@@ -11,3 +11,7 @@ runs/
 eval_report.md
 timing_summary.md
 implementation_*.md
+
+# 화자가 실제로 읽은/말한 스크립트 원문 — 팀원 발화 내용이라 커밋 안 함 (README만 예외)
+stt/eval/ground_truth/*
+!stt/eval/ground_truth/README.md
