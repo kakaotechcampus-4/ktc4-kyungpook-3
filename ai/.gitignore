@@ -1,0 +1,13 @@
+.env
+.venv/
+__pycache__/
+.pytest_cache/
+recordings/*.wav
+recordings/*.json
+transcripts/*.txt
+transcripts/*.json
+data/*.json
+runs/
+eval_report.md
+timing_summary.md
+implementation_*.md
