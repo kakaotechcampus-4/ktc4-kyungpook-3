@@ -6,6 +6,11 @@ labels: "enhancement"
 assignees: ""
 ---
 
+## 담당 파트
+- [ ] ai
+- [ ] backend
+- [ ] frontend
+
 ## 작업 개요
 <!-- 작업 목적 및 배경을 간략히 설명해 주세요. -->
 

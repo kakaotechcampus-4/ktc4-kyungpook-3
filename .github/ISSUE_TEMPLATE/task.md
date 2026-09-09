@@ -6,6 +6,11 @@ labels: "chore"
 assignees: ""
 ---
 
+## 담당 파트
+- [ ] ai
+- [ ] backend
+- [ ] frontend
+
 ## 작업 개요
 <!-- 수행할 작업과 그 필요성을 간략히 설명해 주세요. -->
 
