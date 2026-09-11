@@ -1,7 +1,7 @@
 """Phase 0 — Discord 음성채널 화자별 녹음 어댑터 (py-cord Cog).
 
 "Discord" 라는 이름은 ai/ 안에서는 이 파일에만 있어야 합니다.
-봇 프로세스 자체(기동, 토큰, 상시 실행)는 be/bot/main.py 가 소유하고, 이 Cog 를 add_cog 로 붙여 씁니다:
+봇 프로세스 자체(기동, 토큰, 상시 실행)는 backend/bot/main.py 가 소유하고, 이 Cog 를 add_cog 로 붙여 씁니다:
 
     from capture.discord_adapter import RecordingCog
     bot.add_cog(RecordingCog(bot))
@@ -72,7 +72,7 @@ def is_recording(vc) -> bool:
 
 
 def required_intents() -> discord.Intents:
-    """이 Cog 가 동작하는 데 필요한 인텐트. be/bot/main.py 가 Bot 생성 시 사용."""
+    """이 Cog 가 동작하는 데 필요한 인텐트. backend/bot/main.py 가 Bot 생성 시 사용."""
     intents = discord.Intents.default()
     intents.voice_states = True
     intents.message_content = True
