@@ -1,37 +1,39 @@
-"""Phase 0 — Discord 음성채널 화자별 녹음 어댑터 (py-cord Cog).
+"""디스코드 슬래시 명령과 실시간 전사 파이프라인을 잇는다.
 
-"Discord" 라는 이름은 ai/ 안에서는 이 파일에만 있어야 합니다.
-봇 프로세스 자체(기동, 토큰, 상시 실행)는 be/bot/main.py 가 소유하고, 이 Cog 를 add_cog 로 붙여 씁니다:
+"Discord" 라는 이름은 ai/ 안에서 이 파일 밖으로 나가지 않는다 (ai/CLAUDE.md).
+봇 프로세스는 여기서 띄우지 않는다. RecordingCog 와 required_intents() 만 export 하고
+backend/bot/main.py 또는 capture/run_recorder.py 가 add_cog 로 붙인다.
 
-    from capture.discord_adapter import RecordingCog
-    bot.add_cog(RecordingCog(bot))
+  /record  명령을 친 사람의 음성 채널에 들어가 전사를 시작한다. 줄은 명령을 친 채널에 올라간다
+  /stop    전사를 끝내고 회의록을 낸다
+  /join    입장만 (녹음은 시작하지 않는다)
+  /leave   퇴장
 
-이 파일의 책임은 sink 에서 트랙을 꺼내 recording_store.save_session 에 넘기는 것까지입니다.
-저장 결과(매니페스트 dict)는 on_session_saved 콜백으로 BE 에 전달됩니다 → BE 가 전사/파이프라인을 이어 붙입니다.
-
-슬래시 커맨드
-  /join   - 명령한 사람이 있는 음성채널에 봇 입장
-  /record - 화자별 트랙 녹음 시작 (WaveSink)
-  /stop   - 녹음 종료 → recordings/{user_id}_{ts}.wav + recordings/session_{ts}.json
-  /leave  - 음성채널 퇴장
-
-py-cord 버전 호환 메모 (2026-09 기준, requirements.txt 참고)
-  - 2.6.x: 고전 API. vc.recording / callback(sink, *args). DAVE(E2EE) 미지원 → 2026-03-01 이후 수신 불가.
-  - 2.8.x: DAVE "송신"만 지원. 수신(녹음) 경로 미완성 (pycord #3139).
-  - PR #3159 (2.9.0rc1 예정): DAVE 수신 지원. vc.is_recording(), sink.audio_data 의 key 가 Member/User 객체.
-  아래 코드는 세 경우를 모두 처리합니다.
+산출물은 recordings/{guild_id}_{ts}/ 아래 transcript.md · transcript.jsonl · 화자별 wav 이고,
+매니페스트는 recordings/session_{ts}.json 이다 (stt/transcribe.py 가 찾는 자리).
 """
 
 from __future__ import annotations
 
 import asyncio
+import queue
+import threading
+import time
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import discord
+from discord.voice import VoiceClient
 
-from capture.recording_store import Track, key_to_user_id, save_session
+from capture.publisher import Publisher
+from capture.recording_store import write_manifest
+from capture.streaming_sink import StreamingSink
+from capture.track_writer import TrackWriter
 from shared.config import RECORDINGS_DIR
+from stt.elice import EliceStt
+from stt.session import Session
+from stt.transcript_writer import write_transcript
 
 SessionSavedHook = Callable[[dict, Path], Awaitable[None]]
 
@@ -44,12 +46,153 @@ def is_recording(vc) -> bool:
 
 
 def required_intents() -> discord.Intents:
-    """이 Cog 가 동작하는 데 필요한 인텐트. be/bot/main.py 가 Bot 생성 시 사용."""
+    """이 Cog 에 필요한 인텐트.
+
+    message_content 는 켜지 않는다. 특권 인텐트인데 (flags.py:1150) 우리는 슬래시 명령만
+    쓰고 메시지 본문을 읽지 않는다. 코드에서 켜고 개발자 포털에서 안 켜면 게이트웨이가
+    4014 로 끊고 PrivilegedIntentsRequired 로 봇이 기동 즉시 죽는다 (errors.py:239-264).
+    members 는 남긴다 — 매니페스트의 표시 이름을 guild.get_member 로 얻는다.
+    voice_states 는 default() 에 이미 있지만 요구사항이라 명시한다 (abc.py:2035).
+    """
     intents = discord.Intents.default()
     intents.voice_states = True
-    intents.message_content = True
-    intents.members = True  # user_id → 표시 이름
+    intents.members = True
     return intents
+
+
+class SafeVoiceClient(VoiceClient):
+    """`_remove_ssrc` 의 가드 없는 `self._reader` 접근을 막는다.
+
+    discord.VoiceClient 가 아니라 discord.voice.VoiceClient 를 상속한다. 앞의 이름은
+    2.7 부터 DeprecationWarning 을 내는 별칭이고 3.0 에서 사라진다 (discord/__init__.py:106-112).
+
+    py-cord 2.8.2.dev91+g10a5e8cf1 (PR #3159) 기준. voice/client.py:319-324 는 바로 위
+    destroy_decoder 호출과 달리 self._reader 가드가 없어서, 녹음 중이 아닐 때 사람이 나가면
+    MISSING 에 대한 AttributeError 가 난다 (utils.py:148-159). 그 예외는 _poll_ws 가 안 잡고
+    (voice/state.py:766-768) _runner 태스크가 죽는데, is_connected() 는 True 로 남는다.
+    그 뒤로 speaking(op 5) 이 안 와 _ssrc_to_id 가 영영 비고 (voice/client.py:222-226)
+    패킷은 DEBUG 로그 한 줄로 버려진다 (voice/receive/reader.py:252-256). 오디오 0건 무증상.
+
+    라이브러리 private 메서드를 덮는다. 설치본을 올리면 여기가 먼저 깨져야 하고,
+    /selftest 의 _connection._runner.done() 단계가 그걸 잡는다.
+    """
+
+    def _remove_ssrc(self, *, user_id: int) -> None:
+        ssrc = self._id_to_ssrc.pop(user_id, None)
+        if not ssrc:
+            return
+        reader = getattr(self, "_reader", None)
+        if reader:  # MISSING 은 falsy 다
+            reader.speaking_timer.drop_ssrc(ssrc)
+        self._ssrc_to_id.pop(ssrc, None)
+
+
+@dataclass
+class _Ledger:
+    """확정 줄을 모으는 자리.
+
+    on_line 은 STT 워커 스레드에서 불리고 (stt/session.py:36-41) 종료 경로는 루프에서 돈다.
+    closed 는 종료가 스냅샷을 뜬 시점을 알리는 표시다. 그 뒤 도착한 줄은 파일에도 화면에도
+    못 들어가므로 late 로 세고 로그만 남긴다. 정밀한 동기화가 아니라 관측용 카운터다 —
+    경계에 걸친 한 줄이 어느 쪽으로 세어질지는 보장하지 않는다.
+    """
+
+    lines: list = field(default_factory=list)
+    closed: bool = False
+    late: int = 0
+
+
+class _TrackPool:
+    """화자별 wav 를 전용 스레드에서 쓴다.
+
+    sink.write 는 이벤트 루프에서 돌기 때문에 (voice/state.py:189-198) 거기서 파일 IO 를 하면
+    하트비트와 슬래시 응답이 같이 밀린다. sink 는 큐에 넣기만 하고 TrackWriter 인스턴스는
+    이 스레드만 만진다.
+
+    큐는 유한하다. 무한 큐는 쓰기가 막히는 순간 그대로 메모리다 (16k float32 = 화자당 초당
+    64KB). 넘치면 버리고 dropped 로 센다. 버린 것은 wav 에만 없고 전사에는 있다 —
+    session.feed 는 이 큐를 타지 않는다.
+    """
+
+    QUEUE_MAX = 4096  # 20ms 패킷 기준 약 80초분
+
+    def __init__(self, out_dir: Path, ts: int) -> None:
+        self.out_dir = out_dir
+        self.ts = ts
+        self.dropped = 0
+        self._q: queue.Queue = queue.Queue(maxsize=self.QUEUE_MAX)
+        self._writers: dict[int, TrackWriter] = {}
+        self._thread = threading.Thread(target=self._run, name="track-writer", daemon=True)
+        self._thread.start()
+
+    def submit(self, uid: int, samples, offset_ms: int) -> None:
+        """StreamingSink.on_samples 훅. 이벤트 루프에서 불린다. 절대 막히면 안 된다."""
+        try:
+            self._q.put_nowait((uid, samples, offset_ms))
+        except queue.Full:
+            self.dropped += 1
+
+    def _run(self) -> None:
+        while True:
+            item = self._q.get()
+            if item is None:
+                return
+            uid, samples, offset_ms = item
+            try:
+                w = self._writers.get(uid)
+                if w is None:
+                    w = self._writers[uid] = TrackWriter(self.out_dir / f"{uid}_{self.ts}.wav")
+                w.write_at(samples, offset_ms)
+            except Exception as e:
+                # 트랙 하나가 깨져도 회의를 끝내는 것이 먼저다. 건수는 close() 가 보고한다.
+                print(f"[track] uid={uid} 쓰기 실패: {type(e).__name__}: {e}", flush=True)
+
+    def close(self) -> list[dict]:
+        """센티넬을 넣고 스레드를 기다린 뒤 매니페스트 항목을 만든다. 파일 IO 라 스레드에서 부른다.
+
+        display_name 은 자리만 만들어 둔다. 값은 호출자가 guild.get_member 로 채운다.
+        """
+        try:
+            self._q.put(None, timeout=5)
+        except queue.Full:
+            pass  # 스레드가 이미 죽었다. 아래 join 이 바로 돌아오고 파일은 여기서 닫는다
+        self._thread.join(timeout=10)
+        entries: list[dict] = []
+        for uid, w in sorted(self._writers.items()):
+            dur = w.close()
+            if dur <= 0:
+                continue
+            entries.append({
+                "user_id": str(uid),
+                "display_name": str(uid),
+                "file": f"{self.out_dir.name}/{uid}_{self.ts}.wav",
+                "duration_sec": round(dur, 2),
+            })
+        return entries
+
+
+@dataclass
+class _Meeting:
+    """한 길드에서 진행 중인 회의 하나.
+
+    channel 은 전사 줄과 종료 요약을 올릴 텍스트 채널이다. 봇이 음성 채널에서 쫓겨나는
+    경로에는 ctx 가 없으므로 어디에 올릴지를 회의가 직접 들고 있어야 한다.
+    secret_key 는 우리가 복호화기에 마지막으로 적용한 키다. 복호화기는 키를 보관하지 않아
+    (reader.py:292-304) 여기서 기억하는 수밖에 없다.
+    """
+
+    meeting_id: str
+    ts: int
+    out_dir: Path
+    session: Session
+    sink: StreamingSink
+    pool: _TrackPool
+    publisher: Publisher
+    publisher_task: asyncio.Task
+    channel: discord.abc.Messageable
+    voice_channel_id: int
+    ledger: _Ledger
+    secret_key: bytes = b""
 
 
 class RecordingCog(discord.Cog):
@@ -58,100 +201,409 @@ class RecordingCog(discord.Cog):
         self.bot = bot
         self.recordings_dir = recordings_dir
         self.on_session_saved = on_session_saved
+        self._meetings: dict[int, _Meeting] = {}
+        self._locks: dict[int, asyncio.Lock] = {}
+        self._tasks: set[asyncio.Task] = set()  # 콜백이 만든 태스크의 강한 참조
 
-    @discord.slash_command(name="join", description="봇이 현재 음성채널에 입장합니다")
-    async def join(self, ctx: discord.ApplicationContext) -> None:
+    def _lock_for(self, guild_id: int) -> asyncio.Lock:
+        """/record 와 /stop 본문을 길드마다 직렬화한다.
+
+        가드와 표 대입 사이에 connect() 와 respond() 라는 await 가 있어서, 락이 없으면
+        같은 길드의 /record 두 번이 둘 다 가드를 통과한다. asyncio.Lock 은 재진입이 안 되므로
+        _finish_meeting 은 이 락을 잡지 않는다 — /stop 이 자기 자신을 기다리게 된다.
+        콜백·퇴장 경로는 직렬화되지 않는 대신 pop 가드로 멱등하다.
+        """
+        lock = self._locks.get(guild_id)
+        if lock is None:
+            lock = self._locks[guild_id] = asyncio.Lock()
+        return lock
+
+    def _busy_message(self, meeting: _Meeting) -> str:
+        room = self.bot.get_channel(meeting.voice_channel_id)
+        name = room.name if room is not None else str(meeting.voice_channel_id)
+        return f"이 서버에서는 이미 #{name} 에서 회의가 진행 중입니다. /stop 으로 먼저 끝내 주세요."
+
+    @discord.Cog.listener()
+    async def on_voice_state_update(self, member, before, after) -> None:
+        meeting = self._meetings.get(member.guild.id)
+        if meeting is None or before.channel is None:
+            return
+        if before.channel.id != meeting.voice_channel_id:
+            return
+        if after.channel is not None and after.channel.id == meeting.voice_channel_id:
+            return
+        if member.id == self.bot.user.id:
+            # 봇이 회의 방에서 빠졌다. /stop 과 같은 경로로 끝낸다.
+            await self._finish_meeting(member.guild.id)
+            return
+        # 나간 사람의 재정렬 창을 먼저 비우고 진행 중 발화를 확정한다. 순서가 반대면
+        # 창에 남은 꼬리가 이미 닫힌 VAD 로 들어간다.
+        meeting.sink.drain_speaker(member.id)
+        meeting.session.flush_speaker(str(member.id))
+
+    @discord.Cog.listener()
+    async def on_member_speaking_state_update(self, member, ssrc, state) -> None:
+        """재연결로 음성 키가 바뀌면 복호화기를 갱신한다.
+
+        설치본에는 update_secret_key 호출자가 없다 (reader.py:138-139, 370-371). 복호화기는
+        start_recording 시점의 키로 box 를 한 번 만드는데 (reader.py:126-128) load_secret_key 는
+        새 session_description 마다 키를 갈아끼운다 (gateway.py:442). 재연결 경로는
+        disconnect(cleanup=False) 라 reader 가 살아남으므로 낡은 box 로 전부 CryptoError 가 된다.
+        이 리스너는 발화가 시작될 때마다 오므로 갱신이 한 발화 이상 늦지 않는다.
+        소스로 확인한 것이고 실제 재연결로 관측하지 않았다.
+        """
+        meeting = self._meetings.get(member.guild.id)
+        if meeting is None:
+            return
+        vc = member.guild.voice_client
+        reader = getattr(vc, "_reader", None) if vc is not None else None
+        if not reader:
+            return
+        key = bytes(vc.secret_key or b"")
+        if not key or key == meeting.secret_key:
+            return
+        reader.update_secret_key(key)
+        meeting.secret_key = key
+        print("[voice] 음성 세션 키가 바뀌어 복호화기를 갱신했다", flush=True)
+
+    # ------------------------------------------------------------------ /record
+    @discord.slash_command(name="record", description="실시간 전사를 시작합니다")
+    @discord.guild_only()
+    @discord.option("channel", discord.TextChannel, required=False,
+                    description="전사를 올릴 텍스트 채널 (기본: 명령을 친 채널)")
+    async def record(self, ctx: discord.ApplicationContext,
+                     channel: discord.TextChannel | None = None) -> None:
+        # 음성 핸드셰이크는 최대 60초다 (abc.py:2026). 인터랙션 응답 시한 3초를 넘기면
+        # 토큰이 만료돼 아래 respond 가 전부 NotFound 로 터진다. 첫 줄에 defer 한다.
+        await ctx.defer()
+        async with self._lock_for(ctx.guild.id):
+            await self._start_meeting(ctx, channel)
+
+    async def _start_meeting(self, ctx: discord.ApplicationContext,
+                             channel: discord.TextChannel | None) -> None:
+        meeting = self._meetings.get(ctx.guild.id)
+        if meeting is not None:
+            await ctx.respond(self._busy_message(meeting), ephemeral=True)
+            return
+
         voice = getattr(ctx.author, "voice", None)
         if voice is None or voice.channel is None:
-            await ctx.respond("먼저 음성채널에 들어간 뒤 다시 실행해 주세요.", ephemeral=True)
+            await ctx.respond("먼저 음성 채널에 들어간 뒤 다시 실행해 주세요.", ephemeral=True)
             return
-        channel = voice.channel
+        room = voice.channel
+
+        # 권한이 없으면 connect() 는 403 이 아니라 60초 침묵 뒤 TimeoutError 다
+        # (abc.py:2054-2062). 미리 보고 어느 권한이 없는지 그대로 말해 준다.
+        perms = room.permissions_for(ctx.guild.me)
+        missing = [name for name, ok in (("채널 보기", perms.view_channel),
+                                         ("음성 연결", perms.connect)) if not ok]
+        if missing:
+            await ctx.respond(
+                f"`{room.name}` 에 필요한 권한이 없습니다: {', '.join(missing)}. "
+                f"서버 설정 → 역할에서 봇 역할에 추가해 주세요.", ephemeral=True)
+            return
+
         vc = ctx.voice_client
         if vc is not None and vc.is_connected():
-            if vc.channel.id == channel.id:
-                await ctx.respond(f"이미 `{channel.name}` 에 있습니다.", ephemeral=True)
+            if is_recording(vc):
+                # 표에는 없는데 리더가 살아 있다. /stop 이 이 상태를 푼다.
+                await ctx.respond("이 서버에서 이미 녹음이 돌고 있습니다. `/stop` 으로 먼저 "
+                                  "끝내 주세요.", ephemeral=True)
                 return
-            await vc.move_to(channel)
+            if vc.channel.id != room.id:
+                # 녹음 중 이동은 destroy_all_decoders 를 깨뜨린다 (router.py:116-119).
+                # 여기는 녹음 전이라 안전하다. 단 move_to 는 음성 상태 갱신을 보내고 바로
+                # 돌아오므로, 이 줄 다음의 vc.channel 은 아직 옛 방일 수 있다. 아래에서
+                # 방 기준은 전부 room 을 쓴다.
+                await vc.move_to(room)
         else:
-            await channel.connect()
-        await ctx.respond(f"`{channel.name}` 입장 완료. `/record` 로 녹음을 시작하세요.")
+            try:
+                vc = await room.connect(cls=SafeVoiceClient)
+            except asyncio.TimeoutError:
+                await ctx.respond("음성 채널 연결이 60초 안에 끝나지 않았습니다. 봇 역할의 "
+                                  "연결 권한과 서버 상태를 확인해 주세요.", ephemeral=True)
+                return
+            except Exception as e:
+                await ctx.respond(f"음성 채널 연결 실패: {type(e).__name__}: {e}", ephemeral=True)
+                return
 
-    @discord.slash_command(name="record", description="화자별 트랙 녹음을 시작합니다")
-    async def record(self, ctx: discord.ApplicationContext) -> None:
-        vc = ctx.voice_client
-        if vc is None or not vc.is_connected():
-            await ctx.respond("봇이 음성채널에 없습니다. `/join` 먼저 실행해 주세요.", ephemeral=True)
-            return
-        if is_recording(vc):
-            await ctx.respond("이미 녹음 중입니다. `/stop` 으로 먼저 종료하세요.", ephemeral=True)
-            return
-        vc.start_recording(discord.sinks.WaveSink(), self.finished_callback, ctx)
-        await ctx.respond(f"🔴 녹음 시작 (`{vc.channel.name}`). 말이 끝나면 `/stop` 을 실행하세요.\n※ 유저별로 개별 wav 로 저장됩니다.")
+        post_to = channel or ctx.channel
+        ts = int(time.time())
+        meeting_id = f"{ctx.guild.id}_{ts}"
+        out_dir = self.recordings_dir / meeting_id
 
-    @discord.slash_command(name="stop", description="녹음을 종료하고 화자별 wav 로 저장합니다")
+        async def _send(text: str):
+            # Message 객체를 그대로 돌려준다. Publisher 는 이 값을 불투명하게 들고 있다가
+            # _edit 에 그대로 넘긴다 (publisher.py:226,228). fetch_message 를 한 번 더 치면
+            # 편집 한 번이 HTTP 두 번이 되고 우리 토큰 버킷이 실제 요청률을 절반으로 센다.
+            return await post_to.send(text)
+
+        async def _edit(msg, text: str) -> None:
+            await msg.edit(content=text)
+
+        publisher = Publisher(_send, _edit)
+        ledger = _Ledger()
+
+        def on_line(line):
+            # STT 워커 스레드에서 불린다 (stt/session.py:36-41). Publisher.submit 은 그
+            # 스레드에서 안전하다고 스스로 계약한다 (publisher.py:13-19).
+            if ledger.closed:
+                ledger.late += 1
+                print(f"[meeting] 마감 뒤 도착한 줄 {ledger.late}건 "
+                      f"({line.speaker_name}) — 파일에도 화면에도 안 들어간다", flush=True)
+                return
+            ledger.lines.append(line)
+            publisher.submit(line)
+
+        session = Session(final_stt=EliceStt(), on_line=on_line)
+        pool = _TrackPool(out_dir, ts)
+        sink = StreamingSink(session, on_samples=pool.submit)
+        publisher_task = asyncio.create_task(publisher.run())
+
+        try:
+            # 인자를 반드시 하나 이상 넘긴다. reader.py:182 가 `if self.after and self.args:`
+            # 라서 빈 튜플이면 콜백이 아예 안 불린다. 동시에 voice/client.py:763-765 는
+            # 위치 인자에 대해 "deprecated since 2.7, 3.0 에서 제거" 경고를 띄운다.
+            # 둘 다 사실이고, 3.0 으로 올릴 때 이 배선이 조용히 죽는 자리다.
+            vc.start_recording(sink, self._on_recording_done, ctx)
+        except Exception as e:
+            publisher_task.cancel()
+            await asyncio.to_thread(session.close, 1.0)
+            await asyncio.to_thread(pool.close)
+            await ctx.respond(f"녹음을 시작하지 못했습니다: {type(e).__name__}: {e}", ephemeral=True)
+            return
+
+        # start_recording 이 성공한 뒤에 표에 넣는다. 먼저 넣으면 위 예외에 길드가 영구
+        # "회의 중" 으로 잠기고 워커 스레드 3개와 게시 태스크가 새어 나간다.
+        self._meetings[ctx.guild.id] = _Meeting(
+            meeting_id=meeting_id, ts=ts, out_dir=out_dir,
+            session=session, sink=sink, pool=pool,
+            publisher=publisher, publisher_task=publisher_task,
+            # 방은 room 기준이다. move_to 직후의 vc.channel 은 게이트웨이 이벤트가 와야
+            # 갱신되므로, 그걸 믿으면 on_voice_state_update 의 방 필터가 옛 방을 가리켜
+            # 퇴장 flush 와 봇 퇴장 감지가 조용히 안 돈다.
+            channel=post_to, voice_channel_id=room.id, ledger=ledger,
+            secret_key=bytes(vc.secret_key or b""),
+        )
+        await ctx.respond(
+            f"🔴 전사 시작 (`{room.name}`). 줄은 {post_to.mention} 에 올라갑니다. "
+            f"`/stop` 으로 종료합니다."
+        )
+
+    # -------------------------------------------------------- /stop /join /leave
+    @discord.slash_command(name="stop", description="전사를 끝내고 회의록을 저장합니다")
+    @discord.guild_only()
     async def stop(self, ctx: discord.ApplicationContext) -> None:
-        vc = ctx.voice_client
-        if vc is None or not is_recording(vc):
-            await ctx.respond("진행 중인 녹음이 없습니다.", ephemeral=True)
-            return
-        vc.stop_recording()  # 종료 후 finished_callback 호출
-        await ctx.respond("⏹ 녹음 종료. 파일 저장 중...")
+        await ctx.defer()
+        async with self._lock_for(ctx.guild.id):
+            vc = ctx.voice_client
+            if ctx.guild.id not in self._meetings:
+                if vc is not None and is_recording(vc):
+                    # 표와 라이브러리 상태가 어긋난 경우. 그냥 두면 /record 는 "이미 녹음 중",
+                    # /stop 은 "회의 없음" 으로 서로를 막아 프로세스 재시작 말고는 길이 없다.
+                    vc.stop_recording()
+                    await ctx.respond("표에 없는 녹음을 정지했습니다. 회의록은 없습니다.")
+                    return
+                await ctx.respond("진행 중인 회의가 없습니다.", ephemeral=True)
+                return
 
-    @discord.slash_command(name="leave", description="봇이 음성채널에서 나갑니다")
+            # 먼저 답한다. stop_recording() 은 동기이고 라우터 join 에 최대 5초를 쓴다
+            # (reader.py:165-168). 그동안 봇 전체가 멈추므로 응답이 뒤면 3초 시한에 걸린다.
+            await ctx.respond("회의를 마칩니다. 회의록을 만드는 중입니다...")
+            if vc is not None and is_recording(vc):
+                # 이 줄이 돌아온 시점에 cleanup() → drain() 이 끝나 있다 (reader.py:163-197).
+                # 다음 줄에서 session.close() 를 불러도 마지막 발화를 잃지 않는다.
+                vc.stop_recording()
+        await self._finish_meeting(ctx.guild.id)
+
+    @discord.slash_command(name="join", description="봇이 음성 채널에 입장만 합니다")
+    @discord.guild_only()
+    async def join(self, ctx: discord.ApplicationContext) -> None:
+        await ctx.defer()
+        meeting = self._meetings.get(ctx.guild.id)
+        if meeting is not None:
+            # 녹음 중 move_to 는 destroy_all_decoders 를 깨뜨린다 (router.py:116-119).
+            await ctx.respond(self._busy_message(meeting), ephemeral=True)
+            return
+        voice = getattr(ctx.author, "voice", None)
+        if voice is None or voice.channel is None:
+            await ctx.respond("먼저 음성 채널에 들어간 뒤 다시 실행해 주세요.", ephemeral=True)
+            return
+        room = voice.channel
+        perms = room.permissions_for(ctx.guild.me)
+        missing = [name for name, ok in (("채널 보기", perms.view_channel),
+                                         ("음성 연결", perms.connect)) if not ok]
+        if missing:
+            await ctx.respond(f"`{room.name}` 에 필요한 권한이 없습니다: {', '.join(missing)}.",
+                              ephemeral=True)
+            return
+        vc = ctx.voice_client
+        try:
+            if vc is not None and vc.is_connected():
+                if vc.channel.id == room.id:
+                    await ctx.respond(f"이미 `{room.name}` 에 있습니다.", ephemeral=True)
+                    return
+                await vc.move_to(room)
+            else:
+                await room.connect(cls=SafeVoiceClient)
+        except asyncio.TimeoutError:
+            await ctx.respond("음성 채널 연결이 60초 안에 끝나지 않았습니다.", ephemeral=True)
+            return
+        except Exception as e:
+            await ctx.respond(f"음성 채널 연결 실패: {type(e).__name__}: {e}", ephemeral=True)
+            return
+        await ctx.respond(f"`{room.name}` 입장 완료. `/record` 로 전사를 시작하세요.")
+
+    @discord.slash_command(name="leave", description="봇이 음성 채널에서 나갑니다")
+    @discord.guild_only()
     async def leave(self, ctx: discord.ApplicationContext) -> None:
+        await ctx.defer()
+        if ctx.guild.id in self._meetings:
+            await ctx.respond("진행 중인 회의를 먼저 끝냅니다...")
+            vc = ctx.voice_client
+            if vc is not None and is_recording(vc):
+                vc.stop_recording()
+            await self._finish_meeting(ctx.guild.id)
+            return
         vc = ctx.voice_client
         if vc is None:
-            await ctx.respond("봇이 음성채널에 없습니다.", ephemeral=True)
+            await ctx.respond("봇이 음성 채널에 없습니다.", ephemeral=True)
             return
-        if is_recording(vc):
-            vc.stop_recording()
         await vc.disconnect(force=True)
-        await ctx.respond("음성채널에서 나갔습니다.")
+        await ctx.respond("음성 채널에서 나갔습니다.")
 
-    async def finished_callback(self, sink, ctx: discord.ApplicationContext) -> None:
-        """녹음 종료 시 호출. sink.audio_data = {user_key: AudioData}."""
-        # 2.9 계열은 콜백 예약 직후 다른 스레드에서 sink.cleanup()(WAV 포맷)을 수행하므로 잠깐 기다림
-        for _ in range(10):
-            if getattr(sink, "finished", True):
-                break
-            await asyncio.sleep(0.2)
+    def _on_recording_done(self, sink, ctx: discord.ApplicationContext) -> None:
+        """py-cord 가 stop_recording 안에서 동기로 부른다 (reader.py:182-184).
 
-        tracks: list[Track] = []
-        for key, audio in sink.audio_data.items():
-            user_id = key_to_user_id(key)
-            if user_id is None:
-                print("[warn] 사용자 식별이 안 된 오디오 트랙을 건너뜁니다.")
-                continue
-            member = ctx.guild.get_member(user_id) if ctx.guild else None
-            display_name = member.display_name if member else getattr(key, "display_name", None) or str(user_id)
-            audio.file.seek(0)
-            tracks.append(Track(user_id=str(user_id), display_name=display_name, raw=audio.file.read()))
+        동기 함수로 둔 이유가 둘이다. 코루틴을 돌려주면 py-cord 가 loop.create_task 의 반환값을
+        버리는데 (reader.py:185-188) asyncio 는 태스크를 약한 참조로만 들고 있어 실행 중에
+        수거될 수 있다. 그리고 우리가 태스크를 만들면 예외도 우리가 볼 수 있다.
+        본문은 태스크를 예약하는 것이 전부라, 동기 콜백이 sink.cleanup()(reader.py:195) 보다
+        먼저 실행된다는 사실에 걸리는 게 없다 — 실제 마무리는 루프가 제어권을 되찾은 뒤,
+        즉 cleanup() 이 끝난 뒤에 돈다.
 
-        vc = ctx.voice_client
-        manifest_path, manifest = save_session(
-            tracks, self.recordings_dir,
-            guild=ctx.guild.name if ctx.guild else None,
-            channel=vc.channel.name if vc is not None and vc.channel is not None else None,
-            library_version=discord.__version__,
-        )
-        for e in manifest["speakers"]:
-            print(f"[saved] {e['file']}  {e['display_name']}  {e['duration_sec']}s")
-        print(f"[saved] 매니페스트 {manifest_path.name}")
+        /stop 은 이 콜백을 기다리지 않는다. 이 경로가 필요한 것은 네트워크 단절과
+        disconnect() 처럼 /stop 을 거치지 않고 리더가 멈추는 경우다
+        (voice/client.py:381, 618-620). _finish_meeting 은 pop 가드로 멱등하다.
+        """
+        guild_id = ctx.guild.id
+        loop = self.bot.loop
 
-        if manifest["speakers"]:
-            lines = [f"- **{e['display_name']}** → `{e['file']}` ({e['duration_sec']}s)" for e in manifest["speakers"]]
-            msg = f"✅ 저장 완료 (세션 `{manifest['session']}`, 화자 {len(lines)}명)\n" + "\n".join(lines)
-        else:
-            msg = ("⚠️ 저장된 오디오가 없습니다. 아무도 말하지 않았거나, 사용 중인 py-cord 버전이 "
-                   "DAVE(E2EE) 음성 수신을 지원하지 않을 수 있습니다 (requirements.txt 참고).")
+        def _spawn() -> None:
+            task = loop.create_task(self._finish_meeting(guild_id))
+            self._tasks.add(task)
+            task.add_done_callback(self._tasks.discard)
+
         try:
-            await ctx.followup.send(msg)
-        except Exception:  # 인터랙션 토큰 만료 등
-            if ctx.channel is not None:
-                await ctx.channel.send(msg)
+            running = asyncio.get_running_loop()
+        except RuntimeError:
+            running = None
+        if running is loop:
+            _spawn()
+        else:
+            # _stop() 은 라우터 스레드에서 시작될 수도 있다 (router.py:131-136).
+            loop.call_soon_threadsafe(_spawn)
 
-        if self.on_session_saved is not None and manifest["speakers"]:
+    # ------------------------------------------------------------------ 종료
+    async def _finish_meeting(self, guild_id: int) -> None:
+        """/stop, /leave, 봇의 음성 채널 퇴장, py-cord 콜백이 전부 여기로 온다.
+
+        표에서 먼저 꺼내므로 어느 쪽이 먼저 도착하든 본문은 한 번만 돈다.
+        길드 락은 잡지 않는다 — /stop 이 락을 쥔 채 부를 수 있고 asyncio.Lock 은 재진입이 안 된다.
+        """
+        # 이 계획의 목표가 "종료 명령 후 10초 안에 회의록" 이다. 그 수치를 재는 자리가
+        # 여기뿐이다 — session.close() 의 반환값은 전사 대기 시간일 뿐 파일이 나온 시각이
+        # 아니다. 종료 메시지에 둘을 같이 찍어 실제 회의에서 그대로 옮겨 적는다.
+        t0 = time.monotonic()
+        meeting = self._meetings.pop(guild_id, None)
+        if meeting is None:
+            return
+
+        guild = self.bot.get_guild(guild_id)
+        vc = guild.voice_client if guild is not None else None
+
+        # 1. 남은 발화를 확정하고 전사를 기다린다. close() 는 워커를 최대 10초 기다리는
+        #    블로킹 호출이라 스레드로 뺀다. 루프에서 부르면 그동안 봇 전체가 멈춘다.
+        elapsed = await asyncio.to_thread(meeting.session.close, 10.0)
+
+        # 2. 스냅샷은 close() 가 돌아온 **뒤** 에 찍는다. 앞에서 찍으면 close() 가 확정하는
+        #    마지막 발화들이 통째로 빠진다 — 그 줄들은 전부 close() 안에서 on_line 으로 온다
+        #    (stt/session.py:144-175). 마감 경계는 close() 의 반환이고, 그 뒤에 오는 줄이
+        #    ledger.late 다. 세기만 하고 되살리지 않는다.
+        meeting.ledger.closed = True
+        lines = list(meeting.ledger.lines)
+
+        # 3. 화자별 트랙을 닫고 매니페스트를 쓴다. 표시 이름은 여기서 붙인다.
+        entries = await asyncio.to_thread(meeting.pool.close)
+        for e in entries:
+            member = guild.get_member(int(e["user_id"])) if guild is not None else None
+            if member is not None:
+                e["display_name"] = member.display_name
+        manifest_path = None
+        if entries:
+            # 매니페스트는 평평하게 recordings/session_{ts}.json 에 쓴다. stt/transcribe.py:60 과
+            # stt/eval/eval.py:108 이 RECORDINGS_DIR 을 얕게 훑기 때문이다. wav 는 회의
+            # 디렉토리 안에 있고 file 필드가 상대 경로를 들고 있다.
+            manifest_path, _ = await asyncio.to_thread(
+                write_manifest, entries, self.recordings_dir,
+                ts=meeting.ts,
+                guild=guild.name if guild is not None else None,
+                channel=vc.channel.name if vc is not None and vc.channel is not None else None,
+                library_version=discord.__version__,
+            )
+
+        # 4. 회의록. 게시기 정리보다 **앞** 이다. 게시가 막혀 있어도 파일은 나와야 한다.
+        out = await asyncio.to_thread(write_transcript, lines, meeting.out_dir, meeting.meeting_id)
+
+        finals = [ln for ln in lines if ln.final]
+        report = meeting.sink.level_report()
+        total = time.monotonic() - t0
+        msg = [
+            f"⏹ 종료. 발화 {len(finals)}건 · 회의록까지 {total:.1f}초 "
+            f"(전사 대기 {elapsed:.1f}초, 목표 10초)",
+            f"회의록 `{out['markdown']}`",
+        ]
+        if manifest_path is not None:
+            msg.append(f"화자별 트랙 {len(entries)}개 · 매니페스트 `{manifest_path.name}`")
+        msg.append(
+            f"수신 패킷 {report['packets']} · 잡음 {report['noise_packets']} · "
+            f"write 오류 {report['write_errors']} · 화자 미상 {report['unattributed']} · "
+            f"트랙 버림 {meeting.pool.dropped} · 최대 RMS {report['peak_rms']:.3f} "
+            f"(임계 {report['speech_rms']:.3f}, {report['verdict']})"
+        )
+        try:
+            await meeting.channel.send("\n".join(msg))
+        except Exception as e:
+            print(f"[meeting] 종료 메시지 전송 실패: {type(e).__name__}: {e}", flush=True)
+
+        # 5. 게시기를 접는다. 기본 데드라인 8초 (publisher.py:115). 못 나간 줄은 화면에만
+        #    없고 transcript.jsonl 에는 이미 있다. await 가 예외를 올려도 여기서 끝나지 않게
+        #    감싼다 — 회의록은 이미 나왔고 남은 것은 disconnect 뿐이다.
+        meeting.publisher.stop()
+        try:
+            await meeting.publisher_task
+        except Exception as e:
+            print(f"[publish] 게시 태스크 종료 예외: {type(e).__name__}: {e}", flush=True)
+
+        if meeting.ledger.late:
+            print(f"[meeting] {meeting.meeting_id}: 마감 뒤 도착한 줄 {meeting.ledger.late}건. "
+                  f"회의록에 없다. Task 12 에서 실측한다.", flush=True)
+        if meeting.pool.dropped:
+            print(f"[meeting] {meeting.meeting_id}: 트랙 큐가 넘쳐 {meeting.pool.dropped}건 버렸다.",
+                  flush=True)
+
+        # 6. 음성 채널에서 나간다. 회의가 끝나면 봇이 남아 있을 이유가 없고, 남아 있으면
+        #    다음 /record 가 "이미 연결됨" 분기로 들어가 상태가 하나 늘어난다.
+        if vc is not None:
             try:
-                await self.on_session_saved(manifest, manifest_path)
-            except Exception as e:  # BE 후처리 실패가 녹음 저장까지 망치지 않게
+                await vc.disconnect(force=True)
+            except Exception as e:
+                print(f"[voice] 퇴장 실패: {type(e).__name__}: {e}", flush=True)
+
+        if self.on_session_saved is not None:
+            payload = {"meeting_id": meeting.meeting_id, "guild_id": guild_id,
+                       "session": str(meeting.ts), "speakers": entries, **out}
+            try:
+                await self.on_session_saved(payload, out["jsonl"])
+            except Exception as e:  # BE 후처리 실패가 회의록 저장까지 망치지 않게
                 print(f"[warn] on_session_saved 훅 실패: {e!r}")
