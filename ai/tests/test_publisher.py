@@ -1,0 +1,150 @@
+import asyncio
+
+import pytest
+
+from stt.session import Line
+from capture.publisher import Publisher, format_line, render_turn
+
+
+def line(speaker="kim", name="김환", turn="t1", seq=1, start=24_000, end=27_000,
+         text="안녕하세요", final=True):
+    return Line(speaker, name, turn, seq, start, end, text, final)
+
+
+def test_format_shows_meeting_clock():
+    assert format_line(line(start=24_000, name="김환", text="안녕")) == "`[00:24]` **김환** 안녕"
+
+
+def test_format_handles_over_an_hour():
+    assert format_line(line(start=3_725_000, name="A", text="x")).startswith("`[62:05]`")
+
+
+def test_render_turn_joins_finals_in_seq_order():
+    out = render_turn([line(seq=2, text="두 번째"), line(seq=1, text="첫 번째")])
+    assert out.endswith("첫 번째 두 번째")
+
+
+class FakeChannel:
+    def __init__(self, fail_first=0):
+        self.sent = []
+        self.edits = []
+        self._n = 0
+        self._fail = fail_first
+
+    async def send(self, text):
+        if self._fail:
+            self._fail -= 1
+            raise RuntimeError("429")
+        self._n += 1
+        self.sent.append(text)
+        return self._n
+
+    async def edit(self, message_id, text):
+        self.edits.append((message_id, text))
+
+    def shown(self):
+        """화면에 마지막으로 남은 본문."""
+        return self.edits[-1][1] if self.edits else self.sent[-1]
+
+
+async def drive(p, submits, wait=0.05):
+    task = asyncio.create_task(p.run())
+    for ln, gap in submits:
+        p.submit(ln)
+        await asyncio.sleep(gap)
+    await asyncio.sleep(wait)
+    p.stop()
+    await task
+
+
+@pytest.mark.asyncio
+async def test_same_turn_edits_instead_of_sending():
+    ch = FakeChannel()
+    p = Publisher(ch.send, ch.edit, coalesce_s=0)
+    await drive(p, [(line(turn="t1", seq=1, text="그래서 제가"), 0.05),
+                    (line(turn="t1", seq=2, text="이번 주에"), 0.05)])
+    assert len(ch.sent) == 1
+    assert ch.shown().endswith("그래서 제가 이번 주에")
+
+
+@pytest.mark.asyncio
+async def test_different_turn_sends_new_message():
+    ch = FakeChannel()
+    p = Publisher(ch.send, ch.edit, coalesce_s=0)
+    await drive(p, [(line(turn="t1", text="A 말"), 0.05),
+                    (line(turn="t2", speaker="yoo", name="유재환", text="B 말"), 0.05)])
+    assert len(ch.sent) == 2
+
+
+@pytest.mark.asyncio
+async def test_two_finals_in_same_turn_before_publish_both_survive():
+    """게시 전에 같은 턴 확정 2건이 연달아 오면 둘 다 본문에 남아야 한다. 최신 하나만 남기면 U1 이 사라진다."""
+    ch = FakeChannel()
+    p = Publisher(ch.send, ch.edit, coalesce_s=0.2)
+    await drive(p, [(line(turn="t1", seq=1, text="U1"), 0.0),
+                    (line(turn="t1", seq=2, text="U2"), 0.0)], wait=0.4)
+    assert "U1" in ch.shown() and "U2" in ch.shown()
+    assert ch.shown().index("U1") < ch.shown().index("U2")
+
+
+@pytest.mark.asyncio
+async def test_burst_within_bucket_is_not_delayed():
+    """토큰 5개면 5건은 기다리지 않고 나간다."""
+    ch = FakeChannel()
+    p = Publisher(ch.send, ch.edit, burst=5, refill_per_s=1.0, coalesce_s=0)
+    loop = asyncio.get_running_loop()
+    t0 = loop.time()
+    await drive(p, [(line(turn=f"t{i}", speaker=f"s{i}", text=f"m{i}"), 0.0) for i in range(5)], wait=0.1)
+    assert len(ch.sent) == 5
+    assert loop.time() - t0 < 0.5
+
+
+@pytest.mark.asyncio
+async def test_sixth_in_burst_waits_for_refill():
+    ch = FakeChannel()
+    p = Publisher(ch.send, ch.edit, burst=2, refill_per_s=10.0, coalesce_s=0)
+    loop = asyncio.get_running_loop()
+    t0 = loop.time()
+    await drive(p, [(line(turn=f"t{i}", speaker=f"s{i}", text=f"m{i}"), 0.0) for i in range(3)], wait=0.3)
+    assert len(ch.sent) == 3
+    assert loop.time() - t0 >= 0.09   # 3번째는 토큰 회복(0.1초)을 기다린다
+
+
+@pytest.mark.asyncio
+async def test_sixth_in_burst_actually_delays_completion():
+    """test_sixth_in_burst_waits_for_refill 의 wait=0.3 은 항상 0.09 를 넘기므로
+    토큰 버킷을 완전히 없애도 통과한다. 고정 대기가 아니라 3번째 전송이 실제로
+    끝나는 시점으로 재본다."""
+    ch = FakeChannel()
+    p = Publisher(ch.send, ch.edit, burst=2, refill_per_s=10.0, coalesce_s=0)
+    loop = asyncio.get_running_loop()
+    task = asyncio.create_task(p.run())
+    t0 = loop.time()
+    for i in range(3):
+        p.submit(line(turn=f"t{i}", speaker=f"s{i}", text=f"m{i}"))
+    while len(ch.sent) < 3:
+        await asyncio.sleep(0.005)
+    elapsed = loop.time() - t0
+    p.stop()
+    await task
+    assert elapsed >= 0.09
+
+
+@pytest.mark.asyncio
+async def test_send_failure_is_retried_not_dropped():
+    ch = FakeChannel(fail_first=1)
+    p = Publisher(ch.send, ch.edit, coalesce_s=0, backoff_s=(0.05,))
+    await drive(p, [(line(turn="t1", text="살아남아야 함"), 0.0)], wait=0.3)
+    assert ch.sent and "살아남아야 함" in ch.sent[-1]
+
+
+@pytest.mark.asyncio
+async def test_stop_flushes_without_waiting_for_coalesce():
+    ch = FakeChannel()
+    p = Publisher(ch.send, ch.edit, coalesce_s=5.0)
+    task = asyncio.create_task(p.run())
+    p.submit(line(turn="t1", text="즉시"))
+    await asyncio.sleep(0.02)
+    p.stop()
+    await asyncio.wait_for(task, timeout=1.0)
+    assert ch.sent and "즉시" in ch.sent[-1]
