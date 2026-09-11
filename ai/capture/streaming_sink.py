@@ -1,7 +1,10 @@
 """디스코드 음성 수신 진입점.
 
-py-cord 는 소켓 수신 스레드에서 write(data, user) 를 부른다. 여기서 무거운 일을
-하면 패킷을 흘린다. 잡음 필터, PCM 변환, 재정렬까지만 하고 나머지는 Session 에 넘긴다.
+py-cord 는 write(data, user) 를 봇의 asyncio 이벤트 루프에서 부른다 (소켓 리더
+스레드는 콜백을 `loop.create_task` 로 넘길 뿐 직접 부르지 않는다). 여기서 무거운
+일을 하면 게이트웨이 하트비트와 슬래시 응답까지 밀리고, 하트비트가 밀리면 음성
+연결이 끊긴다. write 안에서는 잡음 필터, PCM 변환, 재정렬, session.feed (VAD +
+큐 put) 까지만 한다. 파일 IO, 모델 호출, 큐 대기는 여기서 하지 않는다.
 
 발화 위치는 도착 시각이 정한다. now_ms 를 주입할 수 있어 오프라인 리플레이가
 같은 코드로 시간축을 재현한다. 실제 봇은 monotonic 을 쓴다.
@@ -107,7 +110,10 @@ class StreamingSink(discord.sinks.Sink):
             self.drain_speaker(uid)
 
     def cleanup(self) -> None:
-        """py-cord 가 stop_recording 뒤에 부른다."""
+        """py-cord 가 stop_recording 뒤에 부른다.
+
+        라우터 스레드 또는 이벤트 루프 스레드 어느 쪽에서나 불릴 수 있어 _lock 이 필요하다.
+        """
         self.drain()
         self.finished = True
 
