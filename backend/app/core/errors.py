@@ -13,6 +13,7 @@ class ErrorCode(StrEnum):
     TRANSCRIPTION_FAILED = "TRANSCRIPTION_FAILED"
     EXTRACTION_FAILED = "EXTRACTION_FAILED"
     EXTRACTION_NOT_FOUND = "EXTRACTION_NOT_FOUND"
+    APPROVAL_NOT_FOUND = "APPROVAL_NOT_FOUND"
     NOTION_WRITE_FAILED = "NOTION_WRITE_FAILED"
     INTERNAL_ERROR = "INTERNAL_ERROR"
 
@@ -26,6 +27,7 @@ ERROR_STATUS: dict[ErrorCode, int] = {
     ErrorCode.TRANSCRIPTION_FAILED: 502,
     ErrorCode.EXTRACTION_FAILED: 502,
     ErrorCode.EXTRACTION_NOT_FOUND: 404,
+    ErrorCode.APPROVAL_NOT_FOUND: 404,
     ErrorCode.NOTION_WRITE_FAILED: 502,
     ErrorCode.INTERNAL_ERROR: 500,
 }
@@ -39,6 +41,7 @@ ERROR_MESSAGE: dict[ErrorCode, str] = {
     ErrorCode.TRANSCRIPTION_FAILED: "음성 전사에 실패했습니다.",
     ErrorCode.EXTRACTION_FAILED: "회의 분석에 실패했습니다.",
     ErrorCode.EXTRACTION_NOT_FOUND: "해당 추출 결과를 찾을 수 없습니다.",
+    ErrorCode.APPROVAL_NOT_FOUND: "해당 승인 요청을 찾을 수 없습니다.",
     ErrorCode.NOTION_WRITE_FAILED: "Notion 반영에 실패했습니다.",
     ErrorCode.INTERNAL_ERROR: "서버 내부 오류가 발생했습니다.",
 }

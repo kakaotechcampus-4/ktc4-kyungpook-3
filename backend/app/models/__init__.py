@@ -3,6 +3,9 @@ from app.models.models import (
     AliasReview,
     AliasSource,
     AliasType,
+    ApprovalRequest,
+    ApprovalStatus,
+    ApprovalType,
     AudioSegment,
     ChangedField,
     ChangeSource,
@@ -25,6 +28,7 @@ from app.models.models import (
 
 __all__ = [
     "AliasResolutionLog", "AliasReview", "AliasSource", "AliasType",
+    "ApprovalRequest", "ApprovalStatus", "ApprovalType",
     "AudioSegment", "ChangeSource", "ChangedField", "Extraction",
     "ExtractionItem", "Gate", "Meeting", "MeetingAudio", "MeetingSource",
     "MeetingStatus", "Member", "MemberAlias", "MemberRole",

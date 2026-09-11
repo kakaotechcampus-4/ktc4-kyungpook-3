@@ -90,7 +90,20 @@ class ChangeSource(StrEnum):
     CHAT = "chat"
     CHECKIN = "checkin"
     NOTION = "notion"
+    REMINDER_REPLY = "reminder_reply"
     MANUAL = "manual"
+
+
+class ApprovalType(StrEnum):
+    TASK_CREATE = "task_create"
+    TASK_UPDATE = "task_update"
+    REMINDER_DM = "reminder_dm"
+
+
+class ApprovalStatus(StrEnum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
 
 
 class Gate(StrEnum):
@@ -326,3 +339,30 @@ class TaskHistory(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
     task: Mapped["Task"] = relationship(back_populates="history")
+
+
+class ApprovalRequest(Base):
+    """approval_request 테이블. PM이 승인/반려하기 전까지 모든 변경은 여기서 대기."""
+
+    __tablename__ = "approval_request"
+
+    approval_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    workspace_id: Mapped[str] = mapped_column(String(36), index=True)
+    type: Mapped[str] = mapped_column(String(20))
+    payload: Mapped[str] = mapped_column(Text)  # JSON 직렬화
+    related_task_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("task.task_id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    requested_by: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("member.member_id", ondelete="SET NULL"), nullable=True
+    )
+    status: Mapped[str] = mapped_column(
+        String(16), default=ApprovalStatus.PENDING, index=True
+    )
+    resolved_by: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("member.member_id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    resolved_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
