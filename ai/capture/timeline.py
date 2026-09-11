@@ -19,6 +19,9 @@ OPUS_SILENCE = b"\xf8\xff\xfe"
 NOISE_NONZERO_MAX = 1  # 0 이 아닌 바이트가 이 개수 이하면 쓰레기로 본다
 REORDER_WINDOW = 16    # 16패킷 = 320ms. Craig 와 같은 크기
 HALF_RANGE = 0x80000000
+# 기준점을 다시 잡는 문턱. 정상적인 순서 뒤바뀜은 창 16패킷(약 15,360틱)에 지터를
+# 더한 정도라 5분과는 자릿수가 다르다. 이보다 멀면 같은 스트림이 아니라고 본다.
+REANCHOR_TICKS = 48_000 * 300
 
 
 def is_noise_packet(pcm: bytes) -> bool:
@@ -43,29 +46,56 @@ class Reorderer:
         self._buf: list[tuple[int, int, object]] = []  # (정렬키, 도착순번, item)
         self._n = 0
         self._base: int | None = None
+        self._last_key = 0
 
-    def _key(self, rtp_ts: int | None) -> int:
-        """랩어라운드를 편 단조 증가 키. RTP 가 없으면 도착 순번을 쓴다."""
+    def _key(self, rtp_ts: int | None) -> tuple[int, bool]:
+        """정렬 키와, 스트림이 새로 시작됐는지 여부를 돌려준다.
+
+        키는 기준점에서의 부호 있는 델타다. 단조 증가하지 않고 음수도 될 수 있다.
+        순서가 뒤바뀐 패킷은 앞 패킷보다 작은 키를 받고, 그게 정렬의 목적이다.
+        랩어라운드는 32비트 안에서 델타를 계산해 편다.
+
+        RTP 를 못 읽으면 마지막으로 계산한 키를 그대로 쓴다. 도착 순번을 쓰면
+        (1씩 증가) 실제 RTP 델타(20ms 당 960씩 증가)와 자릿수가 달라 그 패킷이
+        진짜 음성 앞으로 끼어든다. 같은 키를 쓰면 `(키, 도착순번)` 튜플이 그
+        패킷을 바로 앞 패킷 뒤에 놓는다.
+
+        기준점에서 `REANCHOR_TICKS` 보다 멀면 다른 스트림으로 보고 기준점을 다시
+        잡는다. 화자가 나갔다 들어오면 RTP 원점이 무관한 난수로 바뀌고, 새 원점이
+        더 작으면 이후 패킷이 전부 음수 키를 받아 이전 세션의 꼬리보다 앞서
+        나간다. 12.4시간이 지나 부호 있는 델타가 2^31 을 넘는 경우도 같이 걸린다.
+
+        `_base` `_last_key` 를 바꾸므로 `push` 한 번에 정확히 한 번만 부른다.
+        """
         if rtp_ts is None:
-            return self._n
+            return self._last_key, False
         if self._base is None:
             self._base = rtp_ts
-            return 0
+            self._last_key = 0
+            return 0, False
         delta = (rtp_ts - self._base) & 0xFFFFFFFF
         if delta > HALF_RANGE:
             delta -= 0x100000000
-        return delta
+        if abs(delta) > REANCHOR_TICKS:
+            self._base = rtp_ts
+            self._last_key = 0
+            return 0, True
+        self._last_key = delta
+        return delta, False
 
     def push(self, rtp_ts: int | None, item) -> list:
         """패킷을 넣고, 창을 넘쳐 확정된 것들을 순서대로 돌려준다."""
-        self._buf.append((self._key(rtp_ts), self._n, item))
+        key, new_stream = self._key(rtp_ts)
+        out: list = self.flush() if new_stream else []
+        self._buf.append((key, self._n, item))
         self._n += 1
         if len(self._buf) <= self.window:
-            return []
+            return out
         self._buf.sort(key=lambda x: (x[0], x[1]))
-        out = self._buf[: len(self._buf) - self.window]
-        self._buf = self._buf[len(self._buf) - self.window :]
-        return [x[2] for x in out]
+        cut = len(self._buf) - self.window
+        out += [x[2] for x in self._buf[:cut]]
+        self._buf = self._buf[cut:]
+        return out
 
     def flush(self) -> list:
         """창에 남은 것을 전부 순서대로 내보낸다."""

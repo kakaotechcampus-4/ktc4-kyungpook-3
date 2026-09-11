@@ -65,3 +65,46 @@ def test_reorderer_handles_wraparound_without_reordering_everything():
     r.push(0x00000010, "c")   # 랩어라운드
     out = r.push(0x00000100, "d") + r.flush()
     assert out == ["a", "b", "c", "d"]
+
+
+def test_reorderer_keeps_unreadable_packet_in_arrival_position():
+    """RTP 를 못 읽는 패킷 하나가 스트림 중간에 섞여도 제자리에 남아야 한다.
+
+    도착 순번(패킷당 +1)을 키로 쓰면 실제 RTP 델타(패킷당 +960)보다 훨씬 작아서
+    앞선 음성 패킷들을 제치고 먼저 나간다.
+    """
+    r = Reorderer()
+    base = 1_000
+    out = []
+    out += r.push(base, "a")
+    out += r.push(base + 960, "b")
+    out += r.push(base + 1920, "c")
+    out += r.push(None, "x")          # RTP 를 못 읽은 패킷
+    out += r.push(base + 2880, "d")
+    out += r.push(base + 3840, "e")
+    out += r.flush()
+    assert out == ["a", "b", "c", "x", "d", "e"]
+
+
+def test_reorderer_reanchors_when_origin_jumps_backward():
+    """재접속. 새 원점이 더 작아도 이전 세션의 꼬리가 먼저 나가야 한다."""
+    r = Reorderer()
+    out = []
+    for i, name in enumerate(["a", "b", "c", "d"]):
+        out += r.push(900_000_000 + i * 960, name)
+    for i, name in enumerate(["e", "f", "g", "h"]):
+        out += r.push(1_000 + i * 960, name)
+    out += r.flush()
+    assert out == ["a", "b", "c", "d", "e", "f", "g", "h"]
+
+
+def test_reorderer_reanchors_when_origin_jumps_forward():
+    """재접속. 새 원점이 더 큰 경우도 같게 동작한다."""
+    r = Reorderer()
+    out = []
+    for i, name in enumerate(["a", "b", "c", "d"]):
+        out += r.push(1_000 + i * 960, name)
+    for i, name in enumerate(["e", "f", "g", "h"]):
+        out += r.push(900_000_000 + i * 960, name)
+    out += r.flush()
+    assert out == ["a", "b", "c", "d", "e", "f", "g", "h"]
