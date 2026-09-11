@@ -24,6 +24,16 @@ from stt.vad import StreamingVAD, Utterance
 
 @dataclass
 class Line:
+    """전사 한 줄. 뒤쪽 넷은 계측값이라 위치 인자로 넣지 않는다.
+
+    queue_s       큐에 들어간 뒤 워커가 집을 때까지
+    transcribe_s  워커가 집은 뒤 백엔드가 돌아올 때까지. 재시도 대기가 있으면 그것까지 포함한다
+    publish_s     게시기에 넘어간 뒤 이 줄이 처음 나갈 때까지. 게시기가 채운다
+    submitted_at  게시기가 publish_s 를 계산하려고 적어 두는 monotonic 시각. 파일에 쓰지 않는다
+
+    아직 재지 못한 값은 None 이다. 0.0 으로 두면 "즉시" 와 구별되지 않는다.
+    """
+
     speaker_id: str
     speaker_name: str
     turn_id: str
@@ -32,6 +42,10 @@ class Line:
     end_ms: int
     text: str
     final: bool
+    queue_s: float | None = None
+    transcribe_s: float | None = None
+    publish_s: float | None = None
+    submitted_at: float | None = None
 
 
 class Session:
@@ -75,16 +89,14 @@ class Session:
                 vad = self._vads[speaker_id] = StreamingVAD(speaker_id=speaker_id)
             ready = self._assign_locked(vad.feed(samples, offset_ms))
 
-        for item in ready:
-            self._final_q.put(item)
+        self._enqueue(ready)
 
     def flush_speaker(self, speaker_id: str) -> None:
         """퇴장 시 그 화자의 진행 중 발화를 확정한다. 마지막 발언이 사라지지 않게."""
         with self._lock:
             vad = self._vads.get(speaker_id)
             ready = self._assign_locked(vad.flush() if vad else [])
-        for item in ready:
-            self._final_q.put(item)
+        self._enqueue(ready)
 
     def _assign_locked(self, done: list[Utterance]) -> list[tuple[Utterance, str]]:
         """VAD 가 발화를 확정한 그 자리에서 턴을 정한다. 반드시 잠금을 쥔 채로 부른다.
@@ -105,15 +117,26 @@ class Session:
             out.append((u, turn))
         return out
 
+    def _enqueue(self, ready: list[tuple[Utterance, str]]) -> None:
+        """큐에 넣으면서 그 시각을 같이 적는다. 워커가 집는 시각과의 차이가 큐 대기다.
+
+        확정 시점이 아니라 put 시점을 적는다. 대기가 시작되는 자리가 거기다.
+        """
+        now = time.monotonic()
+        for u, turn in ready:
+            self._final_q.put((u, turn, now))
+
     # ------------------------------------------------------------ 워커
     def _final_worker(self) -> None:
         while not self._stop.is_set():
             try:
-                u, turn_id = self._final_q.get(timeout=0.1)
+                u, turn_id, queued_at = self._final_q.get(timeout=0.1)
             except queue.Empty:
                 continue
             try:
-                self._emit(u, turn_id, self._transcribe_final(u))
+                picked = time.monotonic()
+                text = self._transcribe_final(u)
+                self._emit(u, turn_id, text, picked - queued_at, time.monotonic() - picked)
             except Exception as e:
                 # on_line 은 남의 코드다. 여기서 예외가 새면 워커 스레드가 조용히
                 # 죽고, workers=1 이면 그 뒤 발화가 전부 큐에 남아 나오지 않는다.
@@ -132,13 +155,15 @@ class Session:
                 time.sleep(0.5 * (attempt + 1))
         return "[전사 실패]"
 
-    def _emit(self, u: Utterance, turn_id: str, text: str) -> None:
+    def _emit(self, u: Utterance, turn_id: str, text: str,
+              queue_s: float, transcribe_s: float) -> None:
         # 턴은 발화가 확정될 때 이미 정해졌다. 여기 남은 잠금은 _names 때문이다.
         # 수신 스레드가 feed() 에서 계속 덮어쓰는 dict 라 읽을 때도 쥐어야 한다.
         with self._lock:
             name = self._names.get(u.speaker_id, u.speaker_id)
         # 콜백은 느릴 수 있고 이벤트 루프로 넘기기도 한다. 잠금을 놓고 부른다.
-        self.on_line(Line(u.speaker_id, name, turn_id, u.seq, u.start_ms, u.end_ms, text, True))
+        self.on_line(Line(u.speaker_id, name, turn_id, u.seq, u.start_ms, u.end_ms, text, True,
+                          queue_s=queue_s, transcribe_s=transcribe_s))
 
     # ------------------------------------------------------------ 종료
     def close(self, timeout_s: float = 10.0) -> float:
@@ -157,8 +182,7 @@ class Session:
             # 동시에 만진다. 확정과 턴 배정까지 여기서 끝내고 큐에는 밖에서 넣는다.
             for v in self._vads.values():
                 ready.extend(self._assign_locked(v.flush()))
-        for item in ready:
-            self._final_q.put(item)
+        self._enqueue(ready)
 
         deadline = t0 + timeout_s
         # empty() 는 워커가 항목을 꺼낸 순간 참이 된다. 전사가 끝난 순간이 아니다.
