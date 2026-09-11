@@ -98,11 +98,11 @@ CAUSES = {
            "required_intents() 를 고친다. 값이 맞는데 봇이 기동하자마자 죽으면 개발자 포털 "
            "→ Bot → Privileged Gateway Intents 에서 SERVER MEMBERS 를 켠다",
     "음성 채널 권한": "서버 설정 → 역할에서 봇 역할에 채널 보기와 연결 권한을 준다",
-    "음성 연결": "/record 나 /join 을 먼저 실행한다. 연결이 살아 있는데 실패로 뜨면 음성 "
+    "음성 연결": "/live 나 /live-join 을 먼저 실행한다. 연결이 살아 있는데 실패로 뜨면 음성 "
              "웹소켓 폴러가 죽은 것이라 봇을 다시 띄운다",
     "DAVE": "py-cord 가 PR #3159 브랜치인지 확인한다. 2.8.x 정식판은 음성 수신이 안 된다. "
             "협상은 됐는데 복호화가 한 건도 성공하지 않으면 재연결로 키가 어긋난 것이라 "
-            "/stop 뒤 /record 로 다시 잡는다",
+            "/live-stop 뒤 /live 로 다시 잡는다",
     "이벤트 루프": "asyncio 디버그 모드가 켜져 있다. PYTHONASYNCIODEBUG 를 지우고 봇을 다시 "
               "띄운다. 켜져 있으면 수신 콜백이 패킷마다 RuntimeError 를 내고 라이브러리가 "
               "그걸 삼켜서 오디오가 0건이 된다",
@@ -253,7 +253,7 @@ async def _stages(cog, ctx: discord.ApplicationContext, t: SelfTest, use_stt: bo
     vc = ctx.voice_client
     connected = vc is not None and vc.is_connected()
     poller_alive = True
-    detail = "봇이 음성 채널에 없습니다. /record 나 /join 을 먼저 실행하세요"
+    detail = "봇이 음성 채널에 없습니다. /live 나 /live-join 을 먼저 실행하세요"
     if connected:
         # _runner 가 죽어도 is_connected() 는 True 로 남는다 (voice/state.py:329-330).
         # 이 한 줄이 SafeVoiceClient 가 막는 경로를 보는 유일한 직접 관측점이다.
@@ -269,7 +269,7 @@ async def _stages(cog, ctx: discord.ApplicationContext, t: SelfTest, use_stt: bo
     # 없어 건너뜀" 이라고 적는데, 연결은 멀쩡히 있으므로 거짓말이 된다.
     live = connected and poller_alive
     if not connected:
-        skip = "봇이 음성 채널에 없어 확인 못 함. /record 나 /join 을 먼저 실행하세요"
+        skip = "봇이 음성 채널에 없어 확인 못 함. /live 나 /live-join 을 먼저 실행하세요"
     else:
         skip = "음성 WS 폴러가 죽어 확인 못 함. 위 음성 연결 단계를 보세요"
 

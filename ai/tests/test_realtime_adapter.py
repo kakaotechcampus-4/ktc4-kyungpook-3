@@ -95,7 +95,7 @@ def test_required_intents_does_not_ask_for_message_content():
 
 
 # ----------------------------------------------------------------- Cog 본문
-# 게이트웨이 없이 /record 와 _finish_meeting 본문을 돌린다. 아래 대역은 py-cord 가
+# 게이트웨이 없이 /live 와 _finish_meeting 본문을 돌린다. 아래 대역은 py-cord 가
 # 주는 객체 중 이 두 경로가 실제로 읽는 속성만 흉내낸다.
 
 GUILD_ID = 42
@@ -197,7 +197,7 @@ class _FakeVoiceChannel:
 
     async def connect(self, *, cls=None):
         # 실제 음성 핸드셰이크처럼 루프에 제어권을 넘긴다. 길드 락이 없으면
-        # 같은 길드의 /record 두 번이 여기서 서로를 추월한다.
+        # 같은 길드의 /live 두 번이 여기서 서로를 추월한다.
         self.connects += 1
         await asyncio.sleep(0.01)
         return self._vc_box[0]
@@ -280,7 +280,7 @@ def _no_speech(pcm, sample_rate, threshold):
 
 async def _start_one(tmp_path, monkeypatch, sessions_made=None, on_session_saved=None,
                      speech_spans=_all_speech):
-    """/record 한 번을 끝까지 돌리고 (cog, ctx, meeting, text_channel, vc) 를 준다.
+    """/live 한 번을 끝까지 돌리고 (cog, ctx, meeting, text_channel, vc) 를 준다.
 
     말 필터는 켠 채로 두되 판정만 갈아 끼운다. 여기서 흘리는 정현파는 실로가 말이
     아니라고 보므로(말 비율 0.000), 실물 판정을 쓰면 이 파일의 회의가 전부 무음이 된다.
@@ -303,7 +303,7 @@ async def _start_one(tmp_path, monkeypatch, sessions_made=None, on_session_saved
     bot = _FakeBot(guild)
     cog = RealtimeCog(bot, recordings_dir=tmp_path, on_session_saved=on_session_saved)
     ctx = _FakeCtx(guild, room, text)
-    await RealtimeCog.record.callback(cog, ctx)
+    await RealtimeCog.live.callback(cog, ctx)
     return cog, ctx, cog._meetings[GUILD_ID], text, vc
 
 
@@ -331,7 +331,7 @@ async def test_finish_keeps_the_last_utterance_because_the_snapshot_follows_clos
 
 
 async def test_finish_meeting_runs_once_even_when_called_twice(tmp_path, monkeypatch):
-    """/stop 과 py-cord 콜백이 겹쳐도 마무리는 한 번이다.
+    """/live-stop 과 py-cord 콜백이 겹쳐도 마무리는 한 번이다.
 
     표에서 pop 으로 꺼내는 것이 그 관문이다. get 으로 바꾸면 두 번째 호출이 트랙을
     다시 닫고 매니페스트와 회의록을 다시 쓰고 종료 요약과 BE 훅을 한 번 더 부른다.
@@ -367,7 +367,7 @@ async def test_finish_meeting_runs_once_even_when_called_twice(tmp_path, monkeyp
 
 
 async def test_two_concurrent_records_start_one_meeting(tmp_path, monkeypatch):
-    """같은 길드의 /record 두 번이 겹쳐도 회의는 하나다.
+    """같은 길드의 /live 두 번이 겹쳐도 회의는 하나다.
 
     가드(`_meetings.get`)와 표 대입 사이에 connect() 라는 await 가 있다. 길드 락이
     없으면 둘 다 가드를 통과해 세션과 트랙 스레드와 게시 태스크가 두 벌 생기고,
@@ -383,8 +383,8 @@ async def test_two_concurrent_records_start_one_meeting(tmp_path, monkeypatch):
     ctx_a = _FakeCtx(ctx1.guild, ctx1.author.voice.channel, _FakeTextChannel())
     ctx_b = _FakeCtx(ctx1.guild, ctx1.author.voice.channel, _FakeTextChannel())
     await asyncio.gather(
-        RealtimeCog.record.callback(cog, ctx_a),
-        RealtimeCog.record.callback(cog, ctx_b),
+        RealtimeCog.live.callback(cog, ctx_a),
+        RealtimeCog.live.callback(cog, ctx_b),
     )
 
     assert len(made) == 1                      # 세션이 한 벌만 만들어졌다
@@ -400,10 +400,10 @@ async def test_finish_does_not_disconnect_a_meeting_that_started_while_it_waited
 ):
     """마무리가 기다리는 동안 시작된 다음 회의를 끊지 않는다.
 
-    /stop 은 길드 락을 놓은 뒤 _finish_meeting 을 부르고, 그 안의 session.close() 는
+    /live-stop 은 길드 락을 놓은 뒤 _finish_meeting 을 부르고, 그 안의 session.close() 는
     최대 10초, publisher_task 는 최대 8초를 더 기다린다 (publisher.py:115). 그 창 내내
     _meetings 는 비어 있고, stop_recording() 이 _reader 를 MISSING 으로 만들었으므로
-    (voice/client.py:788-790) is_recording 도 False 다. 다음 /record 가 두 가드를 전부
+    (voice/client.py:788-790) is_recording 도 False 다. 다음 /live 가 두 가드를 전부
     통과해 같은 VoiceClient 로 새 회의를 연다. 옛 코루틴이 깨어나 disconnect(force=True)
     를 부르면 새 회의의 리더가 그 자리에서 죽는다 (voice/client.py:381 → 620-622).
     """
@@ -419,14 +419,14 @@ async def test_finish_does_not_disconnect_a_meeting_that_started_while_it_waited
 
     meeting.session.close = _slow_close
 
-    vc.stop_recording()                       # /stop 이 락을 쥔 채 하는 일
+    vc.stop_recording()                       # /live-stop 이 락을 쥔 채 하는 일
     finishing = asyncio.create_task(cog._finish_meeting(GUILD_ID))
     await asyncio.sleep(0.05)
     assert GUILD_ID not in cog._meetings       # 창이 열렸다
 
     ctx2 = _FakeCtx(ctx1.guild, room, _FakeTextChannel())
     ctx2.voice_client = vc                     # 봇은 아직 방에 있다
-    await RealtimeCog.record.callback(cog, ctx2)
+    await RealtimeCog.live.callback(cog, ctx2)
     new_meeting = cog._meetings[GUILD_ID]
 
     gate.set()
@@ -585,7 +585,7 @@ async def test_finish_still_writes_the_transcript_when_the_final_drain_raises(
 
 
 async def test_join_refuses_to_move_while_an_untracked_recording_is_live(tmp_path, monkeypatch):
-    """표에는 없는데 리더가 살아 있는 상태에서 /join 이 방을 옮기면 안 된다.
+    """표에는 없는데 리더가 살아 있는 상태에서 /live-join 이 방을 옮기면 안 된다.
 
     녹음 중 채널 이동은 destroy_all_decoders 를 순회 중 변경으로 깨뜨린다
     (voice/receive/router.py:116-119). _meetings 검사만으로는 이 상태를 못 잡는다.
@@ -604,14 +604,14 @@ async def test_join_refuses_to_move_while_an_untracked_recording_is_live(tmp_pat
     ctx = _FakeCtx(guild, room, _FakeTextChannel())
     ctx.voice_client = vc
 
-    await RealtimeCog.join.callback(cog, ctx)
+    await RealtimeCog.live_join.callback(cog, ctx)
 
     assert vc.moved == []
     assert any("녹음" in r for r in ctx.responses)
 
 
 # ------------------------------------------------- 인터랙션이 죽은 뒤의 명령
-# 첫 실전 실행에서 /join 이 여기서 터졌다. defer 가 3초 시한을 넘겨 10062 를 받았고,
+# 첫 실전 실행에서 /live-join 이 여기서 터졌다. defer 가 3초 시한을 넘겨 10062 를 받았고,
 # 사용자는 "애플리케이션이 응답하지 않았습니다" 만, 터미널은 트레이스백 25줄을 봤다.
 
 
@@ -645,14 +645,14 @@ async def test_a_dead_interaction_ends_the_command_without_raising(tmp_path, mon
     콜백을 직접 부른다 — 핸들러를 태우면 가드를 지워도 같은 로그가 나와 이 단언이
     아무것도 잡지 못한다.
     """
-    cog, ctx, vc, room = _bare_cog(tmp_path, monkeypatch, RealtimeCog.join)
+    cog, ctx, vc, room = _bare_cog(tmp_path, monkeypatch, RealtimeCog.live_join)
 
     async def _expired():
         raise _unknown_interaction()
 
     ctx.defer = _expired
 
-    await RealtimeCog.join.callback(cog, ctx)
+    await RealtimeCog.live_join.callback(cog, ctx)
 
     assert ctx.responses == []                 # 죽은 토큰으로는 보낼 수 있는 것이 없다
     assert room.connects == 0                  # 본문이 아예 안 돌았다
@@ -660,7 +660,7 @@ async def test_a_dead_interaction_ends_the_command_without_raising(tmp_path, mon
     assert cog._meetings == {}
 
     logged = capsys.readouterr().out
-    assert "/join" in logged                   # 어느 명령이었는지 로그가 말한다
+    assert "/live-join" in logged                   # 어느 명령이었는지 로그가 말한다
     assert "만료" in logged
     assert logged.count("\n") == 1             # 한 줄이다. 트레이스백이 아니다
 
@@ -694,18 +694,18 @@ async def test_a_failure_after_defer_is_told_to_the_user_in_discord(tmp_path, mo
     (bot.py:1403-1412). 사용자 화면에는 "응답하지 않았습니다" 만 남고 원인은 터미널을
     보고 있던 사람만 안다. 이 봇이 없애려는 실패가 정확히 그 모양이다.
     """
-    cog, ctx, _vc, room = _bare_cog(tmp_path, monkeypatch, RealtimeCog.join)
+    cog, ctx, _vc, room = _bare_cog(tmp_path, monkeypatch, RealtimeCog.live_join)
 
     def _boom(member):
         raise RuntimeError("권한 조회 실패")
 
     room.permissions_for = _boom
 
-    await _invoke(cog, RealtimeCog.join, ctx)
+    await _invoke(cog, RealtimeCog.live_join, ctx)
 
     assert len(ctx.responses) == 1
     told = ctx.responses[0]
-    assert "/join" in told                     # 어느 명령이 실패했는지
+    assert "/live-join" in told                     # 어느 명령이 실패했는지
     assert "RuntimeError" in told              # 무엇이 터졌는지
     assert "권한 조회 실패" in told
 
@@ -719,7 +719,7 @@ async def test_the_handler_never_answers_an_interaction_that_is_already_gone(
     여기서는 명령 본문의 respond 가 10062 를 내도록 두고 핸들러가 또 보내는지만 본다
     (실제 디스코드가 이 자리에서 정확히 어떤 코드를 주는지는 확인하지 않았다).
     """
-    cog, ctx, _vc, _room = _bare_cog(tmp_path, monkeypatch, RealtimeCog.join)
+    cog, ctx, _vc, _room = _bare_cog(tmp_path, monkeypatch, RealtimeCog.live_join)
     ctx.author.voice = None                    # 첫 respond 까지만 가는 경로
     attempts: list[str] = []
 
@@ -729,13 +729,13 @@ async def test_the_handler_never_answers_an_interaction_that_is_already_gone(
 
     ctx.respond = _gone
 
-    await _invoke(cog, RealtimeCog.join, ctx)
+    await _invoke(cog, RealtimeCog.live_join, ctx)
 
     # 명령 본문이 한 번 보내려다 10062 를 받았다. 핸들러가 또 보내면 두 번이 된다.
     assert len(attempts) == 1
     assert ctx.responses == []
     logged = capsys.readouterr().out
-    assert "/join" in logged
+    assert "/live-join" in logged
     assert "만료" in logged
 
 

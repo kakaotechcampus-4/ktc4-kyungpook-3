@@ -485,7 +485,7 @@ async def test_dead_poller_does_not_claim_the_connection_is_missing(monkeypatch)
 
 
 async def test_missing_voice_connection_prints_no_dave_or_audio_remediation(monkeypatch):
-    """/join 을 안 친 사람에게 py-cord 브랜치와 SERVER MEMBERS 를 안내하면 안 된다.
+    """/live-join 을 안 친 사람에게 py-cord 브랜치와 SERVER MEMBERS 를 안내하면 안 된다.
 
     이 명령이 엉뚱한 길로 보내면 무증상 침묵보다 나쁘다.
     """
@@ -499,7 +499,7 @@ async def test_missing_voice_connection_prints_no_dave_or_audio_remediation(monk
     assert _row(out, "오디오 수신").startswith("정보")
     assert "PR #3159" not in out
     assert "SERVER MEMBERS 인텐트 누락" not in out
-    assert "/record 나 /join 을 먼저 실행" in out
+    assert "/live 나 /live-join 을 먼저 실행" in out
 
 
 async def test_author_not_in_voice_is_information_not_failure(monkeypatch):
@@ -1314,7 +1314,7 @@ async def test_selftest_command_is_registered_on_the_cog():
     bot = discord.Bot(intents=adapter.required_intents())
     bot.add_cog(adapter.RealtimeCog(bot))
     names = sorted(c.name for c in bot.pending_application_commands)
-    assert names == ["join", "leave", "record", "selftest", "stop"]
+    assert names == ["live", "live-join", "live-stop", "selftest"]
 
 
 def test_selftest_command_defers_before_the_probe():

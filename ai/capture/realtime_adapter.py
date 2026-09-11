@@ -259,11 +259,11 @@ class RealtimeCog(discord.Cog):
         self._tasks: set[asyncio.Task] = set()  # 콜백이 만든 태스크의 강한 참조
 
     def _lock_for(self, guild_id: int) -> asyncio.Lock:
-        """/record 와 /stop 본문을 길드마다 직렬화한다.
+        """/live 와 /live-stop 본문을 길드마다 직렬화한다.
 
         가드와 표 대입 사이에 connect() 와 respond() 라는 await 가 있어서, 락이 없으면
-        같은 길드의 /record 두 번이 둘 다 가드를 통과한다. asyncio.Lock 은 재진입이 안 되므로
-        _finish_meeting 은 이 락을 잡지 않는다 — /stop 이 자기 자신을 기다리게 된다.
+        같은 길드의 /live 두 번이 둘 다 가드를 통과한다. asyncio.Lock 은 재진입이 안 되므로
+        _finish_meeting 은 이 락을 잡지 않는다 — /live-stop 이 자기 자신을 기다리게 된다.
         콜백·퇴장 경로는 직렬화되지 않는 대신 pop 가드로 멱등하다.
         """
         lock = self._locks.get(guild_id)
@@ -274,7 +274,7 @@ class RealtimeCog(discord.Cog):
     def _busy_message(self, meeting: _Meeting) -> str:
         room = self.bot.get_channel(meeting.voice_channel_id)
         name = room.name if room is not None else str(meeting.voice_channel_id)
-        return f"이 서버에서는 이미 #{name} 에서 회의가 진행 중입니다. /stop 으로 먼저 끝내 주세요."
+        return f"이 서버에서는 이미 #{name} 에서 회의가 진행 중입니다. /live-stop 으로 먼저 끝내 주세요."
 
     async def cog_command_error(self, ctx: discord.ApplicationContext,
                                 error: Exception) -> None:
@@ -310,7 +310,7 @@ class RealtimeCog(discord.Cog):
         if after.channel is not None and after.channel.id == meeting.voice_channel_id:
             return
         if member.id == self.bot.user.id:
-            # 봇이 회의 방에서 빠졌다. /stop 과 같은 경로로 끝낸다.
+            # 봇이 회의 방에서 빠졌다. /live-stop 과 같은 경로로 끝낸다.
             await self._finish_meeting(member.guild.id)
             return
         # 나간 사람의 재정렬 창을 먼저 비우고 진행 중 발화를 확정한다. 순서가 반대면
@@ -343,13 +343,13 @@ class RealtimeCog(discord.Cog):
         meeting.secret_key = key
         print("[voice] 음성 세션 키가 바뀌어 복호화기를 갱신했다", flush=True)
 
-    # ------------------------------------------------------------------ /record
-    @discord.slash_command(name="record", description="실시간 전사를 시작합니다")
+    # -------------------------------------------------------------------- /live
+    @discord.slash_command(name="live", description="실시간 전사를 시작합니다")
     @discord.guild_only()
     @discord.option("channel", discord.TextChannel, required=False,
                     description="전사를 올릴 텍스트 채널 (기본: 명령을 친 채널)")
-    async def record(self, ctx: discord.ApplicationContext,
-                     channel: discord.TextChannel | None = None) -> None:
+    async def live(self, ctx: discord.ApplicationContext,
+                   channel: discord.TextChannel | None = None) -> None:
         # 음성 핸드셰이크는 최대 60초다 (abc.py:2026). 인터랙션 응답 시한 3초를 넘기면
         # 토큰이 만료돼 아래 respond 가 전부 NotFound 로 터진다. 첫 줄에 defer 한다.
         if not await _defer(ctx):
@@ -384,8 +384,8 @@ class RealtimeCog(discord.Cog):
         vc = ctx.voice_client
         if vc is not None and vc.is_connected():
             if is_recording(vc):
-                # 표에는 없는데 리더가 살아 있다. /stop 이 이 상태를 푼다.
-                await ctx.respond("이 서버에서 이미 녹음이 돌고 있습니다. `/stop` 으로 먼저 "
+                # 표에는 없는데 리더가 살아 있다. /live-stop 이 이 상태를 푼다.
+                await ctx.respond("이 서버에서 이미 녹음이 돌고 있습니다. `/live-stop` 으로 먼저 "
                                   "끝내 주세요.", ephemeral=True)
                 return
             if vc.channel.id != room.id:
@@ -467,21 +467,21 @@ class RealtimeCog(discord.Cog):
         )
         await ctx.respond(
             f"🔴 전사 시작 (`{room.name}`). 줄은 {post_to.mention} 에 올라갑니다. "
-            f"`/stop` 으로 종료합니다."
+            f"`/live-stop` 으로 종료합니다."
         )
 
-    # -------------------------------------------------------- /stop /join /leave
-    @discord.slash_command(name="stop", description="전사를 끝내고 회의록을 저장합니다")
+    # ------------------------------------------------------- /live-stop /live-join
+    @discord.slash_command(name="live-stop", description="전사를 끝내고 회의록을 저장합니다")
     @discord.guild_only()
-    async def stop(self, ctx: discord.ApplicationContext) -> None:
+    async def live_stop(self, ctx: discord.ApplicationContext) -> None:
         if not await _defer(ctx):
             return
         async with self._lock_for(ctx.guild.id):
             vc = ctx.voice_client
             if ctx.guild.id not in self._meetings:
                 if vc is not None and is_recording(vc):
-                    # 표와 라이브러리 상태가 어긋난 경우. 그냥 두면 /record 는 "이미 녹음 중",
-                    # /stop 은 "회의 없음" 으로 서로를 막아 프로세스 재시작 말고는 길이 없다.
+                    # 표와 라이브러리 상태가 어긋난 경우. 그냥 두면 /live 는 "이미 녹음 중",
+                    # /live-stop 은 "회의 없음" 으로 서로를 막아 프로세스 재시작 말고는 길이 없다.
                     vc.stop_recording()
                     await ctx.respond("표에 없는 녹음을 정지했습니다. 회의록은 없습니다.")
                     return
@@ -497,9 +497,9 @@ class RealtimeCog(discord.Cog):
                 vc.stop_recording()
         await self._finish_meeting(ctx.guild.id)
 
-    @discord.slash_command(name="join", description="봇이 음성 채널에 입장만 합니다")
+    @discord.slash_command(name="live-join", description="봇이 음성 채널에 입장만 합니다")
     @discord.guild_only()
-    async def join(self, ctx: discord.ApplicationContext) -> None:
+    async def live_join(self, ctx: discord.ApplicationContext) -> None:
         if not await _defer(ctx):
             return
         meeting = self._meetings.get(ctx.guild.id)
@@ -523,7 +523,7 @@ class RealtimeCog(discord.Cog):
         if vc is not None and is_recording(vc):
             # 표에는 없는데 리더가 살아 있다. 여기서 move_to 하면 destroy_all_decoders 가
             # 순회 중 변경으로 터진다 (router.py:116-119). _meetings 검사는 이 상태를 못 잡는다.
-            await ctx.respond("이 서버에서 표에 없는 녹음이 돌고 있습니다. `/stop` 으로 먼저 "
+            await ctx.respond("이 서버에서 표에 없는 녹음이 돌고 있습니다. `/live-stop` 으로 먼저 "
                               "끝내 주세요.", ephemeral=True)
             return
         try:
@@ -540,7 +540,7 @@ class RealtimeCog(discord.Cog):
         except Exception as e:
             await ctx.respond(f"음성 채널 연결 실패: {type(e).__name__}: {e}", ephemeral=True)
             return
-        await ctx.respond(f"`{room.name}` 입장 완료. `/record` 로 전사를 시작하세요.")
+        await ctx.respond(f"`{room.name}` 입장 완료. `/live` 로 전사를 시작하세요.")
 
     @discord.slash_command(name="selftest", description="봇이 어디서 막혔는지 단계별로 확인합니다")
     @discord.guild_only()
@@ -558,25 +558,6 @@ class RealtimeCog(discord.Cog):
             return
         await ctx.followup.send(await st.run(self, ctx, use_stt=stt, seconds=seconds))
 
-    @discord.slash_command(name="leave", description="봇이 음성 채널에서 나갑니다")
-    @discord.guild_only()
-    async def leave(self, ctx: discord.ApplicationContext) -> None:
-        if not await _defer(ctx):
-            return
-        if ctx.guild.id in self._meetings:
-            await ctx.respond("진행 중인 회의를 먼저 끝냅니다...")
-            vc = ctx.voice_client
-            if vc is not None and is_recording(vc):
-                vc.stop_recording()
-            await self._finish_meeting(ctx.guild.id)
-            return
-        vc = ctx.voice_client
-        if vc is None:
-            await ctx.respond("봇이 음성 채널에 없습니다.", ephemeral=True)
-            return
-        await vc.disconnect(force=True)
-        await ctx.respond("음성 채널에서 나갔습니다.")
-
     def _on_recording_done(self, sink, ctx: discord.ApplicationContext) -> None:
         """py-cord 가 stop_recording 안에서 동기로 부른다 (reader.py:182-184).
 
@@ -587,8 +568,8 @@ class RealtimeCog(discord.Cog):
         먼저 실행된다는 사실에 걸리는 게 없다 — 실제 마무리는 루프가 제어권을 되찾은 뒤,
         즉 cleanup() 이 끝난 뒤에 돈다.
 
-        /stop 은 이 콜백을 기다리지 않는다. 이 경로가 필요한 것은 네트워크 단절과
-        disconnect() 처럼 /stop 을 거치지 않고 리더가 멈추는 경우다
+        /live-stop 은 이 콜백을 기다리지 않는다. 이 경로가 필요한 것은 네트워크 단절과
+        disconnect() 처럼 /live-stop 을 거치지 않고 리더가 멈추는 경우다
         (voice/client.py:381, 618-620). _finish_meeting 은 pop 가드로 멱등하다.
         """
         guild_id = ctx.guild.id
@@ -611,10 +592,10 @@ class RealtimeCog(discord.Cog):
 
     # ------------------------------------------------------------------ 종료
     async def _finish_meeting(self, guild_id: int) -> None:
-        """/stop, /leave, 봇의 음성 채널 퇴장, py-cord 콜백이 전부 여기로 온다.
+        """/live-stop, 봇의 음성 채널 퇴장, py-cord 콜백이 전부 여기로 온다.
 
         표에서 먼저 꺼내므로 어느 쪽이 먼저 도착하든 본문은 한 번만 돈다.
-        길드 락은 잡지 않는다 — /stop 이 락을 쥔 채 부를 수 있고 asyncio.Lock 은 재진입이 안 된다.
+        길드 락은 잡지 않는다 — /live-stop 이 락을 쥔 채 부를 수 있고 asyncio.Lock 은 재진입이 안 된다.
         """
         # 이 계획의 목표가 "종료 명령 후 10초 안에 회의록" 이다. 그 수치를 재는 자리가
         # 여기뿐이다 — session.close() 의 반환값은 전사 대기 시간일 뿐 파일이 나온 시각이
@@ -724,9 +705,9 @@ class RealtimeCog(discord.Cog):
                   flush=True)
 
         # 7. 음성 채널에서 나간다. 회의가 끝나면 봇이 남아 있을 이유가 없고, 남아 있으면
-        #    다음 /record 가 "이미 연결됨" 분기로 들어가 상태가 하나 늘어난다.
+        #    다음 /live 가 "이미 연결됨" 분기로 들어가 상태가 하나 늘어난다.
         #    단 위의 await 들(전사 10초 + 게시 8초) 동안 _meetings 는 비어 있어서 그 사이에
-        #    시작된 /record 가 같은 VoiceClient 를 다시 쓴다. 그 회의가 표에 있으면 끊지
+        #    시작된 /live 가 같은 VoiceClient 를 다시 쓴다. 그 회의가 표에 있으면 끊지
         #    않는다 — disconnect 는 self.stop() 으로 남의 리더까지 세운다
         #    (voice/client.py:381 → 620-622).
         if vc is not None and guild_id not in self._meetings:
