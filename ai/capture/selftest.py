@@ -27,6 +27,12 @@ PROBE_SECONDS = 3.0
 STT_PROBE_SECONDS = 1.0
 # 리포트가 디스코드 2000자 한도 안에 들어가야 해서 앞쪽 인원만 통계를 읽는다.
 DAVE_STATS_MEMBERS = 6
+# 금액이 나오는 자리마다 같이 간다 (stt/elice.py:9). 이 문장이 그 숫자의 정직한 절반이다.
+COST_CAVEAT = "최소 과금 단위는 확인하지 못했다. 실제 청구는 더 클 수 있다"
+
+
+def _cost(whisper_krw) -> str:
+    return f"₩6/60초 기준 약 {whisper_krw(STT_PROBE_SECONDS):.1f}원"
 
 CAUSES = {
     "슬래시 명령 등록": "DISCORD_GUILD_ID 를 채우면 그 서버에 즉시 등록된다. 비우면 글로벌 "
@@ -40,8 +46,8 @@ CAUSES = {
     "음성 연결": "/record 나 /join 을 먼저 실행한다. 연결이 살아 있는데 실패로 뜨면 음성 "
              "웹소켓 폴러가 죽은 것이라 봇을 다시 띄운다",
     "DAVE": "py-cord 가 PR #3159 브랜치인지 확인한다. 2.8.x 정식판은 음성 수신이 안 된다. "
-            "협상은 됐는데 복호화 실패만 쌓이면 재연결로 키가 어긋난 것이라 /stop 뒤 "
-            "/record 로 다시 잡는다",
+            "협상은 됐는데 복호화가 한 건도 성공하지 않으면 재연결로 키가 어긋난 것이라 "
+            "/stop 뒤 /record 로 다시 잡는다",
     "이벤트 루프": "asyncio 디버그 모드가 켜져 있다. PYTHONASYNCIODEBUG 를 지우고 봇을 다시 "
               "띄운다. 켜져 있으면 수신 콜백이 패킷마다 RuntimeError 를 내고 라이브러리가 "
               "그걸 삼켜서 오디오가 0건이 된다",
@@ -50,8 +56,8 @@ CAUSES = {
     "PCM 크기": f"패킷 길이가 {PCM_20MS_BYTES}바이트가 아니다. capture/audio.py 의 "
              "pcm_to_mono16k 전제(4바이트 정렬, 3:1 데시메이션)가 깨지므로 py-cord 버전을 "
              "먼저 본다",
-    "sink 전달": "sink 가 패킷을 받고도 세션으로 넘기지 못했다. 봇 로그에서 '[sink] write 예외' "
-              "줄을 찾는다",
+    "sink 전달": "sink 가 패킷을 받고도 세션으로 넘기지 못했다. write 예외는 패킷 하나가 아니라 "
+              "녹음 세션 전체를 끝내므로, 봇 로그에서 '[sink] write 예외' 줄을 찾는다",
     "VAD 확정": "패킷은 들어오는데 확정된 발화가 없다. 마이크 입력이 임계 RMS 를 못 넘었거나 "
              "STT 워커가 멈춘 것이라, 위 오디오 수신의 최대 RMS 를 임계와 비교한다",
     "채널 쓰기": "명령을 친 텍스트 채널에 봇 역할의 메시지 보내기 권한이 없다",
@@ -215,7 +221,7 @@ async def _stages(cog, ctx: discord.ApplicationContext, t: SelfTest, use_stt: bo
         if session is not None:
             # 협상이 끝났는데도 패킷이 안 풀리는 경우는 이 통계로만 보인다
             # (davey/__init__.pyi:316-325). 재연결로 키가 어긋나면 ready 는 True 인 채로
-            # 실패만 쌓인다. 실제 재연결로 관측하지는 않았다.
+            # 성공이 한 건도 안 늘어난다. 실제 재연결로 관측하지는 않았다.
             members = (vc.channel.members if vc.channel is not None else [])
             for m in members[:DAVE_STATS_MEMBERS]:
                 s = session.get_decryption_stats(m.id)
@@ -226,7 +232,13 @@ async def _stages(cog, ctx: discord.ApplicationContext, t: SelfTest, use_stt: bo
                 successes += good
                 failures += bad
                 rows.append(f"{m.display_name} 성공{good}/실패{bad}")
-        t.record("DAVE", ready and not state.downgraded_dave and failures == 0,
+        # 실패가 있어도 성공이 하나라도 있으면 통과시킨다. 이 카운터가 누적인지 구간인지
+        # 확인하지 못해서 (.pyi 는 successes/failures 에만 "Total" 을 안 붙인다) "실패가
+        # 0인가" 는 답에 따라 뜻이 달라진다. "성공이 0인가" 는 둘 중 어느 쪽이어도 같은
+        # 뜻이라, 키가 어긋나 아무것도 안 풀리는 상태만 잡는다. 키 수립 중 한두 건
+        # 실패했다고 DAVE 를 영구히 실패로 만들고 유료 단계까지 닫으면 안 된다.
+        stuck = failures > 0 and successes == 0
+        t.record("DAVE", ready and not state.downgraded_dave and not stuck,
                  " ".join([f"dave={vc.is_dave_connection()}", f"ready={ready}",
                            f"downgraded={state.downgraded_dave}",
                            f"복호화 성공{successes}/실패{failures}", *rows]))
@@ -251,8 +263,13 @@ async def _stages(cog, ctx: discord.ApplicationContext, t: SelfTest, use_stt: bo
             t.record("오디오 수신", True,
                      f"회의 진행 중 · 패킷 {r['packets']} · 최대 RMS {r['peak_rms']:.3f} "
                      f"(임계 {r['speech_rms']:.3f})")
+        # 발화가 아직 안 끝났거나 STT 워커가 요청 중인 순간이 정상 상태다. 회의 도중에
+        # /selftest 를 치는 것은 흔한 일이라, 확정 0건을 실패로 적으면 멀쩡한 회의가
+        # 실패로 뜨고 유료 단계까지 닫힌다.
         finals = len([x for x in meeting.ledger.lines if x.final])
-        t.record("VAD 확정", quiet or finals > 0, f"확정 발화 {finals}건", info=quiet)
+        t.record("VAD 확정", True,
+                 f"확정 발화 {finals}건" if finals else "아직 확정된 발화 없음",
+                 info=finals == 0)
         internals = _internals(vc) if live else ""
     elif live and not is_recording(vc):
         # 이미 녹음 중인 클라이언트에 한 번 더 걸면 ClientException 이다
@@ -279,17 +296,25 @@ async def _stages(cog, ctx: discord.ApplicationContext, t: SelfTest, use_stt: bo
             good = probe.sizes.get(PCM_20MS_BYTES, 0)
             total = sum(probe.sizes.values())
             speech = r["packets"]
-            # 같은 단계 안에 적는다 — 단계 이름을 하나 더 만들면 CAUSES 에 없어서 안내가 안 붙는다.
-            t.record("오디오 수신", (speech > 0 or r["noise_packets"] > 0) and not err,
-                     f"{PROBE_SECONDS:g}초 동안 패킷 {total} (음성 {speech}, "
-                     f"잡음 {r['noise_packets']}) · 최대 RMS {r['peak_rms']:.3f} "
-                     f"(임계 {r['speech_rms']:.3f})"
-                     + (f" · reader 오류 {type(err).__name__}: {err}" if err else ""))
+            levels = (f"{PROBE_SECONDS:g}초 동안 패킷 {total} (음성 {speech}, "
+                      f"잡음 {r['noise_packets']}) · 최대 RMS {r['peak_rms']:.3f} "
+                      f"(임계 {r['speech_rms']:.3f})")
+            if err is not None:
+                # write 예외가 세션을 끝냈으면 패킷 수로는 수신을 판정할 수 없다. 진짜
+                # 원인은 아래 sink 전달 줄이라, 여기서 실패로 적으면 DAVE·인텐트 안내가
+                # 엉뚱하게 붙는다.
+                t.record("오디오 수신", True,
+                         f"{levels} · write 예외로 수신이 중단돼 판정 불가. 아래 sink 전달을 보세요",
+                         info=True)
+            else:
+                t.record("오디오 수신", speech > 0 or r["noise_packets"] > 0, levels)
             t.record("PCM 크기", total == 0 or good == total,
                      f"{good}/{total} 이 {PCM_20MS_BYTES}바이트" if total else "패킷 없음",
                      info=total == 0)
-            t.record("sink 전달", speech == 0 or probe.session.fed > 0,
-                     f"sink → session {probe.session.fed}건", info=speech == 0)
+            t.record("sink 전달", err is None and (speech == 0 or probe.session.fed > 0),
+                     f"sink → session {probe.session.fed}건"
+                     + (f" · reader 오류 {type(err).__name__}: {err}" if err else ""),
+                     info=speech == 0 and err is None)
     elif live:
         t.record("오디오 수신", True, "이미 녹음 중이라 프로브를 건너뜀", info=True)
         internals = _internals(vc)
@@ -318,21 +343,21 @@ async def _stages(cog, ctx: discord.ApplicationContext, t: SelfTest, use_stt: bo
                      f"확인 메시지를 못 지웠다 ({type(e).__name__}). 채널에서 직접 지워 주세요",
                      info=True)
 
-    from stt.elice import whisper_krw
-
-    cost = f"₩6/60초 기준 약 {whisper_krw(STT_PROBE_SECONDS):.1f}원"
     if not use_stt:
+        from stt.elice import whisper_krw
+
         t.record("STT 왕복", True,
                  f"옵션 stt:True 로 실행하면 {STT_PROBE_SECONDS:g}초 오디오로 확인한다 "
-                 f"({cost}, 최소 과금 단위는 확인하지 못했다)", info=True)
+                 f"({_cost(whisper_krw)}, {COST_CAVEAT})", info=True)
     elif not t.all_ok():
         # 연결도 안 되는 상태에서 유료 API 를 부를 이유가 없다.
         t.record("STT 왕복", True, "앞 단계가 실패해 건너뜀", info=True)
     else:
         import numpy as np
 
-        from stt.elice import EliceStt
+        from stt.elice import EliceStt, whisper_krw
 
+        cost = _cost(whisper_krw)
         backend = EliceStt()
         samples = np.zeros(int(16_000 * STT_PROBE_SECONDS), dtype="float32")
         try:
@@ -340,6 +365,11 @@ async def _stages(cog, ctx: discord.ApplicationContext, t: SelfTest, use_stt: bo
             # 음성 하트비트까지 멈춘다 — 살아 있는 음성 연결을 진단하는 중에.
             # 실패 경로 다섯이 전부 같은 SttError 라 (stt/elice.py) 원인은 메시지에만 있다.
             r = await asyncio.to_thread(backend.transcribe, samples, 16_000)
-            t.record("STT 왕복", True, f"응답 정상 (text={(r.text or '')[:20]!r}) · {cost} 지출")
+            t.record("STT 왕복", True,
+                     f"응답 정상 (text={(r.text or '')[:20]!r}) · {cost} 지출 ({COST_CAVEAT})")
         except Exception as e:
-            t.record("STT 왕복", False, f"{type(e).__name__}: {e} · {cost} 지출")
+            # 요청이 나가기 전에 실패하면 (키 없음, 네트워크 차단) 청구가 없다. 얼마를
+            # 썼다고 적을 수 없으므로 무엇을 시도했는지만 적는다.
+            t.record("STT 왕복", False,
+                     f"{type(e).__name__}: {e} · {STT_PROBE_SECONDS:g}초 오디오로 호출을 "
+                     f"시도했다 ({cost} 상당, {COST_CAVEAT}). 요청 전에 실패했으면 청구는 없다")

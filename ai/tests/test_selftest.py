@@ -552,6 +552,17 @@ async def test_stale_decryption_key_fails_although_dave_looks_healthy(monkeypatc
     assert "키가 어긋난 것" in out
 
 
+async def test_transient_decryption_failure_does_not_fail_dave(monkeypatch):
+    """카운터가 누적인지 구간인지 모른다. 실패 0을 요구하면 키 수립 중 한두 건 때문에
+    멀쩡한 회의가 영구히 실패로 뜨고 유료 단계까지 닫힌다. 성공이 0인지만 본다.
+    """
+    dave = _Dave(ready=True, stats={7: _Stats(successes=120, failures=3)})
+    cog, ctx, _vc, _text = _world(monkeypatch, conn=_Conn(dave=dave))
+    out = await selftest.run(cog, ctx, use_stt=False)
+    assert _row(out, "DAVE").startswith("OK")
+    assert "복호화 성공120/실패3" in out
+
+
 async def test_ready_dave_with_clean_stats_reports_ok(monkeypatch):
     dave = _Dave(ready=True, stats={7: _Stats(successes=120, failures=0)})
     cog, ctx, _vc, _text = _world(monkeypatch, conn=_Conn(dave=dave))
@@ -626,8 +637,18 @@ async def test_reader_error_is_read_before_stop_recording_wipes_it(monkeypatch):
     """
     cog, ctx, _vc, _text = _world(monkeypatch, reader_error=ValueError("복호화 실패"))
     out = await selftest.run(cog, ctx, use_stt=False)
-    assert "실패 오디오 수신" in out
+    assert _row(out, "sink 전달").startswith("실패")
     assert "reader 오류 ValueError: 복호화 실패" in out
+
+
+async def test_reader_error_points_at_the_sink_row_not_at_dave_or_intents(monkeypatch):
+    """패킷 수로는 수신을 판정할 수 없는 상태다. 여기서 실패로 적으면 엉뚱한 안내가 붙는다."""
+    cog, ctx, _vc, _text = _world(monkeypatch, reader_error=ValueError("복호화 실패"))
+    out = await selftest.run(cog, ctx, use_stt=False)
+    assert _row(out, "오디오 수신").startswith("정보")
+    assert "아래 sink 전달을 보세요" in out
+    assert "SERVER MEMBERS 인텐트 누락" not in out
+    assert "write 예외는 패킷 하나가 아니라" in out
 
 
 async def test_receive_internals_are_read_before_the_probe_stops(monkeypatch):
@@ -742,14 +763,14 @@ async def test_running_meeting_with_packets_reports_levels_and_final_lines(monke
     assert "확정 발화 3건" in out          # final=False 두 건은 세지 않는다
 
 
-async def test_running_meeting_with_packets_but_no_final_line_fails(monkeypatch):
-    """패킷은 들어오는데 확정이 0이면 VAD 나 STT 워커가 멈춘 것이다."""
+async def test_running_meeting_with_packets_but_no_final_line_is_not_a_failure(monkeypatch):
+    """발화가 아직 안 끝났거나 워커가 요청 중인 순간이다. 회의 도중 실행은 흔한 일이다."""
     cog, ctx, _vc, _text = _world(monkeypatch,
                                   meetings={GUILD_ID: _meeting(packets=250, nonfinals=4)})
     out = await selftest.run(cog, ctx, use_stt=False)
-    assert _row(out, "VAD 확정").startswith("실패")
-    assert "확정 발화 0건" in out
-    assert "임계 RMS" in out
+    assert _row(out, "VAD 확정").startswith("정보")
+    assert "아직 확정된 발화 없음" in out
+    assert _failed(out) == []
 
 
 # ------------------------------------------------------- 감지기: 인텐트·권한·등록
@@ -835,6 +856,7 @@ async def test_stt_runs_once_on_a_healthy_run_when_asked(monkeypatch, counting_s
     assert counting_stt.calls == [16_000]     # 1.0초
     assert "OK   STT 왕복" in out
     assert "0.1원 지출" in out                 # 쓴 돈은 기록에 남는다
+    assert selftest.COST_CAVEAT in out         # 금액이 나오는 자리마다 같이 간다
 
 
 async def test_stt_is_skipped_when_an_earlier_stage_failed(monkeypatch, counting_stt):
@@ -861,6 +883,10 @@ async def test_stt_failure_carries_the_message_not_only_the_class(monkeypatch):
     assert "실패 STT 왕복" in out
     assert "SttError: ELICE_API_KEY 환경변수가 없습니다." in out
     assert "ELICE_API_KEY 를 확인한다" in out
+    # 요청이 나가기 전에 죽은 경우다. 돈을 썼다고 적으면 거짓말이다.
+    assert "지출" not in out
+    assert "호출을 시도했다" in out
+    assert selftest.COST_CAVEAT in out
 
 
 async def test_stt_round_trip_does_not_block_the_event_loop(monkeypatch):
@@ -914,13 +940,12 @@ async def test_every_failed_step_in_a_run_is_followed_by_a_remediation_line(monk
         {"conn": _Conn(runner_done=True)},
         {"conn": _Conn(dave=_Dave(ready=False))},
         {"conn": _Conn(dave=None)},
-        {"conn": _Conn(dave=_Dave(stats={7: _Stats(failures=9)}))},
+        {"conn": _Conn(dave=_Dave(stats={7: _Stats(successes=0, failures=9)}))},
         {"tracks": []},
         {"perms": _Perms(view_channel=False, connect=False)},
         {"send_error": PermissionError("Missing Permissions")},
         {"reader_error": ValueError("복호화 실패")},
         {"start_error": RuntimeError("not connected to a voice channel")},
-        {"meetings": {GUILD_ID: _meeting(packets=250, nonfinals=4)}},
     ]
     for kw in worlds:
         cog, ctx, _vc, _text = _world(monkeypatch, **kw)
