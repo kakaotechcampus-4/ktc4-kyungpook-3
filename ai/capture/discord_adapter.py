@@ -7,6 +7,7 @@ backend/bot/main.py 또는 capture/run_recorder.py 가 add_cog 로 붙인다.
   /record  명령을 친 사람의 음성 채널에 들어가 전사를 시작한다. 줄은 명령을 친 채널에 올라간다
   /stop    전사를 끝내고 회의록을 낸다
   /join    입장만 (녹음은 시작하지 않는다)
+  /selftest 연결·인텐트·권한·DAVE·수신·쓰기를 단계별로 확인한다
   /leave   퇴장
 
 산출물은 recordings/{guild_id}_{ts}/ 아래 transcript.md · transcript.jsonl · 화자별 wav 이고,
@@ -459,6 +460,16 @@ class RecordingCog(discord.Cog):
             await ctx.respond(f"음성 채널 연결 실패: {type(e).__name__}: {e}", ephemeral=True)
             return
         await ctx.respond(f"`{room.name}` 입장 완료. `/record` 로 전사를 시작하세요.")
+
+    @discord.slash_command(name="selftest", description="봇이 어디서 막혔는지 단계별로 확인합니다")
+    @discord.guild_only()
+    @discord.option("stt", bool, required=False,
+                    description="STT 왕복까지 확인 (1초 오디오, 약 0.1원 과금)")
+    async def selftest(self, ctx: discord.ApplicationContext, stt: bool = False) -> None:
+        from capture import selftest as st
+
+        await ctx.defer()  # 3초 프로브가 인터랙션 시한을 넘긴다
+        await ctx.followup.send(await st.run(self, ctx, use_stt=stt))
 
     @discord.slash_command(name="leave", description="봇이 음성 채널에서 나갑니다")
     @discord.guild_only()
