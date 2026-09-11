@@ -55,7 +55,9 @@ class StreamingSink(discord.sinks.Sink):
         self._reorder: dict[int, Reorderer] = {}
         self._names: dict[int, str] = {}
         self._last_arrival: dict[int, int] = {}
-        self._gaps: list[int] = []
+        self._gaps: dict[int, list[int]] = {}
+        self._speaker_packets: dict[int, int] = {}
+        self._speaker_quiet: dict[int, int] = {}
         # 모듈 최상단에서 읽으면 shared.config 가 .env 를 넣기 전이라 MM_SPEECH_RMS 가 무시된다.
         from stt.vad import SPEECH_RMS
         self._speech_rms = SPEECH_RMS
@@ -103,12 +105,14 @@ class StreamingSink(discord.sinks.Sink):
             self.packets += 1
             rms = float((samples * samples).mean() ** 0.5)
             self.peak_rms = max(self.peak_rms, rms)
+            self._speaker_packets[uid] = self._speaker_packets.get(uid, 0) + 1
             if rms < self._speech_rms:
                 self.quiet_packets += 1
+                self._speaker_quiet[uid] = self._speaker_quiet.get(uid, 0) + 1
             previous = self._last_arrival.get(uid)
             self._last_arrival[uid] = arrival_ms
             if previous is not None and arrival_ms - previous > GAP_MS:
-                self._gaps.append(arrival_ms - previous)
+                self._gaps.setdefault(uid, []).append(arrival_ms - previous)
             self._names[uid] = name
             ro = self._reorder.get(uid)
             if ro is None:
@@ -166,11 +170,22 @@ class StreamingSink(discord.sinks.Sink):
             self.finished = True
 
     def level_report(self) -> dict:
+        """수신 통계. top_* 는 음성 패킷이 제일 많은 화자, 즉 실제로 말한 사람 것이다.
+
+        한 방에 스트림이 둘 이상이면 집계 공백에 말하지 않는 쪽의 긴 침묵이 섞여
+        말한 사람의 끊김을 덮는다. 집계 키는 다른 호출자를 위해 그대로 둔다.
+        """
         from stt.vad import SPEECH_RMS
 
         verdict = "정상" if self.peak_rms > SPEECH_RMS * 1.5 else "너무 낮음"
         with self._lock:
-            gaps = list(self._gaps)
+            per_speaker = {uid: list(g) for uid, g in self._gaps.items()}
+            counts = dict(self._speaker_packets)
+            quiet = dict(self._speaker_quiet)
+        gaps = [g for one in per_speaker.values() for g in one]
+        # 같은 패킷 수면 uid 로 가른다. 정하지 않으면 같은 입력이 실행마다 다른 줄을 낸다.
+        top = max(counts, key=lambda u: (counts[u], u)) if counts else None
+        top_gaps = sorted(per_speaker.get(top, [])) if top is not None else []
         return {
             "packets": self.packets,
             "noise_packets": self.noise_packets,
@@ -178,6 +193,13 @@ class StreamingSink(discord.sinks.Sink):
             "gaps": len(gaps),
             "max_gap_ms": max(gaps) if gaps else 0,
             "median_gap_ms": round(statistics.median(gaps)) if gaps else 0,
+            "speakers": len(counts),
+            "top_packets": counts.get(top, 0),
+            "top_quiet_packets": quiet.get(top, 0),
+            "top_gaps": len(top_gaps),
+            "top_max_gap_ms": max(top_gaps) if top_gaps else 0,
+            "top_median_gap_ms": round(statistics.median(top_gaps)) if top_gaps else 0,
+            "top_gap_sizes": top_gaps,
             "write_errors": self.write_errors,
             "unattributed": self.unattributed,
             "feed_errors": self.feed_errors,

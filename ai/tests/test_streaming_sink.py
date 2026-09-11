@@ -286,6 +286,73 @@ def test_quiet_packets_are_counted_separately_from_noise():
     assert r["packets"] == 2
 
 
+def test_dominant_speaker_stats_leave_out_the_other_stream(monkeypatch):
+    """방에 스트림이 둘이면 집계 공백은 말하지 않는 쪽 것이 섞여 주 화자를 덮는다.
+
+    음성 패킷이 제일 많은 쪽이 실제로 말한 사람이다. 그 사람의 공백이 0건인데
+    집계가 2건이면, 집계를 읽는 해석은 없는 끊김을 있다고 읽는다.
+    """
+    session = FeedCountingSession(final_stt=FakeStt(), on_line=lambda _: None, workers=1)
+    clock = {"now_ms": 0}
+    sink = StreamingSink(session, now_ms=lambda: clock["now_ms"])
+    pkt = _to_discord_bytes(tone(PACKET_MS))
+    talker, other = FakeMember(1, "말한 사람"), FakeMember(2, "거의 조용한 쪽")
+    for t in range(0, 200, 20):        # 10패킷, 끊김 없음
+        clock["now_ms"] = t
+        sink.write(pkt, talker)
+    for t in (0, 1500, 2900):          # 공백 1500ms, 1400ms
+        clock["now_ms"] = t
+        sink.write(pkt, other)
+    session.close()
+
+    r = sink.level_report()
+    assert r["speakers"] == 2
+    assert (r["gaps"], r["max_gap_ms"]) == (2, 1500)    # 집계 키는 그대로 둔다
+    assert r["top_packets"] == 10
+    assert (r["top_gaps"], r["top_max_gap_ms"], r["top_median_gap_ms"]) == (0, 0, 0)
+    assert r["top_gap_sizes"] == []
+
+
+def test_dominant_speaker_quiet_packets_exclude_the_other_stream():
+    """조용한 패킷도 화자별이어야 한다. 섞이면 해석이 다시 흐려진다."""
+    from stt.vad import SPEECH_RMS
+
+    session = FeedCountingSession(final_stt=FakeStt(), on_line=lambda _: None, workers=1)
+    sink = StreamingSink(session)
+    loud = _to_discord_bytes(tone(PACKET_MS))
+    faint = _to_discord_bytes(tone(PACKET_MS, amp=SPEECH_RMS * 0.4))
+    talker, other = FakeMember(1, "말한 사람"), FakeMember(2, "거의 조용한 쪽")
+    for _ in range(3):
+        sink.write(loud, talker)
+    for _ in range(2):
+        sink.write(faint, talker)
+    for _ in range(4):
+        sink.write(faint, other)
+    session.close()
+
+    r = sink.level_report()
+    assert r["quiet_packets"] == 6      # 집계
+    assert r["top_packets"] == 5
+    assert r["top_quiet_packets"] == 2
+
+
+def test_top_gap_sizes_carry_every_gap_of_the_dominant_speaker():
+    """숨 크기 공백과 그보다 큰 공백을 나누는 일은 해석 쪽이 한다. 크기 목록이 그 재료다."""
+    session = FeedCountingSession(final_stt=FakeStt(), on_line=lambda _: None, workers=1)
+    clock = {"now_ms": 0}
+    sink = StreamingSink(session, now_ms=lambda: clock["now_ms"])
+    pkt = _to_discord_bytes(tone(PACKET_MS))
+    for t in (0, 200, 700, 2200):      # 공백 200, 500, 1500
+        clock["now_ms"] = t
+        sink.write(pkt, FakeMember(1, "a"))
+    session.close()
+
+    r = sink.level_report()
+    assert r["top_gap_sizes"] == [200, 500, 1500]
+    assert r["top_gaps"] == 3
+    assert r["top_median_gap_ms"] == 500
+
+
 def test_sink_is_a_pycord_sink():
     sink = StreamingSink(session=None)
     assert isinstance(sink, discord.sinks.Sink)
