@@ -51,6 +51,9 @@ def test_elice_requires_key(monkeypatch):
     from stt.elice import EliceStt
 
     monkeypatch.delenv("ELICE_API_KEY", raising=False)
+    monkeypatch.setattr(
+        requests, "post", lambda *a, **k: pytest.fail("키가 없으면 요청을 보내면 안 된다")
+    )
     with pytest.raises(SttError):
         EliceStt().transcribe(np.zeros(16_000, dtype=np.float32), 16_000)
 
@@ -125,3 +128,26 @@ def test_elice_parses_chunks_and_skips_bad_timestamps(monkeypatch):
     r = EliceStt().transcribe(SAMPLES, 16_000)
     assert r.text == "안녕 하세요 반갑습니다"
     assert [w.text for w in r.words] == ["안녕"]
+
+
+def test_local_transcribe_collects_words(monkeypatch):
+    """세그먼트 텍스트를 잇고 단어를 공백 없이 모은다. words 가 없는 세그먼트도 그냥 지나간다."""
+    from stt.local import LocalStt
+
+    seg = SimpleNamespace(
+        text=" 안녕하세요",
+        words=[
+            SimpleNamespace(word=" 안녕", start=0.0, end=0.5),
+            SimpleNamespace(word="하세요", start=0.5, end=0.9),
+        ],
+    )
+    silent = SimpleNamespace(text="  ", words=None)
+    fake_model = SimpleNamespace(transcribe=lambda *a, **k: (iter([seg, silent]), None))
+    monkeypatch.setattr(LocalStt, "_load", lambda self: fake_model)
+
+    r = LocalStt().transcribe(SAMPLES, 16_000)
+    assert r.text == "안녕하세요"
+    assert [(w.text, w.start_s, w.end_s) for w in r.words] == [
+        ("안녕", 0.0, 0.5),
+        ("하세요", 0.5, 0.9),
+    ]
