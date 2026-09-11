@@ -2,11 +2,13 @@
 
 리포트 문자열 자체가 이 기능의 산출물이다. 단계가 OK 로 뜨는 것만 보면 "고장난 상태를
 고장났다고 말하는가" 를 놓치므로, 감지기마다 정상 세계와 그 감지기가 존재하는 이유인
-고장 세계를 짝으로 돌린다.
+고장 세계를 짝으로 돌린다. 안내 문구가 실패 내용과 맞는지도 같이 본다 — 틀린 안내는
+침묵보다 나쁘다.
 
-py-cord 대역은 실물이 하는 일 중 판정에 걸리는 것만 흉내낸다. 특히 stop_recording 이
-_reader 를 지우는 것 (voice/client.py:788-790) 은 반드시 흉내내야 한다 — 안 그러면
-reader.error 를 stop 뒤에 읽는 코드가 테스트에서만 통과한다.
+py-cord 대역은 실물이 하는 일 중 판정에 걸리는 것만 흉내낸다. 반드시 맞춰야 하는 셋이
+있다. stop_recording 이 _reader 를 지우고 (voice/client.py:788-790), 정지하면서
+sink.cleanup() 을 부르고 (reader.py:194-197), 패킷은 start_recording 안이 아니라 프로브
+창 도중에 도착한다. 셋 중 하나라도 어긋나면 잘못된 코드가 테스트를 통과한다.
 """
 
 from __future__ import annotations
@@ -74,6 +76,15 @@ def test_informational_step_does_not_fail_the_run():
     assert "아직 발화 없음" in t.report()
 
 
+def test_last_step_names_the_most_recent_row():
+    """예외로 끝났을 때 어디까지 갔는지 사용자에게 말해 주는 값이다."""
+    t = SelfTest()
+    assert t.last_step() == ""
+    t.record("인텐트", True, "")
+    t.record("음성 연결", True, "")
+    assert t.last_step() == "음성 연결"
+
+
 def test_null_session_accepts_feed_without_transcribing():
     s = _NullSession()
     s.feed("7", "김환", [0.0] * 320, 0)
@@ -93,12 +104,24 @@ def test_probe_sink_counts_packet_sizes():
     assert probe.session.fed > 0
 
 
+def test_report_truncates_when_it_would_not_fit():
+    t = SelfTest()
+    for i in range(400):
+        t.record(f"단계{i}", True, "x" * 40)
+    out = t.report()
+    assert len(out) <= 2000
+    assert "(잘림)" in out
+
+
 # ------------------------------------------------------------------ py-cord 대역
 
 
 def _tone(ms: int, amp: float = 0.3) -> np.ndarray:
     t = np.arange(int(SR * ms / 1000)) / SR
     return (amp * np.sin(2 * np.pi * 220 * t)).astype(np.float32)
+
+
+_DEFAULT = object()
 
 
 class _Perms:
@@ -134,15 +157,18 @@ class _Msg:
         self._channel.edited += 1
 
     async def delete(self):
+        if self._channel.delete_error is not None:
+            raise self._channel.delete_error
         self._channel.deleted += 1
 
 
 class _TextChannel:
-    def __init__(self, send_error: Exception | None = None) -> None:
+    def __init__(self, send_error=None, delete_error=None) -> None:
         self.name = "일반"
         self.sent: list[str] = []
         self.edited = 0
         self.deleted = 0
+        self.delete_error = delete_error
         self._send_error = send_error
 
     async def send(self, text):
@@ -174,6 +200,14 @@ class _SocketReader:
         return self._paused
 
 
+class _Stats:
+    """davey DecryptionStats 대역 (davey/__init__.pyi:131-142)."""
+
+    def __init__(self, successes: int = 0, failures: int = 0) -> None:
+        self.successes = successes
+        self.failures = failures
+
+
 class _Dave:
     def __init__(self, ready: bool = True, stats: dict | None = None) -> None:
         self.ready = ready
@@ -192,9 +226,10 @@ class _Runner:
 
 
 class _Conn:
-    def __init__(self, *, runner_done=False, dave=None, downgraded=False, paused=False) -> None:
+    def __init__(self, *, runner_done=False, dave=_DEFAULT, downgraded=False, paused=False) -> None:
         self._runner = _Runner(runner_done)
-        self.dave_session = _Dave() if dave is None else dave
+        # dave=None 은 "세션이 아예 없다" 를 뜻해야 한다. 기본값과 구별하려고 센티넬을 쓴다.
+        self.dave_session = _Dave() if dave is _DEFAULT else dave
         self.downgraded_dave = downgraded
         self._socket_reader = _SocketReader(paused)
 
@@ -202,9 +237,13 @@ class _Conn:
 class _VC:
     """VoiceClient 대역.
 
-    stop_recording 이 _reader 를 지우는 것까지 흉내낸다 (voice/client.py:788-790).
-    실물처럼 녹음 중이 아닐 때 stop_recording 을 부르면 터지고 (client.py:792-793),
-    정지하면서 sink.cleanup() 을 부른다 (reader.py:194-197) — 그게 재정렬 창을 비운다.
+    실물을 세 군데서 그대로 흉내낸다. stop_recording 이 _reader 를 지우고
+    (voice/client.py:788-790), 녹음 중이 아닐 때 부르면 터지고 (client.py:792-793),
+    정지하면서 sink.cleanup() 을 부른다 (reader.py:194-197).
+
+    패킷은 start_recording 안에서 바로 흘리지 않고 프로브 창 절반 지점에 예약한다.
+    바로 흘리면 run() 의 await asyncio.sleep(PROBE_SECONDS) 를 통째로 지워도 테스트가
+    초록으로 남는다.
     """
 
     def __init__(self, room: _VoiceRoom, *, conn: _Conn | None = None, ssrc_map=None,
@@ -214,6 +253,7 @@ class _VC:
         self._ssrc_to_id = dict(ssrc_map or {70: 7})
         self._reader = _Reader() if recording else None
         self._sink = None
+        self._deliver = None
         self._tracks = list(tracks)
         self._reader_error = reader_error
         self._start_error = start_error
@@ -237,13 +277,17 @@ class _VC:
         self._recording = True
         self._reader = _Reader(self._reader_error)
         self._sink = sink
-        replay(self._tracks, sink.write)
+        if self._tracks:
+            self._deliver = asyncio.get_running_loop().call_later(
+                selftest.PROBE_SECONDS / 2, replay, self._tracks, sink.write)
 
     def stop_recording(self):
         if self._reader is None:
             raise RuntimeError("You are not recording")
         self.stops += 1
         self._recording = False
+        if self._deliver is not None:
+            self._deliver.cancel()
         if self._sink is not None:
             self._sink.cleanup()
         self._reader = None
@@ -264,7 +308,7 @@ class _Bot:
 class _Cog:
     def __init__(self, bot: _Bot, meetings=None) -> None:
         self.bot = bot
-        self._meetings = meetings or {}
+        self._meetings = {} if meetings is None else meetings
 
 
 class _Guild:
@@ -273,14 +317,14 @@ class _Guild:
         self.me = object()
 
 
-class _Author:
-    def __init__(self, room) -> None:
-        self.voice = None if room is None else _VoiceState(room)
-
-
 class _VoiceState:
     def __init__(self, room) -> None:
         self.channel = room
+
+
+class _Author:
+    def __init__(self, room) -> None:
+        self.voice = None if room is None else _VoiceState(room)
 
 
 class _Ctx:
@@ -291,19 +335,42 @@ class _Ctx:
         self.voice_client = vc
 
 
+class _Line:
+    def __init__(self, final: bool) -> None:
+        self.final = final
+
+
+def _meeting(packets=0, finals=0, nonfinals=0):
+    """진행 중인 회의 대역. run() 이 읽는 sink.level_report 와 ledger.lines 만 있다."""
+
+    class _Sink:
+        def level_report(self):
+            return {"packets": packets, "noise_packets": 0,
+                    "peak_rms": 0.21 if packets else 0.0, "speech_rms": 0.006}
+
+    class _Ledger:
+        lines = [_Line(True)] * finals + [_Line(False)] * nonfinals
+
+    class _Meeting:
+        sink = _Sink()
+        ledger = _Ledger()
+
+    return _Meeting()
+
+
 def _world(monkeypatch, *, guild_id="777", intents=None, perms=None, in_voice=True,
            conn=None, tracks=None, reader_error=None, start_error=None, recording=False,
-           send_error=None, meetings=None):
+           send_error=None, delete_error=None, meetings=None, has_vc=True):
     """기본은 전부 정상인 세계. 테스트마다 하나씩만 망가뜨린다."""
     monkeypatch.setenv("DISCORD_GUILD_ID", guild_id)
-    monkeypatch.setattr(selftest, "PROBE_SECONDS", 0.0)
+    monkeypatch.setattr(selftest, "PROBE_SECONDS", 0.05)
 
     room = _VoiceRoom(perms, members=[_Member(7, "김환")])
     if tracks is None:
         tracks = [ReplayTrack(user_id=7, name="김환", samples=_tone(200), ssrc=70)]
     vc = _VC(room, conn=conn, tracks=tracks, reader_error=reader_error,
-             start_error=start_error, recording=recording)
-    text = _TextChannel(send_error)
+             start_error=start_error, recording=recording) if has_vc else None
+    text = _TextChannel(send_error, delete_error)
     cog = _Cog(_Bot(intents or _Intents()), meetings)
     ctx = _Ctx(room if in_voice else None, text, vc)
     return cog, ctx, vc, text
@@ -333,22 +400,46 @@ def _lines(report: str) -> list[str]:
     return report.strip("`\n").splitlines()
 
 
+def _row(report: str, step: str) -> str:
+    """단계 한 줄을 꺼낸다. 표시는 'OK  ' 4칸, '실패'·'정보' 2칸으로 폭이 다르다."""
+    for ln in _lines(report):
+        for mark in ("OK  ", "실패", "정보"):
+            if ln.startswith(mark) and ln[len(mark):].lstrip().startswith(step):
+                return ln
+    raise AssertionError(f"'{step}' 줄이 리포트에 없다:\n{report}")
+
+
+def _failed(report: str) -> list[str]:
+    """실패한 줄만. 'in out' 으로 '실패' 를 찾으면 복호화 실패 카운트 같은 본문에 걸린다."""
+    return [ln for ln in _lines(report) if ln.startswith("실패")]
+
+
 # ------------------------------------------------------------------ 정상 세계
 
 
 async def test_healthy_world_reports_no_failure(monkeypatch):
     cog, ctx, vc, text = _world(monkeypatch)
     out = await selftest.run(cog, ctx, use_stt=False)
-    assert "실패" not in out, out
+    assert _failed(out) == [], out
     assert vc.starts == 1 and vc.stops == 1
 
 
-async def test_write_probe_sends_edits_and_deletes(monkeypatch):
+async def test_write_probe_sends_edits_then_deletes(monkeypatch):
     """권한 비트가 맞는데도 못 보내는 경우를 잡으려면 실제로 보내 봐야 한다."""
     cog, ctx, vc, text = _world(monkeypatch)
     out = await selftest.run(cog, ctx, use_stt=False)
     assert (len(text.sent), text.edited, text.deleted) == (1, 1, 1)
-    assert "채널 쓰기" in out and "전송·편집·삭제 확인" in out
+    assert "채널 쓰기" in out and "전송·편집 확인" in out
+    assert "확인 메시지 정리" not in out
+
+
+async def test_undeletable_probe_message_is_flagged_without_failing_the_write(monkeypatch):
+    """지우기가 실패해도 쓰기는 된 것이다. 대신 팀 채널에 남은 메시지를 알려야 한다."""
+    cog, ctx, _vc, text = _world(monkeypatch, delete_error=PermissionError("Missing Permissions"))
+    out = await selftest.run(cog, ctx, use_stt=False)
+    assert _row(out, "채널 쓰기").startswith("OK")
+    assert "확인 메시지를 못 지웠다" in out
+    assert text.deleted == 0
 
 
 # ------------------------------------------------- 감지기: 음성 WS 폴러 사망
@@ -376,6 +467,56 @@ async def test_live_voice_ws_poller_reports_ok(monkeypatch):
     assert "음성 WS 폴러 죽음" not in out
 
 
+async def test_dead_poller_does_not_claim_the_connection_is_missing(monkeypatch):
+    """연결은 멀쩡히 있고 폴러만 죽은 상태다. '음성 연결이 없어' 는 거짓말이다."""
+    cog, ctx, _vc, _text = _world(monkeypatch, conn=_Conn(runner_done=True))
+    out = await selftest.run(cog, ctx, use_stt=False)
+    assert "음성 채널에 없어" not in out
+    assert "음성 WS 폴러가 죽어 확인 못 함" in out
+
+
+# ------------------------------------- 앞 단계가 없어 못 본 단계는 실패가 아니다
+
+
+async def test_missing_voice_connection_prints_no_dave_or_audio_remediation(monkeypatch):
+    """/join 을 안 친 사람에게 py-cord 브랜치와 SERVER MEMBERS 를 안내하면 안 된다.
+
+    이 명령이 엉뚱한 길로 보내면 무증상 침묵보다 나쁘다.
+    """
+    cog, ctx, vc, _text = _world(monkeypatch, has_vc=True, conn=None)
+    ctx.voice_client = None
+
+    out = await selftest.run(cog, ctx, use_stt=False)
+
+    assert "실패 음성 연결" in out                      # 진짜 원인은 여기 한 줄
+    assert _row(out, "DAVE").startswith("정보")
+    assert _row(out, "오디오 수신").startswith("정보")
+    assert "PR #3159" not in out
+    assert "SERVER MEMBERS 인텐트 누락" not in out
+    assert "/record 나 /join 을 먼저 실행" in out
+
+
+async def test_author_not_in_voice_is_information_not_failure(monkeypatch):
+    """확인을 못 한 것이지 권한이 없는 것이 아니다. 역할 권한 안내를 붙이면 틀린 안내다."""
+    cog, ctx, _vc, _text = _world(monkeypatch, in_voice=False)
+    out = await selftest.run(cog, ctx, use_stt=False)
+    assert _row(out, "음성 채널 권한").startswith("정보")
+    assert "음성 채널에 들어가서 다시 실행" in out
+    assert "서버 설정 → 역할에서" not in out
+
+
+async def test_prerequisite_skips_do_not_block_the_paid_stage_on_their_own(monkeypatch,
+                                                                          counting_stt):
+    """건너뛴 단계가 all_ok() 를 떨어뜨리면 STT 와 무관한 이유로 유료 단계가 막힌다.
+
+    여기서는 진짜 실패가 하나도 없다. 음성 채널에 안 들어갔을 뿐이다.
+    """
+    cog, ctx, _vc, _text = _world(monkeypatch, in_voice=False)
+    out = await selftest.run(cog, ctx, use_stt=True)
+    assert _failed(out) == [], out
+    assert counting_stt.calls == [16_000]
+
+
 # ------------------------------------------------------------- 감지기: DAVE
 
 
@@ -395,13 +536,58 @@ async def test_dave_not_ready_fails(monkeypatch):
     assert "ready=False" in out
 
 
-async def test_ready_dave_reports_ok_and_carries_decryption_stats(monkeypatch):
-    """패킷은 오는데 안 풀리는 경우에 이 통계가 가장 나은 신호다."""
-    dave = _Dave(ready=True, stats={7: "복호화 12/12"})
+async def test_stale_decryption_key_fails_although_dave_looks_healthy(monkeypatch):
+    """재연결로 키가 어긋나면 ready=True · downgraded=False 인 채 실패만 쌓인다.
+
+    통계를 판정에 안 넣으면 이 상태가 OK 로 뜬다. 무음 원인 중 하나가 통째로 안 보인다.
+    소스로만 확인했고 실제 재연결로 관측하지는 않았다.
+    """
+    dave = _Dave(ready=True, stats={7: _Stats(successes=0, failures=40)})
+    cog, ctx, _vc, _text = _world(monkeypatch, conn=_Conn(dave=dave, downgraded=False))
+
+    out = await selftest.run(cog, ctx, use_stt=False)
+
+    assert "실패 DAVE" in out
+    assert "복호화 성공0/실패40" in out
+    assert "키가 어긋난 것" in out
+
+
+async def test_ready_dave_with_clean_stats_reports_ok(monkeypatch):
+    dave = _Dave(ready=True, stats={7: _Stats(successes=120, failures=0)})
     cog, ctx, _vc, _text = _world(monkeypatch, conn=_Conn(dave=dave))
     out = await selftest.run(cog, ctx, use_stt=False)
     assert "OK   DAVE" in out
-    assert "김환:복호화 12/12" in out
+    assert "김환 성공120/실패0" in out
+
+
+async def test_absent_dave_session_fails(monkeypatch):
+    """PyPI 정식판이면 세션 자체가 없다. 이때가 py-cord 버전 안내가 맞는 유일한 경우다."""
+    cog, ctx, _vc, _text = _world(monkeypatch, conn=_Conn(dave=None))
+    out = await selftest.run(cog, ctx, use_stt=False)
+    assert "실패 DAVE" in out
+    assert "dave=False ready=False" in out
+    assert "PR #3159" in out
+
+
+# ------------------------------------------------------ 감지기: 이벤트 루프 디버그
+
+
+async def test_loop_debug_mode_is_reported_as_a_failure(monkeypatch):
+    """디버그가 켜져 있으면 교차 스레드 create_task 가 패킷마다 터지고 라이브러리가 삼킨다."""
+    cog, ctx, _vc, _text = _world(monkeypatch)
+    asyncio.get_running_loop().set_debug(True)
+    try:
+        out = await selftest.run(cog, ctx, use_stt=False)
+    finally:
+        asyncio.get_running_loop().set_debug(False)
+    assert "실패 이벤트 루프" in out
+    assert "PYTHONASYNCIODEBUG" in out
+
+
+async def test_loop_debug_off_reports_ok(monkeypatch):
+    cog, ctx, _vc, _text = _world(monkeypatch)
+    out = await selftest.run(cog, ctx, use_stt=False)
+    assert "OK   이벤트 루프" in out
 
 
 # --------------------------------------------------------- 감지기: 오디오 수신
@@ -414,6 +600,17 @@ async def test_audio_stage_reports_ok_when_packets_arrive(monkeypatch):
     assert "(음성 0, 잡음 0)" not in out
 
 
+async def test_packets_must_arrive_during_the_probe_window_not_before_it(monkeypatch):
+    """대역이 프로브 창 절반 지점에 패킷을 넣는다. sleep 을 지우면 0건이 된다."""
+    cog, ctx, _vc, _text = _world(monkeypatch)
+    monkeypatch.setattr(selftest, "PROBE_SECONDS", 0.2)
+    out = await selftest.run(cog, ctx, use_stt=False)
+    row = _row(out, "오디오 수신")
+    assert row.startswith("OK")
+    assert "패킷 10 (음성 10, 잡음 0)" in row
+    assert "0.2초 동안" in row
+
+
 async def test_audio_stage_fails_when_no_packet_arrives_in_the_probe(monkeypatch):
     cog, ctx, _vc, _text = _world(monkeypatch, tracks=[])
     out = await selftest.run(cog, ctx, use_stt=False)
@@ -421,28 +618,24 @@ async def test_audio_stage_fails_when_no_packet_arrives_in_the_probe(monkeypatch
     assert "패킷 0 (음성 0, 잡음 0)" in out
 
 
-async def test_probe_window_in_the_report_follows_the_constant(monkeypatch):
-    """리포트가 '3초 동안' 을 문자열로 박아 두면 상수를 바꾼 순간 거짓말이 된다."""
-    cog, ctx, _vc, _text = _world(monkeypatch)
-    monkeypatch.setattr(selftest, "PROBE_SECONDS", 1.5)
-    out = await selftest.run(cog, ctx, use_stt=False)
-    assert "1.5초 동안 패킷" in out
-
-
 async def test_reader_error_is_read_before_stop_recording_wipes_it(monkeypatch):
     """write 예외는 패킷 하나가 아니라 녹음 세션 전체를 끝낸다 (reader.py:273-281).
 
     그 흔적은 reader.error 뿐인데 stop_recording 이 _reader 를 MISSING 으로 되돌리므로
-    (voice/client.py:788-790) 정지 뒤에 읽으면 영영 None 이다. 이 실패 모드가 리포트에
-    한 번도 못 뜨게 되는 자리다.
+    (voice/client.py:788-790) 정지 뒤에 읽으면 영영 None 이다.
     """
-    boom = ValueError("복호화 실패")
-    cog, ctx, _vc, _text = _world(monkeypatch, reader_error=boom)
-
+    cog, ctx, _vc, _text = _world(monkeypatch, reader_error=ValueError("복호화 실패"))
     out = await selftest.run(cog, ctx, use_stt=False)
-
     assert "실패 오디오 수신" in out
     assert "reader 오류 ValueError: 복호화 실패" in out
+
+
+async def test_receive_internals_are_read_before_the_probe_stops(monkeypatch):
+    """정지하면 _reader 가 사라져 router_alive 가 영영 '-' 다. err 와 같은 함정이다."""
+    cog, ctx, _vc, _text = _world(monkeypatch)
+    out = await selftest.run(cog, ctx, use_stt=False)
+    assert "router_alive=True" in out
+    assert "router_alive=-" not in out
 
 
 async def test_probe_failure_to_start_is_reported_instead_of_crashing(monkeypatch):
@@ -462,56 +655,158 @@ async def test_probe_is_skipped_when_the_client_is_already_recording(monkeypatch
     assert "이미 녹음 중이라 프로브를 건너뜀" in out
 
 
-async def test_running_meeting_with_no_speech_yet_is_not_a_failure(monkeypatch):
-    """회의가 막 시작돼 아무도 말하지 않은 순간을 실패로 적으면 엉뚱한 원인이 뜬다."""
+# --------------------------------------------------- 감지기: PCM 크기 · sink 전달
 
-    class _Ledger:
-        lines: list = []
 
-    class _Sink:
-        def level_report(self):
-            return {"packets": 0, "noise_packets": 0, "peak_rms": 0.0, "speech_rms": 0.006}
+async def test_wrong_packet_size_is_a_failure_not_a_note(monkeypatch):
+    """전부 잘못된 길이로 와도 정보로만 찍으면 사용자는 아무 신호를 못 받는다."""
 
-    class _Meeting:
-        sink = _Sink()
-        ledger = _Ledger()
+    class _Odd:
+        pcm = b"\x11\x22" * 400        # 1600바이트, 3840 이 아니다
 
-    cog, ctx, vc, _text = _world(monkeypatch, meetings={GUILD_ID: _Meeting()})
+        class packet:
+            timestamp = 1
+
+        class source:
+            id = 7
+            display_name = "김환"
+
+    cog, ctx, vc, _text = _world(monkeypatch, tracks=[])
+    monkeypatch.setattr(vc, "_tracks", [])
+    orig = vc.start_recording
+
+    def _start(sink, callback, *args):
+        orig(sink, callback, *args)
+        for _ in range(5):
+            sink.write(_Odd, _Odd.source)
+
+    monkeypatch.setattr(vc, "start_recording", _start)
+
     out = await selftest.run(cog, ctx, use_stt=False)
 
+    assert _row(out, "PCM 크기").startswith("실패")
+    assert f"0/5 이 {PCM_20MS_BYTES}바이트" in out
+    assert "pcm_to_mono16k" in out
+
+
+async def test_correct_packet_size_reports_ok(monkeypatch):
+    cog, ctx, _vc, _text = _world(monkeypatch)
+    out = await selftest.run(cog, ctx, use_stt=False)
+    assert _row(out, "PCM 크기").startswith("OK")
+    assert f"10/10 이 {PCM_20MS_BYTES}바이트" in out
+
+
+async def test_sink_delivery_fails_when_packets_arrive_but_nothing_is_handed_on(monkeypatch):
+    """sink 가 받고도 세션으로 안 넘기면 전사 줄이 통째로 사라진다."""
+    cog, ctx, _vc, _text = _world(monkeypatch)
+
+    class _Deaf(selftest._ProbeSink):
+        def cleanup(self):
+            self.finished = True      # drain 을 건너뛴다 = 세션으로 아무것도 안 간다
+
+    monkeypatch.setattr(selftest, "_ProbeSink", _Deaf)
+    out = await selftest.run(cog, ctx, use_stt=False)
+
+    assert _row(out, "sink 전달").startswith("실패")
+    assert "sink → session 0건" in out
+
+
+async def test_sink_delivery_reports_ok_on_a_healthy_probe(monkeypatch):
+    cog, ctx, _vc, _text = _world(monkeypatch)
+    out = await selftest.run(cog, ctx, use_stt=False)
+    assert _row(out, "sink 전달").startswith("OK")
+    assert "sink → session 10건" in out
+
+
+# ------------------------------------------------------------- 진행 중인 회의
+
+
+async def test_running_meeting_with_no_speech_yet_is_not_a_failure(monkeypatch):
+    """회의가 막 시작돼 아무도 말하지 않은 순간을 실패로 적으면 엉뚱한 원인이 뜬다."""
+    cog, ctx, vc, _text = _world(monkeypatch, meetings={GUILD_ID: _meeting(packets=0)})
+    out = await selftest.run(cog, ctx, use_stt=False)
     assert vc.starts == 0
     assert "아직 발화 없음" in out
-    assert "실패 오디오 수신" not in out
+    assert _row(out, "오디오 수신").startswith("정보")
+    assert _row(out, "VAD 확정").startswith("정보")
+
+
+async def test_running_meeting_with_packets_reports_levels_and_final_lines(monkeypatch):
+    cog, ctx, vc, _text = _world(monkeypatch,
+                                 meetings={GUILD_ID: _meeting(packets=250, finals=3, nonfinals=2)})
+    out = await selftest.run(cog, ctx, use_stt=False)
+    assert vc.starts == 0
+    assert _row(out, "오디오 수신").startswith("OK")
+    assert "회의 진행 중 · 패킷 250" in out
+    assert _row(out, "VAD 확정").startswith("OK")
+    assert "확정 발화 3건" in out          # final=False 두 건은 세지 않는다
+
+
+async def test_running_meeting_with_packets_but_no_final_line_fails(monkeypatch):
+    """패킷은 들어오는데 확정이 0이면 VAD 나 STT 워커가 멈춘 것이다."""
+    cog, ctx, _vc, _text = _world(monkeypatch,
+                                  meetings={GUILD_ID: _meeting(packets=250, nonfinals=4)})
+    out = await selftest.run(cog, ctx, use_stt=False)
+    assert _row(out, "VAD 확정").startswith("실패")
+    assert "확정 발화 0건" in out
+    assert "임계 RMS" in out
 
 
 # ------------------------------------------------------- 감지기: 인텐트·권한·등록
 
 
-async def test_missing_members_intent_fails_with_the_portal_instruction(monkeypatch):
+async def test_missing_members_intent_fails(monkeypatch):
     cog, ctx, _vc, _text = _world(monkeypatch, intents=_Intents(members=False))
     out = await selftest.run(cog, ctx, use_stt=False)
     assert "실패 인텐트" in out
     assert "SERVER MEMBERS" in out
 
 
-async def test_correct_intents_report_ok(monkeypatch):
+async def test_missing_voice_states_intent_fails(monkeypatch):
+    cog, ctx, _vc, _text = _world(monkeypatch, intents=_Intents(voice_states=False))
+    out = await selftest.run(cog, ctx, use_stt=False)
+    assert "실패 인텐트" in out
+    assert "voice_states=False" in out
+
+
+async def test_message_content_intent_is_a_note_and_does_not_gate_the_paid_stage(monkeypatch,
+                                                                                counting_stt):
+    """MESSAGE CONTENT 가 켜져 있어도 전사는 된다. 위생 문제라 유료 단계를 막으면 안 된다."""
+    cog, ctx, _vc, _text = _world(monkeypatch, intents=_Intents(message_content=True))
+    out = await selftest.run(cog, ctx, use_stt=True)
+    assert _row(out, "인텐트").startswith("OK")
+    assert _row(out, "메시지 본문 인텐트").startswith("정보")
+    assert "message_content=True" in out
+    assert counting_stt.calls == [16_000]
+
+
+async def test_intent_row_says_it_reports_what_the_code_requested(monkeypatch):
+    """포털 토글이 아니라 코드가 요청한 값이다. 둘을 헷갈리면 엉뚱한 곳을 고친다."""
     cog, ctx, _vc, _text = _world(monkeypatch)
     out = await selftest.run(cog, ctx, use_stt=False)
-    assert "OK   인텐트" in out
+    assert "코드가 요청한 값" in _row(out, "인텐트")
 
 
-async def test_blank_guild_id_warns_about_the_one_hour_delay(monkeypatch):
-    cog, ctx, _vc, _text = _world(monkeypatch, guild_id="")
-    out = await selftest.run(cog, ctx, use_stt=False)
-    assert "실패 슬래시 명령 등록" in out
-    assert "최대 1시간" in out
-
-
-async def test_missing_voice_permissions_name_the_missing_ones(monkeypatch):
+async def test_missing_connect_permission_names_it(monkeypatch):
     cog, ctx, _vc, _text = _world(monkeypatch, perms=_Perms(view_channel=True, connect=False))
     out = await selftest.run(cog, ctx, use_stt=False)
     assert "실패 음성 채널 권한" in out
     assert "없음: 연결" in out
+
+
+async def test_missing_view_channel_permission_names_it(monkeypatch):
+    cog, ctx, _vc, _text = _world(monkeypatch, perms=_Perms(view_channel=False, connect=True))
+    out = await selftest.run(cog, ctx, use_stt=False)
+    assert "실패 음성 채널 권한" in out
+    assert "없음: 채널 보기" in out
+
+
+async def test_blank_guild_id_warns_about_the_one_hour_delay_and_invite_scope(monkeypatch):
+    cog, ctx, _vc, _text = _world(monkeypatch, guild_id="")
+    out = await selftest.run(cog, ctx, use_stt=False)
+    assert "실패 슬래시 명령 등록" in out
+    assert "최대 1시간" in out
+    assert "applications.commands" in out
 
 
 async def test_channel_write_failure_carries_the_exception_message(monkeypatch):
@@ -530,14 +825,16 @@ async def test_stt_is_not_called_when_the_option_is_off(monkeypatch, counting_st
     out = await selftest.run(cog, ctx, use_stt=False)
     assert counting_stt.calls == []
     assert "stt:True" in out and "0.1원" in out
-    assert "실패" not in out
+    assert "최소 과금 단위는 확인하지 못했다" in out
+    assert _failed(out) == []
 
 
 async def test_stt_runs_once_on_a_healthy_run_when_asked(monkeypatch, counting_stt):
     cog, ctx, _vc, _text = _world(monkeypatch)
     out = await selftest.run(cog, ctx, use_stt=True)
-    assert counting_stt.calls == [16_000]     # 1.0초 = 약 0.1원
+    assert counting_stt.calls == [16_000]     # 1.0초
     assert "OK   STT 왕복" in out
+    assert "0.1원 지출" in out                 # 쓴 돈은 기록에 남는다
 
 
 async def test_stt_is_skipped_when_an_earlier_stage_failed(monkeypatch, counting_stt):
@@ -566,6 +863,36 @@ async def test_stt_failure_carries_the_message_not_only_the_class(monkeypatch):
     assert "ELICE_API_KEY 를 확인한다" in out
 
 
+async def test_stt_round_trip_does_not_block_the_event_loop(monkeypatch):
+    """동기 HTTP 왕복을 루프에서 부르면 그동안 음성 하트비트까지 멈춘다."""
+    ticks = []
+
+    class _Slow:
+        def __init__(self, *a, **k):
+            pass
+
+        def transcribe(self, samples, sample_rate):
+            import time
+            time.sleep(0.15)
+            return SttResult(text="느린 응답", words=[])
+
+    monkeypatch.setattr(elice_mod, "EliceStt", _Slow)
+    cog, ctx, _vc, _text = _world(monkeypatch)
+
+    async def _heartbeat():
+        for _ in range(10):
+            await asyncio.sleep(0.01)
+            ticks.append(1)
+
+    beat = asyncio.create_task(_heartbeat())
+    out = await selftest.run(cog, ctx, use_stt=True)
+    await beat
+
+    assert "OK   STT 왕복" in out
+    # 루프에서 그대로 불렀으면 0.15초 동안 한 번도 못 뛴다.
+    assert len(ticks) >= 5, f"루프가 막혔다: {len(ticks)}"
+
+
 # ------------------------------------------------------------------ 안내 문구
 
 
@@ -577,14 +904,17 @@ async def test_every_failed_step_in_a_run_is_followed_by_a_remediation_line(monk
     """
     worlds = [
         {"guild_id": "", "intents": _Intents(members=False)},
+        {"intents": _Intents(voice_states=False)},
         {"conn": _Conn(runner_done=True)},
         {"conn": _Conn(dave=_Dave(ready=False))},
+        {"conn": _Conn(dave=None)},
+        {"conn": _Conn(dave=_Dave(stats={7: _Stats(failures=9)}))},
         {"tracks": []},
         {"perms": _Perms(view_channel=False, connect=False)},
-        {"in_voice": False},
         {"send_error": PermissionError("Missing Permissions")},
         {"reader_error": ValueError("복호화 실패")},
         {"start_error": RuntimeError("not connected to a voice channel")},
+        {"meetings": {GUILD_ID: _meeting(packets=250, nonfinals=4)}},
     ]
     for kw in worlds:
         cog, ctx, _vc, _text = _world(monkeypatch, **kw)
@@ -601,13 +931,24 @@ async def test_report_fits_in_a_discord_message(monkeypatch):
     assert len(out) <= 2000
 
 
-def test_report_truncates_when_it_would_not_fit():
-    t = SelfTest()
-    for i in range(400):
-        t.record(f"단계{i}", True, "x" * 40)
-    out = t.report()
-    assert len(out) <= 2000
-    assert "(잘림)" in out
+# ------------------------------------------------------------------ 예외 내성
+
+
+async def test_an_exception_mid_run_still_returns_the_earlier_rows(monkeypatch):
+    """리포트가 통째로 사라지면 사용자는 이 명령이 없애려던 화면을 그대로 본다."""
+
+    class _Boom(dict):
+        def get(self, key, default=None):
+            raise RuntimeError("표 조회 실패")
+
+    cog, ctx, _vc, _text = _world(monkeypatch, meetings=_Boom())
+    out = await selftest.run(cog, ctx, use_stt=False)
+
+    assert "OK   슬래시 명령 등록" in out          # 앞 단계 결과가 살아 있다
+    assert "OK   인텐트" in out
+    assert "실패 자체 점검" in out
+    assert "'이벤트 루프' 다음에서 RuntimeError: 표 조회 실패" in out
+    assert "위 단계까지는 실제 결과" in out
 
 
 # ------------------------------------------------------------------ 어댑터 배선
@@ -681,6 +1022,6 @@ def test_probe_sink_does_not_transcribe():
 
 
 def test_probe_seconds_is_three():
-    """리포트 문구가 '3초 동안' 이라고 말한다. 상수와 문구가 어긋나면 리포트가 거짓말한다."""
     assert selftest.PROBE_SECONDS == 3.0
+    assert selftest.STT_PROBE_SECONDS == 1.0
     assert asyncio.iscoroutinefunction(selftest.run)
