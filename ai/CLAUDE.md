@@ -25,7 +25,7 @@ uv venv --python 3.12 .venv
 uv pip install -r requirements.txt   # py-cord 는 git PR 브랜치라 git 필요. Linux 는 libopus0 도 필요
 cp .env.example .env                 # 최소 DISCORD_BOT_TOKEN 채우기
 
-# 테스트 (설치된 py-cord 는 있어야 하지만 봇 토큰이나 네트워크 연결은 필요 없다 — 스텁 데이터, tmp_path fixture 사용)
+# 테스트 (py-cord 없이 실행 가능 — 스텁 데이터, tmp_path fixture 사용)
 .venv/bin/python -m pytest
 .venv/bin/python -m pytest tests/test_recording_store.py -k save_session  # 단일 테스트
 
@@ -56,11 +56,9 @@ python capture/run_recorder.py   # 개발용 봇: Discord 에서 /join /record /
 
 ```
 Discord 음성채널
-  → RecordingCog (/record) → StreamingSink → 실시간 전사 → 명령을 친 채널에 줄 게시
-  → recordings/{guild_id}_{ts}/transcript.md · transcript.jsonl  (회의록)
-  → recordings/{guild_id}_{ts}/latency.jsonl (발화별 큐·전사·게시 지연. 종료 요약에 중앙값·최대)
-  → recordings/{guild_id}_{ts}/{user_id}_{ts}.wav (화자별 트랙 — 트랙 자체가 화자라 별도 diarization 불필요)
-  → recordings/session_{ts}.json (매니페스트: user_id ↔ display_name ↔ file ↔ duration)
+  → RecordingCog (/record, /stop) → recording_store.save_session()
+  → recordings/{user_id}_{ts}.wav (화자별 트랙 — 트랙 자체가 화자이므로 별도 diarization 모델 불필요)
+  → recordings/session_{ts}.json  (매니페스트: user_id ↔ display_name ↔ file ↔ duration)
 ```
 
 `on_session_saved(manifest, manifest_path)`는 BE 가 전사 → 추출 → 판단 → `approval_request` 생성을
