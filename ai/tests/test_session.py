@@ -1,11 +1,9 @@
-import threading
 import time
 
 import numpy as np
 
 from stt.backend import SttResult
 from stt.session import Session
-from stt.vad import StreamingVAD
 
 SR = 16_000
 
@@ -66,18 +64,6 @@ def test_leaving_speaker_keeps_last_words():
     assert any(ln.final and ln.speaker_id == "kim" for ln in lines)
 
 
-def test_partial_and_final_share_one_turn():
-    """부분 전사와 확정본이 같은 메시지를 타야 한다. 턴이 달라지면 메시지가 둘로 갈린다."""
-    lines = []
-    s = Session(final_stt=FakeStt("최종"), partial_stt=FakeStt("부분"),
-                on_line=lines.append, workers=1,
-                partial_after_ms=500, partial_every_ms=500)
-    feed_packets(s, "kim", "김환", tone(3_000), 0)
-    s.close()
-    turns = {ln.turn_id for ln in lines}
-    assert len(turns) == 1
-
-
 def test_api_called_once_per_utterance():
     """유료 호출은 발화당 정확히 1번이어야 한다. 최소 과금 단위가 미확인이다."""
     stt = FakeStt()
@@ -88,21 +74,10 @@ def test_api_called_once_per_utterance():
     assert stt.calls == 2
 
 
-def test_partial_backend_is_not_charged_backend():
-    """부분 전사는 로컬로만 돈다. final_stt 호출 수가 늘면 안 된다."""
-    final, partial = FakeStt("최종"), FakeStt("부분")
-    s = Session(final_stt=final, partial_stt=partial, on_line=lambda _: None, workers=1,
-                partial_after_ms=500, partial_every_ms=500)
-    feed_packets(s, "kim", "김환", tone(4_000), 0)
-    s.close()
-    assert final.calls == 1
-    assert partial.calls >= 1
-
-
-def test_partial_disabled_still_produces_final():
+def test_long_utterance_yields_one_final():
     stt = FakeStt("최종")
     lines = []
-    s = Session(final_stt=stt, partial_stt=None, on_line=lines.append, workers=1)
+    s = Session(final_stt=stt, on_line=lines.append, workers=1)
     feed_packets(s, "kim", "김환", tone(4_000), 0)
     s.close()
     assert [ln.text for ln in lines if ln.final] == ["최종"]
@@ -171,55 +146,3 @@ def test_close_waits_for_in_flight_transcription():
     # close() 가 돌아온 시점에 이미 줄이 나와 있어야 한다. 여기서 기다려 주면 안 된다.
     assert any(ln.final and ln.text == "느림" for ln in lines)
     assert elapsed >= 1.2
-
-
-def test_pending_pcm_is_read_only_when_a_partial_is_queued(monkeypatch):
-    """pending_pcm 은 진행 중인 프레임을 매번 이어 붙인다. 패킷마다 읽으면 긴 발화에서
-    수신 스레드가 20ms 예산을 넘긴다. 읽기는 부분 전사를 실제로 넣을 때만 일어나야 한다."""
-    reads = []
-    real = StreamingVAD.pending_pcm
-
-    def counting(self):
-        reads.append(1)
-        return real.fget(self)
-
-    monkeypatch.setattr(StreamingVAD, "pending_pcm", property(counting))
-
-    s = Session(final_stt=FakeStt("최종"), partial_stt=FakeStt("부분"),
-                on_line=lambda _: None, workers=1,
-                partial_after_ms=500, partial_every_ms=500)
-    feed_packets(s, "kim", "김환", tone(4_000), 0)
-    s.close()
-
-    # 4초 발화는 20ms 패킷 200개다. 부분 전사 8회 + 종료 시 발화 확정 1회면 충분하고,
-    # 패킷마다 읽는 구현이면 200회대가 된다.
-    assert len(reads) <= 4_000 // 500 + 1
-
-
-def test_partial_without_word_timestamps_still_has_text():
-    """단어 타임스탬프를 주지 않는 백엔드는 확정 접두사도 꼬리도 만들 수 없다.
-    그래도 "말하는 중" 표시가 빈 문자열이 되면 안 된다."""
-    seen_partial = threading.Event()
-    lines = []
-
-    def collect(line):
-        lines.append(line)
-        if not line.final:
-            seen_partial.set()
-
-    class GatedFinal:
-        """확정본이 먼저 나가면 진행 중 턴이 사라져 부분 줄이 버려진다. 순서를 고정한다."""
-
-        name = "gated"
-
-        def transcribe(self, samples, sample_rate):
-            seen_partial.wait(timeout=2.0)
-            return SttResult(text="최종", words=[])
-
-    s = Session(final_stt=GatedFinal(), partial_stt=FakeStt("부분"),
-                on_line=collect, workers=1,
-                partial_after_ms=500, partial_every_ms=500)
-    feed_packets(s, "kim", "김환", tone(4_000), 0)
-    s.close()
-
-    assert any(not ln.final and ln.text == "부분" for ln in lines)
