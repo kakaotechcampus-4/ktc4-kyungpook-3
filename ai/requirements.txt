@@ -5,6 +5,8 @@
 py-cord[voice] @ git+https://github.com/Pycord-Development/pycord@refs/pull/3159/head
 faster-whisper>=1.0
 jiwer>=3.0            # WER/CER (ai/stt/eval)
+soundfile>=0.12       # WAV 파일 I/O (capture/audio.py)
+requests>=2.31        # HTTP API (stt/elice.py)
 
 # ── Phase 1~2: LLM (Google Gemini 무료 티어) ─────────────────────────────────
 google-genai>=1.0
