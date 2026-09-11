@@ -776,6 +776,12 @@ def _quiet_track():
     return [ReplayTrack(user_id=7, name="김환", samples=_tone(200, amp=0.002), ssrc=70)]
 
 
+def _mixed_track():
+    """또렷한 말 5패킷 뒤에 조용한 5패킷. 말하는 중에 잠깐 조용해진 모양이다."""
+    samples = np.concatenate([_tone(100), _tone(100, amp=0.002)])
+    return [ReplayTrack(user_id=7, name="김환", samples=samples, ssrc=70)]
+
+
 async def test_gaps_without_quiet_packets_point_at_min_speech_ms(monkeypatch):
     """온 패킷이 전부 말이면 우리 쪽 임계가 짧은 응답을 죽이고 있는 것이다."""
     cog, ctx, _vc, _text = _world(monkeypatch)
@@ -790,22 +796,34 @@ async def test_gaps_without_quiet_packets_point_at_min_speech_ms(monkeypatch):
 
 async def test_quiet_packets_without_gaps_point_at_hysteresis(monkeypatch):
     """끊김 없이 오는데 조용한 패킷이 섞이면 경계를 우리가 찾아야 한다."""
-    cog, ctx, _vc, _text = _world(monkeypatch, tracks=_quiet_track())
+    cog, ctx, _vc, _text = _world(monkeypatch, tracks=_mixed_track())
     _clocked_probe(monkeypatch, _EVEN)
     out = await selftest.run(cog, ctx, use_stt=False)
     row = _row(out, "전송 방식")
-    assert "공백 0건" in row and "조용한 패킷 10" in row
+    assert "공백 0건" in row and "조용한 패킷 5" in row
     assert "히스테리시스" in row
     assert "MIN_SPEECH_MS" not in row
 
 
+async def test_all_quiet_run_is_a_gain_problem_not_an_answer(monkeypatch):
+    """한 패킷도 임계를 못 넘은 실행이다. 여기에 히스테리시스를 고치라고 적으면
+    마이크 볼륨 문제를 들고 온 사람을 엉뚱한 코드로 보낸다."""
+    cog, ctx, _vc, _text = _world(monkeypatch, tracks=_quiet_track())
+    _clocked_probe(monkeypatch, _EVEN)
+    out = await selftest.run(cog, ctx, use_stt=False)
+    row = _row(out, "전송 방식")
+    assert "조용한 패킷 10" in row
+    assert "임계 아래" in row and "재지 못했다" in row
+    assert "히스테리시스" not in row and "MIN_SPEECH_MS" not in row
+
+
 async def test_both_signals_together_do_not_pick_a_side(monkeypatch):
     """모순된 관측을 한쪽 근거로 적으면 이 줄이 재는 것보다 나쁜 일을 한다."""
-    cog, ctx, _vc, _text = _world(monkeypatch, tracks=_quiet_track())
+    cog, ctx, _vc, _text = _world(monkeypatch, tracks=_mixed_track())
     _clocked_probe(monkeypatch, _GAPPY)
     out = await selftest.run(cog, ctx, use_stt=False)
     row = _row(out, "전송 방식")
-    assert "공백 2건" in row and "조용한 패킷 10" in row
+    assert "공백 2건" in row and "조용한 패킷 5" in row
     assert "갈리지 않았다" in row
     assert "MIN_SPEECH_MS" not in row and "히스테리시스" not in row
 

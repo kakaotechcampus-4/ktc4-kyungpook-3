@@ -44,7 +44,8 @@ def _transmission(r: dict, cut_short: bool = False) -> str:
     에너지로 찾아야 하고, 안 오면 도착한 패킷은 전부 말이라 MIN_SPEECH_MS 가 짧은
     응답을 죽이고 있는 쪽이다. 숫자만 찍으면 보는 사람이 그 갈림을 혼자 해야 하고,
     앞질러 단정하면 재는 의미가 없다. 그래서 관측과 다음 할 일을 같이 적되, 아무것도
-    못 잰 실행은 못 쟀다고만 적는다.
+    못 잰 실행은 못 쟀다고만 적는다. 최대 RMS 가 임계를 못 넘은 실행이 그렇다. 온 패킷이
+    전부 조용한 것은 숨 쉬는 구간이 아니라 마이크 입력이 작은 것일 수 있다.
     """
     head = (f"공백 {r['gaps']}건 (최대 {r['max_gap_ms']}ms, 중앙값 {r['median_gap_ms']}ms) · "
             f"조용한 패킷 {r['quiet_packets']} · ")
@@ -53,6 +54,9 @@ def _transmission(r: dict, cut_short: bool = False) -> str:
     if r["packets"] == 0:
         return head + ("음성 패킷이 한 건도 없어 아무것도 재지 못했다. 어느 쪽 근거도 아니다. "
                        "음성 채널에서 직접 말하면서 다시 실행한다")
+    if r["peak_rms"] <= r["speech_rms"]:
+        return head + ("온 패킷이 전부 임계 아래라 아무것도 재지 못했다. 조용한 구간이 아니라 입력이 "
+                       "작은 것일 수 있다. 위 최대 RMS 를 보고 마이크를 올린 뒤 다시 실행한다")
     if r["gaps"] >= PROBE_EVIDENCE and r["quiet_packets"] == 0:
         noise = (f" 잡음 {r['noise_packets']}건을 걸렀으니 그 공백이 침묵 프레임일 수도 있다."
                  if r["noise_packets"] else "")
