@@ -483,8 +483,8 @@ async def test_missing_voice_connection_prints_no_dave_or_audio_remediation(monk
 
     이 명령이 엉뚱한 길로 보내면 무증상 침묵보다 나쁘다.
     """
-    cog, ctx, vc, _text = _world(monkeypatch, has_vc=True, conn=None)
-    ctx.voice_client = None
+    cog, ctx, vc, _text = _world(monkeypatch, has_vc=False)
+    assert vc is None and ctx.voice_client is None
 
     out = await selftest.run(cog, ctx, use_stt=False)
 
@@ -683,7 +683,7 @@ async def test_wrong_packet_size_is_a_failure_not_a_note(monkeypatch):
     """전부 잘못된 길이로 와도 정보로만 찍으면 사용자는 아무 신호를 못 받는다."""
 
     class _Odd:
-        pcm = b"\x11\x22" * 400        # 1600바이트, 3840 이 아니다
+        pcm = b"\x11\x22" * 400        # 800바이트, 3840 이 아니다
 
         class packet:
             timestamp = 1
@@ -730,6 +730,7 @@ async def test_sink_delivery_fails_when_packets_arrive_but_nothing_is_handed_on(
 
     assert _row(out, "sink 전달").startswith("실패")
     assert "sink → session 0건" in out
+    assert CAUSES["sink 전달"][:25] in out          # 이름을 바꾸면 안내가 조용히 떨어진다
 
 
 async def test_sink_delivery_reports_ok_on_a_healthy_probe(monkeypatch):
@@ -758,7 +759,7 @@ async def test_running_meeting_with_packets_reports_levels_and_final_lines(monke
     out = await selftest.run(cog, ctx, use_stt=False)
     assert vc.starts == 0
     assert _row(out, "오디오 수신").startswith("OK")
-    assert "회의 진행 중 · 패킷 250" in out
+    assert "회의 진행 중 · 패킷 250 · 최대 RMS 0.210 (임계 0.006)" in out
     assert _row(out, "VAD 확정").startswith("OK")
     assert "확정 발화 3건" in out          # final=False 두 건은 세지 않는다
 
@@ -797,8 +798,16 @@ async def test_message_content_intent_is_a_note_and_does_not_gate_the_paid_stage
     out = await selftest.run(cog, ctx, use_stt=True)
     assert _row(out, "인텐트").startswith("OK")
     assert _row(out, "메시지 본문 인텐트").startswith("정보")
-    assert "message_content=True" in out
+    assert "message_content=True · 전사에는 지장 없지만 꺼 두는 것이 낫다" in out
     assert counting_stt.calls == [16_000]
+
+
+async def test_message_content_off_carries_no_advisory(monkeypatch):
+    """정보 행이라 ok 값은 화면에 안 나온다. 실제로 신호를 지는 것은 이 꼬리말이다."""
+    cog, ctx, _vc, _text = _world(monkeypatch, intents=_Intents(message_content=False))
+    out = await selftest.run(cog, ctx, use_stt=False)
+    assert "message_content=False" in out
+    assert "꺼 두는 것이 낫다" not in out
 
 
 async def test_intent_row_says_it_reports_what_the_code_requested(monkeypatch):
@@ -867,6 +876,19 @@ async def test_stt_is_skipped_when_an_earlier_stage_failed(monkeypatch, counting
     assert "앞 단계가 실패해 건너뜀" in out
 
 
+async def test_stt_is_blocked_by_a_failing_audio_stage_too(monkeypatch, counting_stt):
+    """게이트를 인텐트 하나로만 증명하면 all_ok() 의 info 필터를 넓히는 변형이 그냥 지나간다.
+
+    여기서는 인텐트가 멀쩡하고 오디오 수신만 실패한다.
+    """
+    cog, ctx, _vc, _text = _world(monkeypatch, tracks=[])
+    out = await selftest.run(cog, ctx, use_stt=True)
+    assert _row(out, "오디오 수신").startswith("실패")
+    assert _row(out, "인텐트").startswith("OK")
+    assert counting_stt.calls == []
+    assert "앞 단계가 실패해 건너뜀" in out
+
+
 async def test_stt_failure_carries_the_message_not_only_the_class(monkeypatch):
     """elice 의 실패 경로 다섯이 전부 같은 SttError 다. 메시지를 지우면 전부 똑같이 보인다."""
 
@@ -899,6 +921,7 @@ async def test_stt_round_trip_does_not_block_the_event_loop(monkeypatch):
     """
     import threading
 
+    entered = threading.Event()
     released = threading.Event()
 
     class _Blocking:
@@ -906,13 +929,19 @@ async def test_stt_round_trip_does_not_block_the_event_loop(monkeypatch):
             pass
 
         def transcribe(self, samples, sample_rate):
+            entered.set()
             if not released.wait(timeout=2.0):
                 raise SttError("루프가 막혀 해제 신호가 오지 않았다")
             return SttResult(text="해제됨", words=[])
 
     async def _release():
-        await asyncio.sleep(0.05)
-        released.set()
+        # 고정 대기로 풀면 그사이 run() 이 STT 에 닿기 전에 해제가 끝나 버릴 수 있다.
+        # 그러면 전사가 루프에 있어도 통과한다. 실제로 들어온 뒤에만 푼다.
+        for _ in range(400):
+            if entered.is_set():
+                released.set()
+                return
+            await asyncio.sleep(0.005)
 
     monkeypatch.setattr(elice_mod, "EliceStt", _Blocking)
     cog, ctx, _vc, _text = _world(monkeypatch)

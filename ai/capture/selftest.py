@@ -171,9 +171,11 @@ async def _stages(cog, ctx: discord.ApplicationContext, t: SelfTest, use_stt: bo
     intents = cog.bot.intents
     t.record("인텐트", bool(intents.members and intents.voice_states),
              f"코드가 요청한 값 · members={intents.members} voice_states={intents.voice_states}")
-    t.record("메시지 본문 인텐트", not intents.message_content,
+    # 전사에는 지장이 없어 판정 대상이 아니다. 정보 행이라 ok 값은 아무 데도 안 나타나므로
+    # 계산하지 않는다 — 신호는 아래 꼬리말이 진다.
+    t.record("메시지 본문 인텐트", True,
              f"message_content={intents.message_content}"
-             + ("" if not intents.message_content else " · 전사에는 지장 없지만 꺼 두는 것이 낫다"),
+             + (" · 전사에는 지장 없지만 꺼 두는 것이 낫다" if intents.message_content else ""),
              info=True)
 
     room = getattr(getattr(ctx.author, "voice", None), "channel", None)
