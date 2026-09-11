@@ -15,3 +15,25 @@ def test_member_platform_id_alias_and_unknown_keys_ignored():
     assert m.platform_user_id == "111"
     assert m.role == "member"
     assert isinstance(TranscriptSegment.from_dict({"speaker": None, "start": 0, "end": 1, "text": "x"}).speaker, type(None))
+
+
+def test_transcript_segment_has_seq():
+    from shared.schemas import TranscriptSegment
+
+    s = TranscriptSegment(speaker="123", start=1.0, end=2.5, text="네", seq=7)
+    assert s.seq == 7
+    assert s.to_dict()["seq"] == 7
+
+
+def test_transcript_segment_seq_defaults_to_zero():
+    from shared.schemas import TranscriptSegment
+
+    s = TranscriptSegment(speaker="123", start=1.0, end=2.5, text="네")
+    assert s.seq == 0
+
+
+def test_transcript_segment_from_dict_without_seq():
+    from shared.schemas import TranscriptSegment
+
+    s = TranscriptSegment.from_dict({"speaker": "1", "start": 0.0, "end": 1.0, "text": "x"})
+    assert s.seq == 0
