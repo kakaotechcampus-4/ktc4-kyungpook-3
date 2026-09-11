@@ -1,10 +1,10 @@
 """Phase 0 — faster-whisper 전사. recordings/*.wav → transcripts/*.json (+ .txt).
 
 계획서 인터페이스 (ai/ 디렉토리 안에서 실행)
-  python stt/transcribe.py --audio recordings/{user_id}_{ts}.wav --model small
-  python stt/transcribe.py                      # recordings/ 전체
-  python stt/transcribe.py --model small,medium # 모델 비교
-  python stt/transcribe.py --session 1788526909 # 세션 하나만 → transcripts/session_{ts}.transcript.json 도 생성
+  python -m stt.transcribe --audio recordings/{user_id}_{ts}.wav --model small
+  python -m stt.transcribe                      # recordings/ 전체
+  python -m stt.transcribe --model small,medium # 모델 비교
+  python -m stt.transcribe --session 1788526909 # 세션 하나만 → transcripts/session_{ts}.transcript.json 도 생성
 
 출력 (파일당, 모델당)
   transcripts/{wav_stem}__{model}.json   {"speaker": user_id, "segments": [{speaker,start,end,text}], "text", 처리시간 메타}
@@ -24,9 +24,7 @@ import time
 import wave
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # ai/ 자체를 sys.path 에 추가
-
-from shared.config import AI_ROOT, RECORDINGS_DIR, TRANSCRIPTS_DIR  # noqa: E402
+from shared.config import AI_ROOT, RECORDINGS_DIR, TRANSCRIPTS_DIR
 
 TIMING_SUMMARY_PATH = AI_ROOT / "timing_summary.md"
 MAX_SEC_PER_AUDIO_MIN = 30.0  # 통과 기준: 오디오 1분당 전사 30초 이내

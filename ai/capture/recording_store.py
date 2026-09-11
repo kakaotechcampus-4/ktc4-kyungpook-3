@@ -15,6 +15,8 @@ import wave
 from dataclasses import dataclass
 from pathlib import Path
 
+from shared.schemas import now_iso
+
 # Discord 음성 디코더 출력 포맷 (py-cord OpusDecoder 상수와 동일)
 PCM_RATE = 48000
 PCM_CHANNELS = 2
@@ -42,6 +44,20 @@ def to_wav_bytes(raw: bytes) -> bytes:
         w.setframerate(PCM_RATE)
         w.writeframes(raw)
     return buf.getvalue()
+
+
+def pcm_duration_sec(raw: bytes) -> float:
+    """PCM 바이트 길이 → 재생 시간(초). PCM_RATE/CHANNELS/SAMPLE_WIDTH 기준."""
+    return len(raw) / (PCM_RATE * PCM_CHANNELS * PCM_SAMPLE_WIDTH)
+
+
+def silence_padding(gap_sec: float) -> bytes:
+    """gap_sec 만큼의 무음 PCM 바이트. 화자별 트랙을 실제 경과시간 기준으로 맞추는 데 씀
+    (discord_adapter.SyncedWaveSink 참고 — 세션 병합 시 발화 순서가 깨지는 걸 막기 위한 패딩)."""
+    if gap_sec <= 0:
+        return b""
+    n_frames = int(gap_sec * PCM_RATE)
+    return b"\x00" * (n_frames * PCM_CHANNELS * PCM_SAMPLE_WIDTH)
 
 
 def wav_duration_sec(path: Path) -> float:
@@ -87,7 +103,7 @@ def save_session(tracks: list[Track], recordings_dir: Path, *, ts: int | None = 
         "session": str(ts),
         "guild": guild,
         "channel": channel,
-        "recorded_at": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ts)),
+        "recorded_at": now_iso(),  # UTC, BE 의 DateTime(timezone=True) 와 경계에서 안 맞을 일 없게
         "library_version": library_version,
         "speakers": entries,
     }

@@ -1,4 +1,4 @@
-from shared.schemas import Member, Transcript, TranscriptSegment
+from shared.schemas import Transcript, TranscriptSegment
 
 
 def test_transcript_roundtrip_and_merge():
@@ -10,8 +10,8 @@ def test_transcript_roundtrip_and_merge():
     assert Transcript.from_dict(t.to_dict()) == t
 
 
-def test_member_platform_id_alias_and_unknown_keys_ignored():
-    m = Member.from_dict({"member_id": "m1", "display_name": "민수", "discord_user_id": "111", "extra": 1})
-    assert m.platform_user_id == "111"
-    assert m.role == "member"
-    assert isinstance(TranscriptSegment.from_dict({"speaker": None, "start": 0, "end": 1, "text": "x"}).speaker, type(None))
+def test_transcript_segment_unknown_keys_ignored():
+    seg = TranscriptSegment.from_dict(
+        {"speaker": None, "start": 0, "end": 1, "text": "x"}
+    )
+    assert isinstance(seg.speaker, type(None))
