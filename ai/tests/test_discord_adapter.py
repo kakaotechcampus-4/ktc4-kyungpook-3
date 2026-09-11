@@ -769,7 +769,6 @@ async def test_stop_summary_says_unmeasured_when_nobody_spoke(tmp_path, monkeypa
 
     await cog._finish_meeting(GUILD_ID)
 
-    summary = text.summaries()[0]
-    assert "지연 미측정 (확정된 발화 없음)" in summary
-    assert "0.00" not in summary
+    latency = [x for x in text.summaries()[0].splitlines() if x.startswith("지연")]
+    assert latency == ["지연 미측정 (확정된 발화 없음)"]
     assert (meeting.out_dir / "latency.jsonl").read_text(encoding="utf-8") == ""

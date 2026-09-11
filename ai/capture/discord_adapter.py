@@ -34,6 +34,7 @@ from capture.streaming_sink import StreamingSink
 from capture.track_writer import TrackWriter
 from shared.config import RECORDINGS_DIR
 from stt.elice import EliceStt
+from stt.latency import format_summary, write_latency
 from stt.session import Session
 from stt.transcript_writer import write_transcript
 
@@ -650,6 +651,9 @@ class RecordingCog(discord.Cog):
 
         # 5. 회의록. 게시기 정리보다 **앞** 이다. 게시가 막혀 있어도 파일은 나와야 한다.
         out = await asyncio.to_thread(write_transcript, lines, meeting.out_dir, meeting.meeting_id)
+        # 지연은 회의록 옆에 따로 쓴다. transcript.jsonl 의 레코드 모양은 BE 계약이다.
+        # 여기서 뜬 스냅샷 그대로 요약에도 쓰므로 화면과 파일이 같은 값을 말한다.
+        latency_path = await asyncio.to_thread(write_latency, lines, meeting.out_dir)
 
         finals = [ln for ln in lines if ln.final]
         report = meeting.sink.level_report()
@@ -657,7 +661,8 @@ class RecordingCog(discord.Cog):
         msg = [
             f"⏹ 종료. 발화 {len(finals)}건 · 회의록까지 {total:.1f}초 "
             f"(전사 대기 {elapsed:.1f}초, 목표 10초)",
-            f"회의록 `{out['markdown']}`",
+            format_summary(lines),
+            f"회의록 `{out['markdown']}` · 구간 지연 `{latency_path.name}`",
             f"화자별 트랙 {len(entries)}개 · 매니페스트 `{manifest_path.name}`",
         ]
         msg.append(
