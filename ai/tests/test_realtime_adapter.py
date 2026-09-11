@@ -976,7 +976,12 @@ async def test_live_starts_when_nothing_else_holds_the_connection(tmp_path, monk
 
 # ------------------------------------------------------------------- 명령 이름
 async def test_realtime_commands_are_registered_under_the_new_names():
-    """이름이 겹치면 나중에 붙는 Cog 의 명령이 앞의 것을 덮는다."""
+    """py-cord 는 겹치는 명령 이름을 걸러 주지 않는다.
+
+    같은 이름 둘을 서로 다른 Cog 로 붙여 보면 pending_application_commands 에 둘 다 그대로
+    남아 디스코드 등록 요청으로 나간다. 디스코드가 그때 무엇을 하는지는 확인하지 못했다.
+    이름이 안 겹치게 하는 것은 우리 몫이라 여기서 못박는다.
+    """
     bot = discord.Bot(intents=required_intents())
     bot.add_cog(RealtimeCog(bot))
 
