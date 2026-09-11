@@ -19,19 +19,50 @@ class FakeStt:
         return SttResult(text=f"{len(samples) / sample_rate:.1f}초", words=[])
 
 
+class RampCheckStt(FakeStt):
+    """백엔드에 실제로 도착한 샘플이 단조 증가인지 기록한다.
+
+    발화가 하나 나왔다는 것만으로는 STT 가 받은 오디오가 제 순서인지 알 수 없다.
+    램프를 쓰면 샘플이 한 조각이라도 뒤바뀐 순간 diff 에 음수가 찍힌다.
+    """
+
+    name = "ramp-check"
+
+    def __init__(self):
+        super().__init__()
+        self.monotonic = []
+        self.edges = []
+
+    def transcribe(self, samples, sample_rate):
+        # int16 왕복 때문에 이웃 샘플이 같은 값으로 뭉칠 수 있어 부동소수 오차만 허용한다.
+        self.monotonic.append(bool(np.all(np.diff(samples) >= -1e-6)))
+        self.edges.append((float(samples[0]), float(samples[-1])))
+        return super().transcribe(samples, sample_rate)
+
+
 def tone(ms, amp=0.3, freq=220.0):
     t = np.arange(int(SR * ms / 1000)) / SR
     return (amp * np.sin(2 * np.pi * freq * t)).astype(np.float32)
+
+
+def ramp(ms, lo=0.3, hi=0.9):
+    """전 구간 단조 증가하는 신호.
+
+    진폭이 lo 아래로 내려가지 않아 VAD 가 중간에 끊지 않는다. 0 을 지나는 램프를
+    쓰면 가운데가 SPEECH_RMS 아래로 내려가 발화가 둘로 쪼개진다.
+    """
+    n = int(SR * ms / 1000)
+    return (lo + (hi - lo) * np.linspace(0.0, 1.0, n, dtype=np.float32)).astype(np.float32)
 
 
 def silence(ms):
     return np.zeros(int(SR * ms / 1000), dtype=np.float32)
 
 
-def run(tracks, **session_kw):
+def run(tracks, stt=None, **session_kw):
     """실제 봇과 같은 sink 를 쓴다. 하니스는 시계만 주입한다."""
     lines = []
-    stt = FakeStt()
+    stt = stt if stt is not None else FakeStt()
     s = Session(final_stt=stt, on_line=lines.append, workers=2, **session_kw)
     clock = {"now_ms": 0}
     sink = StreamingSink(s, now_ms=lambda: clock["now_ms"])
@@ -95,11 +126,28 @@ def test_rejoin_does_not_rewind_timestamps():
 
 
 def test_out_of_order_packets_are_reordered():
-    """UDP 순서 뒤바뀜. 버리지 않고 RTP 로 정렬한다. 발화가 쪼개지면 안 된다."""
-    tr = ReplayTrack(user_id=1, name="A", samples=tone(3_000), ssrc=11, shuffle_pairs=True)
-    finals, _, _ = run([tr])
+    """UDP 순서 뒤바뀜. 버리지 않고 RTP 로 정렬해서 STT 에 넘긴다.
+
+    인접 패킷 쌍이 뒤바뀐 채로 도착하지만, 재정렬 창을 지나고 나면 백엔드가 받는
+    샘플은 원본 램프 그대로여야 한다. 발화 개수나 길이만 보면 재정렬을 통째로
+    빼도, 과거 패킷을 버려도 통과한다.
+    """
+    stt = RampCheckStt()
+    tr = ReplayTrack(user_id=1, name="A", samples=ramp(3_000), ssrc=11, shuffle_pairs=True)
+    finals, _, _ = run([tr], stt=stt)
+
     assert len(finals) == 1
-    assert 2_500 <= (finals[0].end_ms - finals[0].start_ms) <= 3_200
+    assert stt.calls == 1
+    assert stt.monotonic == [True]
+
+    first, last = stt.edges[0]
+    assert abs(first - 0.3) < 1e-3   # 램프의 처음과 끝이 그대로 들어왔다 (버린 패킷 없음)
+    assert abs(last - 0.9) < 1e-3
+
+    # 첫 패킷이 두 번째 패킷보다 늦게 도착해 시간축이 20ms 에서 시작한다.
+    # 재정렬을 빼면 0, 과거 패킷을 버리면 40 이 된다.
+    assert finals[0].start_ms == 20
+    assert finals[0].end_ms == 3_020
 
 
 def test_packet_loss_does_not_split_utterance():
