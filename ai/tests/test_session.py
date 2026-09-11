@@ -1,4 +1,5 @@
 import threading
+import time
 
 import numpy as np
 
@@ -142,6 +143,34 @@ def test_close_flushes_in_flight_utterance():
     feed_packets(s, "kim", "김환", tone(1_000), 0)
     s.close()
     assert any(ln.final and ln.text == "마지막" for ln in lines)
+
+
+def test_close_waits_for_in_flight_transcription():
+    """close() 는 큐가 빈 순간이 아니라 전사가 끝난 순간까지 기다려야 한다.
+
+    큐는 워커가 항목을 꺼낸 순간 비므로, 그 시점에 멈추면 아직 전사 중인 워커를 두고
+    close() 가 돌아간다. 그러면 회의록을 쓴 뒤에 on_line 이 불려 마지막 발언이 빠진다.
+    가짜 백엔드는 즉시 돌아와 이 차이를 드러내지 못하므로 여기서만 느리게 만든다.
+    """
+
+    class SlowStt:
+        name = "slow"
+
+        def transcribe(self, samples, sample_rate):
+            # 고치기 전 close() 는 join(timeout=1.0) 으로 기다렸다. 그보다 느려야
+            # 전사가 끝나기 전에 돌아가는 것이 드러난다.
+            time.sleep(1.2)
+            return SttResult(text="느림", words=[])
+
+    lines = []
+    s = Session(final_stt=SlowStt(), on_line=lines.append, workers=1)
+    # 무음을 주지 않아 발화가 진행 중인 채로 종료된다
+    feed_packets(s, "kim", "김환", tone(1_000), 0)
+    elapsed = s.close(timeout_s=5.0)
+
+    # close() 가 돌아온 시점에 이미 줄이 나와 있어야 한다. 여기서 기다려 주면 안 된다.
+    assert any(ln.final and ln.text == "느림" for ln in lines)
+    assert elapsed >= 1.2
 
 
 def test_pending_pcm_is_read_only_when_a_partial_is_queued(monkeypatch):

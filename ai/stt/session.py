@@ -227,9 +227,15 @@ class Session:
                 self._final_q.put(u)
 
         deadline = t0 + timeout_s
-        while not self._final_q.empty() and time.monotonic() < deadline:
+        # empty() 는 워커가 항목을 꺼낸 순간 참이 된다. 전사가 끝난 순간이 아니다.
+        # 워커가 finally 에서 task_done() 을 부르므로 unfinished_tasks 는 꺼낸 항목의
+        # 처리까지 끝나야 0 이 된다. 즉시 돌아오는 백엔드에서는 차이가 없지만, 한 번에
+        # 수 초가 걸리는 백엔드에서는 이 차이가 마지막 발언 하나를 통째로 날린다.
+        while self._final_q.unfinished_tasks and time.monotonic() < deadline:
             time.sleep(0.05)
         self._stop.set()
         for t in self._threads:
-            t.join(timeout=1.0)
+            # 고정 1초로 기다리면 그보다 느린 전사가 끝나기 전에 돌아간다. 남은 예산을
+            # 넘기되, 스레드마다 다시 재서 close() 전체가 시한을 넘지 않게 한다.
+            t.join(timeout=max(0.1, deadline - time.monotonic()))
         return time.monotonic() - t0
