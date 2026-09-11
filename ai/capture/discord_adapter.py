@@ -10,8 +10,8 @@ backend/bot/main.py 또는 capture/run_recorder.py 가 add_cog 로 붙인다.
   /selftest 연결·인텐트·권한·DAVE·수신·쓰기를 단계별로 확인한다
   /leave   퇴장
 
-산출물은 recordings/{guild_id}_{ts}/ 아래 transcript.md · transcript.jsonl · 화자별 wav 이고,
-매니페스트는 recordings/session_{ts}.json 이다 (stt/transcribe.py 가 찾는 자리).
+산출물은 recordings/{guild_id}_{ts}/ 아래 transcript.md · transcript.jsonl · latency.jsonl ·
+화자별 wav 이고, 매니페스트는 recordings/session_{ts}.json 이다 (stt/transcribe.py 가 찾는 자리).
 """
 
 from __future__ import annotations
