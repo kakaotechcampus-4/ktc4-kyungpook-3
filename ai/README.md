@@ -24,6 +24,12 @@ recordings/         녹음 산출물 (git 제외)
   `meeting_id` · `guild_id` · `session` · `speakers` 와 회의록 경로(`markdown`, `jsonl`)를 담습니다. BE 는
   여기서 Phase 1/2 함수 호출 → `approval_request` 생성을 이어 붙이면 됩니다. 전사는 이미 끝나 있습니다.
 - 회의록은 `recordings/{guild_id}_{ts}/transcript.md` 와 `transcript.jsonl` 입니다.
+- 같은 디렉토리의 `latency.jsonl` 은 발화별 지연입니다 = `{"seq", "speaker", "start", "end",
+  "queue_s", "transcribe_s", "publish_s"}`. `seq` 로 `transcript.jsonl` 과 이어집니다.
+  `queue_s` 는 확정된 발화가 큐에서 기다린 시간, `transcribe_s` 는 워커가 집어 STT 백엔드가
+  돌아올 때까지, `publish_s` 는 게시기로 넘어가 처음 화면에 뜰 때까지이고 셋은 겹치지 않습니다.
+  못 잰 값은 `0` 이 아니라 `null` 입니다. `transcript.jsonl` 은 BE 와 맞춘 계약이라 필드를
+  늘리지 않고 파일을 나눴습니다.
 - 매니페스트는 `recordings/session_{ts}.json` 한 자리에 평평하게 씁니다 = `{"session", "speakers":
   [{"user_id", "display_name", "file", "duration_sec"}]}`. 화자별 wav 는 회의 디렉토리 안에 있고
   `file` 은 매니페스트 기준 상대 경로(`{guild_id}_{ts}/{user_id}_{ts}.wav`)입니다.
@@ -47,7 +53,7 @@ cp .env.example .env                 # DISCORD_BOT_TOKEN 과 ELICE_API_KEY 채�
 
 ```bash
 python capture/run_recorder.py    # Discord 에서 /record → (말하기) → /stop
-#    recordings/{guild_id}_{ts}/transcript.md · transcript.jsonl · {user_id}_{ts}.wav
+#    recordings/{guild_id}_{ts}/transcript.md · transcript.jsonl · latency.jsonl · {user_id}_{ts}.wav
 #    recordings/session_{ts}.json
 ```
 
@@ -118,9 +124,9 @@ python capture/run_recorder.py
 서버당 회의는 하나입니다. 회의가 도는 중에 다른 방에서 `/record` 나 `/join` 을 치면 거부합니다.
 봇 계정 하나가 길드당 음성 연결을 하나만 가질 수 있어서입니다.
 
-산출물은 `recordings/{guild_id}_{ts}/` 아래 `transcript.md`, `transcript.jsonl`, 화자별 wav 이고
-매니페스트는 `recordings/session_{ts}.json` 입니다. 녹음한 wav 를 오프라인으로 다시 전사할 때는
-디렉토리를 직접 줍니다. 기본 수집이 하위 디렉토리를 보지 않습니다.
+산출물은 `recordings/{guild_id}_{ts}/` 아래 `transcript.md`, `transcript.jsonl`, `latency.jsonl`,
+화자별 wav 이고 매니페스트는 `recordings/session_{ts}.json` 입니다. 녹음한 wav 를 오프라인으로
+다시 전사할 때는 디렉토리를 직접 줍니다. 기본 수집이 하위 디렉토리를 보지 않습니다.
 
 ```bash
 python stt/transcribe.py --audio recordings/<meeting_id>

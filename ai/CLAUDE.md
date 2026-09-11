@@ -58,6 +58,7 @@ python capture/run_recorder.py   # 개발용 봇: Discord 에서 /join /record /
 Discord 음성채널
   → RecordingCog (/record) → StreamingSink → 실시간 전사 → 명령을 친 채널에 줄 게시
   → recordings/{guild_id}_{ts}/transcript.md · transcript.jsonl  (회의록)
+  → recordings/{guild_id}_{ts}/latency.jsonl (발화별 큐·전사·게시 지연. 종료 요약에 중앙값·최대)
   → recordings/{guild_id}_{ts}/{user_id}_{ts}.wav (화자별 트랙 — 트랙 자체가 화자라 별도 diarization 불필요)
   → recordings/session_{ts}.json (매니페스트: user_id ↔ display_name ↔ file ↔ duration)
 ```
