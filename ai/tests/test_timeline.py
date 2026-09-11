@@ -1,5 +1,3 @@
-import numpy as np
-
 from capture.timeline import OPUS_SILENCE, Reorderer, is_noise_packet
 
 
@@ -65,6 +63,14 @@ def test_reorderer_handles_wraparound_without_reordering_everything():
     r.push(0x00000010, "c")   # 랩어라운드
     out = r.push(0x00000100, "d") + r.flush()
     assert out == ["a", "b", "c", "d"]
+
+
+def test_reorderer_breaks_ties_by_arrival_order():
+    """RTP 가 같으면 도착 순서를 따른다."""
+    r = Reorderer(window=8)
+    r.push(1_000, "a")
+    r.push(1_000, "b")
+    assert r.flush() == ["a", "b"]
 
 
 def test_reorderer_keeps_unreadable_packet_in_arrival_position():
