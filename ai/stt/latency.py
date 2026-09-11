@@ -30,33 +30,60 @@ STAGES = ("queue", "transcribe", "publish")
 STAGE_LABELS = {"queue": "큐", "transcribe": "전사", "publish": "게시"}
 
 
-def _finals(lines: list[Line]) -> list[Line]:
-    return [ln for ln in lines if ln.final]
+def _round(value: float | None) -> float | None:
+    return None if value is None else round(value, 3)
 
 
-def _measured(lines: list[Line], stage: str) -> list[float]:
-    return [v for v in (getattr(ln, f"{stage}_s", None) for ln in lines) if v is not None]
+def snapshot(lines: list[Line]) -> list[dict]:
+    """확정된 줄의 계측값을 await 없이 그 자리에서 뜬다. 아래 함수들은 전부 이걸 받는다.
+
+    줄 객체를 그대로 들고 다니면 안 된다. 종료 경로는 트랙 닫기·매니페스트·회의록으로
+    여러 번 await 하고 그동안 게시 태스크가 같은 객체의 publish_s 를 계속 채운다.
+    그 사이에 한 턴이 나가면 파일에는 null 이, 몇 줄 뒤의 요약에는 수치가 찍혀 두
+    출력이 서로 다른 말을 한다.
+
+    순서와 선별은 transcript.jsonl 과 같게 맞춘다 (stt/transcript_writer.py).
+    """
+    rows = [
+        {
+            "seq": ln.seq,
+            "speaker": ln.speaker_id,
+            "start": ln.start_ms / 1000,
+            "end": ln.end_ms / 1000,
+            "queue_s": _round(ln.queue_s),
+            "transcribe_s": _round(ln.transcribe_s),
+            "publish_s": _round(ln.publish_s),
+            "_order": (ln.start_ms, ln.speaker_id),
+        }
+        for ln in lines
+        if ln.final
+    ]
+    rows.sort(key=lambda r: r.pop("_order"))
+    return rows
 
 
-def stage_stats(lines: list[Line], stage: str) -> dict | None:
+def _measured(rows: list[dict], stage: str) -> list[float]:
+    return [r[f"{stage}_s"] for r in rows if r.get(f"{stage}_s") is not None]
+
+
+def stage_stats(rows: list[dict], stage: str) -> dict | None:
     """잰 값이 하나도 없으면 None. 빈 목록의 중앙값을 0 으로 만들지 않는다."""
-    values = _measured(lines, stage)
+    values = _measured(rows, stage)
     if not values:
         return None
     return {"n": len(values), "median_s": statistics.median(values), "max_s": max(values)}
 
 
-def summarize(lines: list[Line]) -> dict:
-    finals = _finals(lines)
-    stats: dict = {"lines": len(finals)}
+def summarize(rows: list[dict]) -> dict:
+    stats: dict = {"lines": len(rows)}
     for stage in STAGES:
-        stats[stage] = stage_stats(finals, stage)
+        stats[stage] = stage_stats(rows, stage)
     return stats
 
 
-def format_summary(lines: list[Line]) -> str:
+def format_summary(rows: list[dict]) -> str:
     """종료 요약에 넣는 한 줄. 다른 줄들과 같은 어투로 맞춘다."""
-    stats = summarize(lines)
+    stats = summarize(rows)
     total = stats["lines"]
     if not total:
         return "지연 미측정 (확정된 발화 없음)"
@@ -73,11 +100,7 @@ def format_summary(lines: list[Line]) -> str:
     return "지연 중앙값/최대 · " + " · ".join(parts)
 
 
-def _round(value: float | None) -> float | None:
-    return None if value is None else round(value, 3)
-
-
-def write_latency(lines: list[Line], out_dir: Path) -> Path:
+def write_latency(rows: list[dict], out_dir: Path) -> Path:
     """transcript.jsonl 옆에 지연만 따로 쓴다. seq 로 이어 붙는다.
 
     transcript.jsonl 안에 넣지 않는다. 그 파일의 레코드는 BE 와 맞춘
@@ -89,17 +112,8 @@ def write_latency(lines: list[Line], out_dir: Path) -> Path:
     나란히 놓고 볼 수 있어야 한다.
     """
     out_dir.mkdir(parents=True, exist_ok=True)
-    finals = sorted(_finals(lines), key=lambda ln: (ln.start_ms, ln.speaker_id))
     path = out_dir / "latency.jsonl"
     with path.open("w", encoding="utf-8") as f:
-        for ln in finals:
-            f.write(json.dumps({
-                "seq": ln.seq,
-                "speaker": ln.speaker_id,
-                "start": ln.start_ms / 1000,
-                "end": ln.end_ms / 1000,
-                "queue_s": _round(ln.queue_s),
-                "transcribe_s": _round(ln.transcribe_s),
-                "publish_s": _round(ln.publish_s),
-            }, ensure_ascii=False) + "\n")
+        for row in rows:
+            f.write(json.dumps(row, ensure_ascii=False) + "\n")
     return path
