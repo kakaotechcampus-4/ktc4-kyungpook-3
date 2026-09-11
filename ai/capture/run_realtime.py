@@ -63,7 +63,7 @@ capture/discord_adapter.py 의 required_intents() 가 요구하는 MESSAGE CONTE
 화자별 wav 이고 매니페스트는 recordings/session_{ts}.json 이다. 녹음한 wav 를 오프라인으로
 다시 전사할 때는 디렉토리를 직접 준다. 기본 수집이 하위 디렉토리를 보지 않는다.
 
-    python stt/transcribe.py --audio recordings/<meeting_id>
+    python -m stt.transcribe --audio recordings/<meeting_id>
 
 막히면 /selftest 출력을 그대로 가져온다.
 """

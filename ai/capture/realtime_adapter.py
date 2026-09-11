@@ -20,7 +20,7 @@ capture/discord_adapter.py 의 RecordingCog 와 나란히 놓고 고르라고 �
 산출물은 recordings/{guild_id}_{ts}/ 아래 transcript.md · transcript.jsonl · latency.jsonl ·
 화자별 wav 이고, 매니페스트는 recordings/session_{ts}.json 이다 (stt/transcribe.py 가 찾는 자리).
 회의 디렉토리를 오프라인으로 다시 전사할 때는 경로를 직접 준다. 기본 수집이 recordings/ 를
-얕게 훑어서 하위 디렉토리를 보지 않는다:  python stt/transcribe.py --audio recordings/<meeting_id>
+얕게 훑어서 하위 디렉토리를 보지 않는다:  python -m stt.transcribe --audio recordings/<meeting_id>
 
 on_session_saved(payload, jsonl_path) 는 회의록 저장이 끝난 뒤 불린다. payload 는 meeting_id ·
 guild_id · session · speakers 와 회의록 경로(markdown, jsonl) 를 담는다. BE 는 여기서 Phase 1/2
@@ -677,8 +677,8 @@ class RealtimeCog(discord.Cog):
             member = guild.get_member(int(e["user_id"])) if guild is not None else None
             if member is not None:
                 e["display_name"] = member.display_name
-        # 매니페스트는 평평하게 recordings/session_{ts}.json 에 쓴다. stt/transcribe.py:60 과
-        # stt/eval/eval.py:108 이 RECORDINGS_DIR 을 얕게 훑기 때문이다. wav 는 회의
+        # 매니페스트는 평평하게 recordings/session_{ts}.json 에 쓴다. stt/transcribe.py:58 과
+        # stt/eval/eval.py:109 가 RECORDINGS_DIR 을 얕게 훑기 때문이다. wav 는 회의
         # 디렉토리 안에 있고 file 필드가 상대 경로를 들고 있다. 화자가 0명이어도 쓴다 —
         # 무음으로 끝난 회의가 실제로 열렸다는 유일한 기록이다.
         manifest_path, _ = await asyncio.to_thread(
