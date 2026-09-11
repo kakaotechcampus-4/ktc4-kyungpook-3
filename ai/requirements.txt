@@ -7,7 +7,7 @@ faster-whisper>=1.0
 jiwer>=3.0            # WER/CER (ai/stt/eval)
 numpy>=1.26           # 오디오 배열 (capture/audio.py)
 soundfile>=0.12       # WAV 파일 I/O (capture/audio.py)
-requests>=2.31        # HTTP API (stt/elice.py)
+requests>=2.31        # HTTP API (stt/elice.py 에서 쓸 예정, 아직 없음)
 
 # ── Phase 1~2: LLM (Google Gemini 무료 티어) ─────────────────────────────────
 google-genai>=1.0
