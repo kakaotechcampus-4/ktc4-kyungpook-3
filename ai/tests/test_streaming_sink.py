@@ -199,6 +199,93 @@ def test_level_report_verdict_flips_with_peak_rms():
     assert sink.level_report()["verdict"] == "너무 낮음"
 
 
+def test_packet_gaps_are_measured_per_speaker():
+    """말하다 쉬면 도착 시각이 벌어진다. 그 벌어짐을 화자별로 센다."""
+    session = FeedCountingSession(final_stt=FakeStt(), on_line=lambda _: None, workers=1)
+    clock = {"now_ms": 0}
+    sink = StreamingSink(session, now_ms=lambda: clock["now_ms"])
+    pkt = _to_discord_bytes(tone(PACKET_MS))
+    for t in (0, 20, 40, 300, 320, 340):       # 40 → 300 사이가 260ms
+        clock["now_ms"] = t
+        sink.write(pkt, FakeMember(1, "a"))
+    session.close()
+    r = sink.level_report()
+    assert r["gaps"] == 1
+    assert r["max_gap_ms"] == 260
+    assert r["median_gap_ms"] == 260
+    assert r["quiet_packets"] == 0
+
+
+def test_first_packet_from_a_speaker_is_not_a_gap():
+    """직전 패킷이 없는 첫 패킷은 공백이 아니다. 0 에서 재면 5초짜리 공백이 생긴다."""
+    session = FeedCountingSession(final_stt=FakeStt(), on_line=lambda _: None, workers=1)
+    sink = StreamingSink(session, now_ms=lambda: 5_000)
+    sink.write(_to_discord_bytes(tone(PACKET_MS)), FakeMember(1, "a"))
+    session.close()
+    r = sink.level_report()
+    assert r["packets"] == 1
+    assert r["gaps"] == 0
+    assert r["max_gap_ms"] == 0
+    assert r["median_gap_ms"] == 0
+
+
+def test_two_speakers_do_not_share_a_gap_clock():
+    """화자 둘이 번갈아 오면 전체 도착 시각은 촘촘한데 각자는 끊겨 있다.
+
+    시각을 공용으로 하나만 두면 간격이 50ms 라 공백이 0건이 된다. 화자별로 재야
+    각자의 100ms 가 보인다.
+    """
+    session = FeedCountingSession(final_stt=FakeStt(), on_line=lambda _: None, workers=1)
+    clock = {"now_ms": 0}
+    sink = StreamingSink(session, now_ms=lambda: clock["now_ms"])
+    pkt = _to_discord_bytes(tone(PACKET_MS))
+    for i, t in enumerate((0, 50, 100, 150, 200, 250)):
+        clock["now_ms"] = t
+        sink.write(pkt, FakeMember(1 + i % 2, "s"))
+    session.close()
+    r = sink.level_report()
+    assert r["gaps"] == 4
+    assert r["max_gap_ms"] == 100
+
+
+def test_median_gap_is_the_middle_not_the_largest():
+    """최대값 하나는 회의 시작 전 대기 같은 것에 쉽게 오염된다. 가운데가 숨 간격을 말한다."""
+    session = FeedCountingSession(final_stt=FakeStt(), on_line=lambda _: None, workers=1)
+    clock = {"now_ms": 0}
+    sink = StreamingSink(session, now_ms=lambda: clock["now_ms"])
+    pkt = _to_discord_bytes(tone(PACKET_MS))
+    for t in (0, 100, 300, 800):               # 공백 100, 200, 500
+        clock["now_ms"] = t
+        sink.write(pkt, FakeMember(1, "a"))
+    session.close()
+    r = sink.level_report()
+    assert r["gaps"] == 3
+    assert r["max_gap_ms"] == 500
+    assert r["median_gap_ms"] == 200
+
+
+def test_quiet_packets_are_counted_separately_from_noise():
+    """디코딩까지 된 진짜 오디오인데 조용한 것. 침묵 프레임과는 다른 숫자여야 한다."""
+    from stt.vad import SPEECH_RMS
+
+    session = FeedCountingSession(final_stt=FakeStt(), on_line=lambda _: None, workers=1)
+    sink = StreamingSink(session)
+    m = FakeMember(1, "a")
+    sink.write(_to_discord_bytes(tone(PACKET_MS)), m)                        # 또렷
+    sink.write(_to_discord_bytes(tone(PACKET_MS, amp=SPEECH_RMS * 0.4)), m)  # 조용
+    r = sink.level_report()
+    assert r["quiet_packets"] == 1
+    assert r["packets"] == 2
+    assert r["noise_packets"] == 0
+
+    sink.write(DECODED_SILENCE_FRAME, m)
+    session.close()
+    r = sink.level_report()
+    assert r["noise_packets"] == 1
+    assert r["quiet_packets"] == 1
+    assert r["packets"] == 2
+
+
 def test_sink_is_a_pycord_sink():
     sink = StreamingSink(session=None)
     assert isinstance(sink, discord.sinks.Sink)

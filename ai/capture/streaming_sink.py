@@ -18,6 +18,7 @@ discord.sinks.Sink 를 직접 상속한다. py-cord 가 받는 바로 그 객체
 
 from __future__ import annotations
 
+import statistics
 import threading
 import time
 
@@ -25,6 +26,8 @@ import discord
 
 from capture.audio import pcm_to_mono16k
 from capture.timeline import Reorderer, is_noise_packet
+
+GAP_MS = 60  # 20ms 패킷 세 개. 이보다 벌어지면 화자 하나가 끊긴 것으로 센다
 
 
 class StreamingSink(discord.sinks.Sink):
@@ -44,12 +47,18 @@ class StreamingSink(discord.sinks.Sink):
         self.on_samples = on_samples or (lambda uid, samples, offset_ms: None)
         self.packets = 0
         self.noise_packets = 0
+        self.quiet_packets = 0
         self.write_errors = 0
         self.unattributed = 0
         self.feed_errors = 0
         self.peak_rms = 0.0
         self._reorder: dict[int, Reorderer] = {}
         self._names: dict[int, str] = {}
+        self._last_arrival: dict[int, int] = {}
+        self._gaps: list[int] = []
+        # 모듈 최상단에서 읽으면 shared.config 가 .env 를 넣기 전이라 MM_SPEECH_RMS 가 무시된다.
+        from stt.vad import SPEECH_RMS
+        self._speech_rms = SPEECH_RMS
         self._lock = threading.Lock()
         self.finished = False
 
@@ -94,6 +103,12 @@ class StreamingSink(discord.sinks.Sink):
             self.packets += 1
             rms = float((samples * samples).mean() ** 0.5)
             self.peak_rms = max(self.peak_rms, rms)
+            if rms < self._speech_rms:
+                self.quiet_packets += 1
+            previous = self._last_arrival.get(uid)
+            self._last_arrival[uid] = arrival_ms
+            if previous is not None and arrival_ms - previous > GAP_MS:
+                self._gaps.append(arrival_ms - previous)
             self._names[uid] = name
             ro = self._reorder.get(uid)
             if ro is None:
@@ -154,9 +169,15 @@ class StreamingSink(discord.sinks.Sink):
         from stt.vad import SPEECH_RMS
 
         verdict = "정상" if self.peak_rms > SPEECH_RMS * 1.5 else "너무 낮음"
+        with self._lock:
+            gaps = list(self._gaps)
         return {
             "packets": self.packets,
             "noise_packets": self.noise_packets,
+            "quiet_packets": self.quiet_packets,
+            "gaps": len(gaps),
+            "max_gap_ms": max(gaps) if gaps else 0,
+            "median_gap_ms": round(statistics.median(gaps)) if gaps else 0,
             "write_errors": self.write_errors,
             "unattributed": self.unattributed,
             "feed_errors": self.feed_errors,
