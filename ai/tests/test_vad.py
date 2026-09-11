@@ -116,5 +116,9 @@ def test_seq_increases():
 
 def test_pending_ms_reports_in_flight_speech():
     v = vad()
-    feed_packets(v, tone(2_000), 0)
+    # 진행 중이던 발화가 없을 때 pending_start_ms 는 0
+    assert v.pending_start_ms == 0
+    feed_packets(v, tone(2_000), 5_000)
     assert v.pending_ms >= 1_500
+    # 진행 중일 때는 발화 시작 시각을 보고한다
+    assert v.pending_start_ms == pytest.approx(5_000, abs=2 * FRAME_MS)

@@ -74,7 +74,7 @@ class StreamingVAD:
 
     @property
     def pending_start_ms(self) -> int:
-        return self._seg_start_ms
+        return self._seg_start_ms if self._speaking else 0
 
     def feed(self, samples: np.ndarray, offset_ms: int | None = None) -> list[Utterance]:
         """offset_ms 는 이 조각 첫 샘플의 회의 경과 시각. 생략하면 이어지는 것으로 본다."""
@@ -87,7 +87,8 @@ class StreamingVAD:
             gap_ms = offset_ms - self._buf_end_ms
             if gap_ms >= self.frame_ms:
                 # 패킷이 끊긴 구간은 무음이다. 시간축을 옮기기 **전에** 진행 중이던
-                # 발화를 닫는다. 순서가 뒤집히면 end_ms 가 공백을 통째로 삼킨다.
+                # 발화를 닫는다. 진행 중이던 발화가 이전 시각축에 속하므로 축 이동 전에
+                # 닫아야 한다. end_ms 자체는 _last_speech_ms 에서 오므로 순서의 영향을 받지 않는다.
                 done = self._on_gap(gap_ms)
                 if done is not None:
                     out.append(done)
