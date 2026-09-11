@@ -6,8 +6,8 @@ import discord
 import numpy as np
 import pytest
 
-import capture.discord_adapter as adapter
-from capture.discord_adapter import RecordingCog, SafeVoiceClient, _TrackPool, required_intents
+import capture.realtime_adapter as adapter
+from capture.realtime_adapter import RealtimeCog, SafeVoiceClient, _TrackPool, required_intents
 from stt.backend import SttResult
 from stt.speech_gate import SpeechGate
 from tests.replay import ReplayTrack, replay
@@ -301,9 +301,9 @@ async def _start_one(tmp_path, monkeypatch, sessions_made=None, on_session_saved
     guild.voice_client = vc
     text = _FakeTextChannel()
     bot = _FakeBot(guild)
-    cog = RecordingCog(bot, recordings_dir=tmp_path, on_session_saved=on_session_saved)
+    cog = RealtimeCog(bot, recordings_dir=tmp_path, on_session_saved=on_session_saved)
     ctx = _FakeCtx(guild, room, text)
-    await RecordingCog.record.callback(cog, ctx)
+    await RealtimeCog.record.callback(cog, ctx)
     return cog, ctx, cog._meetings[GUILD_ID], text, vc
 
 
@@ -383,8 +383,8 @@ async def test_two_concurrent_records_start_one_meeting(tmp_path, monkeypatch):
     ctx_a = _FakeCtx(ctx1.guild, ctx1.author.voice.channel, _FakeTextChannel())
     ctx_b = _FakeCtx(ctx1.guild, ctx1.author.voice.channel, _FakeTextChannel())
     await asyncio.gather(
-        RecordingCog.record.callback(cog, ctx_a),
-        RecordingCog.record.callback(cog, ctx_b),
+        RealtimeCog.record.callback(cog, ctx_a),
+        RealtimeCog.record.callback(cog, ctx_b),
     )
 
     assert len(made) == 1                      # 세션이 한 벌만 만들어졌다
@@ -426,7 +426,7 @@ async def test_finish_does_not_disconnect_a_meeting_that_started_while_it_waited
 
     ctx2 = _FakeCtx(ctx1.guild, room, _FakeTextChannel())
     ctx2.voice_client = vc                     # 봇은 아직 방에 있다
-    await RecordingCog.record.callback(cog, ctx2)
+    await RealtimeCog.record.callback(cog, ctx2)
     new_meeting = cog._meetings[GUILD_ID]
 
     gate.set()
@@ -600,11 +600,11 @@ async def test_join_refuses_to_move_while_an_untracked_recording_is_live(tmp_pat
     vc.started.append(("sink", None, ()))      # 표에 없는 녹음이 돌고 있다
     vc_box.append(vc)
     guild.voice_client = vc
-    cog = RecordingCog(_FakeBot(guild), recordings_dir=tmp_path)
+    cog = RealtimeCog(_FakeBot(guild), recordings_dir=tmp_path)
     ctx = _FakeCtx(guild, room, _FakeTextChannel())
     ctx.voice_client = vc
 
-    await RecordingCog.join.callback(cog, ctx)
+    await RealtimeCog.join.callback(cog, ctx)
 
     assert vc.moved == []
     assert any("녹음" in r for r in ctx.responses)
@@ -633,7 +633,7 @@ def _bare_cog(tmp_path, monkeypatch, command):
     vc = _FakeVoiceClient(room)
     vc_box.append(vc)
     guild.voice_client = vc
-    cog = RecordingCog(_FakeBot(guild), recordings_dir=tmp_path)
+    cog = RealtimeCog(_FakeBot(guild), recordings_dir=tmp_path)
     return cog, _FakeCtx(guild, room, _FakeTextChannel(), command=command), vc, room
 
 
@@ -645,14 +645,14 @@ async def test_a_dead_interaction_ends_the_command_without_raising(tmp_path, mon
     콜백을 직접 부른다 — 핸들러를 태우면 가드를 지워도 같은 로그가 나와 이 단언이
     아무것도 잡지 못한다.
     """
-    cog, ctx, vc, room = _bare_cog(tmp_path, monkeypatch, RecordingCog.join)
+    cog, ctx, vc, room = _bare_cog(tmp_path, monkeypatch, RealtimeCog.join)
 
     async def _expired():
         raise _unknown_interaction()
 
     ctx.defer = _expired
 
-    await RecordingCog.join.callback(cog, ctx)
+    await RealtimeCog.join.callback(cog, ctx)
 
     assert ctx.responses == []                 # 죽은 토큰으로는 보낼 수 있는 것이 없다
     assert room.connects == 0                  # 본문이 아예 안 돌았다
@@ -694,14 +694,14 @@ async def test_a_failure_after_defer_is_told_to_the_user_in_discord(tmp_path, mo
     (bot.py:1403-1412). 사용자 화면에는 "응답하지 않았습니다" 만 남고 원인은 터미널을
     보고 있던 사람만 안다. 이 봇이 없애려는 실패가 정확히 그 모양이다.
     """
-    cog, ctx, _vc, room = _bare_cog(tmp_path, monkeypatch, RecordingCog.join)
+    cog, ctx, _vc, room = _bare_cog(tmp_path, monkeypatch, RealtimeCog.join)
 
     def _boom(member):
         raise RuntimeError("권한 조회 실패")
 
     room.permissions_for = _boom
 
-    await _invoke(cog, RecordingCog.join, ctx)
+    await _invoke(cog, RealtimeCog.join, ctx)
 
     assert len(ctx.responses) == 1
     told = ctx.responses[0]
@@ -719,7 +719,7 @@ async def test_the_handler_never_answers_an_interaction_that_is_already_gone(
     여기서는 명령 본문의 respond 가 10062 를 내도록 두고 핸들러가 또 보내는지만 본다
     (실제 디스코드가 이 자리에서 정확히 어떤 코드를 주는지는 확인하지 않았다).
     """
-    cog, ctx, _vc, _room = _bare_cog(tmp_path, monkeypatch, RecordingCog.join)
+    cog, ctx, _vc, _room = _bare_cog(tmp_path, monkeypatch, RealtimeCog.join)
     ctx.author.voice = None                    # 첫 respond 까지만 가는 경로
     attempts: list[str] = []
 
@@ -729,7 +729,7 @@ async def test_the_handler_never_answers_an_interaction_that_is_already_gone(
 
     ctx.respond = _gone
 
-    await _invoke(cog, RecordingCog.join, ctx)
+    await _invoke(cog, RealtimeCog.join, ctx)
 
     # 명령 본문이 한 번 보내려다 10062 를 받았다. 핸들러가 또 보내면 두 번이 된다.
     assert len(attempts) == 1

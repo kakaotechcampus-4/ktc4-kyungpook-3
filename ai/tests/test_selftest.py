@@ -1309,10 +1309,10 @@ async def test_selftest_command_is_registered_on_the_cog():
     # discord.Bot() 은 만들 때 이벤트 루프를 찾는다. 동기 테스트에는 루프가 없다.
     import discord
 
-    import capture.discord_adapter as adapter
+    import capture.realtime_adapter as adapter
 
     bot = discord.Bot(intents=adapter.required_intents())
-    bot.add_cog(adapter.RecordingCog(bot))
+    bot.add_cog(adapter.RealtimeCog(bot))
     names = sorted(c.name for c in bot.pending_application_commands)
     assert names == ["join", "leave", "record", "selftest", "stop"]
 
@@ -1321,9 +1321,9 @@ def test_selftest_command_defers_before_the_probe():
     """3초 프로브가 인터랙션 시한 3초를 넘긴다. defer 가 없으면 응답이 통째로 NotFound 다."""
     import inspect
 
-    import capture.discord_adapter as adapter
+    import capture.realtime_adapter as adapter
 
-    src = inspect.getsource(adapter.RecordingCog.selftest.callback)
+    src = inspect.getsource(adapter.RealtimeCog.selftest.callback)
     assert "_defer(ctx)" in src               # _defer 가 ctx.defer() 를 감싼다
     assert src.index("_defer(ctx)") < src.index("st.run(")
 
@@ -1348,7 +1348,7 @@ class _FakeCtx:
 
 async def test_selftest_command_passes_the_stt_flag_through(monkeypatch):
     """옵션이 본문까지 안 내려가면 유료 호출 게이트 전체가 무의미하다."""
-    import capture.discord_adapter as adapter
+    import capture.realtime_adapter as adapter
 
     seen = []
 
@@ -1358,18 +1358,18 @@ async def test_selftest_command_passes_the_stt_flag_through(monkeypatch):
 
     monkeypatch.setattr(selftest, "run", _fake_run)
     ctx = _FakeCtx()
-    await adapter.RecordingCog.selftest.callback(object(), ctx, stt=True)
+    await adapter.RealtimeCog.selftest.callback(object(), ctx, stt=True)
     assert seen == [True]
     assert ctx.deferred == 1
     assert ctx.followup.sent == ["리포트"]
 
-    await adapter.RecordingCog.selftest.callback(object(), _FakeCtx())
+    await adapter.RealtimeCog.selftest.callback(object(), _FakeCtx())
     assert seen == [True, False]
 
 
 async def test_selftest_command_passes_the_seconds_option_through(monkeypatch):
     """옵션이 본문까지 안 내려가면 사용자가 고른 길이가 조용히 버려진다."""
-    import capture.discord_adapter as adapter
+    import capture.realtime_adapter as adapter
 
     seen = []
 
@@ -1378,8 +1378,8 @@ async def test_selftest_command_passes_the_seconds_option_through(monkeypatch):
         return "리포트"
 
     monkeypatch.setattr(selftest, "run", _fake_run)
-    await adapter.RecordingCog.selftest.callback(object(), _FakeCtx(), seconds=12)
-    await adapter.RecordingCog.selftest.callback(object(), _FakeCtx())
+    await adapter.RealtimeCog.selftest.callback(object(), _FakeCtx(), seconds=12)
+    await adapter.RealtimeCog.selftest.callback(object(), _FakeCtx())
     assert seen == [12, None]      # 안 주면 run() 이 PROBE_SECONDS 를 쓴다
 
 
@@ -1390,10 +1390,10 @@ async def test_seconds_option_declares_its_range_to_discord():
     """
     import discord
 
-    import capture.discord_adapter as adapter
+    import capture.realtime_adapter as adapter
 
     bot = discord.Bot(intents=adapter.required_intents())
-    bot.add_cog(adapter.RecordingCog(bot))
+    bot.add_cog(adapter.RealtimeCog(bot))
     cmd = next(c for c in bot.pending_application_commands if c.name == "selftest")
 
     opt = next(o for o in cmd.options if o.name == "seconds")
