@@ -60,6 +60,24 @@ class Track:
     raw: bytes
 
 
+def write_manifest(entries: list[dict], recordings_dir: Path, *, ts: int,
+                    guild: str | None, channel: str | None,
+                    library_version: str | None) -> tuple[Path, dict]:
+    """매니페스트를 저장하고 (매니페스트 경로, 매니페스트 dict) 를 반환합니다."""
+    recordings_dir.mkdir(parents=True, exist_ok=True)
+    manifest = {
+        "session": str(ts),
+        "guild": guild,
+        "channel": channel,
+        "recorded_at": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ts)),
+        "library_version": library_version,
+        "speakers": entries,
+    }
+    manifest_path = recordings_dir / f"session_{ts}.json"
+    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+    return manifest_path, manifest
+
+
 def save_session(tracks: list[Track], recordings_dir: Path, *, ts: int | None = None,
                  guild: str | None = None, channel: str | None = None,
                  library_version: str | None = None) -> tuple[Path, dict]:
@@ -83,14 +101,5 @@ def save_session(tracks: list[Track], recordings_dir: Path, *, ts: int | None = 
             "duration_sec": round(wav_duration_sec(path), 2),
         })
 
-    manifest = {
-        "session": str(ts),
-        "guild": guild,
-        "channel": channel,
-        "recorded_at": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ts)),
-        "library_version": library_version,
-        "speakers": entries,
-    }
-    manifest_path = recordings_dir / f"session_{ts}.json"
-    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
-    return manifest_path, manifest
+    return write_manifest(entries, recordings_dir, ts=ts, guild=guild, channel=channel,
+                           library_version=library_version)
