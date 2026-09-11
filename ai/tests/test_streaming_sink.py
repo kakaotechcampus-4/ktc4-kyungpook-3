@@ -145,10 +145,37 @@ def test_level_report_mentions_threshold():
     session = Session(final_stt=FakeStt(), on_line=lambda _: None, workers=1)
     sink = StreamingSink(session)
     session.close()
-    assert "임계" in sink.level_report()
+    report = sink.level_report()
+    assert report["speech_rms"] > 0
+    assert report["verdict"] in ("정상", "너무 낮음")
 
 
 def test_sink_is_a_pycord_sink():
     sink = StreamingSink(session=None)
     assert isinstance(sink, discord.sinks.Sink)
     assert sink.vc is None and sink.audio_data == {} and sink.finished is False
+
+
+def test_write_exception_is_counted_not_raised():
+    class Boom:
+        def feed(self, *a, **k):
+            raise RuntimeError("boom")
+
+        def flush_speaker(self, *a, **k):
+            pass
+
+    sink = StreamingSink(Boom())
+    m = FakeMember(1, "a")
+    # window 안에 있는 동안은 release 가 없어 feed() 가 안 불린다. window + 2 만큼
+    # 써야 release 가 두 번 일어나 Boom.feed 가 실제로 두 번 예외를 던진다.
+    for _ in range(REORDER_WINDOW + 2):
+        sink.write(_to_discord_bytes(tone(PACKET_MS)), m)
+    assert sink.write_errors == 2
+    assert sink.level_report()["write_errors"] == 2
+
+
+def test_unattributed_packet_is_counted():
+    sink = StreamingSink(session=None)
+    sink.write(_to_discord_bytes(tone(PACKET_MS)), None)
+    assert sink.unattributed == 1
+    assert sink.packets == 0

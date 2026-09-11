@@ -32,6 +32,8 @@ class StreamingSink(discord.sinks.Sink):
         self.now_ms = now_ms or (lambda: int((time.monotonic() - t0) * 1000))
         self.packets = 0
         self.noise_packets = 0
+        self.write_errors = 0
+        self.unattributed = 0
         self.peak_rms = 0.0
         self._reorder: dict[int, Reorderer] = {}
         self._names: dict[int, str] = {}
@@ -43,9 +45,23 @@ class StreamingSink(discord.sinks.Sink):
         return False
 
     def write(self, data, user) -> None:
-        pcm = getattr(data, "pcm", data)
+        try:
+            self._write(data, user)
+        except Exception as exc:
+            with self._lock:
+                self.write_errors += 1
+                first = self.write_errors == 1
+            if first:
+                print(f"[sink] write 예외: {type(exc).__name__}: {exc}")
+
+    def _write(self, data, user) -> None:
         uid = getattr(user, "id", user)
-        if uid is None or not pcm:
+        if uid is None:
+            with self._lock:
+                self.unattributed += 1
+            return
+        pcm = getattr(data, "pcm", data)
+        if not pcm:
             return
         raw = bytes(pcm)
         if is_noise_packet(raw):
@@ -95,11 +111,16 @@ class StreamingSink(discord.sinks.Sink):
         self.drain()
         self.finished = True
 
-    def level_report(self) -> str:
+    def level_report(self) -> dict:
         from stt.vad import SPEECH_RMS
 
         verdict = "정상" if self.peak_rms > SPEECH_RMS * 1.5 else "너무 낮음"
-        return (
-            f"패킷 {self.packets}건 · 잡음 {self.noise_packets}건 · "
-            f"최대 RMS {self.peak_rms:.4f} / 임계 {SPEECH_RMS:.4f} → {verdict}"
-        )
+        return {
+            "packets": self.packets,
+            "noise_packets": self.noise_packets,
+            "write_errors": self.write_errors,
+            "unattributed": self.unattributed,
+            "peak_rms": self.peak_rms,
+            "speech_rms": SPEECH_RMS,
+            "verdict": verdict,
+        }
