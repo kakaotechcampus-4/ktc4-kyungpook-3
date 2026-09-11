@@ -143,7 +143,8 @@ class _FakeReader:
     (voice/client.py:771-773, 788-790). 그래서 이 대역도 녹음 중에만 존재한다.
     """
 
-    def __init__(self):
+    def __init__(self, sink=None):
+        self.sink = sink
         self.rekeys: list[bytes] = []
 
     def update_secret_key(self, secret_key):
@@ -167,7 +168,7 @@ class _FakeVoiceClient:
 
     def start_recording(self, sink, callback, *args):
         self.started.append((sink, callback, args))
-        self._reader = _FakeReader()
+        self._reader = _FakeReader(sink)
 
     def stop_recording(self):
         self.started.clear()
@@ -823,3 +824,153 @@ async def test_stop_summary_says_unmeasured_when_nobody_spoke(tmp_path, monkeypa
     latency = [x for x in text.summaries()[0].splitlines() if x.startswith("지연")]
     assert latency == ["지연 미측정 (확정된 발화 없음)"]
     assert (meeting.out_dir / "latency.jsonl").read_text(encoding="utf-8") == ""
+
+
+# ------------------------------------------------ 두 녹음기가 한 연결을 두고 만날 때
+# 봇 계정은 길드마다 음성 연결이 하나이고 그 연결의 리더도 하나다
+# (voice/client.py:759-773). 동료의 /record 가 잡고 있는 연결에 우리가 start_recording 을
+# 걸면 py-cord 가 ClientException("Already recording audio") 를 낸다 (client.py:759-760).
+
+
+def _foreign_vc(room):
+    """동료의 WaveSink 가 잡고 있는 연결."""
+    vc = _FakeVoiceClient(room)
+    vc.start_recording(discord.sinks.WaveSink(), lambda *a: None)
+    return vc
+
+
+def _ours_vc(room):
+    """우리 StreamingSink 가 잡고 있는데 표에는 없는 연결."""
+    from capture.streaming_sink import StreamingSink
+
+    vc = _FakeVoiceClient(room)
+    vc.start_recording(StreamingSink(_NullSessionStub()), lambda *a: None)
+    return vc
+
+
+class _NullSessionStub:
+    def feed(self, speaker_id, speaker_name, samples, offset_ms):
+        pass
+
+    def flush_speaker(self, speaker_id):
+        pass
+
+
+def test_holds_other_recorder_is_false_on_an_idle_connection():
+    assert adapter.holds_other_recorder(None) is False
+    assert adapter.holds_other_recorder(_FakeVoiceClient(object())) is False
+
+
+def test_holds_other_recorder_tells_our_sink_from_the_other_one():
+    assert adapter.holds_other_recorder(_foreign_vc(object())) is True
+    assert adapter.holds_other_recorder(_ours_vc(object())) is False
+
+
+def test_holds_other_recorder_counts_an_unreadable_sink_as_the_other_one():
+    """sink 를 못 읽으면 남의 것으로 센다. 남의 녹음을 우리가 멈추는 쪽이 더 나쁘다."""
+    vc = _FakeVoiceClient(object())
+    vc.started.append(("sink", None, ()))      # 리더 없이 녹음 중으로만 보이는 상태
+    assert adapter.holds_other_recorder(vc) is True
+
+
+def _cog_with(tmp_path, monkeypatch, vc):
+    monkeypatch.setattr(adapter, "EliceStt", _FakeStt)
+    guild = _FakeGuild({})
+    vc_box = [vc]
+    room = _FakeVoiceChannel(vc_box)
+    guild.voice_client = vc
+    cog = RealtimeCog(_FakeBot(guild), recordings_dir=tmp_path)
+    ctx = _FakeCtx(guild, room, _FakeTextChannel())
+    ctx.voice_client = vc
+    return cog, ctx, room
+
+
+async def test_live_refuses_while_the_other_recorder_holds_the_connection(tmp_path, monkeypatch):
+    room_box = []
+    vc = _foreign_vc(_FakeVoiceChannel(room_box))
+    cog, ctx, _room = _cog_with(tmp_path, monkeypatch, vc)
+    before = list(vc.started)
+
+    await RealtimeCog.live.callback(cog, ctx)
+
+    assert vc.started == before                # 우리 sink 를 걸지 않았다
+    assert cog._meetings == {}
+    said = " ".join(ctx.responses)
+    assert "우리 것이 아닌 녹음" in said        # 무엇이 돌고 있는지
+    assert "/record" in said and "/stop" in said   # 누구 것이고 무엇으로 끝내는지
+
+
+async def test_live_join_refuses_while_the_other_recorder_holds_the_connection(
+    tmp_path, monkeypatch
+):
+    room_box = []
+    vc = _foreign_vc(_FakeVoiceChannel(room_box))
+    cog, ctx, _room = _cog_with(tmp_path, monkeypatch, vc)
+
+    await RealtimeCog.live_join.callback(cog, ctx)
+
+    assert vc.moved == []
+    said = " ".join(ctx.responses)
+    assert "우리 것이 아닌 녹음" in said
+    assert "/stop" in said
+
+
+async def test_live_stop_does_not_stop_the_other_recorder(tmp_path, monkeypatch):
+    """표에 회의가 없다고 남의 리더를 세우면 동료의 녹음이 우리 명령으로 끝난다."""
+    room_box = []
+    vc = _foreign_vc(_FakeVoiceChannel(room_box))
+    cog, ctx, _room = _cog_with(tmp_path, monkeypatch, vc)
+
+    await RealtimeCog.live_stop.callback(cog, ctx)
+
+    assert vc.is_recording() is True            # 남의 녹음은 그대로 돈다
+    said = " ".join(ctx.responses)
+    assert "우리 것이 아닌 녹음" in said
+    assert "/stop" in said
+
+
+async def test_live_stop_still_clears_our_own_untracked_recording(tmp_path, monkeypatch):
+    """우리 sink 인데 표에 없는 상태는 여전히 우리가 푼다. 안 그러면 봇 재시작 말고 길이 없다."""
+    room_box = []
+    vc = _ours_vc(_FakeVoiceChannel(room_box))
+    cog, ctx, _room = _cog_with(tmp_path, monkeypatch, vc)
+
+    await RealtimeCog.live_stop.callback(cog, ctx)
+
+    assert vc.is_recording() is False
+    assert any("표에 없는 녹음을 정지" in r for r in ctx.responses)
+
+
+async def test_live_starts_when_nothing_else_holds_the_connection(tmp_path, monkeypatch):
+    """가드가 빈 연결까지 막으면 우리 쪽이 아예 안 돈다."""
+    cog, _ctx, meeting, _text, vc = await _start_one(tmp_path, monkeypatch)
+
+    assert adapter.holds_other_recorder(vc) is False
+    assert meeting.sink is vc.started[0][0]
+
+    await cog._finish_meeting(GUILD_ID)
+
+
+# ------------------------------------------------------------------- 명령 이름
+async def test_realtime_commands_are_registered_under_the_new_names():
+    """이름이 겹치면 나중에 붙는 Cog 의 명령이 앞의 것을 덮는다."""
+    bot = discord.Bot(intents=required_intents())
+    bot.add_cog(RealtimeCog(bot))
+
+    names = sorted(c.name for c in bot.pending_application_commands)
+    assert names == ["live", "live-join", "live-stop", "selftest"]
+    assert not ({"join", "leave", "record", "stop"} & set(names))
+
+
+async def test_both_cogs_fit_on_one_bot():
+    """Bot.add_cog 는 클래스 이름을 키로 쓰고 (cog.py:681-687) 겹치면 ClientException 이다."""
+    from capture.discord_adapter import RecordingCog
+
+    bot = discord.Bot(intents=required_intents())
+    bot.add_cog(RecordingCog(bot))
+    bot.add_cog(RealtimeCog(bot))
+
+    names = sorted(c.name for c in bot.pending_application_commands)
+    assert names == ["join", "leave", "live", "live-join", "live-stop", "record",
+                     "selftest", "stop"]
+    assert len(names) == len(set(names))
