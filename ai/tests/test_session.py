@@ -49,20 +49,33 @@ def test_one_utterance_makes_one_final_line():
 def test_close_returns_elapsed_within_budget():
     """종료 후 회의록까지 10초 목표. 발화 단위로 이미 전사가 끝나 있어
     종료 시점에 남는 것은 진행 중이던 발화 하나뿐이다."""
-    s = Session(final_stt=FakeStt(), on_line=lambda _: None, workers=1)
+    lines = []
+    s = Session(final_stt=FakeStt("끝"), on_line=lines.append, workers=1)
     feed_packets(s, "kim", "김환", tone(1_000), 0)
     elapsed = s.close(timeout_s=10.0)
     assert elapsed < 10.0
+    # 시한 안에 돌아온 것만으로는 부족하다. 돌아온 시점에 줄이 나와 있어야 한다.
+    assert any(ln.final and ln.text == "끝" for ln in lines)
 
 
 def test_leaving_speaker_keeps_last_words():
-    """퇴장하면 그 화자만 flush 한다. 마지막 발언이 사라지면 안 된다."""
+    """퇴장하면 그 화자만 flush 한다. 마지막 발언이 사라지면 안 된다.
+
+    close() 도 flush 하므로 close() 뒤에 보면 flush_speaker 가 아무 일도 안 해도
+    통과한다. close() 전에 줄이 나왔는지를 본다.
+    """
     lines = []
     s = Session(final_stt=FakeStt("마지막"), on_line=lines.append, workers=1)
     feed_packets(s, "kim", "김환", tone(1_000), 0)
     s.flush_speaker("kim")
-    s.close()
+
+    deadline = time.monotonic() + 2.0
+    while time.monotonic() < deadline:
+        if any(ln.final and ln.speaker_id == "kim" for ln in lines):
+            break
+        time.sleep(0.05)
     assert any(ln.final and ln.speaker_id == "kim" for ln in lines)
+    s.close()
 
 
 def test_api_called_once_per_utterance():

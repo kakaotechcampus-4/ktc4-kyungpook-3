@@ -65,7 +65,7 @@ class StreamingVAD:
 
     @property
     def pending_ms(self) -> int:
-        """진행 중인 발화의 길이. 부분 전사를 언제 돌릴지 판단하는 데 쓴다."""
+        """아직 확정되지 않은 발화의 현재 길이. 진단용으로 읽는다."""
         return self._last_speech_ms - self._seg_start_ms if self._speaking else 0
 
     @property
