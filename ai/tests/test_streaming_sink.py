@@ -127,6 +127,21 @@ def test_cleanup_drains_pending_packets():
     assert sink.finished is True
 
 
+def test_on_samples_sees_everything_session_feed_sees():
+    fed, hooked = [], []
+
+    class Rec:
+        def feed(self, sid, name, samples, offset_ms):
+            fed.append((sid, len(samples), offset_ms))
+
+    clock = {"now_ms": 0}
+    sink = StreamingSink(Rec(), now_ms=lambda: clock["now_ms"],
+                         on_samples=lambda uid, s, at: hooked.append((str(uid), len(s), at)))
+    replay([ReplayTrack(user_id=7, name="김환", samples=tone(1_000), ssrc=70)], sink.write, clock=clock)
+    sink.drain()          # 재정렬 창에 남아 있던 것까지
+    assert fed and fed == hooked
+
+
 def test_arrival_time_is_the_position():
     """RTP 원점이 무엇이든 위치는 now_ms 가 정한다."""
     lines = []

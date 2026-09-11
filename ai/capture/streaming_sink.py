@@ -34,11 +34,14 @@ class StreamingSink(discord.sinks.Sink):
     된다. 저장은 finished_callback 이 아니라 session.feed 로 이미 흐르고 있다.
     """
 
-    def __init__(self, session, now_ms=None) -> None:
+    def __init__(self, session, now_ms=None, on_samples=None) -> None:
         super().__init__()
         self.session = session
         t0 = time.monotonic()
         self.now_ms = now_ms or (lambda: int((time.monotonic() - t0) * 1000))
+        # 같은 PCM 을 두 번째 소비자에게 넘기는 자리. 기본은 아무 일도 안 한다.
+        # 이벤트 루프에서 불리므로 훅은 논블로킹이어야 한다 (voice/state.py:189-198).
+        self.on_samples = on_samples or (lambda uid, samples, offset_ms: None)
         self.packets = 0
         self.noise_packets = 0
         self.write_errors = 0
@@ -98,14 +101,19 @@ class StreamingSink(discord.sinks.Sink):
             released = ro.push(rtp_ts, (samples, arrival_ms))
 
         for s, at in released:
+            # session.feed 가 먼저다. 훅이 실패하면 wav 한 조각을 잃지만, feed 를
+            # 건너뛰면 전사 줄을 잃는다.
             self.session.feed(str(uid), name, s, at)
+            self.on_samples(uid, s, at)
 
     def drain_speaker(self, uid: int) -> None:
         """이 화자의 재정렬 창을 비운다. 퇴장 시 flush_speaker 보다 먼저 부른다.
 
         write() 와 달리 이 경로는 py-cord 의 예외 삼키기 대상이 아니라 cleanup()
         에서 직접 불린다. session.feed 가 여기서 죽어도 남은 항목은 계속 흘려보내야
-        해서 항목 단위로 감싼다.
+        해서 항목 단위로 감싼다. on_samples 도 같은 try 안이라 훅의 예외까지
+        feed_errors 로 세어진다 — 밖으로 내보내면 cleanup() 이 다시 올리고 py-cord 는
+        자기 로거에만 남긴다.
         """
         with self._lock:
             ro = self._reorder.get(int(uid))
@@ -114,6 +122,7 @@ class StreamingSink(discord.sinks.Sink):
         for s, at in released:
             try:
                 self.session.feed(str(uid), name, s, at)
+                self.on_samples(uid, s, at)
             except Exception as exc:
                 with self._lock:
                     self.feed_errors += 1
