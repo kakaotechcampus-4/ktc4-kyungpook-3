@@ -9,6 +9,7 @@ import pytest
 import capture.discord_adapter as adapter
 from capture.discord_adapter import RecordingCog, SafeVoiceClient, _TrackPool, required_intents
 from stt.backend import SttResult
+from stt.speech_gate import SpeechGate
 from tests.replay import ReplayTrack, replay
 
 SR = 16_000
@@ -269,8 +270,21 @@ def _tone(ms, amp=0.3):
     return (amp * np.sin(2 * np.pi * 220 * t)).astype(np.float32)
 
 
-async def _start_one(tmp_path, monkeypatch, sessions_made=None, on_session_saved=None):
-    """/record 한 번을 끝까지 돌리고 (cog, ctx, meeting, text_channel, vc) 를 준다."""
+def _all_speech(pcm, sample_rate, threshold):
+    return [{"start": 0, "end": len(pcm)}]
+
+
+def _no_speech(pcm, sample_rate, threshold):
+    return []
+
+
+async def _start_one(tmp_path, monkeypatch, sessions_made=None, on_session_saved=None,
+                     speech_spans=_all_speech):
+    """/record 한 번을 끝까지 돌리고 (cog, ctx, meeting, text_channel, vc) 를 준다.
+
+    말 필터는 켠 채로 두되 판정만 갈아 끼운다. 여기서 흘리는 정현파는 실로가 말이
+    아니라고 보므로(말 비율 0.000), 실물 판정을 쓰면 이 파일의 회의가 전부 무음이 된다.
+    """
 
     def _stt_factory():
         if sessions_made is not None:
@@ -278,6 +292,7 @@ async def _start_one(tmp_path, monkeypatch, sessions_made=None, on_session_saved
         return _FakeStt()
 
     monkeypatch.setattr(adapter, "EliceStt", _stt_factory)
+    monkeypatch.setattr(adapter, "SpeechGate", lambda: SpeechGate(speech_spans=speech_spans))
     guild = _FakeGuild({7: _FakeMember(7, "김환")})
     vc_box = []
     room = _FakeVoiceChannel(vc_box)
@@ -761,6 +776,42 @@ async def test_stop_summary_carries_the_stage_latencies(tmp_path, monkeypatch):
     assert len(rows) == 1
     assert rows[0]["queue_s"] is not None and rows[0]["transcribe_s"] is not None
     assert rows[0]["seq"] == 1
+
+
+async def test_stop_summary_says_how_many_utterances_the_speech_filter_dropped(
+    tmp_path, monkeypatch
+):
+    """열 건을 지운 회의는 지웠다고 말해야 한다. 조용히 거르는 필터가 이 프로젝트가
+    내내 싸워 온 실패 방식이다."""
+    cog, _ctx, meeting, text, _vc = await _start_one(
+        tmp_path, monkeypatch, speech_spans=_no_speech
+    )
+    replay([ReplayTrack(user_id=7, name="김환", samples=_tone(1_200), ssrc=70)], meeting.sink.write)
+    meeting.sink.cleanup()
+
+    await cog._finish_meeting(GUILD_ID)
+
+    filtered = [x for x in text.summaries()[0].splitlines() if x.startswith("말 필터")]
+    assert filtered == [
+        "말 필터 · 거름 1건 / 검사 1건 · 오류 0건 (말 비율 0.60 미만은 거른다)"
+    ]
+    # 거른 발화는 회의록에도 없어야 한다. 요약에만 세고 줄은 남기면 의미가 없다.
+    assert (meeting.out_dir / "transcript.jsonl").read_text(encoding="utf-8") == ""
+
+
+async def test_stop_summary_reports_the_filter_even_when_it_dropped_nothing(
+    tmp_path, monkeypatch
+):
+    cog, _ctx, meeting, text, _vc = await _start_one(tmp_path, monkeypatch)
+    replay([ReplayTrack(user_id=7, name="김환", samples=_tone(1_200), ssrc=70)], meeting.sink.write)
+    meeting.sink.cleanup()
+
+    await cog._finish_meeting(GUILD_ID)
+
+    filtered = [x for x in text.summaries()[0].splitlines() if x.startswith("말 필터")]
+    assert filtered == [
+        "말 필터 · 거름 0건 / 검사 1건 · 오류 0건 (말 비율 0.60 미만은 거른다)"
+    ]
 
 
 async def test_stop_summary_says_unmeasured_when_nobody_spoke(tmp_path, monkeypatch):

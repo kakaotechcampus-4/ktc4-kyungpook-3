@@ -36,6 +36,7 @@ from shared.config import RECORDINGS_DIR
 from stt.elice import EliceStt
 from stt.latency import format_summary, snapshot, write_latency
 from stt.session import Session
+from stt.speech_gate import SpeechGate
 from stt.transcript_writer import write_transcript
 
 SessionSavedHook = Callable[[dict, Path], Awaitable[None]]
@@ -410,7 +411,9 @@ class RecordingCog(discord.Cog):
             ledger.lines.append(line)
             publisher.submit(line)
 
-        session = Session(final_stt=EliceStt(), on_line=on_line)
+        # 게이트는 여기서 고른다. 백엔드를 고르는 자리와 같다 — stt/session.py 는
+        # 게이트를 받지 못하면 예전처럼 전부 전사한다.
+        session = Session(final_stt=EliceStt(), on_line=on_line, gate=SpeechGate())
         pool = _TrackPool(out_dir, ts)
         sink = StreamingSink(session, on_samples=pool.submit)
         publisher_task = asyncio.create_task(publisher.run())
@@ -673,6 +676,8 @@ class RecordingCog(discord.Cog):
             f"트랙 버림 {meeting.pool.dropped} · 최대 RMS {report['peak_rms']:.3f} "
             f"(임계 {report['speech_rms']:.3f}, {report['verdict']})"
         )
+        if meeting.session.gate is not None:
+            msg.append(meeting.session.gate.summary())
         if drain_error is not None:
             msg.append(f"⚠️ 마지막 드레인 실패 ({drain_error}) — 회의 끝부분이 빠졌을 수 있습니다")
         try:
