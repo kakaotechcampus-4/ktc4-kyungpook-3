@@ -238,7 +238,7 @@ def _tone(ms, amp=0.3):
     return (amp * np.sin(2 * np.pi * 220 * t)).astype(np.float32)
 
 
-async def _start_one(tmp_path, monkeypatch, sessions_made=None):
+async def _start_one(tmp_path, monkeypatch, sessions_made=None, on_session_saved=None):
     """/record 한 번을 끝까지 돌리고 (cog, ctx, meeting, text_channel, vc) 를 준다."""
 
     def _stt_factory():
@@ -255,7 +255,7 @@ async def _start_one(tmp_path, monkeypatch, sessions_made=None):
     guild.voice_client = vc
     text = _FakeTextChannel()
     bot = _FakeBot(guild)
-    cog = RecordingCog(bot, recordings_dir=tmp_path)
+    cog = RecordingCog(bot, recordings_dir=tmp_path, on_session_saved=on_session_saved)
     ctx = _FakeCtx(guild, room, text)
     await RecordingCog.record.callback(cog, ctx)
     return cog, ctx, cog._meetings[GUILD_ID], text, vc
@@ -288,9 +288,17 @@ async def test_finish_meeting_runs_once_even_when_called_twice(tmp_path, monkeyp
     """/stop 과 py-cord 콜백이 겹쳐도 마무리는 한 번이다.
 
     표에서 pop 으로 꺼내는 것이 그 관문이다. get 으로 바꾸면 두 번째 호출이 트랙을
-    다시 닫고 매니페스트와 회의록을 다시 쓰고 종료 요약을 한 번 더 올린다.
+    다시 닫고 매니페스트와 회의록을 다시 쓰고 종료 요약과 BE 훅을 한 번 더 부른다.
+
+    훅 페이로드도 여기서 같이 본다. capture/run_recorder.py 의 데모 훅이 session 과
+    speakers 두 키를 읽으므로 키가 빠지면 동료 스크립트가 KeyError 로 죽는다.
     """
-    cog, _ctx, meeting, text, vc = await _start_one(tmp_path, monkeypatch)
+    saved = []
+
+    async def _hook(payload, jsonl_path):
+        saved.append((payload, jsonl_path))
+
+    cog, _ctx, meeting, text, vc = await _start_one(tmp_path, monkeypatch, on_session_saved=_hook)
     replay([ReplayTrack(user_id=7, name="김환", samples=_tone(1_200), ssrc=70)], meeting.sink.write)
     meeting.sink.cleanup()
 
@@ -298,8 +306,18 @@ async def test_finish_meeting_runs_once_even_when_called_twice(tmp_path, monkeyp
     await cog._finish_meeting(GUILD_ID)
 
     assert len(text.summaries()) == 1
+    assert len(saved) == 1
     assert vc.disconnected == 1
     assert GUILD_ID not in cog._meetings
+
+    payload, jsonl_path = saved[0]
+    assert payload["session"] == str(meeting.ts)
+    assert payload["meeting_id"] == meeting.meeting_id
+    assert payload["guild_id"] == GUILD_ID
+    # display_name 은 _TrackPool 이 user_id 로 채워 둔 자리를 guild.get_member 가 덮는다
+    assert [(s["user_id"], s["display_name"]) for s in payload["speakers"]] == [("7", "김환")]
+    assert jsonl_path == meeting.out_dir / "transcript.jsonl"
+    assert payload["markdown"] == meeting.out_dir / "transcript.md"
 
 
 async def test_two_concurrent_records_start_one_meeting(tmp_path, monkeypatch):
