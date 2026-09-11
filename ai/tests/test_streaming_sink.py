@@ -1,3 +1,4 @@
+import discord
 import numpy as np
 
 from capture.streaming_sink import StreamingSink
@@ -145,3 +146,9 @@ def test_level_report_mentions_threshold():
     sink = StreamingSink(session)
     session.close()
     assert "임계" in sink.level_report()
+
+
+def test_sink_is_a_pycord_sink():
+    sink = StreamingSink(session=None)
+    assert isinstance(sink, discord.sinks.Sink)
+    assert sink.vc is None and sink.audio_data == {} and sink.finished is False

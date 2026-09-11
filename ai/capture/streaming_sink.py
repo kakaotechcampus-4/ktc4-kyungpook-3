@@ -9,7 +9,8 @@ py-cord 는 소켓 수신 스레드에서 write(data, user) 를 부른다. 여�
 WaveSink 를 쓰지 않는 이유는 녹음이 끝난 뒤에야 오디오를 통째로 주기 때문이다.
 발화 도중에 꺼낼 훅이 없어 실시간 경로를 올릴 수 없다.
 
-discord 를 import 하지 않는다. discord.sinks.Sink 와의 결합은 discord_adapter.py 가 한다.
+discord.sinks.Sink 를 직접 상속한다. py-cord 가 받는 바로 그 객체를 오프라인
+하니스가 검증해야 하므로 여기서 상속을 끊지 않는다.
 """
 
 from __future__ import annotations
@@ -17,12 +18,15 @@ from __future__ import annotations
 import threading
 import time
 
+import discord
+
 from capture.audio import pcm_to_mono16k
 from capture.timeline import Reorderer, is_noise_packet
 
 
-class StreamingSink:
+class StreamingSink(discord.sinks.Sink):
     def __init__(self, session, now_ms=None) -> None:
+        super().__init__()
         self.session = session
         t0 = time.monotonic()
         self.now_ms = now_ms or (lambda: int((time.monotonic() - t0) * 1000))
@@ -33,7 +37,6 @@ class StreamingSink:
         self._names: dict[int, str] = {}
         self._lock = threading.Lock()
         self.finished = False
-        self.audio_data: dict = {}  # py-cord Sink 인터페이스가 기대하는 속성
 
     def is_opus(self) -> bool:
         """False 를 주면 py-cord 가 디코딩된 PCM 을 즉시 넘긴다 (router.py:82 경로)."""
