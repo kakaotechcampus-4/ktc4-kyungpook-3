@@ -115,10 +115,11 @@ class StreamingSink(discord.sinks.Sink):
         feed_errors 로 세어진다 — 밖으로 내보내면 cleanup() 이 다시 올리고 py-cord 는
         자기 로거에만 남긴다.
         """
+        uid = int(uid)
         with self._lock:
-            ro = self._reorder.get(int(uid))
+            ro = self._reorder.get(uid)
             released = ro.flush() if ro else []
-            name = self._names.get(int(uid), str(uid))
+            name = self._names.get(uid, str(uid))
         for s, at in released:
             try:
                 self.session.feed(str(uid), name, s, at)

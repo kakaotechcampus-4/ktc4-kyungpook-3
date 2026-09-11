@@ -142,6 +142,27 @@ def test_on_samples_sees_everything_session_feed_sees():
     assert fed and fed == hooked
 
 
+def test_drain_speaker_hands_the_hook_an_int_uid():
+    """훅이 받는 uid 는 write 경로와 같은 int 여야 한다.
+
+    drain_speaker 는 자기 조회에만 int(uid) 를 쓴다. 원본 uid 를 그대로 훅에 넘기면
+    문자열로 부른 호출자 하나가 같은 경로에 TrackWriter 를 하나 더 열고, 같은 wav 를
+    두 핸들이 동시에 쓴다.
+    """
+    got = []
+
+    class Rec:
+        def feed(self, sid, name, samples, offset_ms):
+            pass
+
+    sink = StreamingSink(Rec(), on_samples=lambda uid, s, at: got.append(uid))
+    m = FakeMember(7, "A")
+    for _ in range(REORDER_WINDOW):
+        sink.write(_to_discord_bytes(tone(PACKET_MS)), m)
+    sink.drain_speaker("7")
+    assert got and all(u == 7 and isinstance(u, int) for u in got)
+
+
 def test_arrival_time_is_the_position():
     """RTP 원점이 무엇이든 위치는 now_ms 가 정한다."""
     lines = []
