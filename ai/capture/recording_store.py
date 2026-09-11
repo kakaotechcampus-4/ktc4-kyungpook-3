@@ -15,6 +15,8 @@ import wave
 from dataclasses import dataclass
 from pathlib import Path
 
+from shared.schemas import now_iso
+
 # Discord 음성 디코더 출력 포맷 (py-cord OpusDecoder 상수와 동일)
 PCM_RATE = 48000
 PCM_CHANNELS = 2
@@ -87,7 +89,7 @@ def save_session(tracks: list[Track], recordings_dir: Path, *, ts: int | None = 
         "session": str(ts),
         "guild": guild,
         "channel": channel,
-        "recorded_at": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ts)),
+        "recorded_at": now_iso(),  # UTC, BE 의 DateTime(timezone=True) 와 경계에서 안 맞을 일 없게
         "library_version": library_version,
         "speakers": entries,
     }
