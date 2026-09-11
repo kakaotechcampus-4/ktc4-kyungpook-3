@@ -438,6 +438,12 @@ class RecordingCog(discord.Cog):
                               ephemeral=True)
             return
         vc = ctx.voice_client
+        if vc is not None and is_recording(vc):
+            # 표에는 없는데 리더가 살아 있다. 여기서 move_to 하면 destroy_all_decoders 가
+            # 순회 중 변경으로 터진다 (router.py:116-119). _meetings 검사는 이 상태를 못 잡는다.
+            await ctx.respond("이 서버에서 표에 없는 녹음이 돌고 있습니다. `/stop` 으로 먼저 "
+                              "끝내 주세요.", ephemeral=True)
+            return
         try:
             if vc is not None and vc.is_connected():
                 if vc.channel.id == room.id:
@@ -522,37 +528,44 @@ class RecordingCog(discord.Cog):
         guild = self.bot.get_guild(guild_id)
         vc = guild.voice_client if guild is not None else None
 
-        # 1. 남은 발화를 확정하고 전사를 기다린다. close() 는 워커를 최대 10초 기다리는
+        # 1. 재정렬 창을 먼저 비운다. 여기가 스스로 하지 않으면 위 독스트링의 "전부 여기로
+        #    온다" 가 거짓이 된다 — 봇 퇴장 경로에는 stop_recording() 이 없고, py-cord 의
+        #    cleanup() 은 자기 태스크에서 여러 번 await 한 뒤에야 온다 (state.py:1909 가
+        #    먼저 예약되지만 1928 의 우리 리스너가 먼저 끝난다). 늦게 온 샘플은 이미 멈춘
+        #    워커 큐와 이미 join 된 트랙 스레드로 들어가 예외도 카운터도 없이 사라진다.
+        #    두 번 불러도 안전하다 — Reorderer.flush() 가 _buf 를 비운다 (timeline.py:101-106).
+        meeting.sink.cleanup()
+
+        # 2. 남은 발화를 확정하고 전사를 기다린다. close() 는 워커를 최대 10초 기다리는
         #    블로킹 호출이라 스레드로 뺀다. 루프에서 부르면 그동안 봇 전체가 멈춘다.
         elapsed = await asyncio.to_thread(meeting.session.close, 10.0)
 
-        # 2. 스냅샷은 close() 가 돌아온 **뒤** 에 찍는다. 앞에서 찍으면 close() 가 확정하는
+        # 3. 스냅샷은 close() 가 돌아온 **뒤** 에 찍는다. 앞에서 찍으면 close() 가 확정하는
         #    마지막 발화들이 통째로 빠진다 — 그 줄들은 전부 close() 안에서 on_line 으로 온다
         #    (stt/session.py:144-175). 마감 경계는 close() 의 반환이고, 그 뒤에 오는 줄이
         #    ledger.late 다. 세기만 하고 되살리지 않는다.
         meeting.ledger.closed = True
         lines = list(meeting.ledger.lines)
 
-        # 3. 화자별 트랙을 닫고 매니페스트를 쓴다. 표시 이름은 여기서 붙인다.
+        # 4. 화자별 트랙을 닫고 매니페스트를 쓴다. 표시 이름은 여기서 붙인다.
         entries = await asyncio.to_thread(meeting.pool.close)
         for e in entries:
             member = guild.get_member(int(e["user_id"])) if guild is not None else None
             if member is not None:
                 e["display_name"] = member.display_name
-        manifest_path = None
-        if entries:
-            # 매니페스트는 평평하게 recordings/session_{ts}.json 에 쓴다. stt/transcribe.py:60 과
-            # stt/eval/eval.py:108 이 RECORDINGS_DIR 을 얕게 훑기 때문이다. wav 는 회의
-            # 디렉토리 안에 있고 file 필드가 상대 경로를 들고 있다.
-            manifest_path, _ = await asyncio.to_thread(
-                write_manifest, entries, self.recordings_dir,
-                ts=meeting.ts,
-                guild=guild.name if guild is not None else None,
-                channel=vc.channel.name if vc is not None and vc.channel is not None else None,
-                library_version=discord.__version__,
-            )
+        # 매니페스트는 평평하게 recordings/session_{ts}.json 에 쓴다. stt/transcribe.py:60 과
+        # stt/eval/eval.py:108 이 RECORDINGS_DIR 을 얕게 훑기 때문이다. wav 는 회의
+        # 디렉토리 안에 있고 file 필드가 상대 경로를 들고 있다. 화자가 0명이어도 쓴다 —
+        # 무음으로 끝난 회의가 실제로 열렸다는 유일한 기록이다.
+        manifest_path, _ = await asyncio.to_thread(
+            write_manifest, entries, self.recordings_dir,
+            ts=meeting.ts,
+            guild=guild.name if guild is not None else None,
+            channel=vc.channel.name if vc is not None and vc.channel is not None else None,
+            library_version=discord.__version__,
+        )
 
-        # 4. 회의록. 게시기 정리보다 **앞** 이다. 게시가 막혀 있어도 파일은 나와야 한다.
+        # 5. 회의록. 게시기 정리보다 **앞** 이다. 게시가 막혀 있어도 파일은 나와야 한다.
         out = await asyncio.to_thread(write_transcript, lines, meeting.out_dir, meeting.meeting_id)
 
         finals = [ln for ln in lines if ln.final]
@@ -562,9 +575,8 @@ class RecordingCog(discord.Cog):
             f"⏹ 종료. 발화 {len(finals)}건 · 회의록까지 {total:.1f}초 "
             f"(전사 대기 {elapsed:.1f}초, 목표 10초)",
             f"회의록 `{out['markdown']}`",
+            f"화자별 트랙 {len(entries)}개 · 매니페스트 `{manifest_path.name}`",
         ]
-        if manifest_path is not None:
-            msg.append(f"화자별 트랙 {len(entries)}개 · 매니페스트 `{manifest_path.name}`")
         msg.append(
             f"수신 패킷 {report['packets']} · 잡음 {report['noise_packets']} · "
             f"write 오류 {report['write_errors']} · 화자 미상 {report['unattributed']} · "
@@ -576,7 +588,7 @@ class RecordingCog(discord.Cog):
         except Exception as e:
             print(f"[meeting] 종료 메시지 전송 실패: {type(e).__name__}: {e}", flush=True)
 
-        # 5. 게시기를 접는다. 기본 데드라인 8초 (publisher.py:115). 못 나간 줄은 화면에만
+        # 6. 게시기를 접는다. 기본 데드라인 8초 (publisher.py:115). 못 나간 줄은 화면에만
         #    없고 transcript.jsonl 에는 이미 있다. await 가 예외를 올려도 여기서 끝나지 않게
         #    감싼다 — 회의록은 이미 나왔고 남은 것은 disconnect 뿐이다.
         meeting.publisher.stop()
@@ -592,9 +604,13 @@ class RecordingCog(discord.Cog):
             print(f"[meeting] {meeting.meeting_id}: 트랙 큐가 넘쳐 {meeting.pool.dropped}건 버렸다.",
                   flush=True)
 
-        # 6. 음성 채널에서 나간다. 회의가 끝나면 봇이 남아 있을 이유가 없고, 남아 있으면
+        # 7. 음성 채널에서 나간다. 회의가 끝나면 봇이 남아 있을 이유가 없고, 남아 있으면
         #    다음 /record 가 "이미 연결됨" 분기로 들어가 상태가 하나 늘어난다.
-        if vc is not None:
+        #    단 위의 await 들(전사 10초 + 게시 8초) 동안 _meetings 는 비어 있어서 그 사이에
+        #    시작된 /record 가 같은 VoiceClient 를 다시 쓴다. 그 회의가 표에 있으면 끊지
+        #    않는다 — disconnect 는 self.stop() 으로 남의 리더까지 세운다
+        #    (voice/client.py:381 → 620-622).
+        if vc is not None and guild_id not in self._meetings:
             try:
                 await vc.disconnect(force=True)
             except Exception as e:

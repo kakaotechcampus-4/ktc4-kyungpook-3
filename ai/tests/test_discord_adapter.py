@@ -1,5 +1,6 @@
 import asyncio
 import json
+import threading
 
 import discord
 import numpy as np
@@ -139,6 +140,7 @@ class _FakeVoiceClient:
         self.channel = channel
         self.secret_key: list[int] = []
         self.started: list[tuple] = []
+        self.moved: list = []
         self.disconnected = 0
 
     def is_connected(self):
@@ -153,8 +155,15 @@ class _FakeVoiceClient:
     def stop_recording(self):
         self.started.clear()
 
+    async def move_to(self, channel):
+        self.moved.append(channel)
+        self.channel = channel
+
     async def disconnect(self, *, force=False):
         self.disconnected += 1
+        # 실제 VoiceClient.disconnect 는 self.stop() 을 거쳐 돌고 있는 리더를 세운다
+        # (voice/client.py:381 → 620-622). 남의 회의를 끊으면 그 회의가 그 자리에서 죽는다.
+        self.started.clear()
 
 
 class _FakeVoiceChannel:
@@ -174,9 +183,10 @@ class _FakeVoiceChannel:
 
 
 class _FakeMember:
-    def __init__(self, uid, name):
+    def __init__(self, uid, name, guild=None):
         self.id = uid
         self.display_name = name
+        self.guild = guild
 
 
 class _FakeGuild:
@@ -347,3 +357,123 @@ async def test_two_concurrent_records_start_one_meeting(tmp_path, monkeypatch):
     assert any("이미" in r for r in ctx_b.responses)
 
     await cog._finish_meeting(GUILD_ID)
+
+
+async def test_finish_does_not_disconnect_a_meeting_that_started_while_it_waited(
+    tmp_path, monkeypatch
+):
+    """마무리가 기다리는 동안 시작된 다음 회의를 끊지 않는다.
+
+    /stop 은 길드 락을 놓은 뒤 _finish_meeting 을 부르고, 그 안의 session.close() 는
+    최대 10초, publisher_task 는 최대 8초를 더 기다린다 (publisher.py:115). 그 창 내내
+    _meetings 는 비어 있고, stop_recording() 이 _reader 를 MISSING 으로 만들었으므로
+    (voice/client.py:788-790) is_recording 도 False 다. 다음 /record 가 두 가드를 전부
+    통과해 같은 VoiceClient 로 새 회의를 연다. 옛 코루틴이 깨어나 disconnect(force=True)
+    를 부르면 새 회의의 리더가 그 자리에서 죽는다 (voice/client.py:381 → 620-622).
+    """
+    cog, ctx1, meeting, _text, vc = await _start_one(tmp_path, monkeypatch)
+    room = ctx1.author.voice.channel
+
+    gate = threading.Event()
+    real_close = meeting.session.close
+
+    def _slow_close(timeout_s):
+        gate.wait(5)
+        return real_close(timeout_s)
+
+    meeting.session.close = _slow_close
+
+    vc.stop_recording()                       # /stop 이 락을 쥔 채 하는 일
+    finishing = asyncio.create_task(cog._finish_meeting(GUILD_ID))
+    await asyncio.sleep(0.05)
+    assert GUILD_ID not in cog._meetings       # 창이 열렸다
+
+    ctx2 = _FakeCtx(ctx1.guild, room, _FakeTextChannel())
+    ctx2.voice_client = vc                     # 봇은 아직 방에 있다
+    await RecordingCog.record.callback(cog, ctx2)
+    new_meeting = cog._meetings[GUILD_ID]
+
+    gate.set()
+    await finishing
+
+    assert cog._meetings.get(GUILD_ID) is new_meeting
+    assert vc.disconnected == 0
+    assert len(vc.started) == 1                # 새 녹음이 살아 있다
+
+    await cog._finish_meeting(GUILD_ID)
+
+
+async def test_bot_kicked_from_the_room_keeps_the_last_reorder_window(tmp_path, monkeypatch):
+    """봇이 방에서 쫓겨나는 경로에도 마지막 재정렬 창이 회의록과 wav 에 들어간다.
+
+    이 경로에는 stop_recording() 이 없다. py-cord 는 같은 이벤트를 받아 자기 태스크에서
+    disconnect → reader.stop() → sink.cleanup() 로 내려가지만 (state.py:1909 대 1928),
+    그쪽은 안에서 여러 번 await 하고 이쪽은 pop 과 get_guild 뿐이라 이쪽이 먼저 끝난다.
+    _finish_meeting 이 스스로 드레인하지 않으면 화자마다 16패킷(320ms)이 사라진다.
+    뒤늦게 도착한 cleanup 의 feed 는 이미 멈춘 워커 큐로, on_samples 는 이미 join 된
+    트랙 스레드로 들어가 둘 다 조용히 버려진다.
+    """
+    saved = []
+
+    async def _hook(payload, jsonl_path):
+        saved.append(payload)
+
+    cog, ctx, meeting, _text, _vc = await _start_one(tmp_path, monkeypatch, on_session_saved=_hook)
+    room = ctx.author.voice.channel
+    replay([ReplayTrack(user_id=7, name="김환", samples=_tone(1_200), ssrc=70)], meeting.sink.write)
+    assert meeting.sink.finished is False      # py-cord 의 cleanup 은 아직 안 돌았다
+
+    bot_member = _FakeMember(cog.bot.user.id, "봇", guild=ctx.guild)
+    await cog.on_voice_state_update(bot_member, _FakeVoiceState(room), _FakeVoiceState(None))
+
+    records = [
+        json.loads(x)
+        for x in (meeting.out_dir / "transcript.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert len(records) == 1
+    # 1.2초 = 60패킷 × 20ms. 마지막 창 16개가 빠지면 0.88 이 된다.
+    assert records[0]["end"] == pytest.approx(1.2, abs=0.02)
+    assert saved[0]["speakers"][0]["duration_sec"] == pytest.approx(1.2, abs=0.02)
+
+
+async def test_join_refuses_to_move_while_an_untracked_recording_is_live(tmp_path, monkeypatch):
+    """표에는 없는데 리더가 살아 있는 상태에서 /join 이 방을 옮기면 안 된다.
+
+    녹음 중 채널 이동은 destroy_all_decoders 를 순회 중 변경으로 깨뜨린다
+    (voice/receive/router.py:116-119). _meetings 검사만으로는 이 상태를 못 잡는다.
+    """
+    monkeypatch.setattr(adapter, "EliceStt", _FakeStt)
+    guild = _FakeGuild({})
+    vc_box = []
+    room = _FakeVoiceChannel(vc_box)
+    other = _FakeVoiceChannel(vc_box)
+    other.id = ROOM_ID + 1
+    vc = _FakeVoiceClient(other)               # 봇은 다른 방에 있다
+    vc.started.append(("sink", None, ()))      # 표에 없는 녹음이 돌고 있다
+    vc_box.append(vc)
+    guild.voice_client = vc
+    cog = RecordingCog(_FakeBot(guild), recordings_dir=tmp_path)
+    ctx = _FakeCtx(guild, room, _FakeTextChannel())
+    ctx.voice_client = vc
+
+    await RecordingCog.join.callback(cog, ctx)
+
+    assert vc.moved == []
+    assert any("녹음" in r for r in ctx.responses)
+
+
+async def test_manifest_is_written_even_with_no_speakers(tmp_path, monkeypatch):
+    """아무도 말하지 않아도 매니페스트는 남는다.
+
+    무음 회의를 나중에 진단할 때 그 회의가 실제로 열렸다는 유일한 기록이다
+    (capture/recording_store.py:86 의 save_session 이 갖고 있던 성질).
+    """
+    cog, _ctx, meeting, _text, _vc = await _start_one(tmp_path, monkeypatch)
+
+    await cog._finish_meeting(GUILD_ID)
+
+    manifest = tmp_path / f"session_{meeting.ts}.json"
+    assert manifest.exists()
+    data = json.loads(manifest.read_text(encoding="utf-8"))
+    assert data["speakers"] == []
+    assert data["session"] == str(meeting.ts)
