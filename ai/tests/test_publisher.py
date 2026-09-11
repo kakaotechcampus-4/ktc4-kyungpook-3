@@ -222,3 +222,83 @@ def test_render_turn_caps_discord_message_length():
     out = render_turn(long_lines)
     assert len(out) <= 2000
     assert out.endswith("…")
+
+
+# ----------------------------------------------------------------- 지연 계측
+@pytest.mark.asyncio
+async def test_publish_time_includes_the_token_bucket_wait():
+    """버킷이 비어 기다린 시간도 게시 지연이다. 그 줄은 그만큼 늦게 화면에 뜬다.
+
+    두 줄을 같이 본다. 뒤 줄만 보면 상수를 더해도 통과하고, 앞 줄만 보면 대기를
+    빼먹어도 통과한다.
+    """
+    ch = FakeChannel()
+    p = Publisher(ch.send, ch.edit, burst=1, refill_per_s=5.0, coalesce_s=0)
+    task = asyncio.create_task(p.run())
+    first = line(turn="t1", speaker="s1", text="먼저")
+    second = line(turn="t2", speaker="s2", text="나중")
+    p.submit(first)
+    p.submit(second)
+    await _wait_until(lambda: len(ch.sent) >= 2)
+    p.stop()
+    await asyncio.wait_for(task, timeout=1.0)
+
+    assert first.publish_s < 0.1
+    assert second.publish_s >= 0.15   # 토큰 하나가 다시 차는 데 0.2초
+
+
+@pytest.mark.asyncio
+async def test_publish_time_is_kept_from_the_first_send_not_a_later_edit():
+    """한 턴이 여러 번 나가도 각 줄의 값은 그 줄이 처음 화면에 뜬 때까지다."""
+    ch = FakeChannel()
+    p = Publisher(ch.send, ch.edit, coalesce_s=0)
+    task = asyncio.create_task(p.run())
+    first = line(turn="t1", seq=1, text="첫 발화")
+    p.submit(first)
+    await _wait_until(lambda: len(ch.sent) >= 1)
+    at_send = first.publish_s
+    await asyncio.sleep(0.25)
+
+    later = line(turn="t1", seq=2, text="이어서")
+    p.submit(later)
+    await _wait_until(lambda: len(ch.edits) >= 1)
+    p.stop()
+    await asyncio.wait_for(task, timeout=1.0)
+
+    assert at_send is not None and first.publish_s == at_send
+    # 턴이 아니라 줄 기준이다. 턴의 첫 submit 부터 재면 0.25초를 넘는다.
+    assert later.publish_s is not None and later.publish_s < 0.2
+
+
+@pytest.mark.asyncio
+async def test_a_line_arriving_during_a_send_is_not_counted_as_published():
+    """전송이 시작된 뒤 도착한 줄은 그 본문에 없다. 같이 게시된 것으로 세면
+    아직 화면에 없는 줄의 지연이 실제보다 짧게 잡힌다."""
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    class GatedChannel(FakeChannel):
+        async def send(self, text):
+            started.set()
+            await release.wait()
+            return await super().send(text)
+
+    ch = GatedChannel()
+    p = Publisher(ch.send, ch.edit, coalesce_s=0)
+    task = asyncio.create_task(p.run())
+    first = line(turn="t1", seq=1, text="첫 발화")
+    p.submit(first)
+    await asyncio.wait_for(started.wait(), timeout=1.0)
+
+    during = line(turn="t1", seq=2, text="전송 중 도착")
+    p.submit(during)
+    release.set()
+    await _wait_until(lambda: len(ch.sent) >= 1)
+
+    assert first.publish_s is not None
+    assert during.publish_s is None
+
+    await _wait_until(lambda: len(ch.edits) >= 1)
+    p.stop()
+    await asyncio.wait_for(task, timeout=1.0)
+    assert during.publish_s is not None
