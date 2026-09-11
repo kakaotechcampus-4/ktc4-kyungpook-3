@@ -216,3 +216,9 @@ async def test_stop_deadline_bounds_drain_and_reports_leftovers(capsys):
     for turn_id in missing:
         assert turn_id in out
 
+
+def test_render_turn_caps_discord_message_length():
+    long_lines = [line(seq=i, text="가" * 300) for i in range(10)]
+    out = render_turn(long_lines)
+    assert len(out) <= 2000
+    assert out.endswith("…")

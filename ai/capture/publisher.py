@@ -27,6 +27,7 @@ import time
 from stt.session import Line
 
 DEFAULT_BACKOFF_S = (1.0, 2.0, 4.0, 8.0, 16.0)
+DISCORD_SAFE_CHARS = 1990  # 2000자 한도에서 여유를 둔다
 
 
 def format_line(line: Line) -> str:
@@ -34,13 +35,43 @@ def format_line(line: Line) -> str:
     return f"`[{total // 60:02d}:{total % 60:02d}]` **{line.speaker_name}** {line.text}"
 
 
+def _truncate_body(body: str, texts: list[str], budget: int) -> str:
+    """예산 안에서 통째로 들어가는 발화까지만 남긴다. 발화 하나가 이미 예산을
+    넘으면 그 안에서 마지막 공백까지만 잘라 단어 중간을 피한다."""
+    if len(body) <= budget:
+        return body
+    kept: list[str] = []
+    length = 0
+    for t in texts:
+        add = len(t) if not kept else len(t) + 1
+        if length + add > budget:
+            break
+        kept.append(t)
+        length += add
+    if kept:
+        return " ".join(kept)
+    cut = texts[0][:budget]
+    sp = cut.rfind(" ")
+    return cut[:sp] if sp > 0 else cut
+
+
 def render_turn(lines: list[Line]) -> str:
-    """턴의 확정 줄 전부를 한 메시지 본문으로. 머리는 첫 줄의 시각과 이름."""
+    """턴의 확정 줄 전부를 한 메시지 본문으로. 머리는 첫 줄의 시각과 이름.
+
+    디스코드 메시지 한도(2000자)를 넘으면 잘라 "…" 를 붙인다. 발화 경계에서
+    자르는 게 먼저고, 발화 하나가 이미 넘으면 그 안에서 단어 경계로 자른다.
+    """
     ordered = sorted(lines, key=lambda ln: ln.seq)
     head = ordered[0]
-    body = " ".join(ln.text for ln in ordered if ln.text)
     total = head.start_ms // 1000
-    return f"`[{total // 60:02d}:{total % 60:02d}]` **{head.speaker_name}** {body}"
+    prefix = f"`[{total // 60:02d}:{total % 60:02d}]` **{head.speaker_name}** "
+    texts = [ln.text for ln in ordered if ln.text]
+    body = " ".join(texts)
+    if len(prefix) + len(body) > DISCORD_SAFE_CHARS:
+        ellipsis = "…"
+        budget = DISCORD_SAFE_CHARS - len(prefix) - len(ellipsis)
+        body = _truncate_body(body, texts, budget) + ellipsis
+    return prefix + body
 
 
 class Publisher:
