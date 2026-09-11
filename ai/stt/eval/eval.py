@@ -1,10 +1,10 @@
 """Phase 0 평가 — 전사 정확도(WER/CER) 계산 + 크로스토크 체크리스트 → eval_report.md 생성.
 
 사용 순서 (ai/ 디렉토리 안에서)
-  1) python stt/eval/eval.py --init
+  1) python -m stt.eval.eval --init
        recordings/session_*.json 을 읽어 ground_truth/eval_config.json 스켈레톤 생성
        (세션별 scenario, 화자별 정답 스크립트 파일명, 크로스토크 체크 항목을 손으로 채우면 됨)
-  2) python stt/eval/eval.py
+  2) python -m stt.eval.eval
        transcripts/*.json 을 모두 평가해 eval_report.md 작성 (콘솔에도 요약 출력)
 
 eval_config.json 형식
@@ -34,12 +34,12 @@ import re
 import sys
 from pathlib import Path
 
-BASE_DIR = Path(__file__).resolve().parents[2]  # ai/ 자체 (독립 프로젝트 루트)
-RECORDINGS_DIR = BASE_DIR / "recordings"
-TRANSCRIPTS_DIR = BASE_DIR / "transcripts"
+from shared.config import AI_ROOT, RECORDINGS_DIR, TRANSCRIPTS_DIR
+from stt.transcribe import parse_transcript_stem
+
 GROUND_TRUTH_DIR = Path(__file__).resolve().parent / "ground_truth"
 CONFIG_PATH = GROUND_TRUTH_DIR / "eval_config.json"
-REPORT_PATH = BASE_DIR / "eval_report.md"
+REPORT_PATH = AI_ROOT / "eval_report.md"
 
 # 통과 기준 (계획서 4장). 한국어는 띄어쓰기 관습 때문에 어절 단위 WER 이 체감보다 높게 나오므로
 # PASS/FAIL 은 공백 무시 CER 로 판정하고, WER 은 참고용으로만 나란히 표시한다.
@@ -132,13 +132,6 @@ def load_config() -> dict:
     return cfg
 
 
-def parse_transcript_name(stem: str) -> tuple[str, str, str]:
-    """'{user_id}_{ts}__{model}' → (user_id, ts, model)"""
-    base, _, model = stem.partition("__")
-    user_id, _, ts = base.partition("_")
-    return user_id, ts, model or "?"
-
-
 def resolve_ground_truth(cfg: dict, session: str, user_id: str, name: str) -> Path | None:
     mapping = dict(cfg.get("speakers", {}))
     mapping.update(cfg.get("sessions", {}).get(session, {}).get("speakers", {}))
@@ -211,7 +204,7 @@ def evaluate(args) -> int:
     missing: list[str] = []
     for tp in transcripts:
         data = json.loads(tp.read_text(encoding="utf-8"))
-        user_id, ts, model = parse_transcript_name(tp.stem)
+        user_id, ts, model = parse_transcript_stem(tp.stem)
         name = data.get("speaker") or names.get(user_id, user_id)
         scenario = cfg["sessions"].get(ts, {}).get("scenario") or args.scenario
         gt_path = resolve_ground_truth(cfg, ts, user_id, name)
