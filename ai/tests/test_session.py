@@ -1,3 +1,4 @@
+import threading
 import time
 
 import numpy as np
@@ -146,3 +147,65 @@ def test_close_waits_for_in_flight_transcription():
     # close() 가 돌아온 시점에 이미 줄이 나와 있어야 한다. 여기서 기다려 주면 안 된다.
     assert any(ln.final and ln.text == "느림" for ln in lines)
     assert elapsed >= 1.2
+
+
+def test_same_speaker_within_gap_shares_turn():
+    """3초 안에 이어 말하면 한 턴이다. 발화 둘이 메시지 하나로 묶여야 한다."""
+    lines = []
+    s = Session(final_stt=FakeStt(), on_line=lines.append, workers=1)
+    feed_packets(s, "kim", "김환", tone(1_000), 0)
+    feed_packets(s, "kim", "김환", tone(1_000), 2_000)
+    s.close()
+
+    finals = [ln for ln in lines if ln.final]
+    assert len(finals) == 2
+    assert finals[0].turn_id == finals[1].turn_id
+
+
+def test_same_speaker_after_gap_gets_new_turn():
+    """9초를 쉬면 다른 턴이다. 같은 화자라고 무한정 붙이면 안 된다."""
+    lines = []
+    s = Session(final_stt=FakeStt(), on_line=lines.append, workers=1)
+    feed_packets(s, "kim", "김환", tone(1_000), 0)
+    feed_packets(s, "kim", "김환", tone(1_000), 10_000)
+    s.close()
+
+    finals = [ln for ln in lines if ln.final]
+    assert len(finals) == 2
+    assert finals[0].turn_id != finals[1].turn_id
+
+
+def test_turns_follow_speech_order_not_completion_order():
+    """턴은 전사가 끝난 순서가 아니라 말한 순서로 정해져야 한다.
+
+    워커가 셋이면 앞 발화가 느린 API 에 걸린 사이 뒷 발화가 먼저 끝난다. 턴을 전사
+    완료 시점에 정하면 뒷 발화가 턴을 먼저 받고, 뒤늦게 도착한 앞 발화가 9초 떨어진
+    발화와 한 턴으로 묶인다. 첫 호출만 느리게 만들어 그 역전을 강제한다.
+    """
+
+    class SlowFirstStt:
+        name = "slow-first"
+
+        def __init__(self):
+            self.calls = 0
+            self._lock = threading.Lock()
+
+        def transcribe(self, samples, sample_rate):
+            with self._lock:
+                self.calls += 1
+                nth = self.calls
+            if nth == 1:
+                time.sleep(0.6)
+            return SttResult(text=f"{nth}번째", words=[])
+
+    lines = []
+    s = Session(final_stt=SlowFirstStt(), on_line=lines.append, workers=3)
+    feed_packets(s, "kim", "김환", tone(1_000), 0)
+    feed_packets(s, "kim", "김환", tone(1_000), 10_000)
+    s.close()
+
+    finals = sorted((ln for ln in lines if ln.final), key=lambda ln: ln.seq)
+    assert len(finals) == 2
+    assert finals[0].turn_id != finals[1].turn_id
+    assert finals[0].seq == 1 and abs(finals[0].start_ms - 0) <= 40
+    assert finals[1].seq == 2 and abs(finals[1].start_ms - 10_000) <= 40
