@@ -75,8 +75,8 @@ def test_short_gap_keeps_one_utterance():
 def test_backwards_offset_does_not_rewind():
     """과거를 가리키는 offset_ms 가 와도 시간축은 뒤로 가지 않는다.
 
-    역방향 조각은 진행 중인 발화에 이어 붙는다. 이걸 존중해 시간축을 되돌리면
-    500ms 근처에서 시작하는 발화가 생긴다. 그런 시작이 없어야 한다.
+    역방향 조각은 진행 중인 발화에 이어 붙는다. 발화 시작은 이미 고정돼 있으므로
+    되감기는 끝 시각이 시작보다 앞으로 가는 것으로 드러난다. 그게 없어야 한다.
     """
     v = vad()
     got = feed_packets(v, tone(1_000), 10_000)   # 발화 1: 10.0 ~ 11.0초
@@ -84,11 +84,14 @@ def test_backwards_offset_does_not_rewind():
     got += feed_packets(v, tone(1_000), 500)     # 과거 오프셋. 발화 2 에 이어 붙어야 한다
     got += v.flush()
 
-    starts = [s for s, _ in times(got)]
     assert len(got) == 2
-    assert starts[0] == pytest.approx(10_000, abs=2 * FRAME_MS)
-    assert starts[1] == pytest.approx(20_000, abs=2 * FRAME_MS)
-    assert all(s >= 10_000 - 2 * FRAME_MS for s in starts)
+    (s1, e1), (s2, e2) = times(got)
+    assert s1 == pytest.approx(10_000, abs=2 * FRAME_MS)
+    assert e1 == pytest.approx(11_000, abs=2 * FRAME_MS)
+    assert s2 == pytest.approx(20_000, abs=2 * FRAME_MS)
+    # 역방향 1초가 이어 붙었으니 발화 2 는 20.0 ~ 22.0초다. 되감겼다면 끝이 1.5초 근처가 된다
+    assert e2 == pytest.approx(22_000, abs=2 * FRAME_MS)
+    assert all(e >= s for s, e in times(got))
 
 
 def test_cough_is_dropped():
