@@ -650,6 +650,80 @@ async def test_a_dead_interaction_ends_the_command_without_raising(tmp_path, mon
     assert logged.count("\n") == 1             # 한 줄이다. 트레이스백이 아니다
 
 
+async def _invoke(cog, command, ctx):
+    """py-cord 가 명령을 부르고 예외를 핸들러로 넘기는 경로를 그대로 옮긴 것.
+
+    콜백이 낸 예외는 ApplicationCommandInvokeError 로 싸이고 (commands/core.py:126-150),
+    bot.py:1301-1307 이 그것을 dispatch_error 로 넘기면 core.py:474-478 이 **오버라이드된**
+    cog_command_error 만 부른다. 그 조회를 여기서도 그대로 해야 핸들러를 지웠을 때
+    아무도 안 불리고 테스트가 깨진다 — cog.cog_command_error 를 직접 부르면 베이스의
+    빈 코루틴(cog.py:518)이 대신 받아 사보타지가 조용히 지나간다.
+    """
+    try:
+        await command.callback(cog, ctx)
+    except discord.ApplicationCommandError as e:
+        err = e
+    except Exception as e:
+        err = discord.ApplicationCommandInvokeError(e)
+    else:
+        return
+    local = type(cog)._get_overridden_method(cog.cog_command_error)
+    if local is not None:
+        await local(ctx, err)
+
+
+async def test_a_failure_after_defer_is_told_to_the_user_in_discord(tmp_path, monkeypatch):
+    """defer 가 성공한 뒤 터진 예외는 디스코드에서 사용자가 읽는다.
+
+    핸들러가 없으면 py-cord 는 stderr 에 트레이스백만 찍고 인터랙션에는 응답하지 않는다
+    (bot.py:1403-1412). 사용자 화면에는 "응답하지 않았습니다" 만 남고 원인은 터미널을
+    보고 있던 사람만 안다. 이 봇이 없애려는 실패가 정확히 그 모양이다.
+    """
+    cog, ctx, _vc, room = _bare_cog(tmp_path, monkeypatch, RecordingCog.join)
+
+    def _boom(member):
+        raise RuntimeError("권한 조회 실패")
+
+    room.permissions_for = _boom
+
+    await _invoke(cog, RecordingCog.join, ctx)
+
+    assert len(ctx.responses) == 1
+    told = ctx.responses[0]
+    assert "/join" in told                     # 어느 명령이 실패했는지
+    assert "RuntimeError" in told              # 무엇이 터졌는지
+    assert "권한 조회 실패" in told
+
+
+async def test_the_handler_never_answers_an_interaction_that_is_already_gone(
+    tmp_path, monkeypatch, capsys
+):
+    """죽은 인터랙션에는 핸들러도 보내지 않는다.
+
+    보내려고 하면 그 send 가 같은 예외를 내고, 이번에는 핸들러 안이라 받아 줄 곳이 없다.
+    여기서는 명령 본문의 respond 가 10062 를 내도록 두고 핸들러가 또 보내는지만 본다
+    (실제 디스코드가 이 자리에서 정확히 어떤 코드를 주는지는 확인하지 않았다).
+    """
+    cog, ctx, _vc, _room = _bare_cog(tmp_path, monkeypatch, RecordingCog.join)
+    ctx.author.voice = None                    # 첫 respond 까지만 가는 경로
+    attempts: list[str] = []
+
+    async def _gone(text, ephemeral=False):
+        attempts.append(text)
+        raise _unknown_interaction()
+
+    ctx.respond = _gone
+
+    await _invoke(cog, RecordingCog.join, ctx)
+
+    # 명령 본문이 한 번 보내려다 10062 를 받았다. 핸들러가 또 보내면 두 번이 된다.
+    assert len(attempts) == 1
+    assert ctx.responses == []
+    logged = capsys.readouterr().out
+    assert "/join" in logged
+    assert "만료" in logged
+
+
 async def test_manifest_is_written_even_with_no_speakers(tmp_path, monkeypatch):
     """아무도 말하지 않아도 매니페스트는 남는다.
 

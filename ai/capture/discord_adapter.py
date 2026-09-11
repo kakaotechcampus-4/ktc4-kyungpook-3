@@ -252,6 +252,30 @@ class RecordingCog(discord.Cog):
         name = room.name if room is not None else str(meeting.voice_channel_id)
         return f"이 서버에서는 이미 #{name} 에서 회의가 진행 중입니다. /stop 으로 먼저 끝내 주세요."
 
+    async def cog_command_error(self, ctx: discord.ApplicationContext,
+                                error: Exception) -> None:
+        """이 Cog 의 명령이 낸 예외를 사용자가 보는 자리로 옮긴다.
+
+        py-cord 는 콜백 예외를 ApplicationCommandInvokeError 로 싸서 (commands/core.py:126-150)
+        dispatch_error 로 넘기고, 그쪽이 오버라이드된 이 메서드를 부른다 (core.py:474-478,
+        cog.py:518). 체크 실패처럼 defer 전에 나는 예외는 안 싸여서 오므로 original 이 없다.
+
+        이 메서드가 생기는 순간 py-cord 기본 핸들러는 아무것도 안 찍고 돌아간다
+        (bot.py:1403-1412). 터미널 트레이스백은 그래서 여기서 직접 찍는다.
+        """
+        err = getattr(error, "original", error)
+        if isinstance(err, discord.NotFound) and err.code == UNKNOWN_INTERACTION:
+            _log_interaction_gone(ctx, err)
+            return
+        traceback.print_exception(err)
+        try:
+            await ctx.respond(f"`/{_command_name(ctx)}` 명령이 실패했습니다: "
+                              f"{type(err).__name__}: {err}", ephemeral=True)
+        except Exception as e:
+            print(f"[command] /{_command_name(ctx)}: 실패를 알리지 못했다 "
+                  f"({type(e).__name__}: {e}). 원래 예외는 {type(err).__name__}: {err}",
+                  flush=True)
+
     @discord.Cog.listener()
     async def on_voice_state_update(self, member, before, after) -> None:
         meeting = self._meetings.get(member.guild.id)
