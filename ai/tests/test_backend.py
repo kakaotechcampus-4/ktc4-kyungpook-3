@@ -1,7 +1,17 @@
+from types import SimpleNamespace
+
 import numpy as np
 import pytest
+import requests
 
 from stt.backend import SttError, SttResult, Word
+
+SAMPLES = np.zeros(16_000, dtype=np.float32)
+
+
+def _response(payload):
+    """requests.Response 대역. transcribe 는 status_code 와 json() 만 본다."""
+    return lambda *a, **k: SimpleNamespace(status_code=200, json=lambda: payload)
 
 
 def test_result_joins_words_when_text_missing():
@@ -43,3 +53,75 @@ def test_elice_requires_key(monkeypatch):
     monkeypatch.delenv("ELICE_API_KEY", raising=False)
     with pytest.raises(SttError):
         EliceStt().transcribe(np.zeros(16_000, dtype=np.float32), 16_000)
+
+
+def test_elice_wraps_request_failure(monkeypatch):
+    """requests 예외는 OSError 계열이라 감싸지 않으면 호출자의 except SttError 를 지나친다."""
+    from stt.elice import EliceStt
+
+    monkeypatch.setenv("ELICE_API_KEY", "test-key")
+
+    def boom(*a, **k):
+        raise requests.ConnectionError("연결 실패")
+
+    monkeypatch.setattr(requests, "post", boom)
+    with pytest.raises(SttError) as e:
+        EliceStt().transcribe(SAMPLES, 16_000)
+    assert "ConnectionError" in str(e.value)
+
+
+def test_elice_wraps_non_json_body(monkeypatch):
+    """200 인데 본문이 JSON 이 아니면 r.json() 이 ValueError 를 던진다."""
+    from stt.elice import EliceStt
+
+    monkeypatch.setenv("ELICE_API_KEY", "test-key")
+
+    def not_json():
+        raise ValueError("Expecting value: line 1 column 1 (char 0)")
+
+    monkeypatch.setattr(
+        requests, "post", lambda *a, **k: SimpleNamespace(status_code=200, json=not_json)
+    )
+    with pytest.raises(SttError) as e:
+        EliceStt().transcribe(SAMPLES, 16_000)
+    assert "JSON" in str(e.value)
+
+
+def test_elice_caps_server_reason(monkeypatch):
+    """서버가 준 reason 도 상태코드 경로와 같이 200자에서 자른다."""
+    from stt.elice import EliceStt
+
+    monkeypatch.setenv("ELICE_API_KEY", "test-key")
+    monkeypatch.setattr(
+        requests, "post", _response({"_result": {"status": "error", "reason": "실" * 500}})
+    )
+    with pytest.raises(SttError) as e:
+        EliceStt().transcribe(SAMPLES, 16_000)
+    assert len(str(e.value)) == 200
+
+
+def test_elice_parses_chunks_and_skips_bad_timestamps(monkeypatch):
+    """timestamp 가 None 이거나 원소가 하나면 그 청크만 버리고 text 는 그대로 둔다."""
+    from stt.elice import EliceStt
+
+    monkeypatch.setenv("ELICE_API_KEY", "test-key")
+    monkeypatch.setattr(
+        requests,
+        "post",
+        _response(
+            {
+                "_result": {"status": "ok"},
+                "transcript": {
+                    "text": "안녕 하세요 반갑습니다",
+                    "chunks": [
+                        {"timestamp": [0.0, 0.4], "text": " 안녕"},
+                        {"timestamp": [None, 0.9], "text": " 하세요"},
+                        {"timestamp": [0.9], "text": " 반갑습니다"},
+                    ],
+                },
+            }
+        ),
+    )
+    r = EliceStt().transcribe(SAMPLES, 16_000)
+    assert r.text == "안녕 하세요 반갑습니다"
+    assert [w.text for w in r.words] == ["안녕"]

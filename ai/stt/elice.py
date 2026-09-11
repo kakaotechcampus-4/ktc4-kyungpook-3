@@ -48,24 +48,39 @@ class EliceStt:
         if self.word_timestamps:
             data["return_timestamps"] = "word"
 
-        r = requests.post(
-            f"{BASE}/v1/audio/transcriptions",
-            headers={"Authorization": f"Bearer {key}"},
-            files={"file": ("seg.wav", wav, "audio/wav")},
-            data=data,
-            timeout=self.timeout,
-        )
+        try:
+            r = requests.post(
+                f"{BASE}/v1/audio/transcriptions",
+                headers={"Authorization": f"Bearer {key}"},
+                files={"file": ("seg.wav", wav, "audio/wav")},
+                data=data,
+                timeout=self.timeout,
+            )
+        except requests.RequestException as e:
+            # 연결 끊김과 타임아웃은 OSError 계열이라 호출자의 except SttError 를 그냥 지나친다.
+            # 예외 이름만 싣는다. 본문이나 헤더를 붙이면 Authorization 이 로그로 나간다.
+            raise SttError(f"STT 요청 실패: {type(e).__name__}") from e
+
         if r.status_code != 200:
             raise SttError(f"STT {r.status_code}: {r.text[:200]}")
-        j = r.json()
+
+        try:
+            j = r.json()
+        except ValueError as e:
+            # 게이트웨이가 200 에 HTML 을 실어 보내는 경우가 있다. ValueError 는 SttError 가 아니다.
+            raise SttError("STT 응답이 JSON 이 아님") from e
+
         if (j.get("_result") or {}).get("status") != "ok" or not j.get("transcript"):
-            raise SttError((j.get("_result") or {}).get("reason") or "stt failed")
+            # 서버 문자열은 길이를 모른다. 위 상태코드 경로와 같은 200자로 자른다.
+            reason = (j.get("_result") or {}).get("reason")
+            raise SttError(str(reason)[:200] if reason else "stt failed")
 
         t = j["transcript"]
         words = []
         for c in t.get("chunks") or []:
             ts = c.get("timestamp") or [None, None]
-            if ts[0] is None or ts[1] is None:
+            # 원소가 하나뿐인 timestamp 가 실제로 온다. ts[1] 을 보기 전에 길이부터 본다.
+            if len(ts) < 2 or ts[0] is None or ts[1] is None:
                 continue
             words.append(Word(text=(c.get("text") or "").strip(), start_s=ts[0], end_s=ts[1]))
         return SttResult(text=(t.get("text") or "").strip(), words=words)
