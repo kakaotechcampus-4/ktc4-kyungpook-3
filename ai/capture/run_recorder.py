@@ -8,8 +8,6 @@
 
 from __future__ import annotations
 
-import logging
-import os
 import sys
 from pathlib import Path
 
@@ -30,10 +28,6 @@ async def on_session_saved(manifest: dict, manifest_path: Path) -> None:
 
 
 def build_bot() -> discord.Bot:
-    if not S.discord_guild_id:
-        print("[warn] DISCORD_GUILD_ID 가 비어 있다. 슬래시 명령이 글로벌로 등록되고 "
-              "반영까지 최대 1시간 걸린다. 한 서버에서 바로 확인하려면 .env 에 길드 ID 를 "
-              "채운다. 여러 서버에서 쓰려면 비운 게 맞다.", file=sys.stderr)
     bot = discord.Bot(
         intents=required_intents(),
         debug_guilds=[int(S.discord_guild_id)] if S.discord_guild_id else None,
@@ -48,11 +42,6 @@ def build_bot() -> discord.Bot:
 
 
 def main() -> int:
-    # 무음의 가장 흔한 원인인 "버린 패킷" 로그가 DEBUG 라 기본 설정에서는 안 보인다
-    # (voice/receive/reader.py:252-256).
-    if os.environ.get("LOG_LEVEL", "").upper() == "DEBUG":
-        logging.basicConfig(level=logging.INFO)
-        logging.getLogger("discord.voice").setLevel(logging.DEBUG)
     if not S.discord_bot_token:
         print("DISCORD_BOT_TOKEN 이 없습니다. .env.example 을 .env 로 복사해 채워 주세요.", file=sys.stderr)
         return 1
