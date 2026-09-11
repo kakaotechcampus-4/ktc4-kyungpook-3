@@ -1,7 +1,10 @@
+import threading
+
 import numpy as np
 
 from stt.backend import SttResult
 from stt.session import Session
+from stt.vad import StreamingVAD
 
 SR = 16_000
 
@@ -139,3 +142,55 @@ def test_close_flushes_in_flight_utterance():
     feed_packets(s, "kim", "김환", tone(1_000), 0)
     s.close()
     assert any(ln.final and ln.text == "마지막" for ln in lines)
+
+
+def test_pending_pcm_is_read_only_when_a_partial_is_queued(monkeypatch):
+    """pending_pcm 은 진행 중인 프레임을 매번 이어 붙인다. 패킷마다 읽으면 긴 발화에서
+    수신 스레드가 20ms 예산을 넘긴다. 읽기는 부분 전사를 실제로 넣을 때만 일어나야 한다."""
+    reads = []
+    real = StreamingVAD.pending_pcm
+
+    def counting(self):
+        reads.append(1)
+        return real.fget(self)
+
+    monkeypatch.setattr(StreamingVAD, "pending_pcm", property(counting))
+
+    s = Session(final_stt=FakeStt("최종"), partial_stt=FakeStt("부분"),
+                on_line=lambda _: None, workers=1,
+                partial_after_ms=500, partial_every_ms=500)
+    feed_packets(s, "kim", "김환", tone(4_000), 0)
+    s.close()
+
+    # 4초 발화는 20ms 패킷 200개다. 부분 전사 8회 + 종료 시 발화 확정 1회면 충분하고,
+    # 패킷마다 읽는 구현이면 200회대가 된다.
+    assert len(reads) <= 4_000 // 500 + 1
+
+
+def test_partial_without_word_timestamps_still_has_text():
+    """단어 타임스탬프를 주지 않는 백엔드는 확정 접두사도 꼬리도 만들 수 없다.
+    그래도 "말하는 중" 표시가 빈 문자열이 되면 안 된다."""
+    seen_partial = threading.Event()
+    lines = []
+
+    def collect(line):
+        lines.append(line)
+        if not line.final:
+            seen_partial.set()
+
+    class GatedFinal:
+        """확정본이 먼저 나가면 진행 중 턴이 사라져 부분 줄이 버려진다. 순서를 고정한다."""
+
+        name = "gated"
+
+        def transcribe(self, samples, sample_rate):
+            seen_partial.wait(timeout=2.0)
+            return SttResult(text="최종", words=[])
+
+    s = Session(final_stt=GatedFinal(), partial_stt=FakeStt("부분"),
+                on_line=collect, workers=1,
+                partial_after_ms=500, partial_every_ms=500)
+    feed_packets(s, "kim", "김환", tone(4_000), 0)
+    s.close()
+
+    assert any(not ln.final and ln.text == "부분" for ln in lines)
