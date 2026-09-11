@@ -46,6 +46,20 @@ def to_wav_bytes(raw: bytes) -> bytes:
     return buf.getvalue()
 
 
+def pcm_duration_sec(raw: bytes) -> float:
+    """PCM 바이트 길이 → 재생 시간(초). PCM_RATE/CHANNELS/SAMPLE_WIDTH 기준."""
+    return len(raw) / (PCM_RATE * PCM_CHANNELS * PCM_SAMPLE_WIDTH)
+
+
+def silence_padding(gap_sec: float) -> bytes:
+    """gap_sec 만큼의 무음 PCM 바이트. 화자별 트랙을 실제 경과시간 기준으로 맞추는 데 씀
+    (discord_adapter.SyncedWaveSink 참고 — 세션 병합 시 발화 순서가 깨지는 걸 막기 위한 패딩)."""
+    if gap_sec <= 0:
+        return b""
+    n_frames = int(gap_sec * PCM_RATE)
+    return b"\x00" * (n_frames * PCM_CHANNELS * PCM_SAMPLE_WIDTH)
+
+
 def wav_duration_sec(path: Path) -> float:
     try:
         with wave.open(str(path), "rb") as w:

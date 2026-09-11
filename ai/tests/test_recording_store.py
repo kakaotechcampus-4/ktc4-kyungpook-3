@@ -2,7 +2,17 @@ import json
 import wave
 from types import SimpleNamespace
 
-from capture.recording_store import PCM_CHANNELS, PCM_RATE, Track, key_to_user_id, save_session, to_wav_bytes
+from capture.recording_store import (
+    PCM_CHANNELS,
+    PCM_RATE,
+    PCM_SAMPLE_WIDTH,
+    Track,
+    key_to_user_id,
+    pcm_duration_sec,
+    save_session,
+    silence_padding,
+    to_wav_bytes,
+)
 
 
 def test_key_to_user_id_handles_all_pycord_variants():
@@ -10,6 +20,15 @@ def test_key_to_user_id_handles_all_pycord_variants():
     assert key_to_user_id(12345) == 12345
     assert key_to_user_id(SimpleNamespace(id=777)) == 777
     assert key_to_user_id(SimpleNamespace(name="no id")) is None
+
+
+def test_silence_padding_matches_gap_duration():
+    assert silence_padding(0) == b""
+    assert silence_padding(-1) == b""
+    one_sec = silence_padding(1.0)
+    assert len(one_sec) == PCM_RATE * PCM_CHANNELS * PCM_SAMPLE_WIDTH
+    assert one_sec == b"\x00" * len(one_sec)
+    assert pcm_duration_sec(one_sec) == 1.0
 
 
 def test_to_wav_bytes_wraps_raw_pcm_and_keeps_existing_wav():
