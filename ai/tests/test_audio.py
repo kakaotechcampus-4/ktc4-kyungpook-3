@@ -27,6 +27,18 @@ def test_amplitude_is_normalised():
     assert 0.4 < float(out.mean()) < 0.6
 
 
+def test_channels_are_averaged_not_picked():
+    # 좌우 진폭이 다른 패킷. 한쪽 채널만 읽으면 0.25(L) 나 0.75(R) 가 나오고,
+    # 두 채널을 평균해야 0.5 가 나온다. 값이 유일한 판별 조건이라 shape 만 보면 못 잡는다.
+    frames = np.zeros((960, 2), dtype="<i2")
+    frames[:, 0] = 8192
+    frames[:, 1] = 24576
+    out = pcm_to_mono16k(frames.reshape(-1).tobytes())
+    assert out.shape == (320,)
+    expected = ((8192 + 24576) / 2) / 32768.0  # 0.5
+    np.testing.assert_allclose(out, expected, atol=1e-6)
+
+
 def test_wav_roundtrip_preserves_length():
     import io
     import soundfile as sf
