@@ -217,9 +217,15 @@ def test_the_filter_does_not_charge_its_cost_to_the_transcribe_stage():
 
 # ------------------------------------------------------------------ 실제 음성
 def _golden_wav():
+    import os
     from pathlib import Path
 
-    root = Path.home() / "Desktop" / "카테캠 아이디어톤" / "mm" / "golden" / "meeting-01" / "audio"
+    # 골든셋 오디오는 팀원 목소리라 레포에 없다. 각자 기기에 있는 경로를
+    # GOLDEN_AUDIO_DIR 로 알려주면 이 테스트가 돈다. 없으면 건너뛴다.
+    env = os.environ.get("GOLDEN_AUDIO_DIR")
+    root = Path(env) if env else (
+        Path.home() / "Desktop" / "카테캠 아이디어톤" / "mm" / "golden" / "meeting-01" / "audio"
+    )
     if not root.is_dir():
         return None
     wavs = sorted(root.glob("*.wav"))
