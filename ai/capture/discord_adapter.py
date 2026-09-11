@@ -520,12 +520,17 @@ class RecordingCog(discord.Cog):
     @discord.guild_only()
     @discord.option("stt", bool, required=False,
                     description="STT 왕복까지 확인 (1초 오디오, 약 0.1원 과금)")
-    async def selftest(self, ctx: discord.ApplicationContext, stt: bool = False) -> None:
+    @discord.option("seconds", int, required=False, min_value=1, max_value=15,
+                    description="수신을 재는 시간 (기본 3초, 말하다 쉬는 구간을 넣으려면 길게)")
+    async def selftest(self, ctx: discord.ApplicationContext, stt: bool = False,
+                       seconds: int | None = None) -> None:
         from capture import selftest as st
 
-        if not await _defer(ctx):  # 3초 프로브가 인터랙션 시한을 넘긴다
+        # 프로브가 인터랙션 시한 3초를 넘긴다. defer 뒤에는 followup 까지 15분이라
+        # 15초 프로브도 안에 들어온다.
+        if not await _defer(ctx):
             return
-        await ctx.followup.send(await st.run(self, ctx, use_stt=stt))
+        await ctx.followup.send(await st.run(self, ctx, use_stt=stt, seconds=seconds))
 
     @discord.slash_command(name="leave", description="봇이 음성 채널에서 나갑니다")
     @discord.guild_only()

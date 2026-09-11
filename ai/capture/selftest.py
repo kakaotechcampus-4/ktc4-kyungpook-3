@@ -177,22 +177,28 @@ def _internals(vc) -> str:
     return f"router_alive={'-' if router is None else router} socket_paused={paused}"
 
 
-async def run(cog, ctx: discord.ApplicationContext, use_stt: bool = False) -> str:
+async def run(cog, ctx: discord.ApplicationContext, use_stt: bool = False,
+              seconds: float | None = None) -> str:
     """단계를 순서대로 밟고 리포트 문자열을 돌려준다.
 
     어느 단계가 예외로 끝나도 리포트는 나온다. 예외가 밖으로 나가면 사용자는 부분 결과도
     못 보고 인터랙션 오류만 보는데, 그게 이 명령이 없애려는 바로 그 화면이다.
+
+    seconds 는 프로브 창 길이다. 기본값을 상수로 두지 않고 None 으로 받는 이유는, 기본
+    인자는 정의 시점에 묶여 나중에 PROBE_SECONDS 를 바꿔도 따라오지 않기 때문이다.
     """
     t = SelfTest()
+    probe_seconds = PROBE_SECONDS if seconds is None else float(seconds)
     try:
-        await _stages(cog, ctx, t, use_stt)
+        await _stages(cog, ctx, t, use_stt, probe_seconds)
     except Exception as e:
         t.record("자체 점검", False,
                  f"'{t.last_step() or '시작'}' 다음에서 {type(e).__name__}: {e}")
     return t.report()
 
 
-async def _stages(cog, ctx: discord.ApplicationContext, t: SelfTest, use_stt: bool) -> None:
+async def _stages(cog, ctx: discord.ApplicationContext, t: SelfTest, use_stt: bool,
+                  probe_seconds: float) -> None:
     # 어댑터가 이 모듈을 부르므로 모듈 최상단에서 되부르면 순환 import 다.
     from capture.discord_adapter import is_recording
 
@@ -336,7 +342,7 @@ async def _stages(cog, ctx: discord.ApplicationContext, t: SelfTest, use_stt: bo
             t.record("오디오 수신", False, f"녹음을 시작하지 못했습니다: {type(e).__name__}: {e}")
         else:
             try:
-                await asyncio.sleep(PROBE_SECONDS)
+                await asyncio.sleep(probe_seconds)
             finally:
                 # stop_recording 이 _reader 를 MISSING 으로 되돌리므로
                 # (voice/client.py:788-790) reader 에서 읽을 것은 전부 정지 전에 읽는다.
@@ -349,7 +355,7 @@ async def _stages(cog, ctx: discord.ApplicationContext, t: SelfTest, use_stt: bo
             good = probe.sizes.get(PCM_20MS_BYTES, 0)
             total = sum(probe.sizes.values())
             speech = r["packets"]
-            levels = (f"{PROBE_SECONDS:g}초 동안 패킷 {total} (음성 {speech}, "
+            levels = (f"{probe_seconds:g}초 동안 패킷 {total} (음성 {speech}, "
                       f"잡음 {r['noise_packets']}) · 최대 RMS {r['peak_rms']:.3f} "
                       f"(임계 {r['speech_rms']:.3f})")
             if err is not None:

@@ -695,6 +695,34 @@ async def test_packets_must_arrive_during_the_probe_window_not_before_it(monkeyp
     assert "0.2초 동안" in row
 
 
+async def test_chosen_seconds_reaches_both_the_wait_and_the_report(monkeypatch):
+    """둘 중 하나만 닿으면 사용자는 3초라고 적힌 10초 결과를 보거나 그 반대를 본다.
+
+    _world 는 PROBE_SECONDS 를 0.05 로 눌러 둔다. 고른 값이 상수를 실제로 밀어내야
+    대기도 문구도 0.3 이 된다.
+    """
+    import time
+
+    cog, ctx, _vc, _text = _world(monkeypatch)
+    t0 = time.monotonic()
+    out = await selftest.run(cog, ctx, use_stt=False, seconds=0.3)
+    elapsed = time.monotonic() - t0
+
+    row = _row(out, "오디오 수신")
+    assert "0.3초 동안" in row
+    assert "0.05초" not in row
+    assert elapsed >= 0.25, f"{elapsed:.3f}초만 기다렸다 — 대기가 고른 값을 안 읽는다"
+    assert "패킷 10 (음성 10, 잡음 0)" in row      # 창 안에 패킷이 실제로 들어왔다
+
+
+async def test_omitted_seconds_falls_back_to_the_module_constant(monkeypatch):
+    """옵션을 안 주면 PROBE_SECONDS 가 기본이다. 그래야 상수를 바꾸면 기본이 따라온다."""
+    cog, ctx, _vc, _text = _world(monkeypatch)
+    monkeypatch.setattr(selftest, "PROBE_SECONDS", 0.12)
+    out = await selftest.run(cog, ctx, use_stt=False, seconds=None)
+    assert "0.12초 동안" in _row(out, "오디오 수신")
+
+
 async def test_audio_stage_fails_when_no_packet_arrives_in_the_probe(monkeypatch):
     cog, ctx, _vc, _text = _world(monkeypatch, tracks=[])
     out = await selftest.run(cog, ctx, use_stt=False)
@@ -1224,17 +1252,8 @@ def test_selftest_command_defers_before_the_probe():
     assert src.index("_defer(ctx)") < src.index("st.run(")
 
 
-async def test_selftest_command_passes_the_stt_flag_through(monkeypatch):
-    """옵션이 본문까지 안 내려가면 유료 호출 게이트 전체가 무의미하다."""
-    import capture.discord_adapter as adapter
-
-    seen = []
-
-    async def _fake_run(cog, ctx, use_stt=False):
-        seen.append(use_stt)
-        return "리포트"
-
-    monkeypatch.setattr(selftest, "run", _fake_run)
+class _FakeCtx:
+    """콜백 배선만 보는 인터랙션 대역. defer 와 followup 만 있으면 된다."""
 
     class _Followup:
         def __init__(self):
@@ -1243,22 +1262,72 @@ async def test_selftest_command_passes_the_stt_flag_through(monkeypatch):
         async def send(self, text):
             self.sent.append(text)
 
-    class _C:
-        def __init__(self):
-            self.followup = _Followup()
-            self.deferred = 0
+    def __init__(self):
+        self.followup = self._Followup()
+        self.deferred = 0
 
-        async def defer(self):
-            self.deferred += 1
+    async def defer(self):
+        self.deferred += 1
 
-    ctx = _C()
+
+async def test_selftest_command_passes_the_stt_flag_through(monkeypatch):
+    """옵션이 본문까지 안 내려가면 유료 호출 게이트 전체가 무의미하다."""
+    import capture.discord_adapter as adapter
+
+    seen = []
+
+    async def _fake_run(cog, ctx, use_stt=False, seconds=None):
+        seen.append(use_stt)
+        return "리포트"
+
+    monkeypatch.setattr(selftest, "run", _fake_run)
+    ctx = _FakeCtx()
     await adapter.RecordingCog.selftest.callback(object(), ctx, stt=True)
     assert seen == [True]
     assert ctx.deferred == 1
     assert ctx.followup.sent == ["리포트"]
 
-    await adapter.RecordingCog.selftest.callback(object(), _C())
+    await adapter.RecordingCog.selftest.callback(object(), _FakeCtx())
     assert seen == [True, False]
+
+
+async def test_selftest_command_passes_the_seconds_option_through(monkeypatch):
+    """옵션이 본문까지 안 내려가면 사용자가 고른 길이가 조용히 버려진다."""
+    import capture.discord_adapter as adapter
+
+    seen = []
+
+    async def _fake_run(cog, ctx, use_stt=False, seconds=None):
+        seen.append(seconds)
+        return "리포트"
+
+    monkeypatch.setattr(selftest, "run", _fake_run)
+    await adapter.RecordingCog.selftest.callback(object(), _FakeCtx(), seconds=12)
+    await adapter.RecordingCog.selftest.callback(object(), _FakeCtx())
+    assert seen == [12, None]      # 안 주면 run() 이 PROBE_SECONDS 를 쓴다
+
+
+async def test_seconds_option_declares_its_range_to_discord():
+    """범위는 디스코드가 강제한다. 페이로드에서 빠지면 900초짜리 프로브가 그대로 들어온다.
+
+    discord.Bot() 은 만들 때 이벤트 루프를 찾는다 — 동기 테스트에는 루프가 없다.
+    """
+    import discord
+
+    import capture.discord_adapter as adapter
+
+    bot = discord.Bot(intents=adapter.required_intents())
+    bot.add_cog(adapter.RecordingCog(bot))
+    cmd = next(c for c in bot.pending_application_commands if c.name == "selftest")
+
+    opt = next(o for o in cmd.options if o.name == "seconds")
+    assert (opt.min_value, opt.max_value) == (1, 15)
+    assert opt.required is False
+    # 기본값을 설명에 적어 두고 상수와 어긋나게 두면 설명이 거짓말이 된다.
+    assert f"기본 {selftest.PROBE_SECONDS:g}초" in opt.description
+
+    payload = next(o for o in cmd.to_dict()["options"] if o["name"] == "seconds")
+    assert (payload["min_value"], payload["max_value"]) == (1, 15)
 
 
 def test_probe_sink_does_not_transcribe():
