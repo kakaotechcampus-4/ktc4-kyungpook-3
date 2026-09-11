@@ -739,3 +739,37 @@ async def test_manifest_is_written_even_with_no_speakers(tmp_path, monkeypatch):
     data = json.loads(manifest.read_text(encoding="utf-8"))
     assert data["speakers"] == []
     assert data["session"] == str(meeting.ts)
+
+
+async def test_stop_summary_carries_the_stage_latencies(tmp_path, monkeypatch):
+    """종료 요약에 구간별 지연 한 줄이 있어야 한다. 그게 없으면 "체감 10초" 를
+    수치와 맞춰 볼 자리가 어디에도 없다."""
+    cog, _ctx, meeting, text, _vc = await _start_one(tmp_path, monkeypatch)
+    replay([ReplayTrack(user_id=7, name="김환", samples=_tone(1_200), ssrc=70)], meeting.sink.write)
+    meeting.sink.cleanup()
+
+    await cog._finish_meeting(GUILD_ID)
+
+    latency = [x for x in text.summaries()[0].splitlines() if x.startswith("지연")]
+    assert len(latency) == 1
+    assert "큐 " in latency[0] and "전사 " in latency[0] and "게시 " in latency[0]
+
+    rows = [
+        json.loads(x)
+        for x in (meeting.out_dir / "latency.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert len(rows) == 1
+    assert rows[0]["queue_s"] is not None and rows[0]["transcribe_s"] is not None
+    assert rows[0]["seq"] == 1
+
+
+async def test_stop_summary_says_unmeasured_when_nobody_spoke(tmp_path, monkeypatch):
+    """발화가 없으면 0.00 초가 아니라 못 쟀다고 적는다. 0 은 즉시로 읽힌다."""
+    cog, _ctx, meeting, text, _vc = await _start_one(tmp_path, monkeypatch)
+
+    await cog._finish_meeting(GUILD_ID)
+
+    summary = text.summaries()[0]
+    assert "지연 미측정 (확정된 발화 없음)" in summary
+    assert "0.00" not in summary
+    assert (meeting.out_dir / "latency.jsonl").read_text(encoding="utf-8") == ""
