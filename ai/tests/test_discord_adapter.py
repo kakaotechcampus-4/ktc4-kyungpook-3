@@ -135,6 +135,20 @@ class _FakePerms:
     connect = True
 
 
+class _FakeReader:
+    """py-cord AudioReader 자리. 리키 리스너가 읽는 것만 흉내낸다.
+
+    실물은 start_recording 이 만들고 stop 때 MISSING 으로 돌아간다
+    (voice/client.py:771-773, 788-790). 그래서 이 대역도 녹음 중에만 존재한다.
+    """
+
+    def __init__(self):
+        self.rekeys: list[bytes] = []
+
+    def update_secret_key(self, secret_key):
+        self.rekeys.append(secret_key)
+
+
 class _FakeVoiceClient:
     def __init__(self, channel):
         self.channel = channel
@@ -142,6 +156,7 @@ class _FakeVoiceClient:
         self.started: list[tuple] = []
         self.moved: list = []
         self.disconnected = 0
+        self._reader = None
 
     def is_connected(self):
         return True
@@ -151,9 +166,11 @@ class _FakeVoiceClient:
 
     def start_recording(self, sink, callback, *args):
         self.started.append((sink, callback, args))
+        self._reader = _FakeReader()
 
     def stop_recording(self):
         self.started.clear()
+        self._reader = None
 
     async def move_to(self, channel):
         self.moved.append(channel)
@@ -164,6 +181,7 @@ class _FakeVoiceClient:
         # 실제 VoiceClient.disconnect 는 self.stop() 을 거쳐 돌고 있는 리더를 세운다
         # (voice/client.py:381 → 620-622). 남의 회의를 끊으면 그 회의가 그 자리에서 죽는다.
         self.started.clear()
+        self._reader = None
 
 
 class _FakeVoiceChannel:
@@ -434,6 +452,85 @@ async def test_bot_kicked_from_the_room_keeps_the_last_reorder_window(tmp_path, 
     # 1.2초 = 60패킷 × 20ms. 마지막 창 16개가 빠지면 0.88 이 된다.
     assert records[0]["end"] == pytest.approx(1.2, abs=0.02)
     assert saved[0]["speakers"][0]["duration_sec"] == pytest.approx(1.2, abs=0.02)
+
+
+async def test_person_leaving_drains_the_window_before_flushing_the_speaker(tmp_path, monkeypatch):
+    """퇴장한 사람의 재정렬 창을 비운 **뒤** 에 진행 중 발화를 확정한다.
+
+    순서가 반대이거나 드레인이 빠지면 창에 남은 꼬리 16패킷이 이미 닫힌 VAD 로 들어가
+    새 발화를 하나 더 연다. 회의록에 0.88초짜리와 0.32초짜리 두 줄이 생기고, 사람이
+    한 번 말한 것이 두 번 말한 것으로 남는다.
+    """
+    cog, ctx, meeting, _text, _vc = await _start_one(tmp_path, monkeypatch)
+    room = ctx.author.voice.channel
+    replay([ReplayTrack(user_id=7, name="김환", samples=_tone(1_200), ssrc=70)], meeting.sink.write)
+
+    leaver = _FakeMember(7, "김환", guild=ctx.guild)
+    await cog.on_voice_state_update(leaver, _FakeVoiceState(room), _FakeVoiceState(None))
+
+    # flush_speaker 가 확정한 발화는 STT 워커를 거쳐 on_line 으로 온다. 고정 대기 대신
+    # 실제 도착을 기다린다. flush_speaker 가 없으면 여기서 아무것도 안 오고, 뒤의
+    # session.close() 가 대신 확정해 같은 회의록이 나온다 — 이 단언이 그 차이를 잡는다.
+    for _ in range(200):
+        if meeting.ledger.lines:
+            break
+        await asyncio.sleep(0.01)
+    assert len(meeting.ledger.lines) == 1      # 퇴장 시점에 확정됐다. close() 전이다.
+
+    await cog._finish_meeting(GUILD_ID)
+
+    records = [
+        json.loads(x)
+        for x in (meeting.out_dir / "transcript.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert len(records) == 1
+    assert records[0]["end"] == pytest.approx(1.2, abs=0.02)
+
+
+async def test_speaking_update_rekeys_the_decryptor_when_the_key_changed(tmp_path, monkeypatch):
+    """재연결로 음성 키가 바뀌면 복호화기를 갱신한다.
+
+    설치본에는 update_secret_key 호출자가 없고 (reader.py:138-139, 370-371) 복호화기는
+    start_recording 시점의 키로 box 를 한 번 만든다 (reader.py:126-128). 재연결 경로는
+    disconnect(cleanup=False) 라 reader 가 살아남으므로, 이 리스너가 없으면 회의 중반에
+    음성 서버가 한 번 끊긴 뒤 모든 패킷이 CryptoError 가 된다 — 예외도 메시지도 없이
+    오디오만 0건이다.
+
+    실제 재연결을 일으켜 관측한 것은 아니다. 리스너가 키 변화에 반응한다는 것까지만 본다.
+    """
+    cog, ctx, meeting, _text, vc = await _start_one(tmp_path, monkeypatch)
+    assert meeting.secret_key == b""           # connect 시점의 키
+    assert vc._reader.rekeys == []
+
+    vc.secret_key = [1, 2, 3, 4]               # 새 session_description 이 키를 갈아끼웠다
+    speaker = _FakeMember(7, "김환", guild=ctx.guild)
+    await cog.on_member_speaking_state_update(speaker, 70, None)
+
+    assert vc._reader.rekeys == [bytes([1, 2, 3, 4])]
+    assert meeting.secret_key == bytes([1, 2, 3, 4])
+
+    await cog._finish_meeting(GUILD_ID)
+
+
+async def test_speaking_update_does_not_rekey_when_the_key_is_unchanged(tmp_path, monkeypatch):
+    """같은 키로는 다시 갱신하지 않는다.
+
+    이 리스너는 발화가 시작될 때마다 온다. 매번 box 를 새로 만들면 회의 내내 불필요한
+    재생성이 쌓이고, 무엇보다 "키가 바뀌었다" 라는 신호가 의미를 잃는다.
+    """
+    cog, ctx, meeting, _text, vc = await _start_one(tmp_path, monkeypatch)
+    vc.secret_key = [9, 9, 9]
+    speaker = _FakeMember(7, "김환", guild=ctx.guild)
+
+    await cog.on_member_speaking_state_update(speaker, 70, None)
+    assert len(vc._reader.rekeys) == 1          # 첫 발화에서 한 번
+
+    for _ in range(3):                          # 그 뒤 발화마다 같은 이벤트가 온다
+        await cog.on_member_speaking_state_update(speaker, 70, None)
+    assert len(vc._reader.rekeys) == 1          # 더는 안 부른다
+    assert meeting.secret_key == bytes([9, 9, 9])
+
+    await cog._finish_meeting(GUILD_ID)
 
 
 async def test_finish_still_writes_the_transcript_when_the_final_drain_raises(
