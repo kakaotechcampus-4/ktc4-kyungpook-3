@@ -29,6 +29,9 @@ STT_PROBE_SECONDS = 1.0
 DAVE_STATS_MEMBERS = 6
 # 공백이든 조용한 패킷이든 한 건은 우연이라 어느 쪽 근거로도 쓰지 않는다.
 PROBE_EVIDENCE = 2
+# 숨 쉬려고 쉬는 간격의 위쪽. 이보다 긴 공백은 말이 끊긴 것이 아니라 말할 차례가
+# 바뀐 구간 쪽이라 전송 방식의 근거로 쓰지 않는다. 실제 회의로 재서 고른 값은 아니다.
+BREATH_GAP_MS = 500
 # 금액이 나오는 자리마다 같이 간다 (stt/elice.py:9). 이 문장이 그 숫자의 정직한 절반이다.
 COST_CAVEAT = "최소 과금 단위는 확인하지 못했다. 실제 청구는 더 클 수 있다"
 
@@ -38,7 +41,7 @@ def _cost(whisper_krw) -> str:
 
 
 def _transmission(r: dict, cut_short: bool = False) -> str:
-    """공백·조용한 패킷과 그 해석 한 줄.
+    """주 화자의 공백·조용한 패킷과 그 해석 한 줄.
 
     이 줄을 읽는 사람은 VAD 설계를 정한다. 조용한 구간에도 패킷이 오면 발화 경계를
     에너지로 찾아야 하고, 안 오면 도착한 패킷은 전부 말이라 MIN_SPEECH_MS 가 짧은
@@ -46,9 +49,19 @@ def _transmission(r: dict, cut_short: bool = False) -> str:
     앞질러 단정하면 재는 의미가 없다. 그래서 관측과 다음 할 일을 같이 적되, 아무것도
     못 잰 실행은 못 쟀다고만 적는다. 최대 RMS 가 임계를 못 넘은 실행이 그렇다. 온 패킷이
     전부 조용한 것은 숨 쉬는 구간이 아니라 마이크 입력이 작은 것일 수 있다.
+
+    숫자는 방 전체가 아니라 음성 패킷이 제일 많은 화자 것을 읽는다. 거의 말하지 않는
+    스트림의 몇 초짜리 침묵이 섞이면 말한 사람의 끊김이 그 밑에 묻힌다.
+
+    공백은 세지 않고 크기로 가른다. 숨 쉬려고 쉰 200~500ms 와 말할 차례가 바뀐 1.5초는
+    건수로는 같지만 답이 반대다.
     """
-    head = (f"공백 {r['gaps']}건 (최대 {r['max_gap_ms']}ms, 중앙값 {r['median_gap_ms']}ms) · "
-            f"조용한 패킷 {r['quiet_packets']} · ")
+    breaths = [g for g in r["top_gap_sizes"] if g <= BREATH_GAP_MS]
+    long_gaps = [g for g in r["top_gap_sizes"] if g > BREATH_GAP_MS]
+    quiet = r["top_quiet_packets"]
+    head = (f"화자 {r['speakers']}명 · 주 화자 공백 {r['top_gaps']}건 "
+            f"(최대 {r['top_max_gap_ms']}ms, 중앙값 {r['top_median_gap_ms']}ms · "
+            f"숨 크기 {len(breaths)}건) · 조용한 패킷 {quiet} · ")
     if cut_short:
         return head + "수신이 중간에 끊겨 근거가 못 된다. 아래 sink 전달을 먼저 본다"
     if r["packets"] == 0:
@@ -57,16 +70,24 @@ def _transmission(r: dict, cut_short: bool = False) -> str:
     if r["peak_rms"] <= r["speech_rms"]:
         return head + ("온 패킷이 전부 임계 아래라 아무것도 재지 못했다. 조용한 구간이 아니라 입력이 "
                        "작은 것일 수 있다. 위 최대 RMS 를 보고 마이크를 올린 뒤 다시 실행한다")
-    if r["gaps"] >= PROBE_EVIDENCE and r["quiet_packets"] == 0:
+    if len(breaths) >= PROBE_EVIDENCE and quiet == 0:
         noise = (f" 잡음 {r['noise_packets']}건을 걸렀으니 그 공백이 침묵 프레임일 수도 있다."
                  if r["noise_packets"] else "")
-        return head + ("sink 까지 온 패킷은 전부 말이었고 사이가 끊겼다." + noise +
+        return head + (f"주 화자 패킷은 전부 말이었고 숨 크기 공백 {len(breaths)}건으로 끊겼다 "
+                       f"— 그게 근거다." + noise +
                        " 짧은 응답이 MIN_SPEECH_MS 에 잘리는 쪽을 먼저 본다")
-    if r["quiet_packets"] >= PROBE_EVIDENCE and r["gaps"] == 0:
-        return head + ("끊김 없이 오는데 조용한 패킷이 섞여 있다. 발화 경계를 에너지로 찾아야 "
-                       "하므로 간격 병합과 히스테리시스부터 고친다")
-    return head + ("공백과 조용한 패킷이 같이 나왔거나 둘 다 적어서 아직 갈리지 않았다. "
-                   "말하다 한두 번 쉬기를 섞어 다시 실행한다")
+    if quiet >= PROBE_EVIDENCE and not breaths:
+        aside = (f" {BREATH_GAP_MS}ms 를 넘는 공백 {len(long_gaps)}건은 차례가 바뀐 구간일 수 "
+                 f"있어 근거에서 뺐다." if long_gaps else "")
+        return head + (f"주 화자는 숨 크기 공백 없이 오는데 조용한 패킷이 {quiet}건 섞여 있다 "
+                       f"— 그게 근거다." + aside +
+                       " 발화 경계를 에너지로 찾아야 하므로 간격 병합과 히스테리시스부터 고친다")
+    if long_gaps and not breaths:
+        return head + (f"주 화자 공백이 전부 {BREATH_GAP_MS}ms 를 넘어 숨 쉬는 간격이 아니다. "
+                       "조용한 패킷도 적어 아직 갈리지 않았다. seconds 를 늘리고 말하다 잠깐 "
+                       "쉬기를 섞어 다시 실행한다")
+    return head + ("숨 크기 공백과 조용한 패킷이 같이 나왔거나 둘 다 적어서 아직 갈리지 않았다. "
+                   "seconds 를 늘리고 말하다 한두 번 쉬기를 섞어 다시 실행한다")
 
 CAUSES = {
     "슬래시 명령 등록": "DISCORD_GUILD_ID 를 채우면 그 서버에 즉시 등록된다. 비우면 글로벌 "

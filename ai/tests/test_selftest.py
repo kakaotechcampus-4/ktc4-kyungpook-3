@@ -866,8 +866,39 @@ def _clocked_probe(monkeypatch, times):
     monkeypatch.setattr(selftest, "_ProbeSink", _Clocked)
 
 
+def _clocked_probe_by_speaker(monkeypatch, times):
+    """화자마다 도착 시각을 따로 쥔다. 스트림이 둘인 방은 이렇게만 만들 수 있다."""
+
+    class _Clocked(selftest._ProbeSink):
+        def __init__(self) -> None:
+            super().__init__()
+            self._queues = {uid: list(ts) for uid, ts in times.items()}
+            self._clock = {"now_ms": 0}
+            self.now_ms = lambda: self._clock["now_ms"]
+
+        def write(self, data, user):
+            q = self._queues.get(getattr(user, "id", user))
+            if q:
+                self._clock["now_ms"] = q.pop(0)
+            super().write(data, user)
+
+    monkeypatch.setattr(selftest, "_ProbeSink", _Clocked)
+
+
 _GAPPY = [0, 20, 40, 300, 320, 340, 600, 620, 640, 660]     # 260ms 공백 둘
 _EVEN = [20 * i for i in range(10)]
+# 전부 1초를 넘는다. 숨 쉬는 간격이 아니라 말할 차례가 바뀐 자리 쪽이다.
+_TURN_GAPS = [0, 20, 40, 1600, 1620, 1640, 2900, 2920, 2940, 2960]
+# 숨 크기 둘에 큰 것 하나가 섞인 모양.
+_GAPPY_PLUS_TURN = [0, 20, 40, 300, 320, 340, 600, 620, 640, 2300]
+_SECOND_STREAM = [0, 1500, 2900]                            # 1500ms, 1400ms 공백
+
+
+def _two_stream_tracks():
+    """말한 사람(또렷하다 조용해짐)과, 거의 말하지 않는 두 번째 스트림."""
+    return [ReplayTrack(user_id=7, name="김환",
+                        samples=np.concatenate([_tone(100), _tone(100, amp=0.002)]), ssrc=70),
+            ReplayTrack(user_id=8, name="둘째", samples=_tone(60, amp=0.002), ssrc=80)]
 
 
 def _quiet_track():
@@ -944,6 +975,51 @@ async def test_cut_short_probe_is_not_evidence_either(monkeypatch):
     row = _row(out, "전송 방식")
     assert "근거가 못 된다" in row
     assert "MIN_SPEECH_MS" not in row and "히스테리시스" not in row
+
+
+async def test_transmission_row_reads_the_dominant_speaker_not_the_aggregate(monkeypatch):
+    """실제 실행 둘이 '갈리지 않았다' 로 나온 이유가 이 세계다.
+
+    거의 말하지 않는 두 번째 스트림의 1.5초 공백이 집계에 섞여 말한 사람의 공백
+    0건을 덮었다. 화자별로 읽으면 같은 입력이 한쪽으로 갈린다.
+    """
+    cog, ctx, _vc, _text = _world(monkeypatch, tracks=_two_stream_tracks())
+    _clocked_probe_by_speaker(monkeypatch, {7: _EVEN, 8: _SECOND_STREAM})
+    out = await selftest.run(cog, ctx, use_stt=False)
+
+    assert "패킷 13 (음성 13" in _row(out, "오디오 수신")   # 두 스트림이 다 들어왔다
+    row = _row(out, "전송 방식")
+    assert "화자 2명" in row
+    assert "공백 0건" in row and "조용한 패킷 5" in row
+    assert "1500" not in row and "1400" not in row          # 집계 공백이 새면 안 된다
+    assert "히스테리시스" in row
+    assert "갈리지 않았다" not in row
+
+
+async def test_gaps_too_large_to_be_breaths_are_not_min_speech_evidence(monkeypatch):
+    """숨 쉬는 간격은 200~500ms다. 1.5초는 말이 끊긴 게 아니라 차례가 바뀐 자리다.
+
+    건수만 세면 둘이 같은 근거가 되고, 이 줄을 읽는 사람이 VAD 를 엉뚱하게 고친다.
+    """
+    cog, ctx, _vc, _text = _world(monkeypatch)
+    _clocked_probe(monkeypatch, _TURN_GAPS)
+    out = await selftest.run(cog, ctx, use_stt=False)
+    row = _row(out, "전송 방식")
+    assert "공백 2건" in row and "최대 1560ms" in row
+    assert "숨 크기 0건" in row
+    assert f"{selftest.BREATH_GAP_MS}ms 를 넘어" in row
+    assert "MIN_SPEECH_MS" not in row and "히스테리시스" not in row
+
+
+async def test_one_oversized_gap_does_not_cancel_the_breath_sized_ones(monkeypatch):
+    """숨 크기 공백이 충분히 나왔으면 큰 공백 하나가 섞였다고 근거가 없어지지 않는다."""
+    cog, ctx, _vc, _text = _world(monkeypatch)
+    _clocked_probe(monkeypatch, _GAPPY_PLUS_TURN)
+    out = await selftest.run(cog, ctx, use_stt=False)
+    row = _row(out, "전송 방식")
+    assert "공백 3건" in row and "최대 1660ms" in row
+    assert "숨 크기 2건" in row
+    assert "MIN_SPEECH_MS" in row
 
 
 async def test_transmission_row_never_fails_the_run(monkeypatch):
