@@ -10,6 +10,8 @@ VoiceData 는 .packet(.timestamp, .ssrc) · .source(.id, .display_name) · .pcm 
 
 py-cord PR#3159 은 무음 구간에 패킷을 만들지 않지만, 디스코드가 Opus 침묵 프레임을
 보내기도 한다(Craig onData:791). emit_silence_frames 로 두 경우를 다 재현한다.
+sink 는 is_opus() 가 False 라 이미 디코딩된 PCM 을 받으므로, 침묵 프레임도 원문
+오퍼스 바이트가 아니라 디코딩된 모양(DECODED_SILENCE_FRAME)으로 흘린다.
 """
 
 from __future__ import annotations
@@ -18,11 +20,12 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from capture.timeline import OPUS_SILENCE
-
 SR = 16_000
 PACKET_MS = 20
 RTP_CLOCK_HZ = 48_000
+# 디코딩된 침묵 프레임 (20ms 스테레오 48kHz 프레임과 같은 길이 — _to_discord_bytes 참고).
+# is_opus() 가 False 인 경로에서 디스코드 침묵 프레임은 이미 이 모양으로 풀려 온다.
+DECODED_SILENCE_FRAME = b"\x00" * 3840
 
 
 @dataclass
@@ -78,7 +81,7 @@ def replay(tracks: list[ReplayTrack], sink_write, clock: dict | None = None, rng
             is_silent = tr.silent_below and float(np.sqrt(np.mean(chunk * chunk))) < tr.silent_below
             if is_silent:
                 if tr.emit_silence_frames:
-                    events.append((at_ms, tr, rtp, OPUS_SILENCE))
+                    events.append((at_ms, tr, rtp, DECODED_SILENCE_FRAME))
                 continue
             if tr.drop_rate and rng.random() < tr.drop_rate:
                 continue

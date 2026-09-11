@@ -15,7 +15,6 @@ Craig(craig.chat) 도 같은 선택을 한다 - 도착 시각으로 위치를 �
 
 from __future__ import annotations
 
-OPUS_SILENCE = b"\xf8\xff\xfe"
 NOISE_NONZERO_MAX = 1  # 0 이 아닌 바이트가 이 개수 이하면 쓰레기로 본다
 REORDER_WINDOW = 16    # 16패킷 = 320ms. Craig 와 같은 크기
 HALF_RANGE = 0x80000000
@@ -27,15 +26,10 @@ REANCHOR_TICKS = 48_000 * 300
 def is_noise_packet(pcm: bytes) -> bool:
     """음성이 아닌 패킷인가. 공백 판정 전에 걸러야 한다.
 
-    실제 PCM 경로에서는 디스코드 침묵 프레임도 Cloudflare 쓰레기 패킷도 디코딩되면
-    거의 전부 0이라 nonzero <= 1 분기 하나로 걸러진다 (3바이트 원문 그대로는 오지
-    않는다, 실측). OPUS_SILENCE 와의 직접 비교는 그래서 운영 경로에서는 죽어 있지만,
-    오프라인 리플레이 하니스(tests/replay.py)가 침묵 프레임을 이 3바이트 상수로
-    흉내내 그대로 write() 에 흘리므로 하니스 호환을 위해 남긴다.
+    디스코드 침묵 프레임도 Cloudflare 쓰레기 패킷도 디코딩되면 거의 전부 0이라
+    nonzero <= 1 분기 하나로 걸러진다.
     """
     if not pcm:
-        return True
-    if pcm == OPUS_SILENCE:
         return True
     nonzero = len(pcm) - pcm.count(b"\x00")
     return nonzero <= NOISE_NONZERO_MAX

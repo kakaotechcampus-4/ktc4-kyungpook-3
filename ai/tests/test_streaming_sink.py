@@ -2,10 +2,11 @@ import discord
 import numpy as np
 
 from capture.streaming_sink import StreamingSink
-from capture.timeline import OPUS_SILENCE, REORDER_WINDOW
+from capture.timeline import REORDER_WINDOW
 from stt.backend import SttResult
 from stt.session import Session
 from tests.replay import (
+    DECODED_SILENCE_FRAME,
     PACKET_MS,
     FakeMember,
     FakePacket,
@@ -82,7 +83,7 @@ def test_silence_frame_is_counted_as_noise_not_audio():
     session = Session(final_stt=FakeStt(), on_line=lambda _: None, workers=1)
     sink = StreamingSink(session)
     m = FakeMember(1, "A")
-    sink.write(FakeVoiceData(FakePacket(0, 1), m, OPUS_SILENCE), m)
+    sink.write(FakeVoiceData(FakePacket(0, 1), m, DECODED_SILENCE_FRAME), m)
     sink.write(FakeVoiceData(FakePacket(960, 1), m, b"\x00" * 3839 + b"\x01"), m)
     session.close()
     assert sink.packets == 0

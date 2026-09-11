@@ -1,8 +1,11 @@
-from capture.timeline import OPUS_SILENCE, Reorderer, is_noise_packet
+from capture.timeline import Reorderer, is_noise_packet
 
 
-def test_opus_silence_frame_is_noise():
-    assert is_noise_packet(OPUS_SILENCE) is True
+def test_decoded_silence_frame_is_noise():
+    """디스코드 침묵 프레임은 is_opus() 가 False 인 경로에서 이미 디코딩되어 온다
+    — 3840바이트(20ms 스테레오 48kHz) 전부 0으로 풀린다. 원문 오퍼스 바이트는
+    여기까지 오지 않는다."""
+    assert is_noise_packet(b"\x00" * 3840) is True
 
 
 def test_almost_all_zero_packet_is_noise():
