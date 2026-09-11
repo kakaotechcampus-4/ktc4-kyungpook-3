@@ -56,3 +56,29 @@ def test_partial_lines_are_excluded(tmp_path):
     rows = out["jsonl"].read_text(encoding="utf-8").strip().splitlines()
     assert len(rows) == 1
     assert "최종" in rows[0]
+
+
+def test_empty_lines_still_produce_both_files(tmp_path):
+    out = write_transcript([], tmp_path, meeting_id="m1")
+    assert out["jsonl"].exists() and out["markdown"].exists()
+    assert out["jsonl"].read_text(encoding="utf-8") == ""
+    md = out["markdown"].read_text(encoding="utf-8")
+    assert "## 시간순" in md and "## 화자별" in md
+
+
+def test_blank_speaker_name_falls_back_to_speaker_id(tmp_path):
+    lines = [L("42", "", "t1", 1, 0, 1_000, "이름 없음")]
+    out = write_transcript(lines, tmp_path, meeting_id="m1")
+    md = out["markdown"].read_text(encoding="utf-8")
+    assert "**42**" in md
+    assert "### 42" in md
+
+
+def test_newline_in_text_does_not_break_markdown_bullet(tmp_path):
+    lines = [L("1", "김환", "t1", 1, 0, 1_000, "한 줄\n다음 줄")]
+    out = write_transcript(lines, tmp_path, meeting_id="m1")
+    md = out["markdown"].read_text(encoding="utf-8")
+    for line in md.splitlines():
+        if "한 줄" in line:
+            assert line.startswith("- `[00:00]`")
+            assert "다음 줄" in line
