@@ -560,7 +560,7 @@ async def test_finish_still_writes_the_transcript_when_the_final_drain_raises(
     이 시점에 pop 은 이미 끝났다. 예외가 _finish_meeting 밖으로 나가면 회의록·wav·
     매니페스트·요약이 한꺼번에 사라지고 표에도 없어 아무도 다시 시도하지 못한다.
     꼬리 320ms 를 잃는 쪽이 회의 전체를 잃는 쪽보다 낫다. drain_speaker 가 항목마다
-    예외를 잡는데도 이 경로가 가능하다는 것은 Task 7b 가 feed_errors 를 만들면서
+    예외를 잡는데도 이 경로가 가능하다는 것은 feed_errors 카운터를 넣을 때
     이미 확인했다.
     """
     cog, _ctx, meeting, text, _vc = await _start_one(tmp_path, monkeypatch)

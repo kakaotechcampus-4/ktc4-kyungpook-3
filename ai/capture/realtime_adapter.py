@@ -733,7 +733,7 @@ class RealtimeCog(discord.Cog):
 
         if meeting.ledger.late:
             print(f"[meeting] {meeting.meeting_id}: 마감 뒤 도착한 줄 {meeting.ledger.late}건. "
-                  f"회의록에 없다. Task 12 에서 실측한다.", flush=True)
+                  f"회의록에 없다. 지연 측정에 이 건수를 같이 본다.", flush=True)
         if meeting.pool.dropped:
             print(f"[meeting] {meeting.meeting_id}: 트랙 큐가 넘쳐 {meeting.pool.dropped}건 버렸다.",
                   flush=True)
