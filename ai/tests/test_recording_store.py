@@ -1,5 +1,4 @@
 import json
-import time
 import wave
 from types import SimpleNamespace
 
@@ -40,14 +39,3 @@ def test_save_session_writes_per_speaker_wav_and_manifest(tmp_path):
 
     on_disk = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert on_disk == manifest
-
-
-def test_write_manifest_matches_save_session_shape(tmp_path):
-    from capture.recording_store import Track, save_session, write_manifest
-    raw = b"\x00\x00" * 3200
-    p1, m1 = save_session([Track("7", "김환", raw)], tmp_path / "a", ts=1700000000, guild="g", channel="c", library_version="v")
-    entries = [{"user_id": "7", "display_name": "김환", "file": "7_1700000000.wav", "duration_sec": m1["speakers"][0]["duration_sec"]}]
-    p2, m2 = write_manifest(entries, tmp_path / "b", ts=1700000000, guild="g", channel="c", library_version="v")
-    assert m1 == m2
-    assert p1.read_text(encoding="utf-8") == p2.read_text(encoding="utf-8")
-    assert m1["recorded_at"] == time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(1700000000))

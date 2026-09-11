@@ -757,6 +757,29 @@ async def test_manifest_is_written_even_with_no_speakers(tmp_path, monkeypatch):
     assert data["session"] == str(meeting.ts)
 
 
+def test_write_manifest_and_save_session_write_the_same_bytes(tmp_path):
+    """우리가 뽑아낸 write_manifest 가 동료의 save_session 과 같은 파일을 낸다.
+
+    같지 않으면 매니페스트 형식이 두 벌이 되고 stt/transcribe.py 가 한쪽만 읽는다.
+    save_session 쪽은 동료의 tests/test_recording_store.py 가 따로 못박고 있다.
+    """
+    import time
+
+    from capture.recording_store import Track, save_session, write_manifest
+
+    raw = b"\x00\x00" * 3200
+    p1, m1 = save_session([Track("7", "김환", raw)], tmp_path / "a", ts=1700000000,
+                          guild="g", channel="c", library_version="v")
+    entries = [{"user_id": "7", "display_name": "김환", "file": "7_1700000000.wav",
+                "duration_sec": m1["speakers"][0]["duration_sec"]}]
+    p2, m2 = write_manifest(entries, tmp_path / "b", ts=1700000000, guild="g", channel="c",
+                            library_version="v")
+
+    assert m1 == m2
+    assert p1.read_text(encoding="utf-8") == p2.read_text(encoding="utf-8")
+    assert m1["recorded_at"] == time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(1700000000))
+
+
 async def test_stop_summary_carries_the_stage_latencies(tmp_path, monkeypatch):
     """종료 요약에 구간별 지연 한 줄이 있어야 한다. 그게 없으면 "체감 10초" 를
     수치와 맞춰 볼 자리가 어디에도 없다."""
