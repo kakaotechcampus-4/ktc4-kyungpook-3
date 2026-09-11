@@ -141,19 +141,36 @@ def test_arrival_time_is_the_position():
     assert 41_500 <= finals[0].start_ms <= 42_500
 
 
-def test_level_report_mentions_threshold():
+def test_level_report_verdict_flips_with_peak_rms():
+    """verdict 는 peak_rms 값에 실제로 반응해야 한다.
+
+    이전 버전은 verdict 가 두 문자열 중 하나인지만 봐서 삼항 조건의 방향을
+    뒤집거나 임계 배수를 바꿔도 통과했다. peak_rms 를 임계 위/아래로 직접
+    옮겨 verdict 가 실제로 바뀌는지 본다.
+    """
+    from stt.vad import SPEECH_RMS
+
     session = Session(final_stt=FakeStt(), on_line=lambda _: None, workers=1)
     sink = StreamingSink(session)
     session.close()
-    report = sink.level_report()
-    assert report["speech_rms"] > 0
-    assert report["verdict"] in ("정상", "너무 낮음")
+
+    sink.peak_rms = SPEECH_RMS * 2.0
+    assert sink.level_report()["verdict"] == "정상"
+
+    sink.peak_rms = SPEECH_RMS * 0.5
+    assert sink.level_report()["verdict"] == "너무 낮음"
 
 
 def test_sink_is_a_pycord_sink():
     sink = StreamingSink(session=None)
     assert isinstance(sink, discord.sinks.Sink)
-    assert sink.vc is None and sink.audio_data == {} and sink.finished is False
+    assert sink.vc is None
+    assert sink.audio_data == {}
+    assert sink.finished is False
+    # py-cord 가 실제로 부르는 진입점. Filters.init() 이 self.seconds 를 읽으므로
+    # super().__init__() 을 건너뛰고 vc/audio_data/finished 만 흉내내면 여기서 죽는다.
+    sink.init(object())
+    assert sink.vc is not None
 
 
 def test_write_exception_is_counted_not_raised():
