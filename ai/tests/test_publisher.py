@@ -99,22 +99,22 @@ async def test_burst_within_bucket_is_not_delayed():
     assert loop.time() - t0 < 0.5
 
 
+async def _wait_until(predicate, timeout=5.0, interval=0.005):
+    """predicate() 가 참이 될 때까지 짧게 폴링한다. timeout 안에 안 되면 그대로
+    asyncio.TimeoutError 로 실패한다 — 고정 sleep 으로 재는 대신 실제 완료
+    시점을 잡고, 무한 대기로 테스트가 멈추는 것도 막는다."""
+    async def poll():
+        while not predicate():
+            await asyncio.sleep(interval)
+    await asyncio.wait_for(poll(), timeout=timeout)
+
+
 @pytest.mark.asyncio
 async def test_sixth_in_burst_waits_for_refill():
-    ch = FakeChannel()
-    p = Publisher(ch.send, ch.edit, burst=2, refill_per_s=10.0, coalesce_s=0)
-    loop = asyncio.get_running_loop()
-    t0 = loop.time()
-    await drive(p, [(line(turn=f"t{i}", speaker=f"s{i}", text=f"m{i}"), 0.0) for i in range(3)], wait=0.3)
-    assert len(ch.sent) == 3
-    assert loop.time() - t0 >= 0.09   # 3번째는 토큰 회복(0.1초)을 기다린다
-
-
-@pytest.mark.asyncio
-async def test_sixth_in_burst_actually_delays_completion():
-    """test_sixth_in_burst_waits_for_refill 의 wait=0.3 은 항상 0.09 를 넘기므로
-    토큰 버킷을 완전히 없애도 통과한다. 고정 대기가 아니라 3번째 전송이 실제로
-    끝나는 시점으로 재본다."""
+    """drive() 의 고정 wait 로 재면 0.3초 자체가 하한(0.09)을 항상 넘겨, 토큰
+    버킷을 완전히 없애도 통과해 버린다 (실사례: FakeChannel 이 즉시 응답해도
+    구분이 안 됨). 그래서 고정 대기가 아니라 3번째 전송이 실제로 끝나는
+    시점으로 잰다."""
     ch = FakeChannel()
     p = Publisher(ch.send, ch.edit, burst=2, refill_per_s=10.0, coalesce_s=0)
     loop = asyncio.get_running_loop()
@@ -122,11 +122,10 @@ async def test_sixth_in_burst_actually_delays_completion():
     t0 = loop.time()
     for i in range(3):
         p.submit(line(turn=f"t{i}", speaker=f"s{i}", text=f"m{i}"))
-    while len(ch.sent) < 3:
-        await asyncio.sleep(0.005)
+    await _wait_until(lambda: len(ch.sent) >= 3)
     elapsed = loop.time() - t0
     p.stop()
-    await task
+    await asyncio.wait_for(task, timeout=1.0)
     assert elapsed >= 0.09
 
 
