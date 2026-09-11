@@ -222,3 +222,74 @@ def test_turns_follow_speech_order_not_completion_order():
     assert finals[0].turn_id != finals[1].turn_id
     assert finals[0].seq == 1 and abs(finals[0].start_ms - 0) <= 40
     assert finals[1].seq == 2 and abs(finals[1].start_ms - 10_000) <= 40
+
+
+# ----------------------------------------------------------------- 지연 계측
+class SleepingStt:
+    """호출마다 정해진 시간을 쓰는 백엔드. 전사 구간의 하한을 만든다."""
+
+    name = "sleeping"
+
+    def __init__(self, delay_s: float, text="느림"):
+        self.delay_s = delay_s
+        self.text = text
+
+    def transcribe(self, samples, sample_rate):
+        time.sleep(self.delay_s)
+        return SttResult(text=self.text, words=[])
+
+
+def feed_speakers(s, n, ms=1_000):
+    """화자 n 명분을 확정 전까지 넣어 둔다. 확정은 close() 가 한꺼번에 한다."""
+    for i in range(n):
+        feed_packets(s, f"sp{i}", f"화자{i}", tone(ms), 0)
+
+
+def test_transcribe_time_measures_the_backend_not_the_queue():
+    """발화가 워커보다 많아도 transcribe_s 에 큐 대기가 섞이면 안 된다.
+
+    로컬 모델을 들일지 정하는 수치가 이것이다. 큐 대기를 여기 합치면 밀린 발화의
+    전사 시간이 두 배로 잡히고, 같은 부하에서 API 가 실제보다 느려 보인다.
+    """
+    delay = 0.3
+    lines = []
+    s = Session(final_stt=SleepingStt(delay), on_line=lines.append, workers=3)
+    feed_speakers(s, 4)
+    s.close(timeout_s=5.0)
+
+    finals = [ln for ln in lines if ln.final]
+    assert len(finals) == 4
+    assert all(ln.transcribe_s >= delay for ln in finals)
+    # 네 번째는 워커를 한 차례 기다린다. 큐 대기가 섞였다면 그 줄이 0.6초에 가깝다.
+    assert all(ln.transcribe_s < delay + 0.2 for ln in finals)
+
+
+def test_queue_time_rises_when_utterances_outnumber_workers():
+    """워커 셋에 발화 넷이면 하나는 반드시 기다린다. 그 대기가 보여야 한다."""
+    delay = 0.3
+    lines = []
+    s = Session(final_stt=SleepingStt(delay), on_line=lines.append, workers=3)
+    feed_speakers(s, 4)
+    s.close(timeout_s=5.0)
+
+    finals = [ln for ln in lines if ln.final]
+    assert len(finals) == 4
+    assert max(ln.queue_s for ln in finals) > 0.2
+
+
+def test_queue_time_stays_near_zero_when_workers_keep_up():
+    """워커가 남으면 큐 대기는 0 에 가깝다. 전사가 느려도 마찬가지다.
+
+    앞 테스트와 짝이다. 둘 중 하나만 보면 두 구간을 합쳐 놔도 통과한다 — 여기서
+    전사가 delay 를 쓴 것을 같이 확인해야 "대기가 0 인 이유가 전부 빨라서" 가 아님이 된다.
+    """
+    delay = 0.3
+    lines = []
+    s = Session(final_stt=SleepingStt(delay), on_line=lines.append, workers=3)
+    feed_speakers(s, 3)
+    s.close(timeout_s=5.0)
+
+    finals = [ln for ln in lines if ln.final]
+    assert len(finals) == 3
+    assert all(ln.transcribe_s >= delay for ln in finals)
+    assert all(ln.queue_s < 0.1 for ln in finals)
