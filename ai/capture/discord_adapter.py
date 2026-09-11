@@ -13,7 +13,8 @@
   /join   - 명령한 사람이 있는 음성채널에 봇 입장
   /record - 화자별 트랙 녹음 시작 (WaveSink)
   /stop   - 녹음 종료 → recordings/{user_id}_{ts}.wav + recordings/session_{ts}.json
-  /leave  - 음성채널 퇴장
+  /leave  - 음성채널 퇴장 (녹음 중에는 거절 → 먼저 /stop 또는 /end 사용)
+  /end    - 녹음 저장이 끝날 때까지 기다린 뒤 음성채널 퇴장
 
 py-cord 버전 호환 메모 (2026-09 기준, requirements.txt 참고)
   - 2.6.x: 고전 API. vc.recording / callback(sink, *args). DAVE(E2EE) 미지원 → 2026-03-01 이후 수신 불가.
@@ -58,6 +59,8 @@ class RecordingCog(discord.Cog):
         self.bot = bot
         self.recordings_dir = recordings_dir
         self.on_session_saved = on_session_saved
+        # guild_id -> 저장(finished_callback) 완료 신호. /end 가 disconnect 전에 대기하는 데 씀.
+        self._save_done: dict[int, asyncio.Event] = {}
 
     @discord.slash_command(name="join", description="봇이 현재 음성채널에 입장합니다")
     async def join(self, ctx: discord.ApplicationContext) -> None:
@@ -94,6 +97,8 @@ class RecordingCog(discord.Cog):
         if vc is None or not is_recording(vc):
             await ctx.respond("진행 중인 녹음이 없습니다.", ephemeral=True)
             return
+        if ctx.guild is not None:
+            self._save_done[ctx.guild.id] = asyncio.Event()
         vc.stop_recording()  # 종료 후 finished_callback 호출
         await ctx.respond("⏹ 녹음 종료. 파일 저장 중...")
 
@@ -104,12 +109,41 @@ class RecordingCog(discord.Cog):
             await ctx.respond("봇이 음성채널에 없습니다.", ephemeral=True)
             return
         if is_recording(vc):
-            vc.stop_recording()
+            await ctx.respond("녹음 중입니다. 먼저 `/stop` 으로 종료하거나, 저장까지 기다렸다가 나가려면 `/end` 를 사용하세요.", ephemeral=True)
+            return
         await vc.disconnect(force=True)
         await ctx.respond("음성채널에서 나갔습니다.")
 
+    @discord.slash_command(name="end", description="녹음 저장이 끝나면 음성채널에서 나갑니다")
+    async def end(self, ctx: discord.ApplicationContext) -> None:
+        vc = ctx.voice_client
+        if vc is None:
+            await ctx.respond("봇이 음성채널에 없습니다.", ephemeral=True)
+            return
+        if is_recording(vc):
+            event = asyncio.Event()
+            if ctx.guild is not None:
+                self._save_done[ctx.guild.id] = event
+            vc.stop_recording()
+            await ctx.respond("⏹ 녹음 종료. 저장이 끝나면 나갑니다...")
+            await event.wait()
+        else:
+            await ctx.respond("음성채널에서 나가는 중...")
+        await vc.disconnect(force=True)
+        if ctx.channel is not None:
+            await ctx.channel.send("음성채널에서 나갔습니다.")
+
     async def finished_callback(self, sink, ctx: discord.ApplicationContext) -> None:
         """녹음 종료 시 호출. sink.audio_data = {user_key: AudioData}."""
+        try:
+            await self._save_recording(sink, ctx)
+        finally:
+            # /end 가 disconnect 전에 이 콜백(저장 + 후속 훅)이 끝나길 기다리고 있을 수 있음
+            event = self._save_done.pop(ctx.guild.id, None) if ctx.guild else None
+            if event is not None:
+                event.set()
+
+    async def _save_recording(self, sink, ctx: discord.ApplicationContext) -> None:
         # 2.9 계열은 콜백 예약 직후 다른 스레드에서 sink.cleanup()(WAV 포맷)을 수행하므로 잠깐 기다림
         for _ in range(10):
             if getattr(sink, "finished", True):
