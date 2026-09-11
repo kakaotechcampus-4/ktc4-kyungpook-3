@@ -102,14 +102,27 @@ def test_long_silence_keeps_meeting_clock():
 
 
 def test_silence_frames_do_not_create_utterances():
-    """침묵 구간에 Opus 침묵 프레임이 오는 경우. 공백 대신 잡음 패킷이 온다."""
-    tr = ReplayTrack(user_id=1, name="A",
-                     samples=np.concatenate([silence(24_000), tone(3_000)]),
-                     silent_below=0.001, emit_silence_frames=True, ssrc=11)
-    finals, _, sink = run([tr])
-    assert len(finals) == 1
-    assert 23_000 <= finals[0].start_ms <= 25_000
+    """침묵 구간에 Opus 침묵 프레임이 오는 경우. 공백 대신 잡음 패킷이 온다.
+
+    침묵 프레임은 하류에 아무 흔적도 남기면 안 된다. 그래서 프레임을 안 보내는
+    쪽과 발화 수·시작·끝이 전부 같은지 본다. 잡음 카운터만 보면 프레임이 발화를
+    밀어도 통과한다.
+    """
+    def track(emit_silence):
+        return ReplayTrack(user_id=1, name="A",
+                           samples=np.concatenate([silence(24_000), tone(3_000)]),
+                           silent_below=0.001, emit_silence_frames=emit_silence, ssrc=11)
+
+    finals, _, sink = run([track(True)])
+    plain, _, plain_sink = run([track(False)])
+
     assert sink.noise_packets > 0
+    assert plain_sink.noise_packets == 0
+    assert sink.packets == plain_sink.packets
+    assert len(finals) == len(plain) == 1
+    assert finals[0].start_ms == plain[0].start_ms
+    assert finals[0].end_ms == plain[0].end_ms
+    assert 23_000 <= finals[0].start_ms <= 25_000
 
 
 def test_rejoin_does_not_rewind_timestamps():
