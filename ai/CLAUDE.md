@@ -25,7 +25,7 @@ uv venv --python 3.12 .venv
 uv pip install -r requirements.txt   # py-cord 는 git PR 브랜치라 git 필요. Linux 는 libopus0 도 필요
 cp .env.example .env                 # 최소 DISCORD_BOT_TOKEN 채우기
 
-# 테스트 (py-cord 없이 실행 가능 — 스텁 데이터, tmp_path fixture 사용)
+# 테스트 (설치된 py-cord 는 있어야 하지만 봇 토큰이나 네트워크 연결은 필요 없다 — 스텁 데이터, tmp_path fixture 사용)
 .venv/bin/python -m pytest
 .venv/bin/python -m pytest tests/test_recording_store.py -k save_session  # 단일 테스트
 
