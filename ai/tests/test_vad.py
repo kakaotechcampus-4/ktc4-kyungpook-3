@@ -73,12 +73,22 @@ def test_short_gap_keeps_one_utterance():
 
 
 def test_backwards_offset_does_not_rewind():
+    """과거를 가리키는 offset_ms 가 와도 시간축은 뒤로 가지 않는다.
+
+    역방향 조각은 진행 중인 발화에 이어 붙는다. 이걸 존중해 시간축을 되돌리면
+    500ms 근처에서 시작하는 발화가 생긴다. 그런 시작이 없어야 한다.
+    """
     v = vad()
-    got = feed_packets(v, tone(1_000), 10_000)
-    got += feed_packets(v, tone(1_000), 500)
+    got = feed_packets(v, tone(1_000), 10_000)   # 발화 1: 10.0 ~ 11.0초
+    got += feed_packets(v, tone(1_000), 20_000)  # 9초 공백 → 발화 1 닫힘. 발화 2 시작
+    got += feed_packets(v, tone(1_000), 500)     # 과거 오프셋. 발화 2 에 이어 붙어야 한다
     got += v.flush()
+
     starts = [s for s, _ in times(got)]
-    assert starts == sorted(starts)
+    assert len(got) == 2
+    assert starts[0] == pytest.approx(10_000, abs=2 * FRAME_MS)
+    assert starts[1] == pytest.approx(20_000, abs=2 * FRAME_MS)
+    assert all(s >= 10_000 - 2 * FRAME_MS for s in starts)
 
 
 def test_cough_is_dropped():
