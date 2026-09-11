@@ -114,3 +114,22 @@ def test_reorderer_reanchors_when_origin_jumps_forward():
         out += r.push(900_000_000 + i * 960, name)
     out += r.flush()
     assert out == ["a", "b", "c", "d", "e", "f", "g", "h"]
+
+
+def test_long_continuous_stream_does_not_reanchor():
+    """20,000개의 정상적인 연속 패킷은 거짓 재고정을 트리거하지 않아야 한다."""
+    r = Reorderer(window=16)
+    out = []
+    for i in range(20_000):
+        result = r.push(i * 960, i)
+        out += result
+        # 처음 16번 push는 window를 채우지 못해 아무것도 반환하지 않음
+        if i < 16:
+            assert len(result) == 0, f"push {i}: expected empty, got {len(result)}"
+        # 그 이후는 매번 정확히 1개씩 반환 (창이 차서)
+        else:
+            assert len(result) == 1, f"push {i}: expected 1, got {len(result)}"
+    # 마지막으로 남은 것들 모두 출력
+    out += r.flush()
+    # 결과가 정렬 순서대로 0부터 19,999까지여야 함
+    assert out == list(range(20_000))

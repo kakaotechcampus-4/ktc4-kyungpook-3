@@ -60,10 +60,9 @@ class Reorderer:
         진짜 음성 앞으로 끼어든다. 같은 키를 쓰면 `(키, 도착순번)` 튜플이 그
         패킷을 바로 앞 패킷 뒤에 놓는다.
 
-        기준점에서 `REANCHOR_TICKS` 보다 멀면 다른 스트림으로 보고 기준점을 다시
-        잡는다. 화자가 나갔다 들어오면 RTP 원점이 무관한 난수로 바뀌고, 새 원점이
-        더 작으면 이후 패킷이 전부 음수 키를 받아 이전 세션의 꼬리보다 앞서
-        나간다. 12.4시간이 지나 부호 있는 델타가 2^31 을 넘는 경우도 같이 걸린다.
+        직전 패킷의 키로부터 `REANCHOR_TICKS` 보다 크게 점프하면 다른 스트림으로 본다.
+        화자가 나갔다 들어오면 RTP 원점이 무관한 난수로 바뀌고, 32비트 래핑도 같이
+        잡는다. 정상적인 순서 뒤바뀜은 창보다 작은 범위라 이 점프를 트리거하지 않는다.
 
         `_base` `_last_key` 를 바꾸므로 `push` 한 번에 정확히 한 번만 부른다.
         """
@@ -76,7 +75,8 @@ class Reorderer:
         delta = (rtp_ts - self._base) & 0xFFFFFFFF
         if delta > HALF_RANGE:
             delta -= 0x100000000
-        if abs(delta) > REANCHOR_TICKS:
+        jump = abs(delta - self._last_key)
+        if jump > REANCHOR_TICKS:
             self._base = rtp_ts
             self._last_key = 0
             return 0, True
