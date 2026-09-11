@@ -1,7 +1,11 @@
-"""데이터 모델 (data_model.md MVP 4테이블과 1:1) + 파이프라인 단계 간 입출력 타입.
+"""AI 파이프라인 단계 간 입출력 타입.
 
 외부 의존성 없이 dataclass 만 사용합니다. 모든 타입은 to_dict()/from_dict() 로 JSON 과 왕복 가능.
 날짜/시각은 문자열(ISO 8601)로 보관합니다 — BE/Notion 과 주고받을 때 변환 비용을 없애기 위함.
+
+NOTE: DB 테이블 모델(Member, Task, TaskHistory, ApprovalRequest 등)은
+BE(backend/app/models/models.py)가 Single Source of Truth입니다.
+이 파일에는 AI 파이프라인 단계 간 입출력 타입만 정의합니다.
 """
 
 from __future__ import annotations
@@ -32,73 +36,6 @@ class _Base:
     def from_dict(cls: type[T], data: dict[str, Any]) -> T:
         allowed = {f.name for f in fields(cls)}  # type: ignore[arg-type]
         return cls(**{k: v for k, v in data.items() if k in allowed})
-
-
-# ─────────────────────────────────────────────────────────────── MVP 4 테이블
-@dataclass
-class Member(_Base):
-    """member 테이블. discord_user_id 는 캡처 플랫폼의 사용자 ID.
-
-    코어 로직(extract/judge/draft)은 이 필드를 직접 참조하지 말고 platform_user_id 를 쓰세요 —
-    9주차 이후 웹사이트 이전 시 이 클래스만 고치면 되게 하기 위함.
-    """
-
-    member_id: str
-    display_name: str
-    discord_user_id: str | None = None
-    role: str = "member"  # pm | member
-    aliases: list[str] = field(default_factory=list)  # 닉네임/영문명 등 추가 호칭
-
-    @property
-    def platform_user_id(self) -> str | None:
-        return self.discord_user_id
-
-
-TaskStatus = Literal["todo", "in_progress", "done", "blocked"]
-
-
-@dataclass
-class Task(_Base):
-    """task 테이블."""
-
-    task_id: str
-    title: str
-    assignee_member_id: str | None = None
-    status: str = "todo"
-    due_date: str | None = None  # YYYY-MM-DD
-    notion_page_id: str | None = None
-    updated_at: str = field(default_factory=now_iso)
-
-
-@dataclass
-class TaskHistory(_Base):
-    """task_history 테이블. 필드 단위 변경 기록 (롤백의 근거)."""
-
-    history_id: str
-    task_id: str
-    changed_field: str
-    old_value: str | None
-    new_value: str | None
-    change_source: str  # meeting | chat | reminder_reply | manual | rollback
-    created_at: str = field(default_factory=now_iso)
-
-
-ApprovalType = Literal["task_create", "task_update", "reminder_dm"]
-ApprovalStatus = Literal["pending", "approved", "rejected"]
-
-
-@dataclass
-class ApprovalRequest(_Base):
-    """approval_request 테이블. PM 이 승인/반려하기 전까지 모든 변경은 여기서 대기."""
-
-    approval_id: str
-    type: str
-    payload: dict[str, Any]
-    related_task_id: str | None = None
-    status: str = "pending"
-    resolved_by: str | None = None
-    created_at: str = field(default_factory=now_iso)
-    resolved_at: str | None = None
 
 
 # ─────────────────────────────────────────────────────────── 단계 간 입출력
