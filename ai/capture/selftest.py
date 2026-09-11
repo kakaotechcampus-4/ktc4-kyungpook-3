@@ -254,12 +254,14 @@ async def _stages(cog, ctx: discord.ApplicationContext, t: SelfTest, use_stt: bo
         session = state.dave_session
         ready = bool(session is not None and session.ready)
         rows, successes, failures = [], 0, 0
+        polled = reported = 0
         if session is not None:
             # 협상이 끝났는데도 패킷이 안 풀리는 경우는 이 통계로만 보인다
             # (davey/__init__.pyi:316-325). 재연결로 키가 어긋나면 ready 는 True 인 채로
             # 성공이 한 건도 안 늘어난다. 실제 재연결로 관측하지는 않았다.
             members = (vc.channel.members if vc.channel is not None else [])
             for m in members[:DAVE_STATS_MEMBERS]:
+                polled += 1
                 try:
                     s = session.get_decryption_stats(m.id)
                 except Exception:
@@ -272,6 +274,7 @@ async def _stages(cog, ctx: discord.ApplicationContext, t: SelfTest, use_stt: bo
                 bad = int(getattr(s, "failures", 0) or 0)
                 successes += good
                 failures += bad
+                reported += 1
                 rows.append(f"{m.display_name} 성공{good}/실패{bad}")
         # 실패가 있어도 성공이 하나라도 있으면 통과시킨다. 이 카운터가 누적인지 구간인지
         # 확인하지 못해서 (.pyi 는 successes/failures 에만 "Total" 을 안 붙인다) "실패가
@@ -279,10 +282,19 @@ async def _stages(cog, ctx: discord.ApplicationContext, t: SelfTest, use_stt: bo
         # 뜻이라, 키가 어긋나 아무것도 안 풀리는 상태만 잡는다. 키 수립 중 한두 건
         # 실패했다고 DAVE 를 영구히 실패로 만들고 유료 단계까지 닫으면 안 된다.
         stuck = failures > 0 and successes == 0
-        t.record("DAVE", ready and not state.downgraded_dave and not stuck,
+        ok = ready and not state.downgraded_dave and not stuck
+        # 통계를 낸 사람이 0명이면 성공도 실패도 0이라 stuck 이 False 가 된다. 그 0을
+        # 통과로 적으면 복호화를 확인한 적이 없는데 확인한 것처럼 읽힌다.
+        unproven = ok and reported == 0
+        t.record("DAVE", ok,
                  " ".join([f"dave={vc.is_dave_connection()}", f"ready={ready}",
                            f"downgraded={state.downgraded_dave}",
-                           f"복호화 성공{successes}/실패{failures}", *rows]))
+                           f"복호화 성공{successes}/실패{failures}",
+                           f"· 통계 보고 {reported}/{polled}명"]
+                          + (["· 통계를 낸 사람이 없어 복호화는 확인하지 못했다"]
+                             if unproven else [])
+                          + rows),
+                 info=unproven)
     else:
         t.record("DAVE", True, skip, info=True)
 

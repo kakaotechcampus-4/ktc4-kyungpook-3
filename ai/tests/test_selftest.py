@@ -617,6 +617,40 @@ async def test_a_member_without_stats_does_not_hide_another_members_counts(monke
     assert _row(out, "DAVE").startswith("OK")
     assert "복호화 성공120/실패0" in out
     assert "이준 성공120/실패0" in out
+    assert "통계 보고 1/2명" in out
+
+
+async def test_dave_does_not_pass_when_no_member_reported_stats(monkeypatch):
+    """아무도 통계를 안 내면 실패 0건은 '괜찮다' 가 아니라 '못 쟀다' 다.
+
+    OK 로 적으면 복호화를 확인한 적이 없는데 확인한 것처럼 읽힌다.
+    """
+    dave = _Dave(ready=True, stats={7: ValueError(_NO_DECRYPTOR),
+                                    8: ValueError(_NO_DECRYPTOR)})
+    cog, ctx, _vc, _text = _world(monkeypatch, conn=_Conn(dave=dave),
+                                  members=[_Member(7, "김환"), _Member(8, "이준")])
+
+    out = await selftest.run(cog, ctx, use_stt=False)
+
+    row = _row(out, "DAVE")
+    assert row.startswith("정보")
+    assert "통계 보고 0/2명" in row
+    assert "확인하지 못했다" in row
+    assert _failed(out) == [], out
+
+
+async def test_stats_polling_stops_at_the_member_cap(monkeypatch):
+    """리포트가 디스코드 2000자 한도에 들어가야 해서 앞쪽 인원만 읽는다."""
+    n = selftest.DAVE_STATS_MEMBERS + 2
+    dave = _Dave(ready=True, stats={i: _Stats(successes=1, failures=0) for i in range(n)})
+    cog, ctx, _vc, _text = _world(monkeypatch, conn=_Conn(dave=dave),
+                                  members=[_Member(i, f"사람{i}") for i in range(n)])
+
+    out = await selftest.run(cog, ctx, use_stt=False)
+
+    cap = selftest.DAVE_STATS_MEMBERS
+    assert f"통계 보고 {cap}/{cap}명" in out
+    assert f"사람{n - 1}" not in out
 
 
 # ------------------------------------------------------ 감지기: 이벤트 루프 디버그
