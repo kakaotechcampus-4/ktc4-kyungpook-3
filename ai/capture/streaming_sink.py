@@ -28,6 +28,12 @@ from capture.timeline import Reorderer, is_noise_packet
 
 
 class StreamingSink(discord.sinks.Sink):
+    """상속받은 audio_data 는 채우지 않는다 — write() 는 실시간 경로로 session.feed
+    까지만 넘기고 파일을 쌓지 않는다. 이 sink 를 넘긴 finished_callback 이 다른
+    Sink 처럼 audio_data.items() 를 순회해 트랙을 저장하려 하면 조용히 0건이
+    된다. 저장은 finished_callback 이 아니라 session.feed 로 이미 흐르고 있다.
+    """
+
     def __init__(self, session, now_ms=None) -> None:
         super().__init__()
         self.session = session
