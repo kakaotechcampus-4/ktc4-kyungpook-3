@@ -1149,8 +1149,8 @@ def test_selftest_command_defers_before_the_probe():
     import capture.discord_adapter as adapter
 
     src = inspect.getsource(adapter.RecordingCog.selftest.callback)
-    assert "ctx.defer()" in src
-    assert src.index("ctx.defer()") < src.index("st.run(")
+    assert "_defer(ctx)" in src               # _defer 가 ctx.defer() 를 감싼다
+    assert src.index("_defer(ctx)") < src.index("st.run(")
 
 
 async def test_selftest_command_passes_the_stt_flag_through(monkeypatch):

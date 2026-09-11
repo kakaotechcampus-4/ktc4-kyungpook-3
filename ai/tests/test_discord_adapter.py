@@ -188,6 +188,7 @@ class _FakeVoiceChannel:
     def __init__(self, vc_box):
         self.id = ROOM_ID
         self.name = "회의방"
+        self.connects = 0
         self._vc_box = vc_box
 
     def permissions_for(self, member):
@@ -196,6 +197,7 @@ class _FakeVoiceChannel:
     async def connect(self, *, cls=None):
         # 실제 음성 핸드셰이크처럼 루프에 제어권을 넘긴다. 길드 락이 없으면
         # 같은 길드의 /record 두 번이 여기서 서로를 추월한다.
+        self.connects += 1
         await asyncio.sleep(0.01)
         return self._vc_box[0]
 
@@ -231,11 +233,12 @@ class _FakeAuthor:
 
 
 class _FakeCtx:
-    def __init__(self, guild, room, text_channel):
+    def __init__(self, guild, room, text_channel, command=None):
         self.guild = guild
         self.author = _FakeAuthor(room)
         self.channel = text_channel
         self.voice_client = None
+        self.command = command
         self.responses: list[str] = []
 
     async def defer(self):
@@ -590,6 +593,61 @@ async def test_join_refuses_to_move_while_an_untracked_recording_is_live(tmp_pat
 
     assert vc.moved == []
     assert any("녹음" in r for r in ctx.responses)
+
+
+# ------------------------------------------------- 인터랙션이 죽은 뒤의 명령
+# 첫 실전 실행에서 /join 이 여기서 터졌다. defer 가 3초 시한을 넘겨 10062 를 받았고,
+# 사용자는 "애플리케이션이 응답하지 않았습니다" 만, 터미널은 트레이스백 25줄을 봤다.
+
+
+class _FakeResponse:
+    status = 404
+    reason = "Not Found"
+
+
+def _unknown_interaction() -> discord.NotFound:
+    """응답 시한이 지난 인터랙션에 defer 를 걸면 오는 것 (errors.py:119-160, 170-174)."""
+    return discord.NotFound(_FakeResponse(), {"code": 10062, "message": "Unknown interaction"})
+
+
+def _bare_cog(tmp_path, monkeypatch, command):
+    monkeypatch.setattr(adapter, "EliceStt", _FakeStt)
+    guild = _FakeGuild({})
+    vc_box = []
+    room = _FakeVoiceChannel(vc_box)
+    vc = _FakeVoiceClient(room)
+    vc_box.append(vc)
+    guild.voice_client = vc
+    cog = RecordingCog(_FakeBot(guild), recordings_dir=tmp_path)
+    return cog, _FakeCtx(guild, room, _FakeTextChannel(), command=command), vc, room
+
+
+async def test_a_dead_interaction_ends_the_command_without_raising(tmp_path, monkeypatch, capsys):
+    """defer 가 10062 로 실패하면 명령은 그 자리에서 끝난다.
+
+    가드가 없으면 NotFound 가 콜백 밖으로 나가 py-cord 기본 핸들러의 트레이스백이 되고
+    (bot.py:1403-1412) 디스코드에는 아무 말도 안 간다. 여기서는 핸들러를 거치지 않고
+    콜백을 직접 부른다 — 핸들러를 태우면 가드를 지워도 같은 로그가 나와 이 단언이
+    아무것도 잡지 못한다.
+    """
+    cog, ctx, vc, room = _bare_cog(tmp_path, monkeypatch, RecordingCog.join)
+
+    async def _expired():
+        raise _unknown_interaction()
+
+    ctx.defer = _expired
+
+    await RecordingCog.join.callback(cog, ctx)
+
+    assert ctx.responses == []                 # 죽은 토큰으로는 보낼 수 있는 것이 없다
+    assert room.connects == 0                  # 본문이 아예 안 돌았다
+    assert vc.moved == []
+    assert cog._meetings == {}
+
+    logged = capsys.readouterr().out
+    assert "/join" in logged                   # 어느 명령이었는지 로그가 말한다
+    assert "만료" in logged
+    assert logged.count("\n") == 1             # 한 줄이다. 트레이스백이 아니다
 
 
 async def test_manifest_is_written_even_with_no_speakers(tmp_path, monkeypatch):

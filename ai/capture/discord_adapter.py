@@ -20,6 +20,7 @@ import asyncio
 import queue
 import threading
 import time
+import traceback
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -37,6 +38,33 @@ from stt.session import Session
 from stt.transcript_writer import write_transcript
 
 SessionSavedHook = Callable[[dict, Path], Awaitable[None]]
+
+# 첫 응답이 3초 시한을 넘긴 인터랙션에 무엇이든 보내면 오는 코드 (errors.py:140-143).
+UNKNOWN_INTERACTION = 10062
+
+
+def _command_name(ctx) -> str:
+    return getattr(ctx.command, "name", "?")
+
+
+def _log_interaction_gone(ctx, error: BaseException) -> None:
+    print(f"[command] /{_command_name(ctx)}: 봇이 답하기 전에 인터랙션이 만료됐다. "
+          f"디스코드에는 아무것도 보낼 수 없어 여기서 끝낸다. 다시 실행하면 대개 된다. "
+          f"({type(error).__name__}: {error})", flush=True)
+
+
+async def _defer(ctx) -> bool:
+    """응답 시한 안에 defer 를 넣는다. False 면 부른 쪽은 그 자리에서 끝내야 한다.
+
+    실패하면 토큰이 이미 없어서 respond 도 followup 도 같은 예외를 낸다. 명령을 계속
+    진행할 방법이 없으므로 여기서 한 줄만 남기고 돌려보낸다.
+    """
+    try:
+        await ctx.defer()
+    except Exception as e:
+        _log_interaction_gone(ctx, e)
+        return False
+    return True
 
 
 def is_recording(vc) -> bool:
@@ -276,7 +304,8 @@ class RecordingCog(discord.Cog):
                      channel: discord.TextChannel | None = None) -> None:
         # 음성 핸드셰이크는 최대 60초다 (abc.py:2026). 인터랙션 응답 시한 3초를 넘기면
         # 토큰이 만료돼 아래 respond 가 전부 NotFound 로 터진다. 첫 줄에 defer 한다.
-        await ctx.defer()
+        if not await _defer(ctx):
+            return
         async with self._lock_for(ctx.guild.id):
             await self._start_meeting(ctx, channel)
 
@@ -395,7 +424,8 @@ class RecordingCog(discord.Cog):
     @discord.slash_command(name="stop", description="전사를 끝내고 회의록을 저장합니다")
     @discord.guild_only()
     async def stop(self, ctx: discord.ApplicationContext) -> None:
-        await ctx.defer()
+        if not await _defer(ctx):
+            return
         async with self._lock_for(ctx.guild.id):
             vc = ctx.voice_client
             if ctx.guild.id not in self._meetings:
@@ -420,7 +450,8 @@ class RecordingCog(discord.Cog):
     @discord.slash_command(name="join", description="봇이 음성 채널에 입장만 합니다")
     @discord.guild_only()
     async def join(self, ctx: discord.ApplicationContext) -> None:
-        await ctx.defer()
+        if not await _defer(ctx):
+            return
         meeting = self._meetings.get(ctx.guild.id)
         if meeting is not None:
             # 녹음 중 move_to 는 destroy_all_decoders 를 깨뜨린다 (router.py:116-119).
@@ -468,13 +499,15 @@ class RecordingCog(discord.Cog):
     async def selftest(self, ctx: discord.ApplicationContext, stt: bool = False) -> None:
         from capture import selftest as st
 
-        await ctx.defer()  # 3초 프로브가 인터랙션 시한을 넘긴다
+        if not await _defer(ctx):  # 3초 프로브가 인터랙션 시한을 넘긴다
+            return
         await ctx.followup.send(await st.run(self, ctx, use_stt=stt))
 
     @discord.slash_command(name="leave", description="봇이 음성 채널에서 나갑니다")
     @discord.guild_only()
     async def leave(self, ctx: discord.ApplicationContext) -> None:
-        await ctx.defer()
+        if not await _defer(ctx):
+            return
         if ctx.guild.id in self._meetings:
             await ctx.respond("진행 중인 회의를 먼저 끝냅니다...")
             vc = ctx.voice_client
