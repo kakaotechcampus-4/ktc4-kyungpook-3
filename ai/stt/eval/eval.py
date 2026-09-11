@@ -1,10 +1,10 @@
 """Phase 0 평가 — 전사 정확도(WER/CER) 계산 + 크로스토크 체크리스트 → eval_report.md 생성.
 
 사용 순서 (ai/ 디렉토리 안에서)
-  1) python stt/eval/eval.py --init
+  1) python -m stt.eval.eval --init
        recordings/session_*.json 을 읽어 ground_truth/eval_config.json 스켈레톤 생성
        (세션별 scenario, 화자별 정답 스크립트 파일명, 크로스토크 체크 항목을 손으로 채우면 됨)
-  2) python stt/eval/eval.py
+  2) python -m stt.eval.eval
        transcripts/*.json 을 모두 평가해 eval_report.md 작성 (콘솔에도 요약 출력)
 
 eval_config.json 형식
@@ -34,15 +34,16 @@ import re
 import sys
 from pathlib import Path
 
-BASE_DIR = Path(__file__).resolve().parents[2]  # ai/ 자체 (독립 프로젝트 루트)
-RECORDINGS_DIR = BASE_DIR / "recordings"
-TRANSCRIPTS_DIR = BASE_DIR / "transcripts"
+from shared.config import AI_ROOT, RECORDINGS_DIR, TRANSCRIPTS_DIR
+from stt.transcribe import parse_transcript_stem
+
 GROUND_TRUTH_DIR = Path(__file__).resolve().parent / "ground_truth"
 CONFIG_PATH = GROUND_TRUTH_DIR / "eval_config.json"
-REPORT_PATH = BASE_DIR / "eval_report.md"
+REPORT_PATH = AI_ROOT / "eval_report.md"
 
-# 통과 기준 (계획서 4장)
-WER_THRESHOLDS = {"reading": 0.15, "conversation": 0.30}
+# 통과 기준 (계획서 4장). 한국어는 띄어쓰기 관습 때문에 어절 단위 WER 이 체감보다 높게 나오므로
+# PASS/FAIL 은 공백 무시 CER 로 판정하고, WER 은 참고용으로만 나란히 표시한다.
+CER_THRESHOLDS = {"reading": 0.05, "conversation": 0.10}
 MAX_SEC_PER_AUDIO_MIN = 30.0
 SCENARIO_LABEL = {"reading": "정독", "conversation": "대화"}
 
@@ -131,13 +132,6 @@ def load_config() -> dict:
     return cfg
 
 
-def parse_transcript_name(stem: str) -> tuple[str, str, str]:
-    """'{user_id}_{ts}__{model}' → (user_id, ts, model)"""
-    base, _, model = stem.partition("__")
-    user_id, _, ts = base.partition("_")
-    return user_id, ts, model or "?"
-
-
 def resolve_ground_truth(cfg: dict, session: str, user_id: str, name: str) -> Path | None:
     mapping = dict(cfg.get("speakers", {}))
     mapping.update(cfg.get("sessions", {}).get(session, {}).get("speakers", {}))
@@ -210,7 +204,7 @@ def evaluate(args) -> int:
     missing: list[str] = []
     for tp in transcripts:
         data = json.loads(tp.read_text(encoding="utf-8"))
-        user_id, ts, model = parse_transcript_name(tp.stem)
+        user_id, ts, model = parse_transcript_stem(tp.stem)
         name = data.get("speaker") or names.get(user_id, user_id)
         scenario = cfg["sessions"].get(ts, {}).get("scenario") or args.scenario
         gt_path = resolve_ground_truth(cfg, ts, user_id, name)
@@ -220,7 +214,7 @@ def evaluate(args) -> int:
 
         ref, hyp = read_text(gt_path), data.get("text", "")
         s = score(ref, hyp)
-        threshold = WER_THRESHOLDS.get(scenario, WER_THRESHOLDS["reading"])
+        threshold = CER_THRESHOLDS.get(scenario, CER_THRESHOLDS["reading"])
         per_min = data.get("sec_per_audio_min")
         rows.append(
             {
@@ -233,7 +227,7 @@ def evaluate(args) -> int:
                 "audio_sec": data.get("audio_duration_sec"),
                 "per_min": per_min,
                 "time_pass": None if per_min is None else per_min <= MAX_SEC_PER_AUDIO_MIN,
-                "wer_pass": None if s["wer_norm"] is None else s["wer_norm"] <= threshold,
+                "cer_pass": None if s["cer_nospace"] is None else s["cer_nospace"] <= threshold,
                 "ref": ref,
                 "hyp": hyp,
                 "gt_file": gt_path.name,
@@ -255,15 +249,15 @@ def build_report(rows: list[dict], cfg: dict, manifests: dict, missing: list[str
     # 1. 전사 정확도
     L.append("## 1. 전사 정확도\n")
     L.append("WER(정규화) = 문장부호 제거 후 어절 단위 오류율. CER(공백 제거) = 띄어쓰기 차이를 무시한 글자 단위 오류율. "
-             "한국어는 띄어쓰기 관습 때문에 WER 이 체감보다 높게 나오므로 CER 과 아래 나란히 비교를 함께 보세요.\n")
-    L.append("| 세션 | 화자 | 모델 | 시나리오 | WER(원본) | WER(정규화) | CER(공백제거) | 기준 | WER 판정 | 전사 s/1분 | 시간 판정 |")
+             "한국어는 띄어쓰기 관습 때문에 WER 이 체감보다 높게 나오므로, PASS/FAIL 은 CER 기준으로 판정하고 WER 은 참고용으로 나란히 봅니다.\n")
+    L.append("| 세션 | 화자 | 모델 | 시나리오 | WER(원본) | WER(정규화) | CER(공백제거) | 기준 | CER 판정 | 전사 s/1분 | 시간 판정 |")
     L.append("|---|---|---|---|---|---|---|---|---|---|---|")
     for r in sorted(rows, key=lambda x: (x["session"], x["speaker"], x["model"])):
         per_min = "-" if r["per_min"] is None else f"{r['per_min']:.1f}"
         L.append(
             f"| {r['session']} | {r['speaker']} | {r['model']} | {SCENARIO_LABEL.get(r['scenario'], r['scenario'])} "
             f"| {pct(r['wer_raw'])} | {pct(r['wer_norm'])} | {pct(r['cer_nospace'])} | ≤{pct(r['threshold'])} "
-            f"| {verdict(r['wer_pass'])} | {per_min} | {verdict(r['time_pass'])} |"
+            f"| {verdict(r['cer_pass'])} | {per_min} | {verdict(r['time_pass'])} |"
         )
     if not rows:
         L.append("| (평가 가능한 전사 결과 없음) | | | | | | | | | | |")
@@ -302,17 +296,17 @@ def build_report(rows: list[dict], cfg: dict, manifests: dict, missing: list[str
     L.append("## 3. 통과 기준 대비 요약\n")
     L.append("| 항목 | 목표 | 결과 | 판정 |")
     L.append("|---|---|---|---|")
-    for scenario, th in WER_THRESHOLDS.items():
-        sub = [r for r in rows if r["scenario"] == scenario and r["wer_norm"] is not None]
+    for scenario, th in CER_THRESHOLDS.items():
+        sub = [r for r in rows if r["scenario"] == scenario and r["cer_nospace"] is not None]
         if sub:
-            worst = max(r["wer_norm"] for r in sub)
-            mean = sum(r["wer_norm"] for r in sub) / len(sub)
+            worst = max(r["cer_nospace"] for r in sub)
+            mean = sum(r["cer_nospace"] for r in sub) / len(sub)
             L.append(
-                f"| {SCENARIO_LABEL[scenario]} 시나리오 WER(정규화) | {pct(th)} 이하 "
+                f"| {SCENARIO_LABEL[scenario]} 시나리오 CER(공백제거) | {pct(th)} 이하 "
                 f"| 평균 {pct(mean)}, 최대 {pct(worst)} ({len(sub)}건) | {verdict(worst <= th)} |"
             )
         else:
-            L.append(f"| {SCENARIO_LABEL[scenario]} 시나리오 WER(정규화) | {pct(th)} 이하 | 데이터 없음 | - |")
+            L.append(f"| {SCENARIO_LABEL[scenario]} 시나리오 CER(공백제거) | {pct(th)} 이하 | 데이터 없음 | - |")
 
     ct_states = [crosstalk_state(cfg.get("sessions", {}).get(ts, {}).get("crosstalk", {})) for ts in sessions]
     if ct_states:
@@ -367,7 +361,7 @@ def main() -> int:
     ap.add_argument("--init", action="store_true", help="ground_truth/eval_config.json 스켈레톤 생성")
     ap.add_argument("--force", action="store_true", help="--init 시 기존 설정 덮어쓰기")
     ap.add_argument("--transcripts", default=str(TRANSCRIPTS_DIR))
-    ap.add_argument("--scenario", default="reading", choices=list(WER_THRESHOLDS), help="설정 파일에 시나리오가 없을 때 기본값")
+    ap.add_argument("--scenario", default="reading", choices=list(CER_THRESHOLDS), help="설정 파일에 시나리오가 없을 때 기본값")
     ap.add_argument("--report", default=str(REPORT_PATH))
     args = ap.parse_args()
     if args.init:

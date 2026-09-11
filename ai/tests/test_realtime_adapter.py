@@ -757,15 +757,21 @@ async def test_manifest_is_written_even_with_no_speakers(tmp_path, monkeypatch):
     assert data["session"] == str(meeting.ts)
 
 
-def test_write_manifest_and_save_session_write_the_same_bytes(tmp_path):
+def test_write_manifest_and_save_session_write_the_same_bytes(tmp_path, monkeypatch):
     """우리가 뽑아낸 write_manifest 가 동료의 save_session 과 같은 파일을 낸다.
 
     같지 않으면 매니페스트 형식이 두 벌이 되고 stt/transcribe.py 가 한쪽만 읽는다.
     save_session 쪽은 동료의 tests/test_recording_store.py 가 따로 못박고 있다.
-    """
-    import time
 
+    recorded_at 은 ts 가 아니라 "매니페스트를 쓴 시각"이라서 save_session 과 write_manifest 가
+    now_iso() 를 각각 부른다. 초 단위로 잘리므로 대개 같은 값이 나오지만 초 경계에 걸치면
+    갈라진다. 시각을 고정해서 비교한다 — 여기서 재려는 건 시계가 아니라 매니페스트 형식이다.
+    """
+    from capture import recording_store
     from capture.recording_store import Track, save_session, write_manifest
+
+    frozen = "2023-11-14T22:13:20+00:00"
+    monkeypatch.setattr(recording_store, "now_iso", lambda: frozen)
 
     raw = b"\x00\x00" * 3200
     p1, m1 = save_session([Track("7", "김환", raw)], tmp_path / "a", ts=1700000000,
@@ -777,7 +783,23 @@ def test_write_manifest_and_save_session_write_the_same_bytes(tmp_path):
 
     assert m1 == m2
     assert p1.read_text(encoding="utf-8") == p2.read_text(encoding="utf-8")
-    assert m1["recorded_at"] == time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(1700000000))
+    assert m1["recorded_at"] == frozen
+
+
+def test_manifest_recorded_at_is_utc_iso8601(tmp_path):
+    """recorded_at 형식은 now_iso() 의 UTC ISO8601 이다. BE 의 DateTime(timezone=True) 와
+    경계에서 어긋나지 않게 맞춘 것이라, 예전 time.localtime 형식으로 되돌아가면 여기서 걸린다.
+    위 테스트는 시각을 고정하므로 형식은 이쪽에서 진짜 now_iso() 로 확인한다."""
+    from datetime import datetime, timedelta
+
+    from capture.recording_store import write_manifest
+
+    _, m = write_manifest([], tmp_path, ts=1700000000, guild=None, channel=None,
+                          library_version=None)
+
+    parsed = datetime.fromisoformat(m["recorded_at"])
+    assert parsed.tzinfo is not None
+    assert parsed.utcoffset() == timedelta(0)
 
 
 async def test_stop_summary_carries_the_stage_latencies(tmp_path, monkeypatch):
@@ -1009,11 +1031,15 @@ async def test_realtime_commands_are_registered_under_the_new_names():
 
     names = sorted(c.name for c in bot.pending_application_commands)
     assert names == ["live", "live-join", "live-stop", "selftest"]
-    assert not ({"join", "leave", "record", "stop"} & set(names))
+    assert not ({"end", "join", "leave", "record", "stop"} & set(names))
 
 
 async def test_both_cogs_fit_on_one_bot():
-    """Bot.add_cog 는 클래스 이름을 키로 쓰고 (cog.py:681-687) 겹치면 ClientException 이다."""
+    """Bot.add_cog 는 클래스 이름을 키로 쓰고 (cog.py:681-687) 겹치면 ClientException 이다.
+
+    end 는 RecordingCog 쪽 명령이다. 이 목록은 RecordingCog 가 명령을 늘릴 때마다 같이
+    늘어난다 — 여기서 재려는 건 목록의 내용이 아니라 두 Cog 의 이름이 안 겹친다는 것이다.
+    """
     from capture.discord_adapter import RecordingCog
 
     bot = discord.Bot(intents=required_intents())
@@ -1021,6 +1047,6 @@ async def test_both_cogs_fit_on_one_bot():
     bot.add_cog(RealtimeCog(bot))
 
     names = sorted(c.name for c in bot.pending_application_commands)
-    assert names == ["join", "leave", "live", "live-join", "live-stop", "record",
+    assert names == ["end", "join", "leave", "live", "live-join", "live-stop", "record",
                      "selftest", "stop"]
     assert len(names) == len(set(names))
