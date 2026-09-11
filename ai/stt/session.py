@@ -6,6 +6,9 @@
 큐는 하나다. 확정된 발화가 여기 쌓이고 워커가 발화당 API 를 한 번 부른다.
 확정본은 회의록 자체라 밀려도 버리지 않는다. 턴은 큐에 넣기 전, VAD 가 발화를
 확정한 그 자리에서 정한다. 워커가 여럿이라 전사가 끝나는 순서는 발화 순서가 아니다.
+
+gate 를 주면 워커가 API 를 부르기 직전에 한 번 더 묻는다 (stt/speech_gate.py).
+주지 않으면 예전대로 전부 전사한다 — 오프라인 테스트와 리플레이 하니스가 이 길이다.
 """
 
 from __future__ import annotations
@@ -18,6 +21,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from stt.backend import SttBackend
+from stt.speech_gate import SpeechGate
 from stt.turns import DEFAULT_GAP_MS, TurnTracker
 from stt.vad import StreamingVAD, Utterance
 
@@ -62,10 +66,12 @@ class Session:
         workers: int = 3,
         retries: int = 3,
         turn_gap_ms: int = DEFAULT_GAP_MS,
+        gate: SpeechGate | None = None,
     ) -> None:
         self.final_stt = final_stt
         self.on_line = on_line or (lambda line: None)
         self.retries = retries
+        self.gate = gate
 
         self._vads: dict[str, StreamingVAD] = {}
         self._names: dict[str, str] = {}
@@ -134,6 +140,14 @@ class Session:
             except queue.Empty:
                 continue
             try:
+                # 게이트는 picked 앞이다. 뒤에 두면 그 비용이 transcribe_s 에 얹혀
+                # 백엔드끼리 비교하는 유일한 수치가 오염된다 (stt/latency.py:9-11).
+                # 거른 발화는 줄을 만들지 않는다. finally 가 task_done() 을 부르므로
+                # close() 의 unfinished_tasks 대기는 여기서 멈추지 않는다.
+                if self.gate is not None and not self.gate.accepts(
+                    u.pcm, u.sample_rate, tag=f"{u.speaker_id}#{u.seq}"
+                ):
+                    continue
                 picked = time.monotonic()
                 text = self._transcribe_final(u)
                 self._emit(u, turn_id, text, picked - queued_at, time.monotonic() - picked)
