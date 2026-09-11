@@ -98,6 +98,33 @@ def is_recording(vc) -> bool:
     return bool(getattr(vc, "recording", False))
 
 
+def holds_other_recorder(vc) -> bool:
+    """같은 음성 연결을 우리 아닌 녹음기가 쥐고 있는가.
+
+    is_recording 은 누가 걸었든 True 다 — 리더가 연결마다 하나라서 그렇다
+    (voice/client.py:759-773, 794-796). 그래서 sink 가 우리 것인지까지 봐야
+    동료의 WaveSink 와 우리 StreamingSink 가 갈린다.
+
+    sink 를 못 읽으면 남의 것으로 센다. 남의 녹음을 우리 명령이 멈추는 쪽이
+    우리 것을 못 멈추는 쪽보다 나쁘다.
+    """
+    if vc is None or not is_recording(vc):
+        return False
+    reader = getattr(vc, "_reader", None)
+    sink = getattr(reader, "sink", None) if reader else None
+    return not isinstance(sink, StreamingSink)
+
+
+OTHER_RECORDER_MESSAGE = (
+    "이 서버의 음성 연결에서 우리 것이 아닌 녹음이 돌고 있습니다. 봇 계정은 서버마다 음성 "
+    "연결이 하나뿐이라 둘이 같이 받을 수 없습니다. 이 봇에 함께 붙는 녹음기는 "
+    "capture/discord_adapter.py 의 `/record` 이고, 그쪽이면 `/stop` 으로 끝냅니다."
+)
+UNTRACKED_OURS_MESSAGE = (
+    "표에 없는 실시간 녹음이 남아 있습니다. `/live-stop` 으로 먼저 끝내 주세요."
+)
+
+
 def required_intents() -> discord.Intents:
     """이 Cog 에 필요한 인텐트.
 
@@ -364,6 +391,13 @@ class RealtimeCog(discord.Cog):
             await ctx.respond(self._busy_message(meeting), ephemeral=True)
             return
 
+        # 아래 권한·입장 검사보다 먼저 본다. 연결이 이미 남의 것이면 방을 고를 일이 없고,
+        # "먼저 음성 채널에 들어가세요" 는 이 상황에서 엉뚱한 안내다.
+        if is_recording(ctx.voice_client):
+            await ctx.respond(OTHER_RECORDER_MESSAGE if holds_other_recorder(ctx.voice_client)
+                              else UNTRACKED_OURS_MESSAGE, ephemeral=True)
+            return
+
         voice = getattr(ctx.author, "voice", None)
         if voice is None or voice.channel is None:
             await ctx.respond("먼저 음성 채널에 들어간 뒤 다시 실행해 주세요.", ephemeral=True)
@@ -383,11 +417,6 @@ class RealtimeCog(discord.Cog):
 
         vc = ctx.voice_client
         if vc is not None and vc.is_connected():
-            if is_recording(vc):
-                # 표에는 없는데 리더가 살아 있다. /live-stop 이 이 상태를 푼다.
-                await ctx.respond("이 서버에서 이미 녹음이 돌고 있습니다. `/live-stop` 으로 먼저 "
-                                  "끝내 주세요.", ephemeral=True)
-                return
             if vc.channel.id != room.id:
                 # 녹음 중 이동은 destroy_all_decoders 를 깨뜨린다 (router.py:116-119).
                 # 여기는 녹음 전이라 안전하다. 단 move_to 는 음성 상태 갱신을 보내고 바로
@@ -479,8 +508,13 @@ class RealtimeCog(discord.Cog):
         async with self._lock_for(ctx.guild.id):
             vc = ctx.voice_client
             if ctx.guild.id not in self._meetings:
+                if holds_other_recorder(vc):
+                    # stop_recording() 은 연결의 리더를 세운다. 누가 걸었는지 보지 않으므로
+                    # 여기서 그냥 부르면 동료의 녹음이 우리 명령으로 끝난다.
+                    await ctx.respond(OTHER_RECORDER_MESSAGE, ephemeral=True)
+                    return
                 if vc is not None and is_recording(vc):
-                    # 표와 라이브러리 상태가 어긋난 경우. 그냥 두면 /live 는 "이미 녹음 중",
+                    # 우리 sink 인데 표와 어긋난 경우. 그냥 두면 /live 는 "이미 녹음 중",
                     # /live-stop 은 "회의 없음" 으로 서로를 막아 프로세스 재시작 말고는 길이 없다.
                     vc.stop_recording()
                     await ctx.respond("표에 없는 녹음을 정지했습니다. 회의록은 없습니다.")
@@ -507,6 +541,12 @@ class RealtimeCog(discord.Cog):
             # 녹음 중 move_to 는 destroy_all_decoders 를 깨뜨린다 (router.py:116-119).
             await ctx.respond(self._busy_message(meeting), ephemeral=True)
             return
+        # 녹음 중 move_to 는 destroy_all_decoders 를 순회 중 변경으로 깨뜨린다
+        # (voice/receive/router.py:116-119). _meetings 검사는 남의 녹음을 못 잡는다.
+        if is_recording(ctx.voice_client):
+            await ctx.respond(OTHER_RECORDER_MESSAGE if holds_other_recorder(ctx.voice_client)
+                              else UNTRACKED_OURS_MESSAGE, ephemeral=True)
+            return
         voice = getattr(ctx.author, "voice", None)
         if voice is None or voice.channel is None:
             await ctx.respond("먼저 음성 채널에 들어간 뒤 다시 실행해 주세요.", ephemeral=True)
@@ -520,12 +560,6 @@ class RealtimeCog(discord.Cog):
                               ephemeral=True)
             return
         vc = ctx.voice_client
-        if vc is not None and is_recording(vc):
-            # 표에는 없는데 리더가 살아 있다. 여기서 move_to 하면 destroy_all_decoders 가
-            # 순회 중 변경으로 터진다 (router.py:116-119). _meetings 검사는 이 상태를 못 잡는다.
-            await ctx.respond("이 서버에서 표에 없는 녹음이 돌고 있습니다. `/live-stop` 으로 먼저 "
-                              "끝내 주세요.", ephemeral=True)
-            return
         try:
             if vc is not None and vc.is_connected():
                 if vc.channel.id == room.id:
