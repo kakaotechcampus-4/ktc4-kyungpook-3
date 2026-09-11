@@ -864,33 +864,39 @@ async def test_stt_failure_carries_the_message_not_only_the_class(monkeypatch):
 
 
 async def test_stt_round_trip_does_not_block_the_event_loop(monkeypatch):
-    """동기 HTTP 왕복을 루프에서 부르면 그동안 음성 하트비트까지 멈춘다."""
-    ticks = []
+    """동기 HTTP 왕복을 루프에서 부르면 왕복 내내 음성 하트비트까지 멈춘다.
 
-    class _Slow:
+    전사가 루프에 있는 태스크의 신호를 기다리게 만든다. 스레드로 뺐으면 루프가 계속
+    돌아 신호가 오고, 루프에서 그대로 불렀으면 신호를 세울 태스크가 영영 못 돌아
+    전사가 대기 시한에 걸린다. 경과 시간으로 재면 run() 의 다른 await 들이 하트비트를
+    대신 돌려 줘서 동어반복이 된다.
+    """
+    import threading
+
+    released = threading.Event()
+
+    class _Blocking:
         def __init__(self, *a, **k):
             pass
 
         def transcribe(self, samples, sample_rate):
-            import time
-            time.sleep(0.15)
-            return SttResult(text="느린 응답", words=[])
+            if not released.wait(timeout=2.0):
+                raise SttError("루프가 막혀 해제 신호가 오지 않았다")
+            return SttResult(text="해제됨", words=[])
 
-    monkeypatch.setattr(elice_mod, "EliceStt", _Slow)
+    async def _release():
+        await asyncio.sleep(0.05)
+        released.set()
+
+    monkeypatch.setattr(elice_mod, "EliceStt", _Blocking)
     cog, ctx, _vc, _text = _world(monkeypatch)
 
-    async def _heartbeat():
-        for _ in range(10):
-            await asyncio.sleep(0.01)
-            ticks.append(1)
-
-    beat = asyncio.create_task(_heartbeat())
+    releaser = asyncio.create_task(_release())
     out = await selftest.run(cog, ctx, use_stt=True)
-    await beat
+    await releaser
 
     assert "OK   STT 왕복" in out
-    # 루프에서 그대로 불렀으면 0.15초 동안 한 번도 못 뛴다.
-    assert len(ticks) >= 5, f"루프가 막혔다: {len(ticks)}"
+    assert "해제됨" in out
 
 
 # ------------------------------------------------------------------ 안내 문구
