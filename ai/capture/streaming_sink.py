@@ -37,6 +37,7 @@ class StreamingSink(discord.sinks.Sink):
         self.noise_packets = 0
         self.write_errors = 0
         self.unattributed = 0
+        self.feed_errors = 0
         self.peak_rms = 0.0
         self._reorder: dict[int, Reorderer] = {}
         self._names: dict[int, str] = {}
@@ -94,13 +95,25 @@ class StreamingSink(discord.sinks.Sink):
             self.session.feed(str(uid), name, s, at)
 
     def drain_speaker(self, uid: int) -> None:
-        """이 화자의 재정렬 창을 비운다. 퇴장 시 flush_speaker 보다 먼저 부른다."""
+        """이 화자의 재정렬 창을 비운다. 퇴장 시 flush_speaker 보다 먼저 부른다.
+
+        write() 와 달리 이 경로는 py-cord 의 예외 삼키기 대상이 아니라 cleanup()
+        에서 직접 불린다. session.feed 가 여기서 죽어도 남은 항목은 계속 흘려보내야
+        해서 항목 단위로 감싼다.
+        """
         with self._lock:
             ro = self._reorder.get(int(uid))
             released = ro.flush() if ro else []
             name = self._names.get(int(uid), str(uid))
         for s, at in released:
-            self.session.feed(str(uid), name, s, at)
+            try:
+                self.session.feed(str(uid), name, s, at)
+            except Exception as exc:
+                with self._lock:
+                    self.feed_errors += 1
+                    first = self.feed_errors == 1
+                if first:
+                    print(f"[sink] feed 예외: {type(exc).__name__}: {exc}")
 
     def drain(self) -> None:
         """모든 재정렬 창을 비운다. 종료 시 session.close() 보다 먼저 부른다."""
@@ -113,9 +126,13 @@ class StreamingSink(discord.sinks.Sink):
         """py-cord 가 stop_recording 뒤에 부른다.
 
         라우터 스레드 또는 이벤트 루프 스레드 어느 쪽에서나 불릴 수 있어 _lock 이 필요하다.
+        drain() 이 (drain_speaker 가 못 잡는) 다른 이유로 예외를 내도 finished 는
+        세팅돼야 py-cord 의 대기가 안 걸린다.
         """
-        self.drain()
-        self.finished = True
+        try:
+            self.drain()
+        finally:
+            self.finished = True
 
     def level_report(self) -> dict:
         from stt.vad import SPEECH_RMS
@@ -126,6 +143,7 @@ class StreamingSink(discord.sinks.Sink):
             "noise_packets": self.noise_packets,
             "write_errors": self.write_errors,
             "unattributed": self.unattributed,
+            "feed_errors": self.feed_errors,
             "peak_rms": self.peak_rms,
             "speech_rms": SPEECH_RMS,
             "verdict": verdict,

@@ -1,5 +1,6 @@
 import discord
 import numpy as np
+import pytest
 
 from capture.streaming_sink import StreamingSink
 from capture.timeline import REORDER_WINDOW
@@ -197,3 +198,35 @@ def test_unattributed_packet_is_counted():
     sink.write(_to_discord_bytes(tone(PACKET_MS)), None)
     assert sink.unattributed == 1
     assert sink.packets == 0
+
+
+def test_cleanup_counts_feed_errors_and_finishes():
+    """cleanup 이 부르는 drain 은 write() 와 다른 경로다 — write() 의 예외 삼키기가
+    이쪽을 지켜주지 않는다. session.feed 가 여기서 죽으면 finished 가 영영 False 로
+    남고, py-cord 는 자기 로거에만 기록한 채 넘어간다(reader.py:195-198)."""
+    class Boom:
+        def feed(self, *a, **k):
+            raise RuntimeError("boom")
+
+    sink = StreamingSink(Boom())
+    m = FakeMember(1, "a")
+    sink.write(_to_discord_bytes(tone(PACKET_MS)), m)  # 재정렬 창에 하나 담아 둔다
+
+    sink.cleanup()
+
+    assert sink.finished is True
+    assert sink.feed_errors == 1
+    assert sink.level_report()["feed_errors"] == 1
+
+
+def test_cleanup_finishes_even_if_drain_raises():
+    """feed_errors 카운팅과 무관하게, drain() 이 어떤 이유로든 예외를 내도
+    finished 는 세팅되어야 한다. drain() 을 직접 오버라이드해 이 경로를 격리한다."""
+    class BoomDrain(StreamingSink):
+        def drain(self):
+            raise RuntimeError("drain boom")
+
+    sink = BoomDrain(session=None)
+    with pytest.raises(RuntimeError):
+        sink.cleanup()
+    assert sink.finished is True
