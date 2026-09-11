@@ -17,7 +17,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from stt.backend import SttBackend, SttError
+from stt.backend import SttBackend
 from stt.turns import DEFAULT_GAP_MS, TurnTracker
 from stt.vad import StreamingVAD, Utterance
 
@@ -114,6 +114,10 @@ class Session:
                 continue
             try:
                 self._emit(u, turn_id, self._transcribe_final(u))
+            except Exception as e:
+                # on_line 은 남의 코드다. 여기서 예외가 새면 워커 스레드가 조용히
+                # 죽고, workers=1 이면 그 뒤 발화가 전부 큐에 남아 나오지 않는다.
+                print(f"[session] on_line 예외: {type(e).__name__}", flush=True)
             finally:
                 self._final_q.task_done()
 
@@ -121,7 +125,7 @@ class Session:
         for attempt in range(self.retries):
             try:
                 return self.final_stt.transcribe(u.pcm, u.sample_rate).text
-            except (SttError, Exception):
+            except Exception:
                 if attempt == self.retries - 1:
                     # 발화를 버리지 않는다. 오디오는 트랙에 남아 있으니 나중에 다시 돌릴 수 있다.
                     return "[전사 실패]"
@@ -138,7 +142,11 @@ class Session:
 
     # ------------------------------------------------------------ 종료
     def close(self, timeout_s: float = 10.0) -> float:
-        """진행 중이던 발화를 전부 확정하고 워커를 멈춘다. 걸린 초를 돌려준다.
+        """진행 중이던 발화를 확정하고 워커를 멈춘다. 걸린 초를 돌려준다.
+
+        전사 중인 발화를 timeout_s 까지 기다리지만, 그때까지 안 끝난 것이 있어도
+        돌아온다. 남은 줄은 나중에 on_line 으로 오고, 그 전에 프로세스가 끝나면
+        오지 않는다. 전부 나왔다는 보장은 없다.
 
         줄의 소유자는 on_line 콜백이다. 여기서는 모으지 않는다.
         """
