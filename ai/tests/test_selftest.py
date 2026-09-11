@@ -422,6 +422,8 @@ async def test_healthy_world_reports_no_failure(monkeypatch):
     out = await selftest.run(cog, ctx, use_stt=False)
     assert _failed(out) == [], out
     assert vc.starts == 1 and vc.stops == 1
+    # 줄이 하나 늘 때마다 잘림에 가까워진다. 잘리는 쪽은 맨 아래 STT 왕복 줄이다.
+    assert "(잘림)" not in out
 
 
 async def test_write_probe_sends_edits_then_deletes(monkeypatch):
@@ -738,6 +740,102 @@ async def test_sink_delivery_reports_ok_on_a_healthy_probe(monkeypatch):
     out = await selftest.run(cog, ctx, use_stt=False)
     assert _row(out, "sink 전달").startswith("OK")
     assert "sink → session 10건" in out
+
+
+# ------------------------------------------------------------ 감지기: 전송 방식
+
+
+def _clocked_probe(monkeypatch, times):
+    """프로브 sink 의 도착 시각을 미리 정한다.
+
+    대역은 패킷을 한 번에 흘리므로 실제 시계로는 전부 같은 순간에 도착한 것이 된다.
+    공백이 있는 세계를 만들려면 시각을 직접 쥐어야 한다.
+    """
+
+    class _Clocked(selftest._ProbeSink):
+        def __init__(self) -> None:
+            super().__init__()
+            self._times = list(times)
+            self._clock = {"now_ms": 0}
+            self.now_ms = lambda: self._clock["now_ms"]
+
+        def write(self, data, user):
+            if self._times:
+                self._clock["now_ms"] = self._times.pop(0)
+            super().write(data, user)
+
+    monkeypatch.setattr(selftest, "_ProbeSink", _Clocked)
+
+
+_GAPPY = [0, 20, 40, 300, 320, 340, 600, 620, 640, 660]     # 260ms 공백 둘
+_EVEN = [20 * i for i in range(10)]
+
+
+def _quiet_track():
+    """잡음 필터는 통과하지만 RMS 가 임계 아래인 진짜 오디오."""
+    return [ReplayTrack(user_id=7, name="김환", samples=_tone(200, amp=0.002), ssrc=70)]
+
+
+async def test_gaps_without_quiet_packets_point_at_min_speech_ms(monkeypatch):
+    """온 패킷이 전부 말이면 우리 쪽 임계가 짧은 응답을 죽이고 있는 것이다."""
+    cog, ctx, _vc, _text = _world(monkeypatch)
+    _clocked_probe(monkeypatch, _GAPPY)
+    out = await selftest.run(cog, ctx, use_stt=False)
+    row = _row(out, "전송 방식")
+    assert "공백 2건" in row and "최대 260ms" in row and "중앙값 260ms" in row
+    assert "조용한 패킷 0" in row
+    assert "MIN_SPEECH_MS" in row
+    assert "히스테리시스" not in row
+
+
+async def test_quiet_packets_without_gaps_point_at_hysteresis(monkeypatch):
+    """끊김 없이 오는데 조용한 패킷이 섞이면 경계를 우리가 찾아야 한다."""
+    cog, ctx, _vc, _text = _world(monkeypatch, tracks=_quiet_track())
+    _clocked_probe(monkeypatch, _EVEN)
+    out = await selftest.run(cog, ctx, use_stt=False)
+    row = _row(out, "전송 방식")
+    assert "공백 0건" in row and "조용한 패킷 10" in row
+    assert "히스테리시스" in row
+    assert "MIN_SPEECH_MS" not in row
+
+
+async def test_both_signals_together_do_not_pick_a_side(monkeypatch):
+    """모순된 관측을 한쪽 근거로 적으면 이 줄이 재는 것보다 나쁜 일을 한다."""
+    cog, ctx, _vc, _text = _world(monkeypatch, tracks=_quiet_track())
+    _clocked_probe(monkeypatch, _GAPPY)
+    out = await selftest.run(cog, ctx, use_stt=False)
+    row = _row(out, "전송 방식")
+    assert "공백 2건" in row and "조용한 패킷 10" in row
+    assert "갈리지 않았다" in row
+    assert "MIN_SPEECH_MS" not in row and "히스테리시스" not in row
+
+
+async def test_silent_probe_says_it_measured_nothing(monkeypatch):
+    """프로브 동안 아무도 말하지 않은 실행이 어느 한쪽 근거로 읽히면 안 된다."""
+    cog, ctx, _vc, _text = _world(monkeypatch, tracks=[])
+    out = await selftest.run(cog, ctx, use_stt=False)
+    row = _row(out, "전송 방식")
+    assert "재지 못했다" in row and "어느 쪽 근거도 아니다" in row
+    assert "MIN_SPEECH_MS" not in row and "히스테리시스" not in row
+
+
+async def test_cut_short_probe_is_not_evidence_either(monkeypatch):
+    """write 예외는 녹음 세션 전체를 끝낸다. 그 뒤 숫자는 3초치가 아니다."""
+    cog, ctx, _vc, _text = _world(monkeypatch, reader_error=ValueError("복호화 실패"))
+    _clocked_probe(monkeypatch, _GAPPY)
+    out = await selftest.run(cog, ctx, use_stt=False)
+    row = _row(out, "전송 방식")
+    assert "근거가 못 된다" in row
+    assert "MIN_SPEECH_MS" not in row and "히스테리시스" not in row
+
+
+async def test_transmission_row_never_fails_the_run(monkeypatch):
+    """관측 줄이다. 여기서 판정을 내면 멀쩡한 회의가 실패로 뜬다."""
+    cog, ctx, _vc, _text = _world(monkeypatch)
+    _clocked_probe(monkeypatch, _GAPPY)
+    out = await selftest.run(cog, ctx, use_stt=False)
+    assert _row(out, "전송 방식").startswith("정보")
+    assert _failed(out) == [], out
 
 
 # ------------------------------------------------------------- 진행 중인 회의

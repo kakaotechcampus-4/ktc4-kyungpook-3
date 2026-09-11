@@ -27,12 +27,42 @@ PROBE_SECONDS = 3.0
 STT_PROBE_SECONDS = 1.0
 # 리포트가 디스코드 2000자 한도 안에 들어가야 해서 앞쪽 인원만 통계를 읽는다.
 DAVE_STATS_MEMBERS = 6
+# 공백이든 조용한 패킷이든 한 건은 우연이라 어느 쪽 근거로도 쓰지 않는다.
+PROBE_EVIDENCE = 2
 # 금액이 나오는 자리마다 같이 간다 (stt/elice.py:9). 이 문장이 그 숫자의 정직한 절반이다.
 COST_CAVEAT = "최소 과금 단위는 확인하지 못했다. 실제 청구는 더 클 수 있다"
 
 
 def _cost(whisper_krw) -> str:
     return f"₩6/60초 기준 약 {whisper_krw(STT_PROBE_SECONDS):.1f}원"
+
+
+def _transmission(r: dict, cut_short: bool = False) -> str:
+    """공백·조용한 패킷과 그 해석 한 줄.
+
+    이 줄을 읽는 사람은 VAD 설계를 정한다. 조용한 구간에도 패킷이 오면 발화 경계를
+    에너지로 찾아야 하고, 안 오면 도착한 패킷은 전부 말이라 MIN_SPEECH_MS 가 짧은
+    응답을 죽이고 있는 쪽이다. 숫자만 찍으면 보는 사람이 그 갈림을 혼자 해야 하고,
+    앞질러 단정하면 재는 의미가 없다. 그래서 관측과 다음 할 일을 같이 적되, 아무것도
+    못 잰 실행은 못 쟀다고만 적는다.
+    """
+    head = (f"공백 {r['gaps']}건 (최대 {r['max_gap_ms']}ms, 중앙값 {r['median_gap_ms']}ms) · "
+            f"조용한 패킷 {r['quiet_packets']} · ")
+    if cut_short:
+        return head + "수신이 중간에 끊겨 근거가 못 된다. 아래 sink 전달을 먼저 본다"
+    if r["packets"] == 0:
+        return head + ("음성 패킷이 한 건도 없어 아무것도 재지 못했다. 어느 쪽 근거도 아니다. "
+                       "음성 채널에서 직접 말하면서 다시 실행한다")
+    if r["gaps"] >= PROBE_EVIDENCE and r["quiet_packets"] == 0:
+        noise = (f" 잡음 {r['noise_packets']}건을 걸렀으니 그 공백이 침묵 프레임일 수도 있다."
+                 if r["noise_packets"] else "")
+        return head + ("sink 까지 온 패킷은 전부 말이었고 사이가 끊겼다." + noise +
+                       " 짧은 응답이 MIN_SPEECH_MS 에 잘리는 쪽을 먼저 본다")
+    if r["quiet_packets"] >= PROBE_EVIDENCE and r["gaps"] == 0:
+        return head + ("끊김 없이 오는데 조용한 패킷이 섞여 있다. 발화 경계를 에너지로 찾아야 "
+                       "하므로 간격 병합과 히스테리시스부터 고친다")
+    return head + ("공백과 조용한 패킷이 같이 나왔거나 둘 다 적어서 아직 갈리지 않았다. "
+                   "말하다 한두 번 쉬기를 섞어 다시 실행한다")
 
 CAUSES = {
     "슬래시 명령 등록": "DISCORD_GUILD_ID 를 채우면 그 서버에 즉시 등록된다. 비우면 글로벌 "
@@ -310,6 +340,7 @@ async def _stages(cog, ctx: discord.ApplicationContext, t: SelfTest, use_stt: bo
                          info=True)
             else:
                 t.record("오디오 수신", speech > 0 or r["noise_packets"] > 0, levels)
+            t.record("전송 방식", True, _transmission(r, cut_short=err is not None), info=True)
             t.record("PCM 크기", total == 0 or good == total,
                      f"{good}/{total} 이 {PCM_20MS_BYTES}바이트" if total else "패킷 없음",
                      info=total == 0)
