@@ -67,3 +67,64 @@ pytest          # 설치된 py-cord 는 있어야 하지만 봇 토큰도 네트
 ## 다음 단계
 
 실제 음성 채널에서 한 번도 돌려 보지 않았습니다. 실측(수신 패킷, 종료까지 걸린 시간, CER)이 다음입니다.
+
+## 실시간 전사 실행
+
+아래 절차는 아직 실제 서버에서 끝까지 돌려 보지 않았습니다. 어디서 막히는지는 `/selftest` 가
+단계별로 알려 줍니다.
+
+### 한 번만 하는 준비
+
+포털 설정과 초대 링크는 코드에서 고칠 수 없어서 사람이 손으로 확인해야 합니다.
+
+1. 개발자 포털 → 해당 앱 → Bot → Privileged Gateway Intents 에서 SERVER MEMBERS 를 켭니다.
+   MESSAGE CONTENT 는 이 봇이 쓰지 않으므로 켜지 않습니다. 코드에서 안 쓰는 특권 인텐트를 켜 두면
+   포털 설정이 어긋났을 때 봇이 기동 즉시 죽습니다.
+   확인은 포털의 SERVER MEMBERS 토글이 켜진 색인지 눈으로 봅니다.
+
+2. 초대 링크의 scopes 에 `bot` 과 `applications.commands` 를 둘 다 넣습니다. 이게 빠지면 슬래시
+   명령 자체가 서버에 안 뜹니다.
+   확인은 실제로 쓴 링크에 `scope=bot%20applications.commands` (또는 `bot+applications.commands`)
+   가 들어 있는지 문자열을 읽습니다. 이미 `bot` 만으로 초대한 서버라면 새 링크로 다시 초대합니다.
+   재초대만으로 스코프가 갱신됩니다.
+
+3. 봇 역할에 음성 채널의 채널 보기·연결, 텍스트 채널의 채널 보기·메시지 보내기를 줍니다.
+   말하기(Speak) 는 수신 전용 녹음에 필요 없고, 링크 첨부와 메시지 기록 보기도 지금 코드에는
+   필요 없습니다.
+   확인은 음성·텍스트 채널에서 "채널 권한 보기" 로 봇 계정 기준 최종 권한을 봅니다.
+
+4. `ai/.env` 에 `DISCORD_BOT_TOKEN`, `ELICE_API_KEY` 를 넣습니다. 값은 `secrets/` 에서 옮겨 넣고
+   화면에 출력하지 않습니다. `DISCORD_GUILD_ID` 는 개발·데모용으로 내 서버 ID 를 채우면 슬래시
+   명령이 몇 초 안에 그 서버에 뜹니다. 여러 서버에서 쓰려면 비웁니다. 글로벌 등록이라 반영까지
+   최대 1시간 걸립니다. `DISCORD_CHANNEL_ID` 는 더 이상 쓰지 않습니다.
+   확인은 봇을 띄운 뒤 서버에서 `/` 를 쳐서 join·record·selftest·stop·leave 다섯 개가 보이는지
+   봅니다.
+
+### 매번 하는 것
+
+```bash
+cd ai && .venv/bin/python capture/run_recorder.py
+```
+
+프로세스 하나가 초대된 서버 전부를 담당합니다. 무음 원인을 쫓을 때는 `LOG_LEVEL=DEBUG` 를 붙입니다.
+패킷이 버려지는 로그가 DEBUG 라 기본 설정에서는 안 보입니다.
+
+음성 채널에 들어간 다음, 전사를 올릴 텍스트 채널에서 명령을 칩니다.
+
+1. `/selftest` - 어디까지 되는지 먼저 봅니다. 유료 호출은 없습니다. STT 까지 보려면 `stt: True`
+2. `/record` - 봇이 명령을 친 사람의 음성 채널로 들어가 시작합니다. 줄은 명령을 친 채널에 올라갑니다
+3. 말합니다
+4. `/stop` - 회의록 경로와 수신 요약이 올라옵니다
+
+서버당 회의는 하나입니다. 회의가 도는 중에 다른 방에서 `/record` 나 `/join` 을 치면 거부합니다.
+봇 계정 하나가 길드당 음성 연결을 하나만 가질 수 있어서입니다.
+
+산출물은 `recordings/{guild_id}_{ts}/` 아래 `transcript.md`, `transcript.jsonl`, 화자별 wav 이고
+매니페스트는 `recordings/session_{ts}.json` 입니다. 녹음한 wav 를 오프라인으로 다시 전사할 때는
+디렉토리를 직접 줍니다. 기본 수집이 하위 디렉토리를 보지 않습니다.
+
+```bash
+.venv/bin/python stt/transcribe.py --audio recordings/<meeting_id>
+```
+
+막히면 `/selftest` 출력을 그대로 가져옵니다.
