@@ -436,6 +436,39 @@ async def test_bot_kicked_from_the_room_keeps_the_last_reorder_window(tmp_path, 
     assert saved[0]["speakers"][0]["duration_sec"] == pytest.approx(1.2, abs=0.02)
 
 
+async def test_finish_still_writes_the_transcript_when_the_final_drain_raises(
+    tmp_path, monkeypatch
+):
+    """마지막 드레인이 깨져도 회의는 끝까지 나온다. 대신 요약이 그 사실을 말한다.
+
+    이 시점에 pop 은 이미 끝났다. 예외가 _finish_meeting 밖으로 나가면 회의록·wav·
+    매니페스트·요약이 한꺼번에 사라지고 표에도 없어 아무도 다시 시도하지 못한다.
+    꼬리 320ms 를 잃는 쪽이 회의 전체를 잃는 쪽보다 낫다. drain_speaker 가 항목마다
+    예외를 잡는데도 이 경로가 가능하다는 것은 Task 7b 가 feed_errors 를 만들면서
+    이미 확인했다.
+    """
+    cog, _ctx, meeting, text, _vc = await _start_one(tmp_path, monkeypatch)
+    replay([ReplayTrack(user_id=7, name="김환", samples=_tone(1_200), ssrc=70)], meeting.sink.write)
+
+    def _boom():
+        raise RuntimeError("drain boom")
+
+    meeting.sink.cleanup = _boom
+
+    await cog._finish_meeting(GUILD_ID)
+
+    records = [
+        json.loads(x)
+        for x in (meeting.out_dir / "transcript.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert [r["text"] for r in records] == ["마지막 발언"]
+
+    summary = text.summaries()
+    assert len(summary) == 1
+    assert "드레인 실패" in summary[0]
+    assert "RuntimeError" in summary[0]
+
+
 async def test_join_refuses_to_move_while_an_untracked_recording_is_live(tmp_path, monkeypatch):
     """표에는 없는데 리더가 살아 있는 상태에서 /join 이 방을 옮기면 안 된다.
 

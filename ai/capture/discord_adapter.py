@@ -534,7 +534,17 @@ class RecordingCog(discord.Cog):
         #    먼저 예약되지만 1928 의 우리 리스너가 먼저 끝난다). 늦게 온 샘플은 이미 멈춘
         #    워커 큐와 이미 join 된 트랙 스레드로 들어가 예외도 카운터도 없이 사라진다.
         #    두 번 불러도 안전하다 — Reorderer.flush() 가 _buf 를 비운다 (timeline.py:101-106).
-        meeting.sink.cleanup()
+        #    여기서 예외를 밖으로 내보내지 않는다. pop 이 이미 끝나서, 나가면 회의록·wav·
+        #    매니페스트·요약이 한꺼번에 사라지고 표에도 없어 아무도 다시 시도하지 못한다.
+        #    꼬리를 잃은 드레인이 회의 전체를 잃는 것보다 낫다. 대신 요약에 적어 내보낸다.
+        #    CancelledError 는 BaseException 이라 여기 안 걸리고 그대로 올라간다.
+        drain_error = None
+        try:
+            meeting.sink.cleanup()
+        except Exception as e:
+            drain_error = f"{type(e).__name__}: {e}"
+            print(f"[meeting] guild={guild_id} {meeting.meeting_id}: 마지막 드레인 실패 "
+                  f"({drain_error}). 회의 끝부분이 빠졌을 수 있다.", flush=True)
 
         # 2. 남은 발화를 확정하고 전사를 기다린다. close() 는 워커를 최대 10초 기다리는
         #    블로킹 호출이라 스레드로 뺀다. 루프에서 부르면 그동안 봇 전체가 멈춘다.
@@ -583,6 +593,8 @@ class RecordingCog(discord.Cog):
             f"트랙 버림 {meeting.pool.dropped} · 최대 RMS {report['peak_rms']:.3f} "
             f"(임계 {report['speech_rms']:.3f}, {report['verdict']})"
         )
+        if drain_error is not None:
+            msg.append(f"⚠️ 마지막 드레인 실패 ({drain_error}) — 회의 끝부분이 빠졌을 수 있습니다")
         try:
             await meeting.channel.send("\n".join(msg))
         except Exception as e:
