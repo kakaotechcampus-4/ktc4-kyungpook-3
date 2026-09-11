@@ -214,7 +214,11 @@ class _Dave:
         self._stats = stats or {}
 
     def get_decryption_stats(self, user_id, media_type=None):
-        return self._stats.get(user_id)
+        """stats 값이 예외면 던진다. davey 는 멤버에 따라 raise 한다."""
+        s = self._stats.get(user_id)
+        if isinstance(s, Exception):
+            raise s
+        return s
 
 
 class _Runner:
@@ -360,12 +364,12 @@ def _meeting(packets=0, finals=0, nonfinals=0):
 
 def _world(monkeypatch, *, guild_id="777", intents=None, perms=None, in_voice=True,
            conn=None, tracks=None, reader_error=None, start_error=None, recording=False,
-           send_error=None, delete_error=None, meetings=None, has_vc=True):
+           send_error=None, delete_error=None, meetings=None, has_vc=True, members=None):
     """기본은 전부 정상인 세계. 테스트마다 하나씩만 망가뜨린다."""
     monkeypatch.setenv("DISCORD_GUILD_ID", guild_id)
     monkeypatch.setattr(selftest, "PROBE_SECONDS", 0.05)
 
-    room = _VoiceRoom(perms, members=[_Member(7, "김환")])
+    room = _VoiceRoom(perms, members=members or [_Member(7, "김환")])
     if tracks is None:
         tracks = [ReplayTrack(user_id=7, name="김환", samples=_tone(200), ssrc=70)]
     vc = _VC(room, conn=conn, tracks=tracks, reader_error=reader_error,
@@ -580,6 +584,39 @@ async def test_absent_dave_session_fails(monkeypatch):
     assert "실패 DAVE" in out
     assert "dave=False ready=False" in out
     assert "PR #3159" in out
+
+
+_NO_DECRYPTOR = "Failed to get decryption stats: NoDecryptorForUser"
+
+
+async def test_member_without_decryption_stats_does_not_end_the_command(monkeypatch):
+    """멤버 한 명에서 raise 가 나면 명령이 통째로 거기서 끝났다.
+
+    실제 실행에서 '실패 자체 점검' 한 줄만 남고 뒤 단계가 전부 사라졌다.
+    """
+    dave = _Dave(ready=True, stats={7: ValueError(_NO_DECRYPTOR)})
+    cog, ctx, _vc, _text = _world(monkeypatch, conn=_Conn(dave=dave))
+
+    out = await selftest.run(cog, ctx, use_stt=False)
+
+    assert _row(out, "DAVE")
+    assert "자체 점검" not in out
+    assert "NoDecryptorForUser" not in out
+    assert "OK   채널 쓰기" in out          # DAVE 뒤 단계까지 실제로 갔다
+
+
+async def test_a_member_without_stats_does_not_hide_another_members_counts(monkeypatch):
+    """통계를 낸 사람이 한 명이라도 있으면 그 수치는 그대로 나와야 한다."""
+    dave = _Dave(ready=True, stats={7: ValueError(_NO_DECRYPTOR),
+                                    8: _Stats(successes=120, failures=0)})
+    cog, ctx, _vc, _text = _world(monkeypatch, conn=_Conn(dave=dave),
+                                  members=[_Member(7, "김환"), _Member(8, "이준")])
+
+    out = await selftest.run(cog, ctx, use_stt=False)
+
+    assert _row(out, "DAVE").startswith("OK")
+    assert "복호화 성공120/실패0" in out
+    assert "이준 성공120/실패0" in out
 
 
 # ------------------------------------------------------ 감지기: 이벤트 루프 디버그

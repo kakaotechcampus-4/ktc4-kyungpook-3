@@ -260,7 +260,12 @@ async def _stages(cog, ctx: discord.ApplicationContext, t: SelfTest, use_stt: bo
             # 성공이 한 건도 안 늘어난다. 실제 재연결로 관측하지는 않았다.
             members = (vc.channel.members if vc.channel is not None else [])
             for m in members[:DAVE_STATS_MEMBERS]:
-                s = session.get_decryption_stats(m.id)
+                try:
+                    s = session.get_decryption_stats(m.id)
+                except Exception:
+                    # 실제 실행에서 멤버 한 명이 ValueError(NoDecryptorForUser) 를 냈고
+                    # 명령 전체가 거기서 끝났다. 어떤 조건에서 나는지는 확인하지 못했다.
+                    continue
                 if s is None:
                     continue
                 good = int(getattr(s, "successes", 0) or 0)
