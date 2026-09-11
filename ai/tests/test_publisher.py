@@ -1,4 +1,5 @@
 import asyncio
+import threading
 
 import pytest
 
@@ -147,3 +148,71 @@ async def test_stop_flushes_without_waiting_for_coalesce():
     p.stop()
     await asyncio.wait_for(task, timeout=1.0)
     assert ch.sent and "즉시" in ch.sent[-1]
+
+
+@pytest.mark.asyncio
+async def test_submit_from_worker_thread_is_delivered():
+    """Session.on_line 은 워커 스레드에서 불린다. submit() 이 내부에서 loop.time()
+    (또는 asyncio.get_event_loop().time())을 부르면, 자기 루프가 없는 진짜
+    threading.Thread 에서는 RuntimeError 로 죽는다 — time.monotonic() 하나로
+    통일해야 이 경로가 산다. 실제 스레드로 확인한다 (같은 코루틴 안에서 부르면
+    이 문제가 드러나지 않는다)."""
+    ch = FakeChannel()
+    p = Publisher(ch.send, ch.edit, coalesce_s=0)
+    task = asyncio.create_task(p.run())
+    await asyncio.sleep(0.02)  # run() 이 유휴 대기(wait_for)에 들어갈 시간
+
+    t = threading.Thread(target=p.submit, args=(line(turn="t1", text="워커에서"),))
+    t.start()
+    t.join()
+
+    await _wait_until(lambda: bool(ch.sent), timeout=0.5)
+    p.stop()
+    await asyncio.wait_for(task, timeout=1.0)
+    assert ch.sent and "워커에서" in ch.sent[-1]
+
+
+@pytest.mark.asyncio
+async def test_submit_after_run_returned_does_not_raise(capsys):
+    """루프가 열려 있어도 run() 이 이미 끝났으면 깨울 대상이 없다. submit() 은
+    예외를 올리지 않고 로그로만 남긴다 — 줄이 조용히 사라지지 않았다는 뜻이다."""
+    ch = FakeChannel()
+    p = Publisher(ch.send, ch.edit, coalesce_s=0)
+    task = asyncio.create_task(p.run())
+    await asyncio.sleep(0.01)
+    p.stop()
+    await asyncio.wait_for(task, timeout=1.0)
+
+    p.submit(line(turn="t9", text="너무 늦게 옴"))  # 예외 없이 끝나야 한다
+
+    out = capsys.readouterr().out
+    assert "t9" in out
+
+
+@pytest.mark.asyncio
+async def test_stop_deadline_bounds_drain_and_reports_leftovers(capsys):
+    """burst=1 이면 첫 턴만 즉시 나가고 나머지는 매번 refill_per_s 만큼 기다려야
+    한다. 짧은 시한을 주면 다 못 올리고 run() 이 그 시한 안에 돌아와야 하고,
+    남은 턴은 로그로 남아야 한다 (내용이 아니라 turn_id 와 개수만)."""
+    ch = FakeChannel()
+    p = Publisher(ch.send, ch.edit, burst=1, refill_per_s=1.0, coalesce_s=0)
+    task = asyncio.create_task(p.run())
+    for i in range(4):
+        p.submit(line(turn=f"t{i}", speaker=f"s{i}", text=f"m{i}"))
+    await asyncio.sleep(0.02)  # 버스트 토큰으로 t0 하나는 이미 나갔을 시간
+
+    loop = asyncio.get_running_loop()
+    t0 = loop.time()
+    p.stop(deadline_s=0.3)
+    await asyncio.wait_for(task, timeout=1.0)
+    elapsed = loop.time() - t0
+
+    assert elapsed < 0.5   # 시한(0.3) + 여유
+    sent_indices = {i for i in range(4) if any(f"m{i}" in s for s in ch.sent)}
+    missing = [f"t{i}" for i in range(4) if i not in sent_indices]
+    assert missing, "burst=1 이면 4건이 다 나갈 수 없다"
+    out = capsys.readouterr().out
+    assert str(len(missing)) in out
+    for turn_id in missing:
+        assert turn_id in out
+

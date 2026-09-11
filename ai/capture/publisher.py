@@ -10,12 +10,13 @@
 실패는 버리지 않는다. 라이브러리가 429 재시도를 소진해 예외를 올리면
 그 턴을 되돌리고 백오프 후 다시 시도한다.
 
-submit() 은 다른 스레드에서 불러도 안전하다. 루프가 있다고 가정하지 않고
-await 도 하지 않는다 (Session.on_line 이 워커 스레드에서 불린다). 그래서 내부
-시계는 loop.time() 이 아니라 time.monotonic() 하나로 통일한다 — submit() 쪽에서
-루프를 요구하면 워커 스레드에서 예외가 난다. 실제 배선에서는 Discord 레이어가
-loop.call_soon_threadsafe(publisher.submit, line) 으로 넘기므로 submit() 본문은
-그때는 루프 스레드에서 실행되지만, 그 가정 없이도 깨지지 않게 짠다.
+submit() 은 await 하지 않고, 자기 안(줄 누적·dirty 표시)에서는 루프를 요구하지
+않는다 — 내부 시계를 loop.time() 이 아니라 time.monotonic() 으로 통일해서
+Session.on_line 이 부르는 워커 스레드에서 불려도 이 부분은 죽지 않는다.
+게시 루프를 깨우는 부분만 loop.call_soon_threadsafe 를 쓰는데, 루프가 이미
+닫혔거나 run() 이 이미 끝났으면 그 시도를 건너뛰고 로그만 남긴다 — 예외를
+올리지 않는다. 이 두 경로는 test_submit_from_worker_thread_is_delivered,
+test_submit_after_run_returned_does_not_raise 로 확인했다.
 """
 
 from __future__ import annotations
@@ -70,28 +71,47 @@ class Publisher:
         self._tokens = float(self.burst)
         self._refilled_at: float | None = None
         self._stop = False
+        self._stop_deadline: float | None = None
         self._wake = asyncio.Event()
         self._loop: asyncio.AbstractEventLoop | None = None  # run() 이 시작돼야 안다
+        self._running = False  # run() 의 while 문 안에 있는 동안만 True
 
     # ------------------------------------------------------------ 입력
     def submit(self, line: Line) -> None:
         self._lines_of.setdefault(line.turn_id, []).append(line)
         self._mark_dirty(line.turn_id)
 
-    def stop(self) -> None:
+    def stop(self, deadline_s: float = 8.0) -> None:
+        """지금부터 deadline_s 안에 다 못 올리면 남은 턴은 포기하고 run() 이 돌아온다.
+
+        백오프를 기다리던 턴도 이번 한 번은 남은 사다리를 건너뛰고 바로 시도한다 —
+        재시도 자체를 없애는 게 아니라, 종료 마감 안에서 마지막 기회를 준다.
+        """
         self._stop = True
+        self._stop_deadline = time.monotonic() + deadline_s
+        self._not_before.clear()
         self._wake.set()
 
     def _mark_dirty(self, turn_id: str) -> None:
         if turn_id not in self._dirty:
             self._dirty.append(turn_id)
         self._dirty_at[turn_id] = time.monotonic()
-        self._wake_loop()
+        self._wake_loop(turn_id)
 
-    def _wake_loop(self) -> None:
-        """run() 이 아직 시작 전이면 깨울 루프가 없다 — run() 의 0.1초 폴백이 대신 잡는다."""
-        if self._loop is not None:
-            self._loop.call_soon_threadsafe(self._wake.set)
+    def _wake_loop(self, turn_id: str) -> None:
+        """run() 이 아직 시작 전이면 깨울 루프가 없다 — run() 의 0.1초 폴백이 대신 잡는다.
+
+        루프가 닫혔거나 run() 이 이미 끝난 뒤라면 call_soon_threadsafe 가
+        RuntimeError 를 올린다. 그 예외가 submit() 밖으로 새면 Session._final_worker
+        가 "on_line 예외"로만 삼켜 게시가 안 됐다는 사실 자체가 사라지므로,
+        여기서 잡아 로그만 남긴다. 그동안 줄 자체는 _lines_of 에 남아 있다.
+        """
+        if self._loop is None:
+            return
+        if self._loop.is_closed() or not self._running:
+            print(f"[publish] 턴 {turn_id} 을 게시 루프로 못 넘긴다 (루프 종료됨)", flush=True)
+            return
+        self._loop.call_soon_threadsafe(self._wake.set)
 
     # ------------------------------------------------------------ 토큰 버킷
     def _refill(self, now: float) -> None:
@@ -101,14 +121,26 @@ class Publisher:
         self._tokens = min(float(self.burst), self._tokens + (now - self._refilled_at) * self.refill_per_s)
         self._refilled_at = now
 
-    async def _take_token(self) -> None:
+    async def _take_token(self) -> bool:
+        """토큰을 받으면 True. 종료 시한 안에 못 받으면 False — 버킷을 건너뛰지 않는다.
+
+        디스코드 한도 자체를 우회하면 429 를 부른다. 대신 한 번에 최대 0.1초씩만
+        자서 self._stop_deadline 을 자주 다시 본다 — refill_per_s 가 느리면 한 번의
+        sleep 이 시한을 통째로 넘길 수 있어서다.
+        """
         while True:
             self._refill(time.monotonic())
             if self._tokens >= 1.0:
                 self._tokens -= 1.0
-                return
+                return True
+            now = time.monotonic()
+            if self._stop_deadline is not None and now >= self._stop_deadline:
+                return False
             need = (1.0 - self._tokens) / self.refill_per_s if self.refill_per_s > 0 else 0.05
-            await asyncio.sleep(max(0.01, need))
+            sleep_for = max(0.01, min(need, 0.1))
+            if self._stop_deadline is not None:
+                sleep_for = min(sleep_for, max(0.0, self._stop_deadline - now))
+            await asyncio.sleep(sleep_for)
 
     # ------------------------------------------------------------ 루프
     def _ready_turn(self, now: float) -> tuple[str | None, float]:
@@ -125,23 +157,37 @@ class Publisher:
 
     async def run(self) -> None:
         self._loop = asyncio.get_running_loop()
-        while True:
-            if not self._dirty:
-                if self._stop:
+        self._running = True
+        try:
+            while True:
+                if self._stop_deadline is not None and time.monotonic() >= self._stop_deadline:
+                    if self._dirty:
+                        print(
+                            f"[publish] 종료 시한을 넘겨 {len(self._dirty)}건 미게시: {self._dirty}",
+                            flush=True,
+                        )
                     return
-                self._wake.clear()
-                try:
-                    await asyncio.wait_for(self._wake.wait(), timeout=0.1)
-                except asyncio.TimeoutError:
-                    pass
-                continue
-            turn_id, wait = self._ready_turn(time.monotonic())
-            if turn_id is None:
-                await asyncio.sleep(wait)
-                continue
-            self._dirty.remove(turn_id)
-            await self._take_token()
-            await self._publish(turn_id)
+                if not self._dirty:
+                    if self._stop:
+                        return
+                    self._wake.clear()
+                    try:
+                        await asyncio.wait_for(self._wake.wait(), timeout=0.1)
+                    except asyncio.TimeoutError:
+                        pass
+                    continue
+                turn_id, wait = self._ready_turn(time.monotonic())
+                if turn_id is None:
+                    await asyncio.sleep(wait)
+                    continue
+                self._dirty.remove(turn_id)
+                if not await self._take_token():
+                    if turn_id not in self._dirty:
+                        self._dirty.append(turn_id)
+                    continue
+                await self._publish(turn_id)
+        finally:
+            self._running = False
 
     async def _publish(self, turn_id: str) -> None:
         lines = self._lines_of.get(turn_id)
