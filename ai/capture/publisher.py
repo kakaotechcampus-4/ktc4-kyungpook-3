@@ -109,6 +109,13 @@ class Publisher:
 
     # ------------------------------------------------------------ 입력
     def submit(self, line: Line) -> None:
+        """넘어온 시각을 줄에 직접 적는다. 게시가 끝나면 그 차이가 publish_s 다.
+
+        나란한 리스트에 따로 쌓으면 안 된다 — submit 은 워커 스레드 셋에서 동시에
+        불리고, 줄과 시각을 두 번에 나눠 append 하면 그 둘이 어긋나 같은 턴의
+        publish_s 가 통째로 다른 줄의 것이 된다.
+        """
+        line.submitted_at = time.monotonic()
         self._lines_of.setdefault(line.turn_id, []).append(line)
         self._mark_dirty(line.turn_id)
 
@@ -220,17 +227,27 @@ class Publisher:
         finally:
             self._running = False
 
+    def _note_published(self, lines: list[Line], done: float) -> None:
+        """줄이 처음 화면에 뜬 때까지만 남긴다. 같은 턴을 다시 편집해도 덮지 않는다."""
+        for ln in lines:
+            if ln.publish_s is None and ln.submitted_at is not None:
+                ln.publish_s = done - ln.submitted_at
+
     async def _publish(self, turn_id: str) -> None:
         lines = self._lines_of.get(turn_id)
         if not lines:
             return
         text = render_turn(lines)
+        # await 사이에 워커 스레드가 같은 턴에 줄을 더 붙일 수 있다. 그 줄은 이번
+        # 본문에 없으므로 여기서 게시된 것으로 세지 않는다.
+        sent = list(lines)
         msg_id = self._message_of.get(turn_id)
         try:
             if msg_id is None:
                 self._message_of[turn_id] = await self.send(text)
             else:
                 await self.edit(msg_id, text)
+            self._note_published(sent, time.monotonic())
             self._attempts.pop(turn_id, None)
             self._not_before.pop(turn_id, None)
         except Exception as e:

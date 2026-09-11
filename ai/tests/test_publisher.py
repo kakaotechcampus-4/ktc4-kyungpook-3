@@ -276,12 +276,19 @@ async def test_a_line_arriving_during_a_send_is_not_counted_as_published():
     아직 화면에 없는 줄의 지연이 실제보다 짧게 잡힌다."""
     started = asyncio.Event()
     release = asyncio.Event()
+    allow_edit = asyncio.Event()
 
     class GatedChannel(FakeChannel):
         async def send(self, text):
             started.set()
             await release.wait()
             return await super().send(text)
+
+        async def edit(self, message_id, text):
+            # 뒤따르는 편집을 잡아 둔다. 풀어 두면 전송 완료와 편집 완료 사이가
+            # 폴링 간격보다 짧아, 아래 확인이 편집까지 끝난 뒤를 보게 된다.
+            await allow_edit.wait()
+            return await super().edit(message_id, text)
 
     ch = GatedChannel()
     p = Publisher(ch.send, ch.edit, coalesce_s=0)
@@ -298,6 +305,7 @@ async def test_a_line_arriving_during_a_send_is_not_counted_as_published():
     assert first.publish_s is not None
     assert during.publish_s is None
 
+    allow_edit.set()
     await _wait_until(lambda: len(ch.edits) >= 1)
     p.stop()
     await asyncio.wait_for(task, timeout=1.0)
