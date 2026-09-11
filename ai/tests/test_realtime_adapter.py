@@ -917,10 +917,31 @@ async def test_live_refuses_while_the_other_recorder_holds_the_connection(tmp_pa
     await RealtimeCog.live.callback(cog, ctx)
 
     assert vc.started == before                # 우리 sink 를 걸지 않았다
+    assert _room.connects == 0                 # 새로 연결하지도 않았다
     assert cog._meetings == {}
     said = " ".join(ctx.responses)
     assert "우리 것이 아닌 녹음" in said        # 무엇이 돌고 있는지
     assert "/record" in said and "/stop" in said   # 누구 것이고 무엇으로 끝내는지
+
+
+async def test_live_refuses_even_while_the_connection_is_reconnecting(tmp_path, monkeypatch):
+    """is_connected() 가 False 인 동안에도 리더는 살아 있을 수 있다.
+
+    재연결은 disconnect(cleanup=False) 라 _reader 가 남고, is_connected() 는 상태 기계가
+    connected 일 때만 True 다 (voice/state.py:329-330). 이때 connect() 로 흘려보내면
+    VoiceClient 가 이미 있어서 ClientException("Already connected to a voice channel.") 이
+    되고 (abc.py:2077-2078), 사용자는 남의 녹음이 돌고 있다는 사실을 못 듣는다.
+    """
+    room_box = []
+    vc = _foreign_vc(_FakeVoiceChannel(room_box))
+    vc.is_connected = lambda: False
+    cog, ctx, _room = _cog_with(tmp_path, monkeypatch, vc)
+
+    await RealtimeCog.live.callback(cog, ctx)
+
+    assert _room.connects == 0
+    assert cog._meetings == {}
+    assert "우리 것이 아닌 녹음" in " ".join(ctx.responses)
 
 
 async def test_live_join_refuses_while_the_other_recorder_holds_the_connection(
@@ -933,6 +954,7 @@ async def test_live_join_refuses_while_the_other_recorder_holds_the_connection(
     await RealtimeCog.live_join.callback(cog, ctx)
 
     assert vc.moved == []
+    assert _room.connects == 0
     said = " ".join(ctx.responses)
     assert "우리 것이 아닌 녹음" in said
     assert "/stop" in said
