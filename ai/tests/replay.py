@@ -16,6 +16,7 @@ sink 는 is_opus() 가 False 라 이미 디코딩된 PCM 을 받으므로, 침�
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 
 import numpy as np
@@ -68,7 +69,14 @@ def _to_discord_bytes(mono16k: np.ndarray) -> bytes:
     return np.repeat(i16, 2).tobytes()
 
 
-def replay(tracks: list[ReplayTrack], sink_write, clock: dict | None = None, rng_seed: int = 0) -> None:
+def replay(tracks: list[ReplayTrack], sink_write, clock: dict | None = None,
+           rng_seed: int = 0, pace: bool = False) -> None:
+    """pace=True 면 각 이벤트를 그 슬롯 시각까지 기다렸다 넘긴다.
+
+    기본값(False)은 순간 주입이라 테스트가 빠르다. 대신 그때 잰 "첫 줄까지" 는 체감
+    지연이 아니라 워커가 큐를 비우는 시간이다. 체감 지연을 재려면 오디오가 실제
+    속도로 흘러야 한다.
+    """
     rng = np.random.default_rng(rng_seed)
     n = SR * PACKET_MS // 1000
 
@@ -97,7 +105,12 @@ def replay(tracks: list[ReplayTrack], sink_write, clock: dict | None = None, rng
         for a, b in zip(idx[0::2], idx[1::2]):
             events[a], events[b] = events[b], events[a]
 
+    t0 = time.monotonic()
     for k, (_at, tr, rtp, pcm) in enumerate(events):
+        if pace:
+            delay = t0 + slots[k] / 1000 - time.monotonic()
+            if delay > 0:
+                time.sleep(delay)
         if clock is not None:
             clock["now_ms"] = slots[k]
         data = FakeVoiceData(

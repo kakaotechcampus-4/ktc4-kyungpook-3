@@ -1,3 +1,5 @@
+import time
+
 import numpy as np
 
 from capture.streaming_sink import StreamingSink
@@ -172,3 +174,24 @@ def test_packet_loss_does_not_split_utterance():
 def test_api_called_once_per_utterance_in_six_person_meeting():
     finals, stt, _ = run(six_speakers())
     assert stt.calls == len(finals) == 6
+
+
+def test_pace_makes_replay_take_real_time():
+    """페이싱을 켜면 주입이 오디오 길이만큼 걸린다. 꺼져 있으면 순간이다.
+
+    이 차이가 벤치의 "첫 줄 지연" 을 읽는 법을 가른다. 순간 주입에서 잰 값은
+    체감 지연이 아니라 워커가 큐를 비우는 시간이다.
+    """
+    tr = ReplayTrack(user_id=1, name="A", samples=tone(600), ssrc=11)
+    seen = []
+    t0 = time.monotonic()
+    replay([tr], lambda d, s: seen.append(d), pace=True)
+    paced = time.monotonic() - t0
+
+    t0 = time.monotonic()
+    replay([tr], lambda d, s: None)
+    instant = time.monotonic() - t0
+
+    assert len(seen) == 30          # 20ms 패킷 30개
+    assert paced >= 0.5
+    assert instant < 0.2
