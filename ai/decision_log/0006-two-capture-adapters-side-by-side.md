@@ -81,6 +81,58 @@ MESSAGE CONTENT 를 켜 두어야 한다. `.env.example` 주석을 그렇게 고
 옮겼지만 `/live` `/live-stop` 이라는 이름으로는 아직 실제 서버에서 다시 돌리지 않았다.
 오프라인 쪽은 우리가 돌려 보지 않았다.
 
+### CPU 와 메모리 (2026-09-12, M4 10코어 노트북)
+
+두 방식이 서버에서 무엇을 쓰는지 같은 기기에서 쟀다. t3.medium 값이 아니다. 그 인스턴스는
+Xeon 한 코어의 스레드 둘이라 여기보다 느리고, 얼마나 느린지는 받아서 재야 안다.
+
+오프라인 경로의 로컬 모델. 실제 디스코드 녹음 44초를 `faster-whisper` 로 전사하고 프로세스
+CPU 시간(user+sys)을 오디오 길이로 나눴다.
+
+| 모델 (int8) | 스레드 | RTF | CPU초 / 오디오초 | 최대 RSS |
+|---|---|---|---|---|
+| small | 1 | 0.18 | 0.18 | 1.06GB |
+| large-v3-turbo | 1 | 0.74 | 0.74 | 2.49GB |
+| large-v3-turbo | 2 | 0.44 | 0.84 | 2.64GB |
+| large-v3-turbo | 자동 (3.7코어) | 0.27 | 0.99 | 2.93GB |
+
+스레드를 늘리면 벽시계는 줄지만 CPU 총량은 는다. 크레딧은 CPU 총량으로 센다.
+
+실시간 경로. 골든셋 6트랙 209.6초를 실시간 속도로 흘리고 `/usr/bin/time -l` 로 쟀다.
+Opus·DAVE 복호화는 py-cord 가 하므로 여기 안 들어간다. 그건 종료 요약의
+"봇 프로세스 CPU" 줄이 실제 회의에서 잰다.
+
+| | |
+|---|---|
+| 벽시계 | 40.3초 |
+| CPU | 2.15초 (코어 하나의 5.3%) |
+| 오디오 1초당 CPU | 0.010초 |
+| 최대 RSS | 198MB |
+
+t3.medium 에 대입하면 이렇다. 기준선은 20% 이고 24시간 평균이 그걸 넘길 때만 초과분에
+vCPU-시간당 $0.05 가 붙는다 (T3 는 기본이 unlimited). 실시간 경로는 노트북보다 3배 느려도
+코어 하나의 16% 라 기준선 아래다. 오프라인 경로는 2배만 느려도 RTF 1.5 로 60분 회의에
+90분이 걸리고, 하루 한두 건이면 24시간 평균은 20% 아래지만 그 90분 동안 두 vCPU 가 다른
+일을 못 한다. 메모리 2.5~2.9GB 는 4GiB 의 60~70% 다.
+
+재현 (`ai/` 에서):
+
+```bash
+# 로컬 모델. small 과 turbo 를 스레드 1·2·자동으로. 약 4분
+.venv/bin/python -B -c "
+import resource,time,wave
+from faster_whisper import WhisperModel
+wav='recordings/<회의>/<화자>.wav'; a=wave.open(wav).getnframes()/16000
+cpu=lambda:(lambda r:r.ru_utime+r.ru_stime)(resource.getrusage(resource.RUSAGE_SELF))
+for n in (1,2,0):
+  m=WhisperModel('large-v3-turbo',device='cpu',compute_type='int8',cpu_threads=n)
+  c0,t0=cpu(),time.monotonic(); ' '.join(s.text for s in m.transcribe(wav,language='ko')[0])
+  w,c=time.monotonic()-t0,cpu()-c0; print(n,f'RTF {w/a:.2f} CPU/오디오 {c/a:.2f}')"
+
+# 실시간 파이프라인
+/usr/bin/time -l .venv/bin/python stt/eval/realtime_bench.py --tracks "<골든셋 audio>" --pace
+```
+
 ## 다시 볼 조건
 
 멘토가 한쪽을 고르면 이 항목은 끝난다. 남길 파일과 명령만 두고 나머지는 지운다. 둘을

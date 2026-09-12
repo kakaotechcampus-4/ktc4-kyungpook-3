@@ -1148,3 +1148,19 @@ async def test_the_summary_says_when_lines_arrived_after_the_deadline(tmp_path, 
     late_msgs = [m for m in text.sent if "마감 뒤 도착" in m]
     assert late_msgs, text.sent
     assert "느린 전사" in late_msgs[0]      # 전사된 내용까지 보여 준다
+
+
+async def test_summary_reports_process_cpu_for_the_meeting(tmp_path, monkeypatch):
+    """서버 부하 비교의 유일한 실측 자리다. 두 트랙을 나란히 놓고 고를 때 이 줄을 본다.
+
+    벤치는 Opus·DAVE 복호화를 못 잰다. 실제 봇 프로세스의 CPU 시간을 회의 길이로
+    나눈 값이라야 t3.medium 기준선(20%)과 비교할 수 있다.
+    """
+    cog, _ctx, meeting, text, _vc = await _start_one(tmp_path, monkeypatch)
+    replay([ReplayTrack(user_id=7, name="김환", samples=_tone(1_200), ssrc=70)], meeting.sink.write)
+    meeting.sink.cleanup()
+    await cog._finish_meeting(GUILD_ID)
+
+    summary = text.summaries()[0]
+    assert "봇 프로세스 CPU" in summary and "코어 하나의" in summary
+    assert meeting.cpu_t0 > 0            # 시작 시점을 실제로 적었다

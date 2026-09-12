@@ -40,6 +40,7 @@ from __future__ import annotations
 
 import asyncio
 import queue
+import resource
 import threading
 import time
 import traceback
@@ -173,6 +174,12 @@ class SafeVoiceClient(VoiceClient):
         self._ssrc_to_id.pop(ssrc, None)
 
 
+def _cpu_seconds() -> float:
+    """이 프로세스가 지금까지 쓴 CPU 시간 (user+sys, 전 스레드 합)."""
+    r = resource.getrusage(resource.RUSAGE_SELF)
+    return r.ru_utime + r.ru_stime
+
+
 def _post_late(loop, channel, count: int, line) -> None:
     """마감 뒤에 끝난 전사를 회의실에 따로 올린다. 워커 스레드에서 불린다.
 
@@ -294,6 +301,10 @@ class _Meeting:
     voice_channel_id: int
     ledger: _Ledger
     secret_key: bytes = b""
+    # 종료 요약에 이 회의가 쓴 CPU 를 찍으려고 시작 시점을 적어 둔다. 프로세스 전체 기준이라
+    # 길드가 둘 이상 동시에 회의 중이면 서로 섞인다. t3.medium 에서 실제 부하를 볼 자리다.
+    wall_t0: float = 0.0
+    cpu_t0: float = 0.0
 
 
 class RealtimeCog(discord.Cog):
@@ -528,6 +539,7 @@ class RealtimeCog(discord.Cog):
             # 퇴장 flush 와 봇 퇴장 감지가 조용히 안 돈다.
             channel=post_to, voice_channel_id=room.id, ledger=ledger,
             secret_key=bytes(vc.secret_key or b""),
+            wall_t0=t0, cpu_t0=_cpu_seconds(),
         )
         await ctx.respond(
             f"🔴 전사 시작 (`{room.name}`). 줄은 {post_to.mention} 에 올라갑니다. "
@@ -747,6 +759,14 @@ class RealtimeCog(discord.Cog):
             f"write 오류 {report['write_errors']} · 화자 미상 {report['unattributed']} · "
             f"트랙 버림 {meeting.pool.dropped} · 최대 RMS {report['peak_rms']:.3f} "
             f"(임계 {report['speech_rms']:.3f}, {report['verdict']})"
+        )
+        cpu_s = _cpu_seconds() - meeting.cpu_t0
+        wall_s = max(1e-6, time.monotonic() - meeting.wall_t0)
+        # 실시간 경로가 서버 CPU 를 얼마나 쓰는지는 이 줄로 잰다. API 대기는 CPU 가 아니라
+        # 여기 안 들어가고, Opus 복호화·DAVE 복호화는 py-cord 가 이 프로세스에서 하므로 들어간다.
+        msg.append(
+            f"봇 프로세스 CPU {cpu_s:.1f}초 / 회의 {wall_s:.0f}초 = 코어 하나의 "
+            f"{cpu_s / wall_s * 100:.1f}% (수신·복호화·VAD·말 필터·게시 합, API 대기 제외)"
         )
         if meeting.session.gate is not None:
             msg.append(meeting.session.gate.summary())
