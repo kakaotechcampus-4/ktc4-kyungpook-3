@@ -41,12 +41,18 @@ class _Base:
 # ─────────────────────────────────────────────────────────── 단계 간 입출력
 @dataclass
 class TranscriptSegment(_Base):
-    """Phase 0 출력 단위. speaker = 플랫폼 사용자 ID(문자열) 또는 None."""
+    """Phase 0 출력 단위.
+
+    speaker: 플랫폼 사용자 ID(문자열) 또는 None
+    start/end: **회의 시작 기준 초**. 화자 트랙 파일 안의 위치가 아니다
+    seq: 회의 전체에서의 발화 순번. 근거 점프가 참조하는 안정된 식별자
+    """
 
     speaker: str | None
     start: float
     end: float
     text: str
+    seq: int = 0
 
 
 @dataclass
