@@ -28,6 +28,11 @@ import numpy as np
 ENABLED = True
 THRESHOLD = 0.95
 MIN_SPEECH_RATIO = 0.60
+# 실로는 확신이 오르는 데 수백 ms 걸린다. 1초 미만 발화는 그 안에서 끝나서 0.95 에
+# 못 닿는다. 실제 녹음의 "감사합니다" 0.40초가 0.7 에서는 말 비율 0.97, 0.8 부터는
+# 0.00 이었다. 짧은 발화는 느슨한 임계로 본다. 대신 짧은 배경음이 같이 통과할 수 있다.
+SHORT_SPEECH_S = 1.0
+SHORT_THRESHOLD = 0.70
 
 
 def _load_silero():
@@ -59,12 +64,16 @@ class SpeechGate:
         enabled: bool | None = None,
         threshold: float = THRESHOLD,
         min_ratio: float = MIN_SPEECH_RATIO,
+        short_threshold: float = SHORT_THRESHOLD,
+        short_s: float = SHORT_SPEECH_S,
         load_model=_load_silero,
         speech_spans=_silero_spans,
     ) -> None:
         self.enabled = ENABLED if enabled is None else enabled
         self.threshold = threshold
         self.min_ratio = min_ratio
+        self.short_threshold = short_threshold
+        self.short_s = short_s
         self._load_model = load_model
         self._speech_spans = speech_spans
 
@@ -80,23 +89,33 @@ class SpeechGate:
     def model_loaded(self) -> bool:
         return self._loaded
 
-    def speech_ratio(self, pcm: np.ndarray, sample_rate: int) -> float:
+    def threshold_for(self, speech_s: float) -> float:
+        return self.short_threshold if speech_s < self.short_s else self.threshold
+
+    def speech_ratio(self, pcm: np.ndarray, sample_rate: int,
+                     threshold: float | None = None) -> float:
         if len(pcm) == 0:
             return 0.0
+        thr = self.threshold if threshold is None else threshold
         with self._lock:
             if not self._loaded:
                 self._model = self._load_model()
                 self._loaded = True
-            spans = self._speech_spans(pcm, sample_rate, self.threshold)
+            spans = self._speech_spans(pcm, sample_rate, thr)
         speech = sum(s["end"] - s["start"] for s in spans)
         return speech / len(pcm)
 
-    def accepts(self, pcm: np.ndarray, sample_rate: int, tag: str = "") -> bool:
+    def accepts(self, pcm: np.ndarray, sample_rate: int, tag: str = "",
+                speech_s: float | None = None) -> bool:
+        """speech_s 는 VAD 가 잰 발화 길이(뒤 무음 제외). 안 주면 pcm 길이로 대신한다."""
         if not self.enabled:
             return True
+        if speech_s is None:
+            speech_s = len(pcm) / sample_rate
+        thr = self.threshold_for(speech_s)
 
         try:
-            ratio = self.speech_ratio(pcm, sample_rate)
+            ratio = self.speech_ratio(pcm, sample_rate, thr)
         except Exception as e:
             # 여기서 발화를 버리면 필터 하나가 고장 난 값으로 회의록을 지운다.
             # 지어낸 줄보다 사라진 말이 나쁘다. 통과시키고 센다.
@@ -114,7 +133,7 @@ class SpeechGate:
         with self._lock:
             self.rejected += 1
         print(f"[speech_gate] 거름: {tag or '발화'} {len(pcm) / sample_rate:.2f}초 · "
-              f"말 비율 {ratio:.2f} < {self.min_ratio:.2f}", flush=True)
+              f"말 비율 {ratio:.2f} < {self.min_ratio:.2f} (임계 {thr:.2f})", flush=True)
         return False
 
     def summary(self) -> str:

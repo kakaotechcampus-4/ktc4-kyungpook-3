@@ -184,7 +184,8 @@ class Session:
                 # 거른 발화는 줄을 만들지 않는다. finally 가 task_done() 을 부르므로
                 # close() 의 unfinished_tasks 대기는 여기서 멈추지 않는다.
                 if self.gate is not None and not self.gate.accepts(
-                    u.pcm, u.sample_rate, tag=f"{u.speaker_id}#{u.seq}"
+                    u.pcm, u.sample_rate, tag=f"{u.speaker_id}#{u.seq}",
+                    speech_s=(u.end_ms - u.start_ms) / 1000,
                 ):
                     continue
                 picked = time.monotonic()

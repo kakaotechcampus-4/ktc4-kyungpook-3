@@ -21,6 +21,18 @@ SILENCE_HOLD_MS = 800    # 이만큼 조용하면 발화 끝
 MIN_SPEECH_MS = 320      # 이보다 짧으면 버린다 (기침, 마우스)
 MAX_SEGMENT_MS = 25_000  # 긴 독백 상한
 FRAME_MS = 20
+# 임계를 넘는 프레임이 이만큼 이어져야 말로 본다. 한 프레임(20ms)은 마이크 바닥 잡음이
+# 튄 것일 수 있다. 실제로 0.0064 짜리 한 프레임이 침묵 카운터를 되돌려 클릭·침묵·말이
+# 한 발화로 묶였고, 말 비율이 희석돼 필터가 진짜 말을 버렸다.
+ONSET_MS = 60
+# 앞에 온 소리가 MIN_SPEECH_MS 보다 짧고 그 뒤 침묵이 이만큼 이어졌으면 그 소리는
+# 기침·클릭이다. 뒤에 말이 시작되면 거기서부터 발화로 다시 센다. SILENCE_HOLD_MS 의 절반.
+RESTART_SILENCE_MS = 400
+# 발화가 이만큼 길어지면 짧은 쉼(SOFT_HOLD_MS)에서도 끊는다. 대본을 읽으면 문장 사이 쉼이
+# 280ms 안팎이라 800ms 규칙에 안 걸리고, 5~6문장 22초가 한 발화로 묶여 다 끝난 뒤에야
+# 전사가 올라갔다. 잘린 조각은 turns.py 가 같은 메시지로 잇는다.
+SOFT_CAP_MS = 8_000
+SOFT_HOLD_MS = 400
 
 
 @dataclass
@@ -54,6 +66,9 @@ class StreamingVAD:
     _next_frame_ms: int = 0
     _last_speech_ms: int = 0
     _seq: int = 0
+    _run_ms: int = 0                # 임계를 넘는 프레임이 연속으로 이어진 길이
+    _run: list[np.ndarray] = field(default_factory=list)  # 발화 시작 전 런의 프레임 (뒤늦게 붙인다)
+    _silence_at_run: int = 0        # 이 런이 시작되기 직전까지 쌓인 침묵
 
     @property
     def _frame(self) -> int:
@@ -106,6 +121,12 @@ class StreamingVAD:
                 out.append(done)
         return out
 
+    def _hold_ms(self) -> int:
+        """지금 발화를 닫는 데 필요한 침묵 길이. 길어진 발화는 짧은 쉼에서도 끊는다."""
+        if self._speaking and self._last_speech_ms - self._seg_start_ms >= SOFT_CAP_MS:
+            return SOFT_HOLD_MS
+        return SILENCE_HOLD_MS
+
     def sweep(self, now_ms: int) -> Utterance | None:
         """마지막으로 받은 오디오 뒤로 흐른 시간을 침묵으로 세고, 한도를 넘으면 닫는다.
 
@@ -125,16 +146,18 @@ class StreamingVAD:
         if not self._speaking:
             return None
         idle_ms = now_ms - self._buf_end_ms
-        if idle_ms <= 0 or self._silence_ms + idle_ms < SILENCE_HOLD_MS:
+        if idle_ms <= 0 or self._silence_ms + idle_ms < self._hold_ms():
             return None
         self._silence_ms += idle_ms
         return self._close()
 
     def _on_gap(self, gap_ms: int) -> Utterance | None:
+        self._run_ms = 0
+        self._run = []
         if not self._speaking:
             return None
         self._silence_ms += gap_ms
-        if self._silence_ms >= SILENCE_HOLD_MS:
+        if self._silence_ms >= self._hold_ms():
             return self._close()
         return None
 
@@ -144,28 +167,60 @@ class StreamingVAD:
         frame_start_ms = self._next_frame_ms
         self._next_frame_ms += self.frame_ms
 
-        if rms > threshold:
-            self._silence_ms = 0
+        if rms <= threshold:
+            self._run_ms = 0
+            self._run = []
+            # 조용할 때만 배경 소음 추정치를 갱신한다 (에어컨, 팬에 적응)
+            self._noise = self._noise * 0.97 + rms * 0.03
             if not self._speaking:
-                self._speaking = True
-                self._speech_ms = 0
-                self._seg_start_ms = frame_start_ms
-                self._pending = []
-            self._speech_ms += self.frame_ms
-            self._last_speech_ms = self._next_frame_ms
-            self._pending.append(f)
-            if self._next_frame_ms - self._seg_start_ms >= MAX_SEGMENT_MS:
+                return None
+            self._silence_ms += self.frame_ms
+            self._pending.append(f)  # 발화 끝의 여운을 살짝 남긴다
+            if self._silence_ms >= self._hold_ms():
                 return self._close()
             return None
 
-        # 조용할 때만 배경 소음 추정치를 갱신한다 (에어컨, 팬에 적응)
-        self._noise = self._noise * 0.97 + rms * 0.03
+        # 임계를 넘었다. 런이 ONSET_MS 에 닿기 전까지는 말로 치지 않는다.
+        if self._run_ms == 0:
+            self._silence_at_run = self._silence_ms
+        self._run_ms += self.frame_ms
+
         if not self._speaking:
+            self._run.append(f)
+            if self._run_ms < ONSET_MS:
+                return None
+            # 런이 한도에 닿았다. 런의 첫 프레임부터가 발화다.
+            self._speaking = True
+            self._seg_start_ms = frame_start_ms - (self._run_ms - self.frame_ms)
+            self._pending = list(self._run)
+            self._run = []
+            self._speech_ms = self._run_ms
+            self._silence_ms = 0
+            self._last_speech_ms = self._next_frame_ms
             return None
 
-        self._silence_ms += self.frame_ms
-        self._pending.append(f)  # 발화 끝의 여운을 살짝 남긴다
-        if self._silence_ms >= SILENCE_HOLD_MS:
+        self._pending.append(f)
+        if self._run_ms < ONSET_MS:
+            # 아직 말인지 모른다. 침묵으로 세되 프레임은 남긴다. 런이 한도에 닿으면 되돌린다.
+            self._silence_ms += self.frame_ms
+            if self._silence_ms >= self._hold_ms():
+                return self._close()
+            return None
+
+        if self._run_ms == ONSET_MS:
+            # 지금 막 말로 확정됐다. 런 동안 침묵으로 셌던 것을 되돌린다.
+            self._silence_ms = 0
+            if self._speech_ms < MIN_SPEECH_MS and self._silence_at_run >= RESTART_SILENCE_MS:
+                # 앞에 있던 소리는 기침·클릭이다. 여기서부터 다시 센다. 앞 소리를 pcm 에
+                # 두면 말 필터의 비율이 희석돼 진짜 말이 버려진다.
+                self._seg_start_ms = frame_start_ms - (ONSET_MS - self.frame_ms)
+                self._pending = self._pending[-(ONSET_MS // self.frame_ms):]
+                self._speech_ms = 0
+            self._speech_ms += ONSET_MS
+        else:
+            self._speech_ms += self.frame_ms
+        self._last_speech_ms = self._next_frame_ms
+        if self._next_frame_ms - self._seg_start_ms >= MAX_SEGMENT_MS:
             return self._close()
         return None
 
@@ -179,6 +234,8 @@ class StreamingVAD:
         self._pending = []
         self._speech_ms = 0
         self._silence_ms = 0
+        self._run_ms = 0
+        self._run = []
 
         if speech_ms < MIN_SPEECH_MS or len(pcm) == 0:
             return None
@@ -195,6 +252,8 @@ class StreamingVAD:
 
     def flush(self) -> list[Utterance]:
         """회의 종료나 퇴장 시 진행 중이던 발화를 확정한다."""
+        self._run_ms = 0
+        self._run = []
         if not self._speaking:
             return []
         u = self._close()
