@@ -1,0 +1,1026 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>로그인 · 매니저스 매니저</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#ffffff">
+<meta name="description" content="매니저스 매니저 화면 흐름 프로토타입. 로그인부터 메시지 보내기까지 눌러서 넘어갑니다.">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&amp;family=Bricolage+Grotesque:wght@700&amp;display=swap">
+<style>
+/* ── 프로토타입 껍데기. 디자인의 일부가 아니다 ───────────────── */
+html { color-scheme: light; background: #fff; }
+body { margin: 0; height: 100svh; display: grid; grid-template-rows: minmax(0, 1fr) 58px; overflow: hidden; background: #E6E9EC; font: 14px/1.7 var(--sans); -webkit-font-smoothing: antialiased; }
+body:is([data-view="login"], [data-view="signup"], [data-view="connect"]) { background: #fff; }
+body[data-view="selectteam"] { background: #008272; }
+#fit { width: 100%; min-height: 0; overflow: auto; scrollbar-width: thin; scrollbar-gutter: stable both-edges; }
+#stage { width: 100%; margin: 0 auto; }
+.screen > div { min-height: calc(100svh - 58px) !important; }
+[hidden], .screen[hidden] { display: none !important; }
+[data-p] { cursor: pointer; }
+body.hint [data-p], body.hint button, body.hint input { outline: 2px dashed #eebc75; outline-offset: 3px; }
+#ctl { position: relative; z-index: 99; min-width: 0; min-height: 58px; padding: 8px 24px; display: flex; align-items: center; justify-content: center; gap: 5px; background: #263b34; border-top: 1px solid #ffffff20; color: #fff; font: 11px/1.4 var(--sans); }
+#ctl::before { content: 'DESIGN PREVIEW'; font: 9px/1.5 var(--display); letter-spacing: .12em; margin-right: 19px; white-space: nowrap; color: #d0ded6; }
+#ctl button { appearance: none; border: 0; padding: 9px 11px; border-radius: 6px; background: transparent; color: #fff; font: inherit; white-space: nowrap; }
+#ctl button:hover { background: #ffffff16; }
+#ctl button[aria-current="true"] { background: #456557; font-weight: 700; box-shadow: inset 0 0 0 1px #ffffff1a; }
+#ctl .sep { width: 1px; height: 16px; background: #ffffff2a; flex-shrink: 0; margin: 0 8px; }
+#ctl button.tgl[aria-pressed="true"] { background: #795a2c; }
+/* the script tags the 팀원 calendar so it scrolls instead of squashing */
+.calendar-grid { min-width: 680px; }
+.calendar-scroll { overflow-x: auto; }
+@media(max-width: 1050px) { #ctl::before { display: none; } }
+@media(max-width: 760px) {
+  #ctl { justify-content: flex-start; overflow-x: auto; padding: 8px 12px; scrollbar-width: none; }
+  #ctl::-webkit-scrollbar { display: none; }
+  #ctl button { flex-shrink: 0; }
+}
+
+
+
+/* Folder edition — white entry pages, brand folders, and document-shaped teams. */
+:root { --brand: #009D8A; --brand-dark: #007c6d; --brand-ink: #00665a; --ink: #253832; --page: #e9ede7; --sans: 'Noto Sans KR', 'Malgun Gothic', system-ui, sans-serif; --display: 'Bricolage Grotesque', var(--sans); }
+* { box-sizing: border-box; }
+button, input { font: inherit; }
+button, a, input { -webkit-tap-highlight-color: transparent; }
+button, a { touch-action: manipulation; }
+button { cursor: pointer; color: inherit; }
+button:disabled { cursor: default; }
+a { color: inherit; text-decoration: none; }
+:focus-visible { outline: 3px solid #55d9bc; outline-offset: 4px; }
+[hidden], .screen[hidden] { display: none !important; }
+[data-p] { cursor: pointer; }
+.icon { width: 20px; height: 20px; flex: 0 0 20px; vertical-align: middle; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+
+/* One compact form, with no separate marketing column. */
+.auth-page { display: flex; flex-direction: column; background: #fff; color: var(--ink); word-break: keep-all; }
+.auth-header { flex: 0 0 80px; min-width: 0; width: min(100%, 1248px); margin: 0 auto; padding: 0 44px; display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+.wordmark { display: inline-flex; align-items: center; gap: 10px; font: 700 20px/1.2 var(--display); letter-spacing: -.6px; white-space: nowrap; color: var(--ink); }
+.brand-symbol { width: 35px; height: 35px; flex-shrink: 0; color: var(--brand); }
+.header-right { display: flex; align-items: center; gap: 12px; font-size: 12px; }
+.account-avatar { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 50%; background: #edf5f1; color: var(--brand-ink); font-size: 11px; }
+.text-button { border: 0; background: transparent; color: inherit; padding: 4px 0; font-size: inherit; }
+.text-button:hover { text-decoration: underline; text-underline-offset: 4px; }
+.auth-main { flex: 1; width: 100%; padding: 24px 32px 28px; display: flex; align-items: center; justify-content: center; }
+.auth-footer { flex-shrink: 0; padding: 12px 24px 18px; text-align: center; color: #687970; font: 10px/1.7 var(--sans); }
+.folder { position: relative; isolation: isolate; width: min(100%, 500px); padding-top: 70px; color: #fff; filter: drop-shadow(0 18px 25px #174a3c15); }
+.folder-back { position: absolute; z-index: -3; inset: 48px 0 0; border-radius: 24px; background: var(--brand-ink); }
+.folder-tab { position: absolute; z-index: -3; top: 0; left: 0; width: 100%; height: 100px; fill: var(--brand-ink); }
+.folder-label { position: absolute; top: 15px; left: 29px; display: flex; align-items: center; height: 22px; color: #fff; }
+.folder-label .icon { width: 20px; height: 20px; }
+.folder-sheet { position: absolute; z-index: -2; top: 60px; left: 15px; right: 15px; height: 50px; border-radius: 15px 15px 0 0; background: #e1f0e9; border: 1px solid #ffffff80; transform: rotate(-.5deg); }
+.folder-front { position: relative; padding: 34px 40px 30px; border-radius: 24px; background: var(--brand); border: 1px solid #ffffff24; box-shadow: inset 0 1px 0 #ffffff12, 0 3px 5px #003e3210; }
+.form-heading { position: relative; margin-bottom: 26px; }
+.form-heading h1 { margin: 0; font-size: 30px; line-height: 1.4; font-weight: 700; letter-spacing: -.035em; }
+.form-heading p { margin: 8px 0 0; font-size: 12px; line-height: 1.7; }
+.auth-form { display: flex; flex-direction: column; gap: 18px; }
+.field { display: flex; flex-direction: column; gap: 8px; }
+.field > label { font-size: 12px; font-weight: 500; }
+.field input { width: 100%; height: 50px; padding: 0 14px; border: 1px solid #ffffff75; border-radius: 8px; background: #fff; color: var(--ink); font-size: 14px; transition: border-color .15s, background .15s; }
+.field input::placeholder { color: #687970; opacity: 1; font-size: 12px; }
+.field input:hover { border-color: #ffffffbf; }
+.field input:focus { outline: 2px solid #ffffff75; outline-offset: 2px; border-color: #fff; background: #fff; }
+.field input:-webkit-autofill { -webkit-text-fill-color: var(--ink); caret-color: var(--ink); box-shadow: 0 0 0 60px #fff inset; }
+.password-field { position: relative; }
+.password-field input { padding-right: 50px; }
+.password-toggle { position: absolute; top: 3px; right: 3px; width: 44px; height: 44px; display: grid; place-items: center; border: 0; border-radius: 6px; background: transparent; color: var(--brand-ink); }
+.password-toggle:hover { background: #00665a12; }
+.password-toggle .icon { width: 18px; height: 18px; }
+.eye-slash { display: none; }
+.password-toggle[aria-pressed="true"] .eye-slash { display: block; }
+.field-hint { font-size: 11px; }
+.form-options { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 11px; }
+.check-label { display: inline-flex; gap: 7px; align-items: center; cursor: pointer; }
+.check-label input { width: 14px; height: 14px; margin: 0; accent-color: #005a50; }
+.primary-button { position: relative; width: 100%; min-height: 50px; padding: 12px 40px; display: flex; align-items: center; justify-content: center; gap: 10px; border: 1px solid #fff; border-radius: 8px; background: #fff; color: var(--brand-ink); font-size: 13px; font-weight: 700; box-shadow: 0 3px 6px #003a3010; transition: background .15s, transform .15s; }
+.primary-button > .icon:last-child { position: absolute; right: 16px; width: 17px; height: 17px; }
+.primary-button:hover { background: #edf8f3; transform: translateY(-1px); }
+.primary-button:active { transform: translateY(0); }
+.form-switch { margin: 22px 0 0; text-align: center; font-size: 12px; }
+.form-switch a { display: inline-flex; align-items: center; gap: 6px; padding: 2px 0; }
+.form-switch a:hover { text-decoration: underline; text-underline-offset: 4px; }
+.form-switch .icon { width: 15px; height: 15px; flex-basis: 15px; }
+.connect-symbol { position: absolute; right: 0; top: 0; width: 45px; height: 45px; display: grid; place-items: center; border: 1px solid #ffffff50; border-radius: 12px; background: #fff; color: var(--brand-ink); }
+.connect-symbol .icon { width: 25px; height: 25px; }
+.form-heading:has(.connect-symbol) h1 { padding-right: 54px; }
+.permission-list { margin: 4px 0 0; }
+.permission-row { display: flex; align-items: center; gap: 12px; min-height: 61px; border-bottom: 1px solid #ffffff35; font-size: 13px; }
+.permission-row:first-child { border-top: 1px solid #ffffff35; }
+.permission-row .icon { width: 18px; height: 18px; flex-basis: 18px; }
+.permission-row > span:nth-child(2) { flex: 1; }
+.permission-row small { margin-left: 5px; font-size: 10px; }
+.permission-badge { font-size: 10px; border: 1px solid #ffffff60; padding: 1px 7px; border-radius: 4px; background: #fff; color: var(--brand-ink); }
+label.permission-row { cursor: pointer; }
+.switch { appearance: none; position: relative; flex: 0 0 32px; width: 32px; height: 20px; border-radius: 20px; border: 1px solid #ffffff90; background: #005c54; margin: 0; cursor: pointer; }
+.switch::after { content: ''; position: absolute; left: 3px; top: 3px; width: 12px; height: 12px; border-radius: 50%; background: #fff; transition: transform .15s; }
+.switch:checked { background: #ffffff25; }
+.switch:checked::after { transform: translateX(12px); }
+.permission-details { margin: 17px 0 25px; font-size: 11px; }
+.permission-details summary { cursor: pointer; width: fit-content; padding: 3px 0; text-underline-offset: 4px; }
+.permission-details summary:hover { text-decoration: underline; }
+.permission-details ul { margin: 12px 0 0; padding-left: 16px; }
+.permission-details li { margin: 8px 0; line-height: 1.9; }
+.skip-link { display: block; width: fit-content; margin: 20px auto 0; padding: 3px; font-size: 12px; }
+.skip-link:hover { text-decoration: underline; text-underline-offset: 4px; }
+
+/* Each team is a white sheet, with its upper-right corner folded down. */
+.teams-page { display: flex; flex-direction: column; color: #fff; background: #008272; word-break: keep-all; }
+.teams-page .wordmark, .teams-page .brand-symbol { color: #fff; }
+.teams-page .account-avatar { color: #fff; border: 1px solid #ffffff65; background: #ffffff0a; }
+.teams-main { flex: 1; width: 100%; max-width: 888px; padding: 28px 32px 40px; margin: 0 auto; display: flex; flex-direction: column; justify-content: center; gap: 28px; }
+.teams-heading h1 { margin: 0; font-size: 28px; line-height: 1.4; font-weight: 700; letter-spacing: -.035em; }
+.teams-heading p { margin: 8px 0 0; font-size: 12px; }
+.teams-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; }
+.file-card { position: relative; isolation: isolate; display: block; min-width: 0; min-height: 262px; margin: 0; padding: 0; border: 0; border-radius: 17px; background: transparent; color: var(--ink); text-align: left; font: inherit; transition: transform .18s; }
+.file-shape { position: absolute; z-index: -1; inset: 0; width: 100%; height: 100%; overflow: visible; filter: drop-shadow(0 5px 8px #004e4020); transition: filter .18s; }
+.file-paper { fill: #fff; stroke: #d1e0d9; stroke-width: 2.6; stroke-linejoin: round; }
+.file-fold { fill: #CEF3E9; stroke: #BAE8DC; stroke-width: 2.6; stroke-linejoin: round; }
+.file-fold-edge { fill: none; stroke: #d1e0d9; stroke-width: 2.6; }
+.file-content { position: relative; display: flex; flex-direction: column; min-height: inherit; padding: 25px 24px 21px; }
+.team-avatar { display: inline-flex; align-items: center; height: 36px; color: var(--brand-dark); font-size: 13px; font-weight: 500; letter-spacing: .01em; }
+.file-title { display: block; margin: 38px 0 5px; font-size: 15px; line-height: 1.6; font-weight: 700; letter-spacing: -.02em; }
+.file-members { color: #617269; font-size: 12px; }
+.file-status { display: flex; align-items: center; gap: 6px; border-top: 1px solid #e4ece7; padding-top: 13px; margin-top: auto; color: var(--brand-ink); font-size: 11px; }
+.status-dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+.file-status .icon { margin-left: auto; width: 16px; height: 16px; flex-basis: 16px; }
+.needs-setup { color: #926521; }
+.archived .team-avatar { color: #68736d; }
+.archived .file-title, .archived .file-status { color: #68736d; }
+.archived .status-dot { background: transparent; border: 1px solid currentColor; width: 6px; height: 6px; }
+.screen[data-screen="selectteam"] .file-card:hover { text-decoration: none; }
+button.file-card:hover { transform: translateY(-4px); }
+button.file-card:hover .file-shape { filter: drop-shadow(0 10px 12px #003f4030); }
+.new-team .file-content { align-items: center; justify-content: center; }
+.new-team-plus { width: 41px; height: 41px; display: grid; place-items: center; border: 1px dashed #9cbcac; border-radius: 50%; color: var(--brand-dark); margin-top: 12px; }
+.new-team .file-title { margin-top: 16px; }
+.new-team .file-members { font-size: 11px; }
+.new-team .file-paper { stroke: #94b8a5; }
+
+/* Existing workspace pages keep their established layout. */
+
+@media(max-width: 1050px) {
+}
+@media(max-width: 760px) {
+  .auth-header { flex-basis: 72px; padding: 0 24px; }
+  .wordmark { font-size: 17px; gap: 8px; }
+  .brand-symbol { width: 30px; height: 30px; }
+  .auth-main { padding: 22px 24px; }
+  .folder-front { padding: 30px 30px 26px; }
+  .form-heading h1 { font-size: 27px; }
+  .field input { font-size: 16px; }
+  .teams-main { padding: 24px 24px 32px; }
+  .teams-heading h1 { font-size: 25px; }
+  .teams-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+  .file-card { min-height: 248px; }
+  .file-content { padding: 24px 21px 20px; }
+  .file-title { margin-top: 32px; }
+  .message-tone-row { flex-wrap: wrap; gap: 10px !important; }
+  .message-tone-row > div:first-child { max-width: 100%; }
+  .message-tone-row > div:first-child > div { padding: 5px 8px !important; font-size: 11px !important; white-space: nowrap; }
+  .message-tone-row > span { font-size: 11px !important; }
+}
+@media(max-width: 480px) {
+  .auth-header { padding: 0 18px; gap: 12px; }
+  .wordmark { font-size: 15px; gap: 7px; }
+  .brand-symbol { width: 27px; height: 27px; }
+  .header-right { gap: 8px; font-size: 11px; }
+  .account-avatar { width: 27px; height: 27px; font-size: 10px; }
+  .auth-main { padding: 16px 18px 20px; }
+  .folder { padding-top: 61px; }
+  .folder-tab { height: 88px; }
+  .folder-back { top: 43px; }
+  .folder-sheet { top: 53px; left: 12px; right: 12px; }
+  .folder-label { left: 24px; top: 11px; }
+  .folder-label .icon { width: 17px; height: 17px; }
+  .folder-front { padding: 28px 24px 24px; border-radius: 20px; }
+  .form-heading { margin-bottom: 23px; }
+  .form-heading h1 { font-size: 25px; }
+  .form-heading p { font-size: 11px; }
+  .connect-symbol { width: 35px; height: 35px; border-radius: 9px; }
+  .connect-symbol .icon { width: 21px; height: 21px; }
+  .form-heading:has(.connect-symbol) h1 { padding-right: 40px; }
+  .auth-form { gap: 16px; }
+  .teams-main { padding: 22px 18px 30px; gap: 23px; }
+  .teams-heading h1 { font-size: 23px; }
+  .teams-grid { gap: 15px; }
+  .file-card { min-height: 224px; }
+  .file-content { padding: 20px 16px 16px; }
+  .team-avatar { height: 29px; font-size: 12px; }
+  .file-title { font-size: 13px; margin-top: 30px; }
+  .file-members, .file-status { font-size: 10px; }
+  .file-status { padding-top: 10px; }
+  .new-team .file-members { font-size: 9px; }
+}
+@media(max-width: 359px) {
+  .auth-header { padding: 0 14px; gap: 8px; }
+  .wordmark { font-size: 13px; }
+  .header-right { gap: 6px; font-size: 10px; }
+  .auth-main { padding-right: 14px; padding-left: 14px; }
+  .folder-front { padding-right: 20px; padding-left: 20px; }
+  .form-heading h1 { font-size: 23px; }
+  .form-heading:has(.connect-symbol) h1 { font-size: 21px; }
+  .teams-grid { grid-template-columns: 1fr; max-width: 236px; width: 100%; margin: 0 auto; }
+  .file-card { min-height: 250px; }
+  .file-content { padding: 25px 24px 21px; }
+  .file-title { font-size: 15px; }
+}
+@media(max-width: 400px) {
+}
+@media(prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; animation: none !important; } }
+  
+
+#reset-dialog { color: #fff; background: var(--brand-dark); border: 1px solid #ffffff35; width: min(430px, calc(100% - 32px)); border-radius: 20px; padding: 30px; }
+#reset-dialog::backdrop { background: #102a2370; backdrop-filter: blur(4px); }
+#reset-dialog .dialog-heading { display: flex; justify-content: space-between; align-items: center; gap: 20px; }
+#reset-dialog h2 { margin: 0; font-size: 21px; }
+#reset-dialog > p { font-size: 12px; margin: 10px 0 22px; }
+#reset-dialog .close-dialog { color: #fff; border: 0; border-radius: 6px; background: #ffffff10; width: 30px; height: 30px; font-size: 20px; }
+#reset-status { font-size: 12px; padding: 12px; border: 1px solid #ffffff40; border-radius: 8px; margin-bottom: 0; }
+</style>
+</head>
+<body>
+<div id="fit"><div id="stage">
+
+<section class="screen auth-screen" data-screen="login" hidden>
+<div class="auth-page"><header class="auth-header"><a class="wordmark" href="#login" data-p="login" aria-label="Manager's Manager 홈"><svg class="brand-symbol" viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 79V31L41 61 63 31V79" stroke-opacity=".35" stroke-width="14"></path><path d="M8 90V42L30 72 52 42V90" stroke-width="14"></path><path d="m86 40-6 20" stroke-width="10"></path></svg><span>Manager's Manager<span class="brand-period">.</span></span></a></header><main class="auth-main"><div class="folder"><div class="folder-back" aria-hidden="true"></div><svg class="folder-tab" viewBox="0 0 520 100" preserveAspectRatio="none" aria-hidden="true"><path d="M0 100V27Q0 0 27 0H142Q157 0 170 11L204 39Q215 48 231 48H493Q520 48 520 75V100Z" fill="#008272"></path></svg><span class="folder-label" aria-hidden="true"><svg class="icon " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7V5a2 2 0 0 1 2-2h5l3 3h6a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"></path><path d="M3 8h18"></path></svg></span><div class="folder-sheet" aria-hidden="true"></div><div class="folder-front" style="background-color: #00A18E">
+<div class="form-heading"><h1>로그인</h1></div>
+<form class="auth-form" data-next="selectteam">
+<div class="field"><label for="login-email">이메일</label><input id="login-email" name="email" type="email" autocomplete="email" placeholder="name@example.com" required=""></div>
+<div class="field"><label for="login-password">비밀번호</label><div class="password-field"><input id="login-password" name="password" type="password" autocomplete="current-password" required=""><button class="password-toggle" type="button" aria-label="비밀번호 보기" aria-pressed="false" aria-controls="login-password" data-password="login-password"><svg class="icon " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"></path><circle cx="12" cy="12" r="3"></circle><path class="eye-slash" d="m3 3 18 18"></path></svg></button></div></div>
+<div class="form-options"><label class="check-label"><input type="checkbox" name="remember">로그인 유지</label><button type="button" class="text-button reset-trigger">비밀번호 찾기</button></div>
+<button class="primary-button" type="submit">로그인 <svg class="icon " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14m-5-5 5 5-5 5"></path></svg></button>
+</form><p class="form-switch"><a href="#signup" data-p="signup">계정 만들기 <svg class="icon " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14m-5-5 5 5-5 5"></path></svg></a></p>
+</div></div></main><footer class="auth-footer">© 2026 Manager’s Manager</footer></div>
+</section>
+
+<section class="screen auth-screen" data-screen="signup" hidden>
+<div class="auth-page"><header class="auth-header"><a class="wordmark" href="#login" data-p="login" aria-label="Manager's Manager 홈"><svg class="brand-symbol" viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 79V31L41 61 63 31V79" stroke-opacity=".35" stroke-width="14"></path><path d="M8 90V42L30 72 52 42V90" stroke-width="14"></path><path d="m86 40-6 20" stroke-width="10"></path></svg><span>Manager's Manager<span class="brand-period">.</span></span></a></header><main class="auth-main"><div class="folder"><div class="folder-back" aria-hidden="true"></div><svg class="folder-tab" viewBox="0 0 520 100" preserveAspectRatio="none" aria-hidden="true"><path d="M0 100V27Q0 0 27 0H142Q157 0 170 11L204 39Q215 48 231 48H493Q520 48 520 75V100Z" fill="#008272"></path></svg><span class="folder-label" aria-hidden="true"><svg class="icon " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7V5a2 2 0 0 1 2-2h5l3 3h6a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"></path><path d="M3 8h18"></path></svg></span><div class="folder-sheet" aria-hidden="true"></div><div class="folder-front" style="background-color: #00A18E">
+<div class="form-heading"><h1>회원가입</h1><p>팀을 만드는 사람 한 명만 가입하면 돼요.</p></div>
+<form class="auth-form" data-next="connect">
+<div class="field"><label for="signup-name">이름</label><input id="signup-name" name="name" autocomplete="name" maxlength="30" required=""></div>
+<div class="field"><label for="signup-email">이메일</label><input id="signup-email" name="email" type="email" autocomplete="email" placeholder="name@example.com" required=""></div>
+<div class="field"><label for="signup-password">비밀번호</label><div class="password-field"><input id="signup-password" name="password" type="password" autocomplete="new-password" minlength="8" pattern="(?=.*[0-9]).{8,}" aria-describedby="signup-password-help" required=""><button class="password-toggle" type="button" aria-label="비밀번호 보기" aria-pressed="false" aria-controls="signup-password" data-password="signup-password"><svg class="icon " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"></path><circle cx="12" cy="12" r="3"></circle><path class="eye-slash" d="m3 3 18 18"></path></svg></button></div><span class="field-hint" id="signup-password-help">8자 이상, 숫자 포함</span></div>
+<button class="primary-button" type="submit">계정 만들기 <svg class="icon " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14m-5-5 5 5-5 5"></path></svg></button>
+</form><p class="form-switch"><a href="#login" data-p="login">로그인 <svg class="icon " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14m-5-5 5 5-5 5"></path></svg></a></p>
+</div></div></main><footer class="auth-footer">© 2026 Manager’s Manager</footer></div>
+</section>
+
+<section class="screen auth-screen" data-screen="connect" hidden>
+<div class="auth-page"><header class="auth-header"><a class="wordmark" href="#login" data-p="login" aria-label="Manager's Manager 홈"><svg class="brand-symbol" viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 79V31L41 61 63 31V79" stroke-opacity=".35" stroke-width="14"></path><path d="M8 90V42L30 72 52 42V90" stroke-width="14"></path><path d="m86 40-6 20" stroke-width="10"></path></svg><span>Manager's Manager<span class="brand-period">.</span></span></a><div class="header-right"><span class="account-avatar" aria-label="지훈 계정">지훈</span><button class="text-button" type="button" data-p="login">로그아웃</button></div></header><main class="auth-main"><div class="folder"><div class="folder-back" aria-hidden="true"></div><svg class="folder-tab" viewBox="0 0 520 100" preserveAspectRatio="none" aria-hidden="true"><path d="M0 100V27Q0 0 27 0H142Q157 0 170 11L204 39Q215 48 231 48H493Q520 48 520 75V100Z" fill="#008272"></path></svg><span class="folder-label" aria-hidden="true"><svg class="icon " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7V5a2 2 0 0 1 2-2h5l3 3h6a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"></path><path d="M3 8h18"></path></svg></span><div class="folder-sheet" aria-hidden="true"></div><div class="folder-front" style="background-color: #00A18E">
+<div class="form-heading"><span class="connect-symbol" aria-hidden="true"><svg class="icon discord-mark" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M19.7 5.1A18 18 0 0 0 15.4 3.8l-.5 1.1a16 16 0 0 0-5.8 0l-.5-1.1a18 18 0 0 0-4.3 1.3C1.6 9.1.9 13 .9 16.8a17 17 0 0 0 5.3 2.7l1.1-1.8-1.7-.9.4-.3a13 13 0 0 0 12 0l.4.3-1.7.9 1.1 1.8a17 17 0 0 0 5.3-2.7c0-4.4-.9-8-3.4-11.7ZM8.1 14.6c-1 0-1.7-.9-1.7-2s.7-2 1.7-2 1.8.9 1.8 2-.8 2-1.8 2Zm7.8 0c-1 0-1.8-.9-1.8-2s.8-2 1.8-2 1.7.9 1.7 2-.7 2-1.7 2Z" fill="#00A18E"></path></svg></span><h1>디스코드 연결</h1><p>우리 팀 서버에 봇을 초대해 주세요.</p></div>
+<div class="permission-list"><div class="permission-row"><svg class="icon " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"></rect><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3M8 22h8"></path></svg><span>회의 기록</span><span class="permission-badge">필수</span></div>
+<label class="permission-row"><svg class="icon " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5a8.5 8.5 0 0 1-8.5 8.5H3l2-4a8.5 8.5 0 1 1 16-4.5Z"></path><path d="M8 10h8M8 14h5"></path></svg><span>리마인드 DM <small>선택</small></span><input class="switch" type="checkbox" name="reminders" aria-label="팀원 리마인드 사용" checked="" style="background-color: #00665A"></label></div>
+<details class="permission-details"><summary>권한 자세히 보기</summary><ul><li>회의 시간에만 녹음하고, 정리가 끝나면 녹음 파일을 지워요.</li><li>리마인드는 내가 확인한 문안만 발송해요.</li><li>텍스트 채널 읽기와 서버 설정 변경 권한은 요청하지 않아요.</li></ul></details>
+<button class="primary-button discord-button" type="button" data-p="selectteam">디스코드 연결하기 <svg class="icon " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14m-5-5 5 5-5 5"></path></svg></button>
+<a class="skip-link" href="#selectteam" data-p="selectteam">나중에 연결하기</a>
+</div></div></main><footer class="auth-footer">© 2026 Manager’s Manager</footer></div>
+</section>
+
+<section class="screen" data-screen="selectteam" hidden>
+<div class="teams-page" style="background-color: #00A18E"><header class="auth-header"><a class="wordmark" href="#login" data-p="login" aria-label="Manager's Manager 홈"><svg class="brand-symbol" viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 79V31L41 61 63 31V79" stroke-opacity=".35" stroke-width="14"></path><path d="M8 90V42L30 72 52 42V90" stroke-width="14"></path><path d="m86 40-6 20" stroke-width="10"></path></svg><span>Manager's Manager<span class="brand-period">.</span></span></a><div class="header-right"><span class="account-avatar" aria-label="지훈 계정">지훈</span><button class="text-button" type="button" data-p="login">로그아웃</button></div></header><main class="teams-main"><div class="teams-heading"><h1>어떤 팀에서 시작할까요?</h1><p>함께할 팀을 선택해 주세요.</p></div><div class="teams-grid" style="justify-content: flex-start; gap: 35px"><button type="button" class="file-card" data-p="dashboard" aria-label="캡스톤 5조, 팀원 5명, 연결됨"><svg class="file-shape" viewBox="0 0 260 280" preserveAspectRatio="none" aria-hidden="true"><path class="file-paper" d="M18 1H202L259 58V262Q259 279 241 279H18Q1 279 1 262V18Q1 1 18 1Z"></path><path class="file-fold" d="M202 1V43Q202 58 217 58H259"></path><path class="file-fold-edge" d="M202 1 259 58"></path></svg><span class="file-content"><span class="team-avatar">#캡스</span><span class="file-title">캡스톤 5조</span><span class="file-members">팀원 5명</span><span class="file-status "><span class="status-dot"></span>연결됨<svg class="icon " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14m-5-5 5 5-5 5"></path></svg></span></span></button>
+<button type="button" class="file-card" data-p="dashboard" aria-label="웹개발 소모임, 팀원 9명, 연결됨"><svg class="file-shape" viewBox="0 0 260 280" preserveAspectRatio="none" aria-hidden="true"><path class="file-paper" d="M18 1H202L259 58V262Q259 279 241 279H18Q1 279 1 262V18Q1 1 18 1Z"></path><path class="file-fold" d="M202 1V43Q202 58 217 58H259"></path><path class="file-fold-edge" d="M202 1 259 58"></path></svg><span class="file-content"><span class="team-avatar">#웹개</span><span class="file-title">웹개발 소모임</span><span class="file-members">팀원 9명</span><span class="file-status "><span class="status-dot"></span>연결됨<svg class="icon " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14m-5-5 5 5-5 5"></path></svg></span></span></button>
+<button type="button" class="file-card" data-p="connect" aria-label="알고리즘 스터디, 팀원 12명, 설정 필요"><svg class="file-shape" viewBox="0 0 260 280" preserveAspectRatio="none" aria-hidden="true"><path class="file-paper" d="M18 1H202L259 58V262Q259 279 241 279H18Q1 279 1 262V18Q1 1 18 1Z"></path><path class="file-fold" d="M202 1V43Q202 58 217 58H259"></path><path class="file-fold-edge" d="M202 1 259 58"></path></svg><span class="file-content"><span class="team-avatar">#알고</span><span class="file-title">알고리즘 스터디</span><span class="file-members">팀원 12명</span><span class="file-status needs-setup"><span class="status-dot"></span>설정 필요<svg class="icon " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14m-5-5 5 5-5 5"></path></svg></span></span></button>
+<button type="button" class="file-card" data-p="connect" aria-label="졸업프로젝트 A반, 팀원 34명, 설정 필요"><svg class="file-shape" viewBox="0 0 260 280" preserveAspectRatio="none" aria-hidden="true"><path class="file-paper" d="M18 1H202L259 58V262Q259 279 241 279H18Q1 279 1 262V18Q1 1 18 1Z"></path><path class="file-fold" d="M202 1V43Q202 58 217 58H259"></path><path class="file-fold-edge" d="M202 1 259 58"></path></svg><span class="file-content"><span class="team-avatar">#졸업</span><span class="file-title">졸업프로젝트 A반</span><span class="file-members">팀원 34명</span><span class="file-status needs-setup"><span class="status-dot"></span>설정 필요<svg class="icon " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14m-5-5 5 5-5 5"></path></svg></span></span></button>
+<article class="file-card archived" aria-label="데모데이 준비, 팀원 7명, 보관됨"><svg class="file-shape" viewBox="0 0 260 280" preserveAspectRatio="none" aria-hidden="true"><path class="file-paper" d="M18 1H202L259 58V262Q259 279 241 279H18Q1 279 1 262V18Q1 1 18 1Z"></path><path class="file-fold" d="M202 1V43Q202 58 217 58H259"></path><path class="file-fold-edge" d="M202 1 259 58"></path></svg><span class="file-content"><span class="team-avatar">#데모</span><span class="file-title">데모데이 준비</span><span class="file-members">팀원 7명</span><span class="file-status "><span class="status-dot"></span>보관됨</span></span></article><button type="button" class="file-card new-team" data-p="connect" aria-label="새 팀 만들기"><svg class="file-shape" viewBox="0 0 260 280" preserveAspectRatio="none" aria-hidden="true"><path class="file-paper" d="M18 1H202L259 58V262Q259 279 241 279H18Q1 279 1 262V18Q1 1 18 1Z" stroke-dasharray="5 4"></path><path class="file-fold" d="M202 1V43Q202 58 217 58H259"></path><path class="file-fold-edge" d="M202 1 259 58"></path></svg><span class="file-content"><span class="new-team-plus"><svg class="icon " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg></span><span class="file-title">새 팀 만들기</span><span class="file-members">디스코드 서버 연결</span></span></button></div></main></div>
+</section>
+
+<section class="screen" data-screen="dashboard" hidden>
+<div style="min-height: 100vh; background: #E6E9EC; display: flex; flex-direction: column; font-family: 'Noto Sans KR', system-ui, 'Apple SD Gothic Neo', Pretendard, sans-serif; color: #182322; font-size: 15px; line-height: 1.7; word-break: keep-all; font-variant-numeric: tabular-nums; -webkit-font-smoothing: antialiased;">
+
+  <!-- ── 앱 셸 ───────────────────────────────────────────── -->
+  <header style="height: 56px; background: #E6E9EC; display: flex; align-items: center; padding: 0 24px; gap: 24px">
+    <span style="display: flex; align-items: center; gap: 9px; flex-shrink: 0;">
+      <svg width="24" height="24" viewBox="0 0 100 100" fill="none" stroke-linecap="round" stroke-linejoin="round" style="width: 30px; height: 30px; transform: translate(0px, -3px)"><path d="M19 79 V31 L41 61 L63 31 V79" stroke="#006F5E" stroke-opacity="0.3" stroke-width="14"></path><path d="M8 90 V42 L30 72 L52 42 V90" stroke="#00A18E" stroke-width="14"></path><path d="M86 40 L80 60" stroke="#00A18E" stroke-width="10"></path></svg>
+      
+    </span>
+    <nav style="display: flex; align-items: flex-end; align-self: stretch; gap: 2px;">
+      <span style="position: relative; display: flex; align-items: center; height: 46px; box-sizing: border-box; padding: 0 14px 10px; background: #FFFFFF; border-radius: 10px 10px 0 0; font-weight: 700; color: #182322;"><span style="position: absolute; left: -10px; bottom: 0; width: 10px; height: 10px; background: #FFFFFF;"></span><span style="position: absolute; left: -10px; bottom: 0; width: 10px; height: 10px; background: #E6E9EC; border-bottom-right-radius: 10px;"></span><span style="position: absolute; right: -10px; bottom: 0; width: 10px; height: 10px; background: #FFFFFF;"></span><span style="position: absolute; right: -10px; bottom: 0; width: 10px; height: 10px; background: #E6E9EC; border-bottom-left-radius: 10px;"></span>대시보드</span>
+      <span style="align-self: center; display: flex; align-items: center; height: 40px; padding: 0 14px; color: #5E6B69;">확인할 일 <span style="margin-left: 5px; color: #AC4500;">3</span></span>
+      <span style="align-self: center; display: flex; align-items: center; height: 40px; padding: 0 14px; color: #5E6B69;">팀원</span>
+      <span style="align-self: center; display: flex; align-items: center; height: 40px; padding: 0 14px; color: #5E6B69;">설정</span>
+    </nav>
+    <div style="flex-grow: 1;"></div>
+    <div style="display: flex; align-items: center; gap: 12px;">
+      <span style="font-size: 13px; color: #5E6B69;">캡스톤 5조</span>
+      <span style="width: 32px; height: 32px; border-radius: 999px; background: #182322; color: #FFFFFF; font-size: 12px; font-weight: 500; display: flex; align-items: center; justify-content: center;">지훈</span>
+    </div>
+  </header>
+
+  <div style="flex: 1; background: #FFFFFF; border-radius: 14px 14px 0 0;"><main style="max-width: 900px; margin: 0 auto; padding: 48px 24px 80px; display: flex; flex-direction: column; gap: 40px;">
+
+    <!-- ══ 히어로 ══════════════════════════════════════════
+         이 화면의 보람은 문장 하나다. 지표 타일을 두지 않는다.
+         진행률 상세는 팀원 탭에 있으므로 중복시키지 않는다 ─── -->
+    <div style="display: flex; flex-direction: column; gap: 6px;">
+      <span style="font-size: 13px; color: #5E6B69;">8월 26일 수요일</span>
+      <h1 style="margin: 0; font-size: 24px; line-height: 1.35; font-weight: 700; letter-spacing: -0.01em;">확인이 필요합니다</h1>
+      
+    </div>
+
+    <!-- ══ 손댈 일 ═════════════════════════════════════════ -->
+    <div>
+      <div style="display: flex; align-items: center; gap: 20px; padding: 20px 4px; border-top-width: 1px; border-top-style: solid; border-top-color: #DAE0E7">
+        <div style="flex-grow: 1; display: flex; flex-direction: column; gap: 2px;">
+          <span style="font-size: 16px; font-weight: 700;">회의에서 나온 3개를 아직 확인 안 하셨어요</span>
+          <span style="font-size: 13px; color: #5E6B69;">3주차 회의에서 뽑은 6개 가운데 확실한 3개는 이미 노션에 올려뒀어요</span>
+        </div><span style="display: flex; align-items: center; gap: 4px; font-weight: 500; flex-shrink: 0;">확인하기<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"></path></svg></span>
+        
+      </div>
+
+      <div style="display: flex; align-items: center; gap: 20px; padding: 20px 4px; border-top-width: 1px; border-top-style: solid; border-top-color: #DAE0E7">
+        <div style="flex-grow: 1; display: flex; flex-direction: column; gap: 2px;">
+          <span style="font-size: 16px; font-weight: 700;">서연에게 보낼 리마인드 초안이 준비됐어요</span>
+          <span style="font-size: 13px; color: #5E6B69;">발표 준비 마감이 <span style="color: #B33736;">3일</span> 남았는데 체크인에 두 번 답이 없어요</span>
+        </div>
+        <span style="display: flex; align-items: center; gap: 4px; font-weight: 500; flex-shrink: 0;">초안 보기<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"></path></svg></span>
+      </div>
+
+      <div style="display: flex; align-items: center; gap: 20px; padding: 20px 4px; border-top-width: 1px; border-top-style: solid; border-top-color: #DAE0E7; border-bottom-width: 1px; border-bottom-style: solid; border-bottom-color: #DAE0E7">
+        <div style="flex-grow: 1; display: flex; flex-direction: column; gap: 2px;">
+          <span style="font-size: 16px; font-weight: 700;">재환이 DB 스키마를 기다리며 멈춰 있어요</span>
+          <span style="font-size: 13px; color: #5E6B69;">API 명세서가 8월 25일부터 50%에서 그대로예요</span>
+        </div>
+        <span style="display: flex; align-items: center; gap: 4px; font-weight: 500; flex-shrink: 0;">팀원 보기<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"></path></svg></span>
+      </div>
+    </div>
+
+    <!-- ══ 마감 순서 ═══════════════════════════════════════
+         팀원 탭은 사람으로 묶고, 여기는 날짜로 줄 세운다 ──── -->
+    <div style="display: flex; flex-direction: column; gap: 8px;">
+      <h2 style="margin: 0; font-size: 16px; line-height: 1.45; font-weight: 700;">마감 순서</h2>
+
+      <div>
+        <div style="display: grid; grid-template-columns: 104px 1fr 64px 88px; gap: 12px; align-items: center; padding: 13px 4px; border-top-width: 1px; border-top-style: solid; border-top-color: #DAE0E7">
+          <span style="color: #4C5B5A;">8월 28일 금</span>
+          <span style="font-weight: 500;">DB 스키마 검토</span>
+          <span style="color: #4C5B5A;">재환</span>
+          <span style="font-size: 13px; color: #5E6B69;">2일 남음</span>
+        </div>
+        <div style="display: grid; grid-template-columns: 104px 1fr 64px 88px; gap: 12px; align-items: center; padding: 13px 4px; border-top-width: 1px; border-top-style: solid; border-top-color: #DAE0E7">
+          <span style="color: #4C5B5A;">8월 28일 금</span>
+          <span style="font-weight: 500;">카드 컴포넌트 적용</span>
+          <span style="color: #4C5B5A;">서연</span>
+          <span style="font-size: 13px; color: #5E6B69;">2일 남음</span>
+        </div>
+        <div style="display: grid; grid-template-columns: 104px 1fr 64px 88px; gap: 12px; align-items: center; padding: 13px 4px; border-top-width: 1px; border-top-style: solid; border-top-color: #DAE0E7">
+          <span style="color: #4C5B5A;">8월 29일 토</span>
+          <span style="font-weight: 500;">발표 준비</span>
+          <span style="color: #4C5B5A;">서연</span>
+          <span style="font-size: 13px; color: #B33736;">0%</span>
+        </div>
+        <div style="display: grid; grid-template-columns: 104px 1fr 64px 88px; gap: 12px; align-items: center; padding: 13px 4px; border-top-width: 1px; border-top-style: solid; border-top-color: #DAE0E7">
+          <span style="color: #4C5B5A;">8월 29일 토</span>
+          <span style="font-weight: 500;">API 명세서</span>
+          <span style="color: #4C5B5A;">재환</span>
+          <span style="display: flex; align-items: center; color: #B33736;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"></path><path d="M12 9v4"></path><path d="M12 17h.01"></path></svg></span>
+        </div>
+        <div style="display: grid; grid-template-columns: 104px 1fr 64px 88px; gap: 12px; align-items: center; padding: 13px 4px; border-top: 1px solid #BAE8DC; border-bottom: 1px solid #BAE8DC;">
+          <span style="color: #4C5B5A;">9월 2일 화</span>
+          <span style="font-weight: 500;">중간 발표 자료</span>
+          <span style="color: #4C5B5A;">지민</span>
+          <span style="font-size: 13px; color: #5E6B69;">7일 남음</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ 다음 회의 ═══════════════════════════════════════ -->
+    <div style="padding-top: 24px; display: flex; align-items: flex-end; gap: 20px">
+      <div style="flex-grow: 1; display: flex; flex-direction: column; gap: 4px;">
+        <h2 style="margin: 0; font-size: 16px; line-height: 1.45; font-weight: 700;">오늘 오후 4시 정기회의</h2>
+        <p style="margin: 0; max-width: 40em; color: #4C5B5A;">봇이 음성 채널에 들어가서 알아서 기록해요. 지난 회의 녹음이 있으면 직접 올려도 돼요.</p>
+      </div>
+      <div style="display: flex; align-items: center; height: 40px; box-sizing: border-box; padding: 0 18px; border-radius: 10px; flex-shrink: 0; background-color: #009D8A; font-weight: 500; color: #FFFFFF">회의록 올리기</div>
+    </div>
+
+    
+
+  </main></div>
+</div>
+</section>
+
+<section class="screen" data-screen="review" hidden>
+<div style="min-height: 100vh; background: #E6E9EC; display: flex; flex-direction: column; font-family: 'Noto Sans KR', system-ui, 'Apple SD Gothic Neo', Pretendard, sans-serif; color: #182322; font-size: 15px; line-height: 1.7; word-break: keep-all; font-variant-numeric: tabular-nums; -webkit-font-smoothing: antialiased;">
+
+  <!-- ── 앱 셸 ───────────────────────────────────────────── -->
+  <header style="height: 56px; background: #E6E9EC; display: flex; align-items: center; padding: 0 24px; gap: 24px">
+    <span style="display: flex; align-items: center; gap: 9px; flex-shrink: 0;">
+      <svg width="24" height="24" viewBox="0 0 100 100" fill="none" stroke-linecap="round" stroke-linejoin="round" style="width: 30px; height: 30px; transform: translate(0px, -3px)"><path d="M19 79 V31 L41 61 L63 31 V79" stroke="#006F5E" stroke-opacity="0.3" stroke-width="14"></path><path d="M8 90 V42 L30 72 L52 42 V90" stroke="#00A18E" stroke-width="14"></path><path d="M86 40 L80 60" stroke="#00A18E" stroke-width="10"></path></svg>
+      
+    </span>
+    <nav style="display: flex; align-items: flex-end; align-self: stretch; gap: 2px;">
+      <span style="align-self: center; display: flex; align-items: center; height: 40px; padding: 0 14px; color: #5E6B69;">대시보드</span>
+      <span style="position: relative; display: flex; align-items: center; height: 46px; box-sizing: border-box; padding: 0 14px 10px; background: #FFFFFF; border-radius: 10px 10px 0 0; font-weight: 700; color: #182322;"><span style="position: absolute; left: -10px; bottom: 0; width: 10px; height: 10px; background: #FFFFFF;"></span><span style="position: absolute; left: -10px; bottom: 0; width: 10px; height: 10px; background: #E6E9EC; border-bottom-right-radius: 10px;"></span><span style="position: absolute; right: -10px; bottom: 0; width: 10px; height: 10px; background: #FFFFFF;"></span><span style="position: absolute; right: -10px; bottom: 0; width: 10px; height: 10px; background: #E6E9EC; border-bottom-left-radius: 10px;"></span>확인할 일 <span style="margin-left: 5px; color: #AC4500;">3</span></span>
+      <span style="align-self: center; display: flex; align-items: center; height: 40px; padding: 0 14px; color: #5E6B69;">팀원</span>
+      <span style="align-self: center; display: flex; align-items: center; height: 40px; padding: 0 14px; color: #5E6B69;">설정</span>
+    </nav>
+    <div style="flex-grow: 1;"></div>
+    <div style="display: flex; align-items: center; gap: 12px;">
+      <span style="font-size: 13px; color: #5E6B69;">캡스톤 5조</span>
+      <span style="width: 32px; height: 32px; border-radius: 999px; background: #182322; color: #FFFFFF; font-size: 12px; font-weight: 500; display: flex; align-items: center; justify-content: center;">지훈</span>
+    </div>
+  </header><div style="flex: 1; background: #FFFFFF; border-radius: 14px 14px 0 0;"><main style="max-width: 900px; margin: 0 auto; padding: 48px 24px 80px; display: flex; flex-direction: column; gap: 40px;">
+
+    <div style="display: flex; flex-direction: column; gap: 8px;">
+      <div data-dc-group="" style="box-sizing: border-box; display: flex; flex-direction: row; gap: 12px; justify-content: normal; align-items: flex-end"><h1 style="margin: 0; font-size: 20px; line-height: 1.4; font-weight: 700; letter-spacing: -0.01em;">확인이 필요한 일 3개</h1><p style="margin: 0; max-width: 46em; color: #4C5B5A;">3주차 회의를 정리했어요<br></p></div>
+      <p style="margin: 0; max-width: 46em; color: #4C5B5A;">확실한 3개는 노션에 이미 올려두었고, 아래 3개만 확인하시면 돼요</p>
+    </div>
+
+    <!-- ══ 판단이 필요한 항목 ══════════════════════════════
+         면          = 내용은 있고 판단이 필요함
+         흰 바탕 + 점선 윤곽 = 비어 있어 채워야 함
+         라벨로 구분하지 않는다 ─────────────────────────── -->
+    <section style="display: flex; flex-direction: column; gap: 25px">
+
+      <!-- 항목 1 -->
+      <div style="background: #FFFFFF; border: 1px solid #BAE8DC; border-radius: 16px; box-shadow: 0 1px 2px rgba(0, 111, 94, 0.06), 0 6px 16px rgba(0, 111, 94, 0.08); padding: 24px; display: flex; flex-direction: column; gap: 20px; border-color: #DAE0E7">
+        <div style="display: flex; flex-direction: column; gap: 4px;">
+          <h2 style="margin: 0; font-size: 16px; line-height: 1.45; font-weight: 700;">발표 준비</h2>
+          <p style="margin: 0; max-width: 44em; color: #4C5B5A;">담당자가 서연인지 지민인지 정해주세요.</p>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px;">
+          <div style="height: 40px; box-sizing: border-box; background: #FFFFFF; border: 1px solid #BAE8DC; border-radius: 10px; padding: 0 14px; display: flex; align-items: center;">발표 준비</div>
+          <div style="height: 40px; box-sizing: border-box; background: #FFFFFF; border: 1px solid #FFCFB1; border-radius: 10px; padding: 0 14px; display: flex; align-items: center; gap: 8px;">
+            <span style="flex-grow: 1;">서연</span>
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#AC4500" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 7.5 9 12l4.5-4.5"></path></svg>
+          </div>
+          <div style="height: 40px; box-sizing: border-box; background: #FFFFFF; border: 1px solid #BAE8DC; border-radius: 10px; padding: 0 14px; display: flex; align-items: center; gap: 8px;">
+            <span style="flex-grow: 1;">8월 29일</span>
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#5E6B69" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="3.75" width="13" height="11.75" rx="2.5"></rect><path d="M2.5 7.5h13M6 2.25v2.5M12 2.25v2.5"></path></svg>
+          </div>
+        </div>
+
+        <div style="border-radius: 12px; padding: 16px 18px; display: flex; flex-direction: column; gap: 8px; background-color: #F1F5F8">
+          <p style="margin: 0;">“발표는 내가 맡을게, 금요일까지 하면 되지?”</p>
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <span style="font-size: 13px; color: #5E6B69;">서연이 회의 31분쯤 한 말이에요</span>
+            <div style="flex-grow: 1;"></div>
+            <span style="font-size: 13px; font-weight: 500;">회의 다시 듣기</span>
+          </div>
+        </div>
+
+        <div style="display: flex; align-items: center; gap: 12px;">
+          
+          <div style="flex-grow: 1;"></div><div style="display: flex; align-items: center; height: 40px; box-sizing: border-box; padding: 0 18px; background: #FFFFFF; border: 1px solid #BAE8DC; border-radius: 10px; color: #4C5B5A;">제외</div>
+          <div style="display: flex; align-items: center; height: 40px; box-sizing: border-box; padding: 0 18px; border-radius: 10px; font-weight: 500; color: #FFFFFF; background-color: #009D8A">추가</div>
+          
+        </div>
+      </div>
+
+      <!-- 항목 2 -->
+      <div style="background: #FFFFFF; border: 1px solid #BAE8DC; border-radius: 16px; box-shadow: 0 1px 2px rgba(0, 111, 94, 0.06), 0 6px 16px rgba(0, 111, 94, 0.08); padding: 24px; display: flex; flex-direction: column; gap: 20px; border-color: #DAE0E7">
+        <div style="display: flex; flex-direction: column; gap: 4px;">
+          <h2 style="margin: 0; font-size: 16px; line-height: 1.45; font-weight: 700;">API 명세서</h2>
+          <p style="margin: 0; max-width: 44em; color: #4C5B5A;">재환 이름이 나왔지만, 본인이 맡겠다고 한 말은 못 찾았어요. 마감은 지훈 님이 8월 29일로 고쳐두셨어요.</p>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px;">
+          <div style="height: 40px; box-sizing: border-box; background: #FFFFFF; border: 1px solid #BAE8DC; border-radius: 10px; padding: 0 14px; display: flex; align-items: center;">API 명세서</div>
+          <div style="height: 40px; box-sizing: border-box; background: #FFFFFF; border: 1px solid #FFCFB1; border-radius: 10px; padding: 0 14px; display: flex; align-items: center; gap: 8px;">
+            <span style="flex-grow: 1;">재환</span>
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#AC4500" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 7.5 9 12l4.5-4.5"></path></svg>
+          </div>
+          <div style="height: 40px; box-sizing: border-box; background: #FFFFFF; border: 1px solid #BAE8DC; border-radius: 10px; padding: 0 14px; display: flex; align-items: center; gap: 8px;">
+            <span style="flex-grow: 1;">8월 29일</span>
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#5E6B69" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="3.75" width="13" height="11.75" rx="2.5"></rect><path d="M2.5 7.5h13M6 2.25v2.5M12 2.25v2.5"></path></svg>
+          </div>
+        </div>
+
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <span style="font-weight: 500;">회의 다시 듣기</span>
+          <div style="flex-grow: 1;"></div><div style="display: flex; align-items: center; height: 40px; box-sizing: border-box; padding: 0 18px; background: #FFFFFF; border: 1px solid #BAE8DC; border-radius: 10px; color: #4C5B5A;">제외</div>
+          <div style="display: flex; align-items: center; height: 40px; box-sizing: border-box; padding: 0 18px; border-radius: 10px; font-weight: 500; color: #FFFFFF; background-color: #009D8A">추가</div>
+          
+        </div>
+      </div>
+
+      <!-- 항목 3 · 비어 있어 채워야 하는 항목 -->
+      <div style="background: #FFFFFF; border: 2px dashed #9DB0AB; border-radius: 16px; padding: 24px; display: flex; flex-direction: column; gap: 20px; border-width: 2px">
+        <div style="display: flex; flex-direction: column; gap: 4px;">
+          <h2 style="margin: 0; font-size: 16px; line-height: 1.45; font-weight: 700; color: #4C5B5A;">자료조사</h2>
+          <p style="margin: 0; max-width: 44em; color: #4C5B5A;">회의에서 누가 할지 안 정했어요. 두 칸을 채우면 올릴 수 있어요.</p>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px;">
+          <div style="height: 40px; box-sizing: border-box; background: #FFFFFF; border: 1px solid #BAE8DC; border-radius: 10px; padding: 0 14px; display: flex; align-items: center;">자료조사</div>
+          <div style="height: 40px; box-sizing: border-box; background: #FFFFFF; border: 1px solid #BAE8DC; border-radius: 10px; padding: 0 14px; display: flex; align-items: center; gap: 8px; border-color: #FFCFB1">
+            <span style="flex-grow: 1; color: #5E6B69;">사람을 지정해주세요</span>
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#5E6B69" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="stroke: #AC4500"><path d="M4.5 7.5 9 12l4.5-4.5"></path></svg>
+          </div>
+          <div style="height: 40px; box-sizing: border-box; background: #FFFFFF; border: 1px solid #BAE8DC; border-radius: 10px; padding: 0 14px; display: flex; align-items: center; gap: 8px; border-color: #FFCFB1">
+            <span style="flex-grow: 1; color: #5E6B69;">날짜를 지정해주세요</span>
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#5E6B69" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="stroke: #AC4500"><rect x="2.5" y="3.75" width="13" height="11.75" rx="2.5"></rect><path d="M2.5 7.5h13M6 2.25v2.5M12 2.25v2.5"></path></svg>
+          </div>
+        </div>
+
+        <div style="border-radius: 12px; padding: 16px 18px; display: flex; flex-direction: column; gap: 8px; background-color: #F1F5F8">
+          <p style="margin: 0;">“자료조사는… 누가 하지? 일단 나중에 정하자”</p>
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <span style="font-size: 13px; color: #5E6B69;">회의 18분쯤이고, 이 뒤로는 이 일 얘기가 안 나왔어요</span>
+            <div style="flex-grow: 1;"></div>
+            <span style="font-size: 13px; font-weight: 500;">회의 다시 듣기</span>
+          </div>
+        </div>
+
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <div style="flex-grow: 1;"></div><div style="display: flex; align-items: center; height: 40px; box-sizing: border-box; padding: 0 18px; background: #FFFFFF; border: 1px solid #BAE8DC; border-radius: 10px; color: #4C5B5A;">제외</div>
+          <div style="display: flex; align-items: center; height: 40px; box-sizing: border-box; padding: 0 18px; background: #CEF3E9; border-radius: 10px; font-weight: 500; color: #4C5B5A">추가</div>
+          
+        </div>
+      </div>
+
+      <div style="display: flex; align-items: center; gap: 16px; padding-top: 8px; flex-direction: row-reverse">
+        <div style="display: flex; align-items: center; height: 44px; box-sizing: border-box; padding: 0 22px; border-radius: 10px; font-weight: 700; color: #FFFFFF; background-color: #009D8A">한번에 추가하기</div>
+        
+      </div>
+    </section>
+
+    <!-- ══ 이미 올린 것 ════════════════════════════════════ -->
+    <section style="display: flex; flex-direction: column; gap: 12px;">
+      <h2 style="margin: 0; font-size: 16px; line-height: 1.45; font-weight: 700;">이미 올린 3개</h2>
+      
+
+      <div style="margin-top: 4px;">
+        <div style="display: flex; align-items: center; gap: 16px; padding: 16px 4px; border-top-width: 1px; border-top-style: solid; border-top-color: #DAE0E7">
+          <span style="font-weight: 500;">DB 스키마 검토</span>
+          <span style="color: #4C5B5A;">재환</span>
+          <span style="color: #4C5B5A;">8월 28일까지</span>
+          <div style="flex-grow: 1;"></div>
+          <span style="font-size: 13px; color: #5E6B69;">회의 8분쯤</span>
+          <span style="display: flex; align-items: center;"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.12" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"></path><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5 5.5 5.5 0 0 1-5.5 5.5H11"></path></svg></span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 16px; padding: 16px 4px; border-top-width: 1px; border-top-style: solid; border-top-color: #DAE0E7">
+          <span style="font-weight: 500;">카드 컴포넌트 적용</span>
+          <span style="color: #4C5B5A;">서연</span>
+          <span style="color: #4C5B5A;">8월 28일까지</span>
+          <div style="flex-grow: 1;"></div>
+          <span style="font-size: 13px; color: #5E6B69;">회의 22분쯤</span>
+          <span style="display: flex; align-items: center;"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.12" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"></path><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5 5.5 5.5 0 0 1-5.5 5.5H11"></path></svg></span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 16px; padding: 16px 4px; border-top-width: 1px; border-top-style: solid; border-top-color: #DAE0E7; border-bottom-width: 1px; border-bottom-style: solid; border-bottom-color: #DAE0E7">
+          <span style="font-weight: 500;">ERD 정리해서 노션에 올리기</span>
+          <span style="color: #4C5B5A;">지훈</span>
+          <span style="color: #4C5B5A;">8월 25일까지</span>
+          <div style="flex-grow: 1;"></div>
+          <span style="font-size: 13px; color: #5E6B69;">회의 41분쯤</span>
+          <span style="display: flex; align-items: center;"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.12" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"></path><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5 5.5 5.5 0 0 1-5.5 5.5H11"></path></svg></span>
+        </div>
+      </div>
+    </section>
+
+  </main></div>
+
+  
+</div>
+</section>
+
+<section class="screen" data-screen="members" hidden>
+<div style="min-height: 100vh; background: #E6E9EC; display: flex; flex-direction: column; font-family: 'Noto Sans KR', system-ui, 'Apple SD Gothic Neo', Pretendard, sans-serif; color: #182322; font-size: 15px; line-height: 1.7; word-break: keep-all; font-variant-numeric: tabular-nums; -webkit-font-smoothing: antialiased;">
+
+  <!-- ── 앱 셸 ───────────────────────────────────────────── -->
+  <header style="height: 56px; background: #E6E9EC; display: flex; align-items: center; padding: 0 24px; gap: 24px">
+    <span style="display: flex; align-items: center; gap: 9px; flex-shrink: 0;">
+      <svg width="24" height="24" viewBox="0 0 100 100" fill="none" stroke-linecap="round" stroke-linejoin="round" style="width: 30px; height: 30px; transform: translate(0px, -3px)"><path d="M19 79 V31 L41 61 L63 31 V79" stroke="#006F5E" stroke-opacity="0.3" stroke-width="14"></path><path d="M8 90 V42 L30 72 L52 42 V90" stroke="#00A18E" stroke-width="14"></path><path d="M86 40 L80 60" stroke="#00A18E" stroke-width="10"></path></svg>
+      
+    </span>
+    <nav style="display: flex; align-items: flex-end; align-self: stretch; gap: 2px;">
+      <span style="align-self: center; display: flex; align-items: center; height: 40px; padding: 0 14px; color: #5E6B69;">대시보드</span>
+      <span style="align-self: center; display: flex; align-items: center; height: 40px; padding: 0 14px; color: #5E6B69;">확인할 일 <span style="margin-left: 5px; color: #AC4500;">3</span></span>
+      <span style="position: relative; display: flex; align-items: center; height: 46px; box-sizing: border-box; padding: 0 14px 10px; background: #FFFFFF; border-radius: 10px 10px 0 0; font-weight: 700; color: #182322;"><span style="position: absolute; left: -10px; bottom: 0; width: 10px; height: 10px; background: #FFFFFF;"></span><span style="position: absolute; left: -10px; bottom: 0; width: 10px; height: 10px; background: #E6E9EC; border-bottom-right-radius: 10px;"></span><span style="position: absolute; right: -10px; bottom: 0; width: 10px; height: 10px; background: #FFFFFF;"></span><span style="position: absolute; right: -10px; bottom: 0; width: 10px; height: 10px; background: #E6E9EC; border-bottom-left-radius: 10px;"></span>팀원</span>
+      <span style="align-self: center; display: flex; align-items: center; height: 40px; padding: 0 14px; color: #5E6B69;">설정</span>
+    </nav>
+    <div style="flex-grow: 1;"></div>
+    <div style="display: flex; align-items: center; gap: 12px;">
+      <span style="font-size: 13px; color: #5E6B69;">캡스톤 5조</span>
+      <span style="width: 32px; height: 32px; border-radius: 999px; background: #182322; color: #FFFFFF; font-size: 12px; font-weight: 500; display: flex; align-items: center; justify-content: center;">지훈</span>
+    </div>
+  </header>
+
+  <div style="flex: 1; background: #FFFFFF; border-radius: 14px 14px 0 0;"><main style="max-width: 900px; margin: 0 auto; padding: 48px 24px 80px; display: flex; flex-direction: column; gap: 40px;">
+
+    <div style="display: flex; flex-direction: column; gap: 8px;">
+      <h1 style="margin: 0; font-size: 24px; line-height: 1.4; font-weight: 700; letter-spacing: -0.01em">팀원 진행상황</h1>
+      
+    </div>
+
+    <!-- ══ 재환 ═══════════════════════════════════════════
+         상태는 칩이 아니라 우측 정렬된 낱말이다.
+         세 사람의 낱말이 세로 열을 이뤄 스캔된다 ────────── -->
+    <div style="border-top-width: 1px; border-top-style: solid; border-top-color: #DAE0E7; padding-top: 24px; display: flex; flex-direction: column; gap: 20px">
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <span style="width: 32px; height: 32px; border-radius: 999px; background: #CEF3E9; color: #4C5B5A; font-size: 12px; font-weight: 500; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">재환</span>
+        <h2 style="margin: 0; font-size: 16px; line-height: 1.45; font-weight: 700;">재환</h2>
+        <span style="font-size: 13px; color: #5E6B69;">백엔드</span>
+        <div style="flex-grow: 1;"></div>
+        <span style="font-weight: 500; color: #AC4500;">확인 필요</span>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <span style="font-weight: 500;">API 명세서</span>
+          <span style="font-weight: 500;">50%</span>
+          <div style="flex-grow: 1;"></div>
+          <span style="color: #4C5B5A;">8월 29일까지</span>
+          
+        </div>
+        <div style="height: 8px; border-radius: 999px; overflow: hidden; display: flex; background-color: #F1F5F8">
+          <div style="width: 50%; background: #DD6400; border-radius: 999px;"></div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <span style="font-size: 13px; color: #B33736;">DB 스키마를 기다리는 중</span>
+          <div style="flex-grow: 1;"></div>
+          
+          <span style="font-size: 13px; font-weight: 500;">원문 보기</span>
+        </div>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <span style="font-weight: 500;">DB 스키마 검토</span>
+          <span style="font-weight: 500;">55%</span>
+          <div style="flex-grow: 1;"></div>
+          <span style="color: #4C5B5A;">8월 28일까지</span>
+        </div>
+        <div style="height: 8px; border-radius: 999px; overflow: hidden; display: flex; opacity: 0.55; background-color: #F1F5F8">
+          <div style="width: 55%; background: #DD6400; border-radius: 999px;"></div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <span style="font-size: 13px; color: #5E6B69;">8월 21일에서 멈춤&nbsp;</span>
+          <div style="flex-grow: 1;"></div>
+          <span style="font-size: 13px; font-weight: 500;">물어보기</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ 서연 ═══════════════════════════════════════════ -->
+    <div style="border-top-width: 1px; border-top-style: solid; border-top-color: #DAE0E7; padding-top: 24px; display: flex; flex-direction: column; gap: 20px">
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <span style="width: 32px; height: 32px; border-radius: 999px; background: #CEF3E9; color: #4C5B5A; font-size: 12px; font-weight: 500; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">서연</span>
+        <h2 style="margin: 0; font-size: 16px; line-height: 1.45; font-weight: 700;">서연</h2>
+        <span style="font-size: 13px; color: #5E6B69;">디자인</span>
+        <div style="flex-grow: 1;"></div>
+        <span style="font-weight: 500; color: #B33736;">확인 시급</span>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <span style="font-weight: 500;">발표 준비</span>
+          <span style="font-weight: 500; color: #5E6B69;">0%</span>
+          <span style="font-size: 13px; color: #5E6B69;">Task&nbsp;3개</span>
+          <div style="flex-grow: 1;"></div>
+          <span style="color: #B33736;">8월 29일까지</span>
+          <span style="font-size: 13px; color: #B33736;">3일 남음</span>
+        </div>
+        <div style="height: 8px; border-radius: 999px; overflow: hidden; display: flex; background-color: #F1F5F8">
+          <div style="width: 3px; background: #E55551; border-radius: 999px;"></div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 12px;">
+          
+          <div style="flex-grow: 1;"></div>
+          <span style="font-size: 13px; font-weight: 500;">물어보기</span>
+        </div>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <span style="font-weight: 500;">카드 컴포넌트 적용</span>
+          <span style="font-weight: 500;">30%</span>
+          <div style="flex-grow: 1;"></div>
+          <span style="color: #4C5B5A;">8월 28일까지</span>
+        </div>
+        <div style="height: 8px; border-radius: 999px; overflow: hidden; display: flex; background-color: #F1F5F8">
+          <div style="width: 30%; background: #DD6400; border-radius: 999px;"></div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <span style="font-size: 13px; color: #5E6B69;">8월 25일에 확인</span>
+          <div style="flex-grow: 1;"></div>
+          <span style="font-size: 13px; font-weight: 500;">노션에서 보기</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ 지훈 ═══════════════════════════════════════════ -->
+    <div style="border-top-width: 1px; border-top-style: solid; border-top-color: #DAE0E7; padding-top: 24px; display: flex; flex-direction: column; gap: 20px">
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <span style="width: 32px; height: 32px; border-radius: 999px; background: #182322; color: #FFFFFF; font-size: 12px; font-weight: 500; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">지훈</span>
+        <h2 style="margin: 0; font-size: 16px; line-height: 1.45; font-weight: 700;">지훈</h2>
+        <span style="font-size: 13px; color: #5E6B69;">팀장, 백엔드</span>
+        <div style="flex-grow: 1;"></div>
+        <span style="font-weight: 500; color: #006F5E;">완료</span>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <span style="font-weight: 500;">DB 설계</span>
+          <span style="font-weight: 500;">100%</span>
+          <div style="flex-grow: 1;"></div>
+          <span style="color: #4C5B5A;">8월 25일에 완료</span>
+        </div>
+        <div style="height: 8px; border-radius: 999px; background: #CEF3E9; overflow: hidden; display: flex;">
+          <div style="width: 100%; background: #00A18E; border-radius: 999px;"></div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 12px;">
+          
+          <div style="flex-grow: 1;"></div>
+          <span style="font-size: 13px; font-weight: 500;">원문 보기</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ 이번 주 ════════════════════════════════════════ -->
+    <div style="border-top-width: 1px; border-top-style: solid; border-top-color: #DAE0E7; padding-top: 24px; display: flex; flex-direction: column; gap: 16px">
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <h2 style="margin: 0; font-size: 16px; line-height: 1.45; font-weight: 700;">이번 주</h2>
+        <div style="flex-grow: 1;"></div>
+        
+      </div>
+
+      <div style="display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px;">
+        <div style="display: flex; align-items: baseline; gap: 6px; padding: 0 10px 4px; font-size: 13px; color: #5E6B69;"><span>월</span><span style="font-weight: 500; color: #182322;">24</span></div>
+        <div style="display: flex; align-items: baseline; gap: 6px; padding: 0 10px 4px; font-size: 13px; color: #5E6B69;"><span>화</span><span style="font-weight: 500; color: #182322;">25</span></div>
+        <div style="display: flex; align-items: baseline; gap: 6px; padding: 0 10px 4px; font-size: 13px; color: #182322;"><span style="font-weight: 700;">수</span><span style="font-weight: 700;">26</span></div>
+        <div style="display: flex; align-items: baseline; gap: 6px; padding: 0 10px 4px; font-size: 13px; color: #5E6B69;"><span>목</span><span style="font-weight: 500; color: #182322;">27</span></div>
+        <div style="display: flex; align-items: baseline; gap: 6px; padding: 0 10px 4px; font-size: 13px; color: #5E6B69;"><span>금</span><span style="font-weight: 500; color: #182322;">28</span></div>
+        <div style="display: flex; align-items: baseline; gap: 6px; padding: 0 10px 4px; font-size: 13px; color: #5E6B69;"><span>토</span><span style="font-weight: 500; color: #182322;">29</span></div>
+        <div style="display: flex; align-items: baseline; gap: 6px; padding: 0 10px 4px; font-size: 13px; color: #5E6B69;"><span>일</span><span style="font-weight: 500; color: #182322;">30</span></div>
+
+        <div style="min-height: 170px; border-radius: 12px; padding: 8px; display: flex; flex-direction: column; gap: 8px;"></div>
+
+        <div style="min-height: 170px; border-radius: 12px; padding: 8px; display: flex; flex-direction: column; gap: 8px;">
+          <div style="background: #FFFFFF; border-radius: 10px; padding: 8px 10px; display: flex; flex-direction: column; gap: 2px;">
+            <span style="font-size: 13px; font-weight: 500;">DB 설계 끝</span>
+            <span style="font-size: 12px; color: #5E6B69;">지훈</span>
+          </div>
+        </div>
+
+        <div style="min-height: 170px; border-radius: 12px; padding: 8px; display: flex; flex-direction: column; gap: 8px; background-color: #00A18E">
+          <div style="background: #FFFFFF; border-radius: 10px; padding: 8px 10px; display: flex; flex-direction: column; gap: 2px;">
+            <span style="font-size: 13px; font-weight: 500;">정기회의</span>
+            <span style="font-size: 12px; color: #5E6B69;">오후 4시, 자동으로 기록해요</span>
+          </div>
+        </div>
+
+        <div style="min-height: 170px; border-radius: 12px; padding: 8px; display: flex; flex-direction: column; gap: 8px;">
+          <div style="border: 1px dashed #BAE8DC; border-radius: 10px; padding: 8px 10px; display: flex; flex-direction: column; gap: 2px;">
+            <span style="font-size: 13px; color: #5E6B69;">API 명세서</span>
+            <span style="font-size: 12px; color: #5E6B69;">원래 마감이었어요</span>
+          </div>
+        </div>
+
+        <div style="min-height: 170px; border-radius: 12px; padding: 8px; display: flex; flex-direction: column; gap: 8px;">
+          <div style="background: #FFFFFF; border-radius: 10px; padding: 8px 10px; display: flex; flex-direction: column; gap: 2px;">
+            <span style="font-size: 13px; font-weight: 500;">DB 스키마</span>
+            <span style="font-size: 12px; color: #5E6B69;">재환</span>
+          </div>
+          <div style="background: #FFFFFF; border-radius: 10px; padding: 8px 10px; display: flex; flex-direction: column; gap: 2px;">
+            <span style="font-size: 13px; font-weight: 500;">카드 컴포넌트</span>
+            <span style="font-size: 12px; color: #5E6B69;">서연</span>
+          </div>
+        </div>
+
+        <div style="min-height: 170px; border-radius: 12px; padding: 8px; display: flex; flex-direction: column; gap: 8px;">
+          <div style="background: #FFFFFF; border-radius: 10px; padding: 8px 10px; display: flex; flex-direction: column; gap: 2px;">
+            <span style="font-size: 13px; font-weight: 500;">발표 준비</span>
+            <span style="font-size: 12px; color: #5E6B69;">서연, 잘게 나눈 일 3개</span>
+          </div>
+          <div style="background: #FFFFFF; border-radius: 10px; padding: 8px 10px; display: flex; flex-direction: column; gap: 2px;">
+            <span style="font-size: 13px; font-weight: 500;">API 명세서</span>
+            <span style="font-size: 12px; color: #5E6B69;">재환, 27일에서 밀렸어요</span>
+          </div>
+        </div>
+
+        <div style="min-height: 170px; border-radius: 12px; padding: 8px; display: flex; flex-direction: column; gap: 8px;"></div>
+      </div>
+    </div>
+
+  </main></div>
+</div>
+</section>
+
+<section class="screen" data-screen="sendapproval" hidden>
+<div style="min-height: 100vh; background: #E6E9EC; display: flex; flex-direction: column; font-family: 'Noto Sans KR', system-ui, 'Apple SD Gothic Neo', Pretendard, sans-serif; color: #1A2026; font-size: 15px; line-height: 1.7; word-break: keep-all; font-variant-numeric: tabular-nums; -webkit-font-smoothing: antialiased;">
+
+  <!-- ── 앱 셸 ───────────────────────────────────────────── -->
+  <header style="height: 56px; background: #E6E9EC; display: flex; align-items: center; padding: 0 24px; gap: 24px">
+    <span style="display: flex; align-items: center; gap: 9px; flex-shrink: 0;">
+      <svg width="24" height="24" viewBox="0 0 100 100" fill="none" stroke-linecap="round" stroke-linejoin="round" style="width: 30px; height: 30px; transform: translate(0px, -3px)"><path d="M19 79 V31 L41 61 L63 31 V79" stroke="#006F5E" stroke-opacity="0.3" stroke-width="14"></path><path d="M8 90 V42 L30 72 L52 42 V90" stroke="#00A18E" stroke-width="14"></path><path d="M86 40 L80 60" stroke="#00A18E" stroke-width="10"></path></svg>
+      
+    </span>
+    <nav style="display: flex; align-items: flex-end; align-self: stretch; gap: 2px;">
+      <span style="align-self: center; display: flex; align-items: center; height: 40px; padding: 0 14px; color: #626971;">대시보드</span>
+      <span style="align-self: center; display: flex; align-items: center; height: 40px; padding: 0 14px; color: #626971;">확인할 일 <span style="margin-left: 5px; color: #AC4500;">3</span></span>
+      
+      <span style="position: relative; display: flex; align-items: center; height: 46px; box-sizing: border-box; padding: 0 14px 10px; background: #FFFFFF; border-radius: 10px 10px 0 0; font-weight: 700; color: #1A2026;"><span style="position: absolute; left: -10px; bottom: 0; width: 10px; height: 10px; background: #FFFFFF;"></span><span style="position: absolute; left: -10px; bottom: 0; width: 10px; height: 10px; background: #E6E9EC; border-bottom-right-radius: 10px;"></span><span style="position: absolute; right: -10px; bottom: 0; width: 10px; height: 10px; background: #FFFFFF;"></span><span style="position: absolute; right: -10px; bottom: 0; width: 10px; height: 10px; background: #E6E9EC; border-bottom-left-radius: 10px;"></span>팀원</span><span style="align-self: center; display: flex; align-items: center; height: 40px; padding: 0 14px; color: #626971;">설정</span>
+    </nav>
+    <div style="flex-grow: 1;"></div>
+    <div style="display: flex; align-items: center; gap: 12px;">
+      <span style="font-size: 13px; color: #626971;">캡스톤 5조</span>
+      <span style="width: 32px; height: 32px; border-radius: 999px; background: #1A2026; color: #FFFFFF; font-size: 12px; font-weight: 500; display: flex; align-items: center; justify-content: center;">지훈</span>
+    </div>
+  </header>
+
+  <!-- 되돌릴 수 없는 결정 하나만 놓는 화면 -->
+  <div style="flex: 1; background: #FFFFFF; border-radius: 14px 14px 0 0;"><main style="max-width: 640px; margin: 0 auto; padding: 56px 24px 80px; display: flex; flex-direction: column; gap: 32px;">
+
+    <div style="display: flex; flex-direction: column; gap: 12px;">
+      <div style="display: flex; align-items: center; gap: 6px; font-size: 13px; color: #676E76;">
+        <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.5 4.5 6 9l4.5 4.5"></path></svg>
+        <span>팀원</span>
+      </div>
+      <h1 style="margin: 0; font-size: 24px; line-height: 1.35; font-weight: 700; letter-spacing: -0.01em;">이 메시지, 보낼까요?</h1>
+      <p style="margin: 0; max-width: 34em; color: #515962;">서연이 이틀 동안 진행 상황 요청에 답이 없어요.<br>발표 준비 마감은 <span style="color: rgb(179, 55, 54); font-weight: 500">3일</span> 남았어요.</p>
+    </div>
+
+    <!-- 누구에게 -->
+    <div style="border-top: 1px solid #DAE0E7; border-bottom: 1px solid #DAE0E7; padding: 18px 0; display: flex; align-items: center; gap: 10px;">
+      <span style="width: 32px; height: 32px; border-radius: 999px; background: #E9EDF2; color: #515962; font-size: 12px; font-weight: 500; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">서연</span>
+      <span style="font-size: 16px; font-weight: 700;">서연</span>
+      <span style="font-size: 13px; color: #676E76;">디자인, 발표 준비 담당</span>
+      <div style="flex-grow: 1;"></div>
+      <span style="font-weight: 500; color: #B33736;">확인 시급</span>
+    </div>
+
+    <!-- 보낼 메시지 -->
+    <div style="background: #FFFFFF; border: 1px solid #DAE0E7; border-radius: 16px; box-shadow: 0 1px 2px rgba(26, 32, 38, 0.05), 0 6px 16px rgba(26, 32, 38, 0.06); padding: 24px; display: flex; flex-direction: column; gap: 20px;">
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <div style="display: flex; gap: 3px; background: #E9EDF2; border-radius: 999px; padding: 3px;">
+          <div style="padding: 5px 14px; border-radius: 999px; font-size: 13px; color: #515962;">단호하게</div>
+          <div style="padding: 5px 14px; border-radius: 999px; background: #FFFFFF; font-size: 13px; font-weight: 500;">부드럽게</div>
+          <div style="padding: 5px 14px; border-radius: 999px; font-size: 13px; color: #515962;">응원하듯</div>
+        </div>
+        <div style="flex-grow: 1;"></div>
+        <span style="font-size: 13px; color: #676E76;">지훈 님 이름으로 가요</span>
+      </div>
+
+      <div style="background: #F1F5F8; border-radius: 12px; padding: 18px 20px;">
+        <p style="margin: 0; line-height: 1.8;">서연아, 발표 준비 마감이 이번 주 토요일이야. 지금 어디까지 됐는지만 알려줄 수 있어? 자료조사부터 막혔으면 같이 나눠서 하자 🙏</p>
+      </div>
+
+      <div style="display: flex; align-items: center; gap: 12px;">
+        
+        <div style="flex-grow: 1;"></div>
+        <span style="font-size: 13px; font-weight: 500;">회의 다시 듣기</span>
+      </div>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 20px;">
+      <div style="display: flex; align-items: center; gap: 8px;">
+        
+        
+      </div>
+
+      <div style="display: flex; align-items: center; gap: 10px; flex-direction: row-reverse">
+        
+        <div style="display: flex; align-items: center; height: 44px; box-sizing: border-box; padding: 0 22px; border-radius: 10px; font-weight: 700; color: #FFFFFF; background-color: #009D8A">보내기</div><div style="display: flex; align-items: center; height: 44px; box-sizing: border-box; padding: 0 20px; background: #FFFFFF; border: 1px solid #DAE0E7; border-radius: 10px;">수정하기</div>
+        <div style="flex-grow: 1;"></div>
+        <div style="display: flex; align-items: center; height: 44px; box-sizing: border-box; padding: 0 14px; color: #676E76;">안 보내기</div>
+      </div>
+    </div>
+
+  </main></div>
+</div>
+</section>
+
+</div></div>
+
+<nav id="ctl" aria-label="디자인 미리보기 화면 이동">
+      <button type="button" data-nav="login">로그인</button>
+      <button type="button" data-nav="signup">회원가입</button>
+      <button type="button" data-nav="connect">디스코드 연결</button>
+      <button type="button" data-nav="selectteam">팀 선택</button>
+      <button type="button" data-nav="dashboard">대시보드</button>
+      <button type="button" data-nav="review">확인할 일</button>
+      <button type="button" data-nav="members">팀원</button>
+      <button type="button" data-nav="sendapproval">메시지 보내기</button>
+      <span class="sep"></span>
+      <button type="button" class="tgl" id="hint" aria-pressed="false">클릭 지점</button>
+</nav>
+
+<dialog id="reset-dialog" aria-labelledby="reset-title"><div class="dialog-heading"><h2 id="reset-title">비밀번호 찾기</h2><button type="button" class="close-dialog" aria-label="닫기">×</button></div><p>가입한 이메일로 비밀번호 재설정 링크를 받아요.</p><form id="reset-form" class="auth-form"><div class="field"><label for="reset-email">이메일</label><input id="reset-email" type="email" autocomplete="email" placeholder="name@example.com" required></div><button type="submit" class="primary-button">재설정 링크 받기 <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14m-5-5 5 5-5 5"/></svg></button></form><p id="reset-status" role="status" hidden>디자인 미리보기에서는 이메일이 발송되지 않아요.</p></dialog>
+<script>
+const WIRING = {"login": [{"text": "로그인", "style": "background: #009D8A", "to": "selectteam"}, {"text": "계정 만들기", "to": "signup"}], "signup": [{"text": "계정 만들기", "style": "background: #009D8A", "to": "connect"}, {"text": "로그인", "to": "login"}], "connect": [{"text": "디스코드 서버에 봇 초대하기", "to": "selectteam"}, {"text": "로그아웃", "to": "login"}], "selectteam": [{"text": "캡스톤 5조", "tile": true, "to": "dashboard"}, {"text": "웹개발 소모임", "tile": true, "to": "dashboard"}, {"text": "알고리즘 스터디", "tile": true, "to": "connect"}, {"text": "졸업프로젝트 A반", "tile": true, "to": "connect"}, {"text": "새 팀 만들기", "tile": true, "to": "connect"}, {"text": "로그아웃", "to": "login"}], "dashboard": [{"text": "대시보드", "style": "padding: 0 14px", "to": "dashboard"}, {"prefix": "확인할 일", "style": "padding: 0 14px", "to": "review"}, {"text": "팀원", "style": "padding: 0 14px", "to": "members"}, {"text": "캡스톤 5조", "style": "font-size: 13px", "to": "selectteam"}, {"text": "확인하기", "to": "review"}, {"text": "초안 보기", "to": "sendapproval"}, {"text": "팀원 보기", "to": "members"}], "review": [{"text": "대시보드", "style": "padding: 0 14px", "to": "dashboard"}, {"prefix": "확인할 일", "style": "padding: 0 14px", "to": "review"}, {"text": "팀원", "style": "padding: 0 14px", "to": "members"}, {"text": "캡스톤 5조", "style": "font-size: 13px", "to": "selectteam"}, {"text": "한번에 추가하기", "to": "dashboard"}], "members": [{"text": "대시보드", "style": "padding: 0 14px", "to": "dashboard"}, {"prefix": "확인할 일", "style": "padding: 0 14px", "to": "review"}, {"text": "팀원", "style": "padding: 0 14px", "to": "members"}, {"text": "캡스톤 5조", "style": "font-size: 13px", "to": "selectteam"}], "sendapproval": [{"text": "대시보드", "style": "padding: 0 14px", "to": "dashboard"}, {"prefix": "확인할 일", "style": "padding: 0 14px", "to": "review"}, {"text": "팀원", "style": "padding: 0 14px", "to": "members"}, {"text": "캡스톤 5조", "style": "font-size: 13px", "to": "selectteam"}, {"text": "팀원", "style": "color: #676E76", "to": "members"}, {"text": "보내기", "to": "dashboard"}, {"text": "안 보내기", "to": "dashboard"}]};
+const ORDER = ["login", "signup", "connect", "selectteam", "dashboard", "review", "members", "sendapproval"];
+
+
+delete WIRING.login;
+delete WIRING.signup;
+delete WIRING.connect;
+delete WIRING.selectteam;
+const screens = new Map([...document.querySelectorAll('.screen')].map(s => [s.dataset.screen, s]));
+const pageTitles = { login: '로그인', signup: '회원가입', connect: '디스코드 연결', selectteam: '팀 선택', dashboard: '대시보드', review: '확인할 일', members: '팀원', sendapproval: '메시지 보내기' };
+function innermost(root, pred) {
+  const hit = [...root.querySelectorAll('*')].filter(pred);
+  return hit.filter(el => ![...el.children].some(c => pred(c)));
+}
+function tileOf(el) {
+  let n = el;
+  while (n && n !== document.body && !(n.style && n.style.aspectRatio)) n = n.parentElement;
+  return n && n.style && n.style.aspectRatio ? n : el;
+}
+function wire() {
+  for (const [sid, rules] of Object.entries(WIRING)) {
+    const root = screens.get(sid);
+    if (!root) continue;
+    for (const r of rules) {
+      const pred = el => {
+        const t = el.textContent.trim();
+        if (r.text !== undefined && t !== r.text) return false;
+        if (r.prefix !== undefined && !t.startsWith(r.prefix)) return false;
+        if (r.style && !(el.getAttribute('style') || '').includes(r.style)) return false;
+        return true;
+      };
+      let hits = innermost(root, pred);
+      if (r.tile) hits = hits.map(tileOf);
+      for (const el of hits) {
+        el.dataset.p = r.to;
+        el.setAttribute('tabindex', '0');
+        el.setAttribute('role', 'link');
+      }
+    }
+  }
+}
+function show(sid, push = true, moveFocus = true) {
+  if (!screens.has(sid)) sid = ORDER[0];
+  for (const [id, el] of screens) el.hidden = id !== sid;
+  document.body.dataset.view = sid;
+  document.title = pageTitles[sid] + ' · 매니저스 매니저';
+  for (const button of document.querySelectorAll('#ctl [data-nav]')) {
+    button.setAttribute('aria-current', String(button.dataset.nav === sid));
+  }
+  if (push && location.hash.slice(1) !== sid) history.pushState(null, '', '#' + sid);
+  if (moveFocus) {
+    const heading = screens.get(sid).querySelector('h1');
+    heading?.setAttribute('tabindex', '-1');
+    heading?.focus({ preventScroll: true });
+  }
+  document.getElementById('fit').scrollTo({ top: 0, behavior: 'instant' });
+}
+document.addEventListener('click', e => {
+  const target = e.target.closest('[data-p]');
+  if (!target || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+  e.preventDefault();
+  show(target.dataset.p);
+});
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  const target = e.target.closest('[data-p]');
+  if (!target || target.matches('a, button, input, select, textarea')) return;
+  e.preventDefault();
+  show(target.dataset.p);
+});
+for (const button of document.querySelectorAll('#ctl [data-nav]')) button.addEventListener('click', () => show(button.dataset.nav));
+document.getElementById('hint').addEventListener('click', e => {
+  const on = document.body.classList.toggle('hint');
+  e.currentTarget.setAttribute('aria-pressed', String(on));
+});
+for (const button of document.querySelectorAll('[data-password]')) {
+  button.addEventListener('click', () => {
+    const input = document.getElementById(button.dataset.password);
+    const visible = input.type === 'password';
+    input.type = visible ? 'text' : 'password';
+    button.setAttribute('aria-pressed', String(visible));
+    button.setAttribute('aria-label', visible ? '비밀번호 숨기기' : '비밀번호 보기');
+  });
+}
+// These forms demonstrate the original prototype flow locally. No account request,
+// password storage, email delivery, or Discord authorization is performed.
+for (const form of document.querySelectorAll('.auth-form[data-next]')) {
+  form.addEventListener('submit', e => {
+    e.preventDefault();
+    if (!form.reportValidity()) return;
+    show(form.dataset.next);
+    form.reset();
+    for (const button of form.querySelectorAll('[data-password]')) {
+      document.getElementById(button.dataset.password).type = 'password';
+      button.setAttribute('aria-pressed', 'false');
+      button.setAttribute('aria-label', '비밀번호 보기');
+    }
+  });
+}
+const signupPassword = document.getElementById('signup-password');
+signupPassword.addEventListener('input', () => {
+  signupPassword.setCustomValidity(signupPassword.value && !/^(?=.*[0-9]).{8,}$/.test(signupPassword.value) ? '비밀번호는 8자 이상이며 숫자를 하나 이상 포함해야 해요.' : '');
+});
+const resetDialog = document.getElementById('reset-dialog');
+for (const button of document.querySelectorAll('.reset-trigger')) button.addEventListener('click', () => {
+  document.getElementById('reset-status').hidden = true;
+  document.getElementById('reset-form').reset();
+  resetDialog.showModal();
+});
+document.querySelector('.close-dialog').addEventListener('click', () => resetDialog.close());
+document.getElementById('reset-form').addEventListener('submit', e => {
+  e.preventDefault();
+  document.getElementById('reset-status').hidden = false;
+});
+for (const grid of document.querySelectorAll('.screen:not(.auth-screen) div[style*="grid-template-columns: repeat(7"]')) {
+  grid.classList.add('calendar-grid');
+  grid.parentElement.classList.add('calendar-scroll');
+}
+window.addEventListener('hashchange', () => show(location.hash.slice(1), false));
+window.addEventListener('popstate', () => show(location.hash.slice(1), false));
+wire();
+show(location.hash.slice(1) || ORDER[0], false, false);
+</script>
+</body>
+</html>
