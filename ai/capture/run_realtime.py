@@ -11,7 +11,7 @@ capture/discord_adapter.py 의 required_intents() 가 요구하는 MESSAGE CONTE
 
 실행 (ai/ 디렉토리 안에서):  python capture/run_realtime.py
 
-아래 절차는 아직 실제 서버에서 끝까지 돌려 보지 않았다. 어디서 막히는지는 /selftest 가
+아래 절차는 실제 서버에서 끝까지 돌려 확인했다 (2026-09-12). 어디서 막히는지는 /selftest 가
 단계별로 알려 준다.
 
 한 번만 하는 준비
