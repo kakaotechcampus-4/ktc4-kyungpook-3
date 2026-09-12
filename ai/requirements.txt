@@ -1,8 +1,8 @@
 # ── Phase 0: 캡처(Discord) + STT ─────────────────────────────────────────────
 # Discord 음성 "수신"(녹음)은 2026-03-01 부터 DAVE(E2EE) 필수.
-#   py-cord 2.8.x 는 DAVE 송신만 지원 → 녹음 불가. PR #3159(2.9.0rc1 예정)만 수신 가능.
-#   2.9.0rc1 이 PyPI 에 올라오면  py-cord[voice]>=2.9.0rc1  로 바꾸세요.
-py-cord[voice] @ git+https://github.com/Pycord-Development/pycord@refs/pull/3159/head
+#   py-cord 2.8.x 는 start_recording 이 "reception is broken" 경고를 내고 수신이 안 된다.
+#   PR #3159 만 수신 가능. 2026-08-29 잠김, 충돌 미해결, 릴리스 일정 없음. 이 커밋에 고정한다.
+py-cord[voice] @ git+https://github.com/Pycord-Development/pycord@10a5e8cf13bd8db21f95baf62cf866056d1e1091
 faster-whisper>=1.0
 jiwer>=3.0            # WER/CER (ai/stt/eval)
 numpy>=1.26           # 오디오 배열 (capture/audio.py)
