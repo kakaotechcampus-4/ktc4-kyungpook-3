@@ -198,14 +198,27 @@ class Session:
                 self._final_q.task_done()
 
     def _transcribe_final(self, u: Utterance) -> str:
+        """실패하면 재시도한다. 재시도는 반드시 로그로 남긴다.
+
+        전에는 조용히 세 번 시도했다. 그러면 transcribe_s 가 20초로 찍혔을 때 백엔드가
+        느린 건지 두 번 실패하고 세 번째에 성공한 건지 가를 수 없다. 실제로 그 상황에서
+        원인을 못 좁힌 적이 있다. 대기 시간도 같이 적는다 — 재시도 사이 sleep 이
+        transcribe_s 에 그대로 들어가기 때문이다.
+        """
         for attempt in range(self.retries):
             try:
                 return self.final_stt.transcribe(u.pcm, u.sample_rate).text
-            except Exception:
+            except Exception as e:
+                tag = f"{u.speaker_id}#{u.seq}"
                 if attempt == self.retries - 1:
                     # 발화를 버리지 않는다. 오디오는 트랙에 남아 있으니 나중에 다시 돌릴 수 있다.
+                    print(f"[stt] 포기 {tag} · {attempt + 1}/{self.retries}회 실패 "
+                          f"· {type(e).__name__}: {e}", flush=True)
                     return "[전사 실패]"
-                time.sleep(0.5 * (attempt + 1))
+                wait = 0.5 * (attempt + 1)
+                print(f"[stt] 재시도 {tag} · {attempt + 1}/{self.retries} 실패 "
+                      f"· {type(e).__name__}: {e} · {wait:.1f}초 뒤 다시", flush=True)
+                time.sleep(wait)
         return "[전사 실패]"
 
     def _emit(self, u: Utterance, turn_id: str, text: str,

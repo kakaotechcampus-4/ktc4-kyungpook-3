@@ -345,3 +345,54 @@ def test_close_stops_the_sweeper():
                 now_ms=lambda: clock["ms"], sweep_interval_s=0.02)
     s.close()
     assert _wait_for(lambda: not s.sweeper_alive), "청소 스레드가 안 멈췄다"
+
+
+def test_retries_are_logged(capsys):
+    """재시도가 조용하면 "전사가 20초 걸렸다" 를 API 탓인지 재시도 탓인지 못 가른다.
+
+    실제로 한 회의에서 transcribe_s 가 20.34초로 찍혔는데, 백엔드가 느린 건지 두 번
+    실패하고 세 번째에 성공한 건지 로그가 없어 판단할 수 없었다.
+    """
+
+    class FlakyStt:
+        name = "flaky"
+
+        def __init__(self):
+            self.calls = 0
+
+        def transcribe(self, samples, sample_rate):
+            self.calls += 1
+            if self.calls < 3:
+                raise RuntimeError("일시 오류")
+            return SttResult(text="세 번째에 성공", words=[])
+
+    stt = FlakyStt()
+    lines = []
+    s = Session(final_stt=stt, on_line=lines.append, workers=1)
+    feed_packets(s, "kim", "김환", tone(1_000), 0)
+    s.close()
+
+    assert [ln.text for ln in lines] == ["세 번째에 성공"]
+    assert stt.calls == 3
+    out = capsys.readouterr().out
+    assert out.count("[stt] 재시도") == 2      # 1회차·2회차 실패
+    assert "RuntimeError" in out
+
+
+def test_giving_up_after_retries_is_logged(capsys):
+    """전부 실패하면 회의록에 [전사 실패] 만 남는다. 왜 실패했는지는 로그에만 있다."""
+
+    class DeadStt:
+        name = "dead"
+
+        def transcribe(self, samples, sample_rate):
+            raise RuntimeError("계속 실패")
+
+    lines = []
+    s = Session(final_stt=DeadStt(), on_line=lines.append, workers=1, retries=2)
+    feed_packets(s, "kim", "김환", tone(1_000), 0)
+    s.close()
+
+    assert [ln.text for ln in lines] == ["[전사 실패]"]
+    out = capsys.readouterr().out
+    assert "[stt] 포기" in out and "RuntimeError" in out

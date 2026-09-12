@@ -1,6 +1,7 @@
 import asyncio
 import json
 import threading
+import time
 
 import discord
 import numpy as np
@@ -280,7 +281,7 @@ def _no_speech(pcm, sample_rate, threshold):
 
 
 async def _start_one(tmp_path, monkeypatch, sessions_made=None, on_session_saved=None,
-                     speech_spans=_all_speech):
+                     speech_spans=_all_speech, stt=None):
     """/live 한 번을 끝까지 돌리고 (cog, ctx, meeting, text_channel, vc) 를 준다.
 
     말 필터는 켠 채로 두되 판정만 갈아 끼운다. 여기서 흘리는 정현파는 실로가 말이
@@ -290,7 +291,7 @@ async def _start_one(tmp_path, monkeypatch, sessions_made=None, on_session_saved
     def _stt_factory():
         if sessions_made is not None:
             sessions_made.append(1)
-        return _FakeStt()
+        return stt if stt is not None else _FakeStt()
 
     monkeypatch.setattr(adapter, "EliceStt", _stt_factory)
     monkeypatch.setattr(adapter, "SpeechGate", lambda: SpeechGate(speech_spans=speech_spans))
@@ -1065,3 +1066,85 @@ async def test_sink_and_session_share_one_meeting_clock(tmp_path, monkeypatch):
         assert meeting.session.sweeper_alive
     finally:
         await cog._finish_meeting(GUILD_ID)
+
+
+class _SlowStt:
+    """전사가 느린 백엔드. Elice 가 실제로 20초 넘게 걸린 적이 있다."""
+
+    name = "slow"
+
+    def __init__(self, delay_s: float):
+        self.delay_s = delay_s
+
+    def transcribe(self, samples, sample_rate):
+        time.sleep(self.delay_s)
+        return SttResult(text="느린 전사", words=[])
+
+
+async def test_finish_waits_on_the_module_budget_not_a_hardcoded_ten(tmp_path, monkeypatch):
+    """마감 대기가 코드에 박혀 있으면 Elice 꼬리가 길어질 때 고칠 자리가 없다.
+
+    실측에서 같은 0.96초 클립이 2.62초와 20.58초로 갈렸다. 10초로는 꼬리에 걸린 줄이
+    마감 뒤에 도착해 회의록에서 빠진다. 예산을 상수로 빼서 한 곳에서 조정한다.
+    """
+    seen = []
+    real_close = adapter.Session.close
+
+    def spy(self, timeout_s=10.0):
+        seen.append(timeout_s)
+        return real_close(self, timeout_s)
+
+    monkeypatch.setattr(adapter.Session, "close", spy)
+    cog, _ctx, _meeting, _text, _vc = await _start_one(tmp_path, monkeypatch)
+    await cog._finish_meeting(GUILD_ID)
+
+    assert seen == [adapter.FINISH_WAIT_S]
+    assert adapter.FINISH_WAIT_S >= 30.0    # 관측한 꼬리가 22.57초였다
+
+
+async def test_a_transcription_slower_than_ten_seconds_still_reaches_the_file(
+    tmp_path, monkeypatch
+):
+    """예산 안에서 끝나면 늦어도 회의록에 들어간다. 예산이 짧으면 통째로 사라진다."""
+    monkeypatch.setattr(adapter, "FINISH_WAIT_S", 5.0)
+    cog, _ctx, meeting, _text, _vc = await _start_one(
+        tmp_path, monkeypatch, stt=_SlowStt(0.6)
+    )
+    replay([ReplayTrack(user_id=7, name="김환", samples=_tone(1_200), ssrc=70)], meeting.sink.write)
+    meeting.sink.cleanup()
+    await cog._finish_meeting(GUILD_ID)
+
+    jsonl = meeting.out_dir / "transcript.jsonl"
+    records = [json.loads(x) for x in jsonl.read_text(encoding="utf-8").splitlines()]
+    assert [r["text"] for r in records] == ["느린 전사"]
+    assert meeting.ledger.late == 0
+
+
+async def test_the_summary_says_when_lines_arrived_after_the_deadline(tmp_path, monkeypatch):
+    """마감 뒤에 온 줄은 지금 터미널에만 찍힌다. 회의실에서는 아무 표시가 없다.
+
+    실제로 발화 3건 중 2건을 이렇게 잃은 회의가 있었고, 요약은 "발화 1건" 만 말했다.
+    쓴 사람이 잃은 줄이 있다는 것을 알 방법이 없으면 다시 말해 달라고 할 수도 없다.
+    """
+    monkeypatch.setattr(adapter, "FINISH_WAIT_S", 0.05)
+    cog, _ctx, meeting, text, _vc = await _start_one(
+        tmp_path, monkeypatch, stt=_SlowStt(0.8)
+    )
+    replay([ReplayTrack(user_id=7, name="김환", samples=_tone(1_200), ssrc=70)], meeting.sink.write)
+    meeting.sink.cleanup()
+    await cog._finish_meeting(GUILD_ID)
+
+    # 마감이 먼저 끝나고 줄이 뒤따라온다. 그 줄이 도착할 때까지 기다렸다가 요약을 본다.
+    deadline = time.monotonic() + 5.0
+    while meeting.ledger.late == 0 and time.monotonic() < deadline:
+        await asyncio.sleep(0.02)
+    assert meeting.ledger.late == 1
+
+    # 요약이 나간 뒤에 도착할 수도 있으므로 채널 전체에서 찾는다. 어느 쪽이든
+    # 회의실에 있는 사람이 "줄이 빠졌다" 를 볼 수 있어야 한다.
+    deadline = time.monotonic() + 5.0
+    while not any("마감 뒤 도착" in m for m in text.sent) and time.monotonic() < deadline:
+        await asyncio.sleep(0.02)
+    late_msgs = [m for m in text.sent if "마감 뒤 도착" in m]
+    assert late_msgs, text.sent
+    assert "느린 전사" in late_msgs[0]      # 전사된 내용까지 보여 준다
