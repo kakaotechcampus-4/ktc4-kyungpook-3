@@ -106,6 +106,30 @@ class StreamingVAD:
                 out.append(done)
         return out
 
+    def sweep(self, now_ms: int) -> Utterance | None:
+        """마지막으로 받은 오디오 뒤로 흐른 시간을 침묵으로 세고, 한도를 넘으면 닫는다.
+
+        `_on_gap` 은 뒤에 온 패킷이 공백을 알려 줄 때만 불린다. 디스코드는 사람이 말을
+        멈추면 패킷을 아예 끊으므로, 그 화자가 다시 말할 때까지 발화가 열린 채로 남는다.
+        회의가 끝날 때 `flush()` 가 닫아 주니 회의록에서 빠지지는 않지만, 회의 중에 줄이
+        화면에 안 뜬다. 이 함수를 주기적으로 불러 그 자리를 메운다.
+
+        한도를 넘길 때만 `_silence_ms` 를 적립한다. 미달인데 적립해 두면 뒤에 온 패킷의
+        `_on_gap` 이 같은 구간을 한 번 더 세서 발화가 일찍 닫힌다.
+
+        now_ms 는 sink 가 쓰는 것과 같은 회의 시계여야 한다. 리플레이처럼 오디오를 순간
+        주입하는 경로에서는 주기적으로 부르지 않는다. 값 자체는 맞지만 실제 시간 기준으로
+        도는 청소가 몇 번 걸리느냐가 기기 속도에 달려서 같은 입력이 실행마다 다른 발화 수를
+        낸다.
+        """
+        if not self._speaking:
+            return None
+        idle_ms = now_ms - self._buf_end_ms
+        if idle_ms <= 0 or self._silence_ms + idle_ms < SILENCE_HOLD_MS:
+            return None
+        self._silence_ms += idle_ms
+        return self._close()
+
     def _on_gap(self, gap_ms: int) -> Utterance | None:
         if not self._speaking:
             return None

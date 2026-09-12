@@ -293,3 +293,55 @@ def test_queue_time_stays_near_zero_when_workers_keep_up():
     assert len(finals) == 3
     assert all(ln.transcribe_s >= delay for ln in finals)
     assert all(ln.queue_s < 0.1 for ln in finals)
+
+
+def _wait_for(pred, timeout_s=3.0):
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        if pred():
+            return True
+        time.sleep(0.01)
+    return False
+
+
+def test_sweeper_emits_a_line_while_the_meeting_is_still_running():
+    """말을 멈추면 디스코드가 패킷을 끊는다. 그래도 줄은 회의 중에 나와야 한다.
+
+    close() 가 마지막에 다 닫아 주므로 회의록에서 빠지지는 않는다. 문제는 회의가
+    도는 동안 화면에 안 뜨는 것이라, close() 를 부르기 **전에** 나오는지를 본다.
+    """
+    from stt.vad import SILENCE_HOLD_MS
+
+    clock = {"ms": 0}
+    lines = []
+    s = Session(final_stt=FakeStt("안녕하세요"), on_line=lines.append, workers=1,
+                now_ms=lambda: clock["ms"], sweep_interval_s=0.02)
+    try:
+        feed_packets(s, "kim", "김환", tone(1_000), 0)
+        assert lines == []                       # 아직 열려 있다
+        clock["ms"] = 1_000 + SILENCE_HOLD_MS    # 패킷 없이 시간만 흐른다
+        assert _wait_for(lambda: len(lines) == 1), "청소가 발화를 닫지 않았다"
+    finally:
+        s.close()
+
+    assert lines[0].text == "안녕하세요"
+    assert lines[0].speaker_name == "김환"
+
+
+def test_no_sweeper_without_a_clock():
+    """now_ms 를 안 주면 청소 스레드를 띄우지 않는다. 가상 시계 경로의 기존 동작 그대로."""
+    s = Session(final_stt=FakeStt(), on_line=lambda ln: None, workers=1)
+    before = threading.active_count()
+    feed_packets(s, "kim", "김환", tone(1_000), 0)
+    time.sleep(0.1)
+    assert threading.active_count() == before
+    s.close()
+
+
+def test_close_stops_the_sweeper():
+    """데몬이라 프로세스는 안 막지만, 남으면 다음 회의의 VAD 를 남의 시계로 훑는다."""
+    clock = {"ms": 0}
+    s = Session(final_stt=FakeStt(), on_line=lambda ln: None, workers=1,
+                now_ms=lambda: clock["ms"], sweep_interval_s=0.02)
+    s.close()
+    assert _wait_for(lambda: not s.sweeper_alive), "청소 스레드가 안 멈췄다"

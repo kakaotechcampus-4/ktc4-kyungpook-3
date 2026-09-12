@@ -188,9 +188,28 @@ def main(argv: list[str] | None = None) -> None:
             wall.append(now)
             lag.append(now - line.end_ms / 1000)
 
-    session = Session(final_stt=stt, on_line=on_line, workers=args.workers, gate=gate)
-    clock = {"now_ms": 0}
-    sink = StreamingSink(session, now_ms=lambda: clock["now_ms"])
+    # 페이싱을 켜면 실제 봇과 같은 단조 시계를 쓰고 침묵 청소도 같이 돈다. 끄면 오디오가
+    # 순간 주입되므로 청소를 붙이지 않는다 — 값은 맞지만 몇 번 걸리느냐가 기기 속도에
+    # 달려 같은 입력이 실행마다 다른 발화 수를 낸다. 대신 페이싱을 끈 실행은 발화가
+    # 실제보다 길게 뭉친다. 수치를 볼 때는 --pace 쪽을 본다.
+    if args.pace:
+        t0 = time.monotonic()
+
+        def now_ms() -> int:
+            return int((time.monotonic() - t0) * 1000)
+
+        clock = None
+    else:
+        virtual = {"now_ms": 0}
+
+        def now_ms() -> int:
+            return virtual["now_ms"]
+
+        clock = virtual
+
+    session = Session(final_stt=stt, on_line=on_line, workers=args.workers, gate=gate,
+                      now_ms=now_ms if args.pace else None)
+    sink = StreamingSink(session, now_ms=now_ms)
 
     replay(tracks, sink.write, clock=clock, pace=args.pace)
     sink.drain()

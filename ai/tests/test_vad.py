@@ -125,3 +125,41 @@ def test_pending_ms_reports_in_flight_speech():
     assert v.pending_ms >= 1_500
     # 진행 중일 때는 발화 시작 시각을 보고한다
     assert v.pending_start_ms == pytest.approx(5_000, abs=2 * FRAME_MS)
+
+
+def test_sweep_closes_an_utterance_when_packets_stop():
+    """디스코드는 말을 멈추면 패킷을 끊는다. 다음 패킷을 기다리면 그때까지 안 닫힌다.
+
+    _on_gap 은 뒤에 온 패킷이 공백을 알려 줄 때만 불린다. 그 화자가 다시 말하지 않으면
+    발화가 열린 채로 남아 회의 중 화면에 안 뜬다. sweep 은 벽시계 쪽에서 그 자리를 메운다.
+    """
+    v = vad()
+    assert feed_packets(v, tone(1_000), 0) == []      # 아직 말하는 중
+    assert v.pending_ms > 0
+
+    assert v.sweep(1_000 + SILENCE_HOLD_MS - FRAME_MS) is None   # 한도 직전
+    u = v.sweep(1_000 + SILENCE_HOLD_MS)                         # 한도
+    assert u is not None
+    assert u.start_ms == 0
+    assert u.end_ms <= 1_000          # 끝은 마지막으로 말이 있던 프레임이다
+    assert v.pending_ms == 0
+
+
+def test_sweep_is_quiet_when_nothing_is_open():
+    """열린 발화가 없으면 아무 일도 하지 않는다. 주기적으로 불리는 함수라 조용해야 한다."""
+    v = vad()
+    assert v.sweep(10_000) is None
+    feed_packets(v, tone(1_000), 0)
+    v.sweep(1_000 + SILENCE_HOLD_MS)
+    assert v.sweep(50_000) is None       # 이미 닫힌 뒤
+
+
+def test_sweep_does_not_double_count_a_later_gap():
+    """한도에 못 미친 sweep 이 침묵을 적립해 두면 뒤에 온 패킷의 _on_gap 이 이중으로 센다."""
+    v = vad()
+    feed_packets(v, tone(1_000), 0)
+    half = SILENCE_HOLD_MS // 2
+    assert v.sweep(1_000 + half) is None          # 한도 미달
+    # 한도의 절반만 더 흐른 시점에 패킷이 오면 아직 닫히면 안 된다.
+    out = feed_packets(v, tone(200), 1_000 + half + FRAME_MS)
+    assert out == []

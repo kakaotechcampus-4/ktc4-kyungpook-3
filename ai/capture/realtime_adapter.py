@@ -462,11 +462,20 @@ class RealtimeCog(discord.Cog):
             ledger.lines.append(line)
             publisher.submit(line)
 
+        # 회의 시계를 여기서 만들어 sink 와 session 이 같은 것을 본다. sink 는 패킷 위치를
+        # 잡는 데 쓰고 session 은 침묵을 세는 데 쓴다. 둘이 다른 시계를 보면 청소가 진행
+        # 중인 발화를 끊거나 영영 안 닫는다.
+        t0 = time.monotonic()
+
+        def now_ms() -> int:
+            return int((time.monotonic() - t0) * 1000)
+
         # 게이트는 여기서 고른다. 백엔드를 고르는 자리와 같다 — stt/session.py 는
         # 게이트를 받지 못하면 예전처럼 전부 전사한다.
-        session = Session(final_stt=EliceStt(), on_line=on_line, gate=SpeechGate())
+        session = Session(final_stt=EliceStt(), on_line=on_line, gate=SpeechGate(),
+                          now_ms=now_ms)
         pool = _TrackPool(out_dir, ts)
-        sink = StreamingSink(session, on_samples=pool.submit)
+        sink = StreamingSink(session, now_ms=now_ms, on_samples=pool.submit)
         publisher_task = asyncio.create_task(publisher.run())
 
         try:

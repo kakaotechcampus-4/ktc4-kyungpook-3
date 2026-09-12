@@ -1050,3 +1050,18 @@ async def test_both_cogs_fit_on_one_bot():
     assert names == ["end", "join", "leave", "live", "live-join", "live-stop", "record",
                      "selftest", "stop"]
     assert len(names) == len(set(names))
+
+
+async def test_sink_and_session_share_one_meeting_clock(tmp_path, monkeypatch):
+    """둘이 다른 시계를 보면 침묵 청소가 조용히 어긋난다.
+
+    sink 는 패킷 위치를 잡는 데, session 은 침묵을 세는 데 같은 값을 쓴다. session 쪽
+    시계가 앞서면 진행 중인 발화를 끊고, 뒤처지면 영영 안 닫아 이 회의가 고치기 전으로
+    돌아간다. 어느 쪽도 예외를 내지 않아서 배선이 끊긴 것을 알 방법이 없다.
+    """
+    cog, _ctx, meeting, _text, _vc = await _start_one(tmp_path, monkeypatch)
+    try:
+        assert meeting.sink.now_ms is meeting.session._now_ms
+        assert meeting.session.sweeper_alive
+    finally:
+        await cog._finish_meeting(GUILD_ID)
