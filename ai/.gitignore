@@ -1,0 +1,19 @@
+.env
+.venv/
+__pycache__/
+.pytest_cache/
+# 회의 녹음은 팀원 목소리다. 회의별 하위 디렉토리까지 통째로 제외한다
+# (recordings/*.wav 는 평면 파일만 걸러서 recordings/<회의>/x.wav 가 새어 나갔다)
+recordings/*
+!recordings/.gitkeep
+transcripts/*.txt
+transcripts/*.json
+data/*.json
+runs/
+eval_report.md
+timing_summary.md
+implementation_*.md
+
+# 화자가 실제로 읽은/말한 스크립트 원문 — 팀원 발화 내용이라 커밋 안 함 (README만 예외)
+stt/eval/ground_truth/*
+!stt/eval/ground_truth/README.md
