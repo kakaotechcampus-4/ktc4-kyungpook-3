@@ -1,4 +1,4 @@
-"""텍스트 임베딩 + 유사도 검색. Google Gemini 무료 티어 임베딩 모델만 사용합니다.
+"""텍스트 임베딩 + 유사도 검색. Elice MLAPI(OpenAI 호환) 의 text-embedding-3-small 만 사용합니다.
 
 원칙 (ai/llm.py 와 동일)
   - API 키가 없거나 호출이 실패하면 None/빈 리스트를 반환합니다. 호출자는 이걸 "검색 결과 없음"으로
@@ -18,7 +18,7 @@ from typing import Any, Protocol
 
 from shared.config import settings
 
-ALLOWED_EMBEDDING_MODELS = ("text-embedding-004",)
+ALLOWED_EMBEDDING_MODELS = ("text-embedding-3-small",)
 
 
 class EmbedderClient(Protocol):
@@ -52,23 +52,25 @@ class FakeEmbedder:
         return self.vectors.pop(0)
 
 
-class GeminiEmbedder:
-    name = "gemini"
+class MLAPIEmbedder:
+    """Elice MLAPI(OpenAI 호환 SDK) 임베딩 클라이언트."""
 
-    def __init__(self, api_key: str, model: str = "text-embedding-004"):
+    name = "mlapi"
+
+    def __init__(self, api_key: str, base_url: str, model: str = "text-embedding-3-small"):
         if model not in ALLOWED_EMBEDDING_MODELS:
-            raise ValueError(f"허용되지 않은 임베딩 모델: {model}. 무료 티어 모델만 사용: {ALLOWED_EMBEDDING_MODELS}")
-        from google import genai  # 지연 import: 설치 안 돼 있어도 나머지 모듈은 동작
+            raise ValueError(f"허용되지 않은 임베딩 모델: {model}. 사용 가능: {ALLOWED_EMBEDDING_MODELS}")
+        from openai import OpenAI  # 지연 import: 설치 안 돼 있어도 나머지 모듈은 동작
 
-        self._client = genai.Client(api_key=api_key)
+        self._client = OpenAI(base_url=base_url, api_key=api_key)
         self.model = model
         self.calls = 0
 
     def embed(self, text: str) -> list[float] | None:
         try:
             self.calls += 1
-            resp = self._client.models.embed_content(model=self.model, contents=text)
-            return list(resp.embeddings[0].values)
+            resp = self._client.embeddings.create(model=self.model, input=text)
+            return list(resp.data[0].embedding)
         except Exception as e:
             print(f"[embedding] {self.model} 호출 실패: {str(e)[:120]}", file=sys.stderr)
             return None
@@ -80,19 +82,19 @@ _cached: EmbedderClient | None = None
 def get_embedder(force: str | None = None) -> EmbedderClient:
     """설정에 따라 임베딩 클라이언트를 돌려줍니다.
 
-    force: "off" | "gemini" | None(설정값 따름). GEMINI_API_KEY 가 없으면 항상 NullEmbedder.
+    force: "off" | None(설정값 따름). EMBEDDING_API_KEY 가 없으면 항상 NullEmbedder.
     """
     global _cached
     if force is None and _cached is not None:
         return _cached
     s = settings()
-    mode = force or ("gemini" if s.gemini_api_key else "off")
+    mode = force or ("mlapi" if s.embedding_api_key else "off")
     client: EmbedderClient
-    if mode == "gemini" and s.gemini_api_key:
+    if mode == "mlapi" and s.embedding_api_key:
         try:
-            client = GeminiEmbedder(s.gemini_api_key)
+            client = MLAPIEmbedder(s.embedding_api_key, s.embedding_base_url)
         except ImportError:
-            print("[embedding] google-genai 미설치 → 검색 결과 없음으로 폴백 (pip install google-genai)", file=sys.stderr)
+            print("[embedding] openai 미설치 → 검색 결과 없음으로 폴백 (pip install openai)", file=sys.stderr)
             client = NullEmbedder()
     else:
         client = NullEmbedder()
