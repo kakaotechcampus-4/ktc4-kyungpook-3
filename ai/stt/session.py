@@ -92,6 +92,10 @@ class Session:
         # 청소가 몇 번 걸리느냐가 기기 속도에 달려 같은 입력이 실행마다 다른 결과를 낸다.
         self._now_ms = now_ms
         self.sweep_interval_s = sweep_interval_s
+        # 청소 직전에 같은 시계 값으로 부르는 훅. 어댑터가 sink.tick 을 건다 — 재정렬
+        # 창에 갇힌 오디오를 VAD 가 보기 전에 청소가 돌면 발화가 일찍 닫힌다. 훅이 화자별
+        # 마지막 도착 시각(dict)을 돌려주면 청소가 그것을 같이 본다.
+        self.before_sweep = None
         self._sweeper = None
         if now_ms is not None:
             self._sweeper = threading.Thread(target=self._sweep_loop, daemon=True)
@@ -119,16 +123,18 @@ class Session:
             ready = self._assign_locked(vad.flush() if vad else [])
         self._enqueue(ready)
 
-    def sweep(self, now_ms: int) -> None:
+    def sweep(self, now_ms: int, last_seen: dict[str, int] | None = None) -> None:
         """패킷이 끊긴 채로 침묵 한도를 넘긴 발화를 닫는다.
 
         VAD 는 다음 패킷이 와야 공백을 안다. 디스코드는 말을 멈추면 패킷을 끊으므로,
         그 화자가 다시 말할 때까지 마지막 발화가 열린 채로 남아 회의 중 화면에 안 뜬다.
+        last_seen 은 화자별 마지막 패킷 도착 시각. sink 창에 갇힌 패킷까지 센 값이다.
         """
+        last_seen = last_seen or {}
         with self._lock:
             done = []
-            for v in self._vads.values():
-                u = v.sweep(now_ms)
+            for sid, v in self._vads.items():
+                u = v.sweep(now_ms, last_seen.get(sid))
                 if u is not None:
                     done.append(u)
             ready = self._assign_locked(done)
@@ -138,7 +144,9 @@ class Session:
         # wait() 는 _stop 이 서면 즉시 깨므로 close() 가 이 간격만큼 기다리지 않는다.
         while not self._stop.wait(self.sweep_interval_s):
             try:
-                self.sweep(self._now_ms())
+                now = self._now_ms()
+                seen = self.before_sweep(now) if self.before_sweep is not None else None
+                self.sweep(now, seen)
             except Exception as e:
                 # 여기서 예외가 새면 청소가 조용히 멈추고 증상은 "줄이 늦게 뜬다" 뿐이다.
                 print(f"[session] 청소 예외: {type(e).__name__}: {e}", flush=True)

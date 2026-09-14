@@ -210,6 +210,8 @@ def main(argv: list[str] | None = None) -> None:
     session = Session(final_stt=stt, on_line=on_line, workers=args.workers, gate=gate,
                       now_ms=now_ms if args.pace else None)
     sink = StreamingSink(session, now_ms=now_ms)
+    if args.pace:
+        session.before_sweep = sink.tick   # 실제 봇과 같은 배선
 
     replay(tracks, sink.write, clock=clock, pace=args.pace)
     sink.drain()

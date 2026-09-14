@@ -30,6 +30,14 @@ from capture.timeline import Reorderer, is_noise_packet
 GAP_MS = 60  # 20ms 패킷 세 개. 이보다 벌어지면 화자 하나가 끊긴 것으로 센다
 
 
+# 재정렬 창은 17번째 패킷이 와야 첫 패킷을 내보낸다. 화자가 말을 멈추면 패킷이 끊겨 마지막
+# 16패킷(320ms)이 다음 발화까지 창에 갇힌다. 그러면 모든 발화 끝 320ms 가 잘리고, 갇힌 조각은
+# 나중에 320ms 짜리 발화로 따로 풀려나 MIN_SPEECH_MS 미달로 사라진다. 패킷은 20ms 마다
+# 오므로 이만큼 공백이면 스트림이 멈춘 것이다. 그때 창을 비운다. 침묵 청소(session.sweep)가
+# 돌기 직전에 부른다 — 청소가 창 안의 오디오를 못 본 채 돌면 발화가 그만큼 일찍 닫힌다.
+IDLE_FLUSH_MS = 100
+
+
 class StreamingSink(discord.sinks.Sink):
     """상속받은 audio_data 는 채우지 않는다 — write() 는 실시간 경로로 session.feed
     까지만 넘기고 파일을 쌓지 않는다. 이 sink 를 넘긴 finished_callback 이 다른
@@ -125,20 +133,13 @@ class StreamingSink(discord.sinks.Sink):
             self.session.feed(str(uid), name, s, at)
             self.on_samples(uid, s, at)
 
-    def drain_speaker(self, uid: int) -> None:
-        """이 화자의 재정렬 창을 비운다. 퇴장 시 flush_speaker 보다 먼저 부른다.
+    def _release(self, uid: int, name: str, released: list) -> None:
+        """창에서 나온 조각을 session 과 훅에 넘긴다. 잠금 밖에서 부른다.
 
-        write() 와 달리 이 경로는 py-cord 의 예외 삼키기 대상이 아니라 cleanup()
-        에서 직접 불린다. session.feed 가 여기서 죽어도 남은 항목은 계속 흘려보내야
-        해서 항목 단위로 감싼다. on_samples 도 같은 try 안이라 훅의 예외까지
-        feed_errors 로 세어진다 — 밖으로 내보내면 cleanup() 이 다시 올리고 py-cord 는
-        자기 로거에만 남긴다.
+        write() 와 달리 이 경로는 py-cord 의 예외 삼키기 대상이 아니다. session.feed 가
+        여기서 죽어도 남은 항목은 계속 흘려보내야 해서 항목 단위로 감싼다. on_samples 도
+        같은 try 안이라 훅의 예외까지 feed_errors 로 세어진다.
         """
-        uid = int(uid)
-        with self._lock:
-            ro = self._reorder.get(uid)
-            released = ro.flush() if ro else []
-            name = self._names.get(uid, str(uid))
         for s, at in released:
             try:
                 self.session.feed(str(uid), name, s, at)
@@ -149,6 +150,44 @@ class StreamingSink(discord.sinks.Sink):
                     first = self.feed_errors == 1
                 if first:
                     print(f"[sink] feed 예외: {type(exc).__name__}: {exc}")
+
+    def drain_speaker(self, uid: int) -> None:
+        """이 화자의 재정렬 창을 비운다. 퇴장 시 flush_speaker 보다 먼저 부른다."""
+        uid = int(uid)
+        with self._lock:
+            ro = self._reorder.get(uid)
+            released = ro.flush() if ro else []
+            name = self._names.get(uid, str(uid))
+        self._release(uid, name, released)
+
+    def tick(self, now_ms: int) -> dict[str, int]:
+        """청소 직전에 불린다. 멈춘 창을 비우고, 화자별 마지막 패킷 도착 시각을 돌려준다.
+
+        도착 시각은 창에 갇힌 패킷까지 센 값이라, 청소가 "쉬었다 다시 말한" 화자를 조용한
+        것으로 보고 닫는 일이 없다 (stt/vad.py sweep 의 last_seen_ms).
+        """
+        self.flush_idle(now_ms)
+        with self._lock:
+            return {str(uid): at for uid, at in self._last_arrival.items()}
+
+    def flush_idle(self, now_ms: int | None = None, idle_ms: int = IDLE_FLUSH_MS) -> int:
+        """마지막 패킷 뒤로 idle_ms 가 지난 화자의 창을 비운다. 내보낸 조각 수를 돌려준다.
+
+        흐르는 중인 화자는 건드리지 않는다. 그쪽은 정렬이 아직 필요하다. tick() 이
+        session.sweep 직전에 부른다.
+        """
+        now = self.now_ms() if now_ms is None else now_ms
+        todo = []
+        with self._lock:
+            for uid, ro in self._reorder.items():
+                last = self._last_arrival.get(uid)
+                if len(ro) and last is not None and now - last >= idle_ms:
+                    todo.append((uid, self._names.get(uid, str(uid)), ro.flush()))
+        n = 0
+        for uid, name, released in todo:
+            self._release(uid, name, released)
+            n += len(released)
+        return n
 
     def drain(self) -> None:
         """모든 재정렬 창을 비운다. 종료 시 session.close() 보다 먼저 부른다."""

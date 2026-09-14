@@ -230,3 +230,18 @@ def test_long_speech_is_cut_at_a_short_pause_once_past_the_soft_cap():
     short = np.concatenate([tone(SOFT_CAP_MS - 3_000), silence(500), tone(2_000)])
     got = feed_packets(v, short, 0) + v.flush()
     assert len(got) == 1, times(got)          # 상한 아래서는 500ms 쉼이 발화를 안 가른다
+
+
+def test_sweep_trusts_the_last_arrival_over_its_own_buffer():
+    """sink 의 재정렬 창이 새 패킷 16개(320ms)를 쥐고 있는 동안 VAD 의 버퍼 끝은 옛날에
+    멈춰 있다. 그 사이 청소가 돌면 "쉬었다 다시 말한" 화자를 조용한 것으로 보고 닫는다.
+
+    청소는 버퍼 끝과 마지막 도착 시각 중 늦은 쪽을 기준으로 잰다. 패킷이 오고 있으면
+    창 안에 있어도 그 화자는 말하는 중이다.
+    """
+    v = vad()
+    feed_packets(v, tone(1_000), 0)
+    now = 1_000 + SILENCE_HOLD_MS + 200
+    assert v.sweep(now, last_seen_ms=now - 100) is None      # 100ms 전에도 패킷이 왔다
+    assert v.pending_ms > 0
+    assert v.sweep(now, last_seen_ms=900) is not None         # 도착도 오래전이면 닫는다

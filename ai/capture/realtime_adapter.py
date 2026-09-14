@@ -513,6 +513,9 @@ class RealtimeCog(discord.Cog):
                           now_ms=now_ms)
         pool = _TrackPool(out_dir, ts)
         sink = StreamingSink(session, now_ms=now_ms, on_samples=pool.submit)
+        # 청소 직전에 재정렬 창부터 비우고 마지막 도착 시각을 넘긴다. 빠지면 예외 없이
+        # 모든 발화 끝 320ms 가 잘리고 700ms 쉼에서도 발화가 갈린다.
+        session.before_sweep = sink.tick
         publisher_task = asyncio.create_task(publisher.run())
 
         try:

@@ -128,8 +128,12 @@ class StreamingVAD:
             return SOFT_HOLD_MS
         return SILENCE_HOLD_MS
 
-    def sweep(self, now_ms: int) -> Utterance | None:
+    def sweep(self, now_ms: int, last_seen_ms: int | None = None) -> Utterance | None:
         """마지막으로 받은 오디오 뒤로 흐른 시간을 침묵으로 세고, 한도를 넘으면 닫는다.
+
+        last_seen_ms 는 sink 가 이 화자의 패킷을 마지막으로 받은 시각이다. sink 의 재정렬
+        창이 새 패킷 16개(320ms)를 쥐고 있는 동안 여기 버퍼 끝은 옛날에 멈춰 있어서, 그것만
+        보면 "쉬었다 다시 말한" 화자를 조용한 것으로 보고 닫는다. 둘 중 늦은 쪽을 기준으로 잰다.
 
         `_on_gap` 은 뒤에 온 패킷이 공백을 알려 줄 때만 불린다. 디스코드는 사람이 말을
         멈추면 패킷을 아예 끊으므로, 그 화자가 다시 말할 때까지 발화가 열린 채로 남는다.
@@ -146,7 +150,8 @@ class StreamingVAD:
         """
         if not self._speaking:
             return None
-        idle_ms = now_ms - self._buf_end_ms
+        seen = self._buf_end_ms if last_seen_ms is None else max(self._buf_end_ms, last_seen_ms)
+        idle_ms = now_ms - seen
         if idle_ms <= 0 or self._silence_ms + idle_ms < self._hold_ms():
             return None
         self._silence_ms += idle_ms

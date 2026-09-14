@@ -396,3 +396,17 @@ def test_giving_up_after_retries_is_logged(capsys):
     assert [ln.text for ln in lines] == ["[전사 실패]"]
     out = capsys.readouterr().out
     assert "[stt] 포기" in out and "RuntimeError" in out
+
+
+def test_sweep_loop_runs_the_before_sweep_hook_with_the_same_clock():
+    """청소 전에 sink 의 재정렬 창부터 비워야 한다. 창에 갇힌 320ms 를 VAD 가 못 본 채로
+    청소가 돌면 발화가 그만큼 일찍, 짧게 닫힌다. 같은 시계 값을 넘겨야 둘이 어긋나지 않는다.
+    """
+    clock = {"ms": 1_234}
+    seen = []
+    s = Session(final_stt=FakeStt(), on_line=lambda ln: None, workers=1,
+                now_ms=lambda: clock["ms"], sweep_interval_s=0.02)
+    s.before_sweep = lambda now: (seen.append(now), None)[1]
+    assert _wait_for(lambda: len(seen) >= 2)
+    s.close()
+    assert set(seen) == {1_234}

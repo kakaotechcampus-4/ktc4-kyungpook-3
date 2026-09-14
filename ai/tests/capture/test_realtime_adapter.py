@@ -1164,3 +1164,14 @@ async def test_summary_reports_process_cpu_for_the_meeting(tmp_path, monkeypatch
     summary = text.summaries()[0]
     assert "봇 프로세스 CPU" in summary and "코어 하나의" in summary
     assert meeting.cpu_t0 > 0            # 시작 시점을 실제로 적었다
+
+
+async def test_adapter_flushes_the_reorder_window_before_each_sweep(tmp_path, monkeypatch):
+    """배선이 빠지면 예외 없이 모든 발화 끝 320ms 가 잘린다. 회의록의 마지막 음절이 사라지는
+    자리라 어댑터에서 못박는다.
+    """
+    cog, _ctx, meeting, _text, _vc = await _start_one(tmp_path, monkeypatch)
+    try:
+        assert meeting.session.before_sweep == meeting.sink.tick
+    finally:
+        await cog._finish_meeting(GUILD_ID)
