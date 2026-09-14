@@ -53,6 +53,7 @@ def snapshot(lines: list[Line]) -> list[dict]:
             "queue_s": _round(ln.queue_s),
             "transcribe_s": _round(ln.transcribe_s),
             "publish_s": _round(ln.publish_s),
+            "error": ln.error,
             "_order": (ln.start_ms, ln.speaker_id),
         }
         for ln in lines

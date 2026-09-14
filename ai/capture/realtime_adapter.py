@@ -187,7 +187,8 @@ def _post_late(loop, channel, count: int, line) -> None:
     워커 스레드가 죽고, 그 뒤 발화가 전부 큐에 남는다 (stt/session.py 의 워커 루프가
     잡아 주기는 하지만 여기서 새어 나가게 둘 이유가 없다).
     """
-    text = (f"🕘 마감 뒤 도착 {count}건 · **{line.speaker_name}** {line.text}\n"
+    shown = "⚠️ 전사 실패" if line.error else line.text
+    text = (f"🕘 마감 뒤 도착 {count}건 · **{line.speaker_name}** {shown}\n"
             f"회의록 파일에는 없습니다. 화자별 wav 로 다시 전사할 수 있습니다.")
     try:
         asyncio.run_coroutine_threadsafe(channel.send(text), loop)
@@ -747,7 +748,7 @@ class RealtimeCog(discord.Cog):
         timings = snapshot(lines)
         latency_path = await asyncio.to_thread(write_latency, timings, meeting.out_dir)
 
-        finals = [ln for ln in lines if ln.final]
+        finals = [ln for ln in lines if ln.final and not ln.error]
         report = meeting.sink.level_report()
         total = time.monotonic() - t0
         msg = [
@@ -773,6 +774,11 @@ class RealtimeCog(discord.Cog):
         )
         if meeting.session.gate is not None:
             msg.append(meeting.session.gate.summary())
+        if out["failed"]:
+            msg.append(
+                f"⚠️ 전사 실패 {out['failed']}건 — 회의록에 없습니다. 실패 이유는 봇 로그의 "
+                f"`[stt] 포기` 줄에 있고, 화자별 wav 로 다시 전사할 수 있습니다"
+            )
         if meeting.ledger.late:
             # 터미널에만 찍으면 회의실에 있는 사람은 줄이 빠진 것을 알 방법이 없다.
             msg.append(

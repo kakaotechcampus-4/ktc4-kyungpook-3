@@ -1175,3 +1175,29 @@ async def test_adapter_flushes_the_reorder_window_before_each_sweep(tmp_path, mo
         assert meeting.session.before_sweep == meeting.sink.tick
     finally:
         await cog._finish_meeting(GUILD_ID)
+
+
+class _DeadStt:
+    name = "dead"
+
+    def transcribe(self, samples, sample_rate):
+        raise RuntimeError("api down")
+
+
+async def test_summary_reports_failed_transcriptions_and_keeps_them_out_of_the_file(
+    tmp_path, monkeypatch
+):
+    """실패한 전사가 "발화 1건" 으로 세어지고 jsonl 에 발화로 남으면 추출이 그걸 읽는다.
+
+    요약은 발화 0건 · 전사 실패 1건이라고 말해야 하고, jsonl 은 비어 있어야 한다.
+    """
+    cog, _ctx, meeting, text, _vc = await _start_one(tmp_path, monkeypatch, stt=_DeadStt())
+    replay([ReplayTrack(user_id=7, name="김환", samples=_tone(1_200), ssrc=70)], meeting.sink.write)
+    meeting.sink.cleanup()
+    await cog._finish_meeting(GUILD_ID)
+
+    jsonl = meeting.out_dir / "transcript.jsonl"
+    assert jsonl.read_text(encoding="utf-8").strip() == ""
+    summary = text.summaries()[0]
+    assert "발화 0건" in summary
+    assert "전사 실패 1건" in summary

@@ -82,3 +82,21 @@ def test_newline_in_text_does_not_break_markdown_bullet(tmp_path):
         if "한 줄" in line:
             assert line.startswith("- `[00:00]`")
             assert "다음 줄" in line
+
+
+def test_failed_lines_stay_out_of_both_files(tmp_path):
+    """전사가 실패한 줄이 transcript.jsonl 에 발화처럼 들어가면 추출이 그걸 발언으로 읽는다.
+
+    text 가 비어 있어도 안 된다. 빈 발화 레코드가 시각과 화자를 달고 남는다. 파일에서
+    빼고 몇 건을 뺐는지만 돌려준다. 종료 요약이 그 수를 회의실에 적는다.
+    """
+    ok = L("1", "김환", "t1", 1, 0, 2_000, "안녕하세요")
+    bad = L("1", "김환", "t1", 2, 2_500, 4_000, "")
+    bad.error = "SttError: STT 503"
+    out = write_transcript([ok, bad], tmp_path, meeting_id="m1")
+
+    rows = [json.loads(x) for x in out["jsonl"].read_text(encoding="utf-8").splitlines()]
+    assert [r["seq"] for r in rows] == [1]
+    md = out["markdown"].read_text(encoding="utf-8")
+    assert "전사 실패" not in md and md.count("`[00:0") == 2    # 시간순 절 + 화자별 절, 한 줄씩
+    assert out["failed"] == 1

@@ -110,7 +110,10 @@ def test_stt_failure_keeps_the_line():
     s.close()
     finals = [ln for ln in lines if ln.final]
     assert len(finals) == 1
-    assert "전사 실패" in finals[0].text
+    # 실패는 text 가 아니라 error 로 간다. text 에 "[전사 실패]" 를 넣으면 회의록과 추출이
+    # 그걸 발화로 읽는다.
+    assert finals[0].text == ""
+    assert finals[0].error and "RuntimeError" in finals[0].error
 
 
 def test_two_speakers_are_independent():
@@ -380,7 +383,7 @@ def test_retries_are_logged(capsys):
 
 
 def test_giving_up_after_retries_is_logged(capsys):
-    """전부 실패하면 회의록에 [전사 실패] 만 남는다. 왜 실패했는지는 로그에만 있다."""
+    """전부 실패하면 줄은 error 만 들고 나온다. 왜 실패했는지는 error 와 로그에 있다."""
 
     class DeadStt:
         name = "dead"
@@ -393,7 +396,8 @@ def test_giving_up_after_retries_is_logged(capsys):
     feed_packets(s, "kim", "김환", tone(1_000), 0)
     s.close()
 
-    assert [ln.text for ln in lines] == ["[전사 실패]"]
+    assert [ln.text for ln in lines] == [""]
+    assert "RuntimeError" in (lines[0].error or "")
     out = capsys.readouterr().out
     assert "[stt] 포기" in out and "RuntimeError" in out
 

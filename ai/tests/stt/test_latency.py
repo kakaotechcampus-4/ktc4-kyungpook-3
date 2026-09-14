@@ -71,7 +71,16 @@ def test_writes_one_row_per_final_line_in_transcript_order(tmp_path):
     assert path.name == "latency.jsonl"
     assert [r["seq"] for r in rows] == [1, 2]
     assert rows[0] == {"seq": 1, "speaker": "1", "start": 0.0, "end": 1.0,
-                       "queue_s": 0.1, "transcribe_s": 1.0, "publish_s": 0.3}
+                       "queue_s": 0.1, "transcribe_s": 1.0, "publish_s": 0.3, "error": None}
+
+
+def test_failed_lines_keep_their_timing_but_carry_the_error(tmp_path):
+    """실패한 줄도 큐·전사 시간은 잰 값이다. 회의록에서는 빠지지만 지연 파일에는 이유와
+    함께 남는다. Elice 꼬리를 쫓을 때 "실패한 것이 얼마나 걸렸나" 가 필요하다."""
+    bad = L(1, 0, queue_s=0.1, transcribe_s=9.0, publish_s=None)
+    bad.text, bad.error = "", "SttError: STT 503"
+    row = json.loads(write_latency(snapshot([bad]), tmp_path).read_text(encoding="utf-8").splitlines()[0])
+    assert row["error"] == "SttError: STT 503" and row["transcribe_s"] == 9.0
 
 
 def test_unmeasured_values_are_written_as_null(tmp_path):

@@ -34,6 +34,9 @@ class Line:
     transcribe_s  워커가 집은 뒤 백엔드가 돌아올 때까지. 재시도 대기가 있으면 그것까지 포함한다
     publish_s     게시기에 넘어간 뒤 이 줄이 처음 나갈 때까지. 게시기가 채운다
     submitted_at  게시기가 publish_s 를 계산하려고 적어 두는 monotonic 시각. 파일에 쓰지 않는다
+    error         전사가 끝내 실패했으면 그 이유. 그때 text 는 비어 있다. 회의록 파일에는 안
+                  들어가고 화면과 종료 요약에만 보인다. 전에는 text 에 "[전사 실패]" 를 넣었는데
+                  그러면 회의록과 추출이 그것을 발화로 읽는다.
 
     아직 재지 못한 값은 None 이다. 0.0 으로 두면 "즉시" 와 구별되지 않는다.
     """
@@ -50,6 +53,7 @@ class Line:
     transcribe_s: float | None = None
     publish_s: float | None = None
     submitted_at: float | None = None
+    error: str | None = None
 
 
 class Session:
@@ -196,8 +200,9 @@ class Session:
                 ):
                     continue
                 picked = time.monotonic()
-                text = self._transcribe_final(u)
-                self._emit(u, turn_id, text, picked - queued_at, time.monotonic() - picked)
+                text, error = self._transcribe_final(u)
+                self._emit(u, turn_id, text, picked - queued_at, time.monotonic() - picked,
+                           error=error)
             except Exception as e:
                 # on_line 은 남의 코드다. 여기서 예외가 새면 워커 스레드가 조용히
                 # 죽고, workers=1 이면 그 뒤 발화가 전부 큐에 남아 나오지 않는다.
@@ -205,39 +210,41 @@ class Session:
             finally:
                 self._final_q.task_done()
 
-    def _transcribe_final(self, u: Utterance) -> str:
-        """실패하면 재시도한다. 재시도는 반드시 로그로 남긴다.
+    def _transcribe_final(self, u: Utterance) -> tuple[str, str | None]:
+        """(text, error). 실패하면 재시도하고, 끝내 실패하면 ("", 이유) 다. 재시도는 반드시 로그로 남긴다.
 
         전에는 조용히 세 번 시도했다. 그러면 transcribe_s 가 20초로 찍혔을 때 백엔드가
         느린 건지 두 번 실패하고 세 번째에 성공한 건지 가를 수 없다. 실제로 그 상황에서
         원인을 못 좁힌 적이 있다. 대기 시간도 같이 적는다 — 재시도 사이 sleep 이
         transcribe_s 에 그대로 들어가기 때문이다.
         """
+        reason = "재시도 0회"
         for attempt in range(self.retries):
             try:
-                return self.final_stt.transcribe(u.pcm, u.sample_rate).text
+                return self.final_stt.transcribe(u.pcm, u.sample_rate).text, None
             except Exception as e:
                 tag = f"{u.speaker_id}#{u.seq}"
+                reason = f"{type(e).__name__}: {e}"
                 if attempt == self.retries - 1:
-                    # 발화를 버리지 않는다. 오디오는 트랙에 남아 있으니 나중에 다시 돌릴 수 있다.
-                    print(f"[stt] 포기 {tag} · {attempt + 1}/{self.retries}회 실패 "
-                          f"· {type(e).__name__}: {e}", flush=True)
-                    return "[전사 실패]"
+                    # 줄을 버리지 않는다. 오디오는 트랙에 남아 있으니 나중에 다시 돌릴 수 있고,
+                    # 화면과 요약이 이 줄이 있었다는 것을 알려야 한다.
+                    print(f"[stt] 포기 {tag} · {attempt + 1}/{self.retries}회 실패 · {reason}", flush=True)
+                    return "", reason
                 wait = 0.5 * (attempt + 1)
                 print(f"[stt] 재시도 {tag} · {attempt + 1}/{self.retries} 실패 "
-                      f"· {type(e).__name__}: {e} · {wait:.1f}초 뒤 다시", flush=True)
+                      f"· {reason} · {wait:.1f}초 뒤 다시", flush=True)
                 time.sleep(wait)
-        return "[전사 실패]"
+        return "", reason
 
     def _emit(self, u: Utterance, turn_id: str, text: str,
-              queue_s: float, transcribe_s: float) -> None:
+              queue_s: float, transcribe_s: float, error: str | None = None) -> None:
         # 턴은 발화가 확정될 때 이미 정해졌다. 여기 남은 잠금은 _names 때문이다.
         # 수신 스레드가 feed() 에서 계속 덮어쓰는 dict 라 읽을 때도 쥐어야 한다.
         with self._lock:
             name = self._names.get(u.speaker_id, u.speaker_id)
         # 콜백은 느릴 수 있고 이벤트 루프로 넘기기도 한다. 잠금을 놓고 부른다.
         self.on_line(Line(u.speaker_id, name, turn_id, u.seq, u.start_ms, u.end_ms, text, True,
-                          queue_s=queue_s, transcribe_s=transcribe_s))
+                          queue_s=queue_s, transcribe_s=transcribe_s, error=error))
 
     # ------------------------------------------------------------ 종료
     def close(self, timeout_s: float = 10.0) -> float:

@@ -30,9 +30,18 @@ DEFAULT_BACKOFF_S = (1.0, 2.0, 4.0, 8.0, 16.0)
 DISCORD_SAFE_CHARS = 1990  # 2000자 한도에서 여유를 둔다
 
 
+FAILED_MARK = "⚠️ 전사 실패"
+
+
+def _shown(line: Line) -> str:
+    # 실패한 줄은 파일에서는 빠지지만 화면에서는 보여야 한다. 쓴 사람이 "내 말이 왜
+    # 없지" 를 알 수 있게. 빈 text 를 그냥 거르면 그 발화의 흔적이 화면에서 사라진다.
+    return FAILED_MARK if line.error else line.text
+
+
 def format_line(line: Line) -> str:
     total = line.start_ms // 1000
-    return f"`[{total // 60:02d}:{total % 60:02d}]` **{line.speaker_name}** {line.text}"
+    return f"`[{total // 60:02d}:{total % 60:02d}]` **{line.speaker_name}** {_shown(line)}"
 
 
 def _truncate_body(body: str, texts: list[str], budget: int) -> str:
@@ -65,7 +74,7 @@ def render_turn(lines: list[Line]) -> str:
     head = ordered[0]
     total = head.start_ms // 1000
     prefix = f"`[{total // 60:02d}:{total % 60:02d}]` **{head.speaker_name}** "
-    texts = [ln.text for ln in ordered if ln.text]
+    texts = [_shown(ln) for ln in ordered if ln.text or ln.error]
     body = " ".join(texts)
     if len(prefix) + len(body) > DISCORD_SAFE_CHARS:
         ellipsis = "…"
