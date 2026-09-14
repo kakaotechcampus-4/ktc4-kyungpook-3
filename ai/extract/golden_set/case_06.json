@@ -1,0 +1,46 @@
+{
+  "case_id": "case_06",
+  "scenario": "short_exchange",
+  "description": "크로스토크(동시발화) 인터젝션 뒤에 할일, 마감=\"모레\"",
+  "reference_date": "2026-09-09",
+  "speaker_names": {
+    "E": "세영",
+    "B": "도윤"
+  },
+  "turns": [
+    {
+      "speaker": "E",
+      "text": "어 죄송해요, 좀 늦었습니다—"
+    },
+    {
+      "speaker": "B",
+      "text": "괜찮아요, 방금 시작했어요."
+    },
+    {
+      "speaker": "E",
+      "text": "저는 노션 문서 정리하는 거 오늘까지 끝낼 계획이었는데 반나절 밀렸어요. 모레까지는 무조건 끝낼게요."
+    }
+  ],
+  "expected": [
+    {
+      "sentence": "어 죄송해요, 좀 늦었습니다—",
+      "is_task": false
+    },
+    {
+      "sentence": "괜찮아요, 방금 시작했어요.",
+      "is_task": false
+    },
+    {
+      "sentence": "저는 노션 문서 정리하는 거 오늘까지 끝낼 계획이었는데 반나절 밀렸어요.",
+      "is_task": false
+    },
+    {
+      "sentence": "모레까지는 무조건 끝낼게요.",
+      "is_task": true,
+      "assignee_mention": null,
+      "due_date": "2026-09-11",
+      "task_keywords": [],
+      "assignee_type": "first"
+    }
+  ]
+}

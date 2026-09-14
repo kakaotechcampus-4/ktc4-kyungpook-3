@@ -1,0 +1,54 @@
+{
+  "case_id": "case_03",
+  "scenario": "correction",
+  "description": "마감 정정 — 같은 화자가 나중에 마감을 바꿔 말함(오늘→내일). 지금 시스템은 두 발화를 하나로 병합하지 않으므로, 이 케이스는 두 발화 각각이 '자기 문장 안에서는' 올바르게 파싱되는지만 본다.",
+  "note": "병합/정정 감지 자체는 v1 범위 밖(다음 이터레이션). 여기 gold 는 '병합된 최종값'이 아니라 각 문장 단독 정답임 — 나중에 정정 병합 기능이 생기면 이 케이스를 '최종적으로 살아남아야 하는 값은 turn2 것' 관점으로 다시 정의해야 함.",
+  "reference_date": "2026-09-09",
+  "speaker_names": {
+    "C": "하은"
+  },
+  "turns": [
+    {
+      "speaker": "C",
+      "text": "넵 확인할게요. 근데 어제 QA 팀에서 버그 리포트가 27건이나 왔더라고요. 일단 급한 것부터 오늘 안에 세 개는 고쳐볼게요."
+    },
+    {
+      "speaker": "C",
+      "text": "아 참, 아까 말씀드린 버그 수정이요, 세 개 다 오늘 못 끝낼 것 같아서 내일 오전까지로 미룰게요."
+    }
+  ],
+  "expected": [
+    {
+      "sentence": "넵 확인할게요.",
+      "is_task": true,
+      "assignee_mention": null,
+      "due_date": null,
+      "task_keywords": [],
+      "assignee_type": "first"
+    },
+    {
+      "sentence": "근데 어제 QA 팀에서 버그 리포트가 27건이나 왔더라고요.",
+      "is_task": false
+    },
+    {
+      "sentence": "일단 급한 것부터 오늘 안에 세 개는 고쳐볼게요.",
+      "is_task": true,
+      "assignee_mention": null,
+      "due_date": "2026-09-09",
+      "task_keywords": [
+        "세 개"
+      ],
+      "assignee_type": "first"
+    },
+    {
+      "sentence": "아 참, 아까 말씀드린 버그 수정이요, 세 개 다 오늘 못 끝낼 것 같아서 내일 오전까지로 미룰게요.",
+      "is_task": true,
+      "assignee_mention": null,
+      "due_date": "2026-09-10",
+      "task_keywords": [
+        "버그 수정"
+      ],
+      "assignee_type": "first"
+    }
+  ]
+}

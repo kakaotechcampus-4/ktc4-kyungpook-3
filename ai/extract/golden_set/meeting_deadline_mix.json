@@ -1,0 +1,61 @@
+{
+  "case_id": "meeting_deadline_mix",
+  "scenario": "full_meeting",
+  "description": "마감 표현이 다양한 릴리스 준비 회의 15턴 — 요일 단독, N일, 월말, N주 뒤, 시각 포함, 마감 없음까지",
+  "note": "규칙 파서(extract/dates.py)가 못 잡는 표현을 일부러 많이 넣었다. 실측 벤치(scratchpad)에서 규칙 48% / LLM 100% 가 나온 그 표현들이 실제 회의 문맥에 들어갔을 때도 같은 차이가 나는지 보는 용도. '이번 주 안으로'처럼 사람도 하나로 못 정하는 표현은 gold 를 null 로 두고 due 채점에서 빠지게 했다.",
+  "reference_date": "2026-09-09",
+  "speaker_names": {"P": "유진", "Q": "도윤", "R": "하은", "S": "민재"},
+  "turns": [
+    {"speaker": "P", "text": "다음 릴리스 준비 상황 보죠. 각자 일정만 짧게 공유해주세요."},
+    {"speaker": "Q", "text": "저는 마이그레이션 스크립트를 월요일까지 끝내겠습니다."},
+    {"speaker": "R", "text": "QA 체크리스트는 17일까지 정리해서 공유드릴게요."},
+    {"speaker": "S", "text": "디자인 QA는 2주 뒤에 한 번 더 돌면 좋을 것 같은데요."},
+    {"speaker": "P", "text": "그러죠. 민재님이 2주 뒤에 디자인 QA 한 번 더 돌려주세요."},
+    {"speaker": "Q", "text": "아 그리고 로그 수집기는 이번 달 말까지 붙여놓을게요."},
+    {"speaker": "R", "text": "릴리스 노트 초안은 내일 오전 11시까지 드리겠습니다."},
+    {"speaker": "P", "text": "장애 대응 문서는 이번 주 안으로 한번 손보죠."},
+    {"speaker": "S", "text": "저 지난주에 아이콘 작업하다가 시안이 다 엎어져서 고생했어요."},
+    {"speaker": "Q", "text": "성능 테스트는 언제 하는 게 좋을까요? 아직 일정이 안 잡혔네요."},
+    {"speaker": "P", "text": "그건 릴리스 끝나고 다시 얘기하죠."},
+    {"speaker": "R", "text": "그리고 모니터링 알림 설정은 다음 달 3일까지 마무리하겠습니다."},
+    {"speaker": "S", "text": "시간 되면 접근성 점검도 해볼게요."},
+    {"speaker": "P", "text": "보안 점검 항목은 하은님이 챙겨주세요. 기한은 따로 없고 릴리스 전까지만 되면 돼요."},
+    {"speaker": "P", "text": "네 오늘은 여기까지 하겠습니다. 수고하셨어요."}
+  ],
+  "expected": [
+    {"sentence": "다음 릴리스 준비 상황 보죠.", "is_task": false},
+    {"sentence": "각자 일정만 짧게 공유해주세요.", "is_task": false},
+
+    {"sentence": "저는 마이그레이션 스크립트를 월요일까지 끝내겠습니다.", "is_task": true, "assignee_type": "first", "assignee_mention": null, "due_date": "2026-09-14", "task_keywords": ["마이그레이션"]},
+
+    {"sentence": "QA 체크리스트는 17일까지 정리해서 공유드릴게요.", "is_task": true, "assignee_type": "first", "assignee_mention": null, "due_date": "2026-09-17", "task_keywords": ["체크리스트"]},
+
+    {"sentence": "디자인 QA는 2주 뒤에 한 번 더 돌면 좋을 것 같은데요.", "is_task": false},
+
+    {"sentence": "그러죠.", "is_task": false},
+    {"sentence": "민재님이 2주 뒤에 디자인 QA 한 번 더 돌려주세요.", "is_task": true, "assignee_type": "thirdname", "assignee_mention": "민재", "due_date": "2026-09-23", "task_keywords": ["QA"]},
+
+    {"sentence": "아 그리고 로그 수집기는 이번 달 말까지 붙여놓을게요.", "is_task": true, "assignee_type": "first", "assignee_mention": null, "due_date": "2026-09-30", "task_keywords": ["로그"]},
+
+    {"sentence": "릴리스 노트 초안은 내일 오전 11시까지 드리겠습니다.", "is_task": true, "assignee_type": "first", "assignee_mention": null, "due_date": "2026-09-10", "task_keywords": ["릴리스 노트"]},
+
+    {"sentence": "장애 대응 문서는 이번 주 안으로 한번 손보죠.", "is_task": true, "assignee_type": "group", "assignee_mention": null, "due_date": null, "task_keywords": ["장애 대응"]},
+
+    {"sentence": "저 지난주에 아이콘 작업하다가 시안이 다 엎어져서 고생했어요.", "is_task": false},
+
+    {"sentence": "성능 테스트는 언제 하는 게 좋을까요?", "is_task": false},
+    {"sentence": "아직 일정이 안 잡혔네요.", "is_task": false},
+
+    {"sentence": "그건 릴리스 끝나고 다시 얘기하죠.", "is_task": false},
+
+    {"sentence": "그리고 모니터링 알림 설정은 다음 달 3일까지 마무리하겠습니다.", "is_task": true, "assignee_type": "first", "assignee_mention": null, "due_date": "2026-10-03", "task_keywords": ["모니터링"]},
+
+    {"sentence": "시간 되면 접근성 점검도 해볼게요.", "is_task": true, "assignee_type": "first", "assignee_mention": null, "due_date": null, "task_keywords": ["접근성"]},
+
+    {"sentence": "보안 점검 항목은 하은님이 챙겨주세요.", "is_task": true, "assignee_type": "thirdname", "assignee_mention": "하은", "due_date": null, "task_keywords": ["보안"]},
+    {"sentence": "기한은 따로 없고 릴리스 전까지만 되면 돼요.", "is_task": false},
+
+    {"sentence": "네 오늘은 여기까지 하겠습니다.", "is_task": false},
+    {"sentence": "수고하셨어요.", "is_task": false}
+  ]
+}
