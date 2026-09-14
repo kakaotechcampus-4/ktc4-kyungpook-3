@@ -7,7 +7,8 @@ faster-whisper>=1.0
 jiwer>=3.0            # WER/CER (ai/stt/eval)
 
 # ── Phase 1~2: LLM (Google Gemini 무료 티어) ─────────────────────────────────
-google-genai>=1.0
+google-genai>=1.0     # Google API 키를 직접 쓰는 경우
+openai>=1.0           # Elice MLAPI 같은 OpenAI 호환 프록시로 Gemini 를 쓰는 경우 (extract/llm.py 가 이 방식)
 
 # ── 개발 ─────────────────────────────────────────────────────────────────────
 pytest>=8.0

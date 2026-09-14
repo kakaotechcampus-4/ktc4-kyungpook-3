@@ -52,6 +52,10 @@ class Settings:
     discord_guild_id: str = env("DISCORD_GUILD_ID")
     gemini_api_key: str = env("GEMINI_API_KEY")
     gemini_model: str = env("GEMINI_MODEL", "gemini-2.5-flash-lite")
+    # 팀에서 Google 키를 직접 안 쓰고 Elice MLAPI 같은 OpenAI 호환 프록시로 Gemini 를 쓰는 경우 채움.
+    # 비어 있으면(기본) openai 클라이언트가 OpenAI 공식 엔드포인트를 그대로 쓰게 되므로, 이 프록시를
+    # 쓸 거면 반드시 채워야 함.
+    gemini_base_url: str = env("GEMINI_BASE_URL")
     notion_api_key: str = env("NOTION_API_KEY")
     notion_database_id: str = env("NOTION_DATABASE_ID")
     llm_mode: str = env("PM_AGENT_LLM")  # "" | off | gemini
