@@ -22,7 +22,7 @@ import capture.selftest as selftest
 import stt.elice as elice_mod
 from capture.selftest import CAUSES, PCM_20MS_BYTES, SelfTest, _NullSession, _ProbeSink
 from stt.backend import SttError, SttResult
-from tests.replay import ReplayTrack, replay
+from tests.capture.replay import ReplayTrack, replay
 
 GUILD_ID = 42
 SR = 16_000
