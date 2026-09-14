@@ -22,11 +22,12 @@ MIN_SPEECH_MS = 320      # 이보다 짧으면 버린다 (기침, 마우스)
 MAX_SEGMENT_MS = 25_000  # 긴 독백 상한
 FRAME_MS = 20
 # 임계를 넘는 프레임이 이만큼 이어져야 말로 본다. 한 프레임(20ms)은 마이크 바닥 잡음이
-# 튄 것일 수 있다. 실제로 0.0064 짜리 한 프레임이 침묵 카운터를 되돌려 클릭·침묵·말이
+# 튄 것일 수 있다. 실제로 0.0064 짜리 한 프레임이 침묵 카운터를 되돌려 알림음·침묵·말이
 # 한 발화로 묶였고, 말 비율이 희석돼 필터가 진짜 말을 버렸다.
 ONSET_MS = 60
 # 앞에 온 소리가 MIN_SPEECH_MS 보다 짧고 그 뒤 침묵이 이만큼 이어졌으면 그 소리는
-# 기침·클릭이다. 뒤에 말이 시작되면 거기서부터 발화로 다시 센다. SILENCE_HOLD_MS 의 절반.
+# 기침이나 디스코드 알림음이다 (봇이 들어오고 메시지를 올릴 때 나는 소리가 스피커를 타고
+# 마이크로 들어온다). 뒤에 말이 시작되면 거기서부터 발화로 다시 센다. SILENCE_HOLD_MS 의 절반.
 RESTART_SILENCE_MS = 400
 # 발화가 이만큼 길어지면 짧은 쉼(SOFT_HOLD_MS)에서도 끊는다. 대본을 읽으면 문장 사이 쉼이
 # 280ms 안팎이라 800ms 규칙에 안 걸리고, 5~6문장 22초가 한 발화로 묶여 다 끝난 뒤에야
@@ -211,7 +212,7 @@ class StreamingVAD:
             # 지금 막 말로 확정됐다. 런 동안 침묵으로 셌던 것을 되돌린다.
             self._silence_ms = 0
             if self._speech_ms < MIN_SPEECH_MS and self._silence_at_run >= RESTART_SILENCE_MS:
-                # 앞에 있던 소리는 기침·클릭이다. 여기서부터 다시 센다. 앞 소리를 pcm 에
+                # 앞에 있던 소리는 기침이나 알림음이다. 여기서부터 다시 센다. 앞 소리를 pcm 에
                 # 두면 말 필터의 비율이 희석돼 진짜 말이 버려진다.
                 self._seg_start_ms = frame_start_ms - (ONSET_MS - self.frame_ms)
                 self._pending = self._pending[-(ONSET_MS // self.frame_ms):]

@@ -60,8 +60,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
     h = ap.add_argument_group("말 필터 (기본값은 stt/speech_gate.py)")
     h.add_argument("--no-gate", action="store_true", help="Silero 게이트를 끄고 돌린다")
-    h.add_argument("--gate-threshold", type=float, help="Silero 프레임 확률 임계 (1초 이상 발화)")
-    h.add_argument("--gate-short-threshold", type=float, help="1초 미만 발화에 쓰는 임계")
+    h.add_argument("--gate-threshold", type=float, help="Silero 프레임 확률 임계")
     h.add_argument("--gate-ratio", type=float, help="발화로 인정할 말 프레임 비율 하한")
     return ap.parse_args(argv)
 
@@ -89,8 +88,7 @@ def settings_line(vad, gate) -> str:
         f"min_speech_ms={vad.MIN_SPEECH_MS}",
         f"noise_margin={vad.NOISE_MARGIN}",
     ]
-    parts.append("gate=off" if gate is None else
-                 f"gate={gate.threshold}(짧으면 {gate.short_threshold})/{gate.min_ratio}")
+    parts.append("gate=off" if gate is None else f"gate={gate.threshold}/{gate.min_ratio}")
     return " · ".join(parts)
 
 
@@ -169,8 +167,6 @@ def main(argv: list[str] | None = None) -> None:
             kw["threshold"] = args.gate_threshold
         if args.gate_ratio is not None:
             kw["min_ratio"] = args.gate_ratio
-        if args.gate_short_threshold is not None:
-            kw["short_threshold"] = args.gate_short_threshold
         gate = SpeechGate(**kw)
 
     print(f"설정: {settings_line(vad, gate)}")

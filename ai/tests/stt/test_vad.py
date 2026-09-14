@@ -173,7 +173,7 @@ def blip(amp: float = 0.012) -> np.ndarray:
 def test_a_single_frame_above_threshold_does_not_reset_the_silence_count():
     """실제 녹음에서 0.0064 짜리 20ms 프레임 하나가 침묵 카운터를 0 으로 되돌렸다.
 
-    그래서 클릭 소리와 1.2초 침묵과 진짜 말이 한 발화로 묶였고, 말 비율이 희석돼
+    그래서 디스코드 알림음과 1.2초 침묵과 진짜 말이 한 발화로 묶였고, 말 비율이 희석돼
     필터가 진짜 말을 버렸다. 한 프레임은 말이 아니다.
     """
     v = vad()
@@ -187,7 +187,7 @@ def test_a_single_frame_above_threshold_does_not_reset_the_silence_count():
 
 
 def test_a_short_burst_followed_by_silence_does_not_become_the_utterance_start():
-    """클릭 200ms · 침묵 500ms · 말 1초. 발화는 말에서 시작해야 한다.
+    """알림음 200ms · 침묵 500ms · 말 1초. 발화는 말에서 시작해야 한다.
 
     500ms 는 800ms 한도보다 짧아 지금은 셋이 한 발화가 되고, pcm 앞 700ms 가 잡음과
     침묵이라 말 비율이 떨어진다. MIN_SPEECH_MS 가 버리는 종류의 소리가 앞에 붙어
