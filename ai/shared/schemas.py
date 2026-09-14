@@ -93,6 +93,45 @@ JUDGE_CATEGORIES: tuple[str, ...] = ("schedule", "assignee", "scope", "decision"
 
 
 @dataclass
+class NotionCandidate(_Base):
+    """BE가 벡터 검색으로 찾아준, 의미상 가장 가까운 기존 Notion 항목 하나."""
+
+    notion_page_id: str  # 이 후보가 가리키는 실제 Notion 페이지 ID (나중에 반영할 때 필수)
+    task_id: str | None = None  # 우리 DB task 테이블과 연결돼 있으면 그 ID (없으면 아직 task화 안 된 Notion 내용)
+    title: str = ""  # 페이지 항목 제목
+    content_snippet: str = ""  # 본문 일부 — 유사도 비교와 문맥 파악용 (전체 본문 아님, 필요한 만큼만)
+    assignee_member_id: str | None = None  # 현재 기록된 담당자
+    due_date: str | None = None  # 현재 기록된 마감일
+    status: str | None = None  # 현재 진행 상태(todo/in_progress/done/blocked 등) — 비교 기준값
+    similarity: float = 0.0  # 새 텍스트와의 벡터 유사도 (0.0~1.0). BE가 계산해서 넘겨줌
+    updated_at: str | None = None  # 이 항목이 마지막으로 수정된 시각 — 오래된 정보인지 참고용
+
+
+@dataclass
+class JudgeInput(_Base):
+    """Terra(semantic_judge)의 입력. candidates 가 빈 리스트면 기존 문서화된 단순 판단(문장만 보고 판단)과 동일하게 동작."""
+
+    source: str  # "meeting" | "chat" — 어디서 나온 텍스트인지
+    text: str  # 실제로 판단할 문장/발화 원문
+    candidates: list[NotionCandidate] = field(default_factory=list)  # BE가 검색해 온 기존 Notion 후보들 (없으면 빈 리스트)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "source": self.source,
+            "text": self.text,
+            "candidates": [c.to_dict() for c in self.candidates],
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "JudgeInput":
+        return cls(
+            source=data["source"],
+            text=data["text"],
+            candidates=[NotionCandidate.from_dict(c) for c in data.get("candidates", [])],
+        )
+
+
+@dataclass
 class JudgeResult(_Base):
     """Phase 2 Terra 출력. 계획서 스키마 그대로."""
 
