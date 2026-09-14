@@ -189,7 +189,7 @@ def _post_late(loop, channel, count: int, line) -> None:
     """
     shown = "⚠️ 전사 실패" if line.error else line.text
     text = (f"🕘 마감 뒤 도착 {count}건 · **{line.speaker_name}** {shown}\n"
-            f"회의록 파일에는 없습니다. 화자별 wav 로 다시 전사할 수 있습니다.")
+            f"회의록에 추가했습니다. 종료 요약의 발화 수에는 빠져 있습니다.")
     try:
         asyncio.run_coroutine_threadsafe(channel.send(text), loop)
     except Exception as e:
@@ -201,14 +201,18 @@ class _Ledger:
     """확정 줄을 모으는 자리.
 
     on_line 은 STT 워커 스레드에서 불리고 (stt/session.py:36-41) 종료 경로는 루프에서 돈다.
-    closed 는 종료가 스냅샷을 뜬 시점을 알리는 표시다. 그 뒤 도착한 줄은 파일에도 화면에도
-    못 들어가므로 late 로 세고 로그만 남긴다. 정밀한 동기화가 아니라 관측용 카운터다 —
-    경계에 걸친 한 줄이 어느 쪽으로 세어질지는 보장하지 않는다.
+    closed 는 종료가 스냅샷을 뜬 시점을 알리는 표시다. 그 뒤 도착한 줄은 late 로 세고,
+    회의록 파일을 다시 써서 붙인다. 파일이 진실이면 마감은 요약을 언제 낼지의 문제로만
+    남는다. 경계에 걸친 한 줄이 어느 쪽으로 세어질지는 보장하지 않는다.
+
+    files_lock 은 회의록 두 파일을 쓰는 자리를 지킨다. 종료 경로가 루프 밖 스레드에서
+    쓰는 동안 늦은 줄이 워커 스레드에서 같은 파일을 다시 쓸 수 있다.
     """
 
     lines: list = field(default_factory=list)
     closed: bool = False
     late: int = 0
+    files_lock: threading.Lock = field(default_factory=threading.Lock)
 
 
 class _TrackPool:
@@ -491,10 +495,18 @@ class RealtimeCog(discord.Cog):
             if ledger.closed:
                 ledger.late += 1
                 print(f"[meeting] 마감 뒤 도착한 줄 {ledger.late}건 "
-                      f"({line.speaker_name}) — 회의록 파일에는 없다", flush=True)
-                # 파일은 이미 닫혔지만 화면에는 낼 수 있다. 여기서도 안 내면 늦게 끝난
-                # 전사가 통째로 사라지고, 쓴 사람은 줄이 빠진 것을 알 방법이 없다.
-                # 게시기는 이미 멈춘 뒤라 채널로 직접 보낸다.
+                      f"({line.speaker_name}) — 회의록에 붙인다", flush=True)
+                # 파일이 진실이다. 회의록 두 파일을 전체 줄로 다시 쓴다. 이 스레드에서
+                # 파일을 쓰는 동안 종료 경로가 같은 파일을 쓰고 있을 수 있어 잠근다.
+                # BE 훅(on_session_saved)은 이미 불린 뒤다 — 늦게 붙은 줄은 종료 후
+                # 재전사가 기록을 만드는 2단계 구조에서 그쪽이 다시 읽는다.
+                try:
+                    with ledger.files_lock:
+                        ledger.lines.append(line)
+                        write_transcript(list(ledger.lines), out_dir, meeting_id)
+                except Exception as e:
+                    print(f"[meeting] 늦은 줄 기록 실패: {type(e).__name__}: {e}", flush=True)
+                # 화면에도 낸다. 게시기는 이미 멈춘 뒤라 채널로 직접 보낸다.
                 _post_late(loop, post_to, ledger.late, line)
                 return
             ledger.lines.append(line)
@@ -741,7 +753,11 @@ class RealtimeCog(discord.Cog):
         )
 
         # 5. 회의록. 게시기 정리보다 **앞** 이다. 게시가 막혀 있어도 파일은 나와야 한다.
-        out = await asyncio.to_thread(write_transcript, lines, meeting.out_dir, meeting.meeting_id)
+        def _write_files():
+            with meeting.ledger.files_lock:
+                return write_transcript(lines, meeting.out_dir, meeting.meeting_id)
+
+        out = await asyncio.to_thread(_write_files)
         # 지연은 회의록 옆에 따로 쓴다. transcript.jsonl 의 레코드 모양은 BE 계약이다.
         # 값은 여기서 한 번만 뜬다. 아래 요약까지 가는 동안 게시 태스크가 계속 돌면서
         # 같은 Line 객체를 채우므로, 줄을 그대로 넘기면 파일과 화면이 갈라진다.

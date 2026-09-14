@@ -1120,11 +1120,12 @@ async def test_a_transcription_slower_than_ten_seconds_still_reaches_the_file(
     assert meeting.ledger.late == 0
 
 
-async def test_the_summary_says_when_lines_arrived_after_the_deadline(tmp_path, monkeypatch):
-    """마감 뒤에 온 줄은 지금 터미널에만 찍힌다. 회의실에서는 아무 표시가 없다.
+async def test_late_lines_are_appended_to_the_transcript_files(tmp_path, monkeypatch):
+    """마감 뒤에 온 줄도 회의록 파일에 들어간다. 파일이 진실이면 마감이 필요 없다.
 
-    실제로 발화 3건 중 2건을 이렇게 잃은 회의가 있었고, 요약은 "발화 1건" 만 말했다.
-    쓴 사람이 잃은 줄이 있다는 것을 알 방법이 없으면 다시 말해 달라고 할 수도 없다.
+    실제로 발화 3건 중 2건을 마감 뒤 도착으로 잃은 회의가 있었다. 대기를 늘리는 것은
+    꼬리가 더 길어지면 다시 진다. 늦은 줄을 파일에 붙이면 대기는 요약을 언제 낼지의
+    문제로만 남는다. 화면 알림은 그대로 보내되 "파일에 없다" 가 아니라 "추가했다" 고 말한다.
     """
     monkeypatch.setattr(adapter, "FINISH_WAIT_S", 0.05)
     cog, _ctx, meeting, text, _vc = await _start_one(
@@ -1148,6 +1149,16 @@ async def test_the_summary_says_when_lines_arrived_after_the_deadline(tmp_path, 
     late_msgs = [m for m in text.sent if "마감 뒤 도착" in m]
     assert late_msgs, text.sent
     assert "느린 전사" in late_msgs[0]      # 전사된 내용까지 보여 준다
+    assert "추가" in late_msgs[0] and "없습니다" not in late_msgs[0]
+
+    # 파일에도 들어가 있다. 늦은 줄은 워커 스레드에서 붙이므로 잠깐 기다린다.
+    jsonl = meeting.out_dir / "transcript.jsonl"
+    deadline = time.monotonic() + 5.0
+    while "느린 전사" not in jsonl.read_text(encoding="utf-8") and time.monotonic() < deadline:
+        await asyncio.sleep(0.02)
+    records = [json.loads(x) for x in jsonl.read_text(encoding="utf-8").splitlines()]
+    assert [r["text"] for r in records] == ["느린 전사"]
+    assert "느린 전사" in (meeting.out_dir / "transcript.md").read_text(encoding="utf-8")
 
 
 async def test_summary_reports_process_cpu_for_the_meeting(tmp_path, monkeypatch):
