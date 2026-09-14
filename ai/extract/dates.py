@@ -36,3 +36,28 @@ def parse_due_date(text: str, today: date) -> date | None:
         return monday + timedelta(days=_WEEKDAYS[day_char])
 
     return None
+
+
+# 실측(scratchpad 벤치, 기준일 2026-09-09): 위 규칙은 마감 표현 21개 중 10개(48%)만 맞췄고
+# 같은 표현들을 LLM 이 직접 ISO 로 계산했을 땐 21/21(100%, 5회 연속 동일)이었다.
+# 그래서 LLM 경로는 날짜 계산을 LLM 에 맡기고, 코드는 아래 sanity check 로 최악만 막는다.
+# (규칙 파서는 LLM 을 못 쓸 때의 폴백으로 남긴다 — 못 잡는 표현은 None 이라 조용히 틀리진 않는다.)
+MAX_FUTURE_DAYS = 365
+
+
+def sanity_check_due_date(value: str | None, today: date) -> date | None:
+    """LLM 이 준 마감일 문자열을 검증한다. 이상하면 None — 지어낸 날짜가 조용히 DB 에 박히는 걸 막는다.
+
+    거르는 것: 형식 오류, 기준일보다 과거, 1년 넘게 먼 미래.
+    """
+    if not value:
+        return None
+    try:
+        parsed = date.fromisoformat(value.strip())
+    except (ValueError, AttributeError):
+        return None
+    if parsed < today:
+        return None
+    if (parsed - today).days > MAX_FUTURE_DAYS:
+        return None
+    return parsed

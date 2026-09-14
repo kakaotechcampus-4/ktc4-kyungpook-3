@@ -59,18 +59,35 @@ def _task_title(sentence: str) -> str:
     return sentence
 
 
-def _find_assignee_mention(sentence: str, speaker_name: str | None) -> str | None:
-    if _GROUP_RE.search(sentence):
-        return None  # 담당자 특정 불가 (전체/다같이) — 화자 본인으로 대충 채우지 않는다
+def find_explicit_name(sentence: str) -> str | None:
+    """문장에 "OO님" 형태로 이름이 **원문 그대로** 박혀 있으면 그 이름을 돌려준다.
+
+    LLM 경로(extract/llm.py)에서도 교차검증용으로 쓴다 — LLM 이 thirdname 이라고 분류했는데
+    정규식이 같은 이름을 못 찾으면, 근거가 약한 것으로 보고 상태를 inferred 로 낮춘다.
+    """
     m = _ASSIGNEE_RE.search(sentence)
-    if m:
-        return m.group(1)
-    return speaker_name  # 3인칭 지정이 없으면 화자 본인 지칭으로 간주
+    return m.group(1) if m else None
 
 
-def _confidence(assignee: str | None, due: date | None) -> float:
-    signals = sum(1 for x in (assignee, due) if x is not None)
-    return {0: 0.4, 1: 0.6, 2: 0.8}[signals]
+def _classify_assignee(sentence: str, speaker_name: str | None) -> tuple[str, str | None]:
+    """(assignee_type, assignee_mention) — 규칙으로 판별 가능한 범위까지만.
+
+    정규식으로는 second/thirdpronoun/thirdrole 을 신뢰성 있게 못 가른다(그건 LLM 경로의 몫).
+    여기선 확실한 것만: 그룹 지칭 / 원문에 박힌 "OO님" / 그 외 본인 지칭.
+    """
+    if _GROUP_RE.search(sentence):
+        return "group", None  # 할일은 맞지만 담당자는 PM 이 지정해야 함
+    name = find_explicit_name(sentence)
+    if name:
+        return "thirdname", name
+    if speaker_name:
+        return "first", None  # first 는 BE 가 발화자로 바로 푸니 이름을 채우지 않는다
+    return "none", None
+
+
+def _confidence(task_status: str, assignee_status: str, due_status: str) -> float:
+    score = {"certain": 1.0, "inferred": 0.6, "missing": 0.3}
+    return round(min(score[task_status], score[assignee_status], score[due_status]), 2)
 
 
 def extract_tasks(
@@ -93,17 +110,27 @@ def extract_tasks(
         for sentence in split_sentences(seg.text):
             if not _is_actionable(sentence):
                 continue
-            assignee = _find_assignee_mention(sentence, speaker_name)
+            assignee_type, mention = _classify_assignee(sentence, speaker_name)
             due = parse_due_date(sentence, ref_date)
+
+            # 규칙 경로는 원문에 박힌 것만 보므로 추론(inferred) 상태가 나올 일이 없다:
+            # 잡았으면 certain, 못 잡았으면 missing.
+            assignee_status = "certain" if assignee_type in {"first", "thirdname"} else "missing"
+            due_status = "certain" if due else "missing"
             results.append(
                 ExtractedTask(
                     task=_task_title(sentence),
                     assignee_member_id=None,
                     due_date=due.isoformat() if due else None,
-                    confidence=_confidence(assignee, due),
-                    assignee_mention=assignee,
+                    confidence=_confidence("certain", assignee_status, due_status),
+                    assignee_mention=mention,
                     source_sentence=sentence,
                     method="rules",
+                    assignee_type=assignee_type,
+                    due_raw=None,  # 규칙 파서는 원문 조각을 따로 보관하지 않는다
+                    task_status="certain",
+                    assignee_status=assignee_status,
+                    due_status=due_status,
                 )
             )
     return results
