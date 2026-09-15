@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>타이머 캐릭터</title>
+  <style>
+    :root {
+      --bg: #111;
+      --card: #fff;
+      --ink: #171717;
+      --muted: #7a7a7a;
+      --line: #ddd;
+      --coral: #ff6969;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; background: var(--bg); color: #eee; }
+    body {
+      font-family: "IBM Plex Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+      font-size: 13px;
+    }
+    button { font: inherit; cursor: pointer; color: inherit; }
+    main {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 20px;
+      padding: 32px 16px;
+    }
+    #stage {
+      width: min(420px, 100%);
+      aspect-ratio: 1;
+      background: var(--card);
+      border-radius: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .row {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 8px;
+      max-width: 520px;
+    }
+    .row button {
+      height: 30px;
+      padding: 0 12px;
+      border: 1px solid #333;
+      border-radius: 999px;
+      background: transparent;
+      color: #bbb;
+    }
+    .row button[aria-pressed="true"] {
+      border-color: #fff;
+      color: #fff;
+      background: #222;
+    }
+    p { margin: 0; color: var(--muted); }
+  </style>
+</head>
+<body>
+  <main>
+    <div id="stage"></div>
+    <div class="row" id="poses">
+      <button type="button" data-expr="idle" aria-pressed="true">정면</button>
+      <button type="button" data-expr="left">왼쪽</button>
+      <button type="button" data-expr="right">오른쪽</button>
+      <button type="button" data-expr="upLeft">왼쪽 위</button>
+      <button type="button" data-expr="upRight">오른쪽 위</button>
+      <button type="button" data-expr="talking">말하는 중</button>
+      <button type="button" data-expr="squint">눈 가늘게</button>
+      <button type="button" data-expr="dial">다이얼</button>
+    </div>
+    <div class="row" id="palettes">
+      <button type="button" data-palette="ink" aria-pressed="true">잉크</button>
+      <button type="button" data-palette="coral">레드</button>
+      <button type="button" data-palette="coralCap">버튼만 레드</button>
+    </div>
+    <p>클릭하면 타이머 버튼이 눌립니다.</p>
+  </main>
+  <script src="./mascot.js"></script>
+  <script>
+    const mascot = new PebbleMascot("#stage", { size: 340 });
+    window.mascot = mascot;
+
+    document.getElementById("poses").addEventListener("click", (event) => {
+      const btn = event.target.closest("button[data-expr]");
+      if (!btn) return;
+      const expr = btn.getAttribute("data-expr");
+      mascot.setTalking(expr === "talking");
+      mascot.setExpression(expr);
+      document.querySelectorAll("#poses button").forEach((node) => {
+        node.setAttribute("aria-pressed", String(node === btn));
+      });
+    });
+
+    document.getElementById("palettes").addEventListener("click", (event) => {
+      const btn = event.target.closest("button[data-palette]");
+      if (!btn) return;
+      mascot.setPalette(btn.getAttribute("data-palette"));
+      document.querySelectorAll("#palettes button").forEach((node) => {
+        node.setAttribute("aria-pressed", String(node === btn));
+      });
+    });
+  </script>
+</body>
+</html>

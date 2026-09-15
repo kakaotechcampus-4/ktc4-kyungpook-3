@@ -1,0 +1,298 @@
+{
+  "artboards": [
+    {
+      "file": "SetupTeam.dc.html",
+      "x": 0,
+      "y": 0,
+      "w": 1440,
+      "h": 900,
+      "title": "셋업 1 · 팀 만들기",
+      "page": "page-2"
+    },
+    {
+      "file": "SetupDiscord.dc.html",
+      "x": 1560,
+      "y": 0,
+      "w": 1440,
+      "h": 900,
+      "title": "셋업 2 · Discord 연결",
+      "page": "page-2"
+    },
+    {
+      "file": "SetupNotion.dc.html",
+      "x": 0,
+      "y": 1020,
+      "w": 1440,
+      "h": 900,
+      "title": "셋업 3 · Notion 연결",
+      "page": "page-2"
+    },
+    {
+      "file": "SetupMembers.dc.html",
+      "x": 1560,
+      "y": 1020,
+      "w": 1440,
+      "h": 900,
+      "title": "셋업 4 · 팀원 · 알림",
+      "page": "page-2"
+    },
+    {
+      "file": "Foundations.dc.html",
+      "x": 0,
+      "y": 0,
+      "w": 1440,
+      "h": 5350,
+      "title": "디자인 파운데이션",
+      "page": "page-4"
+    },
+    {
+      "file": "Mascot.dc.html",
+      "x": 0,
+      "y": 0,
+      "w": 1440,
+      "h": 3530,
+      "title": "매스 · 포즈와 치수",
+      "page": "page-5"
+    },
+    {
+      "file": "MascotUsage.dc.html",
+      "x": 1560,
+      "y": 0,
+      "w": 1440,
+      "h": 3710,
+      "title": "매스 · 쓰는 법",
+      "page": "page-5"
+    },
+    {
+      "file": "Main.dc.html",
+      "x": 0,
+      "y": 0,
+      "w": 1440,
+      "h": 900,
+      "title": "홈 대시보드 · 팀 바꾸기",
+      "page": "page-3"
+    },
+    {
+      "file": "Upload.dc.html",
+      "x": 1560,
+      "y": 0,
+      "w": 1440,
+      "h": 1130,
+      "title": "회의 올리기",
+      "page": "page-3"
+    },
+    {
+      "file": "Processing.dc.html",
+      "x": 3120,
+      "y": 0,
+      "w": 1440,
+      "h": 900,
+      "title": "정리 중",
+      "page": "page-3"
+    },
+    {
+      "file": "Meetings.dc.html",
+      "x": 0,
+      "y": 1291,
+      "w": 1440,
+      "h": 1020,
+      "title": "회의록",
+      "page": "page-3"
+    },
+    {
+      "file": "Tasks.dc.html",
+      "x": 1567,
+      "y": 1294,
+      "w": 1440,
+      "h": 1950,
+      "title": "태스크 · 리스트",
+      "page": "page-3"
+    },
+    {
+      "file": "TasksBoard.dc.html",
+      "x": 3120,
+      "y": 1290,
+      "w": 1440,
+      "h": 860,
+      "title": "태스크 · 보드",
+      "page": "page-3"
+    },
+    {
+      "file": "TasksGantt.dc.html",
+      "x": 4680,
+      "y": 1290,
+      "w": 1440,
+      "h": 1240,
+      "title": "태스크 · 간트차트",
+      "page": "page-3"
+    },
+    {
+      "file": "TasksCalendar.dc.html",
+      "x": 6240,
+      "y": 1290,
+      "w": 1440,
+      "h": 1190,
+      "title": "태스크 · 캘린더",
+      "page": "page-3"
+    },
+    {
+      "file": "Messages.dc.html",
+      "x": 0,
+      "y": 3480,
+      "w": 1440,
+      "h": 1000,
+      "title": "메시지 · 보내기 전 확인",
+      "page": "page-3"
+    },
+    {
+      "file": "MessagesThread.dc.html",
+      "x": 1560,
+      "y": 3480,
+      "w": 1440,
+      "h": 960,
+      "title": "메시지 · 사람별 대화",
+      "page": "page-3"
+    },
+    {
+      "file": "Team.dc.html",
+      "x": 3120,
+      "y": 3480,
+      "w": 1440,
+      "h": 1430,
+      "title": "팀",
+      "page": "page-3"
+    },
+    {
+      "file": "Settings.dc.html",
+      "x": 4680,
+      "y": 3480,
+      "w": 1440,
+      "h": 1420,
+      "title": "설정",
+      "page": "page-3"
+    },
+    {
+      "file": "EmptyMeetings.dc.html",
+      "x": 0,
+      "y": 5100,
+      "w": 1440,
+      "h": 900,
+      "title": "빈 상태 · 회의록",
+      "page": "page-3"
+    },
+    {
+      "file": "EmptyTasks.dc.html",
+      "x": 1560,
+      "y": 5100,
+      "w": 1440,
+      "h": 900,
+      "title": "빈 상태 · 태스크",
+      "page": "page-3"
+    },
+    {
+      "file": "EmptyMessages.dc.html",
+      "x": 3120,
+      "y": 5100,
+      "w": 1440,
+      "h": 900,
+      "title": "빈 상태 · 메시지",
+      "page": "page-3"
+    },
+    {
+      "file": "Landing.dc.html",
+      "x": 0,
+      "y": 0,
+      "w": 1440,
+      "h": 6180,
+      "title": "랜딩페이지",
+      "print": "flow",
+      "page": "page-1"
+    },
+    {
+      "file": "Login.dc.html",
+      "x": 1560,
+      "y": 0,
+      "w": 1440,
+      "h": 760,
+      "title": "로그인",
+      "page": "page-1"
+    },
+    {
+      "file": "Signup.dc.html",
+      "x": 3120,
+      "y": 0,
+      "w": 1440,
+      "h": 920,
+      "title": "회원가입",
+      "page": "page-1"
+    }
+  ],
+  "annotations": [
+    {
+      "id": "note-setup",
+      "x": 0,
+      "y": -230,
+      "w": 620,
+      "text": "셋업 4스텝 · 대화형\n봇이 말을 걸고, 필요한 것만 카드로 물어봅니다.\n페이지 하나에 질문 하나 — 스텝 점 4개로 어디쯤인지만 알려줍니다.\n\n연결이 끝나지 않은 단계에서는 '다음'이 비활성입니다(2/4).\n매칭 안 된 계정이 남으면 그 사람에게는 DM을 보낼 수 없어요(4/4).",
+      "page": "page-2"
+    },
+    {
+      "id": "note-foundations",
+      "x": 0,
+      "y": -230,
+      "w": 620,
+      "text": "디자인 시스템 v4.1\n흰 바탕 · 면으로 구분 · 유채색은 경고·강조 #FF6969 하나.\n\n이 페이지의 수치는 캔버스의 실제 화면 22장에서 뽑았습니다.\n글자 회색은 주 4단(#171717 · #5A5A5A · #666666 · #999999)에\n선 색 3개(#E8E8E8 · #BDBDBD · #C9C9C9)가 글자로도 쓰여 실제로는 7단입니다.\n면 5단, 선 5단. #DCDCDC 는 선이 아니라 면(스텝 점·토글 트랙)입니다.\n\n입력칸은 한 규격이 아닙니다 — 제품 42px/#949494/r9,\n온보딩 42px/#C9C9C9/r8, 로그인·가입 48px/#C9C9C9/r12.\n\n마스코트 매스도 같은 잉크 #171717 을 씁니다.\n서체는 나눔스퀘어(NanumSquare) OTF 서브셋 — 굵기가 네 단뿐이라 500은 쓰지 않습니다.",
+      "page": "page-4"
+    },
+    {
+      "id": "note-mascot",
+      "x": 0,
+      "y": -250,
+      "w": 700,
+      "text": "마스코트 · 매스\nfrontend/docs/mascot 의 mascot.js 를 그대로 계산해 그렸습니다.\nviewBox 0 0 240 240 · 중심 (120,120) · R = 84 · 정규화는 Outer 반지름 = 1.\n\n타이머를 형상화한 마크입니다. 레이어는 여섯 — Outer · Inner · Cap · Dial stripes · Eye L · Eye R.\n잉크 #171717 과 흰색 #FFFFFF 둘뿐이고, 링은 스트로크가 아니라 큰 잉크 원에서 흰 원을 뺀 결과입니다.\n\n타이머 버튼은 몸과 맞닿지 않습니다 — 간격은 R=84 기준 3.5–4.2 유닛.\n버튼에 붙는 움직임은 눌림 하나뿐입니다. 몸 쪽 아랫변이 고정이라 눌러도 이 간격은 그대로입니다.",
+      "page": "page-5"
+    },
+    {
+      "id": "note-product",
+      "x": 0,
+      "y": -330,
+      "w": 820,
+      "text": "제품 화면 12개\n헤더는 12개 화면 모두 같습니다 — 활성 탭만 다릅니다.\n우측 상단 '캡스톤 5조'를 누르면 팀을 바꾸는 목록이 열립니다(홈 대시보드).\n\n태스크는 같은 데이터를 리스트 · 보드 · 간트 · 캘린더 네 뷰로 그렸습니다.\n리스트에서만 승인하고, 보드·간트·캘린더는 승인이 끝난 일정을 봅니다.\n리스트는 담당자 필터 + 상태(전체/확인 필요/진행 중/완료)로 걸러 봅니다.\n\n회의록은 결정된 것과 '확인이 필요한 일'만 보여 줍니다 — 발언 원문은 전사문 탭에.\n메시지는 승인 화면과 사람별 대화 기록, 두 화면입니다.",
+      "page": "page-3"
+    },
+    {
+      "id": "note-entry",
+      "x": 0,
+      "y": -230,
+      "w": 620,
+      "text": "진입 흐름\n랜딩 → 로그인/회원가입 → 팀 선택 → 온보딩.\n\n로그인·가입 입력은 48px · 경계 #C9C9C9 · 라운드 12로,\n제품 화면(42px · #949494 · r9)보다 크고 부드럽습니다.\n주 버튼은 #171717 채움으로 화면당 하나입니다.",
+      "page": "page-1"
+    }
+  ],
+  "launch": {
+    "view": "canvas",
+    "page": "page-2"
+  },
+  "pages": [
+    {
+      "id": "page-1",
+      "name": "진입"
+    },
+    {
+      "id": "page-2",
+      "name": "온보딩"
+    },
+    {
+      "id": "page-3",
+      "name": "제품"
+    },
+    {
+      "id": "page-4",
+      "name": "파운데이션"
+    },
+    {
+      "id": "page-5",
+      "name": "캐릭터"
+    }
+  ]
+}

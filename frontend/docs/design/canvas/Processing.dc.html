@@ -1,0 +1,127 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>정리 중 — Manager's Manager</title>
+  <link rel="stylesheet" href="./_fonts.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #FFFFFF; color: #171717;
+      font-family: 'NanumSquare','Apple SD Gothic Neo','Malgun Gothic',system-ui,sans-serif;
+      font-size: 14px; line-height: 1.75; word-break: keep-all; -webkit-font-smoothing: antialiased; }
+    a { color: #171717; text-decoration: none; }
+    a:hover { color: #5A5A5A; }
+    button { font: inherit; color: inherit; cursor: pointer; }
+    .mono { font-family: 'NanumSquare','Apple SD Gothic Neo','Malgun Gothic',system-ui,sans-serif; font-variant-numeric: tabular-nums; letter-spacing: 0; }
+    .dsp { font-family: 'NanumSquare','Apple SD Gothic Neo','Malgun Gothic',system-ui,sans-serif; }
+    ::selection { background: #171717; color: #FFFFFF; }
+    :focus-visible { outline: 2px solid #171717; outline-offset: 4px; }
+    h1 { font-weight: 700; line-height: 1.4; letter-spacing: -0.045em; }
+    h2, h3 { font-weight: 700; line-height: 1.55; letter-spacing: -0.025em; }
+    p { line-height: 1.85; }
+    @keyframes dc-spin { to { transform: rotate(360deg); } }
+    .spin { animation: dc-spin 1.1s linear infinite; }
+    @media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
+  </style>
+</helmet>
+
+<div style="width: 100%; min-height: 900px; background: #FFFFFF; display: flex; flex-direction: column;">
+
+  <header style="flex: 0 0 76px; height: 76px; display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 0 40px; border-bottom: 1px solid #EFEFEF;">
+    <div style="display: flex; align-items: center; gap: 30px;">
+      <span style="display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 7px; background: #171717; line-height: 1;">
+        <svg width="15" height="15" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M2 11V3.5l3.5 4.5L9 3.5V11" stroke="#FFFFFF" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path><path d="M11.6 5.2v2.4" stroke="#FFFFFF" stroke-width="1.8" stroke-linecap="round"></path></svg>
+      </span>
+      <nav style="display: flex; align-items: center; gap: 2px;">
+        <a href="#" style="display: inline-flex; align-items: center; height: 32px; padding: 0 12px; border-radius: 9px; font-size: 13px; color: #5A5A5A; min-height: 36px; font-weight: 600; line-height: 1;">대시보드</a>
+        <a href="#" style="display: inline-flex; align-items: center; height: 32px; padding: 0 12px; border-radius: 9px; background: #F0F0F0; font-size: 13px; font-weight: 600; color: #171717; min-height: 36px; line-height: 1;">회의록</a>
+        <a href="#" style="display: inline-flex; align-items: center; gap: 7px; height: 32px; padding: 0 12px; border-radius: 9px; font-size: 13px; color: #5A5A5A; min-height: 36px; font-weight: 600; line-height: 1;">태스크<span class="mono" style="display: inline-flex; align-items: center; justify-content: center; min-width: 17px; height: 17px; padding: 0 5px; border-radius: 999px; background: #E8E8E8; font-size: 10.5px; font-weight: 400; color: #171717; line-height: 1;">3</span></a>
+        <a href="#" style="display: inline-flex; align-items: center; gap: 7px; height: 32px; padding: 0 12px; border-radius: 9px; font-size: 13px; color: #5A5A5A; min-height: 36px; font-weight: 600; line-height: 1;">메시지<span class="mono" style="display: inline-flex; align-items: center; justify-content: center; min-width: 17px; height: 17px; padding: 0 5px; border-radius: 999px; background: #E8E8E8; font-size: 10.5px; font-weight: 400; color: #171717; line-height: 1;">2</span></a>
+        <a href="#" style="display: inline-flex; align-items: center; height: 32px; padding: 0 12px; border-radius: 9px; font-size: 13px; color: #5A5A5A; min-height: 36px; font-weight: 600; line-height: 1;">팀</a>
+      </nav>
+    </div>
+    <div style="display: flex; align-items: center; gap: 24px;">
+      <button type="button" style="display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 11px; border: 1px solid #E8E8E8; border-radius: 9px; background: #FFFFFF; font-size: 13px; font-weight: 600; color: #171717; min-height: 36px; line-height: 1;">캡스톤 5조<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#666666" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg></button>
+      <span style="display: inline-flex; align-items: center; justify-content: center; width: 29px; height: 29px; border-radius: 999px; background: #EFEFEF; font-size: 11px; font-weight: 600; color: #171717; line-height: 1;">지훈</span>
+    </div>
+  </header>
+
+  <main style="flex: 1; display: flex; align-items: center; justify-content: center; padding: 48px 48px 72px; width: 100%; max-width: 1360px; margin-inline: auto;">
+    <div style="width: 560px; display: flex; flex-direction: column; gap: 30px;">
+
+      <div style="display: flex; align-items: center; gap: 20px;">
+        <span style="display: inline-flex; flex: 0 0 64px; line-height: 1;"><svg width="64" height="64" viewBox="0 0 240 240" fill="none" role="img" aria-label="매스"><defs><clipPath id="pm1-f-f-f"><ellipse cx="106.98" cy="117.4" rx="65.69" ry="64.01"></ellipse></clipPath></defs><circle cx="120" cy="120" r="84" fill="#171717"></circle><ellipse cx="106.98" cy="117.4" rx="65.69" ry="64.01" fill="#FFFFFF"></ellipse><g transform="translate(98.05 25.75) rotate(-13)"><rect x="-17.41" y="-9.14" width="34.82" height="18.28" rx="5.22" ry="5.22" fill="#171717"></rect></g><g clip-path="url(#pm1-f-f-f)"><rect x="56.87" y="96.06" width="13.02" height="33.1" rx="6.51" fill="#171717"></rect><rect x="88.25" y="93.46" width="14.78" height="38.3" rx="7.39" fill="#171717"></rect></g></svg></span>
+        <div style="display: flex; flex-direction: column; gap: 10px;">
+          <h1 style="margin: 0; font-size: 30px; line-height: 1.25; font-weight: 700; letter-spacing: -0.045em; color: #171717;">정리하고 있어요</h1>
+          <p style="margin: 0; font-size: 14px; color: #5A5A5A;">3주차 정기회의 · <span class="mono" style="color: #666666;">52:14</span> · 참석 4명</p>
+        </div>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 10px;">
+        <div style="height: 4px; border-radius: 999px; background: #E8E8E8; overflow: hidden;">
+          <span style="display: block; width: 62%; height: 100%; border-radius: 999px; background: #171717;"></span>
+        </div>
+        <div style="display: flex; align-items: center; justify-content: space-between;">
+          <span class="mono" style="font-size: 12px; color: #666666;">3 / 4 단계</span>
+          <span class="mono" style="font-size: 12px; color: #666666;">경과 03:06</span>
+        </div>
+      </div>
+
+      <div style="display: flex; flex-direction: column;">
+
+        <div style="display: flex; align-items: center; gap: 13px; padding: 16px 0; border-bottom: 1px solid #E8E8E8;">
+          <span style="display: inline-flex; align-items: center; justify-content: center; flex: 0 0 22px; width: 22px; height: 22px; border-radius: 999px; background: #FFFFFF; border: 1px solid #C9C9C9; line-height: 1;">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#171717" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m20 6-11 11-5-5"></path></svg>
+          </span>
+          <span style="flex: 1; font-size: 14px; color: #5A5A5A;">음성을 텍스트로 옮기기</span>
+          <span class="mono" style="font-size: 12px; color: #666666;">1:48</span>
+        </div>
+
+        <div style="display: flex; align-items: center; gap: 13px; padding: 16px 0; border-bottom: 1px solid #E8E8E8;">
+          <span style="display: inline-flex; align-items: center; justify-content: center; flex: 0 0 22px; width: 22px; height: 22px; border-radius: 999px; background: #FFFFFF; border: 1px solid #C9C9C9; line-height: 1;">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#171717" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m20 6-11 11-5-5"></path></svg>
+          </span>
+          <span style="flex: 1; font-size: 14px; color: #5A5A5A;">누가 말했는지 나누기</span>
+          <span class="mono" style="font-size: 12px; color: #666666;">0:42</span>
+        </div>
+
+        <div style="display: flex; align-items: center; gap: 13px; padding: 16px 0; border-bottom: 1px solid #E8E8E8; background-color: #FFFFFF">
+          <span style="display: inline-flex; align-items: center; justify-content: center; flex: 0 0 22px; width: 22px; height: 22px; line-height: 1;">
+            <svg class="spin" width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="#C9C9C9" stroke-width="2.4"></circle><path d="M12 3a9 9 0 0 1 9 9" stroke="#171717" stroke-width="2.4" stroke-linecap="round"></path></svg>
+          </span>
+          <span style="flex: 1; font-size: 14px; font-weight: 600; color: #171717;">결정사항 뽑아내기</span>
+          <span class="mono" style="font-size: 12px; color: #171717;">0:36</span>
+        </div>
+
+        <div style="display: flex; align-items: center; gap: 13px; padding: 16px 0;">
+          <span style="display: inline-flex; align-items: center; justify-content: center; flex: 0 0 22px; width: 22px; height: 22px; border-radius: 999px; border: 1px solid #C9C9C9; line-height: 1;"></span>
+          <span style="flex: 1; font-size: 14px; color: #666666;">담당자와 마감 맞추기</span>
+          <span class="mono" style="font-size: 12px; color: #666666;">대기</span>
+        </div>
+
+      </div>
+
+      <div style="display: flex; gap: 12px; padding: 15px 17px; border: 1px solid #C9C9C9; border-radius: 16px; background: #FFFFFF;">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#171717" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex: 0 0 17px; margin-top: 3px;" aria-hidden="true"><path d="M12 9v4M12 17h.01"></path><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"></path></svg>
+        <div style="display: flex; flex-direction: column; gap: 8px; align-items: stretch">
+          <p style="margin: 0; font-size: 13px; line-height: 1.7; color: #171717;"><span class="mono">29:12~29:40</span> 구간은 말이 겹쳐 잘 들리지 않았어요. 이 구간에서 나온 내용은 <strong style="font-weight: 600;">보류</strong>로 표시해 두고, 원문을 바로 들어볼 수 있게 링크를 달아 둘게요.</p>
+          <button type="button" style="align-self: flex-end; height: 30px; padding: 0 12px; border: 1px solid transparent; border-radius: 9px; background: #EDEDED; font-size: 12.5px; font-weight: 600; color: #171717; min-height: 36px">해당 구간 들어보기</button>
+        </div>
+      </div>
+
+      <div style="display: flex; align-items: center; justify-content: space-between; gap: 20px; padding-top: 4px;">
+        <p style="margin: 0; font-size: 12.5px; color: #666666;">확인이 끝나기 전에는 Notion에 아무것도 쓰지 않아요.</p>
+        <button type="button" style="height: 36px; padding: 0 16px; border: 1px solid transparent; border-radius: 9px; font-size: 13px; color: #ffffff; min-height: 36px; font-weight: 600; background-color: #171717">중단하기</button>
+      </div>
+
+    </div>
+  </main>
+
+</div>
+</x-dc>
+</body>
+</html>
