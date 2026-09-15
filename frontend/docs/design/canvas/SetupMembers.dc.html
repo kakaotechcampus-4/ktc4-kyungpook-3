@@ -1,0 +1,79 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>셋업 4 · 팀원 · 알림 — Manager's Manager</title>
+  <link rel="stylesheet" href="./_fonts.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #FFFFFF; color: #171717;
+      font-family: 'NanumSquare','Apple SD Gothic Neo','Malgun Gothic',system-ui,sans-serif;
+      font-size: 14px; line-height: 1.75; word-break: keep-all; -webkit-font-smoothing: antialiased; }
+    a { color: #171717; text-decoration: none; }
+    a:hover { color: #5A5A5A; }
+    button { font: inherit; color: inherit; cursor: pointer; }
+    .mono { font-family: 'NanumSquare','Apple SD Gothic Neo','Malgun Gothic',system-ui,sans-serif; font-variant-numeric: tabular-nums; letter-spacing: 0; }
+    .dsp { font-family: 'NanumSquare','Apple SD Gothic Neo','Malgun Gothic',system-ui,sans-serif; }
+    ::selection { background: #171717; color: #FFFFFF; }
+    :focus-visible { outline: 2px solid #171717; outline-offset: 4px; }
+    h1 { font-weight: 700; line-height: 1.4; letter-spacing: -0.045em; }
+    h2, h3 { font-weight: 700; line-height: 1.55; letter-spacing: -0.025em; }
+    p { line-height: 1.85; }
+  </style>
+</helmet>
+
+<div style="width: 100%; min-height: 900px; background: #FFFFFF; display: flex; align-items: center; justify-content: center; padding: 64px 48px;">
+  <div style="width: 512px; display: flex; flex-direction: column; gap: 34px;">
+
+    <div style="display: flex; align-items: center; justify-content: center; gap: 7px;">
+      <span style="width: 5px; height: 5px; border-radius: 999px; background: #DCDCDC;"></span>
+      <span style="width: 5px; height: 5px; border-radius: 999px; background: #DCDCDC;"></span>
+      <span style="width: 5px; height: 5px; border-radius: 999px; background: #DCDCDC;"></span>
+      <span style="width: 6px; height: 6px; border-radius: 999px; background: #171717;"></span>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 20px;">
+      <div style="display: flex; align-items: center; gap: 9px; padding-left: 42px;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#171717" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 13 4 4L19 7"></path></svg>
+        <span style="font-size: 12.5px; color: #666666;">노션 연동 완료 — <span style="font-weight: 600; color: #171717;">캡스톤 5조 · 태스크</span></span>
+      </div>
+      <div style="display: flex; align-items: flex-start; gap: 12px;">
+        <span style="display: inline-flex; flex: 0 0 38px; line-height: 1;"><svg width="38" height="38" viewBox="0 0 240 240" fill="none" role="img" aria-label="매스"><defs><clipPath id="ms-setupmembers-1-f-f-f"><ellipse cx="120" cy="113.91" rx="65.69" ry="64.01"></ellipse></clipPath></defs><circle cx="120" cy="120" r="84" fill="#171717"></circle><ellipse cx="120" cy="113.91" rx="65.69" ry="64.01" fill="#FFFFFF"></ellipse><g transform="translate(80.78 30.79) rotate(-22)"><rect x="-17.41" y="-9.14" width="34.82" height="18.28" rx="5.22" ry="5.22" fill="#171717"></rect></g><g clip-path="url(#ms-setupmembers-1-f-f-f)"><rect x="91.73" y="88.25" width="14.78" height="38.3" rx="7.39" fill="#171717"></rect><rect x="133.48" y="88.25" width="14.78" height="38.3" rx="7.39" fill="#171717"></rect></g></svg></span>
+        <p style="margin: 0; flex: 1; min-width: 0; padding: 13px 18px; border-radius: 10px; background: #F0F0F0; font-size: 13.5px; line-height: 1.7; color: #171717;">마지막이에요. 디스코드에서 팀원 5명을 찾았어요 — 이름만 확인해 주세요.</p>
+      </div>
+      <div style="display: flex; align-items: flex-start; gap: 12px;">
+        <span style="display: inline-flex; flex: 0 0 38px; line-height: 1;"><svg width="38" height="38" viewBox="0 0 240 240" fill="none" role="img" aria-label="매스"><defs><clipPath id="ms-setupmembers-2-f-f-f"><ellipse cx="120" cy="113.91" rx="65.69" ry="64.01"></ellipse></clipPath></defs><circle cx="120" cy="120" r="84" fill="#171717"></circle><ellipse cx="120" cy="113.91" rx="65.69" ry="64.01" fill="#FFFFFF"></ellipse><g transform="translate(80.78 30.79) rotate(-22)"><rect x="-17.41" y="-9.14" width="34.82" height="18.28" rx="5.22" ry="5.22" fill="#171717"></rect></g><g clip-path="url(#ms-setupmembers-2-f-f-f)"><rect x="91.73" y="88.25" width="14.78" height="38.3" rx="7.39" fill="#171717"></rect><rect x="133.48" y="88.25" width="14.78" height="38.3" rx="7.39" fill="#171717"></rect></g></svg></span>
+        <p style="margin: 0; flex: 1; min-width: 0; padding: 13px 18px; border-radius: 10px; background: #F0F0F0; font-size: 13.5px; line-height: 1.7; color: #171717;">한 명은 누구인지 모르겠어요. 매칭하지 않으면 그 사람에게는 DM을 보낼 수 없습니다.</p>
+      </div>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 28px;">
+      <div style="display: flex; flex-direction: column; gap: 8px; padding: 22px 22px 18px; border: 1px solid #E8E8E8; border-radius: 10px; background: #FFFFFF;">
+        <h2 style="margin: 0; font-size: 15px; font-weight: 700; letter-spacing: -0.02em; color: #171717;">팀원 연결</h2>
+        <p style="margin: 0; font-size: 13px; line-height: 1.65; color: #666666;">디스코드 계정과 이름을 이어 두면 마감 하루 전에 DM이 나갑니다.</p>
+        <div style="padding-top: 6px;">
+          <div style="display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid #F0F0F0;"><span class="mono" style="flex: 1; min-width: 0; font-size: 12.5px; color: #666666;">@jaehwan</span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#BDBDBD" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"></path></svg><span style="flex: 1; display: flex; align-items: center; justify-content: flex-end; gap: 7px; font-size: 12.5px; font-weight: 600; color: #171717;">재환<span style="font-weight: 400; color: #666666;">백엔드</span></span></div>
+          <div style="display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid #F0F0F0;"><span class="mono" style="flex: 1; min-width: 0; font-size: 12.5px; color: #666666;">@seoyeon</span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#BDBDBD" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"></path></svg><span style="flex: 1; display: flex; align-items: center; justify-content: flex-end; gap: 7px; font-size: 12.5px; font-weight: 600; color: #171717;">서연<span style="font-weight: 400; color: #666666;">프론트엔드</span></span></div>
+          <div style="display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid #F0F0F0;"><span class="mono" style="flex: 1; min-width: 0; font-size: 12.5px; color: #666666;">@jimin_ai</span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#BDBDBD" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"></path></svg><span style="flex: 1; display: flex; align-items: center; justify-content: flex-end; gap: 7px; font-size: 12.5px; font-weight: 600; color: #171717;">지민<span style="font-weight: 400; color: #666666;">AI</span></span></div>
+          <div style="display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid #F0F0F0;"><span class="mono" style="flex: 1; min-width: 0; font-size: 12.5px; color: #666666;">@dohyun</span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#BDBDBD" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"></path></svg><span style="flex: 1; display: flex; align-items: center; justify-content: flex-end; gap: 7px; font-size: 12.5px; font-weight: 600; color: #171717;">도현<span style="font-weight: 400; color: #666666;">기획</span></span></div>
+          <div style="display: flex; align-items: center; gap: 10px; padding: 10px 0;"><span class="mono" style="flex: 1; min-width: 0; font-size: 12.5px; color: #666666;">@nano_04</span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#BDBDBD" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"></path></svg><span style="flex: 1; display: flex; align-items: center; justify-content: flex-end; gap: 8px;"><span style="display: inline-flex; align-items: center; height: 24px; padding: 0 9px; border: 1px dashed #BDBDBD; border-radius: 6px; font-size: 11.5px; color: #666666; line-height: 1;">누구인가요?</span><a href="#" style="font-size: 12.5px; font-weight: 600; color: #171717;">고르기</a></span></div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 4px; padding-top: 8px; flex-direction: row-reverse"><button type="button" style="display: inline-flex; align-items: center; justify-content: center; height: 40px; padding: 0 18px; border: 0; border-radius: 8px; background: #171717; font-size: 13.5px; font-weight: 700; color: #FFFFFF; line-height: 1;">4명 확인 완료</button><button type="button" style="display: inline-flex; align-items: center; justify-content: center; height: 40px; padding: 0 14px; border: 0; background: transparent; font-size: 13.5px; font-weight: 600; color: #999999; line-height: 1;">나중에 하기</button></div>
+      </div>
+      <div style="display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-top: 4px;">
+        <span class="mono" style="font-size: 13px; color: #999999;">4 / 4</span>
+        <span style="flex: 1;"></span>
+        <button type="button" style="display: inline-flex; align-items: center; justify-content: center; gap: 5px; height: 40px; padding: 0 14px 0 11px; border: 0; background: transparent; font-size: 13.5px; font-weight: 600; color: #666666; line-height: 1;">이전</button>
+        <button type="button" style="display: inline-flex; align-items: center; justify-content: center; height: 40px; padding: 0 30px; border: 0; border-radius: 8px; background: #171717; font-size: 13.5px; font-weight: 600; color: #FFFFFF; line-height: 1;">시작하기</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+</x-dc>
+</body>
+</html>
