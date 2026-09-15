@@ -8,6 +8,7 @@ class ErrorCode(StrEnum):
     INVALID_REQUEST = "INVALID_REQUEST"
     MEETING_NOT_FOUND = "MEETING_NOT_FOUND"
     MEETING_ALREADY_ENDED = "MEETING_ALREADY_ENDED"
+    MEETING_NOT_PROCESSING = "MEETING_NOT_PROCESSING"
     AUDIO_UPLOAD_FAILED = "AUDIO_UPLOAD_FAILED"
     AUDIO_FORMAT_UNSUPPORTED = "AUDIO_FORMAT_UNSUPPORTED"
     TRANSCRIPTION_FAILED = "TRANSCRIPTION_FAILED"
@@ -22,6 +23,7 @@ ERROR_STATUS: dict[ErrorCode, int] = {
     ErrorCode.INVALID_REQUEST: 400,
     ErrorCode.MEETING_NOT_FOUND: 404,
     ErrorCode.MEETING_ALREADY_ENDED: 409,
+    ErrorCode.MEETING_NOT_PROCESSING: 409,
     ErrorCode.AUDIO_UPLOAD_FAILED: 422,
     ErrorCode.AUDIO_FORMAT_UNSUPPORTED: 422,
     ErrorCode.TRANSCRIPTION_FAILED: 502,
@@ -36,6 +38,7 @@ ERROR_MESSAGE: dict[ErrorCode, str] = {
     ErrorCode.INVALID_REQUEST: "요청 형식이 올바르지 않습니다.",
     ErrorCode.MEETING_NOT_FOUND: "해당 회의 세션을 찾을 수 없습니다.",
     ErrorCode.MEETING_ALREADY_ENDED: "이미 종료된 회의 세션입니다.",
+    ErrorCode.MEETING_NOT_PROCESSING: "회의가 분석 중(PROCESSING) 상태가 아닙니다.",
     ErrorCode.AUDIO_UPLOAD_FAILED: "오디오 저장·병합에 실패했습니다.",
     ErrorCode.AUDIO_FORMAT_UNSUPPORTED: "지원하지 않는 오디오 형식입니다.",
     ErrorCode.TRANSCRIPTION_FAILED: "음성 전사에 실패했습니다.",
