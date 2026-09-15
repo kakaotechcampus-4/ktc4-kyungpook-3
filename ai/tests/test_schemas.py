@@ -1,4 +1,4 @@
-from shared.schemas import JudgeInput, NotionCandidate, Transcript, TranscriptSegment
+from shared.schemas import JudgeFinding, JudgeInput, NotionCandidate, Transcript, TranscriptSegment
 
 
 def test_transcript_roundtrip_and_merge():
@@ -37,6 +37,27 @@ def test_transcript_segment_from_dict_without_seq():
 
     s = TranscriptSegment.from_dict({"speaker": "1", "start": 0.0, "end": 1.0, "text": "x"})
     assert s.seq == 0
+
+
+def test_judge_finding_defaults():
+    f = JudgeFinding(text="이번 주 금요일까지 끝낼게요")
+    assert f.source == "meeting"
+    assert f.seq == 0
+    assert f.speaker is None
+    assert f.reason == ""
+    assert f.method == "rules"
+
+
+def test_judge_finding_roundtrip():
+    f = JudgeFinding(
+        text="이번 주 금요일까지 끝낼게요",
+        source="meeting",
+        seq=12,
+        speaker="mem_dongwoo",
+        reason="실행 의지 종결 표현 매치",
+        method="rules",
+    )
+    assert JudgeFinding.from_dict(f.to_dict()) == f
 
 
 def test_notion_candidate_defaults():

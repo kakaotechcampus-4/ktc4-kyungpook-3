@@ -93,6 +93,21 @@ JUDGE_CATEGORIES: tuple[str, ...] = ("schedule", "assignee", "scope", "decision"
 
 
 @dataclass
+class JudgeFinding(_Base):
+    """Terra 1단계 출력. '이 발화는 2단계 판단까지 가볼 가치가 있다'고 골라낸 후보 하나.
+
+    아직 Notion 후보와 비교하지 않은 상태라 JudgeResult보다 거친 1차 필터다.
+    """
+
+    text: str  # 발화 원문 (나중에 JudgeInput.text로 그대로 이어짐)
+    source: str = "meeting"  # "meeting" | "chat"
+    seq: int = 0  # 원본 TranscriptSegment.seq — 근거 추적용 안정 식별자
+    speaker: str | None = None  # 화자(opaque id) — 문맥 참고/디버깅용
+    reason: str = ""  # 왜 후보로 골랐는지 (규칙 기반이면 어떤 규칙에 걸렸는지)
+    method: str = "rules"  # rules | llm
+
+
+@dataclass
 class NotionCandidate(_Base):
     """BE가 벡터 검색으로 찾아준, 의미상 가장 가까운 기존 Notion 항목 하나."""
 
