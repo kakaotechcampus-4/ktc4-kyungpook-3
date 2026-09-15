@@ -112,13 +112,28 @@ class Gate(StrEnum):
     HOLD = "hold"
 
 
+class Workspace(Base):
+    __tablename__ = "workspace"
+
+    workspace_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    name: Mapped[str] = mapped_column(String(100))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
 class Member(Base):
     __tablename__ = "member"
+    __table_args__ = (
+        UniqueConstraint(
+            "workspace_id", "discord_user_id", name="uq_workspace_discord_user"
+        ),
+    )
 
     member_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
-    workspace_id: Mapped[str] = mapped_column(String(36), index=True)
+    workspace_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("workspace.workspace_id", ondelete="CASCADE"), index=True
+    )
     display_name: Mapped[str] = mapped_column(String(100))
-    discord_user_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    discord_user_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     notion_name: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
     role: Mapped[str] = mapped_column(String(16), default=MemberRole.MEMBER)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
@@ -140,7 +155,9 @@ class MemberAlias(Base):
     member_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("member.member_id", ondelete="CASCADE"), index=True
     )
-    workspace_id: Mapped[str] = mapped_column(String(36), index=True)
+    workspace_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("workspace.workspace_id", ondelete="CASCADE"), index=True
+    )
     alias_text: Mapped[str] = mapped_column(String(100), index=True)
     alias_type: Mapped[str] = mapped_column(String(16))
     source: Mapped[str] = mapped_column(String(20))
@@ -155,7 +172,9 @@ class AliasResolutionLog(Base):
     __tablename__ = "alias_resolution_log"
 
     log_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
-    workspace_id: Mapped[str] = mapped_column(String(36), index=True)
+    workspace_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("workspace.workspace_id", ondelete="CASCADE"), index=True
+    )
     alias_text: Mapped[str] = mapped_column(String(100), index=True)
     resolved_member_id: Mapped[str | None] = mapped_column(
         String(36), ForeignKey("member.member_id", ondelete="SET NULL"), nullable=True
@@ -188,7 +207,9 @@ class Meeting(Base):
     __tablename__ = "meeting"
 
     meeting_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
-    workspace_id: Mapped[str] = mapped_column(String(36), index=True)
+    workspace_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("workspace.workspace_id", ondelete="CASCADE"), index=True
+    )
     title: Mapped[str | None] = mapped_column(String(200), nullable=True)
     source: Mapped[str] = mapped_column(String(20), default=MeetingSource.DISCORD)
     status: Mapped[str] = mapped_column(String(16), default=MeetingStatus.CREATED, index=True)
@@ -294,7 +315,9 @@ class Task(Base):
     __tablename__ = "task"
 
     task_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
-    workspace_id: Mapped[str] = mapped_column(String(36), index=True)
+    workspace_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("workspace.workspace_id", ondelete="CASCADE"), index=True
+    )
     meeting_id: Mapped[str | None] = mapped_column(
         String(36), ForeignKey("meeting.meeting_id", ondelete="SET NULL"), nullable=True
     )
@@ -347,7 +370,9 @@ class ApprovalRequest(Base):
     __tablename__ = "approval_request"
 
     approval_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
-    workspace_id: Mapped[str] = mapped_column(String(36), index=True)
+    workspace_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("workspace.workspace_id", ondelete="CASCADE"), index=True
+    )
     type: Mapped[str] = mapped_column(String(20))
     payload: Mapped[str] = mapped_column(Text)  # JSON 직렬화
     related_task_id: Mapped[str | None] = mapped_column(
