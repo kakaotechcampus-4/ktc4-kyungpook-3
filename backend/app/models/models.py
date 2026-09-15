@@ -190,9 +190,7 @@ class Meeting(Base):
     title: Mapped[str | None] = mapped_column(String(200), nullable=True)
     source: Mapped[str] = mapped_column(String(20), default=MeetingSource.DISCORD)
     status: Mapped[str] = mapped_column(String(16), default=MeetingStatus.CREATED, index=True)
-    audio_merged: Mapped[bool] = mapped_column(Boolean, default=False)
-    transcribed: Mapped[bool] = mapped_column(Boolean, default=False)
-    extracted: Mapped[bool] = mapped_column(Boolean, default=False)
+
     failed_stage: Mapped[str | None] = mapped_column(String(32), nullable=True)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

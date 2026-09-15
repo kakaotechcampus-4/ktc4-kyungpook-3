@@ -12,7 +12,6 @@ from app.schemas.meeting import (
     MeetingCreateResponse,
     MeetingDetailResponse,
     MeetingEndResponse,
-    MeetingProgress,
 )
 
 router = APIRouter(prefix="/meetings", tags=["meetings"])
@@ -93,12 +92,8 @@ def get_meeting(meeting_id: str, db: Session = Depends(get_db)) -> dict:
         status=meeting.status,
         started_at=meeting.started_at,
         ended_at=meeting.ended_at,
-        progress=MeetingProgress(
-            audio_merged=meeting.audio_merged,
-            transcribed=meeting.transcribed,
-            extracted=meeting.extracted,
-        ),
         extraction_id=extraction_id,
         failed_stage=meeting.failed_stage,
     )
     return success(detail.model_dump(mode="json"))
+

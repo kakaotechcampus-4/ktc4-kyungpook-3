@@ -85,8 +85,8 @@ def create_extraction(
             )
         )
 
-    meeting.extracted = True
     meeting.status = str(MeetingStatus.DONE)
+
 
     db.commit()
     db.refresh(extraction)
