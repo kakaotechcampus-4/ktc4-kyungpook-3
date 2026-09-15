@@ -2,7 +2,7 @@
 
 실행 (ai/ 디렉토리 안에서):
   python -m extract.eval_golden_set                    # 규칙 기반만
-  python -m extract.eval_golden_set --llm               # + LLM(openai 설치 + GEMINI_API_KEY 필요)
+  python -m extract.eval_golden_set --llm               # + LLM(openai 설치 + LLM_API_KEY 필요)   
   python -m extract.eval_golden_set --llm --n-samples 3 # + self-consistency
 
 채점 방법 (extract/golden_set/README.md 참고):
@@ -340,19 +340,19 @@ def main() -> int:
     from shared.config import settings
 
     cfg = settings()
-    if not cfg.gemini_api_key:
-        print("\nGEMINI_API_KEY 가 없어 LLM 채점은 건너뜁니다 (.env 에 채워 주세요).")
+    if not cfg.llm_api_key:
+        print("\nLLM_API_KEY(또는 GEMINI_API_KEY) 가 없어 LLM 채점은 건너뜁니다 (.env 에 채워 주세요).")
         return 0
 
     from extract import llm as llm_extract
 
-    client = OpenAI(base_url=cfg.gemini_base_url or None, api_key=cfg.gemini_api_key)
+    client = OpenAI(base_url=cfg.llm_base_url or None, api_key=cfg.llm_api_key)
     run(
         f"LLM 기반 (n_samples={args.n_samples})",
         lambda case: llm_extract.extract_tasks(
             case.transcript,
             client=client,
-            model=cfg.gemini_model,
+            model=cfg.llm_model,
             today=case.reference_date,
             speaker_names=case.speaker_names,
             n_samples=args.n_samples,

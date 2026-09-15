@@ -75,18 +75,22 @@ def _call_llm(
     *,
     temperature: float,
     max_completion_tokens: int = 4000,
-    reasoning_effort: str = "low",
+    reasoning_effort: str | None = None,
 ) -> BaseModel:
-    """추론형 모델은 reasoning_effort='none' 이어도 내부 추론을 완전히 끄지 않는다(Elice MLAPI 문서).
-    max_completion_tokens 를 안 주면 그 추론이 JSON 을 다 뱉기 전에 한도를 넘겨
-    openai.LengthFinishReasonError 로 죽는다(실제로 겪음). 둘 다 보수적으로 명시한다."""
+    """max_completion_tokens 는 항상 명시한다 — Gemini 로 돌릴 때 내부 추론이 JSON 을 다 뱉기 전에
+    한도를 넘겨 openai.LengthFinishReasonError 로 죽은 적이 있다(완료 토큰 5986). Claude 는 같은
+    작업에 70 토큰 남짓이라 여유롭지만, 공급자가 바뀌어도 안전하도록 상한은 유지한다.
+
+    reasoning_effort 는 Gemini 계열 전용이라 기본은 안 보낸다 — 게이트웨이가 지원하지 않는
+    파라미터를 400 으로 거절할 수 있어서, 필요한 공급자에서만 명시적으로 넘긴다."""
+    extra = {"reasoning_effort": reasoning_effort} if reasoning_effort else {}
     response = client.chat.completions.parse(
         model=model,
         messages=messages,
         response_format=schema,
         temperature=temperature,
         max_completion_tokens=max_completion_tokens,
-        reasoning_effort=reasoning_effort,
+        **extra,
     )
     message = response.choices[0].message
     parsed = getattr(message, "parsed", None)

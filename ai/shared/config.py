@@ -50,15 +50,15 @@ class Settings:
     discord_bot_token: str = env("DISCORD_BOT_TOKEN")
     discord_channel_id: str = env("DISCORD_CHANNEL_ID")
     discord_guild_id: str = env("DISCORD_GUILD_ID")
-    gemini_api_key: str = env("GEMINI_API_KEY")
-    gemini_model: str = env("GEMINI_MODEL", "gemini-2.5-flash-lite")
-    # 팀에서 Google 키를 직접 안 쓰고 Elice MLAPI 같은 OpenAI 호환 프록시로 Gemini 를 쓰는 경우 채움.
-    # 비어 있으면(기본) openai 클라이언트가 OpenAI 공식 엔드포인트를 그대로 쓰게 되므로, 이 프록시를
-    # 쓸 거면 반드시 채워야 함.
-    gemini_base_url: str = env("GEMINI_BASE_URL")
+    # LLM 접속 정보. 공급자를 갈아끼울 수 있게 이름을 중립적으로 둔다 — 실제로 Gemini(무료 티어)에서
+    # Claude Sonnet 5 로 한 번 갈아탔고, 둘 다 Elice MLAPI(OpenAI 호환 게이트웨이)를 통해 쓴다.
+    # 구 변수명(GEMINI_*)도 계속 읽는다 — 팀원 .env 를 한꺼번에 바꾸게 만들지 않기 위함.
+    llm_api_key: str = env("LLM_API_KEY") or env("GEMINI_API_KEY")
+    llm_model: str = env("LLM_MODEL") or env("GEMINI_MODEL", "claude-sonnet-5")
+    llm_base_url: str = env("LLM_BASE_URL") or env("GEMINI_BASE_URL")
     notion_api_key: str = env("NOTION_API_KEY")
     notion_database_id: str = env("NOTION_DATABASE_ID")
-    llm_mode: str = env("PM_AGENT_LLM")  # "" | off | gemini
+    llm_mode: str = env("PM_AGENT_LLM")  # "" | off | on
 
 
 def settings() -> Settings:

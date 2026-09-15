@@ -50,17 +50,17 @@ def main() -> int:
     from shared.config import settings
 
     cfg = settings()
-    if not cfg.gemini_api_key:
-        print("\nGEMINI_API_KEY 가 없어 LLM 비교는 건너뜁니다 (.env 에 채워 주세요).")
+    if not cfg.llm_api_key:
+        print("\nLLM_API_KEY(또는 GEMINI_API_KEY) 가 없어 LLM 비교는 건너뜁니다 (.env 에 채워 주세요).")
         return 0
 
     from extract import llm as llm_extract
 
-    client = OpenAI(base_url=cfg.gemini_base_url or None, api_key=cfg.gemini_api_key)
+    client = OpenAI(base_url=cfg.llm_base_url or None, api_key=cfg.llm_api_key)
     llm_tasks = llm_extract.extract_tasks(
         transcript,
         client=client,
-        model=cfg.gemini_model,
+        model=cfg.llm_model,
         today=TODAY,
         speaker_names=SPEAKER_NAMES,
         n_samples=args.n_samples,
