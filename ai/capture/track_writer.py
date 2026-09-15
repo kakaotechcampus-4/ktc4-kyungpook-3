@@ -14,10 +14,10 @@ from pathlib import Path
 import numpy as np
 import soundfile as sf
 
-# RTP 기준점이 어긋나면 offset_ms 가 몇 시간까지 튈 수 있는데 그대로 믿으면
-# 락을 쥔 채 수 GB를 쓴다. 회의 중 이만큼 조용한 구간은 정상이 아니므로
-# 채우지 않고 세어서 드러낸다.
-MAX_GAP_MS = 60_000
+# offset_ms 는 도착 시각(monotonic)이라 뛰지 않는다. 그래도 상한을 하나 두는 것은 값이
+# 깨졌을 때 락을 쥔 채 수 GB 를 쓰지 않으려는 것뿐이다. 회의 한 판을 넘는 길이로 잡는다.
+# 60초였을 때는 1분 넘게 조용한 정상 화자의 트랙이 앞으로 당겨져 시간축이 어긋났다.
+MAX_GAP_MS = 4 * 60 * 60 * 1000
 
 
 class TrackWriter:
