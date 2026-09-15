@@ -69,4 +69,8 @@ def test_batch_session_merges_into_time_ordered_transcript(tmp_path):
     merged = T.build_session_transcript(out, "500", "echo")
     d = json.loads(merged.read_text(encoding="utf-8"))
     assert [s["speaker"] for s in d["segments"]] == ["1", "2", "1"]
+    assert [s["seq"] for s in d["segments"]] == [1, 2, 3]      # 화자별 카운터가 아니라 회의 전체 순번
     assert d["speakers"] == {"1": "1", "2": "2"}
+    from shared.schemas import Transcript
+    tr = Transcript.from_dict(d)                                 # 추출기(Transcript.segments)가 그대로 읽는다
+    assert [seg.seq for seg in sorted(tr.segments, key=lambda x: x.start)] == [1, 2, 3]

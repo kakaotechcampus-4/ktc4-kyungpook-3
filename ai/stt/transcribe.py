@@ -171,9 +171,10 @@ def transcribe_session_batch(wavs: list[Path], names: dict[str, str], backend, *
     results: dict[Path, dict] = {}
     for tr in tracks:
         mine = [ln for ln in lines if ln.speaker_id == tr.speaker_id]
+        # seq 는 회의 전체 순번이다. JudgeFinding.seq 가 이 값으로 근거 발화를 가리킨다
         segments = [
             {"speaker": tr.speaker_id, "start": round(ln.start_ms / 1000, 2), "end": round(ln.end_ms / 1000, 2),
-             "text": ln.text}
+             "text": ln.text, "seq": ln.seq}
             for ln in mine if ln.text
         ]
         elapsed = stats.by_speaker_s.get(tr.speaker_id, 0.0)
