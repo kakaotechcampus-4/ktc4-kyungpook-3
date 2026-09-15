@@ -1,12 +1,12 @@
-"""extract/golden_set/*.json 으로 규칙 기반(extract/rules.py) vs LLM 기반(extract/llm.py) 채점.
+"""extract/golden_set/*.json 으로 추출기(extract/llm.py)를 채점한다.
 
-실행 (ai/ 디렉토리 안에서):
-  python -m extract.eval_golden_set                    # 규칙 기반만
-  python -m extract.eval_golden_set --llm               # + LLM(openai 설치 + LLM_API_KEY 필요)   
-  python -m extract.eval_golden_set --llm --n-samples 3 # + self-consistency
+실행 (ai/ 디렉토리 안에서 — openai 설치 + LLM_API_KEY 필요):
+  python -m extract.eval_golden_set                 # 채점
+  python -m extract.eval_golden_set -v              # + 틀린 항목을 정답과 나란히
+  python -m extract.eval_golden_set --n-samples 3   # + self-consistency(호출 3배, recall 약 1%p)
 
 채점 방법 (extract/golden_set/README.md 참고):
-  각 케이스의 turns 를 extract.rules.split_sentences 로 쪼갠 문장 하나하나를 "탐지 대상"으로 보고,
+  각 케이스의 turns 를 extract.text.split_sentences 로 쪼갠 문장 하나하나를 "탐지 대상"으로 보고,
   정답(is_task)과 예측(추출됐는지)을 비교해 Precision/Recall/F1 을 낸다. 탐지된 문장에 한해서만
   담당자(assignee_mention)·마감(due_date) 일치율도 잰다 — 탐지 자체가 틀린 문장의 필드 정확도는
   의미가 없어서 분모에서 뺀다.
@@ -26,7 +26,7 @@ from datetime import date
 from pathlib import Path
 from typing import Callable
 
-from extract.rules import split_sentences
+from extract.text import split_sentences
 from shared.schemas import ExtractedTask, Transcript, TranscriptSegment
 
 CASES_DIR = Path(__file__).resolve().parent / "golden_set"
@@ -314,41 +314,30 @@ def run(label: str, extract_fn: Callable[[GoldCase], list[ExtractedTask]], *, ve
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="extract 골든셋 채점: 규칙 기반 vs LLM 기반")
-    ap.add_argument("--llm", action="store_true", help="LLM 기반도 같이 돌림 (openai 설치 + GEMINI_API_KEY 필요)")
-    ap.add_argument("--n-samples", type=int, default=1, help="LLM self-consistency 반복 횟수 (기본 1)")
+    ap = argparse.ArgumentParser(description="extract 골든셋 채점")
+    ap.add_argument("--n-samples", type=int, default=1,
+                    help="self-consistency 반복 횟수 (기본 1). 3 으로 올리면 호출이 3배인데 recall 은 약 1%p 오른다")
     ap.add_argument("-v", "--verbose", action="store_true", help="틀린 항목을 정답과 나란히 출력")
     args = ap.parse_args()
-
-    from extract import rules
-
-    run(
-        "규칙 기반",
-        lambda case: rules.extract_tasks(case.transcript, today=case.reference_date, speaker_names=case.speaker_names),
-        verbose=args.verbose,
-    )
-
-    if not args.llm:
-        return 0
 
     try:
         from openai import OpenAI
     except ImportError:
-        print("\nopenai 가 설치돼 있지 않아 LLM 채점은 건너뜁니다 (pip install openai).")
-        return 0
+        print("openai 가 설치돼 있지 않습니다 (pip install openai).")
+        return 1
 
     from shared.config import settings
 
     cfg = settings()
     if not cfg.llm_api_key:
-        print("\nLLM_API_KEY(또는 GEMINI_API_KEY) 가 없어 LLM 채점은 건너뜁니다 (.env 에 채워 주세요).")
-        return 0
+        print("LLM_API_KEY(또는 GEMINI_API_KEY) 가 없습니다 — .env 에 채워 주세요.")
+        return 1
 
     from extract import llm as llm_extract
 
     client = OpenAI(base_url=cfg.llm_base_url or None, api_key=cfg.llm_api_key)
     run(
-        f"LLM 기반 (n_samples={args.n_samples})",
+        f"{cfg.llm_model} (n_samples={args.n_samples})",
         lambda case: llm_extract.extract_tasks(
             case.transcript,
             client=client,

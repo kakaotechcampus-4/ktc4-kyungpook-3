@@ -1,10 +1,10 @@
-"""Phase 1 — LLM 기반 추출 (method="llm"). extract/rules.py 의 대안이자 기본 경로.
+"""Phase 1 — 회의 대화록에서 할일·담당자·마감일 추출.
 
-역할 분담 (실측 근거는 extract/dates.py 주석 참고):
+역할 분담 (실측 근거는 extract/dates.py 주석과 PR 본문 참고):
   - 할일 여부·task 내용·담당자 타입 분류·모호한 호칭 해소·마감일 해석 → **LLM**
   - 마감일 검증(과거/먼 미래/형식 이상) → **코드**(dates.sanity_check_due_date)
   - 담당자 → member_id 매칭 → **BE**(backend/app/services/matching.py). 여기선 원문·타입까지만
-  - 명시적 "OO님" 패턴 → 정규식(rules._ASSIGNEE_RE)으로 교차검증, 어긋나면 상태를 inferred 로 낮춤
+  - 명시적 "OO님" 패턴 → 정규식(text.find_explicit_name)으로 교차검증, 어긋나면 inferred 로 낮춤
 
 판단 기준(무엇을 할일로 보는가)은 extract/TASK_CRITERIA.md 가 원본이고, 프롬프트는
 extract/prompts.py 에 모아 뒀다.
@@ -26,7 +26,7 @@ from pydantic import BaseModel
 
 from extract import prompts
 from extract.dates import sanity_check_due_date
-from extract.rules import find_explicit_name, split_sentences
+from extract.text import find_explicit_name, split_sentences
 from shared.config import today as _config_today
 from shared.schemas import ExtractedTask, Transcript
 
@@ -199,7 +199,7 @@ def extract_tasks(
     speaker_names: dict[str, str] | None = None,
     n_samples: int = 1,
 ) -> list[ExtractedTask]:
-    """extract/rules.py::extract_tasks 와 같은 자리. client/model 은 호출자가 넘긴다."""
+    """대화록에서 할일을 뽑는다. client/model 은 호출자가 넘긴다(설정 로딩은 안 함)."""
     ref_date = today if today is not None else _config_today()
     names = speaker_names or {}
 

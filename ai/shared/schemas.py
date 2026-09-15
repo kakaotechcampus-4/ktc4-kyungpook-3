@@ -79,7 +79,7 @@ class ExtractedTask(_Base):
     # 아래는 디버깅/근거 추적용 부가 정보 (스키마 확장, 선택)
     assignee_mention: str | None = None
     source_sentence: str | None = None
-    method: str = "rules"  # rules | llm
+    method: str = "llm"
 
     # ── 담당자 호칭 분류 (BE alias 설계와 1:1). 기준은 extract/TASK_CRITERIA.md
     # BE 는 assignee_type 을 보고 처리 경로를 고른다: first/mention 은 발화자·멤버 테이블로 직행,

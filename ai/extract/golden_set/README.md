@@ -1,7 +1,7 @@
 # extract/golden_set/
 
-Phase 1(추출) 채점용 골든셋. `extract/eval_golden_set.py`가 이 안의 `*.json`을 전부 읽어서
-규칙 기반(`extract/rules.py`)·LLM 기반(`extract/llm.py`)을 나란히 채점한다.
+Phase 1(추출) 채점용 골든셋. `extract/eval_golden_set.py`가 이 안의 `*.json`을 전부 읽어
+추출기(`extract/llm.py`)를 채점한다.
 
 ## 케이스 형식
 
@@ -16,7 +16,7 @@ Phase 1(추출) 채점용 골든셋. `extract/eval_golden_set.py`가 이 안의 
   "turns": [{"speaker": "화자키", "text": "..."}],
   "expected": [
     {
-      "sentence": "extract.rules.split_sentences 로 이 turns 를 쪼갰을 때 나오는 문장과 정확히 같아야 함",
+      "sentence": "extract.text.split_sentences 로 이 turns 를 쪼갰을 때 나오는 문장과 정확히 같아야 함",
       "is_task": true,
       "assignee_type": "first|second|thirdname|thirdpronoun|thirdrole|group|none",
       "assignee_mention": "원문에 나온 호칭 그대로. first/group/none 이면 null",
@@ -54,7 +54,7 @@ Phase 1(추출) 채점용 골든셋. `extract/eval_golden_set.py`가 이 안의 
 
 ## 새 케이스 추가하는 법
 
-1. `turns`를 정하고, `python -c "from extract.rules import split_sentences; ..."`로 실제 쪼개지는
+1. `turns`를 정하고, `python -c "from extract.text import split_sentences; ..."`로 실제 쪼개지는
    문장 목록을 뽑는다(또는 그냥 `extract/eval_golden_set.py`를 한번 돌려서 에러 메시지로 확인).
 2. 그 문장 목록 순서 그대로 `expected`를 채운다.
 3. `python -m extract.eval_golden_set` 로 로더 검증(문장 불일치 시 에러) + 점수 확인.
