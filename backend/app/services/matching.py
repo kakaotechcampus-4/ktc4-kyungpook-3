@@ -96,7 +96,7 @@ def log_resolution(
     log = AliasResolutionLog(
         workspace_id=workspace_id,
         alias_text=alias_text,
-        resolved_member=match.member_id,
+        resolved_member_id=match.member_id,
         result=str(match.result),
         candidate_count=match.candidate_count,
         evidence_quote=evidence_quote,

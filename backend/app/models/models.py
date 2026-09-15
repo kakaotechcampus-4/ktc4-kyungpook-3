@@ -157,13 +157,15 @@ class AliasResolutionLog(Base):
     log_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     workspace_id: Mapped[str] = mapped_column(String(36), index=True)
     alias_text: Mapped[str] = mapped_column(String(100), index=True)
-    resolved_member: Mapped[str | None] = mapped_column(
+    resolved_member_id: Mapped[str | None] = mapped_column(
         String(36), ForeignKey("member.member_id", ondelete="SET NULL"), nullable=True
     )
     result: Mapped[str] = mapped_column(String(16))
     candidate_count: Mapped[int] = mapped_column(Integer, default=0)
     evidence_quote: Mapped[str | None] = mapped_column(Text, nullable=True)
-    meeting_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    meeting_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("meeting.meeting_id", ondelete="SET NULL"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 
@@ -175,7 +177,7 @@ class AliasReview(Base):
         String(36), ForeignKey("alias_resolution_log.log_id", ondelete="CASCADE"), index=True
     )
     decision: Mapped[str] = mapped_column(String(16))
-    corrected_member: Mapped[str | None] = mapped_column(
+    corrected_member_id: Mapped[str | None] = mapped_column(
         String(36), ForeignKey("member.member_id", ondelete="SET NULL"), nullable=True
     )
     reviewed_by: Mapped[str] = mapped_column(String(36), ForeignKey("member.member_id"))
