@@ -192,7 +192,7 @@
       "sentence": "아 그리고 이번 주 안으로 전체 코드 컨벤션 문서 한번 다 같이 검토하죠.",
       "is_task": true,
       "assignee_mention": null,
-      "due_date": null,
+      "due_date": "2026-09-13",
       "task_keywords": [
         "코드 컨벤션"
       ],
