@@ -30,6 +30,7 @@ import argparse
 import json
 import statistics
 import sys
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
@@ -72,6 +73,8 @@ class BatchStats:
     unmapped: int = 0            # 단어 시각이 없어 통째로 첫 클립에 붙인 묶음 수
     hallucinated_words: int = 0  # track 모드: VAD 가 말이 없다고 본 자리의 단어 수
     transcribe_s: list[float] = field(default_factory=list)
+    by_speaker_s: dict[str, float] = field(default_factory=dict)  # 화자별 호출 시간 합. 파일당 처리 시간 기록용
+    _lock: threading.Lock = field(default_factory=threading.Lock, repr=False, compare=False)
 
     def summary(self) -> dict:
         ts = sorted(self.transcribe_s)
@@ -180,7 +183,8 @@ def build_chunks(utts: list[Utterance], max_s: float = CHUNK_MAX_S, gap_s: float
 
 
 # ─────────────────────────────────────────────────────────────── 전사
-def _call(backend: SttBackend, pcm: np.ndarray, stats: BatchStats) -> tuple[SttResult | None, float, str | None]:
+def _call(backend: SttBackend, pcm: np.ndarray, stats: BatchStats,
+          speaker: str = "") -> tuple[SttResult | None, float, str | None]:
     t0 = time.monotonic()
     try:
         r = backend.transcribe(pcm, SR)
@@ -188,11 +192,13 @@ def _call(backend: SttBackend, pcm: np.ndarray, stats: BatchStats) -> tuple[SttR
     except Exception as e:  # SttError 도, 예상 못 한 것도 줄 하나의 실패로만 남긴다
         r, err = None, f"{type(e).__name__}: {e}"
     dt = time.monotonic() - t0
-    stats.calls += 1
-    stats.audio_sent_s += len(pcm) / SR
-    stats.transcribe_s.append(dt)
-    if err:
-        stats.failed += 1
+    with stats._lock:   # 워커 여럿이 같은 통계를 만진다
+        stats.calls += 1
+        stats.audio_sent_s += len(pcm) / SR
+        stats.transcribe_s.append(dt)
+        stats.by_speaker_s[speaker] = stats.by_speaker_s.get(speaker, 0.0) + dt
+        if err:
+            stats.failed += 1
     return r, dt, err
 
 
@@ -223,7 +229,7 @@ def _assign_words_to_clips(words: list[Word], clips: list[Utterance], tol_s: flo
 def transcribe_clip_mode(tr: Track, utts: list[Utterance], backend: SttBackend, stats: BatchStats,
                          workers: int) -> list[Line]:
     with ThreadPoolExecutor(max_workers=max(1, workers)) as ex:
-        results = list(ex.map(lambda u: _call(backend, u.pcm, stats), utts))
+        results = list(ex.map(lambda u: _call(backend, u.pcm, stats, tr.speaker_id), utts))
     return [_line(u, tr.speaker_name, r.text if r else "", dt, err) for u, (r, dt, err) in zip(utts, results)]
 
 
@@ -231,7 +237,7 @@ def transcribe_chunk_mode(tr: Track, utts: list[Utterance], backend: SttBackend,
                           workers: int) -> list[Line]:
     chunks = build_chunks(utts)
     with ThreadPoolExecutor(max_workers=max(1, workers)) as ex:
-        results = list(ex.map(lambda c: _call(backend, c.pcm, stats), chunks))
+        results = list(ex.map(lambda c: _call(backend, c.pcm, stats, tr.speaker_id), chunks))
     lines: list[Line] = []
     for c, (r, dt, err) in zip(chunks, results):
         clips = [u for _, u in c.pieces]
@@ -258,7 +264,7 @@ def transcribe_chunk_mode(tr: Track, utts: list[Utterance], backend: SttBackend,
 
 def transcribe_track_mode(tr: Track, audio: np.ndarray, utts: list[Utterance], backend: SttBackend,
                           stats: BatchStats) -> list[Line]:
-    r, dt, err = _call(backend, audio, stats)
+    r, dt, err = _call(backend, audio, stats, tr.speaker_id)
     if err or r is None:
         return [_line(u, tr.speaker_name, "", dt, err or "empty") for u in utts]
     if not r.words:
