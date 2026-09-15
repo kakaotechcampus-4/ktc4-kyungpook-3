@@ -117,8 +117,23 @@ def decide_gate(confidence: float) -> Gate:
 
 def item_confidence(
     task_confidence: float,
+    assignee_raw: str | None,
     assignee_confidence: float,
+    due_raw: str | None,
     due_confidence: float,
 ) -> float:
-    """항목 신뢰도 = min(태스크, 담당자, 마감)."""
-    return min(task_confidence, assignee_confidence, due_confidence)
+    """항목 전체 신뢰도 산출.
+    
+    피드백 반영: 마감일이나 담당자가 미언급(None)인 경우, 이를 '파싱 실패(0.0)'가 아닌 
+    '정상적인 미언급'으로 취급하여 min() 계산에서 제외한다. 
+    (제외하지 않으면 기본값 0.0 때문에 무조건 HOLD 게이트로 빠짐)
+    """
+    confidences = [task_confidence]
+    
+    if assignee_raw is not None:
+        confidences.append(assignee_confidence)
+        
+    if due_raw is not None:
+        confidences.append(due_confidence)
+        
+    return min(confidences)

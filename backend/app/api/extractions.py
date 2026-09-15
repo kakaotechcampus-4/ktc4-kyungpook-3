@@ -63,7 +63,11 @@ def create_extraction(
         )
 
         conf = item_confidence(
-            raw_item.task_confidence, match.confidence, raw_item.due_confidence
+            task_confidence=raw_item.task_confidence,
+            assignee_raw=raw_item.assignee_raw,
+            assignee_confidence=match.confidence,
+            due_raw=raw_item.due_raw,
+            due_confidence=raw_item.due_confidence,
         )
         db.add(
             ExtractionItem(
