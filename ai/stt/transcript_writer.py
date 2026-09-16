@@ -51,9 +51,11 @@ def write_transcript(lines: list[Line], out_dir: Path, meeting_id: str) -> dict:
             )
             f.write(json.dumps(seg.to_dict(), ensure_ascii=False) + "\n")
 
+    # 대본처럼 읽히게 한 턴이 한 줄이다. 줄 머리는 턴 시작 시각과 화자.
     md = [f"# 회의 전사 {meeting_id}", "", "## 시간순", ""]
     for ln in finals:
-        md.append(f"- `[{_clock(ln.start_ms)}]` **{_display_name(ln)}** {_md_text(ln.text)}")
+        md.append(f"({_clock(ln.start_ms)}) **{_display_name(ln)}**: {_md_text(ln.text)}")
+        md.append("")
 
     md += ["", "## 화자별", ""]
     by_speaker: dict[str, list[Line]] = {}
@@ -62,8 +64,8 @@ def write_transcript(lines: list[Line], out_dir: Path, meeting_id: str) -> dict:
     for name, items in by_speaker.items():
         md.append(f"### {name}")
         for ln in items:
-            md.append(f"- `[{_clock(ln.start_ms)}]` {_md_text(ln.text)}")
-        md.append("")
+            md.append(f"({_clock(ln.start_ms)}) {_md_text(ln.text)}")
+            md.append("")
 
     md_path = out_dir / "transcript.md"
     md_path.write_text("\n".join(md) + "\n", encoding="utf-8")
