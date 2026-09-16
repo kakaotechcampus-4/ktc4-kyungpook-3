@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.errors import AppError, ErrorCode, success
+from app.core.errors import AppError, Envelope, ErrorCode, success
 from app.models import (
     ApprovalRequest,
     ApprovalType,
@@ -38,7 +38,7 @@ from app.services.tasks import create_task
 router = APIRouter(prefix="/extractions", tags=["extractions"])
 
 
-@router.post("", status_code=201)
+@router.post("", status_code=201, response_model=Envelope[ExtractionCreateResponse])
 def create_extraction(
     payload: ExtractionCreateRequest,
     db: Session = Depends(get_db),
@@ -167,7 +167,7 @@ def create_extraction(
     )
 
 
-@router.get("/{extraction_id}")
+@router.get("/{extraction_id}", response_model=Envelope[ExtractionDetailResponse])
 def get_extraction(extraction_id: str, db: Session = Depends(get_db)) -> dict:
     extraction = db.get(Extraction, extraction_id)
     if extraction is None:

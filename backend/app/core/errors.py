@@ -1,7 +1,9 @@
 from enum import StrEnum
-from typing import Any
+from typing import Any, Generic, TypeVar
 
 from pydantic import BaseModel
+
+T = TypeVar("T")
 
 
 class ErrorCode(StrEnum):
@@ -78,6 +80,18 @@ class ErrorDetail(BaseModel):
     code: str
     message: str
     details: dict[str, Any] | None = None
+
+
+class Envelope(BaseModel, Generic[T]):
+    """모든 엔드포인트가 공통으로 쓰는 응답 봉투.
+
+    Swagger가 실제 응답 모양을 보여주도록 각 라우터의 response_model에
+    Envelope[XxxResponse] 형태로 붙여 쓴다. success()/failure()는 그대로
+    dict를 반환하고, FastAPI가 이 모델로 검증·직렬화한다.
+    """
+
+    data: T | None
+    error: ErrorDetail | None
 
 
 class AppError(Exception):

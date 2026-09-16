@@ -3,7 +3,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.errors import AppError, ErrorCode, success
+from app.core.errors import AppError, Envelope, ErrorCode, success
 from app.models import Workspace
 from app.schemas.workspace import (
     WorkspaceCreateRequest,
@@ -14,7 +14,7 @@ from app.schemas.workspace import (
 router = APIRouter(prefix="/workspaces", tags=["workspaces"])
 
 
-@router.post("", status_code=201)
+@router.post("", status_code=201, response_model=Envelope[WorkspaceResponse])
 def create_workspace(
     payload: WorkspaceCreateRequest,
     db: Session = Depends(get_db),
@@ -26,7 +26,7 @@ def create_workspace(
     return success(WorkspaceResponse.model_validate(workspace).model_dump(mode="json"))
 
 
-@router.get("")
+@router.get("", response_model=Envelope[WorkspaceListResponse])
 def list_workspaces(db: Session = Depends(get_db)) -> dict:
     rows = db.execute(
         select(Workspace).order_by(Workspace.created_at.desc())
@@ -41,7 +41,7 @@ def list_workspaces(db: Session = Depends(get_db)) -> dict:
     )
 
 
-@router.get("/{workspace_id}")
+@router.get("/{workspace_id}", response_model=Envelope[WorkspaceResponse])
 def get_workspace(workspace_id: str, db: Session = Depends(get_db)) -> dict:
     workspace = db.get(Workspace, workspace_id)
     if workspace is None:

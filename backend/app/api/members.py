@@ -3,7 +3,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.errors import AppError, ErrorCode, success
+from app.core.errors import AppError, Envelope, ErrorCode, success
 from app.models import (
     AliasResolutionLog,
     Member,
@@ -33,7 +33,7 @@ def _get_member(db: Session, member_id: str) -> Member:
     return member
 
 
-@router.post("", status_code=201)
+@router.post("", status_code=201, response_model=Envelope[MemberResponse])
 def create_member(
     payload: MemberCreateRequest,
     db: Session = Depends(get_db),
@@ -56,7 +56,7 @@ def create_member(
     return success(MemberResponse.model_validate(member).model_dump(mode="json"))
 
 
-@router.get("")
+@router.get("", response_model=Envelope[MemberListResponse])
 def list_members(
     workspace_id: str = Query(..., description="워크스페이스 ID"),
     db: Session = Depends(get_db),
@@ -80,7 +80,7 @@ def list_members(
     )
 
 
-@router.get("/aliases")
+@router.get("/aliases", response_model=Envelope[MemberAliasListResponse])
 def list_aliases(
     workspace_id: str = Query(..., description="워크스페이스 ID"),
     db: Session = Depends(get_db),
@@ -100,7 +100,7 @@ def list_aliases(
     )
 
 
-@router.get("/unresolved-aliases")
+@router.get("/unresolved-aliases", response_model=Envelope[UnresolvedAliasListResponse])
 def list_unresolved_aliases(
     workspace_id: str = Query(..., description="워크스페이스 ID"),
     db: Session = Depends(get_db),
@@ -153,13 +153,13 @@ def delete_alias(alias_id: str, db: Session = Depends(get_db)) -> None:
     db.commit()
 
 
-@router.get("/{member_id}")
+@router.get("/{member_id}", response_model=Envelope[MemberResponse])
 def get_member(member_id: str, db: Session = Depends(get_db)) -> dict:
     member = _get_member(db, member_id)
     return success(MemberResponse.model_validate(member).model_dump(mode="json"))
 
 
-@router.patch("/{member_id}")
+@router.patch("/{member_id}", response_model=Envelope[MemberResponse])
 def update_member(
     member_id: str,
     payload: MemberUpdateRequest,
@@ -176,7 +176,9 @@ def update_member(
     return success(MemberResponse.model_validate(member).model_dump(mode="json"))
 
 
-@router.post("/{member_id}/aliases", status_code=201)
+@router.post(
+    "/{member_id}/aliases", status_code=201, response_model=Envelope[MemberAliasResponse]
+)
 def create_alias(
     member_id: str,
     payload: MemberAliasCreateRequest,

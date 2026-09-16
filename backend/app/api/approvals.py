@@ -6,7 +6,7 @@ from sqlalchemy import select, func, update
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.errors import AppError, ErrorCode, success
+from app.core.errors import AppError, Envelope, ErrorCode, success
 from app.models import ApprovalRequest, ApprovalStatus, ApprovalType, ChangeSource, Task
 from app.schemas.approval import (
     ApprovalCreateRequest,
@@ -90,7 +90,7 @@ def _to_response(row: ApprovalRequest) -> ApprovalResponse:
     )
 
 
-@router.post("", status_code=201)
+@router.post("", status_code=201, response_model=Envelope[ApprovalResponse])
 def create_approval(
     payload: ApprovalCreateRequest,
     db: Session = Depends(get_db),
@@ -110,7 +110,7 @@ def create_approval(
     return success(_to_response(approval).model_dump(mode="json"))
 
 
-@router.get("")
+@router.get("", response_model=Envelope[ApprovalListResponse])
 def list_approvals(
     workspace_id: str = Query(..., description="워크스페이스 ID"),
     status: ApprovalStatus | None = Query(None, description="상태 필터"),
@@ -141,7 +141,7 @@ def list_approvals(
     )
 
 
-@router.get("/{approval_id}")
+@router.get("/{approval_id}", response_model=Envelope[ApprovalResponse])
 def get_approval(approval_id: str, db: Session = Depends(get_db)) -> dict:
     """승인 요청 단건을 조회한다."""
     approval = db.get(ApprovalRequest, approval_id)
@@ -153,7 +153,7 @@ def get_approval(approval_id: str, db: Session = Depends(get_db)) -> dict:
     return success(_to_response(approval).model_dump(mode="json"))
 
 
-@router.patch("/{approval_id}")
+@router.patch("/{approval_id}", response_model=Envelope[ApprovalResponse])
 def resolve_approval(
     approval_id: str,
     payload: ApprovalResolveRequest,

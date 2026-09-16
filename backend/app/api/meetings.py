@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.errors import AppError, ErrorCode, success
+from app.core.errors import AppError, Envelope, ErrorCode, success
 from app.models import Extraction, Meeting, MeetingStatus
 from app.schemas.meeting import (
     MeetingCreateRequest,
@@ -28,7 +28,7 @@ def _get_meeting(db: Session, meeting_id: str) -> Meeting:
     return meeting
 
 
-@router.post("", status_code=201)
+@router.post("", status_code=201, response_model=Envelope[MeetingCreateResponse])
 def create_meeting(
     payload: MeetingCreateRequest,
     db: Session = Depends(get_db),
@@ -48,7 +48,9 @@ def create_meeting(
     )
 
 
-@router.patch("/{meeting_id}/end", status_code=202)
+@router.patch(
+    "/{meeting_id}/end", status_code=202, response_model=Envelope[MeetingEndResponse]
+)
 def end_meeting(
     meeting_id: str,
     db: Session = Depends(get_db),
@@ -71,7 +73,7 @@ def end_meeting(
     )
 
 
-@router.get("/{meeting_id}")
+@router.get("/{meeting_id}", response_model=Envelope[MeetingDetailResponse])
 def get_meeting(meeting_id: str, db: Session = Depends(get_db)) -> dict:
     meeting = _get_meeting(db, meeting_id)
 

@@ -5,7 +5,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.errors import AppError, ErrorCode, success
+from app.core.errors import AppError, Envelope, ErrorCode, success
 from app.models import ChangeSource, Task, TaskHistory, TaskStatus, Workspace
 from app.schemas.task import (
     TaskCreateRequest,
@@ -27,7 +27,7 @@ def _get_task(db: Session, task_id: str) -> Task:
     return task
 
 
-@router.post("", status_code=201)
+@router.post("", status_code=201, response_model=Envelope[TaskResponse])
 def create_task_endpoint(
     payload: TaskCreateRequest,
     db: Session = Depends(get_db),
@@ -56,7 +56,7 @@ def create_task_endpoint(
     return success(TaskResponse.model_validate(task).model_dump(mode="json"))
 
 
-@router.get("")
+@router.get("", response_model=Envelope[TaskListResponse])
 def list_tasks(
     workspace_id: str = Query(..., description="워크스페이스 ID"),
     status: TaskStatus | None = Query(None, description="라이프사이클 상태 필터"),
@@ -88,13 +88,13 @@ def list_tasks(
     )
 
 
-@router.get("/{task_id}")
+@router.get("/{task_id}", response_model=Envelope[TaskResponse])
 def get_task(task_id: str, db: Session = Depends(get_db)) -> dict:
     task = _get_task(db, task_id)
     return success(TaskResponse.model_validate(task).model_dump(mode="json"))
 
 
-@router.patch("/{task_id}")
+@router.patch("/{task_id}", response_model=Envelope[TaskResponse])
 def update_task(
     task_id: str,
     payload: TaskUpdateRequest,
@@ -123,7 +123,7 @@ def update_task(
     return success(TaskResponse.model_validate(task).model_dump(mode="json"))
 
 
-@router.get("/{task_id}/history")
+@router.get("/{task_id}/history", response_model=Envelope[TaskHistoryListResponse])
 def list_task_history(task_id: str, db: Session = Depends(get_db)) -> dict:
     _get_task(db, task_id)
     stmt = (
@@ -140,7 +140,9 @@ def list_task_history(task_id: str, db: Session = Depends(get_db)) -> dict:
     )
 
 
-@router.post("/{task_id}/history/{history_id}/rollback")
+@router.post(
+    "/{task_id}/history/{history_id}/rollback", response_model=Envelope[TaskResponse]
+)
 def rollback_history_endpoint(
     task_id: str,
     history_id: str,

@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api import approvals, extractions, meetings, members, tasks, workspaces
-from app.core.errors import AppError, ErrorCode, failure, success
+from app.core.errors import AppError, Envelope, ErrorCode, failure, success
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +73,7 @@ async def unhandled_error_handler(_: Request, exc: Exception) -> JSONResponse:
     )
 
 
-@app.get("/health")
+@app.get("/health", response_model=Envelope[dict[str, str]])
 async def health() -> dict[str, Any]:
     return success({"status": "ok"})
 
