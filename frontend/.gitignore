@@ -2,3 +2,4 @@
 storybook-static/
 playwright-report/
 test-results/
+.ua/

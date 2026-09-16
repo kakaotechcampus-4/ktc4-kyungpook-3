@@ -1,0 +1,147 @@
+/* ============================================================
+   Manager's Manager — 디자인 토큰
+   근거: frontend/docs/design/canvas/Foundations.dc.html (실측 원본)
+        frontend/docs/design/design-system.md
+        frontend/docs/plan/m2-design-tokens.md (이 값들의 유래)
+   금지: #000000 / font-weight 500 / 그림자 / ok·warn·bad·pri 의미색
+   ============================================================ */
+
+@theme {
+  /* ---------- 기본 스케일 제거 ----------
+     Tailwind 기본 팔레트·간격·반경·폰트를 전부 비우고
+     아래에 선언한 것만 유틸로 만든다.
+     - --color-*   : #000000 과 유채 팔레트가 아예 생기지 않게 한다
+     - --spacing   : gap-7 이 28px 가 되는 4px 배수 스케일을 끈다
+     - --font-weight-* : font-medium(500) 유틸을 없앤다 */
+  --color-*: initial;
+  --spacing: initial;
+  --spacing-*: initial;
+  --radius-*: initial;
+  --font-*: initial;
+  --font-weight-*: initial;
+  --text-*: initial;
+  --container-*: initial;
+  --shadow-*: initial;
+  --drop-shadow-*: initial;
+  --blur-*: initial;
+  --animate-*: initial;
+
+  /* ---------- 색 · 글자 (4단) ---------- */
+  --color-ink: #171717; /* 먹 — 제목·본문·강조·주 버튼 채움 */
+  --color-sub: #5a5a5a; /* 보조 — 설명문·카드 부제 */
+  --color-dim: #666666; /* 흐림 — 메타·캡션·시각·날짜 */
+  --color-faint: #999999; /* 미세 — 플레이스홀더·비활성 버튼 글자 */
+
+  /* ---------- 색 · 면 (5단) ---------- */
+  --color-surface: #ffffff; /* 바탕·카드 */
+  --color-surface-sunken: #fafafa; /* 눌린 면 — 근거 블록·패널·완료 카드 */
+  --color-surface-selected: #f0f0f0; /* 선택 — 선택된 행·활성 탭·말풍선 */
+  --color-control: #ededed; /* 컨트롤 — 보조 버튼·칩·보류 배지·세그먼트 트랙 */
+  --color-inactive: #dcdcdc; /* 비활성 표식 — 스텝 점·토글 트랙 (면이지 테두리가 아니다) */
+
+  /* ---------- 색 · 선 (5단) ---------- */
+  --color-input-border: #949494; /* 입력 경계 — 선 중 가장 진하다 */
+  --color-line: #e8e8e8; /* 선 — 카드 테두리·표 경계·리스트 구분 */
+  --color-divider: #efefef; /* 구분선 — 헤더 아래·행과 행 사이 */
+  --color-line-strong: #c9c9c9; /* 강조 테두리 — 지금 봐야 하는 카드 한 겹 */
+  --color-dashed: #bdbdbd; /* 점선 — 비어 있음·아직 정해지지 않음 */
+
+  /* ---------- 색 · 강조 (유일한 유채색 2개) ---------- */
+  --color-accent: #ff6969; /* 강조·경고 — 위험 배지, 승인을 막는 입력의 라벨·경계 */
+  --color-accent-soft: #ff8989; /* 연한 짝 — 위 입력의 플레이스홀더에만 */
+
+  /* ---------- 간격 ----------
+     4px 배수 스케일이 아니다. 아트보드 22장에서 3회 이상 쓰인 34종.
+     이름 = px 값이므로 시안의 인라인 값을 그대로 옮겨 적는다 (gap-7 = 7px). */
+  --spacing-1: 1px;
+  --spacing-2: 2px;
+  --spacing-3: 3px;
+  --spacing-4: 4px;
+  --spacing-5: 5px;
+  --spacing-6: 6px;
+  --spacing-7: 7px;
+  --spacing-8: 8px;
+  --spacing-9: 9px;
+  --spacing-10: 10px;
+  --spacing-11: 11px;
+  --spacing-12: 12px;
+  --spacing-13: 13px;
+  --spacing-14: 14px;
+  --spacing-15: 15px;
+  --spacing-16: 16px;
+  --spacing-18: 18px;
+  --spacing-20: 20px;
+  --spacing-22: 22px;
+  --spacing-24: 24px;
+  --spacing-26: 26px;
+  --spacing-28: 28px;
+  --spacing-30: 30px;
+  --spacing-32: 32px;
+  --spacing-34: 34px;
+  --spacing-36: 36px;
+  --spacing-40: 40px;
+  --spacing-44: 44px;
+  --spacing-48: 48px;
+  --spacing-56: 56px;
+  --spacing-64: 64px;
+  --spacing-72: 72px;
+  --spacing-96: 96px;
+  --spacing-128: 128px;
+
+  /* 레이아웃 고정 치수 */
+  --spacing-header: 76px; /* 앱 헤더 높이 — 제품 15장 공통 */
+  --spacing-aside: 308px; /* 좌측 목록 aside */
+  --spacing-aside-narrow: 252px; /* TasksGantt 전용 */
+
+  /* ---------- 반경 (10종) ---------- */
+  --radius-4: 4px; /* 간트 눈금·미세 표식 */
+  --radius-6: 6px; /* 배지·칩·체크박스 */
+  --radius-7: 7px; /* 간트 막대·소형 칩·로고 마크 */
+  --radius-8: 8px; /* 온보딩 입력·온보딩 버튼 */
+  --radius-9: 9px; /* 컨트롤·버튼·제품 입력·헤더 탭 — 최다 */
+  --radius-10: 10px; /* 말풍선·온보딩 카드 */
+  --radius-11: 11px; /* 세그먼트 트랙 */
+  --radius-12: 12px; /* 칸반 카드·인증 입력·근거 블록 */
+  --radius-16: 16px; /* 카드·패널 */
+  --radius-999: 999px; /* 알약 — 시안의 999/9999 를 하나로 통일 */
+
+  /* ---------- 서체 ---------- */
+  --font-sans: 'NanumSquare', 'Apple SD Gothic Neo', 'Malgun Gothic', system-ui, sans-serif;
+
+  /* 실측 400·600·700 셋뿐. 500 은 캔버스에 0건이고 400 으로 폴백되므로 만들지 않는다. */
+  --font-weight-normal: 400;
+  --font-weight-semibold: 600; /* 나눔스퀘어에서 Bold(700) 로 렌더된다 */
+  --font-weight-bold: 700;
+
+  /* ---------- 타이포 스케일 ---------- */
+  --text-meta: 11.5px; /* 시각·날짜·카운트 */
+  --text-meta--line-height: 1.6;
+  --text-caption: 12.5px; /* 카드 밑단·보조 설명 */
+  --text-caption--line-height: 1.7;
+  --text-control: 13px; /* 버튼·라벨·배지 — 항상 600 과 함께 쓴다 */
+  --text-control--line-height: 1;
+  --text-body: 13.5px; /* 제품 화면 본문 */
+  --text-body--line-height: 1.7;
+  --text-landing: 16px; /* 랜딩 섹션 설명 */
+  --text-landing--line-height: 1.8;
+  --text-lead: 18px; /* 랜딩 히어로 아래 한 줄 */
+  --text-lead--line-height: 1.7;
+
+  /* ---------- 레이아웃 폭 ---------- */
+  --container-shell: 1360px; /* 앱 셸 본문 최대 폭 */
+  --container-column: 1000px; /* 안쪽 컬럼 */
+  --container-prose: 640px; /* 본문 한 줄 길이 상한 (design-system.md §4-2) */
+  --container-landing-text: 1024px;
+  --container-landing-card: 1200px;
+
+  /* ---------- 자간 ---------- */
+  --tracking-normal: 0; /* 한글 본문은 트래킹 0 — 조이지 않는다 */
+  --tracking-h1: -0.045em;
+  --tracking-h2: -0.025em;
+  --tracking-h3: -0.02em;
+
+  /* ---------- 그림자 ----------
+     의도적으로 비어 있다. design-system.md §5 와 이슈 #36 이 금지한다.
+     깊이는 1px 헤어라인(--color-line)이 낸다.
+     시안에 4곳 있으나 m2-design-tokens.md §3-④ 참고. */
+}
