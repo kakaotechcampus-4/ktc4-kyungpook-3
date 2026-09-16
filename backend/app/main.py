@@ -6,8 +6,8 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app.api import approvals, extractions, meetings
-from app.core.errors import AppError, ErrorCode, failure, success
+from app.api import approvals, extractions, meetings, members, tasks, workspaces
+from app.core.errors import AppError, Envelope, ErrorCode, failure, success
 
 logger = logging.getLogger(__name__)
 
@@ -18,9 +18,12 @@ app = FastAPI(
 )
 
 API_PREFIX = "/api/v1"
+app.include_router(workspaces.router, prefix=API_PREFIX)
+app.include_router(members.router, prefix=API_PREFIX)
 app.include_router(meetings.router, prefix=API_PREFIX)
 app.include_router(extractions.router, prefix=API_PREFIX)
 app.include_router(approvals.router, prefix=API_PREFIX)
+app.include_router(tasks.router, prefix=API_PREFIX)
 
 
 @app.exception_handler(AppError)
@@ -70,7 +73,7 @@ async def unhandled_error_handler(_: Request, exc: Exception) -> JSONResponse:
     )
 
 
-@app.get("/health")
+@app.get("/health", response_model=Envelope[dict[str, str]])
 async def health() -> dict[str, Any]:
     return success({"status": "ok"})
 
