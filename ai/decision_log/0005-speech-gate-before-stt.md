@@ -113,6 +113,7 @@ Elice 에 보내 확인했다. 오늘 녹음 전부(35건)를 다시 잘라 임�
 ## 영향받은 파일
 
 - `stt/speech_gate.py` 게이트 본체. `ENABLED`, `THRESHOLD`, `MIN_SPEECH_RATIO`
+- `stt/batch.py` 배치 경로에서는 `run()` 이 클립을 자른 직후 같은 필터를 건다
 - `stt/realtime/session.py` 워커가 API 를 부르기 직전에 판정. 게이트 비용이 `transcribe_s` 에 안 섞이게
   `picked` 앞에 둔다
 - `capture/realtime/adapter.py` 종료 요약에 거른 건수
