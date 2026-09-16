@@ -154,7 +154,8 @@ def build_session_transcript(out_dir: Path, session: str, model_name: str) -> Pa
 
 # ───────────────────────────────────────────────────────────── 배치 전사 (stt/batch.py 위임)
 def transcribe_session_batch(wavs: list[Path], names: dict[str, str], backend, *, mode: str,
-                             model_name: str, gate=None, workers: int = 1) -> tuple[dict[Path, dict], dict]:
+                             model_name: str, gate=None, workers: int = 1,
+                             lines_out: list | None = None) -> tuple[dict[Path, dict], dict]:
     """한 세션의 트랙들을 stt.batch 로 전사해 파일당 결과 dict 를 돌려준다.
 
     한 세션을 한 번에 넣는 이유는 순번(seq)이 회의 전체 기준이기 때문이다. 결과 dict 의 모양은
@@ -168,6 +169,8 @@ def transcribe_session_batch(wavs: list[Path], names: dict[str, str], backend, *
         uid, _ = parse_wav_stem(wav.stem)
         tracks.append(B.Track(speaker_id=uid, speaker_name=names.get(uid, uid), path=wav))
     lines, stats = B.run(tracks, backend, mode=mode, gate=gate, workers=workers)
+    if lines_out is not None:
+        lines_out.extend(lines)   # 회의록(md/jsonl)을 쓰려는 호출자용
 
     results: dict[Path, dict] = {}
     for tr in tracks:
@@ -201,6 +204,26 @@ def transcribe_session_batch(wavs: list[Path], names: dict[str, str], backend, *
             "segments": segments,
         }
     return results, stats.summary()
+
+
+def run_session(wavs: list[Path], names: dict[str, str], backend, *, mode: str = "chunk",
+                model_name: str, gate=None, workers: int = 1, out_dir: Path) -> dict:
+    """한 세션을 전사해 파일당 json/txt, 세션 통계, 병합 Transcript 까지 쓴다.
+
+    돌려주는 dict: results(파일당 결과), summary(통계), lines(회의록용 Line), transcript_json(경로).
+    봇 녹음기(capture/recorder.py)와 이 파일의 main 이 같은 함수를 쓴다.
+    """
+    out_dir.mkdir(parents=True, exist_ok=True)
+    lines: list = []
+    results, summary = transcribe_session_batch(wavs, names, backend, mode=mode, model_name=model_name,
+                                                gate=gate, workers=workers, lines_out=lines)
+    session = parse_wav_stem(wavs[0].stem)[1] if wavs else ""
+    for w, result in results.items():
+        _save(result, out_dir / f"{w.stem}__{model_name}")
+    (out_dir / f"session_{session}__{model_name}.batch.json").write_text(
+        json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
+    merged = build_session_transcript(out_dir, session, model_name)
+    return {"results": results, "summary": summary, "lines": lines, "transcript_json": merged, "session": session}
 
 
 # ───────────────────────────────────────────────────────────── 처리시간 누적 기록
@@ -310,21 +333,17 @@ def main() -> int:
                 continue
 
             print(f"[run ] 세션 {ts} 트랙 {len(session_wavs)}개 ...", flush=True)
-            results, summary = transcribe_session_batch(session_wavs, names, backend, mode=args.mode,
-                                                        model_name=model_name, gate=gate, workers=workers)
-            for w, result in results.items():
-                _save(result, stems[w])
+            run = run_session(session_wavs, names, backend, mode=args.mode, model_name=model_name,
+                              gate=gate, workers=workers, out_dir=out_dir)
+            summary = run["summary"]
+            for w, result in run["results"].items():
                 rows.append(_row(result, w, model_name))
                 print(f"       {w.name} ({result['speaker']}) 줄 {result['clips']} · 실패 {result['failed']} · "
                       f"{result['transcribe_sec']}s (오디오 {result['audio_duration_sec']}s)")
-            (out_dir / f"session_{ts}__{model_name}.batch.json").write_text(
-                json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
             print(f"       호출 {summary['calls']} · 보낸 오디오 {summary['audio_sent_s']}s / 트랙 {summary['track_s']}s · "
                   f"p50 {summary['transcribe_p50_s']}s p95 {summary['transcribe_p95_s']}s · 거름 {summary['gated']}")
-
-            merged = build_session_transcript(out_dir, ts, model_name)
-            if merged:
-                print(f"[merge] 세션 {ts} → {merged.name}")
+            if run["transcript_json"]:
+                print(f"[merge] 세션 {ts} → {run['transcript_json'].name}")
 
     print("\n=== 처리 시간 요약 (기준: 오디오 1분당 30초 이내) ===")
     for r in rows:

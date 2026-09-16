@@ -1049,7 +1049,7 @@ async def test_both_cogs_fit_on_one_bot():
 
     names = sorted(c.name for c in bot.pending_application_commands)
     assert names == ["end", "join", "leave", "live", "live-join", "live-stop", "record",
-                     "selftest", "stop"]
+                     "recover", "selftest", "stop"]
     assert len(names) == len(set(names))
 
 
