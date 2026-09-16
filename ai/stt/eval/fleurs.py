@@ -4,6 +4,11 @@
 여기서는 CER·처리 시간·메모리만 보고, 회의 조건은 골든셋 정렬본(golden.py)이 맡는다.
 클립 하나가 곧 발화 하나라 모드 구분이 없고, 말 필터가 거른 수만 따로 센다.
 
+말 필터에는 앞뒤 무음을 뗀 오디오를 준다. 공개 셋 클립은 앞뒤에 무음이 1~4초씩 붙어 있어
+그대로 재면 말 비율이 희석돼 120개 중 43개가 걸렸다(2026-09-16). 파이프라인에서는 에너지
+VAD 가 발화만 잘라 넘기므로 그 입력을 흉내낸 것이다. 전사에는 원본 클립을 그대로 넣는다.
+모델 순위만 볼 때는 --no-gate 로 돌린다.
+
 사용 (ai/ 안에서):
   .venv/bin/python -m stt.eval.fleurs --root "<fleurs_ko>" --backend local --model small
   .venv/bin/python -m stt.eval.fleurs --root "<fleurs_ko>" --backend elice --yes     # 약 150원
@@ -25,6 +30,20 @@ import soundfile as sf
 from stt import batch as B
 from stt.eval.eval import score as cer_score
 from stt.speech_gate import SpeechGate
+from stt.vad import SPEECH_RMS
+
+
+def trim_edges(audio: np.ndarray, sr: int, threshold: float = SPEECH_RMS, frame_ms: int = 20) -> np.ndarray:
+    """앞뒤의 조용한 프레임을 뗀다. 안쪽 쉼은 그대로다. 전부 조용하면 원본을 돌려준다."""
+    frame = sr * frame_ms // 1000
+    n = len(audio) // frame * frame
+    if n == 0:
+        return audio
+    rms = np.sqrt((audio[:n].reshape(-1, frame) ** 2).mean(axis=1))
+    idx = np.where(rms > threshold)[0]
+    if len(idx) == 0:
+        return audio
+    return audio[idx[0] * frame: (idx[-1] + 1) * frame]
 
 
 def load_clips(root: Path) -> list[dict]:
@@ -57,7 +76,7 @@ def run(root: Path, backend_kind: str, model: str, *, beam: int = 5, gate_on: bo
     gated = 0
     todo = []
     for c in clips:
-        if gate is not None and not gate.accepts(c["audio"], B.SR, tag=str(c["id"])):
+        if gate is not None and not gate.accepts(trim_edges(c["audio"], B.SR), B.SR, tag=str(c["id"])):
             gated += 1
             c["hyp"] = ""
             continue
