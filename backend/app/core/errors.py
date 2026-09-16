@@ -17,6 +17,13 @@ class ErrorCode(StrEnum):
     APPROVAL_NOT_FOUND = "APPROVAL_NOT_FOUND"
     APPROVAL_ALREADY_RESOLVED = "APPROVAL_ALREADY_RESOLVED"
     NOTION_WRITE_FAILED = "NOTION_WRITE_FAILED"
+    WORKSPACE_NOT_FOUND = "WORKSPACE_NOT_FOUND"
+    WORKSPACE_MISMATCH = "WORKSPACE_MISMATCH"
+    MEMBER_NOT_FOUND = "MEMBER_NOT_FOUND"
+    MEMBER_ALIAS_NOT_FOUND = "MEMBER_ALIAS_NOT_FOUND"
+    TASK_NOT_FOUND = "TASK_NOT_FOUND"
+    TASK_HISTORY_NOT_FOUND = "TASK_HISTORY_NOT_FOUND"
+    TASK_HISTORY_ALREADY_ROLLED_BACK = "TASK_HISTORY_ALREADY_ROLLED_BACK"
     INTERNAL_ERROR = "INTERNAL_ERROR"
 
 
@@ -33,6 +40,13 @@ ERROR_STATUS: dict[ErrorCode, int] = {
     ErrorCode.APPROVAL_NOT_FOUND: 404,
     ErrorCode.APPROVAL_ALREADY_RESOLVED: 409,
     ErrorCode.NOTION_WRITE_FAILED: 502,
+    ErrorCode.WORKSPACE_NOT_FOUND: 404,
+    ErrorCode.WORKSPACE_MISMATCH: 400,
+    ErrorCode.MEMBER_NOT_FOUND: 404,
+    ErrorCode.MEMBER_ALIAS_NOT_FOUND: 404,
+    ErrorCode.TASK_NOT_FOUND: 404,
+    ErrorCode.TASK_HISTORY_NOT_FOUND: 404,
+    ErrorCode.TASK_HISTORY_ALREADY_ROLLED_BACK: 409,
     ErrorCode.INTERNAL_ERROR: 500,
 }
 
@@ -49,6 +63,13 @@ ERROR_MESSAGE: dict[ErrorCode, str] = {
     ErrorCode.APPROVAL_NOT_FOUND: "해당 승인 요청을 찾을 수 없습니다.",
     ErrorCode.APPROVAL_ALREADY_RESOLVED: "이미 처리된 승인 요청입니다.",
     ErrorCode.NOTION_WRITE_FAILED: "Notion 반영에 실패했습니다.",
+    ErrorCode.WORKSPACE_NOT_FOUND: "해당 워크스페이스를 찾을 수 없습니다.",
+    ErrorCode.WORKSPACE_MISMATCH: "요청한 워크스페이스가 대상 리소스의 워크스페이스와 다릅니다.",
+    ErrorCode.MEMBER_NOT_FOUND: "해당 팀원을 찾을 수 없습니다.",
+    ErrorCode.MEMBER_ALIAS_NOT_FOUND: "해당 별칭을 찾을 수 없습니다.",
+    ErrorCode.TASK_NOT_FOUND: "해당 태스크를 찾을 수 없습니다.",
+    ErrorCode.TASK_HISTORY_NOT_FOUND: "해당 반영 로그를 찾을 수 없습니다.",
+    ErrorCode.TASK_HISTORY_ALREADY_ROLLED_BACK: "이미 되돌린 변경입니다.",
     ErrorCode.INTERNAL_ERROR: "서버 내부 오류가 발생했습니다.",
 }
 
