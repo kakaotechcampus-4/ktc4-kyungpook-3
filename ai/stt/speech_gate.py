@@ -8,13 +8,13 @@
 임계는 이 프로젝트 오디오에서 재서 정했다. threshold 0.95 에서 골든셋 실제 발화
 18건의 말 비율은 최소 75%, 5퍼센타일 83%, 중앙값 97% 였고, 환각을 만든 클립 세
 건은 42% / 0% / 33%, 숨소리 한 건은 0% 였다. 42% 와 75% 사이가 비어 있어 0.60 에
-자른다. VadOptions 의 두 0 은 바꾸면 안 된다 — 패딩과 최소 길이가 붙으면 비율
+자른다. VadOptions 의 두 0 은 바꾸면 안 된다. 패딩과 최소 길이가 붙으면 비율
 자체가 달라져 이 수치가 의미를 잃는다.
 
 무엇을 재지 않았는지는 decision_log/0005-speech-gate-before-stt.md 에 적어 두었다.
 
 모델은 처음 쓸 때 한 번만 올린다. 워커 여럿이 같이 부르므로 적재와 판정을 같은
-잠금 안에 둔다 — faster_whisper 의 get_vad_model 은 lru_cache 지만 lru_cache 는
+잠금 안에 둔다. faster_whisper 의 get_vad_model 은 lru_cache 지만 lru_cache 는
 감싼 함수가 도는 동안을 잠그지 않아서, 찬 캐시를 두 스레드가 같이 만나면 모델이
 두 번 올라간다.
 """
@@ -28,6 +28,11 @@ import numpy as np
 ENABLED = True
 THRESHOLD = 0.95
 MIN_SPEECH_RATIO = 0.60
+# 1초 미만 발화에 느슨한 임계(0.70)를 두었다가 걷어냈다 (2026-09-14). 근거로 삼은
+# "감사합니다 0.40초" 클립을 들어 보니 "으음" 하는 소리였고, 위스퍼가 거기에 "감사합니다."
+# 를 지어낸 것이었다. 0.4초에 다섯 음절은 애초에 말이 안 됐다. 실제 짧은 단어("안녕하세요"
+# 0.64초·0.96초)는 0.95 에서도 0.91 로 통과한다. 0.95 가 거르는 짧은 소리는 "으음", "아아"
+# 같은 군소리이고, 그건 걸러야 위스퍼가 문장을 지어내지 않는다.
 
 
 def _load_silero():
@@ -80,14 +85,16 @@ class SpeechGate:
     def model_loaded(self) -> bool:
         return self._loaded
 
-    def speech_ratio(self, pcm: np.ndarray, sample_rate: int) -> float:
+    def speech_ratio(self, pcm: np.ndarray, sample_rate: int,
+                     threshold: float | None = None) -> float:
         if len(pcm) == 0:
             return 0.0
+        thr = self.threshold if threshold is None else threshold
         with self._lock:
             if not self._loaded:
                 self._model = self._load_model()
                 self._loaded = True
-            spans = self._speech_spans(pcm, sample_rate, self.threshold)
+            spans = self._speech_spans(pcm, sample_rate, thr)
         speech = sum(s["end"] - s["start"] for s in spans)
         return speech / len(pcm)
 
@@ -102,7 +109,7 @@ class SpeechGate:
             # 지어낸 줄보다 사라진 말이 나쁘다. 통과시키고 센다.
             with self._lock:
                 self.errors += 1
-            print(f"[speech_gate] 판정 실패 ({type(e).__name__}: {e}) — "
+            print(f"[speech_gate] 판정 실패 ({type(e).__name__}: {e}), "
                   f"{tag or '발화'} 를 그대로 전사한다", flush=True)
             return True
 
@@ -114,11 +121,11 @@ class SpeechGate:
         with self._lock:
             self.rejected += 1
         print(f"[speech_gate] 거름: {tag or '발화'} {len(pcm) / sample_rate:.2f}초 · "
-              f"말 비율 {ratio:.2f} < {self.min_ratio:.2f}", flush=True)
+              f"말 비율 {ratio:.2f} < {self.min_ratio:.2f} (임계 {self.threshold:.2f})", flush=True)
         return False
 
     def summary(self) -> str:
-        """종료 요약에 넣는 한 줄. 거른 것이 없어도 적는다 — 조용히 지우는 필터를 만들지 않는다."""
+        """종료 요약에 넣는 한 줄. 거른 것이 없어도 적는다. 조용히 지우는 필터를 만들지 않는다."""
         if not self.enabled:
             return "말 필터 꺼짐 (speech_gate.ENABLED)"
         checked = self.passed + self.rejected + self.errors

@@ -20,9 +20,12 @@ recordings/         녹음 산출물 (git 제외)
 - `capture/discord_adapter.py` 는 **봇을 띄우지 않습니다.** `RecordingCog` 를 export 하고, BE 의
   `backend/bot/main.py`(다른 디렉토리, 다른 프로젝트)가 `bot.add_cog(RecordingCog(bot, on_session_saved=...))`
   로 붙입니다. BE 가 준비되기 전에는 `capture/run_recorder.py` 로 같은 구성을 띄워 검증합니다.
-- `/stop` 으로 저장이 끝나면 `on_session_saved(manifest, manifest_path)` 훅이 호출됩니다. BE 는 여기서
-  전사 → Phase 1/2 함수 호출 → `approval_request` 생성을 이어 붙이면 됩니다.
-- 매니페스트 `recordings/session_{ts}.json` = `{"session", "speakers": [{"user_id", "display_name", "file", "duration_sec"}]}`.
+- `/stop` 이면 트랙을 닫고 배치 전사(`stt/batch.py`)를 돌려 회의록을 채널에 올린 뒤
+  `on_session_saved(manifest, manifest_path)` 훅을 부릅니다. BE 는 여기서 Phase 1/2 함수 호출 → `approval_request`
+  생성을 이어 붙이면 됩니다. BE 가 읽는 전사는 `transcripts/session_{ts}.transcript.json` 입니다.
+- 매니페스트 `recordings/session_{ts}.json` = `{"session", "status", "started_at", "meeting_dir", "transcript",
+  "speakers": [{"user_id", "display_name", "file", "duration_sec"}]}`. `status` 는 recording → saved → transcribed
+  (실패 시 failed) 이고, 봇이 죽어도 `/recover` 가 남은 회의를 마저 전사합니다.
 
 ## 설치 (이 디렉토리, `ai/` 안에서)
 
@@ -40,8 +43,8 @@ cp .env.example .env                 # DISCORD_BOT_TOKEN 채우기 (DISCORD_GUIL
 ## 실행
 
 ```bash
-python capture/run_recorder.py    # Discord 에서 /join → /record → (말하기) → /stop
-#    recordings/{user_id}_{ts}.wav · recordings/session_{ts}.json
+python capture/run_recorder.py    # Discord 에서 /join → /record → (말하기) → /stop → 회의록이 채널에 올라옴
+#    recordings/{guild}_{ts}/{user_id}_{ts}.wav · recordings/session_{ts}.json · transcripts/session_{ts}.transcript.json
 ```
 
 ## 테스트

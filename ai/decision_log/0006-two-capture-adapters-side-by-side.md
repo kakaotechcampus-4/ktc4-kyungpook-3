@@ -1,7 +1,8 @@
 # 0006. 회의 캡처 구현 두 개를 한 브랜치에 나란히 둔다
 
 - 날짜: 2026-09-12
-- 상태: 검토중 (어느 쪽을 남길지는 멘토 리뷰에서 정한다)
+- 상태: 결정됨 (2026-09-16). 캡처는 `/record` 하나로 합쳤다. sink 는 StreamingSink + TrackWriter 이고
+  종료 뒤 배치 전사(0008)가 이어진다. `/live` 계열은 `capture/realtime/` 에 남겨 두고 프로세스에 올리지 않는다
 
 ## 배경
 
@@ -18,7 +19,7 @@
 덮어쓴 채로 둔다. diff 가 작고 파일이 하나다. 대신 리뷰가 "왜 지웠나" 부터 시작한다.
 
 파일을 나누고 명령 이름을 바꾼다. 동료 파일은 develop 그대로 두고 실시간 쪽을
-`capture/realtime_adapter.py` 로 옮긴 뒤 `/live` `/live-join` `/live-stop` 으로 부른다.
+`capture/realtime/adapter.py` 로 옮긴 뒤 `/live` `/live-join` `/live-stop` 으로 부른다.
 한 봇에 둘 다 붙고 서버에서 번갈아 눌러 볼 수 있다. 대신 같은 음성 연결을 두고 두 Cog 가
 다투는 자리가 새로 생긴다.
 
@@ -42,7 +43,7 @@ wav 를 sink 에서 스트리밍으로 쓰기 때문에 `save_session` 의 입�
 raw bytes)를 쓸 수 없는데 매니페스트 형식은 같아야 한다. `stt/transcribe.py` 와
 `stt/eval/eval.py` 가 `recordings/` 를 얕게 훑어 `session_*.json` 을 그 형식으로 읽는다.
 되돌리면 형식이 두 벌이 되고 시간이 지나면 갈라진다. 두 함수의 출력이 바이트 단위로 같은
-것은 `tests/test_realtime_adapter.py` 의
+것은 `tests/realtime/test_realtime_adapter.py` 의
 `test_write_manifest_and_save_session_write_the_same_bytes` 가 확인하고, 동료의
 `tests/test_recording_store.py` 는 손대지 않은 채로 통과한다.
 
@@ -64,7 +65,7 @@ MESSAGE CONTENT 를 켜 두어야 한다. `.env.example` 주석을 그렇게 고
 
 ## 영향받은 파일
 
-- 새로 만듦: `capture/realtime_adapter.py`, `capture/run_realtime.py`
+- 새로 만듦: `capture/realtime/adapter.py`, `capture/realtime/run.py`
 - develop 상태로 되돌림: `capture/discord_adapter.py`, `capture/run_recorder.py`,
   `README.md`, `CLAUDE.md`, `tests/test_recording_store.py` (전부 diff 0)
 - 공유로 남김: `capture/recording_store.py` (`write_manifest` 분리)
@@ -80,6 +81,58 @@ MESSAGE CONTENT 를 켜 두어야 한다. `.env.example` 주석을 그렇게 고
 다만 그 실행은 파일을 나누기 전이라 명령 이름이 `/record` `/stop` 이었다. 코드 경로는 그대로
 옮겼지만 `/live` `/live-stop` 이라는 이름으로는 아직 실제 서버에서 다시 돌리지 않았다.
 오프라인 쪽은 우리가 돌려 보지 않았다.
+
+### CPU 와 메모리 (2026-09-12, M4 10코어 노트북)
+
+두 방식이 서버에서 무엇을 쓰는지 같은 기기에서 쟀다. t3.medium 값이 아니다. 그 인스턴스는
+Xeon 한 코어의 스레드 둘이라 여기보다 느리고, 얼마나 느린지는 받아서 재야 안다.
+
+오프라인 경로의 로컬 모델. 실제 디스코드 녹음 44초를 `faster-whisper` 로 전사하고 프로세스
+CPU 시간(user+sys)을 오디오 길이로 나눴다.
+
+| 모델 (int8) | 스레드 | RTF | CPU초 / 오디오초 | 최대 RSS |
+|---|---|---|---|---|
+| small | 1 | 0.18 | 0.18 | 1.06GB |
+| large-v3-turbo | 1 | 0.74 | 0.74 | 2.49GB |
+| large-v3-turbo | 2 | 0.44 | 0.84 | 2.64GB |
+| large-v3-turbo | 자동 (3.7코어) | 0.27 | 0.99 | 2.93GB |
+
+스레드를 늘리면 벽시계는 줄지만 CPU 총량은 는다. 크레딧은 CPU 총량으로 센다.
+
+실시간 경로. 골든셋 6트랙 209.6초를 실시간 속도로 흘리고 `/usr/bin/time -l` 로 쟀다.
+Opus·DAVE 복호화는 py-cord 가 하므로 여기 안 들어간다. 그건 종료 요약의
+"봇 프로세스 CPU" 줄이 실제 회의에서 잰다.
+
+| | |
+|---|---|
+| 벽시계 | 40.3초 |
+| CPU | 2.15초 (코어 하나의 5.3%) |
+| 오디오 1초당 CPU | 0.010초 |
+| 최대 RSS | 198MB |
+
+t3.medium 에 대입하면 이렇다. 기준선은 20% 이고 24시간 평균이 그걸 넘길 때만 초과분에
+vCPU-시간당 $0.05 가 붙는다 (T3 는 기본이 unlimited). 실시간 경로는 노트북보다 3배 느려도
+코어 하나의 16% 라 기준선 아래다. 오프라인 경로는 2배만 느려도 RTF 1.5 로 60분 회의에
+90분이 걸리고, 하루 한두 건이면 24시간 평균은 20% 아래지만 그 90분 동안 두 vCPU 가 다른
+일을 못 한다. 메모리 2.5~2.9GB 는 4GiB 의 60~70% 다.
+
+재현 (`ai/` 에서):
+
+```bash
+# 로컬 모델. small 과 turbo 를 스레드 1·2·자동으로. 약 4분
+.venv/bin/python -B -c "
+import resource,time,wave
+from faster_whisper import WhisperModel
+wav='recordings/<회의>/<화자>.wav'; a=wave.open(wav).getnframes()/16000
+cpu=lambda:(lambda r:r.ru_utime+r.ru_stime)(resource.getrusage(resource.RUSAGE_SELF))
+for n in (1,2,0):
+  m=WhisperModel('large-v3-turbo',device='cpu',compute_type='int8',cpu_threads=n)
+  c0,t0=cpu(),time.monotonic(); ' '.join(s.text for s in m.transcribe(wav,language='ko')[0])
+  w,c=time.monotonic()-t0,cpu()-c0; print(n,f'RTF {w/a:.2f} CPU/오디오 {c/a:.2f}')"
+
+# 실시간 파이프라인
+/usr/bin/time -l .venv/bin/python stt/realtime/bench.py --tracks "<골든셋 audio>" --pace
+```
 
 ## 다시 볼 조건
 

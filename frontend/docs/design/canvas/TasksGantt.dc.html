@@ -1,0 +1,295 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>태스크 · 간트차트 — Manager's Manager</title>
+  <link rel="stylesheet" href="./_fonts.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #FFFFFF; color: #171717;
+      font-family: 'NanumSquare','Apple SD Gothic Neo','Malgun Gothic',system-ui,sans-serif;
+      font-size: 14px; line-height: 1.75; word-break: keep-all; -webkit-font-smoothing: antialiased; }
+    a { color: #171717; text-decoration: none; }
+    a:hover { color: #5A5A5A; }
+    button { font: inherit; color: inherit; cursor: pointer; }
+    .mono { font-family: 'NanumSquare','Apple SD Gothic Neo','Malgun Gothic',system-ui,sans-serif; font-variant-numeric: tabular-nums; letter-spacing: 0; }
+    .dsp { font-family: 'NanumSquare','Apple SD Gothic Neo','Malgun Gothic',system-ui,sans-serif; }
+    ::selection { background: #171717; color: #FFFFFF; }
+    :focus-visible { outline: 2px solid #171717; outline-offset: 4px; }
+    h1 { font-weight: 700; line-height: 1.4; letter-spacing: -0.045em; }
+    h2, h3 { font-weight: 700; line-height: 1.55; letter-spacing: -0.025em; }
+    p { line-height: 1.85; }
+  </style>
+</helmet>
+
+<div style="width: 100%; min-height: 1240px; background: #FFFFFF; display: flex; flex-direction: column;">
+
+  <header style="flex: 0 0 76px; height: 76px; display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 0 40px; border-bottom: 1px solid #EFEFEF;">
+    <div style="display: flex; align-items: center; gap: 30px;">
+      <span style="display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 7px; background: #171717; line-height: 1;">
+        <svg width="15" height="15" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M2 11V3.5l3.5 4.5L9 3.5V11" stroke="#FFFFFF" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path><path d="M11.6 5.2v2.4" stroke="#FFFFFF" stroke-width="1.8" stroke-linecap="round"></path></svg>
+      </span>
+      <nav style="display: flex; align-items: center; gap: 2px;">
+        <a href="#" style="display: inline-flex; align-items: center; height: 32px; padding: 0 12px; border-radius: 9px; font-size: 13px; color: #5A5A5A; min-height: 36px; font-weight: 600; line-height: 1;">대시보드</a>
+        <a href="#" style="display: inline-flex; align-items: center; height: 32px; padding: 0 12px; border-radius: 9px; font-size: 13px; color: #5A5A5A; min-height: 36px; font-weight: 600; line-height: 1;">회의록</a>
+        <a href="#" style="display: inline-flex; align-items: center; gap: 7px; height: 32px; padding: 0 12px; border-radius: 9px; background: #F0F0F0; font-size: 13px; font-weight: 600; color: #171717; min-height: 36px; line-height: 1;">태스크<span class="mono" style="display: inline-flex; align-items: center; justify-content: center; min-width: 17px; height: 17px; padding: 0 5px; border-radius: 999px; background: #E8E8E8; font-size: 10.5px; font-weight: 400; color: #FFFFFF; line-height: 1; background-color: #171717; fill: #171717">3</span></a>
+        <a href="#" style="display: inline-flex; align-items: center; gap: 7px; height: 32px; padding: 0 12px; border-radius: 9px; font-size: 13px; color: #5A5A5A; min-height: 36px; font-weight: 600; line-height: 1;">메시지<span class="mono" style="display: inline-flex; align-items: center; justify-content: center; min-width: 17px; height: 17px; padding: 0 5px; border-radius: 999px; background: #E8E8E8; font-size: 10.5px; font-weight: 400; color: #171717; line-height: 1;">2</span></a>
+        <a href="#" style="display: inline-flex; align-items: center; height: 32px; padding: 0 12px; border-radius: 9px; font-size: 13px; color: #5A5A5A; min-height: 36px; font-weight: 600; line-height: 1;">팀</a>
+      </nav>
+    </div>
+    <div style="display: flex; align-items: center; gap: 24px;">
+      <button type="button" style="display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 11px; border: 1px solid #E8E8E8; border-radius: 9px; background: #FFFFFF; font-size: 13px; font-weight: 600; color: #171717; min-height: 36px; line-height: 1;">캡스톤 5조<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#666666" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg></button>
+      <span style="display: inline-flex; align-items: center; justify-content: center; width: 29px; height: 29px; border-radius: 999px; background: #EFEFEF; font-size: 11px; font-weight: 600; color: #171717; line-height: 1;">지훈</span>
+    </div>
+  </header>
+
+  <main style="flex: 1; padding: 48px 48px 72px; display: flex; flex-direction: column; gap: 20px; width: 100%; max-width: 1360px; margin-inline: auto;">
+
+    <div style="display: flex; align-items: flex-end; justify-content: space-between; gap: 24px;">
+      <div style="display: flex; flex-direction: column; gap: 5px;">
+        <h1 style="margin: 0; font-size: 28px; line-height: 1.25; font-weight: 700; letter-spacing: -0.045em; color: #171717;">태스크</h1>
+        <p style="margin: 0; font-size: 13.5px; color: #5A5A5A;">간트차트로 일정을 한 눈에 볼 수 있어요.</p>
+      </div>
+      <div style="display: inline-flex; gap: 3px; padding: 3px; border: 1px solid transparent; border-radius: 11px; background: #EDEDED;">
+        <button type="button" style="height: 30px; padding: 0 13px; border: 0; border-radius: 9px; background: transparent; font-size: 12.5px; color: #5A5A5A; min-height: 36px; font-weight: 600;">리스트</button>
+        <button type="button" style="height: 30px; padding: 0 13px; border: 0; border-radius: 9px; background: transparent; font-size: 12.5px; color: #5A5A5A; min-height: 36px; font-weight: 600;">보드</button>
+        <button type="button" style="height: 30px; padding: 0 13px; border: 0; border-radius: 9px; background: transparent; font-size: 12.5px; color: #5A5A5A; min-height: 36px; font-weight: 600;">캘린더</button>
+        <button type="button" style="height: 30px; padding: 0 13px; border: 0; border-radius: 9px; background: #FFFFFF; font-size: 12.5px; font-weight: 600; color: #171717; min-height: 36px;">간트</button>
+      </div>
+    </div>
+
+    <div style="display: flex; align-items: center; justify-content: space-between; gap: 16px;">
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <h2 class="dsp" style="margin: 0; font-size: 19px; font-weight: 700; letter-spacing: -0.025em; color: #171717;">9월 2주 – 4주</h2>
+        <div style="display: flex; align-items: center; gap: 4px;">
+          <button type="button" aria-label="이전 3주" style="display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border: 1px solid transparent; border-radius: 9px; background: #EDEDED; min-height: 36px; line-height: 1;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#5A5A5A" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"></path></svg></button>
+          <button type="button" aria-label="다음 3주" style="display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border: 1px solid transparent; border-radius: 9px; background: #EDEDED; min-height: 36px; line-height: 1;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#5A5A5A" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg></button>
+        </div>
+        
+      </div>
+      <div style="display: flex; align-items: center; gap: 16px;">
+        <span style="display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: #5A5A5A;"><span style="width: 20px; height: 12px; border-radius: 4px; background-color: #171717"></span>진행 중</span>
+        <span style="display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: #5A5A5A;"><span style="width: 20px; height: 12px; border-radius: 4px; border: 1px solid #C9C9C9; background: #FFFFFF;"></span>시작 전</span>
+        <span style="display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: #5A5A5A;"><span style="width: 20px; height: 12px; border-radius: 4px; background: #FAFAFA;"></span>완료</span>
+        <span style="display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: #5A5A5A;"><span style="width: 20px; height: 12px; border-radius: 4px; border: 1px dashed #BDBDBD; background: #FFFFFF; border-width: 2px"></span>확인 필요</span>
+      </div>
+    </div>
+
+    <div style="position: relative; border: 1px solid #E8E8E8; border-radius: 16px; background: #FFFFFF; overflow: hidden;">
+
+      <div aria-hidden="true" style="position: absolute; inset: 0; z-index: 0; display: flex;">
+        <div style="flex: 0 0 252px;"></div>
+        <div style="flex: 1; display: grid; grid-template-columns: repeat(21, minmax(0, 1fr)); grid-template-rows: 1fr;">
+          <span style="grid-row: 1; grid-column: 6 / 8; background: #FAFAFA;"></span>
+          <span style="grid-row: 1; grid-column: 13 / 15; background: #FAFAFA;"></span>
+          <span style="grid-row: 1; grid-column: 20 / 22; background: #FAFAFA;"></span>
+        </div>
+      </div>
+
+      <div style="position: relative; z-index: 1;">
+
+      <div style="display: flex; align-items: stretch;">
+        <div style="flex: 0 0 252px; display: flex; align-items: center; padding: 0 14px; border-right: 1px solid #E8E8E8; background: #FAFAFA;"><span class="mono" style="font-size: 10.5px; font-weight: 400; letter-spacing: 0.08em; color: #666666;">담당자 · 태스크</span></div>
+        <div style="flex: 1; display: grid; grid-template-columns: repeat(21, minmax(0, 1fr));">
+          <span style="grid-column: 1 / 8; padding: 8px 10px; font-size: 11.5px; font-weight: 600; color: #5A5A5A;">9월 2주</span>
+          <span style="grid-column: 8 / 15; padding: 8px 10px; border-left: 1px solid #E8E8E8; font-size: 11.5px; font-weight: 600; color: #5A5A5A;">9월 3주</span>
+          <span style="grid-column: 15 / 22; padding: 8px 10px; border-left: 1px solid #E8E8E8; font-size: 11.5px; font-weight: 600; color: #5A5A5A;">9월 4주</span>
+        </div>
+      </div>
+
+      <div style="display: flex; align-items: stretch; border-top: 1px solid #EFEFEF;">
+        <div style="flex: 0 0 252px; border-right: 1px solid #E8E8E8; background: #FAFAFA;"></div>
+        <div style="flex: 1; display: grid; grid-template-columns: repeat(21, minmax(0, 1fr)); min-height: 30px;">
+            <span style="display: flex; align-items: center; justify-content: center;"><span class="mono" style="font-size: 11px; color: #5A5A5A;">7</span></span>
+            <span style="display: flex; align-items: center; justify-content: center;"><span class="mono" style="font-size: 11px; color: #5A5A5A;">8</span></span>
+            <span style="display: flex; align-items: center; justify-content: center;"><span class="mono" style="font-size: 11px; color: #5A5A5A;">9</span></span>
+            <span style="display: flex; align-items: center; justify-content: center;"><span class="mono" style="font-size: 11px; color: #5A5A5A;">10</span></span>
+            <span style="display: flex; align-items: center; justify-content: center;"><span class="mono" style="display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 999px; background: #171717; font-size: 11px; font-weight: 600; color: #FFFFFF; line-height: 1;">11</span></span>
+            <span style="display: flex; align-items: center; justify-content: center;"><span class="mono" style="font-size: 11px; color: #666666;">12</span></span>
+            <span style="display: flex; align-items: center; justify-content: center;"><span class="mono" style="font-size: 11px; color: #666666;">13</span></span>
+            <span style="display: flex; align-items: center; justify-content: center;"><span class="mono" style="font-size: 11px; color: #5A5A5A;">14</span></span>
+            <span style="display: flex; align-items: center; justify-content: center;"><span class="mono" style="font-size: 11px; color: #5A5A5A;">15</span></span>
+            <span style="display: flex; align-items: center; justify-content: center;"><span class="mono" style="font-size: 11px; color: #5A5A5A;">16</span></span>
+            <span style="display: flex; align-items: center; justify-content: center;"><span class="mono" style="font-size: 11px; color: #5A5A5A;">17</span></span>
+            <span style="display: flex; align-items: center; justify-content: center;"><span class="mono" style="font-size: 11px; color: #5A5A5A;">18</span></span>
+            <span style="display: flex; align-items: center; justify-content: center;"><span class="mono" style="font-size: 11px; color: #666666;">19</span></span>
+            <span style="display: flex; align-items: center; justify-content: center;"><span class="mono" style="font-size: 11px; color: #666666;">20</span></span>
+            <span style="display: flex; align-items: center; justify-content: center;"><span class="mono" style="font-size: 11px; color: #5A5A5A;">21</span></span>
+            <span style="display: flex; align-items: center; justify-content: center;"><span class="mono" style="font-size: 11px; color: #5A5A5A;">22</span></span>
+            <span style="display: flex; align-items: center; justify-content: center;"><span class="mono" style="font-size: 11px; color: #5A5A5A;">23</span></span>
+            <span style="display: flex; align-items: center; justify-content: center;"><span class="mono" style="font-size: 11px; color: #5A5A5A;">24</span></span>
+            <span style="display: flex; align-items: center; justify-content: center;"><span class="mono" style="font-size: 11px; color: #5A5A5A;">25</span></span>
+            <span style="display: flex; align-items: center; justify-content: center;"><span class="mono" style="font-size: 11px; color: #666666;">26</span></span>
+            <span style="display: flex; align-items: center; justify-content: center;"><span class="mono" style="font-size: 11px; color: #666666;">27</span></span>
+        </div>
+      </div>
+
+      <div style="display: flex; align-items: stretch; border-top: 1px solid #E8E8E8;">
+        <div style="flex: 0 0 252px; display: flex; align-items: center; gap: 9px; padding: 8px 14px; border-right: 1px solid #E8E8E8; background: #FAFAFA;">
+          <span style="display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 999px; background: #EFEFEF; font-size: 9.5px; font-weight: 600; color: #171717; line-height: 1;">재</span>
+          <span style="font-size: 12.5px; font-weight: 600; color: #171717;">재환</span>
+          <span style="flex: 1; font-size: 11px; color: #666666;">백엔드</span>
+          <span class="mono" style="font-size: 11px; color: #666666;">3건</span>
+        </div>
+        <div style="flex: 1;"></div>
+      </div>
+      <div style="display: flex; align-items: stretch; border-top: 1px solid #EFEFEF;">
+        <div style="flex: 0 0 252px; display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 14px; border-right: 1px solid #E8E8E8;">
+          <span style="flex: 1; min-width: 0; font-size: 13px; font-weight: 600; color: #171717; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">API 명세서</span>
+        </div>
+        <div style="flex: 1; display: grid; grid-template-columns: repeat(21, minmax(0, 1fr)); align-items: center; min-height: 44px;">
+            <span style="grid-column: 3 / 12; display: flex; align-items: center; justify-content: space-between; gap: 8px; height: 26px; margin: 0 3px; padding: 0 9px; border-radius: 7px; font-size: 10.5px; overflow: hidden; white-space: nowrap; color: #ffffff; background-color: #FF6969; fill: #FF6969"><span class="mono">09/09 → 09/17</span><span style="display: inline-flex; align-items: center; height: 18px; padding: 0 7px; border-radius: 6px; background: #171717; font-size: 10px; font-weight: 700; color: #FFFFFF; line-height: 1; background-color: #FF6969; fill: #FF6969">위험</span></span>
+        </div>
+      </div>
+      <div style="display: flex; align-items: stretch; border-top: 1px solid #EFEFEF;">
+        <div style="flex: 0 0 252px; display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 14px; border-right: 1px solid #E8E8E8;">
+          <span style="flex: 1; min-width: 0; font-size: 13px; font-weight: 600; color: #171717; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">배포 스크립트 정리</span>
+        </div>
+        <div style="flex: 1; display: grid; grid-template-columns: repeat(21, minmax(0, 1fr)); align-items: center; min-height: 44px;">
+            <span style="grid-column: 12 / 16; display: flex; align-items: center; justify-content: space-between; gap: 8px; height: 26px; margin: 0 3px; padding: 0 9px; border-radius: 7px; font-size: 10.5px; overflow: hidden; white-space: nowrap; border: 1px solid #C9C9C9; background: #FFFFFF; color: #5A5A5A;"><span class="mono">09/18 → 09/21</span></span>
+        </div>
+      </div>
+      <div style="display: flex; align-items: stretch; border-top: 1px solid #EFEFEF;">
+        <div style="flex: 0 0 252px; display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 14px; border-right: 1px solid #E8E8E8;">
+          <span style="flex: 1; min-width: 0; font-size: 13px; font-weight: 400; color: #666666; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-decoration: line-through;">DB 스키마 확정</span>
+        </div>
+        <div style="flex: 1; display: grid; grid-template-columns: repeat(21, minmax(0, 1fr)); align-items: center; min-height: 44px;">
+            <span style="grid-column: 1 / 5; display: flex; align-items: center; justify-content: space-between; gap: 8px; height: 26px; margin: 0 3px; padding: 0 9px; border-radius: 7px; font-size: 10.5px; overflow: hidden; white-space: nowrap; background: #FAFAFA; color: #666666;"><span class="mono">09/10 완료</span></span>
+        </div>
+      </div>
+
+      <div style="display: flex; align-items: stretch; border-top: 1px solid #E8E8E8;">
+        <div style="flex: 0 0 252px; display: flex; align-items: center; gap: 9px; padding: 8px 14px; border-right: 1px solid #E8E8E8; background: #FAFAFA;">
+          <span style="display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 999px; background: #EFEFEF; font-size: 9.5px; font-weight: 600; color: #171717; line-height: 1;">서</span>
+          <span style="font-size: 12.5px; font-weight: 600; color: #171717;">서연</span>
+          <span style="flex: 1; font-size: 11px; color: #666666;">프론트엔드</span>
+          <span class="mono" style="font-size: 11px; color: #666666;">2건</span>
+        </div>
+        <div style="flex: 1;"></div>
+      </div>
+      <div style="display: flex; align-items: stretch; border-top: 1px solid #EFEFEF;">
+        <div style="flex: 0 0 252px; display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 14px; border-right: 1px solid #E8E8E8;">
+          <span style="flex: 1; min-width: 0; font-size: 13px; font-weight: 600; color: #171717; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">로그인 화면 퍼블리싱</span>
+        </div>
+        <div style="flex: 1; display: grid; grid-template-columns: repeat(21, minmax(0, 1fr)); align-items: center; min-height: 44px;">
+            <span style="grid-column: 2 / 9; display: flex; align-items: center; justify-content: space-between; gap: 8px; height: 26px; margin: 0 3px; padding: 0 9px; border-radius: 7px; font-size: 10.5px; overflow: hidden; white-space: nowrap; color: #FFFFFF; background-color: #171717"><span class="mono">09/08 → 09/14</span></span>
+        </div>
+      </div>
+      <div style="display: flex; align-items: stretch; border-top: 1px solid #EFEFEF;">
+        <div style="flex: 0 0 252px; display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 14px; border-right: 1px solid #E8E8E8;">
+          <span style="flex: 1; min-width: 0; font-size: 13px; font-weight: 400; color: #666666; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-decoration: line-through;">디자인 시스템 1차</span>
+        </div>
+        <div style="flex: 1; display: grid; grid-template-columns: repeat(21, minmax(0, 1fr)); align-items: center; min-height: 44px;">
+            <span style="grid-column: 1 / 3; display: flex; align-items: center; justify-content: space-between; gap: 8px; height: 26px; margin: 0 3px; padding: 0 9px; border-radius: 7px; font-size: 10.5px; overflow: hidden; white-space: nowrap; background: #FAFAFA; color: #666666;"><span class="mono"></span></span>
+        </div>
+      </div>
+
+      <div style="display: flex; align-items: stretch; border-top: 1px solid #E8E8E8;">
+        <div style="flex: 0 0 252px; display: flex; align-items: center; gap: 9px; padding: 8px 14px; border-right: 1px solid #E8E8E8; background: #FAFAFA;">
+          <span style="display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 999px; background: #EFEFEF; font-size: 9.5px; font-weight: 600; color: #171717; line-height: 1;">지</span>
+          <span style="font-size: 12.5px; font-weight: 600; color: #171717;">지민</span>
+          <span style="flex: 1; font-size: 11px; color: #666666;">AI</span>
+          <span class="mono" style="font-size: 11px; color: #666666;">2건</span>
+        </div>
+        <div style="flex: 1;"></div>
+      </div>
+      <div style="display: flex; align-items: stretch; border-top: 1px solid #EFEFEF;">
+        <div style="flex: 0 0 252px; display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 14px; border-right: 1px solid #E8E8E8;">
+          <span style="flex: 1; min-width: 0; font-size: 13px; font-weight: 600; color: #171717; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">STT 파이프라인 튜닝</span>
+        </div>
+        <div style="flex: 1; display: grid; grid-template-columns: repeat(21, minmax(0, 1fr)); align-items: center; min-height: 44px;">
+            <span style="grid-column: 4 / 11; display: flex; align-items: center; justify-content: space-between; gap: 8px; height: 26px; margin: 0 3px; padding: 0 9px; border-radius: 7px; font-size: 10.5px; overflow: hidden; white-space: nowrap; background: #171717; color: #FFFFFF"><span class="mono">09/10 → 09/16</span><span style="display: inline-flex; align-items: center; gap: 4px; height: 18px; padding: 0 7px; border-radius: 6px; background: #171717; font-size: 10px; font-weight: 700; color: #FFFFFF; line-height: 1;"><span style="width: 4px; height: 4px; border-radius: 999px; background: currentColor;"></span>주의</span></span>
+        </div>
+      </div>
+      <div style="display: flex; align-items: stretch; border-top: 1px solid #EFEFEF;">
+        <div style="flex: 0 0 252px; display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 14px; border-right: 1px solid #E8E8E8;">
+          <span style="flex: 1; min-width: 0; font-size: 13px; font-weight: 600; color: #171717; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">사용자 테스트 모집</span>
+        </div>
+        <div style="flex: 1; display: grid; grid-template-columns: repeat(21, minmax(0, 1fr)); align-items: center; min-height: 44px;">
+            <span style="grid-column: 15 / 17; display: flex; align-items: center; justify-content: space-between; gap: 8px; height: 26px; margin: 0 3px; padding: 0 9px; border-radius: 7px; font-size: 10.5px; overflow: hidden; white-space: nowrap; border: 1px solid #C9C9C9; background: #FFFFFF; color: #5A5A5A;"><span class="mono"></span></span>
+        </div>
+      </div>
+
+      <div style="display: flex; align-items: stretch; border-top: 1px solid #E8E8E8;">
+        <div style="flex: 0 0 252px; display: flex; align-items: center; gap: 9px; padding: 8px 14px; border-right: 1px solid #E8E8E8; background: #FAFAFA;">
+          <span style="display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 999px; background: #EFEFEF; font-size: 9.5px; font-weight: 600; color: #171717; line-height: 1;">도</span>
+          <span style="font-size: 12.5px; font-weight: 600; color: #171717;">도현</span>
+          <span style="flex: 1; font-size: 11px; color: #666666;">기획</span>
+          <span class="mono" style="font-size: 11px; color: #666666;">2건</span>
+        </div>
+        <div style="flex: 1;"></div>
+      </div>
+      <div style="display: flex; align-items: stretch; border-top: 1px solid #EFEFEF;">
+        <div style="flex: 0 0 252px; display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 14px; border-right: 1px solid #E8E8E8;">
+          <span style="flex: 1; min-width: 0; font-size: 13px; font-weight: 600; color: #171717; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">중간 발표 자료</span>
+        </div>
+        <div style="flex: 1; display: grid; grid-template-columns: repeat(21, minmax(0, 1fr)); align-items: center; min-height: 44px;">
+            <span style="grid-column: 8 / 13; display: flex; align-items: center; justify-content: space-between; gap: 8px; height: 26px; margin: 0 3px; padding: 0 9px; border-radius: 7px; font-size: 10.5px; overflow: hidden; white-space: nowrap; color: #171717; background-color: #FFFFFF; border-width: 1px; border-style: solid; border-color: #C9C9C9"><span class="mono">09/14 → 09/18</span></span>
+        </div>
+      </div>
+      <div style="display: flex; align-items: stretch; border-top: 1px solid #EFEFEF;">
+        <div style="flex: 0 0 252px; display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 14px; border-right: 1px solid #E8E8E8;">
+          <span style="flex: 1; min-width: 0; font-size: 13px; font-weight: 600; color: #171717; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">중간 발표 리허설</span>
+        </div>
+        <div style="flex: 1; display: grid; grid-template-columns: repeat(21, minmax(0, 1fr)); align-items: center; min-height: 44px;">
+            <span style="grid-column: 11 / 12; display: flex; align-items: center; justify-content: space-between; gap: 8px; height: 26px; margin: 0 3px; padding: 0 9px; border-radius: 7px; font-size: 10.5px; overflow: hidden; white-space: nowrap; border: 1px solid #C9C9C9; background: #FFFFFF; color: #5A5A5A;"><span class="mono"></span></span>
+        </div>
+      </div>
+
+      <div style="display: flex; align-items: stretch; border-top: 1px solid #E8E8E8;">
+        <div style="flex: 0 0 252px; display: flex; align-items: center; gap: 9px; padding: 8px 14px; border-right: 1px solid #E8E8E8; background: #FAFAFA;">
+          <span style="display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border: 1px dashed #BDBDBD; border-radius: 999px; font-size: 10px; color: #666666; line-height: 1;">?</span>
+          <span style="font-size: 12.5px; font-weight: 600; color: #171717;">미지정</span>
+          <span style="flex: 1; font-size: 11px; color: #666666;">승인하면 담당자가 붙습니다</span>
+          <span class="mono" style="font-size: 11px; color: #666666;">1건</span>
+        </div>
+        <div style="flex: 1;"></div>
+      </div>
+      <div style="display: flex; align-items: stretch; border-top: 1px solid #EFEFEF;">
+        <div style="flex: 0 0 252px; display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 14px; border-right: 1px solid #E8E8E8;">
+          <span style="flex: 1; min-width: 0; font-size: 13px; font-weight: 600; color: #171717; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">중간 발표 자료 준비</span>
+        </div>
+        <div style="flex: 1; display: grid; grid-template-columns: repeat(21, minmax(0, 1fr)); align-items: center; min-height: 44px;">
+            <span style="grid-column: 10 / 13; display: flex; align-items: center; justify-content: space-between; gap: 8px; height: 26px; margin: 0 3px; padding: 0 9px; border-radius: 7px; font-size: 10.5px; overflow: hidden; white-space: nowrap; border: 1px dashed #BDBDBD; background: #FFFFFF; color: #5A5A5A;"><span class="mono">마감 09/18</span></span>
+        </div>
+      </div>
+
+      </div>
+
+      <span aria-hidden="true" style="position: absolute; top: 62px; bottom: 0; left: calc(252px + (100% - 252px) * 0.2143); z-index: 2; width: 1px; background: #171717;"></span>
+
+    </div>
+
+    <section style="display: flex; flex-direction: column; gap: 10px; padding-top: 14px;">
+      <div style="display: flex; align-items: center; justify-content: space-between;">
+        <h2 style="margin: 0; font-size: 14px; font-weight: 600; color: #171717;">일정이 없는 일 <span class="mono" style="font-weight: 400; color: #666666;">2</span></h2>
+        
+      </div>
+      <div>
+        <div style="display: flex; align-items: center; gap: 12px; padding: 13px 0; border-bottom: 1px solid #EFEFEF;">
+          <span style="display: inline-flex; align-items: center; height: 21px; padding: 0 8px; border: 1px dashed #BDBDBD; border-radius: 6px; font-size: 11px; font-weight: 600; color: #5A5A5A; line-height: 1; border-width: 2px">일정 없음</span>
+          <span style="flex: 1; font-size: 13.5px; font-weight: 600; color: #171717;">디자인 시안 2차</span>
+          <span style="font-size: 12.5px; color: #666666;">마감이 "다음 주쯤"으로만 언급됨</span>
+          <span style="display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; color: #666666;"><span style="display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 999px; background: #EFEFEF; font-size: 9.5px; font-weight: 600; color: #171717; line-height: 1;">서</span>서연</span>
+          <a href="#" style="display: inline-flex; align-items: center; gap: 3px; height: 32px; padding: 0 4px; font-size: 12.5px; font-weight: 600; color: #171717;">날짜 넣기<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#171717" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"></path></svg></a>
+        </div>
+        <div style="display: flex; align-items: center; gap: 12px; padding: 13px 0;">
+          <span style="display: inline-flex; align-items: center; height: 21px; padding: 0 8px; border: 1px dashed #BDBDBD; border-radius: 6px; font-size: 11px; font-weight: 600; color: #5A5A5A; line-height: 1; border-width: 2px">일정 없음</span>
+          <span style="flex: 1; font-size: 13.5px; font-weight: 600; color: #171717;">자료조사</span>
+          <span style="font-size: 12.5px; color: #666666;">담당자와 마감 모두 미정 · 보류</span>
+          <span style="display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; color: #666666;"><span style="display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border: 1px dashed #BDBDBD; border-radius: 999px; font-size: 10px; color: #666666; line-height: 1;">?</span>미지정</span>
+          <a href="#" style="display: inline-flex; align-items: center; gap: 3px; height: 32px; padding: 0 4px; font-size: 12.5px; font-weight: 600; color: #171717;">날짜 넣기<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#171717" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"></path></svg></a>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+</div>
+</x-dc>
+</body>
+</html>

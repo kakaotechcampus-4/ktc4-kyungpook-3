@@ -50,11 +50,20 @@ class Settings:
     discord_bot_token: str = env("DISCORD_BOT_TOKEN")
     discord_channel_id: str = env("DISCORD_CHANNEL_ID")
     discord_guild_id: str = env("DISCORD_GUILD_ID")
-    gemini_api_key: str = env("GEMINI_API_KEY")
-    gemini_model: str = env("GEMINI_MODEL", "gemini-2.5-flash-lite")
+    embedding_api_key: str = env("EMBEDDING_API_KEY")
+    embedding_base_url: str = env("EMBEDDING_BASE_URL")
+    terra_api_key: str = env("TERRA_API_KEY")
+    terra_base_url: str = env("TERRA_BASE_URL")
+    luna_api_key: str = env("LUNA_API_KEY")
+    luna_base_url: str = env("LUNA_BASE_URL")
+    # 추출(Phase 1, extract/llm.py) 전용. Terra/Luna 와 같은 게이트웨이지만 엔드포인트가 또 다르다.
+    # 구 변수명(GEMINI_*)도 계속 읽는다 — 팀원 .env 를 한꺼번에 바꾸게 만들지 않기 위함.
+    llm_api_key: str = env("LLM_API_KEY") or env("GEMINI_API_KEY")
+    llm_model: str = env("LLM_MODEL") or env("GEMINI_MODEL", "claude-sonnet-5")
+    llm_base_url: str = env("LLM_BASE_URL") or env("GEMINI_BASE_URL")
     notion_api_key: str = env("NOTION_API_KEY")
     notion_database_id: str = env("NOTION_DATABASE_ID")
-    llm_mode: str = env("PM_AGENT_LLM")  # "" | off | gemini
+    llm_mode: str = env("PM_AGENT_LLM")  # "" | off
 
 
 def settings() -> Settings:

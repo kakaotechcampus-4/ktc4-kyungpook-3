@@ -98,6 +98,9 @@ class Reorderer:
         self._buf = self._buf[cut:]
         return out
 
+    def __len__(self) -> int:
+        return len(self._buf)
+
     def flush(self) -> list:
         """창에 남은 것을 전부 순서대로 내보낸다."""
         self._buf.sort(key=lambda x: (x[0], x[1]))

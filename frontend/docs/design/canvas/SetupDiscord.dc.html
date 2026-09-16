@@ -1,0 +1,68 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>셋업 2 · Discord 연결 — Manager's Manager</title>
+  <link rel="stylesheet" href="./_fonts.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #FFFFFF; color: #171717;
+      font-family: 'NanumSquare','Apple SD Gothic Neo','Malgun Gothic',system-ui,sans-serif;
+      font-size: 14px; line-height: 1.75; word-break: keep-all; -webkit-font-smoothing: antialiased; }
+    a { color: #171717; text-decoration: none; }
+    a:hover { color: #5A5A5A; }
+    button { font: inherit; color: inherit; cursor: pointer; }
+    .mono { font-family: 'NanumSquare','Apple SD Gothic Neo','Malgun Gothic',system-ui,sans-serif; font-variant-numeric: tabular-nums; letter-spacing: 0; }
+    .dsp { font-family: 'NanumSquare','Apple SD Gothic Neo','Malgun Gothic',system-ui,sans-serif; }
+    ::selection { background: #171717; color: #FFFFFF; }
+    :focus-visible { outline: 2px solid #171717; outline-offset: 4px; }
+    h1 { font-weight: 700; line-height: 1.4; letter-spacing: -0.045em; }
+    h2, h3 { font-weight: 700; line-height: 1.55; letter-spacing: -0.025em; }
+    p { line-height: 1.85; }
+  </style>
+</helmet>
+
+<div style="width: 100%; min-height: 900px; background: #FFFFFF; display: flex; align-items: center; justify-content: center; padding: 64px 48px;">
+  <div style="width: 512px; display: flex; flex-direction: column; gap: 34px;">
+
+    <div style="display: flex; align-items: center; justify-content: center; gap: 7px;">
+      <span style="width: 5px; height: 5px; border-radius: 999px; background: #DCDCDC;"></span>
+      <span style="width: 6px; height: 6px; border-radius: 999px; background: #171717;"></span>
+      <span style="width: 5px; height: 5px; border-radius: 999px; background: #DCDCDC;"></span>
+      <span style="width: 5px; height: 5px; border-radius: 999px; background: #DCDCDC;"></span>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 20px;">
+      <div style="display: flex; align-items: flex-start; gap: 12px;">
+        <span style="display: inline-flex; flex: 0 0 38px; line-height: 1;"><svg width="38" height="38" viewBox="0 0 240 240" fill="none" role="img" aria-label="매스"><defs><clipPath id="ms-setupdiscord-1-f-f-f"><ellipse cx="120" cy="113.91" rx="65.69" ry="64.01"></ellipse></clipPath></defs><circle cx="120" cy="120" r="84" fill="#171717"></circle><ellipse cx="120" cy="113.91" rx="65.69" ry="64.01" fill="#FFFFFF"></ellipse><g transform="translate(80.78 30.79) rotate(-22)"><rect x="-17.41" y="-9.14" width="34.82" height="18.28" rx="5.22" ry="5.22" fill="#171717"></rect></g><g clip-path="url(#ms-setupdiscord-1-f-f-f)"><rect x="91.73" y="88.25" width="14.78" height="38.3" rx="7.39" fill="#171717"></rect><rect x="133.48" y="88.25" width="14.78" height="38.3" rx="7.39" fill="#171717"></rect></g></svg></span>
+        <p style="margin: 0; flex: 1; min-width: 0; padding: 13px 18px; border-radius: 10px; background: #F0F0F0; font-size: 13.5px; line-height: 1.7; color: #171717;">안녕하세요! 회의록 정리부터 마감 리마인드까지, 제가 도와드릴게요.</p>
+      </div>
+      <div style="display: flex; align-items: flex-start; gap: 12px;">
+        <span style="display: inline-flex; flex: 0 0 38px; line-height: 1;"><svg width="38" height="38" viewBox="0 0 240 240" fill="none" role="img" aria-label="매스"><defs><clipPath id="ms-setupdiscord-2-f-f-f"><ellipse cx="120" cy="113.91" rx="65.69" ry="64.01"></ellipse></clipPath></defs><circle cx="120" cy="120" r="84" fill="#171717"></circle><ellipse cx="120" cy="113.91" rx="65.69" ry="64.01" fill="#FFFFFF"></ellipse><g transform="translate(80.78 30.79) rotate(-22)"><rect x="-17.41" y="-9.14" width="34.82" height="18.28" rx="5.22" ry="5.22" fill="#171717"></rect></g><g clip-path="url(#ms-setupdiscord-2-f-f-f)"><rect x="91.73" y="88.25" width="14.78" height="38.3" rx="7.39" fill="#171717"></rect><rect x="133.48" y="88.25" width="14.78" height="38.3" rx="7.39" fill="#171717"></rect></g></svg></span>
+        <p style="margin: 0; flex: 1; min-width: 0; padding: 13px 18px; border-radius: 10px; background: #F0F0F0; font-size: 13.5px; line-height: 1.7; color: #171717;">시작하기 전에 몇 가지만 연결할게요. 먼저 디스코드부터 연결해주세요.</p>
+      </div>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 28px;">
+      <div style="display: flex; flex-direction: column; gap: 8px; padding: 22px 22px 18px; border: 1px solid #E8E8E8; border-radius: 10px; background: #FFFFFF;">
+        <h2 style="margin: 0; font-size: 15px; font-weight: 700; letter-spacing: -0.02em; color: #171717;">디스코드 연동</h2>
+        <p style="margin: 0; font-size: 13px; line-height: 1.65; color: #666666;">팀 채널에 마감 리마인드와 회의록 요약을 자동으로 보내드려요.</p>
+        <div style="display: flex; align-items: center; gap: 4px; padding-top: 8px; flex-direction: row-reverse"><button type="button" style="display: inline-flex; align-items: center; justify-content: center; height: 40px; padding: 0 18px; border: 0; border-radius: 8px; background: #171717; font-size: 13.5px; font-weight: 700; color: #FFFFFF; line-height: 1;">연결하기</button><button type="button" style="display: inline-flex; align-items: center; justify-content: center; height: 40px; padding: 0 14px; border: 0; background: transparent; font-size: 13.5px; font-weight: 600; color: #999999; line-height: 1;">건너뛰기</button></div>
+      </div>
+      <div style="display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-top: 4px;">
+        <span class="mono" style="font-size: 13px; color: #999999;">2 / 4</span>
+        <span style="flex: 1;"></span>
+        <button type="button" style="display: inline-flex; align-items: center; justify-content: center; gap: 5px; height: 40px; padding: 0 14px 0 11px; border: 0; background: transparent; font-size: 13.5px; font-weight: 600; color: #666666; line-height: 1;">이전</button>
+        <button type="button" style="display: inline-flex; align-items: center; justify-content: center; height: 40px; padding: 0 30px; border: 0; border-radius: 8px; background: #F0F0F0; font-size: 13.5px; font-weight: 600; color: #999999; line-height: 1;">다음</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

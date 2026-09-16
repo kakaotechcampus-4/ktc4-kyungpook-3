@@ -1,0 +1,46 @@
+{
+  "case_id": "case_05",
+  "scenario": "correction",
+  "description": "담당자 재할당 — 민재에게 부탁한 일을 나중에 세영이 대신 맡기로 함",
+  "note": "'세영님이 대신 맡아주시기로 했어요'는 실질적으로 재할당 결정을 담은 문장이라 gold 는 is_task=true 로 두었지만, 지금 규칙 기반의 실행-의지 종결어미 목록(게요/겠습니다/해주세요/부탁드립니다/부탁드려요/하죠/시죠)엔 '-기로 했어요'가 없어서 현재는 못 잡을 걸로 예상됨(알려진 recall 갭). 병합(민재→세영 최종 반영)도 v1 범위 밖.",
+  "reference_date": "2026-09-09",
+  "speaker_names": {
+    "A": "유진"
+  },
+  "turns": [
+    {
+      "speaker": "A",
+      "text": "민재님, 그거 말고 지난주 회의 때 나온 반응형 레이아웃 작업도 다음 주 화요일까지 부탁드릴게요."
+    },
+    {
+      "speaker": "A",
+      "text": "참고로 아까 민재님한테 부탁드린 반응형 레이아웃은 세영님이 대신 맡아주시기로 했어요. 민재님이 다른 일정이 있어서요."
+    }
+  ],
+  "expected": [
+    {
+      "sentence": "민재님, 그거 말고 지난주 회의 때 나온 반응형 레이아웃 작업도 다음 주 화요일까지 부탁드릴게요.",
+      "is_task": true,
+      "assignee_mention": "민재",
+      "due_date": "2026-09-15",
+      "task_keywords": [
+        "반응형 레이아웃"
+      ],
+      "assignee_type": "thirdname"
+    },
+    {
+      "sentence": "참고로 아까 민재님한테 부탁드린 반응형 레이아웃은 세영님이 대신 맡아주시기로 했어요.",
+      "is_task": true,
+      "assignee_mention": "세영",
+      "due_date": null,
+      "task_keywords": [
+        "반응형 레이아웃"
+      ],
+      "assignee_type": "thirdname"
+    },
+    {
+      "sentence": "민재님이 다른 일정이 있어서요.",
+      "is_task": false
+    }
+  ]
+}

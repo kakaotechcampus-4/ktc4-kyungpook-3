@@ -6,6 +6,9 @@
         "transcript":{"text":..., "chunks":[{"timestamp":[s,e],"text":...}]}}
 
 단가 ₩6 / 60초 (2026-09 기준). 보낸 오디오 길이만큼 과금된다.
+
+타임아웃 30초. 실측(2026-09-15, 같은 1초 클립 20회)은 p50 2.6초, 15% 가 22~28초로 stall 이었다.
+180초 × 재시도 3회면 발화 하나가 워커를 9분 쥔다. 30초면 stall 은 잡고 정상 호출은 안 자른다.
 최소 과금 단위는 확인하지 못했다. 그래서 호출을 잘게 쪼개지 않는다.
 """
 
@@ -33,7 +36,7 @@ class EliceStt:
 
     name = "elice/whisper-large-v3"
 
-    def __init__(self, language: str = "ko", timeout: int = 180, word_timestamps: bool = True):
+    def __init__(self, language: str = "ko", timeout: int = 30, word_timestamps: bool = True):
         self.language = language
         self.timeout = timeout
         self.word_timestamps = word_timestamps
