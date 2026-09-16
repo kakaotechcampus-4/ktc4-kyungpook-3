@@ -147,7 +147,14 @@ def _edits(a: list[str], b: list[str]) -> int:
 
 
 def score(session: Path, mode: str, backend_kind: str, model: str, gate_on: bool, workers: int | None,
-          yes: bool) -> dict | None:
+          yes: bool, *, beam: int = 5, cond: bool | None = None, hst: float | None = None,
+          preprocess: str | None = None, pack_turns: bool = True, merge: bool = True,
+          tag: str = "", out_dir: Path | None = None) -> dict | None:
+    """정렬본 하나를 한 설정으로 전사해 지표를 JSON 으로 남긴다.
+
+    preprocess: "highpass" 면 100~7500Hz 대역 제한을 트랙에 건다 (0007 의 필터).
+    tag: 결과 파일 이름에 붙는 꼬리표. 같은 모드의 변형을 구분한다.
+    """
     truth_by = json.loads((session / "truth_by_speaker.json").read_text(encoding="utf-8"))
     aligned = json.loads((session / "truth_aligned.json").read_text(encoding="utf-8"))
     tracks = [t for t in B.discover(session) if t.speaker_id in truth_by]
@@ -157,12 +164,17 @@ def score(session: Path, mode: str, backend_kind: str, model: str, gate_on: bool
         est = sum(sum(u.duration_s for u in B.cut(B.load_track(t.path), t.speaker_id)) for t in tracks)
         print(f"Elice {mode}: 발화 합 {est:.0f}초 · 예상 약 {whisper_krw(est):.0f}원. --yes 로 승인.")
         return None
-    backend = B.make_backend(backend_kind, model)
+    backend = B.make_backend(backend_kind, model, mode, beam=beam, cond=cond, hst=hst)
     gate = SpeechGate() if gate_on else None
-    w = workers if workers is not None else (3 if backend_kind == "elice" else 1)
+    w = workers if workers is not None else B.default_workers(backend_kind)
+    pre = None
+    if preprocess == "highpass":
+        from stt.eval.noise_filter_bench import bandlimit
+        pre = lambda audio, sr: bandlimit(audio, sr)  # noqa: E731
 
     ru0 = resource.getrusage(resource.RUSAGE_SELF)
-    lines, stats = B.run(tracks, backend, mode=mode, gate=gate, workers=w)
+    lines, stats = B.run(tracks, backend, mode=mode, gate=gate, workers=w, pack_turns=pack_turns,
+                         merge=merge, preprocess=pre)
     ru1 = resource.getrusage(resource.RUSAGE_SELF)
     cpu_s = (ru1.ru_utime + ru1.ru_stime) - (ru0.ru_utime + ru0.ru_stime)
 
@@ -197,19 +209,28 @@ def score(session: Path, mode: str, backend_kind: str, model: str, gate_on: bool
     order_edits = _edits(truth_turns, hyp_turns)
 
     from stt.elice import whisper_krw
+    krw = round(whisper_krw(stats.audio_sent_s), 1) if backend_kind == "elice" else 0.0
+    meeting_h = (stats.track_s / max(1, stats.tracks)) / 3600
     out = {
         "session": session.name, "mode": mode, "backend": stats.backend, "gate": gate_on,
+        "beam": beam, "cond": cond, "hst": hst, "preprocess": preprocess, "pack_turns": pack_turns,
+        "merge": merge, "workers": w, "tag": tag,
+        "krw_per_meeting_hour": round(krw / meeting_h, 1) if meeting_h > 0 else None,
+        "cpu_s_per_speech_s": round(cpu_s / stats.speech_s, 3) if stats.speech_s > 0 else None,
+        "wall_per_meeting_s": round(stats.wall_s / meeting_h / 3600, 3) if meeting_h > 0 else None,
         "cer": round(cer, 4), "cer_by_speaker": {k: round(v["cer"], 4) for k, v in per.items()},
         "insertion_rate": round(ins_rate, 4),
         "lost_utterances": f"{lost}/{n_truth}", "gated": stats.gated, "failed": stats.failed,
         "order_edits": order_edits, "turns_truth": len(truth_turns), "turns_hyp": len(hyp_turns),
         "start_abs_err_mean_s": round(float(np.mean(start_err)), 2) if start_err else None,
         "start_abs_err_max_s": round(float(np.max(start_err)), 2) if start_err else None,
-        "krw": round(whisper_krw(stats.audio_sent_s), 1) if backend_kind == "elice" else 0.0,
+        "krw": krw,
         "cpu_s": round(cpu_s, 1), "peak_rss_gb": round(ru1.ru_maxrss / 1e9, 2),
         **{k: v for k, v in stats.summary().items() if k not in ("mode", "backend")},
     }
-    path = session / f"score_{mode}_{backend_kind}{'' if backend_kind == 'elice' else '-' + model}.json"
+    stem = f"score_{mode}_{backend_kind}{'' if backend_kind == 'elice' else '-' + model}{'-' + tag if tag else ''}"
+    path = (out_dir or session) / f"{stem}.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps({**out, "hyp_by_speaker": {k: v["hyp"] for k, v in per.items()}},
                                ensure_ascii=False, indent=1), encoding="utf-8")
     print(json.dumps(out, ensure_ascii=False))
@@ -236,17 +257,28 @@ def main(argv=None) -> int:
     sub = ap.add_subparsers(dest="cmd", required=True)
     a = sub.add_parser("align"); a.add_argument("--golden", type=Path, required=True); a.add_argument("--out", type=Path, required=True)
     s = sub.add_parser("score"); s.add_argument("--session", type=Path, required=True)
-    s.add_argument("--mode", choices=["clip", "chunk", "track"], default="chunk")
+    s.add_argument("--mode", choices=["clip", "chunk", "track", "whole"], default="chunk")
     s.add_argument("--backend", choices=["local", "elice"], default="local")
     s.add_argument("--model", default="large-v3-turbo"); s.add_argument("--no-gate", action="store_true")
     s.add_argument("--workers", type=int); s.add_argument("--yes", action="store_true")
+    s.add_argument("--beam", type=int, default=5)
+    s.add_argument("--cond", choices=["on", "off"], default=None, help="condition_on_previous_text 를 강제로")
+    s.add_argument("--hst", type=float, default=None, help="hallucination_silence_threshold 를 강제로 (0 은 끔)")
+    s.add_argument("--preprocess", choices=["highpass"], default=None)
+    s.add_argument("--no-pack-turns", action="store_true", help="턴마다 묶음 하나")
+    s.add_argument("--no-merge", action="store_true", help="턴 병합 없이 클립 단위 줄")
+    s.add_argument("--tag", default=""); s.add_argument("--out-dir", type=Path, default=None)
     m = sub.add_parser("matrix"); m.add_argument("--session", type=Path, required=True)
     m.add_argument("--model", default="large-v3-turbo"); m.add_argument("--elice", action="store_true"); m.add_argument("--yes", action="store_true")
     args = ap.parse_args(argv)
     if args.cmd == "align":
         align(args.golden.expanduser(), args.out.expanduser())
     elif args.cmd == "score":
-        score(args.session.expanduser(), args.mode, args.backend, args.model, not args.no_gate, args.workers, args.yes)
+        hst = args.hst
+        score(args.session.expanduser(), args.mode, args.backend, args.model, not args.no_gate, args.workers, args.yes,
+              beam=args.beam, cond=None if args.cond is None else args.cond == "on", hst=hst,
+              preprocess=args.preprocess, pack_turns=not args.no_pack_turns, merge=not args.no_merge,
+              tag=args.tag, out_dir=args.out_dir)
     else:
         matrix(args.session.expanduser(), args.model, args.elice, args.yes)
     return 0
