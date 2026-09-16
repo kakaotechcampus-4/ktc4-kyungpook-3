@@ -1,0 +1,84 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>셋업 3 · Notion 연결 — Manager's Manager</title>
+  <link rel="stylesheet" href="./_fonts.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #FFFFFF; color: #171717;
+      font-family: 'NanumSquare','Apple SD Gothic Neo','Malgun Gothic',system-ui,sans-serif;
+      font-size: 14px; line-height: 1.75; word-break: keep-all; -webkit-font-smoothing: antialiased; }
+    a { color: #171717; text-decoration: none; }
+    a:hover { color: #5A5A5A; }
+    button { font: inherit; color: inherit; cursor: pointer; }
+    .mono { font-family: 'NanumSquare','Apple SD Gothic Neo','Malgun Gothic',system-ui,sans-serif; font-variant-numeric: tabular-nums; letter-spacing: 0; }
+    .dsp { font-family: 'NanumSquare','Apple SD Gothic Neo','Malgun Gothic',system-ui,sans-serif; }
+    ::selection { background: #171717; color: #FFFFFF; }
+    :focus-visible { outline: 2px solid #171717; outline-offset: 4px; }
+    h1 { font-weight: 700; line-height: 1.4; letter-spacing: -0.045em; }
+    h2, h3 { font-weight: 700; line-height: 1.55; letter-spacing: -0.025em; }
+    p { line-height: 1.85; }
+  </style>
+</helmet>
+
+<div style="width: 100%; min-height: 900px; background: #FFFFFF; display: flex; align-items: center; justify-content: center; padding: 64px 48px;">
+  <div style="width: 512px; display: flex; flex-direction: column; gap: 34px;">
+
+    <div style="display: flex; align-items: center; justify-content: center; gap: 7px;">
+      <span style="width: 5px; height: 5px; border-radius: 999px; background: #DCDCDC;"></span>
+      <span style="width: 5px; height: 5px; border-radius: 999px; background: #DCDCDC;"></span>
+      <span style="width: 6px; height: 6px; border-radius: 999px; background: #171717;"></span>
+      <span style="width: 5px; height: 5px; border-radius: 999px; background: #DCDCDC;"></span>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 20px;">
+      <div style="display: flex; align-items: center; gap: 9px; padding-left: 42px;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#171717" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 13 4 4L19 7"></path></svg>
+        <span style="font-size: 12.5px; color: #666666;">디스코드 연동 완료 — <span style="font-weight: 600; color: #171717;">#일반 채널</span></span>
+      </div>
+      <div style="display: flex; align-items: flex-start; gap: 12px;">
+        <span style="display: inline-flex; flex: 0 0 38px; line-height: 1;"><svg width="38" height="38" viewBox="0 0 240 240" fill="none" role="img" aria-label="매스"><defs><clipPath id="ms-setupnotion-1-f-f-f"><ellipse cx="120" cy="113.91" rx="65.69" ry="64.01"></ellipse></clipPath></defs><circle cx="120" cy="120" r="84" fill="#171717"></circle><ellipse cx="120" cy="113.91" rx="65.69" ry="64.01" fill="#FFFFFF"></ellipse><g transform="translate(80.78 30.79) rotate(-22)"><rect x="-17.41" y="-9.14" width="34.82" height="18.28" rx="5.22" ry="5.22" fill="#171717"></rect></g><g clip-path="url(#ms-setupnotion-1-f-f-f)"><rect x="91.73" y="88.25" width="14.78" height="38.3" rx="7.39" fill="#171717"></rect><rect x="133.48" y="88.25" width="14.78" height="38.3" rx="7.39" fill="#171717"></rect></g></svg></span>
+        <p style="margin: 0; flex: 1; min-width: 0; padding: 13px 18px; border-radius: 10px; background: #F0F0F0; font-size: 13.5px; line-height: 1.7; color: #171717;">좋아요, 이제 노션 보드를 연결할게요. 쓰던 데이터베이스를 그대로 쓰면 됩니다.</p>
+      </div>
+      <div style="display: flex; align-items: flex-start; gap: 12px;">
+        <span style="display: inline-flex; flex: 0 0 38px; line-height: 1;"><svg width="38" height="38" viewBox="0 0 240 240" fill="none" role="img" aria-label="매스"><defs><clipPath id="ms-setupnotion-2-f-f-f"><ellipse cx="120" cy="113.91" rx="65.69" ry="64.01"></ellipse></clipPath></defs><circle cx="120" cy="120" r="84" fill="#171717"></circle><ellipse cx="120" cy="113.91" rx="65.69" ry="64.01" fill="#FFFFFF"></ellipse><g transform="translate(80.78 30.79) rotate(-22)"><rect x="-17.41" y="-9.14" width="34.82" height="18.28" rx="5.22" ry="5.22" fill="#171717"></rect></g><g clip-path="url(#ms-setupnotion-2-f-f-f)"><rect x="91.73" y="88.25" width="14.78" height="38.3" rx="7.39" fill="#171717"></rect><rect x="133.48" y="88.25" width="14.78" height="38.3" rx="7.39" fill="#171717"></rect></g></svg></span>
+        <p style="margin: 0; flex: 1; min-width: 0; padding: 13px 18px; border-radius: 10px; background: #F0F0F0; font-size: 13.5px; line-height: 1.7; color: #171717;">속성은 제가 맞춰 뒀어요. 다르면 바꿔 주세요.</p>
+      </div>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 28px;">
+      <div style="display: flex; flex-direction: column; gap: 8px; padding: 22px 22px 18px; border: 1px solid #E8E8E8; border-radius: 10px; background: #FFFFFF;">
+        <h2 style="margin: 0; font-size: 15px; font-weight: 700; letter-spacing: -0.02em; color: #171717;">노션 연동</h2>
+        <p style="margin: 0; font-size: 13px; line-height: 1.65; color: #666666;">승인한 태스크만 이 데이터베이스에 채워 넣어요. 새 보드는 만들지 않습니다.</p>
+        <div style="display: flex; flex-direction: column; gap: 10px; padding-top: 6px;">
+          <div style="display: flex; align-items: center; gap: 10px; height: 42px; padding: 0 13px; border: 1px solid #E8E8E8; border-radius: 8px; background: #FFFFFF;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5A5A5A" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"></rect><path d="M8.5 16.5v-9l7 9v-9" stroke-linecap="round"></path></svg>
+            <span style="flex: 1; font-size: 13.5px; font-weight: 600; color: #171717;">캡스톤 5조 · 태스크</span>
+            <a href="#" style="font-size: 12.5px; font-weight: 600; color: #666666;">바꾸기</a>
+          </div>
+          <div>
+          <div style="display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid #F0F0F0;"><span style="flex: 1; font-size: 12.5px; color: #666666;">태스크명</span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#BDBDBD" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"></path></svg><span style="flex: 1; text-align: right; font-size: 12.5px; font-weight: 600; color: #171717;">이름</span></div>
+          <div style="display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid #F0F0F0;"><span style="flex: 1; font-size: 12.5px; color: #666666;">담당자</span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#BDBDBD" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"></path></svg><span style="flex: 1; text-align: right; font-size: 12.5px; font-weight: 600; color: #171717;">사람</span></div>
+          <div style="display: flex; align-items: center; gap: 10px; padding: 9px 0;"><span style="flex: 1; font-size: 12.5px; color: #666666;">마감</span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#BDBDBD" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"></path></svg><span style="flex: 1; text-align: right; font-size: 12.5px; font-weight: 600; color: #171717;">날짜</span></div>
+          </div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 4px; padding-top: 8px; flex-direction: row-reverse"><button type="button" style="display: inline-flex; align-items: center; justify-content: center; height: 40px; padding: 0 18px; border: 0; border-radius: 8px; background: #171717; font-size: 13.5px; font-weight: 700; color: #FFFFFF; line-height: 1;">이 보드로 연결</button><button type="button" style="display: inline-flex; align-items: center; justify-content: center; height: 40px; padding: 0 14px; border: 0; background: transparent; font-size: 13.5px; font-weight: 600; color: #999999; line-height: 1;">건너뛰기</button></div>
+      </div>
+      <div style="display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-top: 4px;">
+        <span class="mono" style="font-size: 13px; color: #999999;">3 / 4</span>
+        <span style="flex: 1;"></span>
+        <button type="button" style="display: inline-flex; align-items: center; justify-content: center; gap: 5px; height: 40px; padding: 0 14px 0 11px; border: 0; background: transparent; font-size: 13.5px; font-weight: 600; color: #666666; line-height: 1;">이전</button>
+        <button type="button" style="display: inline-flex; align-items: center; justify-content: center; height: 40px; padding: 0 30px; border: 0; border-radius: 8px; font-size: 13.5px; font-weight: 600; color: #999999; line-height: 1; background-color: #F0F0F0">다음</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

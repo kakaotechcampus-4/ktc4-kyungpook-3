@@ -24,6 +24,7 @@ from app.models.models import (
     Task,
     TaskHistory,
     TaskStatus,
+    Workspace,
 )
 
 __all__ = [
@@ -33,4 +34,5 @@ __all__ = [
     "ExtractionItem", "Gate", "Meeting", "MeetingAudio", "MeetingSource",
     "MeetingStatus", "Member", "MemberAlias", "MemberRole",
     "ResolutionResult", "ReviewDecision", "Task", "TaskHistory", "TaskStatus",
+    "Workspace",
 ]

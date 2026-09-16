@@ -1,0 +1,476 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>랜딩페이지 — Manager's Manager</title>
+  <link rel="stylesheet" href="./_fonts.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #FFFFFF; color: #171717;
+      font-family: 'NanumSquare','Apple SD Gothic Neo','Malgun Gothic',system-ui,sans-serif;
+      font-size: 14px; line-height: 1.75; word-break: keep-all; -webkit-font-smoothing: antialiased; }
+    a { color: #171717; text-decoration: none; }
+    a:hover { color: #5A5A5A; }
+    button { font: inherit; color: inherit; cursor: pointer; }
+    .mono { font-family: 'NanumSquare','Apple SD Gothic Neo','Malgun Gothic',system-ui,sans-serif; font-variant-numeric: tabular-nums; letter-spacing: 0; }
+    .dsp { font-family: 'NanumSquare','Apple SD Gothic Neo','Malgun Gothic',system-ui,sans-serif; }
+    ::selection { background: #171717; color: #FFFFFF; }
+    :focus-visible { outline: 2px solid #171717; outline-offset: 4px; }
+    h1 { font-weight: 700; line-height: 1.4; letter-spacing: -0.045em; }
+    h2, h3 { font-weight: 700; line-height: 1.55; letter-spacing: -0.025em; }
+    p { line-height: 1.85; }
+  
+    .modal-trigger { display: inline-flex; align-items: center; justify-content: center; border: 0; background: transparent; cursor: pointer; transition: background-color .15s ease; }
+    .modal-trigger:hover { background: #EDEDED; }
+    .modal-trigger svg { transition: stroke .15s ease; }
+    .modal-trigger:hover svg { stroke: #171717; }
+    .modal-check { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+    .modal-overlay { display: none; position: fixed; inset: 0; align-items: center; justify-content: center; padding: 24px; z-index: 100; }
+    .modal-scrim { position: absolute; inset: 0; background: rgba(23, 23, 23, 0.32); cursor: pointer; }
+    .modal-card { position: relative; width: 380px; max-width: 100%; padding: 24px; border: 1px solid #E8E8E8; border-radius: 16px; background: #FFFFFF; display: flex; flex-direction: column; gap: 12px; }
+    .modal-card h3 { margin: 0; font-size: 17px; font-weight: 700; letter-spacing: -0.02em; color: #171717; }
+    .modal-card p { margin: 0; font-size: 13.5px; line-height: 1.7; color: #5A5A5A; }
+    .modal-actions { display: flex; justify-content: flex-end; gap: 8px; padding-top: 6px; }
+    .modal-cancel { display: inline-flex; align-items: center; height: 36px; padding: 0 14px; border-radius: 9px; font-size: 13px; font-weight: 600; color: #5A5A5A; background: transparent; cursor: pointer; }
+    .modal-cancel:hover { background: #EDEDED; }
+    .modal-confirm { height: 36px; padding: 0 16px; border: 0; border-radius: 9px; font-size: 13px; font-weight: 600; color: #FFFFFF; background: #171717; cursor: pointer; }
+  body:has(#undo-landing-1:checked) #modal-undo-landing-1 { display: flex; }
+
+    .pose-radio { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+    .pose-tab { display: inline-flex; align-items: center; height: 40px; padding: 0 18px; border: 1px solid #E8E8E8; border-radius: 9999px; background: #FFFFFF; font-size: 15px; font-weight: 600; color: #171717; cursor: pointer; transition: background-color .15s ease; }
+    .pose-fig, .pose-pane { display: none; }
+    body:not(:has(.pose-radio:checked)) #fig-pose-idle,
+    body:not(:has(.pose-radio:checked)) #pane-pose-idle { display: flex; }
+    body:not(:has(.pose-radio:checked)) label[for="pose-idle"] { background: #F0F0F0; border-color: transparent; font-weight: 600; }
+    body:has(#pose-idle:checked) label[for="pose-idle"] { background: #F0F0F0; border-color: transparent; font-weight: 600; }
+    body:has(#pose-left:checked) label[for="pose-left"] { background: #F0F0F0; border-color: transparent; font-weight: 600; }
+    body:has(#pose-ask:checked) label[for="pose-ask"] { background: #F0F0F0; border-color: transparent; font-weight: 600; }
+    body:has(#pose-done:checked) label[for="pose-done"] { background: #F0F0F0; border-color: transparent; font-weight: 600; }
+    body:has(#pose-idle:checked) #fig-pose-idle { display: flex; }
+    body:has(#pose-left:checked) #fig-pose-left { display: flex; }
+    body:has(#pose-ask:checked) #fig-pose-ask { display: flex; }
+    body:has(#pose-done:checked) #fig-pose-done { display: flex; }
+    body:has(#pose-idle:checked) #pane-pose-idle { display: flex; }
+    body:has(#pose-left:checked) #pane-pose-left { display: flex; }
+    body:has(#pose-ask:checked) #pane-pose-ask { display: flex; }
+    body:has(#pose-done:checked) #pane-pose-done { display: flex; }
+  </style>
+</helmet>
+
+<div style="width: 100%; min-height: 6180px; background: #FFFFFF; color: #171717; display: flex; flex-direction: column; align-items: center;">
+
+  <header style="width: 100%; flex: 0 0 64px; height: 64px; display: flex; align-items: center; justify-content: center; padding: 0 40px; border-bottom: 1px solid #E8E8E8;">
+    <div style="width: 1200px; display: flex; align-items: center; justify-content: space-between; gap: 32px;">
+      <a href="#" style="display: inline-flex; align-items: center; gap: 9px;"><span style="display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 7px; background: #171717; line-height: 1;"><svg width="15" height="15" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M2 11V3.5l3.5 4.5L9 3.5V11" stroke="#FFFFFF" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path><path d="M11.6 5.2v2.4" stroke="#FFFFFF" stroke-width="1.8" stroke-linecap="round"></path></svg></span><span class="dsp" style="font-size: 16px; font-weight: 600; letter-spacing: -0.3px; color: #171717">Manager's Manager</span></a>
+      <nav style="display: flex; align-items: center; gap: 28px;">
+        <a href="#" style="font-size: 16px; line-height: 24px; font-weight: 600; color: #171717">제품</a>
+        <a href="#" style="font-size: 16px; line-height: 24px; font-weight: 600; color: #171717">기능</a>
+        <a href="#" style="font-size: 16px; line-height: 24px; font-weight: 600; color: #171717">연동</a>
+        <a href="#" style="font-size: 16px; line-height: 24px; font-weight: 600; color: #171717">요금제</a>
+        <a href="#" style="font-size: 16px; line-height: 24px; font-weight: 600; color: #171717">가이드</a>
+      </nav>
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <a href="#" style="display: inline-flex; align-items: center; justify-content: center; height: 38px; padding: 0 18px; border: 1px solid #E8E8E8; border-radius: 9999px; background: #FFFFFF; color: #171717; font-size: 15px; font-weight: 600; line-height: 1">문의하기</a>
+        <a href="#" style="display: inline-flex; align-items: center; justify-content: center; height: 38px; padding: 0 18px; border: 0; border-radius: 9999px; background: #171717; color: #FFFFFF; font-size: 15px; font-weight: 600; line-height: 1">시작하기</a>
+      </div>
+    </div>
+  </header>
+
+  <section style="width: 1024px; padding: 72px 0 0; display: flex; flex-direction: column; align-items: center; gap: 28px;">
+    <a href="#" style="display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 16px; border: 1px solid #E8E8E8; border-radius: 9999px; background: #FFFFFF; font-size: 13.5px; font-weight: 400; color: #171717; line-height: 1;">Manager's Manager<span style="color: rgb(102, 102, 102)">·</span><span style="color: rgb(102, 102, 102)">소개 글 읽기</span></a>
+    <h1 style="margin: 0; max-width: 900px; font-size: 60px; line-height: 60px; font-weight: 700; letter-spacing: -1.2px; text-align: center; color: #171717">한 번의 클릭으로,<br>매니저가 정리합니다</h1>
+    <p style="margin: 0; max-width: 660px; font-size: 18px; line-height: 29px; font-weight: 400; text-align: center; color: #666666;">회의 녹음을 올리면 결정사항과 담당자, 마감을 정리해 Notion에 반영하고 담당자에게 Discord로 알립니다. 확인이 필요한 것만 골라 드려요.</p>
+    <div style="display: flex; align-items: center; gap: 10px; padding-top: 4px;">
+      <a href="#" style="display: inline-flex; align-items: center; justify-content: center; height: 44px; padding: 0 24px; border: 0; border-radius: 9999px; background: #171717; color: #FFFFFF; font-size: 16px; font-weight: 600; line-height: 1">시작하기</a>
+      <a href="#" style="display: inline-flex; align-items: center; justify-content: center; height: 44px; padding: 0 24px; border: 0; border-radius: 9999px; background: #EDEDED; color: #171717; font-size: 16px; font-weight: 600; line-height: 1">살펴보기</a>
+    </div>
+  </section>
+
+  <section style="width: 1200px; padding: 56px 0 132px;">
+    <div style="width: 1200px; border: 1px solid #E8E8E8; border-radius: 24px; background: #FFFFFF; overflow: hidden;">
+      <div style="display: flex; align-items: center; gap: 10px; height: 44px; padding: 0 16px; border-bottom: 1px solid #E8E8E8; background: #FAFAFA;">
+        <span style="display: flex; gap: 7px;"><span style="width: 11px; height: 11px; border-radius: 9999px; background: #C9C9C9;"></span><span style="width: 11px; height: 11px; border-radius: 9999px; background: #E8E8E8;"></span><span style="width: 11px; height: 11px; border-radius: 9999px; background: #EFEFEF;"></span></span>
+        <span style="flex: 1; text-align: center; font-size: 12.5px; color: #666666;">Manager's Manager — 캡스톤 5조</span>
+        <span style="flex: 0 0 60px;"></span>
+      </div>
+      <div style="height: 580px; display: flex; flex-direction: column; background: #FFFFFF; overflow: hidden;">
+  <header style="flex: 0 0 76px; height: 76px; display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 0 40px; border-bottom: 1px solid #EFEFEF;">
+    <div style="display: flex; align-items: center; gap: 30px;">
+      <span style="display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 7px; background: #171717; line-height: 1;">
+        <svg width="15" height="15" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M2 11V3.5l3.5 4.5L9 3.5V11" stroke="#FFFFFF" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path><path d="M11.6 5.2v2.4" stroke="#FFFFFF" stroke-width="1.8" stroke-linecap="round"></path></svg>
+      </span>
+      <nav style="display: flex; align-items: center; gap: 2px;">
+        <a href="#" style="display: inline-flex; align-items: center; height: 32px; padding: 0 12px; border-radius: 9px; font-size: 13px; color: #5A5A5A; min-height: 36px; font-weight: 600; line-height: 1;">대시보드</a>
+        <a href="#" style="display: inline-flex; align-items: center; height: 32px; padding: 0 12px; border-radius: 9px; background: #F0F0F0; font-size: 13px; font-weight: 600; color: #171717; min-height: 36px; line-height: 1;">회의록</a>
+        <a href="#" style="display: inline-flex; align-items: center; gap: 7px; height: 32px; padding: 0 12px; border-radius: 9px; font-size: 13px; color: #5A5A5A; min-height: 36px; font-weight: 600; line-height: 1;">태스크<span class="mono" style="display: inline-flex; align-items: center; justify-content: center; min-width: 17px; height: 17px; padding: 0 5px; border-radius: 999px; background: #E8E8E8; font-size: 10.5px; font-weight: 600; color: #171717; line-height: 1;">3</span></a>
+        <a href="#" style="display: inline-flex; align-items: center; gap: 7px; height: 32px; padding: 0 12px; border-radius: 9px; font-size: 13px; color: #5A5A5A; min-height: 36px; font-weight: 600; line-height: 1;">메시지<span class="mono" style="display: inline-flex; align-items: center; justify-content: center; min-width: 17px; height: 17px; padding: 0 5px; border-radius: 999px; background: #E8E8E8; font-size: 10.5px; font-weight: 600; color: #171717; line-height: 1;">2</span></a>
+        <a href="#" style="display: inline-flex; align-items: center; height: 32px; padding: 0 12px; border-radius: 9px; font-size: 13px; color: #5A5A5A; min-height: 36px; font-weight: 600; line-height: 1;">팀</a>
+      </nav>
+    </div>
+    <div style="display: flex; align-items: center; gap: 24px;">
+      <button type="button" style="display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 11px; border: 1px solid #E8E8E8; border-radius: 9px; background: #FFFFFF; font-size: 13px; font-weight: 600; color: #171717; min-height: 36px; line-height: 1;">캡스톤 5조<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#666666" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg></button>
+      <span style="display: inline-flex; align-items: center; justify-content: center; width: 29px; height: 29px; border-radius: 999px; background: #EFEFEF; font-size: 11px; font-weight: 600; color: #171717; line-height: 1;">지훈</span>
+    </div>
+  </header>
+      <div style="flex: 1; min-height: 0; display: flex; align-items: stretch; overflow: hidden;">
+    <aside style="flex: 0 0 308px; display: flex; flex-direction: column; border-right: 1px solid #EFEFEF;">
+      <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 18px 20px 14px;">
+        <h1 style="margin: 0; font-size: 17px; font-weight: 700; letter-spacing: -0.025em; color: #171717;">회의록</h1>
+        <button type="button" aria-label="검색" style="display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: 0; border-radius: 7px; background: transparent; line-height: 1;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#666666" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m21 21-4.3-4.3"></path></svg></button>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 4px; padding: 0 12px;">
+        <button type="button" style="display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 13px 14px; border: 0; border-radius: 10px; background: #F0F0F0; text-align: left;">
+          <div style="display: flex; align-items: center; gap: 8px; width: 100%;">
+            <span style="flex: 1; font-size: 13.5px; font-weight: 600; color: #171717;">3주차 정기회의</span>
+            <span style="display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 6px; border-radius: 999px; background: #171717; font-size: 10.5px; font-weight: 600; color: #FFFFFF; line-height: 1;">3</span>
+          </div>
+          <span class="mono" style="font-size: 11.5px; color: #666666;">09/09 14:00 · 52분 · 4명</span>
+        </button>
+        <button type="button" style="display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 13px 14px; border: 0; border-radius: 10px; background: transparent; text-align: left;">
+          <span style="font-size: 13.5px; color: #5A5A5A;">디자인 싱크</span>
+          <span class="mono" style="font-size: 11.5px; color: #666666;">09/04 16:30 · 28분 · 3명</span>
+        </button>
+        <button type="button" style="display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 13px 14px; border: 0; border-radius: 10px; background: transparent; text-align: left;">
+          <span style="font-size: 13.5px; color: #5A5A5A;">2주차 정기회의</span>
+          <span class="mono" style="font-size: 11.5px; color: #666666;">09/02 14:00 · 61분 · 5명</span>
+        </button>
+        <button type="button" style="display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 13px 14px; border: 0; border-radius: 10px; background: transparent; text-align: left;">
+          <span style="font-size: 13.5px; color: #5A5A5A;">기획 리뷰</span>
+          <span class="mono" style="font-size: 11.5px; color: #666666;">08/28 11:00 · 44분 · 4명</span>
+        </button>
+        <button type="button" style="display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 13px 14px; border: 0; border-radius: 10px; background: transparent; text-align: left;">
+          <span style="font-size: 13.5px; color: #5A5A5A;">1주차 킥오프</span>
+          <span class="mono" style="font-size: 11.5px; color: #666666;">08/26 14:00 · 71분 · 5명</span>
+        </button>
+      </div>
+    </aside>
+    <section style="flex: 1; min-width: 0; display: flex; flex-direction: column;">
+
+      <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; padding: 22px 32px 16px;">
+        <div style="display: flex; flex-direction: column; gap: 7px;">
+          <h2 style="margin: 0; font-size: 26px; line-height: 1.3; font-weight: 700; letter-spacing: -0.045em; color: #171717;">3주차 정기회의</h2>
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <span class="mono" style="font-size: 12.5px; color: #666666;">2026-09-09 14:00 · 52:14</span>
+            <span style="width: 1px; height: 12px; background: #E8E8E8;"></span>
+            <span style="display: flex; align-items: center;">
+              <span style="display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 999px; background: #EFEFEF; border: 1px solid #FFFFFF; font-size: 10px; color: #171717; line-height: 1;">재</span>
+              <span style="display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; margin-left: -6px; border-radius: 999px; background: #EFEFEF; border: 1px solid #FFFFFF; font-size: 10px; color: #171717; line-height: 1;">서</span>
+              <span style="display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; margin-left: -6px; border-radius: 999px; background: #EFEFEF; border: 1px solid #FFFFFF; font-size: 10px; color: #171717; line-height: 1;">지</span>
+              <span style="display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; margin-left: -6px; border-radius: 999px; background: #EFEFEF; border: 1px solid #FFFFFF; font-size: 10px; color: #171717; line-height: 1;">도</span>
+            </span>
+          </div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <button type="button" style="display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 13px; border: 1px solid transparent; border-radius: 9px; background: #EDEDED; font-size: 12.5px; color: #171717; min-height: 36px; font-weight: 600; line-height: 1;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#171717" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="m10 8.5 6 3.5-6 3.5z"></path></svg>원본 듣기</button>
+          <button type="button" style="display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 13px; border: 1px solid transparent; border-radius: 9px; background: #EDEDED; font-size: 12.5px; color: #171717; min-height: 36px; font-weight: 600; line-height: 1;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#5A5A5A" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6M10 14 21 3"></path><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path></svg>Notion에서 보기</button>
+        </div>
+      </div>
+
+      <div style="display: flex; align-items: center; gap: 4px; padding: 0 32px; border-bottom: 1px solid #E8E8E8;">
+        <button type="button" style="height: 38px; padding: 0 3px; margin-right: 18px; border: 0; border-bottom-width: 2px; border-bottom-style: solid; border-bottom-color: #171717; background: transparent; font-size: 13.5px; font-weight: 600; color: #171717; min-height: 36px">요약</button>
+        <button type="button" style="height: 38px; padding: 0 3px; margin-right: 18px; border: 0; border-bottom-width: 0; border-bottom-style: solid; border-bottom-color: #E8E8E8; background: transparent; font-size: 13.5px; color: #5A5A5A; min-height: 36px; font-weight: 600">전사문</button>
+        <button type="button" style="display: inline-flex; align-items: center; gap: 7px; height: 38px; padding: 0 3px; border: 0; border-bottom-width: 0; border-bottom-style: solid; border-bottom-color: #E8E8E8; background: transparent; font-size: 13.5px; color: #5A5A5A; min-height: 36px; font-weight: 600; line-height: 1">추출된 일<span class="mono" style="display: inline-flex; align-items: center; justify-content: center; min-width: 17px; height: 17px; padding: 0 5px; border-radius: 6px; border: 0; font-size: 10.5px; background: #EDEDED; color: #5A5A5A; font-weight: 600; line-height: 1;">6</span></button>
+      </div>
+
+      <div style="flex: 1; display: flex; flex-direction: column; gap: 24px; padding: 24px 32px 28px;">
+
+        <div style="display: flex; flex-direction: column; gap: 14px;">
+          <div style="display: flex; align-items: center; justify-content: space-between;">
+            <h3 style="margin: 0; font-size: 14px; font-weight: 600; color: #171717;">확인이 필요한 일 <span class="mono" style="font-weight: 400; color: #666666;">3</span></h3>
+            <a href="#" style="display: inline-flex; align-items: center; gap: 3px; font-size: 12.5px; color: #5A5A5A;">태스크에서 전부 보기<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#5A5A5A" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"></path></svg></a>
+          </div>
+          <div>
+          <div style="display: flex; align-items: flex-start; gap: 16px; padding: 18px 0; border-bottom: 1px solid #E8E8E8;">
+            <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 9px;">
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <span style="display: inline-flex; align-items: center; gap: 5px; height: 21px; padding: 0 8px; border: 0; border-radius: 6px; background: #171717; color: #FFFFFF; font-size: 11.5px; font-weight: 600; line-height: 1;"><span style="width: 5px; height: 5px; margin-right: 3px; border-radius: 999px; background: currentColor; flex: 0 0 5px;"></span>확인 필요</span>
+                <span style="font-size: 15px; font-weight: 600; color: #171717;">발표 준비</span>
+                <span class="mono" style="font-size: 11.5px; color: #666666;">31:05</span>
+              </div>
+              <p style="margin: 0; font-size: 13px; color: #5A5A5A;">담당자 후보가 둘 — 서연 / 지민</p>
+            </div>
+            <a href="#" style="display: inline-flex; align-items: center; gap: 3px; height: 32px; padding: 0 4px; font-size: 12.5px; font-weight: 600; color: #171717;">확인하기<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#171717" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"></path></svg></a>
+          </div>
+          <div style="display: flex; align-items: flex-start; gap: 16px; padding: 18px 0; border-bottom: 1px solid #E8E8E8;">
+            <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 9px;">
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <span style="display: inline-flex; align-items: center; gap: 5px; height: 21px; padding: 0 8px; border: 0; border-radius: 6px; background: #171717; color: #FFFFFF; font-size: 11.5px; font-weight: 600; line-height: 1;"><span style="width: 5px; height: 5px; margin-right: 3px; border-radius: 999px; background: currentColor; flex: 0 0 5px;"></span>확인 필요</span>
+                <span style="font-size: 15px; font-weight: 600; color: #171717;">디자인 시안 2차</span>
+                <span class="mono" style="font-size: 11.5px; color: #666666;">38:22</span>
+              </div>
+              <p style="margin: 0; font-size: 13px; color: #5A5A5A;">마감이 "다음 주쯤"으로만 언급됨</p>
+            </div>
+            <a href="#" style="display: inline-flex; align-items: center; gap: 3px; height: 32px; padding: 0 4px; font-size: 12.5px; font-weight: 600; color: #171717;">확인하기<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#171717" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"></path></svg></a>
+          </div>
+          <div style="display: flex; align-items: flex-start; gap: 16px; padding: 18px 0;">
+            <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 9px;">
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <span style="display: inline-flex; align-items: center; height: 21px; padding: 0 8px; border: 0; border-radius: 6px; color: #5A5A5A; font-size: 11.5px; font-weight: 600; background: #EDEDED; line-height: 1;">보류</span>
+                <span style="font-size: 15px; font-weight: 600; color: #5A5A5A;">자료조사</span>
+                <span class="mono" style="font-size: 11.5px; color: #666666;">44:10</span>
+              </div>
+              <p style="margin: 0; font-size: 13px; color: #666666;">누가, 무엇을, 언제까지인지 모두 언급되지 않음</p>
+            </div>
+            <a href="#" style="display: inline-flex; align-items: center; gap: 3px; height: 32px; padding: 0 4px; font-size: 12.5px; font-weight: 600; color: #171717;">채워 넣기<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#171717" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"></path></svg></a>
+          </div>
+          </div>
+          <p style="margin: 0; font-size: 12.5px; color: #666666;">확실한 건은 이미 Notion에 올렸습니다. 이 세 건만 확인하면 이 회의는 끝나요. 발언 원문은 위 <strong style="font-weight: 600; color: #5A5A5A;">전사문</strong> 탭에 그대로 있습니다.</p>
+        </div>
+
+      </div>
+
+    </section>
+      </div>
+      </div>
+    </div>
+  </section>
+
+  <section style="width: 1024px; padding-bottom: 60px; display: flex; flex-direction: column; align-items: center; gap: 16px; text-align: center;">
+    <h2 style="margin: 0; font-size: 36px; line-height: 40px; font-weight: 600; letter-spacing: -0.72px; color: #171717">회의를 올리면, 정리는 끝납니다</h2>
+    <p style="margin: 0; max-width: 640px; font-size: 18px; line-height: 29px; color: #666666;">녹음을 올리면 발화자를 나누고 결정된 것과 담당자, 마감을 뽑아냅니다. 녹음이 없으면 텍스트 회의록을 붙여 넣어도 됩니다.</p>
+  </section>
+
+  <section style="width: 1024px; padding-bottom: 60px; display: flex; flex-direction: column; align-items: center; gap: 16px; text-align: center;">
+    <h2 style="margin: 0; font-size: 36px; line-height: 40px; font-weight: 600; letter-spacing: -0.72px; color: #171717">확인이 필요한 것만 모아 드립니다</h2>
+    <p style="margin: 0; max-width: 640px; font-size: 18px; line-height: 29px; color: #666666;">전부 다시 읽을 필요 없어요. 담당자가 둘로 갈렸거나 마감이 "다음 주쯤"으로만 나온 것만 승인 목록에 올라옵니다.</p>
+  </section>
+
+  <section style="width: 1024px; padding-bottom: 118px; display: flex; flex-direction: column; align-items: center; gap: 16px; text-align: center;">
+    <h2 style="margin: 0; font-size: 36px; line-height: 40px; font-weight: 600; letter-spacing: -0.72px; color: #171717">승인한 것만 나갑니다</h2>
+    <p style="margin: 0; max-width: 640px; font-size: 18px; line-height: 29px; color: #666666;">자동 발송은 기본값이 아닙니다. Notion 반영도 Discord DM도 확인한 뒤에 나가고, 반영 로그에서 언제든 되돌릴 수 있어요.</p>
+  </section>
+
+  <section style="width: 1200px; padding-bottom: 128px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px;">
+      <div style="display: flex; flex-direction: column; gap: 20px; padding: 28px; border-radius: 24px; background: #FAFAFA;">
+        <div style="display: flex; flex-direction: column; gap: 10px;">
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;"><h3 style="margin: 0; font-size: 16px; line-height: 26px; font-weight: 600; color: #171717">회의록 정리</h3></div>
+          <p style="margin: 0; font-size: 14px; line-height: 22px; color: #666666;">녹음을 올리면 전사하고 발화자를 나눕니다. 요약에는 근거가 된 원문 구간이 함께 붙어 나와요.</p>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 10px; min-height: 168px; padding: 16px; border: 1px solid #E8E8E8; border-radius: 16px; background: #FFFFFF;">
+          <span style="font-size: 11.5px; color: #666666;">전사문 · 3주차 정기회의</span>
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 0; border-bottom: 1px solid #E8E8E8;"><span style="font-size: 13px; color: #171717;">12:40 · 재환</span><span style="font-size: 12px; color: #666666;">API 명세서 9/17</span></div>
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 0; border-bottom: 1px solid #E8E8E8;"><span style="font-size: 13px; color: #171717;">19:05 · 서연</span><span style="font-size: 12px; color: #666666;">로그인 퍼블리싱 9/14</span></div>
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 0;"><span style="font-size: 13px; color: #171717;">31:05 · 도현</span><span style="font-size: 12px; color: #666666;">발표 준비 — 담당자 미정</span></div>
+        </div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 20px; padding: 28px; border-radius: 24px; background: #FAFAFA;">
+        <div style="display: flex; flex-direction: column; gap: 10px;">
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;"><h3 style="margin: 0; font-size: 16px; line-height: 26px; font-weight: 600; color: #171717">담당자 배치</h3></div>
+          <p style="margin: 0; font-size: 14px; line-height: 22px; color: #666666;">회의에서 정해진 사람을 그대로 붙입니다. 둘로 갈렸으면 고르라고 물어봐요.</p>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 10px; min-height: 168px; padding: 16px; border: 1px solid #E8E8E8; border-radius: 16px; background: #FFFFFF;">
+          <span style="font-size: 11.5px; color: #666666;">발표 준비 · 후보 2명</span>
+          <div style="display: flex; align-items: center; gap: 8px; padding-top: 6px;"><button type="button" style="display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 14px 0 9px; border: 1px solid #E8E8E8; border-radius: 9999px; background: #FFFFFF; font-size: 13.5px; color: #171717; line-height: 1;"><span style="display: inline-flex; align-items: center; justify-content: center; flex: 0 0 20px; width: 20px; height: 20px; border-radius: 9999px; background: #F0F0F0; font-size: 10px; font-weight: 600; color: #171717; line-height: 1;">서</span>서연</button><button type="button" style="display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 14px 0 9px; border: 1px solid #E8E8E8; border-radius: 9999px; background: #FFFFFF; font-size: 13.5px; color: #171717; line-height: 1;"><span style="display: inline-flex; align-items: center; justify-content: center; flex: 0 0 20px; width: 20px; height: 20px; border-radius: 9999px; background: #F0F0F0; font-size: 10px; font-weight: 600; color: #171717; line-height: 1;">지</span>지민</button></div>
+          <p style="margin: 6px 0 0; font-size: 12.5px; line-height: 19px; color: #666666;">뒤이어 확답한 사람이 없어서 한 명으로 좁히지 못했어요.</p>
+        </div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 20px; padding: 28px; border-radius: 24px; background: #FAFAFA;">
+        <div style="display: flex; flex-direction: column; gap: 10px;">
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;"><h3 style="margin: 0; font-size: 16px; line-height: 26px; font-weight: 600; color: #171717">마감 리마인드</h3></div>
+          <p style="margin: 0; font-size: 14px; line-height: 22px; color: #666666;">마감 하루 전에 담당자에게 Discord DM이 갑니다. 문구는 보내기 전에 고칠 수 있어요.</p>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 10px; min-height: 168px; padding: 16px; border: 1px solid #E8E8E8; border-radius: 16px; background: #FFFFFF;">
+          <span style="font-size: 11.5px; color: #666666;">Discord DM · 재환 · 09/16 09:00 예정</span>
+          <p style="margin: 4px 0 0; padding: 11px 14px; border-radius: 16px; background: #F0F0F0; font-size: 13px; line-height: 20px; color: #171717;">재환님, API 명세서 마감이 다음 주 목요일이에요 🙂 막히는 부분 있으면 알려주세요.</p>
+          <div style="display: flex; align-items: center; gap: 8px; margin-top: auto; justify-content: flex-start; flex-direction: row-reverse"><button type="button" style="height: 32px; padding: 0 14px; border: 0; border-radius: 9999px; background: #171717; font-size: 13px; font-weight: 600; color: #FFFFFF; line-height: 1">이대로 발송</button><button type="button" style="height: 32px; padding: 0 12px; border: 0; background: transparent; font-size: 13px; color: #666666; line-height: 1; font-weight: 600">고쳐 쓰기</button></div>
+        </div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 20px; padding: 28px; border-radius: 24px; background: #FAFAFA;">
+        <div style="display: flex; flex-direction: column; gap: 10px;">
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;"><h3 style="margin: 0; font-size: 16px; line-height: 26px; font-weight: 600; color: #171717">되돌리기</h3></div>
+          <p style="margin: 0; font-size: 14px; line-height: 22px; color: #666666;">반영한 것은 전부 로그에 남습니다. 되돌릴 수 없는 건 DM 발송 하나뿐이에요.</p>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 10px; min-height: 168px; padding: 16px; border: 1px solid #E8E8E8; border-radius: 16px; background: #FFFFFF;">
+          <span style="font-size: 11.5px; color: #666666;">반영 로그 · 오늘</span>
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 0; border-bottom: 1px solid #E8E8E8;"><span style="font-size: 13px; color: #171717;">API 명세서 — 자동 반영됨</span><span style="font-size: 12px; color: #666666;">14:22</span></div>
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 0; border-bottom: 1px solid #E8E8E8;"><span style="font-size: 13px; color: #171717;">로그인 퍼블리싱 — 승인함</span><span style="font-size: 12px; color: #666666;">14:19</span></div>
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 0;"><span style="font-size: 13px; color: #171717;">마감일 3건 갱신 — 자동</span><span style="font-size: 12px; color: #666666;">14:18</span></div>
+        </div>
+      </div>
+  </section>
+
+  <section style="width: 1200px; padding-bottom: 128px; display: flex; flex-direction: column; align-items: center; gap: 48px;">
+    <div style="display: flex; flex-direction: column; align-items: center; gap: 16px; text-align: center;">
+      <h2 style="margin: 0; font-size: 36px; line-height: 40px; font-weight: 600; letter-spacing: -0.72px; color: #171717">일을 하는 건 매스입니다</h2>
+      <p style="margin: 0; max-width: 660px; font-size: 18px; line-height: 29px; color: #666666;">Manager's Manager 안에서 회의를 듣고 정리하는 도우미예요.<br>대화창은 없습니다 — 매스는 정리한 결과와 확인할 것만 화면에 올려 둡니다.</p>
+    </div>
+
+    <input type="radio" name="mascot-pose" id="pose-idle" class="pose-radio" checked="">
+    <input type="radio" name="mascot-pose" id="pose-left" class="pose-radio">
+    <input type="radio" name="mascot-pose" id="pose-ask" class="pose-radio">
+    <input type="radio" name="mascot-pose" id="pose-done" class="pose-radio">
+
+    <div style="display: grid; grid-template-columns: 560px minmax(0, 1fr); gap: 64px; width: 100%; align-items: center;">
+      <div style="position: relative; display: flex; align-items: center; justify-content: center; height: 440px; border-radius: 24px; background: #FAFAFA;">
+        <span class="pose-fig" id="fig-pose-idle" style="align-items: center; justify-content: center;"><svg width="272" height="272" viewBox="0 0 240 240" fill="none" role="img" aria-label="매스 idle"><defs><clipPath id="ps1-f-f-f"><ellipse cx="120" cy="113.91" rx="65.69" ry="64.01"></ellipse></clipPath></defs><circle cx="120" cy="120" r="84" fill="#171717"></circle><ellipse cx="120" cy="113.91" rx="65.69" ry="64.01" fill="#FFFFFF"></ellipse><g transform="translate(80.78 30.79) rotate(-22)"><rect x="-17.41" y="-9.14" width="34.82" height="18.28" rx="5.22" ry="5.22" fill="#171717"></rect></g><g clip-path="url(#ps1-f-f-f)"><rect x="91.73" y="88.25" width="14.78" height="38.3" rx="7.39" fill="#171717"></rect><rect x="133.48" y="88.25" width="14.78" height="38.3" rx="7.39" fill="#171717"></rect></g></svg></span>
+        <span class="pose-fig" id="fig-pose-left" style="align-items: center; justify-content: center;"><svg width="272" height="272" viewBox="0 0 240 240" fill="none" role="img" aria-label="매스 left"><defs><clipPath id="ps2-f-f-f"><ellipse cx="106.98" cy="117.4" rx="65.69" ry="64.01"></ellipse></clipPath></defs><circle cx="120" cy="120" r="84" fill="#171717"></circle><ellipse cx="106.98" cy="117.4" rx="65.69" ry="64.01" fill="#FFFFFF"></ellipse><g transform="translate(98.05 25.75) rotate(-13)"><rect x="-17.41" y="-9.14" width="34.82" height="18.28" rx="5.22" ry="5.22" fill="#171717"></rect></g><g clip-path="url(#ps2-f-f-f)"><rect x="56.87" y="96.06" width="13.02" height="33.1" rx="6.51" fill="#171717"></rect><rect x="88.25" y="93.46" width="14.78" height="38.3" rx="7.39" fill="#171717"></rect></g></svg></span>
+        <span class="pose-fig" id="fig-pose-ask" style="align-items: center; justify-content: center;"><svg width="272" height="272" viewBox="0 0 240 240" fill="none" role="img" aria-label="매스 upRight"><defs><clipPath id="ps3-f-f-f"><ellipse cx="128.7" cy="108.69" rx="65.69" ry="64.01"></ellipse></clipPath></defs><circle cx="120" cy="120" r="84" fill="#171717"></circle><ellipse cx="128.7" cy="108.69" rx="65.69" ry="64.01" fill="#FFFFFF"></ellipse><g transform="translate(62.59 40.66) rotate(-34)"><rect x="-17.41" y="-9.14" width="34.82" height="18.28" rx="5.22" ry="5.22" fill="#171717"></rect></g><g clip-path="url(#ps3-f-f-f)"><rect x="130.89" y="69.05" width="14.8" height="38.3" rx="7.4" transform="rotate(-8.01 138.3 88.2)" fill="#171717"></rect><rect x="162.46" y="67.75" width="13.05" height="30.9" rx="6.53" transform="rotate(-12.92 168.99 83.2)" fill="#171717"></rect></g></svg></span>
+        <span class="pose-fig" id="fig-pose-done" style="align-items: center; justify-content: center;"><svg width="272" height="272" viewBox="0 0 240 240" fill="none" role="img" aria-label="매스 squint"><defs><clipPath id="ps4-f-f-f"><ellipse cx="120" cy="113.91" rx="65.69" ry="64.01"></ellipse></clipPath></defs><circle cx="120" cy="120" r="84" fill="#171717"></circle><ellipse cx="120" cy="113.91" rx="65.69" ry="64.01" fill="#FFFFFF"></ellipse><g transform="translate(80.78 30.79) rotate(-22)"><rect x="-17.41" y="-9.14" width="34.82" height="18.28" rx="5.22" ry="5.22" fill="#171717"></rect></g><g clip-path="url(#ps4-f-f-f)"><rect x="73.43" y="104.53" width="38.3" height="10.45" rx="5.22" fill="#171717"></rect><rect x="128.27" y="104.53" width="38.3" height="10.45" rx="5.22" fill="#171717"></rect></g></svg></span>
+        <span class="mono" style="position: absolute; left: 24px; bottom: 20px; font-size: 11.5px; color: #666666;">Manager's Manager</span>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 28px;">
+        <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+          <label class="pose-tab" for="pose-idle" style="color: #ffffff; background-color: #171717">대기</label>
+          <label class="pose-tab" for="pose-left">듣는 중</label>
+          <label class="pose-tab" for="pose-ask">묻는 중</label>
+          <label class="pose-tab" for="pose-done">완료</label>
+        </div>
+        <div class="pose-pane" id="pane-pose-idle" style="flex-direction: column; gap: 14px;">
+          <h3 style="margin: 0; font-size: 24px; line-height: 32px; font-weight: 600; letter-spacing: -0.4px; color: #171717;">회의를 기다립니다</h3>
+          <p style="margin: 0; max-width: 460px; font-size: 16px; line-height: 26px; color: #666666;">랜딩과 대시보드의 기본 포즈예요. 고개는 고정하고 2.5–4초에 한 번 깜빡입니다. 커서를 따라다니지 않아요 — 포즈는 제품의 상태로만 바뀝니다.</p>
+          <span class="mono" style="padding-top: 6px; font-size: 12.5px; color: #666666;">idle · 눈 두 개가 크기·높이·간격까지 완전 대칭</span>
+        </div>
+        <div class="pose-pane" id="pane-pose-left" style="flex-direction: column; gap: 14px;">
+          <h3 style="margin: 0; font-size: 24px; line-height: 32px; font-weight: 600; letter-spacing: -0.4px; color: #171717;">녹음을 듣고 정리합니다</h3>
+          <p style="margin: 0; max-width: 460px; font-size: 16px; line-height: 26px; color: #666666;">전사하고 발화자를 나누고, 결정된 것과 담당자와 마감을 골라냅니다. 확실한 건 묻지 않고 바로 Notion에 올려요.</p>
+          <span class="mono" style="padding-top: 6px; font-size: 12.5px; color: #666666;">left · 흰 얼굴을 왼쪽으로 밀어 오른쪽에 초승달</span>
+        </div>
+        <div class="pose-pane" id="pane-pose-ask" style="flex-direction: column; gap: 14px;">
+          <h3 style="margin: 0; font-size: 24px; line-height: 32px; font-weight: 600; letter-spacing: -0.4px; color: #171717;">확신하지 못한 것만 묻습니다</h3>
+          <p style="margin: 0; max-width: 460px; font-size: 16px; line-height: 26px; color: #666666;">담당자가 둘로 갈렸거나 마감이 "다음 주쯤"으로만 나온 것. 이런 것만 승인 목록에 올려 두고 기다립니다.</p>
+          <span class="mono" style="padding-top: 6px; font-size: 12.5px; color: #666666;">upRight · 고개는 그대로, 눈만 올려 기울임</span>
+        </div>
+        <div class="pose-pane" id="pane-pose-done" style="flex-direction: column; gap: 14px;">
+          <h3 style="margin: 0; font-size: 24px; line-height: 32px; font-weight: 600; letter-spacing: -0.4px; color: #171717;">확인이 끝나면 눈을 접습니다</h3>
+          <p style="margin: 0; max-width: 460px; font-size: 16px; line-height: 26px; color: #666666;">승인한 것만 Notion 보드에 반영되고 담당자에게 Discord DM이 나갑니다. 반영 로그에서 언제든 되돌릴 수 있어요.</p>
+          <span class="mono" style="padding-top: 6px; font-size: 12.5px; color: #666666;">squint · 세로 눈을 누른 게 아니라 가로 캡슐로 다시 그린 눈</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section style="width: 1024px; padding-bottom: 128px; display: flex; flex-direction: column; align-items: center; gap: 28px; text-align: center;">
+    <h2 style="margin: 0; font-size: 36px; line-height: 40px; font-weight: 600; letter-spacing: -0.72px; color: #171717">이런 일을 맡길 수 있어요</h2>
+    <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 10px;">
+      <button type="button" style="display: inline-flex; align-items: center; height: 40px; padding: 0 18px; border: 1px solid transparent; border-radius: 9999px; font-size: 15px; font-weight: 600; color: #ffffff; line-height: 1; background-color: #171717">회의록 정리</button>
+      <button type="button" style="display: inline-flex; align-items: center; height: 40px; padding: 0 18px; border: 1px solid #E8E8E8; border-radius: 9999px; background: #FFFFFF; font-size: 15px; font-weight: 600; color: #171717; line-height: 1;">마감 리마인드</button>
+      <button type="button" style="display: inline-flex; align-items: center; height: 40px; padding: 0 18px; border: 1px solid #E8E8E8; border-radius: 9999px; background: #FFFFFF; font-size: 15px; font-weight: 600; color: #171717; line-height: 1;">담당자 배치</button>
+      <button type="button" style="display: inline-flex; align-items: center; height: 40px; padding: 0 18px; border: 1px solid #E8E8E8; border-radius: 9999px; background: #FFFFFF; font-size: 15px; font-weight: 600; color: #171717; line-height: 1;">진행 상황 점검</button>
+      <button type="button" style="display: inline-flex; align-items: center; height: 40px; padding: 0 18px; border: 1px solid #E8E8E8; border-radius: 9999px; background: #FFFFFF; font-size: 15px; font-weight: 600; color: #171717; line-height: 1;">주간 요약</button>
+    </div>
+    <p style="margin: 0; max-width: 620px; font-size: 18px; line-height: 29px; color: #666666;">녹음을 올리면 전사·요약·결정사항 추출까지 한 번에. <br>Notion에 바로 올리고, 애매한 것만 승인 목록에 남깁니다.</p>
+    <a href="#" style="display: inline-flex; align-items: center; gap: 6px; font-size: 16px; color: #171717;">기능 전부 보기<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#171717" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"></path></svg></a>
+  </section>
+
+  <section style="width: 1200px; padding-bottom: 128px; display: flex; flex-direction: column; gap: 36px;">
+    <div style="display: flex; flex-direction: column; align-items: center; gap: 14px; text-align: center;">
+      <h2 style="margin: 0; font-size: 36px; line-height: 40px; font-weight: 600; letter-spacing: -0.72px; color: #171717">요금제</h2>
+      <p style="margin: 0; font-size: 16px; line-height: 24px; color: #666666;">팀 규모가 크다면 <a href="#" style="color: #171717; text-decoration: underline; text-underline-offset: 3px;">문의해 주세요</a>.</p>
+      <div style="display: inline-flex; gap: 4px; padding: 4px; border: 1px solid #E8E8E8; border-radius: 9999px; background: #FFFFFF;"><button type="button" style="height: 32px; padding: 0 18px; border: 0; border-radius: 9999px; background: #F0F0F0; font-size: 13.5px; font-weight: 600; color: #171717; line-height: 1;">월간</button><button type="button" style="height: 32px; padding: 0 18px; border: 0; border-radius: 9999px; background: transparent; font-size: 13.5px; font-weight: 600; color: #666666; line-height: 1;">연간</button></div>
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; align-items: start;">
+      <div style="display: flex; flex-direction: column; gap: 22px; padding: 28px; border: 1px solid #E8E8E8; border-radius: 24px; background: #FFFFFF;">
+        <span style="font-size: 14px; line-height: 20px; font-weight: 600; color: #666666;">무료</span>
+        <div style="display: flex; flex-direction: column; gap: 6px;">
+          <span style="font-size: 40px; line-height: 44px; font-weight: 600; letter-spacing: -0.8px; color: #171717">₩0</span>
+          <span style="font-size: 13.5px; color: #666666;">팀 하나 · 월 회의 3건까지</span>
+        </div>
+        <a href="#" style="display: inline-flex; align-items: center; justify-content: center; height: 44px; border: 0; border-radius: 9999px; background: #171717; color: #FFFFFF; font-size: 15px; font-weight: 600; line-height: 1;">무료로 시작하기</a>
+        <div style="display: flex; flex-direction: column; gap: 11px; padding-top: 4px; border-top: 1px solid #E8E8E8;">
+          <span style="display: flex; align-items: flex-start; gap: 9px; padding-top: 7px; font-size: 13.5px; line-height: 21px; color: #171717;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#171717" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex: 0 0 14px; margin-top: 4px;" aria-hidden="true"><path d="m5 13 4 4L19 7"></path></svg>회의록 전사·요약</span>
+          <span style="display: flex; align-items: flex-start; gap: 9px; padding-top: 7px; font-size: 13.5px; line-height: 21px; color: #171717;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#171717" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex: 0 0 14px; margin-top: 4px;" aria-hidden="true"><path d="m5 13 4 4L19 7"></path></svg>확인 필요 목록</span>
+          <span style="display: flex; align-items: flex-start; gap: 9px; padding-top: 7px; font-size: 13.5px; line-height: 21px; color: #171717;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#171717" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex: 0 0 14px; margin-top: 4px;" aria-hidden="true"><path d="m5 13 4 4L19 7"></path></svg>Notion 연동 1개</span>
+        </div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 22px; padding: 28px; border: 1px solid #E8E8E8; border-radius: 24px; background: #FAFAFA;">
+        <span style="font-size: 14px; line-height: 20px; font-weight: 600; color: #666666;">팀</span>
+        <div style="display: flex; flex-direction: column; gap: 6px;">
+          <span style="font-size: 40px; line-height: 44px; font-weight: 600; letter-spacing: -0.8px; color: #171717">[요금 미정]</span>
+          <span style="font-size: 13.5px; color: #666666;">팀원 수 제한 없음</span>
+        </div>
+        <a href="#" style="display: inline-flex; align-items: center; justify-content: center; height: 44px; border: 0; border-radius: 9999px; background: #171717; color: #FFFFFF; font-size: 15px; font-weight: 600; line-height: 1;">시작하기</a>
+        <div style="display: flex; flex-direction: column; gap: 11px; padding-top: 4px; border-top: 1px solid #E8E8E8;">
+          <span style="display: flex; align-items: flex-start; gap: 9px; padding-top: 7px; font-size: 13.5px; line-height: 21px; color: #171717;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#171717" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex: 0 0 14px; margin-top: 4px;" aria-hidden="true"><path d="m5 13 4 4L19 7"></path></svg>회의 무제한</span>
+          <span style="display: flex; align-items: flex-start; gap: 9px; padding-top: 7px; font-size: 13.5px; line-height: 21px; color: #171717;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#171717" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex: 0 0 14px; margin-top: 4px;" aria-hidden="true"><path d="m5 13 4 4L19 7"></path></svg>Discord DM 리마인드</span>
+          <span style="display: flex; align-items: flex-start; gap: 9px; padding-top: 7px; font-size: 13.5px; line-height: 21px; color: #171717;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#171717" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex: 0 0 14px; margin-top: 4px;" aria-hidden="true"><path d="m5 13 4 4L19 7"></path></svg>반영 로그 · 되돌리기</span>
+          <span style="display: flex; align-items: flex-start; gap: 9px; padding-top: 7px; font-size: 13.5px; line-height: 21px; color: #171717;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#171717" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex: 0 0 14px; margin-top: 4px;" aria-hidden="true"><path d="m5 13 4 4L19 7"></path></svg>태스크 4개 뷰</span>
+        </div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 22px; padding: 28px; border: 1px solid #E8E8E8; border-radius: 24px; background: #FFFFFF;">
+        <span style="font-size: 14px; line-height: 20px; font-weight: 600; color: #666666;">기업</span>
+        <div style="display: flex; flex-direction: column; gap: 6px;">
+          <span style="font-size: 40px; line-height: 44px; font-weight: 600; letter-spacing: -0.8px; color: #171717">문의</span>
+          <span style="font-size: 13.5px; color: #666666;">보안 검토 · 전담 지원</span>
+        </div>
+        <a href="#" style="display: inline-flex; align-items: center; justify-content: center; height: 44px; border: 0; border-radius: 9999px; background: #171717; color: #FFFFFF; font-size: 15px; font-weight: 600; line-height: 1;">문의하기</a>
+        <div style="display: flex; flex-direction: column; gap: 11px; padding-top: 4px; border-top: 1px solid #E8E8E8;">
+          <span style="display: flex; align-items: flex-start; gap: 9px; padding-top: 7px; font-size: 13.5px; line-height: 21px; color: #171717;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#171717" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex: 0 0 14px; margin-top: 4px;" aria-hidden="true"><path d="m5 13 4 4L19 7"></path></svg>SSO · 감사 로그</span>
+          <span style="display: flex; align-items: flex-start; gap: 9px; padding-top: 7px; font-size: 13.5px; line-height: 21px; color: #171717;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#171717" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex: 0 0 14px; margin-top: 4px;" aria-hidden="true"><path d="m5 13 4 4L19 7"></path></svg>[데이터 보관 정책]</span>
+          <span style="display: flex; align-items: flex-start; gap: 9px; padding-top: 7px; font-size: 13.5px; line-height: 21px; color: #171717;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#171717" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex: 0 0 14px; margin-top: 4px;" aria-hidden="true"><path d="m5 13 4 4L19 7"></path></svg>전담 온보딩</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section style="width: 1024px; padding-bottom: 128px; display: flex; flex-direction: column; gap: 28px;">
+    <h2 style="margin: 0; font-size: 36px; line-height: 40px; font-weight: 600; letter-spacing: -0.72px; color: #171717">자주 묻는 것</h2>
+    <div style="border-top: 1px solid #E8E8E8;">
+      <div style="display: flex; flex-direction: column; gap: 14px; padding: 26px 0; border-bottom: 1px solid #E8E8E8;">
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 20px;">
+          <span style="font-size: 18px; line-height: 26px; font-weight: 400; color: #171717;">팀원도 가입해야 하나요?</span>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#666666" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14"></path></svg>
+        </div>
+        <p style="margin: 0; max-width: 760px; font-size: 16px; line-height: 24px; color: #666666;">아니요. 가입은 팀을 관리하는 한 사람만 진행해도 됩니다. 팀원은 쓰던 대로 Discord와 Notion만 쓰고, 마감이 다가오면 DM으로 알림이 갑니다. 팀원 가입 시, 팀원들과 일정관리 탭을 공유할 수 있어요.</p>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 14px; padding: 26px 0; border-bottom: 1px solid #E8E8E8;">
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 20px;">
+          <span style="font-size: 18px; line-height: 26px; font-weight: 400; color: #171717;">Notion을 마음대로 고치나요?</span>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#666666" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
+        </div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 14px; padding: 26px 0; border-bottom: 1px solid #E8E8E8;">
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 20px;">
+          <span style="font-size: 18px; line-height: 26px; font-weight: 400; color: #171717;">녹음이 없으면 쓸 수 없나요?</span>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#666666" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
+        </div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 14px; padding: 26px 0; border-bottom: 1px solid #E8E8E8;">
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 20px;">
+          <span style="font-size: 18px; line-height: 26px; font-weight: 400; color: #171717;">이미 쓰던 Notion 보드를 그대로 쓸 수 있나요?</span>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#666666" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
+        </div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 14px; padding: 26px 0; border-bottom: 1px solid #E8E8E8;">
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 20px;">
+          <span style="font-size: 18px; line-height: 26px; font-weight: 400; color: #171717;">[녹음 데이터는 얼마나 보관되나요?]</span>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#666666" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section style="width: 1024px; padding-bottom: 120px; display: flex; flex-direction: column; align-items: center; gap: 20px; text-align: center;">
+    <h2 style="margin: 0; font-size: 36px; line-height: 40px; font-weight: 600; letter-spacing: -0.72px; color: #171717">이번 주 회의부터 시작해 보세요</h2>
+    <p style="margin: 0; max-width: 620px; font-size: 18px; line-height: 29px; font-weight: 400; color: #666666;">첫 회의를 올리고 확인하는 데까지 10분이면 충분합니다. 팀원에게는 아무것도 요청하지 않아도 돼요.</p>
+    <div style="display: flex; align-items: center; gap: 10px; padding-top: 8px;"><a href="#" style="display: inline-flex; align-items: center; justify-content: center; height: 44px; padding: 0 24px; border: 0; border-radius: 9999px; background: #171717; color: #FFFFFF; font-size: 16px; font-weight: 600; line-height: 1">시작하기</a><a href="#" style="display: inline-flex; align-items: center; justify-content: center; height: 44px; padding: 0 24px; border: 0; border-radius: 9999px; background: #EDEDED; color: #171717; font-size: 16px; font-weight: 600; line-height: 1">문의하기</a></div>
+  </section>
+
+  <footer style="width: 100%; display: flex; justify-content: center; padding: 0 40px; border-top: 1px solid #E8E8E8;">
+    <div style="width: 1200px; display: flex; flex-direction: column; gap: 44px; padding: 48px 0 40px;">
+      <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 56px;">
+        <div style="display: flex; flex-direction: column; gap: 14px; max-width: 260px;">
+          <span style="display: inline-flex; align-items: center; gap: 9px;"><span style="display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 6px; background: #171717; line-height: 1;"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M2 11V3.5l3.5 4.5L9 3.5V11" stroke="#FFFFFF" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path><path d="M11.6 5.2v2.4" stroke="#FFFFFF" stroke-width="1.8" stroke-linecap="round"></path></svg></span><span class="dsp" style="font-size: 14px; font-weight: 600; letter-spacing: -0.3px; color: #171717;">Manager's Manager</span></span>
+          <p style="margin: 0; font-size: 13px; line-height: 20px; color: #666666;">한 번의 클릭으로, 매니저가 정리합니다</p>
+        </div>
+      <div style="display: flex; gap: 56px;">
+        <div style="display: flex; flex-direction: column; gap: 12px;"><span style="font-size: 13px; font-weight: 600; color: #171717;">제품</span><a href="#" style="font-size: 13.5px; color: #666666;">기능</a><a href="#" style="font-size: 13.5px; color: #666666;">연동</a><a href="#" style="font-size: 13.5px; color: #666666;">요금제</a><a href="#" style="font-size: 13.5px; color: #666666;">변경 기록</a></div>
+        <div style="display: flex; flex-direction: column; gap: 12px;"><span style="font-size: 13px; font-weight: 600; color: #171717;">쓰는 법</span><a href="#" style="font-size: 13.5px; color: #666666;">시작 가이드</a><a href="#" style="font-size: 13.5px; color: #666666;">회의 올리기</a><a href="#" style="font-size: 13.5px; color: #666666;">승인 워크벤치</a><a href="#" style="font-size: 13.5px; color: #666666;">[상태 페이지]</a></div>
+        <div style="display: flex; flex-direction: column; gap: 12px;"><span style="font-size: 13px; font-weight: 600; color: #171717;">회사</span><a href="#" style="font-size: 13.5px; color: #666666;">소개</a><a href="#" style="font-size: 13.5px; color: #666666;">블로그</a><a href="#" style="font-size: 13.5px; color: #666666;">문의하기</a></div>
+        <div style="display: flex; flex-direction: column; gap: 12px;"><span style="font-size: 13px; font-weight: 600; color: #171717;">약관</span><a href="#" style="font-size: 13.5px; color: #666666;">이용약관</a><a href="#" style="font-size: 13.5px; color: #666666;">개인정보처리방침</a><a href="#" style="font-size: 13.5px; color: #666666;">보안</a></div>
+      </div>
+      </div>
+      <div style="display: flex; align-items: center; justify-content: space-between; gap: 24px; padding-top: 28px; border-top: 1px solid #E8E8E8;">
+        <span style="font-size: 13px; color: #666666;">© 2026 Manager's Manager · 카카오테크캠퍼스 4기 · 경북대 3팀</span>
+        <span style="display: inline-flex; align-items: center; gap: 4px; padding: 4px; border: 1px solid #E8E8E8; border-radius: 9999px;"><span style="display: inline-flex; align-items: center; height: 26px; padding: 0 12px; border-radius: 9999px; background: #F0F0F0; font-size: 12.5px; color: #171717; line-height: 1;">라이트</span><span style="display: inline-flex; align-items: center; height: 26px; padding: 0 12px; border-radius: 9999px; font-size: 12.5px; color: #666666; line-height: 1;">다크</span></span>
+      </div>
+    </div>
+  </footer>
+</div>
+</x-dc>
+</body>
+</html>

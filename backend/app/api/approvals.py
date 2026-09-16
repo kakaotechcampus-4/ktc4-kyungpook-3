@@ -1,20 +1,77 @@
 import json
+from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import select, func
+from sqlalchemy import select, func, update
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.errors import AppError, ErrorCode, success
-from app.models import ApprovalRequest, ApprovalStatus
+from app.core.errors import AppError, Envelope, ErrorCode, success
+from app.models import ApprovalRequest, ApprovalStatus, ApprovalType, ChangeSource, Task
 from app.schemas.approval import (
     ApprovalCreateRequest,
     ApprovalListResponse,
     ApprovalResolveRequest,
     ApprovalResponse,
 )
+from app.services.tasks import apply_task_updates, create_task
 
 router = APIRouter(prefix="/approvals", tags=["approvals"])
+
+_TASK_UPDATE_FIELDS = {"title", "assignee_member_id", "status", "progress", "blocker", "due_date"}
+
+
+def _parse_date(value: object) -> date | None:
+    if value is None:
+        return None
+    if isinstance(value, date):
+        return value
+    return date.fromisoformat(str(value))
+
+
+def _apply_approval(db: Session, approval: ApprovalRequest) -> None:
+    """승인된 요청을 실제 Task 생성/수정으로 반영한다."""
+    payload = json.loads(approval.payload)
+
+    if approval.type == str(ApprovalType.TASK_CREATE):
+        task = create_task(
+            db,
+            workspace_id=approval.workspace_id,
+            title=payload.get("task_title") or payload.get("title") or "",
+            meeting_id=payload.get("meeting_id"),
+            assignee_member_id=payload.get("assignee_member_id"),
+            due_date=_parse_date(payload.get("due_date")),
+            change_source=str(ChangeSource.MEETING if payload.get("meeting_id") else ChangeSource.MANUAL),
+            changed_by=approval.resolved_by,
+            is_auto=False,
+        )
+        approval.related_task_id = task.task_id
+
+    elif approval.type == str(ApprovalType.TASK_UPDATE):
+        if approval.related_task_id is None:
+            raise AppError(
+                ErrorCode.INVALID_REQUEST,
+                message="task_update 승인 요청에 related_task_id가 없습니다.",
+                details={"approval_id": approval.approval_id},
+            )
+        task = db.get(Task, approval.related_task_id)
+        if task is None:
+            raise AppError(
+                ErrorCode.TASK_NOT_FOUND, details={"task_id": approval.related_task_id}
+            )
+        updates = {k: v for k, v in payload.items() if k in _TASK_UPDATE_FIELDS}
+        if "due_date" in updates:
+            updates["due_date"] = _parse_date(updates["due_date"])
+        apply_task_updates(
+            db,
+            task,
+            updates,
+            change_source=str(ChangeSource.MEETING),
+            changed_by=approval.resolved_by,
+            is_auto=False,
+        )
+
+    # REMINDER_DM: 태스크에 반영할 내용이 없다 — 실제 발송은 알림 채널(디스코드 봇)의 책임
 
 
 def _to_response(row: ApprovalRequest) -> ApprovalResponse:
@@ -33,7 +90,7 @@ def _to_response(row: ApprovalRequest) -> ApprovalResponse:
     )
 
 
-@router.post("", status_code=201)
+@router.post("", status_code=201, response_model=Envelope[ApprovalResponse])
 def create_approval(
     payload: ApprovalCreateRequest,
     db: Session = Depends(get_db),
@@ -53,7 +110,7 @@ def create_approval(
     return success(_to_response(approval).model_dump(mode="json"))
 
 
-@router.get("")
+@router.get("", response_model=Envelope[ApprovalListResponse])
 def list_approvals(
     workspace_id: str = Query(..., description="워크스페이스 ID"),
     status: ApprovalStatus | None = Query(None, description="상태 필터"),
@@ -84,7 +141,7 @@ def list_approvals(
     )
 
 
-@router.get("/{approval_id}")
+@router.get("/{approval_id}", response_model=Envelope[ApprovalResponse])
 def get_approval(approval_id: str, db: Session = Depends(get_db)) -> dict:
     """승인 요청 단건을 조회한다."""
     approval = db.get(ApprovalRequest, approval_id)
@@ -96,40 +153,50 @@ def get_approval(approval_id: str, db: Session = Depends(get_db)) -> dict:
     return success(_to_response(approval).model_dump(mode="json"))
 
 
-@router.patch("/{approval_id}")
+@router.patch("/{approval_id}", response_model=Envelope[ApprovalResponse])
 def resolve_approval(
     approval_id: str,
     payload: ApprovalResolveRequest,
     db: Session = Depends(get_db),
 ) -> dict:
     """PM이 승인 요청을 승인/반려한다."""
-    approval = db.get(ApprovalRequest, approval_id)
-    if approval is None:
-        raise AppError(
-            ErrorCode.APPROVAL_NOT_FOUND,
-            details={"approval_id": approval_id},
-        )
-
-    if approval.status != str(ApprovalStatus.PENDING):
-        raise AppError(
-            ErrorCode.INVALID_REQUEST,
-            message="이미 처리된 승인 요청입니다.",
-            details={"current_status": approval.status},
-        )
-
     if payload.status == ApprovalStatus.PENDING:
         raise AppError(
             ErrorCode.INVALID_REQUEST,
             message="pending 상태로 변경할 수 없습니다.",
         )
 
-    from datetime import datetime, timezone
+    stmt = (
+        update(ApprovalRequest)
+        .where(
+            ApprovalRequest.approval_id == approval_id,
+            ApprovalRequest.status == str(ApprovalStatus.PENDING),
+        )
+        .values(
+            status=str(payload.status),
+            resolved_by=payload.resolved_by,
+            resolved_at=datetime.now(timezone.utc),
+        )
+    )
+    result = db.execute(stmt)
 
-    approval.status = str(payload.status)
-    approval.resolved_by = payload.resolved_by
-    approval.resolved_at = datetime.now(timezone.utc)
+    if result.rowcount == 0:
+        approval = db.get(ApprovalRequest, approval_id)
+        if approval is None:
+            raise AppError(
+                ErrorCode.APPROVAL_NOT_FOUND,
+                details={"approval_id": approval_id},
+            )
+        raise AppError(
+            ErrorCode.APPROVAL_ALREADY_RESOLVED,
+            details={"approval_id": approval_id, "current_status": approval.status},
+        )
+
+    approval = db.get(ApprovalRequest, approval_id)
+
+    if payload.status == ApprovalStatus.APPROVED:
+        _apply_approval(db, approval)
 
     db.commit()
     db.refresh(approval)
-
     return success(_to_response(approval).model_dump(mode="json"))
