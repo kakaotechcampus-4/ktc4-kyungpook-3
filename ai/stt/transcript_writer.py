@@ -10,7 +10,7 @@ import json
 from pathlib import Path
 
 from shared.schemas import TranscriptSegment
-from stt.session import Line
+from stt.lines import Line
 
 
 def _clock(ms: int) -> str:

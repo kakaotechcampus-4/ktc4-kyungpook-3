@@ -24,7 +24,7 @@ import json
 import statistics
 from pathlib import Path
 
-from stt.session import Line
+from stt.lines import Line
 
 STAGES = ("queue", "transcribe", "publish")
 STAGE_LABELS = {"queue": "큐", "transcribe": "전사", "publish": "게시"}

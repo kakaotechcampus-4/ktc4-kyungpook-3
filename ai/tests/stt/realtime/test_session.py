@@ -4,7 +4,7 @@ import time
 import numpy as np
 
 from stt.backend import SttResult
-from stt.session import Session
+from stt.realtime.session import Session
 
 SR = 16_000
 

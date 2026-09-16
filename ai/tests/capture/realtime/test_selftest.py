@@ -18,9 +18,9 @@ import asyncio
 import numpy as np
 import pytest
 
-import capture.selftest as selftest
+import capture.realtime.selftest as selftest
 import stt.elice as elice_mod
-from capture.selftest import CAUSES, PCM_20MS_BYTES, SelfTest, _NullSession, _ProbeSink
+from capture.realtime.selftest import CAUSES, PCM_20MS_BYTES, SelfTest, _NullSession, _ProbeSink
 from stt.backend import SttError, SttResult
 from tests.capture.replay import ReplayTrack, replay
 
@@ -1309,7 +1309,7 @@ async def test_selftest_command_is_registered_on_the_cog():
     # discord.Bot() 은 만들 때 이벤트 루프를 찾는다. 동기 테스트에는 루프가 없다.
     import discord
 
-    import capture.realtime_adapter as adapter
+    import capture.realtime.adapter as adapter
 
     bot = discord.Bot(intents=adapter.required_intents())
     bot.add_cog(adapter.RealtimeCog(bot))
@@ -1321,7 +1321,7 @@ def test_selftest_command_defers_before_the_probe():
     """3초 프로브가 인터랙션 시한 3초를 넘긴다. defer 가 없으면 응답이 통째로 NotFound 다."""
     import inspect
 
-    import capture.realtime_adapter as adapter
+    import capture.realtime.adapter as adapter
 
     src = inspect.getsource(adapter.RealtimeCog.selftest.callback)
     assert "_defer(ctx)" in src               # _defer 가 ctx.defer() 를 감싼다
@@ -1348,7 +1348,7 @@ class _FakeCtx:
 
 async def test_selftest_command_passes_the_stt_flag_through(monkeypatch):
     """옵션이 본문까지 안 내려가면 유료 호출 게이트 전체가 무의미하다."""
-    import capture.realtime_adapter as adapter
+    import capture.realtime.adapter as adapter
 
     seen = []
 
@@ -1369,7 +1369,7 @@ async def test_selftest_command_passes_the_stt_flag_through(monkeypatch):
 
 async def test_selftest_command_passes_the_seconds_option_through(monkeypatch):
     """옵션이 본문까지 안 내려가면 사용자가 고른 길이가 조용히 버려진다."""
-    import capture.realtime_adapter as adapter
+    import capture.realtime.adapter as adapter
 
     seen = []
 
@@ -1390,7 +1390,7 @@ async def test_seconds_option_declares_its_range_to_discord():
     """
     import discord
 
-    import capture.realtime_adapter as adapter
+    import capture.realtime.adapter as adapter
 
     bot = discord.Bot(intents=adapter.required_intents())
     bot.add_cog(adapter.RealtimeCog(bot))

@@ -3,8 +3,8 @@ import threading
 
 import pytest
 
-from stt.session import Line
-from capture.publisher import Publisher, format_line, render_turn
+from stt.lines import Line
+from capture.realtime.publisher import Publisher, format_line, render_turn
 
 
 def line(speaker="kim", name="김환", turn="t1", seq=1, start=24_000, end=27_000,

@@ -75,11 +75,11 @@ import os
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # ai/ 자체를 sys.path 에 추가
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))  # ai/ 자체를 sys.path 에 추가
 
 import discord  # noqa: E402
 
-from capture.realtime_adapter import RealtimeCog, required_intents  # noqa: E402
+from capture.realtime.adapter import RealtimeCog, required_intents  # noqa: E402
 from shared.config import settings  # noqa: E402
 
 S = settings()

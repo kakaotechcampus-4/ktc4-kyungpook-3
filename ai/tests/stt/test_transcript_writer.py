@@ -1,6 +1,6 @@
 import json
 
-from stt.session import Line
+from stt.lines import Line
 from stt.transcript_writer import write_transcript
 
 

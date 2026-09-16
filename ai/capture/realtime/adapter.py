@@ -51,14 +51,14 @@ from pathlib import Path
 import discord
 from discord.voice import VoiceClient
 
-from capture.publisher import Publisher
+from capture.realtime.publisher import Publisher
 from capture.recording_store import write_manifest
 from capture.streaming_sink import StreamingSink
 from capture.track_writer import TrackWriter
 from shared.config import RECORDINGS_DIR
 from stt.elice import EliceStt
-from stt.latency import format_summary, snapshot, write_latency
-from stt.session import Session
+from stt.realtime.latency import format_summary, snapshot, write_latency
+from stt.realtime.session import Session
 from stt.speech_gate import SpeechGate
 from stt.transcript_writer import write_transcript
 
@@ -647,7 +647,7 @@ class RealtimeCog(discord.Cog):
                     description="수신을 재는 시간 (기본 3초, 말하다 쉬는 구간을 넣으려면 길게)")
     async def selftest(self, ctx: discord.ApplicationContext, stt: bool = False,
                        seconds: int | None = None) -> None:
-        from capture import selftest as st
+        from capture.realtime import selftest as st
 
         # 프로브가 인터랙션 시한 3초를 넘긴다. defer 뒤에는 followup 까지 15분이라
         # 15초 프로브도 안에 들어온다.

@@ -1,7 +1,7 @@
 import json
 
-from stt.latency import format_summary, snapshot, summarize, write_latency
-from stt.session import Line
+from stt.realtime.latency import format_summary, snapshot, summarize, write_latency
+from stt.lines import Line
 
 
 def L(seq, start, queue_s=None, transcribe_s=None, publish_s=None, final=True, speaker="1"):
