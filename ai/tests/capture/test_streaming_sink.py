@@ -420,3 +420,45 @@ def test_cleanup_finishes_even_if_drain_raises():
     with pytest.raises(RuntimeError):
         sink.cleanup()
     assert sink.finished is True
+
+
+def test_flush_idle_releases_a_window_whose_stream_has_stopped():
+    """재정렬 창은 17번째 패킷이 와야 첫 패킷을 내보낸다. 화자가 말을 멈추면 패킷이
+    끊겨 마지막 16패킷(320ms)이 다음 발화까지 창에 갇힌다.
+
+    그러면 모든 발화 끝 320ms 가 잘리고, 갇힌 조각은 나중에 320ms 짜리 발화로 따로
+    풀려나 MIN_SPEECH_MS 미달로 사라진다. "마지막 도착 뒤 IDLE_FLUSH_MS 가 지나면 창을
+    비운다" 가 그 자리를 메운다. 패킷은 20ms 마다 오므로 100ms 공백은 스트림이 멈춘 것이다.
+    """
+    from capture.streaming_sink import IDLE_FLUSH_MS
+
+    session = FeedCountingSession(final_stt=FakeStt(), on_line=lambda ln: None, workers=1)
+    clock = {"now_ms": 0}
+    sink = StreamingSink(session, now_ms=lambda: clock["now_ms"])
+    replay([ReplayTrack(user_id=5, name="박", samples=tone(100), ssrc=50)], sink.write, clock=clock)
+    assert session.feeds == 0                      # 5패킷, 창 안
+
+    last = clock["now_ms"]
+    assert sink.flush_idle(last + IDLE_FLUSH_MS - 1) == 0   # 아직 흐르는 중일 수 있다
+    assert session.feeds == 0
+    assert sink.flush_idle(last + IDLE_FLUSH_MS) == 5       # 멈췄다. 전부 내보낸다
+    assert session.feeds == 5
+    assert sink.flush_idle(last + IDLE_FLUSH_MS * 3) == 0   # 비운 창은 다시 안 센다
+    session.close()
+
+
+def test_flush_idle_leaves_a_speaker_who_is_still_talking():
+    """두 화자 중 한쪽만 멈췄다. 흐르는 쪽 창은 건드리면 안 된다. 그쪽은 정렬이 아직 필요하다."""
+    from capture.streaming_sink import IDLE_FLUSH_MS
+
+    session = FeedCountingSession(final_stt=FakeStt(), on_line=lambda ln: None, workers=1)
+    clock = {"now_ms": 0}
+    sink = StreamingSink(session, now_ms=lambda: clock["now_ms"])
+    replay([ReplayTrack(user_id=5, name="박", samples=tone(100), ssrc=50)], sink.write, clock=clock)
+    stopped_at = clock["now_ms"]
+    replay([ReplayTrack(user_id=6, name="최", samples=tone(300), ssrc=60,
+                        start_ms=stopped_at + IDLE_FLUSH_MS)], sink.write, clock=clock)
+    # 박은 멈춘 지 오래고 최는 방금까지 말했다
+    assert sink.flush_idle(clock["now_ms"]) == 5
+    assert session.feeds == 5
+    session.close()

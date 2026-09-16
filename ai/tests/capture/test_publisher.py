@@ -310,3 +310,15 @@ async def test_a_line_arriving_during_a_send_is_not_counted_as_published():
     p.stop()
     await asyncio.wait_for(task, timeout=1.0)
     assert during.publish_s is not None
+
+
+def test_failed_line_is_visible_in_the_channel_but_not_as_speech():
+    """파일에서는 빼지만 화면에서는 보여야 한다. 쓴 사람이 "내 말이 왜 없지" 를 알 수 있게.
+
+    text 가 빈 줄을 그냥 거르면 그 발화가 있었다는 흔적이 화면에서 사라진다.
+    """
+    bad = line(seq=1, text="")
+    bad.error = "SttError: STT 503"
+    assert "전사 실패" in format_line(bad)
+    out = render_turn([bad, line(seq=2, text="다음 말")])
+    assert "전사 실패" in out and out.endswith("다음 말")

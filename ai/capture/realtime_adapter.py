@@ -40,6 +40,7 @@ from __future__ import annotations
 
 import asyncio
 import queue
+import resource
 import threading
 import time
 import traceback
@@ -62,6 +63,12 @@ from stt.speech_gate import SpeechGate
 from stt.transcript_writer import write_transcript
 
 SessionSavedHook = Callable[[dict, Path], Awaitable[None]]
+
+# 종료 후 전사가 끝나기를 기다리는 상한. 큐가 비면 바로 돌아오므로 정상 회의에서는
+# 0.1초도 안 쓴다 (실측 0.08초). 이 값이 사는 자리는 Elice 가 느릴 때다 — 같은 0.96초
+# 클립이 2.62초와 20.58초로 갈렸고, 8.70초 클립이 22.57초 걸린 적이 있다. 예전 값 10초는
+# 그 꼬리보다 짧아서, 늦게 끝난 전사가 마감 뒤에 도착해 회의록에서 통째로 빠졌다.
+FINISH_WAIT_S = 60.0
 
 # 첫 응답이 3초 시한을 넘긴 인터랙션에 무엇이든 보내면 오는 코드 (errors.py:140-143).
 UNKNOWN_INTERACTION = 10062
@@ -167,19 +174,45 @@ class SafeVoiceClient(VoiceClient):
         self._ssrc_to_id.pop(ssrc, None)
 
 
+def _cpu_seconds() -> float:
+    """이 프로세스가 지금까지 쓴 CPU 시간 (user+sys, 전 스레드 합)."""
+    r = resource.getrusage(resource.RUSAGE_SELF)
+    return r.ru_utime + r.ru_stime
+
+
+def _post_late(loop, channel, count: int, line) -> None:
+    """마감 뒤에 끝난 전사를 회의실에 따로 올린다. 워커 스레드에서 불린다.
+
+    루프가 이미 닫혔거나 채널이 사라졌으면 조용히 포기한다. 이 경로가 예외를 내면
+    워커 스레드가 죽고, 그 뒤 발화가 전부 큐에 남는다 (stt/session.py 의 워커 루프가
+    잡아 주기는 하지만 여기서 새어 나가게 둘 이유가 없다).
+    """
+    shown = "⚠️ 전사 실패" if line.error else line.text
+    text = (f"🕘 마감 뒤 도착 {count}건 · **{line.speaker_name}** {shown}\n"
+            f"회의록에 추가했습니다. 종료 요약의 발화 수에는 빠져 있습니다.")
+    try:
+        asyncio.run_coroutine_threadsafe(channel.send(text), loop)
+    except Exception as e:
+        print(f"[meeting] 마감 뒤 도착 알림 실패: {type(e).__name__}: {e}", flush=True)
+
+
 @dataclass
 class _Ledger:
     """확정 줄을 모으는 자리.
 
     on_line 은 STT 워커 스레드에서 불리고 (stt/session.py:36-41) 종료 경로는 루프에서 돈다.
-    closed 는 종료가 스냅샷을 뜬 시점을 알리는 표시다. 그 뒤 도착한 줄은 파일에도 화면에도
-    못 들어가므로 late 로 세고 로그만 남긴다. 정밀한 동기화가 아니라 관측용 카운터다 —
-    경계에 걸친 한 줄이 어느 쪽으로 세어질지는 보장하지 않는다.
+    closed 는 종료가 스냅샷을 뜬 시점을 알리는 표시다. 그 뒤 도착한 줄은 late 로 세고,
+    회의록 파일을 다시 써서 붙인다. 파일이 진실이면 마감은 요약을 언제 낼지의 문제로만
+    남는다. 경계에 걸친 한 줄이 어느 쪽으로 세어질지는 보장하지 않는다.
+
+    files_lock 은 회의록 두 파일을 쓰는 자리를 지킨다. 종료 경로가 루프 밖 스레드에서
+    쓰는 동안 늦은 줄이 워커 스레드에서 같은 파일을 다시 쓸 수 있다.
     """
 
     lines: list = field(default_factory=list)
     closed: bool = False
     late: int = 0
+    files_lock: threading.Lock = field(default_factory=threading.Lock)
 
 
 class _TrackPool:
@@ -273,6 +306,10 @@ class _Meeting:
     voice_channel_id: int
     ledger: _Ledger
     secret_key: bytes = b""
+    # 종료 요약에 이 회의가 쓴 CPU 를 찍으려고 시작 시점을 적어 둔다. 프로세스 전체 기준이라
+    # 길드가 둘 이상 동시에 회의 중이면 서로 섞인다. t3.medium 에서 실제 부하를 볼 자리다.
+    wall_t0: float = 0.0
+    cpu_t0: float = 0.0
 
 
 class RealtimeCog(discord.Cog):
@@ -450,6 +487,7 @@ class RealtimeCog(discord.Cog):
 
         publisher = Publisher(_send, _edit)
         ledger = _Ledger()
+        loop = asyncio.get_running_loop()
 
         def on_line(line):
             # STT 워커 스레드에서 불린다 (stt/session.py:36-41). Publisher.submit 은 그
@@ -457,7 +495,19 @@ class RealtimeCog(discord.Cog):
             if ledger.closed:
                 ledger.late += 1
                 print(f"[meeting] 마감 뒤 도착한 줄 {ledger.late}건 "
-                      f"({line.speaker_name}) — 파일에도 화면에도 안 들어간다", flush=True)
+                      f"({line.speaker_name}) — 회의록에 붙인다", flush=True)
+                # 파일이 진실이다. 회의록 두 파일을 전체 줄로 다시 쓴다. 이 스레드에서
+                # 파일을 쓰는 동안 종료 경로가 같은 파일을 쓰고 있을 수 있어 잠근다.
+                # BE 훅(on_session_saved)은 이미 불린 뒤다 — 늦게 붙은 줄은 종료 후
+                # 재전사가 기록을 만드는 2단계 구조에서 그쪽이 다시 읽는다.
+                try:
+                    with ledger.files_lock:
+                        ledger.lines.append(line)
+                        write_transcript(list(ledger.lines), out_dir, meeting_id)
+                except Exception as e:
+                    print(f"[meeting] 늦은 줄 기록 실패: {type(e).__name__}: {e}", flush=True)
+                # 화면에도 낸다. 게시기는 이미 멈춘 뒤라 채널로 직접 보낸다.
+                _post_late(loop, post_to, ledger.late, line)
                 return
             ledger.lines.append(line)
             publisher.submit(line)
@@ -476,6 +526,9 @@ class RealtimeCog(discord.Cog):
                           now_ms=now_ms)
         pool = _TrackPool(out_dir, ts)
         sink = StreamingSink(session, now_ms=now_ms, on_samples=pool.submit)
+        # 청소 직전에 재정렬 창부터 비우고 마지막 도착 시각을 넘긴다. 빠지면 예외 없이
+        # 모든 발화 끝 320ms 가 잘리고 700ms 쉼에서도 발화가 갈린다.
+        session.before_sweep = sink.tick
         publisher_task = asyncio.create_task(publisher.run())
 
         try:
@@ -502,6 +555,7 @@ class RealtimeCog(discord.Cog):
             # 퇴장 flush 와 봇 퇴장 감지가 조용히 안 돈다.
             channel=post_to, voice_channel_id=room.id, ledger=ledger,
             secret_key=bytes(vc.secret_key or b""),
+            wall_t0=t0, cpu_t0=_cpu_seconds(),
         )
         await ctx.respond(
             f"🔴 전사 시작 (`{room.name}`). 줄은 {post_to.mention} 에 올라갑니다. "
@@ -671,7 +725,7 @@ class RealtimeCog(discord.Cog):
 
         # 2. 남은 발화를 확정하고 전사를 기다린다. close() 는 워커를 최대 10초 기다리는
         #    블로킹 호출이라 스레드로 뺀다. 루프에서 부르면 그동안 봇 전체가 멈춘다.
-        elapsed = await asyncio.to_thread(meeting.session.close, 10.0)
+        elapsed = await asyncio.to_thread(meeting.session.close, FINISH_WAIT_S)
 
         # 3. 스냅샷은 close() 가 돌아온 **뒤** 에 찍는다. 앞에서 찍으면 close() 가 확정하는
         #    마지막 발화들이 통째로 빠진다 — 그 줄들은 전부 close() 안에서 on_line 으로 온다
@@ -699,19 +753,23 @@ class RealtimeCog(discord.Cog):
         )
 
         # 5. 회의록. 게시기 정리보다 **앞** 이다. 게시가 막혀 있어도 파일은 나와야 한다.
-        out = await asyncio.to_thread(write_transcript, lines, meeting.out_dir, meeting.meeting_id)
+        def _write_files():
+            with meeting.ledger.files_lock:
+                return write_transcript(lines, meeting.out_dir, meeting.meeting_id)
+
+        out = await asyncio.to_thread(_write_files)
         # 지연은 회의록 옆에 따로 쓴다. transcript.jsonl 의 레코드 모양은 BE 계약이다.
         # 값은 여기서 한 번만 뜬다. 아래 요약까지 가는 동안 게시 태스크가 계속 돌면서
         # 같은 Line 객체를 채우므로, 줄을 그대로 넘기면 파일과 화면이 갈라진다.
         timings = snapshot(lines)
         latency_path = await asyncio.to_thread(write_latency, timings, meeting.out_dir)
 
-        finals = [ln for ln in lines if ln.final]
+        finals = [ln for ln in lines if ln.final and not ln.error]
         report = meeting.sink.level_report()
         total = time.monotonic() - t0
         msg = [
             f"⏹ 종료. 발화 {len(finals)}건 · 회의록까지 {total:.1f}초 "
-            f"(전사 대기 {elapsed:.1f}초, 목표 10초)",
+            f"(전사 대기 {elapsed:.1f}초, 상한 {FINISH_WAIT_S:.0f}초)",
             format_summary(timings),
             f"회의록 `{out['markdown']}` · 구간 지연 `{latency_path.name}`",
             f"화자별 트랙 {len(entries)}개 · 매니페스트 `{manifest_path.name}`",
@@ -722,8 +780,27 @@ class RealtimeCog(discord.Cog):
             f"트랙 버림 {meeting.pool.dropped} · 최대 RMS {report['peak_rms']:.3f} "
             f"(임계 {report['speech_rms']:.3f}, {report['verdict']})"
         )
+        cpu_s = _cpu_seconds() - meeting.cpu_t0
+        wall_s = max(1e-6, time.monotonic() - meeting.wall_t0)
+        # 실시간 경로가 서버 CPU 를 얼마나 쓰는지는 이 줄로 잰다. API 대기는 CPU 가 아니라
+        # 여기 안 들어가고, Opus 복호화·DAVE 복호화는 py-cord 가 이 프로세스에서 하므로 들어간다.
+        msg.append(
+            f"봇 프로세스 CPU {cpu_s:.1f}초 / 회의 {wall_s:.0f}초 = 코어 하나의 "
+            f"{cpu_s / wall_s * 100:.1f}% (수신·복호화·VAD·말 필터·게시 합, API 대기 제외)"
+        )
         if meeting.session.gate is not None:
             msg.append(meeting.session.gate.summary())
+        if out["failed"]:
+            msg.append(
+                f"⚠️ 전사 실패 {out['failed']}건 — 회의록에 없습니다. 실패 이유는 봇 로그의 "
+                f"`[stt] 포기` 줄에 있고, 화자별 wav 로 다시 전사할 수 있습니다"
+            )
+        if meeting.ledger.late:
+            # 터미널에만 찍으면 회의실에 있는 사람은 줄이 빠진 것을 알 방법이 없다.
+            msg.append(
+                f"⚠️ 마감 뒤 도착 {meeting.ledger.late}건 — 전사가 상한을 넘겨 회의록에 없습니다. "
+                f"화자별 wav 는 남아 있으니 다시 전사할 수 있습니다"
+            )
         if drain_error is not None:
             msg.append(f"⚠️ 마지막 드레인 실패 ({drain_error}) — 회의 끝부분이 빠졌을 수 있습니다")
         try:

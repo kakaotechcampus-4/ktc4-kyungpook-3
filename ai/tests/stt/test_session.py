@@ -110,7 +110,10 @@ def test_stt_failure_keeps_the_line():
     s.close()
     finals = [ln for ln in lines if ln.final]
     assert len(finals) == 1
-    assert "전사 실패" in finals[0].text
+    # 실패는 text 가 아니라 error 로 간다. text 에 "[전사 실패]" 를 넣으면 회의록과 추출이
+    # 그걸 발화로 읽는다.
+    assert finals[0].text == ""
+    assert finals[0].error and "RuntimeError" in finals[0].error
 
 
 def test_two_speakers_are_independent():
@@ -345,3 +348,69 @@ def test_close_stops_the_sweeper():
                 now_ms=lambda: clock["ms"], sweep_interval_s=0.02)
     s.close()
     assert _wait_for(lambda: not s.sweeper_alive), "청소 스레드가 안 멈췄다"
+
+
+def test_retries_are_logged(capsys):
+    """재시도가 조용하면 "전사가 20초 걸렸다" 를 API 탓인지 재시도 탓인지 못 가른다.
+
+    실제로 한 회의에서 transcribe_s 가 20.34초로 찍혔는데, 백엔드가 느린 건지 두 번
+    실패하고 세 번째에 성공한 건지 로그가 없어 판단할 수 없었다.
+    """
+
+    class FlakyStt:
+        name = "flaky"
+
+        def __init__(self):
+            self.calls = 0
+
+        def transcribe(self, samples, sample_rate):
+            self.calls += 1
+            if self.calls < 3:
+                raise RuntimeError("일시 오류")
+            return SttResult(text="세 번째에 성공", words=[])
+
+    stt = FlakyStt()
+    lines = []
+    s = Session(final_stt=stt, on_line=lines.append, workers=1)
+    feed_packets(s, "kim", "김환", tone(1_000), 0)
+    s.close()
+
+    assert [ln.text for ln in lines] == ["세 번째에 성공"]
+    assert stt.calls == 3
+    out = capsys.readouterr().out
+    assert out.count("[stt] 재시도") == 2      # 1회차·2회차 실패
+    assert "RuntimeError" in out
+
+
+def test_giving_up_after_retries_is_logged(capsys):
+    """전부 실패하면 줄은 error 만 들고 나온다. 왜 실패했는지는 error 와 로그에 있다."""
+
+    class DeadStt:
+        name = "dead"
+
+        def transcribe(self, samples, sample_rate):
+            raise RuntimeError("계속 실패")
+
+    lines = []
+    s = Session(final_stt=DeadStt(), on_line=lines.append, workers=1, retries=2)
+    feed_packets(s, "kim", "김환", tone(1_000), 0)
+    s.close()
+
+    assert [ln.text for ln in lines] == [""]
+    assert "RuntimeError" in (lines[0].error or "")
+    out = capsys.readouterr().out
+    assert "[stt] 포기" in out and "RuntimeError" in out
+
+
+def test_sweep_loop_runs_the_before_sweep_hook_with_the_same_clock():
+    """청소 전에 sink 의 재정렬 창부터 비워야 한다. 창에 갇힌 320ms 를 VAD 가 못 본 채로
+    청소가 돌면 발화가 그만큼 일찍, 짧게 닫힌다. 같은 시계 값을 넘겨야 둘이 어긋나지 않는다.
+    """
+    clock = {"ms": 1_234}
+    seen = []
+    s = Session(final_stt=FakeStt(), on_line=lambda ln: None, workers=1,
+                now_ms=lambda: clock["ms"], sweep_interval_s=0.02)
+    s.before_sweep = lambda now: (seen.append(now), None)[1]
+    assert _wait_for(lambda: len(seen) >= 2)
+    s.close()
+    assert set(seen) == {1_234}

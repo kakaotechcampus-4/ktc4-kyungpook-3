@@ -163,3 +163,85 @@ def test_sweep_does_not_double_count_a_later_gap():
     # 한도의 절반만 더 흐른 시점에 패킷이 오면 아직 닫히면 안 된다.
     out = feed_packets(v, tone(200), 1_000 + half + FRAME_MS)
     assert out == []
+
+
+def blip(amp: float = 0.012) -> np.ndarray:
+    """임계(0.006)를 살짝 넘는 20ms 한 프레임. 마이크 바닥 잡음이 튀는 모양."""
+    return tone(FRAME_MS, amp=amp)
+
+
+def test_a_single_frame_above_threshold_does_not_reset_the_silence_count():
+    """실제 녹음에서 0.0064 짜리 20ms 프레임 하나가 침묵 카운터를 0 으로 되돌렸다.
+
+    그래서 디스코드 알림음과 1.2초 침묵과 진짜 말이 한 발화로 묶였고, 말 비율이 희석돼
+    필터가 진짜 말을 버렸다. 한 프레임은 말이 아니다.
+    """
+    v = vad()
+    samples = np.concatenate([tone(1_000), silence(400), blip(), silence(400), tone(1_000)])
+    got = feed_packets(v, samples, 0) + v.flush()
+    # 침묵 820ms 가 이어졌으니 첫 발화는 닫혀야 하고, 뒤 1초는 새 발화다.
+    assert len(got) == 2, times(got)
+    (s1, e1), (s2, _) = times(got)
+    assert e1 == pytest.approx(1_000, abs=2 * FRAME_MS)
+    assert s2 == pytest.approx(1_820, abs=3 * FRAME_MS)
+
+
+def test_a_short_burst_followed_by_silence_does_not_become_the_utterance_start():
+    """알림음 200ms · 침묵 500ms · 말 1초. 발화는 말에서 시작해야 한다.
+
+    500ms 는 800ms 한도보다 짧아 지금은 셋이 한 발화가 되고, pcm 앞 700ms 가 잡음과
+    침묵이라 말 비율이 떨어진다. MIN_SPEECH_MS 가 버리는 종류의 소리가 앞에 붙어
+    있으면 거기서 끊고 말부터 다시 센다.
+    """
+    v = vad()
+    samples = np.concatenate([tone(200), silence(500), tone(1_000)])
+    got = feed_packets(v, samples, 0) + v.flush()
+    assert len(got) == 1
+    (s, e), = times(got)
+    assert s == pytest.approx(700, abs=3 * FRAME_MS)
+    assert e == pytest.approx(1_700, abs=2 * FRAME_MS)
+
+
+def test_a_real_first_syllable_is_kept_when_the_pause_is_short():
+    """위 규칙이 말 첫 음절을 지우면 안 된다. 200ms 뒤 짧게 머뭇거린 경우다."""
+    v = vad()
+    samples = np.concatenate([tone(200), silence(200), tone(1_000)])
+    got = feed_packets(v, samples, 0) + v.flush()
+    assert len(got) == 1
+    (s, _), = times(got)
+    assert s == pytest.approx(0, abs=2 * FRAME_MS)
+
+
+def test_long_speech_is_cut_at_a_short_pause_once_past_the_soft_cap():
+    """대본을 읽으면 문장 사이 쉼이 280ms 안팎이라 800ms 규칙에 안 걸린다.
+
+    실제로 5~6문장 22.68초가 한 발화가 되어 다 끝난 뒤에야 전사가 올라갔다.
+    일정 길이를 넘긴 발화는 짧은 쉼에서도 끊어 문장 단위로 흐르게 한다.
+    """
+    from stt.vad import SOFT_CAP_MS, SOFT_HOLD_MS
+
+    assert SOFT_HOLD_MS < 500 < SILENCE_HOLD_MS     # 아래 500ms 가 두 규칙 사이여야 한다
+    v = vad()
+    long = np.concatenate([tone(SOFT_CAP_MS + 1_000), silence(500), tone(2_000)])
+    got = feed_packets(v, long, 0) + v.flush()
+    assert len(got) == 2, times(got)
+
+    v = vad()
+    short = np.concatenate([tone(SOFT_CAP_MS - 3_000), silence(500), tone(2_000)])
+    got = feed_packets(v, short, 0) + v.flush()
+    assert len(got) == 1, times(got)          # 상한 아래서는 500ms 쉼이 발화를 안 가른다
+
+
+def test_sweep_trusts_the_last_arrival_over_its_own_buffer():
+    """sink 의 재정렬 창이 새 패킷 16개(320ms)를 쥐고 있는 동안 VAD 의 버퍼 끝은 옛날에
+    멈춰 있다. 그 사이 청소가 돌면 "쉬었다 다시 말한" 화자를 조용한 것으로 보고 닫는다.
+
+    청소는 버퍼 끝과 마지막 도착 시각 중 늦은 쪽을 기준으로 잰다. 패킷이 오고 있으면
+    창 안에 있어도 그 화자는 말하는 중이다.
+    """
+    v = vad()
+    feed_packets(v, tone(1_000), 0)
+    now = 1_000 + SILENCE_HOLD_MS + 200
+    assert v.sweep(now, last_seen_ms=now - 100) is None      # 100ms 전에도 패킷이 왔다
+    assert v.pending_ms > 0
+    assert v.sweep(now, last_seen_ms=900) is not None         # 도착도 오래전이면 닫는다

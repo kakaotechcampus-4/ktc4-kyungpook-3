@@ -28,6 +28,11 @@ import numpy as np
 ENABLED = True
 THRESHOLD = 0.95
 MIN_SPEECH_RATIO = 0.60
+# 1초 미만 발화에 느슨한 임계(0.70)를 두었다가 걷어냈다 (2026-09-14). 근거로 삼은
+# "감사합니다 0.40초" 클립을 들어 보니 "으음" 하는 소리였고, 위스퍼가 거기에 "감사합니다."
+# 를 지어낸 것이었다. 0.4초에 다섯 음절은 애초에 말이 안 됐다. 실제 짧은 단어("안녕하세요"
+# 0.64초·0.96초)는 0.95 에서도 0.91 로 통과한다. 0.95 가 거르는 짧은 소리는 "으음", "아아"
+# 같은 군소리이고, 그건 걸러야 위스퍼가 문장을 지어내지 않는다.
 
 
 def _load_silero():
@@ -80,14 +85,16 @@ class SpeechGate:
     def model_loaded(self) -> bool:
         return self._loaded
 
-    def speech_ratio(self, pcm: np.ndarray, sample_rate: int) -> float:
+    def speech_ratio(self, pcm: np.ndarray, sample_rate: int,
+                     threshold: float | None = None) -> float:
         if len(pcm) == 0:
             return 0.0
+        thr = self.threshold if threshold is None else threshold
         with self._lock:
             if not self._loaded:
                 self._model = self._load_model()
                 self._loaded = True
-            spans = self._speech_spans(pcm, sample_rate, self.threshold)
+            spans = self._speech_spans(pcm, sample_rate, thr)
         speech = sum(s["end"] - s["start"] for s in spans)
         return speech / len(pcm)
 
@@ -114,7 +121,7 @@ class SpeechGate:
         with self._lock:
             self.rejected += 1
         print(f"[speech_gate] 거름: {tag or '발화'} {len(pcm) / sample_rate:.2f}초 · "
-              f"말 비율 {ratio:.2f} < {self.min_ratio:.2f}", flush=True)
+              f"말 비율 {ratio:.2f} < {self.min_ratio:.2f} (임계 {self.threshold:.2f})", flush=True)
         return False
 
     def summary(self) -> str:

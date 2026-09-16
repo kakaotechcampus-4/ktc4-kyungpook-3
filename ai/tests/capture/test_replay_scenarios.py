@@ -195,3 +195,58 @@ def test_pace_makes_replay_take_real_time():
     assert len(seen) == 30          # 20ms 패킷 30개
     assert paced >= 0.5
     assert instant < 0.2
+
+
+def test_live_path_keeps_the_tail_of_an_utterance():
+    """실제 봇 경로(sink 재정렬 창 + 회의 시계 + 청소)로 1.0초 발화 하나를 흘린다.
+
+    고치기 전에는 (23, 703) 으로 닫히고 320ms 가 drain 때 (703, 1023) 으로 따로 나왔다.
+    끝이 잘린 줄 하나와 MIN_SPEECH_MS 를 간신히 넘긴 조각 하나. 실제 회의에서는 조각이
+    다음 발화가 올 때까지 창에 갇혀 있다가 사라진다.
+    """
+    lines = []
+    t0 = time.monotonic()
+    now_ms = lambda: int((time.monotonic() - t0) * 1000)   # noqa: E731
+    s = Session(final_stt=FakeStt(), on_line=lines.append, workers=1,
+                now_ms=now_ms, sweep_interval_s=0.05)
+    sink = StreamingSink(s, now_ms=now_ms)
+    s.before_sweep = sink.tick
+    replay([ReplayTrack(user_id=1, name="A", samples=tone(1_000), ssrc=11)], sink.write, pace=True)
+    time.sleep(1.5)                                          # 패킷이 끊긴 채로 기다린다
+    live = [(ln.start_ms, ln.end_ms) for ln in lines]
+    sink.drain()
+    s.close()
+    late = [(ln.start_ms, ln.end_ms) for ln in lines[len(live):]]
+
+    assert len(live) == 1, live
+    start, end = live[0]
+    assert end - start >= 960, live          # 1000ms 발화가 통째로 (페이싱 지터 ±2프레임)
+    assert late == [], late                  # drain 이 꺼낼 조각이 없다
+
+
+def test_live_path_keeps_a_pause_shorter_than_the_hold_in_one_utterance():
+    """700ms 쉬고 이어 말하면 한 발화여야 한다 (800ms 미만). 실제 봇 경로로 확인한다.
+
+    쉬었다 다시 말을 시작하면 새 패킷 16개가 재정렬 창에 320ms 동안 갇힌다. 그동안 청소가
+    VAD 버퍼 끝만 보면 700 + 320 > 800 이라 닫아 버린다. 골든셋의 "네 다들 감사합니다" 가
+    이렇게 앞뒤에서 떨어져 나와 1초 조각이 됐고 말 필터에 걸렸다.
+    """
+    from stt.vad import SILENCE_HOLD_MS
+
+    pause = SILENCE_HOLD_MS - 100
+    lines = []
+    t0 = time.monotonic()
+    now_ms = lambda: int((time.monotonic() - t0) * 1000)   # noqa: E731
+    s = Session(final_stt=FakeStt(), on_line=lines.append, workers=1,
+                now_ms=now_ms, sweep_interval_s=0.05)
+    sink = StreamingSink(s, now_ms=now_ms)
+    s.before_sweep = sink.tick
+    samples = np.concatenate([tone(1_000), silence(pause), tone(1_000)])
+    replay([ReplayTrack(user_id=1, name="A", samples=samples, ssrc=11, silent_below=0.002)],
+           sink.write, pace=True)
+    time.sleep(1.5)
+    live = [(ln.start_ms, ln.end_ms) for ln in lines]
+    sink.drain()
+    s.close()
+    assert len(live) == 1, live
+    assert live[0][1] - live[0][0] >= 2_000 + pause - 60, live

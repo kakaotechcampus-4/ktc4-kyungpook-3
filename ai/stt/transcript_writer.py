@@ -28,9 +28,16 @@ def _md_text(text: str) -> str:
     return " ".join(text.splitlines())
 
 
-def write_transcript(lines: list[Line], out_dir: Path, meeting_id: str) -> dict[str, Path]:
+def write_transcript(lines: list[Line], out_dir: Path, meeting_id: str) -> dict:
+    """{"jsonl": Path, "markdown": Path, "failed": int}.
+
+    전사가 실패한 줄(error)은 두 파일 모두에서 뺀다. 빈 발화 레코드도 시각과 화자를 달고
+    남으면 추출이 발언으로 읽는다. 뺀 건수를 돌려주고 종료 요약이 회의실에 적는다.
+    """
     out_dir.mkdir(parents=True, exist_ok=True)
-    finals = sorted((ln for ln in lines if ln.final), key=lambda ln: (ln.start_ms, ln.speaker_id))
+    failed = sum(1 for ln in lines if ln.final and ln.error)
+    finals = sorted((ln for ln in lines if ln.final and not ln.error),
+                    key=lambda ln: (ln.start_ms, ln.speaker_id))
 
     jsonl_path = out_dir / "transcript.jsonl"
     with jsonl_path.open("w", encoding="utf-8") as f:
@@ -60,4 +67,4 @@ def write_transcript(lines: list[Line], out_dir: Path, meeting_id: str) -> dict[
 
     md_path = out_dir / "transcript.md"
     md_path.write_text("\n".join(md) + "\n", encoding="utf-8")
-    return {"jsonl": jsonl_path, "markdown": md_path}
+    return {"jsonl": jsonl_path, "markdown": md_path, "failed": failed}
