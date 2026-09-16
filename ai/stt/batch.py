@@ -76,6 +76,7 @@ class BatchStats:
     gated: int = 0
     calls: int = 0
     failed: int = 0
+    retries: int = 0             # 실패 뒤 다시 보낸 횟수
     long_splits: int = 0         # 28초 넘어 조용한 자리에서 가른 클립 수
     audio_sent_s: float = 0.0
     speech_s: float = 0.0
@@ -95,7 +96,7 @@ class BatchStats:
         return {
             "mode": self.mode, "backend": self.backend, "tracks": self.tracks, "clips": self.clips,
             "turns": self.turns, "gated": self.gated, "calls": self.calls, "failed": self.failed,
-            "long_splits": self.long_splits,
+            "retries": self.retries, "long_splits": self.long_splits,
             "audio_sent_s": round(self.audio_sent_s, 1), "speech_s": round(self.speech_s, 1),
             "track_s": round(self.track_s, 1), "wall_s": round(self.wall_s, 1),
             "transcribe_p50_s": None if not ts else round(statistics.median(ts), 2),
@@ -260,15 +261,31 @@ def build_chunks(utts: list[Utterance], max_s: float = CHUNK_MAX_S, gap_s: float
 
 
 # ─────────────────────────────────────────────────────────────── 전사
+RETRIES = 2            # 실패한 호출을 다시 보내는 횟수. 배치는 마감이 없어 기다릴 수 있다
+RETRY_WAIT_S = 2.0     # 재시도 사이 대기. API 가 잠시 막힌 것이면 이 정도로 풀린다
+
+
 def _call(backend: SttBackend, pcm: np.ndarray, stats: BatchStats,
           speaker: str = "") -> tuple[SttResult | None, float, str | None]:
-    t0 = time.monotonic()
-    try:
-        r = backend.transcribe(pcm, SR)
-        err = None
-    except Exception as e:  # SttError 도, 예상 못 한 것도 줄 하나의 실패로만 남긴다
-        r, err = None, f"{type(e).__name__}: {e}"
-    dt = time.monotonic() - t0
+    """한 번 호출. 실패하면 RETRIES 만큼 다시 보낸다. 시간은 성공한 호출(또는 마지막 실패)만 센다.
+
+    회의 중 전사에서는 재시도가 stall 을 두 배로 늘려서 안 했다. 배치는 마감이 없고 한 묶음이
+    빠지면 회의록에서 그 화자의 한 턴이 통째로 사라지므로 다시 보내는 쪽이 낫다.
+    """
+    r, err, dt = None, None, 0.0
+    for attempt in range(RETRIES + 1):
+        t0 = time.monotonic()
+        try:
+            r = backend.transcribe(pcm, SR)
+            err = None
+        except Exception as e:  # SttError 도, 예상 못 한 것도 줄 하나의 실패로만 남긴다
+            r, err = None, f"{type(e).__name__}: {e}"
+        dt = time.monotonic() - t0
+        if err is None or attempt == RETRIES:
+            break
+        with stats._lock:
+            stats.retries += 1
+        time.sleep(RETRY_WAIT_S * (attempt + 1))
     with stats._lock:   # 워커 여럿이 같은 통계를 만진다
         stats.calls += 1
         stats.audio_sent_s += len(pcm) / SR
@@ -533,7 +550,9 @@ def make_backend(kind: str, model: str, mode: str = "chunk", *, beam: int = 5,
 
 
 def default_workers(kind: str) -> int:
-    return 6 if kind == "elice" else 1
+    """Elice 는 3. 여섯을 동시에 보내면 호출당 시간이 7초에서 34초로 늘어 타임아웃에 걸렸다(2026-09-16).
+    셋이면 12초 안팎이고 끝까지 간다. 로컬은 CPU 를 다 쓰므로 1."""
+    return 3 if kind == "elice" else 1
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -544,7 +563,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--model", default="large-v3-turbo", help="--backend local 의 faster-whisper 모델")
     ap.add_argument("--beam", type=int, default=5, help="로컬 빔 폭. 1 이면 빠르고 5 가 정확하다")
     ap.add_argument("--no-gate", action="store_true", help="말 필터를 끈다")
-    ap.add_argument("--workers", type=int, default=None, help="동시 호출 수. 기본: elice 6, local 1")
+    ap.add_argument("--workers", type=int, default=None, help="동시 호출 수. 기본: elice 3, local 1")
     ap.add_argument("--out", type=Path, default=None, help="회의록 출력 디렉토리 (기본: session_dir)")
     ap.add_argument("--yes", action="store_true", help="유료 실행을 승인한다")
     args = ap.parse_args(argv)
