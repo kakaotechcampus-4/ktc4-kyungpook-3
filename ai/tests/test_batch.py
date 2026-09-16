@@ -96,6 +96,32 @@ def test_chunks_respect_max_length_and_keep_pieces_in_order():
     assert abs(len(chunks[0].pcm) / SR - (10 + 0.2 + 10 + 0.2)) < 0.01
 
 
+def test_chunks_keep_a_turn_together_and_split_only_at_its_longest_pause():
+    """한 턴(공백 3초 이내)은 한 묶음에 둔다. 턴이 28초를 넘으면 그 턴 안의 가장 긴 쉼에서 가른다."""
+    # 턴 A: 0~9, 9.5~19 (공백 0.5) / 턴 B: 40~48 (앞 턴과 21초 떨어짐)
+    utts = _utts((0, 9), (9.5, 9.5), (40, 8))
+    chunks = B.build_chunks(utts, max_s=28.0)
+    assert [len(c.pieces) for c in chunks] == [3]          # 셋 다 28초 안이라 한 묶음
+    chunks = B.build_chunks(utts, max_s=28.0, pack_turns=False)
+    assert [len(c.pieces) for c in chunks] == [2, 1]       # 턴마다 하나
+    # 턴 하나가 28초를 넘는다: 12 + (공백 0.4) 12 + (공백 1.5) 12. 가장 긴 쉼 1.5초에서 가른다
+    long_turn = _utts((0, 12), (12.4, 12), (25.9, 12))
+    chunks = B.build_chunks(long_turn, max_s=28.0)
+    assert [[u.start_ms for _, u in c.pieces] for c in chunks] == [[0, 12_400], [25_900]]
+
+
+def test_long_clip_is_split_at_its_quietest_frame():
+    """쉼이 없는 40초 클립은 15초 이후 가장 조용한 20ms 에서 갈린다. 단어 중간의 25초 강제 절단은 없다."""
+    from stt.vad import Utterance
+    pcm = tone(40_000)
+    pcm[int(SR * 22.0):int(SR * 22.0) + SR // 50] = 0.0    # 22.0초에 20ms 짜리 조용한 자리
+    u = Utterance(speaker_id="1", pcm=pcm, sample_rate=SR, start_ms=100_000, end_ms=140_000, seq=1)
+    parts = B.split_long(u, max_s=28.0)
+    assert [p.start_ms for p in parts] == [100_000, 122_000]
+    assert parts[0].end_ms == 122_000 and parts[1].end_ms == 140_000
+    assert abs(len(parts[0].pcm) / SR - 22.0) < 0.03
+
+
 def test_chunk_time_maps_back_to_meeting_time():
     utts = _utts((100, 2), (130, 3))
     (c,) = B.build_chunks(utts, max_s=28.0, gap_s=0.2)
@@ -148,6 +174,55 @@ def test_track_mode_counts_words_in_silence_as_hallucination(tmp_path):
     assert stats.calls == 1 and stats.hallucinated_words > 0
     kept = " ".join(ln.text for ln in lines).split()
     assert all(0.0 <= float(w[1:]) <= 2.3 or 9.7 <= float(w[1:]) <= 12.3 for w in kept)
+
+
+def test_turn_merge_joins_a_pause_inside_a_sentence_but_not_across_another_speaker(tmp_path):
+    """A 가 2초 말하고 1초 쉬고 3초 말하면 회의록 한 줄. 그 1초 사이에 B 가 시작하면 두 줄."""
+    write_track(tmp_path / "a.wav", [tone(2_000), silence(1_000), tone(3_000), silence(1_000)])
+    write_track(tmp_path / "b.wav", [silence(7_000)])
+    lines, stats = B.run(B.discover(tmp_path), EchoStt(), mode="chunk", gate=None, workers=1)
+    a = [ln for ln in lines if ln.speaker_id == "a"]
+    assert stats.clips == 2 and stats.turns == 1 and len(a) == 1
+    assert a[0].start_ms <= 100 and 5_900 <= a[0].end_ms <= 6_200 and a[0].seq == 1
+
+    write_track(tmp_path / "b.wav", [silence(2_300), tone(400), silence(4_300)])   # B 가 사이에 끼어든다
+    lines, _ = B.run(B.discover(tmp_path), EchoStt(), mode="chunk", gate=None, workers=1)
+    assert [ln.speaker_id for ln in lines] == ["a", "b", "a"]
+    assert [ln.seq for ln in lines] == [1, 2, 3]
+
+
+def test_whole_mode_keeps_words_outside_vad_and_counts_them(tmp_path):
+    """이전 방식 그대로. 무음 자리 단어도 회의록에 남고, 몇 개였는지만 센다."""
+    stt = EchoStt()
+    lines, stats = B.run(_session(tmp_path)[:1], stt, mode="whole", gate=None)
+    assert stats.calls == 1 and stats.hallucinated_words > 0
+    text = " ".join(ln.text for ln in lines)
+    assert "w5.25" in text            # A 의 2~10초 무음 자리 단어가 남아 있다
+
+
+def test_pool_runs_all_tracks_chunks_concurrently(tmp_path):
+    """전 트랙의 묶음이 한 풀에 들어간다. 워커 3 이면 세 트랙의 호출이 겹친다."""
+    import threading, time as _t
+
+    class SlowStt(EchoStt):
+        def __init__(self):
+            super().__init__(); self.active = 0; self.peak = 0; self._lk = threading.Lock()
+
+        def transcribe(self, samples, sample_rate):
+            with self._lk:
+                self.active += 1; self.peak = max(self.peak, self.active)
+            _t.sleep(0.15)
+            try:
+                return super().transcribe(samples, sample_rate)
+            finally:
+                with self._lk:
+                    self.active -= 1
+
+    for name in "abc":
+        write_track(tmp_path / f"{name}.wav", [tone(1_000), silence(1_000)])
+    stt = SlowStt()
+    B.run(B.discover(tmp_path), stt, mode="chunk", gate=None, workers=3)
+    assert stt.peak == 3
 
 
 def test_failed_calls_become_error_lines_not_text(tmp_path):

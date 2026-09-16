@@ -56,6 +56,7 @@ class StreamingVAD:
     sample_rate: int = 16_000
     frame_ms: int = FRAME_MS
     speech_rms: float = SPEECH_RMS
+    max_segment_ms: int = MAX_SEGMENT_MS   # 배치 경로는 파일 전체를 들고 있어 더 크게 주고 뒤에서 조용한 자리에서 가른다
 
     _buf: np.ndarray = field(default_factory=lambda: np.zeros(0, dtype=np.float32))
     _pending: list[np.ndarray] = field(default_factory=list)
@@ -226,7 +227,7 @@ class StreamingVAD:
         else:
             self._speech_ms += self.frame_ms
         self._last_speech_ms = self._next_frame_ms
-        if self._next_frame_ms - self._seg_start_ms >= MAX_SEGMENT_MS:
+        if self._next_frame_ms - self._seg_start_ms >= self.max_segment_ms:
             return self._close()
         return None
 
