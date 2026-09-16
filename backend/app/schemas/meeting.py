@@ -75,6 +75,10 @@ class ExtractionItemResponse(BaseModel):
     confidence: float
     gate: str
     evidence: EvidenceInfo
+    task_id: str | None = Field(None, description="gate=auto — 바로 생성된 태스크 ID")
+    approval_id: str | None = Field(
+        None, description="gate=review|hold — PM 승인이 필요한 승인 요청 ID"
+    )
 
 
 class ExtractionDetailResponse(BaseModel):

@@ -1,3 +1,5 @@
+import json
+
 from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -5,8 +7,12 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.errors import AppError, ErrorCode, success
 from app.models import (
+    ApprovalRequest,
+    ApprovalType,
+    ChangeSource,
     Extraction,
     ExtractionItem,
+    Gate,
     Meeting,
     MeetingStatus,
     Member,
@@ -27,6 +33,7 @@ from app.services.matching import (
     log_resolution,
     resolve_assignee,
 )
+from app.services.tasks import create_task
 
 router = APIRouter(prefix="/extractions", tags=["extractions"])
 
@@ -41,6 +48,15 @@ def create_extraction(
     if meeting is None:
         raise AppError(
             ErrorCode.MEETING_NOT_FOUND, details={"meeting_id": payload.meeting_id}
+        )
+    if meeting.workspace_id != payload.workspace_id:
+        raise AppError(
+            ErrorCode.WORKSPACE_MISMATCH,
+            details={
+                "meeting_id": payload.meeting_id,
+                "requested_workspace_id": payload.workspace_id,
+                "meeting_workspace_id": meeting.workspace_id,
+            },
         )
     if meeting.status != str(MeetingStatus.PROCESSING):
         raise AppError(
@@ -74,25 +90,67 @@ def create_extraction(
             due_raw=raw_item.due_raw,
             due_confidence=raw_item.due_confidence,
         )
-        db.add(
-            ExtractionItem(
-                extraction_id=extraction.extraction_id,
-                task_title=raw_item.task_title,
-                task_confidence=raw_item.task_confidence,
-                assignee_raw=raw_item.assignee_raw,
-                assignee_member_id=match.member_id,
-                assignee_confidence=match.confidence,
-                assignee_needs_check=match.needs_check,
-                due_date=raw_item.due_date,
-                due_raw=raw_item.due_raw,
-                due_confidence=raw_item.due_confidence,
-                confidence=conf,
-                gate=str(decide_gate(conf)),
-                evidence_quote=raw_item.evidence_quote,
-                evidence_speaker=raw_item.evidence_speaker,
-                evidence_at_ms=raw_item.evidence_at_ms,
-            )
+        gate = decide_gate(conf)
+
+        item = ExtractionItem(
+            extraction_id=extraction.extraction_id,
+            task_title=raw_item.task_title,
+            task_confidence=raw_item.task_confidence,
+            assignee_raw=raw_item.assignee_raw,
+            assignee_member_id=match.member_id,
+            assignee_confidence=match.confidence,
+            assignee_needs_check=match.needs_check,
+            due_date=raw_item.due_date,
+            due_raw=raw_item.due_raw,
+            due_confidence=raw_item.due_confidence,
+            confidence=conf,
+            gate=str(gate),
+            evidence_quote=raw_item.evidence_quote,
+            evidence_speaker=raw_item.evidence_speaker,
+            evidence_at_ms=raw_item.evidence_at_ms,
         )
+        db.add(item)
+        db.flush()  # item_id 확보 (approval/task 연결에 필요)
+
+        if gate == Gate.AUTO:
+            # 신뢰도가 충분하므로 승인 없이 바로 태스크로 반영한다.
+            task = create_task(
+                db,
+                workspace_id=meeting.workspace_id,
+                title=raw_item.task_title,
+                meeting_id=meeting.meeting_id,
+                assignee_member_id=match.member_id,
+                due_date=raw_item.due_date,
+                change_source=str(ChangeSource.MEETING),
+                changed_by=None,
+                is_auto=True,
+            )
+            item.task_id = task.task_id
+        else:
+            # review/hold — PM 승인을 거쳐야 태스크가 생긴다.
+            approval_payload = {
+                "task_title": raw_item.task_title,
+                "assignee_member_id": match.member_id,
+                "assignee_raw": raw_item.assignee_raw,
+                "due_date": raw_item.due_date.isoformat() if raw_item.due_date else None,
+                "due_raw": raw_item.due_raw,
+                "evidence_quote": raw_item.evidence_quote,
+                "evidence_speaker": raw_item.evidence_speaker,
+                "evidence_at_ms": raw_item.evidence_at_ms,
+                "extraction_item_id": item.item_id,
+                "meeting_id": meeting.meeting_id,
+                "gate": str(gate),
+            }
+            approval = ApprovalRequest(
+                workspace_id=meeting.workspace_id,
+                type=str(ApprovalType.TASK_CREATE),
+                payload=json.dumps(approval_payload, ensure_ascii=False),
+                related_task_id=None,
+                requested_by=None,
+            )
+            db.add(approval)
+            db.flush()
+            item.approval_id = approval.approval_id
 
     meeting.status = str(MeetingStatus.DONE)
 
@@ -155,6 +213,8 @@ def get_extraction(extraction_id: str, db: Session = Depends(get_db)) -> dict:
                 speaker=i.evidence_speaker,
                 at_ms=i.evidence_at_ms,
             ),
+            task_id=i.task_id,
+            approval_id=i.approval_id,
         )
         for i in items
     ]

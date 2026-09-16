@@ -306,6 +306,12 @@ class ExtractionItem(Base):
     evidence_quote: Mapped[str | None] = mapped_column(Text, nullable=True)
     evidence_speaker: Mapped[str | None] = mapped_column(String(100), nullable=True)
     evidence_at_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    task_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("task.task_id", ondelete="SET NULL"), nullable=True
+    )
+    approval_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("approval_request.approval_id", ondelete="SET NULL"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
     extraction: Mapped["Extraction"] = relationship(back_populates="items")
