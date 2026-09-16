@@ -391,7 +391,7 @@ def test_unattributed_packet_is_counted():
 
 
 def test_cleanup_counts_feed_errors_and_finishes():
-    """cleanup 이 부르는 drain 은 write() 와 다른 경로다 — write() 의 예외 삼키기가
+    """cleanup 이 부르는 drain 은 write() 와 다른 경로다. write() 의 예외 삼키기가
     이쪽을 지켜주지 않는다. session.feed 가 여기서 죽으면 finished 가 영영 False 로
     남고, py-cord 는 자기 로거에만 기록한 채 넘어간다(reader.py:195-198)."""
     class Boom:
