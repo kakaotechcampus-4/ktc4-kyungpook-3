@@ -1,0 +1,16 @@
+{
+  "case_id": "case_07",
+  "scenario": "short_exchange",
+  "description": "점심 잡담 — false positive(할일 아닌데 추출) 방지",
+  "reference_date": "2026-09-09",
+  "speaker_names": {"A": "유진", "B": "도윤"},
+  "turns": [
+    {"speaker": "A", "text": "다들 점심 뭐 드실 거예요? 저는 오늘 국밥이요."},
+    {"speaker": "B", "text": "저는 아직 점심 메뉴 고민 중이에요, 하하."}
+  ],
+  "expected": [
+    {"sentence": "다들 점심 뭐 드실 거예요?", "is_task": false},
+    {"sentence": "저는 오늘 국밥이요.", "is_task": false},
+    {"sentence": "저는 아직 점심 메뉴 고민 중이에요, 하하.", "is_task": false}
+  ]
+}

@@ -10,7 +10,7 @@ soundfile>=0.12       # WAV 파일 I/O (capture/audio.py)
 requests>=2.31        # HTTP API (stt/elice.py 에서 쓸 예정, 아직 없음)
 
 # ── Phase 1~2: 임베딩 + LLM (전부 Elice MLAPI, OpenAI 호환 SDK 하나로 통일) ──
-openai>=1.0           # embedding.py(text-embedding-3-small) + llm.py(Terra/Luna) 공용
+openai>=1.0           # embedding.py + llm.py(Terra/Luna) + extract/llm.py 공용
 
 # ── 개발 ─────────────────────────────────────────────────────────────────────
 pytest>=8.0

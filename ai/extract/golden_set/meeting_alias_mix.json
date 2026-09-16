@@ -1,0 +1,72 @@
+{
+  "case_id": "meeting_alias_mix",
+  "scenario": "full_meeting",
+  "description": "담당자 호칭 6종(first/second/thirdname/thirdpronoun/thirdrole/group)이 골고루 나오는 스프린트 계획 회의 16턴",
+  "note": "BE alias 설계(first/second/thirdname/thirdpronoun/thirdrole/group)를 타입별로 한 번씩은 밟도록 일부러 짠 스크립트. 프롬프트 few-shot 예시와 문장이 겹치지 않게 새로 썼다(채점 오염 방지).",
+  "reference_date": "2026-09-09",
+  "speaker_names": {"P": "유진", "Q": "도윤", "R": "하은", "S": "민재", "T": "세영"},
+  "turns": [
+    {"speaker": "P", "text": "자 스프린트 계획 시작하죠. 지난주 남은 것부터 정리하고 갈게요."},
+    {"speaker": "Q", "text": "결제 모듈은 제가 계속 붙잡고 있는데요. 금요일까지는 1차 붙여놓겠습니다."},
+    {"speaker": "P", "text": "좋아요. 그럼 결제 붙고 나면 하은님이 통합 테스트 시나리오 좀 짜주세요."},
+    {"speaker": "R", "text": "네 알겠습니다. 근데 지금 테스트 서버가 계속 죽어서요, 그것부터 봐야 할 것 같아요."},
+    {"speaker": "P", "text": "그건 인프라 담당이 처리하는 걸로 하죠. 이번 주 안에는 정리돼야 다음 작업이 안 밀려요."},
+    {"speaker": "S", "text": "저는 어제 화면 세 개 퍼블리싱 끝냈고요, 오늘은 좀 쉬엄쉬엄 하려고요."},
+    {"speaker": "P", "text": "민재님 그러면 이건 어때요, 남은 리스트 화면은 너가 맡아서 17일까지 마무리해주는 걸로."},
+    {"speaker": "S", "text": "아 네 그건 할 수 있을 것 같아요. 17일까지 올려둘게요."},
+    {"speaker": "T", "text": "저 잠깐 늦었는데 지금 무슨 얘기 중이에요?"},
+    {"speaker": "P", "text": "리스트 화면 일정 얘기요. 아 그리고 세영님, 저번에 말한 API 문서화는 어떻게 됐어요?"},
+    {"speaker": "T", "text": "그거 아직 손도 못 댔어요. 이번 주는 좀 빡셀 것 같고, 다음 주 월요일까지 해보겠습니다."},
+    {"speaker": "P", "text": "그리고 배포 스크립트 정리는 저번에 그분이 하시기로 했었죠? 도윤님 맞나요?"},
+    {"speaker": "Q", "text": "네 맞아요. 그건 제가 담당인데 이번 달 말까지로 잡아두면 될 것 같아요."},
+    {"speaker": "P", "text": "코드 컨벤션 문서는 다 같이 한번 훑어보죠. 각자 시간 날 때 코멘트 남겨주세요."},
+    {"speaker": "R", "text": "혹시 이 리팩터링은 누가 맡나요? 아직 정해진 게 없는 것 같아서요."},
+    {"speaker": "P", "text": "그건 다음 회의 때 다시 얘기하죠. 오늘은 여기까지 하겠습니다."}
+  ],
+  "expected": [
+    {"sentence": "자 스프린트 계획 시작하죠.", "is_task": false},
+    {"sentence": "지난주 남은 것부터 정리하고 갈게요.", "is_task": false},
+
+    {"sentence": "결제 모듈은 제가 계속 붙잡고 있는데요.", "is_task": false},
+    {"sentence": "금요일까지는 1차 붙여놓겠습니다.", "is_task": true, "assignee_type": "first", "assignee_mention": null, "due_date": "2026-09-11", "task_keywords": []},
+
+    {"sentence": "좋아요.", "is_task": false},
+    {"sentence": "그럼 결제 붙고 나면 하은님이 통합 테스트 시나리오 좀 짜주세요.", "is_task": true, "assignee_type": "thirdname", "assignee_mention": "하은", "due_date": null, "task_keywords": ["테스트"]},
+
+    {"sentence": "네 알겠습니다.", "is_task": false},
+    {"sentence": "근데 지금 테스트 서버가 계속 죽어서요, 그것부터 봐야 할 것 같아요.", "is_task": false},
+
+    {"sentence": "그건 인프라 담당이 처리하는 걸로 하죠.", "is_task": true, "assignee_type": "thirdrole", "assignee_mention": "인프라 담당", "due_date": null, "task_keywords": []},
+    {"sentence": "이번 주 안에는 정리돼야 다음 작업이 안 밀려요.", "is_task": false},
+
+    {"sentence": "저는 어제 화면 세 개 퍼블리싱 끝냈고요, 오늘은 좀 쉬엄쉬엄 하려고요.", "is_task": false},
+
+    {"sentence": "민재님 그러면 이건 어때요, 남은 리스트 화면은 너가 맡아서 17일까지 마무리해주는 걸로.", "is_task": true, "assignee_type": "second", "assignee_mention": "너", "assignee_resolved": "민재", "due_date": "2026-09-17", "task_keywords": ["리스트 화면"]},
+
+    {"sentence": "아 네 그건 할 수 있을 것 같아요.", "is_task": false},
+    {"sentence": "17일까지 올려둘게요.", "is_task": true, "assignee_type": "first", "assignee_mention": null, "due_date": "2026-09-17", "task_keywords": []},
+
+    {"sentence": "저 잠깐 늦었는데 지금 무슨 얘기 중이에요?", "is_task": false},
+
+    {"sentence": "리스트 화면 일정 얘기요.", "is_task": false},
+    {"sentence": "아 그리고 세영님, 저번에 말한 API 문서화는 어떻게 됐어요?", "is_task": false},
+
+    {"sentence": "그거 아직 손도 못 댔어요.", "is_task": false},
+    {"sentence": "이번 주는 좀 빡셀 것 같고, 다음 주 월요일까지 해보겠습니다.", "is_task": true, "assignee_type": "first", "assignee_mention": null, "due_date": "2026-09-14", "task_keywords": []},
+
+    {"sentence": "그리고 배포 스크립트 정리는 저번에 그분이 하시기로 했었죠?", "is_task": false},
+    {"sentence": "도윤님 맞나요?", "is_task": false},
+
+    {"sentence": "네 맞아요.", "is_task": false},
+    {"sentence": "그건 제가 담당인데 이번 달 말까지로 잡아두면 될 것 같아요.", "is_task": true, "assignee_type": "first", "assignee_mention": null, "due_date": "2026-09-30", "task_keywords": []},
+
+    {"sentence": "코드 컨벤션 문서는 다 같이 한번 훑어보죠.", "is_task": true, "assignee_type": "group", "assignee_mention": null, "due_date": null, "task_keywords": ["컨벤션"]},
+    {"sentence": "각자 시간 날 때 코멘트 남겨주세요.", "is_task": true, "assignee_type": "group", "assignee_mention": null, "due_date": null, "task_keywords": []},
+
+    {"sentence": "혹시 이 리팩터링은 누가 맡나요?", "is_task": false},
+    {"sentence": "아직 정해진 게 없는 것 같아서요.", "is_task": false},
+
+    {"sentence": "그건 다음 회의 때 다시 얘기하죠.", "is_task": false},
+    {"sentence": "오늘은 여기까지 하겠습니다.", "is_task": false}
+  ]
+}

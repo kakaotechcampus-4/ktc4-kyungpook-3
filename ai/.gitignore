@@ -17,3 +17,8 @@ implementation_*.md
 # 화자가 실제로 읽은/말한 스크립트 원문 — 팀원 발화 내용이라 커밋 안 함 (README만 예외)
 stt/eval/ground_truth/*
 !stt/eval/ground_truth/README.md
+# 세션 간 인수인계 메모 — 저장소에 남길 성격이 아니라 로컬에만 둔다
+extract/NEXT_STEPS.md
+
+# Cygwin/MSYS 크래시 덤프 — 실행 환경이 남기는 쓰레기
+bash.exe.stackdump

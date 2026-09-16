@@ -1,0 +1,31 @@
+{
+  "case_id": "case_02",
+  "scenario": "single_sentence",
+  "description": "3인칭 지정(\"하은님이\") + 조건부(\"끝나면\") 마감은 null",
+  "reference_date": "2026-09-09",
+  "speaker_names": {
+    "A": "유진"
+  },
+  "turns": [
+    {
+      "speaker": "A",
+      "text": "좋아요. 그럼 리프레시 토큰 작업 끝나면 하은님이 코드 리뷰 한번 부탁드려요."
+    }
+  ],
+  "expected": [
+    {
+      "sentence": "좋아요.",
+      "is_task": false
+    },
+    {
+      "sentence": "그럼 리프레시 토큰 작업 끝나면 하은님이 코드 리뷰 한번 부탁드려요.",
+      "is_task": true,
+      "assignee_mention": "하은",
+      "due_date": null,
+      "task_keywords": [
+        "코드 리뷰"
+      ],
+      "assignee_type": "thirdname"
+    }
+  ]
+}

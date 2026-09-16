@@ -1,0 +1,55 @@
+{
+  "case_id": "meeting_edge_cases",
+  "scenario": "full_meeting",
+  "description": "TASK_CRITERIA.md 의 '애매한 구간' 규칙을 한 줄씩 밟는 회고 회의 14턴",
+  "note": "조건부/사고활동/질문형/추측/미완료보고/보류를 각각 넣었다. 기준 문서와 gold 가 어긋나면 둘 중 하나를 고쳐야 한다는 신호다. 프롬프트 few-shot 과 문장이 겹치지 않게 새로 썼다.",
+  "reference_date": "2026-09-09",
+  "speaker_names": {"P": "유진", "Q": "도윤", "R": "하은", "S": "민재"},
+  "turns": [
+    {"speaker": "P", "text": "이번 스프린트 회고 시작하겠습니다. 편하게 얘기해주세요."},
+    {"speaker": "Q", "text": "여유 되면 온보딩 문서도 정리해둘게요."},
+    {"speaker": "R", "text": "그 부분은 좀 고민해볼게요."},
+    {"speaker": "S", "text": "저도 고민해보고 내일까지 의견 정리해서 공유드릴게요."},
+    {"speaker": "Q", "text": "이 캐시 이슈는 누가 보는 게 맞을까요?"},
+    {"speaker": "P", "text": "그건 아마 하은님이 보실 것 같은데요."},
+    {"speaker": "R", "text": "아직 로그 정리는 못 했어요."},
+    {"speaker": "R", "text": "그건 목요일까지 마무리하겠습니다."},
+    {"speaker": "S", "text": "지금 하던 아이콘 작업은 계속 진행하겠습니다."},
+    {"speaker": "Q", "text": "이 PR 검토해볼게요."},
+    {"speaker": "P", "text": "배포 자동화 얘기는 다음에 하죠."},
+    {"speaker": "S", "text": "필요하시면 디자인 쪽도 도와드릴게요."},
+    {"speaker": "P", "text": "테스트 커버리지 올리는 건 우리 모두 신경 쓰기로 하죠."},
+    {"speaker": "P", "text": "오늘 회고는 여기까지입니다. 다들 고생하셨어요."}
+  ],
+  "expected": [
+    {"sentence": "이번 스프린트 회고 시작하겠습니다.", "is_task": false},
+    {"sentence": "편하게 얘기해주세요.", "is_task": false},
+
+    {"sentence": "여유 되면 온보딩 문서도 정리해둘게요.", "is_task": true, "assignee_type": "first", "assignee_mention": null, "due_date": null, "task_keywords": ["온보딩"]},
+
+    {"sentence": "그 부분은 좀 고민해볼게요.", "is_task": false},
+
+    {"sentence": "저도 고민해보고 내일까지 의견 정리해서 공유드릴게요.", "is_task": true, "assignee_type": "first", "assignee_mention": null, "due_date": "2026-09-10", "task_keywords": []},
+
+    {"sentence": "이 캐시 이슈는 누가 보는 게 맞을까요?", "is_task": false},
+
+    {"sentence": "그건 아마 하은님이 보실 것 같은데요.", "is_task": false},
+
+    {"sentence": "아직 로그 정리는 못 했어요.", "is_task": false},
+
+    {"sentence": "그건 목요일까지 마무리하겠습니다.", "is_task": true, "assignee_type": "first", "assignee_mention": null, "due_date": "2026-09-10", "task_keywords": []},
+
+    {"sentence": "지금 하던 아이콘 작업은 계속 진행하겠습니다.", "is_task": false},
+
+    {"sentence": "이 PR 검토해볼게요.", "is_task": true, "assignee_type": "first", "assignee_mention": null, "due_date": null, "task_keywords": ["PR"]},
+
+    {"sentence": "배포 자동화 얘기는 다음에 하죠.", "is_task": false},
+
+    {"sentence": "필요하시면 디자인 쪽도 도와드릴게요.", "is_task": true, "assignee_type": "first", "assignee_mention": null, "due_date": null, "task_keywords": ["디자인"]},
+
+    {"sentence": "테스트 커버리지 올리는 건 우리 모두 신경 쓰기로 하죠.", "is_task": true, "assignee_type": "group", "assignee_mention": null, "due_date": null, "task_keywords": ["커버리지"]},
+
+    {"sentence": "오늘 회고는 여기까지입니다.", "is_task": false},
+    {"sentence": "다들 고생하셨어요.", "is_task": false}
+  ]
+}

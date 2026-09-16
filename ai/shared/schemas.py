@@ -85,7 +85,21 @@ class ExtractedTask(_Base):
     # 아래는 디버깅/근거 추적용 부가 정보 (스키마 확장, 선택)
     assignee_mention: str | None = None
     source_sentence: str | None = None
-    method: str = "rules"  # rules | llm
+    method: str = "llm"
+
+    # ── 담당자 호칭 분류 (BE alias 설계와 1:1). 기준은 extract/TASK_CRITERIA.md
+    # BE 는 assignee_type 을 보고 처리 경로를 고른다: first/mention 은 발화자·멤버 테이블로 직행,
+    # thirdname 은 alias 테이블 조회, second/thirdpronoun 은 AI 가 해소한 결과를 쓰고,
+    # thirdrole/group/none 은 PM 확인으로 보낸다.
+    assignee_type: str = "none"  # first|second|thirdname|thirdpronoun|thirdrole|group|none
+    assignee_resolved: str | None = None  # second/thirdpronoun 을 문맥으로 푼 이름 (못 풀면 None)
+    due_raw: str | None = None  # 마감을 가리킨 원문 표현 ("이번 주 목요일까지")
+
+    # ── 필드별 근거 상태. 사용자에겐 정확도 % 대신 이걸 보여준다 (숫자는 로그로만)
+    # certain=원문에 명시 / inferred=문맥 추론이거나 반복 호출 시 흔들림 / missing=발화에 없음
+    task_status: str = "certain"
+    assignee_status: str = "missing"
+    due_status: str = "missing"
 
 
 JudgeCategory = Literal["schedule", "assignee", "scope", "decision", "none"]
