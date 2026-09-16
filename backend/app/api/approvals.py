@@ -1,7 +1,8 @@
 import json
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import select, func
+from sqlalchemy import select, func, update
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -103,33 +104,39 @@ def resolve_approval(
     db: Session = Depends(get_db),
 ) -> dict:
     """PM이 승인 요청을 승인/반려한다."""
-    approval = db.get(ApprovalRequest, approval_id)
-    if approval is None:
-        raise AppError(
-            ErrorCode.APPROVAL_NOT_FOUND,
-            details={"approval_id": approval_id},
-        )
-
-    if approval.status != str(ApprovalStatus.PENDING):
-        raise AppError(
-            ErrorCode.INVALID_REQUEST,
-            message="이미 처리된 승인 요청입니다.",
-            details={"current_status": approval.status},
-        )
-
     if payload.status == ApprovalStatus.PENDING:
         raise AppError(
             ErrorCode.INVALID_REQUEST,
             message="pending 상태로 변경할 수 없습니다.",
         )
 
-    from datetime import datetime, timezone
+    stmt = (
+        update(ApprovalRequest)
+        .where(
+            ApprovalRequest.approval_id == approval_id,
+            ApprovalRequest.status == str(ApprovalStatus.PENDING),
+        )
+        .values(
+            status=str(payload.status),
+            resolved_by=payload.resolved_by,
+            resolved_at=datetime.now(timezone.utc),
+        )
+    )
+    result = db.execute(stmt)
 
-    approval.status = str(payload.status)
-    approval.resolved_by = payload.resolved_by
-    approval.resolved_at = datetime.now(timezone.utc)
+    if result.rowcount == 0:
+        approval = db.get(ApprovalRequest, approval_id)
+        if approval is None:
+            raise AppError(
+                ErrorCode.APPROVAL_NOT_FOUND,
+                details={"approval_id": approval_id},
+            )
+        raise AppError(
+            ErrorCode.APPROVAL_ALREADY_RESOLVED,
+            details={"approval_id": approval_id, "current_status": approval.status},
+        )
 
     db.commit()
-    db.refresh(approval)
-
+    
+    approval = db.get(ApprovalRequest, approval_id)
     return success(_to_response(approval).model_dump(mode="json"))

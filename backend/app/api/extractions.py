@@ -42,6 +42,11 @@ def create_extraction(
         raise AppError(
             ErrorCode.MEETING_NOT_FOUND, details={"meeting_id": payload.meeting_id}
         )
+    if meeting.status != str(MeetingStatus.PROCESSING):
+        raise AppError(
+            ErrorCode.MEETING_NOT_PROCESSING,
+            details={"meeting_id": payload.meeting_id, "status": meeting.status},
+        )
 
     extraction = Extraction(
         meeting_id=payload.meeting_id,
@@ -52,10 +57,10 @@ def create_extraction(
     db.flush()
 
     for raw_item in payload.items:
-        match = resolve_assignee(db, payload.workspace_id, raw_item.assignee_raw)
+        match = resolve_assignee(db, meeting.workspace_id, raw_item.assignee_raw)
         log_resolution(
             db,
-            workspace_id=payload.workspace_id,
+            workspace_id=meeting.workspace_id,
             alias_text=raw_item.assignee_raw,
             match=match,
             evidence_quote=raw_item.evidence_quote,
@@ -63,7 +68,11 @@ def create_extraction(
         )
 
         conf = item_confidence(
-            raw_item.task_confidence, match.confidence, raw_item.due_confidence
+            task_confidence=raw_item.task_confidence,
+            assignee_raw=raw_item.assignee_raw,
+            assignee_confidence=match.confidence,
+            due_raw=raw_item.due_raw,
+            due_confidence=raw_item.due_confidence,
         )
         db.add(
             ExtractionItem(
@@ -85,8 +94,8 @@ def create_extraction(
             )
         )
 
-    meeting.extracted = True
     meeting.status = str(MeetingStatus.DONE)
+
 
     db.commit()
     db.refresh(extraction)

@@ -30,12 +30,6 @@ class MeetingEndResponse(BaseModel):
     ended_at: datetime | None
 
 
-class MeetingProgress(BaseModel):
-    audio_merged: bool
-    transcribed: bool
-    extracted: bool
-
-
 class MeetingDetailResponse(BaseModel):
     meeting_id: str
     workspace_id: str
@@ -43,9 +37,9 @@ class MeetingDetailResponse(BaseModel):
     status: str
     started_at: datetime
     ended_at: datetime | None
-    progress: MeetingProgress
     extraction_id: str | None = None
     failed_stage: str | None = None
+
 
 
 class TaskInfo(BaseModel):
