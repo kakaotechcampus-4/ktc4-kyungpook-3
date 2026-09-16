@@ -6,7 +6,7 @@ from capture.streaming_sink import StreamingSink
 from capture.timeline import REORDER_WINDOW
 from stt.backend import SttResult
 from stt.session import Session
-from tests.replay import (
+from tests.capture.replay import (
     DECODED_SILENCE_FRAME,
     PACKET_MS,
     FakeMember,

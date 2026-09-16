@@ -1,0 +1,4 @@
+.vite/
+storybook-static/
+playwright-report/
+test-results/

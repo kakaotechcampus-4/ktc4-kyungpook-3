@@ -10,7 +10,7 @@ import capture.realtime_adapter as adapter
 from capture.realtime_adapter import RealtimeCog, SafeVoiceClient, _TrackPool, required_intents
 from stt.backend import SttResult
 from stt.speech_gate import SpeechGate
-from tests.replay import ReplayTrack, replay
+from tests.capture.replay import ReplayTrack, replay
 
 SR = 16_000
 

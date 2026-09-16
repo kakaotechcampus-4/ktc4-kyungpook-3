@@ -1,0 +1,126 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>회의 올리기 — Manager's Manager</title>
+  <link rel="stylesheet" href="./_fonts.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #FFFFFF; color: #171717;
+      font-family: 'NanumSquare','Apple SD Gothic Neo','Malgun Gothic',system-ui,sans-serif;
+      font-size: 14px; line-height: 1.75; word-break: keep-all; -webkit-font-smoothing: antialiased; }
+    a { color: #171717; text-decoration: none; }
+    a:hover { color: #5A5A5A; }
+    button { font: inherit; color: inherit; cursor: pointer; }
+    input { font: inherit; color: inherit; }
+    .mono { font-family: 'NanumSquare','Apple SD Gothic Neo','Malgun Gothic',system-ui,sans-serif; font-variant-numeric: tabular-nums; letter-spacing: 0; }
+    .dsp { font-family: 'NanumSquare','Apple SD Gothic Neo','Malgun Gothic',system-ui,sans-serif; }
+    ::selection { background: #171717; color: #FFFFFF; }
+    :focus-visible { outline: 2px solid #171717; outline-offset: 4px; }
+    h1 { font-weight: 700; line-height: 1.4; letter-spacing: -0.045em; }
+    h2, h3 { font-weight: 700; line-height: 1.55; letter-spacing: -0.025em; }
+    p { line-height: 1.85; }
+  </style>
+</helmet>
+
+<div style="width: 100%; min-height: 1130px; background: #FFFFFF; display: flex; flex-direction: column;">
+
+  <header style="flex: 0 0 76px; height: 76px; display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 0 40px; border-bottom: 1px solid #EFEFEF;">
+    <div style="display: flex; align-items: center; gap: 30px;">
+      <span style="display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 7px; background: #171717; line-height: 1;">
+        <svg width="15" height="15" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M2 11V3.5l3.5 4.5L9 3.5V11" stroke="#FFFFFF" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path><path d="M11.6 5.2v2.4" stroke="#FFFFFF" stroke-width="1.8" stroke-linecap="round"></path></svg>
+      </span>
+      <nav style="display: flex; align-items: center; gap: 2px;">
+        <a href="#" style="display: inline-flex; align-items: center; height: 32px; padding: 0 12px; border-radius: 9px; font-size: 13px; color: #5A5A5A; min-height: 36px; font-weight: 600; line-height: 1;">대시보드</a>
+        <a href="#" style="display: inline-flex; align-items: center; height: 32px; padding: 0 12px; border-radius: 9px; background: #F0F0F0; font-size: 13px; font-weight: 600; color: #171717; min-height: 36px; line-height: 1;">회의록</a>
+        <a href="#" style="display: inline-flex; align-items: center; gap: 7px; height: 32px; padding: 0 12px; border-radius: 9px; font-size: 13px; color: #5A5A5A; min-height: 36px; font-weight: 600; line-height: 1;">태스크<span class="mono" style="display: inline-flex; align-items: center; justify-content: center; min-width: 17px; height: 17px; padding: 0 5px; border-radius: 999px; background: #E8E8E8; font-size: 10.5px; font-weight: 400; color: #171717; line-height: 1;">3</span></a>
+        <a href="#" style="display: inline-flex; align-items: center; gap: 7px; height: 32px; padding: 0 12px; border-radius: 9px; font-size: 13px; color: #5A5A5A; min-height: 36px; font-weight: 600; line-height: 1;">메시지<span class="mono" style="display: inline-flex; align-items: center; justify-content: center; min-width: 17px; height: 17px; padding: 0 5px; border-radius: 999px; background: #E8E8E8; font-size: 10.5px; font-weight: 400; color: #171717; line-height: 1;">2</span></a>
+        <a href="#" style="display: inline-flex; align-items: center; height: 32px; padding: 0 12px; border-radius: 9px; font-size: 13px; color: #5A5A5A; min-height: 36px; font-weight: 600; line-height: 1;">팀</a>
+      </nav>
+    </div>
+    <div style="display: flex; align-items: center; gap: 24px;">
+      <button type="button" style="display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 11px; border: 1px solid #E8E8E8; border-radius: 9px; background: #FFFFFF; font-size: 13px; font-weight: 600; color: #171717; min-height: 36px; line-height: 1;">캡스톤 5조<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#666666" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg></button>
+      <span style="display: inline-flex; align-items: center; justify-content: center; width: 29px; height: 29px; border-radius: 999px; background: #EFEFEF; font-size: 11px; font-weight: 600; color: #171717; line-height: 1;">지훈</span>
+    </div>
+  </header>
+
+  <main style="flex: 1; display: flex; justify-content: center; padding: 48px 48px 72px; width: 100%; max-width: 1360px; margin-inline: auto;">
+    <div style="width: 700px; display: flex; flex-direction: column; gap: 26px;">
+
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <h1 style="margin: 0; font-size: 30px; line-height: 1.25; font-weight: 700; letter-spacing: -0.045em; color: #171717;">회의를 올려 주세요</h1>
+        <p style="margin: 0; font-size: 14px; color: #5A5A5A;">정리가 끝나면 알려드릴게요. 올리는 동안 창을 닫아도 됩니다.</p>
+      </div>
+
+      <div style="display: inline-flex; align-self: flex-start; gap: 3px; padding: 3px; border: 1px solid transparent; border-radius: 11px; background: #EDEDED;">
+        <button type="button" style="height: 32px; padding: 0 15px; border: 0; border-radius: 9px; background: #FFFFFF; font-size: 13px; font-weight: 600; color: #171717; min-height: 36px;">녹음 파일</button>
+        <button type="button" style="height: 32px; padding: 0 15px; border: 0; border-radius: 9px; background: transparent; font-size: 13px; color: #5A5A5A; min-height: 36px; font-weight: 600;">텍스트 회의록</button>
+      </div>
+
+      <div style="display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 44px 32px; border: 1px solid #E8E8E8; border-radius: 16px; background: #FAFAFA;">
+        <span style="display: inline-flex; align-items: center; justify-content: center; width: 48px; height: 48px; border-radius: 9px; background: #FFFFFF; border: 1px solid #949494; min-height: 42px; line-height: 1;">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#5A5A5A" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><path d="M17 8l-5-5-5 5M12 3v12"></path></svg>
+        </span>
+        <div style="display: flex; flex-direction: column; align-items: center; gap: 5px;">
+          <p style="margin: 0; font-size: 15px; font-weight: 600; color: #171717;">파일을 여기로 끌어다 놓으세요</p>
+          <p style="margin: 0; font-size: 13px; color: #666666;">또는 <span style="color: #171717; text-decoration: underline; text-underline-offset: 3px;">컴퓨터에서 찾기</span></p>
+        </div>
+        <span class="mono" style="font-size: 11.5px; color: #666666;">m4a · mp3 · wav · mp4 — [용량 · 길이 제한]</span>
+      </div>
+
+      <div style="display: flex; align-items: center; gap: 14px; padding: 15px 18px; border: 1px solid #E8E8E8; border-radius: 16px; background: #FFFFFF; border-color: #C9C9C9">
+        <span style="display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 10px; background: #FAFAFA; line-height: 1;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#171717" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path><path d="M19 10v1a7 7 0 0 1-14 0v-1M12 18v4"></path></svg>
+        </span>
+        <div style="flex: 1; display: flex; flex-direction: column; gap: 3px;">
+          <span style="font-size: 13.5px; font-weight: 600; color: #171717;">3주차_정기회의_0909.m4a</span>
+          <span class="mono" style="font-size: 11.5px; color: #666666;">52:14 · 48.2 MB · 업로드 완료</span>
+        </div>
+        <button type="button" aria-label="파일 제거" style="display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border: 0; border-radius: 9px; background: transparent; min-height: 36px; font-weight: 600; line-height: 1;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#666666" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"></path></svg>
+        </button>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 18px; padding: 22px; border: 1px solid #E8E8E8; border-radius: 16px; background: #FFFFFF; box-shadow: 0px 8px 24px 0px #17171733">
+        <div style="display: flex; gap: 14px;">
+          <div style="flex: 1; display: flex; flex-direction: column; gap: 7px;">
+            <label for="m-title" style="font-size: 12.5px; font-weight: 400; color: #5A5A5A;">회의 제목</label>
+            <input id="m-title" type="text" value="3주차 정기회의" style="height: 40px; padding: 0 13px; border: 1px solid #949494; border-radius: 9px; background: #FFFFFF; font-size: 13.5px; color: #171717; min-height: 42px;">
+          </div>
+          <div style="flex: 0 0 200px; display: flex; flex-direction: column; gap: 7px;">
+            <label style="font-size: 12.5px; font-weight: 400; color: #5A5A5A;">회의 날짜</label>
+            <div style="display: flex; align-items: center; justify-content: space-between; height: 40px; padding: 0 13px; border: 1px solid #949494; border-radius: 9px; background: #FFFFFF; min-height: 42px;">
+              <span class="mono" style="font-size: 13.5px; color: #171717;">2026-09-09</span>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#666666" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"></rect><path d="M16 3v4M8 3v4M3 11h18"></path></svg>
+            </div>
+          </div>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <label style="font-size: 12.5px; font-weight: 400; color: #5A5A5A;">참석자</label>
+          <div style="display: flex; flex-wrap: wrap; gap: 7px;">
+            <span style="display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 11px 0 4px; border: 0; border-radius: 6px; background: #EDEDED; font-size: 12.5px; color: #5A5A5A; font-weight: 600; line-height: 1;"><span style="display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 999px; background: #EFEFEF; font-size: 10px; line-height: 1;">재</span>재환</span>
+            <span style="display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 11px 0 4px; border: 0; border-radius: 6px; background: #EDEDED; font-size: 12.5px; color: #5A5A5A; font-weight: 600; line-height: 1;"><span style="display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 999px; background: #EFEFEF; font-size: 10px; line-height: 1;">서</span>서연</span>
+            <span style="display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 11px 0 4px; border: 0; border-radius: 6px; background: #EDEDED; font-size: 12.5px; color: #5A5A5A; font-weight: 600; line-height: 1;"><span style="display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 999px; background: #EFEFEF; font-size: 10px; line-height: 1;">지</span>지민</span>
+            <span style="display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 11px 0 4px; border: 0; border-radius: 6px; background: #EDEDED; font-size: 12.5px; color: #5A5A5A; font-weight: 600; line-height: 1;"><span style="display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 999px; background: #EFEFEF; font-size: 10px; line-height: 1;">도</span>도현</span>
+            <button type="button" style="display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border: 1px solid transparent; border-radius: 9px; background: #EDEDED; font-size: 12.5px; color: #171717; min-height: 30px; font-weight: 600; line-height: 1"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#5A5A5A" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>추가</button>
+          </div>
+          <p style="margin: 0; font-size: 12px; color: #666666;">참석자를 알려주면 목소리와 이름을 더 정확히 맞출 수 있어요.</p>
+        </div>
+      </div>
+
+      <div style="display: flex; align-items: center; justify-content: space-between; gap: 20px;">
+        <p style="margin: 0; font-size: 12.5px; color: #666666;">확인이 끝나기 전에는 Notion에 아무것도 쓰지 않아요.</p>
+        <button type="button" style="display: inline-flex; align-items: center; gap: 8px; height: 44px; padding: 0 22px; border: 0; border-radius: 9px; background: #171717; color: #FFFFFF; font-size: 14.5px; font-weight: 600; min-height: 36px; line-height: 1;">정리 시작하기<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"></path></svg></button>
+      </div>
+
+    </div>
+  </main>
+
+</div>
+</x-dc>
+</body>
+</html>
