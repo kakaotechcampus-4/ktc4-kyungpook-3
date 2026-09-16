@@ -34,12 +34,12 @@ GAP_MS = 60  # 20ms 패킷 세 개. 이보다 벌어지면 화자 하나가 끊�
 # 16패킷(320ms)이 다음 발화까지 창에 갇힌다. 그러면 모든 발화 끝 320ms 가 잘리고, 갇힌 조각은
 # 나중에 320ms 짜리 발화로 따로 풀려나 MIN_SPEECH_MS 미달로 사라진다. 패킷은 20ms 마다
 # 오므로 이만큼 공백이면 스트림이 멈춘 것이다. 그때 창을 비운다. 침묵 청소(session.sweep)가
-# 돌기 직전에 부른다 — 청소가 창 안의 오디오를 못 본 채 돌면 발화가 그만큼 일찍 닫힌다.
+# 돌기 직전에 부른다. 청소가 창 안의 오디오를 못 본 채 돌면 발화가 그만큼 일찍 닫힌다.
 IDLE_FLUSH_MS = 100
 
 
 class StreamingSink(discord.sinks.Sink):
-    """상속받은 audio_data 는 채우지 않는다 — write() 는 실시간 경로로 session.feed
+    """상속받은 audio_data 는 채우지 않는다. write() 는 실시간 경로로 session.feed
     까지만 넘기고 파일을 쌓지 않는다. 이 sink 를 넘긴 finished_callback 이 다른
     Sink 처럼 audio_data.items() 를 순회해 트랙을 저장하려 하면 조용히 0건이
     된다. 저장은 finished_callback 이 아니라 session.feed 로 이미 흐르고 있다.

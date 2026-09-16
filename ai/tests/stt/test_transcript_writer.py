@@ -70,7 +70,7 @@ def test_blank_speaker_name_falls_back_to_speaker_id(tmp_path):
     lines = [L("42", "", "t1", 1, 0, 1_000, "이름 없음")]
     out = write_transcript(lines, tmp_path, meeting_id="m1")
     md = out["markdown"].read_text(encoding="utf-8")
-    assert "**42**" in md
+    assert "**42**:" in md
     assert "### 42" in md
 
 
@@ -80,7 +80,7 @@ def test_newline_in_text_does_not_break_markdown_bullet(tmp_path):
     md = out["markdown"].read_text(encoding="utf-8")
     for line in md.splitlines():
         if "한 줄" in line:
-            assert line.startswith("- `[00:00]`")
+            assert line.startswith("(00:00)")
             assert "다음 줄" in line
 
 
@@ -98,5 +98,5 @@ def test_failed_lines_stay_out_of_both_files(tmp_path):
     rows = [json.loads(x) for x in out["jsonl"].read_text(encoding="utf-8").splitlines()]
     assert [r["seq"] for r in rows] == [1]
     md = out["markdown"].read_text(encoding="utf-8")
-    assert "전사 실패" not in md and md.count("`[00:0") == 2    # 시간순 절 + 화자별 절, 한 줄씩
+    assert "전사 실패" not in md and md.count("(00:0") == 2    # 시간순 절 + 화자별 절, 한 줄씩
     assert out["failed"] == 1

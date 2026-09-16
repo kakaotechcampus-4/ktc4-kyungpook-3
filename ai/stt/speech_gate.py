@@ -8,13 +8,13 @@
 임계는 이 프로젝트 오디오에서 재서 정했다. threshold 0.95 에서 골든셋 실제 발화
 18건의 말 비율은 최소 75%, 5퍼센타일 83%, 중앙값 97% 였고, 환각을 만든 클립 세
 건은 42% / 0% / 33%, 숨소리 한 건은 0% 였다. 42% 와 75% 사이가 비어 있어 0.60 에
-자른다. VadOptions 의 두 0 은 바꾸면 안 된다 — 패딩과 최소 길이가 붙으면 비율
+자른다. VadOptions 의 두 0 은 바꾸면 안 된다. 패딩과 최소 길이가 붙으면 비율
 자체가 달라져 이 수치가 의미를 잃는다.
 
 무엇을 재지 않았는지는 decision_log/0005-speech-gate-before-stt.md 에 적어 두었다.
 
 모델은 처음 쓸 때 한 번만 올린다. 워커 여럿이 같이 부르므로 적재와 판정을 같은
-잠금 안에 둔다 — faster_whisper 의 get_vad_model 은 lru_cache 지만 lru_cache 는
+잠금 안에 둔다. faster_whisper 의 get_vad_model 은 lru_cache 지만 lru_cache 는
 감싼 함수가 도는 동안을 잠그지 않아서, 찬 캐시를 두 스레드가 같이 만나면 모델이
 두 번 올라간다.
 """
@@ -109,7 +109,7 @@ class SpeechGate:
             # 지어낸 줄보다 사라진 말이 나쁘다. 통과시키고 센다.
             with self._lock:
                 self.errors += 1
-            print(f"[speech_gate] 판정 실패 ({type(e).__name__}: {e}) — "
+            print(f"[speech_gate] 판정 실패 ({type(e).__name__}: {e}), "
                   f"{tag or '발화'} 를 그대로 전사한다", flush=True)
             return True
 
@@ -125,7 +125,7 @@ class SpeechGate:
         return False
 
     def summary(self) -> str:
-        """종료 요약에 넣는 한 줄. 거른 것이 없어도 적는다 — 조용히 지우는 필터를 만들지 않는다."""
+        """종료 요약에 넣는 한 줄. 거른 것이 없어도 적는다. 조용히 지우는 필터를 만들지 않는다."""
         if not self.enabled:
             return "말 필터 꺼짐 (speech_gate.ENABLED)"
         checked = self.passed + self.rejected + self.errors
