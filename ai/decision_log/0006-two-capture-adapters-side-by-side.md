@@ -18,7 +18,7 @@
 덮어쓴 채로 둔다. diff 가 작고 파일이 하나다. 대신 리뷰가 "왜 지웠나" 부터 시작한다.
 
 파일을 나누고 명령 이름을 바꾼다. 동료 파일은 develop 그대로 두고 실시간 쪽을
-`capture/realtime_adapter.py` 로 옮긴 뒤 `/live` `/live-join` `/live-stop` 으로 부른다.
+`capture/realtime/adapter.py` 로 옮긴 뒤 `/live` `/live-join` `/live-stop` 으로 부른다.
 한 봇에 둘 다 붙고 서버에서 번갈아 눌러 볼 수 있다. 대신 같은 음성 연결을 두고 두 Cog 가
 다투는 자리가 새로 생긴다.
 
@@ -42,7 +42,7 @@ wav 를 sink 에서 스트리밍으로 쓰기 때문에 `save_session` 의 입�
 raw bytes)를 쓸 수 없는데 매니페스트 형식은 같아야 한다. `stt/transcribe.py` 와
 `stt/eval/eval.py` 가 `recordings/` 를 얕게 훑어 `session_*.json` 을 그 형식으로 읽는다.
 되돌리면 형식이 두 벌이 되고 시간이 지나면 갈라진다. 두 함수의 출력이 바이트 단위로 같은
-것은 `tests/test_realtime_adapter.py` 의
+것은 `tests/realtime/test_realtime_adapter.py` 의
 `test_write_manifest_and_save_session_write_the_same_bytes` 가 확인하고, 동료의
 `tests/test_recording_store.py` 는 손대지 않은 채로 통과한다.
 
@@ -64,7 +64,7 @@ MESSAGE CONTENT 를 켜 두어야 한다. `.env.example` 주석을 그렇게 고
 
 ## 영향받은 파일
 
-- 새로 만듦: `capture/realtime_adapter.py`, `capture/run_realtime.py`
+- 새로 만듦: `capture/realtime/adapter.py`, `capture/realtime/run.py`
 - develop 상태로 되돌림: `capture/discord_adapter.py`, `capture/run_recorder.py`,
   `README.md`, `CLAUDE.md`, `tests/test_recording_store.py` (전부 diff 0)
 - 공유로 남김: `capture/recording_store.py` (`write_manifest` 분리)
@@ -130,7 +130,7 @@ for n in (1,2,0):
   w,c=time.monotonic()-t0,cpu()-c0; print(n,f'RTF {w/a:.2f} CPU/오디오 {c/a:.2f}')"
 
 # 실시간 파이프라인
-/usr/bin/time -l .venv/bin/python stt/eval/realtime_bench.py --tracks "<골든셋 audio>" --pace
+/usr/bin/time -l .venv/bin/python stt/realtime/bench.py --tracks "<골든셋 audio>" --pace
 ```
 
 ## 다시 볼 조건

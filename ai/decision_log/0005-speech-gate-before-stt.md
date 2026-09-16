@@ -107,15 +107,15 @@ Elice 에 보내 확인했다. 오늘 녹음 전부(35건)를 다시 잘라 임�
 진짜 말이 0.95 에 걸린 표본은 아직 없다.** 재현:
 
 ```bash
-.venv/bin/python stt/eval/realtime_bench.py --tracks "<골든셋>" --pace     # 발화 17 · 거름 0
+.venv/bin/python stt/realtime/bench.py --tracks "<골든셋>" --pace     # 발화 17 · 거름 0
 ```
 
 ## 영향받은 파일
 
 - `stt/speech_gate.py` 게이트 본체. `ENABLED`, `THRESHOLD`, `MIN_SPEECH_RATIO`
-- `stt/session.py` 워커가 API 를 부르기 직전에 판정. 게이트 비용이 `transcribe_s` 에 안 섞이게
+- `stt/realtime/session.py` 워커가 API 를 부르기 직전에 판정. 게이트 비용이 `transcribe_s` 에 안 섞이게
   `picked` 앞에 둔다
-- `capture/realtime_adapter.py` 종료 요약에 거른 건수
+- `capture/realtime/adapter.py` 종료 요약에 거른 건수
 
 ## 재지 않은 것
 
@@ -128,7 +128,7 @@ Elice 에 보내 확인했다. 오늘 녹음 전부(35건)를 다시 잘라 임�
 골든 트랙은 파일 오디오라 디스코드의 잡음 억제를 거치지 않았다. 실제 통화를 지난 소리가 같은
 비율로 나오는지는 확인하지 않았다.
 
-거른 발화도 턴 배정과 `note_post` 는 이미 받은 뒤다 (`stt/session.py` 의 `_assign_locked`).
+거른 발화도 턴 배정과 `note_post` 는 이미 받은 뒤다 (`stt/realtime/session.py` 의 `_assign_locked`).
 전사되지 않은 발화가 턴 경계에 영향을 준다. 실제 회의에서 이게 얼마나 보이는지는 보지 않았다.
 
 ## 다시 볼 조건

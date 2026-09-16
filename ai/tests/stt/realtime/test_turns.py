@@ -1,4 +1,4 @@
-from stt.turns import TurnTracker
+from stt.realtime.turns import TurnTracker
 
 
 def test_same_speaker_within_gap_joins_turn():

@@ -14,10 +14,10 @@ VAD 상수와 게이트 임계를 인자로 받는다. 같은 녹음을 임계�
 마감 뒤 도착한 줄(late_lines)과 미게시 턴은 실제 회의에서만 나온다.
 
 사용:
-  .venv/bin/python stt/eval/realtime_bench.py                      # 합성 3초, 무과금
-  .venv/bin/python stt/eval/realtime_bench.py --tracks "<디렉토리>" --pace
-  .venv/bin/python stt/eval/realtime_bench.py --tracks "<디렉토리>" --min-speech-ms 200 --no-gate
-  .venv/bin/python stt/eval/realtime_bench.py --tracks "<디렉토리>" --stt elice --pace --yes
+  .venv/bin/python -m stt.realtime.bench                      # 합성 3초, 무과금
+  .venv/bin/python -m stt.realtime.bench --tracks "<디렉토리>" --pace
+  .venv/bin/python -m stt.realtime.bench --tracks "<디렉토리>" --min-speech-ms 200 --no-gate
+  .venv/bin/python -m stt.realtime.bench --tracks "<디렉토리>" --stt elice --pace --yes
 
 --stt elice 는 --yes 없이는 견적만 찍고 끝난다.
 
@@ -104,7 +104,7 @@ def main(argv: list[str] | None = None) -> None:
     from capture.streaming_sink import StreamingSink
     from shared.config import RECORDINGS_DIR
     from stt.backend import SttResult
-    from stt.session import Session
+    from stt.realtime.session import Session
     from stt.speech_gate import SpeechGate
     from stt.transcript_writer import write_transcript
     from tests.replay import ReplayTrack, replay

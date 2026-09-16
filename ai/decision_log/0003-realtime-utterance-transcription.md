@@ -103,7 +103,7 @@ py-cord PR #3159 은 무음 구간을 채우지 않는다. `SilencePacket` 클�
 골든셋 `meeting-01` 6트랙, 합계 209.6초. `--stt fake` 라 무과금이고 전사 시간은 빠져 있다.
 
 ```bash
-.venv/bin/python stt/eval/realtime_bench.py --tracks "<골든셋 audio 디렉토리>" --pace
+.venv/bin/python stt/realtime/bench.py --tracks "<골든셋 audio 디렉토리>" --pace
 ```
 
 | | |
@@ -155,7 +155,7 @@ py-cord PR #3159 은 무음 구간을 채우지 않는다. `SilencePacket` 클�
 ### 임계를 바꾸면 이렇게 갈린다
 
 ```bash
-.venv/bin/python stt/eval/realtime_bench.py --tracks "<...>" --pace --silence-hold-ms 1500
+.venv/bin/python stt/realtime/bench.py --tracks "<...>" --pace --silence-hold-ms 1500
 ```
 
 | 바꾼 값 | 발화 | 첫 줄 지연 중앙값 · 최대 | 거름 |
@@ -190,11 +190,11 @@ py-cord PR #3159 은 무음 구간을 채우지 않는다. `SilencePacket` 클�
 ## 영향받은 파일
 
 - `stt/vad.py` 화자별 스트리밍 VAD. `sweep()` 로 패킷 끊긴 발화 마감, `ONSET_MS` · `RESTART_SILENCE_MS` · `SOFT_CAP_MS`
-- `stt/session.py` 큐 하나·워커 셋·발화당 1회, 침묵 청소 스레드
-- `stt/turns.py` 같은 화자 연속 발화를 턴으로 묶기
+- `stt/realtime/session.py` 큐 하나·워커 셋·발화당 1회, 침묵 청소 스레드
+- `stt/realtime/turns.py` 같은 화자 연속 발화를 턴으로 묶기
 - `capture/timeline.py` 침묵 프레임·쓰레기 패킷 필터, RTP 재정렬 창
 - `capture/streaming_sink.py` 도착 시각 기준 위치 부여. `tick()` 이 멈춘 재정렬 창을 비우고 도착 시각을 청소에 넘긴다
-- `stt/eval/realtime_bench.py` 위 수치를 내는 스크립트
+- `stt/realtime/bench.py` 위 수치를 내는 스크립트
 
 ## 다시 볼 조건
 

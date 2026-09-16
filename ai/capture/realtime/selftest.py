@@ -221,7 +221,7 @@ async def run(cog, ctx: discord.ApplicationContext, use_stt: bool = False,
 async def _stages(cog, ctx: discord.ApplicationContext, t: SelfTest, use_stt: bool,
                   probe_seconds: float) -> None:
     # 어댑터가 이 모듈을 부르므로 모듈 최상단에서 되부르면 순환 import 다.
-    from capture.realtime_adapter import is_recording
+    from capture.realtime.adapter import is_recording
 
     guild_id = env("DISCORD_GUILD_ID")
     t.record("슬래시 명령 등록", bool(guild_id),

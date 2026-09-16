@@ -15,7 +15,7 @@ import numpy as np
 import pytest
 
 from stt.backend import SttResult
-from stt.session import Session
+from stt.realtime.session import Session
 from stt.speech_gate import MIN_SPEECH_RATIO, SpeechGate
 
 SR = 16_000

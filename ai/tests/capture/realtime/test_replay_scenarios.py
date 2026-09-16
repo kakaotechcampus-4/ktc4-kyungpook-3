@@ -4,7 +4,7 @@ import numpy as np
 
 from capture.streaming_sink import StreamingSink
 from stt.backend import SttResult
-from stt.session import Session
+from stt.realtime.session import Session
 from tests.capture.replay import ReplayTrack, replay
 
 SR = 16_000

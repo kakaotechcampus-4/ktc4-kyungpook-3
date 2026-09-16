@@ -4,7 +4,7 @@ import types
 
 import pytest
 
-import capture.run_realtime as runner
+import capture.realtime.run as runner
 
 
 @pytest.fixture

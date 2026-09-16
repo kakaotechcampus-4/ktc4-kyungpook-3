@@ -7,8 +7,8 @@ import discord
 import numpy as np
 import pytest
 
-import capture.realtime_adapter as adapter
-from capture.realtime_adapter import RealtimeCog, SafeVoiceClient, _TrackPool, required_intents
+import capture.realtime.adapter as adapter
+from capture.realtime.adapter import RealtimeCog, SafeVoiceClient, _TrackPool, required_intents
 from stt.backend import SttResult
 from stt.speech_gate import SpeechGate
 from tests.capture.replay import ReplayTrack, replay

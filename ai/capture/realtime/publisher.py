@@ -24,7 +24,7 @@ from __future__ import annotations
 import asyncio
 import time
 
-from stt.session import Line
+from stt.lines import Line
 
 DEFAULT_BACKOFF_S = (1.0, 2.0, 4.0, 8.0, 16.0)
 DISCORD_SAFE_CHARS = 1990  # 2000자 한도에서 여유를 둔다
