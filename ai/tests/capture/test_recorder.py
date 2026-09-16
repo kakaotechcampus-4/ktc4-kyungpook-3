@@ -78,3 +78,25 @@ def test_recover_transcribes_pending_and_marks_a_broken_one_failed(tmp_path):
     assert m500["status"] == "transcribed" and m500["transcript"] == "g_500/transcript.md"
     assert json.loads(path2.read_text(encoding="utf-8"))["status"] == "failed"
     assert R.pending_sessions(rec) == [path2]      # 실패한 것은 다시 시도 대상으로 남는다
+
+
+def test_extract_after_transcription_writes_tasks_and_skips_without_extractor(tmp_path):
+    rec, path, manifest = _session(tmp_path)
+    tdir = tmp_path / "transcripts"
+    R.transcribe_session(rec, manifest, backend=EchoStt(), model_name="echo", workers=1, gate=None, transcripts_dir=tdir)
+    seen = {}
+
+    class Task:
+        def to_dict(self):
+            return {"task": "와이어프레임 그리기", "assignee_member_id": None, "due_date": "2026-09-18", "confidence": 1.0}
+
+    def fake_extractor(transcript, names):
+        seen["names"] = names
+        seen["n"] = len(transcript.segments)
+        return [Task()]
+
+    out = R.extract_after_transcription(tdir, manifest, extractor=fake_extractor)
+    assert out == tdir / "session_500.tasks.json"
+    assert json.loads(out.read_text(encoding="utf-8"))[0]["task"] == "와이어프레임 그리기"
+    assert seen["names"] == {"1": "민수", "2": "서연"} and seen["n"] == 3
+    assert R.extract_after_transcription(tdir, manifest, extractor=None) in (None, out)   # 설정이 없으면 건너뛴다

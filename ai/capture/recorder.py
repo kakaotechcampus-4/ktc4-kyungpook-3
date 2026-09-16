@@ -7,6 +7,9 @@ discord 이름은 여기 없다. capture/discord_adapter.py 가 이 함수들을
   status      recording | saved | transcribed | failed
   started_at  녹음 시작 벽시계(UTC ISO). 트랙 안의 위치는 이 시각부터 흐른 monotonic 시간이다
   transcript  전사가 끝나면 회의록 경로
+  tasks       할일 추출까지 됐으면 그 결과 파일 경로
+
+전사 뒤 할일 추출(extract/, #30)을 같은 자리에서 잇는다. LLM 설정이 없으면 건너뛴다.
 """
 
 from __future__ import annotations
@@ -110,3 +113,50 @@ def recover(recordings_dir: Path, *, backend, model_name: str, workers: int, gat
             done.append({"session": m["session"], "status": STATUS_FAILED, "error": m["error"]})
         p.write_text(json.dumps(m, ensure_ascii=False, indent=2), encoding="utf-8")
     return done
+
+
+def build_extractor():
+    """extract_tasks 를 부를 함수를 만든다. 모듈이나 LLM 설정이 없으면 None.
+
+    extract/ 는 다른 담당의 모듈이라 여기서는 부르기만 한다. 설정은 shared.config 의 LLM_* 다.
+    """
+    try:
+        from openai import OpenAI
+        from extract.llm import extract_tasks
+        from shared.config import settings
+    except ImportError:
+        return None
+    cfg = settings()
+    if not getattr(cfg, "llm_api_key", "") or getattr(cfg, "llm_mode", "") == "off":
+        return None
+    client = OpenAI(base_url=getattr(cfg, "llm_base_url", "") or None, api_key=cfg.llm_api_key)
+
+    def run(transcript, speaker_names):
+        return extract_tasks(transcript, client=client, model=cfg.llm_model, speaker_names=speaker_names)
+
+    return run
+
+
+def extract_after_transcription(transcripts_dir: Path, manifest: dict, *, extractor=None) -> Path | None:
+    """전사 결과(Transcript)에서 할일을 뽑아 transcripts/session_<ts>.tasks.json 에 쓴다.
+
+    extractor(transcript, speaker_names) -> list[ExtractedTask]. 없으면 build_extractor() 로 만들고,
+    그것도 없으면 아무것도 안 하고 None 을 돌려준다. 회의록은 이미 나와 있으므로 여기서 실패해도
+    전사 결과는 그대로다.
+    """
+    from shared.schemas import Transcript
+
+    ts = manifest["session"]
+    src = transcripts_dir / f"session_{ts}.transcript.json"
+    if not src.exists():
+        return None
+    extractor = extractor or build_extractor()
+    if extractor is None:
+        return None
+    transcript = Transcript.from_dict(json.loads(src.read_text(encoding="utf-8")))
+    names = {str(e["user_id"]): e["display_name"] for e in manifest["speakers"]}
+    tasks = extractor(transcript, names)
+    out = transcripts_dir / f"session_{ts}.tasks.json"
+    out.write_text(json.dumps([t.to_dict() if hasattr(t, "to_dict") else t for t in tasks],
+                              ensure_ascii=False, indent=2), encoding="utf-8")
+    return out

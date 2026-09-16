@@ -27,6 +27,7 @@ on_session_saved(manifest, manifest_path) 훅은 전사까지 끝난 뒤 불린�
 from __future__ import annotations
 
 import asyncio
+import json
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
@@ -35,7 +36,8 @@ from pathlib import Path
 import discord
 
 from capture.recorder import (STATUS_FAILED, STATUS_RECORDING, STATUS_SAVED, STATUS_TRANSCRIBED, NullSession,
-                              backend_from_env, recover, transcribe_session, write_status)
+                              backend_from_env, extract_after_transcription, recover, transcribe_session,
+                              write_status)
 from capture.streaming_sink import StreamingSink
 from capture.track_writer import TrackPool
 from capture.voice_client import SafeVoiceClient
@@ -304,6 +306,19 @@ class RecordingCog(discord.Cog):
             if out["failed"]:
                 text += f"\n⚠️ 전사 실패 {out['failed']}줄은 회의록에 없습니다. `/recover` 로 다시 시도할 수 있습니다."
             await rec.text_channel.send(text, file=discord.File(str(out["markdown"])))
+            # 전사 뒤 할일 추출. LLM 설정이 없으면 조용히 건너뛴다. 실패해도 회의록은 이미 올라갔다
+            try:
+                tasks_path = await asyncio.to_thread(extract_after_transcription, self.transcripts_dir, manifest)
+            except Exception as e:
+                tasks_path = None
+                await rec.text_channel.send(f"⚠️ 할일 추출 실패: {type(e).__name__}: {e}")
+            if tasks_path is not None:
+                manifest["tasks"] = str(tasks_path)
+                path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+                tasks = json.loads(tasks_path.read_text(encoding="utf-8"))
+                shown = "\n".join(f"- {x.get('task')} / {x.get('assignee_mention') or '담당 미정'} / {x.get('due_date') or '마감 미정'}"
+                                   for x in tasks[:10]) or "- (없음)"
+                await rec.text_channel.send(f"📋 할일 {len(tasks)}건\n{shown}")
         except Exception as e:
             path, manifest = self._write_status(rec, STATUS_FAILED, entries)
             print(f"[transcribe] 세션 {rec.ts} 실패: {type(e).__name__}: {e}", flush=True)
