@@ -12,9 +12,10 @@
          한 번에 전사한 뒤 단어 시각으로 클립에 되돌린다. 무음은 모델에 안 들어간다.
   clip   클립 하나씩 전사. 실시간 경로가 보내던 단위와 같다.
   track  트랙 통째 (로컬 전용). 반복 환각을 누르는 옵션을 켜고, 무음 자리의 단어는 버린다.
-  whole  예전 방식 그대로. 트랙 통째를 faster-whisper 에 넣고 --vad --beam-size --device 를 쓴다.
-         비교용으로 남긴다. 세 모드의 차이와 측정치는 decision_log/0008.
-  본체는 stt/batch.py 다. 여기서는 같은 출력 파일 형식으로 감싼다.
+  whole  예전 방식 그대로. 트랙 통째를 옵션 없이 넣는다. 비교용으로 남긴다.
+         네 모드의 차이와 측정치는 decision_log/0008.
+  본체는 stt/batch.py 다. 여기서는 같은 출력 파일 형식으로 감싼다. 모델 호출은 SttBackend 뒤에
+  있어서 이 파일은 faster-whisper 에 직접 의존하지 않는다.
 
 출력 (파일당, 모델당)
   transcripts/{wav_stem}__{model}.json   {"speaker": user_id, "segments": [{speaker,start,end,text}], "text", 처리시간 메타}
@@ -24,7 +25,7 @@
 
 segments 의 start/end 는 회의 기준 초다. 화자별 트랙이 같은 회의 시계 위에 쓰여 있어서(패킷이 안 온
 구간은 0) 파일 안의 위치가 곧 회의 시각이고, 화자를 섞어 start 로 정렬하면 회의록이 된다.
-화자 분리는 파일명(user_id)이 담당하므로 diarization 모델이 없습니다 — Discord 캡처의 핵심 이점.
+화자 분리는 파일명(user_id)이 담당하므로 diarization 모델이 없습니다. Discord 캡처의 핵심 이점.
 """
 
 from __future__ import annotations
@@ -185,7 +186,7 @@ def transcribe_session_batch(wavs: list[Path], names: dict[str, str], backend, *
             "audio_path": str(tr.path),
             "audio_duration_sec": round(duration, 2),
             "model": model_name,
-            "device": "cpu" if not model_name.startswith("elice") else "api",
+            "device": "api" if model_name == "elice" else "cpu",
             "compute_type": getattr(backend, "compute_type", "-"),
             "language": getattr(backend, "language", "ko"),
             "mode": mode,
@@ -258,13 +259,11 @@ def main() -> int:
     ap.add_argument("--backend", choices=["local", "elice"], default="local",
                     help="elice 는 API. 예상 비용을 찍고 --yes 가 있어야 돈다. whole 모드는 local 만")
     ap.add_argument("--no-gate", action="store_true", help="말 필터(실로 VAD)를 끈다")
-    ap.add_argument("--workers", type=int, default=None, help="동시 호출 수. 기본: elice 3, local 1")
+    ap.add_argument("--workers", type=int, default=None, help="동시 호출 수. 기본: elice 6, local 1")
     ap.add_argument("--yes", action="store_true", help="유료 실행을 승인한다")
-    ap.add_argument("--device", default="cpu", help="whole 모드만")
     ap.add_argument("--compute-type", default="int8")
     ap.add_argument("--language", default="ko")
-    ap.add_argument("--beam-size", type=int, default=5, help="whole 모드만. 배치 모드는 5 고정")
-    ap.add_argument("--vad", action="store_true", help="whole 모드만. faster-whisper 내장 VAD 로 무음 제거")
+    ap.add_argument("--beam-size", type=int, default=5, help="로컬 빔 폭. 1 이면 빠르고 5 가 정확하다")
     ap.add_argument("--out", default=str(TRANSCRIPTS_DIR))
     ap.add_argument("--overwrite", action="store_true")
     ap.add_argument("--no-timing-summary", action="store_true")
@@ -274,10 +273,6 @@ def main() -> int:
     if not wavs:
         print("전사할 wav 가 없습니다. 먼저 봇으로 녹음하거나 --audio 로 경로를 지정하세요.", file=sys.stderr)
         return 1
-    if args.mode == "whole" and args.backend != "local":
-        print("whole 모드는 로컬 faster-whisper 만 지원합니다. --mode chunk 로 API 를 쓰세요.", file=sys.stderr)
-        return 1
-
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
     names = load_manifests(RECORDINGS_DIR)
@@ -299,15 +294,10 @@ def main() -> int:
 
     rows: list[dict] = []
     for model_name in models:
-        if args.mode == "whole":
-            model = _load_whole_model(model_name, args)
-            if model is None:
-                return 1
-        else:
-            backend = _make_backend(args.backend, model_name, args)
-            gate = None if args.no_gate else _make_gate()
-            workers = args.workers if args.workers is not None else (3 if args.backend == "elice" else 1)
-            print(f"\n=== {backend.name} · mode={args.mode} · workers={workers} · gate={'off' if gate is None else 'on'} ===")
+        backend = _make_backend(args.backend, model_name, args)
+        gate = None if args.no_gate else _make_gate()
+        workers = args.workers if args.workers is not None else _default_workers(args.backend)
+        print(f"\n=== {backend.name} · mode={args.mode} · workers={workers} · gate={'off' if gate is None else 'on'} ===")
 
         for ts, session_wavs in sorted(by_session.items()):
             stems = {w: out_dir / f"{w.stem}__{model_name}" for w in session_wavs}
@@ -319,30 +309,18 @@ def main() -> int:
                     rows.append(_row(result, w, model_name))
                 continue
 
-            if args.mode == "whole":
-                for w, stem in stems.items():
-                    uid, _ = parse_wav_stem(w.stem)
-                    speaker = names.get(uid, uid)
-                    print(f"[run ] {w.name} ({speaker}) ...", end="", flush=True)
-                    result = transcribe_file(model, w, model_name=model_name, device=args.device,
-                                             compute_type=args.compute_type, language=args.language,
-                                             beam_size=args.beam_size, vad=args.vad)
-                    result["speaker"] = speaker
-                    _save(result, stem)
-                    rows.append(_row(result, w, model_name))
-            else:
-                print(f"[run ] 세션 {ts} 트랙 {len(session_wavs)}개 ...", flush=True)
-                results, summary = transcribe_session_batch(session_wavs, names, backend, mode=args.mode,
-                                                            model_name=model_name, gate=gate, workers=workers)
-                for w, result in results.items():
-                    _save(result, stems[w])
-                    rows.append(_row(result, w, model_name))
-                    print(f"       {w.name} ({result['speaker']}) 클립 {result['clips']} · 실패 {result['failed']} · "
-                          f"{result['transcribe_sec']}s (오디오 {result['audio_duration_sec']}s)")
-                (out_dir / f"session_{ts}__{model_name}.batch.json").write_text(
-                    json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
-                print(f"       호출 {summary['calls']} · 보낸 오디오 {summary['audio_sent_s']}s / 트랙 {summary['track_s']}s · "
-                      f"p50 {summary['transcribe_p50_s']}s p95 {summary['transcribe_p95_s']}s · 거름 {summary['gated']}")
+            print(f"[run ] 세션 {ts} 트랙 {len(session_wavs)}개 ...", flush=True)
+            results, summary = transcribe_session_batch(session_wavs, names, backend, mode=args.mode,
+                                                        model_name=model_name, gate=gate, workers=workers)
+            for w, result in results.items():
+                _save(result, stems[w])
+                rows.append(_row(result, w, model_name))
+                print(f"       {w.name} ({result['speaker']}) 줄 {result['clips']} · 실패 {result['failed']} · "
+                      f"{result['transcribe_sec']}s (오디오 {result['audio_duration_sec']}s)")
+            (out_dir / f"session_{ts}__{model_name}.batch.json").write_text(
+                json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
+            print(f"       호출 {summary['calls']} · 보낸 오디오 {summary['audio_sent_s']}s / 트랙 {summary['track_s']}s · "
+                  f"p50 {summary['transcribe_p50_s']}s p95 {summary['transcribe_p95_s']}s · 거름 {summary['gated']}")
 
             merged = build_session_transcript(out_dir, ts, model_name)
             if merged:
@@ -362,25 +340,20 @@ def main() -> int:
     return 0
 
 
-def _load_whole_model(model_name: str, args):
-    try:
-        from faster_whisper import WhisperModel
-    except ImportError:
-        print("faster-whisper 가 없습니다:  uv pip install faster-whisper", file=sys.stderr)
-        return None
-    print(f"\n=== 모델 로드: {model_name} ({args.device}, {args.compute_type}) ===")
-    t0 = time.perf_counter()
-    model = WhisperModel(model_name, device=args.device, compute_type=args.compute_type)
-    print(f"    로드 {time.perf_counter() - t0:.1f}s")
-    return model
-
-
 def _make_backend(kind: str, model_name: str, args):
+    from stt import batch as B
     if kind == "elice":
-        from stt import batch as B
-        return B.make_backend("elice", "")
+        return B.make_backend("elice", "", args.mode)
     from stt.local import LocalStt
-    return LocalStt(model_size=model_name, compute_type=args.compute_type, language=args.language, track_mode=True)
+    be = B.make_backend("local", model_name, args.mode, beam=args.beam_size)
+    be.compute_type = args.compute_type
+    be.language = args.language
+    return be
+
+
+def _default_workers(kind: str) -> int:
+    from stt import batch as B
+    return B.default_workers(kind)
 
 
 def _make_gate():
