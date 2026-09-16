@@ -15,7 +15,6 @@ import numpy as np
 import pytest
 
 from stt.backend import SttResult
-from stt.realtime.session import Session
 from stt.speech_gate import MIN_SPEECH_RATIO, SpeechGate
 
 SR = 16_000
@@ -37,12 +36,6 @@ def noise(ms, amp=0.05, seed=0):
     n = int(SR * ms / 1000)
     rng = np.random.default_rng(seed)
     return (rng.standard_normal(n) * amp).astype(np.float32)
-
-
-def feed_packets(s, speaker, name, samples, start_ms=0):
-    n = SR * 20 // 1000
-    for i in range(0, len(samples) - n + 1, n):
-        s.feed(speaker, name, samples[i : i + n], start_ms + i * 1000 // SR)
 
 
 def all_speech(pcm, sample_rate, threshold):
@@ -153,14 +146,21 @@ def test_the_summary_says_so_when_the_filter_is_off():
     assert SpeechGate(enabled=False).summary() == "말 필터 꺼짐 (speech_gate.ENABLED)"
 
 
-# ------------------------------------------------------------------ 세션 배선
+# ------------------------------------------------------------------ 배치 배선
 def run_one(gate, samples, stt=None):
+    """배치 경로 그대로. 트랙 하나를 클립으로 자르고 필터를 건 뒤 전사한다 (stt/batch.py run)."""
+    import tempfile
+    from pathlib import Path
+
+    import soundfile as sf
+
+    from stt import batch as B
+
     stt = stt or FakeStt()
-    lines = []
-    s = Session(final_stt=stt, on_line=lines.append, workers=1, gate=gate)
-    feed_packets(s, "kim", "김환", samples)
-    s.close()
-    return [ln for ln in lines if ln.final], stt
+    with tempfile.TemporaryDirectory() as d:
+        sf.write(str(Path(d) / "kim.wav"), samples, SR, subtype="PCM_16")
+        lines, _stats = B.run(B.discover(Path(d)), stt, mode="clip", gate=gate, workers=1, merge=False)  # 클립마다 한 줄
+    return lines, stt
 
 
 def test_non_speech_audio_never_reaches_the_backend():
@@ -188,14 +188,14 @@ def test_speech_reaches_the_backend():
     assert (gate.passed, gate.rejected) == (1, 0)
 
 
-def test_a_session_without_a_gate_transcribes_everything():
-    """게이트를 넘기지 않은 세션은 예전 그대로다. 오프라인 테스트와 리플레이가 이 길로 돈다."""
+def test_a_run_without_a_gate_transcribes_everything():
+    """게이트를 넘기지 않으면 전부 전사한다. --no-gate 가 이 길이다."""
     finals, stt = run_one(None, noise(1_500), FakeStt("안녕하세요"))
     assert stt.calls == 1
     assert len(finals) == 1
 
 
-def test_a_failing_filter_does_not_eat_the_utterance_in_a_session():
+def test_a_failing_filter_does_not_eat_the_utterance_in_a_run():
     gate = SpeechGate(speech_spans=boom)
     finals, stt = run_one(gate, noise(1_500), FakeStt("안녕하세요"))
     assert stt.calls == 1
@@ -204,7 +204,7 @@ def test_a_failing_filter_does_not_eat_the_utterance_in_a_session():
 
 
 def test_the_filter_does_not_charge_its_cost_to_the_transcribe_stage():
-    """게이트 비용은 큐 구간에 들어간다. transcribe_s 는 백엔드만 재는 수치다."""
+    """게이트 비용은 전사 시간에 안 섞인다. transcribe_s 는 백엔드 호출만 재는 수치다."""
 
     def slow_spans(pcm, sample_rate, threshold):
         time.sleep(0.3)

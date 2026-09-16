@@ -4,8 +4,6 @@ import pytest
 
 from capture.streaming_sink import StreamingSink
 from capture.timeline import REORDER_WINDOW
-from stt.backend import SttResult
-from stt.realtime.session import Session
 from tests.capture.replay import (
     DECODED_SILENCE_FRAME,
     PACKET_MS,
@@ -20,27 +18,25 @@ from tests.capture.replay import (
 SR = 16_000
 
 
-class FakeStt:
-    name = "fake"
+class RecordingSession:
+    """sink 가 feed 로 넘긴 조각을 그대로 모은다.
 
-    def transcribe(self, samples, sample_rate):
-        return SttResult(text="x", words=[])
-
-
-class FeedCountingSession(Session):
-    """sink 가 session.feed 를 실제로 부른 횟수를 센다.
-
-    줄이 안 나온 것과 sink 가 아직 아무것도 안 넘긴 것은 다르다. 재정렬 창이
-    잡고 있는지 보려면 넘긴 횟수를 직접 세야 한다.
+    배치 경로에서 sink 의 소비자는 트랙 기록뿐이라 이걸로 충분하다. 넘긴 횟수를 직접 세야
+    재정렬 창이 잡고 있는지 보인다.
     """
 
-    def __init__(self, *args, **kwargs):
-        self.feeds = 0
-        super().__init__(*args, **kwargs)
+    def __init__(self):
+        self.fed: list[tuple] = []
+
+    @property
+    def feeds(self) -> int:
+        return len(self.fed)
 
     def feed(self, speaker_id, speaker_name, samples, offset_ms):
-        self.feeds += 1
-        super().feed(speaker_id, speaker_name, samples, offset_ms)
+        self.fed.append((speaker_id, speaker_name, samples, offset_ms))
+
+    def close(self):
+        pass
 
 
 def tone(ms, amp=0.3):
@@ -49,14 +45,12 @@ def tone(ms, amp=0.3):
 
 
 def test_sink_write_reaches_session():
-    lines = []
-    session = Session(final_stt=FakeStt(), on_line=lines.append, workers=1)
+    session = RecordingSession()
     clock = {"now_ms": 0}
     sink = StreamingSink(session, now_ms=lambda: clock["now_ms"])
     replay([ReplayTrack(user_id=7, name="김환", samples=tone(1_500), ssrc=70)], sink.write, clock=clock)
     sink.drain()
-    session.close()
-    assert any(ln.final and ln.speaker_id == "7" for ln in lines)
+    assert any(sid == "7" for sid, _n, _s, _at in session.fed)
 
 
 def test_is_opus_is_false():
@@ -65,7 +59,7 @@ def test_is_opus_is_false():
 
 
 def test_sink_ignores_empty_pcm():
-    session = Session(final_stt=FakeStt(), on_line=lambda _: None, workers=1)
+    session = RecordingSession()
     sink = StreamingSink(session)
     m = FakeMember(1, "A")
     sink.write(FakeVoiceData(FakePacket(0, 1), m, b""), m)
@@ -74,19 +68,17 @@ def test_sink_ignores_empty_pcm():
     assert sink.noise_packets == 0
     # 뒤이어 정상 패킷이 세어져야 write() 가 통째로 no-op 인 경우를 잡는다.
     sink.write(FakeVoiceData(FakePacket(960, 1), m, _to_discord_bytes(tone(PACKET_MS))), m)
-    session.close()
     assert sink.packets == 1
     assert sink.noise_packets == 0
 
 
 def test_silence_frame_is_counted_as_noise_not_audio():
     """디스코드가 보내는 Opus 침묵 프레임. py-cord 는 이걸 sink 까지 넘긴다."""
-    session = Session(final_stt=FakeStt(), on_line=lambda _: None, workers=1)
+    session = RecordingSession()
     sink = StreamingSink(session)
     m = FakeMember(1, "A")
     sink.write(FakeVoiceData(FakePacket(0, 1), m, DECODED_SILENCE_FRAME), m)
     sink.write(FakeVoiceData(FakePacket(960, 1), m, b"\x00" * 3839 + b"\x01"), m)
-    session.close()
     assert sink.packets == 0
     assert sink.noise_packets == 2
 
@@ -102,8 +94,7 @@ def test_cleanup_drains_pending_packets():
     로 딱 걸쳐 있으니 창을 줄이면 이 테스트부터 깨진다.
     """
     held = REORDER_WINDOW
-    lines = []
-    session = FeedCountingSession(final_stt=FakeStt(), on_line=lines.append, workers=1)
+    session = RecordingSession()
     clock = {"now_ms": 0}
     sink = StreamingSink(session, now_ms=lambda: clock["now_ms"])
     tracks = [
@@ -114,16 +105,12 @@ def test_cleanup_drains_pending_packets():
 
     assert sink.packets == 2 * held
     assert session.feeds == 0      # 전부 재정렬 창에 잡혀 있다
-    assert not [ln for ln in lines if ln.final]
     assert sink.finished is False
 
     sink.cleanup()
-    session.close()
 
     assert session.feeds == 2 * held
-    finals = [ln for ln in lines if ln.final]
-    assert {ln.speaker_id for ln in finals} == {"5", "6"}
-    assert len(finals) == 2
+    assert {sid for sid, _n, _s, _at in session.fed} == {"5", "6"}
     assert sink.finished is True
 
 
@@ -165,18 +152,15 @@ def test_drain_speaker_hands_the_hook_an_int_uid():
 
 def test_arrival_time_is_the_position():
     """RTP 원점이 무엇이든 위치는 now_ms 가 정한다."""
-    lines = []
-    session = Session(final_stt=FakeStt(), on_line=lines.append, workers=1)
+    session = RecordingSession()
     clock = {"now_ms": 0}
     sink = StreamingSink(session, now_ms=lambda: clock["now_ms"])
     tr = ReplayTrack(user_id=1, name="A", samples=tone(1_000), start_ms=42_000,
                      ssrc=11, rtp_origin=0xDEADBEEF)
     replay([tr], sink.write, clock=clock)
     sink.drain()
-    session.close()
-    finals = [ln for ln in lines if ln.final]
-    assert len(finals) == 1
-    assert 41_500 <= finals[0].start_ms <= 42_500
+    first = min(at for sid, _n, _s, at in session.fed if sid == "1")
+    assert 41_500 <= first <= 42_500
 
 
 def test_level_report_verdict_flips_with_peak_rms():
@@ -188,9 +172,8 @@ def test_level_report_verdict_flips_with_peak_rms():
     """
     from stt.vad import SPEECH_RMS
 
-    session = Session(final_stt=FakeStt(), on_line=lambda _: None, workers=1)
+    session = RecordingSession()
     sink = StreamingSink(session)
-    session.close()
 
     sink.peak_rms = SPEECH_RMS * 2.0
     assert sink.level_report()["verdict"] == "정상"
@@ -201,14 +184,13 @@ def test_level_report_verdict_flips_with_peak_rms():
 
 def test_packet_gaps_are_measured_per_speaker():
     """말하다 쉬면 도착 시각이 벌어진다. 그 벌어짐을 화자별로 센다."""
-    session = FeedCountingSession(final_stt=FakeStt(), on_line=lambda _: None, workers=1)
+    session = RecordingSession()
     clock = {"now_ms": 0}
     sink = StreamingSink(session, now_ms=lambda: clock["now_ms"])
     pkt = _to_discord_bytes(tone(PACKET_MS))
     for t in (0, 20, 40, 300, 320, 340):       # 40 → 300 사이가 260ms
         clock["now_ms"] = t
         sink.write(pkt, FakeMember(1, "a"))
-    session.close()
     r = sink.level_report()
     assert r["gaps"] == 1
     assert r["max_gap_ms"] == 260
@@ -218,10 +200,9 @@ def test_packet_gaps_are_measured_per_speaker():
 
 def test_first_packet_from_a_speaker_is_not_a_gap():
     """직전 패킷이 없는 첫 패킷은 공백이 아니다. 0 에서 재면 5초짜리 공백이 생긴다."""
-    session = FeedCountingSession(final_stt=FakeStt(), on_line=lambda _: None, workers=1)
+    session = RecordingSession()
     sink = StreamingSink(session, now_ms=lambda: 5_000)
     sink.write(_to_discord_bytes(tone(PACKET_MS)), FakeMember(1, "a"))
-    session.close()
     r = sink.level_report()
     assert r["packets"] == 1
     assert r["gaps"] == 0
@@ -235,14 +216,13 @@ def test_two_speakers_do_not_share_a_gap_clock():
     시각을 공용으로 하나만 두면 간격이 50ms 라 공백이 0건이 된다. 화자별로 재야
     각자의 100ms 가 보인다.
     """
-    session = FeedCountingSession(final_stt=FakeStt(), on_line=lambda _: None, workers=1)
+    session = RecordingSession()
     clock = {"now_ms": 0}
     sink = StreamingSink(session, now_ms=lambda: clock["now_ms"])
     pkt = _to_discord_bytes(tone(PACKET_MS))
     for i, t in enumerate((0, 50, 100, 150, 200, 250)):
         clock["now_ms"] = t
         sink.write(pkt, FakeMember(1 + i % 2, "s"))
-    session.close()
     r = sink.level_report()
     assert r["gaps"] == 4
     assert r["max_gap_ms"] == 100
@@ -250,14 +230,13 @@ def test_two_speakers_do_not_share_a_gap_clock():
 
 def test_median_gap_is_the_middle_not_the_largest():
     """최대값 하나는 회의 시작 전 대기 같은 것에 쉽게 오염된다. 가운데가 숨 간격을 말한다."""
-    session = FeedCountingSession(final_stt=FakeStt(), on_line=lambda _: None, workers=1)
+    session = RecordingSession()
     clock = {"now_ms": 0}
     sink = StreamingSink(session, now_ms=lambda: clock["now_ms"])
     pkt = _to_discord_bytes(tone(PACKET_MS))
     for t in (0, 100, 300, 800):               # 공백 100, 200, 500
         clock["now_ms"] = t
         sink.write(pkt, FakeMember(1, "a"))
-    session.close()
     r = sink.level_report()
     assert r["gaps"] == 3
     assert r["max_gap_ms"] == 500
@@ -268,7 +247,7 @@ def test_quiet_packets_are_counted_separately_from_noise():
     """디코딩까지 된 진짜 오디오인데 조용한 것. 침묵 프레임과는 다른 숫자여야 한다."""
     from stt.vad import SPEECH_RMS
 
-    session = FeedCountingSession(final_stt=FakeStt(), on_line=lambda _: None, workers=1)
+    session = RecordingSession()
     sink = StreamingSink(session)
     m = FakeMember(1, "a")
     sink.write(_to_discord_bytes(tone(PACKET_MS)), m)                        # 또렷
@@ -279,7 +258,6 @@ def test_quiet_packets_are_counted_separately_from_noise():
     assert r["noise_packets"] == 0
 
     sink.write(DECODED_SILENCE_FRAME, m)
-    session.close()
     r = sink.level_report()
     assert r["noise_packets"] == 1
     assert r["quiet_packets"] == 1
@@ -292,7 +270,7 @@ def test_dominant_speaker_stats_leave_out_the_other_stream(monkeypatch):
     음성 패킷이 제일 많은 쪽이 실제로 말한 사람이다. 그 사람의 공백이 0건인데
     집계가 2건이면, 집계를 읽는 해석은 없는 끊김을 있다고 읽는다.
     """
-    session = FeedCountingSession(final_stt=FakeStt(), on_line=lambda _: None, workers=1)
+    session = RecordingSession()
     clock = {"now_ms": 0}
     sink = StreamingSink(session, now_ms=lambda: clock["now_ms"])
     pkt = _to_discord_bytes(tone(PACKET_MS))
@@ -303,7 +281,6 @@ def test_dominant_speaker_stats_leave_out_the_other_stream(monkeypatch):
     for t in (0, 1500, 2900):          # 공백 1500ms, 1400ms
         clock["now_ms"] = t
         sink.write(pkt, other)
-    session.close()
 
     r = sink.level_report()
     assert r["speakers"] == 2
@@ -317,7 +294,7 @@ def test_dominant_speaker_quiet_packets_exclude_the_other_stream():
     """조용한 패킷도 화자별이어야 한다. 섞이면 해석이 다시 흐려진다."""
     from stt.vad import SPEECH_RMS
 
-    session = FeedCountingSession(final_stt=FakeStt(), on_line=lambda _: None, workers=1)
+    session = RecordingSession()
     sink = StreamingSink(session)
     loud = _to_discord_bytes(tone(PACKET_MS))
     faint = _to_discord_bytes(tone(PACKET_MS, amp=SPEECH_RMS * 0.4))
@@ -328,7 +305,6 @@ def test_dominant_speaker_quiet_packets_exclude_the_other_stream():
         sink.write(faint, talker)
     for _ in range(4):
         sink.write(faint, other)
-    session.close()
 
     r = sink.level_report()
     assert r["quiet_packets"] == 6      # 집계
@@ -338,14 +314,13 @@ def test_dominant_speaker_quiet_packets_exclude_the_other_stream():
 
 def test_top_gap_sizes_carry_every_gap_of_the_dominant_speaker():
     """숨 크기 공백과 그보다 큰 공백을 나누는 일은 해석 쪽이 한다. 크기 목록이 그 재료다."""
-    session = FeedCountingSession(final_stt=FakeStt(), on_line=lambda _: None, workers=1)
+    session = RecordingSession()
     clock = {"now_ms": 0}
     sink = StreamingSink(session, now_ms=lambda: clock["now_ms"])
     pkt = _to_discord_bytes(tone(PACKET_MS))
     for t in (0, 200, 700, 2200):      # 공백 200, 500, 1500
         clock["now_ms"] = t
         sink.write(pkt, FakeMember(1, "a"))
-    session.close()
 
     r = sink.level_report()
     assert r["top_gap_sizes"] == [200, 500, 1500]
@@ -432,7 +407,7 @@ def test_flush_idle_releases_a_window_whose_stream_has_stopped():
     """
     from capture.streaming_sink import IDLE_FLUSH_MS
 
-    session = FeedCountingSession(final_stt=FakeStt(), on_line=lambda ln: None, workers=1)
+    session = RecordingSession()
     clock = {"now_ms": 0}
     sink = StreamingSink(session, now_ms=lambda: clock["now_ms"])
     replay([ReplayTrack(user_id=5, name="박", samples=tone(100), ssrc=50)], sink.write, clock=clock)
@@ -444,14 +419,13 @@ def test_flush_idle_releases_a_window_whose_stream_has_stopped():
     assert sink.flush_idle(last + IDLE_FLUSH_MS) == 5       # 멈췄다. 전부 내보낸다
     assert session.feeds == 5
     assert sink.flush_idle(last + IDLE_FLUSH_MS * 3) == 0   # 비운 창은 다시 안 센다
-    session.close()
 
 
 def test_flush_idle_leaves_a_speaker_who_is_still_talking():
     """두 화자 중 한쪽만 멈췄다. 흐르는 쪽 창은 건드리면 안 된다. 그쪽은 정렬이 아직 필요하다."""
     from capture.streaming_sink import IDLE_FLUSH_MS
 
-    session = FeedCountingSession(final_stt=FakeStt(), on_line=lambda ln: None, workers=1)
+    session = RecordingSession()
     clock = {"now_ms": 0}
     sink = StreamingSink(session, now_ms=lambda: clock["now_ms"])
     replay([ReplayTrack(user_id=5, name="박", samples=tone(100), ssrc=50)], sink.write, clock=clock)
@@ -461,4 +435,3 @@ def test_flush_idle_leaves_a_speaker_who_is_still_talking():
     # 박은 멈춘 지 오래고 최는 방금까지 말했다
     assert sink.flush_idle(clock["now_ms"]) == 5
     assert session.feeds == 5
-    session.close()
