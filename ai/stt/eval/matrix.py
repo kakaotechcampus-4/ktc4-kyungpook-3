@@ -44,11 +44,11 @@ def golden_configs(elice: bool) -> list[dict]:
             cfgs.append(dict(name=f"local {m} {mode}", backend="local", model=m, mode=mode))
     if elice:
         cfgs += [
-            dict(name="elice chunk (워커 6)", backend="elice", model="", mode="chunk"),
+            dict(name="elice chunk (워커 3 기본)", backend="elice", model="", mode="chunk"),
             dict(name="elice clip", backend="elice", model="", mode="clip"),
             dict(name="elice whole", backend="elice", model="", mode="whole"),
             dict(name="elice chunk 턴마다 묶음", backend="elice", model="", mode="chunk", extra=["--no-pack-turns"], tag="perturn"),
-            dict(name="elice chunk 워커 3", backend="elice", model="", mode="chunk", extra=["--workers", "3"], tag="w3"),
+            dict(name="elice chunk 워커 6", backend="elice", model="", mode="chunk", extra=["--workers", "6"], tag="w6"),
             dict(name="elice chunk 워커 9", backend="elice", model="", mode="chunk", extra=["--workers", "9"], tag="w9"),
         ]
     return cfgs
