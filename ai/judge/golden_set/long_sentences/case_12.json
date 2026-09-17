@@ -1,0 +1,114 @@
+{
+  "case_id": "case_12",
+  "scenario": "long_multisentence_turns_mixed_with_short_chitchat",
+  "description": "한 발화 안에 문장이 여러 개(그 중 하나만 결정)인 경우가 짧은 잡담들과 섞여 있음",
+  "speaker_names": {
+    "A": "하은",
+    "B": "도윤",
+    "C": "민재",
+    "D": "세영",
+    "E": "유진"
+  },
+  "turns": [
+    {
+      "speaker": "A",
+      "text": "좋은 아침입니다."
+    },
+    {
+      "speaker": "B",
+      "text": "네 안녕하세요."
+    },
+    {
+      "speaker": "C",
+      "text": "저는 어제 계속 디버깅했어요. 원인을 못 찾아서 좀 힘들었습니다. 오늘 다시 봐야 할 것 같아요."
+    },
+    {
+      "speaker": "D",
+      "text": "고생하셨네요."
+    },
+    {
+      "speaker": "A",
+      "text": "그럼 로그인 쪽 말씀드릴게요. 어제 디자인팀이랑 얘기했는데요, 마감을 이번 주 목요일로 하기로 했습니다."
+    },
+    {
+      "speaker": "E",
+      "text": "네 알겠습니다."
+    },
+    {
+      "speaker": "B",
+      "text": "저는 오늘 별다른 거 없어요."
+    },
+    {
+      "speaker": "C",
+      "text": "저도 그렇습니다."
+    },
+    {
+      "speaker": "A",
+      "text": "그럼 마치겠습니다."
+    }
+  ],
+  "expected": [
+    {
+      "text": "좋은 아침입니다.",
+      "should_flag": false,
+      "note": "인사"
+    },
+    {
+      "text": "네 안녕하세요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "저는 어제 계속 디버깅했어요.",
+      "should_flag": false,
+      "note": "긴 진행상황 보고, 결정 없음 (원래 한 발화가 문장 3개로 쪼개짐 1/3)"
+    },
+    {
+      "text": "원인을 못 찾아서 좀 힘들었습니다.",
+      "should_flag": false,
+      "note": "긴 진행상황 보고, 결정 없음 (2/3)"
+    },
+    {
+      "text": "오늘 다시 봐야 할 것 같아요.",
+      "should_flag": false,
+      "note": "긴 진행상황 보고, 결정 없음 (3/3)"
+    },
+    {
+      "text": "고생하셨네요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "그럼 로그인 쪽 말씀드릴게요.",
+      "should_flag": false,
+      "note": "긴 발화의 도입부 (원래 한 발화가 문장 2개로 쪼개짐 1/2), 결정 없음"
+    },
+    {
+      "text": "어제 디자인팀이랑 얘기했는데요, 마감을 이번 주 목요일로 하기로 했습니다.",
+      "should_flag": true,
+      "note": "긴 발화 안의 실제 결정 부분 (2/2)"
+    },
+    {
+      "text": "네 알겠습니다.",
+      "should_flag": false,
+      "note": "단순 맞장구"
+    },
+    {
+      "text": "저는 오늘 별다른 거 없어요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "저도 그렇습니다.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "그럼 마치겠습니다.",
+      "should_flag": false,
+      "note": "회의 진행"
+    }
+  ],
+  "counts_toward_pass_rate": true,
+  "meeting_duration_sec": 195.0
+}

@@ -1,0 +1,180 @@
+{
+  "case_id": "case_04",
+  "scenario": "signals_back_loaded",
+  "description": "긴 잡담/진행상황 뒤에 후반부에만 결정이 나옴 — 뒷부분까지 문맥 유지되는지 확인",
+  "speaker_names": {
+    "A": "하은",
+    "B": "도윤",
+    "C": "민재",
+    "D": "세영",
+    "E": "유진"
+  },
+  "turns": [
+    {
+      "speaker": "A",
+      "text": "좋은 아침입니다, 시작할까요."
+    },
+    {
+      "speaker": "B",
+      "text": "저는 어제 API 서버 배포 준비했어요."
+    },
+    {
+      "speaker": "C",
+      "text": "저도 프론트 쪽 빌드 이슈 좀 고쳤습니다."
+    },
+    {
+      "speaker": "D",
+      "text": "디자인은 거의 다 됐어요."
+    },
+    {
+      "speaker": "E",
+      "text": "테스트는 순조롭게 돌아가고 있습니다."
+    },
+    {
+      "speaker": "A",
+      "text": "다들 특별한 이슈는 없으신 거죠?"
+    },
+    {
+      "speaker": "B",
+      "text": "네 없습니다."
+    },
+    {
+      "speaker": "C",
+      "text": "저도 딱히 없어요."
+    },
+    {
+      "speaker": "D",
+      "text": "저도 마찬가지예요."
+    },
+    {
+      "speaker": "E",
+      "text": "오늘 점심 뭐 먹을지 다들 생각해두셨나요."
+    },
+    {
+      "speaker": "A",
+      "text": "저는 아직 안 정했어요."
+    },
+    {
+      "speaker": "B",
+      "text": "근처에 새로 생긴 식당 가볼까요."
+    },
+    {
+      "speaker": "C",
+      "text": "좋아요."
+    },
+    {
+      "speaker": "D",
+      "text": "아 맞다, 그러고 보니 결제 기능 마감을 다음 주 금요일로 늦추는 게 나을 것 같아요."
+    },
+    {
+      "speaker": "A",
+      "text": "네 그렇게 하시죠, 다음 주 금요일로 미루겠습니다."
+    },
+    {
+      "speaker": "E",
+      "text": "그리고 알림 기능 담당은 제가 맡을게요."
+    },
+    {
+      "speaker": "C",
+      "text": "네 알겠습니다."
+    },
+    {
+      "speaker": "B",
+      "text": "그럼 오늘 회의 마치겠습니다."
+    }
+  ],
+  "expected": [
+    {
+      "text": "좋은 아침입니다, 시작할까요.",
+      "should_flag": false,
+      "note": "인사"
+    },
+    {
+      "text": "저는 어제 API 서버 배포 준비했어요.",
+      "should_flag": false,
+      "note": "진행상황"
+    },
+    {
+      "text": "저도 프론트 쪽 빌드 이슈 좀 고쳤습니다.",
+      "should_flag": false,
+      "note": "진행상황"
+    },
+    {
+      "text": "디자인은 거의 다 됐어요.",
+      "should_flag": false,
+      "note": "진행상황"
+    },
+    {
+      "text": "테스트는 순조롭게 돌아가고 있습니다.",
+      "should_flag": false,
+      "note": "진행상황"
+    },
+    {
+      "text": "다들 특별한 이슈는 없으신 거죠?",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "네 없습니다.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "저도 딱히 없어요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "저도 마찬가지예요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "오늘 점심 뭐 먹을지 다들 생각해두셨나요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "저는 아직 안 정했어요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "근처에 새로 생긴 식당 가볼까요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "좋아요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "아 맞다, 그러고 보니 결제 기능 마감을 다음 주 금요일로 늦추는 게 나을 것 같아요.",
+      "should_flag": false,
+      "note": "질문/제안 — 아직 결정 아님"
+    },
+    {
+      "text": "네 그렇게 하시죠, 다음 주 금요일로 미루겠습니다.",
+      "should_flag": true,
+      "note": "일정 변경 결정(문맥 필요)"
+    },
+    {
+      "text": "그리고 알림 기능 담당은 제가 맡을게요.",
+      "should_flag": true,
+      "note": "담당자 자기지칭"
+    },
+    {
+      "text": "네 알겠습니다.",
+      "should_flag": false,
+      "note": "단순 맞장구"
+    },
+    {
+      "text": "그럼 오늘 회의 마치겠습니다.",
+      "should_flag": false,
+      "note": "회의 진행"
+    }
+  ],
+  "counts_toward_pass_rate": true,
+  "meeting_duration_sec": 393.0
+}

@@ -1,0 +1,99 @@
+{
+  "case_id": "case_11",
+  "scenario": "disagreement_then_consensus",
+  "description": "의견이 갈렸다가 합의로 마무리되는 회의 — 대립 발화는 제외하고 최종 합의만 잡는지",
+  "speaker_names": {
+    "A": "하은",
+    "B": "도윤",
+    "C": "민재",
+    "D": "세영",
+    "E": "유진"
+  },
+  "turns": [
+    {
+      "speaker": "A",
+      "text": "로그인 마감을 이번 주로 당기는 게 어떨까요."
+    },
+    {
+      "speaker": "B",
+      "text": "저는 그건 너무 촉박한 것 같아요."
+    },
+    {
+      "speaker": "C",
+      "text": "저도 동의해요, 다음 주가 나을 것 같습니다."
+    },
+    {
+      "speaker": "A",
+      "text": "음, 그럼 다들 그렇게 생각하시면 다음 주 화요일로 하겠습니다."
+    },
+    {
+      "speaker": "D",
+      "text": "네 그게 좋겠네요."
+    },
+    {
+      "speaker": "E",
+      "text": "저는 그동안 다른 작업 하고 있었어요."
+    },
+    {
+      "speaker": "B",
+      "text": "저도 딱히 이견 없습니다."
+    },
+    {
+      "speaker": "C",
+      "text": "그럼 다음 안건 갈까요."
+    },
+    {
+      "speaker": "A",
+      "text": "오늘은 여기까지 하겠습니다."
+    }
+  ],
+  "expected": [
+    {
+      "text": "로그인 마감을 이번 주로 당기는 게 어떨까요.",
+      "should_flag": false,
+      "note": "제안/질문"
+    },
+    {
+      "text": "저는 그건 너무 촉박한 것 같아요.",
+      "should_flag": false,
+      "note": "반대 의견 — 결정 아님"
+    },
+    {
+      "text": "저도 동의해요, 다음 주가 나을 것 같습니다.",
+      "should_flag": false,
+      "note": "반대 의견 — 결정 아님"
+    },
+    {
+      "text": "음, 그럼 다들 그렇게 생각하시면 다음 주 화요일로 하겠습니다.",
+      "should_flag": true,
+      "note": "최종 합의(문맥 필요)"
+    },
+    {
+      "text": "네 그게 좋겠네요.",
+      "should_flag": false,
+      "note": "단순 동의 — 이미 결정됨"
+    },
+    {
+      "text": "저는 그동안 다른 작업 하고 있었어요.",
+      "should_flag": false,
+      "note": "진행상황"
+    },
+    {
+      "text": "저도 딱히 이견 없습니다.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "그럼 다음 안건 갈까요.",
+      "should_flag": false,
+      "note": "회의 진행"
+    },
+    {
+      "text": "오늘은 여기까지 하겠습니다.",
+      "should_flag": false,
+      "note": "회의 진행"
+    }
+  ],
+  "counts_toward_pass_rate": true,
+  "meeting_duration_sec": 188.0
+}

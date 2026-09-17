@@ -38,6 +38,19 @@ _LUNA_SYSTEM_PROMPT = (
     "너는 회의/채팅 전사록에서 Notion 문서를 갱신할 만큼 의미 있는 발화만 골라내는 필터다. "
     "일정 합의, 담당자 관련 언급, 작업 범위 변경, 프로젝트 관련 결정은 포함하고, "
     "인사/잡담/맞장구/회의 진행 멘트(시작·마무리 인사, 발언 요청)는 제외한다. "
+    "이미 하고 있거나 끝낸 작업에 대한 단순 진행상황 공유(예: '저는 어제 로그인 API 붙였고요', "
+    "'디자인 시스템 정리하고 있어요')는 새로운 결정/변경이 아니라 FYI이므로 제외한다 — 그 "
+    "안에 새로운 일정/담당자/범위 결정이 실제로 포함된 경우에만 그 결정 부분을 포함한다. "
+    "질문 형태(예: ~ 어때요?, ~할 수 있어요?)나 제안/의견 형태(예: ~하는 게 나을 것 같아요, "
+    "~하면 좋겠어요)는 아직 결정된 게 아니므로 그 자체로는 포함하지 않는다 — 다만 그 제안에 "
+    "대한 답변/합의가 의미 있다면, 답변 쪽 발화에 제안 내용까지 반영해서 자기완결적으로 "
+    "요약한다. 질문/제안이 결론 없이 보류되면(예: '나중에 다시 얘기하죠') 둘 다 포함하지 않는다. "
+    "누군가 이미 말한 결정에 대해 다른 사람이 새 정보 없이 그대로 동의/재확인만 하는 발화"
+    "(예: '저도 그렇게 생각해요', '저도 그렇게 알고 있어요')는 제외한다 — 최초 결정 발화 "
+    "하나면 충분하다. "
+    "같은 회의 안에서 나중에 정정/번복되더라도, 정정 전 발화도 그 자체로 결정/합의였다면 "
+    "포함한다 — 어느 쪽이 최종본인지 판단하는 건 다음 단계의 몫이니 여기서 미리 하나만 "
+    "고르지 않는다. "
     "애매하면 포함시켜라 — 여기서 놓치면 다음 단계에서 검토할 기회가 아예 없어진다."
 )
 
@@ -82,6 +95,7 @@ def extract_findings_rules(transcript: Transcript) -> list[JudgeFinding]:
             findings.append(
                 JudgeFinding(
                     text=sentence,
+                    evidence=sentence,  # 재작성 능력이 없어서 원문 그대로(text와 동일)
                     source=transcript.source,
                     seq=seg.seq,
                     speaker=seg.speaker,
@@ -98,9 +112,10 @@ def _numbered_lines(sentences: list[str], speakers: list[str | None]) -> str:
 
 def _luna_user_prompt(numbered: str) -> str:
     return (
-        "다음은 번호가 매겨진 발화 목록이다. 의미 있다고 판단한 발화의 번호와, "
-        "왜 그렇게 판단했는지 짧은 이유를 JSON으로만 답하라.\n\n"
-        '형식: {"findings": [{"index": 0, "reason": "..."}]}\n\n'
+        "다음은 번호가 매겨진 발화 목록이다. 의미 있다고 판단한 발화마다 번호와, "
+        "앞뒤 문맥까지 반영해서 이 발화 하나만 읽어도 무슨 내용인지 알 수 있게 다시 쓴 "
+        "자기완결적 요약(summary), 왜 그렇게 판단했는지 짧은 이유(reason)를 JSON으로만 답하라.\n\n"
+        '형식: {"findings": [{"index": 0, "summary": "...", "reason": "..."}]}\n\n'
         f"{numbered}"
     )
 
@@ -126,9 +141,11 @@ def extract_findings_llm(transcript: Transcript, client: LLMClient) -> list[Judg
         idx = item.get("index")
         if not isinstance(idx, int) or not (0 <= idx < len(sentences)):
             continue  # Luna가 범위 밖 번호를 지어내면 그냥 무시 — 통째로 실패 처리하지 않는다
+        summary = str(item.get("summary", "")).strip()
         findings.append(
             JudgeFinding(
-                text=sentences[idx],
+                text=summary or sentences[idx],  # summary 비어있으면 원문으로 폴백
+                evidence=sentences[idx],
                 source=transcript.source,
                 seq=seqs[idx],
                 speaker=speakers[idx],

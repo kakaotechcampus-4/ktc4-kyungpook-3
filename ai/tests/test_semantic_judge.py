@@ -27,6 +27,7 @@ def test_commit_sentence_is_flagged():
     findings = extract_findings_rules(t)
     assert len(findings) == 1
     assert findings[0].text == "이번 주 금요일까지 로그인 화면 시안을 마무리하기로 했습니다."
+    assert findings[0].evidence == findings[0].text  # 규칙 기반은 재작성 안 하니 text == evidence
     assert findings[0].reason == "실행 의지/합의 종결 표현"
     assert findings[0].seq == 1
     assert findings[0].speaker == "mem_dongwoo"
@@ -81,25 +82,40 @@ def test_schedule_only_mention_is_flagged_generously():
 # ── extract_findings_llm (Luna) ──────────────────────────────────────────────
 
 
-def test_llm_path_maps_indices_back_to_seq_and_speaker():
+def test_llm_path_uses_summary_as_text_and_keeps_raw_sentence_as_evidence():
     t = _transcript(
-        TranscriptSegment(speaker="mem_dongwoo", start=0.0, end=1.0, text="그거 좋은데요.", seq=5),
-        TranscriptSegment(speaker="mem_jimin", start=1.0, end=2.0, text="그럼 그렇게 갑시다.", seq=6),
+        TranscriptSegment(speaker="mem_wonjun", start=0.0, end=1.0,
+                           text="로그인 화면 마감을 다음 주 화요일로 미루는 게 어때요?", seq=5),
+        TranscriptSegment(speaker="mem_jimin", start=1.0, end=2.0, text="네, 알겠습니다.", seq=6),
     )
-    fake = FakeLLM(responses=[{"findings": [{"index": 1, "reason": "합의 표현(문맥상)"}]}])
+    fake = FakeLLM(responses=[{"findings": [
+        {"index": 1, "summary": "로그인 화면 마감을 다음 주 화요일로 연기하는 데 동의함", "reason": "일정 변경 합의"}
+    ]}])
     findings = extract_findings_llm(t, fake)
 
     assert findings == [
         JudgeFinding(
-            text="그럼 그렇게 갑시다.",
+            text="로그인 화면 마감을 다음 주 화요일로 연기하는 데 동의함",
+            evidence="네, 알겠습니다.",
             source="meeting",
             seq=6,
             speaker="mem_jimin",
-            reason="합의 표현(문맥상)",
+            reason="일정 변경 합의",
             method="llm",
         )
     ]
     assert len(fake.prompts) == 1  # 문장마다가 아니라 전사록 전체를 한 번에 넣었는지 확인
+
+
+def test_llm_path_falls_back_to_raw_sentence_when_summary_missing():
+    t = _transcript(
+        TranscriptSegment(speaker="mem_dongwoo", start=0.0, end=1.0, text="그럼 그렇게 갑시다.", seq=6)
+    )
+    fake = FakeLLM(responses=[{"findings": [{"index": 0, "reason": "합의 표현(문맥상)"}]}])  # summary 없음
+    findings = extract_findings_llm(t, fake)
+
+    assert findings[0].text == "그럼 그렇게 갑시다."
+    assert findings[0].evidence == "그럼 그렇게 갑시다."
 
 
 def test_llm_path_ignores_out_of_range_indices():

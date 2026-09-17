@@ -1,0 +1,126 @@
+{
+  "case_id": "case_10",
+  "scenario": "chat_style_short_messages",
+  "description": "회의가 아니라 텍스트 채팅(source=chat) — 짧고 캐주얼한 메시지들 사이에서도 결정을 잡는지",
+  "speaker_names": {
+    "A": "하은",
+    "B": "도윤",
+    "C": "민재",
+    "D": "세영",
+    "E": "유진"
+  },
+  "turns": [
+    {
+      "speaker": "A",
+      "text": "다들 안녕하세요"
+    },
+    {
+      "speaker": "B",
+      "text": "네넹"
+    },
+    {
+      "speaker": "C",
+      "text": "안뇽하세요"
+    },
+    {
+      "speaker": "A",
+      "text": "로그인 마감 이번주 금욜로 당길게요"
+    },
+    {
+      "speaker": "D",
+      "text": "ㅇㅋㅇㅋ"
+    },
+    {
+      "speaker": "B",
+      "text": "저는 그냥 코드 정리 중"
+    },
+    {
+      "speaker": "C",
+      "text": "저도 별일 없어요"
+    },
+    {
+      "speaker": "E",
+      "text": "결제쪽 담당 제가 할게요"
+    },
+    {
+      "speaker": "A",
+      "text": "ㄱㅅㄱㅅ"
+    },
+    {
+      "speaker": "D",
+      "text": "점심 뭐드실?"
+    },
+    {
+      "speaker": "B",
+      "text": "아무거나요"
+    },
+    {
+      "speaker": "C",
+      "text": "저는 김밥ㅋㅋ"
+    }
+  ],
+  "expected": [
+    {
+      "text": "다들 안녕하세요",
+      "should_flag": false,
+      "note": "인사"
+    },
+    {
+      "text": "네넹",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "안뇽하세요",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "로그인 마감 이번주 금욜로 당길게요",
+      "should_flag": true,
+      "note": "일정 결정(채팅체)"
+    },
+    {
+      "text": "ㅇㅋㅇㅋ",
+      "should_flag": false,
+      "note": "단순 맞장구"
+    },
+    {
+      "text": "저는 그냥 코드 정리 중",
+      "should_flag": false,
+      "note": "진행상황"
+    },
+    {
+      "text": "저도 별일 없어요",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "결제쪽 담당 제가 할게요",
+      "should_flag": true,
+      "note": "담당자 자기지칭(채팅체)"
+    },
+    {
+      "text": "ㄱㅅㄱㅅ",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "점심 뭐드실?",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "아무거나요",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "저는 김밥ㅋㅋ",
+      "should_flag": false,
+      "note": "잡담"
+    }
+  ],
+  "counts_toward_pass_rate": true,
+  "meeting_duration_sec": 275.0
+}
