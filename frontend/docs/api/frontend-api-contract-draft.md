@@ -5,7 +5,7 @@
 - 개발 계획의 M1-A 산출물
 
 §2 와 §3 은 `backend/app` 을 읽고 적은 **사실**이다. §4 는 백엔드에 요청하는 것이며, 그중 형태는 프론트엔드의 가정이라 실제 API 와 다를 수 있다.
-백엔드를 향한 요청은 **§4 한 절**에 모았다.
+백엔드를 향한 요청은 **§4 한 절**에 모았다. 각 화면이 무엇을 호출하는지는 §5 에 있다.
 
 > **기준 커밋을 반드시 확인하고 읽을 것.** 이 문서의 이전 판은 하루 낡은 `develop` 을 보고 쓰여
 > 이미 구현된 엔드포인트를 신규 요청으로 적는 오류가 있었다. 백엔드는 빠르게 움직인다.
@@ -55,7 +55,7 @@ TASK_HISTORY_ALREADY_ROLLED_BACK(409)
 INTERNAL_ERROR(500)
 ```
 
-§4 의 신규 API 에 필요한 코드는 §4.8 에 적었다.
+§4 의 신규 API 에 필요한 코드는 §4.9 에 적었다.
 
 ---
 
@@ -114,7 +114,7 @@ INTERNAL_ERROR(500)
 
 - `alias_type` 은 `realname` \| `nickname` \| `mention` \| `inferred`, `source` 는 `manual` \| `discord_profile` \| `learned`.
 - **`unresolved-aliases` 는 Discord 서버의 사용자 목록이 아니다.** 회의 전사에서 감지됐지만 매칭되지 않은 **이름 문자열**이다. `alias_resolution_log` 에서 집계하며 이미 별칭으로 등록된 것은 빠진다.
-- 따라서 **팀원 연결 화면의 데이터 출처가 D-026 의 전제와 다르다** → §4.7 의 질문 1번.
+- 따라서 **팀원 연결 화면의 데이터 출처가 D-026 의 전제와 다르다** → §4.5 에서 엔드포인트 하나를 요청한다.
 - Discord 사용자 식별자는 `member.discord_user_id` 에 팀원당 하나씩 붙는다.
 
 ### 2.3 meetings — 봇 경로
@@ -140,7 +140,7 @@ INTERNAL_ERROR(500)
 
 - `status` 는 `created` → `recording` → `processing` → `done` \| `failed`.
 - `extraction_id` 는 `status: done` 일 때만 채워진다.
-- **`progress`(audio_merged·transcribed·extracted) 가 응답에서 빠졌다.** 모델에는 남아 있지만 API 가 내려주지 않는다. 진행률 UI 는 현재 `status` 밖에 쓸 것이 없다 → §4.6 증분 요청.
+- **`progress`(audio_merged·transcribed·extracted) 가 응답에서 빠졌다.** 모델에는 남아 있지만 API 가 내려주지 않는다. 진행률 UI 는 현재 `status` 밖에 쓸 것이 없다 → §4.7 증분 요청.
 - 이미 종료된 회의에 `/end` 를 호출하면 409 `MEETING_ALREADY_ENDED`.
 
 ### 2.4 extractions
@@ -335,20 +335,21 @@ INTERNAL_ERROR(500)
   페이지네이션이 없으니 `GET /tasks?workspace_id=` 로 전량을 받아 **클라이언트에서 필터링한다.**
 - `막힌 일 N` 은 탭이 아니라 대시보드 집계다. `status` 가 `blocked` 인 것을 센다 (D-056).
 - `전체` 탭 병합은 PM 화면에만 적용된다. 일반 팀원은 승인 요청을 조회하지 않는다 (D-163).
-- 이 매핑은 제품 결정이 나오면 교체한다. §7 참조.
+- 이 매핑은 제품 결정이 나오면 교체한다. §8 참조.
 
 ---
 
 ## 4. 백엔드 요청
 
-**이 절만 백엔드를 향한다.** §1~§3 은 이미 구현된 것이고, §5~§7 은 프론트엔드 내부 규약이다.
+**이 절만 백엔드를 향한다.** §1~§3 은 이미 구현된 것이고, §5~§8 은 프론트엔드가 지킬 규약이다.
 
 원칙은 D-160 이다. 이미 구현된 엔드포인트와 스키마의 **변경·삭제·이름 변경을 요청하지 않는다.**
 요청은 추가이거나 기존 필드의 의미 확정에 그친다.
 
 - **§4.1~§4.5** — 코드에 아예 없는 API. 형태는 프론트엔드의 가정이다.
-- **§4.6** — 이미 있는 것에 붙이는 증분.
-- **§4.7** — 프론트엔드가 단독으로 정할 수 없는 질문.
+- **§4.6** — 이전 판에서 요청했다가 **철회**하는 것.
+- **§4.7** — 이미 있는 것에 붙이는 증분 5건.
+- **§4.8** — 프론트엔드가 답을 기다리지 않고 고정한 가정 4건.
 
 ### 4.1 auth
 
@@ -475,39 +476,59 @@ POST .../meetings/upload            multipart/form-data
 - `speaker_display_name` 이 `null` 이면 `speaker_fallback` 으로 표시한다 (D-028).
 - 일반 팀원에게 `확인 필요` 영역을 숨긴다. **개수와 존재 여부도 노출하지 않는다** (D-104). 프론트엔드가 `approval_id` 가 있는 항목을 걸러 낸다.
 
-### 4.5 dashboard
+### 4.5 Discord 서버 사용자 목록
+
+팀원 연결 화면(온보딩 4단계)의 데이터 출처가 없다. **엔드포인트 하나만 추가해 달라.**
 
 | Method | Path |
 |---|---|
-| GET | `/api/v1/workspaces/{workspace_id}/dashboard` |
-
-**집계 엔드포인트 하나여야 한다.** 목록에 5개만 보여도 상단 숫자는 워크스페이스 전체 개수다 (D-052~D-054).
+| GET | `/api/v1/workspaces/{workspace_id}/discord/members` |
 
 ```jsonc
-{"summary": {"needs_review_count": 12, "overdue_count": 3,
-             "due_in_7days_count": 4, "blocked_count": 2},
- "needs_review": {"items": [], "total": 12},
- "due_soon":     {"items": [], "total": 7},
- "recent_applied": {
-   "meeting": {"meeting_id": "mt_09", "title": "3주차 정기회의",
-               "processed_at": "2026-09-15T06:12:00Z", "duration_ms": 2730000},
-   "items": [{"history_id": "hs_01", "task_id": "tk_04", "title": "디자인 토큰 정리",
-              "changed_field": "assignee", "applied_at": "2026-09-15T06:12:00Z",
-              "is_rolled_back": false}],
-   "total": 8,
-   "empty_reason": null},
- "latest_meeting": {"meeting_id": "mt_09", "title": "...", "duration_ms": 2730000}}
+{"items": [{"discord_user_id": "1123...",
+            "username": "seoyeon_01",
+            "display_name": "서연",        // Discord 서버 별명, 없으면 null
+            "avatar_url": "https://cdn.discordapp.com/...",
+            "is_bot": false}],
+ "total": 7}
 ```
 
-- `needs_review.items` 는 **§2.5 의 승인 요청 형태**, `due_soon.items` 는 **§2.6 의 태스크 형태**다. 서로 다른 리소스다.
-- 상단 요약 순서는 `확인 대기`, `기한 지남`, `7일 이내 마감`, `막힌 일` (D-055). 앞 셋은 클릭할 수 없다 (D-061).
-- `due_in_7days_count` 는 오늘 포함 7일이며 **기한 지남을 포함하지 않는다** (D-053, D-054).
-- `needs_review.items` 는 최대 5개, 대기 오래된 순 (D-050, D-051). `due_soon.items` 는 최대 5개, 기한 지남 먼저 그다음 마감 가까운 순 (D-044, D-045).
-- `recent_applied` 는 가장 최근 회의록 1건만, 최대 3개 (D-038, D-039). 되돌리기는 §2.6 의 rollback 을 쓴다.
-- **`empty_reason`** 은 `null`, `no_meeting`, `no_applied_items`, `notion_not_connected` 4가지다 (D-041, D-042).
-- `latest_meeting` 은 처리된 회의가 없으면 `null` (D-065).
+- 연결된 Discord 서버의 현재 사용자 목록이다. 봇은 `is_bot: true` 로 표시해 프론트엔드가 거른다.
+- Discord 미연결이면 409 `INTEGRATION_NOT_CONNECTED`.
 
-### 4.6 기존 구현에 대한 증분 요청 — 5건
+**매핑은 새 엔드포인트가 필요 없다.** 기존 것을 그대로 쓴다.
+
+| 동작 | 호출 |
+|---|---|
+| 팀원 생성과 동시에 Discord 사용자 연결 | `POST /api/v1/members` `{workspace_id, display_name, discord_user_id}` |
+| 이미 있는 팀원에 연결 | `PATCH /api/v1/members/{member_id}` `{discord_user_id}` |
+| 연결 해제 | `PATCH /api/v1/members/{member_id}` `{discord_user_id: null}` |
+| 매핑 현황 | `GET /api/v1/members?workspace_id=` 의 `discord_user_id` 와 위 목록을 클라이언트에서 조인 |
+
+- 한 Discord 사용자가 두 팀원에 붙지 않도록 **`member.discord_user_id` 에 워크스페이스 범위 유일 제약**을 걸어 달라 (D-027). 위반은 409 `DISCORD_USER_ALREADY_MAPPED`.
+- 부분 매핑을 허용한다. 일부만 연결한 상태로 저장하고 온보딩을 완료할 수 있다 (D-029).
+- 서버를 나간 사용자는 이 목록에서 빠지지만 `member` 행과 과거 회의록의 화자 정보는 남는다 (D-031). 프론트엔드가 `members` 에는 있고 Discord 목록에는 없는 사용자를 `비활성` 으로 표시한다.
+- 신규 사용자는 이 목록에 자동으로 나타난다 (D-030).
+
+**`GET /members/unresolved-aliases` 는 이 화면이 아니다.**
+그 API 는 회의 전사에서 감지됐지만 팀원과 연결되지 않은 **이름 문자열**을 준다(§2.2). 회의를 한 번도 돌리지 않은 온보딩 시점에는 비어 있다.
+운영 중 `워크스페이스 설정 > 팀원` 에서 **회의에 나왔지만 매칭 안 된 이름**을 보여주고 `POST /members/{member_id}/aliases` 로 붙이는 보조 화면에 쓴다. 두 화면은 목적이 다르다.
+
+### 4.6 대시보드 — 요청하지 않는다
+
+이전 판은 `GET /workspaces/{id}/dashboard` 집계 엔드포인트를 요청했다. **철회한다.**
+
+목록 API 에 페이지네이션이 없어 전량이 오므로, 상단 숫자 4개와 두 목록을 **프론트엔드가 기존 API 로 계산할 수 있다.** 계산 방법은 §5.4 에 적었다.
+
+집계 API 를 요청했던 이유는 `목록에는 5개만 보여도 상단 숫자는 전체 개수여야 한다`(D-052~D-054) 였는데, 전량이 오면 이 문제가 성립하지 않는다.
+
+- `GET /approvals?workspace_id=&status=pending` 의 `total` 이 필터를 반영한다.
+- `GET /tasks?workspace_id=` 가 워크스페이스의 태스크 전량을 준다.
+
+대시보드에 추가로 필요한 것은 **회의 목록(§4.4)뿐**이며 그것은 이미 요청 중이다.
+데이터가 커져 페이지네이션이 도입되면 이 판단을 다시 한다(§8).
+
+### 4.7 기존 구현에 대한 증분 요청 — 5건
 
 | # | 대상 | 현재 | 요청 | 이유 |
 |---|---|---|---|---|
@@ -519,19 +540,20 @@ POST .../meetings/upload            multipart/form-data
 
 되돌리기는 요청 목록에서 빠졌다. `POST /tasks/{task_id}/history/{history_id}/rollback` 이 **이미 구현돼 있다**(§2.6).
 
-### 4.7 백엔드 답이 필요한 것 — 2건
+### 4.8 프론트엔드가 고정한 가정
 
-1. **팀원 연결 화면의 데이터 출처.**
-   D-026 은 `연결된 Discord 서버에서 사용자 목록을 자동으로 불러온다` 를 전제한다. 그런데 `GET /members/unresolved-aliases` 는 **회의 전사에서 감지된 미매칭 이름**을 돌려주지 온보딩 시점의 Discord 서버 멤버 목록이 아니다.
-   회의를 한 번도 돌리지 않은 온보딩 단계에서는 이 목록이 비어 있다.
-   Discord 서버 사용자 목록을 주는 경로를 추가할지, 아니면 화면을 alias 기반으로 다시 설계할지 정해야 한다. 후자면 D-026·D-028·D-030 을 개정한다.
+백엔드가 답을 주기를 기다리지 않고 프론트엔드가 정했다. **다르면 알려 달라.** 고칠 범위는 `entities` 계층이다.
 
-2. **Notion 반영 여부의 판단 근거.**
-   `task.notion_page_id` 가 채워진 것을 반영 완료로 봐도 되는지. 회의록 상세와 대시보드 `최근 반영` 에 반영 시각과 Notion URL 이 필요하다.
+| # | 항목 | 고정한 내용 | 근거 |
+|---|---|---|---|
+| 1 | Notion 반영 여부 | `task.notion_page_id` 가 `null` 이 아니면 반영 완료로 본다 | 다른 판단 근거가 스키마에 없다 |
+| 2 | Notion 반영 시각 | 별도 필드를 요청하지 않는다. `task_history` 의 해당 변경 시각을 쓴다 | 반영은 태스크 변경과 함께 일어난다 |
+| 3 | Notion URL | 요청하지 않는다. `notion_page_id` 로 프론트엔드가 URL 을 만든다 | 페이지 ID 만으로 링크가 성립한다 |
+| 4 | `todo`·`blocked` 가 속할 탭 | 완료가 아닌 태스크를 모두 `진행 중` 탭에 넣는다 | 시안의 탭 개수 `13 = 3 + 7 + 3` (§3.2) |
 
-> 이전 판에서 물었던 `approval_request.payload` 의 형태와 `승인 시 task 생성 주체` 는 **코드에 답이 있어 질문에서 뺐다.** §2.5 와 §3.1 에 사실로 적었다.
+3번이 틀리면(예: 워크스페이스마다 도메인이 다르다) 링크만 깨진다. 화면은 그대로 동작한다.
 
-### 4.8 신규 API 에 필요한 오류 코드
+### 4.9 신규 API 에 필요한 오류 코드
 
 §4.1~§4.5 에서 쓴다. 이름과 상태 코드는 제안이며 백엔드가 조정해도 된다.
 
@@ -547,7 +569,179 @@ MEETING_PROCESSING_IN_PROGRESS(409)   AUDIO_TOO_LARGE(413)
 
 ---
 
-## 5. 도메인 모델
+## 5. 화면별 데이터 요구
+
+§1~§4 는 API 중심이다. 이 절은 그 역방향으로, **각 화면이 무엇을 몇 번 호출하는지** 적는다.
+MSW 픽스처의 단위이자 M1-C 의 작업 단위이기도 하다.
+
+범위는 D-001 의 1차 개발 8개 영역이다. `구현됨` 은 §2, `요청 중` 은 §4 를 가리킨다.
+
+### 5.1 랜딩 · 로그인 · 회원가입
+
+| 화면 | 호출 | 상태 |
+|---|---|---|
+| 랜딩 | 없음 | — |
+| 로그인 | `POST /auth/login` | 요청 중 §4.1 |
+| 회원가입 | `POST /auth/signup` | 요청 중 §4.1 |
+| Google 로그인 | `GET /auth/google/start?state=` 로 **페이지 이동** | 요청 중 §4.1 |
+| 앱 부팅 | `GET /auth/me` | 요청 중 §4.1 |
+
+- 랜딩은 데모 기능을 넣지 않으므로 호출이 없다 (D-002).
+- 로그인 응답의 `workspace_count` 로 이동을 분기한다. `0` 이면 온보딩, `1` 이면 대시보드, `2` 이상이면 선택 화면 (D-010).
+
+### 5.2 워크스페이스 선택 · 온보딩
+
+| 화면 | 호출 | 상태 |
+|---|---|---|
+| 워크스페이스 선택 | `GET /workspaces` | 구현됨 §2.1 + 사용자 스코프·역할 요청 §4.2 |
+| 워크스페이스 만들기 | `POST /workspaces` `{name}` | **구현됨** §2.1 |
+| 온보딩 진행 상태 | `GET /workspaces/{id}` 의 `onboarding` | 요청 중 §4.2 |
+| 단계 건너뛰기·완료 | `PATCH /workspaces/{id}/onboarding` | 요청 중 §4.2 |
+
+- 생성은 이름 하나만 보낸다. **이미 그렇게 구현돼 있다** (D-014, D-153).
+- 미완료 워크스페이스는 목록에서 표시를 달리하고 대시보드 접근을 막는다 (D-070, D-071).
+
+### 5.3 Discord · Notion · 팀원 연결
+
+| 화면 | 호출 | 상태 |
+|---|---|---|
+| 연결 상태 표시 | `GET /workspaces/{id}/integrations` | 요청 중 §4.3 |
+| Discord·Notion 연결 | `GET .../integrations/{provider}/start?state=` 로 **페이지 이동** | 요청 중 §4.3 |
+| 연결 해제 | `DELETE .../integrations/{provider}` | 요청 중 §4.3 |
+| 팀원 연결 — 목록 | `GET /workspaces/{id}/discord/members` + `GET /members?workspace_id=` | 요청 중 §4.5 / 구현됨 §2.2 |
+| 팀원 연결 — 매핑 | `POST /members` 또는 `PATCH /members/{id}` | **구현됨** §2.2 |
+
+**팀원 연결 화면의 조립** — 두 목록을 `discord_user_id` 로 조인한다.
+
+```
+GET /workspaces/{id}/discord/members   →  Discord 서버의 사용자 전체
+GET /members?workspace_id=             →  이미 만든 팀원 (discord_user_id 보유)
+
+행 = Discord 사용자 1명
+  members 에 같은 discord_user_id 가 있으면  → 연결됨, 팀원 이름 표시
+  없으면                                     → 미연결, username 표시 (D-028)
+members 에만 있고 Discord 목록에 없으면      → 비활성 (서버를 나감, D-031)
+```
+
+### 5.4 대시보드
+
+**집계 API 없이 기존 API 로 조립한다** (§4.6). 진입 시 호출은 4번이다.
+
+```
+1. GET /api/v1/tasks?workspace_id=            태스크 전량
+2. GET /api/v1/approvals?workspace_id=&status=pending   확인 필요 전량
+3. GET /api/v1/workspaces/{id}/meetings       회의 목록        (요청 중 §4.4)
+4. GET /api/v1/members?workspace_id=          담당자 이름 조인용
+```
+
+상단 요약 4개 (D-052~D-055):
+
+| 숫자 | 계산 |
+|---|---|
+| 확인 대기 | 2번 응답의 `total` |
+| 기한 지남 | 1번에서 `status !== "done" && due_date < 오늘` |
+| 7일 이내 마감 | 1번에서 `status !== "done" && 오늘 <= due_date <= 오늘+6일` |
+| 막힌 일 | 1번에서 `status === "blocked"` |
+
+- `기한 지남` 과 `7일 이내 마감` 은 조건이 겹치지 않아 중복 집계가 없다 (D-054).
+
+본문 세 영역:
+
+| 영역 | 조립 |
+|---|---|
+| 확인이 필요한 일 | 2번을 `created_at` **오름차순**으로 정렬해 5개 (D-050, D-051) |
+| 마감 임박 | 1번에서 기한 지남 먼저, 그다음 마감 가까운 순으로 5개 (D-044, D-045) |
+| 최근 반영 | 아래 |
+
+`최근 반영` 은 가장 최근 회의 1건 기준이다 (D-038).
+
+```
+3번에서 status="done" 인 최신 회의 1건
+  → GET /meetings/{meeting_id}          extraction_id 획득 (구현됨 §2.3)
+  → GET /extractions/{extraction_id}    항목 중 gate="auto" 인 것 = 자동 반영분
+  → 상위 3개의 task_id 로
+     GET /tasks/{task_id}/history        is_rolled_back 확인 (최대 3회)
+```
+
+- 되돌리기는 `POST /tasks/{task_id}/history/{history_id}/rollback` 이다. **이미 구현돼 있다** (§2.6).
+- 빈 상태 원인 3갈래 (D-041, D-042):
+
+| 원인 | 판정 |
+|---|---|
+| `no_meeting` | 3번이 비었다 |
+| `no_applied_items` | 최신 회의에 `gate="auto"` 항목이 없다 |
+| `notion_not_connected` | `GET .../integrations` 의 notion 이 `connected` 가 아니다 |
+
+- 호출이 늘어나는 구간은 `최근 반영` 뿐이고 최대 3회다. 표시 개수가 3개로 묶여 있어 늘어나지 않는다 (D-039).
+
+### 5.5 회의 업로드 · 정리 중 · 회의록
+
+| 화면 | 호출 | 상태 |
+|---|---|---|
+| 회의 올리기 진입 가드 | `GET /workspaces/{id}/integrations` 로 Notion 연결 확인 | 요청 중 §4.3 |
+| 참석자 선택 | `GET /members?workspace_id=` | **구현됨** §2.2 |
+| 업로드 | `POST /workspaces/{id}/meetings/upload` (multipart) | 요청 중 §4.4 |
+| 정리 중 — 폴링 | `GET /meetings/{meeting_id}` | 구현됨 §2.3 + `progress` 복구 요청 §4.7 |
+| 회의록 목록 | `GET /workspaces/{id}/meetings` | 요청 중 §4.4 |
+| 회의록 본문 | `GET /meetings/{meeting_id}/minutes` | 요청 중 §4.4 |
+| 회의록의 태스크 영역 | `GET /extractions/{extraction_id}` | **구현됨** §2.4 |
+
+- Notion 미연결이면 업로드 화면으로 보내지 않고 차단 모달을 띄운다 (D-097).
+- 회의록 상세의 `반영된 태스크` 와 `확인이 필요한 일` 은 **`minutes` 가 아니라 `extractions` 에서 온다.** 항목이 `task_id`·`approval_id` 를 배타적으로 들고 있다 (§2.4, §3.1).
+- 일반 팀원에게는 `approval_id` 가 있는 항목을 화면에서 제거한다. 개수도 노출하지 않는다 (D-104).
+- 정리 실패 시 회의록 페이지로 이동하고 토스트를 띄운다. 실패한 회의는 목록에 없다 (D-091~D-093).
+
+### 5.6 태스크 목록 · 보드 · 캘린더 · 간트
+
+| 화면 | 호출 | 상태 |
+|---|---|---|
+| 목록 — 전체·진행 중·완료 | `GET /tasks?workspace_id=` **전량 1회** | **구현됨** §2.6 |
+| 목록 — 확인 필요 | `GET /approvals?workspace_id=&status=pending` | **구현됨** §2.5 |
+| 담당자 이름 | `GET /members?workspace_id=` | **구현됨** §2.2 |
+| 태스크 상세 | `GET /tasks/{task_id}` + `GET /tasks/{task_id}/history` | **구현됨** §2.6 |
+| 태스크 수정 | `PATCH /tasks/{task_id}` | **구현됨** §2.6 |
+| 확인 필요 상세 | `GET /approvals/{approval_id}` | **구현됨** §2.5 |
+| 승인·반려 | `PATCH /approvals/{approval_id}` | **구현됨** §2.5 |
+| 캘린더 | `GET /tasks?workspace_id=&due_after=&due_before=` | **구현됨** §2.6 |
+
+- 탭 필터링은 클라이언트에서 한다 (D-166, §3.2).
+- 승인 직후 `GET /approvals` 와 `GET /tasks` 를 모두 다시 조회한다. 승인이 태스크를 만든다 (§3.1).
+- **보드와 간트는 결정 대기다.** 컬럼 정의와 기간 표현이 정해지지 않았다. 조회는 캘린더와 같은 API 로 가능할 것으로 본다.
+
+### 5.7 메시지
+
+**전체가 결정 대기다.** 제품 결정이 D-106 까지만 있고 메시지 화면 정책이 없다.
+백엔드에도 관련 리소스가 없다. 1차 착수 대상에서 뺀다.
+
+### 5.8 워크스페이스 관리 · 설정
+
+| 화면 | 호출 | 상태 |
+|---|---|---|
+| 연결 상태·해제 | `GET`·`DELETE /workspaces/{id}/integrations` | 요청 중 §4.3 |
+| 팀원 목록·수정 | `GET /members?workspace_id=`, `PATCH /members/{id}` | **구현됨** §2.2 |
+| 미매칭 이름 붙이기 | `GET /members/unresolved-aliases`, `POST /members/{id}/aliases` | **구현됨** §2.2 |
+| 별칭 삭제 | `DELETE /members/aliases/{alias_id}` | **구현됨** §2.2 |
+| 건너뛴 온보딩 마저 하기 | 5.3 과 같다 | |
+
+- `unresolved-aliases` 가 쓰이는 곳이 여기다. 온보딩의 팀원 연결과 목적이 다르다 (§4.5).
+- 그 밖의 설정 항목은 결정 대기다.
+
+### 착수 가능 여부 요약
+
+| 영역 | M1 착수 | 막는 것 |
+|---|---|---|
+| 5.4 대시보드 | **가능** | 회의 목록만 mock |
+| 5.6 태스크 (목록·상세·확인 필요) | **가능** | 없음 — 전부 구현됨 |
+| 5.8 워크스페이스 설정 (팀원 부분) | **가능** | 없음 |
+| 5.2 워크스페이스 선택·온보딩 | 가능 | 온보딩 상태를 mock |
+| 5.3 연결 화면 | 가능 | 전부 mock |
+| 5.5 회의 | 가능 | 업로드·회의록 본문 mock |
+| 5.1 로그인 | 가능 | 전부 mock |
+| 5.6 보드·간트 / 5.7 메시지 | **불가** | 제품 결정 없음 |
+
+---
+
+## 6. 도메인 모델
 
 화면은 DTO 를 직접 참조하지 않는다. `entities` 계층에서만 DTO 를 다루고 변환한다 (D-133, D-134).
 `pages`·`widgets`·`features` 에서 DTO 타입을 import 하지 않으며 ESLint `no-restricted-imports` 로 강제한다.
@@ -574,7 +768,7 @@ MEETING_PROCESSING_IN_PROGRESS(409)   AUDIO_TOO_LARGE(413)
 
 ---
 
-## 6. MSW
+## 7. MSW
 
 - 로컬 개발·Vitest·Storybook 이 같은 핸들러를 공유한다. production 번들에서 제외한다 (D-146).
 - 정상 응답이 기본이다. 빈 상태·권한 오류·검증 오류·서버 오류·느린 응답은 테스트와 Story 에서 개별 override 한다.
@@ -591,24 +785,29 @@ MEETING_PROCESSING_IN_PROGRESS(409)   AUDIO_TOO_LARGE(413)
 
 ---
 
-## 7. 결정 대기
+## 8. 결정 대기
 
-**가정으로 고정한 것 1건.** 실제 결정이 나오면 교체하고, 그때 고칠 범위는 `entities` 계층이다.
+가정으로 고정한 것은 §4.8 에 4건 있다. 답을 기다리지 않고 진행하며, 틀리면 `entities` 계층만 고친다.
 
-- **`todo` 와 `blocked` 가 속할 탭** (§3.2). 완료가 아닌 태스크를 모두 `진행 중` 에 넣는다고 가정했다. 시안의 탭 개수 `13 = 3 + 7 + 3` 이 근거이며 제품 결정은 없다.
+**M1 을 막는 것 — 제품 결정이 필요하다.**
 
-**아직 손대지 않은 것.**
+- **태스크 보드의 컬럼 정의.** 어떤 축으로 나눌지 정해지지 않았다 (§5.6).
+- **간트차트의 기간 표현.** 태스크에 시작일이 없고 `due_date` 만 있다 (§5.6).
+- **메시지 화면 전반.** 제품 결정도 백엔드 리소스도 없다 (§5.7).
+
+세 가지 모두 **나머지 화면의 착수를 막지 않는다.** §5 의 착수 가능 여부 요약 참조.
+
+**M1 을 막지 않지만 남아 있는 것.**
 
 - 태스크 목록의 정렬·페이지네이션 정책. 현재 백엔드는 페이지네이션이 없고 정렬이 고정이다.
-- 보드·캘린더·간트차트 전용 조회. `due_before` / `due_after` 가 캘린더용으로 이미 있다.
-- 메시지 전반.
-- 워크스페이스 관리·설정의 개별 항목.
-- 팀원 연결 화면의 데이터 출처 (§4.7 1번의 답에 따라 D-026·D-028·D-030 개정 여부가 갈린다).
+  도입되면 §3.2 의 탭 필터링, §4.6 의 대시보드 조립, D-161 의 `전체` 탭 병합이 **함께** 깨진다.
+- 워크스페이스 관리·설정의 개별 항목. 팀원 부분은 §5.8 에서 확정했다.
+- 로그아웃의 동작과 이동 경로. 이를 정한 결정이 없다 (D-165).
 
 ---
 
 ## 참고
 
-- 결정 기록: `frontend/docs/decision/frontend-decisions.md` (특히 D-160~D-166)
+- 결정 기록: `frontend/docs/decision/frontend-decisions.md` (특히 D-160~D-168)
 - 개발 계획: `frontend/docs/plan/frontend-development-plan.md`
 - 백엔드 실행과 Swagger: `backend/README.md`
