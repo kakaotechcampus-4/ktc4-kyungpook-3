@@ -4,8 +4,8 @@
 - **기준 커밋: `origin/develop` `3dab0a1`** (PR #38 병합 이후)
 - 개발 계획의 M1-A 산출물
 
-§2 와 §3 은 `backend/app` 을 읽고 적은 **사실**이다. §4 는 코드에 없어 프론트엔드가 가정한 것이며 실제 API 와 다를 수 있다.
-백엔드를 향한 요청은 **§5 한 절**에 모았다.
+§2 와 §3 은 `backend/app` 을 읽고 적은 **사실**이다. §4 는 백엔드에 요청하는 것이며, 그중 형태는 프론트엔드의 가정이라 실제 API 와 다를 수 있다.
+백엔드를 향한 요청은 **§4 한 절**에 모았다.
 
 > **기준 커밋을 반드시 확인하고 읽을 것.** 이 문서의 이전 판은 하루 낡은 `develop` 을 보고 쓰여
 > 이미 구현된 엔드포인트를 신규 요청으로 적는 오류가 있었다. 백엔드는 빠르게 움직인다.
@@ -55,7 +55,7 @@ TASK_HISTORY_ALREADY_ROLLED_BACK(409)
 INTERNAL_ERROR(500)
 ```
 
-§4 의 신규 API 에 필요한 코드는 §5.3 에 적었다.
+§4 의 신규 API 에 필요한 코드는 §4.8 에 적었다.
 
 ---
 
@@ -114,7 +114,7 @@ INTERNAL_ERROR(500)
 
 - `alias_type` 은 `realname` \| `nickname` \| `mention` \| `inferred`, `source` 는 `manual` \| `discord_profile` \| `learned`.
 - **`unresolved-aliases` 는 Discord 서버의 사용자 목록이 아니다.** 회의 전사에서 감지됐지만 매칭되지 않은 **이름 문자열**이다. `alias_resolution_log` 에서 집계하며 이미 별칭으로 등록된 것은 빠진다.
-- 따라서 **팀원 연결 화면의 데이터 출처가 D-026 의 전제와 다르다** → §5.2 의 질문 1번.
+- 따라서 **팀원 연결 화면의 데이터 출처가 D-026 의 전제와 다르다** → §4.7 의 질문 1번.
 - Discord 사용자 식별자는 `member.discord_user_id` 에 팀원당 하나씩 붙는다.
 
 ### 2.3 meetings — 봇 경로
@@ -140,7 +140,7 @@ INTERNAL_ERROR(500)
 
 - `status` 는 `created` → `recording` → `processing` → `done` \| `failed`.
 - `extraction_id` 는 `status: done` 일 때만 채워진다.
-- **`progress`(audio_merged·transcribed·extracted) 가 응답에서 빠졌다.** 모델에는 남아 있지만 API 가 내려주지 않는다. 진행률 UI 는 현재 `status` 밖에 쓸 것이 없다 → §5.1 증분 요청.
+- **`progress`(audio_merged·transcribed·extracted) 가 응답에서 빠졌다.** 모델에는 남아 있지만 API 가 내려주지 않는다. 진행률 UI 는 현재 `status` 밖에 쓸 것이 없다 → §4.6 증분 요청.
 - 이미 종료된 회의에 `/end` 를 호출하면 409 `MEETING_ALREADY_ENDED`.
 
 ### 2.4 extractions
@@ -335,13 +335,20 @@ INTERNAL_ERROR(500)
   페이지네이션이 없으니 `GET /tasks?workspace_id=` 로 전량을 받아 **클라이언트에서 필터링한다.**
 - `막힌 일 N` 은 탭이 아니라 대시보드 집계다. `status` 가 `blocked` 인 것을 센다 (D-056).
 - `전체` 탭 병합은 PM 화면에만 적용된다. 일반 팀원은 승인 요청을 조회하지 않는다 (D-163).
-- 이 매핑은 제품 결정이 나오면 교체한다. §8 참조.
+- 이 매핑은 제품 결정이 나오면 교체한다. §7 참조.
 
 ---
 
-## 4. 신규 요청 — 코드에 없는 것
+## 4. 백엔드 요청
 
-§2 에 없는 것만 적는다. 형태는 프론트엔드의 가정이다.
+**이 절만 백엔드를 향한다.** §1~§3 은 이미 구현된 것이고, §5~§7 은 프론트엔드 내부 규약이다.
+
+원칙은 D-160 이다. 이미 구현된 엔드포인트와 스키마의 **변경·삭제·이름 변경을 요청하지 않는다.**
+요청은 추가이거나 기존 필드의 의미 확정에 그친다.
+
+- **§4.1~§4.5** — 코드에 아예 없는 API. 형태는 프론트엔드의 가정이다.
+- **§4.6** — 이미 있는 것에 붙이는 증분.
+- **§4.7** — 프론트엔드가 단독으로 정할 수 없는 질문.
 
 ### 4.1 auth
 
@@ -500,15 +507,7 @@ POST .../meetings/upload            multipart/form-data
 - **`empty_reason`** 은 `null`, `no_meeting`, `no_applied_items`, `notion_not_connected` 4가지다 (D-041, D-042).
 - `latest_meeting` 은 처리된 회의가 없으면 `null` (D-065).
 
----
-
-## 5. 백엔드 요청 정리
-
-**이 절만 백엔드를 향한다.** §1~§4 는 프론트엔드가 지킬 계약이다.
-
-원칙은 D-160 이다. 이미 구현된 엔드포인트와 스키마의 **변경·삭제·이름 변경을 요청하지 않는다.** 요청은 추가이거나 기존 필드의 의미 확정에 그친다.
-
-### 5.1 기존 구현에 대한 증분 요청 — 5건
+### 4.6 기존 구현에 대한 증분 요청 — 5건
 
 | # | 대상 | 현재 | 요청 | 이유 |
 |---|---|---|---|---|
@@ -520,7 +519,7 @@ POST .../meetings/upload            multipart/form-data
 
 되돌리기는 요청 목록에서 빠졌다. `POST /tasks/{task_id}/history/{history_id}/rollback` 이 **이미 구현돼 있다**(§2.6).
 
-### 5.2 백엔드 답이 필요한 것 — 2건
+### 4.7 백엔드 답이 필요한 것 — 2건
 
 1. **팀원 연결 화면의 데이터 출처.**
    D-026 은 `연결된 Discord 서버에서 사용자 목록을 자동으로 불러온다` 를 전제한다. 그런데 `GET /members/unresolved-aliases` 는 **회의 전사에서 감지된 미매칭 이름**을 돌려주지 온보딩 시점의 Discord 서버 멤버 목록이 아니다.
@@ -532,9 +531,9 @@ POST .../meetings/upload            multipart/form-data
 
 > 이전 판에서 물었던 `approval_request.payload` 의 형태와 `승인 시 task 생성 주체` 는 **코드에 답이 있어 질문에서 뺐다.** §2.5 와 §3.1 에 사실로 적었다.
 
-### 5.3 신규 API 에 필요한 오류 코드
+### 4.8 신규 API 에 필요한 오류 코드
 
-§4 에서 쓴다. 이름과 상태 코드는 제안이며 백엔드가 조정해도 된다.
+§4.1~§4.5 에서 쓴다. 이름과 상태 코드는 제안이며 백엔드가 조정해도 된다.
 
 ```
 UNAUTHENTICATED(401)            FORBIDDEN(403)
@@ -546,7 +545,9 @@ MEETING_PROCESSING_IN_PROGRESS(409)   AUDIO_TOO_LARGE(413)
 
 ---
 
-## 6. 도메인 모델
+---
+
+## 5. 도메인 모델
 
 화면은 DTO 를 직접 참조하지 않는다. `entities` 계층에서만 DTO 를 다루고 변환한다 (D-133, D-134).
 `pages`·`widgets`·`features` 에서 DTO 타입을 import 하지 않으며 ESLint `no-restricted-imports` 로 강제한다.
@@ -573,7 +574,7 @@ MEETING_PROCESSING_IN_PROGRESS(409)   AUDIO_TOO_LARGE(413)
 
 ---
 
-## 7. MSW
+## 6. MSW
 
 - 로컬 개발·Vitest·Storybook 이 같은 핸들러를 공유한다. production 번들에서 제외한다 (D-146).
 - 정상 응답이 기본이다. 빈 상태·권한 오류·검증 오류·서버 오류·느린 응답은 테스트와 Story 에서 개별 override 한다.
@@ -590,7 +591,7 @@ MEETING_PROCESSING_IN_PROGRESS(409)   AUDIO_TOO_LARGE(413)
 
 ---
 
-## 8. 결정 대기
+## 7. 결정 대기
 
 **가정으로 고정한 것 1건.** 실제 결정이 나오면 교체하고, 그때 고칠 범위는 `entities` 계층이다.
 
@@ -602,7 +603,7 @@ MEETING_PROCESSING_IN_PROGRESS(409)   AUDIO_TOO_LARGE(413)
 - 보드·캘린더·간트차트 전용 조회. `due_before` / `due_after` 가 캘린더용으로 이미 있다.
 - 메시지 전반.
 - 워크스페이스 관리·설정의 개별 항목.
-- 팀원 연결 화면의 데이터 출처 (§5.2 1번의 답에 따라 D-026·D-028·D-030 개정 여부가 갈린다).
+- 팀원 연결 화면의 데이터 출처 (§4.7 1번의 답에 따라 D-026·D-028·D-030 개정 여부가 갈린다).
 
 ---
 
