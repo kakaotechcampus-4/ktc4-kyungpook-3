@@ -7,7 +7,7 @@
 
 - **기존 구현**(§2)은 `backend/app` 의 코드를 읽고 적은 **사실**이다.
 - **신규 가정**(§3)은 백엔드에 요청한 내용이며 실제 API 와 다를 수 있다.
-- 백엔드에 넘기는 요청 문서는 `frontend/docs/plan/backend-alignment.md` 다.
+- **백엔드에 요청하는 내용은 §4 하나에 모았다.** 백엔드는 그 절만 읽으면 된다.
 
 > **한 번 적은 요청·응답을 화면 사정으로 임의로 바꾸지 않는다.**
 > 바꾸면 MSW 픽스처와 통합 테스트가 함께 흔들린다.
@@ -55,7 +55,20 @@ APPROVAL_NOT_FOUND(404)         NOTION_WRITE_FAILED(502)
 INTERNAL_ERROR(500)
 ```
 
-신규 API 에서 쓸 코드는 `backend-alignment.md` §1 에 적었다.
+### 추가를 요청한 오류 코드
+
+신규 API(§3)에서 쓴다. 이름과 상태 코드는 제안이며 백엔드가 조정해도 된다.
+
+```
+UNAUTHENTICATED(401)            FORBIDDEN(403)
+EMAIL_ALREADY_EXISTS(409)       INVALID_CREDENTIALS(401)
+WORKSPACE_NAME_DUPLICATED(409)  WORKSPACE_NOT_FOUND(404)
+ONBOARDING_INCOMPLETE(403)      INTEGRATION_NOT_CONNECTED(409)
+INTEGRATION_REVOKED(409)        DISCORD_USER_ALREADY_MAPPED(409)
+MEETING_PROCESSING_IN_PROGRESS(409)   AUDIO_TOO_LARGE(413)
+TASK_NOT_FOUND(404)             TASK_ALREADY_RESOLVED(409)
+APPLIED_ITEM_NOT_REVERTIBLE(409)
+```
 
 ---
 
@@ -155,7 +168,7 @@ INTERNAL_ERROR(500)
 
 `payload` 는 구현상 자유 JSON 이다. **아래 형태를 가정하고 고정한다.** 근거는 AI 파이프라인의
 `DraftResult.structured`(`ai/shared/schemas.py`)와 `ExtractedTask` 이며, 확정 여부는 백엔드 확인 대기 중이다
-(`backend-alignment.md` §5 1번). **실제 형태가 다르면 `entities/approval` 의 변환만 고친다.**
+(§4.5 1번). **실제 형태가 다르면 `entities/approval` 의 변환만 고친다.**
 
 ```jsonc
 // type: "task_create"
@@ -201,7 +214,7 @@ INTERNAL_ERROR(500)
 ## 3. 신규 가정
 
 코드에 존재하지 않는 부분이다. **이 절이 모든 형태의 원본이다.**
-`backend-alignment.md` 는 요청 이유·제약·근거만 담고 형태는 이 절을 가리킨다. 양쪽에 같은 JSON 을 두지 않는다.
+백엔드에 요청하는 항목과 이유는 §4 에 따로 모았다. 같은 형태를 두 곳에 적지 않는다.
 
 ### 3.1 auth
 
@@ -231,6 +244,10 @@ INTERNAL_ERROR(500)
 - `workspace_count` 로 로그인 후 이동을 분기한다. `0` → 온보딩, `1` → 대시보드, `2` 이상 → 워크스페이스 선택 (D-010).
 - `last_workspace_id` 는 없으면 `null`.
 - 미인증 요청은 401 `UNAUTHENTICATED`. Axios 인터셉터가 로그인으로 보낸다.
+- **세션 요구사항 3가지** (D-165). 토큰 형식은 백엔드가 정하며 **JWT 를 요구하지 않는다.**
+  1. Secure·HttpOnly 쿠키, `SameSite=Lax`. 응답 본문에 토큰을 담지 않는다.
+  2. 로그아웃 시 즉시 무효화한다.
+  3. **토큰·세션에 역할과 권한을 담지 않는다.** 권한은 요청마다 워크스페이스 멤버십에서 조회한다.
 - OAuth 는 본문 없는 302 다. `window.location.assign` 만 하고 `state` 에 복귀 경로를 담는다 (D-158).
 
 ### 3.2 workspaces
@@ -274,7 +291,9 @@ INTERNAL_ERROR(500)
 - `step` 은 `create_workspace` \| `connect_discord` \| `connect_notion` \| `connect_members`, 순서 고정 (D-008).
 - `status` 는 `pending` \| `completed` \| `skipped`. 건너뛴 단계는 재개 대상에서 제외한다 (D-012).
 - `current_step` 은 재개 지점이다. `completed: true` 면 `null`.
-- 이름 중복은 409 `WORKSPACE_NAME_DUPLICATED`, 글자 수 초과는 `details.max_length` 동반 (D-015~D-020).
+- **이름 정규화와 중복 판정** (D-015~D-020): 앞뒤 공백 제거, 중간 연속 공백 1칸 축약 후
+  **같은 사용자 계정 안에서** 대소문자를 무시하고 중복을 막는다. 위반은 409 `WORKSPACE_NAME_DUPLICATED`.
+  글자 수 초과는 `details.max_length` 를 함께 내려준다.
 - 온보딩 미완료 워크스페이스의 대시보드 접근은 403 `ONBOARDING_INCOMPLETE` + `details.current_step` (D-071).
 
 ### 3.3 integrations
@@ -333,6 +352,7 @@ INTERNAL_ERROR(500)
 
 - 미매핑이면 `member_display_name` 이 `null` 이다. **`discord_username` 으로 대체 표시한다** (D-028).
 - 중복 매핑은 409 `DISCORD_USER_ALREADY_MAPPED` (D-027).
+- **부분 매핑을 허용한다.** 일부만 연결한 상태로 저장하고 온보딩을 완료할 수 있다 (D-029).
 - 서버를 나간 사용자는 `active: false` 로 남는다. 목록에서 지우지 않는다 (D-031).
 
 ### 3.5 meetings — 웹 경로
@@ -450,7 +470,7 @@ POST .../meetings/upload            multipart/form-data
 
 - `막힌 일 N` 은 탭이 아니라 대시보드 집계다. `blocked` 만 센다 (D-056).
 - `status` 는 쉼표로 여러 값을 받는다. 백엔드 enum 값을 그대로 쓴다 (D-160).
-- 이 매핑은 제품 결정이 나오면 교체한다. §6 에 결정 대기로 남겼다.
+- 이 매핑은 제품 결정이 나오면 교체한다. §7 에 결정 대기로 남겼다.
 
 ```jsonc
 // GET .../tasks?status=todo,in_progress,blocked&filter=due_soon
@@ -588,7 +608,80 @@ POST .../meetings/upload            multipart/form-data
 
 ---
 
-## 4. 도메인 모델 (entities)
+## 4. 백엔드 요청
+
+**이 절만 백엔드를 향한다.** §1~§3 은 프론트엔드가 지킬 계약이고, 여기가 실제로 해 달라는 것이다.
+
+### 4.1 원칙
+
+**백엔드가 이미 구현했거나 정한 것에는 프론트엔드가 맞춘다. 요청은 코드에 존재하지 않는 것으로 한정한다** (D-160).
+
+- 이미 동작하는 엔드포인트와 스키마의 **변경·삭제·이름 변경을 요청하지 않는다.**
+- 요청은 **추가**이거나 **기존 필드의 의미 확정**에 그친다.
+
+### 4.2 신규 API
+
+§3 의 8개 영역이 모두 코드에 없다. 형태는 각 절에 있다.
+
+| 영역 | 절 | 영역 | 절 |
+|---|---|---|---|
+| auth | §3.1 | meetings (웹) | §3.5 |
+| workspaces | §3.2 | tasks | §3.6 |
+| integrations | §3.3 | dashboard | §3.7 |
+| members · Discord 매핑 | §3.4 | task-history | §3.8 |
+
+기존 `POST /meetings` 와 `PATCH /meetings/{id}/end` 는 **봇 경로로 그대로 둔다.** 웹 경로만 추가한다 (D-157).
+
+### 4.3 기존 구현에 대한 증분 요청 — 4건
+
+**컬럼 삭제·이름 변경·타입 변경은 요청하지 않는다.** 모두 추가이거나 기존 필드의 의미 확정이다.
+
+| # | 대상 | 현재 | 요청 | 이유 |
+|---|---|---|---|---|
+| 1 | `meeting.started_at` | 서버 기본값(`_now`) | 업로드 요청의 사용자 지정 날짜를 그대로 저장 | 지난 녹음을 나중에 올리면 회의 날짜가 업로드 날짜가 된다. 목록 정렬이 깨진다 (D-079, D-106, D-164) |
+| 2 | `meeting.failed_stage` | 자유 문자열 | Notion 연결 끊김을 구분할 수 있는 값 포함 | 차단 모달(D-100)과 오류 토스트(D-092)로 화면이 갈린다 |
+| 3 | `extraction` | 요약 저장 위치 없음 | 회의 요약을 저장할 컬럼 또는 테이블 | 회의록 상세의 요약 영역에 데이터 출처가 없다 (D-156) |
+| 4 | `extraction.transcript_path` | 파일 경로 | 화자·시각이 붙은 구조화 응답으로 제공 | 브라우저가 서버 파일을 읽을 수 없다. `audio_segment` 에 화자·구간이 이미 있다 (D-028, D-105) |
+
+되돌리기는 증분이 아니다. `task_history` 에 `change_source`, `is_auto`, `is_rolled_back`, `rolled_back_at` 이 **이미 있어** 새 리소스가 필요 없고, 요청은 플래그를 세울 엔드포인트 하나뿐이다 (§3.8).
+
+### 4.4 2026-09-15 요청에서 철회하는 것 — 9건
+
+이전 요청 문서(2026-09-15, 이 문서로 대체되어 삭제됨)는 **백엔드 구현 전에** 작성되어 이미 충족된 요청이 섞여 있었다.
+구현된 코드를 확인한 결과 아래 9건을 철회한다. **그 문서 기준으로 작업 중이라면 중단해도 된다.**
+
+| 이전 요청 | 철회 사유 |
+|---|---|
+| `assignee` 를 문자열에서 member ID 로 | `task.assignee_member_id` 가 이미 ID다 |
+| 목록 응답에 `total` 포함 | `ApprovalListResponse.total` 이 이미 있다 |
+| `/proposals` `/tasks` 등에 워크스페이스 스코프 추가 | `task.workspace_id` 와 `approval_request.workspace_id` 가 이미 있다 |
+| `decision` 의 `action` 에 `reject` 추가 | `ApprovalResolveRequest.status` 가 이미 `approved` / `rejected` 다 |
+| `blocker` 를 문자열에서 태스크 상태로 | `TaskStatus.BLOCKED` 가 이미 있다. `blocker` 텍스트는 막힘 원인 표시로 함께 쓴다 (D-056) |
+| `POST /changes/poll` 의 job 상태 조회 경로 | `GET /meetings/{id}` 의 `progress` 가 이미 폴링 대상이다 |
+| `GET /proposals` 를 `GET /tasks?status=needs_review` 로 통합 | 프론트엔드가 표시 계층에서 병합하는 것으로 변경했다 (D-161) |
+| `/meetings/notes` 텍스트 업로드 처리 | 1차에서 호출하지 않으므로 요청 자체를 철회한다 (D-084, D-156) |
+| `checkin-rules` 의 `days: 3` 을 72시간 단위로 | 메시지·체크인이 1차 범위 밖이다. 제품 결정 후 다시 요청한다 |
+
+마지막 항목 보충. D-060 이 Discord 무응답 3일을 **72시간**으로 계산한다고 정해 두었으므로 요구 자체는 유효하다. 해당 화면이 1차 범위가 아니어서 지금 요청하지 않을 뿐이다.
+
+### 4.5 백엔드 답이 필요한 것 — 3건
+
+프론트엔드가 단독으로 정할 수 없다. 1번과 2번은 §7 에 가정으로 고정해 두었고, 답이 오면 `entities` 계층만 고친다.
+
+1. **`approval_request.payload` 의 확정 형태.**
+   AI 파이프라인의 `DraftResult.structured`(`task`, `assignee_member_id`, `due_date`, `type`)를 그대로 넣는지.
+   프론트엔드는 이 키들로 `확인 필요` 카드를 그리고, 비어 있는 필드에서 보완 사유를 파생한다 (§2.3).
+
+2. **Notion 반영 여부의 판단 근거.**
+   `task.notion_page_id` 가 채워진 것을 반영 완료로 봐도 되는지. 회의록 상세와 대시보드 `최근 반영`에 반영 시각과 URL 이 필요하다.
+
+3. **승인 시 `task` 행을 만드는 주체.**
+   `PATCH /approvals/{approval_id}` 가 승인되면 백엔드가 `task` 를 생성하는지, AI 파이프라인이 따로 넣는지.
+   승인 직후 프론트엔드가 어느 목록을 다시 조회해야 하는지가 달라진다.
+
+---
+
+## 5. 도메인 모델 (entities)
 
 화면은 DTO 를 직접 참조하지 않는다. `entities` 계층에서만 DTO 를 다루고 변환한다 (D-133, D-134).
 `pages`·`widgets`·`features` 에서 DTO 타입을 import 하지 않으며 ESLint `no-restricted-imports` 로 강제한다.
@@ -613,7 +706,7 @@ POST .../meetings/upload            multipart/form-data
 
 ---
 
-## 5. MSW
+## 6. MSW
 
 - 로컬 개발·Vitest·Storybook 이 같은 핸들러를 공유한다. production 번들에서 제외한다 (D-146).
 - 정상 응답이 기본이다. 빈 상태·권한 오류·검증 오류·서버 오류·느린 응답은 테스트와 Story 에서 개별 override 한다.
@@ -628,7 +721,7 @@ POST .../meetings/upload            multipart/form-data
 
 ---
 
-## 6. 결정 대기
+## 7. 결정 대기
 
 제품 결정이 없어 이 문서에서 확정하지 않는다. 결정이 나오면 추가한다.
 
@@ -649,6 +742,5 @@ POST .../meetings/upload            multipart/form-data
 
 ## 참고
 
-- 백엔드 요청: `frontend/docs/plan/backend-alignment.md`
 - 결정 기록: `frontend/docs/decision/frontend-decisions.md` (특히 D-160~D-165)
 - 개발 계획: `frontend/docs/plan/frontend-development-plan.md`
