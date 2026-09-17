@@ -1,8 +1,8 @@
 {
   "case_id": "meeting_alias_mix",
   "scenario": "full_meeting",
-  "description": "담당자 호칭 6종(first/second/thirdname/thirdpronoun/thirdrole/group)이 골고루 나오는 스프린트 계획 회의 16턴",
-  "note": "BE alias 설계(first/second/thirdname/thirdpronoun/thirdrole/group)를 타입별로 한 번씩은 밟도록 일부러 짠 스크립트. 프롬프트 few-shot 예시와 문장이 겹치지 않게 새로 썼다(채점 오염 방지).",
+  "description": "담당자 호칭 6종(first/second/thirdname/thirdpronoun/thirdrole/all)이 골고루 나오는 스프린트 계획 회의 16턴",
+  "note": "BE alias 설계(first/second/thirdname/thirdpronoun/thirdrole/all)를 타입별로 한 번씩은 밟도록 일부러 짠 스크립트. 프롬프트 few-shot 예시와 문장이 겹치지 않게 새로 썼다(채점 오염 방지).",
   "reference_date": "2026-09-09",
   "speaker_names": {"P": "유진", "Q": "도윤", "R": "하은", "S": "민재", "T": "세영"},
   "turns": [
@@ -60,8 +60,8 @@
     {"sentence": "네 맞아요.", "is_task": false},
     {"sentence": "그건 제가 담당인데 이번 달 말까지로 잡아두면 될 것 같아요.", "is_task": true, "assignee_type": "first", "assignee_mention": null, "due_date": "2026-09-30", "task_keywords": []},
 
-    {"sentence": "코드 컨벤션 문서는 다 같이 한번 훑어보죠.", "is_task": true, "assignee_type": "group", "assignee_mention": null, "due_date": null, "task_keywords": ["컨벤션"]},
-    {"sentence": "각자 시간 날 때 코멘트 남겨주세요.", "is_task": true, "assignee_type": "group", "assignee_mention": null, "due_date": null, "task_keywords": []},
+    {"sentence": "코드 컨벤션 문서는 다 같이 한번 훑어보죠.", "is_task": true, "assignee_type": "all", "assignee_mention": null, "due_date": null, "task_keywords": ["컨벤션"]},
+    {"sentence": "각자 시간 날 때 코멘트 남겨주세요.", "is_task": true, "assignee_type": "all", "assignee_mention": null, "due_date": null, "task_keywords": []},
 
     {"sentence": "혹시 이 리팩터링은 누가 맡나요?", "is_task": false},
     {"sentence": "아직 정해진 게 없는 것 같아서요.", "is_task": false},

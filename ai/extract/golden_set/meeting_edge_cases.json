@@ -47,7 +47,7 @@
 
     {"sentence": "필요하시면 디자인 쪽도 도와드릴게요.", "is_task": true, "assignee_type": "first", "assignee_mention": null, "due_date": null, "task_keywords": ["디자인"]},
 
-    {"sentence": "테스트 커버리지 올리는 건 우리 모두 신경 쓰기로 하죠.", "is_task": true, "assignee_type": "group", "assignee_mention": null, "due_date": null, "task_keywords": ["커버리지"]},
+    {"sentence": "테스트 커버리지 올리는 건 우리 모두 신경 쓰기로 하죠.", "is_task": true, "assignee_type": "all", "assignee_mention": null, "due_date": null, "task_keywords": ["커버리지"]},
 
     {"sentence": "오늘 회고는 여기까지입니다.", "is_task": false},
     {"sentence": "다들 고생하셨어요.", "is_task": false}

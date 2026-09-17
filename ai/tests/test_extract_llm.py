@@ -175,3 +175,71 @@ def test_no_relevant_sentences_skips_extraction_call():
 
     assert _run(client) == []
     assert len(client.calls) == 1  # 구조화 추출은 호출조차 안 함(비용 절약)
+
+
+def test_all_is_certain_without_mention():
+    """`all`("다 같이")은 이름은 없지만 '참석자 전원'이라는 판단이 명확하다 — BE 가 전원을 채운다."""
+    client = FakeChatClient([
+        RelevanceResult(relevant_indices=[2]),
+        ExtractionResult(items=[ExtractionItem(
+            index=2,
+            evidence_span="코드 컨벤션 문서는 다 같이 한번 훑어보죠.",
+            reasoning="참석자 전원을 지칭",
+            task_raw="코드 컨벤션 문서 검토",
+            assignee_type="all",
+            assignee_mention="다 같이",  # LLM 이 채워 보내도
+        )]),
+    ])
+
+    t = _run(client)[0]
+
+    assert t.assignee_type == "all"
+    assert t.assignee_mention is None  # 코드가 지운다 (BE 가 참석자 전원으로 펼침)
+    assert t.assignee_status == "certain"
+
+
+def test_long_transcript_is_chunked_into_multiple_calls():
+    """긴 회의록은 끊어서 묻는다 — 한 번에 몰아 넣으면 게이트웨이 출력 상한(6000토큰)에서
+    JSON 이 잘리고 LengthFinishReasonError 로 케이스가 통째로 날아간다."""
+    from shared.schemas import Transcript, TranscriptSegment
+    from extract.llm import _CHUNK_SIZE, _RELEVANCE_CHUNK_SIZE, extract_tasks
+
+    n = _RELEVANCE_CHUNK_SIZE * 2 + 1  # 관련성 2청크를 넘기는 문장 수
+    transcript = Transcript(
+        segments=[TranscriptSegment(speaker="A", start=float(i), end=float(i) + 0.9,
+                                    text=f"작업 {i} 오늘까지 끝낼게요.") for i in range(n)],
+        source="meeting",
+    )
+    # 관련성: 청크마다 그 청크의 인덱스를 전부 관련 있다고 답한다
+    relevance = [
+        RelevanceResult(relevant_indices=list(range(s, min(s + _RELEVANCE_CHUNK_SIZE, n))))
+        for s in range(0, n, _RELEVANCE_CHUNK_SIZE)
+    ]
+    extraction = [
+        ExtractionResult(items=[
+            ExtractionItem(index=i, evidence_span=f"작업 {i} 오늘까지 끝낼게요.", reasoning="본인 선언",
+                           task_raw=f"작업 {i}", assignee_type="first", due_date="2026-09-09")
+            for i in range(s, min(s + _CHUNK_SIZE, n))
+        ])
+        for s in range(0, n, _CHUNK_SIZE)
+    ]
+    client = FakeChatClient(relevance + extraction)
+
+    tasks = extract_tasks(transcript, client=client, model="m", today=TODAY, speaker_names={"A": "유진"})
+
+    assert len(tasks) == n  # 청크를 넘나들어도 하나도 안 흘린다
+    assert len(client.calls) == len(relevance) + len(extraction) == 3 + 5
+
+
+def test_double_encoded_json_is_unwrapped():
+    """게이트웨이가 JSON 을 문자열로 한 겹 더 감싸 보내도 케이스를 통째로 날리지 않는다."""
+    import json as _json
+    from extract.llm import _validate_json
+
+    inner = ExtractionResult(items=[ExtractionItem(
+        index=0, evidence_span="e", reasoning="r", task_raw="t", assignee_type="first",
+    )]).model_dump_json()
+
+    out = _validate_json(ExtractionResult, _json.dumps({"items": inner}))
+
+    assert isinstance(out, ExtractionResult) and out.items[0].task_raw == "t"

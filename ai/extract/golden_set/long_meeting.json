@@ -1,0 +1,987 @@
+{
+  "case_id": "long_meeting",
+  "scenario": "full_meeting",
+  "description": "실제 10분 분량 주간 통합 회의 81턴 — 스탠드업·스프린트 계획·릴리스 준비·회고 4개 안건을 잡담 브릿지로 이어붙였다",
+  "note": "기존 긴 케이스 4개(full_meeting / meeting_alias_mix / meeting_deadline_mix / meeting_edge_cases)의 turns 와 expected 를 그대로 가져와 안건 전환 잡담으로 이은 케이스라 정답은 원본과 동일하다 — 원본 gold 를 고치면 여기도 같이 고쳐야 한다. 긴 문맥에서만 드러나는 것(출력 잘림, lost in the middle, 위치별 recall)을 재는 용도. 세그먼트 경계(expected 인덱스): full_meeting=5~29, meeting_alias_mix=36~64, meeting_deadline_mix=72~91, meeting_edge_cases=96~111. 브릿지 턴은 전부 명백한 잡담이라 is_task=false 다 — 애매한 잡담을 넣으면 gold 자체가 흔들려서 일부러 뺐다.",
+  "reference_date": "2026-09-09",
+  "speaker_names": {
+    "A": "유진",
+    "B": "도윤",
+    "C": "하은",
+    "D": "민재",
+    "E": "세영"
+  },
+  "turns": [
+    {
+      "speaker": "A",
+      "text": "다들 들리시죠? 세영님은 아직 안 들어오셨네요, 먼저 시작할게요."
+    },
+    {
+      "speaker": "B",
+      "text": "네 잘 들립니다. 저 마이크가 좀 먹먹한데 괜찮나요?"
+    },
+    {
+      "speaker": "C",
+      "text": "괜찮아요, 잘 들려요."
+    },
+    {
+      "speaker": "A",
+      "text": "자, 오늘 스탠드업 시작할게요. 어제 한 일이랑 오늘 할 일, 막히는 거 있으면 편하게 말씀해 주세요."
+    },
+    {
+      "speaker": "B",
+      "text": "저는 어제 로그인 API 붙였고요, 음, 이번 주 목요일까지 리프레시 토큰 처리까지 끝낼게요."
+    },
+    {
+      "speaker": "A",
+      "text": "좋아요. 그럼 리프레시 토큰 작업 끝나면 하은님이 코드 리뷰 한번 부탁드려요."
+    },
+    {
+      "speaker": "C",
+      "text": "넵 확인할게요. 근데 어제 QA 팀에서 버그 리포트가 27건이나 왔더라고요. 일단 급한 것부터 오늘 안에 세 개는 고쳐볼게요."
+    },
+    {
+      "speaker": "D",
+      "text": "음... 저는 어제 디자인 시스템 쪽 UI 컴포넌트 작업하다가 머지 컨플릭트가 나서 좀 헤맸어요. 그래도 오늘 중으로 PR은 올릴게요."
+    },
+    {
+      "speaker": "A",
+      "text": "민재님, 그거 말고 지난주 회의 때 나온 반응형 레이아웃 작업도 다음 주 화요일까지 부탁드릴게요."
+    },
+    {
+      "speaker": "E",
+      "text": "어 죄송해요, 좀 늦었습니다—"
+    },
+    {
+      "speaker": "B",
+      "text": "괜찮아요, 방금 시작했어요."
+    },
+    {
+      "speaker": "E",
+      "text": "저는 노션 문서 정리하는 거 오늘까지 끝낼 계획이었는데 반나절 밀렸어요. 모레까지는 무조건 끝낼게요."
+    },
+    {
+      "speaker": "A",
+      "text": "다들 점심 뭐 드실 거예요? 저는 오늘 국밥이요."
+    },
+    {
+      "speaker": "B",
+      "text": "저는 아직 점심 메뉴 고민 중이에요, 하하."
+    },
+    {
+      "speaker": "A",
+      "text": "아 그리고 이번 주 안으로 전체 코드 컨벤션 문서 한번 다 같이 검토하죠."
+    },
+    {
+      "speaker": "C",
+      "text": "아 참, 아까 말씀드린 버그 수정이요, 세 개 다 오늘 못 끝낼 것 같아서 내일 오전까지로 미룰게요."
+    },
+    {
+      "speaker": "A",
+      "text": "참고로 아까 민재님한테 부탁드린 반응형 레이아웃은 세영님이 대신 맡아주시기로 했어요. 민재님이 다른 일정이 있어서요."
+    },
+    {
+      "speaker": "A",
+      "text": "네, 오늘 스탠드업은 여기까지 할게요. 다들 수고하셨습니다."
+    },
+    {
+      "speaker": "A",
+      "text": "자 스탠드업은 여기까지 하고요, 바로 다음 안건 갈게요."
+    },
+    {
+      "speaker": "D",
+      "text": "잠깐만요, 화면 공유가 안 붙네요. 아 이제 됐다."
+    },
+    {
+      "speaker": "A",
+      "text": "네 보여요."
+    },
+    {
+      "speaker": "B",
+      "text": "근데 회의실 에어컨이 너무 센 것 같지 않아요?"
+    },
+    {
+      "speaker": "C",
+      "text": "그러게요, 아까부터 좀 추웠어요."
+    },
+    {
+      "speaker": "A",
+      "text": "자 스프린트 계획 시작하죠. 지난주 남은 것부터 정리하고 갈게요."
+    },
+    {
+      "speaker": "B",
+      "text": "결제 모듈은 제가 계속 붙잡고 있는데요. 금요일까지는 1차 붙여놓겠습니다."
+    },
+    {
+      "speaker": "A",
+      "text": "좋아요. 그럼 결제 붙고 나면 하은님이 통합 테스트 시나리오 좀 짜주세요."
+    },
+    {
+      "speaker": "C",
+      "text": "네 알겠습니다. 근데 지금 테스트 서버가 계속 죽어서요, 그것부터 봐야 할 것 같아요."
+    },
+    {
+      "speaker": "A",
+      "text": "그건 인프라 담당이 처리하는 걸로 하죠. 이번 주 안에는 정리돼야 다음 작업이 안 밀려요."
+    },
+    {
+      "speaker": "D",
+      "text": "저는 어제 화면 세 개 퍼블리싱 끝냈고요, 오늘은 좀 쉬엄쉬엄 하려고요."
+    },
+    {
+      "speaker": "A",
+      "text": "민재님 그러면 이건 어때요, 남은 리스트 화면은 너가 맡아서 17일까지 마무리해주는 걸로."
+    },
+    {
+      "speaker": "D",
+      "text": "아 네 그건 할 수 있을 것 같아요. 17일까지 올려둘게요."
+    },
+    {
+      "speaker": "E",
+      "text": "저 잠깐 늦었는데 지금 무슨 얘기 중이에요?"
+    },
+    {
+      "speaker": "A",
+      "text": "리스트 화면 일정 얘기요. 아 그리고 세영님, 저번에 말한 API 문서화는 어떻게 됐어요?"
+    },
+    {
+      "speaker": "E",
+      "text": "그거 아직 손도 못 댔어요. 이번 주는 좀 빡셀 것 같고, 다음 주 월요일까지 해보겠습니다."
+    },
+    {
+      "speaker": "A",
+      "text": "그리고 배포 스크립트 정리는 저번에 그분이 하시기로 했었죠? 도윤님 맞나요?"
+    },
+    {
+      "speaker": "B",
+      "text": "네 맞아요. 그건 제가 담당인데 이번 달 말까지로 잡아두면 될 것 같아요."
+    },
+    {
+      "speaker": "A",
+      "text": "코드 컨벤션 문서는 다 같이 한번 훑어보죠. 각자 시간 날 때 코멘트 남겨주세요."
+    },
+    {
+      "speaker": "C",
+      "text": "혹시 이 리팩터링은 누가 맡나요? 아직 정해진 게 없는 것 같아서요."
+    },
+    {
+      "speaker": "A",
+      "text": "그건 다음 회의 때 다시 얘기하죠. 오늘은 여기까지 하겠습니다."
+    },
+    {
+      "speaker": "A",
+      "text": "스프린트 계획은 여기까지고요, 이어서 릴리스 일정 볼게요."
+    },
+    {
+      "speaker": "E",
+      "text": "아 죄송해요 잠깐 다른 미팅이 겹쳐서 소리만 듣고 있었어요."
+    },
+    {
+      "speaker": "A",
+      "text": "네 괜찮아요."
+    },
+    {
+      "speaker": "D",
+      "text": "혹시 이거 녹화되고 있나요?"
+    },
+    {
+      "speaker": "A",
+      "text": "네 녹화 중이에요. 녹화본은 늘 노션에 올라가 있어요."
+    },
+    {
+      "speaker": "B",
+      "text": "오케이요."
+    },
+    {
+      "speaker": "A",
+      "text": "다음 릴리스 준비 상황 보죠. 각자 일정만 짧게 공유해주세요."
+    },
+    {
+      "speaker": "B",
+      "text": "저는 마이그레이션 스크립트를 월요일까지 끝내겠습니다."
+    },
+    {
+      "speaker": "C",
+      "text": "QA 체크리스트는 17일까지 정리해서 공유드릴게요."
+    },
+    {
+      "speaker": "D",
+      "text": "디자인 QA는 2주 뒤에 한 번 더 돌면 좋을 것 같은데요."
+    },
+    {
+      "speaker": "A",
+      "text": "그러죠. 민재님이 2주 뒤에 디자인 QA 한 번 더 돌려주세요."
+    },
+    {
+      "speaker": "B",
+      "text": "아 그리고 로그 수집기는 이번 달 말까지 붙여놓을게요."
+    },
+    {
+      "speaker": "C",
+      "text": "릴리스 노트 초안은 내일 오전 11시까지 드리겠습니다."
+    },
+    {
+      "speaker": "A",
+      "text": "장애 대응 문서는 이번 주 안으로 한번 손보죠."
+    },
+    {
+      "speaker": "D",
+      "text": "저 지난주에 아이콘 작업하다가 시안이 다 엎어져서 고생했어요."
+    },
+    {
+      "speaker": "B",
+      "text": "성능 테스트는 언제 하는 게 좋을까요? 아직 일정이 안 잡혔네요."
+    },
+    {
+      "speaker": "A",
+      "text": "그건 릴리스 끝나고 다시 얘기하죠."
+    },
+    {
+      "speaker": "C",
+      "text": "그리고 모니터링 알림 설정은 다음 달 3일까지 마무리하겠습니다."
+    },
+    {
+      "speaker": "D",
+      "text": "시간 되면 접근성 점검도 해볼게요."
+    },
+    {
+      "speaker": "A",
+      "text": "보안 점검 항목은 하은님이 챙겨주세요. 기한은 따로 없고 릴리스 전까지만 되면 돼요."
+    },
+    {
+      "speaker": "A",
+      "text": "네 오늘은 여기까지 하겠습니다. 수고하셨어요."
+    },
+    {
+      "speaker": "A",
+      "text": "릴리스 얘기는 여기까지 하고, 마지막으로 회고만 짧게 하고 끝낼게요."
+    },
+    {
+      "speaker": "C",
+      "text": "벌써 시간이 이렇게 됐네요."
+    },
+    {
+      "speaker": "D",
+      "text": "저는 다음 일정이 정각에 있어서 5분 전에 나가야 할 것 같아요."
+    },
+    {
+      "speaker": "A",
+      "text": "네 그 전에 끝낼게요."
+    },
+    {
+      "speaker": "A",
+      "text": "이번 스프린트 회고 시작하겠습니다. 편하게 얘기해주세요."
+    },
+    {
+      "speaker": "B",
+      "text": "여유 되면 온보딩 문서도 정리해둘게요."
+    },
+    {
+      "speaker": "C",
+      "text": "그 부분은 좀 고민해볼게요."
+    },
+    {
+      "speaker": "D",
+      "text": "저도 고민해보고 내일까지 의견 정리해서 공유드릴게요."
+    },
+    {
+      "speaker": "B",
+      "text": "이 캐시 이슈는 누가 보는 게 맞을까요?"
+    },
+    {
+      "speaker": "A",
+      "text": "그건 아마 하은님이 보실 것 같은데요."
+    },
+    {
+      "speaker": "C",
+      "text": "아직 로그 정리는 못 했어요."
+    },
+    {
+      "speaker": "C",
+      "text": "그건 목요일까지 마무리하겠습니다."
+    },
+    {
+      "speaker": "D",
+      "text": "지금 하던 아이콘 작업은 계속 진행하겠습니다."
+    },
+    {
+      "speaker": "B",
+      "text": "이 PR 검토해볼게요."
+    },
+    {
+      "speaker": "A",
+      "text": "배포 자동화 얘기는 다음에 하죠."
+    },
+    {
+      "speaker": "D",
+      "text": "필요하시면 디자인 쪽도 도와드릴게요."
+    },
+    {
+      "speaker": "A",
+      "text": "테스트 커버리지 올리는 건 우리 모두 신경 쓰기로 하죠."
+    },
+    {
+      "speaker": "A",
+      "text": "오늘 회고는 여기까지입니다. 다들 고생하셨어요."
+    },
+    {
+      "speaker": "A",
+      "text": "네 오늘 회의는 여기까지입니다."
+    },
+    {
+      "speaker": "B",
+      "text": "고생하셨습니다."
+    },
+    {
+      "speaker": "E",
+      "text": "네 다들 고생 많으셨어요, 들어가세요."
+    }
+  ],
+  "expected": [
+    {
+      "sentence": "다들 들리시죠?",
+      "is_task": false
+    },
+    {
+      "sentence": "세영님은 아직 안 들어오셨네요, 먼저 시작할게요.",
+      "is_task": false
+    },
+    {
+      "sentence": "네 잘 들립니다.",
+      "is_task": false
+    },
+    {
+      "sentence": "저 마이크가 좀 먹먹한데 괜찮나요?",
+      "is_task": false
+    },
+    {
+      "sentence": "괜찮아요, 잘 들려요.",
+      "is_task": false
+    },
+    {
+      "sentence": "자, 오늘 스탠드업 시작할게요.",
+      "is_task": false
+    },
+    {
+      "sentence": "어제 한 일이랑 오늘 할 일, 막히는 거 있으면 편하게 말씀해 주세요.",
+      "is_task": false
+    },
+    {
+      "sentence": "저는 어제 로그인 API 붙였고요, 음, 이번 주 목요일까지 리프레시 토큰 처리까지 끝낼게요.",
+      "is_task": true,
+      "assignee_mention": null,
+      "due_date": "2026-09-10",
+      "task_keywords": [
+        "리프레시 토큰"
+      ],
+      "assignee_type": "first"
+    },
+    {
+      "sentence": "좋아요.",
+      "is_task": false
+    },
+    {
+      "sentence": "그럼 리프레시 토큰 작업 끝나면 하은님이 코드 리뷰 한번 부탁드려요.",
+      "is_task": true,
+      "assignee_mention": "하은",
+      "due_date": null,
+      "task_keywords": [
+        "코드 리뷰"
+      ],
+      "assignee_type": "thirdname"
+    },
+    {
+      "sentence": "넵 확인할게요.",
+      "is_task": true,
+      "assignee_mention": null,
+      "due_date": null,
+      "task_keywords": [],
+      "assignee_type": "first"
+    },
+    {
+      "sentence": "근데 어제 QA 팀에서 버그 리포트가 27건이나 왔더라고요.",
+      "is_task": false
+    },
+    {
+      "sentence": "일단 급한 것부터 오늘 안에 세 개는 고쳐볼게요.",
+      "is_task": true,
+      "assignee_mention": null,
+      "due_date": "2026-09-09",
+      "task_keywords": [
+        "세 개"
+      ],
+      "assignee_type": "first"
+    },
+    {
+      "sentence": "음.",
+      "is_task": false
+    },
+    {
+      "sentence": "저는 어제 디자인 시스템 쪽 UI 컴포넌트 작업하다가 머지 컨플릭트가 나서 좀 헤맸어요.",
+      "is_task": false
+    },
+    {
+      "sentence": "그래도 오늘 중으로 PR은 올릴게요.",
+      "is_task": true,
+      "assignee_mention": null,
+      "due_date": "2026-09-09",
+      "task_keywords": [
+        "PR"
+      ],
+      "assignee_type": "first"
+    },
+    {
+      "sentence": "민재님, 그거 말고 지난주 회의 때 나온 반응형 레이아웃 작업도 다음 주 화요일까지 부탁드릴게요.",
+      "is_task": true,
+      "assignee_mention": "민재",
+      "due_date": "2026-09-15",
+      "task_keywords": [
+        "반응형 레이아웃"
+      ],
+      "assignee_type": "thirdname"
+    },
+    {
+      "sentence": "어 죄송해요, 좀 늦었습니다—",
+      "is_task": false
+    },
+    {
+      "sentence": "괜찮아요, 방금 시작했어요.",
+      "is_task": false
+    },
+    {
+      "sentence": "저는 노션 문서 정리하는 거 오늘까지 끝낼 계획이었는데 반나절 밀렸어요.",
+      "is_task": false
+    },
+    {
+      "sentence": "모레까지는 무조건 끝낼게요.",
+      "is_task": true,
+      "assignee_mention": null,
+      "due_date": "2026-09-11",
+      "task_keywords": [],
+      "assignee_type": "first"
+    },
+    {
+      "sentence": "다들 점심 뭐 드실 거예요?",
+      "is_task": false
+    },
+    {
+      "sentence": "저는 오늘 국밥이요.",
+      "is_task": false
+    },
+    {
+      "sentence": "저는 아직 점심 메뉴 고민 중이에요, 하하.",
+      "is_task": false
+    },
+    {
+      "sentence": "아 그리고 이번 주 안으로 전체 코드 컨벤션 문서 한번 다 같이 검토하죠.",
+      "is_task": true,
+      "assignee_mention": null,
+      "due_date": "2026-09-13",
+      "task_keywords": [
+        "코드 컨벤션"
+      ],
+      "assignee_type": "all"
+    },
+    {
+      "sentence": "아 참, 아까 말씀드린 버그 수정이요, 세 개 다 오늘 못 끝낼 것 같아서 내일 오전까지로 미룰게요.",
+      "is_task": true,
+      "assignee_mention": null,
+      "due_date": "2026-09-10",
+      "task_keywords": [
+        "버그 수정"
+      ],
+      "assignee_type": "first"
+    },
+    {
+      "sentence": "참고로 아까 민재님한테 부탁드린 반응형 레이아웃은 세영님이 대신 맡아주시기로 했어요.",
+      "is_task": true,
+      "assignee_mention": "세영",
+      "due_date": null,
+      "task_keywords": [
+        "반응형 레이아웃"
+      ],
+      "assignee_type": "thirdname"
+    },
+    {
+      "sentence": "민재님이 다른 일정이 있어서요.",
+      "is_task": false
+    },
+    {
+      "sentence": "네, 오늘 스탠드업은 여기까지 할게요.",
+      "is_task": false
+    },
+    {
+      "sentence": "다들 수고하셨습니다.",
+      "is_task": false
+    },
+    {
+      "sentence": "자 스탠드업은 여기까지 하고요, 바로 다음 안건 갈게요.",
+      "is_task": false
+    },
+    {
+      "sentence": "잠깐만요, 화면 공유가 안 붙네요.",
+      "is_task": false
+    },
+    {
+      "sentence": "아 이제 됐다.",
+      "is_task": false
+    },
+    {
+      "sentence": "네 보여요.",
+      "is_task": false
+    },
+    {
+      "sentence": "근데 회의실 에어컨이 너무 센 것 같지 않아요?",
+      "is_task": false
+    },
+    {
+      "sentence": "그러게요, 아까부터 좀 추웠어요.",
+      "is_task": false
+    },
+    {
+      "sentence": "자 스프린트 계획 시작하죠.",
+      "is_task": false
+    },
+    {
+      "sentence": "지난주 남은 것부터 정리하고 갈게요.",
+      "is_task": false
+    },
+    {
+      "sentence": "결제 모듈은 제가 계속 붙잡고 있는데요.",
+      "is_task": false
+    },
+    {
+      "sentence": "금요일까지는 1차 붙여놓겠습니다.",
+      "is_task": true,
+      "assignee_type": "first",
+      "assignee_mention": null,
+      "due_date": "2026-09-11",
+      "task_keywords": []
+    },
+    {
+      "sentence": "좋아요.",
+      "is_task": false
+    },
+    {
+      "sentence": "그럼 결제 붙고 나면 하은님이 통합 테스트 시나리오 좀 짜주세요.",
+      "is_task": true,
+      "assignee_type": "thirdname",
+      "assignee_mention": "하은",
+      "due_date": null,
+      "task_keywords": [
+        "테스트"
+      ]
+    },
+    {
+      "sentence": "네 알겠습니다.",
+      "is_task": false
+    },
+    {
+      "sentence": "근데 지금 테스트 서버가 계속 죽어서요, 그것부터 봐야 할 것 같아요.",
+      "is_task": false
+    },
+    {
+      "sentence": "그건 인프라 담당이 처리하는 걸로 하죠.",
+      "is_task": true,
+      "assignee_type": "thirdrole",
+      "assignee_mention": "인프라 담당",
+      "due_date": null,
+      "task_keywords": []
+    },
+    {
+      "sentence": "이번 주 안에는 정리돼야 다음 작업이 안 밀려요.",
+      "is_task": false
+    },
+    {
+      "sentence": "저는 어제 화면 세 개 퍼블리싱 끝냈고요, 오늘은 좀 쉬엄쉬엄 하려고요.",
+      "is_task": false
+    },
+    {
+      "sentence": "민재님 그러면 이건 어때요, 남은 리스트 화면은 너가 맡아서 17일까지 마무리해주는 걸로.",
+      "is_task": true,
+      "assignee_type": "second",
+      "assignee_mention": "너",
+      "assignee_resolved": "민재",
+      "due_date": "2026-09-17",
+      "task_keywords": [
+        "리스트 화면"
+      ]
+    },
+    {
+      "sentence": "아 네 그건 할 수 있을 것 같아요.",
+      "is_task": false
+    },
+    {
+      "sentence": "17일까지 올려둘게요.",
+      "is_task": true,
+      "assignee_type": "first",
+      "assignee_mention": null,
+      "due_date": "2026-09-17",
+      "task_keywords": []
+    },
+    {
+      "sentence": "저 잠깐 늦었는데 지금 무슨 얘기 중이에요?",
+      "is_task": false
+    },
+    {
+      "sentence": "리스트 화면 일정 얘기요.",
+      "is_task": false
+    },
+    {
+      "sentence": "아 그리고 세영님, 저번에 말한 API 문서화는 어떻게 됐어요?",
+      "is_task": false
+    },
+    {
+      "sentence": "그거 아직 손도 못 댔어요.",
+      "is_task": false
+    },
+    {
+      "sentence": "이번 주는 좀 빡셀 것 같고, 다음 주 월요일까지 해보겠습니다.",
+      "is_task": true,
+      "assignee_type": "first",
+      "assignee_mention": null,
+      "due_date": "2026-09-14",
+      "task_keywords": []
+    },
+    {
+      "sentence": "그리고 배포 스크립트 정리는 저번에 그분이 하시기로 했었죠?",
+      "is_task": false
+    },
+    {
+      "sentence": "도윤님 맞나요?",
+      "is_task": false
+    },
+    {
+      "sentence": "네 맞아요.",
+      "is_task": false
+    },
+    {
+      "sentence": "그건 제가 담당인데 이번 달 말까지로 잡아두면 될 것 같아요.",
+      "is_task": true,
+      "assignee_type": "first",
+      "assignee_mention": null,
+      "due_date": "2026-09-30",
+      "task_keywords": []
+    },
+    {
+      "sentence": "코드 컨벤션 문서는 다 같이 한번 훑어보죠.",
+      "is_task": true,
+      "assignee_type": "all",
+      "assignee_mention": null,
+      "due_date": null,
+      "task_keywords": [
+        "컨벤션"
+      ]
+    },
+    {
+      "sentence": "각자 시간 날 때 코멘트 남겨주세요.",
+      "is_task": true,
+      "assignee_type": "all",
+      "assignee_mention": null,
+      "due_date": null,
+      "task_keywords": []
+    },
+    {
+      "sentence": "혹시 이 리팩터링은 누가 맡나요?",
+      "is_task": false
+    },
+    {
+      "sentence": "아직 정해진 게 없는 것 같아서요.",
+      "is_task": false
+    },
+    {
+      "sentence": "그건 다음 회의 때 다시 얘기하죠.",
+      "is_task": false
+    },
+    {
+      "sentence": "오늘은 여기까지 하겠습니다.",
+      "is_task": false
+    },
+    {
+      "sentence": "스프린트 계획은 여기까지고요, 이어서 릴리스 일정 볼게요.",
+      "is_task": false
+    },
+    {
+      "sentence": "아 죄송해요 잠깐 다른 미팅이 겹쳐서 소리만 듣고 있었어요.",
+      "is_task": false
+    },
+    {
+      "sentence": "네 괜찮아요.",
+      "is_task": false
+    },
+    {
+      "sentence": "혹시 이거 녹화되고 있나요?",
+      "is_task": false
+    },
+    {
+      "sentence": "네 녹화 중이에요.",
+      "is_task": false
+    },
+    {
+      "sentence": "녹화본은 늘 노션에 올라가 있어요.",
+      "is_task": false
+    },
+    {
+      "sentence": "오케이요.",
+      "is_task": false
+    },
+    {
+      "sentence": "다음 릴리스 준비 상황 보죠.",
+      "is_task": false
+    },
+    {
+      "sentence": "각자 일정만 짧게 공유해주세요.",
+      "is_task": false
+    },
+    {
+      "sentence": "저는 마이그레이션 스크립트를 월요일까지 끝내겠습니다.",
+      "is_task": true,
+      "assignee_type": "first",
+      "assignee_mention": null,
+      "due_date": "2026-09-14",
+      "task_keywords": [
+        "마이그레이션"
+      ]
+    },
+    {
+      "sentence": "QA 체크리스트는 17일까지 정리해서 공유드릴게요.",
+      "is_task": true,
+      "assignee_type": "first",
+      "assignee_mention": null,
+      "due_date": "2026-09-17",
+      "task_keywords": [
+        "체크리스트"
+      ]
+    },
+    {
+      "sentence": "디자인 QA는 2주 뒤에 한 번 더 돌면 좋을 것 같은데요.",
+      "is_task": false
+    },
+    {
+      "sentence": "그러죠.",
+      "is_task": false
+    },
+    {
+      "sentence": "민재님이 2주 뒤에 디자인 QA 한 번 더 돌려주세요.",
+      "is_task": true,
+      "assignee_type": "thirdname",
+      "assignee_mention": "민재",
+      "due_date": "2026-09-23",
+      "task_keywords": [
+        "QA"
+      ]
+    },
+    {
+      "sentence": "아 그리고 로그 수집기는 이번 달 말까지 붙여놓을게요.",
+      "is_task": true,
+      "assignee_type": "first",
+      "assignee_mention": null,
+      "due_date": "2026-09-30",
+      "task_keywords": [
+        "로그"
+      ]
+    },
+    {
+      "sentence": "릴리스 노트 초안은 내일 오전 11시까지 드리겠습니다.",
+      "is_task": true,
+      "assignee_type": "first",
+      "assignee_mention": null,
+      "due_date": "2026-09-10",
+      "task_keywords": [
+        "릴리스 노트"
+      ]
+    },
+    {
+      "sentence": "장애 대응 문서는 이번 주 안으로 한번 손보죠.",
+      "is_task": true,
+      "assignee_type": "none",
+      "assignee_mention": null,
+      "due_date": "2026-09-13",
+      "task_keywords": [
+        "장애 대응"
+      ]
+    },
+    {
+      "sentence": "저 지난주에 아이콘 작업하다가 시안이 다 엎어져서 고생했어요.",
+      "is_task": false
+    },
+    {
+      "sentence": "성능 테스트는 언제 하는 게 좋을까요?",
+      "is_task": false
+    },
+    {
+      "sentence": "아직 일정이 안 잡혔네요.",
+      "is_task": false
+    },
+    {
+      "sentence": "그건 릴리스 끝나고 다시 얘기하죠.",
+      "is_task": false
+    },
+    {
+      "sentence": "그리고 모니터링 알림 설정은 다음 달 3일까지 마무리하겠습니다.",
+      "is_task": true,
+      "assignee_type": "first",
+      "assignee_mention": null,
+      "due_date": "2026-10-03",
+      "task_keywords": [
+        "모니터링"
+      ]
+    },
+    {
+      "sentence": "시간 되면 접근성 점검도 해볼게요.",
+      "is_task": true,
+      "assignee_type": "first",
+      "assignee_mention": null,
+      "due_date": null,
+      "task_keywords": [
+        "접근성"
+      ]
+    },
+    {
+      "sentence": "보안 점검 항목은 하은님이 챙겨주세요.",
+      "is_task": true,
+      "assignee_type": "thirdname",
+      "assignee_mention": "하은",
+      "due_date": null,
+      "task_keywords": [
+        "보안"
+      ]
+    },
+    {
+      "sentence": "기한은 따로 없고 릴리스 전까지만 되면 돼요.",
+      "is_task": false
+    },
+    {
+      "sentence": "네 오늘은 여기까지 하겠습니다.",
+      "is_task": false
+    },
+    {
+      "sentence": "수고하셨어요.",
+      "is_task": false
+    },
+    {
+      "sentence": "릴리스 얘기는 여기까지 하고, 마지막으로 회고만 짧게 하고 끝낼게요.",
+      "is_task": false
+    },
+    {
+      "sentence": "벌써 시간이 이렇게 됐네요.",
+      "is_task": false
+    },
+    {
+      "sentence": "저는 다음 일정이 정각에 있어서 5분 전에 나가야 할 것 같아요.",
+      "is_task": false
+    },
+    {
+      "sentence": "네 그 전에 끝낼게요.",
+      "is_task": false
+    },
+    {
+      "sentence": "이번 스프린트 회고 시작하겠습니다.",
+      "is_task": false
+    },
+    {
+      "sentence": "편하게 얘기해주세요.",
+      "is_task": false
+    },
+    {
+      "sentence": "여유 되면 온보딩 문서도 정리해둘게요.",
+      "is_task": true,
+      "assignee_type": "first",
+      "assignee_mention": null,
+      "due_date": null,
+      "task_keywords": [
+        "온보딩"
+      ]
+    },
+    {
+      "sentence": "그 부분은 좀 고민해볼게요.",
+      "is_task": false
+    },
+    {
+      "sentence": "저도 고민해보고 내일까지 의견 정리해서 공유드릴게요.",
+      "is_task": true,
+      "assignee_type": "first",
+      "assignee_mention": null,
+      "due_date": "2026-09-10",
+      "task_keywords": []
+    },
+    {
+      "sentence": "이 캐시 이슈는 누가 보는 게 맞을까요?",
+      "is_task": false
+    },
+    {
+      "sentence": "그건 아마 하은님이 보실 것 같은데요.",
+      "is_task": false
+    },
+    {
+      "sentence": "아직 로그 정리는 못 했어요.",
+      "is_task": false
+    },
+    {
+      "sentence": "그건 목요일까지 마무리하겠습니다.",
+      "is_task": true,
+      "assignee_type": "first",
+      "assignee_mention": null,
+      "due_date": "2026-09-10",
+      "task_keywords": []
+    },
+    {
+      "sentence": "지금 하던 아이콘 작업은 계속 진행하겠습니다.",
+      "is_task": false
+    },
+    {
+      "sentence": "이 PR 검토해볼게요.",
+      "is_task": true,
+      "assignee_type": "first",
+      "assignee_mention": null,
+      "due_date": null,
+      "task_keywords": [
+        "PR"
+      ]
+    },
+    {
+      "sentence": "배포 자동화 얘기는 다음에 하죠.",
+      "is_task": false
+    },
+    {
+      "sentence": "필요하시면 디자인 쪽도 도와드릴게요.",
+      "is_task": true,
+      "assignee_type": "first",
+      "assignee_mention": null,
+      "due_date": null,
+      "task_keywords": [
+        "디자인"
+      ]
+    },
+    {
+      "sentence": "테스트 커버리지 올리는 건 우리 모두 신경 쓰기로 하죠.",
+      "is_task": true,
+      "assignee_type": "all",
+      "assignee_mention": null,
+      "due_date": null,
+      "task_keywords": [
+        "커버리지"
+      ]
+    },
+    {
+      "sentence": "오늘 회고는 여기까지입니다.",
+      "is_task": false
+    },
+    {
+      "sentence": "다들 고생하셨어요.",
+      "is_task": false
+    },
+    {
+      "sentence": "네 오늘 회의는 여기까지입니다.",
+      "is_task": false
+    },
+    {
+      "sentence": "고생하셨습니다.",
+      "is_task": false
+    },
+    {
+      "sentence": "네 다들 고생 많으셨어요, 들어가세요.",
+      "is_task": false
+    }
+  ]
+}

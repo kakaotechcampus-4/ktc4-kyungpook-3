@@ -19,10 +19,11 @@ self-consistency(n_samples>1)는 항목 존재 여부는 합집합으로 잡고,
 
 from __future__ import annotations
 
+import json
 from datetime import date
 from typing import Any, Protocol
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from extract import prompts
 from extract.dates import sanity_check_due_date
@@ -33,7 +34,7 @@ from shared.schemas import ExtractedTask, Transcript
 CERTAIN, INFERRED, MISSING = "certain", "inferred", "missing"
 
 # 원문에 그대로 적힌 것으로 볼 수 있는 담당자 타입 (해소가 필요 없는 것들)
-_EXPLICIT_ASSIGNEE_TYPES = {"first", "thirdname"}
+_EXPLICIT_ASSIGNEE_TYPES = {"first", "thirdname", "all"}
 
 
 class RelevanceResult(BaseModel):
@@ -74,12 +75,19 @@ def _call_llm(
     schema: type[BaseModel],
     *,
     temperature: float,
-    max_completion_tokens: int = 4000,
+    max_completion_tokens: int = 16000,
     reasoning_effort: str | None = None,
 ) -> BaseModel:
     """max_completion_tokens 는 항상 명시한다 — Gemini 로 돌릴 때 내부 추론이 JSON 을 다 뱉기 전에
-    한도를 넘겨 openai.LengthFinishReasonError 로 죽은 적이 있다(완료 토큰 5986). Claude 는 같은
-    작업에 70 토큰 남짓이라 여유롭지만, 공급자가 바뀌어도 안전하도록 상한은 유지한다.
+    한도를 넘겨 openai.LengthFinishReasonError 로 죽은 적이 있다(완료 토큰 5986). 짧은 케이스는
+    Claude 기준 70 토큰 남짓이라 여유롭지만, 상한은 공급자가 바뀌어도 안전하도록 유지한다.
+
+    상한이 4000 이던 시절 long_meeting(할일 34개)이 정확히 4000 에서 잘려 케이스 전체가
+    LengthFinishReasonError 로 죽었다 — 잘리면 일부 손실이 아니라 **전량 손실**이다.
+    다만 이 숫자를 올려도 해결되지 않는다: Elice MLAPI 게이트웨이는 요청값과 무관하게 완료
+    토큰을 6000 에서 하드캡한다(16000 을 요청해도 6000 에서 length 로 끊긴다). 그래서 실제
+    방어는 청킹 쪽에 있고(_CHUNK_SIZE), 여기 16000 은 게이트웨이가 상한을 풀거나 다른
+    공급자로 옮겼을 때를 위한 여유값이다. 근거: decision_log/0009.
 
     reasoning_effort 는 Gemini 계열 전용이라 기본은 안 보낸다 — 게이트웨이가 지원하지 않는
     파라미터를 400 으로 거절할 수 있어서, 필요한 공급자에서만 명시적으로 넘긴다."""
@@ -96,17 +104,50 @@ def _call_llm(
     parsed = getattr(message, "parsed", None)
     if isinstance(parsed, schema):
         return parsed
-    return schema.model_validate_json(message.content)
+    return _validate_json(schema, message.content)
+
+
+def _validate_json(schema: type[BaseModel], content: str) -> BaseModel:
+    """게이트웨이가 JSON 을 문자열로 한 겹 더 감싸 보내는 경우가 있어 한 번 벗겨보고 재시도한다.
+
+    실제로 겪었다 — 프롬프트 문구를 한 줄 바꿨더니 items 값이 배열이 아니라 "배열이 담긴 JSON
+    문자열"로 와서 ValidationError 로 케이스가 통째로 날아갔다(출력 잘림과 같은 전량 손실).
+    """
+    try:
+        return schema.model_validate_json(content)
+    except ValidationError:
+        inner = next((v for v in json.loads(content).values() if isinstance(v, str)), None)
+        if inner is None:
+            raise
+        return schema.model_validate_json(inner)
+
+
+_RELEVANCE_CHUNK_SIZE = 40
 
 
 def filter_relevant(client: ChatClient, model: str, sentences: list[str], speakers: list[str | None]) -> list[int]:
-    lines = _numbered_lines(list(range(len(sentences))), speakers, sentences)
-    messages = [
-        {"role": "system", "content": prompts.RELEVANCE_SYSTEM},
-        {"role": "user", "content": prompts.relevance_user_prompt(lines)},
-    ]
-    result = _call_llm(client, model, messages, RelevanceResult, temperature=0.0)
-    return sorted(i for i in set(result.relevant_indices) if 0 <= i < len(sentences))
+    """할일 후보 문장의 인덱스. 문장이 많으면 _RELEVANCE_CHUNK_SIZE 개씩 끊어 묻는다.
+
+    한 번에 100문장 넘게 주면 애매한 문장("~하죠", "~기로 했어요")을 조용히 빠뜨린다 —
+    long_meeting(115문장)에서 같은 문장이 짧게 따로 돌릴 땐 잡히는데 길게 붙이면 안 잡혔다.
+    """
+    relevant: set[int] = set()
+    for start in range(0, len(sentences), _RELEVANCE_CHUNK_SIZE):
+        chunk = list(range(start, min(start + _RELEVANCE_CHUNK_SIZE, len(sentences))))
+        lines = _numbered_lines(chunk, speakers, sentences)
+        messages = [
+            {"role": "system", "content": prompts.RELEVANCE_SYSTEM},
+            {"role": "user", "content": prompts.relevance_user_prompt(lines)},
+        ]
+        result = _call_llm(client, model, messages, RelevanceResult, temperature=0.0)
+        relevant |= {i for i in result.relevant_indices if chunk[0] <= i <= chunk[-1]}
+    return sorted(relevant)
+
+
+# 한 번에 추출을 요청할 관련 문장 수. 게이트웨이(Elice MLAPI)가 요청값과 무관하게 완료 토큰을
+# 6000 에서 하드캡하는데, 항목 하나가 한국어 evidence_span+reasoning 포함 ~180 토큰이라 30개를
+# 넘기면 JSON 이 잘리고 LengthFinishReasonError 로 **케이스 전량이 날아간다**. 여유를 두고 20.
+_CHUNK_SIZE = 20
 
 
 def extract_structured(
@@ -119,15 +160,22 @@ def extract_structured(
     today: date,
     temperature: float,
 ) -> list[ExtractionItem]:
-    if not indices:
-        return []
-    lines = _numbered_lines(indices, speakers, sentences)
-    messages = [
-        {"role": "system", "content": prompts.extraction_system_prompt(today)},
-        {"role": "user", "content": prompts.extraction_user_prompt(lines)},
-    ]
-    result = _call_llm(client, model, messages, ExtractionResult, temperature=temperature)
-    return result.items
+    """관련 문장을 _CHUNK_SIZE 개씩 끊어 추출한다. 인덱스가 전역이라 결과는 그냥 이어 붙이면 된다.
+
+    추출 프롬프트에는 원래 전체 대화록이 아니라 관련 문장만 들어가므로, 청킹으로 더 잃는 문맥은
+    청크 경계를 넘는 지시대명사 해소뿐이다. 연속 구간으로 끊어 그 손실을 최소화한다.
+    """
+    items: list[ExtractionItem] = []
+    for start in range(0, len(indices), _CHUNK_SIZE):
+        chunk = indices[start:start + _CHUNK_SIZE]
+        lines = _numbered_lines(chunk, speakers, sentences)
+        messages = [
+            {"role": "system", "content": prompts.extraction_system_prompt(today)},
+            {"role": "user", "content": prompts.extraction_user_prompt(lines)},
+        ]
+        result = _call_llm(client, model, messages, ExtractionResult, temperature=temperature)
+        items.extend(result.items)
+    return items
 
 
 def _norm(s: str | None) -> str:
@@ -159,11 +207,12 @@ def _reconcile(runs: list[list[ExtractionItem]]) -> dict[int, tuple[ExtractionIt
 
 
 def _assignee_status(item: ExtractionItem, sentence: str, wobbles: bool) -> str:
-    """담당자 근거 상태. 원문에 이름이 그대로 있으면 certain, 문맥 추론이면 inferred."""
+    """담당자 근거 상태. 원문에 이름이 그대로 있으면 certain, 문맥 추론이면 inferred.
+
+    all("다 같이")은 이름은 없지만 "참석자 전원"이라는 판단이 명확하므로 certain.
+    """
     if item.assignee_type == "none":
         return MISSING
-    if item.assignee_type == "group":
-        return MISSING  # 할일은 맞지만 담당자는 PM 이 지정해야 함
     if wobbles or item.ambiguity_flag:
         return INFERRED
     if item.assignee_type in _EXPLICIT_ASSIGNEE_TYPES:
@@ -239,7 +288,7 @@ def extract_tasks(
         task_status = INFERRED if item.ambiguity_flag else CERTAIN
 
         # first 는 BE 가 발화자로 바로 푸니 AI 가 이름을 채우지 않는다(중복 작업 방지)
-        mention = None if item.assignee_type in {"first", "group", "none"} else item.assignee_mention
+        mention = None if item.assignee_type in {"first", "all", "none"} else item.assignee_mention
 
         results.append(
             ExtractedTask(

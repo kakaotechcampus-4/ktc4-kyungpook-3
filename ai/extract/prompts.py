@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from datetime import date
 
-ASSIGNEE_TYPES = ("first", "second", "thirdname", "thirdpronoun", "thirdrole", "group", "none")
+ASSIGNEE_TYPES = ("first", "second", "thirdname", "thirdpronoun", "thirdrole", "all", "none")
 
 # ─────────────────────────────────────────────────────────── 1단계: 관련성 필터
 RELEVANCE_SYSTEM = """너는 팀 회의 대화록에서 '할일'이 담긴 문장만 골라내는 필터다.
@@ -64,9 +64,11 @@ def extraction_system_prompt(today: date) -> str:
    - thirdname: 제3자를 이름·별명으로 ("환 님이", "하은이가")
    - thirdpronoun: 제3자를 지시대명사로 ("그분이", "저쪽에서")
    - thirdrole: 역할·직책으로 ("백엔드 리더가", "디자인 담당이")
-   - group: 특정 개인이 아닌 전체 ("다 같이", "우리 모두", "전체가")
+   - all: 참석자 전원이 담당. 전원을 가리키는 표현이 원문에 있을 때만 쓴다
+     ("다 같이", "우리 모두", "전체가", "각자"). 그런 표현 없이 담당자를 안 밝힌
+     청유형이면 all 이 아니라 none 이다
    - none: 담당자 언급이 전혀 없음
-5. assignee_mention — 담당자를 가리킨 표현을 **원문 그대로**. first/group/none 이면 null
+5. assignee_mention — 담당자를 가리킨 표현을 **원문 그대로**. first/all/none 이면 null
 6. assignee_resolved — second/thirdpronoun 처럼 그 표현만으로는 누군지 모르는 경우,
    **앞뒤 문맥을 보고** 실제 사람 이름으로 바꿔라 (예: "그분" → "환"). 문맥으로도 모르면 null.
    다른 타입이면 null

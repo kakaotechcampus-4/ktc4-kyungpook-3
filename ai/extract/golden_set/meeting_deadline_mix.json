@@ -142,7 +142,7 @@
     {
       "sentence": "장애 대응 문서는 이번 주 안으로 한번 손보죠.",
       "is_task": true,
-      "assignee_type": "group",
+      "assignee_type": "none",
       "assignee_mention": null,
       "due_date": "2026-09-13",
       "task_keywords": [

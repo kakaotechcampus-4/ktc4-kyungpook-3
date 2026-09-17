@@ -18,8 +18,8 @@ Phase 1(추출) 채점용 골든셋. `extract/eval_golden_set.py`가 이 안의 
     {
       "sentence": "extract.text.split_sentences 로 이 turns 를 쪼갰을 때 나오는 문장과 정확히 같아야 함",
       "is_task": true,
-      "assignee_type": "first|second|thirdname|thirdpronoun|thirdrole|group|none",
-      "assignee_mention": "원문에 나온 호칭 그대로. first/group/none 이면 null",
+      "assignee_type": "first|second|thirdname|thirdpronoun|thirdrole|all|none",
+      "assignee_mention": "원문에 나온 호칭 그대로. first/all/none 이면 null",
       "assignee_resolved": "second/thirdpronoun 을 문맥으로 풀었을 때 기대하는 실제 이름 (그 외 생략)",
       "due_date": "YYYY-MM-DD 또는 null",
       "task_keywords": ["예측 task 텍스트에 이 키워드들이 다 포함돼야 정답으로 침 (선택, 생략 가능)"]
@@ -49,6 +49,10 @@ Phase 1(추출) 채점용 골든셋. `extract/eval_golden_set.py`가 이 안의 
   gold 를 "최종 병합 결과" 관점으로 다시 정의해야 한다.
 - **dense_multi_task**: 한 문장에 담당자·마감이 다른 할일이 여러 개 섞인 경우. 지금 추출기는
   "문장 하나 = 할일 하나"를 가정해서 못 쪼갤 걸로 예상되는 케이스 — 알려진 한계를 드러내는 용도.
+- **full_meeting** 중 `long_meeting`은 기존 긴 케이스 4개를 잡담으로 이어붙인 **파생 케이스**다
+  (81턴 / 약 10분). 내용이 중복이라 전체 집계에 이중 계산되니, 원본만 보려면
+  `python -m extract.eval_golden_set -k meeting_` 처럼 `-k` 로 거른다. **원본의 gold 를
+  고치면 `long_meeting` 도 같이 고쳐야 한다.**
 - **unknown_speaker**: `speaker_names`가 비어 있을 때(화자 표시 이름을 못 받은 경우) 본인 지칭이
   깨지는지 확인.
 

@@ -36,7 +36,7 @@ CASES_DIR = Path(__file__).resolve().parent / "golden_set"
 class GoldSentence:
     text: str
     is_task: bool
-    assignee_type: str | None = None  # first|second|thirdname|thirdpronoun|thirdrole|group|none
+    assignee_type: str | None = None  # first|second|thirdname|thirdpronoun|thirdrole|all|none
     assignee_mention: str | None = None
     assignee_resolved: str | None = None  # second/thirdpronoun 을 문맥으로 풀었을 때 기대하는 이름
     due_date: str | None = None
@@ -94,8 +94,11 @@ def load_case(path: Path) -> GoldCase:
     )
 
 
-def load_all_cases() -> list[GoldCase]:
-    return [load_case(p) for p in sorted(CASES_DIR.glob("*.json"))]
+def load_all_cases(pattern: str | None = None) -> list[GoldCase]:
+    paths = sorted(p for p in CASES_DIR.glob("*.json") if not pattern or pattern in p.stem)
+    if not paths:
+        raise SystemExit(f"-k {pattern!r} 에 맞는 케이스가 없습니다.")
+    return [load_case(p) for p in paths]
 
 
 def _normalize(s: str) -> str:
@@ -154,7 +157,7 @@ def _name_candidates(s: str | None) -> set[str]:
 def _names_match(a: str | None, b: str | None) -> bool:
     ca, cb = _name_candidates(a), _name_candidates(b)
     if not ca and not cb:
-        return True  # 둘 다 비어 있으면(first/group/none) 일치로 본다
+        return True  # 둘 다 비어 있으면(first/all/none) 일치로 본다
     return bool(ca & cb)
 
 
@@ -223,7 +226,7 @@ def score_case(gold: GoldCase, predictions: list[ExtractedTask]) -> ScoreResult:
                     result.type_correct += 1
 
             # 담당자 지목 — second/thirdpronoun 은 '해소된 이름'이 맞는지를 본다.
-            # first/group/none 은 이름이 없는 게 정답이므로 둘 다 비어 있으면 정답.
+            # first/all/none 은 이름이 없는 게 정답이므로 둘 다 비어 있으면 정답.
             result.assignee_total += 1
             if gs.assignee_resolved:
                 got = pred.assignee_resolved or pred.assignee_mention
@@ -278,8 +281,9 @@ def _print_mismatches(case: GoldCase, preds: list[ExtractedTask]) -> None:
         print("\n".join(lines))
 
 
-def run(label: str, extract_fn: Callable[[GoldCase], list[ExtractedTask]], *, verbose: bool = False) -> None:
-    cases = load_all_cases()
+def run(label: str, extract_fn: Callable[[GoldCase], list[ExtractedTask]], *,
+        verbose: bool = False, pattern: str | None = None) -> None:
+    cases = load_all_cases(pattern)
     print(f"\n=== {label} ===")
     print(f"  {'case':<22}{'시나리오':<18}{'P':>5}{'R':>5}{'F1':>5}{'타입':>7}{'담당자':>7}{'마감':>7}")
     by_scenario: dict[str, ScoreResult] = {}
@@ -318,6 +322,7 @@ def main() -> int:
     ap.add_argument("--n-samples", type=int, default=1,
                     help="self-consistency 반복 횟수 (기본 1). 3 으로 올리면 호출이 3배인데 recall 은 약 1%p 오른다")
     ap.add_argument("-v", "--verbose", action="store_true", help="틀린 항목을 정답과 나란히 출력")
+    ap.add_argument("-k", metavar="PATTERN", help="case_id 에 이 문자열이 든 케이스만 채점 (예: -k long_meeting)")
     args = ap.parse_args()
 
     try:
@@ -347,6 +352,7 @@ def main() -> int:
             n_samples=args.n_samples,
         ),
         verbose=args.verbose,
+        pattern=args.k,
     )
     return 0
 

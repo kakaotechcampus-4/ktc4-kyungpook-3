@@ -90,8 +90,8 @@ class ExtractedTask(_Base):
     # ── 담당자 호칭 분류 (BE alias 설계와 1:1). 기준은 extract/TASK_CRITERIA.md
     # BE 는 assignee_type 을 보고 처리 경로를 고른다: first/mention 은 발화자·멤버 테이블로 직행,
     # thirdname 은 alias 테이블 조회, second/thirdpronoun 은 AI 가 해소한 결과를 쓰고,
-    # thirdrole/group/none 은 PM 확인으로 보낸다.
-    assignee_type: str = "none"  # first|second|thirdname|thirdpronoun|thirdrole|group|none
+    # all 은 참석자 전원으로 펼치고, thirdrole/none 은 PM 확인으로 보낸다.
+    assignee_type: str = "none"  # first|second|thirdname|thirdpronoun|thirdrole|all|none
     assignee_resolved: str | None = None  # second/thirdpronoun 을 문맥으로 푼 이름 (못 풀면 None)
     due_raw: str | None = None  # 마감을 가리킨 원문 표현 ("이번 주 목요일까지")
 
