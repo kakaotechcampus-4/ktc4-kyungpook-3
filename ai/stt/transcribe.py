@@ -282,7 +282,7 @@ def main() -> int:
     ap.add_argument("--backend", choices=["local", "elice"], default="local",
                     help="elice 는 API. 예상 비용을 찍고 --yes 가 있어야 돈다. whole 모드는 local 만")
     ap.add_argument("--no-gate", action="store_true", help="말 필터(실로 VAD)를 끈다")
-    ap.add_argument("--workers", type=int, default=None, help="동시 호출 수. 기본: elice 3, local 1")
+    ap.add_argument("--workers", type=int, default=None, help="동시 호출 수. 기본: elice 6, local 1")
     ap.add_argument("--yes", action="store_true", help="유료 실행을 승인한다")
     ap.add_argument("--compute-type", default="int8")
     ap.add_argument("--language", default="ko")

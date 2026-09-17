@@ -550,9 +550,10 @@ def make_backend(kind: str, model: str, mode: str = "chunk", *, beam: int = 5,
 
 
 def default_workers(kind: str) -> int:
-    """Elice 는 3. 여섯을 동시에 보내면 호출당 시간이 7초에서 34초로 늘어 타임아웃에 걸렸다(2026-09-16).
-    셋이면 12초 안팎이고 끝까지 간다. 로컬은 CPU 를 다 쓰므로 1."""
-    return 3 if kind == "elice" else 1
+    """Elice 는 6. 동시에 보내면 호출당 시간은 늘지만(7초 → 10~34초) 전체 벽시계는 가장 짧았다
+    (정렬본 두 회의 22초·21초, 워커 3 은 102초·37초). 고정 30초 타임아웃 시절에는 여섯이 전부
+    잘렸는데, 길이에 비례하는 타임아웃과 재시도를 넣은 뒤로는 실패가 없다. 로컬은 CPU 를 다 쓰므로 1."""
+    return 6 if kind == "elice" else 1
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -563,7 +564,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--model", default="large-v3-turbo", help="--backend local 의 faster-whisper 모델")
     ap.add_argument("--beam", type=int, default=5, help="로컬 빔 폭. 1 이면 빠르고 5 가 정확하다")
     ap.add_argument("--no-gate", action="store_true", help="말 필터를 끈다")
-    ap.add_argument("--workers", type=int, default=None, help="동시 호출 수. 기본: elice 3, local 1")
+    ap.add_argument("--workers", type=int, default=None, help="동시 호출 수. 기본: elice 6, local 1")
     ap.add_argument("--out", type=Path, default=None, help="회의록 출력 디렉토리 (기본: session_dir)")
     ap.add_argument("--yes", action="store_true", help="유료 실행을 승인한다")
     args = ap.parse_args(argv)
