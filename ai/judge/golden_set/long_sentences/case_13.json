@@ -24,6 +24,46 @@
     },
     {
       "speaker": "D",
+      "text": "경쟁사 캠페인도 좀 살펴봤어요."
+    },
+    {
+      "speaker": "E",
+      "text": "어떤 게 있었나요?"
+    },
+    {
+      "speaker": "A",
+      "text": "나중에 자료로 공유드릴게요."
+    },
+    {
+      "speaker": "B",
+      "text": "좋습니다."
+    },
+    {
+      "speaker": "C",
+      "text": "저는 SNS 반응 좀 모니터링했어요."
+    },
+    {
+      "speaker": "D",
+      "text": "괜찮아 보이나요?"
+    },
+    {
+      "speaker": "E",
+      "text": "네 나쁘지 않아요."
+    },
+    {
+      "speaker": "A",
+      "text": "다행이네요."
+    },
+    {
+      "speaker": "B",
+      "text": "점심은 뭐 드실 건가요?"
+    },
+    {
+      "speaker": "C",
+      "text": "저는 아직 안 정했어요."
+    },
+    {
+      "speaker": "D",
       "text": "인플루언서 섭외는 제가 맡을게요."
     },
     {
@@ -68,6 +108,56 @@
       "note": "진행상황"
     },
     {
+      "text": "경쟁사 캠페인도 좀 살펴봤어요.",
+      "should_flag": false,
+      "note": "진행상황"
+    },
+    {
+      "text": "어떤 게 있었나요?",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "나중에 자료로 공유드릴게요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "좋습니다.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "저는 SNS 반응 좀 모니터링했어요.",
+      "should_flag": false,
+      "note": "진행상황"
+    },
+    {
+      "text": "괜찮아 보이나요?",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "네 나쁘지 않아요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "다행이네요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "점심은 뭐 드실 건가요?",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "저는 아직 안 정했어요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
       "text": "인플루언서 섭외는 제가 맡을게요.",
       "should_flag": true,
       "note": "담당자 자기지칭"
@@ -104,5 +194,5 @@
     }
   ],
   "counts_toward_pass_rate": true,
-  "meeting_duration_sec": 219.0
+  "meeting_duration_sec": 443.0
 }

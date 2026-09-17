@@ -52,6 +52,54 @@
     },
     {
       "speaker": "A",
+      "text": "여기 인프라 쪽 로그 좀 정리했어요."
+    },
+    {
+      "speaker": "B",
+      "text": "저도 그냥 리팩터링 조금 했습니다."
+    },
+    {
+      "speaker": "C",
+      "text": "특별히 막히는 이슈는 없었어요."
+    },
+    {
+      "speaker": "D",
+      "text": "저도 순조롭게 진행 중입니다."
+    },
+    {
+      "speaker": "E",
+      "text": "어제 좀 늦게까지 일했더니 피곤하네요."
+    },
+    {
+      "speaker": "A",
+      "text": "고생하셨어요."
+    },
+    {
+      "speaker": "B",
+      "text": "커피 한잔하고 계속해야겠어요."
+    },
+    {
+      "speaker": "C",
+      "text": "저는 문서 정리 좀 했어요."
+    },
+    {
+      "speaker": "D",
+      "text": "리뷰 남겨주신 거 확인했습니다."
+    },
+    {
+      "speaker": "E",
+      "text": "감사합니다."
+    },
+    {
+      "speaker": "A",
+      "text": "오늘 오후에 미팅이 하나 더 있어요."
+    },
+    {
+      "speaker": "B",
+      "text": "저도 그거 참석해야 해요."
+    },
+    {
+      "speaker": "A",
       "text": "그럼 오늘은 여기까지 하겠습니다."
     },
     {
@@ -111,6 +159,66 @@
       "note": "잡담"
     },
     {
+      "text": "여기 인프라 쪽 로그 좀 정리했어요.",
+      "should_flag": false,
+      "note": "진행상황"
+    },
+    {
+      "text": "저도 그냥 리팩터링 조금 했습니다.",
+      "should_flag": false,
+      "note": "진행상황"
+    },
+    {
+      "text": "특별히 막히는 이슈는 없었어요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "저도 순조롭게 진행 중입니다.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "어제 좀 늦게까지 일했더니 피곤하네요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "고생하셨어요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "커피 한잔하고 계속해야겠어요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "저는 문서 정리 좀 했어요.",
+      "should_flag": false,
+      "note": "진행상황"
+    },
+    {
+      "text": "리뷰 남겨주신 거 확인했습니다.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "감사합니다.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "오늘 오후에 미팅이 하나 더 있어요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "저도 그거 참석해야 해요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
       "text": "그럼 오늘은 여기까지 하겠습니다.",
       "should_flag": false,
       "note": "회의 진행"
@@ -122,5 +230,5 @@
     }
   ],
   "counts_toward_pass_rate": true,
-  "meeting_duration_sec": 254.0
+  "meeting_duration_sec": 510.0
 }

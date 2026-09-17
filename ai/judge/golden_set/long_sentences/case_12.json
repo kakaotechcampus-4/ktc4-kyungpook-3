@@ -24,6 +24,50 @@
     },
     {
       "speaker": "D",
+      "text": "QA 쪽에서 버그 리포트 몇 개 왔어요."
+    },
+    {
+      "speaker": "E",
+      "text": "네 그거 확인해볼게요."
+    },
+    {
+      "speaker": "A",
+      "text": "저는 배포 스크립트 좀 손봤습니다."
+    },
+    {
+      "speaker": "B",
+      "text": "좋네요."
+    },
+    {
+      "speaker": "C",
+      "text": "점심시간 다가오네요."
+    },
+    {
+      "speaker": "D",
+      "text": "뭐 드실지 정하셨어요?"
+    },
+    {
+      "speaker": "E",
+      "text": "저는 아직이요."
+    },
+    {
+      "speaker": "A",
+      "text": "근처에 새로 생긴 식당 가볼까요."
+    },
+    {
+      "speaker": "B",
+      "text": "좋아요."
+    },
+    {
+      "speaker": "C",
+      "text": "저는 오늘 컨디션이 괜찮네요."
+    },
+    {
+      "speaker": "D",
+      "text": "다행이네요."
+    },
+    {
+      "speaker": "D",
       "text": "고생하셨네요."
     },
     {
@@ -62,6 +106,61 @@
       "text": "저는 어제 계속 디버깅했어요.",
       "should_flag": false,
       "note": "긴 진행상황 보고, 결정 없음 (원래 한 발화가 문장 3개로 쪼개짐 1/3)"
+    },
+    {
+      "text": "QA 쪽에서 버그 리포트 몇 개 왔어요.",
+      "should_flag": false,
+      "note": "진행상황"
+    },
+    {
+      "text": "네 그거 확인해볼게요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "저는 배포 스크립트 좀 손봤습니다.",
+      "should_flag": false,
+      "note": "진행상황"
+    },
+    {
+      "text": "좋네요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "점심시간 다가오네요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "뭐 드실지 정하셨어요?",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "저는 아직이요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "근처에 새로 생긴 식당 가볼까요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "좋아요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "저는 오늘 컨디션이 괜찮네요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "다행이네요.",
+      "should_flag": false,
+      "note": "잡담"
     },
     {
       "text": "원인을 못 찾아서 좀 힘들었습니다.",
@@ -110,5 +209,5 @@
     }
   ],
   "counts_toward_pass_rate": true,
-  "meeting_duration_sec": 195.0
+  "meeting_duration_sec": 450.0
 }

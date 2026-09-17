@@ -27,6 +27,42 @@
       "text": "로그인 마감 이번주 금욜로 당길게요"
     },
     {
+      "speaker": "E",
+      "text": "오전 회의 어떠셨어요"
+    },
+    {
+      "speaker": "A",
+      "text": "무난했어요ㅎㅎ"
+    },
+    {
+      "speaker": "B",
+      "text": "저는 좀 졸리네요"
+    },
+    {
+      "speaker": "C",
+      "text": "커피 드세요ㅋㅋ"
+    },
+    {
+      "speaker": "D",
+      "text": "이따 점심 뭐드실?"
+    },
+    {
+      "speaker": "E",
+      "text": "저는 아무거나요"
+    },
+    {
+      "speaker": "A",
+      "text": "넵넵"
+    },
+    {
+      "speaker": "B",
+      "text": "오늘 날씨 좋네요"
+    },
+    {
+      "speaker": "C",
+      "text": "그러게요"
+    },
+    {
       "speaker": "D",
       "text": "ㅇㅋㅇㅋ"
     },
@@ -81,6 +117,51 @@
       "note": "일정 결정(채팅체)"
     },
     {
+      "text": "오전 회의 어떠셨어요",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "무난했어요ㅎㅎ",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "저는 좀 졸리네요",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "커피 드세요ㅋㅋ",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "이따 점심 뭐드실?",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "저는 아무거나요",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "넵넵",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "오늘 날씨 좋네요",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "그러게요",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
       "text": "ㅇㅋㅇㅋ",
       "should_flag": false,
       "note": "단순 맞장구"
@@ -122,5 +203,5 @@
     }
   ],
   "counts_toward_pass_rate": true,
-  "meeting_duration_sec": 275.0
+  "meeting_duration_sec": 470.0
 }
