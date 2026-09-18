@@ -1,0 +1,12 @@
+{
+  "case_id": "case_11",
+  "scenario": "regex_false_positive_schedule_keyword",
+  "description": "날짜 키워드만 있는 잡담 — 규칙 기반은 오탐, Luna는 걸러야 함",
+  "turns": [
+    {"speaker": "C", "text": "오늘 날씨가 좋네요."}
+  ],
+  "expected": [
+    {"text": "오늘 날씨가 좋네요.", "should_flag": false, "note": "잡담. 규칙 기반은 '오늘' 키워드로 오탐할 것으로 예상"}
+  ],
+  "counts_toward_pass_rate": true
+}

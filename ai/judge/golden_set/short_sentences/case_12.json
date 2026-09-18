@@ -1,0 +1,14 @@
+{
+  "case_id": "case_12",
+  "scenario": "question_left_unresolved",
+  "description": "질문은 나왔지만 결론 없이 보류됨 — 둘 다 flag 안 돼야 정상",
+  "turns": [
+    {"speaker": "A", "text": "로그인 화면 마감을 다음 주 화요일로 미루는 게 어때요?"},
+    {"speaker": "B", "text": "음... 그건 나중에 다시 얘기해보죠."}
+  ],
+  "expected": [
+    {"text": "로그인 화면 마감을 다음 주 화요일로 미루는 게 어때요?", "should_flag": false, "note": "질문 — 아직 결정 아님"},
+    {"text": "음... 그건 나중에 다시 얘기해보죠.", "should_flag": false, "note": "보류/회피 — 결정된 게 없으므로 반영할 것도 없음"}
+  ],
+  "counts_toward_pass_rate": true
+}

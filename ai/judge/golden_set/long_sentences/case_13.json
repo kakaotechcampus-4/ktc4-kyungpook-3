@@ -1,0 +1,198 @@
+{
+  "case_id": "case_13",
+  "scenario": "different_domain_marketing_schedule",
+  "description": "개발 용어 없이 마케팅/일정 조율 회의 — 특정 도메인 패턴에 과적합 안 됐는지 확인",
+  "speaker_names": {
+    "A": "하은",
+    "B": "도윤",
+    "C": "민재",
+    "D": "세영",
+    "E": "유진"
+  },
+  "turns": [
+    {
+      "speaker": "A",
+      "text": "이번 캠페인 회의 시작하겠습니다."
+    },
+    {
+      "speaker": "B",
+      "text": "저는 어제 광고 시안 몇 개 만들어봤어요."
+    },
+    {
+      "speaker": "C",
+      "text": "저도 예산안 정리하고 있습니다."
+    },
+    {
+      "speaker": "D",
+      "text": "경쟁사 캠페인도 좀 살펴봤어요."
+    },
+    {
+      "speaker": "E",
+      "text": "어떤 게 있었나요?"
+    },
+    {
+      "speaker": "A",
+      "text": "나중에 자료로 공유드릴게요."
+    },
+    {
+      "speaker": "B",
+      "text": "좋습니다."
+    },
+    {
+      "speaker": "C",
+      "text": "저는 SNS 반응 좀 모니터링했어요."
+    },
+    {
+      "speaker": "D",
+      "text": "괜찮아 보이나요?"
+    },
+    {
+      "speaker": "E",
+      "text": "네 나쁘지 않아요."
+    },
+    {
+      "speaker": "A",
+      "text": "다행이네요."
+    },
+    {
+      "speaker": "B",
+      "text": "점심은 뭐 드실 건가요?"
+    },
+    {
+      "speaker": "C",
+      "text": "저는 아직 안 정했어요."
+    },
+    {
+      "speaker": "D",
+      "text": "인플루언서 섭외는 제가 맡을게요."
+    },
+    {
+      "speaker": "A",
+      "text": "좋아요, 그리고 캠페인 오픈일은 다음 달 3일로 정하죠."
+    },
+    {
+      "speaker": "E",
+      "text": "예산은 나중에 다시 논의할까요?"
+    },
+    {
+      "speaker": "C",
+      "text": "네 다음에 다시 얘기해요."
+    },
+    {
+      "speaker": "B",
+      "text": "시안은 이번 주 안에 3개로 추리기로 했어요."
+    },
+    {
+      "speaker": "D",
+      "text": "저도 그게 좋을 것 같아요."
+    },
+    {
+      "speaker": "A",
+      "text": "그럼 오늘은 여기까지 하겠습니다."
+    }
+  ],
+  "expected": [
+    {
+      "text": "이번 캠페인 회의 시작하겠습니다.",
+      "should_flag": false,
+      "note": "회의 진행"
+    },
+    {
+      "text": "저는 어제 광고 시안 몇 개 만들어봤어요.",
+      "should_flag": false,
+      "note": "진행상황"
+    },
+    {
+      "text": "저도 예산안 정리하고 있습니다.",
+      "should_flag": false,
+      "note": "진행상황"
+    },
+    {
+      "text": "경쟁사 캠페인도 좀 살펴봤어요.",
+      "should_flag": false,
+      "note": "진행상황"
+    },
+    {
+      "text": "어떤 게 있었나요?",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "나중에 자료로 공유드릴게요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "좋습니다.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "저는 SNS 반응 좀 모니터링했어요.",
+      "should_flag": false,
+      "note": "진행상황"
+    },
+    {
+      "text": "괜찮아 보이나요?",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "네 나쁘지 않아요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "다행이네요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "점심은 뭐 드실 건가요?",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "저는 아직 안 정했어요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "인플루언서 섭외는 제가 맡을게요.",
+      "should_flag": true,
+      "note": "담당자 자기지칭"
+    },
+    {
+      "text": "좋아요, 그리고 캠페인 오픈일은 다음 달 3일로 정하죠.",
+      "should_flag": true,
+      "note": "일정 결정"
+    },
+    {
+      "text": "예산은 나중에 다시 논의할까요?",
+      "should_flag": false,
+      "note": "질문 — 아직 결정 아님"
+    },
+    {
+      "text": "네 다음에 다시 얘기해요.",
+      "should_flag": false,
+      "note": "보류 — 결정 없음"
+    },
+    {
+      "text": "시안은 이번 주 안에 3개로 추리기로 했어요.",
+      "should_flag": true,
+      "note": "범위 결정"
+    },
+    {
+      "text": "저도 그게 좋을 것 같아요.",
+      "should_flag": false,
+      "note": "단순 동의"
+    },
+    {
+      "text": "그럼 오늘은 여기까지 하겠습니다.",
+      "should_flag": false,
+      "note": "회의 진행"
+    }
+  ],
+  "counts_toward_pass_rate": true,
+  "meeting_duration_sec": 443.0
+}

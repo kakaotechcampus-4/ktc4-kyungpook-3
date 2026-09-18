@@ -1,0 +1,360 @@
+{
+  "case_id": "case_02",
+  "scenario": "all_noise_no_signal",
+  "description": "신호가 하나도 없는 순수 진행상황 공유 회의 — Luna가 하나도 안 걸러야 정상(오탐 방지 테스트)",
+  "speaker_names": {
+    "A": "하은",
+    "B": "도윤",
+    "C": "민재",
+    "D": "세영",
+    "E": "유진"
+  },
+  "turns": [
+    {
+      "speaker": "A",
+      "text": "다들 오셨나요? 시작하겠습니다."
+    },
+    {
+      "speaker": "B",
+      "text": "저는 어제 API 문서 리뷰했어요."
+    },
+    {
+      "speaker": "C",
+      "text": "저도 코드 리뷰 몇 개 봤습니다."
+    },
+    {
+      "speaker": "D",
+      "text": "여기 인프라 쪽 로그 좀 정리했어요."
+    },
+    {
+      "speaker": "E",
+      "text": "저도 그냥 리팩터링 조금 했습니다."
+    },
+    {
+      "speaker": "A",
+      "text": "특별히 막히는 이슈는 없었어요."
+    },
+    {
+      "speaker": "B",
+      "text": "저도 순조롭게 진행 중입니다."
+    },
+    {
+      "speaker": "C",
+      "text": "어제 좀 늦게까지 일했더니 피곤하네요."
+    },
+    {
+      "speaker": "D",
+      "text": "고생하셨어요."
+    },
+    {
+      "speaker": "E",
+      "text": "커피 한잔하고 계속해야겠어요."
+    },
+    {
+      "speaker": "A",
+      "text": "저는 문서 정리 좀 했어요."
+    },
+    {
+      "speaker": "B",
+      "text": "리뷰 남겨주신 거 확인했습니다."
+    },
+    {
+      "speaker": "C",
+      "text": "감사합니다."
+    },
+    {
+      "speaker": "D",
+      "text": "오늘 오후에 미팅이 하나 더 있어요."
+    },
+    {
+      "speaker": "D",
+      "text": "디자인 시안 계속 다듬고 있어요."
+    },
+    {
+      "speaker": "E",
+      "text": "테스트 코드 커버리지 좀 올렸습니다."
+    },
+    {
+      "speaker": "A",
+      "text": "다들 수고 많으셨네요."
+    },
+    {
+      "speaker": "B",
+      "text": "네 별다른 이슈는 없었어요."
+    },
+    {
+      "speaker": "C",
+      "text": "저도 딱히 막힌 건 없었습니다."
+    },
+    {
+      "speaker": "D",
+      "text": "저도 순조롭게 진행 중이에요."
+    },
+    {
+      "speaker": "E",
+      "text": "오늘 날씨가 좋아서 그런지 컨디션이 좋네요."
+    },
+    {
+      "speaker": "A",
+      "text": "하하 그러네요."
+    },
+    {
+      "speaker": "B",
+      "text": "커피 한잔하고 다시 집중해야겠어요."
+    },
+    {
+      "speaker": "A",
+      "text": "네 오늘은 이 정도로 마무리하겠습니다."
+    },
+    {
+      "speaker": "D",
+      "text": "저도 그거 참석해야 해요."
+    },
+    {
+      "speaker": "E",
+      "text": "QA 쪽에서 버그 리포트 몇 개 왔어요."
+    },
+    {
+      "speaker": "A",
+      "text": "네 그거 확인해볼게요."
+    },
+    {
+      "speaker": "B",
+      "text": "저는 배포 스크립트 좀 손봤습니다."
+    },
+    {
+      "speaker": "C",
+      "text": "좋네요."
+    },
+    {
+      "speaker": "D",
+      "text": "점심시간 다가오네요."
+    },
+    {
+      "speaker": "E",
+      "text": "뭐 드실지 정하셨어요?"
+    },
+    {
+      "speaker": "A",
+      "text": "저는 아직이요."
+    },
+    {
+      "speaker": "B",
+      "text": "근처에 새로 생긴 식당 가볼까요."
+    },
+    {
+      "speaker": "C",
+      "text": "좋아요."
+    },
+    {
+      "speaker": "D",
+      "text": "저는 오늘 컨디션이 괜찮네요."
+    },
+    {
+      "speaker": "C",
+      "text": "네 감사합니다."
+    },
+    {
+      "speaker": "D",
+      "text": "수고하셨어요."
+    },
+    {
+      "speaker": "E",
+      "text": "내일 뵐게요."
+    }
+  ],
+  "expected": [
+    {
+      "text": "다들 오셨나요? 시작하겠습니다.",
+      "should_flag": false,
+      "note": "회의 진행"
+    },
+    {
+      "text": "저는 어제 API 문서 리뷰했어요.",
+      "should_flag": false,
+      "note": "진행상황"
+    },
+    {
+      "text": "저도 코드 리뷰 몇 개 봤습니다.",
+      "should_flag": false,
+      "note": "진행상황"
+    },
+    {
+      "text": "여기 인프라 쪽 로그 좀 정리했어요.",
+      "should_flag": false,
+      "note": "진행상황"
+    },
+    {
+      "text": "저도 그냥 리팩터링 조금 했습니다.",
+      "should_flag": false,
+      "note": "진행상황"
+    },
+    {
+      "text": "특별히 막히는 이슈는 없었어요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "저도 순조롭게 진행 중입니다.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "어제 좀 늦게까지 일했더니 피곤하네요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "고생하셨어요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "커피 한잔하고 계속해야겠어요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "저는 문서 정리 좀 했어요.",
+      "should_flag": false,
+      "note": "진행상황"
+    },
+    {
+      "text": "리뷰 남겨주신 거 확인했습니다.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "감사합니다.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "오늘 오후에 미팅이 하나 더 있어요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "디자인 시안 계속 다듬고 있어요.",
+      "should_flag": false,
+      "note": "진행상황"
+    },
+    {
+      "text": "테스트 코드 커버리지 좀 올렸습니다.",
+      "should_flag": false,
+      "note": "진행상황"
+    },
+    {
+      "text": "다들 수고 많으셨네요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "네 별다른 이슈는 없었어요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "저도 딱히 막힌 건 없었습니다.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "저도 순조롭게 진행 중이에요.",
+      "should_flag": false,
+      "note": "진행상황"
+    },
+    {
+      "text": "오늘 날씨가 좋아서 그런지 컨디션이 좋네요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "하하 그러네요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "커피 한잔하고 다시 집중해야겠어요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "네 오늘은 이 정도로 마무리하겠습니다.",
+      "should_flag": false,
+      "note": "회의 진행"
+    },
+    {
+      "text": "저도 그거 참석해야 해요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "QA 쪽에서 버그 리포트 몇 개 왔어요.",
+      "should_flag": false,
+      "note": "진행상황"
+    },
+    {
+      "text": "네 그거 확인해볼게요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "저는 배포 스크립트 좀 손봤습니다.",
+      "should_flag": false,
+      "note": "진행상황"
+    },
+    {
+      "text": "좋네요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "점심시간 다가오네요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "뭐 드실지 정하셨어요?",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "저는 아직이요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "근처에 새로 생긴 식당 가볼까요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "좋아요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "저는 오늘 컨디션이 괜찮네요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "네 감사합니다.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "수고하셨어요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "내일 뵐게요.",
+      "should_flag": false,
+      "note": "잡담"
+    }
+  ],
+  "counts_toward_pass_rate": true,
+  "meeting_duration_sec": 838.0
+}

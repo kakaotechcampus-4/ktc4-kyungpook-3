@@ -1,0 +1,12 @@
+{
+  "case_id": "case_02",
+  "scenario": "scope_change",
+  "description": "범위 변경 — 담당자 없이 결정만 있는 문장",
+  "turns": [
+    {"speaker": "B", "text": "로그인 기능에서 소셜 로그인은 이번 스프린트에서 빼기로 했어요."}
+  ],
+  "expected": [
+    {"text": "로그인 기능에서 소셜 로그인은 이번 스프린트에서 빼기로 했어요.", "should_flag": true, "note": "범위 변경 결정"}
+  ],
+  "counts_toward_pass_rate": true
+}

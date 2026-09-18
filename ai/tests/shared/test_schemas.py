@@ -41,6 +41,7 @@ def test_transcript_segment_from_dict_without_seq():
 
 def test_judge_finding_defaults():
     f = JudgeFinding(text="이번 주 금요일까지 끝낼게요")
+    assert f.evidence == ""
     assert f.source == "meeting"
     assert f.seq == 0
     assert f.speaker is None
@@ -50,12 +51,13 @@ def test_judge_finding_defaults():
 
 def test_judge_finding_roundtrip():
     f = JudgeFinding(
-        text="이번 주 금요일까지 끝낼게요",
+        text="로그인 화면 마감을 다음 주 화요일로 연기하는 데 동의함",
+        evidence="네, 알겠습니다.",
         source="meeting",
         seq=12,
         speaker="mem_dongwoo",
-        reason="실행 의지 종결 표현 매치",
-        method="rules",
+        reason="일정 변경 합의",
+        method="llm",
     )
     assert JudgeFinding.from_dict(f.to_dict()) == f
 

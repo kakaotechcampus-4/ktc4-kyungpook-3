@@ -1,0 +1,12 @@
+{
+  "case_id": "case_01",
+  "scenario": "self_commit_schedule",
+  "description": "본인 지칭 + 명확한 일정 합의 — 규칙 기반도 잡아야 하는 기본 케이스",
+  "turns": [
+    {"speaker": "A", "text": "이번 주 금요일까지 로그인 화면 시안을 마무리하기로 했습니다."}
+  ],
+  "expected": [
+    {"text": "이번 주 금요일까지 로그인 화면 시안을 마무리하기로 했습니다.", "should_flag": true, "note": "명확한 일정 합의"}
+  ],
+  "counts_toward_pass_rate": true
+}

@@ -1,0 +1,225 @@
+{
+  "case_id": "case_06",
+  "scenario": "multiple_corrections_same_topic",
+  "description": "같은 주제(마감일)가 대화 중 세 번 바뀜 — 1단계는 전부 후보로 남기는지(모순 해결은 2단계 몫)",
+  "speaker_names": {
+    "A": "하은",
+    "B": "도윤",
+    "C": "민재",
+    "D": "세영",
+    "E": "유진"
+  },
+  "turns": [
+    {
+      "speaker": "A",
+      "text": "회의 시작하겠습니다."
+    },
+    {
+      "speaker": "B",
+      "text": "로그인 화면은 이번 주 금요일까지 하겠습니다."
+    },
+    {
+      "speaker": "C",
+      "text": "저는 어제 다른 작업 좀 했어요."
+    },
+    {
+      "speaker": "A",
+      "text": "생각해보니 다음 주 화요일로 늦추는 게 나을 것 같아요."
+    },
+    {
+      "speaker": "E",
+      "text": "QA 쪽에서 버그 리포트 몇 개 왔어요."
+    },
+    {
+      "speaker": "A",
+      "text": "네 그거 확인해볼게요."
+    },
+    {
+      "speaker": "B",
+      "text": "저는 배포 스크립트 좀 손봤습니다."
+    },
+    {
+      "speaker": "C",
+      "text": "좋네요."
+    },
+    {
+      "speaker": "D",
+      "text": "점심시간 다가오네요."
+    },
+    {
+      "speaker": "E",
+      "text": "뭐 드실지 정하셨어요?"
+    },
+    {
+      "speaker": "A",
+      "text": "저는 아직이요."
+    },
+    {
+      "speaker": "B",
+      "text": "근처에 새로 생긴 식당 가볼까요."
+    },
+    {
+      "speaker": "C",
+      "text": "좋아요."
+    },
+    {
+      "speaker": "D",
+      "text": "저는 오늘 컨디션이 괜찮네요."
+    },
+    {
+      "speaker": "E",
+      "text": "다행이네요."
+    },
+    {
+      "speaker": "D",
+      "text": "저도 그렇게 생각해요."
+    },
+    {
+      "speaker": "E",
+      "text": "점심시간 다가오네요."
+    },
+    {
+      "speaker": "B",
+      "text": "아 그냥 원래대로 이번 주 금요일로 가겠습니다."
+    },
+    {
+      "speaker": "A",
+      "text": "네 알겠습니다."
+    },
+    {
+      "speaker": "C",
+      "text": "그럼 다음 안건으로 넘어갈까요."
+    },
+    {
+      "speaker": "D",
+      "text": "저는 디자인쪽 계속 진행 중이에요."
+    },
+    {
+      "speaker": "E",
+      "text": "저도 특별한 이슈 없습니다."
+    },
+    {
+      "speaker": "A",
+      "text": "그럼 마치겠습니다."
+    }
+  ],
+  "expected": [
+    {
+      "text": "회의 시작하겠습니다.",
+      "should_flag": false,
+      "note": "회의 진행"
+    },
+    {
+      "text": "로그인 화면은 이번 주 금요일까지 하겠습니다.",
+      "should_flag": true,
+      "note": "최초 일정"
+    },
+    {
+      "text": "저는 어제 다른 작업 좀 했어요.",
+      "should_flag": false,
+      "note": "진행상황"
+    },
+    {
+      "text": "생각해보니 다음 주 화요일로 늦추는 게 나을 것 같아요.",
+      "should_flag": true,
+      "note": "1차 정정"
+    },
+    {
+      "text": "QA 쪽에서 버그 리포트 몇 개 왔어요.",
+      "should_flag": false,
+      "note": "진행상황"
+    },
+    {
+      "text": "네 그거 확인해볼게요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "저는 배포 스크립트 좀 손봤습니다.",
+      "should_flag": false,
+      "note": "진행상황"
+    },
+    {
+      "text": "좋네요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "점심시간 다가오네요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "뭐 드실지 정하셨어요?",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "저는 아직이요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "근처에 새로 생긴 식당 가볼까요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "좋아요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "저는 오늘 컨디션이 괜찮네요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "다행이네요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "저도 그렇게 생각해요.",
+      "should_flag": false,
+      "note": "단순 동의(이미 A가 결정 발화)"
+    },
+    {
+      "text": "점심시간 다가오네요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "아 그냥 원래대로 이번 주 금요일로 가겠습니다.",
+      "should_flag": true,
+      "note": "2차 정정(원상복구)"
+    },
+    {
+      "text": "네 알겠습니다.",
+      "should_flag": false,
+      "note": "단순 맞장구"
+    },
+    {
+      "text": "그럼 다음 안건으로 넘어갈까요.",
+      "should_flag": false,
+      "note": "회의 진행"
+    },
+    {
+      "text": "저는 디자인쪽 계속 진행 중이에요.",
+      "should_flag": false,
+      "note": "진행상황"
+    },
+    {
+      "text": "저도 특별한 이슈 없습니다.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "그럼 마치겠습니다.",
+      "should_flag": false,
+      "note": "회의 진행"
+    }
+  ],
+  "counts_toward_pass_rate": true,
+  "meeting_duration_sec": 519.0
+}
