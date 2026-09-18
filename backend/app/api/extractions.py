@@ -121,14 +121,19 @@ def create_extraction(
     resolved_cache = {}
 
     for raw_item in payload.items:
-        alias = raw_item.assignee_raw
-        if alias not in resolved_cache:
-            resolved_cache[alias] = resolve_assignee(db, meeting.workspace_id, alias)
-        match = resolved_cache[alias]
+        if raw_item.assignee_type == "first" and raw_item.evidence_speaker:
+            target_alias = raw_item.evidence_speaker
+        else:
+            target_alias = raw_item.assignee_raw
+
+        if target_alias not in resolved_cache:
+            resolved_cache[target_alias] = resolve_assignee(db, meeting.workspace_id, target_alias)
+        match = resolved_cache[target_alias]
+
         log_resolution(
             db,
             workspace_id=meeting.workspace_id,
-            alias_text=raw_item.assignee_raw,
+            alias_text=target_alias,
             match=match,
             evidence_quote=raw_item.evidence_quote,
             meeting_id=payload.meeting_id,
@@ -272,4 +277,4 @@ def get_extraction(extraction_id: str, db: Session = Depends(get_db)) -> dict:
         meeting_id=extraction.meeting_id,
         items=item_responses,
     )
-    return success(detail.model_dump(mode="json"))
+    return success(detail.model_dump(mode="json"))
