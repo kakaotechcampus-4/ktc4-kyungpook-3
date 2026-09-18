@@ -12,6 +12,9 @@ import { workspaceFixtures } from './fixtures/workspace'
 import { integrationFixtures } from './fixtures/integration'
 import { meetingFixtures, meetingSummaryFixtures } from './fixtures/meeting'
 import { minutesFixtures } from './fixtures/minutes'
+import { extractionFixtures } from './fixtures/extraction'
+import { taskFixtures, taskHistoryFixtures } from './fixtures/task'
+import { approvalFixtures } from './fixtures/approval'
 
 interface MockAccount {
   session: SessionDto
@@ -31,6 +34,10 @@ export interface MockDb {
   meetings: typeof meetingFixtures
   meetingSummaries: typeof meetingSummaryFixtures
   minutes: typeof minutesFixtures
+  extractions: typeof extractionFixtures
+  tasks: typeof taskFixtures
+  taskHistory: typeof taskHistoryFixtures
+  approvals: typeof approvalFixtures
 }
 function initialDb(): MockDb {
   return {
@@ -52,6 +59,10 @@ function initialDb(): MockDb {
     meetings: structuredClone(meetingFixtures),
     meetingSummaries: structuredClone(meetingSummaryFixtures),
     minutes: structuredClone(minutesFixtures),
+    extractions: structuredClone(extractionFixtures),
+    tasks: structuredClone(taskFixtures),
+    taskHistory: structuredClone(taskHistoryFixtures),
+    approvals: structuredClone(approvalFixtures),
   }
 }
 export const db: MockDb = initialDb()
