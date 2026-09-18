@@ -397,6 +397,7 @@ export interface MeetingProgress { audioMerged: boolean; transcribed: boolean; e
 ```
 
 - **목록과 단건의 필드가 다르다.** 매퍼도 `toMeetingSummary` / `toMeeting` 둘이다. 하나로 합치면 없는 필드를 `null` 로 채우게 되고 화면이 어느 쪽인지 모른다.
+- 단건 DTO의 `title` 은 실제 `MeetingDetailResponse`처럼 `string | null` 이다. 매퍼는 `null` 제목을 빈 문자열로 내려 도메인의 문자열 계약을 지킨다.
 - 목록은 `started_at` 내림차순이고 **실패한 회의는 들어 있지 않다** (D-093, D-106).
 - `progress` 는 백엔드가 응답에서 빼 놓은 상태다(계약 §4.7-1). **`null` 을 정상 경로로 다룬다.** 진행률 UI 는 M5 에서 `status` 만으로도 그려지게 만든다.
 
@@ -434,7 +435,7 @@ export interface Minutes {
 ```ts
 export type ExtractionGate = 'auto' | 'review' | 'hold'
 
-export interface ExtractionEvidence { quote: string; speaker: string; atMs: number }
+export interface ExtractionEvidence { quote: string | null; speaker: string | null; atMs: number | null }
 
 export interface ExtractionItem {
   id: string
@@ -442,7 +443,7 @@ export interface ExtractionItem {
   confidence: number
   gate: ExtractionGate
   assigneeMemberId: string | null
-  assigneeLabel: string          // member 이름이 없으면 raw (D-161)
+  assigneeLabel: string          // member 이름이 없으면 raw, 둘 다 null이면 빈 문자열 (D-161)
   dueDate: string | null
   dueRaw: string | null
   evidence: ExtractionEvidence
@@ -454,6 +455,7 @@ export interface Extraction { id: string; meetingId: string; items: ExtractionIt
 ```
 
 - **`appliedTaskId` 와 `approvalId` 는 배타적이다** (계약 §2.4, §3.1). 둘 다 채워졌거나 둘 다 비었으면 픽스처가 틀린 것이다.
+- `ExtractionEvidence` 는 승인도 쓰므로 `shared/types/common.ts` 에 둔다. 실제 `EvidenceInfo` 응답은 객체 내부 세 필드를 `null` 로 허용한다(`backend/app/schemas/meeting.py`). 빈 근거를 발명하지 않고 그대로 보존한다.
 - `lib/extractionView.ts`
   ```ts
   export function appliedItems(extraction: Extraction): ExtractionItem[]   // appliedTaskId !== null
@@ -487,9 +489,9 @@ export interface TaskCreateApproval extends ApprovalBase {
   dueRaw: string | null
   missing: ApprovalMissing[]         // §5-3 에서 파생
   evidence: ExtractionEvidence
-  meetingId: string
-  extractionItemId: string
-  gate: 'review' | 'hold'
+  meetingId: string | null
+  extractionItemId: string | null
+  gate: 'review' | 'hold' | null
 }
 
 export interface TaskUpdateApproval extends ApprovalBase {
@@ -735,7 +737,7 @@ export const taskHandlers = [
 
 - **경로는 상대 경로(`/api/v1/...`)로 쓴다.** dev proxy 와 테스트가 같은 경로를 쓴다.
 - 질의 파라미터를 **계약대로 전부 지원한다.** 화면이 안 쓰더라도 `due_before`·`due_after` 는 구현한다 (캘린더가 M8 에서 쓴다).
-- 정렬도 계약대로 고정한다 — 태스크는 `due_date` 오름차순·`created_at` 내림차순, 승인과 회의는 `created_at`·`started_at` 내림차순.
+- 정렬도 계약대로 고정한다 — 태스크는 `due_date` 오름차순·`created_at` 내림차순, 승인과 회의는 `created_at`·`started_at` 내림차순. 현재 백엔드 SQLite의 오름차순 정렬처럼 `due_date: null` 은 먼저 온다.
 - **정상 응답이 기본이다.** 오류·빈 상태·느린 응답은 handler 에 넣지 않고 override 로 만든다.
 - **인위적 지연을 넣지 않는다** (D-146). `delay()` 는 테스트에 쓰지 않는다.
 
@@ -984,7 +986,7 @@ afterEach(() => { vi.useRealTimers() })
 | 매퍼 (엔티티마다) | `snake_case → camelCase`, `null` 처리, §5-3 의 폴백 5종 |
 | 봉투 | `unwrap` 이 `data` 를 꺼낸다 · `error` 면 `ApiError` 를 던지고 `code`·`status` 를 보존한다 |
 | 통합 — 목록 | `GET /tasks?workspace_id=ws_01` → 10건, `total: 10`, `ws_02` → 0건 |
-| 통합 — 승인 흐름 | `PATCH /approvals/ap_01 {status:'approved'}` → 이후 `GET /tasks` 가 11건, `GET /approvals?status=pending` 이 2건 |
+| 통합 — 승인 흐름 | `PATCH /approvals/ap_01 {status:'approved', resolved_by:'mb_01'}` → 이후 `GET /tasks` 가 11건, `GET /approvals?status=pending` 이 2건. `resolved_by` 는 계약 §2.5의 필수 요청 필드다 |
 | 통합 — 409 | 같은 승인을 두 번 처리하면 `APPROVAL_ALREADY_RESOLVED` |
 | 통합 — 격리 | 위 테스트 다음에 도는 테스트가 다시 10건을 본다 (`resetDb`) |
 | `linkDiscordUsers` | §9-3 의 네 경로 |

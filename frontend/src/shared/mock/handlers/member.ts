@@ -29,8 +29,8 @@ export const memberHandlers = [
   http.get(`${base}/workspaces/:workspaceId/discord/members`, ({ params }) => {
     if (!db.workspaces.some(({ workspace_id }) => workspace_id === params.workspaceId))
       return fail('WORKSPACE_NOT_FOUND', '워크스페이스가 없습니다.', 404)
-    return params.workspaceId === 'ws_01'
-      ? list(db.discordUsers)
+    return db.integrations[String(params.workspaceId)]?.discord.status === 'connected'
+      ? list(params.workspaceId === 'ws_01' ? db.discordUsers : [])
       : fail('INTEGRATION_NOT_CONNECTED', 'Discord 연결이 필요합니다.', 409)
   }),
   http.get(`${base}/members`, ({ request }) => {
