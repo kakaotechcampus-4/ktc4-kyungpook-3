@@ -1,4 +1,4 @@
-"""녹음 Cog. 가짜 디스코드 객체로 /record → 트랙 → /stop → 전사 → 게시 흐름을 본다. 모델은 안 쓴다."""
+"""녹음 Cog. 가짜 디스코드 객체로 /record → 트랙 → /stop → 전사 → 추출 → 인계 → 게시 흐름을 본다. 모델은 안 쓴다."""
 
 import asyncio
 import json
@@ -7,8 +7,10 @@ import numpy as np
 import pytest
 
 from capture import discord_adapter as A
+from capture import handoff as H
 from capture.streaming_sink import StreamingSink
 from stt.backend import SttResult, Word
+from tests.capture.fake_be import FakeBe
 
 GUILD_ID = 77
 ROOM_ID = 5
@@ -103,12 +105,26 @@ class State:
         self.channel = channel
 
 
+class Task:
+    def __init__(self, sentence):
+        self.sentence = sentence
+
+    def to_dict(self):
+        return {"task": "와이어프레임 그리기", "assignee_member_id": None, "due_date": "2026-09-18", "confidence": 1.0,
+                "assignee_mention": None, "source_sentence": self.sentence, "assignee_type": "first",
+                "due_raw": "내일", "due_status": "certain"}
+
+
+def first_person_extractor(transcript, names, today):
+    return [Task(transcript.segments[0].text)]
+
+
 async def _run(command, cog, ctx):
     """슬래시 명령 객체의 본체를 Cog 에 묶어 부른다. 봇 없이 Cog 만 만들었을 때의 호출법."""
     return await command.callback(cog, ctx)
 
 
-def _setup(tmp_path):
+def _setup(tmp_path, *, extractor=None, handoff=None):
     room = FakeVoiceChannel()
     vc = FakeVC(room)
     members = {1: FakeMember(1, "민수"), 2: FakeMember(2, "서연")}
@@ -118,7 +134,8 @@ def _setup(tmp_path):
     bot = FakeBot(guild)
     bot.user.guild = guild
     cog = A.RecordingCog(bot, recordings_dir=tmp_path / "recordings", transcripts_dir=tmp_path / "transcripts",
-                         stt_factory=lambda: (EchoStt(), "echo", 1), gate_factory=lambda: None)
+                         stt_factory=lambda: (EchoStt(), "echo", 1), gate_factory=lambda: None,
+                         extractor_factory=lambda: extractor, handoff_factory=lambda: handoff)
     channel = FakeTextChannel()
     return cog, guild, vc, channel, FakeCtx(guild, vc, channel)
 
@@ -128,14 +145,19 @@ def _tone(ms, sr=16_000):
     return (0.3 * np.sin(2 * np.pi * 220 * t)).astype(np.float32)
 
 
+def _manifest(tmp_path, rec):
+    return json.loads((tmp_path / "recordings" / f"session_{rec.ts}.json").read_text(encoding="utf-8"))
+
+
 async def test_record_writes_a_recording_manifest_and_announces(tmp_path):
     cog, guild, vc, channel, ctx = _setup(tmp_path)
     await _run(A.RecordingCog.record, cog, ctx)
     assert isinstance(vc.started[0], StreamingSink)
     assert ctx.responses == [A.NOTICE]
     rec = cog._recordings[GUILD_ID]
-    m = json.loads((tmp_path / "recordings" / f"session_{rec.ts}.json").read_text(encoding="utf-8"))
+    m = _manifest(tmp_path, rec)
     assert m["status"] == "recording" and m["speakers"] == [] and m["meeting_dir"] == rec.meeting_id
+    assert m["timezone"] == "Asia/Seoul" and m["be"] == {}
     await _run(A.RecordingCog.leave, cog, ctx)
     assert "녹음 중" in ctx.responses[-1] and vc.disconnected == 0     # 녹음 중 퇴장은 거절
     rec.flush_task.cancel()
@@ -157,16 +179,56 @@ async def test_stop_closes_tracks_transcribes_and_posts_the_script(tmp_path):
     rec.sink.on_samples(1, _tone(2000), 10_000)
     await _run(A.RecordingCog.stop, cog, ctx)
     await asyncio.wait_for(rec.done.wait(), 20)
-    m = json.loads((tmp_path / "recordings" / f"session_{rec.ts}.json").read_text(encoding="utf-8"))
+    m = _manifest(tmp_path, rec)
     assert m["status"] == "transcribed" and m["transcript"] == f"{rec.meeting_id}/transcript.md"
     assert [e["display_name"] for e in m["speakers"]] == ["민수", "서연"]
+    assert "transcribed" in m["stages"]
     assert len(hooked) == 1 and hooked[0][0]["status"] == "transcribed"
     texts = [t for t, _ in channel.sent]
     assert texts[0].startswith("✅ 저장 완료") and texts[1].startswith("📝 회의록")
     assert channel.sent[1][1] is not None                       # 회의록 파일을 붙였다
+    assert texts[2].startswith("ℹ️ 할일 추출은 건너뜁니다")       # LLM 설정이 없다
     contract = json.loads((tmp_path / "transcripts" / f"session_{rec.ts}.transcript.json").read_text(encoding="utf-8"))
     assert [s["speaker"] for s in contract["segments"]] == ["1", "2", "1"]
     assert GUILD_ID not in cog._recordings and vc.started is None
+
+
+async def test_record_creates_the_be_meeting_and_stop_hands_the_tasks_off(tmp_path):
+    fake = FakeBe()
+    handoff = H.Handoff(H.BeClient("http://be", session=fake), "ws-1")
+    cog, guild, vc, channel, ctx = _setup(tmp_path, extractor=first_person_extractor, handoff=handoff)
+    await _run(A.RecordingCog.record, cog, ctx)
+    rec = cog._recordings[GUILD_ID]
+    assert rec.be["meeting_id"] == "m1" and _manifest(tmp_path, rec)["be"]["meeting_id"] == "m1"
+    assert fake.calls[0][2]["title"].startswith("회의방 ")
+    rec.sink.on_samples(1, _tone(2000), 0)
+    rec.sink.on_samples(2, _tone(3000), 5000)
+    await _run(A.RecordingCog.stop, cog, ctx)
+    await asyncio.wait_for(rec.done.wait(), 20)
+    m = _manifest(tmp_path, rec)
+    assert m["status"] == "handed_off" and set(m["stages"]) == {"transcribed", "extracted", "handed_off"}
+    assert m["be"] == {"meeting_id": "m1", "status": "done", "extraction_id": "e-m1", "item_count": 1}
+    assert [c[1] for c in fake.calls] == ["/meetings", "/meetings/m1/end", "/extractions"]
+    sent = fake.calls[2][2]["items"][0]
+    assert sent["evidence_speaker"] == "1" and sent["assignee_type"] == "first" and sent["assignee_raw"] is None
+    texts = [t for t, _ in channel.sent]
+    assert texts[1].startswith("📝 회의록") and texts[2].startswith("📋 할일 1건") and texts[3].startswith("📨 BE 인계 완료")
+
+
+async def test_be_being_down_at_record_does_not_stop_the_recording(tmp_path):
+    fake = FakeBe()
+    fake.down = True
+    handoff = H.Handoff(H.BeClient("http://be", session=fake), "ws-1")
+    cog, guild, vc, channel, ctx = _setup(tmp_path, extractor=first_person_extractor, handoff=handoff)
+    await _run(A.RecordingCog.record, cog, ctx)
+    rec = cog._recordings[GUILD_ID]
+    assert "meeting_id" not in rec.be and "NETWORK" in rec.be["error"] and vc.started is not None
+    fake.down = False                                           # 회의가 끝날 때는 BE 가 살아났다
+    rec.sink.on_samples(1, _tone(2000), 0)
+    await _run(A.RecordingCog.stop, cog, ctx)
+    await asyncio.wait_for(rec.done.wait(), 20)
+    m = _manifest(tmp_path, rec)
+    assert m["status"] == "handed_off" and m["be"]["meeting_id"] == "m1"     # 인계 단계가 회의를 만들었다
 
 
 async def test_late_joiner_is_told_once_and_bot_leaving_finishes(tmp_path):
@@ -198,8 +260,28 @@ async def test_transcription_failure_marks_manifest_failed_and_keeps_tracks(tmp_
     rec.sink.on_samples(1, _tone(1500), 0)
     await _run(A.RecordingCog.stop, cog, ctx)
     await asyncio.wait_for(rec.done.wait(), 20)
-    m = json.loads((tmp_path / "recordings" / f"session_{rec.ts}.json").read_text(encoding="utf-8"))
+    m = _manifest(tmp_path, rec)
     # 호출 실패는 error 줄이 되고 회의록은 나온다. 전사 자체가 죽는 경우는 failed 로 남는다
     assert m["status"] in ("transcribed", "failed")
     assert (tmp_path / "recordings" / rec.meeting_id / f"1_{rec.ts}.wav").exists()
     assert any("회의록" in t or "전사 실패" in t for t, _ in channel.sent)
+
+
+async def test_recover_reports_only_sessions_that_moved(tmp_path):
+    cog, guild, vc, channel, ctx = _setup(tmp_path, extractor=first_person_extractor)
+    await _run(A.RecordingCog.record, cog, ctx)
+    rec = cog._recordings[GUILD_ID]
+    rec.sink.on_samples(1, _tone(2000), 0)
+    await _run(A.RecordingCog.stop, cog, ctx)
+    await asyncio.wait_for(rec.done.wait(), 20)
+    assert _manifest(tmp_path, rec)["status"] == "extracted"     # BE 설정이 없어 여기까지
+    channel.sent.clear()
+    await _run(A.RecordingCog.recover_cmd, cog, ctx)             # 아직도 BE 가 없다. 조용하다
+    assert [t for t, _ in channel.sent] == ["마저 처리할 녹음이 없습니다. 설정이 없어 멈춘 회의 1개는 그대로입니다."]
+    fake = FakeBe()
+    cog._handoff_factory = lambda: H.Handoff(H.BeClient("http://be", session=fake), "ws-1")
+    channel.sent.clear()
+    await _run(A.RecordingCog.recover_cmd, cog, ctx)             # BE 가 생겼다. 인계만 하고 알린다
+    texts = [t for t, _ in channel.sent]
+    assert texts[0] == f"세션 `{rec.ts}`" and texts[1].startswith("📨 BE 인계 완료")
+    assert _manifest(tmp_path, rec)["status"] == "handed_off"

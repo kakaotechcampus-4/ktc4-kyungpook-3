@@ -1,4 +1,4 @@
-"""디스코드 음성 채널 화자별 녹음 어댑터 (py-cord Cog). 종료 뒤 배치 전사까지 잇는다.
+"""디스코드 음성 채널 화자별 녹음 어댑터 (py-cord Cog). 종료 뒤 배치 전사, 할일 추출, BE 인계까지 잇는다.
 
 "Discord" 라는 이름은 ai/ 안에서는 capture/ 안에만 있어야 한다.
 봇 프로세스(기동, 토큰, 상시 실행)는 backend/bot/main.py 가 소유하고, 이 Cog 를 add_cog 로 붙인다:
@@ -8,11 +8,11 @@
 
 명령
   /join     명령한 사람이 있는 음성 채널에 봇 입장
-  /record   화자별 트랙 녹음 시작. 채널에 "녹음·전사 중" 을 알린다
-  /stop     녹음 종료. 트랙을 닫고 배치 전사를 돌려 회의록을 채널에 올린다
+  /record   화자별 트랙 녹음 시작. 채널에 "녹음·전사 중" 을 알리고 BE 에 회의를 만든다
+  /stop     녹음 종료. 트랙을 닫고 전사 → 할일 추출 → BE 인계를 돌려 결과를 채널에 올린다
   /leave    음성 채널 퇴장 (녹음 중에는 거절)
   /end      전사까지 끝나면 퇴장
-  /recover  봇이 죽었거나 전사가 실패해 남은 녹음을 마저 전사한다
+  /recover  봇이 죽었거나 어느 단계가 실패해 남은 회의를 마지막 단계 다음부터 마저 처리한다
 
 녹음은 StreamingSink + TrackWriter 다. 패킷을 받는 즉시 16kHz 모노로 바꿔 화자별 wav 에 흘리고
 (메모리가 회의 길이와 무관), 트랙 안의 위치는 녹음 시작부터 흐른 monotonic 시간이다. 그래서
@@ -20,14 +20,15 @@
 started_at 에 한 번만 적는다. 실시간 게시 Cog(capture/realtime/)는 이 프로세스에 올리지 않는다.
 음성 연결은 길드마다 하나라 녹음기 둘이 같이 돌 수 없다.
 
-on_session_saved(manifest, manifest_path) 훅은 전사까지 끝난 뒤 불린다. manifest["transcript"] 에
-회의록 경로가 있고 transcripts/session_<ts>.transcript.json 이 BE 가 읽는 Transcript 다.
+종료 뒤 처리는 capture/recorder.py 의 process_session 이다. /stop 과 /recover 가 같은 함수를 쓴다.
+BE 인계(capture/handoff.py)는 BE_BASE_URL 과 BE_WORKSPACE_ID 가 있을 때만 돈다.
+on_session_saved(manifest, manifest_path) 훅은 그 뒤에 불린다. manifest["transcript"] 에 회의록
+경로가 있고 transcripts/session_<ts>.transcript.json 이 BE 가 읽는 Transcript 다.
 """
 
 from __future__ import annotations
 
 import asyncio
-import json
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
@@ -35,13 +36,14 @@ from pathlib import Path
 
 import discord
 
-from capture.recorder import (STATUS_FAILED, STATUS_RECORDING, STATUS_SAVED, STATUS_TRANSCRIBED, NullSession,
-                              backend_from_env, extract_after_transcription, recover, transcribe_session,
-                              write_status)
+from capture.handoff import from_env as handoff_from_env
+from capture.recorder import (STATUS_EXTRACTED, STATUS_FAILED, STATUS_HANDED_OFF, STATUS_RECORDING, STATUS_SAVED,
+                              STATUS_TRANSCRIBED, NullSession, backend_from_env, build_extractor, meeting_title,
+                              process_session, recover, write_status)
 from capture.streaming_sink import StreamingSink
 from capture.track_writer import TrackPool
 from capture.voice_client import SafeVoiceClient
-from shared.config import RECORDINGS_DIR, TRANSCRIPTS_DIR
+from shared.config import RECORDINGS_DIR, TRANSCRIPTS_DIR, settings
 from shared.schemas import now_iso
 from stt.speech_gate import SpeechGate
 
@@ -49,6 +51,8 @@ SessionSavedHook = Callable[[dict, Path], Awaitable[None]]
 
 NOTICE = "🔴 녹음·전사 중입니다. 이 음성 채널의 말은 화자별로 녹음되고 `/stop` 뒤 회의록이 여기 올라옵니다."
 FLUSH_EVERY_S = 0.2   # 재정렬 창에 갇힌 마지막 패킷을 이 주기로 비운다. 패킷은 20ms 마다 온다
+STAGE_LABEL = {STATUS_TRANSCRIBED: "전사", STATUS_EXTRACTED: "할일 추출", STATUS_HANDED_OFF: "BE 인계",
+               "stt": "전사", "extract": "할일 추출", "handoff": "BE 인계"}
 
 
 def is_recording(vc) -> bool:
@@ -81,6 +85,8 @@ class _Recording:
     voice_channel_name: str | None
     guild_name: str | None
     started_at: str
+    timezone: str = "Asia/Seoul"
+    be: dict = field(default_factory=dict)          # BE 회의 상태. capture/handoff.py 가 채운다
     notified: set[int] = field(default_factory=set)
     flush_task: asyncio.Task | None = None
     done: asyncio.Event = field(default_factory=asyncio.Event)
@@ -89,14 +95,20 @@ class _Recording:
 class RecordingCog(discord.Cog):
     def __init__(self, bot: discord.Bot, *, recordings_dir: Path = RECORDINGS_DIR,
                  transcripts_dir: Path = TRANSCRIPTS_DIR, on_session_saved: SessionSavedHook | None = None,
-                 stt_factory=None, gate_factory=None):
-        """stt_factory() 는 (백엔드, 모델 이름, 워커 수). 기본은 MM_STT_BACKEND 환경 변수를 본다."""
+                 stt_factory=None, gate_factory=None, extractor_factory=None, handoff_factory=None):
+        """stt_factory() 는 (백엔드, 모델 이름, 워커 수). 기본은 MM_STT_BACKEND 환경 변수를 본다.
+
+        extractor_factory() 는 extract_tasks 를 부를 함수 또는 None (LLM 설정 없음).
+        handoff_factory() 는 capture.handoff.Handoff 또는 None (BE 설정 없음). 둘 다 기본은 환경 변수다.
+        """
         self.bot = bot
         self.recordings_dir = recordings_dir
         self.transcripts_dir = transcripts_dir
         self.on_session_saved = on_session_saved
         self._stt_factory = stt_factory or backend_from_env
         self._gate_factory = gate_factory if gate_factory is not None else SpeechGate
+        self._extractor_factory = extractor_factory if extractor_factory is not None else build_extractor
+        self._handoff_factory = handoff_factory if handoff_factory is not None else handoff_from_env
         self._recordings: dict[int, _Recording] = {}
         self._tasks: set[asyncio.Task] = set()
 
@@ -139,13 +151,24 @@ class RecordingCog(discord.Cog):
         rec = _Recording(meeting_id=meeting_id, ts=ts, out_dir=out_dir, sink=sink, pool=pool,
                          text_channel=ctx.channel, voice_channel_id=vc.channel.id,
                          voice_channel_name=getattr(vc.channel, "name", None),
-                         guild_name=ctx.guild.name if ctx.guild else None, started_at=now_iso())
+                         guild_name=ctx.guild.name if ctx.guild else None, started_at=now_iso(),
+                         timezone=settings().meeting_timezone)
         vc.start_recording(sink, self._on_recording_done, ctx)
         self._recordings[ctx.guild.id] = rec
         # 시작 시점에 매니페스트를 먼저 쓴다. 봇이 죽어도 이 회의가 있었다는 기록과 트랙이 남는다
-        self._write_status(rec, STATUS_RECORDING, [])
+        _, manifest = self._write_status(rec, STATUS_RECORDING, [])
         rec.flush_task = asyncio.create_task(self._flush_loop(rec))
         await ctx.respond(NOTICE)
+        # BE 에 회의를 먼저 만들어 둔다. 실패해도 녹음은 계속되고 인계 단계가 다시 만든다
+        handoff = self._handoff_factory()
+        if handoff is not None:
+            try:
+                await asyncio.to_thread(handoff.start, {"be": rec.be}, title=meeting_title(manifest))
+            except Exception as e:  # noqa: BLE001
+                rec.be["error"] = f"{type(e).__name__}: {e}"
+                print(f"[be] 회의 생성 실패: {rec.be['error']}", flush=True)
+            if ctx.guild.id in self._recordings:   # 그 사이 끝나지 않았을 때만 다시 쓴다
+                self._write_status(rec, STATUS_RECORDING, [])
 
     @discord.slash_command(name="stop", description="녹음을 종료하고 회의록을 만듭니다")
     async def stop(self, ctx: discord.ApplicationContext) -> None:
@@ -187,21 +210,25 @@ class RecordingCog(discord.Cog):
         if ctx.channel is not None:
             await ctx.channel.send("음성채널에서 나갔습니다.")
 
-    @discord.slash_command(name="recover", description="전사가 안 끝난 녹음을 마저 전사합니다")
+    @discord.slash_command(name="recover", description="끝까지 처리되지 않은 녹음을 마저 처리합니다")
     async def recover_cmd(self, ctx: discord.ApplicationContext) -> None:
-        await ctx.respond("남은 녹음을 찾아 전사합니다...")
+        await ctx.respond("남은 녹음을 찾아 마지막 단계 다음부터 마저 처리합니다...")
         backend, model_name, workers = self._stt_factory()
         results = await asyncio.to_thread(recover, self.recordings_dir, backend=backend, model_name=model_name,
                                           workers=workers, gate=self._gate_factory(),
-                                          transcripts_dir=self.transcripts_dir)
-        if not results:
-            await ctx.channel.send("전사가 안 끝난 녹음이 없습니다.")
-            return
+                                          transcripts_dir=self.transcripts_dir,
+                                          extractor=self._extractor_factory(), handoff=self._handoff_factory())
+        shown = 0
         for r in results:
-            if r["status"] == STATUS_TRANSCRIBED:
-                await ctx.channel.send(f"✅ 세션 `{r['session']}` 전사 완료", file=discord.File(str(r["markdown"])))
-            else:
-                await ctx.channel.send(f"⚠️ 세션 `{r['session']}` 전사 실패: {r['error']}")
+            if not r["ran"] and r["status"] != STATUS_FAILED:
+                continue   # 설정이 없어 그 자리에 그대로인 회의는 매번 알리지 않는다
+            shown += 1
+            await ctx.channel.send(f"세션 `{r['session']}`")
+            await self._report(ctx.channel, r["session"], r)
+        if shown == 0:
+            waiting = len(results)
+            await ctx.channel.send("마저 처리할 녹음이 없습니다." +
+                                   (f" 설정이 없어 멈춘 회의 {waiting}개는 그대로입니다." if waiting else ""))
 
     # ------------------------------------------------------------------ 이벤트
     @discord.Cog.listener()
@@ -256,7 +283,8 @@ class RecordingCog(discord.Cog):
     def _write_status(self, rec: _Recording, status: str, entries: list[dict], transcript: str | None = None):
         return write_status(self.recordings_dir, rec.ts, status=status, entries=entries, guild=rec.guild_name,
                             channel=rec.voice_channel_name, library_version=discord.__version__,
-                            started_at=rec.started_at, meeting_dir=rec.meeting_id, transcript=transcript)
+                            started_at=rec.started_at, meeting_dir=rec.meeting_id, transcript=transcript,
+                            extra={"timezone": rec.timezone, "be": rec.be})
 
     async def _finish(self, guild_id: int) -> None:
         """/stop, /end, 봇 퇴장, py-cord 콜백이 전부 여기로 온다. 표에서 먼저 꺼내 한 번만 돈다."""
@@ -293,37 +321,13 @@ class RecordingCog(discord.Cog):
             head += f"\n⚠️ 쓰기 큐가 넘쳐 조각 {rec.pool.dropped}개를 버렸습니다."
         await rec.text_channel.send(head)
 
-        try:
-            backend, model_name, workers = self._stt_factory()
-            out = await asyncio.to_thread(transcribe_session, self.recordings_dir, manifest, backend=backend,
-                                          model_name=model_name, workers=workers, gate=self._gate_factory(),
-                                          transcripts_dir=self.transcripts_dir)
-            rel = str(Path(out["markdown"]).relative_to(self.recordings_dir))
-            path, manifest = self._write_status(rec, STATUS_TRANSCRIBED, entries, transcript=rel)
-            s = out["summary"]
-            text = (f"📝 회의록 (세션 `{rec.ts}`, 화자 {len(entries)}명, 줄 {len(out['lines'])}개, "
-                    f"전사 호출 {s['calls']}회, 보낸 오디오 {s['audio_sent_s']}초)")
-            if out["failed"]:
-                text += f"\n⚠️ 전사 실패 {out['failed']}줄은 회의록에 없습니다. `/recover` 로 다시 시도할 수 있습니다."
-            await rec.text_channel.send(text, file=discord.File(str(out["markdown"])))
-            # 전사 뒤 할일 추출. LLM 설정이 없으면 조용히 건너뛴다. 실패해도 회의록은 이미 올라갔다
-            try:
-                tasks_path = await asyncio.to_thread(extract_after_transcription, self.transcripts_dir, manifest)
-            except Exception as e:
-                tasks_path = None
-                await rec.text_channel.send(f"⚠️ 할일 추출 실패: {type(e).__name__}: {e}")
-            if tasks_path is not None:
-                manifest["tasks"] = str(tasks_path)
-                path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
-                tasks = json.loads(tasks_path.read_text(encoding="utf-8"))
-                shown = "\n".join(f"- {x.get('task')} / {x.get('assignee_mention') or '담당 미정'} / {x.get('due_date') or '마감 미정'}"
-                                   for x in tasks[:10]) or "- (없음)"
-                await rec.text_channel.send(f"📋 할일 {len(tasks)}건\n{shown}")
-        except Exception as e:
-            path, manifest = self._write_status(rec, STATUS_FAILED, entries)
-            print(f"[transcribe] 세션 {rec.ts} 실패: {type(e).__name__}: {e}", flush=True)
-            await rec.text_channel.send(f"⚠️ 전사 실패: {type(e).__name__}: {e}\n트랙은 저장돼 있습니다. "
-                                        f"`/recover` 로 다시 시도하세요.")
+        # 전사 → 할일 추출 → BE 인계. 어느 단계가 죽어도 매니페스트에 남고 /recover 가 거기서 잇는다
+        backend, model_name, workers = self._stt_factory()
+        result = await asyncio.to_thread(process_session, self.recordings_dir, manifest, backend=backend,
+                                         model_name=model_name, workers=workers, gate=self._gate_factory(),
+                                         transcripts_dir=self.transcripts_dir,
+                                         extractor=self._extractor_factory(), handoff=self._handoff_factory())
+        await self._report(rec.text_channel, rec.ts, result)
 
         if self.on_session_saved is not None:
             try:
@@ -331,3 +335,29 @@ class RecordingCog(discord.Cog):
             except Exception as e:  # BE 후처리 실패가 녹음·전사 결과까지 망치지 않게
                 print(f"[warn] on_session_saved 훅 실패: {e!r}", flush=True)
         rec.done.set()
+
+    async def _report(self, channel, session, result: dict) -> None:
+        """process_session 의 결과를 채널에 올린다. 이번에 끝낸 단계만 말한다."""
+        tr = result.get("transcribe")
+        if tr is not None:
+            s = tr["summary"]
+            text = (f"📝 회의록 (세션 `{session}`, 화자 {result.get('speakers', 0)}명, 줄 {tr['lines']}개, "
+                    f"전사 호출 {s['calls']}회, 보낸 오디오 {s['audio_sent_s']}초)")
+            if tr["failed"]:
+                text += f"\n⚠️ 전사 실패 {tr['failed']}줄은 회의록에 없습니다."
+            await channel.send(text, file=discord.File(str(tr["markdown"])))
+        if STATUS_EXTRACTED in result["ran"]:
+            tasks = result.get("tasks") or []
+            shown = "\n".join(f"- {x.get('task')} / {x.get('assignee_resolved') or x.get('assignee_mention') or '담당 미정'} "
+                              f"/ {x.get('due_date') or '마감 미정'}" for x in tasks[:10]) or "- (없음)"
+            await channel.send(f"📋 할일 {len(tasks)}건\n{shown}")
+        be = result.get("be")
+        if STATUS_HANDED_OFF in result["ran"] and be:
+            await channel.send(f"📨 BE 인계 완료. 회의 `{be.get('meeting_id')}`, 항목 {be.get('item_count', 0)}건")
+        for stage, why in result.get("skipped", {}).items():
+            await channel.send(f"ℹ️ {STAGE_LABEL.get(stage, stage)}은 건너뜁니다 ({why}).")
+        if result["status"] == STATUS_FAILED:
+            label = STAGE_LABEL.get(result.get("failed_stage"), result.get("failed_stage"))
+            print(f"[{result.get('failed_stage')}] 세션 {session} 실패: {result['error']}", flush=True)
+            await channel.send(f"⚠️ {label} 실패: {result['error']}\n트랙과 지금까지의 결과는 남아 있습니다. "
+                               f"`/recover` 로 이 단계부터 다시 시도하세요.")
