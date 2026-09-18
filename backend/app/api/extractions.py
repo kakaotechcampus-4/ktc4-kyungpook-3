@@ -118,8 +118,13 @@ def create_extraction(
     db.add(extraction)
     db.flush()
 
+    resolved_cache = {}
+
     for raw_item in payload.items:
-        match = resolve_assignee(db, meeting.workspace_id, raw_item.assignee_raw)
+        alias = raw_item.assignee_raw
+        if alias not in resolved_cache:
+            resolved_cache[alias] = resolve_assignee(db, meeting.workspace_id, alias)
+        match = resolved_cache[alias]
         log_resolution(
             db,
             workspace_id=meeting.workspace_id,
