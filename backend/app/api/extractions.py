@@ -136,7 +136,7 @@ def create_extraction(
             due_raw=raw_item.due_raw,
             due_confidence=raw_item.due_confidence,
         )
-        gate = decide_gate(conf)
+        gate = decide_gate(conf, needs_check=match.needs_check)
 
         item = ExtractionItem(
             extraction_id=extraction.extraction_id,
