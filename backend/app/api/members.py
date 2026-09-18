@@ -106,11 +106,15 @@ def list_unresolved_aliases(
     db: Session = Depends(get_db),
 ) -> dict:
     """담당자 매핑 화면의 '미매칭' 행 — 회의에서 감지됐지만 아직 팀원과 연결 안 된 이름."""
-    already_mapped = set(
+    resolved_aliases = set(
         db.execute(
-            select(MemberAlias.alias_text).where(
-                MemberAlias.workspace_id == workspace_id
+            select(MemberAlias.alias_text)
+            .where(
+                MemberAlias.workspace_id == workspace_id,
+                MemberAlias.verified == True,
             )
+            .group_by(MemberAlias.alias_text)
+            .having(func.count() == 1)
         ).scalars()
     )
 
@@ -120,10 +124,7 @@ def list_unresolved_aliases(
             func.count().label("occurrences"),
             func.max(AliasResolutionLog.created_at).label("last_seen_at"),
         )
-        .where(
-            AliasResolutionLog.workspace_id == workspace_id,
-            AliasResolutionLog.result != str(ResolutionResult.MATCHED),
-        )
+        .where(AliasResolutionLog.workspace_id == workspace_id)
         .group_by(AliasResolutionLog.alias_text)
         .order_by(func.max(AliasResolutionLog.created_at).desc())
     )
@@ -134,7 +135,7 @@ def list_unresolved_aliases(
             alias_text=alias_text, occurrences=occurrences, last_seen_at=last_seen_at
         )
         for alias_text, occurrences, last_seen_at in rows
-        if alias_text not in already_mapped
+        if alias_text not in resolved_aliases
     ]
 
     return success(
