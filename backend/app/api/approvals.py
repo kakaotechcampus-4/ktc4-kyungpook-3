@@ -69,6 +69,15 @@ def _apply_approval(db: Session, approval: ApprovalRequest) -> None:
             raise AppError(
                 ErrorCode.TASK_NOT_FOUND, details={"task_id": approval.related_task_id}
             )
+        if task.workspace_id != approval.workspace_id:
+            raise AppError(
+                ErrorCode.WORKSPACE_MISMATCH,
+                message="승인 요청의 워크스페이스와 대상 태스크의 워크스페이스가 다릅니다.",
+                details={
+                    "approval_workspace_id": approval.workspace_id,
+                    "task_workspace_id": task.workspace_id,
+                },
+            )
         updates = {k: v for k, v in payload.items() if k in _TASK_UPDATE_FIELDS}
         if "due_date" in updates:
             updates["due_date"] = _parse_date(updates["due_date"])

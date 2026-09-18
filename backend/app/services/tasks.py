@@ -8,7 +8,7 @@ from datetime import date, datetime, timezone
 from sqlalchemy.orm import Session
 
 from app.core.errors import AppError, ErrorCode
-from app.models import ChangedField, Task, TaskHistory, TaskStatus
+from app.models import ChangedField, Meeting, Member, Task, TaskHistory, TaskStatus
 
 # TaskUpdateRequest/승인 payload의 필드명 -> ChangedField 매핑
 _FIELD_MAP: dict[str, ChangedField] = {
@@ -72,6 +72,57 @@ def validate_task_fields(updates: dict[str, object]) -> None:
             )
 
 
+def validate_workspace_ownership(
+    db: Session,
+    workspace_id: str,
+    *,
+    assignee_member_id: str | None = None,
+    meeting_id: str | None = None,
+) -> None:
+    """assignee_member_id·meeting_id가 같은 워크스페이스 소속인지 검증한다.
+
+    Task에 연결하는 ID들이 실제로 같은 workspace에 소속되어 있는지 확인하여
+    cross-workspace 참조를 방지한다.
+    """
+    if assignee_member_id is not None:
+        member = db.get(Member, assignee_member_id)
+        if member is None:
+            raise AppError(
+                ErrorCode.MEMBER_NOT_FOUND,
+                details={"member_id": assignee_member_id},
+            )
+        if member.workspace_id != workspace_id:
+            raise AppError(
+                ErrorCode.WORKSPACE_MISMATCH,
+                message="담당자가 해당 워크스페이스 소속이 아닙니다.",
+                details={
+                    "field": "assignee_member_id",
+                    "member_id": assignee_member_id,
+                    "member_workspace_id": member.workspace_id,
+                    "task_workspace_id": workspace_id,
+                },
+            )
+
+    if meeting_id is not None:
+        meeting = db.get(Meeting, meeting_id)
+        if meeting is None:
+            raise AppError(
+                ErrorCode.MEETING_NOT_FOUND,
+                details={"meeting_id": meeting_id},
+            )
+        if meeting.workspace_id != workspace_id:
+            raise AppError(
+                ErrorCode.WORKSPACE_MISMATCH,
+                message="회의가 해당 워크스페이스 소속이 아닙니다.",
+                details={
+                    "field": "meeting_id",
+                    "meeting_id": meeting_id,
+                    "meeting_workspace_id": meeting.workspace_id,
+                    "task_workspace_id": workspace_id,
+                },
+            )
+
+
 def _serialize(value: object) -> str | None:
     if value is None:
         return None
@@ -106,6 +157,12 @@ def create_task(
     is_auto: bool = False,
 ) -> Task:
     """태스크를 새로 만들고, 생성 사실을 반영 로그 한 줄로 남긴다."""
+    validate_workspace_ownership(
+        db, workspace_id,
+        assignee_member_id=assignee_member_id,
+        meeting_id=meeting_id,
+    )
+
     task = Task(
         workspace_id=workspace_id,
         meeting_id=meeting_id,
@@ -144,6 +201,11 @@ def apply_task_updates(
 ) -> list[TaskHistory]:
     """필드별로 변경을 적용하고, 실제로 바뀐 필드마다 반영 로그를 남긴다."""
     validate_task_fields(updates)
+    if "assignee_member_id" in updates and updates["assignee_member_id"] is not None:
+        validate_workspace_ownership(
+            db, task.workspace_id,
+            assignee_member_id=str(updates["assignee_member_id"]),
+        )
     entries: list[TaskHistory] = []
     for field, new_value in updates.items():
         if field not in _FIELD_MAP:
