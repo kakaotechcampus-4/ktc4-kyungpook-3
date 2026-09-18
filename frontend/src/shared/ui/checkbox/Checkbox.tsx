@@ -12,7 +12,7 @@ export interface CheckboxProps extends ComponentPropsWithoutRef<typeof CheckboxP
 }
 
 /* 표는 모듈 스코프에 둔다 — 렌더마다 다시 만들지 않는다.
-   근거: m2-design-tokens.md §7-5, docs/error/2026-09-16-no-cn-clsx-tailwind-merge.md */
+   근거: m2-design-tokens.md §7-5, docs/impl-decision/2026-09-16-no-cn-clsx-tailwind-merge.md */
 
 /** 라벨 붙은 행 실측 (`Signup.dc.html`) — gap 10 · padding-top 2 · 체크박스 margin-top 1 */
 const ROW = 'flex items-start gap-10 pt-2'
@@ -24,7 +24,7 @@ const BOX = 'mt-1 inline-flex h-18 w-18 shrink-0 items-center justify-center rou
 const BOX_SURFACE =
   'bg-surface data-[state=checked]:border-transparent data-[state=checked]:bg-ink data-[state=checked]:active:bg-sub data-[state=indeterminate]:border-transparent data-[state=indeterminate]:bg-ink data-[state=indeterminate]:active:bg-sub'
 
-/** 미체크 테두리는 "입력 경계"다 — docs/error/2026-09-16-checkbox-unchecked-border.md */
+/** 미체크 테두리는 "입력 경계"다 — docs/impl-decision/2026-09-16-checkbox-unchecked-border.md */
 const BOX_BORDER =
   'border-input-border data-[state=unchecked]:hover:border-ink data-[state=unchecked]:active:border-ink'
 
@@ -41,7 +41,7 @@ const BOX_TONE: Record<CheckboxTone, string> = {
   disabled: BOX_DISABLED,
 }
 
-/* 13px / 20px 는 타이포 스케일 밖이다 — docs/error/2026-09-16-values-outside-token-scale.md */
+/* 13px / 20px 는 타이포 스케일 밖이다 — docs/impl-decision/2026-09-16-values-outside-token-scale.md */
 const LABEL = 'cursor-pointer text-[13px] leading-[20px] font-normal text-dim'
 
 const INDICATOR = 'inline-flex items-center justify-center text-surface'

@@ -29,7 +29,7 @@ const CARD_TONE = {
   disabled: 'border-line',
 }
 
-/* 17px 은 간격 스케일 밖이다 — docs/error/2026-09-16-values-outside-token-scale.md */
+/* 17px 은 간격 스케일 밖이다 — docs/impl-decision/2026-09-16-values-outside-token-scale.md */
 const MARK =
   'mt-3 inline-flex h-[17px] w-[17px] shrink-0 items-center justify-center rounded-999 border'
 

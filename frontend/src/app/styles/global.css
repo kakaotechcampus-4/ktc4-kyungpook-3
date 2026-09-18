@@ -3,7 +3,7 @@
 
    @layer base 안에 둔다. 밖에 두면 button { color: inherit } · h1 자간이
    유틸리티를 이겨 주 버튼 글자가 먹 면 위에 먹으로 나간다.
-   docs/error/2026-09-16-unlayered-global-beats-utilities.md */
+   docs/impl-decision/2026-09-16-unlayered-global-beats-utilities.md */
 
 @layer base {
   html {

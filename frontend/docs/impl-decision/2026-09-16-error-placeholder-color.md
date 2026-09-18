@@ -47,7 +47,7 @@ T0 가 이미 §5-1 의 16색을 전부 넣으면서 `accent-soft` 를 만들어
 경계색(`border-input-border` vs `border-accent`), 라벨색(`text-sub` vs `text-accent`) 도 마찬가지다.
 
 Tailwind 는 HTML 의 클래스 순서가 아니라 **생성된 CSS 의 순서**로 이긴다
-(`docs/error/2026-09-16-no-cn-clsx-tailwind-merge.md`). 그래서 `Label`·`TextField` 는 색을 **삼항 하나로** 고른다.
+(`docs/impl-decision/2026-09-16-no-cn-clsx-tailwind-merge.md`). 그래서 `Label`·`TextField` 는 색을 **삼항 하나로** 고른다.
 
 ```ts
 const borderColor = error || blocking ? 'border-accent' : TONE_BORDER[tone]

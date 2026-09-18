@@ -22,7 +22,7 @@ export interface TextFieldProps extends Omit<ComponentPropsWithoutRef<'input'>, 
 }
 
 /* 표는 모듈 스코프. 42px 는 §5-7 이 이미 `h-[42px]` 로 적어 둔 값이고,
-   15px 는 타이포 스케일 밖이다 — docs/error/2026-09-16-values-outside-token-scale.md */
+   15px 는 타이포 스케일 밖이다 — docs/impl-decision/2026-09-16-values-outside-token-scale.md */
 
 const TONE_SHAPE: Record<FieldTone, string> = {
   product: 'h-[42px] rounded-9 px-13',
@@ -56,7 +56,7 @@ const INPUT_DISABLED = 'disabled:border-line disabled:bg-surface-sunken disabled
 
 /* min-w-[0px] 은 오타가 아니다 — tokens.css 가 --spacing 을 비워서 min-w-0 유틸이 없다.
    padding 은 preflight 의 `*{padding:0}` 이 이미 지운다 (p-0 도 같은 이유로 없다).
-   docs/error/2026-09-16-values-outside-token-scale.md */
+   docs/impl-decision/2026-09-16-values-outside-token-scale.md */
 const BARE_INPUT = 'h-full w-full min-w-[0px] border-0 bg-transparent font-normal text-ink'
 
 const ADORNED_BOX = 'flex w-full items-center gap-8 border bg-surface'

@@ -5,7 +5,7 @@
 
 ## 고민
 
-`docs/error/` 의 여러 글이 "이 클래스가 진짜 CSS 를 내는지"를 이렇게 확인한다.
+`docs/impl-decision/` 의 여러 글이 "이 클래스가 진짜 CSS 를 내는지"를 이렇게 확인한다.
 
 ```bash
 npm run build
@@ -20,10 +20,10 @@ Tailwind v4 는 `@source` 를 안 적으면 프로젝트를 훑어 클래스 이
 
 ## 증거 — 넣었다 뺐다 해 봤다
 
-`src/` 어디에도 없는 이름을 `docs/error/README.md` 에만 적고 빌드했다.
+`src/` 어디에도 없는 이름을 `docs/impl-decision/README.md` 에만 적고 빌드했다.
 
 ```bash
-printf '\n필요하면 `rounded-[77px]` 로 쓴다.\n' >> docs/error/README.md
+printf '\n필요하면 `rounded-[77px]` 로 쓴다.\n' >> docs/impl-decision/README.md
 npm run build && grep -c '77px' dist/assets/*.css   # → 1
 
 # 되돌리고 다시
@@ -39,7 +39,7 @@ npm run build && grep -c '77px' dist/assets/*.css   # → 0
 
 - `rounded-[28px]` — 출처는 `docs/plan/m2-design-tokens.md` §5 의 산문 한 줄이다.
   §7-4 가 "반경 28 은 `Card` 에 넣지 않는다"고 적었고 `Card.tsx` 도 안 쓴다. 그런데 CSS 는 나간다.
-- `border-[color:var(--color-dashed)]` — 출처는 `docs/error/2026-09-16-border-dashed-name-collision.md` 본문이다.
+- `border-[color:var(--color-dashed)]` — 출처는 `docs/impl-decision/2026-09-16-border-dashed-name-collision.md` 본문이다.
 
 **추출기는 구분자를 본다.** 백틱 없이 맨 줄로 `rounded-[77px]` 만 적었을 때는 안 잡혔다.
 백틱이나 따옴표로 감싼 순간 잡힌다. 글에서 클래스 이름은 거의 항상 백틱 안에 적으므로, 사실상 전부 잡힌다고 보면 된다.

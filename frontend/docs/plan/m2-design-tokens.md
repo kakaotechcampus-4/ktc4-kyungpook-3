@@ -966,7 +966,7 @@ p {
 > `src/shared/ui/` 어느 컴포넌트에도 `focus-visible:` 유틸이 없다.
 > `WCAG 2.2 AA` SC 2.4.7 미충족이며 **M4 화면 작업 전에 반드시 채운다.**
 > design-system.md §13-1은 "`outline` 배제만 확정, 대체 표현 미정"으로 **미결 유지**다.
-> 후보와 경위는 `docs/error/2026-09-16-focus-ring-not-ink.md`.
+> 후보와 경위는 `docs/impl-decision/2026-09-16-focus-ring-not-ink.md`.
 
 ### 6-5. hover / pressed
 
@@ -1808,7 +1808,7 @@ cd frontend && npm run dev   # http://localhost:5173
 | 6 | `Skeleton` 전체 | 캔버스에 스켈레톤이 0건 | §7-11의 제안을 M3 라우트 스켈레톤에서 확정 |
 | 7 | 모든 컴포넌트의 pressed(`:active`) | 캔버스에 `:active` 0건 | M4에서 일괄 확정 |
 | 8 | ~~`Button variant="primary"`의 hover~~ | **채택.** `#666666` / 흰 글자. 기본 버튼은 `#C9C9C9` / 먹 글자 | design-system.md §7-6 |
-| 9 | **키보드 포커스 표시가 없다 — 최우선** | `outline` 배제만 정하고 대체 표현을 안 정했다. 탭 이동 시 화면 변화 0 (§6-4) | **M4 화면 작업 전 필수.** `WCAG 2.2 AA` SC 2.4.7 미충족. 후보는 `docs/error/2026-09-16-focus-ring-not-ink.md` |
+| 9 | **키보드 포커스 표시가 없다 — 최우선** | `outline` 배제만 정하고 대체 표현을 안 정했다. 탭 이동 시 화면 변화 0 (§6-4) | **M4 화면 작업 전 필수.** `WCAG 2.2 AA` SC 2.4.7 미충족. 후보는 `docs/impl-decision/2026-09-16-focus-ring-not-ink.md` |
 | 10 | 필수 미입력칸의 **먹 경계** | design-system.md §7-7이 "먹 또는 `#FF6969`"라 하는데 먹 사례가 캔버스에 없다 | M4 첫 사례에서 정한다 |
 | 11 | `Tasks` 카드 안 입력의 12px/13px vs 표준 13px/13.5px | Foundations 샘플과 `Tasks` 실물이 1px씩 다르다 (§3-⑩) | M4에서 3열 그리드를 실제로 짜고 결정 |
 | 12 | `Modal`에 닫기 X 버튼을 넣을지 | 시안에 X가 없다 | M4에서 결정 |

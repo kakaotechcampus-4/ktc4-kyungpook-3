@@ -12,16 +12,16 @@ export interface CardProps extends ComponentPropsWithoutRef<'div'> {
 }
 
 /* 표는 모듈 스코프에 둔다 — 렌더마다 다시 만들지 않는다.
-   근거: m2-design-tokens.md §7-4, docs/error/2026-09-16-no-cn-clsx-tailwind-merge.md */
+   근거: m2-design-tokens.md §7-4, docs/impl-decision/2026-09-16-no-cn-clsx-tailwind-merge.md */
 
 /** 네 변형 모두 흰 면이다. 눌린 면은 Panel 쪽이다. */
 const BASE = 'bg-surface'
 
 /* padding 은 변형마다 대표값 하나로 접었다 —
-   docs/error/2026-09-16-card-padding-representative.md
+   docs/impl-decision/2026-09-16-card-padding-representative.md
 
    `border-dashed` 는 한 이름이 두 규칙을 낸다 — 모양(dashed)과 --color-dashed 색.
-   색 클래스를 따로 붙이지 않는다 — docs/error/2026-09-16-border-dashed-name-collision.md */
+   색 클래스를 따로 붙이지 않는다 — docs/impl-decision/2026-09-16-border-dashed-name-collision.md */
 const VARIANT: Record<CardVariant, string> = {
   default: 'rounded-16 border border-line px-20 py-18',
   attention: 'rounded-16 border border-line-strong px-30 py-28',

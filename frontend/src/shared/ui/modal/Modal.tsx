@@ -21,7 +21,7 @@ export interface ModalProps {
 }
 
 /* 표는 모듈 스코프에 둔다 — 렌더마다 다시 만들지 않는다.
-   근거: m2-design-tokens.md §7-8, docs/error/2026-09-16-no-cn-clsx-tailwind-merge.md */
+   근거: m2-design-tokens.md §7-8, docs/impl-decision/2026-09-16-no-cn-clsx-tailwind-merge.md */
 
 const OVERLAY = 'fixed inset-0 z-100 flex items-center justify-center p-24'
 
@@ -33,7 +33,7 @@ const SCRIM = 'absolute inset-0 cursor-pointer bg-ink/32'
 const CARD =
   'relative flex w-[380px] max-w-full flex-col gap-12 rounded-16 border border-line bg-surface p-24'
 
-/* 17px 은 타이포 토큰 6종 밖이다 — docs/error/2026-09-16-modal-title-17px.md
+/* 17px 은 타이포 토큰 6종 밖이다 — docs/impl-decision/2026-09-16-modal-title-17px.md
    자간 -0.02em 은 `tracking-h3` 과 정확히 같은 값이라 임의값을 쓰지 않는다. */
 const TITLE = 'text-[17px] font-bold tracking-h3 text-ink'
 

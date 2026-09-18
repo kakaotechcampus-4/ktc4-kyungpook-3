@@ -9,7 +9,7 @@ export interface LabelProps extends ComponentPropsWithoutRef<'label'> {
   blocking?: boolean
 }
 
-/* 12px · 13px 는 타이포 스케일 밖이다 — docs/error/2026-09-16-values-outside-token-scale.md */
+/* 12px · 13px 는 타이포 스케일 밖이다 — docs/impl-decision/2026-09-16-values-outside-token-scale.md */
 const TONE_SIZE: Record<LabelTone, string> = {
   product: 'text-[12px]',
   onboarding: 'text-[12px]',

@@ -22,10 +22,10 @@ export type ToastProviderProps = ComponentPropsWithoutRef<typeof ToastPrimitive.
 export type ToastViewportProps = ComponentPropsWithoutRef<typeof ToastPrimitive.Viewport>
 
 /* 표는 모듈 스코프에 둔다 — 렌더마다 다시 만들지 않는다.
-   근거: m2-design-tokens.md §7-9, docs/error/2026-09-16-no-cn-clsx-tailwind-merge.md
+   근거: m2-design-tokens.md §7-9, docs/impl-decision/2026-09-16-no-cn-clsx-tailwind-merge.md
 
    §7-9 는 전부 제안값이다 — 캔버스 25장에 토스트가 한 개도 없다.
-   docs/error/2026-09-16-toast-has-no-canvas.md */
+   docs/impl-decision/2026-09-16-toast-has-no-canvas.md */
 
 const VIEWPORT = 'fixed right-24 bottom-24 z-100 flex flex-col gap-8'
 

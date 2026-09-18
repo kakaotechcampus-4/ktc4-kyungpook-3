@@ -30,7 +30,7 @@ import type { MascotPose } from '@/shared/ui/mascot/Mascot'
 const PAGE = 'mx-auto flex max-w-column flex-col gap-48 px-24 py-48'
 
 /* 갤러리 제목도 EmptyState 와 같은 단이다 — 줄 높이·자간의 `!` 는 오타가 아니다.
-   docs/error/2026-09-16-unlayered-global-beats-utilities.md */
+   docs/impl-decision/2026-09-16-unlayered-global-beats-utilities.md */
 const PAGE_TITLE = 'text-[24px] leading-[1.35] font-bold tracking-[-0.035em] text-ink'
 
 const SECTION = 'flex flex-col gap-14'
@@ -40,7 +40,7 @@ const SECTION_TITLE = 'text-caption font-semibold text-faint'
 const ROW = 'flex flex-wrap items-center gap-12'
 
 /* 폭 토큰을 쓰지 않는다 — `max-w-prose` 는 `--container-prose` 가 아니라 Tailwind 기본 65ch 다.
-   docs/error/2026-09-16-max-w-prose-is-not-the-token.md */
+   docs/impl-decision/2026-09-16-max-w-prose-is-not-the-token.md */
 const COLUMN = 'flex max-w-[420px] flex-col gap-12'
 
 const BUTTON_VARIANTS: ButtonVariant[] = ['primary', 'default', 'ghost', 'text', 'outline']

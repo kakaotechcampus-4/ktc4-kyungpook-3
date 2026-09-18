@@ -36,7 +36,7 @@ default: 'rounded-16 border border-line px-20 py-18'
 `Settings` 연결 행과 `Upload` 드롭존은 M4·M5 에서 각자 레이아웃을 갖는다.
 지금 축을 하나 늘리면 그 축의 이름(`density`? `compact`?)을 화면을 보기 전에 정해야 한다.
 
-**2번을 안 하는 이유** — `docs/error/2026-09-16-no-cn-clsx-tailwind-merge.md` 가
+**2번을 안 하는 이유** — `docs/impl-decision/2026-09-16-no-cn-clsx-tailwind-merge.md` 가
 "`className` 은 레이아웃만 더한다"로 못을 박았다. padding 을 호출부로 내리면 카드마다 값이 흩어지고,
 카드가 카드로 안 보이는 순간이 온다.
 

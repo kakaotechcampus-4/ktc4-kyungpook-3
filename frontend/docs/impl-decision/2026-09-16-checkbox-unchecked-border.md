@@ -37,7 +37,7 @@ const BOX_TONE: Record<CheckboxTone, string> = {
 ## 왜
 
 `className` 을 배열 join 으로 붙이면 **HTML 에 나중에 적은 클래스가 이기지 않는다** — 생성된 CSS 순서가 이긴다
-(docs/error/2026-09-16-no-cn-clsx-tailwind-merge.md).
+(docs/impl-decision/2026-09-16-no-cn-clsx-tailwind-merge.md).
 `border-accent` 와 `data-[state=unchecked]:border-input-border` 를 같이 붙이면 변형 쪽이 뒤에 생성돼
 **오류 상태가 조용히 묻힌다.** 타입·린트·테스트 어디서도 잡히지 않는다.
 

@@ -31,11 +31,11 @@ lightningcss 가 그 값을 파싱하다 걸린다.
 ## 증거 — 빼 봤다
 
 ```bash
-mv docs/error/2026-09-16-tailwind-scans-docs-markdown.md /tmp/
+mv docs/impl-decision/2026-09-16-tailwind-scans-docs-markdown.md /tmp/
 npm run build            # 경고 0건
 wc -c dist/assets/*.css  # 24,516 B → 24,479 B (-37 B)
 
-mv /tmp/2026-09-16-tailwind-scans-docs-markdown.md docs/error/
+mv /tmp/2026-09-16-tailwind-scans-docs-markdown.md docs/impl-decision/
 npm run build            # 경고 1건, 24,516 B
 ```
 

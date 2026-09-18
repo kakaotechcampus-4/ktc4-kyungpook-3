@@ -36,7 +36,7 @@ const ITEM_SIZE: Record<SegmentedSize, string> = {
 }
 
 /* 두 묶음은 겹치는 속성이 없다 — 한 번에 하나만 붙는다.
-   hover / pressed 를 미선택에만 거는 이유는 docs/error/2026-09-16-segmented-hover-pressed.md */
+   hover / pressed 를 미선택에만 거는 이유는 docs/impl-decision/2026-09-16-segmented-hover-pressed.md */
 const ITEM_TONE = {
   default:
     'text-sub data-[state=on]:bg-surface data-[state=on]:text-ink data-[state=off]:hover:text-ink data-[state=off]:active:bg-surface-sunken',

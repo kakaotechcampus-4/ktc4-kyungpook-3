@@ -18,7 +18,7 @@ export interface EmptyStateProps {
 }
 
 /* 표는 모듈 스코프에 둔다 — 렌더마다 다시 만들지 않는다.
-   근거: m2-design-tokens.md §7-10, docs/error/2026-09-16-no-cn-clsx-tailwind-merge.md */
+   근거: m2-design-tokens.md §7-10, docs/impl-decision/2026-09-16-no-cn-clsx-tailwind-merge.md */
 
 /** 460px 는 폭 토큰(`--container-*`) 다섯 종 어디에도 없는 실측값이다 */
 const CONTAINER = 'flex max-w-[460px] flex-col items-center gap-26 text-center'
@@ -26,7 +26,7 @@ const CONTAINER = 'flex max-w-[460px] flex-col items-center gap-26 text-center'
 const TEXT_BLOCK = 'flex flex-col gap-10'
 
 /* 24px · 1.35 · -0.035em 도, 설명의 14px · 1.8 도 토큰 스케일 밖이다 —
-   docs/error/2026-09-16-empty-state-title-24px.md
+   docs/impl-decision/2026-09-16-empty-state-title-24px.md
 
    global.css 는 @layer base 안이라 유틸이 h1/p 전역을 이긴다. */
 const TITLE = 'text-[24px] leading-[1.35] font-bold tracking-[-0.035em] text-ink'

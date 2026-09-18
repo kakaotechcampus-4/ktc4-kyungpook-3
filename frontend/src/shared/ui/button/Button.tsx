@@ -27,7 +27,7 @@ export interface ButtonProps extends ComponentPropsWithoutRef<'button'> {
 }
 
 /* 표는 모듈 스코프에 둔다 — 렌더마다 다시 만들지 않는다.
-   근거: m2-design-tokens.md §7-1, docs/error/2026-09-16-no-cn-clsx-tailwind-merge.md */
+   근거: m2-design-tokens.md §7-1, docs/impl-decision/2026-09-16-no-cn-clsx-tailwind-merge.md */
 
 const BASE = 'inline-flex items-center justify-center gap-6 whitespace-nowrap'
 
@@ -54,7 +54,7 @@ const SIZE: Record<ButtonSize, string> = {
   'md-compact': 'h-34 rounded-9 px-13 text-caption',
   lg: 'h-40 rounded-9 px-20 text-body',
   'lg-onboarding': 'h-40 rounded-8 px-18 text-body',
-  // 14.5px · 38px · 15px 는 토큰 스케일 밖이다 — docs/error/2026-09-16-values-outside-token-scale.md
+  // 14.5px · 38px · 15px 는 토큰 스케일 밖이다 — docs/impl-decision/2026-09-16-values-outside-token-scale.md
   xl: 'h-44 rounded-9 px-22 text-[14.5px]',
   auth: 'h-48 w-full rounded-999 text-[15px]',
   'landing-hero': 'h-44 rounded-999 px-24 text-landing',
@@ -70,7 +70,7 @@ const SIZE: Record<ButtonSize, string> = {
  * - 포커스를 남겨야 하는 비활성은 `disabled` 대신 `aria-disabled` 를 넘긴다.
  * - 온보딩 카드 안의 확정 버튼(`size="lg-onboarding"` + `variant="primary"`)만 700 이다.
  *   하단 내비의 `다음` 은 600 이라 이 표로 덮지 못한다 —
- *   docs/error/2026-09-16-button-size-table-vs-variant.md
+ *   docs/impl-decision/2026-09-16-button-size-table-vs-variant.md
  */
 export function Button({
   variant = 'default',

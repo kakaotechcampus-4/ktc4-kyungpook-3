@@ -13,14 +13,14 @@ export interface SkeletonProps extends ComponentPropsWithoutRef<'div'> {
 }
 
 /* 표는 모듈 스코프에 둔다 — 렌더마다 다시 만들지 않는다.
-   근거: m2-design-tokens.md §7-11, docs/error/2026-09-16-no-cn-clsx-tailwind-merge.md
+   근거: m2-design-tokens.md §7-11, docs/impl-decision/2026-09-16-no-cn-clsx-tailwind-merge.md
 
    §7-11 은 전부 제안값이다 — 캔버스 25장에 스켈레톤이 한 개도 없다. */
 
 /* 선택 면(`bg-surface-selected`) + 1.6s 숨쉬기. `motion-safe:` 가 prefers-reduced-motion 을 건다 —
    줄이기를 켠 사람에게는 규칙 자체가 안 나와서 면만 남는다.
    keyframes 는 같은 폴더의 skeleton.css 에 있다 —
-   docs/error/2026-09-16-skeleton-keyframes-outside-theme.md */
+   docs/impl-decision/2026-09-16-skeleton-keyframes-outside-theme.md */
 const BASE = 'bg-surface-selected motion-safe:animate-[skeleton-breathe_1.6s_ease-in-out_infinite]'
 
 /** 12px 는 본문 13.5/1.7 한 줄 안에 앉는 뼈대 높이다. height 를 주면 인라인 스타일이 덮는다. */
