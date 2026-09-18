@@ -2,7 +2,7 @@ export interface ExtractionItemDto {
   item_id: string
   task: { title: string; confidence: number }
   assignee: {
-    raw: string
+    raw: string | null
     member_id: string | null
     display_name: string | null
     confidence: number
@@ -11,7 +11,7 @@ export interface ExtractionItemDto {
   due_date: { value: string | null; raw: string | null; confidence: number }
   confidence: number
   gate: string
-  evidence: { quote: string; speaker: string; at_ms: number }
+  evidence: { quote: string | null; speaker: string | null; at_ms: number | null }
   task_id: string | null
   approval_id: string | null
 }
