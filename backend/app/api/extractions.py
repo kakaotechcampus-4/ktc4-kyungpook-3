@@ -1,7 +1,7 @@
 import json
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -38,6 +38,17 @@ from app.services.tasks import create_task
 router = APIRouter(prefix="/extractions", tags=["extractions"])
 
 
+def _find_existing_extraction(db: Session, meeting_id: str) -> Extraction | None:
+    """이미 생성된 Extraction이 있으면 반환한다 (멱등성 보장)."""
+    stmt = (
+        select(Extraction)
+        .where(Extraction.meeting_id == meeting_id)
+        .order_by(Extraction.created_at.desc())
+        .limit(1)
+    )
+    return db.execute(stmt).scalar_one_or_none()
+
+
 @router.post("", status_code=201, response_model=Envelope[ExtractionCreateResponse])
 def create_extraction(
     payload: ExtractionCreateRequest,
@@ -58,11 +69,46 @@ def create_extraction(
                 "meeting_workspace_id": meeting.workspace_id,
             },
         )
-    if meeting.status != str(MeetingStatus.PROCESSING):
+
+    # ── 원자적 선점: processing → done 조건부 UPDATE (CAS) ──
+    # 두 세션이 동시에 진입해도 rowcount=1인 쪽만 처리를 계속한다.
+    claim_stmt = (
+        update(Meeting)
+        .where(
+            Meeting.meeting_id == payload.meeting_id,
+            Meeting.status == str(MeetingStatus.PROCESSING),
+        )
+        .values(status=str(MeetingStatus.DONE))
+    )
+    result = db.execute(claim_stmt)
+
+    if result.rowcount == 0:
+        # 선점 실패 — 이미 다른 요청이 처리했거나, processing 상태가 아님
+        db.rollback()
+        meeting = db.get(Meeting, payload.meeting_id)
+        if meeting.status == str(MeetingStatus.DONE):
+            # 멱등성: 이미 만들어진 Extraction을 돌려준다
+            existing = _find_existing_extraction(db, payload.meeting_id)
+            if existing is not None:
+                item_count = db.execute(
+                    select(ExtractionItem)
+                    .where(ExtractionItem.extraction_id == existing.extraction_id)
+                ).scalars().all()
+                return success(
+                    ExtractionCreateResponse(
+                        extraction_id=existing.extraction_id,
+                        meeting_id=existing.meeting_id,
+                        item_count=len(item_count),
+                    ).model_dump(mode="json")
+                )
         raise AppError(
             ErrorCode.MEETING_NOT_PROCESSING,
             details={"meeting_id": payload.meeting_id, "status": meeting.status},
         )
+
+    # ── 선점 성공: Extraction + Items 생성 ──
+    # meeting 객체를 갱신하여 이후 참조 시 done 상태를 반영한다
+    db.refresh(meeting)
 
     extraction = Extraction(
         meeting_id=payload.meeting_id,
@@ -72,12 +118,22 @@ def create_extraction(
     db.add(extraction)
     db.flush()
 
+    resolved_cache = {}
+
     for raw_item in payload.items:
-        match = resolve_assignee(db, meeting.workspace_id, raw_item.assignee_raw)
+        if raw_item.assignee_type == "first" and raw_item.evidence_speaker:
+            target_alias = raw_item.evidence_speaker
+        else:
+            target_alias = raw_item.assignee_raw
+
+        if target_alias not in resolved_cache:
+            resolved_cache[target_alias] = resolve_assignee(db, meeting.workspace_id, target_alias)
+        match = resolved_cache[target_alias]
+
         log_resolution(
             db,
             workspace_id=meeting.workspace_id,
-            alias_text=raw_item.assignee_raw,
+            alias_text=target_alias,
             match=match,
             evidence_quote=raw_item.evidence_quote,
             meeting_id=payload.meeting_id,
@@ -90,7 +146,7 @@ def create_extraction(
             due_raw=raw_item.due_raw,
             due_confidence=raw_item.due_confidence,
         )
-        gate = decide_gate(conf)
+        gate = decide_gate(conf, needs_check=match.needs_check)
 
         item = ExtractionItem(
             extraction_id=extraction.extraction_id,
@@ -151,9 +207,6 @@ def create_extraction(
             db.add(approval)
             db.flush()
             item.approval_id = approval.approval_id
-
-    meeting.status = str(MeetingStatus.DONE)
-
 
     db.commit()
     db.refresh(extraction)
@@ -224,4 +277,4 @@ def get_extraction(extraction_id: str, db: Session = Depends(get_db)) -> dict:
         meeting_id=extraction.meeting_id,
         items=item_responses,
     )
-    return success(detail.model_dump(mode="json"))
+    return success(detail.model_dump(mode="json"))

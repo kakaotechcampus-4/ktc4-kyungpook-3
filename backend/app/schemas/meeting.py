@@ -30,6 +30,10 @@ class MeetingEndResponse(BaseModel):
     ended_at: datetime | None
 
 
+class MeetingFailRequest(BaseModel):
+    failed_stage: str = Field(..., description="어느 단계에서 실패했는지 (e.g., STT, LLM)")
+
+
 class MeetingDetailResponse(BaseModel):
     meeting_id: str
     workspace_id: str
@@ -91,6 +95,7 @@ class ExtractionItemCreate(BaseModel):
     task_title: str
     task_confidence: float = 0.0
     assignee_raw: str | None = None
+    assignee_type: str | None = Field(None, description="'first'(1인칭), 'third'(3인칭), 'group', 'none' 등")
     due_date: date | None = None
     due_raw: str | None = None
     due_confidence: float = 0.0

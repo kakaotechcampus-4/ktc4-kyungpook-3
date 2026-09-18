@@ -7,14 +7,14 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.errors import AppError, Envelope, ErrorCode, success
-from app.models import ApprovalRequest, ApprovalStatus, ApprovalType, ChangeSource, Task
+from app.models import ApprovalRequest, ApprovalStatus, ApprovalType, ChangeSource, ExtractionItem, Task, TaskStatus
 from app.schemas.approval import (
     ApprovalCreateRequest,
     ApprovalListResponse,
     ApprovalResolveRequest,
     ApprovalResponse,
 )
-from app.services.tasks import apply_task_updates, create_task
+from app.services.tasks import apply_task_updates, create_task, validate_task_fields
 
 router = APIRouter(prefix="/approvals", tags=["approvals"])
 
@@ -34,18 +34,34 @@ def _apply_approval(db: Session, approval: ApprovalRequest) -> None:
     payload = json.loads(approval.payload)
 
     if approval.type == str(ApprovalType.TASK_CREATE):
+        title = payload.get("task_title") or payload.get("title") or ""
+        create_fields: dict[str, object] = {"title": title}
+        if payload.get("status") is not None:
+            create_fields["status"] = payload["status"]
+        if payload.get("progress") is not None:
+            create_fields["progress"] = payload["progress"]
+        validate_task_fields(create_fields)
+
         task = create_task(
             db,
             workspace_id=approval.workspace_id,
-            title=payload.get("task_title") or payload.get("title") or "",
+            title=create_fields["title"],
             meeting_id=payload.get("meeting_id"),
             assignee_member_id=payload.get("assignee_member_id"),
             due_date=_parse_date(payload.get("due_date")),
+            status=create_fields.get("status", str(TaskStatus.TODO)),
+            progress=create_fields.get("progress"),
             change_source=str(ChangeSource.MEETING if payload.get("meeting_id") else ChangeSource.MANUAL),
             changed_by=approval.resolved_by,
             is_auto=False,
         )
         approval.related_task_id = task.task_id
+
+        extraction_item_id = payload.get("extraction_item_id")
+        if extraction_item_id:
+            ext_item = db.get(ExtractionItem, extraction_item_id)
+            if ext_item:
+                ext_item.task_id = task.task_id
 
     elif approval.type == str(ApprovalType.TASK_UPDATE):
         if approval.related_task_id is None:
@@ -58,6 +74,15 @@ def _apply_approval(db: Session, approval: ApprovalRequest) -> None:
         if task is None:
             raise AppError(
                 ErrorCode.TASK_NOT_FOUND, details={"task_id": approval.related_task_id}
+            )
+        if task.workspace_id != approval.workspace_id:
+            raise AppError(
+                ErrorCode.WORKSPACE_MISMATCH,
+                message="승인 요청의 워크스페이스와 대상 태스크의 워크스페이스가 다릅니다.",
+                details={
+                    "approval_workspace_id": approval.workspace_id,
+                    "task_workspace_id": task.workspace_id,
+                },
             )
         updates = {k: v for k, v in payload.items() if k in _TASK_UPDATE_FIELDS}
         if "due_date" in updates:

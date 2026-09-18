@@ -34,8 +34,23 @@ def upgrade() -> None:
     sa.PrimaryKeyConstraint('workspace_id')
     )
 
+    # 기존 데이터에서 고유한 workspace_id 추출 후 workspace 테이블에 삽입 (Data Migration)
+    op.execute("""
+        INSERT INTO workspace (workspace_id, name, created_at)
+        SELECT DISTINCT workspace_id, 'Migrated Workspace', CURRENT_TIMESTAMP
+        FROM (
+            SELECT workspace_id FROM meeting
+            UNION
+            SELECT workspace_id FROM member
+            UNION
+            SELECT workspace_id FROM approval_request
+            UNION
+            SELECT workspace_id FROM task
+        ) WHERE workspace_id IS NOT NULL;
+    """)
+
     with op.batch_alter_table('alias_resolution_log', recreate='always') as batch_op:
-        batch_op.add_column(sa.Column('resolved_member_id', sa.String(length=36), nullable=True))
+        batch_op.alter_column('resolved_member', new_column_name='resolved_member_id')
         batch_op.create_foreign_key(
             'fk_alias_resolution_log_workspace_id_workspace',
             'workspace', ['workspace_id'], ['workspace_id'], ondelete='CASCADE',
@@ -44,15 +59,13 @@ def upgrade() -> None:
             'fk_alias_resolution_log_resolved_member_id_member',
             'member', ['resolved_member_id'], ['member_id'], ondelete='SET NULL',
         )
-        batch_op.drop_column('resolved_member')
 
     with op.batch_alter_table('alias_review', recreate='always') as batch_op:
-        batch_op.add_column(sa.Column('corrected_member_id', sa.String(length=36), nullable=True))
+        batch_op.alter_column('corrected_member', new_column_name='corrected_member_id')
         batch_op.create_foreign_key(
             'fk_alias_review_corrected_member_id_member',
             'member', ['corrected_member_id'], ['member_id'], ondelete='SET NULL',
         )
-        batch_op.drop_column('corrected_member')
 
     with op.batch_alter_table('approval_request') as batch_op:
         batch_op.create_foreign_key(
@@ -121,14 +134,12 @@ def downgrade() -> None:
         batch_op.drop_constraint('fk_approval_request_workspace_id_workspace', type_='foreignkey')
 
     with op.batch_alter_table('alias_review', recreate='always') as batch_op:
-        batch_op.add_column(sa.Column('corrected_member', sa.VARCHAR(length=36), nullable=True))
         batch_op.drop_constraint('fk_alias_review_corrected_member_id_member', type_='foreignkey')
-        batch_op.drop_column('corrected_member_id')
+        batch_op.alter_column('corrected_member_id', new_column_name='corrected_member')
 
     with op.batch_alter_table('alias_resolution_log', recreate='always') as batch_op:
-        batch_op.add_column(sa.Column('resolved_member', sa.VARCHAR(length=36), nullable=True))
         batch_op.drop_constraint('fk_alias_resolution_log_workspace_id_workspace', type_='foreignkey')
         batch_op.drop_constraint('fk_alias_resolution_log_resolved_member_id_member', type_='foreignkey')
-        batch_op.drop_column('resolved_member_id')
+        batch_op.alter_column('resolved_member_id', new_column_name='resolved_member')
 
     op.drop_table('workspace')

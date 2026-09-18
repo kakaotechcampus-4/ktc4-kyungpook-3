@@ -106,9 +106,15 @@ def log_resolution(
     return log
 
 
-def decide_gate(confidence: float) -> Gate:
-    """신뢰도 → 게이트 판정. 규칙 기반이어야 감사·재현이 가능하다."""
+def decide_gate(confidence: float, *, needs_check: bool = False) -> Gate:
+    """신뢰도 → 게이트 판정. 규칙 기반이어야 감사·재현이 가능하다.
+
+    needs_check가 True이면 (미검증 별칭, 중의성 등) 점수가 높아도
+    AUTO 대신 REVIEW로 하향하여 PM 확인을 강제한다.
+    """
     if confidence >= GATE_AUTO_THRESHOLD:
+        if needs_check:
+            return Gate.REVIEW
         return Gate.AUTO
     if confidence >= GATE_REVIEW_THRESHOLD:
         return Gate.REVIEW
