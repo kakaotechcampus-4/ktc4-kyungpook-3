@@ -12,6 +12,7 @@ from app.schemas.meeting import (
     MeetingCreateResponse,
     MeetingDetailResponse,
     MeetingEndResponse,
+    MeetingFailRequest,
 )
 
 router = APIRouter(prefix="/meetings", tags=["meetings"])
@@ -71,6 +72,41 @@ def end_meeting(
     return success(
         MeetingEndResponse.model_validate(meeting).model_dump(mode="json")
     )
+
+
+@router.patch(
+    "/{meeting_id}/fail", status_code=200, response_model=Envelope[MeetingDetailResponse]
+)
+def fail_meeting(
+    meeting_id: str,
+    payload: MeetingFailRequest,
+    db: Session = Depends(get_db),
+) -> dict:
+    meeting = _get_meeting(db, meeting_id)
+
+    if meeting.status in {MeetingStatus.DONE, MeetingStatus.FAILED}:
+        raise AppError(
+            ErrorCode.MEETING_ALREADY_ENDED,
+            details={"meeting_id": meeting_id, "status": meeting.status},
+        )
+
+    meeting.status = str(MeetingStatus.FAILED)
+    meeting.failed_stage = payload.failed_stage
+    meeting.ended_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(meeting)
+
+    detail = MeetingDetailResponse(
+        meeting_id=meeting.meeting_id,
+        workspace_id=meeting.workspace_id,
+        title=meeting.title,
+        status=meeting.status,
+        started_at=meeting.started_at,
+        ended_at=meeting.ended_at,
+        extraction_id=None,
+        failed_stage=meeting.failed_stage,
+    )
+    return success(detail.model_dump(mode="json"))
 
 
 @router.get("/{meeting_id}", response_model=Envelope[MeetingDetailResponse])
