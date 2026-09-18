@@ -235,7 +235,13 @@ def rollback_task_history(
     *,
     changed_by: str | None = None,
 ) -> TaskHistory:
-    """반영 로그 한 줄을 되돌린다. 되돌리기 자체도 새 로그 한 줄로 남는다."""
+    """반영 로그 한 줄을 되돌린다. 되돌리기 자체도 새 로그 한 줄로 남는다.
+
+    다음 경우 롤백을 거절한다:
+    - 이미 롤백된 이력
+    - 최초 생성 이력 (old_value가 None인 NOT NULL 필드 — 롤백 시 500 방지)
+    - 현재 값이 해당 이력의 new_value와 다를 때 (이후 다른 변경이 있었으므로 충돌)
+    """
     if history.is_rolled_back:
         raise AppError(
             ErrorCode.TASK_HISTORY_ALREADY_ROLLED_BACK,
@@ -250,6 +256,29 @@ def rollback_task_history(
             details={"history_id": history.history_id, "changed_field": history.changed_field},
         )
 
+    # 최초 생성 이력 롤백 차단 (NOT NULL 필드에 None을 넣으면 DB 에러)
+    _NOT_NULLABLE_FIELDS = {"title", "status"}
+    if history.old_value is None and field in _NOT_NULLABLE_FIELDS:
+        raise AppError(
+            ErrorCode.INVALID_REQUEST,
+            message="최초 생성 이력은 되돌릴 수 없습니다.",
+            details={"history_id": history.history_id, "field": field},
+        )
+
+    # 충돌 감지: 현재 값이 이 이력이 설정한 값과 다르면 이후 수정이 있었음
+    current_value = _serialize(getattr(task, field))
+    if current_value != history.new_value:
+        raise AppError(
+            ErrorCode.INVALID_REQUEST,
+            message="이후 다른 변경이 있어 되돌릴 수 없습니다. 최신 이력부터 되돌려주세요.",
+            details={
+                "history_id": history.history_id,
+                "field": field,
+                "expected_current": history.new_value,
+                "actual_current": current_value,
+            },
+        )
+
     restored_value = _deserialize(field, history.old_value)
     setattr(task, field, restored_value)
 
@@ -260,7 +289,7 @@ def rollback_task_history(
         TaskHistory(
             task_id=task.task_id,
             changed_field=history.changed_field,
-            old_value=history.new_value,
+            old_value=current_value, 
             new_value=history.old_value,
             change_source=history.change_source,
             changed_by=changed_by,
