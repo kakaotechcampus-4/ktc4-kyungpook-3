@@ -225,7 +225,26 @@ def test_pool_runs_all_tracks_chunks_concurrently(tmp_path):
     assert stt.peak == 3
 
 
-def test_failed_calls_become_error_lines_not_text(tmp_path):
+def test_a_call_that_fails_once_is_retried_and_counted(tmp_path, monkeypatch):
+    """배치는 마감이 없다. 한 번 실패한 호출은 다시 보내고, 재시도 횟수를 센다."""
+    monkeypatch.setattr(B, "RETRY_WAIT_S", 0.0)
+
+    class Flaky(EchoStt):
+        def __init__(self):
+            super().__init__(); self.n = 0
+
+        def transcribe(self, samples, sample_rate):
+            self.n += 1
+            if self.n == 1:
+                raise RuntimeError("잠깐 막힘")
+            return super().transcribe(samples, sample_rate)
+
+    lines, stats = B.run(_session(tmp_path)[:1], Flaky(), mode="chunk", gate=None, workers=1)
+    assert stats.retries == 1 and stats.failed == 0 and all(ln.text for ln in lines)
+
+
+def test_failed_calls_become_error_lines_not_text(tmp_path, monkeypatch):
+    monkeypatch.setattr(B, "RETRY_WAIT_S", 0.0)
     lines, stats = B.run(_session(tmp_path), FailingStt(), mode="clip", gate=None, workers=1)
     assert stats.failed == 3
     assert all(ln.error and ln.text == "" for ln in lines)

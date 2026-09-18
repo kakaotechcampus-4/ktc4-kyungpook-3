@@ -44,11 +44,11 @@ def golden_configs(elice: bool) -> list[dict]:
             cfgs.append(dict(name=f"local {m} {mode}", backend="local", model=m, mode=mode))
     if elice:
         cfgs += [
-            dict(name="elice chunk (워커 6)", backend="elice", model="", mode="chunk"),
+            dict(name="elice chunk (워커 3 기본)", backend="elice", model="", mode="chunk"),
             dict(name="elice clip", backend="elice", model="", mode="clip"),
             dict(name="elice whole", backend="elice", model="", mode="whole"),
             dict(name="elice chunk 턴마다 묶음", backend="elice", model="", mode="chunk", extra=["--no-pack-turns"], tag="perturn"),
-            dict(name="elice chunk 워커 3", backend="elice", model="", mode="chunk", extra=["--workers", "3"], tag="w3"),
+            dict(name="elice chunk 워커 6", backend="elice", model="", mode="chunk", extra=["--workers", "6"], tag="w6"),
             dict(name="elice chunk 워커 9", backend="elice", model="", mode="chunk", extra=["--workers", "9"], tag="w9"),
         ]
     return cfgs
@@ -87,24 +87,25 @@ def run_all(goldens: list[Path], fleurs: Path | None, out: Path, elice: bool, on
             rc, dt = _run(cmd, log)
             print(f" rc={rc} {dt:.0f}s", flush=True)
     if fleurs is not None:
+        # 모델 순위는 말 필터 없이 잰다. 필터는 turbo 한 줄만 켜서 거른 수를 본다
         for m in FLEURS_MODELS if only != "elice" else []:
-            stem = f"fleurs_local-{m}.json"
+            stem = f"fleurs_local-{m}-nogate.json"
             if (out / "fleurs" / stem).exists():
                 print(f"[skip] fleurs {m}", flush=True)
                 continue
             print(f"[run ] fleurs local {m} ...", end="", flush=True)
             rc, dt = _run([py, "-m", "stt.eval.fleurs", "--root", str(fleurs), "--backend", "local", "--model", m,
-                           "--out-dir", str(out / "fleurs")], log)
-            print(f" rc={rc} {dt:.0f}s", flush=True)
-        if not (out / "fleurs" / "fleurs_local-large-v3-turbo-nogate.json").exists() and only != "elice":
-            print("[run ] fleurs local large-v3-turbo 필터 없음 ...", end="", flush=True)
-            rc, dt = _run([py, "-m", "stt.eval.fleurs", "--root", str(fleurs), "--backend", "local", "--model", "large-v3-turbo",
                            "--no-gate", "--tag", "nogate", "--out-dir", str(out / "fleurs")], log)
             print(f" rc={rc} {dt:.0f}s", flush=True)
-        if elice and not (out / "fleurs" / "fleurs_elice.json").exists():
+        if not (out / "fleurs" / "fleurs_local-large-v3-turbo-gate.json").exists() and only != "elice":
+            print("[run ] fleurs local large-v3-turbo 말 필터 켬 ...", end="", flush=True)
+            rc, dt = _run([py, "-m", "stt.eval.fleurs", "--root", str(fleurs), "--backend", "local", "--model", "large-v3-turbo",
+                           "--tag", "gate", "--out-dir", str(out / "fleurs")], log)
+            print(f" rc={rc} {dt:.0f}s", flush=True)
+        if elice and not (out / "fleurs" / "fleurs_elice-nogate.json").exists():
             print("[run ] fleurs elice ...", end="", flush=True)
             rc, dt = _run([py, "-m", "stt.eval.fleurs", "--root", str(fleurs), "--backend", "elice", "--yes",
-                           "--out-dir", str(out / "fleurs")], log)
+                           "--no-gate", "--tag", "nogate", "--out-dir", str(out / "fleurs")], log)
             print(f" rc={rc} {dt:.0f}s", flush=True)
     report(out)
 
@@ -146,7 +147,8 @@ def report(out: Path) -> None:
                       "|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
             for r in rows:
                 lines.append("| " + " | ".join([
-                    r["backend"], r.get("tag", "") or "기본", f"{r['cer'] * 100:.2f}%", f"{r['cer_median_clip'] * 100:.2f}%",
+                    r["backend"], {"nogate": "필터 없음", "gate": "필터 켬", "trimgate": "필터 켬"}.get(r.get("tag", ""), r.get("tag", "") or "필터 켬"),
+                    f"{r['cer'] * 100:.2f}%", f"{r['cer_median_clip'] * 100:.2f}%",
                     f"{r['insertion_rate'] * 100:.1f}%", str(r["gated"]), _fmt(r["wall_s"], 0), _fmt(r["rtf_wall"], 3),
                     _fmt(r["transcribe_p50_s"]), _fmt(r["transcribe_p95_s"]), _fmt(r["cpu_s_per_speech_s"]),
                     _fmt(r["peak_rss_gb"]), _fmt(r["krw"], 1)]) + " |")

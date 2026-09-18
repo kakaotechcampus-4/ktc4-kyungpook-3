@@ -128,3 +128,13 @@ def test_local_transcribe_collects_words(monkeypatch):
         ("안녕", 0.0, 0.5),
         ("하세요", 0.5, 0.9),
     ]
+
+
+def test_elice_timeout_grows_with_audio_length():
+    """고정 30초로는 트랙 통째 호출이 전부 잘렸다. 길이에 비례해 기다린다."""
+    from stt.elice import EliceStt
+
+    be = EliceStt()
+    assert be.timeout_for(1.0) == 30.6
+    assert be.timeout_for(28.0) == 30 + 0.6 * 28
+    assert be.timeout_for(147.0) > 100
