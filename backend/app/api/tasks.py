@@ -103,7 +103,7 @@ def update_task(
     task = _get_task(db, task_id)
 
     updates = payload.model_dump(
-        exclude_unset=True, exclude_none=True, exclude={"changed_by"}
+        exclude_unset=True, exclude={"changed_by"}
     )
     if "status" in updates:
         updates["status"] = str(updates["status"])
