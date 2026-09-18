@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.errors import AppError, Envelope, ErrorCode, success
-from app.models import ApprovalRequest, ApprovalStatus, ApprovalType, ChangeSource, Task, TaskStatus
+from app.models import ApprovalRequest, ApprovalStatus, ApprovalType, ChangeSource, ExtractionItem, Task, TaskStatus
 from app.schemas.approval import (
     ApprovalCreateRequest,
     ApprovalListResponse,
@@ -56,6 +56,12 @@ def _apply_approval(db: Session, approval: ApprovalRequest) -> None:
             is_auto=False,
         )
         approval.related_task_id = task.task_id
+
+        extraction_item_id = payload.get("extraction_item_id")
+        if extraction_item_id:
+            ext_item = db.get(ExtractionItem, extraction_item_id)
+            if ext_item:
+                ext_item.task_id = task.task_id
 
     elif approval.type == str(ApprovalType.TASK_UPDATE):
         if approval.related_task_id is None:
