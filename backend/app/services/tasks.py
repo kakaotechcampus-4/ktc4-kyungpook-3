@@ -21,6 +21,56 @@ _FIELD_MAP: dict[str, ChangedField] = {
 }
 _REVERSE_FIELD_MAP = {str(v): k for k, v in _FIELD_MAP.items()}
 
+_VALID_STATUSES = {str(s) for s in TaskStatus}
+
+
+def validate_task_fields(updates: dict[str, object]) -> None:
+    """status·progress 등 업무 규칙을 검증한다.
+
+    PATCH API, 승인 반영, 자동 반영 모든 경로가 이 함수를 거쳐야 한다.
+    """
+    if "status" in updates:
+        status_val = str(updates["status"])
+        if status_val not in _VALID_STATUSES:
+            raise AppError(
+                ErrorCode.INVALID_REQUEST,
+                message=f"유효하지 않은 status 값입니다: {status_val}",
+                details={"field": "status", "value": status_val, "allowed": sorted(_VALID_STATUSES)},
+            )
+        updates["status"] = status_val
+
+    if "progress" in updates and updates["progress"] is not None:
+        try:
+            progress_val = int(updates["progress"])
+        except (TypeError, ValueError):
+            raise AppError(
+                ErrorCode.INVALID_REQUEST,
+                message=f"progress는 정수여야 합니다: {updates['progress']}",
+                details={"field": "progress", "value": str(updates["progress"])},
+            )
+        if not (0 <= progress_val <= 100):
+            raise AppError(
+                ErrorCode.INVALID_REQUEST,
+                message=f"progress는 0~100 범위여야 합니다: {progress_val}",
+                details={"field": "progress", "value": progress_val},
+            )
+        updates["progress"] = progress_val
+
+    if "title" in updates:
+        title_val = updates["title"]
+        if not isinstance(title_val, str) or len(title_val.strip()) == 0:
+            raise AppError(
+                ErrorCode.INVALID_REQUEST,
+                message="title은 빈 문자열일 수 없습니다.",
+                details={"field": "title"},
+            )
+        if len(title_val) > 300:
+            raise AppError(
+                ErrorCode.INVALID_REQUEST,
+                message=f"title은 300자 이하여야 합니다. (현재 {len(title_val)}자)",
+                details={"field": "title", "length": len(title_val)},
+            )
+
 
 def _serialize(value: object) -> str | None:
     if value is None:
@@ -93,6 +143,7 @@ def apply_task_updates(
     is_auto: bool = False,
 ) -> list[TaskHistory]:
     """필드별로 변경을 적용하고, 실제로 바뀐 필드마다 반영 로그를 남긴다."""
+    validate_task_fields(updates)
     entries: list[TaskHistory] = []
     for field, new_value in updates.items():
         if field not in _FIELD_MAP:
