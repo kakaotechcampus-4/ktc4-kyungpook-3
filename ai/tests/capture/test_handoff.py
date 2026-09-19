@@ -130,6 +130,16 @@ def test_fail_without_meeting_or_with_be_down_is_quiet(tmp_path):
     assert "error" in m["be"] and "ConnectionError" in m["be"]["error"]
 
 
+def test_fail_after_be_closed_the_meeting_as_done_keeps_done(tmp_path):
+    fake = FakeBe()
+    h = _handoff(fake)
+    m, tdir = _manifest(tmp_path)
+    h.register(m, transcripts_dir=tdir, model_name="x")       # BE 는 done
+    h.fail(m, "handoff")                                       # 뒤늦은 실패 통보. BE 는 409 로 done 을 알려 준다
+    assert m["be"]["status"] == "done" and "failed_stage" not in m["be"]
+    assert fake.meetings["m1"]["status"] == "done"
+
+
 def test_register_without_tasks_refuses(tmp_path):
     m, tdir = _manifest(tmp_path, with_tasks=False)
     with pytest.raises(ValueError):

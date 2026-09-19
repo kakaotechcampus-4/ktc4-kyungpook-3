@@ -223,8 +223,11 @@ class Handoff:
         if not mid:
             return
         try:
-            self.client.fail_meeting(mid, failed_stage)
-            be.update({"status": "failed", "failed_stage": failed_stage})
+            data = self.client.fail_meeting(mid, failed_stage) or {}
+            # BE 가 이미 done 으로 닫은 회의면 실패로 바꾸지 않는다 (409 의 details 가 지금 상태를 준다)
+            be["status"] = str(data.get("status") or "failed")
+            if be["status"] == "failed":
+                be["failed_stage"] = failed_stage
         except Exception as e:  # noqa: BLE001 - 실패 통보가 실패해도 매니페스트 기록이 먼저다
             be["error"] = f"{type(e).__name__}: {e}"
 
