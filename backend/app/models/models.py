@@ -78,6 +78,7 @@ class TaskStatus(StrEnum):
 
 class ChangedField(StrEnum):
     ASSIGNEE = "assignee"
+    START_DATE = "start_date"
     DUE_DATE = "due_date"
     STATUS = "status"
     TITLE = "title"
@@ -112,12 +113,75 @@ class Gate(StrEnum):
     HOLD = "hold"
 
 
+class User(Base):
+    __tablename__ = "user"
+
+    user_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    name: Mapped[str] = mapped_column(String(100))
+    provider: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    provider_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    profile_image_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, onupdate=_now
+    )
+
+    sessions: Mapped[list["Session"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+
+
+class Session(Base):
+    __tablename__ = "session"
+
+    session_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("user.user_id", ondelete="CASCADE"), index=True
+    )
+    session_token: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+    user: Mapped["User"] = relationship(back_populates="sessions")
+
+
 class Workspace(Base):
     __tablename__ = "workspace"
 
     workspace_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     name: Mapped[str] = mapped_column(String(100))
+    onboarding_completed: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+    integrations: Mapped[list["Integration"]] = relationship(
+        back_populates="workspace", cascade="all, delete-orphan"
+    )
+
+
+class Integration(Base):
+    __tablename__ = "integration"
+    __table_args__ = (
+        UniqueConstraint(
+            "workspace_id", "provider", name="uq_workspace_provider"
+        ),
+    )
+
+    integration_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    workspace_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("workspace.workspace_id", ondelete="CASCADE"), index=True
+    )
+    provider: Mapped[str] = mapped_column(String(20))
+    access_token: Mapped[str | None] = mapped_column(Text, nullable=True)
+    refresh_token: Mapped[str | None] = mapped_column(Text, nullable=True)
+    provider_channel_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, onupdate=_now
+    )
+
+    workspace: Mapped["Workspace"] = relationship(back_populates="integrations")
 
 
 class Member(Base):
@@ -132,10 +196,15 @@ class Member(Base):
     workspace_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("workspace.workspace_id", ondelete="CASCADE"), index=True
     )
+    user_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("user.user_id", ondelete="SET NULL"), nullable=True, index=True
+    )
     display_name: Mapped[str] = mapped_column(String(100))
     discord_user_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     notion_name: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
     role: Mapped[str] = mapped_column(String(16), default=MemberRole.MEMBER)
+    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
     aliases: Mapped[list["MemberAlias"]] = relationship(
@@ -274,6 +343,7 @@ class Extraction(Base):
         String(36), ForeignKey("meeting.meeting_id", ondelete="CASCADE"), index=True
     )
     transcript_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     model_name: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
@@ -334,6 +404,7 @@ class Task(Base):
     status: Mapped[str] = mapped_column(String(16), default=TaskStatus.TODO, index=True)
     progress: Mapped[int | None] = mapped_column(Integer, nullable=True)
     blocker: Mapped[str | None] = mapped_column(Text, nullable=True)
+    start_date: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
     due_date: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
     notion_page_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)

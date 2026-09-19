@@ -10,6 +10,7 @@ class TaskCreateRequest(BaseModel):
     title: str = Field(..., min_length=1, max_length=300)
     meeting_id: str | None = None
     assignee_member_id: str | None = None
+    start_date: date | None = None
     due_date: date | None = None
     status: TaskStatus = TaskStatus.TODO
     progress: int | None = Field(None, ge=0, le=100)
@@ -23,6 +24,7 @@ class TaskUpdateRequest(BaseModel):
     status: TaskStatus | None = None
     progress: int | None = Field(None, ge=0, le=100)
     blocker: str | None = None
+    start_date: date | None = None
     due_date: date | None = None
     changed_by: str | None = Field(None, description="변경한 PM member_id")
 
@@ -38,6 +40,7 @@ class TaskResponse(BaseModel):
     status: str
     progress: int | None
     blocker: str | None
+    start_date: date | None
     due_date: date | None
     notion_page_id: str | None
     created_at: datetime
