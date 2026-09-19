@@ -35,9 +35,11 @@ import json
 import sys
 import time
 import wave
+from dataclasses import asdict
 from pathlib import Path
 
 from shared.config import AI_ROOT, RECORDINGS_DIR, TRANSCRIPTS_DIR
+from stt.lines import Line
 
 TIMING_SUMMARY_PATH = AI_ROOT / "timing_summary.md"
 MAX_SEC_PER_AUDIO_MIN = 30.0  # 통과 기준: 오디오 1분당 전사 30초 이내
@@ -132,11 +134,18 @@ def transcribe_file(model, wav: Path, *, model_name: str, device: str, compute_t
     }
 
 
-def build_session_transcript(out_dir: Path, session: str, model_name: str) -> Path | None:
-    """세션의 화자별 결과를 시간순으로 합쳐 Transcript(JSON) 하나로 만듭니다 (Phase 2/3 입력)."""
+def build_session_transcript(out_dir: Path, session: str, model_name: str,
+                             files: list[Path] | None = None) -> Path | None:
+    """세션의 화자별 결과를 시간순으로 합쳐 Transcript(JSON) 하나로 만듭니다 (Phase 2/3 입력).
+
+    files 를 주면 그 파일들만 합친다. 세션 ID 가 wav 이름의 ts 와 다를 때(봇의 <guild>_<ts>) 쓴다.
+    """
     segs: list[dict] = []
     speakers: dict[str, str] = {}
-    for jp in sorted(out_dir.glob(f"*_{session}__{model_name}.json")):
+    found = sorted(files) if files is not None else sorted(out_dir.glob(f"*_{session}__{model_name}.json"))
+    for jp in found:
+        if not jp.exists():
+            continue
         d = json.loads(jp.read_text(encoding="utf-8"))
         segs.extend(d.get("segments", []))
         speakers[d.get("speaker_id", "?")] = d.get("speaker", d.get("speaker_id", "?"))
@@ -153,35 +162,32 @@ def build_session_transcript(out_dir: Path, session: str, model_name: str) -> Pa
 
 
 # ───────────────────────────────────────────────────────────── 배치 전사 (stt/batch.py 위임)
-def transcribe_session_batch(wavs: list[Path], names: dict[str, str], backend, *, mode: str,
-                             model_name: str, gate=None, workers: int = 1,
-                             lines_out: list | None = None) -> tuple[dict[Path, dict], dict]:
-    """한 세션의 트랙들을 stt.batch 로 전사해 파일당 결과 dict 를 돌려준다.
-
-    한 세션을 한 번에 넣는 이유는 순번(seq)이 회의 전체 기준이기 때문이다. 결과 dict 의 모양은
-    transcribe_file 과 같아서 이후 build_session_transcript / timing_summary 가 그대로 돈다.
-    돌려주는 두 번째 값은 세션 통계(호출 수, 보낸 오디오, p50/p95, 걸러진 클립 수 등)다.
-    """
+def _tracks_for(wavs: list[Path], names: dict[str, str]) -> list:
     from stt import batch as B
 
     tracks = []
     for wav in wavs:
         uid, _ = parse_wav_stem(wav.stem)
         tracks.append(B.Track(speaker_id=uid, speaker_name=names.get(uid, uid), path=wav))
-    lines, stats = B.run(tracks, backend, mode=mode, gate=gate, workers=workers)
-    if lines_out is not None:
-        lines_out.extend(lines)   # 회의록(md/jsonl)을 쓰려는 호출자용
+    return tracks
 
+
+def results_from_lines(tracks: list, lines: list, *, mode: str, model_name: str, backend,
+                       by_speaker_s: dict[str, float]) -> dict[Path, dict]:
+    """Line 목록을 파일당 결과 dict 로. 모양은 transcribe_file 과 같아서 build_session_transcript 가 그대로 돈다.
+
+    seq 는 회의 전체 순번이다. JudgeFinding.seq 가 이 값으로 근거 발화를 가리킨다. 실패한 줄(error)은
+    segments 에서 빠지고 failed 로만 센다.
+    """
     results: dict[Path, dict] = {}
     for tr in tracks:
         mine = [ln for ln in lines if ln.speaker_id == tr.speaker_id]
-        # seq 는 회의 전체 순번이다. JudgeFinding.seq 가 이 값으로 근거 발화를 가리킨다
         segments = [
             {"speaker": tr.speaker_id, "start": round(ln.start_ms / 1000, 2), "end": round(ln.end_ms / 1000, 2),
              "text": ln.text, "seq": ln.seq}
             for ln in mine if ln.text
         ]
-        elapsed = stats.by_speaker_s.get(tr.speaker_id, 0.0)
+        elapsed = by_speaker_s.get(tr.speaker_id, 0.0)
         duration = wav_duration_sec(tr.path)
         sec_per_min = (elapsed / duration * 60.0) if duration > 0 else None
         results[tr.path] = {
@@ -203,27 +209,112 @@ def transcribe_session_batch(wavs: list[Path], names: dict[str, str], backend, *
             "text": " ".join(seg["text"] for seg in segments).strip(),
             "segments": segments,
         }
+    return results
+
+
+def transcribe_session_batch(wavs: list[Path], names: dict[str, str], backend, *, mode: str,
+                             model_name: str, gate=None, workers: int = 1,
+                             lines_out: list | None = None) -> tuple[dict[Path, dict], dict]:
+    """한 세션의 트랙들을 stt.batch 로 전사해 파일당 결과 dict 를 돌려준다.
+
+    한 세션을 한 번에 넣는 이유는 순번(seq)이 회의 전체 기준이기 때문이다. 돌려주는 두 번째 값은
+    세션 통계(호출 수, 보낸 오디오, p50/p95, 걸러진 클립 수 등)다.
+    """
+    from stt import batch as B
+
+    tracks = _tracks_for(wavs, names)
+    lines, stats = B.run(tracks, backend, mode=mode, gate=gate, workers=workers)
+    if lines_out is not None:
+        lines_out.extend(lines)   # 회의록(md/jsonl)을 쓰려는 호출자용
+    results = results_from_lines(tracks, lines, mode=mode, model_name=model_name, backend=backend,
+                                 by_speaker_s=stats.by_speaker_s)
     return results, stats.summary()
 
 
+def lines_to_json(lines: list, path: Path) -> None:
+    """줄 목록을 그대로 남긴다. 실패한 줄(error)도 들어 있어 나중에 그 줄만 다시 보낼 수 있다."""
+    path.write_text(json.dumps([{k: v for k, v in asdict(ln).items() if k != "submitted_at"} for ln in lines],
+                               ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def lines_from_json(path: Path) -> list:
+    return [Line(**d) for d in json.loads(path.read_text(encoding="utf-8"))]
+
+
+def save_session_outputs(lines: list, *, results: dict[Path, dict], summary: dict, model_name: str,
+                         out_dir: Path, session: str) -> Path | None:
+    """파일당 json/txt, 세션 통계, 줄 목록, 병합 Transcript 를 쓴다. 첫 전사와 실패 줄 재전사가 같이 쓴다."""
+    out_dir.mkdir(parents=True, exist_ok=True)
+    files = []
+    for w, result in results.items():
+        stem = out_dir / f"{w.stem}__{model_name}"
+        _save(result, stem)
+        files.append(stem.with_suffix(".json"))
+    (out_dir / f"session_{session}__{model_name}.batch.json").write_text(
+        json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
+    lines_to_json(lines, out_dir / f"session_{session}.lines.json")
+    return build_session_transcript(out_dir, session, model_name, files=files)
+
+
 def run_session(wavs: list[Path], names: dict[str, str], backend, *, mode: str = "chunk",
-                model_name: str, gate=None, workers: int = 1, out_dir: Path) -> dict:
+                model_name: str, gate=None, workers: int = 1, out_dir: Path,
+                session_id: str | None = None) -> dict:
     """한 세션을 전사해 파일당 json/txt, 세션 통계, 병합 Transcript 까지 쓴다.
 
     돌려주는 dict: results(파일당 결과), summary(통계), lines(회의록용 Line), transcript_json(경로).
-    봇 녹음기(capture/recorder.py)와 이 파일의 main 이 같은 함수를 쓴다.
+    봇 녹음기(capture/recorder.py)와 이 파일의 main 이 같은 함수를 쓴다. session_id 를 주면
+    산출물 이름에 그것을 쓴다 (봇은 <guild>_<ts>). 없으면 wav 이름의 ts 다.
     """
-    out_dir.mkdir(parents=True, exist_ok=True)
     lines: list = []
     results, summary = transcribe_session_batch(wavs, names, backend, mode=mode, model_name=model_name,
                                                 gate=gate, workers=workers, lines_out=lines)
-    session = parse_wav_stem(wavs[0].stem)[1] if wavs else ""
-    for w, result in results.items():
-        _save(result, out_dir / f"{w.stem}__{model_name}")
-    (out_dir / f"session_{session}__{model_name}.batch.json").write_text(
-        json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
-    merged = build_session_transcript(out_dir, session, model_name)
+    session = session_id or (parse_wav_stem(wavs[0].stem)[1] if wavs else "")
+    merged = save_session_outputs(lines, results=results, summary=summary, model_name=model_name,
+                                  out_dir=out_dir, session=session)
     return {"results": results, "summary": summary, "lines": lines, "transcript_json": merged, "session": session}
+
+
+def retry_failed_lines(wavs: list[Path], names: dict[str, str], backend, *, model_name: str, mode: str,
+                       out_dir: Path, session: str) -> dict:
+    """session_<id>.lines.json 의 실패한 줄만 화자 wav 에서 잘라 다시 보내고 산출물을 다시 쓴다.
+
+    묶음 대신 클립 하나씩 보내므로 단어 시각 없이도 시각이 맞는다. 순번(seq)은 첫 전사 때 실패한
+    줄까지 넣어 매겼으므로 그대로다. 돌려주는 dict: lines, retried, still_failed, transcript_json.
+    """
+    import numpy as np
+
+    from stt import batch as B
+
+    path = out_dir / f"session_{session}.lines.json"
+    lines = lines_from_json(path)
+    tracks = _tracks_for(wavs, names)
+    by_speaker = {tr.speaker_id: tr for tr in tracks}
+    stats = B.BatchStats(mode=mode, backend=getattr(backend, "name", type(backend).__name__))
+    audio: dict[str, np.ndarray] = {}
+    retried = 0
+    for ln in lines:
+        if not ln.error or ln.speaker_id not in by_speaker:
+            continue
+        tr = by_speaker[ln.speaker_id]
+        if ln.speaker_id not in audio:
+            audio[ln.speaker_id] = B.load_track(tr.path)
+        a = int(ln.start_ms * B.SR / 1000)
+        b = int((ln.end_ms / 1000 + B.TAIL_PAD_S) * B.SR)
+        pcm = np.array(audio[ln.speaker_id][a:b], copy=True)
+        r, dt, err = B._call(backend, pcm, stats, tr.speaker_id)
+        retried += 1
+        ln.text = r.text if (r is not None and not err) else ""
+        ln.error = err
+        ln.transcribe_s = round(dt, 3)
+    results = results_from_lines(tracks, lines, mode=mode, model_name=model_name, backend=backend,
+                                 by_speaker_s=stats.by_speaker_s)
+    summary_path = out_dir / f"session_{session}__{model_name}.batch.json"
+    summary = json.loads(summary_path.read_text(encoding="utf-8")) if summary_path.exists() else stats.summary()
+    summary["retried_lines"] = summary.get("retried_lines", 0) + retried
+    summary["failed"] = sum(1 for ln in lines if ln.error)
+    merged = save_session_outputs(lines, results=results, summary=summary, model_name=model_name,
+                                  out_dir=out_dir, session=session)
+    return {"lines": lines, "retried": retried, "still_failed": summary["failed"], "transcript_json": merged}
 
 
 # ───────────────────────────────────────────────────────────── 처리시간 누적 기록
