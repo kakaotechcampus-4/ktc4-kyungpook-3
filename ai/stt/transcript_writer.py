@@ -18,6 +18,11 @@ def _clock(ms: int) -> str:
     return f"{total // 60:02d}:{total % 60:02d}"
 
 
+def _stamp(ln: Line) -> str:
+    """줄 머리 시각. 단어 시각 없이 묶음 구간에 붙인 줄은 그렇다고 표시한다."""
+    return _clock(ln.start_ms) + (" 구간" if ln.timing == "chunk" else "")
+
+
 def _display_name(ln: Line) -> str:
     # speaker_name 이 빈 문자열이면 화자 ID 로 대신한다. "### " 같은 빈 절 제목을 막는다.
     return ln.speaker_name or ln.speaker_id
@@ -54,7 +59,7 @@ def write_transcript(lines: list[Line], out_dir: Path, meeting_id: str) -> dict:
     # 대본처럼 읽히게 한 턴이 한 줄이다. 줄 머리는 턴 시작 시각과 화자.
     md = [f"# 회의 전사 {meeting_id}", "", "## 시간순", ""]
     for ln in finals:
-        md.append(f"({_clock(ln.start_ms)}) **{_display_name(ln)}**: {_md_text(ln.text)}")
+        md.append(f"({_stamp(ln)}) **{_display_name(ln)}**: {_md_text(ln.text)}")
         md.append("")
 
     md += ["", "## 화자별", ""]
@@ -64,7 +69,7 @@ def write_transcript(lines: list[Line], out_dir: Path, meeting_id: str) -> dict:
     for name, items in by_speaker.items():
         md.append(f"### {name}")
         for ln in items:
-            md.append(f"({_clock(ln.start_ms)}) {_md_text(ln.text)}")
+            md.append(f"({_stamp(ln)}) {_md_text(ln.text)}")
             md.append("")
 
     md_path = out_dir / "transcript.md"

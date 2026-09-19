@@ -159,12 +159,26 @@ def test_chunk_mode_joins_a_speakers_clips_and_remaps_words(tmp_path):
     assert 4.0 < max(stt.calls) < 5.0
 
 
-def test_chunk_mode_without_word_times_puts_text_on_first_clip(tmp_path):
+def test_chunk_mode_without_word_times_spans_the_chunk_and_marks_it(tmp_path):
+    """단어 시각이 없으면 첫 클립에 붙이지 않고 묶음 구간 전체를 한 줄로 둔다. 거칠어도 발화가 그 안에 있다."""
     stt = EchoStt(words=False)
     lines, stats = B.run(_session(tmp_path), stt, mode="chunk", gate=None, workers=1)
     a = [ln for ln in lines if ln.speaker_id == "a"]
-    assert a[0].text and not a[1].text
+    assert len(a) == 1 and a[0].text and a[0].timing == "chunk"
+    assert a[0].start_ms <= 100 and 11_900 <= a[0].end_ms <= 12_200     # 0~2초 클립부터 10~12초 클립까지
     assert stats.unmapped == 2      # 화자 a, b 묶음 둘 다 단어 시각이 없다
+    assert all(ln.timing == "word" for ln in B.run(_session(tmp_path), EchoStt(), mode="chunk", gate=None)[0])
+
+
+def test_backend_without_word_times_can_reclip_when_calls_are_free(tmp_path):
+    """로컬처럼 호출 비용이 없는 백엔드는 그 묶음의 클립을 하나씩 다시 보내 정확한 시각을 얻는다."""
+    stt = EchoStt(words=False)
+    stt.reclip_unmapped = True
+    lines, stats = B.run(_session(tmp_path), stt, mode="chunk", gate=None, workers=1, merge=False)
+    a = [ln for ln in lines if ln.speaker_id == "a"]
+    assert len(a) == 2 and all(ln.text and ln.timing == "word" for ln in a)
+    assert stats.unmapped == 2 and stats.calls == 2 + 3        # 묶음 둘 + 클립 셋
+    assert 1.9 < min(stt.calls) < 2.3                            # 클립 하나 길이만큼만 다시 보냈다
 
 
 def test_track_mode_counts_words_in_silence_as_hallucination(tmp_path):

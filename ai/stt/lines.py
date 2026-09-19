@@ -19,6 +19,8 @@ class Line:
     error         전사가 끝내 실패했으면 그 이유. 그때 text 는 비어 있다. 회의록 파일에는 안
                   들어가고 화면과 종료 요약에만 보인다. 전에는 text 에 "[전사 실패]" 를 넣었는데
                   그러면 회의록과 추출이 그것을 발화로 읽는다.
+    timing        시각 근거. "word" 는 단어 시각이나 클립 경계로 잡은 것이고, "chunk" 는 단어 시각이
+                  없어 묶음 구간 전체를 한 줄로 둔 것이다. 그 줄의 start~end 는 거칠지만 발화가 그 안에 있다.
 
     아직 재지 못한 값은 None 이다. 0.0 으로 두면 "즉시" 와 구별되지 않는다.
     """
@@ -36,3 +38,4 @@ class Line:
     publish_s: float | None = None
     submitted_at: float | None = None
     error: str | None = None
+    timing: str = "word"
