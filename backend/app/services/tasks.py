@@ -17,6 +17,7 @@ _FIELD_MAP: dict[str, ChangedField] = {
     "status": ChangedField.STATUS,
     "progress": ChangedField.PROGRESS,
     "blocker": ChangedField.BLOCKER,
+    "start_date": ChangedField.START_DATE,
     "due_date": ChangedField.DUE_DATE,
 }
 _REVERSE_FIELD_MAP = {str(v): k for k, v in _FIELD_MAP.items()}
@@ -136,7 +137,7 @@ def _deserialize(field: str, value: str | None) -> object:
         return None
     if field == "progress":
         return int(value)
-    if field == "due_date":
+    if field in {"due_date", "start_date"}:
         return date.fromisoformat(value)
     return value
 
@@ -148,6 +149,7 @@ def create_task(
     title: str,
     meeting_id: str | None = None,
     assignee_member_id: str | None = None,
+    start_date: date | None = None,
     due_date: date | None = None,
     status: str = TaskStatus.TODO,
     progress: int | None = None,
@@ -168,6 +170,7 @@ def create_task(
         meeting_id=meeting_id,
         title=title,
         assignee_member_id=assignee_member_id,
+        start_date=start_date,
         due_date=due_date,
         status=str(status),
         progress=progress,

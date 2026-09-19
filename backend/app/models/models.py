@@ -78,6 +78,7 @@ class TaskStatus(StrEnum):
 
 class ChangedField(StrEnum):
     ASSIGNEE = "assignee"
+    START_DATE = "start_date"
     DUE_DATE = "due_date"
     STATUS = "status"
     TITLE = "title"

@@ -22,9 +22,9 @@ from app.schemas.member import (
     UnresolvedAliasListResponse,
     UnresolvedAliasResponse,
 )
+from app.api.deps import get_current_member
 
 router = APIRouter(prefix="/members", tags=["members"])
-
 
 def _get_member(db: Session, member_id: str) -> Member:
     member = db.get(Member, member_id)
