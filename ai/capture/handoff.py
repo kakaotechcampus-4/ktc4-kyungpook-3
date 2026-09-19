@@ -171,8 +171,8 @@ class Handoff:
         old = be.get("meeting_id")
         if old:
             be.setdefault("replaced", []).append(old)
-        be.pop("meeting_id", None)
-        be.pop("extraction_id", None)
+        for k in ("meeting_id", "extraction_id", "item_count", "failed_stage", "error"):
+            be.pop(k, None)
         return self.start(manifest, title=title)
 
     def end(self, manifest: dict, *, title: str | None = None) -> dict:

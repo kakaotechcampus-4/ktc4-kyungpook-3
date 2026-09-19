@@ -115,6 +115,7 @@ def test_meeting_be_marked_failed_is_replaced_on_recovery(tmp_path):
     assert fake.meetings["m1"]["status"] == "failed" and m["be"]["failed_stage"] == "stt"
     be = h.register(m, transcripts_dir=tdir, model_name="x")   # 복구가 성공해 넘긴다
     assert be["meeting_id"] == "m2" and be["replaced"] == ["m1"] and be["status"] == "done"
+    assert "failed_stage" not in be and be["extraction_id"] == "e-m2"     # 옛 회의의 실패 표시는 따라오지 않는다
     assert fake.meetings["m2"]["status"] == "done"
 
 
