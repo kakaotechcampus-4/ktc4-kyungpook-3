@@ -70,7 +70,7 @@ def list_workspaces(
     db: Session = Depends(get_db)
 ) -> dict:
     # 사용자가 속한 워크스페이스만 조회
-    members = db.query(Member).filter(Member.user_id == user.user_id, Member.is_deleted == False).all()
+    members = db.query(Member).filter(Member.user_id == user.user_id, Member.is_deleted.is_(False)).all()
     workspace_ids = [m.workspace_id for m in members]
     
     if not workspace_ids:
@@ -101,7 +101,7 @@ def get_workspace(
             ErrorCode.WORKSPACE_NOT_FOUND, details={"workspace_id": workspace_id}
         )
         
-    member = db.query(Member).filter(Member.workspace_id == workspace_id, Member.user_id == user.user_id, Member.is_deleted == False).first()
+    member = db.query(Member).filter(Member.workspace_id == workspace_id, Member.user_id == user.user_id, Member.is_deleted.is_(False)).first()
     return success(_build_workspace_response(workspace, member))
 
 
@@ -117,7 +117,7 @@ def update_onboarding(
         raise AppError(ErrorCode.WORKSPACE_NOT_FOUND, details={"workspace_id": workspace_id})
         
     if member.role != MemberRole.PM:
-         raise AppError(ErrorCode.FORBIDDEN, "Only PM can update onboarding status")
+        raise AppError(ErrorCode.FORBIDDEN, "Only PM can update onboarding status")
 
     # 온보딩 단계 업데이트 로직 (간단화)
     if payload.action == "complete" and payload.step == "connect_members":
@@ -134,10 +134,10 @@ def list_workspace_meetings(
     db: Session = Depends(get_db)
 ) -> dict:
     member = db.query(Member).filter(
-        Member.workspace_id == workspace_id, Member.user_id == user.user_id, Member.is_deleted == False
+        Member.workspace_id == workspace_id, Member.user_id == user.user_id, Member.is_deleted.is_(False)
     ).first()
     if not member:
-        raise AppError(ErrorCode.FORBIDDEN, details={"msg": "Forbidden"})
+        raise AppError(ErrorCode.FORBIDDEN)
         
     meetings = db.query(Meeting).filter(
         Meeting.workspace_id == workspace_id,
@@ -179,8 +179,8 @@ def upload_meeting(
     ).first()
     if processing:
         raise AppError(
-            ErrorCode.INVALID_REQUEST, 
-            details={"msg": "MEETING_PROCESSING_IN_PROGRESS", "meeting_id": processing.meeting_id}
+            ErrorCode.MEETING_PROCESSING_IN_PROGRESS,
+            details={"meeting_id": processing.meeting_id}
         )
         
     meeting = Meeting(

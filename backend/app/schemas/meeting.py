@@ -34,6 +34,12 @@ class MeetingFailRequest(BaseModel):
     failed_stage: str = Field(..., description="어느 단계에서 실패했는지 (e.g., STT, LLM)")
 
 
+class MeetingProgress(BaseModel):
+    audio_merged: bool
+    transcribed: bool
+    extracted: bool
+
+
 class MeetingDetailResponse(BaseModel):
     meeting_id: str
     workspace_id: str
@@ -43,6 +49,7 @@ class MeetingDetailResponse(BaseModel):
     ended_at: datetime | None
     extraction_id: str | None = None
     failed_stage: str | None = None
+    progress: MeetingProgress
 
 
 class MeetingListResponse(BaseModel):

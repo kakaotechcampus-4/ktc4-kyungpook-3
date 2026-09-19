@@ -14,7 +14,8 @@ from app.schemas.meeting import (
     MeetingDetailResponse,
     MeetingEndResponse,
     MeetingFailRequest,
-    MeetingMinutesResponse
+    MeetingMinutesResponse,
+    MeetingProgress,
 )
 
 router = APIRouter(prefix="/meetings", tags=["meetings"])
@@ -29,6 +30,21 @@ def _get_meeting(db: Session, meeting_id: str) -> Meeting:
             ErrorCode.MEETING_NOT_FOUND, details={"meeting_id": meeting_id}
         )
     return meeting
+
+
+def _compute_progress(db: Session, meeting: Meeting) -> MeetingProgress:
+    audio_merged = bool(meeting.audio and meeting.audio.is_complete)
+    extraction = (
+        db.query(Extraction)
+        .filter(Extraction.meeting_id == meeting.meeting_id)
+        .order_by(Extraction.created_at.desc())
+        .first()
+    )
+    transcribed = bool(extraction and extraction.transcript_path)
+    extracted = bool(extraction and extraction.items)
+    return MeetingProgress(
+        audio_merged=audio_merged, transcribed=transcribed, extracted=extracted
+    )
 
 
 @router.post("", status_code=201, response_model=Envelope[MeetingCreateResponse])
@@ -107,6 +123,7 @@ def fail_meeting(
         ended_at=meeting.ended_at,
         extraction_id=None,
         failed_stage=meeting.failed_stage,
+        progress=_compute_progress(db, meeting),
     )
     return success(detail.model_dump(mode="json"))
 
@@ -134,6 +151,7 @@ def get_meeting(meeting_id: str, db: Session = Depends(get_db)) -> dict:
         ended_at=meeting.ended_at,
         extraction_id=extraction_id,
         failed_stage=meeting.failed_stage,
+        progress=_compute_progress(db, meeting),
     )
     return success(detail.model_dump(mode="json"))
 
@@ -148,22 +166,26 @@ def get_meeting_minutes(
     meeting = _get_meeting(db, meeting_id)
     
     member = db.query(Member).filter(
-        Member.workspace_id == meeting.workspace_id, Member.user_id == user.user_id, Member.is_deleted == False
+        Member.workspace_id == meeting.workspace_id, Member.user_id == user.user_id, Member.is_deleted.is_(False)
     ).first()
-    
+
     if not member:
-        raise AppError(ErrorCode.FORBIDDEN, details={"msg": "Forbidden"})
-        
+        raise AppError(ErrorCode.FORBIDDEN)
+
+    segment_member_ids = {seg.member_id for seg in meeting.segments if seg.member_id}
+    display_names = {
+        m.member_id: m.display_name
+        for m in db.query(Member).filter(Member.member_id.in_(segment_member_ids)).all()
+    } if segment_member_ids else {}
+
     attendees = []
     seen = set()
     for seg in meeting.segments:
         if seg.member_id and seg.member_id not in seen:
             seen.add(seg.member_id)
-            # member 테이블 정보는 join이나 relationship이 필요한데
-            # 현재 모델상 세그먼트에서 바로 가져오긴 어려울 수 있어 일단 null fallback 처리
             attendees.append({
                 "member_id": seg.member_id,
-                "display_name": None
+                "display_name": display_names.get(seg.member_id)
             })
             
     summary = None

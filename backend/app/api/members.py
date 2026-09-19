@@ -43,6 +43,20 @@ def create_member(
             ErrorCode.WORKSPACE_NOT_FOUND, details={"workspace_id": payload.workspace_id}
         )
 
+    if payload.discord_user_id:
+        exists = db.execute(
+            select(Member).where(
+                Member.workspace_id == payload.workspace_id,
+                Member.discord_user_id == payload.discord_user_id,
+                Member.is_deleted.is_(False),
+            )
+        ).scalar_one_or_none()
+        if exists is not None:
+            raise AppError(
+                ErrorCode.DISCORD_USER_ALREADY_MAPPED,
+                details={"discord_user_id": payload.discord_user_id},
+            )
+
     member = Member(
         workspace_id=payload.workspace_id,
         display_name=payload.display_name,
@@ -63,13 +77,13 @@ def list_members(
 ) -> dict:
     stmt = (
         select(Member)
-        .where(Member.workspace_id == workspace_id)
+        .where(Member.workspace_id == workspace_id, Member.is_deleted.is_(False))
         .order_by(Member.created_at)
     )
     rows = db.execute(stmt).scalars().all()
 
     count_stmt = select(func.count()).select_from(Member).where(
-        Member.workspace_id == workspace_id
+        Member.workspace_id == workspace_id, Member.is_deleted.is_(False)
     )
     total = db.execute(count_stmt).scalar() or 0
 
@@ -168,9 +182,29 @@ def update_member(
 ) -> dict:
     member = _get_member(db, member_id)
 
-    updates = payload.model_dump(exclude_unset=True, exclude_none=True)
+    updates = {field: getattr(payload, field) for field in payload.model_fields_set}
+
+    if updates.get("discord_user_id"):
+        exists = db.execute(
+            select(Member).where(
+                Member.workspace_id == member.workspace_id,
+                Member.discord_user_id == updates["discord_user_id"],
+                Member.member_id != member_id,
+                Member.is_deleted.is_(False),
+            )
+        ).scalar_one_or_none()
+        if exists is not None:
+            raise AppError(
+                ErrorCode.DISCORD_USER_ALREADY_MAPPED,
+                details={"discord_user_id": updates["discord_user_id"]},
+            )
+
     for field, value in updates.items():
-        setattr(member, field, str(value) if field == "role" else value)
+        if field == "role":
+            if value is not None:
+                member.role = str(value)
+            continue
+        setattr(member, field, value)
 
     db.commit()
     db.refresh(member)

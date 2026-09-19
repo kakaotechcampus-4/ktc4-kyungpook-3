@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from app.core.database import get_db
-from app.core.errors import Envelope, success
+from app.core.errors import AppError, Envelope, ErrorCode, success
 from app.models import Integration
 from app.api.deps import get_current_member
 
@@ -54,10 +54,16 @@ def list_discord_members(
     member = Depends(get_current_member),
     db: Session = Depends(get_db)
 ) -> dict:
-    # 향후 Discord API 연동 시 실제 멤버 목록 반환
-    return success({
-        "items": [
-            {"discord_user_id": "disc_01", "username": "discordUser1", "display_name": "Discord User 1"},
-            {"discord_user_id": "disc_02", "username": "discordUser2", "display_name": "Discord User 2"}
-        ]
-    })
+    integration = db.query(Integration).filter(
+        Integration.workspace_id == workspace_id,
+        Integration.provider == "discord",
+    ).first()
+    if integration is None:
+        raise AppError(ErrorCode.INTEGRATION_NOT_CONNECTED, details={"provider": "discord"})
+
+    # 향후 Discord API 연동 시 실제 멤버 목록으로 교체
+    items = [
+        {"discord_user_id": "disc_01", "username": "discordUser1", "display_name": "Discord User 1", "avatar_url": None, "is_bot": False},
+        {"discord_user_id": "disc_02", "username": "discordUser2", "display_name": "Discord User 2", "avatar_url": None, "is_bot": False},
+    ]
+    return success({"items": items, "total": len(items)})
