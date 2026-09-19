@@ -6,7 +6,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app.api import approvals, extractions, meetings, members, tasks, workspaces
+from app.api import approvals, extractions, meetings, members, tasks, workspaces, auth
 from app.core.errors import AppError, Envelope, ErrorCode, failure, success
 
 logger = logging.getLogger(__name__)
@@ -18,6 +18,7 @@ app = FastAPI(
 )
 
 API_PREFIX = "/api/v1"
+app.include_router(auth.router, prefix=API_PREFIX)
 app.include_router(workspaces.router, prefix=API_PREFIX)
 app.include_router(members.router, prefix=API_PREFIX)
 app.include_router(meetings.router, prefix=API_PREFIX)

@@ -1,6 +1,23 @@
 from datetime import datetime
+from typing import Optional, List
 
 from pydantic import BaseModel, ConfigDict, Field
+
+
+class WorkspaceOnboardingStep(BaseModel):
+    step: str
+    status: str
+
+
+class WorkspaceOnboarding(BaseModel):
+    completed: bool
+    current_step: str
+    steps: List[WorkspaceOnboardingStep]
+
+
+class WorkspaceOnboardingUpdateRequest(BaseModel):
+    step: str
+    action: str  # skip or complete
 
 
 class WorkspaceCreateRequest(BaseModel):
@@ -13,6 +30,8 @@ class WorkspaceResponse(BaseModel):
     workspace_id: str
     name: str
     created_at: datetime
+    role: Optional[str] = None
+    onboarding: Optional[WorkspaceOnboarding] = None
 
 
 class WorkspaceListResponse(BaseModel):
