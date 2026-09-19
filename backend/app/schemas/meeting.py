@@ -45,6 +45,23 @@ class MeetingDetailResponse(BaseModel):
     failed_stage: str | None = None
 
 
+class MeetingListResponse(BaseModel):
+    items: list[dict]
+    total: int
+
+
+class MeetingMinutesResponse(BaseModel):
+    meeting_id: str
+    title: str | None
+    started_at: datetime
+    duration_ms: int
+    source: str
+    attendees: list[dict]
+    summary: dict | None
+    transcript: list[dict]
+    permissions: dict
+
+
 
 class TaskInfo(BaseModel):
     title: str

@@ -1,11 +1,14 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, UploadFile, File, Form
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
+from datetime import datetime, timezone
+from typing import Optional
 
 from app.api.deps import get_current_user, get_current_member
 from app.core.database import get_db
 from app.core.errors import AppError, Envelope, ErrorCode, success
-from app.models import Workspace, Member, MemberRole, User
+from app.models import Workspace, Member, MemberRole, User, Meeting, MeetingStatus
+from app.schemas.meeting import MeetingListResponse
 from app.schemas.workspace import (
     WorkspaceCreateRequest,
     WorkspaceListResponse,
@@ -122,3 +125,75 @@ def update_onboarding(
         
     db.commit()
     return success({})
+
+
+@router.get("/{workspace_id}/meetings", response_model=Envelope[MeetingListResponse])
+def list_workspace_meetings(
+    workspace_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+) -> dict:
+    member = db.query(Member).filter(
+        Member.workspace_id == workspace_id, Member.user_id == user.user_id, Member.is_deleted == False
+    ).first()
+    if not member:
+        raise AppError(ErrorCode.FORBIDDEN, details={"msg": "Forbidden"})
+        
+    meetings = db.query(Meeting).filter(
+        Meeting.workspace_id == workspace_id,
+        Meeting.status != MeetingStatus.FAILED
+    ).order_by(Meeting.started_at.desc()).all()
+    
+    items = []
+    for m in meetings:
+        # attendee_count 로직 개선 필요(현재는 segment 기반 추정)
+        attendee_count = len({s.member_id for s in m.segments if s.member_id}) if m.segments else 0
+        items.append({
+            "meeting_id": m.meeting_id,
+            "title": m.title,
+            "started_at": m.started_at,
+            "source": m.source,
+            "status": m.status,
+            "duration_ms": m.audio.duration_ms if m.audio else 0,
+            "attendee_count": attendee_count,
+            "processed_at": m.ended_at
+        })
+        
+    return success(MeetingListResponse(items=items, total=len(items)).model_dump(mode="json"))
+
+
+@router.post("/{workspace_id}/meetings/upload", status_code=202, response_model=Envelope[dict])
+def upload_meeting(
+    workspace_id: str,
+    title: str = Form(...),
+    started_at: Optional[datetime] = Form(None),
+    attendee_member_ids: str = Form(...),
+    file: UploadFile = File(...),
+    member: Member = Depends(get_current_member),
+    db: Session = Depends(get_db)
+) -> dict:
+    
+    processing = db.query(Meeting).filter(
+        Meeting.workspace_id == workspace_id, 
+        Meeting.status == MeetingStatus.PROCESSING
+    ).first()
+    if processing:
+        raise AppError(
+            ErrorCode.INVALID_REQUEST, 
+            details={"msg": "MEETING_PROCESSING_IN_PROGRESS", "meeting_id": processing.meeting_id}
+        )
+        
+    meeting = Meeting(
+        workspace_id=workspace_id,
+        title=title,
+        source="manual_upload",
+        status=MeetingStatus.PROCESSING,
+        started_at=started_at or datetime.now(timezone.utc)
+    )
+    db.add(meeting)
+    db.commit()
+    db.refresh(meeting)
+    
+    # TODO: 파일 저장 및 큐 전송 등 비동기 처리 연결
+    
+    return success({"meeting_id": meeting.meeting_id, "status": meeting.status})

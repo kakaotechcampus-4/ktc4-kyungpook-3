@@ -4,15 +4,17 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.api.deps import get_current_user
 from app.core.database import get_db
 from app.core.errors import AppError, Envelope, ErrorCode, success
-from app.models import Extraction, Meeting, MeetingStatus
+from app.models import Extraction, Meeting, MeetingStatus, Member, User
 from app.schemas.meeting import (
     MeetingCreateRequest,
     MeetingCreateResponse,
     MeetingDetailResponse,
     MeetingEndResponse,
     MeetingFailRequest,
+    MeetingMinutesResponse
 )
 
 router = APIRouter(prefix="/meetings", tags=["meetings"])
@@ -134,4 +136,67 @@ def get_meeting(meeting_id: str, db: Session = Depends(get_db)) -> dict:
         failed_stage=meeting.failed_stage,
     )
     return success(detail.model_dump(mode="json"))
+
+
+@router.get("/{meeting_id}/minutes", response_model=Envelope[MeetingMinutesResponse])
+def get_meeting_minutes(
+    meeting_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+) -> dict:
+    import json
+    meeting = _get_meeting(db, meeting_id)
+    
+    member = db.query(Member).filter(
+        Member.workspace_id == meeting.workspace_id, Member.user_id == user.user_id, Member.is_deleted == False
+    ).first()
+    
+    if not member:
+        raise AppError(ErrorCode.FORBIDDEN, details={"msg": "Forbidden"})
+        
+    attendees = []
+    seen = set()
+    for seg in meeting.segments:
+        if seg.member_id and seg.member_id not in seen:
+            seen.add(seg.member_id)
+            # member 테이블 정보는 join이나 relationship이 필요한데
+            # 현재 모델상 세그먼트에서 바로 가져오긴 어려울 수 있어 일단 null fallback 처리
+            attendees.append({
+                "member_id": seg.member_id,
+                "display_name": None
+            })
+            
+    summary = None
+    transcript = []
+    
+    extraction = db.query(Extraction).filter(Extraction.meeting_id == meeting_id).order_by(Extraction.created_at.desc()).first()
+    if extraction:
+        if extraction.summary:
+            try:
+                summary = json.loads(extraction.summary)
+            except:
+                pass
+                
+        # 대본 구성 (향후 실제 대본 맵핑 로직 필요, 임시 Mock)
+        transcript = [
+            {
+                "at_ms": 0,
+                "speaker_member_id": None,
+                "speaker_display_name": None,
+                "speaker_fallback": "Speaker 1",
+                "text": "회의 기록입니다. 추후 대본 맵핑 기능이 연결될 예정입니다."
+            }
+        ]
+        
+    return success(MeetingMinutesResponse(
+        meeting_id=meeting.meeting_id,
+        title=meeting.title,
+        started_at=meeting.started_at,
+        duration_ms=meeting.audio.duration_ms if meeting.audio else 0,
+        source=meeting.source,
+        attendees=attendees,
+        summary=summary,
+        transcript=transcript,
+        permissions={"can_review": member.role == "pm", "can_undo": member.role == "pm"}
+    ).model_dump(mode="json"))
 
