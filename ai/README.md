@@ -23,6 +23,9 @@ recordings/         녹음 산출물 (git 제외)
 - `/stop` 이면 트랙을 닫고 `capture/recorder.py` 의 `process_session` 이 전사(`stt/batch.py`) → 할일 추출
   (`extract/`) → BE 인계(`capture/handoff.py`)를 차례로 돌려 결과를 채널에 올린 뒤 `on_session_saved(manifest,
   manifest_path)` 훅을 부릅니다. BE 가 읽는 전사는 `transcripts/session_{ts}.transcript.json` 입니다.
+- 운영에 올리는 Cog 는 `RecordingCog` 하나입니다. `capture/realtime/` 은 실행기에 등록하지 않고 공용 계층
+  (`voice_client.py`, `streaming_sink.py`, `track_writer.py`)에 기댈 뿐이며 반대 방향 의존은 없습니다. 재연결
+  키 갱신처럼 두 경로에 다 필요한 처리는 공용 계층에 있습니다.
 - BE 인계는 봇이 BE 회의 API 를 직접 부릅니다 (`decision_log/0009`). `/record` 에서 `POST /api/v1/meetings`,
   트랙을 닫은 뒤 `PATCH /meetings/{id}/end`, 추출 뒤 `POST /extractions`, 어느 단계가 실패하면
   `PATCH /meetings/{id}/fail`. `BE_BASE_URL` 과 `BE_WORKSPACE_ID` 가 없으면 이 단계에서 멈춥니다.
