@@ -5,14 +5,14 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.errors import AppError, ErrorCode, success
+from app.core.errors import AppError, Envelope, ErrorCode, success
 from app.models import Extraction, Meeting, MeetingStatus
 from app.schemas.meeting import (
     MeetingCreateRequest,
     MeetingCreateResponse,
     MeetingDetailResponse,
     MeetingEndResponse,
-    MeetingProgress,
+    MeetingFailRequest,
 )
 
 router = APIRouter(prefix="/meetings", tags=["meetings"])
@@ -29,7 +29,7 @@ def _get_meeting(db: Session, meeting_id: str) -> Meeting:
     return meeting
 
 
-@router.post("", status_code=201)
+@router.post("", status_code=201, response_model=Envelope[MeetingCreateResponse])
 def create_meeting(
     payload: MeetingCreateRequest,
     db: Session = Depends(get_db),
@@ -49,7 +49,9 @@ def create_meeting(
     )
 
 
-@router.patch("/{meeting_id}/end", status_code=202)
+@router.patch(
+    "/{meeting_id}/end", status_code=202, response_model=Envelope[MeetingEndResponse]
+)
 def end_meeting(
     meeting_id: str,
     db: Session = Depends(get_db),
@@ -72,7 +74,42 @@ def end_meeting(
     )
 
 
-@router.get("/{meeting_id}")
+@router.patch(
+    "/{meeting_id}/fail", status_code=200, response_model=Envelope[MeetingDetailResponse]
+)
+def fail_meeting(
+    meeting_id: str,
+    payload: MeetingFailRequest,
+    db: Session = Depends(get_db),
+) -> dict:
+    meeting = _get_meeting(db, meeting_id)
+
+    if meeting.status in {MeetingStatus.DONE, MeetingStatus.FAILED}:
+        raise AppError(
+            ErrorCode.MEETING_ALREADY_ENDED,
+            details={"meeting_id": meeting_id, "status": meeting.status},
+        )
+
+    meeting.status = str(MeetingStatus.FAILED)
+    meeting.failed_stage = payload.failed_stage
+    meeting.ended_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(meeting)
+
+    detail = MeetingDetailResponse(
+        meeting_id=meeting.meeting_id,
+        workspace_id=meeting.workspace_id,
+        title=meeting.title,
+        status=meeting.status,
+        started_at=meeting.started_at,
+        ended_at=meeting.ended_at,
+        extraction_id=None,
+        failed_stage=meeting.failed_stage,
+    )
+    return success(detail.model_dump(mode="json"))
+
+
+@router.get("/{meeting_id}", response_model=Envelope[MeetingDetailResponse])
 def get_meeting(meeting_id: str, db: Session = Depends(get_db)) -> dict:
     meeting = _get_meeting(db, meeting_id)
 
@@ -93,12 +130,8 @@ def get_meeting(meeting_id: str, db: Session = Depends(get_db)) -> dict:
         status=meeting.status,
         started_at=meeting.started_at,
         ended_at=meeting.ended_at,
-        progress=MeetingProgress(
-            audio_merged=meeting.audio_merged,
-            transcribed=meeting.transcribed,
-            extracted=meeting.extracted,
-        ),
         extraction_id=extraction_id,
         failed_stage=meeting.failed_stage,
     )
     return success(detail.model_dump(mode="json"))
+

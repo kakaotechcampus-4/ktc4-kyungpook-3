@@ -96,7 +96,7 @@ def log_resolution(
     log = AliasResolutionLog(
         workspace_id=workspace_id,
         alias_text=alias_text,
-        resolved_member=match.member_id,
+        resolved_member_id=match.member_id,
         result=str(match.result),
         candidate_count=match.candidate_count,
         evidence_quote=evidence_quote,
@@ -106,9 +106,15 @@ def log_resolution(
     return log
 
 
-def decide_gate(confidence: float) -> Gate:
-    """신뢰도 → 게이트 판정. 규칙 기반이어야 감사·재현이 가능하다."""
+def decide_gate(confidence: float, *, needs_check: bool = False) -> Gate:
+    """신뢰도 → 게이트 판정. 규칙 기반이어야 감사·재현이 가능하다.
+
+    needs_check가 True이면 (미검증 별칭, 중의성 등) 점수가 높아도
+    AUTO 대신 REVIEW로 하향하여 PM 확인을 강제한다.
+    """
     if confidence >= GATE_AUTO_THRESHOLD:
+        if needs_check:
+            return Gate.REVIEW
         return Gate.AUTO
     if confidence >= GATE_REVIEW_THRESHOLD:
         return Gate.REVIEW
@@ -117,8 +123,23 @@ def decide_gate(confidence: float) -> Gate:
 
 def item_confidence(
     task_confidence: float,
+    assignee_raw: str | None,
     assignee_confidence: float,
+    due_raw: str | None,
     due_confidence: float,
 ) -> float:
-    """항목 신뢰도 = min(태스크, 담당자, 마감)."""
-    return min(task_confidence, assignee_confidence, due_confidence)
+    """항목 전체 신뢰도 산출.
+    
+    피드백 반영: 마감일이나 담당자가 미언급(None)인 경우, 이를 '파싱 실패(0.0)'가 아닌 
+    '정상적인 미언급'으로 취급하여 min() 계산에서 제외한다. 
+    (제외하지 않으면 기본값 0.0 때문에 무조건 HOLD 게이트로 빠짐)
+    """
+    confidences = [task_confidence]
+    
+    if assignee_raw is not None:
+        confidences.append(assignee_confidence)
+        
+    if due_raw is not None:
+        confidences.append(due_confidence)
+        
+    return min(confidences)

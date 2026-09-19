@@ -1,0 +1,27 @@
+{
+  "case_id": "case_01",
+  "scenario": "single_sentence",
+  "description": "본인 지칭 + 상대 날짜(\"이번 주 목요일\")",
+  "reference_date": "2026-09-09",
+  "speaker_names": {
+    "B": "도윤"
+  },
+  "turns": [
+    {
+      "speaker": "B",
+      "text": "저는 어제 로그인 API 붙였고요, 음, 이번 주 목요일까지 리프레시 토큰 처리까지 끝낼게요."
+    }
+  ],
+  "expected": [
+    {
+      "sentence": "저는 어제 로그인 API 붙였고요, 음, 이번 주 목요일까지 리프레시 토큰 처리까지 끝낼게요.",
+      "is_task": true,
+      "assignee_mention": null,
+      "due_date": "2026-09-10",
+      "task_keywords": [
+        "리프레시 토큰"
+      ],
+      "assignee_type": "first"
+    }
+  ]
+}

@@ -1,0 +1,35 @@
+{
+  "case_id": "case_04",
+  "scenario": "single_sentence",
+  "description": "잡담(컨플릭트로 헤맴) 뒤에 할일 등장 — 한 발화에 잡담+할일이 섞여도 할일만 추출되는지",
+  "reference_date": "2026-09-09",
+  "speaker_names": {
+    "D": "민재"
+  },
+  "turns": [
+    {
+      "speaker": "D",
+      "text": "음... 저는 어제 디자인 시스템 쪽 UI 컴포넌트 작업하다가 머지 컨플릭트가 나서 좀 헤맸어요. 그래도 오늘 중으로 PR은 올릴게요."
+    }
+  ],
+  "expected": [
+    {
+      "sentence": "음.",
+      "is_task": false
+    },
+    {
+      "sentence": "저는 어제 디자인 시스템 쪽 UI 컴포넌트 작업하다가 머지 컨플릭트가 나서 좀 헤맸어요.",
+      "is_task": false
+    },
+    {
+      "sentence": "그래도 오늘 중으로 PR은 올릴게요.",
+      "is_task": true,
+      "assignee_mention": null,
+      "due_date": "2026-09-09",
+      "task_keywords": [
+        "PR"
+      ],
+      "assignee_type": "first"
+    }
+  ]
+}

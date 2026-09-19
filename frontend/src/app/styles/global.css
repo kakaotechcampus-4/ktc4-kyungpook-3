@@ -1,0 +1,93 @@
+/* 캔버스 25장의 helmet 에 실제로 들어 있던 규칙만 옮겼다.
+   근거: frontend/docs/design/canvas/*.dc.html
+
+   @layer base 안에 둔다. 밖에 두면 button { color: inherit } · h1 자간이
+   유틸리티를 이겨 주 버튼 글자가 먹 면 위에 먹으로 나간다.
+   docs/impl-decision/2026-09-16-unlayered-global-beats-utilities.md */
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    margin: 0;
+    background: var(--color-surface);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.75;
+    word-break: keep-all;
+    letter-spacing: 0;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  a {
+    color: var(--color-ink);
+    text-decoration: none;
+  }
+
+  a:hover {
+    color: var(--color-sub);
+  }
+
+  button {
+    font: inherit;
+    color: inherit;
+    cursor: pointer;
+  }
+
+  input,
+  textarea,
+  select {
+    font: inherit;
+    color: inherit;
+  }
+
+  h1 {
+    font-weight: 700;
+    line-height: 1.4;
+    letter-spacing: -0.045em;
+  }
+
+  h2,
+  h3 {
+    font-weight: 700;
+    line-height: 1.55;
+    letter-spacing: -0.025em;
+  }
+
+  p {
+    line-height: 1.85;
+  }
+
+  ::selection {
+    background: var(--color-ink);
+    color: var(--color-surface);
+  }
+
+  /* outline 링은 이미 테두리가 있는 컨트롤과 선이 두 겹이 된다.
+     포커스 표시는 테두리 색으로만 한다. */
+  :focus,
+  :focus-visible {
+    outline: none;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+/* ---- .mono ----
+   캔버스의 .mono 는 서체를 바꾸지 않는다 — 같은 나눔스퀘어에 숫자만 고정폭으로 돌린다. */
+@utility mono {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+}

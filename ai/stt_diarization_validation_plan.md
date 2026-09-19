@@ -99,12 +99,12 @@ python -m stt.transcribe --model small,medium     # 모델 비교
 - [ ] 여러 명이 동시에 말한 구간에서 자기 트랙에 자기 목소리만 잡히는가
 - [ ] 녹음 시작/끝에 소리 끊김이나 씹힘이 있는가
 
-### 3.5 지연 측정 (`stt/eval/realtime_bench.py`)
+### 3.5 지연 측정 (`stt/realtime/bench.py`)
 
 실시간 경로는 정확도만으로 판단할 수 없어서 지연을 따로 잽니다. 저장된 화자별 wav 를 리플레이 하니스로 흘려 발화별 첫 줄 지연, 종료 후 산출 시간, API 호출 수, 유실을 한 번에 냅니다.
 
 ```bash
-.venv/bin/python stt/eval/realtime_bench.py --tracks "<화자별 16kHz wav 디렉토리>" --pace
+.venv/bin/python stt/realtime/bench.py --tracks "<화자별 16kHz wav 디렉토리>" --pace
 ```
 
 `--pace` 를 켜야 오디오가 실제 속도로 흐릅니다. 끄면 순간 주입이라 발화가 실제보다 길게 뭉치고 "첫 줄까지" 가 체감 지연이 아니라 워커가 큐를 비우는 시간이 됩니다.
@@ -114,8 +114,8 @@ python -m stt.transcribe --model small,medium     # 모델 비교
 VAD 상수와 말 필터 임계를 인자로 받으므로, 같은 녹음을 조건만 바꿔 다시 흘려 결과가 어떻게 달라지는지 볼 수 있습니다. 임계를 고칠 때 근거로 씁니다.
 
 ```bash
-.venv/bin/python stt/eval/realtime_bench.py --tracks "<...>" --pace --silence-hold-ms 300
-.venv/bin/python stt/eval/realtime_bench.py --tracks "<...>" --pace --no-gate
+.venv/bin/python stt/realtime/bench.py --tracks "<...>" --pace --silence-hold-ms 300
+.venv/bin/python stt/realtime/bench.py --tracks "<...>" --pace --no-gate
 ```
 
 ## 4. 통과 기준 (1차 목표치)

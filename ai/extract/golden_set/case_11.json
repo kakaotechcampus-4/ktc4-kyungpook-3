@@ -1,0 +1,26 @@
+{
+  "case_id": "case_11",
+  "scenario": "unknown_speaker",
+  "description": "화자 표시 이름을 못 받은 경우(speaker_names 비어있음) — 본인 지칭 케이스가 어떻게 되는지",
+  "note": "case_01 과 같은 문장이지만 speaker_names={} 로 줌. 담당자를 화자 본인으로 채우려면 이름이 필요한데 없으니, gold 는 assignee_mention=null 로 둠 — '이름을 모르면 조용히 정보가 사라진다'는 걸 보여주는 케이스. 날짜 해석은 화자 이름과 무관하므로 영향 없음.",
+  "reference_date": "2026-09-09",
+  "speaker_names": {},
+  "turns": [
+    {
+      "speaker": "B",
+      "text": "저는 어제 로그인 API 붙였고요, 음, 이번 주 목요일까지 리프레시 토큰 처리까지 끝낼게요."
+    }
+  ],
+  "expected": [
+    {
+      "sentence": "저는 어제 로그인 API 붙였고요, 음, 이번 주 목요일까지 리프레시 토큰 처리까지 끝낼게요.",
+      "is_task": true,
+      "assignee_mention": null,
+      "due_date": "2026-09-10",
+      "task_keywords": [
+        "리프레시 토큰"
+      ],
+      "assignee_type": "first"
+    }
+  ]
+}

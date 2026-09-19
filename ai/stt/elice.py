@@ -6,6 +6,12 @@
         "transcript":{"text":..., "chunks":[{"timestamp":[s,e],"text":...}]}}
 
 단가 ₩6 / 60초 (2026-09 기준). 보낸 오디오 길이만큼 과금된다.
+
+타임아웃은 30초에 오디오 1초당 0.6초를 더한다. 실측(2026-09-15, 같은 1초 클립 20회)은 p50 2.6초에
+15% 가 22~28초 stall 이고, 길이별로는 고정비 2.4초에 길이의 0.45배가 붙는다. 28초 묶음이면 47초,
+147초 트랙 통째면 118초까지 기다린다. 고정 30초였을 때 트랙 통째 호출이 전부 잘려 회의 하나에
+88원을 버렸다(2026-09-16). 동시에 여섯을 보내면 호출당 시간이 두 배 넘게 늘어난 것도 실측이라
+여유를 길이에 비례해 둔다. 그래도 여섯이 전체 벽시계는 가장 짧다(stt/batch.py 의 워커 기본값).
 최소 과금 단위는 확인하지 못했다. 그래서 호출을 잘게 쪼개지 않는다.
 """
 
@@ -33,10 +39,15 @@ class EliceStt:
 
     name = "elice/whisper-large-v3"
 
-    def __init__(self, language: str = "ko", timeout: int = 180, word_timestamps: bool = True):
+    TIMEOUT_PER_AUDIO_S = 0.6   # 오디오 1초당 더 기다리는 시간. 실측 0.45배에 여유
+
+    def __init__(self, language: str = "ko", timeout: int = 30, word_timestamps: bool = True):
         self.language = language
-        self.timeout = timeout
+        self.timeout = timeout          # 고정 몫. 여기에 길이 비례분이 붙는다
         self.word_timestamps = word_timestamps
+
+    def timeout_for(self, audio_seconds: float) -> float:
+        return self.timeout + self.TIMEOUT_PER_AUDIO_S * audio_seconds
 
     def transcribe(self, samples: np.ndarray, sample_rate: int) -> SttResult:
         key = os.environ.get("ELICE_API_KEY")
@@ -54,7 +65,7 @@ class EliceStt:
                 headers={"Authorization": f"Bearer {key}"},
                 files={"file": ("seg.wav", wav, "audio/wav")},
                 data=data,
-                timeout=self.timeout,
+                timeout=self.timeout_for(len(samples) / sample_rate),
             )
         except requests.RequestException as e:
             # 연결 끊김과 타임아웃은 OSError 계열이라 호출자의 except SttError 를 그냥 지나친다.
