@@ -5,6 +5,7 @@
 
 실행 (ai/ 디렉토리 안에서):  python capture/run_recorder.py
 전사 백엔드는 MM_STT_BACKEND=local|elice (기본 local), 모델은 MM_STT_MODEL (기본 large-v3-turbo).
+할일 추출은 LLM_API_KEY, BE 인계는 BE_BASE_URL 과 BE_WORKSPACE_ID 가 있을 때 돈다. 없으면 그 단계에서 멈춘다.
 """
 
 from __future__ import annotations
@@ -23,9 +24,10 @@ S = settings()
 
 
 async def on_session_saved(manifest: dict, manifest_path: Path) -> None:
-    """전사까지 끝난 뒤 불리는 후처리 자리. BE 는 여기서 추출·판단 파이프라인을 이어 붙인다."""
+    """전사, 추출, BE 인계까지 끝난 뒤 불리는 후처리 자리. 인계는 capture/handoff.py 가 이미 했다."""
+    be = manifest.get("be") or {}
     print(f"[recorder] 세션 {manifest['session']} {manifest.get('status')} ({len(manifest['speakers'])}명). "
-          f"회의록: {manifest.get('transcript', '-')}  계약: transcripts/session_{manifest['session']}.transcript.json")
+          f"회의록: {manifest.get('transcript', '-')}  BE 회의: {be.get('meeting_id', '-')} {be.get('status', '')}")
 
 
 def build_bot() -> discord.Bot:

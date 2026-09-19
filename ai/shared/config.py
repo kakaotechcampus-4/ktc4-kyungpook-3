@@ -64,6 +64,11 @@ class Settings:
     notion_api_key: str = env("NOTION_API_KEY")
     notion_database_id: str = env("NOTION_DATABASE_ID")
     llm_mode: str = env("PM_AGENT_LLM")  # "" | off
+    # BE 인계 (capture/handoff.py). 둘 다 있어야 봇이 회의 생성·종료·추출 등록을 부른다
+    be_base_url: str = env("BE_BASE_URL")
+    be_workspace_id: str = env("BE_WORKSPACE_ID")
+    # 회의 시작 시각을 이 시간대의 날짜로 바꿔 "내일" 같은 상대 날짜의 기준일로 쓴다
+    meeting_timezone: str = env("MEETING_TIMEZONE", "Asia/Seoul")
 
 
 def settings() -> Settings:

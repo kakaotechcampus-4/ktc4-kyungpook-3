@@ -31,6 +31,7 @@ from stt import batch as B
 from stt.eval.eval import score as cer_score
 from stt.speech_gate import SpeechGate
 from stt.vad import SPEECH_RMS
+from stt.eval.sysinfo import peak_rss_bytes
 
 
 def trim_edges(audio: np.ndarray, sr: int, threshold: float = SPEECH_RMS, frame_ms: int = 20) -> np.ndarray:
@@ -108,7 +109,7 @@ def run(root: Path, backend_kind: str, model: str, *, beam: int = 5, gate_on: bo
         "gated": gated, "failed": stats.failed,
         "wall_s": round(wall, 1), "rtf_wall": round(wall / total_s, 3),
         "cpu_s": round(cpu_s, 1), "cpu_s_per_speech_s": round(cpu_s / total_s, 3),
-        "peak_rss_gb": round(ru1.ru_maxrss / 1e9, 2),
+        "peak_rss_gb": round(peak_rss_bytes(ru1) / 1e9, 2),
         "krw": round(whisper_krw(stats.audio_sent_s), 1) if backend_kind == "elice" else 0.0,
         "transcribe_p50_s": summ["transcribe_p50_s"], "transcribe_p95_s": summ["transcribe_p95_s"],
         "transcribe_max_s": summ["transcribe_max_s"], "calls_over_20s": summ["calls_over_20s"],

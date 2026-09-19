@@ -57,6 +57,7 @@ TAIL_PAD_S = 0.10        # 클립 끝에 남기는 여유. 마지막 음절이 �
 LONG_SPLIT_FROM_S = 15.0 # 28초 넘는 클립은 15초 이후의 가장 조용한 20ms 에서 가른다
 WHOLE_SEGMENT_GAP_S = 1.0  # whole 모드: 단어 사이가 이만큼 비면 새 줄
 STALL_S = 20.0           # 이보다 오래 걸린 호출을 센다. Elice 가 15% 확률로 22~28초 멈춘다
+_EMPTY = np.zeros(0, dtype=np.float32)   # 보낸 뒤 트랙 배열을 놓으려고 클립 pcm 자리에 넣는다
 
 
 @dataclass
@@ -197,6 +198,14 @@ def group_turns(utts: list[Utterance], gap_s: float = TURN_GAP_S) -> list[list[U
 class Chunk:
     pcm: np.ndarray
     pieces: list[tuple[float, Utterance]]   # (묶음 안에서의 시작 초, 클립)
+    lengths: list[int] = field(default_factory=list)   # 클립마다 묶음 안에 든 샘플 수. 클립 단위 재전사에 쓴다
+
+    def clip_pcm(self, i: int) -> np.ndarray:
+        """i 번째 클립의 오디오. 클립 pcm 을 놓은 뒤에도 묶음에서 잘라 낼 수 있다."""
+        off, _u = self.pieces[i]
+        start = int(round(off * SR))
+        n = self.lengths[i] if i < len(self.lengths) else len(self.pcm) - start
+        return self.pcm[start:start + n]
 
     def to_absolute(self, t_chunk_s: float) -> tuple[Utterance, float] | None:
         """묶음 안 시각 → (클립, 회의 시각). 침묵 자리면 가장 가까운 앞 클립."""
@@ -249,14 +258,15 @@ def build_chunks(utts: list[Utterance], max_s: float = CHUNK_MAX_S, gap_s: float
 
     chunks: list[Chunk] = []
     for grp in packed:
-        parts, pieces, off = [], [], 0.0
+        parts, pieces, lengths, off = [], [], [], 0.0
         for u in grp:
             pieces.append((off, u))
+            lengths.append(len(u.pcm))
             parts.append(u.pcm)
             off += len(u.pcm) / SR
             parts.append(gap)
             off += gap_s
-        chunks.append(Chunk(pcm=np.concatenate(parts), pieces=pieces))
+        chunks.append(Chunk(pcm=np.concatenate(parts), pieces=pieces, lengths=lengths))   # concatenate 는 복사본이다
     return chunks
 
 
@@ -325,7 +335,24 @@ def _clip_lines(tr: Track, utts: list[Utterance], results) -> list[Line]:
     return [_line(u, tr.speaker_name, r.text if r else "", dt, err) for u, (r, dt, err) in zip(utts, results)]
 
 
-def _chunk_lines(tr: Track, chunks: list[Chunk], results, stats: BatchStats) -> list[Line]:
+def _span_line(tr: Track, start_ms: int, end_ms: int, seq: int, text: str, dt: float) -> Line:
+    """단어 시각이 없을 때. 구간 전체를 한 줄로 두고 시각이 거칠다고 표시한다.
+
+    첫 클립에만 붙이면 시각이 틀리고, 구간을 넓히면 거칠어도 발화가 그 안에 있다.
+    """
+    u = Utterance(speaker_id=tr.speaker_id, pcm=_EMPTY, sample_rate=SR, start_ms=start_ms, end_ms=end_ms, seq=seq)
+    ln = _line(u, tr.speaker_name, text, dt, None)
+    ln.timing = "chunk"
+    return ln
+
+
+def _chunk_lines(tr: Track, chunks: list[Chunk], results, stats: BatchStats, reclip=None) -> list[Line]:
+    """묶음 결과를 클립 줄로 되돌린다.
+
+    단어 시각이 없는 응답은 되매핑을 못 한다. reclip(pcm) 이 있으면 (로컬처럼 호출 비용이 없는
+    백엔드) 그 묶음의 클립을 하나씩 다시 보내 클립 경계의 시각을 얻고, 없으면 (API) 묶음 구간
+    전체를 한 줄로 두고 timing="chunk" 로 표시한다. 어느 쪽이든 unmapped 에 센다.
+    """
     lines: list[Line] = []
     for c, (r, dt, err) in zip(chunks, results):
         clips = [u for _, u in c.pieces]
@@ -333,10 +360,13 @@ def _chunk_lines(tr: Track, chunks: list[Chunk], results, stats: BatchStats) -> 
             lines += [_line(u, tr.speaker_name, "", dt, err or "empty") for u in clips]
             continue
         if not r.words:
-            # 단어 시각이 없으면 되매핑을 못 한다. 통째로 첫 클립에 붙이고 센다.
             stats.unmapped += 1
-            lines.append(_line(clips[0], tr.speaker_name, r.text, dt, None))
-            lines += [_line(u, tr.speaker_name, "", dt, None) for u in clips[1:]]
+            if reclip is not None:
+                for i, u in enumerate(clips):
+                    r2, dt2, err2 = reclip(c.clip_pcm(i))
+                    lines.append(_line(u, tr.speaker_name, r2.text if (r2 and not err2) else "", dt2, err2))
+                continue
+            lines.append(_span_line(tr, clips[0].start_ms, clips[-1].end_ms, clips[0].seq, r.text, dt))
             continue
         texts: dict[int, list[str]] = {}
         for w in r.words:
@@ -356,7 +386,7 @@ def _track_lines(tr: Track, utts: list[Utterance], result, stats: BatchStats) ->
         return [_line(u, tr.speaker_name, "", dt, err or "empty") for u in utts]
     if not r.words:
         stats.unmapped += 1
-        return [_line(u, tr.speaker_name, r.text if i == 0 else "", dt, None) for i, u in enumerate(utts)]
+        return [_span_line(tr, utts[0].start_ms, utts[-1].end_ms, utts[0].seq, r.text, dt)]
     by_clip, stray = _assign_words_to_clips(r.words, utts, WORD_TOLERANCE_S)
     stats.hallucinated_words += stray
     return [_line(u, tr.speaker_name, " ".join(by_clip.get(i, [])), dt, None) for i, u in enumerate(utts)]
@@ -373,9 +403,7 @@ def _whole_lines(tr: Track, audio_s: float, utts: list[Utterance], result, stats
         return [_line(u, tr.speaker_name, "", dt, err or "empty") for u in utts]
     if not r.words:
         stats.unmapped += 1
-        u = Utterance(speaker_id=tr.speaker_id, pcm=np.zeros(0, dtype=np.float32), sample_rate=SR,
-                      start_ms=0, end_ms=int(audio_s * 1000), seq=1)
-        return [_line(u, tr.speaker_name, r.text, dt, None)]
+        return [_span_line(tr, 0, int(audio_s * 1000), 1, r.text, dt)]
     _by, stray = _assign_words_to_clips(r.words, utts, WORD_TOLERANCE_S)
     stats.hallucinated_words += stray
     lines: list[Line] = []
@@ -440,64 +468,70 @@ def run(tracks: list[Track], backend: SttBackend, *, mode: str = "chunk", gate: 
         preprocess=None) -> tuple[list[Line], BatchStats]:
     """트랙 목록을 전사해 회의 전체 순번이 매겨진 Line 목록과 통계를 돌려준다.
 
-    전 트랙의 호출을 한 풀에 넣어 workers 개씩 동시에 보낸다. 로컬 모델은 CPU 를 다 쓰므로
+    트랙은 하나씩 읽는다. 자르고 보낼 조각(복사본)을 풀에 넣은 뒤 트랙 배열과 클립의 뷰를 놓고
+    다음 트랙으로 간다. 그래서 메모리는 회의 길이가 아니라 말한 구간의 합만큼이다. 60분 6인이면
+    트랙 배열은 1.4GB 인데 말한 구간은 그 몇 분의 일이다. track·whole 모드는 트랙 통째를 보내므로
+    예외다. 전 트랙의 호출이 한 풀에서 workers 개씩 나간다. 로컬 모델은 CPU 를 다 쓰므로
     workers=1 이 맞고, API 는 대기가 대부분이라 여럿이 벽시계를 줄인다.
     preprocess(audio, sr) 를 주면 트랙을 읽은 직후에 건다. 필터 비교용이다.
+    백엔드에 reclip_unmapped=True 가 있으면 단어 시각이 없는 묶음을 클립 단위로 다시 보낸다.
     """
     if mode not in ("clip", "chunk", "track", "whole"):
         raise ValueError(f"mode 는 clip|chunk|track|whole 이다: {mode}")
     stats = BatchStats(mode=mode, backend=getattr(backend, "name", type(backend).__name__))
     t0 = time.monotonic()
+    reclip = bool(getattr(backend, "reclip_unmapped", False)) and mode == "chunk"
 
-    prepared = []   # (track, audio_s, utts, chunks, units)
-    for tr in tracks:
-        audio = load_track(tr.path)
-        if preprocess is not None:
-            audio = preprocess(audio, SR)
-        stats.tracks += 1
-        stats.track_s += len(audio) / SR
-        utts = cut(audio, tr.speaker_id, stats)
-        if gate is not None:
-            kept = []
-            for u in utts:
-                if gate.accepts(u.pcm, SR, tag=f"{tr.speaker_name}#{u.seq}"):
-                    kept.append(u)
-                else:
-                    stats.gated += 1
-            utts = kept
-        stats.clips += len(utts)
-        stats.turns += len(group_turns(utts))
-        stats.speech_s += sum(u.duration_s for u in utts)
-        chunks = None
-        if mode == "clip":
-            units = [u.pcm for u in utts]
-        elif mode == "chunk":
-            chunks = build_chunks(utts, pack_turns=pack_turns) if utts else []
-            units = [c.pcm for c in chunks]
-        else:
-            units = [audio] if utts else []
-        prepared.append((tr, len(audio) / SR, utts, chunks, units))
-
-    jobs = [(i, j) for i, (_, _, _, _, units) in enumerate(prepared) for j in range(len(units))]
+    prepared = []   # (track, audio_s, utts, chunks, futures)
     with ThreadPoolExecutor(max_workers=max(1, workers)) as ex:
-        results = list(ex.map(lambda ij: _call(backend, prepared[ij[0]][4][ij[1]], stats, prepared[ij[0]][0].speaker_id),
-                              jobs))
-    got: dict[int, list] = {i: [] for i in range(len(prepared))}
-    for (i, _j), r in zip(jobs, results):
-        got[i].append(r)
+        for tr in tracks:
+            audio = load_track(tr.path)
+            if preprocess is not None:
+                audio = preprocess(audio, SR)
+            audio_s = len(audio) / SR
+            stats.tracks += 1
+            stats.track_s += audio_s
+            utts = cut(audio, tr.speaker_id, stats)
+            if gate is not None:
+                kept = []
+                for u in utts:
+                    if gate.accepts(u.pcm, SR, tag=f"{tr.speaker_name}#{u.seq}"):
+                        kept.append(u)
+                    else:
+                        stats.gated += 1
+                utts = kept
+            stats.clips += len(utts)
+            stats.turns += len(group_turns(utts))
+            stats.speech_s += sum(u.duration_s for u in utts)
+            chunks = None
+            if mode == "clip":
+                units = [np.array(u.pcm, copy=True) for u in utts]
+            elif mode == "chunk":
+                chunks = build_chunks(utts, pack_turns=pack_turns) if utts else []
+                units = [c.pcm for c in chunks]
+            else:
+                units = [audio] if utts else []
+            if mode in ("clip", "chunk"):
+                for u in utts:
+                    u.pcm = _EMPTY   # 트랙 배열을 가리키는 뷰를 놓는다. 뒤 단계는 시각만 쓴다
+                del audio
+            futures = [ex.submit(_call, backend, pcm, stats, tr.speaker_id) for pcm in units]
+            prepared.append((tr, audio_s, utts, chunks, futures))
+        got = [[f.result() for f in futures] for (_tr, _s, _u, _c, futures) in prepared]
 
     all_lines: list[Line] = []
-    for i, (tr, audio_s, utts, chunks, units) in enumerate(prepared):
-        if not units:
+    for (tr, audio_s, utts, chunks, futures), results in zip(prepared, got):
+        if not futures:
             continue
         if mode == "clip":
-            all_lines += _clip_lines(tr, utts, got[i])
+            all_lines += _clip_lines(tr, utts, results)
         elif mode == "chunk":
-            all_lines += _chunk_lines(tr, chunks, got[i], stats)
+            rc = (lambda pcm, sp=tr.speaker_id: _call(backend, pcm, stats, sp)) if reclip else None
+            all_lines += _chunk_lines(tr, chunks, results, stats, reclip=rc)
         elif mode == "track":
-            all_lines += _track_lines(tr, utts, got[i][0], stats)
+            all_lines += _track_lines(tr, utts, results[0], stats)
         else:
-            all_lines += _whole_lines(tr, audio_s, utts, got[i][0], stats)
+            all_lines += _whole_lines(tr, audio_s, utts, results[0], stats)
 
     if merge:
         all_lines = merge_turns(all_lines)
@@ -546,6 +580,7 @@ def make_backend(kind: str, model: str, mode: str = "chunk", *, beam: int = 5,
     if hst_value is None:
         local.hallucination_silence_threshold = None
         local.name = local.name.split("-hst")[0]
+    local.reclip_unmapped = True   # 호출 비용이 없으니 단어 시각이 없는 묶음은 클립 단위로 다시 보낸다
     return local
 
 

@@ -34,6 +34,7 @@ import soundfile as sf
 from stt import batch as B
 from stt.eval.eval import score as cer_score
 from stt.speech_gate import SpeechGate
+from stt.eval.sysinfo import peak_rss_bytes
 
 SR = 16_000
 RUN_GAP_S = 3.0        # 한 화자 안에서 이만큼 비면 다른 발화 덩어리로 본다
@@ -225,7 +226,7 @@ def score(session: Path, mode: str, backend_kind: str, model: str, gate_on: bool
         "start_abs_err_mean_s": round(float(np.mean(start_err)), 2) if start_err else None,
         "start_abs_err_max_s": round(float(np.max(start_err)), 2) if start_err else None,
         "krw": krw,
-        "cpu_s": round(cpu_s, 1), "peak_rss_gb": round(ru1.ru_maxrss / 1e9, 2),
+        "cpu_s": round(cpu_s, 1), "peak_rss_gb": round(peak_rss_bytes(ru1) / 1e9, 2),
         **{k: v for k, v in stats.summary().items() if k not in ("mode", "backend")},
     }
     stem = f"score_{mode}_{backend_kind}{'' if backend_kind == 'elice' else '-' + model}{'-' + tag if tag else ''}"
