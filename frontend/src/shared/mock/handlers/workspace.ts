@@ -26,8 +26,17 @@ export const workspaceHandlers = [
     if (typeof body.name !== 'string' || body.name.trim() === '' || body.name.length > 100)
       return fail('INVALID_REQUEST', '이름이 필요합니다.', 400)
     const name = body.name
+    const account = db.accounts.find(
+      ({ session }) => session.user.user_id === db.session.user.user_id,
+    )
     const normalize = (value: string) => value.trim().replace(/\s+/g, ' ').toLocaleLowerCase()
-    if (db.workspaces.some((workspace) => normalize(workspace.name) === normalize(name)))
+    if (
+      db.workspaces.some(
+        (workspace) =>
+          account?.workspaceIds.includes(workspace.workspace_id) &&
+          normalize(workspace.name) === normalize(name),
+      )
+    )
       return fail('WORKSPACE_NAME_DUPLICATED', '이미 존재하는 이름입니다.', 409)
     const workspace = {
       workspace_id: `ws_${String(db.workspaces.length + 1).padStart(2, '0')}`,
@@ -46,9 +55,6 @@ export const workspaceHandlers = [
       },
     }
     db.workspaces.push(workspace)
-    const account = db.accounts.find(
-      ({ session }) => session.user.user_id === db.session.user.user_id,
-    )
     if (account) {
       account.workspaceIds.push(workspace.workspace_id)
       account.session.workspace_count = account.workspaceIds.length

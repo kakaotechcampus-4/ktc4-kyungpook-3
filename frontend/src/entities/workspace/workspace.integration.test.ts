@@ -57,3 +57,19 @@ it('creates a workspace and rejects duplicate names or unknown workspace request
   const missing = await fetch('http://localhost:3000/api/v1/workspaces/missing')
   expect(missing.status).toBe(404)
 })
+
+it('allows different accounts to use the same workspace name', async () => {
+  const signup = await fetch('http://localhost:3000/api/v1/auth/signup', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ email: 'new@example.com', password: 'secret', name: '새 사용자' }),
+  })
+  expect(signup.status).toBe(201)
+
+  const created = await fetch('http://localhost:3000/api/v1/workspaces', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ name: '카테캠 3팀' }),
+  })
+  expect(created.status).toBe(201)
+})
