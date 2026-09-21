@@ -1,0 +1,216 @@
+{
+  "case_id": "case_07",
+  "scenario": "duplicate_content_multiple_speakers",
+  "description": "서로 다른 화자가 같은 결정을 반복해서 확인 — 중복이어도 각각 올바르게 판단하는지",
+  "speaker_names": {
+    "A": "하은",
+    "B": "도윤",
+    "C": "민재",
+    "D": "세영",
+    "E": "유진"
+  },
+  "turns": [
+    {
+      "speaker": "A",
+      "text": "로그인 마감은 이번 주 금요일로 하겠습니다."
+    },
+    {
+      "speaker": "B",
+      "text": "네, 금요일까지 로그인 마감 맞습니다."
+    },
+    {
+      "speaker": "C",
+      "text": "저도 금요일로 알고 있어요."
+    },
+    {
+      "speaker": "D",
+      "text": "여기 인프라 쪽 로그 좀 정리했어요."
+    },
+    {
+      "speaker": "E",
+      "text": "저도 그냥 리팩터링 조금 했습니다."
+    },
+    {
+      "speaker": "A",
+      "text": "특별히 막히는 이슈는 없었어요."
+    },
+    {
+      "speaker": "B",
+      "text": "저도 순조롭게 진행 중입니다."
+    },
+    {
+      "speaker": "C",
+      "text": "어제 좀 늦게까지 일했더니 피곤하네요."
+    },
+    {
+      "speaker": "D",
+      "text": "고생하셨어요."
+    },
+    {
+      "speaker": "E",
+      "text": "커피 한잔하고 계속해야겠어요."
+    },
+    {
+      "speaker": "A",
+      "text": "저는 문서 정리 좀 했어요."
+    },
+    {
+      "speaker": "B",
+      "text": "리뷰 남겨주신 거 확인했습니다."
+    },
+    {
+      "speaker": "C",
+      "text": "감사합니다."
+    },
+    {
+      "speaker": "D",
+      "text": "오늘 오후에 미팅이 하나 더 있어요."
+    },
+    {
+      "speaker": "E",
+      "text": "저도 그거 참석해야 해요."
+    },
+    {
+      "speaker": "D",
+      "text": "저는 그동안 디자인 작업했어요."
+    },
+    {
+      "speaker": "E",
+      "text": "저도 특별한 이슈 없었습니다."
+    },
+    {
+      "speaker": "A",
+      "text": "다음 안건 갈까요."
+    },
+    {
+      "speaker": "B",
+      "text": "네 좋습니다."
+    },
+    {
+      "speaker": "C",
+      "text": "저는 오늘 컨디션이 좀 안 좋네요."
+    },
+    {
+      "speaker": "D",
+      "text": "고생 많으세요."
+    },
+    {
+      "speaker": "E",
+      "text": "그럼 마치겠습니다."
+    }
+  ],
+  "expected": [
+    {
+      "text": "로그인 마감은 이번 주 금요일로 하겠습니다.",
+      "should_flag": true,
+      "note": "최초 발화"
+    },
+    {
+      "text": "네, 금요일까지 로그인 마감 맞습니다.",
+      "should_flag": false,
+      "note": "재확인 — 새 정보 없음(아래 줄과 같은 성격이라 일관되게 false로 정정)"
+    },
+    {
+      "text": "저도 금요일로 알고 있어요.",
+      "should_flag": false,
+      "note": "단순 동의 재확인 — 새 정보 없음"
+    },
+    {
+      "text": "여기 인프라 쪽 로그 좀 정리했어요.",
+      "should_flag": false,
+      "note": "진행상황"
+    },
+    {
+      "text": "저도 그냥 리팩터링 조금 했습니다.",
+      "should_flag": false,
+      "note": "진행상황"
+    },
+    {
+      "text": "특별히 막히는 이슈는 없었어요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "저도 순조롭게 진행 중입니다.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "어제 좀 늦게까지 일했더니 피곤하네요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "고생하셨어요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "커피 한잔하고 계속해야겠어요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "저는 문서 정리 좀 했어요.",
+      "should_flag": false,
+      "note": "진행상황"
+    },
+    {
+      "text": "리뷰 남겨주신 거 확인했습니다.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "감사합니다.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "오늘 오후에 미팅이 하나 더 있어요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "저도 그거 참석해야 해요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "저는 그동안 디자인 작업했어요.",
+      "should_flag": false,
+      "note": "진행상황"
+    },
+    {
+      "text": "저도 특별한 이슈 없었습니다.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "다음 안건 갈까요.",
+      "should_flag": false,
+      "note": "회의 진행"
+    },
+    {
+      "text": "네 좋습니다.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "저는 오늘 컨디션이 좀 안 좋네요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "고생 많으세요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "그럼 마치겠습니다.",
+      "should_flag": false,
+      "note": "회의 진행"
+    }
+  ],
+  "counts_toward_pass_rate": true,
+  "meeting_duration_sec": 464.0
+}

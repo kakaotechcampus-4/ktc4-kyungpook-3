@@ -1,0 +1,216 @@
+{
+  "case_id": "case_08",
+  "scenario": "interleaved_topics",
+  "description": "로그인/결제/디자인 세 주제가 번갈아 나오는 회의 — 주제가 섞여도 각 결정을 올바르게 잡는지",
+  "speaker_names": {
+    "A": "하은",
+    "B": "도윤",
+    "C": "민재",
+    "D": "세영",
+    "E": "유진"
+  },
+  "turns": [
+    {
+      "speaker": "A",
+      "text": "오늘은 세 가지만 빠르게 보겠습니다."
+    },
+    {
+      "speaker": "B",
+      "text": "로그인 쪽은 담당자를 제가 맡을게요."
+    },
+    {
+      "speaker": "C",
+      "text": "결제 쪽은 아직 API 문서 보고 있어요."
+    },
+    {
+      "speaker": "D",
+      "text": "QA 쪽에서 버그 리포트 몇 개 왔어요."
+    },
+    {
+      "speaker": "E",
+      "text": "네 그거 확인해볼게요."
+    },
+    {
+      "speaker": "A",
+      "text": "저는 배포 스크립트 좀 손봤습니다."
+    },
+    {
+      "speaker": "B",
+      "text": "좋네요."
+    },
+    {
+      "speaker": "C",
+      "text": "점심시간 다가오네요."
+    },
+    {
+      "speaker": "D",
+      "text": "뭐 드실지 정하셨어요?"
+    },
+    {
+      "speaker": "E",
+      "text": "저는 아직이요."
+    },
+    {
+      "speaker": "A",
+      "text": "근처에 새로 생긴 식당 가볼까요."
+    },
+    {
+      "speaker": "B",
+      "text": "좋아요."
+    },
+    {
+      "speaker": "C",
+      "text": "저는 오늘 컨디션이 괜찮네요."
+    },
+    {
+      "speaker": "D",
+      "text": "다행이네요."
+    },
+    {
+      "speaker": "D",
+      "text": "디자인은 색상 팔레트 다 정했습니다."
+    },
+    {
+      "speaker": "B",
+      "text": "로그인 마감은 다음 주 화요일로 하겠습니다."
+    },
+    {
+      "speaker": "C",
+      "text": "결제는 소셜 로그인 연동을 이번 스프린트에서 빼기로 하죠."
+    },
+    {
+      "speaker": "D",
+      "text": "디자인은 타이포그래피만 남았어요."
+    },
+    {
+      "speaker": "A",
+      "text": "디자인 쪽 마감도 정해야 할 것 같은데 다음 주 월요일 어때요?"
+    },
+    {
+      "speaker": "D",
+      "text": "네 좋습니다, 월요일로 하겠습니다."
+    },
+    {
+      "speaker": "C",
+      "text": "저는 이 정도면 됐습니다."
+    },
+    {
+      "speaker": "A",
+      "text": "그럼 오늘은 여기까지 하겠습니다."
+    }
+  ],
+  "expected": [
+    {
+      "text": "오늘은 세 가지만 빠르게 보겠습니다.",
+      "should_flag": false,
+      "note": "회의 진행"
+    },
+    {
+      "text": "로그인 쪽은 담당자를 제가 맡을게요.",
+      "should_flag": true,
+      "note": "담당자 결정(로그인)"
+    },
+    {
+      "text": "결제 쪽은 아직 API 문서 보고 있어요.",
+      "should_flag": false,
+      "note": "진행상황(결제)"
+    },
+    {
+      "text": "QA 쪽에서 버그 리포트 몇 개 왔어요.",
+      "should_flag": false,
+      "note": "진행상황"
+    },
+    {
+      "text": "네 그거 확인해볼게요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "저는 배포 스크립트 좀 손봤습니다.",
+      "should_flag": false,
+      "note": "진행상황"
+    },
+    {
+      "text": "좋네요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "점심시간 다가오네요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "뭐 드실지 정하셨어요?",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "저는 아직이요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "근처에 새로 생긴 식당 가볼까요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "좋아요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "저는 오늘 컨디션이 괜찮네요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "다행이네요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "디자인은 색상 팔레트 다 정했습니다.",
+      "should_flag": false,
+      "note": "진행상황(디자인)"
+    },
+    {
+      "text": "로그인 마감은 다음 주 화요일로 하겠습니다.",
+      "should_flag": true,
+      "note": "일정 결정(로그인)"
+    },
+    {
+      "text": "결제는 소셜 로그인 연동을 이번 스프린트에서 빼기로 하죠.",
+      "should_flag": true,
+      "note": "범위 변경(결제)"
+    },
+    {
+      "text": "디자인은 타이포그래피만 남았어요.",
+      "should_flag": false,
+      "note": "진행상황(디자인)"
+    },
+    {
+      "text": "디자인 쪽 마감도 정해야 할 것 같은데 다음 주 월요일 어때요?",
+      "should_flag": false,
+      "note": "질문(디자인)"
+    },
+    {
+      "text": "네 좋습니다, 월요일로 하겠습니다.",
+      "should_flag": true,
+      "note": "일정 결정(디자인, 문맥 필요)"
+    },
+    {
+      "text": "저는 이 정도면 됐습니다.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "그럼 오늘은 여기까지 하겠습니다.",
+      "should_flag": false,
+      "note": "회의 진행"
+    }
+  ],
+  "counts_toward_pass_rate": true,
+  "meeting_duration_sec": 505.0
+}

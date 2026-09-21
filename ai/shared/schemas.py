@@ -111,9 +111,15 @@ class JudgeFinding(_Base):
     """Terra 1단계 출력. '이 발화는 2단계 판단까지 가볼 가치가 있다'고 골라낸 후보 하나.
 
     아직 Notion 후보와 비교하지 않은 상태라 JudgeResult보다 거친 1차 필터다.
+
+    text 는 원문 그대로가 아니라 문맥까지 반영해서 자기완결적으로 다시 쓴 것일 수 있다
+    (예: "네, 알겠습니다." 원문 → "로그인 화면 마감을 다음 주 화요일로 연기하는 데 동의함").
+    LLM 경로는 전사록 전체를 한 번에 보고 판단하기 때문에 이런 재구성이 가능하고, 규칙
+    기반 경로는 그런 능력이 없어서 원문을 그대로 쓴다(이 경우 text == evidence).
     """
 
-    text: str  # 발화 원문 (나중에 JudgeInput.text로 그대로 이어짐)
+    text: str  # 자기완결적 요약(LLM) 또는 원문 그대로(규칙). 나중에 JudgeInput.text로 이어짐
+    evidence: str = ""  # 실제 발화 원문 그대로 — 추적/감사용. 비어있으면 text와 동일하다고 간주
     source: str = "meeting"  # "meeting" | "chat"
     seq: int = 0  # 원본 TranscriptSegment.seq — 근거 추적용 안정 식별자
     speaker: str | None = None  # 화자(opaque id) — 문맥 참고/디버깅용

@@ -1,0 +1,12 @@
+{
+  "case_id": "case_08",
+  "scenario": "stt_truncated_fragment",
+  "description": "STT로 마침표 없이 잘린 문장 — 정확도보다는 에러 없이 처리되는지가 목적(통과율 계산 제외)",
+  "turns": [
+    {"speaker": "B", "text": "그러니까 이번 주"}
+  ],
+  "expected": [
+    {"text": "그러니까 이번 주", "should_flag": true, "note": "판단은 애매함. 크래시 없이 처리되는지 확인이 목적이라 통과율 계산에서 제외"}
+  ],
+  "counts_toward_pass_rate": false
+}
