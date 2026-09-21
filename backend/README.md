@@ -63,14 +63,43 @@ cp .env.example .env            # 기본값(SQLite)만으로 바로 실행 가�
 | `AUDIO_FORMAT_UNSUPPORTED` | 422 | 지원하지 않는 오디오 형식 *(아직 미구현 경로)* |
 | `TRANSCRIPTION_FAILED` | 502 | 음성 전사 실패 *(아직 미구현 경로)* |
 | `EXTRACTION_FAILED` | 502 | 회의 분석 실패 *(아직 미구현 경로)* |
-| `NOTION_WRITE_FAILED` | 502 | Notion 반영 실패 *(아직 미구현 경로)* |
+| `NOTION_WRITE_FAILED` | 502 | Notion 페이지 생성/갱신 실패 (`app/services/notion.py`) |
 | `INTERNAL_ERROR` | 500 | 그 외 서버 내부 오류 |
 
-*(아직 미구현 경로)* 표시가 붙은 코드는 오디오 업로드/전사/Notion 연동이 실제로
-붙기 전까지는 절대 내려오지 않는다.
+*(아직 미구현 경로)* 표시가 붙은 코드는 오디오 업로드/전사가 실제로 붙기
+전까지는 절대 내려오지 않는다.
+
+## Notion 연동
+
+Task 생성·수정·되돌리기(`app/services/tasks.py`)는 매번 `app/services/notion.py`의
+`upsert_task()`를 거쳐 워크스페이스에 연결된 Notion 데이터베이스에 같은 내용을
+반영한다. `Integration(provider="notion")` 행이 없거나 `access_token`/
+`provider_channel_id`(대상 데이터베이스 ID)가 비어 있으면 조용히 건너뛴다 —
+Notion 미연결 워크스페이스도 Task CRUD는 정상 동작해야 하기 때문이다. 연동은
+돼 있는데 Notion API 호출 자체가 실패하면 `NOTION_WRITE_FAILED`(502)를 올리고,
+그 요청에서 시도한 로컬 Task 변경도 함께 롤백된다(같은 DB 트랜잭션).
+
+OAuth 연결 화면(`GET/POST .../integrations/notion/start`·`/callback`)은 아직
+없다. 로컬에서 Upsert를 테스트하려면 `Integration` 행을 직접 만든다:
+
+```python
+from app.models import Integration
+db.add(Integration(
+    workspace_id="...",
+    provider="notion",
+    access_token="secret_...",       # Notion Integration Token
+    provider_channel_id="...",       # 대상 데이터베이스 ID
+))
+db.commit()
+```
+
+대상 Notion 데이터베이스에는 `app/services/notion.py`의 `PROPERTY_NAMES`와
+이름이 같은 속성(Name/title, Status/select, Assignee/rich_text, Due Date/date,
+Progress/number, Blocker/rich_text)이 있어야 하고, 해당 Integration이 그
+데이터베이스에 공유돼 있어야 한다.
 
 ## 아직 없는 것
 
-로그인/인증, Discord 봇 연동, Notion 연동, 오디오 업로드·스트리밍, 메시지 로그.
+로그인/인증, Discord 봇 연동, Notion OAuth 연결 화면, 오디오 업로드·스트리밍, 메시지 로그.
 현재 모든 엔드포인트는 `member_id`를 요청 바디/쿼리로 그대로 받는다 (예:
 `resolved_by`, `changed_by`) — PM 본인 확인 없이도 호출 가능한 상태이니 그렇게 알고 써야 한다.
