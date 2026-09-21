@@ -52,6 +52,27 @@ it('creates, lists and deletes aliases and maps unresolved names', async () => {
   expect((await fetch(`${base}/workspaces/ws_02/discord/members`)).status).toBe(409)
 })
 
+it('keeps alias ids unique after an alias is deleted', async () => {
+  const base = `${location.origin}/api/v1`
+  const firstCreated = await fetch(`${base}/members/mb_02/aliases`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ alias_text: '민수' }),
+  })
+  expect(
+    unwrap((await firstCreated.json()) as Envelope<MemberAliasDto>, firstCreated.status).alias_id,
+  ).toBe('al_02')
+  expect((await fetch(`${base}/members/aliases/al_01`, { method: 'DELETE' })).status).toBe(204)
+
+  const created = await fetch(`${base}/members/mb_03/aliases`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ alias_text: '새 별칭' }),
+  })
+  const alias = unwrap((await created.json()) as Envelope<MemberAliasDto>, created.status)
+  expect(alias.alias_id).toBe('al_03')
+})
+
 it('creates a member, rejects invalid roles and requires an existing workspace', async () => {
   const send = (body: unknown) =>
     fetch(`${location.origin}/api/v1/members`, {

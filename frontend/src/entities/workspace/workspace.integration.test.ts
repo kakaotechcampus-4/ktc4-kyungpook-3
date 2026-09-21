@@ -1,6 +1,7 @@
 import { unwrap } from '@/shared/api/envelope'
 import type { Envelope } from '@/shared/types/api/envelope'
 import type { ListDto } from '@/shared/types/api/envelope'
+import type { IntegrationsDto } from '@/shared/types/api/integration'
 import type { WorkspaceSummaryDto } from '@/shared/types/api/workspace'
 import type { WorkspaceDto } from '@/shared/types/api/workspace'
 import { toWorkspace } from './model/mapper'
@@ -45,9 +46,19 @@ it('creates a workspace and rejects duplicate names or unknown workspace request
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ name: '새 워크스페이스' }),
   })
+  const workspace = toWorkspace(
+    unwrap((await created.json()) as Envelope<WorkspaceDto>, created.status),
+  )
+  expect(workspace).toMatchObject({ name: '새 워크스페이스', role: 'pm' })
+  const integrations = await fetch(
+    `http://localhost:3000/api/v1/workspaces/${workspace.id}/integrations`,
+  )
   expect(
-    toWorkspace(unwrap((await created.json()) as Envelope<WorkspaceDto>, created.status)),
-  ).toMatchObject({ name: '새 워크스페이스', role: 'pm' })
+    unwrap((await integrations.json()) as Envelope<IntegrationsDto>, integrations.status),
+  ).toMatchObject({
+    discord: { status: 'not_connected' },
+    notion: { status: 'not_connected' },
+  })
   const duplicate = await fetch('http://localhost:3000/api/v1/workspaces', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },

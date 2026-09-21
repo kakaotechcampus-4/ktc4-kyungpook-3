@@ -55,6 +55,10 @@ export const workspaceHandlers = [
       },
     }
     db.workspaces.push(workspace)
+    db.integrations[workspace.workspace_id] = {
+      discord: { status: 'not_connected', display_name: null, connected_at: null },
+      notion: { status: 'not_connected', display_name: null, connected_at: null },
+    }
     if (account) {
       account.workspaceIds.push(workspace.workspace_id)
       account.session.workspace_count = account.workspaceIds.length

@@ -2,6 +2,7 @@ import { http } from 'msw'
 import { db } from '../db'
 import { fail, list, ok } from '../envelope'
 import { MOCK_NOW } from '../fixtures/constants'
+import { nextId } from '../utils'
 const base = '/api/v1'
 export const memberHandlers = [
   http.get(`${base}/members/aliases`, ({ request }) => {
@@ -136,7 +137,10 @@ export const memberHandlers = [
     if (typeof body.alias_text !== 'string' || !validType || !validSource)
       return fail('INVALID_REQUEST', '별칭 요청이 올바르지 않습니다.', 400)
     const alias = {
-      alias_id: `al_${String(db.aliases.length + 1).padStart(2, '0')}`,
+      alias_id: nextId(
+        'al',
+        db.aliases.map(({ alias_id }) => alias_id),
+      ),
       member_id: member.member_id,
       workspace_id: member.workspace_id,
       alias_text: body.alias_text,
