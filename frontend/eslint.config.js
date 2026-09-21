@@ -38,6 +38,9 @@ export default tseslint.config(
       boundaries,
     },
     settings: {
+      'import/resolver': {
+        typescript: { project: './tsconfig.json' },
+      },
       'boundaries/elements': [
         { type: 'app', pattern: 'src/app/*' },
         { type: 'pages', pattern: 'src/pages/*' },
