@@ -31,7 +31,7 @@ export function toTaskHistory(dto: TaskHistoryDto): TaskHistoryEntry {
     taskId: dto.task_id,
     field: enumValue(
       dto.changed_field,
-      ['assignee', 'due_date', 'status', 'title', 'progress', 'blocker'] as const,
+      ['assignee', 'start_date', 'due_date', 'status', 'title', 'progress', 'blocker'] as const,
       'title',
       'history field',
     ),

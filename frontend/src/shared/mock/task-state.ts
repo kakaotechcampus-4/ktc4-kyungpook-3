@@ -3,15 +3,31 @@ import { db } from './db'
 import { MOCK_NOW } from './fixtures/constants'
 import { nextId } from './utils'
 
+// 백엔드 services/tasks.py 의 _FIELD_MAP 과 같은 집합이다. 이 목록에 있으면 이력이 남는다.
 export const taskFields = [
   'title',
   'assignee_member_id',
   'status',
   'progress',
   'blocker',
+  'start_date',
   'due_date',
 ] as const
-export type TaskUpdates = Partial<Pick<TaskDto, (typeof taskFields)[number] | 'start_date'>>
+export type TaskField = (typeof taskFields)[number]
+export type TaskUpdates = Partial<Pick<TaskDto, TaskField>>
+// PATCH 로 null 을 보내 지울 수 있는 필드는 title·status 를 뺀 나머지다.
+// 그 둘은 NOT NULL 이라 validTaskFields 가 400 으로 거른다.
+
+// 승인(task_update) 반영이 받는 필드는 더 좁다. 백엔드 approvals.py 의 _TASK_UPDATE_FIELDS 와 같고
+// start_date 가 빠져 있다. 승인 payload 에 start_date 가 있어도 무시된다.
+export const approvalTaskUpdateFields: readonly TaskField[] = [
+  'title',
+  'assignee_member_id',
+  'status',
+  'progress',
+  'blocker',
+  'due_date',
+]
 export function createTask(
   input: Pick<TaskDto, 'workspace_id' | 'title'> & Partial<TaskDto>,
   actor: string | null,
@@ -89,8 +105,6 @@ export function updateTask(
     )
     Object.assign(task, { [field]: value })
   }
-  // start_date는 요청 중인 증분 필드다. 계약의 history enum에는 없으므로 새 이력 필드를 발명하지 않는다.
-  if ('start_date' in updates) task.start_date = updates.start_date
   task.updated_at = MOCK_NOW
 }
 export function validDate(value: unknown): value is string {
@@ -101,13 +115,12 @@ export function validDate(value: unknown): value is string {
     new Date(value).toISOString().slice(0, 10) === value
   )
 }
+// title·status 는 명시적 null 을 거절한다. 백엔드 validate_task_fields 가 400 을 내는 것과 같다.
 export function validTaskFields(body: Record<string, unknown>): boolean {
   return (
     (body.title === undefined ||
-      body.title === null ||
       (typeof body.title === 'string' && body.title.length > 0 && body.title.length <= 300)) &&
     (body.status === undefined ||
-      body.status === null ||
       (typeof body.status === 'string' &&
         ['todo', 'in_progress', 'blocked', 'done'].includes(body.status))) &&
     (body.progress === undefined ||
@@ -125,11 +138,12 @@ export function validTaskFields(body: Record<string, unknown>): boolean {
     )
   )
 }
-export function taskUpdates(body: Record<string, unknown>, includeNull = false): TaskUpdates {
+// 본문에 있는 키만 모은다. null 도 값이다 — 백엔드가 exclude_unset 만 쓰고
+// exclude_none 을 쓰지 않으므로(PR #55), 명시적 null 은 필드 해제로 적용된다.
+export function taskUpdates(body: Record<string, unknown>): TaskUpdates {
   const updates: Record<string, unknown> = {}
-  for (const field of [...taskFields, 'start_date'] as const) {
-    if (body[field] !== undefined && (includeNull || body[field] !== null))
-      updates[field] = body[field]
+  for (const field of taskFields) {
+    if (body[field] !== undefined) updates[field] = body[field]
   }
   return updates
 }

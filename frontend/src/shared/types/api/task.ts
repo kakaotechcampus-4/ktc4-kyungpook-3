@@ -8,7 +8,8 @@ export interface TaskDto {
   progress: number | null
   blocker: string | null
   due_date: string | null
-  start_date?: string | null
+  // 계약 §4.7-6 이 PR #59 로 반영돼 항상 응답에 들어온다. 값은 대부분 null 이다
+  start_date: string | null
   notion_page_id: string | null
   created_at: string
   updated_at: string

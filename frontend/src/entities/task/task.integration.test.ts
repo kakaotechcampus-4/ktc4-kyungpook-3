@@ -102,6 +102,71 @@ it('rolls back a history entry once, restores the field and appends an inverse h
   ).rejects.toMatchObject({ code: 'TASK_HISTORY_NOT_FOUND', status: 404 })
 })
 
+// PR #55 가 백엔드의 exclude_none 을 뺐다. 명시적 null 이 무시가 아니라 필드 해제다 (계약 §2.6)
+it('clears a field when PATCH carries an explicit null and records it as a change', async () => {
+  const cleared = toTask(
+    await fetchDto<TaskDto>(
+      '/tasks/tk_01',
+      jsonRequest('PATCH', { due_date: null, blocker: null, changed_by: 'mb_01' }),
+    ),
+  )
+  expect(cleared.dueDate).toBeNull()
+  const history = (await fetchDto<ListDto<TaskHistoryDto>>('/tasks/tk_01/history')).items.map(
+    toTaskHistory,
+  )
+  expect(history[0]).toMatchObject({
+    field: 'due_date',
+    oldValue: '2026-09-20',
+    newValue: null,
+    changedBy: 'mb_01',
+  })
+  // 이미 null 인 blocker 는 바뀐 것이 없으므로 이력을 남기지 않는다
+  expect(history.filter(({ field }) => field === 'blocker')).toHaveLength(0)
+})
+
+// title·status 는 NOT NULL 이라 백엔드 validate_task_fields 가 400 을 낸다
+it('refuses an explicit null for the fields the backend cannot clear', async () => {
+  for (const body of [{ title: null }, { status: null }]) {
+    await expect(fetchDto('/tasks/tk_01', jsonRequest('PATCH', body))).rejects.toMatchObject({
+      code: 'INVALID_REQUEST',
+      status: 400,
+    })
+  }
+  expect(toTask(await fetchDto<TaskDto>('/tasks/tk_01'))).toMatchObject({
+    title: '로그인 API 연동',
+    status: 'in_progress',
+  })
+})
+
+// ChangedField.START_DATE 가 생겨서 시작일도 이력·되돌리기 대상이다 (계약 §4.7-6)
+it('records a start date change as its own history field and rolls it back', async () => {
+  await fetchDto(
+    '/tasks/tk_01',
+    jsonRequest('PATCH', { start_date: '2026-10-01', changed_by: 'mb_01' }),
+  )
+  const entry = (await fetchDto<ListDto<TaskHistoryDto>>('/tasks/tk_01/history')).items.map(
+    toTaskHistory,
+  )[0]
+  expect(entry).toMatchObject({
+    field: 'start_date',
+    oldValue: '2026-09-15',
+    newValue: '2026-10-01',
+  })
+  const restored = toTask(
+    await fetchDto<TaskDto>(`/tasks/tk_01/history/${entry.id}/rollback`, { method: 'POST' }),
+  )
+  expect(restored.startDate).toBe('2026-09-15')
+})
+
+// 되돌리기 충돌 감지 (PR #55). 그 이력 이후에 다른 변경이 있으면 순서를 건너뛸 수 없다
+it('refuses to roll back a history entry that a later change has superseded', async () => {
+  await fetchDto('/tasks/tk_01', jsonRequest('PATCH', { due_date: '2026-09-30' }))
+  await expect(
+    fetchDto('/tasks/tk_01/history/hs_01/rollback', { method: 'POST' }),
+  ).rejects.toMatchObject({ code: 'INVALID_REQUEST', status: 400 })
+  expect(toTask(await fetchDto<TaskDto>('/tasks/tk_01')).dueDate).toBe('2026-09-30')
+})
+
 it('rejects missing tasks, empty changes, invalid progress and nonexistent workspaces', async () => {
   await expect(fetchDto('/tasks/missing')).rejects.toMatchObject({
     code: 'TASK_NOT_FOUND',

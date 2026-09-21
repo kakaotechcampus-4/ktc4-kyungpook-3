@@ -3,7 +3,13 @@ import { db } from '../db'
 import { ok, list, fail } from '../envelope'
 import { MOCK_NOW } from '../fixtures/constants'
 import { readJson } from '../utils'
-import { createTask, updateTask, taskUpdates, validTaskFields, taskFields } from '../task-state'
+import {
+  createTask,
+  updateTask,
+  taskUpdates,
+  validTaskFields,
+  approvalTaskUpdateFields,
+} from '../task-state'
 
 export const approvalHandlers = [
   http.get('/api/v1/approvals', ({ request }) => {
@@ -66,10 +72,12 @@ export const approvalHandlers = [
         const task = db.tasks.find(({ task_id }) => task_id === approval.related_task_id)
         if (!task) return fail('TASK_NOT_FOUND', '태스크가 없습니다.', 404)
         const changes: Record<string, unknown> = {}
-        for (const field of taskFields) if (field in payload) changes[field] = payload[field]
+        // start_date 는 승인 경로가 받지 않는다 (백엔드 _TASK_UPDATE_FIELDS 와 같다)
+        for (const field of approvalTaskUpdateFields)
+          if (field in payload) changes[field] = payload[field]
         if (!validTaskFields(changes))
           return fail('INVALID_REQUEST', '태스크 변경 값이 올바르지 않습니다.', 400)
-        updateTask(task, taskUpdates(changes, true), body.resolved_by, 'meeting')
+        updateTask(task, taskUpdates(changes), body.resolved_by, 'meeting')
       }
     }
     approval.status = body.status

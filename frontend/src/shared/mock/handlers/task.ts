@@ -5,6 +5,7 @@ import { readJson } from '../utils'
 import {
   createTask,
   updateTask,
+  taskFields,
   taskUpdates,
   validTaskFields,
   validDate,
@@ -56,7 +57,7 @@ export const taskHandlers = [
     return ok(
       createTask(
         {
-          ...taskUpdates(body, true),
+          ...taskUpdates(body),
           workspace_id: body.workspace_id,
           title: body.title,
           meeting_id: typeof body.meeting_id === 'string' ? body.meeting_id : null,
@@ -101,12 +102,19 @@ export const taskHandlers = [
     if (entry.is_rolled_back)
       return fail('TASK_HISTORY_ALREADY_ROLLED_BACK', '이미 되돌린 이력입니다.', 409)
     const field = entry.changed_field === 'assignee' ? 'assignee_member_id' : entry.changed_field
-    if (
-      !['title', 'assignee_member_id', 'due_date', 'status', 'progress', 'blocker'].includes(field)
-    )
-      return fail('INVALID_REQUEST', '되돌릴 수 없는 항목입니다.', 400)
+    if (!(taskFields as readonly string[]).includes(field))
+      return fail('INVALID_REQUEST', '되돌릴 수 없는 변경 항목입니다.', 400)
+    // 최초 생성 이력은 NOT NULL 필드에 null 을 넣게 되므로 거절한다 (백엔드와 같은 400)
     if ((field === 'title' || field === 'status') && entry.old_value === null)
-      return fail('INTERNAL_ERROR', '변경을 되돌리지 못했습니다.', 500)
+      return fail('INVALID_REQUEST', '최초 생성 이력은 되돌릴 수 없습니다.', 400)
+    // 충돌 감지 — 이 이력이 남긴 값이 지금 값과 다르면 이후 다른 변경이 있었다 (PR #55)
+    const current = task[field as keyof typeof task]
+    if ((current === null ? null : String(current)) !== entry.new_value)
+      return fail(
+        'INVALID_REQUEST',
+        '이후 다른 변경이 있어 되돌릴 수 없습니다. 최신 이력부터 되돌려주세요.',
+        400,
+      )
     Object.assign(task, {
       [field]:
         field === 'progress' && entry.old_value !== null
