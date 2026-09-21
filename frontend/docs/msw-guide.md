@@ -88,6 +88,21 @@ await fetch('/api/v1/approvals/ap_01', {
 
 로컬 브라우저는 `warn`으로 경고하고 실제 네트워크로 보낸다. 의도한 mock에서 경고가 나면 handler 누락을 먼저 확인한다. OAuth `start`·`callback` 같은 302 네비게이션, AI→BE 전용 생성 경로, 메시지 API는 M1 mock 범위 밖이다.
 
+## 실 백엔드와 다른 점
+
+`VITE_ENABLE_MSW=false`로 붙일 때 어긋나는 것들이다. 전체 현황은 [계약 §4.0](api/frontend-api-contract-draft.md)에 있다.
+
+- **로그인이 쿠키 세션이다.** 실 백엔드는 `Set-Cookie: session_token`(HttpOnly·Secure·SameSite=Lax)으로 응답하고, 이후 요청은 쿠키로 인증한다. MSW는 쿠키를 심지 않는다. 브라우저에서 두 모드를 오가면 로그인 상태가 이어지지 않는다.
+- **온보딩·Discord 사용자 목록·회의록 본문이 실 API에서 스텁이다.** 엔드포인트는 응답하지만 값이 비었거나 하드코딩이다. MSW 쪽이 더 완전하므로 이 세 화면은 mock으로 개발한다.
+- **OAuth `start`·`callback`은 양쪽 다 없다.** Google 로그인과 Discord·Notion 연결은 아직 어느 쪽으로도 동작하지 않는다.
+- 실 백엔드는 업로드한 **파일을 저장하지 않는다.** 회의가 `processing`에 머물러 다음 업로드를 409로 막는다. MSW는 정상 흐름을 낸다.
+
+태스크 쓰기 경로는 실 백엔드에 맞춰 두었다. 세 가지를 기억한다.
+
+- `PATCH`의 명시적 `null`은 **필드를 지운다.** 보내지 않을 필드는 `undefined`로 빼야 한다.
+- `title`·`status`에 `null`을 보내면 400이다. 두 필드는 지울 수 없다.
+- 되돌리기는 **최신 이력부터** 해야 한다. 그 이력 이후에 다른 변경이 있으면 400이다.
+
 ## 지킬 규칙
 
 - handler나 테스트에서 픽스처 원본을 직접 변경하지 않는다. 시나리오 변경은 DB 복사본이나 `server.use()`로 한다.

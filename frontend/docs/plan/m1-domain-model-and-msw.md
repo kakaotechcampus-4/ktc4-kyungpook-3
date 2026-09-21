@@ -128,6 +128,12 @@ ESLint `boundaries` 정책상 **`entities` 는 `shared` 만 참조할 수 있다
 import type { Member } from '@/entities/member' // ✗ boundaries/dependencies 에러
 ```
 
+> **이 강제는 `settings['import/resolver']` 가 있어야 성립한다.**
+> `boundaries/dependencies` 는 import 경로를 파일로 **해석하지 못하면 조용히 건너뛴다.** 경고도 내지 않는다.
+> 기본 resolver 는 tsconfig 의 `paths` 별칭(`@/…`)도, 확장자 없는 `.ts` 도 읽지 못해
+> 위 코드가 **에러 없이 통과했다.** M1 검증에서 발견해 `eslint-import-resolver-typescript` 를 붙여 고쳤다.
+> 경위는 `docs/impl-decision/2026-09-21-boundaries-import-resolver.md` 에 있다. §12 도 함께 본다.
+
 규칙 셋:
 
 1. **조인 함수는 남의 엔티티 타입을 받지 않고, 필요한 모양만 인자로 받는다.**
@@ -241,6 +247,11 @@ export function todayInSeoul(now: Date = new Date()): string {
 | Notion 반영 | `notion_page_id !== null` → `isSyncedToNotion` | 계약 §4.8-1 |
 
 **담당자 이름 조인과 `overdue` 는 매퍼가 아니라 `lib` 함수다**(§7). 매퍼는 DTO 하나만 보고, 바깥 데이터나 오늘 날짜를 필요로 하지 않는다.
+
+**2026-09-21 — 시작일 폴백의 근거가 바뀌었지만 폴백은 남는다.**
+PR #59 가 계약 §4.7-6 을 반영해 `task.start_date` 를 만들었다. 「응답에 아예 없다」는 경우가 사라지고 **`null` 만 남는다.**
+그래도 폴백은 줄어들지 않는다 — 컬럼이 방금 생겨 **기존 태스크 행이 전부 `null`** 이고, 봇이 만드는 태스크도 시작일을 보내지 않는다.
+바뀐 것은 근거뿐이다: 「백엔드가 안 주니까 가정한다」 → 「백엔드가 주는데 대부분 비어 있으니 채운다」.
 
 ### 5-4. 모르는 유니온 값을 만나면 떨어뜨리지 않는다
 
@@ -390,7 +401,7 @@ export interface Meeting {
   status: MeetingStatus; startedAt: string; endedAt: string | null
   extractionId: string | null      // status === 'done' 일 때만 채워진다
   failedStage: string | null
-  progress: MeetingProgress | null // §4.7-1 로 복구 요청 중. 없으면 null
+  progress: MeetingProgress | null // §4.7-1 반영됨(PR #59). null 은 방어로만 남긴다
 }
 
 export interface MeetingProgress { audioMerged: boolean; transcribed: boolean; extracted: boolean }
@@ -399,7 +410,10 @@ export interface MeetingProgress { audioMerged: boolean; transcribed: boolean; e
 - **목록과 단건의 필드가 다르다.** 매퍼도 `toMeetingSummary` / `toMeeting` 둘이다. 하나로 합치면 없는 필드를 `null` 로 채우게 되고 화면이 어느 쪽인지 모른다.
 - 단건 DTO의 `title` 은 실제 `MeetingDetailResponse`처럼 `string | null` 이다. 매퍼는 `null` 제목을 빈 문자열로 내려 도메인의 문자열 계약을 지킨다.
 - 목록은 `started_at` 내림차순이고 **실패한 회의는 들어 있지 않다** (D-093, D-106).
-- `progress` 는 백엔드가 응답에서 빼 놓은 상태다(계약 §4.7-1). **`null` 을 정상 경로로 다룬다.** 진행률 UI 는 M5 에서 `status` 만으로도 그려지게 만든다.
+- ~~`progress` 는 백엔드가 응답에서 빼 놓은 상태다~~ **2026-09-21: PR #59 가 §4.7-1 을 반영했다.**
+  `MeetingDetailResponse.progress` 는 이제 **필수** 필드다. 그래도 **DTO 는 좁히지 않는다** (§4-1 의 원칙).
+  Zod 를 쓰지 않아 런타임 검증이 없으므로(D-134), 필수로 선언해 두면 서버가 한 번 빠뜨렸을 때 `dto.progress.audio_merged` 가 그 자리에서 터진다.
+  `progress?: … | null` 을 유지하고 매퍼의 `null` 분기를 **방어로 남긴다.** 진행률 UI 는 M5 에서 `status` 만으로도 그려지게 만든다.
 
 ### 6-5. `minutes` — 계약 §4.4 (요청 중)
 
@@ -526,7 +540,7 @@ export interface Task {
   progress: number | null
   blocker: string | null
   dueDate: string | null
-  startDate: string          // 폴백으로 항상 채운다 (계약 §4.8-5)
+  startDate: string          // start_date 가 null 이면 폴백으로 채운다 (계약 §4.8-5)
   notionPageId: string | null
   isSyncedToNotion: boolean  // 계약 §4.8-1
   createdAt: string; updatedAt: string
@@ -536,7 +550,8 @@ export type TaskTab = 'all' | 'needs_review' | 'in_progress' | 'done'
 
 export interface TaskHistoryEntry {
   id: string; taskId: string
-  field: 'assignee' | 'due_date' | 'status' | 'title' | 'progress' | 'blocker'
+  // start_date 는 PR #59 가 ChangedField 에 추가했다 (계약 §2.6, §4.7-6)
+  field: 'assignee' | 'start_date' | 'due_date' | 'status' | 'title' | 'progress' | 'blocker'
   oldValue: string | null; newValue: string | null
   source: 'meeting' | 'chat' | 'checkin' | 'notion' | 'reminder_reply' | 'manual'
   changedBy: string | null
@@ -561,6 +576,22 @@ export interface TaskHistoryEntry {
   `until`(오늘+6일)은 호출자가 넘긴다. M1 에 날짜 덧셈을 들이지 않기 위해서다 (§5-2).
 - `lib/assignee.ts` — §3-2 의 시그니처.
 - 되돌리기는 `POST /tasks/{id}/history/{history_id}/rollback` 이며 **이미 구현돼 있다.** 응답은 갱신된 `TaskResponse` 다.
+
+**2026-09-22 — PR #55 가 태스크 쓰기 경로의 의미를 셋 바꿨다. MSW 를 거기에 맞췄다.**
+
+| | 이전 | 지금 |
+|---|---|---|
+| `PATCH` 의 명시적 `null` | **무시**했다 (`exclude_none=True`) | **필드를 해제한다.** 백엔드가 그 옵션을 뺐다 |
+| `title`·`status` 에 `null` | 무시 | **400 `INVALID_REQUEST`.** DB 가 NOT NULL 이다 |
+| 되돌리기 | 이미 되돌린 건만 거절 | **충돌 감지가 붙었다.** 그 이력 이후에 다른 변경이 있으면 400 |
+
+- **화면은 보내지 않을 필드를 `undefined` 로 빼야 한다.** 부분 갱신에 `null` 이 섞이면 값이 지워진다.
+  `JSON.stringify` 가 `undefined` 키를 지우는 동작에 기대는 것이 안전하다.
+- 최초 생성 이력(`old_value` 가 `null` 인 `title`·`status`)은 되돌릴 수 없다. **400 이다** — 예전 MSW 는 500 을 냈는데 그게 틀렸다.
+- 충돌은 「최신 이력부터 되돌려라」는 뜻이다. 화면은 이력 목록에서 **가장 위 항목만** 되돌리기 버튼을 열어 두는 편이 낫다.
+- `start_date` 도 이력과 되돌리기 대상이다 (계약 §4.7-6).
+  다만 **승인(`task_update`) 반영 경로는 `start_date` 를 받지 않는다.** 백엔드 `_TASK_UPDATE_FIELDS` 에 없다.
+  `shared/mock/task-state.ts` 가 `taskFields` 와 `approvalTaskUpdateFields` 두 목록을 따로 두는 이유가 이것이다.
 
 ### 6-9. `integration` — 계약 §4.3 (요청 중)
 
@@ -773,7 +804,7 @@ it('온보딩이 끝나지 않은 워크스페이스는 403 을 받는다', asyn
 `POST /workspaces/{id}/meetings/upload` handler 는 `await request.formData()` 로 `file`·`title`·`started_at`·`attendee_member_ids` 를 확인하고 **202 `{meeting_id, status: 'processing'}`** 를 준다.
 
 - **업로드 진행률은 mock 하지 않는다.** `fetch` 로는 업로드 진행률을 읽을 수 없다. 진행률은 XHR 이 필요하고 M3 에서 axios 가 들어올 때 다룬다.
-- 처리 진행률은 별개다. `GET /meetings/{id}` 폴링이며 `status`(+ 복구되면 `progress`)를 본다 (계약 §4.7-1).
+- 처리 진행률은 별개다. `GET /meetings/{id}` 폴링이며 `status` 와 `progress` 를 본다 (계약 §4.7-1 — **반영됨**).
 - 워크스페이스에 `processing` 인 회의가 이미 있으면 409 `MEETING_PROCESSING_IN_PROGRESS` + `details.meeting_id` (D-088, D-089). **픽스처에 `processing` 회의가 하나 있으므로**(§9-5) 기본 상태에서 이 경로가 바로 밟힌다. 정상 업로드를 테스트하려면 그 회의를 먼저 `done` 으로 바꾸거나 override 한다.
 
 ---
@@ -854,8 +885,9 @@ afterEach(() => { vi.useRealTimers() })
 | `tk_09` | 폰트 적용 | `mb_01` | `done` | `2026-09-14` | `null` | `notion_page_id` 있음 |
 | `tk_10` | 토큰 정리 | `mb_02` | `done` | `2026-09-17` | `2026-09-12` | |
 
-- `start_date` 는 **일부만 채운다.** 비어 있는 항목이 있어야 §4.8-5 의 폴백이 테스트된다 (계약 §7).
+- `start_date` 는 **일부만 채운다.** `null` 인 항목이 있어야 §4.8-5 의 폴백이 테스트된다 (계약 §7).
   `start_date` 가 `null` 인 태스크의 `created_at` 은 해당 `due_date` 보다 앞선 날짜로 둔다.
+  **§4.7-6 이 반영된 뒤에도 이 지침은 그대로다.** 컬럼이 방금 생겨 실제 DB 의 기존 행이 전부 `null` 이라 이쪽이 오히려 흔한 경우다.
 - `blocked` 는 최소 1건 — `tk_03` (계약 §7, D-169).
 - `meeting_id` 는 `tk_01`·`tk_02`·`tk_03` 이 `mt_09`, 나머지는 `null`.
 
@@ -946,7 +978,7 @@ afterEach(() => { vi.useRealTimers() })
 | 14 | `GET /api/v1/meetings/{id}` | 구현됨 | 폴링 대상 |
 | 15 | `POST /api/v1/meetings` | 구현됨 | 봇 경로. 프론트엔드는 안 쓰지만 계약에 있으므로 둔다 |
 | 16 | `PATCH /api/v1/meetings/{id}/end` | 구현됨 | 〃 |
-| 17 | `GET /api/v1/meetings/{id}/minutes` | 요청 중 | |
+| 17 | `GET /api/v1/meetings/{id}/minutes` | 구현됨(스텁) | 실 API 는 `transcript`·`summary` 가 비었다 (계약 §4.0) |
 | 18 | `GET /api/v1/extractions/{id}` | 구현됨 | |
 | 19 | `GET /api/v1/approvals` | 구현됨 | `workspace_id` 필수 · `status` 필터 |
 | 20 | `GET /api/v1/approvals/{id}` | 구현됨 | |
@@ -954,9 +986,9 @@ afterEach(() => { vi.useRealTimers() })
 | 22 | `GET /api/v1/tasks` | 구현됨 | 질의 파라미터 4종 |
 | 23 | `POST /api/v1/tasks` | 구현됨 | |
 | 24 | `GET /api/v1/tasks/{id}` | 구현됨 | |
-| 25 | `PATCH /api/v1/tasks/{id}` | 구현됨 | 상태 변경 · 낙관적 업데이트 대상 (D-137) |
+| 25 | `PATCH /api/v1/tasks/{id}` | 구현됨 | 상태 변경 · 낙관적 업데이트 대상 (D-137) · **명시적 `null` 은 필드 해제** |
 | 26 | `GET /api/v1/tasks/{id}/history` | 구현됨 | |
-| 27 | `POST /api/v1/tasks/{id}/history/{history_id}/rollback` | 구현됨 | 409 `TASK_HISTORY_ALREADY_ROLLED_BACK` |
+| 27 | `POST /api/v1/tasks/{id}/history/{history_id}/rollback` | 구현됨 | 409 `TASK_HISTORY_ALREADY_ROLLED_BACK` · 400 최초 이력·**충돌** |
 | 28 | `GET /api/v1/members` | 구현됨 | `workspace_id` 필수 |
 | 29 | `POST /api/v1/members` | 구현됨 | 409 `DISCORD_USER_ALREADY_MAPPED` |
 | 30 | `GET /api/v1/members/{id}` | 구현됨 | |
@@ -1037,7 +1069,28 @@ afterEach(() => { vi.useRealTimers() })
 - `src/shared/types/common.ts` 는 이 패턴에 걸리지 않는다. DTO 가 아니다 (§3-2).
 - **확인 방법** — `src/pages/_probe.ts` 에 DTO import 한 줄을 넣고 `npm run lint` 가 에러를 내는지 본 뒤 파일을 지운다. 지우는 것까지 하고 커밋한다.
 
-`entities → entities` 금지는 이미 `boundaries` 가 막고 있다. 따로 설정하지 않는다 (§3-2).
+~~`entities → entities` 금지는 이미 `boundaries` 가 막고 있다. 따로 설정하지 않는다 (§3-2).~~
+
+**이 문장은 틀렸다 (2026-09-21 검증).** `boundaries/dependencies` 는 `error` 로 켜져 있고 `elements`·`policies` 도 맞았지만
+**한 번도 발동하지 않았다.** `settings['import/resolver']` 가 없어 import 경로를 파일로 해석하지 못했고,
+`boundaries` 는 **해석 실패를 위반이 아니라 「판단 불가」로 보고 조용히 건너뛴다.**
+
+확인한 것:
+
+| 쓴 코드 | 결과 |
+|---|---|
+| `import … from '@/entities/member'` | 에러 **없음** (별칭을 못 읽는다) |
+| `import … from '../../member/model/types'` | 에러 **없음** (`.ts` 를 못 붙인다) |
+| `import … from '../../member/model/types.ts'` | 에러 발생 |
+
+`eslint-import-resolver-typescript` 를 설치하고 `settings['import/resolver'].typescript` 를 붙여 고쳤다.
+고친 뒤 위 세 경우가 모두 잡히고, 허용된 `entities → shared` 는 그대로 통과한다.
+**M1 코드에 실제 위반은 없었다** — 규칙이 아니라 규칙의 작동 여부가 문제였다.
+경위와 대안 비교는 `docs/impl-decision/2026-09-21-boundaries-import-resolver.md` 에 있다.
+
+남은 구멍 하나는 알고 둔다. `boundaries/elements` 패턴이 `src/<layer>/*` 라 **하위 폴더 한 겹을 요구한다.**
+`src/entities/foo.ts` 처럼 루트에 바로 놓인 파일은 `isUnknown` 으로 분류돼 정책을 전부 빠져나간다.
+지금 그런 파일이 없어 무해하고, 막으려면 `boundaries/no-unknown-files` 가 필요한데 그것은 `src/App.tsx`·`src/main.tsx`·`src/vite-env.d.ts` 까지 잡는다. M1 범위 밖이다.
 
 ---
 
