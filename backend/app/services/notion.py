@@ -112,6 +112,18 @@ def upsert_task(
                     },
                 )
             response.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        # Notion이 실제로 왜 거부했는지는 응답 바디의 message에 있다 (예: "Make sure
+        # the relevant pages and databases are shared with your integration").
+        # str(exc)만 남기면 상태 코드만 보이고 원인은 매번 API를 다시 호출해봐야 한다.
+        try:
+            reason = exc.response.json().get("message", str(exc))
+        except ValueError:
+            reason = str(exc)
+        raise AppError(
+            ErrorCode.NOTION_WRITE_FAILED,
+            details={"task_id": task.task_id, "reason": reason},
+        ) from exc
     except httpx.HTTPError as exc:
         raise AppError(
             ErrorCode.NOTION_WRITE_FAILED,
