@@ -43,6 +43,7 @@ def create_task_endpoint(
         title=payload.title,
         meeting_id=payload.meeting_id,
         assignee_member_id=payload.assignee_member_id,
+        start_date=payload.start_date,
         due_date=payload.due_date,
         status=str(payload.status),
         progress=payload.progress,
