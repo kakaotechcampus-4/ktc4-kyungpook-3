@@ -1,0 +1,27 @@
+{
+  "case_id": "case_08",
+  "scenario": "single_sentence",
+  "description": "담당자 특정 불가(\"다 같이\") + 요일 미지정 기간 표현(\"이번 주 안으로\" → 그 주 일요일)",
+  "reference_date": "2026-09-09",
+  "speaker_names": {
+    "A": "유진"
+  },
+  "turns": [
+    {
+      "speaker": "A",
+      "text": "아 그리고 이번 주 안으로 전체 코드 컨벤션 문서 한번 다 같이 검토하죠."
+    }
+  ],
+  "expected": [
+    {
+      "sentence": "아 그리고 이번 주 안으로 전체 코드 컨벤션 문서 한번 다 같이 검토하죠.",
+      "is_task": true,
+      "assignee_mention": null,
+      "due_date": "2026-09-13",
+      "task_keywords": [
+        "코드 컨벤션"
+      ],
+      "assignee_type": "group"
+    }
+  ]
+}

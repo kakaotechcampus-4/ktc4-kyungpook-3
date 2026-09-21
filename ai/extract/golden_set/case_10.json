@@ -1,0 +1,26 @@
+{
+  "case_id": "case_10",
+  "scenario": "dense_multi_task",
+  "description": "한 문장에 서로 다른 담당자·마감을 가진 할일이 2개 들어있는 경우",
+  "note": "지금 rules.py/llm.py 는 둘 다 '문장 하나 = 할일 하나'를 가정해서, 이 문장에서 할일을 2개로 쪼개지 못할 걸로 예상됨(알려진 recall 갭). gold 의 assignee/due 를 null 로 둔 이유: 이 문장 전체에 단일 정답 담당자·마감이 존재하지 않기 때문 — '전체적으로 할일로는 인식되는지'만 본다. 이상적으로는 '이거(화자 본인, 오늘)'와 '저거(하은, 내일)' 2개 항목으로 쪼개져야 함.",
+  "reference_date": "2026-09-09",
+  "speaker_names": {
+    "D": "민재"
+  },
+  "turns": [
+    {
+      "speaker": "D",
+      "text": "이거는 제가 오늘까지 끝내고, 저거는 내일까지 하은님이 봐주세요."
+    }
+  ],
+  "expected": [
+    {
+      "sentence": "이거는 제가 오늘까지 끝내고, 저거는 내일까지 하은님이 봐주세요.",
+      "is_task": true,
+      "assignee_mention": null,
+      "due_date": null,
+      "task_keywords": [],
+      "assignee_type": "none"
+    }
+  ]
+}

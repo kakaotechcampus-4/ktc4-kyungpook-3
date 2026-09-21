@@ -71,3 +71,6 @@ target/
 *.db
 .terraform/
 implementation_plan_1.md
+
+# 폐기된 프로토타입 런타임 (이전 세대 디자인 기준, 폰트 TTF 11MB 포함)
+frontend/docs/design/site-runtime/

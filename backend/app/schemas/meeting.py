@@ -30,6 +30,10 @@ class MeetingEndResponse(BaseModel):
     ended_at: datetime | None
 
 
+class MeetingFailRequest(BaseModel):
+    failed_stage: str = Field(..., description="어느 단계에서 실패했는지 (e.g., STT, LLM)")
+
+
 class MeetingProgress(BaseModel):
     audio_merged: bool
     transcribed: bool
@@ -43,9 +47,27 @@ class MeetingDetailResponse(BaseModel):
     status: str
     started_at: datetime
     ended_at: datetime | None
-    progress: MeetingProgress
     extraction_id: str | None = None
     failed_stage: str | None = None
+    progress: MeetingProgress
+
+
+class MeetingListResponse(BaseModel):
+    items: list[dict]
+    total: int
+
+
+class MeetingMinutesResponse(BaseModel):
+    meeting_id: str
+    title: str | None
+    started_at: datetime
+    duration_ms: int
+    source: str
+    attendees: list[dict]
+    summary: dict | None
+    transcript: list[dict]
+    permissions: dict
+
 
 
 class TaskInfo(BaseModel):
@@ -81,6 +103,10 @@ class ExtractionItemResponse(BaseModel):
     confidence: float
     gate: str
     evidence: EvidenceInfo
+    task_id: str | None = Field(None, description="gate=auto — 바로 생성된 태스크 ID")
+    approval_id: str | None = Field(
+        None, description="gate=review|hold — PM 승인이 필요한 승인 요청 ID"
+    )
 
 
 class ExtractionDetailResponse(BaseModel):
@@ -93,6 +119,7 @@ class ExtractionItemCreate(BaseModel):
     task_title: str
     task_confidence: float = 0.0
     assignee_raw: str | None = None
+    assignee_type: str | None = Field(None, description="'first'(1인칭), 'third'(3인칭), 'group', 'none' 등")
     due_date: date | None = None
     due_raw: str | None = None
     due_confidence: float = 0.0

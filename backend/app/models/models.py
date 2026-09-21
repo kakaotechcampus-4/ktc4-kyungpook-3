@@ -78,6 +78,7 @@ class TaskStatus(StrEnum):
 
 class ChangedField(StrEnum):
     ASSIGNEE = "assignee"
+    START_DATE = "start_date"
     DUE_DATE = "due_date"
     STATUS = "status"
     TITLE = "title"
@@ -112,15 +113,98 @@ class Gate(StrEnum):
     HOLD = "hold"
 
 
+class User(Base):
+    __tablename__ = "user"
+
+    user_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    name: Mapped[str] = mapped_column(String(100))
+    provider: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    provider_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    profile_image_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, onupdate=_now
+    )
+
+    sessions: Mapped[list["Session"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+
+
+class Session(Base):
+    __tablename__ = "session"
+
+    session_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("user.user_id", ondelete="CASCADE"), index=True
+    )
+    session_token: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+    user: Mapped["User"] = relationship(back_populates="sessions")
+
+
+class Workspace(Base):
+    __tablename__ = "workspace"
+
+    workspace_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    name: Mapped[str] = mapped_column(String(100))
+    onboarding_completed: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+    integrations: Mapped[list["Integration"]] = relationship(
+        back_populates="workspace", cascade="all, delete-orphan"
+    )
+
+
+class Integration(Base):
+    __tablename__ = "integration"
+    __table_args__ = (
+        UniqueConstraint(
+            "workspace_id", "provider", name="uq_workspace_provider"
+        ),
+    )
+
+    integration_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    workspace_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("workspace.workspace_id", ondelete="CASCADE"), index=True
+    )
+    provider: Mapped[str] = mapped_column(String(20))
+    access_token: Mapped[str | None] = mapped_column(Text, nullable=True)
+    refresh_token: Mapped[str | None] = mapped_column(Text, nullable=True)
+    provider_channel_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, onupdate=_now
+    )
+
+    workspace: Mapped["Workspace"] = relationship(back_populates="integrations")
+
+
 class Member(Base):
     __tablename__ = "member"
+    __table_args__ = (
+        UniqueConstraint(
+            "workspace_id", "discord_user_id", name="uq_workspace_discord_user"
+        ),
+    )
 
     member_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
-    workspace_id: Mapped[str] = mapped_column(String(36), index=True)
+    workspace_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("workspace.workspace_id", ondelete="CASCADE"), index=True
+    )
+    user_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("user.user_id", ondelete="SET NULL"), nullable=True, index=True
+    )
     display_name: Mapped[str] = mapped_column(String(100))
-    discord_user_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    discord_user_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     notion_name: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
     role: Mapped[str] = mapped_column(String(16), default=MemberRole.MEMBER)
+    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
     aliases: Mapped[list["MemberAlias"]] = relationship(
@@ -140,7 +224,9 @@ class MemberAlias(Base):
     member_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("member.member_id", ondelete="CASCADE"), index=True
     )
-    workspace_id: Mapped[str] = mapped_column(String(36), index=True)
+    workspace_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("workspace.workspace_id", ondelete="CASCADE"), index=True
+    )
     alias_text: Mapped[str] = mapped_column(String(100), index=True)
     alias_type: Mapped[str] = mapped_column(String(16))
     source: Mapped[str] = mapped_column(String(20))
@@ -155,15 +241,19 @@ class AliasResolutionLog(Base):
     __tablename__ = "alias_resolution_log"
 
     log_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
-    workspace_id: Mapped[str] = mapped_column(String(36), index=True)
+    workspace_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("workspace.workspace_id", ondelete="CASCADE"), index=True
+    )
     alias_text: Mapped[str] = mapped_column(String(100), index=True)
-    resolved_member: Mapped[str | None] = mapped_column(
+    resolved_member_id: Mapped[str | None] = mapped_column(
         String(36), ForeignKey("member.member_id", ondelete="SET NULL"), nullable=True
     )
     result: Mapped[str] = mapped_column(String(16))
     candidate_count: Mapped[int] = mapped_column(Integer, default=0)
     evidence_quote: Mapped[str | None] = mapped_column(Text, nullable=True)
-    meeting_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    meeting_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("meeting.meeting_id", ondelete="SET NULL"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 
@@ -175,7 +265,7 @@ class AliasReview(Base):
         String(36), ForeignKey("alias_resolution_log.log_id", ondelete="CASCADE"), index=True
     )
     decision: Mapped[str] = mapped_column(String(16))
-    corrected_member: Mapped[str | None] = mapped_column(
+    corrected_member_id: Mapped[str | None] = mapped_column(
         String(36), ForeignKey("member.member_id", ondelete="SET NULL"), nullable=True
     )
     reviewed_by: Mapped[str] = mapped_column(String(36), ForeignKey("member.member_id"))
@@ -186,13 +276,13 @@ class Meeting(Base):
     __tablename__ = "meeting"
 
     meeting_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
-    workspace_id: Mapped[str] = mapped_column(String(36), index=True)
+    workspace_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("workspace.workspace_id", ondelete="CASCADE"), index=True
+    )
     title: Mapped[str | None] = mapped_column(String(200), nullable=True)
     source: Mapped[str] = mapped_column(String(20), default=MeetingSource.DISCORD)
     status: Mapped[str] = mapped_column(String(16), default=MeetingStatus.CREATED, index=True)
-    audio_merged: Mapped[bool] = mapped_column(Boolean, default=False)
-    transcribed: Mapped[bool] = mapped_column(Boolean, default=False)
-    extracted: Mapped[bool] = mapped_column(Boolean, default=False)
+
     failed_stage: Mapped[str | None] = mapped_column(String(32), nullable=True)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -253,6 +343,7 @@ class Extraction(Base):
         String(36), ForeignKey("meeting.meeting_id", ondelete="CASCADE"), index=True
     )
     transcript_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     model_name: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
@@ -285,6 +376,12 @@ class ExtractionItem(Base):
     evidence_quote: Mapped[str | None] = mapped_column(Text, nullable=True)
     evidence_speaker: Mapped[str | None] = mapped_column(String(100), nullable=True)
     evidence_at_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    task_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("task.task_id", ondelete="SET NULL"), nullable=True
+    )
+    approval_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("approval_request.approval_id", ondelete="SET NULL"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
     extraction: Mapped["Extraction"] = relationship(back_populates="items")
@@ -294,7 +391,9 @@ class Task(Base):
     __tablename__ = "task"
 
     task_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
-    workspace_id: Mapped[str] = mapped_column(String(36), index=True)
+    workspace_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("workspace.workspace_id", ondelete="CASCADE"), index=True
+    )
     meeting_id: Mapped[str | None] = mapped_column(
         String(36), ForeignKey("meeting.meeting_id", ondelete="SET NULL"), nullable=True
     )
@@ -305,6 +404,7 @@ class Task(Base):
     status: Mapped[str] = mapped_column(String(16), default=TaskStatus.TODO, index=True)
     progress: Mapped[int | None] = mapped_column(Integer, nullable=True)
     blocker: Mapped[str | None] = mapped_column(Text, nullable=True)
+    start_date: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
     due_date: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
     notion_page_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
@@ -347,7 +447,9 @@ class ApprovalRequest(Base):
     __tablename__ = "approval_request"
 
     approval_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
-    workspace_id: Mapped[str] = mapped_column(String(36), index=True)
+    workspace_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("workspace.workspace_id", ondelete="CASCADE"), index=True
+    )
     type: Mapped[str] = mapped_column(String(20))
     payload: Mapped[str] = mapped_column(Text)  # JSON 직렬화
     related_task_id: Mapped[str | None] = mapped_column(

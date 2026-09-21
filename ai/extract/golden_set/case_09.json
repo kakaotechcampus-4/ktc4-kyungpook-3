@@ -1,0 +1,14 @@
+{
+  "case_id": "case_09",
+  "scenario": "single_sentence",
+  "description": "회의 마무리 인사 — 종결어미가 실행-의지 패턴과 같아도(\"할게요\") 할일이 아님",
+  "reference_date": "2026-09-09",
+  "speaker_names": {"A": "유진"},
+  "turns": [
+    {"speaker": "A", "text": "네, 오늘 스탠드업은 여기까지 할게요. 다들 수고하셨습니다."}
+  ],
+  "expected": [
+    {"sentence": "네, 오늘 스탠드업은 여기까지 할게요.", "is_task": false},
+    {"sentence": "다들 수고하셨습니다.", "is_task": false}
+  ]
+}
