@@ -43,7 +43,8 @@ export function toWorkspaceSummary(dto: WorkspaceSummaryDto): WorkspaceSummary {
 export function toOnboarding(dto: OnboardingDto): OnboardingProgress {
   return {
     completed: dto.completed,
-    currentStep: dto.current_step === null ? null : safeStep(dto.current_step),
+    // 백엔드는 온보딩 완료 시 null 이 아니라 빈 문자열을 준다 (계약 §4.0-②-4). 둘을 같게 다룬다
+    currentStep: dto.current_step ? safeStep(dto.current_step) : null,
     steps: dto.steps.map(({ step, status }) => ({
       step: safeStep(step) ?? 'create_workspace',
       status: safeStatus(status),
