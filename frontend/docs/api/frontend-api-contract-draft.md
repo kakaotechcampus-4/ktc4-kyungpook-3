@@ -462,8 +462,8 @@ PR #59 가 §4.1~§4.5 를 구현했다. **요청의 성격이 바뀌었다** �
 | 11 | `GET /meetings/{id}/minutes` | `transcript` 가 **하드코딩 1줄.** `attendees` 는 `audio_segment` 에서 역산 | §4.7-5 의 구조화 응답. 참석자는 회의 참석자 명단에서 |
 | 12 | 승인 반영 | `extraction_item.task_id` 를 채우되 **`approval_id` 를 비우지 않는다** | 승인 시 `approval_id` 를 `null` 로. 안 되면 프론트가 `task_id` 우선으로 우회한다 (§3.1) |
 | 13 | 승인 `task_create` | payload 의 `status` · `progress` 도 읽어 반영한다 | 요청이 아니라 **기록**이다. §2.5 의 payload 설명에 빠져 있었다 |
-| 14 | `GET /workspaces/{id}/meetings` | `title` 이 nullable 인데 `items: list[dict]` 라 스키마에 안 드러난다 | 목록 `title` 의 nullable 여부를 스키마로 고정해 달라. 프론트 DTO 는 지금 필수 `string` 이다 |
-| 15 | `GET /members/unresolved-aliases` | 해결 판정이 **`verified` 별칭 정확히 1개**다. 미검증·복수 verified 는 목록에 남는다 | 요청이 아니라 기록이다. MSW 가 고정 배열이라 이 전이를 재현하지 못한다 |
+| 14 | `GET /workspaces/{id}/meetings` | `title` 이 nullable 인데 `items: list[dict]` 라 스키마에 안 드러난다 | 목록 `title` 의 nullable 여부를 스키마로 고정해 달라. **프론트 DTO 는 nullable 로 맞췄고 매퍼가 빈 문자열로 폴백한다** |
+| 15 | `GET /members/unresolved-aliases` | 해결 판정이 **`verified` 별칭 정확히 1개**다. 미검증·복수 verified 는 목록에 남는다 | 요청이 아니라 기록이다. **MSW 도 같은 규칙으로 계산하게 맞췄다** |
 
 **①-1 의 실제 범위** — PR #59 가 인증을 넣었지만 라우터별로 적용이 갈린다. `main.py` 에 전역 미들웨어도 없다.
 

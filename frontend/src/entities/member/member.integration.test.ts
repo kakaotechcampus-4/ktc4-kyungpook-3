@@ -115,3 +115,37 @@ it('covers Discord users, aliases, workspace scoping, duplicate mapping, and mis
   const missing = await fetch('http://localhost:3000/api/v1/members/missing')
   expect(missing.status).toBe(404)
 })
+
+// 백엔드는 워크스페이스 안에서 verified 별칭이 정확히 1개인 이름만 해결된 것으로 본다
+// (members.py 의 group_by + having count == 1). 미검증·복수 verified 는 미해결로 남는다
+it('drops a detected name from the unresolved list once exactly one verified alias exists', async () => {
+  const base = `${location.origin}/api/v1`
+  const unresolved = async () => {
+    const response = await fetch(`${base}/members/unresolved-aliases?workspace_id=ws_01`)
+    return unwrap(
+      (await response.json()) as Envelope<ListDto<UnresolvedAliasDto>>,
+      response.status,
+    ).items.map(({ alias_text }) => alias_text)
+  }
+  expect(await unresolved()).toEqual(['지훈'])
+
+  const addAlias = (memberId: string, verified: boolean) =>
+    fetch(`${base}/members/${memberId}/aliases`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ alias_text: '지훈', verified }),
+    })
+
+  // 미검증 별칭은 해결로 치지 않는다
+  await addAlias('mb_01', false)
+  expect(await unresolved()).toEqual(['지훈'])
+
+  // verified 가 하나 생기면 목록에서 빠진다
+  const first = await addAlias('mb_02', true)
+  expect(first.status).toBe(201)
+  expect(await unresolved()).toEqual([])
+
+  // 두 팀원에 붙으면 중의적이라 다시 미해결이다
+  await addAlias('mb_03', true)
+  expect(await unresolved()).toEqual(['지훈'])
+})

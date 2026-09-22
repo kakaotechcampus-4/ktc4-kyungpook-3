@@ -17,9 +17,15 @@ export const memberHandlers = [
   }),
   http.get(`${base}/members/unresolved-aliases`, ({ request }) => {
     const workspaceId = new URL(request.url).searchParams.get('workspace_id')
-    return workspaceId
-      ? list(workspaceId === 'ws_01' ? db.unresolvedAliases : [])
-      : fail('INVALID_REQUEST', 'workspace_id가 필요합니다.', 400)
+    if (!workspaceId) return fail('INVALID_REQUEST', 'workspace_id가 필요합니다.', 400)
+    // 백엔드 members.py 는 워크스페이스 안에서 verified 별칭이 **정확히 1개**인 이름만
+    // 해결된 것으로 본다. 미검증 별칭과 여러 팀원에 붙은 이름은 미해결로 남는다.
+    const verifiedCount = new Map<string, number>()
+    for (const alias of db.aliases)
+      if (alias.workspace_id === workspaceId && alias.verified)
+        verifiedCount.set(alias.alias_text, (verifiedCount.get(alias.alias_text) ?? 0) + 1)
+    const detected = workspaceId === 'ws_01' ? db.unresolvedAliases : []
+    return list(detected.filter(({ alias_text }) => verifiedCount.get(alias_text) !== 1))
   }),
   http.delete(`${base}/members/aliases/:aliasId`, ({ params }) => {
     const index = db.aliases.findIndex(({ alias_id }) => alias_id === params.aliasId)

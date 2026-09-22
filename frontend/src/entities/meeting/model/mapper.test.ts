@@ -52,3 +52,9 @@ it('falls back unknown status and source without throwing', () => {
     warning.mockRestore()
   }
 })
+
+// 백엔드 Meeting.title 이 nullable 이고 목록은 그 값을 그대로 내린다. items 가 list[dict] 라
+// 스키마로는 드러나지 않는다 (계약 §4.0-②-14). 단건과 같은 폴백으로 도메인 계약을 지킨다
+it('falls back a null list title to an empty string like the detail mapper does', () => {
+  expect(toMeetingSummary({ ...meetingSummaryFixtures[0], title: null }).title).toBe('')
+})

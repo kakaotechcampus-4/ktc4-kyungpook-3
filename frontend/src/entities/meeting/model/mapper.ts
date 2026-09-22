@@ -25,7 +25,7 @@ export function toMeeting(dto: MeetingDto): Meeting {
 export function toMeetingSummary(dto: MeetingSummaryDto): MeetingSummary {
   return {
     id: dto.meeting_id,
-    title: dto.title,
+    title: dto.title ?? '',
     status: enumValue(dto.status, statuses, 'created', 'meeting status'),
     source: enumValue(
       dto.source,

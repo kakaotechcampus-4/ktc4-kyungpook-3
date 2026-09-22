@@ -1,6 +1,8 @@
 export interface MeetingSummaryDto {
   meeting_id: string
-  title: string
+  // 백엔드 Meeting.title 이 nullable 이고 목록은 그 값을 그대로 내린다.
+  // items 가 list[dict] 라 스키마에 드러나지 않으므로 이 선언이 유일한 기록이다 (계약 §4.0-②-14)
+  title: string | null
   status: string
   source: string
   started_at: string
