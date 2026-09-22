@@ -85,6 +85,8 @@ export const workspaceHandlers = [
     )
     workspace.onboarding.current_step =
       workspace.onboarding.steps.find(({ status }) => status === 'pending')?.step ?? null
-    return ok(workspace)
+    // 실 API 는 success({}) 만 준다. 갱신된 워크스페이스를 돌려주지 않는다
+    // (workspaces.py 의 update_onboarding). 화면은 PATCH 뒤 상세를 다시 조회해야 한다.
+    return ok({})
   }),
 ]

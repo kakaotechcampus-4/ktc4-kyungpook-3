@@ -995,7 +995,7 @@ afterEach(() => { vi.useRealTimers() })
 | 14 | `GET /api/v1/meetings/{id}` | 구현됨 | 폴링 대상 |
 | 15 | `POST /api/v1/meetings` | 구현됨 | 봇 경로. 프론트엔드는 안 쓰지만 계약에 있으므로 둔다 |
 | 16 | `PATCH /api/v1/meetings/{id}/end` | 구현됨 | 〃 |
-| 17 | `GET /api/v1/meetings/{id}/minutes` | 구현됨(스텁) | 실 API 는 `transcript`·`summary` 가 비었다 (계약 §4.0) |
+| 17 | `GET /api/v1/meetings/{id}/minutes` | 구현됨(스텁) | 실 API 는 `transcript` 가 안내 문구 1줄, `summary` 는 항상 `null` (계약 §4.0) |
 | 18 | `GET /api/v1/extractions/{id}` | 구현됨 | |
 | 19 | `GET /api/v1/approvals` | 구현됨 | `workspace_id` 필수 · `status` 필터 |
 | 20 | `GET /api/v1/approvals/{id}` | 구현됨 | |

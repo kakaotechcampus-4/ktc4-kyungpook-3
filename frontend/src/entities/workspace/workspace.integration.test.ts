@@ -21,14 +21,18 @@ it('lists only user workspaces and changes onboarding state', async () => {
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ step: 'connect_notion', action: 'complete' }),
   })
-  expect(
-    toWorkspace(unwrap((await update.json()) as Envelope<WorkspaceDto>, update.status)),
-  ).toMatchObject({ id: 'ws_02', onboarding: { currentStep: 'connect_members' } })
+  // 실 API 는 빈 객체만 준다. 갱신된 워크스페이스를 기대하면 안 된다 (계약 §4.2)
+  expect(unwrap((await update.json()) as Envelope<Record<string, never>>, update.status)).toEqual(
+    {},
+  )
+
+  // 갱신 결과는 상세를 다시 조회해서 확인한다
   const detail = await fetch('http://localhost:3000/api/v1/workspaces/ws_02')
-  expect(
-    toWorkspace(unwrap((await detail.json()) as Envelope<WorkspaceDto>, detail.status)).onboarding
-      .steps[2],
-  ).toEqual({ step: 'connect_notion', status: 'completed' })
+  const updated = toWorkspace(
+    unwrap((await detail.json()) as Envelope<WorkspaceDto>, detail.status),
+  )
+  expect(updated.onboarding.currentStep).toBe('connect_members')
+  expect(updated.onboarding.steps[2]).toEqual({ step: 'connect_notion', status: 'completed' })
 })
 
 it('collapses internal whitespace when detecting duplicate workspace names', async () => {

@@ -10,8 +10,10 @@ export const meetingFixtures: MeetingDto[] = [
     ended_at: '2026-09-08T05:45:00Z',
     extraction_id: 'ex_00',
     failed_stage: null,
-    // done 이면 세 단계가 다 끝나 있다 (백엔드 _compute_progress)
-    progress: { audio_merged: true, transcribed: true, extracted: true },
+    // 백엔드 _compute_progress 는 status 가 아니라 audio.is_complete · extraction.transcript_path ·
+    // extraction.items 로 계산한다. ex_00 은 items 가 비어 있어 extracted 가 false 다.
+    // done 인데 추출 항목이 0건인 회의 — 할 일이 안 나온 회의다
+    progress: { audio_merged: true, transcribed: true, extracted: false },
   },
   {
     meeting_id: 'mt_09',
@@ -22,6 +24,7 @@ export const meetingFixtures: MeetingDto[] = [
     ended_at: '2026-09-15T05:45:30Z',
     extraction_id: 'ex_01',
     failed_stage: null,
+    // ex_01 은 items 6건이라 세 단계가 다 끝났다
     progress: { audio_merged: true, transcribed: true, extracted: true },
   },
   {
@@ -33,7 +36,7 @@ export const meetingFixtures: MeetingDto[] = [
     ended_at: '2026-09-18T01:00:00Z',
     extraction_id: null,
     failed_stage: null,
-    // processing 은 중간 단계다. 진행률 UI 가 이 경로를 실제로 밟아야 한다
+    // extraction 이 없으므로 transcribed·extracted 가 false 다. 진행률 UI 가 밟는 중간 단계
     progress: { audio_merged: true, transcribed: false, extracted: false },
   },
 ]

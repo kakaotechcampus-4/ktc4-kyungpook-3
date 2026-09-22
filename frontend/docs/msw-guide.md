@@ -93,7 +93,8 @@ await fetch('/api/v1/approvals/ap_01', {
 `VITE_ENABLE_MSW=false`로 붙일 때 어긋나는 것들이다. 전체 현황은 [계약 §4.0](api/frontend-api-contract-draft.md)에 있다.
 
 - **로그인이 쿠키 세션이다.** 실 백엔드는 `Set-Cookie: session_token`(HttpOnly·Secure·SameSite=Lax)으로 응답하고, 이후 요청은 쿠키로 인증한다. MSW는 쿠키를 심지 않는다. 브라우저에서 두 모드를 오가면 로그인 상태가 이어지지 않는다.
-- **온보딩·Discord 사용자 목록·회의록 본문이 실 API에서 스텁이다.** 엔드포인트는 응답하지만 값이 비었거나 하드코딩이다. MSW 쪽이 더 완전하므로 이 세 화면은 mock으로 개발한다.
+- **온보딩·Discord 사용자 목록·회의록 본문·회의 업로드가 실 API에서 스텁이다.** 엔드포인트는 응답하지만 값이 하드코딩이거나 저장을 하지 않는다. MSW 쪽이 더 완전하므로 이 네 화면은 mock으로 개발한다.
+  회의록 본문은 비어 있는 게 아니라 **안내 문구 1줄**이 온다. extraction이 없을 때만 빈 배열이다.
 - **OAuth `start`·`callback`은 양쪽 다 없다.** Google 로그인과 Discord·Notion 연결은 아직 어느 쪽으로도 동작하지 않는다.
 - 실 백엔드는 업로드한 **파일을 저장하지 않는다.** 회의가 `processing`에 머물러 다음 업로드를 409로 막는다. MSW는 정상 흐름을 낸다.
 
