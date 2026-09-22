@@ -1,0 +1,205 @@
+[
+  {
+    "description": "새 항목 — candidates 없음",
+    "judge_input": {"source": "meeting", "text": "결제 환불 기능 구현하기로 했다.", "candidates": []},
+    "expected": {"is_meaningful": true, "is_new": true, "matched_task_id": null}
+  },
+  {
+    "description": "새 항목 — candidates 있지만 무관한 것뿐",
+    "judge_input": {
+      "source": "meeting", "text": "디자인 시스템 색상 팔레트 정리하기로 했다.",
+      "candidates": [
+        {"notion_page_id": "n1", "task_id": "task_payment", "title": "결제 API 연동", "similarity": 0.15}
+      ]
+    },
+    "expected": {"is_meaningful": true, "is_new": true, "matched_task_id": null}
+  },
+  {
+    "description": "기존 수정 — 마감일 변경",
+    "judge_input": {
+      "source": "meeting", "text": "로그인 화면 마감일을 다음 주 화요일(9/22)로 미루기로 했다.",
+      "candidates": [
+        {"notion_page_id": "n2", "task_id": "task_login", "title": "로그인 화면 시안 마무리 작업",
+         "due_date": "2026-09-16", "status": "in_progress", "similarity": 0.6}
+      ]
+    },
+    "expected": {"is_meaningful": true, "is_new": false, "matched_task_id": "task_login", "category": "schedule"}
+  },
+  {
+    "description": "이미 반영된 내용 — 마감일이 이미 그 값임",
+    "judge_input": {
+      "source": "meeting", "text": "로그인 화면 마감일이 9월 22일인 거 다시 확인했습니다.",
+      "candidates": [
+        {"notion_page_id": "n2", "task_id": "task_login", "title": "로그인 화면 시안 마무리 작업",
+         "due_date": "2026-09-22", "similarity": 0.6}
+      ]
+    },
+    "expected": {"is_meaningful": false}
+  },
+  {
+    "description": "기존 수정 — 담당자 변경",
+    "judge_input": {
+      "source": "meeting", "text": "로그인 화면 작업 담당을 원준님으로 바꾸기로 했다.",
+      "candidates": [
+        {"notion_page_id": "n2", "task_id": "task_login", "title": "로그인 화면 시안 마무리 작업",
+         "assignee_member_id": "mem_dongwoo", "similarity": 0.55}
+      ]
+    },
+    "expected": {"is_meaningful": true, "is_new": false, "matched_task_id": "task_login", "category": "assignee"}
+  },
+  {
+    "description": "기존 수정 — 상태를 완료로",
+    "judge_input": {
+      "source": "meeting", "text": "로그인 화면 작업 다 끝냈습니다.",
+      "candidates": [
+        {"notion_page_id": "n2", "task_id": "task_login", "title": "로그인 화면 시안 마무리 작업",
+         "status": "in_progress", "similarity": 0.65}
+      ]
+    },
+    "expected": {"is_meaningful": true, "is_new": false, "matched_task_id": "task_login", "status": "done"}
+  },
+  {
+    "description": "기존 수정 — 상태를 블록으로",
+    "judge_input": {
+      "source": "meeting", "text": "로그인 화면 작업이 디자인팀 이슈로 막혔어요.",
+      "candidates": [
+        {"notion_page_id": "n2", "task_id": "task_login", "title": "로그인 화면 시안 마무리 작업",
+         "status": "in_progress", "similarity": 0.6}
+      ]
+    },
+    "expected": {"is_meaningful": true, "is_new": false, "matched_task_id": "task_login", "status": "blocked"}
+  },
+  {
+    "description": "기존 수정 — 범위 축소(소셜 로그인 제외)",
+    "judge_input": {
+      "source": "meeting", "text": "로그인 화면에서 소셜 로그인은 이번 스프린트 범위에서 빼기로 했다.",
+      "candidates": [
+        {"notion_page_id": "n2", "task_id": "task_login", "title": "로그인 화면 시안 마무리 작업", "similarity": 0.5}
+      ]
+    },
+    "expected": {"is_meaningful": true, "is_new": false, "matched_task_id": "task_login", "category": "scope"}
+  },
+  {
+    "description": "다중후보 구분 — 결제 환불(연동과 구분, 마감일이라는 새 정보 포함)",
+    "judge_input": {
+      "source": "meeting", "text": "결제 환불 처리 로직을 다음 주 금요일까지 구현하기로 했다.",
+      "candidates": [
+        {"notion_page_id": "n3", "task_id": "task_payment", "title": "결제 API 연동", "similarity": 0.5},
+        {"notion_page_id": "n4", "task_id": "task_refund", "title": "결제 환불 기능 구현", "similarity": 0.7}
+      ]
+    },
+    "expected": {"is_meaningful": true, "is_new": false, "matched_task_id": "task_refund", "category": "schedule"}
+  },
+  {
+    "description": "다중후보 있어도 실제로는 새 항목",
+    "judge_input": {
+      "source": "meeting", "text": "결제 알림 기능 추가하기로 했다.",
+      "candidates": [
+        {"notion_page_id": "n3", "task_id": "task_payment", "title": "결제 API 연동", "similarity": 0.45},
+        {"notion_page_id": "n4", "task_id": "task_refund", "title": "결제 환불 기능 구현", "similarity": 0.4}
+      ]
+    },
+    "expected": {"is_meaningful": true, "is_new": true, "matched_task_id": null}
+  },
+  {
+    "description": "기존 수정 — 부정문(소셜 로그인 버튼 취소)",
+    "judge_input": {
+      "source": "meeting", "text": "로그인 화면 소셜 로그인 버튼은 이번엔 안 넣기로 했다.",
+      "candidates": [
+        {"notion_page_id": "n5", "task_id": "task_social_login", "title": "로그인 화면에 소셜 로그인 버튼 추가",
+         "status": "todo", "similarity": 0.6}
+      ]
+    },
+    "expected": {"is_meaningful": true, "is_new": false, "matched_task_id": "task_social_login", "category": "scope"}
+  },
+  {
+    "description": "새 항목 — 마감일까지 명시, 상태 언급 없음",
+    "judge_input": {
+      "source": "meeting", "text": "회원가입 이메일 인증 기능을 다음 주 금요일까지 구현하기로 했다.",
+      "candidates": []
+    },
+    "expected": {"is_meaningful": true, "is_new": true, "matched_task_id": null, "status": null}
+  },
+  {
+    "description": "새 항목 — 담당자 최초 지정",
+    "judge_input": {
+      "source": "meeting", "text": "온보딩 튜토리얼 제작은 하은님이 맡기로 했다.",
+      "candidates": []
+    },
+    "expected": {"is_meaningful": true, "is_new": true, "matched_task_id": null, "category": "assignee"}
+  },
+  {
+    "description": "이미 반영된 내용 — 담당자 재확인(변경 없음)",
+    "judge_input": {
+      "source": "meeting", "text": "네, 로그인 화면은 원준님이 계속 담당하시는 걸로 확인했습니다.",
+      "candidates": [
+        {"notion_page_id": "n2", "task_id": "task_login", "title": "로그인 화면 시안 마무리 작업",
+         "assignee_member_id": "mem_wonjun", "similarity": 0.5}
+      ]
+    },
+    "expected": {"is_meaningful": false}
+  },
+  {
+    "description": "기존 수정 — 범위 추가",
+    "judge_input": {
+      "source": "meeting", "text": "로그인 화면에 아이디 저장 기능도 추가하기로 했다.",
+      "candidates": [
+        {"notion_page_id": "n2", "task_id": "task_login", "title": "로그인 화면 시안 마무리 작업", "similarity": 0.55}
+      ]
+    },
+    "expected": {"is_meaningful": true, "is_new": false, "matched_task_id": "task_login", "category": "scope"}
+  },
+  {
+    "description": "기존 수정 — 마감을 앞당김",
+    "judge_input": {
+      "source": "meeting", "text": "결제 API 연동을 이번 주 금요일까지 앞당기기로 했다.",
+      "candidates": [
+        {"notion_page_id": "n3", "task_id": "task_payment", "title": "결제 API 연동",
+         "due_date": "2026-09-30", "similarity": 0.7}
+      ]
+    },
+    "expected": {"is_meaningful": true, "is_new": false, "matched_task_id": "task_payment", "category": "schedule"}
+  },
+  {
+    "description": "기존 수정 — 블록 사유 명시",
+    "judge_input": {
+      "source": "meeting", "text": "검색 기능 성능 개선 작업이 서버 리소스 부족으로 중단됐습니다.",
+      "candidates": [
+        {"notion_page_id": "n6", "task_id": "task_search", "title": "검색 기능 성능 개선",
+         "status": "in_progress", "similarity": 0.6}
+      ]
+    },
+    "expected": {"is_meaningful": true, "is_new": false, "matched_task_id": "task_search", "status": "blocked"}
+  },
+  {
+    "description": "경계 — 결론 없이 보류(관찰용)",
+    "judge_input": {
+      "source": "meeting", "text": "로그인 관련 이슈는 다음에 다시 얘기하죠.",
+      "candidates": [
+        {"notion_page_id": "n2", "task_id": "task_login", "title": "로그인 화면 시안 마무리 작업", "similarity": 0.4}
+      ]
+    },
+    "observe_only": true
+  },
+  {
+    "description": "경계 — 막연한 언급(관찰용)",
+    "judge_input": {
+      "source": "meeting", "text": "로그인 관련해서 좀 더 알아보기로 했다.",
+      "candidates": [
+        {"notion_page_id": "n2", "task_id": "task_login", "title": "로그인 화면 시안 마무리 작업", "similarity": 0.45}
+      ]
+    },
+    "observe_only": true
+  },
+  {
+    "description": "새 항목 — 여러 무관 후보 중에서도 새 것으로 판단",
+    "judge_input": {
+      "source": "meeting", "text": "신규 사용자 온보딩 튜토리얼 제작 시작하기로 했다.",
+      "candidates": [
+        {"notion_page_id": "n2", "task_id": "task_login", "title": "로그인 화면 시안 마무리 작업", "similarity": 0.25},
+        {"notion_page_id": "n6", "task_id": "task_search", "title": "검색 기능 성능 개선", "similarity": 0.2}
+      ]
+    },
+    "expected": {"is_meaningful": true, "is_new": true, "matched_task_id": null}
+  }
+]
