@@ -119,7 +119,9 @@ export function validDate(value: unknown): value is string {
 export function validTaskFields(body: Record<string, unknown>): boolean {
   return (
     (body.title === undefined ||
-      (typeof body.title === 'string' && body.title.length > 0 && body.title.length <= 300)) &&
+      (typeof body.title === 'string' &&
+        body.title.trim().length > 0 &&
+        body.title.length <= 300)) &&
     (body.status === undefined ||
       (typeof body.status === 'string' &&
         ['todo', 'in_progress', 'blocked', 'done'].includes(body.status))) &&
@@ -140,6 +142,29 @@ export function validTaskFields(body: Record<string, unknown>): boolean {
 }
 // 본문에 있는 키만 모은다. null 도 값이다 — 백엔드가 exclude_unset 만 쓰고
 // exclude_none 을 쓰지 않으므로(PR #55), 명시적 null 은 필드 해제로 적용된다.
+// 백엔드 services/tasks.py 의 validate_workspace_ownership 과 같다.
+// Task 에 연결하는 ID 가 같은 워크스페이스 소속인지 본다. null 이면 검사하지 않는다.
+export function ownershipError(
+  workspaceId: string,
+  ids: { assignee_member_id?: unknown; meeting_id?: unknown },
+): {
+  code: 'MEMBER_NOT_FOUND' | 'MEETING_NOT_FOUND' | 'WORKSPACE_MISMATCH'
+  message: string
+} | null {
+  if (typeof ids.assignee_member_id === 'string') {
+    const member = db.members.find(({ member_id }) => member_id === ids.assignee_member_id)
+    if (!member) return { code: 'MEMBER_NOT_FOUND', message: '팀원이 없습니다.' }
+    if (member.workspace_id !== workspaceId)
+      return { code: 'WORKSPACE_MISMATCH', message: '담당자가 해당 워크스페이스 소속이 아닙니다.' }
+  }
+  if (typeof ids.meeting_id === 'string') {
+    const meeting = db.meetings.find(({ meeting_id }) => meeting_id === ids.meeting_id)
+    if (!meeting) return { code: 'MEETING_NOT_FOUND', message: '회의가 없습니다.' }
+    if (meeting.workspace_id !== workspaceId)
+      return { code: 'WORKSPACE_MISMATCH', message: '회의가 해당 워크스페이스 소속이 아닙니다.' }
+  }
+  return null
+}
 export function taskUpdates(body: Record<string, unknown>): TaskUpdates {
   const updates: Record<string, unknown> = {}
   for (const field of taskFields) {

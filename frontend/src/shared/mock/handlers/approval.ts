@@ -9,6 +9,7 @@ import {
   taskUpdates,
   validTaskFields,
   approvalTaskUpdateFields,
+  ownershipError,
 } from '../task-state'
 
 export const approvalHandlers = [
@@ -48,15 +49,28 @@ export const approvalHandlers = [
       const payload = approval.payload
       if (approval.type === 'task_create') {
         const meetingId = typeof payload.meeting_id === 'string' ? payload.meeting_id : null
+        const title =
+          typeof payload.task_title === 'string' && payload.task_title
+            ? payload.task_title
+            : typeof payload.title === 'string'
+              ? payload.title
+              : ''
+        // 백엔드 _apply_approval 은 status·progress 도 읽고 validate_task_fields 를 거친다
+        const created: Record<string, unknown> = { title }
+        if (payload.status !== undefined && payload.status !== null) created.status = payload.status
+        if (payload.progress !== undefined && payload.progress !== null)
+          created.progress = payload.progress
+        if (!validTaskFields(created))
+          return fail('INVALID_REQUEST', '승인 내용이 올바르지 않습니다.', 400)
+        const owned = ownershipError(approval.workspace_id, payload)
+        if (owned)
+          return fail(owned.code, owned.message, owned.code === 'WORKSPACE_MISMATCH' ? 400 : 404)
         const task = createTask(
           {
             workspace_id: approval.workspace_id,
-            title:
-              typeof payload.task_title === 'string' && payload.task_title
-                ? payload.task_title
-                : typeof payload.title === 'string'
-                  ? payload.title
-                  : '',
+            title,
+            status: typeof created.status === 'string' ? created.status : undefined,
+            progress: typeof created.progress === 'number' ? created.progress : null,
             meeting_id: meetingId,
             assignee_member_id:
               typeof payload.assignee_member_id === 'string' ? payload.assignee_member_id : null,
@@ -81,6 +95,13 @@ export const approvalHandlers = [
           return fail('INVALID_REQUEST', '변경할 태스크가 필요합니다.', 400)
         const task = db.tasks.find(({ task_id }) => task_id === approval.related_task_id)
         if (!task) return fail('TASK_NOT_FOUND', '태스크가 없습니다.', 404)
+        // 백엔드는 승인과 대상 태스크의 워크스페이스가 다르면 400 WORKSPACE_MISMATCH 다
+        if (task.workspace_id !== approval.workspace_id)
+          return fail(
+            'WORKSPACE_MISMATCH',
+            '승인 요청의 워크스페이스와 대상 태스크의 워크스페이스가 다릅니다.',
+            400,
+          )
         const changes: Record<string, unknown> = {}
         // start_date 는 승인 경로가 받지 않는다 (백엔드 _TASK_UPDATE_FIELDS 와 같다)
         for (const field of approvalTaskUpdateFields)

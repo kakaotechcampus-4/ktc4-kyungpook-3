@@ -167,6 +167,51 @@ it('refuses to roll back a history entry that a later change has superseded', as
   expect(toTask(await fetchDto<TaskDto>('/tasks/tk_01')).dueDate).toBe('2026-09-30')
 })
 
+// 백엔드 validate_workspace_ownership 과 같다. Task 에 연결하는 ID 의 소속을 본다
+it('refuses ids that do not exist or belong to another workspace', async () => {
+  const cases: [Record<string, unknown>, string, number][] = [
+    [{ assignee_member_id: 'mb_99' }, 'MEMBER_NOT_FOUND', 404],
+    [{ meeting_id: 'mt_99' }, 'MEETING_NOT_FOUND', 404],
+  ]
+  for (const [extra, code, status] of cases) {
+    await expect(
+      fetchDto(
+        '/tasks',
+        jsonRequest('POST', { workspace_id: 'ws_01', title: '연결 확인', ...extra }),
+      ),
+    ).rejects.toMatchObject({ code, status })
+  }
+  // ws_02 에는 태스크가 없으므로 ws_01 의 팀원을 붙이면 워크스페이스가 어긋난다
+  await expect(
+    fetchDto(
+      '/tasks',
+      jsonRequest('POST', {
+        workspace_id: 'ws_02',
+        title: '남의 팀원',
+        assignee_member_id: 'mb_01',
+      }),
+    ),
+  ).rejects.toMatchObject({ code: 'WORKSPACE_MISMATCH', status: 400 })
+  await expect(
+    fetchDto('/tasks/tk_01', jsonRequest('PATCH', { assignee_member_id: 'mb_99' })),
+  ).rejects.toMatchObject({ code: 'MEMBER_NOT_FOUND', status: 404 })
+  expect((await fetchDto<ListDto<TaskDto>>('/tasks?workspace_id=ws_01')).total).toBe(10)
+})
+
+// 백엔드는 title.strip() 이 비면 400 이다. 공백만 있는 제목이 통과하면 안 된다
+it('refuses a title that is only whitespace', async () => {
+  for (const body of [{ title: '   ' }, { title: '   ' }]) {
+    await expect(fetchDto('/tasks/tk_01', jsonRequest('PATCH', body))).rejects.toMatchObject({
+      code: 'INVALID_REQUEST',
+      status: 400,
+    })
+  }
+  await expect(
+    fetchDto('/tasks', jsonRequest('POST', { workspace_id: 'ws_01', title: '  ' })),
+  ).rejects.toMatchObject({ code: 'INVALID_REQUEST', status: 400 })
+  expect(toTask(await fetchDto<TaskDto>('/tasks/tk_01')).title).toBe('로그인 API 연동')
+})
+
 it('rejects missing tasks, empty changes, invalid progress and nonexistent workspaces', async () => {
   await expect(fetchDto('/tasks/missing')).rejects.toMatchObject({
     code: 'TASK_NOT_FOUND',

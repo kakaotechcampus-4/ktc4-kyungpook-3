@@ -10,6 +10,7 @@ import {
   validTaskFields,
   validDate,
   addHistory,
+  ownershipError,
 } from '../task-state'
 import { MOCK_NOW } from '../fixtures/constants'
 
@@ -54,6 +55,9 @@ export const taskHandlers = [
       return fail('INVALID_REQUEST', '태스크 요청이 올바르지 않습니다.', 400)
     if (!db.workspaces.some(({ workspace_id }) => workspace_id === body.workspace_id))
       return fail('WORKSPACE_NOT_FOUND', '워크스페이스가 없습니다.', 404)
+    const owned = ownershipError(body.workspace_id, body)
+    if (owned)
+      return fail(owned.code, owned.message, owned.code === 'WORKSPACE_MISMATCH' ? 400 : 404)
     return ok(
       createTask(
         {
@@ -80,6 +84,12 @@ export const taskHandlers = [
     const updates = taskUpdates(body)
     if (Object.keys(updates).length === 0)
       return fail('INVALID_REQUEST', '변경할 값이 없습니다.', 400)
+    // 백엔드 apply_task_updates 는 PATCH 에서 담당자만 검증한다
+    const owned = ownershipError(task.workspace_id, {
+      assignee_member_id: updates.assignee_member_id,
+    })
+    if (owned)
+      return fail(owned.code, owned.message, owned.code === 'WORKSPACE_MISMATCH' ? 400 : 404)
     updateTask(task, updates, typeof body.changed_by === 'string' ? body.changed_by : null)
     return ok(task)
   }),

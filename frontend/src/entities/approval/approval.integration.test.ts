@@ -66,6 +66,38 @@ it('resets approval and task data between tests and rejects without creating a t
   expect((await fetchDto<ListDto<TaskDto>>('/tasks?workspace_id=ws_01')).total).toBe(10)
 })
 
+// 백엔드 _apply_approval 은 payload 의 status·progress 도 읽고 validate_task_fields 를 거친다
+it('honours status and progress in a task_create payload and rejects invalid ones', async () => {
+  db.approvals[0].payload = {
+    ...db.approvals[0].payload,
+    status: 'in_progress',
+    progress: 30,
+  }
+  await fetchDto(
+    '/approvals/ap_01',
+    jsonRequest('PATCH', { status: 'approved', resolved_by: 'mb_01' }),
+  )
+  expect(await fetchDto<TaskDto>('/tasks/tk_90')).toMatchObject({
+    status: 'in_progress',
+    progress: 30,
+  })
+})
+
+it('refuses an approval whose payload carries an invalid status or progress', async () => {
+  db.approvals[1].payload = { ...db.approvals[1].payload, progress: 200 }
+  await expect(
+    fetchDto(
+      '/approvals/ap_02',
+      jsonRequest('PATCH', { status: 'approved', resolved_by: 'mb_01' }),
+    ),
+  ).rejects.toMatchObject({ code: 'INVALID_REQUEST', status: 400 })
+  // 실패한 승인은 그대로 pending 이고 태스크도 생기지 않는다
+  expect(
+    (await fetchDto<ListDto<ApprovalDto>>('/approvals?workspace_id=ws_01&status=pending')).total,
+  ).toBe(3)
+  expect((await fetchDto<ListDto<TaskDto>>('/tasks?workspace_id=ws_01')).total).toBe(10)
+})
+
 it('applies task-update payload instead of creating another task', async () => {
   db.approvals[0].type = 'task_update'
   db.approvals[0].related_task_id = 'tk_01'
