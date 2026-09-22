@@ -3,6 +3,7 @@ import type { Envelope } from '@/shared/types/api/envelope'
 import type { ListDto } from '@/shared/types/api/envelope'
 import type { IntegrationsDto } from '@/shared/types/api/integration'
 import type { WorkspaceDto } from '@/shared/types/api/workspace'
+import type { MemberDto } from '@/shared/types/api/member'
 import { toWorkspace } from './model/mapper'
 
 it('lists only user workspaces and changes onboarding state', async () => {
@@ -166,4 +167,20 @@ it('reports a null role for a workspace the signed-in user does not belong to', 
   expect(dto.role).toBeNull()
   // 매퍼는 null 을 member 로 내린다 — 권한을 넓히는 방향으로 틀리지 않는다
   expect(toWorkspace(dto).role).toBe('member')
+})
+
+// 백엔드는 워크스페이스를 만들 때 생성자를 PM Member 로 함께 저장한다 (workspaces.py).
+// 이게 없으면 가입 → 생성 → 팀원 목록 흐름의 초기 상태가 실 API 와 달라진다
+it('registers the creator as a PM member of the new workspace', async () => {
+  const created = await fetch('http://localhost:3000/api/v1/workspaces', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ name: '멤버 확인' }),
+  })
+  const { workspace_id } = unwrap((await created.json()) as Envelope<WorkspaceDto>, created.status)
+
+  const listed = await fetch(`http://localhost:3000/api/v1/members?workspace_id=${workspace_id}`)
+  const members = unwrap((await listed.json()) as Envelope<ListDto<MemberDto>>, listed.status)
+  expect(members.total).toBe(1)
+  expect(members.items[0]).toMatchObject({ role: 'pm', workspace_id })
 })

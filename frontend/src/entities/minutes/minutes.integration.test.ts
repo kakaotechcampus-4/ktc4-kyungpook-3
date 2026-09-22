@@ -2,6 +2,7 @@ import { http } from 'msw'
 import { server } from '@/shared/mock/server'
 import { ok } from '@/shared/mock/envelope'
 import { minutesFixtures } from '@/shared/mock/fixtures/minutes'
+import { db } from '@/shared/mock/db'
 import { fetchDto } from '@/shared/test/api'
 import type { MinutesDto } from '@/shared/types/api/minutes'
 import { toMinutes } from './model/mapper'
@@ -39,5 +40,22 @@ it('returns an empty body instead of an error when the meeting has no minutes ye
     summary: null,
     transcript: [],
     attendees: [],
+  })
+})
+
+// 백엔드는 현재 멤버가 PM 일 때만 can_review·can_undo 를 true 로 준다 (meetings.py:222).
+// 하드코딩하면 일반 팀원 화면에 PM 전용 확인·되돌리기 UI 가 열린다 (D-104)
+it('derives minutes permissions from the current role instead of hardcoding them', async () => {
+  // mt_09 는 ws_01 소속이고 현재 사용자가 PM 이다
+  expect(toMinutes(await fetchDto<MinutesDto>('/meetings/mt_09/minutes'))).toMatchObject({
+    canReview: true,
+    canUndo: true,
+  })
+
+  // ws_02 에서는 일반 팀원이다. 그 워크스페이스의 회의록은 권한이 없어야 한다
+  db.workspaces.find(({ workspace_id }) => workspace_id === 'ws_01')!.role = 'member'
+  expect(toMinutes(await fetchDto<MinutesDto>('/meetings/mt_09/minutes'))).toMatchObject({
+    canReview: false,
+    canUndo: false,
   })
 })

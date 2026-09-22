@@ -2,6 +2,7 @@ import { http } from 'msw'
 import { db } from '../db'
 import { fail, list, ok } from '../envelope'
 import { MOCK_NOW } from '../fixtures/constants'
+import { nextId } from '../utils'
 import { requireAuth, requireMember } from '../auth-guard'
 const base = '/api/v1/workspaces'
 export const workspaceHandlers = [
@@ -61,6 +62,21 @@ export const workspaceHandlers = [
       },
     }
     db.workspaces.push(workspace)
+    // 백엔드는 생성자를 PM Member 로 함께 저장한다 (workspaces.py 의 create_workspace).
+    // 이게 없으면 가입 → 워크스페이스 생성 → 팀원 목록 흐름의 초기 상태가 실 API 와 다르다
+    db.members.push({
+      member_id: nextId(
+        'mb',
+        db.members.map(({ member_id }) => member_id),
+        90,
+      ),
+      workspace_id: workspace.workspace_id,
+      display_name: db.session.user.name,
+      discord_user_id: null,
+      notion_name: null,
+      role: 'pm',
+      created_at: MOCK_NOW,
+    })
     db.integrations[workspace.workspace_id] = {
       discord: { status: 'not_connected', display_name: null, connected_at: null },
       notion: { status: 'not_connected', display_name: null, connected_at: null },

@@ -480,7 +480,7 @@ PR #59 가 §4.1~§4.5 를 구현했다. **요청의 성격이 바뀌었다** �
 | 6 | `GET /integrations` | `status` 가 `connected` \| `not_connected` **둘뿐.** `revoked` 가 절대 안 나온다 | **`revoked` 를 구분해 달라.** 미연결과 끊김은 다른 모달이다 (D-097, D-100) |
 | 7 | `integration.display_name` | `"Discord 연결됨"` 같은 **생성 문자열** | 실제 서버 · 워크스페이스 이름 |
 | 8 | `DELETE .../integrations/{provider}` | **204, 본문 없음** | 봉투로 (§1) |
-| 9 | `POST .../meetings/upload` | `attendee_member_ids` 를 **받고 버린다.** 파일도 저장하지 않는다(TODO) | 참석자 저장 (D-085, D-086). Notion 미연결 409 `INTEGRATION_NOT_CONNECTED` (D-096), 용량 초과 413 `AUDIO_TOO_LARGE` |
+| 9 | `POST .../meetings/upload` | `attendee_member_ids` 를 **받고 버린다.** 파일도 저장하지 않는다(TODO). 게다가 **`str = Form(...)` 단일 값**이라 같은 이름을 반복해 보내도 하나만 잡는다 | 참석자 저장 (D-085, D-086). **받는 형식을 `list[str] = Form(...)` 로** — 프론트는 같은 이름 필드를 반복해 보낸다(impl-decision 2026-09-18). 지금 형식으로 저장을 구현하면 **참석자 일부만 저장된다.** Notion 미연결 409 `INTEGRATION_NOT_CONNECTED` (D-096), 용량 초과 413 `AUDIO_TOO_LARGE` |
 | 10 | `GET .../discord/members` | **하드코딩 2명** (`disc_01`, `disc_02`) | 연결된 서버의 실제 사용자 목록 |
 | 11 | `GET /meetings/{id}/minutes` | `transcript` 가 **하드코딩 1줄.** `attendees` 는 `audio_segment` 에서 역산 | §4.7-5 의 구조화 응답. 참석자는 회의 참석자 명단에서 |
 | 12 | 승인·반려 처리 | `extraction_item.approval_id` 를 **어느 쪽으로 닫혀도 비우지 않는다.** 반려는 `extraction_item` 을 아예 건드리지 않는다 | **승인이든 반려든 닫히면 `approval_id` 를 `null` 로.** 안 되면 프론트가 `GET /approvals?status=pending` 과 조인해 우회한다 (§3.1) |
