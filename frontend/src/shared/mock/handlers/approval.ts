@@ -108,6 +108,16 @@ export const approvalHandlers = [
           if (field in payload) changes[field] = payload[field]
         if (!validTaskFields(changes))
           return fail('INVALID_REQUEST', '태스크 변경 값이 올바르지 않습니다.', 400)
+        // 백엔드 apply_task_updates 는 값 검증 뒤 담당자 소속을 본다. 기준은 task.workspace_id 다
+        const assigned = ownershipError(task.workspace_id, {
+          assignee_member_id: changes.assignee_member_id,
+        })
+        if (assigned)
+          return fail(
+            assigned.code,
+            assigned.message,
+            assigned.code === 'WORKSPACE_MISMATCH' ? 400 : 404,
+          )
         updateTask(task, taskUpdates(changes), body.resolved_by, 'meeting')
       }
     }

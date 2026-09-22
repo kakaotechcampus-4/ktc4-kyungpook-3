@@ -32,17 +32,20 @@ export const workspaceHandlers = [
     // D-019 는 대소문자를 구분한다. Alpha 와 alpha 는 서로 다른 워크스페이스다.
     // 정규화는 앞뒤 공백 제거와 연속 공백 축약까지다 (D-016, D-018, 계약 §4.0-②-2).
     const normalize = (value: string) => value.trim().replace(/\s+/g, ' ')
+    // D-016·D-018 은 저장 전에도 정규화하라고 정했다. 비교만 정규화하고 원본을 저장하면
+    // "  새   팀  " 이 그대로 남는다
+    const normalizedName = normalize(name)
     if (
       db.workspaces.some(
         (workspace) =>
           account?.workspaceIds.includes(workspace.workspace_id) &&
-          normalize(workspace.name) === normalize(name),
+          normalize(workspace.name) === normalizedName,
       )
     )
       return fail('WORKSPACE_NAME_DUPLICATED', '이미 존재하는 이름입니다.', 409)
     const workspace = {
       workspace_id: `ws_${String(db.workspaces.length + 1).padStart(2, '0')}`,
-      name,
+      name: normalizedName,
       role: 'pm',
       created_at: MOCK_NOW,
       onboarding: {

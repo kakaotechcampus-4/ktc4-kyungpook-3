@@ -100,3 +100,16 @@ it('treats names that differ only by letter case as different workspaces', async
   expect((await create('  Alpha  ')).status).toBe(409)
   expect((await create('Al  pha')).status).toBe(201)
 })
+
+// D-016·D-018 은 "저장하거나 중복 검사하기 전에" 정규화하라고 정했다.
+// 비교에만 쓰고 원본을 저장하면 "  새   팀  " 이 그대로 남는다
+it('stores the normalized workspace name, not the raw input', async () => {
+  const response = await fetch('http://localhost:3000/api/v1/workspaces', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ name: '  새   팀  ' }),
+  })
+  expect(response.status).toBe(201)
+  const created = unwrap((await response.json()) as Envelope<WorkspaceDto>, response.status)
+  expect(created.name).toBe('새 팀')
+})

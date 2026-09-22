@@ -120,6 +120,25 @@ it('applies task-update payload instead of creating another task', async () => {
   expect((await fetchDto<ListDto<TaskDto>>('/tasks?workspace_id=ws_01')).total).toBe(10)
 })
 
+// 백엔드 apply_task_updates 는 값 검증 뒤 담당자 소속을 본다 (services/tasks.py)
+it('refuses a task_update approval whose assignee does not exist', async () => {
+  db.approvals[0].type = 'task_update'
+  db.approvals[0].related_task_id = 'tk_01'
+  db.approvals[0].payload = { assignee_member_id: 'mb_99' }
+  await expect(
+    fetchDto(
+      '/approvals/ap_01',
+      jsonRequest('PATCH', { status: 'approved', resolved_by: 'mb_01' }),
+    ),
+  ).rejects.toMatchObject({ code: 'MEMBER_NOT_FOUND', status: 404 })
+
+  // 실패했으므로 태스크도 승인도 그대로다
+  expect(await fetchDto<TaskDto>('/tasks/tk_01')).toMatchObject({ assignee_member_id: 'mb_01' })
+  expect(
+    (await fetchDto<ListDto<ApprovalDto>>('/approvals?workspace_id=ws_01&status=pending')).total,
+  ).toBe(3)
+})
+
 it('requires the resolver and reports absent approvals or invalid filters', async () => {
   await expect(
     fetchDto('/approvals/ap_01', jsonRequest('PATCH', { status: 'approved' })),
