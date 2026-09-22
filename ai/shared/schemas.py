@@ -166,15 +166,26 @@ class JudgeInput(_Base):
         )
 
 
+TASK_STATUSES: tuple[str, ...] = ("todo", "in_progress", "blocked", "done")  # BE TaskStatus 와 동일 값
+
+
 @dataclass
 class JudgeResult(_Base):
-    """Phase 2 Terra 출력. 계획서 스키마 그대로."""
+    """Terra 2단계 출력. candidates 와 비교해서 실제로 Notion 을 바꿔야 하는지 최종 판단한다.
+
+    is_meaningful=False 는 "새 내용이라 후보가 없다"는 뜻이 아니다 — candidates 가 없어서
+    새로 만들어야 하는 경우는 is_meaningful=True, is_new=True 다. is_meaningful=False 는
+    candidates 와 비교했더니 이미 반영된 내용이거나, 2단계의 더 넓은 문맥으로 보니 애초에
+    Notion 을 바꿀 필요가 없었던 경우다 — 이때는 category/is_new/matched_task_id/status 모두
+    의미 없으니 호출자는 Luna(DraftResult) 를 부르지 않고 그냥 버린다.
+    """
 
     is_meaningful: bool
-    category: str
-    confidence: float
-    evidence: str
-    method: str = "rules"
+    category: str  # schedule|assignee|scope|decision|none
+    is_new: bool = False  # True=새 Notion 항목 생성, False=matched_task_id 항목 수정
+    matched_task_id: str | None = None  # is_new=False 일 때 수정 대상. is_new=True 면 None
+    status: str | None = None  # todo|in_progress|blocked|done. 명시적 언급 없으면 None
+    evidence: str = ""
 
     VALID: ClassVar[tuple[str, ...]] = JUDGE_CATEGORIES
 
