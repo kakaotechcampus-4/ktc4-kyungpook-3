@@ -2,19 +2,19 @@ import { unwrap } from '@/shared/api/envelope'
 import type { Envelope } from '@/shared/types/api/envelope'
 import type { ListDto } from '@/shared/types/api/envelope'
 import type { IntegrationsDto } from '@/shared/types/api/integration'
-import type { WorkspaceSummaryDto } from '@/shared/types/api/workspace'
 import type { WorkspaceDto } from '@/shared/types/api/workspace'
 import { toWorkspace } from './model/mapper'
 
 it('lists only user workspaces and changes onboarding state', async () => {
   const listed = await fetch('http://localhost:3000/api/v1/workspaces')
-  const summaries = unwrap(
-    (await listed.json()) as Envelope<ListDto<WorkspaceSummaryDto>>,
-    listed.status,
-  )
+  const summaries = unwrap((await listed.json()) as Envelope<ListDto<WorkspaceDto>>, listed.status)
   expect(summaries.total).toBe(2)
-  expect(summaries.items.find(({ workspace_id }) => workspace_id === 'ws_01')).toMatchObject({
-    role: 'pm',
+  // 백엔드는 목록에서도 role 과 onboarding 을 넣는다 (계약 §2.1).
+  // 목록에 onboarding 이 없으면 선택 화면이 설정 미완료 표시를 못 하고 상세를 다시 부르게 된다 (D-070)
+  const listedWs02 = summaries.items.find(({ workspace_id }) => workspace_id === 'ws_02')!
+  expect(toWorkspace(listedWs02)).toMatchObject({
+    role: 'member',
+    onboarding: { completed: false, currentStep: 'connect_notion' },
   })
   const update = await fetch('http://localhost:3000/api/v1/workspaces/ws_02/onboarding', {
     method: 'PATCH',

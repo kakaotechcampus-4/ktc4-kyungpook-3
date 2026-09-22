@@ -7,7 +7,12 @@ it('maps integrations and persists a disconnected provider', async () => {
     toIntegrations(await fetchDto<IntegrationsDto>('/workspaces/ws_01/integrations')).discord
       .status,
   ).toBe('connected')
-  await fetchDto('/workspaces/ws_01/integrations/discord', { method: 'DELETE' })
+  // 204 무본문이라 fetchDto 로 읽을 수 없다. 상태 코드만 본다
+  const removed = await fetch(`${location.origin}/api/v1/workspaces/ws_01/integrations/discord`, {
+    method: 'DELETE',
+  })
+  expect(removed.status).toBe(204)
+  expect(await removed.text()).toBe('')
   expect(
     toIntegrations(await fetchDto<IntegrationsDto>('/workspaces/ws_01/integrations')).discord,
   ).toEqual({ provider: 'discord', status: 'not_connected', displayName: null, connectedAt: null })

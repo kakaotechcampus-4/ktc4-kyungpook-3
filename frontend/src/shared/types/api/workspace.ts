@@ -4,6 +4,8 @@ export interface OnboardingDto {
   current_step: string | null
   steps: { step: string; status: string }[]
 }
+// 목록과 상세가 같은 모양이다. 백엔드 WorkspaceListResponse.items 가 WorkspaceResponse 다.
+// 화면이 요약만 필요하면 매퍼(toWorkspaceSummary)가 좁힌다
 export interface WorkspaceSummaryDto {
   workspace_id: string
   name: string

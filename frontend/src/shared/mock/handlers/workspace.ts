@@ -12,13 +12,9 @@ export const workspaceHandlers = [
             .find(({ session }) => session.user.user_id === db.session.user.user_id)
             ?.workspaceIds.includes(workspace_id),
         )
-        .sort((a, b) => b.created_at.localeCompare(a.created_at))
-        .map(({ workspace_id, name, role, created_at }) => ({
-          workspace_id,
-          name,
-          role,
-          created_at,
-        })),
+        // 백엔드는 목록에서도 _build_workspace_response 를 불러 role 과 onboarding 을 넣는다.
+        // 여기서 깎으면 워크스페이스 선택 화면이 설정 미완료 상태를 못 받는다 (계약 §2.1, D-070)
+        .sort((a, b) => b.created_at.localeCompare(a.created_at)),
     ),
   ),
   http.post(base, async ({ request }) => {
