@@ -146,6 +146,15 @@ export const memberHandlers = [
         ['manual', 'discord_profile', 'learned'].includes(body.source))
     if (typeof body.alias_text !== 'string' || !validType || !validSource)
       return fail('INVALID_REQUEST', '별칭 요청이 올바르지 않습니다.', 400)
+    // 백엔드는 같은 workspace_id + member_id + alias_text 가 있으면 기존 행을 그대로 돌려준다.
+    // 새로 만들지 않고 201 도 아닌 200 이다 (members.py 의 create_alias)
+    const duplicate = db.aliases.find(
+      (existing) =>
+        existing.workspace_id === member.workspace_id &&
+        existing.member_id === member.member_id &&
+        existing.alias_text === body.alias_text,
+    )
+    if (duplicate) return ok(duplicate)
     const alias = {
       alias_id: nextId(
         'al',

@@ -19,10 +19,17 @@ export const meetingHandlers = [
     return list(
       db.meetingSummaries
         .filter((summary) => meetings.some(({ meeting_id }) => meeting_id === summary.meeting_id))
-        .map((summary) => ({
-          ...summary,
-          status: meetings.find(({ meeting_id }) => meeting_id === summary.meeting_id)!.status,
-        }))
+        .map((summary) => {
+          const meeting = meetings.find(({ meeting_id }) => meeting_id === summary.meeting_id)!
+          return {
+            ...summary,
+            status: meeting.status,
+            // 백엔드는 audio 가 없으면 0 을 주고, processed_at 에는 상태와 무관하게
+            // ended_at 을 넣는다 (workspaces.py 의 list_workspace_meetings)
+            duration_ms: summary.duration_ms ?? 0,
+            processed_at: meeting.ended_at,
+          }
+        })
         .sort((a, b) => b.started_at.localeCompare(a.started_at)),
     )
   }),

@@ -29,3 +29,15 @@ it('supports a non-PM permission override without leaking previous handler state
     canUndo: false,
   })
 })
+
+// 백엔드는 extraction 이 없어도 200 을 준다. summary=null, transcript=[] 로 초기화한 뒤
+// 그대로 내려보낸다 (meetings.py). MSW 가 400 을 내면 정상 빈 상태가 오류 UI 로만 검증된다
+it('returns an empty body instead of an error when the meeting has no minutes yet', async () => {
+  const minutes = toMinutes(await fetchDto<MinutesDto>('/meetings/mt_10/minutes'))
+  expect(minutes).toMatchObject({
+    meetingId: 'mt_10',
+    summary: null,
+    transcript: [],
+    attendees: [],
+  })
+})

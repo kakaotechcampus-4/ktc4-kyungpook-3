@@ -16,23 +16,13 @@ it('lists only user workspaces and changes onboarding state', async () => {
     role: 'member',
     onboarding: { completed: false, currentStep: 'connect_notion' },
   })
-  const update = await fetch('http://localhost:3000/api/v1/workspaces/ws_02/onboarding', {
+  // ws_02 에서는 member 라 온보딩을 바꿀 수 없다. 백엔드가 PM 만 허용한다
+  const refused = await fetch('http://localhost:3000/api/v1/workspaces/ws_02/onboarding', {
     method: 'PATCH',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ step: 'connect_notion', action: 'complete' }),
   })
-  // 실 API 는 빈 객체만 준다. 갱신된 워크스페이스를 기대하면 안 된다 (계약 §4.2)
-  expect(unwrap((await update.json()) as Envelope<Record<string, never>>, update.status)).toEqual(
-    {},
-  )
-
-  // 갱신 결과는 상세를 다시 조회해서 확인한다
-  const detail = await fetch('http://localhost:3000/api/v1/workspaces/ws_02')
-  const updated = toWorkspace(
-    unwrap((await detail.json()) as Envelope<WorkspaceDto>, detail.status),
-  )
-  expect(updated.onboarding.currentStep).toBe('connect_members')
-  expect(updated.onboarding.steps[2]).toEqual({ step: 'connect_notion', status: 'completed' })
+  expect(refused.status).toBe(403)
 })
 
 it('collapses internal whitespace when detecting duplicate workspace names', async () => {
@@ -116,4 +106,44 @@ it('stores the normalized workspace name, not the raw input', async () => {
   expect(response.status).toBe(201)
   const created = unwrap((await response.json()) as Envelope<WorkspaceDto>, response.status)
   expect(created.name).toBe('새 팀')
+})
+
+// 온보딩 단계 전이는 PM 인 워크스페이스에서만 확인할 수 있다. 새로 만들면 생성자가 PM 이고
+// 네 단계가 모두 pending 이다. PATCH 응답은 빈 객체라 갱신 결과는 상세 재조회로 본다 (계약 §4.2)
+it('advances onboarding steps in a workspace the user owns', async () => {
+  const created = await fetch('http://localhost:3000/api/v1/workspaces', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ name: '온보딩 확인' }),
+  })
+  expect(created.status).toBe(201)
+  const { workspace_id } = unwrap((await created.json()) as Envelope<WorkspaceDto>, created.status)
+
+  const update = await fetch(`http://localhost:3000/api/v1/workspaces/${workspace_id}/onboarding`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ step: 'create_workspace', action: 'complete' }),
+  })
+  expect(unwrap((await update.json()) as Envelope<Record<string, never>>, update.status)).toEqual(
+    {},
+  )
+
+  const detail = await fetch(`http://localhost:3000/api/v1/workspaces/${workspace_id}`)
+  const updated = toWorkspace(
+    unwrap((await detail.json()) as Envelope<WorkspaceDto>, detail.status),
+  )
+  expect(updated.onboarding.currentStep).toBe('connect_discord')
+  expect(updated.onboarding.steps[0]).toEqual({ step: 'create_workspace', status: 'completed' })
+
+  // 건너뛴 단계는 skipped 로 남고 재개 대상에서 빠진다 (D-012)
+  await fetch(`http://localhost:3000/api/v1/workspaces/${workspace_id}/onboarding`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ step: 'connect_discord', action: 'skip' }),
+  })
+  const again = await fetch(`http://localhost:3000/api/v1/workspaces/${workspace_id}`)
+  expect(
+    toWorkspace(unwrap((await again.json()) as Envelope<WorkspaceDto>, again.status)).onboarding
+      .currentStep,
+  ).toBe('connect_notion')
 })

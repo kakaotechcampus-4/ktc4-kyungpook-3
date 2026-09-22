@@ -85,6 +85,8 @@ export const workspaceHandlers = [
     if (denied) return denied
     const workspace = db.workspaces.find(({ workspace_id }) => workspace_id === params.workspaceId)
     if (!workspace) return fail('WORKSPACE_NOT_FOUND', '워크스페이스가 없습니다.', 404)
+    // 백엔드는 PM 만 온보딩을 바꿀 수 있다 (workspaces.py 의 update_onboarding)
+    if (workspace.role !== 'pm') return fail('FORBIDDEN', '이 작업을 수행할 권한이 없습니다.', 403)
     const body = (await request.json()) as { step?: unknown; action?: unknown }
     const item = workspace.onboarding.steps.find(({ step }) => step === body.step)
     if (!item || (body.action !== 'skip' && body.action !== 'complete'))

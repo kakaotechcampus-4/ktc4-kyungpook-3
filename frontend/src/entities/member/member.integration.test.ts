@@ -149,3 +149,27 @@ it('drops a detected name from the unresolved list once exactly one verified ali
   await addAlias('mb_03', true)
   expect(await unresolved()).toEqual(['지훈'])
 })
+
+// 백엔드는 같은 workspace_id + member_id + alias_text 면 기존 행을 그대로 돌려준다.
+// 새로 만들면 미해결 별칭의 "verified 정확히 1개" 계산까지 실제와 달라진다 (members.py)
+it('returns the existing alias instead of creating a duplicate', async () => {
+  const base = `${location.origin}/api/v1`
+  const create = () =>
+    fetch(`${base}/members/mb_01/aliases`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ alias_text: '중복 별칭' }),
+    })
+
+  const first = await create()
+  expect(first.status).toBe(201)
+  const firstAlias = unwrap((await first.json()) as Envelope<MemberAliasDto>, first.status)
+
+  const second = await create()
+  const secondAlias = unwrap((await second.json()) as Envelope<MemberAliasDto>, second.status)
+  expect(secondAlias.alias_id).toBe(firstAlias.alias_id)
+
+  const listed = await fetch(`${base}/members/aliases?workspace_id=ws_01`)
+  const aliases = unwrap((await listed.json()) as Envelope<ListDto<MemberAliasDto>>, listed.status)
+  expect(aliases.items.filter(({ alias_text }) => alias_text === '중복 별칭')).toHaveLength(1)
+})

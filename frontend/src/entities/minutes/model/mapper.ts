@@ -5,7 +5,7 @@ import type { Minutes } from './types'
 export function toMinutes(dto: MinutesDto): Minutes {
   return {
     meetingId: dto.meeting_id,
-    title: dto.title,
+    title: dto.title ?? '',
     startedAt: dto.started_at,
     durationMs: dto.duration_ms,
     source: enumValue(
@@ -18,11 +18,13 @@ export function toMinutes(dto: MinutesDto): Minutes {
       memberId: attendee.member_id,
       displayName: attendee.display_name,
     })),
-    summary: {
-      overview: dto.summary.overview,
-      keyPoints: [...dto.summary.key_points],
-      decisions: [...dto.summary.decisions],
-    },
+    summary: dto.summary
+      ? {
+          overview: dto.summary.overview,
+          keyPoints: [...dto.summary.key_points],
+          decisions: [...dto.summary.decisions],
+        }
+      : null,
     transcript: dto.transcript.map((line) => ({
       atMs: line.at_ms,
       speakerMemberId: line.speaker_member_id,

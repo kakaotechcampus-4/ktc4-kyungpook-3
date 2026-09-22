@@ -22,7 +22,8 @@ export interface Minutes {
   durationMs: number
   source: MeetingSource
   attendees: MinutesAttendee[]
-  summary: MinutesSummary
+  /** 실 API 에서는 항상 `null` 이다. 요약을 채우는 경로가 아직 없다 (계약 §4.0-②-11) */
+  summary: MinutesSummary | null
   transcript: TranscriptLine[]
   canReview: boolean
   canUndo: boolean

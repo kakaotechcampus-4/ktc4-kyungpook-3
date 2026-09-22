@@ -11,8 +11,21 @@ export const minutesHandlers = [
     const denied = requireMember(meeting.workspace_id)
     if (denied) return denied
     const minutes = db.minutes.find(({ meeting_id }) => meeting_id === params.meetingId)
-    return minutes
-      ? ok(minutes)
-      : fail('INVALID_REQUEST', '회의록 처리가 아직 끝나지 않았습니다.', 400)
+    if (minutes) return ok(minutes)
+    // 백엔드는 extraction 이 없어도 200 을 준다. summary=null, transcript=[] 로 초기화한 뒤
+    // 그대로 내려보낸다 (meetings.py 의 get_meeting_minutes). 빈 상태는 오류가 아니다.
+    return ok({
+      meeting_id: meeting.meeting_id,
+      title: meeting.title,
+      started_at: meeting.started_at,
+      duration_ms: 0,
+      source:
+        db.meetingSummaries.find(({ meeting_id }) => meeting_id === meeting.meeting_id)?.source ??
+        'discord',
+      attendees: [],
+      summary: null,
+      transcript: [],
+      permissions: { can_review: true, can_undo: true },
+    })
   }),
 ]
