@@ -474,8 +474,28 @@ PR #59 가 §4.1~§4.5 를 구현했다. **요청의 성격이 바뀌었다** �
 
 | 항목 | 백엔드 | MSW |
 |---|---|---|
-| `progress` | `int(value)` 로 강제 변환한다. `"30"` → 30, `30.9` → 30, `true` → 1 | 정수형 `number` 만 받는다 |
+| `progress` — **승인 payload 경로만** | `validate_task_fields` 의 `int(value)` 가 그대로 돈다. `"30"` → 30, `30.9` → 30, `true` → 1 | 정수형 `number` 만 받는다 |
 | `title` 300자 | Python `len()` — 유니코드 **코드 포인트** | JS `.length` — UTF-16 **코드 단위**. 이모지 등 비-BMP 가 많으면 MSW 가 먼저 막는다 |
+
+**`progress` 의 편차는 승인 경로에만 있다.** 값이 태스크에 들어가는 길이 둘인데 한쪽만 타입 검사를 거친다.
+
+- `POST` · `PATCH /tasks` — 본문이 먼저 `TaskCreateRequest` · `TaskUpdateRequest` 를 통과한다.
+  `progress: int | None = Field(None, ge=0, le=100)` 이라 **`30.9` 는 여기서 거절되고** `int(value)` 까지 가지 않는다.
+- `PATCH /approvals/{id}` 의 반영 — `approval.payload` 가 `Text` 컬럼이라 `json.loads` 한 **타입 없는 dict** 다.
+  pydantic 을 거치지 않아 `validate_task_fields` 의 `int(value)` 가 그대로 돈다.
+
+계약만 읽고 **직접 태스크 API 도 소수점을 받아 준다고 오해하면 안 된다.**
+
+**워크스페이스 이름 길이 — 제품 결정과 서버가 다르다.** 요청이 아니라 기록이다.
+
+| | 값 | 기준 |
+|---|---|---|
+| D-017 (제품 결정) | **1~20자** | 앞뒤 공백을 제거한 뒤 |
+| 백엔드 | **1~100자** | `Field(min_length=1, max_length=100)` — 원본 그대로 |
+
+**서버를 20자로 좁혀 달라고 요청하지 않는다.** D-160 이 이미 구현된 스키마의 변경을 요청하지 않기로 정했고, `100 → 20` 은 변경이다.
+**D-017 은 폼이 막는다** — M3 의 `shared/lib/validation` 이 정규화 후 1~20자를 검사한다(개발 계획 M3).
+MSW 는 **API 를 흉내내므로 100자 기준을 그대로 쓴다.** 여기에 20자를 넣으면 「mock 은 막는데 실 API 는 받는」 반대 방향 불일치가 생긴다.
 
 **②-1 의 실제 범위** — PR #59 가 인증을 넣었지만 라우터별로 적용이 갈린다. `main.py` 에 전역 미들웨어도 없다.
 숫자는 `Depends(get_current_user)` · `Depends(get_current_member)` 를 실제로 건 **엔드포인트 수**다.

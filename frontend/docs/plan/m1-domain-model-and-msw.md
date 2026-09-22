@@ -461,8 +461,11 @@ export interface ExtractionItem {
   dueDate: string | null
   dueRaw: string | null
   evidence: ExtractionEvidence
-  appliedTaskId: string | null   // gate 'auto' 일 때만
-  approvalId: string | null      // gate 'review' | 'hold' 일 때만
+  // 생성 시점에는 gate 'auto' 면 appliedTaskId, 'review'|'hold' 면 approvalId 하나만 채워진다.
+  // 승인 뒤에는 둘 다 채워진다 — 백엔드가 task_id 를 넣으면서 approval_id 도 gate 도 그대로 둔다.
+  // 그래서 gate 로 어느 쪽이 채워졌는지 추론하면 안 된다 (계약 §3.1, §4.0-②-12)
+  appliedTaskId: string | null
+  approvalId: string | null
 }
 
 export interface Extraction { id: string; meetingId: string; items: ExtractionItem[] }
@@ -1038,7 +1041,8 @@ afterEach(() => { vi.useRealTimers() })
 | `linkDiscordUsers` | §9-3 의 네 경로 |
 | `filterByTab` | `in_progress` 7건 · `done` 3건 |
 | `isOverdue` | `MOCK_TODAY` 기준 `tk_02`·`tk_07` 만 참, `done` 인 `tk_08`(09-12)은 거짓 |
-| 추출 항목 | `gate`·식별자 배타성 · `visibleItems(canReview: false)` 가 `auto` 3건만 준다 |
+| 추출 항목 | **픽스처의** `gate`·식별자 배타성(생성 직후 상태) · `visibleItems(canReview: false)` 가 `auto` 3건만 준다 |
+| 추출 항목 — 승인·반려 후 | 승인하면 `approval_id` 가 남은 채 `task_id` 가 채워진다 · 반려하면 항목이 그대로여서 `pendingItems` 는 열린 승인 집합과 조인해야 빠진다 |
 
 **하지 않는 것** — 화면 렌더 테스트(M4~), 느린 응답·로딩 상태 테스트, Zod 스키마 테스트, 커버리지 수치 목표.
 
