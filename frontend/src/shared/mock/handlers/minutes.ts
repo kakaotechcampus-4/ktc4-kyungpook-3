@@ -1,13 +1,17 @@
 import { http } from 'msw'
 import { db } from '../db'
 import { ok, fail } from '../envelope'
-import { requireMember } from '../auth-guard'
+import { requireAuth, requireMember } from '../auth-guard'
 
 export const minutesHandlers = [
   http.get('/api/v1/meetings/:meetingId/minutes', ({ params }) => {
+    // 백엔드는 Depends(get_current_user) 가 함수 본문보다 먼저 돈다. 비로그인이면 회의가
+    // 있는지 보기 전에 401 이다 — 리소스 존재 여부를 먼저 드러내지 않는다 (meetings.py:159)
+    const unauthenticated = requireAuth()
+    if (unauthenticated) return unauthenticated
     const meeting = db.meetings.find(({ meeting_id }) => meeting_id === params.meetingId)
     if (!meeting) return fail('MEETING_NOT_FOUND', '회의가 없습니다.', 404)
-    // 백엔드는 get_current_user 뒤에 회의의 워크스페이스 소속을 직접 확인해 403 을 낸다
+    // 회의를 찾은 뒤에야 그 워크스페이스 소속을 확인해 403 을 낸다
     const denied = requireMember(meeting.workspace_id)
     if (denied) return denied
     const minutes = db.minutes.find(({ meeting_id }) => meeting_id === params.meetingId)

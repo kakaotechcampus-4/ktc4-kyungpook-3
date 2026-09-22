@@ -9,7 +9,9 @@ export interface OnboardingDto {
 export interface WorkspaceSummaryDto {
   workspace_id: string
   name: string
-  role: string
+  // 현재 사용자 기준이라 비소속이면 null 이다 (WorkspaceResponse.role 이 Optional).
+  // 목록은 소속만 반환하므로 항상 채워지고, 상세에서만 null 이 올 수 있다
+  role: string | null
   created_at: string
 }
 export interface WorkspaceDto extends WorkspaceSummaryDto {

@@ -78,7 +78,14 @@ export const workspaceHandlers = [
     const denied = requireAuth()
     if (denied) return denied
     const workspace = db.workspaces.find(({ workspace_id }) => workspace_id === params.workspaceId)
-    return workspace ? ok(workspace) : fail('WORKSPACE_NOT_FOUND', '워크스페이스가 없습니다.', 404)
+    if (!workspace) return fail('WORKSPACE_NOT_FOUND', '워크스페이스가 없습니다.', 404)
+    // role 은 현재 사용자 기준이다. 백엔드는 멤버를 조회해 비소속이면 member=None 이 되고
+    // _build_workspace_response 가 role 을 채우지 않아 null 이 된다 (workspaces.py:92)
+    const account = db.accounts.find(
+      ({ session }) => session.user.user_id === db.session.user.user_id,
+    )
+    const isMember = account?.workspaceIds.includes(workspace.workspace_id) ?? false
+    return ok({ ...workspace, role: isMember ? workspace.role : null })
   }),
   http.patch(`${base}/:workspaceId/onboarding`, async ({ params, request }) => {
     const denied = requireMember(String(params.workspaceId))

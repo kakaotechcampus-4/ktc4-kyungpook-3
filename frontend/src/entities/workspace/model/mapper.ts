@@ -17,9 +17,10 @@ const statuses: OnboardingStepStatus[] = ['pending', 'completed', 'skipped']
 function warnUnknown(field: string, value: string): void {
   if (import.meta.env.DEV) console.warn(`Unknown ${field}: ${value}`)
 }
-function safeRole(value: string): Role {
+function safeRole(value: string | null): Role {
   if (value === 'pm' || value === 'member') return value
-  warnUnknown('workspace role', value)
+  // null 은 "이 워크스페이스의 멤버가 아니다" 라는 정상 응답이다. 경고하지 않는다
+  if (value !== null) warnUnknown('workspace role', value)
   return 'member'
 }
 function safeStep(value: string): OnboardingStep | null {

@@ -154,7 +154,8 @@ export const memberHandlers = [
         existing.member_id === member.member_id &&
         existing.alias_text === body.alias_text,
     )
-    if (duplicate) return ok(duplicate)
+    // 라우트 선언이 status_code=201 이라 기존 행을 돌려줘도 201 이다 (members.py:215)
+    if (duplicate) return ok(duplicate, { status: 201 })
     const alias = {
       alias_id: nextId(
         'al',

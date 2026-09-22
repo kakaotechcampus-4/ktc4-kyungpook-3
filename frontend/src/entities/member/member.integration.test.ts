@@ -166,6 +166,8 @@ it('returns the existing alias instead of creating a duplicate', async () => {
   const firstAlias = unwrap((await first.json()) as Envelope<MemberAliasDto>, first.status)
 
   const second = await create()
+  // 라우트 선언이 status_code=201 이라 기존 행을 돌려줘도 201 이다. 200 이 아니다
+  expect(second.status).toBe(201)
   const secondAlias = unwrap((await second.json()) as Envelope<MemberAliasDto>, second.status)
   expect(secondAlias.alias_id).toBe(firstAlias.alias_id)
 

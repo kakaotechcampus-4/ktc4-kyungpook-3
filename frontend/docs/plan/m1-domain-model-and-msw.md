@@ -1026,41 +1026,84 @@ afterEach(() => { vi.useRealTimers() })
 
 ### 10-1. 실 API 대조 (2026-09-23)
 
-handler 35개를 `origin/develop` 의 백엔드 라우트 38개와 맞췄다. 축은 다섯이다.
+handler 35개를 `origin/develop` 의 백엔드 라우트 38개와 맞췄다.
 
-| 축 | 결과 |
-|---|---|
-| 경로 · 메서드 | ✅ 일치 |
-| 성공 상태코드 | ✅ 일치 — 201 · 202 · 204 까지 |
-| 오류 코드 | 2건 어긋나 고쳤다 |
-| 응답 필드 | 3건 어긋나 고쳤다 |
-| 인증 · 멤버십 | 11개 handler 가 재현하지 않아 붙였다 (§10-2) |
+**먼저 원칙.** MSW 는 **스텁이 아니라 계약을 구현한다.** 백엔드에 미완성이 많아, 실 API 를 그대로 흉내내면
+화면을 만들 수 없다(D-172). 그래서 「다르다」가 곧 「틀렸다」가 아니다. 방향으로 가른다.
 
-**MSW 에 없는 것이 맞는 셋.** 프론트엔드가 호출하지 않는 AI→BE 경로다 (계약 §2.3, §2.4, §2.5).
+```
+MSW 가 실 API 보다 빈약하거나 모양이 다르다   → 버그.   고친다
+MSW 가 계약을 구현하고 백엔드가 스텁이다      → 정책.   적는다
+```
+
+#### 대조한 축과 범위
+
+| 축 | 대조 | 결과 |
+|---|---|---|
+| 경로 · 메서드 | 전수 | 일치. MSW 에 없는 셋은 AI→BE 경로로 없는 것이 맞다 |
+| 성공 상태코드 | 전수 | 일치 (201 · 202 · 204 포함) |
+| 오류 코드 · 상태 | 전수 | 어긋난 것 고침 |
+| 응답 필드 이름 · nullable | **주요 엔드포인트만** | 어긋난 것 고침 |
+| 인증 · 멤버십 | 전수 | §10-2 |
+| **요청 검증 · 쿼리 파라미터** | **안 했다** | 아래 참조 |
+
+**대조하지 않은 축이 있다.** 요청 본문의 타입·길이·범위 검증과 쿼리 파라미터 처리다.
+백엔드는 pydantic 이 막고 MSW 는 자체 검사인데, 경계값에서 서로 다르다(이메일 형식, 빈 `workspace_id=`,
+별칭 길이·`confidence` 범위, `member`·`task` 의 optional 필드 타입).
+**의도적으로 맞추지 않는다** — MSW 의 일은 계약을 서빙하는 것이지 서버 검증을 복제하는 것이 아니고,
+화면이 만들 요청은 이 경계에 닿지 않는다. 닿는다면 그것은 화면 쪽 버그다.
+
+#### MSW 에 없는 것이 맞는 셋
+
+프론트엔드가 호출하지 않는 AI→BE 경로다 (계약 §2.3, §2.4, §2.5).
 
 ```
 POST  /api/v1/extractions            POST  /api/v1/approvals
 PATCH /api/v1/meetings/{id}/fail
 ```
 
-**고친 것.**
+#### 고친 것 — 12건
 
 | 대상 | 달랐던 것 |
 |---|---|
 | `PATCH /workspaces/{id}/onboarding` | 백엔드는 **PM 만** 허용해 403 을 낸다. MSW 는 누구나 통과했다 |
 | `PATCH /workspaces/{id}/onboarding` | 응답이 갱신된 워크스페이스였다. 실 API 는 **빈 객체** 다 |
-| `GET /meetings/{id}/minutes` | extraction 이 없으면 400 이었다. 실 API 는 **200 에 빈 본문** 이다 |
-| `MinutesDto.title` · `summary` | 필수였다. 백엔드는 **둘 다 nullable** 이고 `summary` 는 항상 `null` 이다 |
+| `GET /workspaces/{id}` | `role` 이 픽스처의 전역 값이었다. 실 API 는 **현재 사용자 기준**이라 비소속이면 `null` |
+| `GET /workspaces` | 목록 항목에서 `onboarding` 을 깎았다. 실 API 는 상세와 **같은 모양** |
+| `GET /meetings/{id}` | `progress` 가 픽스처에 없고 생성 경로에도 빠졌다. 실 API 는 **항상** 준다 |
+| `GET /meetings/{id}/minutes` | extraction 이 없으면 400 이었다. 실 API 는 **200 에 빈 본문** |
+| `GET /meetings/{id}/minutes` | 비로그인 + 없는 ID 에서 404 를 먼저 냈다. 실 API 는 **401 이 먼저**다 (`Depends` 가 본문보다 먼저 돈다) |
+| `MinutesDto.title` · `summary` | 필수였다. 백엔드는 **둘 다 nullable** |
+| `GET /workspaces/{id}/meetings` | `duration_ms`·`processed_at` 이 `null` 이었다. 실 API 는 **0 과 `ended_at`** |
 | `POST /members/{id}/aliases` | 매번 새 alias 를 만들었다. 실 API 는 같은 이름이면 **기존 행을 그대로** 준다 |
-| `GET /workspaces/{id}/meetings` | `duration_ms`·`processed_at` 이 `null` 이었다. 실 API 는 **0 과 `ended_at`** 이다 |
-| `GET /meetings/{id}` | `progress` 가 픽스처에 없었고 생성 경로에도 빠져 있었다. 실 API 는 **항상** 준다 |
-| `DELETE .../integrations/{provider}` | 200 봉투였다. 실 API 는 **204 무본문** 이고, provider 를 검증하지 않아 **알 수 없는 값도 204** 다 |
-| `GET /workspaces` | 목록 항목에서 `onboarding` 을 깎았다. 실 API 는 상세와 **같은 모양** 이다 |
+| `POST /members/{id}/aliases` | 중복일 때 200 이었다. 라우트가 `status_code=201` 이라 **기존 행도 201** |
+| `DELETE .../integrations/{provider}` | 200 봉투였다. 실 API 는 **204 무본문** 이고 provider 를 검증하지 않아 **알 수 없는 값도 204** |
 
-**일부러 다르게 둔 것.** 어느 쪽도 「mock 은 되는데 실 API 에서 깨지는」 방향이 아니다. 계약 §4.0 에 기록했다.
+#### 의도적으로 다른 것 — 백엔드가 스텁이다
 
-- `progress` 강제변환 — 승인 payload 경로에서 백엔드가 `int()` 로 자른다. MSW 는 정수만 받는다.
-- `title` 300자 — Python 은 코드 포인트, JS 는 UTF-16 코드 단위로 센다.
+아래는 **고치지 않는다.** MSW 를 실 API 에 맞추면 그 화면을 개발할 수 없다.
+백엔드에 요청한 내역은 계약 §4.0-② 에 있다.
+
+| # | 대상 | 백엔드 | MSW | 백엔드 코드의 표시 |
+|---|---|---|---|---|
+| 1 | 온보딩 생성 | 불리언 하나로 `steps` 4개를 매번 만든다 | 단계별 상태를 저장 | `# 임시 온보딩 로직` |
+| 2 | 온보딩 저장 | `complete + connect_members` 만 처리. **`skip` 은 무동작** | 모든 단계·동작 처리 (D-008, D-012) | `# 온보딩 단계 업데이트 로직 (간단화)` |
+| 3 | Discord 사용자 목록 | 상수 2명 | 픽스처 4명 + 봇. `is_bot` 필터를 테스트할 수 있다 (D-030) | `# 향후 Discord API 연동 시 교체` |
+| 4 | 회의록 본문 | `transcript` 안내 문구 1줄, `summary` 항상 `null` | 5줄 + 화자 폴백 + 요약 (D-028) | `# 임시 Mock` |
+| 5 | 회의 업로드 | 파일·참석자를 저장하지 않는다. 회의가 `processing` 에 갇혀 **다음 업로드를 409 로 막는다** | 정상 흐름 | `# TODO: 파일 저장 및 큐 전송` |
+| 6 | `attendee_count` | `audio_segment` 화자에서 역산. 말 안 한 참석자는 빠지고 로컬 업로드는 0 | 픽스처 값 · 업로드 참석자 수 | `# attendee_count 로직 개선 필요` |
+| 7 | integrations | `status` 가 `connected`·`not_connected` 둘뿐. `display_name` 은 `"Discord 연결됨"` 생성 문자열 | 세 상태(`revoked` 포함) + 실제 표시명 (D-097, D-100) | 표시 없음 — **스키마에 컬럼이 없다** |
+
+**엔드포인트 자체가 없는 것 넷** — OAuth `start`·`callback` 두 쌍. 연동을 만들 방법이 API 에 없다.
+
+**정의만 되고 던지는 곳이 없는 오류 셋** — `ONBOARDING_INCOMPLETE` · `INTEGRATION_REVOKED` · `AUDIO_TOO_LARGE`.
+막는 이유가 각각 다르다. 검사 코드 부재 / **스키마 부재** / 파일 처리와 한도 정책 부재.
+프론트엔드는 셋 다 `ERROR_CODES` 에 두되 실 API 로는 오지 않는다고 본다 (계약 §4.9).
+
+#### 값 변환에서 MSW 가 더 엄격한 둘
+
+`progress` 강제변환(승인 payload 경로)과 `title` 300자 계산(코드 포인트 대 UTF-16)이다.
+계약 §4.0 에 값별 표로 적었다. 「mock 은 되는데 실 API 에서 깨지는」 방향이 아니라 맞추지 않는다.
 
 ### 10-2. 세션 인증
 

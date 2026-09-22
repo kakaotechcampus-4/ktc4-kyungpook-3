@@ -147,3 +147,23 @@ it('advances onboarding steps in a workspace the user owns', async () => {
       .currentStep,
   ).toBe('connect_notion')
 })
+
+// role 은 현재 사용자 기준이다. 백엔드는 멤버를 조회해 비소속이면 role 을 채우지 않는다.
+// 계약이 정한 null → member 폴백이 여기서 돈다 (계약 §4.0-①, §6)
+it('reports a null role for a workspace the signed-in user does not belong to', async () => {
+  const base = `${location.origin}/api/v1`
+  const signup = await fetch(`${base}/auth/signup`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ email: 'outsider@example.com', password: 'secret', name: '외부인' }),
+  })
+  expect(signup.status).toBe(201)
+
+  // GET /workspaces/{id} 는 멤버십을 보지 않으므로 200 이 나온다 (계약 §4.0-②-1)
+  const detail = await fetch(`${base}/workspaces/ws_01`)
+  expect(detail.status).toBe(200)
+  const dto = unwrap((await detail.json()) as Envelope<WorkspaceDto>, detail.status)
+  expect(dto.role).toBeNull()
+  // 매퍼는 null 을 member 로 내린다 — 권한을 넓히는 방향으로 틀리지 않는다
+  expect(toWorkspace(dto).role).toBe('member')
+})

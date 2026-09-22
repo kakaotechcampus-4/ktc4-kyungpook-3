@@ -112,3 +112,15 @@ it('refuses workspaces the signed-in user does not belong to', async () => {
   // 반면 GET /workspaces/{id} 는 멤버십을 보지 않는다. 실 API 의 구멍을 그대로 흉내낸다 (계약 §4.0-②-1)
   expect((await fetch(`${base}/workspaces/ws_99`)).status).toBe(404)
 })
+
+// 백엔드는 Depends(get_current_user) 가 함수 본문보다 먼저 돈다. 비로그인이면 리소스가
+// 있는지 보기 전에 401 이다 — 존재 여부를 먼저 드러내지 않는다 (meetings.py 의 get_meeting_minutes)
+it('answers 401 before revealing whether a meeting exists', async () => {
+  const base = `${location.origin}/api/v1`
+  // 로그인 상태에서는 없는 회의가 404 다
+  expect((await fetch(`${base}/meetings/mt_99/minutes`)).status).toBe(404)
+
+  await fetch(`${base}/auth/logout`, { method: 'POST' })
+  // 로그아웃하면 같은 URL 이 404 가 아니라 401 이다
+  expect((await fetch(`${base}/meetings/mt_99/minutes`)).status).toBe(401)
+})

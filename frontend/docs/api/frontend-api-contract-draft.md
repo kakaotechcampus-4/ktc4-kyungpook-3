@@ -453,7 +453,7 @@ PR #59 가 §4.1~§4.5 를 구현했다. **요청의 성격이 바뀌었다** �
 | §4.7-6 `task.start_date` | 모델 · 응답 · POST · PATCH · `ChangedField` 전부 |
 | §4.9 오류 코드 11개 | 이름과 상태 코드까지 제안 그대로 |
 
-**② 구현됐지만 계약과 다르다 — 이 15건이 새 요청 목록이다**
+**② 구현됐지만 계약과 다르다 — 이 16건이 새 요청 목록이다**
 
 | # | 대상 | 현재 | 요청 |
 |---|---|---|---|
@@ -472,6 +472,7 @@ PR #59 가 §4.1~§4.5 를 구현했다. **요청의 성격이 바뀌었다** �
 | 13 | 승인 `task_create` | payload 의 `status` · `progress` 도 읽어 반영한다 | 요청이 아니라 **기록**이다. §2.5 의 payload 설명에 빠져 있었다 |
 | 14 | `GET /workspaces/{id}/meetings` | `title` 이 nullable 인데 `items: list[dict]` 라 스키마에 안 드러난다 | 목록 `title` 의 nullable 여부를 스키마로 고정해 달라. **프론트 DTO 는 nullable 로 맞췄고 매퍼가 빈 문자열로 폴백한다** |
 | 15 | `GET /members/unresolved-aliases` | 해결 판정이 **`verified` 별칭 정확히 1개**다. 미검증·복수 verified 는 목록에 남는다 | 요청이 아니라 기록이다. **MSW 도 같은 규칙으로 계산하게 맞췄다** |
+| 16 | `GET /workspaces/{id}/meetings` 의 `attendee_count` | `audio_segment` 의 화자에서 역산한다(`# attendee_count 로직 개선 필요`). **말하지 않은 참석자는 빠지고, 로컬 업로드는 세그먼트가 없어 늘 0** 이다 | 업로드가 받은 `attendee_member_ids` 를 저장하고 그것으로 세 달라 (②-9 와 한 쌍이다) |
 
 **MSW 가 일부러 더 엄격한 곳 두 군데.** 요청이 아니라 기록이다. 어느 쪽도 「mock 은 되는데 실 API 에서 깨지는」 방향이 아니라
 「실 API 는 받아 주는데 mock 이 막는」 방향이라 화면을 잘못 만들 위험이 없다. 맞출 실익이 없어 그대로 둔다.
@@ -544,8 +545,9 @@ MSW 는 **API 를 흉내내므로 100자 기준을 그대로 쓴다.** 여기에
 - **M1 산출물은 그대로 유효하다.** `entities` 타입과 mapper 는 §4.1~§4.5 를 미리 가정해 두었고, 실제 구현이 그 가정과 이름·형태가 맞다.
 - 스텁(②-3, ②-10, ②-11)에 걸리는 화면은 **M4 · M5 다.** 그때까지 채워지지 않으면 MSW 로 개발하고 실 API 연결을 뒤로 미룬다.
 - ②-1 은 보안 문제이므로 화면 일정과 무관하게 먼저 올린다.
-- ①의 `WorkspaceResponse.role` 은 `Optional` 이다. 목록에서는 항상 채워지지만 상세에서는 `null` 이 가능하다.
-  프론트엔드 DTO 는 필수 `string` 으로 두고 mapper 가 `member` 로 폴백한다 (§6).
+- ①의 `WorkspaceResponse.role` 은 `Optional` 이고 **현재 사용자 기준**이다. 목록은 소속만 반환해 항상 채워지지만,
+  **상세는 비소속 사용자에게 `null` 을 준다** — `GET /workspaces/{id}` 가 멤버십을 안 보기 때문이다(②-1).
+  프론트엔드 DTO 를 `string | null` 로 두고 mapper 가 `member` 로 폴백한다 (§6). 권한을 넓히는 방향으로 틀리지 않는다.
 
 ### 4.1 auth
 
