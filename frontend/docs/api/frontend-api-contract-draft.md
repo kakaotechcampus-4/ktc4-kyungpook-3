@@ -371,9 +371,13 @@ AUDIO_TOO_LARGE(413)              DISCORD_USER_ALREADY_MAPPED(409)
 > D-104 로 `approval_id` 있는 항목을 숨기는 일반 팀원에게는 **영원히 보이지 않는다.**
 >
 > - **백엔드 요청** — 승인 반영 시 `extraction_item.approval_id` 를 `null` 로 비워 달라 (§4.0-②-12).
-> - **프론트엔드 대응** — 답을 기다리지 않는다. `확인 필요` 의 기준을
->   `approval_id != null` 에서 **`approval_id != null 이고 task_id == null`** 로 바꾼다.
->   `task_id` 가 우선이므로 백엔드가 비우든 안 비우든 같은 결과가 나온다 (§6).
+> - **반려는 더 나쁘다.** 백엔드가 반려 시 `extraction_item` 을 **아예 건드리지 않아**
+>   반려된 항목과 대기 중인 항목이 **응답에서 완전히 같은 모양**이다(`task_id` 없음, `approval_id` 있음).
+>   `extraction` 응답만으로는 구분할 방법이 없다 — 승인 상태 필드가 없다.
+> - **프론트엔드 대응** — 답을 기다리지 않는다. 화면별로 나눈다.
+>   - **일반 팀원** — `task_id` 가 없고 `approval_id` 가 있으면 숨긴다. 대기든 반려든 보여줄 태스크가 없어 이 규칙으로 충분하다.
+>   - **PM** — `GET /approvals?status=pending` 과 조인한다. 그 목록에 있는 `approval_id` 만 `확인 필요` 다.
+>     승인이든 반려든 닫힌 승인은 목록에서 빠지므로 자동으로 제외된다. 백엔드가 ②-12 를 고쳐도 그대로 맞는다 (§6).
 
 **따라서 `확인 필요` 항목에는 `task_id` 가 없다.** 승인 전까지 태스크 행이 존재하지 않는다.
 식별자는 `approval_id` 뿐이며, 이것이 D-161·D-162 의 근거다.
@@ -460,18 +464,27 @@ PR #59 가 §4.1~§4.5 를 구현했다. **요청의 성격이 바뀌었다** �
 | 9 | `POST .../meetings/upload` | `attendee_member_ids` 를 **받고 버린다.** 파일도 저장하지 않는다(TODO) | 참석자 저장 (D-085, D-086). Notion 미연결 409 `INTEGRATION_NOT_CONNECTED` (D-096), 용량 초과 413 `AUDIO_TOO_LARGE` |
 | 10 | `GET .../discord/members` | **하드코딩 2명** (`disc_01`, `disc_02`) | 연결된 서버의 실제 사용자 목록 |
 | 11 | `GET /meetings/{id}/minutes` | `transcript` 가 **하드코딩 1줄.** `attendees` 는 `audio_segment` 에서 역산 | §4.7-5 의 구조화 응답. 참석자는 회의 참석자 명단에서 |
-| 12 | 승인 반영 | `extraction_item.task_id` 를 채우되 **`approval_id` 를 비우지 않는다** | 승인 시 `approval_id` 를 `null` 로. 안 되면 프론트가 `task_id` 우선으로 우회한다 (§3.1) |
+| 12 | 승인·반려 처리 | `extraction_item.approval_id` 를 **어느 쪽으로 닫혀도 비우지 않는다.** 반려는 `extraction_item` 을 아예 건드리지 않는다 | **승인이든 반려든 닫히면 `approval_id` 를 `null` 로.** 안 되면 프론트가 `GET /approvals?status=pending` 과 조인해 우회한다 (§3.1) |
 | 13 | 승인 `task_create` | payload 의 `status` · `progress` 도 읽어 반영한다 | 요청이 아니라 **기록**이다. §2.5 의 payload 설명에 빠져 있었다 |
 | 14 | `GET /workspaces/{id}/meetings` | `title` 이 nullable 인데 `items: list[dict]` 라 스키마에 안 드러난다 | 목록 `title` 의 nullable 여부를 스키마로 고정해 달라. **프론트 DTO 는 nullable 로 맞췄고 매퍼가 빈 문자열로 폴백한다** |
 | 15 | `GET /members/unresolved-aliases` | 해결 판정이 **`verified` 별칭 정확히 1개**다. 미검증·복수 verified 는 목록에 남는다 | 요청이 아니라 기록이다. **MSW 도 같은 규칙으로 계산하게 맞췄다** |
 
-**①-1 의 실제 범위** — PR #59 가 인증을 넣었지만 라우터별로 적용이 갈린다. `main.py` 에 전역 미들웨어도 없다.
+**MSW 가 일부러 더 엄격한 곳 두 군데.** 요청이 아니라 기록이다. 어느 쪽도 「mock 은 되는데 실 API 에서 깨지는」 방향이 아니라
+「실 API 는 받아 주는데 mock 이 막는」 방향이라 화면을 잘못 만들 위험이 없다. 맞출 실익이 없어 그대로 둔다.
 
-| 라우터 | 인증 의존성 | 상태 |
+| 항목 | 백엔드 | MSW |
 |---|---|---|
-| `workspaces.py` | 7곳 | 걸려 있다. 단 `GET /{workspace_id}` 는 **멤버십을 안 본다** |
-| `integrations.py` | 4곳 | 걸려 있다 |
-| `meetings.py` | 2곳 | `/minutes` 만. `GET /meetings/{id}` 등은 열려 있다 |
+| `progress` | `int(value)` 로 강제 변환한다. `"30"` → 30, `30.9` → 30, `true` → 1 | 정수형 `number` 만 받는다 |
+| `title` 300자 | Python `len()` — 유니코드 **코드 포인트** | JS `.length` — UTF-16 **코드 단위**. 이모지 등 비-BMP 가 많으면 MSW 가 먼저 막는다 |
+
+**②-1 의 실제 범위** — PR #59 가 인증을 넣었지만 라우터별로 적용이 갈린다. `main.py` 에 전역 미들웨어도 없다.
+숫자는 `Depends(get_current_user)` · `Depends(get_current_member)` 를 실제로 건 **엔드포인트 수**다.
+
+| 라우터 | 보호된 엔드포인트 | 상태 |
+|---|---|---|
+| `workspaces.py` | 6 | 걸려 있다. 단 `GET /{workspace_id}` 는 **멤버십을 안 본다** |
+| `integrations.py` | 3 | 걸려 있다 |
+| `meetings.py` | 1 | `/minutes` 만. `GET /meetings/{id}` 등은 열려 있다 |
 | `tasks.py` | **0** | 조회 · 생성 · 수정 · 되돌리기 전부 **비로그인 가능** |
 | `approvals.py` | **0** | 조회 · 승인 · 반려 전부 비로그인 가능 |
 | `extractions.py` | **0** | 열려 있다 |
@@ -918,8 +931,12 @@ members 에만 있고 Discord 목록에 없으면      → 비활성 (서버를 
 | 회의록의 태스크 영역 | `GET /extractions/{extraction_id}` | **구현됨** §2.4 |
 
 - Notion 미연결이면 업로드 화면으로 보내지 않고 차단 모달을 띄운다 (D-097).
-- 회의록 상세의 `반영된 태스크` 와 `확인이 필요한 일` 은 **`minutes` 가 아니라 `extractions` 에서 온다.** 항목이 `task_id`·`approval_id` 를 배타적으로 들고 있다 (§2.4, §3.1).
-- 일반 팀원에게는 `approval_id` 가 있는 항목을 화면에서 제거한다. 개수도 노출하지 않는다 (D-104).
+- 회의록 상세의 `반영된 태스크` 와 `확인이 필요한 일` 은 **`minutes` 가 아니라 `extractions` 에서 온다** (§2.4, §3.1).
+  - `반영된 태스크` — `task_id` 가 있는 항목.
+  - `확인이 필요한 일` — **PM 전용이고 `extractions` 만으로는 판정할 수 없다.** `GET /approvals?workspace_id=&status=pending` 과 조인해
+    그 목록에 있는 `approval_id` 만 고른다. 반려된 항목이 `extraction_item` 에 그대로 남기 때문이다 (§3.1, §4.0-②-12).
+- 일반 팀원에게는 `task_id` 가 없고 `approval_id` 가 있는 항목을 화면에서 제거한다. 개수도 노출하지 않는다 (D-104).
+  대기든 반려든 보여줄 태스크가 없으므로 조인 없이 판정되며, D-163 대로 승인 목록을 부르지 않아도 된다.
 - 정리 실패 시 회의록 페이지로 이동하고 토스트를 띄운다. 실패한 회의는 목록에 없다 (D-091~D-093).
 
 ### 5.6 태스크 목록 · 보드 · 캘린더 · 간트
@@ -1012,9 +1029,11 @@ API 요청이 없으므로 계약도 모델도 픽스처도 필요 없다. 이 �
 - **`current_step` 정규화** — 완료 시 빈 문자열 `''` 이 온다 (§4.0-②-4). `null` 과 같게 다룬다.
 - **`display_name` 무시** — 연동의 `display_name` 이 생성 문자열이다 (②-7). 화면은 provider 이름을 쓴다.
 - **빈 `transcript`·`summary`** — `/minutes` 가 스텁이다 (②-11). 빈 배열과 `null` 이 **정상 경로**다. 오류로 다루지 않는다.
-- **`확인 필요` 판정** — 승인 뒤에도 `approval_id` 가 남는다 (②-12). `entities/extraction` 의 파생 함수가
-  **`approval_id != null 이고 task_id == null`** 을 `확인 필요` 로 본다. `task_id` 가 우선이다.
-  이 규칙은 백엔드가 ②-12 를 고쳐도 그대로 맞는다.
+- **`확인 필요` 판정** — 승인·반려 어느 쪽으로 닫혀도 `approval_id` 가 남는다 (②-12). 파생 함수를 둘로 나눈다.
+  - `isUnresolved(item)` = `approval_id != null && task_id == null`. **extraction 단독으로 알 수 있는 한계**다 — 대기와 반려를 구분하지 못한다.
+    일반 팀원 화면(`visibleItems`)은 이것으로 충분하다. 둘 다 숨기는 것이 맞기 때문이다.
+  - `pendingItems(extraction, openApprovalIds)` — PM 전용. `GET /approvals?status=pending` 의 ID 집합을 받아 조인한다.
+    `entities → entities` 를 피해 **`ReadonlySet<string>` 만 받고**, 그 집합은 두 엔티티를 모두 보는 `widgets` 가 만든다.
 
 ---
 

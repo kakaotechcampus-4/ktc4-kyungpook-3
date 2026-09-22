@@ -475,11 +475,23 @@ export interface Extraction { id: string; meetingId: string; items: ExtractionIt
 - `lib/extractionView.ts`
   ```ts
   export function appliedItems(extraction: Extraction): ExtractionItem[]   // appliedTaskId !== null
-  export function pendingItems(extraction: Extraction): ExtractionItem[]   // approvalId !== null
+
+  /** 태스크가 없고 승인이 걸려 있다. 대기인지 반려인지는 extraction 만으로 알 수 없다 */
+  export function isUnresolved(item: ExtractionItem): boolean
+
+  /** 확인 필요 — PM 전용. GET /approvals?status=pending 의 ID 집합과 조인해야 정확하다 */
+  export function pendingItems(extraction: Extraction, openApprovalIds: ReadonlySet<string>): ExtractionItem[]
+
   /** 일반 팀원에게는 확인 필요 항목의 존재 자체를 숨긴다 (D-104) */
   export function visibleItems(extraction: Extraction, canReview: boolean): ExtractionItem[]
   ```
-  `canReview` 가 `false` 면 `approvalId` 가 있는 항목을 **개수에서도** 뺀다.
+  `canReview` 가 `false` 면 `isUnresolved` 인 항목을 **개수에서도** 뺀다. 조인이 필요 없다 — 대기든 반려든 숨기는 것이 맞고,
+  D-163 대로 일반 팀원은 승인 목록을 부르지 않는다.
+
+  **`pendingItems` 만 인자가 하나 더 있는 이유.** 백엔드가 승인·반려 어느 쪽으로 닫혀도 `extraction_item.approval_id` 를
+  비우지 않는다(계약 §4.0-②-12). 특히 **반려는 `extraction_item` 을 아예 건드리지 않아** 대기 중인 항목과 응답이 완전히 같다.
+  그래서 `확인 필요` 는 extraction 단독으로 판정할 수 없고, 열려 있는 승인 목록과 조인해야 한다.
+  `entities → entities` 를 피하려고 `Approval` 타입이 아니라 `ReadonlySet<string>` 만 받는다 (§3-2 의 규칙 1과 같다).
 
 ### 6-7. `approval` — 계약 §2.5 (구현됨). `확인 필요` 의 데이터 출처
 
