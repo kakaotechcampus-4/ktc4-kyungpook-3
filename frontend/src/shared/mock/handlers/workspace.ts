@@ -29,7 +29,9 @@ export const workspaceHandlers = [
     const account = db.accounts.find(
       ({ session }) => session.user.user_id === db.session.user.user_id,
     )
-    const normalize = (value: string) => value.trim().replace(/\s+/g, ' ').toLocaleLowerCase()
+    // D-019 는 대소문자를 구분한다. Alpha 와 alpha 는 서로 다른 워크스페이스다.
+    // 정규화는 앞뒤 공백 제거와 연속 공백 축약까지다 (D-016, D-018, 계약 §4.0-②-2).
+    const normalize = (value: string) => value.trim().replace(/\s+/g, ' ')
     if (
       db.workspaces.some(
         (workspace) =>

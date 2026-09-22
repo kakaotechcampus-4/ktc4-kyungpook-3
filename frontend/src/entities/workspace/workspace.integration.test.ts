@@ -84,3 +84,19 @@ it('allows different accounts to use the same workspace name', async () => {
   })
   expect(created.status).toBe(201)
 })
+
+// D-019 — 영문 대소문자를 구분해 서로 다른 이름으로 본다. Alpha 와 alpha 를 각각 만들 수 있다.
+// 계약이 초안부터 "대소문자 무시" 를 요청해 온 것은 D-019 와 어긋난 오류였다 (계약 §4.0-②-2)
+it('treats names that differ only by letter case as different workspaces', async () => {
+  const create = (name: string) =>
+    fetch('http://localhost:3000/api/v1/workspaces', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name }),
+    })
+  expect((await create('Alpha')).status).toBe(201)
+  expect((await create('alpha')).status).toBe(201)
+  // 공백 정규화는 그대로 적용된다 — 앞뒤 공백과 연속 공백만 다르면 중복이다 (D-016, D-018)
+  expect((await create('  Alpha  ')).status).toBe(409)
+  expect((await create('Al  pha')).status).toBe(201)
+})
