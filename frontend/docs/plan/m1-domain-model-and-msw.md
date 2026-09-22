@@ -468,7 +468,9 @@ export interface ExtractionItem {
 export interface Extraction { id: string; meetingId: string; items: ExtractionItem[] }
 ```
 
-- **`appliedTaskId` 와 `approvalId` 는 배타적이다** (계약 §2.4, §3.1). 둘 다 채워졌거나 둘 다 비었으면 픽스처가 틀린 것이다.
+- **픽스처에서는 `appliedTaskId` 와 `approvalId` 가 배타적이다** (계약 §2.4). 둘 다 채워졌거나 둘 다 비었으면 픽스처가 틀린 것이다.
+  **단 승인을 반영한 뒤에는 배타적이지 않다.** 백엔드가 `task_id` 를 채우면서 `approval_id` 를 비우지 않는다 (계약 §3.1, §4.0-②-12).
+  MSW 도 같은 모양을 낸다. 화면은 `task_id` 를 우선으로 읽는다.
 - `ExtractionEvidence` 는 승인도 쓰므로 `shared/types/common.ts` 에 둔다. 실제 `EvidenceInfo` 응답은 객체 내부 세 필드를 `null` 로 허용한다(`backend/app/schemas/meeting.py`). 빈 근거를 발명하지 않고 그대로 보존한다.
 - `lib/extractionView.ts`
   ```ts
@@ -962,19 +964,19 @@ afterEach(() => { vi.useRealTimers() })
 
 | # | Method · Path | 상태 | 비고 |
 |---|---|---|---|
-| 1 | `POST /api/v1/auth/signup` | 요청 중 | 409 `EMAIL_ALREADY_EXISTS` 경로 포함 |
-| 2 | `POST /api/v1/auth/login` | 요청 중 | 401 `INVALID_CREDENTIALS` 경로 포함 |
-| 3 | `POST /api/v1/auth/logout` | 요청 중 | |
-| 4 | `GET /api/v1/auth/me` | 요청 중 | 미인증이면 401 `UNAUTHENTICATED` (override) |
+| 1 | `POST /api/v1/auth/signup` | 구현됨 | 201 · 409 `EMAIL_ALREADY_EXISTS` 경로 포함 |
+| 2 | `POST /api/v1/auth/login` | 구현됨 | 401 `INVALID_CREDENTIALS` 경로 포함 |
+| 3 | `POST /api/v1/auth/logout` | 구현됨 |  |
+| 4 | `GET /api/v1/auth/me` | 구현됨 | 미인증이면 401 `UNAUTHENTICATED` (override) |
 | 5 | `POST /api/v1/workspaces` | 구현됨 | 본문 `{name}` 하나 |
 | 6 | `GET /api/v1/workspaces` | 구현됨 | 사용자 소속만 · `role` 포함 |
 | 7 | `GET /api/v1/workspaces/{id}` | 구현됨 + 증분 | `role` · `onboarding` 포함 |
-| 8 | `PATCH /api/v1/workspaces/{id}/onboarding` | 요청 중 | `{step, action}` |
-| 9 | `GET /api/v1/workspaces/{id}/integrations` | 요청 중 | |
-| 10 | `DELETE /api/v1/workspaces/{id}/integrations/{provider}` | 요청 중 | |
-| 11 | `GET /api/v1/workspaces/{id}/discord/members` | 요청 중 | |
-| 12 | `GET /api/v1/workspaces/{id}/meetings` | 요청 중 | 실패 회의 제외 |
-| 13 | `POST /api/v1/workspaces/{id}/meetings/upload` | 요청 중 | multipart · 202 (§8-8) |
+| 8 | `PATCH /api/v1/workspaces/{id}/onboarding` | 구현됨(스텁) | `{step, action}` · 실 API 는 `skip` 이 동작하지 않는다 |
+| 9 | `GET /api/v1/workspaces/{id}/integrations` | 구현됨 | 실 API 는 `revoked` 를 내지 않는다 (계약 §4.0) |
+| 10 | `DELETE /api/v1/workspaces/{id}/integrations/{provider}` | 구현됨 | 실 API 는 204 무본문이라 봉투가 아니다 |
+| 11 | `GET /api/v1/workspaces/{id}/discord/members` | 구현됨(스텁) | 실 API 는 하드코딩 2명 |
+| 12 | `GET /api/v1/workspaces/{id}/meetings` | 구현됨 | 실패 회의 제외 |
+| 13 | `POST /api/v1/workspaces/{id}/meetings/upload` | 구현됨(스텁) | multipart · 202 (§8-8) · 실 API 는 파일·참석자를 저장하지 않는다 |
 | 14 | `GET /api/v1/meetings/{id}` | 구현됨 | 폴링 대상 |
 | 15 | `POST /api/v1/meetings` | 구현됨 | 봇 경로. 프론트엔드는 안 쓰지만 계약에 있으므로 둔다 |
 | 16 | `PATCH /api/v1/meetings/{id}/end` | 구현됨 | 〃 |

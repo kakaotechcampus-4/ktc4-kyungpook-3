@@ -87,7 +87,7 @@ AUDIO_TOO_LARGE(413)              DISCORD_USER_ALREADY_MAPPED(409)
 | Method | Path | 비고 |
 |---|---|---|
 | POST | `/api/v1/workspaces` | 201 |
-| GET | `/api/v1/workspaces` | 전체 목록 |
+| GET | `/api/v1/workspaces` | **로그인 사용자의 소속만** |
 | GET | `/api/v1/workspaces/{workspace_id}` | |
 
 ```jsonc
@@ -100,8 +100,10 @@ AUDIO_TOO_LARGE(413)              DISCORD_USER_ALREADY_MAPPED(409)
 ```
 
 - **생성 본문이 `name` 하나다.** D-153 의 요청이 이미 충족돼 있다.
-- **사용자 개념이 없어 목록이 전체 워크스페이스를 반환한다.** 로그인한 사용자의 소속만 거르는 기능이 없다 → §4.2.
-- `role`(pm/member)과 온보딩 진행 상태가 응답에 없다 → §4.2.
+- ~~사용자 개념이 없어 목록이 전체 워크스페이스를 반환한다.~~ **PR #59 로 사용자 스코프가 생겼다.** `Member.user_id` 조인으로 소속만 반환한다 → §4.2.
+- ~~`role`(pm/member)과 온보딩 진행 상태가 응답에 없다.~~ **둘 다 생겼고 목록 항목에도 들어온다.** `role` 은 `Optional` 이고 `onboarding` 은 스텁이다 → §4.0-②-3, §4.2.
+- **`GET /workspaces/{workspace_id}` 에 멤버십 검사가 없다.** 로그인만 하면 남의 워크스페이스를 ID 로 읽는다 → §4.0-②-1.
+- 이름 중복은 409 `WORKSPACE_NAME_DUPLICATED` 다. 다만 **완전일치 + 전역** 비교라 D-015~D-020 과 다르다 → §4.0-②-2.
 
 ### 2.2 members · aliases
 
@@ -161,7 +163,7 @@ AUDIO_TOO_LARGE(413)              DISCORD_USER_ALREADY_MAPPED(409)
 
 - `status` 는 `created` → `recording` → `processing` → `done` \| `failed`.
 - `extraction_id` 는 `status: done` 일 때만 채워진다.
-- **`progress`(audio_merged·transcribed·extracted) 가 응답에서 빠졌다.** 모델에는 남아 있지만 API 가 내려주지 않는다. 진행률 UI 는 현재 `status` 밖에 쓸 것이 없다 → §4.7 증분 요청.
+- ~~`progress` 가 응답에서 빠졌다.~~ **PR #59 가 §4.7-1 을 반영했다.** `progress`(audio_merged·transcribed·extracted)가 **필수 필드**로 온다. 진행률 UI 가 이 값을 쓴다.
 - 이미 종료된 회의에 `/end` 를 호출하면 409 `MEETING_ALREADY_ENDED`.
 
 ### 2.4 extractions
@@ -188,7 +190,11 @@ AUDIO_TOO_LARGE(413)              DISCORD_USER_ALREADY_MAPPED(409)
 
 - `confidence` 는 `min(task, assignee, due)`.
 - `gate` 는 `auto`(≥0.8) / `review`(≥0.5) / `hold`. 임계값은 `services/matching.py`.
-- **`task_id` 와 `approval_id` 가 배타적으로 채워진다.** `gate=auto` 면 `task_id`, `review`·`hold` 면 `approval_id`. §3 참조.
+  **`≥0.8` 이 `auto` 의 충분조건이 아니다.** `needs_check` 면 점수와 무관하게 `review` 로 내려간다 (PR #55) → §3.1.
+- **생성 시점에는** `task_id` 와 `approval_id` 가 배타적으로 채워진다. `gate=auto` 면 `task_id`, `review`·`hold` 면 `approval_id`.
+- **승인 뒤에는 배타적이지 않다.** `PATCH /approvals/{id}` 로 승인하면 백엔드가 `extraction_item.task_id` 를 채우면서
+  **`approval_id` 를 비우지 않는다.** 같은 항목이 두 ID 를 동시에 갖는다 → §3.1, §4.0-②-12.
+  화면은 `task_id` 를 우선으로 읽어 `task_id` 가 있으면 `반영됨` 으로 다룬다 (§6).
 - `assignee.member_id` 가 `null` 이면 `raw` 로 대체 표시한다.
 
 ### 2.5 approvals — `확인 필요` 의 데이터 출처
@@ -238,7 +244,9 @@ AUDIO_TOO_LARGE(413)              DISCORD_USER_ALREADY_MAPPED(409)
 
 승인 시 백엔드가 읽는 키는 `api/approvals.py` 의 `_apply_approval` 에 있다.
 
-- `task_create` → `task_title`(없으면 `title`), `meeting_id`, `assignee_member_id`, `due_date`
+- `task_create` → `task_title`(없으면 `title`), `meeting_id`, `assignee_member_id`, `due_date`, **`status`, `progress`**
+  뒤의 둘은 PR #55 가 추가했다. `validate_task_fields` 를 거치므로 **잘못된 값이면 승인이 400 으로 실패한다.**
+  반영 뒤 `extraction_item.task_id` 도 채워진다 (§3.1).
 - `task_update` → `title`, `assignee_member_id`, `status`, `progress`, `blocker`, `due_date` 중 존재하는 것만
 - `reminder_dm` → 태스크에 반영하지 않는다. 발송은 Discord 봇의 책임이다
 
@@ -346,9 +354,26 @@ AUDIO_TOO_LARGE(413)              DISCORD_USER_ALREADY_MAPPED(409)
 
 **PR #55 로 `confidence >= 0.8` 이 더 이상 `auto` 의 충분조건이 아니다.**
 `decide_gate(confidence, needs_check=)` 가 미검증 별칭·중의성이면 점수와 무관하게 `review` 로 내린다.
-화면이 지킬 불변식은 그대로다 — **`task_id` XOR `approval_id`** 이고, `gate=='auto'` ⟺ `task_id` 가 있다.
-바뀐 것은 **`확인 필요` 에 높은 신뢰도 항목이 섞일 수 있다**는 점이다. 신뢰도 순으로 정렬해 낮은 것만 의심하는 UI 는 쓰지 않는다.
+**`확인 필요` 에 높은 신뢰도 항목이 섞일 수 있다.** 신뢰도 순으로 정렬해 낮은 것만 의심하는 UI 는 쓰지 않는다.
 1인칭 발화(`assignee_type == "first"`)는 `evidence_speaker` 를 화자로 보고 담당자를 매칭한다.
+
+> **`task_id` XOR `approval_id` 는 생성 시점에만 성립한다.**
+> 이전 판은 이 배타성을 화면이 기댈 불변식으로 적었다. **승인 뒤에는 깨진다.**
+>
+> ```python
+> # approvals.py — task_id 를 채우고 approval_id 는 그대로 둔다
+> ext_item.task_id = task.task_id
+> # extractions.py — 둘 다 응답에 실린다
+> task_id=i.task_id, approval_id=i.approval_id
+> ```
+>
+> 그대로 두면 승인된 항목이 **`반영됨` 과 `확인 필요` 양쪽에 동시에** 나타나고,
+> D-104 로 `approval_id` 있는 항목을 숨기는 일반 팀원에게는 **영원히 보이지 않는다.**
+>
+> - **백엔드 요청** — 승인 반영 시 `extraction_item.approval_id` 를 `null` 로 비워 달라 (§4.0-②-12).
+> - **프론트엔드 대응** — 답을 기다리지 않는다. `확인 필요` 의 기준을
+>   `approval_id != null` 에서 **`approval_id != null 이고 task_id == null`** 로 바꾼다.
+>   `task_id` 가 우선이므로 백엔드가 비우든 안 비우든 같은 결과가 나온다 (§6).
 
 **따라서 `확인 필요` 항목에는 `task_id` 가 없다.** 승인 전까지 태스크 행이 존재하지 않는다.
 식별자는 `approval_id` 뿐이며, 이것이 D-161·D-162 의 근거다.
@@ -409,7 +434,7 @@ PR #59 가 §4.1~§4.5 를 구현했다. **요청의 성격이 바뀌었다** �
 | 계약 | 구현 |
 |---|---|
 | §4.1 `signup` · `login` · `logout` · `me` | `api/auth.py`. PBKDF2, `session` 테이블 |
-| §4.1 세션 요구 3가지 (D-165) | **3개 다 충족.** `httponly` · `samesite=lax` · `secure`, 로그아웃 즉시 삭제, 토큰은 opaque random 이라 역할이 안 담긴다 |
+| §4.1 세션 요구 3가지 (D-165) | **3개 다 충족.** `httponly` · `samesite=lax` · `secure`, 로그아웃 즉시 삭제, 토큰은 opaque random 이라 역할이 안 담긴다. **단 그 세션을 요구하는 라우터가 절반뿐이다** → ②-1 |
 | §4.2 `GET /workspaces` 사용자 스코프 | `Member.user_id` 조인으로 소속만 반환 |
 | §4.2 `role` | `MemberRole` = `pm` \| `member`. 제안 그대로 |
 | §4.4 `GET /workspaces/{id}/meetings` | `started_at` 내림차순, `failed` 제외까지 맞다 (D-093, D-106) |
@@ -420,12 +445,12 @@ PR #59 가 §4.1~§4.5 를 구현했다. **요청의 성격이 바뀌었다** �
 | §4.7-6 `task.start_date` | 모델 · 응답 · POST · PATCH · `ChangedField` 전부 |
 | §4.9 오류 코드 11개 | 이름과 상태 코드까지 제안 그대로 |
 
-**② 구현됐지만 계약과 다르다 — 이 11건이 새 요청 목록이다**
+**② 구현됐지만 계약과 다르다 — 이 15건이 새 요청 목록이다**
 
 | # | 대상 | 현재 | 요청 |
 |---|---|---|---|
-| 1 | `GET /workspaces/{workspace_id}` | **멤버십 검사가 없다.** 로그인만 하면 남의 워크스페이스를 ID 로 읽는다 | `get_current_member` 를 걸어 비소속은 403 `FORBIDDEN` |
-| 2 | 워크스페이스 이름 중복 | 완전일치 + **전역** 비교 | 앞뒤 공백 제거 · 연속 공백 축약 · 대소문자 무시 후 **같은 계정 안에서만** 비교 (D-015~D-020) |
+| 1 | **인증 전반** | **절반만 걸려 있다.** 아래 표 참조 | 프론트가 쓰는 모든 엔드포인트에 `get_current_user` · `get_current_member` 를 걸어 달라 |
+| 2 | 워크스페이스 이름 중복 | 완전일치 + **전역** 비교 | 앞뒤 공백 제거 · 연속 공백 축약 후 **대소문자는 구분한 채** **같은 계정 안에서만** 비교 (D-015~D-020) |
 | 3 | `onboarding` | **스텁이다.** `current_step` 이 하드코딩, `steps` 가 고정, `skipped` 가 절대 안 나온다 | 단계별 상태를 실제로 저장. `PATCH .../onboarding` 의 `skip` 이 동작해야 한다 (D-008, D-012) |
 | 4 | `onboarding.current_step` | 완료 시 **빈 문자열** `""` | 완료 시 `null` |
 | 5 | 온보딩 미완료 대시보드 접근 | 검사가 없다 | 403 `ONBOARDING_INCOMPLETE` + `details.current_step` (D-071) |
@@ -435,6 +460,26 @@ PR #59 가 §4.1~§4.5 를 구현했다. **요청의 성격이 바뀌었다** �
 | 9 | `POST .../meetings/upload` | `attendee_member_ids` 를 **받고 버린다.** 파일도 저장하지 않는다(TODO) | 참석자 저장 (D-085, D-086). Notion 미연결 409 `INTEGRATION_NOT_CONNECTED` (D-096), 용량 초과 413 `AUDIO_TOO_LARGE` |
 | 10 | `GET .../discord/members` | **하드코딩 2명** (`disc_01`, `disc_02`) | 연결된 서버의 실제 사용자 목록 |
 | 11 | `GET /meetings/{id}/minutes` | `transcript` 가 **하드코딩 1줄.** `attendees` 는 `audio_segment` 에서 역산 | §4.7-5 의 구조화 응답. 참석자는 회의 참석자 명단에서 |
+| 12 | 승인 반영 | `extraction_item.task_id` 를 채우되 **`approval_id` 를 비우지 않는다** | 승인 시 `approval_id` 를 `null` 로. 안 되면 프론트가 `task_id` 우선으로 우회한다 (§3.1) |
+| 13 | 승인 `task_create` | payload 의 `status` · `progress` 도 읽어 반영한다 | 요청이 아니라 **기록**이다. §2.5 의 payload 설명에 빠져 있었다 |
+| 14 | `GET /workspaces/{id}/meetings` | `title` 이 nullable 인데 `items: list[dict]` 라 스키마에 안 드러난다 | 목록 `title` 의 nullable 여부를 스키마로 고정해 달라. 프론트 DTO 는 지금 필수 `string` 이다 |
+| 15 | `GET /members/unresolved-aliases` | 해결 판정이 **`verified` 별칭 정확히 1개**다. 미검증·복수 verified 는 목록에 남는다 | 요청이 아니라 기록이다. MSW 가 고정 배열이라 이 전이를 재현하지 못한다 |
+
+**①-1 의 실제 범위** — PR #59 가 인증을 넣었지만 라우터별로 적용이 갈린다. `main.py` 에 전역 미들웨어도 없다.
+
+| 라우터 | 인증 의존성 | 상태 |
+|---|---|---|
+| `workspaces.py` | 7곳 | 걸려 있다. 단 `GET /{workspace_id}` 는 **멤버십을 안 본다** |
+| `integrations.py` | 4곳 | 걸려 있다 |
+| `meetings.py` | 2곳 | `/minutes` 만. `GET /meetings/{id}` 등은 열려 있다 |
+| `tasks.py` | **0** | 조회 · 생성 · 수정 · 되돌리기 전부 **비로그인 가능** |
+| `approvals.py` | **0** | 조회 · 승인 · 반려 전부 비로그인 가능 |
+| `extractions.py` | **0** | 열려 있다 |
+| `members.py` | **0** | `get_current_member` 를 **import 만 하고 쓰지 않는다** |
+
+**이 사실이 프론트엔드 설계에 주는 것.** 라우터 가드는 **UX 장치이지 보안 경계가 아니다.**
+서버가 막아 준다고 가정하고 가드를 느슨하게 만들면 안 된다. 반대로 가드를 촘촘히 해도 API 는 그대로 열려 있다.
+**이것은 프론트엔드가 해결할 수 없는 문제이며, 위 표를 그대로 백엔드에 전달한다.**
 
 **③ 아직 없다**
 
@@ -479,7 +524,8 @@ PR #59 가 §4.1~§4.5 를 구현했다. **요청의 성격이 바뀌었다** �
 - **세션 요구사항 3가지** (D-165) — **셋 다 충족됐다.** 토큰 형식은 백엔드가 정하며 **JWT 를 요구하지 않았다.**
   1. Secure·HttpOnly 쿠키, `SameSite=Lax`. 응답 본문에 토큰을 담지 않는다. → ✅ `set_cookie(httponly, samesite="lax", secure=True)`
   2. 로그아웃 시 즉시 무효화한다. → ✅ `session` 행을 삭제하고 쿠키를 지운다
-  3. **토큰과 세션에 역할·권한을 담지 않는다.** → ✅ `secrets.token_urlsafe(32)` 의 opaque 값이라 담길 수 없다. 권한은 `get_current_member` 가 요청마다 멤버십에서 조회한다
+  3. **토큰과 세션에 역할·권한을 담지 않는다.** → ✅ `secrets.token_urlsafe(32)` 의 opaque 값이라 담길 수 없다.
+     권한은 `get_current_member` 가 요청마다 멤버십에서 조회한다 — **다만 그 의존성을 건 라우터에 한해서다.** `tasks` · `approvals` · `extractions` · `members` 에는 걸려 있지 않다 (②-1)
 - OAuth 는 본문 없는 302 다. `state` 에 복귀 경로를 담는다 (D-158). → ❌ 미구현. 로그인 화면의 Google 버튼은 M4 에서 비활성으로 둔다.
 - 미인증 요청은 401 `UNAUTHENTICATED`. → ✅ `deps.get_current_user`
 - 쿠키가 `secure=True` 라서 **HTTPS 가 아니면 브라우저가 저장하지 않는다.** `localhost` 는 예외로 허용되므로 Vite 프록시 경유 개발은 된다.
@@ -519,8 +565,10 @@ PR #59 가 §4.1~§4.5 를 구현했다. **요청의 성격이 바뀌었다** �
 - `current_step` 은 완료 시 `null` 을 기대했는데 **빈 문자열** `""` 이 온다 (§4.0-②-4).
   프론트엔드 mapper 는 `''` 를 `null` 과 같게 다룬다 (§6).
 - **이름 중복 검증이 없다.** → ⚠️ **409 는 생겼지만 비교 방식이 다르다.** 완전일치 + **전역** 비교다.
-  같은 계정 안에서 앞뒤 공백 제거·연속 공백 축약·대소문자 무시 후 중복을 막아 달라 (D-015~D-020). 409 `WORKSPACE_NAME_DUPLICATED`.
+  같은 계정 안에서 앞뒤 공백 제거·연속 공백 축약 후 중복을 막아 달라 (D-015~D-020). 409 `WORKSPACE_NAME_DUPLICATED`.
   지금은 **남이 쓴 이름도 막힌다.** 반대로 `"팀 A"` 와 `"팀  A"` 는 둘 다 통과한다.
+  **대소문자는 구분한다.** D-019 가 `Alpha` 와 `alpha` 를 서로 다른 이름으로 정했다. 이전 판이 `대소문자 무시` 를 요청한 것은 **D-019 와 어긋난 오류**였다.
+  이 점에서는 백엔드의 완전일치 비교가 이미 맞다.
 - 온보딩 미완료 워크스페이스의 대시보드 접근은 403 `ONBOARDING_INCOMPLETE` 와 `details.current_step` (D-071).
   → ❌ 코드는 정의됐지만 던지는 곳이 없다. **가드는 M3 에서 프론트엔드가 `onboarding.completed` 로 먼저 판단한다.**
 
@@ -864,7 +912,7 @@ members 에만 있고 Discord 목록에 없으면      → 비활성 (서버를 
 | 회의 올리기 진입 가드 | `GET /workspaces/{id}/integrations` 로 Notion 연결 확인 | **구현됨** §4.3 |
 | 참석자 선택 | `GET /members?workspace_id=` | **구현됨** §2.2 |
 | 업로드 | `POST /workspaces/{id}/meetings/upload` (multipart) | ⚠️ **스텁** §4.4 — 파일·참석자를 저장하지 않는다 |
-| 정리 중 — 폴링 | `GET /meetings/{meeting_id}` | 구현됨 §2.3 + `progress` 복구 요청 §4.7 |
+| 정리 중 — 폴링 | `GET /meetings/{meeting_id}` | **구현됨** §2.3 — `progress` 포함 |
 | 회의록 목록 | `GET /workspaces/{id}/meetings` | **구현됨** §4.4 |
 | 회의록 본문 | `GET /meetings/{meeting_id}/minutes` | ⚠️ **스텁** §4.4 — `transcript`·`summary` 가 비었다 |
 | 회의록의 태스크 영역 | `GET /extractions/{extraction_id}` | **구현됨** §2.4 |
@@ -920,10 +968,10 @@ API 요청이 없으므로 계약도 모델도 픽스처도 필요 없다. 이 �
 
 | 영역 | M1 착수 | 막는 것 |
 |---|---|---|
-| 5.4 대시보드 | **가능** | 회의 목록만 mock |
+| 5.4 대시보드 | **가능** | 없음 — 회의 목록도 구현됐다 |
 | 5.6 태스크 (목록·상세·확인 필요) | **가능** | 없음 — 전부 구현됨 |
 | 5.8 워크스페이스 설정 (팀원 부분) | **가능** | 없음 |
-| 5.2 워크스페이스 선택·온보딩 | 가능 | 온보딩 상태를 mock |
+| 5.2 워크스페이스 선택·온보딩 | 가능 | 온보딩 저장이 서버 스텁이라 계속 mock (§4.0-②-3) |
 | 5.3 연결 화면 | 가능 | 전부 mock |
 | 5.5 회의 | 가능 | 업로드·회의록 본문 mock |
 | 5.1 로그인 | 가능 | 전부 mock |
@@ -964,6 +1012,9 @@ API 요청이 없으므로 계약도 모델도 픽스처도 필요 없다. 이 �
 - **`current_step` 정규화** — 완료 시 빈 문자열 `''` 이 온다 (§4.0-②-4). `null` 과 같게 다룬다.
 - **`display_name` 무시** — 연동의 `display_name` 이 생성 문자열이다 (②-7). 화면은 provider 이름을 쓴다.
 - **빈 `transcript`·`summary`** — `/minutes` 가 스텁이다 (②-11). 빈 배열과 `null` 이 **정상 경로**다. 오류로 다루지 않는다.
+- **`확인 필요` 판정** — 승인 뒤에도 `approval_id` 가 남는다 (②-12). `entities/extraction` 의 파생 함수가
+  **`approval_id != null 이고 task_id == null`** 을 `확인 필요` 로 본다. `task_id` 가 우선이다.
+  이 규칙은 백엔드가 ②-12 를 고쳐도 그대로 맞는다.
 
 ---
 
@@ -978,6 +1029,7 @@ API 요청이 없으므로 계약도 모델도 픽스처도 필요 없다. 이 �
 
 - **`gate` 와 식별자의 짝이 맞아야 한다.** `gate=auto` 인 추출 항목은 `task_id` 만, `review`·`hold` 는 `approval_id` 만 갖는다 (§3.1).
 - 승인 픽스처의 `payload` 는 §2.5 의 11개 키를 그대로 쓴다. `task_title` 이며 `task` 가 아니다.
+- **승인을 반영하면 해당 `extraction_item` 의 `task_id` 가 채워지고 `approval_id` 는 남는다.** 실 백엔드와 같은 모양이어야 §3.1 의 우회가 검증된다.
 - `전체` 탭 개수가 `확인 필요 + 완료 아님 + 완료` 와 맞아야 한다. 시안 기준 `13 = 3 + 7 + 3`.
 - `extraction_id` 는 `status: done` 인 회의에만 존재한다.
 - 일반 팀원 픽스처에는 `approval_id` 를 가진 항목이 노출되지 않아야 한다 (D-104).

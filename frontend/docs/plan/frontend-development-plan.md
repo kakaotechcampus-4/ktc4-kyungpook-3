@@ -190,7 +190,8 @@ OpenAPI 제공 전까지만 `shared/types`에 임시 DTO 타입을 두고, 제�
   - 경로(D-108): `/`, `/login`, `/signup`, `/onboarding/*`, `/workspaces`, `/workspaces/:workspaceId/dashboard`, `/workspaces/:workspaceId/meetings/:meetingId?`, `/workspaces/:workspaceId/tasks/:taskId?`, `/workspaces/:workspaceId/messages/*`, `/workspaces/:workspaceId/members`, `/workspaces/:workspaceId/settings`.
 - **가드**(D-131, D-070~D-072, D-102): `RequireAuth`, `RedirectIfAuthed`, `RequireTeamMember`, `RequireOnboardingComplete`, `RequirePM`. 페이지 일부의 PM 전용 액션은 컴포넌트 단계에서 제어. **프론트 접근 제어는 UX 목적이며 실제 권한은 API에서도 검증되어야 함**을 계약 문서에 명시.
   - `RequireOnboardingComplete` 는 **서버 응답에 기대지 않는다.** 백엔드가 403 `ONBOARDING_INCOMPLETE` 를 던지지 않으므로 `workspace.onboarding.completed` 로 직접 판단한다(D-071, D-172).
-  - 반대로 `RequireTeamMember` 는 서버가 이미 403 `FORBIDDEN` 을 낸다. 가드는 UX 용이고 실제 차단은 서버가 한다.
+  - **가드 전체가 UX 장치이지 보안 경계가 아니다.** 인증이 절반만 걸려 있다 — `tasks` · `approvals` · `extractions` · `members` 는 비로그인으로 호출된다(D-172, 계약 §4.0-②-1).
+    **서버가 막아 준다고 가정하고 가드를 느슨하게 만들지 않는다.** 반대로 가드를 촘촘히 해도 API 는 열려 있으므로, 이 상태를 보안 대책으로 보고하지도 않는다.
 - **가드 워터폴 방지 (중요)**: 가드를 순서대로 두면 `/me` → `/workspaces` → 페이지 데이터로 **3홉 직렬 대기**가 생겨 콜드 로드가 느려진다.
   앱 부팅 시 `/me`와 `/workspaces`를 **동시에** `queryClient.prefetchQuery`로 시작하고, 가드는 네트워크를 직접 기다리지 않고 **캐시를 읽기만** 하도록 구현한다. 페이지 데이터도 가드 통과를 기다리지 않고 라우트 진입과 함께 시작한다.
 - `shared/api/client.ts`(D-120): Axios 인스턴스 — `baseURL`, `withCredentials: true`, **응답 봉투 `{data, error}` 해제**, 오류를 `AppError { code, message, status, details }`로 정규화. 인터셉터에 비즈니스 로직·재요청을 넣지 않는다(D-120, D-135).
