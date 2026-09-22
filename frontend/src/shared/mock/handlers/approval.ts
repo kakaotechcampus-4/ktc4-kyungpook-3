@@ -66,6 +66,16 @@ export const approvalHandlers = [
           meetingId ? 'meeting' : 'manual',
         )
         approval.related_task_id = task.task_id
+        // 실 백엔드와 같게 — extraction 항목의 task_id 를 채우되 approval_id 는 비우지 않는다
+        // (계약 §3.1, §4.0-②-12). 화면은 task_id 를 우선으로 읽어 이 상태를 반영됨으로 다룬다.
+        if (typeof payload.extraction_item_id === 'string') {
+          for (const extraction of db.extractions) {
+            const item = extraction.items.find(
+              ({ item_id }) => item_id === payload.extraction_item_id,
+            )
+            if (item) item.task_id = task.task_id
+          }
+        }
       } else if (approval.type === 'task_update') {
         if (approval.related_task_id === null)
           return fail('INVALID_REQUEST', '변경할 태스크가 필요합니다.', 400)
