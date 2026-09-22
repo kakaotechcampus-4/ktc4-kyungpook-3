@@ -136,7 +136,9 @@ AUDIO_TOO_LARGE(413)              DISCORD_USER_ALREADY_MAPPED(409)
 ```
 
 - `alias_type` 은 `realname` \| `nickname` \| `mention` \| `inferred`, `source` 는 `manual` \| `discord_profile` \| `learned`.
-- **`unresolved-aliases` 는 Discord 서버의 사용자 목록이 아니다.** 회의 전사에서 감지됐지만 매칭되지 않은 **이름 문자열**이다. `alias_resolution_log` 에서 집계하며 이미 별칭으로 등록된 것은 빠진다.
+- **`unresolved-aliases` 는 Discord 서버의 사용자 목록이 아니다.** 회의 전사에서 감지됐지만 매칭되지 않은 **이름 문자열**이다. `alias_resolution_log` 에서 집계한다.
+  **빠지는 조건이 「등록되면」이 아니다** — 같은 이름의 `verified` 별칭이 **정확히 1개**일 때만 해결된 것으로 본다.
+  미검증 별칭이거나 여러 팀원에 붙어 중의적이면 목록에 **남는다** (§4.0-②-15).
 - 따라서 **팀원 연결 화면의 데이터 출처가 D-026 의 전제와 다르다** → §4.5 에서 엔드포인트 하나를 요청한다.
 - Discord 사용자 식별자는 `member.discord_user_id` 에 팀원당 하나씩 붙는다.
 
@@ -188,7 +190,9 @@ AUDIO_TOO_LARGE(413)              DISCORD_USER_ALREADY_MAPPED(409)
     "approval_id": "ap_01"}]}
 ```
 
-- `confidence` 는 `min(task, assignee, due)`.
+- `confidence` 는 **언급된 값들의 최솟값**이다. `assignee_raw` · `due_raw` 가 `null` 이면 **그 값은 계산에서 빠진다**
+  (`services/matching.py` 의 `item_confidence`). 담당자·마감이 아예 언급되지 않은 항목을 `0.0` 으로 보고 무조건 `hold` 로 떨어뜨리지 않기 위해서다.
+  따라서 **「담당자 미언급 = 신뢰도 0 = hold」 가 아니다.** 나머지 값만 높으면 `auto` 로 갈 수 있다. 픽스처를 만들 때 이것을 전제로 한다.
 - `gate` 는 `auto`(≥0.8) / `review`(≥0.5) / `hold`. 임계값은 `services/matching.py`.
   **`≥0.8` 이 `auto` 의 충분조건이 아니다.** `needs_check` 면 점수와 무관하게 `review` 로 내려간다 (PR #55) → §3.1.
 - **생성 시점에는** `task_id` 와 `approval_id` 가 배타적으로 채워진다. `gate=auto` 면 `task_id`, `review`·`hold` 면 `approval_id`.
@@ -332,7 +336,7 @@ AUDIO_TOO_LARGE(413)              DISCORD_USER_ALREADY_MAPPED(409)
 
 ```
 추출 항목
-  confidence = min(task, assignee, due)
+  confidence = min(언급된 값들)          assignee_raw·due_raw 가 null 이면 그 값은 빠진다
   needs_check = 미검증 별칭 · 중의성 등            <- PR #55 가 추가
       |
       +- >= 0.8 이고 needs_check 아님
@@ -474,17 +478,27 @@ PR #59 가 §4.1~§4.5 를 구현했다. **요청의 성격이 바뀌었다** �
 
 | 항목 | 백엔드 | MSW |
 |---|---|---|
-| `progress` — **승인 payload 경로만** | `validate_task_fields` 의 `int(value)` 가 그대로 돈다. `"30"` → 30, `30.9` → 30, `true` → 1 | 정수형 `number` 만 받는다 |
+| `progress` | 아래 표 참조 — **두 경로 모두** MSW 가 더 엄격하다 | 정수형 `number` 만 받는다 |
 | `title` 300자 | Python `len()` — 유니코드 **코드 포인트** | JS `.length` — UTF-16 **코드 단위**. 이모지 등 비-BMP 가 많으면 MSW 가 먼저 막는다 |
 
-**`progress` 의 편차는 승인 경로에만 있다.** 값이 태스크에 들어가는 길이 둘인데 한쪽만 타입 검사를 거친다.
+**`progress` 를 값별로 보면 이렇다.** pydantic 이 **lax 모드**라 직접 API 도 문자열·불리언을 받아 준다.
 
-- `POST` · `PATCH /tasks` — 본문이 먼저 `TaskCreateRequest` · `TaskUpdateRequest` 를 통과한다.
-  `progress: int | None = Field(None, ge=0, le=100)` 이라 **`30.9` 는 여기서 거절되고** `int(value)` 까지 가지 않는다.
+| 보낸 값 | `POST`·`PATCH /tasks` | 승인 payload | MSW |
+|---|---|---|---|
+| `30` | 30 | 30 | 30 |
+| `"30"` | **30** | 30 | **거절** |
+| `30.0` | **30** | 30 | **거절** |
+| `30.9` | **거절** | **30** | 거절 |
+| `true` | **1** | 1 | **거절** |
+
+두 경로가 갈리는 것은 `30.9` 하나다.
+
+- `POST` · `PATCH /tasks` — 본문이 `TaskCreateRequest` · `TaskUpdateRequest` 의 `progress: int` 를 먼저 통과한다.
+  pydantic lax 는 소수부가 있는 실수를 정수로 바꾸지 않으므로 `30.9` 만 여기서 거절된다.
 - `PATCH /approvals/{id}` 의 반영 — `approval.payload` 가 `Text` 컬럼이라 `json.loads` 한 **타입 없는 dict** 다.
-  pydantic 을 거치지 않아 `validate_task_fields` 의 `int(value)` 가 그대로 돈다.
+  pydantic 을 거치지 않아 `validate_task_fields` 의 `int(value)` 가 그대로 돌고, `30.9` 도 `30` 으로 잘린다.
 
-계약만 읽고 **직접 태스크 API 도 소수점을 받아 준다고 오해하면 안 된다.**
+**어느 경우든 MSW 가 더 엄격하다.** 「mock 은 되는데 실 API 에서 깨지는」 방향이 아니므로 맞추지 않는다.
 
 **워크스페이스 이름 길이 — 제품 결정과 서버가 다르다.** 요청이 아니라 기록이다.
 
@@ -947,7 +961,7 @@ members 에만 있고 Discord 목록에 없으면      → 비활성 (서버를 
 | 업로드 | `POST /workspaces/{id}/meetings/upload` (multipart) | ⚠️ **스텁** §4.4 — 파일·참석자를 저장하지 않는다 |
 | 정리 중 — 폴링 | `GET /meetings/{meeting_id}` | **구현됨** §2.3 — `progress` 포함 |
 | 회의록 목록 | `GET /workspaces/{id}/meetings` | **구현됨** §4.4 |
-| 회의록 본문 | `GET /meetings/{meeting_id}/minutes` | ⚠️ **스텁** §4.4 — `transcript`·`summary` 가 비었다 |
+| 회의록 본문 | `GET /meetings/{meeting_id}/minutes` | ⚠️ **스텁** §4.4 — `transcript` 가 안내 문구 1줄, `summary` 는 항상 `null` |
 | 회의록의 태스크 영역 | `GET /extractions/{extraction_id}` | **구현됨** §2.4 |
 
 - Notion 미연결이면 업로드 화면으로 보내지 않고 차단 모달을 띄운다 (D-097).
