@@ -9,7 +9,15 @@ import prettier from 'eslint-config-prettier'
 
 export default tseslint.config(
   {
-    ignores: ['dist', 'coverage', 'storybook-static', 'playwright-report', 'test-results', 'docs'],
+    ignores: [
+      'dist',
+      'coverage',
+      'storybook-static',
+      'playwright-report',
+      'test-results',
+      'docs',
+      'public/mockServiceWorker.js',
+    ],
   },
 
   js.configs.recommended,
@@ -30,6 +38,9 @@ export default tseslint.config(
       boundaries,
     },
     settings: {
+      'import/resolver': {
+        typescript: { project: './tsconfig.json' },
+      },
       'boundaries/elements': [
         { type: 'app', pattern: 'src/app/*' },
         { type: 'pages', pattern: 'src/pages/*' },
@@ -103,6 +114,34 @@ export default tseslint.config(
             {
               name: 'radix-ui',
               message: 'Radix 는 primitive 별 패키지로 import 한다. 예: @radix-ui/react-dialog',
+            },
+          ],
+        },
+      ],
+    },
+  },
+
+  {
+    files: [
+      'src/app/**/*.{ts,tsx}',
+      'src/pages/**/*.{ts,tsx}',
+      'src/widgets/**/*.{ts,tsx}',
+      'src/features/**/*.{ts,tsx}',
+    ],
+    rules: {
+      '@typescript-eslint/no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: [
+                '@/shared/types/api',
+                '@/shared/types/api/*',
+                '**/shared/types/api',
+                '**/shared/types/api/*',
+              ],
+              message:
+                'DTO 는 entities 와 shared/mock 에서만 다룬다 (D-133). 도메인 타입은 @/entities/<name> 에서 가져온다.',
             },
           ],
         },
