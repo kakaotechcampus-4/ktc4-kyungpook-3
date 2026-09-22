@@ -98,6 +98,12 @@ await fetch('/api/v1/approvals/ap_01', {
 - **OAuth `start`·`callback`은 양쪽 다 없다.** Google 로그인과 Discord·Notion 연결은 아직 어느 쪽으로도 동작하지 않는다.
 - 실 백엔드는 업로드한 **파일을 저장하지 않는다.** 회의가 `processing`에 머물러 다음 업로드를 409로 막는다. MSW는 정상 흐름을 낸다.
 
+**세션 인증을 흉내낸다.** 로그아웃하면 보호된 엔드포인트가 401 을 낸다. 소속이 아닌 워크스페이스는 403 이다.
+`db.authenticated` 기본값이 `true` 라 평소에는 로그인 상태다. 붙인 곳은 [M1 사양서 §10-2](plan/m1-domain-model-and-msw.md)에 있다.
+`tasks`·`approvals`·`extractions`·`members` 에는 **일부러 붙이지 않았다** — 백엔드에 인증이 없다.
+
+handler 35개를 실 API 와 대조한 결과는 [M1 사양서 §10-1](plan/m1-domain-model-and-msw.md)에 표로 있다.
+
 태스크 쓰기 경로는 실 백엔드에 맞춰 두었다. 세 가지를 기억한다.
 
 - `PATCH`의 명시적 `null`은 **필드를 지운다.** 보내지 않을 필드는 `undefined`로 빼야 한다.

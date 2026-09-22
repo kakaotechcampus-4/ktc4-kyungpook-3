@@ -53,6 +53,15 @@ npm run dev             # 브라우저 콘솔에서 §14 의 확인 스니펫 �
 - [ ] **`pages`·`widgets`·`features`·`app` 에서 DTO 를 import 하면 ESLint 가 막는다** (§12).
 - [ ] production 번들에 MSW 가 들어가지 않는다 — `npm run build` 후 `dist/assets/*.js` 에 `msw` 가 0건 (§14).
 - [ ] 위 5개 npm 명령이 전부 통과한다.
+- [ ] **MSW handler 가 실 API 와 대조됐다** (§10-1). 2026-09-23 추가.
+
+> **일곱 번째 기준은 왜 뒤늦게 붙었나.** M1 은 실 API 가 없던 시점에 설계됐고, 여섯 기준은 전부
+> 「mock 이 응답하는가 · 테스트가 도는가 · 경계가 지켜지는가」였다. 실 API 와 같은지는 묻지 않았다.
+> 그 답이 **변환 계층**이었기 때문이다(§0 의 전제, D-159).
+>
+> PR #59 로 실 API 가 도착하면서 전제가 바뀌었다. D-172 가 「MSW 는 실 API 의 의미에 맞춘다」로
+> 정했는데, 그것은 사실상 **handler 전수 대조**를 뜻한다. 그 약속을 기준으로 명시하지 않으면
+> 리뷰가 찾아 주는 것만 하나씩 고치게 된다. 실제로 그렇게 다섯 라운드를 돌았다.
 
 ---
 
@@ -1014,6 +1023,64 @@ afterEach(() => { vi.useRealTimers() })
 | 33 | `GET /api/v1/members/aliases` | 구현됨 | |
 | 34 | `GET /api/v1/members/unresolved-aliases` | 구현됨 | |
 | 35 | `DELETE /api/v1/members/aliases/{alias_id}` | 구현됨 | 204 |
+
+### 10-1. 실 API 대조 (2026-09-23)
+
+handler 35개를 `origin/develop` 의 백엔드 라우트 38개와 맞췄다. 축은 다섯이다.
+
+| 축 | 결과 |
+|---|---|
+| 경로 · 메서드 | ✅ 일치 |
+| 성공 상태코드 | ✅ 일치 — 201 · 202 · 204 까지 |
+| 오류 코드 | 2건 어긋나 고쳤다 |
+| 응답 필드 | 3건 어긋나 고쳤다 |
+| 인증 · 멤버십 | 11개 handler 가 재현하지 않아 붙였다 (§10-2) |
+
+**MSW 에 없는 것이 맞는 셋.** 프론트엔드가 호출하지 않는 AI→BE 경로다 (계약 §2.3, §2.4, §2.5).
+
+```
+POST  /api/v1/extractions            POST  /api/v1/approvals
+PATCH /api/v1/meetings/{id}/fail
+```
+
+**고친 것.**
+
+| 대상 | 달랐던 것 |
+|---|---|
+| `PATCH /workspaces/{id}/onboarding` | 백엔드는 **PM 만** 허용해 403 을 낸다. MSW 는 누구나 통과했다 |
+| `PATCH /workspaces/{id}/onboarding` | 응답이 갱신된 워크스페이스였다. 실 API 는 **빈 객체** 다 |
+| `GET /meetings/{id}/minutes` | extraction 이 없으면 400 이었다. 실 API 는 **200 에 빈 본문** 이다 |
+| `MinutesDto.title` · `summary` | 필수였다. 백엔드는 **둘 다 nullable** 이고 `summary` 는 항상 `null` 이다 |
+| `POST /members/{id}/aliases` | 매번 새 alias 를 만들었다. 실 API 는 같은 이름이면 **기존 행을 그대로** 준다 |
+| `GET /workspaces/{id}/meetings` | `duration_ms`·`processed_at` 이 `null` 이었다. 실 API 는 **0 과 `ended_at`** 이다 |
+| `GET /meetings/{id}` | `progress` 가 픽스처에 없었고 생성 경로에도 빠져 있었다. 실 API 는 **항상** 준다 |
+| `DELETE .../integrations/{provider}` | 200 봉투였다. 실 API 는 **204 무본문** 이고, provider 를 검증하지 않아 **알 수 없는 값도 204** 다 |
+| `GET /workspaces` | 목록 항목에서 `onboarding` 을 깎았다. 실 API 는 상세와 **같은 모양** 이다 |
+
+**일부러 다르게 둔 것.** 어느 쪽도 「mock 은 되는데 실 API 에서 깨지는」 방향이 아니다. 계약 §4.0 에 기록했다.
+
+- `progress` 강제변환 — 승인 payload 경로에서 백엔드가 `int()` 로 자른다. MSW 는 정수만 받는다.
+- `title` 300자 — Python 은 코드 포인트, JS 는 UTF-16 코드 단위로 센다.
+
+### 10-2. 세션 인증
+
+`shared/mock/auth-guard.ts` 의 헬퍼 둘을 **백엔드가 의존성을 건 곳에만** 붙인다. 쿠키나 토큰 만료는 흉내내지 않고 결과만 맞춘다.
+
+```
+requireAuth()               401 UNAUTHENTICATED
+  logout · POST /workspaces · GET /workspaces · GET /workspaces/{id}
+
+requireMember(workspaceId)  401 또는 403 FORBIDDEN
+  onboarding · meetings upload · integrations GET·DELETE ·
+  discord/members · workspaces/{id}/meetings · meetings/{id}/minutes
+```
+
+뒤의 둘은 `Depends` 대신 본문에서 멤버를 직접 조회하지만 결과가 같아 함께 묶었다.
+
+**붙이지 않는 곳** — `tasks` · `approvals` · `extractions` · `members`. 백엔드에 인증이 없다(계약 §4.0-②-1).
+`GET /workspaces/{id}` 도 로그인만 보고 **멤버십을 보지 않는** 실 API 의 구멍을 그대로 흉내낸다.
+
+`db.authenticated` 기본값이 `true` 라 로그인 상태가 기본이다. 로그아웃 후 401, 비소속 403 은 테스트가 고정한다.
 
 **주의** — `/api/v1/members/aliases` 와 `/api/v1/members/{member_id}` 는 경로가 겹친다. MSW 는 **먼저 등록된 handler** 가 이긴다. `handlers/index.ts` 에서 `aliases`·`unresolved-aliases` 를 `{member_id}` **앞에** 둔다. 순서가 틀리면 `member_id = 'aliases'` 로 404 가 난다.
 
