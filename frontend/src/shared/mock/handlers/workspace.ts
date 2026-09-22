@@ -2,10 +2,13 @@ import { http } from 'msw'
 import { db } from '../db'
 import { fail, list, ok } from '../envelope'
 import { MOCK_NOW } from '../fixtures/constants'
+import { requireAuth, requireMember } from '../auth-guard'
 const base = '/api/v1/workspaces'
 export const workspaceHandlers = [
-  http.get(base, () =>
-    list(
+  http.get(base, () => {
+    const denied = requireAuth()
+    if (denied) return denied
+    return list(
       db.workspaces
         .filter(({ workspace_id }) =>
           db.accounts
@@ -15,9 +18,11 @@ export const workspaceHandlers = [
         // 백엔드는 목록에서도 _build_workspace_response 를 불러 role 과 onboarding 을 넣는다.
         // 여기서 깎으면 워크스페이스 선택 화면이 설정 미완료 상태를 못 받는다 (계약 §2.1, D-070)
         .sort((a, b) => b.created_at.localeCompare(a.created_at)),
-    ),
-  ),
+    )
+  }),
   http.post(base, async ({ request }) => {
+    const denied = requireAuth()
+    if (denied) return denied
     const body = (await request.json()) as { name?: unknown }
     if (typeof body.name !== 'string' || body.name.trim() === '' || body.name.length > 100)
       return fail('INVALID_REQUEST', '이름이 필요합니다.', 400)
@@ -69,10 +74,15 @@ export const workspaceHandlers = [
     return ok(workspace, { status: 201 })
   }),
   http.get(`${base}/:workspaceId`, ({ params }) => {
+    // 실 API 는 로그인만 확인하고 멤버십을 보지 않는다 (계약 §4.0-②-1). 그대로 흉내낸다
+    const denied = requireAuth()
+    if (denied) return denied
     const workspace = db.workspaces.find(({ workspace_id }) => workspace_id === params.workspaceId)
     return workspace ? ok(workspace) : fail('WORKSPACE_NOT_FOUND', '워크스페이스가 없습니다.', 404)
   }),
   http.patch(`${base}/:workspaceId/onboarding`, async ({ params, request }) => {
+    const denied = requireMember(String(params.workspaceId))
+    if (denied) return denied
     const workspace = db.workspaces.find(({ workspace_id }) => workspace_id === params.workspaceId)
     if (!workspace) return fail('WORKSPACE_NOT_FOUND', '워크스페이스가 없습니다.', 404)
     const body = (await request.json()) as { step?: unknown; action?: unknown }

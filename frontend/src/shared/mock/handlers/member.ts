@@ -1,6 +1,7 @@
 import { http } from 'msw'
 import { db } from '../db'
 import { fail, list, ok } from '../envelope'
+import { requireMember } from '../auth-guard'
 import { MOCK_NOW } from '../fixtures/constants'
 import { nextId } from '../utils'
 const base = '/api/v1'
@@ -34,6 +35,9 @@ export const memberHandlers = [
     return new Response(null, { status: 204 })
   }),
   http.get(`${base}/workspaces/:workspaceId/discord/members`, ({ params }) => {
+    // 백엔드는 integrations.py 에 있고 get_current_member 를 건다
+    const denied = requireMember(String(params.workspaceId))
+    if (denied) return denied
     if (!db.workspaces.some(({ workspace_id }) => workspace_id === params.workspaceId))
       return fail('WORKSPACE_NOT_FOUND', '워크스페이스가 없습니다.', 404)
     return db.integrations[String(params.workspaceId)]?.discord.status === 'connected'

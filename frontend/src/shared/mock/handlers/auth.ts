@@ -1,6 +1,7 @@
 import { http } from 'msw'
 import { db } from '../db'
 import { fail, ok } from '../envelope'
+import { requireAuth } from '../auth-guard'
 
 const base = '/api/v1/auth'
 export const authHandlers = [
@@ -45,6 +46,8 @@ export const authHandlers = [
     return ok(db.session)
   }),
   http.post(`${base}/logout`, () => {
+    const denied = requireAuth()
+    if (denied) return denied
     db.authenticated = false
     return ok({})
   }),

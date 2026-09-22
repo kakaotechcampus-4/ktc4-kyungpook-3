@@ -3,10 +3,14 @@ import type { MeetingDto } from '@/shared/types/api/meeting'
 import { db } from '../db'
 import { ok, list, fail } from '../envelope'
 import { MOCK_NOW } from '../fixtures/constants'
+import { requireMember } from '../auth-guard'
 import { readJson, nextId } from '../utils'
 
 export const meetingHandlers = [
   http.get('/api/v1/workspaces/:workspaceId/meetings', ({ params }) => {
+    // 백엔드는 get_current_user 뒤 멤버십을 직접 확인해 403 을 낸다
+    const denied = requireMember(String(params.workspaceId))
+    if (denied) return denied
     if (!db.workspaces.some(({ workspace_id }) => workspace_id === params.workspaceId))
       return fail('WORKSPACE_NOT_FOUND', '워크스페이스가 없습니다.', 404)
     const meetings = db.meetings.filter(
@@ -90,6 +94,8 @@ export const meetingHandlers = [
   }),
   http.post('/api/v1/workspaces/:workspaceId/meetings/upload', async ({ params, request }) => {
     const workspaceId = String(params.workspaceId)
+    const denied = requireMember(workspaceId)
+    if (denied) return denied
     if (!db.workspaces.some(({ workspace_id }) => workspace_id === workspaceId))
       return fail('WORKSPACE_NOT_FOUND', '워크스페이스가 없습니다.', 404)
     let form: FormData
