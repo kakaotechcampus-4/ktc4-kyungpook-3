@@ -179,9 +179,8 @@ OpenAPI 제공 전까지만 `shared/types`에 임시 DTO 타입을 두고, 제�
 
 ## M3. 앱 셸 · 라우팅 · 데이터 계층
 
-**착수 전 정리 2건.**
+**착수 전에.** M3 이전에 정리할 항목은 별도로 관리한다. 이 문서에 중복해 적지 않는다.
 
-- **키보드 포커스 표시를 만든다.** M2가 `outline` 배제까지만 정하고 대체 표현을 정하지 않아 탭 이동 시 화면 변화가 없다. WCAG 2.2 AA SC 2.4.7 미충족이다. focus 시 border로 표시해 W3C 규격을 맞춘다. 경위는 `docs/impl-decision/2026-09-16-focus-ring-not-ink.md`.
 - **실 API 대조를 M3 안에서 한 번 더 한다.** M1 시점의 대조는 D-172에 있다. M3는 axios와 `unwrap`을 인터셉터로 옮기는 마일스톤이라 **실 응답을 처음으로 직접 받는 지점**이다. 계약 §4.0의 편차 목록이 그대로인지 확인하고, 스텁이 채워졌으면 해당 화면의 MSW 의존을 푼다.
 
 - `app/providers`: `QueryClientProvider`, `RouterProvider`, Toast Provider, **Root Error Boundary**(D-129).
