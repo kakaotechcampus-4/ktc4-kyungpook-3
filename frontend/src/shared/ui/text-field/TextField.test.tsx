@@ -157,4 +157,46 @@ describe('TextField', () => {
 
     expect(screen.getByLabelText('이메일').className).not.toMatch(/outline/)
   })
+
+  it('draws the focus line in the accent when an error is shown', () => {
+    render(<TextField label="담당자" error="담당자를 골라 주세요" />)
+    const input = screen.getByLabelText('담당자')
+
+    expect(input).toHaveClass('focus-visible:outline-accent')
+    expect(input.className).not.toMatch(/outline-ink/)
+  })
+
+  it('draws the focus line in the accent for a blocking field', () => {
+    render(<TextField label="담당자" labelTone="required-blocking" />)
+    const input = screen.getByLabelText('담당자')
+
+    expect(input).toHaveClass('focus-visible:outline-accent')
+    expect(input.className).not.toMatch(/outline-ink/)
+  })
+
+  it('leaves the accent focus line off a plain input', () => {
+    render(<TextField label="이메일" />)
+
+    expect(screen.getByLabelText('이메일')).not.toHaveClass('focus-visible:outline-accent')
+  })
+
+  it.each([
+    ['an error is shown', { error: '비밀번호를 입력해 주세요' }],
+    ['the field is blocking', { labelTone: 'required-blocking' as const }],
+  ])('draws the wrapper focus line in the accent when %s', (_, props) => {
+    render(
+      <TextField
+        label="비밀번호"
+        {...props}
+        endAdornment={<button type="button" aria-label="비밀번호 보기" />}
+      />,
+    )
+    const input = screen.getByLabelText('비밀번호')
+    const wrapper = input.parentElement
+
+    expect(wrapper).toHaveClass('has-[input:focus-visible]:outline-accent')
+    expect(wrapper).not.toHaveClass('has-[input:focus-visible]:outline-ink')
+    expect(input).toHaveClass('focus-visible:outline-none')
+    expect(input).not.toHaveClass('focus-visible:outline-accent')
+  })
 })

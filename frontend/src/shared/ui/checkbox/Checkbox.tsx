@@ -29,7 +29,10 @@ const BOX_SURFACE =
 const BOX_BORDER =
   'border-input-border data-[state=unchecked]:hover:border-ink data-[state=unchecked]:active:border-ink'
 
-const BOX_BORDER_INVALID = 'border-accent'
+/* 강조색 테두리는 포커스 선도 강조색이다 — 먹 선이 덮으면 "승인이 막힌 칸" 신호가 사라진다.
+   체크·중간 상태는 먹 면이라 BOX_SURFACE 의 흰 선이 이긴다 (변형 유틸이 뒤에 생성되고 더 구체적이다).
+   docs/impl-decision/2026-09-23-focus-outline-over-border.md */
+const BOX_BORDER_INVALID = 'border-accent focus-visible:outline-accent'
 
 /** 비활성은 면이 비활성 표식 한 단이다. 미체크만 테두리가 남는다 */
 const BOX_DISABLED = 'border-transparent bg-inactive data-[state=unchecked]:border-line-strong'

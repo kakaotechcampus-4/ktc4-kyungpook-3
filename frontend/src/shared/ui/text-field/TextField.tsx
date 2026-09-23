@@ -64,7 +64,16 @@ const BARE_INPUT =
 /* 래퍼는 input 포커스에만 그린다. 장식 안의 버튼은 자기 전역 선을 그린다 — 둘 다 그리면 두 겹이다.
    docs/impl-decision/2026-09-23-focus-outline-over-border.md */
 const ADORNED_BOX =
-  'flex w-full items-center gap-8 border bg-surface has-[input:focus-visible]:outline-2 has-[input:focus-visible]:outline-ink has-[input:focus-visible]:-outline-offset-1'
+  'flex w-full items-center gap-8 border bg-surface has-[input:focus-visible]:outline-2 has-[input:focus-visible]:-outline-offset-1'
+
+/* 포커스 선 색. 강조색 테두리 입력은 선도 강조색이다 — 먹 선이 덮으면 포커스 중에
+   "승인이 막힌 칸"이라는 신호가 사라진다. 장식 없는 보통 입력은 전역 먹 선을 그대로 쓴다.
+   docs/impl-decision/2026-09-23-focus-outline-over-border.md */
+const INPUT_FOCUS_ACCENT = 'focus-visible:outline-accent'
+
+const ADORNED_FOCUS = 'has-[input:focus-visible]:outline-ink'
+
+const ADORNED_FOCUS_ACCENT = 'has-[input:focus-visible]:outline-accent'
 
 /**
  * 네이티브 `<input>`. Radix 를 쓰지 않는다 (§7-0).
@@ -96,10 +105,12 @@ export function TextField({
 
   const blocking = labelTone === 'required-blocking'
 
-  // 경계색·플레이스홀더색은 한 곳에서만 고른다 — 두 클래스를 같이 붙이면 CSS 순서가 이긴다
-  const borderColor = error || blocking ? 'border-accent' : TONE_BORDER[tone]
-  const placeholderColor =
-    error || blocking ? 'placeholder:text-accent-soft' : 'placeholder:text-faint'
+  // 경계색·플레이스홀더색·포커스 선 색은 한 곳에서만 고른다 — 두 클래스를 같이 붙이면 CSS 순서가 이긴다
+  const accent = Boolean(error) || blocking
+  const borderColor = accent ? 'border-accent' : TONE_BORDER[tone]
+  const placeholderColor = accent ? 'placeholder:text-accent-soft' : 'placeholder:text-faint'
+  const inputFocusColor = accent ? INPUT_FOCUS_ACCENT : undefined
+  const adornedFocusColor = accent ? ADORNED_FOCUS_ACCENT : ADORNED_FOCUS
 
   const describedBy =
     [description ? descriptionId : undefined, error ? errorId : undefined]
@@ -124,7 +135,15 @@ export function TextField({
       ) : null}
 
       {hasAdornment ? (
-        <div className={[ADORNED_BOX, TONE_SHAPE[tone], TONE_TEXT[tone], borderColor].join(' ')}>
+        <div
+          className={[
+            ADORNED_BOX,
+            adornedFocusColor,
+            TONE_SHAPE[tone],
+            TONE_TEXT[tone],
+            borderColor,
+          ].join(' ')}
+        >
           {startAdornment}
           <input className={[BARE_INPUT, placeholderColor].join(' ')} {...inputProps} />
           {endAdornment}
@@ -138,7 +157,10 @@ export function TextField({
             TONE_TEXT[tone],
             borderColor,
             placeholderColor,
-          ].join(' ')}
+            inputFocusColor,
+          ]
+            .filter(Boolean)
+            .join(' ')}
           {...inputProps}
         />
       )}

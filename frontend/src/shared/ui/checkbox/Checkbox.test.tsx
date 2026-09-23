@@ -150,4 +150,21 @@ describe('Checkbox', () => {
       /data-\[state=unchecked\]:focus-visible:/,
     )
   })
+
+  it('draws the focus line in the accent on an invalid box and keeps the white line when checked', () => {
+    render(<Checkbox invalid>이용약관에 동의합니다</Checkbox>)
+    const box = screen.getByRole('checkbox')
+
+    expect(box).toHaveClass(
+      'focus-visible:outline-accent',
+      'data-[state=checked]:focus-visible:outline-surface',
+      'data-[state=indeterminate]:focus-visible:outline-surface',
+    )
+  })
+
+  it('leaves the accent focus line off the default box', () => {
+    render(<Checkbox />)
+
+    expect(screen.getByRole('checkbox').className).not.toMatch(/outline-accent/)
+  })
 })
