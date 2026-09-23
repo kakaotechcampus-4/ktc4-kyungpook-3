@@ -89,7 +89,7 @@ def test_llm_path_uses_summary_as_text_and_keeps_raw_sentence_as_evidence():
         TranscriptSegment(speaker="mem_jimin", start=1.0, end=2.0, text="네, 알겠습니다.", seq=6),
     )
     fake = FakeLLM(responses=[{"findings": [
-        {"index": 1, "summary": "로그인 화면 마감을 다음 주 화요일로 연기하는 데 동의함", "reason": "일정 변경 합의"}
+        {"indices": [1], "summary": "로그인 화면 마감을 다음 주 화요일로 연기하는 데 동의함", "reason": "일정 변경 합의"}
     ]}])
     findings = extract_findings_llm(t, fake)
 
@@ -111,10 +111,41 @@ def test_llm_path_falls_back_to_raw_sentence_when_summary_missing():
     t = _transcript(
         TranscriptSegment(speaker="mem_dongwoo", start=0.0, end=1.0, text="그럼 그렇게 갑시다.", seq=6)
     )
-    fake = FakeLLM(responses=[{"findings": [{"index": 0, "reason": "합의 표현(문맥상)"}]}])  # summary 없음
+    fake = FakeLLM(responses=[{"findings": [{"indices": [0], "reason": "합의 표현(문맥상)"}]}])  # summary 없음
     findings = extract_findings_llm(t, fake)
 
     assert findings[0].text == "그럼 그렇게 갑시다."
+    assert findings[0].evidence == "그럼 그렇게 갑시다."
+
+
+def test_llm_path_joins_evidence_across_lines_and_anchors_on_the_last():
+    """결정이 여러 줄에 걸쳐 만들어지면 근거를 이어 붙이고, seq/speaker 는 마지막 줄을 가리킨다."""
+    t = _transcript(
+        TranscriptSegment(speaker="mem_yujin", start=0.0, end=1.0,
+                          text="API 명세서 작성 담당이 필요합니다.", seq=3),
+        TranscriptSegment(speaker="mem_haeun", start=1.0, end=2.0,
+                          text="이건 지민님이 맡아주세요.", seq=4),
+    )
+    fake = FakeLLM(responses=[{"findings": [
+        {"indices": [0, 1], "summary": "API 명세서 작성을 지민이 맡기로 함", "reason": "담당자 지정"}
+    ]}])
+    findings = extract_findings_llm(t, fake)
+
+    assert len(findings) == 1
+    assert findings[0].evidence == "API 명세서 작성 담당이 필요합니다. 이건 지민님이 맡아주세요."
+    assert findings[0].seq == 4  # 결론을 말한 마지막 줄
+    assert findings[0].speaker == "mem_haeun"
+
+
+def test_llm_path_keeps_valid_indices_when_some_are_out_of_range():
+    """지어낸 번호가 섞여도 나머지 근거로 결정을 살린다 — 항목을 통째로 버리지 않는다."""
+    t = _transcript(
+        TranscriptSegment(speaker="a", start=0.0, end=1.0, text="그럼 그렇게 갑시다.", seq=7)
+    )
+    fake = FakeLLM(responses=[{"findings": [{"indices": [0, 99], "reason": "합의"}]}])
+    findings = extract_findings_llm(t, fake)
+
+    assert len(findings) == 1
     assert findings[0].evidence == "그럼 그렇게 갑시다."
 
 
@@ -122,7 +153,7 @@ def test_llm_path_ignores_out_of_range_indices():
     t = _transcript(
         TranscriptSegment(speaker="a", start=0.0, end=1.0, text="안녕하세요.", seq=0)
     )
-    fake = FakeLLM(responses=[{"findings": [{"index": 99, "reason": "존재하지 않는 번호"}]}])
+    fake = FakeLLM(responses=[{"findings": [{"indices": [99], "reason": "존재하지 않는 번호"}]}])
     assert extract_findings_llm(t, fake) == []
 
 

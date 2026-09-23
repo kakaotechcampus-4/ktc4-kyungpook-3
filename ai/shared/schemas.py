@@ -116,13 +116,18 @@ class JudgeFinding(_Base):
     (예: "네, 알겠습니다." 원문 → "로그인 화면 마감을 다음 주 화요일로 연기하는 데 동의함").
     LLM 경로는 전사록 전체를 한 번에 보고 판단하기 때문에 이런 재구성이 가능하고, 규칙
     기반 경로는 그런 능력이 없어서 원문을 그대로 쓴다(이 경우 text == evidence).
+
+    근거는 문장 하나가 아니라 **여러 줄에 걸칠 수 있다.** 결정은 보통 "제안 → 합의"처럼
+    나뉘어 만들어지기 때문이다("API 명세서 작성 담당이 필요합니다." + "이건 지민님이
+    맡아주세요."). 그래서 evidence 에는 해당 원문들이 순서대로 이어 붙는다. seq/speaker 는
+    그중 **마지막 줄**을 가리킨다 — 결론을 말한 발화이자, 1인칭 담당자 해소가 봐야 하는 화자다.
     """
 
     text: str  # 자기완결적 요약(LLM) 또는 원문 그대로(규칙). 나중에 JudgeInput.text로 이어짐
-    evidence: str = ""  # 실제 발화 원문 그대로 — 추적/감사용. 비어있으면 text와 동일하다고 간주
+    evidence: str = ""  # 근거 발화 원문(여러 줄이면 순서대로 이어 붙임) — 추적/감사용. 비어있으면 text와 동일하다고 간주
     source: str = "meeting"  # "meeting" | "chat"
-    seq: int = 0  # 원본 TranscriptSegment.seq — 근거 추적용 안정 식별자
-    speaker: str | None = None  # 화자(opaque id) — 문맥 참고/디버깅용
+    seq: int = 0  # 근거 마지막 줄의 TranscriptSegment.seq — 근거 추적용 안정 식별자
+    speaker: str | None = None  # 근거 마지막 줄의 화자(opaque id) — 문맥 참고/디버깅용
     reason: str = ""  # 왜 후보로 골랐는지 (규칙 기반이면 어떤 규칙에 걸렸는지)
     method: str = "rules"  # rules | llm
 

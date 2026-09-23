@@ -16,7 +16,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from judge.semantic_judge import extract_findings_llm, extract_findings_rules
+from judge.semantic_judge import extract_findings_llm, extract_findings_rules, split_sentences
 from llm import get_llm
 from shared.schemas import JudgeFinding, Transcript, TranscriptSegment
 
@@ -46,7 +46,9 @@ def _build_transcript(case: dict) -> Transcript:
 def _flagged_texts(findings: list[JudgeFinding]) -> set[str]:
     # evidence로 매칭한다 — text는 LLM 경로에서 문맥 반영 요약으로 바뀔 수 있어서
     # 골든셋의 원문 기준(expected[].text)과 안정적으로 대응하는 건 evidence 쪽이다.
-    return {f.evidence for f in findings}
+    # evidence는 근거가 여러 줄이면 원문을 이어 붙인 것이라, 문장을 쪼갤 때와 같은 규칙으로
+    # 다시 쪼개 문장 단위로 되돌린다. 골든셋 라벨이 문장 하나 단위라 그래야 대응이 된다.
+    return {s for f in findings for s in split_sentences(f.evidence)}
 
 
 def _score(case: dict, flagged: set[str]) -> tuple[int, int, list[str]]:

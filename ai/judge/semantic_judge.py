@@ -110,12 +110,28 @@ def _numbered_lines(sentences: list[str], speakers: list[str | None]) -> str:
     return "\n".join(f"[{i}] {speakers[i] or '?'}: {s}" for i, s in enumerate(sentences))
 
 
+def _valid_indices(item: dict, n: int) -> list[int]:
+    """LLM 이 준 근거 줄 번호 중 범위 안의 것만 남겨 정렬한다.
+
+    지어낸 번호는 버리고 나머지는 살린다 — 한 줄이 어긋났다고 항목을 통째로 버리면 결정
+    자체가 사라진다. 구형 단일 index 응답도 그대로 받아준다.
+    """
+    raw = item.get("indices", item.get("index"))
+    if isinstance(raw, int):
+        raw = [raw]
+    if not isinstance(raw, list):
+        return []
+    return sorted({i for i in raw if isinstance(i, int) and 0 <= i < n})
+
+
 def _luna_user_prompt(numbered: str) -> str:
     return (
-        "다음은 번호가 매겨진 발화 목록이다. 의미 있다고 판단한 발화마다 번호와, "
-        "앞뒤 문맥까지 반영해서 이 발화 하나만 읽어도 무슨 내용인지 알 수 있게 다시 쓴 "
+        "다음은 번호가 매겨진 발화 목록이다. 의미 있다고 판단한 내용마다 근거가 되는 줄 번호 "
+        "전부(indices)와, 앞뒤 문맥까지 반영해서 이것만 읽어도 무슨 내용인지 알 수 있게 다시 쓴 "
         "자기완결적 요약(summary), 왜 그렇게 판단했는지 짧은 이유(reason)를 JSON으로만 답하라.\n\n"
-        '형식: {"findings": [{"index": 0, "summary": "...", "reason": "..."}]}\n\n'
+        "하나의 결정이 여러 줄에 걸쳐 만들어지면(제안 → 합의, 지시 → 수락) 그 줄 번호를 모두 "
+        "indices 에 담아라. 한 줄로 끝나면 번호 하나만 담는다. 서로 다른 결정은 따로 나눈다.\n\n"
+        '형식: {"findings": [{"indices": [1, 2], "summary": "...", "reason": "..."}]}\n\n'
         f"{numbered}"
     )
 
@@ -138,17 +154,24 @@ def extract_findings_llm(transcript: Transcript, client: LLMClient) -> list[Judg
 
     findings: list[JudgeFinding] = []
     for item in result.get("findings", []):
-        idx = item.get("index")
-        if not isinstance(idx, int) or not (0 <= idx < len(sentences)):
+        idxs = _valid_indices(item, len(sentences))
+        if not idxs:
             continue  # Luna가 범위 밖 번호를 지어내면 그냥 무시 — 통째로 실패 처리하지 않는다
         summary = str(item.get("summary", "")).strip()
+        # 근거가 여러 줄이면 원문을 순서대로 이어 붙인다. 채점기는 같은 규칙으로 다시 쪼개
+        # 문장 단위로 본다(judge/eval_golden_set.py).
+        evidence = " ".join(sentences[i] for i in idxs)
+        # 마지막 줄을 앵커로 삼는다 — "제안 → 합의" 구조에선 결론을 말한 발화가 뒤에 오고,
+        # 1인칭("제가 할게요") 담당자 해소도 그 발화의 화자를 봐야 한다.
+        # ponytail: 앵커가 항상 마지막이라는 보장은 없다. 어긋나면 LLM 에 anchor 를 따로 받는다.
+        anchor = idxs[-1]
         findings.append(
             JudgeFinding(
-                text=summary or sentences[idx],  # summary 비어있으면 원문으로 폴백
-                evidence=sentences[idx],
+                text=summary or evidence,  # summary 비어있으면 원문으로 폴백
+                evidence=evidence,
                 source=transcript.source,
-                seq=seqs[idx],
-                speaker=speakers[idx],
+                seq=seqs[anchor],
+                speaker=speakers[anchor],
                 reason=str(item.get("reason", "")).strip()[:200],
                 method="llm",
             )
