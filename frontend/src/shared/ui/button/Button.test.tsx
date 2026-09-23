@@ -125,4 +125,35 @@ describe('Button', () => {
     expect(button).not.toBeDisabled()
     expect(button).toHaveAttribute('aria-disabled', 'true')
   })
+
+  it('draws a white focus line inside the ink face of primary', () => {
+    render(<Button variant="primary">승인</Button>)
+
+    expect(screen.getByRole('button')).toHaveClass(
+      'focus-visible:outline-surface',
+      'focus-visible:-outline-offset-3',
+    )
+  })
+
+  it('returns aria-disabled primary to the ink focus line — the face is light there', () => {
+    render(
+      <Button variant="primary" aria-disabled="true">
+        승인
+      </Button>,
+    )
+
+    expect(screen.getByRole('button')).toHaveClass(
+      'aria-disabled:focus-visible:outline-ink',
+      'aria-disabled:focus-visible:-outline-offset-1',
+    )
+  })
+
+  it.each(['default', 'ghost', 'text', 'outline'] as const)(
+    'leaves the %s variant on the global focus line',
+    (variant) => {
+      render(<Button variant={variant}>승인</Button>)
+
+      expect(screen.getByRole('button').className).not.toMatch(/focus-visible:/)
+    },
+  )
 })
