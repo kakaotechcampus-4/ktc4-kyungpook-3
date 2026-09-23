@@ -104,6 +104,21 @@ describe('Checkbox', () => {
     )
   })
 
+  it.each([true, 'indeterminate'] as const)(
+    'keeps the ink face still while pressed (checked=%s)',
+    (checked) => {
+      render(<Checkbox checked={checked} />)
+      const box = screen.getByRole('checkbox')
+
+      expect(box).not.toHaveClass(
+        'data-[state=checked]:active:bg-sub',
+        'data-[state=indeterminate]:active:bg-sub',
+      )
+      expect(box.className).not.toMatch(/active:bg-/)
+      expect(box).toHaveClass('data-[state=unchecked]:active:border-ink')
+    },
+  )
+
   it('toggles with the keyboard', async () => {
     const user = userEvent.setup()
     const onCheckedChange = vi.fn()

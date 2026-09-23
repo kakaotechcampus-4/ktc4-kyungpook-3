@@ -21,9 +21,10 @@ const BOX = 'mt-1 inline-flex h-18 w-18 shrink-0 items-center justify-center rou
 
 /* 면은 data-state 가 고른다. 호출부가 uncontrolled 로 써도 맞아야 하기 때문이다.
    같은 속성 안에서 기본 유틸과 변형 유틸이 겹치면 변형이 이긴다 (Tailwind 생성 순서).
-   먹 면일 때만 포커스를 흰 선으로 바꾼다 — docs/impl-decision/2026-09-23-focus-outline-over-border.md */
+   먹 면일 때만 포커스를 흰 선으로 바꾼다 — docs/impl-decision/2026-09-23-focus-outline-over-border.md
+   누르는 동안 먹 면은 그대로다 — docs/impl-decision/2026-09-23-no-pressed-face-checkbox-segmented.md */
 const BOX_SURFACE =
-  'bg-surface data-[state=checked]:border-transparent data-[state=checked]:bg-ink data-[state=checked]:active:bg-sub data-[state=checked]:focus-visible:outline-surface data-[state=checked]:focus-visible:-outline-offset-3 data-[state=indeterminate]:border-transparent data-[state=indeterminate]:bg-ink data-[state=indeterminate]:active:bg-sub data-[state=indeterminate]:focus-visible:outline-surface data-[state=indeterminate]:focus-visible:-outline-offset-3'
+  'bg-surface data-[state=checked]:border-transparent data-[state=checked]:bg-ink data-[state=checked]:focus-visible:outline-surface data-[state=checked]:focus-visible:-outline-offset-3 data-[state=indeterminate]:border-transparent data-[state=indeterminate]:bg-ink data-[state=indeterminate]:focus-visible:outline-surface data-[state=indeterminate]:focus-visible:-outline-offset-3'
 
 /** 미체크 테두리는 "입력 경계"다 — docs/impl-decision/2026-09-16-checkbox-unchecked-border.md */
 const BOX_BORDER =
