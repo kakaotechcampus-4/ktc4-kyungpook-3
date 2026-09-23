@@ -56,10 +56,15 @@ const INPUT_DISABLED = 'disabled:border-line disabled:bg-surface-sunken disabled
 
 /* min-w-[0px] 은 오타가 아니다 — tokens.css 가 --spacing 을 비워서 min-w-0 유틸이 없다.
    padding 은 preflight 의 `*{padding:0}` 이 이미 지운다 (p-0 도 같은 이유로 없다).
-   docs/impl-decision/2026-09-16-values-outside-token-scale.md */
-const BARE_INPUT = 'h-full w-full min-w-[0px] border-0 bg-transparent font-normal text-ink'
+   docs/impl-decision/2026-09-16-values-outside-token-scale.md
+   포커스는 래퍼가 그리므로 안쪽 input 은 끈다 — 래퍼 테두리 안쪽에 선이 하나 더 생긴다. */
+const BARE_INPUT =
+  'h-full w-full min-w-[0px] border-0 bg-transparent font-normal text-ink focus-visible:outline-none'
 
-const ADORNED_BOX = 'flex w-full items-center gap-8 border bg-surface'
+/* 래퍼는 input 포커스에만 그린다. 장식 안의 버튼은 자기 전역 선을 그린다 — 둘 다 그리면 두 겹이다.
+   docs/impl-decision/2026-09-23-focus-outline-over-border.md */
+const ADORNED_BOX =
+  'flex w-full items-center gap-8 border bg-surface has-[input:focus-visible]:outline-2 has-[input:focus-visible]:outline-ink has-[input:focus-visible]:-outline-offset-1'
 
 /**
  * 네이티브 `<input>`. Radix 를 쓰지 않는다 (§7-0).

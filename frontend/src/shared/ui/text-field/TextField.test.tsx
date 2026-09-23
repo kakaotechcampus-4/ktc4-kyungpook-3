@@ -133,4 +133,28 @@ describe('TextField', () => {
 
     expect(container.firstElementChild).toHaveClass('mt-16', 'flex', 'flex-col')
   })
+
+  it('moves the focus line to the wrapper when an adornment wraps the input', () => {
+    render(
+      <TextField
+        label="비밀번호"
+        endAdornment={<button type="button" aria-label="비밀번호 보기" />}
+      />,
+    )
+    const input = screen.getByLabelText('비밀번호')
+    const wrapper = input.parentElement
+
+    expect(input).toHaveClass('focus-visible:outline-none')
+    expect(wrapper).toHaveClass(
+      'has-[input:focus-visible]:outline-2',
+      'has-[input:focus-visible]:outline-ink',
+      'has-[input:focus-visible]:-outline-offset-1',
+    )
+  })
+
+  it('keeps the plain input on the global focus line', () => {
+    render(<TextField label="이메일" />)
+
+    expect(screen.getByLabelText('이메일').className).not.toMatch(/outline/)
+  })
 })
