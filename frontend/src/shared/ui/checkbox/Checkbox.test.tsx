@@ -131,4 +131,23 @@ describe('Checkbox', () => {
 
     expect(row).toHaveClass('flex', 'items-start', 'gap-10', 'mt-12')
   })
+
+  it('draws a white focus line inside the ink face when checked or indeterminate', () => {
+    render(<Checkbox checked />)
+
+    expect(screen.getByRole('checkbox')).toHaveClass(
+      'data-[state=checked]:focus-visible:outline-surface',
+      'data-[state=checked]:focus-visible:-outline-offset-3',
+      'data-[state=indeterminate]:focus-visible:outline-surface',
+      'data-[state=indeterminate]:focus-visible:-outline-offset-3',
+    )
+  })
+
+  it('leaves the unchecked box on the global focus line', () => {
+    render(<Checkbox />)
+
+    expect(screen.getByRole('checkbox').className).not.toMatch(
+      /data-\[state=unchecked\]:focus-visible:/,
+    )
+  })
 })
