@@ -46,7 +46,12 @@ def _build_transcript(case: dict) -> Transcript:
 def _flagged_texts(findings: list[JudgeFinding]) -> set[str]:
     # evidence로 매칭한다 — text는 LLM 경로에서 문맥 반영 요약으로 바뀔 수 있어서
     # 골든셋의 원문 기준(expected[].text)과 안정적으로 대응하는 건 evidence 쪽이다.
-    return {f.evidence for f in findings}
+    # evidence 는 근거 문장들의 리스트이고, 그중 **마지막(앵커)만** 후보로 센다.
+    # should_flag 는 "이 발화 자체가 후보인가"를 묻는데, 앞줄들은 후보가 아니라 그 결정을
+    # 뒷받침하려고 딸려온 근거이기 때문이다(예: "~게 어때요?" + "네 그러시죠" 가 한 건으로
+    # 묶이면 후보는 뒤쪽 합의 발화다). 전부 세면 제안·질문이 통째로 오탐으로 잡혀
+    # 실제보다 잡음이 많아 보인다.
+    return {f.evidence[-1] for f in findings if f.evidence}
 
 
 def _score(case: dict, flagged: set[str]) -> tuple[int, int, list[str]]:

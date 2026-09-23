@@ -45,6 +45,17 @@ _LUNA_SYSTEM_PROMPT = (
     "~하면 좋겠어요)는 아직 결정된 게 아니므로 그 자체로는 포함하지 않는다 — 다만 그 제안에 "
     "대한 답변/합의가 의미 있다면, 답변 쪽 발화에 제안 내용까지 반영해서 자기완결적으로 "
     "요약한다. 질문/제안이 결론 없이 보류되면(예: '나중에 다시 얘기하죠') 둘 다 포함하지 않는다. "
+    "다만 이미 정해진 것을 바꾸자는 발화는 제안 형태('~게 나을 것 같아요')여도 포함한다 — "
+    "기존 결정을 흔드는 정보라 다음 단계가 반드시 봐야 한다. 제외하는 제안은 아직 아무것도 "
+    "정해지지 않은 상태에서 처음 꺼내는 의견이다. "
+    "조건이 붙은 약속(예: '시간 되면 접근성 점검도 해볼게요', '여유 되면 문서도 정리해둘게요', "
+    "'필요하시면 디자인 쪽도 도와드릴게요')은 포함한다 — 실행 여부가 불확실한 것이지 하겠다는 "
+    "말 자체가 없는 게 아니다. 남에게 묻는 제안과 달리 본인이 하겠다고 말하고 있다. "
+    "산출물이 분명한 작업 요청(예: '리뷰 부탁드려요', '배포 스크립트 좀 봐주세요')도 포함한다 "
+    "— 위에서 제외하라고 한 '발언 요청'은 회의를 굴리기 위한 말(예: '편하게 말씀해주세요', "
+    "'각자 공유해주세요')에 한한다. "
+    "생각만 하겠다는 말(예: '고민해볼게요')은 제외하되, 산출물이 붙으면(예: '고민해보고 "
+    "내일까지 정리해서 공유드릴게요') 포함한다. "
     "누군가 이미 말한 결정에 대해 다른 사람이 새 정보 없이 그대로 동의/재확인만 하는 발화"
     "(예: '저도 그렇게 생각해요', '저도 그렇게 알고 있어요')는 제외한다 — 최초 결정 발화 "
     "하나면 충분하다. "
@@ -86,23 +97,25 @@ def _match_reason(sentence: str) -> str | None:
 
 def extract_findings_rules(transcript: Transcript) -> list[JudgeFinding]:
     """규칙(정규식) 기반 1차 필터. Luna 키가 없거나 호출이 실패했을 때의 폴백."""
+    # LLM 경로와 같은 _flatten 을 쓴다 — indices 가 가리키는 위치가 두 경로에서 같아야 한다.
+    sentences, seqs, speakers = _flatten(transcript)
     findings: list[JudgeFinding] = []
-    for seg in sorted(transcript.segments, key=lambda s: s.start):
-        for sentence in split_sentences(seg.text):
-            reason = _match_reason(sentence)
-            if reason is None:
-                continue
-            findings.append(
-                JudgeFinding(
-                    text=sentence,
-                    evidence=sentence,  # 재작성 능력이 없어서 원문 그대로(text와 동일)
-                    source=transcript.source,
-                    seq=seg.seq,
-                    speaker=seg.speaker,
-                    reason=reason,
-                    method="rules",
-                )
+    for i, sentence in enumerate(sentences):
+        reason = _match_reason(sentence)
+        if reason is None:
+            continue
+        findings.append(
+            JudgeFinding(
+                text=sentence,
+                evidence=[sentence],  # 재작성 능력이 없어서 원문 그대로(text와 동일)
+                indices=[i],  # 문장을 묶을 능력도 없어서 항상 한 줄
+                source=transcript.source,
+                seq=seqs[i],
+                speaker=speakers[i],
+                reason=reason,
+                method="rules",
             )
+        )
     return findings
 
 
@@ -110,12 +123,28 @@ def _numbered_lines(sentences: list[str], speakers: list[str | None]) -> str:
     return "\n".join(f"[{i}] {speakers[i] or '?'}: {s}" for i, s in enumerate(sentences))
 
 
+def _valid_indices(item: dict, n: int) -> list[int]:
+    """LLM 이 준 근거 줄 번호 중 범위 안의 것만 남겨 정렬한다.
+
+    지어낸 번호는 버리고 나머지는 살린다 — 한 줄이 어긋났다고 항목을 통째로 버리면 결정
+    자체가 사라진다. 구형 단일 index 응답도 그대로 받아준다.
+    """
+    raw = item.get("indices", item.get("index"))
+    if isinstance(raw, int):
+        raw = [raw]
+    if not isinstance(raw, list):
+        return []
+    return sorted({i for i in raw if isinstance(i, int) and 0 <= i < n})
+
+
 def _luna_user_prompt(numbered: str) -> str:
     return (
-        "다음은 번호가 매겨진 발화 목록이다. 의미 있다고 판단한 발화마다 번호와, "
-        "앞뒤 문맥까지 반영해서 이 발화 하나만 읽어도 무슨 내용인지 알 수 있게 다시 쓴 "
+        "다음은 번호가 매겨진 발화 목록이다. 의미 있다고 판단한 내용마다 근거가 되는 줄 번호 "
+        "전부(indices)와, 앞뒤 문맥까지 반영해서 이것만 읽어도 무슨 내용인지 알 수 있게 다시 쓴 "
         "자기완결적 요약(summary), 왜 그렇게 판단했는지 짧은 이유(reason)를 JSON으로만 답하라.\n\n"
-        '형식: {"findings": [{"index": 0, "summary": "...", "reason": "..."}]}\n\n'
+        "하나의 결정이 여러 줄에 걸쳐 만들어지면(제안 → 합의, 지시 → 수락) 그 줄 번호를 모두 "
+        "indices 에 담아라. 한 줄로 끝나면 번호 하나만 담는다. 서로 다른 결정은 따로 나눈다.\n\n"
+        '형식: {"findings": [{"indices": [1, 2], "summary": "...", "reason": "..."}]}\n\n'
         f"{numbered}"
     )
 
@@ -138,17 +167,23 @@ def extract_findings_llm(transcript: Transcript, client: LLMClient) -> list[Judg
 
     findings: list[JudgeFinding] = []
     for item in result.get("findings", []):
-        idx = item.get("index")
-        if not isinstance(idx, int) or not (0 <= idx < len(sentences)):
+        idxs = _valid_indices(item, len(sentences))
+        if not idxs:
             continue  # Luna가 범위 밖 번호를 지어내면 그냥 무시 — 통째로 실패 처리하지 않는다
         summary = str(item.get("summary", "")).strip()
+        evidence = [sentences[i] for i in idxs]
+        # 마지막 줄을 앵커로 삼는다 — "제안 → 합의" 구조에선 결론을 말한 발화가 뒤에 오고,
+        # 1인칭("제가 할게요") 담당자 해소도 그 발화의 화자를 봐야 한다.
+        # ponytail: 앵커가 항상 마지막이라는 보장은 없다. 어긋나면 LLM 에 anchor 를 따로 받는다.
+        anchor = idxs[-1]
         findings.append(
             JudgeFinding(
-                text=summary or sentences[idx],  # summary 비어있으면 원문으로 폴백
-                evidence=sentences[idx],
+                text=summary or " ".join(evidence),  # summary 비어있으면 원문으로 폴백
+                evidence=evidence,
+                indices=idxs,
                 source=transcript.source,
-                seq=seqs[idx],
-                speaker=speakers[idx],
+                seq=seqs[anchor],
+                speaker=speakers[anchor],
                 reason=str(item.get("reason", "")).strip()[:200],
                 method="llm",
             )

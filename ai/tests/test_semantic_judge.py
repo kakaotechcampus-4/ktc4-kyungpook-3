@@ -16,6 +16,30 @@ def test_split_sentences_drops_delimiters_and_empties():
     assert split_sentences("안녕하세요. 반갑습니다!  ") == ["안녕하세요.", "반갑습니다!"]
 
 
+def test_golden_set_labels_match_split_sentences():
+    """골든셋 expected[].text 가 실제 문장 분리 결과와 1:1 로 맞는지 검사한다.
+
+    안 맞으면 그 라벨은 어떤 findings 와도 매칭되지 않아 **조용히** 늘 같은 답으로 채점된다
+    (should_flag=false 면 공짜 정답, true 면 영원한 오답). 실제로 세 건이 그 상태였다:
+    한 발화가 문장 둘로 쪼개지는 경우("다들 오셨나요? 시작하겠습니다.")와 말줄임표가
+    종결부호로 잘리는 경우("음... 그건~")다. judge/golden_set/README.md 도 같은 실수를
+    한 번 겪었다고 적어 두었는데, 사람이 눈으로 지키는 대신 여기서 막는다.
+    """
+    import json
+    from pathlib import Path
+
+    golden_dir = Path(__file__).resolve().parent.parent / "judge" / "golden_set"
+    mismatched: list[str] = []
+    for path in sorted(golden_dir.rglob("case_*.json")):
+        case = json.loads(path.read_text(encoding="utf-8"))
+        actual = [s for turn in case["turns"] for s in split_sentences(turn["text"])]
+        for exp in case["expected"]:
+            if exp["text"] not in actual:
+                mismatched.append(f"{path.parent.name}/{case['case_id']}: {exp['text']!r}")
+
+    assert not mismatched, "실제 문장과 안 맞는 라벨:\n  " + "\n  ".join(mismatched)
+
+
 # ── extract_findings_rules (정규식 폴백) ──────────────────────────────────────
 
 
@@ -27,7 +51,7 @@ def test_commit_sentence_is_flagged():
     findings = extract_findings_rules(t)
     assert len(findings) == 1
     assert findings[0].text == "이번 주 금요일까지 로그인 화면 시안을 마무리하기로 했습니다."
-    assert findings[0].evidence == findings[0].text  # 규칙 기반은 재작성 안 하니 text == evidence
+    assert findings[0].evidence == [findings[0].text]  # 규칙 기반은 재작성 안 하니 text == evidence
     assert findings[0].reason == "실행 의지/합의 종결 표현"
     assert findings[0].seq == 1
     assert findings[0].speaker == "mem_dongwoo"
@@ -89,14 +113,15 @@ def test_llm_path_uses_summary_as_text_and_keeps_raw_sentence_as_evidence():
         TranscriptSegment(speaker="mem_jimin", start=1.0, end=2.0, text="네, 알겠습니다.", seq=6),
     )
     fake = FakeLLM(responses=[{"findings": [
-        {"index": 1, "summary": "로그인 화면 마감을 다음 주 화요일로 연기하는 데 동의함", "reason": "일정 변경 합의"}
+        {"indices": [1], "summary": "로그인 화면 마감을 다음 주 화요일로 연기하는 데 동의함", "reason": "일정 변경 합의"}
     ]}])
     findings = extract_findings_llm(t, fake)
 
     assert findings == [
         JudgeFinding(
             text="로그인 화면 마감을 다음 주 화요일로 연기하는 데 동의함",
-            evidence="네, 알겠습니다.",
+            evidence=["네, 알겠습니다."],
+            indices=[1],
             source="meeting",
             seq=6,
             speaker="mem_jimin",
@@ -111,18 +136,50 @@ def test_llm_path_falls_back_to_raw_sentence_when_summary_missing():
     t = _transcript(
         TranscriptSegment(speaker="mem_dongwoo", start=0.0, end=1.0, text="그럼 그렇게 갑시다.", seq=6)
     )
-    fake = FakeLLM(responses=[{"findings": [{"index": 0, "reason": "합의 표현(문맥상)"}]}])  # summary 없음
+    fake = FakeLLM(responses=[{"findings": [{"indices": [0], "reason": "합의 표현(문맥상)"}]}])  # summary 없음
     findings = extract_findings_llm(t, fake)
 
     assert findings[0].text == "그럼 그렇게 갑시다."
-    assert findings[0].evidence == "그럼 그렇게 갑시다."
+    assert findings[0].evidence == ["그럼 그렇게 갑시다."]
+
+
+def test_llm_path_joins_evidence_across_lines_and_anchors_on_the_last():
+    """결정이 여러 줄에 걸쳐 만들어지면 근거를 이어 붙이고, seq/speaker 는 마지막 줄을 가리킨다."""
+    t = _transcript(
+        TranscriptSegment(speaker="mem_yujin", start=0.0, end=1.0,
+                          text="API 명세서 작성 담당이 필요합니다.", seq=3),
+        TranscriptSegment(speaker="mem_haeun", start=1.0, end=2.0,
+                          text="이건 지민님이 맡아주세요.", seq=4),
+    )
+    fake = FakeLLM(responses=[{"findings": [
+        {"indices": [0, 1], "summary": "API 명세서 작성을 지민이 맡기로 함", "reason": "담당자 지정"}
+    ]}])
+    findings = extract_findings_llm(t, fake)
+
+    assert len(findings) == 1
+    assert findings[0].evidence == ["API 명세서 작성 담당이 필요합니다.", "이건 지민님이 맡아주세요."]
+    assert findings[0].indices == [0, 1]
+    assert findings[0].seq == 4  # 결론을 말한 마지막 줄
+    assert findings[0].speaker == "mem_haeun"
+
+
+def test_llm_path_keeps_valid_indices_when_some_are_out_of_range():
+    """지어낸 번호가 섞여도 나머지 근거로 결정을 살린다 — 항목을 통째로 버리지 않는다."""
+    t = _transcript(
+        TranscriptSegment(speaker="a", start=0.0, end=1.0, text="그럼 그렇게 갑시다.", seq=7)
+    )
+    fake = FakeLLM(responses=[{"findings": [{"indices": [0, 99], "reason": "합의"}]}])
+    findings = extract_findings_llm(t, fake)
+
+    assert len(findings) == 1
+    assert findings[0].evidence == ["그럼 그렇게 갑시다."]
 
 
 def test_llm_path_ignores_out_of_range_indices():
     t = _transcript(
         TranscriptSegment(speaker="a", start=0.0, end=1.0, text="안녕하세요.", seq=0)
     )
-    fake = FakeLLM(responses=[{"findings": [{"index": 99, "reason": "존재하지 않는 번호"}]}])
+    fake = FakeLLM(responses=[{"findings": [{"indices": [99], "reason": "존재하지 않는 번호"}]}])
     assert extract_findings_llm(t, fake) == []
 
 
