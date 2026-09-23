@@ -1,0 +1,26 @@
+name: ai-ci
+
+on:
+  pull_request:
+    branches: [develop]
+    paths:
+      - 'ai/**'
+      - '.github/workflows/ai-ci.yml'
+
+defaults:
+  run:
+    working-directory: ai
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install system deps (py-cord voice)
+        run: sudo apt-get update && sudo apt-get install -y libopus0
+      - uses: astral-sh/setup-uv@v3
+        with:
+          python-version: "3.12"
+      - run: uv venv --python 3.12 .venv
+      - run: uv pip install --python .venv/bin/python -r requirements.txt
+      - run: .venv/bin/python -m pytest
