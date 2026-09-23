@@ -51,7 +51,7 @@ def test_commit_sentence_is_flagged():
     findings = extract_findings_rules(t)
     assert len(findings) == 1
     assert findings[0].text == "이번 주 금요일까지 로그인 화면 시안을 마무리하기로 했습니다."
-    assert findings[0].evidence == findings[0].text  # 규칙 기반은 재작성 안 하니 text == evidence
+    assert findings[0].evidence == [findings[0].text]  # 규칙 기반은 재작성 안 하니 text == evidence
     assert findings[0].reason == "실행 의지/합의 종결 표현"
     assert findings[0].seq == 1
     assert findings[0].speaker == "mem_dongwoo"
@@ -120,7 +120,8 @@ def test_llm_path_uses_summary_as_text_and_keeps_raw_sentence_as_evidence():
     assert findings == [
         JudgeFinding(
             text="로그인 화면 마감을 다음 주 화요일로 연기하는 데 동의함",
-            evidence="네, 알겠습니다.",
+            evidence=["네, 알겠습니다."],
+            indices=[1],
             source="meeting",
             seq=6,
             speaker="mem_jimin",
@@ -139,7 +140,7 @@ def test_llm_path_falls_back_to_raw_sentence_when_summary_missing():
     findings = extract_findings_llm(t, fake)
 
     assert findings[0].text == "그럼 그렇게 갑시다."
-    assert findings[0].evidence == "그럼 그렇게 갑시다."
+    assert findings[0].evidence == ["그럼 그렇게 갑시다."]
 
 
 def test_llm_path_joins_evidence_across_lines_and_anchors_on_the_last():
@@ -156,7 +157,8 @@ def test_llm_path_joins_evidence_across_lines_and_anchors_on_the_last():
     findings = extract_findings_llm(t, fake)
 
     assert len(findings) == 1
-    assert findings[0].evidence == "API 명세서 작성 담당이 필요합니다. 이건 지민님이 맡아주세요."
+    assert findings[0].evidence == ["API 명세서 작성 담당이 필요합니다.", "이건 지민님이 맡아주세요."]
+    assert findings[0].indices == [0, 1]
     assert findings[0].seq == 4  # 결론을 말한 마지막 줄
     assert findings[0].speaker == "mem_haeun"
 
@@ -170,7 +172,7 @@ def test_llm_path_keeps_valid_indices_when_some_are_out_of_range():
     findings = extract_findings_llm(t, fake)
 
     assert len(findings) == 1
-    assert findings[0].evidence == "그럼 그렇게 갑시다."
+    assert findings[0].evidence == ["그럼 그렇게 갑시다."]
 
 
 def test_llm_path_ignores_out_of_range_indices():

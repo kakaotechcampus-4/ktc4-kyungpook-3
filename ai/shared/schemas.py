@@ -119,17 +119,27 @@ class JudgeFinding(_Base):
 
     근거는 문장 하나가 아니라 **여러 줄에 걸칠 수 있다.** 결정은 보통 "제안 → 합의"처럼
     나뉘어 만들어지기 때문이다("API 명세서 작성 담당이 필요합니다." + "이건 지민님이
-    맡아주세요."). 그래서 evidence 에는 해당 원문들이 순서대로 이어 붙는다. seq/speaker 는
-    그중 **마지막 줄**을 가리킨다 — 결론을 말한 발화이자, 1인칭 담당자 해소가 봐야 하는 화자다.
+    맡아주세요."). 그래서 evidence/indices 는 리스트다. seq/speaker 는 그중 **마지막 줄**을
+    가리킨다 — 결론을 말한 발화이자, 1인칭 담당자 해소가 봐야 하는 화자다.
+
+    뒤쪽 세 필드(assignee_type/status/evidence_status)는 **1단계가 채우지 않는다.** 1단계는
+    "이 발화가 볼 가치가 있나"만 판단하므로 담당자나 진행 상태를 매길 근거가 없다. Terra
+    2단계와 구조화 단계를 거치며 채워지고, 그때까지는 None 이 "아직 판정 전"을 뜻한다.
     """
 
     text: str  # 자기완결적 요약(LLM) 또는 원문 그대로(규칙). 나중에 JudgeInput.text로 이어짐
-    evidence: str = ""  # 근거 발화 원문(여러 줄이면 순서대로 이어 붙임) — 추적/감사용. 비어있으면 text와 동일하다고 간주
+    evidence: list[str] = field(default_factory=list)  # 근거 발화 원문들(순서대로) — 추적/감사용
+    indices: list[int] = field(default_factory=list)  # 근거 문장의 전사록 내 위치. evidence 와 같은 순서
     source: str = "meeting"  # "meeting" | "chat"
     seq: int = 0  # 근거 마지막 줄의 TranscriptSegment.seq — 근거 추적용 안정 식별자
     speaker: str | None = None  # 근거 마지막 줄의 화자(opaque id) — 문맥 참고/디버깅용
     reason: str = ""  # 왜 후보로 골랐는지 (규칙 기반이면 어떤 규칙에 걸렸는지)
     method: str = "rules"  # rules | llm
+
+    # ── 이후 단계가 채우는 칸 (1단계에서는 항상 None)
+    assignee_type: str | None = None  # first | third | group | none. BE 계약 어휘와 맞춤
+    status: str | None = None  # todo | in_progress | blocked | done. Terra 2단계(JudgeResult.status)가 정함
+    evidence_status: str | None = None  # certain | inferred | missing — 근거가 원문에 얼마나 명시적인가
 
 
 @dataclass

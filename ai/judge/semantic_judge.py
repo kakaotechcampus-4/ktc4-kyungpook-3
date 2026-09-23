@@ -97,23 +97,25 @@ def _match_reason(sentence: str) -> str | None:
 
 def extract_findings_rules(transcript: Transcript) -> list[JudgeFinding]:
     """규칙(정규식) 기반 1차 필터. Luna 키가 없거나 호출이 실패했을 때의 폴백."""
+    # LLM 경로와 같은 _flatten 을 쓴다 — indices 가 가리키는 위치가 두 경로에서 같아야 한다.
+    sentences, seqs, speakers = _flatten(transcript)
     findings: list[JudgeFinding] = []
-    for seg in sorted(transcript.segments, key=lambda s: s.start):
-        for sentence in split_sentences(seg.text):
-            reason = _match_reason(sentence)
-            if reason is None:
-                continue
-            findings.append(
-                JudgeFinding(
-                    text=sentence,
-                    evidence=sentence,  # 재작성 능력이 없어서 원문 그대로(text와 동일)
-                    source=transcript.source,
-                    seq=seg.seq,
-                    speaker=seg.speaker,
-                    reason=reason,
-                    method="rules",
-                )
+    for i, sentence in enumerate(sentences):
+        reason = _match_reason(sentence)
+        if reason is None:
+            continue
+        findings.append(
+            JudgeFinding(
+                text=sentence,
+                evidence=[sentence],  # 재작성 능력이 없어서 원문 그대로(text와 동일)
+                indices=[i],  # 문장을 묶을 능력도 없어서 항상 한 줄
+                source=transcript.source,
+                seq=seqs[i],
+                speaker=speakers[i],
+                reason=reason,
+                method="rules",
             )
+        )
     return findings
 
 
@@ -169,17 +171,16 @@ def extract_findings_llm(transcript: Transcript, client: LLMClient) -> list[Judg
         if not idxs:
             continue  # Luna가 범위 밖 번호를 지어내면 그냥 무시 — 통째로 실패 처리하지 않는다
         summary = str(item.get("summary", "")).strip()
-        # 근거가 여러 줄이면 원문을 순서대로 이어 붙인다. 채점기는 같은 규칙으로 다시 쪼개
-        # 문장 단위로 본다(judge/eval_golden_set.py).
-        evidence = " ".join(sentences[i] for i in idxs)
+        evidence = [sentences[i] for i in idxs]
         # 마지막 줄을 앵커로 삼는다 — "제안 → 합의" 구조에선 결론을 말한 발화가 뒤에 오고,
         # 1인칭("제가 할게요") 담당자 해소도 그 발화의 화자를 봐야 한다.
         # ponytail: 앵커가 항상 마지막이라는 보장은 없다. 어긋나면 LLM 에 anchor 를 따로 받는다.
         anchor = idxs[-1]
         findings.append(
             JudgeFinding(
-                text=summary or evidence,  # summary 비어있으면 원문으로 폴백
+                text=summary or " ".join(evidence),  # summary 비어있으면 원문으로 폴백
                 evidence=evidence,
+                indices=idxs,
                 source=transcript.source,
                 seq=seqs[anchor],
                 speaker=speakers[anchor],
