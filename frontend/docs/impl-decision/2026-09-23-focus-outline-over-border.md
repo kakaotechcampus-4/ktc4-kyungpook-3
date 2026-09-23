@@ -22,12 +22,13 @@ M2 는 outline 을 뺐다. 테두리가 있는 컨트롤에서 선이 두 겹이
 
 offset 이 음수라 outline 이 기존 1px 테두리 위에 그려진다. 겉으로는 테두리가 먹으로 두꺼워진 한 줄이다.
 
-예외는 둘이다.
+예외는 셋이다. 강조색 행은 Task 1–6 을 브라우저로 본 뒤 더했다 (2026-09-23).
 
 | 대상 | 값 | 이유 |
 |---|---|---|
 | Button `primary`, Checkbox 체크·중간 상태 | `outline-surface` · offset `-3px` | 먹 선이 먹 면에 묻힌다. 면 안쪽에 흰 선을 긋는다 |
 | 장식형 TextField | 래퍼가 `has-[input:focus-visible]` 로 그리고 안쪽 input 은 `outline-none` | 안쪽 input 에 그리면 래퍼 테두리 안쪽에 선이 하나 더 생긴다 |
+| 강조색 테두리 컨트롤 — TextField `error`·`required-blocking` (장식형이면 래퍼), Checkbox `invalid` 미체크 | `outline-accent` · offset `-1px` | 먹 선이 빨간 테두리를 덮으면 포커스 중에 "승인이 막힌 칸" 신호가 사라진다. `invalid` 라도 체크·중간 상태는 먹 면이라 흰 선이 이긴다 |
 
 `aria-disabled` primary 는 면이 밝아 흰 선이 안 보이므로 먹 선으로 되돌린다.
 
@@ -39,6 +40,11 @@ offset 이 음수라 outline 이 기존 1px 테두리 위에 그려진다. 겉�
 - **`box-shadow` 링을 쓰지 않는다.** 그림자 금지(tokens.css)에 걸리고, 고대비 모드에서 사라진다.
 - outline 은 상태 변형(`data-[state=*]:border-*`)과 속성이 겹치지 않는다.
   선택된 카드의 `border-line-strong` 이 포커스를 덮는 일이 없다.
+- **강조색 테두리 컨트롤은 선도 강조색이다.** 먹 선은 겹쳐 그리는 동안 빨간 테두리를 가린다.
+  포커스된 칸이 바로 "비우면 승인이 막히는 칸"일 때 그 신호가 사라지므로, 신호를 지키는 쪽을 골랐다 (2026-09-23).
+  알고 감수한 것이 둘이다.
+  - `accent` #FF6969 는 흰 바탕 대비 약 2.8:1 로 SC 1.4.11 의 3:1 에 못 미친다.
+  - 테두리 위에 겹치므로 포커스 변화가 빨간 1px → 빨간 2px, 두께뿐이다.
 
 ## 다시 고민할 때
 

@@ -109,7 +109,8 @@
 
 **포커스는 테두리 위에 겹친 `outline`이다.** `:focus-visible { outline: 2px solid #171717; outline-offset: -1px }`.
 offset이 음수라 기존 1px 테두리 위에 그려져 선이 두 겹이 되지 않는다 — 겉으로는 테두리가 먹으로 두꺼워진다.
-먹 면 컨트롤(주 버튼, 체크된 체크박스)만 면 안쪽 흰 선(`#FFFFFF`, offset `-3px`)이다.
+먹 면 컨트롤(주 버튼, 체크·중간 상태 체크박스)만 면 안쪽 흰 선(`#FFFFFF`, offset `-3px`)이다.
+강조색 테두리 컨트롤(오류·승인을 막는 입력, `invalid` 미체크 체크박스)은 선도 강조색(`#FF6969`, offset `-1px`)이다 — 먹 선이 "승인이 막힌 칸" 신호를 덮지 않게.
 캔버스의 `offset 4px`는 테두리와 링 사이에 틈을 만들어 두 겹으로 보였기 때문에 옮기지 않았다.
 근거: `docs/impl-decision/2026-09-23-focus-outline-over-border.md`
 

@@ -18,7 +18,7 @@
 - `:focus-visible` 만 쓴다. `:focus` 에는 그리지 않는다 (마우스 클릭에 링이 뜨지 않게).
 - React 에서 포커스를 추적하지 않는다 (`onFocus` 상태·`useState` 금지). CSS 의사 클래스만 쓴다.
 - 클래스는 모듈 스코프 표에 두고 배열 join 으로 붙인다 (`docs/impl-decision/2026-09-16-no-cn-clsx-tailwind-merge.md`).
-- 새 색·간격 토큰을 만들지 않는다. 허용 색은 `ink`·`surface` 뿐이다.
+- 새 색·간격 토큰을 만들지 않는다. 허용 색은 `ink`·`surface` 뿐이다. (Task 7 에서 강조색 테두리 컨트롤에 `accent` 추가)
 - 커밋은 `feat(frontend): …` / `docs(frontend): …`, 한국어 설명.
 
 ## 확인해 둔 사실 (2026-09-23, 설치된 Tailwind 로 직접 컴파일)
@@ -594,6 +594,31 @@ Expected: 통과. `docs/` 가 prettier 대상이면 떨어진 파일만 고친�
 git add frontend/docs
 git commit -m "docs(frontend): 키보드 포커스 미결 항목을 닫다"
 ```
+
+### Task 7: 강조색 테두리 컨트롤은 포커스도 강조색 선으로 그린다
+
+Task 1–6 을 브라우저로 본 뒤 사용자가 내린 결정이다 (2026-09-23).
+빨간 테두리(`border-accent`)를 가진 컨트롤은 포커스 선도 `accent` 로 그린다. 두께·offset 은 그대로 (`2px`, `-1px`).
+먹 선이 덮으면 포커스 중에 "승인이 막힌 칸"이라는 신호가 사라지기 때문이다.
+
+감수한 것: `accent` #FF6969 는 흰 바탕 대비 약 2.8:1 로 SC 1.4.11 의 3:1 에 못 미친다.
+테두리 위에 겹치므로 포커스 변화가 빨간 1px → 빨간 2px 두께뿐이다.
+
+| 컨트롤 | 조건 | 포커스 선 |
+|---|---|---|
+| TextField (장식 없음) | `error` 또는 `labelTone="required-blocking"` | input 에 `focus-visible:outline-accent` |
+| TextField (장식형) | 같음 | 래퍼 `has-[input:focus-visible]:outline-accent`. 안쪽 input 은 계속 `outline-none` |
+| Checkbox `invalid` | 미체크 | `focus-visible:outline-accent` |
+| Checkbox `invalid` | 체크·중간 상태 | 기존 흰 선 (`data-[state=*]:focus-visible:outline-surface`, `-3px`) |
+
+변경:
+- `TextField.tsx` — 포커스 선 색을 `borderColor`·`placeholderColor` 와 같은 자리에서 같은 조건(`error || blocking`)으로 고른다.
+  `ADORNED_BOX` 에서 색을 떼어 `ADORNED_FOCUS`(ink)·`ADORNED_FOCUS_ACCENT` 둘 중 하나만 붙인다.
+- `Checkbox.tsx` — `BOX_BORDER_INVALID` 에 `focus-visible:outline-accent` 를 더했다.
+  체크 상태 변형은 생성 CSS 에서 뒤에 오고 선택자도 더 구체적(0,3,0 대 0,2,0)이라 흰 선이 이긴다.
+- 브라우저(DPR 1)에서 error·required-blocking 입력과 `invalid` 미체크 체크박스가 `solid 2px rgb(255, 105, 105) / -1px`,
+  체크 후 `solid 2px rgb(255, 255, 255) / -3px`, 보통 입력은 `rgb(23, 23, 23) / -1px` 그대로임을 확인했다.
+  갤러리에 장식형 오류 입력이 없어 래퍼 값은 단위 테스트로만 확인했다.
 
 ---
 
