@@ -16,6 +16,30 @@ def test_split_sentences_drops_delimiters_and_empties():
     assert split_sentences("안녕하세요. 반갑습니다!  ") == ["안녕하세요.", "반갑습니다!"]
 
 
+def test_golden_set_labels_match_split_sentences():
+    """골든셋 expected[].text 가 실제 문장 분리 결과와 1:1 로 맞는지 검사한다.
+
+    안 맞으면 그 라벨은 어떤 findings 와도 매칭되지 않아 **조용히** 늘 같은 답으로 채점된다
+    (should_flag=false 면 공짜 정답, true 면 영원한 오답). 실제로 세 건이 그 상태였다:
+    한 발화가 문장 둘로 쪼개지는 경우("다들 오셨나요? 시작하겠습니다.")와 말줄임표가
+    종결부호로 잘리는 경우("음... 그건~")다. judge/golden_set/README.md 도 같은 실수를
+    한 번 겪었다고 적어 두었는데, 사람이 눈으로 지키는 대신 여기서 막는다.
+    """
+    import json
+    from pathlib import Path
+
+    golden_dir = Path(__file__).resolve().parent.parent / "judge" / "golden_set"
+    mismatched: list[str] = []
+    for path in sorted(golden_dir.rglob("case_*.json")):
+        case = json.loads(path.read_text(encoding="utf-8"))
+        actual = [s for turn in case["turns"] for s in split_sentences(turn["text"])]
+        for exp in case["expected"]:
+            if exp["text"] not in actual:
+                mismatched.append(f"{path.parent.name}/{case['case_id']}: {exp['text']!r}")
+
+    assert not mismatched, "실제 문장과 안 맞는 라벨:\n  " + "\n  ".join(mismatched)
+
+
 # ── extract_findings_rules (정규식 폴백) ──────────────────────────────────────
 
 

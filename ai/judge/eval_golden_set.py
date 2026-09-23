@@ -47,8 +47,16 @@ def _flagged_texts(findings: list[JudgeFinding]) -> set[str]:
     # evidence로 매칭한다 — text는 LLM 경로에서 문맥 반영 요약으로 바뀔 수 있어서
     # 골든셋의 원문 기준(expected[].text)과 안정적으로 대응하는 건 evidence 쪽이다.
     # evidence는 근거가 여러 줄이면 원문을 이어 붙인 것이라, 문장을 쪼갤 때와 같은 규칙으로
-    # 다시 쪼개 문장 단위로 되돌린다. 골든셋 라벨이 문장 하나 단위라 그래야 대응이 된다.
-    return {s for f in findings for s in split_sentences(f.evidence)}
+    # 다시 쪼갠 뒤 **마지막 문장(앵커)만** 후보로 센다. should_flag 는 "이 발화 자체가 후보인가"를
+    # 묻는데, 앞줄들은 후보가 아니라 그 결정을 뒷받침하려고 딸려온 근거이기 때문이다
+    # (예: "~게 어때요?" + "네 그러시죠" 가 한 건으로 묶이면 후보는 뒤쪽 합의 발화다).
+    # 전부 세면 제안·질문이 통째로 오탐으로 잡혀 실제보다 잡음이 많아 보인다.
+    flagged: set[str] = set()
+    for f in findings:
+        sentences = split_sentences(f.evidence)
+        if sentences:
+            flagged.add(sentences[-1])
+    return flagged
 
 
 def _score(case: dict, flagged: set[str]) -> tuple[int, int, list[str]]:

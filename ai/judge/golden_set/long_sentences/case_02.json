@@ -165,7 +165,12 @@
   ],
   "expected": [
     {
-      "text": "다들 오셨나요? 시작하겠습니다.",
+      "text": "다들 오셨나요?",
+      "should_flag": false,
+      "note": "회의 진행"
+    },
+    {
+      "text": "시작하겠습니다.",
       "should_flag": false,
       "note": "회의 진행"
     },
