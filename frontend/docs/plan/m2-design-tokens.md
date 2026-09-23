@@ -1267,6 +1267,8 @@ interface PanelProps extends React.ComponentPropsWithoutRef<'div'> {}
 | **disabled** | 면 `#DCDCDC`(비활성 표식) · 테두리 없음 · 체크 `#FFFFFF` / unchecked 테두리 `#C9C9C9` | **제안** — `#DCDCDC`의 Foundations 용례가 "비활성 표식"이다 |
 | error | 테두리 `#FF6969` | **제안** — 약관 동의 미체크 차단에만 |
 
+> 2026-09-23: 체크·중간 상태의 눌림 면 변화는 없앴다. 미체크 테두리 눌림은 남는다 — docs/impl-decision/2026-09-23-no-pressed-face-checkbox-segmented.md
+
 라벨 붙은 행 실측 (`Signup.dc.html`):
 
 ```
@@ -1356,6 +1358,8 @@ interface SelectCardProps {
 | pressed | **제안** 면 `#FAFAFA` |
 | focus | 전역 링. **주의** — 트랙 `gap`이 3px이라 `outline-offset: 4px`가 이웃을 덮는다(§6-4) |
 | 비활성 | **제안** 글자 `#C9C9C9`, 포인터 이벤트 없음 |
+
+> 2026-09-23: 미선택 항목의 눌림 면 변화는 없앴다. hover 글자만 남는다 — docs/impl-decision/2026-09-23-no-pressed-face-checkbox-segmented.md
 
 ```ts
 interface SegmentedProps {

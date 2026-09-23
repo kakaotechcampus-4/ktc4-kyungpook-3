@@ -1,7 +1,7 @@
 # 세그먼트 hover / pressed — 선택된 손잡이까지 덮을 것인가
 
 - 날짜: 2026-09-16
-- 상태: 결정
+- 상태: 결정 · pressed 는 2026-09-23 에 없앰
 
 ## 고민
 
@@ -48,3 +48,8 @@ M2 에서는 **건드리지 않는다.** M4 에서 태스크 화면에 실제로
 
 hover / pressed 가 그려진 아트보드가 생기면 그 값으로 바꾼다.
 선택 항목에도 눌린 피드백이 필요하다는 말이 나오면, 면이 아니라 글자 한 단(`text-sub`)으로 낸다 — 손잡이 면은 건드리지 않는다.
+
+## 그 뒤 (2026-09-23)
+
+pressed 면(`data-[state=off]:active:bg-surface-sunken`)은 없앴다. 미선택 항목에는 hover 글자 `text-ink` 만 남는다.
+누르는 순간 면이 밝아지는 효과가 필요 없다는 사용자 판단이다 — docs/impl-decision/2026-09-23-no-pressed-face-checkbox-segmented.md

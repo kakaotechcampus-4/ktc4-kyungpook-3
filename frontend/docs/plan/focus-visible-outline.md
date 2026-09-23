@@ -620,6 +620,24 @@ Task 1–6 을 브라우저로 본 뒤 사용자가 내린 결정이다 (2026-09
   체크 후 `solid 2px rgb(255, 255, 255) / -3px`, 보통 입력은 `rgb(23, 23, 23) / -1px` 그대로임을 확인했다.
   갤러리에 장식형 오류 입력이 없어 래퍼 값은 단위 테스트로만 확인했다.
 
+### Task 8: 체크박스·세그먼트는 눌러도 면이 바뀌지 않는다
+
+Task 7 까지를 브라우저로 본 뒤 사용자가 내린 결정이다 (2026-09-23).
+이슈 #73 (포커스) 범위 밖이지만 이 PR 에 넣었다.
+누르는 순간 면이 번쩍이는 효과가 필요 없고, 원래 값도 캔버스 실측 없는 M2 제안이었다.
+
+| 컴포넌트 | 뺀 클래스 | 누르는 동안 |
+|---|---|---|
+| Checkbox 체크·중간 상태 | `data-[state=checked]:active:bg-sub`, `data-[state=indeterminate]:active:bg-sub` | 먹 면 `#171717` 그대로 |
+| Segmented 미선택 항목 | `data-[state=off]:active:bg-surface-sunken` | 투명(트랙 `#EDEDED`) 그대로 |
+
+남긴 것: 미체크 체크박스 테두리 hover / pressed(`border-ink`), 세그먼트 미선택 hover 글자(`text-ink`), 포커스 클래스 전부, Button 등 다른 컴포넌트의 pressed.
+`m2-design-tokens.md` §11 미결 7번은 다른 컴포넌트가 남아 닫지 않았다.
+
+- 결정 기록: `docs/impl-decision/2026-09-23-no-pressed-face-checkbox-segmented.md`
+- 브라우저에서 `mouse.down()` 으로 `:active` 를 건 동안 체크·중간 상태 면이 `rgb(23, 23, 23)`,
+  미체크 테두리가 `rgb(23, 23, 23)`, 세그먼트 미선택 항목 면이 누르기 전과 같은 `rgba(0, 0, 0, 0)` 임을 확인했다.
+
 ---
 
 ## PR
