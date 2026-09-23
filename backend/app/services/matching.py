@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from sqlalchemy import select
+from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
 from app.models import (
@@ -79,6 +79,25 @@ def resolve_assignee(
         needs_check=True,
         candidate_count=0,
     )
+
+
+def resolved_alias_texts(db: Session, workspace_id: str) -> set[str]:
+    """resolve_assignee가 확정 매칭(MATCHED, needs_check=False)으로 판정할 별칭 목록.
+
+    검증 여부와 상관없이 전체 후보가 정확히 1명이고, 그 1명이 검증된 경우만 해결된 것으로 본다.
+    검증 1명 + 미검증 1명처럼 후보가 여럿이면 매칭은 ambiguous이므로 해결 대기로 남는다.
+    """
+    stmt = (
+        select(MemberAlias.alias_text)
+        .join(Member, Member.member_id == MemberAlias.member_id)
+        .where(MemberAlias.workspace_id == workspace_id)
+        .group_by(MemberAlias.alias_text)
+        .having(
+            func.count() == 1,
+            func.sum(case((MemberAlias.verified.is_(True), 1), else_=0)) == 1,
+        )
+    )
+    return set(db.execute(stmt).scalars())
 
 
 def log_resolution(

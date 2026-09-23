@@ -23,6 +23,7 @@ from app.schemas.member import (
     UnresolvedAliasResponse,
 )
 from app.api.deps import get_current_member
+from app.services.matching import resolved_alias_texts
 
 router = APIRouter(prefix="/members", tags=["members"])
 
@@ -120,17 +121,8 @@ def list_unresolved_aliases(
     db: Session = Depends(get_db),
 ) -> dict:
     """담당자 매핑 화면의 '미매칭' 행 — 회의에서 감지됐지만 아직 팀원과 연결 안 된 이름."""
-    resolved_aliases = set(
-        db.execute(
-            select(MemberAlias.alias_text)
-            .where(
-                MemberAlias.workspace_id == workspace_id,
-                MemberAlias.verified == True,
-            )
-            .group_by(MemberAlias.alias_text)
-            .having(func.count() == 1)
-        ).scalars()
-    )
+    # 매칭 판정(resolve_assignee)과 같은 기준으로 해결 여부를 가른다.
+    resolved_aliases = resolved_alias_texts(db, workspace_id)
 
     stmt = (
         select(
