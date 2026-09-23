@@ -31,10 +31,15 @@ export interface ButtonProps extends ComponentPropsWithoutRef<'button'> {
 
 const BASE = 'inline-flex items-center justify-center gap-6 whitespace-nowrap'
 
+/* 먹 면에는 전역 먹 선이 묻힌다 — 면 안쪽에 흰 선을 긋는다.
+   aria-disabled 면은 밝아서 흰 선이 안 보이므로 전역 값으로 되돌린다.
+   docs/impl-decision/2026-09-23-focus-outline-over-border.md */
+const INK_FACE_FOCUS =
+  'focus-visible:outline-surface focus-visible:-outline-offset-3 aria-disabled:focus-visible:outline-ink aria-disabled:focus-visible:-outline-offset-1'
+
 const VARIANT: Record<ButtonVariant, string> = {
   // 먹 면 → hover/pressed 는 같은 축에서 한 단 이동한 보조. 검정도 opacity 도 쓰지 않는다
-  primary:
-    'bg-ink text-surface hover:bg-dim hover:text-surface active:bg-sub active:text-surface disabled:bg-surface-selected disabled:text-faint aria-disabled:bg-surface-selected aria-disabled:text-faint',
+  primary: `bg-ink text-surface hover:bg-dim hover:text-surface active:bg-sub active:text-surface disabled:bg-surface-selected disabled:text-faint aria-disabled:bg-surface-selected aria-disabled:text-faint ${INK_FACE_FOCUS}`,
   // 컨트롤 면 #EDEDED → hover 는 같은 회색 축에서 한 단 진한 강조 테두리색 #C9C9C9.
   // 차콜(#666)은 면이 바뀌는 느낌이 나서 쓰지 않는다.
   default:

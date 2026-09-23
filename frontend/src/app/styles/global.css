@@ -66,11 +66,14 @@
     color: var(--color-surface);
   }
 
-  /* outline 링은 이미 테두리가 있는 컨트롤과 선이 두 겹이 된다.
-     포커스 표시는 테두리 색으로만 한다. */
-  :focus,
+  /* 포커스는 outline 이다. offset 을 -1px 로 주면 outline 이 기존 1px 테두리 위에 겹쳐
+     "테두리가 먹으로 두꺼워진다"로 보이고, 선이 두 겹이 되지 않는다.
+     outline 은 박스 크기에 들지 않아 레이아웃을 밀지 않고, 고대비 모드에서도 남는다.
+     먹 면 컨트롤은 컴포넌트가 흰 선으로 덮는다.
+     docs/impl-decision/2026-09-23-focus-outline-over-border.md */
   :focus-visible {
-    outline: none;
+    outline: 2px solid var(--color-ink);
+    outline-offset: -1px;
   }
 
   @media (prefers-reduced-motion: reduce) {

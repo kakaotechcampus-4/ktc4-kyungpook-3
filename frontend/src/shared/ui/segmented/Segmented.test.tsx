@@ -130,13 +130,15 @@ describe('Segmented', () => {
     expect(onValueChange).not.toHaveBeenCalled()
   })
 
-  it('lifts hover and press onto the unselected items only', () => {
+  it('lifts hover onto the unselected items only and keeps the face still on press', () => {
     renderSegmented()
 
     expect(screen.getByRole('radio', { name: '보드' })).toHaveClass(
       'data-[state=off]:hover:text-ink',
-      'data-[state=off]:active:bg-surface-sunken',
     )
+    for (const item of screen.getAllByRole('radio')) {
+      expect(item.className).not.toMatch(/active:bg-/)
+    }
   })
 
   it('appends the caller className to the track', () => {
