@@ -29,11 +29,55 @@ def _parse_date(value: object) -> date | None:
     return date.fromisoformat(str(value))
 
 
+def _get_linkable_extraction_item(
+    db: Session, approval: ApprovalRequest, extraction_item_id: str
+) -> ExtractionItem | None:
+    """payload의 extraction_item_id가 이 승인 요청에서 나온 추출 항목인지 검증한다.
+
+    다른 워크스페이스의 추출 항목이나 다른 승인 요청의 추출 항목에
+    Task ID가 기록되지 않도록 소속 워크스페이스와 approval_id를 확인한다.
+    """
+    ext_item = db.get(ExtractionItem, extraction_item_id)
+    if ext_item is None:
+        return None
+
+    item_workspace_id = ext_item.extraction.meeting.workspace_id
+    if item_workspace_id != approval.workspace_id:
+        raise AppError(
+            ErrorCode.WORKSPACE_MISMATCH,
+            message="승인 요청의 워크스페이스와 추출 항목의 워크스페이스가 다릅니다.",
+            details={
+                "extraction_item_id": extraction_item_id,
+                "approval_workspace_id": approval.workspace_id,
+                "extraction_item_workspace_id": item_workspace_id,
+            },
+        )
+    if ext_item.approval_id != approval.approval_id:
+        raise AppError(
+            ErrorCode.INVALID_REQUEST,
+            message="추출 항목이 이 승인 요청에 연결되어 있지 않습니다.",
+            details={
+                "extraction_item_id": extraction_item_id,
+                "approval_id": approval.approval_id,
+                "extraction_item_approval_id": ext_item.approval_id,
+            },
+        )
+    return ext_item
+
+
 def _apply_approval(db: Session, approval: ApprovalRequest) -> None:
     """승인된 요청을 실제 Task 생성/수정으로 반영한다."""
     payload = json.loads(approval.payload)
 
     if approval.type == str(ApprovalType.TASK_CREATE):
+        # Task를 만들기 전에 연결 대상부터 검증한다.
+        extraction_item_id = payload.get("extraction_item_id")
+        ext_item = (
+            _get_linkable_extraction_item(db, approval, extraction_item_id)
+            if extraction_item_id
+            else None
+        )
+
         title = payload.get("task_title") or payload.get("title") or ""
         create_fields: dict[str, object] = {"title": title}
         if payload.get("status") is not None:
@@ -57,11 +101,8 @@ def _apply_approval(db: Session, approval: ApprovalRequest) -> None:
         )
         approval.related_task_id = task.task_id
 
-        extraction_item_id = payload.get("extraction_item_id")
-        if extraction_item_id:
-            ext_item = db.get(ExtractionItem, extraction_item_id)
-            if ext_item:
-                ext_item.task_id = task.task_id
+        if ext_item is not None:
+            ext_item.task_id = task.task_id
 
     elif approval.type == str(ApprovalType.TASK_UPDATE):
         if approval.related_task_id is None:
