@@ -28,10 +28,12 @@ from app.schemas.meeting import (
     TaskInfo,
 )
 from app.services.matching import (
+    MatchResult,
     decide_gate,
     item_confidence,
     log_resolution,
     resolve_assignee,
+    resolve_speaker,
 )
 from app.services.tasks import create_task
 
@@ -118,30 +120,37 @@ def create_extraction(
     db.add(extraction)
     db.flush()
 
-    resolved_cache = {}
+    resolved_cache: dict[tuple[str, str | None], MatchResult] = {}
 
     for raw_item in payload.items:
         if raw_item.assignee_type == "first" and raw_item.evidence_speaker:
-            target_alias = raw_item.evidence_speaker
+            # 1인칭: evidence_speaker는 화자의 Discord uid다. 별칭이 아니라 Member.discord_user_id로 찾는다.
+            assignee_hint = raw_item.evidence_speaker
+            cache_key = ("speaker", assignee_hint)
+            if cache_key not in resolved_cache:
+                resolved_cache[cache_key] = resolve_speaker(db, meeting.workspace_id, assignee_hint)
+            match = resolved_cache[cache_key]
         else:
-            target_alias = raw_item.assignee_raw
+            # 그 외: assignee_raw를 별칭 텍스트로 찾는다. raw가 없으면(group/none 등) 담당자 미지정이다.
+            assignee_hint = raw_item.assignee_raw
+            cache_key = ("alias", assignee_hint)
+            if cache_key not in resolved_cache:
+                resolved_cache[cache_key] = resolve_assignee(db, meeting.workspace_id, assignee_hint)
+            match = resolved_cache[cache_key]
 
-        if target_alias not in resolved_cache:
-            resolved_cache[target_alias] = resolve_assignee(db, meeting.workspace_id, target_alias)
-        match = resolved_cache[target_alias]
-
-        log_resolution(
-            db,
-            workspace_id=meeting.workspace_id,
-            alias_text=target_alias,
-            match=match,
-            evidence_quote=raw_item.evidence_quote,
-            meeting_id=payload.meeting_id,
-        )
+            # 별칭 판정 로그는 해결 대기 별칭 목록의 원천이므로 별칭 경로만 남긴다.
+            log_resolution(
+                db,
+                workspace_id=meeting.workspace_id,
+                alias_text=assignee_hint,
+                match=match,
+                evidence_quote=raw_item.evidence_quote,
+                meeting_id=payload.meeting_id,
+            )
 
         conf = item_confidence(
             task_confidence=raw_item.task_confidence,
-            assignee_raw=raw_item.assignee_raw,
+            assignee_raw=assignee_hint,
             assignee_confidence=match.confidence,
             due_raw=raw_item.due_raw,
             due_confidence=raw_item.due_confidence,
