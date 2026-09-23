@@ -1,5 +1,5 @@
 import json
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select, func, update
@@ -14,19 +14,11 @@ from app.schemas.approval import (
     ApprovalResolveRequest,
     ApprovalResponse,
 )
-from app.services.tasks import apply_task_updates, create_task, validate_task_fields
+from app.services.tasks import apply_task_updates, create_task, parse_date
 
 router = APIRouter(prefix="/approvals", tags=["approvals"])
 
 _TASK_UPDATE_FIELDS = {"title", "assignee_member_id", "status", "progress", "blocker", "due_date"}
-
-
-def _parse_date(value: object) -> date | None:
-    if value is None:
-        return None
-    if isinstance(value, date):
-        return value
-    return date.fromisoformat(str(value))
 
 
 def _get_linkable_extraction_item(
@@ -78,23 +70,16 @@ def _apply_approval(db: Session, approval: ApprovalRequest) -> None:
             else None
         )
 
-        title = payload.get("task_title") or payload.get("title") or ""
-        create_fields: dict[str, object] = {"title": title}
-        if payload.get("status") is not None:
-            create_fields["status"] = payload["status"]
-        if payload.get("progress") is not None:
-            create_fields["progress"] = payload["progress"]
-        validate_task_fields(create_fields)
-
+        # 제목·status·progress 검증은 create_task가 공통으로 수행한다.
         task = create_task(
             db,
             workspace_id=approval.workspace_id,
-            title=create_fields["title"],
+            title=payload.get("task_title") or payload.get("title") or "",
             meeting_id=payload.get("meeting_id"),
             assignee_member_id=payload.get("assignee_member_id"),
-            due_date=_parse_date(payload.get("due_date")),
-            status=create_fields.get("status", str(TaskStatus.TODO)),
-            progress=create_fields.get("progress"),
+            due_date=parse_date(payload.get("due_date"), field="due_date"),
+            status=payload.get("status") or str(TaskStatus.TODO),
+            progress=payload.get("progress"),
             change_source=str(ChangeSource.MEETING if payload.get("meeting_id") else ChangeSource.MANUAL),
             changed_by=approval.resolved_by,
             is_auto=False,
@@ -127,7 +112,7 @@ def _apply_approval(db: Session, approval: ApprovalRequest) -> None:
             )
         updates = {k: v for k, v in payload.items() if k in _TASK_UPDATE_FIELDS}
         if "due_date" in updates:
-            updates["due_date"] = _parse_date(updates["due_date"])
+            updates["due_date"] = parse_date(updates["due_date"], field="due_date")
         apply_task_updates(
             db,
             task,

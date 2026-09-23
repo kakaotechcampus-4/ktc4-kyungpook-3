@@ -74,6 +74,25 @@ def validate_task_fields(updates: dict[str, object]) -> None:
             )
 
 
+def parse_date(value: object, *, field: str) -> date | None:
+    """승인 payload 등 외부 입력의 날짜 값을 date로 변환한다.
+
+    형식이 잘못되면 500 대신 INVALID_REQUEST(400)로 돌려준다.
+    """
+    if value is None:
+        return None
+    if isinstance(value, date):
+        return value
+    try:
+        return date.fromisoformat(str(value))
+    except ValueError:
+        raise AppError(
+            ErrorCode.INVALID_REQUEST,
+            message=f"{field}는 YYYY-MM-DD 형식이어야 합니다: {value}",
+            details={"field": field, "value": str(value)},
+        )
+
+
 def validate_workspace_ownership(
     db: Session,
     workspace_id: str,
@@ -159,7 +178,16 @@ def create_task(
     changed_by: str | None = None,
     is_auto: bool = False,
 ) -> Task:
-    """태스크를 새로 만들고, 생성 사실을 반영 로그 한 줄로 남긴다."""
+    """태스크를 새로 만들고, 생성 사실을 반영 로그 한 줄로 남긴다.
+
+    수동 생성, 승인 반영, 자동 반영 모든 경로가 이 함수에서 같은 도메인 검증을 거친다.
+    """
+    fields: dict[str, object] = {"title": title, "status": status, "progress": progress}
+    validate_task_fields(fields)
+    title = fields["title"]
+    status = fields["status"]
+    progress = fields["progress"]
+
     validate_workspace_ownership(
         db, workspace_id,
         assignee_member_id=assignee_member_id,
