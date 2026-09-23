@@ -81,6 +81,46 @@ def resolve_assignee(
     )
 
 
+def resolve_speaker(
+    db: Session,
+    workspace_id: str,
+    discord_user_id: str | None,
+) -> MatchResult:
+    """1인칭 발화의 화자(Discord uid)로 팀원을 찾는다.
+
+    봇은 evidence_speaker에 별칭 텍스트가 아니라 발화 트랙의 Discord uid를 넣는다.
+    (workspace_id, discord_user_id)는 유일하므로 찾으면 확정, 못 찾으면 not_found다.
+    """
+    if not discord_user_id:
+        return MatchResult(None, None, 0.0, ResolutionResult.NOT_FOUND, True, 0)
+
+    member = db.execute(
+        select(Member).where(
+            Member.workspace_id == workspace_id,
+            Member.discord_user_id == discord_user_id,
+            Member.is_deleted.is_(False),
+        )
+    ).scalar_one_or_none()
+
+    if member is None:
+        return MatchResult(
+            member_id=None,
+            display_name=None,
+            confidence=NOT_FOUND_CONFIDENCE,
+            result=ResolutionResult.NOT_FOUND,
+            needs_check=True,
+            candidate_count=0,
+        )
+    return MatchResult(
+        member_id=member.member_id,
+        display_name=member.display_name,
+        confidence=1.0,
+        result=ResolutionResult.MATCHED,
+        needs_check=False,
+        candidate_count=1,
+    )
+
+
 def resolved_alias_texts(db: Session, workspace_id: str) -> set[str]:
     """resolve_assignee가 확정 매칭(MATCHED, needs_check=False)으로 판정할 별칭 목록.
 
