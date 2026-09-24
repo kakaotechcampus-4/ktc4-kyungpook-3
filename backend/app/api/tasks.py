@@ -15,6 +15,7 @@ from app.schemas.task import (
     TaskResponse,
     TaskUpdateRequest,
 )
+from app.services.notion_sync import retry_failed_sync
 from app.services.tasks import apply_task_updates, create_task, rollback_task_history
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
@@ -158,6 +159,16 @@ def rollback_history_endpoint(
         )
 
     rollback_task_history(db, task, history, changed_by=changed_by)
+    db.commit()
+    db.refresh(task)
+    return success(TaskResponse.model_validate(task).model_dump(mode="json"))
+
+
+@router.post("/{task_id}/notion-sync/retry", response_model=Envelope[TaskResponse])
+def retry_notion_sync(task_id: str, db: Session = Depends(get_db)) -> dict:
+    """Notion 반영이 failed로 끝난 Task를 다시 대기열에 넣는다. 실제 전송은 워커가 한다."""
+    task = _get_task(db, task_id)
+    retry_failed_sync(db, task)
     db.commit()
     db.refresh(task)
     return success(TaskResponse.model_validate(task).model_dump(mode="json"))
