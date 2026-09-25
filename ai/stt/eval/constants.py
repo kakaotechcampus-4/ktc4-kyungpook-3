@@ -71,6 +71,9 @@ class Const:
 
 _PACKETS = "실서버 녹음과 패킷 도착 기록(패킷별 도착 시각·RTP·SSRC)이 들어오면"
 _REAL = "실녹음 골든셋(짧은 대답·겹침·긴 침묵 뒤 발화)이 들어오면"
+_SHORT = "실녹음에서 짧은 대답이 말 필터에 걸리는지 볼 때. 합성에서는 이 값이 거른 수를 바꿨다(0012)"
+_GATE = "실녹음에서 짧은 대답이 걸리는지와 말 아닌 소리가 통과하는지를 같이 볼 때. 이 데이터에는 말 아닌 클립이 없다(0012)"
+_EDGE = "기본값이 평탄 구간의 한쪽 끝이다. 실녹음에서 줄이 잘게 나뉘거나 끝 음절이 빠지면 먼저 본다(0012)"
 
 REGISTRY: tuple[Const, ...] = (
     # ── stt/batch.py
@@ -89,7 +92,7 @@ REGISTRY: tuple[Const, ...] = (
     Const("stt.batch", "WORD_TOLERANCE_S", DESIGN, "단어를 클립에 배정하는 경계 여유", TRACK_ONLY,
           source="chunk 는 묶음 안 위치로 되매핑해 이 값을 안 쓴다(_chunk_lines)", recheck="track 모드를 다시 쓸 때"),
     Const("stt.batch", "TAIL_PAD_S", MEASURED, "클립 끝에 남기는 여유. 마지막 음절", BATCH,
-          sweep=(0.0, 0.05, 0.1, 0.2, 0.4, 0.8), metric="edge", elice=True, priority=P_UNIT, recheck=_REAL),
+          sweep=(0.0, 0.05, 0.1, 0.2, 0.4, 0.8), metric="edge", elice=True, priority=P_UNIT, recheck=_SHORT),
     Const("stt.batch", "LONG_SPLIT_FROM_S", MEASURED, "CHUNK_MAX_S 를 넘는 클립을 가를 자리를 찾기 시작하는 시각", BATCH,
           sweep=(5.0, 10.0, 15.0, 20.0, 25.0), metric="edge", binds=(("split_long", "search_from_s"),),
           priority=P_UNIT, recheck="쉼 없이 30초 넘게 말하는 실녹음이 들어오면"),
@@ -111,7 +114,7 @@ REGISTRY: tuple[Const, ...] = (
           sweep=(1.2, 1.5, 1.8, 2.4, 3.0), metric="lost", priority=P_VAD,
           recheck="배경 소음이 있는 실녹음이 들어오면(정렬본 무음은 0 이다)"),
     Const("stt.vad", "SILENCE_HOLD_MS", MEASURED, "이만큼 조용하면 클립을 닫는다", BATCH,
-          sweep=(400, 600, 800, 1000, 1500), metric="err_chars", priority=P_VAD, recheck=_REAL),
+          sweep=(400, 600, 800, 1000, 1500), metric="err_chars", priority=P_VAD, recheck=_EDGE),
     Const("stt.vad", "MIN_SPEECH_MS", MEASURED, "이보다 짧은 소리는 버린다", BATCH,
           sweep=(120, 200, 320, 480, 640), metric="lost", priority=P_VAD, recheck=_REAL),
     Const("stt.vad", "MAX_SEGMENT_MS", DESIGN, "실시간 경로의 긴 독백 강제 절단", REALTIME,
@@ -121,7 +124,7 @@ REGISTRY: tuple[Const, ...] = (
           binds=(("StreamingVAD.__init__", "frame_ms"),),
           source="디스코드 패킷 20ms 와 같다. ONSET_MS 를 == 로 비교해 ms 상수가 이 배수라는 전제가 코드에 있다"),
     Const("stt.vad", "ONSET_MS", MEASURED, "임계를 넘는 프레임이 이만큼 이어져야 말로 본다", BATCH,
-          sweep=(20, 40, 60, 100, 160), metric="lost", priority=P_VAD, recheck=_REAL),
+          sweep=(20, 40, 60, 100, 160), metric="lost", priority=P_VAD, recheck=_EDGE),
     Const("stt.vad", "RESTART_SILENCE_MS", MEASURED, "짧은 소리 뒤 이만큼 조용하면 그 소리를 버리고 다시 센다", BATCH,
           sweep=(200, 300, 400, 600, 800), metric="lost", priority=P_VAD, recheck=_REAL),
     Const("stt.vad", "SOFT_CAP_MS", MEASURED, "발화가 이만큼 길어지면 짧은 쉼에서도 끊는다", BATCH,
@@ -130,13 +133,13 @@ REGISTRY: tuple[Const, ...] = (
           sweep=(200, 300, 400, 600, 800), metric="err_chars", priority=P_VAD, recheck=_REAL),
     # ── stt/speech_gate.py
     Const("stt.speech_gate", "ENABLED", MEASURED, "말 필터 켬·끔", BATCH, sweep=(True, False), metric="lost",
-          priority=P_GATE, source="0005", recheck=_REAL),
+          priority=P_GATE, source="0005", recheck=_GATE),
     Const("stt.speech_gate", "THRESHOLD", MEASURED, "silero 말 판정 임계", BATCH, sweep=(0.5, 0.8, 0.95, 0.98),
           metric="lost", binds=(("SpeechGate.__init__", "threshold"),), priority=P_GATE,
-          source="0005: 골든셋 실제 발화 18건 말 비율 최소 75%, 환각 클립 42% 이하", recheck=_REAL),
+          source="0005: 골든셋 실제 발화 18건 말 비율 최소 75%, 환각 클립 42% 이하", recheck=_GATE),
     Const("stt.speech_gate", "MIN_SPEECH_RATIO", MEASURED, "클립에서 말 비율이 이보다 낮으면 거른다", BATCH,
           sweep=(0.3, 0.45, 0.6, 0.75, 0.9), metric="lost", binds=(("SpeechGate.__init__", "min_ratio"),),
-          priority=P_GATE, source="0005", recheck=_REAL),
+          priority=P_GATE, source="0005", recheck=_GATE),
     # ── stt/elice.py, stt/transcribe.py
     Const("stt.elice", "WHISPER_KRW_PER_SEC", SPEC, "Elice 전사 단가(원/초)", FIXED,
           source="Elice 단가 6원/60초 (2026-09, stt/elice.py)", recheck="단가가 바뀌면"),
