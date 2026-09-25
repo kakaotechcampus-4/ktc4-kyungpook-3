@@ -1,9 +1,10 @@
 """Terra 1단계 — 전사록에서 2단계 판단까지 가볼 가치가 있는 발화를 골라낸다.
 
-Luna(get_llm("luna"))가 있으면 전사록 전체를 한 번에 넣어 필터링하고, 키가 없거나 호출이
-실패하면 규칙 기반(extract_findings_rules)으로 폴백한다 — llm.py/embedding.py와 같은 원칙
-("API 키 없어도 전 단계가 실행/테스트 가능해야 한다")이라, 호출자는 항상 extract_findings()만
-쓰면 된다.
+Luna(get_llm("luna")) 없이는 이 판단을 대신할 방법이 없으므로, 규칙 기반 폴백을 두지 않는다
+— 키가 없거나 호출/파싱이 실패하면 FindingExtractionUnavailableError 를 던진다
+(final_judge.py 의 JudgeUnavailableError 와 같은 원칙). extract_findings_rules 는 프로덕션
+경로에서는 더 이상 쓰이지 않고, eval_golden_set.py 가 "규칙 기반 대비 Luna가 얼마나 나은가"를
+비교하는 용도로만 남아있다.
 
 담당자/마감일을 실제로 파싱하는 건 여기서 하지 않는다(Phase 1 extract 몫) — 여기는
 "이 문장이 Notion 문서를 바꿀 만큼 의미가 있는가"만 본다.
@@ -19,6 +20,11 @@ import re
 
 from llm import LLMClient, get_llm
 from shared.schemas import JudgeFinding, Transcript
+
+
+class FindingExtractionUnavailableError(RuntimeError):
+    """Luna API 키가 없거나 호출/응답 파싱에 실패해 1단계 판단을 할 수 없을 때."""
+
 
 # 문장 종결(.!?) 단위로 스플릿. 구분자 자체는 버린다.
 _SENTENCE_RE = re.compile(r"[^.!?]+[.!?]?")
@@ -96,7 +102,11 @@ def _match_reason(sentence: str) -> str | None:
 
 
 def extract_findings_rules(transcript: Transcript) -> list[JudgeFinding]:
-    """규칙(정규식) 기반 1차 필터. Luna 키가 없거나 호출이 실패했을 때의 폴백."""
+    """규칙(정규식) 기반 1차 필터.
+
+    프로덕션 경로(extract_findings)에서는 더 이상 쓰이지 않는다 — eval_golden_set.py 가
+    Luna(extract_findings_llm)와 나란히 돌려 정답률을 비교하는 용도로만 직접 호출한다.
+    """
     # LLM 경로와 같은 _flatten 을 쓴다 — indices 가 가리키는 위치가 두 경로에서 같아야 한다.
     sentences, seqs, speakers = _flatten(transcript)
     findings: list[JudgeFinding] = []
@@ -154,8 +164,8 @@ def extract_findings_llm(transcript: Transcript, client: LLMClient) -> list[Judg
     """Luna로 전사록 전체를 한 번에 훑어 JudgeFinding을 뽑는다.
 
     청크로 안 쪼개고 전사록 전체를 한 번에 넣는다 — 경계에서 문맥이 끊기는 걸 피하기 위함
-    (지민님의 Phase 1 추출기와 같은 방식). 호출 실패/파싱 실패면 None — 호출자가 규칙 기반으로
-    폴백해야 한다.
+    (지민님의 Phase 1 추출기와 같은 방식). 호출 실패/파싱 실패면 None — 호출자(extract_findings)가
+    이걸 신뢰할 수 없는 응답으로 보고 FindingExtractionUnavailableError 를 던져야 한다.
     """
     sentences, seqs, speakers = _flatten(transcript)
     if not sentences:
@@ -166,8 +176,17 @@ def extract_findings_llm(transcript: Transcript, client: LLMClient) -> list[Judg
     if result is None:
         return None
 
+    if "findings" not in result:
+        findings_raw: list = []  # 키 자체가 없으면 "0건"으로 정상 처리
+    else:
+        findings_raw = result.get("findings")
+        if not isinstance(findings_raw, list):
+            return None  # 값은 있는데 리스트가 아니면 신뢰 불가
+
     findings: list[JudgeFinding] = []
-    for item in result.get("findings", []):
+    for item in findings_raw:
+        if not isinstance(item, dict):
+            continue  # 항목 하나가 이상해도 나머지는 살림
         idxs = _valid_indices(item, len(sentences))
         if not idxs:
             continue  # Luna가 범위 밖 번호를 지어내면 그냥 무시 — 통째로 실패 처리하지 않는다
@@ -193,10 +212,11 @@ def extract_findings_llm(transcript: Transcript, client: LLMClient) -> list[Judg
 
 
 def extract_findings(transcript: Transcript) -> list[JudgeFinding]:
-    """Luna가 되면 그걸로, 안 되면(키 없음/호출 실패) 규칙 기반으로 폴백한다."""
+    """Luna로 1단계 판단을 한다. 키가 없거나 호출/파싱이 실패하면 FindingExtractionUnavailableError."""
     client = get_llm("luna")
-    if client.name != "off":
-        result = extract_findings_llm(transcript, client)
-        if result is not None:
-            return result
-    return extract_findings_rules(transcript)
+    if client.name == "off":
+        raise FindingExtractionUnavailableError("Luna API 키가 없어 1단계 판단을 할 수 없습니다.")
+    result = extract_findings_llm(transcript, client)
+    if result is None:
+        raise FindingExtractionUnavailableError("Luna 응답을 파싱하지 못했습니다.")
+    return result
