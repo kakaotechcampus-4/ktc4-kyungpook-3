@@ -150,3 +150,76 @@ def test_the_worker_process_exits_cleanly_on_sigterm(tmp_path):
             child.kill()
             child.wait(timeout=10)
     assert W.read_heartbeat(rec)["state"] == "stopped"
+
+
+# ------------------------------------------------------------------ 워커 모드의 봇
+import pytest  # noqa: E402
+
+from capture import discord_adapter as A  # noqa: E402
+from tests.capture import test_discord_adapter as T  # noqa: E402
+from tests.capture.test_recovery_loop import _meeting  # noqa: E402
+
+
+def _no_stt():
+    raise AssertionError("워커 모드의 봇은 전사 백엔드를 부르면 안 된다")
+
+
+def _worker_cog(tmp_path):
+    cog, guild, vc, channel, ctx = T._setup(tmp_path)
+    return A.RecordingCog(cog.bot, recordings_dir=tmp_path / "recordings", transcripts_dir=tmp_path / "transcripts",
+                          stt_factory=_no_stt, gate_factory=lambda: None, extractor_factory=lambda: None,
+                          handoff_factory=lambda: None, mode="worker"), guild, vc, channel, ctx
+
+
+def test_an_unknown_pipeline_mode_fails_at_start(tmp_path):
+    """오타 하나로 봇 모드가 되면 4GB 서버에 모델(약 2.5GB)이 올라간다."""
+    cog, *_ = T._setup(tmp_path)
+    with pytest.raises(ValueError):
+        A.RecordingCog(cog.bot, recordings_dir=tmp_path / "recordings", mode="wroker")
+
+
+async def test_worker_mode_stop_saves_only_and_says_how_many_meetings_are_ahead(tmp_path):
+    cog, guild, vc, channel, ctx = _worker_cog(tmp_path)
+    _meeting(tmp_path, 100)
+    _meeting(tmp_path, 200)
+    _meeting(tmp_path, 300, recovery={"attempts": 5, "gave_up_at": "2026-09-26T00:00:00+00:00"})   # 포기. 차례가 없다
+    await T._run(A.RecordingCog.record, cog, ctx)
+    rec = cog._active[T.GUILD_ID]
+    rec.sink.on_samples(1, T._tone(2000), 0)
+    await T._run(A.RecordingCog.stop, cog, ctx)
+    await asyncio.wait_for(rec.done.wait(), 20)
+    path = R.manifest_path(tmp_path / "recordings", rec.meeting_id)
+    assert _status(path) == "saved" and R.is_locked(path) is False
+    saved = [t for t, _ in channel.sent if "녹음을 저장했습니다" in t]
+    assert len(saved) == 1 and "웹에서 확인" in saved[0] and "앞에 2건" in saved[0]
+    assert not any(t.startswith("📝 회의록") for t, _ in channel.sent)
+
+
+async def test_worker_mode_releases_the_lock_only_after_saved_is_written(tmp_path):
+    """먼저 놓으면 워커가 잠금 없는 recording 을 끊긴 녹음으로 읽고 녹음 중인 트랙을 집을 수 있다."""
+    cog, guild, vc, channel, ctx = _worker_cog(tmp_path)
+    await T._run(A.RecordingCog.record, cog, ctx)
+    rec = cog._active[T.GUILD_ID]
+    path = R.manifest_path(tmp_path / "recordings", rec.meeting_id)
+    seen = []
+    real_release = rec.lock.release
+
+    def watching():
+        seen.append(_status(path))
+        real_release()
+
+    rec.lock.release = watching
+    rec.sink.on_samples(1, T._tone(2000), 0)
+    await T._run(A.RecordingCog.stop, cog, ctx)
+    await asyncio.wait_for(rec.done.wait(), 20)
+    assert seen and seen[0] == "saved"
+
+
+async def test_worker_mode_loop_posts_restart_notices_but_never_processes(tmp_path):
+    cog, guild, vc, channel, ctx = _worker_cog(tmp_path)
+    waiting = _meeting(tmp_path, 500)
+    cut = _meeting(tmp_path, 600, status=R.STATUS_RECORDING,
+                   started_at=(datetime.now(timezone.utc) - timedelta(minutes=30)).replace(microsecond=0).isoformat())
+    await cog._tick()
+    assert [t for t, _ in channel.sent] == [A.RESUME_NOTICE]
+    assert _status(waiting) == "saved" and _status(cut) == "recording"      # 처리는 워커 몫이다

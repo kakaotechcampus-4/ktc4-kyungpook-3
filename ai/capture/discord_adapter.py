@@ -51,8 +51,8 @@ from pathlib import Path
 import discord
 
 from capture.handoff import from_env as handoff_from_env
-from capture.recorder import (RECOVERY_INTERVAL_S, Claims, interrupted_meetings, manifest_path, recover_pass,
-                              try_lock)
+from capture.recorder import (RECOVERY_INTERVAL_S, Claims, interrupted_meetings, manifest_path, queue_ahead,
+                              recover_pass, try_lock)
 from capture.recorder import (PARTIAL_RETRY_MAX, STATUS_EXTRACTED, STATUS_FAILED, STATUS_HANDED_OFF, STATUS_PARTIAL,
                               STATUS_RECORDING, STATUS_SAVED, STATUS_TRANSCRIBED, NullSession, backend_from_env,
                               build_extractor, meeting_title, process_session, recover, write_status)
@@ -128,8 +128,12 @@ def _name_resolver(guild):
 class RecordingCog(discord.Cog):
     def __init__(self, bot: discord.Bot, *, recordings_dir: Path = RECORDINGS_DIR,
                  transcripts_dir: Path = TRANSCRIPTS_DIR, on_session_saved: SessionSavedHook | None = None,
-                 stt_factory=None, gate_factory=None, extractor_factory=None, handoff_factory=None):
+                 stt_factory=None, gate_factory=None, extractor_factory=None, handoff_factory=None,
+                 mode: str | None = None):
         """stt_factory() 는 (백엔드, 모델 이름, 워커 수). 기본은 MM_STT_BACKEND 환경 변수를 본다.
+
+        mode 는 bot(기본, 저장 뒤 봇이 스스로 처리한다. 개발용 한 프로세스) 또는 worker(봇은 저장까지만 하고
+        python -m capture.worker 가 처리한다). 기본은 MM_PIPELINE_MODE 이고 다른 값이면 시작할 때 멈춘다.
 
         extractor_factory() 는 extract_tasks 를 부를 함수 또는 None (LLM 설정 없음).
         handoff_factory() 는 capture.handoff.Handoff 또는 None (BE 설정 없음). 둘 다 기본은 환경 변수다.
@@ -146,6 +150,9 @@ class RecordingCog(discord.Cog):
         self._processing: dict[str, _Recording] = {}   # 회의 ID → 후처리 중
         self._post_sem = asyncio.Semaphore(max(1, int(os.environ.get("MM_MAX_CONCURRENT_MEETINGS", "1"))))
         self._tasks: set[asyncio.Task] = set()
+        self._mode = mode or os.environ.get("MM_PIPELINE_MODE", "bot")
+        if self._mode not in ("bot", "worker"):
+            raise ValueError(f"MM_PIPELINE_MODE 는 bot 또는 worker 다. 받은 값: {self._mode!r}")
         # 자동 복구. 루프와 /recover 가 같은 선점과 같은 한 바퀴(_recover_pass)를 쓴다
         self._claims = Claims()
         self._recovery_interval_s = RECOVERY_INTERVAL_S      # 0 이면 루프를 띄우지 않는다
@@ -341,10 +348,17 @@ class RecordingCog(discord.Cog):
         """첫 바퀴는 바로 돈다(재시작으로 끊긴 회의). 한 바퀴가 예외를 내도 로그만 남기고 다음 바퀴로 간다."""
         while True:
             try:
-                await self._recover_pass()
+                await self._tick()
             except Exception as e:  # noqa: BLE001 - 깨진 매니페스트 하나가 자동 복구를 멈추면 안 된다
                 print(f"[recovery] 복구 바퀴 예외: {type(e).__name__}: {e}", flush=True)
             await asyncio.sleep(self._recovery_interval_s)
+
+    async def _tick(self) -> None:
+        """루프의 한 번. 워커 모드면 처리는 워커가 하고 봇은 재시작 안내만 올린다."""
+        if self._mode == "worker":
+            await self._notice_interrupted()
+        else:
+            await self._recover_pass()
 
     async def _recover_pass(self, *, guild_id=None, manual: bool = False, fallback=None) -> tuple[list[dict], list[dict]]:
         """루프와 /recover 가 같이 쓰는 한 바퀴. (돌린 회의의 결과, 남이 잡고 있어 건너뛴 회의).
@@ -514,12 +528,20 @@ class RecordingCog(discord.Cog):
                 await self._notify(rec.text_channel, "⚠️ 저장된 오디오가 없습니다. 아무도 말하지 않았거나 py-cord 가 "
                                    "음성을 수신하지 못했습니다 (requirements.txt 의 PR 브랜치 참고).")
                 return
-            head = f"✅ 저장 완료 (화자 {len(entries)}명). 전사 중입니다..."
+            warn = ""
             if drain_error:
-                head += f"\n⚠️ 마지막 패킷 정리 실패 ({drain_error}). 회의 끝부분이 빠졌을 수 있습니다."
+                warn += f"\n⚠️ 마지막 패킷 정리 실패 ({drain_error}). 회의 끝부분이 빠졌을 수 있습니다."
             if rec.pool.dropped:
-                head += f"\n⚠️ 쓰기 큐가 넘쳐 조각 {rec.pool.dropped}개를 버렸습니다."
-            await self._notify(rec.text_channel, head)
+                warn += f"\n⚠️ 쓰기 큐가 넘쳐 조각 {rec.pool.dropped}개를 버렸습니다."
+            if self._mode == "worker":
+                # saved 를 다 쓴 뒤에 잠금을 놓는다. 이제 워커가 집는다. 결과는 BE 를 거쳐 웹에서 본다
+                if rec.lock is not None:
+                    rec.lock.release()
+                ahead = queue_ahead(self.recordings_dir, rec.meeting_id, exclude=self._holding())
+                await self._notify(rec.text_channel, f"✅ 녹음을 저장했습니다(화자 {len(entries)}명). 회의록과 할일은 "
+                                   f"처리되면 웹에서 확인할 수 있습니다(앞에 {ahead}건).{warn}")
+                return
+            await self._notify(rec.text_channel, f"✅ 저장 완료 (화자 {len(entries)}명). 전사 중입니다...{warn}")
 
             # 전사 → 할일 추출 → BE 인계. 어느 단계가 죽어도 매니페스트에 남고 /recover 가 거기서 잇는다
             backend, model_name, workers = self._stt_factory()
@@ -538,9 +560,13 @@ class RecordingCog(discord.Cog):
                     print(f"[warn] on_session_saved 훅 실패: {e!r}", flush=True)
         except Exception as e:  # noqa: BLE001 - 여기 오면 파일 처리가 죽은 것이다. 신호는 아래서 켠다
             print(f"[finish] 세션 {rec.meeting_id} 후처리 예외: {type(e).__name__}: {e}", flush=True)
-            await self._notify(rec.text_channel, f"⚠️ 후처리 중 예외: {type(e).__name__}: {e}. 트랙은 남아 있습니다. " +
-                               ("끝나지 않은 단계는 자동 복구가 다시 시도합니다. 바로 하려면 `/recover`."
-                                if self._loop_alive() else "`/recover` 로 다시 시도하세요."))
+            if self._mode == "worker":
+                nxt = "끝나지 않은 단계는 워커가 이어서 처리합니다."
+            elif self._loop_alive():
+                nxt = "끝나지 않은 단계는 자동 복구가 다시 시도합니다. 바로 하려면 `/recover`."
+            else:
+                nxt = "`/recover` 로 다시 시도하세요."
+            await self._notify(rec.text_channel, f"⚠️ 후처리 중 예외: {type(e).__name__}: {e}. 트랙은 남아 있습니다. {nxt}")
         finally:
             if rec.lock is not None:
                 rec.lock.release()          # 봇 모드는 스스로 처리하는 동안 쥐고 있다가 여기서 놓는다
