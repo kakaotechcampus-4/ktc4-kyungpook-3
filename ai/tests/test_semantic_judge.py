@@ -66,19 +66,55 @@ def test_scorer_counts_unlabeled_and_duplicate_outputs():
         {"text": "점심 뭐 드세요?", "should_flag": False},
     ]}
 
-    correct, total, mistakes = _score(case, ["내일까지 끝내기로 했습니다."])
+    correct, total, mistakes = _score(case, [["내일까지 끝내기로 했습니다."]])
     assert (correct, total) == (2, 2)
     assert mistakes == []
 
     # 라벨에 없는 문장을 후보로 냄 → 분모만 늘어 점수가 깎인다
-    correct, total, mistakes = _score(case, ["내일까지 끝내기로 했습니다.", "라벨에 없는 문장입니다."])
+    correct, total, mistakes = _score(
+        case, [["내일까지 끝내기로 했습니다."], ["라벨에 없는 문장입니다."]]
+    )
     assert (correct, total) == (2, 3)
     assert any("라벨에 없는" in m for m in mistakes)
 
     # 같은 앵커로 두 건 → 중복 1건이 오답
-    correct, total, mistakes = _score(case, ["내일까지 끝내기로 했습니다."] * 2)
+    correct, total, mistakes = _score(case, [["내일까지 끝내기로 했습니다."]] * 2)
     assert (correct, total) == (2, 3)
     assert any("같은 앵커로 2건" in m for m in mistakes)
+
+
+def test_scorer_separates_hit_from_anchor():
+    """정답 판정(근거 어디에든)과 오탐 판정(앵커일 때만)을 분리하는지.
+
+    한 결정이 두 문장에 걸치고 골든셋이 둘 다 True 로 라벨하면 앵커는 하나뿐이라,
+    앵커 기준으로만 재면 나머지 하나가 구조적으로 영원히 놓침이 된다(long/case_03 실측).
+    반대로 근거에 딸려온 문장까지 전부 후보로 세면 제안·질문이 통째로 오탐이 된다(실측 8건).
+    """
+    from judge.eval_golden_set import _score
+
+    # 결정 하나가 두 문장에 걸쳐 있고 둘 다 True 라벨 — 앵커가 아닌 쪽도 정답이어야 한다
+    case = {"expected": [
+        {"text": "로그인 마감은 이번 주 목요일로 하기로 했습니다.", "should_flag": True},
+        {"text": "네, 그리고 담당자는 저로 하겠습니다.", "should_flag": True},
+    ]}
+    correct, total, _ = _score(case, [[
+        "로그인 마감은 이번 주 목요일로 하기로 했습니다.",
+        "네, 그리고 담당자는 저로 하겠습니다.",
+    ]])
+    assert (correct, total) == (2, 2)
+
+    # 제안이 합의와 한 건으로 묶인 경우 — 제안(False 라벨)은 앵커가 아니므로 오탐이 아니다
+    case = {"expected": [
+        {"text": "마감을 금요일로 당기는 게 어때요?", "should_flag": False},
+        {"text": "네 그렇게 하시죠.", "should_flag": True},
+    ]}
+    correct, total, _ = _score(case, [["마감을 금요일로 당기는 게 어때요?", "네 그렇게 하시죠."]])
+    assert (correct, total) == (2, 2)
+
+    # 같은 문장이 앵커로 나오면 오탐으로 잡혀야 한다
+    case = {"expected": [{"text": "마감을 금요일로 당기는 게 어때요?", "should_flag": False}]}
+    correct, total, _ = _score(case, [["마감을 금요일로 당기는 게 어때요?"]])
+    assert (correct, total) == (0, 1)
 
 
 # ── extract_findings_rules (정규식 폴백) ──────────────────────────────────────
