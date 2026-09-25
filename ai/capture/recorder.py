@@ -246,26 +246,29 @@ def pending_sessions(recordings_dir: Path, *, guild_id=None, exclude=None) -> li
     녹음 중에 죽어 speakers 가 빈 회의는 디렉토리에 트랙이 있으면 든다. 빠진 구간을 둔 채 인계까지 간
     partial 회의는 재시도 상한을 올리면 다시 든다.
     """
-    out = []
+    return [p for p, _ in _pending(recordings_dir, guild_id=guild_id, exclude=exclude)]
+
+
+def _pending(recordings_dir: Path, *, guild_id=None, exclude=None):
     skip = set(exclude or ())
     for p in sorted(recordings_dir.glob("session_*.json")):
-        try:
-            m = json.loads(p.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
+        m = _load(p)
+        if m is None or m.get("session") in skip:
             continue
-        if m.get("session") in skip:
-            continue
-        if m.get("status") == STATUS_HANDED_OFF:
-            if not (m.get("partial") and m.get("retry_runs", 0) < PARTIAL_RETRY_MAX):
-                continue
         if guild_id is not None and str(m.get("guild_id")) != str(guild_id):
             continue
-        if m.get("speakers"):
-            if all((recordings_dir / e["file"]).exists() for e in m["speakers"]):
-                out.append(p)
-        elif m.get("status") == STATUS_RECORDING and discover_tracks(recordings_dir, m):
-            out.append(p)
-    return out
+        if _is_pending(recordings_dir, m):
+            yield p, m
+
+
+def _is_pending(recordings_dir: Path, m: dict) -> bool:
+    """끝까지 가지 않았고 돌릴 트랙이 있는 회의인가. 목록(pending_sessions)과 잡은 뒤의 재확인(recover_one)이 같이 쓴다."""
+    if m.get("status") == STATUS_HANDED_OFF:
+        if not (m.get("partial") and m.get("retry_runs", 0) < PARTIAL_RETRY_MAX):
+            return False
+    if m.get("speakers"):
+        return all((recordings_dir / e["file"]).exists() for e in m["speakers"])
+    return m.get("status") == STATUS_RECORDING and bool(discover_tracks(recordings_dir, m))
 
 
 class Claims:
@@ -521,20 +524,76 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
     return result
 
 
+def _due(manifest: dict, now: datetime) -> bool:
+    """루프가 이번 바퀴에 돌릴 때인가. 다음 시도 시각 전이거나 포기한 회의면 아니다."""
+    state = manifest.get("recovery") or {}
+    if state.get("gave_up_at"):
+        return False
+    nxt = state.get("next_at")
+    return not nxt or now >= _parse_time(nxt)
+
+
+def recovery_targets(recordings_dir: Path, *, claims: Claims, guild_id=None, exclude=None,
+                     manual: bool = False) -> tuple[list[tuple[Path, dict]], list[dict]]:
+    """이번 바퀴에 돌릴 회의 [(경로, 매니페스트)] 와, 남이 잡고 있어 건너뛸 회의 [{session, busy, claimed_by, ...}].
+
+    manual 은 사람이 친 /recover 다. 다음 시도 시각을 기다리지 않고 포기한 회의도 한 번 더 돌린다. 루프는 시각이
+    안 됐거나 포기한 회의를 뺀다. exclude 는 봇이 지금 들고 있는 회의(녹음 중·후처리 중)다.
+    """
+    now = utcnow()
+    due, busy = [], []
+    for p, m in _pending(recordings_dir, guild_id=guild_id, exclude=exclude):
+        who = claims.holder(m)
+        if who is not None:
+            busy.append({"session": m.get("session"), "busy": True, **who})
+        elif manual or _due(m, now):
+            due.append((p, m))
+    return due, busy
+
+
+def recover_one(recordings_dir: Path, path: Path, *, claims: Claims, manual: bool = False, backend,
+                model_name: str, workers: int, gate=None, transcripts_dir: Path | None = None, extractor=None,
+                handoff=None, name_of=None) -> dict | None:
+    """회의 하나를 잡아 돌리고 놓는다. 루프와 /recover 가 회의마다 지나는 경로다. 스레드에서 부른다.
+
+    목록을 만든 뒤 시간이 흘렀으니(세마포어를 기다렸다) 선점을 먼저 잡고 매니페스트를 다시 읽어 아직 할 일인지
+    본다. 그 사이 남이 잡았으면 {"session", "busy": True, claimed_by, expires_at, expires_in_s, mine}, 끝났거나
+    루프가 돌릴 때가 아니면 None, 돌렸으면 process_session 의 결과다.
+    """
+    m = claims.acquire(path)
+    if m is None:
+        cur = _load(path)
+        who = claims.holder(cur) if cur is not None else None
+        return {"session": cur.get("session"), "busy": True, **who} if who is not None else None
+    try:
+        if not _is_pending(recordings_dir, m) or not (manual or _due(m, utcnow())):
+            return None
+        return process_session(recordings_dir, m, backend=backend, model_name=model_name, workers=workers, gate=gate,
+                               transcripts_dir=transcripts_dir, extractor=extractor, handoff=handoff, name_of=name_of)
+    finally:
+        claims.release(path, m)
+
+
 def recover(recordings_dir: Path, *, backend, model_name: str, workers: int, gate=None,
             transcripts_dir: Path | None = None, extractor=None, handoff=None, guild_id=None,
-            name_of=None, exclude=None) -> list[dict]:
+            name_of=None, exclude=None, claims: Claims | None = None, manual: bool = True) -> list[dict]:
     """끝까지 가지 않은 회의를 마지막 단계 다음부터 마저 돌린다. 회의마다 process_session 의 결과.
 
-    guild_id 를 주면 그 서버의 회의만 본다. 봇의 /recover 는 명령이 온 서버로 제한한다.
-    exclude 는 봇이 지금 들고 있는 회의 ID 다. 녹음 중인 wav 를 집어 가면 안 된다.
+    한 바퀴다. recovery_targets 로 고르고 recover_one 으로 하나씩 돌린다. 봇의 루프와 /recover 는 같은 두
+    함수를 회의마다 후처리 세마포어를 잡고 부른다(capture/discord_adapter.py). 기본은 사람이 친 /recover 와
+    같다. 다음 시도 시각을 기다리지 않고 포기한 회의도 돌린다. 남이 잡고 있는 회의는 건너뛴다.
+
+    guild_id 를 주면 그 서버의 회의만 본다. exclude 는 봇이 지금 들고 있는 회의 ID 다. 녹음 중인 wav 를 집어 가면 안 된다.
     """
+    claims = claims or Claims()
+    due, _ = recovery_targets(recordings_dir, claims=claims, guild_id=guild_id, exclude=exclude, manual=manual)
     done = []
-    for p in pending_sessions(recordings_dir, guild_id=guild_id, exclude=exclude):
-        m = json.loads(p.read_text(encoding="utf-8"))
-        done.append(process_session(recordings_dir, m, backend=backend, model_name=model_name, workers=workers,
-                                    gate=gate, transcripts_dir=transcripts_dir, extractor=extractor,
-                                    handoff=handoff, name_of=name_of))
+    for p, _m in due:
+        r = recover_one(recordings_dir, p, claims=claims, manual=manual, backend=backend, model_name=model_name,
+                        workers=workers, gate=gate, transcripts_dir=transcripts_dir, extractor=extractor,
+                        handoff=handoff, name_of=name_of)
+        if r is not None and not r.get("busy"):
+            done.append(r)
     return done
 
 

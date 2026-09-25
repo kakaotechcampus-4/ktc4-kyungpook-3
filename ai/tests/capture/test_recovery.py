@@ -177,3 +177,118 @@ def test_a_partial_meeting_that_keeps_recovering_moves_on_before_the_cap(tmp_pat
     assert fake.meetings["m1"]["status"] == "done" and _fails(fake) == 0
     saved = _saved(path)
     assert saved["partial"] is True and "recovery" not in saved
+
+
+def _failed(path, *, next_at=None, gave_up_at=None, be=None):
+    """실패로 멈춘 회의를 손으로 만든다. 다음 시도 시각이나 포기 시각을 적는다."""
+    m = _saved(path)
+    m.update(status="failed", failed_stage="stt", error="RuntimeError: 죽음")
+    state = {"attempts": 5 if gave_up_at else 1}
+    if next_at:
+        state["next_at"] = next_at
+    if gave_up_at:
+        state.update(gave_up_at=gave_up_at, failed_stage="stt")
+    m["recovery"] = state
+    if be is not None:
+        m["be"] = be
+    R.save_manifest(path, m)
+
+
+def _names(pairs):
+    return [m["session"] for _, m in pairs]
+
+
+def test_the_loop_skips_meetings_waiting_for_their_next_try_and_given_up_ones(tmp_path, clock):
+    rec, _, _ = _session(tmp_path, ts=500)                                     # 막 저장된 회의
+    _, p600, _ = _session(tmp_path, ts=600)
+    _failed(p600, next_at="2026-09-26T03:00:01+00:00")                         # 1초 뒤에 다시 한다
+    _, p700, _ = _session(tmp_path, ts=700)
+    _failed(p700, next_at="2026-09-26T03:00:00+00:00")                         # 지금이다
+    _, p800, _ = _session(tmp_path, ts=800)
+    _failed(p800, gave_up_at="2026-09-26T02:00:00+00:00", be={"meeting_id": "m9", "status": "failed"})
+    claims = R.Claims(owner="host:1:a")
+    loop, busy = R.recovery_targets(rec, claims=claims)
+    assert _names(loop) == ["77_500", "77_700"] and busy == []
+    hand, _ = R.recovery_targets(rec, claims=claims, manual=True)              # 사람은 기다리지 않고 포기한 것도 다시 돌린다
+    assert _names(hand) == ["77_500", "77_600", "77_700", "77_800"]
+
+
+def test_a_meeting_another_owner_holds_is_listed_as_busy_with_who_and_until_when(tmp_path, clock):
+    rec, path, manifest = _session(tmp_path)
+    manifest.update(claimed_by="other:9:b", claimed_at="2026-09-26T02:55:00+00:00")
+    R.save_manifest(path, manifest)
+    due, busy = R.recovery_targets(rec, claims=R.Claims(owner="host:1:a", ttl_s=600), manual=True)
+    assert due == []
+    assert busy == [{"session": "77_500", "busy": True, "claimed_by": "other:9:b",
+                     "expires_at": "2026-09-26T03:05:00+00:00", "expires_in_s": 300, "mine": False}]
+
+
+class NoStt:
+    name = "none"
+
+    def transcribe(self, samples, sample_rate):
+        raise AssertionError("전사를 부르면 안 된다")
+
+
+def test_recover_one_looks_again_after_claiming_and_leaves_a_meeting_that_moved_on(tmp_path, clock):
+    """목록을 만든 뒤 세마포어를 기다리는 사이 다른 바퀴가 그 회의를 끝냈거나 다시 미뤘다."""
+    rec, path, _ = _session(tmp_path)
+    claims = R.Claims(owner="host:1:a")
+    (target, _), = R.recovery_targets(rec, claims=claims)[0]
+    _failed(path, next_at="2026-09-26T03:02:00+00:00")                        # 그 사이 실패해 2분 뒤로 미뤄졌다
+    kw = dict(claims=claims, backend=NoStt(), model_name="echo", workers=1, transcripts_dir=tmp_path / "transcripts")
+    assert R.recover_one(rec, target, **kw) is None
+    m = _saved(path)
+    m.update(status="handed_off", stages={"transcribed": "x", "extracted": "x", "handed_off": "x"})
+    R.save_manifest(path, m)                                                   # 그 사이 끝났다
+    assert R.recover_one(rec, target, manual=True, **kw) is None
+    assert "claimed_by" not in _saved(path)                                    # 잡았던 선점은 놓았다
+
+
+def test_recover_one_reports_busy_when_the_claim_was_taken_after_listing(tmp_path, clock):
+    rec, path, _ = _session(tmp_path)
+    claims = R.Claims(owner="host:1:a", ttl_s=600)
+    (target, _), = R.recovery_targets(rec, claims=claims)[0]
+    R.Claims(owner="other:9:b", ttl_s=600).acquire(path)                      # 다른 프로세스가 먼저 잡았다
+    r = R.recover_one(rec, target, claims=claims, backend=NoStt(), model_name="echo", workers=1,
+                      transcripts_dir=tmp_path / "transcripts")
+    assert r == {"session": "77_500", "busy": True, "claimed_by": "other:9:b",
+                 "expires_at": "2026-09-26T03:10:00+00:00", "expires_in_s": 600, "mine": False}
+
+
+def _give_up(rec, path, tmp_path, fake, clock, *, down_at_the_end=False):
+    """상한 2 에서 추출이 두 번 죽어 포기한 회의. down_at_the_end 면 포기하는 순간 BE 가 꺼져 있다."""
+    for n in (1, 2):
+        fake.down = down_at_the_end and n == 2
+        _run(rec, _saved(path), tmp_path, extractor=_dying, handoff=_handoff(fake))
+        clock["t"] += timedelta(hours=1)
+    fake.down = False
+
+
+def test_hand_recovery_of_a_given_up_meeting_opens_a_new_be_meeting(tmp_path, clock, limits, monkeypatch):
+    """BE 의 failed 는 끝 상태다. 사람이 /recover 로 다시 돌리면 handoff 의 우회(새 회의, 옛 ID 는 replaced)로 간다."""
+    monkeypatch.setattr(R, "RECOVERY_MAX_ATTEMPTS", 2)
+    rec, path, _ = _session(tmp_path)
+    fake = FakeBe()
+    _give_up(rec, path, tmp_path, fake, clock)
+    assert fake.meetings["m1"]["status"] == "failed"
+    results = R.recover(rec, backend=NoStt(), model_name="echo", workers=1, transcripts_dir=tmp_path / "transcripts",
+                        extractor=_extractor({}), handoff=_handoff(fake))
+    assert results[0]["ran"] == ["extracted", "handed_off"] and results[0]["gave_up"] is False
+    saved = _saved(path)
+    assert saved["be"]["meeting_id"] == "m2" and saved["be"]["replaced"] == ["m1"] and "recovery" not in saved
+    assert fake.meetings["m2"]["status"] == "done"
+
+
+def test_a_failed_hand_retry_of_a_given_up_meeting_closes_the_new_be_meeting_too(tmp_path, clock, limits, monkeypatch):
+    """사람의 재시도는 한 번이다. 또 실패하면 곧바로 다시 포기하고, 그 사이 만든 BE 회의도 failed 로 닫는다.
+    BE 에 processing 으로 남은 회의는 언제나 루프가 아직 돌리는 회의여야 한다."""
+    monkeypatch.setattr(R, "RECOVERY_MAX_ATTEMPTS", 2)
+    rec, path, _ = _session(tmp_path)
+    fake = FakeBe()
+    _give_up(rec, path, tmp_path, fake, clock)
+    results = R.recover(rec, backend=NoStt(), model_name="echo", workers=1, transcripts_dir=tmp_path / "transcripts",
+                        extractor=_dying, handoff=_handoff(fake))
+    assert results[0]["status"] == "failed" and results[0]["gave_up"] is True
+    assert {mid: m["status"] for mid, m in fake.meetings.items()} == {"m1": "failed", "m2": "failed"}
+    assert _saved(path)["be"]["replaced"] == ["m1"]
