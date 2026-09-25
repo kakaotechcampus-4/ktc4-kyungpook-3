@@ -115,3 +115,12 @@ def test_line_count_is_described_not_judged():
     got = R.constant_verdict(runs, "stt.batch.TURN_GAP_S", ALIGNED, {"err": 5, "lost": 0, "lines": 0})
     assert got["label"] == S.FLAT
     assert got["primary"]["text"] == "줄 수 0.5: 21, 1: 15, 2~8: 14"
+
+
+def test_verdict_says_whether_the_moving_side_is_better_or_worse():
+    runs = {"base": _run("base", [_rec("m1", 94, lost="7/45")])}
+    for v, err, lost in ((0.0, 99, "7/45"), (0.05, 96, "7/45"), (0.2, 79, "3/45"), (0.4, 71, "3/45")):
+        runs[f"TAIL_PAD_S={v:g}"] = _run("", [_rec("m1", err, lost=lost, fp=f"i{v}")], [("stt.batch.TAIL_PAD_S", v)])
+    got = R.constant_verdict(runs, "stt.batch.TAIL_PAD_S", ALIGNED, {"err": 8, "lost": 0})
+    assert got["label"] == S.CLIFF and got["direction"] == "개선 쪽"
+    assert "절벽(개선 쪽)" in R._verdict_line(got)

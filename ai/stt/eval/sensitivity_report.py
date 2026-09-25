@@ -121,6 +121,20 @@ def _points(runs: dict[str, dict], path: str, group: str) -> dict:
     return pts
 
 
+def _direction(changed, pts, default, noise, errs) -> str:
+    """움직인 값들이 기본값보다 나은 쪽인가 나쁜 쪽인가. 오류 글자와 잃은 발화는 적을수록 낫다."""
+    better = worse = False
+    for v in changed:
+        if v in errs:
+            worse = True
+            continue
+        de = pts[v]["err"] - pts[default]["err"]
+        dl = pts[v]["lost"] - pts[default]["lost"]
+        better |= de < -noise["err"] or dl < 0
+        worse |= de > noise["err"] or dl > 0
+    return {(True, False): "개선 쪽", (False, True): "악화 쪽", (True, True): "양쪽"}.get((better, worse), "")
+
+
 def constant_verdict(runs: dict[str, dict], path: str, group: str, noise: dict) -> dict | None:
     default = C.current_value(path)
     pts = _points(runs, path, group)
@@ -134,7 +148,8 @@ def constant_verdict(runs: dict[str, dict], path: str, group: str, noise: dict) 
     got = S.classify(values, default, {v: (None if v in errs else pts[v]["err"]) for v in values}, noise["err"],
                      errors=errs | lost_moved)
     got.update({"errors": sorted(errs), "lost_changed": sorted(lost_moved), "values": values, "points": pts,
-                "noise": noise["err"], "metric": "오류 글자·잃은 발화"})
+                "noise": noise["err"], "metric": "오류 글자·잃은 발화",
+                "direction": _direction(got["changed"], pts, default, noise, errs)})
     c = C.BY_PATH[path]
     if c.metric == "lines":
         # 줄 수는 좋고 나쁨이 없다. 어느 값에서 줄이 합쳐지고 갈리는지만 적고, 좋고 나쁨은 추출 표에서 본다
@@ -172,7 +187,8 @@ def _row(v, a: dict, base: dict | None, kind: str) -> dict:
 def _verdict_line(v: dict) -> str:
     if v["label"] == S.INACTIVE:
         return f"판정 {S.INACTIVE}. 어느 값에서도 모델 입력과 줄 구조가 기본값과 같다"
-    s = (f"판정 {v['label']}. 평탄 구간 {S._fmt(v['flat_lo'])}~{S._fmt(v['flat_hi'])} "
+    label = v["label"] + (f"({v['direction']})" if v.get("direction") else "")
+    s = (f"판정 {label}. 평탄 구간 {S._fmt(v['flat_lo'])}~{S._fmt(v['flat_hi'])} "
          f"(오류 글자 잡음 폭 {v['noise']}, 잃은 발화 변화 {', '.join(S._fmt(x) for x in v['lost_changed']) or '없음'})")
     if v.get("errors"):
         s += f". 실행 오류 값 {', '.join(S._fmt(x) for x in v['errors'])}"
@@ -227,7 +243,9 @@ def report(out: Path) -> dict:
                 if v.get("lost_changed"):
                     note = (note + ". " if note else "") + "잃은 발화가 달라진 값 " + ", ".join(
                         S._fmt(x) for x in v["lost_changed"])
-                entry = {"backend": label, "group": group, "label": v["label"], "flat_lo": v.get("flat_lo"),
+                entry = {"backend": label, "group": group,
+                         "label": v["label"] + (f"({v['direction']})" if v.get("direction") else ""),
+                         "flat_lo": v.get("flat_lo"),
                          "flat_hi": v.get("flat_hi"), "noise": v["noise"], "metric": "오류 글자·잃은 발화",
                          "errors": v.get("errors", []), "note": note}
                 verdicts.setdefault(c.path, []).append(entry)
