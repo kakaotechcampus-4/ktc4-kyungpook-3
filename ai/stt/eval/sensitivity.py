@@ -141,7 +141,7 @@ def range_text(lo, hi) -> str:
 
 
 def _verdict_text(v: dict) -> str:
-    head = f"{v['backend']} {v['group']}: "
+    head = f"{v['backend']} {v['group']}: " if v.get("group") else f"{v['backend']}: "
     if v.get("text"):
         return head + v["text"]
     if v["label"] == INACTIVE:

@@ -147,3 +147,16 @@ def test_align_text_keeps_each_source_separate(tmp_path):
             for v in (0.3, 1.0)]
     _md, verdicts = R.align_section(tmp_path, {"local-large-v3-turbo": {"base": _run("base", recs)}})
     assert "오류 글자는 원본마다 값과 무관하게 같음 (m1 43, m2 38)" in verdicts["stt.eval.golden.PLACE_GAP_S"][0]["text"]
+
+
+def test_evidence_says_not_yet_measured_on_elice_for_backend_dependent_constants(tmp_path):
+    d = tmp_path / "runs" / "local-large-v3-turbo"
+    d.mkdir(parents=True)
+    for sid, e, ov in (("base", 42, []), ("CHUNK_GAP_S=0.4", 45, [("stt.batch.CHUNK_GAP_S", 0.4)])):
+        (d / f"{sid}.json").write_text(json.dumps(_run(sid, [_rec("m1", e, fp=sid)], ov), ensure_ascii=False),
+                                       encoding="utf-8")
+    R.report(tmp_path)
+    rows = {line.split("|")[1].strip(): line for line in
+            (tmp_path / "tables" / "evidence.md").read_text(encoding="utf-8").splitlines() if line.startswith("| stt.")}
+    assert "elice: 아직 안 잼" in rows["stt.batch.CHUNK_GAP_S"]
+    assert "elice" not in rows["stt.batch.TURN_GAP_S"]

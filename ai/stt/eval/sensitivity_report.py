@@ -259,6 +259,10 @@ def report(out: Path) -> dict:
             sens += [f"## {c.name} (기본 {S._fmt(C.current_value(c.path))})", "", c.affects, "", *block]
     (tables / "sensitivity.md").write_text("\n".join(sens) + "\n", encoding="utf-8")
     (tables / "noise.md").write_text("\n".join(noise_md + determinism(all_runs)) + "\n", encoding="utf-8")
+    for c in C.REGISTRY:
+        # 백엔드에 따라 갈릴 수 있는 상수는 Elice 결과가 없으면 없다고 적는다. 로컬 판정만 보이면 넓혀 읽기 쉽다
+        if c.elice and not any(v["backend"].startswith("elice") for v in verdicts.get(c.path, [])):
+            verdicts.setdefault(c.path, []).append({"backend": "elice", "group": "", "text": "아직 안 잼"})
     lat_md, lat_verdicts = latency(all_runs)
     verdicts.update(lat_verdicts)
     al_md, al_verdicts = align_section(out, all_runs)
