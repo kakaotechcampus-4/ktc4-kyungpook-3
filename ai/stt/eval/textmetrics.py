@@ -169,3 +169,32 @@ def term_recall(ref: str, hyp: str, terms) -> dict:
     ref_n = sum(rn.count(_cf(t)) for t in terms)
     hit = sum(min(rn.count(_cf(t)), hn.count(_cf(t))) for t in terms)
     return {"ref_terms": ref_n, "hit": hit, "recall": _ratio(hit, ref_n)}
+
+
+def utterance_errors(truth: list[dict], lines, slack_s: float = 0.5) -> dict:
+    """정답 발화 단위 오류. 전사 줄(화자, 시작 ms, 끝 ms, 글)을 같은 화자 정답 발화 중 시간이 가장 많이 겹치는
+    것에 붙이고 발화마다 오류를 센다. 어느 발화와도 안 겹치는 줄은 전부 삽입으로 센다.
+
+    화자별로 이어 붙인 CER(char_errors)은 단어가 옆 발화로 옮겨 가도 순서가 같으면 오류로 안 센다. 묶음을
+    클립으로 되돌릴 때 단어가 다른 화자의 말을 건너 앞 클립으로 붙는 경우가 그렇다. 이 값에서 화자별 오류를
+    뺀 것이 발화 경계를 넘어간 글자다.
+    """
+    by: dict[int, list[tuple[int, str]]] = {i: [] for i in range(len(truth))}
+    stray = 0
+    for spk, a, b, text in lines:
+        if not text:
+            continue
+        best, hit = 0.0, None
+        for i, t in enumerate(truth):
+            if t["speaker"] != spk or t.get("start") is None:
+                continue
+            ov = min(b / 1000, t["end"] + slack_s) - max(a / 1000, t["start"] - slack_s)
+            if ov > best:
+                best, hit = ov, i
+        if hit is None:
+            stray += len(nospace(text))
+        else:
+            by[hit].append((a, text))
+    err = sum(char_errors(t["text"], " ".join(x for _, x in sorted(by[i])))["errors"]
+              for i, t in enumerate(truth) if t.get("start") is not None)
+    return {"utt_err": err + stray, "unassigned_chars": stray}

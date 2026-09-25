@@ -71,6 +71,7 @@ def aggregate(run: dict, group: str) -> dict | None:
         "edge_err": e("edge_errors"), "edge_chars": e("edge_chars"),
         "inner_err": e("inner_errors"), "inner_chars": e("inner_chars"),
         "paid_krw": round(tot(lambda r: r.get("paid_krw") or 0), 2),
+        "moved": tot(lambda r: r.get("moved_chars") or 0),
         "prompt_leak": sum(leak) if leak else None,
         "fp": tuple(sorted((r["session"], r["input_fp"], r["lines_fp"]) for r in ok)),
         "errors": sorted(r["session"] for r in recs if r.get("error")),
@@ -81,7 +82,7 @@ def aggregate(run: dict, group: str) -> dict | None:
 def noise_band(runs: dict[str, dict], group: str, kind: str) -> dict:
     present = [i for i in NOISE_IDS[kind] if i in runs]
     aggs = [a for a in (aggregate(runs[i], group) for i in present) if a]
-    keys = ("err", "lost", "punct_err", "edge_err", "lines", "halluc")
+    keys = ("err", "lost", "punct_err", "edge_err", "lines", "halluc", "moved")
     band = {k: (max(a[k] for a in aggs) - min(a[k] for a in aggs)) if len(aggs) >= 2 else 0 for k in keys}
     band.update({"settings": present, "n": len(aggs), "values": [a["err"] for a in aggs]})
     return band
@@ -140,7 +141,8 @@ def _row(v, a: dict, base: dict | None, kind: str) -> dict:
             "화자별 흩어짐": _f(a["spread"]), "삽입 글자": a["char_ins"], "잃은 발화": f"{a['lost']}/{a['n_truth']}",
             "거름": a["gated"], "문장 끝 오류": a["punct_err"],
             "이음 마침표 유지": f"{a['join_kept']}/{a['join_need']}", "이음 마침표 생성": f"{a['join_invented']}/{a['join_without']}",
-            "가장자리 오류": f"{a['edge_err']}/{a['edge_chars']}", "환각 구절": a["halluc"], "줄": a["lines"],
+            "가장자리 오류": f"{a['edge_err']}/{a['edge_chars']}", "발화 경계 넘은 글자": a["moved"],
+            "환각 구절": a["halluc"], "줄": a["lines"],
             "클립": a["clips"], "호출": a["calls"], "보낸 초": a["audio_s"], "전사 초": a["stt_s"],
             "원": _f(a["audio_s"] * KRW_PER_SEC, 1) if kind == "elice" else "0",
             "실행 오류": ",".join(a["errors"]) or "-"}

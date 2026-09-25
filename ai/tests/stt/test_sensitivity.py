@@ -178,3 +178,16 @@ def test_align_sweep_rebuilds_aligned_sessions_under_their_own_group(tmp_path):
     assert S.group_of(made[0]) == "정렬 변형 PLACE_GAP_S"
     from stt.eval import golden
     assert golden.PLACE_GAP_S == 1.0
+
+
+def test_rescore_recomputes_text_metrics_from_stored_lines_without_transcribing(tmp_path):
+    s = _tiny(tmp_path)
+    st = S.Setting("TURN_GAP_S=0.5", "const:stt.batch.TURN_GAP_S", overrides=(("stt.batch.TURN_GAP_S", 0.5),))
+    with C.overrides(NO_GATE):
+        rec = S.measure(st, [s], backend_kind="local", backend=LengthStt(), cache_dir=None)["tiny-aligned"]
+    assert "utt_err" in rec and rec["moved_chars"] >= 0
+    broken = {**rec, "err_chars": 999, "n_lines": 99}
+    del broken["utt_err"]
+    again = S.rescore_record(s, broken, {"overrides": [["stt.batch.TURN_GAP_S", 0.5]]})
+    assert again["err_chars"] == rec["err_chars"] and again["n_lines"] == 2 and again["utt_err"] == rec["utt_err"]
+    assert again["calls"] == rec["calls"]                 # 전사 통계는 그대로 둔다

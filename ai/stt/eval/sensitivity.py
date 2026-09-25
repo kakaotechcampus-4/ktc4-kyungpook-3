@@ -298,10 +298,10 @@ def _pct(xs, p):
     return None if not xs else xs[min(len(xs) - 1, int(round((len(xs) - 1) * p)))]
 
 
-def score_lines(session: Path, lines: list, merged: list, stats, *, backend_kind: str, cached: CachedStt,
-                prompt_text: str = "") -> dict:
-    m = golden.session_metrics(session, merged, stats, backend_kind=backend_kind)
+def text_fields(session: Path, lines: list, merged: list, *, prompt_text: str = "") -> dict:
+    """전사 글에서만 나오는 지표. 전사를 다시 하지 않고 저장된 줄로 다시 셀 수 있다(rescore)."""
     truth_by = json.loads((session / "truth_by_speaker.json").read_text(encoding="utf-8"))
+    aligned = json.loads((session / "truth_aligned.json").read_text(encoding="utf-8"))
     names = list(truth_by)
     errs, puncts, edges = {}, [], []
     halluc = ins = leak = 0
@@ -325,19 +325,30 @@ def score_lines(session: Path, lines: list, merged: list, stats, *, backend_kind
                           "joins_without_end", "joins_invented_end"))
     edge = _sum(edges, ("edges", "edge_chars", "edge_errors", "inner_chars", "inner_errors"))
     cers = [e["errors"] / e["ref_chars"] for e in errs.values() if e["ref_chars"]]
+    err_chars = sum(e["errors"] for e in errs.values())
+    utt = T.utterance_errors(aligned, [(ln.speaker_id, ln.start_ms, ln.end_ms, ln.text) for ln in lines])
+    structure = [[ln.speaker_id, ln.start_ms, ln.end_ms] for ln in merged if ln.text]
+    return {
+        "err_chars": err_chars, "ref_chars": sum(e["ref_chars"] for e in errs.values()),
+        "err_by_speaker": {k: e["errors"] for k, e in errs.items()},
+        "spread_cer": round(max(cers) - min(cers), 4) if cers else None,
+        "char_ins": ins, "halluc": halluc, "prompt_leak": leak if prompt_text else None, "terms": terms,
+        "punct": punct, "edge": edge, "utt_err": utt["utt_err"], "moved_chars": max(0, utt["utt_err"] - err_chars),
+        "n_lines": len(structure), "n_clip_lines": sum(1 for ln in lines if ln.text),
+        "lines_fp": hashlib.sha256(json.dumps(structure).encode()).hexdigest()[:16],
+    }
+
+
+def score_lines(session: Path, lines: list, merged: list, stats, *, backend_kind: str, cached: CachedStt,
+                prompt_text: str = "") -> dict:
+    m = golden.session_metrics(session, merged, stats, backend_kind=backend_kind)
     calls = list(cached.calls)
     dts = sorted(c["dt"] for c in calls if not c["error"])
     fresh = [c for c in calls if not c["cached"]]
     from stt.elice import whisper_krw
-    structure = [[ln.speaker_id, ln.start_ms, ln.end_ms] for ln in merged if ln.text]
     return {
         "session": session.name, "group": group_of(session), **m,
-        "err_chars": sum(e["errors"] for e in errs.values()), "ref_chars": sum(e["ref_chars"] for e in errs.values()),
-        "err_by_speaker": {k: e["errors"] for k, e in errs.items()},
-        "spread_cer": round(max(cers) - min(cers), 4) if cers else None,
-        "char_ins": ins, "halluc": halluc, "prompt_leak": leak if prompt_text else None, "terms": terms,
-        "punct": punct, "edge": edge,
-        "n_lines": len(structure), "n_clip_lines": sum(1 for ln in lines if ln.text),
+        **text_fields(session, lines, merged, prompt_text=prompt_text),
         "calls": stats.calls, "audio_sent_s": round(stats.audio_sent_s, 2), "clips": stats.clips,
         "turns": stats.turns, "long_splits": stats.long_splits, "unmapped": stats.unmapped,
         "retries": stats.retries,
@@ -347,11 +358,32 @@ def score_lines(session: Path, lines: list, merged: list, stats, *, backend_kind
         "fresh_audio_s": round(sum(c["audio_s"] for c in fresh), 2),
         "paid_krw": round(whisper_krw(sum(c["audio_s"] for c in fresh)), 2) if backend_kind == "elice" else 0.0,
         "input_fp": cached.fingerprint(),
-        "lines_fp": hashlib.sha256(json.dumps(structure).encode()).hexdigest()[:16],
         "clip_lines": [[ln.speaker_id, ln.start_ms, ln.end_ms, ln.text] for ln in lines],
         "call_log": [{"audio_s": round(c["audio_s"], 2), "dt": round(c["dt"], 3), "cached": c["cached"],
                       "error": c["error"]} for c in calls],
     }
+
+
+def rescore_record(session: Path, rec: dict, setting: dict) -> dict:
+    """저장된 clip_lines 로 채점 지표를 다시 센다. 전사 통계(호출·시간·지문)는 그대로 둔다.
+
+    지표를 더하거나 정답을 고쳤을 때 쓴다. 줄 병합은 그 설정의 TURN_GAP_S 로 다시 한다.
+    """
+    from types import SimpleNamespace
+
+    from stt.lines import Line
+
+    lines = [Line(speaker_id=a, speaker_name=a, turn_id="", seq=0, start_ms=b, end_ms=c, text=t, final=True)
+             for a, b, c, t in rec["clip_lines"]]
+    with C.overrides({p: v for p, v in setting.get("overrides", [])}):
+        merged = merged_lines([Line(**{**ln.__dict__}) for ln in lines])
+    stats = SimpleNamespace(gated=rec.get("gated", 0), failed=rec.get("failed", 0),
+                            audio_sent_s=rec.get("audio_sent_s", 0.0))
+    kind = "elice" if (rec.get("paid_krw") or 0) > 0 or setting.get("backend") == "elice" else "local"
+    m = golden.session_metrics(session, merged, stats, backend_kind=kind)
+    m.pop("krw", None)
+    prompt = prompt_for(setting.get("prompt", ""), session)
+    return {**rec, **m, **text_fields(session, lines, merged, prompt_text=prompt)}
 
 
 def measure(setting: Setting, sessions: list[Path], *, backend_kind: str, backend, cache_dir: Path | None,
@@ -458,6 +490,9 @@ def main(argv=None) -> int:
     al.add_argument("--golden", type=Path, action="append", required=True, help="원본 골든 회의(audio/, truth_utterances.json)")
     al.add_argument("--out", type=Path, required=True, help="만들 곳. 레포 밖")
     al.add_argument("--summary", type=Path, default=None, help="정렬본 해시 요약 JSON (결과 폴더에 둔다)")
+    rs = sub.add_parser("rescore", help="저장된 줄로 채점 지표를 다시 센다. 전사는 다시 안 한다")
+    rs.add_argument("--golden-root", type=Path, action="append", required=True)
+    rs.add_argument("--out", type=Path, required=True)
     rp = sub.add_parser("report", help="runs/ 에서 표(tables/)와 summary.json 을 다시 만든다")
     rp.add_argument("--out", type=Path, required=True)
     a = ap.parse_args(argv)
@@ -467,6 +502,18 @@ def main(argv=None) -> int:
         if a.summary:
             a.summary.expanduser().write_text(json.dumps(align_summary(made), ensure_ascii=False, indent=1),
                                               encoding="utf-8")
+        return 0
+    if a.cmd == "rescore":
+        by = {x.name: x for x in discover_sessions([g.expanduser() for g in a.golden_root])}
+        n = 0
+        for f in sorted((a.out.expanduser() / "runs").rglob("*.json")):
+            rec = json.loads(f.read_text(encoding="utf-8"))
+            for name, r in rec["sessions"].items():
+                if name in by and not r.get("error") and "clip_lines" in r:
+                    rec["sessions"][name] = rescore_record(by[name], r, rec["setting"])
+                    n += 1
+            f.write_text(json.dumps(rec, ensure_ascii=False, indent=1), encoding="utf-8")
+        print(f"다시 센 기록 {n}개")
         return 0
     if a.cmd == "report":
         from stt.eval.sensitivity_report import report

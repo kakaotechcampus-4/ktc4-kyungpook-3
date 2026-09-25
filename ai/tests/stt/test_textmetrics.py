@@ -56,3 +56,20 @@ def test_phrase_excess_counts_only_what_the_reference_does_not_have():
 def test_term_recall_is_case_and_space_insensitive():
     r = T.term_recall("large-v3-turbo 로 GPU 서버에서", "라지 v3 터보로 gpu 서버에서", ("large-v3-turbo", "GPU", "Notion"))
     assert (r["ref_terms"], r["hit"]) == (2, 1)
+
+
+# ─────────────────────────────────────────── 발화 경계
+def test_utterance_errors_catch_words_that_moved_into_the_neighbouring_utterance():
+    """화자별로 이어 붙이면 순서가 같아 오류 0 이지만, 발화 단위로 보면 "라" 가 앞 발화로 옮겨 갔다."""
+    truth = [{"speaker": "A", "text": "가나다.", "start": 0.0, "end": 1.0},
+             {"speaker": "B", "text": "네.", "start": 1.1, "end": 1.4},
+             {"speaker": "A", "text": "라마바.", "start": 1.6, "end": 2.6}]
+    lines = [("A", 0, 1000, "가나다 라"), ("B", 1100, 1400, "네"), ("A", 1600, 2600, "마바")]
+    got = T.utterance_errors(truth, lines)
+    assert got == {"utt_err": 2, "unassigned_chars": 0}
+
+
+def test_utterance_errors_count_lines_with_no_matching_utterance_as_insertions():
+    truth = [{"speaker": "A", "text": "가나다.", "start": 0.0, "end": 1.0}]
+    got = T.utterance_errors(truth, [("A", 0, 1000, "가나다"), ("A", 9000, 9500, "감사합니다")])
+    assert got == {"utt_err": 5, "unassigned_chars": 5}
