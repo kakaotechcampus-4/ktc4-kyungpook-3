@@ -142,7 +142,7 @@ def constant_verdict(runs: dict[str, dict], path: str, group: str, noise: dict) 
         return None
     values = sorted(pts)
     errs = {v for v in values if pts[v]["errors"]}
-    if not errs and all(pts[v]["fp"] == pts[default]["fp"] for v in values):
+    if not errs and S.inactive({v: pts[v]["fp"] for v in values}, default):
         return {"label": S.INACTIVE, "values": values, "points": pts, "noise": noise["err"]}
     lost_moved = {v for v in values if abs(pts[v]["lost"] - pts[default]["lost"]) > noise["lost"]}
     got = S.classify(values, default, {v: (None if v in errs else pts[v]["err"]) for v in values}, noise["err"],
