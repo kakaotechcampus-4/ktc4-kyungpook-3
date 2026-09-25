@@ -140,3 +140,50 @@ async def test_recover_skips_a_meeting_another_process_claimed_and_says_until_wh
     texts = _texts(channel)
     assert len(texts) == 1 and "other:9:b" in texts[0] and "110분" in texts[0]
     assert _status(path) == "saved"
+
+
+async def test_on_ready_starts_one_loop_that_runs_at_once_and_cog_unload_cancels_it(tmp_path, monkeypatch):
+    cog, *_ = _setup(tmp_path)
+    cog._recovery_interval_s = 10
+    passes = []
+
+    async def counting_pass(**kwargs):
+        passes.append(kwargs)
+        return [], []
+
+    monkeypatch.setattr(cog, "_recover_pass", counting_pass)
+    await cog.on_ready()
+    task = cog._recovery_task
+    await cog.on_ready()                                            # 재연결로 on_ready 가 다시 와도
+    await asyncio.sleep(0.05)
+    assert cog._recovery_task is task and len(passes) == 1          # 첫 바퀴는 바로, 태스크는 하나
+    cog.cog_unload()
+    await asyncio.wait([task], timeout=1)
+    assert task.cancelled()
+
+
+async def test_an_interval_of_zero_keeps_the_loop_off(tmp_path):
+    cog, *_ = _setup(tmp_path)
+    cog._recovery_interval_s = 0
+    await cog.on_ready()
+    assert cog._recovery_task is None
+
+
+async def test_the_loop_keeps_going_after_a_pass_raises(tmp_path, monkeypatch):
+    cog, *_ = _setup(tmp_path)
+    cog._recovery_interval_s = 0.01
+    passes = []
+
+    async def flaky_pass(**kwargs):
+        passes.append(kwargs)
+        if len(passes) == 1:
+            raise RuntimeError("깨진 매니페스트")
+        return [], []
+
+    monkeypatch.setattr(cog, "_recover_pass", flaky_pass)
+    await cog.on_ready()
+    await asyncio.sleep(0.1)
+    task = cog._recovery_task
+    assert len(passes) >= 2 and not task.done()
+    cog.cog_unload()
+    await asyncio.wait([task], timeout=1)

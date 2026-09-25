@@ -44,7 +44,7 @@ from pathlib import Path
 import discord
 
 from capture.handoff import from_env as handoff_from_env
-from capture.recorder import Claims, recover_one, recovery_targets
+from capture.recorder import RECOVERY_INTERVAL_S, Claims, recover_one, recovery_targets
 from capture.recorder import (PARTIAL_RETRY_MAX, STATUS_EXTRACTED, STATUS_FAILED, STATUS_HANDED_OFF, STATUS_PARTIAL,
                               STATUS_RECORDING, STATUS_SAVED, STATUS_TRANSCRIBED, NullSession, backend_from_env,
                               build_extractor, meeting_title, process_session, recover, write_status)
@@ -137,6 +137,8 @@ class RecordingCog(discord.Cog):
         self._tasks: set[asyncio.Task] = set()
         # 자동 복구. 루프와 /recover 가 같은 선점과 같은 한 바퀴(_recover_pass)를 쓴다
         self._claims = Claims()
+        self._recovery_interval_s = RECOVERY_INTERVAL_S      # 0 이면 루프를 띄우지 않는다
+        self._recovery_task: asyncio.Task | None = None
 
     # ------------------------------------------------------------------ 명령
     @discord.slash_command(name="join", description="봇이 현재 음성채널에 입장합니다")
@@ -284,7 +286,37 @@ class RecordingCog(discord.Cog):
         elif left:
             rec.sink.drain_speaker(member.id)
 
+    @discord.Cog.listener()
+    async def on_ready(self) -> None:
+        self.start_recovery_loop()
+
     # ------------------------------------------------------------------ 자동 복구
+    def start_recovery_loop(self) -> asyncio.Task | None:
+        """자동 복구 루프를 띄운다. on_ready 가 재연결로 다시 와도 하나만 돈다. 주기가 0 이면 띄우지 않는다.
+
+        정리는 둘이다. Cog 를 떼면 cog_unload 가 취소한다. bot.run() 이 끝나면 py-cord 가 남은 태스크를 모두
+        취소한다(Client.close 는 cog_unload 를 부르지 않는다). 취소돼도 스레드에서 돌던 회의는 끝까지 가고
+        선점은 그 스레드가 놓는다.
+        """
+        if self._recovery_interval_s <= 0:
+            return None
+        if self._recovery_task is None or self._recovery_task.done():
+            self._recovery_task = asyncio.get_running_loop().create_task(self._recovery_loop())
+        return self._recovery_task
+
+    def cog_unload(self) -> None:
+        if self._recovery_task is not None:
+            self._recovery_task.cancel()
+
+    async def _recovery_loop(self) -> None:
+        """첫 바퀴는 바로 돈다(재시작으로 끊긴 회의). 한 바퀴가 예외를 내도 로그만 남기고 다음 바퀴로 간다."""
+        while True:
+            try:
+                await self._recover_pass()
+            except Exception as e:  # noqa: BLE001 - 깨진 매니페스트 하나가 자동 복구를 멈추면 안 된다
+                print(f"[recovery] 복구 바퀴 예외: {type(e).__name__}: {e}", flush=True)
+            await asyncio.sleep(self._recovery_interval_s)
+
     async def _recover_pass(self, *, guild_id=None, manual: bool = False, fallback=None) -> tuple[list[dict], list[dict]]:
         """루프와 /recover 가 같이 쓰는 한 바퀴. (돌린 회의의 결과, 남이 잡고 있어 건너뛴 회의).
 
