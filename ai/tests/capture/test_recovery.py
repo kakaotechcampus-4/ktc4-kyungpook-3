@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from capture import recorder as R
-from tests.capture.test_recorder import _session
+from tests.capture.test_recorder import _run, _session
 
 T0 = datetime(2026, 9, 26, 3, 0, 0, tzinfo=timezone.utc)
 
@@ -58,3 +58,18 @@ def test_release_clears_the_claim_so_another_owner_can_take_it_at_once(tmp_path,
     saved = _saved(path)
     assert "claimed_by" not in saved and "claimed_at" not in saved
     assert R.Claims(owner="other:9:b", ttl_s=600).acquire(path) is not None
+
+
+def test_claimed_at_is_rewritten_whenever_a_stage_is_saved(tmp_path, clock):
+    """긴 전사가 끝나 단계가 바뀌면 선점 시각을 새로 적는다. 다음 단계가 도는 동안 파일에서 보인다."""
+    rec, path, _ = _session(tmp_path)
+    m = R.Claims(owner="host:1:a", ttl_s=600).acquire(path)     # 03:00:00
+    clock["t"] = T0 + timedelta(minutes=17)                      # 전사가 17분 걸렸다
+    seen = {}
+
+    def extractor(transcript, names, today):
+        seen.update(_saved(path))
+        return []
+
+    _run(rec, m, tmp_path, extractor=extractor)
+    assert seen["claimed_by"] == "host:1:a" and seen["claimed_at"] == "2026-09-26T03:17:00+00:00"

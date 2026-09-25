@@ -347,13 +347,19 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
               "partial": False, "missing_units": 0}
     stage = None
 
+    def save() -> None:
+        # 복구가 잡은 회의면 저장할 때마다(단계가 바뀔 때마다) 선점 시각을 새로 적는다. 긴 전사 중에 만료되지 않게
+        if manifest.get("claimed_by"):
+            manifest["claimed_at"] = _iso(utcnow())
+        save_manifest(path, manifest)
+
     def finish(name: str) -> None:
         stages[name] = now_iso()
         manifest["status"] = name
         manifest.pop("error", None)
         manifest.pop("failed_stage", None)
         result["ran"].append(name)
-        save_manifest(path, manifest)
+        save()
 
     try:
         if not manifest.get("speakers"):
@@ -366,7 +372,7 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
             manifest["status"] = STATUS_SAVED
             manifest["recovered_tracks"] = True
             result["speakers"] = len(entries)
-            save_manifest(path, manifest)
+            save()
 
         if handoff is not None:
             # 녹음이 끝났으니 BE 회의를 processing 으로 돌린다. 여기서 실패해도 전사는 하고 인계 단계가 다시 부른다
@@ -374,7 +380,7 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
                 handoff.end(manifest, title=meeting_title(manifest))
             except Exception as e:  # noqa: BLE001
                 manifest.setdefault("be", {})["error"] = f"{type(e).__name__}: {e}"
-            save_manifest(path, manifest)
+            save()
 
         if STATUS_TRANSCRIBED not in stages:
             stage = STATUS_TRANSCRIBED
@@ -392,7 +398,7 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
                 manifest.pop("error", None)
                 manifest.pop("failed_stage", None)
                 result["ran"].append(STATUS_PARTIAL)
-                save_manifest(path, manifest)
+                save()
                 result["status"] = STATUS_PARTIAL
                 return result
             finish(STATUS_TRANSCRIBED)
@@ -413,7 +419,7 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
                 if out["failed"] >= len(out["lines"]) or manifest["retry_runs"] < PARTIAL_RETRY_MAX:
                     # 한 줄도 못 살렸거나 아직 상한 전이다. 완료로 닫지 않고 다음 시도를 기다린다
                     manifest["status"] = STATUS_PARTIAL
-                    save_manifest(path, manifest)
+                    save()
                     result["status"] = STATUS_PARTIAL
                     return result
                 manifest["partial"] = True
@@ -427,7 +433,7 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
                 manifest.pop("tasks", None)
                 manifest["reextracted"] = True
             manifest["status"] = STATUS_TRANSCRIBED
-            save_manifest(path, manifest)
+            save()
 
         if STATUS_EXTRACTED not in stages:
             if extractor is None:
@@ -458,7 +464,7 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
         result.update(error=manifest["error"], failed_stage=manifest["failed_stage"])
         if handoff is not None:
             handoff.fail(manifest, manifest["failed_stage"])
-        save_manifest(path, manifest)
+        save()
     finally:
         result["status"] = manifest["status"]
         result["partial"] = bool(manifest.get("partial"))
