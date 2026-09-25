@@ -143,6 +143,8 @@ def _verdict_text(v: dict) -> str:
     s = f"{v['label']} {_fmt(v['flat_lo'])}~{_fmt(v['flat_hi'])} ({v['metric']}, 잡음 폭 {_fmt(v['noise'])})"
     if v.get("errors"):
         s += f", 실행 오류 {', '.join(_fmt(e) for e in v['errors'])}"
+    if v.get("note"):
+        s += f". {v['note']}"
     return head + s
 
 

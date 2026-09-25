@@ -104,3 +104,14 @@ def test_noise_band_uses_every_dither_seed_that_was_run():
             [("base", 42), ("dither1", 42), ("dither2", 44), ("dither3", 42), ("dither7", 48), ("mode=clip", 60)]}
     band = R.noise_band(runs, ALIGNED, "local")
     assert band["err"] == 6 and band["settings"] == ["base", "dither1", "dither2", "dither3", "dither7"]
+
+
+def test_line_count_is_described_not_judged():
+    """줄 수는 많고 적음이 좋고 나쁨이 아니다. 어느 값에서 몇 줄이 되는지만 적는다."""
+    runs = {"base": _run("base", [_rec("m1", 42, n_lines=14, lines_fp="a")])}
+    for v, n in ((0.5, 21), (1.0, 15), (2.0, 14), (5.0, 14), (8.0, 14)):
+        runs[f"TURN_GAP_S={v:g}"] = _run("", [_rec("m1", 42, n_lines=n, lines_fp=f"l{n}")],
+                                         [("stt.batch.TURN_GAP_S", v)])
+    got = R.constant_verdict(runs, "stt.batch.TURN_GAP_S", ALIGNED, {"err": 5, "lost": 0, "lines": 0})
+    assert got["label"] == S.FLAT
+    assert got["primary"]["text"] == "줄 수 0.5: 21, 1: 15, 2~8: 14"

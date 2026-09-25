@@ -22,8 +22,20 @@ from pathlib import Path
 from stt.eval import constants as C
 from stt.eval import sensitivity as S
 
-PRIMARY = {"punct": ("punct_err", "문장 끝 오류"), "edge": ("edge_err", "가장자리 오류"), "lines": ("lines", "줄 수"),
-           "lost": ("lost", "잃은 발화")}
+PRIMARY = {"punct": ("punct_err", "문장 끝 오류"), "edge": ("edge_err", "가장자리 오류"), "lost": ("lost", "잃은 발화")}
+
+
+def _runs_of(values, series) -> str:
+    """값이 이어지는 구간마다 같은 수를 묶는다. 예: "0.5: 21, 1: 15, 2~8: 14"."""
+    out, i = [], 0
+    while i < len(values):
+        j = i
+        while j + 1 < len(values) and series[values[j + 1]] == series[values[i]]:
+            j += 1
+        lo, hi = S._fmt(values[i]), S._fmt(values[j])
+        out.append(f"{lo if i == j else lo + '~' + hi}: {series[values[i]]}")
+        i = j + 1
+    return ", ".join(out)
 KRW_PER_SEC = 6 / 60
 
 
@@ -122,7 +134,10 @@ def constant_verdict(runs: dict[str, dict], path: str, group: str, noise: dict) 
     got.update({"errors": sorted(errs), "lost_changed": sorted(lost_moved), "values": values, "points": pts,
                 "noise": noise["err"], "metric": "오류 글자·잃은 발화"})
     c = C.BY_PATH[path]
-    if c.metric in PRIMARY:
+    if c.metric == "lines":
+        # 줄 수는 좋고 나쁨이 없다. 어느 값에서 줄이 합쳐지고 갈리는지만 적고, 좋고 나쁨은 추출 표에서 본다
+        got["primary"] = {"text": "줄 수 " + _runs_of(values, {v: pts[v]["lines"] for v in values})}
+    elif c.metric in PRIMARY:
         key, name = PRIMARY[c.metric]
         pv = S.classify(values, default, {v: (None if v in errs else pts[v][key]) for v in values}, noise.get(key, 0),
                         errors=errs)
@@ -158,7 +173,9 @@ def _verdict_line(v: dict) -> str:
          f"(오류 글자 잡음 폭 {v['noise']}, 잃은 발화 변화 {', '.join(S._fmt(x) for x in v['lost_changed']) or '없음'})")
     if v.get("errors"):
         s += f". 실행 오류 값 {', '.join(S._fmt(x) for x in v['errors'])}"
-    if v.get("primary"):
+    if v.get("primary", {}).get("text"):
+        s += f". {v['primary']['text']}"
+    elif v.get("primary"):
         p = v["primary"]
         s += f". 주 지표 {p['metric']}: {p['label']}, 평탄 {S._fmt(p['flat_lo'])}~{S._fmt(p['flat_hi'])} (잡음 폭 {p['noise']})"
     return s
@@ -201,9 +218,15 @@ def report(out: Path) -> dict:
                 v = constant_verdict(runs, c.path, group, band)
                 if v is None:
                     continue
+                pr = v.get("primary") or {}
+                note = pr.get("text") or (f"{pr['metric']} {pr['label']} {S._fmt(pr['flat_lo'])}~{S._fmt(pr['flat_hi'])}"
+                                          if pr else "")
+                if v.get("lost_changed"):
+                    note = (note + ". " if note else "") + "잃은 발화가 달라진 값 " + ", ".join(
+                        S._fmt(x) for x in v["lost_changed"])
                 entry = {"backend": label, "group": group, "label": v["label"], "flat_lo": v.get("flat_lo"),
                          "flat_hi": v.get("flat_hi"), "noise": v["noise"], "metric": "오류 글자·잃은 발화",
-                         "errors": v.get("errors", [])}
+                         "errors": v.get("errors", []), "note": note}
                 verdicts.setdefault(c.path, []).append(entry)
                 summary["verdicts"].setdefault(c.path, []).append(
                     {**entry, "lost_changed": v.get("lost_changed", []),
