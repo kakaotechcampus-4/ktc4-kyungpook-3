@@ -1,6 +1,6 @@
 import pytest
 
-from judge.final_judge import JudgeUnavailableError, judge, judge_llm
+from judge.final_judge import JudgeUnavailableError, _numbered_candidates, judge, judge_llm
 from llm import FakeLLM, NullLLM
 from shared.schemas import JudgeInput, NotionCandidate
 
@@ -13,6 +13,19 @@ def _candidate(**overrides) -> NotionCandidate:
     )
     base.update(overrides)
     return NotionCandidate(**base)
+
+
+# ── _numbered_candidates (Terra 프롬프트에 넘기는 후보 포맷) ─────────────────
+
+
+def test_numbered_candidates_includes_content_snippet():
+    # title만 보고는 "카카오만 지원"인지 "카카오·구글 지원"인지 구분이 안 돼서
+    # 범위 변경(scope) 판단이 틀릴 수 있다 — 본문 일부가 프롬프트에 실제로 들어가는지 확인.
+    ji = JudgeInput(
+        source="meeting", text="x",
+        candidates=[_candidate(title="소셜 로그인 구현", content_snippet="카카오 로그인만 지원")],
+    )
+    assert "카카오 로그인만 지원" in _numbered_candidates(ji)
 
 
 # ── judge_llm (Terra) ─────────────────────────────────────────────────────

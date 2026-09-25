@@ -9,13 +9,17 @@ pytest 스위트엔 안 넣는다 — 실제 Terra 호출이라 비용이 들고
 실행 (ai/ 디렉토리 안에서 — TERRA_API_KEY 필요):
     .venv/bin/python -m judge.eval_final_judge
 
-결과는 runs/final_judge_eval.csv 에도 남는다 (.gitignore 대상 — 커밋 안 됨).
+결과는 runs/final_judge_eval_success.csv · runs/final_judge_eval_errors.csv 에도 남는다
+(.gitignore 대상 — 커밋 안 됨). 두 파일로 나누는 이유: 성공 행과 ERROR 행은 컬럼 자체가 달라서,
+하나의 CSV에 같이 넣으면 DictWriter가 첫 행 기준으로 헤더를 고정하다가 다른 모양의 행을 만나는
+순간 ValueError로 죽는다 — 이미 호출한(비용 지불한) 나머지 결과까지 통째로 날아간다.
 """
 
 from __future__ import annotations
 
 import csv
 import json
+from pathlib import Path
 
 from judge.final_judge import JudgeUnavailableError, judge
 from shared.config import AI_ROOT, RUNS_DIR
@@ -28,10 +32,20 @@ def _load_cases() -> list[dict]:
     return json.loads(CASES_PATH.read_text(encoding="utf-8"))
 
 
+def _write_csv(path: Path, rows: list[dict]) -> None:
+    if not rows:
+        return
+    with path.open("w", newline="", encoding="utf-8-sig") as f:
+        writer = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
+        writer.writeheader()
+        writer.writerows(rows)
+
+
 def main() -> None:
     cases = _load_cases()
     correct = graded = 0
-    rows = []
+    success_rows = []
+    error_rows = []
 
     for case in cases:
         desc = case["description"]
@@ -43,7 +57,7 @@ def main() -> None:
             result = judge(judge_input)
         except JudgeUnavailableError as e:
             print(f"[!] {desc}\n    Terra 호출 실패: {e}\n")
-            rows.append({"description": desc, "status": "ERROR", "detail": str(e)})
+            error_rows.append({"description": desc, "status": "ERROR", "detail": str(e)})
             continue
 
         if observe_only:
@@ -78,7 +92,7 @@ def main() -> None:
         print(f"    근거: {result.evidence}")
         print()
 
-        rows.append({
+        success_rows.append({
             "description": desc,
             "status": status,
             "text": judge_input.text,
@@ -94,12 +108,11 @@ def main() -> None:
     print(f"채점 대상 {correct}/{graded} 통과 (관찰용/에러 {len(cases) - graded}개 제외, 전체 {len(cases)}개)")
 
     RUNS_DIR.mkdir(parents=True, exist_ok=True)
-    csv_path = RUNS_DIR / "final_judge_eval.csv"
-    with csv_path.open("w", newline="", encoding="utf-8-sig") as f:
-        writer = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
-        writer.writeheader()
-        writer.writerows(rows)
-    print(f"CSV 저장: {csv_path}")
+    success_path = RUNS_DIR / "final_judge_eval_success.csv"
+    error_path = RUNS_DIR / "final_judge_eval_errors.csv"
+    _write_csv(success_path, success_rows)
+    _write_csv(error_path, error_rows)
+    print(f"CSV 저장: {success_path} ({len(success_rows)}건), {error_path} ({len(error_rows)}건)")
 
 
 if __name__ == "__main__":

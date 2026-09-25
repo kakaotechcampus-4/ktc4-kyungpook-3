@@ -27,7 +27,7 @@ def _numbered_candidates(judge_input: JudgeInput) -> str:
     lines = []
     for i, c in enumerate(judge_input.candidates):
         lines.append(
-            f"[{i}] title={c.title!r}, 담당자={c.assignee_member_id}, "
+            f"[{i}] title={c.title!r}, 본문={c.content_snippet!r}, 담당자={c.assignee_member_id}, "
             f"마감일={c.due_date}, 상태={c.status}, 유사도={c.similarity:.2f}"
         )
     return "\n".join(lines)
