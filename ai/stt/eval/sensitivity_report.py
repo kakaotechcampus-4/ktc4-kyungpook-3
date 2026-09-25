@@ -84,6 +84,8 @@ def aggregate(run: dict, group: str) -> dict | None:
         "paid_krw": round(tot(lambda r: r.get("paid_krw") or 0), 2),
         "moved": tot(lambda r: r.get("moved_chars") or 0),
         "prompt_leak": sum(leak) if leak else None,
+        "term_ref": tot(lambda r: (r.get("terms") or {}).get("ref_terms", 0)),
+        "term_hit": tot(lambda r: (r.get("terms") or {}).get("hit", 0)),
         "fp": tuple(sorted((r["session"], r["input_fp"], r["lines_fp"]) for r in ok)),
         "errors": sorted(r["session"] for r in recs if r.get("error")),
         "p95": None,
@@ -160,7 +162,8 @@ def _row(v, a: dict, base: dict | None, kind: str) -> dict:
             "거름": a["gated"], "문장 끝 오류": a["punct_err"],
             "이음 마침표 유지": f"{a['join_kept']}/{a['join_need']}", "이음 마침표 생성": f"{a['join_invented']}/{a['join_without']}",
             "가장자리 오류": f"{a['edge_err']}/{a['edge_chars']}", "턴 경계 넘은 글자": a["moved"],
-            "환각 구절": a["halluc"], "줄": a["lines"],
+            "환각 구절": a["halluc"], "용어 재현": f"{a['term_hit']}/{a['term_ref']}",
+            "프롬프트 누설": "-" if a["prompt_leak"] is None else a["prompt_leak"], "줄": a["lines"],
             "클립": a["clips"], "호출": a["calls"], "보낸 초": a["audio_s"], "전사 초": a["stt_s"],
             "원": _f(a["audio_s"] * KRW_PER_SEC, 1) if kind == "elice" else "0",
             "실행 오류": ",".join(a["errors"]) or "-"}
