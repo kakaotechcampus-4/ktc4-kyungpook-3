@@ -275,3 +275,39 @@ async def test_worker_mode_restart_notice_goes_out_even_after_the_worker_took_th
     await cog._tick()
     await cog._tick()
     assert [t for t, _ in channel.sent] == [A.RESUME_NOTICE]
+
+
+BACKEND_MODULES = ("stt.batch", "stt.local", "stt.elice", "stt.transcribe", "faster_whisper", "ctranslate2", "openai")
+
+
+def test_worker_mode_bot_never_imports_a_transcription_backend(tmp_path):
+    """모델(약 2.5GB)이 봇 프로세스에 올라오지 않는다. 기본 팩토리 그대로 /record, /stop, /recover, 루프 한 번을 돈다."""
+    code = f"""
+import asyncio, sys
+from pathlib import Path
+from capture import discord_adapter as A
+from tests.capture import test_discord_adapter as T
+
+async def main():
+    tmp = Path({str(tmp_path)!r})
+    vc = T.FakeVC(T.FakeVoiceChannel())
+    guild = T.FakeGuild({{1: T.FakeMember(1, "민수")}}, vc)
+    channel = T.FakeTextChannel()
+    cog = A.RecordingCog(T.FakeBot(guild, channels=[channel]), recordings_dir=tmp / "recordings",
+                         transcripts_dir=tmp / "transcripts", mode="worker")
+    ctx = T.FakeCtx(guild, vc, channel)
+    await T._run(A.RecordingCog.record, cog, ctx)
+    rec = cog._active[guild.id]
+    rec.sink.on_samples(1, T._tone(2000), 0)
+    await T._run(A.RecordingCog.stop, cog, ctx)
+    await asyncio.wait_for(rec.done.wait(), 20)
+    await T._run(A.RecordingCog.recover_cmd, cog, ctx)
+    await cog._tick()
+    assert any("녹음을 저장했습니다" in t for t, _ in channel.sent), channel.sent
+
+asyncio.run(main())
+print(sorted(m for m in sys.modules if m in {BACKEND_MODULES!r} or m.split(".")[0] in {BACKEND_MODULES!r}))
+"""
+    out = subprocess.run([sys.executable, "-c", code], cwd=AI_DIR, capture_output=True, text=True, timeout=120)
+    assert out.returncode == 0, out.stderr[-2000:]
+    assert out.stdout.strip().splitlines()[-1] == "[]"
