@@ -95,7 +95,7 @@ def test_align_section_says_whether_a_constant_changed_the_audio_or_the_model_in
         _rec("m1-PLACE_GAP_S=3", 42, group="정렬 변형 PLACE_GAP_S")])}}
     md, verdicts = R.align_section(tmp_path, runs)
     assert "wav 같음" in verdicts["stt.eval.golden.RUN_GAP_S"][0]["text"]
-    assert "오류 글자 42~44" in verdicts["stt.eval.golden.PLACE_GAP_S"][0]["text"]
+    assert "오류 글자 m1 42~44" in verdicts["stt.eval.golden.PLACE_GAP_S"][0]["text"]
     assert "| m1 |" in md
 
 
@@ -124,3 +124,26 @@ def test_verdict_says_whether_the_moving_side_is_better_or_worse():
     got = R.constant_verdict(runs, "stt.batch.TAIL_PAD_S", ALIGNED, {"err": 8, "lost": 0})
     assert got["label"] == S.CLIFF and got["direction"] == "개선 쪽"
     assert "절벽(개선 쪽)" in R._verdict_line(got)
+
+
+def test_stall_line_counts_only_chunk_and_clip_calls(tmp_path, monkeypatch):
+    d = tmp_path / "old" / "m1"
+    d.mkdir(parents=True)
+    for mode, calls, over in (("chunk", 7, 2), ("clip", 15, 1), ("whole", 6, 6)):
+        (d / f"score_{mode}_elice.json").write_text(json.dumps({"backend": "elice/whisper-large-v3", "mode": mode,
+                                                                "calls": calls, "transcribe_p50_s": 1.0,
+                                                                "transcribe_p95_s": 30.0, "calls_over_20s": over,
+                                                                "failed": 0, "retries": 0}), encoding="utf-8")
+    monkeypatch.setattr(R, "PREVIOUS", tmp_path / "old")
+    _md, verdicts = R.latency({})
+    assert "chunk·clip 호출 22건 중 20초 넘음 3건" in verdicts["stt.batch.STALL_S"][0]["text"]
+
+
+def test_align_text_keeps_each_source_separate(tmp_path):
+    rows = [{"source": s, "const": "stt.eval.golden.PLACE_GAP_S", "value": v, "session": f"{s}-PLACE_GAP_S={v:g}",
+             "wav": f"w{v}", "chunks": "c", "slots": []} for s in ("m1", "m2") for v in (0.3, 1.0)]
+    (tmp_path / "align_sweep.json").write_text(json.dumps(rows), encoding="utf-8")
+    recs = [_rec(f"{s}-PLACE_GAP_S={v:g}", e, group="정렬 변형 PLACE_GAP_S") for s, e in (("m1", 43), ("m2", 38))
+            for v in (0.3, 1.0)]
+    _md, verdicts = R.align_section(tmp_path, {"local-large-v3-turbo": {"base": _run("base", recs)}})
+    assert "오류 글자는 원본마다 값과 무관하게 같음 (m1 43, m2 38)" in verdicts["stt.eval.golden.PLACE_GAP_S"][0]["text"]

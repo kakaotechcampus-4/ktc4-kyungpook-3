@@ -141,7 +141,8 @@ def _verdict_text(v: dict) -> str:
         return head + v["text"]
     if v["label"] == INACTIVE:
         return head + INACTIVE
-    s = f"{v['label']} {_fmt(v['flat_lo'])}~{_fmt(v['flat_hi'])} ({v['metric']}, 잡음 폭 {_fmt(v['noise'])})"
+    rng = "" if isinstance(v["flat_lo"], bool) else f" {_fmt(v['flat_lo'])}~{_fmt(v['flat_hi'])}"
+    s = f"{v['label']}{rng} ({v['metric']}, 잡음 폭 {_fmt(v['noise'])})"
     if v.get("errors"):
         s += f", 실행 오류 {', '.join(_fmt(e) for e in v['errors'])}"
     if v.get("note"):
@@ -159,7 +160,10 @@ def evidence_rows(consts, verdicts: dict[str, list[dict]]) -> list[dict]:
             result = "아직 안 잼"
         else:
             result = c.source or "-"
-        rows.append({"상수": c.path, "값": C.source_value(c.path), "쓰이는 자리": c.scope, "근거 종류": c.evidence,
+        value = C.source_value(c.path)
+        if "environ" in value:
+            value = f"{_fmt(C.current_value(c.path))} (환경 변수로 바꿀 수 있다)"
+        rows.append({"상수": c.path, "값": value, "쓰이는 자리": c.scope, "근거 종류": c.evidence,
                      "측정 결과와 범위": result, "결정": c.decision, "다시 잴 조건": c.recheck or "-"})
     return rows
 

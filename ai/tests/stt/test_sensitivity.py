@@ -197,3 +197,14 @@ def test_plan_noise_takes_a_seed_count():
     assert [s.id for s in S.plan_noise("local", seeds=5)] == ["repeat", "dither1", "dither2", "dither3", "dither4",
                                                               "dither5"]
     assert [s.id for s in S.plan_noise("elice")] == ["rep1", "rep2"]
+
+
+def test_verdict_text_skips_the_range_for_an_on_off_constant():
+    v = {"backend": "local", "group": "합성", "label": "절벽(개선 쪽)", "flat_lo": True, "flat_hi": True, "noise": 8,
+         "metric": "오류 글자·잃은 발화", "note": "잃은 발화가 달라진 값 False"}
+    assert S._verdict_text(v) == "local 합성: 절벽(개선 쪽) (오류 글자·잃은 발화, 잡음 폭 8). 잃은 발화가 달라진 값 False"
+
+
+def test_evidence_shows_the_value_in_use_for_an_environment_driven_constant():
+    row = {r["상수"]: r for r in S.evidence_rows(C.REGISTRY, verdicts={})}["stt.vad.SPEECH_RMS"]
+    assert row["값"] == "0.006 (환경 변수로 바꿀 수 있다)"

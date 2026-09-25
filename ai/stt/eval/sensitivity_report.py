@@ -339,16 +339,18 @@ def latency(all_runs: dict[str, dict]) -> tuple[str, dict]:
                   for rec in runs.values() for r in rec["sessions"].values())
     md = ["# Elice 호출 지연", ""]
     verdicts: dict[str, list[dict]] = {}
-    prev = previous_latency()
+    prev = previous_latency(PREVIOUS)
     if prev:
-        n = sum(r["호출"] or 0 for r in prev)
-        over = sum(r["20초 넘음"] or 0 for r in prev)
-        md += [f"이전 측정(`stt/eval/results/2026-09-16-batch`, 정렬본 두 회의 Elice 설정 {len(prev)}개): 호출 {n}건 중 "
-               f"20초 넘은 호출 {over}건, 재시도 {sum(r['재시도'] or 0 for r in prev)}건, 실패 {sum(r['실패'] or 0 for r in prev)}건. "
-               "설정별 p50·p95 는 아래 표.", "", S.md_table(prev), ""]
+        # 트랙 통째(whole)는 오디오가 길어 20초를 넘는 것이 당연하다. 멈춤 문턱의 근거는 묶음·클립 호출만 센다
+        cc = [r for r in prev if not str(r["설정"]).startswith("whole")]
+        n = sum(r["호출"] or 0 for r in cc)
+        over = sum(r["20초 넘음"] or 0 for r in cc)
+        md += [f"이전 측정(`stt/eval/results/2026-09-16-batch`, 정렬본 두 회의 Elice 설정 {len(prev)}개): 트랙 통째를 뺀 "
+               f"chunk·clip 호출 {n}건 중 20초 넘은 호출 {over}건, 재시도 {sum(r['재시도'] or 0 for r in prev)}건, "
+               f"실패 {sum(r['실패'] or 0 for r in prev)}건. 설정별 p50·p95 는 아래 표.", "", S.md_table(prev), ""]
         verdicts["stt.batch.STALL_S"] = [{"backend": "elice", "group": "2026-09-16 결과",
-                                          "text": f"호출 {n}건 중 20초 넘음 {over}건 (설정별 p95 {min(r['p95'] for r in prev):.1f}~"
-                                                  f"{max(r['p95'] for r in prev):.1f}초)"}]
+                                          "text": f"chunk·clip 호출 {n}건 중 20초 넘음 {over}건 (설정별 p95 "
+                                                  f"{min(r['p95'] for r in cc):.1f}~{max(r['p95'] for r in cc):.1f}초)"}]
     ok = sorted(c["dt"] for c in calls if not c["error"])
     fails = [c for c in calls if c["error"]]
     if not calls:
@@ -415,9 +417,18 @@ def align_section(out: Path, all_runs: dict[str, dict]) -> tuple[str, dict]:
             text = f"{rng} 에서 정렬본 wav 같음 (발동 안 함)"
         else:
             changed = sorted({r["source"] for r in mine if ref.get(r["source"]) and ref[r["source"]]["chunks"] != r["chunks"]})
-            es = [err[r["session"]][1] for r in mine if r["session"] in err]
-            text = (f"{rng} 에서 wav 달라짐, 묶음 입력이 달라진 원본 {', '.join(changed) or '없음'}"
-                    + (f", 오류 글자 {min(es)}~{max(es)}" if es else ", 전사 안 함"))
+            per: dict[str, set] = {}
+            for r in mine:
+                if r["session"] in err:
+                    per.setdefault(r["source"], set()).add(err[r["session"]][1])
+            if not per:
+                tail = ", 전사 안 함"
+            elif all(len(x) == 1 for x in per.values()):
+                tail = ", 오류 글자는 원본마다 값과 무관하게 같음 (" + ", ".join(
+                    f"{k} {next(iter(x))}" for k, x in per.items()) + ")"
+            else:
+                tail = ", 오류 글자 " + ", ".join(f"{k} {min(x)}~{max(x)}" for k, x in per.items())
+            text = f"{rng} 에서 wav 달라짐, 묶음 입력이 달라진 원본 {', '.join(changed) or '없음'}{tail}"
         verdicts[const] = [{"backend": "정렬", "group": "원본 7발화판", "text": text}]
     md = ("# 정렬본을 만드는 상수\n\n원본 골든셋(대본 7발화판)을 상수만 바꿔 다시 정렬했다. 기본값 정렬본은 기존 정렬본과 "
           "바이트까지 같다. 오류 글자는 그 정렬본에 기본 설정을 돌린 값이다.\n\n" + S.md_table(table))
