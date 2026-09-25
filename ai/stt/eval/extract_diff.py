@@ -392,8 +392,9 @@ def _intent(expected, views) -> str:
 def report(out: Path) -> list[dict]:
     """회의·전사마다 놓침/더함/담당자 바뀜/마감 바뀜. 여러 회차면 "/" 로 잇는다.
 
-    첫 줄은 정답 전사 추출끼리의 흔들림 폭(하나를 뺀 나머지 기준, 회차 중 최댓값)이다. 의도한 할일이 있는
-    합성 회의는 "찾음·담당자 맞음·마감 맞음/의도 수" 를 같이 적는다.
+    흔들림 폭 줄이 둘이다. 정답 전사 추출끼리(같은 입력, 하나를 뺀 나머지 기준)와, 들리지 않는 디더를 넣어
+    몇 글자만 달라진 전사들의 추출(입력의 작은 변화에 추출이 얼마나 흔들리나)이다. 전사 사이의 차이는 둘째
+    폭 안이면 승부로 읽지 않는다. 의도한 할일이 있는 합성 회의는 "찾음·담당자 맞음·마감 맞음/의도 수" 를 같이 적는다.
     """
     rows = []
     root = out / "extract"
@@ -413,6 +414,14 @@ def report(out: Path) -> list[dict]:
         by_target: dict[str, list[Path]] = {}
         for p in sorted(d.glob("*__r*.json")):
             by_target.setdefault(p.name.rsplit("__r", 1)[0], []).append(p)
+        dith = [ref.diff(_views(p)) for slug, ps in by_target.items() if slug.split("__")[-1].startswith("dither")
+                for p in ps]
+        if dith:
+            rows.append({"회의": d.name, "전사": "디더 전사 (흔들림 폭)", "회": len(dith), "합의 할일": len(ref.consensus),
+                         **{name: max(x[k] for x in dith) for name, k in (("놓침", "missed"), ("더함", "added"),
+                                                                        ("담당자 바뀜", "assignee_changed"),
+                                                                        ("마감 바뀜", "due_changed"))},
+                         "의도": "-"})
         for slug, paths in by_target.items():
             if slug == "truth":
                 continue

@@ -126,3 +126,18 @@ def test_view_strips_a_bare_speaker_prefix_and_finds_the_speaker_inside_a_long_t
     tr = _tr(("장원준", long_turn), ("유재환", "각자 마무리해 주세요."))
     v = X.view(_task("목 데이터 만들기", "장원준: 백엔드 API 명세가 나오면 바로 연결할 수 있게 목데이터로 먼저 만들어"), tr)
     assert (v.source.startswith("백엔드"), v.speaker, v.assignee) == (True, "장원준", "장원준")
+
+
+def test_report_adds_a_band_from_transcripts_that_differ_only_by_inaudible_noise(tmp_path):
+    d = tmp_path / "extract" / "m1"
+    d.mkdir(parents=True)
+    tr = _tr(("김환", "통과 기준표를 정리해서 공유드릴게요."), ("장원준", "데모 버전을 공유드릴게요."))
+    a = _task("기준표", "통과 기준표를 정리해서 공유드릴게요")
+    b = _task("데모", "데모 버전을 공유드릴게요")
+    for k in range(3):
+        _dump(d / f"truth__r{k}.json", tr.segments, [a, b])
+    _dump(d / "local-large-v3-turbo__dither1__r0.json", tr.segments, [a, b])
+    _dump(d / "local-large-v3-turbo__dither2__r0.json", tr.segments, [a])
+    rows = X.report(tmp_path)
+    band = [r for r in rows if r["전사"].startswith("디더")]
+    assert len(band) == 1 and band[0]["놓침"] == 1 and band[0]["회"] == 2
