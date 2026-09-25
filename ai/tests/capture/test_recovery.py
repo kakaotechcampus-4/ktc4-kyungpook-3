@@ -4,6 +4,7 @@
 """
 
 import json
+import os
 import subprocess
 import sys
 import time
@@ -417,3 +418,52 @@ def test_a_person_can_still_run_a_meeting_whose_last_run_died(tmp_path, clock, l
     r = R.recover_one(rec, path, claims=R.Claims(owner="host:1:a"), manual=True, backend=EchoStt(), model_name="echo",
                       workers=1, transcripts_dir=tmp_path / "transcripts")
     assert r["ran"] == ["transcribed"] and "recovery" not in _saved(path)
+
+
+def test_capture_imports_where_there_is_no_fcntl():
+    """윈도에는 fcntl 이 없다. 모듈 맨 위에서 import 하면 윈도로 AI 코드를 돌리는 동료의 테스트가 capture 부터 깨진다."""
+    code = ("import sys\nsys.modules['fcntl'] = None\n"
+            "import capture.recorder, capture.worker, capture.discord_adapter\nprint('ok')\n")
+    out = subprocess.run([sys.executable, "-c", code], cwd=AI_DIR, capture_output=True, text=True, timeout=120)
+    assert out.returncode == 0, out.stderr[-1500:]
+    assert out.stdout.strip() == "ok"
+
+
+class FakeMsvcrt:
+    """msvcrt.locking 의 약속만 흉내 낸다. 같은 파일의 같은 바이트를 다른 핸들이 쥐고 있으면 OSError 를 낸다."""
+    LK_UNLCK, LK_LOCK, LK_NBLCK = 0, 1, 2
+
+    def __init__(self):
+        self.held = {}
+        self.calls = []
+
+    def locking(self, fd, mode, nbytes):
+        at = os.lseek(fd, 0, os.SEEK_CUR)
+        self.calls.append((mode, nbytes, at))
+        key = (os.fstat(fd).st_ino, at)
+        if mode == self.LK_NBLCK:
+            if self.held.get(key, fd) != fd:
+                raise OSError(36, "Resource deadlock avoided")
+            self.held[key] = fd
+        elif mode == self.LK_UNLCK:
+            self.held.pop(key, None)
+
+
+def test_the_windows_branch_means_the_same_as_flock(tmp_path, monkeypatch):
+    """윈도 잠금은 여기서 실제로 돌릴 수 없다. msvcrt 의 약속대로 기다리지 않고(LK_NBLCK) 첫 1바이트를 잡는지,
+    남이 쥐면 False 인지, 놓으면 다른 쪽이 잡는지만 본다."""
+    fake = FakeMsvcrt()
+    monkeypatch.setitem(sys.modules, "msvcrt", fake)
+    grab, drop = R._lock_backend("nt")
+    path = tmp_path / "session_77_500.lock"
+    a = os.open(path, os.O_RDWR | os.O_CREAT)
+    b = os.open(path, os.O_RDWR | os.O_CREAT)
+    os.lseek(b, 5, os.SEEK_SET)                                              # 파일 위치가 어디든 같은 바이트를 잡아야 한다
+    try:
+        assert grab(a) is True and grab(b) is False
+        drop(a)
+        assert grab(b) is True
+    finally:
+        os.close(a)
+        os.close(b)
+    assert {(mode, n, at) for mode, n, at in fake.calls} == {(fake.LK_NBLCK, 1, 0), (fake.LK_UNLCK, 1, 0)}

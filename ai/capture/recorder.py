@@ -35,7 +35,6 @@ partial 로 두며, 다음 실행이 그 줄만 다시 보낸다. 할일 추출(
 from __future__ import annotations
 
 import asyncio
-import fcntl
 import functools
 import json
 import os
@@ -113,21 +112,61 @@ def _parse_time(raw: str) -> datetime:
     return dt if dt.tzinfo is not None else dt.replace(tzinfo=timezone.utc)
 
 
+def _lock_backend(platform: str = os.name):
+    """이 플랫폼의 파일 잠금 (잡기, 풀기). 잡기는 기다리지 않고, 잡으면 True, 남이 쥐고 있으면 False 다.
+
+    POSIX 는 fcntl.flock(배타), 윈도는 msvcrt.locking 으로 파일의 첫 1바이트를 잡는다. 둘 다 쥔 프로세스가
+    죽거나 파일을 닫으면 풀리고, 같은 프로세스라도 따로 연 파일끼리는 부딪힌다. import 는 여기서 한다.
+    모듈 맨 위에서 fcntl 을 부르면 윈도에서 capture 를 import 하지 못한다. 윈도 쪽은 아직 윈도에서 돌려 보지 않았다.
+    """
+    if platform == "nt":
+        import msvcrt
+
+        def grab(fd: int) -> bool:
+            os.lseek(fd, 0, os.SEEK_SET)          # locking 은 지금 위치부터 잡는다. 모두 같은 바이트를 잡게 맞춘다
+            try:
+                msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+            except OSError:
+                return False
+            return True
+
+        def drop(fd: int) -> None:
+            os.lseek(fd, 0, os.SEEK_SET)
+            msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+
+        return grab, drop
+
+    import fcntl
+
+    def grab(fd: int) -> bool:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return False
+        return True
+
+    def drop(fd: int) -> None:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+
+    return grab, drop
+
+
 class MeetingLock:
-    """회의 하나의 OS 파일 잠금(flock). 쥔 프로세스가 죽으면 OS 가 푼다.
+    """회의 하나의 OS 파일 잠금(POSIX 는 flock, 윈도는 msvcrt.locking). 쥔 프로세스가 죽으면 OS 가 푼다.
 
     잠금 파일은 지우지 않는다. 지우면 다른 쪽이 새로 만든 파일에 잠금을 잡아 둘이 동시에 쥘 수 있다.
-    flock 은 한 기계의 로컬 파일시스템에서만 서로를 막는다(NFS, EFS, S3 에 두면 소용없다).
+    한 기계의 로컬 파일시스템에서만 서로를 막는다(NFS, EFS, S3 에 두면 소용없다).
     """
 
-    def __init__(self, fd: int) -> None:
+    def __init__(self, fd: int, drop) -> None:
         self._fd: int | None = fd
+        self._drop = drop
 
     def release(self) -> None:
         if self._fd is None:
             return
         try:
-            fcntl.flock(self._fd, fcntl.LOCK_UN)
+            self._drop(self._fd)
         finally:
             os.close(self._fd)
             self._fd = None
@@ -138,15 +177,14 @@ def try_lock(manifest: Path) -> MeetingLock | None:
 
     같은 프로세스라도 따로 연 파일끼리는 부딪힌다. 그래서 봇의 루프와 /recover 도 이것으로 서로를 막는다.
     """
+    grab, drop = _lock_backend()
     lock = manifest.with_suffix(".lock")
     lock.parent.mkdir(parents=True, exist_ok=True)
     fd = os.open(lock, os.O_RDWR | os.O_CREAT, 0o644)
-    try:
-        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except BlockingIOError:
+    if not grab(fd):
         os.close(fd)
         return None
-    return MeetingLock(fd)
+    return MeetingLock(fd, drop)
 
 
 def is_locked(manifest: Path) -> bool:
