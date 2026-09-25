@@ -69,6 +69,8 @@ RECOVERY_BACKOFF_S = float(os.environ.get("MM_RECOVERY_BACKOFF_S", "60"))      #
 RECOVERY_BACKOFF_CEIL_S = 3600.0                                                # 두 배로 늘려도 한 시간에서 멈춘다
 # 복구 선점의 만료. 선점은 단계가 바뀔 때만 새로 적으므로 가장 긴 단계(로컬 전사)보다 길어야 한다
 CLAIM_TTL_S = float(os.environ.get("MM_RECOVERY_CLAIM_TTL_S", "7200"))
+# 끊긴 녹음의 마지막 트랙 쓰기가 이보다 오래됐으면 회의가 끝났다고 보고 재시작 안내를 하지 않는다. 잠정값이다
+RESUME_NOTICE_WINDOW_S = 3600.0
 
 
 def utcnow() -> datetime:
@@ -543,6 +545,18 @@ def interrupted_recording(manifest: dict, *, since: str) -> bool:
         return False
     raw = manifest.get("started_at") or manifest.get("recorded_at")
     return raw is None or _parse_time(raw) < _parse_time(since)
+
+
+def recently_cut(recordings_dir: Path, manifest: dict) -> bool:
+    """녹음이 끊긴 지 얼마 안 됐나. 회의 디렉토리에서 가장 늦게 쓴 wav 가 RESUME_NOTICE_WINDOW_S 안이면 그렇다.
+
+    봇이 오래 꺼져 있다 뜨면 회의는 이미 끝났으니 "이어서 기록하려면" 안내가 소용없다. 처리는 그대로 한다.
+    """
+    mdir = recordings_dir / (manifest.get("meeting_dir") or "")
+    if not manifest.get("meeting_dir") or not mdir.is_dir():
+        return False
+    newest = max((p.stat().st_mtime for p in mdir.glob("*.wav")), default=None)
+    return newest is not None and utcnow().timestamp() - newest <= RESUME_NOTICE_WINDOW_S
 
 
 def _due(manifest: dict, now: datetime) -> bool:

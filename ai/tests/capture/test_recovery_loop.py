@@ -3,7 +3,9 @@
 
 import asyncio
 import json
+import os
 import threading
+import time
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -143,9 +145,13 @@ async def test_recover_skips_a_meeting_another_process_claimed_and_says_until_wh
     assert _status(path) == "saved"
 
 
+def _minutes_ago(n):
+    return (datetime.now(timezone.utc) - timedelta(minutes=n)).replace(microsecond=0).isoformat()
+
+
 async def test_an_interrupted_recording_gets_one_restart_notice_in_its_own_channel(tmp_path):
     cog, guild, vc, channel, ctx = _setup(tmp_path)
-    cut = _meeting(tmp_path, 500, status=R.STATUS_RECORDING)       # 이 봇이 뜨기 전에 시작돼 녹음 중에 끊겼다
+    cut = _meeting(tmp_path, 500, status=R.STATUS_RECORDING, started_at=_minutes_ago(30))   # 봇이 뜨기 전에 시작돼 끊겼다
     ours = _meeting(tmp_path, 600, status=R.STATUS_RECORDING, started_at=now_iso())   # 이 봇이 시작했다가 트랙을 닫다 죽었다
     await cog._recover_pass()
     await cog._recover_pass()
@@ -157,7 +163,7 @@ async def test_an_interrupted_recording_gets_one_restart_notice_in_its_own_chann
 async def test_two_passes_listing_the_same_interrupted_recording_post_one_notice(tmp_path):
     """루프가 재시작 안내를 올리고 세마포어를 기다리는 사이 /recover 가 같은 회의를 목록에 올린다."""
     cog, guild, vc, channel, ctx = _setup(tmp_path)
-    _meeting(tmp_path, 500, status=R.STATUS_RECORDING)
+    _meeting(tmp_path, 500, status=R.STATUS_RECORDING, started_at=_minutes_ago(30))
     await cog._post_sem.acquire()
     loop_pass = asyncio.create_task(cog._recover_pass())
     await asyncio.sleep(0.05)                                       # 안내를 올리고 세마포어 앞에서 기다린다
@@ -166,6 +172,17 @@ async def test_two_passes_listing_the_same_interrupted_recording_post_one_notice
     cog._post_sem.release()
     await asyncio.wait_for(asyncio.gather(loop_pass, hand), 20)
     assert _texts(channel).count(A.RESUME_NOTICE) == 1
+
+
+async def test_an_old_cut_is_processed_without_a_restart_notice(tmp_path):
+    """봇이 오래 꺼져 있다 뜨면 회의는 이미 끝났다. "이어서 기록하려면" 안내는 마지막 트랙 쓰기가 한 시간 안일 때만."""
+    cog, guild, vc, channel, ctx = _setup(tmp_path)
+    old = _meeting(tmp_path, 500, status=R.STATUS_RECORDING, started_at=_minutes_ago(300))
+    stale = time.time() - 3 * 3600
+    for wav in (tmp_path / "recordings" / f"{GUILD_ID}_500").glob("*.wav"):
+        os.utime(wav, (stale, stale))                               # 마지막으로 쓴 것이 세 시간 전
+    await cog._recover_pass()
+    assert A.RESUME_NOTICE not in _texts(channel) and _status(old) == "transcribed"
 
 
 async def test_the_loop_leaves_manifests_without_a_guild_alone(tmp_path):

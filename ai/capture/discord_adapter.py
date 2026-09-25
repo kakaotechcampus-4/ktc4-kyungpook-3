@@ -50,7 +50,8 @@ from pathlib import Path
 import discord
 
 from capture.handoff import from_env as handoff_from_env
-from capture.recorder import RECOVERY_INTERVAL_S, Claims, interrupted_recording, recover_one, recovery_targets
+from capture.recorder import (RECOVERY_INTERVAL_S, Claims, interrupted_recording, recently_cut, recover_one,
+                              recovery_targets)
 from capture.recorder import (PARTIAL_RETRY_MAX, STATUS_EXTRACTED, STATUS_FAILED, STATUS_HANDED_OFF, STATUS_PARTIAL,
                               STATUS_RECORDING, STATUS_SAVED, STATUS_TRANSCRIBED, NullSession, backend_from_env,
                               build_extractor, meeting_title, process_session, recover, write_status)
@@ -343,7 +344,8 @@ class RecordingCog(discord.Cog):
             due = [(p, m) for p, m in due if m.get("guild_id")]
         for _, m in due:
             session = str(m.get("session"))
-            if session not in self._resume_noticed and interrupted_recording(m, since=self._started_at):
+            if (session not in self._resume_noticed and interrupted_recording(m, since=self._started_at)
+                    and recently_cut(self.recordings_dir, m)):
                 self._resume_noticed.add(session)
                 await self._notify(self._channel_for(m), RESUME_NOTICE)
         results = []
