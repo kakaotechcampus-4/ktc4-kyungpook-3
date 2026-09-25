@@ -404,12 +404,15 @@ class RecordingCog(discord.Cog):
         return (f"ℹ️ 세션 `{b['session']}`: 다른 프로세스(`{b.get('claimed_by')}`)가 잡고 있어 건너뜁니다. "
                 f"선점은 약 {mins}분 뒤 풀립니다.")
 
+    def _loop_alive(self) -> bool:
+        return self._recovery_task is not None and not self._recovery_task.done()
+
     def _next_try(self, result: dict, *, auto: str, by_hand: str) -> str:
-        """실패나 partial 뒤에 무엇이 일어나는지. 루프가 다시 하는지, 멈췄는지, 루프가 꺼져 있는지."""
+        """실패나 partial 뒤에 무엇이 일어나는지. 루프가 다시 하는지, 멈췄는지, 루프가 떠 있지 않은지."""
         n = result.get("attempts") or 0
         if result.get("gave_up"):
             return f"실패 {n}회로 자동 재시도를 멈췄습니다. `/recover` 로 다시 시도할 수 있습니다."
-        if self._recovery_interval_s > 0 and result.get("retry_in_s"):
+        if self._loop_alive() and result.get("retry_in_s"):
             mins = max(1, int((result["retry_in_s"] + 59) // 60))
             return f"{mins}분 뒤 {auto} (실패 {n}회). 바로 하려면 `/recover`."
         return by_hand
@@ -533,7 +536,7 @@ class RecordingCog(discord.Cog):
             print(f"[finish] 세션 {rec.meeting_id} 후처리 예외: {type(e).__name__}: {e}", flush=True)
             await self._notify(rec.text_channel, f"⚠️ 후처리 중 예외: {type(e).__name__}: {e}. 트랙은 남아 있습니다. " +
                                ("끝나지 않은 단계는 자동 복구가 다시 시도합니다. 바로 하려면 `/recover`."
-                                if self._recovery_interval_s > 0 else "`/recover` 로 다시 시도하세요."))
+                                if self._loop_alive() else "`/recover` 로 다시 시도하세요."))
         finally:
             self._processing.pop(rec.meeting_id, None)
             rec.done.set()

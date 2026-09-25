@@ -266,9 +266,18 @@ def _dying(transcript, names, today):
     raise RuntimeError("LLM 죽음")
 
 
+async def _start_idle_loop(cog):
+    """루프를 띄우고 빈 첫 바퀴가 끝나기를 기다린다. 다음 바퀴는 한 시간 뒤라 테스트가 부르는 바퀴와 겹치지 않는다."""
+    cog._recovery_interval_s = 3600
+    await cog.on_ready()
+    await asyncio.sleep(0.05)
+    return cog._recovery_task
+
+
 async def test_the_loop_posts_moves_and_give_ups_but_not_a_scheduled_retry(tmp_path, clock, monkeypatch):
     monkeypatch.setattr(R, "RECOVERY_MAX_ATTEMPTS", 3)
     cog, guild, vc, channel, ctx = _setup(tmp_path, extractor=_dying)
+    task = await _start_idle_loop(cog)
     _meeting(tmp_path, 500)
     posted = []
     for _ in range(3):
@@ -280,14 +289,30 @@ async def test_the_loop_posts_moves_and_give_ups_but_not_a_scheduled_retry(tmp_p
     assert first[0] == f"세션 `{GUILD_ID}_500`" and any("자동으로 다시 시도합니다" in t for t in first)   # 전사가 끝났다
     assert second == []                                                                              # 예약된 재시도의 실패
     assert any("자동 재시도를 멈췄습니다" in t for t in third)                                          # 포기
+    cog.cog_unload()
+    await asyncio.wait([task], timeout=1)
 
 
-async def test_a_failure_after_stop_says_the_retry_is_automatic(tmp_path):
-    cog, guild, vc, channel, ctx = _setup(tmp_path, extractor=_dying)
+async def _failure_after_stop(cog, ctx, channel):
     await _run(A.RecordingCog.record, cog, ctx)
     rec = cog._active[GUILD_ID]
     rec.sink.on_samples(1, _tone(2000), 0)
     await _run(A.RecordingCog.stop, cog, ctx)
     await asyncio.wait_for(rec.done.wait(), 20)
-    failure = [t for t in _texts(channel) if t.startswith("⚠️ 할일 추출 실패")]
+    return [t for t in _texts(channel) if t.startswith("⚠️ 할일 추출 실패")]
+
+
+async def test_a_failure_after_stop_says_the_retry_is_automatic(tmp_path):
+    cog, guild, vc, channel, ctx = _setup(tmp_path, extractor=_dying)
+    task = await _start_idle_loop(cog)
+    failure = await _failure_after_stop(cog, ctx, channel)
     assert len(failure) == 1 and "1분 뒤 이 단계부터 자동으로 다시 시도합니다" in failure[0]
+    cog.cog_unload()
+    await asyncio.wait([task], timeout=1)
+
+
+async def test_a_failure_after_stop_points_to_recover_when_the_loop_is_not_running(tmp_path):
+    """루프가 안 떠 있으면(주기 0, 또는 on_ready 전) 자동으로 다시 한다고 말하지 않는다."""
+    cog, guild, vc, channel, ctx = _setup(tmp_path, extractor=_dying)
+    failure = await _failure_after_stop(cog, ctx, channel)
+    assert len(failure) == 1 and "`/recover` 로 이 단계부터 다시 시도하세요" in failure[0]
