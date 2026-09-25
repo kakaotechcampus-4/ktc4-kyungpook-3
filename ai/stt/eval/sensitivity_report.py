@@ -212,6 +212,10 @@ def report(out: Path) -> dict:
     (tables / "noise.md").write_text("\n".join(noise_md + determinism(all_runs)) + "\n", encoding="utf-8")
     lat_md, lat_verdicts = latency(all_runs)
     verdicts.update(lat_verdicts)
+    al_md, al_verdicts = align_section(out, all_runs)
+    verdicts.update(al_verdicts)
+    if al_md:
+        (tables / "align.md").write_text(al_md, encoding="utf-8")
     (tables / "latency.md").write_text(lat_md, encoding="utf-8")
     ev = S.evidence_rows(C.REGISTRY, verdicts)
     (tables / "evidence.md").write_text(
@@ -330,6 +334,45 @@ def latency(all_runs: dict[str, dict]) -> tuple[str, dict]:
         verdicts[p] = [{"backend": "elice", "group": "전체",
                         "text": f"호출 {len(calls)}건 중 실패 {len(fails)}건, 재시도 {retries}건. 실패율을 가를 만한 표본이 아니다"}]
     return "\n".join(md) + "\n", verdicts
+
+
+def align_section(out: Path, all_runs: dict[str, dict]) -> tuple[str, dict]:
+    """정렬본을 만드는 상수(RUN_GAP_S, PLACE_GAP_S)를 바꿔 다시 만든 정렬본. wav·묶음 입력이 바뀌었나와 기본 설정 전사 오류."""
+    p = out / "align_sweep.json"
+    if not p.exists():
+        return "", {}
+    rows = json.loads(p.read_text(encoding="utf-8"))
+    err = {}
+    for label in sorted(all_runs, key=lambda x: x != "local-large-v3-turbo"):
+        base = all_runs[label].get("base")
+        for sname, r in (base or {}).get("sessions", {}).items():
+            if not r.get("error"):
+                err.setdefault(sname, (label, r["err_chars"]))
+    table, verdicts = [], {}
+    for const in dict.fromkeys(r["const"] for r in rows):
+        mine = [r for r in rows if r["const"] == const]
+        default = C.current_value(const)
+        ref = {r["source"]: r for r in mine if r["value"] == default}
+        for r in mine:
+            d = ref.get(r["source"])
+            e = err.get(r["session"])
+            table.append({"원본": r["source"], "상수": const.rsplit(".", 1)[1], "값": S._fmt(r["value"]),
+                          "wav": "기본과 같음" if d and d["wav"] == r["wav"] else "다름",
+                          "묶음 입력": "기본과 같음" if d and d["chunks"] == r["chunks"] else "다름",
+                          "오류 글자": "-" if e is None else f"{e[1]} ({e[0]})"})
+        vals = sorted({r["value"] for r in mine})
+        rng = f"{S._fmt(vals[0])}~{S._fmt(vals[-1])}"
+        if all(ref.get(r["source"]) and ref[r["source"]]["wav"] == r["wav"] for r in mine):
+            text = f"{rng} 에서 정렬본 wav 같음 (발동 안 함)"
+        else:
+            changed = sorted({r["source"] for r in mine if ref.get(r["source"]) and ref[r["source"]]["chunks"] != r["chunks"]})
+            es = [err[r["session"]][1] for r in mine if r["session"] in err]
+            text = (f"{rng} 에서 wav 달라짐, 묶음 입력이 달라진 원본 {', '.join(changed) or '없음'}"
+                    + (f", 오류 글자 {min(es)}~{max(es)}" if es else ", 전사 안 함"))
+        verdicts[const] = [{"backend": "정렬", "group": "원본 7발화판", "text": text}]
+    md = ("# 정렬본을 만드는 상수\n\n원본 골든셋(대본 7발화판)을 상수만 바꿔 다시 정렬했다. 기본값 정렬본은 기존 정렬본과 "
+          "바이트까지 같다. 오류 글자는 그 정렬본에 기본 설정을 돌린 값이다.\n\n" + S.md_table(table))
+    return md, verdicts
 
 
 def cost(out: Path) -> str:

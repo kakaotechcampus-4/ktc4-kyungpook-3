@@ -81,3 +81,19 @@ def test_previous_latency_reads_elice_rows_from_an_older_results_folder(tmp_path
     rows = R.previous_latency(tmp_path / "2026-09-16-batch")
     assert rows == [{"회의": "meeting-01-aligned", "설정": "chunk", "호출": 7, "p50": 30.33, "p95": 37.39,
                      "20초 넘음": 7, "재시도": 2, "실패": 0}]
+
+
+def test_align_section_says_whether_a_constant_changed_the_audio_or_the_model_input(tmp_path):
+    rows = [{"source": "m1", "const": "stt.eval.golden.RUN_GAP_S", "value": v, "session": f"m1-RUN_GAP_S={v:g}",
+             "wav": "w", "chunks": "c", "slots": []} for v in (1.0, 3.0, 8.0)]
+    rows += [{"source": "m1", "const": "stt.eval.golden.PLACE_GAP_S", "value": v, "session": f"m1-PLACE_GAP_S={v:g}",
+              "wav": f"w{v}", "chunks": "c" if v != 0.3 else "c2", "slots": []} for v in (0.3, 1.0, 3.0)]
+    (tmp_path / "align_sweep.json").write_text(json.dumps(rows), encoding="utf-8")
+    runs = {"local-large-v3-turbo": {"base": _run("base", [
+        _rec("m1-PLACE_GAP_S=0.3", 44, group="정렬 변형 PLACE_GAP_S"),
+        _rec("m1-PLACE_GAP_S=1", 42, group="정렬 변형 PLACE_GAP_S"),
+        _rec("m1-PLACE_GAP_S=3", 42, group="정렬 변형 PLACE_GAP_S")])}}
+    md, verdicts = R.align_section(tmp_path, runs)
+    assert "wav 같음" in verdicts["stt.eval.golden.RUN_GAP_S"][0]["text"]
+    assert "오류 글자 42~44" in verdicts["stt.eval.golden.PLACE_GAP_S"][0]["text"]
+    assert "| m1 |" in md

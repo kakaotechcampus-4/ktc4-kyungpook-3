@@ -169,10 +169,11 @@ REGISTRY: tuple[Const, ...] = (
           source="주석(패킷 20ms 마다)", recheck=_D6),
     # ── 평가. 정렬본을 만드는 값이라 평가 결과에 영향이 있다
     Const("stt.eval.golden", "SR", SPEC, "정렬본 표본율", FIXED, source="위스퍼 입력 16kHz"),
-    Const("stt.eval.golden", "RUN_GAP_S", DESIGN, "정렬본을 만들 때 한 화자의 발화 덩어리를 나누는 공백", EVAL,
-          source="대본 발화 수에 맞춰 덩어리를 합치거나 쪼갠다(golden.align)", recheck="새 원본 골든셋을 정렬할 때"),
-    Const("stt.eval.golden", "PLACE_GAP_S", DESIGN, "정렬본에서 발화 덩어리 사이에 두는 침묵", EVAL,
-          source="합성 시간축. 화자 트랙별 전사라 묶음 입력은 이 값과 무관하다", recheck="새 원본 골든셋을 정렬할 때"),
+    Const("stt.eval.golden", "RUN_GAP_S", MEASURED, "정렬본을 만들 때 한 화자의 발화 덩어리를 나누는 공백", EVAL,
+          source="sensitivity align-sweep 으로 다시 정렬해 wav 를 비교한다", recheck="새 원본 골든셋을 정렬할 때"),
+    Const("stt.eval.golden", "PLACE_GAP_S", MEASURED, "정렬본에서 발화 덩어리 사이에 두는 침묵", EVAL,
+          source="sensitivity align-sweep 으로 다시 정렬해 묶음 입력과 전사 오류를 비교한다",
+          recheck="새 원본 골든셋을 정렬할 때"),
 )
 
 BY_PATH = {c.path: c for c in REGISTRY}
