@@ -54,7 +54,11 @@ STAGES = (STATUS_TRANSCRIBED, STATUS_EXTRACTED, STATUS_HANDED_OFF)
 PARTIAL_RETRY_MAX = int(os.environ.get("MM_PARTIAL_RETRY_MAX", "3"))
 # 매니페스트와 BE 의 failed_stage 에 적는 이름
 FAILED_STAGE = {STATUS_TRANSCRIBED: "stt", STATUS_EXTRACTED: "extract", STATUS_HANDED_OFF: "handoff"}
-# 복구 선점의 만료. 선점은 단계가 바뀔 때만 새로 적으므로 가장 긴 단계(로컬 전사)보다 길어야 한다. 근거는 decision_log/0013
+# 자동 복구. #83 의 retry_runs·PARTIAL_RETRY_MAX 와 따로 센다. 기본값의 근거는 decision_log/0013
+RECOVERY_MAX_ATTEMPTS = int(os.environ.get("MM_RECOVERY_MAX_ATTEMPTS", "5"))   # 이만큼 실패하면 포기하고 BE 에 fail
+RECOVERY_BACKOFF_S = float(os.environ.get("MM_RECOVERY_BACKOFF_S", "60"))      # 첫 실패 뒤 기다림. 실패마다 두 배
+RECOVERY_BACKOFF_CEIL_S = 3600.0                                                # 두 배로 늘려도 한 시간에서 멈춘다
+# 복구 선점의 만료. 선점은 단계가 바뀔 때만 새로 적으므로 가장 긴 단계(로컬 전사)보다 길어야 한다
 CLAIM_TTL_S = float(os.environ.get("MM_RECOVERY_CLAIM_TTL_S", "7200"))
 
 
@@ -323,6 +327,34 @@ class Claims:
                 self._held.discard(str(manifest.get("session")))
 
 
+def backoff_s(attempts: int) -> float:
+    """attempts 번째 실패 뒤 다음 시도까지 기다리는 초. RECOVERY_BACKOFF_S 에서 두 배씩 늘고 한 시간에서 멈춘다."""
+    return min(RECOVERY_BACKOFF_S * 2 ** max(0, attempts - 1), RECOVERY_BACKOFF_CEIL_S)
+
+
+def _count_failure(manifest: dict, handoff, failed_stage: str) -> dict:
+    """이번 실행이 단계를 닫지 못했다(failed 또는 partial). 실패 횟수를 올리고 다음 시도 시각을 적는다.
+
+    RECOVERY_MAX_ATTEMPTS 에 닿으면 포기한다. 루프는 더 돌리지 않고, 이때 처음으로 BE 에 fail 을 보낸다.
+    사람이 /recover 로 포기한 회의를 다시 돌렸다 또 실패하면 곧바로 다시 포기한다(그 사이 BE 에 새 회의가
+    생겼으면 그것도 failed 로 닫힌다).
+    """
+    state = manifest.setdefault("recovery", {})
+    state["attempts"] = state.get("attempts", 0) + 1
+    now = utcnow()
+    if state["attempts"] >= RECOVERY_MAX_ATTEMPTS:
+        state.pop("next_at", None)
+        state["gave_up_at"] = _iso(now)
+        state["failed_stage"] = failed_stage
+        if handoff is not None:
+            handoff.fail(manifest, failed_stage)
+    else:
+        state.pop("gave_up_at", None)                  # 상한을 올렸으면 포기를 거두고 다시 돈다
+        state.pop("failed_stage", None)
+        state["next_at"] = _iso(now + timedelta(seconds=backoff_s(state["attempts"])))
+    return state
+
+
 def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name: str, workers: int,
                     gate=None, transcripts_dir: Path | None = None, extractor=None, handoff=None,
                     name_of=None) -> dict:
@@ -332,11 +364,16 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
     설정이 없는 것이다. 그 단계에서 멈추고 result["skipped"] 에 이유를 적는다. 전사에서 실패한 줄이
     있으면 partial 로 두고 멈춘다. 다음 실행이 그 줄만 다시 보내고, 그래도 남으면 그 줄이 빠진 채
     다음 단계로 간다 (구간은 failed_units 에 남는다). 어느 단계가 예외를 내면 매니페스트를 failed 로
-    쓰고 BE 에도 알린 뒤 돌아온다. 다음 /recover 가 그 단계부터 다시 한다.
+    쓰고 돌아온다. 다음 실행이 그 단계부터 다시 한다.
+
+    단계를 닫지 못한 실행(failed, partial)은 recovery.attempts 를 하나 올리고 recovery.next_at 에 다음 시도
+    시각을 적는다. 단계가 닫히면 recovery 를 지운다. RECOVERY_MAX_ATTEMPTS 에 닿으면 포기하고
+    (recovery.gave_up_at) 그때 처음 BE 에 fail 을 보낸다. 그 전에는 BE 회의가 processing 으로 남는다.
+    복구가 잡은 회의(claimed_by 가 있다)면 저장할 때마다 claimed_at 을 새로 적는다.
 
     돌려주는 dict: session, status, ran(이번에 끝낸 단계), skipped, error, failed_stage,
     transcribe({markdown, failed, summary, lines}), retried(다시 보낸 줄 수), tasks(목록), be, speakers(명),
-    text_channel_id(결과를 올릴 채널).
+    text_channel_id(결과를 올릴 채널), attempts, gave_up, retry_in_s(이번 실패로 잡힌 다음 시도까지 초).
     """
     tdir = transcripts_dir or TRANSCRIPTS_DIR
     path = manifest_path(recordings_dir, manifest["session"])
@@ -344,8 +381,9 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
     result = {"session": manifest["session"], "status": manifest.get("status"), "ran": [], "skipped": {},
               "error": None, "failed_stage": None, "transcribe": None, "retried": 0, "tasks": None, "be": None,
               "speakers": len(manifest.get("speakers") or []), "text_channel_id": manifest.get("text_channel_id"),
-              "partial": False, "missing_units": 0}
+              "partial": False, "missing_units": 0, "attempts": 0, "gave_up": False, "retry_in_s": None}
     stage = None
+    counted = False
 
     def save() -> None:
         # 복구가 잡은 회의면 저장할 때마다(단계가 바뀔 때마다) 선점 시각을 새로 적는다. 긴 전사 중에 만료되지 않게
@@ -358,6 +396,7 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
         manifest["status"] = name
         manifest.pop("error", None)
         manifest.pop("failed_stage", None)
+        manifest.pop("recovery", None)                 # 단계가 닫혔다. 실패 횟수는 다음 단계에서 새로 센다
         result["ran"].append(name)
         save()
 
@@ -398,6 +437,8 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
                 manifest.pop("error", None)
                 manifest.pop("failed_stage", None)
                 result["ran"].append(STATUS_PARTIAL)
+                _count_failure(manifest, handoff, FAILED_STAGE[STATUS_TRANSCRIBED])
+                counted = True
                 save()
                 result["status"] = STATUS_PARTIAL
                 return result
@@ -419,6 +460,8 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
                 if out["failed"] >= len(out["lines"]) or manifest["retry_runs"] < PARTIAL_RETRY_MAX:
                     # 한 줄도 못 살렸거나 아직 상한 전이다. 완료로 닫지 않고 다음 시도를 기다린다
                     manifest["status"] = STATUS_PARTIAL
+                    _count_failure(manifest, handoff, FAILED_STAGE[STATUS_TRANSCRIBED])
+                    counted = True
                     save()
                     result["status"] = STATUS_PARTIAL
                     return result
@@ -433,6 +476,7 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
                 manifest.pop("tasks", None)
                 manifest["reextracted"] = True
             manifest["status"] = STATUS_TRANSCRIBED
+            manifest.pop("recovery", None)             # 전사 단계가 닫혔다
             save()
 
         if STATUS_EXTRACTED not in stages:
@@ -462,13 +506,18 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
         manifest["failed_stage"] = FAILED_STAGE.get(stage, stage or "unknown")
         manifest["error"] = f"{type(e).__name__}: {e}"
         result.update(error=manifest["error"], failed_stage=manifest["failed_stage"])
-        if handoff is not None:
-            handoff.fail(manifest, manifest["failed_stage"])
+        # BE 에는 포기할 때만 알린다. 그 전에는 processing 으로 두고 다음 시도를 기다린다
+        _count_failure(manifest, handoff, manifest["failed_stage"])
+        counted = True
         save()
     finally:
         result["status"] = manifest["status"]
         result["partial"] = bool(manifest.get("partial"))
         result["missing_units"] = len(manifest.get("failed_units") or [])
+        state = manifest.get("recovery") or {}
+        result["attempts"] = state.get("attempts", 0)
+        result["gave_up"] = bool(state.get("gave_up_at"))
+        result["retry_in_s"] = backoff_s(state["attempts"]) if counted and state.get("next_at") else None
     return result
 
 
