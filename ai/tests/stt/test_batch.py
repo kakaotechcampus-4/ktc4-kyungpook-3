@@ -278,3 +278,28 @@ def test_summary_has_percentiles():
     st.transcribe_s = [1, 2, 3, 4, 20]
     s = st.summary()
     assert s["transcribe_p50_s"] == 3 and s["transcribe_p95_s"] == 20 and s["transcribe_max_s"] == 20
+
+
+def test_in_flight_chunks_are_bounded_even_with_more_workers(tmp_path):
+    """제출 상한이 1 이면 워커가 셋이어도 호출이 겹치지 않는다. 준비해 둔 pcm 도 그만큼만 쌓인다."""
+    import threading, time as _t
+
+    class SlowStt(EchoStt):
+        def __init__(self):
+            super().__init__(); self.active = 0; self.peak = 0; self._lk = threading.Lock()
+
+        def transcribe(self, samples, sample_rate):
+            with self._lk:
+                self.active += 1; self.peak = max(self.peak, self.active)
+            _t.sleep(0.1)
+            try:
+                return super().transcribe(samples, sample_rate)
+            finally:
+                with self._lk:
+                    self.active -= 1
+
+    for name in "abc":
+        write_track(tmp_path / f"{name}.wav", [tone(1_000), silence(1_000)])
+    stt = SlowStt()
+    lines, _ = B.run(B.discover(tmp_path), stt, mode="chunk", gate=None, workers=3, max_inflight=1)
+    assert stt.peak == 1 and len(lines) == 3

@@ -465,7 +465,7 @@ def merge_turns(lines: list[Line], gap_s: float = TURN_GAP_S) -> list[Line]:
 # ─────────────────────────────────────────────────────────────── 한 회의
 def run(tracks: list[Track], backend: SttBackend, *, mode: str = "chunk", gate: SpeechGate | None = None,
         workers: int = 1, pack_turns: bool = True, merge: bool = True,
-        preprocess=None) -> tuple[list[Line], BatchStats]:
+        preprocess=None, max_inflight: int | None = None) -> tuple[list[Line], BatchStats]:
     """트랙 목록을 전사해 회의 전체 순번이 매겨진 Line 목록과 통계를 돌려준다.
 
     트랙은 하나씩 읽는다. 자르고 보낼 조각(복사본)을 풀에 넣은 뒤 트랙 배열과 클립의 뷰를 놓고
@@ -475,6 +475,9 @@ def run(tracks: list[Track], backend: SttBackend, *, mode: str = "chunk", gate: 
     workers=1 이 맞고, API 는 대기가 대부분이라 여럿이 벽시계를 줄인다.
     preprocess(audio, sr) 를 주면 트랙을 읽은 직후에 건다. 필터 비교용이다.
     백엔드에 reclip_unmapped=True 가 있으면 단어 시각이 없는 묶음을 클립 단위로 다시 보낸다.
+    max_inflight 는 한 번에 제출해 두는 조각 수의 상한(기본 workers 의 두 배). 상한에 닿으면 다음 트랙을
+    읽지 않고 기다리므로 준비해 둔 pcm 이 회의 길이에 비례해 쌓이지 않는다. 트랙의 결과를 받으면 그 트랙의
+    조각을 바로 놓는다.
     """
     if mode not in ("clip", "chunk", "track", "whole"):
         raise ValueError(f"mode 는 clip|chunk|track|whole 이다: {mode}")
@@ -483,6 +486,18 @@ def run(tracks: list[Track], backend: SttBackend, *, mode: str = "chunk", gate: 
     reclip = bool(getattr(backend, "reclip_unmapped", False)) and mode == "chunk"
 
     prepared = []   # (track, audio_s, utts, chunks, futures)
+    inflight = threading.BoundedSemaphore(max_inflight or max(1, workers) * 2)
+
+    def _job(pcm, speaker):
+        try:
+            return _call(backend, pcm, stats, speaker)
+        finally:
+            inflight.release()
+
+    def _submit(ex, pcm, speaker):
+        inflight.acquire()      # 자리가 날 때까지 다음 조각을 준비하지 않는다
+        return ex.submit(_job, pcm, speaker)
+
     with ThreadPoolExecutor(max_workers=max(1, workers)) as ex:
         for tr in tracks:
             audio = load_track(tr.path)
@@ -515,23 +530,23 @@ def run(tracks: list[Track], backend: SttBackend, *, mode: str = "chunk", gate: 
                 for u in utts:
                     u.pcm = _EMPTY   # 트랙 배열을 가리키는 뷰를 놓는다. 뒤 단계는 시각만 쓴다
                 del audio
-            futures = [ex.submit(_call, backend, pcm, stats, tr.speaker_id) for pcm in units]
+            futures = [_submit(ex, pcm, tr.speaker_id) for pcm in units]
             prepared.append((tr, audio_s, utts, chunks, futures))
-        got = [[f.result() for f in futures] for (_tr, _s, _u, _c, futures) in prepared]
 
-    all_lines: list[Line] = []
-    for (tr, audio_s, utts, chunks, futures), results in zip(prepared, got):
-        if not futures:
-            continue
-        if mode == "clip":
-            all_lines += _clip_lines(tr, utts, results)
-        elif mode == "chunk":
-            rc = (lambda pcm, sp=tr.speaker_id: _call(backend, pcm, stats, sp)) if reclip else None
-            all_lines += _chunk_lines(tr, chunks, results, stats, reclip=rc)
-        elif mode == "track":
-            all_lines += _track_lines(tr, utts, results[0], stats)
-        else:
-            all_lines += _whole_lines(tr, audio_s, utts, results[0], stats)
+        all_lines: list[Line] = []
+        for i, (tr, audio_s, utts, chunks, futures) in enumerate(prepared):
+            results = [f.result() for f in futures]
+            if futures:
+                if mode == "clip":
+                    all_lines += _clip_lines(tr, utts, results)
+                elif mode == "chunk":
+                    rc = (lambda pcm, sp=tr.speaker_id: _call(backend, pcm, stats, sp)) if reclip else None
+                    all_lines += _chunk_lines(tr, chunks, results, stats, reclip=rc)
+                elif mode == "track":
+                    all_lines += _track_lines(tr, utts, results[0], stats)
+                else:
+                    all_lines += _whole_lines(tr, audio_s, utts, results[0], stats)
+            prepared[i] = None       # 이 트랙의 조각 pcm 을 놓는다. 뒤 트랙이 아직 돌고 있어도 먼저 비운다
 
     if merge:
         all_lines = merge_turns(all_lines)
