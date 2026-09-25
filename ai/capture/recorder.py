@@ -47,6 +47,8 @@ STATUS_HANDED_OFF = "handed_off"
 STATUS_FAILED = "failed"
 
 STAGES = (STATUS_TRANSCRIBED, STATUS_EXTRACTED, STATUS_HANDED_OFF)
+# partial 회의를 추출·인계로 넘기기 전에 실패 구간을 다시 보내는 횟수. 상한에 닿으면 빠진 구간을 둔 채 간다
+PARTIAL_RETRY_MAX = int(os.environ.get("MM_PARTIAL_RETRY_MAX", "3"))
 # 매니페스트와 BE 의 failed_stage 에 적는 이름
 FAILED_STAGE = {STATUS_TRANSCRIBED: "stt", STATUS_EXTRACTED: "extract", STATUS_HANDED_OFF: "handoff"}
 
@@ -207,19 +209,25 @@ def discover_tracks(recordings_dir: Path, manifest: dict, name_of=None) -> list[
     return entries
 
 
-def pending_sessions(recordings_dir: Path, *, guild_id=None) -> list[Path]:
+def pending_sessions(recordings_dir: Path, *, guild_id=None, exclude=None) -> list[Path]:
     """끝까지 가지 않은 매니페스트. 봇이 죽었거나 어느 단계가 실패했거나 설정이 없어 멈춘 회의가 여기 남는다.
 
-    guild_id 를 주면 그 서버의 회의만. 녹음 중에 죽어 speakers 가 빈 회의는 디렉토리에 트랙이 있으면 든다.
+    guild_id 를 주면 그 서버의 회의만. exclude 는 봇이 지금 들고 있는 회의 ID(녹음 중·후처리 중)라 건너뛴다.
+    녹음 중에 죽어 speakers 가 빈 회의는 디렉토리에 트랙이 있으면 든다. 빠진 구간을 둔 채 인계까지 간
+    partial 회의는 재시도 상한을 올리면 다시 든다.
     """
     out = []
+    skip = set(exclude or ())
     for p in sorted(recordings_dir.glob("session_*.json")):
         try:
             m = json.loads(p.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             continue
-        if m.get("status") == STATUS_HANDED_OFF:
+        if m.get("session") in skip:
             continue
+        if m.get("status") == STATUS_HANDED_OFF:
+            if not (m.get("partial") and m.get("retry_runs", 0) < PARTIAL_RETRY_MAX):
+                continue
         if guild_id is not None and str(m.get("guild_id")) != str(guild_id):
             continue
         if m.get("speakers"):
@@ -250,7 +258,8 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
     stages = manifest.setdefault("stages", {})
     result = {"session": manifest["session"], "status": manifest.get("status"), "ran": [], "skipped": {},
               "error": None, "failed_stage": None, "transcribe": None, "retried": 0, "tasks": None, "be": None,
-              "speakers": len(manifest.get("speakers") or []), "text_channel_id": manifest.get("text_channel_id")}
+              "speakers": len(manifest.get("speakers") or []), "text_channel_id": manifest.get("text_channel_id"),
+              "partial": False, "missing_units": 0}
     stage = None
 
     def finish(name: str) -> None:
@@ -303,7 +312,8 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
                 return result
             finish(STATUS_TRANSCRIBED)
         elif manifest.get("failed_units"):
-            # 지난번에 실패한 줄만 다시 보낸다. 그래도 남으면 그 줄이 빠진 채로 간다. 구간은 매니페스트에 남는다
+            # 지난번에 실패한 줄만 다시 보낸다. 상한 전에는 partial 로 두고 다음 시도를 기다린다.
+            # 상한에 닿으면 빠진 구간을 둔 채 추출·인계로 간다. 구간은 매니페스트에 남는다
             stage = STATUS_TRANSCRIBED
             out = retry_failed(recordings_dir, manifest, backend=backend, model_name=model_name, transcripts_dir=tdir)
             manifest["retry_runs"] = manifest.get("retry_runs", 0) + 1
@@ -312,16 +322,25 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
                                     "lines": len(out["lines"])}
             result["retried"] = out["retried"]
             result["ran"].append("retried")
+            changed = out["retried"] > out["failed"]          # 이번에 살아난 줄이 있다
             if out["failed_units"]:
                 manifest["failed_units"] = out["failed_units"]
-                if out["failed"] >= len(out["lines"]):
-                    # 한 줄도 살지 못했다. 회의록이 없으니 더 갈 수 없다. partial 로 두고 다음 시도를 기다린다
+                if out["failed"] >= len(out["lines"]) or manifest["retry_runs"] < PARTIAL_RETRY_MAX:
+                    # 한 줄도 못 살렸거나 아직 상한 전이다. 완료로 닫지 않고 다음 시도를 기다린다
                     manifest["status"] = STATUS_PARTIAL
                     save_manifest(path, manifest)
                     result["status"] = STATUS_PARTIAL
                     return result
+                manifest["partial"] = True
             else:
                 manifest.pop("failed_units", None)
+                manifest.pop("partial", None)
+            if changed and (STATUS_EXTRACTED in stages or STATUS_HANDED_OFF in stages):
+                # 회의록이 바뀌었다. 옛 회의록으로 뽑은 할일과 인계는 무효다. 다시 뽑고 다시 보낸다
+                stages.pop(STATUS_EXTRACTED, None)
+                stages.pop(STATUS_HANDED_OFF, None)
+                manifest.pop("tasks", None)
+                manifest["reextracted"] = True
             manifest["status"] = STATUS_TRANSCRIBED
             save_manifest(path, manifest)
 
@@ -355,19 +374,23 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
         if handoff is not None:
             handoff.fail(manifest, manifest["failed_stage"])
         save_manifest(path, manifest)
-    result["status"] = manifest["status"]
+    finally:
+        result["status"] = manifest["status"]
+        result["partial"] = bool(manifest.get("partial"))
+        result["missing_units"] = len(manifest.get("failed_units") or [])
     return result
 
 
 def recover(recordings_dir: Path, *, backend, model_name: str, workers: int, gate=None,
             transcripts_dir: Path | None = None, extractor=None, handoff=None, guild_id=None,
-            name_of=None) -> list[dict]:
+            name_of=None, exclude=None) -> list[dict]:
     """끝까지 가지 않은 회의를 마지막 단계 다음부터 마저 돌린다. 회의마다 process_session 의 결과.
 
     guild_id 를 주면 그 서버의 회의만 본다. 봇의 /recover 는 명령이 온 서버로 제한한다.
+    exclude 는 봇이 지금 들고 있는 회의 ID 다. 녹음 중인 wav 를 집어 가면 안 된다.
     """
     done = []
-    for p in pending_sessions(recordings_dir, guild_id=guild_id):
+    for p in pending_sessions(recordings_dir, guild_id=guild_id, exclude=exclude):
         m = json.loads(p.read_text(encoding="utf-8"))
         done.append(process_session(recordings_dir, m, backend=backend, model_name=model_name, workers=workers,
                                     gate=gate, transcripts_dir=transcripts_dir, extractor=extractor,
