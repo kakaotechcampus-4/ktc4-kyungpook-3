@@ -191,3 +191,120 @@ def build(spec: dict, lib: Library, out_root: Path) -> Path:
         (out / "expected_tasks.json").write_text(json.dumps(spec["expected"], ensure_ascii=False, indent=1),
                                                  encoding="utf-8")
     return out
+
+
+# ─────────────────────────────────────────────────────────── D4 시나리오
+M1, M2 = "meeting-01-aligned", "meeting-02-aligned"
+
+
+def _p(speaker, src, text, gap, **kw):
+    return {"speaker": speaker, "src": src, "text": text, "gap": gap, **kw}
+
+
+SPECS = [
+    {"name": "rearr-quick-exchange", "title": "교대 직후",
+     "description": "0.3초 간격으로 주고받는다. 같은 화자 두 조각 사이에 다른 화자의 짧은 말이 낀다",
+     "pieces": [
+         _p("윤지민", M1, "지난주에 GPU 서버를 새로 배정받아서 medium 모델 대신 large-v3-turbo로 테스트를 돌려봤는데, "
+                        "처리 속도가 이전보다 훨씬 빨라졌습니다.", 1.0),
+         _p("김환", M1, "네 맞아요,", 0.3),
+         _p("윤지민", M1, "1분짜리 오디오를 전사하는 데 8초 정도밖에 안 걸렸고, 정확도도 준수했습니다.", 0.3),
+         _p("최진호", M1, "다음 주에 5명, 그리고 가능하면 7명까지 늘려서 한 번 더 테스트해 보면 좋을 것 같아요.", 0.3),
+         _p("유재환", M1, "네 다들 감사합니다.", 0.3),
+         _p("최진호", M1, "대신 타이밍 서머리 파일하고 평가 리포트 형식만 정리해 뒀습니다.", 0.3),
+         _p("김동우", M1, "그래도 크로스토크 체크리스트 4개 항목 중에서는 3개는 계속 통과했고, "
+                        "동시에 말하는 구간에서만 가끔 문제가 있었습니다.", 0.3)]},
+    {"name": "rearr-overlap", "title": "끼어들기",
+     "description": "앞 사람 말이 끝나기 0.8~1.5초 전에 다음 사람이 시작한다",
+     "pieces": [
+         _p("장원준", M2, "이번 주에 PM이 할 일 초안을 승인하거나 반려하는 화면의 와이어프레임을 그렸고,", 1.0),
+         _p("유재환", M2, "네 다들 감사합니다.", -1.0),
+         _p("장원준", M2, "담당자, 마감일, 근거 문장 세 가지가 한눈에 보이도록 배치했습니다.", 0.2),
+         _p("김환", M2, "네 맞아요,", -0.8),
+         _p("김동우", M2, "저는 화자 분리 쪽을 봤는데요,", 0.3),
+         _p("윤지민", M2, "다만 GPU 서버를 24시간 계속 켜 두는 건 비용 문제가 있어서, 필요할 때만 켜는 방식으로 "
+                        "바꿔야 할 것 같습니다.", -1.5),
+         _p("김동우", M2, "그러니까 3명일 때랑 5명일 때랑 비교해 보니까 확실히 사람이 늘어날수록 침묵 구간에 다른 사람 "
+                        "목소리가 살짝 섞이는 경우가 늘어나긴 하더라고요.", 0.3)]},
+    {"name": "rearr-short-replies", "title": "짧은 대답",
+     "description": "\"네,\", \"네 맞아요,\" 같은 1초 안팎 조각이 긴 발화 사이에 온다",
+     "pieces": [
+         _p("김동우", M1, "그래도 크로스토크 체크리스트 4개 항목 중에서는 3개는 계속 통과했고, "
+                        "동시에 말하는 구간에서만 가끔 문제가 있었습니다.", 1.0),
+         _p("윤지민", M1, "네,", 0.5),
+         _p("김환", M1, "네 맞아요,", 0.6),
+         _p("최진호", M1, "저는 문서화 쪽인데, Notion 연동은 아직 이번 범위가 아니라서 손대지 않았고요,", 1.0),
+         _p("유재환", M1, "그럼 시작할까요.", 0.5),
+         _p("유재환", M1, "다시 하겠습니다.", 2.5),
+         _p("윤지민", M2, "네,", 0.8),
+         _p("장원준", M2, "다음 주 수요일까지는 데모 가능한 버전을 공유드릴게요.", 0.6),
+         _p("김환", M2, "네 맞아요,", 0.5)]},
+    {"name": "rearr-long-silence", "title": "긴 침묵 뒤 첫 발화",
+     "description": "모두 75초·40초 말이 없다가 다시 시작한다. 같은 화자의 먼 두 턴이 한 묶음에 채워진다",
+     "pieces": [
+         _p("윤지민", M2, "네, 저부터 말씀드릴게요.", 2.0),
+         _p("최진호", M2, "저는 문서화 쪽인데, Notion 연동은 아직 이번 범위가 아니라서 손대지 않았고요,", 0.5),
+         _p("장원준", M2, "저는 승인 화면 쪽 얘기를 짧게 드리겠습니다.", 75.0),
+         _p("윤지민", M2, "1분짜리 오디오를 전사하는 데 8초 정도밖에 안 걸렸고, 정확도도 준수했습니다.", 0.5),
+         _p("장원준", M2, "백엔드 API 명세가 나오면 바로 연결할 수 있게 목 데이터로 먼저 만들어 두겠습니다.", 0.4),
+         _p("최진호", M2, "다음 주에 5명, 그리고 가능하면 7명까지 늘려서 한 번 더 테스트해 보면 좋을 것 같아요.", 40.0)]},
+    {"name": "rearr-split-commitment", "title": "할일과 마감이 다른 줄",
+     "description": "마감과 할일이 1.5초 쉼으로 갈리거나, 다른 화자의 짧은 말 뒤에 마감이 따로 온다",
+     "pieces": [
+         _p("김환", M1, "그래서 이번 주 안에", 1.0),
+         _p("김환", M1, "통과 기준표를 다시 정리해서 공유드릴게요.", 1.5),
+         _p("장원준", M1, "데모 가능한 버전을 공유드릴게요.", 0.8),
+         _p("유재환", M1, "네 다들 감사합니다.", 0.3),
+         _p("장원준", M1, "다음 주 수요일까지는", 0.3),
+         _p("윤지민", M1, "필요할 때만 켜는 방식으로 바꿔야 할 것 같습니다.", 0.8),
+         _p("유재환", M1, "다음 회의 전까지 각자 맡은 부분 마무리해서 공유해 주세요.", 0.6),
+         _p("장원준", M2, "백엔드 API 명세가 나오면 바로 연결할 수 있게 목 데이터로 먼저 만들어 두겠습니다.", 0.6)],
+     "expected": [
+         {"speaker": "김환", "key": "통과 기준표", "assignee": "김환", "due_raw": "이번 주 안에"},
+         {"speaker": "장원준", "key": "데모", "assignee": "장원준", "due_raw": "다음 주 수요일까지"},
+         {"speaker": "유재환", "key": "마무리", "assignee": "group", "due_raw": "다음 회의 전까지"},
+         {"speaker": "장원준", "key": "목 데이터", "assignee": "장원준", "due_raw": None}]},
+    {"name": "rearr-long-monologue", "title": "30초 넘는 독백",
+     "description": "한 화자의 문장들을 0.15초 간격으로 이어 한 턴이 45초 안팎이 된다",
+     "pieces": [
+         _p("유재환", M1, "네 다들 감사합니다. 정리하면, 속도는 GPU로 개선 여지가 있고, 화자 분리는 인원이 늘어도 아직은 "
+                        "견딜 만하고, 정확도는 12퍼센트대로 나쁘지 않은 수준입니다.", 1.0),
+         _p("유재환", M1, "다음 회의 전까지 각자 맡은 부분 마무리해서 공유해 주세요.", 0.15),
+         _p("유재환", M1, "오늘 회의는 여기서 마치겠습니다.", 0.15),
+         _p("유재환", M2, "자, 오늘은 다섯 명이 한 번에 녹음했을 때도 화자 분리가 잘 되는지 확인하는 자리입니다.", 0.15),
+         _p("유재환", M2, "순서대로 한 명씩 최근 진행 상황을 공유하고, 저는 마지막에 정리하겠습니다.", 0.15),
+         _p("유재환", M2, "네 다들 감사합니다. 정리하면, 속도는 GPU로 개선 여지가 있고, 화자 분리는 인원이 늘어도 아직은 "
+                        "견딜 만하고, 정확도는 12퍼센트대로 나쁘지 않은 수준입니다.", 0.15),
+         _p("김환", M2, "네 맞아요,", 0.5)]},
+]
+
+
+def main(argv=None) -> int:
+    ap = argparse.ArgumentParser(description="재배치 합성 회의를 만든다")
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    b = sub.add_parser("build")
+    b.add_argument("--golden-root", type=Path, required=True, help="정렬본 회의 폴더들의 부모")
+    b.add_argument("--out", type=Path, required=True, help="만들 곳. 레포 밖")
+    b.add_argument("--cache", type=Path, default=None, help="전사 캐시. 민감도 측정과 같은 곳이면 다시 전사하지 않는다")
+    b.add_argument("--model", default="large-v3-turbo")
+    b.add_argument("--only", default="", help="이 시나리오만 (이름, 쉼표로 여럿)")
+    a = ap.parse_args(argv)
+    from stt.eval.sttcache import CachedStt
+
+    root = a.golden_root.expanduser()
+    lib = Library({M1: root / M1, M2: root / M2},
+                  CachedStt(B.make_backend("local", a.model, "chunk"), a.cache.expanduser() if a.cache else None))
+    keep = set(x for x in a.only.split(",") if x)
+    for spec in SPECS:
+        if keep and spec["name"] not in keep:
+            continue
+        out = build(spec, lib, a.out.expanduser())
+        truth = json.loads((out / "truth_aligned.json").read_text(encoding="utf-8"))
+        print(f"{spec['name']}: 조각 {len(truth)}개 · 길이 {max(t['end'] for t in truth):.1f}초 → {out}")
+        for t in truth:
+            print(f"  {t['start']:6.2f}~{t['end']:6.2f} {t['speaker']:<4} {t['end'] - t['start']:4.2f}초  {t['text'][:40]}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
