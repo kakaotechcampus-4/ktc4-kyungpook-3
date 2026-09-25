@@ -16,7 +16,7 @@
 
 9/26 에 확인해 보니 키 갱신은 #57 이 `capture/voice_client.py` 로 옮겼는데 실시간 Cog 의 리스너가 남아
 두 곳이 같은 갱신을 하고 있었다. 비교 도구 `stt/realtime/bench.py` 는 테스트 재구성(8d562b2) 뒤로
-import 가 깨져 돌지 않았다. 둘 다 이번에 고쳤다 (`ai/docs/2026-09-26-d7-shared-receive.md`).
+import 가 깨져 돌지 않았다. 둘 다 이번에 고쳤다 (`ai/docs/2026-09-26-shared-receive.md`).
 
 ## 검토한 선택지
 
