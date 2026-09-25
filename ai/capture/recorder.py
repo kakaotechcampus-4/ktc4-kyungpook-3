@@ -7,7 +7,7 @@ discord 이름은 여기 없다. capture/discord_adapter.py 가 이 함수들을
 필드는 recording_store.write_manifest 와 같고 아래를 더한다.
   status        recording | saved | transcribed | partial | extracted | handed_off | failed
   stages        단계별 완료 시각 {"transcribed": iso, "extracted": iso, "handed_off": iso}
-  failed_units  partial 일 때 실패한 줄 [{"speaker", "start_ms", "end_ms", "error"}]. /recover 가 이 구간만 다시 보낸다
+  failed_units  partial 일 때 실패한 줄 [{"speaker", "start_ms", "end_ms", "error"}]. 다음 실행이 이 구간만 다시 보낸다
   failed_stage  failed 일 때 어느 단계인지. stt | extract | handoff
   error         failed 일 때 예외 한 줄
   started_at    녹음 시작 벽시계(UTC ISO). 트랙 안의 위치는 이 시각부터 흐른 monotonic 시간이다
@@ -16,11 +16,19 @@ discord 이름은 여기 없다. capture/discord_adapter.py 가 이 함수들을
   transcript    전사가 끝나면 회의록 경로
   tasks         할일 추출까지 됐으면 그 결과 파일 경로
   be            BE 인계 상태 {"meeting_id", "status", "extraction_id", ...}. capture/handoff.py 가 쓴다
+  claimed_by, claimed_at   복구가 이 회의를 잡고 있다는 표시. 단계를 저장할 때마다 claimed_at 을 새로 적고
+                만료(MM_RECOVERY_CLAIM_TTL_S)가 지나면 누구든 다시 잡는다. 놓으면 지운다
+  recovery      단계를 닫지 못한 실행의 횟수와 다음 시도 {"attempts", "next_at"}, 또는 포기
+                {"attempts", "gave_up_at", "failed_stage"}. partial 재전사 횟수(retry_runs)와 따로 센다
 
-process_session 이 마지막으로 끝난 단계 다음부터 실행한다. /stop 뒤 처리와 /recover 가 같은
-함수를 쓰므로 어디서 죽어도 같은 경로로 이어진다. 전사에서 실패한 줄이 있으면 완료로 닫지 않고
+process_session 이 마지막으로 끝난 단계 다음부터 실행한다. /stop 뒤 처리, 봇 안의 복구 루프, /recover 가
+같은 함수를 쓰므로 어디서 죽어도 같은 경로로 이어진다. 전사에서 실패한 줄이 있으면 완료로 닫지 않고
 partial 로 두며, 다음 실행이 그 줄만 다시 보낸다. 할일 추출(extract/, #30)과 BE 인계는 설정이
 없으면 그 단계에서 멈추고 매니페스트는 그 앞 상태로 남는다.
+
+복구 한 바퀴는 recovery_targets 로 대상을 고르고 recover_one 으로 회의 하나씩 선점을 잡고 돌린다.
+실패는 recovery.attempts 로 세어 다음 시도를 미루고(두 배씩), RECOVERY_MAX_ATTEMPTS 에 닿으면 포기하며
+그때 처음 BE 에 fail 을 보낸다. 기본값과 근거는 decision_log/0013.
 """
 
 from __future__ import annotations

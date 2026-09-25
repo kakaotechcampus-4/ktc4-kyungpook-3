@@ -30,6 +30,12 @@ BE 인계(capture/handoff.py)는 BE_BASE_URL 과 BE_WORKSPACE_ID 가 있을 때�
 전부 _notify 를 거쳐서, 디스코드 쪽 실패가 파일과 상태 처리를 막지 않는다.
 on_session_saved(manifest, manifest_path) 훅은 그 뒤에 불린다. manifest["transcript"] 에 회의록
 경로가 있고 transcripts/session_<회의ID>.transcript.json 이 BE 가 읽는 Transcript 다.
+
+자동 복구. 봇이 준비되면(on_ready) 루프가 MM_RECOVERY_INTERVAL_S(기본 60초)마다 끝나지 않은 회의를
+훑어 마저 처리한다. /recover 와 같은 한 바퀴(_recover_pass)이고 회의마다 후처리 세마포어와 매니페스트
+선점을 잡는다. 루프는 다음 시도 시각이 된 회의만, /recover 는 기다리지 않고 포기한 회의까지 돌린다.
+봇이 녹음 중에 죽었다 다시 뜨면 그 회의를 처음 집는 바퀴가 회의 채널에 재시작 안내를 올린다.
+근거는 decision_log/0013.
 """
 
 from __future__ import annotations
