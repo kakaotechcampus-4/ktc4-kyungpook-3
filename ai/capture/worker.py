@@ -57,6 +57,16 @@ def read_heartbeat(recordings_dir: Path) -> dict | None:
         return None
 
 
+def _on_stop_signals(loop, stop) -> None:
+    """SIGTERM·SIGINT 에 stop 을 건다. 윈도의 이벤트 루프는 add_signal_handler 가 없어서(NotImplementedError)
+    signal.signal 로 걸고 이벤트 루프로 넘긴다."""
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        try:
+            loop.add_signal_handler(sig, stop)
+        except NotImplementedError:
+            signal.signal(sig, lambda signum, frame: loop.call_soon_threadsafe(stop))
+
+
 def _speech_gate():
     from stt.speech_gate import SpeechGate
     return SpeechGate()
@@ -150,9 +160,7 @@ def main(argv: list[str] | None = None) -> int:
     worker = Worker(Path(args.recordings), transcripts_dir=Path(args.transcripts), interval_s=args.interval)
 
     async def run() -> None:
-        loop = asyncio.get_running_loop()
-        for sig in (signal.SIGTERM, signal.SIGINT):
-            loop.add_signal_handler(sig, worker.stop)
+        _on_stop_signals(asyncio.get_running_loop(), worker.stop)
         await worker.run()
 
     asyncio.run(run())

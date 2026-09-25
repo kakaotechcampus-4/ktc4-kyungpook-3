@@ -311,3 +311,25 @@ print(sorted(m for m in sys.modules if m in {BACKEND_MODULES!r} or m.split(".")[
     out = subprocess.run([sys.executable, "-c", code], cwd=AI_DIR, capture_output=True, text=True, timeout=120)
     assert out.returncode == 0, out.stderr[-2000:]
     assert out.stdout.strip().splitlines()[-1] == "[]"
+
+
+def test_the_worker_catches_stop_signals_where_the_loop_cannot(monkeypatch):
+    """윈도의 이벤트 루프에는 add_signal_handler 가 없다(NotImplementedError). 그때는 signal.signal 로 건다."""
+    class WindowsLoop:
+        def __init__(self):
+            self.soon = []
+
+        def add_signal_handler(self, sig, handler):
+            raise NotImplementedError
+
+        def call_soon_threadsafe(self, fn):
+            self.soon.append(fn)
+
+    registered = {}
+    monkeypatch.setattr(W.signal, "signal", lambda sig, handler: registered.__setitem__(sig, handler))
+    loop, stopped = WindowsLoop(), []
+    W._on_stop_signals(loop, lambda: stopped.append(True))
+    assert set(registered) == {W.signal.SIGTERM, W.signal.SIGINT}
+    registered[W.signal.SIGINT](W.signal.SIGINT, None)                       # Ctrl+C
+    loop.soon[0]()
+    assert stopped == [True]
