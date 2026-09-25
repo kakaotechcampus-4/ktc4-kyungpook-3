@@ -141,3 +141,18 @@ def test_report_adds_a_band_from_transcripts_that_differ_only_by_inaudible_noise
     rows = X.report(tmp_path)
     band = [r for r in rows if r["전사"].startswith("디더")]
     assert len(band) == 1 and band[0]["놓침"] == 1 and band[0]["회"] == 2
+
+
+def test_expected_check_accepts_a_paraphrased_deadline_and_picks_the_best_candidate():
+    tr = _tr(("장원준", "데모 가능한 버전을 공유 드릴게요. 다음 주 수요일까지는"),
+             ("김환", "그래서 이번 주 안에 통과 기준표를 다시 정리해서 공유해 드릴게요."))
+    no_due = _task("데모 가능한 버전 공유하기", "데모 가능한 버전을 공유 드릴게요")
+    with_due = _task("데모 가능한 버전 공유하기", "다음 주 수요일까지는", due="2026-09-16")
+    with_due.due_raw = "다음 주 수요일까지"
+    kim = _task("통과 기준표 공유", "그래서 이번 주 안에 통과 기준표를 다시 정리해서 공유해 드릴게요", due="2026-09-13")
+    kim.due_raw = "이번 주 안으로"
+    views = [X.view(t, tr) for t in (no_due, with_due, kim)]
+    views[1].speaker = "장원준"
+    exp = [{"speaker": "장원준", "key": "데모", "assignee": "장원준", "due_raw": "다음 주 수요일까지"},
+           {"speaker": "김환", "key": "통과 기준표", "assignee": "김환", "due_raw": "이번 주 안에"}]
+    assert X.check_expected(exp, views) == {"expected": 2, "found": 2, "assignee_ok": 2, "due_ok": 2}

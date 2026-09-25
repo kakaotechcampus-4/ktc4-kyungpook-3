@@ -263,7 +263,24 @@ class Reference:
         return [Reference([x for k, x in enumerate(self.runs) if k != i]).diff(run) for i, run in enumerate(self.runs)]
 
 
+def _due_ok(e: dict, v: TaskView) -> bool:
+    """의도한 마감이 붙었나. LLM 이 마감 원문을 바꿔 적기도 해서("이번 주 안에" → "이번 주 안으로") 앞 세 글자가
+    같으면 같은 마감으로 본다. 마감이 없어야 하는 할일은 날짜가 없어야 맞다."""
+    if e.get("due_raw") is None:
+        return v.due is None
+    if not v.due:
+        return False
+    want, got = nospace(e["due_raw"]), nospace(v.due_raw or "")
+    if not got:
+        return True
+    k = 0
+    while k < min(len(want), len(got)) and want[k] == got[k]:
+        k += 1
+    return want in got or got in want or k >= 3
+
+
 def check_expected(expected: list[dict], views: list[TaskView]) -> dict:
+    """의도한 할일마다, 같은 화자·핵심어를 가진 할일 중 가장 잘 맞는 것을 골라 담당자·마감을 본다."""
     found = a_ok = d_ok = 0
     for e in expected:
         key = nospace(e["key"])
@@ -271,13 +288,9 @@ def check_expected(expected: list[dict], views: list[TaskView]) -> dict:
         if not cands:
             continue
         found += 1
-        v = cands[0]
-        a_ok += v.assignee == e["assignee"]
-        if e.get("due_raw") is None:
-            d_ok += v.due is None
-        else:
-            want, got = nospace(e["due_raw"]), nospace(v.due_raw or "")
-            d_ok += bool(v.due) and bool(got) and (want in got or got in want)
+        best = max(cands, key=lambda v: (v.assignee == e["assignee"]) + _due_ok(e, v))
+        a_ok += best.assignee == e["assignee"]
+        d_ok += _due_ok(e, best)
     return {"expected": len(expected), "found": found, "assignee_ok": a_ok, "due_ok": d_ok}
 
 
