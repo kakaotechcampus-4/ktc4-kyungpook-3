@@ -26,7 +26,8 @@ process_session 이 마지막으로 끝난 단계 다음부터 실행한다. /st
 partial 로 두며, 다음 실행이 그 줄만 다시 보낸다. 할일 추출(extract/, #30)과 BE 인계는 설정이
 없으면 그 단계에서 멈추고 매니페스트는 그 앞 상태로 남는다.
 
-복구 한 바퀴는 recovery_targets 로 대상을 고르고 recover_one 으로 회의 하나씩 선점을 잡고 돌린다.
+복구 한 바퀴(recover_pass)는 recovery_targets 로 대상을 고르고 recover_one 으로 회의 하나씩 회의 잠금을 잡고
+돌린다. 봇과 워커(capture/worker.py)가 같은 함수를 쓴다.
 실패는 recovery.attempts 로 세어 다음 시도를 미루고(두 배씩), RECOVERY_MAX_ATTEMPTS 에 닿으면 포기하며
 그때 처음 BE 에 fail 을 보낸다. 기본값과 근거는 decision_log/0013.
 """
@@ -73,7 +74,7 @@ RESUME_NOTICE_WINDOW_S = 3600.0
 
 
 def utcnow() -> datetime:
-    """선점 만료와 다음 시도 시각을 재는 시계. 테스트가 바꿔 끼운다."""
+    """다음 시도 시각과 처리 중인 시간을 재는 시계. 테스트가 바꿔 끼운다."""
     return datetime.now(timezone.utc)
 
 
@@ -665,7 +666,7 @@ def recover_one(recordings_dir: Path, path: Path, *, claims: Claims, manual: boo
                 handoff=None, name_of=None) -> dict | None:
     """회의 하나를 잡아 돌리고 놓는다. 루프와 /recover 가 회의마다 지나는 경로다. 스레드에서 부른다.
 
-    목록을 만든 뒤 시간이 흘렀으니(세마포어를 기다렸다) 선점을 먼저 잡고 매니페스트를 다시 읽어 아직 할 일인지
+    목록을 만든 뒤 시간이 흘렀으니(세마포어를 기다렸다) 회의 잠금을 먼저 잡고 매니페스트를 다시 읽어 아직 할 일인지
     본다. 그 사이 남이 잡았으면 {"session", "busy": True, claimed_by, claimed_at, since_s, mine}, 끝났거나
     루프가 돌릴 때가 아니면 None, 돌렸으면 process_session 의 결과다. 루프가 포기한 회의를 만나면 돌리지 않고
     포기 때 BE 에 닿지 못한 fail 만 다시 보낸다.
@@ -682,7 +683,7 @@ def recover_one(recordings_dir: Path, path: Path, *, claims: Claims, manual: boo
         if not manual and state.get("gave_up_at"):
             if handoff is not None:
                 handoff.fail(m, state.get("failed_stage") or m.get("failed_stage") or "unknown")
-            return None                                # 바뀐 be 는 아래 release 가 선점을 지우며 같이 저장한다
+            return None                                # 바뀐 be 는 아래 release 가 표시를 지우며 같이 저장한다
         return process_session(recordings_dir, m, backend=backend, model_name=model_name, workers=workers, gate=gate,
                                transcripts_dir=transcripts_dir, extractor=extractor, handoff=handoff, name_of=name_of)
     finally:

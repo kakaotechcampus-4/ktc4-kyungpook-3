@@ -1,4 +1,4 @@
-"""봇 안의 자동 복구(capture/discord_adapter.py). 루프와 /recover 가 같이 쓰는 한 바퀴, 재시작 안내, 선점 알림,
+"""봇 안의 자동 복구(capture/discord_adapter.py). 루프와 /recover 가 같이 쓰는 한 바퀴, 재시작 안내, 처리 중 알림,
 세마포어, 루프 태스크의 시작과 정리. 가짜 디스코드 객체와 가짜 BE 를 쓴다. 모델은 안 쓴다."""
 
 import asyncio

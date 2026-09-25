@@ -9,10 +9,10 @@
 명령
   /join     명령한 사람이 있는 음성 채널에 봇 입장
   /record   화자별 트랙 녹음 시작. 채널에 "녹음·전사 중" 을 알리고 BE 에 회의를 만든다
-  /stop     녹음 종료. 트랙을 닫고 전사 → 할일 추출 → BE 인계를 돌려 결과를 채널에 올린다
+  /stop     녹음 종료. 트랙을 닫고 전사 → 할일 추출 → BE 인계를 돌려 결과를 채널에 올린다(워커 모드는 저장까지)
   /leave    음성 채널 퇴장 (녹음 중에는 거절. 앞 회의의 후처리 중에는 된다)
   /end      자기 녹음의 후처리까지 끝나면 퇴장. 그 사이 새 녹음이 시작됐으면 남는다
-  /recover  이 서버에서 끝까지 처리되지 않은 회의를 마지막 단계 다음부터 마저 처리한다
+  /recover  이 서버에서 끝까지 처리되지 않은 회의를 마지막 단계 다음부터 마저 처리한다(워커 모드는 워커를 깨운다)
 
 녹음은 StreamingSink + TrackWriter 다. 패킷을 받는 즉시 16kHz 모노로 바꿔 화자별 wav 에 흘리고
 (메모리가 회의 길이와 무관), 트랙 안의 위치는 녹음 시작부터 흐른 monotonic 시간이다. 그래서
@@ -32,11 +32,18 @@ on_session_saved(manifest, manifest_path) 훅은 그 뒤에 불린다. manifest[
 경로가 있고 transcripts/session_<회의ID>.transcript.json 이 BE 가 읽는 Transcript 다.
 
 자동 복구. 봇이 준비되면(on_ready, 준비된 뒤에 붙었으면 붙는 자리에서) 루프가 MM_RECOVERY_INTERVAL_S
-(기본 60초)마다 끝나지 않은 회의를 훑어 마저 처리한다. /recover 와 같은 한 바퀴(_recover_pass)이고 회의마다
-후처리 세마포어와 매니페스트 선점을 잡는다. 루프는 다음 시도 시각이 된 회의만, /recover 는 기다리지 않고
+(기본 60초)마다 끝나지 않은 회의를 훑어 마저 처리한다. /recover 와 같은 한 바퀴(recorder.recover_pass)이고
+회의마다 후처리 세마포어와 회의 잠금을 잡는다. 루프는 다음 시도 시각이 된 회의만, /recover 는 기다리지 않고
 포기한 회의까지 돌린다. 서버가 적히지 않은 옛 매니페스트와 자동 복구 전에 failed 로 끝난 회의는 루프가
-집지 않는다. 봇이 녹음 중에 죽었다 한 시간 안에 다시 뜨면 그 회의를 처음 집는 바퀴가 회의 채널에 재시작
-안내를 올린다. 근거는 decision_log/0013.
+집지 않는다. 봇이 녹음 중에 죽었다 한 시간 안에 다시 뜨면 회의 채널에 재시작 안내를 한 번 올린다.
+
+회의 잠금. 누가 회의를 처리할지는 회의마다의 OS 파일 잠금(recorder.try_lock)만 정한다. /record 는 잠금을
+먼저 잡고 recording 매니페스트를 쓰고, 봇 모드는 스스로 처리하는 동안까지 쥐고 있다가 놓는다.
+
+워커 모드(MM_PIPELINE_MODE=worker). 봇은 녹음을 저장까지만 하고 saved 를 다 쓴 뒤 잠금을 놓는다. 처리는
+python -m capture.worker 가 하고 결과는 BE 를 거쳐 웹에서 본다. 채널에는 "처리되면 웹에서 확인(앞에 N건)",
+재시작 안내, /recover 의 워커 상태만 올라간다. 이 모드의 봇은 전사 백엔드를 싣지 않고 on_session_saved 를
+부르지 않는다. 근거는 decision_log/0013.
 """
 
 from __future__ import annotations
@@ -159,7 +166,7 @@ class RecordingCog(discord.Cog):
         self._mode = mode or os.environ.get("MM_PIPELINE_MODE", "bot")
         if self._mode not in ("bot", "worker"):
             raise ValueError(f"MM_PIPELINE_MODE 는 bot 또는 worker 다. 받은 값: {self._mode!r}")
-        # 자동 복구. 루프와 /recover 가 같은 선점과 같은 한 바퀴(_recover_pass)를 쓴다
+        # 자동 복구. 루프와 /recover 가 같은 회의 잠금과 같은 한 바퀴(_recover_pass)를 쓴다
         self._claims = Claims()
         self._recovery_interval_s = RECOVERY_INTERVAL_S      # 0 이면 루프를 띄우지 않는다
         self._recovery_task: asyncio.Task | None = None
@@ -342,7 +349,7 @@ class RecordingCog(discord.Cog):
 
         정리는 둘이다. Cog 를 떼면 cog_unload 가 취소한다. bot.run() 이 끝나면 py-cord 가 남은 태스크를 모두
         취소한다(Client.close 는 cog_unload 를 부르지 않는다). 취소돼도 스레드에서 돌던 회의는 끝까지 가고
-        선점은 그 스레드가 놓는다.
+        회의 잠금은 그 스레드가 놓는다.
         """
         if self._recovery_interval_s <= 0:
             return None

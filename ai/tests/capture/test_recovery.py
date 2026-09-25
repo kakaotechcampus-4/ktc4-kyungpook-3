@@ -279,7 +279,7 @@ def test_recover_one_looks_again_after_claiming_and_leaves_a_meeting_that_moved_
     m.update(status="handed_off", stages={"transcribed": "x", "extracted": "x", "handed_off": "x"})
     R.save_manifest(path, m)                                                   # 그 사이 끝났다
     assert R.recover_one(rec, target, manual=True, **kw) is None
-    assert "claimed_by" not in _saved(path)                                    # 잡았던 선점은 놓았다
+    assert "claimed_by" not in _saved(path) and R.is_locked(path) is False     # 잡았던 잠금과 표시를 놓았다
 
 
 def test_recover_one_reports_busy_when_the_claim_was_taken_after_listing(tmp_path, clock):
