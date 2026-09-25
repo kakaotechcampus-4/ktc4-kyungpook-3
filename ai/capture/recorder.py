@@ -525,6 +525,18 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
     return result
 
 
+def interrupted_recording(manifest: dict, *, since: str) -> bool:
+    """since(이 프로세스가 뜬 시각, ISO) 전에 시작돼 recording 으로 남은 회의. 녹음 중에 봇이 죽었다 다시 뜬 것이다.
+
+    봇이 들고 있는 회의는 복구 목록에서 이미 빠진다. 이 프로세스가 시작한 녹음이 recording 으로 남는 것은 트랙을
+    닫다 예외가 난 경우라 재시작 안내 대상이 아니다.
+    """
+    if manifest.get("status") != STATUS_RECORDING:
+        return False
+    raw = manifest.get("started_at") or manifest.get("recorded_at")
+    return raw is None or _parse_time(raw) < _parse_time(since)
+
+
 def _due(manifest: dict, now: datetime) -> bool:
     """루프가 이번 바퀴에 돌릴 때인가. 다음 시도 시각 전이면 아니다. 포기한 회의는 BE 에 fail 이 안 닿았을 때만이다."""
     state = manifest.get("recovery") or {}

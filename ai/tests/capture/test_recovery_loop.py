@@ -11,6 +11,7 @@ import soundfile as sf
 
 from capture import discord_adapter as A
 from capture import recorder as R
+from shared.schemas import now_iso
 from tests.capture.test_discord_adapter import GUILD_ID, TEXT_ID, _manifest, _run, _setup, _tone
 
 T0 = datetime(2026, 9, 26, 3, 0, 0, tzinfo=timezone.utc)
@@ -140,6 +141,31 @@ async def test_recover_skips_a_meeting_another_process_claimed_and_says_until_wh
     texts = _texts(channel)
     assert len(texts) == 1 and "other:9:b" in texts[0] and "110분" in texts[0]
     assert _status(path) == "saved"
+
+
+async def test_an_interrupted_recording_gets_one_restart_notice_in_its_own_channel(tmp_path):
+    cog, guild, vc, channel, ctx = _setup(tmp_path)
+    cut = _meeting(tmp_path, 500, status=R.STATUS_RECORDING)       # 이 봇이 뜨기 전에 시작돼 녹음 중에 끊겼다
+    ours = _meeting(tmp_path, 600, status=R.STATUS_RECORDING, started_at=now_iso())   # 이 봇이 시작했다가 트랙을 닫다 죽었다
+    await cog._recover_pass()
+    await cog._recover_pass()
+    notices = [t for t in _texts(channel) if t == A.RESUME_NOTICE]
+    assert len(notices) == 1 and _texts(channel)[0] == A.RESUME_NOTICE      # 처리 결과보다 먼저
+    assert _status(cut) == "transcribed" and _status(ours) == "transcribed"
+
+
+async def test_two_passes_listing_the_same_interrupted_recording_post_one_notice(tmp_path):
+    """루프가 재시작 안내를 올리고 세마포어를 기다리는 사이 /recover 가 같은 회의를 목록에 올린다."""
+    cog, guild, vc, channel, ctx = _setup(tmp_path)
+    _meeting(tmp_path, 500, status=R.STATUS_RECORDING)
+    await cog._post_sem.acquire()
+    loop_pass = asyncio.create_task(cog._recover_pass())
+    await asyncio.sleep(0.05)                                       # 안내를 올리고 세마포어 앞에서 기다린다
+    hand = asyncio.create_task(_run(A.RecordingCog.recover_cmd, cog, ctx))
+    await asyncio.sleep(0.05)
+    cog._post_sem.release()
+    await asyncio.wait_for(asyncio.gather(loop_pass, hand), 20)
+    assert _texts(channel).count(A.RESUME_NOTICE) == 1
 
 
 async def test_on_ready_starts_one_loop_that_runs_at_once_and_cog_unload_cancels_it(tmp_path, monkeypatch):

@@ -44,7 +44,7 @@ from pathlib import Path
 import discord
 
 from capture.handoff import from_env as handoff_from_env
-from capture.recorder import RECOVERY_INTERVAL_S, Claims, recover_one, recovery_targets
+from capture.recorder import RECOVERY_INTERVAL_S, Claims, interrupted_recording, recover_one, recovery_targets
 from capture.recorder import (PARTIAL_RETRY_MAX, STATUS_EXTRACTED, STATUS_FAILED, STATUS_HANDED_OFF, STATUS_PARTIAL,
                               STATUS_RECORDING, STATUS_SAVED, STATUS_TRANSCRIBED, NullSession, backend_from_env,
                               build_extractor, meeting_title, process_session, recover, write_status)
@@ -61,6 +61,8 @@ NOTICE = "🔴 녹음·전사 중입니다. 이 음성 채널의 말은 화자�
 FLUSH_EVERY_S = 0.2   # 재정렬 창에 갇힌 마지막 패킷을 이 주기로 비운다. 패킷은 20ms 마다 온다
 STAGE_LABEL = {STATUS_TRANSCRIBED: "전사", STATUS_EXTRACTED: "할일 추출", STATUS_HANDED_OFF: "BE 인계",
                "stt": "전사", "extract": "할일 추출", "handoff": "BE 인계"}
+RESUME_NOTICE = ("⚠️ 봇이 다시 시작되어 끊긴 회의의 녹음된 부분을 처리합니다. "
+                 "이어서 기록하려면 `/join` 뒤 `/record` 를 실행해 주세요.")
 
 
 def is_recording(vc) -> bool:
@@ -139,6 +141,8 @@ class RecordingCog(discord.Cog):
         self._claims = Claims()
         self._recovery_interval_s = RECOVERY_INTERVAL_S      # 0 이면 루프를 띄우지 않는다
         self._recovery_task: asyncio.Task | None = None
+        self._started_at = now_iso()                         # 이보다 먼저 시작돼 recording 으로 남은 회의는 재시작으로 끊겼다
+        self._resume_noticed: set[str] = set()
 
     # ------------------------------------------------------------------ 명령
     @discord.slash_command(name="join", description="봇이 현재 음성채널에 입장합니다")
@@ -324,10 +328,15 @@ class RecordingCog(discord.Cog):
         고른 회의를 뒤에 봇이 다시 들 일은 없다(새 녹음은 새 회의 ID 다). 후처리 세마포어는 회의마다 잡는다.
         기다린 뒤에는 recover_one 이 선점을 잡고 매니페스트를 다시 읽어 아직 할 일인지 본다. 결과는 그 회의를
         시작한 채널에 올린다. 루프(manual=False)는 단계가 움직였거나 포기했을 때만 올리고 예약된 재시도의 실패는
-        로그로만 남긴다.
+        로그로만 남긴다. 봇이 뜨기 전에 녹음 중이던 회의는 처리하기 전에 그 채널에 재시작 안내를 한 번 올린다.
         """
         due, busy = recovery_targets(self.recordings_dir, claims=self._claims, guild_id=guild_id,
                                      exclude=self._holding(), manual=manual)
+        for _, m in due:
+            session = str(m.get("session"))
+            if session not in self._resume_noticed and interrupted_recording(m, since=self._started_at):
+                self._resume_noticed.add(session)
+                await self._notify(self._channel_for(m), RESUME_NOTICE)
         results = []
         for path, m in due:
             backend, model_name, workers = self._stt_factory()
