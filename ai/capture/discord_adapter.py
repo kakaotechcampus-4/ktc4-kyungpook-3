@@ -52,7 +52,7 @@ import discord
 
 from capture.handoff import from_env as handoff_from_env
 from capture.recorder import (RECOVERY_INTERVAL_S, Claims, interrupted_recording, manifest_path, recently_cut,
-                              recover_one, recovery_targets)
+                              recover_one, recovery_targets, try_lock)
 from capture.recorder import (PARTIAL_RETRY_MAX, STATUS_EXTRACTED, STATUS_FAILED, STATUS_HANDED_OFF, STATUS_PARTIAL,
                               STATUS_RECORDING, STATUS_SAVED, STATUS_TRANSCRIBED, NullSession, backend_from_env,
                               build_extractor, meeting_title, process_session, recover, write_status)
@@ -111,6 +111,7 @@ class _Recording:
     notified: set[int] = field(default_factory=set)
     flush_task: asyncio.Task | None = None
     done: asyncio.Event = field(default_factory=asyncio.Event)
+    lock: object | None = None                      # 회의 잠금(recorder.MeetingLock). 녹음하는 동안 쥔다
 
 
 def _name_resolver(guild):
@@ -188,8 +189,16 @@ class RecordingCog(discord.Cog):
         if is_recording(vc) or ctx.guild.id in self._active:
             await ctx.respond("이미 녹음 중입니다. `/stop` 으로 먼저 종료하세요.", ephemeral=True)
             return
+        # 회의 잠금을 먼저 잡고 recording 매니페스트를 쓴다. 워커는 봇 메모리를 못 보니 이 잠금으로 녹음 중인 회의를
+        # 건너뛰고, 잠금 없는 recording 은 봇이 녹음 중에 죽은 회의로 읽는다
         ts = int(time.time())
-        while manifest_path(self.recordings_dir, f"{ctx.guild.id}_{ts}").exists():
+        while True:
+            path = manifest_path(self.recordings_dir, f"{ctx.guild.id}_{ts}")
+            lock = try_lock(path)
+            if lock is not None and not path.exists():
+                break
+            if lock is not None:
+                lock.release()
             ts += 1        # 같은 초에 시작한 앞 회의가 있다. 회의 ID 가 겹치면 그 매니페스트와 트랙을 덮어쓴다
         meeting_id = f"{ctx.guild.id}_{ts}"
         out_dir = self.recordings_dir / meeting_id
@@ -202,7 +211,7 @@ class RecordingCog(discord.Cog):
                          voice_channel_name=getattr(vc.channel, "name", None),
                          guild_name=ctx.guild.name if ctx.guild else None, started_at=now_iso(),
                          text_channel_id=getattr(ctx.channel, "id", None), workspace_id=cfg.be_workspace_id or None,
-                         timezone=cfg.meeting_timezone)
+                         timezone=cfg.meeting_timezone, lock=lock)
         vc.start_recording(sink, self._on_recording_done, ctx)
         self._active[ctx.guild.id] = rec
         # 시작 시점에 매니페스트를 먼저 쓴다. 봇이 죽어도 이 회의가 있었다는 기록과 트랙이 남는다
@@ -541,6 +550,8 @@ class RecordingCog(discord.Cog):
                                ("끝나지 않은 단계는 자동 복구가 다시 시도합니다. 바로 하려면 `/recover`."
                                 if self._loop_alive() else "`/recover` 로 다시 시도하세요."))
         finally:
+            if rec.lock is not None:
+                rec.lock.release()          # 봇 모드는 스스로 처리하는 동안 쥐고 있다가 여기서 놓는다
             self._processing.pop(rec.meeting_id, None)
             rec.done.set()
 

@@ -349,3 +349,53 @@ async def test_a_recording_started_in_the_same_second_gets_its_own_meeting(tmp_p
     await asyncio.wait_for(first.done.wait(), 20)
     await _run(A.RecordingCog.stop, cog, ctx)
     await asyncio.wait_for(second.done.wait(), 20)
+
+
+def _path_of(tmp_path, rec):
+    return R.manifest_path(tmp_path / "recordings", rec.meeting_id)
+
+
+async def test_record_takes_the_meeting_lock_before_writing_the_recording_manifest(tmp_path, monkeypatch):
+    """워커는 봇 메모리를 못 본다. 녹음 중인 회의는 잠금으로 막아야 하고, 잠금 없는 recording 은 끊긴 녹음으로 읽힌다."""
+    cog, guild, vc, channel, ctx = _setup(tmp_path)
+    seen = []
+    real = A.write_status
+
+    def watching(recordings_dir, session, *, status, **kw):
+        if status == R.STATUS_RECORDING:
+            seen.append(R.is_locked(R.manifest_path(recordings_dir, session)))
+        return real(recordings_dir, session, status=status, **kw)
+
+    monkeypatch.setattr(A, "write_status", watching)
+    await _run(A.RecordingCog.record, cog, ctx)
+    rec = cog._active[GUILD_ID]
+    assert seen and all(seen)                                        # recording 을 쓸 때마다 이미 잠금을 쥐고 있었다
+    assert R.Claims(owner="worker").acquire(_path_of(tmp_path, rec)) is None      # 워커 자리에서 못 집는다
+    await _run(A.RecordingCog.stop, cog, ctx)
+    await asyncio.wait_for(rec.done.wait(), 20)
+
+
+async def test_bot_mode_keeps_the_lock_until_its_own_post_processing_ends(tmp_path, monkeypatch):
+    """봇 모드는 저장 뒤 스스로 처리한다. 그동안 잠금을 놓으면 다른 프로세스가 같은 회의를 돌릴 수 있다."""
+    cog, guild, vc, channel, ctx = _setup(tmp_path)
+    started = asyncio.Event()
+    release = threading.Event()
+    real = A.process_session
+    loop = asyncio.get_running_loop()
+
+    def slow(*args, **kwargs):
+        loop.call_soon_threadsafe(started.set)
+        release.wait(5)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(A, "process_session", slow)
+    await _run(A.RecordingCog.record, cog, ctx)
+    rec = cog._active[GUILD_ID]
+    rec.sink.on_samples(1, _tone(2000), 0)
+    await _run(A.RecordingCog.stop, cog, ctx)
+    await asyncio.wait_for(started.wait(), 5)
+    path = _path_of(tmp_path, rec)
+    assert _status(path) == "saved" and R.Claims(owner="worker").acquire(path) is None
+    release.set()
+    await asyncio.wait_for(rec.done.wait(), 20)
+    assert R.is_locked(path) is False                                # 끝나면 놓는다
