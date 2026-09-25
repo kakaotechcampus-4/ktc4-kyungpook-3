@@ -146,3 +146,35 @@ def test_measure_reports_the_d4_metrics_per_session(tmp_path):
     assert set(r["punct"]) >= {"ref_ends", "hyp_ends", "matched", "joins", "joins_needing_end_kept"}
     assert set(r["edge"]) >= {"edge_errors", "inner_errors"}
     assert r["calls"] == 1 and r["stt_s"] >= 0 and len(r["clip_lines"]) == 2
+
+
+def test_group_of_prefers_an_explicit_group_in_meta(tmp_path):
+    """정렬 상수를 바꿔 다시 만든 정렬본은 원래 정렬본과 섞이면 안 된다."""
+    s = tmp_path / "m01-RUN_GAP_S=5"
+    s.mkdir()
+    (s / "meta.json").write_text(json.dumps({"kind": "real", "timeline": "합성", "group": "정렬 변형 RUN_GAP_S"},
+                                            ensure_ascii=False), encoding="utf-8")
+    assert S.group_of(s) == "정렬 변형 RUN_GAP_S"
+
+
+def test_align_sweep_rebuilds_aligned_sessions_under_their_own_group(tmp_path):
+    src = tmp_path / "meeting-x"
+    (src / "audio").mkdir(parents=True)
+    t = np.arange(16_000) / 16_000
+    tone = (0.3 * np.sin(2 * np.pi * 220 * t)).astype(np.float32)
+    z = lambda sec: np.zeros(int(16_000 * sec), dtype=np.float32)  # noqa: E731
+    sf.write(str(src / "audio" / "a.wav"), np.concatenate([z(1), tone, z(5), tone, z(1)]), 16_000, subtype="PCM_16")
+    sf.write(str(src / "audio" / "b.wav"), np.concatenate([z(2), tone, z(6)]), 16_000, subtype="PCM_16")
+    utts = [{"seq": 0, "speaker": "a", "text": "가"}, {"seq": 1, "speaker": "b", "text": "나"},
+            {"seq": 2, "speaker": "a", "text": "다"}]
+    (src / "truth_utterances.json").write_text(json.dumps(utts, ensure_ascii=False), encoding="utf-8")
+    (src / "truth_by_speaker.json").write_text(json.dumps({"a": "가 다", "b": "나"}, ensure_ascii=False), encoding="utf-8")
+    (src / "meta.json").write_text(json.dumps({"name": "meeting-x", "kind": "real"}, ensure_ascii=False), encoding="utf-8")
+    with C.overrides(NO_GATE):
+        made = S.align_sweep([src], tmp_path / "aligned", {"stt.eval.golden.PLACE_GAP_S": (0.5, 1.0)})
+    assert [m.name for m in made] == ["meeting-x-aligned-PLACE_GAP_S=0.5", "meeting-x-aligned-PLACE_GAP_S=1"]
+    starts = [json.loads((m / "truth_aligned.json").read_text(encoding="utf-8"))[1]["start"] for m in made]
+    assert starts[0] < starts[1]
+    assert S.group_of(made[0]) == "정렬 변형 PLACE_GAP_S"
+    from stt.eval import golden
+    assert golden.PLACE_GAP_S == 1.0

@@ -174,11 +174,62 @@ def group_of(session: Path) -> str:
     """결과를 묶는 데이터 이름. 합성 여부가 이름에 드러나야 한다."""
     mp = session / "meta.json"
     meta = json.loads(mp.read_text(encoding="utf-8")) if mp.exists() else {}
+    if meta.get("group"):
+        return meta["group"]
     if meta.get("kind") == "synthetic-rearranged":
         return "재배치 합성"
     if "합성" in str(meta.get("timeline", "")):
         return "정렬본(시간축 합성)"
     return {"real": "실녹음"}.get(meta.get("kind"), meta.get("kind") or "기타")
+
+
+ALIGN_SWEEPS = {"stt.eval.golden.RUN_GAP_S": (1.0, 2.0, 3.0, 5.0, 8.0),
+                "stt.eval.golden.PLACE_GAP_S": (0.3, 1.0, 3.0)}
+
+
+def _digest(session: Path) -> dict:
+    """정렬본의 wav 해시와, 기본 VAD·묶음 규칙으로 자른 묶음 조각 해시(모델 입력 지문)."""
+    wav = hashlib.sha256()
+    chunks = []
+    for tr in B.discover(session):
+        wav.update(tr.path.read_bytes())
+        for c in B.build_chunks(B.cut(B.load_track(tr.path), tr.speaker_id)):
+            chunks.append(hashlib.sha256(c.pcm.tobytes()).hexdigest())
+    aligned = json.loads((session / "truth_aligned.json").read_text(encoding="utf-8"))
+    return {"wav": wav.hexdigest()[:16], "chunks": hashlib.sha256("|".join(sorted(chunks)).encode()).hexdigest()[:16],
+            "slots": [[t["speaker"], t["start"], t["end"]] for t in aligned]}
+
+
+def align_sweep(originals: list[Path], out: Path, sweeps: dict[str, tuple] = ALIGN_SWEEPS) -> list[Path]:
+    """정렬본을 만드는 상수(golden.RUN_GAP_S, PLACE_GAP_S)를 바꿔 원본 골든셋을 다시 정렬한다.
+
+    이 상수들은 전사가 아니라 평가 데이터를 바꾼다. 만든 폴더에 group 을 붙여 원래 정렬본과 섞이지 않게
+    하고, run 으로 같은 설정(base)을 돌려 CER·잃은 발화·시작 오차가 어떻게 달라지는지 본다.
+    """
+    from stt.eval import golden
+
+    made = []
+    for src in originals:
+        for path, values in sweeps.items():
+            name = path.rsplit(".", 1)[1]
+            for v in values:
+                dst = out / f"{src.name}-aligned-{name}={_fmt(v)}"
+                with C.overrides({path: v}):
+                    golden.align(src, dst)
+                meta = json.loads((dst / "meta.json").read_text(encoding="utf-8"))
+                meta.update({"group": f"정렬 변형 {name}", "align_override": {path: v}, "source": src.name})
+                (dst / "meta.json").write_text(json.dumps(meta, ensure_ascii=False, indent=1), encoding="utf-8")
+                made.append(dst)
+    return made
+
+
+def align_summary(made: list[Path]) -> list[dict]:
+    rows = []
+    for d in made:
+        meta = json.loads((d / "meta.json").read_text(encoding="utf-8"))
+        (path, v), = meta["align_override"].items()
+        rows.append({"source": meta["source"], "const": path, "value": v, "session": d.name, **_digest(d)})
+    return rows
 
 
 def discover_sessions(roots: list[Path]) -> list[Path]:
@@ -403,9 +454,20 @@ def main(argv=None) -> int:
     r.add_argument("--yes", action="store_true", help="유료 실행 승인")
     r.add_argument("--budget", type=float, default=4500.0, help="누적 원 상한. 장부(ledger.jsonl) 기준")
     r.add_argument("--no-prompt", action="store_true")
+    al = sub.add_parser("align-sweep", help="정렬본을 만드는 상수를 바꿔 원본 골든셋을 다시 정렬한다")
+    al.add_argument("--golden", type=Path, action="append", required=True, help="원본 골든 회의(audio/, truth_utterances.json)")
+    al.add_argument("--out", type=Path, required=True, help="만들 곳. 레포 밖")
+    al.add_argument("--summary", type=Path, default=None, help="정렬본 해시 요약 JSON (결과 폴더에 둔다)")
     rp = sub.add_parser("report", help="runs/ 에서 표(tables/)와 summary.json 을 다시 만든다")
     rp.add_argument("--out", type=Path, required=True)
     a = ap.parse_args(argv)
+    if a.cmd == "align-sweep":
+        made = align_sweep([g.expanduser() for g in a.golden], a.out.expanduser())
+        print(f"정렬 변형 {len(made)}개: {a.out}")
+        if a.summary:
+            a.summary.expanduser().write_text(json.dumps(align_summary(made), ensure_ascii=False, indent=1),
+                                              encoding="utf-8")
+        return 0
     if a.cmd == "report":
         from stt.eval.sensitivity_report import report
         report(a.out.expanduser())
