@@ -344,6 +344,7 @@ class Claims:
     def __init__(self, owner: str | None = None) -> None:
         self.owner = owner or f"{socket.gethostname()}:{os.getpid()}:{uuid.uuid4().hex[:6]}"
         self._locks: dict[str, MeetingLock] = {}
+        self._dead: dict[str, str] = {}
 
     def holder(self, path: Path, manifest: dict) -> dict | None:
         """이 회의를 지금 누가 처리 중인가 {claimed_by, claimed_at, since_s, mine}. 잠금이 풀려 있으면 None."""
@@ -367,11 +368,18 @@ class Claims:
         if m is None:
             lock.release()
             return None
+        if m.get("claimed_by"):
+            # 잠금은 풀려 있는데 표시가 남았다. 쥐었던 쪽이 처리 도중 죽었다(메모리 상한, 종료 대기 시간 초과)
+            self._dead[str(m.get("session"))] = str(m["claimed_by"])
         m["claimed_by"] = self.owner
         m["claimed_at"] = _iso(utcnow())
         save_manifest(path, m)
         self._locks[str(m.get("session"))] = lock
         return m
+
+    def died_before(self, manifest: dict) -> str | None:
+        """방금 잡은 회의를 전에 쥐었다가 처리 도중 죽은 쪽. 없으면 None. 한 번만 돌려준다."""
+        return self._dead.pop(str(manifest.get("session")), None)
 
     def release(self, path: Path, manifest: dict) -> None:
         """놓는다. manifest 는 acquire 가 준 dict 다. 마지막 상태에서 표시만 지우고 저장한 뒤 잠금을 푼다."""
@@ -412,6 +420,21 @@ def _count_failure(manifest: dict, handoff, failed_stage: str) -> dict:
         state.pop("failed_stage", None)
         state["next_at"] = _iso(now + timedelta(seconds=backoff_s(state["attempts"])))
     return state
+
+
+def _count_dead_run(manifest: dict, handoff, holder: str) -> None:
+    """처리 도중 죽은 실행을 실패로 센다. process_session 이 돌아오지 못해 스스로 세지 못한 것이다.
+
+    안 세면 다시 뜬 워커가 같은 회의를 곧바로 다시 집고 또 죽는다. 그 회의가 줄 맨 앞이라 뒤 회의도 멈춘다.
+    """
+    stages = manifest.get("stages") or {}
+    stage = next((s for s in STAGES if s not in stages), STATUS_HANDED_OFF)
+    if manifest.get("failed_units"):
+        stage = STATUS_TRANSCRIBED                     # 실패 구간을 다시 보내다 죽었다
+    manifest["status"] = STATUS_FAILED
+    manifest["failed_stage"] = FAILED_STAGE[stage]
+    manifest["error"] = f"처리 도중 프로세스가 끝났다({holder})"
+    _count_failure(manifest, handoff, manifest["failed_stage"])
 
 
 def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name: str, workers: int,
@@ -669,7 +692,8 @@ def recover_one(recordings_dir: Path, path: Path, *, claims: Claims, manual: boo
     목록을 만든 뒤 시간이 흘렀으니(세마포어를 기다렸다) 회의 잠금을 먼저 잡고 매니페스트를 다시 읽어 아직 할 일인지
     본다. 그 사이 남이 잡았으면 {"session", "busy": True, claimed_by, claimed_at, since_s, mine}, 끝났거나
     루프가 돌릴 때가 아니면 None, 돌렸으면 process_session 의 결과다. 루프가 포기한 회의를 만나면 돌리지 않고
-    포기 때 BE 에 닿지 못한 fail 만 다시 보낸다.
+    포기 때 BE 에 닿지 못한 fail 만 다시 보낸다. 잡을 때 전 주인의 표시가 남아 있으면 그 실행이 처리 도중 죽은
+    것이라 실패 한 번으로 먼저 센다.
     """
     m = claims.acquire(path)
     if m is None:
@@ -677,6 +701,10 @@ def recover_one(recordings_dir: Path, path: Path, *, claims: Claims, manual: boo
         who = claims.holder(path, cur) if cur is not None else None
         return {"session": cur.get("session"), "busy": True, **who} if who is not None else None
     try:
+        dead = claims.died_before(m)
+        if dead is not None and _is_pending(recordings_dir, m):
+            _count_dead_run(m, handoff, dead)
+            save_manifest(path, m)
         if not _is_pending(recordings_dir, m) or not (manual or _due(m, utcnow())):
             return None
         state = m.get("recovery") or {}

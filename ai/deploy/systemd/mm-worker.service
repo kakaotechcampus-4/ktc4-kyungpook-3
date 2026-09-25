@@ -19,7 +19,8 @@ RestartSec=5
 Nice=10
 # 로컬 large-v3-turbo 는 M4 에서 RSS 2.5~2.9GB 였다. 서버 값은 아직 안 쟀다
 MemoryMax=3G
-# SIGTERM 을 받으면 새 회의를 집지 않고 하던 회의를 마친다. 이보다 오래 걸리면 끊기고 다음 워커가 그 단계부터 잇는다
+# SIGTERM 을 받으면 새 회의를 집지 않고 하던 회의를 마친다. 이보다 오래 걸리면 끊기고, 다음 워커가 그것을
+# 실패 한 번으로 센 뒤 그 단계부터 잇는다. 메모리 상한에 걸려 죽어도 같다
 KillSignal=SIGTERM
 TimeoutStopSec=1200
 

@@ -16,7 +16,7 @@ from capture import handoff as H
 from capture import recorder as R
 from stt import batch as B
 from tests.capture.fake_be import FakeBe
-from tests.capture.test_recorder import DiesOnLong, _extractor, _run, _session
+from tests.capture.test_recorder import DiesOnLong, EchoStt, _extractor, _run, _session
 
 T0 = datetime(2026, 9, 26, 3, 0, 0, tzinfo=timezone.utc)
 AI_DIR = Path(__file__).resolve().parents[2]
@@ -363,3 +363,57 @@ def test_the_queue_goes_by_start_time_across_servers(tmp_path):
     rec, p88, _ = _session(tmp_path, ts=500, guild="88")
     _, p77, _ = _session(tmp_path, ts=600, guild="77")
     assert R.pending_sessions(rec) == [p88, p77]
+
+
+def _left_by_dead_worker(path, who="dead:1:x", at="2026-09-26T02:00:00+00:00"):
+    """잠금은 풀렸는데 표시가 남은 상태. 쥔 프로세스가 처리 도중 죽었다(메모리 상한, 종료 대기 시간 초과)."""
+    m = _saved(path)
+    m.update(claimed_by=who, claimed_at=at)
+    R.save_manifest(path, m)
+
+
+def test_a_run_that_died_mid_meeting_counts_as_a_failure_and_waits(tmp_path, clock, limits):
+    """죽은 실행은 process_session 이 돌아오지 못해 스스로 세지 못한다. 안 세면 다시 뜬 워커가 같은 회의를
+    다시 집고 또 죽는다. 그 회의가 줄 맨 앞이라 뒤 회의들도 멈춘다."""
+    rec, path, _ = _session(tmp_path)
+    _left_by_dead_worker(path)
+    r = R.recover_one(rec, path, claims=R.Claims(owner="host:1:a"), backend=NoStt(), model_name="echo", workers=1,
+                      transcripts_dir=tmp_path / "transcripts")
+    saved = _saved(path)
+    assert r is None and saved["status"] == "failed" and saved["failed_stage"] == "stt"
+    assert saved["recovery"] == {"attempts": 1, "next_at": "2026-09-26T03:01:00+00:00"}
+    assert "dead:1:x" in saved["error"] and "claimed_by" not in saved
+
+
+def test_dead_runs_give_up_at_the_cap_and_tell_be_once(tmp_path, clock, limits, monkeypatch):
+    monkeypatch.setattr(R, "RECOVERY_MAX_ATTEMPTS", 3)
+    rec, path, _ = _session(tmp_path)
+    fake = FakeBe()
+    h = _handoff(fake)
+    m = _saved(path)
+    h.end(m, title="회의방")
+    R.save_manifest(path, m)                                                   # BE 회의 m1 이 processing
+    for _ in range(3):
+        _left_by_dead_worker(path)
+        R.recover_one(rec, path, claims=R.Claims(owner="host:1:a"), backend=NoStt(), model_name="echo", workers=1,
+                      transcripts_dir=tmp_path / "transcripts", handoff=h)
+        clock["t"] += timedelta(hours=1)
+    saved = _saved(path)
+    assert saved["recovery"]["attempts"] == 3 and saved["recovery"]["gave_up_at"] and _fails(fake) == 1
+    assert fake.meetings["m1"]["status"] == "failed" and fake.meetings["m1"]["failed_stage"] == "stt"
+    assert "transcribed" not in saved.get("stages", {})                        # 죽은 실행만 셌고 다시 돌리지 않았다
+
+
+def test_a_meeting_without_a_leftover_claim_is_not_counted(tmp_path, clock, limits):
+    rec, path, _ = _session(tmp_path)
+    r = R.recover_one(rec, path, claims=R.Claims(owner="host:1:a"), backend=EchoStt(), model_name="echo", workers=1,
+                      transcripts_dir=tmp_path / "transcripts")
+    assert r["status"] == "transcribed" and "recovery" not in _saved(path)
+
+
+def test_a_person_can_still_run_a_meeting_whose_last_run_died(tmp_path, clock, limits):
+    rec, path, _ = _session(tmp_path)
+    _left_by_dead_worker(path)
+    r = R.recover_one(rec, path, claims=R.Claims(owner="host:1:a"), manual=True, backend=EchoStt(), model_name="echo",
+                      workers=1, transcripts_dir=tmp_path / "transcripts")
+    assert r["ran"] == ["transcribed"] and "recovery" not in _saved(path)
