@@ -401,9 +401,9 @@ class RecordingCog(discord.Cog):
     def _busy_text(b: dict) -> str:
         if b.get("mine"):
             return f"ℹ️ 세션 `{b['session']}`: 자동 복구가 지금 처리 중이라 건너뜁니다. 결과는 그 회의 채널에 올라옵니다."
-        mins = max(1, int(((b.get("expires_in_s") or 0) + 59) // 60))
-        return (f"ℹ️ 세션 `{b['session']}`: 다른 프로세스(`{b.get('claimed_by')}`)가 잡고 있어 건너뜁니다. "
-                f"선점은 약 {mins}분 뒤 풀립니다.")
+        who = f"`{b['claimed_by']}`" if b.get("claimed_by") else "다른 프로세스"
+        since = f"{max(1, int((b['since_s'] + 59) // 60))}분째 " if b.get("since_s") is not None else ""
+        return f"ℹ️ 세션 `{b['session']}`: {who} 가 {since}처리 중이라 건너뜁니다."
 
     def _loop_alive(self) -> bool:
         return self._recovery_task is not None and not self._recovery_task.done()

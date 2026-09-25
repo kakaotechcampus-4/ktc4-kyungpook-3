@@ -1,10 +1,14 @@
-"""자동 복구의 플랫폼 비종속 부분(capture/recorder.py). 선점, 실패 횟수와 백오프, 포기, 한 바퀴의 대상. 모델은 안 쓴다.
+"""자동 복구의 플랫폼 비종속 부분(capture/recorder.py). 회의 잠금, 실패 횟수와 백오프, 포기, 한 바퀴의 대상. 모델은 안 쓴다.
 
-시계는 recorder.utcnow 를 바꿔 끼운다. 기다리지 않는다.
+시계는 recorder.utcnow 를 바꿔 끼운다. 기다리지 않는다. 다른 프로세스의 잠금은 하위 프로세스를 실제로 띄워 본다.
 """
 
 import json
+import subprocess
+import sys
+import time
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import pytest
 
@@ -15,6 +19,7 @@ from tests.capture.fake_be import FakeBe
 from tests.capture.test_recorder import DiesOnLong, _extractor, _run, _session
 
 T0 = datetime(2026, 9, 26, 3, 0, 0, tzinfo=timezone.utc)
+AI_DIR = Path(__file__).resolve().parents[2]
 
 
 @pytest.fixture
@@ -49,45 +54,75 @@ def limits(monkeypatch):
     monkeypatch.setattr(B, "RETRY_WAIT_S", 0.0)
 
 
-def test_a_claim_is_written_to_the_manifest_and_the_same_process_cannot_take_it_twice(tmp_path, clock):
+def test_a_claim_takes_the_meeting_lock_and_the_same_process_cannot_take_it_twice(tmp_path, clock):
     rec, path, _ = _session(tmp_path)
-    claims = R.Claims(owner="host:1:a", ttl_s=0)          # 만료 0 초. 프로세스 안 배제는 만료와 무관해야 한다
+    claims = R.Claims(owner="host:1:a")
     m = claims.acquire(path)
     assert m is not None and m["session"] == "77_500"
     saved = _saved(path)
-    assert saved["claimed_by"] == "host:1:a" and saved["claimed_at"] == "2026-09-26T03:00:00+00:00"
+    assert saved["claimed_by"] == "host:1:a" and saved["claimed_at"] == "2026-09-26T03:00:00+00:00"   # 보여 주기용
     assert claims.acquire(path) is None                  # 루프가 잡은 회의를 같은 프로세스의 /recover 가 못 잡는다
+    assert R.Claims(owner="host:1:c").acquire(path) is None
 
 
-def test_another_owners_claim_holds_until_it_expires(tmp_path, clock):
-    rec, path, manifest = _session(tmp_path)
-    manifest.update(claimed_by="other:9:b", claimed_at="2026-09-26T02:50:00+00:00")
-    R.save_manifest(path, manifest)
-    claims = R.Claims(owner="host:1:a", ttl_s=600)
-    clock["t"] = T0 - timedelta(seconds=1)               # 02:59:59. 만료(03:00:00) 1초 전
-    assert claims.acquire(path) is None
-    assert claims.holder(_saved(path)) == {"claimed_by": "other:9:b", "expires_at": "2026-09-26T03:00:00+00:00",
-                                           "expires_in_s": 1, "mine": False}
-    clock["t"] = T0                                      # 만료. 죽은 선점은 풀린다
-    assert claims.holder(_saved(path)) is None
-    assert claims.acquire(path)["claimed_by"] == "host:1:a"
-    assert _saved(path)["claimed_by"] == "host:1:a"
-
-
-def test_release_clears_the_claim_so_another_owner_can_take_it_at_once(tmp_path, clock):
+def test_probing_a_lock_does_not_let_it_go(tmp_path, clock):
     rec, path, _ = _session(tmp_path)
-    claims = R.Claims(owner="host:1:a", ttl_s=600)
+    claims = R.Claims(owner="host:1:a")
+    claims.acquire(path)
+    assert [R.is_locked(path) for _ in range(3)] == [True, True, True]
+    assert R.Claims(owner="other:9:b").acquire(path) is None
+
+
+def test_a_claim_left_in_the_manifest_without_a_lock_does_not_block(tmp_path, clock):
+    """죽은 프로세스가 남긴 claimed_by·claimed_at 은 표시일 뿐이다. 잠금이 풀려 있으면 바로 잡는다."""
+    rec, path, manifest = _session(tmp_path)
+    manifest.update(claimed_by="dead:9:b", claimed_at="2026-09-26T02:59:00+00:00")
+    R.save_manifest(path, manifest)
+    claims = R.Claims(owner="host:1:a")
+    assert claims.holder(path, _saved(path)) is None
+    assert claims.acquire(path)["claimed_by"] == "host:1:a"
+
+
+def _child_holding(path):
+    """다른 프로세스가 이 회의 잠금을 쥔다. 잡을 때까지 기다렸다 돌려준다."""
+    code = ("import sys, time\nfrom pathlib import Path\nfrom capture import recorder as R\n"
+            "lock = None\nwhile lock is None:\n    lock = R.try_lock(Path(sys.argv[1]))\n    time.sleep(0.01)\n"
+            "print('held', flush=True)\ntime.sleep(60)\n")
+    child = subprocess.Popen([sys.executable, "-c", code, str(path)], cwd=AI_DIR, stdout=subprocess.PIPE, text=True)
+    deadline = time.monotonic() + 30
+    while child.poll() is None and time.monotonic() < deadline:
+        if R.is_locked(path):
+            return child
+        time.sleep(0.05)
+    child.kill()
+    raise AssertionError("자식 프로세스가 잠금을 잡지 못했다")
+
+
+def test_a_lock_held_by_another_process_blocks_until_that_process_is_killed(tmp_path, clock):
+    rec, path, _ = _session(tmp_path)
+    child = _child_holding(path)
+    try:
+        assert R.Claims(owner="host:1:a").acquire(path) is None
+    finally:
+        child.kill()
+        child.wait(timeout=10)
+    assert R.Claims(owner="host:1:a").acquire(path) is not None     # OS 가 죽은 프로세스의 잠금을 풀었다
+
+
+def test_release_clears_the_claim_and_the_lock_so_another_owner_can_take_it_at_once(tmp_path, clock):
+    rec, path, _ = _session(tmp_path)
+    claims = R.Claims(owner="host:1:a")
     m = claims.acquire(path)
     claims.release(path, m)
     saved = _saved(path)
-    assert "claimed_by" not in saved and "claimed_at" not in saved
-    assert R.Claims(owner="other:9:b", ttl_s=600).acquire(path) is not None
+    assert "claimed_by" not in saved and "claimed_at" not in saved and R.is_locked(path) is False
+    assert R.Claims(owner="other:9:b").acquire(path) is not None
 
 
-def test_claimed_at_is_rewritten_whenever_a_stage_is_saved(tmp_path, clock):
-    """긴 전사가 끝나 단계가 바뀌면 선점 시각을 새로 적는다. 다음 단계가 도는 동안 파일에서 보인다."""
+def test_who_and_since_when_stay_in_the_manifest_while_the_meeting_is_processed(tmp_path, clock):
+    """/recover 가 "누가 몇 분째" 를 보여 줄 수 있게 처리 중에도 표시가 남는다. 시각은 잡은 때 그대로다."""
     rec, path, _ = _session(tmp_path)
-    m = R.Claims(owner="host:1:a", ttl_s=600).acquire(path)     # 03:00:00
+    m = R.Claims(owner="host:1:a").acquire(path)                 # 03:00:00
     clock["t"] = T0 + timedelta(minutes=17)                      # 전사가 17분 걸렸다
     seen = {}
 
@@ -96,7 +131,7 @@ def test_claimed_at_is_rewritten_whenever_a_stage_is_saved(tmp_path, clock):
         return []
 
     _run(rec, m, tmp_path, extractor=extractor)
-    assert seen["claimed_by"] == "host:1:a" and seen["claimed_at"] == "2026-09-26T03:17:00+00:00"
+    assert seen["claimed_by"] == "host:1:a" and seen["claimed_at"] == "2026-09-26T03:00:00+00:00"
 
 
 def test_each_failed_run_waits_twice_as_long_before_the_next_try(tmp_path, clock, limits):
@@ -213,14 +248,16 @@ def test_the_loop_skips_meetings_waiting_for_their_next_try_and_given_up_ones(tm
     assert _names(hand) == ["77_500", "77_600", "77_700", "77_800"]
 
 
-def test_a_meeting_another_owner_holds_is_listed_as_busy_with_who_and_until_when(tmp_path, clock):
+def test_a_meeting_another_owner_holds_is_listed_as_busy_with_who_and_since_when(tmp_path, clock):
     rec, path, manifest = _session(tmp_path)
     manifest.update(claimed_by="other:9:b", claimed_at="2026-09-26T02:55:00+00:00")
     R.save_manifest(path, manifest)
-    due, busy = R.recovery_targets(rec, claims=R.Claims(owner="host:1:a", ttl_s=600), manual=True)
+    held = R.try_lock(path)                                                    # 다른 쪽이 잠금을 쥐고 있다
+    due, busy = R.recovery_targets(rec, claims=R.Claims(owner="host:1:a"), manual=True)
+    held.release()
     assert due == []
     assert busy == [{"session": "77_500", "busy": True, "claimed_by": "other:9:b",
-                     "expires_at": "2026-09-26T03:05:00+00:00", "expires_in_s": 300, "mine": False}]
+                     "claimed_at": "2026-09-26T02:55:00+00:00", "since_s": 300, "mine": False}]
 
 
 class NoStt:
@@ -247,13 +284,13 @@ def test_recover_one_looks_again_after_claiming_and_leaves_a_meeting_that_moved_
 
 def test_recover_one_reports_busy_when_the_claim_was_taken_after_listing(tmp_path, clock):
     rec, path, _ = _session(tmp_path)
-    claims = R.Claims(owner="host:1:a", ttl_s=600)
+    claims = R.Claims(owner="host:1:a")
     (target, _), = R.recovery_targets(rec, claims=claims)[0]
-    R.Claims(owner="other:9:b", ttl_s=600).acquire(path)                      # 다른 프로세스가 먼저 잡았다
+    R.Claims(owner="other:9:b").acquire(path)                                 # 다른 쪽이 먼저 잡았다
     r = R.recover_one(rec, target, claims=claims, backend=NoStt(), model_name="echo", workers=1,
                       transcripts_dir=tmp_path / "transcripts")
     assert r == {"session": "77_500", "busy": True, "claimed_by": "other:9:b",
-                 "expires_at": "2026-09-26T03:10:00+00:00", "expires_in_s": 600, "mine": False}
+                 "claimed_at": "2026-09-26T03:00:00+00:00", "since_s": 0, "mine": False}
 
 
 def _give_up(rec, path, tmp_path, fake, clock, *, down_at_the_end=False):

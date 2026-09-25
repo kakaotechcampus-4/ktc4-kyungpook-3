@@ -16,8 +16,8 @@ discord 이름은 여기 없다. capture/discord_adapter.py 가 이 함수들을
   transcript    전사가 끝나면 회의록 경로
   tasks         할일 추출까지 됐으면 그 결과 파일 경로
   be            BE 인계 상태 {"meeting_id", "status", "extraction_id", ...}. capture/handoff.py 가 쓴다
-  claimed_by, claimed_at   복구가 이 회의를 잡고 있다는 표시. 단계를 저장할 때마다 claimed_at 을 새로 적고
-                만료(MM_RECOVERY_CLAIM_TTL_S)가 지나면 누구든 다시 잡는다. 놓으면 지운다
+  claimed_by, claimed_at   누가 언제부터 이 회의를 처리 중인지 보여 주는 표시. 누가 처리할지는 회의 잠금
+                (session_<회의ID>.lock 의 OS 파일 잠금)만 정한다. 놓으면 지운다
   recovery      단계를 닫지 못한 실행의 횟수와 다음 시도 {"attempts", "next_at"}, 또는 포기
                 {"attempts", "gave_up_at", "failed_stage"}. partial 재전사 횟수(retry_runs)와 따로 센다
 
@@ -36,8 +36,8 @@ from __future__ import annotations
 import functools
 import json
 import os
+import fcntl
 import socket
-import threading
 import uuid
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -67,8 +67,6 @@ RECOVERY_INTERVAL_S = float(os.environ.get("MM_RECOVERY_INTERVAL_S", "60"))    #
 RECOVERY_MAX_ATTEMPTS = int(os.environ.get("MM_RECOVERY_MAX_ATTEMPTS", "5"))   # 이만큼 실패하면 포기하고 BE 에 fail
 RECOVERY_BACKOFF_S = float(os.environ.get("MM_RECOVERY_BACKOFF_S", "60"))      # 첫 실패 뒤 기다림. 실패마다 두 배
 RECOVERY_BACKOFF_CEIL_S = 3600.0                                                # 두 배로 늘려도 한 시간에서 멈춘다
-# 복구 선점의 만료. 선점은 단계가 바뀔 때만 새로 적으므로 가장 긴 단계(로컬 전사)보다 길어야 한다
-CLAIM_TTL_S = float(os.environ.get("MM_RECOVERY_CLAIM_TTL_S", "7200"))
 # 끊긴 녹음의 마지막 트랙 쓰기가 이보다 오래됐으면 회의가 끝났다고 보고 재시작 안내를 하지 않는다. 잠정값이다
 RESUME_NOTICE_WINDOW_S = 3600.0
 
@@ -111,6 +109,51 @@ def _iso(dt: datetime) -> str:
 def _parse_time(raw: str) -> datetime:
     dt = datetime.fromisoformat(raw)
     return dt if dt.tzinfo is not None else dt.replace(tzinfo=timezone.utc)
+
+
+class MeetingLock:
+    """회의 하나의 OS 파일 잠금(flock). 쥔 프로세스가 죽으면 OS 가 푼다.
+
+    잠금 파일은 지우지 않는다. 지우면 다른 쪽이 새로 만든 파일에 잠금을 잡아 둘이 동시에 쥘 수 있다.
+    flock 은 한 기계의 로컬 파일시스템에서만 서로를 막는다(NFS, EFS, S3 에 두면 소용없다).
+    """
+
+    def __init__(self, fd: int) -> None:
+        self._fd: int | None = fd
+
+    def release(self) -> None:
+        if self._fd is None:
+            return
+        try:
+            fcntl.flock(self._fd, fcntl.LOCK_UN)
+        finally:
+            os.close(self._fd)
+            self._fd = None
+
+
+def try_lock(manifest: Path) -> MeetingLock | None:
+    """회의 잠금을 기다리지 않고 잡는다. 남이 쥐고 있으면 None. manifest 는 session_<회의ID>.json 의 경로다.
+
+    같은 프로세스라도 따로 연 파일끼리는 부딪힌다. 그래서 봇의 루프와 /recover 도 이것으로 서로를 막는다.
+    """
+    lock = manifest.with_suffix(".lock")
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(lock, os.O_RDWR | os.O_CREAT, 0o644)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        os.close(fd)
+        return None
+    return MeetingLock(fd)
+
+
+def is_locked(manifest: Path) -> bool:
+    """누가 이 회의 잠금을 쥐고 있나. 잡아 보고 바로 놓는다. 쥔 쪽의 잠금은 그대로다(flock 은 여는 것마다 따로다)."""
+    lock = try_lock(manifest)
+    if lock is None:
+        return True
+    lock.release()
+    return False
 
 
 def write_status(recordings_dir: Path, session, *, status: str, entries: list[dict],
@@ -283,62 +326,56 @@ def _is_pending(recordings_dir: Path, m: dict) -> bool:
 
 
 class Claims:
-    """복구가 회의를 잡았다는 표시. 매니페스트의 claimed_by·claimed_at 과, 이 프로세스가 지금 든 회의 ID.
+    """복구가 회의를 잡는다. 누가 처리할지는 회의 잠금(try_lock)만 정한다.
 
-    같은 프로세스의 루프와 /recover 는 잠금과 held 로 서로를 막는다. 이 배제는 만료와 무관하다. 매니페스트의
-    표시는 프로세스가 죽은 뒤에도 남으므로 ttl_s 가 지나면 누구든 다시 잡는다. 긴 전사 중에 자기 선점이 만료되지
-    않게 process_session 이 단계를 저장할 때마다 claimed_at 을 새로 적는다. 선점은 복구만 쓴다. /record 와 /stop
-    뒤 처리는 봇이 들고 있는 회의라 선점 없이 돈다. 프로세스 사이의 원자성은 1차 범위 밖이다. 두 프로세스가 같은
-    순간에 읽고 쓰면 둘 다 잡을 수 있다.
+    잡으면 매니페스트에 claimed_by·claimed_at 을 적는다. /recover 가 누가 몇 분째 처리 중인지 보여 주는 데만 쓰고
+    누가 처리할지 정하는 데는 쓰지 않는다. 죽은 프로세스가 남긴 표시는 잠금이 풀려 있으니 무시된다.
+    같은 프로세스의 루프와 /recover 도, 봇과 워커도 이 잠금으로 서로를 막는다.
     """
 
-    def __init__(self, owner: str | None = None, ttl_s: float | None = None) -> None:
+    def __init__(self, owner: str | None = None) -> None:
         self.owner = owner or f"{socket.gethostname()}:{os.getpid()}:{uuid.uuid4().hex[:6]}"
-        self.ttl_s = CLAIM_TTL_S if ttl_s is None else ttl_s
-        self._lock = threading.Lock()
-        self._held: set[str] = set()
+        self._locks: dict[str, MeetingLock] = {}
 
-    def holder(self, manifest: dict) -> dict | None:
-        """이 회의를 지금 잡고 있는 쪽 {claimed_by, expires_at, expires_in_s, mine}. 아무도 없거나 만료됐으면 None."""
-        by, at = manifest.get("claimed_by"), manifest.get("claimed_at")
-        expires = _parse_time(at) + timedelta(seconds=self.ttl_s) if at else None
-        if str(manifest.get("session")) in self._held:
-            return self._who(by or self.owner, expires, mine=True)
-        if not by or expires is None or by == self.owner or utcnow() >= expires:
+    def holder(self, path: Path, manifest: dict) -> dict | None:
+        """이 회의를 지금 누가 처리 중인가 {claimed_by, claimed_at, since_s, mine}. 잠금이 풀려 있으면 None."""
+        mine = str(manifest.get("session")) in self._locks
+        if not mine and not is_locked(path):
             return None
-        return self._who(by, expires, mine=False)
-
-    @staticmethod
-    def _who(by: str, expires: datetime | None, *, mine: bool) -> dict:
-        left = max(0, int((expires - utcnow()).total_seconds())) if expires is not None else None
-        return {"claimed_by": by, "expires_at": _iso(expires) if expires is not None else None,
-                "expires_in_s": left, "mine": mine}
+        at = manifest.get("claimed_at")
+        since = max(0, int((utcnow() - _parse_time(at)).total_seconds())) if at else None
+        return {"claimed_by": manifest.get("claimed_by"), "claimed_at": at, "since_s": since, "mine": mine}
 
     def acquire(self, path: Path) -> dict | None:
-        """잡는다. 잡았으면 방금 읽은 매니페스트(선점이 적힌 것), 남이 잡고 있거나 읽을 수 없으면 None.
+        """잡는다. 잡았으면 방금 읽은 매니페스트(표시가 적힌 것), 남이 쥐고 있거나 읽을 수 없으면 None.
 
-        process_session 은 이 dict 를 통째로 저장하므로 선점 표시가 같이 남는다. 다 쓰면 release 로 놓는다.
+        잠금을 먼저 잡고 매니페스트를 읽는다. process_session 은 이 dict 를 통째로 저장하므로 표시가 같이 남는다.
+        다 쓰면 release 로 놓는다.
         """
-        with self._lock:
-            m = _load(path)
-            if m is None or self.holder(m) is not None:
-                return None
-            m["claimed_by"] = self.owner
-            m["claimed_at"] = _iso(utcnow())
-            save_manifest(path, m)
-            self._held.add(str(m.get("session")))
-            return m
+        lock = try_lock(path)
+        if lock is None:
+            return None
+        m = _load(path)
+        if m is None:
+            lock.release()
+            return None
+        m["claimed_by"] = self.owner
+        m["claimed_at"] = _iso(utcnow())
+        save_manifest(path, m)
+        self._locks[str(m.get("session"))] = lock
+        return m
 
     def release(self, path: Path, manifest: dict) -> None:
-        """놓는다. manifest 는 acquire 가 준 dict 다. process_session 이 고친 마지막 상태에서 선점만 지우고 저장한다."""
-        with self._lock:
-            try:
-                if manifest.get("claimed_by") == self.owner:
-                    manifest.pop("claimed_by", None)
-                    manifest.pop("claimed_at", None)
-                    save_manifest(path, manifest)
-            finally:
-                self._held.discard(str(manifest.get("session")))
+        """놓는다. manifest 는 acquire 가 준 dict 다. 마지막 상태에서 표시만 지우고 저장한 뒤 잠금을 푼다."""
+        lock = self._locks.pop(str(manifest.get("session")), None)
+        try:
+            if manifest.get("claimed_by") == self.owner:
+                manifest.pop("claimed_by", None)
+                manifest.pop("claimed_at", None)
+                save_manifest(path, manifest)
+        finally:
+            if lock is not None:
+                lock.release()
 
 
 def backoff_s(attempts: int) -> float:
@@ -383,7 +420,6 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
     단계를 닫지 못한 실행(failed, partial)은 recovery.attempts 를 하나 올리고 recovery.next_at 에 다음 시도
     시각을 적는다. 단계가 닫히면 recovery 를 지운다. RECOVERY_MAX_ATTEMPTS 에 닿으면 포기하고
     (recovery.gave_up_at) 그때 처음 BE 에 fail 을 보낸다. 그 전에는 BE 회의가 processing 으로 남는다.
-    복구가 잡은 회의(claimed_by 가 있다)면 저장할 때마다 claimed_at 을 새로 적는다.
 
     돌려주는 dict: session, status, ran(이번에 끝낸 단계), skipped, error, failed_stage,
     transcribe({markdown, failed, summary, lines}), retried(다시 보낸 줄 수), tasks(목록), be, speakers(명),
@@ -400,9 +436,6 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
     counted = False
 
     def save() -> None:
-        # 복구가 잡은 회의면 저장할 때마다(단계가 바뀔 때마다) 선점 시각을 새로 적는다. 긴 전사 중에 만료되지 않게
-        if manifest.get("claimed_by"):
-            manifest["claimed_at"] = _iso(utcnow())
         save_manifest(path, manifest)
 
     def finish(name: str) -> None:
@@ -586,7 +619,7 @@ def recovery_targets(recordings_dir: Path, *, claims: Claims, guild_id=None, exc
     now = utcnow()
     due, busy = [], []
     for p, m in _pending(recordings_dir, guild_id=guild_id, exclude=exclude):
-        who = claims.holder(m)
+        who = claims.holder(p, m)
         if who is not None:
             busy.append({"session": m.get("session"), "busy": True, **who})
         elif manual or _due(m, now):
@@ -600,14 +633,14 @@ def recover_one(recordings_dir: Path, path: Path, *, claims: Claims, manual: boo
     """회의 하나를 잡아 돌리고 놓는다. 루프와 /recover 가 회의마다 지나는 경로다. 스레드에서 부른다.
 
     목록을 만든 뒤 시간이 흘렀으니(세마포어를 기다렸다) 선점을 먼저 잡고 매니페스트를 다시 읽어 아직 할 일인지
-    본다. 그 사이 남이 잡았으면 {"session", "busy": True, claimed_by, expires_at, expires_in_s, mine}, 끝났거나
+    본다. 그 사이 남이 잡았으면 {"session", "busy": True, claimed_by, claimed_at, since_s, mine}, 끝났거나
     루프가 돌릴 때가 아니면 None, 돌렸으면 process_session 의 결과다. 루프가 포기한 회의를 만나면 돌리지 않고
     포기 때 BE 에 닿지 못한 fail 만 다시 보낸다.
     """
     m = claims.acquire(path)
     if m is None:
         cur = _load(path)
-        who = claims.holder(cur) if cur is not None else None
+        who = claims.holder(path, cur) if cur is not None else None
         return {"session": cur.get("session"), "busy": True, **who} if who is not None else None
     try:
         if not _is_pending(recordings_dir, m) or not (manual or _due(m, utcnow())):

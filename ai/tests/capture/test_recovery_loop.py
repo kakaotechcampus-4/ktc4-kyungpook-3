@@ -75,6 +75,7 @@ async def test_a_loop_pass_touches_only_meetings_that_are_due(tmp_path, clock):
     later = _meeting(tmp_path, 600, recovery={"attempts": 1, "next_at": "2026-09-26T03:01:00+00:00"})
     gave_up = _meeting(tmp_path, 700, recovery={"attempts": 5, "gave_up_at": "2026-09-26T02:00:00+00:00"})
     claimed = _meeting(tmp_path, 800, claimed_by="other:9:b", claimed_at="2026-09-26T02:59:00+00:00")
+    held = R.try_lock(claimed)                                      # 다른 프로세스가 처리 중이다
     done = _meeting(tmp_path, 900)
     m = json.loads(done.read_text(encoding="utf-8"))
     m.update(status="handed_off", stages={"transcribed": "x", "extracted": "x", "handed_off": "x"})
@@ -84,6 +85,7 @@ async def test_a_loop_pass_touches_only_meetings_that_are_due(tmp_path, clock):
     rec.sink.on_samples(1, _tone(2000), 0)
     await asyncio.sleep(0.3)
     results, busy = await cog._recover_pass()
+    held.release()
     assert [r["session"] for r in results] == [f"{GUILD_ID}_500"]
     assert [_status(p) for p in (due, later, gave_up, claimed, done)] == \
         ["transcribed", "saved", "saved", "saved", "handed_off"]
@@ -135,13 +137,14 @@ async def test_recover_skips_a_meeting_the_loop_is_processing_and_says_so(tmp_pa
     assert not any(t.startswith("마저 처리할 녹음이 없습니다") for t in _texts(channel))
 
 
-async def test_recover_skips_a_meeting_another_process_claimed_and_says_until_when(tmp_path, clock):
+async def test_recover_skips_a_meeting_another_process_holds_and_says_who_and_for_how_long(tmp_path, clock):
     cog, guild, vc, channel, ctx = _setup(tmp_path)
     path = _meeting(tmp_path, 500, claimed_by="other:9:b", claimed_at="2026-09-26T02:50:00+00:00")
-    cog._claims.ttl_s = 7200                                        # 02:50 에 잡았으니 04:50 까지, 110분 남았다
+    held = R.try_lock(path)                                         # 02:50 부터 다른 프로세스가 처리 중
     await _run(A.RecordingCog.recover_cmd, cog, ctx)
+    held.release()
     texts = _texts(channel)
-    assert len(texts) == 1 and "other:9:b" in texts[0] and "110분" in texts[0]
+    assert len(texts) == 1 and "other:9:b" in texts[0] and "10분째" in texts[0]
     assert _status(path) == "saved"
 
 
