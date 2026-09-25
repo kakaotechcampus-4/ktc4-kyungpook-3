@@ -118,3 +118,11 @@ def test_report_puts_the_llm_band_first_and_each_transcript_after(tmp_path):
     assert rows[1]["전사"] == "local-large-v3-turbo/TURN_GAP_S=1" and rows[1]["놓침"] == "1" and rows[1]["의도"] == "0·0·0/1"
     c = X.cost(tmp_path)
     assert c["extractions"] == 4 and c["tokens_in"] == 4000 and c["krw"] == round(4 * (1000 * 0.1 + 500 * 0.4) / 1e6 * 1400, 2)
+
+
+def test_view_strips_a_bare_speaker_prefix_and_finds_the_speaker_inside_a_long_turn():
+    long_turn = ("저는 승인 화면 쪽 얘기를 짧게 드리겠습니다. 이번 주에 PM이 할 일 초안을 승인하거나 반려하는 화면의 "
+                 "와이어프레임을 그렸고, 백엔드 API 명세가 나오면 바로 연결할 수 있게 목 데이터로 먼저 만들어 두겠습니다.")
+    tr = _tr(("장원준", long_turn), ("유재환", "각자 마무리해 주세요."))
+    v = X.view(_task("목 데이터 만들기", "장원준: 백엔드 API 명세가 나오면 바로 연결할 수 있게 목데이터로 먼저 만들어"), tr)
+    assert (v.source.startswith("백엔드"), v.speaker, v.assignee) == (True, "장원준", "장원준")

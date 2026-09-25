@@ -139,7 +139,8 @@ def default_client() -> tuple[HttpChat, str, str]:
 
 
 # ─────────────────────────────────────────────────────────── 할일 보기
-_PREFIX = re.compile(r"^\s*\[\d+\]\s*[^:\]]{1,20}:\s*")
+# LLM 이 근거 문장 앞에 줄 머리("[3] 장원준: " 또는 "장원준: ")를 붙여 오는 경우가 있다
+_PREFIX = re.compile(r"^\s*(\[\d+\]\s*)?([^:\]\s]{1,10}\s*:\s*)?")
 
 
 @dataclass
@@ -159,6 +160,12 @@ def _name(x: str | None) -> str | None:
     return nospace(x).removesuffix("님") or None
 
 
+def _coverage(src: str, seg: str) -> float:
+    """src 글자 중 seg 와 겹치는 비율. 긴 턴 안의 짧은 근거도 1 에 가깝게 나온다."""
+    blocks = difflib.SequenceMatcher(a=src, b=seg, autojunk=False).get_matching_blocks()
+    return sum(b.size for b in blocks) / len(src) if src else 0.0
+
+
 def _speaker_of(source: str, transcript: Transcript) -> str | None:
     s = nospace(source)
     if not s:
@@ -168,10 +175,10 @@ def _speaker_of(source: str, transcript: Transcript) -> str | None:
             return seg.speaker
     best, who = 0.0, None
     for seg in transcript.segments:
-        r = difflib.SequenceMatcher(a=s, b=nospace(seg.text), autojunk=False).ratio()
-        if r > best:
-            best, who = r, seg.speaker
-    return who if best >= SIM_MIN else None
+        c = _coverage(s, nospace(seg.text))
+        if c > best:
+            best, who = c, seg.speaker
+    return who if best >= 0.7 else None
 
 
 def view(task, transcript: Transcript) -> TaskView:
