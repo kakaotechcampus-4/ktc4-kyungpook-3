@@ -168,6 +168,19 @@ async def test_two_passes_listing_the_same_interrupted_recording_post_one_notice
     assert _texts(channel).count(A.RESUME_NOTICE) == 1
 
 
+async def test_the_loop_leaves_manifests_without_a_guild_alone(tmp_path):
+    """서버가 적히지 않은 옛 매니페스트는 서버별 /recover 가 집지 못하던 것이다. 모든 서버를 보는 루프도 집지 않는다."""
+    cog, guild, vc, channel, ctx = _setup(tmp_path)
+    path = _meeting(tmp_path, 500)
+    m = json.loads(path.read_text(encoding="utf-8"))
+    for key in ("guild_id", "text_channel_id", "status", "meeting_dir", "started_at", "timezone"):
+        m.pop(key)
+    R.save_manifest(path, m)
+    assert R.pending_sessions(tmp_path / "recordings") == [path]    # 전제: 목록에는 보인다
+    results, _ = await cog._recover_pass()
+    assert results == [] and "stages" not in json.loads(path.read_text(encoding="utf-8"))
+
+
 async def test_on_ready_starts_one_loop_that_runs_at_once_and_cog_unload_cancels_it(tmp_path, monkeypatch):
     cog, *_ = _setup(tmp_path)
     cog._recovery_interval_s = 10

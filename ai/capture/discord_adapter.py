@@ -338,6 +338,9 @@ class RecordingCog(discord.Cog):
         """
         due, busy = recovery_targets(self.recordings_dir, claims=self._claims, guild_id=guild_id,
                                      exclude=self._holding(), manual=manual)
+        if guild_id is None:
+            # 루프는 모든 서버를 본다. 서버가 적히지 않은 옛 매니페스트는 서버별 /recover 도 집지 못하던 것이다
+            due = [(p, m) for p, m in due if m.get("guild_id")]
         for _, m in due:
             session = str(m.get("session"))
             if session not in self._resume_noticed and interrupted_recording(m, since=self._started_at):
