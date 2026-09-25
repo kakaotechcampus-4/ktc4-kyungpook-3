@@ -51,8 +51,8 @@ from pathlib import Path
 import discord
 
 from capture.handoff import from_env as handoff_from_env
-from capture.recorder import (RECOVERY_INTERVAL_S, Claims, interrupted_recording, recently_cut, recover_one,
-                              recovery_targets)
+from capture.recorder import (RECOVERY_INTERVAL_S, Claims, interrupted_recording, manifest_path, recently_cut,
+                              recover_one, recovery_targets)
 from capture.recorder import (PARTIAL_RETRY_MAX, STATUS_EXTRACTED, STATUS_FAILED, STATUS_HANDED_OFF, STATUS_PARTIAL,
                               STATUS_RECORDING, STATUS_SAVED, STATUS_TRANSCRIBED, NullSession, backend_from_env,
                               build_extractor, meeting_title, process_session, recover, write_status)
@@ -189,6 +189,8 @@ class RecordingCog(discord.Cog):
             await ctx.respond("이미 녹음 중입니다. `/stop` 으로 먼저 종료하세요.", ephemeral=True)
             return
         ts = int(time.time())
+        while manifest_path(self.recordings_dir, f"{ctx.guild.id}_{ts}").exists():
+            ts += 1        # 같은 초에 시작한 앞 회의가 있다. 회의 ID 가 겹치면 그 매니페스트와 트랙을 덮어쓴다
         meeting_id = f"{ctx.guild.id}_{ts}"
         out_dir = self.recordings_dir / meeting_id
         out_dir.mkdir(parents=True, exist_ok=True)

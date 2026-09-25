@@ -319,3 +319,33 @@ async def test_a_failure_after_stop_points_to_recover_when_the_loop_is_not_runni
     cog, guild, vc, channel, ctx = _setup(tmp_path, extractor=_dying)
     failure = await _failure_after_stop(cog, ctx, channel)
     assert len(failure) == 1 and "`/recover` 로 이 단계부터 다시 시도하세요" in failure[0]
+
+
+async def test_a_recording_started_in_the_same_second_gets_its_own_meeting(tmp_path, monkeypatch):
+    """회의 ID 는 초 단위다. 앞 회의가 후처리 중일 때 같은 초에 새 녹음을 시작하면 앞 회의의 매니페스트를 덮어썼다."""
+    cog, guild, vc, channel, ctx = _setup(tmp_path)
+    monkeypatch.setattr(A.time, "time", lambda: 1_790_000_000.0)    # 두 /record 가 같은 초에 온다
+    started = asyncio.Event()
+    release = threading.Event()
+    real = A.process_session
+    loop = asyncio.get_running_loop()
+
+    def slow(*args, **kwargs):
+        loop.call_soon_threadsafe(started.set)
+        release.wait(5)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(A, "process_session", slow)
+    await _run(A.RecordingCog.record, cog, ctx)
+    first = cog._active[GUILD_ID]
+    first.sink.on_samples(1, _tone(2000), 0)
+    await _run(A.RecordingCog.stop, cog, ctx)
+    await asyncio.wait_for(started.wait(), 5)                       # 앞 회의가 후처리 중
+    await _run(A.RecordingCog.record, cog, ctx)
+    second = cog._active[GUILD_ID]
+    assert second.meeting_id != first.meeting_id
+    assert _manifest(tmp_path, first)["status"] == "saved"          # 앞 회의의 기록이 그대로다
+    release.set()
+    await asyncio.wait_for(first.done.wait(), 20)
+    await _run(A.RecordingCog.stop, cog, ctx)
+    await asyncio.wait_for(second.done.wait(), 20)
