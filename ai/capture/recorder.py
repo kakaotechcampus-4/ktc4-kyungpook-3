@@ -525,10 +525,11 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
 
 
 def _due(manifest: dict, now: datetime) -> bool:
-    """루프가 이번 바퀴에 돌릴 때인가. 다음 시도 시각 전이거나 포기한 회의면 아니다."""
+    """루프가 이번 바퀴에 돌릴 때인가. 다음 시도 시각 전이면 아니다. 포기한 회의는 BE 에 fail 이 안 닿았을 때만이다."""
     state = manifest.get("recovery") or {}
     if state.get("gave_up_at"):
-        return False
+        be = manifest.get("be") or {}
+        return bool(be.get("meeting_id")) and be.get("status") not in ("failed", "done")
     nxt = state.get("next_at")
     return not nxt or now >= _parse_time(nxt)
 
@@ -538,7 +539,8 @@ def recovery_targets(recordings_dir: Path, *, claims: Claims, guild_id=None, exc
     """이번 바퀴에 돌릴 회의 [(경로, 매니페스트)] 와, 남이 잡고 있어 건너뛸 회의 [{session, busy, claimed_by, ...}].
 
     manual 은 사람이 친 /recover 다. 다음 시도 시각을 기다리지 않고 포기한 회의도 한 번 더 돌린다. 루프는 시각이
-    안 됐거나 포기한 회의를 뺀다. exclude 는 봇이 지금 들고 있는 회의(녹음 중·후처리 중)다.
+    안 됐거나 포기한 회의를 뺀다. 포기했는데 BE 에 fail 이 닿지 않은 회의만 그 fail 을 다시 보내려고 넣는다.
+    exclude 는 봇이 지금 들고 있는 회의(녹음 중·후처리 중)다.
     """
     now = utcnow()
     due, busy = [], []
@@ -558,7 +560,8 @@ def recover_one(recordings_dir: Path, path: Path, *, claims: Claims, manual: boo
 
     목록을 만든 뒤 시간이 흘렀으니(세마포어를 기다렸다) 선점을 먼저 잡고 매니페스트를 다시 읽어 아직 할 일인지
     본다. 그 사이 남이 잡았으면 {"session", "busy": True, claimed_by, expires_at, expires_in_s, mine}, 끝났거나
-    루프가 돌릴 때가 아니면 None, 돌렸으면 process_session 의 결과다.
+    루프가 돌릴 때가 아니면 None, 돌렸으면 process_session 의 결과다. 루프가 포기한 회의를 만나면 돌리지 않고
+    포기 때 BE 에 닿지 못한 fail 만 다시 보낸다.
     """
     m = claims.acquire(path)
     if m is None:
@@ -568,6 +571,11 @@ def recover_one(recordings_dir: Path, path: Path, *, claims: Claims, manual: boo
     try:
         if not _is_pending(recordings_dir, m) or not (manual or _due(m, utcnow())):
             return None
+        state = m.get("recovery") or {}
+        if not manual and state.get("gave_up_at"):
+            if handoff is not None:
+                handoff.fail(m, state.get("failed_stage") or m.get("failed_stage") or "unknown")
+            return None                                # 바뀐 be 는 아래 release 가 선점을 지우며 같이 저장한다
         return process_session(recordings_dir, m, backend=backend, model_name=model_name, workers=workers, gate=gate,
                                transcripts_dir=transcripts_dir, extractor=extractor, handoff=handoff, name_of=name_of)
     finally:

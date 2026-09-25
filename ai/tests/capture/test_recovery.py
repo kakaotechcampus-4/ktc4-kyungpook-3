@@ -265,6 +265,22 @@ def _give_up(rec, path, tmp_path, fake, clock, *, down_at_the_end=False):
     fake.down = False
 
 
+def test_the_loop_resends_only_the_fail_when_be_missed_it_at_give_up(tmp_path, clock, limits, monkeypatch):
+    monkeypatch.setattr(R, "RECOVERY_MAX_ATTEMPTS", 2)
+    rec, path, _ = _session(tmp_path)
+    fake = FakeBe()
+    _give_up(rec, path, tmp_path, fake, clock, down_at_the_end=True)
+    assert _saved(path)["recovery"]["gave_up_at"] and fake.meetings["m1"]["status"] == "processing"
+    claims = R.Claims(owner="host:1:a")
+    (target, _), = R.recovery_targets(rec, claims=claims)[0]                  # BE 에 fail 이 안 닿아 루프가 집는다
+    fake.calls.clear()
+    r = R.recover_one(rec, target, claims=claims, backend=NoStt(), model_name="echo", workers=1,
+                      transcripts_dir=tmp_path / "transcripts", extractor=_extractor({}), handoff=_handoff(fake))
+    assert r is None and [(c[0], c[1]) for c in fake.calls] == [("PATCH", "/meetings/m1/fail")]
+    assert fake.meetings["m1"]["status"] == "failed" and fake.meetings["m1"]["failed_stage"] == "extract"
+    assert _saved(path)["status"] == "failed" and R.recovery_targets(rec, claims=claims)[0] == []
+
+
 def test_hand_recovery_of_a_given_up_meeting_opens_a_new_be_meeting(tmp_path, clock, limits, monkeypatch):
     """BE 의 failed 는 끝 상태다. 사람이 /recover 로 다시 돌리면 handoff 의 우회(새 회의, 옛 ID 는 replaced)로 간다."""
     monkeypatch.setattr(R, "RECOVERY_MAX_ATTEMPTS", 2)
