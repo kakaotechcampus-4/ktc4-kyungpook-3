@@ -194,8 +194,6 @@ class _Meeting:
 
     channel 은 전사 줄과 종료 요약을 올릴 텍스트 채널이다. 봇이 음성 채널에서 쫓겨나는
     경로에는 ctx 가 없으므로 어디에 올릴지를 회의가 직접 들고 있어야 한다.
-    secret_key 는 우리가 복호화기에 마지막으로 적용한 키다. 복호화기는 키를 보관하지 않아
-    (reader.py:292-304) 여기서 기억하는 수밖에 없다.
     """
 
     meeting_id: str
@@ -209,7 +207,6 @@ class _Meeting:
     channel: discord.abc.Messageable
     voice_channel_id: int
     ledger: _Ledger
-    secret_key: bytes = b""
     # 종료 요약에 이 회의가 쓴 CPU 를 찍으려고 시작 시점을 적어 둔다. 프로세스 전체 기준이라
     # 길드가 둘 이상 동시에 회의 중이면 서로 섞인다. t3.medium 에서 실제 부하를 볼 자리다.
     wall_t0: float = 0.0
@@ -286,30 +283,9 @@ class RealtimeCog(discord.Cog):
         meeting.sink.drain_speaker(member.id)
         meeting.session.flush_speaker(str(member.id))
 
-    @discord.Cog.listener()
-    async def on_member_speaking_state_update(self, member, ssrc, state) -> None:
-        """재연결로 음성 키가 바뀌면 복호화기를 갱신한다.
-
-        설치본에는 update_secret_key 호출자가 없다 (reader.py:138-139, 370-371). 복호화기는
-        start_recording 시점의 키로 box 를 한 번 만드는데 (reader.py:126-128) load_secret_key 는
-        새 session_description 마다 키를 갈아끼운다 (gateway.py:442). 재연결 경로는
-        disconnect(cleanup=False) 라 reader 가 살아남으므로 낡은 box 로 전부 CryptoError 가 된다.
-        이 리스너는 발화가 시작될 때마다 오므로 갱신이 한 발화 이상 늦지 않는다.
-        소스로 확인한 것이고 실제 재연결로 관측하지 않았다.
-        """
-        meeting = self._meetings.get(member.guild.id)
-        if meeting is None:
-            return
-        vc = member.guild.voice_client
-        reader = getattr(vc, "_reader", None) if vc is not None else None
-        if not reader:
-            return
-        key = bytes(vc.secret_key or b"")
-        if not key or key == meeting.secret_key:
-            return
-        reader.update_secret_key(key)
-        meeting.secret_key = key
-        print("[voice] 음성 세션 키가 바뀌어 복호화기를 갱신했다", flush=True)
+    # 재연결로 음성 키가 바뀌었을 때의 복호화기 갱신은 이 Cog 가 하지 않는다. 두 연결 자리가
+    # 모두 SafeVoiceClient 로 붙고, 그 연결 상태(capture/voice_client.py 의 _KeyForwardingState)가
+    # 새 키가 들어오는 순간 갱신한다. 배치 녹음기도 같은 클래스를 쓴다.
 
     # -------------------------------------------------------------------- /live
     @discord.slash_command(name="live", description="실시간 전사를 시작합니다")
@@ -458,7 +434,6 @@ class RealtimeCog(discord.Cog):
             # 갱신되므로, 그걸 믿으면 on_voice_state_update 의 방 필터가 옛 방을 가리켜
             # 퇴장 flush 와 봇 퇴장 감지가 조용히 안 돈다.
             channel=post_to, voice_channel_id=room.id, ledger=ledger,
-            secret_key=bytes(vc.secret_key or b""),
             wall_t0=t0, cpu_t0=_cpu_seconds(),
         )
         await ctx.respond(
