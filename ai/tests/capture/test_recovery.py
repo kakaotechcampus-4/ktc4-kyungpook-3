@@ -356,3 +356,10 @@ def test_a_failure_from_before_the_loop_is_left_to_a_person(tmp_path, clock):
     claims = R.Claims(owner="host:1:a")
     assert R.recovery_targets(rec, claims=claims)[0] == []
     assert _names(R.recovery_targets(rec, claims=claims, manual=True)[0]) == ["77_500"]
+
+
+def test_the_queue_goes_by_start_time_across_servers(tmp_path):
+    """파일 이름 순이면 서버 ID 가 작은 서버의 회의가 늘 먼저다. 먼저 시작한 회의가 먼저 처리된다."""
+    rec, p88, _ = _session(tmp_path, ts=500, guild="88")
+    _, p77, _ = _session(tmp_path, ts=600, guild="77")
+    assert R.pending_sessions(rec) == [p88, p77]

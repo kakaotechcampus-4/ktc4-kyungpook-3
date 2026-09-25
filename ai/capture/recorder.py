@@ -303,9 +303,15 @@ def pending_sessions(recordings_dir: Path, *, guild_id=None, exclude=None) -> li
     return [p for p, _ in _pending(recordings_dir, guild_id=guild_id, exclude=exclude)]
 
 
+def _queue_key(path: Path) -> tuple[int, str]:
+    """처리 순서. 회의 ID 끝의 시작 초(<guild>_<ts>) 순이고 같으면 파일 이름 순이다. 먼저 시작한 회의가 먼저다."""
+    tail = path.stem.rsplit("_", 1)[-1]
+    return (int(tail) if tail.isdigit() else 2**63, path.name)
+
+
 def _pending(recordings_dir: Path, *, guild_id=None, exclude=None):
     skip = set(exclude or ())
-    for p in sorted(recordings_dir.glob("session_*.json")):
+    for p in sorted(recordings_dir.glob("session_*.json"), key=_queue_key):
         m = _load(p)
         if m is None or m.get("session") in skip:
             continue
