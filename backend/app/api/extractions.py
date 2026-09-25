@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
+from app.api.deps import get_current_user, require_member
 from app.core.database import get_db
 from app.core.errors import AppError, Envelope, ErrorCode, success
 from app.models import (
@@ -16,6 +17,7 @@ from app.models import (
     Meeting,
     MeetingStatus,
     Member,
+    User,
 )
 from app.schemas.meeting import (
     AssigneeInfo,
@@ -51,6 +53,7 @@ def _find_existing_extraction(db: Session, meeting_id: str) -> Extraction | None
     return db.execute(stmt).scalar_one_or_none()
 
 
+# 디스코드 봇(ai/capture/handoff.py)이 사용자 세션 없이 부르는 경로라 세션 인증을 걸지 않는다.
 @router.post("", status_code=201, response_model=Envelope[ExtractionCreateResponse])
 def create_extraction(
     payload: ExtractionCreateRequest,
@@ -230,12 +233,17 @@ def create_extraction(
 
 
 @router.get("/{extraction_id}", response_model=Envelope[ExtractionDetailResponse])
-def get_extraction(extraction_id: str, db: Session = Depends(get_db)) -> dict:
+def get_extraction(
+    extraction_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
     extraction = db.get(Extraction, extraction_id)
     if extraction is None:
         raise AppError(
             ErrorCode.EXTRACTION_NOT_FOUND, details={"extraction_id": extraction_id}
         )
+    require_member(db, user, extraction.meeting.workspace_id)
 
     stmt = (
         select(ExtractionItem)

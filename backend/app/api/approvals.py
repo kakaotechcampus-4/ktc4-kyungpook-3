@@ -5,9 +5,10 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select, func, update
 from sqlalchemy.orm import Session
 
+from app.api.deps import get_current_member, get_current_user, require_member
 from app.core.database import get_db
 from app.core.errors import AppError, Envelope, ErrorCode, success
-from app.models import ApprovalRequest, ApprovalStatus, ApprovalType, ChangeSource, ExtractionItem, Task, TaskStatus
+from app.models import ApprovalRequest, ApprovalStatus, ApprovalType, ChangeSource, ExtractionItem, Member, Task, TaskStatus, User
 from app.schemas.approval import (
     ApprovalCreateRequest,
     ApprovalListResponse,
@@ -144,9 +145,11 @@ def _to_response(row: ApprovalRequest) -> ApprovalResponse:
 @router.post("", status_code=201, response_model=Envelope[ApprovalResponse])
 def create_approval(
     payload: ApprovalCreateRequest,
+    user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
-    """승인 요청을 생성한다 (AI → BE)."""
+    """승인 요청을 생성한다."""
+    require_member(db, user, payload.workspace_id)
     approval = ApprovalRequest(
         workspace_id=payload.workspace_id,
         type=str(payload.type),
@@ -165,6 +168,7 @@ def create_approval(
 def list_approvals(
     workspace_id: str = Query(..., description="워크스페이스 ID"),
     status: ApprovalStatus | None = Query(None, description="상태 필터"),
+    _member: Member = Depends(get_current_member),
     db: Session = Depends(get_db),
 ) -> dict:
     """승인 요청 목록을 조회한다. status 로 필터 가능."""
@@ -193,7 +197,11 @@ def list_approvals(
 
 
 @router.get("/{approval_id}", response_model=Envelope[ApprovalResponse])
-def get_approval(approval_id: str, db: Session = Depends(get_db)) -> dict:
+def get_approval(
+    approval_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
     """승인 요청 단건을 조회한다."""
     approval = db.get(ApprovalRequest, approval_id)
     if approval is None:
@@ -201,6 +209,7 @@ def get_approval(approval_id: str, db: Session = Depends(get_db)) -> dict:
             ErrorCode.APPROVAL_NOT_FOUND,
             details={"approval_id": approval_id},
         )
+    require_member(db, user, approval.workspace_id)
     return success(_to_response(approval).model_dump(mode="json"))
 
 
@@ -208,6 +217,7 @@ def get_approval(approval_id: str, db: Session = Depends(get_db)) -> dict:
 def resolve_approval(
     approval_id: str,
     payload: ApprovalResolveRequest,
+    user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
     """PM이 승인 요청을 승인/반려한다."""
@@ -216,6 +226,15 @@ def resolve_approval(
             ErrorCode.INVALID_REQUEST,
             message="pending 상태로 변경할 수 없습니다.",
         )
+
+    # 상태를 바꾸는 조건부 UPDATE보다 먼저 소속을 확인해야 비소속 요청이 아무것도 바꾸지 못한다.
+    target = db.get(ApprovalRequest, approval_id)
+    if target is None:
+        raise AppError(
+            ErrorCode.APPROVAL_NOT_FOUND,
+            details={"approval_id": approval_id},
+        )
+    require_member(db, user, target.workspace_id)
 
     stmt = (
         update(ApprovalRequest)
