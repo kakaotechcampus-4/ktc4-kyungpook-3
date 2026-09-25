@@ -69,3 +69,15 @@ def test_render_writes_the_tables_for_every_backend_and_group(tmp_path):
     ev = (tmp_path / "tables" / "evidence.md").read_text(encoding="utf-8")
     assert "stt.batch.TURN_GAP_S" in ev and "local-large-v3-turbo" in ev
     assert "TURN_GAP_S" in (tmp_path / "tables" / "sensitivity.md").read_text(encoding="utf-8")
+
+
+def test_previous_latency_reads_elice_rows_from_an_older_results_folder(tmp_path):
+    d = tmp_path / "2026-09-16-batch" / "meeting-01-aligned"
+    d.mkdir(parents=True)
+    (d / "score_chunk_elice.json").write_text(json.dumps({"backend": "elice/whisper-large-v3", "mode": "chunk", "tag": "",
+                                                          "calls": 7, "transcribe_p50_s": 30.33, "transcribe_p95_s": 37.39,
+                                                          "calls_over_20s": 7, "failed": 0, "retries": 2}), encoding="utf-8")
+    (d / "score_chunk_local-small.json").write_text(json.dumps({"backend": "local/small", "calls": 7}), encoding="utf-8")
+    rows = R.previous_latency(tmp_path / "2026-09-16-batch")
+    assert rows == [{"회의": "meeting-01-aligned", "설정": "chunk", "호출": 7, "p50": 30.33, "p95": 37.39,
+                     "20초 넘음": 7, "재시도": 2, "실패": 0}]

@@ -261,8 +261,24 @@ def units(all_runs: dict[str, dict]) -> str:
     return "\n".join(md) + "\n"
 
 
+PREVIOUS = Path(__file__).resolve().parent / "results" / "2026-09-16-batch"
+
+
+def previous_latency(folder: Path = PREVIOUS) -> list[dict]:
+    """이전 결과 폴더(2026-09-16)의 Elice 설정별 지연. 호출별 기록은 없고 p50·p95·20초 넘은 수만 있다."""
+    rows = []
+    for f in sorted(folder.glob("*/score_*.json")) if folder.exists() else []:
+        r = json.loads(f.read_text(encoding="utf-8"))
+        if not str(r.get("backend", "")).startswith("elice"):
+            continue
+        rows.append({"회의": f.parent.name, "설정": r.get("mode", "?") + (f"-{r['tag']}" if r.get("tag") else ""),
+                     "호출": r.get("calls"), "p50": r.get("transcribe_p50_s"), "p95": r.get("transcribe_p95_s"),
+                     "20초 넘음": r.get("calls_over_20s"), "재시도": r.get("retries"), "실패": r.get("failed")})
+    return rows
+
+
 def latency(all_runs: dict[str, dict]) -> tuple[str, dict]:
-    """Elice 호출 지연. 캐시에서 온 것은 빼고 실제로 보낸 호출만."""
+    """Elice 호출 지연. 캐시에서 온 것은 빼고 실제로 보낸 호출만. 이전 결과 폴더의 설정별 값도 붙인다."""
     calls = [c for label, runs in all_runs.items() if _kind(label) == "elice"
              for rec in runs.values() for r in rec["sessions"].values() for c in r.get("call_log", [])
              if not c["cached"]]
@@ -270,10 +286,23 @@ def latency(all_runs: dict[str, dict]) -> tuple[str, dict]:
                   for rec in runs.values() for r in rec["sessions"].values())
     md = ["# Elice 호출 지연", ""]
     verdicts: dict[str, list[dict]] = {}
+    prev = previous_latency()
+    if prev:
+        n = sum(r["호출"] or 0 for r in prev)
+        over = sum(r["20초 넘음"] or 0 for r in prev)
+        md += [f"이전 측정(`stt/eval/results/2026-09-16-batch`, 정렬본 두 회의 Elice 설정 {len(prev)}개): 호출 {n}건 중 "
+               f"20초 넘은 호출 {over}건, 재시도 {sum(r['재시도'] or 0 for r in prev)}건, 실패 {sum(r['실패'] or 0 for r in prev)}건. "
+               "설정별 p50·p95 는 아래 표.", "", S.md_table(prev), ""]
+        verdicts["stt.batch.STALL_S"] = [{"backend": "elice", "group": "2026-09-16 결과",
+                                          "text": f"호출 {n}건 중 20초 넘음 {over}건 (설정별 p95 {min(r['p95'] for r in prev):.1f}~"
+                                                  f"{max(r['p95'] for r in prev):.1f}초)"}]
     ok = sorted(c["dt"] for c in calls if not c["error"])
     fails = [c for c in calls if c["error"]]
+    if not calls:
+        md.append("이번 측정에서 Elice 로 보낸 호출이 없다.")
+        return "\n".join(md) + "\n", verdicts
     if not ok:
-        md.append("Elice 호출 기록이 없다.")
+        md.append(f"이번 측정에서 보낸 호출 {len(calls)}건이 전부 실패했다(시간 초과 {sum(1 for c in fails if 'Timeout' in str(c['error']))}건).")
         return "\n".join(md) + "\n", verdicts
     from stt.batch import STALL_S
     from stt.elice import EliceStt
@@ -294,7 +323,7 @@ def latency(all_runs: dict[str, dict]) -> tuple[str, dict]:
                          "최대": _f(xs[-1]), f"{STALL_S:g}초 넘음": sum(1 for x in xs if x > STALL_S)})
     md += [S.md_table(rows), ""]
     txt = f"호출 {len(ok)}건 p50 {statistics.median(ok):.1f}초 p95 {pct(0.95):.1f}초, {STALL_S:g}초 넘음 {over}건"
-    verdicts["stt.batch.STALL_S"] = [{"backend": "elice", "group": "전체", "text": txt}]
+    verdicts.setdefault("stt.batch.STALL_S", []).append({"backend": "elice", "group": "이번 측정", "text": txt})
     verdicts["stt.elice.EliceStt.TIMEOUT_PER_AUDIO_S"] = [
         {"backend": "elice", "group": "전체", "text": f"가장 오래 걸린 호출이 타임아웃 한도의 {near * 100:.0f}%, 시간 초과 {len(fails)}건"}]
     for p in ("stt.batch.RETRIES", "stt.batch.RETRY_WAIT_S"):
