@@ -223,3 +223,36 @@ async def test_worker_mode_loop_posts_restart_notices_but_never_processes(tmp_pa
     await cog._tick()
     assert [t for t, _ in channel.sent] == [A.RESUME_NOTICE]
     assert _status(waiting) == "saved" and _status(cut) == "recording"      # 처리는 워커 몫이다
+
+
+def _beat(tmp_path, *, age_s, interval_s=10.0, state="running", current=None):
+    R.save_manifest(tmp_path / "recordings" / ".worker" / "heartbeat.json",
+                    {"state": state, "pid": 1, "host": "h", "at": "x", "at_ts": time.time() - age_s,
+                     "interval_s": interval_s, "current": current, "started_at": "x"})
+
+
+async def test_worker_mode_recover_wakes_the_worker_and_reports_the_queue_and_a_live_worker(tmp_path):
+    cog, guild, vc, channel, ctx = _worker_cog(tmp_path)
+    first = _meeting(tmp_path, 100)
+    second = _meeting(tmp_path, 200)
+    busy = _meeting(tmp_path, 300, claimed_by="host:7:w", claimed_at=(datetime.now(timezone.utc) - timedelta(minutes=4))
+                    .replace(microsecond=0).isoformat())
+    held = R.try_lock(busy)                                        # 워커가 처리 중이다
+    _beat(tmp_path, age_s=5, current=f"{T.GUILD_ID}_300")
+    await T._run(A.RecordingCog.recover_cmd, cog, ctx)
+    held.release()
+    assert (tmp_path / "recordings" / ".worker" / f"wake-{T.GUILD_ID}").exists()
+    text = "\n".join(t for t, _ in channel.sent)
+    assert "대기 2건" in text and "처리 중 1건" in text and f"{T.GUILD_ID}_300" in text and "4분째" in text
+    assert "마지막 신호" in text and "응답이 없습니다" not in text
+    assert [_status(p) for p in (first, second, busy)] == ["saved", "saved", "saved"]      # 봇은 처리하지 않는다
+
+
+async def test_worker_mode_recover_says_when_the_worker_is_quiet_or_missing(tmp_path):
+    cog, guild, vc, channel, ctx = _worker_cog(tmp_path)
+    _beat(tmp_path, age_s=600)                                     # 10분째 조용하다
+    await T._run(A.RecordingCog.recover_cmd, cog, ctx)
+    assert "워커가 10분째 응답이 없습니다" in channel.sent[-1][0]
+    (tmp_path / "recordings" / ".worker" / "heartbeat.json").unlink()
+    await T._run(A.RecordingCog.recover_cmd, cog, ctx)
+    assert "워커 신호가 없습니다" in channel.sent[-1][0]

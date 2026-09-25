@@ -52,7 +52,8 @@ import discord
 
 from capture.handoff import from_env as handoff_from_env
 from capture.recorder import (RECOVERY_INTERVAL_S, Claims, interrupted_meetings, manifest_path, queue_ahead,
-                              recover_pass, try_lock)
+                              recover_pass, recovery_targets, try_lock)
+from capture.worker import read_heartbeat, request_wake
 from capture.recorder import (PARTIAL_RETRY_MAX, STATUS_EXTRACTED, STATUS_FAILED, STATUS_HANDED_OFF, STATUS_PARTIAL,
                               STATUS_RECORDING, STATUS_SAVED, STATUS_TRANSCRIBED, NullSession, backend_from_env,
                               build_extractor, meeting_title, process_session, recover, write_status)
@@ -112,6 +113,11 @@ class _Recording:
     flush_task: asyncio.Task | None = None
     done: asyncio.Event = field(default_factory=asyncio.Event)
     lock: object | None = None                      # 회의 잠금(recorder.MeetingLock). 녹음하는 동안 쥔다
+
+
+def _minutes(seconds) -> int:
+    """흐른 분. 1분이 안 돼도 1 이다."""
+    return max(1, int(seconds) // 60)
 
 
 def _name_resolver(guild):
@@ -290,6 +296,10 @@ class RecordingCog(discord.Cog):
 
     @discord.slash_command(name="recover", description="끝까지 처리되지 않은 녹음을 마저 처리합니다")
     async def recover_cmd(self, ctx: discord.ApplicationContext) -> None:
+        if self._mode == "worker":
+            await ctx.respond("워커에게 이 서버의 남은 회의를 바로 다시 시도하라고 알립니다...")
+            await self._wake_worker(ctx.guild.id, ctx.channel)
+            return
         await ctx.respond("이 서버의 남은 녹음을 찾아 마지막 단계 다음부터 마저 처리합니다...")
         # 자동 복구 루프와 같은 한 바퀴다. 다음 시도 시각을 기다리지 않고 포기한 회의도 한 번 더 돌린다
         results, busy = await self._recover_pass(guild_id=ctx.guild.id, manual=True, fallback=ctx.channel)
@@ -419,8 +429,35 @@ class RecordingCog(discord.Cog):
         if b.get("mine"):
             return f"ℹ️ 세션 `{b['session']}`: 자동 복구가 지금 처리 중이라 건너뜁니다. 결과는 그 회의 채널에 올라옵니다."
         who = f"`{b['claimed_by']}`" if b.get("claimed_by") else "다른 프로세스"
-        since = f"{max(1, int((b['since_s'] + 59) // 60))}분째 " if b.get("since_s") is not None else ""
+        since = f"{_minutes(b['since_s'])}분째 " if b.get("since_s") is not None else ""
         return f"ℹ️ 세션 `{b['session']}`: {who} 가 {since}처리 중이라 건너뜁니다."
+
+    async def _wake_worker(self, guild_id, channel) -> None:
+        """워커 모드의 /recover. 워커를 깨우고 대기열과 워커 상태를 알린다. 봇은 처리하지 않는다.
+
+        깨우면 워커가 이 서버의 회의를 사람이 친 /recover 처럼(포기한 회의까지) 바로 한 바퀴 돈다.
+        """
+        request_wake(self.recordings_dir, guild_id)
+        due, busy = recovery_targets(self.recordings_dir, claims=self._claims, exclude=self._holding())
+        waiting = sum(1 for _, m in due if m.get("guild_id"))
+        lines = [f"🔁 워커를 깨웠습니다. 대기 {waiting}건, 처리 중 {len(busy)}건."]
+        for b in busy[:3]:
+            since = f" {_minutes(b['since_s'])}분째" if b.get("since_s") is not None else ""
+            lines.append(f"처리 중: 세션 `{b['session']}`{since}")
+        lines.append(self._worker_state())
+        await self._notify(channel, "\n".join(lines))
+
+    def _worker_state(self) -> str:
+        """워커가 주기마다 남기는 살아 있다는 표시로 본 워커 상태. 주기의 여섯 배(최소 1분) 넘게 조용하면 경고한다."""
+        hb = read_heartbeat(self.recordings_dir)
+        if hb is None:
+            return "⚠️ 워커 신호가 없습니다. 워커가 떠 있는지 확인해 주세요."
+        if hb.get("state") == "stopped":
+            return "⚠️ 워커가 멈춰 있습니다. 워커를 다시 띄워 주세요."
+        age = max(0.0, time.time() - float(hb.get("at_ts") or 0))
+        if age > max(60.0, 6 * float(hb.get("interval_s") or 10)):
+            return f"⚠️ 워커가 {_minutes(age)}분째 응답이 없습니다."
+        return f"워커 마지막 신호 {int(age)}초 전."
 
     def _loop_alive(self) -> bool:
         return self._recovery_task is not None and not self._recovery_task.done()
