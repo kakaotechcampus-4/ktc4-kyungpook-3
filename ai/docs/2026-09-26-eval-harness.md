@@ -39,7 +39,7 @@ LLM 호출은 openai SDK 가 공유 venv 에 없어(requirements.txt 에는 있�
 | Elice | 2026-09-26 02:04~08:24 전사 API 가 응답하지 않아 아직 안 잼 |
 | 비용 | 154.8원. 추출 LLM 280회 145.6원(입력 434,392·출력 151,323 토큰, Google 공시 단가와 1,400원/$ 가정), Elice 전사 확인 호출 24건 9.3원(시간 초과도 과금된 것으로 셈) |
 
-재현: `python -m stt.eval.sensitivity run --golden-root <골든> --golden-root <합성> --out stt/eval/results/2026-09-26-units --cache <캐시> --noise-seeds 10` 다음 `report`. 테스트는 500 통과(새 테스트 76).
+재현: `python -m stt.eval.sensitivity run --golden-root <골든> --golden-root <합성> --out stt/eval/results/2026-09-26-units --cache <캐시> --noise-seeds 10` 다음 `report`. 테스트는 501 통과(새 테스트 77).
 
 ## 남은 것
 
