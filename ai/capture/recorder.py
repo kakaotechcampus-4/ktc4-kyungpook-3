@@ -28,7 +28,10 @@ from __future__ import annotations
 import functools
 import json
 import os
-from datetime import date, datetime, timezone
+import socket
+import threading
+import uuid
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -51,6 +54,13 @@ STAGES = (STATUS_TRANSCRIBED, STATUS_EXTRACTED, STATUS_HANDED_OFF)
 PARTIAL_RETRY_MAX = int(os.environ.get("MM_PARTIAL_RETRY_MAX", "3"))
 # 매니페스트와 BE 의 failed_stage 에 적는 이름
 FAILED_STAGE = {STATUS_TRANSCRIBED: "stt", STATUS_EXTRACTED: "extract", STATUS_HANDED_OFF: "handoff"}
+# 복구 선점의 만료. 선점은 단계가 바뀔 때만 새로 적으므로 가장 긴 단계(로컬 전사)보다 길어야 한다. 근거는 decision_log/0013
+CLAIM_TTL_S = float(os.environ.get("MM_RECOVERY_CLAIM_TTL_S", "7200"))
+
+
+def utcnow() -> datetime:
+    """선점 만료와 다음 시도 시각을 재는 시계. 테스트가 바꿔 끼운다."""
+    return datetime.now(timezone.utc)
 
 
 class NullSession:
@@ -70,6 +80,22 @@ def save_manifest(path: Path, manifest: dict) -> None:
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
     os.replace(tmp, path)
+
+
+def _load(path: Path) -> dict | None:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def _iso(dt: datetime) -> str:
+    return dt.astimezone(timezone.utc).replace(microsecond=0).isoformat()
+
+
+def _parse_time(raw: str) -> datetime:
+    dt = datetime.fromisoformat(raw)
+    return dt if dt.tzinfo is not None else dt.replace(tzinfo=timezone.utc)
 
 
 def write_status(recordings_dir: Path, session, *, status: str, entries: list[dict],
@@ -236,6 +262,65 @@ def pending_sessions(recordings_dir: Path, *, guild_id=None, exclude=None) -> li
         elif m.get("status") == STATUS_RECORDING and discover_tracks(recordings_dir, m):
             out.append(p)
     return out
+
+
+class Claims:
+    """복구가 회의를 잡았다는 표시. 매니페스트의 claimed_by·claimed_at 과, 이 프로세스가 지금 든 회의 ID.
+
+    같은 프로세스의 루프와 /recover 는 잠금과 held 로 서로를 막는다. 이 배제는 만료와 무관하다. 매니페스트의
+    표시는 프로세스가 죽은 뒤에도 남으므로 ttl_s 가 지나면 누구든 다시 잡는다. 긴 전사 중에 자기 선점이 만료되지
+    않게 process_session 이 단계를 저장할 때마다 claimed_at 을 새로 적는다. 선점은 복구만 쓴다. /record 와 /stop
+    뒤 처리는 봇이 들고 있는 회의라 선점 없이 돈다. 프로세스 사이의 원자성은 1차 범위 밖이다. 두 프로세스가 같은
+    순간에 읽고 쓰면 둘 다 잡을 수 있다.
+    """
+
+    def __init__(self, owner: str | None = None, ttl_s: float | None = None) -> None:
+        self.owner = owner or f"{socket.gethostname()}:{os.getpid()}:{uuid.uuid4().hex[:6]}"
+        self.ttl_s = CLAIM_TTL_S if ttl_s is None else ttl_s
+        self._lock = threading.Lock()
+        self._held: set[str] = set()
+
+    def holder(self, manifest: dict) -> dict | None:
+        """이 회의를 지금 잡고 있는 쪽 {claimed_by, expires_at, expires_in_s, mine}. 아무도 없거나 만료됐으면 None."""
+        by, at = manifest.get("claimed_by"), manifest.get("claimed_at")
+        expires = _parse_time(at) + timedelta(seconds=self.ttl_s) if at else None
+        if str(manifest.get("session")) in self._held:
+            return self._who(by or self.owner, expires, mine=True)
+        if not by or expires is None or by == self.owner or utcnow() >= expires:
+            return None
+        return self._who(by, expires, mine=False)
+
+    @staticmethod
+    def _who(by: str, expires: datetime | None, *, mine: bool) -> dict:
+        left = max(0, int((expires - utcnow()).total_seconds())) if expires is not None else None
+        return {"claimed_by": by, "expires_at": _iso(expires) if expires is not None else None,
+                "expires_in_s": left, "mine": mine}
+
+    def acquire(self, path: Path) -> dict | None:
+        """잡는다. 잡았으면 방금 읽은 매니페스트(선점이 적힌 것), 남이 잡고 있거나 읽을 수 없으면 None.
+
+        process_session 은 이 dict 를 통째로 저장하므로 선점 표시가 같이 남는다. 다 쓰면 release 로 놓는다.
+        """
+        with self._lock:
+            m = _load(path)
+            if m is None or self.holder(m) is not None:
+                return None
+            m["claimed_by"] = self.owner
+            m["claimed_at"] = _iso(utcnow())
+            save_manifest(path, m)
+            self._held.add(str(m.get("session")))
+            return m
+
+    def release(self, path: Path, manifest: dict) -> None:
+        """놓는다. manifest 는 acquire 가 준 dict 다. process_session 이 고친 마지막 상태에서 선점만 지우고 저장한다."""
+        with self._lock:
+            try:
+                if manifest.get("claimed_by") == self.owner:
+                    manifest.pop("claimed_by", None)
+                    manifest.pop("claimed_at", None)
+                    save_manifest(path, manifest)
+            finally:
+                self._held.discard(str(manifest.get("session")))
 
 
 def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name: str, workers: int,
