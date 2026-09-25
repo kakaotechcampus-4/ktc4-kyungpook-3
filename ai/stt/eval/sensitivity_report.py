@@ -22,7 +22,6 @@ from pathlib import Path
 from stt.eval import constants as C
 from stt.eval import sensitivity as S
 
-NOISE_IDS = {"local": ["base", "dither1", "dither2", "dither3"], "elice": ["base", "rep1", "rep2"]}
 PRIMARY = {"punct": ("punct_err", "문장 끝 오류"), "edge": ("edge_err", "가장자리 오류"), "lines": ("lines", "줄 수"),
            "lost": ("lost", "잃은 발화")}
 KRW_PER_SEC = 6 / 60
