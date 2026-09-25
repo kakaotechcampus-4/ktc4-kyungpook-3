@@ -137,8 +137,8 @@ AUDIO_TOO_LARGE(413)              DISCORD_USER_ALREADY_MAPPED(409)
 
 - `alias_type` 은 `realname` \| `nickname` \| `mention` \| `inferred`, `source` 는 `manual` \| `discord_profile` \| `learned`.
 - **`unresolved-aliases` 는 Discord 서버의 사용자 목록이 아니다.** 회의 전사에서 감지됐지만 매칭되지 않은 **이름 문자열**이다. `alias_resolution_log` 에서 집계한다.
-  **빠지는 조건이 「등록되면」이 아니다** — 같은 이름의 `verified` 별칭이 **정확히 1개**일 때만 해결된 것으로 본다.
-  미검증 별칭이거나 여러 팀원에 붙어 중의적이면 목록에 **남는다** (§4.0-②-15).
+  **빠지는 조건이 「등록되면」이 아니다** — 같은 이름의 별칭이 검증 여부와 상관없이 **정확히 1개**이고 그 1개가 `verified` 일 때만 해결된 것으로 본다 (`services/matching.py` `resolved_alias_texts`).
+  미검증 별칭뿐이거나, 여러 팀원에 붙어 중의적이면(검증 1 + 미검증 1 도 후보가 둘이다) 목록에 **남는다** (§4.0-②-15).
 - 따라서 **팀원 연결 화면의 데이터 출처가 D-026 의 전제와 다르다** → §4.5 에서 엔드포인트 하나를 요청한다.
 - Discord 사용자 식별자는 `member.discord_user_id` 에 팀원당 하나씩 붙는다.
 
@@ -251,6 +251,8 @@ AUDIO_TOO_LARGE(413)              DISCORD_USER_ALREADY_MAPPED(409)
 - `task_create` → `task_title`(없으면 `title`), `meeting_id`, `assignee_member_id`, `due_date`, **`status`, `progress`**
   뒤의 둘은 PR #55 가 추가했다. `validate_task_fields` 를 거치므로 **잘못된 값이면 승인이 400 으로 실패한다.**
   반영 뒤 `extraction_item.task_id` 도 채워진다 (§3.1).
+  `extraction_item_id` 는 Task 를 만들기 **전에** 검증한다. 항목의 워크스페이스가 승인과 다르면 400 `WORKSPACE_MISMATCH`, 항목의 `approval_id` 가 이 승인이 아니면 400 `INVALID_REQUEST` 이고 아무것도 바뀌지 않는다.
+  항목이 없으면 연결 없이 Task 만 만든다. 이 검사가 제목·`status`·`progress` 검증보다 먼저다.
 - `task_update` → `title`, `assignee_member_id`, `status`, `progress`, `blocker`, `due_date` 중 존재하는 것만
 - `reminder_dm` → 태스크에 반영하지 않는다. 발송은 Discord 봇의 책임이다
 
@@ -486,7 +488,7 @@ PR #59 가 §4.1~§4.5 를 구현했다. **요청의 성격이 바뀌었다** �
 | 12 | 승인·반려 처리 | `extraction_item.approval_id` 를 **어느 쪽으로 닫혀도 비우지 않는다.** 반려는 `extraction_item` 을 아예 건드리지 않는다 | **승인이든 반려든 닫히면 `approval_id` 를 `null` 로.** 안 되면 프론트가 `GET /approvals?status=pending` 과 조인해 우회한다 (§3.1) |
 | 13 | 승인 `task_create` | payload 의 `status` · `progress` 도 읽어 반영한다 | 요청이 아니라 **기록**이다. §2.5 의 payload 설명에 빠져 있었다 |
 | 14 | `GET /workspaces/{id}/meetings` | `title` 이 nullable 인데 `items: list[dict]` 라 스키마에 안 드러난다 | 목록 `title` 의 nullable 여부를 스키마로 고정해 달라. **프론트 DTO 는 nullable 로 맞췄고 매퍼가 빈 문자열로 폴백한다** |
-| 15 | `GET /members/unresolved-aliases` | 해결 판정이 **`verified` 별칭 정확히 1개**다. 미검증·복수 verified 는 목록에 남는다 | 요청이 아니라 기록이다. **MSW 도 같은 규칙으로 계산하게 맞췄다** |
+| 15 | `GET /members/unresolved-aliases` | 해결 판정이 **별칭 후보 정확히 1개 + 그 1개가 `verified`** 다(`matching.py` `resolved_alias_texts`). 미검증뿐이거나 후보가 여럿(검증 1 + 미검증 1 포함)이면 목록에 남는다 | 요청이 아니라 기록이다. **MSW 도 같은 규칙으로 계산하게 맞췄다** |
 | 16 | `GET /workspaces/{id}/meetings` 의 `attendee_count` | `audio_segment` 의 화자에서 역산한다(`# attendee_count 로직 개선 필요`). **말하지 않은 참석자는 빠지고, 로컬 업로드는 세그먼트가 없어 늘 0** 이다 | 업로드가 받은 `attendee_member_ids` 를 저장하고 그것으로 세 달라 (②-9 와 한 쌍이다) |
 
 **MSW 가 일부러 더 엄격한 곳 두 군데.** 요청이 아니라 기록이다. 어느 쪽도 「mock 은 되는데 실 API 에서 깨지는」 방향이 아니라
