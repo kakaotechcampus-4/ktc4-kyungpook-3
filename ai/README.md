@@ -51,7 +51,7 @@ cp .env.example .env                 # DISCORD_BOT_TOKEN 채우기 (DISCORD_GUIL
 ## 실행
 
 ```bash
-python capture/run_recorder.py    # Discord 에서 /join → /record → (말하기) → /stop → 회의록이 채널에 올라옴
+python -m capture.run_recorder    # Discord 에서 /join → /record → (말하기) → /stop → 회의록이 채널에 올라옴
 #    recordings/{guild}_{ts}/{user_id}_{ts}.wav · recordings/session_{ts}.json · transcripts/session_{ts}.transcript.json
 ```
 

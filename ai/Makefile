@@ -9,7 +9,7 @@ setup:
 	test -f .env || cp .env.example .env
 
 run:
-	$(PYTHON) capture/run_recorder.py
+	$(PYTHON) -m capture.run_recorder
 
 test:
 	$(PYTHON) -m pytest
