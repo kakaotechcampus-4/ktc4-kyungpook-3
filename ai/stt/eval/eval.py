@@ -58,6 +58,11 @@ _PUNCT_RE = re.compile(r"[^\w\s]", re.UNICODE)
 _WS_RE = re.compile(r"\s+")
 
 
+# 채점 기준 버전. 정규화, score, rescore 의 합산, 정답 fixture 를 일부러 바꾸면 1 올린다.
+# 결과 파일에 이 값이 적히고, 값이 다른 옛 결과는 회귀 테스트가 실패 대신 건너뛴다(stt/eval/fixtures/README.md).
+SCORING_VERSION = 1
+
+
 # ---------------------------------------------------------------- 텍스트 처리
 def normalize(text: str) -> str:
     """문장부호 제거 + 공백 정리. 어절 단위 WER(정규화)용."""
