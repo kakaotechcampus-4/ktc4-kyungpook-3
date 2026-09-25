@@ -1,0 +1,80 @@
+# 0013. 복구는 봇 안의 주기 루프가 돌리고, BE 에는 재시도를 다 쓴 뒤에만 fail 을 보낸다
+
+- 날짜: 2026-09-26
+- 상태: 결정됨(1차). 선점 만료 기본값은 #40 에서 t3.medium 전사 시간을 잰 뒤 다시 정한다
+
+## 배경
+
+회의 후처리(전사 → 추출 → BE 인계)가 중간에 실패하거나 봇이 죽으면 사람이 `/recover` 를 쳐야 다시 돌았다. 아무도 안 치면 회의는 매니페스트에 멈춘 채 남았다. BE 에는 첫 실패에서 바로 fail 을 보냈고, BE 의 failed 는 끝 상태라 나중에 복구가 성공하면 새 BE 회의를 만들고 옛 ID 를 `be.replaced` 에 남기는 우회를 탔다. 봇이 회의 중에 죽으면 채널은 아무 안내도 받지 못했다.
+
+제약은 둘이다. 서버가 한 대(t3.medium)라 봇과 워커를 다른 기계로 나눌 수 없다. wav 가 그 서버 디스크에 있어서 무엇을 먼저 처리할지는 파일이 있는 쪽이 정해야 하고, 그래서 매니페스트가 큐다.
+
+## 검토한 선택지
+
+어디서 돌릴지.
+
+- 지금처럼 사람의 `/recover` 만 둔다. 코드는 그대로지만 멈춘 회의를 아무도 모르면 영원히 남는다
+- 봇 프로세스 안의 주기 태스크. 녹음 중·후처리 중 여부를 봇 메모리(`_active`, `_processing`)로 바로 알고 결과를 원래 채널에 올릴 수 있다. 봇이 죽으면 루프도 같이 죽지만 다시 뜨면 첫 바퀴가 남은 것을 잇는다
+- 별도 워커 프로세스. 봇 재시작과 후처리가 갈린다. 대신 프로세스 사이 원자적 선점, 봇이 들고 있는지 판단할 다른 수단(매니페스트 심박이나 BE 상태), 워커가 채널에 결과를 올릴 경로가 새로 필요하다
+
+BE 상태를 어떻게 둘지.
+
+- 실패마다 fail 을 보내고 BE 에 failed → processing 전이를 만든다. BE 상태 머신을 바꿔야 하고, 재시도 중인 회의가 PM 화면에 실패로 보였다가 되살아난다
+- BE 상태 머신은 그대로 두고 fail 을 보내는 시점만 늦춘다. 재시도가 남은 동안 BE 회의는 processing 이고, failed 는 재시도가 끝났다는 뜻이 된다
+
+선점을 어디에 둘지.
+
+- 프로세스 메모리에만. 한 프로세스에서는 충분하지만 워커를 떼는 순간 다시 만들어야 한다
+- 매니페스트의 `claimed_by`, `claimed_at` 과 만료. 프로세스가 죽어도 표시가 남고, 만료가 있어 죽은 선점이 회의를 영원히 막지 않는다. 같은 호스트의 pid 가 살아 있는지 보는 방법도 검토했다. 재시작 뒤 죽은 선점을 바로 풀 수 있지만 1차에는 넣지 않았다(다시 볼 조건)
+
+## 결정
+
+봇 안의 주기 루프와 매니페스트 선점을 골랐고, BE 에는 포기할 때만 fail 을 보낸다.
+
+- 루프는 봇이 준비되면(`on_ready`) 뜨고 첫 바퀴를 바로 돈다. 재연결로 `on_ready` 가 다시 와도 하나만 돈다. Cog 를 떼면 `cog_unload` 가 취소하고, `bot.run()` 이 끝나면 py-cord 가 남은 태스크를 취소한다
+- 루프와 `/recover` 는 같은 한 바퀴(`_recover_pass`)를 쓴다. 대상은 바퀴를 시작할 때 봇이 들고 있는 회의를 빼고 정한다. 후처리 세마포어는 회의마다 잡고, 기다린 뒤에는 선점을 잡고 매니페스트를 다시 읽어 아직 할 일인지 본다(`recorder.recover_one`)
+- 선점은 복구만 쓴다. `/record` 와 `/stop` 뒤 처리는 봇이 든 회의라 선점 없이 돈다. 그래서 재시작 뒤 남는 선점은 복구 바퀴 도중 죽은 경우뿐이다. 같은 프로세스 안의 루프와 `/recover` 는 잠금과 메모리의 보유 목록으로 막고, 이 배제는 만료와 무관하다. 단계를 저장할 때마다 `claimed_at` 을 새로 적는다. 프로세스 사이의 원자성은 1차 범위 밖이다. 두 프로세스가 같은 순간에 읽고 쓰면 둘 다 잡을 수 있다
+- 단계를 닫지 못한 실행(failed 또는 partial)은 `recovery.attempts` 를 하나 올리고 다음 시도를 두 배씩 미룬다. 단계가 닫히면 0 으로 돌아간다. 상한에 닿으면 포기하고 그때 처음 BE 에 fail 을 보낸다. partial 을 실패로 세지 않으면 한 줄도 못 살린 partial 회의(#83 이 남긴 것)를 루프가 끝없이 다시 보낸다. 포기할 때 BE 가 꺼져 있어 fail 이 안 닿았으면 루프가 fail 만 다시 보낸다
+- 포기한 회의에 사람이 `/recover` 를 치면 한 번 더 돈다. BE 회의는 이미 failed 라 handoff 의 기존 우회가 새 BE 회의를 만든다. 그 한 번이 또 실패하면 곧바로 다시 포기하고 새 BE 회의도 failed 로 닫는다. BE 에 processing 으로 남은 회의는 언제나 루프가 아직 돌리는 회의다
+- 봇이 뜨기 전에 시작돼 recording 으로 남은 회의는 처리하기 전에 그 회의 채널에 재시작 안내를 한 번 올린다. 이어 녹음을 같은 회의로 묶는 것은 하지 않는다
+
+기본값과 근거.
+
+| 환경 변수 | 기본값 | 근거 |
+|---|---|---|
+| `MM_RECOVERY_INTERVAL_S` | 60초. 0 이면 루프를 끈다 | 한 바퀴의 대상 목록이 매니페스트 100개에 중앙값 2.4ms, 1000개에 32.1ms 였다(M4, 합성 매니페스트). 60초면 첫 백오프와 같은 간격이다 |
+| `MM_RECOVERY_BACKOFF_S` | 60초에서 두 배씩, 한 시간 상한 | 1, 2, 4, 8분 뒤에 다시 한다. 네 번째 재시도까지 약 15분이라 BE 재시작이나 API 일시 장애는 넘긴다. 그보다 긴 장애는 사람이 고친 뒤 `/recover` 를 친다 |
+| `MM_RECOVERY_MAX_ATTEMPTS` | 5 | `MM_PARTIAL_RETRY_MAX + 1`(기본 4) 이상이어야 재전사에서 살아나는 partial 회의가 포기 전에 빠진 구간을 둔 채 넘어간다. 비용 상한은 아래 |
+| `MM_RECOVERY_CLAIM_TTL_S` | 7200초 | 선점은 단계가 바뀔 때만 새로 적으므로 가장 긴 단계보다 길어야 한다. M4 로컬 전사가 60분 회의에 약 17분(0008 추정)이다. t3.medium 은 2 vCPU 라 더 길고 아직 안 쟀다(#40) |
+
+비용 상한(추정). 한 회의가 전사 단계에서 상한까지 가면 원격 전사를 최대 5번 보낸다. 60분 회의 한 번이 약 290원(0008 추정)이라 최대 약 1,450원이고, 자동 재시도로 늘어난 몫은 4번, 약 1,160원이다. 재전사는 실패한 구간만 보내므로 보통은 이보다 적다. 추출 LLM 한 번의 비용은 아직 안 쟀다.
+
+재현(대상 목록 시간, 무과금):
+
+```bash
+.venv/bin/python - <<'PY'
+import statistics, tempfile, time
+from pathlib import Path
+import numpy as np, soundfile as sf
+from capture import recorder as R
+rec = Path(tempfile.mkdtemp()) / "recordings"
+for i in range(100):
+    mid = f"77_{1000 + i}"
+    (rec / mid).mkdir(parents=True)
+    sf.write(str(rec / mid / f"1_{1000 + i}.wav"), np.zeros(1600, dtype=np.float32), 16000, subtype="PCM_16")
+    R.write_status(rec, mid, status=R.STATUS_SAVED, entries=[{"user_id": "1", "display_name": "a",
+                   "file": f"{mid}/1_{1000 + i}.wav", "duration_sec": 0.1}], guild="g", channel="c", library_version="x",
+                   started_at="2026-09-16T00:00:00Z", meeting_dir=mid, extra={"guild_id": "77"})
+claims, times = R.Claims(), []
+for _ in range(20):
+    t = time.perf_counter(); R.recovery_targets(rec, claims=claims); times.append((time.perf_counter() - t) * 1000)
+print(f"{statistics.median(times):.1f}ms")
+PY
+```
+
+## 다시 볼 조건
+
+- 워커를 별도 프로세스로 뗄 때. 선점을 원자적으로 바꾸고(파일 잠금이나 DB), 봇이 들고 있는지를 `_active` 대신 매니페스트 심박이나 BE 상태로 판단하고, 결과를 채널에 올릴 경로를 만든다
+- #40 에서 t3.medium 의 60분 회의 전사 시간을 재면 선점 만료를 그 값의 두 배 정도로 다시 정한다
+- 재시작 뒤 죽은 선점이 실제로 회의를 오래 막으면 같은 호스트 pid 확인이나 `/recover` 의 강제 해제를 넣는다
+- BE 에 failed → processing 전이가 생기면 포기한 회의의 수동 재시도가 새 BE 회의를 만들지 않아도 된다
