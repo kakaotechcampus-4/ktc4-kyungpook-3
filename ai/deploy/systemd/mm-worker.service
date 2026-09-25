@@ -1,0 +1,27 @@
+# 예시다. 배포는 팀이 정한다. MemoryMax 와 TimeoutStopSec 은 자리만 잡은 값이고 #40 의 서버 측정 뒤 정한다.
+# 워커는 끝나지 않은 회의를 전사, 할일 추출, BE 인계까지 돈다. 디스코드를 모르고 봇 토큰이 필요 없다.
+# 한 번에 한 회의만 처리한다. 봇보다 낮은 우선순위로 돌고, 메모리 상한을 넘으면 워커만 죽는다.
+# 죽어도 다시 뜨고, 새 워커가 매니페스트의 마지막 단계 다음부터 잇는다.
+
+[Unit]
+Description=MM 후처리 워커 (예시)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=mm
+WorkingDirectory=/opt/mm/ai
+Environment=MM_WORKER_INTERVAL_S=10
+ExecStart=/opt/mm/ai/.venv/bin/python -m capture.worker
+Restart=always
+RestartSec=5
+Nice=10
+# 로컬 large-v3-turbo 는 M4 에서 RSS 2.5~2.9GB 였다. 서버 값은 아직 안 쟀다
+MemoryMax=3G
+# SIGTERM 을 받으면 새 회의를 집지 않고 하던 회의를 마친다. 이보다 오래 걸리면 끊기고 다음 워커가 그 단계부터 잇는다
+KillSignal=SIGTERM
+TimeoutStopSec=1200
+
+[Install]
+WantedBy=multi-user.target
