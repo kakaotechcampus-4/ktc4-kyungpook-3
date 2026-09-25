@@ -1,0 +1,142 @@
+"""봇 안의 자동 복구(capture/discord_adapter.py). 루프와 /recover 가 같이 쓰는 한 바퀴, 재시작 안내, 선점 알림,
+세마포어, 루프 태스크의 시작과 정리. 가짜 디스코드 객체와 가짜 BE 를 쓴다. 모델은 안 쓴다."""
+
+import asyncio
+import json
+import threading
+from datetime import datetime, timedelta, timezone
+
+import pytest
+import soundfile as sf
+
+from capture import discord_adapter as A
+from capture import recorder as R
+from tests.capture.test_discord_adapter import GUILD_ID, TEXT_ID, _manifest, _run, _setup, _tone
+
+T0 = datetime(2026, 9, 26, 3, 0, 0, tzinfo=timezone.utc)
+
+
+@pytest.fixture
+def clock(monkeypatch):
+    now = {"t": T0}
+    monkeypatch.setattr(R, "utcnow", lambda: now["t"])
+    return now
+
+
+def _meeting(tmp_path, ts, *, status=R.STATUS_SAVED, started_at="2026-09-16T00:00:00Z", **extra):
+    """봇이 들고 있지 않은 회의를 디스크에 만든다. 화자 1 의 2초 트랙 하나."""
+    rec = tmp_path / "recordings"
+    mid = f"{GUILD_ID}_{ts}"
+    (rec / mid).mkdir(parents=True)
+    sf.write(str(rec / mid / f"1_{ts}.wav"), _tone(2000), 16_000, subtype="PCM_16")
+    entries = [] if status == R.STATUS_RECORDING else \
+        [{"user_id": "1", "display_name": "민수", "file": f"{mid}/1_{ts}.wav", "duration_sec": 2.0}]
+    path, _ = R.write_status(rec, mid, status=status, entries=entries, guild="g", channel="회의방", library_version="x",
+                             started_at=started_at, meeting_dir=mid,
+                             extra={"guild_id": str(GUILD_ID), "text_channel_id": str(TEXT_ID), "timezone": "Asia/Seoul",
+                                    **extra})
+    return path
+
+
+def _status(path):
+    return json.loads(path.read_text(encoding="utf-8"))["status"]
+
+
+def _texts(channel):
+    return [t for t, _ in channel.sent]
+
+
+async def test_recover_waiting_for_the_semaphore_leaves_a_recording_started_meanwhile_alone(tmp_path):
+    """#83 의 /recover 는 보유 집합을 세마포어 앞에서 만들고 목록은 세마포어 뒤에서 만들었다.
+    기다리는 사이 시작된 녹음은 집합에 없어 녹음 중인 wav 가 전사됐다. 목록을 바퀴 시작에 만들면 안 집는다."""
+    cog, guild, vc, channel, ctx = _setup(tmp_path)
+    old = _meeting(tmp_path, 500)                                   # 봇이 죽어 남은 회의
+    await cog._post_sem.acquire()                                   # 앞 회의의 후처리가 세마포어를 쥐고 있다
+    recover = asyncio.create_task(_run(A.RecordingCog.recover_cmd, cog, ctx))
+    await asyncio.sleep(0.05)                                       # /recover 가 세마포어 앞에서 기다린다
+    await _run(A.RecordingCog.record, cog, ctx)                     # 그 사이 새 녹음
+    rec = cog._active[GUILD_ID]
+    rec.sink.on_samples(1, _tone(2000), 0)
+    await asyncio.sleep(0.3)                                        # 트랙 파일이 생길 시간
+    cog._post_sem.release()
+    await asyncio.wait_for(recover, 20)
+    assert _manifest(tmp_path, rec)["status"] == "recording" and GUILD_ID in cog._active
+    assert _status(old) == "transcribed"
+    await _run(A.RecordingCog.stop, cog, ctx)
+    await asyncio.wait_for(rec.done.wait(), 20)
+
+
+async def test_a_loop_pass_touches_only_meetings_that_are_due(tmp_path, clock):
+    cog, guild, vc, channel, ctx = _setup(tmp_path)
+    due = _meeting(tmp_path, 500)
+    later = _meeting(tmp_path, 600, recovery={"attempts": 1, "next_at": "2026-09-26T03:01:00+00:00"})
+    gave_up = _meeting(tmp_path, 700, recovery={"attempts": 5, "gave_up_at": "2026-09-26T02:00:00+00:00"})
+    claimed = _meeting(tmp_path, 800, claimed_by="other:9:b", claimed_at="2026-09-26T02:59:00+00:00")
+    done = _meeting(tmp_path, 900)
+    m = json.loads(done.read_text(encoding="utf-8"))
+    m.update(status="handed_off", stages={"transcribed": "x", "extracted": "x", "handed_off": "x"})
+    R.save_manifest(done, m)
+    await _run(A.RecordingCog.record, cog, ctx)                     # 녹음 중인 회의
+    rec = cog._active[GUILD_ID]
+    rec.sink.on_samples(1, _tone(2000), 0)
+    await asyncio.sleep(0.3)
+    results, busy = await cog._recover_pass()
+    assert [r["session"] for r in results] == [f"{GUILD_ID}_500"]
+    assert [_status(p) for p in (due, later, gave_up, claimed, done)] == \
+        ["transcribed", "saved", "saved", "saved", "handed_off"]
+    assert _manifest(tmp_path, rec)["status"] == "recording"
+    await _run(A.RecordingCog.stop, cog, ctx)
+    await asyncio.wait_for(rec.done.wait(), 20)
+
+
+async def test_the_loop_processes_each_meeting_inside_the_post_processing_semaphore(tmp_path, monkeypatch):
+    cog, guild, vc, channel, ctx = _setup(tmp_path)
+    _meeting(tmp_path, 500)
+    _meeting(tmp_path, 600)
+    seen = []
+    real = R.process_session
+
+    def guarded(*args, **kwargs):
+        seen.append(cog._post_sem.locked())
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(R, "process_session", guarded)
+    await cog._recover_pass()
+    assert seen == [True, True] and cog._post_sem._value == 1
+
+
+async def test_recover_skips_a_meeting_the_loop_is_processing_and_says_so(tmp_path, monkeypatch):
+    cog, guild, vc, channel, ctx = _setup(tmp_path)
+    _meeting(tmp_path, 500)
+    started = asyncio.Event()
+    release = threading.Event()
+    real = R.process_session
+    calls = []
+    loop = asyncio.get_running_loop()
+
+    def slow(*args, **kwargs):
+        calls.append(args[1]["session"])
+        loop.call_soon_threadsafe(started.set)
+        release.wait(5)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(R, "process_session", slow)
+    loop_pass = asyncio.create_task(cog._recover_pass())            # 루프의 한 바퀴가 이 회의를 잡고 도는 중
+    await asyncio.wait_for(started.wait(), 5)
+    await _run(A.RecordingCog.recover_cmd, cog, ctx)
+    release.set()
+    await asyncio.wait_for(loop_pass, 20)
+    assert calls == [f"{GUILD_ID}_500"]
+    busy = [t for t in _texts(channel) if "자동 복구가 지금 처리 중" in t]
+    assert len(busy) == 1 and f"{GUILD_ID}_500" in busy[0]
+    assert not any(t.startswith("마저 처리할 녹음이 없습니다") for t in _texts(channel))
+
+
+async def test_recover_skips_a_meeting_another_process_claimed_and_says_until_when(tmp_path, clock):
+    cog, guild, vc, channel, ctx = _setup(tmp_path)
+    path = _meeting(tmp_path, 500, claimed_by="other:9:b", claimed_at="2026-09-26T02:50:00+00:00")
+    cog._claims.ttl_s = 7200                                        # 02:50 에 잡았으니 04:50 까지, 110분 남았다
+    await _run(A.RecordingCog.recover_cmd, cog, ctx)
+    texts = _texts(channel)
+    assert len(texts) == 1 and "other:9:b" in texts[0] and "110분" in texts[0]
+    assert _status(path) == "saved"

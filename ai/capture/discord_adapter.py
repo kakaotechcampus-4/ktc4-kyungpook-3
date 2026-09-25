@@ -44,6 +44,7 @@ from pathlib import Path
 import discord
 
 from capture.handoff import from_env as handoff_from_env
+from capture.recorder import Claims, recover_one, recovery_targets
 from capture.recorder import (PARTIAL_RETRY_MAX, STATUS_EXTRACTED, STATUS_FAILED, STATUS_HANDED_OFF, STATUS_PARTIAL,
                               STATUS_RECORDING, STATUS_SAVED, STATUS_TRANSCRIBED, NullSession, backend_from_env,
                               build_extractor, meeting_title, process_session, recover, write_status)
@@ -134,6 +135,8 @@ class RecordingCog(discord.Cog):
         self._processing: dict[str, _Recording] = {}   # 회의 ID → 후처리 중
         self._post_sem = asyncio.Semaphore(max(1, int(os.environ.get("MM_MAX_CONCURRENT_MEETINGS", "1"))))
         self._tasks: set[asyncio.Task] = set()
+        # 자동 복구. 루프와 /recover 가 같은 선점과 같은 한 바퀴(_recover_pass)를 쓴다
+        self._claims = Claims()
 
     # ------------------------------------------------------------------ 명령
     @discord.slash_command(name="join", description="봇이 현재 음성채널에 입장합니다")
@@ -250,26 +253,12 @@ class RecordingCog(discord.Cog):
     @discord.slash_command(name="recover", description="끝까지 처리되지 않은 녹음을 마저 처리합니다")
     async def recover_cmd(self, ctx: discord.ApplicationContext) -> None:
         await ctx.respond("이 서버의 남은 녹음을 찾아 마지막 단계 다음부터 마저 처리합니다...")
-        backend, model_name, workers = self._stt_factory()
-        # 지금 녹음 중이거나 후처리 중인 회의는 봇이 들고 있다. 그 wav 를 집어 가면 녹음이 끊긴 채 인계된다
-        holding = {r.meeting_id for r in self._active.values()} | set(self._processing)
-        async with self._post_sem:
-            results = await asyncio.to_thread(recover, self.recordings_dir, backend=backend, model_name=model_name,
-                                              workers=workers, gate=self._gate_factory(),
-                                              transcripts_dir=self.transcripts_dir,
-                                              extractor=self._extractor_factory(), handoff=self._handoff_factory(),
-                                              guild_id=ctx.guild.id, name_of=_name_resolver(ctx.guild),
-                                              exclude=holding)
-        shown = 0
-        for r in results:
-            if not r["ran"] and r["status"] != STATUS_FAILED:
-                continue   # 설정이 없어 그 자리에 그대로인 회의는 매번 알리지 않는다
-            shown += 1
-            channel = self._channel_for(r) or ctx.channel   # 결과는 그 회의를 시작한 채널에
-            await self._notify(channel, f"세션 `{r['session']}`")
-            await self._report(channel, r["session"], r)
-        if shown == 0:
-            waiting = len(results)
+        # 자동 복구 루프와 같은 한 바퀴다. 다음 시도 시각을 기다리지 않고 포기한 회의도 한 번 더 돌린다
+        results, busy = await self._recover_pass(guild_id=ctx.guild.id, manual=True, fallback=ctx.channel)
+        for b in busy:
+            await self._notify(ctx.channel, self._busy_text(b))
+        if not busy and not any(self._should_post(r, manual=True) for r in results):
+            waiting = len(results)   # 설정이 없어 그 자리에 그대로인 회의는 매번 알리지 않는다
             await self._notify(ctx.channel, "마저 처리할 녹음이 없습니다." +
                                (f" 설정이 없어 멈춘 회의 {waiting}개는 그대로입니다." if waiting else ""))
 
@@ -294,6 +283,68 @@ class RecordingCog(discord.Cog):
             await self._notify(rec.text_channel, f"{member.mention} {NOTICE}")
         elif left:
             rec.sink.drain_speaker(member.id)
+
+    # ------------------------------------------------------------------ 자동 복구
+    async def _recover_pass(self, *, guild_id=None, manual: bool = False, fallback=None) -> tuple[list[dict], list[dict]]:
+        """루프와 /recover 가 같이 쓰는 한 바퀴. (돌린 회의의 결과, 남이 잡고 있어 건너뛴 회의).
+
+        대상은 바퀴를 시작할 때 정한다. 봇이 들고 있는 회의(녹음 중·후처리 중)는 이 순간의 집합으로 빼고, 여기서
+        고른 회의를 뒤에 봇이 다시 들 일은 없다(새 녹음은 새 회의 ID 다). 후처리 세마포어는 회의마다 잡는다.
+        기다린 뒤에는 recover_one 이 선점을 잡고 매니페스트를 다시 읽어 아직 할 일인지 본다. 결과는 그 회의를
+        시작한 채널에 올린다. 루프(manual=False)는 단계가 움직였거나 포기했을 때만 올리고 예약된 재시도의 실패는
+        로그로만 남긴다.
+        """
+        due, busy = recovery_targets(self.recordings_dir, claims=self._claims, guild_id=guild_id,
+                                     exclude=self._holding(), manual=manual)
+        results = []
+        for path, m in due:
+            backend, model_name, workers = self._stt_factory()
+            async with self._post_sem:
+                r = await asyncio.to_thread(recover_one, self.recordings_dir, path, claims=self._claims, manual=manual,
+                                            backend=backend, model_name=model_name, workers=workers,
+                                            gate=self._gate_factory(), transcripts_dir=self.transcripts_dir,
+                                            extractor=self._extractor_factory(), handoff=self._handoff_factory(),
+                                            name_of=_name_resolver(self._guild_of(m)))
+            if r is None:
+                continue
+            if r.get("busy"):
+                busy.append(r)
+                continue
+            results.append(r)
+            if self._should_post(r, manual=manual):
+                channel = self._channel_for(r) or fallback
+                await self._notify(channel, f"세션 `{r['session']}`")
+                await self._report(channel, r["session"], r)
+            elif r["status"] in (STATUS_FAILED, STATUS_PARTIAL):
+                print(f"[recovery] 세션 {r['session']} {r['status']}. 실패 {r.get('attempts')}회, "
+                      f"{r.get('retry_in_s')}초 뒤 다시 시도", flush=True)
+        return results, busy
+
+    def _holding(self) -> set[str]:
+        """봇이 지금 들고 있는 회의 ID. 녹음 중(_active)과 후처리 중(_processing). 그 wav 를 복구가 집으면 안 된다."""
+        return {r.meeting_id for r in self._active.values()} | set(self._processing)
+
+    def _guild_of(self, manifest: dict):
+        try:
+            return self.bot.get_guild(int(manifest.get("guild_id")))
+        except (TypeError, ValueError, AttributeError):
+            return None
+
+    @staticmethod
+    def _should_post(result: dict, *, manual: bool) -> bool:
+        """채널에 올릴 결과인가. 설정이 없어 그대로인 회의는 올리지 않는다."""
+        if manual:
+            return bool(result["ran"]) or result["status"] == STATUS_FAILED
+        moved = any(s != "retried" for s in result["ran"])     # 재전사만 하고 여전히 partial 이면 움직인 것이 아니다
+        return moved or bool(result.get("gave_up"))
+
+    @staticmethod
+    def _busy_text(b: dict) -> str:
+        if b.get("mine"):
+            return f"ℹ️ 세션 `{b['session']}`: 자동 복구가 지금 처리 중이라 건너뜁니다. 결과는 그 회의 채널에 올라옵니다."
+        mins = max(1, int(((b.get("expires_in_s") or 0) + 59) // 60))
+        return (f"ℹ️ 세션 `{b['session']}`: 다른 프로세스(`{b.get('claimed_by')}`)가 잡고 있어 건너뜁니다. "
+                f"선점은 약 {mins}분 뒤 풀립니다.")
 
     # ------------------------------------------------------------------ 종료
     def _on_recording_done(self, sink, ctx: discord.ApplicationContext) -> None:
