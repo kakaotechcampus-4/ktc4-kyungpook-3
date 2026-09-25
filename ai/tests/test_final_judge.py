@@ -79,6 +79,17 @@ def test_llm_returns_none_when_update_missing_valid_index():
     assert judge_llm(ji, fake) is None
 
 
+def test_llm_returns_none_when_index_is_bool():
+    # bool은 int의 서브클래스라 isinstance(idx, int) 검사만으로는 True/False가 0/1 후보로
+    # 잘못 통과할 수 있다 — type()으로 엄격히 걸러지는지 확인한다.
+    ji = JudgeInput(source="meeting", text="x", candidates=[_candidate(), _candidate()])
+    fake = FakeLLM(responses=[{
+        "is_meaningful": True, "category": "schedule", "is_new": False,
+        "matched_candidate_index": True, "status": None, "evidence": "",
+    }])
+    assert judge_llm(ji, fake) is None
+
+
 def test_llm_returns_none_when_call_fails():
     ji = JudgeInput(source="meeting", text="x", candidates=[])
     assert judge_llm(ji, NullLLM()) is None

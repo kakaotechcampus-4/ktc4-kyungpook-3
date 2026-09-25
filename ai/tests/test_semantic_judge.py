@@ -183,6 +183,17 @@ def test_llm_path_ignores_out_of_range_indices():
     assert extract_findings_llm(t, fake) == []
 
 
+def test_llm_path_ignores_bool_indices():
+    # bool은 int의 서브클래스라 isinstance(i, int) 검사만으로는 True/False가 0/1번 문장으로
+    # 잘못 통과할 수 있다 — type()으로 엄격히 걸러지는지 확인한다.
+    t = _transcript(
+        TranscriptSegment(speaker="a", start=0.0, end=1.0, text="안녕하세요.", seq=0),
+        TranscriptSegment(speaker="b", start=1.0, end=2.0, text="반갑습니다.", seq=1),
+    )
+    fake = FakeLLM(responses=[{"findings": [{"indices": [True, False], "reason": "타입 오염"}]}])
+    assert extract_findings_llm(t, fake) == []
+
+
 def test_llm_path_returns_none_when_call_fails():
     t = _transcript(TranscriptSegment(speaker="a", start=0.0, end=1.0, text="안녕하세요.", seq=0))
     assert extract_findings_llm(t, NullLLM()) is None

@@ -130,11 +130,12 @@ def _valid_indices(item: dict, n: int) -> list[int]:
     자체가 사라진다. 구형 단일 index 응답도 그대로 받아준다.
     """
     raw = item.get("indices", item.get("index"))
-    if isinstance(raw, int):
+    # bool은 int의 서브클래스라 isinstance(True, int)가 True다 — type()으로 엄격히 검사한다.
+    if type(raw) is int:
         raw = [raw]
     if not isinstance(raw, list):
         return []
-    return sorted({i for i in raw if isinstance(i, int) and 0 <= i < n})
+    return sorted({i for i in raw if type(i) is int and 0 <= i < n})
 
 
 def _luna_user_prompt(numbered: str) -> str:
