@@ -1,12 +1,14 @@
-"""디스코드 슬래시 명령과 실시간 전사 파이프라인을 잇는다.
+"""디스코드 슬래시 명령과 실시간 전사 파이프라인을 잇는다. 비교 실행용이고 운영 봇에는 붙이지 않는다.
 
 "Discord" 라는 이름은 ai/ 안에서 capture/ 밖으로 나가지 않는다 (ai/CLAUDE.md).
 봇 프로세스는 여기서 띄우지 않는다. RealtimeCog 와 required_intents() 만 export 하고
-backend/bot/main.py 또는 capture/run_realtime.py 가 add_cog 로 붙인다.
+capture/realtime/run.py 가 add_cog 로 붙인다. 이 폴더를 남긴 이유와 유지 범위는
+capture/realtime/__init__.py 에 있다.
 
-capture/discord_adapter.py 의 RecordingCog 와 나란히 놓고 고르라고 만든 두 번째 구현이다.
-그쪽은 화자별 wav 를 받아 두고 나중에 오프라인으로 전사하고, 이쪽은 회의 중에 발화마다
-전사해 채널에 올린다. 클래스 이름과 명령 이름이 겹치지 않아 한 봇에 둘 다 붙일 수 있다.
+운영 Cog 는 capture/discord_adapter.py 의 RecordingCog 하나다. 그쪽은 화자별 wav 를 받아 두고 회의가
+끝난 뒤 배치로 전사하고, 이쪽은 회의 중에 발화마다 전사해 채널에 올린다. 음성 연결(SafeVoiceClient),
+수신 sink(StreamingSink), 화자별 트랙(TrackPool)은 두 Cog 가 같은 공용 모듈을 쓴다. 클래스 이름과 명령
+이름이 겹치지 않아 비교할 때는 한 봇에 둘 다 붙일 수 있다.
 
   /live       명령을 친 사람의 음성 채널에 들어가 전사를 시작한다. 줄은 명령을 친 채널에 올라간다
   /live-stop  전사를 끝내고 회의록을 낸 뒤 음성 채널에서 나간다
@@ -23,8 +25,8 @@ capture/discord_adapter.py 의 RecordingCog 와 나란히 놓고 고르라고 �
 얕게 훑어서 하위 디렉토리를 보지 않는다:  python -m stt.transcribe --audio recordings/<meeting_id>
 
 on_session_saved(payload, jsonl_path) 는 회의록 저장이 끝난 뒤 불린다. payload 는 meeting_id ·
-guild_id · session · speakers 와 회의록 경로(markdown, jsonl) 를 담는다. BE 는 여기서 Phase 1/2
-호출과 approval_request 생성을 이어 붙이면 된다 — 전사는 이미 끝나 있다.
+guild_id · session · speakers 와 회의록 경로(markdown, jsonl) 를 담는다. 비교 실행기(run.py)는 경로를
+찍기만 한다. 추출과 BE 인계는 운영 경로(capture/recorder.py, capture/handoff.py)에만 있다.
 
 latency.jsonl 은 발화별 지연이다 = {"seq", "speaker", "start", "end", "queue_s",
 "transcribe_s", "publish_s"}. seq 로 transcript.jsonl 과 이어진다. queue_s 는 확정된 발화가
