@@ -629,7 +629,8 @@ def interrupted_meetings(recordings_dir: Path, *, since: str, guild_id=None, exc
     """재시작 안내를 올릴 회의. since(이 봇이 뜬 시각) 전에 시작돼 녹음 중에 끊겼고 끊긴 지 얼마 안 된 회의.
 
     잠금이 풀린 recording 으로 남은 회의와, 워커가 먼저 집어 트랙을 되찾은(recovered_tracks) 회의를 다 본다.
-    봇이 다시 뜨는 몇 초 사이에 워커가 먼저 처리를 시작하는 일이 흔하다. 서버가 적힌 것만 본다. 읽기만 한다.
+    봇이 다시 뜨는 몇 초 사이에 워커가 먼저 처리를 시작하는 일이 흔하다. 서버가 적힌 것만 본다. 매니페스트는
+    쓰지 않는다(잠금을 확인하느라 잠금 파일은 생길 수 있다).
     """
     skip = set(exclude or ())
     out = []
