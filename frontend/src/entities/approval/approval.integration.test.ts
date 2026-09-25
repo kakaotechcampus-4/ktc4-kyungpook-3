@@ -98,6 +98,95 @@ it('refuses an approval whose payload carries an invalid status or progress', as
   expect((await fetchDto<ListDto<TaskDto>>('/tasks?workspace_id=ws_01')).total).toBe(10)
 })
 
+// 백엔드 _apply_approval 은 Task 를 만들기 전에 _get_linkable_extraction_item 으로
+// extraction_item_id 의 워크스페이스(추출 → 회의)와 approval_id 를 확인한다 (api/approvals.py).
+// 거절되면 커밋되지 않으므로 Task · 승인 · 추출 항목이 모두 그대로다
+describe('task_create approval linking an extraction item', () => {
+  const approve = () =>
+    fetchDto<ApprovalDto>(
+      '/approvals/ap_01',
+      jsonRequest('PATCH', { status: 'approved', resolved_by: 'mb_01' }),
+    )
+  const allItems = () => db.extractions.flatMap(({ items }) => items)
+  const snapshot = () => ({
+    taskCount: db.tasks.length,
+    itemTaskIds: allItems().map(({ item_id, task_id }) => [item_id, task_id]),
+    approval: db.approvals
+      .filter(({ approval_id }) => approval_id === 'ap_01')
+      .map(({ status, related_task_id }) => ({ status, related_task_id })),
+  })
+  // ws_02 회의에서 나온, ap_01 에 연결된 추출 항목을 만든다
+  const addForeignWorkspaceItem = () => {
+    db.meetings.push({
+      meeting_id: 'mt_90',
+      workspace_id: 'ws_02',
+      title: '다른 워크스페이스 회의',
+      status: 'done',
+      started_at: '2026-09-15T05:00:00Z',
+      ended_at: '2026-09-15T05:30:00Z',
+      extraction_id: 'ex_90',
+      failed_stage: null,
+    })
+    const [source] = allItems()
+    db.extractions.push({
+      extraction_id: 'ex_90',
+      meeting_id: 'mt_90',
+      items: [
+        { ...structuredClone(source), item_id: 'it_90', task_id: null, approval_id: 'ap_01' },
+      ],
+    })
+    db.approvals[0].payload = { ...db.approvals[0].payload, extraction_item_id: 'it_90' }
+  }
+
+  it('refuses an item that belongs to another approval and changes nothing', async () => {
+    db.approvals[0].payload = { ...db.approvals[0].payload, extraction_item_id: 'it_05' }
+    const before = snapshot()
+    await expect(approve()).rejects.toMatchObject({
+      code: 'INVALID_REQUEST',
+      status: 400,
+      message: '추출 항목이 이 승인 요청에 연결되어 있지 않습니다.',
+    })
+    expect(snapshot()).toEqual(before)
+    expect(before.approval).toEqual([{ status: 'pending', related_task_id: null }])
+  })
+
+  it('refuses an item from another workspace and changes nothing', async () => {
+    addForeignWorkspaceItem()
+    const before = snapshot()
+    await expect(approve()).rejects.toMatchObject({
+      code: 'WORKSPACE_MISMATCH',
+      status: 400,
+      message: '승인 요청의 워크스페이스와 추출 항목의 워크스페이스가 다릅니다.',
+    })
+    expect(snapshot()).toEqual(before)
+    expect(before.approval).toEqual([{ status: 'pending', related_task_id: null }])
+  })
+
+  it('approves without linking when the item does not exist', async () => {
+    db.approvals[0].payload = { ...db.approvals[0].payload, extraction_item_id: 'it_99' }
+    const before = snapshot()
+    expect(await approve()).toMatchObject({ status: 'approved', related_task_id: 'tk_90' })
+    expect(db.tasks).toHaveLength(before.taskCount + 1)
+    expect(snapshot().itemTaskIds).toEqual(before.itemTaskIds)
+  })
+
+  it('checks the item before validating the task fields', async () => {
+    addForeignWorkspaceItem()
+    db.approvals[0].payload = { ...db.approvals[0].payload, task_title: '', title: '' }
+    await expect(approve()).rejects.toMatchObject({ code: 'WORKSPACE_MISMATCH', status: 400 })
+  })
+
+  it('records the new task only on the linked item', async () => {
+    const before = snapshot()
+    await approve()
+    expect(snapshot().itemTaskIds).toEqual(
+      before.itemTaskIds.map(([itemId, taskId]) => [itemId, itemId === 'it_04' ? 'tk_90' : taskId]),
+    )
+    // approval_id 는 비우지 않는다 (계약 §3.1, §4.0-②-12)
+    expect(allItems().find(({ item_id }) => item_id === 'it_04')?.approval_id).toBe('ap_01')
+  })
+})
+
 it('applies task-update payload instead of creating another task', async () => {
   db.approvals[0].type = 'task_update'
   db.approvals[0].related_task_id = 'tk_01'
