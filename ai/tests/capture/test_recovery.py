@@ -308,3 +308,14 @@ def test_a_failed_hand_retry_of_a_given_up_meeting_closes_the_new_be_meeting_too
     assert results[0]["status"] == "failed" and results[0]["gave_up"] is True
     assert {mid: m["status"] for mid, m in fake.meetings.items()} == {"m1": "failed", "m2": "failed"}
     assert _saved(path)["be"]["replaced"] == ["m1"]
+
+
+def test_a_failure_from_before_the_loop_is_left_to_a_person(tmp_path, clock):
+    """recovery 가 없는 failed 매니페스트는 이 루프가 생기기 전의 실패다. 그때 BE 에 바로 fail 을 보냈으니
+    포기한 회의로 본다. 루프가 쓸어 가면 BE 에 새 회의가 줄줄이 생기고 원격 전사가 다시 과금된다."""
+    rec, path, manifest = _session(tmp_path)
+    manifest.update(status="failed", failed_stage="stt", error="RuntimeError: 죽음", be={"meeting_id": "m1", "status": "failed"})
+    R.save_manifest(path, manifest)
+    claims = R.Claims(owner="host:1:a")
+    assert R.recovery_targets(rec, claims=claims)[0] == []
+    assert _names(R.recovery_targets(rec, claims=claims, manual=True)[0]) == ["77_500"]

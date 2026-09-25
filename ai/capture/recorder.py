@@ -546,7 +546,13 @@ def interrupted_recording(manifest: dict, *, since: str) -> bool:
 
 
 def _due(manifest: dict, now: datetime) -> bool:
-    """루프가 이번 바퀴에 돌릴 때인가. 다음 시도 시각 전이면 아니다. 포기한 회의는 BE 에 fail 이 안 닿았을 때만이다."""
+    """루프가 이번 바퀴에 돌릴 때인가. 다음 시도 시각 전이면 아니다. 포기한 회의는 BE 에 fail 이 안 닿았을 때만이다.
+
+    recovery 가 없는 failed 는 자동 복구가 생기기 전의 실패다. 그때 BE 에 바로 fail 을 보냈으니 포기한 회의처럼
+    두고 사람이 /recover 로 돌린다. 루프가 쓸어 가면 BE 에 새 회의가 줄줄이 생기고 원격 전사가 다시 과금된다.
+    """
+    if "recovery" not in manifest and manifest.get("status") == STATUS_FAILED:
+        return False
     state = manifest.get("recovery") or {}
     if state.get("gave_up_at"):
         be = manifest.get("be") or {}
