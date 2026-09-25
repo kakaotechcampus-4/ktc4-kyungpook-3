@@ -123,6 +123,27 @@ def test_http_error_is_classified(db, status, retryable, uncertain):
     assert exc_info.value.outcome_uncertain is uncertain
 
 
+def test_build_properties_sends_explicit_clear_values_when_fields_are_emptied(db):
+    integration, task = _make_task(db)
+
+    properties = notion.build_properties(db, task)
+    assert properties[notion.PROPERTY_NAMES["assignee"]] == {
+        "rich_text": [{"text": {"content": "Seoyeon"}}]
+    }
+    assert properties[notion.PROPERTY_NAMES["progress"]] == {"number": 30}
+
+    task.assignee_member_id = None
+    task.due_date = None
+    task.progress = None
+    task.blocker = None
+
+    cleared = notion.build_properties(db, task)
+    assert cleared[notion.PROPERTY_NAMES["assignee"]] == {"rich_text": []}
+    assert cleared[notion.PROPERTY_NAMES["due_date"]] == {"date": None}
+    assert cleared[notion.PROPERTY_NAMES["progress"]] == {"number": None}
+    assert cleared[notion.PROPERTY_NAMES["blocker"]] == {"rich_text": []}
+
+
 def test_read_timeout_is_uncertain_but_connect_error_is_not(db):
     integration, task = _make_task(db)
 

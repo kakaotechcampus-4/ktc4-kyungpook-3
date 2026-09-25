@@ -86,18 +86,16 @@ def build_properties(db: Session, task: Task) -> dict[str, object]:
         PROPERTY_NAMES["status"]: {"select": {"name": task.status}},
         PROPERTY_NAMES["task_id"]: {"rich_text": [{"text": {"content": task.task_id}}]},
     }
-    if assignee_name:
-        properties[PROPERTY_NAMES["assignee"]] = {
-            "rich_text": [{"text": {"content": assignee_name}}]
-        }
-    if task.due_date:
-        properties[PROPERTY_NAMES["due_date"]] = {"date": {"start": task.due_date.isoformat()}}
-    if task.progress is not None:
-        properties[PROPERTY_NAMES["progress"]] = {"number": task.progress}
-    if task.blocker:
-        properties[PROPERTY_NAMES["blocker"]] = {
-            "rich_text": [{"text": {"content": task.blocker}}]
-        }
+    properties[PROPERTY_NAMES["assignee"]] = {
+        "rich_text": [{"text": {"content": assignee_name}}] if assignee_name else []
+    }
+    properties[PROPERTY_NAMES["due_date"]] = {
+        "date": {"start": task.due_date.isoformat()} if task.due_date else None
+    }
+    properties[PROPERTY_NAMES["progress"]] = {"number": task.progress}
+    properties[PROPERTY_NAMES["blocker"]] = {
+        "rich_text": [{"text": {"content": task.blocker}}] if task.blocker else []
+    }
     return properties
 
 
