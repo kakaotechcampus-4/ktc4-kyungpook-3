@@ -16,28 +16,69 @@ def test_split_sentences_drops_delimiters_and_empties():
     assert split_sentences("안녕하세요. 반갑습니다!  ") == ["안녕하세요.", "반갑습니다!"]
 
 
-def test_golden_set_labels_match_split_sentences():
-    """골든셋 expected[].text 가 실제 문장 분리 결과와 1:1 로 맞는지 검사한다.
+def test_golden_set_labels_cover_every_sentence():
+    """골든셋 expected[].text 와 실제 문장 분리 결과가 **양방향으로** 1:1 인지 검사한다.
 
-    안 맞으면 그 라벨은 어떤 findings 와도 매칭되지 않아 **조용히** 늘 같은 답으로 채점된다
-    (should_flag=false 면 공짜 정답, true 면 영원한 오답). 실제로 세 건이 그 상태였다:
-    한 발화가 문장 둘로 쪼개지는 경우("다들 오셨나요? 시작하겠습니다.")와 말줄임표가
-    종결부호로 잘리는 경우("음... 그건~")다. judge/golden_set/README.md 도 같은 실수를
-    한 번 겪었다고 적어 두었는데, 사람이 눈으로 지키는 대신 여기서 막는다.
+    라벨 → 문장 방향이 깨지면 그 라벨은 어떤 findings 와도 매칭되지 않아 **조용히** 늘 같은
+    답으로 채점된다 (should_flag=false 면 공짜 정답, true 면 영원한 오답). 실제로 세 건이 그
+    상태였다: 한 발화가 문장 둘로 쪼개지는 경우("다들 오셨나요? 시작하겠습니다.")와
+    말줄임표가 종결부호로 잘리는 경우("음... 그건~")다.
+
+    문장 → 라벨 방향이 깨지면 그 문장을 후보로 내도 채점기가 볼 대상이 없어 **오탐이 사라진다.**
+    지금은 전 케이스가 100% 덮여 있지만 그걸 지키는 장치가 없어서, 라벨을 빠뜨린 케이스를
+    새로 추가하면 그 문장의 오탐이 조용히 점수에서 빠진다. 채점기(eval_golden_set._score)도
+    라벨 밖 출력을 오답으로 세지만, 애초에 라벨이 빠지지 않게 하는 게 먼저다.
+
+    judge/golden_set/README.md 도 같은 실수를 한 번 겪었다고 적어 두었는데, 사람이 눈으로
+    지키는 대신 여기서 막는다.
     """
     import json
     from pathlib import Path
 
     golden_dir = Path(__file__).resolve().parent.parent / "judge" / "golden_set"
-    mismatched: list[str] = []
+    problems: list[str] = []
     for path in sorted(golden_dir.rglob("case_*.json")):
         case = json.loads(path.read_text(encoding="utf-8"))
         actual = [s for turn in case["turns"] for s in split_sentences(turn["text"])]
+        labeled = {e["text"] for e in case["expected"]}
+        where = f"{path.parent.name}/{case['case_id']}"
         for exp in case["expected"]:
             if exp["text"] not in actual:
-                mismatched.append(f"{path.parent.name}/{case['case_id']}: {exp['text']!r}")
+                problems.append(f"{where}: 라벨이 실제 문장에 없음 — {exp['text']!r}")
+        for sentence in actual:
+            if sentence not in labeled:
+                problems.append(f"{where}: 문장에 라벨이 없음 — {sentence!r}")
 
-    assert not mismatched, "실제 문장과 안 맞는 라벨:\n  " + "\n  ".join(mismatched)
+    assert not problems, "골든셋 라벨과 문장이 어긋남:\n  " + "\n  ".join(problems)
+
+
+def test_scorer_counts_unlabeled_and_duplicate_outputs():
+    """채점기가 라벨 밖 출력과 중복 출력을 오답으로 세는지.
+
+    라벨만 순회하던 시절엔 둘 다 점수에 안 잡혔다 — 골든셋에 없는 문장을 후보로 내도,
+    한 결정을 두 건으로 쪼개 내도 만점이었다. 특히 중복은 indices 도입으로 고치려던
+    문제 그 자체라, 채점기가 못 보면 고쳤는지 확인할 방법이 없다.
+    """
+    from judge.eval_golden_set import _score
+
+    case = {"expected": [
+        {"text": "내일까지 끝내기로 했습니다.", "should_flag": True},
+        {"text": "점심 뭐 드세요?", "should_flag": False},
+    ]}
+
+    correct, total, mistakes = _score(case, ["내일까지 끝내기로 했습니다."])
+    assert (correct, total) == (2, 2)
+    assert mistakes == []
+
+    # 라벨에 없는 문장을 후보로 냄 → 분모만 늘어 점수가 깎인다
+    correct, total, mistakes = _score(case, ["내일까지 끝내기로 했습니다.", "라벨에 없는 문장입니다."])
+    assert (correct, total) == (2, 3)
+    assert any("라벨에 없는" in m for m in mistakes)
+
+    # 같은 앵커로 두 건 → 중복 1건이 오답
+    correct, total, mistakes = _score(case, ["내일까지 끝내기로 했습니다."] * 2)
+    assert (correct, total) == (2, 3)
+    assert any("같은 앵커로 2건" in m for m in mistakes)
 
 
 # ── extract_findings_rules (정규식 폴백) ──────────────────────────────────────

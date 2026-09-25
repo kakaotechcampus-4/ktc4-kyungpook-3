@@ -14,6 +14,7 @@ agreement 등)에서 Luna가 실제로 더 나은지 확인하는 게 이 스크
 from __future__ import annotations
 
 import json
+from collections import Counter
 from pathlib import Path
 
 from judge.semantic_judge import extract_findings_llm, extract_findings_rules
@@ -43,19 +44,34 @@ def _build_transcript(case: dict) -> Transcript:
     return Transcript(segments=segments, source="meeting")
 
 
-def _flagged_texts(findings: list[JudgeFinding]) -> set[str]:
-    # evidence로 매칭한다 — text는 LLM 경로에서 문맥 반영 요약으로 바뀔 수 있어서
-    # 골든셋의 원문 기준(expected[].text)과 안정적으로 대응하는 건 evidence 쪽이다.
-    # evidence 는 근거 문장들의 리스트이고, 그중 **마지막(앵커)만** 후보로 센다.
-    # should_flag 는 "이 발화 자체가 후보인가"를 묻는데, 앞줄들은 후보가 아니라 그 결정을
-    # 뒷받침하려고 딸려온 근거이기 때문이다(예: "~게 어때요?" + "네 그러시죠" 가 한 건으로
-    # 묶이면 후보는 뒤쪽 합의 발화다). 전부 세면 제안·질문이 통째로 오탐으로 잡혀
-    # 실제보다 잡음이 많아 보인다.
-    return {f.evidence[-1] for f in findings if f.evidence}
+def _anchors(findings: list[JudgeFinding]) -> list[str]:
+    """findings 하나당 앵커(근거의 마지막 문장) 하나를 순서대로.
+
+    evidence로 매칭한다 — text는 LLM 경로에서 문맥 반영 요약으로 바뀔 수 있어서
+    골든셋의 원문 기준(expected[].text)과 안정적으로 대응하는 건 evidence 쪽이다.
+    evidence 는 근거 문장들의 리스트이고, 그중 **마지막(앵커)만** 후보로 센다.
+    should_flag 는 "이 발화 자체가 후보인가"를 묻는데, 앞줄들은 후보가 아니라 그 결정을
+    뒷받침하려고 딸려온 근거이기 때문이다(예: "~게 어때요?" + "네 그러시죠" 가 한 건으로
+    묶이면 후보는 뒤쪽 합의 발화다). 전부 세면 제안·질문이 통째로 오탐으로 잡혀
+    실제보다 잡음이 많아 보인다.
+
+    set 이 아니라 list 인 이유는 **중복을 세기 위해서**다. 같은 앵커로 findings 가 두 건
+    나오는 건 한 결정이 쪼개졌다는 뜻이고, 그건 indices 도입으로 고치려던 문제 그 자체라
+    채점기가 못 보면 고쳤는지 확인할 방법이 없다.
+    """
+    return [f.evidence[-1] for f in findings if f.evidence]
 
 
-def _score(case: dict, flagged: set[str]) -> tuple[int, int, list[str]]:
+def _score(case: dict, anchors: list[str]) -> tuple[int, int, list[str]]:
+    """라벨마다 맞았는지 세고, **라벨 밖 출력과 중복 출력도 오답으로** 센다.
+
+    라벨만 순회하면 출력 쪽은 아무도 안 본다 — 골든셋에 라벨이 없는 문장을 후보로 내거나
+    같은 결정을 두 건으로 쪼개 내도 점수가 그대로다. 둘 다 분모에 더해 점수가 실제로 깎이게 한다.
+    """
+    labeled = {e["text"] for e in case["expected"]}
+    flagged = set(anchors)
     correct, total, mistakes = 0, 0, []
+
     for exp in case["expected"]:
         total += 1
         was_flagged = exp["text"] in flagged
@@ -65,6 +81,16 @@ def _score(case: dict, flagged: set[str]) -> tuple[int, int, list[str]]:
             mistakes.append(
                 f'"{exp["text"]}" — 기대={exp["should_flag"]} 실제={was_flagged} ({exp.get("note", "")})'
             )
+
+    for text in sorted(flagged - labeled):
+        total += 1
+        mistakes.append(f'"{text}" — 골든셋 라벨에 없는 문장을 후보로 냄')
+
+    for text, n in sorted(Counter(anchors).items()):
+        if n > 1:
+            total += n - 1
+            mistakes.append(f'"{text}" — 같은 앵커로 {n}건 (한 결정이 쪼개졌을 수 있음)')
+
     return correct, total, mistakes
 
 
@@ -82,9 +108,9 @@ def main() -> None:
         transcript = _build_transcript(case)
         counts = case.get("counts_toward_pass_rate", True)
 
-        rules_flagged = _flagged_texts(extract_findings_rules(transcript))
+        rules_flagged = _anchors(extract_findings_rules(transcript))
         llm_result = extract_findings_llm(transcript, client)
-        llm_flagged = _flagged_texts(llm_result) if llm_result is not None else set()
+        llm_flagged = _anchors(llm_result) if llm_result is not None else []
 
         r_correct, r_total, r_mistakes = _score(case, rules_flagged)
         l_correct, l_total, l_mistakes = _score(case, llm_flagged)
