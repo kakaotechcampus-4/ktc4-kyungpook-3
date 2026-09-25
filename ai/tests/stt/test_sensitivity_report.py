@@ -97,3 +97,10 @@ def test_align_section_says_whether_a_constant_changed_the_audio_or_the_model_in
     assert "wav 같음" in verdicts["stt.eval.golden.RUN_GAP_S"][0]["text"]
     assert "오류 글자 42~44" in verdicts["stt.eval.golden.PLACE_GAP_S"][0]["text"]
     assert "| m1 |" in md
+
+
+def test_noise_band_uses_every_dither_seed_that_was_run():
+    runs = {sid: _run(sid, [_rec("m1", e)]) for sid, e in
+            [("base", 42), ("dither1", 42), ("dither2", 44), ("dither3", 42), ("dither7", 48), ("mode=clip", 60)]}
+    band = R.noise_band(runs, ALIGNED, "local")
+    assert band["err"] == 6 and band["settings"] == ["base", "dither1", "dither2", "dither3", "dither7"]

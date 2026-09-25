@@ -80,7 +80,11 @@ def aggregate(run: dict, group: str) -> dict | None:
 
 
 def noise_band(runs: dict[str, dict], group: str, kind: str) -> dict:
-    present = [i for i in NOISE_IDS[kind] if i in runs]
+    """base 와 잡음 설정(로컬은 dither 씨앗 전부, 원격은 rep 전부)의 범위."""
+    prefix = "dither" if kind == "local" else "rep"
+    extra = sorted((i for i in runs if i.startswith(prefix) and i[len(prefix):].isdigit()),
+                   key=lambda i: int(i[len(prefix):]))
+    present = [i for i in ["base", *extra] if i in runs]
     aggs = [a for a in (aggregate(runs[i], group) for i in present) if a]
     keys = ("err", "lost", "punct_err", "edge_err", "lines", "halluc", "moved")
     band = {k: (max(a[k] for a in aggs) - min(a[k] for a in aggs)) if len(aggs) >= 2 else 0 for k in keys}

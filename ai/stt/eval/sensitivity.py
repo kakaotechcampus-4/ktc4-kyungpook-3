@@ -78,10 +78,12 @@ def plan_sweep(consts, priorities=(C.P_UNIT, C.P_VAD, C.P_GATE), only: set[str] 
     return out
 
 
-def plan_noise(backend_kind: str) -> list[Setting]:
+def plan_noise(backend_kind: str, seeds: int = 3) -> list[Setting]:
+    """원격은 같은 설정 반복(base 포함 3회), 로컬은 결정성 확인 1회와 디더 seeds 회."""
     if backend_kind == "elice":
         return [Setting(f"rep{i}", "noise", fresh=True) for i in (1, 2)]
-    return [Setting("repeat", "noise", fresh=True)] + [Setting(f"dither{s}", "noise", dither_seed=s) for s in (1, 2, 3)]
+    return [Setting("repeat", "noise", fresh=True)] + [Setting(f"dither{k}", "noise", dither_seed=k)
+                                                       for k in range(1, seeds + 1)]
 
 
 def plan_units() -> list[Setting]:
@@ -93,9 +95,9 @@ def plan_prompt() -> list[Setting]:
 
 
 def full_plan(backend_kind: str, *, priorities=(C.P_UNIT, C.P_VAD, C.P_GATE), only=None,
-              prompt: bool = True) -> list[Setting]:
+              prompt: bool = True, seeds: int = 3) -> list[Setting]:
     consts = C.REGISTRY if backend_kind != "elice" else [c for c in C.REGISTRY if c.elice]
-    plan = [BASE, *plan_noise(backend_kind), *plan_units(), *plan_sweep(consts, priorities, only)]
+    plan = [BASE, *plan_noise(backend_kind, seeds), *plan_units(), *plan_sweep(consts, priorities, only)]
     return plan + (plan_prompt() if prompt else [])
 
 
@@ -486,6 +488,7 @@ def main(argv=None) -> int:
     r.add_argument("--yes", action="store_true", help="유료 실행 승인")
     r.add_argument("--budget", type=float, default=4500.0, help="누적 원 상한. 장부(ledger.jsonl) 기준")
     r.add_argument("--no-prompt", action="store_true")
+    r.add_argument("--noise-seeds", type=int, default=3, help="로컬 잡음 폭을 잴 디더 씨앗 수")
     al = sub.add_parser("align-sweep", help="정렬본을 만드는 상수를 바꿔 원본 골든셋을 다시 정렬한다")
     al.add_argument("--golden", type=Path, action="append", required=True, help="원본 골든 회의(audio/, truth_utterances.json)")
     al.add_argument("--out", type=Path, required=True, help="만들 곳. 레포 밖")
@@ -529,7 +532,7 @@ def main(argv=None) -> int:
         return 1
     pri = tuple(int(x) for x in a.priority.split(",") if x)
     only = set(x for x in a.only.split(",") if x) or None
-    plan = full_plan(a.backend, priorities=pri, only=only, prompt=not a.no_prompt)
+    plan = full_plan(a.backend, priorities=pri, only=only, prompt=not a.no_prompt, seeds=a.noise_seeds)
     parts = set(a.plan.split(","))
     if "all" not in parts:
         keep = {"base": {"base"}, "noise": {"noise"}, "units": {"units"}, "prompt": {"prompt"}}

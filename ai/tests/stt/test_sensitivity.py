@@ -191,3 +191,9 @@ def test_rescore_recomputes_text_metrics_from_stored_lines_without_transcribing(
     again = S.rescore_record(s, broken, {"overrides": [["stt.batch.TURN_GAP_S", 0.5]]})
     assert again["err_chars"] == rec["err_chars"] and again["n_lines"] == 2 and again["utt_err"] == rec["utt_err"]
     assert again["calls"] == rec["calls"]                 # 전사 통계는 그대로 둔다
+
+
+def test_plan_noise_takes_a_seed_count():
+    assert [s.id for s in S.plan_noise("local", seeds=5)] == ["repeat", "dither1", "dither2", "dither3", "dither4",
+                                                              "dither5"]
+    assert [s.id for s in S.plan_noise("elice")] == ["rep1", "rep2"]
