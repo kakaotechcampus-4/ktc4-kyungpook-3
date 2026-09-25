@@ -387,6 +387,16 @@ class RecordingCog(discord.Cog):
         return (f"ℹ️ 세션 `{b['session']}`: 다른 프로세스(`{b.get('claimed_by')}`)가 잡고 있어 건너뜁니다. "
                 f"선점은 약 {mins}분 뒤 풀립니다.")
 
+    def _next_try(self, result: dict, *, auto: str, by_hand: str) -> str:
+        """실패나 partial 뒤에 무엇이 일어나는지. 루프가 다시 하는지, 멈췄는지, 루프가 꺼져 있는지."""
+        n = result.get("attempts") or 0
+        if result.get("gave_up"):
+            return f"실패 {n}회로 자동 재시도를 멈췄습니다. `/recover` 로 다시 시도할 수 있습니다."
+        if self._recovery_interval_s > 0 and result.get("retry_in_s"):
+            mins = max(1, int((result["retry_in_s"] + 59) // 60))
+            return f"{mins}분 뒤 {auto} (실패 {n}회). 바로 하려면 `/recover`."
+        return by_hand
+
     # ------------------------------------------------------------------ 종료
     def _on_recording_done(self, sink, ctx: discord.ApplicationContext) -> None:
         """py-cord 가 stop_recording 안에서 동기로 부른다 (reader.py:182-184). 태스크만 예약한다."""
@@ -504,8 +514,9 @@ class RecordingCog(discord.Cog):
                     print(f"[warn] on_session_saved 훅 실패: {e!r}", flush=True)
         except Exception as e:  # noqa: BLE001 - 여기 오면 파일 처리가 죽은 것이다. 신호는 아래서 켠다
             print(f"[finish] 세션 {rec.meeting_id} 후처리 예외: {type(e).__name__}: {e}", flush=True)
-            await self._notify(rec.text_channel, f"⚠️ 후처리 중 예외: {type(e).__name__}: {e}. 트랙은 남아 있습니다. "
-                               "`/recover` 로 다시 시도하세요.")
+            await self._notify(rec.text_channel, f"⚠️ 후처리 중 예외: {type(e).__name__}: {e}. 트랙은 남아 있습니다. " +
+                               ("끝나지 않은 단계는 자동 복구가 다시 시도합니다. 바로 하려면 `/recover`."
+                                if self._recovery_interval_s > 0 else "`/recover` 로 다시 시도하세요."))
         finally:
             self._processing.pop(rec.meeting_id, None)
             rec.done.set()
@@ -523,7 +534,9 @@ class RecordingCog(discord.Cog):
                 text += f"\n🔁 실패했던 {result['retried']}줄을 다시 보냈습니다."
             if tr["failed"]:
                 if result["status"] == STATUS_PARTIAL:
-                    text += f"\n⚠️ 전사 실패 {tr['failed']}줄. 이 회의는 완료로 닫지 않았습니다. `/recover` 가 그 구간만 다시 보냅니다."
+                    text += (f"\n⚠️ 전사 실패 {tr['failed']}줄. 이 회의는 완료로 닫지 않았습니다. " +
+                             self._next_try(result, auto="그 구간만 자동으로 다시 보냅니다",
+                                            by_hand="`/recover` 가 그 구간만 다시 보냅니다."))
                 else:
                     text += f"\n⚠️ 다시 보내도 실패한 {tr['failed']}줄은 회의록에 없습니다. 구간은 매니페스트에 남아 있습니다."
             await self._notify(channel, text, file=discord.File(str(tr["markdown"])))
@@ -546,5 +559,6 @@ class RecordingCog(discord.Cog):
         if result["status"] == STATUS_FAILED:
             label = STAGE_LABEL.get(result.get("failed_stage"), result.get("failed_stage"))
             print(f"[{result.get('failed_stage')}] 세션 {session} 실패: {result['error']}", flush=True)
-            await self._notify(channel, f"⚠️ {label} 실패: {result['error']}\n트랙과 지금까지의 결과는 남아 있습니다. "
-                               f"`/recover` 로 이 단계부터 다시 시도하세요.")
+            await self._notify(channel, f"⚠️ {label} 실패: {result['error']}\n트랙과 지금까지의 결과는 남아 있습니다. " +
+                               self._next_try(result, auto="이 단계부터 자동으로 다시 시도합니다",
+                                              by_hand="`/recover` 로 이 단계부터 다시 시도하세요."))

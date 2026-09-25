@@ -213,3 +213,34 @@ async def test_the_loop_keeps_going_after_a_pass_raises(tmp_path, monkeypatch):
     assert len(passes) >= 2 and not task.done()
     cog.cog_unload()
     await asyncio.wait([task], timeout=1)
+
+
+def _dying(transcript, names, today):
+    raise RuntimeError("LLM 죽음")
+
+
+async def test_the_loop_posts_moves_and_give_ups_but_not_a_scheduled_retry(tmp_path, clock, monkeypatch):
+    monkeypatch.setattr(R, "RECOVERY_MAX_ATTEMPTS", 3)
+    cog, guild, vc, channel, ctx = _setup(tmp_path, extractor=_dying)
+    _meeting(tmp_path, 500)
+    posted = []
+    for _ in range(3):
+        before = len(channel.sent)
+        await cog._recover_pass()
+        posted.append(_texts(channel)[before:])
+        clock["t"] += timedelta(hours=1)
+    first, second, third = posted
+    assert first[0] == f"세션 `{GUILD_ID}_500`" and any("자동으로 다시 시도합니다" in t for t in first)   # 전사가 끝났다
+    assert second == []                                                                              # 예약된 재시도의 실패
+    assert any("자동 재시도를 멈췄습니다" in t for t in third)                                          # 포기
+
+
+async def test_a_failure_after_stop_says_the_retry_is_automatic(tmp_path):
+    cog, guild, vc, channel, ctx = _setup(tmp_path, extractor=_dying)
+    await _run(A.RecordingCog.record, cog, ctx)
+    rec = cog._active[GUILD_ID]
+    rec.sink.on_samples(1, _tone(2000), 0)
+    await _run(A.RecordingCog.stop, cog, ctx)
+    await asyncio.wait_for(rec.done.wait(), 20)
+    failure = [t for t in _texts(channel) if t.startswith("⚠️ 할일 추출 실패")]
+    assert len(failure) == 1 and "1분 뒤 이 단계부터 자동으로 다시 시도합니다" in failure[0]
