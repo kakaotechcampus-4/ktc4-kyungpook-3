@@ -581,8 +581,10 @@ def interrupted_recording(manifest: dict, *, since: str) -> bool:
     봇이 들고 있는 회의는 복구 목록에서 이미 빠진다. 이 프로세스가 시작한 녹음이 recording 으로 남는 것은 트랙을
     닫다 예외가 난 경우라 재시작 안내 대상이 아니다.
     """
-    if manifest.get("status") != STATUS_RECORDING:
-        return False
+    return manifest.get("status") == STATUS_RECORDING and _started_before(manifest, since)
+
+
+def _started_before(manifest: dict, since: str) -> bool:
     raw = manifest.get("started_at") or manifest.get("recorded_at")
     return raw is None or _parse_time(raw) < _parse_time(since)
 
@@ -600,13 +602,25 @@ def recently_cut(recordings_dir: Path, manifest: dict) -> bool:
 
 
 def interrupted_meetings(recordings_dir: Path, *, since: str, guild_id=None, exclude=None) -> list[tuple[Path, dict]]:
-    """재시작 안내를 올릴 회의. since(이 봇이 뜬 시각) 전에 시작돼 녹음 중에 끊겼고(잠금이 풀린 recording)
-    끊긴 지 얼마 안 된 회의. 서버가 적힌 것만 본다. 읽기만 한다."""
+    """재시작 안내를 올릴 회의. since(이 봇이 뜬 시각) 전에 시작돼 녹음 중에 끊겼고 끊긴 지 얼마 안 된 회의.
+
+    잠금이 풀린 recording 으로 남은 회의와, 워커가 먼저 집어 트랙을 되찾은(recovered_tracks) 회의를 다 본다.
+    봇이 다시 뜨는 몇 초 사이에 워커가 먼저 처리를 시작하는 일이 흔하다. 서버가 적힌 것만 본다. 읽기만 한다.
+    """
+    skip = set(exclude or ())
     out = []
-    for p, m in _pending(recordings_dir, guild_id=guild_id, exclude=exclude):
-        if not m.get("guild_id") or not interrupted_recording(m, since=since):
+    for p in sorted(recordings_dir.glob("session_*.json"), key=_queue_key):
+        m = _load(p)
+        if m is None or m.get("session") in skip or not m.get("guild_id"):
             continue
-        if not is_locked(p) and recently_cut(recordings_dir, m):
+        if guild_id is not None and str(m.get("guild_id")) != str(guild_id):
+            continue
+        if interrupted_recording(m, since=since):
+            if not _is_pending(recordings_dir, m) or is_locked(p):
+                continue
+        elif not (m.get("recovered_tracks") and _started_before(m, since)):
+            continue
+        if recently_cut(recordings_dir, m):
             out.append((p, m))
     return out
 

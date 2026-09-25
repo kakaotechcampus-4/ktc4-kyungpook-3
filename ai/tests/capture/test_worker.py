@@ -3,6 +3,7 @@
 
 import asyncio
 import json
+import os
 import signal
 import subprocess
 import sys
@@ -256,3 +257,21 @@ async def test_worker_mode_recover_says_when_the_worker_is_quiet_or_missing(tmp_
     (tmp_path / "recordings" / ".worker" / "heartbeat.json").unlink()
     await T._run(A.RecordingCog.recover_cmd, cog, ctx)
     assert "워커 신호가 없습니다" in channel.sent[-1][0]
+
+
+async def test_worker_mode_restart_notice_goes_out_even_after_the_worker_took_the_meeting(tmp_path):
+    """봇이 다시 뜨기 전에 워커가 끊긴 녹음을 먼저 집어 recording 이 아니게 됐다. 안내는 그래도 한 번 나간다.
+    끊긴 지 오래된 회의에는 안내하지 않는다."""
+    cog, guild, vc, channel, ctx = _worker_cog(tmp_path)
+    ago = (datetime.now(timezone.utc) - timedelta(minutes=30)).replace(microsecond=0).isoformat()
+    cut = _meeting(tmp_path, 600, status=R.STATUS_RECORDING, started_at=ago)
+    old = _meeting(tmp_path, 700, status=R.STATUS_RECORDING, started_at=ago)
+    stale = time.time() - 3 * 3600
+    for wav in (tmp_path / "recordings" / f"{T.GUILD_ID}_700").glob("*.wav"):
+        os.utime(wav, (stale, stale))
+    R.recover(tmp_path / "recordings", backend=EchoStt(), model_name="echo", workers=1,
+              transcripts_dir=tmp_path / "transcripts")                 # 워커가 먼저 처리했다
+    assert _status(cut) == "transcribed" and _status(old) == "transcribed"
+    await cog._tick()
+    await cog._tick()
+    assert [t for t, _ in channel.sent] == [A.RESUME_NOTICE]
