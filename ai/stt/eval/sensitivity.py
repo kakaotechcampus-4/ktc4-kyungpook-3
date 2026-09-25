@@ -135,14 +135,18 @@ def inactive(fingerprints: dict, default) -> bool:
 
 
 # ─────────────────────────────────────────────────────────── 근거 표
+def range_text(lo, hi) -> str:
+    """평탄 구간 표기. 켬·끔 상수는 구간이 뜻이 없어 비운다."""
+    return "" if isinstance(lo, bool) else f" {_fmt(lo)}~{_fmt(hi)}"
+
+
 def _verdict_text(v: dict) -> str:
     head = f"{v['backend']} {v['group']}: "
     if v.get("text"):
         return head + v["text"]
     if v["label"] == INACTIVE:
         return head + INACTIVE
-    rng = "" if isinstance(v["flat_lo"], bool) else f" {_fmt(v['flat_lo'])}~{_fmt(v['flat_hi'])}"
-    s = f"{v['label']}{rng} ({v['metric']}, 잡음 폭 {_fmt(v['noise'])})"
+    s = f"{v['label']}{range_text(v['flat_lo'], v['flat_hi'])} ({v['metric']}, 잡음 폭 {_fmt(v['noise'])})"
     if v.get("errors"):
         s += f", 실행 오류 {', '.join(_fmt(e) for e in v['errors'])}"
     if v.get("note"):

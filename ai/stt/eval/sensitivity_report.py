@@ -238,7 +238,7 @@ def report(out: Path) -> dict:
                 if v is None:
                     continue
                 pr = v.get("primary") or {}
-                note = pr.get("text") or (f"{pr['metric']} {pr['label']} {S._fmt(pr['flat_lo'])}~{S._fmt(pr['flat_hi'])}"
+                note = pr.get("text") or (f"{pr['metric']} {pr['label']}{S.range_text(pr['flat_lo'], pr['flat_hi'])}"
                                           if pr else "")
                 if v.get("lost_changed"):
                     note = (note + ". " if note else "") + "잃은 발화가 달라진 값 " + ", ".join(
