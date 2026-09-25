@@ -34,7 +34,7 @@
 
 회의를 더하는 길은 셋이다.
 
-1. 봇 녹음(D6 실녹음): `TrackWriter` 가 쓴 트랙은 이미 회의 시계 위에 있다. 파일 이름을 화자 이름으로 바꾸고, 들으면서 발화마다 시작·끝 초를 적어 `truth_aligned.json` 을 만든다. `meta.json` 의 kind 는 real, timeline 은 비운다
+1. 봇 녹음(실녹음): `TrackWriter` 가 쓴 트랙은 이미 회의 시계 위에 있다. 파일 이름을 화자 이름으로 바꾸고, 들으면서 발화마다 시작·끝 초를 적어 `truth_aligned.json` 을 만든다. `meta.json` 의 kind 는 real, timeline 은 비운다
 2. 트랙이 각자 0초에서 시작하는 옛 골든셋: `python -m stt.eval.golden align --golden <원본> --out <정렬본>` 이 대본 순서로 1초 간격을 두고 놓는다. 목소리는 진짜, 시간축은 합성이다. 정렬 뒤 `truth_aligned.json` 의 자리에 실제 그 말이 들어갔는지 확인한다(아래 알려진 문제)
 3. 재배치 합성: `python -m stt.eval.scenarios build --golden-root <정렬본 폴더> --out <레포 밖> --cache <캐시>` 가 정렬본 조각을 다시 놓아 교대 직후·끼어들기·짧은 대답·긴 침묵·마감 분리·긴 독백을 만든다. 시나리오는 `scenarios.SPECS` 에 정답 글자열(앵커)로 적는다
 

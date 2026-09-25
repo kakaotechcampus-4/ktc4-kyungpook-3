@@ -69,8 +69,8 @@ class Const:
         return f"{self.module}.{self.name}"
 
 
-_D6 = "D6 실서버 녹음과 패킷 도착 기록(패킷별 도착 시각·RTP·SSRC)이 들어오면"
-_REAL = "D6 실녹음 골든셋(짧은 대답·겹침·긴 침묵 뒤 발화)이 들어오면"
+_PACKETS = "실서버 녹음과 패킷 도착 기록(패킷별 도착 시각·RTP·SSRC)이 들어오면"
+_REAL = "실녹음 골든셋(짧은 대답·겹침·긴 침묵 뒤 발화)이 들어오면"
 
 REGISTRY: tuple[Const, ...] = (
     # ── stt/batch.py
@@ -79,7 +79,7 @@ REGISTRY: tuple[Const, ...] = (
     Const("stt.batch", "CHUNK_MAX_S", MEASURED, "묶음 길이 상한. 호출 수와 문맥, 위스퍼 30초 창", BATCH,
           sweep=(15.0, 20.0, 24.0, 28.0, 30.0, 40.0), binds=(("build_chunks", "max_s"), ("split_long", "max_s")),
           elice=True, priority=P_UNIT, recheck="30초 넘는 독백이 있는 실녹음이 들어오면. LONG_SPLIT_FROM_S 보다 커야 한다"),
-    Const("stt.batch", "CHUNK_GAP_S", MEASURED, "묶음 안 클립 사이에 넣는 침묵. 이음 자리 문장부호(M12)", BATCH,
+    Const("stt.batch", "CHUNK_GAP_S", MEASURED, "묶음 안 클립 사이에 넣는 침묵. 이음 자리에 마침표가 남나", BATCH,
           sweep=(0.0, 0.1, 0.2, 0.4, 0.8, 1.5), metric="punct", binds=(("build_chunks", "gap_s"),),
           elice=True, priority=P_UNIT, recheck="모델이 바뀌면(문장부호 습관이 모델마다 다르다)"),
     Const("stt.batch", "TURN_GAP_S", MEASURED, "같은 화자 클립을 한 턴(회의록 한 줄)으로 보는 최대 공백", BATCH,
@@ -151,22 +151,22 @@ REGISTRY: tuple[Const, ...] = (
     Const("capture.recording_store", "PCM_CHANNELS", SPEC, "디스코드 PCM 채널 수", FIXED, source="디스코드 음성 스테레오"),
     Const("capture.recording_store", "PCM_SAMPLE_WIDTH", SPEC, "디스코드 PCM 표본 폭(바이트)", FIXED, source="16비트"),
     Const("capture.streaming_sink", "GAP_MS", NOT_HERE, "이보다 벌어진 패킷 간격을 화자 끊김으로 센다", RECEIVE,
-          source="주석(20ms 패킷 세 개), tests/capture/test_streaming_sink.py", recheck=_D6),
+          source="주석(20ms 패킷 세 개), tests/capture/test_streaming_sink.py", recheck=_PACKETS),
     Const("capture.streaming_sink", "IDLE_FLUSH_MS", NOT_HERE, "패킷이 이만큼 안 오면 재정렬 창을 비운다", RECEIVE,
-          source="주석(창에 갇힌 발화 끝 320ms 가 MIN_SPEECH_MS 미달로 사라진 사례), test_streaming_sink", recheck=_D6),
+          source="주석(창에 갇힌 발화 끝 320ms 가 MIN_SPEECH_MS 미달로 사라진 사례), test_streaming_sink", recheck=_PACKETS),
     Const("capture.timeline", "NOISE_NONZERO_MAX", NOT_HERE, "0 아닌 바이트가 이 개수 이하인 패킷은 버린다", RECEIVE,
-          source="주석(디스코드 침묵 프레임, 쓰레기 패킷), Craig", recheck=_D6),
+          source="주석(디스코드 침묵 프레임, 쓰레기 패킷), Craig", recheck=_PACKETS),
     Const("capture.timeline", "REORDER_WINDOW", NOT_HERE, "RTP 순서로 정렬하는 창(패킷 수)", RECEIVE,
-          source="Craig 와 같은 16패킷(320ms). tests/capture/test_timeline.py", recheck=_D6),
+          source="Craig 와 같은 16패킷(320ms). tests/capture/test_timeline.py", recheck=_PACKETS),
     Const("capture.timeline", "HALF_RANGE", SPEC, "32비트 RTP 타임스탬프 랩어라운드 판정", FIXED, source="RTP 32비트"),
     Const("capture.timeline", "REANCHOR_TICKS", DESIGN, "RTP 기준점을 다시 잡는 문턱(5분)", RECEIVE,
-          source="주석: 정상 재정렬(약 15,360틱)과 자릿수가 다르다", recheck=_D6),
+          source="주석: 정상 재정렬(약 15,360틱)과 자릿수가 다르다", recheck=_PACKETS),
     Const("capture.track_writer", "MAX_GAP_MS", DESIGN, "트랙에 한 번에 채우는 무음 상한(4시간)", RECEIVE,
           source="주석: 60초였을 때 1분 넘게 조용한 화자의 시간축이 당겨졌다"),
     Const("capture.track_writer", "TrackPool.QUEUE_MAX", DESIGN, "쓰기 큐 상한(약 80초분)", RECEIVE,
-          source="주석", recheck=_D6),
+          source="주석", recheck=_PACKETS),
     Const("capture.discord_adapter", "FLUSH_EVERY_S", NOT_HERE, "재정렬 창을 비우는 주기", RECEIVE,
-          source="주석(패킷 20ms 마다)", recheck=_D6),
+          source="주석(패킷 20ms 마다)", recheck=_PACKETS),
     # ── 평가. 정렬본을 만드는 값이라 평가 결과에 영향이 있다
     Const("stt.eval.golden", "SR", SPEC, "정렬본 표본율", FIXED, source="위스퍼 입력 16kHz"),
     Const("stt.eval.golden", "RUN_GAP_S", MEASURED, "정렬본을 만들 때 한 화자의 발화 덩어리를 나누는 공백", EVAL,

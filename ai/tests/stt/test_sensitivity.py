@@ -68,7 +68,7 @@ def test_evidence_rows_cover_every_registered_constant_and_say_what_was_not_meas
     assert len(rows) == len(C.REGISTRY)
     assert by["stt.batch.TURN_GAP_S"]["측정 결과와 범위"] == "아직 안 잼"
     assert by["capture.timeline.REORDER_WINDOW"]["근거 종류"] == C.NOT_HERE
-    assert "D6" in by["capture.timeline.REORDER_WINDOW"]["다시 잴 조건"]
+    assert "실서버" in by["capture.timeline.REORDER_WINDOW"]["다시 잴 조건"]
 
 
 def test_evidence_rows_print_the_measured_verdict_per_backend_and_data():

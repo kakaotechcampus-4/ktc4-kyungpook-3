@@ -4,7 +4,7 @@
   char_errors     절대 오류 글자 수(S+D+I). 정답 약 1,050자 회의에서 CER 0.5%p 는 약 5자다
   sentence_ends   문장 끝(. ? !) 위치. extract.text.split_sentences 가 같은 부호로 문장을 나눈다
   punctuation     정답의 문장 끝이 전사에 남았나(재현율·정밀도). segments 를 주면 클립 이음 자리만 따로
-                  센다. 묶음 안 0.2초 이음이 마침표를 지우는지(M12)를 이것으로 본다
+                  센다. 묶음 안 0.2초 이음이 마침표를 지우는지를 이것으로 본다
   edge_errors     클립 가장자리(VAD 가 자른 자리) 좌우 window 자 안의 오류와 그 밖의 오류
   phrase_excess   정답보다 더 나온 구절 수. 위스퍼의 무음 환각 구절과 프롬프트 누설에 쓴다
   term_recall     정답에 있는 용어가 전사에 남은 비율. 대소문자·공백 무시
