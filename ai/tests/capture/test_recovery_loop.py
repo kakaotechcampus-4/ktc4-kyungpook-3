@@ -14,7 +14,7 @@ import soundfile as sf
 from capture import discord_adapter as A
 from capture import recorder as R
 from shared.schemas import now_iso
-from tests.capture.test_discord_adapter import GUILD_ID, TEXT_ID, _manifest, _run, _setup, _tone
+from tests.capture.test_discord_adapter import GUILD_ID, TEXT_ID, FakeBot, _manifest, _run, _setup, _tone
 
 T0 = datetime(2026, 9, 26, 3, 0, 0, tzinfo=timezone.utc)
 
@@ -196,6 +196,23 @@ async def test_the_loop_leaves_manifests_without_a_guild_alone(tmp_path):
     assert R.pending_sessions(tmp_path / "recordings") == [path]    # 전제: 목록에는 보인다
     results, _ = await cog._recover_pass()
     assert results == [] and "stages" not in json.loads(path.read_text(encoding="utf-8"))
+
+
+async def test_a_cog_added_after_the_bot_is_ready_starts_the_loop_itself(tmp_path):
+    """봇 쪽이 on_ready 뒤에 Cog 를 붙이면 이 Cog 는 on_ready 를 못 받는다. 붙는 순간 루프를 띄운다."""
+    cog, *_ = _setup(tmp_path)
+
+    class ReadyBot(FakeBot):
+        def is_ready(self):
+            return True
+
+    late = A.RecordingCog(ReadyBot(cog.bot._guild), recordings_dir=tmp_path / "recordings",
+                          transcripts_dir=tmp_path / "transcripts", stt_factory=cog._stt_factory,
+                          gate_factory=lambda: None, extractor_factory=lambda: None, handoff_factory=lambda: None)
+    task = late._recovery_task
+    assert task is not None and not task.done()
+    late.cog_unload()
+    await asyncio.wait([task], timeout=1)
 
 
 async def test_on_ready_starts_one_loop_that_runs_at_once_and_cog_unload_cancels_it(tmp_path, monkeypatch):

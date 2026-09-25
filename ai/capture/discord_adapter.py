@@ -150,6 +150,12 @@ class RecordingCog(discord.Cog):
         self._recovery_task: asyncio.Task | None = None
         self._started_at = now_iso()                         # 이보다 먼저 시작돼 recording 으로 남은 회의는 재시작으로 끊겼다
         self._resume_noticed: set[str] = set()
+        # 봇 쪽이 준비된 뒤에 이 Cog 를 붙이면 on_ready 를 받지 못한다. 그때는 붙는 자리에서 루프를 띄운다
+        if getattr(bot, "is_ready", lambda: False)():
+            try:
+                self.start_recovery_loop()
+            except RuntimeError:                             # 이벤트 루프 밖에서 붙였다. 다음 on_ready 에 뜬다
+                pass
 
     # ------------------------------------------------------------------ 명령
     @discord.slash_command(name="join", description="봇이 현재 음성채널에 입장합니다")
