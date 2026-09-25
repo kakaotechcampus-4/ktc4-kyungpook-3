@@ -73,3 +73,12 @@ def test_utterance_errors_count_lines_with_no_matching_utterance_as_insertions()
     truth = [{"speaker": "A", "text": "가나다.", "start": 0.0, "end": 1.0}]
     got = T.utterance_errors(truth, [("A", 0, 1000, "가나다"), ("A", 9000, 9500, "감사합니다")])
     assert got == {"utt_err": 5, "unassigned_chars": 5}
+
+
+def test_utterance_errors_do_not_count_a_clip_spanning_two_adjacent_pieces_of_one_speaker():
+    """같은 화자의 이어진 두 발화(사이에 다른 화자 없음)를 VAD 가 한 클립으로 묶는 것은 옮겨 간 것이 아니다."""
+    truth = [{"speaker": "A", "text": "가나다.", "start": 0.0, "end": 1.0},
+             {"speaker": "A", "text": "라마바.", "start": 1.15, "end": 2.2},
+             {"speaker": "B", "text": "네.", "start": 2.5, "end": 2.8}]
+    got = T.utterance_errors(truth, [("A", 0, 2200, "가나다 라마바"), ("B", 2500, 2800, "네")])
+    assert got == {"utt_err": 0, "unassigned_chars": 0}

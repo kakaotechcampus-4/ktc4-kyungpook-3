@@ -171,22 +171,35 @@ def term_recall(ref: str, hyp: str, terms) -> dict:
     return {"ref_terms": ref_n, "hit": hit, "recall": _ratio(hit, ref_n)}
 
 
-def utterance_errors(truth: list[dict], lines, slack_s: float = 0.5) -> dict:
-    """정답 발화 단위 오류. 전사 줄(화자, 시작 ms, 끝 ms, 글)을 같은 화자 정답 발화 중 시간이 가장 많이 겹치는
-    것에 붙이고 발화마다 오류를 센다. 어느 발화와도 안 겹치는 줄은 전부 삽입으로 센다.
+def _turns(truth: list[dict]) -> list[dict]:
+    """정답 발화를 시작 순으로 놓고, 다른 화자가 끼지 않은 같은 화자의 이어진 발화를 한 턴으로 합친다."""
+    turns: list[dict] = []
+    for t in sorted((t for t in truth if t.get("start") is not None), key=lambda t: t["start"]):
+        if turns and turns[-1]["speaker"] == t["speaker"]:
+            turns[-1] = {**turns[-1], "text": f"{turns[-1]['text']} {t['text']}", "end": max(turns[-1]["end"], t["end"])}
+        else:
+            turns.append(dict(t))
+    return turns
 
-    화자별로 이어 붙인 CER(char_errors)은 단어가 옆 발화로 옮겨 가도 순서가 같으면 오류로 안 센다. 묶음을
-    클립으로 되돌릴 때 단어가 다른 화자의 말을 건너 앞 클립으로 붙는 경우가 그렇다. 이 값에서 화자별 오류를
-    뺀 것이 발화 경계를 넘어간 글자다.
+
+def utterance_errors(truth: list[dict], lines, slack_s: float = 0.5) -> dict:
+    """정답 턴 단위 오류. 전사 줄(화자, 시작 ms, 끝 ms, 글)을 같은 화자 정답 턴 중 시간이 가장 많이 겹치는 것에
+    붙이고 턴마다 오류를 센다. 어느 턴과도 안 겹치는 줄은 전부 삽입으로 센다.
+
+    턴은 다른 화자가 끼지 않은 같은 화자의 이어진 발화다. VAD 가 짧은 쉼으로 이어진 같은 화자의 두 발화를 한
+    클립으로 묶는 것은 옮겨 간 것이 아니어서 턴으로 합쳐 둔다. 화자별로 이어 붙인 CER(char_errors)은 단어가
+    다른 화자의 말을 건너 앞 턴으로 붙어도 순서가 같으면 오류로 안 센다. 묶음을 클립으로 되돌릴 때 그런
+    일이 생긴다. 이 값에서 화자별 오류를 뺀 것이 턴 경계를 넘어간 글자다.
     """
-    by: dict[int, list[tuple[int, str]]] = {i: [] for i in range(len(truth))}
+    turns = _turns(truth)
+    by: dict[int, list[tuple[int, str]]] = {i: [] for i in range(len(turns))}
     stray = 0
     for spk, a, b, text in lines:
         if not text:
             continue
         best, hit = 0.0, None
-        for i, t in enumerate(truth):
-            if t["speaker"] != spk or t.get("start") is None:
+        for i, t in enumerate(turns):
+            if t["speaker"] != spk:
                 continue
             ov = min(b / 1000, t["end"] + slack_s) - max(a / 1000, t["start"] - slack_s)
             if ov > best:
@@ -195,6 +208,5 @@ def utterance_errors(truth: list[dict], lines, slack_s: float = 0.5) -> dict:
             stray += len(nospace(text))
         else:
             by[hit].append((a, text))
-    err = sum(char_errors(t["text"], " ".join(x for _, x in sorted(by[i])))["errors"]
-              for i, t in enumerate(truth) if t.get("start") is not None)
+    err = sum(char_errors(t["text"], " ".join(x for _, x in sorted(by[i])))["errors"] for i, t in enumerate(turns))
     return {"utt_err": err + stray, "unassigned_chars": stray}

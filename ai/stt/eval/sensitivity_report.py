@@ -159,7 +159,7 @@ def _row(v, a: dict, base: dict | None, kind: str) -> dict:
             "화자별 흩어짐": _f(a["spread"]), "삽입 글자": a["char_ins"], "잃은 발화": f"{a['lost']}/{a['n_truth']}",
             "거름": a["gated"], "문장 끝 오류": a["punct_err"],
             "이음 마침표 유지": f"{a['join_kept']}/{a['join_need']}", "이음 마침표 생성": f"{a['join_invented']}/{a['join_without']}",
-            "가장자리 오류": f"{a['edge_err']}/{a['edge_chars']}", "발화 경계 넘은 글자": a["moved"],
+            "가장자리 오류": f"{a['edge_err']}/{a['edge_chars']}", "턴 경계 넘은 글자": a["moved"],
             "환각 구절": a["halluc"], "줄": a["lines"],
             "클립": a["clips"], "호출": a["calls"], "보낸 초": a["audio_s"], "전사 초": a["stt_s"],
             "원": _f(a["audio_s"] * KRW_PER_SEC, 1) if kind == "elice" else "0",
