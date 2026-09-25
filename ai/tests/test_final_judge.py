@@ -48,6 +48,22 @@ def test_llm_update_path_resolves_matched_task_id_from_index():
     assert result.status is None
 
 
+def test_llm_update_path_keeps_notion_page_id_even_without_task_id():
+    # candidate가 우리 DB Task와 아직 연결 안 된(task_id=None) Notion 후보라도, 어떤 페이지를
+    # 골랐는지는 matched_notion_page_id로 남아야 한다 — 안 그러면 BE가 뭘 고쳐야 할지 알 수 없다.
+    ji = JudgeInput(
+        source="meeting", text="x",
+        candidates=[_candidate(task_id=None, notion_page_id="n_manual")],
+    )
+    fake = FakeLLM(responses=[{
+        "is_meaningful": True, "category": "schedule", "is_new": False,
+        "matched_candidate_index": 0, "status": None, "evidence": "",
+    }])
+    result = judge_llm(ji, fake)
+    assert result.matched_task_id is None
+    assert result.matched_notion_page_id == "n_manual"
+
+
 def test_llm_new_item_path_has_no_matched_task_id():
     ji = JudgeInput(source="meeting", text="결제 환불 기능 구현하기로 했다.", candidates=[])
     fake = FakeLLM(responses=[{

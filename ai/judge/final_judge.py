@@ -72,18 +72,21 @@ def _parse_terra_response(result: dict, judge_input: JudgeInput) -> JudgeResult 
         return None
 
     matched_task_id: str | None = None
+    matched_notion_page_id: str | None = None
     if is_meaningful and not is_new:
         idx = result.get("matched_candidate_index")
         # bool은 int의 서브클래스라 isinstance(True, int)가 True다 — type()으로 엄격히 검사한다.
         if type(idx) is not int or not (0 <= idx < len(judge_input.candidates)):
             return None  # 기존 항목 수정이라면서 어떤 건지 특정 못 하면 신뢰 못 함
         matched_task_id = judge_input.candidates[idx].task_id
+        matched_notion_page_id = judge_input.candidates[idx].notion_page_id
 
     return JudgeResult(
         is_meaningful=is_meaningful,
         category=category,
         is_new=is_new,
         matched_task_id=matched_task_id,
+        matched_notion_page_id=matched_notion_page_id,
         status=status,
         evidence=str(result.get("evidence", "")).strip()[:300],
     )
