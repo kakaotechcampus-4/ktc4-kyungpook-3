@@ -17,6 +17,7 @@
 사용 (ai/ 안에서):
   .venv/bin/python -m stt.eval.sensitivity run --golden-root "<골든 폴더>" --out <결과> --cache ~/.cache/mm-stt-eval
   .venv/bin/python -m stt.eval.sensitivity run ... --backend elice --yes          # Elice. 예산 장부를 본다
+  .venv/bin/python -m stt.eval.sensitivity report --out <결과>                    # 표를 다시 만든다
 """
 
 from __future__ import annotations
@@ -402,7 +403,14 @@ def main(argv=None) -> int:
     r.add_argument("--yes", action="store_true", help="유료 실행 승인")
     r.add_argument("--budget", type=float, default=4500.0, help="누적 원 상한. 장부(ledger.jsonl) 기준")
     r.add_argument("--no-prompt", action="store_true")
+    rp = sub.add_parser("report", help="runs/ 에서 표(tables/)와 summary.json 을 다시 만든다")
+    rp.add_argument("--out", type=Path, required=True)
     a = ap.parse_args(argv)
+    if a.cmd == "report":
+        from stt.eval.sensitivity_report import report
+        report(a.out.expanduser())
+        print(f"표: {a.out / 'tables'}")
+        return 0
     sessions = discover_sessions([g.expanduser() for g in a.golden_root])
     if a.session:
         keep = set(a.session.split(","))

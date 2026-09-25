@@ -84,3 +84,22 @@ def test_build_writes_a_session_with_the_piece_audio_and_its_truth(tmp_path):
     assert np.abs(wav[int(SR * 2.0): int(SR * 3.6)]).max() > 0.1   # 조각 소리
     meta = json.loads((out / "meta.json").read_text(encoding="utf-8"))
     assert meta["kind"] == "synthetic-rearranged" and "합성" in meta["timeline"]
+
+
+def test_fragment_refuses_an_anchor_whose_words_sit_far_apart(tmp_path):
+    """정렬본에서 한 문장이 두 자리로 흩어진 경우가 있다(m02 유재환). 사이 무음까지 한 조각으로 자르면 안 된다."""
+
+    class FarStt:
+        name = "fake/far"
+
+        def transcribe(self, samples, sample_rate):
+            return SttResult(text="하나 둘.", words=[Word("하나", 0.0, 0.5), Word("둘.", 20.0, 20.5)])
+
+    src = tmp_path / "src-aligned"
+    src.mkdir()
+    z = lambda s: np.zeros(int(SR * s), dtype=np.float32)  # noqa: E731
+    sf.write(str(src / "가.wav"), np.concatenate([z(1.0), _burst(0.5), z(2)]), SR, subtype="PCM_16")
+    (src / "truth_by_speaker.json").write_text(json.dumps({"가": "하나 둘."}, ensure_ascii=False), encoding="utf-8")
+    lib = SC.Library({"src-aligned": src}, FarStt())
+    with pytest.raises(ValueError, match="떨어진"):
+        lib.fragment("src-aligned", "가", "하나 둘.")

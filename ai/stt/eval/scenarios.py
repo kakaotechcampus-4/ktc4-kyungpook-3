@@ -36,6 +36,7 @@ from stt.eval.eval import nospace
 SR = 16_000
 _WORD = re.compile(r"\w")
 EDGE_SEARCH_S = 0.25   # 단어 경계에서 조용한 자리를 찾는 범위
+MAX_INNER_GAP_S = 2.0  # 앵커 안 이웃 단어 사이가 이보다 멀면 두 자리에 흩어진 것이다
 TAIL_S = 2.0           # 마지막 조각 뒤 무음
 
 
@@ -140,6 +141,9 @@ class Library:
             raise ValueError(f"{src}/{spk}: 앵커에 해당하는 단어가 없다 {text!r}")
         i, j = sel
         words, audio = d["words"], d["audio"]
+        gaps = [words[k + 1][1] - words[k][2] for k in range(i, j)]
+        if gaps and max(gaps) > MAX_INNER_GAP_S:
+            raise ValueError(f"{src}/{spk}: 앵커 {text!r} 의 단어가 {max(gaps):.1f}초 떨어진 두 자리에 있다. 앵커를 나눈다")
         t0, t1 = words[i][1], words[j][2]
         lo = (words[i - 1][2] + t0) / 2 if i > 0 else t0 - EDGE_SEARCH_S
         hi = (t1 + words[j + 1][1]) / 2 if j + 1 < len(words) else t1 + EDGE_SEARCH_S
@@ -272,7 +276,9 @@ SPECS = [
          _p("유재환", M1, "다음 회의 전까지 각자 맡은 부분 마무리해서 공유해 주세요.", 0.15),
          _p("유재환", M1, "오늘 회의는 여기서 마치겠습니다.", 0.15),
          _p("유재환", M2, "자, 오늘은 다섯 명이 한 번에 녹음했을 때도 화자 분리가 잘 되는지 확인하는 자리입니다.", 0.15),
-         _p("유재환", M2, "순서대로 한 명씩 최근 진행 상황을 공유하고, 저는 마지막에 정리하겠습니다.", 0.15),
+         _p("유재환", M2, "순서대로 한 명씩 최근 진행 상황을 공유하고,", 0.15),
+         # m02 정렬본은 이 뒤 "저는 마지막에 정리하겠습니다." 가 129초 자리에 있다(정렬 때 3초 넘는 쉼에서 갈렸다)
+         _p("유재환", M2, "저는 마지막에 정리하겠습니다.", 0.15),
          _p("유재환", M2, "네 다들 감사합니다. 정리하면, 속도는 GPU로 개선 여지가 있고, 화자 분리는 인원이 늘어도 아직은 "
                         "견딜 만하고, 정확도는 12퍼센트대로 나쁘지 않은 수준입니다.", 0.15),
          _p("김환", M2, "네 맞아요,", 0.5)]},
