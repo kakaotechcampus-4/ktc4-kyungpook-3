@@ -51,8 +51,8 @@ from pathlib import Path
 import discord
 
 from capture.handoff import from_env as handoff_from_env
-from capture.recorder import (RECOVERY_INTERVAL_S, Claims, interrupted_recording, manifest_path, recently_cut,
-                              recover_one, recovery_targets, try_lock)
+from capture.recorder import (RECOVERY_INTERVAL_S, Claims, interrupted_meetings, manifest_path, recover_pass,
+                              try_lock)
 from capture.recorder import (PARTIAL_RETRY_MAX, STATUS_EXTRACTED, STATUS_FAILED, STATUS_HANDED_OFF, STATUS_PARTIAL,
                               STATUS_RECORDING, STATUS_SAVED, STATUS_TRANSCRIBED, NullSession, backend_from_env,
                               build_extractor, meeting_title, process_session, recover, write_status)
@@ -349,38 +349,14 @@ class RecordingCog(discord.Cog):
     async def _recover_pass(self, *, guild_id=None, manual: bool = False, fallback=None) -> tuple[list[dict], list[dict]]:
         """루프와 /recover 가 같이 쓰는 한 바퀴. (돌린 회의의 결과, 남이 잡고 있어 건너뛴 회의).
 
-        대상은 바퀴를 시작할 때 정한다. 봇이 들고 있는 회의(녹음 중·후처리 중)는 이 순간의 집합으로 빼고, 여기서
-        고른 회의를 뒤에 봇이 다시 들 일은 없다(새 녹음은 새 회의 ID 다). 후처리 세마포어는 회의마다 잡는다.
-        기다린 뒤에는 recover_one 이 선점을 잡고 매니페스트를 다시 읽어 아직 할 일인지 본다. 결과는 그 회의를
-        시작한 채널에 올린다. 루프(manual=False)는 단계가 움직였거나 포기했을 때만 올리고 예약된 재시도의 실패는
-        로그로만 남긴다. 봇이 뜨기 전에 녹음 중이던 회의는 처리하기 전에 그 채널에 재시작 안내를 한 번 올린다.
+        처리는 recorder.recover_pass 다(워커도 같은 함수를 쓴다). 봇이 들고 있는 회의(녹음 중·후처리 중)는 이 순간의
+        집합으로 빼고, 후처리 세마포어는 회의마다 잡는다. 결과는 그 회의를 시작한 채널에 올린다. 루프(manual=False)는
+        단계가 움직였거나 포기했을 때만 올리고 예약된 재시도의 실패는 로그로만 남긴다. 처리하기 전에 재시작으로 끊긴
+        회의의 채널에 안내부터 올린다.
         """
-        due, busy = recovery_targets(self.recordings_dir, claims=self._claims, guild_id=guild_id,
-                                     exclude=self._holding(), manual=manual)
-        if guild_id is None:
-            # 루프는 모든 서버를 본다. 서버가 적히지 않은 옛 매니페스트는 서버별 /recover 도 집지 못하던 것이다
-            due = [(p, m) for p, m in due if m.get("guild_id")]
-        for _, m in due:
-            session = str(m.get("session"))
-            if (session not in self._resume_noticed and interrupted_recording(m, since=self._started_at)
-                    and recently_cut(self.recordings_dir, m)):
-                self._resume_noticed.add(session)
-                await self._notify(self._channel_for(m), RESUME_NOTICE)
-        results = []
-        for path, m in due:
-            backend, model_name, workers = self._stt_factory()
-            async with self._post_sem:
-                r = await asyncio.to_thread(recover_one, self.recordings_dir, path, claims=self._claims, manual=manual,
-                                            backend=backend, model_name=model_name, workers=workers,
-                                            gate=self._gate_factory(), transcripts_dir=self.transcripts_dir,
-                                            extractor=self._extractor_factory(), handoff=self._handoff_factory(),
-                                            name_of=_name_resolver(self._guild_of(m)))
-            if r is None:
-                continue
-            if r.get("busy"):
-                busy.append(r)
-                continue
-            results.append(r)
+        await self._notice_interrupted(guild_id=guild_id)
+
+        async def post(r: dict) -> None:
             if self._should_post(r, manual=manual):
                 channel = self._channel_for(r) or fallback
                 await self._notify(channel, f"세션 `{r['session']}`")
@@ -388,7 +364,23 @@ class RecordingCog(discord.Cog):
             elif r["status"] in (STATUS_FAILED, STATUS_PARTIAL):
                 print(f"[recovery] 세션 {r['session']} {r['status']}. 실패 {r.get('attempts')}회, "
                       f"{r.get('retry_in_s')}초 뒤 다시 시도", flush=True)
-        return results, busy
+
+        return await recover_pass(self.recordings_dir, claims=self._claims, sem=self._post_sem,
+                                  stt_factory=self._stt_factory, gate_factory=self._gate_factory,
+                                  extractor_factory=self._extractor_factory, handoff_factory=self._handoff_factory,
+                                  transcripts_dir=self.transcripts_dir, guild_id=guild_id, exclude=self._holding(),
+                                  manual=manual, name_of_for=lambda m: _name_resolver(self._guild_of(m)),
+                                  on_result=post)
+
+    async def _notice_interrupted(self, *, guild_id=None) -> None:
+        """봇이 뜨기 전에 녹음 중이던 회의의 채널에 재시작 안내를 한 번 올린다. 끊긴 지 한 시간 안일 때만."""
+        for _, m in interrupted_meetings(self.recordings_dir, since=self._started_at, guild_id=guild_id,
+                                         exclude=self._holding()):
+            session = str(m.get("session"))
+            if session in self._resume_noticed:
+                continue
+            self._resume_noticed.add(session)
+            await self._notify(self._channel_for(m), RESUME_NOTICE)
 
     def _holding(self) -> set[str]:
         """봇이 지금 들고 있는 회의 ID. 녹음 중(_active)과 후처리 중(_processing). 그 wav 를 복구가 집으면 안 된다."""

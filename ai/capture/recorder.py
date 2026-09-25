@@ -33,10 +33,11 @@ partial 로 두며, 다음 실행이 그 줄만 다시 보낸다. 할일 추출(
 
 from __future__ import annotations
 
+import asyncio
+import fcntl
 import functools
 import json
 import os
-import fcntl
 import socket
 import uuid
 from datetime import date, datetime, timedelta, timezone
@@ -598,6 +599,18 @@ def recently_cut(recordings_dir: Path, manifest: dict) -> bool:
     return newest is not None and utcnow().timestamp() - newest <= RESUME_NOTICE_WINDOW_S
 
 
+def interrupted_meetings(recordings_dir: Path, *, since: str, guild_id=None, exclude=None) -> list[tuple[Path, dict]]:
+    """재시작 안내를 올릴 회의. since(이 봇이 뜬 시각) 전에 시작돼 녹음 중에 끊겼고(잠금이 풀린 recording)
+    끊긴 지 얼마 안 된 회의. 서버가 적힌 것만 본다. 읽기만 한다."""
+    out = []
+    for p, m in _pending(recordings_dir, guild_id=guild_id, exclude=exclude):
+        if not m.get("guild_id") or not interrupted_recording(m, since=since):
+            continue
+        if not is_locked(p) and recently_cut(recordings_dir, m):
+            out.append((p, m))
+    return out
+
+
 def _due(manifest: dict, now: datetime) -> bool:
     """루프가 이번 바퀴에 돌릴 때인가. 다음 시도 시각 전이면 아니다. 포기한 회의는 BE 에 fail 이 안 닿았을 때만이다.
 
@@ -660,6 +673,45 @@ def recover_one(recordings_dir: Path, path: Path, *, claims: Claims, manual: boo
                                transcripts_dir=transcripts_dir, extractor=extractor, handoff=handoff, name_of=name_of)
     finally:
         claims.release(path, m)
+
+
+async def recover_pass(recordings_dir: Path, *, claims: Claims, sem: asyncio.Semaphore, stt_factory, gate_factory,
+                       extractor_factory, handoff_factory, transcripts_dir: Path | None = None, guild_id=None,
+                       exclude=None, manual: bool = False, name_of_for=None, stop=None, on_start=None,
+                       on_result=None) -> tuple[list[dict], list[dict]]:
+    """복구 한 바퀴. 봇(capture/discord_adapter.py)의 루프와 /recover, 워커(capture/worker.py)가 같이 쓴다.
+
+    대상은 바퀴를 시작할 때 정한다(recovery_targets). 모든 서버를 보는 바퀴(guild_id=None)는 서버가 적히지 않은
+    옛 매니페스트를 뺀다. 서버별 /recover 도 집지 못하던 것이다. 회의마다 sem 을 잡고 recover_one 을 스레드에서
+    돌린다. stop() 이 참이 되면 새 회의를 집지 않는다. on_start(매니페스트)는 처리 직전에, on_result(결과)는 처리
+    뒤에 부른다. 돌려주는 것은 (돌린 회의의 결과, 남이 잡고 있어 건너뛴 회의)다.
+    """
+    due, busy = recovery_targets(recordings_dir, claims=claims, guild_id=guild_id, exclude=exclude, manual=manual)
+    if guild_id is None:
+        due = [(p, m) for p, m in due if m.get("guild_id")]
+    results = []
+    for path, m in due:
+        if stop is not None and stop():
+            break
+        backend, model_name, workers = stt_factory()
+        async with sem:
+            if stop is not None and stop():
+                break
+            if on_start is not None:
+                on_start(m)
+            r = await asyncio.to_thread(recover_one, recordings_dir, path, claims=claims, manual=manual,
+                                        backend=backend, model_name=model_name, workers=workers, gate=gate_factory(),
+                                        transcripts_dir=transcripts_dir, extractor=extractor_factory(),
+                                        handoff=handoff_factory(), name_of=name_of_for(m) if name_of_for else None)
+        if r is None:
+            continue
+        if r.get("busy"):
+            busy.append(r)
+            continue
+        results.append(r)
+        if on_result is not None:
+            await on_result(r)
+    return results, busy
 
 
 def recover(recordings_dir: Path, *, backend, model_name: str, workers: int, gate=None,
