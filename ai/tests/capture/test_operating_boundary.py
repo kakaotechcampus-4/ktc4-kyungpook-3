@@ -1,4 +1,4 @@
-"""운영 봇의 경계. 운영 Cog 는 RecordingCog 하나이고 실시간 폴더에 기대지 않는다 (decision_log/0014).
+"""운영 봇의 경계. 운영 Cog 는 RecordingCog 하나이고 실시간 폴더에 기대지 않는다 (decision_log/0006).
 
 실시간 경로(capture/realtime, stt/realtime)는 비교 실행과 회귀 근거로 남겨 둔 것이라, 지우기로
 정하면 폴더째 지울 수 있어야 한다. 그 전제를 여기서 지킨다.

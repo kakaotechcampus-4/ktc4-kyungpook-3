@@ -14,7 +14,7 @@
 - `tests/capture/test_operating_boundary.py`: `run_recorder.build_bot()` 의 Cog 가 RecordingCog 하나인지, 운영 Cog 와 실행기를 새 프로세스에서 import 했을 때 `capture.realtime`·`stt.realtime` 모듈이 하나도 실리지 않는지 본다 (f58dea9)
 - `stt/realtime/bench.py`: 옮겨진 리플레이 하니스(`tests/capture/replay.py`)를 찾게 고치고 무과금 합성 실행을 `tests/stt/realtime/test_bench.py` 로 묶었다 (82377a3)
 - `capture/realtime/__init__.py`: 운영 Cog, 남긴 이유(비교 실행, 회귀 근거), 의존성, 유지 범위를 적었다. `stt/realtime/__init__.py` 와 `adapter.py`·`run.py`·`selftest.py` 의 낡은 경로와 설명, `.env.example` 의 인텐트·`LOG_LEVEL` 설명을 지금 코드에 맞췄다 (4447e97, 0d30693)
-- 결정은 [decision_log/0014](../decision_log/0014-keep-realtime-path-for-comparison.md) (c214e26)
+- 결정: 실시간 경로는 이후 회의 중 전사를 다시 넣을 때 쓰려고 폴더로 보관한다. decision_log/0006 의 상태와 다시 볼 조건을 고쳤다
 
 ## 왜
 
@@ -35,7 +35,7 @@
 
 남긴 네 줄은 배치 쪽 `def` 를 지워야 없어진다. `discord_adapter.py` 는 복구 자동화 작업(#88)이 크게 고치는 중이라 이 PR 에서는 건드리지 않았다. 공용 모듈에 사본을 만들어 실시간만 쓰게 하는 안도 봤는데, 배치 사본이 그대로라 같은 코드가 세 곳이 되고 배치가 공용 코드를 쓴다는 목표도 못 채워서 버렸다. 네 곳 모두 두 경로에 같은 처리가 이미 있어 지금 퇴행할 곳은 없다.
 
-실시간 폴더를 지우지 않고 범위를 정한 이유와 지우는 조건은 0014 에 적었다.
+실시간 폴더를 지우지 않는 이유(이후 회의 중 전사를 다시 넣을 수 있다)는 0006 의 다시 볼 조건에 적었다.
 
 ## 결과
 
