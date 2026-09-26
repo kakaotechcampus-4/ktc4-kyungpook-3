@@ -105,6 +105,14 @@ class ExtractedTask(_Base):
 JudgeCategory = Literal["schedule", "assignee", "scope", "decision", "none"]
 JUDGE_CATEGORIES: tuple[str, ...] = ("schedule", "assignee", "scope", "decision", "none")
 
+# JudgeFinding.signal — 1단계가 고른 발화가 **어느 축의 신호인지**.
+# JudgeResult.category(schedule|assignee|scope|decision|none)와는 다른 축이다: category 는
+# "문서에 무엇이 바뀌는가"를 2단계가 매기고, signal 은 "문서 축인가 작업 상태 축인가"를
+# 1단계가 매긴다. 값 이름이 겹쳐 보이지만(decision) 섞어 쓰면 안 된다.
+SIGNAL_DECISION = "decision"  # 문서에 쓸 새 내용이 있다 (결정/합의/범위 변경)
+SIGNAL_PROGRESS = "progress"  # 문서에 쓸 새 내용은 없지만 기존 작업의 진척 신호다
+FINDING_SIGNALS: tuple[str, ...] = (SIGNAL_DECISION, SIGNAL_PROGRESS)
+
 
 @dataclass
 class JudgeFinding(_Base):
@@ -122,6 +130,11 @@ class JudgeFinding(_Base):
     맡아주세요."). 그래서 evidence/indices 는 리스트다. seq/speaker 는 그중 **마지막 줄**을
     가리킨다 — 결론을 말한 발화이자, 1인칭 담당자 해소가 봐야 하는 화자다.
 
+    signal 은 이 발화가 **어느 축의 신호인지**를 가른다. 축이 하나뿐이면("문서를 바꿀 만한가")
+    "로그인 API 다 붙였어요" 같은 완료 보고가 문서 기준으로 무의미하다는 이유만으로 파이프라인
+    에서 사라지고, 2단계의 status(done) 판정에 영원히 도달하지 못한다. 그래서 문서 축과 작업
+    상태 축을 나눠 표시하고, 버릴지 말지는 호출자가 축별로 정한다.
+
     뒤쪽 세 필드(assignee_type/status/evidence_status)는 **1단계가 채우지 않는다.** 1단계는
     "이 발화가 볼 가치가 있나"만 판단하므로 담당자나 진행 상태를 매길 근거가 없다. Terra
     2단계와 구조화 단계를 거치며 채워지고, 그때까지는 None 이 "아직 판정 전"을 뜻한다.
@@ -133,6 +146,7 @@ class JudgeFinding(_Base):
     source: str = "meeting"  # "meeting" | "chat"
     seq: int = 0  # 근거 마지막 줄의 TranscriptSegment.seq — 근거 추적용 안정 식별자
     speaker: str | None = None  # 근거 마지막 줄의 화자(opaque id) — 문맥 참고/디버깅용
+    signal: str = SIGNAL_DECISION  # decision | progress — 문서 축인가 작업 상태 축인가
     reason: str = ""  # 왜 후보로 골랐는지 (규칙 기반이면 어떤 규칙에 걸렸는지)
     method: str = "rules"  # rules | llm
 

@@ -186,6 +186,71 @@ def test_llm_path_ignores_out_of_range_indices():
     assert extract_findings_llm(t, fake) == []
 
 
+def test_llm_path_reads_signal_and_defaults_to_decision():
+    """signal 을 읽어 담고, 값이 없거나 모르는 값이면 decision 으로 둔다.
+
+    signal 은 라우팅 축이라 값이 이상하다고 항목을 버리면 결정이 통째로 사라진다.
+    decision 이 기본인 이유는 그쪽이 안전한 실패라서다 — progress 로 잘못 보내면 문서 갱신
+    경로를 건너뛰지만, decision 으로 잘못 보내면 2단계가 한 번 더 걸러준다.
+    """
+    t = _transcript(
+        TranscriptSegment(speaker="a", start=0.0, end=1.0, text="로그인 API 다 붙였어요.", seq=1),
+        TranscriptSegment(speaker="b", start=1.0, end=2.0, text="금요일까지 하기로 했습니다.", seq=2),
+        TranscriptSegment(speaker="c", start=2.0, end=3.0, text="문서도 정리해뒀어요.", seq=3),
+    )
+    fake = FakeLLM(responses=[{"findings": [
+        {"indices": [0], "signal": "progress", "reason": "완료 보고"},
+        {"indices": [1], "signal": "decision", "reason": "일정 합의"},
+        {"indices": [2], "signal": "무슨값", "reason": "모르는 값"},
+    ]}])
+    findings = extract_findings_llm(t, fake)
+
+    assert [f.signal for f in findings] == ["progress", "decision", "decision"]
+
+
+def test_progress_report_reaches_the_next_stage():
+    """완료 보고가 1단계에서 사라지지 않는지 — 이 PR 의 핵심.
+
+    축이 "문서를 바꿀 만한가" 하나뿐이던 시절엔 완료 보고가 문서 기준 무의미하다는 이유로
+    걸러져서, 2단계의 status(done) 판정에 영원히 도달하지 못했다.
+    """
+    t = _transcript(
+        TranscriptSegment(speaker="a", start=0.0, end=1.0, text="로그인 API 다 붙였어요.", seq=1)
+    )
+    fake = FakeLLM(responses=[{"findings": [
+        {"indices": [0], "summary": "로그인 API 연동을 완료함", "signal": "progress", "reason": "완료 보고"}
+    ]}])
+    findings = extract_findings_llm(t, fake)
+
+    assert len(findings) == 1
+    assert findings[0].signal == "progress"
+    assert findings[0].evidence == ["로그인 API 다 붙였어요."]
+
+
+def test_golden_set_signal_labels_are_valid():
+    """골든셋의 signal 라벨이 허용값인지, should_flag=True 인 라벨에만 붙어 있는지."""
+    import json
+    from pathlib import Path as _P
+
+    from shared.schemas import FINDING_SIGNALS
+
+    golden_dir = _P(__file__).resolve().parent.parent / "judge" / "golden_set"
+    problems: list[str] = []
+    for path in sorted(golden_dir.rglob("case_*.json")):
+        case = json.loads(path.read_text(encoding="utf-8"))
+        where = f"{path.parent.name}/{case['case_id']}"
+        for exp in case["expected"]:
+            sig = exp.get("signal")
+            if sig is None:
+                continue
+            if sig not in FINDING_SIGNALS:
+                problems.append(f"{where}: 허용되지 않은 signal {sig!r} — {exp['text']!r}")
+            if not exp["should_flag"]:
+                problems.append(f"{where}: 고르지도 않을 문장에 signal 이 붙음 — {exp['text']!r}")
+
+    assert not problems, "골든셋 signal 라벨 문제:\n  " + "\n  ".join(problems)
+
+
 def test_llm_path_ignores_bool_indices():
     # bool은 int의 서브클래스라 isinstance(i, int) 검사만으로는 True/False가 0/1번 문장으로
     # 잘못 통과할 수 있다 — type()으로 엄격히 걸러지는지 확인한다.

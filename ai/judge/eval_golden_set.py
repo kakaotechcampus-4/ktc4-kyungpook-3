@@ -18,7 +18,7 @@ from pathlib import Path
 
 from judge.semantic_judge import extract_findings_llm, extract_findings_rules
 from llm import get_llm
-from shared.schemas import JudgeFinding, Transcript, TranscriptSegment
+from shared.schemas import SIGNAL_DECISION, JudgeFinding, Transcript, TranscriptSegment
 
 GOLDEN_SET_DIR = Path(__file__).resolve().parent / "golden_set"
 GROUPS = ("short_sentences", "long_sentences")
@@ -41,6 +41,37 @@ def _build_transcript(case: dict) -> Transcript:
         for i, t in enumerate(case["turns"])
     ]
     return Transcript(segments=segments, source="meeting")
+
+
+def _signal_by_text(findings: list[JudgeFinding]) -> dict[str, str]:
+    """앵커 문장 → 그 finding 의 signal. 라벨과 맞춰 축 분류 정확도를 재려고 쓴다."""
+    return {f.evidence[-1]: f.signal for f in findings if f.evidence}
+
+
+def _score_signal(case: dict, signals: dict[str, str]) -> tuple[int, int, list[str]]:
+    """**골라낸 것 중에서만** 축 분류가 맞았는지 센다.
+
+    통과 여부(should_flag)와는 다른 질문이다 — 진척 보고를 골라냈어도 decision 으로 분류하면
+    문서 갱신 경로로 잘못 가고, 결정을 progress 로 분류하면 문서에 안 써진다. 통과율만 보면
+    둘 다 "맞음"으로 보이므로 따로 잰다.
+
+    못 골라낸 문장은 분모에서 뺀다 — 놓친 건 이미 통과율에서 오답으로 잡혔고, 여기서 또 세면
+    같은 실패를 두 번 깎는 셈이다.
+    """
+    correct, total, mistakes = 0, 0, []
+    for exp in case["expected"]:
+        if not exp["should_flag"]:
+            continue
+        got = signals.get(exp["text"])
+        if got is None:
+            continue  # 못 골라낸 문장 — 통과율 쪽에서 이미 오답
+        total += 1
+        want = exp.get("signal", SIGNAL_DECISION)
+        if got == want:
+            correct += 1
+        else:
+            mistakes.append(f'"{exp["text"]}" — signal 기대={want} 실제={got}')
+    return correct, total, mistakes
 
 
 def _flagged_texts(findings: list[JudgeFinding]) -> set[str]:
@@ -75,7 +106,9 @@ def main() -> None:
         return
 
     cases = _load_cases()
-    totals: dict[str, dict[str, int]] = {g: {"r_c": 0, "r_t": 0, "l_c": 0, "l_t": 0} for g in GROUPS}
+    totals: dict[str, dict[str, int]] = {
+        g: {"r_c": 0, "r_t": 0, "l_c": 0, "l_t": 0, "s_c": 0, "s_t": 0} for g in GROUPS
+    }
 
     for case in cases:
         group = case["_group"]
@@ -88,20 +121,29 @@ def main() -> None:
 
         r_correct, r_total, r_mistakes = _score(case, rules_flagged)
         l_correct, l_total, l_mistakes = _score(case, llm_flagged)
+        llm_signals = _signal_by_text(llm_result) if llm_result is not None else {}
+        s_correct, s_total, s_mistakes = _score_signal(case, llm_signals)
 
         tag = "" if counts else " (통과율 제외)"
         print(f"\n[{group}/{case['case_id']}] {case['description']}{tag}")
         print(f"  규칙 기반 {r_correct}/{r_total}", *[f"\n    ✗ {m}" for m in r_mistakes])
         print(f"  Luna     {l_correct}/{l_total}", *[f"\n    ✗ {m}" for m in l_mistakes])
 
+        if s_total:
+            print(f"  축 분류   {s_correct}/{s_total}")
+            for m in s_mistakes:
+                print(f"    ✗ {m}")
+
         if counts:
             totals[group]["r_c"] += r_correct
             totals[group]["r_t"] += r_total
             totals[group]["l_c"] += l_correct
             totals[group]["l_t"] += l_total
+            totals[group]["s_c"] += s_correct
+            totals[group]["s_t"] += s_total
 
     print("\n" + "=" * 60)
-    grand = {"r_c": 0, "r_t": 0, "l_c": 0, "l_t": 0}
+    grand = {"r_c": 0, "r_t": 0, "l_c": 0, "l_t": 0, "s_c": 0, "s_t": 0}
     for group in GROUPS:
         g = totals[group]
         if g["r_t"] == 0:
@@ -114,6 +156,9 @@ def main() -> None:
     print("-" * 60)
     print(f"전체 규칙 기반 정답률: {grand['r_c']}/{grand['r_t']} ({grand['r_c'] / grand['r_t']:.0%})")
     print(f"전체 Luna 정답률   : {grand['l_c']}/{grand['l_t']} ({grand['l_c'] / grand['l_t']:.0%})")
+    if grand["s_t"]:
+        print(f"축 분류(decision/progress): {grand['s_c']}/{grand['s_t']} "
+              f"({grand['s_c'] / grand['s_t']:.0%}) — 골라낸 것 중에서만 잼")
 
 
 if __name__ == "__main__":

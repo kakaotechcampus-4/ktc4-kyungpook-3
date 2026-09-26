@@ -136,8 +136,9 @@
     },
     {
       "text": "저는 배포 스크립트 좀 손봤습니다.",
-      "should_flag": false,
-      "note": "진행상황"
+      "should_flag": true,
+      "note": "진행상황 — 작업 대상이 명시된 진척 보고이므로 progress",
+      "signal": "progress"
     },
     {
       "text": "좋네요.",
@@ -206,8 +207,9 @@
     },
     {
       "text": "저는 디자인쪽 계속 진행 중이에요.",
-      "should_flag": false,
-      "note": "진행상황"
+      "should_flag": true,
+      "note": "진행상황 — 작업 대상이 명시된 진척 보고이므로 progress",
+      "signal": "progress"
     },
     {
       "text": "저도 특별한 이슈 없습니다.",

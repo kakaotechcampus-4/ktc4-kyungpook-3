@@ -104,8 +104,9 @@
     },
     {
       "text": "저는 어제 계속 디버깅했어요.",
-      "should_flag": false,
-      "note": "긴 진행상황 보고, 결정 없음 (원래 한 발화가 문장 3개로 쪼개짐 1/3)"
+      "should_flag": true,
+      "note": "긴 진행상황 보고, 결정 없음 (원래 한 발화가 문장 3개로 쪼개짐 1/3) — 작업 대상이 명시된 진척 보고이므로 progress",
+      "signal": "progress"
     },
     {
       "text": "QA 쪽에서 버그 리포트 몇 개 왔어요.",
@@ -119,8 +120,9 @@
     },
     {
       "text": "저는 배포 스크립트 좀 손봤습니다.",
-      "should_flag": false,
-      "note": "진행상황"
+      "should_flag": true,
+      "note": "진행상황 — 작업 대상이 명시된 진척 보고이므로 progress",
+      "signal": "progress"
     },
     {
       "text": "좋네요.",

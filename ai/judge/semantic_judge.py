@@ -6,8 +6,10 @@ Luna(get_llm("luna")) 없이는 이 판단을 대신할 방법이 없으므로, 
 경로에서는 더 이상 쓰이지 않고, eval_golden_set.py 가 "규칙 기반 대비 Luna가 얼마나 나은가"를
 비교하는 용도로만 남아있다.
 
-담당자/마감일을 실제로 파싱하는 건 여기서 하지 않는다(Phase 1 extract 몫) — 여기는
-"이 문장이 Notion 문서를 바꿀 만큼 의미가 있는가"만 본다.
+담당자/마감일을 실제로 파싱하는 건 여기서 하지 않는다(Phase 1 extract 몫) — 여기는 "이 발화가
+다음 단계가 볼 가치가 있는가"와 "어느 축의 신호인가"(JudgeFinding.signal)만 본다. 축이 둘인
+이유는 "문서를 바꿀 만한가" 하나로 거르면 "로그인 API 다 붙였어요" 같은 완료 보고가 문서 기준
+무의미하다는 이유로 사라져서, 2단계의 status(done) 판정에 영원히 도달하지 못하기 때문이다.
 
 의도적으로 넉넉하게 통과시킨다: 애매하면 걸러내지 않고 후보로 남긴다. 여기서 놓치면 2단계까지
 갈 기회 자체가 없어지지만, 여기서 잘못 통과시켜도 2단계(Notion 후보 비교 + 최종 판단)에서
@@ -19,7 +21,7 @@ from __future__ import annotations
 import re
 
 from llm import LLMClient, get_llm
-from shared.schemas import JudgeFinding, Transcript
+from shared.schemas import FINDING_SIGNALS, SIGNAL_DECISION, JudgeFinding, Transcript
 
 
 class FindingExtractionUnavailableError(RuntimeError):
@@ -41,12 +43,19 @@ _MEETING_TALK_RE = re.compile(r"(스탠드업|회의).*(시작|여기까지|마�
 _FACILITATION_RE = re.compile(r"말씀해\s?주세요")
 
 _LUNA_SYSTEM_PROMPT = (
-    "너는 회의/채팅 전사록에서 Notion 문서를 갱신할 만큼 의미 있는 발화만 골라내는 필터다. "
-    "일정 합의, 담당자 관련 언급, 작업 범위 변경, 프로젝트 관련 결정은 포함하고, "
-    "인사/잡담/맞장구/회의 진행 멘트(시작·마무리 인사, 발언 요청)는 제외한다. "
-    "이미 하고 있거나 끝낸 작업에 대한 단순 진행상황 공유(예: '저는 어제 로그인 API 붙였고요', "
-    "'디자인 시스템 정리하고 있어요')는 새로운 결정/변경이 아니라 FYI이므로 제외한다 — 그 "
-    "안에 새로운 일정/담당자/범위 결정이 실제로 포함된 경우에만 그 결정 부분을 포함한다. "
+    "너는 회의/채팅 전사록에서 다음 단계가 볼 가치가 있는 발화만 골라내는 필터다. "
+    "고른 발화마다 signal 로 어느 쪽 신호인지 표시한다:\n"
+    "  signal=\"decision\" — 문서에 쓸 새 내용이 있다 (일정 합의, 담당자 지정, 작업 범위 변경,"
+    " 프로젝트 관련 결정)\n"
+    "  signal=\"progress\" — 문서에 쓸 새 내용은 없지만 **이미 있는 작업의 진척** 신호다\n"
+    "인사/잡담/맞장구/회의 진행 멘트(시작·마무리 인사, 발언 요청)는 둘 다 아니므로 제외한다. "
+    "이미 하고 있거나 끝낸 작업에 대한 진행상황 공유(예: '저는 어제 로그인 API 붙였고요', "
+    "'디자인 시스템 정리하고 있어요')는 signal=\"progress\" 로 포함한다 — 새 결정은 아니지만 "
+    "기존 작업의 상태를 바꿀 신호라 버리면 완료 소식이 어디에도 도달하지 못한다. "
+    "다만 **어떤 작업인지 문장에서 알 수 있어야** 한다 — '어제 야근했어요', '다른 작업 좀 "
+    "했어요'처럼 가리키는 작업이 없으면 상태를 바꿀 대상이 없으므로 제외한다. "
+    "진행상황 공유 안에 새로운 일정/담당자/범위 결정이 실제로 포함돼 있으면 그 결정 부분은 "
+    "signal=\"decision\" 으로 따로 낸다. "
     "질문 형태(예: ~ 어때요?, ~할 수 있어요?)나 제안/의견 형태(예: ~하는 게 나을 것 같아요, "
     "~하면 좋겠어요)는 아직 결정된 게 아니므로 그 자체로는 포함하지 않는다 — 다만 그 제안에 "
     "대한 답변/합의가 의미 있다면, 답변 쪽 발화에 제안 내용까지 반영해서 자기완결적으로 "
@@ -148,14 +157,28 @@ def _valid_indices(item: dict, n: int) -> list[int]:
     return sorted({i for i in raw if type(i) is int and 0 <= i < n})
 
 
+def _valid_signal(item: dict) -> str:
+    """LLM 이 준 signal 을 허용값으로 좁힌다. 모르는 값이면 decision 으로 둔다.
+
+    signal 은 라우팅용 축이라 값이 이상하다고 항목을 버리면 결정이 통째로 사라진다.
+    decision 이 기본인 이유는 그쪽이 안전한 실패이기 때문이다 — progress 로 잘못 보내면
+    문서 갱신 경로를 건너뛰지만, decision 으로 잘못 보내면 2단계가 한 번 더 걸러준다.
+    """
+    raw = item.get("signal")
+    return raw if raw in FINDING_SIGNALS else SIGNAL_DECISION
+
+
 def _luna_user_prompt(numbered: str) -> str:
     return (
         "다음은 번호가 매겨진 발화 목록이다. 의미 있다고 판단한 내용마다 근거가 되는 줄 번호 "
         "전부(indices)와, 앞뒤 문맥까지 반영해서 이것만 읽어도 무슨 내용인지 알 수 있게 다시 쓴 "
-        "자기완결적 요약(summary), 왜 그렇게 판단했는지 짧은 이유(reason)를 JSON으로만 답하라.\n\n"
+        "자기완결적 요약(summary), 어느 쪽 신호인지(signal), 왜 그렇게 판단했는지 짧은 "
+        "이유(reason)를 JSON으로만 답하라.\n\n"
         "하나의 결정이 여러 줄에 걸쳐 만들어지면(제안 → 합의, 지시 → 수락) 그 줄 번호를 모두 "
         "indices 에 담아라. 한 줄로 끝나면 번호 하나만 담는다. 서로 다른 결정은 따로 나눈다.\n\n"
-        '형식: {"findings": [{"indices": [1, 2], "summary": "...", "reason": "..."}]}\n\n'
+        'signal 은 "decision"(문서에 쓸 새 내용) 또는 "progress"(기존 작업의 진척) 둘 중 하나다.\n\n'
+        '형식: {"findings": [{"indices": [1, 2], "summary": "...", '
+        '"signal": "decision", "reason": "..."}]}\n\n'
         f"{numbered}"
     )
 
@@ -204,6 +227,7 @@ def extract_findings_llm(transcript: Transcript, client: LLMClient) -> list[Judg
                 source=transcript.source,
                 seq=seqs[anchor],
                 speaker=speakers[anchor],
+                signal=_valid_signal(item),
                 reason=str(item.get("reason", "")).strip()[:200],
                 method="llm",
             )
