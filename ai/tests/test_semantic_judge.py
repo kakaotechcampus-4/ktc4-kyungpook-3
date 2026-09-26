@@ -1,4 +1,7 @@
+import pytest
+
 from judge.semantic_judge import (
+    FindingExtractionUnavailableError,
     extract_findings,
     extract_findings_llm,
     extract_findings_rules,
@@ -183,6 +186,17 @@ def test_llm_path_ignores_out_of_range_indices():
     assert extract_findings_llm(t, fake) == []
 
 
+def test_llm_path_ignores_bool_indices():
+    # bool은 int의 서브클래스라 isinstance(i, int) 검사만으로는 True/False가 0/1번 문장으로
+    # 잘못 통과할 수 있다 — type()으로 엄격히 걸러지는지 확인한다.
+    t = _transcript(
+        TranscriptSegment(speaker="a", start=0.0, end=1.0, text="안녕하세요.", seq=0),
+        TranscriptSegment(speaker="b", start=1.0, end=2.0, text="반갑습니다.", seq=1),
+    )
+    fake = FakeLLM(responses=[{"findings": [{"indices": [True, False], "reason": "타입 오염"}]}])
+    assert extract_findings_llm(t, fake) == []
+
+
 def test_llm_path_returns_none_when_call_fails():
     t = _transcript(TranscriptSegment(speaker="a", start=0.0, end=1.0, text="안녕하세요.", seq=0))
     assert extract_findings_llm(t, NullLLM()) is None
@@ -194,19 +208,43 @@ def test_llm_path_empty_transcript_returns_empty_without_calling():
     assert fake.prompts == []  # 빈 전사록이면 호출 자체를 안 함
 
 
-# ── extract_findings (디스패처: Luna 되면 Luna, 안 되면 규칙 폴백) ────────────
+def test_llm_path_treats_missing_findings_key_as_empty():
+    # {} 처럼 findings 키 자체가 없으면 "0건"으로 정상 처리한다 — 실패가 아니다.
+    t = _transcript(TranscriptSegment(speaker="a", start=0.0, end=1.0, text="안녕하세요.", seq=0))
+    fake = FakeLLM(responses=[{}])
+    assert extract_findings_llm(t, fake) == []
 
 
-def test_dispatcher_uses_rules_when_llm_off(monkeypatch):
+def test_llm_path_returns_none_when_findings_is_null():
+    # 키는 있는데 값이 None/리스트가 아니면 신뢰할 수 없는 응답 → None(실패)으로 구분한다.
+    t = _transcript(TranscriptSegment(speaker="a", start=0.0, end=1.0, text="안녕하세요.", seq=0))
+    fake = FakeLLM(responses=[{"findings": None}])
+    assert extract_findings_llm(t, fake) is None
+
+
+def test_llm_path_skips_non_dict_items_but_keeps_valid_ones():
+    t = _transcript(
+        TranscriptSegment(speaker="a", start=0.0, end=1.0, text="안녕하세요.", seq=0),
+        TranscriptSegment(speaker="b", start=1.0, end=2.0, text="그럼 그렇게 갑시다.", seq=1),
+    )
+    fake = FakeLLM(responses=[{"findings": [1, {"indices": [1], "reason": "정상"}]}])
+    findings = extract_findings_llm(t, fake)
+    assert len(findings) == 1
+    assert findings[0].evidence == ["그럼 그렇게 갑시다."]
+
+
+# ── extract_findings (디스패처: 규칙 기반 폴백 없음, Terra와 같은 원칙) ────────
+
+
+def test_dispatcher_raises_when_llm_off(monkeypatch):
     import judge.semantic_judge as sj
 
     monkeypatch.setattr(sj, "get_llm", lambda which: NullLLM())
     t = _transcript(
         TranscriptSegment(speaker="a", start=0.0, end=1.0, text="내일까지 끝낼게요.", seq=0)
     )
-    findings = extract_findings(t)
-    assert len(findings) == 1
-    assert findings[0].method == "rules"
+    with pytest.raises(FindingExtractionUnavailableError):
+        extract_findings(t)
 
 
 def test_dispatcher_uses_llm_when_available(monkeypatch):
@@ -222,7 +260,7 @@ def test_dispatcher_uses_llm_when_available(monkeypatch):
     assert findings[0].method == "llm"
 
 
-def test_dispatcher_falls_back_to_rules_when_llm_call_fails(monkeypatch):
+def test_dispatcher_raises_when_llm_call_fails(monkeypatch):
     import judge.semantic_judge as sj
 
     fake = FakeLLM(responses=[None])  # 호출은 됐지만 파싱 실패 등으로 실패
@@ -230,6 +268,5 @@ def test_dispatcher_falls_back_to_rules_when_llm_call_fails(monkeypatch):
     t = _transcript(
         TranscriptSegment(speaker="a", start=0.0, end=1.0, text="내일까지 끝낼게요.", seq=0)
     )
-    findings = extract_findings(t)
-    assert len(findings) == 1
-    assert findings[0].method == "rules"
+    with pytest.raises(FindingExtractionUnavailableError):
+        extract_findings(t)

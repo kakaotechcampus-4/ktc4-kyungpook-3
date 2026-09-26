@@ -199,6 +199,8 @@ class JudgeResult(_Base):
     category: str  # schedule|assignee|scope|decision|none
     is_new: bool = False  # True=새 Notion 항목 생성, False=matched_task_id 항목 수정
     matched_task_id: str | None = None  # is_new=False 일 때 수정 대상. is_new=True 면 None
+    matched_notion_page_id: str | None = None  # matched_task_id가 None이어도(아직 우리 DB Task와
+    # 연결 안 된 Notion 후보를 골랐을 때) 실제 어떤 페이지를 골랐는지는 남긴다
     status: str | None = None  # todo|in_progress|blocked|done. 명시적 언급 없으면 None
     evidence: str = ""
 
