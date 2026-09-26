@@ -44,9 +44,9 @@ from pathlib import Path
 import discord
 
 from capture.handoff import from_env as handoff_from_env
-from capture.recorder import (STATUS_EXTRACTED, STATUS_FAILED, STATUS_HANDED_OFF, STATUS_PARTIAL, STATUS_RECORDING,
-                              STATUS_SAVED, STATUS_TRANSCRIBED, NullSession, backend_from_env, build_extractor,
-                              meeting_title, process_session, recover, write_status)
+from capture.recorder import (PARTIAL_RETRY_MAX, STATUS_EXTRACTED, STATUS_FAILED, STATUS_HANDED_OFF, STATUS_PARTIAL,
+                              STATUS_RECORDING, STATUS_SAVED, STATUS_TRANSCRIBED, NullSession, backend_from_env,
+                              build_extractor, meeting_title, process_session, recover, write_status)
 from capture.streaming_sink import StreamingSink
 from capture.track_writer import TrackPool
 from capture.voice_client import SafeVoiceClient
@@ -225,12 +225,21 @@ class RecordingCog(discord.Cog):
             await ctx.respond("봇이 음성채널에 없습니다.", ephemeral=True)
             return
         rec = self._active.get(ctx.guild.id)
+        waiting = [r for r in self._processing.values() if r.guild_id == ctx.guild.id]
         if rec is not None and is_recording(vc):
             await ctx.respond("⏹ 녹음 종료. 전사가 끝나면 나갑니다.")
             vc.stop_recording()
             await rec.done.wait()          # 자기 세션만 기다린다
             if ctx.guild.id in self._active:
                 # 기다리는 사이 새 녹음이 시작됐다. 그 연결은 새 녹음 것이라 끊지 않는다
+                await self._notify(ctx.channel, "새 녹음이 시작돼 음성채널에 남습니다.")
+                return
+        elif waiting:
+            # 녹음은 끝났고 후처리가 도는 중이다. 설명대로 끝날 때까지 기다린다
+            await ctx.respond("후처리가 끝나면 나갑니다.")
+            for r in waiting:
+                await r.done.wait()
+            if ctx.guild.id in self._active:
                 await self._notify(ctx.channel, "새 녹음이 시작돼 음성채널에 남습니다.")
                 return
         else:
@@ -242,12 +251,15 @@ class RecordingCog(discord.Cog):
     async def recover_cmd(self, ctx: discord.ApplicationContext) -> None:
         await ctx.respond("이 서버의 남은 녹음을 찾아 마지막 단계 다음부터 마저 처리합니다...")
         backend, model_name, workers = self._stt_factory()
+        # 지금 녹음 중이거나 후처리 중인 회의는 봇이 들고 있다. 그 wav 를 집어 가면 녹음이 끊긴 채 인계된다
+        holding = {r.meeting_id for r in self._active.values()} | set(self._processing)
         async with self._post_sem:
             results = await asyncio.to_thread(recover, self.recordings_dir, backend=backend, model_name=model_name,
                                               workers=workers, gate=self._gate_factory(),
                                               transcripts_dir=self.transcripts_dir,
                                               extractor=self._extractor_factory(), handoff=self._handoff_factory(),
-                                              guild_id=ctx.guild.id, name_of=_name_resolver(ctx.guild))
+                                              guild_id=ctx.guild.id, name_of=_name_resolver(ctx.guild),
+                                              exclude=holding)
         shown = 0
         for r in results:
             if not r["ran"] and r["status"] != STATUS_FAILED:
@@ -423,6 +435,9 @@ class RecordingCog(discord.Cog):
                 else:
                     text += f"\n⚠️ 다시 보내도 실패한 {tr['failed']}줄은 회의록에 없습니다. 구간은 매니페스트에 남아 있습니다."
             await self._notify(channel, text, file=discord.File(str(tr["markdown"])))
+        if result.get("partial"):
+            await self._notify(channel, f"⚠️ 빠진 구간 {result.get('missing_units', 0)}개를 둔 채 진행했습니다 "
+                               f"(재시도 {PARTIAL_RETRY_MAX}회). 구간은 매니페스트에 남아 있습니다.")
         if STATUS_EXTRACTED in result["ran"]:
             tasks = result.get("tasks") or []
             shown = "\n".join(f"- {x.get('task')} / {x.get('assignee_resolved') or x.get('assignee_mention') or '담당 미정'} "
@@ -431,6 +446,9 @@ class RecordingCog(discord.Cog):
         be = result.get("be")
         if STATUS_HANDED_OFF in result["ran"] and be:
             await self._notify(channel, f"📨 BE 인계 완료. 회의 `{be.get('meeting_id')}`, 항목 {be.get('item_count', 0)}건")
+            if be.get("stale_extraction"):
+                await self._notify(channel, "⚠️ 전사가 바뀌어 할일을 다시 뽑았지만 BE 에는 예전 추출이 남아 있습니다. "
+                                   "BE 에 다시 등록하는 경로가 필요합니다.")
         for stage, why in result.get("skipped", {}).items():
             await self._notify(channel, f"ℹ️ {STAGE_LABEL.get(stage, stage)}은 건너뜁니다 ({why}).")
         if result["status"] == STATUS_FAILED:

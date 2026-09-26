@@ -380,3 +380,90 @@ async def test_recover_only_touches_this_guilds_meetings(tmp_path):
     await _run(A.RecordingCog.recover_cmd, cog, ctx)
     assert [t for t, _ in channel.sent][0] == "세션 `77_500`"
     assert json.loads((tmp_path / "recordings" / "session_88_500.json").read_text(encoding="utf-8"))["status"] == "saved"
+
+
+async def test_recover_leaves_the_session_being_recorded_alone(tmp_path):
+    cog, guild, vc, channel, ctx = _setup(tmp_path)
+    await _run(A.RecordingCog.record, cog, ctx)
+    rec = cog._active[GUILD_ID]
+    rec.sink.on_samples(1, _tone(2000), 0)
+    await asyncio.sleep(0.3)                                          # 트랙 파일이 생길 시간
+    pending = [p.name for p in R.pending_sessions(tmp_path / "recordings")]
+    assert pending == [f"session_{rec.meeting_id}.json"]              # 전제: 복구 목록에 보이는 상태다
+    await _run(A.RecordingCog.recover_cmd, cog, ctx)
+    assert GUILD_ID in cog._active and _manifest(tmp_path, rec)["status"] == "recording"
+    assert all(not t.startswith("세션 `") for t, _ in channel.sent)
+    await _run(A.RecordingCog.stop, cog, ctx)
+    await asyncio.wait_for(rec.done.wait(), 20)
+    assert _manifest(tmp_path, rec)["status"] == "transcribed"
+
+
+async def test_recover_excludes_sessions_in_post_processing(tmp_path, monkeypatch):
+    cog, guild, vc, channel, ctx = _setup(tmp_path)
+    cog._post_sem = asyncio.Semaphore(2)                              # 동시 후처리를 허용했을 때
+    started = asyncio.Event()
+    release = threading.Event()
+    real = A.process_session
+
+    def slow(*args, **kwargs):
+        cog.bot.loop.call_soon_threadsafe(started.set)
+        release.wait(5)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(A, "process_session", slow)
+    cog.bot.loop = asyncio.get_running_loop()
+    await _run(A.RecordingCog.record, cog, ctx)
+    rec = cog._active[GUILD_ID]
+    rec.sink.on_samples(1, _tone(2000), 0)
+    await _run(A.RecordingCog.stop, cog, ctx)
+    await asyncio.wait_for(started.wait(), 5)
+    assert rec.meeting_id in cog._processing
+    seen = {}
+
+    def fake_recover(*args, **kwargs):
+        seen.update(kwargs)
+        return []
+
+    monkeypatch.setattr(A, "recover", fake_recover)
+    await _run(A.RecordingCog.recover_cmd, cog, ctx)
+    assert seen["exclude"] == {rec.meeting_id}
+    release.set()
+    await asyncio.wait_for(rec.done.wait(), 20)
+
+
+async def test_end_after_stop_waits_for_post_processing_before_leaving(tmp_path, monkeypatch):
+    cog, guild, vc, channel, ctx = _setup(tmp_path)
+    started = asyncio.Event()
+    release = threading.Event()
+    real = A.process_session
+
+    def slow(*args, **kwargs):
+        cog.bot.loop.call_soon_threadsafe(started.set)
+        release.wait(5)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(A, "process_session", slow)
+    cog.bot.loop = asyncio.get_running_loop()
+    await _run(A.RecordingCog.record, cog, ctx)
+    rec = cog._active[GUILD_ID]
+    rec.sink.on_samples(1, _tone(2000), 0)
+    await _run(A.RecordingCog.stop, cog, ctx)                         # 녹음은 끝났고 후처리가 도는 중
+    await asyncio.wait_for(started.wait(), 5)
+    end_task = asyncio.create_task(_run(A.RecordingCog.end, cog, ctx))
+    await asyncio.sleep(0.3)
+    assert vc.disconnected == 0                                       # 후처리가 끝나기 전에는 안 나간다
+    release.set()
+    await asyncio.wait_for(end_task, 20)
+    assert vc.disconnected == 1 and rec.done.is_set()
+
+
+async def test_report_says_how_many_units_a_partial_meeting_is_missing(tmp_path):
+    cog, guild, vc, channel, ctx = _setup(tmp_path)
+    md = tmp_path / "transcript.md"
+    md.write_text("# 회의록\n", encoding="utf-8")
+    result = {"session": "77_500", "status": "extracted", "ran": ["retried", "extracted"], "skipped": {}, "error": None,
+              "failed_stage": None, "transcribe": {"markdown": str(md), "failed": 1, "summary": None, "lines": 3},
+              "retried": 1, "tasks": [], "be": None, "speakers": 2, "text_channel_id": str(TEXT_ID),
+              "partial": True, "missing_units": 1}
+    await cog._report(channel, "77_500", result)
+    assert any("빠진 구간 1개" in t for t, _ in channel.sent)
