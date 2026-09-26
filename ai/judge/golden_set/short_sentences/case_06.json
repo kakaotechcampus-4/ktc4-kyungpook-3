@@ -1,0 +1,12 @@
+{
+  "case_id": "case_06",
+  "scenario": "conditional_commitment",
+  "description": "조건부/불확실한 약속 — 애매하면 포함시키는 원칙 확인",
+  "turns": [
+    {"speaker": "A", "text": "혹시 시간 되면 이번 주까지 해볼게요."}
+  ],
+  "expected": [
+    {"text": "혹시 시간 되면 이번 주까지 해볼게요.", "should_flag": true, "note": "불확실해도 일정 관련 약속이라 넉넉하게 포함"}
+  ],
+  "counts_toward_pass_rate": true
+}

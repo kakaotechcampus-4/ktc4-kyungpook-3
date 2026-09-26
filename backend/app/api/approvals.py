@@ -1,32 +1,61 @@
 import json
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select, func, update
 from sqlalchemy.orm import Session
 
+from app.api.deps import get_current_member, get_current_user, require_member
 from app.core.database import get_db
 from app.core.errors import AppError, Envelope, ErrorCode, success
-from app.models import ApprovalRequest, ApprovalStatus, ApprovalType, ChangeSource, ExtractionItem, Task, TaskStatus
+from app.models import ApprovalRequest, ApprovalStatus, ApprovalType, ChangeSource, ExtractionItem, Member, Task, TaskStatus, User
 from app.schemas.approval import (
     ApprovalCreateRequest,
     ApprovalListResponse,
     ApprovalResolveRequest,
     ApprovalResponse,
 )
-from app.services.tasks import apply_task_updates, create_task, validate_task_fields
+from app.services.tasks import apply_task_updates, create_task, parse_date
 
 router = APIRouter(prefix="/approvals", tags=["approvals"])
 
 _TASK_UPDATE_FIELDS = {"title", "assignee_member_id", "status", "progress", "blocker", "due_date"}
 
 
-def _parse_date(value: object) -> date | None:
-    if value is None:
+def _get_linkable_extraction_item(
+    db: Session, approval: ApprovalRequest, extraction_item_id: str
+) -> ExtractionItem | None:
+    """payload의 extraction_item_id가 이 승인 요청에서 나온 추출 항목인지 검증한다.
+
+    다른 워크스페이스의 추출 항목이나 다른 승인 요청의 추출 항목에
+    Task ID가 기록되지 않도록 소속 워크스페이스와 approval_id를 확인한다.
+    """
+    ext_item = db.get(ExtractionItem, extraction_item_id)
+    if ext_item is None:
         return None
-    if isinstance(value, date):
-        return value
-    return date.fromisoformat(str(value))
+
+    item_workspace_id = ext_item.extraction.meeting.workspace_id
+    if item_workspace_id != approval.workspace_id:
+        raise AppError(
+            ErrorCode.WORKSPACE_MISMATCH,
+            message="승인 요청의 워크스페이스와 추출 항목의 워크스페이스가 다릅니다.",
+            details={
+                "extraction_item_id": extraction_item_id,
+                "approval_workspace_id": approval.workspace_id,
+                "extraction_item_workspace_id": item_workspace_id,
+            },
+        )
+    if ext_item.approval_id != approval.approval_id:
+        raise AppError(
+            ErrorCode.INVALID_REQUEST,
+            message="추출 항목이 이 승인 요청에 연결되어 있지 않습니다.",
+            details={
+                "extraction_item_id": extraction_item_id,
+                "approval_id": approval.approval_id,
+                "extraction_item_approval_id": ext_item.approval_id,
+            },
+        )
+    return ext_item
 
 
 def _apply_approval(db: Session, approval: ApprovalRequest) -> None:
@@ -34,34 +63,32 @@ def _apply_approval(db: Session, approval: ApprovalRequest) -> None:
     payload = json.loads(approval.payload)
 
     if approval.type == str(ApprovalType.TASK_CREATE):
-        title = payload.get("task_title") or payload.get("title") or ""
-        create_fields: dict[str, object] = {"title": title}
-        if payload.get("status") is not None:
-            create_fields["status"] = payload["status"]
-        if payload.get("progress") is not None:
-            create_fields["progress"] = payload["progress"]
-        validate_task_fields(create_fields)
+        # Task를 만들기 전에 연결 대상부터 검증한다.
+        extraction_item_id = payload.get("extraction_item_id")
+        ext_item = (
+            _get_linkable_extraction_item(db, approval, extraction_item_id)
+            if extraction_item_id
+            else None
+        )
 
+        # 제목·status·progress 검증은 create_task가 공통으로 수행한다.
         task = create_task(
             db,
             workspace_id=approval.workspace_id,
-            title=create_fields["title"],
+            title=payload.get("task_title") or payload.get("title") or "",
             meeting_id=payload.get("meeting_id"),
             assignee_member_id=payload.get("assignee_member_id"),
-            due_date=_parse_date(payload.get("due_date")),
-            status=create_fields.get("status", str(TaskStatus.TODO)),
-            progress=create_fields.get("progress"),
+            due_date=parse_date(payload.get("due_date"), field="due_date"),
+            status=payload.get("status") or str(TaskStatus.TODO),
+            progress=payload.get("progress"),
             change_source=str(ChangeSource.MEETING if payload.get("meeting_id") else ChangeSource.MANUAL),
             changed_by=approval.resolved_by,
             is_auto=False,
         )
         approval.related_task_id = task.task_id
 
-        extraction_item_id = payload.get("extraction_item_id")
-        if extraction_item_id:
-            ext_item = db.get(ExtractionItem, extraction_item_id)
-            if ext_item:
-                ext_item.task_id = task.task_id
+        if ext_item is not None:
+            ext_item.task_id = task.task_id
 
     elif approval.type == str(ApprovalType.TASK_UPDATE):
         if approval.related_task_id is None:
@@ -86,7 +113,7 @@ def _apply_approval(db: Session, approval: ApprovalRequest) -> None:
             )
         updates = {k: v for k, v in payload.items() if k in _TASK_UPDATE_FIELDS}
         if "due_date" in updates:
-            updates["due_date"] = _parse_date(updates["due_date"])
+            updates["due_date"] = parse_date(updates["due_date"], field="due_date")
         apply_task_updates(
             db,
             task,
@@ -118,9 +145,11 @@ def _to_response(row: ApprovalRequest) -> ApprovalResponse:
 @router.post("", status_code=201, response_model=Envelope[ApprovalResponse])
 def create_approval(
     payload: ApprovalCreateRequest,
+    user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
-    """승인 요청을 생성한다 (AI → BE)."""
+    """승인 요청을 생성한다."""
+    require_member(db, user, payload.workspace_id)
     approval = ApprovalRequest(
         workspace_id=payload.workspace_id,
         type=str(payload.type),
@@ -139,6 +168,7 @@ def create_approval(
 def list_approvals(
     workspace_id: str = Query(..., description="워크스페이스 ID"),
     status: ApprovalStatus | None = Query(None, description="상태 필터"),
+    _member: Member = Depends(get_current_member),
     db: Session = Depends(get_db),
 ) -> dict:
     """승인 요청 목록을 조회한다. status 로 필터 가능."""
@@ -167,7 +197,11 @@ def list_approvals(
 
 
 @router.get("/{approval_id}", response_model=Envelope[ApprovalResponse])
-def get_approval(approval_id: str, db: Session = Depends(get_db)) -> dict:
+def get_approval(
+    approval_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
     """승인 요청 단건을 조회한다."""
     approval = db.get(ApprovalRequest, approval_id)
     if approval is None:
@@ -175,6 +209,7 @@ def get_approval(approval_id: str, db: Session = Depends(get_db)) -> dict:
             ErrorCode.APPROVAL_NOT_FOUND,
             details={"approval_id": approval_id},
         )
+    require_member(db, user, approval.workspace_id)
     return success(_to_response(approval).model_dump(mode="json"))
 
 
@@ -182,6 +217,7 @@ def get_approval(approval_id: str, db: Session = Depends(get_db)) -> dict:
 def resolve_approval(
     approval_id: str,
     payload: ApprovalResolveRequest,
+    user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
     """PM이 승인 요청을 승인/반려한다."""
@@ -190,6 +226,15 @@ def resolve_approval(
             ErrorCode.INVALID_REQUEST,
             message="pending 상태로 변경할 수 없습니다.",
         )
+
+    # 상태를 바꾸는 조건부 UPDATE보다 먼저 소속을 확인해야 비소속 요청이 아무것도 바꾸지 못한다.
+    target = db.get(ApprovalRequest, approval_id)
+    if target is None:
+        raise AppError(
+            ErrorCode.APPROVAL_NOT_FOUND,
+            details={"approval_id": approval_id},
+        )
+    require_member(db, user, target.workspace_id)
 
     stmt = (
         update(ApprovalRequest)

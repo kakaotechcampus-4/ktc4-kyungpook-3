@@ -8,8 +8,16 @@ if (!root) {
   throw new Error('root element is missing')
 }
 
-createRoot(root).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-)
+async function enableMocking(): Promise<void> {
+  if (!import.meta.env.DEV || import.meta.env.VITE_ENABLE_MSW !== 'true') return
+  const { worker } = await import('@/shared/mock/browser')
+  await worker.start({ onUnhandledRequest: 'warn' })
+}
+
+void enableMocking().finally(() => {
+  createRoot(root).render(
+    <StrictMode>
+      <App />
+    </StrictMode>,
+  )
+})

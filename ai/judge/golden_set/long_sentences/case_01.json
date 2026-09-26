@@ -1,0 +1,338 @@
+{
+  "case_id": "case_01",
+  "scenario": "ten_minute_standup_meeting",
+  "description": "약 10분 분량의 스탠드업 회의 전체를 통째로 넣었을 때, 청크로 안 쪼개도 잡담/질문 사이에 흩어진 decision 신호 4개(일정 합의, 범위 변경, 일정 변경, 범위+일정 변경)를 빠짐없이 찾고, 진척 보고는 progress 로 갈라내는지 확인하는 스트레스 테스트",
+  "speaker_names": {
+    "A": "하은",
+    "B": "도윤",
+    "C": "민재",
+    "D": "세영",
+    "E": "유진"
+  },
+  "turns": [
+    {
+      "speaker": "A",
+      "text": "좋은 아침입니다, 다들 오셨죠?"
+    },
+    {
+      "speaker": "B",
+      "text": "네 좋은 아침입니다."
+    },
+    {
+      "speaker": "C",
+      "text": "안녕하세요."
+    },
+    {
+      "speaker": "D",
+      "text": "좋은 아침이에요."
+    },
+    {
+      "speaker": "E",
+      "text": "넵 안녕하세요."
+    },
+    {
+      "speaker": "A",
+      "text": "그럼 스탠드업 시작하겠습니다."
+    },
+    {
+      "speaker": "B",
+      "text": "저는 어제 로그인 API 붙였고요."
+    },
+    {
+      "speaker": "B",
+      "text": "이번 주 금요일까지 로그인 화면 시안을 마무리하기로 했습니다."
+    },
+    {
+      "speaker": "A",
+      "text": "네 알겠습니다."
+    },
+    {
+      "speaker": "C",
+      "text": "저도 어제 회원가입 쪽 작업했어요."
+    },
+    {
+      "speaker": "C",
+      "text": "근데 소셜 로그인 부분이 좀 복잡해서요."
+    },
+    {
+      "speaker": "D",
+      "text": "그럼 로그인 기능에서 소셜 로그인은 이번 스프린트에서 빼는 게 어때요?"
+    },
+    {
+      "speaker": "C",
+      "text": "네 그렇게 하시죠."
+    },
+    {
+      "speaker": "E",
+      "text": "좋습니다."
+    },
+    {
+      "speaker": "A",
+      "text": "다음으로 넘어갈까요?"
+    },
+    {
+      "speaker": "E",
+      "text": "저는 결제 API 연동 중인데 문서가 좀 헷갈리네요."
+    },
+    {
+      "speaker": "A",
+      "text": "결제 연동 언제까지 될 수 있어요?"
+    },
+    {
+      "speaker": "E",
+      "text": "잘 모르겠어요, 나중에 다시 말씀드릴게요."
+    },
+    {
+      "speaker": "A",
+      "text": "네 알겠습니다."
+    },
+    {
+      "speaker": "B",
+      "text": "아 참고로 어제 회의에서 결제 마감 다음 주 수요일이라고 했었는데요."
+    },
+    {
+      "speaker": "B",
+      "text": "그거 이번 주 금요일로 앞당기기로 했습니다."
+    },
+    {
+      "speaker": "D",
+      "text": "네 알겠습니다."
+    },
+    {
+      "speaker": "C",
+      "text": "그럼 프론트엔드 쪽은 언제 얘기하나요?"
+    },
+    {
+      "speaker": "A",
+      "text": "그건 다음 회의 때 다루죠."
+    },
+    {
+      "speaker": "D",
+      "text": "저는 오늘 디자인 시스템 정리하고 있어요."
+    },
+    {
+      "speaker": "D",
+      "text": "색상 팔레트는 다 정했고 타이포그래피만 남았어요."
+    },
+    {
+      "speaker": "E",
+      "text": "오 좋네요."
+    },
+    {
+      "speaker": "B",
+      "text": "그러고 보니 이번 스프린트 목표에서 알림 기능은 빼는 게 어때요?"
+    },
+    {
+      "speaker": "A",
+      "text": "그럼 알림 기능은 다음 스프린트로 미루죠."
+    },
+    {
+      "speaker": "C",
+      "text": "좋습니다."
+    },
+    {
+      "speaker": "E",
+      "text": "그럼 마무리할까요?"
+    },
+    {
+      "speaker": "A",
+      "text": "네 오늘 스탠드업 여기까지 하겠습니다."
+    },
+    {
+      "speaker": "B",
+      "text": "수고하셨습니다."
+    },
+    {
+      "speaker": "C",
+      "text": "감사합니다."
+    },
+    {
+      "speaker": "D",
+      "text": "내일 뵐게요."
+    }
+  ],
+  "expected": [
+    {
+      "text": "좋은 아침입니다, 다들 오셨죠?",
+      "should_flag": false,
+      "note": "인사"
+    },
+    {
+      "text": "네 좋은 아침입니다.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "안녕하세요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "좋은 아침이에요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "넵 안녕하세요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "그럼 스탠드업 시작하겠습니다.",
+      "should_flag": false,
+      "note": "회의 진행 멘트"
+    },
+    {
+      "text": "저는 어제 로그인 API 붙였고요.",
+      "should_flag": true,
+      "note": "단순 진행상황 보고, 결정 아님 — 작업 대상이 명시된 진척 보고이므로 progress",
+      "signal": "progress"
+    },
+    {
+      "text": "이번 주 금요일까지 로그인 화면 시안을 마무리하기로 했습니다.",
+      "should_flag": true,
+      "note": "신호1: 일정 합의"
+    },
+    {
+      "text": "네 알겠습니다.",
+      "should_flag": false,
+      "note": "단순 맞장구"
+    },
+    {
+      "text": "저도 어제 회원가입 쪽 작업했어요.",
+      "should_flag": true,
+      "note": "진행상황 보고 — 작업 대상이 명시된 진척 보고이므로 progress",
+      "signal": "progress"
+    },
+    {
+      "text": "근데 소셜 로그인 부분이 좀 복잡해서요.",
+      "should_flag": false,
+      "note": "상태 설명"
+    },
+    {
+      "text": "그럼 로그인 기능에서 소셜 로그인은 이번 스프린트에서 빼는 게 어때요?",
+      "should_flag": false,
+      "note": "질문 — 아직 결정 아님"
+    },
+    {
+      "text": "네 그렇게 하시죠.",
+      "should_flag": true,
+      "note": "신호2: 범위 변경 합의(패턴 없음, 질문 문맥 필요)"
+    },
+    {
+      "text": "좋습니다.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "다음으로 넘어갈까요?",
+      "should_flag": false,
+      "note": "회의 진행 멘트"
+    },
+    {
+      "text": "저는 결제 API 연동 중인데 문서가 좀 헷갈리네요.",
+      "should_flag": false,
+      "note": "상태 설명"
+    },
+    {
+      "text": "결제 연동 언제까지 될 수 있어요?",
+      "should_flag": false,
+      "note": "질문 — 아직 결정 아님"
+    },
+    {
+      "text": "잘 모르겠어요, 나중에 다시 말씀드릴게요.",
+      "should_flag": false,
+      "note": "보류/회피 — 결정 없음"
+    },
+    {
+      "text": "네 알겠습니다.",
+      "should_flag": false,
+      "note": "단순 맞장구"
+    },
+    {
+      "text": "아 참고로 어제 회의에서 결제 마감 다음 주 수요일이라고 했었는데요.",
+      "should_flag": false,
+      "note": "과거 회상, 그 자체는 결정 아님"
+    },
+    {
+      "text": "그거 이번 주 금요일로 앞당기기로 했습니다.",
+      "should_flag": true,
+      "note": "신호3: 일정 변경 결정"
+    },
+    {
+      "text": "네 알겠습니다.",
+      "should_flag": false,
+      "note": "단순 맞장구"
+    },
+    {
+      "text": "그럼 프론트엔드 쪽은 언제 얘기하나요?",
+      "should_flag": false,
+      "note": "질문"
+    },
+    {
+      "text": "그건 다음 회의 때 다루죠.",
+      "should_flag": false,
+      "note": "보류 — 결정 아님"
+    },
+    {
+      "text": "저는 오늘 디자인 시스템 정리하고 있어요.",
+      "should_flag": true,
+      "note": "진행상황 보고 — 작업 대상이 명시된 진척 보고이므로 progress",
+      "signal": "progress"
+    },
+    {
+      "text": "색상 팔레트는 다 정했고 타이포그래피만 남았어요.",
+      "should_flag": true,
+      "note": "진행상황 보고 — 작업 대상이 명시된 진척 보고이므로 progress",
+      "signal": "progress"
+    },
+    {
+      "text": "오 좋네요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "그러고 보니 이번 스프린트 목표에서 알림 기능은 빼는 게 어때요?",
+      "should_flag": false,
+      "note": "질문 — 아직 결정 아님"
+    },
+    {
+      "text": "그럼 알림 기능은 다음 스프린트로 미루죠.",
+      "should_flag": true,
+      "note": "신호4: 범위/일정 변경 합의(패턴 없음)",
+      "assignee_type": "none"
+    },
+    {
+      "text": "좋습니다.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "그럼 마무리할까요?",
+      "should_flag": false,
+      "note": "회의 진행 멘트"
+    },
+    {
+      "text": "네 오늘 스탠드업 여기까지 하겠습니다.",
+      "should_flag": false,
+      "note": "회의 진행 멘트"
+    },
+    {
+      "text": "수고하셨습니다.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "감사합니다.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "내일 뵐게요.",
+      "should_flag": false,
+      "note": "잡담"
+    }
+  ],
+  "counts_toward_pass_rate": true,
+  "meeting_duration_sec": 772.0
+}

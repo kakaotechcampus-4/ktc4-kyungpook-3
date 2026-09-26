@@ -105,20 +105,77 @@ class ExtractedTask(_Base):
 JudgeCategory = Literal["schedule", "assignee", "scope", "decision", "none"]
 JUDGE_CATEGORIES: tuple[str, ...] = ("schedule", "assignee", "scope", "decision", "none")
 
+# JudgeFinding.signal — 1단계가 고른 발화가 **어느 축의 신호인지**.
+# JudgeResult.category(schedule|assignee|scope|decision|none)와는 다른 축이다: category 는
+# "문서에 무엇이 바뀌는가"를 2단계가 매기고, signal 은 "문서 축인가 작업 상태 축인가"를
+# 1단계가 매긴다. 값 이름이 겹쳐 보이지만(decision) 섞어 쓰면 안 된다.
+SIGNAL_DECISION = "decision"  # 문서에 쓸 새 내용이 있다 (결정/합의/범위 변경)
+SIGNAL_PROGRESS = "progress"  # 문서에 쓸 새 내용은 없지만 기존 작업의 진척 신호다
+FINDING_SIGNALS: tuple[str, ...] = (SIGNAL_DECISION, SIGNAL_PROGRESS)
+
+# 담당자 호칭 분류. ExtractedTask.assignee_type 과 **같은 어휘를 쓴다** — 기준 원본은
+# extract/TASK_CRITERIA.md 다. 3인칭을 third 하나로 합치지 않는 이유는 BE 처리 경로가
+# 갈리기 때문이다: thirdname 은 alias 완전일치로 찾을 수 있고, thirdpronoun 은 AI 가
+# 문맥으로 풀어야 하며, thirdrole 은 역할 매핑이라 대체로 PM 확인으로 간다.
+# second("너가")도 따로 둬야 한다 — 합쳐 두면 "너"가 별칭 텍스트로 조회돼 영원히 안 맞는다.
+ASSIGNEE_TYPES: tuple[str, ...] = (
+    "first",         # 화자 자신 ("제가", "저는", "내가"). BE 는 evidence_speaker 로 푼다
+    "second",        # 상대방 지칭 ("너가", "당신이") — 그 표현으로는 조회 불가
+    "thirdname",     # 제3자를 이름·별명으로 ("환 님이", "하은이가")
+    "thirdpronoun",  # 제3자를 지시대명사로 ("그분이", "저쪽에서") — 조회 불가
+    "thirdrole",     # 역할·직책으로 ("백엔드 리더가")
+    "group",         # 특정 개인이 아닌 전체 ("다 같이", "우리 모두")
+    "none",          # 담당자 언급이 전혀 없음
+)
+
 
 @dataclass
 class JudgeFinding(_Base):
     """Terra 1단계 출력. '이 발화는 2단계 판단까지 가볼 가치가 있다'고 골라낸 후보 하나.
 
     아직 Notion 후보와 비교하지 않은 상태라 JudgeResult보다 거친 1차 필터다.
+
+    text 는 원문 그대로가 아니라 문맥까지 반영해서 자기완결적으로 다시 쓴 것일 수 있다
+    (예: "네, 알겠습니다." 원문 → "로그인 화면 마감을 다음 주 화요일로 연기하는 데 동의함").
+    LLM 경로는 전사록 전체를 한 번에 보고 판단하기 때문에 이런 재구성이 가능하고, 규칙
+    기반 경로는 그런 능력이 없어서 원문을 그대로 쓴다(이 경우 text == evidence).
+
+    근거는 문장 하나가 아니라 **여러 줄에 걸칠 수 있다.** 결정은 보통 "제안 → 합의"처럼
+    나뉘어 만들어지기 때문이다("API 명세서 작성 담당이 필요합니다." + "이건 지민님이
+    맡아주세요."). 그래서 evidence/indices 는 리스트다. seq/speaker 는 그중 **마지막 줄**을
+    가리킨다 — 결론을 말한 발화이자, 1인칭 담당자 해소가 봐야 하는 화자다.
+
+    signal 은 이 발화가 **어느 축의 신호인지**를 가른다. 축이 하나뿐이면("문서를 바꿀 만한가")
+    "로그인 API 다 붙였어요" 같은 완료 보고가 문서 기준으로 무의미하다는 이유만으로 파이프라인
+    에서 사라지고, 2단계의 status(done) 판정에 영원히 도달하지 못한다. 그래서 문서 축과 작업
+    상태 축을 나눠 표시하고, 버릴지 말지는 호출자가 축별로 정한다.
+
+    뒤쪽 세 필드(assignee_type/status/evidence_status)는 **1단계가 채우지 않는다.** 1단계는
+    "이 발화가 볼 가치가 있나"만 판단하므로 담당자나 진행 상태를 매길 근거가 없다. Terra
+    2단계와 구조화 단계를 거치며 채워지고, 그때까지는 None 이 "아직 판정 전"을 뜻한다.
     """
 
-    text: str  # 발화 원문 (나중에 JudgeInput.text로 그대로 이어짐)
+    text: str  # 자기완결적 요약(LLM) 또는 원문 그대로(규칙). 나중에 JudgeInput.text로 이어짐
+    evidence: list[str] = field(default_factory=list)  # 근거 발화 원문들(순서대로) — 추적/감사용
+    indices: list[int] = field(default_factory=list)  # 근거 문장의 전사록 내 위치. evidence 와 같은 순서
     source: str = "meeting"  # "meeting" | "chat"
-    seq: int = 0  # 원본 TranscriptSegment.seq — 근거 추적용 안정 식별자
-    speaker: str | None = None  # 화자(opaque id) — 문맥 참고/디버깅용
+    seq: int = 0  # 근거 마지막 줄의 TranscriptSegment.seq — 근거 추적용 안정 식별자
+    speaker: str | None = None  # 근거 마지막 줄의 화자(opaque id) — 문맥 참고/디버깅용
+    signal: str = SIGNAL_DECISION  # decision | progress — 문서 축인가 작업 상태 축인가
     reason: str = ""  # 왜 후보로 골랐는지 (규칙 기반이면 어떤 규칙에 걸렸는지)
     method: str = "rules"  # rules | llm
+
+    # ── 담당자 (1단계가 채운다 — 문장 표면만 보면 판정되는 값이라 비교할 것이 없다)
+    assignee_type: str | None = None  # ASSIGNEE_TYPES 중 하나. 아직 판정 전이면 None
+    assignee_raw: str | None = None  # 담당자를 가리킨 **원문 표현** ("지민님", "너"). BE 의
+    # assignee_raw 로 그대로 흘러가 별칭 조회 키가 된다. first/group/none 이면 None
+    assignee_resolved: str | None = None  # second/thirdpronoun 을 문맥으로 푼 실제 이름
+    # ("그분" → "환"). 못 풀면 None. 원문(assignee_raw)과 섞지 않는다 — "너"를 별칭으로
+    # 조회하면 영원히 안 맞기 때문에 BE 가 둘을 구분할 수 있어야 한다
+
+    # ── 이후 단계가 채우는 칸 (1단계에서는 항상 None)
+    status: str | None = None  # todo | in_progress | blocked | done. Terra 2단계(JudgeResult.status)가 정함
+    evidence_status: str | None = None  # certain | inferred | missing — 근거가 원문에 얼마나 명시적인가
 
 
 @dataclass
@@ -160,15 +217,28 @@ class JudgeInput(_Base):
         )
 
 
+TASK_STATUSES: tuple[str, ...] = ("todo", "in_progress", "blocked", "done")  # BE TaskStatus 와 동일 값
+
+
 @dataclass
 class JudgeResult(_Base):
-    """Phase 2 Terra 출력. 계획서 스키마 그대로."""
+    """Terra 2단계 출력. candidates 와 비교해서 실제로 Notion 을 바꿔야 하는지 최종 판단한다.
+
+    is_meaningful=False 는 "새 내용이라 후보가 없다"는 뜻이 아니다 — candidates 가 없어서
+    새로 만들어야 하는 경우는 is_meaningful=True, is_new=True 다. is_meaningful=False 는
+    candidates 와 비교했더니 이미 반영된 내용이거나, 2단계의 더 넓은 문맥으로 보니 애초에
+    Notion 을 바꿀 필요가 없었던 경우다 — 이때는 category/is_new/matched_task_id/status 모두
+    의미 없으니 호출자는 Luna(DraftResult) 를 부르지 않고 그냥 버린다.
+    """
 
     is_meaningful: bool
-    category: str
-    confidence: float
-    evidence: str
-    method: str = "rules"
+    category: str  # schedule|assignee|scope|decision|none
+    is_new: bool = False  # True=새 Notion 항목 생성, False=matched_task_id 항목 수정
+    matched_task_id: str | None = None  # is_new=False 일 때 수정 대상. is_new=True 면 None
+    matched_notion_page_id: str | None = None  # matched_task_id가 None이어도(아직 우리 DB Task와
+    # 연결 안 된 Notion 후보를 골랐을 때) 실제 어떤 페이지를 골랐는지는 남긴다
+    status: str | None = None  # todo|in_progress|blocked|done. 명시적 언급 없으면 None
+    evidence: str = ""
 
     VALID: ClassVar[tuple[str, ...]] = JUDGE_CATEGORIES
 

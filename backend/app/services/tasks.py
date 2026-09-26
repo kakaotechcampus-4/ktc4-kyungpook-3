@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.core.errors import AppError, ErrorCode
 from app.models import ChangedField, Meeting, Member, Task, TaskHistory, TaskStatus
+from app.services import notion_sync
 
 # TaskUpdateRequest/승인 payload의 필드명 -> ChangedField 매핑
 _FIELD_MAP: dict[str, ChangedField] = {
@@ -71,6 +72,25 @@ def validate_task_fields(updates: dict[str, object]) -> None:
                 message=f"title은 300자 이하여야 합니다. (현재 {len(title_val)}자)",
                 details={"field": "title", "length": len(title_val)},
             )
+
+
+def parse_date(value: object, *, field: str) -> date | None:
+    """승인 payload 등 외부 입력의 날짜 값을 date로 변환한다.
+
+    형식이 잘못되면 500 대신 INVALID_REQUEST(400)로 돌려준다.
+    """
+    if value is None:
+        return None
+    if isinstance(value, date):
+        return value
+    try:
+        return date.fromisoformat(str(value))
+    except ValueError:
+        raise AppError(
+            ErrorCode.INVALID_REQUEST,
+            message=f"{field}는 YYYY-MM-DD 형식이어야 합니다: {value}",
+            details={"field": field, "value": str(value)},
+        )
 
 
 def validate_workspace_ownership(
@@ -158,7 +178,16 @@ def create_task(
     changed_by: str | None = None,
     is_auto: bool = False,
 ) -> Task:
-    """태스크를 새로 만들고, 생성 사실을 반영 로그 한 줄로 남긴다."""
+    """태스크를 새로 만들고, 생성 사실을 반영 로그 한 줄로 남긴다.
+
+    수동 생성, 승인 반영, 자동 반영 모든 경로가 이 함수에서 같은 도메인 검증을 거친다.
+    """
+    fields: dict[str, object] = {"title": title, "status": status, "progress": progress}
+    validate_task_fields(fields)
+    title = fields["title"]
+    status = fields["status"]
+    progress = fields["progress"]
+
     validate_workspace_ownership(
         db, workspace_id,
         assignee_member_id=assignee_member_id,
@@ -175,6 +204,7 @@ def create_task(
         status=str(status),
         progress=progress,
         blocker=blocker,
+        version=1,
     )
     db.add(task)
     db.flush()
@@ -190,6 +220,7 @@ def create_task(
             is_auto=is_auto,
         )
     )
+    notion_sync.enqueue_task_sync(db, task)
     return task
 
 
@@ -228,6 +259,10 @@ def apply_task_updates(
         db.add(entry)
         entries.append(entry)
         setattr(task, field, new_value)
+
+    if entries:
+        task.version += 1
+        notion_sync.enqueue_task_sync(db, task)
     return entries
 
 
@@ -292,11 +327,13 @@ def rollback_task_history(
         TaskHistory(
             task_id=task.task_id,
             changed_field=history.changed_field,
-            old_value=current_value, 
+            old_value=current_value,
             new_value=history.old_value,
             change_source=history.change_source,
             changed_by=changed_by,
             is_auto=False,
         )
     )
+    task.version += 1
+    notion_sync.enqueue_task_sync(db, task)
     return history

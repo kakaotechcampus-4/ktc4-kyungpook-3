@@ -1,12 +1,14 @@
-"""디스코드 슬래시 명령과 실시간 전사 파이프라인을 잇는다.
+"""디스코드 슬래시 명령과 실시간 전사 파이프라인을 잇는다. 비교 실행용이고 운영 봇에는 붙이지 않는다.
 
 "Discord" 라는 이름은 ai/ 안에서 capture/ 밖으로 나가지 않는다 (ai/CLAUDE.md).
 봇 프로세스는 여기서 띄우지 않는다. RealtimeCog 와 required_intents() 만 export 하고
-backend/bot/main.py 또는 capture/run_realtime.py 가 add_cog 로 붙인다.
+capture/realtime/run.py 가 add_cog 로 붙인다. 이 폴더를 남긴 이유와 유지 범위는
+capture/realtime/__init__.py 에 있다.
 
-capture/discord_adapter.py 의 RecordingCog 와 나란히 놓고 고르라고 만든 두 번째 구현이다.
-그쪽은 화자별 wav 를 받아 두고 나중에 오프라인으로 전사하고, 이쪽은 회의 중에 발화마다
-전사해 채널에 올린다. 클래스 이름과 명령 이름이 겹치지 않아 한 봇에 둘 다 붙일 수 있다.
+운영 Cog 는 capture/discord_adapter.py 의 RecordingCog 하나다. 그쪽은 화자별 wav 를 받아 두고 회의가
+끝난 뒤 배치로 전사하고, 이쪽은 회의 중에 발화마다 전사해 채널에 올린다. 음성 연결(SafeVoiceClient),
+수신 sink(StreamingSink), 화자별 트랙(TrackPool)은 두 Cog 가 같은 공용 모듈을 쓴다. 클래스 이름과 명령
+이름이 겹치지 않아 비교할 때는 한 봇에 둘 다 붙일 수 있다.
 
   /live       명령을 친 사람의 음성 채널에 들어가 전사를 시작한다. 줄은 명령을 친 채널에 올라간다
   /live-stop  전사를 끝내고 회의록을 낸 뒤 음성 채널에서 나간다
@@ -23,8 +25,8 @@ capture/discord_adapter.py 의 RecordingCog 와 나란히 놓고 고르라고 �
 얕게 훑어서 하위 디렉토리를 보지 않는다:  python -m stt.transcribe --audio recordings/<meeting_id>
 
 on_session_saved(payload, jsonl_path) 는 회의록 저장이 끝난 뒤 불린다. payload 는 meeting_id ·
-guild_id · session · speakers 와 회의록 경로(markdown, jsonl) 를 담는다. BE 는 여기서 Phase 1/2
-호출과 approval_request 생성을 이어 붙이면 된다 — 전사는 이미 끝나 있다.
+guild_id · session · speakers 와 회의록 경로(markdown, jsonl) 를 담는다. 비교 실행기(run.py)는 경로를
+찍기만 한다. 추출과 BE 인계는 운영 경로(capture/recorder.py, capture/handoff.py)에만 있다.
 
 latency.jsonl 은 발화별 지연이다 = {"seq", "speaker", "start", "end", "queue_s",
 "transcribe_s", "publish_s"}. seq 로 transcript.jsonl 과 이어진다. queue_s 는 확정된 발화가
@@ -194,8 +196,6 @@ class _Meeting:
 
     channel 은 전사 줄과 종료 요약을 올릴 텍스트 채널이다. 봇이 음성 채널에서 쫓겨나는
     경로에는 ctx 가 없으므로 어디에 올릴지를 회의가 직접 들고 있어야 한다.
-    secret_key 는 우리가 복호화기에 마지막으로 적용한 키다. 복호화기는 키를 보관하지 않아
-    (reader.py:292-304) 여기서 기억하는 수밖에 없다.
     """
 
     meeting_id: str
@@ -209,7 +209,6 @@ class _Meeting:
     channel: discord.abc.Messageable
     voice_channel_id: int
     ledger: _Ledger
-    secret_key: bytes = b""
     # 종료 요약에 이 회의가 쓴 CPU 를 찍으려고 시작 시점을 적어 둔다. 프로세스 전체 기준이라
     # 길드가 둘 이상 동시에 회의 중이면 서로 섞인다. t3.medium 에서 실제 부하를 볼 자리다.
     wall_t0: float = 0.0
@@ -286,30 +285,9 @@ class RealtimeCog(discord.Cog):
         meeting.sink.drain_speaker(member.id)
         meeting.session.flush_speaker(str(member.id))
 
-    @discord.Cog.listener()
-    async def on_member_speaking_state_update(self, member, ssrc, state) -> None:
-        """재연결로 음성 키가 바뀌면 복호화기를 갱신한다.
-
-        설치본에는 update_secret_key 호출자가 없다 (reader.py:138-139, 370-371). 복호화기는
-        start_recording 시점의 키로 box 를 한 번 만드는데 (reader.py:126-128) load_secret_key 는
-        새 session_description 마다 키를 갈아끼운다 (gateway.py:442). 재연결 경로는
-        disconnect(cleanup=False) 라 reader 가 살아남으므로 낡은 box 로 전부 CryptoError 가 된다.
-        이 리스너는 발화가 시작될 때마다 오므로 갱신이 한 발화 이상 늦지 않는다.
-        소스로 확인한 것이고 실제 재연결로 관측하지 않았다.
-        """
-        meeting = self._meetings.get(member.guild.id)
-        if meeting is None:
-            return
-        vc = member.guild.voice_client
-        reader = getattr(vc, "_reader", None) if vc is not None else None
-        if not reader:
-            return
-        key = bytes(vc.secret_key or b"")
-        if not key or key == meeting.secret_key:
-            return
-        reader.update_secret_key(key)
-        meeting.secret_key = key
-        print("[voice] 음성 세션 키가 바뀌어 복호화기를 갱신했다", flush=True)
+    # 재연결로 음성 키가 바뀌었을 때의 복호화기 갱신은 이 Cog 가 하지 않는다. 두 연결 자리가
+    # 모두 SafeVoiceClient 로 붙고, 그 연결 상태(capture/voice_client.py 의 _KeyForwardingState)가
+    # 새 키가 들어오는 순간 갱신한다. 배치 녹음기도 같은 클래스를 쓴다.
 
     # -------------------------------------------------------------------- /live
     @discord.slash_command(name="live", description="실시간 전사를 시작합니다")
@@ -458,7 +436,6 @@ class RealtimeCog(discord.Cog):
             # 갱신되므로, 그걸 믿으면 on_voice_state_update 의 방 필터가 옛 방을 가리켜
             # 퇴장 flush 와 봇 퇴장 감지가 조용히 안 돈다.
             channel=post_to, voice_channel_id=room.id, ledger=ledger,
-            secret_key=bytes(vc.secret_key or b""),
             wall_t0=t0, cpu_t0=_cpu_seconds(),
         )
         await ctx.respond(

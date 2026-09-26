@@ -209,21 +209,32 @@ def test_partial_transcription_is_not_closed_and_recover_resends_only_the_failed
     assert [s["seq"] for s in contract["segments"]] == [1, 2, 3]              # 첫 전사 때 매긴 순번 그대로
 
 
-def test_lines_that_fail_twice_are_kept_in_the_manifest_and_the_meeting_moves_on(tmp_path, monkeypatch):
-    """묶음 둘이 다 죽고(2.5초 넘음), 재전사에서 화자 1 의 클립 둘(2.1초)은 살고 화자 2 의 클립(3.1초)은 또 죽는다."""
+def test_lines_that_still_fail_keep_the_meeting_partial_until_the_retry_cap(tmp_path, monkeypatch):
+    """묶음 둘이 다 죽고(2.5초 넘음), 재전사에서 화자 1 의 클립 둘(2.1초)은 살고 화자 2 의 클립(3.1초)은 계속 죽는다.
+    상한(3회) 전에는 partial 로 남아 복구가 계속 재시도하고, 상한에 닿으면 빠진 구간을 표시한 채 추출로 간다."""
     monkeypatch.setattr(B, "RETRY_WAIT_S", 0.0)
     rec, path, manifest = _session(tmp_path)
     stt = DiesOnLong(limit_s=2.5)
-    r = _run(rec, manifest, tmp_path, backend=stt, extractor=_extractor({}))
+    seen = {}
+    r = _run(rec, manifest, tmp_path, backend=stt, extractor=_extractor(seen))
     assert r["status"] == "partial" and r["transcribe"]["failed"] == 3
-    results = R.recover(rec, backend=stt, model_name="echo", workers=1, gate=None,
-                        transcripts_dir=tmp_path / "transcripts", extractor=_extractor({}), handoff=None)
-    r2 = results[0]
-    assert r2["ran"] == ["retried", "extracted"] and r2["retried"] == 3 and r2["transcribe"]["failed"] == 1
+    kw = dict(backend=stt, model_name="echo", workers=1, gate=None, transcripts_dir=tmp_path / "transcripts",
+              extractor=_extractor(seen))
+    for n in (1, 2):
+        r2 = R.recover(rec, **kw)[0]
+        assert r2["ran"] == ["retried"] and r2["status"] == "partial" and r2["transcribe"]["failed"] == 1
+        saved = json.loads(path.read_text(encoding="utf-8"))
+        assert saved["status"] == "partial" and saved["retry_runs"] == n and "extracted" not in saved["stages"]
+        assert R.pending_sessions(rec) == [path]
+    r3 = R.recover(rec, **kw)[0]
+    assert r3["ran"] == ["retried", "extracted"] and r3["status"] == "extracted"
+    assert r3["partial"] is True and r3["missing_units"] == 1
     saved = json.loads(path.read_text(encoding="utf-8"))
-    assert saved["status"] == "extracted" and [u["speaker"] for u in saved["failed_units"]] == ["2"]   # 구간은 남는다
+    assert saved["partial"] is True and saved["retry_runs"] == 3 and "n" in seen
+    assert [u["speaker"] for u in saved["failed_units"]] == ["2"]          # 구간은 남는다
     md = (rec / "77_500" / "transcript.md").read_text(encoding="utf-8")
     assert "**민수**:" in md and "**서연**:" not in md
+    assert R.pending_sessions(rec) == [path]                               # BE 설정이 없어 아직 대기
 
 
 def test_when_no_line_survives_the_meeting_stays_partial(tmp_path, monkeypatch):
@@ -239,7 +250,7 @@ def test_when_no_line_survives_the_meeting_stays_partial(tmp_path, monkeypatch):
     assert R.pending_sessions(rec) == [path]
 
 
-def test_failed_stage_is_recorded_told_to_be_and_retried_from_there(tmp_path):
+def test_failed_stage_is_recorded_and_retried_from_there_on_the_same_be_meeting(tmp_path):
     rec, path, manifest = _session(tmp_path)
     fake = FakeBe()
     h = H.Handoff(H.BeClient("http://be", session=fake), "ws-1")
@@ -251,14 +262,16 @@ def test_failed_stage_is_recorded_told_to_be_and_retried_from_there(tmp_path):
     assert r["status"] == "failed" and r["failed_stage"] == "extract" and "LLM 죽음" in r["error"]
     saved = json.loads(path.read_text(encoding="utf-8"))
     assert saved["status"] == "failed" and saved["failed_stage"] == "extract" and "transcribed" in saved["stages"]
-    assert fake.meetings["m1"]["status"] == "failed" and fake.meetings["m1"]["failed_stage"] == "extract"
+    # 재시도가 남았으니 BE 에는 아직 알리지 않는다. BE 회의는 processing 으로 남는다
+    assert fake.meetings["m1"]["status"] == "processing" and saved["recovery"]["attempts"] == 1
     assert R.pending_sessions(rec) == [path]
-    # 복구. 전사는 건너뛰고 추출부터. BE 는 failed 로 닫혀 있어 새 회의로 넘긴다
+    # 복구. 전사는 건너뛰고 추출부터. BE 회의는 그대로 이어 쓴다
     results = R.recover(rec, backend=EchoStt(), model_name="echo", workers=1, gate=None,
                         transcripts_dir=tmp_path / "transcripts", extractor=_extractor({}), handoff=h)
     assert results[0]["ran"] == ["extracted", "handed_off"] and results[0]["status"] == "handed_off"
     saved = json.loads(path.read_text(encoding="utf-8"))
-    assert saved["be"]["meeting_id"] == "m2" and saved["be"]["replaced"] == ["m1"] and "error" not in saved
+    assert saved["be"]["meeting_id"] == "m1" and "replaced" not in saved["be"] and "error" not in saved
+    assert "recovery" not in saved
 
 
 def test_recover_transcribes_pending_and_marks_a_broken_one_failed(tmp_path):
@@ -329,3 +342,45 @@ def test_extract_after_transcription_uses_the_meeting_date_and_skips_without_ext
     assert seen["today"] == date(2026, 9, 17)                          # 한국 시각으로 다음 날
     assert R.extract_after_transcription(tdir, manifest, extractor=lambda *a: [], today=date(2026, 1, 1)) == out
     assert R.extract_after_transcription(tmp_path / "없음", manifest, extractor=_extractor({})) is None
+
+
+def test_pending_sessions_can_exclude_sessions_the_bot_still_holds(tmp_path):
+    """녹음 중이거나 후처리 중인 회의는 봇이 들고 있다. 복구가 그 wav 를 집어 가면 안 된다."""
+    rec, path, _ = _session(tmp_path)
+    assert R.pending_sessions(rec) == [path]
+    assert R.pending_sessions(rec, exclude={"77_500"}) == []
+    assert R.recover(rec, backend=EchoStt(), model_name="echo", workers=1, gate=None,
+                     transcripts_dir=tmp_path / "transcripts", exclude={"77_500"}) == []
+
+
+def test_a_changed_transcript_invalidates_extraction_and_flags_a_stale_be_extraction(tmp_path, monkeypatch):
+    """상한에 닿아 빠진 구간을 둔 채 인계까지 갔다. 상한을 올려 다시 돌리니 전사가 다 살아났다.
+    그러면 추출을 다시 하고 BE 에 다시 보낸다. BE 가 기존 추출을 돌려주면 stale 로 표시한다."""
+    monkeypatch.setattr(B, "RETRY_WAIT_S", 0.0)
+    monkeypatch.setattr(R, "PARTIAL_RETRY_MAX", 1)
+    rec, path, manifest = _session(tmp_path)
+    fake = FakeBe()
+    h = H.Handoff(H.BeClient("http://be", session=fake), "ws-1")
+    seen = {}
+    stt = DiesOnLong()                                    # 화자 1 의 묶음(4.4초)만 죽는다
+    r = _run(rec, manifest, tmp_path, backend=stt, extractor=_extractor(seen), handoff=h)
+    assert r["status"] == "partial"
+    kw = dict(backend=stt, model_name="echo", workers=1, gate=None, transcripts_dir=tmp_path / "transcripts",
+              extractor=_extractor(seen), handoff=h)
+    stt.limit_s = 1.0                                     # 재전사도 죽는다
+    r2 = R.recover(rec, **kw)[0]
+    assert r2["ran"] == ["retried", "extracted", "handed_off"] and r2["partial"] is True
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    assert saved["status"] == "handed_off" and saved["partial"] is True and len(saved["failed_units"]) == 2
+    n_partial = seen["n"]
+    assert fake.meetings["m1"]["status"] == "done" and saved["be"]["extraction_id"] == "e-m1"
+    assert R.pending_sessions(rec) == []                  # 상한에 닿았으니 더 집지 않는다
+    monkeypatch.setattr(R, "PARTIAL_RETRY_MAX", 2)
+    assert R.pending_sessions(rec) == [path]              # 상한을 올리면 다시 집는다
+    stt.limit_s = 3.5                                     # 이번엔 산다
+    r3 = R.recover(rec, **kw)[0]
+    assert r3["ran"] == ["retried", "extracted", "handed_off"] and r3["retried"] == 2
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    assert "failed_units" not in saved and not saved.get("partial") and seen["n"] > n_partial
+    assert saved["be"]["stale_extraction"] is True and r3["be"]["stale_extraction"] is True
+    assert len(fake.extractions) == 1                     # BE 는 새 항목을 받지 않았다

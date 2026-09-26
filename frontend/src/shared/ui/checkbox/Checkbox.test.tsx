@@ -104,6 +104,21 @@ describe('Checkbox', () => {
     )
   })
 
+  it.each([true, 'indeterminate'] as const)(
+    'keeps the ink face still while pressed (checked=%s)',
+    (checked) => {
+      render(<Checkbox checked={checked} />)
+      const box = screen.getByRole('checkbox')
+
+      expect(box).not.toHaveClass(
+        'data-[state=checked]:active:bg-sub',
+        'data-[state=indeterminate]:active:bg-sub',
+      )
+      expect(box.className).not.toMatch(/active:bg-/)
+      expect(box).toHaveClass('data-[state=unchecked]:active:border-ink')
+    },
+  )
+
   it('toggles with the keyboard', async () => {
     const user = userEvent.setup()
     const onCheckedChange = vi.fn()
@@ -130,5 +145,41 @@ describe('Checkbox', () => {
     const row = container.firstElementChild
 
     expect(row).toHaveClass('flex', 'items-start', 'gap-10', 'mt-12')
+  })
+
+  it('draws a white focus line inside the ink face when checked or indeterminate', () => {
+    render(<Checkbox checked />)
+
+    expect(screen.getByRole('checkbox')).toHaveClass(
+      'data-[state=checked]:focus-visible:outline-surface',
+      'data-[state=checked]:focus-visible:-outline-offset-3',
+      'data-[state=indeterminate]:focus-visible:outline-surface',
+      'data-[state=indeterminate]:focus-visible:-outline-offset-3',
+    )
+  })
+
+  it('leaves the unchecked box on the global focus line', () => {
+    render(<Checkbox />)
+
+    expect(screen.getByRole('checkbox').className).not.toMatch(
+      /data-\[state=unchecked\]:focus-visible:/,
+    )
+  })
+
+  it('draws the focus line in the accent on an invalid box and keeps the white line when checked', () => {
+    render(<Checkbox invalid>이용약관에 동의합니다</Checkbox>)
+    const box = screen.getByRole('checkbox')
+
+    expect(box).toHaveClass(
+      'focus-visible:outline-accent',
+      'data-[state=checked]:focus-visible:outline-surface',
+      'data-[state=indeterminate]:focus-visible:outline-surface',
+    )
+  })
+
+  it('leaves the accent focus line off the default box', () => {
+    render(<Checkbox />)
+
+    expect(screen.getByRole('checkbox').className).not.toMatch(/outline-accent/)
   })
 })

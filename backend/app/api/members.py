@@ -9,6 +9,7 @@ from app.models import (
     Member,
     MemberAlias,
     ResolutionResult,
+    User,
     Workspace,
 )
 from app.schemas.member import (
@@ -22,26 +23,30 @@ from app.schemas.member import (
     UnresolvedAliasListResponse,
     UnresolvedAliasResponse,
 )
-from app.api.deps import get_current_member
+from app.api.deps import get_current_member, get_current_user, require_member
+from app.services.matching import resolved_alias_texts
 
 router = APIRouter(prefix="/members", tags=["members"])
 
-def _get_member(db: Session, member_id: str) -> Member:
+def _get_member(db: Session, member_id: str, user: User) -> Member:
     member = db.get(Member, member_id)
     if member is None:
         raise AppError(ErrorCode.MEMBER_NOT_FOUND, details={"member_id": member_id})
+    require_member(db, user, member.workspace_id)
     return member
 
 
 @router.post("", status_code=201, response_model=Envelope[MemberResponse])
 def create_member(
     payload: MemberCreateRequest,
+    user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
     if db.get(Workspace, payload.workspace_id) is None:
         raise AppError(
             ErrorCode.WORKSPACE_NOT_FOUND, details={"workspace_id": payload.workspace_id}
         )
+    require_member(db, user, payload.workspace_id)
 
     if payload.discord_user_id:
         exists = db.execute(
@@ -73,6 +78,7 @@ def create_member(
 @router.get("", response_model=Envelope[MemberListResponse])
 def list_members(
     workspace_id: str = Query(..., description="워크스페이스 ID"),
+    _member: Member = Depends(get_current_member),
     db: Session = Depends(get_db),
 ) -> dict:
     stmt = (
@@ -97,6 +103,7 @@ def list_members(
 @router.get("/aliases", response_model=Envelope[MemberAliasListResponse])
 def list_aliases(
     workspace_id: str = Query(..., description="워크스페이스 ID"),
+    _member: Member = Depends(get_current_member),
     db: Session = Depends(get_db),
 ) -> dict:
     """담당자 매핑 화면의 현재 별칭 테이블."""
@@ -117,20 +124,12 @@ def list_aliases(
 @router.get("/unresolved-aliases", response_model=Envelope[UnresolvedAliasListResponse])
 def list_unresolved_aliases(
     workspace_id: str = Query(..., description="워크스페이스 ID"),
+    _member: Member = Depends(get_current_member),
     db: Session = Depends(get_db),
 ) -> dict:
     """담당자 매핑 화면의 '미매칭' 행 — 회의에서 감지됐지만 아직 팀원과 연결 안 된 이름."""
-    resolved_aliases = set(
-        db.execute(
-            select(MemberAlias.alias_text)
-            .where(
-                MemberAlias.workspace_id == workspace_id,
-                MemberAlias.verified == True,
-            )
-            .group_by(MemberAlias.alias_text)
-            .having(func.count() == 1)
-        ).scalars()
-    )
+    # 매칭 판정(resolve_assignee)과 같은 기준으로 해결 여부를 가른다.
+    resolved_aliases = resolved_alias_texts(db, workspace_id)
 
     stmt = (
         select(
@@ -160,17 +159,26 @@ def list_unresolved_aliases(
 
 
 @router.delete("/aliases/{alias_id}", status_code=204)
-def delete_alias(alias_id: str, db: Session = Depends(get_db)) -> None:
+def delete_alias(
+    alias_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> None:
     alias = db.get(MemberAlias, alias_id)
     if alias is None:
         raise AppError(ErrorCode.MEMBER_ALIAS_NOT_FOUND, details={"alias_id": alias_id})
+    require_member(db, user, alias.workspace_id)
     db.delete(alias)
     db.commit()
 
 
 @router.get("/{member_id}", response_model=Envelope[MemberResponse])
-def get_member(member_id: str, db: Session = Depends(get_db)) -> dict:
-    member = _get_member(db, member_id)
+def get_member(
+    member_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    member = _get_member(db, member_id, user)
     return success(MemberResponse.model_validate(member).model_dump(mode="json"))
 
 
@@ -178,9 +186,10 @@ def get_member(member_id: str, db: Session = Depends(get_db)) -> dict:
 def update_member(
     member_id: str,
     payload: MemberUpdateRequest,
+    user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
-    member = _get_member(db, member_id)
+    member = _get_member(db, member_id, user)
 
     updates = {field: getattr(payload, field) for field in payload.model_fields_set}
 
@@ -217,9 +226,10 @@ def update_member(
 def create_alias(
     member_id: str,
     payload: MemberAliasCreateRequest,
+    user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
-    member = _get_member(db, member_id)
+    member = _get_member(db, member_id, user)
 
     exists = db.execute(
         select(MemberAlias).where(
