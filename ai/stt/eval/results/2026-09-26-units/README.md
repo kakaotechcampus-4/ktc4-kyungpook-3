@@ -1,17 +1,23 @@
 # 2026-09-26 전사 단위와 상수 민감도
 
-`decision_log/0012` 의 수치가 여기서 나왔다. 표는 `tables/` 에 있고 `python -m stt.eval.sensitivity report --out <이 폴더>` 로 다시 만든다.
+`decision_log/0012` 의 수치가 여기서 나왔다. 이 폴더(레포 안)에는 표, 숫자 요약, 비용 장부만 있다. 설정마다 회의별 전사가 든 원자료와 추출 출력은 레포가 공개라 레포 밖에 둔다(`stt/eval/README.md` "원자료는 레포 밖에 둔다").
 
 ## 폴더
 
 | 경로 | 내용 |
 |---|---|
-| `runs/<백엔드>/<설정>.json` | 설정 하나를 회의마다 돌린 원자료. 지표, 화자별 전사(`hyp_by_speaker`), 클립별 줄(`clip_lines`), 호출별 지연(`call_log`), 모델 입력 지문 |
-| `extract/<회의>/<전사>__r<n>.json` | 할일 추출 결과. 넣은 줄, 뽑은 할일, 토큰 사용량 |
-| `align_sweep.json` | 정렬본을 만드는 상수(RUN_GAP_S, PLACE_GAP_S)를 바꿔 다시 정렬한 결과의 wav·묶음 지문 |
-| `ledger.jsonl` | 유료 호출 장부(Elice 전사 초, LLM 토큰, 원) |
-| `summary.json` | 잡음 폭과 상수별 판정 원자료 |
 | `tables/*.md` | 사람이 읽는 표. `evidence.md` 가 상수 근거 표다 |
+| `summary.json` | 잡음 폭과 상수별 판정. 숫자와 영문 키만 있다(`aligned`, `rearranged`, `flat`, `cliff` 등) |
+| `align_sweep.json` | 정렬본을 만드는 상수(RUN_GAP_S, PLACE_GAP_S)를 바꿔 다시 정렬한 결과의 wav·묶음 해시 |
+| `ledger.jsonl` | 유료 호출 장부(Elice 전사 초, LLM 토큰, 원) |
+
+원자료는 골든 폴더 옆 `eval-runs/2026-09-26-units/` 에 있다. `runs/<백엔드>/<설정>.json`(89개, 지표와 화자별 전사, 클립별 줄, 호출별 지연), `extract/<회의>/<전사>__r<n>.json`(281개, 넣은 줄과 뽑은 할일, 토큰 사용량), 그리고 이 폴더 요약의 원본이다. 표를 다시 만드는 명령:
+
+```bash
+.venv/bin/python -m stt.eval.sensitivity report --out stt/eval/results/2026-09-26-units --golden-root "<골든 폴더>"
+```
+
+원자료가 없는 곳에서는 `stt/eval/README.md` 의 재측정 절차로 새로 만든다. 새 원자료도 같은 규칙으로 레포 밖에 쌓인다.
 
 ## 데이터
 
@@ -19,7 +25,7 @@
 - 재배치 합성: `stt/eval/scenarios.py` 의 여섯 회의(교대 직후, 끼어들기, 짧은 대답, 긴 침묵, 마감 분리, 긴 독백). 정렬본 조각을 다시 놓은 것이다. 목소리는 진짜, 배치는 합성이고 조각 가장자리는 로컬 전사의 단어 시각으로 잘랐다. wav 는 레포에 없다. 같은 명령으로 다시 만든다
 - 실녹음(짧은 대답·겹침·긴 침묵 뒤 발화가 있는 것)은 아직 없다. 실서버에서 녹음하면 이 폴더 형식으로 넣고 같은 명령을 다시 돌린다
 
-오디오는 레포 밖(`~/Desktop/카테캠 아이디어톤/mm/golden/`)에 있다. 전사 캐시도 레포 밖에 둔다.
+오디오와 전사 캐시도 레포 밖에 있다.
 
 ## 이번 측정에서 돌린 것과 못 돌린 것
 

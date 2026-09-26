@@ -5,10 +5,18 @@
 ```bash
 # ai/ 안에서. 로컬 전사는 무과금, 캐시는 레포 밖에 둔다
 .venv/bin/python -m stt.eval.sensitivity run --golden-root "<골든 폴더>" --out stt/eval/results/<날짜>-units --cache ~/.cache/mm-stt-eval
-.venv/bin/python -m stt.eval.sensitivity report --out stt/eval/results/<날짜>-units
+.venv/bin/python -m stt.eval.sensitivity report --out stt/eval/results/<날짜>-units --golden-root "<골든 폴더>"
 ```
 
-`run` 은 이미 잰 (설정, 회의) 조합을 건너뛰므로 회의를 하나 추가하고 다시 돌리면 새 회의만 전사한다. 모델에 가는 조각은 내용 해시로 캐시해(`sttcache.py`) 같은 조각을 다시 계산하지 않는다. `report` 는 `runs/` 전체에서 표를 새로 만든다.
+`run` 은 이미 잰 (설정, 회의) 조합을 건너뛰므로 회의를 하나 추가하고 다시 돌리면 새 회의만 전사한다. 모델에 가는 조각은 내용 해시로 캐시해(`sttcache.py`) 같은 조각을 다시 계산하지 않는다. `report` 는 원자료 전체에서 표를 새로 만든다.
+
+## 원자료는 레포 밖에 둔다
+
+레포는 공개다. 실행별 원자료(설정마다 회의별 전사가 든 `runs/`, 추출 출력이 든 `extract/`)에는 회의 발언과 LLM 출력이 들어 있고, 파일이 수백 개라 PR 을 덮고, 재측정할 때마다 레포가 커진다. 그래서 레포 안 결과 폴더(`stt/eval/results/<이름>/`)에는 표(`tables/*.md`), 숫자와 영문 키만 든 요약(`summary.json`, `align_sweep.json`), 비용 장부(`ledger.jsonl`), README 만 둔다. `.gitignore` 가 결과 폴더 아래 `runs/`, `extract/`, `raw/` 를 막는다.
+
+원자료 위치는 이 순서로 정한다(`rawdir.py`). `--raw-dir` 로 준 경로, 환경 변수 `MM_EVAL_RAW_DIR` 아래 `<결과 폴더 이름>`, 첫 `--golden-root` 의 부모 아래 `eval-runs/<결과 폴더 이름>`. 정한 경로가 원격이 있는 git 레포 안이거나 결과 폴더와 같은 레포 안이면 명령이 멈춘다. 골든셋을 담은 로컬 레포처럼 원격이 없는 레포는 허용한다. 전사 캐시(`--cache`)와 합성 회의(`scenarios build --out`), 정렬 변형(`align-sweep --out`)도 같은 검사를 거친다.
+
+2026-09-26 측정의 원자료는 골든 폴더 옆 `eval-runs/2026-09-26-units/`(runs/ 파일 89개, extract/ 281개, 약 4.4MB)에 있다. 표만 다시 만들 때는 `report --out stt/eval/results/2026-09-26-units --golden-root <골든 폴더>` 를 돌린다. 원자료가 없는 곳에서는 아래 재측정 절차로 새로 만든다.
 
 ## 용어
 
@@ -47,8 +55,9 @@ wav 와 전사 캐시는 레포에 넣지 않는다. 회의 음성과 그 전사
 2. 로컬: `sensitivity run ... --plan all` (기본값, 잡음, 단위 모드, 상수 흔들기, 프롬프트). 시간이 모자라면 `--priority 1`(전사 단위 상수)부터, 다음 `--priority 2,3`(VAD, 말 필터)
 3. 다른 로컬 모델: `--model small --plan base,units --no-prompt`. 로컬 모델은 한 번에 하나씩 돌린다(메모리)
 4. Elice: `--backend elice --yes`. 백엔드에 따라 갈릴 수 있는 상수(`constants.py` 의 `elice=True`)만 흔든다. 누적 비용은 결과 폴더의 `ledger.jsonl` 에 쌓이고 `--budget`(기본 4,500원)에 닿기 전에 멈춘다
-5. 추출: `python -m stt.eval.extract_diff run --golden-root ... --out <결과> --targets truth,local-large-v3-turbo/base,... --yes`. 정답 전사는 3번, 다른 전사는 1번 뽑는다
-6. `sensitivity report --out <결과>` 로 `tables/` 를 다시 만든다. `tables/evidence.md` 가 상수 근거 표다
+5. 추출: `python -m stt.eval.extract_diff run --golden-root ... --out <결과> --targets truth,local-large-v3-turbo/base,... --yes`. 정답 전사는 3번, 다른 전사는 1번 뽑는다. 출력은 원자료 폴더의 `extract/` 에 쌓인다
+6. `sensitivity report --out <결과> --golden-root <골든 폴더>` 로 `tables/` 와 `summary.json` 을 다시 만든다. `tables/evidence.md` 가 상수 근거 표다
+7. 원자료 폴더는 레포 밖에 그대로 둔다. 커밋하는 것은 결과 폴더의 표, 요약, 장부, README 다
 
 ## 상수를 더할 때
 
