@@ -1,17 +1,14 @@
-"""실시간 전사 Cog 검증용 봇 실행 스크립트 (AI 파트 개발용).
+"""실시간 전사 Cog 를 띄우는 비교 실행기 (AI 파트 개발용). 운영 봇이 아니다.
 
-정식 봇 프로세스는 BE 의 backend/bot/main.py 가 소유한다. 이건 BE 가 준비되기 전에 실시간
-전사를 돌려 보기 위한 최소 실행기이고, 아래 build_bot() 이 붙이는 방식 그대로 BE 가 붙이면 된다.
+운영 봇은 RecordingCog 하나만 붙인다. 지금은 capture/run_recorder.py 가 띄운다. 이 실행기는 회의 중
+전사를 배치와 비교할 때만 따로 띄우고, 운영 봇에 RealtimeCog 를 붙이지 않는다. 이 폴더를 남긴 이유와
+유지 범위는 capture/realtime/__init__.py 에 있다. 봇 계정은 길드마다 음성 연결을 하나만 가지므로 두
+실행기가 같은 서버에서 동시에 녹음하지 않게 한다. 두 Cog 모두 MESSAGE CONTENT 인텐트를 요구하지 않는다.
 
-동료의 오프라인 녹음 Cog 는 capture/run_recorder.py 가 띄운다. 두 실행기를 나눠 둔 것은
-한쪽만으로 각자의 명령을 끝까지 돌려 볼 수 있게 하려는 것이다. 한 봇에 둘 다 붙이는 것도
-된다 — Cog 이름과 명령 이름이 겹치지 않는다. 다만 그때는 인텐트가 하나로 합쳐지므로,
-capture/discord_adapter.py 의 required_intents() 가 요구하는 MESSAGE CONTENT 를 개발자
-포털에서 같이 켜야 한다. 이쪽 required_intents() 는 그걸 요구하지 않는다.
+실행 (ai/ 디렉토리 안에서):  python -m capture.realtime.run
 
-실행 (ai/ 디렉토리 안에서):  python capture/run_realtime.py
-
-아래 절차는 실제 서버에서 끝까지 돌려 확인했다 (2026-09-12). 어디서 막히는지는 /selftest 가
+아래 절차는 2026-09-12 에 실제 서버에서 끝까지 돌렸다. 그때 명령 이름은 /record /stop 이었고 지금
+이름(/live /live-stop)으로는 아직 다시 돌리지 않았다 (decision_log/0006). 어디서 막히는지는 /selftest 가
 단계별로 알려 준다.
 
 한 번만 하는 준비
@@ -39,7 +36,7 @@ capture/discord_adapter.py 의 required_intents() 가 요구하는 MESSAGE CONTE
 
 매번 하는 것
 ------------
-    python capture/run_realtime.py
+    python -m capture.realtime.run
 
 프로세스 하나가 초대된 서버 전부를 담당한다. 무음 원인을 쫓을 때는 LOG_LEVEL=DEBUG 를 붙인다.
 패킷이 버려지는 로그가 DEBUG 라 기본 설정에서는 안 보인다.
@@ -86,7 +83,7 @@ S = settings()
 
 
 async def on_session_saved(payload: dict, jsonl_path: Path) -> None:
-    """회의록 저장 직후 후처리 자리. BE 는 여기서 추출·판단을 이어 붙인다."""
+    """회의록 저장 직후 불린다. 비교 실행이라 경로만 찍는다. BE 인계는 운영 경로(capture/handoff.py)에만 있다."""
     print(f"[realtime] 회의 {payload['meeting_id']} 저장됨 "
           f"(화자 {len(payload['speakers'])}명). 회의록: {jsonl_path}")
 

@@ -133,10 +133,13 @@ def to_extraction_items(tasks: list[dict], transcript: dict) -> list[dict]:
     for t in tasks:
         sentence = t.get("source_sentence") or ""
         speaker, at_ms = locate_sentence(sentence, segments)
+        kind = t.get("assignee_type")
+        # "네가"·"그분"·"백엔드 리더" 는 별칭이 아니다. 이름으로 풀리지 않았으면 BE 에 조회를 시키지 않는다
+        mention = None if kind in ("second", "thirdpronoun", "thirdrole") else t.get("assignee_mention")
         items.append({
             "task_title": t.get("task", ""),
             "task_confidence": float(t.get("confidence") or 0.0),
-            "assignee_raw": t.get("assignee_resolved") or t.get("assignee_mention"),
+            "assignee_raw": t.get("assignee_resolved") or mention,
             "assignee_type": t.get("assignee_type"),
             "due_date": t.get("due_date"),
             "due_raw": t.get("due_raw"),
@@ -198,6 +201,8 @@ class Handoff:
         tasks = json.loads(Path(tasks_path).read_text(encoding="utf-8"))
         transcript = json.loads(transcript_json.read_text(encoding="utf-8")) if transcript_json.exists() else {}
         items = to_extraction_items(tasks, transcript)
+        changed = bool(manifest.get("reextracted"))                       # 전사가 바뀌어 다시 뽑은 결과다
+        previous = (manifest.get("be") or {}).get("extraction_id")
 
         be = self.end(manifest, title=title)
         try:
@@ -210,6 +215,18 @@ class Handoff:
             else:
                 raise
         be.update({"status": "done", "extraction_id": data["extraction_id"], "item_count": data.get("item_count", len(items))})
+        # BE 는 done 회의에 새 추출을 만들지 않고 기존 것을 돌려준다. 다시 뽑아 보냈는데 같은 것이 돌아오면 BE 에는 옛 추출이 남은 것이다
+        if changed and previous and data["extraction_id"] == previous:
+            be["stale_extraction"] = True
+        else:
+            be.pop("stale_extraction", None)
+        manifest.pop("reextracted", None)
+        if manifest.get("partial"):
+            be["partial"] = True
+            be["missing_units"] = len(manifest.get("failed_units") or [])
+        else:
+            be.pop("partial", None)
+            be.pop("missing_units", None)
         return be
 
     def _register(self, meeting_id: str, transcript_json: Path, model_name: str | None, items: list[dict]) -> dict:

@@ -1,4 +1,7 @@
 import logging
+import os
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import FastAPI, Request
@@ -8,13 +11,32 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api import approvals, extractions, meetings, members, tasks, workspaces, auth, integrations
 from app.core.errors import AppError, Envelope, ErrorCode, failure, success
+from app.services import notion_sync
 
 logger = logging.getLogger(__name__)
+
+# Notion 반영 대기열을 훑는 주기(초). 0 이하면 워커를 띄우지 않는다.
+NOTION_SYNC_INTERVAL_SECONDS = float(os.getenv("NOTION_SYNC_INTERVAL_SECONDS", "5"))
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    if NOTION_SYNC_INTERVAL_SECONDS <= 0:
+        yield
+        return
+    thread, stop_event = notion_sync.start_worker(NOTION_SYNC_INTERVAL_SECONDS)
+    try:
+        yield
+    finally:
+        stop_event.set()
+        thread.join(timeout=5)
+
 
 app = FastAPI(
     title="Manager's Manager API",
     version="0.1.0",
     description="회의 → 추출 → 매칭 → 게이트 파이프라인 백엔드",
+    lifespan=lifespan,
 )
 
 API_PREFIX = "/api/v1"
