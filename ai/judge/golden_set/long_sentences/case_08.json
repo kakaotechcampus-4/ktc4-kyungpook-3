@@ -108,7 +108,8 @@
     {
       "text": "로그인 쪽은 담당자를 제가 맡을게요.",
       "should_flag": true,
-      "note": "담당자 결정(로그인)"
+      "note": "담당자 결정(로그인)",
+      "assignee_type": "first"
     },
     {
       "text": "결제 쪽은 아직 API 문서 보고 있어요.",

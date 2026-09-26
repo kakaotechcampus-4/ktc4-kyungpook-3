@@ -180,7 +180,8 @@
     {
       "text": "결제쪽 담당 제가 할게요",
       "should_flag": true,
-      "note": "담당자 자기지칭(채팅체)"
+      "note": "담당자 자기지칭(채팅체)",
+      "assignee_type": "first"
     },
     {
       "text": "ㄱㅅㄱㅅ",

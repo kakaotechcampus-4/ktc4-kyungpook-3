@@ -21,7 +21,7 @@ from __future__ import annotations
 import re
 
 from llm import LLMClient, get_llm
-from shared.schemas import FINDING_SIGNALS, SIGNAL_DECISION, JudgeFinding, Transcript
+from shared.schemas import ASSIGNEE_TYPES, FINDING_SIGNALS, SIGNAL_DECISION, JudgeFinding, Transcript
 
 
 class FindingExtractionUnavailableError(RuntimeError):
@@ -77,6 +77,20 @@ _LUNA_SYSTEM_PROMPT = (
     "같은 회의 안에서 나중에 정정/번복되더라도, 정정 전 발화도 그 자체로 결정/합의였다면 "
     "포함한다 — 어느 쪽이 최종본인지 판단하는 건 다음 단계의 몫이니 여기서 미리 하나만 "
     "고르지 않는다. "
+    "고른 발화마다 담당자가 **어떻게 지칭됐는지**도 분류한다(assignee_type). 누구인지가 아니라 "
+    "어떻게 불렀는가가 기준이다:\n"
+    "  first        화자 자신 ('제가', '저는', '내가')\n"
+    "  second       상대방 ('너가', '당신이')\n"
+    "  thirdname    제3자를 이름·별명으로 ('환 님이', '하은이가')\n"
+    "  thirdpronoun 제3자를 지시대명사로 ('그분이', '저쪽에서')\n"
+    "  thirdrole    역할·직책으로 ('백엔드 리더가')\n"
+    "  group        특정 개인이 아닌 전체 ('다 같이', '우리 모두')\n"
+    "  none         담당자 언급이 전혀 없음 — 일정·범위만 정한 경우가 대부분이다\n"
+    "assignee_raw 에는 담당자를 가리킨 **원문 표현을 그대로** 넣는다('지민님', '너'). "
+    "first/group/none 이면 null 이다 — 가리킨 말이 없거나, 화자 자신이라 이름이 필요 없다. "
+    "assignee_resolved 는 second/thirdpronoun 처럼 그 표현만으로는 누군지 모를 때 앞뒤 문맥을 "
+    "보고 실제 이름으로 바꾼 값이다('그분' → '환'). 문맥으로도 모르면 null, 다른 타입도 null. "
+    "원문과 해소된 이름을 절대 섞지 마라 — '너'를 이름 자리에 넣으면 조회가 영원히 실패한다.\n"
     "애매하면 포함시켜라 — 여기서 놓치면 다음 단계에서 검토할 기회가 아예 없어진다."
 )
 
@@ -168,6 +182,28 @@ def _valid_signal(item: dict) -> str:
     return raw if raw in FINDING_SIGNALS else SIGNAL_DECISION
 
 
+_NO_RAW_TYPES = {"first", "group", "none"}  # 가리킬 원문 호칭이 없는 타입
+
+
+def _valid_assignee(item: dict) -> tuple[str | None, str | None, str | None]:
+    """LLM 이 준 담당자 정보를 (type, raw, resolved) 로 좁힌다.
+
+    모르는 타입이면 셋 다 None — "아직 판정 전"으로 둔다. 여기서 "none"(담당자 언급 없음)으로
+    떨어뜨리면 **판정 실패와 "담당자가 없다"가 구분되지 않는다.**
+
+    first/group/none 은 가리킬 원문 호칭이 없으므로 raw 를 지운다. 특히 first 는 BE 가
+    evidence_speaker(화자 uid)로 푸는데, raw 가 같이 오면 BE 분기가 그쪽을 먼저 본다.
+    """
+    a_type = item.get("assignee_type")
+    if a_type not in ASSIGNEE_TYPES:
+        return None, None, None
+    raw = str(item.get("assignee_raw") or "").strip() or None
+    resolved = str(item.get("assignee_resolved") or "").strip() or None
+    if a_type in _NO_RAW_TYPES:
+        raw = None
+    return a_type, raw, resolved
+
+
 def _luna_user_prompt(numbered: str) -> str:
     return (
         "다음은 번호가 매겨진 발화 목록이다. 의미 있다고 판단한 내용마다 근거가 되는 줄 번호 "
@@ -177,8 +213,9 @@ def _luna_user_prompt(numbered: str) -> str:
         "하나의 결정이 여러 줄에 걸쳐 만들어지면(제안 → 합의, 지시 → 수락) 그 줄 번호를 모두 "
         "indices 에 담아라. 한 줄로 끝나면 번호 하나만 담는다. 서로 다른 결정은 따로 나눈다.\n\n"
         'signal 은 "decision"(문서에 쓸 새 내용) 또는 "progress"(기존 작업의 진척) 둘 중 하나다.\n\n'
-        '형식: {"findings": [{"indices": [1, 2], "summary": "...", '
-        '"signal": "decision", "reason": "..."}]}\n\n'
+        '형식: {"findings": [{"indices": [1, 2], "summary": "...", "signal": "decision", '
+        '"assignee_type": "thirdname", "assignee_raw": "지민님", "assignee_resolved": null, '
+        '"reason": "..."}]}\n\n'
         f"{numbered}"
     )
 
@@ -219,6 +256,7 @@ def extract_findings_llm(transcript: Transcript, client: LLMClient) -> list[Judg
         # 1인칭("제가 할게요") 담당자 해소도 그 발화의 화자를 봐야 한다.
         # ponytail: 앵커가 항상 마지막이라는 보장은 없다. 어긋나면 LLM 에 anchor 를 따로 받는다.
         anchor = idxs[-1]
+        a_type, a_raw, a_resolved = _valid_assignee(item)
         findings.append(
             JudgeFinding(
                 text=summary or " ".join(evidence),  # summary 비어있으면 원문으로 폴백
@@ -228,6 +266,9 @@ def extract_findings_llm(transcript: Transcript, client: LLMClient) -> list[Judg
                 seq=seqs[anchor],
                 speaker=speakers[anchor],
                 signal=_valid_signal(item),
+                assignee_type=a_type,
+                assignee_raw=a_raw,
+                assignee_resolved=a_resolved,
                 reason=str(item.get("reason", "")).strip()[:200],
                 method="llm",
             )

@@ -113,6 +113,21 @@ SIGNAL_DECISION = "decision"  # 문서에 쓸 새 내용이 있다 (결정/합�
 SIGNAL_PROGRESS = "progress"  # 문서에 쓸 새 내용은 없지만 기존 작업의 진척 신호다
 FINDING_SIGNALS: tuple[str, ...] = (SIGNAL_DECISION, SIGNAL_PROGRESS)
 
+# 담당자 호칭 분류. ExtractedTask.assignee_type 과 **같은 어휘를 쓴다** — 기준 원본은
+# extract/TASK_CRITERIA.md 다. 3인칭을 third 하나로 합치지 않는 이유는 BE 처리 경로가
+# 갈리기 때문이다: thirdname 은 alias 완전일치로 찾을 수 있고, thirdpronoun 은 AI 가
+# 문맥으로 풀어야 하며, thirdrole 은 역할 매핑이라 대체로 PM 확인으로 간다.
+# second("너가")도 따로 둬야 한다 — 합쳐 두면 "너"가 별칭 텍스트로 조회돼 영원히 안 맞는다.
+ASSIGNEE_TYPES: tuple[str, ...] = (
+    "first",         # 화자 자신 ("제가", "저는", "내가"). BE 는 evidence_speaker 로 푼다
+    "second",        # 상대방 지칭 ("너가", "당신이") — 그 표현으로는 조회 불가
+    "thirdname",     # 제3자를 이름·별명으로 ("환 님이", "하은이가")
+    "thirdpronoun",  # 제3자를 지시대명사로 ("그분이", "저쪽에서") — 조회 불가
+    "thirdrole",     # 역할·직책으로 ("백엔드 리더가")
+    "group",         # 특정 개인이 아닌 전체 ("다 같이", "우리 모두")
+    "none",          # 담당자 언급이 전혀 없음
+)
+
 
 @dataclass
 class JudgeFinding(_Base):
@@ -150,8 +165,15 @@ class JudgeFinding(_Base):
     reason: str = ""  # 왜 후보로 골랐는지 (규칙 기반이면 어떤 규칙에 걸렸는지)
     method: str = "rules"  # rules | llm
 
+    # ── 담당자 (1단계가 채운다 — 문장 표면만 보면 판정되는 값이라 비교할 것이 없다)
+    assignee_type: str | None = None  # ASSIGNEE_TYPES 중 하나. 아직 판정 전이면 None
+    assignee_raw: str | None = None  # 담당자를 가리킨 **원문 표현** ("지민님", "너"). BE 의
+    # assignee_raw 로 그대로 흘러가 별칭 조회 키가 된다. first/group/none 이면 None
+    assignee_resolved: str | None = None  # second/thirdpronoun 을 문맥으로 푼 실제 이름
+    # ("그분" → "환"). 못 풀면 None. 원문(assignee_raw)과 섞지 않는다 — "너"를 별칭으로
+    # 조회하면 영원히 안 맞기 때문에 BE 가 둘을 구분할 수 있어야 한다
+
     # ── 이후 단계가 채우는 칸 (1단계에서는 항상 None)
-    assignee_type: str | None = None  # first | third | group | none. BE 계약 어휘와 맞춤
     status: str | None = None  # todo | in_progress | blocked | done. Terra 2단계(JudgeResult.status)가 정함
     evidence_status: str | None = None  # certain | inferred | missing — 근거가 원문에 얼마나 명시적인가
 

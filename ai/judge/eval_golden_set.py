@@ -74,6 +74,35 @@ def _score_signal(case: dict, signals: dict[str, str]) -> tuple[int, int, list[s
     return correct, total, mistakes
 
 
+def _assignee_by_text(findings: list[JudgeFinding]) -> dict[str, str | None]:
+    """앵커 문장 → 그 finding 의 assignee_type."""
+    return {f.evidence[-1]: f.assignee_type for f in findings if f.evidence}
+
+
+def _score_assignee(case: dict, types: dict[str, str | None]) -> tuple[int, int, list[str]]:
+    """담당자 호칭 분류가 맞았는지 — **라벨이 붙은 문장에 한해서만** 센다.
+
+    judge 골든셋은 원래 "이 발화가 후보인가" 하나만 재던 데이터라 담당자 라벨이 없었다.
+    한꺼번에 다 붙이는 대신 담당자가 명시적으로 드러난 문장부터 붙였고, 라벨이 없는 문장은
+    분모에서 뺀다 — "~하겠습니다"처럼 1인칭 표현 없이 의지만 드러나는 마감 결정문이
+    first 인지 none 인지는 사람마다 갈려서, 합의 전에 점수로 만들면 안 된다.
+    """
+    correct, total, mistakes = 0, 0, []
+    for exp in case["expected"]:
+        want = exp.get("assignee_type")
+        if want is None or not exp["should_flag"]:
+            continue
+        if exp["text"] not in types:
+            continue  # 못 골라낸 문장 — 통과율 쪽에서 이미 오답
+        total += 1
+        got = types[exp["text"]]
+        if got == want:
+            correct += 1
+        else:
+            mistakes.append(f'"{exp["text"]}" — assignee_type 기대={want} 실제={got}')
+    return correct, total, mistakes
+
+
 def _flagged_texts(findings: list[JudgeFinding]) -> set[str]:
     # evidence로 매칭한다 — text는 LLM 경로에서 문맥 반영 요약으로 바뀔 수 있어서
     # 골든셋의 원문 기준(expected[].text)과 안정적으로 대응하는 건 evidence 쪽이다.
@@ -107,7 +136,8 @@ def main() -> None:
 
     cases = _load_cases()
     totals: dict[str, dict[str, int]] = {
-        g: {"r_c": 0, "r_t": 0, "l_c": 0, "l_t": 0, "s_c": 0, "s_t": 0} for g in GROUPS
+        g: {"r_c": 0, "r_t": 0, "l_c": 0, "l_t": 0, "s_c": 0, "s_t": 0, "a_c": 0, "a_t": 0}
+        for g in GROUPS
     }
 
     for case in cases:
@@ -123,6 +153,8 @@ def main() -> None:
         l_correct, l_total, l_mistakes = _score(case, llm_flagged)
         llm_signals = _signal_by_text(llm_result) if llm_result is not None else {}
         s_correct, s_total, s_mistakes = _score_signal(case, llm_signals)
+        llm_types = _assignee_by_text(llm_result) if llm_result is not None else {}
+        a_correct, a_total, a_mistakes = _score_assignee(case, llm_types)
 
         tag = "" if counts else " (통과율 제외)"
         print(f"\n[{group}/{case['case_id']}] {case['description']}{tag}")
@@ -133,6 +165,10 @@ def main() -> None:
             print(f"  축 분류   {s_correct}/{s_total}")
             for m in s_mistakes:
                 print(f"    ✗ {m}")
+        if a_total:
+            print(f"  담당자    {a_correct}/{a_total}")
+            for m in a_mistakes:
+                print(f"    ✗ {m}")
 
         if counts:
             totals[group]["r_c"] += r_correct
@@ -141,9 +177,11 @@ def main() -> None:
             totals[group]["l_t"] += l_total
             totals[group]["s_c"] += s_correct
             totals[group]["s_t"] += s_total
+            totals[group]["a_c"] += a_correct
+            totals[group]["a_t"] += a_total
 
     print("\n" + "=" * 60)
-    grand = {"r_c": 0, "r_t": 0, "l_c": 0, "l_t": 0, "s_c": 0, "s_t": 0}
+    grand = {"r_c": 0, "r_t": 0, "l_c": 0, "l_t": 0, "s_c": 0, "s_t": 0, "a_c": 0, "a_t": 0}
     for group in GROUPS:
         g = totals[group]
         if g["r_t"] == 0:
@@ -159,6 +197,9 @@ def main() -> None:
     if grand["s_t"]:
         print(f"축 분류(decision/progress): {grand['s_c']}/{grand['s_t']} "
               f"({grand['s_c'] / grand['s_t']:.0%}) — 골라낸 것 중에서만 잼")
+    if grand["a_t"]:
+        print(f"담당자 호칭 분류          : {grand['a_c']}/{grand['a_t']} "
+              f"({grand['a_c'] / grand['a_t']:.0%}) — 라벨이 붙은 문장에 한해서만 잼")
 
 
 if __name__ == "__main__":

@@ -121,12 +121,14 @@
     {
       "text": "네, 그리고 담당자는 저로 하겠습니다.",
       "should_flag": true,
-      "note": "담당자 자기지칭"
+      "note": "담당자 자기지칭",
+      "assignee_type": "first"
     },
     {
       "text": "회원가입 쪽 소셜 로그인은 이번 스프린트에서 빼기로 하죠.",
       "should_flag": true,
-      "note": "범위 변경"
+      "note": "범위 변경",
+      "assignee_type": "none"
     },
     {
       "text": "좋습니다, 그럼 나머지는 자유롭게 얘기해볼까요.",
