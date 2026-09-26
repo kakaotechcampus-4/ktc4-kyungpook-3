@@ -15,13 +15,16 @@
 - 민감도 측정 `stt/eval/sensitivity.py` 와 표 `stt/eval/sensitivity_report.py`. 골든 폴더의 모든 회의에 기본값, 결정성 확인, 디더 잡음, 단위 모드, 상수 하나씩 흔들기, 용어 힌트를 돌리고 평탄·경사·절벽·발동 안 함으로 판정한다. `rescore` 는 저장된 줄로 지표를 다시 센다. `align-sweep` 은 정렬본을 만드는 상수를 바꿔 다시 정렬한다 (aac9b78, 057520b, 8056158 등)
 - 재배치 합성 회의 `stt/eval/scenarios.py`. 정렬본 조각을 다시 놓아 교대 직후, 끼어들기, 짧은 대답, 긴 침묵 뒤 첫 발화, 할일과 마감이 다른 줄, 30초 넘는 독백을 만든다 (db36db2, 274690c)
 - 추출 비교 `stt/eval/extract_diff.py`. 지민의 `extract_tasks` 를 호출만 한다. 정답 전사 추출 세 번의 합의 대비 놓친 할일·더한 할일·담당자·마감 변화, 합성 회의에 적은 의도 대비 담당자·마감 보존을 센다 (8fea001, 320d8cc, 604ad28)
-- 골든 폴더 형식과 재측정 절차 `stt/eval/README.md`, 결정 기록 `decision_log/0012-*.md`, 결과 `stt/eval/results/2026-09-26-units/`
+- 원자료 위치 `stt/eval/rawdir.py`. 설정마다 회의별 전사가 든 원자료(`runs/`)와 추출 출력(`extract/`)은 레포 밖(`--raw-dir`, 기본은 골든 폴더 옆 `eval-runs/<결과 폴더 이름>`)에 쓰고, 그 경로가 원격이 있는 레포 안이면 멈춘다. 레포 안 결과 폴더에는 표, 숫자와 영문 키만 든 요약, 비용 장부만 둔다. `.gitignore` 가 결과 폴더 아래 `runs/`·`extract/`·`raw/` 를 막는다
+- 골든 폴더 형식과 재측정 절차 `stt/eval/README.md`, 결정 기록 `decision_log/0012-*.md`, 결과 `stt/eval/results/2026-09-26-units/`(표와 요약 약 180KB, 원자료 약 4.4MB 는 레포 밖)
 
 ## 왜
 
 단위(클립·턴·묶음)와 그 상수들은 0008 에서 한 값으로만 쟀고, 멘토 리뷰(#45 1차 본문 5, 고민 5)가 턴 기준을 화자 교대·끼어들기·마감 분리 발화에서 추출 누락으로 비교하라고 했다. 결정과 트레이드오프는 `decision_log/0012` 에 적고 여기서는 다시 쓰지 않는다.
 
 상수 값을 바꿔 끼우는 방법을 비교했다. 운영 코드를 호출 시점에 전역을 읽게 고치는 것은 `run()` 을 PR #83 이 고치는 중이라 버렸다. 함수를 감싼 대리 함수로 바꿔치기하는 것은 안에서 위치 인자로 넘기는 호출과 인자가 겹쳐 버렸다. 함수 객체의 기본 인자를 직접 바꾸고 되돌리는 쪽을 골랐다.
+
+원자료는 레포에 두지 않는다. 레포가 공개라 회의 발언 전사와 LLM 출력이 퍼지기 때문이다. 원자료 파일 370개가 PR 을 덮고 재측정마다 레포를 키우는 것도 이것으로 막힌다.
 
 LLM 호출은 openai SDK 가 공유 venv 에 없어(requirements.txt 에는 있다) requests 로 같은 json_schema 요청을 보냈다. `.env` 에 LLM_API_KEY 가 없어 ELICE_API_KEY 로 엘리스 게이트웨이의 gemini-2.5-flash-lite 를 불렀다.
 
@@ -39,7 +42,7 @@ LLM 호출은 openai SDK 가 공유 venv 에 없어(requirements.txt 에는 있�
 | Elice | 2026-09-26 02:04~08:24 전사 API 가 응답하지 않아 아직 안 잼 |
 | 비용 | 154.8원. 추출 LLM 280회 145.6원(입력 434,392·출력 151,323 토큰, Google 공시 단가와 1,400원/$ 가정), Elice 전사 확인 호출 24건 9.3원(시간 초과도 과금된 것으로 셈) |
 
-재현: `python -m stt.eval.sensitivity run --golden-root <골든> --golden-root <합성> --out stt/eval/results/2026-09-26-units --cache <캐시> --noise-seeds 10` 다음 `report`. 테스트는 501 통과(새 테스트 77).
+재현: `python -m stt.eval.sensitivity run --golden-root <골든> --golden-root <합성> --out stt/eval/results/2026-09-26-units --cache <캐시> --noise-seeds 10` 다음 `report`. 테스트는 514 통과(새 테스트 90).
 
 ## 남은 것
 
