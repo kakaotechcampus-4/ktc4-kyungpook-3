@@ -263,6 +263,138 @@ def test_llm_path_ignores_out_of_range_indices():
     assert extract_findings_llm(t, fake) == []
 
 
+def test_llm_path_reads_signal_and_defaults_to_decision():
+    """signal 을 읽어 담고, 값이 없거나 모르는 값이면 decision 으로 둔다.
+
+    signal 은 라우팅 축이라 값이 이상하다고 항목을 버리면 결정이 통째로 사라진다.
+    decision 이 기본인 이유는 그쪽이 안전한 실패라서다 — progress 로 잘못 보내면 문서 갱신
+    경로를 건너뛰지만, decision 으로 잘못 보내면 2단계가 한 번 더 걸러준다.
+    """
+    t = _transcript(
+        TranscriptSegment(speaker="a", start=0.0, end=1.0, text="로그인 API 다 붙였어요.", seq=1),
+        TranscriptSegment(speaker="b", start=1.0, end=2.0, text="금요일까지 하기로 했습니다.", seq=2),
+        TranscriptSegment(speaker="c", start=2.0, end=3.0, text="문서도 정리해뒀어요.", seq=3),
+    )
+    fake = FakeLLM(responses=[{"findings": [
+        {"indices": [0], "signal": "progress", "reason": "완료 보고"},
+        {"indices": [1], "signal": "decision", "reason": "일정 합의"},
+        {"indices": [2], "signal": "무슨값", "reason": "모르는 값"},
+    ]}])
+    findings = extract_findings_llm(t, fake)
+
+    assert [f.signal for f in findings] == ["progress", "decision", "decision"]
+
+
+def test_progress_report_reaches_the_next_stage():
+    """완료 보고가 1단계에서 사라지지 않는지 — 이 PR 의 핵심.
+
+    축이 "문서를 바꿀 만한가" 하나뿐이던 시절엔 완료 보고가 문서 기준 무의미하다는 이유로
+    걸러져서, 2단계의 status(done) 판정에 영원히 도달하지 못했다.
+    """
+    t = _transcript(
+        TranscriptSegment(speaker="a", start=0.0, end=1.0, text="로그인 API 다 붙였어요.", seq=1)
+    )
+    fake = FakeLLM(responses=[{"findings": [
+        {"indices": [0], "summary": "로그인 API 연동을 완료함", "signal": "progress", "reason": "완료 보고"}
+    ]}])
+    findings = extract_findings_llm(t, fake)
+
+    assert len(findings) == 1
+    assert findings[0].signal == "progress"
+    assert findings[0].evidence == ["로그인 API 다 붙였어요."]
+
+
+def test_llm_path_reads_assignee_and_keeps_raw_apart_from_resolved():
+    """담당자 호칭 분류를 담되, 원문 표현과 해소된 이름을 섞지 않는지.
+
+    "너"를 이름 자리에 넣으면 BE 의 별칭 조회(MemberAlias.alias_text 완전일치)가 영원히
+    실패한다. first/group/none 은 가리킨 말이 없으므로 raw 를 지운다 — 특히 first 는 BE 가
+    evidence_speaker(화자 uid)로 푸는데 raw 가 같이 오면 BE 분기가 그쪽을 먼저 본다.
+    """
+    t = _transcript(
+        TranscriptSegment(speaker="a", start=0.0, end=1.0, text="이건 지민님이 맡아주세요.", seq=1),
+        TranscriptSegment(speaker="b", start=1.0, end=2.0, text="결제는 제가 할게요.", seq=2),
+        TranscriptSegment(speaker="a", start=2.0, end=3.0, text="그럼 이건 너가 해줘.", seq=3),
+    )
+    fake = FakeLLM(responses=[{"findings": [
+        {"indices": [0], "assignee_type": "thirdname", "assignee_raw": "지민님", "reason": "이름 지정"},
+        {"indices": [1], "assignee_type": "first", "assignee_raw": "제가", "reason": "1인칭"},
+        {"indices": [2], "assignee_type": "second", "assignee_raw": "너", "assignee_resolved": "민재",
+         "reason": "상대 지칭"},
+    ]}])
+    findings = extract_findings_llm(t, fake)
+
+    assert [(f.assignee_type, f.assignee_raw, f.assignee_resolved) for f in findings] == [
+        ("thirdname", "지민님", None),
+        ("first", None, None),        # 화자 자신이라 raw 를 지운다
+        ("second", "너", "민재"),      # 원문과 해소된 이름을 둘 다, 따로
+    ]
+
+
+def test_llm_path_leaves_assignee_unset_when_type_is_unknown():
+    """모르는 타입이면 셋 다 None — "none"(담당자 언급 없음)으로 떨어뜨리지 않는다.
+
+    판정 실패와 "담당자가 없다"는 다른 상태다. 섞으면 나중에 구분할 방법이 없다.
+    """
+    t = _transcript(
+        TranscriptSegment(speaker="a", start=0.0, end=1.0, text="금요일까지 하기로 했습니다.", seq=1)
+    )
+    fake = FakeLLM(responses=[{"findings": [
+        {"indices": [0], "assignee_type": "무슨값", "assignee_raw": "지민님", "reason": "모르는 타입"}
+    ]}])
+    f = extract_findings_llm(t, fake)[0]
+
+    assert (f.assignee_type, f.assignee_raw, f.assignee_resolved) == (None, None, None)
+
+
+def test_golden_set_assignee_labels_are_valid():
+    """골든셋 assignee_type 라벨이 허용값이고 should_flag=True 에만 붙어 있는지."""
+    import json
+    from pathlib import Path as _P
+
+    from shared.schemas import ASSIGNEE_TYPES
+
+    golden_dir = _P(__file__).resolve().parent.parent / "judge" / "golden_set"
+    problems: list[str] = []
+    for path in sorted(golden_dir.rglob("case_*.json")):
+        case = json.loads(path.read_text(encoding="utf-8"))
+        where = f"{path.parent.name}/{case['case_id']}"
+        for exp in case["expected"]:
+            a = exp.get("assignee_type")
+            if a is None:
+                continue
+            if a not in ASSIGNEE_TYPES:
+                problems.append(f"{where}: 허용되지 않은 assignee_type {a!r} — {exp['text']!r}")
+            if not exp["should_flag"]:
+                problems.append(f"{where}: 고르지도 않을 문장에 assignee_type — {exp['text']!r}")
+
+    assert not problems, "골든셋 assignee_type 라벨 문제:\n  " + "\n  ".join(problems)
+
+
+def test_golden_set_signal_labels_are_valid():
+    """골든셋의 signal 라벨이 허용값인지, should_flag=True 인 라벨에만 붙어 있는지."""
+    import json
+    from pathlib import Path as _P
+
+    from shared.schemas import FINDING_SIGNALS
+
+    golden_dir = _P(__file__).resolve().parent.parent / "judge" / "golden_set"
+    problems: list[str] = []
+    for path in sorted(golden_dir.rglob("case_*.json")):
+        case = json.loads(path.read_text(encoding="utf-8"))
+        where = f"{path.parent.name}/{case['case_id']}"
+        for exp in case["expected"]:
+            sig = exp.get("signal")
+            if sig is None:
+                continue
+            if sig not in FINDING_SIGNALS:
+                problems.append(f"{where}: 허용되지 않은 signal {sig!r} — {exp['text']!r}")
+            if not exp["should_flag"]:
+                problems.append(f"{where}: 고르지도 않을 문장에 signal 이 붙음 — {exp['text']!r}")
+
+    assert not problems, "골든셋 signal 라벨 문제:\n  " + "\n  ".join(problems)
+
+
 def test_llm_path_ignores_bool_indices():
     # bool은 int의 서브클래스라 isinstance(i, int) 검사만으로는 True/False가 0/1번 문장으로
     # 잘못 통과할 수 있다 — type()으로 엄격히 걸러지는지 확인한다.

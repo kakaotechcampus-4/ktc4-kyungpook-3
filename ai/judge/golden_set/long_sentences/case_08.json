@@ -108,12 +108,14 @@
     {
       "text": "로그인 쪽은 담당자를 제가 맡을게요.",
       "should_flag": true,
-      "note": "담당자 결정(로그인)"
+      "note": "담당자 결정(로그인)",
+      "assignee_type": "first"
     },
     {
       "text": "결제 쪽은 아직 API 문서 보고 있어요.",
-      "should_flag": false,
-      "note": "진행상황(결제)"
+      "should_flag": true,
+      "note": "진행상황(결제) — 작업 대상이 명시된 진척 보고이므로 progress",
+      "signal": "progress"
     },
     {
       "text": "QA 쪽에서 버그 리포트 몇 개 왔어요.",
@@ -127,8 +129,9 @@
     },
     {
       "text": "저는 배포 스크립트 좀 손봤습니다.",
-      "should_flag": false,
-      "note": "진행상황"
+      "should_flag": true,
+      "note": "진행상황 — 작업 대상이 명시된 진척 보고이므로 progress",
+      "signal": "progress"
     },
     {
       "text": "좋네요.",
@@ -172,8 +175,9 @@
     },
     {
       "text": "디자인은 색상 팔레트 다 정했습니다.",
-      "should_flag": false,
-      "note": "진행상황(디자인)"
+      "should_flag": true,
+      "note": "진행상황(디자인) — 작업 대상이 명시된 진척 보고이므로 progress",
+      "signal": "progress"
     },
     {
       "text": "로그인 마감은 다음 주 화요일로 하겠습니다.",
@@ -187,8 +191,9 @@
     },
     {
       "text": "디자인은 타이포그래피만 남았어요.",
-      "should_flag": false,
-      "note": "진행상황(디자인)"
+      "should_flag": true,
+      "note": "진행상황(디자인) — 작업 대상이 명시된 진척 보고이므로 progress",
+      "signal": "progress"
     },
     {
       "text": "디자인 쪽 마감도 정해야 할 것 같은데 다음 주 월요일 어때요?",
