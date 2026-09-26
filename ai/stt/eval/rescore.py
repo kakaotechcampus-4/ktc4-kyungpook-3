@@ -15,7 +15,9 @@ import json
 import sys
 from pathlib import Path
 
-from stt.eval.eval import score as cer_score
+from stt.eval.eval import SCORING_VERSION, score as cer_score
+
+FIELDS = ("cer", "cer_by_speaker", "insertion_rate")
 
 
 def rescore(truth_by: dict[str, str], result: dict) -> dict:
@@ -29,7 +31,27 @@ def rescore(truth_by: dict[str, str], result: dict) -> dict:
     out["cer"] = round(sum(v[0] * v[1] for v in per.values() if v[0] is not None) / tot, 4)
     out["cer_by_speaker"] = {k: round(v[0], 4) for k, v in per.items()}
     out["insertion_rate"] = round(sum(v[2] for v in per.values()) / max(1, sum(v[3] for v in per.values())), 4)
+    out["scoring_version"] = SCORING_VERSION
     return out
+
+
+def version_of(result: dict) -> int:
+    """결과를 채점한 기준 버전. 버전을 적기 전에 만든 결과는 1 로 본다."""
+    return int(result.get("scoring_version", 1))
+
+
+def stale_reason(result: dict) -> str | None:
+    """지금 기준과 다른 버전으로 채점한 결과면 그 이유를, 같으면 None."""
+    v = version_of(result)
+    if v == SCORING_VERSION:
+        return None
+    return f"채점 기준 {v} 로 채점한 결과다(지금 {SCORING_VERSION}). rescore 로 다시 채점하면 다시 검사한다"
+
+
+def mismatches(truth_by: dict[str, str], result: dict) -> list[str]:
+    """지금 기준으로 다시 채점했을 때 저장값과 달라지는 필드."""
+    again = rescore(truth_by, result)
+    return [k for k in FIELDS if again[k] != result.get(k)]
 
 
 def main(argv=None) -> int:

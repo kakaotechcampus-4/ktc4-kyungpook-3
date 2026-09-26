@@ -3,7 +3,7 @@
 정식 봇 프로세스는 BE 의 be/bot/main.py 가 소유합니다. 이 스크립트는 BE 가 준비되기 전에
 녹음/STT 검증을 돌리기 위한 최소 실행기이며, BE 는 아래 build_bot() 과 같은 방식으로 RecordingCog 를 붙이면 됩니다.
 
-실행 (ai/ 디렉토리 안에서):  python capture/run_recorder.py
+실행 (ai/ 디렉토리 안에서):  python -m capture.run_recorder
 전사 백엔드는 MM_STT_BACKEND=local|elice (기본 local), 모델은 MM_STT_MODEL (기본 large-v3-turbo).
 할일 추출은 LLM_API_KEY, BE 인계는 BE_BASE_URL 과 BE_WORKSPACE_ID 가 있을 때 돈다. 없으면 그 단계에서 멈춘다.
 """
@@ -13,12 +13,10 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # ai/ 자체를 sys.path 에 추가
+import discord
 
-import discord  # noqa: E402
-
-from capture.discord_adapter import RecordingCog, required_intents  # noqa: E402
-from shared.config import settings  # noqa: E402
+from capture.discord_adapter import RecordingCog, required_intents
+from shared.config import settings
 
 S = settings()
 
