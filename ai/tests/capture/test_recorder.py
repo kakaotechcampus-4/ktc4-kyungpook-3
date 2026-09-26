@@ -250,7 +250,7 @@ def test_when_no_line_survives_the_meeting_stays_partial(tmp_path, monkeypatch):
     assert R.pending_sessions(rec) == [path]
 
 
-def test_failed_stage_is_recorded_told_to_be_and_retried_from_there(tmp_path):
+def test_failed_stage_is_recorded_and_retried_from_there_on_the_same_be_meeting(tmp_path):
     rec, path, manifest = _session(tmp_path)
     fake = FakeBe()
     h = H.Handoff(H.BeClient("http://be", session=fake), "ws-1")
@@ -262,14 +262,16 @@ def test_failed_stage_is_recorded_told_to_be_and_retried_from_there(tmp_path):
     assert r["status"] == "failed" and r["failed_stage"] == "extract" and "LLM 죽음" in r["error"]
     saved = json.loads(path.read_text(encoding="utf-8"))
     assert saved["status"] == "failed" and saved["failed_stage"] == "extract" and "transcribed" in saved["stages"]
-    assert fake.meetings["m1"]["status"] == "failed" and fake.meetings["m1"]["failed_stage"] == "extract"
+    # 재시도가 남았으니 BE 에는 아직 알리지 않는다. BE 회의는 processing 으로 남는다
+    assert fake.meetings["m1"]["status"] == "processing" and saved["recovery"]["attempts"] == 1
     assert R.pending_sessions(rec) == [path]
-    # 복구. 전사는 건너뛰고 추출부터. BE 는 failed 로 닫혀 있어 새 회의로 넘긴다
+    # 복구. 전사는 건너뛰고 추출부터. BE 회의는 그대로 이어 쓴다
     results = R.recover(rec, backend=EchoStt(), model_name="echo", workers=1, gate=None,
                         transcripts_dir=tmp_path / "transcripts", extractor=_extractor({}), handoff=h)
     assert results[0]["ran"] == ["extracted", "handed_off"] and results[0]["status"] == "handed_off"
     saved = json.loads(path.read_text(encoding="utf-8"))
-    assert saved["be"]["meeting_id"] == "m2" and saved["be"]["replaced"] == ["m1"] and "error" not in saved
+    assert saved["be"]["meeting_id"] == "m1" and "replaced" not in saved["be"] and "error" not in saved
+    assert "recovery" not in saved
 
 
 def test_recover_transcribes_pending_and_marks_a_broken_one_failed(tmp_path):

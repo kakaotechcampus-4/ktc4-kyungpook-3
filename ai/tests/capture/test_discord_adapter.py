@@ -418,15 +418,17 @@ async def test_recover_excludes_sessions_in_post_processing(tmp_path, monkeypatc
     await _run(A.RecordingCog.stop, cog, ctx)
     await asyncio.wait_for(started.wait(), 5)
     assert rec.meeting_id in cog._processing
-    seen = {}
+    pending = [p.name for p in R.pending_sessions(tmp_path / "recordings")]
+    assert pending == [f"session_{rec.meeting_id}.json"]              # 전제: 복구 목록에 보이는 상태다
+    recovered = []
 
-    def fake_recover(*args, **kwargs):
-        seen.update(kwargs)
-        return []
+    def watching(*args, **kwargs):
+        recovered.append(args[1]["session"])
+        return real(*args, **kwargs)
 
-    monkeypatch.setattr(A, "recover", fake_recover)
+    monkeypatch.setattr(R, "process_session", watching)               # 복구 경로(recover_one)가 부르는 것
     await _run(A.RecordingCog.recover_cmd, cog, ctx)
-    assert seen["exclude"] == {rec.meeting_id}
+    assert recovered == []
     release.set()
     await asyncio.wait_for(rec.done.wait(), 20)
 

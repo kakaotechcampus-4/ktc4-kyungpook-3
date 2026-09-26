@@ -1,0 +1,21 @@
+# 예시다. 같은 EC2 에 어떻게 올릴지(경로, 사용자, 로그, 정식 진입점)는 팀이 정한다.
+# 정식 봇 진입점은 backend/bot/main.py 가 RecordingCog 를 붙이는 쪽이다. 여기서는 ai/ 의 개발용 실행기를 적었다.
+# MM_PIPELINE_MODE=worker 면 봇은 녹음을 저장까지만 하고 후처리는 mm-worker.service 가 한다.
+# 키는 ai/.env 에 둔다(shared/config.py 가 읽는다). 이 파일에 값을 쓰지 않는다.
+
+[Unit]
+Description=MM 녹음 봇 (예시)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=mm
+WorkingDirectory=/opt/mm/ai
+Environment=MM_PIPELINE_MODE=worker
+ExecStart=/opt/mm/ai/.venv/bin/python -m capture.run_recorder
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

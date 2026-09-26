@@ -1,6 +1,7 @@
-"""py-cord VoiceClient 의 알려진 결함을 막는 얇은 상속.
+"""py-cord VoiceClient 의 알려진 결함을 막는 얇은 상속. 수신 공용 계층의 한 조각이다.
 
-녹음기 둘(capture/discord_adapter.py 와 capture/realtime/adapter.py)이 같은 클래스를 쓴다.
+운영 녹음기(capture/discord_adapter.py 의 RecordingCog)와 비교용 실시간 경로(capture/realtime/adapter.py)가
+둘 다 이 클래스로 음성 채널에 붙는다. 재연결 키 갱신과 SSRC 가드는 여기 한 곳에만 있고 Cog 는 따로 하지 않는다.
 """
 
 from __future__ import annotations
@@ -16,8 +17,11 @@ class _KeyForwardingState(VoiceConnectionState):
     재연결하면 게이트웨이가 session_description 으로 새 키를 주고 VoiceWebSocket.load_secret_key 가
     이 객체의 secret_key 를 갈아끼운다 (voice/gateway.py:438-442). 그런데 설치본에는 그 키를
     AudioReader.update_secret_key (voice/receive/reader.py:138) 에 전달하는 코드가 없어서, 녹음 중
-    재연결이 일어나면 복호화기가 낡은 키로 모든 패킷을 버린다. 실시간 Cog 는 발화 시작 이벤트에서
-    갱신했는데 그건 그 Cog 에만 있었다. 여기서 하면 어느 Cog 가 쓰든 같다.
+    재연결이 일어나면 복호화기가 낡은 키로 모든 패킷을 버린다. VoiceClient.__init__ 이
+    create_connection_state 로 이 상태 객체를 만들고 (voice/client.py:128) 웹소켓도 그 객체로
+    만들어지므로 (voice/state.py:739-741, voice/gateway.py:496) 키가 들어오는
+    자리가 여기 하나다. 여기서 넘기면 어느 Cog 가 쓰든 같다. 예전에 실시간 Cog 가 발화 이벤트마다 같은
+    갱신을 한 번 더 했는데 그 리스너는 지웠다.
 
     소스로 확인한 것이고, 실제 재연결에서 패킷이 이어지는지는 실제 디스코드 서버에 봇을 붙여 녹음 중에
     음성 채널의 지역을 바꿔(재협상이 일어난다) 그 뒤 트랙에 샘플이 쌓이는지로 본다. 아직 안 했다.
