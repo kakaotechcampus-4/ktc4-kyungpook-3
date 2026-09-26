@@ -14,6 +14,7 @@ agreement 등)에서 Luna가 실제로 더 나은지 확인하는 게 이 스크
 from __future__ import annotations
 
 import json
+from collections import Counter
 from pathlib import Path
 
 from judge.semantic_judge import extract_findings_llm, extract_findings_rules
@@ -43,28 +44,63 @@ def _build_transcript(case: dict) -> Transcript:
     return Transcript(segments=segments, source="meeting")
 
 
-def _flagged_texts(findings: list[JudgeFinding]) -> set[str]:
-    # evidence로 매칭한다 — text는 LLM 경로에서 문맥 반영 요약으로 바뀔 수 있어서
-    # 골든셋의 원문 기준(expected[].text)과 안정적으로 대응하는 건 evidence 쪽이다.
-    # evidence 는 근거 문장들의 리스트이고, 그중 **마지막(앵커)만** 후보로 센다.
-    # should_flag 는 "이 발화 자체가 후보인가"를 묻는데, 앞줄들은 후보가 아니라 그 결정을
-    # 뒷받침하려고 딸려온 근거이기 때문이다(예: "~게 어때요?" + "네 그러시죠" 가 한 건으로
-    # 묶이면 후보는 뒤쪽 합의 발화다). 전부 세면 제안·질문이 통째로 오탐으로 잡혀
-    # 실제보다 잡음이 많아 보인다.
-    return {f.evidence[-1] for f in findings if f.evidence}
+def _spans(findings: list[JudgeFinding]) -> list[list[str]]:
+    """findings 하나당 근거 문장 리스트 하나를, 순서대로.
+
+    evidence로 매칭한다 — text는 LLM 경로에서 문맥 반영 요약으로 바뀔 수 있어서
+    골든셋의 원문 기준(expected[].text)과 안정적으로 대응하는 건 evidence 쪽이다.
+
+    스팬 통째로 넘기는 이유는 채점이 **두 가지를 따로 봐야 하기 때문**이다(_score 참고).
+    앵커만 추려 넘기면 "근거에는 들어왔지만 앵커가 아닌 문장"을 구분할 수 없다.
+    list 인 이유는 중복(같은 결정이 두 건으로 쪼개짐)을 세기 위해서다.
+    """
+    return [f.evidence for f in findings if f.evidence]
 
 
-def _score(case: dict, flagged: set[str]) -> tuple[int, int, list[str]]:
+def _score(case: dict, spans: list[list[str]]) -> tuple[int, int, list[str]]:
+    """라벨마다 맞았는지 세고, 라벨 밖 출력과 중복 출력도 오답으로 센다.
+
+    **정답 판정과 앵커 판정을 분리한다.** 골든셋 라벨은 "이 문장이 후보인가"(문장 단위)인데
+    판단 단위는 "결정 하나"(스팬)라, 한 기준으로 둘 다 재면 어느 쪽이든 틀린 점수가 나온다.
+
+      should_flag=True  → 근거 **어디에든** 들어왔으면 정답 (그 결정이 2단계로 넘어갔는가)
+      should_flag=False → **앵커일 때만** 오답 (잡음을 후보로 세웠는가)
+
+    한 결정이 두 문장에 걸치고 골든셋이 둘 다 True 로 라벨한 경우(long/case_03 의
+    "로그인 마감은~" + "담당자는 저로~"), 앵커는 하나뿐이라 앵커 기준으로만 재면 나머지
+    하나가 **구조적으로 영원히 놓침**이 된다 — 결정은 멀쩡히 잡았는데도.
+
+    반대로 근거에 딸려온 문장까지 전부 후보로 세면, "~게 어때요?" 같은 제안이 합의와 한 건으로
+    묶였을 때 통째로 오탐이 된다(실측 8건). 그래서 오탐 쪽은 앵커로만 잰다.
+
+    여기에 출력 쪽 두 가지를 더 센다. 라벨만 순회하면 골든셋에 라벨이 없는 문장을 후보로 내거나
+    같은 결정을 두 건으로 쪼개 내도 점수가 그대로다. 둘 다 분모에 더해 점수가 실제로 깎이게 한다.
+    """
+    labeled = {e["text"] for e in case["expected"]}
+    anchors = [span[-1] for span in spans]
+    anchor_set = set(anchors)
+    covered = {text for span in spans for text in span}  # 근거 어디에든 등장한 문장
     correct, total, mistakes = 0, 0, []
+
     for exp in case["expected"]:
         total += 1
-        was_flagged = exp["text"] in flagged
+        was_flagged = exp["text"] in (covered if exp["should_flag"] else anchor_set)
         if was_flagged == exp["should_flag"]:
             correct += 1
         else:
             mistakes.append(
                 f'"{exp["text"]}" — 기대={exp["should_flag"]} 실제={was_flagged} ({exp.get("note", "")})'
             )
+
+    for text in sorted(anchor_set - labeled):
+        total += 1
+        mistakes.append(f'"{text}" — 골든셋 라벨에 없는 문장을 후보로 냄')
+
+    for text, n in sorted(Counter(anchors).items()):
+        if n > 1:
+            total += n - 1
+            mistakes.append(f'"{text}" — 같은 앵커로 {n}건 (한 결정이 쪼개졌을 수 있음)')
+
     return correct, total, mistakes
 
 
@@ -82,9 +118,9 @@ def main() -> None:
         transcript = _build_transcript(case)
         counts = case.get("counts_toward_pass_rate", True)
 
-        rules_flagged = _flagged_texts(extract_findings_rules(transcript))
+        rules_flagged = _spans(extract_findings_rules(transcript))
         llm_result = extract_findings_llm(transcript, client)
-        llm_flagged = _flagged_texts(llm_result) if llm_result is not None else set()
+        llm_flagged = _spans(llm_result) if llm_result is not None else []
 
         r_correct, r_total, r_mistakes = _score(case, rules_flagged)
         l_correct, l_total, l_mistakes = _score(case, llm_flagged)
