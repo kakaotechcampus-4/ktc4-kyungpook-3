@@ -147,25 +147,31 @@ def _edits(a: list[str], b: list[str]) -> int:
     return n
 
 
+def session_tracks(session: Path) -> list:
+    """정답이 있는 화자의 트랙만."""
+    truth_by = json.loads((session / "truth_by_speaker.json").read_text(encoding="utf-8"))
+    return [t for t in B.discover(session) if t.speaker_id in truth_by]
+
+
 def score(session: Path, mode: str, backend_kind: str, model: str, gate_on: bool, workers: int | None,
           yes: bool, *, beam: int = 5, cond: bool | None = None, hst: float | None = None,
           preprocess: str | None = None, pack_turns: bool = True, merge: bool = True,
-          tag: str = "", out_dir: Path | None = None) -> dict | None:
+          tag: str = "", out_dir: Path | None = None, backend=None) -> dict | None:
     """정렬본 하나를 한 설정으로 전사해 지표를 JSON 으로 남긴다.
 
     preprocess: "highpass" 면 100~7500Hz 대역 제한을 트랙에 건다 (0007 의 필터).
     tag: 결과 파일 이름에 붙는 꼬리표. 같은 모드의 변형을 구분한다.
+    backend: 이미 만든 백엔드를 쓴다(캐시로 감싼 것 등). 없으면 backend_kind·model 로 만든다.
     """
-    truth_by = json.loads((session / "truth_by_speaker.json").read_text(encoding="utf-8"))
-    aligned = json.loads((session / "truth_aligned.json").read_text(encoding="utf-8"))
-    tracks = [t for t in B.discover(session) if t.speaker_id in truth_by]
+    tracks = session_tracks(session)
 
     if backend_kind == "elice" and not yes:
         from stt.elice import whisper_krw
         est = sum(sum(u.duration_s for u in B.cut(B.load_track(t.path), t.speaker_id)) for t in tracks)
         print(f"Elice {mode}: 발화 합 {est:.0f}초 · 예상 약 {whisper_krw(est):.0f}원. --yes 로 승인.")
         return None
-    backend = B.make_backend(backend_kind, model, mode, beam=beam, cond=cond, hst=hst)
+    if backend is None:
+        backend = B.make_backend(backend_kind, model, mode, beam=beam, cond=cond, hst=hst)
     gate = SpeechGate() if gate_on else None
     w = workers if workers is not None else B.default_workers(backend_kind)
     pre = None
@@ -178,6 +184,36 @@ def score(session: Path, mode: str, backend_kind: str, model: str, gate_on: bool
                          merge=merge, preprocess=pre)
     ru1 = resource.getrusage(resource.RUSAGE_SELF)
     cpu_s = (ru1.ru_utime + ru1.ru_stime) - (ru0.ru_utime + ru0.ru_stime)
+
+    m = session_metrics(session, lines, stats, backend_kind=backend_kind)
+    meeting_h = (stats.track_s / max(1, stats.tracks)) / 3600
+    hyp_by = m.pop("hyp_by_speaker")
+    out = {
+        "session": session.name, "mode": mode, "backend": stats.backend, "gate": gate_on,
+        "beam": beam, "cond": cond, "hst": hst, "preprocess": preprocess, "pack_turns": pack_turns,
+        "merge": merge, "workers": w, "tag": tag,
+        "krw_per_meeting_hour": round(m["krw"] / meeting_h, 1) if meeting_h > 0 else None,
+        "cpu_s_per_speech_s": round(cpu_s / stats.speech_s, 3) if stats.speech_s > 0 else None,
+        "wall_per_meeting_s": round(stats.wall_s / meeting_h / 3600, 3) if meeting_h > 0 else None,
+        **m,
+        "cpu_s": round(cpu_s, 1), "peak_rss_gb": round(peak_rss_bytes(ru1) / 1e9, 2),
+        **{k: v for k, v in stats.summary().items() if k not in ("mode", "backend")},
+    }
+    stem = f"score_{mode}_{backend_kind}{'' if backend_kind == 'elice' else '-' + model}{'-' + tag if tag else ''}"
+    path = (out_dir or session) / f"{stem}.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({**out, "hyp_by_speaker": hyp_by}, ensure_ascii=False, indent=1), encoding="utf-8")
+    print(json.dumps(out, ensure_ascii=False))
+    return out
+
+
+def session_metrics(session: Path, lines: list, stats, *, backend_kind: str) -> dict:
+    """전사 줄을 정렬본 정답에 채점한다. score 와 민감도 측정(stt/eval/sensitivity.py)이 같이 쓴다.
+
+    CER(화자별·문자 가중), 삽입률, 유실, 시작 시각 오차, 순서 편집, 비용, 화자별 전사.
+    """
+    truth_by = json.loads((session / "truth_by_speaker.json").read_text(encoding="utf-8"))
+    aligned = json.loads((session / "truth_aligned.json").read_text(encoding="utf-8"))
 
     # CER: 화자별 · 문자 가중
     per = {}
@@ -211,14 +247,7 @@ def score(session: Path, mode: str, backend_kind: str, model: str, gate_on: bool
 
     from stt.elice import whisper_krw
     krw = round(whisper_krw(stats.audio_sent_s), 1) if backend_kind == "elice" else 0.0
-    meeting_h = (stats.track_s / max(1, stats.tracks)) / 3600
-    out = {
-        "session": session.name, "mode": mode, "backend": stats.backend, "gate": gate_on,
-        "beam": beam, "cond": cond, "hst": hst, "preprocess": preprocess, "pack_turns": pack_turns,
-        "merge": merge, "workers": w, "tag": tag,
-        "krw_per_meeting_hour": round(krw / meeting_h, 1) if meeting_h > 0 else None,
-        "cpu_s_per_speech_s": round(cpu_s / stats.speech_s, 3) if stats.speech_s > 0 else None,
-        "wall_per_meeting_s": round(stats.wall_s / meeting_h / 3600, 3) if meeting_h > 0 else None,
+    return {
         "cer": round(cer, 4), "cer_by_speaker": {k: round(v["cer"], 4) for k, v in per.items()},
         "insertion_rate": round(ins_rate, 4),
         "lost_utterances": f"{lost}/{n_truth}", "gated": stats.gated, "failed": stats.failed,
@@ -226,16 +255,8 @@ def score(session: Path, mode: str, backend_kind: str, model: str, gate_on: bool
         "start_abs_err_mean_s": round(float(np.mean(start_err)), 2) if start_err else None,
         "start_abs_err_max_s": round(float(np.max(start_err)), 2) if start_err else None,
         "krw": krw,
-        "cpu_s": round(cpu_s, 1), "peak_rss_gb": round(peak_rss_bytes(ru1) / 1e9, 2),
-        **{k: v for k, v in stats.summary().items() if k not in ("mode", "backend")},
+        "hyp_by_speaker": {k: v["hyp"] for k, v in per.items()},
     }
-    stem = f"score_{mode}_{backend_kind}{'' if backend_kind == 'elice' else '-' + model}{'-' + tag if tag else ''}"
-    path = (out_dir or session) / f"{stem}.json"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({**out, "hyp_by_speaker": {k: v["hyp"] for k, v in per.items()}},
-                               ensure_ascii=False, indent=1), encoding="utf-8")
-    print(json.dumps(out, ensure_ascii=False))
-    return out
 
 
 def matrix(session: Path, model: str, elice: bool, yes: bool) -> None:

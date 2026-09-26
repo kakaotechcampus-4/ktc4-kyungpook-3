@@ -1,0 +1,130 @@
+[
+ {
+  "source": "meeting-01-orig7",
+  "const": "stt.eval.golden.RUN_GAP_S",
+  "value": 1.0,
+  "session": "meeting-01-orig7-aligned-RUN_GAP_S=1",
+  "wav": "b80e8af43b067f87",
+  "chunks": "76f0234499637562"
+ },
+ {
+  "source": "meeting-01-orig7",
+  "const": "stt.eval.golden.RUN_GAP_S",
+  "value": 2.0,
+  "session": "meeting-01-orig7-aligned-RUN_GAP_S=2",
+  "wav": "b80e8af43b067f87",
+  "chunks": "76f0234499637562"
+ },
+ {
+  "source": "meeting-01-orig7",
+  "const": "stt.eval.golden.RUN_GAP_S",
+  "value": 3.0,
+  "session": "meeting-01-orig7-aligned-RUN_GAP_S=3",
+  "wav": "b80e8af43b067f87",
+  "chunks": "76f0234499637562"
+ },
+ {
+  "source": "meeting-01-orig7",
+  "const": "stt.eval.golden.RUN_GAP_S",
+  "value": 5.0,
+  "session": "meeting-01-orig7-aligned-RUN_GAP_S=5",
+  "wav": "b80e8af43b067f87",
+  "chunks": "76f0234499637562"
+ },
+ {
+  "source": "meeting-01-orig7",
+  "const": "stt.eval.golden.RUN_GAP_S",
+  "value": 8.0,
+  "session": "meeting-01-orig7-aligned-RUN_GAP_S=8",
+  "wav": "b80e8af43b067f87",
+  "chunks": "76f0234499637562"
+ },
+ {
+  "source": "meeting-01-orig7",
+  "const": "stt.eval.golden.PLACE_GAP_S",
+  "value": 0.3,
+  "session": "meeting-01-orig7-aligned-PLACE_GAP_S=0.3",
+  "wav": "9ff351f1dfa730d2",
+  "chunks": "76f0234499637562"
+ },
+ {
+  "source": "meeting-01-orig7",
+  "const": "stt.eval.golden.PLACE_GAP_S",
+  "value": 1.0,
+  "session": "meeting-01-orig7-aligned-PLACE_GAP_S=1",
+  "wav": "b80e8af43b067f87",
+  "chunks": "76f0234499637562"
+ },
+ {
+  "source": "meeting-01-orig7",
+  "const": "stt.eval.golden.PLACE_GAP_S",
+  "value": 3.0,
+  "session": "meeting-01-orig7-aligned-PLACE_GAP_S=3",
+  "wav": "a1d514e3b3491905",
+  "chunks": "76f0234499637562"
+ },
+ {
+  "source": "meeting-02-orig7",
+  "const": "stt.eval.golden.RUN_GAP_S",
+  "value": 1.0,
+  "session": "meeting-02-orig7-aligned-RUN_GAP_S=1",
+  "wav": "29a07011fae11254",
+  "chunks": "a8bed994726de80e"
+ },
+ {
+  "source": "meeting-02-orig7",
+  "const": "stt.eval.golden.RUN_GAP_S",
+  "value": 2.0,
+  "session": "meeting-02-orig7-aligned-RUN_GAP_S=2",
+  "wav": "29a07011fae11254",
+  "chunks": "a8bed994726de80e"
+ },
+ {
+  "source": "meeting-02-orig7",
+  "const": "stt.eval.golden.RUN_GAP_S",
+  "value": 3.0,
+  "session": "meeting-02-orig7-aligned-RUN_GAP_S=3",
+  "wav": "29a07011fae11254",
+  "chunks": "a8bed994726de80e"
+ },
+ {
+  "source": "meeting-02-orig7",
+  "const": "stt.eval.golden.RUN_GAP_S",
+  "value": 5.0,
+  "session": "meeting-02-orig7-aligned-RUN_GAP_S=5",
+  "wav": "29a07011fae11254",
+  "chunks": "a8bed994726de80e"
+ },
+ {
+  "source": "meeting-02-orig7",
+  "const": "stt.eval.golden.RUN_GAP_S",
+  "value": 8.0,
+  "session": "meeting-02-orig7-aligned-RUN_GAP_S=8",
+  "wav": "29a07011fae11254",
+  "chunks": "a8bed994726de80e"
+ },
+ {
+  "source": "meeting-02-orig7",
+  "const": "stt.eval.golden.PLACE_GAP_S",
+  "value": 0.3,
+  "session": "meeting-02-orig7-aligned-PLACE_GAP_S=0.3",
+  "wav": "e766152ea54ddf5c",
+  "chunks": "726f52e828038258"
+ },
+ {
+  "source": "meeting-02-orig7",
+  "const": "stt.eval.golden.PLACE_GAP_S",
+  "value": 1.0,
+  "session": "meeting-02-orig7-aligned-PLACE_GAP_S=1",
+  "wav": "29a07011fae11254",
+  "chunks": "a8bed994726de80e"
+ },
+ {
+  "source": "meeting-02-orig7",
+  "const": "stt.eval.golden.PLACE_GAP_S",
+  "value": 3.0,
+  "session": "meeting-02-orig7-aligned-PLACE_GAP_S=3",
+  "wav": "a39b03329844b26b",
+  "chunks": "726f52e828038258"
+ }
+]
