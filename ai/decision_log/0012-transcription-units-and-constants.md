@@ -23,13 +23,13 @@
 
 상수 하나를 흔들 때 나머지는 기본값에 둔다. 운영 코드는 고치지 않고, 하네스가 모듈 속성과 정의 시점에 묶인 함수 기본 인자를 같이 바꿔 끼운다(`stt/eval/constants.py`). 로컬 turbo 는 같은 입력을 캐시 없이 다시 돌려도 회의 8개가 글자까지 같았다. 디더 열 번을 더한 11회의 오류 글자는 정렬본 79~85(잡음 폭 6자), 합성 93~101(8자)이다. 추출은 지민의 `extract_tasks` 를 gemini-2.5-flash-lite 로 불렀다. 같은 입력 세 번은 할일까지 같아서, 추출 흔들림은 디더로 몇 글자만 바뀐 전사 세 개의 추출 차이로 잡았다(합의 기준 대비 놓침 최대 2, 더함 최대 2, 마감 바뀜 최대 2). 이 폭 안의 추출 차이로는 승부를 말하지 않는다.
 
-재현 (ai/ 안에서, 로컬은 무과금):
+재현 (ai/ 안에서, 로컬은 무과금). 설정마다 회의별 전사가 든 원자료(`runs/`, `extract/`)는 레포가 공개라 레포 밖, 골든 폴더 옆 `eval-runs/2026-09-26-units/` 에 쓰고 읽는다. 레포의 결과 폴더에는 표, 숫자 요약, 비용 장부만 있다. 원자료가 있으면 마지막 줄만 돌려 표를 다시 만든다.
 
 ```bash
 .venv/bin/python -m stt.eval.scenarios build --golden-root "<골든>" --out <레포 밖>/scenarios --cache <캐시>
 .venv/bin/python -m stt.eval.sensitivity run --golden-root "<골든>" --golden-root <레포 밖>/scenarios --out stt/eval/results/2026-09-26-units --cache <캐시> --noise-seeds 10
 .venv/bin/python -m stt.eval.extract_diff run --golden-root "<골든>" --golden-root <레포 밖>/scenarios --out stt/eval/results/2026-09-26-units --targets truth,local-large-v3-turbo/base --yes
-.venv/bin/python -m stt.eval.sensitivity report --out stt/eval/results/2026-09-26-units
+.venv/bin/python -m stt.eval.sensitivity report --out stt/eval/results/2026-09-26-units --golden-root "<골든>"
 ```
 
 ## 단위마다 무엇으로 정하나
@@ -155,5 +155,5 @@ SILENCE_HOLD_MS 와 ONSET_MS 는 기본값이 평탄 구간의 한쪽 끝이다.
 
 ## 영향받은 파일
 
-- `stt/eval/constants.py`, `sensitivity.py`, `sensitivity_report.py`, `textmetrics.py`, `sttcache.py`, `scenarios.py`, `extract_diff.py`, `golden.py`(채점 분리), `README.md`
-- 결과 `stt/eval/results/2026-09-26-units/`. 운영 코드와 상수 값은 바꾸지 않았다
+- `stt/eval/constants.py`, `sensitivity.py`, `sensitivity_report.py`, `textmetrics.py`, `sttcache.py`, `scenarios.py`, `extract_diff.py`, `rawdir.py`(원자료 위치), `golden.py`(채점 분리), `README.md`
+- 결과 `stt/eval/results/2026-09-26-units/`(표와 숫자 요약, 약 180KB). 원자료는 레포 밖. 운영 코드와 상수 값은 바꾸지 않았다
