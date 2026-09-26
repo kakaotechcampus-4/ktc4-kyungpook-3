@@ -103,3 +103,14 @@ def test_fragment_refuses_an_anchor_whose_words_sit_far_apart(tmp_path):
     lib = SC.Library({"src-aligned": src}, FarStt())
     with pytest.raises(ValueError, match="떨어진"):
         lib.fragment("src-aligned", "가", "하나 둘.")
+
+
+def test_build_refuses_to_write_audio_into_a_repo_that_can_be_pushed(tmp_path):
+    import subprocess
+    from stt.eval import rawdir as RD
+    pub = tmp_path / "pub"
+    pub.mkdir()
+    subprocess.run(["git", "init", "-q", str(pub)], check=True)
+    subprocess.run(["git", "-C", str(pub), "remote", "add", "origin", "https://example.invalid/t.git"], check=True)
+    with pytest.raises(RD.RawDirError):
+        SC.main(["build", "--golden-root", str(tmp_path), "--out", str(pub / "scenarios")])

@@ -59,16 +59,46 @@ def test_constant_verdict_uses_error_characters_and_lost_utterances():
     assert got["lost_changed"] == [5.0, 8.0]
 
 
-def test_render_writes_the_tables_for_every_backend_and_group(tmp_path):
-    d = tmp_path / "runs" / "local-large-v3-turbo"
+def _raw_runs(raw, runs):
+    d = raw / "runs" / "local-large-v3-turbo"
     d.mkdir(parents=True)
-    for sid, e in (("base", 42), ("dither1", 43), ("TURN_GAP_S=1", 42)):
-        ov = [("stt.batch.TURN_GAP_S", 1.0)] if sid.startswith("TURN") else []
-        (d / f"{sid}.json").write_text(json.dumps(_run(sid, [_rec("m1", e)], ov), ensure_ascii=False), encoding="utf-8")
-    R.report(tmp_path)
-    ev = (tmp_path / "tables" / "evidence.md").read_text(encoding="utf-8")
+    for sid, rec in runs.items():
+        (d / f"{sid}.json").write_text(json.dumps(rec, ensure_ascii=False), encoding="utf-8")
+
+
+def test_render_writes_the_tables_for_every_backend_and_group(tmp_path):
+    raw, out = tmp_path / "raw", tmp_path / "out"
+    _raw_runs(raw, {sid: _run(sid, [_rec("m1", e)], [("stt.batch.TURN_GAP_S", 1.0)] if sid.startswith("TURN") else [])
+                    for sid, e in (("base", 42), ("dither1", 43), ("TURN_GAP_S=1", 42))})
+    R.report(out, raw)
+    ev = (out / "tables" / "evidence.md").read_text(encoding="utf-8")
     assert "stt.batch.TURN_GAP_S" in ev and "local-large-v3-turbo" in ev
-    assert "TURN_GAP_S" in (tmp_path / "tables" / "sensitivity.md").read_text(encoding="utf-8")
+    assert "TURN_GAP_S" in (out / "tables" / "sensitivity.md").read_text(encoding="utf-8")
+
+
+def test_report_writes_only_tables_and_a_numbers_only_summary_next_to_the_results(tmp_path):
+    """결과 폴더(레포 안)에는 표와 숫자 요약만. 전사 원문 필드와 한글 문장이 요약에 없어야 한다."""
+    import re
+    raw, out = tmp_path / "raw", tmp_path / "out"
+    _raw_runs(raw, {sid: _run(sid, [_rec("m1", e, lines_fp=sid)], [("stt.batch.TURN_GAP_S", 1.0)] if sid.startswith("TURN") else [])
+                    for sid, e in (("base", 42), ("dither1", 43), ("TURN_GAP_S=1", 50))})
+    R.report(out, raw)
+    assert {p.name for p in out.iterdir()} == {"tables", "summary.json"}
+    text = (out / "summary.json").read_text(encoding="utf-8")
+    assert re.search("[가-힣]", text) is None
+
+    def keys(x):
+        if isinstance(x, dict):
+            for k, v in x.items():
+                yield k
+                yield from keys(v)
+        elif isinstance(x, list):
+            for v in x:
+                yield from keys(v)
+    s = json.loads(text)
+    assert not set(keys(s)) & {"text", "note", "lines", "clip_lines", "hyp_by_speaker", "segments", "tasks", "call_log"}
+    v = s["verdicts"]["stt.batch.TURN_GAP_S"][0]
+    assert (v["group"], v["label"], v["direction"]) == ("aligned", "slope", "worse") or v["label"] in ("flat", "cliff")
 
 
 def test_previous_latency_reads_elice_rows_from_an_older_results_folder(tmp_path):
@@ -150,13 +180,11 @@ def test_align_text_keeps_each_source_separate(tmp_path):
 
 
 def test_evidence_says_not_yet_measured_on_elice_for_backend_dependent_constants(tmp_path):
-    d = tmp_path / "runs" / "local-large-v3-turbo"
-    d.mkdir(parents=True)
-    for sid, e, ov in (("base", 42, []), ("CHUNK_GAP_S=0.4", 45, [("stt.batch.CHUNK_GAP_S", 0.4)])):
-        (d / f"{sid}.json").write_text(json.dumps(_run(sid, [_rec("m1", e, fp=sid)], ov), ensure_ascii=False),
-                                       encoding="utf-8")
-    R.report(tmp_path)
+    raw, out = tmp_path / "raw", tmp_path / "out"
+    _raw_runs(raw, {sid: _run(sid, [_rec("m1", e, fp=sid)], ov) for sid, e, ov in
+                    (("base", 42, []), ("CHUNK_GAP_S=0.4", 45, [("stt.batch.CHUNK_GAP_S", 0.4)]))})
+    R.report(out, raw)
     rows = {line.split("|")[1].strip(): line for line in
-            (tmp_path / "tables" / "evidence.md").read_text(encoding="utf-8").splitlines() if line.startswith("| stt.")}
+            (out / "tables" / "evidence.md").read_text(encoding="utf-8").splitlines() if line.startswith("| stt.")}
     assert "elice: 아직 안 잼" in rows["stt.batch.CHUNK_GAP_S"]
     assert "elice" not in rows["stt.batch.TURN_GAP_S"]

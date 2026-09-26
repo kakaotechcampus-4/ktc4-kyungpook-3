@@ -295,8 +295,12 @@ def main(argv=None) -> int:
     b.add_argument("--model", default="large-v3-turbo")
     b.add_argument("--only", default="", help="이 시나리오만 (이름, 쉼표로 여럿)")
     a = ap.parse_args(argv)
+    from stt.eval import rawdir as RD
     from stt.eval.sttcache import CachedStt
 
+    RD.check(a.out.expanduser(), out=None)            # 회의 음성 조각이라 공개될 수 있는 레포에는 쓰지 않는다
+    if a.cache:
+        RD.check(a.cache.expanduser(), out=None)
     root = a.golden_root.expanduser()
     lib = Library({M1: root / M1, M2: root / M2},
                   CachedStt(B.make_backend("local", a.model, "chunk"), a.cache.expanduser() if a.cache else None))

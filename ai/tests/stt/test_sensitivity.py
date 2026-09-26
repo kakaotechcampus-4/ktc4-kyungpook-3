@@ -176,6 +176,7 @@ def test_align_sweep_rebuilds_aligned_sessions_under_their_own_group(tmp_path):
     starts = [json.loads((m / "truth_aligned.json").read_text(encoding="utf-8"))[1]["start"] for m in made]
     assert starts[0] < starts[1]
     assert S.group_of(made[0]) == "정렬 변형 PLACE_GAP_S"
+    assert "slots" not in S.align_summary(made)[0]           # 화자 이름·시각 목록은 레포 요약에 안 싣는다
     from stt.eval import golden
     assert golden.PLACE_GAP_S == 1.0
 
@@ -208,3 +209,29 @@ def test_verdict_text_skips_the_range_for_an_on_off_constant():
 def test_evidence_shows_the_value_in_use_for_an_environment_driven_constant():
     row = {r["상수"]: r for r in S.evidence_rows(C.REGISTRY, verdicts={})}["stt.vad.SPEECH_RMS"]
     assert row["값"] == "0.006 (환경 변수로 바꿀 수 있다)"
+
+
+def test_run_plan_puts_per_run_records_in_the_raw_dir(tmp_path):
+    s = _tiny(tmp_path)
+    raw, out = tmp_path / "raw", tmp_path / "out"
+    with C.overrides(NO_GATE):
+        S.run_plan([S.BASE], [s], out=out, raw=raw, label="fake", kind="local", backend=LengthStt(), cache_dir=None,
+                   workers=1, yes=True, budget=10.0)
+    rec = json.loads((raw / "runs" / "fake" / "base.json").read_text(encoding="utf-8"))
+    assert "clip_lines" in rec["sessions"]["tiny-aligned"]
+    assert not (out / "runs").exists()
+
+
+def test_rescore_command_rereads_the_raw_dir(tmp_path):
+    s = _tiny(tmp_path)
+    raw, out = tmp_path / "raw", tmp_path / "out"
+    with C.overrides(NO_GATE):
+        S.run_plan([S.BASE], [s], out=out, raw=raw, label="fake", kind="local", backend=LengthStt(), cache_dir=None,
+                   workers=1, yes=True, budget=10.0)
+    f = raw / "runs" / "fake" / "base.json"
+    rec = json.loads(f.read_text(encoding="utf-8"))
+    good = rec["sessions"]["tiny-aligned"]["err_chars"]
+    rec["sessions"]["tiny-aligned"]["err_chars"] = 999
+    f.write_text(json.dumps(rec), encoding="utf-8")
+    S.main(["rescore", "--golden-root", str(tmp_path), "--out", str(out), "--raw-dir", str(raw)])
+    assert json.loads(f.read_text(encoding="utf-8"))["sessions"]["tiny-aligned"]["err_chars"] == good

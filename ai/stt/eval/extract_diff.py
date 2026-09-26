@@ -14,8 +14,11 @@ LLM 호출은 openai SDK 의 chat.completions.parse 와 같은 json_schema(stric
 openai 패키지가 공유 venv 에 없어서다(requirements.txt 에는 있다). 토큰 사용량을 호출마다 남기고
 공시 단가로 원을 계산한다.
 
+추출 출력(할일, 넣은 줄, 토큰 사용량)은 원자료라 레포 밖(--raw-dir, 기본은 골든 폴더 옆 eval-runs/<결과 폴더 이름>)
+<원자료>/extract/ 에 쓴다. 비용 장부만 레포 안 결과 폴더에 쌓는다.
+
     python -m stt.eval.extract_diff run --golden-root "<골든>" --golden-root <합성> --out <결과> --yes
-    python -m stt.eval.extract_diff report --out <결과>
+    python -m stt.eval.extract_diff report --out <결과> --golden-root "<골든>"
 """
 
 from __future__ import annotations
@@ -331,13 +334,16 @@ def _slug(target: str) -> str:
     return target.replace("/", "__").replace(":", "--")
 
 
-def run(targets: list[str], sessions: list[Path], out: Path, *, reps: int, yes: bool, budget: float) -> None:
+def run(targets: list[str], sessions: list[Path], out: Path, raw: Path, *, reps: int, yes: bool, budget: float,
+        client: HttpChat | None = None, model: str | None = None) -> None:
+    """전사마다 추출을 돌려 raw/extract/<회의>/ 에 쓴다. 민감도 원자료도 raw/runs/ 에서 읽는다. 장부는 out 에."""
     from stt.eval.sensitivity import ledger_add, ledger_total
 
-    client, model, how = default_client()
-    print(f"추출 모델 {model} · 키 {how}", flush=True)
+    if client is None:
+        client, model, how = default_client()
+        print(f"추출 모델 {model} · 키 {how}", flush=True)
     for session in sessions:
-        d = out / "extract" / session.name
+        d = raw / "extract" / session.name
         d.mkdir(parents=True, exist_ok=True)
         if (session / "expected_tasks.json").exists():
             (d / "expected_tasks.json").write_text((session / "expected_tasks.json").read_text(encoding="utf-8"),
@@ -348,7 +354,7 @@ def run(targets: list[str], sessions: list[Path], out: Path, *, reps: int, yes: 
             else:
                 label, rest = target.split("/", 1)
                 sid, _, variant = rest.partition(":")
-                p = out / "runs" / label / f"{sid}.json"
+                p = raw / "runs" / label / f"{sid}.json"
                 if not p.exists():
                     print(f"[없음] {session.name} {target}", flush=True)
                     continue
@@ -461,7 +467,8 @@ def main(argv=None) -> int:
     sub = ap.add_subparsers(dest="cmd", required=True)
     r = sub.add_parser("run")
     r.add_argument("--golden-root", type=Path, action="append", required=True)
-    r.add_argument("--out", type=Path, required=True)
+    r.add_argument("--out", type=Path, required=True, help="레포 안 결과 폴더. 비용 장부만 쓴다")
+    r.add_argument("--raw-dir", type=Path, default=None, help="원자료 폴더. sensitivity 와 같은 규칙으로 정한다")
     r.add_argument("--targets", default="truth", help="truth, <결과 폴더>/<설정>[:clip] 를 쉼표로")
     r.add_argument("--session", default="")
     r.add_argument("--reps", type=int, default=3, help="정답 전사 추출 횟수. 다른 전사는 이 수의 1/3")
@@ -469,12 +476,15 @@ def main(argv=None) -> int:
     r.add_argument("--budget", type=float, default=4500.0)
     p = sub.add_parser("report")
     p.add_argument("--out", type=Path, required=True)
+    p.add_argument("--raw-dir", type=Path, default=None)
+    p.add_argument("--golden-root", type=Path, action="append", default=[])
     a = ap.parse_args(argv)
+    from stt.eval import rawdir as RD
     if a.cmd == "report":
         from stt.eval.sensitivity import md_table
-        o = a.out.expanduser()
-        print(md_table(report(o)))
-        print(json.dumps(cost(o), ensure_ascii=False))
+        raw = RD.raw_for(a.out.expanduser(), a.raw_dir, a.golden_root)
+        print(md_table(report(raw)))
+        print(json.dumps(cost(raw), ensure_ascii=False))
         return 0
     from stt.eval.sensitivity import discover_sessions
 
@@ -482,7 +492,8 @@ def main(argv=None) -> int:
     if a.session:
         keep = set(a.session.split(","))
         sessions = [s for s in sessions if s.name in keep]
-    run([t for t in a.targets.split(",") if t], sessions, a.out.expanduser(), reps=a.reps, yes=a.yes,
+    raw = RD.raw_for(a.out.expanduser(), a.raw_dir, [g.expanduser() for g in a.golden_root])
+    run([t for t in a.targets.split(",") if t], sessions, a.out.expanduser(), raw, reps=a.reps, yes=a.yes,
         budget=a.budget)
     return 0
 

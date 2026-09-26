@@ -1,5 +1,6 @@
-"""민감도 결과(runs/<백엔드>/<설정>.json)에서 표를 만든다. 골든셋을 추가하고 run 을 다시 돌린 뒤 이것만
-다시 부르면 표가 새로 나온다.
+"""민감도 원자료(<원자료>/runs/<백엔드>/<설정>.json, <원자료>/extract/)에서 표를 만든다. 골든셋을 추가하고 run 을
+다시 돌린 뒤 이것만 다시 부르면 표가 새로 나온다. 원자료는 레포 밖에서 읽고, 레포 안 결과 폴더에는 표와 숫자
+요약만 쓴다(stt/eval/rawdir.py).
 
   tables/sensitivity.md  상수마다 값별 지표와 판정
   tables/evidence.md     상수 목록 전체의 근거 표(상수 / 값 / 근거 종류 / 측정 결과와 범위 / 결정 / 다시 잴 조건)
@@ -8,7 +9,7 @@
   tables/latency.md      Elice 호출 지연 분포와 API 상수 위치
   tables/extract.md      전사별 추출 차이
   tables/cost.md         장부 합계
-  summary.json           판정 원자료
+  summary.json           판정과 잡음 폭을 숫자와 영문 키로만 담은 요약. 전사 원문도 한글 문장도 없다
 
 데이터 묶음(정렬본, 재배치 합성, 실녹음)과 백엔드는 섞지 않는다. 판정도 따로 낸다.
 """
@@ -43,9 +44,9 @@ def _kind(label: str) -> str:
     return "elice" if label.startswith("elice") else "local"
 
 
-def load_runs(out: Path) -> dict[str, dict[str, dict]]:
+def load_runs(raw: Path) -> dict[str, dict[str, dict]]:
     runs: dict[str, dict[str, dict]] = {}
-    root = out / "runs"
+    root = raw / "runs"
     for d in sorted(p for p in root.iterdir() if p.is_dir()) if root.exists() else []:
         runs[d.name] = {p.stem: json.loads(p.read_text(encoding="utf-8")) for p in sorted(d.glob("*.json"))}
     return runs
@@ -101,6 +102,7 @@ def noise_band(runs: dict[str, dict], group: str, kind: str) -> dict:
     aggs = [a for a in (aggregate(runs[i], group) for i in present) if a]
     keys = ("err", "lost", "punct_err", "edge_err", "lines", "halluc", "moved")
     band = {k: (max(a[k] for a in aggs) - min(a[k] for a in aggs)) if len(aggs) >= 2 else 0 for k in keys}
+    band["n_lines"] = band.pop("lines")      # 줄 수의 흔들림(숫자). 전사 줄 필드와 헷갈리지 않게 이름을 바꾼다
     band.update({"settings": present, "n": len(aggs), "values": [a["err"] for a in aggs]})
     return band
 
@@ -209,12 +211,27 @@ def _groups(runs: dict[str, dict]) -> list[str]:
     return sorted(gs)
 
 
-def report(out: Path) -> dict:
-    all_runs = load_runs(out)
+GROUP_KEY = {"정렬본(시간축 합성)": "aligned", "재배치 합성": "rearranged", "실녹음": "real"}
+LABEL_KEY = {S.FLAT: "flat", S.SLOPE: "slope", S.CLIFF: "cliff", S.INACTIVE: "inactive"}
+DIRECTION_KEY = {"개선 쪽": "better", "악화 쪽": "worse", "양쪽": "both", "": ""}
+
+
+def group_key(group: str) -> str:
+    """요약 파일의 묶음 이름. 표에는 한글 이름을 쓰고 요약에는 영문 키를 쓴다."""
+    if group in GROUP_KEY:
+        return GROUP_KEY[group]
+    if group.startswith("정렬 변형 "):
+        return "align-variant:" + group.split()[-1]
+    return "other"
+
+
+def report(out: Path, raw: Path) -> dict:
+    all_runs = load_runs(raw)
     tables = out / "tables"
     tables.mkdir(parents=True, exist_ok=True)
     verdicts: dict[str, list[dict]] = {}
     summary: dict = {"noise": {}, "verdicts": {}}
+    bands: dict[str, dict] = {}
     sens = ["# 상수 민감도", "", "상수 하나를 기본값 주변에서 흔들고 나머지는 기본값이다. Δ 는 기본값 대비 오류 글자 차이. "
             "판정 규칙은 `stt/eval/sensitivity.py` 머리말.", ""]
     noise_md = ["# 잡음 폭", ""]
@@ -222,10 +239,11 @@ def report(out: Path) -> dict:
         kind = _kind(label)
         for group in _groups(runs):
             band = noise_band(runs, group, kind)
-            summary["noise"][f"{label}|{group}"] = band
+            bands[f"{label}|{group}"] = band
+            summary["noise"][f"{label}|{group_key(group)}"] = band
             noise_md += [f"{label}, {group}: 설정 {', '.join(band['settings'])} 의 오류 글자 {band['values']} → "
                          f"잡음 폭 {band['err']}자 (잃은 발화 {band['lost']}, 문장 끝 {band['punct_err']}, "
-                         f"가장자리 {band['edge_err']}, 줄 {band['lines']})", ""]
+                         f"가장자리 {band['edge_err']}, 줄 {band['n_lines']})", ""]
     for c in C.REGISTRY:
         if not c.sweep:
             continue
@@ -233,7 +251,7 @@ def report(out: Path) -> dict:
         for label, runs in all_runs.items():
             kind = _kind(label)
             for group in _groups(runs):
-                band = summary["noise"][f"{label}|{group}"]
+                band = bands[f"{label}|{group}"]
                 v = constant_verdict(runs, c.path, group, band)
                 if v is None:
                     continue
@@ -250,8 +268,10 @@ def report(out: Path) -> dict:
                          "errors": v.get("errors", []), "note": note}
                 verdicts.setdefault(c.path, []).append(entry)
                 summary["verdicts"].setdefault(c.path, []).append(
-                    {**entry, "lost_changed": v.get("lost_changed", []),
-                     "primary": {k: x for k, x in (v.get("primary") or {}).items() if k != "points"} or None})
+                    {"backend": label, "group": group_key(group), "label": LABEL_KEY[v["label"]],
+                     "direction": DIRECTION_KEY.get(v.get("direction", ""), ""), "flat_lo": v.get("flat_lo"),
+                     "flat_hi": v.get("flat_hi"), "noise": v["noise"], "errors": v.get("errors", []),
+                     "lost_changed": v.get("lost_changed", []), "values": v.get("values", [])})
                 base = v["points"][C.current_value(c.path)]
                 rows = [_row(x, v["points"][x], base, kind) for x in v["values"]]
                 block += [f"{label}, {group}. {_verdict_line(v)}", "", S.md_table(rows)]
@@ -278,11 +298,11 @@ def report(out: Path) -> dict:
     (tables / "cost.md").write_text(cost(out), encoding="utf-8")
     try:
         from stt.eval import extract_diff as X
-        rows = X.report(out)
+        rows = X.report(raw)
         if rows:
             (tables / "extract.md").write_text(
                 "# 전사별 할일 추출 차이\n\n정답 전사 추출 합의 대비. 여러 회차는 / 로 잇는다. 첫 줄은 LLM 흔들림 폭. "
-                "의도는 찾음·담당자 맞음·마감 맞음/의도 수.\n\n" + S.md_table(rows) + "\n" + json.dumps(X.cost(out), ensure_ascii=False)
+                "의도는 찾음·담당자 맞음·마감 맞음/의도 수.\n\n" + S.md_table(rows) + "\n" + json.dumps(X.cost(raw), ensure_ascii=False)
                 + "\n", encoding="utf-8")
     except FileNotFoundError:
         pass

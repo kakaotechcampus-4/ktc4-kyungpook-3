@@ -15,10 +15,13 @@
 잡음 폭: 로컬은 들리지 않는 디더(1 LSB)를 씨앗 여러 개(--noise-seeds, 기본 3)로 넣은 실행, 원격은 같은
 설정 반복의 오류 글자 범위.
 
+실행별 원자료(runs/)는 레포 밖(--raw-dir, 기본은 골든 폴더 옆 eval-runs/<결과 폴더 이름>)에 쓰고, 레포 안
+결과 폴더에는 표와 숫자 요약, 비용 장부만 둔다(stt/eval/rawdir.py).
+
 사용 (ai/ 안에서):
   .venv/bin/python -m stt.eval.sensitivity run --golden-root "<골든 폴더>" --out <결과> --cache ~/.cache/mm-stt-eval
   .venv/bin/python -m stt.eval.sensitivity run ... --backend elice --yes          # Elice. 예산 장부를 본다
-  .venv/bin/python -m stt.eval.sensitivity report --out <결과>                    # 표를 다시 만든다
+  .venv/bin/python -m stt.eval.sensitivity report --out <결과> --golden-root "<골든 폴더>"   # 표를 다시 만든다
 """
 
 from __future__ import annotations
@@ -37,6 +40,7 @@ import numpy as np
 from stt import batch as B
 from stt.eval import constants as C
 from stt.eval import golden
+from stt.eval import rawdir as RD
 from stt.eval import textmetrics as T
 from stt.eval.sttcache import CachedStt
 from stt.speech_gate import SpeechGate
@@ -201,16 +205,14 @@ ALIGN_SWEEPS = {"stt.eval.golden.RUN_GAP_S": (1.0, 2.0, 3.0, 5.0, 8.0),
 
 
 def _digest(session: Path) -> dict:
-    """정렬본의 wav 해시와, 기본 VAD·묶음 규칙으로 자른 묶음 조각 해시(모델 입력 지문)."""
+    """정렬본의 wav 해시와, 기본 VAD·묶음 규칙으로 자른 묶음 조각 해시(모델 입력 지문). 해시만이라 레포에 둔다."""
     wav = hashlib.sha256()
     chunks = []
     for tr in B.discover(session):
         wav.update(tr.path.read_bytes())
         for c in B.build_chunks(B.cut(B.load_track(tr.path), tr.speaker_id)):
             chunks.append(hashlib.sha256(c.pcm.tobytes()).hexdigest())
-    aligned = json.loads((session / "truth_aligned.json").read_text(encoding="utf-8"))
-    return {"wav": wav.hexdigest()[:16], "chunks": hashlib.sha256("|".join(sorted(chunks)).encode()).hexdigest()[:16],
-            "slots": [[t["speaker"], t["start"], t["end"]] for t in aligned]}
+    return {"wav": wav.hexdigest()[:16], "chunks": hashlib.sha256("|".join(sorted(chunks)).encode()).hexdigest()[:16]}
 
 
 def align_sweep(originals: list[Path], out: Path, sweeps: dict[str, tuple] = ALIGN_SWEEPS) -> list[Path]:
@@ -448,9 +450,10 @@ def build_backend(kind: str, model: str):
     return f"local-{model}", B.make_backend("local", model, "chunk")
 
 
-def run_plan(plan: list[Setting], sessions: list[Path], *, out: Path, label: str, kind: str, backend,
+def run_plan(plan: list[Setting], sessions: list[Path], *, out: Path, raw: Path, label: str, kind: str, backend,
              cache_dir: Path | None, workers: int | None, yes: bool, budget: float) -> None:
-    d = out / "runs" / label
+    """설정마다 원자료를 raw/runs/<백엔드>/<설정>.json 에 쓴다. 비용 장부는 out(레포 안 결과 폴더)에 쌓는다."""
+    d = raw / "runs" / label
     d.mkdir(parents=True, exist_ok=True)
     for st in plan:
         path = d / f"{st.id}.json"
@@ -487,7 +490,9 @@ def main(argv=None) -> int:
     sub = ap.add_subparsers(dest="cmd", required=True)
     r = sub.add_parser("run")
     r.add_argument("--golden-root", type=Path, action="append", required=True, help="정렬본 회의 폴더들의 부모. 여럿")
-    r.add_argument("--out", type=Path, required=True)
+    r.add_argument("--out", type=Path, required=True, help="레포 안 결과 폴더. 표·숫자 요약·비용 장부만 쓴다")
+    r.add_argument("--raw-dir", type=Path, default=None,
+                   help=f"원자료 폴더. 기본은 {RD.ENV}/<결과 폴더 이름>, 없으면 첫 --golden-root 옆 eval-runs/<결과 폴더 이름>")
     r.add_argument("--cache", type=Path, default=None, help="전사 캐시 폴더. 레포 밖에 둔다")
     r.add_argument("--backend", choices=["local", "elice"], default="local")
     r.add_argument("--model", default="large-v3-turbo")
@@ -507,10 +512,14 @@ def main(argv=None) -> int:
     rs = sub.add_parser("rescore", help="저장된 줄로 채점 지표를 다시 센다. 전사는 다시 안 한다")
     rs.add_argument("--golden-root", type=Path, action="append", required=True)
     rs.add_argument("--out", type=Path, required=True)
-    rp = sub.add_parser("report", help="runs/ 에서 표(tables/)와 summary.json 을 다시 만든다")
+    rs.add_argument("--raw-dir", type=Path, default=None)
+    rp = sub.add_parser("report", help="원자료(runs/, extract/)에서 표(tables/)와 숫자 요약(summary.json)을 다시 만든다")
     rp.add_argument("--out", type=Path, required=True)
+    rp.add_argument("--raw-dir", type=Path, default=None)
+    rp.add_argument("--golden-root", type=Path, action="append", default=[], help="원자료 기본 위치를 정하는 데만 쓴다")
     a = ap.parse_args(argv)
     if a.cmd == "align-sweep":
+        RD.check(a.out.expanduser(), out=None)
         made = align_sweep([g.expanduser() for g in a.golden], a.out.expanduser())
         print(f"정렬 변형 {len(made)}개: {a.out}")
         if a.summary:
@@ -518,9 +527,11 @@ def main(argv=None) -> int:
                                               encoding="utf-8")
         return 0
     if a.cmd == "rescore":
-        by = {x.name: x for x in discover_sessions([g.expanduser() for g in a.golden_root])}
+        roots = [g.expanduser() for g in a.golden_root]
+        raw = RD.raw_for(a.out.expanduser(), a.raw_dir, roots)
+        by = {x.name: x for x in discover_sessions(roots)}
         n = 0
-        for f in sorted((a.out.expanduser() / "runs").rglob("*.json")):
+        for f in sorted((raw / "runs").rglob("*.json")):
             rec = json.loads(f.read_text(encoding="utf-8"))
             for name, r in rec["sessions"].items():
                 if name in by and not r.get("error") and "clip_lines" in r:
@@ -531,8 +542,9 @@ def main(argv=None) -> int:
         return 0
     if a.cmd == "report":
         from stt.eval.sensitivity_report import report
-        report(a.out.expanduser())
-        print(f"표: {a.out / 'tables'}")
+        raw = RD.raw_for(a.out.expanduser(), a.raw_dir, a.golden_root)
+        report(a.out.expanduser(), raw)
+        print(f"표: {a.out / 'tables'} (원자료 {raw})")
         return 0
     sessions = discover_sessions([g.expanduser() for g in a.golden_root])
     if a.session:
@@ -551,10 +563,14 @@ def main(argv=None) -> int:
         plan = [s for s in plan if s.group in groups or ("sweep" in parts and s.group.startswith("const:"))]
         if "base" not in parts and plan and plan[0].id != "base":
             plan = [BASE, *plan]
+    out = a.out.expanduser()
+    raw = RD.raw_for(out, a.raw_dir, [g.expanduser() for g in a.golden_root])
+    cache = RD.check(a.cache.expanduser(), out=out) if a.cache else None
     label, backend = build_backend(a.backend, a.model)
-    print(f"회의 {len(sessions)}개: {', '.join(s.name for s in sessions)} · 설정 {len(plan)}개 · {label}", flush=True)
-    run_plan(plan, sessions, out=a.out.expanduser(), label=label, kind=a.backend, backend=backend,
-             cache_dir=a.cache.expanduser() if a.cache else None, workers=a.workers, yes=a.yes, budget=a.budget)
+    print(f"회의 {len(sessions)}개: {', '.join(s.name for s in sessions)} · 설정 {len(plan)}개 · {label} · 원자료 {raw}",
+          flush=True)
+    run_plan(plan, sessions, out=out, raw=raw, label=label, kind=a.backend, backend=backend, cache_dir=cache,
+             workers=a.workers, yes=a.yes, budget=a.budget)
     return 0
 
 

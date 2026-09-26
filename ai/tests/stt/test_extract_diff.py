@@ -156,3 +156,21 @@ def test_expected_check_accepts_a_paraphrased_deadline_and_picks_the_best_candid
     exp = [{"speaker": "장원준", "key": "데모", "assignee": "장원준", "due_raw": "다음 주 수요일까지"},
            {"speaker": "김환", "key": "통과 기준표", "assignee": "김환", "due_raw": "이번 주 안에"}]
     assert X.check_expected(exp, views) == {"expected": 2, "found": 2, "assignee_ok": 2, "due_ok": 2}
+
+
+def test_run_writes_extractions_to_the_raw_dir_and_the_ledger_next_to_the_results(tmp_path):
+    session = tmp_path / "golden" / "m1-aligned"
+    session.mkdir(parents=True)
+    (session / "truth_aligned.json").write_text(json.dumps([{"seq": 0, "speaker": "김환", "start": 1.0, "end": 3.0,
+                                                             "text": "통과 기준표를 정리해서 공유드릴게요."}],
+                                                           ensure_ascii=False), encoding="utf-8")
+    item = {"index": 0, "evidence_span": "통과 기준표를 정리해서 공유드릴게요", "reasoning": "r", "task_raw": "기준표 공유",
+            "assignee_type": "first", "assignee_mention": None, "assignee_resolved": None, "due_date": None,
+            "due_raw": None, "ambiguity_flag": False}
+    client = X.HttpChat("https://llm.example/v1", "k", retry_wait_s=0,
+                        post=FakePost([_ok('{"relevant_indices": [0]}'), _ok(json.dumps({"items": [item]}))]))
+    raw, out = tmp_path / "raw", tmp_path / "out"
+    X.run(["truth"], [session], out, raw, reps=1, yes=True, budget=10.0, client=client, model="m")
+    saved = json.loads((raw / "extract" / "m1-aligned" / "truth__r0.json").read_text(encoding="utf-8"))
+    assert saved["tasks"][0]["task"] == "기준표 공유"
+    assert (out / "ledger.jsonl").exists() and not (out / "extract").exists()
