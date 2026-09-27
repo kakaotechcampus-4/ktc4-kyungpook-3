@@ -162,6 +162,11 @@ def _deserialize(field: str, value: str | None) -> object:
     return value
 
 
+def _clear_embedding(task: Task) -> None:
+    """제목이 바뀌면 옛 제목의 임베딩을 지운다. 임베딩 워커가 새 제목으로 다시 채운다."""
+    task.embedding = None
+
+
 def create_task(
     db: Session,
     *,
@@ -181,6 +186,7 @@ def create_task(
     """태스크를 새로 만들고, 생성 사실을 반영 로그 한 줄로 남긴다.
 
     수동 생성, 승인 반영, 자동 반영 모든 경로가 이 함수에서 같은 도메인 검증을 거친다.
+    embedding은 NULL로 생기고 임베딩 워커가 채운다(app/services/embedding.py).
     """
     fields: dict[str, object] = {"title": title, "status": status, "progress": progress}
     validate_task_fields(fields)
@@ -259,6 +265,8 @@ def apply_task_updates(
         db.add(entry)
         entries.append(entry)
         setattr(task, field, new_value)
+        if field == "title":
+            _clear_embedding(task)
 
     if entries:
         task.version += 1
@@ -319,6 +327,8 @@ def rollback_task_history(
 
     restored_value = _deserialize(field, history.old_value)
     setattr(task, field, restored_value)
+    if field == "title":
+        _clear_embedding(task)
 
     history.is_rolled_back = True
     history.rolled_back_at = datetime.now(timezone.utc)
