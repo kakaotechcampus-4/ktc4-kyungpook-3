@@ -256,16 +256,25 @@ def test_invalid_target_skips_only_that_item(client, db, seed, target_key):
 
 
 @pytest.mark.parametrize(
-    "item",
+    "bad_item",
     [
         {"action": "update", "due_date": "2026-10-01"},
         {"action": "create", "due_date": "2026-10-01"},
-        {"action": "delete", "task_title": "무언가"},
+        {"task_title": "   ", "task_confidence": 0.9},
     ],
-    ids=["update-without-target", "create-without-title", "unknown-action"],
+    ids=["update-without-target", "create-without-title", "blank-title"],
 )
-def test_malformed_item_is_400(client, db, seed, item):
-    r = _post(client, seed, [item])
+def test_item_missing_required_value_is_skipped(client, db, seed, bad_item):
+    r = _post(client, seed, [bad_item, {"task_title": "결제 환불 기능 구현", "task_confidence": 0.6}])
+
+    assert r.status_code == 201
+    assert r.json()["data"]["item_count"] == 1
+    assert len(_approvals(db, "task_create")) == 1
+    assert db.query(Task).count() == 3
+
+
+def test_unknown_action_is_400(client, db, seed):
+    r = _post(client, seed, [{"action": "delete", "task_title": "무언가"}])
 
     assert r.status_code == 400
     db.refresh(seed["meeting"])

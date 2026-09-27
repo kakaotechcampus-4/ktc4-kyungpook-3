@@ -134,18 +134,25 @@ def create_extraction(
     saved_count = 0
 
     for raw_item in payload.items:
+        # 잘못된 항목 하나로 요청 전체를 실패시키면 봇이 같은 요청을 재시도하다 회의 전체가
+        # 반영되지 않는다. 그런 항목은 건너뛰고 나머지를 처리한다.
         target: Task | None = None
         if raw_item.action == ExtractionAction.UPDATE:
-            target = db.get(Task, raw_item.target_task_id)
+            target = db.get(Task, raw_item.target_task_id) if raw_item.target_task_id else None
             if target is None or target.workspace_id != meeting.workspace_id:
-                # 요청 전체를 실패시키면 봇이 같은 요청을 재시도하다 회의 전체가 반영되지 않는다.
-                # 그 항목만 건너뛴다(검색 이후 task가 지워졌거나, 잘못된 ID).
+                # 검색 이후 task가 지워졌거나, 잘못된 ID
                 logger.warning(
                     "수정 대상 task가 없거나 다른 워크스페이스라 추출 항목을 건너뜁니다. "
                     "meeting_id=%s target_task_id=%s",
                     meeting.meeting_id, raw_item.target_task_id,
                 )
                 continue
+        elif not (raw_item.task_title and raw_item.task_title.strip()):
+            logger.warning(
+                "제목이 비어 있는 새 task 항목을 건너뜁니다. meeting_id=%s evidence_quote=%s",
+                meeting.meeting_id, raw_item.evidence_quote,
+            )
+            continue
 
         if raw_item.assignee_type == "first" and raw_item.evidence_speaker:
             # 1인칭: evidence_speaker는 화자의 Discord uid다. 별칭이 아니라 Member.discord_user_id로 찾는다.

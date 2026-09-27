@@ -145,7 +145,7 @@ Progress/number, Blocker/rich_text, **Task ID/rich_text**)이 있어야 하고, 
 | `action` 없음 / `create` | 예전과 같다. 게이트가 auto면 task 생성, 아니면 task_create 승인 요청 |
 | `action: update` | `target_task_id`의 task_update 승인 요청을 만든다. 신뢰도와 무관하게 항상 PM 승인. `task_title`은 없어도 되고, 와도 제목은 바꾸지 않는다 |
 | update 변경안 | 들어온 값 중 지금 task와 다른 `due_date`·`status`·`assignee_member_id`만 담는다. 담당자는 한 명으로 찾았을 때만 넣고, 못 찾았거나 여러 명이면 `assignee_raw`만 표시용으로 남긴다. 바뀌는 값이 없어도 승인 요청은 만든다 |
-| 잘못된 대상 | `target_task_id`가 없거나 다른 워크스페이스면 그 항목만 건너뛰고 나머지는 처리한다(응답 `item_count`는 저장된 항목 수) |
+| 잘못된 항목 | update의 `target_task_id`가 없거나 다른 워크스페이스 task면, create의 `task_title`이 비어 있으면 그 항목만 건너뛰고 나머지는 처리한다(응답 `item_count`는 저장된 항목 수) |
 
 ## 아직 없는 것
 
