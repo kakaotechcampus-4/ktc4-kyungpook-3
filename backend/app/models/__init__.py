@@ -1,4 +1,5 @@
 from app.models.models import (
+    EMBEDDING_DIMENSIONS,
     AliasResolutionLog,
     AliasReview,
     AliasSource,
@@ -10,6 +11,7 @@ from app.models.models import (
     ChangedField,
     ChangeSource,
     Extraction,
+    ExtractionAction,
     ExtractionItem,
     Gate,
     Meeting,
@@ -34,10 +36,11 @@ from app.models.models import (
 )
 
 __all__ = [
+    "EMBEDDING_DIMENSIONS",
     "AliasResolutionLog", "AliasReview", "AliasSource", "AliasType",
     "ApprovalRequest", "ApprovalStatus", "ApprovalType",
     "AudioSegment", "ChangeSource", "ChangedField", "Extraction",
-    "ExtractionItem", "Gate", "Meeting", "MeetingAudio", "MeetingSource",
+    "ExtractionAction", "ExtractionItem", "Gate", "Meeting", "MeetingAudio", "MeetingSource",
     "MeetingStatus", "Member", "MemberAlias", "MemberRole",
     "NotionSyncJob", "NotionSyncJobStatus", "NotionSyncStatus",
     "ResolutionResult", "ReviewDecision", "Task", "TaskHistory", "TaskStatus",
