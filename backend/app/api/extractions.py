@@ -1,4 +1,5 @@
 import json
+import logging
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import select, update
@@ -12,11 +13,14 @@ from app.models import (
     ApprovalType,
     ChangeSource,
     Extraction,
+    ExtractionAction,
     ExtractionItem,
     Gate,
     Meeting,
     MeetingStatus,
     Member,
+    Task,
+    TaskStatus,
     User,
 )
 from app.schemas.meeting import (
@@ -25,6 +29,7 @@ from app.schemas.meeting import (
     EvidenceInfo,
     ExtractionCreateRequest,
     ExtractionCreateResponse,
+    ExtractionItemCreate,
     ExtractionDetailResponse,
     ExtractionItemResponse,
     TaskInfo,
@@ -38,6 +43,8 @@ from app.services.matching import (
     resolve_speaker,
 )
 from app.services.tasks import create_task
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/extractions", tags=["extractions"])
 
@@ -124,8 +131,22 @@ def create_extraction(
     db.flush()
 
     resolved_cache: dict[tuple[str, str | None], MatchResult] = {}
+    saved_count = 0
 
     for raw_item in payload.items:
+        target: Task | None = None
+        if raw_item.action == ExtractionAction.UPDATE:
+            target = db.get(Task, raw_item.target_task_id)
+            if target is None or target.workspace_id != meeting.workspace_id:
+                # 요청 전체를 실패시키면 봇이 같은 요청을 재시도하다 회의 전체가 반영되지 않는다.
+                # 그 항목만 건너뛴다(검색 이후 task가 지워졌거나, 잘못된 ID).
+                logger.warning(
+                    "수정 대상 task가 없거나 다른 워크스페이스라 추출 항목을 건너뜁니다. "
+                    "meeting_id=%s target_task_id=%s",
+                    meeting.meeting_id, raw_item.target_task_id,
+                )
+                continue
+
         if raw_item.assignee_type == "first" and raw_item.evidence_speaker:
             # 1인칭: evidence_speaker는 화자의 Discord uid다. 별칭이 아니라 Member.discord_user_id로 찾는다.
             assignee_hint = raw_item.evidence_speaker
@@ -158,11 +179,16 @@ def create_extraction(
             due_raw=raw_item.due_raw,
             due_confidence=raw_item.due_confidence,
         )
-        gate = decide_gate(conf, needs_check=match.needs_check)
+        if target is not None:
+            # 기존 task 수정은 유사도·LLM 판단이 틀릴 수 있어 신뢰도와 무관하게 항상 PM 승인을 거친다.
+            gate = Gate.REVIEW
+        else:
+            gate = decide_gate(conf, needs_check=match.needs_check)
 
         item = ExtractionItem(
             extraction_id=extraction.extraction_id,
-            task_title=raw_item.task_title,
+            action=str(raw_item.action),
+            task_title=target.title if target is not None else raw_item.task_title,
             task_confidence=raw_item.task_confidence,
             assignee_raw=raw_item.assignee_raw,
             assignee_member_id=match.member_id,
@@ -176,11 +202,19 @@ def create_extraction(
             evidence_quote=raw_item.evidence_quote,
             evidence_speaker=raw_item.evidence_speaker,
             evidence_at_ms=raw_item.evidence_at_ms,
+            category=raw_item.category,
+            status=str(raw_item.status) if raw_item.status else None,
+            doc_text=raw_item.doc_text,
         )
         db.add(item)
         db.flush()  # item_id 확보 (approval/task 연결에 필요)
+        saved_count += 1
 
-        if gate == Gate.AUTO:
+        if target is not None:
+            _request_task_update(
+                db, meeting, item, raw_item, match, target, has_assignee=assignee_hint is not None
+            )
+        elif gate == Gate.AUTO:
             # 신뢰도가 충분하므로 승인 없이 바로 태스크로 반영한다.
             task = create_task(
                 db,
@@ -189,6 +223,7 @@ def create_extraction(
                 meeting_id=meeting.meeting_id,
                 assignee_member_id=match.member_id,
                 due_date=raw_item.due_date,
+                status=str(raw_item.status or TaskStatus.TODO),
                 change_source=str(ChangeSource.MEETING),
                 changed_by=None,
                 is_auto=True,
@@ -208,7 +243,11 @@ def create_extraction(
                 "extraction_item_id": item.item_id,
                 "meeting_id": meeting.meeting_id,
                 "gate": str(gate),
+                "doc_text": raw_item.doc_text,
+                "category": raw_item.category,
             }
+            if raw_item.status:
+                approval_payload["status"] = str(raw_item.status)
             approval = ApprovalRequest(
                 workspace_id=meeting.workspace_id,
                 type=str(ApprovalType.TASK_CREATE),
@@ -227,9 +266,65 @@ def create_extraction(
         ExtractionCreateResponse(
             extraction_id=extraction.extraction_id,
             meeting_id=extraction.meeting_id,
-            item_count=len(payload.items),
+            item_count=saved_count,
         ).model_dump(mode="json")
     )
+
+
+def _request_task_update(
+    db: Session,
+    meeting: Meeting,
+    item: ExtractionItem,
+    raw_item: ExtractionItemCreate,
+    match: MatchResult,
+    target: Task,
+    *,
+    has_assignee: bool,
+) -> None:
+    """기존 task 수정 항목을 task_update 승인 요청으로 만든다.
+
+    들어온 값 중 지금 task와 다른 것만 변경안에 담는다. 제목은 바꾸지 않는다. 추출된 제목이
+    기존 제목과 글자까지 같을 리 없어서, 마감만 바꾸려던 승인이 제목까지 바꾸게 된다.
+    바뀌는 값이 없어도 승인 요청은 만든다. 결정 자체(doc_text, 근거)가 사라지지 않게 하려는 것이다.
+    """
+    changes: dict[str, object] = {}
+    if raw_item.due_date is not None and raw_item.due_date != target.due_date:
+        changes["due_date"] = raw_item.due_date.isoformat()
+    if raw_item.status is not None and str(raw_item.status) != target.status:
+        changes["status"] = str(raw_item.status)
+    # 담당자는 한 명으로 찾았을 때만 바꾼다. 못 찾았거나 여러 명이면 원문만 보여 주고 PM이 고른다.
+    # 원문을 그대로 넣으면 팀원 ID가 아니라서 승인할 때 무시된다.
+    if match.member_id is not None and match.member_id != target.assignee_member_id:
+        changes["assignee_member_id"] = match.member_id
+
+    payload = {
+        **changes,
+        # 아래는 표시용이다. 승인 시 반영되는 키(approvals._TASK_UPDATE_FIELDS)와 겹치지 않게 둔다.
+        # 특히 "title"은 반영 대상이라 대상 task 이름은 "task_title"로 싣는다.
+        "task_title": target.title,
+        "doc_text": raw_item.doc_text,
+        "category": raw_item.category,
+        "assignee_raw": raw_item.assignee_raw,
+        "assignee_needs_check": match.needs_check if has_assignee else False,
+        "due_raw": raw_item.due_raw,
+        "evidence_quote": raw_item.evidence_quote,
+        "evidence_speaker": raw_item.evidence_speaker,
+        "evidence_at_ms": raw_item.evidence_at_ms,
+        "extraction_item_id": item.item_id,
+        "meeting_id": meeting.meeting_id,
+        "gate": str(Gate.REVIEW),
+    }
+    approval = ApprovalRequest(
+        workspace_id=meeting.workspace_id,
+        type=str(ApprovalType.TASK_UPDATE),
+        payload=json.dumps(payload, ensure_ascii=False),
+        related_task_id=target.task_id,
+        requested_by=None,
+    )
+    db.add(approval)
+    db.flush()
+    item.task_id = target.task_id
+    item.approval_id = approval.approval_id
 
 
 @router.get("/{extraction_id}", response_model=Envelope[ExtractionDetailResponse])
