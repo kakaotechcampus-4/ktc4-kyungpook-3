@@ -288,6 +288,51 @@ def test_stale_in_progress_job_is_reclaimed_and_reconciled(db):
     assert task.notion_sync_status == "synced"
 
 
+def _stale_last_attempt(db, task: Task) -> datetime:
+    """마지막(MAX_ATTEMPTS번째) 시도를 처리하던 중 워커가 죽은 상태를 만든다."""
+    now = datetime.now(timezone.utc)
+    db.execute(
+        update(NotionSyncJob)
+        .where(NotionSyncJob.task_id == task.task_id, NotionSyncJob.task_version == 1)
+        .values(status="in_progress", attempts=notion_sync.MAX_ATTEMPTS, locked_at=now)
+    )
+    db.commit()
+    return now + timedelta(seconds=notion_sync.LEASE_SECONDS + 1)
+
+
+def test_stale_job_over_max_attempts_marks_task_failed(db):
+    task = _create(db, _workspace(db))
+    after_lease = _stale_last_attempt(db, task)
+
+    fake = FakeNotion()
+    notion_sync.process_due_jobs(db, transport=fake.transport, now=after_lease)
+
+    db.refresh(task)
+    assert [j.status for j in _jobs(db, task)] == ["failed"]
+    assert task.notion_sync_status == "failed"
+    assert fake.requests == []
+
+
+def test_stale_job_over_max_attempts_waits_for_newer_job(db):
+    task = _create(db, _workspace(db))
+    apply_task_updates(db, task, {"title": "제목 변경"}, change_source="manual")
+    db.commit()
+    # 더 최신 작업(v2)은 아직 시도할 때가 안 됐다.
+    db.execute(
+        update(NotionSyncJob)
+        .where(NotionSyncJob.task_id == task.task_id, NotionSyncJob.task_version == 2)
+        .values(next_attempt_at=_later(60 * 24))
+    )
+    db.commit()
+    after_lease = _stale_last_attempt(db, task)
+
+    notion_sync.process_due_jobs(db, transport=FakeNotion().transport, now=after_lease)
+
+    db.refresh(task)
+    assert [(j.task_version, j.status) for j in _jobs(db, task)] == [(1, "failed"), (2, "pending")]
+    assert task.notion_sync_status == "pending"
+
+
 def test_removed_integration_skips_pending_jobs(db):
     workspace = _workspace(db)
     task = _create(db, workspace)
