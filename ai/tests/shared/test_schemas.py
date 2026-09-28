@@ -50,7 +50,6 @@ def test_judge_finding_defaults():
     assert f.method == "rules"
     # 이후 단계가 채우는 칸 — 1단계에서는 "아직 판정 전"을 뜻하는 None 이어야 한다
     assert f.assignee_type is None
-    assert f.status is None
     assert f.evidence_status is None
 
 
@@ -65,7 +64,6 @@ def test_judge_finding_roundtrip():
         reason="일정 변경 합의",
         method="llm",
         assignee_type="first",
-        status="todo",
         evidence_status="certain",
     )
     assert JudgeFinding.from_dict(f.to_dict()) == f

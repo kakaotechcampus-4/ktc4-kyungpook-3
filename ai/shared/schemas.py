@@ -150,9 +150,9 @@ class JudgeFinding(_Base):
     에서 사라지고, 2단계의 status(done) 판정에 영원히 도달하지 못한다. 그래서 문서 축과 작업
     상태 축을 나눠 표시하고, 버릴지 말지는 호출자가 축별로 정한다.
 
-    뒤쪽 세 필드(assignee_type/status/evidence_status)는 **1단계가 채우지 않는다.** 1단계는
-    "이 발화가 볼 가치가 있나"만 판단하므로 담당자나 진행 상태를 매길 근거가 없다. Terra
-    2단계와 구조화 단계를 거치며 채워지고, 그때까지는 None 이 "아직 판정 전"을 뜻한다.
+    진행 상태(todo/done 등)는 여기 두지 않는다 — Notion 후보와 비교해야 알 수 있는 값이라
+    Terra 2단계(JudgeResult.status)가 정한다. evidence_status 는 구조화 단계가 채우고, 그때까지는
+    None 이 "아직 판정 전"을 뜻한다.
     """
 
     text: str  # 자기완결적 요약(LLM) 또는 원문 그대로(규칙). 나중에 JudgeInput.text로 이어짐
@@ -174,7 +174,6 @@ class JudgeFinding(_Base):
     # 조회하면 영원히 안 맞기 때문에 BE 가 둘을 구분할 수 있어야 한다
 
     # ── 이후 단계가 채우는 칸 (1단계에서는 항상 None)
-    status: str | None = None  # todo | in_progress | blocked | done. Terra 2단계(JudgeResult.status)가 정함
     evidence_status: str | None = None  # certain | inferred | missing — 근거가 원문에 얼마나 명시적인가
 
 
