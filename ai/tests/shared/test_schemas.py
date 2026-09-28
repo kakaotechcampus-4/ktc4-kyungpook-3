@@ -86,6 +86,13 @@ def test_notion_candidate_defaults():
     assert c.similarity == 0.0
 
 
+def test_notion_candidate_page_id_is_optional():
+    # Notion 동기화 전인 Task 는 페이지가 없다 — 유사 검색 응답(#102)이 null 로 준다
+    c = NotionCandidate.from_dict({"task_id": "task_1", "notion_page_id": None, "title": "로그인 화면 시안"})
+    assert c.notion_page_id is None
+    assert NotionCandidate(task_id="task_1").notion_page_id is None
+
+
 def test_notion_candidate_roundtrip():
     c = NotionCandidate(
         notion_page_id="page_1",

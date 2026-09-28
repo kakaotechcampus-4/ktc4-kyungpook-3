@@ -182,7 +182,8 @@ class JudgeFinding(_Base):
 class NotionCandidate(_Base):
     """BE가 벡터 검색으로 찾아준, 의미상 가장 가까운 기존 Notion 항목 하나."""
 
-    notion_page_id: str  # 이 후보가 가리키는 실제 Notion 페이지 ID (나중에 반영할 때 필수)
+    notion_page_id: str | None = None  # 이 후보의 Notion 페이지 ID. 승인 직후 Notion 동기화 전인
+    # Task 는 아직 페이지가 없어 None 이다(#102 유사 검색 응답과 같음). 반영은 BE 가 task_id 로 한다
     task_id: str | None = None  # 우리 DB task 테이블과 연결돼 있으면 그 ID (없으면 아직 task화 안 된 Notion 내용)
     title: str = ""  # 페이지 항목 제목
     content_snippet: str = ""  # 본문 일부 — 유사도 비교와 문맥 파악용 (전체 본문 아님, 필요한 만큼만)
