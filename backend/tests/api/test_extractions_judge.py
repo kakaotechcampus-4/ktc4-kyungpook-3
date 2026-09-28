@@ -192,17 +192,64 @@ def test_update_only_includes_values_that_differ(client, db, seed):
     assert "due_date" not in payload
 
 
-def test_update_without_changes_still_requests_approval(client, db, seed):
-    """이미 반영된 값만 왔어도 결정(doc_text, 근거)이 사라지지 않게 승인 요청은 만든다."""
+def test_update_without_any_change_creates_no_approval(client, db, seed):
+    """이미 반영된 값만 왔고 담당자 언급도 없으면 승인 요청을 만들지 않는다."""
     login = seed["login"]
     r = _post(client, seed, [_update(login, due_date="2026-09-28", status="in_progress",
                                      doc_text="로그인 시안 마감 재확인")])
 
     assert r.status_code == 201
+    assert r.json()["data"]["item_count"] == 1
+    assert _approvals(db, "task_update") == []
+
+    item = db.execute(select(ExtractionItem)).scalar_one()
+    # 승인은 없어도 어떤 task 얘기였는지, doc_text·근거는 항목에 남는다.
+    assert item.task_id == login.task_id
+    assert item.approval_id is None
+    assert item.doc_text == "로그인 시안 마감 재확인"
+
+
+def test_update_with_matching_assignee_excludes_it_and_skips_approval(client, db, seed):
+    """담당자가 이미 대상 task와 같으면 변경안에서 빼고, 다른 변경이 없으면 승인도 만들지 않는다."""
+    search = seed["search"]
+    search.assignee_member_id = seed["jimin"].member_id
+    db.commit()
+
+    r = _post(client, seed, [_update(search, assignee_raw="지민님", assignee_type="thirdname")])
+
+    assert r.status_code == 201
+    assert _approvals(db, "task_update") == []
+    item = db.execute(select(ExtractionItem)).scalar_one()
+    assert item.task_id == search.task_id
+    assert item.approval_id is None
+
+
+def test_update_with_matching_assignee_but_other_change_still_creates_approval(client, db, seed):
+    search = seed["search"]
+    search.assignee_member_id = seed["jimin"].member_id
+    db.commit()
+
+    r = _post(client, seed, [_update(
+        search, assignee_raw="지민님", assignee_type="thirdname", status="done",
+    )])
+
+    assert r.status_code == 201
+    payload = _payload(_approvals(db, "task_update")[0])
+    assert payload["status"] == "done"
+    assert "assignee_member_id" not in payload
+
+
+@pytest.mark.parametrize("raw", ["민수님", "없는사람"], ids=["ambiguous", "not-found"])
+def test_update_with_unresolved_assignee_always_creates_approval(client, db, seed, raw):
+    """담당자를 하나로 못 찾았으면 다른 변경이 없어도 PM이 보도록 승인 요청을 만든다."""
+    r = _post(client, seed, [_update(seed["search"], assignee_raw=raw, assignee_type="thirdname")])
+
+    assert r.status_code == 201
     [approval] = _approvals(db, "task_update")
     payload = _payload(approval)
-    assert {"due_date", "status", "assignee_member_id"}.isdisjoint(payload)
-    assert payload["doc_text"] == "로그인 시안 마감 재확인"
+    assert "assignee_member_id" not in payload
+    assert payload["assignee_raw"] == raw
+    assert payload["assignee_needs_check"] is True
 
 
 def test_update_ignores_task_title_even_if_sent(client, db, seed):

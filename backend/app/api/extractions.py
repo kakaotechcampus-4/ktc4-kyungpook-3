@@ -292,7 +292,11 @@ def _request_task_update(
 
     들어온 값 중 지금 task와 다른 것만 변경안에 담는다. 제목은 바꾸지 않는다. 추출된 제목이
     기존 제목과 글자까지 같을 리 없어서, 마감만 바꾸려던 승인이 제목까지 바꾸게 된다.
-    바뀌는 값이 없어도 승인 요청은 만든다. 결정 자체(doc_text, 근거)가 사라지지 않게 하려는 것이다.
+
+    담당자는 지금 task와 다를 때만 변경안에 담는다. 같으면 뺀다. 다만 하나로 못 찾았으면
+    (중의적이거나 없음) 그 자체가 PM이 봐야 할 사안이라 다른 변경이 없어도 승인 요청을 만든다.
+    담당자까지 같고(또는 언급이 없고) 다른 변경도 없으면 승인 요청을 만들지 않는다. 이 경우에도
+    doc_text·근거는 ExtractionItem에 그대로 남는다.
     """
     changes: dict[str, object] = {}
     if raw_item.due_date is not None and raw_item.due_date != target.due_date:
@@ -303,6 +307,11 @@ def _request_task_update(
     # 원문을 그대로 넣으면 팀원 ID가 아니라서 승인할 때 무시된다.
     if match.member_id is not None and match.member_id != target.assignee_member_id:
         changes["assignee_member_id"] = match.member_id
+
+    item.task_id = target.task_id
+    assignee_unresolved = has_assignee and match.member_id is None
+    if not changes and not assignee_unresolved:
+        return
 
     payload = {
         **changes,
@@ -330,7 +339,6 @@ def _request_task_update(
     )
     db.add(approval)
     db.flush()
-    item.task_id = target.task_id
     item.approval_id = approval.approval_id
 
 
