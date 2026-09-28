@@ -152,3 +152,178 @@ def test_rejects_not_meaningful_and_update_without_target():
 def test_evidence_at_ms_is_none_when_seq_not_in_transcript():
     item = to_item(_finding(seq=99), _result(), _drafted(due_date="2026-10-06"), _target(), TRANSCRIPT)
     assert item["evidence_at_ms"] is None
+
+
+# ── run (오케스트레이터) ──────────────────────────────────────────────────────
+#
+# 세 단계 모두 FakeLLM 을 끼워 실제 파싱 코드까지 거친다. 1단계와 Luna Phase 2 는 같은 Luna 지만
+# 모듈마다 get_llm 을 따로 부르므로 FakeLLM 도 따로 둔다.
+
+from datetime import date  # noqa: E402
+
+import draft.doc_draft as doc_draft  # noqa: E402
+import judge.final_judge as final_judge  # noqa: E402
+import judge.pipeline as pipeline  # noqa: E402
+import judge.semantic_judge as semantic_judge  # noqa: E402
+from judge.pipeline import PipelineUnavailableError, run  # noqa: E402
+from judge.semantic_judge import FindingExtractionUnavailableError  # noqa: E402
+from llm import FakeLLM, NullLLM  # noqa: E402
+
+MEETING = Transcript(segments=[
+    TranscriptSegment(speaker="uid_pm", start=1.0, end=4.0, text="결제 환불 기능은 지민님이 다음 주까지 만들어 주세요.", seq=1),
+    TranscriptSegment(speaker="uid_pm", start=5.0, end=8.0, text="로그인 화면 마감 좀 미룰 수 있을까요? 다음 주 화요일로요.", seq=2),
+    TranscriptSegment(speaker="uid_haeun", start=8.5, end=9.2, text="네, 알겠습니다.", seq=3),
+    TranscriptSegment(speaker="uid_dongwoo", start=10.0, end=12.0, text="검색 개선은 계속 진행 중이에요.", seq=4),
+    TranscriptSegment(speaker="uid_pm", start=13.0, end=14.0, text="검색 마감 10월 3일 맞죠?", seq=5),
+])
+# _flatten 기준 문장 번호: 0 결제 환불 / 1 미룰 수 있을까요 / 2 다음 주 화요일로요 / 3 네 / 4 계속 진행 중 / 5 10월 3일 맞죠
+
+FINDINGS = [
+    {"indices": [0], "summary": "결제 환불 기능을 지민님이 다음 주까지 구현하기로 함", "signal": "decision",
+     "assignee_type": "thirdname", "assignee_raw": "지민님", "reason": "새 할일"},
+    {"indices": [1, 2, 3], "summary": "로그인 화면 마감을 다음 주 화요일로 연기하는 데 동의함", "signal": "decision",
+     "assignee_type": "none", "reason": "일정 변경"},
+    {"indices": [4], "summary": "검색 개선 작업을 계속 진행 중이라고 보고함", "signal": "progress",
+     "assignee_type": "none", "reason": "진척"},
+    {"indices": [5], "summary": "검색 마감이 10월 3일인지 확인함", "signal": "decision",
+     "assignee_type": "none", "reason": "일정 확인"},
+]
+
+LOGIN = NotionCandidate(task_id="task_login", notion_page_id="n1", title="로그인 화면 시안 마무리 작업",
+                        due_date="2026-09-28", status="in_progress", similarity=0.82)
+SEARCH = NotionCandidate(task_id="task_search", notion_page_id="n6", title="검색 기능 성능 개선",
+                         due_date="2026-10-03", status="in_progress", similarity=0.7)
+
+
+def _terra(**overrides):
+    base = {"is_meaningful": True, "category": "decision", "is_new": False,
+            "matched_candidate_index": 0, "status": None, "evidence": "근거"}
+    base.update(overrides)
+    return base
+
+
+TERRA_OK = [
+    _terra(is_new=True, matched_candidate_index=None),              # 결제 환불 → 새 항목
+    _terra(category="schedule"),                                     # 로그인 → 마감 변경
+    _terra(status="in_progress"),                                    # 검색 → 이미 in_progress (빈 update)
+    _terra(is_meaningful=False, category="none", matched_candidate_index=None),  # 확인만 → 버림
+]
+LUNA_DRAFT_OK = [
+    {"task": "결제 환불 기능 구현", "due_date": "2026-10-04", "doc_text": "결제 환불 기능 구현을 지민님이 10/4까지 하기로 함"},
+    {"task": None, "due_date": "2026-10-06", "doc_text": "로그인 화면 시안 마무리 작업 마감을 9/28에서 10/6으로 연기"},
+    {"task": None, "due_date": None, "doc_text": "검색 기능 성능 개선 진행 중"},
+]
+
+
+class FakeCandidates:
+    def __init__(self, fail_on: str | None = None):
+        self.fail_on = fail_on
+        self.calls: list[tuple[str, str]] = []
+
+    def similar_tasks(self, workspace_id, text):
+        self.calls.append((workspace_id, text))
+        if self.fail_on and self.fail_on in text:
+            raise ConnectionError("BE 연결 실패")
+        if "로그인" in text:
+            return [LOGIN]
+        if "검색" in text:
+            return [SEARCH]
+        return []
+
+
+def _install(monkeypatch, *, stage1, terra, luna_draft):
+    fakes = {"stage1": FakeLLM(responses=[stage1]), "terra": FakeLLM(responses=list(terra)),
+             "draft": FakeLLM(responses=list(luna_draft))}
+    monkeypatch.setattr(semantic_judge, "get_llm", lambda which: fakes["stage1"])
+    monkeypatch.setattr(final_judge, "get_llm", lambda which: fakes["terra"])
+    monkeypatch.setattr(doc_draft, "get_llm", lambda which: fakes["draft"])
+    monkeypatch.setattr(pipeline, "get_llm", lambda which: fakes["terra"] if which == "terra" else fakes["draft"])
+    return fakes
+
+
+def _run(source=None):
+    return run(MEETING, workspace_id="ws_1", today=date(2026, 9, 28), candidates=source or FakeCandidates())
+
+
+def test_run_mixed_meeting(monkeypatch):
+    fakes = _install(monkeypatch, stage1={"findings": FINDINGS}, terra=TERRA_OK, luna_draft=LUNA_DRAFT_OK)
+    source = FakeCandidates()
+
+    out = _run(source)
+
+    assert [(i["action"], i["target_task_id"]) for i in out.items] == [("create", None), ("update", "task_login")]
+    create, update = out.items
+    assert create["task_title"] == "결제 환불 기능 구현"
+    assert create["assignee_raw"] == "지민님"
+    assert update["due_date"] == "2026-10-06"
+    assert update["evidence_quote"] == "네, 알겠습니다."
+    assert update["evidence_speaker"] == "uid_haeun"
+    assert out.failures == []
+    # 유사 검색 쿼리는 1단계 요약문 — finding 마다 한 번
+    assert [text for _, text in source.calls] == [f["summary"] for f in FINDINGS]
+    # 버린 finding(is_meaningful=False)은 Luna 를 부르지 않는다
+    assert len(fakes["draft"].prompts) == 3
+
+
+def test_run_terra_failure_skips_only_that_finding(monkeypatch):
+    terra = [TERRA_OK[0], {"is_meaningful": "모름"}, *TERRA_OK[2:]]  # 로그인 finding 만 파싱 실패
+    _install(monkeypatch, stage1={"findings": FINDINGS}, terra=terra, luna_draft=[LUNA_DRAFT_OK[0], LUNA_DRAFT_OK[2]])
+
+    out = _run()
+
+    assert [i["action"] for i in out.items] == ["create"]
+    assert [(f.stage, f.finding_text) for f in out.failures] == [("judge", FINDINGS[1]["summary"])]
+
+
+def test_run_similar_search_failure_is_recorded(monkeypatch):
+    _install(monkeypatch, stage1={"findings": FINDINGS[:2]}, terra=[TERRA_OK[0]], luna_draft=[LUNA_DRAFT_OK[0]])
+
+    out = _run(FakeCandidates(fail_on="로그인"))
+
+    assert [i["action"] for i in out.items] == ["create"]
+    assert out.failures[0].stage == "similar"
+    assert "ConnectionError" in out.failures[0].reason
+
+
+def test_run_draft_failure_is_recorded(monkeypatch):
+    _install(monkeypatch, stage1={"findings": FINDINGS[:2]}, terra=TERRA_OK[:2],
+             luna_draft=[LUNA_DRAFT_OK[0], {"task": None, "due_date": None}])  # doc_text 없음
+
+    out = _run()
+
+    assert [i["action"] for i in out.items] == ["create"]
+    assert [f.stage for f in out.failures] == ["draft"]
+
+
+def test_run_update_without_task_id_is_target_failure(monkeypatch):
+    # Notion 에만 있는(task_id 없는) 후보를 골랐을 때 — 수정할 Task 가 없다
+    notion_only = NotionCandidate(task_id=None, notion_page_id="n7", title="로그인 화면 시안 마무리 작업", similarity=0.8)
+
+    class NotionOnly(FakeCandidates):
+        def similar_tasks(self, workspace_id, text):
+            return [notion_only]
+
+    _install(monkeypatch, stage1={"findings": [FINDINGS[1]]}, terra=[TERRA_OK[1]], luna_draft=[])
+
+    out = _run(NotionOnly())
+
+    assert out.items == []
+    assert [f.stage for f in out.failures] == ["target"]
+
+
+def test_run_stage1_failure_fails_whole_meeting(monkeypatch):
+    fakes = _install(monkeypatch, stage1=None, terra=TERRA_OK, luna_draft=LUNA_DRAFT_OK)
+    with pytest.raises(FindingExtractionUnavailableError):
+        _run()
+    assert fakes["terra"].prompts == []
+
+
+def test_run_missing_key_fails_before_any_call(monkeypatch):
+    fakes = _install(monkeypatch, stage1={"findings": FINDINGS}, terra=TERRA_OK, luna_draft=LUNA_DRAFT_OK)
+    monkeypatch.setattr(pipeline, "get_llm", lambda which: NullLLM() if which == "terra" else fakes["draft"])
+    source = FakeCandidates()
+
+    with pytest.raises(PipelineUnavailableError, match="terra"):
+        _run(source)
+    assert fakes["stage1"].prompts == []
+    assert source.calls == []
