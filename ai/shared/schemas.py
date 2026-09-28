@@ -244,9 +244,33 @@ class JudgeResult(_Base):
 
 
 @dataclass
-class DraftResult(_Base):
-    """Phase 2 Luna 출력. structured = {task, assignee_member_id, due_date, type}."""
+class DraftStructured(_Base):
+    """Luna 가 새로 만든 구조화 값. /extractions item 으로 옮겨 담긴다.
 
-    structured: dict[str, Any]
-    doc_text: str
-    method: str = "rules"
+    Luna 가 **새로 만들어야 하는 값만** 둔다. 담당자는 JudgeFinding(1단계가 전사록 전체를 보고
+    판정), 진행 상태는 JudgeResult(2단계가 후보와 비교해 판정)에 이미 있으므로 여기서 다시
+    판단하지 않는다 — 같은 값을 두 번 판단하면 단계마다 다른 답이 나올 수 있다.
+
+    None 은 "바꾸지 않음"이다. update 에서는 값이 있는 필드만 승인 payload 에 들어가고, 승인 시
+    그 값으로 덮어쓰므로 바뀌지 않은 필드를 채우면 기존 값이 바뀐다.
+    """
+
+    task: str | None = None  # 할일 제목. create 에서만 채움 — update 에서 채우면 기존 제목을 덮어씀
+    due_date: str | None = None  # ISO 날짜(YYYY-MM-DD). 발화에 마감이 있을 때만
+
+
+@dataclass
+class DraftResult(_Base):
+    """Luna Phase 2 출력. JudgeResult.is_meaningful=True 인 발화에만 만든다."""
+
+    structured: DraftStructured
+    doc_text: str  # PM 승인 화면에 보여줄 한 문장 — 무엇이 왜 바뀌는지
+    method: str = "llm"  # 1·2단계와 같이 규칙 기반 폴백이 없으므로 항상 llm
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "DraftResult":
+        return cls(
+            structured=DraftStructured.from_dict(data.get("structured") or {}),
+            doc_text=data["doc_text"],
+            method=data.get("method", "llm"),
+        )

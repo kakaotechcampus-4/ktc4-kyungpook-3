@@ -1,4 +1,12 @@
-from shared.schemas import JudgeFinding, JudgeInput, NotionCandidate, Transcript, TranscriptSegment
+from shared.schemas import (
+    DraftResult,
+    DraftStructured,
+    JudgeFinding,
+    JudgeInput,
+    NotionCandidate,
+    Transcript,
+    TranscriptSegment,
+)
 
 
 def test_transcript_roundtrip_and_merge():
@@ -106,3 +114,27 @@ def test_judge_input_roundtrip_with_candidates():
     )
     restored = JudgeInput.from_dict(ji.to_dict())
     assert restored == ji
+
+
+def test_draft_structured_defaults_mean_no_change():
+    # None 은 "바꾸지 않음" — update 에서 채우지 않은 필드가 승인 payload 에 들어가면 안 된다
+    s = DraftStructured()
+    assert s.task is None
+    assert s.due_date is None
+
+
+def test_draft_result_roundtrip():
+    d = DraftResult(
+        structured=DraftStructured(task="결제 환불 기능 구현", due_date="2026-10-05"),
+        doc_text="결제 환불 기능을 지민님이 10/5까지 구현하기로 함",
+    )
+    assert d.method == "llm"
+    assert d.to_dict()["structured"] == {"task": "결제 환불 기능 구현", "due_date": "2026-10-05"}
+    assert DraftResult.from_dict(d.to_dict()) == d
+
+
+def test_draft_result_from_dict_without_structured():
+    # update 에서 바뀐 필드가 없어 structured 가 비어 와도 기본값(전부 None)으로 복원된다
+    d = DraftResult.from_dict({"doc_text": "검색 성능 개선 작업 완료"})
+    assert d.structured == DraftStructured()
+    assert d.method == "llm"
