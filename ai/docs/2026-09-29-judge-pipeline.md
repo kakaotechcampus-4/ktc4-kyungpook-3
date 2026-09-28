@@ -2,7 +2,7 @@
 
 - 날짜: 2026-09-29
 - 이슈: #106
-- PR: (이 PR)
+- PR: #109
 - 브랜치: feat/106-judge-pipeline (base: feat/103-luna-draft — #104 위에 쌓은 PR)
 - 작성자: 유재환
 
