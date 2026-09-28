@@ -151,14 +151,14 @@ describe('Toast', () => {
       vi.useRealTimers()
     })
 
-    it('stays for 6 seconds when there is nothing to undo', () => {
+    it('stays for 5 seconds when there is nothing to undo', () => {
       const onOpenChange = vi.fn()
       renderInProvider(
         <Toast data-testid="toast" title="정리가 끝났습니다" onOpenChange={onOpenChange} />,
       )
 
       act(() => {
-        vi.advanceTimersByTime(5999)
+        vi.advanceTimersByTime(4999)
       })
       expect(onOpenChange).not.toHaveBeenCalled()
 
@@ -180,12 +180,12 @@ describe('Toast', () => {
       )
 
       act(() => {
-        vi.advanceTimersByTime(6001)
+        vi.advanceTimersByTime(5001)
       })
       expect(onOpenChange).not.toHaveBeenCalled()
 
       act(() => {
-        vi.advanceTimersByTime(4000)
+        vi.advanceTimersByTime(5000)
       })
       expect(onOpenChange).toHaveBeenCalledWith(false)
     })
