@@ -209,6 +209,21 @@ def test_update_without_any_change_creates_no_approval(client, db, seed):
     assert item.doc_text == "로그인 시안 마감 재확인"
 
 
+def test_update_with_scope_category_creates_approval_even_without_changes(client, db, seed):
+    """scope 결정은 대응하는 task 필드가 없어서, 변경이 없어도 승인 요청을 만든다."""
+    search = seed["search"]
+    r = _post(client, seed, [_update(
+        search, category="scope", doc_text="이번 스프린트에서는 소셜 로그인은 빼기로 함",
+    )])
+
+    assert r.status_code == 201
+    [approval] = _approvals(db, "task_update")
+    payload = _payload(approval)
+    assert payload["category"] == "scope"
+    assert payload["doc_text"] == "이번 스프린트에서는 소셜 로그인은 빼기로 함"
+    assert {"due_date", "status", "assignee_member_id"}.isdisjoint(payload)
+
+
 def test_update_with_matching_assignee_excludes_it_and_skips_approval(client, db, seed):
     """담당자가 이미 대상 task와 같으면 변경안에서 빼고, 다른 변경이 없으면 승인도 만들지 않는다."""
     search = seed["search"]

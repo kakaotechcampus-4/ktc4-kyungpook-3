@@ -295,8 +295,14 @@ def _request_task_update(
 
     담당자는 지금 task와 다를 때만 변경안에 담는다. 같으면 뺀다. 다만 하나로 못 찾았으면
     (중의적이거나 없음) 그 자체가 PM이 봐야 할 사안이라 다른 변경이 없어도 승인 요청을 만든다.
-    담당자까지 같고(또는 언급이 없고) 다른 변경도 없으면 승인 요청을 만들지 않는다. 이 경우에도
-    doc_text·근거는 ExtractionItem에 그대로 남는다.
+
+    category가 scope("이번엔 소셜 로그인은 빼기로" 같은 범위 결정)이면 다른 변경이 없어도
+    승인 요청을 만든다. scope는 due_date·status·assignee_member_id 어디에도 대응하는 필드가
+    없어서, 다른 category처럼 "값이 같아서 안 만든다"가 아니라 애초에 비교할 필드 자체가 없기
+    때문이다 — 승인 요청을 만들지 않으면 이 결정은 doc_text만 남고 PM이 볼 방법이 없어진다.
+
+    그 외에는 담당자까지 같고(또는 언급이 없고) 다른 변경도 없으면 승인 요청을 만들지 않는다.
+    이 경우에도 doc_text·근거는 ExtractionItem에 그대로 남는다.
     """
     changes: dict[str, object] = {}
     if raw_item.due_date is not None and raw_item.due_date != target.due_date:
@@ -310,7 +316,8 @@ def _request_task_update(
 
     item.task_id = target.task_id
     assignee_unresolved = has_assignee and match.member_id is None
-    if not changes and not assignee_unresolved:
+    is_scope_decision = raw_item.category == "scope"
+    if not changes and not assignee_unresolved and not is_scope_decision:
         return
 
     payload = {
