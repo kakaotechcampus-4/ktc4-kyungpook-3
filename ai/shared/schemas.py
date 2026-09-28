@@ -81,7 +81,8 @@ class ExtractedTask(_Base):
     task: str
     assignee_member_id: str | None
     due_date: str | None
-    confidence: float
+    # confidence(숫자 신뢰도)는 두지 않는다 — 필드별 상태(아래 *_status)로 대체했다.
+    # BE 가 요구하는 숫자(task_confidence 등)는 인계 단계(capture/handoff.py)가 상태에서 바꿔 보낸다
     # 아래는 디버깅/근거 추적용 부가 정보 (스키마 확장, 선택)
     assignee_mention: str | None = None
     source_sentence: str | None = None

@@ -34,7 +34,7 @@ API_PREFIX = "/api/v1"
 TIMEOUT_S = 10.0
 
 # 추출기의 마감 상태를 BE 의 숫자 신뢰도로. BE 는 due_raw 가 없으면 이 값을 보지 않는다
-DUE_CONFIDENCE = {"certain": 1.0, "inferred": 0.6, "missing": 0.0}
+STATUS_CONFIDENCE = {"certain": 1.0, "inferred": 0.6, "missing": 0.0}
 
 
 class BeError(Exception):
@@ -138,12 +138,13 @@ def to_extraction_items(tasks: list[dict], transcript: dict) -> list[dict]:
         mention = None if kind in ("second", "thirdpronoun", "thirdrole") else t.get("assignee_mention")
         items.append({
             "task_title": t.get("task", ""),
-            "task_confidence": float(t.get("confidence") or 0.0),
+            # BE(item_confidence)가 필드별 숫자의 최솟값을 직접 내므로 할일 자체의 상태만 보낸다
+            "task_confidence": STATUS_CONFIDENCE.get(t.get("task_status"), 0.0),
             "assignee_raw": t.get("assignee_resolved") or mention,
             "assignee_type": t.get("assignee_type"),
             "due_date": t.get("due_date"),
             "due_raw": t.get("due_raw"),
-            "due_confidence": DUE_CONFIDENCE.get(t.get("due_status"), 0.0),
+            "due_confidence": STATUS_CONFIDENCE.get(t.get("due_status"), 0.0),
             "evidence_quote": sentence or None,
             "evidence_speaker": speaker,
             "evidence_at_ms": at_ms,

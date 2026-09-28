@@ -326,8 +326,9 @@ LLM 응답 스키마 (`extract/llm.py :: ExtractionItem`, pydantic 으로 강제
      LLM 만 주장하는 이름은 사람이 한 번 보게 한다
 4. 나머지(`second` / `thirdpronoun` / `thirdrole`) → `inferred`
 
-`confidence` 는 세 상태의 **최솟값**이다 (`certain=1.0, inferred=0.6, missing=0.3`).
-내부 로그·정렬용이고 사용자에게 노출하지 않는다.
+숫자 `confidence` 는 출력에 없다 — 이 세 상태로 대체했다. BE 가 요구하는 `task_confidence` /
+`due_confidence` 는 인계 단계(`capture/handoff.py`)가 상태를 숫자로 바꿔 보낸다
+(`certain=1.0, inferred=0.6, missing=0.0`).
 
 ---
 
@@ -347,7 +348,6 @@ extract_tasks(transcript, client=..., model=..., today=..., speaker_names=...) -
     "task": "리프레시 토큰 처리",
     "assignee_member_id": null,
     "due_date": "2026-09-10",
-    "confidence": 1.0,
     "assignee_mention": null,
     "source_sentence": "이번 주 목요일까지 리프레시 토큰 처리",
     "method": "llm",
@@ -364,7 +364,6 @@ extract_tasks(transcript, client=..., model=..., today=..., speaker_names=...) -
     "task": "코드 리뷰",
     "assignee_member_id": null,
     "due_date": null,
-    "confidence": 0.3,
     "assignee_mention": "하은님",
     "source_sentence": "하은님이 코드 리뷰 부탁드려요",
     "method": "llm",
@@ -387,7 +386,6 @@ extract_tasks(transcript, client=..., model=..., today=..., speaker_names=...) -
 | `task` | 할일 내용 | |
 | `assignee_member_id` | **항상 `null`** | 멤버 테이블을 AI 가 안 본다. BE 가 채운다 |
 | `due_date` | 검증을 통과한 `YYYY-MM-DD` | 시각은 없다 (BE 의 `datetime` 전환 대기 중) |
-| `confidence` | 세 상태의 최솟값 | 내부용 |
 | `assignee_mention` | 원문 호칭 | `first`/`all`/`none` 이면 **코드가 지운다** |
 | `source_sentence` | LLM 이 인용한 `evidence_span` | **부분 인용일 수 있어 키로 못 쓴다** |
 | `speaker_id` | 이 발화를 한 사람의 플랫폼 ID | 표시 이름이 아니다 |
@@ -520,7 +518,7 @@ AI 가 이름을 비우는 이유: **BE 가 발화자를 이미 알고 있으니
 |---|---|
 | **`evidence_speaker` 의 타입** | BE 는 이 값을 `MemberAlias.alias_text` 로 조회한다. AI 가 보낼 값은 Discord user ID 라 별칭으로 등록돼 있지 않으면 NOT_FOUND 다. `Member.discord_user_id` 컬럼이 이미 있으니 그쪽 조회 경로가 필요하다 |
 | **`assignee_type` 어휘** | BE 스키마 설명은 `first / third / group / none`, AI 는 `first / second / thirdname / thirdpronoun / thirdrole / all / none`. 특히 `group` → `all` 로 바뀌었는데 BE 는 `"first"` 만 분기하므로 **`all` 은 전원으로 펼쳐지지 않고 PM 확인으로 간다** |
-| **상태 3종이 계약에 없다** | `ExtractionItemCreate` 에 `task_status`/`assignee_status`/`due_status` 가 없다. `confidence` 실수값만 건너간다 |
+| **상태 3종이 계약에 없다** | `ExtractionItemCreate` 에 `task_status`/`assignee_status`/`due_status` 가 없다. 인계 단계가 상태를 `task_confidence`/`due_confidence` 숫자로 바꿔 보낸다 |
 | **마감에 시각이 없다** | `due_date` 가 `date` 라 "3시까지"의 시각이 잘린다. BE 의 `DueDateInfo.value` 를 `datetime` 으로 바꾸기로 했고 대기 중이다 |
 
 ---
