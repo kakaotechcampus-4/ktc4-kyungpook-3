@@ -26,7 +26,7 @@ def search_similar_tasks(
     payload: SimilarTaskSearchRequest,
     db: Session = Depends(get_db),
 ) -> dict:
-    """문장과 비슷한 진행 중인 task를 유사도 순으로 돌려준다(done·임베딩 없는 task 제외).
+    """문장과 비슷한 task를 유사도 순으로 돌려준다(임베딩 없는 task 제외).
 
     임베딩 서버 호출이 실패하면 빈 목록 대신 EMBEDDING_UNAVAILABLE을 돌려준다. 빈 목록이면
     호출한 쪽이 "비슷한 task 없음"으로 판단해 중복 task를 만들 수 있기 때문이다.

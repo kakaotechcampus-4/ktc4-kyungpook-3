@@ -94,16 +94,16 @@ def test_drops_candidates_below_min_similarity(db):
     assert embedding.search_similar_tasks(db, ws.workspace_id, QUERY, min_similarity=0.95) == []
 
 
-def test_excludes_done_tasks_missing_embeddings_and_other_workspaces(db):
+def test_includes_all_statuses_but_excludes_missing_embeddings_and_other_workspaces(db):
     ws, other = _workspace(db, "A"), _workspace(db, "B")
     _task(db, ws, "todo", 0.8, status="todo")
     _task(db, ws, "in_progress", 0.8, status="in_progress")
     _task(db, ws, "blocked", 0.8, status="blocked")
-    _task(db, ws, "done", 0.99, status="done")
+    _task(db, ws, "done", 0.8, status="done")
     _task(db, ws, "임베딩 없음", None)
     _task(db, other, "다른 워크스페이스", 0.99)
     db.commit()
 
     results = embedding.search_similar_tasks(db, ws.workspace_id, QUERY, k=10)
 
-    assert sorted(_titles(results)) == ["blocked", "in_progress", "todo"]
+    assert sorted(_titles(results)) == ["blocked", "done", "in_progress", "todo"]

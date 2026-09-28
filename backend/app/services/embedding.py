@@ -8,8 +8,8 @@ AI 파트(ai/embedding.py)와 같은 모델(text-embedding-3-small)과 같은 �
 워커가 주기적으로 NULL인 task를 찾아 채우고, 실패하면 다음 주기에 다시 시도한다.
 기존 task 백필도 같은 경로로 처리된다.
 
-검색: pgvector의 코사인 거리로 같은 워크스페이스의 진행 중인 task를 찾는다. 임베딩이 아직
-없는 task는 검색에서 빠진다. PostgreSQL 전용이다.
+검색: pgvector의 코사인 거리로 같은 워크스페이스의 task를 찾는다(todo·in_progress·blocked·done).
+임베딩이 아직 없는 task는 검색에서 빠진다. PostgreSQL 전용이다.
 """
 import logging
 import os
@@ -29,12 +29,13 @@ TIMEOUT_SECONDS = 10.0
 # 워커가 한 번에 채우는 task 수. 임베딩 API 한 번 호출에 묶어 보낸다.
 BATCH_SIZE = 50
 
-# 끝난(done) task는 다시 수정될 일이 드물고, 후보에 섞이면 비슷한 새 일이 끝난 task의
-# 수정으로 잘못 판단될 수 있어 검색에서 뺀다.
+# done task도 후보에 넣는다. "버그 때문에 다시 작업 들어가야 할 것 같다"처럼 끝난 task를
+# 다시 진행 상태로 되돌리는 발화도 AI가 기존 task 수정(action=update)으로 판단할 수 있어야 한다.
 SEARCHABLE_STATUSES = (
     str(TaskStatus.TODO),
     str(TaskStatus.IN_PROGRESS),
     str(TaskStatus.BLOCKED),
+    str(TaskStatus.DONE),
 )
 # decision_log 0010: 명확한 불일치 최고점 0.33, 명확한 매치 최저점 0.42
 DEFAULT_MIN_SIMILARITY = 0.4
@@ -139,7 +140,8 @@ def search_similar_tasks(
 ) -> list[tuple[Task, float]]:
     """코사인 유사도가 높은 순으로 최대 k개의 (task, 유사도)를 돌려준다.
 
-    min_similarity 미만인 후보는 뺀다. 남는 게 없으면 빈 목록이다.
+    todo·in_progress·blocked·done task가 대상이다. min_similarity 미만인 후보는 뺀다.
+    남는 게 없으면 빈 목록이다.
     """
     distance = Task.embedding.cosine_distance(query_vector)
     rows = db.execute(
