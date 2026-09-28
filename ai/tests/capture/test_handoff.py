@@ -19,7 +19,7 @@ TRANSCRIPT = {
 
 
 def _task(**over):
-    base = {"task": "와이어프레임 그리기", "assignee_member_id": None, "due_date": "2026-09-25", "confidence": 0.9,
+    base = {"task": "와이어프레임 그리기", "assignee_member_id": None, "due_date": "2026-09-25",
             "assignee_mention": None, "source_sentence": "제가 할게요.", "method": "llm", "assignee_type": "first",
             "assignee_resolved": None, "due_raw": "금요일까지", "task_status": "certain",
             "assignee_status": "certain", "due_status": "certain"}
@@ -50,7 +50,7 @@ def test_first_person_item_carries_the_speaker_uid_and_time():
     it = items[0]
     assert it["evidence_speaker"] == "103" and it["evidence_at_ms"] == 12000      # 그 문장을 말한 트랙
     assert it["assignee_raw"] is None and it["assignee_type"] == "first"          # 1인칭은 별칭 텍스트가 없다
-    assert it["task_title"] == "와이어프레임 그리기" and it["task_confidence"] == 0.9
+    assert it["task_title"] == "와이어프레임 그리기" and it["task_confidence"] == 1.0
     assert it["due_date"] == "2026-09-25" and it["due_raw"] == "금요일까지" and it["due_confidence"] == 1.0
     assert it["evidence_quote"] == "제가 할게요."
 
@@ -170,3 +170,34 @@ def test_from_env_needs_both_settings(monkeypatch):
     monkeypatch.setattr(config, "settings", lambda: type("S", (), {"be_base_url": "http://be", "be_workspace_id": "ws"})())
     h = H.from_env()
     assert h is not None and h.workspace_id == "ws" and h.client.api == "http://be/api/v1"
+
+
+def test_unresolved_second_person_and_pronouns_are_not_sent_as_aliases():
+    """"네가", "그분", "백엔드 리더" 는 별칭이 아니다. 이름으로 풀리지 않았으면 BE 에 조회를 시키지 않는다."""
+    for kind, mention in (("second", "네가"), ("thirdpronoun", "그분이"), ("thirdrole", "백엔드 리더가")):
+        t = _task(assignee_type=kind, assignee_mention=mention, assignee_resolved=None)
+        assert H.to_extraction_items([t], TRANSCRIPT)[0]["assignee_raw"] is None, kind
+    t = _task(assignee_type="thirdname", assignee_mention="민수", assignee_resolved=None)
+    assert H.to_extraction_items([t], TRANSCRIPT)[0]["assignee_raw"] == "민수"
+
+
+def test_register_marks_a_partial_meeting_in_the_be_record(tmp_path):
+    fake = FakeBe()
+    m, tdir = _manifest(tmp_path)
+    m["partial"] = True
+    m["failed_units"] = [{"speaker": "101", "start_ms": 0, "end_ms": 2000, "error": "x"}]
+    be = _handoff(fake).register(m, transcripts_dir=tdir, model_name="x")
+    assert be["partial"] is True and be["missing_units"] == 1
+
+
+def test_reregistering_after_a_changed_transcript_flags_the_stale_be_extraction(tmp_path):
+    fake = FakeBe()
+    h = _handoff(fake)
+    m, tdir = _manifest(tmp_path)
+    h.register(m, transcripts_dir=tdir, model_name="x")
+    m["reextracted"] = True                                   # 전사가 바뀌어 추출을 다시 했다
+    be = h.register(m, transcripts_dir=tdir, model_name="x")
+    assert be["stale_extraction"] is True and be["extraction_id"] == "e-m1" and len(fake.meetings) == 1
+    assert "reextracted" not in m
+    h.register(m, transcripts_dir=tdir, model_name="x")       # 바뀐 게 없으면 표시도 없다
+    assert "stale_extraction" not in m["be"]

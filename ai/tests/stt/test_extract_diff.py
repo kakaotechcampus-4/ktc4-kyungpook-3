@@ -52,7 +52,7 @@ def _tr(*segs):
 
 
 def _task(task, src, typ="first", mention=None, resolved=None, due=None):
-    return ExtractedTask(task=task, assignee_member_id=None, due_date=due, confidence=1.0, assignee_mention=mention,
+    return ExtractedTask(task=task, assignee_member_id=None, due_date=due, assignee_mention=mention,
                          source_sentence=src, assignee_type=typ, assignee_resolved=resolved)
 
 

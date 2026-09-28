@@ -43,6 +43,10 @@ class TaskResponse(BaseModel):
     start_date: date | None
     due_date: date | None
     notion_page_id: str | None
+    version: int
+    notion_sync_status: str | None = Field(
+        None, description="Notion 반영 상태: pending | synced | failed (미연동이면 null)"
+    )
     created_at: datetime
     updated_at: datetime
 

@@ -1,7 +1,7 @@
 {
   "case_id": "case_02",
-  "scenario": "all_noise_no_signal",
-  "description": "신호가 하나도 없는 순수 진행상황 공유 회의 — Luna가 하나도 안 걸러야 정상(오탐 방지 테스트)",
+  "scenario": "progress_only_no_decision",
+  "description": "decision 신호가 하나도 없는 순수 진행상황 공유 회의 — 진척 보고는 progress 로 전부 골라내고, 대상이 없는 잡담은 걸러야 정상(축 분류 테스트)",
   "speaker_names": {
     "A": "하은",
     "B": "도윤",
@@ -176,23 +176,27 @@
     },
     {
       "text": "저는 어제 API 문서 리뷰했어요.",
-      "should_flag": false,
-      "note": "진행상황"
+      "should_flag": true,
+      "note": "진행상황 — 작업 대상이 명시된 진척 보고이므로 progress",
+      "signal": "progress"
     },
     {
       "text": "저도 코드 리뷰 몇 개 봤습니다.",
-      "should_flag": false,
-      "note": "진행상황"
+      "should_flag": true,
+      "note": "진행상황 — 작업 대상이 명시된 진척 보고이므로 progress",
+      "signal": "progress"
     },
     {
       "text": "여기 인프라 쪽 로그 좀 정리했어요.",
-      "should_flag": false,
-      "note": "진행상황"
+      "should_flag": true,
+      "note": "진행상황 — 작업 대상이 명시된 진척 보고이므로 progress",
+      "signal": "progress"
     },
     {
       "text": "저도 그냥 리팩터링 조금 했습니다.",
-      "should_flag": false,
-      "note": "진행상황"
+      "should_flag": true,
+      "note": "진행상황 — 작업 대상이 명시된 진척 보고이므로 progress",
+      "signal": "progress"
     },
     {
       "text": "특별히 막히는 이슈는 없었어요.",
@@ -221,8 +225,9 @@
     },
     {
       "text": "저는 문서 정리 좀 했어요.",
-      "should_flag": false,
-      "note": "진행상황"
+      "should_flag": true,
+      "note": "진행상황 — 작업 대상이 명시된 진척 보고이므로 progress",
+      "signal": "progress"
     },
     {
       "text": "리뷰 남겨주신 거 확인했습니다.",
@@ -241,13 +246,15 @@
     },
     {
       "text": "디자인 시안 계속 다듬고 있어요.",
-      "should_flag": false,
-      "note": "진행상황"
+      "should_flag": true,
+      "note": "진행상황 — 작업 대상이 명시된 진척 보고이므로 progress",
+      "signal": "progress"
     },
     {
       "text": "테스트 코드 커버리지 좀 올렸습니다.",
-      "should_flag": false,
-      "note": "진행상황"
+      "should_flag": true,
+      "note": "진행상황 — 작업 대상이 명시된 진척 보고이므로 progress",
+      "signal": "progress"
     },
     {
       "text": "다들 수고 많으셨네요.",
@@ -306,8 +313,9 @@
     },
     {
       "text": "저는 배포 스크립트 좀 손봤습니다.",
-      "should_flag": false,
-      "note": "진행상황"
+      "should_flag": true,
+      "note": "진행상황 — 작업 대상이 명시된 진척 보고이므로 progress",
+      "signal": "progress"
     },
     {
       "text": "좋네요.",

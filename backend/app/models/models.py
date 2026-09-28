@@ -107,6 +107,22 @@ class ApprovalStatus(StrEnum):
     REJECTED = "rejected"
 
 
+class NotionSyncStatus(StrEnum):
+    """Task 단위로 본 Notion 반영 상태. Notion 미연동 Task는 None."""
+
+    PENDING = "pending"
+    SYNCED = "synced"
+    FAILED = "failed"
+
+
+class NotionSyncJobStatus(StrEnum):
+    PENDING = "pending"
+    IN_PROGRESS = "in_progress"
+    DONE = "done"
+    FAILED = "failed"
+    SKIPPED = "skipped"  # 더 최신 버전이 이미 반영됐거나 연동이 해제돼 보낼 필요가 없음
+
+
 class Gate(StrEnum):
     AUTO = "auto"
     REVIEW = "review"
@@ -407,6 +423,16 @@ class Task(Base):
     start_date: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
     due_date: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
     notion_page_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # 변경이 반영될 때마다 1씩 올라간다. Notion 동기화 작업의 순서·중복 판단 기준.
+    version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    # Notion에 마지막으로 반영된 version. version보다 작으면 아직 반영 대기 중인 변경이 있다.
+    notion_synced_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    notion_sync_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    # 페이지 생성(POST)을 보내기 직전에 찍는다. notion_page_id 없이 이 값만 남아 있으면
+    # 이전 POST가 실제로 페이지를 만들었는지 모르는 상태라, 다시 POST하기 전에 조회부터 한다.
+    notion_create_attempted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_now, onupdate=_now
@@ -414,6 +440,39 @@ class Task(Base):
 
     history: Mapped[list["TaskHistory"]] = relationship(
         back_populates="task", cascade="all, delete-orphan"
+    )
+
+
+class NotionSyncJob(Base):
+    """Task 변경을 Notion에 반영하는 작업(outbox).
+
+    Task 변경과 같은 트랜잭션에서 커밋되고, 실제 Notion 호출은 워커
+    (`services/notion_sync.py`)가 요청과 분리해서 처리한다. (task_id, task_version)은
+    한 번만 쌓이므로 같은 변경이 큐에 두 번 들어가지 않는다.
+    """
+
+    __tablename__ = "notion_sync_job"
+    __table_args__ = (
+        UniqueConstraint("task_id", "task_version", name="uq_notion_sync_job_task_version"),
+    )
+
+    job_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    task_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("task.task_id", ondelete="CASCADE"), index=True
+    )
+    task_version: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(
+        String(16), default=NotionSyncJobStatus.PENDING, index=True
+    )
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    next_attempt_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, index=True
+    )
+    locked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, onupdate=_now
     )
 
 

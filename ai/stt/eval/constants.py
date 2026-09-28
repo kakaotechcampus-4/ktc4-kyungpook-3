@@ -106,6 +106,10 @@ REGISTRY: tuple[Const, ...] = (
           recheck="실패율을 잴 만큼 호출이 쌓이면(#40)"),
     Const("stt.batch", "RETRY_WAIT_S", DESIGN, "재시도 사이 대기", BATCH, metric="latency",
           source="0008. 대기 길이별 성공률은 안 쟀다", recheck="실패율을 잴 만큼 호출이 쌓이면(#40)"),
+    Const("stt.batch", "HOLD_PCM_MB", DESIGN, "결과를 안 받은 트랙의 묶음 pcm 상한. 넘으면 앞 트랙을 기다려 받고 놓는다", BATCH,
+          metric="latency",
+          source="ai/docs/2026-09-25-review-45-2nd.md: 원격 12개 동시 호출(28초 묶음 1.8MB)의 세 배, 60분 6인 발화 합 230MB 의 약 1/4. pcm_retention 합성 30분 6인에서 붙잡은 pcm 97.0MB → 19.4MB",
+          recheck="#40 에서 모델까지 올린 RSS 를 재면. 동시 제출 상한(max_inflight)이 바뀌면"),
     # ── stt/vad.py
     Const("stt.vad", "SPEECH_RMS", MEASURED, "말로 보는 최소 RMS", BATCH,
           sweep=(0.003, 0.0045, 0.006, 0.009, 0.012), metric="lost",

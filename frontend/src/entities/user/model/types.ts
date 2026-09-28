@@ -9,4 +9,3 @@ export interface Session {
   workspaceCount: number
   lastWorkspaceId: string | null
 }
-export type PostLoginRoute = 'onboarding' | 'dashboard' | 'workspace-select'

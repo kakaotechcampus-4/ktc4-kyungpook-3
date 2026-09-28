@@ -1,6 +1,6 @@
 import pytest
 
-from judge.final_judge import JudgeUnavailableError, judge, judge_llm
+from judge.final_judge import JudgeUnavailableError, _numbered_candidates, judge, judge_llm
 from llm import FakeLLM, NullLLM
 from shared.schemas import JudgeInput, NotionCandidate
 
@@ -13,6 +13,19 @@ def _candidate(**overrides) -> NotionCandidate:
     )
     base.update(overrides)
     return NotionCandidate(**base)
+
+
+# ── _numbered_candidates (Terra 프롬프트에 넘기는 후보 포맷) ─────────────────
+
+
+def test_numbered_candidates_includes_content_snippet():
+    # title만 보고는 "카카오만 지원"인지 "카카오·구글 지원"인지 구분이 안 돼서
+    # 범위 변경(scope) 판단이 틀릴 수 있다 — 본문 일부가 프롬프트에 실제로 들어가는지 확인.
+    ji = JudgeInput(
+        source="meeting", text="x",
+        candidates=[_candidate(title="소셜 로그인 구현", content_snippet="카카오 로그인만 지원")],
+    )
+    assert "카카오 로그인만 지원" in _numbered_candidates(ji)
 
 
 # ── judge_llm (Terra) ─────────────────────────────────────────────────────
@@ -33,6 +46,22 @@ def test_llm_update_path_resolves_matched_task_id_from_index():
     assert result.is_new is False
     assert result.matched_task_id == "task_9f8e7d6c"
     assert result.status is None
+
+
+def test_llm_update_path_keeps_notion_page_id_even_without_task_id():
+    # candidate가 우리 DB Task와 아직 연결 안 된(task_id=None) Notion 후보라도, 어떤 페이지를
+    # 골랐는지는 matched_notion_page_id로 남아야 한다 — 안 그러면 BE가 뭘 고쳐야 할지 알 수 없다.
+    ji = JudgeInput(
+        source="meeting", text="x",
+        candidates=[_candidate(task_id=None, notion_page_id="n_manual")],
+    )
+    fake = FakeLLM(responses=[{
+        "is_meaningful": True, "category": "schedule", "is_new": False,
+        "matched_candidate_index": 0, "status": None, "evidence": "",
+    }])
+    result = judge_llm(ji, fake)
+    assert result.matched_task_id is None
+    assert result.matched_notion_page_id == "n_manual"
 
 
 def test_llm_new_item_path_has_no_matched_task_id():
@@ -75,6 +104,17 @@ def test_llm_returns_none_when_update_missing_valid_index():
     fake = FakeLLM(responses=[{
         "is_meaningful": True, "category": "schedule", "is_new": False,
         "matched_candidate_index": None, "status": None, "evidence": "",
+    }])
+    assert judge_llm(ji, fake) is None
+
+
+def test_llm_returns_none_when_index_is_bool():
+    # bool은 int의 서브클래스라 isinstance(idx, int) 검사만으로는 True/False가 0/1 후보로
+    # 잘못 통과할 수 있다 — type()으로 엄격히 걸러지는지 확인한다.
+    ji = JudgeInput(source="meeting", text="x", candidates=[_candidate(), _candidate()])
+    fake = FakeLLM(responses=[{
+        "is_meaningful": True, "category": "schedule", "is_new": False,
+        "matched_candidate_index": True, "status": None, "evidence": "",
     }])
     assert judge_llm(ji, fake) is None
 

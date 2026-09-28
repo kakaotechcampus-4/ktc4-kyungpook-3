@@ -8,6 +8,7 @@ import numpy as np
 import pytest
 
 import capture.realtime.adapter as adapter
+from capture import voice_client
 from capture.realtime.adapter import RealtimeCog, SafeVoiceClient, _TrackPool, required_intents
 from stt.backend import SttResult
 from stt.speech_gate import SpeechGate
@@ -138,7 +139,7 @@ class _FakePerms:
 
 
 class _FakeReader:
-    """py-cord AudioReader 자리. 리키 리스너가 읽는 것만 흉내낸다.
+    """py-cord AudioReader 자리. sink 와 복호화기 키 갱신 호출만 흉내낸다.
 
     실물은 start_recording 이 만들고 stop 때 MISSING 으로 돌아간다
     (voice/client.py:771-773, 788-790). 그래서 이 대역도 녹음 중에만 존재한다.
@@ -192,6 +193,7 @@ class _FakeVoiceChannel:
         self.id = ROOM_ID
         self.name = "회의방"
         self.connects = 0
+        self.connected_with = None
         self._vc_box = vc_box
 
     def permissions_for(self, member):
@@ -201,6 +203,7 @@ class _FakeVoiceChannel:
         # 실제 음성 핸드셰이크처럼 루프에 제어권을 넘긴다. 길드 락이 없으면
         # 같은 길드의 /live 두 번이 여기서 서로를 추월한다.
         self.connects += 1
+        self.connected_with = cls
         await asyncio.sleep(0.01)
         return self._vc_box[0]
 
@@ -281,7 +284,7 @@ def _no_speech(pcm, sample_rate, threshold):
 
 
 async def _start_one(tmp_path, monkeypatch, sessions_made=None, on_session_saved=None,
-                     speech_spans=_all_speech, stt=None):
+                     speech_spans=_all_speech, stt=None, vc_cls=_FakeVoiceClient):
     """/live 한 번을 끝까지 돌리고 (cog, ctx, meeting, text_channel, vc) 를 준다.
 
     말 필터는 켠 채로 두되 판정만 갈아 끼운다. 여기서 흘리는 정현파는 실로가 말이
@@ -298,7 +301,7 @@ async def _start_one(tmp_path, monkeypatch, sessions_made=None, on_session_saved
     guild = _FakeGuild({7: _FakeMember(7, "김환")})
     vc_box = []
     room = _FakeVoiceChannel(vc_box)
-    vc = _FakeVoiceClient(room)
+    vc = vc_cls(room)
     vc_box.append(vc)
     guild.voice_client = vc
     text = _FakeTextChannel()
@@ -507,49 +510,65 @@ async def test_person_leaving_drains_the_window_before_flushing_the_speaker(tmp_
     assert records[0]["end"] == pytest.approx(1.2, abs=0.02)
 
 
-async def test_speaking_update_rekeys_the_decryptor_when_the_key_changed(tmp_path, monkeypatch):
-    """재연결로 음성 키가 바뀌면 복호화기를 갱신한다.
+class _SharedStateVoiceClient(_FakeVoiceClient):
+    """키를 공용 연결 상태에 두는 대역.
 
-    설치본에는 update_secret_key 호출자가 없고 (reader.py:138-139, 370-371) 복호화기는
-    start_recording 시점의 키로 box 를 한 번 만든다 (reader.py:126-128). 재연결 경로는
-    disconnect(cleanup=False) 라 reader 가 살아남으므로, 이 리스너가 없으면 회의 중반에
-    음성 서버가 한 번 끊긴 뒤 모든 패킷이 CryptoError 가 된다 — 예외도 메시지도 없이
-    오디오만 0건이다.
-
-    실제 재연결을 일으켜 관측한 것은 아니다. 리스너가 키 변화에 반응한다는 것까지만 본다.
+    실물 VoiceClient 는 secret_key 를 연결 상태 객체에서 읽고 (voice/client.py:188-190), 재연결 뒤
+    게이트웨이는 새 키를 그 객체에 넣는다 (voice/gateway.py:442). SafeVoiceClient 는 그 객체로
+    capture/voice_client.py 의 _KeyForwardingState 를 끼운다. 여기서는 소켓 스레드를 띄우는
+    __init__ 을 건너뛰고 그 상태 객체만 붙인다.
     """
-    cog, ctx, meeting, _text, vc = await _start_one(tmp_path, monkeypatch)
-    assert meeting.secret_key == b""           # connect 시점의 키
-    assert vc._reader.rekeys == []
 
-    vc.secret_key = [1, 2, 3, 4]               # 새 session_description 이 키를 갈아끼웠다
-    speaker = _FakeMember(7, "김환", guild=ctx.guild)
-    await cog.on_member_speaking_state_update(speaker, 70, None)
+    def __init__(self, channel):
+        state = voice_client._KeyForwardingState.__new__(voice_client._KeyForwardingState)
+        state.client = self
+        self._connection = state
+        super().__init__(channel)
 
-    assert vc._reader.rekeys == [bytes([1, 2, 3, 4])]
-    assert meeting.secret_key == bytes([1, 2, 3, 4])
+    @property
+    def secret_key(self):
+        return self._connection.secret_key
 
+    @secret_key.setter
+    def secret_key(self, value):
+        self._connection.secret_key = value
+
+
+async def test_both_connect_paths_use_the_shared_voice_client(tmp_path, monkeypatch):
+    """/live 와 /live-join 이 공용 SafeVoiceClient 로 붙어야 재연결 키 갱신과 SSRC 가드가 걸린다.
+
+    이 Cog 는 키 갱신을 따로 하지 않는다. 일반 VoiceClient 로 붙으면 재연결 뒤 복호화기가 낡은
+    키로 모든 패킷을 버리고, 오디오만 조용히 0건이 된다.
+    """
+    cog, ctx, _meeting, _text, _vc = await _start_one(tmp_path, monkeypatch)
+    assert ctx.author.voice.channel.connected_with is voice_client.SafeVoiceClient
     await cog._finish_meeting(GUILD_ID)
 
+    guild = _FakeGuild({})
+    room = _FakeVoiceChannel([_FakeVoiceClient(None)])
+    joiner = RealtimeCog(_FakeBot(guild), recordings_dir=tmp_path)
+    await RealtimeCog.live_join.callback(joiner, _FakeCtx(guild, room, _FakeTextChannel()))
+    assert room.connected_with is voice_client.SafeVoiceClient
 
-async def test_speaking_update_does_not_rekey_when_the_key_is_unchanged(tmp_path, monkeypatch):
-    """같은 키로는 다시 갱신하지 않는다.
 
-    이 리스너는 발화가 시작될 때마다 온다. 매번 box 를 새로 만들면 회의 내내 불필요한
-    재생성이 쌓이고, 무엇보다 "키가 바뀌었다" 라는 신호가 의미를 잃는다.
+async def test_a_new_key_reaches_the_decryptor_once(tmp_path, monkeypatch):
+    """재연결로 키가 바뀌면 복호화기 갱신은 공용 연결 상태에서 한 번 일어난다.
+
+    Cog 가 발화 이벤트에서 한 번 더 갱신하면 같은 처리를 두 경로가 따로 들고 있게 된다
+    (#45 1차 리뷰 본문 8). 키가 바뀐 뒤 발화 이벤트가 몇 번 와도 갱신은 한 번이어야 한다.
     """
-    cog, ctx, meeting, _text, vc = await _start_one(tmp_path, monkeypatch)
-    vc.secret_key = [9, 9, 9]
+    cog, ctx, _meeting, _text, vc = await _start_one(tmp_path, monkeypatch,
+                                                     vc_cls=_SharedStateVoiceClient)
+    assert vc._reader.rekeys == []
+
+    vc.secret_key = [1, 2, 3, 4]                # 재연결 뒤 게이트웨이가 새 키를 넣는다
     speaker = _FakeMember(7, "김환", guild=ctx.guild)
+    for _ in range(3):                          # 그 뒤 발화마다 speaking 이벤트가 온다
+        for name, listener in cog.get_listeners():
+            if name == "on_member_speaking_state_update":
+                await listener(speaker, 70, None)
 
-    await cog.on_member_speaking_state_update(speaker, 70, None)
-    assert len(vc._reader.rekeys) == 1          # 첫 발화에서 한 번
-
-    for _ in range(3):                          # 그 뒤 발화마다 같은 이벤트가 온다
-        await cog.on_member_speaking_state_update(speaker, 70, None)
-    assert len(vc._reader.rekeys) == 1          # 더는 안 부른다
-    assert meeting.secret_key == bytes([9, 9, 9])
-
+    assert vc._reader.rekeys == [bytes([1, 2, 3, 4])]
     await cog._finish_meeting(GUILD_ID)
 
 

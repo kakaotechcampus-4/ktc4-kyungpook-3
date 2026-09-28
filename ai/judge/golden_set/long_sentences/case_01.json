@@ -1,7 +1,7 @@
 {
   "case_id": "case_01",
   "scenario": "ten_minute_standup_meeting",
-  "description": "약 10분 분량의 스탠드업 회의 전체를 통째로 넣었을 때, 청크로 안 쪼개도 잡음(잡담/진행상황보고/질문) 사이에 흩어진 신호 4개(일정 합의, 범위 변경, 일정 변경, 범위+일정 변경)를 빠짐없이 찾아내고 나머지는 오탐하지 않는지 확인하는 스트레스 테스트",
+  "description": "약 10분 분량의 스탠드업 회의 전체를 통째로 넣었을 때, 청크로 안 쪼개도 잡담/질문 사이에 흩어진 decision 신호 4개(일정 합의, 범위 변경, 일정 변경, 범위+일정 변경)를 빠짐없이 찾고, 진척 보고는 progress 로 갈라내는지 확인하는 스트레스 테스트",
   "speaker_names": {
     "A": "하은",
     "B": "도윤",
@@ -184,8 +184,9 @@
     },
     {
       "text": "저는 어제 로그인 API 붙였고요.",
-      "should_flag": false,
-      "note": "단순 진행상황 보고, 결정 아님"
+      "should_flag": true,
+      "note": "단순 진행상황 보고, 결정 아님 — 작업 대상이 명시된 진척 보고이므로 progress",
+      "signal": "progress"
     },
     {
       "text": "이번 주 금요일까지 로그인 화면 시안을 마무리하기로 했습니다.",
@@ -199,8 +200,9 @@
     },
     {
       "text": "저도 어제 회원가입 쪽 작업했어요.",
-      "should_flag": false,
-      "note": "진행상황 보고"
+      "should_flag": true,
+      "note": "진행상황 보고 — 작업 대상이 명시된 진척 보고이므로 progress",
+      "signal": "progress"
     },
     {
       "text": "근데 소셜 로그인 부분이 좀 복잡해서요.",
@@ -274,13 +276,15 @@
     },
     {
       "text": "저는 오늘 디자인 시스템 정리하고 있어요.",
-      "should_flag": false,
-      "note": "진행상황 보고"
+      "should_flag": true,
+      "note": "진행상황 보고 — 작업 대상이 명시된 진척 보고이므로 progress",
+      "signal": "progress"
     },
     {
       "text": "색상 팔레트는 다 정했고 타이포그래피만 남았어요.",
-      "should_flag": false,
-      "note": "진행상황 보고"
+      "should_flag": true,
+      "note": "진행상황 보고 — 작업 대상이 명시된 진척 보고이므로 progress",
+      "signal": "progress"
     },
     {
       "text": "오 좋네요.",
@@ -295,7 +299,8 @@
     {
       "text": "그럼 알림 기능은 다음 스프린트로 미루죠.",
       "should_flag": true,
-      "note": "신호4: 범위/일정 변경 합의(패턴 없음)"
+      "note": "신호4: 범위/일정 변경 합의(패턴 없음)",
+      "assignee_type": "none"
     },
     {
       "text": "좋습니다.",

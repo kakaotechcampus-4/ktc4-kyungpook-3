@@ -48,6 +48,44 @@ export const approvalHandlers = [
     if (body.status === 'approved') {
       const payload = approval.payload
       if (approval.type === 'task_create') {
+        // 백엔드 _get_linkable_extraction_item 처럼 Task 를 만들기 전에 연결 대상부터 검증한다.
+        // MSW 에는 롤백이 없으므로 이 검사는 db 를 바꾸는 어떤 코드보다도 앞에 있어야 한다.
+        // 항목이 없으면 연결 없이 진행한다
+        const extractionItemId =
+          typeof payload.extraction_item_id === 'string' ? payload.extraction_item_id : ''
+        const extraction = extractionItemId
+          ? db.extractions.find(({ items }) =>
+              items.some(({ item_id }) => item_id === extractionItemId),
+            )
+          : undefined
+        const linkedItem = extraction?.items.find(({ item_id }) => item_id === extractionItemId)
+        if (extraction && linkedItem) {
+          const itemWorkspaceId = db.meetings.find(
+            ({ meeting_id }) => meeting_id === extraction.meeting_id,
+          )?.workspace_id
+          if (itemWorkspaceId !== approval.workspace_id)
+            return fail(
+              'WORKSPACE_MISMATCH',
+              '승인 요청의 워크스페이스와 추출 항목의 워크스페이스가 다릅니다.',
+              400,
+              {
+                extraction_item_id: extractionItemId,
+                approval_workspace_id: approval.workspace_id,
+                extraction_item_workspace_id: itemWorkspaceId ?? null,
+              },
+            )
+          if (linkedItem.approval_id !== approval.approval_id)
+            return fail(
+              'INVALID_REQUEST',
+              '추출 항목이 이 승인 요청에 연결되어 있지 않습니다.',
+              400,
+              {
+                extraction_item_id: extractionItemId,
+                approval_id: approval.approval_id,
+                extraction_item_approval_id: linkedItem.approval_id,
+              },
+            )
+        }
         const meetingId = typeof payload.meeting_id === 'string' ? payload.meeting_id : null
         const title =
           typeof payload.task_title === 'string' && payload.task_title
@@ -80,16 +118,9 @@ export const approvalHandlers = [
           meetingId ? 'meeting' : 'manual',
         )
         approval.related_task_id = task.task_id
-        // 실 백엔드와 같게 — extraction 항목의 task_id 를 채우되 approval_id 는 비우지 않는다
+        // 실 백엔드와 같게 — 위에서 검증한 그 항목의 task_id 만 채우되 approval_id 는 비우지 않는다
         // (계약 §3.1, §4.0-②-12). 화면은 task_id 를 우선으로 읽어 이 상태를 반영됨으로 다룬다.
-        if (typeof payload.extraction_item_id === 'string') {
-          for (const extraction of db.extractions) {
-            const item = extraction.items.find(
-              ({ item_id }) => item_id === payload.extraction_item_id,
-            )
-            if (item) item.task_id = task.task_id
-          }
-        }
+        if (linkedItem) linkedItem.task_id = task.task_id
       } else if (approval.type === 'task_update') {
         if (approval.related_task_id === null)
           return fail('INVALID_REQUEST', '변경할 태스크가 필요합니다.', 400)

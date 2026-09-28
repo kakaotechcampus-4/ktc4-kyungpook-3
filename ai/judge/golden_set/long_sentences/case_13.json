@@ -99,18 +99,21 @@
     },
     {
       "text": "저는 어제 광고 시안 몇 개 만들어봤어요.",
-      "should_flag": false,
-      "note": "진행상황"
+      "should_flag": true,
+      "note": "진행상황 — 작업 대상이 명시된 진척 보고이므로 progress",
+      "signal": "progress"
     },
     {
       "text": "저도 예산안 정리하고 있습니다.",
-      "should_flag": false,
-      "note": "진행상황"
+      "should_flag": true,
+      "note": "진행상황 — 작업 대상이 명시된 진척 보고이므로 progress",
+      "signal": "progress"
     },
     {
       "text": "경쟁사 캠페인도 좀 살펴봤어요.",
-      "should_flag": false,
-      "note": "진행상황"
+      "should_flag": true,
+      "note": "진행상황 — 작업 대상이 명시된 진척 보고이므로 progress",
+      "signal": "progress"
     },
     {
       "text": "어떤 게 있었나요?",
@@ -129,8 +132,9 @@
     },
     {
       "text": "저는 SNS 반응 좀 모니터링했어요.",
-      "should_flag": false,
-      "note": "진행상황"
+      "should_flag": true,
+      "note": "진행상황 — 작업 대상이 명시된 진척 보고이므로 progress",
+      "signal": "progress"
     },
     {
       "text": "괜찮아 보이나요?",
@@ -160,12 +164,14 @@
     {
       "text": "인플루언서 섭외는 제가 맡을게요.",
       "should_flag": true,
-      "note": "담당자 자기지칭"
+      "note": "담당자 자기지칭",
+      "assignee_type": "first"
     },
     {
       "text": "좋아요, 그리고 캠페인 오픈일은 다음 달 3일로 정하죠.",
       "should_flag": true,
-      "note": "일정 결정"
+      "note": "일정 결정",
+      "assignee_type": "none"
     },
     {
       "text": "예산은 나중에 다시 논의할까요?",
@@ -180,7 +186,8 @@
     {
       "text": "시안은 이번 주 안에 3개로 추리기로 했어요.",
       "should_flag": true,
-      "note": "범위 결정"
+      "note": "범위 결정",
+      "assignee_type": "none"
     },
     {
       "text": "저도 그게 좋을 것 같아요.",

@@ -4,9 +4,10 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.api.deps import get_current_member, get_current_user, require_member, require_task_member
 from app.core.database import get_db
 from app.core.errors import AppError, Envelope, ErrorCode, success
-from app.models import ChangeSource, Task, TaskHistory, TaskStatus, Workspace
+from app.models import ChangeSource, Member, Task, TaskHistory, TaskStatus, User, Workspace
 from app.schemas.task import (
     TaskCreateRequest,
     TaskHistoryListResponse,
@@ -15,9 +16,10 @@ from app.schemas.task import (
     TaskResponse,
     TaskUpdateRequest,
 )
+from app.services.notion_sync import retry_failed_sync
 from app.services.tasks import apply_task_updates, create_task, rollback_task_history
 
-router = APIRouter(prefix="/tasks", tags=["tasks"])
+router = APIRouter(prefix="/tasks", tags=["tasks"], dependencies=[Depends(require_task_member)])
 
 
 def _get_task(db: Session, task_id: str) -> Task:
@@ -30,12 +32,14 @@ def _get_task(db: Session, task_id: str) -> Task:
 @router.post("", status_code=201, response_model=Envelope[TaskResponse])
 def create_task_endpoint(
     payload: TaskCreateRequest,
+    user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
     if db.get(Workspace, payload.workspace_id) is None:
         raise AppError(
             ErrorCode.WORKSPACE_NOT_FOUND, details={"workspace_id": payload.workspace_id}
         )
+    require_member(db, user, payload.workspace_id)
 
     task = create_task(
         db,
@@ -64,6 +68,7 @@ def list_tasks(
     assignee_member_id: str | None = Query(None, description="담당자 필터"),
     due_before: date | None = Query(None, description="마감일 상한 (캘린더 뷰)"),
     due_after: date | None = Query(None, description="마감일 하한 (캘린더 뷰)"),
+    _member: Member = Depends(get_current_member),
     db: Session = Depends(get_db),
 ) -> dict:
     filters = [Task.workspace_id == workspace_id]
@@ -158,6 +163,16 @@ def rollback_history_endpoint(
         )
 
     rollback_task_history(db, task, history, changed_by=changed_by)
+    db.commit()
+    db.refresh(task)
+    return success(TaskResponse.model_validate(task).model_dump(mode="json"))
+
+
+@router.post("/{task_id}/notion-sync/retry", response_model=Envelope[TaskResponse])
+def retry_notion_sync(task_id: str, db: Session = Depends(get_db)) -> dict:
+    """Notion 반영이 failed로 끝난 Task를 다시 대기열에 넣는다. 실제 전송은 워커가 한다."""
+    task = _get_task(db, task_id)
+    retry_failed_sync(db, task)
     db.commit()
     db.refresh(task)
     return success(TaskResponse.model_validate(task).model_dump(mode="json"))

@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.core.errors import AppError, ErrorCode
 from app.models import ChangedField, Meeting, Member, Task, TaskHistory, TaskStatus
-from app.services import notion
+from app.services import notion_sync
 
 # TaskUpdateRequest/승인 payload의 필드명 -> ChangedField 매핑
 _FIELD_MAP: dict[str, ChangedField] = {
@@ -204,6 +204,7 @@ def create_task(
         status=str(status),
         progress=progress,
         blocker=blocker,
+        version=1,
     )
     db.add(task)
     db.flush()
@@ -219,7 +220,7 @@ def create_task(
             is_auto=is_auto,
         )
     )
-    notion.upsert_task(db, task)
+    notion_sync.enqueue_task_sync(db, task)
     return task
 
 
@@ -260,7 +261,8 @@ def apply_task_updates(
         setattr(task, field, new_value)
 
     if entries:
-        notion.upsert_task(db, task)
+        task.version += 1
+        notion_sync.enqueue_task_sync(db, task)
     return entries
 
 
@@ -332,5 +334,6 @@ def rollback_task_history(
             is_auto=False,
         )
     )
-    notion.upsert_task(db, task)
+    task.version += 1
+    notion_sync.enqueue_task_sync(db, task)
     return history

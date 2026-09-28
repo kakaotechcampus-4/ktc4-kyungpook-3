@@ -278,3 +278,68 @@ def test_summary_has_percentiles():
     st.transcribe_s = [1, 2, 3, 4, 20]
     s = st.summary()
     assert s["transcribe_p50_s"] == 3 and s["transcribe_p95_s"] == 20 and s["transcribe_max_s"] == 20
+
+
+def test_in_flight_chunks_are_bounded_even_with_more_workers(tmp_path):
+    """제출 상한이 1 이면 워커가 셋이어도 호출이 겹치지 않는다. 묶는 것은 동시 호출이지 준비한 pcm 이 아니다."""
+    import threading, time as _t
+
+    class SlowStt(EchoStt):
+        def __init__(self):
+            super().__init__(); self.active = 0; self.peak = 0; self._lk = threading.Lock()
+
+        def transcribe(self, samples, sample_rate):
+            with self._lk:
+                self.active += 1; self.peak = max(self.peak, self.active)
+            _t.sleep(0.1)
+            try:
+                return super().transcribe(samples, sample_rate)
+            finally:
+                with self._lk:
+                    self.active -= 1
+
+    for name in "abc":
+        write_track(tmp_path / f"{name}.wav", [tone(1_000), silence(1_000)])
+    stt = SlowStt()
+    lines, _ = B.run(B.discover(tmp_path), stt, mode="chunk", gate=None, workers=3, max_inflight=1)
+    assert stt.peak == 1 and len(lines) == 3
+
+
+def test_over_the_hold_limit_earlier_tracks_are_collected_and_released_before_the_next_read(tmp_path, monkeypatch):
+    """붙잡은 묶음이 상한을 넘으면 앞 트랙 결과를 받아 묶음을 놓은 뒤에 다음 트랙을 읽는다. 상한 0 이면 앞 트랙 하나까지만 남는다."""
+    import gc, time as _t, weakref
+
+    class SlowEcho(EchoStt):
+        def transcribe(self, samples, sample_rate):
+            _t.sleep(0.05)
+            return super().transcribe(samples, sample_rate)
+
+    for name in "abcd":
+        write_track(tmp_path / f"{name}.wav", [tone(1_000), silence(1_000)])
+    refs: list[list] = []
+    leaks: list[tuple[int, int]] = []
+    real_build, real_load = B.build_chunks, B.load_track
+
+    def build(utts, **kw):
+        chunks = real_build(utts, **kw)
+        refs.append([weakref.ref(c.pcm) for c in chunks])
+        return chunks
+
+    def load(path):
+        j = len(refs)                      # 지금 읽는 트랙 순번. 묶음은 읽은 뒤에 만들어진다
+        deadline = _t.monotonic() + 1.0    # 작업 스레드가 참조를 놓기까지 잠깐 걸릴 수 있다
+        while True:
+            gc.collect()
+            alive = [(k, i) for k in range(j - 1) for i, r in enumerate(refs[k]) if r() is not None]
+            if not alive or _t.monotonic() > deadline:
+                break
+            _t.sleep(0.01)
+        leaks.extend(alive)
+        return real_load(path)
+
+    monkeypatch.setattr(B, "build_chunks", build)
+    monkeypatch.setattr(B, "load_track", load)
+    monkeypatch.setattr(B, "HOLD_PCM_MB", 0)
+    lines, _ = B.run(B.discover(tmp_path), SlowEcho(), mode="chunk", gate=None, workers=1)
+    assert len(lines) == 4 and len(refs) == 4
+    assert leaks == []

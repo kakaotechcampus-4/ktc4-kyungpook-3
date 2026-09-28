@@ -19,6 +19,9 @@ from app.models.models import (
     Member,
     MemberAlias,
     MemberRole,
+    NotionSyncJob,
+    NotionSyncJobStatus,
+    NotionSyncStatus,
     ResolutionResult,
     ReviewDecision,
     Task,
@@ -36,6 +39,7 @@ __all__ = [
     "AudioSegment", "ChangeSource", "ChangedField", "Extraction",
     "ExtractionItem", "Gate", "Meeting", "MeetingAudio", "MeetingSource",
     "MeetingStatus", "Member", "MemberAlias", "MemberRole",
+    "NotionSyncJob", "NotionSyncJobStatus", "NotionSyncStatus",
     "ResolutionResult", "ReviewDecision", "Task", "TaskHistory", "TaskStatus",
     "Workspace", "User", "Session", "Integration",
 ]

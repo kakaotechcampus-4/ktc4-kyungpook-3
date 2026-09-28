@@ -163,6 +163,8 @@ def score(session: Path, mode: str, backend_kind: str, model: str, gate_on: bool
     tag: 결과 파일 이름에 붙는 꼬리표. 같은 모드의 변형을 구분한다.
     backend: 이미 만든 백엔드를 쓴다(캐시로 감싼 것 등). 없으면 backend_kind·model 로 만든다.
     """
+    from stt.eval.eval import SCORING_VERSION
+
     tracks = session_tracks(session)
 
     if backend_kind == "elice" and not yes:
@@ -191,7 +193,7 @@ def score(session: Path, mode: str, backend_kind: str, model: str, gate_on: bool
     out = {
         "session": session.name, "mode": mode, "backend": stats.backend, "gate": gate_on,
         "beam": beam, "cond": cond, "hst": hst, "preprocess": preprocess, "pack_turns": pack_turns,
-        "merge": merge, "workers": w, "tag": tag,
+        "merge": merge, "workers": w, "tag": tag, "scoring_version": SCORING_VERSION,
         "krw_per_meeting_hour": round(m["krw"] / meeting_h, 1) if meeting_h > 0 else None,
         "cpu_s_per_speech_s": round(cpu_s / stats.speech_s, 3) if stats.speech_s > 0 else None,
         "wall_per_meeting_s": round(stats.wall_s / meeting_h / 3600, 3) if meeting_h > 0 else None,

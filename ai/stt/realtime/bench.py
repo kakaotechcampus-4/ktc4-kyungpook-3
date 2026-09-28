@@ -14,7 +14,7 @@ VAD 상수와 게이트 임계를 인자로 받는다. 같은 녹음을 임계�
 마감 뒤 도착한 줄(late_lines)과 미게시 턴은 실제 회의에서만 나온다.
 
 사용:
-  .venv/bin/python -m stt.realtime.bench                      # 합성 3초, 무과금
+  .venv/bin/python -m stt.realtime.bench --no-gate            # 합성 3초, 무과금. 정현파는 말 필터가 거른다
   .venv/bin/python -m stt.realtime.bench --tracks "<디렉토리>" --pace
   .venv/bin/python -m stt.realtime.bench --tracks "<디렉토리>" --min-speech-ms 200 --no-gate
   .venv/bin/python -m stt.realtime.bench --tracks "<디렉토리>" --stt elice --pace --yes
@@ -107,7 +107,7 @@ def main(argv: list[str] | None = None) -> None:
     from stt.realtime.session import Session
     from stt.speech_gate import SpeechGate
     from stt.transcript_writer import write_transcript
-    from tests.replay import ReplayTrack, replay
+    from tests.capture.replay import ReplayTrack, replay
 
     if args.silence_hold_ms is not None:
         vad.SILENCE_HOLD_MS = args.silence_hold_ms

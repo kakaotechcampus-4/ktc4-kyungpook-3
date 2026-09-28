@@ -1,5 +1,6 @@
 import type { OnboardingDto, WorkspaceDto, WorkspaceSummaryDto } from '@/shared/types/api/workspace'
 import type { Role } from '@/shared/types/common'
+import { readOnboardingStep } from './onboardingSteps'
 import type {
   OnboardingProgress,
   OnboardingStep,
@@ -7,12 +8,6 @@ import type {
   Workspace,
   WorkspaceSummary,
 } from './types'
-const steps: OnboardingStep[] = [
-  'create_workspace',
-  'connect_discord',
-  'connect_notion',
-  'connect_members',
-]
 const statuses: OnboardingStepStatus[] = ['pending', 'completed', 'skipped']
 function warnUnknown(field: string, value: string): void {
   if (import.meta.env.DEV) console.warn(`Unknown ${field}: ${value}`)
@@ -24,9 +19,9 @@ function safeRole(value: string | null): Role {
   return 'member'
 }
 function safeStep(value: string): OnboardingStep | null {
-  if (steps.includes(value as OnboardingStep)) return value as OnboardingStep
-  warnUnknown('onboarding step', value)
-  return null
+  const step = readOnboardingStep(value)
+  if (step === null) warnUnknown('onboarding step', value)
+  return step
 }
 function safeStatus(value: string): OnboardingStepStatus {
   if (statuses.includes(value as OnboardingStepStatus)) return value as OnboardingStepStatus

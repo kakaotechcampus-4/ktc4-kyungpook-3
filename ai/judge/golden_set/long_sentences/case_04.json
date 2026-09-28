@@ -1,7 +1,7 @@
 {
   "case_id": "case_04",
   "scenario": "signals_back_loaded",
-  "description": "긴 잡담/진행상황 뒤에 후반부에만 결정이 나옴 — 뒷부분까지 문맥 유지되는지 확인",
+  "description": "긴 잡담/진척 보고 뒤에 후반부에만 decision 이 나옴 — 뒷부분까지 문맥이 유지되는지, 앞쪽 진척 보고를 progress 로 갈라내는지 확인",
   "speaker_names": {
     "A": "하은",
     "B": "도윤",
@@ -135,23 +135,27 @@
     },
     {
       "text": "저는 어제 API 서버 배포 준비했어요.",
-      "should_flag": false,
-      "note": "진행상황"
+      "should_flag": true,
+      "note": "진행상황 — 작업 대상이 명시된 진척 보고이므로 progress",
+      "signal": "progress"
     },
     {
       "text": "저도 프론트 쪽 빌드 이슈 좀 고쳤습니다.",
-      "should_flag": false,
-      "note": "진행상황"
+      "should_flag": true,
+      "note": "진행상황 — 작업 대상이 명시된 진척 보고이므로 progress",
+      "signal": "progress"
     },
     {
       "text": "디자인은 거의 다 됐어요.",
-      "should_flag": false,
-      "note": "진행상황"
+      "should_flag": true,
+      "note": "진행상황 — 작업 대상이 명시된 진척 보고이므로 progress",
+      "signal": "progress"
     },
     {
       "text": "테스트는 순조롭게 돌아가고 있습니다.",
-      "should_flag": false,
-      "note": "진행상황"
+      "should_flag": true,
+      "note": "진행상황 — 작업 대상이 명시된 진척 보고이므로 progress",
+      "signal": "progress"
     },
     {
       "text": "QA 쪽에서 버그 리포트 몇 개 왔어요.",
@@ -165,8 +169,9 @@
     },
     {
       "text": "저는 배포 스크립트 좀 손봤습니다.",
-      "should_flag": false,
-      "note": "진행상황"
+      "should_flag": true,
+      "note": "진행상황 — 작업 대상이 명시된 진척 보고이므로 progress",
+      "signal": "progress"
     },
     {
       "text": "좋네요.",
@@ -261,7 +266,8 @@
     {
       "text": "그리고 알림 기능 담당은 제가 맡을게요.",
       "should_flag": true,
-      "note": "담당자 자기지칭"
+      "note": "담당자 자기지칭",
+      "assignee_type": "first"
     },
     {
       "text": "네 알겠습니다.",

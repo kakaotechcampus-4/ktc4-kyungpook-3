@@ -117,13 +117,15 @@
     },
     {
       "text": "여기 인프라 쪽 로그 좀 정리했어요.",
-      "should_flag": false,
-      "note": "진행상황"
+      "should_flag": true,
+      "note": "진행상황 — 작업 대상이 명시된 진척 보고이므로 progress",
+      "signal": "progress"
     },
     {
       "text": "저도 그냥 리팩터링 조금 했습니다.",
-      "should_flag": false,
-      "note": "진행상황"
+      "should_flag": true,
+      "note": "진행상황 — 작업 대상이 명시된 진척 보고이므로 progress",
+      "signal": "progress"
     },
     {
       "text": "특별히 막히는 이슈는 없었어요.",
@@ -152,8 +154,9 @@
     },
     {
       "text": "저는 문서 정리 좀 했어요.",
-      "should_flag": false,
-      "note": "진행상황"
+      "should_flag": true,
+      "note": "진행상황 — 작업 대상이 명시된 진척 보고이므로 progress",
+      "signal": "progress"
     },
     {
       "text": "리뷰 남겨주신 거 확인했습니다.",
@@ -177,8 +180,9 @@
     },
     {
       "text": "저는 그동안 디자인 작업했어요.",
-      "should_flag": false,
-      "note": "진행상황"
+      "should_flag": true,
+      "note": "진행상황 — 작업 대상이 명시된 진척 보고이므로 progress",
+      "signal": "progress"
     },
     {
       "text": "저도 특별한 이슈 없었습니다.",

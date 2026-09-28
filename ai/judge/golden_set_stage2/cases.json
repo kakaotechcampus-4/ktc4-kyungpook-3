@@ -201,5 +201,25 @@
       ]
     },
     "expected": {"is_meaningful": true, "is_new": true, "matched_task_id": null}
+  },
+  {
+    "description": "기존 수정 — content_snippet 없이는 신규/기반영 구분 불가(카카오만 지원 → 구글 추가는 신규 범위 확대)",
+    "judge_input": {
+      "source": "meeting", "text": "소셜 로그인에 구글 로그인도 추가하기로 했다.",
+      "candidates": [
+        {"notion_page_id": "n3", "task_id": "task_social_login", "title": "소셜 로그인 구현", "content_snippet": "카카오 로그인만 지원", "similarity": 0.6}
+      ]
+    },
+    "expected": {"is_meaningful": true, "is_new": false, "matched_task_id": "task_social_login", "category": "scope"}
+  },
+  {
+    "description": "이미 반영된 내용 — content_snippet에 이미 구글까지 포함돼 있으면 변경 없음(위 케이스와 text/title 동일, content_snippet만 다름)",
+    "judge_input": {
+      "source": "meeting", "text": "소셜 로그인에 구글 로그인도 추가하기로 했다.",
+      "candidates": [
+        {"notion_page_id": "n3", "task_id": "task_social_login", "title": "소셜 로그인 구현", "content_snippet": "카카오·구글 로그인 지원", "similarity": 0.6}
+      ]
+    },
+    "expected": {"is_meaningful": false}
   }
 ]
