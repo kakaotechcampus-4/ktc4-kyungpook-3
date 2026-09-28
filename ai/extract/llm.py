@@ -184,12 +184,6 @@ def _due_status(due: date | None, raw: str | None, wobbles: bool) -> str:
     return CERTAIN
 
 
-def _confidence(task_status: str, assignee_status: str, due_status: str) -> float:
-    """내부 로그·정렬용 숫자. 사용자에겐 상태로 보여주고 이 값은 노출하지 않는다."""
-    score = {CERTAIN: 1.0, INFERRED: 0.6, MISSING: 0.3}
-    return round(min(score[task_status], score[assignee_status], score[due_status]), 2)
-
-
 def extract_tasks(
     transcript: Transcript,
     *,
@@ -246,7 +240,6 @@ def extract_tasks(
                 task=item.task_raw,
                 assignee_member_id=None,
                 due_date=due.isoformat() if due else None,
-                confidence=_confidence(task_status, assignee_status, due_status),
                 assignee_mention=mention,
                 source_sentence=item.evidence_span or sentence,
                 method="llm",

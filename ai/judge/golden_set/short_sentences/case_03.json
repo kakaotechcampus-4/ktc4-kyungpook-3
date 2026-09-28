@@ -1,0 +1,12 @@
+{
+  "case_id": "case_03",
+  "scenario": "pure_chitchat",
+  "description": "순수 잡담/맞장구 — 오탐하면 안 됨",
+  "turns": [
+    {"speaker": "C", "text": "네, 알겠습니다."}
+  ],
+  "expected": [
+    {"text": "네, 알겠습니다.", "should_flag": false, "note": "의미 없는 맞장구"}
+  ],
+  "counts_toward_pass_rate": true
+}

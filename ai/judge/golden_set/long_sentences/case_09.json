@@ -1,0 +1,207 @@
+{
+  "case_id": "case_09",
+  "scenario": "single_signal_heavy_noise",
+  "description": "긴 잡담/진행상황 속에 결정이 딱 하나만 있음 — 극단적 noise 비율에서도 놓치지 않는지",
+  "speaker_names": {
+    "A": "하은",
+    "B": "도윤",
+    "C": "민재",
+    "D": "세영",
+    "E": "유진"
+  },
+  "turns": [
+    {
+      "speaker": "A",
+      "text": "다들 좋은 아침입니다."
+    },
+    {
+      "speaker": "B",
+      "text": "네 좋은 아침이에요."
+    },
+    {
+      "speaker": "C",
+      "text": "오늘 좀 춥네요."
+    },
+    {
+      "speaker": "D",
+      "text": "그러게요, 난방 좀 세게 틀어야겠어요."
+    },
+    {
+      "speaker": "E",
+      "text": "저는 어제 야근했어요."
+    },
+    {
+      "speaker": "A",
+      "text": "고생하셨네요."
+    },
+    {
+      "speaker": "B",
+      "text": "저는 그냥 일상적인 작업만 했습니다."
+    },
+    {
+      "speaker": "C",
+      "text": "저도 특별한 건 없었어요."
+    },
+    {
+      "speaker": "D",
+      "text": "커피 마셨더니 좀 낫네요."
+    },
+    {
+      "speaker": "E",
+      "text": "저도 한 잔 해야겠어요."
+    },
+    {
+      "speaker": "A",
+      "text": "다들 주말 잘 보내셨어요?"
+    },
+    {
+      "speaker": "B",
+      "text": "네 저는 집에서 쉬었어요."
+    },
+    {
+      "speaker": "C",
+      "text": "저는 여행 다녀왔습니다."
+    },
+    {
+      "speaker": "D",
+      "text": "좋았겠네요."
+    },
+    {
+      "speaker": "A",
+      "text": "참, 로그인 화면 마감을 이번 주 수요일로 하기로 했습니다."
+    },
+    {
+      "speaker": "E",
+      "text": "아 네 알겠습니다."
+    },
+    {
+      "speaker": "B",
+      "text": "그럼 계속 잡담해도 될까요."
+    },
+    {
+      "speaker": "C",
+      "text": "하하 네."
+    },
+    {
+      "speaker": "D",
+      "text": "점심 뭐 드실 거예요?"
+    },
+    {
+      "speaker": "A",
+      "text": "저는 아직 못 정했어요."
+    },
+    {
+      "speaker": "E",
+      "text": "그럼 이만 마치겠습니다."
+    }
+  ],
+  "expected": [
+    {
+      "text": "다들 좋은 아침입니다.",
+      "should_flag": false,
+      "note": "인사"
+    },
+    {
+      "text": "네 좋은 아침이에요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "오늘 좀 춥네요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "그러게요, 난방 좀 세게 틀어야겠어요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "저는 어제 야근했어요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "고생하셨네요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "저는 그냥 일상적인 작업만 했습니다.",
+      "should_flag": false,
+      "note": "진행상황"
+    },
+    {
+      "text": "저도 특별한 건 없었어요.",
+      "should_flag": false,
+      "note": "진행상황"
+    },
+    {
+      "text": "커피 마셨더니 좀 낫네요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "저도 한 잔 해야겠어요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "다들 주말 잘 보내셨어요?",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "네 저는 집에서 쉬었어요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "저는 여행 다녀왔습니다.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "좋았겠네요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "참, 로그인 화면 마감을 이번 주 수요일로 하기로 했습니다.",
+      "should_flag": true,
+      "note": "유일한 신호: 일정 결정"
+    },
+    {
+      "text": "아 네 알겠습니다.",
+      "should_flag": false,
+      "note": "단순 맞장구"
+    },
+    {
+      "text": "그럼 계속 잡담해도 될까요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "하하 네.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "점심 뭐 드실 거예요?",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "저는 아직 못 정했어요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "그럼 이만 마치겠습니다.",
+      "should_flag": false,
+      "note": "회의 진행"
+    }
+  ],
+  "counts_toward_pass_rate": true,
+  "meeting_duration_sec": 474.0
+}

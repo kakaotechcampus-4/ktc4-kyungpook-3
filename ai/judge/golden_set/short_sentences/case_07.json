@@ -1,0 +1,14 @@
+{
+  "case_id": "case_07",
+  "scenario": "correction_within_meeting",
+  "description": "같은 회의 안에서 번복 — 1단계는 둘 다 후보로 남기면 됨(모순 해결은 2단계 몫)",
+  "turns": [
+    {"speaker": "A", "text": "이번 주까지 끝낼게요."},
+    {"speaker": "A", "text": "아, 잠깐만요, 다음 주로 미루죠."}
+  ],
+  "expected": [
+    {"text": "이번 주까지 끝낼게요.", "should_flag": true, "note": "최초 합의"},
+    {"text": "아, 잠깐만요, 다음 주로 미루죠.", "should_flag": true, "note": "번복 — 이것도 후보로 남아야 2단계가 비교 가능"}
+  ],
+  "counts_toward_pass_rate": true
+}

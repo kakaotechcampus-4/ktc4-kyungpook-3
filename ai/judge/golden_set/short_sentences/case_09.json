@@ -1,0 +1,12 @@
+{
+  "case_id": "case_09",
+  "scenario": "two_decisions_one_sentence",
+  "description": "한 문장에 결정 2개(쉼표로만 구분) — 문장 분리가 안 돼서 하나의 JudgeFinding으로 뭉뚱그려지는지 확인",
+  "turns": [
+    {"speaker": "A", "text": "로그인은 내일까지 하고, 회원가입은 담당자를 다시 정하기로 했어요."}
+  ],
+  "expected": [
+    {"text": "로그인은 내일까지 하고, 회원가입은 담당자를 다시 정하기로 했어요.", "should_flag": true, "note": "두 결정이 한 문장에 섞여 있음 — 하나의 finding으로 처리되는 게 알려진 한계"}
+  ],
+  "counts_toward_pass_rate": true
+}

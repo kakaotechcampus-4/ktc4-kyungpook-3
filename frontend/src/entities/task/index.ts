@@ -1,0 +1,6 @@
+export type { Task, TaskStatus, TaskTab, TaskHistoryEntry } from './model/types'
+export { toTask, toTaskHistory } from './model/mapper'
+export { filterByTab } from './lib/taskFilter'
+export { isOverdue, isDueSoon } from './lib/taskDate'
+export { withAssigneeName } from './lib/assignee'
+export type { TaskWithAssignee } from './lib/assignee'

@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from datetime import datetime, timezone
 from typing import Optional
 
-from app.api.deps import get_current_user, get_current_member
+from app.api.deps import get_current_user, get_current_member, require_member
 from app.core.database import get_db
 from app.core.errors import AppError, Envelope, ErrorCode, success
 from app.models import Workspace, Member, MemberRole, User, Meeting, MeetingStatus
@@ -100,8 +100,8 @@ def get_workspace(
         raise AppError(
             ErrorCode.WORKSPACE_NOT_FOUND, details={"workspace_id": workspace_id}
         )
-        
-    member = db.query(Member).filter(Member.workspace_id == workspace_id, Member.user_id == user.user_id, Member.is_deleted.is_(False)).first()
+
+    member = require_member(db, user, workspace_id)
     return success(_build_workspace_response(workspace, member))
 
 

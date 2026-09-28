@@ -1,0 +1,12 @@
+{
+  "case_id": "case_04",
+  "scenario": "meeting_facilitation",
+  "description": "회의 진행 멘트 — 패턴은 걸려도 제외해야 함",
+  "turns": [
+    {"speaker": "A", "text": "오늘 스탠드업 시작하겠습니다."}
+  ],
+  "expected": [
+    {"text": "오늘 스탠드업 시작하겠습니다.", "should_flag": false, "note": "회의 진행 멘트, 실제 결정 아님"}
+  ],
+  "counts_toward_pass_rate": true
+}

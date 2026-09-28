@@ -162,6 +162,7 @@ def score(session: Path, mode: str, backend_kind: str, model: str, gate_on: bool
 
     if backend_kind == "elice" and not yes:
         from stt.elice import whisper_krw
+    from stt.eval.eval import SCORING_VERSION
         est = sum(sum(u.duration_s for u in B.cut(B.load_track(t.path), t.speaker_id)) for t in tracks)
         print(f"Elice {mode}: 발화 합 {est:.0f}초 · 예상 약 {whisper_krw(est):.0f}원. --yes 로 승인.")
         return None
@@ -215,7 +216,7 @@ def score(session: Path, mode: str, backend_kind: str, model: str, gate_on: bool
     out = {
         "session": session.name, "mode": mode, "backend": stats.backend, "gate": gate_on,
         "beam": beam, "cond": cond, "hst": hst, "preprocess": preprocess, "pack_turns": pack_turns,
-        "merge": merge, "workers": w, "tag": tag,
+        "merge": merge, "workers": w, "tag": tag, "scoring_version": SCORING_VERSION,
         "krw_per_meeting_hour": round(krw / meeting_h, 1) if meeting_h > 0 else None,
         "cpu_s_per_speech_s": round(cpu_s / stats.speech_s, 3) if stats.speech_s > 0 else None,
         "wall_per_meeting_s": round(stats.wall_s / meeting_h / 3600, 3) if meeting_h > 0 else None,

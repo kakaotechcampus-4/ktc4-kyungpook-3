@@ -36,6 +36,7 @@ import statistics
 import sys
 import threading
 import time
+from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -57,6 +58,8 @@ TAIL_PAD_S = 0.10        # 클립 끝에 남기는 여유. 마지막 음절이 �
 LONG_SPLIT_FROM_S = 15.0 # 28초 넘는 클립은 15초 이후의 가장 조용한 20ms 에서 가른다
 WHOLE_SEGMENT_GAP_S = 1.0  # whole 모드: 단어 사이가 이만큼 비면 새 줄
 STALL_S = 20.0           # 이보다 오래 걸린 호출을 센다. Elice 가 15% 확률로 22~28초 멈춘다
+HOLD_PCM_MB = 64         # 결과를 안 받은 트랙의 묶음 pcm 이 이만큼을 넘으면 앞 트랙을 기다려 받고 놓는다.
+                         # 원격 12개 동시 호출(28초 묶음 1.8MB)이 끊기지 않을 양의 세 배, 60분 6인 발화 합 230MB 의 약 1/4
 _EMPTY = np.zeros(0, dtype=np.float32)   # 보낸 뒤 트랙 배열을 놓으려고 클립 pcm 자리에 넣는다
 
 
@@ -465,7 +468,7 @@ def merge_turns(lines: list[Line], gap_s: float = TURN_GAP_S) -> list[Line]:
 # ─────────────────────────────────────────────────────────────── 한 회의
 def run(tracks: list[Track], backend: SttBackend, *, mode: str = "chunk", gate: SpeechGate | None = None,
         workers: int = 1, pack_turns: bool = True, merge: bool = True,
-        preprocess=None) -> tuple[list[Line], BatchStats]:
+        preprocess=None, max_inflight: int | None = None) -> tuple[list[Line], BatchStats]:
     """트랙 목록을 전사해 회의 전체 순번이 매겨진 Line 목록과 통계를 돌려준다.
 
     트랙은 하나씩 읽는다. 자르고 보낼 조각(복사본)을 풀에 넣은 뒤 트랙 배열과 클립의 뷰를 놓고
@@ -475,6 +478,11 @@ def run(tracks: list[Track], backend: SttBackend, *, mode: str = "chunk", gate: 
     workers=1 이 맞고, API 는 대기가 대부분이라 여럿이 벽시계를 줄인다.
     preprocess(audio, sr) 를 주면 트랙을 읽은 직후에 건다. 필터 비교용이다.
     백엔드에 reclip_unmapped=True 가 있으면 단어 시각이 없는 묶음을 클립 단위로 다시 보낸다.
+    max_inflight 는 한 번에 제출해 두는 조각 수의 상한(기본 workers 의 두 배)이다. 동시 호출과 풀의 대기열을
+    묶는다. 준비한 묶음 pcm 은 따로 묶는다. 다음 트랙을 읽기 전에 결과가 다 온 앞 트랙을 받아 묶음을 놓고,
+    결과를 안 받은 트랙의 묶음이 HOLD_PCM_MB 를 넘으면 앞 트랙이 끝날 때까지 기다려 받는다. 그래서 붙잡는
+    묶음은 회의 길이와 상관없이 상한과 트랙 하나 분 안팎이다. 트랙을 하나씩 끝까지 처리하지 않는 것은
+    발화가 짧은 트랙이 많을 때 원격 API 의 병렬 이점을 잃지 않기 위해서다.
     """
     if mode not in ("clip", "chunk", "track", "whole"):
         raise ValueError(f"mode 는 clip|chunk|track|whole 이다: {mode}")
@@ -482,7 +490,38 @@ def run(tracks: list[Track], backend: SttBackend, *, mode: str = "chunk", gate: 
     t0 = time.monotonic()
     reclip = bool(getattr(backend, "reclip_unmapped", False)) and mode == "chunk"
 
-    prepared = []   # (track, audio_s, utts, chunks, futures)
+    pending: deque = deque()   # 제출은 했고 결과는 아직 안 받은 트랙: (track, audio_s, utts, chunks, futures)
+    all_lines: list[Line] = []
+    inflight = threading.BoundedSemaphore(max_inflight or max(1, workers) * 2)
+
+    def _job(pcm, speaker):
+        try:
+            return _call(backend, pcm, stats, speaker)
+        finally:
+            inflight.release()
+
+    def _submit(ex, pcm, speaker):
+        inflight.acquire()      # 자리가 날 때까지 다음 조각을 준비하지 않는다
+        return ex.submit(_job, pcm, speaker)
+
+    def _held_bytes(entries) -> int:
+        return sum(c.pcm.nbytes for (_, _, _, chunks, _) in entries if chunks for c in chunks)
+
+    def _collect(ex, tr, audio_s, utts, chunks, futures) -> None:
+        results = [f.result() for f in futures]
+        if not futures:
+            return
+        if mode == "clip":
+            all_lines.extend(_clip_lines(tr, utts, results))
+        elif mode == "chunk":
+            # 다시 보내는 클립도 풀을 거친다. 제출과 수거가 겹치므로 직접 부르면 로컬 모델에 호출이 겹친다
+            rc = (lambda pcm, sp=tr.speaker_id: _submit(ex, pcm, sp).result()) if reclip else None
+            all_lines.extend(_chunk_lines(tr, chunks, results, stats, reclip=rc))
+        elif mode == "track":
+            all_lines.extend(_track_lines(tr, utts, results[0], stats))
+        else:
+            all_lines.extend(_whole_lines(tr, audio_s, utts, results[0], stats))
+
     with ThreadPoolExecutor(max_workers=max(1, workers)) as ex:
         for tr in tracks:
             audio = load_track(tr.path)
@@ -515,23 +554,16 @@ def run(tracks: list[Track], backend: SttBackend, *, mode: str = "chunk", gate: 
                 for u in utts:
                     u.pcm = _EMPTY   # 트랙 배열을 가리키는 뷰를 놓는다. 뒤 단계는 시각만 쓴다
                 del audio
-            futures = [ex.submit(_call, backend, pcm, stats, tr.speaker_id) for pcm in units]
-            prepared.append((tr, audio_s, utts, chunks, futures))
-        got = [[f.result() for f in futures] for (_tr, _s, _u, _c, futures) in prepared]
-
-    all_lines: list[Line] = []
-    for (tr, audio_s, utts, chunks, futures), results in zip(prepared, got):
-        if not futures:
-            continue
-        if mode == "clip":
-            all_lines += _clip_lines(tr, utts, results)
-        elif mode == "chunk":
-            rc = (lambda pcm, sp=tr.speaker_id: _call(backend, pcm, stats, sp)) if reclip else None
-            all_lines += _chunk_lines(tr, chunks, results, stats, reclip=rc)
-        elif mode == "track":
-            all_lines += _track_lines(tr, utts, results[0], stats)
-        else:
-            all_lines += _whole_lines(tr, audio_s, utts, results[0], stats)
+            futures = [_submit(ex, pcm, tr.speaker_id) for pcm in units]
+            pending.append((tr, audio_s, utts, chunks, futures))
+            # 결과가 다 온 앞 트랙은 바로 받아 묶음을 놓는다
+            while pending and all(f.done() for f in pending[0][4]):
+                _collect(ex, *pending.popleft())
+            # 붙잡은 묶음이 상한을 넘으면 앞 트랙이 끝날 때까지 기다려 받는다. 지금 트랙은 풀에서 계속 돈다
+            while len(pending) > 1 and _held_bytes(pending) > HOLD_PCM_MB * 1024 * 1024:
+                _collect(ex, *pending.popleft())
+        while pending:
+            _collect(ex, *pending.popleft())
 
     if merge:
         all_lines = merge_turns(all_lines)

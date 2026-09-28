@@ -30,7 +30,7 @@ cp .env.example .env                 # 최소 DISCORD_BOT_TOKEN 채우기
 .venv/bin/python -m pytest tests/capture/test_recording_store.py -k save_session  # 단일 테스트
 
 # 캡처
-python capture/run_recorder.py   # 개발용 봇: Discord 에서 /join /record /stop /leave
+python -m capture.run_recorder   # 개발용 봇: Discord 에서 /join /record /stop /leave
 ```
 
 이 저장소에는 lint/format 설정이 없습니다. 있다고 가정하지 마세요.

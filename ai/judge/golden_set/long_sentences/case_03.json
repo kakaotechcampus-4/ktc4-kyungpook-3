@@ -1,0 +1,246 @@
+{
+  "case_id": "case_03",
+  "scenario": "signals_front_loaded",
+  "description": "회의 시작하자마자 결정이 쏟아지고 나머지는 잡담 — 앞부분 신호도 놓치지 않는지",
+  "speaker_names": {
+    "A": "하은",
+    "B": "도윤",
+    "C": "민재",
+    "D": "세영",
+    "E": "유진"
+  },
+  "turns": [
+    {
+      "speaker": "A",
+      "text": "바로 본론으로 갈게요. 로그인 마감은 이번 주 목요일로 하기로 했습니다."
+    },
+    {
+      "speaker": "B",
+      "text": "네, 그리고 담당자는 저로 하겠습니다."
+    },
+    {
+      "speaker": "C",
+      "text": "회원가입 쪽 소셜 로그인은 이번 스프린트에서 빼기로 하죠."
+    },
+    {
+      "speaker": "A",
+      "text": "좋습니다, 그럼 나머지는 자유롭게 얘기해볼까요."
+    },
+    {
+      "speaker": "D",
+      "text": "저는 어제 디자인 시안 좀 다듬었어요."
+    },
+    {
+      "speaker": "E",
+      "text": "저도 그냥 코드 정리하고 있었습니다."
+    },
+    {
+      "speaker": "B",
+      "text": "특별히 막히는 건 없었어요."
+    },
+    {
+      "speaker": "C",
+      "text": "저도 순조롭습니다."
+    },
+    {
+      "speaker": "D",
+      "text": "점심 뭐 드실지 정하셨어요?"
+    },
+    {
+      "speaker": "E",
+      "text": "저는 아무거나 괜찮아요."
+    },
+    {
+      "speaker": "A",
+      "text": "여기 인프라 쪽 로그 좀 정리했어요."
+    },
+    {
+      "speaker": "B",
+      "text": "저도 그냥 리팩터링 조금 했습니다."
+    },
+    {
+      "speaker": "C",
+      "text": "특별히 막히는 이슈는 없었어요."
+    },
+    {
+      "speaker": "D",
+      "text": "저도 순조롭게 진행 중입니다."
+    },
+    {
+      "speaker": "E",
+      "text": "어제 좀 늦게까지 일했더니 피곤하네요."
+    },
+    {
+      "speaker": "A",
+      "text": "고생하셨어요."
+    },
+    {
+      "speaker": "B",
+      "text": "커피 한잔하고 계속해야겠어요."
+    },
+    {
+      "speaker": "C",
+      "text": "저는 문서 정리 좀 했어요."
+    },
+    {
+      "speaker": "D",
+      "text": "리뷰 남겨주신 거 확인했습니다."
+    },
+    {
+      "speaker": "E",
+      "text": "감사합니다."
+    },
+    {
+      "speaker": "A",
+      "text": "오늘 오후에 미팅이 하나 더 있어요."
+    },
+    {
+      "speaker": "B",
+      "text": "저도 그거 참석해야 해요."
+    },
+    {
+      "speaker": "A",
+      "text": "그럼 오늘은 여기까지 하겠습니다."
+    },
+    {
+      "speaker": "B",
+      "text": "네 감사합니다."
+    }
+  ],
+  "expected": [
+    {
+      "text": "바로 본론으로 갈게요.",
+      "should_flag": false,
+      "note": "회의 진행 멘트"
+    },
+    {
+      "text": "로그인 마감은 이번 주 목요일로 하기로 했습니다.",
+      "should_flag": true,
+      "note": "일정 결정"
+    },
+    {
+      "text": "네, 그리고 담당자는 저로 하겠습니다.",
+      "should_flag": true,
+      "note": "담당자 자기지칭",
+      "assignee_type": "first"
+    },
+    {
+      "text": "회원가입 쪽 소셜 로그인은 이번 스프린트에서 빼기로 하죠.",
+      "should_flag": true,
+      "note": "범위 변경",
+      "assignee_type": "none"
+    },
+    {
+      "text": "좋습니다, 그럼 나머지는 자유롭게 얘기해볼까요.",
+      "should_flag": false,
+      "note": "회의 진행"
+    },
+    {
+      "text": "저는 어제 디자인 시안 좀 다듬었어요.",
+      "should_flag": true,
+      "note": "진행상황 — 작업 대상이 명시된 진척 보고이므로 progress",
+      "signal": "progress"
+    },
+    {
+      "text": "저도 그냥 코드 정리하고 있었습니다.",
+      "should_flag": true,
+      "note": "진행상황 — 작업 대상이 명시된 진척 보고이므로 progress",
+      "signal": "progress"
+    },
+    {
+      "text": "특별히 막히는 건 없었어요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "저도 순조롭습니다.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "점심 뭐 드실지 정하셨어요?",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "저는 아무거나 괜찮아요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "여기 인프라 쪽 로그 좀 정리했어요.",
+      "should_flag": true,
+      "note": "진행상황 — 작업 대상이 명시된 진척 보고이므로 progress",
+      "signal": "progress"
+    },
+    {
+      "text": "저도 그냥 리팩터링 조금 했습니다.",
+      "should_flag": true,
+      "note": "진행상황 — 작업 대상이 명시된 진척 보고이므로 progress",
+      "signal": "progress"
+    },
+    {
+      "text": "특별히 막히는 이슈는 없었어요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "저도 순조롭게 진행 중입니다.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "어제 좀 늦게까지 일했더니 피곤하네요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "고생하셨어요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "커피 한잔하고 계속해야겠어요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "저는 문서 정리 좀 했어요.",
+      "should_flag": true,
+      "note": "진행상황 — 작업 대상이 명시된 진척 보고이므로 progress",
+      "signal": "progress"
+    },
+    {
+      "text": "리뷰 남겨주신 거 확인했습니다.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "감사합니다.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "오늘 오후에 미팅이 하나 더 있어요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "저도 그거 참석해야 해요.",
+      "should_flag": false,
+      "note": "잡담"
+    },
+    {
+      "text": "그럼 오늘은 여기까지 하겠습니다.",
+      "should_flag": false,
+      "note": "회의 진행"
+    },
+    {
+      "text": "네 감사합니다.",
+      "should_flag": false,
+      "note": "잡담"
+    }
+  ],
+  "counts_toward_pass_rate": true,
+  "meeting_duration_sec": 510.0
+}

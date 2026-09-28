@@ -1,0 +1,14 @@
+{
+  "case_id": "case_10",
+  "scenario": "context_dependent_agreement",
+  "description": "패턴 없는 문맥적 합의 — 규칙 기반은 못 잡고 Luna만 잡아야 하는 케이스(Luna 도입 이유 그 자체)",
+  "turns": [
+    {"speaker": "A", "text": "그러면 로그인 화면 마감을 다음 주 화요일로 늦추는 게 어때요?"},
+    {"speaker": "B", "text": "그럼 그렇게 갑시다."}
+  ],
+  "expected": [
+    {"text": "그러면 로그인 화면 마감을 다음 주 화요일로 늦추는 게 어때요?", "should_flag": false, "note": "질문 형태 — 아직 결정 아님, 규칙 개정으로 제외돼야 함"},
+    {"text": "그럼 그렇게 갑시다.", "should_flag": true, "note": "패턴 없는 합의 — 규칙 기반은 못 잡을 것으로 예상. summary에 질문 내용까지 반영돼야 함"}
+  ],
+  "counts_toward_pass_rate": true
+}

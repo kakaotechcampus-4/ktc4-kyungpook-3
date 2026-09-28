@@ -94,7 +94,7 @@ CAUSES = {
                  "등록이라 반영까지 최대 1시간 걸린다. 나에게만 보이고 다른 사람에게 안 "
                  "보이면 초대 링크 scopes 에 applications.commands 가 빠진 것이라 새 "
                  "링크로 다시 초대한다",
-    "인텐트": "코드가 요청한 값이다. 여기가 실패면 capture/realtime_adapter.py 의 "
+    "인텐트": "코드가 요청한 값이다. 여기가 실패면 capture/realtime/adapter.py 의 "
            "required_intents() 를 고친다. 값이 맞는데 봇이 기동하자마자 죽으면 개발자 포털 "
            "→ Bot → Privileged Gateway Intents 에서 SERVER MEMBERS 를 켠다",
     "음성 채널 권한": "서버 설정 → 역할에서 봇 역할에 채널 보기와 연결 권한을 준다",

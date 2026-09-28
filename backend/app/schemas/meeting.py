@@ -118,13 +118,21 @@ class ExtractionDetailResponse(BaseModel):
 class ExtractionItemCreate(BaseModel):
     task_title: str
     task_confidence: float = 0.0
-    assignee_raw: str | None = None
-    assignee_type: str | None = Field(None, description="'first'(1인칭), 'third'(3인칭), 'group', 'none' 등")
+    assignee_raw: str | None = Field(
+        None, description="담당자를 가리킨 원문. first가 아니면 이 값을 별칭 텍스트로 매칭한다."
+    )
+    assignee_type: str | None = Field(
+        None,
+        description="'first'(1인칭), 'second', 'thirdname', 'group', 'none' 등. "
+        "first이면 assignee_raw 대신 evidence_speaker(Discord uid)로 Member.discord_user_id를 찾는다.",
+    )
     due_date: date | None = None
     due_raw: str | None = None
     due_confidence: float = 0.0
     evidence_quote: str | None = None
-    evidence_speaker: str | None = None
+    evidence_speaker: str | None = Field(
+        None, description="근거 문장을 말한 화자의 Discord uid (별칭 텍스트가 아님)"
+    )
     evidence_at_ms: int | None = None
 
 

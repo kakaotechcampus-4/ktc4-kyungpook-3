@@ -1,0 +1,12 @@
+{
+  "case_id": "case_05",
+  "scenario": "question_not_decision",
+  "description": "질문 — 아직 결정된 게 아님. 규칙 기반은 '까지' 키워드 때문에 오탐 예상",
+  "turns": [
+    {"speaker": "B", "text": "그거 언제까지 할 수 있어요?"}
+  ],
+  "expected": [
+    {"text": "그거 언제까지 할 수 있어요?", "should_flag": false, "note": "결정이 아니라 질문. 규칙 기반은 '까지' 매치로 오탐할 것으로 예상"}
+  ],
+  "counts_toward_pass_rate": true
+}

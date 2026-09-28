@@ -41,14 +41,14 @@ const DESCRIPTION = 'text-caption text-dim'
 /** 액션 행은 Modal 의 실측 액션 행에서 값을 빌린다 — 토스트에는 실측이 없다 */
 const ACTION_ROW = 'flex justify-end pt-6'
 
-/** 액션 없을 때 6초, 있으면 10초 — 되돌릴 시간을 준다 */
-const DURATION = 6000
+/** 액션 없을 때 5초, 있으면 10초 — 되돌릴 시간을 준다. 5초는 M3 확정 계획 값이다 (§7-9 의 6초를 대체) */
+const DURATION = 5000
 const DURATION_WITH_ACTION = 10000
 
 /**
  * `@radix-ui/react-toast` 의 `Provider` 를 감싸기만 한다. 스타일이 없다.
  *
- * **M2 는 이 Provider 를 어디에도 올리지 않는다.** 배선은 M3 의 `app/providers` 몫이다.
+ * 앱 배선은 같은 폴더의 `GlobalToaster` 가 한다. 화면은 `toast.show()` 만 부른다.
  * 테스트와 M3 이 Radix 패키지를 직접 import 하지 않도록 이름만 여기서 내보낸다.
  */
 export function ToastProvider(props: ToastProviderProps) {

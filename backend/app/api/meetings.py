@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
@@ -100,19 +100,33 @@ def fail_meeting(
     payload: MeetingFailRequest,
     db: Session = Depends(get_db),
 ) -> dict:
-    meeting = _get_meeting(db, meeting_id)
+    # ── 조건부 UPDATE (CAS): 아직 끝나지 않은 회의만 failed로 전이한다 ──
+    # 상태를 읽고 나서 쓰면, 그 사이 추출 등록이 processing → done으로 선점한 결과를
+    # 늦게 도착한 실패 요청이 failed로 덮을 수 있다. 판정과 쓰기를 한 문장으로 묶는다.
+    fail_stmt = (
+        update(Meeting)
+        .where(
+            Meeting.meeting_id == meeting_id,
+            Meeting.status.not_in([str(MeetingStatus.DONE), str(MeetingStatus.FAILED)]),
+        )
+        .values(
+            status=str(MeetingStatus.FAILED),
+            failed_stage=payload.failed_stage,
+            ended_at=datetime.now(timezone.utc),
+        )
+    )
+    result = db.execute(fail_stmt)
 
-    if meeting.status in {MeetingStatus.DONE, MeetingStatus.FAILED}:
+    if result.rowcount == 0:
+        db.rollback()
+        meeting = _get_meeting(db, meeting_id)
         raise AppError(
             ErrorCode.MEETING_ALREADY_ENDED,
             details={"meeting_id": meeting_id, "status": meeting.status},
         )
 
-    meeting.status = str(MeetingStatus.FAILED)
-    meeting.failed_stage = payload.failed_stage
-    meeting.ended_at = datetime.now(timezone.utc)
     db.commit()
-    db.refresh(meeting)
+    meeting = _get_meeting(db, meeting_id)
 
     detail = MeetingDetailResponse(
         meeting_id=meeting.meeting_id,
