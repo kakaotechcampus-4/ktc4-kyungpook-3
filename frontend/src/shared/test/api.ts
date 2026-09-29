@@ -1,11 +1,14 @@
-import type { Envelope } from '@/shared/types/api/envelope'
-import { unwrap } from '@/shared/api/envelope'
+import { request } from '@/shared/api/client'
+import type { HttpMethod, RequestOptions } from '@/shared/api/client'
 
-/** 테스트 전용 fetch→unwrap. 프로덕션 HTTP 클라이언트는 M3에서 만든다. */
-export async function fetchDto<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${location.origin}/api/v1${path}`, init)
-  return unwrap((await response.json()) as Envelope<T>, response.status)
+/**
+ * 테스트 전용 진입점. 제품과 같은 `request()` 를 탄다 — 봉투 해제·오류 정규화·204 처리가 같다.
+ * 예전 fetch 경로는 없앴다. 이름과 호출 모양은 기존 통합 테스트를 위해 그대로 둔다.
+ */
+export function fetchDto<T>(path: string, options?: RequestOptions): Promise<T> {
+  return request<T>(path, options)
 }
-export function jsonRequest(method: string, body: unknown): RequestInit {
-  return { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
+
+export function jsonRequest(method: HttpMethod, body: unknown): RequestOptions {
+  return { method, body }
 }

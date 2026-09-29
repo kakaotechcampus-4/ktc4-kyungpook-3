@@ -122,7 +122,7 @@ class Task:
         self.sentence = sentence
 
     def to_dict(self):
-        return {"task": "와이어프레임 그리기", "assignee_member_id": None, "due_date": "2026-09-18", "confidence": 1.0,
+        return {"task": "와이어프레임 그리기", "assignee_member_id": None, "due_date": "2026-09-18",
                 "assignee_mention": None, "source_sentence": self.sentence, "assignee_type": "first",
                 "due_raw": "내일", "due_status": "certain"}
 

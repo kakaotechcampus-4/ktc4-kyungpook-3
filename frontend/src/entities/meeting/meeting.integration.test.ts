@@ -1,3 +1,4 @@
+import type { RequestOptions } from '@/shared/api/client'
 import { fetchDto, jsonRequest } from '@/shared/test/api'
 import type { ListDto } from '@/shared/types/api/envelope'
 import type {
@@ -16,25 +17,13 @@ import { File as NodeFile } from 'node:buffer'
 beforeEach(() => vi.stubGlobal('File', NodeFile))
 afterEach(() => vi.unstubAllGlobals())
 
-function uploadBody(): RequestInit {
-  const boundary = 'm1-upload-boundary'
-  const fields = [
-    ['title', '지난 회의 녹음'],
-    ['started_at', '2026-09-14T05:00:00Z'],
-    ['attendee_member_ids', 'mb_01'],
-  ]
-  const parts = fields.map(
-    ([name, value]) =>
-      `--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`,
-  )
-  parts.push(
-    `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="meeting.mp3"\r\nContent-Type: audio/mpeg\r\n\r\naudio\r\n--${boundary}--\r\n`,
-  )
-  return {
-    method: 'POST',
-    headers: { 'Content-Type': `multipart/form-data; boundary=${boundary}` },
-    body: parts.join(''),
-  }
+function uploadBody(): RequestOptions {
+  const form = new FormData()
+  form.append('title', '지난 회의 녹음')
+  form.append('started_at', '2026-09-14T05:00:00Z')
+  form.append('attendee_member_ids', 'mb_01')
+  form.append('file', new Blob(['audio'], { type: 'audio/mpeg' }), 'meeting.mp3')
+  return { method: 'POST', body: form }
 }
 
 it('scopes and sorts summaries, excludes failed meetings and maps detail', async () => {

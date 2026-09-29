@@ -19,7 +19,7 @@ TRANSCRIPT = {
 
 
 def _task(**over):
-    base = {"task": "와이어프레임 그리기", "assignee_member_id": None, "due_date": "2026-09-25", "confidence": 0.9,
+    base = {"task": "와이어프레임 그리기", "assignee_member_id": None, "due_date": "2026-09-25",
             "assignee_mention": None, "source_sentence": "제가 할게요.", "method": "llm", "assignee_type": "first",
             "assignee_resolved": None, "due_raw": "금요일까지", "task_status": "certain",
             "assignee_status": "certain", "due_status": "certain"}
@@ -50,7 +50,7 @@ def test_first_person_item_carries_the_speaker_uid_and_time():
     it = items[0]
     assert it["evidence_speaker"] == "103" and it["evidence_at_ms"] == 12000      # 그 문장을 말한 트랙
     assert it["assignee_raw"] is None and it["assignee_type"] == "first"          # 1인칭은 별칭 텍스트가 없다
-    assert it["task_title"] == "와이어프레임 그리기" and it["task_confidence"] == 0.9
+    assert it["task_title"] == "와이어프레임 그리기" and it["task_confidence"] == 1.0
     assert it["due_date"] == "2026-09-25" and it["due_raw"] == "금요일까지" and it["due_confidence"] == 1.0
     assert it["evidence_quote"] == "제가 할게요."
 

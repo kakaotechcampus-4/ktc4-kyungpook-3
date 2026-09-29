@@ -65,7 +65,9 @@ export default tseslint.config(
               allow: {
                 to: {
                   element: {
-                    types: { anyOf: ['pages', 'widgets', 'features', 'entities', 'shared'] },
+                    types: {
+                      anyOf: ['app', 'pages', 'widgets', 'features', 'entities', 'shared'],
+                    },
                   },
                 },
               },

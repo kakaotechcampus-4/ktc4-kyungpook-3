@@ -9,7 +9,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from app.core.database import Base
+from app.core.database import DATABASE_URL, Base
 import app.models  # noqa: F401
 
 # this is the Alembic Config object, which provides
@@ -45,13 +45,13 @@ def run_migrations_offline() -> None:
     script output.
 
     """
-    url = os.getenv("DATABASE_URL", "sqlite:///./mm.db")
+    url = DATABASE_URL
     context.configure(
         url=url,
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
-        render_as_batch=True,
+        render_as_batch=url.startswith("sqlite"),
     )
 
     with context.begin_transaction():
@@ -66,7 +66,7 @@ def run_migrations_online() -> None:
 
     """
     section = config.get_section(config.config_ini_section, {})
-    section["sqlalchemy.url"] = os.getenv("DATABASE_URL", "sqlite:///./mm.db")
+    section["sqlalchemy.url"] = DATABASE_URL
     connectable = engine_from_config(
         section,
         prefix="sqlalchemy.",
@@ -77,7 +77,8 @@ def run_migrations_online() -> None:
         context.configure(
             connection=connection,
             target_metadata=target_metadata,
-            render_as_batch=True,
+            # SQLite는 ALTER를 거의 못 해서 테이블 복사 방식(batch)이 필요하다. PostgreSQL은 ALTER를 그대로 쓴다.
+            render_as_batch=connection.dialect.name == "sqlite",
         )
 
         with context.begin_transaction():
