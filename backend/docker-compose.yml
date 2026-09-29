@@ -1,0 +1,21 @@
+# 로컬 개발용 PostgreSQL. 운영 DB 위치는 별도로 정한다.
+# pgvector 이미지는 공식 postgres 이미지에 vector 확장만 더한 것이다 (임베딩 검색에 쓴다).
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: mm
+      POSTGRES_PASSWORD: mm
+      POSTGRES_DB: mm
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - mm-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mm -d mm"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  mm-pgdata:
