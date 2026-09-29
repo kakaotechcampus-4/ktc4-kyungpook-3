@@ -238,6 +238,12 @@ describe('워크스페이스 전환 (U4-5)', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
     await app.expectPath('/workspaces/ws_01/settings')
     expect(screen.getByLabelText('워크스페이스 이름')).toHaveValue('카테캠 3팀 새 이름')
+    // 새 공간에 들렀다 온 것도 아니다
+    expect(screen.getByRole('heading', { name: '설정' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: '대시보드' })).not.toBeInTheDocument()
+    expect(app.visited().map(({ pathname }) => pathname)).not.toContain(
+      '/workspaces/ws_04/dashboard',
+    )
 
     await userEvent.click(
       within(await openWorkspaceMenu()).getByRole('menuitem', { name: /알고리즘 스터디/ }),
@@ -357,8 +363,14 @@ describe('나가기 뒤 복귀 기억 (U4-r1 #3)', () => {
     await userEvent.type(await screen.findByLabelText('팀 이름'), '적는 중')
     await userEvent.click(screen.getByRole('link', { name: '온보딩 나가기' }))
     await userEvent.click(await screen.findByRole('button', { name: '계속 작성하기' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
     await app.expectPath('/onboarding/create_workspace')
     expect(sessionStorage.getItem(RETURN_KEY)).toBe('ws_01')
+    // 대시보드에 들렀다 온 것도 아니다
+    expect(screen.getByRole('heading', { name: '워크스페이스 만들기' })).toBeInTheDocument()
+    expect(screen.getByLabelText('팀 이름')).toHaveValue('적는 중')
+    expect(screen.queryByRole('heading', { name: '대시보드' })).not.toBeInTheDocument()
+    expect(app.visited().map(({ pathname }) => pathname)).toEqual(['/onboarding/create_workspace'])
   })
 })
 

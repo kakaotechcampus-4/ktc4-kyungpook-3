@@ -57,7 +57,7 @@ const FRAME = 'overflow-hidden rounded-[24px] border border-line bg-surface'
 const TITLE_BAR =
   'flex h-44 items-center gap-10 border-b border-line bg-surface-sunken px-16 text-caption text-dim'
 
-const DOT = 'h-[11px] w-[11px] rounded-999'
+const DOT = 'h-11 w-11 rounded-999'
 
 const WINDOW = 'flex h-[580px] flex-col overflow-hidden bg-surface'
 
@@ -149,7 +149,7 @@ function MeetingList() {
             {'pending' in meeting ? (
               <span className="flex w-full items-center gap-8">
                 <span className="flex-1 text-body font-semibold text-ink">{meeting.title}</span>
-                <span className="inline-flex h-18 min-w-[18px] items-center justify-center rounded-999 bg-ink px-6 text-[10.5px] font-semibold text-surface">
+                <span className="inline-flex h-18 min-w-18 items-center justify-center rounded-999 bg-ink px-6 text-[10.5px] font-semibold text-surface">
                   {meeting.pending}
                 </span>
               </span>

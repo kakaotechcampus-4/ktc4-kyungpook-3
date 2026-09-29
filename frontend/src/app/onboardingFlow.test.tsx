@@ -33,7 +33,9 @@ async function connectVia(app: App, provider: 'discord' | 'notion'): Promise<App
 
 afterEach(() => sessionStorage.clear())
 
-describe('온보딩 전체 흐름 (U3-11)', () => {
+// 한 테스트가 온보딩 네 단계와 OAuth 왕복 두 번을 끝까지 돈다. 단독으로 3~4초라 전체 실행 부하에서
+// 기본 5초를 넘길 때가 있다 (F-r3). 기다리는 조건은 그대로 두고 이 흐름들만 한도를 늘린다
+describe('온보딩 전체 흐름 (U3-11)', { timeout: 15_000 }, () => {
   it('공간 0개 사용자: 만들기 → 전 단계 연결 → 팀원 연결 → 새 공간 대시보드', async () => {
     applyScenario('no-workspace')
     const bodies = recordRequestBodies('PATCH', '/workspaces/ws_03/onboarding')

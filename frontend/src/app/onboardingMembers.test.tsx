@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react'
+import { fireEvent, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http } from 'msw'
 import { rememberReturnWorkspace } from '@/shared/lib/return-workspace'
@@ -9,6 +9,7 @@ import { MOCK_NOW } from '@/shared/mock/fixtures/constants'
 import { settleMockOAuth } from '@/shared/mock/oauth/mockOAuth'
 import { applyScenario } from '@/shared/mock/scenarios'
 import { server } from '@/shared/mock/server'
+import { deferred } from '@/shared/test/deferred'
 import { recordRequestBodies, recordRequests } from '@/shared/test/requests'
 import type { RecordedRequest } from '@/shared/test/requests'
 import { renderApp } from './test/renderApp'
@@ -362,8 +363,16 @@ describe('미저장 변경 확인 (U3-10)', () => {
       await screen.findByRole('dialog', { name: '저장하지 않은 변경 내용이 있어요' }),
     ).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: '계속 작성하기' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
     await app.expectPath('/onboarding/ws_03/connect_members')
     expect(nameInput('minsu')).toHaveValue('박민수')
+    // 목록에 들렀다 온 것도 아니다
+    expect(screen.getByRole('heading', { level: 1, name: '팀원 연결' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: '워크스페이스 선택' })).not.toBeInTheDocument()
+    expect(app.visited().map(({ pathname }) => pathname)).toEqual([
+      '/onboarding/ws_03/connect_members',
+    ])
+    expect(hasUnsavedChanges()).toBe(true)
   })
 })
 
@@ -404,5 +413,58 @@ describe('팀원 연결에서 나가기 (U3-7)', () => {
     expect(await screen.findByRole('heading', { name: '워크스페이스 선택' })).toBeInTheDocument()
     await app.expectPath('/workspaces')
     expect(memberWrites(log.started)).toEqual([])
+  })
+})
+
+/* F-r1 #7. 나가기 저장과 확인 완료 제출이 겹치면 같은 팀원 캐시로 계획해 같은 줄에 POST 가 두 번 나갈 수 있다 */
+describe('팀원 연결 저장은 한 번에 하나다', () => {
+  function holdMemberPost() {
+    const gate = deferred()
+    server.use(
+      http.post('/api/v1/members', async () => {
+        await gate.promise
+        // 아무것도 돌려주지 않아 기본 handler 가 저장한다
+      }),
+    )
+    return gate
+  }
+
+  it('확인 완료 저장 중에는 나가기를 눌러도 나가지 않는다', async () => {
+    rememberReturnWorkspace('ws_01')
+    const gate = holdMemberPost()
+    const log = recordRequests()
+    const app = await openMembers()
+    await userEvent.type(nameInput('minsu'), '박민수')
+    await userEvent.click(screen.getByRole('button', { name: '1명 확인 완료' }))
+    await waitFor(() => expect(memberWrites(log.started)).toEqual(['POST /members']))
+
+    await userEvent.click(screen.getByRole('link', { name: '온보딩 나가기' }))
+    gate.resolve()
+
+    await waitFor(() => expect(onboardingPatches(log.started)).toHaveLength(1))
+    expect(memberWrites(log.started)).toEqual(['POST /members'])
+    expect(app.visited().map(({ pathname }) => pathname)).not.toContain(
+      '/workspaces/ws_01/dashboard',
+    )
+  })
+
+  it('나가기 저장 중의 제출은 무시한다 — 팀원 저장도 단계 완료도 더 나가지 않는다', async () => {
+    rememberReturnWorkspace('ws_01')
+    db.accounts[0].workspaceIds.unshift('ws_01')
+    const gate = holdMemberPost()
+    const log = recordRequests()
+    const app = await openMembers()
+    await userEvent.type(nameInput('minsu'), '박민수')
+    await userEvent.click(screen.getByRole('link', { name: '온보딩 나가기' }))
+    await waitFor(() => expect(memberWrites(log.started)).toEqual(['POST /members']))
+
+    // 버튼 비활성을 거치지 않는 제출 — Enter 와 같다
+    fireEvent.submit(nameInput('minsu').closest('form')!)
+    gate.resolve()
+
+    expect(await screen.findByRole('heading', { name: '대시보드' })).toBeInTheDocument()
+    await app.expectPath('/workspaces/ws_01/dashboard')
+    expect(memberWrites(log.started)).toEqual(['POST /members'])
+    expect(onboardingPatches(log.started)).toHaveLength(0)
   })
 })

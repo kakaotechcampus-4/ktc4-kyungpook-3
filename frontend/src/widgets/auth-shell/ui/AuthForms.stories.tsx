@@ -105,3 +105,34 @@ export const 회원가입_중복_이메일: Story = {
     await expect(await canvas.findByText('이미 가입된 이메일이에요.')).toBeInTheDocument()
   },
 }
+
+/** 제출 중 — `계정 만들기` 가 비활성·aria-busy 라 다시 제출할 수 없다 */
+export const 회원가입_제출_중: Story = {
+  render: () => <Signup />,
+  parameters: {
+    route: '/signup',
+    msw: [
+      http.post('/api/v1/auth/signup', async () => {
+        await delay('infinite')
+      }),
+    ],
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.type(canvas.getByLabelText('이름'), '최진호')
+    await userEvent.type(canvas.getByLabelText('이메일'), 'new@example.com')
+    await userEvent.type(canvas.getByLabelText('비밀번호'), 'pass1234')
+    await userEvent.click(canvas.getByRole('button', { name: '계정 만들기' }))
+    await expect(canvas.getByRole('button', { name: '계정 만들기' })).toBeDisabled()
+  },
+}
+
+/** Google 가입은 비활성으로만 보인다 — 누를 수 없고 포커스도 받지 않는다 (D-007) */
+export const 회원가입_비활성: Story = {
+  render: () => <Signup />,
+  parameters: { route: '/signup' },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.getByRole('button', { name: 'Google 계정으로 가입하기' })).toBeDisabled()
+  },
+}

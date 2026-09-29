@@ -18,6 +18,11 @@ export async function start(page: Page, scenario: Scenario, path = '/'): Promise
   url.searchParams.set('msw-scenario', scenario)
   await page.goto(`${url.pathname}${url.search}`)
   await expect(page).not.toHaveURL(/msw-scenario/)
+  // 개발 서버는 lazy 경로를 처음 요청받을 때 변환한다. 병렬 실행 부하에서 첫 화면이 기본 5초를 넘길 때가 있어
+  // 앱이 뜰 때까지는 따로 기다린다 — 뒤의 단언은 기본 한도 그대로다 (F-r3)
+  await expect(page.locator('#root main:not([aria-busy]), #root header').first()).toBeVisible({
+    timeout: 15_000,
+  })
 }
 
 /** 모의 OAuth 화면에서 결과를 골라 현재 탭으로 돌아온다 (D-158) */
@@ -27,11 +32,12 @@ export async function finishOAuth(
   outcome: '연결 허용' | '취소' | '실패 재현' = '연결 허용',
 ): Promise<void> {
   await expect(page).toHaveURL(/\/__mock\/oauth\//)
+  // 새 문서라 앱·MSW 가 처음부터 다시 뜬다 — 개발 서버가 바쁠 때 기본 5초를 넘길 때가 있다
   await expect(
     page.getByRole('heading', {
       name: `모의 ${provider === '디스코드' ? 'Discord' : 'Notion'} 연결`,
     }),
-  ).toBeVisible()
+  ).toBeVisible({ timeout: 15_000 })
   await page.getByRole('button', { name: outcome }).click()
 }
 

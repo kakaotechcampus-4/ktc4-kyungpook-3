@@ -32,7 +32,7 @@ export function WorkspaceRowContent({ workspace, current }: WorkspaceRowContentP
       {current ? (
         <Icon name="check" size={15} className="shrink-0 text-ink" label="지금 보는 워크스페이스" />
       ) : (
-        <span className="h-[15px] w-[15px] shrink-0" />
+        <span className="h-15 w-15 shrink-0" />
       )}
     </>
   )

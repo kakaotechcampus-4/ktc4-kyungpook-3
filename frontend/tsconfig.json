@@ -27,6 +27,7 @@
     ".storybook/*.ts",
     ".storybook/*.tsx",
     "e2e",
-    "playwright.config.ts"
+    "playwright.config.ts",
+    "playwright.storybook.config.ts"
   ]
 }

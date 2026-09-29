@@ -10,7 +10,7 @@ export interface BrandMarkProps {
 const BOX: Record<BrandMarkSize, string> = {
   sm: 'h-22 w-22 rounded-6',
   md: 'h-24 w-24 rounded-7',
-  lg: 'h-[30px] w-[30px] rounded-9',
+  lg: 'h-30 w-30 rounded-9',
 }
 
 const GLYPH: Record<BrandMarkSize, number> = { sm: 14, md: 15, lg: 19 }

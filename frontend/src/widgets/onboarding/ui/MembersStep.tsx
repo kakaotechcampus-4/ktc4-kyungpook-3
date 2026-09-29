@@ -1,5 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useRef, useState } from 'react'
+import type { FormEvent } from 'react'
 import { z } from 'zod'
 import { integrationsQueryOptions } from '@/entities/integration'
 import { discordUsersQueryOptions, memberListQueryOptions } from '@/entities/member'
@@ -140,14 +141,16 @@ function MembersForm({ workspaceId, initialRows, notice }: MembersFormProps) {
     }
   }
 
-  const onSubmit = submit((values) =>
-    exclusive(async () => {
-      if (!(await saveMappings(values))) return
-      await onboarding
-        .save({ step: 'connect_members', action: 'complete' })
-        .catch((error: unknown) => setFormError(errorMessage(error)))
-    }),
-  )
+  /* 제출 handler 는 이벤트 안에서 만든다 — lock 을 쓰는 함수를 렌더 중에 넘기지 않는다 */
+  const onSubmit = (event: FormEvent<HTMLFormElement>) =>
+    submit((values) =>
+      exclusive(async () => {
+        if (!(await saveMappings(values))) return
+        await onboarding
+          .save({ step: 'connect_members', action: 'complete' })
+          .catch((error: unknown) => setFormError(errorMessage(error)))
+      }),
+    )(event)
 
   /* 건너뛰기가 저장된 뒤에만 등록을 푼다. 실패하면 입력이 남아 있으니 이탈 확인도 남아야 한다.
      성공하면 단계 가드가 옮기는데, 그 <Navigate> 는 관문을 타지 않아 등록이 남아 있어도 막지 않는다 */
@@ -180,9 +183,7 @@ function MembersForm({ workspaceId, initialRows, notice }: MembersFormProps) {
     <OnboardingLayout
       stepNumber={STEP_NUMBER.connect_members}
       title={STEP_TITLE.connect_members}
-      exit={
-        <ExitLink beforeLeave={beforeLeave} />
-      }
+      exit={<ExitLink beforeLeave={beforeLeave} />}
       notice={notice}
       messages={messagesFor(initialRows)}
     >
@@ -221,7 +222,7 @@ function MembersForm({ workspaceId, initialRows, notice }: MembersFormProps) {
               {initialRows.map((row, index) => (
                 <li key={row.discordUserId} className={ROW}>
                   <span className={HANDLE}>@{row.username}</span>
-                  <Icon name="arrow-right" size={12} className="mt-[15px] shrink-0 text-dashed" />
+                  <Icon name="arrow-right" size={12} className="mt-15 shrink-0 text-dashed" />
                   <TextField
                     tone="onboarding"
                     className="flex-1"

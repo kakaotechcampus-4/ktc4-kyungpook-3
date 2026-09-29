@@ -15,12 +15,20 @@ export default tseslint.config(
       'storybook-static',
       'playwright-report',
       'test-results',
+      'playwright-report-storybook',
+      'test-results-storybook',
       'docs',
       'public/mockServiceWorker.js',
     ],
   },
 
   js.configs.recommended,
+
+  {
+    // Node 로 실행하는 보조 스크립트 (예: e2e/storybook/serve.mjs)
+    files: ['**/*.mjs'],
+    languageOptions: { globals: globals.node },
+  },
 
   {
     files: ['**/*.{ts,tsx}'],

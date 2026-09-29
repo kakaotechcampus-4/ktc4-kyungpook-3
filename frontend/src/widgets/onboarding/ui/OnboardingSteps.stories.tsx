@@ -55,6 +55,24 @@ export const 만들기_제출_중: Story = {
   },
 }
 
+/** 공간은 만들었는데 단계 저장이 실패했다 — 이름 칸이 잠기고 `다시 시도` 는 단계 저장만 한다 */
+export const 만들기_비활성: Story = {
+  parameters: {
+    msw: [
+      http.patch('/api/v1/workspaces/:workspaceId/onboarding', () =>
+        fail('INTERNAL_ERROR', 'x', 500),
+      ),
+    ],
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.type(canvas.getByLabelText('팀 이름'), '새 팀')
+    await userEvent.click(canvas.getByRole('button', { name: '만들기' }))
+    await expect(await canvas.findByRole('button', { name: '다시 시도' })).toBeVisible()
+    await expect(canvas.getByLabelText('팀 이름')).toHaveAttribute('readonly')
+  },
+}
+
 export const Discord_기본: Story = {
   render: () => <IntegrationStep workspaceId="ws_03" provider="discord" />,
   parameters: { route: '/onboarding/ws_03/connect_discord' },
@@ -90,6 +108,34 @@ export const Notion_기본: Story = {
   parameters: {
     route: '/onboarding/ws_03/connect_notion',
     setup: () => settleMockOAuth({ workspaceId: 'ws_03', provider: 'discord', outcome: 'success' }),
+  },
+}
+
+/** 연동 상태를 받는 중 — 연결·건너뛰기 버튼이 아직 없다 */
+export const Notion_로딩: Story = {
+  ...Notion_기본,
+  parameters: {
+    ...Notion_기본.parameters,
+    msw: [http.get('/api/v1/workspaces/:workspaceId/integrations', hang)],
+  },
+}
+
+export const Notion_조회_오류: Story = {
+  ...Notion_기본,
+  parameters: {
+    ...Notion_기본.parameters,
+    msw: [
+      http.get('/api/v1/workspaces/:workspaceId/integrations', () => fail('FORBIDDEN', 'no', 403)),
+    ],
+  },
+}
+
+/** OAuth 에서 취소하고 돌아왔다 — 단계는 그대로이고 안내가 남는다 */
+export const Notion_취소_복귀: Story = {
+  ...Notion_기본,
+  parameters: {
+    ...Notion_기본.parameters,
+    route: '/onboarding/ws_03/connect_notion?oauth=notion&oauth_result=cancelled',
   },
 }
 

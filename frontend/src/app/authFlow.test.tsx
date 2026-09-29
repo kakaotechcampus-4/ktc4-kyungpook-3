@@ -309,18 +309,53 @@ describe('로그인 제출 (U2-4·U2-6·U2-8)', () => {
     stale.resolve()
   })
 
-  it('목록 확보가 실패하면 로그인 화면에 머물고 비필드 오류를 보인다', async () => {
-    server.use(http.get('/api/v1/workspaces', () => fail('INTERNAL_ERROR', 'boom', 500)))
+  /* F-r1 #12 로 기대값을 바꿨다. 예전에는 비로그인 화면에 남았는데, 서버 세션은 이미 생겼고
+     가입이라면 다시 제출이 409 로 막혔다. 이제 세션을 반영하고 가드의 목록 오류·다시 시도로 넘긴다 */
+  it('목록 확보가 실패해도 로그인 상태로 넘어가 목록 오류와 다시 시도를 보인다', async () => {
+    let failing = true
+    server.use(
+      // 실패를 끝내면 아무것도 돌려주지 않아 기본 handler 로 넘긴다
+      http.get('/api/v1/workspaces', () =>
+        failing ? fail('INTERNAL_ERROR', 'boom', 500) : undefined,
+      ),
+    )
     const app = await openLogin()
     await fillLogin('pm@example.com', 'mock-password')
     await userEvent.click(screen.getByRole('button', { name: '로그인' }))
     // 5xx 조회는 1초 뒤 한 번 더 요청한다 (Query 공통 정책)
-    expect(await screen.findByRole('alert', {}, { timeout: 3000 })).toHaveTextContent(
-      '서버에 문제가 생겼어요. 잠시 후 다시 시도해 주세요.',
+    const retry = await screen.findByRole('button', { name: '다시 시도' }, { timeout: 6000 })
+    expect(
+      screen.getByText('서버에 문제가 생겼어요. 잠시 후 다시 시도해 주세요.'),
+    ).toBeInTheDocument()
+    expect(app.queryClient.getQueryData(SESSION_QUERY_KEY)).toMatchObject({
+      user: { email: 'pm@example.com' },
+    })
+
+    failing = false
+    await userEvent.click(retry)
+    expect(await screen.findByRole('heading', { name: '워크스페이스 선택' })).toBeInTheDocument()
+  }, 10_000)
+
+  it('가입 뒤 목록 확보가 실패해도 다시 시도로 이어 가고 가입 요청은 한 번이다', async () => {
+    let failing = true
+    server.use(
+      // 실패를 끝내면 아무것도 돌려주지 않아 기본 handler 로 넘긴다
+      http.get('/api/v1/workspaces', () =>
+        failing ? fail('INTERNAL_ERROR', 'boom', 500) : undefined,
+      ),
     )
-    await app.expectPath('/login')
-    expect(app.queryClient.getQueryData(SESSION_QUERY_KEY)).toBeNull()
-  })
+    const log = recordRequests()
+    const app = await openSignup()
+    await fillSignup({ name: '새 사용자', email: 'new@example.com', password: 'pass1234' })
+    await userEvent.click(screen.getByRole('button', { name: '계정 만들기' }))
+    const retry = await screen.findByRole('button', { name: '다시 시도' }, { timeout: 6000 })
+
+    failing = false
+    await userEvent.click(retry)
+    expect(await screen.findByRole('heading', { name: '워크스페이스 만들기' })).toBeInTheDocument()
+    await app.expectPath('/onboarding/create_workspace')
+    expect(posts(log, '/auth/signup')).toHaveLength(1)
+  }, 10_000)
 })
 
 describe('부팅 세션 조회가 실패한 뒤의 로그인', () => {

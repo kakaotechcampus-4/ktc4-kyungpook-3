@@ -18,6 +18,8 @@ export default defineConfig({
     ? [['github'], ['html', { open: 'never', outputFolder: 'playwright-report-storybook' }]]
     : [['list'], ['html', { open: 'never', outputFolder: 'playwright-report-storybook' }]],
   outputDir: 'test-results-storybook',
+  // 막 빌드한 산출물의 첫 스토리는 큰 번들과 MSW worker 등록을 처음 거쳐 기본 5초를 넘길 때가 있다 (F-r3)
+  expect: { timeout: 15_000 },
   use: {
     baseURL: `http://localhost:${PORT}`,
     trace: 'retain-on-failure',

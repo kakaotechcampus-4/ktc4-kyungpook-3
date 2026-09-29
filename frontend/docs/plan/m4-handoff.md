@@ -3,7 +3,7 @@
 - 작성일: 2026-09-29
 - 브랜치: `feature/108-m4-auth-onboarding-workspace`
 - 계획: `m4-auth-onboarding-and-workspace.md` · 완료 조건: `m4-done-criteria.md`
-- 상태: **U1~U5 검증 PASS, 최종 게이트 F 1회차 FAIL(major 1건) → 수정 2회차 진행 중에 중단.** 이 커밋은 중단 시점 작업 트리 그대로이며 lint·format 이 실패한다.
+- 상태: **F 수정 2회차 완료. 최종 게이트 F r4 에서 코드 기준 전부 PASS, 남은 FAIL 1건은 검증 샌드박스 제약으로 인정(사용자 결정, 2026-09-29).** 아래 6절.
 
 ## 1. 지금까지
 
@@ -25,7 +25,7 @@ F r1 에서 확인된 것: `npm ci` 뒤 typecheck·lint·format·build·build-st
 - 랜딩: 제품 미리보기는 정적 마크업으로 구현, 요금제·FAQ 제외 → `docs/impl-decision/2026-09-28-landing-scope.md`
 - 온보딩: 하단 이전/다음 버튼 없이 `n / 4` 만, 나가기는 좌측 상단 뒤로가기. Notion DB 선택 없음, 연동 완료 줄은 이름 없이 → `docs/impl-decision/2026-09-28-onboarding-layout.md`
 
-## 2. 중단 시점 상태 (이 커밋)
+## 2. 중단 시점 상태 (821e7e2 — 기록용)
 
 | 검사 | 결과 |
 |---|---|
@@ -36,9 +36,9 @@ F r1 에서 확인된 것: `npm ci` 뒤 typecheck·lint·format·build·build-st
 | build | PASS |
 | build-storybook · test:e2e · test:storybook | 중단 후 미실행(`test:storybook` 은 중단 전 1회 passed 기록) |
 
-## 3. 남은 일 — F 수정 2회차
+## 3. F 수정 2회차 항목
 
-항목 번호는 F r1 검증 보고서 기준이다. 상태는 중단 시점 파일 변경으로 추정한 것이니 이어받는 쪽이 확인한다.
+항목 번호는 F r1 검증 보고서 기준이다. "상태" 열은 중단 시점 기록이고, 최종 판정은 6절의 F r4 결과다(#1~#14 전부 PASS 또는 사유 유지).
 
 | # | 등급 | 내용 | 상태 |
 |---|---|---|---|
@@ -72,3 +72,24 @@ F r1 에서 확인된 것: `npm ci` 뒤 typecheck·lint·format·build·build-st
 - Windows `core.autocrlf=true` 체크아웃에서 `format:check` 를 맞추느라 작업 트리 전체가 LF 로 정규화됐다. `git status` 에 내용 변경 없는 ` M` 이 많이 보일 수 있으나 커밋에는 실제 변경만 들어간다. 스테이징 뒤 `git diff --cached --stat` 으로 확인한다.
 - Orca 에서 Codex 워커를 띄우면 준비 감지(`agent_readiness`)가 `missing_status` 로 실패했다. `~/.codex/hooks.json` 의 Orca 훅이 비워지는 것이 한 원인이었는데, 복구해도 다시 비워졌다. 이번 루프의 검증은 Claude Opus 5.5 high 로 대체했다.
 - 루프 운영 파일(단위별 작업 지시·검증 보고서·이월 목록)은 작성자 로컬 `.orca-loop/` 에만 있고 커밋하지 않았다. 필요한 내용은 이 문서에 옮겼다.
+
+## 6. F 수정 2회차 결과 (2026-09-29)
+
+검증은 Codex(gpt-5.6-sol, reasoning high, `codex exec` workspace-write 샌드박스)로 했다. Orca 워커 대신 `codex exec` 를 직접 썼다.
+
+이어받은 뒤 처리:
+- lint·format 복구: `**/*.mjs` node 전역, `playwright.storybook.config.ts` tsconfig 포함, Storybook Playwright 산출물 폴더 eslint·prettier 제외
+- #7 `MembersStep` 제출 handler 를 이벤트 안에서 만들어 렌더 중 ref 접근 제거, 상호 배제 테스트 2건(잠금을 빼면 둘 다 실패함을 확인)
+- #12 목록 조회가 실패해도 세션 반영 → 가드의 오류·다시 시도. `authFlow` 기존 기대값 1건 변경(사유 주석) + 가입 테스트 추가
+- #2·#3·#10·#11 처리. #10 의 `만들기_비활성` 은 폼에 비활성 버튼 상태가 없어 "공간 생성 뒤 단계 저장 실패로 이름 칸이 잠긴 상태"로 그렸다
+- 부하 민감 대기 한도: RTL `asyncUtilTimeout` 3초(`setup.ts`), 온보딩 전체 흐름 describe 15초, E2E `start()` 앱 마운트 대기 15초, Storybook Playwright `expect` 15초. 조건은 그대로다(F r4 G3 PASS)
+
+| 회차 | 판정 | 원인 → 조치 |
+|---|---|---|
+| r2 | FAIL | 선택 화면 첫 Tab 단언이 전체 E2E 에서 실패(메뉴로 옮기면 포커스를 가진 트리거가 사라져 Tab 시작점이 흔들림) → 이동 뒤 `page.reload()` 로 시작점 고정 |
+| r3 | FAIL | 온보딩 전체 흐름 테스트 5초 초과, 1024px 온보딩 첫 로드 5초 초과 → 위 대기 한도 |
+| r4 | FAIL → 인정 | 테스트는 E2E 28/28·Storybook 3/3 두 회차 모두 통과했으나 Playwright 명령이 샌드박스에서 종료되지 않음. 로컬에서는 종료 코드 0(E2E 88초, Storybook 10초). 샌드박스가 프로세스 조회도 거부해 종료 처리도 막힌 것으로 추정 — 원인 확정은 안 됨. CI 에서 다시 확인한다 |
+
+검증 환경 제약: 샌드박스에서 `storybook build` 는 `Cannot read directory "../../../../..": Access is denied` 로 실패하고 실패 전에 `storybook-static/` 을 비운다. r4 는 샌드박스 밖에서 만든 산출물로 회귀 검사를 돌리고 `index.json` 으로 최신성을 확인했다.
+
+남은 minor: 앱 빌드의 Tailwind CSS 최적화 경고 1건(docs 마크다운 스캔, M2 부터 있던 것) — 이번 범위에서 고치지 않았다.

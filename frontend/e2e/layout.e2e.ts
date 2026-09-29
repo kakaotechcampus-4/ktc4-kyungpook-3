@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import type { Locator } from '@playwright/test'
 import { expectNoHorizontalOverflow, start } from './support'
 import type { Scenario } from './support'
 
@@ -68,15 +69,32 @@ for (const width of VIEWPORTS) {
     test('앱 헤더 — 탭 5개와 두 메뉴가 한 줄에 보인다', async ({ page }) => {
       await start(page, 'multiple-workspaces', '/workspaces/ws_01/dashboard')
       const header = page.getByRole('banner')
-      await expect(
-        header.getByRole('navigation', { name: '주요 화면' }).getByRole('link'),
-      ).toHaveCount(5)
-      const box = await header.boundingBox()
-      expect(box?.height).toBe(76)
-      for (const trigger of [/^워크스페이스 바꾸기/, /^내 계정/]) {
-        const button = header.getByRole('button', { name: trigger })
-        await expect(button).toBeInViewport()
+      const tabs = header.getByRole('navigation', { name: '주요 화면' }).getByRole('link')
+      await expect(tabs).toHaveCount(5)
+      const menus = [/^워크스페이스 바꾸기/, /^내 계정/].map((name) =>
+        header.getByRole('button', { name }),
+      )
+      for (const menu of menus) await expect(menu).toBeInViewport()
+
+      // 높이 대신 위치로 본다 — 줄바꿈이 없으면 탭은 모두 같은 top, 헤더 항목은 모두 같은 세로 중심에 있다
+      const boxOf = async (locator: Locator) => {
+        const box = await locator.boundingBox()
+        expect(box).not.toBeNull()
+        return box!
       }
+      const tabBoxes = await Promise.all((await tabs.all()).map(boxOf))
+      for (const box of tabBoxes) expect(Math.abs(box.y - tabBoxes[0].y)).toBeLessThanOrEqual(1)
+      const items = [
+        header.getByRole('link', { name: "Manager's Manager 대시보드" }),
+        ...(await tabs.all()),
+        ...menus,
+      ]
+      const itemBoxes = await Promise.all(items.map(boxOf))
+      const centers = itemBoxes.map((box) => box.y + box.height / 2)
+      for (const center of centers) expect(Math.abs(center - centers[0])).toBeLessThanOrEqual(1)
+      // 왼쪽에서 오른쪽으로 차례로 놓인다 — 줄이 넘어가면 이 순서가 깨진다
+      const lefts = itemBoxes.map((box) => box.x)
+      expect(lefts).toEqual([...lefts].sort((a, b) => a - b))
       await expectNoHorizontalOverflow(page)
     })
   })

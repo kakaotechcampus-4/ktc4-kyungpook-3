@@ -1,4 +1,4 @@
-import { act, screen, within } from '@testing-library/react'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http } from 'msw'
 import { fail } from '@/shared/mock/envelope'
@@ -51,8 +51,13 @@ describe('앱 안의 이탈 확인', () => {
     await user.click(screen.getByRole('link', { name: '대시보드' }))
     expect(await screen.findByRole('dialog')).toHaveTextContent('저장하지 않은 변경 내용이 있어요')
     await user.click(screen.getByRole('button', { name: '계속 작성하기' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
     await app.expectPath('/workspaces/ws_01/settings')
     expect(screen.getByLabelText('워크스페이스 이름')).toHaveValue('카테캠 3팀 새 이름')
+    // 대시보드에 들렀다 온 것도 아니다
+    expect(screen.getByRole('heading', { name: '설정' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: '대시보드' })).not.toBeInTheDocument()
+    expect(app.visited().map(({ pathname }) => pathname)).toEqual(['/workspaces/ws_01/settings'])
   })
 
   it('워크스페이스 목록으로 나가는 이동도 묻고, 버리고 나가면 이어 간다', async () => {
