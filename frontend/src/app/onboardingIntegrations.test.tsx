@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from '@testing-library/react'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http } from 'msw'
 import { leaveApp } from '@/shared/lib/location'
@@ -175,35 +175,40 @@ describe('Discord·Notion 연결 (U3-3)', () => {
   })
 })
 
-describe('Discord 건너뛰기의 연쇄 (U3-4, D-073)', () => {
-  it('Discord 를 건너뛰면 팀원 연결도 건너뜀으로 저장한다 — Discord 가 먼저다', async () => {
+/* D-073 개정(2026-09-29, 사용자 결정): Discord 를 건너뛰어도 팀원 연결을 함께 건너뛰지 않는다.
+   아래 테스트는 예전 연쇄(팀원 건너뜀 PATCH 가 뒤따름)를 단언했다 — 이제 PATCH 는 Discord 하나이고 팀원 단계는 pending 이다.
+   "중간 실패" 는 연쇄의 두 번째 요청 대신, PATCH 는 됐는데 뒤의 상세 재조회가 실패한 경우로 옮겼다 */
+describe('Discord 건너뛰기 (U3-4, D-073 개정)', () => {
+  it('Discord 를 건너뛰면 Discord 만 건너뜀으로 저장한다 — 팀원 연결은 pending 이다', async () => {
     const bodies = recordRequestBodies('PATCH', ONBOARDING_PATCH)
     const app = renderApp('/onboarding/ws_03/connect_discord')
     await userEvent.click(await screen.findByRole('button', { name: '건너뛰기' }))
 
     expect(await screen.findByRole('heading', { name: 'Notion 연결' })).toBeInTheDocument()
     await app.expectPath('/onboarding/ws_03/connect_notion')
-    await waitFor(() =>
-      expect(bodies).toEqual([
-        { step: 'connect_discord', action: 'skip' },
-        { step: 'connect_members', action: 'skip' },
-      ]),
-    )
+    await waitFor(() => expect(bodies).toEqual([{ step: 'connect_discord', action: 'skip' }]))
     expect(ws03().onboarding.steps.map(({ status }) => status)).toEqual([
       'completed',
       'skipped',
       'pending',
-      'skipped',
+      'pending',
     ])
   })
 
-  it('중간에 실패하면 저장된 상태를 다시 읽어 남은 요청만 재시도한다', async () => {
-    // 두 번째 PATCH(팀원 건너뜀)만 한 번 실패한다
-    let calls = 0
+  it('저장 뒤 재조회가 실패하면 저장된 상태를 다시 읽어 남은 요청만 재시도한다 — 다시 보낼 PATCH 가 없다', async () => {
+    // PATCH 는 되고, 그 뒤의 상세 재조회만 한 번 실패한다
+    let patched = false
+    let failedOnce = false
     server.use(
       http.patch('/api/v1/workspaces/:workspaceId/onboarding', () => {
-        calls += 1
-        return calls === 2 ? fail('INTERNAL_ERROR', 'x', 500) : undefined
+        patched = true
+        return undefined
+      }),
+      http.get('/api/v1/workspaces/:workspaceId', () => {
+        if (!patched || failedOnce) return undefined
+        failedOnce = true
+        // 재시도하지 않는 오류라야 한 번의 실패가 그대로 드러난다(5xx 는 조회가 한 번 더 시도한다)
+        return fail('FORBIDDEN', 'x', 403)
       }),
     )
     const bodies = recordRequestBodies('PATCH', ONBOARDING_PATCH)
@@ -211,43 +216,43 @@ describe('Discord 건너뛰기의 연쇄 (U3-4, D-073)', () => {
     const app = renderApp('/onboarding/ws_03/connect_discord')
     await userEvent.click(await screen.findByRole('button', { name: '건너뛰기' }))
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(
-      '서버에 문제가 생겼어요. 잠시 후 다시 시도해 주세요.',
-    )
-    // 목록은 중간 상태로 바뀌지 않았다 — 화면이 그대로라 재시도할 수 있다
+    // 실패는 PATCH 뒤 상세 재조회(403)다. 그 오류 문구가 그대로 보인다
+    expect(await screen.findByRole('alert')).toHaveTextContent('접근 권한이 없어요.')
+    // 목록은 바뀌지 않았다 — 화면이 그대로라 재시도할 수 있다
     await app.expectPath('/onboarding/ws_03/connect_discord')
     expect(ws03().onboarding.steps[1].status).toBe('skipped')
 
     await userEvent.click(screen.getByRole('button', { name: '건너뛰기' }))
     expect(await screen.findByRole('heading', { name: 'Notion 연결' })).toBeInTheDocument()
-    await waitFor(() =>
-      expect(bodies).toEqual([
-        { step: 'connect_discord', action: 'skip' },
-        { step: 'connect_members', action: 'skip' },
-        // 재시도는 남은 팀원 건너뜀 하나뿐이다
-        { step: 'connect_members', action: 'skip' },
-      ]),
-    )
-    expect(patches(log.started)).toHaveLength(3)
-    // 재시도 전에 저장된 상태를 다시 읽었다
-    const retryAt = log.timeline.lastIndexOf(`start PATCH ${ONBOARDING_PATCH}`)
-    expect(log.timeline.slice(0, retryAt).at(-2)).toBe('start GET /workspaces/ws_03')
+    // 재시도는 저장된 상태를 다시 읽고 끝난다 — PATCH 는 처음 하나뿐이다
+    expect(bodies).toEqual([{ step: 'connect_discord', action: 'skip' }])
+    expect(patches(log.started)).toHaveLength(1)
+    expect(ws03().onboarding.steps[3].status).toBe('pending')
   })
 
-  it('연쇄가 중간에 실패한 화면에서는 연결하기를 막고 건너뛰기 재시도만 허용한다 (U3-r1 #4)', async () => {
-    let calls = 0
+  it('건너뛰기가 서버에는 저장된 채 실패한 화면에서는 연결하기를 막고 건너뛰기 재시도만 허용한다 (U3-r1 #4)', async () => {
+    let patched = false
+    let failedOnce = false
     server.use(
       http.patch('/api/v1/workspaces/:workspaceId/onboarding', () => {
-        calls += 1
-        return calls === 2 ? fail('INTERNAL_ERROR', 'x', 500) : undefined
+        patched = true
+        return undefined
+      }),
+      http.get('/api/v1/workspaces/:workspaceId', () => {
+        if (!patched || failedOnce) return undefined
+        failedOnce = true
+        // 재시도하지 않는 오류라야 한 번의 실패가 그대로 드러난다(5xx 는 조회가 한 번 더 시도한다)
+        return fail('FORBIDDEN', 'x', 403)
       }),
     )
+    const log = recordRequests()
     renderApp('/onboarding/ws_03/connect_discord')
     await userEvent.click(await screen.findByRole('button', { name: '건너뛰기' }))
     await screen.findByRole('alert')
+    await afterSkipCheck(log)
     // 서버는 이미 Discord 건너뜀이다. 여기서 연결하면 서버와 화면이 갈린다
     expect(ws03().onboarding.steps[1].status).toBe('skipped')
-    expect(screen.getByRole('button', { name: '연결하기' })).toBeDisabled()
+    await waitFor(() => expect(screen.getByRole('button', { name: '연결하기' })).toBeDisabled())
     await userEvent.click(screen.getByRole('button', { name: '연결하기' }))
     expect(leaveApp).not.toHaveBeenCalled()
 
@@ -256,7 +261,7 @@ describe('Discord 건너뛰기의 연쇄 (U3-4, D-073)', () => {
   })
 
   // 막는 것은 서버가 이미 건너뜀일 때뿐이다 (F-r1 #6)
-  it('연쇄의 첫 요청부터 실패해 서버가 pending 이면 연결하기를 막지 않는다', async () => {
+  it('건너뛰기 PATCH 부터 실패해 서버가 pending 이면 연결하기를 막지 않는다', async () => {
     server.use(
       http.patch('/api/v1/workspaces/:workspaceId/onboarding', () =>
         fail('INTERNAL_ERROR', 'x', 500),
@@ -314,7 +319,8 @@ describe('Discord 건너뛰기의 연쇄 (U3-4, D-073)', () => {
     expect(leaveApp).not.toHaveBeenCalled()
   })
 
-  it('Notion 까지 끝나면 팀원 단계 없이 새 공간 대시보드로 간다 (D-073, D-013)', async () => {
+  // D-073 개정 뒤에도 이미 건너뜀으로 저장된 팀원 단계는 그대로 둔다(되돌리지 않는다) — 예전 데이터의 경우다
+  it('팀원 단계가 이미 건너뜀으로 저장돼 있으면 Notion 뒤 바로 새 공간 대시보드로 간다 (D-013)', async () => {
     atNotion('skipped')
     ws03().onboarding.steps[3].status = 'skipped'
     const app = renderApp('/onboarding/ws_03/connect_notion')
@@ -324,18 +330,55 @@ describe('Discord 건너뛰기의 연쇄 (U3-4, D-073)', () => {
     expect(ws03().onboarding.completed).toBe(true)
   })
 
-  it('Discord 만 건너뜀으로 남았다면 Notion 저장이 팀원 건너뜀을 함께 채운다', async () => {
+  // D-073 개정(2026-09-29): 예전에는 Notion 저장이 팀원 건너뜀을 함께 채워 대시보드로 갔다. 이제 팀원 연결 단계로 간다
+  it('Discord 만 건너뜀이면 Notion 저장은 Notion 하나이고 팀원 연결 단계로 간다', async () => {
     atNotion('skipped')
     const bodies = recordRequestBodies('PATCH', ONBOARDING_PATCH)
     const app = renderApp('/onboarding/ws_03/connect_notion')
     await userEvent.click(await screen.findByRole('button', { name: '건너뛰기' }))
-    expect(await screen.findByRole('heading', { name: '대시보드' })).toBeInTheDocument()
-    await app.expectPath('/workspaces/ws_03/dashboard')
-    await waitFor(() =>
-      expect(bodies).toEqual([
-        { step: 'connect_notion', action: 'skip' },
-        { step: 'connect_members', action: 'skip' },
-      ]),
-    )
+    expect(
+      await screen.findByText(
+        '디스코드를 연결하지 않아 팀원을 불러올 수 없어요. 이전 단계에서 연결하거나 건너뛸 수 있어요.',
+      ),
+    ).toBeInTheDocument()
+    await app.expectPath('/onboarding/ws_03/connect_members')
+    await waitFor(() => expect(bodies).toEqual([{ step: 'connect_notion', action: 'skip' }]))
+    expect(ws03().onboarding.steps[3].status).toBe('pending')
+  })
+})
+
+/* 카드 버튼과 하단 `›` 는 같은 저장을 부른다. 버튼 비활성은 다음 렌더에야 걸려, 같은 틱의 두 입력은 둘 다 들어온다 */
+describe('연동 단계 저장은 한 번에 하나다', () => {
+  it('같은 틱에 `건너뛰기` 와 `다음 단계` 를 눌러도 PATCH 는 하나이고 오류 없이 넘어간다', async () => {
+    const log = recordRequests()
+    renderApp('/onboarding/ws_03/connect_discord')
+    const card = await screen.findByRole('button', { name: '건너뛰기' })
+    const next = screen.getByRole('button', { name: '다음 단계' })
+    await waitFor(() => expect(next).toBeEnabled())
+
+    act(() => {
+      card.click()
+      next.click()
+    })
+
+    expect(await screen.findByRole('heading', { name: 'Notion 연결' })).toBeInTheDocument()
+    expect(patches(log.started)).toHaveLength(1)
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('`다음 단계` 를 같은 틱에 두 번 눌러도 PATCH 는 하나다', async () => {
+    const log = recordRequests()
+    renderApp('/onboarding/ws_03/connect_discord')
+    const next = await screen.findByRole('button', { name: '다음 단계' })
+    await waitFor(() => expect(next).toBeEnabled())
+
+    act(() => {
+      next.click()
+      next.click()
+    })
+
+    expect(await screen.findByRole('heading', { name: 'Notion 연결' })).toBeInTheDocument()
+    expect(patches(log.started)).toHaveLength(1)
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 })

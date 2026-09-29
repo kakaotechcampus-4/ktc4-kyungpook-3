@@ -16,6 +16,8 @@ const ICONS = {
   'chevron-down': { strokeWidth: 1.9, paths: <path d="m6 9 6 6 6-6" /> },
   /** Main · Landing 의 `확인하기` · `전부 보기` */
   'chevron-right': { strokeWidth: 2, paths: <path d="m9 6 6 6-6 6" /> },
+  /** 온보딩 `이전 단계`. 캔버스에 없어 chevron-right 를 뒤집었다 */
+  'chevron-left': { strokeWidth: 2, paths: <path d="m15 6-6 6 6 6" /> },
   /** Main 팀 메뉴의 현재 공간 · SetupNotion 연동 완료 */
   check: { strokeWidth: 2.2, paths: <path d="m5 13 4 4L19 7" /> },
   /** Main 팀 메뉴의 `새 팀 만들기` */

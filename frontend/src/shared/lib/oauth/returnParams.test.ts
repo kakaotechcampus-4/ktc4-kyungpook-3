@@ -1,4 +1,9 @@
-import { readOAuthResult, safeReturnPath, withOAuthResult } from './returnParams'
+import {
+  readOAuthResult,
+  safeReturnPath,
+  withOAuthResult,
+  withoutOAuthResult,
+} from './returnParams'
 
 describe('safeReturnPath', () => {
   it('앱 안 경로는 그대로 받는다', () => {
@@ -28,5 +33,17 @@ describe('withOAuthResult · readOAuthResult', () => {
 
   it('모르는 결과는 null 이다', () => {
     expect(readOAuthResult(new URLSearchParams({ oauth: 'discord', oauth_result: 'x' }))).toBeNull()
+  })
+})
+
+describe('withoutOAuthResult', () => {
+  it('복귀 결과만 빼고 나머지 검색 파라미터(둘러보기 표시)는 남긴다', () => {
+    expect(
+      withoutOAuthResult(new URLSearchParams('review=1&oauth=discord&oauth_result=success')),
+    ).toBe('?review=1')
+  })
+
+  it('남는 것이 없으면 빈 문자열이다', () => {
+    expect(withoutOAuthResult(new URLSearchParams('oauth=discord&oauth_result=failed'))).toBe('')
   })
 })

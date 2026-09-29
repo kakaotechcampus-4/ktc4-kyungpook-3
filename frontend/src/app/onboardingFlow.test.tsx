@@ -69,7 +69,9 @@ describe('온보딩 전체 흐름 (U3-11)', { timeout: 15_000 }, () => {
     })
   })
 
-  it('전 단계 건너뛰기 → 새 공간 대시보드. 팀원 연결은 Discord 건너뛰기에 딸려 건너뜀이다', async () => {
+  // D-073 개정(2026-09-29, 사용자 결정): 예전에는 팀원 연결이 Discord 건너뛰기에 딸려 건너뜀이라 Notion 뒤 바로 대시보드였다.
+  // 이제 Notion 뒤에는 언제나 팀원 연결이 오고, Discord 가 없으면 안내와 `건너뛰기` 를 보인다
+  it('전 단계 건너뛰기 → 팀원 연결(Discord 없음 안내)도 건너뛰기 → 새 공간 대시보드', async () => {
     applyScenario('no-workspace')
     const bodies = recordRequestBodies('PATCH', '/workspaces/ws_03/onboarding')
     const app = renderApp('/onboarding/create_workspace')
@@ -81,17 +83,23 @@ describe('온보딩 전체 흐름 (U3-11)', { timeout: 15_000 }, () => {
     await screen.findByRole('heading', { name: 'Notion 연결' })
     await userEvent.click(await screen.findByRole('button', { name: '건너뛰기' }))
 
+    await screen.findByRole('heading', { level: 1, name: '팀원 연결' })
+    await app.expectPath('/onboarding/ws_03/connect_members')
+    expect(
+      await screen.findByText(
+        '디스코드를 연결하지 않아 팀원을 불러올 수 없어요. 이전 단계에서 연결하거나 건너뛸 수 있어요.',
+      ),
+    ).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: '건너뛰기' }))
+
     expect(await screen.findByRole('heading', { name: '대시보드' })).toBeInTheDocument()
     await app.expectPath('/workspaces/ws_03/dashboard')
     expect(bodies).toEqual([
       { step: 'create_workspace', action: 'complete' },
       { step: 'connect_discord', action: 'skip' },
-      { step: 'connect_members', action: 'skip' },
       { step: 'connect_notion', action: 'skip' },
+      { step: 'connect_members', action: 'skip' },
     ])
-    expect(app.visited().map(({ pathname }) => pathname)).not.toContain(
-      '/onboarding/ws_03/connect_members',
-    )
   })
 
   it('중간에 새로고침하면 저장된 미완료 단계로 돌아온다 (U3-5)', async () => {

@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http } from 'msw'
 import { rememberReturnWorkspace } from '@/shared/lib/return-workspace'
@@ -466,5 +466,107 @@ describe('팀원 연결 저장은 한 번에 하나다', () => {
     await app.expectPath('/workspaces/ws_01/dashboard')
     expect(memberWrites(log.started)).toEqual(['POST /members'])
     expect(onboardingPatches(log.started)).toHaveLength(0)
+  })
+})
+
+/* D-073 개정(2026-09-29, 사용자 결정): Discord 를 건너뛰어도 팀원 연결 단계가 온다.
+   Discord 가 없으면 불러올 사용자가 없다 — 다시 시도만 있는 오류 대신 안내와 `건너뛰기` 를 보인다 */
+describe('Discord 없이 온 팀원 연결 (D-073 개정)', () => {
+  const NOT_CONNECTED =
+    '디스코드를 연결하지 않아 팀원을 불러올 수 없어요. 이전 단계에서 연결하거나 건너뛸 수 있어요.'
+
+  /** Discord 는 건너뛰고 Notion 은 연결한 채 팀원 연결 단계다 */
+  function atMembersWithoutDiscord() {
+    applyScenario('incomplete-workspace')
+    const ws03 = db.workspaces.find(({ workspace_id }) => workspace_id === 'ws_03')!
+    ws03.onboarding.steps[1].status = 'skipped'
+    ws03.onboarding.steps[2].status = 'completed'
+    ws03.onboarding.current_step = 'connect_members'
+    settleMockOAuth({ workspaceId: 'ws_03', provider: 'notion', outcome: 'success' })
+  }
+
+  const discordUserGets = (requests: RecordedRequest[]) =>
+    requests.filter(
+      ({ method, path }) => method === 'GET' && path === '/workspaces/ws_03/discord/members',
+    )
+
+  beforeEach(() => atMembersWithoutDiscord())
+
+  it('안내와 `건너뛰기` 를 보이고, 건너뛰면 팀원 연결을 건너뜀으로 저장해 대시보드로 간다', async () => {
+    const bodies = recordRequestBodies('PATCH', '/workspaces/ws_03/onboarding')
+    const app = renderApp('/onboarding/ws_03/connect_members')
+    expect(await screen.findByText(NOT_CONNECTED)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '다시 시도' })).not.toBeInTheDocument()
+    expect(screen.queryAllByRole('textbox')).toEqual([])
+
+    await userEvent.click(screen.getByRole('button', { name: '건너뛰기' }))
+    expect(await screen.findByRole('heading', { name: '대시보드' })).toBeInTheDocument()
+    await app.expectPath('/workspaces/ws_03/dashboard')
+    expect(bodies).toEqual([{ step: 'connect_members', action: 'skip' }])
+  })
+
+  it('`다음 단계` 도 같은 건너뛰기다', async () => {
+    const bodies = recordRequestBodies('PATCH', '/workspaces/ws_03/onboarding')
+    const app = renderApp('/onboarding/ws_03/connect_members')
+    await screen.findByText(NOT_CONNECTED)
+    const nav = screen.getByRole('navigation', { name: '단계 이동' })
+    await userEvent.click(within(nav).getByRole('button', { name: '다음 단계' }))
+    expect(await screen.findByRole('heading', { name: '대시보드' })).toBeInTheDocument()
+    await app.expectPath('/workspaces/ws_03/dashboard')
+    expect(bodies).toEqual([{ step: 'connect_members', action: 'skip' }])
+  })
+
+  it('`이전 단계` 는 Notion 둘러보기다 — 거기서 Discord 로 돌아가 연결할 수 있다', async () => {
+    const app = renderApp('/onboarding/ws_03/connect_members')
+    await screen.findByText(NOT_CONNECTED)
+    const nav = screen.getByRole('navigation', { name: '단계 이동' })
+    await userEvent.click(within(nav).getByRole('button', { name: '이전 단계' }))
+    expect(await screen.findByRole('heading', { name: 'Notion 연결' })).toBeInTheDocument()
+    await app.expectPath('/onboarding/ws_03/connect_notion')
+    await app.expectSearch('?review=1')
+  })
+
+  it('건너뛰기 저장이 실패하면 안내와 함께 화면에 남고, 다시 누르면 저장한다', async () => {
+    server.use(
+      http.patch(
+        '/api/v1/workspaces/:workspaceId/onboarding',
+        () => fail('INTERNAL_ERROR', 'x', 500),
+        { once: true },
+      ),
+    )
+    const app = renderApp('/onboarding/ws_03/connect_members')
+    await screen.findByText(NOT_CONNECTED)
+    await userEvent.click(screen.getByRole('button', { name: '건너뛰기' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      '서버에 문제가 생겼어요. 잠시 후 다시 시도해 주세요.',
+    )
+    await app.expectPath('/onboarding/ws_03/connect_members')
+    await userEvent.click(screen.getByRole('button', { name: '건너뛰기' }))
+    expect(await screen.findByRole('heading', { name: '대시보드' })).toBeInTheDocument()
+  })
+
+  it('처음 들어와 연동 상태를 모를 때 409 `INTEGRATION_NOT_CONNECTED` 가 와도 같은 안내다', async () => {
+    const log = recordRequests()
+    renderApp('/onboarding/ws_03/connect_members')
+    expect(await screen.findByText(NOT_CONNECTED)).toBeInTheDocument()
+    // 연동 상태와 Discord 사용자는 같은 렌더에서 함께 시작한다 — 409 는 한 번이고 다시 부르지 않는다
+    expect(discordUserGets(log.started).length).toBeLessThanOrEqual(1)
+  })
+
+  it('Notion 단계에서 넘어오면 연동 상태를 이미 알아 Discord 사용자를 부르지 않는다 — 409 가 없다', async () => {
+    const ws03 = db.workspaces.find(({ workspace_id }) => workspace_id === 'ws_03')!
+    ws03.onboarding.steps[2].status = 'pending'
+    ws03.onboarding.current_step = 'connect_notion'
+    db.integrations.ws_03.notion = {
+      status: 'not_connected',
+      display_name: null,
+      connected_at: null,
+    }
+    const log = recordRequests()
+    const app = renderApp('/onboarding/ws_03/connect_notion')
+    await userEvent.click(await screen.findByRole('button', { name: '건너뛰기' }))
+    expect(await screen.findByText(NOT_CONNECTED)).toBeInTheDocument()
+    await app.expectPath('/onboarding/ws_03/connect_members')
+    expect(discordUserGets(log.started)).toHaveLength(0)
   })
 })

@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { Navigate, Outlet } from 'react-router'
 import { sessionQueryOptions } from '@/entities/user'
 import { authRevisitPath, postLoginPath, workspaceListQueryOptions } from '@/entities/workspace'
-import { PageSkeleton } from '@/shared/ui/page-skeleton'
+import { RouteSkeleton } from '../RouteSkeleton'
 import { ScreenError } from './ScreenError'
 
 /**
@@ -28,13 +28,13 @@ export function RedirectIfAuthed() {
   // 그 화면에서 로그인한 것은 로그인 직후다. 렌더 중 파생 상태 갱신이고 한 번 true 가 되면 되돌아가지 않는다
   if (!session.data && !session.isPending && !sawSignedOut) setSawSignedOut(true)
 
-  if (session.data === undefined && session.isPending) return <PageSkeleton />
+  if (session.data === undefined && session.isPending) return <RouteSkeleton />
   if (!session.data) return <Outlet />
   if (workspaces.data === undefined) {
     return workspaces.isError ? (
       <ScreenError error={workspaces.error} onRetry={() => void workspaces.refetch()} />
     ) : (
-      <PageSkeleton />
+      <RouteSkeleton />
     )
   }
   const destination = sawSignedOut

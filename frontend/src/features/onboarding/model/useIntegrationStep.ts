@@ -11,6 +11,7 @@ import type { Integration, IntegrationProvider, Integrations } from '@/entities/
 import { workspaceDetailQueryOptions } from '@/entities/workspace'
 import { paths } from '@/shared/config/routes'
 import { leaveApp } from '@/shared/lib/location'
+import { withoutOAuthResult } from '@/shared/lib/oauth'
 import { useOnboardingSave } from './useOnboardingSave'
 
 const STEP_BY_PROVIDER = { discord: 'connect_discord', notion: 'connect_notion' } as const
@@ -32,13 +33,18 @@ export interface IntegrationStep {
   notice: IntegrationNotice | null
   /** 복귀 뒤 연동 상태를 다시 조회하는 중 */
   verifying: boolean
-  /** 현재 탭을 OAuth 로 옮긴다 (D-158). 복귀 경로는 이 단계다 */
+  /** 현재 탭을 OAuth 로 옮긴다 (D-158). 복귀 경로는 이 단계다 — 둘러보기면 둘러보기 주소다 */
   connect: () => void
   /** 연결된 상태에서 단계 완료를 저장한다 — 복귀 뒤 저장이 실패했을 때의 재시도 자리 */
   complete: () => Promise<void>
   skip: () => Promise<void>
   saving: boolean
   saveError: unknown
+}
+
+export interface IntegrationStepOptions {
+  /** 지난 단계 둘러보기(`?review=1`). OAuth 복귀도 둘러보기 주소로 돌아온다 */
+  review?: boolean
 }
 
 /**
@@ -49,6 +55,7 @@ export interface IntegrationStep {
 export function useIntegrationStep(
   workspaceId: string,
   provider: IntegrationProvider,
+  { review = false }: IntegrationStepOptions = {},
 ): IntegrationStep {
   const step = STEP_BY_PROVIDER[provider]
   const queryClient = useQueryClient()
@@ -67,9 +74,10 @@ export function useIntegrationStep(
   const [verifying, setVerifying] = useState(() => returned?.outcome === 'success')
   // 복귀 확인 중에는 구독 조회를 멈춘다 — 확인이 직접 받은 값을 캐시에 넣는다. 같은 조회가 겹쳐 나가지 않는다
   const integrations = useQuery({ ...integrationsQueryOptions(workspaceId), enabled: !verifying })
-  // 건너뛰기 저장이 실패했다. 연쇄(D-073)는 앞 요청만 성공했을 수 있어, 서버는 이미 건너뜀인데
+  // 건너뛰기 저장이 실패했다. PATCH 는 됐는데 뒤의 상세 재조회가 실패했을 수 있어, 서버는 이미 건너뜀인데
   // 화면은 pending 일 수 있다. 그 상태에서 연결하면 서버와 갈린다 — 그때만 건너뛰기 재시도만 허용한다.
-  // 첫 요청부터 실패해 서버가 pending 이면 연결도 그대로 할 수 있다 (F-r1 #6)
+  // PATCH 부터 실패해 서버가 pending 이면 연결도 그대로 할 수 있다 (F-r1 #6).
+  // (D-073 연쇄가 있던 때는 연쇄의 앞 요청만 성공한 경우가 주된 까닭이었다 — 2026-09-29 개정으로 연쇄는 없다)
   const [connectBlocked, setConnectBlocked] = useState(false)
   const handled = useRef(false)
 
@@ -77,8 +85,8 @@ export function useIntegrationStep(
   useEffect(() => {
     if (returned === null || handled.current) return
     handled.current = true
-    // 복귀 표시를 지운다 — 새로고침이 같은 확인을 또 하지 않는다
-    void navigate(pathname, { replace: true })
+    // 복귀 표시를 지운다 — 새로고침이 같은 확인을 또 하지 않는다. 둘러보기 표시(`review=1`)는 남긴다
+    void navigate({ pathname, search: withoutOAuthResult(searchParams) }, { replace: true })
     if (returned.outcome !== 'success') return
     void (async () => {
       let connected = false
@@ -100,16 +108,36 @@ export function useIntegrationStep(
       await save({ step, action: 'complete' }).catch(() => undefined)
       setVerifying(false)
     })()
-  }, [returned, navigate, pathname, queryClient, workspaceId, provider, save, step])
+  }, [returned, navigate, pathname, searchParams, queryClient, workspaceId, provider, save, step])
 
   const connect = useCallback(() => {
-    leaveApp(integrationStartUrl(workspaceId, provider, paths.onboardingStep(workspaceId, step)))
-  }, [workspaceId, provider, step])
+    const back = review
+      ? paths.onboardingReview(workspaceId, step)
+      : paths.onboardingStep(workspaceId, step)
+    leaveApp(integrationStartUrl(workspaceId, provider, back))
+  }, [workspaceId, provider, step, review])
 
-  const complete = useCallback(async () => {
-    setNotice(null)
-    await save({ step, action: 'complete' }).catch(() => undefined)
-  }, [save, step])
+  /* 완료·건너뛰기 저장은 한 번에 하나다. 카드 버튼과 하단 `›` 가 같은 저장을 부르고, isPending 은 다음 렌더에야
+     버튼을 막는다 — 그 사이의 연타·교차 입력이 PATCH 를 두 번 보내지 않게 ref 로 막는다 */
+  const inFlight = useRef(false)
+  const exclusive = useCallback(async (work: () => Promise<void>) => {
+    if (inFlight.current) return
+    inFlight.current = true
+    try {
+      await work()
+    } finally {
+      inFlight.current = false
+    }
+  }, [])
+
+  const complete = useCallback(
+    () =>
+      exclusive(async () => {
+        setNotice(null)
+        await save({ step, action: 'complete' }).catch(() => undefined)
+      }),
+    [exclusive, save, step],
+  )
 
   /** 서버에 이 단계가 건너뜀으로 저장됐는가. 확인하지 못하면 저장됐을 수 있다고 본다 */
   const skippedOnServer = useCallback(async () => {
@@ -124,17 +152,21 @@ export function useIntegrationStep(
     }
   }, [queryClient, workspaceId, step])
 
-  const skip = useCallback(async () => {
-    setNotice(null)
-    try {
-      await save({ step, action: 'skip' })
-      setConnectBlocked(false)
-    } catch {
-      // 확인이 끝날 때까지는 막아 둔다 — 그 사이에 연결을 누르지 못하게
-      setConnectBlocked(true)
-      setConnectBlocked(await skippedOnServer())
-    }
-  }, [save, step, skippedOnServer])
+  const skip = useCallback(
+    () =>
+      exclusive(async () => {
+        setNotice(null)
+        try {
+          await save({ step, action: 'skip' })
+          setConnectBlocked(false)
+        } catch {
+          // 확인이 끝날 때까지는 막아 둔다 — 그 사이에 연결을 누르지 못하게
+          setConnectBlocked(true)
+          setConnectBlocked(await skippedOnServer())
+        }
+      }),
+    [exclusive, save, step, skippedOnServer],
+  )
 
   return {
     integration: integrations.data?.[provider] ?? null,

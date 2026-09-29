@@ -54,38 +54,34 @@ const discordUser = (discordUserId: string, username: string, isBot = false): Di
   isBot,
 })
 
-describe('planOnboardingUpdates (D-073)', () => {
-  it('Discord 를 건너뛰면 팀원 연결도 건너뜀이다 — Discord 가 먼저다', () => {
+// D-073 개정(2026-09-29, 사용자 결정): Discord 를 건너뛰어도 팀원 연결을 함께 건너뛰지 않는다.
+// 예전 기대(팀원 건너뜀을 덧붙임)를 "팀원 단계는 그대로 pending" 으로 바꿨다
+describe('planOnboardingUpdates (D-073 개정)', () => {
+  it('Discord 를 건너뛰면 Discord 만 저장한다 — 팀원 연결은 pending 으로 남는다', () => {
     expect(
       planOnboardingUpdates(workspace(['completed', 'pending', 'pending', 'pending']), {
         step: 'connect_discord',
         action: 'skip',
       }),
-    ).toEqual([
-      { step: 'connect_discord', action: 'skip' },
-      { step: 'connect_members', action: 'skip' },
-    ])
+    ).toEqual([{ step: 'connect_discord', action: 'skip' }])
   })
 
-  it('이미 저장된 단계는 빼고 남은 것만 보낸다 — 재시도', () => {
+  it('이미 저장된 단계는 빼고 남은 것만 보낸다 — 재시도는 보낼 것이 없다', () => {
     expect(
       planOnboardingUpdates(workspace(['completed', 'skipped', 'pending', 'pending']), {
         step: 'connect_discord',
         action: 'skip',
       }),
-    ).toEqual([{ step: 'connect_members', action: 'skip' }])
+    ).toEqual([])
   })
 
-  it('Discord 만 건너뜀으로 남았으면 다음 저장이 팀원 건너뜀을 함께 채운다', () => {
+  it('Discord 가 건너뜀이어도 다음 저장이 팀원 건너뜀을 채우지 않는다', () => {
     expect(
       planOnboardingUpdates(workspace(['completed', 'skipped', 'pending', 'pending']), {
         step: 'connect_notion',
         action: 'complete',
       }),
-    ).toEqual([
-      { step: 'connect_notion', action: 'complete' },
-      { step: 'connect_members', action: 'skip' },
-    ])
+    ).toEqual([{ step: 'connect_notion', action: 'complete' }])
   })
 
   it('Discord 를 연결했으면 팀원 연결은 그대로 남는다', () => {
@@ -95,6 +91,15 @@ describe('planOnboardingUpdates (D-073)', () => {
         action: 'skip',
       }),
     ).toEqual([{ step: 'connect_notion', action: 'skip' }])
+  })
+
+  it('건너뛴 Discord 를 둘러보기에서 다시 연결해도 완료 저장은 걸러진다 — 단계 상태는 바꾸지 않는다', () => {
+    expect(
+      planOnboardingUpdates(workspace(['completed', 'skipped', 'pending', 'pending']), {
+        step: 'connect_discord',
+        action: 'complete',
+      }),
+    ).toEqual([])
   })
 })
 

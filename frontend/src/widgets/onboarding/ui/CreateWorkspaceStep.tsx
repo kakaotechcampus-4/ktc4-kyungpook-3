@@ -17,7 +17,9 @@ import { TextField } from '@/shared/ui/text-field'
 import { ExitLink } from './ExitLink'
 import { OnboardingCard } from './OnboardingCard'
 import { OnboardingLayout } from './OnboardingLayout'
+import type { StepNavProps } from './StepNav'
 import { STEP_TITLE } from './stepTitles'
+import { useStepNavPaths } from './useStepNavPaths'
 
 const MESSAGES = [
   '안녕하세요! 회의록 정리부터 마감 리마인드까지, 제가 도와드릴게요.',
@@ -35,13 +37,17 @@ const CARD = {
   description: '이 이름으로 노션 페이지와 디스코드 알림에 표시돼요.',
 } as const
 
-function StepFrame({ children }: { children: ReactNode }) {
+/* 1단계 화살표 — 지금 단계면 둘 다 비활성(앞 단계도, 건너뛸 수도 없다), 둘러보기면 오른쪽만 */
+const STEP_ONE_NAV: StepNavProps = {}
+
+function StepFrame({ children, nav = STEP_ONE_NAV }: { children: ReactNode; nav?: StepNavProps }) {
   return (
     <OnboardingLayout
       stepNumber={1}
       title={STEP_TITLE.create_workspace}
       exit={<ExitLink />}
       messages={MESSAGES}
+      nav={nav}
     >
       {children}
     </OnboardingLayout>
@@ -157,32 +163,51 @@ export function CreateWorkspaceStep() {
 
 export interface ResumeCreateStepProps {
   workspace: Workspace
+  /** 지난 단계 둘러보기(`?review=1`). 저장된 이름만 보이고 카드 `다음` 은 요청 없이 다음 단계로 간다 */
+  review?: boolean
 }
 
 /**
- * 공간은 만들어졌는데 생성 단계 저장이 안 된 채 돌아왔을 때(새로고침·재로그인).
- * 이름은 바꿀 수 없고 `다음` 은 단계 저장만 한다 — 워크스페이스 생성 요청을 다시 보내지 않는다.
+ * 만든 공간의 1단계.
+ * - 생성 단계 저장이 안 된 채 돌아왔을 때(새로고침·재로그인): 이름은 바꿀 수 없고 카드의 `다음` 은 단계 저장만 한다 —
+ *   워크스페이스 생성 요청을 다시 보내지 않는다. 하단 화살표는 둘 다 비활성이다
+ * - 둘러보기: 저장된 이름을 읽기만 한다. 카드 `다음`·오른쪽 화살표가 요청 없이 다음 단계로 간다 (이름 바꾸기는 범위 밖)
  */
-export function ResumeCreateStep({ workspace }: ResumeCreateStepProps) {
+export function ResumeCreateStep({ workspace, review = false }: ResumeCreateStepProps) {
   const onboarding = useOnboardingSave(workspace.id)
+  const navigate = useGuardedNavigate()
+  const { reviewNext } = useStepNavPaths(workspace.id, 'create_workspace')
+  const goReviewNext = reviewNext === null ? undefined : () => navigate(reviewNext)
+  const nav: StepNavProps = review ? { onNext: goReviewNext } : STEP_ONE_NAV
   return (
-    <StepFrame>
+    <StepFrame nav={nav}>
       <OnboardingCard
         title={CARD.title}
         description={CARD.description}
         actions={
-          <Button
-            variant="primary"
-            size="lg-onboarding"
-            loading={onboarding.isPending}
-            onClick={() =>
-              void onboarding
-                .save({ step: 'create_workspace', action: 'complete' })
-                .catch(() => undefined)
-            }
-          >
-            다음
-          </Button>
+          review ? (
+            <Button
+              variant="primary"
+              size="lg-onboarding"
+              disabled={goReviewNext === undefined}
+              onClick={goReviewNext}
+            >
+              다음
+            </Button>
+          ) : (
+            <Button
+              variant="primary"
+              size="lg-onboarding"
+              loading={onboarding.isPending}
+              onClick={() =>
+                void onboarding
+                  .save({ step: 'create_workspace', action: 'complete' })
+                  .catch(() => undefined)
+              }
+            >
+              다음
+            </Button>
+          )
         }
       >
         <FormErrorPanel

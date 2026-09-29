@@ -19,6 +19,12 @@ export {
   workspaceEntryPath,
 } from './lib/entryPath'
 export {
+  isReviewableStep,
+  nextReviewPath,
+  previousStepPath,
+  readOnboardingReview,
+} from './lib/onboardingReview'
+export {
   WORKSPACE_LIST_QUERY_KEY,
   fetchWorkspaces,
   useMemberWorkspace,

@@ -14,6 +14,7 @@ import {
 } from '@/features/onboarding'
 import type { MappingIssue, MappingRow } from '@/features/onboarding'
 import { errorMessage } from '@/shared/api/errorMessages'
+import { ApiError, ERROR_CODES } from '@/shared/api/errors'
 import { useAppForm } from '@/shared/lib/form'
 import { useUnsavedChanges } from '@/shared/lib/unsaved-changes'
 import { Button } from '@/shared/ui/button'
@@ -26,6 +27,7 @@ import { ExitLink } from './ExitLink'
 import { OnboardingCard } from './OnboardingCard'
 import { OnboardingLayout } from './OnboardingLayout'
 import { STEP_NUMBER, STEP_TITLE } from './stepTitles'
+import { useStepNavPaths } from './useStepNavPaths'
 
 const CARD = {
   title: '팀원 연결',
@@ -38,6 +40,9 @@ const ISSUE_MESSAGES: Record<MappingIssue, string> = {
 }
 
 const PARTIAL_FAILURE = '일부 팀원을 저장하지 못했어요. 남은 줄만 다시 저장해요.'
+
+const NOT_CONNECTED =
+  '디스코드를 연결하지 않아 팀원을 불러올 수 없어요. 이전 단계에서 연결하거나 건너뛸 수 있어요.'
 
 const ROW = 'flex items-start gap-10 border-b border-surface-selected py-10 last:border-b-0'
 
@@ -61,6 +66,8 @@ interface MembersFormProps {
   workspaceId: string
   initialRows: MappingRow[]
   notice: string | undefined
+  /** `이전 단계` 가 갈 Notion 둘러보기 */
+  previous: string | null
 }
 
 /**
@@ -68,8 +75,9 @@ interface MembersFormProps {
  * 빈 줄은 저장하지 않는다 — 일부만 적어도 저장하고 끝낼 수 있다 (D-029). 같은 이름은 두 줄에 못 쓴다 (D-027).
  * 저장은 줄마다 순서대로다. 일부가 실패하면 실패한 줄에 오류를 두고 입력은 그대로 남긴다.
  * 모두 저장한 뒤에만 팀원 연결 단계 완료를 보낸다.
+ * 하단 `다음 단계` 는 `나중에 하기` 와 같다(같은 잠금). `이전 단계` 는 공통 이탈 확인을 거친다 — 입력을 저장하지 않는다.
  */
-function MembersForm({ workspaceId, initialRows, notice }: MembersFormProps) {
+function MembersForm({ workspaceId, initialRows, notice, previous }: MembersFormProps) {
   const queryClient = useQueryClient()
   const { form, submit } = useAppForm(schema, { rows: initialRows })
   const {
@@ -186,6 +194,7 @@ function MembersForm({ workspaceId, initialRows, notice }: MembersFormProps) {
       exit={<ExitLink beforeLeave={beforeLeave} />}
       notice={notice}
       messages={messagesFor(initialRows)}
+      nav={{ previous, onNext: skip, disabled: busy }}
     >
       <form noValidate onSubmit={(event) => void onSubmit(event)}>
         <OnboardingCard
@@ -241,17 +250,90 @@ function MembersForm({ workspaceId, initialRows, notice }: MembersFormProps) {
   )
 }
 
+interface DiscordNotConnectedProps {
+  workspaceId: string
+  notice: string | undefined
+  previous: string | null
+}
+
+/**
+ * Discord 를 연결하지 않은 채 온 팀원 연결 (D-073 개정, 2026-09-29). 불러올 Discord 사용자가 없다 —
+ * 오류 대신 까닭을 알리고 `건너뛰기` 만 둔다. 저장은 `나중에 하기` 와 같다. `‹` 로 Notion·Discord 둘러보기에 가서 연결할 수 있다.
+ */
+function DiscordNotConnected({ workspaceId, notice, previous }: DiscordNotConnectedProps) {
+  const onboarding = useOnboardingSave(workspaceId)
+  const [formError, setFormError] = useState<string | null>(null)
+  // 카드 버튼과 `›` 가 겹쳐 눌려도 건너뛰기 요청은 하나다
+  const lock = useRef(false)
+  const skip = () => {
+    if (lock.current) return
+    lock.current = true
+    setFormError(null)
+    void onboarding
+      .save({ step: 'connect_members', action: 'skip' })
+      .catch((error: unknown) => setFormError(errorMessage(error)))
+      .finally(() => {
+        lock.current = false
+      })
+  }
+  const busy = onboarding.isPending
+
+  return (
+    <OnboardingLayout
+      stepNumber={STEP_NUMBER.connect_members}
+      title={STEP_TITLE.connect_members}
+      exit={<ExitLink />}
+      notice={notice}
+      messages={['마지막이에요. 디스코드를 연결하면 팀원 이름을 이어 둘 수 있어요.']}
+      nav={{ previous, onNext: skip, disabled: busy }}
+    >
+      <OnboardingCard
+        title={CARD.title}
+        description={CARD.description}
+        actions={
+          <Button variant="primary" size="lg-onboarding" loading={busy} onClick={skip}>
+            건너뛰기
+          </Button>
+        }
+      >
+        <FormErrorPanel message={formError} className="mt-6" />
+        <p className="pt-6 text-body text-dim">{NOT_CONNECTED}</p>
+      </OnboardingCard>
+    </OnboardingLayout>
+  )
+}
+
+function isNotConnected(error: unknown): boolean {
+  return error instanceof ApiError && error.code === ERROR_CODES.INTEGRATION_NOT_CONNECTED
+}
+
 export interface MembersStepProps {
   workspaceId: string
 }
 
-/** 온보딩 4단계. Discord 사용자와 기존 팀원을 함께 불러와 `linkDiscordUsers` 로 줄을 만든다 */
+/**
+ * 온보딩 4단계. Discord 사용자와 기존 팀원을 함께 불러와 `linkDiscordUsers` 로 줄을 만든다.
+ * Discord 가 연결되지 않았으면(연동 상태로 알거나 409 `INTEGRATION_NOT_CONNECTED`) 건너뛰기 안내를 보인다.
+ */
 export function MembersStep({ workspaceId }: MembersStepProps) {
-  // 두 조회는 서로 기다리지 않는다 — 같은 렌더에서 함께 시작한다
-  const discordUsers = useQuery(discordUsersQueryOptions(workspaceId))
-  const members = useQuery(memberListQueryOptions(workspaceId))
   const integrations = useQuery(integrationsQueryOptions(workspaceId))
+  const discordStatus = integrations.data?.discord.status
+  // 두 조회는 서로 기다리지 않는다 — 같은 렌더에서 함께 시작한다.
+  // 연동 상태를 이미 알고 연결이 없으면 Discord 사용자는 부르지 않는다 — 409 가 뻔하다
+  const discordUsers = useQuery({
+    ...discordUsersQueryOptions(workspaceId),
+    enabled: discordStatus === undefined || discordStatus === 'connected',
+  })
+  const members = useQuery(memberListQueryOptions(workspaceId))
   const notice = integrations.data?.notion.status === 'connected' ? '노션 연동 완료' : undefined
+  const { previous } = useStepNavPaths(workspaceId, 'connect_members')
+
+  if (
+    (discordStatus !== undefined && discordStatus !== 'connected') ||
+    isNotConnected(discordUsers.error)
+  ) {
+    return <DiscordNotConnected workspaceId={workspaceId} notice={notice} previous={previous} />
+  }
 
   if (discordUsers.data === undefined || members.data === undefined) {
     const error = discordUsers.error ?? members.error
@@ -262,6 +344,7 @@ export function MembersStep({ workspaceId }: MembersStepProps) {
         exit={<ExitLink />}
         notice={notice}
         messages={['디스코드에서 팀원을 불러오고 있어요.']}
+        nav={{ previous }}
       >
         <OnboardingCard title={CARD.title} description={CARD.description}>
           {error ? (
@@ -287,6 +370,7 @@ export function MembersStep({ workspaceId }: MembersStepProps) {
       workspaceId={workspaceId}
       initialRows={buildMappingRows(discordUsers.data, members.data)}
       notice={notice}
+      previous={previous}
     />
   )
 }

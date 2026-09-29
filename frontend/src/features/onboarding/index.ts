@@ -13,5 +13,9 @@ export type { OnboardingSave } from './model/useOnboardingSave'
 export { useCreateWorkspace } from './model/useCreateWorkspace'
 export type { CreateWorkspaceFlow } from './model/useCreateWorkspace'
 export { useIntegrationStep } from './model/useIntegrationStep'
-export type { IntegrationNotice, IntegrationStep } from './model/useIntegrationStep'
+export type {
+  IntegrationNotice,
+  IntegrationStep,
+  IntegrationStepOptions,
+} from './model/useIntegrationStep'
 export { useStartNewWorkspace } from './model/useStartNewWorkspace'

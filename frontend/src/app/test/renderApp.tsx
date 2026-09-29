@@ -9,6 +9,11 @@ import { App } from '../App'
 import { createApp } from '../createApp'
 import { appRoutes } from '../router/routes'
 
+/* 지연 로드 화면을 이 헬퍼가 로드될 때 미리 읽는다. 앱에서는 경로마다 lazy 로 나뉘지만, 테스트에서는 파일의 첫 테스트가
+   그 모듈을 처음 변환하느라 전체 실행 부하에서 대기 한도(3초)를 넘길 때가 있었다 — 스켈레톤만 보이다 끝난다.
+   변환 비용을 테스트 시간 밖(파일 로드)으로 옮긴다. lazy 가 돌려주는 모듈은 같아서 동작은 그대로다 */
+import.meta.glob('../../pages/*/index.ts', { eager: true })
+
 interface RouterProbeProps {
   onLocation: (location: Location) => void
   onNavigate: (navigate: GuardedNavigate) => void

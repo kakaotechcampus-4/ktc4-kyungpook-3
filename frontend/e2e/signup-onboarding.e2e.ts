@@ -54,7 +54,9 @@ test('가입 → 워크스페이스 만들기 → Discord·Notion 모의 OAuth �
   )
 })
 
-test('모의 OAuth 에서 취소하면 단계는 그대로이고 안내 뒤 건너뛸 수 있다', async ({ page }) => {
+test('모의 OAuth 에서 취소하면 단계는 그대로이고 안내 뒤 건너뛸 수 있다 — 팀원 연결도 따로 건너뛴다', async ({
+  page,
+}) => {
   await start(page, 'incomplete-workspace', '/')
   await expect(page).toHaveURL('/onboarding/ws_03/connect_discord')
 
@@ -63,9 +65,15 @@ test('모의 OAuth 에서 취소하면 단계는 그대로이고 안내 뒤 건�
   await expect(page).toHaveURL('/onboarding/ws_03/connect_discord')
   await expect(page.getByRole('alert')).toContainText('연결을 취소했어요')
 
-  // Discord 를 건너뛰면 팀원 연결도 건너뛴다 — Notion 뒤 바로 대시보드 (D-073)
+  // D-073 개정(2026-09-29): 예전에는 Discord 를 건너뛰면 팀원 연결도 건너뛰어 Notion 뒤 바로 대시보드였다.
+  // 이제 팀원 연결 단계가 오고, Discord 가 없어 안내와 `건너뛰기` 만 있다
   await page.getByRole('button', { name: '건너뛰기' }).click()
   await expect(page).toHaveURL('/onboarding/ws_03/connect_notion')
+  await page.getByRole('button', { name: '건너뛰기' }).click()
+  await expect(page).toHaveURL('/onboarding/ws_03/connect_members')
+  await expect(
+    page.getByText('디스코드를 연결하지 않아 팀원을 불러올 수 없어요.', { exact: false }),
+  ).toBeVisible()
   await page.getByRole('button', { name: '건너뛰기' }).click()
   await expect(page).toHaveURL('/workspaces/ws_03/dashboard')
 })

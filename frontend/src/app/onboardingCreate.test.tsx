@@ -28,7 +28,10 @@ async function openCreate() {
 afterEach(() => sessionStorage.clear())
 
 describe('공통 온보딩 레이아웃 (U3-1)', () => {
-  it('단계 표시 · 매스 말풍선 · 단계 카드 · n / 4 가 있고 하단 이전/다음은 없다', async () => {
+  // 동작이 바뀌었다: 2026-09-29 에 카운터 양옆 화살표(`이전 단계`/`다음 단계`)를 넣었다
+  // (docs/impl-decision/2026-09-28-onboarding-layout.md). 캔버스의 `이전`/`다음` 글자 버튼은 여전히 없고,
+  // 1단계는 앞 단계도 건너뛸 것도 없어 두 화살표가 비활성이다 — 자리는 남아 카운터가 움직이지 않는다
+  it('단계 표시 · 매스 말풍선 · 단계 카드 · n / 4 가 있고 1단계의 두 화살표는 비활성이다', async () => {
     await openCreate()
     expect(screen.getByRole('img', { name: '4단계 중 1단계' })).toBeInTheDocument()
     expect(
@@ -40,6 +43,9 @@ describe('공통 온보딩 레이아웃 (U3-1)', () => {
     expect(screen.getByText('1 / 4')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '이전' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '다음' })).not.toBeInTheDocument()
+    const nav = screen.getByRole('navigation', { name: '단계 이동' })
+    expect(within(nav).getByRole('button', { name: '이전 단계' })).toBeDisabled()
+    expect(within(nav).getByRole('button', { name: '다음 단계' })).toBeDisabled()
     expect(screen.getByRole('link', { name: '온보딩 나가기' })).toBeInTheDocument()
   })
 

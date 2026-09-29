@@ -40,3 +40,12 @@ export function readOAuthResult(
   if (!provider || !(OAUTH_OUTCOMES as readonly (string | null)[]).includes(outcome)) return null
   return { provider, outcome: outcome as OAuthOutcome }
 }
+
+/** 복귀 결과만 뺀 검색 문자열(`?review=1` 등 나머지는 남긴다). 남는 것이 없으면 '' */
+export function withoutOAuthResult(params: URLSearchParams): string {
+  const rest = new URLSearchParams(params)
+  rest.delete(OAUTH_RETURN_PARAMS.provider)
+  rest.delete(OAUTH_RETURN_PARAMS.outcome)
+  const search = rest.toString()
+  return search === '' ? '' : `?${search}`
+}

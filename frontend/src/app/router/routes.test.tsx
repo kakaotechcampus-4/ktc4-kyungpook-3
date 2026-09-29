@@ -4,8 +4,8 @@ import type { ReactElement, ReactNode, SuspenseProps } from 'react'
 import { createRoutesFromElements } from 'react-router'
 import type { RouteObject } from 'react-router'
 import { db } from '@/shared/mock/db'
-import { PageSkeleton } from '@/shared/ui/page-skeleton'
 import { renderApp } from '../test/renderApp'
+import { RouteSkeleton } from './RouteSkeleton'
 import { RouteErrorBoundary } from './errors/RouteErrorBoundary'
 import { appRoutes } from './routes'
 
@@ -44,13 +44,15 @@ describe('경로 표', () => {
     }
   })
 
-  it('주요 화면 13개는 지연 로드하고 Suspense 에 PageSkeleton 을 쓴다', () => {
+  /* 기대값을 바꿨다 — 대기 화면은 경로에 맞는 뼈대를 고르는 RouteSkeleton 이다(온보딩은 가운데 열 뼈대).
+     고르는 규칙은 RouteSkeleton.test.tsx 가 본다 */
+  it('주요 화면 13개는 지연 로드하고 Suspense 에 RouteSkeleton 을 쓴다', () => {
     const lazyScreens = leaves(tree)
       .map(lazyScreen)
       .filter((element) => element !== null)
     expect(lazyScreens).toHaveLength(13)
     for (const { props } of lazyScreens) {
-      expect(isValidElement(props.fallback) && props.fallback.type === PageSkeleton).toBe(true)
+      expect(isValidElement(props.fallback) && props.fallback.type === RouteSkeleton).toBe(true)
     }
   })
 })

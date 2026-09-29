@@ -78,3 +78,4 @@ cd ../backend && ./run.sh
 - 결정 기록: `docs/decision`
 - 마일스톤 계획: `docs/plan`
 - 디자인: `docs/design`
+- 성능 개선 거리(측정했지만 아직 고치지 않은 것): `docs/performance`

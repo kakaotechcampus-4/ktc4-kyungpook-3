@@ -39,6 +39,9 @@ export async function finishOAuth(
     }),
   ).toBeVisible({ timeout: 15_000 })
   await page.getByRole('button', { name: outcome }).click()
+  // 복귀도 새 문서다 — 앱이 다시 뜨고 연동 상태를 다시 조회한 뒤 단계를 저장해 주소가 바뀐다.
+  // 개발 서버가 바쁠 때 기본 5초를 넘긴다. 복귀 표시가 주소에서 사라질 때까지만 따로 기다리고, 뒤의 단언은 기본 한도다
+  await expect(page).not.toHaveURL(/oauth_result/, { timeout: 15_000 })
 }
 
 /** 가로 스크롤이 생기지 않았는지 — 1024px 이상 지원 (계획 1절) */

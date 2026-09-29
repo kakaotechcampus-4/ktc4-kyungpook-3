@@ -4,5 +4,6 @@ export {
   readOAuthResult,
   safeReturnPath,
   withOAuthResult,
+  withoutOAuthResult,
 } from './returnParams'
 export type { OAuthOutcome } from './returnParams'

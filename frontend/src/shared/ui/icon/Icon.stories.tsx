@@ -6,6 +6,7 @@ import type { IconName } from './Icon'
 const NAMES: IconName[] = [
   'chevron-down',
   'chevron-right',
+  'chevron-left',
   'check',
   'plus',
   'settings',

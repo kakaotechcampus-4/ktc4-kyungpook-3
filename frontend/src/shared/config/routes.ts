@@ -9,6 +9,9 @@ function workspaceBase(workspaceId: string): string {
   return `/workspaces/${segment(workspaceId)}`
 }
 
+/** 지난 온보딩 단계를 둘러보는 표시. `?review=1` 이면 가드가 저장된 지난 단계를 보여 준다 */
+export const ONBOARDING_REVIEW_PARAM = 'review'
+
 function withOptionalId(base: string, id: string | undefined): string {
   return id === undefined ? base : `${base}/${segment(id)}`
 }
@@ -21,6 +24,9 @@ export const paths = {
   onboardingCreate: () => '/onboarding/create_workspace',
   onboardingStep: (workspaceId: string, step: string) =>
     `/onboarding/${segment(workspaceId)}/${segment(step)}`,
+  /** 지난 단계 둘러보기 — docs/impl-decision/2026-09-28-onboarding-layout.md (2026-09-29) */
+  onboardingReview: (workspaceId: string, step: string) =>
+    `/onboarding/${segment(workspaceId)}/${segment(step)}?${ONBOARDING_REVIEW_PARAM}=1`,
   dashboard: (workspaceId: string) => `${workspaceBase(workspaceId)}/dashboard`,
   meetings: (workspaceId: string, meetingId?: string) =>
     withOptionalId(`${workspaceBase(workspaceId)}/meetings`, meetingId),

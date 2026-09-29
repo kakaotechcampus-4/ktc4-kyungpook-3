@@ -58,6 +58,29 @@ test('OAuth 왕복(현재 탭 이동 두 번)을 지나도 로그인·연동·�
   await expect(page.getByText('디스코드 연동 완료')).toBeVisible()
 })
 
+test('Notion 에서 `이전 단계` 로 연결한 Discord 를 둘러보고 `다음 단계` 로 돌아온다 (2026-09-29)', async ({
+  page,
+}) => {
+  await start(page, 'incomplete-workspace', '/')
+  await page.getByRole('button', { name: '연결하기' }).click()
+  await finishOAuth(page, '디스코드')
+  await expect(page).toHaveURL('/onboarding/ws_03/connect_notion')
+
+  const nav = page.getByRole('navigation', { name: '단계 이동' })
+  await nav.getByRole('button', { name: '이전 단계' }).click()
+  await expect(page).toHaveURL('/onboarding/ws_03/connect_discord?review=1')
+  const card = page.getByRole('region', { name: '디스코드 연동' })
+  await expect(card.getByText('연결됨')).toBeVisible()
+  // 둘러보기 카드의 앞으로 가기는 `다음` 하나다 (2026-09-29)
+  await expect(card.getByRole('button')).toHaveCount(1)
+  await expect(card.getByRole('button', { name: '다음', exact: true })).toBeVisible()
+
+  // 둘러보기의 `다음 단계` 는 요청 없이 이어 갈 단계로 간다
+  await nav.getByRole('button', { name: '다음 단계' }).click()
+  await expect(page).toHaveURL('/onboarding/ws_03/connect_notion')
+  await expect(page.getByRole('region', { name: '노션 연동' })).toBeVisible()
+})
+
 test('손상된 저장값은 버리고 비로그인으로 시작한다', async ({ page }) => {
   await start(page, 'multiple-workspaces', '/workspaces/ws_01/dashboard')
   await expect(page.getByRole('heading', { name: '확인할 일이 여기에 모여요' })).toBeVisible()
