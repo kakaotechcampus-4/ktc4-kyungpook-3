@@ -10,4 +10,4 @@ reviews:
     base_branches:
       - develop
 
-language: ko
+language: ko-KR
