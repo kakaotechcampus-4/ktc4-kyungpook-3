@@ -3,6 +3,8 @@
 디스코드 봇이 사용자 세션 없이 부르는 경로라 세션 대신 서비스 토큰(X-Service-Token)으로 막는다.
 task 제목과 담당자를 돌려주므로 POST /extractions처럼 열어 두지 않는다.
 """
+import logging
+
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
@@ -12,6 +14,8 @@ from app.core.errors import AppError, Envelope, ErrorCode, success
 from app.models import Workspace
 from app.schemas.task import SimilarTaskCandidate, SimilarTaskListResponse, SimilarTaskSearchRequest
 from app.services import embedding
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/workspaces", tags=["tasks"], dependencies=[Depends(require_service_token)]
@@ -37,6 +41,9 @@ def search_similar_tasks(
     try:
         [query_vector] = embedding.embed_texts([payload.text])
     except embedding.EmbeddingError as exc:
+        # 호출자 잘못이 아니라 키·URL 설정이나 임베딩 서버 쪽 실패라 BE 로그에도 남긴다.
+        # 요청 본문(text)은 회의 발화라 남기지 않는다.
+        logger.warning("유사 task 검색 중 임베딩 실패 workspace_id=%s: %s", workspace_id, exc)
         raise AppError(ErrorCode.EMBEDDING_UNAVAILABLE, details={"reason": str(exc)}) from exc
 
     results = embedding.search_similar_tasks(

@@ -148,6 +148,28 @@ def test_embedding_failure_is_error_not_empty_list(client, workspace, search_cal
     assert search_calls == []
 
 
+def test_embedding_failure_is_logged_without_request_text(
+    client, workspace, search_calls, monkeypatch, caplog
+):
+    def fail(texts):
+        raise embedding.EmbeddingError("임베딩 API 오류 [401] invalid key")
+
+    monkeypatch.setattr(embedding, "embed_texts", fail)
+
+    with caplog.at_level("WARNING", logger="app.api.similar_tasks"):
+        client.post(
+            _url(workspace.workspace_id), json={"text": "민감한 회의 발화"}, headers=HEADERS
+        )
+
+    [record] = [r for r in caplog.records if r.name == "app.api.similar_tasks"]
+    assert record.levelname == "WARNING"
+    message = record.getMessage()
+    # BE에서도 원인과 워크스페이스를 알 수 있고, 발화 내용은 남기지 않는다
+    assert workspace.workspace_id in message
+    assert "invalid key" in message
+    assert "민감한 회의 발화" not in message
+
+
 @pytest.mark.parametrize(
     "body", [{"text": ""}, {"text": "로그인", "k": 0}, {"text": "로그인", "min_similarity": 1.5}],
     ids=["empty-text", "k-zero", "similarity-over-1"],
