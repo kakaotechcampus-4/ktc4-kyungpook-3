@@ -1,0 +1,10 @@
+reviews:
+  review_status: false
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  collapse_walkthrough: false
+  auto_review:
+    enabled: false
+
+language: ko-KR
