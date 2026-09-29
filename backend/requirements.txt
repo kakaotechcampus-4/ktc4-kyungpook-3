@@ -1,13 +1,12 @@
 # models/models.py 가 StrEnum(3.11+)을 씀 → Python 3.12 고정 (.python-version 참고)
+# 운영 이미지(Dockerfile)에 들어가는 의존성만 둔다. 개발/테스트용은 requirements-dev.txt.
 fastapi>=0.115
 uvicorn[standard]>=0.30
 sqlalchemy>=2.0
 psycopg[binary]>=3.2
 pgvector>=0.3
 alembic>=1.13
-pydantic>=2.9
+pydantic[email]>=2.9   # app/schemas/auth.py 의 EmailStr 에 email-validator 가 필요하다
 python-dotenv>=1.0
 httpx>=0.27   # app/services/notion.py 의 Notion API 호출에도 쓴다
-
-# 개발/테스트
-pytest>=8.0
+python-multipart>=0.0.9   # app/api/workspaces.py 회의록 업로드(Form/File)에 필요하다
