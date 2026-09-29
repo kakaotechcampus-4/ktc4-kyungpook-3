@@ -109,7 +109,7 @@ it('refuses workspaces the signed-in user does not belong to', async () => {
     expect({ path, status: response.status }).toEqual({ path, status: 403 })
   }
 
-  // 반면 GET /workspaces/{id} 는 멤버십을 보지 않는다. 실 API 의 구멍을 그대로 흉내낸다 (계약 §4.0-②-1)
+  // GET /workspaces/{id} 는 공간이 있는지 먼저 본다 — 없는 공간은 403 이 아니라 404 다 (workspaces.py get_workspace)
   expect((await fetch(`${base}/workspaces/ws_99`)).status).toBe(404)
 })
 

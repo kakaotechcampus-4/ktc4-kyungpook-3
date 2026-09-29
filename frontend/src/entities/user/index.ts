@@ -1,3 +1,4 @@
-export type { Session, User } from './model/types'
+export type { LoginInput, Session, SignupInput, User } from './model/types'
 export { toSession, toUser } from './model/mapper'
 export { SESSION_QUERY_KEY, fetchSession, sessionQueryOptions } from './api/session'
+export { login, logout, signup } from './api/auth'

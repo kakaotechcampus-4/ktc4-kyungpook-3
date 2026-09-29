@@ -9,11 +9,20 @@ export interface OnboardingDto {
 export interface WorkspaceSummaryDto {
   workspace_id: string
   name: string
-  // 현재 사용자 기준이라 비소속이면 null 이다 (WorkspaceResponse.role 이 Optional).
-  // 목록은 소속만 반환하므로 항상 채워지고, 상세에서만 null 이 올 수 있다
+  // 현재 사용자 기준이다 (WorkspaceResponse.role 이 Optional). 목록·상세 모두 소속만 받으므로
+  // 지금은 늘 채워진다 — 상세도 비소속에게 403 이다(require_member). 타입은 스키마대로 null 을 남긴다
   role: string | null
   created_at: string
 }
 export interface WorkspaceDto extends WorkspaceSummaryDto {
   onboarding: OnboardingDto
+}
+// 요청 본문. 백엔드 WorkspaceCreateRequest 는 name 1~100자다. 1~20자·정규화는 화면이 먼저 본다 (D-015~D-020)
+export interface WorkspaceCreateDto {
+  name: string
+}
+// 백엔드 WorkspaceOnboardingUpdateRequest. action 은 skip 또는 complete 다 (계약 §4.2)
+export interface OnboardingUpdateDto {
+  step: string
+  action: 'skip' | 'complete'
 }

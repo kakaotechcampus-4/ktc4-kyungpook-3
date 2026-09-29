@@ -6,7 +6,7 @@ import { renderApp } from '../test/renderApp'
 type RenderedApp = ReturnType<typeof renderApp>
 
 async function landsOn(app: RenderedApp, path: string) {
-  await waitFor(() => expect(app.location().pathname).toBe(path))
+  await app.expectPath(path)
 }
 
 /** 로그인한 PM(us_01)의 소속과 마지막 공간을 바꾼다 */
@@ -31,7 +31,7 @@ describe('RequireAuth', () => {
     const log = recordRequests()
     const app = renderApp('/workspaces/ws_01/approvals/ap_01')
     expect(await screen.findByRole('heading', { name: '로그인' })).toBeInTheDocument()
-    expect(app.location().pathname).toBe('/login')
+    await app.expectPath('/login')
     expect(businessRequests(log.started)).toEqual([])
   })
 })
@@ -153,7 +153,7 @@ describe('RequireOnboardingComplete · 온보딩', () => {
     expect(
       await screen.findByRole('heading', { name: 'PM이 워크스페이스 설정을 마무리하고 있어요' }),
     ).toBeInTheDocument()
-    expect(app.location().pathname).toBe('/onboarding/ws_02/connect_notion')
+    await app.expectPath('/onboarding/ws_02/connect_notion')
   })
 
   it('미완료 공간의 일반 팀원은 대기 안내만 보고 아무것도 고칠 수 없다', async () => {
@@ -205,7 +205,7 @@ describe('RequirePM', () => {
     const app = renderApp('/workspaces/ws_01/approvals/ap_01')
 
     expect(await screen.findByRole('heading', { name: '태스크' })).toBeInTheDocument()
-    expect(app.location().pathname).toBe('/workspaces/ws_01/tasks')
+    await app.expectPath('/workspaces/ws_01/tasks')
     await waitFor(() =>
       expect(document.querySelectorAll('[data-toast-key="access-denied"]')).toHaveLength(1),
     )

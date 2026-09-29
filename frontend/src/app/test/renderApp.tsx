@@ -1,8 +1,8 @@
-import { render } from '@testing-library/react'
-import { useEffect } from 'react'
+import { render, waitFor } from '@testing-library/react'
+import { StrictMode, useEffect, useLayoutEffect } from 'react'
 import { MemoryRouter, Routes, useLocation } from 'react-router'
 import type { Location } from 'react-router'
-import { onTestFinished } from 'vitest'
+import { expect, onTestFinished } from 'vitest'
 import { useGuardedNavigate } from '@/shared/lib/unsaved-changes'
 import type { GuardedNavigate } from '@/shared/lib/unsaved-changes'
 import { App } from '../App'
@@ -14,13 +14,19 @@ interface RouterProbeProps {
   onNavigate: (navigate: GuardedNavigate) => void
 }
 
-/** 라우터 안에서 지금 주소를 알리고 코드 이동 함수를 넘긴다. 코드 이동은 앱과 같은 관문을 탄다 */
+/**
+ * 라우터 안에서 지금 주소를 알리고 코드 이동 함수를 넘긴다. 코드 이동은 앱과 같은 관문을 탄다.
+ *
+ * 주소는 **layout effect** 로 적는다. 라우터 이동은 transition 이라 그 커밋의 일반 effect 는 늦게 비워질 수 있다 —
+ * 화면(DOM)은 이미 바뀌었는데 적힌 주소가 한 틱 늦어, 화면을 기다린 뒤 주소를 읽는 테스트가 부하 때 가끔 틀렸다.
+ * layout effect 는 DOM 을 바꾼 바로 그 커밋 안에서 동기로 돈다. 화면이 보이면 주소도 이미 적혀 있다.
+ */
 // 테스트 전용 파일이라 fast refresh 대상이 아니다
 // eslint-disable-next-line react-refresh/only-export-components
 function RouterProbe({ onLocation, onNavigate }: RouterProbeProps) {
   const location = useLocation()
   const navigate = useGuardedNavigate()
-  useEffect(() => {
+  useLayoutEffect(() => {
     onLocation(location)
   }, [location, onLocation])
   useEffect(() => {
@@ -33,35 +39,57 @@ function RouterProbe({ onLocation, onNavigate }: RouterProbeProps) {
  * 제품과 같은 배선(createApp, App, 경로 표)에 라우터만 MemoryRouter 로 바꿔 끼운다.
  * 선언형 라우터에는 밖에서 읽을 라우터 객체가 없다. 주소와 코드 이동은 RouterProbe 로 얻는다.
  */
-export function renderApp(initialPath: string) {
+export interface RenderAppOptions {
+  /** 브라우저(main.tsx)처럼 StrictMode 로 감싼다. 효과가 두 번 돌고 구독이 한 번 끊겼다 다시 붙는다 */
+  strict?: boolean
+}
+
+export function renderApp(initialPath: string, options: RenderAppOptions = {}) {
   const app = createApp()
   onTestFinished(() => app.dispose())
 
   const visited: Location[] = []
   let guardedNavigate: GuardedNavigate | null = null
 
-  const view = render(
+  const tree = (
     <App queryClient={app.queryClient}>
       <MemoryRouter initialEntries={[initialPath]}>
         <Routes>{appRoutes}</Routes>
         <RouterProbe
-          onLocation={(location) => visited.push(location)}
+          onLocation={(location) => {
+            // StrictMode 는 마운트 때 효과를 두 번 돌린다. 같은 기록 항목(key)을 두 번 적지 않는다
+            if (visited.at(-1)?.key !== location.key) visited.push(location)
+          }}
           onNavigate={(next) => {
             guardedNavigate = next
           }}
         />
       </MemoryRouter>
-    </App>,
+    </App>
   )
+  const view = render(options.strict ? <StrictMode>{tree}</StrictMode> : tree)
+
+  const current = (): Location => {
+    const latest = visited.at(-1)
+    if (!latest) throw new Error('router has not rendered yet')
+    return latest
+  }
 
   return {
     ...app,
     ...view,
-    /** 지금 주소 */
-    location(): Location {
-      const current = visited.at(-1)
-      if (!current) throw new Error('router has not rendered yet')
-      return current
+    /*
+     * 주소는 기다려서 확인한다 — 동기로 꺼내 읽는 접근자를 두지 않는다.
+     * 기록은 커밋과 같이 가지만(layout effect), 이동 직후 곧바로 확인하는 곳도 한 가지 방식으로 안전하게 한다.
+     * 최종 주소만 기다린다. "중간에 다른 곳을 거치지 않았다"는 `visited()` 로 따로 단언한다.
+     */
+    /** 지금 경로가 pathname 이 될 때까지 기다린다 (waitFor 기본 1초) */
+    async expectPath(pathname: string): Promise<void> {
+      await waitFor(() => expect(current().pathname).toBe(pathname))
+    },
+    /** 지금 검색 문자열이 search 가 될 때까지 기다린다. 비었으면 '' */
+    async expectSearch(search: string): Promise<void> {
+      await waitFor(() => expect(current().search).toBe(search))
     },
     /** 거쳐 온 주소. 같은 경로라도 이동마다 key 가 다른 항목으로 남는다 */
     visited: (): readonly Location[] => [...visited],

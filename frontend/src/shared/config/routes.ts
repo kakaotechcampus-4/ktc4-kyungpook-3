@@ -32,3 +32,13 @@ export const paths = {
   members: (workspaceId: string) => `${workspaceBase(workspaceId)}/members`,
   settings: (workspaceId: string) => `${workspaceBase(workspaceId)}/settings`,
 } as const
+
+/*
+ * 개발·MSW 모드에서만 등록하는 경로. 프로덕션 코드는 `import.meta.env.DEV` 분기 안에서만 부른다 —
+ * 번들러가 그 분기를 지우면 이 객체도 쓰이지 않아 함께 빠진다.
+ */
+export const devPaths = {
+  /** 모의 OAuth 화면. 실 API 의 `/workspaces/{id}/integrations/{provider}/start` 자리다 */
+  mockOAuth: (workspaceId: string, provider: string) =>
+    `/__mock/oauth/${segment(workspaceId)}/${segment(provider)}`,
+} as const

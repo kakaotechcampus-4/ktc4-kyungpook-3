@@ -19,7 +19,8 @@ describe('예상할 수 있는 조회 실패', () => {
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent('접근 권한이 없어요.')
     expect(alert).not.toHaveTextContent('member check failed')
-    expect(screen.getByRole('navigation', { name: 'M3 점검용 이동' })).toBeInTheDocument()
+    // 앱 셸(M4 헤더)이 그대로 남는다
+    expect(screen.getByRole('navigation', { name: '주요 화면' })).toBeInTheDocument()
 
     await user.click(within(alert).getByRole('button', { name: '다시 시도' }))
     expect(await screen.findByText('김서연')).toBeInTheDocument()
@@ -50,7 +51,7 @@ describe('앱 안의 이탈 확인', () => {
     await user.click(screen.getByRole('link', { name: '대시보드' }))
     expect(await screen.findByRole('dialog')).toHaveTextContent('저장하지 않은 변경 내용이 있어요')
     await user.click(screen.getByRole('button', { name: '계속 작성하기' }))
-    expect(app.location().pathname).toBe('/workspaces/ws_01/settings')
+    await app.expectPath('/workspaces/ws_01/settings')
     expect(screen.getByLabelText('워크스페이스 이름')).toHaveValue('카테캠 3팀 새 이름')
   })
 
@@ -59,7 +60,9 @@ describe('앱 안의 이탈 확인', () => {
     renderApp('/workspaces/ws_01/settings')
     await user.type(await screen.findByLabelText('워크스페이스 이름'), ' 새 이름')
 
-    await user.click(screen.getByRole('link', { name: '워크스페이스 목록' }))
+    // 워크스페이스 목록은 헤더의 워크스페이스 메뉴 안에 있다 (M4)
+    await user.click(screen.getByRole('button', { name: /^워크스페이스 바꾸기/ }))
+    await user.click(await screen.findByRole('menuitem', { name: '워크스페이스 목록' }))
     await user.click(await screen.findByRole('button', { name: '변경 내용 버리고 나가기' }))
     expect(await screen.findByRole('heading', { name: '워크스페이스 선택' })).toBeInTheDocument()
   })
@@ -73,7 +76,7 @@ describe('앱 안의 이탈 확인', () => {
     expect(await screen.findByRole('dialog')).toBeInTheDocument()
     await user.keyboard('{Escape}')
     expect(screen.queryByRole('dialog')).toBeNull()
-    expect(app.location().pathname).toBe('/workspaces/ws_01/settings')
+    await app.expectPath('/workspaces/ws_01/settings')
     expect(screen.getByLabelText('워크스페이스 이름')).toHaveValue('카테캠 3팀 새 이름')
   })
 

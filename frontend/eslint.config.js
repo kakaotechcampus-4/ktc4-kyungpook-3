@@ -151,5 +151,14 @@ export default tseslint.config(
     },
   },
 
+  {
+    // Storybook 설정·스토리·E2E 는 앱 모듈이 아니라 fast refresh 경계가 없다.
+    // 스토리 파일은 meta 객체와 스토리 객체를, preview 는 설정 객체와 감싸는 컴포넌트를 함께 내보낸다
+    files: ['.storybook/**/*.{ts,tsx}', 'src/**/*.stories.tsx', 'e2e/**/*.ts'],
+    rules: {
+      'react-refresh/only-export-components': 'off',
+    },
+  },
+
   prettier,
 )

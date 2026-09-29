@@ -90,18 +90,14 @@ export const workspaceHandlers = [
     return ok(workspace, { status: 201 })
   }),
   http.get(`${base}/:workspaceId`, ({ params }) => {
-    // 실 API 는 로그인만 확인하고 멤버십을 보지 않는다 (계약 §4.0-②-1). 그대로 흉내낸다
-    const denied = requireAuth()
-    if (denied) return denied
+    // 실 API 순서 그대로다 — 로그인(401) → 공간 존재(404) → 소속(`require_member`, 403) (workspaces.py get_workspace)
+    const unauthenticated = requireAuth()
+    if (unauthenticated) return unauthenticated
     const workspace = db.workspaces.find(({ workspace_id }) => workspace_id === params.workspaceId)
     if (!workspace) return fail('WORKSPACE_NOT_FOUND', '워크스페이스가 없습니다.', 404)
-    // role 은 현재 사용자 기준이다. 백엔드는 멤버를 조회해 비소속이면 member=None 이 되고
-    // _build_workspace_response 가 role 을 채우지 않아 null 이 된다 (workspaces.py:92)
-    const account = db.accounts.find(
-      ({ session }) => session.user.user_id === db.session.user.user_id,
-    )
-    const isMember = account?.workspaceIds.includes(workspace.workspace_id) ?? false
-    return ok({ ...workspace, role: isMember ? workspace.role : null })
+    const denied = requireMember(workspace.workspace_id)
+    if (denied) return denied
+    return ok(workspace)
   }),
   http.patch(`${base}/:workspaceId/onboarding`, async ({ params, request }) => {
     const denied = requireMember(String(params.workspaceId))

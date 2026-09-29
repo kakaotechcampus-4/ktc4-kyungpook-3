@@ -78,7 +78,7 @@ M1이 끝나면 M2와 M3은 병행 가능하다. M4 착수 시점에 M1~M3이 �
 - `frontend/.gitignore` 보강: `storybook-static/`, `playwright-report/`, `test-results/`, `.vite/`.
 - **CI 추가**: `.github/workflows/frontend-ci.yml` (`paths: ['frontend/**']`, `pull_request` 대상 `develop`).
   기존 3개 워크플로는 `@kakaotechcampus-4/pipeline-admin` CODEOWNERS 소유이므로 **건드리지 말고 새 파일만 추가**한다.
-  게이트(D-143): `npm ci` → `tsc --noEmit` → `eslint` → `prettier --check` → `vitest run` → `vite build`. 정적 검사·테스트는 병렬, 빌드는 그 뒤. **빌드 산출물 `dist/`를 아티팩트로 업로드해 배포에 재사용한다**(D-152). (Storybook 빌드는 M4 말에 추가)
+  게이트(D-143): `npm ci` → `tsc --noEmit` → `eslint` → `prettier --check` → `vitest run` → `vite build`. 정적 검사·테스트는 병렬, 빌드는 그 뒤. **빌드 산출물 `dist/`를 아티팩트로 업로드해 배포에 재사용한다**(D-152). (M4 에서 `check` 통과 뒤 `build-storybook` 과 Playwright E2E job 을 더했다 — 실패 시 trace·리포트 업로드)
 - `frontend/README.md`를 실행 방법 중심으로 재작성.
 
 ### FSD 디렉터리 골격 (D-114)
@@ -171,7 +171,7 @@ OpenAPI 제공 전까지만 `shared/types`에 임시 DTO 타입을 두고, 제�
   `Button`(주 액션 ink-fill·화면당 1개 / 기본 / 고스트 / 텍스트), `TextField`(입력 높이 3종: 제품 42px·`#949494`·r9, 온보딩 42px·`#C9C9C9`·r8, 로그인·회원가입 48px·`#C9C9C9`·r12), `Label`/`ErrorText`, `Card`/`Panel`, `Checkbox`, `SelectCard`·`Segmented`(Radix), `Modal`(Radix Dialog), `Toast`(Radix Toast), `EmptyState`, `Skeleton`.
   Radix는 동작·접근성만 사용하고 시각 스타일은 직접 입힌다(D-113). 공통 컴포넌트에 기능 전용 문구를 고정하지 않고 props로 받는다(D-149).
 - **마스코트**: `frontend/docs/mascot/mascot.js`(절차적 SVG 생성기)를 `src/shared/ui/mascot/Mascot.tsx`로 포팅. 8개 포즈, viewBox `0 0 240 240`, `prefers-reduced-motion`이면 정지(`character.md`). SVG/PNG 파일이 저장소에 없으므로 인라인 생성이 유일한 방법이다.
-- **Storybook은 여기서 도입하지 않는다.** 컴포넌트 API가 굳기 전에 설정 비용을 치르게 되므로 **M4 종료 시점에 도입**하고 CI에 `build-storybook`을 추가한다(D-141, D-143 충족).
+- **Storybook은 여기서 도입하지 않는다.** 컴포넌트 API가 굳기 전에 설정 비용을 치르게 되므로 **M4 종료 시점에 도입**하고 CI에 `build-storybook`을 추가한다(D-141, D-143 충족). → **M4 에서 도입했다**(Storybook 10.6, `impl-decision/2026-09-29-storybook-e2e-setup.md`).
 
 **완료 기준**: 1차 컴포넌트가 시안과 육안 일치하고, 토큰 외 하드코딩 색·간격이 남아 있지 않다.
 
@@ -190,10 +190,11 @@ OpenAPI 제공 전까지만 `shared/types`에 임시 DTO 타입을 두고, 제�
   - 경로(D-108, D-162): `/`, `/login`, `/signup`, `/workspaces`, `/onboarding/create_workspace`, `/onboarding/:workspaceId/:step`, `/workspaces/:workspaceId/dashboard`, `/workspaces/:workspaceId/meetings/:meetingId?`, `/workspaces/:workspaceId/tasks/:taskId?`, `/workspaces/:workspaceId/approvals/:approvalId`, `/workspaces/:workspaceId/messages/*`, `/workspaces/:workspaceId/members`, `/workspaces/:workspaceId/settings`.
 - **가드**(D-131, D-070~D-072, D-102): `RequireAuth`, `RedirectIfAuthed`, `RequireTeamMember`, `RequireOnboardingComplete`, `RequirePM`. 페이지 일부의 PM 전용 액션은 컴포넌트 단계에서 제어. **프론트 접근 제어는 UX 목적이며 실제 권한은 API에서도 검증되어야 함**을 계약 문서에 명시.
   - `RequireOnboardingComplete` 는 **서버 응답에 기대지 않는다.** 백엔드가 403 `ONBOARDING_INCOMPLETE` 를 던지지 않으므로 `workspace.onboarding.completed` 로 직접 판단한다(D-071, D-172).
-  - **가드 전체가 UX 장치이지 보안 경계가 아니다.** 인증이 절반만 걸려 있다 — `tasks` · `approvals` · `extractions` · `members` 는 **비로그인으로 읽고 쓸 수 있다**(D-172, 계약 §4.0-②-1).
-    **서버가 막아 준다고 가정하고 가드를 느슨하게 만들지 않는다.** 반대로 가드를 촘촘히 해도 API 는 열려 있으므로, 이 상태를 보안 대책으로 보고하지도 않는다.
-  - **`workspace.role` 하나로 접근을 판단하지 않는다.** 비소속이면 백엔드가 `role: null` 을 주고 매퍼가 `member` 로 폴백한다(계약 §6).
-    소속 여부는 `GET /workspaces` 목록에 그 워크스페이스가 있는지로 본다 — 목록은 소속만 반환한다.
+  - **가드 전체가 UX 장치이지 보안 경계가 아니다.** 권한은 API 가 요청마다 확인한다. M3 작성 때는 `tasks` · `approvals` · `extractions` · `members` 가
+    비로그인으로 열려 있었지만(D-172, 계약 §4.0-②-1), **2026-09-29 `backend/` 기준 프론트가 쓰는 엔드포인트는 모두 로그인 + 소속(`require_member`, 403)을 본다**
+    (`tasks` 는 라우터 단위 `require_task_member`). 서버가 막아 주더라도 가드를 느슨하게 만들지 않고, 가드를 보안 대책으로 보고하지도 않는다.
+  - **`workspace.role` 하나로 접근을 판단하지 않는다.** `role` 은 스키마상 `Optional` 이고 매퍼가 `null` 을 `member` 로 폴백한다(계약 §6).
+    상세도 이제 비소속에게 403 이라 `null` 이 오지 않지만, 소속 여부는 여전히 `GET /workspaces` 목록에 그 워크스페이스가 있는지로 본다 — 목록은 소속만 반환한다.
 - **가드 워터폴 방지 (중요)**: 가드를 순서대로 두면 `/me` → `/workspaces` → 페이지 데이터로 **3홉 직렬 대기**가 생겨 콜드 로드가 느려진다.
   앱 부팅 시 `/me`와 `/workspaces`를 **동시에** `queryClient.prefetchQuery`로 시작하고, 가드는 네트워크를 직접 기다리지 않고 **같은 캐시를 구독만** 하도록 구현한다. **업무 데이터 요청은 인증·소속·온보딩·역할 확인 뒤에만 시작한다.** 가드와 동시에 선조회하지 않고, 부모 가드를 우회하는 자식 loader 선조회도 두지 않는다(M3 확정 계획, 2026-09-28).
 - `shared/api/client.ts`(D-120): Axios 인스턴스 — `baseURL`, `withCredentials: true`, **응답 봉투 `{data, error}` 해제**, 오류를 `AppError { code, message, status, details }`로 정규화. 인터셉터에 비즈니스 로직·재요청을 넣지 않는다(D-120, D-135).
@@ -234,8 +235,8 @@ OpenAPI 제공 전까지만 `shared/types`에 임시 DTO 타입을 두고, 제�
 - 워크스페이스 전환(D-066, D-067): 항상 선택한 워크스페이스 대시보드로. 미저장 변경 시 M3의 공통 이탈 확인 경유.
 - 새 워크스페이스 만들기(D-068~D-072): 동일 파이프라인, 좌측 상단 뒤로가기로 진행 상태 저장 후 기존 워크스페이스 대시보드 복귀. 미완료 워크스페이스은 전환 메뉴에 `설정 미완료`, 선택 시 마지막 미완료 단계로, 대시보드 접근 차단. 재로그인 시에도 동일.
 - **대시보드 껍데기**: 온보딩 종료 지점(D-013)이 필요하므로 앱 셸·헤더·5개 탭과 **빈 상태만** 구현한다. 요약 숫자·목록·되돌리기는 M7에서 채운다.
-- **Storybook 도입** + CI `build-storybook` 추가(D-141, D-143).
-- **E2E**(D-116, D-117): ① 이메일 가입/로그인 → 온보딩 완료 ② 기존 사용자 워크스페이스 선택·워크스페이스 전환. Google은 테스트 서버가 세션을 발급하고 실제 인증은 수동 검증.
+- **Storybook 도입** + CI `build-storybook` 추가(D-141, D-143). → 완료. M2 공통 UI와 M4 폼·메뉴·온보딩의 기본·로딩·오류·비활성 스토리. 스토리 handler 가 기본 handler 를 지우지 않는지 CI `test:storybook` 이 본다.
+- **E2E**(D-116, D-117): ① 이메일 가입/로그인 → 온보딩 완료 ② 기존 사용자 워크스페이스 선택·워크스페이스 전환. Google은 테스트 서버가 세션을 발급하고 실제 인증은 수동 검증. → M4 에서 ①②에 ③ 새로고침·OAuth 왕복 복원과 1024·1280·1440px 레이아웃을 더해 Playwright(Chromium, Vite 개발 서버 + MSW)로 돌린다. Google 은 실 API 에 없어 비활성 버튼 확인까지다.
 
 OAuth는 **현재 탭 이동**으로 구현하고 복귀 경로를 `state`에 담는다(D-158). Discord·Notion 모두 동일하다.
 
@@ -243,16 +244,23 @@ OAuth는 **현재 탭 이동**으로 구현하고 복귀 경로를 `state`에 �
 
 이 마일스톤은 §4.1~§4.5를 가장 많이 쓰는데, 하필 **미구현·스텁이 몰려 있는 구간**이다. 화면 코드는 바뀌지 않지만 일정 판단이 달라진다.
 
-| 화면 | 실 API 상태 | M4에서 할 일 |
+| 화면 | 실 API 상태 (2026-09-29 `backend/` 기준) | M4에서 한 일 |
 |---|---|---|
-| 로그인 · 회원가입 | ✅ 동작한다 | 실 API로 붙여도 된다 |
-| Google 로그인 | ❌ `start`·`callback`이 없다 | **버튼을 비활성**으로 둔다. D-005의 `비밀번호를 잊으셨나요?`와 같은 처리다 |
-| Discord · Notion 연결 | ❌ `start`·`callback`이 없다 | 연결을 만들 방법이 API에 없다. **MSW로만 개발** |
-| 온보딩 단계 저장 | ⚠️ 스텁 | `skip`이 동작하지 않고 단계별 상태가 저장되지 않는다. **MSW로 개발** |
-| 팀원 연결 | ⚠️ 스텁 | Discord 사용자 목록이 하드코딩 2명이다. 매핑 API(`POST`·`PATCH /members`)는 정상 |
-| 워크스페이스 선택 | ✅ 동작한다 | `role`·`onboarding`이 목록에도 들어와 상세를 다시 부르지 않아도 된다 |
+| 로그인 · 회원가입 · 로그아웃 · 세션 | ✅ 동작한다. `session_token` HttpOnly·`SameSite=Lax`·`Secure` 쿠키. **서버 세션이 7일**(`session.expires_at`)이고 쿠키에는 `max_age`·`expires` 가 없다 — 브라우저를 닫으면 쿠키가 사라지는 세션 쿠키다 | 실 API 형식 그대로 붙였다. MSW 도 같은 봉투·코드(`EMAIL_ALREADY_EXISTS` 409, `INVALID_CREDENTIALS` 401) |
+| Google 로그인 | ❌ `start`·`callback` 이 없다 | **버튼을 비활성**으로 둔다. D-005의 `비밀번호를 잊으셨나요?`와 같은 처리다 |
+| Discord · Notion 연결 | ❌ 연동 `start`·`callback` 이 없다. 조회·해제만 있고, 조회는 행 존재 여부로만 `connected`, `display_name` 은 `"Discord 연결됨"` 생성 문자열 | 연결을 만들 방법이 API에 없다. **MSW 의 모의 OAuth 화면으로만 개발** (`impl-decision/2026-09-29-msw-storage-oauth-mock.md`) |
+| 온보딩 단계 저장 | ⚠️ 스텁. `PATCH …/onboarding` 은 `connect_members`+`complete` 일 때만 `onboarding_completed=true` 로 바꾸고 나머지는 무시한다. 응답의 `current_step` 은 미완료면 늘 `connect_notion`, 완료면 `""` 다 | 단계별 저장·재개·건너뛰기는 **MSW 로만 검증**된다. 실 백엔드로는 재개 지점이 틀린다 |
+| 워크스페이스 생성 | ⚠️ 이름 중복을 **전역 완전일치**로 본다(공백 정규화·계정 범위 없음). 생성자를 PM 팀원으로 함께 저장한다 | 정규화·계정 내 중복은 프론트 검증(M3 `checkWorkspaceName`)이 유일한 방어다 |
+| 워크스페이스 목록 · 상세 | ✅ 목록은 소속만, `role`·`onboarding` 포함. **상세도 이제 소속 확인**(`require_member`, 비소속 403) | 목록으로 소속·진입을 판단한다. MSW 의 상세도 같은 순서(401 → 404 → 403)로 맞췄다 |
+| 팀원 연결 | ⚠️ Discord 사용자 목록이 스텁(`disc_01`·`disc_02` 2명 하드코딩, 봇 없음). 팀원 `POST`·`PATCH /members` 는 정상이고 이제 로그인·소속을 확인한다. 같은 공간의 Discord 사용자 중복은 409 `DISCORD_USER_ALREADY_MAPPED` | 매핑 저장은 실 API 형식 그대로다. 목록 내용(봇 제외·기존 매핑 채움)은 MSW 로 검증 |
 
-- 위 표는 **M4 착수 시점에 다시 확인한다.** 그 사이에 채워질 수 있다.
+근거 파일(읽기만 했다): `backend/app/api/auth.py`(signup·login·logout·me, `_create_session`), `backend/app/api/workspaces.py`
+(`_build_workspace_response` 의 임시 온보딩, `create_workspace` 의 전역 이름 비교, `get_workspace` 의 `require_member`, `update_onboarding`),
+`backend/app/api/integrations.py`(조회·해제·`discord/members` 스텁), `backend/app/api/members.py`(`create_member`·`update_member`),
+`backend/app/api/deps.py`(`get_current_user`·`require_member`), `backend/app/main.py`(라우터 등록 — `google`·`start`·`callback` 라우트 없음),
+`backend/app/services/notion.py`(연동 OAuth 플로우는 아직 없다는 주석).
+
+- 위 표는 **M4 착수 때 다시 확인한다고 했던 표를 M4 완료 시점(2026-09-29)에 갱신한 것**이다. 착수 때와 달라진 것은 상세·팀원 API 의 소속 확인이다.
 - 온보딩이 스텁이라 **E2E ①(가입 → 온보딩 완료)은 MSW 기준으로만 성립한다.** 실 백엔드로 돌리면 재개 지점이 틀린다.
 - D-015의 계정 기준 중복은 서버가 보장하지 않는다. M3의 정규화 함수가 유일한 방어다(D-172).
 
@@ -403,7 +411,8 @@ npm run lint             # eslint (FSD 계층 + 번들 규칙 포함)
 npm run format:check     # prettier --check
 npm run test             # vitest (단위 + 통합, MSW)
 npm run build            # production 빌드
-npm run build-storybook  # M4 이후
+npm run build-storybook  # M4 부터
+npm run test:e2e         # M4 부터 — Playwright(Chromium). 처음 한 번 npx playwright install chromium
 ```
 
 **로컬 실행 확인**

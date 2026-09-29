@@ -1134,6 +1134,7 @@ requireMember(workspaceId)  401 또는 403 FORBIDDEN
 
 **붙이지 않는 곳** — `tasks` · `approvals` · `extractions` · `members`. 백엔드에 인증이 없다(계약 §4.0-②-1).
 `GET /workspaces/{id}` 도 로그인만 보고 **멤버십을 보지 않는** 실 API 의 구멍을 그대로 흉내낸다.
+> 2026-09-29 갱신: 백엔드 상세가 `require_member` 를 걸어 비소속 403 이 됐다. MSW 도 401 → 404 → 403 순서로 맞췄다(M4 F 수정).
 
 `db.authenticated` 기본값이 `true` 라 로그인 상태가 기본이다. 로그아웃 후 401, 비소속 403 은 테스트가 고정한다.
 

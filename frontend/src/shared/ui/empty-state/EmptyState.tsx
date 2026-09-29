@@ -9,6 +9,8 @@ export interface EmptyStateProps {
   mascotSize?: number
   /** 문구는 호출자가 준다 — 빈 상태 카피를 컴포넌트에 넣지 않는다 */
   title: ReactNode
+  /** 제목 태그. 기본 h1 — 화면 제목이 따로 있으면 h2 로 내린다 */
+  titleAs?: 'h1' | 'h2'
   description?: ReactNode
   /** 주 액션. 보통 `<Button variant="primary" size="lg">` 하나 */
   action?: ReactNode
@@ -54,6 +56,7 @@ export function EmptyState({
   pose = 'idle',
   mascotSize = 96,
   title,
+  titleAs: Title = 'h1',
   description,
   action,
   secondaryAction,
@@ -68,7 +71,7 @@ export function EmptyState({
       <Mascot pose={pose} size={mascotSize} />
 
       <div className={TEXT_BLOCK}>
-        <h1 className={TITLE}>{title}</h1>
+        <Title className={TITLE}>{title}</Title>
 
         {description === undefined ? null : <p className={DESCRIPTION}>{description}</p>}
       </div>
