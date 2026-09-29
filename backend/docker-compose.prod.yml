@@ -1,0 +1,54 @@
+# 운영용 구성 (EC2 한 대에 DB와 API를 같이 띄운다). 로컬 개발은 docker-compose.yml을 쓴다.
+#   docker compose -f docker-compose.prod.yml up -d --build
+# 값은 같은 폴더의 .env에서 읽는다. .env.example의 운영 항목을 채워 둔다.
+name: mm-prod
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER를 .env에 설정하세요}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD를 .env에 설정하세요}
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB를 .env에 설정하세요}
+    # 호스트에 포트를 열지 않는다. api만 compose 네트워크 안에서 db:5432로 접근한다.
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+    logging: &logging
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  api:
+    build: .
+    image: mm-backend
+    # NOTION_*, EMBEDDING_*, SERVICE_TOKEN 등은 .env에서 그대로 넘긴다.
+    env_file: .env
+    environment:
+      # .env의 DATABASE_URL(로컬용 localhost)보다 우선한다.
+      # 비밀번호에 @ : / 같은 문자가 있으면 URL이 깨지므로 영숫자로 정한다.
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      # 포트를 127.0.0.1에만 열어서 같은 서버의 리버스 프록시만 붙을 수 있다. 그래서 전달 헤더를 모두 믿는다.
+      FORWARDED_ALLOW_IPS: "*"
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    restart: unless-stopped
+    logging: *logging
+
+volumes:
+  pgdata:
