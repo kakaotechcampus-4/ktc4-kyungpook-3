@@ -4,13 +4,24 @@
 
 ## 실행
 
+DB는 PostgreSQL이다. 로컬에서는 Docker로 띄운다(Docker Desktop 필요).
+
 ```bash
 uv venv --python 3.12 .venv
 uv pip install -r requirements.txt
-cp .env.example .env            # 기본값(SQLite)만으로 바로 실행 가능
+cp .env.example .env
 
+docker compose up -d db         # PostgreSQL(pgvector 포함) 기동, 데이터는 mm-pgdata 볼륨에 남는다
 ./run.sh                        # alembic upgrade head + uvicorn --reload
 ```
+
+- 접속 정보는 docker-compose.yml과 같다: `postgresql+psycopg://mm:mm@localhost:5432/mm`.
+  `DATABASE_URL`을 따로 주지 않으면 이 값이 기본값이다(`app/core/database.py`).
+- 로컬에 이미 5432 포트를 쓰는 PostgreSQL이 있으면 `POSTGRES_PORT=5433 docker compose up -d db`로
+  띄우고 `DATABASE_URL`의 포트도 같이 바꾼다.
+- DB를 비우고 처음부터 다시 만들려면 `docker compose down -v` 후 다시 띄운다.
+- SQLite(`mm.db`) 시절 데이터와 마이그레이션은 이관(#98) 때 정리했다. 예전 `mm.db` 파일은 지워도 된다.
+- 테스트(`pytest`)는 sqlite in-memory로 돌아서 DB를 띄우지 않아도 된다.
 
 서버가 뜨면 `http://localhost:8000` 기준으로:
 

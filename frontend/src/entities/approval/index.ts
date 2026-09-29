@@ -8,3 +8,4 @@ export type {
 } from './model/types'
 export { toApproval } from './model/mapper'
 export { sortByWaiting } from './lib/sortByWaiting'
+export { approvalDetailQueryOptions } from './api/approvalDetail'

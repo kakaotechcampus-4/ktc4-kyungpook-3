@@ -187,7 +187,7 @@ OpenAPI 제공 전까지만 `shared/types`에 임시 DTO 타입을 두고, 제�
 - `app/router`: `createBrowserRouter`. 공개 라우트와 보호 라우트를 **상위 레이아웃 라우트**로 분리하고 거기서 공통 검사(D-131).
   - 라우트 lazy 로드 + `Suspense` + 페이지 스켈레톤(D-130). 공통 레이아웃·헤더·기본 UI는 초기 로드.
   - 각 라우트에 **Route Error Boundary**(D-129).
-  - 경로(D-108): `/`, `/login`, `/signup`, `/onboarding/*`, `/workspaces`, `/workspaces/:workspaceId/dashboard`, `/workspaces/:workspaceId/meetings/:meetingId?`, `/workspaces/:workspaceId/tasks/:taskId?`, `/workspaces/:workspaceId/messages/*`, `/workspaces/:workspaceId/members`, `/workspaces/:workspaceId/settings`.
+  - 경로(D-108, D-162): `/`, `/login`, `/signup`, `/workspaces`, `/onboarding/create_workspace`, `/onboarding/:workspaceId/:step`, `/workspaces/:workspaceId/dashboard`, `/workspaces/:workspaceId/meetings/:meetingId?`, `/workspaces/:workspaceId/tasks/:taskId?`, `/workspaces/:workspaceId/approvals/:approvalId`, `/workspaces/:workspaceId/messages/*`, `/workspaces/:workspaceId/members`, `/workspaces/:workspaceId/settings`.
 - **가드**(D-131, D-070~D-072, D-102): `RequireAuth`, `RedirectIfAuthed`, `RequireTeamMember`, `RequireOnboardingComplete`, `RequirePM`. 페이지 일부의 PM 전용 액션은 컴포넌트 단계에서 제어. **프론트 접근 제어는 UX 목적이며 실제 권한은 API에서도 검증되어야 함**을 계약 문서에 명시.
   - `RequireOnboardingComplete` 는 **서버 응답에 기대지 않는다.** 백엔드가 403 `ONBOARDING_INCOMPLETE` 를 던지지 않으므로 `workspace.onboarding.completed` 로 직접 판단한다(D-071, D-172).
   - **가드 전체가 UX 장치이지 보안 경계가 아니다.** 인증이 절반만 걸려 있다 — `tasks` · `approvals` · `extractions` · `members` 는 **비로그인으로 읽고 쓸 수 있다**(D-172, 계약 §4.0-②-1).
@@ -195,22 +195,22 @@ OpenAPI 제공 전까지만 `shared/types`에 임시 DTO 타입을 두고, 제�
   - **`workspace.role` 하나로 접근을 판단하지 않는다.** 비소속이면 백엔드가 `role: null` 을 주고 매퍼가 `member` 로 폴백한다(계약 §6).
     소속 여부는 `GET /workspaces` 목록에 그 워크스페이스가 있는지로 본다 — 목록은 소속만 반환한다.
 - **가드 워터폴 방지 (중요)**: 가드를 순서대로 두면 `/me` → `/workspaces` → 페이지 데이터로 **3홉 직렬 대기**가 생겨 콜드 로드가 느려진다.
-  앱 부팅 시 `/me`와 `/workspaces`를 **동시에** `queryClient.prefetchQuery`로 시작하고, 가드는 네트워크를 직접 기다리지 않고 **캐시를 읽기만** 하도록 구현한다. 페이지 데이터도 가드 통과를 기다리지 않고 라우트 진입과 함께 시작한다.
+  앱 부팅 시 `/me`와 `/workspaces`를 **동시에** `queryClient.prefetchQuery`로 시작하고, 가드는 네트워크를 직접 기다리지 않고 **같은 캐시를 구독만** 하도록 구현한다. **업무 데이터 요청은 인증·소속·온보딩·역할 확인 뒤에만 시작한다.** 가드와 동시에 선조회하지 않고, 부모 가드를 우회하는 자식 loader 선조회도 두지 않는다(M3 확정 계획, 2026-09-28).
 - `shared/api/client.ts`(D-120): Axios 인스턴스 — `baseURL`, `withCredentials: true`, **응답 봉투 `{data, error}` 해제**, 오류를 `AppError { code, message, status, details }`로 정규화. 인터셉터에 비즈니스 로직·재요청을 넣지 않는다(D-120, D-135).
-  - `withCredentials: true` 가 필수로 확정됐다. 실 백엔드의 세션이 **HttpOnly 쿠키**다(D-165, D-172). M1 의 `shared/test/api.ts` 헬퍼는 여기서 인터셉터로 흡수되고 사라진다.
+  - `withCredentials: true` 가 필수로 확정됐다. 실 백엔드의 세션이 **HttpOnly 쿠키**다(D-165, D-172). M1 의 `shared/test/api.ts` 헬퍼는 이름만 남고 공통 `request<T>` 를 타도록 바뀐다. 테스트 전용 fetch 경로는 없어진다.
   - 쿠키가 `Secure` 라 HTTPS 가 아니면 저장되지 않는다. `localhost` 는 예외라 Vite 프록시 경유 개발은 된다.
   - **204 무본문을 봉투로 파싱하지 않는다.** `DELETE /workspaces/{id}/integrations/{provider}` 와 `DELETE /members/aliases/{id}` 가 204 다.
     본문이 빈 문자열이라 그대로 `JSON.parse` 하면 `Unexpected end of JSON input` 으로 죽는다. 인터셉터가 **상태 코드로 먼저 갈라야 한다**(D-172).
 - `shared/api/errorMessages.ts`(D-149): 백엔드 `ErrorCode`(`MEETING_NOT_FOUND`, `NOTION_WRITE_FAILED` 등)를 사용자용 한국어 문구로 변환. 백엔드 기술 문구를 그대로 노출하지 않는다.
 - `QueryClient` 기본값:
-  - 재시도(D-135): 취소 오류와 400/401/403/404/422/429는 재시도 없음. 네트워크 오류·408·5xx만 exponential backoff로 **최대 1회**. mutation·파일 업로드는 재시도 없음.
+  - 재시도(D-135, M3 확정 계획으로 구체화): 취소 오류와 400/401/403/404/422/429는 재시도 없음. 네트워크 오류·408·5xx만 **1초 뒤 1회**. mutation·파일 업로드는 재시도 없음.
   - 캐시(D-136): 대시보드·태스크·회의록 목록 `staleTime` 30초, 워크스페이스 목록·팀원·설정·완료된 회의록 상세 5분, `gcTime` 5분.
   - **모든 워크스페이스 범위 Query Key에 `workspaceId` 포함**, 워크스페이스 전환 시 다른 워크스페이스 캐시 비노출.
 - `shared/config`(D-139): 환경 변수 접근 일원화 + Zod 형식 검증.
 - `shared/lib/date`(D-144, D-145): 표시는 `Intl.DateTimeFormat`(`ko-KR`, `Asia/Seoul`), 계산은 `date-fns`(함수 단위 정적 import). 날짜 전용 값은 `YYYY-MM-DD` **문자열로 유지**. **단위 테스트 대상**(D-115).
 - `shared/lib/validation`: 워크스페이스 이름 정규화·검증(앞뒤 공백 제거 → 연속 공백 축약 → 1~20자, 대소문자 구분, 특수문자·이모지 허용 — D-016~D-020). **순수 함수 + 단위 테스트**(D-115).
   - **서버에 정규화가 없다.** 409 는 완전일치 + 전역 비교라 남이 쓴 이름도 막고 `팀 A` 와 `팀  A` 는 둘 다 통과시킨다(D-172). 이 함수가 유일한 정규화 지점이다. 서버 409 는 보조로만 쓴다.
-- Zustand store: `authStore`, `uiStore`. 서버 데이터 복제 금지(D-110). persist는 `partialize`로 비민감 값만, 버전 포함 key(D-147).
+- Zustand store: 전역 토스트와 이탈 확인 등록 같은 클라이언트 UI 상태만 둔다. 사용자·워크스페이스 객체와 인증 여부는 넣지 않는다(D-110). M3에서는 persist를 쓰지 않는다. 뒤에 필요해지면 `partialize`로 비민감 값만, 버전 포함 key로 저장한다(D-147).
 - **공통 이탈 확인**(D-138, D-067): 미저장 폼 변경·미전송 선택 파일이 있을 때만. 앱 내부 이동·뒤로가기·워크스페이스 전환은 모달, 새로고침·탭 닫기는 브라우저 기본 경고. URL에 즉시 반영되는 검색·필터·정렬은 제외.
 - **URL 검색 파라미터 정책**(D-132): 검색·필터·정렬·페이지네이션·캘린더 기준 날짜는 URL로 관리, Zustand 중복 저장 금지. 페이지 경계에서 한 번 검증·해석해 하위에 원시값만 전달. 검색어는 debounce + `replace`.
 
