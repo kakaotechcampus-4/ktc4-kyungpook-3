@@ -494,3 +494,62 @@ async def _record_and_stop(cog, ctx):
     await _run(A.RecordingCog.stop, cog, ctx)
     await asyncio.wait_for(rec.done.wait(), 20)
     return rec
+
+
+async def test_stop_in_bot_mode_posts_the_judge_results(tmp_path):
+    fake = FakeBe()
+    fake.tasks.add("task_login")
+    handoff = H.Handoff(H.BeClient("http://be", session=fake), "ws-1")
+    items = [_judge_item("결제 환불 기능 구현"),
+             _judge_item("로그인 화면 시안 마무리", action="update", target_task_id="task_login", category="schedule",
+                         due_date="2026-10-06", assignee_type=None,
+                         doc_text="로그인 화면 시안 마무리 마감을 9/28에서 10/6으로 연기")]
+    cog, guild, vc, channel, ctx = _setup(tmp_path, extractor=_judge_extractor(items), handoff=handoff)
+    rec = await _record_and_stop(cog, ctx)
+    m = _manifest(tmp_path, rec)
+    assert m["status"] == "handed_off" and m["be"]["item_count"] == 2 and fake.calls[-1][2]["items"] == items
+    texts = [t for t, _ in channel.sent]
+    posted = next(t for t in texts if t.startswith("📋"))
+    assert posted.startswith("📋 판단 결과 2건 (새 항목 1, 수정 1)")
+    assert "결제 환불 기능 구현을 민수가 하기로 함" in posted and "9/28에서 10/6으로 연기" in posted
+    assert "None" not in posted and not any("판단하지 못한" in t or "받지 않았습니다" in t for t in texts)
+    assert any(t.startswith("📨 BE 인계 완료") for t in texts)
+
+
+async def test_unjudged_findings_and_skipped_items_are_said_in_the_channel(tmp_path, monkeypatch):
+    """끝내 판단하지 못한 발화와 BE 가 받지 않은 항목은 그 회의 채널에서 말한다. 말하지 않으면 빠진 줄 아무도 모른다."""
+    monkeypatch.setattr(R, "EXTRACT_RETRY_MAX", 0)
+    fake = FakeBe()                                       # task_gone 이라는 task 가 없다
+    handoff = H.Handoff(H.BeClient("http://be", session=fake), "ws-1")
+    items = [_judge_item("결제 환불 기능 구현"), _judge_item("옛 작업", action="update", target_task_id="task_gone")]
+    failures = [{"stage": "judge", "text": "소셜 로그인은 이번에 빼기로 함", "reason": "Terra 응답을 파싱하지 못했습니다."}]
+    cog, guild, vc, channel, ctx = _setup(tmp_path, extractor=_judge_extractor(items, failures), handoff=handoff)
+    await _record_and_stop(cog, ctx)
+    texts = [t for t, _ in channel.sent]
+    assert any(t.startswith("⚠️ 판단하지 못한 발화 1건") and "소셜 로그인은 이번에 빼기로 함" in t for t in texts)
+    assert any("BE 가 항목 1건을 받지 않았습니다" in t for t in texts)
+
+
+async def test_a_long_result_list_stays_under_the_message_limit(tmp_path):
+    """디스코드 메시지는 2000자까지다. 넘으면 send 가 실패해 목록이 통째로 안 올라간다."""
+    items = [_judge_item(f"작업 {n}", doc_text="가" * 300) for n in range(15)]
+    cog, guild, vc, channel, ctx = _setup(tmp_path, extractor=_judge_extractor(items))
+    await _record_and_stop(cog, ctx)
+    posted = next(t for t, _ in channel.sent if t.startswith("📋"))
+    assert posted.startswith("📋 판단 결과 15건 (새 항목 15, 수정 0)") and "외 5건" in posted
+    assert len(posted) <= 2000
+
+
+async def test_a_judgement_waiting_for_a_rerun_is_said_as_a_retry(tmp_path):
+    """판단하지 못한 발화가 있어 다시 돌릴 차례다. 채널에는 추출 실패와 다음 시도를 알리고 인계는 하지 않는다."""
+    fake = FakeBe()
+    handoff = H.Handoff(H.BeClient("http://be", session=fake), "ws-1")
+    failures = [{"stage": "draft", "text": "문서를 정리하기로 함", "reason": "Luna 응답을 파싱하지 못했습니다."}]
+    cog, guild, vc, channel, ctx = _setup(tmp_path, extractor=_judge_extractor([_judge_item("검색 개선")], failures),
+                                          handoff=handoff)
+    rec = await _record_and_stop(cog, ctx)
+    m = _manifest(tmp_path, rec)
+    assert m["status"] == "failed" and m["failed_stage"] == "extract" and fake.extractions == {}
+    texts = [t for t, _ in channel.sent]
+    assert any(t.startswith("⚠️ 할일 추출 실패") and "발화 1개를 판단하지 못했다" in t for t in texts)
+    assert not any(t.startswith("📋") or t.startswith("📨") for t in texts)
