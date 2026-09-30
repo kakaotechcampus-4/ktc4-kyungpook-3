@@ -269,6 +269,26 @@ def test_without_a_kept_result_the_last_attempt_still_gives_up(tmp_path, clock, 
     assert fake.extractions == {} and fake.meetings["m1"]["status"] == "failed"
 
 
+def test_a_manual_recover_after_giving_up_hands_the_kept_result_off(tmp_path, clock, limits):
+    """가진 결과가 있는데도 포기로 끝난 회의다(처리 도중 프로세스가 죽어 센 실패로 포기하면 그렇게 된다).
+    결과 파일은 남아 있어서 사람이 /recover 를 치면 새 BE 회의에 그 결과로 인계한다."""
+    rec, path, manifest = _session(tmp_path)
+    fake = FakeBe()
+    ex = Runs(_out([A], [F1]), RuntimeError("1단계 응답을 읽지 못했다"))
+    _run(rec, manifest, tmp_path, extractor=ex, handoff=_handoff(fake))
+    m = _saved(path)
+    m["recovery"] = {"attempts": 5, "gave_up_at": "2026-09-26T08:00:00+00:00", "failed_stage": "extract"}
+    _handoff(fake).fail(m, "extract")                     # 포기하면서 BE 회의를 failed 로 닫았다
+    R.save_manifest(path, m)
+    assert fake.meetings["m1"]["status"] == "failed"
+    r = R.recover(rec, backend=EchoStt(), model_name="echo", workers=1, gate=None,
+                  transcripts_dir=tmp_path / "transcripts", extractor=ex, handoff=_handoff(fake), manual=True)[0]
+    assert r["status"] == "handed_off" and r["items"] == [A] and r["extract_failures"] == [F1]
+    saved = _saved(path)
+    assert saved["be"]["meeting_id"] == "m2" and saved["be"]["replaced"] == ["m1"]
+    assert fake.extractions["m2"]["items"] == [A] and saved["be"]["missing_findings"] == 1
+
+
 def test_no_rerun_when_the_limit_is_zero(tmp_path, clock, limits, monkeypatch):
     monkeypatch.setattr(R, "EXTRACT_RETRY_MAX", 0)
     rec, path, manifest = _session(tmp_path)

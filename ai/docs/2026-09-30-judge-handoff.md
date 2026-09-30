@@ -3,25 +3,30 @@
 - 날짜: 2026-09-30
 - 이슈: #NN
 - PR: #NN
-- 브랜치: feature/NN-judge-handoff (base: feat/106-judge-pipeline, #109 위에 쌓은 PR)
+- 브랜치: feature/NN-judge-handoff (판단 파이프라인 #109 위에서 작업)
 - 작성자: 김동우
 
 ## 한 일
 
 - `capture/handoff.py`
   - `BeClient.similar_tasks(workspace_id, text)`. `POST /workspaces/{id}/tasks/similar` 를 `X-Service-Token` 으로 부르고 `NotionCandidate` 목록을 돌려준다. 메서드 이름이 같아서 `BeClient` 가 그대로 파이프라인의 `CandidateSource` 다 (560da47)
-  - `Handoff.register` 가 매니페스트에 `items` 가 있으면 변환 없이 보낸다. 빈 문자열은 null 로, BE 가 받지 않은 항목 수는 `be.dropped_items`, 판단하지 못한 발화 수는 `be.missing_findings` (2ea51a5)
+  - `Handoff.register` 가 매니페스트에 `items` 가 있으면 변환 없이 보낸다. 빈 문자열은 null 로, BE 가 받지 않은 항목 수는 `be.dropped_items`, 판단하지 못한 발화 수는 `be.missing_findings` (2ea51a5). BE 에 옛 추출이 남은 경우에는 두 수를 덮어쓰지 않는다
 - `capture/judge_path.py` (새 파일)
   - `extract_path()`. `MM_EXTRACT_PATH=legacy|judge`, 모르는 값이면 ValueError
-  - `build_extractor()`. 설정을 확인하고, 화자를 이름으로 바꿔 `judge.pipeline.run` 을 부르고, 결과의 화자를 uid 로 되돌린다. 항목 없이 실패만 있으면 `JudgeAllFailed` (5e73279)
+  - `build_extractor()`. 설정을 확인하고, 화자를 이름으로 바꿔 `judge.pipeline.run` 을 부르고, 결과의 화자를 uid 로 되돌린다. 항목 없이 실패만 있으면 `JudgeAllFailed` (5e73279, 7720852)
+  - 같은 이름을 가르려고 붙인 꼬리표("민수(2)")를 담당자 호칭, 제목, 설명 문장에서 뗀다 (a283b3f)
 - `capture/recorder.py`
   - `build_extractor` 가 플래그로 고른다. `extract_after_transcription` 이 판단 결과를 `session_<id>.items.json` 과 매니페스트에 적는다 (aa09e23)
-  - 판단하지 못한 발화가 남으면 `ExtractIncomplete` 로 단계 실패를 세고 다시 돌린다. `MM_EXTRACT_RETRY_MAX`(기본 2)번 뒤에는 가장 나은 결과로 닫는다. 전사가 바뀌면 옛 판단 결과를 버린다 (6e39d6e, 042ea5d)
+  - 판단하지 못한 발화가 남으면 `ExtractIncomplete` 로 단계 실패를 세고 다시 돌린다. `MM_EXTRACT_RETRY_MAX`(기본 2)번 뒤에는 가장 나은 결과로 닫는다 (6e39d6e, 042ea5d)
+  - 다시 돌린 결과는 항목이 더 많을 때, 같으면 실패가 더 적을 때만 바꿔 끼운다 (0d27847)
+  - 포기 직전 차례에 파이프라인이 통째로 실패하면 앞선 결과로 닫고 이유를 `extract_error` 에 남긴다 (b851d7d)
+  - 전사가 바뀌면 옛 판단 결과를 버린다. 다시 돌리려고 둔 결과도 버린다 (471731d)
 - `capture/discord_adapter.py`, `capture/worker.py`
   - 시작할 때 플래그를 검사한다 (e0c03bd)
   - 봇 모드 채널에 판단 결과(새 항목, 수정)의 설명 문장, 판단하지 못한 발화, BE 가 받지 않은 항목 수를 올린다 (fc8460d)
 - `shared/config.py` 에 `be_service_token`, `.env.example` 과 README 에 `BE_SERVICE_TOKEN`, `MM_EXTRACT_PATH`
-- 테스트 39개. `tests/capture/test_judge_path.py`, `test_judge_stage.py`, `test_judge_wiring.py` 새 파일, `test_handoff.py`, `test_discord_adapter.py`, `test_worker.py` 에 추가. `fake_be.py` 에 유사 검색과 헤더
+- 테스트 50개. `tests/capture/test_judge_path.py`, `test_judge_stage.py`, `test_judge_wiring.py` 새 파일, `test_handoff.py`, `test_discord_adapter.py`, `test_worker.py` 에 추가. `fake_be.py` 에 유사 검색과 헤더
+- `tests/capture/conftest.py`. 개발 기기의 `.env` 에 `MM_PIPELINE_MODE=worker` 나 `MM_EXTRACT_PATH=judge` 가 있어도 기본값을 보는 테스트가 깨지지 않게 테스트마다 두 값을 지운다. `MM_PIPELINE_MODE=worker` 로 돌리면 이 작업 전에도 21개가 실패했다
 
 ## 왜
 
@@ -39,7 +44,9 @@
 
 | 확인한 것 | 방법 | 결과 |
 |---|---|---|
-| 전체 테스트 | `.venv/bin/python -m pytest` | 669 통과 (작업 전 630) |
+| 전체 테스트 | `.venv/bin/python -m pytest` | 680 통과 (작업 전 630) |
+| 환경 변수를 바꿔서 | `MM_PIPELINE_MODE=worker MM_EXTRACT_PATH=judge MM_EXTRACT_RETRY_MAX=0` 을 주고 전체 테스트 | 같은 수가 통과한다 |
+| 다시 돌린 결과가 비었을 때 | 첫 실행은 항목 둘에 실패 하나, 다음 실행은 항목 0에 실패 0 | 가진 결과를 두고 다시 돈 뒤 항목 둘을 등록한다. 고치기 전에는 빈 추출이 등록됐다 |
 | 봇 모드에서 새 경로 | 가짜 디스코드 객체로 `/record` → `/stop` | 판단 항목이 가짜 BE 에 그대로 등록되고 채널에 설명 문장이 올라간다 |
 | 워커 모드에서 새 경로 | `Worker.run_pass` | 같은 항목이 가짜 BE 에 등록된다 |
 | 실제 파이프라인 배선 | `judge.pipeline.run` 에 가짜 LLM, 가짜 BE | 1단계 프롬프트에 이름이 보이고, 유사 검색에 토큰이 실리고, 1인칭 항목의 화자가 uid 로 돌아온다. 진척 발화가 상태 변경으로 BE 까지 간다 |
@@ -54,7 +61,8 @@
 - 실패한 발화만 다시 돌리기. 지금은 파이프라인을 통째로 다시 돌린다. 파이프라인에 진입점이 생기면 바꾼다
 - 워커 모드에서는 판단하지 못한 발화가 매니페스트와 로그에만 남는다. 웹에서 보이려면 BE 가 받을 칸이 있어야 한다
 - 참여 명단(PM 이 정한 이름)을 BE 에서 받아 화자 이름으로 쓰기. BE 에 서비스 토큰으로 읽는 명단 API 가 없다
-- ai-ci 는 develop 대상 PR 에서만 돈다. 이 PR 은 #109 가 머지돼 대상이 develop 으로 바뀐 뒤에 CI 가 돈다
+- ai-ci 는 develop 대상 PR 에서만 돈다
+- 빠진 구간을 둔 채 넘어간 회의(전사 재시도 상한에 닿은 partial)는 뒤 단계가 실패하면 실패 횟수가 매번 지워져 포기하지 않는다. 실패한 구간도 그때마다 전사에 다시 보낸다. 이 작업 전부터 있던 것이고 옛 경로도 같다. 따로 고친다
 
 ## 생각해볼 점
 
