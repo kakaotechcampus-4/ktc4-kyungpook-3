@@ -94,7 +94,7 @@ def test_a_speaker_without_a_name_stays_as_the_uid():
 
 
 def test_two_speakers_with_one_name_stay_apart():
-    """표시 이름이 같으면 어느 uid 인지 되돌릴 수 없다. 둘째부터 꼬리표를 붙여 보내고, 담당자 이름으로 돌아오면 뗀다."""
+    """표시 이름이 같으면 어느 uid 인지 되돌릴 수 없다. 뒤에 나온 쪽에 꼬리표를 붙여 보내고, 담당자 이름으로 돌아오면 뗀다."""
     labels = J.speaker_labels({"101": "민수", "103": "민수", "105": "서연"})
     assert labels == {"101": "민수", "103": "민수(2)", "105": "서연"}
     run = FakeRun([_item(evidence_speaker="민수(2)"),

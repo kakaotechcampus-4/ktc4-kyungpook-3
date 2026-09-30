@@ -77,7 +77,7 @@ def missing_settings(cfg=None, *, run=None) -> list[str]:
 
 
 def speaker_labels(names: dict[str, str]) -> dict[str, str]:
-    """uid → 파이프라인에 보일 이름. 같은 이름이 또 나오면 둘째부터 "이름(2)" 로 갈라 uid 로 되돌릴 수 있게 한다."""
+    """uid → 파이프라인에 보일 이름. 같은 이름이 또 나오면 "이름(2)" 로 갈라 uid 로 되돌릴 수 있게 한다."""
     labels: dict[str, str] = {}
     taken: set[str] = set()
     for uid, name in names.items():
