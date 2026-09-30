@@ -82,7 +82,7 @@ RECOVERY_BACKOFF_S = float(os.environ.get("MM_RECOVERY_BACKOFF_S", "60"))      #
 RECOVERY_BACKOFF_CEIL_S = 3600.0                                                # 두 배로 늘려도 한 시간에서 멈춘다
 # 판단 경로에서 발화 몇 개만 실패했을 때 인계를 미루고 파이프라인을 다시 돌리는 횟수. 상한에 닿으면 가장 나은
 # 결과로 인계한다. 실패한 발화만 다시 돌리는 진입점이 파이프라인에 없어 통째로 다시 돈다(decision_log/0016)
-EXTRACT_RETRY_MAX = int(os.environ.get("MM_EXTRACT_RETRY_MAX", "2"))
+EXTRACT_RETRY_MAX = int(os.environ.get("MM_EXTRACT_RETRY_MAX") or "2")       # .env 에 빈 값으로 적혀 있어도 기본값
 # 판단 경로가 매니페스트에 적는 칸. 전사가 바뀌거나 옛 경로로 다시 뽑으면 같이 버린다
 _JUDGE_KEYS = ("items", "extract_failures", "extract_runs", "extract_partial")
 # 끊긴 녹음의 마지막 트랙 쓰기가 이보다 오래됐으면 회의가 끝났다고 보고 재시작 안내를 하지 않는다. 잠정값이다

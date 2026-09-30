@@ -4,6 +4,9 @@
 """
 
 import json
+import os
+import subprocess
+import sys
 from datetime import timedelta
 from pathlib import Path
 
@@ -220,3 +223,13 @@ def test_a_changed_transcript_drops_the_kept_judge_result(tmp_path, clock, limit
     assert r3["ran"] == ["retried", "extracted", "handed_off"]
     assert _items_on_disk(path) == [C] and _saved(path)["extract_failures"] == [F2, F3]
     assert r3["be"]["stale_extraction"] is True           # BE 에는 옛 추출이 남아 있다
+
+
+def test_empty_values_copied_from_the_env_example_mean_the_defaults():
+    """.env.example 을 그대로 복사하면 값이 빈 줄이 환경 변수로 들어온다. 빈 값 때문에 시작하다 죽으면 안 된다."""
+    env = {**os.environ, "MM_EXTRACT_RETRY_MAX": "", "MM_EXTRACT_PATH": ""}
+    code = "from capture import judge_path as J, recorder as R; print(R.EXTRACT_RETRY_MAX, J.extract_path())"
+    out = subprocess.run([sys.executable, "-c", code], cwd=Path(__file__).resolve().parents[2], env=env,
+                         capture_output=True, text=True, timeout=120)
+    assert out.returncode == 0, out.stderr
+    assert out.stdout.split() == ["2", "legacy"]
