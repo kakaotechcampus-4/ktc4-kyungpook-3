@@ -114,8 +114,16 @@ class Worker:
             self._current = str(m.get("session"))
 
         async def log(r: dict) -> None:
-            print(f"[worker] 세션 {r['session']} {r['status']} 이번에 {r['ran']} 실패 {r.get('attempts')}회"
-                  + (" 포기" if r.get("gave_up") else ""), flush=True)
+            # 워커 모드는 채널에 결과를 올리지 않는다. 실패 이유와 빠진 것을 여기라도 남긴다
+            notes = " 포기" if r.get("gave_up") else ""
+            if r.get("error"):
+                notes += f" 오류: {r['error']}"
+            if r.get("extract_failures"):
+                notes += f" 판단하지 못한 발화 {len(r['extract_failures'])}건"
+            if (r.get("be") or {}).get("dropped_items"):
+                notes += f" BE 가 받지 않은 항목 {r['be']['dropped_items']}건"
+            print(f"[worker] 세션 {r['session']} {r['status']} 이번에 {r['ran']} 실패 {r.get('attempts')}회{notes}",
+                  flush=True)
 
         try:
             return await recover_pass(self.recordings_dir, claims=self._claims, sem=self._sem,
