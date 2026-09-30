@@ -177,7 +177,6 @@ def create_extraction(
                 workspace_id=meeting.workspace_id,
                 alias_text=assignee_hint,
                 match=match,
-                evidence_quote=raw_item.evidence_quote,
                 meeting_id=payload.meeting_id,
             )
 
@@ -232,7 +231,6 @@ def create_extraction(
                 status=str(raw_item.status or TaskStatus.TODO),
                 change_source=str(ChangeSource.MEETING),
                 changed_by=None,
-                is_auto=True,
             )
             item.task_id = task.task_id
         else:

@@ -181,7 +181,6 @@ def create_task(
     blocker: str | None = None,
     change_source: str,
     changed_by: str | None = None,
-    is_auto: bool = False,
 ) -> Task:
     """태스크를 새로 만들고, 생성 사실을 반영 로그 한 줄로 남긴다.
 
@@ -223,7 +222,6 @@ def create_task(
             new_value=title,
             change_source=str(change_source),
             changed_by=changed_by,
-            is_auto=is_auto,
         )
     )
     notion_sync.enqueue_task_sync(db, task)
@@ -237,7 +235,6 @@ def apply_task_updates(
     *,
     change_source: str,
     changed_by: str | None = None,
-    is_auto: bool = False,
 ) -> list[TaskHistory]:
     """필드별로 변경을 적용하고, 실제로 바뀐 필드마다 반영 로그를 남긴다."""
     validate_task_fields(updates)
@@ -260,7 +257,6 @@ def apply_task_updates(
             new_value=_serialize(new_value),
             change_source=str(change_source),
             changed_by=changed_by,
-            is_auto=is_auto,
         )
         db.add(entry)
         entries.append(entry)
@@ -341,7 +337,6 @@ def rollback_task_history(
             new_value=history.old_value,
             change_source=history.change_source,
             changed_by=changed_by,
-            is_auto=False,
         )
     )
     task.version += 1

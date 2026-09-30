@@ -54,7 +54,6 @@ def create_task_endpoint(
         blocker=payload.blocker,
         change_source=str(ChangeSource.MANUAL),
         changed_by=member.member_id,
-        is_auto=False,
     )
     db.commit()
     db.refresh(task)
@@ -124,7 +123,6 @@ def update_task(
         updates,
         change_source=str(ChangeSource.MANUAL),
         changed_by=member.member_id,
-        is_auto=False,
     )
     db.commit()
     db.refresh(task)
