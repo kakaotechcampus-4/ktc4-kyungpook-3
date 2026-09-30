@@ -10,6 +10,8 @@ from app.models.models import (
     AudioSegment,
     ChangedField,
     ChangeSource,
+    Evidence,
+    EvidenceType,
     Extraction,
     ExtractionAction,
     ExtractionItem,
@@ -33,16 +35,17 @@ from app.models.models import (
     User,
     Session,
     Integration,
+    Source,
 )
 
 __all__ = [
     "EMBEDDING_DIMENSIONS",
     "AliasResolutionLog", "AliasReview", "AliasSource", "AliasType",
     "ApprovalRequest", "ApprovalStatus", "ApprovalType",
-    "AudioSegment", "ChangeSource", "ChangedField", "Extraction",
+    "AudioSegment", "ChangeSource", "ChangedField", "Evidence", "EvidenceType", "Extraction",
     "ExtractionAction", "ExtractionItem", "Gate", "Meeting", "MeetingAudio", "MeetingSource",
     "MeetingStatus", "Member", "MemberAlias", "MemberRole",
     "NotionSyncJob", "NotionSyncJobStatus", "NotionSyncStatus",
     "ResolutionResult", "ReviewDecision", "Task", "TaskHistory", "TaskStatus",
-    "Workspace", "User", "Session", "Integration",
+    "Workspace", "User", "Session", "Integration", "Source",
 ]
