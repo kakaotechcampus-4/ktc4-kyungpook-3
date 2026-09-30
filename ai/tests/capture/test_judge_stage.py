@@ -181,7 +181,7 @@ def test_all_failed_is_a_stage_failure_and_registers_nothing(tmp_path, clock, li
     """토큰이 틀리면 모든 발화가 유사 검색에서 실패한다. 빈 추출을 등록하지 않고, 포기할 때 BE 에 실패로 알린다."""
     rec, path, manifest = _session(tmp_path)
     fake = FakeBe()
-    ex = Runs(J.JudgeAllFailed("발화 3개의 판단이 모두 실패했다. 첫 실패(similar): BeError: UNAUTHENTICATED"))
+    ex = Runs(J.JudgeAllFailed("등록할 항목이 없고 판단하지 못한 발화 3개만 남았다. 첫 실패(similar): BeError: UNAUTHENTICATED"))
     r = _run(rec, manifest, tmp_path, extractor=ex, handoff=_handoff(fake))
     assert r["status"] == "failed" and r["failed_stage"] == "extract" and "JudgeAllFailed" in r["error"]
     for _ in range(4):
@@ -242,7 +242,7 @@ def test_a_kept_result_goes_out_when_the_last_attempt_fails_entirely(tmp_path, c
     """부분 결과를 하나 얻은 뒤로는 파이프라인이 통째로 실패하기만 했다. 다음 실패가 포기인 차례에는 가진 결과로 닫는다."""
     rec, path, manifest = _session(tmp_path)
     fake = FakeBe()
-    ex = Runs(_out([A], [F1]), J.JudgeAllFailed("발화 2개의 판단이 모두 실패했다. 첫 실패(judge): Terra 응답 없음"))
+    ex = Runs(_out([A], [F1]), J.JudgeAllFailed("등록할 항목이 없고 판단하지 못한 발화 2개만 남았다. 첫 실패(judge): Terra 응답 없음"))
     r = _run(rec, manifest, tmp_path, extractor=ex, handoff=_handoff(fake))
     for _ in range(3):
         r = _again(rec, tmp_path, ex, fake, clock)

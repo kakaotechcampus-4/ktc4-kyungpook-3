@@ -13,9 +13,10 @@
               "그분" 을 이름으로 풀 재료가 없다. 이름으로 바꿔 넣고, 돌아온 항목의 evidence_speaker 는 uid 로
               되돌린다. BE 는 1인칭 담당자를 uid 로 찾는다. 이름은 추출 단계가 넘겨준 것(지금은 매니페스트의
               표시 이름)을 쓴다
-  결과 분류   항목이 하나도 없고 실패만 있으면 예외로 바꾼다. BE 가 꺼졌거나 토큰이 틀리면 모든 발화가 유사
-              검색에서 실패하는데 파이프라인은 예외 없이 빈 결과를 돌려준다. 그대로 등록하면 빈 추출로 회의가
-              닫히고, BE 는 회의 하나에 추출을 한 번만 받는다
+  결과 분류   등록할 항목이 하나도 없는데 판단하지 못한 발화가 있으면 예외로 바꾼다. BE 가 꺼졌거나 토큰이 틀리면
+              모든 발화가 유사 검색에서 실패하는데 파이프라인은 예외 없이 빈 결과를 돌려준다. 그대로 등록하면
+              빈 추출로 회의가 닫히고, BE 는 회의 하나에 추출을 한 번만 받는다. 다른 발화가 "바꿀 것 없음" 으로
+              판단돼 항목이 0개인 경우도 같다. 판단 실패가 "결정 없는 회의" 로 저장되면 안 된다
 
 발화 몇 개만 실패한 결과를 언제 인계할지는 recorder.extract_after_transcription 이 정한다.
 """
@@ -53,7 +54,7 @@ class JudgeOutput:
 
 
 class JudgeAllFailed(RuntimeError):
-    """항목이 하나도 안 나왔고 실패만 있다. 회의 전체의 실패로 본다."""
+    """등록할 항목이 하나도 없는데 판단하지 못한 발화가 있다. 빈 추출로 닫지 않고 회의 전체의 실패로 본다."""
 
 
 def missing_settings(cfg=None, *, run=None) -> list[str]:
@@ -142,7 +143,8 @@ def build_extractor(*, run=None, candidates=None, cfg=None):
         failures = [{"stage": f.stage, "text": f.finding_text, "reason": f.reason} for f in result.failures]
         if failures and not result.items:
             first = failures[0]
-            raise JudgeAllFailed(f"발화 {len(failures)}개의 판단이 모두 실패했다. 첫 실패({first['stage']}): {first['reason']}")
+            raise JudgeAllFailed(f"등록할 항목이 없고 판단하지 못한 발화 {len(failures)}개만 남았다. "
+                                 f"첫 실패({first['stage']}): {first['reason']}")
         speakers = {s.speaker for s in transcript.segments if s.speaker is not None}
         return JudgeOutput(items=_restore(result.items, labels, names, speakers), failures=failures)
 

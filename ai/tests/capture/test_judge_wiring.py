@@ -159,3 +159,17 @@ def test_a_wrong_service_token_never_registers_an_empty_extraction(tmp_path, mon
     assert "JudgeAllFailed" in result["error"] and "UNAUTHENTICATED" in result["error"]
     assert fake.extractions == {} and fake.meetings["m1"]["status"] == "processing"
     assert saved["recovery"]["attempts"] == 1 and "items" not in saved
+
+
+def test_an_unjudged_finding_with_no_items_is_not_registered_as_an_empty_extraction(tmp_path, monkeypatch):
+    """발화 둘은 바꿀 것이 없다고 판단됐고 하나는 판단하지 못했다. 항목은 0개다. 그대로 등록하면 판단 실패가
+    "결정 없는 회의" 로 저장된다. BE 에는 판단하지 못한 발화를 받을 칸이 없다. 등록하지 않고 단계 실패로 센다."""
+    quiet = {"is_meaningful": False, "category": "none", "is_new": False, "matched_candidate_index": None,
+             "status": None, "evidence": "이미 반영돼 있다"}
+    _fake_llms(monkeypatch, stage1={"findings": FINDINGS}, terra=[quiet, quiet, None], drafts=[])
+    fake = FakeBe()
+    result, saved = _process(tmp_path, fake)
+    assert result["status"] == "failed" and result["failed_stage"] == "extract"
+    assert "JudgeAllFailed" in result["error"] and "판단하지 못한 발화 1개" in result["error"]
+    assert "첫 실패(judge)" in result["error"]
+    assert fake.extractions == {} and fake.meetings["m1"]["status"] == "processing" and "items" not in saved
