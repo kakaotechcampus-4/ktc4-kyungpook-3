@@ -8,6 +8,10 @@ extractions.py). 봇이 이 전이를 순서대로 부른다.
   추출이 끝난 뒤     POST  /api/v1/extractions           done. 항목 저장, 담당자 매칭, 게이트 판정
   어느 단계든 실패   PATCH /api/v1/meetings/{id}/fail    failed, failed_stage
 
+판단 경로(MM_EXTRACT_PATH=judge)는 추출 도중에 발화마다 유사 task 검색을 부른다. 이 경로만 서비스 토큰을 요구한다.
+
+  추출 도중          POST  /api/v1/workspaces/{id}/tasks/similar   X-Service-Token
+
 POST /extractions 는 같은 회의에 두 번 보내도 한 번만 만든다. BE 가 processing → done 을 조건부
 UPDATE 로 선점하고, 이미 done 이면 기존 것을 돌려준다. 그래서 복구 경로가 다시 보내도 중복이 없다.
 fail 은 끝 상태라 되돌리는 전이가 없다. 실패했던 회의를 나중에 복구해 넘길 때는 새 회의를 만들고
@@ -30,8 +34,12 @@ from typing import Any
 
 import requests
 
+from shared.schemas import NotionCandidate
+
 API_PREFIX = "/api/v1"
 TIMEOUT_S = 10.0
+# 유사 검색은 BE 가 임베딩 서버를 10초까지 기다린다. 그보다 길어야 BE 의 502 를 받고, 짧으면 이쪽이 먼저 끊는다
+SIMILAR_TIMEOUT_S = 15.0
 
 # 추출기의 마감 상태를 BE 의 숫자 신뢰도로. BE 는 due_raw 가 없으면 이 값을 보지 않는다
 STATUS_CONFIDENCE = {"certain": 1.0, "inferred": 0.6, "missing": 0.0}
@@ -49,16 +57,22 @@ class BeError(Exception):
 
 
 class BeClient:
-    """회의 API 네 개를 얇게 싼다. session 은 requests.Session 과 같은 request() 를 가진 것이면 된다."""
+    """회의 API 네 개와 유사 task 검색을 얇게 싼다. session 은 requests.Session 과 같은 request() 를 가진 것이면 된다.
 
-    def __init__(self, base_url: str, *, session=None, timeout: float = TIMEOUT_S) -> None:
+    service_token 은 사용자 세션 없이 부르는 경로(유사 검색)가 요구하는 X-Service-Token 값이다. 그 경로에만 싣는다.
+    """
+
+    def __init__(self, base_url: str, *, session=None, timeout: float = TIMEOUT_S, service_token: str = "") -> None:
         self.api = base_url.rstrip("/") + API_PREFIX
         self._session = session or requests.Session()
         self.timeout = timeout
+        self.service_token = service_token
 
-    def _call(self, method: str, path: str, body: dict | None = None) -> Any:
+    def _call(self, method: str, path: str, body: dict | None = None, *, headers: dict | None = None,
+              timeout: float | None = None) -> Any:
+        extra = {"headers": headers} if headers else {}
         try:
-            r = self._session.request(method, self.api + path, json=body, timeout=self.timeout)
+            r = self._session.request(method, self.api + path, json=body, timeout=timeout or self.timeout, **extra)
         except requests.RequestException as e:
             raise BeError("NETWORK", f"{type(e).__name__}: {e}") from e
         try:
@@ -99,6 +113,20 @@ class BeClient:
         return self._call("POST", "/extractions", {"meeting_id": meeting_id, "workspace_id": workspace_id,
                                                     "transcript_path": transcript_path, "model_name": model_name,
                                                     "items": items})
+
+    def similar_tasks(self, workspace_id: str, text: str) -> list[NotionCandidate]:
+        """문장과 비슷한 기존 task 후보. 판단 파이프라인(judge.pipeline.CandidateSource)이 발화마다 부른다.
+
+        후보 수와 유사도 하한은 BE 기본값(3개, 0.4)을 쓴다. 실패는 빈 목록이 아니라 BeError 다. 빈 목록은
+        "비슷한 task 없음" 이라 실패를 그렇게 돌려주면 있는 task 가 새 항목으로 또 만들어진다.
+        """
+        headers = {"X-Service-Token": self.service_token} if self.service_token else None
+        data = self._call("POST", f"/workspaces/{workspace_id}/tasks/similar", {"text": text}, headers=headers,
+                          timeout=SIMILAR_TIMEOUT_S)
+        items = data.get("items") if isinstance(data, dict) else None
+        if not isinstance(items, list):
+            raise BeError("BAD_RESPONSE", "유사 검색 응답에 items 목록이 없다")
+        return [NotionCandidate.from_dict(i) for i in items]
 
 
 # ─────────────────────────────────────────────────────────── 추출 결과 → BE 항목
@@ -257,4 +285,4 @@ def from_env() -> Handoff | None:
     cfg = settings()
     if not cfg.be_base_url or not cfg.be_workspace_id:
         return None
-    return Handoff(BeClient(cfg.be_base_url), cfg.be_workspace_id)
+    return Handoff(BeClient(cfg.be_base_url, service_token=getattr(cfg, "be_service_token", "")), cfg.be_workspace_id)

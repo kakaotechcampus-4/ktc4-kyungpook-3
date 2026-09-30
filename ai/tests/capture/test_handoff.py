@@ -201,3 +201,66 @@ def test_reregistering_after_a_changed_transcript_flags_the_stale_be_extraction(
     assert "reextracted" not in m
     h.register(m, transcripts_dir=tdir, model_name="x")       # 바뀐 게 없으면 표시도 없다
     assert "stale_extraction" not in m["be"]
+
+
+# ── 유사 task 검색. 판단 파이프라인이 발화마다 부른다 ──────────────────────────────────
+
+CANDIDATE = {"task_id": "task_login", "notion_page_id": None, "title": "로그인 화면 시안 마무리", "content_snippet": "",
+             "assignee_member_id": "mem_1", "due_date": "2026-09-28", "status": "in_progress", "similarity": 0.8213,
+             "updated_at": "2026-09-27T01:00:00Z"}
+
+
+def test_similar_search_sends_the_service_token_and_returns_candidates():
+    fake = FakeBe()
+    fake.similar["로그인"] = [CANDIDATE]
+    client = H.BeClient("http://be.local", session=fake, service_token="svc-token")
+    found = client.similar_tasks("ws-1", "로그인 화면 마감을 다음 주 화요일로 연기")
+    assert fake.calls[-1] == ("POST", "/workspaces/ws-1/tasks/similar", {"text": "로그인 화면 마감을 다음 주 화요일로 연기"})
+    assert fake.headers[-1] == {"X-Service-Token": "svc-token"} and fake.timeouts[-1] == H.SIMILAR_TIMEOUT_S
+    assert [(c.task_id, c.title, c.due_date, c.status, c.similarity) for c in found] == \
+        [("task_login", "로그인 화면 시안 마무리", "2026-09-28", "in_progress", 0.8213)]
+    assert found[0].notion_page_id is None                    # 승인 직후라 Notion 페이지가 아직 없는 task
+    assert client.similar_tasks("ws-1", "환불 기능") == []     # 비슷한 task 가 없다. 새 항목이 된다
+    client.create_meeting("ws-1")
+    assert fake.headers[-1] == {}                             # 토큰은 요구하는 경로에만 싣는다
+
+
+def test_a_failed_similar_search_is_an_error_not_an_empty_list():
+    """빈 목록은 "비슷한 task 없음" 이다. 실패를 빈 목록으로 돌려주면 있는 task 가 새 항목으로 또 만들어진다."""
+    fake = FakeBe()
+    with pytest.raises(H.BeError) as wrong_token:
+        H.BeClient("http://be.local", session=fake, service_token="틀린 토큰").similar_tasks("ws-1", "로그인")
+    assert wrong_token.value.code == "UNAUTHENTICATED" and wrong_token.value.status == 401
+    client = H.BeClient("http://be.local", session=fake, service_token="svc-token")
+    with pytest.raises(H.BeError) as no_workspace:
+        client.similar_tasks("없는-워크스페이스", "로그인")
+    assert no_workspace.value.code == "WORKSPACE_NOT_FOUND"
+    fake.embedding_down = True
+    with pytest.raises(H.BeError) as no_embedding:
+        client.similar_tasks("ws-1", "로그인")
+    assert no_embedding.value.code == "EMBEDDING_UNAVAILABLE" and no_embedding.value.status == 502
+    fake.down = True
+    with pytest.raises(H.BeError) as down:
+        client.similar_tasks("ws-1", "로그인")
+    assert down.value.code == "NETWORK"
+
+
+def test_from_env_passes_the_service_token(monkeypatch):
+    from shared import config
+
+    monkeypatch.setattr(config, "settings", lambda: type("S", (), {"be_base_url": "http://be", "be_workspace_id": "ws",
+                                                                  "be_service_token": "svc"})())
+    assert H.from_env().client.service_token == "svc"
+
+
+def test_the_service_token_is_read_from_the_environment(monkeypatch):
+    import importlib
+
+    from shared import config
+
+    monkeypatch.setenv("BE_SERVICE_TOKEN", "svc-from-env")
+    try:
+        assert importlib.reload(config).settings().be_service_token == "svc-from-env"
+    finally:
+        monkeypatch.undo()
+        importlib.reload(config)
