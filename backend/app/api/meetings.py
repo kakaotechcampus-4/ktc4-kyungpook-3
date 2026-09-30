@@ -1,13 +1,13 @@
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import select, update
+from sqlalchemy import exists, func, select, update
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
 from app.core.database import get_db
 from app.core.errors import AppError, Envelope, ErrorCode, success
-from app.models import Extraction, Meeting, MeetingStatus, Member, User
+from app.models import Extraction, Meeting, MeetingStatus, Member, Source, User
 from app.schemas.meeting import (
     MeetingCreateRequest,
     MeetingCreateResponse,
@@ -33,12 +33,14 @@ def _get_meeting(db: Session, meeting_id: str) -> Meeting:
 
 
 def _compute_progress(db: Session, meeting: Meeting) -> MeetingProgress:
-    audio_merged = bool(meeting.audio and meeting.audio.is_complete)
     extraction = (
         db.query(Extraction)
         .filter(Extraction.meeting_id == meeting.meeting_id)
         .order_by(Extraction.created_at.desc())
         .first()
+    )
+    audio_merged = bool(
+        db.scalar(select(exists().where(Source.meeting_id == meeting.meeting_id)))
     )
     transcribed = bool(extraction and extraction.transcript_path)
     extracted = bool(extraction and extraction.items)
@@ -186,22 +188,19 @@ def get_meeting_minutes(
     if not member:
         raise AppError(ErrorCode.FORBIDDEN)
 
-    segment_member_ids = {seg.member_id for seg in meeting.segments if seg.member_id}
-    display_names = {
-        m.member_id: m.display_name
-        for m in db.query(Member).filter(Member.member_id.in_(segment_member_ids)).all()
-    } if segment_member_ids else {}
+    # 발화 전체를 읽지 않고, 멤버별로 처음 말한 순서만 가져온다
+    rows = db.execute(
+        select(Source.member_id, Member.display_name)
+        .join(Member, Member.member_id == Source.member_id)
+        .where(Source.meeting_id == meeting.meeting_id)
+        .group_by(Source.member_id, Member.display_name)
+        .order_by(func.min(Source.seq))
+    ).all()
+    attendees = [
+        {"member_id": member_id, "display_name": display_name}
+        for member_id, display_name in rows
+    ]
 
-    attendees = []
-    seen = set()
-    for seg in meeting.segments:
-        if seg.member_id and seg.member_id not in seen:
-            seen.add(seg.member_id)
-            attendees.append({
-                "member_id": seg.member_id,
-                "display_name": display_names.get(seg.member_id)
-            })
-            
     summary = None
     transcript = []
     
@@ -228,7 +227,7 @@ def get_meeting_minutes(
         meeting_id=meeting.meeting_id,
         title=meeting.title,
         started_at=meeting.started_at,
-        duration_ms=meeting.audio.duration_ms if meeting.audio else 0,
+        duration_ms=meeting.duration_ms or 0,
         source=meeting.source,
         attendees=attendees,
         summary=summary,
