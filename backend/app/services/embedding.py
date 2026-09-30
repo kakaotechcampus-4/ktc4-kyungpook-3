@@ -11,6 +11,7 @@ AI 파트(ai/embedding.py)와 같은 모델(text-embedding-3-small)과 같은 �
 실패는 원인에 따라 다르게 다룬다.
 - 입력 오류(400·413·422): 특정 task 제목 탓일 수 있어서 하나씩 다시 보내고, 거절된 task만 건너뛴다.
   한 task 때문에 같은 배치의 나머지가 계속 막히지 않게 하려는 것이다.
+  거절된 제목은 Task.embedding_rejected_title에 남겨 다음 주기부터 대상에서 뺀다.
 - 그 외(연결 실패·타임아웃·5xx·429 등): 다시 보내도 결과가 같으므로 하나씩 보내지 않는다.
   대신 연속 실패할수록 워커 대기 간격을 두 배씩 늘린다(최대 MAX_BACKOFF_SECONDS).
   401·403은 키 설정 문제라 바로 최대 간격으로 늘린다.
@@ -23,7 +24,7 @@ import os
 import threading
 
 import httpx
-from sqlalchemy import func, select, update
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.orm import Session
 
 from app.core.database import SessionLocal
@@ -152,12 +153,22 @@ def process_missing_embeddings(
     거절해서 같은 배치의 나머지 task까지 매번 함께 실패하기 때문이다.
 
     배치가 입력 오류로 거절되면 task를 하나씩 다시 보내서 거절된 task만 건너뛴다.
+    거절된 제목은 task에 기록해 두고(embedding_rejected_title) 다음 호출부터 대상에서 뺀다.
+    빼지 않으면 거절되는 task가 계속 앞자리를 차지해 뒤의 task가 처리되지 못한다.
+    제목이 바뀌면 기록과 달라지므로 그 task는 새 제목으로 다시 시도된다.
     그 외 실패는 EmbeddingError를 그대로 올린다. 그때까지 받은 벡터는 저장하므로
     다음 호출은 남은 task만 다시 시도한다.
     """
     rows = db.execute(
         select(Task.task_id, Task.title)
-        .where(Task.embedding.is_(None), func.trim(Task.title) != "")
+        .where(
+            Task.embedding.is_(None),
+            func.trim(Task.title) != "",
+            or_(
+                Task.embedding_rejected_title.is_(None),
+                Task.embedding_rejected_title != Task.title,
+            ),
+        )
         .order_by(Task.created_at)
         .limit(limit)
     ).all()
@@ -165,6 +176,7 @@ def process_missing_embeddings(
         return 0
 
     error: EmbeddingError | None = None
+    rejected = []
     try:
         pairs = list(zip(rows, embed_texts([title for _, title in rows], transport=transport)))
     except EmbeddingError as exc:
@@ -173,9 +185,17 @@ def process_missing_embeddings(
         if len(rows) == 1:
             # 하나뿐이면 다시 보내도 같은 결과다.
             _log_rejected(rows[0].task_id, exc)
-            pairs = []
+            pairs, rejected = [], list(rows)
         else:
-            pairs, error = _embed_one_by_one(rows, transport=transport)
+            pairs, rejected, error = _embed_one_by_one(rows, transport=transport)
+
+    for task_id, title in rejected:
+        # 계산하는 사이에 제목이 바뀌었으면 새 제목은 거절된 적이 없으므로 기록하지 않는다.
+        db.execute(
+            update(Task)
+            .where(Task.task_id == task_id, Task.title == title)
+            .values(embedding_rejected_title=title, updated_at=Task.updated_at)
+        )
 
     filled = 0
     for (task_id, title), vector in pairs:
@@ -195,23 +215,26 @@ def process_missing_embeddings(
 
 def _embed_one_by_one(
     rows, *, transport: httpx.BaseTransport | None
-) -> tuple[list, EmbeddingError | None]:
+) -> tuple[list, list, EmbeddingError | None]:
     """배치가 입력 오류로 거절됐을 때 task를 하나씩 다시 보낸다.
 
-    입력 오류로 거절된 task는 건너뛴다. 도중에 입력 오류가 아닌 실패(장애·429 등)가 나면
-    남은 task도 똑같이 실패할 것이라 거기서 멈추고, 그때까지 받은 벡터와 그 오류를 돌려준다.
+    입력 오류로 거절된 task는 건너뛰고 따로 모아 둔다. 도중에 입력 오류가 아닌 실패(장애·429 등)가
+    나면 남은 task도 똑같이 실패할 것이라 거기서 멈추고,
+    그때까지 받은 벡터·거절된 task·그 오류를 돌려준다.
     """
     pairs = []
+    rejected = []
     for row in rows:
         try:
             [vector] = embed_texts([row.title], transport=transport)
         except EmbeddingError as exc:
             if not exc.is_input_error:
-                return pairs, exc
+                return pairs, rejected, exc
             _log_rejected(row.task_id, exc)
+            rejected.append(row)
             continue
         pairs.append((row, vector))
-    return pairs, None
+    return pairs, rejected, None
 
 
 def _log_rejected(task_id: str, exc: EmbeddingError) -> None:

@@ -459,6 +459,10 @@ class Task(Base):
     embedding: Mapped[list[float] | None] = mapped_column(
         Vector(EMBEDDING_DIMENSIONS), nullable=True, deferred=True
     )
+    # 임베딩 API가 입력 오류(400·413·422)로 거절한 제목. 이 값이 지금 제목과 같으면 워커가
+    # 그 task를 다시 고르지 않는다(거절되는 task가 계속 앞자리를 차지해 뒤 task가 굶는 것을 막는다).
+    # 제목이 바뀌면 값이 달라져 자동으로 대상에 돌아오므로 따로 지우지 않는다.
+    embedding_rejected_title: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_now, onupdate=_now

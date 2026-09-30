@@ -253,6 +253,38 @@ def test_worker_single_rejected_task_is_not_sent_twice(db):
     assert _embedding_of(db, task) is None
 
 
+def test_worker_rejected_tasks_do_not_starve_later_tasks(db):
+    workspace = _workspace(db)
+    bad = [_task(db, workspace, f"거절되는 제목 {i}") for i in range(2)]
+    later = _task(db, workspace, "로그인 API 구현")
+
+    # 한 번에 2개만 고르므로, 거절된 task가 대상에서 빠지지 않으면 later에 영영 닿지 못한다.
+    api = FakeEmbeddingApi(reject={"거절되는 제목 0", "거절되는 제목 1"})
+    assert embedding.process_missing_embeddings(db, transport=api.transport, limit=2) == 0
+    assert embedding.process_missing_embeddings(db, transport=api.transport, limit=2) == 1
+
+    assert _embedding_of(db, later) is not None
+    assert all(_embedding_of(db, task) is None for task in bad)
+
+    # 거절된 task는 다시 보내지 않는다
+    sent = [text for inputs in api.inputs() for text in inputs]
+    assert sent.count("거절되는 제목 0") == 2  # 첫 호출의 배치 + 하나씩
+    assert embedding.process_missing_embeddings(db, transport=api.transport, limit=2) == 0
+    assert [text for inputs in api.inputs() for text in inputs] == sent
+
+
+def test_worker_retries_rejected_task_after_title_change(db):
+    task = _task(db, _workspace(db), "거절되는 제목")
+    api = FakeEmbeddingApi(reject={"거절되는 제목"})
+    assert embedding.process_missing_embeddings(db, transport=api.transport) == 0
+
+    apply_task_updates(db, task, {"title": "고친 제목"}, change_source="manual")
+    db.commit()
+
+    assert embedding.process_missing_embeddings(db, transport=api.transport) == 1
+    assert _embedding_of(db, task) is not None
+
+
 @pytest.mark.parametrize("status_code", [429, 500, 503])
 def test_worker_outage_does_not_retry_one_by_one(db, status_code):
     workspace = _workspace(db)
