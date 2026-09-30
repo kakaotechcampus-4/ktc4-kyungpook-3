@@ -100,20 +100,17 @@
     {
       "text": "저는 어제 광고 시안 몇 개 만들어봤어요.",
       "should_flag": true,
-      "note": "진행상황 — 작업 대상이 명시된 진척 보고이므로 progress",
-      "signal": "progress"
+      "note": "진행상황 — 작업 대상이 명시된 진척 보고이므로 포함"
     },
     {
       "text": "저도 예산안 정리하고 있습니다.",
       "should_flag": true,
-      "note": "진행상황 — 작업 대상이 명시된 진척 보고이므로 progress",
-      "signal": "progress"
+      "note": "진행상황 — 작업 대상이 명시된 진척 보고이므로 포함"
     },
     {
       "text": "경쟁사 캠페인도 좀 살펴봤어요.",
       "should_flag": true,
-      "note": "진행상황 — 작업 대상이 명시된 진척 보고이므로 progress",
-      "signal": "progress"
+      "note": "진행상황 — 작업 대상이 명시된 진척 보고이므로 포함"
     },
     {
       "text": "어떤 게 있었나요?",
@@ -133,8 +130,7 @@
     {
       "text": "저는 SNS 반응 좀 모니터링했어요.",
       "should_flag": true,
-      "note": "진행상황 — 작업 대상이 명시된 진척 보고이므로 progress",
-      "signal": "progress"
+      "note": "진행상황 — 작업 대상이 명시된 진척 보고이므로 포함"
     },
     {
       "text": "괜찮아 보이나요?",
