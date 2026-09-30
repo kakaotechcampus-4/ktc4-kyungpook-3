@@ -234,7 +234,7 @@ def resolve_approval(
             ErrorCode.APPROVAL_NOT_FOUND,
             details={"approval_id": approval_id},
         )
-    require_member(db, user, target.workspace_id)
+    member = require_member(db, user, target.workspace_id)
 
     stmt = (
         update(ApprovalRequest)
@@ -244,7 +244,7 @@ def resolve_approval(
         )
         .values(
             status=str(payload.status),
-            resolved_by=payload.resolved_by,
+            resolved_by=member.member_id,
             resolved_at=datetime.now(timezone.utc),
         )
     )

@@ -16,7 +16,9 @@ class TaskCreateRequest(BaseModel):
     status: TaskStatus = TaskStatus.TODO
     progress: int | None = Field(None, ge=0, le=100)
     blocker: str | None = None
-    created_by: str | None = Field(None, description="수동 생성한 PM member_id")
+    created_by: str | None = Field(
+        None, description="하위 호환용. 생성한 사람은 이 값 대신 로그인한 멤버(세션)로 기록한다."
+    )
 
 
 class TaskUpdateRequest(BaseModel):
@@ -27,7 +29,9 @@ class TaskUpdateRequest(BaseModel):
     blocker: str | None = None
     start_date: date | None = None
     due_date: date | None = None
-    changed_by: str | None = Field(None, description="변경한 PM member_id")
+    changed_by: str | None = Field(
+        None, description="하위 호환용. 변경한 사람은 이 값 대신 로그인한 멤버(세션)로 기록한다."
+    )
 
 
 class TaskResponse(BaseModel):
