@@ -1,5 +1,6 @@
 import logging
 import os
+import threading
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
@@ -9,27 +10,35 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app.api import approvals, extractions, meetings, members, tasks, workspaces, auth, integrations
+from app.api import approvals, extractions, meetings, members, similar_tasks, tasks, workspaces, auth, integrations
 from app.core.errors import AppError, Envelope, ErrorCode, failure, success
-from app.services import notion_sync
+from app.services import embedding, notion_sync
 
 logger = logging.getLogger(__name__)
 
 # Notion 반영 대기열을 훑는 주기(초). 0 이하면 워커를 띄우지 않는다.
 NOTION_SYNC_INTERVAL_SECONDS = float(os.getenv("NOTION_SYNC_INTERVAL_SECONDS", "5"))
+# 임베딩이 없는 task를 채우는 주기(초). 0 이하이거나 임베딩 키가 없으면 워커를 띄우지 않는다.
+EMBEDDING_SYNC_INTERVAL_SECONDS = float(os.getenv("EMBEDDING_SYNC_INTERVAL_SECONDS", "5"))
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-    if NOTION_SYNC_INTERVAL_SECONDS <= 0:
-        yield
-        return
-    thread, stop_event = notion_sync.start_worker(NOTION_SYNC_INTERVAL_SECONDS)
+    workers: list[tuple[threading.Thread, threading.Event]] = []
+    if NOTION_SYNC_INTERVAL_SECONDS > 0:
+        workers.append(notion_sync.start_worker(NOTION_SYNC_INTERVAL_SECONDS))
+    if EMBEDDING_SYNC_INTERVAL_SECONDS > 0:
+        if embedding.is_configured():
+            workers.append(embedding.start_worker(EMBEDDING_SYNC_INTERVAL_SECONDS))
+        else:
+            logger.warning("EMBEDDING_API_KEY/EMBEDDING_BASE_URL이 없어 task 임베딩 워커를 띄우지 않습니다.")
     try:
         yield
     finally:
-        stop_event.set()
-        thread.join(timeout=5)
+        for _, stop_event in workers:
+            stop_event.set()
+        for thread, _ in workers:
+            thread.join(timeout=5)
 
 
 app = FastAPI(
@@ -48,6 +57,7 @@ app.include_router(extractions.router, prefix=API_PREFIX)
 app.include_router(approvals.router, prefix=API_PREFIX)
 app.include_router(tasks.router, prefix=API_PREFIX)
 app.include_router(integrations.router, prefix=API_PREFIX)
+app.include_router(similar_tasks.router, prefix=API_PREFIX)
 
 
 @app.exception_handler(AppError)

@@ -2,6 +2,7 @@ import uuid
 from datetime import date, datetime, timezone
 from enum import StrEnum
 
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     Boolean,
     Date,
@@ -16,6 +17,9 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
+
+# text-embedding-3-small의 차원. 모델을 바꾸면 컬럼과 저장된 벡터를 모두 다시 만들어야 한다.
+EMBEDDING_DIMENSIONS = 1536
 
 
 def _uuid() -> str:
@@ -369,6 +373,13 @@ class Extraction(Base):
     )
 
 
+class ExtractionAction(StrEnum):
+    """추출 항목이 새 task인지 기존 task 수정인지. AI의 Terra 2단계(JudgeResult.is_new)가 정한다."""
+
+    CREATE = "create"
+    UPDATE = "update"
+
+
 class ExtractionItem(Base):
     __tablename__ = "extraction_item"
 
@@ -376,6 +387,10 @@ class ExtractionItem(Base):
     extraction_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("extraction.extraction_id", ondelete="CASCADE"), index=True
     )
+    action: Mapped[str] = mapped_column(
+        String(10), default=ExtractionAction.CREATE, server_default=ExtractionAction.CREATE.value
+    )
+    # update 항목은 AI가 제목을 보내지 않으므로 대상 task의 현재 제목을 기록한다.
     task_title: Mapped[str] = mapped_column(String(300))
     task_confidence: Mapped[float] = mapped_column(Float, default=0.0)
     assignee_raw: Mapped[str | None] = mapped_column(String(100), nullable=True)
@@ -392,6 +407,11 @@ class ExtractionItem(Base):
     evidence_quote: Mapped[str | None] = mapped_column(Text, nullable=True)
     evidence_speaker: Mapped[str | None] = mapped_column(String(100), nullable=True)
     evidence_at_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # AI 판단 결과(JudgeResult.category/status)와 PM에게 보여 줄 설명(DraftResult.doc_text)
+    category: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    status: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    doc_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # create: 만들어진 task / update: 수정 대상 task
     task_id: Mapped[str | None] = mapped_column(
         String(36), ForeignKey("task.task_id", ondelete="SET NULL"), nullable=True
     )
@@ -433,6 +453,16 @@ class Task(Base):
     notion_create_attempted_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # 제목(title)의 임베딩. 생성·제목 변경 시 NULL로 비우고 임베딩 워커가 채운다
+    # (app/services/embedding.py). NULL인 동안은 유사 task 검색에서 빠진다.
+    # 벡터 1536개를 매 조회마다 읽지 않도록 필요할 때만 불러온다(deferred).
+    embedding: Mapped[list[float] | None] = mapped_column(
+        Vector(EMBEDDING_DIMENSIONS), nullable=True, deferred=True
+    )
+    # 임베딩 API가 입력 오류(400·413·422)로 거절한 제목. 이 값이 지금 제목과 같으면 워커가
+    # 그 task를 다시 고르지 않는다(거절되는 task가 계속 앞자리를 차지해 뒤 task가 굶는 것을 막는다).
+    # 제목이 바뀌면 값이 달라져 자동으로 대상에 돌아오므로 따로 지우지 않는다.
+    embedding_rejected_title: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_now, onupdate=_now

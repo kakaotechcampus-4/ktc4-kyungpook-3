@@ -3,6 +3,7 @@ from datetime import date, datetime
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.models import TaskStatus
+from app.services.embedding import DEFAULT_K, DEFAULT_MIN_SIMILARITY
 
 
 class TaskCreateRequest(BaseModel):
@@ -75,3 +76,30 @@ class TaskHistoryResponse(BaseModel):
 class TaskHistoryListResponse(BaseModel):
     items: list[TaskHistoryResponse]
     total: int
+
+
+class SimilarTaskSearchRequest(BaseModel):
+    text: str = Field(..., min_length=1, description="검색할 문장 (AI의 JudgeFinding.text)")
+    k: int = Field(DEFAULT_K, ge=1, le=20, description="최대 후보 수")
+    min_similarity: float = Field(
+        DEFAULT_MIN_SIMILARITY, ge=0.0, le=1.0,
+        description="이 값 미만인 후보는 뺀다. 기본값 근거는 ai/decision_log/0010",
+    )
+
+
+class SimilarTaskCandidate(BaseModel):
+    """AI의 NotionCandidate(ai/shared/schemas.py)와 필드 이름을 맞춘다."""
+
+    task_id: str
+    notion_page_id: str | None = Field(None, description="Notion 반영 전이면 null")
+    title: str
+    content_snippet: str = Field("", description="Task에 본문 필드가 없어 당분간 빈 문자열")
+    assignee_member_id: str | None
+    due_date: date | None
+    status: str
+    similarity: float = Field(..., description="코사인 유사도 (0.0~1.0)")
+    updated_at: datetime
+
+
+class SimilarTaskListResponse(BaseModel):
+    items: list[SimilarTaskCandidate]

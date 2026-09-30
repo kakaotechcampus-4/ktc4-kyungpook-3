@@ -2,7 +2,7 @@ from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.models import MeetingSource
+from app.models import ExtractionAction, MeetingSource, TaskStatus
 
 
 class MeetingCreateRequest(BaseModel):
@@ -116,7 +116,21 @@ class ExtractionDetailResponse(BaseModel):
 
 
 class ExtractionItemCreate(BaseModel):
-    task_title: str
+    action: ExtractionAction = Field(
+        ExtractionAction.CREATE,
+        description="create: 새 task(없으면 create) / update: target_task_id의 기존 task 수정. "
+        "AI Terra 2단계의 JudgeResult.is_new에서 온다.",
+    )
+    target_task_id: str | None = Field(
+        None,
+        description="action이 update일 때 수정할 task ID (JudgeResult.matched_task_id). "
+        "없거나 이 워크스페이스 task가 아니면 그 항목만 건너뛴다.",
+    )
+    task_title: str | None = Field(
+        None,
+        description="action이 create면 필수(비어 있으면 그 항목만 건너뛴다). "
+        "update면 보내지 않아도 되고, 보내도 제목은 바꾸지 않는다.",
+    )
     task_confidence: float = 0.0
     assignee_raw: str | None = Field(
         None, description="담당자를 가리킨 원문. first가 아니면 이 값을 별칭 텍스트로 매칭한다."
@@ -134,6 +148,11 @@ class ExtractionItemCreate(BaseModel):
         None, description="근거 문장을 말한 화자의 Discord uid (별칭 텍스트가 아님)"
     )
     evidence_at_ms: int | None = None
+    category: str | None = Field(
+        None, max_length=16, description="schedule / assignee / scope / decision (JudgeResult.category)"
+    )
+    status: TaskStatus | None = Field(None, description="JudgeResult.status. 언급이 없으면 null")
+    doc_text: str | None = Field(None, description="PM에게 보여 줄 설명 문장 (DraftResult.doc_text)")
 
 
 class ExtractionCreateRequest(BaseModel):
