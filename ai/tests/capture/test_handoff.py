@@ -1,6 +1,7 @@
 """BE 인계(capture/handoff.py). 가짜 BE 로 호출 순서, 본문, 멱등, 실패 통보를 본다. 실제 서버는 안 쓴다."""
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -329,6 +330,24 @@ def test_unjudged_findings_are_marked_in_the_be_record(tmp_path):
     assert h.register(m, transcripts_dir=tdir, model_name="x")["missing_findings"] == 1
     m.pop("extract_failures")
     assert "missing_findings" not in h.register(m, transcripts_dir=tdir, model_name="x")
+
+
+def test_a_stale_be_extraction_keeps_the_counts_of_what_the_be_holds(tmp_path):
+    """전사가 바뀌어 다시 뽑아 보냈는데 BE 가 옛 추출을 돌려줬다. be 에 적힌 수는 BE 에 남은 옛 추출의 것이어야 한다.
+    새 결과의 수로 덮어쓰면 item_count(옛 추출)와 어긋난다. 새 결과의 실패는 매니페스트의 extract_failures 에 있다."""
+    fake = FakeBe()                                       # task_login 이 없어 수정 항목 하나가 건너뛰어진다
+    gone = _judge_item(action="update", target_task_id="task_login")
+    fails = [{"stage": "judge", "text": "로그인 화면 마감을 미루기로 함", "reason": "Terra 응답을 파싱하지 못했습니다."}]
+    m, tdir = _judge_manifest(tmp_path, [_judge_item(), gone], extract_failures=fails, extract_partial=True)
+    h = _handoff(fake)
+    be = h.register(m, transcripts_dir=tdir, model_name="x")
+    assert (be["item_count"], be["dropped_items"], be["missing_findings"]) == (1, 1, 1)
+    Path(m["items"]).write_text(json.dumps([_judge_item()] * 3, ensure_ascii=False), encoding="utf-8")
+    m["extract_failures"] = fails * 2                     # 새 전사로 다시 뽑았다. 항목 셋, 판단하지 못한 발화 둘
+    m["reextracted"] = True
+    be = h.register(m, transcripts_dir=tdir, model_name="x")
+    assert be["stale_extraction"] is True and len(fake.extractions["m1"]["items"]) == 2
+    assert (be["item_count"], be["dropped_items"], be["missing_findings"]) == (1, 1, 1)
 
 
 def test_similar_search_over_a_real_http_connection():

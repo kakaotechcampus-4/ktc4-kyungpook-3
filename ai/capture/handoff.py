@@ -263,8 +263,9 @@ class Handoff:
         be.update({"status": "done", "extraction_id": data["extraction_id"], "item_count": data.get("item_count", len(items))})
         # BE 는 done 회의에 새 추출을 만들지 않고 기존 것을 돌려준다. 다시 뽑아 보냈는데 같은 것이 돌아오면 BE 에는 옛 추출이 남은 것이다
         if changed and previous and data["extraction_id"] == previous:
+            # dropped_items, missing_findings 는 BE 가 가진 옛 추출의 수다. 돌아온 item_count 도 옛 추출의 것이라
+            # 이번 결과의 수로 덮어쓰면 서로 어긋난다. 이번 결과의 실패는 매니페스트의 extract_failures 에 있다
             be["stale_extraction"] = True
-            be.pop("dropped_items", None)               # 돌아온 개수는 옛 추출의 것이라 이번에 보낸 것과 견줄 수 없다
         else:
             be.pop("stale_extraction", None)
             # BE 는 수정 대상이 사라졌거나 제목이 빈 항목을 건너뛰고도 201 을 준다. 저장된 수가 적으면 남긴다
@@ -273,12 +274,12 @@ class Handoff:
                 be["dropped_items"] = dropped
             else:
                 be.pop("dropped_items", None)
+            unjudged = len(manifest.get("extract_failures") or [])  # 판단 경로에서 끝내 판단하지 못한 발화
+            if unjudged:
+                be["missing_findings"] = unjudged
+            else:
+                be.pop("missing_findings", None)
         manifest.pop("reextracted", None)
-        unjudged = len(manifest.get("extract_failures") or [])  # 판단 경로에서 끝내 판단하지 못한 발화
-        if unjudged:
-            be["missing_findings"] = unjudged
-        else:
-            be.pop("missing_findings", None)
         if manifest.get("partial"):
             be["partial"] = True
             be["missing_units"] = len(manifest.get("failed_units") or [])
