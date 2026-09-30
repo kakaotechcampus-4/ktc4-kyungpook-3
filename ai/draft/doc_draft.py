@@ -42,7 +42,7 @@ DOC_TEXT_MAX = 300  # JudgeResult.evidence 와 같은 기준
 # 기준일을 실제 회의 날짜와 다르게 둬서 예시의 날짜 계산이 실제 계산에 섞이지 않게 한다.
 _FEW_SHOT = """예시 (기준일은 예시마다 다르다 — 실제 계산은 위의 오늘 날짜로 해라):
 
-[예시 1] 새 할일 생성 · 결정 사항 / 기준일 2026-03-02 (월)
+[예시 1] 새 할일 생성 / 기준일 2026-03-02 (월)
 요약: API 에러 코드 목록을 수빈님이 이번 주 금요일까지 정리하기로 함
 근거: "API 에러 코드 목록 정리가 필요할 것 같아요." / "그건 제가 이번 주 금요일까지 할게요."
 → {"task": "API 에러 코드 목록 정리", "due_date": "2026-03-06", "doc_text": "API 에러 코드 목록 정리를 수빈님이 3/6(금)까지 하기로 함"}
@@ -61,7 +61,12 @@ _FEW_SHOT = """예시 (기준일은 예시마다 다르다 — 실제 계산은 
 요약: 다크모드 토글 구현은 태윤님이 맡기로 함
 담당자 언급: 태윤님
 현재 값: 제목 "다크모드 토글 구현" / 마감일 없음 / 상태 할 일
-→ {"task": null, "due_date": null, "doc_text": "다크모드 토글 구현 담당을 태윤님으로 지정"}"""
+→ {"task": null, "due_date": null, "doc_text": "다크모드 토글 구현 담당을 태윤님으로 지정"}
+
+[예시 5] 기존 할일 수정 · 작업 범위 / 기준일 2026-03-02 (월)
+요약: 사용자 설정 페이지에서 이메일 알림 옵션은 이번 버전에서 빼기로 함
+현재 값: 제목 "사용자 설정 페이지 개발" / 마감일 2026-03-10 / 상태 진행 중
+→ {"task": null, "due_date": null, "doc_text": "사용자 설정 페이지 개발에서 이메일 알림 옵션을 이번 버전 범위에서 제외"}"""
 
 
 def _assignee_line(finding: JudgeFinding) -> str:
@@ -90,6 +95,9 @@ def _draft_prompt(
     kind = "새 할일 생성" if result.is_new else "기존 할일 수정"
     status = _STATUS_KO.get(result.status or "", "언급 없음")
     evidence = "\n".join(f'- "{line}"' for line in finding.evidence) or f'- "{finding.text}"'
+    # 새 항목에는 "바뀌는 것"이 없다 — Terra 가 새 항목에도 category(scope 등)를 주는데, 그대로 넣으면
+    # Luna 가 doc_text 에 "작업 범위에 추가하고"처럼 쓴다
+    changed = "" if result.is_new else f"- 바뀌는 것: {_CATEGORY_KO.get(result.category, result.category)}\n"
     current = ""
     if not result.is_new and candidate is not None:
         current = f"[수정 대상의 현재 값]\n{_current_values(candidate)}\n\n"
@@ -99,7 +107,7 @@ def _draft_prompt(
         f"오늘(회의 날짜)은 {today.isoformat()} ({weekday}요일)이다.\n\n"
         "[이미 확정된 판단 — 다시 판단하지 마라]\n"
         f"- 종류: {kind}\n"
-        f"- 바뀌는 것: {_CATEGORY_KO.get(result.category, result.category)}\n"
+        f"{changed}"
         f"- 진행 상태: {status}\n\n"
         f"[발화 요약] {finding.text}\n"
         f"[근거 원문]\n{evidence}\n"
@@ -114,7 +122,8 @@ def _draft_prompt(
         "   - 요일이 특정되지 않은 기간은 그 기간의 마지막 날:\n"
         '     "이번 주 안으로" → 이번 주 일요일, "다음 주까지" → 다음 주 일요일, "월말까지" → 그 달 마지막 날\n'
         "3. doc_text — PM 이 승인 화면에서 읽을 한 문장. 무엇이 어떻게 바뀌는지 쓴다.\n"
-        '   기존 할일 수정이면 "현재 값 → 새 값"이 드러나게 쓴다. 근거 원문에 없는 내용은 쓰지 마라.\n\n'
+        '   기존 할일 수정이면 "현재 값 → 새 값"이 드러나게 쓴다. 단 작업 범위 변경은 바뀌는 값이 없으므로\n'
+        "   화살표 없이 무엇이 범위에서 빠지거나 더해지는지만 쓴다. 근거 원문에 없는 내용은 쓰지 마라.\n\n"
         f"{_FEW_SHOT}\n\n"
         "JSON으로만 답하라:\n"
         '{"task": str|null, "due_date": "YYYY-MM-DD"|null, "doc_text": str}'

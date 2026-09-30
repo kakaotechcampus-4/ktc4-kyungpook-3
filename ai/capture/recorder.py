@@ -14,8 +14,14 @@ discord 이름은 여기 없다. capture/discord_adapter.py 가 이 함수들을
   timezone      회의가 열린 시간대. "내일" 같은 상대 날짜의 기준일은 이 시간대의 시작 날짜다
   guild_id, voice_channel_id, text_channel_id, workspace_id   어느 서버의 어느 방 회의인지. 복구 범위와 게시 채널
   transcript    전사가 끝나면 회의록 경로
-  tasks         할일 추출까지 됐으면 그 결과 파일 경로
-  be            BE 인계 상태 {"meeting_id", "status", "extraction_id", ...}. capture/handoff.py 가 쓴다
+  tasks         할일 추출까지 됐으면 그 결과 파일 경로 (옛 경로 extract_tasks 의 결과)
+  items         판단 경로(MM_EXTRACT_PATH=judge)의 결과 파일 경로. POST /extractions 의 항목 모양 그대로다.
+                tasks 와 둘 중 하나만 있다
+  extract_failures   판단 경로에서 판단하지 못한 finding(1단계가 고른 결정·진척 하나) [{"stage", "text", "reason"}]
+  extract_runs       판단하지 못한 finding 을 남긴 채 끝난 실행 수. EXTRACT_RETRY_MAX 번까지 다시 돌린다
+  extract_partial    다시 돌려도 남아서 판단하지 못한 finding 을 둔 채 인계로 갔다
+  extract_error      포기 직전 차례에 파이프라인이 통째로 실패해 앞선 결과로 닫았을 때, 그 실패 한 줄
+  be           BE 인계 상태 {"meeting_id", "status", "extraction_id", ...}. capture/handoff.py 가 쓴다
   claimed_by, claimed_at   누가 언제부터 이 회의를 처리 중인지 보여 주는 표시. 누가 처리할지는 회의 잠금
                 (session_<회의ID>.lock 의 OS 파일 잠금)만 정한다. 놓으면 지운다
   recovery      단계를 닫지 못한 실행의 횟수와 다음 시도 {"attempts", "next_at"}, 또는 포기
@@ -25,6 +31,11 @@ process_session 이 마지막으로 끝난 단계 다음부터 실행한다. /st
 같은 함수를 쓰므로 어디서 죽어도 같은 경로로 이어진다. 전사에서 실패한 줄이 있으면 완료로 닫지 않고
 partial 로 두며, 다음 실행이 그 줄만 다시 보낸다. 할일 추출(extract/, #30)과 BE 인계는 설정이
 없으면 그 단계에서 멈추고 매니페스트는 그 앞 상태로 남는다.
+
+추출 단계의 추출기는 둘 중 하나다(build_extractor). 기본은 extract_tasks, MM_EXTRACT_PATH=judge 면 판단
+파이프라인(capture/judge_path.py)이다. 봇과 워커가 같은 팩토리를 쓰므로 두 모드가 같이 바뀐다.
+판단 경로는 1단계가 고른 finding(결정이나 진척 보고 하나) 하나의 실패를 예외가 아니라 목록으로 돌려준다. 그런
+finding 이 남으면 추출 단계를 닫지 않고 파이프라인을 다시 돌린 뒤에 인계한다(_keep_judge_output). 근거는 decision_log/0016.
 
 복구 한 바퀴(recover_pass)는 recovery_targets 로 대상을 고르고 recover_one 으로 회의 하나씩 회의 잠금을 잡고
 돌린다. 봇과 워커(capture/worker.py)가 같은 함수를 쓴다.
@@ -46,6 +57,8 @@ from zoneinfo import ZoneInfo
 
 import soundfile as sf
 
+from capture import judge_path
+from capture.judge_path import JudgeOutput
 from shared.config import TRANSCRIPTS_DIR, settings
 from shared.config import today as config_today
 from shared.schemas import now_iso
@@ -68,8 +81,17 @@ RECOVERY_INTERVAL_S = float(os.environ.get("MM_RECOVERY_INTERVAL_S", "60"))    #
 RECOVERY_MAX_ATTEMPTS = int(os.environ.get("MM_RECOVERY_MAX_ATTEMPTS", "5"))   # 이만큼 실패하면 포기하고 BE 에 fail
 RECOVERY_BACKOFF_S = float(os.environ.get("MM_RECOVERY_BACKOFF_S", "60"))      # 첫 실패 뒤 기다림. 실패마다 두 배
 RECOVERY_BACKOFF_CEIL_S = 3600.0                                                # 두 배로 늘려도 한 시간에서 멈춘다
+# 판단 경로에서 finding 몇 개만 실패했을 때 인계를 미루고 파이프라인을 다시 돌리는 횟수. 상한에 닿으면 가장 나은
+# 결과로 인계한다. 실패한 finding 만 다시 돌리는 진입점이 파이프라인에 없어 통째로 다시 돈다(decision_log/0016)
+EXTRACT_RETRY_MAX = int(os.environ.get("MM_EXTRACT_RETRY_MAX") or "2")       # .env 에 빈 값으로 적혀 있어도 기본값
+# 판단 경로가 매니페스트에 적는 칸. 전사가 바뀌거나 옛 경로로 다시 뽑으면 같이 버린다
+_JUDGE_KEYS = ("items", "extract_failures", "extract_runs", "extract_partial", "extract_error")
 # 끊긴 녹음의 마지막 트랙 쓰기가 이보다 오래됐으면 회의가 끝났다고 보고 재시작 안내를 하지 않는다. 잠정값이다
 RESUME_NOTICE_WINDOW_S = 3600.0
+
+
+class ExtractIncomplete(RuntimeError):
+    """판단하지 못한 finding 이 남았다. 결과는 저장해 두었고 다음 시도가 파이프라인을 다시 돌린다."""
 
 
 def utcnow() -> datetime:
@@ -491,7 +513,8 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
     (recovery.gave_up_at) 그때 처음 BE 에 fail 을 보낸다. 그 전에는 BE 회의가 processing 으로 남는다.
 
     돌려주는 dict: session, status, ran(이번에 끝낸 단계), skipped, error, failed_stage,
-    transcribe({markdown, failed, summary, lines}), retried(다시 보낸 줄 수), tasks(목록), be, speakers(명),
+    transcribe({markdown, failed, summary, lines}), retried(다시 보낸 줄 수), tasks(옛 경로의 목록),
+    items(판단 경로의 항목 목록. 옛 경로면 None), extract_failures(판단하지 못한 finding), be, speakers(명),
     text_channel_id(결과를 올릴 채널), attempts, gave_up, retry_in_s(이번 실패로 잡힌 다음 시도까지 초).
     """
     tdir = transcripts_dir or TRANSCRIPTS_DIR
@@ -499,6 +522,7 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
     stages = manifest.setdefault("stages", {})
     result = {"session": manifest["session"], "status": manifest.get("status"), "ran": [], "skipped": {},
               "error": None, "failed_stage": None, "transcribe": None, "retried": 0, "tasks": None, "be": None,
+              "items": None, "extract_failures": [],
               "speakers": len(manifest.get("speakers") or []), "text_channel_id": manifest.get("text_channel_id"),
               "partial": False, "missing_units": 0, "attempts": 0, "gave_up": False, "retry_in_s": None}
     stage = None
@@ -585,8 +609,13 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
             else:
                 manifest.pop("failed_units", None)
                 manifest.pop("partial", None)
+            if changed:
+                # 회의록이 바뀌었다. 옛 회의록으로 낸 판단 결과는 추출 단계가 열려 있어도(다시 돌릴 차례여도) 버린다.
+                # 두면 새 회의록의 결과와 견줘져 옛 회의록의 항목이 인계될 수 있다
+                for key in _JUDGE_KEYS:
+                    manifest.pop(key, None)
             if changed and (STATUS_EXTRACTED in stages or STATUS_HANDED_OFF in stages):
-                # 회의록이 바뀌었다. 옛 회의록으로 뽑은 할일과 인계는 무효다. 다시 뽑고 다시 보낸다
+                # 옛 회의록으로 뽑은 할일과 인계는 무효다. 다시 뽑고 다시 보낸다
                 stages.pop(STATUS_EXTRACTED, None)
                 stages.pop(STATUS_HANDED_OFF, None)
                 manifest.pop("tasks", None)
@@ -597,15 +626,22 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
 
         if STATUS_EXTRACTED not in stages:
             if extractor is None:
-                result["skipped"][STATUS_EXTRACTED] = "LLM 설정 없음"
+                result["skipped"][STATUS_EXTRACTED] = extract_skip_reason()
                 result["status"] = manifest["status"]
                 return result
             stage = STATUS_EXTRACTED
-            tasks_path = extract_after_transcription(tdir, manifest, extractor=extractor)
-            if tasks_path is None:
+            out_path = extract_after_transcription(tdir, manifest, extractor=extractor)
+            if out_path is None:
                 raise FileNotFoundError(f"전사 계약 파일이 없다: session_{manifest['session']}.transcript.json")
-            manifest["tasks"] = str(tasks_path)
-            result["tasks"] = json.loads(tasks_path.read_text(encoding="utf-8"))
+            if manifest.get("items") == str(out_path):
+                # 판단 경로다. 매니페스트의 items·extract_failures 는 extract_after_transcription 이 적었다
+                result["items"] = json.loads(out_path.read_text(encoding="utf-8"))
+                result["extract_failures"] = list(manifest.get("extract_failures") or [])
+            else:
+                for key in _JUDGE_KEYS:
+                    manifest.pop(key, None)
+                manifest["tasks"] = str(out_path)
+                result["tasks"] = json.loads(out_path.read_text(encoding="utf-8"))
             finish(STATUS_EXTRACTED)
 
         if STATUS_HANDED_OFF not in stages:
@@ -829,10 +865,14 @@ def recover(recordings_dir: Path, *, backend, model_name: str, workers: int, gat
 
 
 def build_extractor():
-    """extract_tasks 를 부를 함수를 만든다. 모듈이나 LLM 설정이 없으면 None.
+    """추출 단계의 추출기를 만든다. 모듈이나 설정이 없으면 None.
 
-    extract/ 는 다른 담당의 모듈이라 여기서는 부르기만 한다. 설정은 shared.config 의 LLM_* 다.
+    MM_EXTRACT_PATH 가 judge 면 판단 파이프라인(capture/judge_path.py), 아니면 extract_tasks 다. 판단 경로의
+    설정이 없다고 옛 경로로 넘어가지 않는다. extract/ 와 judge/ 는 다른 담당의 모듈이라 여기서는 부르기만 한다.
+    옛 경로의 설정은 shared.config 의 LLM_* 다.
     """
+    if judge_path.extract_path() == "judge":
+        return judge_path.build_extractor()
     try:
         from openai import OpenAI
         from extract.llm import extract_tasks
@@ -850,13 +890,24 @@ def build_extractor():
     return run
 
 
+def extract_skip_reason() -> str:
+    """추출기가 없어 단계를 건너뛸 때 결과와 채널에 적는 이유."""
+    if judge_path.extract_path() == "judge":
+        missing = judge_path.missing_settings()
+        return "판단 경로 설정 없음" + (f"({', '.join(missing)})" if missing else "")
+    return "LLM 설정 없음"
+
+
 def extract_after_transcription(transcripts_dir: Path, manifest: dict, *, extractor=None,
                                 today: date | None = None) -> Path | None:
-    """전사 결과(Transcript)에서 할일을 뽑아 transcripts/session_<회의ID>.tasks.json 에 쓴다.
+    """전사 결과(Transcript)에서 할일을 뽑아 파일에 쓰고 그 경로를 돌려준다.
 
-    extractor(transcript, speaker_names, today) -> list[ExtractedTask]. 없으면 build_extractor() 로 만들고,
-    그것도 없으면 아무것도 안 하고 None 을 돌려준다. today 는 회의 날짜다 (meeting_date). 회의록은 이미
-    나와 있으므로 여기서 실패해도 전사 결과는 그대로다.
+    extractor(transcript, speaker_names, today) 가 돌려주는 것에 따라 둘로 갈린다.
+      list[ExtractedTask]   옛 경로. transcripts/session_<회의ID>.tasks.json
+      JudgeOutput           판단 경로. transcripts/session_<회의ID>.items.json 에 쓰고 매니페스트에 items 와
+                            extract_failures 를 적는다
+    extractor 가 없으면 build_extractor() 로 만들고, 그것도 없으면 아무것도 안 하고 None 을 돌려준다.
+    today 는 회의 날짜다 (meeting_date). 회의록은 이미 나와 있으므로 여기서 실패해도 전사 결과는 그대로다.
     """
     from shared.schemas import Transcript
 
@@ -869,8 +920,66 @@ def extract_after_transcription(transcripts_dir: Path, manifest: dict, *, extrac
         return None
     transcript = Transcript.from_dict(json.loads(src.read_text(encoding="utf-8")))
     names = {str(e["user_id"]): e["display_name"] for e in manifest["speakers"]}
-    tasks = extractor(transcript, names, today or meeting_date(manifest))
+    try:
+        tasks = extractor(transcript, names, today or meeting_date(manifest))
+    except Exception as e:  # noqa: BLE001 - 파이프라인이 통째로 실패했다(전부 실패, LLM 키, 1단계)
+        kept = _kept_judge_result(transcripts_dir, manifest)
+        if kept is None or not _last_attempt(manifest):
+            raise
+        # 이번 실패가 포기가 되는 차례인데 앞선 실행이 남긴 결과가 있다. 그것으로 닫고 이유를 남긴다
+        manifest["extract_partial"] = True
+        manifest["extract_error"] = f"{type(e).__name__}: {e}"
+        return kept
+    if isinstance(tasks, JudgeOutput):
+        return _keep_judge_output(transcripts_dir, manifest, tasks)
     out = transcripts_dir / f"session_{ts}.tasks.json"
     out.write_text(json.dumps([t.to_dict() if hasattr(t, "to_dict") else t for t in tasks],
                               ensure_ascii=False, indent=2), encoding="utf-8")
     return out
+
+
+def _kept_judge_result(transcripts_dir: Path, manifest: dict) -> Path | None:
+    """앞선 실행이 남긴 판단 결과 파일. 판단하지 못한 finding 을 둔 채 다음 시도를 기다리는 회의에만 있다."""
+    path = transcripts_dir / f"session_{manifest['session']}.items.json"
+    return path if manifest.get("items") == str(path) and path.exists() else None
+
+
+def _last_attempt(manifest: dict) -> bool:
+    """이번 실행이 실패하면 포기(RECOVERY_MAX_ATTEMPTS)가 되는 차례인가."""
+    return (manifest.get("recovery") or {}).get("attempts", 0) + 1 >= RECOVERY_MAX_ATTEMPTS
+
+
+def _keep_judge_output(transcripts_dir: Path, manifest: dict, out: JudgeOutput) -> Path:
+    """판단 경로의 결과를 파일과 매니페스트에 적고, 이 결과로 단계를 닫을지 정한다. 항목은 인계 단계가 그대로 보낸다.
+
+    판단하지 못한 finding 이 없으면 닫는다. 있으면 결과를 둔 채 ExtractIncomplete 를 내서 단계 실패로 세게 한다.
+    그러면 기존 재시도 규칙(60초부터 두 배)이 파이프라인을 다시 돌린다. 성공한 것만 먼저 인계하지 않는 이유는
+    BE 가 회의 하나에 추출을 한 번만 받아서 나머지를 나중에 넣을 수 없기 때문이다.
+
+    다시 돌린 결과는 항목이 더 많을 때, 같으면 실패가 더 적을 때만 바꿔 끼운다. 1단계는 돌릴 때마다 발화를 다르게
+    묶고, 응답이 이상하면 하나도 못 고른 채(항목 0, 실패 0) 끝난다. 실패 수만 견주면 그 빈 결과가 가진 결과를
+    밀어내고 빈 추출이 등록된다. 닫을지는 남긴 결과에 실패가 있는지로 정한다.
+    EXTRACT_RETRY_MAX 번 다시 돌렸거나 이번 실패가 포기가 되는 차례면(_last_attempt) 가장 나은 결과로 닫고
+    extract_partial 과 extract_failures 를 남긴다. 가진 결과를 두고 회의를 실패로 닫지 않는다. 그 차례에
+    파이프라인이 통째로 실패한 경우는 extract_after_transcription 이 같은 규칙으로 닫는다.
+    """
+    path = transcripts_dir / f"session_{manifest['session']}.items.json"
+    kept = None
+    if _kept_judge_result(transcripts_dir, manifest):
+        kept = manifest.get("extract_failures") or []
+        kept_items = len(json.loads(path.read_text(encoding="utf-8")))
+    if kept is None or (len(out.items), -len(out.failures)) > (kept_items, -len(kept)):
+        path.write_text(json.dumps(out.items, ensure_ascii=False, indent=2), encoding="utf-8")
+        kept = out.failures
+    manifest["items"] = str(path)
+    manifest.pop("tasks", None)
+    if not kept:
+        for key in ("extract_failures", "extract_runs", "extract_partial"):
+            manifest.pop(key, None)
+        return path
+    manifest["extract_failures"] = kept
+    runs = manifest["extract_runs"] = manifest.get("extract_runs", 0) + 1
+    if runs <= EXTRACT_RETRY_MAX and not _last_attempt(manifest):
+        raise ExtractIncomplete(f"발화 {len(kept)}개를 판단하지 못했다. 파이프라인을 다시 돌린다({runs}/{EXTRACT_RETRY_MAX})")
+    manifest["extract_partial"] = True
+    return path

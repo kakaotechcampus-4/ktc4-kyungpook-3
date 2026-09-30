@@ -57,6 +57,7 @@ def test_prompt_for_create_has_no_current_values_but_shows_assignee():
     )
     prompt = _draft_prompt(f, _result(category="decision", is_new=True, matched_task_id=None), None, TODAY)
     assert "새 할일 생성" in prompt
+    assert "- 바뀌는 것:" not in prompt  # 새 항목에 category 를 넣으면 doc_text 에 "범위에 추가" 가 붙는다
     assert "[수정 대상의 현재 값]" not in prompt
     assert "[담당자 언급] 지민님" in prompt
 
