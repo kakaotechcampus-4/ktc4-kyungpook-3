@@ -100,7 +100,8 @@ def _relabel(transcript: Transcript, labels: dict[str, str]) -> Transcript:
 def _restore(items: list[dict], labels: dict[str, str], names: dict[str, str], speakers: set[str]) -> list[dict]:
     """항목의 화자를 uid 로 되돌린다. 되돌릴 수 없는 값은 비운다(BE 가 담당 미정으로 PM 에게 보낸다).
 
-    이름이 겹쳐 꼬리표를 붙였던 이름이 담당자 이름으로 돌아오면 꼬리표를 뗀다. BE 는 그 값으로 별칭을 찾는다.
+    이름이 겹쳐 붙였던 꼬리표는 PM 이 읽는 글에서 뗀다. 담당자 이름(BE 는 그 값으로 별칭을 찾는다), 제목, 설명
+    문장이다. "민수(2)님" 처럼 호칭이 붙어 돌아오기도 해서 통째로 같은지가 아니라 들어 있는지를 본다.
     """
     uid_of = {label: uid for uid, label in labels.items()}
     tagged = {label: (names.get(uid) or "").strip() for uid, label in labels.items()
@@ -113,8 +114,12 @@ def _restore(items: list[dict], labels: dict[str, str], names: dict[str, str], s
             item["evidence_speaker"] = uid_of[speaker]
         elif speaker not in speakers:          # 이름이 없어 uid 로 나간 화자는 그대로 돌아온다. 그 밖의 값은 모르는 화자다
             item["evidence_speaker"] = None
-        if item.get("assignee_raw") in tagged:
-            item["assignee_raw"] = tagged[item["assignee_raw"]]
+        for key in ("assignee_raw", "task_title", "doc_text"):
+            value = item.get(key)
+            if isinstance(value, str):
+                for label, name in tagged.items():
+                    value = value.replace(label, name)
+                item[key] = value
         out.append(item)
     return out
 

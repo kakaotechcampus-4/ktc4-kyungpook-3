@@ -105,6 +105,17 @@ def test_two_speakers_with_one_name_stay_apart():
     assert out.items[1]["assignee_raw"] == "민수"
 
 
+def test_a_name_tag_does_not_reach_the_text_the_pm_reads():
+    """꼬리표는 화자를 가르려고 붙인 것이다. 호칭이 붙어 돌아오거나 제목과 설명 문장에 섞여 돌아와도 뗀다."""
+    run = FakeRun([_item(assignee_type="thirdname", assignee_raw="민수(2)님", task_title="민수(2) 와이어프레임 검토",
+                         doc_text="와이어프레임을 민수(2)가 9/25까지 그리기로 함", evidence_speaker="민수")])
+    extract, _ = _extractor(run)
+    item = extract(TRANSCRIPT, {"101": "민수", "103": "민수"}, date(2026, 9, 19)).items[0]
+    assert item["assignee_raw"] == "민수님" and item["task_title"] == "민수 와이어프레임 검토"
+    assert item["doc_text"] == "와이어프레임을 민수가 9/25까지 그리기로 함" and item["evidence_speaker"] == "101"
+    assert item["evidence_quote"] == "네, 제가 할게요."                     # 전사 원문은 건드리지 않는다
+
+
 def test_an_unknown_speaker_in_an_item_is_dropped_for_pm_review():
     """되돌릴 수 없는 화자를 uid 자리에 그대로 두면 BE 가 엉뚱한 값으로 팀원을 찾는다. 비워서 PM 확인으로 보낸다."""
     run = FakeRun([_item(evidence_speaker="모르는 사람"), _item(evidence_speaker=None)])
