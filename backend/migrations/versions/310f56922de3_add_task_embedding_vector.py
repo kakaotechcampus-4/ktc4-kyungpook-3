@@ -30,5 +30,6 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     """Downgrade schema."""
+    # vector 확장은 DB 소유라 지우지 않는다. upgrade 전에 이미 있었을 수도 있고,
+    # 다른 객체가 쓰고 있으면 DROP이 실패해서 downgrade가 멈춘다.
     op.drop_column('task', 'embedding')
-    op.execute("DROP EXTENSION IF EXISTS vector")
