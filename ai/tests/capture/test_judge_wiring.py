@@ -108,9 +108,12 @@ def test_a_meeting_goes_from_the_transcript_to_be_through_the_real_pipeline(tmp_
     assert "[0] 민수: 결제 환불 기능은" in prompt and "[1] 재환: 네, 제가 맡을게요." in prompt
     assert not any(uid in prompt for uid in ("101", "103", "105"))
 
-    # 유사 검색은 발화마다 한 번, 요약 문장과 서비스 토큰으로
+    # 유사 검색은 1단계가 고른 finding 마다 한 번, 요약 문장과 서비스 토큰으로. 전사록의 줄마다가 아니다
     similar = [(c, h) for c, h in zip(fake.calls, fake.headers) if c[1].endswith("/tasks/similar")]
+    assert len(MEETING) == 5 and len(similar) == len(FINDINGS) == 3
     assert [c[2]["text"] for c, _ in similar] == [f["summary"] for f in FINDINGS]
+    assert [len(fakes["terra"].prompts), len(fakes["draft"].prompts)] == [3, 3]    # 2단계와 초안도 finding 마다
+    assert [c[1] for c in fake.calls].count("/extractions") == 1                  # 등록은 회의마다 한 번
     assert all(h == {"X-Service-Token": "svc-token"} and c[1] == "/workspaces/ws-1/tasks/similar" for c, h in similar)
 
     sent = fake.extractions["m1"]["items"]
