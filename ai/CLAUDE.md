@@ -12,8 +12,8 @@ PM 승인 → Notion 반영으로 이어지는 파이프라인입니다. 누가 
 있고, 각자 자기 venv·의존성·테스트를 따로 갖습니다. **`ai/` 디렉토리 자체가 AI 파트의 파이썬 프로젝트
 루트**이고, `import` 문에 `ai.` 접두어가 붙지 않습니다 — `shared.schemas`, `capture.discord_adapter`
 처럼 이 디렉토리 기준 상대 경로로 임포트합니다. `backend/`, `frontend/` 는 다른 담당자가 만들며 이
-체크아웃에는 없습니다. **현재 캡처(Phase 0 일부)까지만 구현돼 있습니다.** `stt/`, `extract/`, `judge/`,
-`draft/`, `reminder/`, `confidence/`는 이후 이슈에서 붙습니다.
+체크아웃에는 없습니다. **현재 `capture/`, `stt/`, `extract/`, `judge/`, `draft/`가 구현돼 있습니다.**
+`reminder/`, `confidence/`는 이후 이슈에서 붙습니다.
 
 ## 명령어
 
