@@ -77,6 +77,61 @@ def test_judge_items_are_saved_and_handed_off(tmp_path):
     assert saved["be"]["item_count"] == 2 and R.pending_sessions(rec) == []
 
 
+def test_partial_failures_hold_the_handoff_and_wait_for_a_rerun(tmp_path, clock, limits):
+    """발화 하나를 판단하지 못했다. 성공한 것만 먼저 보내면 그 결정은 다시 못 넣는다(BE 는 회의당 추출을 한 번 받는다)."""
+    rec, path, manifest = _session(tmp_path)
+    fake = FakeBe()
+    r = _run(rec, manifest, tmp_path, extractor=Runs(_out([A], [F1])), handoff=_handoff(fake))
+    assert r["status"] == "failed" and r["failed_stage"] == "extract" and r["ran"] == ["transcribed"]
+    assert "ExtractIncomplete" in r["error"] and "1개" in r["error"]
+    assert r["attempts"] == 1 and r["retry_in_s"] == 60.0 and r["gave_up"] is False
+    saved = _saved(path)
+    assert saved["extract_runs"] == 1 and saved["extract_failures"] == [F1] and "extracted" not in saved["stages"]
+    assert _items_on_disk(path) == [A]                           # 결과는 버리지 않고 둔다
+    assert fake.extractions == {} and fake.meetings["m1"]["status"] == "processing" and _fails(fake) == 0
+    assert R.pending_sessions(rec) == [path]
+
+
+def test_a_clean_rerun_clears_the_failure_marks(tmp_path, clock, limits):
+    rec, path, manifest = _session(tmp_path)
+    fake = FakeBe()
+    ex = Runs(_out([A], [F1]), _out([A, B_]))
+    _run(rec, manifest, tmp_path, extractor=ex, handoff=_handoff(fake))
+    r2 = _again(rec, tmp_path, ex, fake, clock)
+    assert r2["ran"] == ["extracted", "handed_off"] and r2["items"] == [A, B_] and r2["extract_failures"] == []
+    saved = _saved(path)
+    assert not {"extract_failures", "extract_runs", "extract_partial", "recovery", "error"} & set(saved)
+    assert fake.extractions["m1"]["items"] == [A, B_] and "missing_findings" not in saved["be"] and ex.calls == 2
+
+
+def test_a_rerun_keeps_the_result_with_fewer_failures(tmp_path, clock, limits):
+    """1단계는 돌릴 때마다 발화를 다르게 묶을 수 있다. 다시 돌린 결과가 더 나쁘면 앞의 것을 둔다."""
+    rec, path, manifest = _session(tmp_path)
+    fake = FakeBe()
+    ex = Runs(_out([A, B_], [F1]), _out([A], [F1, F2]))
+    _run(rec, manifest, tmp_path, extractor=ex, handoff=_handoff(fake))
+    r2 = _again(rec, tmp_path, ex, fake, clock)
+    assert r2["status"] == "failed" and r2["attempts"] == 2 and r2["retry_in_s"] == 120.0
+    saved = _saved(path)
+    assert _items_on_disk(path) == [A, B_] and saved["extract_failures"] == [F1] and saved["extract_runs"] == 2
+    assert fake.extractions == {}
+
+
+def test_after_two_reruns_the_best_result_goes_out_with_failures_recorded(tmp_path, clock, limits):
+    rec, path, manifest = _session(tmp_path)
+    fake = FakeBe()
+    ex = Runs(_out([A], [F1, F2]), _out([A, B_], [F1]), _out([A], [F2, F3]))
+    _run(rec, manifest, tmp_path, extractor=ex, handoff=_handoff(fake))
+    _again(rec, tmp_path, ex, fake, clock)
+    r3 = _again(rec, tmp_path, ex, fake, clock)
+    assert ex.calls == 3 and r3["ran"] == ["extracted", "handed_off"] and r3["status"] == "handed_off"
+    assert r3["items"] == [A, B_] and r3["extract_failures"] == [F1]      # 세 번 중 실패가 가장 적었던 결과
+    saved = _saved(path)
+    assert saved["extract_partial"] is True and saved["extract_failures"] == [F1] and "recovery" not in saved
+    assert fake.extractions["m1"]["items"] == [A, B_] and saved["be"]["missing_findings"] == 1
+    assert _fails(fake) == 0 and R.pending_sessions(rec) == []
+
+
 def test_all_failed_is_a_stage_failure_and_registers_nothing(tmp_path, clock, limits):
     """토큰이 틀리면 모든 발화가 유사 검색에서 실패한다. 빈 추출을 등록하지 않고, 포기할 때 BE 에 실패로 알린다."""
     rec, path, manifest = _session(tmp_path)
@@ -122,3 +177,46 @@ def test_missing_judge_settings_skip_the_stage_by_name(tmp_path, monkeypatch):
     assert R.pending_sessions(rec) == [path]
     monkeypatch.delenv("MM_EXTRACT_PATH")
     assert _run(rec, _saved(path), tmp_path, extractor=None, handoff=None)["skipped"] == {"extracted": "LLM 설정 없음"}
+
+
+def test_a_partial_result_goes_out_instead_of_giving_up(tmp_path, clock, limits, monkeypatch):
+    """다음 실패가 포기가 되는 차례면 부분 결과라도 인계한다. 가진 결과를 두고 회의를 실패로 닫지 않는다."""
+    monkeypatch.setattr(R, "RECOVERY_MAX_ATTEMPTS", 2)
+    monkeypatch.setattr(R, "EXTRACT_RETRY_MAX", 5)
+    rec, path, manifest = _session(tmp_path)
+    fake = FakeBe()
+    ex = Runs(_out([A], [F1]))
+    r1 = _run(rec, manifest, tmp_path, extractor=ex, handoff=_handoff(fake))
+    assert r1["status"] == "failed" and r1["attempts"] == 1
+    r2 = _again(rec, tmp_path, ex, fake, clock)
+    assert r2["status"] == "handed_off" and r2["extract_failures"] == [F1]
+    assert _fails(fake) == 0 and fake.extractions["m1"]["items"] == [A]
+
+
+def test_no_rerun_when_the_limit_is_zero(tmp_path, clock, limits, monkeypatch):
+    monkeypatch.setattr(R, "EXTRACT_RETRY_MAX", 0)
+    rec, path, manifest = _session(tmp_path)
+    fake = FakeBe()
+    ex = Runs(_out([A], [F1]))
+    r = _run(rec, manifest, tmp_path, extractor=ex, handoff=_handoff(fake))
+    assert r["status"] == "handed_off" and ex.calls == 1 and _saved(path)["extract_partial"] is True
+
+
+def test_a_changed_transcript_drops_the_kept_judge_result(tmp_path, clock, limits, monkeypatch):
+    """전사가 바뀌면 옛 전사로 낸 판단 결과와 견주지 않는다. 새 결과가 실패가 더 많아도 새 전사의 것을 쓴다."""
+    monkeypatch.setattr(R, "PARTIAL_RETRY_MAX", 1)
+    monkeypatch.setattr(R, "EXTRACT_RETRY_MAX", 0)
+    rec, path, manifest = _session(tmp_path)
+    fake = FakeBe()
+    stt = DiesOnLong()                                    # 화자 1 의 묶음만 죽는다
+    ex = Runs(_out([A], [F1]), _out([C], [F2, F3]))
+    assert _run(rec, manifest, tmp_path, backend=stt, extractor=ex, handoff=_handoff(fake))["status"] == "partial"
+    stt.limit_s = 1.0                                     # 재전사도 죽는다. 상한(1회)에 닿아 빠진 채 추출로 간다
+    r2 = _again(rec, tmp_path, ex, fake, clock, backend=stt)
+    assert r2["status"] == "handed_off" and _items_on_disk(path) == [A] and _saved(path)["extract_failures"] == [F1]
+    monkeypatch.setattr(R, "PARTIAL_RETRY_MAX", 2)
+    stt.limit_s = 3.5                                     # 이번엔 살아서 전사가 바뀐다
+    r3 = _again(rec, tmp_path, ex, fake, clock, backend=stt)
+    assert r3["ran"] == ["retried", "extracted", "handed_off"]
+    assert _items_on_disk(path) == [C] and _saved(path)["extract_failures"] == [F2, F3]
+    assert r3["be"]["stale_extraction"] is True           # BE 에는 옛 추출이 남아 있다
