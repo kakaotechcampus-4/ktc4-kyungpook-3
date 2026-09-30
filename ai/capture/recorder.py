@@ -14,7 +14,10 @@ discord 이름은 여기 없다. capture/discord_adapter.py 가 이 함수들을
   timezone      회의가 열린 시간대. "내일" 같은 상대 날짜의 기준일은 이 시간대의 시작 날짜다
   guild_id, voice_channel_id, text_channel_id, workspace_id   어느 서버의 어느 방 회의인지. 복구 범위와 게시 채널
   transcript    전사가 끝나면 회의록 경로
-  tasks         할일 추출까지 됐으면 그 결과 파일 경로
+  tasks         할일 추출까지 됐으면 그 결과 파일 경로 (옛 경로 extract_tasks 의 결과)
+  items         판단 경로(MM_EXTRACT_PATH=judge)의 결과 파일 경로. POST /extractions 의 항목 모양 그대로다.
+                tasks 와 둘 중 하나만 있다
+  extract_failures   판단 경로에서 판단하지 못한 발화 [{"stage", "text", "reason"}]
   be            BE 인계 상태 {"meeting_id", "status", "extraction_id", ...}. capture/handoff.py 가 쓴다
   claimed_by, claimed_at   누가 언제부터 이 회의를 처리 중인지 보여 주는 표시. 누가 처리할지는 회의 잠금
                 (session_<회의ID>.lock 의 OS 파일 잠금)만 정한다. 놓으면 지운다
@@ -25,6 +28,9 @@ process_session 이 마지막으로 끝난 단계 다음부터 실행한다. /st
 같은 함수를 쓰므로 어디서 죽어도 같은 경로로 이어진다. 전사에서 실패한 줄이 있으면 완료로 닫지 않고
 partial 로 두며, 다음 실행이 그 줄만 다시 보낸다. 할일 추출(extract/, #30)과 BE 인계는 설정이
 없으면 그 단계에서 멈추고 매니페스트는 그 앞 상태로 남는다.
+
+추출 단계의 추출기는 둘 중 하나다(build_extractor). 기본은 extract_tasks, MM_EXTRACT_PATH=judge 면 판단
+파이프라인(capture/judge_path.py)이다. 봇과 워커가 같은 팩토리를 쓰므로 두 모드가 같이 바뀐다.
 
 복구 한 바퀴(recover_pass)는 recovery_targets 로 대상을 고르고 recover_one 으로 회의 하나씩 회의 잠금을 잡고
 돌린다. 봇과 워커(capture/worker.py)가 같은 함수를 쓴다.
@@ -46,6 +52,8 @@ from zoneinfo import ZoneInfo
 
 import soundfile as sf
 
+from capture import judge_path
+from capture.judge_path import JudgeOutput
 from shared.config import TRANSCRIPTS_DIR, settings
 from shared.config import today as config_today
 from shared.schemas import now_iso
@@ -68,6 +76,8 @@ RECOVERY_INTERVAL_S = float(os.environ.get("MM_RECOVERY_INTERVAL_S", "60"))    #
 RECOVERY_MAX_ATTEMPTS = int(os.environ.get("MM_RECOVERY_MAX_ATTEMPTS", "5"))   # 이만큼 실패하면 포기하고 BE 에 fail
 RECOVERY_BACKOFF_S = float(os.environ.get("MM_RECOVERY_BACKOFF_S", "60"))      # 첫 실패 뒤 기다림. 실패마다 두 배
 RECOVERY_BACKOFF_CEIL_S = 3600.0                                                # 두 배로 늘려도 한 시간에서 멈춘다
+# 판단 경로가 매니페스트에 적는 칸. 전사가 바뀌거나 옛 경로로 다시 뽑으면 같이 버린다
+_JUDGE_KEYS = ("items", "extract_failures")
 # 끊긴 녹음의 마지막 트랙 쓰기가 이보다 오래됐으면 회의가 끝났다고 보고 재시작 안내를 하지 않는다. 잠정값이다
 RESUME_NOTICE_WINDOW_S = 3600.0
 
@@ -491,7 +501,8 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
     (recovery.gave_up_at) 그때 처음 BE 에 fail 을 보낸다. 그 전에는 BE 회의가 processing 으로 남는다.
 
     돌려주는 dict: session, status, ran(이번에 끝낸 단계), skipped, error, failed_stage,
-    transcribe({markdown, failed, summary, lines}), retried(다시 보낸 줄 수), tasks(목록), be, speakers(명),
+    transcribe({markdown, failed, summary, lines}), retried(다시 보낸 줄 수), tasks(옛 경로의 목록),
+    items(판단 경로의 항목 목록. 옛 경로면 None), extract_failures(판단하지 못한 발화), be, speakers(명),
     text_channel_id(결과를 올릴 채널), attempts, gave_up, retry_in_s(이번 실패로 잡힌 다음 시도까지 초).
     """
     tdir = transcripts_dir or TRANSCRIPTS_DIR
@@ -499,6 +510,7 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
     stages = manifest.setdefault("stages", {})
     result = {"session": manifest["session"], "status": manifest.get("status"), "ran": [], "skipped": {},
               "error": None, "failed_stage": None, "transcribe": None, "retried": 0, "tasks": None, "be": None,
+              "items": None, "extract_failures": [],
               "speakers": len(manifest.get("speakers") or []), "text_channel_id": manifest.get("text_channel_id"),
               "partial": False, "missing_units": 0, "attempts": 0, "gave_up": False, "retry_in_s": None}
     stage = None
@@ -589,7 +601,8 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
                 # 회의록이 바뀌었다. 옛 회의록으로 뽑은 할일과 인계는 무효다. 다시 뽑고 다시 보낸다
                 stages.pop(STATUS_EXTRACTED, None)
                 stages.pop(STATUS_HANDED_OFF, None)
-                manifest.pop("tasks", None)
+                for key in ("tasks", *_JUDGE_KEYS):
+                    manifest.pop(key, None)
                 manifest["reextracted"] = True
             manifest["status"] = STATUS_TRANSCRIBED
             manifest.pop("recovery", None)             # 전사 단계가 닫혔다
@@ -597,15 +610,22 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
 
         if STATUS_EXTRACTED not in stages:
             if extractor is None:
-                result["skipped"][STATUS_EXTRACTED] = "LLM 설정 없음"
+                result["skipped"][STATUS_EXTRACTED] = extract_skip_reason()
                 result["status"] = manifest["status"]
                 return result
             stage = STATUS_EXTRACTED
-            tasks_path = extract_after_transcription(tdir, manifest, extractor=extractor)
-            if tasks_path is None:
+            out_path = extract_after_transcription(tdir, manifest, extractor=extractor)
+            if out_path is None:
                 raise FileNotFoundError(f"전사 계약 파일이 없다: session_{manifest['session']}.transcript.json")
-            manifest["tasks"] = str(tasks_path)
-            result["tasks"] = json.loads(tasks_path.read_text(encoding="utf-8"))
+            if manifest.get("items") == str(out_path):
+                # 판단 경로다. 매니페스트의 items·extract_failures 는 extract_after_transcription 이 적었다
+                result["items"] = json.loads(out_path.read_text(encoding="utf-8"))
+                result["extract_failures"] = list(manifest.get("extract_failures") or [])
+            else:
+                for key in _JUDGE_KEYS:
+                    manifest.pop(key, None)
+                manifest["tasks"] = str(out_path)
+                result["tasks"] = json.loads(out_path.read_text(encoding="utf-8"))
             finish(STATUS_EXTRACTED)
 
         if STATUS_HANDED_OFF not in stages:
@@ -829,10 +849,14 @@ def recover(recordings_dir: Path, *, backend, model_name: str, workers: int, gat
 
 
 def build_extractor():
-    """extract_tasks 를 부를 함수를 만든다. 모듈이나 LLM 설정이 없으면 None.
+    """추출 단계의 추출기를 만든다. 모듈이나 설정이 없으면 None.
 
-    extract/ 는 다른 담당의 모듈이라 여기서는 부르기만 한다. 설정은 shared.config 의 LLM_* 다.
+    MM_EXTRACT_PATH 가 judge 면 판단 파이프라인(capture/judge_path.py), 아니면 extract_tasks 다. 판단 경로의
+    설정이 없다고 옛 경로로 넘어가지 않는다. extract/ 와 judge/ 는 다른 담당의 모듈이라 여기서는 부르기만 한다.
+    옛 경로의 설정은 shared.config 의 LLM_* 다.
     """
+    if judge_path.extract_path() == "judge":
+        return judge_path.build_extractor()
     try:
         from openai import OpenAI
         from extract.llm import extract_tasks
@@ -850,13 +874,24 @@ def build_extractor():
     return run
 
 
+def extract_skip_reason() -> str:
+    """추출기가 없어 단계를 건너뛸 때 결과와 채널에 적는 이유."""
+    if judge_path.extract_path() == "judge":
+        missing = judge_path.missing_settings()
+        return "판단 경로 설정 없음" + (f"({', '.join(missing)})" if missing else "")
+    return "LLM 설정 없음"
+
+
 def extract_after_transcription(transcripts_dir: Path, manifest: dict, *, extractor=None,
                                 today: date | None = None) -> Path | None:
-    """전사 결과(Transcript)에서 할일을 뽑아 transcripts/session_<회의ID>.tasks.json 에 쓴다.
+    """전사 결과(Transcript)에서 할일을 뽑아 파일에 쓰고 그 경로를 돌려준다.
 
-    extractor(transcript, speaker_names, today) -> list[ExtractedTask]. 없으면 build_extractor() 로 만들고,
-    그것도 없으면 아무것도 안 하고 None 을 돌려준다. today 는 회의 날짜다 (meeting_date). 회의록은 이미
-    나와 있으므로 여기서 실패해도 전사 결과는 그대로다.
+    extractor(transcript, speaker_names, today) 가 돌려주는 것에 따라 둘로 갈린다.
+      list[ExtractedTask]   옛 경로. transcripts/session_<회의ID>.tasks.json
+      JudgeOutput           판단 경로. transcripts/session_<회의ID>.items.json 에 쓰고 매니페스트에 items 와
+                            extract_failures 를 적는다
+    extractor 가 없으면 build_extractor() 로 만들고, 그것도 없으면 아무것도 안 하고 None 을 돌려준다.
+    today 는 회의 날짜다 (meeting_date). 회의록은 이미 나와 있으므로 여기서 실패해도 전사 결과는 그대로다.
     """
     from shared.schemas import Transcript
 
@@ -870,7 +905,22 @@ def extract_after_transcription(transcripts_dir: Path, manifest: dict, *, extrac
     transcript = Transcript.from_dict(json.loads(src.read_text(encoding="utf-8")))
     names = {str(e["user_id"]): e["display_name"] for e in manifest["speakers"]}
     tasks = extractor(transcript, names, today or meeting_date(manifest))
+    if isinstance(tasks, JudgeOutput):
+        return _keep_judge_output(transcripts_dir, manifest, tasks)
     out = transcripts_dir / f"session_{ts}.tasks.json"
     out.write_text(json.dumps([t.to_dict() if hasattr(t, "to_dict") else t for t in tasks],
                               ensure_ascii=False, indent=2), encoding="utf-8")
     return out
+
+
+def _keep_judge_output(transcripts_dir: Path, manifest: dict, out: JudgeOutput) -> Path:
+    """판단 경로의 결과를 파일과 매니페스트에 적는다. 항목은 인계 단계가 그대로 BE 에 보낸다."""
+    path = transcripts_dir / f"session_{manifest['session']}.items.json"
+    path.write_text(json.dumps(out.items, ensure_ascii=False, indent=2), encoding="utf-8")
+    manifest["items"] = str(path)
+    manifest.pop("tasks", None)
+    if out.failures:
+        manifest["extract_failures"] = out.failures
+    else:
+        manifest.pop("extract_failures", None)
+    return path
