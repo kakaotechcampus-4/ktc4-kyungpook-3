@@ -196,6 +196,37 @@ def test_a_partial_result_goes_out_instead_of_giving_up(tmp_path, clock, limits,
     assert _fails(fake) == 0 and fake.extractions["m1"]["items"] == [A]
 
 
+def test_a_kept_result_goes_out_when_the_last_attempt_fails_entirely(tmp_path, clock, limits):
+    """부분 결과를 하나 얻은 뒤로는 파이프라인이 통째로 실패하기만 했다. 다음 실패가 포기인 차례에는 가진 결과로 닫는다."""
+    rec, path, manifest = _session(tmp_path)
+    fake = FakeBe()
+    ex = Runs(_out([A], [F1]), J.JudgeAllFailed("발화 2개의 판단이 모두 실패했다. 첫 실패(judge): Terra 응답 없음"))
+    r = _run(rec, manifest, tmp_path, extractor=ex, handoff=_handoff(fake))
+    for _ in range(3):
+        r = _again(rec, tmp_path, ex, fake, clock)
+        assert r["status"] == "failed" and "JudgeAllFailed" in r["error"]      # 아직 기회가 남아 있어 다시 돈다
+    assert r["attempts"] == 4 and fake.extractions == {} and _items_on_disk(path) == [A]
+    r5 = _again(rec, tmp_path, ex, fake, clock)
+    assert ex.calls == 5 and r5["ran"] == ["extracted", "handed_off"] and r5["status"] == "handed_off"
+    assert r5["items"] == [A] and r5["extract_failures"] == [F1] and r5["gave_up"] is False
+    saved = _saved(path)
+    assert saved["extract_partial"] is True and "JudgeAllFailed" in saved["extract_error"]
+    assert fake.extractions["m1"]["items"] == [A] and saved["be"]["missing_findings"] == 1 and _fails(fake) == 0
+
+
+def test_without_a_kept_result_the_last_attempt_still_gives_up(tmp_path, clock, limits):
+    """가진 결과가 없으면 닫을 것이 없다. 파이프라인이 죽은 회의는 포기하고 BE 에 실패로 알린다."""
+    rec, path, manifest = _session(tmp_path)
+    fake = FakeBe()
+    ex = Runs(RuntimeError("1단계 응답을 읽지 못했다"))
+    r = _run(rec, manifest, tmp_path, extractor=ex, handoff=_handoff(fake))
+    for _ in range(4):
+        r = _again(rec, tmp_path, ex, fake, clock)
+    assert r["gave_up"] is True and r["status"] == "failed" and "items" not in _saved(path)
+    assert r["error"] == "RuntimeError: 1단계 응답을 읽지 못했다"          # 마지막 차례에도 원래 실패가 그대로 남는다
+    assert fake.extractions == {} and fake.meetings["m1"]["status"] == "failed"
+
+
 def test_no_rerun_when_the_limit_is_zero(tmp_path, clock, limits, monkeypatch):
     monkeypatch.setattr(R, "EXTRACT_RETRY_MAX", 0)
     rec, path, manifest = _session(tmp_path)

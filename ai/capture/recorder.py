@@ -20,7 +20,8 @@ discord 이름은 여기 없다. capture/discord_adapter.py 가 이 함수들을
   extract_failures   판단 경로에서 판단하지 못한 발화 [{"stage", "text", "reason"}]
   extract_runs       판단하지 못한 발화를 남긴 채 끝난 실행 수. EXTRACT_RETRY_MAX 번까지 다시 돌린다
   extract_partial    다시 돌려도 남아서 판단하지 못한 발화를 둔 채 인계로 갔다
-  be            BE 인계 상태 {"meeting_id", "status", "extraction_id", ...}. capture/handoff.py 가 쓴다
+  extract_error      포기 직전 차례에 파이프라인이 통째로 실패해 앞선 결과로 닫았을 때, 그 실패 한 줄
+  be           BE 인계 상태 {"meeting_id", "status", "extraction_id", ...}. capture/handoff.py 가 쓴다
   claimed_by, claimed_at   누가 언제부터 이 회의를 처리 중인지 보여 주는 표시. 누가 처리할지는 회의 잠금
                 (session_<회의ID>.lock 의 OS 파일 잠금)만 정한다. 놓으면 지운다
   recovery      단계를 닫지 못한 실행의 횟수와 다음 시도 {"attempts", "next_at"}, 또는 포기
@@ -84,7 +85,7 @@ RECOVERY_BACKOFF_CEIL_S = 3600.0                                                
 # 결과로 인계한다. 실패한 발화만 다시 돌리는 진입점이 파이프라인에 없어 통째로 다시 돈다(decision_log/0016)
 EXTRACT_RETRY_MAX = int(os.environ.get("MM_EXTRACT_RETRY_MAX") or "2")       # .env 에 빈 값으로 적혀 있어도 기본값
 # 판단 경로가 매니페스트에 적는 칸. 전사가 바뀌거나 옛 경로로 다시 뽑으면 같이 버린다
-_JUDGE_KEYS = ("items", "extract_failures", "extract_runs", "extract_partial")
+_JUDGE_KEYS = ("items", "extract_failures", "extract_runs", "extract_partial", "extract_error")
 # 끊긴 녹음의 마지막 트랙 쓰기가 이보다 오래됐으면 회의가 끝났다고 보고 재시작 안내를 하지 않는다. 잠정값이다
 RESUME_NOTICE_WINDOW_S = 3600.0
 
@@ -915,13 +916,33 @@ def extract_after_transcription(transcripts_dir: Path, manifest: dict, *, extrac
         return None
     transcript = Transcript.from_dict(json.loads(src.read_text(encoding="utf-8")))
     names = {str(e["user_id"]): e["display_name"] for e in manifest["speakers"]}
-    tasks = extractor(transcript, names, today or meeting_date(manifest))
+    try:
+        tasks = extractor(transcript, names, today or meeting_date(manifest))
+    except Exception as e:  # noqa: BLE001 - 파이프라인이 통째로 실패했다(전부 실패, LLM 키, 1단계)
+        kept = _kept_judge_result(transcripts_dir, manifest)
+        if kept is None or not _last_attempt(manifest):
+            raise
+        # 이번 실패가 포기가 되는 차례인데 앞선 실행이 남긴 결과가 있다. 그것으로 닫고 이유를 남긴다
+        manifest["extract_partial"] = True
+        manifest["extract_error"] = f"{type(e).__name__}: {e}"
+        return kept
     if isinstance(tasks, JudgeOutput):
         return _keep_judge_output(transcripts_dir, manifest, tasks)
     out = transcripts_dir / f"session_{ts}.tasks.json"
     out.write_text(json.dumps([t.to_dict() if hasattr(t, "to_dict") else t for t in tasks],
                               ensure_ascii=False, indent=2), encoding="utf-8")
     return out
+
+
+def _kept_judge_result(transcripts_dir: Path, manifest: dict) -> Path | None:
+    """앞선 실행이 남긴 판단 결과 파일. 판단하지 못한 발화를 둔 채 다음 시도를 기다리는 회의에만 있다."""
+    path = transcripts_dir / f"session_{manifest['session']}.items.json"
+    return path if manifest.get("items") == str(path) and path.exists() else None
+
+
+def _last_attempt(manifest: dict) -> bool:
+    """이번 실행이 실패하면 포기(RECOVERY_MAX_ATTEMPTS)가 되는 차례인가."""
+    return (manifest.get("recovery") or {}).get("attempts", 0) + 1 >= RECOVERY_MAX_ATTEMPTS
 
 
 def _keep_judge_output(transcripts_dir: Path, manifest: dict, out: JudgeOutput) -> Path:
@@ -932,11 +953,12 @@ def _keep_judge_output(transcripts_dir: Path, manifest: dict, out: JudgeOutput) 
     BE 가 회의 하나에 추출을 한 번만 받아서 나머지를 나중에 넣을 수 없기 때문이다.
 
     다시 돌린 결과는 실패가 앞의 것보다 많지 않을 때만 바꿔 끼운다. 1단계가 돌릴 때마다 발화를 다르게 묶을 수 있다.
-    EXTRACT_RETRY_MAX 번 다시 돌렸거나 다음 실패가 포기(RECOVERY_MAX_ATTEMPTS)가 되는 차례면 가장 나은 결과로
-    닫고 extract_partial 과 extract_failures 를 남긴다. 가진 결과를 두고 회의를 실패로 닫지 않는다.
+    EXTRACT_RETRY_MAX 번 다시 돌렸거나 이번 실패가 포기가 되는 차례면(_last_attempt) 가장 나은 결과로 닫고
+    extract_partial 과 extract_failures 를 남긴다. 가진 결과를 두고 회의를 실패로 닫지 않는다. 그 차례에
+    파이프라인이 통째로 실패한 경우는 extract_after_transcription 이 같은 규칙으로 닫는다.
     """
     path = transcripts_dir / f"session_{manifest['session']}.items.json"
-    kept = manifest.get("extract_failures") if manifest.get("items") == str(path) and path.exists() else None
+    kept = manifest.get("extract_failures") if _kept_judge_result(transcripts_dir, manifest) else None
     if kept is None or len(out.failures) <= len(kept):
         path.write_text(json.dumps(out.items, ensure_ascii=False, indent=2), encoding="utf-8")
         kept = out.failures
@@ -948,8 +970,7 @@ def _keep_judge_output(transcripts_dir: Path, manifest: dict, out: JudgeOutput) 
         return path
     manifest["extract_failures"] = kept
     runs = manifest["extract_runs"] = manifest.get("extract_runs", 0) + 1
-    attempts = (manifest.get("recovery") or {}).get("attempts", 0)
-    if runs <= EXTRACT_RETRY_MAX and attempts + 1 < RECOVERY_MAX_ATTEMPTS:
+    if runs <= EXTRACT_RETRY_MAX and not _last_attempt(manifest):
         raise ExtractIncomplete(f"발화 {len(kept)}개를 판단하지 못했다. 파이프라인을 다시 돌린다({runs}/{EXTRACT_RETRY_MAX})")
     manifest["extract_partial"] = True
     return path
