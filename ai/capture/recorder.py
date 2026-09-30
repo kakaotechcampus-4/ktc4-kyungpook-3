@@ -17,9 +17,9 @@ discord 이름은 여기 없다. capture/discord_adapter.py 가 이 함수들을
   tasks         할일 추출까지 됐으면 그 결과 파일 경로 (옛 경로 extract_tasks 의 결과)
   items         판단 경로(MM_EXTRACT_PATH=judge)의 결과 파일 경로. POST /extractions 의 항목 모양 그대로다.
                 tasks 와 둘 중 하나만 있다
-  extract_failures   판단 경로에서 판단하지 못한 발화 [{"stage", "text", "reason"}]
-  extract_runs       판단하지 못한 발화를 남긴 채 끝난 실행 수. EXTRACT_RETRY_MAX 번까지 다시 돌린다
-  extract_partial    다시 돌려도 남아서 판단하지 못한 발화를 둔 채 인계로 갔다
+  extract_failures   판단 경로에서 판단하지 못한 finding(1단계가 고른 결정·진척 하나) [{"stage", "text", "reason"}]
+  extract_runs       판단하지 못한 finding 을 남긴 채 끝난 실행 수. EXTRACT_RETRY_MAX 번까지 다시 돌린다
+  extract_partial    다시 돌려도 남아서 판단하지 못한 finding 을 둔 채 인계로 갔다
   extract_error      포기 직전 차례에 파이프라인이 통째로 실패해 앞선 결과로 닫았을 때, 그 실패 한 줄
   be           BE 인계 상태 {"meeting_id", "status", "extraction_id", ...}. capture/handoff.py 가 쓴다
   claimed_by, claimed_at   누가 언제부터 이 회의를 처리 중인지 보여 주는 표시. 누가 처리할지는 회의 잠금
@@ -34,8 +34,8 @@ partial 로 두며, 다음 실행이 그 줄만 다시 보낸다. 할일 추출(
 
 추출 단계의 추출기는 둘 중 하나다(build_extractor). 기본은 extract_tasks, MM_EXTRACT_PATH=judge 면 판단
 파이프라인(capture/judge_path.py)이다. 봇과 워커가 같은 팩토리를 쓰므로 두 모드가 같이 바뀐다.
-판단 경로는 발화 하나의 실패를 예외가 아니라 목록으로 돌려준다. 그런 발화가 남으면 추출 단계를 닫지 않고
-파이프라인을 다시 돌린 뒤에 인계한다(_keep_judge_output). 근거는 decision_log/0016.
+판단 경로는 1단계가 고른 finding(결정이나 진척 보고 하나) 하나의 실패를 예외가 아니라 목록으로 돌려준다. 그런
+finding 이 남으면 추출 단계를 닫지 않고 파이프라인을 다시 돌린 뒤에 인계한다(_keep_judge_output). 근거는 decision_log/0016.
 
 복구 한 바퀴(recover_pass)는 recovery_targets 로 대상을 고르고 recover_one 으로 회의 하나씩 회의 잠금을 잡고
 돌린다. 봇과 워커(capture/worker.py)가 같은 함수를 쓴다.
@@ -81,8 +81,8 @@ RECOVERY_INTERVAL_S = float(os.environ.get("MM_RECOVERY_INTERVAL_S", "60"))    #
 RECOVERY_MAX_ATTEMPTS = int(os.environ.get("MM_RECOVERY_MAX_ATTEMPTS", "5"))   # 이만큼 실패하면 포기하고 BE 에 fail
 RECOVERY_BACKOFF_S = float(os.environ.get("MM_RECOVERY_BACKOFF_S", "60"))      # 첫 실패 뒤 기다림. 실패마다 두 배
 RECOVERY_BACKOFF_CEIL_S = 3600.0                                                # 두 배로 늘려도 한 시간에서 멈춘다
-# 판단 경로에서 발화 몇 개만 실패했을 때 인계를 미루고 파이프라인을 다시 돌리는 횟수. 상한에 닿으면 가장 나은
-# 결과로 인계한다. 실패한 발화만 다시 돌리는 진입점이 파이프라인에 없어 통째로 다시 돈다(decision_log/0016)
+# 판단 경로에서 finding 몇 개만 실패했을 때 인계를 미루고 파이프라인을 다시 돌리는 횟수. 상한에 닿으면 가장 나은
+# 결과로 인계한다. 실패한 finding 만 다시 돌리는 진입점이 파이프라인에 없어 통째로 다시 돈다(decision_log/0016)
 EXTRACT_RETRY_MAX = int(os.environ.get("MM_EXTRACT_RETRY_MAX") or "2")       # .env 에 빈 값으로 적혀 있어도 기본값
 # 판단 경로가 매니페스트에 적는 칸. 전사가 바뀌거나 옛 경로로 다시 뽑으면 같이 버린다
 _JUDGE_KEYS = ("items", "extract_failures", "extract_runs", "extract_partial", "extract_error")
@@ -91,7 +91,7 @@ RESUME_NOTICE_WINDOW_S = 3600.0
 
 
 class ExtractIncomplete(RuntimeError):
-    """판단하지 못한 발화가 남았다. 결과는 저장해 두었고 다음 시도가 파이프라인을 다시 돌린다."""
+    """판단하지 못한 finding 이 남았다. 결과는 저장해 두었고 다음 시도가 파이프라인을 다시 돌린다."""
 
 
 def utcnow() -> datetime:
@@ -514,7 +514,7 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
 
     돌려주는 dict: session, status, ran(이번에 끝낸 단계), skipped, error, failed_stage,
     transcribe({markdown, failed, summary, lines}), retried(다시 보낸 줄 수), tasks(옛 경로의 목록),
-    items(판단 경로의 항목 목록. 옛 경로면 None), extract_failures(판단하지 못한 발화), be, speakers(명),
+    items(판단 경로의 항목 목록. 옛 경로면 None), extract_failures(판단하지 못한 finding), be, speakers(명),
     text_channel_id(결과를 올릴 채널), attempts, gave_up, retry_in_s(이번 실패로 잡힌 다음 시도까지 초).
     """
     tdir = transcripts_dir or TRANSCRIPTS_DIR
@@ -939,7 +939,7 @@ def extract_after_transcription(transcripts_dir: Path, manifest: dict, *, extrac
 
 
 def _kept_judge_result(transcripts_dir: Path, manifest: dict) -> Path | None:
-    """앞선 실행이 남긴 판단 결과 파일. 판단하지 못한 발화를 둔 채 다음 시도를 기다리는 회의에만 있다."""
+    """앞선 실행이 남긴 판단 결과 파일. 판단하지 못한 finding 을 둔 채 다음 시도를 기다리는 회의에만 있다."""
     path = transcripts_dir / f"session_{manifest['session']}.items.json"
     return path if manifest.get("items") == str(path) and path.exists() else None
 
@@ -952,7 +952,7 @@ def _last_attempt(manifest: dict) -> bool:
 def _keep_judge_output(transcripts_dir: Path, manifest: dict, out: JudgeOutput) -> Path:
     """판단 경로의 결과를 파일과 매니페스트에 적고, 이 결과로 단계를 닫을지 정한다. 항목은 인계 단계가 그대로 보낸다.
 
-    판단하지 못한 발화가 없으면 닫는다. 있으면 결과를 둔 채 ExtractIncomplete 를 내서 단계 실패로 세게 한다.
+    판단하지 못한 finding 이 없으면 닫는다. 있으면 결과를 둔 채 ExtractIncomplete 를 내서 단계 실패로 세게 한다.
     그러면 기존 재시도 규칙(60초부터 두 배)이 파이프라인을 다시 돌린다. 성공한 것만 먼저 인계하지 않는 이유는
     BE 가 회의 하나에 추출을 한 번만 받아서 나머지를 나중에 넣을 수 없기 때문이다.
 

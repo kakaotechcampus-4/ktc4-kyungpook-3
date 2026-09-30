@@ -8,7 +8,8 @@ extractions.py). 봇이 이 전이를 순서대로 부른다.
   추출이 끝난 뒤     POST  /api/v1/extractions           done. 항목 저장, 담당자 매칭, 게이트 판정
   어느 단계든 실패   PATCH /api/v1/meetings/{id}/fail    failed, failed_stage
 
-판단 경로(MM_EXTRACT_PATH=judge)는 추출 도중에 발화마다 유사 task 검색을 부른다. 이 경로만 서비스 토큰을 요구한다.
+판단 경로(MM_EXTRACT_PATH=judge)는 추출 도중에 1단계가 고른 finding 마다 유사 task 검색을 부른다. 전사록의 줄마다가
+아니다. 이 경로만 서비스 토큰을 요구한다.
 
   추출 도중          POST  /api/v1/workspaces/{id}/tasks/similar   X-Service-Token
 
@@ -116,7 +117,7 @@ class BeClient:
                                                     "items": items})
 
     def similar_tasks(self, workspace_id: str, text: str) -> list[NotionCandidate]:
-        """문장과 비슷한 기존 task 후보. 판단 파이프라인(judge.pipeline.CandidateSource)이 발화마다 부른다.
+        """문장과 비슷한 기존 task 후보. 판단 파이프라인(judge.pipeline.CandidateSource)이 finding 마다 그 요약 문장으로 부른다.
 
         후보 수와 유사도 하한은 BE 기본값(3개, 0.4)을 쓴다. 실패는 빈 목록이 아니라 BeError 다. 빈 목록은
         "비슷한 task 없음" 이라 실패를 그렇게 돌려주면 있는 task 가 새 항목으로 또 만들어진다.
@@ -274,7 +275,7 @@ class Handoff:
                 be["dropped_items"] = dropped
             else:
                 be.pop("dropped_items", None)
-            unjudged = len(manifest.get("extract_failures") or [])  # 판단 경로에서 끝내 판단하지 못한 발화
+            unjudged = len(manifest.get("extract_failures") or [])  # 판단 경로에서 끝내 판단하지 못한 finding
             if unjudged:
                 be["missing_findings"] = unjudged
             else:

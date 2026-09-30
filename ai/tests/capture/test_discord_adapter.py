@@ -517,7 +517,7 @@ async def test_stop_in_bot_mode_posts_the_judge_results(tmp_path):
 
 
 async def test_unjudged_findings_and_skipped_items_are_said_in_the_channel(tmp_path, monkeypatch):
-    """끝내 판단하지 못한 발화와 BE 가 받지 않은 항목은 그 회의 채널에서 말한다. 말하지 않으면 빠진 줄 아무도 모른다."""
+    """끝내 판단하지 못한 finding 과 BE 가 받지 않은 항목은 그 회의 채널에서 말한다. 말하지 않으면 빠진 줄 아무도 모른다."""
     monkeypatch.setattr(R, "EXTRACT_RETRY_MAX", 0)
     fake = FakeBe()                                       # task_gone 이라는 task 가 없다
     handoff = H.Handoff(H.BeClient("http://be", session=fake), "ws-1")
@@ -541,7 +541,7 @@ async def test_a_long_result_list_stays_under_the_message_limit(tmp_path):
 
 
 async def test_a_judgement_waiting_for_a_rerun_is_said_as_a_retry(tmp_path, monkeypatch):
-    """판단하지 못한 발화가 있어 다시 돌릴 차례다. 채널에는 추출 실패와 다음 시도를 알리고 인계는 하지 않는다."""
+    """판단하지 못한 finding 이 있어 다시 돌릴 차례다. 채널에는 추출 실패와 다음 시도를 알리고 인계는 하지 않는다."""
     monkeypatch.setattr(R, "EXTRACT_RETRY_MAX", 2)       # 기본값. 환경 변수로 바뀌어도 기대값은 그대로다
     fake = FakeBe()
     handoff = H.Handoff(H.BeClient("http://be", session=fake), "ws-1")

@@ -204,7 +204,7 @@ def test_reregistering_after_a_changed_transcript_flags_the_stale_be_extraction(
     assert "stale_extraction" not in m["be"]
 
 
-# ── 유사 task 검색. 판단 파이프라인이 발화마다 부른다 ──────────────────────────────────
+# ── 유사 task 검색. 판단 파이프라인이 1단계가 고른 finding 마다 부른다 ────────────────────
 
 CANDIDATE = {"task_id": "task_login", "notion_page_id": None, "title": "로그인 화면 시안 마무리", "content_snippet": "",
              "assignee_member_id": "mem_1", "due_date": "2026-09-28", "status": "in_progress", "similarity": 0.8213,
@@ -343,7 +343,7 @@ def test_a_stale_be_extraction_keeps_the_counts_of_what_the_be_holds(tmp_path):
     be = h.register(m, transcripts_dir=tdir, model_name="x")
     assert (be["item_count"], be["dropped_items"], be["missing_findings"]) == (1, 1, 1)
     Path(m["items"]).write_text(json.dumps([_judge_item()] * 3, ensure_ascii=False), encoding="utf-8")
-    m["extract_failures"] = fails * 2                     # 새 전사로 다시 뽑았다. 항목 셋, 판단하지 못한 발화 둘
+    m["extract_failures"] = fails * 2                     # 새 전사로 다시 뽑았다. 항목 셋, 판단하지 못한 finding 둘
     m["reextracted"] = True
     be = h.register(m, transcripts_dir=tdir, model_name="x")
     assert be["stale_extraction"] is True and len(fake.extractions["m1"]["items"]) == 2

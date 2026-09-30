@@ -362,7 +362,7 @@ async def test_a_worker_pass_hands_judge_items_to_be(tmp_path):
 
 
 async def test_the_worker_log_says_why_a_meeting_failed_and_what_was_left_unjudged(tmp_path, monkeypatch, capsys):
-    """워커 모드는 채널에 결과를 올리지 않는다. 판단하지 못한 발화와 실패 이유가 로그에도 없으면 매니페스트를 열어야 안다."""
+    """워커 모드는 채널에 결과를 올리지 않는다. 판단하지 못한 finding 과 실패 이유가 로그에도 없으면 매니페스트를 열어야 안다."""
     from capture.judge_path import JudgeOutput
 
     monkeypatch.setattr(R, "EXTRACT_RETRY_MAX", 1)

@@ -135,7 +135,7 @@ def test_failures_keep_their_stage_text_and_reason():
 
 
 def test_a_run_with_failures_and_no_items_raises():
-    """BE 가 꺼졌거나 토큰이 틀리면 모든 발화가 실패하고 항목이 0개로 돌아온다. 그대로 등록하면 빈 추출로 회의가 닫힌다."""
+    """BE 가 꺼졌거나 토큰이 틀리면 finding 이 모두 실패하고 항목이 0개로 돌아온다. 그대로 등록하면 빈 추출로 회의가 닫힌다."""
     extract, _ = _extractor(FakeRun([], [_failure("similar", "a", "BeError: UNAUTHENTICATED"), _failure("similar", "b", "x")]))
     with pytest.raises(J.JudgeAllFailed) as e:
         extract(TRANSCRIPT, NAMES, date(2026, 9, 19))

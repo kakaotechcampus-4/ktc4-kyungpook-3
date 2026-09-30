@@ -1,4 +1,4 @@
-"""추출 단계에 끼운 판단 경로(capture/recorder.py). 결과 저장, 발화 단위 실패의 재시도, 전부 실패, 인계까지.
+"""추출 단계에 끼운 판단 경로(capture/recorder.py). 결과 저장, finding 단위 실패의 재시도, 전부 실패, 인계까지.
 
 판단 추출기는 정해 둔 결과를 차례로 돌려주는 가짜다. 모델도 LLM 도 안 쓴다. 시계는 recorder.utcnow 를 바꿔 끼운다.
 """
@@ -87,7 +87,7 @@ def test_judge_items_are_saved_and_handed_off(tmp_path):
 
 
 def test_partial_failures_hold_the_handoff_and_wait_for_a_rerun(tmp_path, clock, limits):
-    """발화 하나를 판단하지 못했다. 성공한 것만 먼저 보내면 그 결정은 다시 못 넣는다(BE 는 회의당 추출을 한 번 받는다)."""
+    """finding 하나를 판단하지 못했다. 성공한 것만 먼저 보내면 그 결정은 다시 못 넣는다(BE 는 회의당 추출을 한 번 받는다)."""
     rec, path, manifest = _session(tmp_path)
     fake = FakeBe()
     r = _run(rec, manifest, tmp_path, extractor=Runs(_out([A], [F1])), handoff=_handoff(fake))
@@ -178,7 +178,7 @@ def test_after_two_reruns_the_best_result_goes_out_with_failures_recorded(tmp_pa
 
 
 def test_all_failed_is_a_stage_failure_and_registers_nothing(tmp_path, clock, limits):
-    """토큰이 틀리면 모든 발화가 유사 검색에서 실패한다. 빈 추출을 등록하지 않고, 포기할 때 BE 에 실패로 알린다."""
+    """토큰이 틀리면 finding 이 모두 유사 검색에서 실패한다. 빈 추출을 등록하지 않고, 포기할 때 BE 에 실패로 알린다."""
     rec, path, manifest = _session(tmp_path)
     fake = FakeBe()
     ex = Runs(J.JudgeAllFailed("등록할 항목이 없고 판단하지 못한 발화 3개만 남았다. 첫 실패(similar): BeError: UNAUTHENTICATED"))

@@ -150,7 +150,7 @@ def test_a_first_person_item_carries_the_speaker_of_the_last_evidence_line(tmp_p
 
 
 def test_a_wrong_service_token_never_registers_an_empty_extraction(tmp_path, monkeypatch):
-    """토큰이 틀리면 발화마다 유사 검색이 401 이다. 파이프라인은 예외 없이 빈 결과를 돌려주지만 등록하지 않는다."""
+    """토큰이 틀리면 finding 마다 유사 검색이 401 이다. 파이프라인은 예외 없이 빈 결과를 돌려주지만 등록하지 않는다."""
     _fake_llms(monkeypatch, stage1={"findings": FINDINGS}, terra=[], drafts=[])
     fake = FakeBe()
     fake.service_token = "다른 값"
@@ -162,8 +162,8 @@ def test_a_wrong_service_token_never_registers_an_empty_extraction(tmp_path, mon
 
 
 def test_an_unjudged_finding_with_no_items_is_not_registered_as_an_empty_extraction(tmp_path, monkeypatch):
-    """발화 둘은 바꿀 것이 없다고 판단됐고 하나는 판단하지 못했다. 항목은 0개다. 그대로 등록하면 판단 실패가
-    "결정 없는 회의" 로 저장된다. BE 에는 판단하지 못한 발화를 받을 칸이 없다. 등록하지 않고 단계 실패로 센다."""
+    """finding 둘은 바꿀 것이 없다고 판단됐고 하나는 판단하지 못했다. 항목은 0개다. 그대로 등록하면 판단 실패가
+    "결정 없는 회의" 로 저장된다. BE 에는 판단하지 못한 finding 을 받을 칸이 없다. 등록하지 않고 단계 실패로 센다."""
     quiet = {"is_meaningful": False, "category": "none", "is_new": False, "matched_candidate_index": None,
              "status": None, "evidence": "이미 반영돼 있다"}
     _fake_llms(monkeypatch, stage1={"findings": FINDINGS}, terra=[quiet, quiet, None], drafts=[])

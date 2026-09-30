@@ -27,7 +27,7 @@ started_at 에 한 번만 적는다. 실시간 게시 Cog(capture/realtime/)는 
 
 종료 뒤 처리는 capture/recorder.py 의 process_session 이다. /stop 과 /recover 가 같은 함수를 쓴다.
 추출 경로가 판단 파이프라인(MM_EXTRACT_PATH=judge)이면 할일 목록 대신 판단 결과(새 항목, 수정)의 설명 문장과
-판단하지 못한 발화를 올린다.
+판단하지 못한 finding 을 올린다.
 BE 인계(capture/handoff.py)는 BE_BASE_URL 과 BE_WORKSPACE_ID 가 있을 때만 돈다. 채널 알림은
 전부 _notify 를 거쳐서, 디스코드 쪽 실패가 파일과 상태 처리를 막지 않는다.
 on_session_saved(manifest, manifest_path) 훅은 그 뒤에 불린다. manifest["transcript"] 에 회의록
