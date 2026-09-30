@@ -221,5 +221,86 @@
       ]
     },
     "expected": {"is_meaningful": false}
+  },
+  {
+    "description": "암시적 진척 — 과거형 완료 보고('붙였고요')",
+    "judge_input": {
+      "source": "meeting", "text": "저는 어제 로그인 API 붙였고요.",
+      "candidates": [
+        {"notion_page_id": "n7", "task_id": "task_login_api", "title": "로그인 API 연동", "status": "in_progress", "similarity": 0.7}
+      ]
+    },
+    "expected": {"is_meaningful": true, "is_new": false, "matched_task_id": "task_login_api", "status": "done"}
+  },
+  {
+    "description": "암시적 진척 — 1단계 요약문 형태의 완료 보고",
+    "judge_input": {
+      "source": "meeting", "text": "결제 API 연동 작업을 마쳤다고 보고함",
+      "candidates": [
+        {"notion_page_id": "n4", "task_id": "task_payment", "title": "결제 API 연동", "status": "in_progress", "similarity": 0.72},
+        {"notion_page_id": "n5", "task_id": "task_refund", "title": "결제 환불 기능 구현", "status": "todo", "similarity": 0.55}
+      ]
+    },
+    "expected": {"is_meaningful": true, "is_new": false, "matched_task_id": "task_payment", "status": "done"}
+  },
+  {
+    "description": "암시적 진척 — 착수 보고(todo → in_progress)",
+    "judge_input": {
+      "source": "meeting", "text": "디자인 시스템 색상 팔레트 정리하고 있어요.",
+      "candidates": [
+        {"notion_page_id": "n8", "task_id": "task_design", "title": "디자인 시스템 색상 팔레트 정리", "status": "todo", "similarity": 0.75}
+      ]
+    },
+    "expected": {"is_meaningful": true, "is_new": false, "matched_task_id": "task_design", "status": "in_progress"}
+  },
+  {
+    "description": "이미 반영된 진척 — 진행 중 보고인데 이미 in_progress",
+    "judge_input": {
+      "source": "meeting", "text": "검색 기능 성능 개선 작업은 계속 진행 중입니다.",
+      "candidates": [
+        {"notion_page_id": "n6", "task_id": "task_search", "title": "검색 기능 성능 개선", "status": "in_progress", "similarity": 0.7}
+      ]
+    },
+    "expected": {"is_meaningful": false}
+  },
+  {
+    "description": "이미 반영된 진척 — 이미 done 인 작업의 완료 재언급",
+    "judge_input": {
+      "source": "meeting", "text": "로그인 화면 작업은 지난주에 끝났다고 했었죠.",
+      "candidates": [
+        {"notion_page_id": "n2", "task_id": "task_login", "title": "로그인 화면 시안 마무리 작업", "status": "done", "similarity": 0.65}
+      ]
+    },
+    "expected": {"is_meaningful": false}
+  },
+  {
+    "description": "암시적 진척 — done 작업 재개(done → in_progress)",
+    "judge_input": {
+      "source": "meeting", "text": "로그인 화면에서 버그가 나와서 다시 작업 들어갑니다.",
+      "candidates": [
+        {"notion_page_id": "n2", "task_id": "task_login", "title": "로그인 화면 시안 마무리 작업", "status": "done", "similarity": 0.6}
+      ]
+    },
+    "expected": {"is_meaningful": true, "is_new": false, "matched_task_id": "task_login", "status": "in_progress"}
+  },
+  {
+    "description": "경계 — 진행 중 + 애로사항(blocked 로 볼지 관찰용)",
+    "judge_input": {
+      "source": "meeting", "text": "저는 결제 API 연동 중인데 문서가 좀 헷갈리네요.",
+      "candidates": [
+        {"notion_page_id": "n4", "task_id": "task_payment", "title": "결제 API 연동", "status": "in_progress", "similarity": 0.7}
+      ]
+    },
+    "observe_only": true
+  },
+  {
+    "description": "경계 — 부분 진척(상태 변화 없는 진척률, 관찰용)",
+    "judge_input": {
+      "source": "meeting", "text": "회원가입 이메일 인증 기능 절반 정도 했어요.",
+      "candidates": [
+        {"notion_page_id": "n9", "task_id": "task_signup", "title": "회원가입 이메일 인증 기능 구현", "status": "in_progress", "similarity": 0.7}
+      ]
+    },
+    "observe_only": true
   }
 ]
