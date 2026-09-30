@@ -19,6 +19,12 @@ from tests.capture.test_recorder import DiesOnLong, EchoStt, _run, _session
 from tests.capture.test_recovery import _fails, _handoff, _saved, clock, limits  # noqa: F401 - clock, limits 는 fixture
 
 
+@pytest.fixture(autouse=True)
+def rerun_limit(monkeypatch):
+    """다시 돌리는 횟수의 기본값을 테스트 안에 적어 둔다. .env 나 환경 변수로 바뀌어도 기대값은 그대로다."""
+    monkeypatch.setattr(R, "EXTRACT_RETRY_MAX", 2)
+
+
 def _item(title, **over):
     base = {"action": "create", "target_task_id": None, "category": "decision", "task_title": title, "due_date": None,
             "status": None, "assignee_type": "first", "assignee_raw": None, "doc_text": f"{title}을 하기로 함",

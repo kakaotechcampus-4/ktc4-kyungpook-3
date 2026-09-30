@@ -540,8 +540,9 @@ async def test_a_long_result_list_stays_under_the_message_limit(tmp_path):
     assert len(posted) <= 2000
 
 
-async def test_a_judgement_waiting_for_a_rerun_is_said_as_a_retry(tmp_path):
+async def test_a_judgement_waiting_for_a_rerun_is_said_as_a_retry(tmp_path, monkeypatch):
     """판단하지 못한 발화가 있어 다시 돌릴 차례다. 채널에는 추출 실패와 다음 시도를 알리고 인계는 하지 않는다."""
+    monkeypatch.setattr(R, "EXTRACT_RETRY_MAX", 2)       # 기본값. 환경 변수로 바뀌어도 기대값은 그대로다
     fake = FakeBe()
     handoff = H.Handoff(H.BeClient("http://be", session=fake), "ws-1")
     failures = [{"stage": "draft", "text": "문서를 정리하기로 함", "reason": "Luna 응답을 파싱하지 못했습니다."}]
