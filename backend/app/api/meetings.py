@@ -42,7 +42,7 @@ def _compute_progress(db: Session, meeting: Meeting) -> MeetingProgress:
     audio_merged = bool(
         db.scalar(select(exists().where(Source.meeting_id == meeting.meeting_id)))
     )
-    transcribed = bool(extraction and extraction.transcript_path)
+    transcribed = audio_merged
     extracted = bool(extraction and extraction.items)
     return MeetingProgress(
         audio_merged=audio_merged, transcribed=transcribed, extracted=extracted
