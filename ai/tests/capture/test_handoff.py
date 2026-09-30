@@ -264,3 +264,68 @@ def test_the_service_token_is_read_from_the_environment(monkeypatch):
     finally:
         monkeypatch.undo()
         importlib.reload(config)
+
+
+# ── 판단 경로의 항목. 이미 BE 항목 모양이라 변환하지 않는다 ─────────────────────────────
+
+def _judge_item(**over):
+    base = {"action": "create", "target_task_id": None, "category": "decision", "task_title": "결제 환불 기능 구현",
+            "due_date": "2026-10-04", "status": None, "assignee_type": "thirdname", "assignee_raw": "지민님",
+            "doc_text": "결제 환불 기능 구현을 지민님이 10/4까지 하기로 함",
+            "evidence_quote": "결제 환불 기능은 지민님이 다음 주까지 만들어 주세요.", "evidence_speaker": "101",
+            "evidence_at_ms": 3000}
+    base.update(over)
+    return base
+
+
+def _judge_manifest(tmp_path, items, **extra):
+    m, tdir = _manifest(tmp_path, with_tasks=False)
+    path = tdir / "session_500.items.json"
+    path.write_text(json.dumps(items, ensure_ascii=False), encoding="utf-8")
+    m["items"] = str(path)
+    m.update(extra)
+    return m, tdir
+
+
+def test_judge_items_are_registered_as_they_are(tmp_path):
+    fake = FakeBe()
+    fake.tasks.add("task_login")
+    update = _judge_item(action="update", target_task_id="task_login", category="schedule",
+                         task_title="로그인 화면 시안 마무리", due_date="2026-10-06", assignee_type=None,
+                         assignee_raw=None, doc_text="로그인 화면 시안 마무리 마감을 9/28에서 10/6으로 연기")
+    items = [_judge_item(), update]
+    m, tdir = _judge_manifest(tmp_path, items)
+    be = _handoff(fake).register(m, transcripts_dir=tdir, model_name="x")
+    assert fake.calls[-1][2]["items"] == items       # 키를 더하지도 빼지도 않는다. 확신도는 파이프라인이 준 그대로다
+    assert be["status"] == "done" and be["item_count"] == 2 and "dropped_items" not in be
+
+
+def test_empty_strings_become_null_before_registering(tmp_path):
+    """BE 는 빈 문자열을 "언급은 했는데 못 찾은 담당자" 로 계산한다. null 이어야 계산에서 빠진다."""
+    fake = FakeBe()
+    m, tdir = _judge_manifest(tmp_path, [_judge_item(assignee_raw="", assignee_type="none", due_date="", status="  ")])
+    _handoff(fake).register(m, transcripts_dir=tdir, model_name="x")
+    sent = fake.calls[-1][2]["items"][0]
+    assert sent["assignee_raw"] is None and sent["due_date"] is None and sent["status"] is None
+    assert sent["task_title"] == "결제 환불 기능 구현" and sent["assignee_type"] == "none"
+
+
+def test_items_the_be_skipped_are_counted(tmp_path):
+    """BE 는 수정 대상이 사라진 항목과 제목 없는 새 항목을 건너뛰고 201 을 준다. 보낸 수와 저장된 수가 다르면 남긴다."""
+    fake = FakeBe()                                       # task_login 이라는 task 가 없다
+    gone = _judge_item(action="update", target_task_id="task_login")
+    m, tdir = _judge_manifest(tmp_path, [_judge_item(), gone])
+    h = _handoff(fake)
+    be = h.register(m, transcripts_dir=tdir, model_name="x")
+    assert be["item_count"] == 1 and be["dropped_items"] == 1
+    assert h.register(m, transcripts_dir=tdir, model_name="x")["dropped_items"] == 1     # 복구가 다시 보내도 같다
+
+
+def test_unjudged_findings_are_marked_in_the_be_record(tmp_path):
+    fake = FakeBe()
+    fails = [{"stage": "judge", "text": "로그인 화면 마감을 미루기로 함", "reason": "Terra 응답을 파싱하지 못했습니다."}]
+    m, tdir = _judge_manifest(tmp_path, [_judge_item()], extract_failures=fails, extract_partial=True)
+    h = _handoff(fake)
+    assert h.register(m, transcripts_dir=tdir, model_name="x")["missing_findings"] == 1
+    m.pop("extract_failures")
+    assert "missing_findings" not in h.register(m, transcripts_dir=tdir, model_name="x")
