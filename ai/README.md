@@ -29,8 +29,13 @@ recordings/         녹음 산출물 (git 제외)
 - BE 인계는 봇이 BE 회의 API 를 직접 부릅니다 (`decision_log/0009`). `/record` 에서 `POST /api/v1/meetings`,
   트랙을 닫은 뒤 `PATCH /meetings/{id}/end`, 추출 뒤 `POST /extractions`, 어느 단계가 실패하면
   `PATCH /meetings/{id}/fail`. `BE_BASE_URL` 과 `BE_WORKSPACE_ID` 가 없으면 이 단계에서 멈춥니다.
+- 추출 단계의 추출기는 `MM_EXTRACT_PATH` 로 고릅니다 (`decision_log/0016`). 기본(`legacy`)은 `extract/` 의
+  `extract_tasks`, `judge` 는 판단 파이프라인(`judge/pipeline.py`)입니다. `judge` 는 발화마다 BE 의 유사 task 검색
+  (`POST /workspaces/{id}/tasks/similar`, 헤더 `X-Service-Token`)을 부르고, 나온 항목을 그대로 `POST /extractions`
+  로 보냅니다. 판단하지 못한 발화가 남으면 인계를 미루고 다시 돌리며, 항목이 하나도 없이 전부 실패하면 빈 추출을
+  등록하지 않고 단계 실패로 셉니다. 봇 모드와 워커 모드가 같은 `process_session` 을 쓰므로 둘 다 같이 바뀝니다.
 - 매니페스트 `recordings/session_{ts}.json` = `{"session", "status", "stages", "started_at", "timezone", "meeting_dir",
-  "transcript", "tasks", "be", "speakers": [{"user_id", "display_name", "file", "duration_sec"}]}`. `status` 는
+  "transcript", "tasks" 또는 "items", "be", "speakers": [{"user_id", "display_name", "file", "duration_sec"}]}`. `status` 는
   recording → saved → transcribed → extracted → handed_off (실패 시 failed 와 `failed_stage`) 이고, 봇이 죽어도
   `/recover` 가 마지막으로 끝난 단계 다음부터 마저 처리합니다. 상대 날짜("내일")의 기준일은 처리하는 날이 아니라
   `started_at` 을 `timezone` 으로 바꾼 회의 날짜입니다.
@@ -53,6 +58,12 @@ cp .env.example .env                 # DISCORD_BOT_TOKEN 채우기 (DISCORD_GUIL
 ```bash
 python -m capture.run_recorder    # Discord 에서 /join → /record → (말하기) → /stop → 회의록이 채널에 올라옴
 #    recordings/{guild}_{ts}/{user_id}_{ts}.wav · recordings/session_{ts}.json · transcripts/session_{ts}.transcript.json
+
+# 워커 모드. 봇은 저장까지만 하고 후처리는 워커가 한다 (decision_log/0013)
+MM_PIPELINE_MODE=worker python -m capture.run_recorder
+python -m capture.worker
+
+# 판단 경로로 돌리려면 .env 에 MM_EXTRACT_PATH=judge 와 TERRA_*, LUNA_*, BE_* 를 채운다. 두 모드에 같이 적용된다
 ```
 
 ## 테스트
