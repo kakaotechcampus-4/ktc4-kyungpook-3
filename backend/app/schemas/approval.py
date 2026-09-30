@@ -33,7 +33,9 @@ class ApprovalResolveRequest(BaseModel):
     status: ApprovalStatus = Field(
         ..., description="approved | rejected (pending 불가)"
     )
-    resolved_by: str = Field(..., description="승인/반려한 PM member_id")
+    resolved_by: str | None = Field(
+        None, description="하위 호환용. 승인/반려한 사람은 이 값 대신 로그인한 멤버(세션)로 기록한다."
+    )
 
 
 class ApprovalListResponse(BaseModel):

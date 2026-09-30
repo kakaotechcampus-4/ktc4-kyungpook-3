@@ -5,14 +5,17 @@ from enum import StrEnum
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     Date,
     DateTime,
     Float,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -71,6 +74,14 @@ class MeetingStatus(StrEnum):
 class MeetingSource(StrEnum):
     DISCORD = "discord"
     MANUAL_UPLOAD = "manual_upload"
+
+
+class EvidenceType(StrEnum):
+    """근거가 뒷받침하는 값. 추출 항목의 제목, 담당자, 마감 중 무엇인지."""
+
+    TASK = "task"
+    ASSIGNEE = "assignee"
+    DUE = "due"
 
 
 class TaskStatus(StrEnum):
@@ -140,7 +151,7 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     name: Mapped[str] = mapped_column(String(100))
-    provider: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    provider: Mapped[str] = mapped_column(String(20), default="local")
     provider_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     profile_image_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
@@ -270,9 +281,12 @@ class AliasResolutionLog(Base):
     )
     result: Mapped[str] = mapped_column(String(16))
     candidate_count: Mapped[int] = mapped_column(Integer, default=0)
-    evidence_quote: Mapped[str | None] = mapped_column(Text, nullable=True)
     meeting_id: Mapped[str | None] = mapped_column(
         String(36), ForeignKey("meeting.meeting_id", ondelete="SET NULL"), nullable=True
+    )
+    # 별칭이 나온 발화. 전사가 저장되기 전이나 알 수 없으면 NULL이다.
+    source_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("source.source_id", ondelete="SET NULL"), nullable=True, index=True
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
@@ -306,53 +320,45 @@ class Meeting(Base):
     failed_stage: Mapped[str | None] = mapped_column(String(32), nullable=True)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # 전사 길이(ms). 전사가 들어오기 전에는 모르므로 NULL이다.
+    duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
-    audio: Mapped["MeetingAudio | None"] = relationship(
-        back_populates="meeting", uselist=False, cascade="all, delete-orphan"
-    )
-    segments: Mapped[list["AudioSegment"]] = relationship(
-        back_populates="meeting", cascade="all, delete-orphan"
-    )
     extractions: Mapped[list["Extraction"]] = relationship(
         back_populates="meeting", cascade="all, delete-orphan"
     )
-
-
-class MeetingAudio(Base):
-    __tablename__ = "meeting_audio"
-
-    audio_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
-    meeting_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("meeting.meeting_id", ondelete="CASCADE"), unique=True
+    sources: Mapped[list["Source"]] = relationship(
+        back_populates="meeting", cascade="all, delete-orphan"
     )
-    merged_file_path: Mapped[str] = mapped_column(Text)
-    duration_ms: Mapped[int] = mapped_column(Integer, default=0)
-    track_count: Mapped[int] = mapped_column(Integer, default=0)
-    is_complete: Mapped[bool] = mapped_column(Boolean, default=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
-
-    meeting: Mapped["Meeting"] = relationship(back_populates="audio")
 
 
-class AudioSegment(Base):
-    __tablename__ = "audio_segment"
+class Source(Base):
+    """STT 전사의 발화 한 줄. AI의 TranscriptSegment 하나가 한 행이다."""
 
-    segment_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    __tablename__ = "source"
+    __table_args__ = (
+        UniqueConstraint("meeting_id", "seq", name="uq_source_meeting_seq"),
+    )
+
+    source_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     meeting_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("meeting.meeting_id", ondelete="CASCADE"), index=True
     )
+    # 회의 전체에서의 발화 순번. 근거가 발화를 가리키는 안정된 식별자다.
+    seq: Mapped[int] = mapped_column(Integer)
+    speaker_discord_user_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     member_id: Mapped[str | None] = mapped_column(
-        String(36), ForeignKey("member.member_id", ondelete="SET NULL"), nullable=True
+        String(36), ForeignKey("member.member_id", ondelete="SET NULL"), nullable=True, index=True
     )
-    discord_user_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    merged_start_ms: Mapped[int] = mapped_column(Integer, index=True)
-    merged_end_ms: Mapped[int] = mapped_column(Integer)
-    actual_start_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    actual_end_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    track_file_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # 회의 시작 기준 위치(ms)
+    start_ms: Mapped[int] = mapped_column(Integer)
+    end_ms: Mapped[int] = mapped_column(Integer)
+    text: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
-    meeting: Mapped["Meeting"] = relationship(back_populates="segments")
+    meeting: Mapped["Meeting"] = relationship(back_populates="sources")
+    evidences: Mapped[list["Evidence"]] = relationship(
+        back_populates="source", cascade="all, delete-orphan"
+    )
 
 
 class Extraction(Base):
@@ -362,7 +368,6 @@ class Extraction(Base):
     meeting_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("meeting.meeting_id", ondelete="CASCADE"), index=True
     )
-    transcript_path: Mapped[str | None] = mapped_column(Text, nullable=True)
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     model_name: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
@@ -404,9 +409,6 @@ class ExtractionItem(Base):
     due_confidence: Mapped[float] = mapped_column(Float, default=0.0)
     confidence: Mapped[float] = mapped_column(Float, default=0.0)
     gate: Mapped[str] = mapped_column(String(10), default=Gate.HOLD)
-    evidence_quote: Mapped[str | None] = mapped_column(Text, nullable=True)
-    evidence_speaker: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    evidence_at_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # AI 판단 결과(JudgeResult.category/status)와 PM에게 보여 줄 설명(DraftResult.doc_text)
     category: Mapped[str | None] = mapped_column(String(16), nullable=True)
     status: Mapped[str | None] = mapped_column(String(16), nullable=True)
@@ -421,6 +423,46 @@ class ExtractionItem(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
     extraction: Mapped["Extraction"] = relationship(back_populates="items")
+    evidences: Mapped[list["Evidence"]] = relationship(
+        back_populates="item", cascade="all, delete-orphan"
+    )
+
+
+class Evidence(Base):
+    """추출 항목이나 task의 근거로 쓰인 발화(source). 둘 중 하나는 반드시 가리킨다."""
+
+    __tablename__ = "evidence"
+    __table_args__ = (
+        UniqueConstraint("item_id", "source_id", "type", name="uq_evidence_item_source_type"),
+        # 위 제약은 item_id가 NULL이면 걸리지 않는다. task에만 붙은 근거의 중복은 여기서 막는다.
+        # item_id가 있는 행까지 막으면 같은 task를 공유하는 여러 항목이 같은 발화를 근거로 들 수 없다.
+        Index(
+            "uq_evidence_task_source_type", "task_id", "source_id", "type",
+            unique=True,
+            postgresql_where=text("item_id IS NULL"),
+            sqlite_where=text("item_id IS NULL"),
+        ),
+        CheckConstraint(
+            "item_id IS NOT NULL OR task_id IS NOT NULL", name="ck_evidence_item_or_task"
+        ),
+    )
+
+    evidence_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    item_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("extraction_item.item_id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    task_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("task.task_id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    source_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("source.source_id", ondelete="CASCADE"), index=True
+    )
+    type: Mapped[str] = mapped_column(String(16))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+    item: Mapped["ExtractionItem | None"] = relationship(back_populates="evidences")
+    task: Mapped["Task | None"] = relationship(back_populates="evidences")
+    source: Mapped["Source"] = relationship(back_populates="evidences")
 
 
 class Task(Base):
@@ -469,6 +511,9 @@ class Task(Base):
     )
 
     history: Mapped[list["TaskHistory"]] = relationship(
+        back_populates="task", cascade="all, delete-orphan"
+    )
+    evidences: Mapped[list["Evidence"]] = relationship(
         back_populates="task", cascade="all, delete-orphan"
     )
 
@@ -520,7 +565,6 @@ class TaskHistory(Base):
     changed_by: Mapped[str | None] = mapped_column(
         String(36), ForeignKey("member.member_id", ondelete="SET NULL"), nullable=True
     )
-    is_auto: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     is_rolled_back: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     rolled_back_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True

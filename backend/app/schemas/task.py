@@ -1,6 +1,6 @@
 from datetime import date, datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, computed_field
 
 from app.models import TaskStatus
 from app.services.embedding import DEFAULT_K, DEFAULT_MIN_SIMILARITY
@@ -16,7 +16,9 @@ class TaskCreateRequest(BaseModel):
     status: TaskStatus = TaskStatus.TODO
     progress: int | None = Field(None, ge=0, le=100)
     blocker: str | None = None
-    created_by: str | None = Field(None, description="수동 생성한 PM member_id")
+    created_by: str | None = Field(
+        None, description="하위 호환용. 생성한 사람은 이 값 대신 로그인한 멤버(세션)로 기록한다."
+    )
 
 
 class TaskUpdateRequest(BaseModel):
@@ -27,7 +29,9 @@ class TaskUpdateRequest(BaseModel):
     blocker: str | None = None
     start_date: date | None = None
     due_date: date | None = None
-    changed_by: str | None = Field(None, description="변경한 PM member_id")
+    changed_by: str | None = Field(
+        None, description="하위 호환용. 변경한 사람은 이 값 대신 로그인한 멤버(세션)로 기록한다."
+    )
 
 
 class TaskResponse(BaseModel):
@@ -67,10 +71,15 @@ class TaskHistoryResponse(BaseModel):
     new_value: str | None
     change_source: str
     changed_by: str | None
-    is_auto: bool
     is_rolled_back: bool
     rolled_back_at: datetime | None
     created_at: datetime
+
+    @computed_field
+    @property
+    def is_auto(self) -> bool:
+        """변경자가 없으면 시스템이 자동 반영한 이력이다."""
+        return self.changed_by is None
 
 
 class TaskHistoryListResponse(BaseModel):

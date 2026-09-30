@@ -7,7 +7,7 @@ from typing import Optional
 from app.api.deps import get_current_user, get_current_member, require_member
 from app.core.database import get_db
 from app.core.errors import AppError, Envelope, ErrorCode, success
-from app.models import Workspace, Member, MemberRole, User, Meeting, MeetingStatus
+from app.models import Workspace, Member, MemberRole, User, Meeting, MeetingStatus, Source
 from app.schemas.meeting import MeetingListResponse
 from app.schemas.workspace import (
     WorkspaceCreateRequest,
@@ -144,17 +144,25 @@ def list_workspace_meetings(
         Meeting.status != MeetingStatus.FAILED
     ).order_by(Meeting.started_at.desc()).all()
     
+    # 회의마다 발화를 읽지 않고, 회의별 참석자 수를 한 번에 센다
+    attendee_counts = dict(
+        db.execute(
+            select(Source.meeting_id, func.count(Source.member_id.distinct()))
+            .where(Source.meeting_id.in_([m.meeting_id for m in meetings]))
+            .group_by(Source.meeting_id)
+        ).all()
+    ) if meetings else {}
+
     items = []
     for m in meetings:
-        # attendee_count 로직 개선 필요(현재는 segment 기반 추정)
-        attendee_count = len({s.member_id for s in m.segments if s.member_id}) if m.segments else 0
+        attendee_count = attendee_counts.get(m.meeting_id, 0)
         items.append({
             "meeting_id": m.meeting_id,
             "title": m.title,
             "started_at": m.started_at,
             "source": m.source,
             "status": m.status,
-            "duration_ms": m.audio.duration_ms if m.audio else 0,
+            "duration_ms": m.duration_ms or 0,
             "attendee_count": attendee_count,
             "processed_at": m.ended_at
         })

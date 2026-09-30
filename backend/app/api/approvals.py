@@ -83,7 +83,6 @@ def _apply_approval(db: Session, approval: ApprovalRequest) -> None:
             progress=payload.get("progress"),
             change_source=str(ChangeSource.MEETING if payload.get("meeting_id") else ChangeSource.MANUAL),
             changed_by=approval.resolved_by,
-            is_auto=False,
         )
         approval.related_task_id = task.task_id
 
@@ -120,7 +119,6 @@ def _apply_approval(db: Session, approval: ApprovalRequest) -> None:
             updates,
             change_source=str(ChangeSource.MEETING),
             changed_by=approval.resolved_by,
-            is_auto=False,
         )
 
     # REMINDER_DM: 태스크에 반영할 내용이 없다 — 실제 발송은 알림 채널(디스코드 봇)의 책임
@@ -234,7 +232,7 @@ def resolve_approval(
             ErrorCode.APPROVAL_NOT_FOUND,
             details={"approval_id": approval_id},
         )
-    require_member(db, user, target.workspace_id)
+    member = require_member(db, user, target.workspace_id)
 
     stmt = (
         update(ApprovalRequest)
@@ -244,7 +242,7 @@ def resolve_approval(
         )
         .values(
             status=str(payload.status),
-            resolved_by=payload.resolved_by,
+            resolved_by=member.member_id,
             resolved_at=datetime.now(timezone.utc),
         )
     )

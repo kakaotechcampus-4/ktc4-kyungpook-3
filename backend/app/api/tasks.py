@@ -39,7 +39,7 @@ def create_task_endpoint(
         raise AppError(
             ErrorCode.WORKSPACE_NOT_FOUND, details={"workspace_id": payload.workspace_id}
         )
-    require_member(db, user, payload.workspace_id)
+    member = require_member(db, user, payload.workspace_id)
 
     task = create_task(
         db,
@@ -53,8 +53,7 @@ def create_task_endpoint(
         progress=payload.progress,
         blocker=payload.blocker,
         change_source=str(ChangeSource.MANUAL),
-        changed_by=payload.created_by,
-        is_auto=False,
+        changed_by=member.member_id,
     )
     db.commit()
     db.refresh(task)
@@ -104,9 +103,11 @@ def get_task(task_id: str, db: Session = Depends(get_db)) -> dict:
 def update_task(
     task_id: str,
     payload: TaskUpdateRequest,
+    user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
     task = _get_task(db, task_id)
+    member = require_member(db, user, task.workspace_id)
 
     updates = payload.model_dump(
         exclude_unset=True, exclude={"changed_by"}
@@ -121,8 +122,7 @@ def update_task(
         task,
         updates,
         change_source=str(ChangeSource.MANUAL),
-        changed_by=payload.changed_by,
-        is_auto=False,
+        changed_by=member.member_id,
     )
     db.commit()
     db.refresh(task)
@@ -152,17 +152,21 @@ def list_task_history(task_id: str, db: Session = Depends(get_db)) -> dict:
 def rollback_history_endpoint(
     task_id: str,
     history_id: str,
-    changed_by: str | None = Query(None, description="되돌리기를 수행한 PM member_id"),
+    changed_by: str | None = Query(
+        None, description="하위 호환용. 되돌린 사람은 이 값 대신 로그인한 멤버(세션)로 기록한다."
+    ),
+    user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
     task = _get_task(db, task_id)
+    member = require_member(db, user, task.workspace_id)
     history = db.get(TaskHistory, history_id)
     if history is None or history.task_id != task_id:
         raise AppError(
             ErrorCode.TASK_HISTORY_NOT_FOUND, details={"history_id": history_id}
         )
 
-    rollback_task_history(db, task, history, changed_by=changed_by)
+    rollback_task_history(db, task, history, changed_by=member.member_id)
     db.commit()
     db.refresh(task)
     return success(TaskResponse.model_validate(task).model_dump(mode="json"))

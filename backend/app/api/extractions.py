@@ -12,6 +12,8 @@ from app.models import (
     ApprovalRequest,
     ApprovalType,
     ChangeSource,
+    Evidence,
+    EvidenceType,
     Extraction,
     ExtractionAction,
     ExtractionItem,
@@ -19,6 +21,7 @@ from app.models import (
     Meeting,
     MeetingStatus,
     Member,
+    Source,
     Task,
     TaskStatus,
     User,
@@ -124,7 +127,6 @@ def create_extraction(
 
     extraction = Extraction(
         meeting_id=payload.meeting_id,
-        transcript_path=payload.transcript_path,
         model_name=payload.model_name,
     )
     db.add(extraction)
@@ -175,7 +177,6 @@ def create_extraction(
                 workspace_id=meeting.workspace_id,
                 alias_text=assignee_hint,
                 match=match,
-                evidence_quote=raw_item.evidence_quote,
                 meeting_id=payload.meeting_id,
             )
 
@@ -206,9 +207,6 @@ def create_extraction(
             due_confidence=raw_item.due_confidence,
             confidence=conf,
             gate=str(gate),
-            evidence_quote=raw_item.evidence_quote,
-            evidence_speaker=raw_item.evidence_speaker,
-            evidence_at_ms=raw_item.evidence_at_ms,
             category=raw_item.category,
             status=str(raw_item.status) if raw_item.status else None,
             doc_text=raw_item.doc_text,
@@ -233,7 +231,6 @@ def create_extraction(
                 status=str(raw_item.status or TaskStatus.TODO),
                 change_source=str(ChangeSource.MEETING),
                 changed_by=None,
-                is_auto=True,
             )
             item.task_id = task.task_id
         else:
@@ -379,6 +376,26 @@ def get_extraction(
         ).all()
         names = {mid: name for mid, name in rows}
 
+    # 항목마다 근거가 여러 개일 수 있지만 응답 계약은 하나뿐이라, 제목 근거 중 seq가 가장 작은 발화를 대표로 쓴다.
+    evidence_by_item: dict[str, EvidenceInfo] = {}
+    if items:
+        rows = db.execute(
+            select(Evidence.item_id, Source)
+            .join(Source, Evidence.source_id == Source.source_id)
+            .where(
+                Evidence.item_id.in_([i.item_id for i in items]),
+                Evidence.type == str(EvidenceType.TASK),
+            )
+            .order_by(Source.seq)
+        ).all()
+        for item_id, src in rows:
+            evidence_by_item.setdefault(
+                item_id,
+                EvidenceInfo(
+                    quote=src.text, speaker=src.speaker_discord_user_id, at_ms=src.start_ms
+                ),
+            )
+
     item_responses = [
         ExtractionItemResponse(
             item_id=i.item_id,
@@ -395,10 +412,8 @@ def get_extraction(
             ),
             confidence=i.confidence,
             gate=i.gate,
-            evidence=EvidenceInfo(
-                quote=i.evidence_quote,
-                speaker=i.evidence_speaker,
-                at_ms=i.evidence_at_ms,
+            evidence=evidence_by_item.get(
+                i.item_id, EvidenceInfo(quote=None, speaker=None, at_ms=None)
             ),
             task_id=i.task_id,
             approval_id=i.approval_id,
