@@ -298,6 +298,25 @@ def test_a_changed_transcript_drops_the_kept_judge_result(tmp_path, clock, limit
     assert r3["be"]["stale_extraction"] is True           # BE 에는 옛 추출이 남아 있다
 
 
+def test_a_changed_transcript_drops_a_kept_result_still_waiting_for_a_rerun(tmp_path, clock, limits, monkeypatch):
+    """추출 단계가 아직 열려 있는데(다시 돌릴 차례) 전사가 바뀌었다. 옛 전사로 낸 결과는 항목이 더 많아도 남기지 않는다."""
+    monkeypatch.setattr(R, "PARTIAL_RETRY_MAX", 1)
+    rec, path, manifest = _session(tmp_path)
+    fake = FakeBe()
+    stt = DiesOnLong()
+    ex = Runs(_out([A, B_], [F1]), _out([C], [F2, F3]))
+    assert _run(rec, manifest, tmp_path, backend=stt, extractor=ex, handoff=_handoff(fake))["status"] == "partial"
+    stt.limit_s = 1.0                                     # 재전사도 죽는다. 상한(1회)에 닿아 빠진 채 추출로 간다
+    r2 = _again(rec, tmp_path, ex, fake, clock, backend=stt)
+    assert r2["status"] == "failed" and "ExtractIncomplete" in r2["error"] and _items_on_disk(path) == [A, B_]
+    monkeypatch.setattr(R, "PARTIAL_RETRY_MAX", 2)
+    stt.limit_s = 3.5                                     # 이번엔 살아서 전사가 바뀐다
+    r3 = _again(rec, tmp_path, ex, fake, clock, backend=stt)
+    assert "retried" in r3["ran"] and r3["status"] == "failed" and fake.extractions == {}
+    saved = _saved(path)
+    assert _items_on_disk(path) == [C] and saved["extract_failures"] == [F2, F3] and saved["extract_runs"] == 1
+
+
 def test_empty_values_copied_from_the_env_example_mean_the_defaults():
     """.env.example 을 그대로 복사하면 값이 빈 줄이 환경 변수로 들어온다. 빈 값 때문에 시작하다 죽으면 안 된다."""
     env = {**os.environ, "MM_EXTRACT_RETRY_MAX": "", "MM_EXTRACT_PATH": ""}

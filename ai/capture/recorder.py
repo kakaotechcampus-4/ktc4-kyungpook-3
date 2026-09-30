@@ -609,12 +609,16 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
             else:
                 manifest.pop("failed_units", None)
                 manifest.pop("partial", None)
+            if changed:
+                # 회의록이 바뀌었다. 옛 회의록으로 낸 판단 결과는 추출 단계가 열려 있어도(다시 돌릴 차례여도) 버린다.
+                # 두면 새 회의록의 결과와 견줘져 옛 회의록의 항목이 인계될 수 있다
+                for key in _JUDGE_KEYS:
+                    manifest.pop(key, None)
             if changed and (STATUS_EXTRACTED in stages or STATUS_HANDED_OFF in stages):
-                # 회의록이 바뀌었다. 옛 회의록으로 뽑은 할일과 인계는 무효다. 다시 뽑고 다시 보낸다
+                # 옛 회의록으로 뽑은 할일과 인계는 무효다. 다시 뽑고 다시 보낸다
                 stages.pop(STATUS_EXTRACTED, None)
                 stages.pop(STATUS_HANDED_OFF, None)
-                for key in ("tasks", *_JUDGE_KEYS):
-                    manifest.pop(key, None)
+                manifest.pop("tasks", None)
                 manifest["reextracted"] = True
             manifest["status"] = STATUS_TRANSCRIBED
             manifest.pop("recovery", None)             # 전사 단계가 닫혔다
