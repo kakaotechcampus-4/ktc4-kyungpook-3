@@ -329,3 +329,39 @@ def test_unjudged_findings_are_marked_in_the_be_record(tmp_path):
     assert h.register(m, transcripts_dir=tdir, model_name="x")["missing_findings"] == 1
     m.pop("extract_failures")
     assert "missing_findings" not in h.register(m, transcripts_dir=tdir, model_name="x")
+
+
+def test_similar_search_over_a_real_http_connection():
+    """가짜 세션이 아니라 requests 로 실제 소켓을 거친다. 헤더와 본문이 선을 타고 그대로 가는지 본다."""
+    import threading
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    seen = {}
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self):
+            seen["path"] = self.path
+            seen["token"] = self.headers.get("X-Service-Token")
+            seen["body"] = json.loads(self.rfile.read(int(self.headers["Content-Length"])).decode("utf-8"))
+            body = json.dumps({"data": {"items": [CANDIDATE]}, "error": None}).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *args):
+            pass
+
+    server = HTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        client = H.BeClient(f"http://127.0.0.1:{server.server_port}", service_token="svc-token")
+        found = client.similar_tasks("ws-1", "로그인 화면 마감을 미루기로 함")
+    finally:
+        server.shutdown()
+        server.server_close()
+    assert seen == {"path": "/api/v1/workspaces/ws-1/tasks/similar", "token": "svc-token",
+                    "body": {"text": "로그인 화면 마감을 미루기로 함"}}
+    assert [c.task_id for c in found] == ["task_login"]

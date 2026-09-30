@@ -132,3 +132,14 @@ def test_a_run_with_failures_and_no_items_raises():
     extract, _ = _extractor(FakeRun([], []))                     # 결정이 없는 회의. 실패가 아니다
     out = extract(TRANSCRIPT, NAMES, date(2026, 9, 19))
     assert out.items == [] and out.failures == []
+
+
+def test_the_default_candidate_source_is_the_be_client_with_the_service_token():
+    """밖에서 끼우지 않으면 유사 검색은 설정의 BE 주소와 서비스 토큰으로 만든 BeClient 다."""
+    from capture.handoff import BeClient
+
+    run = FakeRun([_item()])
+    extract = J.build_extractor(run=run, cfg=_cfg(be_base_url="http://be.local/", be_service_token="svc"))
+    extract(TRANSCRIPT, NAMES, date(2026, 9, 19))
+    client = run.seen.candidates
+    assert isinstance(client, BeClient) and client.api == "http://be.local/api/v1" and client.service_token == "svc"
