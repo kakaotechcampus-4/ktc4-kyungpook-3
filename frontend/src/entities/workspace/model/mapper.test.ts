@@ -36,6 +36,23 @@ it('uses safe defaults for unrecognized role, step, and status', async () => {
   })
 })
 
+// WorkspaceResponse.role 은 Optional 이다. null 은 경고 없이 member 로 내린다 (계약 §6).
+// 소속 판정에는 쓰지 않는다 — 소속은 목록으로 본다 (lib/membership.ts)
+it('falls back to member for a null role without warning', () => {
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  expect(
+    toWorkspace({
+      workspace_id: 'ws',
+      name: 'W',
+      role: null,
+      created_at: '',
+      onboarding: { completed: true, current_step: null, steps: [] },
+    }).role,
+  ).toBe('member')
+  expect(warn).not.toHaveBeenCalled()
+  warn.mockRestore()
+})
+
 // 백엔드는 온보딩이 끝나면 current_step 에 null 이 아니라 빈 문자열을 넣는다 (계약 §4.0-②-4).
 // 빈 문자열을 그대로 safeStep 에 넘기면 "모르는 단계" 경고가 뜬다. 조용히 null 로 다뤄야 한다
 it('treats the backend empty current_step as no current step without warning', () => {

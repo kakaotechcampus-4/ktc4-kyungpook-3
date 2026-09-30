@@ -49,8 +49,10 @@ export const memberHandlers = [
     if (denied) return denied
     if (!db.workspaces.some(({ workspace_id }) => workspace_id === params.workspaceId))
       return fail('WORKSPACE_NOT_FOUND', '워크스페이스가 없습니다.', 404)
+    // 모의 Discord 서버는 하나다. 어느 공간이든 연결만 되면 같은 사용자 목록을 돌려준다 —
+    // 새로 만든 공간도 Discord 연결 뒤 팀원 연결 단계를 진행할 수 있어야 한다
     return db.integrations[String(params.workspaceId)]?.discord.status === 'connected'
-      ? list(params.workspaceId === 'ws_01' ? db.discordUsers : [])
+      ? list(db.discordUsers)
       : fail('INTEGRATION_NOT_CONNECTED', 'Discord 연결이 필요합니다.', 409)
   }),
   http.get(`${base}/members`, ({ request }) => {

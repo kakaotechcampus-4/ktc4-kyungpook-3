@@ -18,7 +18,7 @@ describe('세션', () => {
     const app = renderApp('/workspaces/ws_01/dashboard')
 
     expect(await screen.findByRole('heading', { name: '로그인' })).toBeInTheDocument()
-    expect(app.location().pathname).toBe('/login')
+    await app.expectPath('/login')
     expect(app.queryClient.getQueryData(sessionQueryOptions().queryKey)).toBeNull()
     expect(log.started.filter(({ path }) => path === '/auth/me')).toHaveLength(1)
   })
@@ -58,7 +58,7 @@ describe('세션', () => {
     // 1초 뒤 한 번 더 시도한 다음에 안내가 뜬다
     const alert = await screen.findByRole('alert', {}, { timeout: 3000 })
     expect(alert).toHaveTextContent('네트워크에 연결할 수 없어요')
-    expect(app.location().pathname).toBe('/workspaces/ws_01/dashboard')
+    await app.expectPath('/workspaces/ws_01/dashboard')
 
     server.resetHandlers()
     await user.click(screen.getByRole('button', { name: '다시 시도' }))

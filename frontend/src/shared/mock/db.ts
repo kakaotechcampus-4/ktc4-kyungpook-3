@@ -39,7 +39,8 @@ export interface MockDb {
   taskHistory: typeof taskHistoryFixtures
   approvals: typeof approvalFixtures
 }
-function initialDb(): MockDb {
+/** Vitest 가 테스트마다 돌아가는 상태다. 로그인돼 있고 ws_01·ws_02 에 속한다. 브라우저 시작 상태는 scenarios.ts 가 정한다 */
+export function initialDb(): MockDb {
   return {
     session: structuredClone(sessionFixture),
     authenticated: true,
@@ -69,4 +70,9 @@ export const db: MockDb = initialDb()
 
 export function resetDb(): void {
   Object.assign(db, initialDb())
+}
+
+/** 통째로 바꾼다. 시나리오 적용과 sessionStorage 복원이 쓴다. `db` 참조는 그대로라 handler 가 새 값을 본다 */
+export function replaceDb(next: MockDb): void {
+  Object.assign(db, next)
 }

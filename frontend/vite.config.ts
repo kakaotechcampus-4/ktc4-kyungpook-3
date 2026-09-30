@@ -1,4 +1,4 @@
-import { defineConfig } from 'vitest/config'
+import { configDefaults, defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { resolve } from 'node:path'
@@ -19,6 +19,8 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     setupFiles: ['./src/shared/test/setup.ts'],
+    // e2e/ 는 Playwright 몫이다 (*.e2e.ts). Vitest 가 집어 가지 않게 뺀다
+    exclude: [...configDefaults.exclude, 'e2e/**'],
     css: false,
     passWithNoTests: true,
   },

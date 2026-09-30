@@ -1,15 +1,19 @@
 import { useId } from 'react'
-import type { ComponentPropsWithoutRef, ReactNode } from 'react'
+import type { ComponentPropsWithRef, ReactNode } from 'react'
 import { Label } from '../label/Label'
 import { ErrorText } from '../error-text/ErrorText'
 
 export type FieldTone = 'product' | 'onboarding' | 'auth'
 
-export interface TextFieldProps extends Omit<ComponentPropsWithoutRef<'input'>, 'size'> {
+/* ref 는 input 으로 간다 — React Hook Form 의 register 가 포커스 이동에 쓴다 (D-142).
+   React 19 는 ref 를 일반 prop 으로 넘겨서 forwardRef 가 필요 없다. */
+export interface TextFieldProps extends Omit<ComponentPropsWithRef<'input'>, 'size'> {
   /** 화면군. 기본 'product' */
   tone?: FieldTone
   /** 없으면 라벨을 그리지 않는다 — 그때는 호출부가 `aria-label` 을 직접 넘긴다 */
   label?: string
+  /** 라벨 줄 오른쪽 끝에 붙는 것. 로그인의 `비밀번호를 잊으셨나요?` 자리다. label 이 있을 때만 그린다 */
+  labelEnd?: ReactNode
   /** 'required-blocking' 이면 라벨과 경계가 강조색이 된다 */
   labelTone?: 'normal' | 'required-blocking'
   /** 입력 아래 보조 문구. `aria-describedby` 에 함께 묶인다 */
@@ -83,12 +87,14 @@ const ADORNED_FOCUS_ACCENT = 'has-[input:focus-visible]:outline-accent'
  *
  * 문구는 전부 props 다 — 라벨·플레이스홀더를 컴포넌트에 넣지 않는다.
  *
- * 강조색(`labelTone="required-blocking"`, `error`)은 **비우면 승인이 막히는 입력**에만 쓴다.
- * 일반 검증 실패에 쓰지 않는다.
+ * 강조색은 두 경우에만 쓴다 — **비우면 승인이 막히는 입력**(`labelTone="required-blocking"`, 늘)과
+ * **검증 오류가 난 칸**(`error`, 문구가 붙은 동안만). 오류 전에 필수칸을 미리 표시하는 데는 쓰지 않는다
+ * (impl-decision 2026-09-29-field-error-accent).
  */
 export function TextField({
   tone = 'product',
   label,
+  labelEnd,
   labelTone = 'normal',
   description,
   error,
@@ -128,7 +134,14 @@ export function TextField({
 
   return (
     <div className={['flex flex-col', className].filter(Boolean).join(' ')}>
-      {label ? (
+      {label && labelEnd ? (
+        <div className={['flex items-baseline justify-between', TONE_LABEL_GAP[tone]].join(' ')}>
+          <Label htmlFor={fieldId} tone={tone} blocking={blocking}>
+            {label}
+          </Label>
+          {labelEnd}
+        </div>
+      ) : label ? (
         <Label htmlFor={fieldId} tone={tone} blocking={blocking} className={TONE_LABEL_GAP[tone]}>
           {label}
         </Label>

@@ -44,3 +44,76 @@ jobs:
           name: frontend-dist
           path: frontend/dist
           retention-days: 7
+
+  storybook:
+    needs: check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - id: playwright-version
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+      - id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright-version.outputs.version }}-chromium
+      - if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+      - if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
+      # storybook build 뒤 산출물을 정적으로 띄워 스토리를 순서대로 연다 — 스토리 handler 가 기본 handler 를 지우지 않는지 본다
+      - run: npm run test:storybook
+      - uses: actions/upload-artifact@v4
+        with:
+          name: frontend-storybook
+          path: frontend/storybook-static
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: frontend-storybook-report
+          path: |
+            frontend/playwright-report-storybook
+            frontend/test-results-storybook
+          retention-days: 7
+
+  # MSW 는 개발 모드에서만 돈다 — Playwright 가 webServer 로 Vite 개발 서버를 띄운다 (playwright.config.ts)
+  e2e:
+    needs: check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      # 브라우저는 설치된 Playwright 버전으로 캐시한다. 적중하면 OS 의존성만 설치한다
+      - id: playwright-version
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+      - id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright-version.outputs.version }}-chromium
+      - if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+      - if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
+      - run: npm run test:e2e
+      # 실패한 테스트의 trace(retain-on-failure)와 HTML 리포트를 남긴다
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: frontend-e2e-report
+          path: |
+            frontend/playwright-report
+            frontend/test-results
+          retention-days: 7

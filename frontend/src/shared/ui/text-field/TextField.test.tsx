@@ -29,8 +29,10 @@ describe('TextField', () => {
 
     expect(input).toHaveAttribute('aria-invalid', 'true')
     expect(input).toHaveAttribute('aria-describedby', 'email-error')
-    expect(screen.getByRole('alert')).toHaveAttribute('id', 'email-error')
-    expect(screen.getByRole('alert')).toHaveTextContent('이메일을 입력해 주세요')
+    expect(screen.getByText('이메일을 입력해 주세요')).toHaveAttribute('id', 'email-error')
+    // 한 번만 읽힌다 — 입력의 설명으로만 읽히고 따로 alert 로 읽히지 않는다 (F-r1 #13)
+    expect(input).toHaveAccessibleDescription('이메일을 입력해 주세요')
+    expect(screen.queryByRole('alert')).toBeNull()
   })
 
   it('leaves the error wiring off when there is no error', () => {
@@ -39,7 +41,7 @@ describe('TextField', () => {
 
     expect(input).not.toHaveAttribute('aria-invalid')
     expect(input).not.toHaveAttribute('aria-describedby')
-    expect(screen.queryByRole('alert')).toBeNull()
+    expect(screen.queryByText('이메일을 입력해 주세요')).toBeNull()
   })
 
   it('describes the input with both the description and the error', () => {

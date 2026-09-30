@@ -1,47 +1,38 @@
-import { useQuery } from '@tanstack/react-query'
-import { workspaceEntryPath, workspaceListQueryOptions } from '@/entities/workspace'
+import { paths } from '@/shared/config/routes'
 import { GuardedLink } from '@/shared/lib/unsaved-changes'
-import { PagePlaceholder } from '@/shared/ui/page-placeholder'
-import { QueryErrorState } from '@/shared/ui/query-error-state'
-import { Skeleton } from '@/shared/ui/skeleton'
+import { BrandMark } from '@/shared/ui/brand-mark'
+import { UserMenu, WorkspaceChoiceList } from '@/widgets/app-shell'
 
-const LIST = 'flex flex-col gap-8'
+const TOP = 'flex h-header shrink-0 items-center justify-between border-b border-divider px-40'
 
-const LINK = 'text-body font-semibold text-ink underline'
+const COLUMN = 'mx-auto flex w-full max-w-[480px] flex-col gap-24 px-24 pt-64 pb-72'
 
-const BADGE = 'ml-8 text-caption text-faint'
-
-/** 소속 목록을 링크로만 보여 준다. 실제 선택 화면은 M4 다. 미완료 공간은 온보딩으로 간다 */
+/**
+ * 워크스페이스 선택 (D-010). 공간이 여럿인 사용자의 로그인 뒤 첫 화면이다. 전용 캔버스가 없어 Main 의 팀 메뉴를
+ * 한 화면으로 펼쳤다 — 같은 줄 모양, 같은 진입 정책. 미완료 공간은 `설정 미완료` 이고 누르면 온보딩을 이어 간다.
+ */
 export function WorkspaceSelectPage() {
   return (
-    <PagePlaceholder title="워크스페이스 선택" description="선택 화면은 M4에서 만들어요.">
-      <WorkspaceLinks />
-    </PagePlaceholder>
-  )
-}
-
-function WorkspaceLinks() {
-  const workspaces = useQuery(workspaceListQueryOptions())
-
-  if (workspaces.data === undefined) {
-    return workspaces.isError ? (
-      <QueryErrorState error={workspaces.error} onRetry={() => void workspaces.refetch()} />
-    ) : (
-      <div aria-busy="true">
-        <Skeleton lines={2} />
-      </div>
-    )
-  }
-  return (
-    <ul className={LIST}>
-      {workspaces.data.map((workspace) => (
-        <li key={workspace.id}>
-          <GuardedLink to={workspaceEntryPath(workspace)} className={LINK}>
-            {workspace.name}
-          </GuardedLink>
-          {workspace.onboarding.completed ? null : <span className={BADGE}>설정 미완료</span>}
-        </li>
-      ))}
-    </ul>
+    <div className="flex min-h-dvh flex-col bg-surface text-ink">
+      <header className={TOP}>
+        <GuardedLink
+          to={paths.workspaceSelect()}
+          aria-label="Manager's Manager"
+          className="inline-flex"
+        >
+          <BrandMark />
+        </GuardedLink>
+        <UserMenu />
+      </header>
+      <main className={COLUMN}>
+        <div className="flex flex-col gap-6">
+          <h1 className="text-[24px] leading-[1.35] font-bold tracking-h3 text-ink">
+            워크스페이스 선택
+          </h1>
+          <p className="text-body text-sub">들어갈 워크스페이스를 골라 주세요.</p>
+        </div>
+        <WorkspaceChoiceList />
+      </main>
+    </div>
   )
 }
