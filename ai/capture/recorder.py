@@ -952,14 +952,19 @@ def _keep_judge_output(transcripts_dir: Path, manifest: dict, out: JudgeOutput) 
     그러면 기존 재시도 규칙(60초부터 두 배)이 파이프라인을 다시 돌린다. 성공한 것만 먼저 인계하지 않는 이유는
     BE 가 회의 하나에 추출을 한 번만 받아서 나머지를 나중에 넣을 수 없기 때문이다.
 
-    다시 돌린 결과는 실패가 앞의 것보다 많지 않을 때만 바꿔 끼운다. 1단계가 돌릴 때마다 발화를 다르게 묶을 수 있다.
+    다시 돌린 결과는 항목이 더 많을 때, 같으면 실패가 더 적을 때만 바꿔 끼운다. 1단계는 돌릴 때마다 발화를 다르게
+    묶고, 응답이 이상하면 하나도 못 고른 채(항목 0, 실패 0) 끝난다. 실패 수만 견주면 그 빈 결과가 가진 결과를
+    밀어내고 빈 추출이 등록된다. 닫을지는 남긴 결과에 실패가 있는지로 정한다.
     EXTRACT_RETRY_MAX 번 다시 돌렸거나 이번 실패가 포기가 되는 차례면(_last_attempt) 가장 나은 결과로 닫고
     extract_partial 과 extract_failures 를 남긴다. 가진 결과를 두고 회의를 실패로 닫지 않는다. 그 차례에
     파이프라인이 통째로 실패한 경우는 extract_after_transcription 이 같은 규칙으로 닫는다.
     """
     path = transcripts_dir / f"session_{manifest['session']}.items.json"
-    kept = manifest.get("extract_failures") if _kept_judge_result(transcripts_dir, manifest) else None
-    if kept is None or len(out.failures) <= len(kept):
+    kept = None
+    if _kept_judge_result(transcripts_dir, manifest):
+        kept = manifest.get("extract_failures") or []
+        kept_items = len(json.loads(path.read_text(encoding="utf-8")))
+    if kept is None or (len(out.items), -len(out.failures)) > (kept_items, -len(kept)):
         path.write_text(json.dumps(out.items, ensure_ascii=False, indent=2), encoding="utf-8")
         kept = out.failures
     manifest["items"] = str(path)

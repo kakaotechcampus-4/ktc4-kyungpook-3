@@ -113,7 +113,7 @@ def test_a_clean_rerun_clears_the_failure_marks(tmp_path, clock, limits):
     assert fake.extractions["m1"]["items"] == [A, B_] and "missing_findings" not in saved["be"] and ex.calls == 2
 
 
-def test_a_rerun_keeps_the_result_with_fewer_failures(tmp_path, clock, limits):
+def test_a_worse_rerun_does_not_replace_the_kept_result(tmp_path, clock, limits):
     """1단계는 돌릴 때마다 발화를 다르게 묶을 수 있다. 다시 돌린 결과가 더 나쁘면 앞의 것을 둔다."""
     rec, path, manifest = _session(tmp_path)
     fake = FakeBe()
@@ -126,6 +126,42 @@ def test_a_rerun_keeps_the_result_with_fewer_failures(tmp_path, clock, limits):
     assert fake.extractions == {}
 
 
+def test_an_empty_rerun_does_not_replace_the_kept_result(tmp_path, clock, limits):
+    """다시 돌렸더니 1단계가 발화를 하나도 고르지 못했다(항목 0, 실패 0). 실패 수만 견주면 빈 결과가 가진 결과를
+    밀어내고 빈 추출이 등록된다. 항목이 더 많은 쪽을 남기고, 남긴 결과에 실패가 있으니 다시 돌린다."""
+    rec, path, manifest = _session(tmp_path)
+    fake = FakeBe()
+    ex = Runs(_out([A, B_], [F1]), _out([]))
+    _run(rec, manifest, tmp_path, extractor=ex, handoff=_handoff(fake))
+    r2 = _again(rec, tmp_path, ex, fake, clock)
+    assert r2["status"] == "failed" and "ExtractIncomplete" in r2["error"] and fake.extractions == {}
+    saved = _saved(path)
+    assert _items_on_disk(path) == [A, B_] and saved["extract_failures"] == [F1] and saved["extract_runs"] == 2
+    r3 = _again(rec, tmp_path, ex, fake, clock)
+    assert r3["status"] == "handed_off" and r3["items"] == [A, B_] and r3["extract_failures"] == [F1]
+    assert fake.extractions["m1"]["items"] == [A, B_] and _saved(path)["be"]["missing_findings"] == 1
+
+
+def test_a_rerun_with_fewer_items_does_not_replace_on_equal_failures(tmp_path, clock, limits):
+    rec, path, manifest = _session(tmp_path)
+    fake = FakeBe()
+    ex = Runs(_out([A, B_, C], [F1]), _out([A], [F2]))
+    _run(rec, manifest, tmp_path, extractor=ex, handoff=_handoff(fake))
+    _again(rec, tmp_path, ex, fake, clock)
+    assert _items_on_disk(path) == [A, B_, C] and _saved(path)["extract_failures"] == [F1]
+
+
+def test_a_rerun_with_more_items_replaces_the_kept_result(tmp_path, clock, limits):
+    """항목이 더 많으면 실패가 늘었어도 바꾼다. 1단계가 발화를 더 잘게 골라 판단한 것이 더 많다."""
+    rec, path, manifest = _session(tmp_path)
+    fake = FakeBe()
+    ex = Runs(_out([A], [F1]), _out([A, B_, C], [F1, F2]))
+    _run(rec, manifest, tmp_path, extractor=ex, handoff=_handoff(fake))
+    r2 = _again(rec, tmp_path, ex, fake, clock)
+    assert r2["status"] == "failed" and _items_on_disk(path) == [A, B_, C]
+    assert _saved(path)["extract_failures"] == [F1, F2]
+
+
 def test_after_two_reruns_the_best_result_goes_out_with_failures_recorded(tmp_path, clock, limits):
     rec, path, manifest = _session(tmp_path)
     fake = FakeBe()
@@ -134,7 +170,7 @@ def test_after_two_reruns_the_best_result_goes_out_with_failures_recorded(tmp_pa
     _again(rec, tmp_path, ex, fake, clock)
     r3 = _again(rec, tmp_path, ex, fake, clock)
     assert ex.calls == 3 and r3["ran"] == ["extracted", "handed_off"] and r3["status"] == "handed_off"
-    assert r3["items"] == [A, B_] and r3["extract_failures"] == [F1]      # 세 번 중 실패가 가장 적었던 결과
+    assert r3["items"] == [A, B_] and r3["extract_failures"] == [F1]      # 세 번 중 항목이 가장 많았던 결과
     saved = _saved(path)
     assert saved["extract_partial"] is True and saved["extract_failures"] == [F1] and "recovery" not in saved
     assert fake.extractions["m1"]["items"] == [A, B_] and saved["be"]["missing_findings"] == 1
