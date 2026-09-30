@@ -87,13 +87,13 @@ def _detail_evidence(client, extraction_id):
     return body["items"][0]["evidence"]
 
 
-def test_request_evidence_and_transcript_path_are_not_stored(client, db, seed):
+def test_request_evidence_and_transcript_path_have_no_columns(client, db, seed):
+    """요청에 근거와 transcript_path를 실어도 저장할 컬럼이 없어 요청은 그대로 받아진다."""
     _extract(client, seed)
 
-    extraction = db.execute(select(Extraction)).scalar_one()
-    item = db.execute(select(ExtractionItem)).scalar_one()
-    assert extraction.transcript_path is None
-    assert (item.evidence_quote, item.evidence_speaker, item.evidence_at_ms) == (None, None, None)
+    assert not hasattr(Extraction, "transcript_path")
+    assert not any(hasattr(ExtractionItem, c) for c in ("evidence_quote", "evidence_speaker", "evidence_at_ms"))
+    assert db.execute(select(ExtractionItem)).scalar_one().task_title == "결제 환불 기능 구현"
 
 
 def test_detail_evidence_is_null_without_source(client, seed):

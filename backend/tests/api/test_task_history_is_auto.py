@@ -89,7 +89,7 @@ def test_history_is_auto_follows_changed_by(db, seed, client):
     assert (manual["changed_by"], manual["is_auto"]) == (seed["pm"], False)
 
 
-def test_log_resolution_records_without_evidence_quote(db, seed):
+def test_log_resolution_records_without_evidence_quote_column(db, seed):
     log = log_resolution(
         db, seed["ws"], "민수님", MatchResult(
             member_id=None, display_name=None, confidence=0.0, result=ResolutionResult.NOT_FOUND,
@@ -99,4 +99,5 @@ def test_log_resolution_records_without_evidence_quote(db, seed):
     db.commit()
     saved = db.execute(select(AliasResolutionLog)).scalar_one()
     assert saved.log_id == log.log_id
-    assert (saved.alias_text, saved.evidence_quote) == ("민수님", None)
+    assert (saved.alias_text, saved.source_id) == ("민수님", None)
+    assert not hasattr(AliasResolutionLog, "evidence_quote")

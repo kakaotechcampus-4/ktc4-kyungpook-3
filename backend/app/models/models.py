@@ -151,7 +151,7 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     name: Mapped[str] = mapped_column(String(100))
-    provider: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    provider: Mapped[str] = mapped_column(String(20), default="local")
     provider_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     profile_image_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
@@ -281,9 +281,12 @@ class AliasResolutionLog(Base):
     )
     result: Mapped[str] = mapped_column(String(16))
     candidate_count: Mapped[int] = mapped_column(Integer, default=0)
-    evidence_quote: Mapped[str | None] = mapped_column(Text, nullable=True)
     meeting_id: Mapped[str | None] = mapped_column(
         String(36), ForeignKey("meeting.meeting_id", ondelete="SET NULL"), nullable=True
+    )
+    # 별칭이 나온 발화. 전사가 저장되기 전이나 알 수 없으면 NULL이다.
+    source_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("source.source_id", ondelete="SET NULL"), nullable=True, index=True
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
@@ -320,55 +323,12 @@ class Meeting(Base):
     # 전사 길이(ms). 전사가 들어오기 전에는 모르므로 NULL이다.
     duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
-    audio: Mapped["MeetingAudio | None"] = relationship(
-        back_populates="meeting", uselist=False, cascade="all, delete-orphan"
-    )
-    segments: Mapped[list["AudioSegment"]] = relationship(
-        back_populates="meeting", cascade="all, delete-orphan"
-    )
     extractions: Mapped[list["Extraction"]] = relationship(
         back_populates="meeting", cascade="all, delete-orphan"
     )
     sources: Mapped[list["Source"]] = relationship(
         back_populates="meeting", cascade="all, delete-orphan"
     )
-
-
-class MeetingAudio(Base):
-    __tablename__ = "meeting_audio"
-
-    audio_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
-    meeting_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("meeting.meeting_id", ondelete="CASCADE"), unique=True
-    )
-    merged_file_path: Mapped[str] = mapped_column(Text)
-    duration_ms: Mapped[int] = mapped_column(Integer, default=0)
-    track_count: Mapped[int] = mapped_column(Integer, default=0)
-    is_complete: Mapped[bool] = mapped_column(Boolean, default=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
-
-    meeting: Mapped["Meeting"] = relationship(back_populates="audio")
-
-
-class AudioSegment(Base):
-    __tablename__ = "audio_segment"
-
-    segment_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
-    meeting_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("meeting.meeting_id", ondelete="CASCADE"), index=True
-    )
-    member_id: Mapped[str | None] = mapped_column(
-        String(36), ForeignKey("member.member_id", ondelete="SET NULL"), nullable=True
-    )
-    discord_user_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    merged_start_ms: Mapped[int] = mapped_column(Integer, index=True)
-    merged_end_ms: Mapped[int] = mapped_column(Integer)
-    actual_start_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    actual_end_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    track_file_path: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
-
-    meeting: Mapped["Meeting"] = relationship(back_populates="segments")
 
 
 class Source(Base):
@@ -408,7 +368,6 @@ class Extraction(Base):
     meeting_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("meeting.meeting_id", ondelete="CASCADE"), index=True
     )
-    transcript_path: Mapped[str | None] = mapped_column(Text, nullable=True)
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     model_name: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
@@ -450,9 +409,6 @@ class ExtractionItem(Base):
     due_confidence: Mapped[float] = mapped_column(Float, default=0.0)
     confidence: Mapped[float] = mapped_column(Float, default=0.0)
     gate: Mapped[str] = mapped_column(String(10), default=Gate.HOLD)
-    evidence_quote: Mapped[str | None] = mapped_column(Text, nullable=True)
-    evidence_speaker: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    evidence_at_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # AI 판단 결과(JudgeResult.category/status)와 PM에게 보여 줄 설명(DraftResult.doc_text)
     category: Mapped[str | None] = mapped_column(String(16), nullable=True)
     status: Mapped[str | None] = mapped_column(String(16), nullable=True)
@@ -609,7 +565,6 @@ class TaskHistory(Base):
     changed_by: Mapped[str | None] = mapped_column(
         String(36), ForeignKey("member.member_id", ondelete="SET NULL"), nullable=True
     )
-    is_auto: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     is_rolled_back: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     rolled_back_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
