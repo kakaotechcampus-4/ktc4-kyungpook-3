@@ -58,6 +58,7 @@ from pathlib import Path
 import discord
 
 from capture.handoff import from_env as handoff_from_env
+from capture.judge_path import extract_path
 from capture.recorder import (RECOVERY_INTERVAL_S, Claims, interrupted_meetings, manifest_path, queue_ahead,
                               recover_pass, recovery_targets, try_lock)
 from capture.worker import read_heartbeat, request_wake
@@ -166,6 +167,7 @@ class RecordingCog(discord.Cog):
         self._mode = mode or os.environ.get("MM_PIPELINE_MODE", "bot")
         if self._mode not in ("bot", "worker"):
             raise ValueError(f"MM_PIPELINE_MODE 는 bot 또는 worker 다. 받은 값: {self._mode!r}")
+        extract_path()      # MM_EXTRACT_PATH 가 모르는 값이면 여기서 멈춘다. 오타로 말없이 옛 추출기가 돌면 안 된다
         # 자동 복구. 루프와 /recover 가 같은 회의 잠금과 같은 한 바퀴(_recover_pass)를 쓴다
         self._claims = Claims()
         self._recovery_interval_s = RECOVERY_INTERVAL_S      # 0 이면 루프를 띄우지 않는다

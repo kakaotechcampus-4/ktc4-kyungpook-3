@@ -333,3 +333,29 @@ def test_the_worker_catches_stop_signals_where_the_loop_cannot(monkeypatch):
     registered[W.signal.SIGINT](W.signal.SIGINT, None)                       # Ctrl+C
     loop.soon[0]()
     assert stopped == [True]
+
+
+# ------------------------------------------------------------------ 판단 경로
+def test_an_unknown_extract_path_fails_at_start(tmp_path, monkeypatch):
+    """오타 하나로 말없이 옛 추출기가 돌면 다른 모양의 결과가 BE 로 간다. 봇도 워커도 시작할 때 멈춘다."""
+    monkeypatch.setenv("MM_EXTRACT_PATH", "jugde")
+    with pytest.raises(ValueError):
+        _worker(tmp_path)
+    with pytest.raises(ValueError):
+        T._setup(tmp_path)
+    monkeypatch.setenv("MM_EXTRACT_PATH", "judge")
+    assert _worker(tmp_path) is not None and T._setup(tmp_path)[0] is not None
+
+
+async def test_a_worker_pass_hands_judge_items_to_be(tmp_path):
+    """워커 모드에서도 같은 추출기가 돈다. 판단 항목이 그대로 BE 로 간다."""
+    from capture.judge_path import JudgeOutput
+
+    rec, path, _ = _session(tmp_path, ts=500)
+    item = T._judge_item("결제 환불 기능 구현")
+    fake = FakeBe()
+    worker = _worker(tmp_path, extractor=lambda transcript, names, today: JudgeOutput(items=[item]),
+                     handoff=H.Handoff(H.BeClient("http://be", session=fake), "ws-1"))
+    results, busy = await worker.run_pass()
+    assert _status(path) == "handed_off" and results[0]["items"] == [item] and busy == []
+    assert fake.extractions["m1"]["items"] == [item]

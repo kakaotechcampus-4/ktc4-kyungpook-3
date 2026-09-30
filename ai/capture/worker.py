@@ -28,6 +28,7 @@ import time
 from pathlib import Path
 
 from capture.handoff import from_env as handoff_from_env
+from capture.judge_path import extract_path
 from capture.recorder import Claims, backend_from_env, build_extractor, recover_pass, save_manifest
 from shared.config import RECORDINGS_DIR, TRANSCRIPTS_DIR
 from shared.schemas import now_iso
@@ -77,6 +78,7 @@ class Worker:
                  stt_factory=None, gate_factory=None, extractor_factory=None, handoff_factory=None,
                  interval_s: float | None = None, poll_s: float = 1.0) -> None:
         """팩토리는 봇(RecordingCog)과 같다. 기본은 환경 변수다. poll_s 는 깨우기와 종료 신호를 확인하는 간격이다."""
+        extract_path()      # MM_EXTRACT_PATH 가 모르는 값이면 시작할 때 멈춘다. 봇과 같다
         self.recordings_dir = recordings_dir
         self.transcripts_dir = transcripts_dir
         self._stt_factory = stt_factory or backend_from_env

@@ -469,3 +469,28 @@ async def test_report_says_how_many_units_a_partial_meeting_is_missing(tmp_path)
               "partial": True, "missing_units": 1}
     await cog._report(channel, "77_500", result)
     assert any("빠진 구간 1개" in t for t, _ in channel.sent)
+
+
+# ── 판단 경로(MM_EXTRACT_PATH=judge). 추출기만 바뀌고 명령과 흐름은 같다 ─────────────────────────────
+
+def _judge_item(title, **over):
+    base = {"action": "create", "target_task_id": None, "category": "decision", "task_title": title, "due_date": None,
+            "status": None, "assignee_type": "first", "assignee_raw": None, "doc_text": f"{title}을 민수가 하기로 함",
+            "evidence_quote": "제가 할게요.", "evidence_speaker": "1", "evidence_at_ms": 0}
+    base.update(over)
+    return base
+
+
+def _judge_extractor(items, failures=()):
+    from capture.judge_path import JudgeOutput
+
+    return lambda transcript, names, today: JudgeOutput(items=list(items), failures=list(failures))
+
+
+async def _record_and_stop(cog, ctx):
+    await _run(A.RecordingCog.record, cog, ctx)
+    rec = cog._active[GUILD_ID]
+    rec.sink.on_samples(1, _tone(2000), 0)
+    await _run(A.RecordingCog.stop, cog, ctx)
+    await asyncio.wait_for(rec.done.wait(), 20)
+    return rec
