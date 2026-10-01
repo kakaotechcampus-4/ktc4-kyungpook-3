@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, UploadFile, File, Form
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -101,7 +101,14 @@ def list_workspaces(
     if not workspace_ids:
         return success(WorkspaceListResponse(items=[], total=0).model_dump(mode="json"))
         
-    workspaces = db.query(Workspace).filter(Workspace.workspace_id.in_(workspace_ids)).order_by(Workspace.created_at.desc()).all()
+    # 온보딩 단계를 워크스페이스마다 따로 읽지 않고 한 번에 가져온다
+    workspaces = (
+        db.query(Workspace)
+        .options(selectinload(Workspace.onboarding_steps))
+        .filter(Workspace.workspace_id.in_(workspace_ids))
+        .order_by(Workspace.created_at.desc())
+        .all()
+    )
     
     member_by_ws = {m.workspace_id: m for m in members}
     items = [_build_workspace_response(ws, member_by_ws.get(ws.workspace_id)) for ws in workspaces]

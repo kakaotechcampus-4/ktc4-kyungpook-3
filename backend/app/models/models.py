@@ -205,9 +205,8 @@ class Workspace(Base):
     integrations: Mapped[list["Integration"]] = relationship(
         back_populates="workspace", cascade="all, delete-orphan"
     )
-    # 목록 API가 워크스페이스마다 따로 조회하지 않도록 한 번에 읽는다
     onboarding_steps: Mapped[list["WorkspaceOnboardingStepState"]] = relationship(
-        back_populates="workspace", cascade="all, delete-orphan", lazy="selectin"
+        back_populates="workspace", cascade="all, delete-orphan"
     )
 
 
