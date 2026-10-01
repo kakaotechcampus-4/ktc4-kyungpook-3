@@ -19,6 +19,10 @@ router = APIRouter(
     prefix="/meetings", tags=["meetings"], dependencies=[Depends(require_service_token)]
 )
 
+# INSERT 한 문장에 넣는 행 수. 한 행이 바인드 변수 9개라, 전부 한 번에 넣으면 긴 회의에서
+# DB의 바인드 변수 한도(SQLite 32766, PostgreSQL 65535)를 넘는다.
+INSERT_BATCH_SIZE = 1000
+
 
 def _to_ms(seconds: float) -> int:
     return int(round(seconds * 1000))
@@ -36,13 +40,16 @@ def _insert_skipping_existing(db: Session, rows: list[dict]) -> int:
     넣은 행 수는 rowcount 대신 RETURNING으로 센다. PostgreSQL에서는 여러 행 INSERT의 rowcount가 -1로 온다.
     """
     insert = pg_insert if db.get_bind().dialect.name == "postgresql" else sqlite_insert
-    stmt = (
-        insert(Source)
-        .values(rows)
-        .on_conflict_do_nothing(index_elements=["meeting_id", "seq"])
-        .returning(Source.source_id)
-    )
-    return len(db.execute(stmt).all())
+    inserted = 0
+    for start in range(0, len(rows), INSERT_BATCH_SIZE):
+        stmt = (
+            insert(Source)
+            .values(rows[start:start + INSERT_BATCH_SIZE])
+            .on_conflict_do_nothing(index_elements=["meeting_id", "seq"])
+            .returning(Source.source_id)
+        )
+        inserted += len(db.execute(stmt).all())
+    return inserted
 
 
 @router.post(
@@ -59,18 +66,28 @@ def create_sources(
 
     done 회의도 받는다. 봇이 추출 결과를 다시 보내기 전에 전사를 한 번 더 올려도 깨지지 않게 하려는 것이다.
     """
-    meeting = db.get(Meeting, meeting_id)
+    # 회의 행을 커밋까지 잠근다. 같은 회의로 동시에 온 요청은 차례로 처리되어 duration_ms를 서로
+    # 덮어쓰지 않고, 상태를 확인한 뒤 PATCH /fail이 끼어들어 failed 회의에 발화가 저장되지도 않는다.
+    meeting = db.execute(
+        select(Meeting)
+        .where(Meeting.meeting_id == meeting_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    ).scalar_one_or_none()
     if meeting is None:
         raise AppError(ErrorCode.MEETING_NOT_FOUND, details={"meeting_id": meeting_id})
     if meeting.status == MeetingStatus.FAILED:
+        # MEETING_ALREADY_ENDED가 아니다. 봇은 그 코드를 "이미 처리됨"으로 보고 넘어가는데,
+        # 여기서는 발화가 저장되지 않았으니 새 회의로 다시 올려야 한다.
         raise AppError(
-            ErrorCode.MEETING_ALREADY_ENDED,
+            ErrorCode.MEETING_FAILED,
             details={"meeting_id": meeting_id, "status": meeting.status},
         )
 
     member_ids = _member_ids_by_speaker(
         db, meeting.workspace_id, {seg.speaker for seg in payload.segments if seg.speaker}
     )
+    # seq 순으로 넣는다. 겹치는 seq를 담은 요청들이 같은 행을 다른 순서로 잡아 서로 기다리지 않게 한다.
     rows = [
         {
             "meeting_id": meeting_id,
@@ -81,7 +98,7 @@ def create_sources(
             "end_ms": _to_ms(seg.end),
             "text": seg.text,
         }
-        for seg in payload.segments
+        for seg in sorted(payload.segments, key=lambda s: s.seq)
     ]
     inserted = _insert_skipping_existing(db, rows) if rows else 0
     # 이번 요청이 아니라 저장된 발화 전체로 센다. 나눠 보내도 맞고, 재전송으로 줄어들지 않는다.

@@ -1,7 +1,12 @@
 from collections import Counter
 from typing import Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+# 회의 하나는 하루를 넘지 않는다. 이보다 큰 값은 잘못 들어온 값이다.
+MAX_SECONDS = 24 * 60 * 60
+# source.seq, start_ms, end_ms는 PostgreSQL integer(int4) 컬럼이다
+INT4_MAX = 2**31 - 1
 
 
 class TranscriptSegmentIn(BaseModel):
@@ -10,10 +15,20 @@ class TranscriptSegmentIn(BaseModel):
     speaker: str | None = Field(
         None, max_length=64, description="발화한 사람의 Discord uid. 모르면 null"
     )
-    start: float = Field(..., ge=0, description="발화 시작(초)")
-    end: float = Field(..., ge=0, description="발화 끝(초)")
+    start: float = Field(..., ge=0, le=MAX_SECONDS, allow_inf_nan=False, description="발화 시작(초)")
+    end: float = Field(..., ge=0, le=MAX_SECONDS, allow_inf_nan=False, description="발화 끝(초)")
     text: str
-    seq: int = Field(..., ge=0, description="회의 전체에서의 발화 순번. 사이가 비어도 된다")
+    seq: int = Field(
+        ..., ge=0, le=INT4_MAX, description="회의 전체에서의 발화 순번. 사이가 비어도 된다"
+    )
+
+    @field_validator("speaker", mode="before")
+    @classmethod
+    def _blank_speaker_is_unknown(cls, value: object) -> object:
+        # 화자를 모르는 발화를 null 하나로만 저장한다
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
 
     @model_validator(mode="after")
     def _end_not_before_start(self) -> "TranscriptSegmentIn":

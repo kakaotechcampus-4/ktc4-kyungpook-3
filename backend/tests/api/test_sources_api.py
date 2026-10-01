@@ -6,7 +6,7 @@ import os
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, select, text
+from sqlalchemy import create_engine, event, select, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -14,6 +14,7 @@ from app.api import sources as sources_api
 from app.core.database import Base, get_db
 from app.main import app
 from app.models import Meeting, MeetingStatus, Member, Source, Workspace
+from app.schemas.source import MAX_SECONDS
 
 TOKEN = "test-service-token"
 HEADERS = {"X-Service-Token": TOKEN}
@@ -260,14 +261,73 @@ def test_duplicated_seq_in_one_request_is_400(client, db, meeting):
         _seg(-1),
         _seg(0, speaker="x" * 65),
         {"speaker": "uid_a", "start": 0.0, "end": 1.0, "text": "seq 없음"},
+        # int4 컬럼을 넘는 값은 저장할 때 500이 나므로 받을 때 막는다
+        _seg(2**31),
+        _seg(0, start=0.0, end=MAX_SECONDS + 1),
     ],
-    ids=["end-before-start", "negative-seq", "speaker-too-long", "missing-seq"],
+    ids=["end-before-start", "negative-seq", "speaker-too-long", "missing-seq", "seq-over-int4", "end-over-a-day"],
 )
 def test_invalid_segment_is_400(client, db, meeting, segment):
     r = _post(client, meeting.meeting_id, [segment])
 
     assert r.status_code == 400
     assert r.json()["error"]["code"] == "INVALID_REQUEST"
+
+
+@pytest.mark.parametrize("value", ["Infinity", "NaN"])
+def test_non_finite_time_is_400(client, db, meeting, value):
+    # 파이썬 json은 Infinity·NaN을 읽는다. 그대로 두면 ms로 바꿀 때 500이 난다
+    body = (
+        '{"source": "meeting", "segments": '
+        f'[{{"speaker": "uid_a", "start": 0, "end": {value}, "text": "말", "seq": 0}}]}}'
+    )
+    r = client.post(
+        f"/api/v1/meetings/{meeting.meeting_id}/sources",
+        content=body,
+        headers={**HEADERS, "Content-Type": "application/json"},
+    )
+
+    assert r.status_code == 400
+    assert r.json()["error"]["code"] == "INVALID_REQUEST"
+    assert _sources(db, meeting.meeting_id) == []
+
+
+@pytest.mark.parametrize("blank", ["", "  "])
+def test_blank_speaker_is_saved_as_null(client, db, meeting, blank):
+    _post(client, meeting.meeting_id, [_seg(0, speaker=blank)])
+
+    [row] = _sources(db, meeting.meeting_id)
+    assert (row.speaker_discord_user_id, row.member_id) == (None, None)
+
+
+def test_long_transcript_is_saved_in_batches(client, db, meeting):
+    # 한 문장에 다 넣으면 SQLite는 약 3600행, PostgreSQL은 약 7300행에서 바인드 변수 한도를 넘는다
+    count = 8000
+    segments = [_seg(seq, start=seq * 0.5, end=seq * 0.5 + 0.4) for seq in reversed(range(count))]
+
+    r = _post(client, meeting.meeting_id, segments)
+
+    assert r.status_code == 201
+    assert r.json()["data"]["inserted"] == count
+    assert r.json()["data"]["duration_ms"] == round(((count - 1) * 0.5 + 0.4) * 1000)
+    assert len(_sources(db, meeting.meeting_id)) == count
+
+
+def test_locks_meeting_row_on_postgresql(client, db, meeting):
+    if db.get_bind().dialect.name != "postgresql":
+        pytest.skip("SQLite는 FOR UPDATE를 쓰지 않는다")
+    statements: list[str] = []
+
+    def listener(conn, cursor, statement, *args):
+        statements.append(statement)
+
+    event.listen(db.get_bind(), "before_cursor_execute", listener)
+    try:
+        _post(client, meeting.meeting_id, [_seg(0)])
+    finally:
+        event.remove(db.get_bind(), "before_cursor_execute", listener)
+
+    assert any("FROM meeting" in s and "FOR UPDATE" in s for s in statements)
 
 
 def test_chat_transcript_is_400(client, db, meeting):
@@ -294,8 +354,10 @@ def test_failed_meeting_is_409(client, db, meeting):
     r = _post(client, meeting.meeting_id, [_seg(0)])
 
     assert r.status_code == 409
-    assert r.json()["error"]["code"] == "MEETING_ALREADY_ENDED"
+    # 봇이 "이미 처리됨"으로 넘기는 MEETING_ALREADY_ENDED와 구분한다
+    assert r.json()["error"]["code"] == "MEETING_FAILED"
     assert r.json()["error"]["details"]["status"] == "failed"
+    assert _sources(db, meeting.meeting_id) == []
 
 
 @pytest.mark.parametrize(
