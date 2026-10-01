@@ -1,5 +1,5 @@
 import json
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select, func, update
@@ -58,8 +58,43 @@ def _get_linkable_extraction_item(
     return ext_item
 
 
-def _apply_approval(db: Session, approval: ApprovalRequest) -> None:
-    """승인된 요청을 실제 Task 생성/수정으로 반영한다."""
+def _comparable(value: object) -> object:
+    """task 필드 값을 payload에 저장된 모양(날짜는 ISO 문자열)으로 맞춘다."""
+    return value.isoformat() if isinstance(value, date) else value
+
+
+def _find_conflicts(task: Task, proposed: dict[str, object], base_values: object) -> list[dict]:
+    """제안 뒤에 같은 필드가 바뀌었으면 그 필드를 돌려준다.
+
+    지금 값이 제안할 때 비교한 값(base_values)과 다르면 충돌이다. 다만 지금 값이 이미 제안 값과 같으면
+    덮어써도 잃는 것이 없으므로 충돌로 보지 않는다. base_values가 없는 요청(이 기능 전에 만들어진 요청,
+    수동 생성)과 base_values에 없는 필드는 비교할 기준이 없어 확인하지 않는다.
+    """
+    if not isinstance(base_values, dict):
+        return []
+    conflicts = []
+    for field, proposed_value in proposed.items():
+        if field not in base_values:
+            continue
+        current = _comparable(getattr(task, field))
+        if current != base_values[field] and current != proposed_value:
+            conflicts.append({
+                "field": field,
+                "base": base_values[field],
+                "current": current,
+                "proposed": proposed_value,
+            })
+    return conflicts
+
+
+def _apply_approval(
+    db: Session, approval: ApprovalRequest, *, confirm_task_version: int | None = None
+) -> None:
+    """승인된 요청을 실제 Task 생성/수정으로 반영한다.
+
+    task_update는 제안 뒤에 같은 필드가 바뀌었으면 반영하지 않고 APPROVAL_CONFLICT를 낸다.
+    PM이 그 충돌을 본 task 버전(confirm_task_version)을 보내면, task가 그 버전 그대로일 때만 덮어쓴다.
+    """
     payload = json.loads(approval.payload)
 
     if approval.type == str(ApprovalType.TASK_CREATE):
@@ -96,7 +131,13 @@ def _apply_approval(db: Session, approval: ApprovalRequest) -> None:
                 message="task_update 승인 요청에 related_task_id가 없습니다.",
                 details={"approval_id": approval.approval_id},
             )
-        task = db.get(Task, approval.related_task_id)
+        # 확인과 반영 사이에 PM의 직접 수정이 끼어들지 않도록 task 행을 커밋까지 잠근다.
+        task = db.execute(
+            select(Task)
+            .where(Task.task_id == approval.related_task_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        ).scalar_one_or_none()
         if task is None:
             raise AppError(
                 ErrorCode.TASK_NOT_FOUND, details={"task_id": approval.related_task_id}
@@ -111,6 +152,18 @@ def _apply_approval(db: Session, approval: ApprovalRequest) -> None:
                 },
             )
         updates = {k: v for k, v in payload.items() if k in _TASK_UPDATE_FIELDS}
+        conflicts = _find_conflicts(task, updates, payload.get("base_values"))
+        # 확인한 뒤에 또 바뀌었으면 PM이 보지 못한 값이라 다시 확인받는다
+        if conflicts and confirm_task_version != task.version:
+            raise AppError(
+                ErrorCode.APPROVAL_CONFLICT,
+                details={
+                    "approval_id": approval.approval_id,
+                    "task_id": task.task_id,
+                    "task_version": task.version,
+                    "conflicts": conflicts,
+                },
+            )
         if "due_date" in updates:
             updates["due_date"] = parse_date(updates["due_date"], field="due_date")
         apply_task_updates(
@@ -263,7 +316,12 @@ def resolve_approval(
     approval = db.get(ApprovalRequest, approval_id)
 
     if payload.status == ApprovalStatus.APPROVED:
-        _apply_approval(db, approval)
+        try:
+            _apply_approval(db, approval, confirm_task_version=payload.confirm_task_version)
+        except AppError:
+            # 반영하지 못했으면 승인 처리도 되돌려 pending으로 남긴다. 충돌을 확인한 PM이 다시 처리할 수 있다
+            db.rollback()
+            raise
 
     db.commit()
     db.refresh(approval)
