@@ -5,7 +5,7 @@
 기존 워크스페이스 중 onboarding_completed가 true인 곳만 네 단계를 completed로 채운다.
 
 Revision ID: c4f19a2d7e83
-Revises: b5d8f03a6c41
+Revises: c4f2a8e61b93
 Create Date: 2026-10-01 12:00:00.000000
 
 """
@@ -17,7 +17,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = 'c4f19a2d7e83'
-down_revision: Union[str, Sequence[str], None] = 'b5d8f03a6c41'
+down_revision: Union[str, Sequence[str], None] = 'c4f2a8e61b93'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
