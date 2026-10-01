@@ -1,7 +1,7 @@
 from collections import Counter
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, StringConstraints, field_validator, model_validator
 
 # 회의 하나는 하루를 넘지 않는다. 이보다 큰 값은 잘못 들어온 값이다.
 MAX_SECONDS = 24 * 60 * 60
@@ -44,6 +44,14 @@ class TranscriptCreateRequest(BaseModel):
         "meeting", description="회의 발화만 받는다. chat 전사는 이 API로 받지 않는다"
     )
     segments: list[TranscriptSegmentIn]
+    speaker_names: (
+        dict[Annotated[str, StringConstraints(max_length=64)], Annotated[str, StringConstraints(max_length=100)]]
+        | None
+    ) = Field(
+        None,
+        description="{ 화자 Discord uid : 디스코드 표시 이름 }. 팀원이 아닌 화자를 이름으로 보여 줄 때 쓴다. "
+        "같은 seq는 다시 보내도 건너뛰므로 처음 보낼 때 같이 보낸다",
+    )
 
     @model_validator(mode="after")
     def _seq_unique(self) -> "TranscriptCreateRequest":

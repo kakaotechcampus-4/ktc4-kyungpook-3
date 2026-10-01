@@ -19,7 +19,7 @@ router = APIRouter(
     prefix="/meetings", tags=["meetings"], dependencies=[Depends(require_service_token)]
 )
 
-# INSERT 한 문장에 넣는 행 수. 한 행이 바인드 변수 9개라, 전부 한 번에 넣으면 긴 회의에서
+# INSERT 한 문장에 넣는 행 수. 한 행이 바인드 변수 10개라, 전부 한 번에 넣으면 긴 회의에서
 # DB의 바인드 변수 한도(SQLite 32766, PostgreSQL 65535)를 넘는다.
 INSERT_BATCH_SIZE = 1000
 
@@ -31,6 +31,14 @@ def _to_ms(seconds: float) -> int:
 def _member_ids_by_speaker(db: Session, workspace_id: str, speakers: set[str]) -> dict[str, str | None]:
     """화자 Discord uid → 이 워크스페이스 팀원 ID. 한 회의에 화자는 몇 명뿐이라 화자마다 한 번만 찾는다."""
     return {uid: resolve_speaker(db, workspace_id, uid).member_id for uid in speakers}
+
+
+def _speaker_name(speaker_names: dict[str, str] | None, uid: str | None) -> str | None:
+    """화자 uid의 표시 이름. 봇은 이름을 못 찾으면 uid를 이름 자리에 넣으므로 그 값은 버린다."""
+    if uid is None or not speaker_names:
+        return None
+    name = (speaker_names.get(uid) or "").strip()
+    return name if name and name != uid else None
 
 
 def _insert_skipping_existing(db: Session, rows: list[dict]) -> int:
@@ -93,6 +101,7 @@ def create_sources(
             "meeting_id": meeting_id,
             "seq": seg.seq,
             "speaker_discord_user_id": seg.speaker,
+            "speaker_name": _speaker_name(payload.speaker_names, seg.speaker),
             "member_id": member_ids.get(seg.speaker) if seg.speaker else None,
             "start_ms": _to_ms(seg.start),
             "end_ms": _to_ms(seg.end),

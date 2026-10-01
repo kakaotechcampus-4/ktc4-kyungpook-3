@@ -201,8 +201,8 @@ def get_meeting_minutes(
             "at_ms": src.start_ms,
             "speaker_member_id": src.member_id,
             "speaker_display_name": display_name,
-            # 팀원이 아니면 FE가 이름 대신 보여 주는 값이다. BE에는 디스코드 이름이 없어 고유한 uid를 쓴다
-            "speaker_fallback": src.speaker_discord_user_id or "Unknown",
+            # 팀원이 아니면 FE가 이름 대신 보여 주는 값이다. 디스코드 표시 이름, 없으면 uid 순으로 쓴다
+            "speaker_fallback": src.speaker_name or src.speaker_discord_user_id or "Unknown",
             "text": src.text,
         }
         for src, display_name in lines

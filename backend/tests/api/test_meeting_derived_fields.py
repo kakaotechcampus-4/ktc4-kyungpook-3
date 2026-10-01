@@ -119,23 +119,31 @@ def test_minutes_transcript_lists_sources_in_seq_order_without_extraction(client
     ]
 
 
-def test_minutes_transcript_falls_back_to_discord_uid(client, db, seed):
+def test_minutes_transcript_falls_back_to_speaker_name_then_uid(client, db, seed):
     meeting = Meeting(workspace_id=seed["ws"], status="done")
     db.add(meeting)
     db.flush()
-    speakers = [("uid_bob", seed["bob"]), ("uid_guest", None), (None, None)]
-    for seq, (uid, member_id) in enumerate(speakers):
+    # (uid, 디스코드 표시 이름, 팀원)
+    speakers = [
+        ("uid_bob", "밥", seed["bob"]),
+        ("uid_guest", "손님", None),
+        ("uid_nameless", None, None),
+        (None, None, None),
+    ]
+    for seq, (uid, name, member_id) in enumerate(speakers):
         db.add(Source(
-            meeting_id=meeting.meeting_id, seq=seq, speaker_discord_user_id=uid,
+            meeting_id=meeting.meeting_id, seq=seq, speaker_discord_user_id=uid, speaker_name=name,
             member_id=member_id, start_ms=seq, end_ms=seq + 1, text="말",
         ))
     db.commit()
 
     body = client.get(f"/api/v1/meetings/{meeting.meeting_id}/minutes").json()["data"]
 
+    # FE는 speaker_display_name ?? speaker_fallback으로 보여 주므로 팀원 이름이 먼저다
     assert [(t["speaker_display_name"], t["speaker_fallback"]) for t in body["transcript"]] == [
-        ("bob", "uid_bob"),
-        (None, "uid_guest"),
+        ("bob", "밥"),
+        (None, "손님"),
+        (None, "uid_nameless"),
         (None, "Unknown"),
     ]
 

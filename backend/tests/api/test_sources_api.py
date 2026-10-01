@@ -185,6 +185,48 @@ def test_speaker_not_linked_to_other_workspace_or_deleted_member(client, db, mee
     assert [s.speaker_discord_user_id for s in rows] == ["uid_other", "uid_left", "uid_unknown"]
 
 
+def test_saves_speaker_name_from_speaker_names(client, db, meeting):
+    _post(
+        client, meeting.meeting_id,
+        [_seg(0, speaker="uid_a"), _seg(1, speaker="uid_b"), _seg(2, speaker=None), _seg(3, speaker="uid_a")],
+        speaker_names={"uid_a": "김서연", "uid_b": "  박민수 ", "uid_absent": "안 나온 사람"},
+    )
+
+    rows = _sources(db, meeting.meeting_id)
+    assert [(s.speaker_discord_user_id, s.speaker_name) for s in rows] == [
+        ("uid_a", "김서연"),
+        ("uid_b", "박민수"),
+        (None, None),
+        ("uid_a", "김서연"),
+    ]
+
+
+@pytest.mark.parametrize(
+    "speaker_names",
+    [None, {}, {"uid_other": "다른 사람"}, {"uid_a": ""}, {"uid_a": "   "}, {"uid_a": "uid_a"}],
+    ids=["missing", "empty", "not-listed", "blank", "spaces", "same-as-uid"],
+)
+def test_speaker_name_is_null_without_usable_name(client, db, meeting, speaker_names):
+    # 봇은 이름을 못 찾으면 uid를 이름 자리에 넣는다
+    extra = {} if speaker_names is None else {"speaker_names": speaker_names}
+    _post(client, meeting.meeting_id, [_seg(0, speaker="uid_a")], **extra)
+
+    [row] = _sources(db, meeting.meeting_id)
+    assert row.speaker_name is None
+
+
+@pytest.mark.parametrize(
+    "speaker_names",
+    [{"x" * 65: "이름"}, {"uid_a": "가" * 101}],
+    ids=["uid-too-long", "name-too-long"],
+)
+def test_too_long_speaker_names_is_400(client, db, meeting, speaker_names):
+    r = _post(client, meeting.meeting_id, [_seg(0, speaker="uid_a")], speaker_names=speaker_names)
+
+    assert r.status_code == 400
+    assert r.json()["error"]["code"] == "INVALID_REQUEST"
+
+
 def test_looks_up_each_speaker_once(client, db, meeting, monkeypatch):
     calls: list[str] = []
     real = sources_api.resolve_speaker
