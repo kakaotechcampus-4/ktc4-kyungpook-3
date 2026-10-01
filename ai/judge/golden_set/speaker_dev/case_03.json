@@ -1,0 +1,39 @@
+{
+  "case_id": "case_03",
+  "scenario": "ask_first_thanks",
+  "description": "담당자 모집 질문 → 1인칭 수락 → 감사",
+  "turns": [
+    {
+      "speaker": "하은",
+      "text": "결제 모듈 리팩터링은 누가 맡아줄 수 있을까요?"
+    },
+    {
+      "speaker": "민재",
+      "text": "그거 제가 할게요."
+    },
+    {
+      "speaker": "하은",
+      "text": "오, 감사합니다."
+    }
+  ],
+  "expected": [
+    {
+      "text": "결제 모듈 리팩터링은 누가 맡아줄 수 있을까요?",
+      "should_flag": false,
+      "note": "질문 — 근거에 딸려와도 앵커만 아니면 됨"
+    },
+    {
+      "text": "그거 제가 할게요.",
+      "should_flag": true,
+      "note": "1인칭 수락",
+      "assignee_type": "first",
+      "assignee": "민재"
+    },
+    {
+      "text": "오, 감사합니다.",
+      "should_flag": false,
+      "note": "단순 맞장구"
+    }
+  ],
+  "counts_toward_pass_rate": true
+}

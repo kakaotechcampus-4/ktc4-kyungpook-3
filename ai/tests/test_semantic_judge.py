@@ -86,6 +86,41 @@ def test_scorer_counts_unlabeled_and_duplicate_outputs():
     assert any("같은 앵커로 2건" in m for m in mistakes)
 
 
+def test_speaker_scorer_compares_the_resolved_person_not_the_type():
+    """담당자 채점이 호칭 분류가 아니라 **풀린 사람**을 정답과 비교하는지.
+
+    "제가 맡을게요"(지민) 뒤에 "네, 감사합니다"(하은)가 묶이면 assignee_type=first 는 맞지만
+    BE 는 근거 마지막 줄의 화자(하은)를 담당자로 찾는다. 분류만 보면 정답으로 보인다.
+    """
+    from judge.eval_golden_set import _score_speaker
+
+    case = {
+        "turns": [{"speaker": "지민", "text": "API 명세서는 제가 정리할게요."},
+                  {"speaker": "하은", "text": "네, 감사합니다."}],
+        "expected": [{"text": "API 명세서는 제가 정리할게요.", "should_flag": True, "assignee": "지민"},
+                     {"text": "네, 감사합니다.", "should_flag": False}],
+    }
+    claim, thanks = "API 명세서는 제가 정리할게요.", "네, 감사합니다."
+
+    bundled = JudgeFinding(text="", evidence=[claim, thanks], indices=[0, 1], speaker="하은", assignee_type="first")
+    out = _score_speaker(case, [bundled])
+    assert (len(out["correct"]), len(out["wrong"]), len(out["guard"])) == (0, 1, 1)
+
+    alone = JudgeFinding(text="", evidence=[claim], indices=[0], speaker="지민", assignee_type="first")
+    out = _score_speaker(case, [alone])
+    assert (len(out["correct"]), len(out["wrong"]), len(out["guard"])) == (1, 0, 0)
+
+    # 이름 호칭은 화자가 아니라 원문/해소 이름으로 풀린다. 존칭은 떼고 비교한다
+    by_name = JudgeFinding(text="", evidence=[claim, thanks], indices=[0, 1], speaker="하은",
+                           assignee_type="thirdname", assignee_raw="지민님")
+    assert len(_score_speaker(case, [by_name])["correct"]) == 1
+
+    # 판정 보류와 놓침은 틀린 담당자와 따로 센다
+    held = JudgeFinding(text="", evidence=[claim], indices=[0], speaker="지민", assignee_type=None)
+    assert len(_score_speaker(case, [held])["unresolved"]) == 1
+    assert len(_score_speaker(case, [])["missed"]) == 1
+
+
 def test_scorer_separates_hit_from_anchor():
     """정답 판정(근거 어디에든)과 오탐 판정(앵커일 때만)을 분리하는지.
 

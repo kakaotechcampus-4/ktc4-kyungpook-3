@@ -1,0 +1,41 @@
+{
+  "case_id": "case_04",
+  "scenario": "first_due_question_self_confirm",
+  "description": "1인칭 담당 → 다른 사람이 마감 질문 → 같은 사람이 확인",
+  "turns": [
+    {
+      "speaker": "세영",
+      "text": "배포 스크립트 정리는 제가 할게요."
+    },
+    {
+      "speaker": "하은",
+      "text": "수요일까지 가능할까요?"
+    },
+    {
+      "speaker": "세영",
+      "text": "네, 수요일까지 할게요."
+    }
+  ],
+  "expected": [
+    {
+      "text": "배포 스크립트 정리는 제가 할게요.",
+      "should_flag": true,
+      "note": "1인칭 담당",
+      "assignee_type": "first",
+      "assignee": "세영"
+    },
+    {
+      "text": "수요일까지 가능할까요?",
+      "should_flag": false,
+      "note": "질문 — 확인 발화와 묶이면 근거에 들어와도 됨"
+    },
+    {
+      "text": "네, 수요일까지 할게요.",
+      "should_flag": true,
+      "note": "1인칭 마감 확정",
+      "assignee_type": "first",
+      "assignee": "세영"
+    }
+  ],
+  "counts_toward_pass_rate": true
+}

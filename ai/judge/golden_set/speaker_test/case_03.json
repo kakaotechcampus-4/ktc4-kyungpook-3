@@ -1,0 +1,30 @@
+{
+  "case_id": "case_03",
+  "scenario": "conditional_first_then_reply",
+  "description": "조건부 1인칭 약속 뒤 다른 사람의 응답",
+  "turns": [
+    {
+      "speaker": "도윤",
+      "text": "시간 되면 캐시 적용도 제가 해볼게요."
+    },
+    {
+      "speaker": "하은",
+      "text": "무리하지는 마세요."
+    }
+  ],
+  "expected": [
+    {
+      "text": "시간 되면 캐시 적용도 제가 해볼게요.",
+      "should_flag": true,
+      "note": "조건부 약속 — 포함 원칙",
+      "assignee_type": "first",
+      "assignee": "도윤"
+    },
+    {
+      "text": "무리하지는 마세요.",
+      "should_flag": false,
+      "note": "단순 응답"
+    }
+  ],
+  "counts_toward_pass_rate": true
+}

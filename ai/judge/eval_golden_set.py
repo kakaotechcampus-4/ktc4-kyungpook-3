@@ -8,27 +8,39 @@ pytest 스위트엔 안 넣는다 — 실제 Luna API를 호출해서 비용이 
 agreement 등)에서 Luna가 실제로 더 나은지 확인하는 게 이 스크립트의 핵심 목적이다.
 
 실행 (ai/ 디렉토리 안에서 — TERRA_API_KEY/LUNA_API_KEY 필요):
-    .venv/bin/python judge/eval_golden_set.py
+    .venv/bin/python -m judge.eval_golden_set
+    .venv/bin/python -m judge.eval_golden_set --groups speaker_dev,speaker_test --runs 3 --out result.json
+
+LLM 은 temperature 를 바꿀 수 없어(기본 1 고정) 실행마다 결과가 달라진다. 결론을 내기 전에는
+--runs 로 여러 번 돌려 실행별 수치를 같이 본다. 호출 실패(None)는 건너뛰지 않고 그 케이스를
+전부 놓친 것으로 채점하고, 실패 횟수를 따로 적는다.
 """
 
 from __future__ import annotations
 
+import argparse
+import hashlib
 import json
 from collections import Counter
+from datetime import datetime
 from pathlib import Path
 
-from judge.semantic_judge import extract_findings_llm, extract_findings_rules
+from judge import semantic_judge
+from judge.semantic_judge import extract_findings_llm, extract_findings_rules, split_sentences
 from llm import get_llm
 from shared.schemas import JudgeFinding, Transcript, TranscriptSegment
 
 GOLDEN_SET_DIR = Path(__file__).resolve().parent / "golden_set"
 GROUPS = ("short_sentences", "long_sentences")
+# 1인칭 담당자 화자 검증용. dev 는 프롬프트를 고치며 보는 세트, test 는 고친 뒤 마지막에 한 번만
+# 보는 세트다 — 프롬프트를 맞춘 데이터로 성능을 결론 내지 않으려고 나눴다(README 참고).
+SPEAKER_GROUPS = ("speaker_dev", "speaker_test")
 
 
-def _load_cases() -> list[dict]:
-    """group(short_sentences/long_sentences)별로 나눠서 불러온다. case 안에 _group을 채워둔다."""
+def _load_cases(groups: tuple[str, ...] = GROUPS) -> list[dict]:
+    """group 별로 나눠서 불러온다. case 안에 _group을 채워둔다."""
     cases = []
-    for group in GROUPS:
+    for group in groups:
         for p in sorted((GOLDEN_SET_DIR / group).glob("case_*.json")):
             case = json.loads(p.read_text(encoding="utf-8"))
             case["_group"] = group
@@ -71,6 +83,71 @@ def _score_assignee(case: dict, types: dict[str, str | None]) -> tuple[int, int,
         else:
             mistakes.append(f'"{exp["text"]}" — assignee_type 기대={want} 실제={got}')
     return correct, total, mistakes
+
+
+_HONORIFICS = ("님", "씨")
+
+
+def _resolved_person(finding: JudgeFinding) -> str | None:
+    """BE 가 이 finding 의 담당자를 누구로 풀게 되는지를 흉내 낸다.
+
+    first 면 BE 는 근거 마지막 줄의 화자(evidence_speaker)로 찾고, 그 밖의 호칭은 원문 호칭이나
+    문맥으로 푼 이름으로 찾는다. 판정 보류(None)·group·none 은 담당자가 정해지지 않는다.
+    """
+    if finding.assignee_type == "first":
+        return finding.speaker
+    name = finding.assignee_resolved or finding.assignee_raw
+    if not name:
+        return None
+    name = name.strip()
+    for h in _HONORIFICS:
+        name = name.removesuffix(h)
+    return name or None
+
+
+def _sentence_speakers(case: dict) -> list[str]:
+    """전사록 문장 순서(_flatten 과 같은 순서)의 화자 목록. finding.indices 가 이 순서를 가리킨다."""
+    return [t["speaker"] for t in case["turns"] for _ in split_sentences(t["text"])]
+
+
+def _score_speaker(case: dict, findings: list[JudgeFinding]) -> dict[str, list[str]]:
+    """`assignee` 라벨이 붙은 문장마다 담당자가 그 사람으로 풀리는지 분류한다.
+
+    assignee_type 분류(_score_assignee)가 맞아도 BE 가 엉뚱한 사람을 찾을 수 있다 — first 는
+    근거 **마지막 줄**의 화자로 풀리는데, "제가 맡을게요" 뒤에 다른 사람의 맞장구가 묶이면 그
+    사람이 담당자가 된다. 그래서 분류가 아니라 **풀린 사람**을 정답과 비교한다.
+
+      correct    — 정답 사람으로 풀림
+      wrong      — 다른 사람으로 풀림 (가장 나쁜 결과: 틀린 담당자가 확정된다)
+      unresolved — 담당자가 정해지지 않음 (PM 이 정하게 된다)
+      missed     — 그 문장을 근거로 든 finding 이 없음 (통과율 쪽에서도 놓침)
+
+    guard 는 "1인칭인데 근거 화자가 둘 이상"인 finding 수다. 이걸 PM 확인으로 돌리는 안전장치를
+    넣는다면 몇 건이 걸리는지(맞은 것까지 포함해) 보려고 같이 센다.
+    """
+    speakers = _sentence_speakers(case)
+    out: dict[str, list[str]] = {"correct": [], "wrong": [], "unresolved": [], "missed": [], "guard": []}
+    for exp in case["expected"]:
+        want = exp.get("assignee")
+        if want is None:
+            continue
+        covering = [f for f in findings if exp["text"] in f.evidence]
+        if not covering:
+            out["missed"].append(f'"{exp["text"]}" — 근거로 든 finding 없음 (정답 {want})')
+            continue
+        # 그 문장이 앵커인 finding 을 먼저 본다 — 앵커가 아니면 다른 결정에 딸려 온 것일 수 있다
+        f = next((f for f in covering if f.evidence[-1] == exp["text"]), covering[0])
+        got = _resolved_person(f)
+        where = f'"{exp["text"]}" — 정답 {want}, 결과 {got} (type={f.assignee_type}, 앵커 "{f.evidence[-1]}")'
+        if got is None:
+            out["unresolved"].append(where)
+        elif got == want:
+            out["correct"].append(where)
+        else:
+            out["wrong"].append(where)
+        if f.assignee_type == "first" and len({speakers[i] for i in f.indices if i < len(speakers)}) > 1:
+            out["guard"].append(f"{'맞음' if got == want else '틀림'}: {where}")
+    return out
 
 
 def _spans(findings: list[JudgeFinding]) -> list[list[str]]:
@@ -133,67 +210,115 @@ def _score(case: dict, spans: list[list[str]]) -> tuple[int, int, list[str]]:
     return correct, total, mistakes
 
 
-def main() -> None:
-    client = get_llm("luna")
-    if client.name == "off":
-        print("LUNA_API_KEY(또는 TERRA_API_KEY) 가 없습니다 — .env 에 채워 주세요.")
-        return
+def _prompt_version() -> str:
+    """1단계 프롬프트의 지문. 결과를 어느 프롬프트로 쟀는지 남기려고 쓴다."""
+    text = semantic_judge._LUNA_SYSTEM_PROMPT + semantic_judge._luna_user_prompt("")
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
 
-    cases = _load_cases()
-    totals: dict[str, dict[str, int]] = {
-        g: {"r_c": 0, "r_t": 0, "l_c": 0, "l_t": 0, "a_c": 0, "a_t": 0}
-        for g in GROUPS
-    }
 
+def _run_once(cases: list[dict], client, *, verbose: bool) -> dict:
+    """케이스 전체를 한 번 돈다. 그룹별 집계와 케이스별 오답을 돌려준다."""
+    totals: dict[str, dict] = {}
     for case in cases:
         group = case["_group"]
+        g = totals.setdefault(group, {"r_c": 0, "r_t": 0, "l_c": 0, "l_t": 0, "a_c": 0, "a_t": 0,
+                                      "api_failures": 0, "cases": 0,
+                                      "speaker": {k: 0 for k in ("correct", "wrong", "unresolved", "missed", "guard")},
+                                      "mistakes": []})
         transcript = _build_transcript(case)
         counts = case.get("counts_toward_pass_rate", True)
 
         rules_flagged = _spans(extract_findings_rules(transcript))
         llm_result = extract_findings_llm(transcript, client)
-        llm_flagged = _spans(llm_result) if llm_result is not None else []
+        if llm_result is None:
+            g["api_failures"] += 1  # 건너뛰지 않는다 — 아래에서 전부 놓친 것으로 채점된다
+        findings = llm_result or []
+        llm_flagged = _spans(findings)
 
         r_correct, r_total, r_mistakes = _score(case, rules_flagged)
         l_correct, l_total, l_mistakes = _score(case, llm_flagged)
-        llm_types = _assignee_by_text(llm_result) if llm_result is not None else {}
-        a_correct, a_total, a_mistakes = _score_assignee(case, llm_types)
+        a_correct, a_total, a_mistakes = _score_assignee(case, _assignee_by_text(findings))
+        sp = _score_speaker(case, findings)
 
-        tag = "" if counts else " (통과율 제외)"
-        print(f"\n[{group}/{case['case_id']}] {case['description']}{tag}")
-        print(f"  규칙 기반 {r_correct}/{r_total}", *[f"\n    ✗ {m}" for m in r_mistakes])
-        print(f"  Luna     {l_correct}/{l_total}", *[f"\n    ✗ {m}" for m in l_mistakes])
+        where = f"{group}/{case['case_id']}"
+        if llm_result is None:
+            l_mistakes = ["LLM 호출/파싱 실패", *l_mistakes]
+        case_mistakes = [*l_mistakes, *a_mistakes, *(f"담당자 {k}: {m}" for k in ("wrong", "unresolved", "missed") for m in sp[k])]
+        if case_mistakes:
+            g["mistakes"].append({"case": where, "mistakes": case_mistakes})
 
-        if a_total:
-            print(f"  담당자    {a_correct}/{a_total}")
-            for m in a_mistakes:
-                print(f"    ✗ {m}")
+        if verbose:
+            tag = "" if counts else " (통과율 제외)"
+            print(f"\n[{where}] {case['description']}{tag}")
+            print(f"  규칙 기반 {r_correct}/{r_total}", *[f"\n    ✗ {m}" for m in r_mistakes])
+            print(f"  Luna     {l_correct}/{l_total}", *[f"\n    ✗ {m}" for m in l_mistakes])
+            if a_total:
+                print(f"  담당자    {a_correct}/{a_total}", *[f"\n    ✗ {m}" for m in a_mistakes])
+            n = sum(len(sp[k]) for k in ("correct", "wrong", "unresolved", "missed"))
+            if n:
+                print(f"  담당자 해소 {len(sp['correct'])}/{n}",
+                      *[f"\n    ✗ {k}: {m}" for k in ("wrong", "unresolved", "missed") for m in sp[k]])
 
         if counts:
-            totals[group]["r_c"] += r_correct
-            totals[group]["r_t"] += r_total
-            totals[group]["l_c"] += l_correct
-            totals[group]["l_t"] += l_total
-            totals[group]["a_c"] += a_correct
-            totals[group]["a_t"] += a_total
+            g["cases"] += 1
+            for k, v in (("r_c", r_correct), ("r_t", r_total), ("l_c", l_correct), ("l_t", l_total),
+                         ("a_c", a_correct), ("a_t", a_total)):
+                g[k] += v
+            for k in g["speaker"]:
+                g["speaker"][k] += len(sp[k])
+    return totals
 
-    print("\n" + "=" * 60)
-    grand = {"r_c": 0, "r_t": 0, "l_c": 0, "l_t": 0, "a_c": 0, "a_t": 0}
-    for group in GROUPS:
-        g = totals[group]
-        if g["r_t"] == 0:
-            continue
-        print(f"[{group}] 규칙 기반 {g['r_c']}/{g['r_t']} ({g['r_c'] / g['r_t']:.0%})"
-              f" · Luna {g['l_c']}/{g['l_t']} ({g['l_c'] / g['l_t']:.0%})")
-        for k in grand:
-            grand[k] += g[k]
 
-    print("-" * 60)
-    print(f"전체 규칙 기반 정답률: {grand['r_c']}/{grand['r_t']} ({grand['r_c'] / grand['r_t']:.0%})")
-    print(f"전체 Luna 정답률   : {grand['l_c']}/{grand['l_t']} ({grand['l_c'] / grand['l_t']:.0%})")
-    if grand["a_t"]:
-        print(f"담당자 호칭 분류          : {grand['a_c']}/{grand['a_t']} "
-              f"({grand['a_c'] / grand['a_t']:.0%}) — 라벨이 붙은 문장에 한해서만 잼")
+def _pct(c: int, t: int) -> str:
+    return f"{c}/{t} ({c / t:.0%})" if t else "-"
+
+
+def _print_summary(runs: list[dict]) -> None:
+    print("\n" + "=" * 70)
+    groups = list(runs[0])
+    for group in groups:
+        print(f"[{group}]")
+        for i, run in enumerate(runs, 1):
+            g = run[group]
+            sp = g["speaker"]
+            n = sum(sp[k] for k in ("correct", "wrong", "unresolved", "missed"))
+            print(f"  run{i}: Luna {_pct(g['l_c'], g['l_t'])} · 규칙 {_pct(g['r_c'], g['r_t'])}"
+                  f" · 호칭 {_pct(g['a_c'], g['a_t'])} · 담당자 해소 {_pct(sp['correct'], n)}"
+                  f" (틀림 {sp['wrong']} · 보류 {sp['unresolved']} · 놓침 {sp['missed']})"
+                  f" · 안전장치 대상 {sp['guard']} · 호출 실패 {g['api_failures']}/{g['cases']}")
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(description="1단계 골든셋 채점")
+    ap.add_argument("--groups", default=",".join(GROUPS), help="쉼표로 구분한 golden_set 하위 디렉토리")
+    ap.add_argument("--runs", type=int, default=1, help="같은 조건으로 반복할 횟수")
+    ap.add_argument("--out", help="결과를 저장할 JSON 경로")
+    ap.add_argument("--label", default="", help="결과 파일에 남길 설명")
+    args = ap.parse_args()
+
+    client = get_llm("luna")
+    if client.name == "off":
+        print("LUNA_API_KEY(또는 TERRA_API_KEY) 가 없습니다 — .env 에 채워 주세요.")
+        return
+
+    groups = tuple(g for g in args.groups.split(",") if g)
+    cases = _load_cases(groups)
+    runs = [_run_once(cases, client, verbose=(args.runs == 1)) for _ in range(max(1, args.runs))]
+    _print_summary(runs)
+
+    if args.out:
+        meta = {
+            "label": args.label,
+            "at": datetime.now().isoformat(timespec="seconds"),
+            "model": getattr(client, "model", client.name),
+            "prompt_version": _prompt_version(),
+            "groups": list(groups),
+            "runs": len(runs),
+            "cases": len(cases),
+        }
+        Path(args.out).write_text(json.dumps({"meta": meta, "runs": runs}, ensure_ascii=False, indent=2),
+                                  encoding="utf-8")
+        print(f"\n결과 저장: {args.out} (prompt_version={meta['prompt_version']})")
 
 
 if __name__ == "__main__":
