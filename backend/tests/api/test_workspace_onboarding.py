@@ -1,9 +1,13 @@
-"""워크스페이스 온보딩 단계 상태 저장 — 생성 직후 상태, PATCH 반영, 완료 판정, 검증, 권한, 재요청."""
+"""워크스페이스 온보딩 단계 상태 저장 — 생성 직후 상태, PATCH 반영, 완료 판정, 검증, 권한, 재요청.
+
+PATCH가 워크스페이스 행을 FOR UPDATE로 잠그므로, TEST_DATABASE_URL이 있으면 PostgreSQL에서도 돈다.
+"""
+import os
 from datetime import datetime, timedelta, timezone
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, select, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -12,15 +16,34 @@ from app.main import app
 from app.models import Member, Session as SessionModel, User, Workspace, WorkspaceOnboardingStepState
 
 STEPS = ["create_workspace", "connect_discord", "connect_notion", "connect_members"]
+TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
 
 
-@pytest.fixture
-def db():
-    engine = create_engine(
-        "sqlite:///:memory:",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
+def _sqlite_engine():
+    return create_engine(
+        "sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool
     )
+
+
+def _pg_engine():
+    engine = create_engine(TEST_DATABASE_URL)
+    with engine.begin() as conn:
+        conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+    Base.metadata.drop_all(engine)
+    return engine
+
+
+@pytest.fixture(
+    params=[
+        "sqlite",
+        pytest.param(
+            "postgresql",
+            marks=pytest.mark.skipif(not TEST_DATABASE_URL, reason="TEST_DATABASE_URL(PostgreSQL)이 없습니다."),
+        ),
+    ]
+)
+def db(request):
+    engine = _pg_engine() if request.param == "postgresql" else _sqlite_engine()
     Base.metadata.create_all(engine)
     session = sessionmaker(bind=engine)()
 
@@ -33,6 +56,8 @@ def db():
     finally:
         app.dependency_overrides.pop(get_db, None)
         session.close()
+        Base.metadata.drop_all(engine)
+        engine.dispose()
 
 
 def _user_with_session(db, email: str, token: str) -> User:
@@ -50,13 +75,17 @@ def _user_with_session(db, email: str, token: str) -> User:
 
 
 @pytest.fixture
-def client(db):
-    pm = _user_with_session(db, "pm@example.com", "pm-token")
+def pm(db) -> User:
+    user = _user_with_session(db, "pm@example.com", "pm-token")
     _user_with_session(db, "member@example.com", "member-token")
     db.commit()
+    return user
+
+
+@pytest.fixture
+def client(pm):
     c = TestClient(app)
     c.cookies.set("session_token", "pm-token")
-    c.pm = pm
     return c
 
 
@@ -180,12 +209,12 @@ def test_non_pm_member_cannot_update(client, db, workspace_id):
     assert _statuses(_onboarding(client, workspace_id))["connect_discord"] == "pending"
 
 
-def test_workspace_without_rows_reads_defaults(client, db):
+def test_workspace_without_rows_reads_defaults(client, db, pm):
     # 마이그레이션 전에 만들어진 공간처럼 단계 행이 없으면 기본값으로 읽는다
     ws = Workspace(name="B")
     db.add(ws)
     db.flush()
-    db.add(Member(workspace_id=ws.workspace_id, user_id=client.pm.user_id, display_name="pm", role="pm"))
+    db.add(Member(workspace_id=ws.workspace_id, user_id=pm.user_id, display_name="pm", role="pm"))
     db.commit()
 
     onboarding = _onboarding(client, ws.workspace_id)
