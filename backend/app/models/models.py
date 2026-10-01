@@ -63,6 +63,21 @@ class ReviewDecision(StrEnum):
     EDITED = "edited"
 
 
+class OnboardingStep(StrEnum):
+    """워크스페이스 온보딩 단계. 정의 순서가 화면 순서다(FE onboardingSteps.ts와 같다)."""
+
+    CREATE_WORKSPACE = "create_workspace"
+    CONNECT_DISCORD = "connect_discord"
+    CONNECT_NOTION = "connect_notion"
+    CONNECT_MEMBERS = "connect_members"
+
+
+class OnboardingStepStatus(StrEnum):
+    PENDING = "pending"
+    COMPLETED = "completed"
+    SKIPPED = "skipped"
+
+
 class MeetingStatus(StrEnum):
     CREATED = "created"
     RECORDING = "recording"
@@ -183,12 +198,36 @@ class Workspace(Base):
 
     workspace_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     name: Mapped[str] = mapped_column(String(100))
+    # 모든 단계가 pending이 아니면 true. 단계 상태(onboarding_steps)를 바꿀 때 함께 맞춘다.
     onboarding_completed: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
     integrations: Mapped[list["Integration"]] = relationship(
         back_populates="workspace", cascade="all, delete-orphan"
     )
+    onboarding_steps: Mapped[list["WorkspaceOnboardingStepState"]] = relationship(
+        back_populates="workspace", cascade="all, delete-orphan"
+    )
+
+
+class WorkspaceOnboardingStepState(Base):
+    """워크스페이스의 온보딩 단계 하나의 상태.
+
+    행이 없는 단계는 기본값으로 본다. create_workspace는 워크스페이스가 있으니 completed, 나머지는 pending이다.
+    """
+
+    __tablename__ = "workspace_onboarding_step"
+
+    workspace_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("workspace.workspace_id", ondelete="CASCADE"), primary_key=True
+    )
+    step: Mapped[str] = mapped_column(String(32), primary_key=True)
+    status: Mapped[str] = mapped_column(String(16))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, onupdate=_now
+    )
+
+    workspace: Mapped["Workspace"] = relationship(back_populates="onboarding_steps")
 
 
 class Integration(Base):
