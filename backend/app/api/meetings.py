@@ -202,8 +202,7 @@ def get_meeting_minutes(
     ]
 
     summary = None
-    transcript = []
-    
+
     extraction = db.query(Extraction).filter(Extraction.meeting_id == meeting_id).order_by(Extraction.created_at.desc()).first()
     if extraction:
         if extraction.summary:
@@ -211,18 +210,26 @@ def get_meeting_minutes(
                 summary = json.loads(extraction.summary)
             except:
                 pass
-                
-        # 대본 구성 (향후 실제 대본 맵핑 로직 필요, 임시 Mock)
-        transcript = [
-            {
-                "at_ms": 0,
-                "speaker_member_id": None,
-                "speaker_display_name": None,
-                "speaker_fallback": "Speaker 1",
-                "text": "회의 기록입니다. 추후 대본 맵핑 기능이 연결될 예정입니다."
-            }
-        ]
-        
+
+    # 전사본은 추출 결과와 상관없이 저장된 발화를 순서대로 보여 준다
+    lines = db.execute(
+        select(Source, Member.display_name)
+        .outerjoin(Member, Member.member_id == Source.member_id)
+        .where(Source.meeting_id == meeting.meeting_id)
+        .order_by(Source.seq)
+    ).all()
+    transcript = [
+        {
+            "at_ms": src.start_ms,
+            "speaker_member_id": src.member_id,
+            "speaker_display_name": display_name,
+            # 팀원이 아니면 FE가 이름 대신 보여 주는 값이다. BE에는 디스코드 이름이 없어 고유한 uid를 쓴다
+            "speaker_fallback": src.speaker_discord_user_id or "Unknown",
+            "text": src.text,
+        }
+        for src, display_name in lines
+    ]
+
     return success(MeetingMinutesResponse(
         meeting_id=meeting.meeting_id,
         title=meeting.title,
