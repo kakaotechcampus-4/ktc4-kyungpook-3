@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import exists, func, select, update
+from sqlalchemy import exists, select, update
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
@@ -188,22 +188,37 @@ def get_meeting_minutes(
     if not member:
         raise AppError(ErrorCode.FORBIDDEN)
 
-    # 발화 전체를 읽지 않고, 멤버별로 처음 말한 순서만 가져온다
-    rows = db.execute(
-        select(Source.member_id, Member.display_name)
-        .join(Member, Member.member_id == Source.member_id)
+    # 전사본은 추출 결과와 상관없이 저장된 발화를 순서대로 보여 준다.
+    # 참석자도 같은 결과에서 뽑아 발화를 두 번 읽지 않는다.
+    lines = db.execute(
+        select(Source, Member.display_name)
+        .outerjoin(Member, Member.member_id == Source.member_id)
         .where(Source.meeting_id == meeting.meeting_id)
-        .group_by(Source.member_id, Member.display_name)
-        .order_by(func.min(Source.seq))
+        .order_by(Source.seq)
     ).all()
+    transcript = [
+        {
+            "at_ms": src.start_ms,
+            "speaker_member_id": src.member_id,
+            "speaker_display_name": display_name,
+            # 팀원이 아니면 FE가 이름 대신 보여 주는 값이다. 디스코드 표시 이름, 없으면 uid 순으로 쓴다
+            "speaker_fallback": src.speaker_name or src.speaker_discord_user_id or "Unknown",
+            "text": src.text,
+        }
+        for src, display_name in lines
+    ]
+    # 팀원별로 처음 말한 순서
+    first_spoken: dict[str, str] = {}
+    for src, display_name in lines:
+        if src.member_id is not None:
+            first_spoken.setdefault(src.member_id, display_name)
     attendees = [
         {"member_id": member_id, "display_name": display_name}
-        for member_id, display_name in rows
+        for member_id, display_name in first_spoken.items()
     ]
 
     summary = None
-    transcript = []
-    
+
     extraction = db.query(Extraction).filter(Extraction.meeting_id == meeting_id).order_by(Extraction.created_at.desc()).first()
     if extraction:
         if extraction.summary:
@@ -211,18 +226,7 @@ def get_meeting_minutes(
                 summary = json.loads(extraction.summary)
             except:
                 pass
-                
-        # 대본 구성 (향후 실제 대본 맵핑 로직 필요, 임시 Mock)
-        transcript = [
-            {
-                "at_ms": 0,
-                "speaker_member_id": None,
-                "speaker_display_name": None,
-                "speaker_fallback": "Speaker 1",
-                "text": "회의 기록입니다. 추후 대본 맵핑 기능이 연결될 예정입니다."
-            }
-        ]
-        
+
     return success(MeetingMinutesResponse(
         meeting_id=meeting.meeting_id,
         title=meeting.title,

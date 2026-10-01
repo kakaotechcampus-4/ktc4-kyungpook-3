@@ -385,6 +385,8 @@ class Source(Base):
     # 회의 전체에서의 발화 순번. 근거가 발화를 가리키는 안정된 식별자다.
     seq: Mapped[int] = mapped_column(Integer)
     speaker_discord_user_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # 저장할 때의 디스코드 표시 이름. 팀원과 연결되지 않은 화자를 이름으로 보여 줄 때 쓴다
+    speaker_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
     member_id: Mapped[str | None] = mapped_column(
         String(36), ForeignKey("member.member_id", ondelete="SET NULL"), nullable=True, index=True
     )
