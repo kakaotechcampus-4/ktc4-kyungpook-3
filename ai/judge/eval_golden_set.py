@@ -122,6 +122,10 @@ def _score_speaker(case: dict, findings: list[JudgeFinding]) -> dict[str, list[s
       unresolved — 담당자가 정해지지 않음 (PM 이 정하게 된다)
       missed     — 그 문장을 근거로 든 finding 이 없음 (통과율 쪽에서도 놓침)
 
+    그 문장을 근거로 든 finding 이 여럿이면 **전부** 본다. 같은 결정이 [본인 줄] 과 [본인 줄, 맞장구]
+    두 건으로 나오면 BE 에도 두 항목이 가고 뒤의 것은 엉뚱한 사람이 담당자다. 하나라도 다른 사람으로
+    풀리면 wrong 이다. 그렇지 않으면 그 문장이 앵커인 finding 으로 correct/unresolved 를 가른다.
+
     guard 는 "1인칭인데 근거 화자가 둘 이상"인 finding 수다. 이걸 PM 확인으로 돌리는 안전장치를
     넣는다면 몇 건이 걸리는지(맞은 것까지 포함해) 보려고 같이 센다.
     """
@@ -135,18 +139,23 @@ def _score_speaker(case: dict, findings: list[JudgeFinding]) -> dict[str, list[s
         if not covering:
             out["missed"].append(f'"{exp["text"]}" — 근거로 든 finding 없음 (정답 {want})')
             continue
+
+        def where(f: JudgeFinding) -> str:
+            return (f'"{exp["text"]}" — 정답 {want}, 결과 {_resolved_person(f)} '
+                    f'(type={f.assignee_type}, 앵커 "{f.evidence[-1]}")')
+
+        wrong = [f for f in covering if _resolved_person(f) not in (None, want)]
         # 그 문장이 앵커인 finding 을 먼저 본다 — 앵커가 아니면 다른 결정에 딸려 온 것일 수 있다
-        f = next((f for f in covering if f.evidence[-1] == exp["text"]), covering[0])
-        got = _resolved_person(f)
-        where = f'"{exp["text"]}" — 정답 {want}, 결과 {got} (type={f.assignee_type}, 앵커 "{f.evidence[-1]}")'
-        if got is None:
-            out["unresolved"].append(where)
-        elif got == want:
-            out["correct"].append(where)
+        anchored = next((f for f in covering if f.evidence[-1] == exp["text"]), covering[0])
+        if wrong:
+            out["wrong"].append(" / ".join(where(f) for f in wrong))
+        elif _resolved_person(anchored) is None:
+            out["unresolved"].append(where(anchored))
         else:
-            out["wrong"].append(where)
-        if f.assignee_type == "first" and len({speakers[i] for i in f.indices if i < len(speakers)}) > 1:
-            out["guard"].append(f"{'맞음' if got == want else '틀림'}: {where}")
+            out["correct"].append(where(anchored))
+        for f in covering:
+            if f.assignee_type == "first" and len({speakers[i] for i in f.indices if i < len(speakers)}) > 1:
+                out["guard"].append(f"{'맞음' if _resolved_person(f) == want else '틀림'}: {where(f)}")
     return out
 
 

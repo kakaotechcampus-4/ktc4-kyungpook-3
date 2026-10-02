@@ -115,6 +115,11 @@ def test_speaker_scorer_compares_the_resolved_person_not_the_type():
                            assignee_type="thirdname", assignee_raw="지민님")
     assert len(_score_speaker(case, [by_name])["correct"]) == 1
 
+    # 같은 결정이 두 건으로 나오고 하나만 틀려도 wrong 이다 — BE 에는 두 항목이 다 간다.
+    # 앵커가 맞는 쪽만 보면 틀린 담당자를 놓친다(#137 CodeRabbit)
+    out = _score_speaker(case, [alone, bundled])
+    assert (len(out["correct"]), len(out["wrong"])) == (0, 1)
+
     # 판정 보류와 놓침은 틀린 담당자와 따로 센다
     held = JudgeFinding(text="", evidence=[claim], indices=[0], speaker="지민", assignee_type=None)
     assert len(_score_speaker(case, [held])["unresolved"]) == 1
