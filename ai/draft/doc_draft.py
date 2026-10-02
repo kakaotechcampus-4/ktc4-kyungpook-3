@@ -29,6 +29,7 @@ class DraftUnavailableError(RuntimeError):
 _CATEGORY_KO = {
     "schedule": "일정(마감일)",
     "assignee": "담당자",
+    "status": "진행 상태",
     "scope": "작업 범위",
     "decision": "결정 사항",
     "none": "없음",
