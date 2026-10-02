@@ -45,7 +45,7 @@ on_session_saved(manifest, manifest_path) 훅은 그 뒤에 불린다. manifest[
 워커 모드(MM_PIPELINE_MODE=worker). 봇은 녹음을 저장까지만 하고 saved 를 다 쓴 뒤 잠금을 놓는다. 처리는
 python -m capture.worker 가 하고 결과는 BE 를 거쳐 웹에서 본다. 채널에는 "처리되면 웹에서 확인(앞에 N건)",
 재시작 안내, /recover 의 워커 상태만 올라간다. 이 모드의 봇은 전사 백엔드를 싣지 않고 on_session_saved 를
-부르지 않는다. 근거는 decision_log/0013.
+부르지 않는다. 근거는 docs/basis_for_decision/member/2026-09-26-0013-recovery-worker-and-meeting-lock.md.
 """
 
 from __future__ import annotations

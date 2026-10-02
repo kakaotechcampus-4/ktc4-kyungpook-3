@@ -1,17 +1,17 @@
-"""디스코드 실시간 전사 경로. 운영에는 올리지 않고, 이후 회의 중 전사를 다시 넣을 때 쓰려고 보관한다 (decision_log/0006).
+"""디스코드 실시간 전사 경로. 운영에는 올리지 않고, 이후 회의 중 전사를 다시 넣을 때 쓰려고 보관한다 (docs/basis_for_decision/member/2026-09-12-0006-two-capture-adapters-side-by-side.md).
 
 운영 Cog 는 capture/discord_adapter.py 의 RecordingCog 하나다. 회의가 끝난 뒤 배치로 전사한다
-(decision_log/0008). 운영 봇(지금은 capture/run_recorder.py)은 이 폴더의 Cog 를 붙이지 않고 이 폴더와
+(docs/basis_for_decision/member/2026-09-16-0008-batch-transcription-by-speaker-chunks.md). 운영 봇(지금은 capture/run_recorder.py)은 이 폴더의 Cog 를 붙이지 않고 이 폴더와
 stt/realtime/ 의 모듈을 하나도 싣지 않는다. tests/capture/test_operating_boundary.py 가 그것을 본다.
 
 보관하는 이유
   다시 쓸 출발점  회의 중 전사를 서비스에 다시 넣기로 하면 여기서 시작한다. 발화 단위로 잘라 바로 전사하는
-             흐름이 2026-09-12 에 실제 음성 채널에서 끝까지 돌았다 (decision_log/0003, 0006).
+             흐름이 2026-09-12 에 실제 음성 채널에서 끝까지 돌았다 (docs/basis_for_decision/member/ 의 0003, 0006).
   비교 실행  회의 중 전사의 지연, 비용, 서버 부하를 배치와 같은 녹음으로 다시 잰다. 두 방식을 같은
-             오디오로 나란히 잰 적은 아직 없다 (decision_log/0006 의 남은 일).
+             오디오로 나란히 잰 적은 아직 없다 (docs/basis_for_decision/member/2026-09-12-0006-two-capture-adapters-side-by-side.md 의 남은 일).
              python -m stt.realtime.bench --tracks <녹음 디렉토리> --pace   (무과금. --stt elice 는 유료)
              python -m capture.realtime.run                                (실제 서버, /live /live-stop)
-  회귀 근거  decision_log 0003~0006 의 실측이 이 코드로 나왔다. 이 폴더의 테스트(tests/capture/realtime,
+  회귀 근거  docs/basis_for_decision/member/ 의 결정 기록 0003~0006 의 실측이 이 코드로 나왔다. 이 폴더의 테스트(tests/capture/realtime,
              tests/stt/realtime)는 공용 수신 계층을 발화 단위 흐름으로 한 번 더 지난다.
 
 의존성 (이 폴더에서 밖으로 한 방향)

@@ -35,12 +35,12 @@ partial 로 두며, 다음 실행이 그 줄만 다시 보낸다. 할일 추출(
 추출 단계의 추출기는 둘 중 하나다(build_extractor). 기본은 extract_tasks, MM_EXTRACT_PATH=judge 면 판단
 파이프라인(capture/judge_path.py)이다. 봇과 워커가 같은 팩토리를 쓰므로 두 모드가 같이 바뀐다.
 판단 경로는 1단계가 고른 finding(결정이나 진척 보고 하나) 하나의 실패를 예외가 아니라 목록으로 돌려준다. 그런
-finding 이 남으면 추출 단계를 닫지 않고 파이프라인을 다시 돌린 뒤에 인계한다(_keep_judge_output). 근거는 decision_log/0016.
+finding 이 남으면 추출 단계를 닫지 않고 파이프라인을 다시 돌린 뒤에 인계한다(_keep_judge_output). 근거는 docs/basis_for_decision/member/2026-09-30-0016-judge-path-flag-and-unjudged-findings.md.
 
 복구 한 바퀴(recover_pass)는 recovery_targets 로 대상을 고르고 recover_one 으로 회의 하나씩 회의 잠금을 잡고
 돌린다. 봇과 워커(capture/worker.py)가 같은 함수를 쓴다.
 실패는 recovery.attempts 로 세어 다음 시도를 미루고(두 배씩), RECOVERY_MAX_ATTEMPTS 에 닿으면 포기하며
-그때 처음 BE 에 fail 을 보낸다. 기본값과 근거는 decision_log/0013.
+그때 처음 BE 에 fail 을 보낸다. 기본값과 근거는 docs/basis_for_decision/member/2026-09-26-0013-recovery-worker-and-meeting-lock.md.
 """
 
 from __future__ import annotations
@@ -76,13 +76,13 @@ STAGES = (STATUS_TRANSCRIBED, STATUS_EXTRACTED, STATUS_HANDED_OFF)
 PARTIAL_RETRY_MAX = int(os.environ.get("MM_PARTIAL_RETRY_MAX", "3"))
 # 매니페스트와 BE 의 failed_stage 에 적는 이름
 FAILED_STAGE = {STATUS_TRANSCRIBED: "stt", STATUS_EXTRACTED: "extract", STATUS_HANDED_OFF: "handoff"}
-# 자동 복구. #83 의 retry_runs·PARTIAL_RETRY_MAX 와 따로 센다. 기본값의 근거는 decision_log/0013
+# 자동 복구. #83 의 retry_runs·PARTIAL_RETRY_MAX 와 따로 센다. 기본값의 근거는 docs/basis_for_decision/member/2026-09-26-0013-recovery-worker-and-meeting-lock.md
 RECOVERY_INTERVAL_S = float(os.environ.get("MM_RECOVERY_INTERVAL_S", "60"))    # 봇 안 복구 루프의 주기. 0 이면 끈다
 RECOVERY_MAX_ATTEMPTS = int(os.environ.get("MM_RECOVERY_MAX_ATTEMPTS", "5"))   # 이만큼 실패하면 포기하고 BE 에 fail
 RECOVERY_BACKOFF_S = float(os.environ.get("MM_RECOVERY_BACKOFF_S", "60"))      # 첫 실패 뒤 기다림. 실패마다 두 배
 RECOVERY_BACKOFF_CEIL_S = 3600.0                                                # 두 배로 늘려도 한 시간에서 멈춘다
 # 판단 경로에서 finding 몇 개만 실패했을 때 인계를 미루고 파이프라인을 다시 돌리는 횟수. 상한에 닿으면 가장 나은
-# 결과로 인계한다. 실패한 finding 만 다시 돌리는 진입점이 파이프라인에 없어 통째로 다시 돈다(decision_log/0016)
+# 결과로 인계한다. 실패한 finding 만 다시 돌리는 진입점이 파이프라인에 없어 통째로 다시 돈다(docs/basis_for_decision/member/2026-09-30-0016-judge-path-flag-and-unjudged-findings.md)
 EXTRACT_RETRY_MAX = int(os.environ.get("MM_EXTRACT_RETRY_MAX") or "2")       # .env 에 빈 값으로 적혀 있어도 기본값
 # 판단 경로가 매니페스트에 적는 칸. 전사가 바뀌거나 옛 경로로 다시 뽑으면 같이 버린다
 _JUDGE_KEYS = ("items", "extract_failures", "extract_runs", "extract_partial", "extract_error")

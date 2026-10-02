@@ -119,7 +119,7 @@ def test_returns_candidates_in_notion_candidate_shape(client, db, workspace, sea
     assert item["due_date"] == "2026-09-25"
     assert item["status"] == "in_progress"
     assert item["similarity"] == 0.9123
-    # 기본값: k=3, min_similarity=0.4 (decision_log 0010)
+    # 기본값: k=3, min_similarity=0.4 (docs/basis_for_decision/ai/2026-09-22-0010-embedding-similarity-threshold.md)
     assert search_calls == [{"workspace_id": workspace.workspace_id, "k": 3, "min_similarity": 0.4}]
 
 

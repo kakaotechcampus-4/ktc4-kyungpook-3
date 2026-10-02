@@ -27,7 +27,7 @@ cp .env.example .env      # DISCORD_BOT_TOKEN, ELICE_API_KEY, DISCORD_GUILD_ID
 
 ## 2. 디렉토리 구조
 
-`ai/` 가 AI 파트의 독립 프로젝트 루트입니다 (`decision_log/0002` 참고).
+`ai/` 가 AI 파트의 독립 프로젝트 루트입니다 (`docs/basis_for_decision/member/2026-09-09-0002-monorepo-restructure.md` 참고).
 
 ```
 ai/
@@ -51,7 +51,7 @@ ai/
 
 ## 3. 실행 흐름
 
-캡처 구현이 두 개라 검증도 두 갈래입니다. 어느 쪽으로 갈지는 멘토 리뷰에서 정합니다 (`decision_log/0006`).
+캡처 구현이 두 개라 검증도 두 갈래입니다. 어느 쪽으로 갈지는 멘토 리뷰에서 정합니다 (`docs/basis_for_decision/member/2026-09-12-0006-two-capture-adapters-side-by-side.md`).
 
 ### 3.1 오프라인 경로
 

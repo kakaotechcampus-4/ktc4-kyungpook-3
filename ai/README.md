@@ -10,7 +10,7 @@ venv·의존성·테스트를 따로 가짐). **이 디렉토리(`ai/`) 자체�
 shared/schemas.py   AI·BE 공통 계약 (MVP 4테이블 + 단계 간 입출력 타입). 바꾸면 전원 공유.
 shared/config.py    .env 로딩
 capture/            discord_adapter.py (RecordingCog, Discord 이름은 이 안에서만) · recording_store.py · run_recorder.py (검증용 실행기)
-decision_log/       트레이드오프 결정 기록
+docs/               문서 (plan/ 계획 · api/ 계약·흐름도 · request/ 타 파트 요청 · basis_for_decision/ 진행 로그·결정 기록)
 tests/              pytest — 외부 서비스 없이 실행
 recordings/         녹음 산출물 (git 제외)
 ```
@@ -26,10 +26,10 @@ recordings/         녹음 산출물 (git 제외)
 - 운영에 올리는 Cog 는 `RecordingCog` 하나입니다. `capture/realtime/` 은 실행기에 등록하지 않고 공용 계층
   (`voice_client.py`, `streaming_sink.py`, `track_writer.py`)에 기댈 뿐이며 반대 방향 의존은 없습니다. 재연결
   키 갱신처럼 두 경로에 다 필요한 처리는 공용 계층에 있습니다.
-- BE 인계는 봇이 BE 회의 API 를 직접 부릅니다 (`decision_log/0009`). `/record` 에서 `POST /api/v1/meetings`,
+- BE 인계는 봇이 BE 회의 API 를 직접 부릅니다 (`docs/basis_for_decision/member/2026-09-19-0009-bot-hands-off-to-be-api.md`). `/record` 에서 `POST /api/v1/meetings`,
   트랙을 닫은 뒤 `PATCH /meetings/{id}/end`, 추출 뒤 `POST /extractions`, 어느 단계가 실패하면
   `PATCH /meetings/{id}/fail`. `BE_BASE_URL` 과 `BE_WORKSPACE_ID` 가 없으면 이 단계에서 멈춥니다.
-- 추출 단계의 추출기는 `MM_EXTRACT_PATH` 로 고릅니다 (`decision_log/0016`). 기본(`legacy`)은 `extract/` 의
+- 추출 단계의 추출기는 `MM_EXTRACT_PATH` 로 고릅니다 (`docs/basis_for_decision/member/2026-09-30-0016-judge-path-flag-and-unjudged-findings.md`). 기본(`legacy`)은 `extract/` 의
   `extract_tasks`, `judge` 는 판단 파이프라인(`judge/pipeline.py`)입니다. `judge` 는 1단계가 전사록에서 고른
   finding(결정이나 진척 보고 하나. 근거 줄 하나나 여러 줄과 요약 문장)마다 그 요약 문장으로 BE 의 유사 task 검색
   (`POST /workspaces/{id}/tasks/similar`, 헤더 `X-Service-Token`)을 부릅니다. 전사록의 줄마다가 아닙니다. 나온 항목은
@@ -61,7 +61,7 @@ cp .env.example .env                 # DISCORD_BOT_TOKEN 채우기 (DISCORD_GUIL
 python -m capture.run_recorder    # Discord 에서 /join → /record → (말하기) → /stop → 회의록이 채널에 올라옴
 #    recordings/{guild}_{ts}/{user_id}_{ts}.wav · recordings/session_{ts}.json · transcripts/session_{ts}.transcript.json
 
-# 워커 모드. 봇은 저장까지만 하고 후처리는 워커가 한다 (decision_log/0013)
+# 워커 모드. 봇은 저장까지만 하고 후처리는 워커가 한다 (docs/basis_for_decision/member/2026-09-26-0013-recovery-worker-and-meeting-lock.md)
 MM_PIPELINE_MODE=worker python -m capture.run_recorder
 python -m capture.worker
 

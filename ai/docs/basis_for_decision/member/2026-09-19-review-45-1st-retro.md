@@ -30,13 +30,13 @@ BE 인계
 - `capture/handoff.py` 의 `BeClient` 가 `POST /meetings`, `PATCH /meetings/{id}/end`, `PATCH /meetings/{id}/fail`, `POST /extractions` 를 부른다. `/record` 에서 회의를 만들고, 트랙을 닫으면 end, 추출이 끝나면 extractions, 어느 단계가 실패하면 `failed_stage` 와 함께 fail 을 보낸다. R01·R02 의 녹음기 몫 (`e3907fe`)
 - 추출 결과를 `ExtractionItemCreate` 로 바꿔 근거 문장을 말한 트랙의 uid 와 그 발화 시각, `assignee_type` 을 싣는다
 - BE 가 done 으로 닫은 회의에 뒤늦게 실패를 알려도 failed 로 적지 않고 (`998ff3f`), 실패한 BE 회의를 새 회의로 바꿀 때 옛 실패 표시를 지운다 (`23c36aa`)
-- 결정과 버린 대안은 `decision_log/0009` (`364bdb7`)
+- 결정과 버린 대안은 `docs/basis_for_decision/member/2026-09-19-0009-bot-hands-off-to-be-api.md` (`364bdb7`)
 
 ## 왜
 
 리뷰가 짚은 것은 복구 경로에서 데이터가 사라지는 길이었다. 전사 호출 하나가 실패해도 transcribed 로 닫혀 `/recover` 대상에서 빠졌고, 녹음 중 프로세스가 죽으면 트랙이 있어도 복구가 건너뛰었고, 복구는 전사까지만 해서 추출만 실패한 회의는 다시 돌릴 길이 없었다(#56 작업 개요).
 
-BE 인계는 봇이 BE 회의 API 를 직접 부르는 쪽으로 정했다. BE 가 매니페스트나 훅을 보고 가져가는 대안은 BE 가 봇의 파일 구조를 알아야 하고, 봇이 죽은 뒤 복구한 회의를 누가 다시 넘길지가 다시 빈다. 자세한 근거는 `decision_log/0009` 에 있다.
+BE 인계는 봇이 BE 회의 API 를 직접 부르는 쪽으로 정했다. BE 가 매니페스트나 훅을 보고 가져가는 대안은 BE 가 봇의 파일 구조를 알아야 하고, 봇이 죽은 뒤 복구한 회의를 누가 다시 넘길지가 다시 빈다. 자세한 근거는 `docs/basis_for_decision/member/2026-09-19-0009-bot-hands-off-to-be-api.md` 에 있다.
 
 ## 결과
 
@@ -54,7 +54,7 @@ PR 본문에는 develop 의 BE 코드(`backend/app`)를 프로세스 안에 띄�
 
 - 실제 디스코드 서버에서 녹음 중 음성 채널 지역을 바꿨을 때 재연결 뒤 패킷이 오는지, 봇을 죽였다 살려 `/recover` 가 잇는지. 아직 안 했다
 - 60분 회의에서 전사, 추출, 다음 녹음이 겹칠 때의 RSS 와 완료 시간 (#40)
-- BE 와 정할 것: 1인칭 담당자를 별칭 텍스트가 아니라 `discord_user_id` 로 찾기, failed 뒤 되돌리는 전이, 길드와 워크스페이스의 연결, 추출 확신도를 숫자 신뢰도로 바꾸는 규칙 (`decision_log/0009` 남은 것)
+- BE 와 정할 것: 1인칭 담당자를 별칭 텍스트가 아니라 `discord_user_id` 로 찾기, failed 뒤 되돌리는 전이, 길드와 워크스페이스의 연결, 추출 확신도를 숫자 신뢰도로 바꾸는 규칙 (`docs/basis_for_decision/member/2026-09-19-0009-bot-hands-off-to-be-api.md` 남은 것)
 
 ## 생각해볼 점
 

@@ -33,7 +33,7 @@
   `_terra_user_prompt`에 기준 추가
 
 두 가지 다 고친 뒤 재실행 **18/18 (100%)**. 규칙 기반 폴백을 안 둔 이유·`matched_candidate_index`로
-받는 이유는 `decision_log/0011-final-judge-no-rules-fallback-and-candidate-index.md` 참고.
+받는 이유는 `docs/basis_for_decision/ai/2026-09-23-0011-final-judge-no-rules-fallback-and-candidate-index.md` 참고.
 
 전체 pytest 스위트 통과.
 

@@ -14,7 +14,7 @@
 |---|---|---|---|---|---|
 | #42 | 9/16 18:29 | `a91152a` | 9 | 24 | 실제 서버 회의에서 드러난 실시간 경로 결함 |
 | #43 | 9/16 18:29 | `da5576b` | 1 | 29 | 실시간 전용 코드를 `capture/realtime/` `stt/realtime/` 로 격리 |
-| #44 | 9/16 18:30 | `85e347c` | 14 | 71 (결과 JSON 48) | 배치 전사 본체, 측정 도구, `decision_log/0008` |
+| #44 | 9/16 18:30 | `85e347c` | 14 | 71 (결과 JSON 48) | 배치 전사 본체, 측정 도구, `docs/basis_for_decision/member/2026-09-16-0008-batch-transcription-by-speaker-chunks.md` |
 | #46 | 9/16 18:30 | `3dab0a1` | 6 | 16 | 녹음기를 `/record` 하나로, 저장 뒤 배치 전사와 추출 |
 | #48 | 9/19 06:36 | `6a1cf8d` | 6 | 37 (결과 JSON 28) | Elice 타임아웃과 재시도, 측정 마감 |
 
@@ -25,7 +25,7 @@
 - `stt/vad.py`: 시작 판정에 60ms 연속 조건(`ONSET_MS`)과 400ms 재시작 규칙을 두고, 8초 넘게 이어진 발화는 400ms 쉼에서 끊는다 (`fcec3e4`)
 - 짧은 발화에 두었던 느슨한 말 필터 임계를 되돌렸다. 근거로 삼은 0.4초 클립을 들어 보니 "으음" 이었다 (`c92de75`)
 - 마감 대기를 60초로 늘리고 마감 뒤에 온 전사를 회의록 파일에 붙인다. 종료 요약에 봇 프로세스가 쓴 CPU 초를 찍는다 (`9f50414`, `433be41`, `5e508e1`)
-- `decision_log/0007`: 전사 앞에 노이즈 필터를 두지 않는다 (`f313325`)
+- `docs/basis_for_decision/member/2026-09-14-0007-no-denoise-before-stt.md`: 전사 앞에 노이즈 필터를 두지 않는다 (`f313325`)
 
 ### #43 실시간 격리
 
@@ -36,7 +36,7 @@
 - `stt/batch.py`: 트랙을 VAD 로 클립으로 자르고, 같은 화자의 클립이 3초 안에 이어지면 턴으로, 턴을 0.2초 침묵으로 이어 28초 안의 묶음으로 보낸다. 단어 시각으로 클립에 되돌려 한 시간축에 놓고 회의 전체 순번 `seq` 를 붙인다. 모드는 whole, clip, chunk, track 넷이고 기본은 chunk, 호출 풀은 전 트랙 공용이다 (`9ff351b`, `2ec7a29`, `61388c9`)
 - `stt/transcribe.py` 본체를 `stt/batch.py` 로 넘기고 faster-whisper 직접 의존을 `SttBackend` 뒤로 옮겼다 (`98ba6e0`, `b4ab204`). 회의록 md 는 턴 한 줄의 대본형이다 (`fd5a43d`)
 - 측정 도구 `stt/eval/golden.py`(정렬본과 지표), `fleurs.py`, `matrix.py` (`8aab607`), 저장된 전사로 다시 채점하는 `rescore.py` (`bfb18eb`)
-- `decision_log/0008` 과 결과 JSON `stt/eval/results/2026-09-16-batch/` (`a8ed7f8`, `2088bff`, `f1836b4`). 회의 중 전사를 정했던 0003 은 번복으로 표시했다
+- `docs/basis_for_decision/member/2026-09-16-0008-batch-transcription-by-speaker-chunks.md` 과 결과 JSON `stt/eval/results/2026-09-16-batch/` (`a8ed7f8`, `2088bff`, `f1836b4`). 회의 중 전사를 정했던 0003 은 번복으로 표시했다
 
 ### #46 녹음기 하나로
 
@@ -55,7 +55,7 @@
 
 ## 왜
 
-실시간 경로를 고치면서 잰 두 가지 때문에 회의 중 전사를 접었다. 같은 1초 클립을 Elice 에 20번 보내면 17번은 2.4초, 3번은 22~28초였고, 트랙을 통째로 모델에 넣으면 무음 구간에서 문장을 반복하거나 지어냈다. 네 모드의 비교와 chunk 를 고른 근거는 `decision_log/0008`, 노이즈 필터를 뺀 근거는 `decision_log/0007` 에 있다.
+실시간 경로를 고치면서 잰 두 가지 때문에 회의 중 전사를 접었다. 같은 1초 클립을 Elice 에 20번 보내면 17번은 2.4초, 3번은 22~28초였고, 트랙을 통째로 모델에 넣으면 무음 구간에서 문장을 반복하거나 지어냈다. 네 모드의 비교와 chunk 를 고른 근거는 `docs/basis_for_decision/member/2026-09-16-0008-batch-transcription-by-speaker-chunks.md`, 노이즈 필터를 뺀 근거는 `docs/basis_for_decision/member/2026-09-14-0007-no-denoise-before-stt.md` 에 있다.
 
 녹음기를 하나로 합친 것은 #17 멘토 2차 리뷰를 따른 것이다. `/record`(WaveSink)와 `/live`(StreamingSink) 두 구현을 main 전에 하나로 정해야 했고(#46 본문), `/record` 쪽은 무음 패딩 때문에 모든 화자 트랙을 회의 전체 길이로 메모리에 들고 있었다. 같은 리뷰의 MEDIUM 이 4.1GB 는 최악치가 아니라 확정치라고 짚었고, #46 본문에는 60분 6인에 4GB 로 적었다. 그래서 패킷을 바로 파일로 흘리는 StreamingSink 쪽을 남겼다.
 
