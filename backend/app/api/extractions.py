@@ -300,16 +300,24 @@ def _request_task_update(
 
     그 외에는 담당자까지 같고(또는 언급이 없고) 다른 변경도 없으면 승인 요청을 만들지 않는다.
     이 경우에도 doc_text·근거는 ExtractionItem에 그대로 남는다.
+
+    변경안마다 비교한 지금 값을 base_values로 함께 남긴다. 제안 뒤에 PM이 같은 필드를 직접
+    고쳤으면 승인할 때 충돌로 알려, 나중의 승인이 PM의 변경을 말없이 덮지 않게 한다.
     """
     changes: dict[str, object] = {}
+    # 변경안마다 비교한 지금 값. 승인할 때 task가 그 사이 바뀌었는지 확인하는 기준이다.
+    base_values: dict[str, object] = {}
     if raw_item.due_date is not None and raw_item.due_date != target.due_date:
         changes["due_date"] = raw_item.due_date.isoformat()
+        base_values["due_date"] = target.due_date.isoformat() if target.due_date else None
     if raw_item.status is not None and str(raw_item.status) != target.status:
         changes["status"] = str(raw_item.status)
+        base_values["status"] = target.status
     # 담당자는 한 명으로 찾았을 때만 바꾼다. 못 찾았거나 여러 명이면 원문만 보여 주고 PM이 고른다.
     # 원문을 그대로 넣으면 팀원 ID가 아니라서 승인할 때 무시된다.
     if match.member_id is not None and match.member_id != target.assignee_member_id:
         changes["assignee_member_id"] = match.member_id
+        base_values["assignee_member_id"] = target.assignee_member_id
 
     item.task_id = target.task_id
     assignee_unresolved = has_assignee and match.member_id is None
@@ -319,6 +327,10 @@ def _request_task_update(
 
     payload = {
         **changes,
+        # 승인 시 충돌 확인용(approvals._find_conflicts). 반영되는 키가 아니다.
+        # version은 어느 필드가 바뀌어도 오르므로 비교에 쓰지 않고 참고로만 남긴다.
+        "base_values": base_values,
+        "base_task_version": target.version,
         # 아래는 표시용이다. 승인 시 반영되는 키(approvals._TASK_UPDATE_FIELDS)와 겹치지 않게 둔다.
         # 특히 "title"은 반영 대상이라 대상 task 이름은 "task_title"로 싣는다.
         "task_title": target.title,

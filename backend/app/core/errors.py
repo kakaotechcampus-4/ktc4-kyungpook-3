@@ -19,6 +19,7 @@ class ErrorCode(StrEnum):
     EXTRACTION_NOT_FOUND = "EXTRACTION_NOT_FOUND"
     APPROVAL_NOT_FOUND = "APPROVAL_NOT_FOUND"
     APPROVAL_ALREADY_RESOLVED = "APPROVAL_ALREADY_RESOLVED"
+    APPROVAL_CONFLICT = "APPROVAL_CONFLICT"
     NOTION_WRITE_FAILED = "NOTION_WRITE_FAILED"
     WORKSPACE_NOT_FOUND = "WORKSPACE_NOT_FOUND"
     WORKSPACE_MISMATCH = "WORKSPACE_MISMATCH"
@@ -57,6 +58,7 @@ ERROR_STATUS: dict[ErrorCode, int] = {
     ErrorCode.EXTRACTION_NOT_FOUND: 404,
     ErrorCode.APPROVAL_NOT_FOUND: 404,
     ErrorCode.APPROVAL_ALREADY_RESOLVED: 409,
+    ErrorCode.APPROVAL_CONFLICT: 409,
     ErrorCode.NOTION_WRITE_FAILED: 502,
     ErrorCode.WORKSPACE_NOT_FOUND: 404,
     ErrorCode.WORKSPACE_MISMATCH: 400,
@@ -93,6 +95,7 @@ ERROR_MESSAGE: dict[ErrorCode, str] = {
     ErrorCode.EXTRACTION_NOT_FOUND: "해당 추출 결과를 찾을 수 없습니다.",
     ErrorCode.APPROVAL_NOT_FOUND: "해당 승인 요청을 찾을 수 없습니다.",
     ErrorCode.APPROVAL_ALREADY_RESOLVED: "이미 처리된 승인 요청입니다.",
+    ErrorCode.APPROVAL_CONFLICT: "제안 이후 task가 바뀌었습니다. 지금 값을 확인한 뒤 다시 승인해 주세요.",
     ErrorCode.NOTION_WRITE_FAILED: "Notion 반영에 실패했습니다.",
     ErrorCode.WORKSPACE_NOT_FOUND: "해당 워크스페이스를 찾을 수 없습니다.",
     ErrorCode.WORKSPACE_MISMATCH: "요청한 워크스페이스가 대상 리소스의 워크스페이스와 다릅니다.",

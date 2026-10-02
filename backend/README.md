@@ -92,6 +92,7 @@ docker compose -f docker-compose.prod.yml logs -f api
 | `MEETING_ALREADY_ENDED` | 409 | 이미 종료된 회의 |
 | `MEETING_NOT_PROCESSING` | 409 | 회의가 PROCESSING 상태가 아닌데 추출을 시도함 |
 | `APPROVAL_ALREADY_RESOLVED` | 409 | 이미 승인/반려 처리된 요청을 다시 처리하려 함 |
+| `APPROVAL_CONFLICT` | 409 | task_update 제안 이후 같은 필드가 바뀌어 승인하지 않음. `details.conflicts`에 필드별 기준값·지금 값·제안 값. 확인 후 `details.task_version`을 `confirm_task_version`에 담아 다시 승인하면 반영(그 사이 또 바뀌었으면 다시 409) |
 | `TASK_HISTORY_ALREADY_ROLLED_BACK` | 409 | 이미 되돌린 변경을 다시 되돌리려 함 |
 | `AUDIO_UPLOAD_FAILED` | 422 | 오디오 저장·병합 실패 *(아직 미구현 경로)* |
 | `AUDIO_FORMAT_UNSUPPORTED` | 422 | 지원하지 않는 오디오 형식 *(아직 미구현 경로)* |
