@@ -5,7 +5,7 @@ AI 파트 문서를 모아 두는 곳입니다.
 ```
 docs/
 ├── README.md
-├── api/                    AI·BE 계약, 단계 간 데이터 흐름도 (.excalidraw)
+├── api/                    AI·BE 계약 (전체 흐름도는 루트 docs/Manager's Manager AI flow.excalidraw)
 ├── request/                다른 파트가 우리 팀에 요청한 것
 ├── plan/
 │   ├── 전체 계획.md
