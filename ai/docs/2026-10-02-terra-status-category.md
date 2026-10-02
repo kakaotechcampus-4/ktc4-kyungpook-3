@@ -3,7 +3,7 @@
 - 날짜: 2026-10-02
 - 이슈: #138
 - PR: #139
-- 브랜치: feat/138-terra-status-category
+- 브랜치: fix/138-terra-status-category
 - 작성자: 유재환
 
 ## 한 일
