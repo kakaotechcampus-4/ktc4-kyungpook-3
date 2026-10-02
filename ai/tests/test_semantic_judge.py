@@ -406,11 +406,20 @@ def test_llm_path_empty_transcript_returns_empty_without_calling():
     assert fake.prompts == []  # 빈 전사록이면 호출 자체를 안 함
 
 
-def test_llm_path_treats_missing_findings_key_as_empty():
-    # {} 처럼 findings 키 자체가 없으면 "0건"으로 정상 처리한다 — 실패가 아니다.
+def test_llm_path_treats_missing_findings_key_as_failure():
+    # {} 처럼 findings 키가 없는 응답을 0건으로 보면 모델 오류가 "후보 없음"으로 확정돼 회의가 빈 추출로
+    # 닫힌다(#128 리뷰). 명시적인 {"findings": []} 만 정상 0건이다.
     t = _transcript(TranscriptSegment(speaker="a", start=0.0, end=1.0, text="안녕하세요.", seq=0))
-    fake = FakeLLM(responses=[{}])
-    assert extract_findings_llm(t, fake) == []
+    assert extract_findings_llm(t, FakeLLM(responses=[{}])) is None
+    assert extract_findings_llm(t, FakeLLM(responses=[{"findings": []}])) == []
+    with pytest.raises(FindingExtractionUnavailableError):
+        import judge.semantic_judge as sj
+        original = sj.get_llm
+        sj.get_llm = lambda which: FakeLLM(responses=[{}])
+        try:
+            extract_findings(t)
+        finally:
+            sj.get_llm = original
 
 
 def test_llm_path_returns_none_when_findings_is_null():
