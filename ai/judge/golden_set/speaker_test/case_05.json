@@ -1,0 +1,41 @@
+{
+  "case_id": "case_05",
+  "scenario": "first_wish_by_other_self_confirm",
+  "description": "1인칭 담당 → 다른 사람의 마감 희망 → 같은 사람이 확인",
+  "turns": [
+    {
+      "speaker": "세영",
+      "text": "에러 로그 대시보드는 제가 붙일게요."
+    },
+    {
+      "speaker": "민재",
+      "text": "목요일 데모 전에만 되면 좋겠어요."
+    },
+    {
+      "speaker": "세영",
+      "text": "넵, 그 전까지 할게요."
+    }
+  ],
+  "expected": [
+    {
+      "text": "에러 로그 대시보드는 제가 붙일게요.",
+      "should_flag": true,
+      "note": "1인칭 담당",
+      "assignee_type": "first",
+      "assignee": "세영"
+    },
+    {
+      "text": "목요일 데모 전에만 되면 좋겠어요.",
+      "should_flag": false,
+      "note": "희망 — 확인 발화와 묶이면 근거에 들어와도 됨"
+    },
+    {
+      "text": "넵, 그 전까지 할게요.",
+      "should_flag": true,
+      "note": "1인칭 마감 확정",
+      "assignee_type": "first",
+      "assignee": "세영"
+    }
+  ],
+  "counts_toward_pass_rate": true
+}

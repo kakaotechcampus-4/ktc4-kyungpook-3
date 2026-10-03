@@ -1,0 +1,30 @@
+{
+  "case_id": "case_08",
+  "scenario": "assign_by_name_then_accept",
+  "description": "대조군 — 이름으로 지정하고 지정받은 사람이 수락",
+  "turns": [
+    {
+      "speaker": "하은",
+      "text": "알림 설정 페이지는 도윤님이 맡아주세요."
+    },
+    {
+      "speaker": "도윤",
+      "text": "네, 알겠습니다."
+    }
+  ],
+  "expected": [
+    {
+      "text": "알림 설정 페이지는 도윤님이 맡아주세요.",
+      "should_flag": true,
+      "note": "이름 지정",
+      "assignee_type": "thirdname",
+      "assignee": "도윤"
+    },
+    {
+      "text": "네, 알겠습니다.",
+      "should_flag": true,
+      "note": "지정받은 사람의 수락 — 앵커가 되어도 화자가 담당자"
+    }
+  ],
+  "counts_toward_pass_rate": true
+}

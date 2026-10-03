@@ -164,6 +164,20 @@ def test_a_wrong_service_token_never_registers_an_empty_extraction(tmp_path, mon
     assert saved["recovery"]["attempts"] == 1 and "items" not in saved
 
 
+def test_a_stage1_reply_without_findings_never_registers_an_empty_extraction(tmp_path, monkeypatch):
+    """1단계가 첫 실행부터 findings 키 없는 응답({})을 주면, "결정 없는 회의"로 등록하지 않고 단계 실패로 센다.
+
+    0건으로 받아들이면 items=[]/failures=[] 로 인계돼 회의가 done 으로 닫히고, 재전송도 기존 빈 추출을 돌려준다(#128).
+    """
+    fakes = _fake_llms(monkeypatch, stage1={}, terra=[], drafts=[])
+    fake = FakeBe()
+    result, saved = _process(tmp_path, fake)
+    assert result["status"] == "failed" and result["failed_stage"] == "extract"
+    assert "FindingExtractionUnavailableError" in result["error"]
+    assert fake.extractions == {} and fake.meetings["m1"]["status"] == "processing" and "items" not in saved
+    assert fakes["terra"].prompts == []                                       # 2단계까지 가지 않았다
+
+
 def test_an_unjudged_finding_with_no_items_is_not_registered_as_an_empty_extraction(tmp_path, monkeypatch):
     """finding 둘은 바꿀 것이 없다고 판단됐고 하나는 판단하지 못했다. 항목은 0개다. 그대로 등록하면 판단 실패가
     "결정 없는 회의" 로 저장된다. BE 에는 판단하지 못한 finding 을 받을 칸이 없다. 등록하지 않고 단계 실패로 센다."""
