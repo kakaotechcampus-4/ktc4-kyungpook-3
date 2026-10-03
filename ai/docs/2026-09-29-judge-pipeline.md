@@ -99,6 +99,13 @@ E2E(`eval_pipeline`, 실제 Luna·Terra·임베딩) — 회의 fixture 1개, 기
   없지만, category 기준이 새 항목에는 잘 맞지 않는다
 - **fixture 가 회의 1개이고 발화가 명확하다.** STT 오류·말 끊김이 있는 실제 전사록으로는 봇 연결 뒤에
   다시 본다
+- **상태만 바뀌는 발화의 category 가 `decision` 으로 나온다.** 상태 변경 category 가 없어서다. status 는
+  category 와 무관하게 반영하므로 동작에는 문제가 없고, `status` category 를 따로 둘지는 보류했다
+  (`decision_log/0014`)
+- **decision 이면서 바뀌는 필드가 없으면 버린다.** "바뀌는 것 없음"과 "필드에 안 담기는 결정"("JSON:API 로
+  통일하기로")이 같은 모양이라 구분이 안 돼서다 — 후자가 빠지는 한계가 있다. scope 만 예외로 보낸다
+- **scope 승인은 Task·Notion 어디에도 남지 않는다.** 승인 요청으로 PM 에게 보이게만 했고, 결정 내용
+  (`doc_text`)을 어디에 저장할지는 정하지 않았다(PR #105 리뷰에서 나온 지적)
 
 ## 다음
 
@@ -107,3 +114,7 @@ E2E(`eval_pipeline`, 실제 Luna·Terra·임베딩) — 회의 fixture 1개, 기
   고르는 플래그
 - BE #102 — update item 담당자를 해소 후 현재 값과 비교(같으면 제외, 못 풀면 PM 확인)해 달라고 요청함
 - tests 정리 — `tests/` 바로 아래 judge·draft·extract 테스트를 모듈별 디렉토리로(지민님 작업과 겹쳐 별도로)
+- decision 빈 update — "바뀌는 게 없는 발화"를 Terra 가 `is_meaningful=false` 로 먼저 거르도록 기준을
+  강화하고(골든셋으로 진짜 결정이 같이 걸러지지 않는지 확인), decision 도 scope 처럼 보내기. 이때
+  `status` category 분리(`decision_log/0014`)를 함께 적용하고 BE 에도 decision 예외 요청
+- scope/decision 결정 기록 위치 — 승인 시 task_history 기록 또는 Notion 페이지 본문 추가 (BE 와 논의)
