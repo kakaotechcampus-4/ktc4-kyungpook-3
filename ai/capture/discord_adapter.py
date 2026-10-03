@@ -26,6 +26,8 @@ started_at 에 한 번만 적는다. 실시간 게시 Cog(capture/realtime/)는 
 한 번에 하나만 돈다 (MM_MAX_CONCURRENT_MEETINGS, 기본 1). 로컬 모델은 CPU 를 다 쓴다.
 
 종료 뒤 처리는 capture/recorder.py 의 process_session 이다. /stop 과 /recover 가 같은 함수를 쓴다.
+추출 경로가 판단 파이프라인(MM_EXTRACT_PATH=judge)이면 할일 목록 대신 판단 결과(새 항목, 수정)의 설명 문장과
+판단하지 못한 finding 을 올린다.
 BE 인계(capture/handoff.py)는 BE_BASE_URL 과 BE_WORKSPACE_ID 가 있을 때만 돈다. 채널 알림은
 전부 _notify 를 거쳐서, 디스코드 쪽 실패가 파일과 상태 처리를 막지 않는다.
 on_session_saved(manifest, manifest_path) 훅은 그 뒤에 불린다. manifest["transcript"] 에 회의록
@@ -58,6 +60,7 @@ from pathlib import Path
 import discord
 
 from capture.handoff import from_env as handoff_from_env
+from capture.judge_path import extract_path
 from capture.recorder import (RECOVERY_INTERVAL_S, Claims, interrupted_meetings, manifest_path, queue_ahead,
                               recover_pass, recovery_targets, try_lock)
 from capture.worker import read_heartbeat, request_wake
@@ -79,6 +82,23 @@ STAGE_LABEL = {STATUS_TRANSCRIBED: "전사", STATUS_EXTRACTED: "할일 추출", 
                "stt": "전사", "extract": "할일 추출", "handoff": "BE 인계"}
 RESUME_NOTICE = ("⚠️ 봇이 다시 시작되어 끊긴 회의의 녹음된 부분을 처리합니다. "
                  "이어서 기록하려면 `/join` 뒤 `/record` 를 실행해 주세요.")
+SHOWN_MAX = 10      # 채널에 보이는 항목 수. 나머지는 "외 N건" 으로 줄인다
+LINE_MAX = 150      # 한 줄 길이. 디스코드 메시지는 2000자까지라 열 줄이 다 차도 넘지 않게 자른다
+
+
+def _clip(text, limit: int = LINE_MAX) -> str:
+    text = " ".join(str(text or "").split())
+    return text if len(text) <= limit else text[:limit - 3] + "..."
+
+
+def _judge_text(items: list[dict]) -> str:
+    """판단 경로의 항목을 채널에 올릴 글로. doc_text 는 PM 에게 보일 문장으로 만들어진 값이라 그대로 쓴다."""
+    creates = sum(1 for x in items if x.get("action") != "update")
+    lines = [f"- {_clip(x.get('doc_text') or x.get('task_title') or '(설명 없음)')}" for x in items[:SHOWN_MAX]]
+    if len(items) > SHOWN_MAX:
+        lines.append(f"외 {len(items) - SHOWN_MAX}건")
+    return (f"📋 판단 결과 {len(items)}건 (새 항목 {creates}, 수정 {len(items) - creates})\n"
+            + ("\n".join(lines) or "- (없음)"))
 
 
 def is_recording(vc) -> bool:
@@ -166,6 +186,7 @@ class RecordingCog(discord.Cog):
         self._mode = mode or os.environ.get("MM_PIPELINE_MODE", "bot")
         if self._mode not in ("bot", "worker"):
             raise ValueError(f"MM_PIPELINE_MODE 는 bot 또는 worker 다. 받은 값: {self._mode!r}")
+        extract_path()      # MM_EXTRACT_PATH 가 모르는 값이면 여기서 멈춘다. 오타로 말없이 옛 추출기가 돌면 안 된다
         # 자동 복구. 루프와 /recover 가 같은 회의 잠금과 같은 한 바퀴(_recover_pass)를 쓴다
         self._claims = Claims()
         self._recovery_interval_s = RECOVERY_INTERVAL_S      # 0 이면 루프를 띄우지 않는다
@@ -639,7 +660,15 @@ class RecordingCog(discord.Cog):
         if result.get("partial"):
             await self._notify(channel, f"⚠️ 빠진 구간 {result.get('missing_units', 0)}개를 둔 채 진행했습니다 "
                                f"(재시도 {PARTIAL_RETRY_MAX}회). 구간은 매니페스트에 남아 있습니다.")
-        if STATUS_EXTRACTED in result["ran"]:
+        if STATUS_EXTRACTED in result["ran"] and result.get("items") is not None:
+            # 판단 경로(MM_EXTRACT_PATH=judge). 항목의 키가 옛 경로와 다르다
+            await self._notify(channel, _judge_text(result["items"]))
+            unjudged = result.get("extract_failures") or []
+            if unjudged:
+                shown = "\n".join(f"- {_clip(f.get('text'))}" for f in unjudged[:SHOWN_MAX])
+                await self._notify(channel, f"⚠️ 판단하지 못한 발화 {len(unjudged)}건은 결과에 없습니다. "
+                                   f"이유는 매니페스트에 남아 있습니다.\n{shown}")
+        elif STATUS_EXTRACTED in result["ran"]:
             tasks = result.get("tasks") or []
             shown = "\n".join(f"- {x.get('task')} / {x.get('assignee_resolved') or x.get('assignee_mention') or '담당 미정'} "
                               f"/ {x.get('due_date') or '마감 미정'}" for x in tasks[:10]) or "- (없음)"
@@ -647,6 +676,9 @@ class RecordingCog(discord.Cog):
         be = result.get("be")
         if STATUS_HANDED_OFF in result["ran"] and be:
             await self._notify(channel, f"📨 BE 인계 완료. 회의 `{be.get('meeting_id')}`, 항목 {be.get('item_count', 0)}건")
+            if be.get("dropped_items"):
+                await self._notify(channel, f"⚠️ BE 가 항목 {be['dropped_items']}건을 받지 않았습니다. "
+                                   "수정 대상 task 가 사라졌거나 제목이 빈 항목입니다.")
             if be.get("stale_extraction"):
                 await self._notify(channel, "⚠️ 전사가 바뀌어 할일을 다시 뽑았지만 BE 에는 예전 추출이 남아 있습니다. "
                                    "BE 에 다시 등록하는 경로가 필요합니다.")

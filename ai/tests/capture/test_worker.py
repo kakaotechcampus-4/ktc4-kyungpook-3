@@ -333,3 +333,48 @@ def test_the_worker_catches_stop_signals_where_the_loop_cannot(monkeypatch):
     registered[W.signal.SIGINT](W.signal.SIGINT, None)                       # Ctrl+C
     loop.soon[0]()
     assert stopped == [True]
+
+
+# ------------------------------------------------------------------ 판단 경로
+def test_an_unknown_extract_path_fails_at_start(tmp_path, monkeypatch):
+    """오타 하나로 말없이 옛 추출기가 돌면 다른 모양의 결과가 BE 로 간다. 봇도 워커도 시작할 때 멈춘다."""
+    monkeypatch.setenv("MM_EXTRACT_PATH", "jugde")
+    with pytest.raises(ValueError):
+        _worker(tmp_path)
+    with pytest.raises(ValueError):
+        T._setup(tmp_path)
+    monkeypatch.setenv("MM_EXTRACT_PATH", "judge")
+    assert _worker(tmp_path) is not None and T._setup(tmp_path)[0] is not None
+
+
+async def test_a_worker_pass_hands_judge_items_to_be(tmp_path):
+    """워커 모드에서도 같은 추출기가 돈다. 판단 항목이 그대로 BE 로 간다."""
+    from capture.judge_path import JudgeOutput
+
+    rec, path, _ = _session(tmp_path, ts=500)
+    item = T._judge_item("결제 환불 기능 구현")
+    fake = FakeBe()
+    worker = _worker(tmp_path, extractor=lambda transcript, names, today: JudgeOutput(items=[item]),
+                     handoff=H.Handoff(H.BeClient("http://be", session=fake), "ws-1"))
+    results, busy = await worker.run_pass()
+    assert _status(path) == "handed_off" and results[0]["items"] == [item] and busy == []
+    assert fake.extractions["m1"]["items"] == [item]
+
+
+async def test_the_worker_log_says_why_a_meeting_failed_and_what_was_left_unjudged(tmp_path, monkeypatch, capsys):
+    """워커 모드는 채널에 결과를 올리지 않는다. 판단하지 못한 finding 과 실패 이유가 로그에도 없으면 매니페스트를 열어야 안다."""
+    from capture.judge_path import JudgeOutput
+
+    monkeypatch.setattr(R, "EXTRACT_RETRY_MAX", 1)
+    rec, path, _ = _session(tmp_path, ts=500)
+    item = T._judge_item("결제 환불 기능 구현")
+    unjudged = [{"stage": "judge", "text": "로그인 마감을 미루기로 함", "reason": "Terra 응답을 파싱하지 못했습니다."}]
+    fake = FakeBe()
+    worker = _worker(tmp_path, extractor=lambda transcript, names, today: JudgeOutput(items=[item], failures=unjudged),
+                     handoff=H.Handoff(H.BeClient("http://be", session=fake), "ws-1"))
+    await worker.run_pass()
+    first = capsys.readouterr().out
+    assert "failed" in first and "ExtractIncomplete" in first and "발화 1개를 판단하지 못했다" in first
+    await worker.run_pass(guild_id="77", manual=True)         # 다음 시도. 상한(1회)에 닿아 남긴 채 인계한다
+    second = capsys.readouterr().out
+    assert "handed_off" in second and "판단하지 못한 발화 1건" in second and _status(path) == "handed_off"

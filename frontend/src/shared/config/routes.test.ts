@@ -7,6 +7,10 @@ it.each([
   [paths.workspaceSelect(), '/workspaces'],
   [paths.onboardingCreate(), '/onboarding/create_workspace'],
   [paths.onboardingStep('ws_02', 'connect_notion'), '/onboarding/ws_02/connect_notion'],
+  [
+    paths.onboardingReview('ws_02', 'connect_discord'),
+    '/onboarding/ws_02/connect_discord?review=1',
+  ],
   [paths.dashboard('ws_01'), '/workspaces/ws_01/dashboard'],
   [paths.meetings('ws_01'), '/workspaces/ws_01/meetings'],
   [paths.meetings('ws_01', 'mt_09'), '/workspaces/ws_01/meetings/mt_09'],

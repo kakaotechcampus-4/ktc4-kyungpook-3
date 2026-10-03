@@ -145,7 +145,6 @@ def log_resolution(
     workspace_id: str,
     alias_text: str | None,
     match: MatchResult,
-    evidence_quote: str | None = None,
     meeting_id: str | None = None,
 ) -> AliasResolutionLog | None:
     """판정 시도를 로그에 기록한다 (APPEND-ONLY)."""
@@ -158,7 +157,6 @@ def log_resolution(
         resolved_member_id=match.member_id,
         result=str(match.result),
         candidate_count=match.candidate_count,
-        evidence_quote=evidence_quote,
         meeting_id=meeting_id,
     )
     db.add(log)

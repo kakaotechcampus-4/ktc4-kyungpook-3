@@ -1,0 +1,59 @@
+{
+  "case_id": "case_02",
+  "scenario": "first_mid_meeting_with_progress",
+  "description": "필요 제기 → 1인칭 담당 → 부탁 → 다른 사람의 진척 보고",
+  "turns": [
+    {
+      "speaker": "하은",
+      "text": "디자인 QA 일정을 잡아야 하는데요."
+    },
+    {
+      "speaker": "세영",
+      "text": "그건 제가 이번 주 안에 잡아볼게요."
+    },
+    {
+      "speaker": "도윤",
+      "text": "넵, 부탁드려요."
+    },
+    {
+      "speaker": "지민",
+      "text": "저는 어제 결제 페이지 마크업 끝냈어요."
+    },
+    {
+      "speaker": "하은",
+      "text": "고생하셨어요."
+    }
+  ],
+  "expected": [
+    {
+      "text": "디자인 QA 일정을 잡아야 하는데요.",
+      "should_flag": false,
+      "note": "필요 제기 — 아직 결정 아님"
+    },
+    {
+      "text": "그건 제가 이번 주 안에 잡아볼게요.",
+      "should_flag": true,
+      "note": "1인칭 담당 + 마감",
+      "assignee_type": "first",
+      "assignee": "세영"
+    },
+    {
+      "text": "넵, 부탁드려요.",
+      "should_flag": false,
+      "note": "단순 맞장구"
+    },
+    {
+      "text": "저는 어제 결제 페이지 마크업 끝냈어요.",
+      "should_flag": true,
+      "note": "작업 대상이 명시된 진척 보고",
+      "assignee_type": "first",
+      "assignee": "지민"
+    },
+    {
+      "text": "고생하셨어요.",
+      "should_flag": false,
+      "note": "단순 맞장구"
+    }
+  ],
+  "counts_toward_pass_rate": true
+}

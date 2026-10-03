@@ -1,5 +1,6 @@
 import type { QueryClient } from '@tanstack/react-query'
 import { SESSION_QUERY_KEY, sessionQueryOptions } from '@/entities/user'
+import { clearReturnWorkspace } from '@/shared/lib/return-workspace'
 import { clearUnsavedChanges } from '@/shared/lib/unsaved-changes'
 import { toast } from '@/shared/ui/toast'
 
@@ -19,6 +20,8 @@ export function expireSession(queryClient: QueryClient): boolean {
   // 세션이 끝나 저장할 방법이 없다. 등록과 저장해 둔 이동(열린 이탈 모달)을 먼저 푼다
   // 로그인 이동은 가드의 <Navigate> 라 관문을 지나지 않지만, 로그인 화면에 모달과 beforeunload 가 남으면 안 된다
   clearUnsavedChanges()
+  // 복귀 공간 기억은 이 사용자의 것이다. 다음에 로그인하는 사람에게 넘기지 않는다
+  clearReturnWorkspace()
   // 이전 사용자에게 띄운 알림도 남기지 않는다
   toast.clear()
   void queryClient.cancelQueries()

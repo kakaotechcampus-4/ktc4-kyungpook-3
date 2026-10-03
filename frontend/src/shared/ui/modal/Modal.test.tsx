@@ -28,10 +28,13 @@ describe('Modal', () => {
     render(<Modal open onOpenChange={vi.fn()} title="팀을 삭제할까요?" />)
     const { card, overlay } = parts()
 
-    expect(overlay).toHaveClass('fixed', 'inset-0', 'z-100', 'flex', 'items-center', 'p-24')
+    // inset-0 은 tokens.css 가 간격 스케일을 꺼서 CSS 에 생성되지 않는다 — 명시 값이어야 화면을 덮는다
+    // (docs/impl-decision/2026-09-29-modal-inset-zero.md)
+    expect(overlay).toHaveClass('fixed', 'inset-[0px]', 'z-100', 'flex', 'items-center', 'p-24')
+    expect(overlay).not.toHaveClass('inset-0')
 
     const scrim = overlay?.querySelector('button')
-    expect(scrim).toHaveClass('absolute', 'inset-0', 'bg-ink/32', 'cursor-pointer')
+    expect(scrim).toHaveClass('absolute', 'inset-[0px]', 'bg-ink/32', 'cursor-pointer')
 
     expect(card).toHaveClass(
       'relative',

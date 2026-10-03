@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { Route } from 'react-router'
 import { NotFoundPage } from '@/pages/not-found'
+import { config } from '@/shared/config/env'
 import { RouteErrorBoundary } from './errors/RouteErrorBoundary'
 import { RedirectIfAuthed } from './guards/RedirectIfAuthed'
 import { RequireAuth } from './guards/RequireAuth'
@@ -38,6 +39,21 @@ const approvalDetailPage = lazyPage(() =>
 const messagesPage = lazyPage(() => import('@/pages/messages').then((m) => m.MessagesPage))
 const membersPage = lazyPage(() => import('@/pages/members').then((m) => m.MembersPage))
 const settingsPage = lazyPage(() => import('@/pages/settings').then((m) => m.SettingsPage))
+
+/*
+ * 모의 OAuth 화면은 개발·MSW 모드에서만 등록한다. 경로는 shared/config/routes.ts 의 devPaths.mockOAuth 다.
+ * DEV 를 먼저 본다 — 번들러가 이 분기를 지워야 프로덕션 번들에 모의 화면 코드가 남지 않는다.
+ * 가드 밖이다. 실제 OAuth 제공자 화면 자리라 로그인·소속 확인은 콜백 흉내가 한다.
+ */
+const mockOAuthRoute =
+  import.meta.env.DEV && config.mswEnabled ? (
+    <Route
+      path="__mock/oauth/:workspaceId/:provider"
+      element={screen(
+        lazyPage(() => import('@/shared/mock/oauth/MockOAuthPage').then((m) => m.MockOAuthPage)),
+      )}
+    />
+  ) : null
 
 /*
  * 경로 표. <Routes>{appRoutes}</Routes> 로 쓴다 — 브라우저는 BrowserRouter, 테스트는 MemoryRouter 안이다.
@@ -80,6 +96,7 @@ export const appRoutes = (
         </Route>
       </Route>
     </Route>
+    {mockOAuthRoute}
     <Route path="*" element={screen(<NotFoundPage />)} />
   </Route>
 )

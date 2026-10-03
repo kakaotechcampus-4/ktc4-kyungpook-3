@@ -22,3 +22,16 @@ describe('global focus rule', () => {
     expect(css).not.toMatch(/(^|[\s,]):focus\s*[,{]/m)
   })
 })
+
+/* 브라우저에서 확인: NanumSquare 의 U+2022 글리프는 잉크가 0 이다 (docs/impl-decision/2026-09-29-nanum-bullet-glyph.md) */
+describe('NanumSquare @font-face', () => {
+  const fonts = readFileSync(resolve(import.meta.dirname, 'fonts.css'), 'utf8')
+  const faces = fonts.match(/@font-face\s*\{[^}]*\}/g) ?? []
+
+  it('네 벌 모두 U+2022(비밀번호 가림 문자)를 폴백 폰트에 넘긴다', () => {
+    expect(faces).toHaveLength(4)
+    for (const face of faces) {
+      expect(face).toMatch(/unicode-range:\s*U\+0-2021,\s*U\+2023-10FFFF;/)
+    }
+  })
+})

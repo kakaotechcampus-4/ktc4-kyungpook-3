@@ -1,0 +1,30 @@
+{
+  "case_id": "case_01",
+  "scenario": "first_then_thanks",
+  "description": "1인칭 담당 뒤에 다른 사람의 감사 인사 — 기본형",
+  "turns": [
+    {
+      "speaker": "지민",
+      "text": "API 명세서는 제가 정리할게요."
+    },
+    {
+      "speaker": "하은",
+      "text": "네, 감사합니다."
+    }
+  ],
+  "expected": [
+    {
+      "text": "API 명세서는 제가 정리할게요.",
+      "should_flag": true,
+      "note": "1인칭 담당",
+      "assignee_type": "first",
+      "assignee": "지민"
+    },
+    {
+      "text": "네, 감사합니다.",
+      "should_flag": false,
+      "note": "단순 맞장구 — 담당자 근거에 들어가면 하은이 담당자가 됨"
+    }
+  ],
+  "counts_toward_pass_rate": true
+}

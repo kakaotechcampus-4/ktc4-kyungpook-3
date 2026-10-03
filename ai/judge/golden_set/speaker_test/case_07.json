@@ -1,0 +1,39 @@
+{
+  "case_id": "case_07",
+  "scenario": "first_handover_by_name",
+  "description": "1인칭 담당 → 다른 사람이 이미 시작 → 처음 사람이 이름으로 넘김",
+  "turns": [
+    {
+      "speaker": "민재",
+      "text": "푸시 알림은 제가 할게요."
+    },
+    {
+      "speaker": "세영",
+      "text": "아, 그거 제가 이미 시작했어요."
+    },
+    {
+      "speaker": "민재",
+      "text": "그럼 세영님이 계속 해주세요."
+    }
+  ],
+  "expected": [
+    {
+      "text": "푸시 알림은 제가 할게요.",
+      "should_flag": true,
+      "note": "1인칭 담당 — 뒤에서 번복됨"
+    },
+    {
+      "text": "아, 그거 제가 이미 시작했어요.",
+      "should_flag": true,
+      "note": "진척 보고 + 번복의 근거"
+    },
+    {
+      "text": "그럼 세영님이 계속 해주세요.",
+      "should_flag": true,
+      "note": "최종 담당자 지정",
+      "assignee_type": "thirdname",
+      "assignee": "세영"
+    }
+  ],
+  "counts_toward_pass_rate": true
+}

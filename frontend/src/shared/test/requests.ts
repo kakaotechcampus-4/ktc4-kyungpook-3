@@ -49,3 +49,21 @@ const BOOT_PATHS = new Set(['/auth/me', '/workspaces'])
 export function businessRequests(requests: readonly RecordedRequest[]): RecordedRequest[] {
   return requests.filter(({ method, path }) => !(method === 'GET' && BOOT_PATHS.has(path)))
 }
+
+/** 이 테스트 동안 `method path`(`/api/v1` 을 뗀 경로, 검색 문자열 제외)로 간 JSON 본문을 보낸 순서대로 적는다 */
+export function recordRequestBodies(method: string, path: string): unknown[] {
+  const bodies: unknown[] = []
+  const onStart = ({ request }: { request: Request }) => {
+    const url = new URL(request.url)
+    if (request.method !== method || url.pathname !== `/api/v1${path}`) return
+    void request
+      .clone()
+      .json()
+      .then((body: unknown) => bodies.push(body))
+  }
+  server.events.on('request:start', onStart)
+  onTestFinished(() => {
+    server.events.removeListener('request:start', onStart)
+  })
+  return bodies
+}

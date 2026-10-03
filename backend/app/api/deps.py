@@ -1,5 +1,7 @@
+import os
+import secrets
 from datetime import datetime, timezone
-from fastapi import Depends, Request
+from fastapi import Depends, Header, Request
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.errors import AppError, ErrorCode
@@ -60,3 +62,13 @@ def require_task_member(
     task = db.get(Task, task_id)
     if task is not None:
         require_member(db, user, task.workspace_id)
+
+
+def require_service_token(x_service_token: str | None = Header(None)) -> None:
+    """디스코드 봇처럼 사용자 세션 없이 부르는 경로용. X-Service-Token을 SERVICE_TOKEN과 비교한다.
+
+    SERVICE_TOKEN이 설정되지 않은 서버는 모든 요청을 거절한다.
+    """
+    expected = os.getenv("SERVICE_TOKEN")
+    if not expected or not x_service_token or not secrets.compare_digest(x_service_token, expected):
+        raise AppError(ErrorCode.UNAUTHENTICATED, message="서비스 토큰이 없거나 올바르지 않습니다.")

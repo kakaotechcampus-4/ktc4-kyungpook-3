@@ -1,15 +1,28 @@
-import { paths } from '@/shared/config/routes'
-import { GuardedLink } from '@/shared/lib/unsaved-changes'
-import { PagePlaceholder } from '@/shared/ui/page-placeholder'
+import { FinalCta, LandingFooter } from './LandingClosing'
+import { LandingHeader } from './LandingHeader'
+import { LandingHero } from './LandingHero'
+import { Capabilities, FeatureCards, ValueSections } from './LandingSections'
+import { MascotShowcase } from './MascotShowcase'
+import { ProductPreview } from './ProductPreview'
 
-const LINK = 'text-body font-semibold text-ink underline'
-
+/**
+ * Landing 캔버스. 주 CTA 는 모두 `시작하기` → 로그인이다 (D-003). 회원가입 직접 링크·데모 버튼은 없다 (D-002, D-004).
+ * 요금제 절과 자주 묻는 것 절은 이번에 뺐다 — docs/impl-decision/2026-09-28-landing-scope.md
+ */
 export function LandingPage() {
   return (
-    <PagePlaceholder title="랜딩" description="랜딩 화면은 M4에서 만들어요.">
-      <GuardedLink to={paths.login()} className={LINK}>
-        로그인으로
-      </GuardedLink>
-    </PagePlaceholder>
+    <div id="top" className="flex min-h-dvh flex-col items-center bg-surface text-ink">
+      <LandingHeader />
+      <main className="flex w-full flex-col items-center px-40">
+        <LandingHero />
+        <ProductPreview />
+        <ValueSections />
+        <FeatureCards />
+        <MascotShowcase />
+        <Capabilities />
+        <FinalCta />
+      </main>
+      <LandingFooter />
+    </div>
   )
 }

@@ -7,9 +7,8 @@ Luna(get_llm("luna")) 없이는 이 판단을 대신할 방법이 없으므로, 
 비교하는 용도로만 남아있다.
 
 담당자/마감일을 실제로 파싱하는 건 여기서 하지 않는다(Phase 1 extract 몫) — 여기는 "이 발화가
-다음 단계가 볼 가치가 있는가"와 "어느 축의 신호인가"(JudgeFinding.signal)만 본다. 축이 둘인
-이유는 "문서를 바꿀 만한가" 하나로 거르면 "로그인 API 다 붙였어요" 같은 완료 보고가 문서 기준
-무의미하다는 이유로 사라져서, 2단계의 status(done) 판정에 영원히 도달하지 못하기 때문이다.
+다음 단계가 볼 가치가 있는가"만 본다. "문서를 바꿀 만한가"만으로 거르면 "로그인 API 다 붙였어요"
+같은 완료 보고가 사라져서 2단계의 status(done) 판정에 도달하지 못하므로, 진척 보고도 포함한다.
 
 의도적으로 넉넉하게 통과시킨다: 애매하면 걸러내지 않고 후보로 남긴다. 여기서 놓치면 2단계까지
 갈 기회 자체가 없어지지만, 여기서 잘못 통과시켜도 2단계(Notion 후보 비교 + 최종 판단)에서
@@ -21,7 +20,7 @@ from __future__ import annotations
 import re
 
 from llm import LLMClient, get_llm
-from shared.schemas import ASSIGNEE_TYPES, FINDING_SIGNALS, SIGNAL_DECISION, JudgeFinding, Transcript
+from shared.schemas import ASSIGNEE_TYPES, JudgeFinding, Transcript
 
 
 class FindingExtractionUnavailableError(RuntimeError):
@@ -44,18 +43,15 @@ _FACILITATION_RE = re.compile(r"말씀해\s?주세요")
 
 _LUNA_SYSTEM_PROMPT = (
     "너는 회의/채팅 전사록에서 다음 단계가 볼 가치가 있는 발화만 골라내는 필터다. "
-    "고른 발화마다 signal 로 어느 쪽 신호인지 표시한다:\n"
-    "  signal=\"decision\" — 문서에 쓸 새 내용이 있다 (일정 합의, 담당자 지정, 작업 범위 변경,"
-    " 프로젝트 관련 결정)\n"
-    "  signal=\"progress\" — 문서에 쓸 새 내용은 없지만 **이미 있는 작업의 진척** 신호다\n"
-    "인사/잡담/맞장구/회의 진행 멘트(시작·마무리 인사, 발언 요청)는 둘 다 아니므로 제외한다. "
+    "일정 합의, 담당자 지정, 작업 범위 변경, 프로젝트 관련 결정은 포함하고, "
+    "인사/잡담/맞장구/회의 진행 멘트(시작·마무리 인사, 발언 요청)는 제외한다. "
     "이미 하고 있거나 끝낸 작업에 대한 진행상황 공유(예: '저는 어제 로그인 API 붙였고요', "
-    "'디자인 시스템 정리하고 있어요')는 signal=\"progress\" 로 포함한다 — 새 결정은 아니지만 "
+    "'디자인 시스템 정리하고 있어요')도 포함한다 — 새 결정은 아니지만 "
     "기존 작업의 상태를 바꿀 신호라 버리면 완료 소식이 어디에도 도달하지 못한다. "
     "다만 **어떤 작업인지 문장에서 알 수 있어야** 한다 — '어제 야근했어요', '다른 작업 좀 "
     "했어요'처럼 가리키는 작업이 없으면 상태를 바꿀 대상이 없으므로 제외한다. "
     "진행상황 공유 안에 새로운 일정/담당자/범위 결정이 실제로 포함돼 있으면 그 결정 부분은 "
-    "signal=\"decision\" 으로 따로 낸다. "
+    "따로 낸다. "
     "질문 형태(예: ~ 어때요?, ~할 수 있어요?)나 제안/의견 형태(예: ~하는 게 나을 것 같아요, "
     "~하면 좋겠어요)는 아직 결정된 게 아니므로 그 자체로는 포함하지 않는다 — 다만 그 제안에 "
     "대한 답변/합의가 의미 있다면, 답변 쪽 발화에 제안 내용까지 반영해서 자기완결적으로 "
@@ -171,17 +167,6 @@ def _valid_indices(item: dict, n: int) -> list[int]:
     return sorted({i for i in raw if type(i) is int and 0 <= i < n})
 
 
-def _valid_signal(item: dict) -> str:
-    """LLM 이 준 signal 을 허용값으로 좁힌다. 모르는 값이면 decision 으로 둔다.
-
-    signal 은 라우팅용 축이라 값이 이상하다고 항목을 버리면 결정이 통째로 사라진다.
-    decision 이 기본인 이유는 그쪽이 안전한 실패이기 때문이다 — progress 로 잘못 보내면
-    문서 갱신 경로를 건너뛰지만, decision 으로 잘못 보내면 2단계가 한 번 더 걸러준다.
-    """
-    raw = item.get("signal")
-    return raw if raw in FINDING_SIGNALS else SIGNAL_DECISION
-
-
 _NO_RAW_TYPES = {"first", "group", "none"}  # 가리킬 원문 호칭이 없는 타입
 
 
@@ -208,12 +193,17 @@ def _luna_user_prompt(numbered: str) -> str:
     return (
         "다음은 번호가 매겨진 발화 목록이다. 의미 있다고 판단한 내용마다 근거가 되는 줄 번호 "
         "전부(indices)와, 앞뒤 문맥까지 반영해서 이것만 읽어도 무슨 내용인지 알 수 있게 다시 쓴 "
-        "자기완결적 요약(summary), 어느 쪽 신호인지(signal), 왜 그렇게 판단했는지 짧은 "
+        "자기완결적 요약(summary), 왜 그렇게 판단했는지 짧은 "
         "이유(reason)를 JSON으로만 답하라.\n\n"
         "하나의 결정이 여러 줄에 걸쳐 만들어지면(제안 → 합의, 지시 → 수락) 그 줄 번호를 모두 "
         "indices 에 담아라. 한 줄로 끝나면 번호 하나만 담는다. 서로 다른 결정은 따로 나눈다.\n\n"
-        'signal 은 "decision"(문서에 쓸 새 내용) 또는 "progress"(기존 작업의 진척) 둘 중 하나다.\n\n'
-        '형식: {"findings": [{"indices": [1, 2], "summary": "...", "signal": "decision", '
+        "담당자가 1인칭(본인이 '제가/저는 ~할게요'라고 말함)이면, **그 사람이 말한 줄이 indices 의 "
+        "마지막 번호가 되게** 하라 — 다음 단계는 근거 마지막 줄을 말한 사람을 1인칭 담당자로 본다. "
+        "그래서 1인칭 발화 뒤에 다른 사람이 한 맞장구·감사·짧은 응답(예: '오케이', '네네', "
+        "'든든하네요')은 indices 에 넣지 않는다. 그 뒤에 다른 사람이 마감이나 범위 같은 새 내용을 "
+        "덧붙이면 그건 별개의 결정으로 따로 낸다. 다만 담당자 본인이 뒤에서 다시 답했다면(마감을 묻자 "
+        "본인이 그때까지 하겠다고 답함) 본인의 그 답까지 묶어서 본인 줄로 끝나게 한다.\n\n"
+        '형식: {"findings": [{"indices": [1, 2], "summary": "...", '
         '"assignee_type": "thirdname", "assignee_raw": "지민님", "assignee_resolved": null, '
         '"reason": "..."}]}\n\n'
         f"{numbered}"
@@ -236,12 +226,11 @@ def extract_findings_llm(transcript: Transcript, client: LLMClient) -> list[Judg
     if result is None:
         return None
 
-    if "findings" not in result:
-        findings_raw: list = []  # 키 자체가 없으면 "0건"으로 정상 처리
-    else:
-        findings_raw = result.get("findings")
-        if not isinstance(findings_raw, list):
-            return None  # 값은 있는데 리스트가 아니면 신뢰 불가
+    # 명시적인 {"findings": []} 만 정상 0건이다. 키가 없는 응답({} 등)을 0건으로 보면 모델 오류가
+    # "후보 없음"으로 확정돼 회의가 빈 추출로 닫히고 다시 보낼 수 없다(#128 리뷰)
+    findings_raw = result.get("findings")
+    if not isinstance(findings_raw, list):
+        return None
 
     findings: list[JudgeFinding] = []
     for item in findings_raw:
@@ -253,8 +242,10 @@ def extract_findings_llm(transcript: Transcript, client: LLMClient) -> list[Judg
         summary = str(item.get("summary", "")).strip()
         evidence = [sentences[i] for i in idxs]
         # 마지막 줄을 앵커로 삼는다 — "제안 → 합의" 구조에선 결론을 말한 발화가 뒤에 오고,
-        # 1인칭("제가 할게요") 담당자 해소도 그 발화의 화자를 봐야 한다.
-        # ponytail: 앵커가 항상 마지막이라는 보장은 없다. 어긋나면 LLM 에 anchor 를 따로 받는다.
+        # 1인칭("제가 할게요") 담당자 해소도 그 발화의 화자를 봐야 한다. 1인칭 뒤의 맞장구가 묶여
+        # 엉뚱한 화자가 담당자가 되지 않도록 프롬프트가 "본인 줄로 끝나게" 시킨다(골든셋 speaker_*).
+        # ponytail: 프롬프트로만 지킨다(코드 검증 없음). speaker_* 에서 틀린 담당자가 다시 나오면
+        # LLM 에 담당자 줄 번호를 따로 받는다.
         anchor = idxs[-1]
         a_type, a_raw, a_resolved = _valid_assignee(item)
         findings.append(
@@ -265,7 +256,6 @@ def extract_findings_llm(transcript: Transcript, client: LLMClient) -> list[Judg
                 source=transcript.source,
                 seq=seqs[anchor],
                 speaker=speakers[anchor],
-                signal=_valid_signal(item),
                 assignee_type=a_type,
                 assignee_raw=a_raw,
                 assignee_resolved=a_resolved,

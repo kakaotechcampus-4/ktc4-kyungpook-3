@@ -1,0 +1,46 @@
+{
+  "description": "주간 회의 — 새 할일(담당·마감), 마감 연기(제안→합의), 완료 보고, 변화 없는 진척 보고, 범위 축소, 잡담이 섞인 회의",
+  "meeting_date": "2026-09-28",
+  "workspace_id": "ws_eval",
+  "tasks": [
+    {"task_id": "task_login", "notion_page_id": "n1", "title": "로그인 화면 시안 마무리 작업",
+     "assignee_member_id": "mem_haeun", "due_date": "2026-09-28", "status": "in_progress"},
+    {"task_id": "task_search", "notion_page_id": "n2", "title": "검색 기능 성능 개선",
+     "assignee_member_id": "mem_dongwoo", "due_date": "2026-10-03", "status": "in_progress"},
+    {"task_id": "task_design", "notion_page_id": "n3", "title": "디자인 시스템 색상 팔레트 정리",
+     "assignee_member_id": "mem_haeun", "due_date": null, "status": "in_progress"},
+    {"task_id": "task_social_login", "notion_page_id": null, "title": "로그인 화면에 소셜 로그인 버튼 추가",
+     "assignee_member_id": null, "due_date": null, "status": "todo"},
+    {"task_id": "task_payment", "notion_page_id": "n5", "title": "결제 API 연동",
+     "assignee_member_id": "mem_jimin", "due_date": "2026-09-30", "status": "in_progress"}
+  ],
+  "transcript": {
+    "source": "meeting",
+    "segments": [
+      {"speaker": "uid_pm", "start": 0.0, "end": 2.5, "text": "자, 이번 주 회의 시작할게요.", "seq": 1},
+      {"speaker": "uid_pm", "start": 3.0, "end": 8.0, "text": "먼저 결제 쪽인데, 결제 환불 기능은 지민님이 다음 주까지 만들어 주세요.", "seq": 2},
+      {"speaker": "uid_jimin", "start": 8.5, "end": 9.5, "text": "네, 제가 맡을게요.", "seq": 3},
+      {"speaker": "uid_pm", "start": 10.0, "end": 14.0, "text": "로그인 화면 마감 좀 미룰 수 있을까요? 다음 주 화요일로요.", "seq": 4},
+      {"speaker": "uid_haeun", "start": 14.5, "end": 15.3, "text": "네, 알겠습니다.", "seq": 5},
+      {"speaker": "uid_dongwoo", "start": 16.0, "end": 19.0, "text": "저는 검색 기능 성능 개선 작업 어제 다 끝냈어요.", "seq": 6},
+      {"speaker": "uid_haeun", "start": 19.5, "end": 22.5, "text": "디자인 시스템 색상 팔레트는 계속 정리하고 있어요.", "seq": 7},
+      {"speaker": "uid_pm", "start": 23.0, "end": 26.0, "text": "소셜 로그인 버튼은 이번엔 안 넣기로 하죠.", "seq": 8},
+      {"speaker": "uid_pm", "start": 27.0, "end": 28.5, "text": "점심은 다들 드셨어요?", "seq": 9},
+      {"speaker": "uid_pm", "start": 29.0, "end": 30.5, "text": "오늘은 여기까지 하겠습니다.", "seq": 10}
+    ]
+  },
+  "expected": [
+    {"note": "새 할일 — 담당 지민님, '다음 주까지' → 다음 주 일요일",
+     "action": "create", "title_contains": "환불", "due_date": "2026-10-11", "assignee_raw": "지민님"},
+    {"note": "마감 연기 — '다음 주 화요일' → 10/6",
+     "action": "update", "target_task_id": "task_login", "due_date": "2026-10-06"},
+    {"note": "완료 보고 — in_progress → done",
+     "action": "update", "target_task_id": "task_search", "status": "done"},
+    {"note": "범위 축소 — 바뀌는 Task 필드는 없지만 결정이라 남아야 함",
+     "action": "update", "target_task_id": "task_social_login", "category": "scope"}
+  ],
+  "not_expected_targets": {
+    "task_design": "이미 in_progress 인 작업의 '계속 정리하고 있어요' — 바뀌는 값이 없어 item 이 없어야 함",
+    "task_payment": "회의에서 언급 안 됨 — 결제 환불과 헷갈려 수정되면 안 됨"
+  }
+}

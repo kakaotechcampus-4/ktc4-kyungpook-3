@@ -1,0 +1,182 @@
+{
+  "meta": {
+    "label": "final: v1 프롬프트 확정 후 화자 세트 (test 첫 확인)",
+    "at": "2026-10-02T10:43:26",
+    "model": "gpt-5.6-luna",
+    "prompt_version": "d7405fcfa281",
+    "groups": [
+      "speaker_dev",
+      "speaker_test"
+    ],
+    "runs": 3,
+    "cases": 16
+  },
+  "runs": [
+    {
+      "speaker_dev": {
+        "r_c": 19,
+        "r_t": 23,
+        "l_c": 22,
+        "l_t": 23,
+        "a_c": 9,
+        "a_t": 9,
+        "api_failures": 0,
+        "cases": 8,
+        "speaker": {
+          "correct": 10,
+          "wrong": 0,
+          "unresolved": 0,
+          "missed": 0,
+          "guard": 3
+        },
+        "mistakes": [
+          {
+            "case": "speaker_dev/case_08",
+            "mistakes": [
+              "\"네, 알겠습니다.\" — 기대=True 실제=False (지정받은 사람의 수락 — 앵커가 되어도 화자가 담당자)"
+            ]
+          }
+        ]
+      },
+      "speaker_test": {
+        "r_c": 22,
+        "r_t": 26,
+        "l_c": 25,
+        "l_t": 26,
+        "a_c": 8,
+        "a_t": 10,
+        "api_failures": 0,
+        "cases": 8,
+        "speaker": {
+          "correct": 12,
+          "wrong": 0,
+          "unresolved": 0,
+          "missed": 1,
+          "guard": 4
+        },
+        "mistakes": [
+          {
+            "case": "speaker_test/case_04",
+            "mistakes": [
+              "\"그럼 스토리북은 지민님이 맡는 걸로 정리할게요.\" — 기대=True 실제=False (이름으로 정리 — 화자는 담당자가 아님)",
+              "담당자 missed: \"그럼 스토리북은 지민님이 맡는 걸로 정리할게요.\" — 근거로 든 finding 없음 (정답 지민)"
+            ]
+          },
+          {
+            "case": "speaker_test/case_06",
+            "mistakes": [
+              "\"회원가입 폼은 제가 맡을게요.\" — assignee_type 기대=first 실제=thirdname",
+              "\"저는 비밀번호 찾기를 할게요.\" — assignee_type 기대=first 실제=thirdname"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "speaker_dev": {
+        "r_c": 19,
+        "r_t": 23,
+        "l_c": 22,
+        "l_t": 23,
+        "a_c": 9,
+        "a_t": 9,
+        "api_failures": 0,
+        "cases": 8,
+        "speaker": {
+          "correct": 10,
+          "wrong": 0,
+          "unresolved": 0,
+          "missed": 0,
+          "guard": 3
+        },
+        "mistakes": [
+          {
+            "case": "speaker_dev/case_08",
+            "mistakes": [
+              "\"네, 알겠습니다.\" — 기대=True 실제=False (지정받은 사람의 수락 — 앵커가 되어도 화자가 담당자)"
+            ]
+          }
+        ]
+      },
+      "speaker_test": {
+        "r_c": 22,
+        "r_t": 26,
+        "l_c": 25,
+        "l_t": 26,
+        "a_c": 10,
+        "a_t": 10,
+        "api_failures": 0,
+        "cases": 8,
+        "speaker": {
+          "correct": 12,
+          "wrong": 0,
+          "unresolved": 0,
+          "missed": 1,
+          "guard": 4
+        },
+        "mistakes": [
+          {
+            "case": "speaker_test/case_04",
+            "mistakes": [
+              "\"그럼 스토리북은 지민님이 맡는 걸로 정리할게요.\" — 기대=True 실제=False (이름으로 정리 — 화자는 담당자가 아님)",
+              "담당자 missed: \"그럼 스토리북은 지민님이 맡는 걸로 정리할게요.\" — 근거로 든 finding 없음 (정답 지민)"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "speaker_dev": {
+        "r_c": 19,
+        "r_t": 23,
+        "l_c": 22,
+        "l_t": 23,
+        "a_c": 9,
+        "a_t": 9,
+        "api_failures": 0,
+        "cases": 8,
+        "speaker": {
+          "correct": 10,
+          "wrong": 0,
+          "unresolved": 0,
+          "missed": 0,
+          "guard": 3
+        },
+        "mistakes": [
+          {
+            "case": "speaker_dev/case_08",
+            "mistakes": [
+              "\"네, 알겠습니다.\" — 기대=True 실제=False (지정받은 사람의 수락 — 앵커가 되어도 화자가 담당자)"
+            ]
+          }
+        ]
+      },
+      "speaker_test": {
+        "r_c": 22,
+        "r_t": 26,
+        "l_c": 25,
+        "l_t": 26,
+        "a_c": 10,
+        "a_t": 10,
+        "api_failures": 0,
+        "cases": 8,
+        "speaker": {
+          "correct": 12,
+          "wrong": 0,
+          "unresolved": 0,
+          "missed": 1,
+          "guard": 3
+        },
+        "mistakes": [
+          {
+            "case": "speaker_test/case_04",
+            "mistakes": [
+              "\"그럼 스토리북은 지민님이 맡는 걸로 정리할게요.\" — 기대=True 실제=False (이름으로 정리 — 화자는 담당자가 아님)",
+              "담당자 missed: \"그럼 스토리북은 지민님이 맡는 걸로 정리할게요.\" — 근거로 든 finding 없음 (정답 지민)"
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

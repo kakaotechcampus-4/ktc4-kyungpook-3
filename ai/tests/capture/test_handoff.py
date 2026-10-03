@@ -1,6 +1,7 @@
 """BE 인계(capture/handoff.py). 가짜 BE 로 호출 순서, 본문, 멱등, 실패 통보를 본다. 실제 서버는 안 쓴다."""
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -201,3 +202,185 @@ def test_reregistering_after_a_changed_transcript_flags_the_stale_be_extraction(
     assert "reextracted" not in m
     h.register(m, transcripts_dir=tdir, model_name="x")       # 바뀐 게 없으면 표시도 없다
     assert "stale_extraction" not in m["be"]
+
+
+# ── 유사 task 검색. 판단 파이프라인이 1단계가 고른 finding 마다 부른다 ────────────────────
+
+CANDIDATE = {"task_id": "task_login", "notion_page_id": None, "title": "로그인 화면 시안 마무리", "content_snippet": "",
+             "assignee_member_id": "mem_1", "due_date": "2026-09-28", "status": "in_progress", "similarity": 0.8213,
+             "updated_at": "2026-09-27T01:00:00Z"}
+
+
+def test_similar_search_sends_the_service_token_and_returns_candidates():
+    fake = FakeBe()
+    fake.similar["로그인"] = [CANDIDATE]
+    client = H.BeClient("http://be.local", session=fake, service_token="svc-token")
+    found = client.similar_tasks("ws-1", "로그인 화면 마감을 다음 주 화요일로 연기")
+    assert fake.calls[-1] == ("POST", "/workspaces/ws-1/tasks/similar", {"text": "로그인 화면 마감을 다음 주 화요일로 연기"})
+    assert fake.headers[-1] == {"X-Service-Token": "svc-token"} and fake.timeouts[-1] == H.SIMILAR_TIMEOUT_S
+    assert [(c.task_id, c.title, c.due_date, c.status, c.similarity) for c in found] == \
+        [("task_login", "로그인 화면 시안 마무리", "2026-09-28", "in_progress", 0.8213)]
+    assert found[0].notion_page_id is None                    # 승인 직후라 Notion 페이지가 아직 없는 task
+    assert client.similar_tasks("ws-1", "환불 기능") == []     # 비슷한 task 가 없다. 새 항목이 된다
+    client.create_meeting("ws-1")
+    assert fake.headers[-1] == {}                             # 토큰은 요구하는 경로에만 싣는다
+
+
+def test_a_failed_similar_search_is_an_error_not_an_empty_list():
+    """빈 목록은 "비슷한 task 없음" 이다. 실패를 빈 목록으로 돌려주면 있는 task 가 새 항목으로 또 만들어진다."""
+    fake = FakeBe()
+    with pytest.raises(H.BeError) as wrong_token:
+        H.BeClient("http://be.local", session=fake, service_token="틀린 토큰").similar_tasks("ws-1", "로그인")
+    assert wrong_token.value.code == "UNAUTHENTICATED" and wrong_token.value.status == 401
+    client = H.BeClient("http://be.local", session=fake, service_token="svc-token")
+    with pytest.raises(H.BeError) as no_workspace:
+        client.similar_tasks("없는-워크스페이스", "로그인")
+    assert no_workspace.value.code == "WORKSPACE_NOT_FOUND"
+    fake.embedding_down = True
+    with pytest.raises(H.BeError) as no_embedding:
+        client.similar_tasks("ws-1", "로그인")
+    assert no_embedding.value.code == "EMBEDDING_UNAVAILABLE" and no_embedding.value.status == 502
+    fake.down = True
+    with pytest.raises(H.BeError) as down:
+        client.similar_tasks("ws-1", "로그인")
+    assert down.value.code == "NETWORK"
+
+
+def test_from_env_passes_the_service_token(monkeypatch):
+    from shared import config
+
+    monkeypatch.setattr(config, "settings", lambda: type("S", (), {"be_base_url": "http://be", "be_workspace_id": "ws",
+                                                                  "be_service_token": "svc"})())
+    assert H.from_env().client.service_token == "svc"
+
+
+def test_the_service_token_is_read_from_the_environment(monkeypatch):
+    import importlib
+
+    from shared import config
+
+    monkeypatch.setenv("BE_SERVICE_TOKEN", "svc-from-env")
+    try:
+        assert importlib.reload(config).settings().be_service_token == "svc-from-env"
+    finally:
+        monkeypatch.undo()
+        importlib.reload(config)
+
+
+# ── 판단 경로의 항목. 이미 BE 항목 모양이라 변환하지 않는다 ─────────────────────────────
+
+def _judge_item(**over):
+    base = {"action": "create", "target_task_id": None, "category": "decision", "task_title": "결제 환불 기능 구현",
+            "due_date": "2026-10-04", "status": None, "assignee_type": "thirdname", "assignee_raw": "지민님",
+            "doc_text": "결제 환불 기능 구현을 지민님이 10/4까지 하기로 함",
+            "evidence_quote": "결제 환불 기능은 지민님이 다음 주까지 만들어 주세요.", "evidence_speaker": "101",
+            "evidence_at_ms": 3000}
+    base.update(over)
+    return base
+
+
+def _judge_manifest(tmp_path, items, **extra):
+    m, tdir = _manifest(tmp_path, with_tasks=False)
+    path = tdir / "session_500.items.json"
+    path.write_text(json.dumps(items, ensure_ascii=False), encoding="utf-8")
+    m["items"] = str(path)
+    m.update(extra)
+    return m, tdir
+
+
+def test_judge_items_are_registered_as_they_are(tmp_path):
+    fake = FakeBe()
+    fake.tasks.add("task_login")
+    update = _judge_item(action="update", target_task_id="task_login", category="schedule",
+                         task_title="로그인 화면 시안 마무리", due_date="2026-10-06", assignee_type=None,
+                         assignee_raw=None, doc_text="로그인 화면 시안 마무리 마감을 9/28에서 10/6으로 연기")
+    items = [_judge_item(), update]
+    m, tdir = _judge_manifest(tmp_path, items)
+    be = _handoff(fake).register(m, transcripts_dir=tdir, model_name="x")
+    assert fake.calls[-1][2]["items"] == items       # 키를 더하지도 빼지도 않는다. 확신도는 파이프라인이 준 그대로다
+    assert be["status"] == "done" and be["item_count"] == 2 and "dropped_items" not in be
+
+
+def test_empty_strings_become_null_before_registering(tmp_path):
+    """BE 는 빈 문자열을 "언급은 했는데 못 찾은 담당자" 로 계산한다. null 이어야 계산에서 빠진다."""
+    fake = FakeBe()
+    m, tdir = _judge_manifest(tmp_path, [_judge_item(assignee_raw="", assignee_type="none", due_date="", status="  ")])
+    _handoff(fake).register(m, transcripts_dir=tdir, model_name="x")
+    sent = fake.calls[-1][2]["items"][0]
+    assert sent["assignee_raw"] is None and sent["due_date"] is None and sent["status"] is None
+    assert sent["task_title"] == "결제 환불 기능 구현" and sent["assignee_type"] == "none"
+
+
+def test_items_the_be_skipped_are_counted(tmp_path):
+    """BE 는 수정 대상이 사라진 항목과 제목 없는 새 항목을 건너뛰고 201 을 준다. 보낸 수와 저장된 수가 다르면 남긴다."""
+    fake = FakeBe()                                       # task_login 이라는 task 가 없다
+    gone = _judge_item(action="update", target_task_id="task_login")
+    m, tdir = _judge_manifest(tmp_path, [_judge_item(), gone])
+    h = _handoff(fake)
+    be = h.register(m, transcripts_dir=tdir, model_name="x")
+    assert be["item_count"] == 1 and be["dropped_items"] == 1
+    assert h.register(m, transcripts_dir=tdir, model_name="x")["dropped_items"] == 1     # 복구가 다시 보내도 같다
+
+
+def test_unjudged_findings_are_marked_in_the_be_record(tmp_path):
+    fake = FakeBe()
+    fails = [{"stage": "judge", "text": "로그인 화면 마감을 미루기로 함", "reason": "Terra 응답을 파싱하지 못했습니다."}]
+    m, tdir = _judge_manifest(tmp_path, [_judge_item()], extract_failures=fails, extract_partial=True)
+    h = _handoff(fake)
+    assert h.register(m, transcripts_dir=tdir, model_name="x")["missing_findings"] == 1
+    m.pop("extract_failures")
+    assert "missing_findings" not in h.register(m, transcripts_dir=tdir, model_name="x")
+
+
+def test_a_stale_be_extraction_keeps_the_counts_of_what_the_be_holds(tmp_path):
+    """전사가 바뀌어 다시 뽑아 보냈는데 BE 가 옛 추출을 돌려줬다. be 에 적힌 수는 BE 에 남은 옛 추출의 것이어야 한다.
+    새 결과의 수로 덮어쓰면 item_count(옛 추출)와 어긋난다. 새 결과의 실패는 매니페스트의 extract_failures 에 있다."""
+    fake = FakeBe()                                       # task_login 이 없어 수정 항목 하나가 건너뛰어진다
+    gone = _judge_item(action="update", target_task_id="task_login")
+    fails = [{"stage": "judge", "text": "로그인 화면 마감을 미루기로 함", "reason": "Terra 응답을 파싱하지 못했습니다."}]
+    m, tdir = _judge_manifest(tmp_path, [_judge_item(), gone], extract_failures=fails, extract_partial=True)
+    h = _handoff(fake)
+    be = h.register(m, transcripts_dir=tdir, model_name="x")
+    assert (be["item_count"], be["dropped_items"], be["missing_findings"]) == (1, 1, 1)
+    Path(m["items"]).write_text(json.dumps([_judge_item()] * 3, ensure_ascii=False), encoding="utf-8")
+    m["extract_failures"] = fails * 2                     # 새 전사로 다시 뽑았다. 항목 셋, 판단하지 못한 finding 둘
+    m["reextracted"] = True
+    be = h.register(m, transcripts_dir=tdir, model_name="x")
+    assert be["stale_extraction"] is True and len(fake.extractions["m1"]["items"]) == 2
+    assert (be["item_count"], be["dropped_items"], be["missing_findings"]) == (1, 1, 1)
+
+
+def test_similar_search_over_a_real_http_connection():
+    """가짜 세션이 아니라 requests 로 실제 소켓을 거친다. 헤더와 본문이 선을 타고 그대로 가는지 본다."""
+    import threading
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    seen = {}
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self):
+            seen["path"] = self.path
+            seen["token"] = self.headers.get("X-Service-Token")
+            seen["body"] = json.loads(self.rfile.read(int(self.headers["Content-Length"])).decode("utf-8"))
+            body = json.dumps({"data": {"items": [CANDIDATE]}, "error": None}).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *args):
+            pass
+
+    server = HTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        client = H.BeClient(f"http://127.0.0.1:{server.server_port}", service_token="svc-token")
+        found = client.similar_tasks("ws-1", "로그인 화면 마감을 미루기로 함")
+    finally:
+        server.shutdown()
+        server.server_close()
+    assert seen == {"path": "/api/v1/workspaces/ws-1/tasks/similar", "token": "svc-token",
+                    "body": {"text": "로그인 화면 마감을 미루기로 함"}}
+    assert [c.task_id for c in found] == ["task_login"]

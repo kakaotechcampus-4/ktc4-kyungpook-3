@@ -1,7 +1,10 @@
 export type {
+  CreateWorkspaceInput,
+  OnboardingAction,
   OnboardingProgress,
   OnboardingStep,
   OnboardingStepStatus,
+  OnboardingUpdate,
   Workspace,
   WorkspaceSummary,
 } from './model/types'
@@ -16,8 +19,21 @@ export {
   workspaceEntryPath,
 } from './lib/entryPath'
 export {
+  isReviewableStep,
+  nextReviewPath,
+  previousStepPath,
+  readOnboardingReview,
+} from './lib/onboardingReview'
+export {
   WORKSPACE_LIST_QUERY_KEY,
   fetchWorkspaces,
   useMemberWorkspace,
   workspaceListQueryOptions,
 } from './api/workspaceList'
+export {
+  createWorkspace,
+  fetchWorkspace,
+  upsertWorkspaceInList,
+  workspaceDetailQueryOptions,
+} from './api/workspaceDetail'
+export { saveOnboardingStep, updateOnboarding } from './api/onboarding'

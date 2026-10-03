@@ -1,0 +1,11 @@
+# 이미지에는 app, migrations, alembic.ini만 들어간다(Dockerfile의 COPY 참고).
+# 빌드 컨텍스트로 넘어가지 않게 막아 두는 것들. 특히 .env는 이미지에 들어가면 안 된다.
+.env
+.env.*
+.venv
+__pycache__
+*.py[cod]
+.pytest_cache
+tests
+mm.db
+*.db

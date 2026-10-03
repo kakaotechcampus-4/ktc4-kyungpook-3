@@ -15,8 +15,8 @@ if (!root) {
 async function enableMocking(): Promise<void> {
   // DEV 를 먼저 본다 — 번들러가 이 분기를 지워야 프로덕션 번들에 MSW 가 남지 않는다
   if (!import.meta.env.DEV || !config.mswEnabled) return
-  const { worker } = await import('@/shared/mock/browser')
-  await worker.start({ onUnhandledRequest: 'warn' })
+  const { startMockWorker } = await import('@/shared/mock/browser')
+  await startMockWorker()
 }
 
 // 부팅 조회는 createApp 이 시작한다. worker 가 뜬 뒤에 만들어야 첫 요청부터 MSW 가 받는다

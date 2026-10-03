@@ -86,6 +86,46 @@ def test_scorer_counts_unlabeled_and_duplicate_outputs():
     assert any("같은 앵커로 2건" in m for m in mistakes)
 
 
+def test_speaker_scorer_compares_the_resolved_person_not_the_type():
+    """담당자 채점이 호칭 분류가 아니라 **풀린 사람**을 정답과 비교하는지.
+
+    "제가 맡을게요"(지민) 뒤에 "네, 감사합니다"(하은)가 묶이면 assignee_type=first 는 맞지만
+    BE 는 근거 마지막 줄의 화자(하은)를 담당자로 찾는다. 분류만 보면 정답으로 보인다.
+    """
+    from judge.eval_golden_set import _score_speaker
+
+    case = {
+        "turns": [{"speaker": "지민", "text": "API 명세서는 제가 정리할게요."},
+                  {"speaker": "하은", "text": "네, 감사합니다."}],
+        "expected": [{"text": "API 명세서는 제가 정리할게요.", "should_flag": True, "assignee": "지민"},
+                     {"text": "네, 감사합니다.", "should_flag": False}],
+    }
+    claim, thanks = "API 명세서는 제가 정리할게요.", "네, 감사합니다."
+
+    bundled = JudgeFinding(text="", evidence=[claim, thanks], indices=[0, 1], speaker="하은", assignee_type="first")
+    out = _score_speaker(case, [bundled])
+    assert (len(out["correct"]), len(out["wrong"]), len(out["guard"])) == (0, 1, 1)
+
+    alone = JudgeFinding(text="", evidence=[claim], indices=[0], speaker="지민", assignee_type="first")
+    out = _score_speaker(case, [alone])
+    assert (len(out["correct"]), len(out["wrong"]), len(out["guard"])) == (1, 0, 0)
+
+    # 이름 호칭은 화자가 아니라 원문/해소 이름으로 풀린다. 존칭은 떼고 비교한다
+    by_name = JudgeFinding(text="", evidence=[claim, thanks], indices=[0, 1], speaker="하은",
+                           assignee_type="thirdname", assignee_raw="지민님")
+    assert len(_score_speaker(case, [by_name])["correct"]) == 1
+
+    # 같은 결정이 두 건으로 나오고 하나만 틀려도 wrong 이다 — BE 에는 두 항목이 다 간다.
+    # 앵커가 맞는 쪽만 보면 틀린 담당자를 놓친다(#137 CodeRabbit)
+    out = _score_speaker(case, [alone, bundled])
+    assert (len(out["correct"]), len(out["wrong"])) == (0, 1)
+
+    # 판정 보류와 놓침은 틀린 담당자와 따로 센다
+    held = JudgeFinding(text="", evidence=[claim], indices=[0], speaker="지민", assignee_type=None)
+    assert len(_score_speaker(case, [held])["unresolved"]) == 1
+    assert len(_score_speaker(case, [])["missed"]) == 1
+
+
 def test_scorer_separates_hit_from_anchor():
     """정답 판정(근거 어디에든)과 오탐 판정(앵커일 때만)을 분리하는지.
 
@@ -263,44 +303,22 @@ def test_llm_path_ignores_out_of_range_indices():
     assert extract_findings_llm(t, fake) == []
 
 
-def test_llm_path_reads_signal_and_defaults_to_decision():
-    """signal 을 읽어 담고, 값이 없거나 모르는 값이면 decision 으로 둔다.
-
-    signal 은 라우팅 축이라 값이 이상하다고 항목을 버리면 결정이 통째로 사라진다.
-    decision 이 기본인 이유는 그쪽이 안전한 실패라서다 — progress 로 잘못 보내면 문서 갱신
-    경로를 건너뛰지만, decision 으로 잘못 보내면 2단계가 한 번 더 걸러준다.
-    """
-    t = _transcript(
-        TranscriptSegment(speaker="a", start=0.0, end=1.0, text="로그인 API 다 붙였어요.", seq=1),
-        TranscriptSegment(speaker="b", start=1.0, end=2.0, text="금요일까지 하기로 했습니다.", seq=2),
-        TranscriptSegment(speaker="c", start=2.0, end=3.0, text="문서도 정리해뒀어요.", seq=3),
-    )
-    fake = FakeLLM(responses=[{"findings": [
-        {"indices": [0], "signal": "progress", "reason": "완료 보고"},
-        {"indices": [1], "signal": "decision", "reason": "일정 합의"},
-        {"indices": [2], "signal": "무슨값", "reason": "모르는 값"},
-    ]}])
-    findings = extract_findings_llm(t, fake)
-
-    assert [f.signal for f in findings] == ["progress", "decision", "decision"]
-
-
 def test_progress_report_reaches_the_next_stage():
-    """완료 보고가 1단계에서 사라지지 않는지 — 이 PR 의 핵심.
+    """완료 보고가 1단계에서 사라지지 않는지.
 
-    축이 "문서를 바꿀 만한가" 하나뿐이던 시절엔 완료 보고가 문서 기준 무의미하다는 이유로
+    기준이 "문서를 바꿀 만한가" 하나뿐이던 시절엔 완료 보고가 문서 기준 무의미하다는 이유로
     걸러져서, 2단계의 status(done) 판정에 영원히 도달하지 못했다.
     """
     t = _transcript(
         TranscriptSegment(speaker="a", start=0.0, end=1.0, text="로그인 API 다 붙였어요.", seq=1)
     )
     fake = FakeLLM(responses=[{"findings": [
-        {"indices": [0], "summary": "로그인 API 연동을 완료함", "signal": "progress", "reason": "완료 보고"}
+        {"indices": [0], "summary": "로그인 API 연동을 완료함", "reason": "완료 보고"}
     ]}])
     findings = extract_findings_llm(t, fake)
 
     assert len(findings) == 1
-    assert findings[0].signal == "progress"
+    assert findings[0].text == "로그인 API 연동을 완료함"
     assert findings[0].evidence == ["로그인 API 다 붙였어요."]
 
 
@@ -371,30 +389,6 @@ def test_golden_set_assignee_labels_are_valid():
     assert not problems, "골든셋 assignee_type 라벨 문제:\n  " + "\n  ".join(problems)
 
 
-def test_golden_set_signal_labels_are_valid():
-    """골든셋의 signal 라벨이 허용값인지, should_flag=True 인 라벨에만 붙어 있는지."""
-    import json
-    from pathlib import Path as _P
-
-    from shared.schemas import FINDING_SIGNALS
-
-    golden_dir = _P(__file__).resolve().parent.parent / "judge" / "golden_set"
-    problems: list[str] = []
-    for path in sorted(golden_dir.rglob("case_*.json")):
-        case = json.loads(path.read_text(encoding="utf-8"))
-        where = f"{path.parent.name}/{case['case_id']}"
-        for exp in case["expected"]:
-            sig = exp.get("signal")
-            if sig is None:
-                continue
-            if sig not in FINDING_SIGNALS:
-                problems.append(f"{where}: 허용되지 않은 signal {sig!r} — {exp['text']!r}")
-            if not exp["should_flag"]:
-                problems.append(f"{where}: 고르지도 않을 문장에 signal 이 붙음 — {exp['text']!r}")
-
-    assert not problems, "골든셋 signal 라벨 문제:\n  " + "\n  ".join(problems)
-
-
 def test_llm_path_ignores_bool_indices():
     # bool은 int의 서브클래스라 isinstance(i, int) 검사만으로는 True/False가 0/1번 문장으로
     # 잘못 통과할 수 있다 — type()으로 엄격히 걸러지는지 확인한다.
@@ -417,11 +411,20 @@ def test_llm_path_empty_transcript_returns_empty_without_calling():
     assert fake.prompts == []  # 빈 전사록이면 호출 자체를 안 함
 
 
-def test_llm_path_treats_missing_findings_key_as_empty():
-    # {} 처럼 findings 키 자체가 없으면 "0건"으로 정상 처리한다 — 실패가 아니다.
+def test_llm_path_treats_missing_findings_key_as_failure():
+    # {} 처럼 findings 키가 없는 응답을 0건으로 보면 모델 오류가 "후보 없음"으로 확정돼 회의가 빈 추출로
+    # 닫힌다(#128 리뷰). 명시적인 {"findings": []} 만 정상 0건이다.
     t = _transcript(TranscriptSegment(speaker="a", start=0.0, end=1.0, text="안녕하세요.", seq=0))
-    fake = FakeLLM(responses=[{}])
-    assert extract_findings_llm(t, fake) == []
+    assert extract_findings_llm(t, FakeLLM(responses=[{}])) is None
+    assert extract_findings_llm(t, FakeLLM(responses=[{"findings": []}])) == []
+    with pytest.raises(FindingExtractionUnavailableError):
+        import judge.semantic_judge as sj
+        original = sj.get_llm
+        sj.get_llm = lambda which: FakeLLM(responses=[{}])
+        try:
+            extract_findings(t)
+        finally:
+            sj.get_llm = original
 
 
 def test_llm_path_returns_none_when_findings_is_null():

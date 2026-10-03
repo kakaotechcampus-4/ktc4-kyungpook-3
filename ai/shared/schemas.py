@@ -103,16 +103,10 @@ class ExtractedTask(_Base):
     due_status: str = "missing"
 
 
-JudgeCategory = Literal["schedule", "assignee", "scope", "decision", "none"]
-JUDGE_CATEGORIES: tuple[str, ...] = ("schedule", "assignee", "scope", "decision", "none")
-
-# JudgeFinding.signal — 1단계가 고른 발화가 **어느 축의 신호인지**.
-# JudgeResult.category(schedule|assignee|scope|decision|none)와는 다른 축이다: category 는
-# "문서에 무엇이 바뀌는가"를 2단계가 매기고, signal 은 "문서 축인가 작업 상태 축인가"를
-# 1단계가 매긴다. 값 이름이 겹쳐 보이지만(decision) 섞어 쓰면 안 된다.
-SIGNAL_DECISION = "decision"  # 문서에 쓸 새 내용이 있다 (결정/합의/범위 변경)
-SIGNAL_PROGRESS = "progress"  # 문서에 쓸 새 내용은 없지만 기존 작업의 진척 신호다
-FINDING_SIGNALS: tuple[str, ...] = (SIGNAL_DECISION, SIGNAL_PROGRESS)
+# status 는 진행 상태만 바뀌는 발화("다 끝냈어요")다. 따로 두지 않으면 Terra 가 "그 외"인 decision 을 고르고,
+# decision 에 상태 변경 · 바뀌는 것 없음 · 필드에 안 담기는 결정이 섞인다(decision_log 0014)
+JudgeCategory = Literal["schedule", "assignee", "status", "scope", "decision", "none"]
+JUDGE_CATEGORIES: tuple[str, ...] = ("schedule", "assignee", "status", "scope", "decision", "none")
 
 # 담당자 호칭 분류. ExtractedTask.assignee_type 과 **같은 어휘를 쓴다** — 기준 원본은
 # extract/TASK_CRITERIA.md 다. 3인칭을 third 하나로 합치지 않는 이유는 BE 처리 경로가
@@ -146,11 +140,6 @@ class JudgeFinding(_Base):
     맡아주세요."). 그래서 evidence/indices 는 리스트다. seq/speaker 는 그중 **마지막 줄**을
     가리킨다 — 결론을 말한 발화이자, 1인칭 담당자 해소가 봐야 하는 화자다.
 
-    signal 은 이 발화가 **어느 축의 신호인지**를 가른다. 축이 하나뿐이면("문서를 바꿀 만한가")
-    "로그인 API 다 붙였어요" 같은 완료 보고가 문서 기준으로 무의미하다는 이유만으로 파이프라인
-    에서 사라지고, 2단계의 status(done) 판정에 영원히 도달하지 못한다. 그래서 문서 축과 작업
-    상태 축을 나눠 표시하고, 버릴지 말지는 호출자가 축별로 정한다.
-
     진행 상태(todo/done 등)는 여기 두지 않는다 — Notion 후보와 비교해야 알 수 있는 값이라
     Terra 2단계(JudgeResult.status)가 정한다. evidence_status 는 구조화 단계가 채우고, 그때까지는
     None 이 "아직 판정 전"을 뜻한다.
@@ -162,7 +151,6 @@ class JudgeFinding(_Base):
     source: str = "meeting"  # "meeting" | "chat"
     seq: int = 0  # 근거 마지막 줄의 TranscriptSegment.seq — 근거 추적용 안정 식별자
     speaker: str | None = None  # 근거 마지막 줄의 화자(opaque id) — 문맥 참고/디버깅용
-    signal: str = SIGNAL_DECISION  # decision | progress — 문서 축인가 작업 상태 축인가
     reason: str = ""  # 왜 후보로 골랐는지 (규칙 기반이면 어떤 규칙에 걸렸는지)
     method: str = "rules"  # rules | llm
 
@@ -182,7 +170,8 @@ class JudgeFinding(_Base):
 class NotionCandidate(_Base):
     """BE가 벡터 검색으로 찾아준, 의미상 가장 가까운 기존 Notion 항목 하나."""
 
-    notion_page_id: str  # 이 후보가 가리키는 실제 Notion 페이지 ID (나중에 반영할 때 필수)
+    notion_page_id: str | None = None  # 이 후보의 Notion 페이지 ID. 승인 직후 Notion 동기화 전인
+    # Task 는 아직 페이지가 없어 None 이다(#102 유사 검색 응답과 같음). 반영은 BE 가 task_id 로 한다
     task_id: str | None = None  # 우리 DB task 테이블과 연결돼 있으면 그 ID (없으면 아직 task화 안 된 Notion 내용)
     title: str = ""  # 페이지 항목 제목
     content_snippet: str = ""  # 본문 일부 — 유사도 비교와 문맥 파악용 (전체 본문 아님, 필요한 만큼만)
@@ -232,7 +221,7 @@ class JudgeResult(_Base):
     """
 
     is_meaningful: bool
-    category: str  # schedule|assignee|scope|decision|none
+    category: str  # schedule|assignee|status|scope|decision|none
     is_new: bool = False  # True=새 Notion 항목 생성, False=matched_task_id 항목 수정
     matched_task_id: str | None = None  # is_new=False 일 때 수정 대상. is_new=True 면 None
     matched_notion_page_id: str | None = None  # matched_task_id가 None이어도(아직 우리 DB Task와
@@ -244,9 +233,33 @@ class JudgeResult(_Base):
 
 
 @dataclass
-class DraftResult(_Base):
-    """Phase 2 Luna 출력. structured = {task, assignee_member_id, due_date, type}."""
+class DraftStructured(_Base):
+    """Luna 가 새로 만든 구조화 값. /extractions item 으로 옮겨 담긴다.
 
-    structured: dict[str, Any]
-    doc_text: str
-    method: str = "rules"
+    Luna 가 **새로 만들어야 하는 값만** 둔다. 담당자는 JudgeFinding(1단계가 전사록 전체를 보고
+    판정), 진행 상태는 JudgeResult(2단계가 후보와 비교해 판정)에 이미 있으므로 여기서 다시
+    판단하지 않는다 — 같은 값을 두 번 판단하면 단계마다 다른 답이 나올 수 있다.
+
+    None 은 "바꾸지 않음"이다. update 에서는 값이 있는 필드만 승인 payload 에 들어가고, 승인 시
+    그 값으로 덮어쓰므로 바뀌지 않은 필드를 채우면 기존 값이 바뀐다.
+    """
+
+    task: str | None = None  # 할일 제목. create 에서만 채움 — update 에서 채우면 기존 제목을 덮어씀
+    due_date: str | None = None  # ISO 날짜(YYYY-MM-DD). 발화에 마감이 있을 때만
+
+
+@dataclass
+class DraftResult(_Base):
+    """Luna Phase 2 출력. JudgeResult.is_meaningful=True 인 발화에만 만든다."""
+
+    structured: DraftStructured
+    doc_text: str  # PM 승인 화면에 보여줄 한 문장 — 무엇이 왜 바뀌는지
+    method: str = "llm"  # 1·2단계와 같이 규칙 기반 폴백이 없으므로 항상 llm
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "DraftResult":
+        return cls(
+            structured=DraftStructured.from_dict(data.get("structured") or {}),
+            doc_text=data["doc_text"],
+            method=data.get("method", "llm"),
+        )

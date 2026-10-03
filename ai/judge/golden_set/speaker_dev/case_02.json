@@ -1,0 +1,48 @@
+{
+  "case_id": "case_02",
+  "scenario": "first_then_two_acks",
+  "description": "1인칭 담당 뒤에 두 사람이 연달아 맞장구",
+  "turns": [
+    {
+      "speaker": "하은",
+      "text": "오늘은 버그 위주로 볼게요."
+    },
+    {
+      "speaker": "도윤",
+      "text": "로그인 세션 끊기는 버그는 제가 볼게요."
+    },
+    {
+      "speaker": "하은",
+      "text": "좋아요."
+    },
+    {
+      "speaker": "민재",
+      "text": "고마워요 도윤님."
+    }
+  ],
+  "expected": [
+    {
+      "text": "오늘은 버그 위주로 볼게요.",
+      "should_flag": false,
+      "note": "회의 진행 멘트"
+    },
+    {
+      "text": "로그인 세션 끊기는 버그는 제가 볼게요.",
+      "should_flag": true,
+      "note": "1인칭 담당",
+      "assignee_type": "first",
+      "assignee": "도윤"
+    },
+    {
+      "text": "좋아요.",
+      "should_flag": false,
+      "note": "단순 맞장구"
+    },
+    {
+      "text": "고마워요 도윤님.",
+      "should_flag": false,
+      "note": "단순 맞장구"
+    }
+  ],
+  "counts_toward_pass_rate": true
+}
