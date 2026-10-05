@@ -36,11 +36,12 @@ def targets(recordings_dir: Path) -> list[tuple[Path, dict]]:
 
 
 def backfill(recordings_dir: Path, *, transcripts_dir: Path, handoff, dry_run: bool = False) -> list[dict]:
-    """대상마다 {session, sent, busy, error, sources}. 보낸 회의는 stages 에 sourced 를 남기고 상태는 그대로 둔다."""
+    """대상마다 {session, sent, busy, already, error, sources}. 보낸 회의는 stages 에 sourced 를 남기고 상태는 그대로 둔다."""
     claims = R.Claims()
     rows = []
     for path, m in targets(recordings_dir):
-        row = {"session": m.get("session"), "sent": False, "busy": False, "error": None, "sources": None}
+        row = {"session": m.get("session"), "sent": False, "busy": False, "already": False, "error": None,
+               "sources": None}
         rows.append(row)
         if dry_run:
             continue
@@ -50,6 +51,7 @@ def backfill(recordings_dir: Path, *, transcripts_dir: Path, handoff, dry_run: b
             continue
         try:
             if not _needs_sources(held):        # 잡는 사이 남이 보냈다
+                row["already"] = True
                 continue
             be = handoff.save_sources(held, transcripts_dir=transcripts_dir, title=R.meeting_title(held))
             held.setdefault("stages", {})[R.STATUS_SOURCED] = now_iso()
@@ -78,12 +80,19 @@ def main(argv: list[str] | None = None) -> int:
         elif r["sent"]:
             s = r["sources"]
             print(f"{r['session']}: 보냄 (새로 {s['inserted']}줄, 이미 있던 {s['skipped']}줄)")
+        elif r["already"]:
+            print(f"{r['session']}: 이미 저장됨")
         elif r["busy"]:
             print(f"{r['session']}: 처리 중이라 건너뜀")
         elif r["error"]:
             print(f"{r['session']}: 실패 {r['error']}")
     print(f"대상 {len(rows)}개")
-    return 1 if any(r["error"] for r in rows) else 0
+    if any(r["error"] for r in rows):
+        return 1
+    if any(r["busy"] for r in rows):
+        print("처리 중이던 회의가 있다. 봇이나 워커가 끝낸 뒤 다시 돌려 주세요")
+        return 2
+    return 0
 
 
 if __name__ == "__main__":

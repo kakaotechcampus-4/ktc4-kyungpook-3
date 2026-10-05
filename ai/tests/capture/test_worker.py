@@ -378,3 +378,16 @@ async def test_the_worker_log_says_why_a_meeting_failed_and_what_was_left_unjudg
     await worker.run_pass(guild_id="77", manual=True)         # 다음 시도. 상한(1회)에 닿아 남긴 채 인계한다
     second = capsys.readouterr().out
     assert "handed_off" in second and "판단하지 못한 발화 1건" in second and _status(path) == "handed_off"
+
+
+async def test_the_worker_log_says_how_many_lines_were_saved_or_why_the_save_was_skipped(tmp_path, capsys):
+    """워커 모드는 채널에 올리지 않는다. 회의록이 BE 에 갔는지, 토큰이 없어 건너뛰었는지가 로그에라도 있어야 한다."""
+    _session(tmp_path, ts=500)
+    fake = FakeBe()
+    with_token = H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"), "ws-1")
+    await _worker(tmp_path, extractor=_extractor({}), handoff=with_token).run_pass()
+    assert "회의록 저장 3줄" in capsys.readouterr().out and sorted(fake.sources["m1"]) == [1, 2, 3]
+    _session(tmp_path, ts=600)
+    no_token = H.Handoff(H.BeClient("http://be", session=fake), "ws-1")
+    await _worker(tmp_path, extractor=_extractor({}), handoff=no_token).run_pass()
+    assert "건너뜀 회의록 저장(BE_SERVICE_TOKEN 없음)" in capsys.readouterr().out

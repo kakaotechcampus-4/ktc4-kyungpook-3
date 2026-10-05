@@ -29,7 +29,7 @@ from pathlib import Path
 
 from capture.handoff import from_env as handoff_from_env
 from capture.judge_path import extract_path
-from capture.recorder import Claims, backend_from_env, build_extractor, recover_pass, save_manifest
+from capture.recorder import STATUS_SOURCED, Claims, backend_from_env, build_extractor, recover_pass, save_manifest
 from shared.config import RECORDINGS_DIR, TRANSCRIPTS_DIR
 from shared.schemas import now_iso
 
@@ -122,6 +122,10 @@ class Worker:
                 notes += f" 판단하지 못한 발화 {len(r['extract_failures'])}건"
             if (r.get("be") or {}).get("dropped_items"):
                 notes += f" BE 가 받지 않은 항목 {r['be']['dropped_items']}건"
+            if r.get("sources"):
+                notes += f" 회의록 저장 {r['sources'].get('inserted', 0)}줄"
+            if (r.get("skipped") or {}).get(STATUS_SOURCED):
+                notes += f" 건너뜀 회의록 저장({r['skipped'][STATUS_SOURCED]})"
             print(f"[worker] 세션 {r['session']} {r['status']} 이번에 {r['ran']} 실패 {r.get('attempts')}회{notes}",
                   flush=True)
 
