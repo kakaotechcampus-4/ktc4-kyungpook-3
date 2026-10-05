@@ -219,3 +219,74 @@ def test_golden_saves_the_turn_lines_for_the_extraction_comparison(monkeypatch, 
     assert saved == {"session": "m01", "model": "small", "segments": [
         {"speaker": "김동우", "start": 1.0, "end": 2.5, "text": "제가 할게요", "seq": 1}]}
     assert r["lines_file"].endswith("lines-m01-small.json")
+
+
+def test_seq_saves_each_run_lines_in_the_golden_shape(tmp_path):
+    out = tmp_path / "out"
+    r = R.run_seq(_meeting(tmp_path / "m"), "real", repeat=2, backend=SlowStt(), out_dir=out, gate_factory=NO_GATE,
+                  save_lines=True, model="small")
+    for i, run in enumerate(r["runs"], 1):
+        saved = json.loads((out / f"lines-real-{i}.json").read_text(encoding="utf-8"))
+        assert saved["session"] == "real" and saved["model"] == "small"
+        segs = saved["segments"]
+        assert all(set(s) == {"speaker", "start", "end", "text", "seq"} and s["start"] < s["end"] for s in segs)
+        assert [(s["speaker"], s["text"], s["seq"]) for s in segs] == [("a", "네", 1), ("b", "네", 2)]
+        assert run["lines_file"].endswith(f"lines-real-{i}.json")
+    R.run_seq(_meeting(tmp_path / "m2"), "quiet", repeat=1, backend=SlowStt(), out_dir=out, gate_factory=NO_GATE)
+    assert not list(out.glob("lines-quiet*"))           # 끄면 전사 문장을 남기지 않는다
+
+
+def test_cli_seq_save_lines_names_the_model_it_ran(monkeypatch, tmp_path):
+    monkeypatch.setattr(R, "warm_backend",
+                        lambda kind, model, beam: (SlowStt(), {"load_s": 1.0, "first_decode_s": 0.5}))
+    monkeypatch.setattr(speech_gate, "ENABLED", False)
+    out = tmp_path / "out"
+    assert R.main(["seq", "--tracks-dir", str(_meeting(tmp_path / "m")), "--label", "real929-small", "--model", "small",
+                   "--beam", "1", "--save-lines", "--out-dir", str(out)]) == 0
+    saved = json.loads((out / "lines-real929-small-1.json").read_text(encoding="utf-8"))
+    assert saved["session"] == "real929-small" and saved["model"] == "small" and len(saved["segments"]) == 2
+
+
+def test_prep_measures_the_preparation_without_loading_a_model(monkeypatch, tmp_path):
+    def no_warm(*a, **kw):
+        raise AssertionError("prep 은 모델을 올리지 않는다")
+
+    monkeypatch.setattr(R, "warm_backend", no_warm)
+    monkeypatch.setattr(speech_gate, "ENABLED", False)
+    out = tmp_path / "out"
+    assert R.main(["prep", "--tracks-dir", str(_meeting(tmp_path / "m")), "--label", "long-60",
+                   "--out-dir", str(out)]) == 0
+    saved = json.loads((out / "prep-long-60.json").read_text(encoding="utf-8"))
+    assert saved["scenario"] == "prep" and saved["label"] == "long-60"
+    # 보고서(report.py)가 모든 결과에서 읽는 칸이다. 모델을 안 올렸으니 비운다
+    assert (saved["model"], saved["beam"], saved["load_s"], saved["first_decode_s"]) == (None, None, None, None)
+    run = saved["run"]
+    assert {"started_at", "wall_s", "cpu_s", "peak_rss_lifetime_bytes"} <= set(run) and run["wall_s"] >= 0
+    assert run["stats"]["clips"] == 2 and run["stats"]["calls"] == 2      # 자르기와 묶음까지는 다 돌았다
+    assert run["stats"]["transcribe_max_s"] < 0.05                         # 전사는 바로 돌아왔다
+    assert (out / "prep-long-60-run.json").exists()
+
+
+def _night2():
+    return (Path(R.__file__).parent / "night2.sh").read_text(encoding="utf-8")
+
+
+def test_night2_script_parses():
+    p = subprocess.run(["bash", "-n", str(Path(R.__file__).with_name("night2.sh"))], capture_output=True, text=True)
+    assert p.returncode == 0, p.stderr
+
+
+def test_night2_runs_prep_long_meetings_then_the_real_recording():
+    text = re.sub(r"\\\n\s*", " ", _night2())                            # 줄 이음(\)은 한 줄로 본다
+    order = re.findall(r"^scenario ([\w$-]+)", text, flags=re.M)
+    assert order == ["env", "prep-long60", "synth-long10", "synth-long30", "seq-long10", "seq-long30",
+                     "seq-real929-turbo", "seq-real929-small"]
+    assert re.search(r"^sleep 60$", text, flags=re.M)                    # 일 없는 구간 60초
+    saving = [ln for ln in text.splitlines() if "--save-lines" in ln]
+    assert len(saving) == 2 and all("real929" in ln for ln in saving)   # 전사 문장은 실녹음에서만 남긴다
+    small = next(ln for ln in text.splitlines() if ln.startswith("scenario seq-real929-small"))
+    assert "--model small --beam 1" in small and "--label real929-small" in small
+    assert "--repeat 3" in next(ln for ln in text.splitlines() if ln.startswith("scenario seq-long10"))
+    assert "capacity.judge_diff" not in text                             # 유료 비교는 따로 승인받아 돈다
+    for s in ("HF_HUB_OFFLINE=1", "/proc/self/cgroup", "stt.eval.capacity.sampler", "stt.eval.capacity.probe"):
+        assert s in text

@@ -4,10 +4,11 @@
 적중하면 처음 잰 시간이 그대로 적혀 가짜로 빨라진다. 모델 로드는 1초 무음 한 번으로 따로 재서 회의 처리
 시간에 섞지 않는다.
 
-시나리오 넷. 결과는 --out-dir 에 JSON 으로 쓰고, 시작할 때 자기 pid 를 --pids-file 에 덧붙인다. 서버
+시나리오 다섯. 결과는 --out-dir 에 JSON 으로 쓰고, 시작할 때 자기 pid 를 --pids-file 에 덧붙인다. 서버
 기록기(sampler)가 그 프로세스를 따라가고 메모리가 넘치면 멈춘다.
   seq      한 프로세스에서 같은 회의를 차례로. 워커 1개의 대기열과 같다. 대기 시간은 그 실행의 시작에서
-           첫 실행의 시작을 뺀 값이다
+           첫 실행의 시작을 뺀 값이다. --save-lines 면 실행마다 회의록 줄을 lines-<label>-<i>.json 으로 남긴다
+  prep     모델 없이 준비 단계(트랙 읽기, 자르기, 말 필터, 묶음)만. 준비 단계와 실행 단계의 메모리를 가른다
   golden   예열한 백엔드로 golden.score 를 불러 CER 까지
   threads  한 프로세스의 스레드 둘이 예열한 백엔드 하나를 같이 쓴다. 봇이 회의 둘을 동시에 처리하는 경우
   botlag   asyncio 루프에서 tick 마다 깨는 코루틴이 얼마나 늦는지. 처음엔 일 없이, 다음엔 봇처럼
@@ -19,6 +20,7 @@ CPU 초는 getrusage(RUSAGE_SELF) 앞뒤 차라 프로세스 전체다. threads 
 사용 (서버의 /home/ubuntu/capacity/code/ai 안에서. 순서는 night.sh):
   python -m stt.eval.capacity.runner env --out-dir RUN
   python -m stt.eval.capacity.runner seq --tracks-dir DATA/two-person --label two --repeat 3 --out-dir RUN --pids-file RUN/pids
+  python -m stt.eval.capacity.runner prep --tracks-dir DATA/long-60 --label long-60 --out-dir RUN --pids-file RUN/pids
   python -m stt.eval.capacity.runner golden --session DATA/m01 --model small --tag m01 --out-dir RUN
   python -m stt.eval.capacity.runner threads --tracks-dir DATA/m01 --tracks-dir DATA/m02 --out-dir RUN
   python -m stt.eval.capacity.runner botlag --tracks-dir DATA/m01 --out-dir RUN
@@ -45,6 +47,7 @@ from pathlib import Path
 import numpy as np
 
 from stt import batch as B
+from stt.backend import SttResult
 from stt.eval import golden
 from stt.eval.sysinfo import peak_rss_bytes
 from stt.speech_gate import SpeechGate
@@ -119,10 +122,18 @@ def _write(out_dir: Path, name: str, data: dict) -> None:
     (out_dir / f"{name}.json").write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
 
 
-def measure_run(label: str, tracks: list[B.Track], backend, *, out_dir: Path, gate_factory=SpeechGate) -> dict:
+def _segments(lines) -> list[dict]:
+    """회의록 줄을 추출 비교(judge_diff)가 읽는 모양으로. 빈 줄은 뺀다."""
+    return [{"speaker": ln.speaker_id, "start": ln.start_ms / 1000, "end": ln.end_ms / 1000, "text": ln.text,
+             "seq": ln.seq} for ln in lines if ln.text]
+
+
+def measure_run(label: str, tracks: list[B.Track], backend, *, out_dir: Path, gate_factory=SpeechGate,
+                lines_out: list | None = None) -> dict:
     """회의 하나를 전사하고 시각, 걸린 시간, CPU 초, 호출별 시간과 길이를 out_dir/<label>.json 에 쓴다.
 
     말 필터는 회의마다 새로 만든다. 봇과 워커도 회의마다 gate_factory() 를 부른다(capture/worker.py _speech_gate).
+    lines_out 을 주면 회의록 줄을 거기에 붙인다.
     """
     if not tracks:
         raise ValueError(f"{label}: 트랙이 없다. 데이터 폴더에 wav 가 있는지 확인한다")
@@ -131,6 +142,8 @@ def measure_run(label: str, tracks: list[B.Track], backend, *, out_dir: Path, ga
     lines, stats = B.run(tracks, backend, mode="chunk", gate=gate_factory(), workers=1)
     wall_s, ended_at = time.monotonic() - t0, time.time()
     ru1 = resource.getrusage(resource.RUSAGE_SELF)
+    if lines_out is not None:
+        lines_out.extend(lines)
     out = {
         "label": label, "started_at": started_at, "ended_at": ended_at,
         "wall_s": round(wall_s, 3), "cpu_s": round(_cpu_s(ru1) - _cpu_s(ru0), 2),
@@ -144,15 +157,44 @@ def measure_run(label: str, tracks: list[B.Track], backend, *, out_dir: Path, ga
 
 
 # ─────────────────────────────────────────────────────────────── 시나리오
-def run_seq(tracks_dir: Path, label: str, *, repeat: int, backend, out_dir: Path, gate_factory=SpeechGate) -> dict:
-    """같은 회의를 repeat 번 차례로. 회의 repeat 개가 같이 끝나 워커 1개 앞에 줄 선 경우와 같다."""
+def run_seq(tracks_dir: Path, label: str, *, repeat: int, backend, out_dir: Path, gate_factory=SpeechGate,
+            save_lines: bool = False, model: str | None = None) -> dict:
+    """같은 회의를 repeat 번 차례로. 회의 repeat 개가 같이 끝나 워커 1개 앞에 줄 선 경우와 같다.
+
+    save_lines 면 실행마다 회의록 줄을 golden --save-lines 와 같은 모양으로 lines-<label>-<i>.json 에 쓴다.
+    전사 문장이라 원자료 폴더에만 둔다.
+    """
     tracks = B.discover(tracks_dir)
     runs: list[dict] = []
     for i in range(1, repeat + 1):
-        r = measure_run(f"{label}-{i}", tracks, backend, out_dir=out_dir, gate_factory=gate_factory)
+        lines: list | None = [] if save_lines else None
+        r = measure_run(f"{label}-{i}", tracks, backend, out_dir=out_dir, gate_factory=gate_factory, lines_out=lines)
         r["wait_s"] = round(r["started_at"] - runs[0]["started_at"], 3) if runs else 0.0
+        if save_lines:
+            _write(out_dir, f"lines-{label}-{i}", {"session": label, "model": model, "segments": _segments(lines)})
+            r["lines_file"] = str(out_dir / f"lines-{label}-{i}.json")
         runs.append(r)
     return {"scenario": "seq", "tracks_dir": str(tracks_dir), "label": label, "repeat": repeat, "runs": runs}
+
+
+class EmptyStt:
+    """전사하지 않고 빈 결과를 바로 돌려준다. prep 이 준비 단계만 재는 데 쓴다."""
+    name = "prep/empty"
+
+    def transcribe(self, samples, sample_rate):
+        return SttResult(text="")
+
+
+def run_prep(tracks_dir: Path, label: str, *, out_dir: Path, gate_factory=SpeechGate) -> dict:
+    """모델 없이 운영과 같은 B.run 을 돌려 준비 단계(트랙 읽기, 자르기, 말 필터, 묶음)의 시간과 메모리만 잰다.
+
+    프로세스에 전사 모델이 없으니 평생 최대 메모리가 곧 준비 단계 값이다. 실행 단계 메모리는 같은 회의의 seq
+    결과와의 차로 본다. 그 차에는 모델과 디코딩 말고도 결과를 기다리며 붙잡은 묶음(HOLD_PCM_MB 까지)이
+    들어간다. 빈 결과가 바로 와서 prep 은 묶음을 거의 붙잡지 않는다.
+    """
+    run = measure_run(f"prep-{label}-run", B.discover(tracks_dir), EmptyStt(), out_dir=out_dir,
+                      gate_factory=gate_factory)
+    return {"scenario": "prep", "tracks_dir": str(tracks_dir), "label": label, "run": run}
 
 
 def run_golden(session: Path, *, model: str, tag: str, backend, out_dir: Path, beam: int = 5,
@@ -171,9 +213,7 @@ def run_golden(session: Path, *, model: str, tag: str, backend, out_dir: Path, b
     lines_file = None
     if save_lines:     # 추출 비교(judge_diff)가 읽는다. 전사 문장이라 원자료 폴더에만 둔다
         name = f"lines-{session.name}-{model}"
-        _write(out_dir, name, {"session": session.name, "model": model, "segments": [
-            {"speaker": ln.speaker_id, "start": ln.start_ms / 1000, "end": ln.end_ms / 1000, "text": ln.text,
-             "seq": ln.seq} for ln in lines if ln.text]})
+        _write(out_dir, name, {"session": session.name, "model": model, "segments": _segments(lines)})
         lines_file = str(out_dir / f"{name}.json")
     return {"scenario": "golden", "session": session.name, "model": model, "tag": tag, "beam": beam,
             "lines_file": lines_file,
@@ -263,6 +303,10 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--label", required=True)
     s.add_argument("--repeat", type=int, default=1)
     s.add_argument("--model", default=DEFAULT_MODEL)
+    s.add_argument("--save-lines", action="store_true", help="실행마다 회의록 줄을 lines-<label>-<i>.json 으로 남긴다")
+    pr = sub.add_parser("prep", parents=[common], help="모델 없이 준비 단계만. 준비와 실행의 메모리를 가른다")
+    pr.add_argument("--tracks-dir", type=Path, required=True)
+    pr.add_argument("--label", required=True)
     g = sub.add_parser("golden", parents=[common], help="정렬본을 CER 까지")
     g.add_argument("--session", type=Path, required=True)
     g.add_argument("--model", default=DEFAULT_MODEL)
@@ -283,11 +327,18 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "env":
         _write(args.out_dir, "env", env)
         return 0
+    if args.cmd == "prep":      # 모델을 올리지 않으므로 예열도 없다. 보고서가 읽는 모델 칸은 비운다
+        name = f"prep-{args.label}"
+        _write(args.out_dir, name, {**run_prep(args.tracks_dir, args.label, out_dir=args.out_dir), "model": None,
+                                    "beam": None, "load_s": None, "first_decode_s": None, "env": env})
+        print(f"[capacity] {name} 끝. 결과 {args.out_dir / (name + '.json')}", flush=True)
+        return 0
 
     backend, timing = warm_backend("local", args.model, beam=args.beam)
     if args.cmd == "seq":
         name = f"seq-{args.label}"
-        result = run_seq(args.tracks_dir, args.label, repeat=args.repeat, backend=backend, out_dir=args.out_dir)
+        result = run_seq(args.tracks_dir, args.label, repeat=args.repeat, backend=backend, out_dir=args.out_dir,
+                         save_lines=args.save_lines, model=args.model)
     elif args.cmd == "golden":
         name = f"golden-{args.session.name}-{args.model}" + (f"-{args.tag}" if args.tag else "")
         result = run_golden(args.session, model=args.model, tag=args.tag, backend=backend, out_dir=args.out_dir,
