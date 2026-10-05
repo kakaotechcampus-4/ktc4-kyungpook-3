@@ -223,8 +223,8 @@ class Handoff:
         old = be.get("meeting_id")
         if old:
             be.setdefault("replaced", []).append(old)
-        for k in ("meeting_id", "extraction_id", "item_count", "failed_stage", "error"):
-            be.pop(k, None)
+        for k in ("meeting_id", "extraction_id", "item_count", "failed_stage", "error", "sources"):
+            be.pop(k, None)                     # 발화도 옛 회의에만 있다. 새 회의에는 다시 보내야 한다
         return self.start(manifest, title=title)
 
     def end(self, manifest: dict, *, title: str | None = None) -> dict:
@@ -240,7 +240,8 @@ class Handoff:
         return be
 
     def save_sources(self, manifest: dict, *, transcripts_dir: Path, title: str | None = None) -> dict:
-        """전사 발화를 BE 에 저장한다. 회의를 processing 으로 확보한 뒤 보낸다(BE 가 failed 로 닫았으면 end 가 새 회의로 바꾼다).
+        """전사 발화를 BE 에 저장한다. processing 이나 done 회의에 보낸다. end 로 회의를 확보하고, BE 가 failed 로 닫아
+        두었으면 end 가 새 회의로 바꾼다. be["sources"] 에 보낸 회의 ID 를 남겨, 회의가 뒤에 바뀌면 다시 보낼 수 있게 한다.
 
         발화가 없으면(계약 파일이 없거나 0줄) BE 를 부르지 않고 0줄로 남긴다. 계약 파일의 session·model·speakers 는
         보내지 않고 Transcript 모양만 보낸다. 화자 이름은 매니페스트 speakers 의 표시 이름이다.
@@ -249,12 +250,13 @@ class Handoff:
         transcript = Transcript.from_dict(json.loads(path.read_text(encoding="utf-8"))).to_dict() if path.exists() else None
         if not transcript or not transcript["segments"]:
             be = manifest.setdefault("be", {})
-            be["sources"] = {"inserted": 0, "skipped": 0, "duration_ms": None}
+            be["sources"] = {"inserted": 0, "skipped": 0, "duration_ms": None, "meeting_id": be.get("meeting_id")}
             return be
         names = {str(e["user_id"]): e.get("display_name") or str(e["user_id"]) for e in manifest.get("speakers") or []}
         be = self.end(manifest, title=title)
         data = self.client.create_sources(be["meeting_id"], transcript, names)
         be["sources"] = {k: data.get(k) for k in ("inserted", "skipped", "duration_ms")}
+        be["sources"]["meeting_id"] = be["meeting_id"]
         return be
 
     def register(self, manifest: dict, *, transcripts_dir: Path, model_name: str | None,
@@ -284,7 +286,9 @@ class Handoff:
         except BeError as e:
             if e.code == "MEETING_NOT_PROCESSING" and e.details.get("status") == "failed":
                 be = self._fresh(manifest, title)
-                self.client.end_meeting(be["meeting_id"])
+                be = self.end(manifest, title=title)
+                if self.client.service_token:   # 발화 먼저(BE 명세). 옛 회의에 보낸 발화를 새 회의에도 둔다
+                    self.save_sources(manifest, transcripts_dir=transcripts_dir, title=title)
                 data = self._register(be["meeting_id"], transcript_json, model_name, items)
             else:
                 raise

@@ -511,6 +511,14 @@ def saves_sources(handoff) -> bool:
     return handoff is not None and bool(getattr(handoff.client, "service_token", ""))
 
 
+def sources_saved(manifest: dict) -> bool:
+    """발화가 지금의 BE 회의에 저장돼 있는가. 저장한 뒤 BE 회의가 새 회의로 바뀌었으면(포기 뒤 /recover, 인계 중 교체)
+    새 회의에는 발화가 없으니 다시 보내야 한다."""
+    be = manifest.get("be") or {}
+    return STATUS_SOURCED in (manifest.get("stages") or {}) and \
+        (be.get("sources") or {}).get("meeting_id") == be.get("meeting_id")
+
+
 def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name: str, workers: int,
                     gate=None, transcripts_dir: Path | None = None, extractor=None, handoff=None,
                     name_of=None) -> dict:
@@ -640,7 +648,7 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
             manifest.pop("recovery", None)             # 전사 단계가 닫혔다
             save()
 
-        if STATUS_SOURCED not in stages and handoff is not None:
+        if handoff is not None and not sources_saved(manifest):
             # BE 설정이 아예 없으면 인계 단계가 "BE 설정 없음" 을 한 번 알린다. 토큰만 없으면 여기서 알린다
             if not saves_sources(handoff):
                 result["skipped"][STATUS_SOURCED] = "BE_SERVICE_TOKEN 없음"

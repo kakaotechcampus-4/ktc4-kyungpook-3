@@ -28,6 +28,7 @@ def test_only_handed_off_meetings_without_saved_lines_are_targets(tmp_path):
     _, saved_already = _handed_off_without_lines(tmp_path, fake, ts=700)
     m = json.loads(saved_already.read_text(encoding="utf-8"))
     m["stages"]["sourced"] = "2026-10-05T00:00:00+00:00"
+    m["be"]["sources"] = {"inserted": 3, "skipped": 0, "duration_ms": 12000, "meeting_id": m["be"]["meeting_id"]}
     R.save_manifest(saved_already, m)
     assert [p for p, _ in BF.targets(rec)] == [done]
 
@@ -79,3 +80,14 @@ def test_main_refuses_without_the_be_settings_and_the_token(monkeypatch, tmp_pat
     monkeypatch.setattr(BF, "handoff_from_env", lambda: H.Handoff(H.BeClient("http://be", session=FakeBe()), "ws-1"))
     assert BF.main(["--recordings", str(tmp_path), "--dry-run"]) == 1           # 토큰이 없다
     assert "BE_SERVICE_TOKEN" in capsys.readouterr().err
+
+
+def test_a_meeting_whose_lines_went_to_a_replaced_be_meeting_is_a_target(tmp_path):
+    """발화를 보낸 BE 회의가 뒤에 새 회의로 바뀌었으면 지금 회의에는 발화가 없다. 소급 대상이다."""
+    fake = FakeBe()
+    rec, done = _handed_off_without_lines(tmp_path, fake)
+    m = json.loads(done.read_text(encoding="utf-8"))
+    m["stages"]["sourced"] = "2026-10-05T00:00:00+00:00"
+    m["be"]["sources"] = {"inserted": 3, "skipped": 0, "duration_ms": 12000, "meeting_id": "옛-회의"}
+    R.save_manifest(done, m)
+    assert [p for p, _ in BF.targets(rec)] == [done]

@@ -465,8 +465,8 @@ def test_lines_that_come_back_on_a_later_retry_are_saved_again(tmp_path, monkeyp
     monkeypatch.setattr(R, "PARTIAL_RETRY_MAX", 2)
     stt.limit_s = 3.5                                     # 이번엔 산다
     r3 = R.recover(rec, **kw)[0]
-    assert r3["ran"][:2] == ["retried", "sourced"] and r3["sources"] == {"inserted": 2, "skipped": 1,
-                                                                         "duration_ms": r3["sources"]["duration_ms"]}
+    assert r3["ran"][:2] == ["retried", "sourced"]
+    assert (r3["sources"]["inserted"], r3["sources"]["skipped"], r3["sources"]["meeting_id"]) == (2, 1, "m1")
     assert sorted(fake.sources["m1"]) == [1, 2, 3]
 
 
@@ -477,3 +477,39 @@ def test_a_run_that_died_without_be_settings_is_counted_at_the_stage_it_was_in(t
     m = json.loads(path.read_text(encoding="utf-8"))
     R._count_dead_run(m, None, "host:1")
     assert m["failed_stage"] == "extract"
+
+
+def _dying(transcript, names, today):
+    raise RuntimeError("LLM 죽음")
+
+
+def test_lines_follow_the_meeting_when_the_be_meeting_is_replaced(tmp_path, monkeypatch):
+    """추출에서 포기해 BE m1 이 failed 가 된 뒤 /recover 하면 새 회의 m2 가 생긴다. 발화도 m2 에 먼저 다시 보낸다."""
+    monkeypatch.setattr(R, "RECOVERY_MAX_ATTEMPTS", 1)
+    rec, path, manifest = _session(tmp_path)
+    fake = FakeBe()
+    r = _run(rec, manifest, tmp_path, extractor=_dying, handoff=_be(fake))
+    assert r["ran"] == ["transcribed", "sourced"] and r["gave_up"] and fake.meetings["m1"]["status"] == "failed"
+    r2 = _run(rec, json.loads(path.read_text(encoding="utf-8")), tmp_path, extractor=_extractor({}), handoff=_be(fake))
+    assert r2["ran"] == ["sourced", "extracted", "handed_off"] and r2["status"] == "handed_off"
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    assert saved["be"]["meeting_id"] == "m2" and saved["be"]["sources"]["meeting_id"] == "m2"
+    assert sorted(fake.sources["m2"]) == [1, 2, 3]
+    paths = [c[1] for c in fake.calls]
+    assert paths.index("/meetings/m2/sources") < paths.index("/extractions")
+
+
+def test_a_meeting_the_be_failed_during_extraction_moves_with_its_lines(tmp_path):
+    """추출하는 사이 BE 가 회의를 failed 로 닫았다. 인계가 같은 실행 안에서 새 회의로 옮길 때 발화를 먼저 보낸다."""
+    rec, path, manifest = _session(tmp_path)
+    fake = FakeBe()
+
+    def meanwhile_failed(transcript, names, today):
+        fake.meetings["m1"]["status"] = "failed"
+        return [Task(transcript.segments[0].text)]
+
+    r = _run(rec, manifest, tmp_path, extractor=meanwhile_failed, handoff=_be(fake))
+    assert r["status"] == "handed_off" and r["be"]["meeting_id"] == "m2"
+    assert [c[1] for c in fake.calls][-4:] == ["/meetings", "/meetings/m2/end", "/meetings/m2/sources", "/extractions"]
+    assert sorted(fake.sources["m2"]) == [1, 2, 3] and list(fake.extractions) == ["m2"]
+    assert json.loads(path.read_text(encoding="utf-8"))["be"]["sources"]["meeting_id"] == "m2"

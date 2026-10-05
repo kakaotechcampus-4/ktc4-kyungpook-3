@@ -20,12 +20,13 @@ from shared.schemas import now_iso
 
 
 def _needs_sources(m: dict | None) -> bool:
-    return bool(m) and m.get("status") == R.STATUS_HANDED_OFF and R.STATUS_SOURCED not in (m.get("stages") or {}) \
+    """인계까지 끝났는데 지금 BE 회의에 발화가 없다. 보낸 적이 없거나, 보낸 뒤 BE 회의가 새 회의로 바뀌었다."""
+    return bool(m) and m.get("status") == R.STATUS_HANDED_OFF and not R.sources_saved(m) \
         and bool((m.get("be") or {}).get("meeting_id"))
 
 
 def targets(recordings_dir: Path) -> list[tuple[Path, dict]]:
-    """인계까지 끝났고(handed_off) 발화 저장 기록이 없으며 BE 회의가 있는 회의 [(매니페스트 경로, 매니페스트)]."""
+    """인계까지 끝났고(handed_off) 지금 BE 회의에 발화가 없으며 BE 회의가 있는 회의 [(매니페스트 경로, 매니페스트)]."""
     found = []
     for p in sorted(recordings_dir.glob("session_*.json")):
         m = R._load(p)

@@ -72,8 +72,8 @@ def _fake_llms(monkeypatch, *, stage1, terra, drafts):
     return fakes
 
 
-def _transcribed(tmp_path, segments, *, sourced=False):
-    """전사까지 끝난 회의. 트랙은 없어도 된다(발화 저장, 추출, 인계만 돈다). sourced 면 발화 저장도 끝났다."""
+def _transcribed(tmp_path, segments):
+    """전사까지 끝난 회의. 트랙은 없어도 된다(발화 저장, 추출, 인계만 돈다)."""
     rec, tdir = tmp_path / "recordings", tmp_path / "transcripts"
     tdir.mkdir(parents=True)
     (tdir / "session_77_500.transcript.json").write_text(
@@ -82,14 +82,17 @@ def _transcribed(tmp_path, segments, *, sourced=False):
                                     channel="회의방", library_version="x", started_at="2026-09-28T01:00:00+00:00",
                                     meeting_dir="77_500", extra={"timezone": "Asia/Seoul", "guild_id": "77",
                                                                  "stages": {"transcribed": "2026-09-28T01:30:00+00:00"}})
-    if sourced:
-        manifest["stages"]["sourced"] = "2026-09-28T01:31:00+00:00"
     return rec, tdir, path, manifest
 
 
 def _process(tmp_path, fake, segments=MEETING, *, sourced=False):
-    rec, tdir, path, manifest = _transcribed(tmp_path, segments, sourced=sourced)
+    """sourced 면 BE 회의를 만들고 발화 저장까지 끝난 회의에서 시작한다."""
+    rec, tdir, path, manifest = _transcribed(tmp_path, segments)
     client = H.BeClient("http://be", session=fake, service_token="svc-token")
+    if sourced:
+        be = H.Handoff(client, "ws-1").end(manifest)
+        manifest["stages"]["sourced"] = "2026-09-28T01:31:00+00:00"
+        be["sources"] = {"inserted": len(segments), "skipped": 0, "duration_ms": None, "meeting_id": be["meeting_id"]}
     extractor = J.build_extractor(run=pipeline.run, candidates=client, cfg=_cfg())
     result = R.process_session(rec, manifest, backend=None, model_name="echo", workers=1, transcripts_dir=tdir,
                                extractor=extractor, handoff=H.Handoff(client, "ws-1"))
