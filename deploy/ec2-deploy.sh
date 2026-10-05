@@ -18,9 +18,10 @@ NEW=$(git rev-parse HEAD)
 echo "배포 ${OLD:0:7} -> ${NEW:0:7} (mode=$MODE)"
 
 # 파트($1 디렉토리)를 다시 올려야 하는가. 문서·테스트만 바뀌었으면 아니다.
+# grep -q 로 바로 끝내지 않는다. pipefail 이라 앞 명령이 SIGPIPE 를 받으면 바뀐 파트를 건너뛴다.
 changed() {
   [ "$MODE" = all ] && return 0
-  git diff --name-only "$OLD" "$NEW" -- "$1/" | grep -qvE '\.md$|/(docs|tests|decision_log)/'
+  [ -n "$(git diff --name-only "$OLD" "$NEW" -- "$1/" | grep -vE '\.md$|/(docs|tests|decision_log)/' || true)" ]
 }
 
 wait_health() {
@@ -64,7 +65,7 @@ if changed ai; then
   # 워커는 SIGTERM 을 받으면 하던 회의를 마치고 끝난다(mm-worker.service TimeoutStopSec)
   sudo systemctl restart mm-worker
   # 2분 안에 쓰인 wav 가 있으면 녹음 중으로 보고 봇은 그대로 둔다
-  if find ai/recordings -name '*.wav' -mmin -2 2>/dev/null | grep -q .; then
+  if [ -n "$(find ai/recordings -name '*.wav' -mmin -2 2>/dev/null)" ]; then
     echo "녹음 중이라 봇은 재시작하지 않았다. 녹음이 끝난 뒤 deploy 를 수동 실행(all)한다" >&2
   else
     sudo systemctl restart mm-bot
