@@ -347,3 +347,4 @@ def test_report_reads_a_night_without_the_60_minute_meeting(night2_dir, tmp_path
     md = (tmp_path / "out" / "tables.md").read_text(encoding="utf-8")
     assert "## 준비 단계" in md and "반복 합성 long-10" in md and "실녹음(혼자 낭독) real929" in md
     assert "## 용량 계산" not in md and SECRET_TEXT not in md
+    assert "## 골든 정확도" not in md        # 골든 실행이 없는 밤에 빈 표를 쓰지 않는다

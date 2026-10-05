@@ -366,7 +366,8 @@ def _tables(run: dict, scen: dict, runs: dict, cap: dict, run_name: str) -> str:
            f"ctranslate2 {env.get('ctranslate2', '-')}, vCPU {env.get('cpu_count', '-')}, 메모리 {total:.0f}MiB. "
            "`python -m stt.eval.capacity.report` 가 원자료 폴더에서 만든 표다.", "",
            "데이터 종류. 실녹음은 2인 디스코드 녹음, 정렬본은 6인 목소리에 시간축이 합성이고 대본 낭독이라 짧은 대답과 "
-           "겹침이 없다. 반복 합성은 정렬본 둘을 이어 붙인 긴 회의라 시간과 자원만 보고 정확도 근거로 쓰지 않는다.", ""]
+           "겹침이 없다. 반복 합성은 정렬본 둘을 이어 붙인 긴 회의라 시간과 자원만 보고 정확도 근거로 쓰지 않는다. "
+           "실녹음(혼자 낭독)은 한 사람이 대본을 읽은 디스코드 녹음이다.", ""]
 
     out += ["## 시나리오", "",
             "서버 전체 값이다. 같은 서버에서 BE·DB·봇이 같이 돈다. 스왑은 구간 첫 표본 대비(그 시나리오가 늘린 양)와 "
@@ -402,7 +403,7 @@ def _tables(run: dict, scen: dict, runs: dict, cap: dict, run_name: str) -> str:
                     if d["model"]]), ""]
 
     golden = {n: d for n, d in runs.items() if d["kind"] == "golden"}
-    out += ["## 골든 정확도", "",
+    out += [] if not golden else ["## 골든 정확도", "",
             "걸린 초와 CPU 초는 채점을 뺀 전사 구간이다. 최대 RSS 는 10진 GB(바이트 ÷ 10⁹)다.", "",
             _table(["시나리오", "데이터", "모델", "빔", "CER %", "삽입률 %", "잃은 발화", "순서 뒤바뀜", "시작 시각 오차 최대 초",
                     "걸린 초", "CPU 초", "최대 RSS GB"],
