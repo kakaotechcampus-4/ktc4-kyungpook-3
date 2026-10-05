@@ -471,6 +471,38 @@ async def test_report_says_how_many_units_a_partial_meeting_is_missing(tmp_path)
     assert any("빠진 구간 1개" in t for t, _ in channel.sent)
 
 
+def _saved_result(**over):
+    base = {"session": "77_500", "status": "handed_off", "ran": ["transcribed", "sourced", "extracted", "handed_off"],
+            "skipped": {}, "error": None, "failed_stage": None, "transcribe": None, "retried": 0, "tasks": [], "be": None,
+            "sources": {"inserted": 3, "skipped": 0, "duration_ms": 12000}, "speakers": 2,
+            "text_channel_id": str(TEXT_ID), "partial": False, "missing_units": 0, "attempts": 0, "gave_up": False,
+            "retry_in_s": None}
+    base.update(over)
+    return base
+
+
+async def test_report_says_how_many_lines_were_saved_to_the_be(tmp_path):
+    cog, guild, vc, channel, ctx = _setup(tmp_path)
+    await cog._report(channel, "77_500", _saved_result())
+    await cog._report(channel, "77_500", _saved_result(ran=["retried", "sourced"],
+                                                       sources={"inserted": 1, "skipped": 2, "duration_ms": 12000}))
+    saved = [t for t, _ in channel.sent if t.startswith("🗂")]
+    assert saved == ["🗂 BE 회의록 저장 3줄", "🗂 BE 회의록 저장 1줄, 이미 있던 2줄"]
+
+
+async def test_a_failed_or_skipped_save_is_said_by_its_name(tmp_path):
+    """단계 이름은 사람이 읽는 말로. sourced, sources 같은 내부 이름이 채널에 나가지 않는다."""
+    cog, guild, vc, channel, ctx = _setup(tmp_path)
+    await cog._report(channel, "77_500", _saved_result(status="failed", ran=[], sources=None, failed_stage="sources",
+                                                       error="BeError: SERVICE_UNAVAILABLE", attempts=1))
+    await cog._report(channel, "77_500", _saved_result(ran=["extracted", "handed_off"], sources=None,
+                                                       skipped={"sourced": "BE_SERVICE_TOKEN 없음"}))
+    texts = [t for t, _ in channel.sent]
+    assert any(t.startswith("⚠️ 회의록 저장 실패: BeError: SERVICE_UNAVAILABLE") for t in texts)
+    assert "ℹ️ 회의록 저장은 건너뜁니다 (BE_SERVICE_TOKEN 없음)." in texts
+    assert not any("sourced" in t or "sources" in t or t.startswith("🗂") for t in texts)
+
+
 # ── 판단 경로(MM_EXTRACT_PATH=judge). 추출기만 바뀌고 명령과 흐름은 같다 ─────────────────────────────
 
 def _judge_item(title, **over):
