@@ -496,7 +496,7 @@ def _count_dead_run(manifest: dict, handoff, holder: str) -> None:
     안 세면 다시 뜬 워커가 같은 회의를 곧바로 다시 집고 또 죽는다. 그 회의가 줄 맨 앞이라 뒤 회의도 멈춘다.
     """
     stages = manifest.get("stages") or {}
-    stage = next((s for s in STAGES if s not in stages and (s != STATUS_SOURCED or _saves_sources(handoff))),
+    stage = next((s for s in STAGES if s not in stages and (s != STATUS_SOURCED or saves_sources(handoff))),
                  STATUS_HANDED_OFF)
     if manifest.get("failed_units"):
         stage = STATUS_TRANSCRIBED                     # 실패 구간을 다시 보내다 죽었다
@@ -506,7 +506,7 @@ def _count_dead_run(manifest: dict, handoff, holder: str) -> None:
     _count_failure(manifest, handoff, manifest["failed_stage"])
 
 
-def _saves_sources(handoff) -> bool:
+def saves_sources(handoff) -> bool:
     """발화 저장 단계가 도는 설정인가. BE 설정과 서비스 토큰이 다 있어야 한다. BE 의 발화 저장 API 는 토큰을 요구한다."""
     return handoff is not None and bool(getattr(handoff.client, "service_token", ""))
 
@@ -642,7 +642,7 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
 
         if STATUS_SOURCED not in stages and handoff is not None:
             # BE 설정이 아예 없으면 인계 단계가 "BE 설정 없음" 을 한 번 알린다. 토큰만 없으면 여기서 알린다
-            if not _saves_sources(handoff):
+            if not saves_sources(handoff):
                 result["skipped"][STATUS_SOURCED] = "BE_SERVICE_TOKEN 없음"
             else:
                 stage = STATUS_SOURCED
