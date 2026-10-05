@@ -2,7 +2,7 @@
 
 - 날짜: 2026-10-05
 - 이슈: #146
-- PR: #NN
+- PR: #148
 - 브랜치: feature/146-transcript-sources
 - 작성자: 김동우
 
