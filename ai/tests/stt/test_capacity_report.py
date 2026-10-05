@@ -305,3 +305,45 @@ def test_main_writes_both_files(run_dir, tmp_path):
     out = tmp_path / "out2"
     assert R.main(["--run-dir", str(run_dir), "--out-dir", str(out)]) == 0
     assert (out / "summary.json").exists() and (out / "tables.md").exists()
+
+
+@pytest.fixture
+def night2_dir(tmp_path):
+    """둘째 밤 모양. 60분 회의(seq-long60)와 golden 이 없고, 준비 단계(prep)와 실녹음 small 이 있다."""
+    d = tmp_path / "night2"
+    d.mkdir()
+    ev = [("env", 99.0, 99.5, 0), ("idle", 100, 104, 0), ("prep-long60", 104, 110, 0),
+          ("seq-long10", 110, 130, 0), ("seq-real929-small", 130, 140, 0)]
+    rows = []
+    for name, a, b, rc in ev:
+        rows += [{"ts": a, "event": "start", "scenario": name}, {"ts": b, "event": "end", "scenario": name, "rc": rc}]
+    _jl(d / "events.jsonl", rows)
+    _jl(d / "sampler.jsonl", [_sample(100, 700, busy=None), _sample(102, 760), _sample(105, 900, procs={"5": 200}),
+                              _sample(115, 2900, busy=1.3, procs={"6": 2000}), _sample(135, 1600, procs={"7": 800})])
+    _jl(d / "probe.jsonl", [{"ts": 101.0, "ms": 2.0, "status": 200}])
+    env = {"cpu_count": 2, "faster_whisper": "1.2.1", "ctranslate2": "4.8.2"}
+    _js(d / "env.json", env)
+    _js(d / "prep-long-60.json", {"scenario": "prep", "tracks_dir": "/data/long-60", "label": "long-60",
+                                   "run": _measure("prep-long-60-run", 105, 108, 3.0, 2.5), "model": None,
+                                   "beam": None, "load_s": None, "first_decode_s": None, "env": env})
+    common = {"beam": 5, "load_s": 15.0, "first_decode_s": 25.0, "env": env}
+    _js(d / "seq-long-10.json", {"scenario": "seq", "tracks_dir": "/data/long-10", "label": "long-10", "repeat": 1,
+                                  "runs": [{**_measure("long-10-1", 112, 128, 16.0, 18.0), "wait_s": 0.0}],
+                                  "model": "large-v3-turbo", **common})
+    _js(d / "seq-real929-small.json", {"scenario": "seq", "tracks_dir": "/data/real929", "label": "real929-small",
+                                        "repeat": 1, "model": "small", **{**common, "beam": 1},
+                                        "runs": [{**_measure("real929-small-1", 131, 139, 8.0, 9.0), "wait_s": 0.0}]})
+    _js(d / "lines-real929-small-1.json", {"session": "real929-small", "model": "small",
+                                            "segments": [{"speaker": "1", "text": SECRET_TEXT}]})
+    return d
+
+
+def test_report_reads_a_night_without_the_60_minute_meeting(night2_dir, tmp_path):
+    summary = R.write_report_files(night2_dir, tmp_path / "out")
+    assert summary["capacity"] == {}            # 용량 계산은 60분 회의가 있는 밤에서만 한다
+    prep = summary["runs"]["prep-long60"]      # summary 는 숫자만 남긴다. 종류와 데이터 이름은 표에 있다
+    assert prep["run"]["peak_rss_mib"] == pytest.approx(2048.0) and prep["run"]["wall_s"] == 3.0
+    assert R.run_metrics(R.load_run(night2_dir))["prep-long60"]["kind"] == "prep"
+    md = (tmp_path / "out" / "tables.md").read_text(encoding="utf-8")
+    assert "## 준비 단계" in md and "반복 합성 long-10" in md and "실녹음(혼자 낭독) real929" in md
+    assert "## 용량 계산" not in md and SECRET_TEXT not in md

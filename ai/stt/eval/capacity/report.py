@@ -36,7 +36,8 @@ MAX_BALANCE = 576
 USD_PER_VCPU_HOUR = 0.05
 QUEUE_N = (1, 2, 3, 5)
 # 데이터 폴더 이름 → 종류. 정렬본은 목소리만 진짜고 시간축이 합성이다. 반복 합성은 정확도 근거로 쓰지 않는다
-DATA_KIND = {"two-person": "실녹음", "m01": "정렬본", "m02": "정렬본", "long-60": "반복 합성"}
+DATA_KIND = {"two-person": "실녹음", "m01": "정렬본", "m02": "정렬본", "long-60": "반복 합성", "long-10": "반복 합성",
+             "long-30": "반복 합성", "real929": "실녹음(혼자 낭독)"}
 
 
 # ─────────────────────────────────────────────────────────────── 읽기
@@ -188,6 +189,13 @@ def run_metrics(run: dict) -> dict:
                          "runs": {r["label"]: {"data": m, "end_s": r["ended_at"] - d["started_at"]}
                                   for r, m in zip(d["runs"], names)},
                          "sequential_wall_s": sum(alone[m] for m in names) if all(m in alone for m in names) else None}
+        elif kind == "prep":       # 모델 없이 준비 단계만. 평생 최대 RSS 가 곧 준비 단계 값이다
+            r = d["run"]
+            out[name] = {**base, "data": Path(d["tracks_dir"]).name,
+                         "run": {"wall_s": r["wall_s"], "cpu_s": r["cpu_s"], "tracks": r["stats"]["tracks"],
+                                 "meeting_s": r["stats"]["track_s"] / r["stats"]["tracks"],
+                                 "speech_s": r["stats"]["speech_s"], "chunks": r["stats"]["calls"],
+                                 "peak_rss_mib": r["peak_rss_lifetime_bytes"] / MIB}}
         elif kind == "botlag":
             out[name] = {**base, "data": Path(d["tracks_dir"]).name, "idle": d["idle"], "busy": d["busy"],
                          "runs": {d["run"]["label"]: _run_row(d["run"])}}
@@ -228,7 +236,11 @@ def capacity(run: dict) -> dict:
 
     메모리. 서버 전체에서 상시 사용(idle 최대)을 뺀 자리에 운영 모델 전사 프로세스(PSS 최대)가 몇 개 들어가는지.
     스왑은 넣지 않는다. 프로세스 하나인 시나리오만 보므로 결과 파일이 없는 workers2 는 빠진다.
+
+    긴 회의가 없는 밤(night2.sh)은 빈 dict 를 돌려준다.
     """
+    if LONG not in run["results"]:
+        return {}
     long = run["results"][LONG]
     r = long["runs"][0]
     row = _run_row(r)
@@ -348,7 +360,7 @@ def _data(folder: str) -> str:
 
 def _tables(run: dict, scen: dict, runs: dict, cap: dict, run_name: str) -> str:
     env = run["env"] or {}
-    total = cap["mem_total_mib"]["value"]
+    total = run["samples"][0]["mem_total"] / MIB if run["samples"] else 0.0
     out = [f"# 서버 처리 용량 측정 {run_name}", "",
            f"커밋 {(run['commit'] or '-')[:7]}, faster-whisper {env.get('faster_whisper', '-')}, "
            f"ctranslate2 {env.get('ctranslate2', '-')}, vCPU {env.get('cpu_count', '-')}, 메모리 {total:.0f}MiB. "
@@ -386,7 +398,8 @@ def _tables(run: dict, scen: dict, runs: dict, cap: dict, run_name: str) -> str:
 
     out += ["## 모델 로드", "",
             _table(["시나리오", "모델", "빔", "모델 로드 초", "첫 디코딩 초"],
-                   [[n, d["model"], d["beam"], d["load_s"], d["first_decode_s"]] for n, d in runs.items()]), ""]
+                   [[n, d["model"], d["beam"], d["load_s"], d["first_decode_s"]] for n, d in runs.items()
+                    if d["model"]]), ""]
 
     golden = {n: d for n, d in runs.items() if d["kind"] == "golden"}
     out += ["## 골든 정확도", "",
@@ -423,6 +436,19 @@ def _tables(run: dict, scen: dict, runs: dict, cap: dict, run_name: str) -> str:
                        [[label, d[k]["n"], d[k]["p50_ms"], d[k]["p95_ms"], d[k]["max_ms"]]
                         for k, label in (("idle", "일 없음"), ("busy", "전사 중"))]), ""]
 
+    preps = {n: d for n, d in runs.items() if d["kind"] == "prep"}
+    if preps:
+        out += ["## 준비 단계", "",
+                "모델 없이 운영과 같은 stt.batch.run 을 빈 전사로 돌려 트랙 읽기, 자르기, 말 필터, 묶음만 쟀다. 프로세스에 "
+                "모델이 없으니 최대 RSS 가 준비 단계 값이다.", "",
+                _table(["시나리오", "데이터", "트랙", "회의 길이 초", "말한 시간 초", "묶음", "걸린 초", "CPU 초",
+                        "프로세스 최대 RSS MiB"],
+                       [[n, _data(d["data"]), d["run"]["tracks"], d["run"]["meeting_s"], d["run"]["speech_s"],
+                         d["run"]["chunks"], d["run"]["wall_s"], d["run"]["cpu_s"], d["run"]["peak_rss_mib"]]
+                        for n, d in preps.items()]), ""]
+
+    if not cap:
+        return "\n".join(out)
     out += ["## 용량 계산", "",
             "식과 근거는 stt/eval/capacity/report.py 의 capacity() 에 있다. 시간은 반복 합성 긴 회의의 실측이라 그 "
             "회의의 말 비율을 물려받는다.", "",
