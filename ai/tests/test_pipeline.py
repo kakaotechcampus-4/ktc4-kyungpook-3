@@ -295,6 +295,17 @@ def test_run_draft_failure_is_recorded(monkeypatch):
     assert [f.stage for f in out.failures] == ["draft"]
 
 
+def test_run_schedule_update_with_unusable_due_date_is_draft_failure(monkeypatch):
+    # Luna 가 없는 날짜("2026-10-40")를 주면 항목이 조용히 사라지지 않고 draft 실패로 남는다
+    _install(monkeypatch, stage1={"findings": [FINDINGS[1]]}, terra=[TERRA_OK[1]],
+             luna_draft=[{"task": None, "due_date": "2026-10-40", "doc_text": "로그인 화면 마감을 연기"}])
+
+    out = _run()
+
+    assert out.items == []
+    assert [f.stage for f in out.failures] == ["draft"]
+
+
 def test_run_update_without_task_id_is_target_failure(monkeypatch):
     # Notion 에만 있는(task_id 없는) 후보를 골랐을 때 — 수정할 Task 가 없다
     notion_only = NotionCandidate(task_id=None, notion_page_id="n7", title="로그인 화면 시안 마무리 작업", similarity=0.8)

@@ -103,6 +103,17 @@ def test_invalid_due_date_becomes_none_without_failing(bad):
     assert drafted.structured == DraftStructured(task="알림 설정 페이지 개발", due_date=None)
 
 
+@pytest.mark.parametrize("bad", ["2026-10-40", "2020-01-01", "다음 주 화요일", None])
+def test_update_schedule_without_usable_due_date_is_failure(bad, monkeypatch):
+    # 일정 변경인데 쓸 수 있는 마감일이 없으면 승인 요청이 "바뀌는 값 없음"으로 사라진다 — 조용히 버리지 않고 실패
+    response = {"task": None, "due_date": bad, "doc_text": "로그인 화면 시안 마감을 연기"}
+    assert draft_llm(_finding(), _result(), _candidate(), TODAY, FakeLLM(responses=[response])) is None
+
+    monkeypatch.setattr(dd, "get_llm", lambda which: FakeLLM(responses=[response]))
+    with pytest.raises(DraftUnavailableError):
+        draft(_finding(), _result(), candidate=_candidate(), today=TODAY)
+
+
 @pytest.mark.parametrize("response, is_new", [
     ({"task": "알림 설정 페이지 개발", "due_date": None, "doc_text": "  "}, True),  # doc_text 없음
     ({"task": "", "due_date": None, "doc_text": "알림 설정 페이지 개발"}, True),     # create 인데 제목 없음
