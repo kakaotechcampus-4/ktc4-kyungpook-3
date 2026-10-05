@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select, func, update
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_member, get_current_user, require_member
+from app.api.deps import get_current_member, get_current_user, require_member, require_pm
 from app.core.database import get_db
 from app.core.errors import AppError, Envelope, ErrorCode, success
 from app.models import ApprovalRequest, ApprovalStatus, ApprovalType, ChangeSource, ExtractionItem, Member, Task, TaskStatus, User
@@ -199,14 +199,28 @@ def create_approval(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
-    """승인 요청을 생성한다."""
-    require_member(db, user, payload.workspace_id)
+    """승인 요청을 생성한다. 워크스페이스 팀원이면 누구나 만들 수 있다.
+
+    일반 팀원은 할일을 직접 바꾸지 못하고 이 요청으로 PM의 승인을 받는다. 요청자는 바디의 requested_by가
+    아니라 로그인한 팀원으로 기록한다. 바디 값을 믿으면 다른 팀원 이름으로 요청을 올릴 수 있다.
+    """
+    member = require_member(db, user, payload.workspace_id)
+    if payload.related_task_id is not None:
+        # 승인할 때도 확인하지만(_apply_approval), 다른 워크스페이스의 task를 가리키는 요청이 PM 목록에 쌓이지 않게 먼저 막는다
+        task = db.get(Task, payload.related_task_id)
+        if task is None:
+            raise AppError(ErrorCode.TASK_NOT_FOUND, details={"task_id": payload.related_task_id})
+        if task.workspace_id != payload.workspace_id:
+            raise AppError(
+                ErrorCode.WORKSPACE_MISMATCH,
+                details={"approval_workspace_id": payload.workspace_id, "task_workspace_id": task.workspace_id},
+            )
     approval = ApprovalRequest(
         workspace_id=payload.workspace_id,
         type=str(payload.type),
         payload=json.dumps(payload.payload, ensure_ascii=False),
         related_task_id=payload.related_task_id,
-        requested_by=payload.requested_by,
+        requested_by=member.member_id,
     )
     db.add(approval)
     db.commit()
@@ -278,14 +292,14 @@ def resolve_approval(
             message="pending 상태로 변경할 수 없습니다.",
         )
 
-    # 상태를 바꾸는 조건부 UPDATE보다 먼저 소속을 확인해야 비소속 요청이 아무것도 바꾸지 못한다.
+    # 상태를 바꾸는 조건부 UPDATE보다 먼저 권한(소속·PM)을 확인해야 권한 없는 요청이 아무것도 바꾸지 못한다.
     target = db.get(ApprovalRequest, approval_id)
     if target is None:
         raise AppError(
             ErrorCode.APPROVAL_NOT_FOUND,
             details={"approval_id": approval_id},
         )
-    member = require_member(db, user, target.workspace_id)
+    member = require_pm(db, user, target.workspace_id)
 
     stmt = (
         update(ApprovalRequest)
