@@ -1,5 +1,5 @@
 """후처리 워커. MM_PIPELINE_MODE=worker 이면 봇은 녹음을 저장까지만 하고, 이 프로세스가 끝나지 않은 회의를
-전사 → 할일 추출 → BE 인계한다.
+전사 → 회의록 저장 → 할일 추출 → BE 인계한다.
 
     python -m capture.worker            # ai/ 안에서. --recordings, --transcripts, --interval 로 바꿀 수 있다
 
