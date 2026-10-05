@@ -1,0 +1,21 @@
+name: oidc-test
+# GitHub Actions가 OIDC로 AWS 역할(ktc-github-deploy)을 받을 수 있는지 확인한다. CD 워크플로를 만들기 전 1회용.
+# Actions 탭에서 수동 실행한다. 성공하면 가정한 역할의 ARN이 찍힌다.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write   # OIDC 토큰 발급
+  contents: read
+
+jobs:
+  whoami:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/ktc-github-deploy
+          aws-region: ap-northeast-2
+
+      - run: aws sts get-caller-identity
