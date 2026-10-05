@@ -202,3 +202,20 @@ def test_night_runs_the_small_model_with_beam_one_and_checks_the_data_first():
     assert "HF_HUB_OFFLINE=1" in text                         # 로드 시간에 Hub 확인이 섞이지 않게
     assert "stt.eval.capacity.synth" in text                  # 60분 합성 회의가 없으면 만든다
     assert "/proc/self/cgroup" in text                        # 측정 단위 자신의 cgroup 도 기록한다
+
+
+def test_golden_saves_the_turn_lines_for_the_extraction_comparison(monkeypatch, tmp_path):
+    from stt.lines import Line
+
+    def fake_score(session, mode, kind, model, gate_on, workers, yes, *, lines_out=None, **kw):
+        lines_out.append(Line(speaker_id="김동우", speaker_name="김동우", turn_id="", seq=1, start_ms=1000,
+                              end_ms=2500, text="제가 할게요", final=True))
+        return {"cer": 0.05}
+
+    monkeypatch.setattr(R.golden, "score", fake_score)
+    out = tmp_path / "out"
+    r = R.run_golden(tmp_path / "m01", model="small", tag="m01", backend=SlowStt(), out_dir=out, save_lines=True)
+    saved = json.loads((out / "lines-m01-small.json").read_text(encoding="utf-8"))
+    assert saved == {"session": "m01", "model": "small", "segments": [
+        {"speaker": "김동우", "start": 1.0, "end": 2.5, "text": "제가 할게요", "seq": 1}]}
+    assert r["lines_file"].endswith("lines-m01-small.json")

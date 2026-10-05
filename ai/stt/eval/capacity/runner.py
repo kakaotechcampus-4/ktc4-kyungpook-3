@@ -155,18 +155,28 @@ def run_seq(tracks_dir: Path, label: str, *, repeat: int, backend, out_dir: Path
     return {"scenario": "seq", "tracks_dir": str(tracks_dir), "label": label, "repeat": repeat, "runs": runs}
 
 
-def run_golden(session: Path, *, model: str, tag: str, backend, out_dir: Path, beam: int = 5) -> dict:
+def run_golden(session: Path, *, model: str, tag: str, backend, out_dir: Path, beam: int = 5,
+               save_lines: bool = False) -> dict:
     """정렬본을 CER 까지. score 의 wall_s·cpu_s 는 전사 구간이고, 바깥의 wall_s·cpu_s 는 채점까지 포함한다.
 
     score 는 결과 파일 이름에 회의 이름을 넣지 않는다. 같은 out_dir 에 m01·m02 를 쓰려면 tag 로 가른다.
     """
     ru0 = resource.getrusage(resource.RUSAGE_SELF)
     started_at, t0 = time.time(), time.monotonic()
+    lines: list = []
     score = golden.score(session, "chunk", "local", model, True, 1, True, backend=backend, tag=tag, out_dir=out_dir,
-                         beam=beam)
+                         beam=beam, lines_out=lines)
     wall_s, ended_at = time.monotonic() - t0, time.time()
     ru1 = resource.getrusage(resource.RUSAGE_SELF)
+    lines_file = None
+    if save_lines:     # 추출 비교(judge_diff)가 읽는다. 전사 문장이라 원자료 폴더에만 둔다
+        name = f"lines-{session.name}-{model}"
+        _write(out_dir, name, {"session": session.name, "model": model, "segments": [
+            {"speaker": ln.speaker_id, "start": ln.start_ms / 1000, "end": ln.end_ms / 1000, "text": ln.text,
+             "seq": ln.seq} for ln in lines if ln.text]})
+        lines_file = str(out_dir / f"{name}.json")
     return {"scenario": "golden", "session": session.name, "model": model, "tag": tag, "beam": beam,
+            "lines_file": lines_file,
             "started_at": started_at, "ended_at": ended_at,
             "wall_s": round(wall_s, 3), "cpu_s": round(_cpu_s(ru1) - _cpu_s(ru0), 2), "score": score}
 
@@ -257,6 +267,7 @@ def main(argv: list[str] | None = None) -> int:
     g.add_argument("--session", type=Path, required=True)
     g.add_argument("--model", default=DEFAULT_MODEL)
     g.add_argument("--tag", default="")
+    g.add_argument("--save-lines", action="store_true", help="회의록 줄을 lines-<회의>-<모델>.json 으로 남긴다")
     t = sub.add_parser("threads", parents=[common], help="한 프로세스의 두 스레드가 백엔드 하나로 동시에")
     t.add_argument("--tracks-dir", type=Path, action="append", required=True)
     t.add_argument("--model", default=DEFAULT_MODEL)
@@ -280,7 +291,7 @@ def main(argv: list[str] | None = None) -> int:
     elif args.cmd == "golden":
         name = f"golden-{args.session.name}-{args.model}" + (f"-{args.tag}" if args.tag else "")
         result = run_golden(args.session, model=args.model, tag=args.tag, backend=backend, out_dir=args.out_dir,
-                            beam=args.beam)
+                            beam=args.beam, save_lines=args.save_lines)
     elif args.cmd == "threads":
         name = "threads"
         result = run_threads(args.tracks_dir, backend=backend, out_dir=args.out_dir)
