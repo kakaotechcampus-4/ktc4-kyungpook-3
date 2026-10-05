@@ -562,3 +562,25 @@ def test_lines_revived_in_a_retry_that_stays_partial_are_sent_when_the_stage_clo
     assert mid["status"] == "partial"
     last = _run(rec, json.loads(path.read_text(encoding="utf-8")), tmp_path, extractor=_extractor({}), handoff=_be(fake))
     assert "sourced" in last["ran"]
+
+
+def test_be_rejection_details_are_kept_so_the_field_is_known(tmp_path):
+    """400 은 다시 보내도 같아서 바로 포기한다. 어느 줄의 어느 필드인지 남기지 않으면 고칠 단서가 없다(BE 명세)."""
+    rec, path, manifest = _session(tmp_path)
+    fake = FakeBe()
+    fake.sources_fail = (400, "INVALID_REQUEST",
+                         {"fields": [{"loc": ["body", "segments", 2, "end"], "msg": "end must be >= start"}]})
+    r = _run(rec, manifest, tmp_path, extractor=_extractor({}), handoff=_be(fake))
+    assert r["gave_up"] and "segments" in r["error"] and "end must be >= start" in r["error"]
+    assert "end must be >= start" in json.loads(path.read_text(encoding="utf-8"))["error"]
+
+
+def test_a_missing_route_is_waited_out_not_given_up(tmp_path):
+    """#130 전 BE 처럼 경로가 없으면 BE 는 404 에 INVALID_REQUEST 를 준다. 요청 형식 거절(400)과 달리 BE 를 다시
+    배포하면 풀리니 기다렸다 다시 한다."""
+    rec, path, manifest = _session(tmp_path)
+    fake = FakeBe()
+    fake.sources_fail = (404, "INVALID_REQUEST")
+    r = _run(rec, manifest, tmp_path, extractor=_extractor({}), handoff=_be(fake))
+    assert r["failed_stage"] == "sources" and r["attempts"] == 1 and not r["gave_up"]
+    assert fake.meetings["m1"]["status"] == "processing"

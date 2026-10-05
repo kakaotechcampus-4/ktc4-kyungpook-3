@@ -82,8 +82,9 @@ PARTIAL_RETRY_MAX = int(os.environ.get("MM_PARTIAL_RETRY_MAX", "3"))
 # 매니페스트와 BE 의 failed_stage 에 적는 이름
 FAILED_STAGE = {STATUS_TRANSCRIBED: "stt", STATUS_SOURCED: "sources", STATUS_EXTRACTED: "extract",
                 STATUS_HANDED_OFF: "handoff"}
-# 발화 저장에서 BE 가 이 코드로 거절하면 다시 보내도 같다. 기다리지 않고 바로 포기한다(노션 BE STT API 명세)
-SOURCES_GIVE_UP = ("INVALID_REQUEST", "MEETING_FAILED")
+# 발화 저장에서 BE 가 이 (상태, 코드) 로 거절하면 다시 보내도 같다. 기다리지 않고 바로 포기한다(노션 BE STT API 명세).
+# 코드만 보지 않는다. BE 는 경로가 없을 때(#130 전 배포)도 404 에 INVALID_REQUEST 를 주는데, 그건 재배포로 풀린다
+SOURCES_GIVE_UP = {(400, "INVALID_REQUEST"), (409, "MEETING_FAILED")}
 # 자동 복구. #83 의 retry_runs·PARTIAL_RETRY_MAX 와 따로 센다. 기본값의 근거는 decision_log/0013
 RECOVERY_INTERVAL_S = float(os.environ.get("MM_RECOVERY_INTERVAL_S", "60"))    # 봇 안 복구 루프의 주기. 0 이면 끈다
 RECOVERY_MAX_ATTEMPTS = int(os.environ.get("MM_RECOVERY_MAX_ATTEMPTS", "5"))   # 이만큼 실패하면 포기하고 BE 에 fail
@@ -700,7 +701,7 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
         manifest["error"] = f"{type(e).__name__}: {e}"
         result.update(error=manifest["error"], failed_stage=manifest["failed_stage"])
         # BE 에는 포기할 때만 알린다. 그 전에는 processing 으로 두고 다음 시도를 기다린다
-        rejected = stage == STATUS_SOURCED and getattr(e, "code", None) in SOURCES_GIVE_UP
+        rejected = stage == STATUS_SOURCED and (getattr(e, "status", None), getattr(e, "code", None)) in SOURCES_GIVE_UP
         _count_failure(manifest, handoff, manifest["failed_stage"], give_up=rejected)
         counted = True
         save()

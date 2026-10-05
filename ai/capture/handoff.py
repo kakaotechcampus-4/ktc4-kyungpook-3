@@ -254,7 +254,14 @@ class Handoff:
             return be
         names = {str(e["user_id"]): e.get("display_name") or str(e["user_id"]) for e in manifest.get("speakers") or []}
         be = self.end(manifest, title=title)
-        data = self.client.create_sources(be["meeting_id"], transcript, names)
+        try:
+            data = self.client.create_sources(be["meeting_id"], transcript, names)
+        except BeError as e:
+            fields = e.details.get("fields")
+            if fields:   # 400 이 알려 주는 어느 줄의 어느 필드인지. 다시 보내도 같아 이것이 유일한 단서다(BE 명세)
+                raise BeError(e.code, f"{e.message} {json.dumps(fields, ensure_ascii=False)[:300]}", status=e.status,
+                              details=e.details) from e
+            raise
         be["sources"] = {k: data.get(k) for k in ("inserted", "skipped", "duration_ms")}
         be["sources"]["meeting_id"] = be["meeting_id"]
         return be
