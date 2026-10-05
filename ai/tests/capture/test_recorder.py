@@ -513,3 +513,29 @@ def test_a_meeting_the_be_failed_during_extraction_moves_with_its_lines(tmp_path
     assert [c[1] for c in fake.calls][-4:] == ["/meetings", "/meetings/m2/end", "/meetings/m2/sources", "/extractions"]
     assert sorted(fake.sources["m2"]) == [1, 2, 3] and list(fake.extractions) == ["m2"]
     assert json.loads(path.read_text(encoding="utf-8"))["be"]["sources"]["meeting_id"] == "m2"
+
+
+def test_resending_the_lines_keeps_the_failure_count_of_a_later_stage(tmp_path, monkeypatch):
+    """포기한 회의를 /recover 로 다시 돌려 또 실패하면 곧바로 다시 포기한다. 발화를 새 회의에 다시 보내는 단계가
+    그 횟수를 지우면 네 번을 더 기다리고, 판단 경로면 그만큼 LLM 호출이 더 나간다."""
+    monkeypatch.setattr(R, "RECOVERY_MAX_ATTEMPTS", 3)
+    rec, path, manifest = _session(tmp_path)
+    fake = FakeBe()
+    for _ in range(3):
+        _run(rec, json.loads(path.read_text(encoding="utf-8")) if path.exists() else manifest, tmp_path,
+             extractor=_dying, handoff=_be(fake))
+    assert fake.meetings["m1"]["status"] == "failed"
+    r = _run(rec, json.loads(path.read_text(encoding="utf-8")), tmp_path, extractor=_dying, handoff=_be(fake))
+    assert r["ran"] == ["sourced"] and r["failed_stage"] == "extract" and r["attempts"] == 4 and r["gave_up"]
+    assert fake.meetings["m2"]["status"] == "failed"
+
+
+def test_a_meeting_failing_extraction_before_this_change_keeps_counting(tmp_path):
+    """배포 때 추출에서 두 번 실패해 있던 회의. 새 단계가 먼저 돌아도 실패 횟수는 이어서 센다."""
+    rec, path, manifest = _session(tmp_path)
+    fake = FakeBe()
+    no_token = H.Handoff(H.BeClient("http://be", session=fake), "ws-1")
+    _run(rec, manifest, tmp_path, extractor=_dying, handoff=no_token)
+    _run(rec, json.loads(path.read_text(encoding="utf-8")), tmp_path, extractor=_dying, handoff=no_token)
+    r = _run(rec, json.loads(path.read_text(encoding="utf-8")), tmp_path, extractor=_dying, handoff=_be(fake))
+    assert r["ran"] == ["sourced"] and r["attempts"] == 3

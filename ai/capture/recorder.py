@@ -554,12 +554,13 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
     def save() -> None:
         save_manifest(path, manifest)
 
-    def finish(name: str) -> None:
+    def finish(name: str, *, keep_recovery: bool = False) -> None:
         stages[name] = now_iso()
         manifest["status"] = name
         manifest.pop("error", None)
         manifest.pop("failed_stage", None)
-        manifest.pop("recovery", None)                 # 단계가 닫혔다. 실패 횟수는 다음 단계에서 새로 센다
+        if not keep_recovery:
+            manifest.pop("recovery", None)             # 단계가 닫혔다. 실패 횟수는 다음 단계에서 새로 센다
         result["ran"].append(name)
         save()
 
@@ -654,9 +655,12 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
                 result["skipped"][STATUS_SOURCED] = "BE_SERVICE_TOKEN 없음"
             else:
                 stage = STATUS_SOURCED
+                # 뒤 단계(추출·인계)에서 실패하던 회의면 그 실패 횟수를 이어 센다. 지우면 포기한 회의를 /recover 로 다시
+                # 돌려 또 실패해도 곧바로 포기하지 않고, 배포 때 재시도 중이던 회의도 처음부터 다시 센다
+                later = manifest.get("failed_stage") in (FAILED_STAGE[STATUS_EXTRACTED], FAILED_STAGE[STATUS_HANDED_OFF])
                 be = handoff.save_sources(manifest, transcripts_dir=tdir, title=meeting_title(manifest))
                 result["sources"] = dict(be["sources"])
-                finish(STATUS_SOURCED)
+                finish(STATUS_SOURCED, keep_recovery=later)
 
         if STATUS_EXTRACTED not in stages:
             if extractor is None:
