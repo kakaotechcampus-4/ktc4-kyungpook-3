@@ -258,9 +258,9 @@ def capacity(run: dict) -> dict:
     cap.update({
         "busy_vcpus_idle": _c(b_idle, f"{IDLE} 구간 서버 전체 바쁜 vCPU 평균"),
         "busy_vcpus_transcribing": _c(b_busy, f"{LONG} 전사 구간 서버 전체 바쁜 vCPU 평균"),
-        "credits_per_hour_idle": _c(c_idle, f"{b_idle:.3f} × 60"),
-        "credits_per_hour_transcribing": _c(c_busy, f"{b_busy:.3f} × 60"),
-        "credits_per_day_idle": _c(c_idle * 24, f"{c_idle:.2f} × 24시간"),
+        "credits_per_hour_idle": _c(c_idle, f"{b_idle:.4f} × 60"),
+        "credits_per_hour_transcribing": _c(c_busy, f"{b_busy:.4f} × 60"),
+        "credits_per_day_idle": _c(c_idle * 24, f"{c_idle:.3f} × 24시간"),
         "credits_earned_per_day": _c(earn_day, f"시간당 적립 {EARN_PER_HOUR} × 24시간"),
         "transcribe_hours_per_day_no_charge": _c(
             t_day, f"({earn_day} − 하루 상시 소모 {c_idle * 24:.1f}) ÷ (전사 중 시간당 소모 {c_busy:.1f} − "
@@ -271,7 +271,7 @@ def capacity(run: dict) -> dict:
             f"잔고 상한 {MAX_BALANCE} ÷ (전사 중 시간당 소모 {c_busy:.1f} − 적립 {EARN_PER_HOUR}). 한 번만 쓸 수 있다"),
         "usd_per_extra_transcribe_hour": _c(
             (b_busy - b_idle) * USD_PER_VCPU_HOUR,
-            f"(전사 중 {b_busy:.3f} − 상시 {b_idle:.3f}) vCPU × ${USD_PER_VCPU_HOUR}/vCPU시간"),
+            f"(전사 중 {b_busy:.4f} − 상시 {b_idle:.4f}) vCPU × ${USD_PER_VCPU_HOUR}/vCPU시간"),
         "credits_net_measured": _c(
             credits_net(run["samples"]),
             f"기록 전체 {hours:.2f}시간의 Σ(바쁜 vCPU × 초 ÷ 60) − {EARN_PER_HOUR} × {hours:.2f}. CloudWatch 와 대조"),
