@@ -1,6 +1,7 @@
 """인계가 끝났는데 발화 저장이 없는 회의에 한 번 보내는 소급 명령(capture/backfill_sources.py, #146)."""
 
 import json
+from pathlib import Path
 
 from capture import backfill_sources as BF
 from capture import handoff as H
@@ -71,6 +72,17 @@ def test_a_failed_save_is_reported_and_left_for_the_next_run(tmp_path):
     fake.sources_fail = (503, "SERVICE_UNAVAILABLE")
     out = BF.backfill(rec, transcripts_dir=tmp_path / "transcripts", handoff=_be(fake))
     assert out[0]["sent"] is False and "SERVICE_UNAVAILABLE" in out[0]["error"]
+    assert [p for p, _ in BF.targets(rec)] == [done]
+
+
+def test_a_missing_transcript_is_an_error_and_stays_a_target(tmp_path):
+    """전사 파일이 없는데 0줄로 기록하면 파일을 되살려도 다시 보내지 못한다. 오류로 남기고 다음 실행의 대상으로 둔다."""
+    fake = FakeBe()
+    rec, done = _handed_off_without_lines(tmp_path, fake)
+    Path(json.loads(done.read_text(encoding="utf-8"))["transcript_json"]).unlink()
+    out = BF.backfill(rec, transcripts_dir=tmp_path / "transcripts", handoff=_be(fake))
+    assert out[0]["sent"] is False and out[0]["error"].startswith("FileNotFoundError")
+    assert "sourced" not in json.loads(done.read_text(encoding="utf-8"))["stages"] and fake.sources == {}
     assert [p for p, _ in BF.targets(rec)] == [done]
 
 

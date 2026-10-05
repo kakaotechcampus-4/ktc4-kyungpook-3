@@ -317,12 +317,29 @@ def test_save_sources_without_lines_saves_nothing(tmp_path):
     fake = FakeBe()
     h = _token_handoff(fake)
     m, tdir = _manifest(tmp_path, with_tasks=False)
-    (tdir / "session_500.transcript.json").unlink()            # 말이 없어 계약 파일이 안 생긴 회의
+    m["transcript_json"] = None                                # 말이 없어 계약 파일이 안 생긴 회의. 전사가 이렇게 적는다
+    (tdir / "session_500.transcript.json").unlink()
     assert h.save_sources(m, transcripts_dir=tdir)["sources"] == {"inserted": 0, "skipped": 0, "duration_ms": None,
                                                                    "meeting_id": None}
     (tdir / "session_500.transcript.json").write_text(json.dumps({"segments": []}), encoding="utf-8")
     assert h.save_sources(m, transcripts_dir=tdir)["sources"]["inserted"] == 0
     assert fake.calls == []
+
+
+def test_save_sources_raises_when_the_transcript_it_should_have_is_missing(tmp_path):
+    """전사가 쓴 계약 파일이 없으면 0줄로 닫지 않는다. 닫으면 파일을 되살려도 sources_saved 가 막아 다시 보내지 못한다."""
+    fake = FakeBe()
+    h = _token_handoff(fake)
+    m, tdir = _manifest(tmp_path, with_tasks=False)
+    contract = tdir / "session_500.transcript.json"
+    m["transcript_json"] = str(contract)
+    contract.unlink()                                          # 옮겨졌거나 지워졌다
+    with pytest.raises(FileNotFoundError):
+        h.save_sources(m, transcripts_dir=tdir)
+    del m["transcript_json"]                                   # 경로를 적기 전의 매니페스트는 transcripts_dir 에서 찾는다
+    with pytest.raises(FileNotFoundError):
+        h.save_sources(m, transcripts_dir=tdir)
+    assert fake.calls == [] and "sources" not in m.get("be", {})
 
 
 def test_from_env_passes_the_service_token(monkeypatch):

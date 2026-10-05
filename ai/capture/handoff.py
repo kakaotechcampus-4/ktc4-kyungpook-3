@@ -244,10 +244,15 @@ class Handoff:
         """전사 발화를 BE 에 저장한다. processing 이나 done 회의에 보낸다. end 로 회의를 확보하고, BE 가 failed 로 닫아
         두었으면 end 가 새 회의로 바꾼다. be["sources"] 에 보낸 회의 ID 를 남겨, 회의가 뒤에 바뀌면 다시 보낼 수 있게 한다.
 
-        발화가 없으면(계약 파일이 없거나 0줄) BE 를 부르지 않고 0줄로 남긴다. 계약 파일의 session·model·speakers 는
-        보내지 않고 Transcript 모양만 보낸다. 화자 이름은 매니페스트 speakers 의 표시 이름이다.
+        발화가 없으면(전사가 계약 파일을 쓰지 않았거나 0줄) BE 를 부르지 않고 0줄로 남긴다. 그 기록 없이 계약 파일이
+        없으면 FileNotFoundError 다. 계약 파일의 session·model·speakers 는 보내지 않고 Transcript 모양만 보낸다.
+        화자 이름은 매니페스트 speakers 의 표시 이름이다.
         """
         path = Path(manifest.get("transcript_json") or transcripts_dir / f"session_{manifest['session']}.transcript.json")
+        no_speech = "transcript_json" in manifest and manifest["transcript_json"] is None   # 전사가 0줄이라 파일을 안 썼다
+        if not path.exists() and not no_speech:
+            # 있어야 할 파일이 없다. 0줄로 닫으면 sources_saved 가 막아 파일을 되살려도 다시 보내지 못한다
+            raise FileNotFoundError(f"전사 계약 파일이 없다: {path}")
         transcript = Transcript.from_dict(json.loads(path.read_text(encoding="utf-8"))).to_dict() if path.exists() else None
         if not transcript or not transcript["segments"]:
             be = manifest.setdefault("be", {})
