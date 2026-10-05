@@ -619,6 +619,10 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
             result["retried"] = out["retried"]
             result["ran"].append("retried")
             changed = out["retried"] > out["failed"]          # 이번에 살아난 줄이 있다
+            if changed:
+                # 살아난 줄을 BE 에 더 보낸다(BE 는 없는 seq 만 넣는다). 아래에서 partial 로 일찍 돌아가도 표시가 남아,
+                # 단계가 닫힐 때 다시 보낸다
+                stages.pop(STATUS_SOURCED, None)
             if out["failed_units"]:
                 manifest["failed_units"] = out["failed_units"]
                 if out["failed"] >= len(out["lines"]) or manifest["retry_runs"] < PARTIAL_RETRY_MAX:
@@ -638,7 +642,6 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
                 # 두면 새 회의록의 결과와 견줘져 옛 회의록의 항목이 인계될 수 있다
                 for key in _JUDGE_KEYS:
                     manifest.pop(key, None)
-                stages.pop(STATUS_SOURCED, None)       # 살아난 줄을 BE 에 더 보낸다. BE 는 없는 seq 만 넣는다
             if changed and (STATUS_EXTRACTED in stages or STATUS_HANDED_OFF in stages):
                 # 옛 회의록으로 뽑은 할일과 인계는 무효다. 다시 뽑고 다시 보낸다
                 stages.pop(STATUS_EXTRACTED, None)

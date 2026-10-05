@@ -539,3 +539,26 @@ def test_a_meeting_failing_extraction_before_this_change_keeps_counting(tmp_path
     _run(rec, json.loads(path.read_text(encoding="utf-8")), tmp_path, extractor=_dying, handoff=no_token)
     r = _run(rec, json.loads(path.read_text(encoding="utf-8")), tmp_path, extractor=_dying, handoff=_be(fake))
     assert r["ran"] == ["sourced"] and r["attempts"] == 3
+
+
+def test_lines_revived_in_a_retry_that_stays_partial_are_sent_when_the_stage_closes(tmp_path, monkeypatch):
+    """인계까지 간 뒤 빠진 구간 둘이 남았다. 중간 재시도에서 한 줄이 살아났지만 다른 줄이 남아 partial 로 돌아갔고,
+    마지막 재시도에서는 더 살아난 줄이 없었다. 그래도 단계가 닫힐 때 발화를 다시 보내 살아났던 줄이 BE 에 간다."""
+    rec, path, manifest = _session(tmp_path)
+    fake = FakeBe()
+    _run(rec, manifest, tmp_path, extractor=_extractor({}), handoff=_be(fake))
+    m = json.loads(path.read_text(encoding="utf-8"))
+    units = [{"speaker": "1", "start_ms": 0, "end_ms": 2000, "error": "x"},
+             {"speaker": "2", "start_ms": 5000, "end_ms": 8000, "error": "x"}]
+    m.update(failed_units=units, partial=True, retry_runs=1)
+    R.save_manifest(path, m)
+    monkeypatch.setattr(R, "PARTIAL_RETRY_MAX", 3)
+    contract = tmp_path / "transcripts" / "session_77_500.transcript.json"
+    out = {"markdown": rec / "77_500" / "transcript.md", "transcript_json": contract, "lines": [1, 2, 3]}
+    runs = iter([dict(out, retried=2, failed=1, failed_units=units[1:]),      # 중간: 둘을 보내 하나 살아남
+                 dict(out, retried=1, failed=1, failed_units=units[1:])])     # 상한: 남은 하나도 그대로
+    monkeypatch.setattr(R, "retry_failed", lambda *a, **k: next(runs))
+    mid = _run(rec, json.loads(path.read_text(encoding="utf-8")), tmp_path, extractor=_extractor({}), handoff=_be(fake))
+    assert mid["status"] == "partial"
+    last = _run(rec, json.loads(path.read_text(encoding="utf-8")), tmp_path, extractor=_extractor({}), handoff=_be(fake))
+    assert "sourced" in last["ran"]
