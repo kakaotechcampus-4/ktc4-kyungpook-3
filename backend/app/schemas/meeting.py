@@ -115,6 +115,18 @@ class ExtractionDetailResponse(BaseModel):
     items: list[ExtractionItemResponse]
 
 
+class TargetSnapshot(BaseModel):
+    """AI가 유사 검색(SimilarTaskCandidate)에서 본 수정 대상 task의 값. 승인 충돌의 기준값으로 쓴다.
+
+    보낸 필드만 기준값으로 쓴다. null은 "그때 값이 없었다"이고, 보내지 않은 필드는 등록 시점의 DB 값을 쓴다.
+    """
+
+    updated_at: datetime | None = Field(None, description="검색 응답의 updated_at. 비교에는 쓰지 않고 기록용")
+    due_date: date | None = None
+    status: str | None = Field(None, max_length=16)
+    assignee_member_id: str | None = Field(None, max_length=36)
+
+
 class ExtractionItemCreate(BaseModel):
     action: ExtractionAction = Field(
         ExtractionAction.CREATE,
@@ -153,6 +165,11 @@ class ExtractionItemCreate(BaseModel):
     )
     status: TaskStatus | None = Field(None, description="JudgeResult.status. 언급이 없으면 null")
     doc_text: str | None = Field(None, description="PM에게 보여 줄 설명 문장 (DraftResult.doc_text)")
+    target_snapshot: TargetSnapshot | None = Field(
+        None,
+        description="action이 update일 때 AI가 유사 검색에서 본 대상 task 값. 승인 충돌의 기준값이 된다. "
+        "없으면 등록 시점의 DB 값을 기준으로 쓴다.",
+    )
 
 
 class ExtractionCreateRequest(BaseModel):

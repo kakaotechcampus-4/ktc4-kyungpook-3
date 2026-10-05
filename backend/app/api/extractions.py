@@ -1,5 +1,6 @@
 import json
 import logging
+from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import select, update
@@ -275,6 +276,14 @@ def create_extraction(
     )
 
 
+def _same_instant(a: datetime, b: datetime) -> bool:
+    """두 시각이 같은가. 시간대가 없는 값(SQLite)은 UTC로 본다."""
+    def utc(d: datetime) -> datetime:
+        return d.replace(tzinfo=timezone.utc) if d.tzinfo is None else d
+
+    return utc(a) == utc(b)
+
+
 def _request_task_update(
     db: Session,
     meeting: Meeting,
@@ -301,23 +310,45 @@ def _request_task_update(
     그 외에는 담당자까지 같고(또는 언급이 없고) 다른 변경도 없으면 승인 요청을 만들지 않는다.
     이 경우에도 doc_text·근거는 ExtractionItem에 그대로 남는다.
 
-    변경안마다 비교한 지금 값을 base_values로 함께 남긴다. 제안 뒤에 PM이 같은 필드를 직접
-    고쳤으면 승인할 때 충돌로 알려, 나중의 승인이 PM의 변경을 말없이 덮지 않게 한다.
+    변경안마다 기준값을 base_values로 함께 남긴다. 제안 뒤에 PM이 같은 필드를 직접 고쳤으면
+    승인할 때 충돌로 알려, 나중의 승인이 PM의 변경을 말없이 덮지 않게 한다.
+
+    기준값은 AI가 유사 검색에서 본 값(target_snapshot)이다. 등록 시점의 DB 값을 쓰면 AI가 검색한 뒤
+    판단하는 사이에 PM이 고친 값이 기준값이 되어, 승인할 때 충돌 없이 그 값을 덮는다(#157).
+    target_snapshot이 없거나 그 필드를 보내지 않았으면 등록 시점의 DB 값을 쓴다.
+    변경안에 넣을지는 지금 DB 값과 비교해 정한다. PM이 이미 같은 값으로 고쳤으면 바꿀 것이 없다.
     """
+    snapshot = raw_item.target_snapshot
+    seen = snapshot.model_fields_set if snapshot is not None else set()
+    if snapshot is None:
+        logger.warning(
+            "수정 항목에 target_snapshot이 없어 등록 시점의 값을 충돌 기준으로 씁니다. task_id=%s",
+            target.task_id,
+        )
+    elif snapshot.updated_at is not None and not _same_instant(snapshot.updated_at, target.updated_at):
+        logger.info(
+            "AI가 검색한 뒤 task가 바뀌었습니다. 승인할 때 충돌로 확인합니다. task_id=%s",
+            target.task_id,
+        )
+
+    def base(field: str, current: object) -> object:
+        value = getattr(snapshot, field) if field in seen else current
+        return value.isoformat() if isinstance(value, date) else value
+
     changes: dict[str, object] = {}
-    # 변경안마다 비교한 지금 값. 승인할 때 task가 그 사이 바뀌었는지 확인하는 기준이다.
+    # 변경안마다 비교한 기준값. 승인할 때 task가 그 뒤로 바뀌었는지 확인하는 기준이다.
     base_values: dict[str, object] = {}
     if raw_item.due_date is not None and raw_item.due_date != target.due_date:
         changes["due_date"] = raw_item.due_date.isoformat()
-        base_values["due_date"] = target.due_date.isoformat() if target.due_date else None
+        base_values["due_date"] = base("due_date", target.due_date)
     if raw_item.status is not None and str(raw_item.status) != target.status:
         changes["status"] = str(raw_item.status)
-        base_values["status"] = target.status
+        base_values["status"] = base("status", target.status)
     # 담당자는 한 명으로 찾았을 때만 바꾼다. 못 찾았거나 여러 명이면 원문만 보여 주고 PM이 고른다.
     # 원문을 그대로 넣으면 팀원 ID가 아니라서 승인할 때 무시된다.
     if match.member_id is not None and match.member_id != target.assignee_member_id:
         changes["assignee_member_id"] = match.member_id
-        base_values["assignee_member_id"] = target.assignee_member_id
+        base_values["assignee_member_id"] = base("assignee_member_id", target.assignee_member_id)
 
     item.task_id = target.task_id
     assignee_unresolved = has_assignee and match.member_id is None
