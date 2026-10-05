@@ -25,6 +25,9 @@ concurrency:
 
 jobs:
   deploy:
+    # 수동 실행은 Actions 화면에서 아무 브랜치나 고를 수 있다. 다른 브랜치 커밋이 서버에 올라가면
+    # 서버 develop 이 origin/develop 과 갈라져 이후 fast-forward 가 모두 실패한다
+    if: github.ref == 'refs/heads/develop'
     runs-on: ubuntu-latest
     timeout-minutes: 60   # OIDC 세션 최대 1시간
     steps:
@@ -51,6 +54,7 @@ jobs:
               "cd /opt/mm",
               "OLD=$(sudo -u ubuntu git rev-parse HEAD)",
               "sudo -u ubuntu git fetch --quiet origin",
+              "sudo -u ubuntu git merge-base --is-ancestor \($sha) origin/develop || { echo \"develop 에 없는 커밋이라 배포하지 않는다: \($sha)\" >&2; exit 1; }",
               "sudo -u ubuntu git merge --ff-only \($sha)",
               "sudo -iu ubuntu bash /opt/mm/deploy/ec2-deploy.sh \"$OLD\" \($mode)"
             ],
