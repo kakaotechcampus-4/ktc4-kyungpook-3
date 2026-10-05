@@ -204,7 +204,7 @@ CloudWatch 5분 지표로 대조했다(원자료 cloudwatch.json). CPUCreditBala
 | 봇 응답(이벤트 루프 지연) | 0013 다시 볼 조건 | 봇 방식 p95 1.40ms, 최대 52.5ms(상시 p95 0.31ms) | 워커 방식의 루프 지연과 디스코드 하트비트 지연은 아직 안 했다 |
 | 작은 모델 판단 규칙(CER 차가 추출에 영향이 없으면 싼 쪽) | #17 2차 답7 | CER 차 2.87pt, 3.69pt. small 이 3.2~3.5배 빠르다(정렬본) | 추출 영향 비교는 아직 결과가 없다 |
 | 판단 경로 실패율, 회의당 LLM 호출 수·시간, 호출 제한 시간 근거 | 0016, ai/docs 2026-09-30-judge-handoff | 없음 | 처리 기록(#153)이 LLM 호출 수를 남긴다. 실제 회의가 쌓인 뒤 |
-| 실행 환경 기록과 버전 고정 | #17 2차 답3 ③, #17 2차 requirements.txt 인라인 | 커밋 bc9dc35, faster-whisper 1.2.1, ctranslate2 4.8.2, cpu_threads 기본값 | requirements 버전 고정은 아직 안 했다 |
+| 실행 환경 기록과 버전 고정 | #17 2차 답3 ③, #17 2차 requirements.txt 인라인 | 커밋 bc9dc35, faster-whisper 1.2.1, ctranslate2 4.8.2, cpu_threads 기본값. requirements.txt 를 이 두 버전으로 고정했다 | 없음 |
 | 측정 결과 공개 | #17 1차 고민했던 점, #17 2차 LOW 재지적 | 이 문서와 summary.json, tables.md | 없음 |
 | 실서버 녹음 검증(키 갱신 재연결 뒤 수신, 봇 재시작 뒤 /recover, 5분 세션 입퇴장·재접속) | #45 R09 | 없음 | 사람이 들어가는 녹음이 필요하다. 실녹음 검증 작업으로 |
 | 짧은 응답 보존율, 수동 전사 대 STT 전사의 추출 F1 | #17 2차 답7, #45 본문7 | 없음 | 실녹음 검증 작업으로 |
