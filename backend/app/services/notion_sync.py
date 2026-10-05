@@ -161,16 +161,29 @@ def _release_stale_jobs(db: Session, now: datetime) -> None:
             updated_at=now,
         )
     )
-    db.execute(
-        update(NotionSyncJob)
+    exhausted = db.execute(
+        select(NotionSyncJob.job_id, NotionSyncJob.task_id, NotionSyncJob.task_version)
         .where(*stale, NotionSyncJob.attempts >= MAX_ATTEMPTS)
-        .values(
-            status=str(NotionSyncJobStatus.FAILED),
-            locked_at=None,
-            last_error="처리 중 중단된 채 재시도 한도를 넘었습니다.",
-            updated_at=now,
+    ).all()
+    if exhausted:
+        db.execute(
+            update(NotionSyncJob)
+            .where(NotionSyncJob.job_id.in_([job_id for job_id, _, _ in exhausted]))
+            .values(
+                status=str(NotionSyncJobStatus.FAILED),
+                locked_at=None,
+                last_error="처리 중 중단된 채 재시도 한도를 넘었습니다.",
+                updated_at=now,
+            )
         )
-    )
+        # _handle_failure와 같은 규칙: 더 최신 변경이 대기 중이면 그쪽 결과를 기다린다.
+        # 그렇지 않으면 남은 작업이 없는데 Task만 pending으로 남는다.
+        for _, task_id, task_version in exhausted:
+            if not _has_newer_active_job(db, task_id, task_version):
+                _update_task_sync(db, task_id, notion_sync_status=str(NotionSyncStatus.FAILED))
+            logger.warning(
+                "Notion 반영 중단 후 재시도 한도 초과 task_id=%s version=%s", task_id, task_version
+            )
     db.commit()
 
 

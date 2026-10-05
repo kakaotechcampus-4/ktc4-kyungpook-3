@@ -4,10 +4,13 @@ import type { ReactElement, ReactNode, SuspenseProps } from 'react'
 import { createRoutesFromElements } from 'react-router'
 import type { RouteObject } from 'react-router'
 import { db } from '@/shared/mock/db'
-import { PageSkeleton } from '@/shared/ui/page-skeleton'
 import { renderApp } from '../test/renderApp'
+import { RouteSkeleton } from './RouteSkeleton'
 import { RouteErrorBoundary } from './errors/RouteErrorBoundary'
 import { appRoutes } from './routes'
+
+/** 랜딩 캔버스의 h1 `한 번의 클릭으로,<br>매니저가 정리합니다` */
+const LANDING_HEADING = /한 번의 클릭으로,\s*매니저가 정리합니다/
 
 /* <Routes> 가 안에서 하는 변환과 같다. 경로 표를 요소 그대로 훑으려고 쓴다 */
 const tree = createRoutesFromElements(appRoutes)
@@ -41,20 +44,23 @@ describe('경로 표', () => {
     }
   })
 
-  it('주요 화면 13개는 지연 로드하고 Suspense 에 PageSkeleton 을 쓴다', () => {
+  /* 기대값을 바꿨다 — 대기 화면은 경로에 맞는 뼈대를 고르는 RouteSkeleton 이다(온보딩은 가운데 열 뼈대).
+     고르는 규칙은 RouteSkeleton.test.tsx 가 본다 */
+  it('주요 화면 13개는 지연 로드하고 Suspense 에 RouteSkeleton 을 쓴다', () => {
     const lazyScreens = leaves(tree)
       .map(lazyScreen)
       .filter((element) => element !== null)
     expect(lazyScreens).toHaveLength(13)
     for (const { props } of lazyScreens) {
-      expect(isValidElement(props.fallback) && props.fallback.type === PageSkeleton).toBe(true)
+      expect(isValidElement(props.fallback) && props.fallback.type === RouteSkeleton).toBe(true)
     }
   })
 })
 
 describe('등록 경로', () => {
+  // 랜딩은 M4 에서 임시 제목 `랜딩` 대신 캔버스 제목을 쓴다. 로그인·회원가입은 폼 칸의 숨은 제목이 화면 이름이다
   it.each([
-    ['/', '랜딩'],
+    ['/', LANDING_HEADING],
     ['/login', '로그인'],
     ['/signup', '회원가입'],
   ])('비로그인 %s → %s', async (path, heading) => {
@@ -79,13 +85,22 @@ describe('등록 경로', () => {
   ])('로그인 %s → %s', async (path, heading) => {
     const app = renderApp(path)
     expect(await screen.findByRole('heading', { name: heading })).toBeInTheDocument()
-    expect(app.location().pathname).toBe(path)
+    await app.expectPath(path)
+  })
+
+  // Vitest 는 MSW 모드가 아니다. 모의 OAuth 화면은 개발·MSW 모드에서만 등록된다 (mockOAuthRoute.test.tsx)
+  it('MSW 모드가 아니면 모의 OAuth 화면이 없다', async () => {
+    renderApp('/__mock/oauth/ws_01/discord?state=%2F')
+    expect(
+      await screen.findByRole('heading', { name: '페이지를 찾을 수 없어요' }),
+    ).toBeInTheDocument()
+    expect(allRoutes(tree).some(({ path }) => path?.startsWith('__mock'))).toBe(false)
   })
 
   it('M2 임시 갤러리는 없다', async () => {
     db.authenticated = false
     renderApp('/')
-    await screen.findByRole('heading', { name: '랜딩' })
+    await screen.findByRole('heading', { name: LANDING_HEADING })
     expect(screen.queryByText('M2 gallery')).toBeNull()
   })
 })

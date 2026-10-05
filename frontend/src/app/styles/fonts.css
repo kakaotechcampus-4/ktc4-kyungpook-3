@@ -2,13 +2,17 @@
    frontend/docs/design/canvas/_fonts.css 의 base64 를 추출한 것이다.
    weight 범위(100 300 / 400 500 / 600 700 / 800 900)는 원본 그대로 유지한다 —
    정적 폰트 4벌이므로 이 범위가 "500 → Regular, 600 → Bold" 폴백을 만든다.
-   url() 은 번들러가 정적 분석할 수 있도록 @ 별칭이 아니라 상대 경로로 적는다. */
+   url() 은 번들러가 정적 분석할 수 있도록 @ 별칭이 아니라 상대 경로로 적는다.
+   unicode-range 로 U+2022(•) 하나만 뺀다 — 이 폰트의 그 글리프는 폭만 있고 모양이 비어 있다.
+   Chromium 은 비밀번호를 이 문자로 가려서 입력이 빈칸으로 보였다. 빼면 그 문자만 다음 폴백 폰트가 그린다.
+   docs/impl-decision/2026-09-29-nanum-bullet-glyph.md */
 
 @font-face {
   font-family: 'NanumSquare';
   font-style: normal;
   font-weight: 100 300;
   font-display: swap;
+  unicode-range: U+0-2021, U+2023-10FFFF;
   src: url('../../shared/styles/fonts/NanumSquare-Light.woff2') format('woff2');
 }
 
@@ -17,6 +21,7 @@
   font-style: normal;
   font-weight: 400 500;
   font-display: swap;
+  unicode-range: U+0-2021, U+2023-10FFFF;
   src: url('../../shared/styles/fonts/NanumSquare-Regular.woff2') format('woff2');
 }
 
@@ -25,6 +30,7 @@
   font-style: normal;
   font-weight: 600 700;
   font-display: swap;
+  unicode-range: U+0-2021, U+2023-10FFFF;
   src: url('../../shared/styles/fonts/NanumSquare-Bold.woff2') format('woff2');
 }
 
@@ -33,5 +39,6 @@
   font-style: normal;
   font-weight: 800 900;
   font-display: swap;
+  unicode-range: U+0-2021, U+2023-10FFFF;
   src: url('../../shared/styles/fonts/NanumSquare-ExtraBold.woff2') format('woff2');
 }

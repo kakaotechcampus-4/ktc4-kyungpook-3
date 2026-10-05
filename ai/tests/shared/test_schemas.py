@@ -1,4 +1,12 @@
-from shared.schemas import JudgeFinding, JudgeInput, NotionCandidate, Transcript, TranscriptSegment
+from shared.schemas import (
+    DraftResult,
+    DraftStructured,
+    JudgeFinding,
+    JudgeInput,
+    NotionCandidate,
+    Transcript,
+    TranscriptSegment,
+)
 
 
 def test_transcript_roundtrip_and_merge():
@@ -76,6 +84,13 @@ def test_notion_candidate_defaults():
     assert c.similarity == 0.0
 
 
+def test_notion_candidate_page_id_is_optional():
+    # Notion 동기화 전인 Task 는 페이지가 없다 — 유사 검색 응답(#102)이 null 로 준다
+    c = NotionCandidate.from_dict({"task_id": "task_1", "notion_page_id": None, "title": "로그인 화면 시안"})
+    assert c.notion_page_id is None
+    assert NotionCandidate(task_id="task_1").notion_page_id is None
+
+
 def test_notion_candidate_roundtrip():
     c = NotionCandidate(
         notion_page_id="page_1",
@@ -104,3 +119,27 @@ def test_judge_input_roundtrip_with_candidates():
     )
     restored = JudgeInput.from_dict(ji.to_dict())
     assert restored == ji
+
+
+def test_draft_structured_defaults_mean_no_change():
+    # None 은 "바꾸지 않음" — update 에서 채우지 않은 필드가 승인 payload 에 들어가면 안 된다
+    s = DraftStructured()
+    assert s.task is None
+    assert s.due_date is None
+
+
+def test_draft_result_roundtrip():
+    d = DraftResult(
+        structured=DraftStructured(task="결제 환불 기능 구현", due_date="2026-10-05"),
+        doc_text="결제 환불 기능을 지민님이 10/5까지 구현하기로 함",
+    )
+    assert d.method == "llm"
+    assert d.to_dict()["structured"] == {"task": "결제 환불 기능 구현", "due_date": "2026-10-05"}
+    assert DraftResult.from_dict(d.to_dict()) == d
+
+
+def test_draft_result_from_dict_without_structured():
+    # update 에서 바뀐 필드가 없어 structured 가 비어 와도 기본값(전부 None)으로 복원된다
+    d = DraftResult.from_dict({"doc_text": "검색 성능 개선 작업 완료"})
+    assert d.structured == DraftStructured()
+    assert d.method == "llm"

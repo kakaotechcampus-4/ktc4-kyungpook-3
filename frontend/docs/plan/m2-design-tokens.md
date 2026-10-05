@@ -1005,7 +1005,7 @@ npm i @radix-ui/react-checkbox @radix-ui/react-dialog @radix-ui/react-radio-grou
 | `Button` | ✕ | — | 네이티브 `<button>`으로 충분하다. `asChild`가 필요해지면 그때 `@radix-ui/react-slot`을 넣는다 |
 | `TextField` | ✕ | — | 네이티브 `<input>`. `id`↔`htmlFor`와 `aria-describedby`는 직접 잇는다 |
 | `Label` | ✕ | — | `<label htmlFor>`가 네이티브로 포커스 이양을 한다. Radix Label이 더하는 것은 더블클릭 텍스트 선택 방지뿐이라 의존성 값을 못 한다 |
-| `ErrorText` | ✕ | — | `<p role="alert">` |
+| `ErrorText` | ✕ | — | `<p>` — 입력의 `aria-describedby` 가 읽는다. M4 에서 `role="alert"` 를 뺐다 (`impl-decision/2026-09-29-field-error-announcement.md`) |
 | `Card` / `Panel` | ✕ | — | 순수 표현 |
 | `Checkbox` | ○ | `@radix-ui/react-checkbox` | indeterminate, 키보드, `aria-checked`. 시안의 체크박스는 커스텀 SVG라 네이티브 `<input type=checkbox>`를 숨기고 그리는 것보다 Radix가 깔끔하다 |
 | `SelectCard` | ○ | `@radix-ui/react-radio-group` | roving tabindex + 방향키 이동. 라디오 그룹을 손으로 만들면 반드시 틀린다 |
@@ -1131,6 +1131,8 @@ interface ButtonProps extends React.ComponentPropsWithoutRef<'button'> {
 > `#FF6969`는 **"비우면 승인이 막히는 입력"에만** 쓴다(Foundations 강조 절). 일반 검증 실패에 쓰지 않는다.
 > 일반 미입력 필수칸은 design-system.md §7-7대로 **경계를 먹(`#171717`)으로** 그린다.
 > **확인 필요** — 먹 경계의 실측 사례가 캔버스에 없다. M4에서 첫 사례를 만들 때 정한다.
+> → **M4 에서 정했다**: 검증 오류가 난 칸(오류 문구가 붙은 동안)은 강조색이다. 먹 경계는 오류 전에 필수칸을 미리 표시할 때의 규칙으로 남기고,
+> M4 폼에는 그 사례가 없다 (`impl-decision/2026-09-29-field-error-accent.md`).
 
 #### props 설계
 
@@ -1189,7 +1191,7 @@ interface LabelProps extends React.ComponentPropsWithoutRef<'label'> {
 | 크기 / 굵기 | 12 / 400 | 라벨과 같은 단. 오류가 라벨보다 커지면 시선을 뺏는다 |
 | 색 | `#FF6969` | 경계·라벨과 같은 색. 유채색을 새로 만들지 않는다 |
 | 위치 | 입력 **아래**, `margin-top: 6px` | D-142 "필드 오류는 입력 아래" |
-| 역할 | `<p role="alert" id={errorId}>` | 입력의 `aria-describedby`가 이걸 가리키고 `aria-invalid="true"`가 붙는다 |
+| 역할 | ~~`<p role="alert" id={errorId}>`~~ → `<p id={errorId}>` (M4) | 입력의 `aria-describedby`가 이걸 가리키고 `aria-invalid="true"`가 붙는다. alert 를 겹치면 두 번 읽혀 M4 에서 뺐다 (`impl-decision/2026-09-29-field-error-announcement.md`) |
 | 아이콘 | 없음 | design-system.md §7-13 "유채 정보/성공/경고/오류 박스를 쓰지 않는다" |
 
 **비필드 서버 오류는 폼 상단**에 놓는다(D-142). 그 블록은 §7-13대로 **눌린 면 + 먹 본문 + 대체 경로 버튼**이고,
@@ -1810,7 +1812,7 @@ cd frontend && npm run dev   # http://localhost:5173
 | 1 | Tailwind v4 `@theme` 문법 (`--namespace-*: initial`, `--spacing: initial`, `--text-*--line-height`) | 설치할 버전의 실제 API를 확인하지 않았다 | 설치 후 문서 확인. **값은 유지하고 문법만 맞춘다** |
 | 2 | Vite가 `index.html`의 `link[rel=preload][href]`를 해시 경로로 다시 쓰는가 | 빌드해 보지 않았다 | `npm run build && grep preload dist/index.html`. 안 되면 `public/fonts/`로 전환 (§4-5) |
 | 3 | `Checkbox`의 unchecked · indeterminate · hover · disabled 시각 | 캔버스에 checked 한 곳뿐 | §7-5의 제안을 M4 첫 사용처에서 눈으로 확정 |
-| 4 | `ErrorText` 전체 | 캔버스에 오류 메시지가 0건 | §7-3의 제안을 M4 폼에서 확정 |
+| 4 | `ErrorText` 전체 | 캔버스에 오류 메시지가 0건 | §7-3의 제안을 M4 폼에서 확정 → 색은 강조색 유지, `role="alert"` 는 뺐다 (`impl-decision/2026-09-29-field-error-{accent,announcement}.md`) |
 | 5 | `Toast` 전체 (특히 그림자 없이 보이는가) | 캔버스에 토스트가 0건 | §7-9. M4에서 실물 확인 후 §3-④의 팝오버 예외를 적용할지 결정 |
 | 6 | `Skeleton` 전체 | 캔버스에 스켈레톤이 0건 | §7-11의 제안을 M3 라우트 스켈레톤에서 확정 |
 | 7 | 모든 컴포넌트의 pressed(`:active`) | 캔버스에 `:active` 0건 | M4에서 일괄 확정 |

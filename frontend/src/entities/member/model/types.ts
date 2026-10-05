@@ -33,3 +33,18 @@ export interface DiscordUser {
   avatarUrl: string | null
   isBot: boolean
 }
+/** 팀원 생성 요청. role 을 빼면 member 다 */
+export interface CreateMemberInput {
+  workspaceId: string
+  displayName: string
+  discordUserId?: string | null
+  notionName?: string | null
+  role?: Role
+}
+/** 팀원 수정 요청. 넣은 필드만 보낸다. discordUserId·notionName 은 null 로 지운다 */
+export interface UpdateMemberInput {
+  displayName?: string
+  discordUserId?: string | null
+  notionName?: string | null
+  role?: Role
+}

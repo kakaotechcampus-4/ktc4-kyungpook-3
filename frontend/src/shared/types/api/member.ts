@@ -30,3 +30,18 @@ export interface DiscordUserDto {
   avatar_url: string | null
   is_bot: boolean
 }
+// 백엔드 MemberCreateRequest. role 을 빼면 member 다
+export interface MemberCreateDto {
+  workspace_id: string
+  display_name: string
+  discord_user_id?: string | null
+  notion_name?: string | null
+  role?: 'pm' | 'member'
+}
+// 백엔드 MemberUpdateRequest. 보낸 키만 바뀐다. discord_user_id·notion_name 은 null 로 지울 수 있다
+export interface MemberUpdateDto {
+  display_name?: string
+  discord_user_id?: string | null
+  notion_name?: string | null
+  role?: 'pm' | 'member'
+}

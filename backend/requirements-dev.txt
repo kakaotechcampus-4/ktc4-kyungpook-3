@@ -1,0 +1,4 @@
+# 로컬 개발/테스트용. 운영 의존성(requirements.txt)을 포함한다.
+-r requirements.txt
+
+pytest>=8.0

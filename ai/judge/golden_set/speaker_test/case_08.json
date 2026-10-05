@@ -1,0 +1,37 @@
+{
+  "case_id": "case_08",
+  "scenario": "single_speaker_two_sentences",
+  "description": "대조군 — 한 사람이 담당과 마감을 두 문장으로 말하고 다른 사람이 감사",
+  "turns": [
+    {
+      "speaker": "도윤",
+      "text": "테스트 커버리지 리포트는 제가 뽑을게요. 금요일까지 공유하겠습니다."
+    },
+    {
+      "speaker": "하은",
+      "text": "고마워요."
+    }
+  ],
+  "expected": [
+    {
+      "text": "테스트 커버리지 리포트는 제가 뽑을게요.",
+      "should_flag": true,
+      "note": "1인칭 담당",
+      "assignee_type": "first",
+      "assignee": "도윤"
+    },
+    {
+      "text": "금요일까지 공유하겠습니다.",
+      "should_flag": true,
+      "note": "같은 사람의 마감",
+      "assignee_type": "first",
+      "assignee": "도윤"
+    },
+    {
+      "text": "고마워요.",
+      "should_flag": false,
+      "note": "단순 맞장구"
+    }
+  ],
+  "counts_toward_pass_rate": true
+}

@@ -1,13 +1,24 @@
 from fastapi import APIRouter, Depends, UploadFile, File, Form
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 from datetime import datetime, timezone
 from typing import Optional
 
 from app.api.deps import get_current_user, get_current_member, require_member
 from app.core.database import get_db
 from app.core.errors import AppError, Envelope, ErrorCode, success
-from app.models import Workspace, Member, MemberRole, User, Meeting, MeetingStatus
+from app.models import (
+    Workspace,
+    WorkspaceOnboardingStepState,
+    Member,
+    MemberRole,
+    User,
+    Meeting,
+    MeetingStatus,
+    OnboardingStep,
+    OnboardingStepStatus,
+    Source,
+)
 from app.schemas.meeting import MeetingListResponse
 from app.schemas.workspace import (
     WorkspaceCreateRequest,
@@ -21,22 +32,36 @@ from app.schemas.workspace import (
 router = APIRouter(prefix="/workspaces", tags=["workspaces"])
 
 
+def _onboarding_statuses(workspace: Workspace) -> dict[OnboardingStep, str]:
+    """단계 → 상태. 저장된 행이 없는 단계는 기본값이다. 워크스페이스가 있으면 create_workspace는 끝난 것이다."""
+    saved = {state.step: state.status for state in workspace.onboarding_steps}
+    return {
+        step: saved.get(
+            step,
+            OnboardingStepStatus.COMPLETED
+            if step == OnboardingStep.CREATE_WORKSPACE
+            else OnboardingStepStatus.PENDING,
+        )
+        for step in OnboardingStep
+    }
+
+
+def _build_onboarding(workspace: Workspace) -> WorkspaceOnboarding:
+    statuses = _onboarding_statuses(workspace)
+    pending = [step for step, status in statuses.items() if status == OnboardingStepStatus.PENDING]
+    return WorkspaceOnboarding(
+        completed=not pending,
+        # 다 끝나면 null이 아니라 빈 문자열이다(계약 4.0)
+        current_step=str(pending[0]) if pending else "",
+        steps=[WorkspaceOnboardingStep(step=str(step), status=str(status)) for step, status in statuses.items()],
+    )
+
+
 def _build_workspace_response(workspace: Workspace, member: Member | None = None) -> dict:
     data = WorkspaceResponse.model_validate(workspace).model_dump()
     if member:
         data["role"] = member.role
-    
-    # 임시 온보딩 로직 (구현 상세는 추후 고도화)
-    data["onboarding"] = WorkspaceOnboarding(
-        completed=workspace.onboarding_completed,
-        current_step="connect_notion" if not workspace.onboarding_completed else "",
-        steps=[
-            WorkspaceOnboardingStep(step="create_workspace", status="completed"),
-            WorkspaceOnboardingStep(step="connect_discord", status="completed" if workspace.onboarding_completed else "pending"),
-            WorkspaceOnboardingStep(step="connect_notion", status="pending"),
-            WorkspaceOnboardingStep(step="connect_members", status="pending"),
-        ]
-    ).model_dump()
+    data["onboarding"] = _build_onboarding(workspace).model_dump()
     return data
 
 
@@ -76,7 +101,14 @@ def list_workspaces(
     if not workspace_ids:
         return success(WorkspaceListResponse(items=[], total=0).model_dump(mode="json"))
         
-    workspaces = db.query(Workspace).filter(Workspace.workspace_id.in_(workspace_ids)).order_by(Workspace.created_at.desc()).all()
+    # 온보딩 단계를 워크스페이스마다 따로 읽지 않고 한 번에 가져온다
+    workspaces = (
+        db.query(Workspace)
+        .options(selectinload(Workspace.onboarding_steps))
+        .filter(Workspace.workspace_id.in_(workspace_ids))
+        .order_by(Workspace.created_at.desc())
+        .all()
+    )
     
     member_by_ws = {m.workspace_id: m for m in members}
     items = [_build_workspace_response(ws, member_by_ws.get(ws.workspace_id)) for ws in workspaces]
@@ -112,18 +144,45 @@ def update_onboarding(
     member: Member = Depends(get_current_member),
     db: Session = Depends(get_db)
 ) -> dict:
-    workspace = db.get(Workspace, workspace_id)
+    # 워크스페이스 행을 커밋까지 잠근다. 같은 공간으로 동시에 온 요청이 같은 단계 행을 두 번 넣거나
+    # onboarding_completed를 서로 덮어쓰지 않는다.
+    workspace = db.execute(
+        select(Workspace)
+        .where(Workspace.workspace_id == workspace_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    ).scalar_one_or_none()
     if not workspace:
         raise AppError(ErrorCode.WORKSPACE_NOT_FOUND, details={"workspace_id": workspace_id})
-        
+
     if member.role != MemberRole.PM:
         raise AppError(ErrorCode.FORBIDDEN, "Only PM can update onboarding status")
 
-    # 온보딩 단계 업데이트 로직 (간단화)
-    if payload.action == "complete" and payload.step == "connect_members":
-        workspace.onboarding_completed = True
-        
+    if payload.step == OnboardingStep.CREATE_WORKSPACE and payload.action == "skip":
+        raise AppError(
+            ErrorCode.INVALID_REQUEST,
+            "워크스페이스 생성 단계는 건너뛸 수 없습니다.",
+            details={"step": payload.step, "action": payload.action},
+        )
+
+    current = _onboarding_statuses(workspace)[payload.step]
+    if payload.action == "complete":
+        new_status = OnboardingStepStatus.COMPLETED
+    else:
+        # 이미 끝낸 단계를 건너뜀으로 되돌리지 않는다. FE 재시도로 같은 요청이 다시 와도 200이다
+        new_status = OnboardingStepStatus.SKIPPED if current == OnboardingStepStatus.PENDING else current
+
+    state = next((s for s in workspace.onboarding_steps if s.step == payload.step), None)
+    if state is None:
+        workspace.onboarding_steps.append(
+            WorkspaceOnboardingStepState(step=str(payload.step), status=str(new_status))
+        )
+    else:
+        state.status = str(new_status)
+
+    workspace.onboarding_completed = _build_onboarding(workspace).completed
     db.commit()
+    # 갱신된 상태는 돌려주지 않는다. FE가 상세를 다시 읽는다(계약 4.2)
     return success({})
 
 
@@ -144,17 +203,25 @@ def list_workspace_meetings(
         Meeting.status != MeetingStatus.FAILED
     ).order_by(Meeting.started_at.desc()).all()
     
+    # 회의마다 발화를 읽지 않고, 회의별 참석자 수를 한 번에 센다
+    attendee_counts = dict(
+        db.execute(
+            select(Source.meeting_id, func.count(Source.member_id.distinct()))
+            .where(Source.meeting_id.in_([m.meeting_id for m in meetings]))
+            .group_by(Source.meeting_id)
+        ).all()
+    ) if meetings else {}
+
     items = []
     for m in meetings:
-        # attendee_count 로직 개선 필요(현재는 segment 기반 추정)
-        attendee_count = len({s.member_id for s in m.segments if s.member_id}) if m.segments else 0
+        attendee_count = attendee_counts.get(m.meeting_id, 0)
         items.append({
             "meeting_id": m.meeting_id,
             "title": m.title,
             "started_at": m.started_at,
             "source": m.source,
             "status": m.status,
-            "duration_ms": m.audio.duration_ms if m.audio else 0,
+            "duration_ms": m.duration_ms or 0,
             "attendee_count": attendee_count,
             "processed_at": m.ended_at
         })

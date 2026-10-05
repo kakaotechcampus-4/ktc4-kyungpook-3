@@ -1,0 +1,39 @@
+{
+  "case_id": "case_05",
+  "scenario": "first_due_by_other",
+  "description": "1인칭 담당 → 다른 사람이 마감을 정함(담당자 확인 발화 없음)",
+  "turns": [
+    {
+      "speaker": "지민",
+      "text": "온보딩 화면 시안은 제가 만들게요."
+    },
+    {
+      "speaker": "하은",
+      "text": "그럼 마감은 다음 주 월요일로 할게요."
+    },
+    {
+      "speaker": "도윤",
+      "text": "넵."
+    }
+  ],
+  "expected": [
+    {
+      "text": "온보딩 화면 시안은 제가 만들게요.",
+      "should_flag": true,
+      "note": "1인칭 담당",
+      "assignee_type": "first",
+      "assignee": "지민"
+    },
+    {
+      "text": "그럼 마감은 다음 주 월요일로 할게요.",
+      "should_flag": true,
+      "note": "일정 결정 — 화자는 담당자가 아님"
+    },
+    {
+      "text": "넵.",
+      "should_flag": false,
+      "note": "단순 맞장구"
+    }
+  ],
+  "counts_toward_pass_rate": true
+}

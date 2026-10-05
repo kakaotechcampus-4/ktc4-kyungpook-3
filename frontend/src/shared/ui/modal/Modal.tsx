@@ -23,10 +23,13 @@ export interface ModalProps {
 /* 표는 모듈 스코프에 둔다 — 렌더마다 다시 만들지 않는다.
    근거: m2-design-tokens.md §7-8, docs/impl-decision/2026-09-16-no-cn-clsx-tailwind-merge.md */
 
-const OVERLAY = 'fixed inset-0 z-100 flex items-center justify-center p-24'
+/* `inset-0` 을 쓰지 않는다 — tokens.css 가 동적 간격 스케일을 꺼서 `*-0` 유틸이 생성되지 않는다.
+   M2 부터 오버레이가 화면을 덮지 못하고 문서 흐름 아래에 떠 있었다(브라우저 E2E 에서 발견).
+   docs/impl-decision/2026-09-29-modal-inset-zero.md */
+const OVERLAY = 'fixed inset-[0px] z-100 flex items-center justify-center p-24'
 
 /** 스크림은 먹의 32% 알파다. 검정이 아니다 (§5-1 금지 목록과 어긋나지 않는다) */
-const SCRIM = 'absolute inset-0 cursor-pointer bg-ink/32'
+const SCRIM = 'absolute inset-[0px] cursor-pointer bg-ink/32'
 
 /* `relative` 는 실측표에 없지만 빠뜨릴 수 없다 — 스크림이 `absolute` 라서
    자리잡지 않은 카드는 스크림 아래로 깔린다. 쌓임 순서를 위한 한 개다. */

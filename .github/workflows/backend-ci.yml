@@ -1,0 +1,43 @@
+name: backend-ci
+
+on:
+  pull_request:
+    branches: [develop]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend-ci.yml'
+
+defaults:
+  run:
+    working-directory: backend
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    # pgvector 검색 테스트(tests/services/test_embedding_search_pg.py)는 TEST_DATABASE_URL이 있을 때만 돈다.
+    # 나머지 테스트는 sqlite in-memory라 이 DB를 쓰지 않는다.
+    services:
+      db:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: mm
+          POSTGRES_PASSWORD: mm
+          POSTGRES_DB: mm_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U mm -d mm_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgresql+psycopg://mm:mm@localhost:5432/mm_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          python-version: "3.12"
+      - run: uv venv --python 3.12 .venv
+      - run: uv pip install --python .venv/bin/python -r requirements-dev.txt
+      # -rs: 건너뛴 테스트와 이유를 로그에 남긴다(pg 테스트가 skip되지 않았는지 확인용)
+      - run: .venv/bin/python -m pytest -rs

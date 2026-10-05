@@ -1,0 +1,48 @@
+{
+  "case_id": "case_01",
+  "scenario": "first_two_acks_smalltalk",
+  "description": "1인칭 담당 뒤 맞장구 둘과 잡담",
+  "turns": [
+    {
+      "speaker": "민재",
+      "text": "회의록 템플릿은 제가 만들어 둘게요."
+    },
+    {
+      "speaker": "지민",
+      "text": "오 좋네요."
+    },
+    {
+      "speaker": "세영",
+      "text": "감사해요, 민재님."
+    },
+    {
+      "speaker": "지민",
+      "text": "근데 다들 점심은 드셨어요?"
+    }
+  ],
+  "expected": [
+    {
+      "text": "회의록 템플릿은 제가 만들어 둘게요.",
+      "should_flag": true,
+      "note": "1인칭 담당",
+      "assignee_type": "first",
+      "assignee": "민재"
+    },
+    {
+      "text": "오 좋네요.",
+      "should_flag": false,
+      "note": "단순 맞장구"
+    },
+    {
+      "text": "감사해요, 민재님.",
+      "should_flag": false,
+      "note": "단순 맞장구"
+    },
+    {
+      "text": "근데 다들 점심은 드셨어요?",
+      "should_flag": false,
+      "note": "잡담"
+    }
+  ],
+  "counts_toward_pass_rate": true
+}

@@ -2,4 +2,6 @@
 storybook-static/
 playwright-report/
 test-results/
+playwright-report-storybook/
+test-results-storybook/
 .ua/

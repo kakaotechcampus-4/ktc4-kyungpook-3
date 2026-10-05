@@ -1,0 +1,184 @@
+name: team-notify
+# 이슈와 PR 이 열리거나 닫힐 때, main 이 아닌 PR 에 리뷰나 코멘트가 달릴 때 팀 디스코드 채널에 한 줄로 알린다.
+# main 으로 가는 PR 의 리뷰는 운영진 notify-discord 가 알리므로 여기서는 뺀다.
+#
+# concurrency 를 넣지 않는다. 알림은 이벤트마다 내용이 달라서, 대기하던 실행이 취소되면 그 알림은 사라진다.
+
+on:
+  issues:
+    types: [opened, closed]
+  pull_request:
+    types: [opened, closed]
+  pull_request_review:
+    types: [submitted]  # branches 조건을 걸 수 없다. main 은 아래 if 와 코드에서 거른다
+  issue_comment:
+    types: [created]
+
+permissions:
+  pull-requests: read  # 대화 탭 코멘트가 달린 PR 의 대상 브랜치 조회
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # 봇(CodeRabbit 등), main PR 의 리뷰, PR 이 아닌 이슈의 코멘트는 러너를 띄우지 않는다. 코드에서 한 번 더 거른다
+    if: >-
+      github.event.sender.type != 'Bot' &&
+      !(github.event_name == 'pull_request_review' && github.event.pull_request.base.ref == 'main') &&
+      !(github.event_name == 'issue_comment' && !github.event.issue.pull_request)
+    steps:
+      - name: Send one line
+        shell: python
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_TEAM }}
+        run: |
+          """이벤트 한 건을 한 줄로 만들어 디스코드로 보낸다."""
+          import json
+          import os
+          import re
+          import subprocess
+          import sys
+          import time
+          import urllib.error
+          import urllib.request
+
+          USERNAME = "Manager's Manager"
+          USER_AGENT = "ktc4-kyungpook-3-team-notify"  # 기본값 Python-urllib 은 디스코드 앞단에서 막힐 수 있다
+          ISSUE_LABEL = {"opened": "📌 이슈 열림", "closed": "☑️ 이슈 닫힘"}
+          REVIEW_LABEL = {"approved": "👍 승인", "changes_requested": "🔁 변경 요청", "commented": "💬 리뷰"}
+          _MARKDOWN = re.compile(r"([\\*_~`|])")
+
+
+          class SendError(RuntimeError):
+              pass
+
+
+          def escape(text):
+              return _MARKDOWN.sub(r"\\\1", text)
+
+
+          def _link(item):
+              return f"[#{item['number']}]({item['html_url']}) {escape(item['title'].strip())}"
+
+
+          def _is_bot(user):
+              return (user or {}).get("type") == "Bot"
+
+
+          def line_for(event_name, event, pr_base=None):
+              """보낼 한 줄. 알리지 않는 이벤트면 None.
+
+              리뷰와 코멘트는 main 이 아닌 PR 에서, 작성자가 아닌 사람이 단 것만 알린다.
+              main PR 의 리뷰는 운영진 notify-discord 가 보낸다. 작성자 답글과 봇은 알림을 늘리기만 한다.
+              """
+              action = event.get("action")
+              sender = event.get("sender") or {}
+              if _is_bot(sender):
+                  return None
+
+              if event_name == "issues":
+                  label = ISSUE_LABEL.get(action)
+                  return label and f"{label} · {_link(event['issue'])} · {sender['login']}"
+
+              if event_name == "pull_request":
+                  pr = event["pull_request"]
+                  if action == "opened":
+                      label = "🔀 PR 열림"
+                  elif action == "closed":
+                      label = "✅ PR 머지" if pr.get("merged") else "❌ PR 닫힘"
+                  else:
+                      return None
+                  return f"{label} · {_link(pr)} · {sender['login']}"
+
+              if event_name == "pull_request_review":
+                  pr, review = event["pull_request"], event["review"]
+                  reviewer, author = review["user"]["login"], pr["user"]["login"]
+                  if pr["base"]["ref"] == "main" or reviewer == author or _is_bot(review["user"]):
+                      return None
+                  label = REVIEW_LABEL.get((review.get("state") or "").lower())
+                  return label and f"{label} · {_link(pr)} · {reviewer} → {author}"
+
+              if event_name == "issue_comment":
+                  issue, comment = event["issue"], event["comment"]
+                  commenter, author = comment["user"]["login"], issue["user"]["login"]
+                  if "pull_request" not in issue or pr_base == "main" or commenter == author or _is_bot(comment["user"]):
+                      return None
+                  return f"💬 코멘트 · {_link(issue)} · {commenter} → {author}"
+
+              return None
+
+
+          def send_message(url, content, sleep=time.sleep, attempts=3):
+              """한 줄을 보낸다. 429 는 retry_after 만큼, 5xx 와 연결 오류는 조금 기다렸다 다시 보낸다.
+
+              오류 메시지와 traceback 에 웹훅 주소가 찍히지 않게 한다. 주소를 가진 사람은 누구나 채널에 쓸 수 있다.
+              """
+              url = re.sub(r"/github/?$", "", url.strip())  # 레포 웹훅의 Payload URL 을 그대로 넣어도 된다
+              payload = {"content": content, "username": USERNAME, "flags": 4, "allowed_mentions": {"parse": []}}
+              data = json.dumps(payload).encode("utf-8")
+              headers = {"Content-Type": "application/json", "User-Agent": USER_AGENT}
+              for attempt in range(1, attempts + 1):
+                  try:
+                      with urllib.request.urlopen(urllib.request.Request(url, data=data, headers=headers, method="POST"), timeout=15):
+                          return
+                  except urllib.error.HTTPError as err:
+                      body = err.read().decode("utf-8", "replace")
+                      if err.code == 429 and attempt < attempts:
+                          sleep(_retry_after(body, err.headers))
+                      elif err.code >= 500 and attempt < attempts:
+                          sleep(2 * attempt)
+                      else:
+                          raise SendError(f"디스코드가 {err.code} 로 거절했다: {body[:200]}") from None
+                  except Exception as err:  # 주소가 들어갈 수 있는 원래 메시지는 버린다
+                      if attempt == attempts:
+                          raise SendError(f"디스코드로 보내지 못했다: {type(err).__name__}") from None
+                      sleep(2 * attempt)
+
+
+          def _retry_after(body, headers):
+              try:
+                  return float(json.loads(body)["retry_after"])
+              except (ValueError, KeyError, TypeError):
+                  return float(headers.get("Retry-After") or 1)
+
+
+          def run(env, event_name, event, fetch_base, send):
+              base = None
+              if event_name == "issue_comment" and "pull_request" in event.get("issue", {}):
+                  base = fetch_base(event["issue"]["number"])  # 코멘트 이벤트에는 대상 브랜치가 없다
+              line = line_for(event_name, event, base)
+              if not line:
+                  print(f"알리지 않는 이벤트다: {event_name}.{event.get('action')}")
+                  return 0
+              webhook = (env.get("DISCORD_WEBHOOK") or "").strip()
+              if not webhook.startswith("https://"):
+                  print("::error::DISCORD_WEBHOOK_TEAM 시크릿이 비었거나 https 주소가 아니다", file=sys.stderr)
+                  return 1
+              send(webhook, line)
+              print(line)
+              return 0
+
+
+          def gh_api(path):
+              result = subprocess.run(["gh", "api", path], capture_output=True, text=True)
+              if result.returncode != 0:
+                  raise RuntimeError(f"gh api {path} 실패: {result.stderr.strip()}")
+              return json.loads(result.stdout)
+
+
+          def main():
+              repo = os.environ["GITHUB_REPOSITORY"]
+              with open(os.environ["GITHUB_EVENT_PATH"], encoding="utf-8") as f:
+                  event = json.load(f)
+              return run(
+                  os.environ,
+                  os.environ["GITHUB_EVENT_NAME"],
+                  event,
+                  lambda number: gh_api(f"repos/{repo}/pulls/{number}")["base"]["ref"],
+                  send_message,
+              )
+
+
+          if __name__ == "__main__":
+              sys.exit(main())

@@ -1,0 +1,364 @@
+name: team-digest
+# 하루 두 번(09시, 21시 KST) 열린 PR 과 머지된 PR 을 팀 디스코드 채널에 보고한다.
+#
+# GitHub 예약 실행은 늦거나 빠질 수 있어서 보고마다 세 번 건다. 먼저 돈 실행이 보내고
+# digest-sent-<날짜>-<am|pm> artifact 를 남기면 뒤 실행은 그걸 보고 그냥 끝난다.
+# 셋 다 빠지면 Actions 탭에서 Run workflow 를 누른다. 수동 실행은 언제나 보낸다.
+
+on:
+  schedule:
+    # cron 은 UTC 다. 정각은 예약이 몰려 늦게 시작하므로 피한다.
+    - cron: '7 0 * * *'    # 09:07 KST 오전보고
+    - cron: '27 0 * * *'   # 09:27
+    - cron: '47 0 * * *'   # 09:47
+    - cron: '7 12 * * *'   # 21:07 KST 오후보고
+    - cron: '27 12 * * *'  # 21:27
+    - cron: '47 12 * * *'  # 21:47
+  workflow_dispatch:
+
+permissions:
+  pull-requests: read
+  issues: read   # PR 대화 탭 코멘트는 issues API 로 읽는다
+  actions: read  # 앞선 실행이 남긴 보낸 표시(artifact) 조회
+
+# 밀린 예약이 한꺼번에 풀려도 차례로 돌게 한다. 알림 워크플로와 달리 여기서는 대기하던 실행이
+# 새 실행에 밀려 취소돼도 잃는 것이 없다. 세 실행 모두 같은 보고를 한다.
+concurrency:
+  group: team-digest
+  cancel-in-progress: false
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Send digest
+        id: send
+        shell: python
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_TEAM }}
+          SCHEDULE: ${{ github.event.schedule }}
+          # 파트 태그와 보이는 순서. 위에 적은 파트부터 보인다. 팀원이 바뀌면 여기만 고친다.
+          PARTS: |
+            AI: dw021213 letsgojh Y-Jimin
+            BE: wkddnjswns hwnv
+            FE: hotpringles
+        run: |
+          """열린 PR 과 머지된 PR 을 보고 메시지로 만들어 디스코드로 보낸다."""
+          import json
+          import os
+          import re
+          import subprocess
+          import sys
+          import time
+          import urllib.error
+          import urllib.request
+          from collections import namedtuple
+          from datetime import datetime, timedelta, timezone
+
+          KST = timezone(timedelta(hours=9))
+          HOUR = {"am": 9, "pm": 21}
+          USERNAME = {"am": "Manager's Manager 오전보고", "pm": "Manager's Manager 오후보고"}
+          MERGED_LABEL = {"am": "밤사이 머지", "pm": "오늘 머지"}
+          MERGED_TITLE = {"am": "✅ 밤사이 머지 (21:00~09:00)", "pm": "✅ 오늘 머지 (09:00~21:00)"}
+          WEEKDAY = "월화수목금토일"
+          EXTRA_TAGS = ["main", "기타"]  # 파트 태그 뒤에 이 순서로 보인다
+          LIMIT = 2000  # 디스코드 메시지 한 건의 최대 길이
+          USER_AGENT = "ktc4-kyungpook-3-team-digest"  # 기본값 Python-urllib 은 디스코드 앞단에서 막힐 수 있다
+          MARK_FILE = "digest-sent.txt"
+
+          Parts = namedtuple("Parts", "by_login order")
+
+
+          class Slot(namedtuple("Slot", "kind boundary")):
+              """보고 한 번. kind 는 am/pm, boundary 는 그 보고의 기준 시각(09:00 또는 21:00 KST)."""
+
+              @property
+              def window_start(self):
+                  return self.boundary - timedelta(hours=12)
+
+              @property
+              def id(self):
+                  return f"{self.boundary:%Y-%m-%d}-{self.kind}"
+
+
+          class SendError(RuntimeError):
+              pass
+
+
+          def resolve_slot(now, cron):
+              """예약 실행은 발동한 cron 으로, 수동 실행은 지금 시각으로 보고를 정한다.
+
+              cron 으로 정해야 예약이 몇 시간 늦게 돌아도 원래 보고의 머지 구간을 쓴다.
+              """
+              now = now.astimezone(KST)
+              if cron:
+                  kst_hour = (int(cron.split()[1]) + 9) % 24
+                  kind = "am" if HOUR["am"] <= kst_hour < HOUR["pm"] else "pm"
+                  return Slot(kind, _latest(now, HOUR[kind]))
+              return max((Slot(kind, _latest(now, hour)) for kind, hour in HOUR.items()), key=lambda s: s.boundary)
+
+
+          def _latest(now, hour):
+              at = now.replace(hour=hour, minute=0, second=0, microsecond=0)
+              return at if at <= now else at - timedelta(days=1)
+
+
+          def decide(event, slot, now, sent_before):
+              """보낼지와 그 이유. 수동 실행은 언제나 보낸다(예약이 모두 빠졌을 때 누르는 버튼이다)."""
+              if event != "schedule":
+                  return True, f"수동 실행이라 {slot.id} 보고를 보낸다"
+              if now.astimezone(KST) - slot.boundary >= timedelta(hours=12):
+                  return False, f"{slot.id} 보고는 다음 보고 시각이 지나 건너뛴다"
+              if sent_before:
+                  return False, f"{slot.id} 보고는 앞선 실행이 이미 보냈다"
+              return True, f"{slot.id} 보고를 보낸다"
+
+
+          def parse_parts(text):
+              """'AI: 아이디 아이디' 줄을 읽는다. 적힌 파트 순서가 보고에 보이는 순서다."""
+              by_login, order = {}, []
+              for line in text.splitlines():
+                  part, sep, logins = line.partition(":")
+                  if not sep or not part.strip():
+                      continue
+                  order.append(part.strip())
+                  for login in logins.split():
+                      by_login[login.lower()] = part.strip()
+              return Parts(by_login, order)
+
+
+          def tag_of(pr, parts):
+              # main 으로 가는 PR 은 팀 전체 반영이라 올린 사람의 파트를 붙이지 않는다
+              if pr["base"] == "main":
+                  return "main"
+              return parts.by_login.get(pr["author"].lower(), "기타")
+
+
+          def normalize_pr(raw, reviews, comments):
+              """REST 응답 한 건을 보고에 쓰는 모양으로. 코멘트 단 사람에서 봇과 작성자는 뺀다."""
+              author = raw["user"]["login"]
+              commenters = []
+              for item in [*reviews, *comments]:
+                  user = item.get("user") or {}
+                  login = user.get("login")
+                  if not login or user.get("type") == "Bot" or login == author or login in commenters:
+                      continue
+                  commenters.append(login)
+              return {
+                  "number": raw["number"],
+                  "title": raw["title"],
+                  "author": author,
+                  "head": raw["head"]["ref"],
+                  "base": raw["base"]["ref"],
+                  "url": raw["html_url"],
+                  "created_at": _parse_time(raw["created_at"]),
+                  "merged_at": _parse_time(raw.get("merged_at")),
+                  "draft": bool(raw.get("draft")),
+                  "commenters": commenters,
+              }
+
+
+          def _parse_time(value):
+              if not value:
+                  return None
+              return datetime.strptime(value, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+
+
+          def age_label(created, window_start, now):
+              if created >= window_start:
+                  return "🆕"
+              hours = int((now - created).total_seconds() // 3600)
+              return f"⏳ {hours}시간" if hours < 24 else f"⏳ {hours // 24}일"
+
+
+          _MARKDOWN = re.compile(r"([\\*_~`|])")
+
+
+          def escape(text):
+              return _MARKDOWN.sub(r"\\\1", text)
+
+
+          def format_digest(slot, open_prs, merged_prs, parts, now):
+              """보고 메시지 목록. 길면 PR 사이에서 나눠 여러 건이 된다."""
+              rank = {tag: i for i, tag in enumerate(parts.order + EXTRA_TAGS)}
+
+              def ordered(prs):
+                  # 파트 순서대로, 같은 파트 안에서는 최근에 열린 PR 이 위로
+                  return sorted(prs, key=lambda p: (rank.get(tag_of(p, parts), len(rank)), -p["number"]))
+
+              by_head = {p["head"]: p for p in open_prs}  # 다른 PR 위에 쌓은 PR 의 대상 찾기
+              opened = ordered([p for p in open_prs if not p["draft"]])
+              merged = ordered([
+                  p for p in merged_prs
+                  if p["merged_at"] and slot.window_start <= p["merged_at"] < slot.boundary
+              ])
+
+              day = slot.boundary
+              blocks = [
+                  f"📋 {day:%m/%d} ({WEEKDAY[day.weekday()]}) · 열린 PR {len(opened)} · {MERGED_LABEL[slot.kind]} {len(merged)}",
+                  "",
+              ]
+              if opened:
+                  blocks.append("📂 열린 PR")
+                  for p in opened:
+                      who = ", ".join(p["commenters"]) or "없음"
+                      blocks.append(f"{_line(p, parts, by_head)} · {age_label(p['created_at'], slot.window_start, now)}\n  └ 💬 {who}")
+              else:
+                  blocks.append("📂 열린 PR 없음")
+              if merged:
+                  blocks += ["", MERGED_TITLE[slot.kind], *(_line(p, parts, by_head) for p in merged)]
+              return _pack(blocks)
+
+
+          def _line(pr, parts, by_head):
+              base = pr["base"]
+              if base in ("develop", "main"):
+                  to = ""
+              elif base in by_head:  # 그 브랜치의 PR 번호로 보인다
+                  to = f" → [#{by_head[base]['number']}]({by_head[base]['url']})"
+              else:
+                  to = f" → {escape(base)}"
+              title = escape(pr["title"].strip())
+              return f"• [{tag_of(pr, parts)}] [#{pr['number']}]({pr['url']}) {title} · {pr['author']}{to}"
+
+
+          def _size(text):
+              # 이모지를 두 글자로 세는 경우에 대비해 UTF-16 길이로 잰다
+              return len(text.encode("utf-16-le")) // 2
+
+
+          def _pack(blocks, limit=LIMIT):
+              messages, current = [], ""
+              for block in blocks:
+                  candidate = f"{current}\n{block}" if current else block
+                  if _size(candidate) <= limit:
+                      current = candidate
+                      continue
+                  if current.strip("\n"):
+                      messages.append(current.strip("\n"))
+                  current = block
+              if current.strip("\n"):
+                  messages.append(current.strip("\n"))
+              return messages
+
+
+          def send_messages(url, username, messages, sleep=time.sleep, attempts=3):
+              """메시지를 차례로 보낸다. 429 는 retry_after 만큼, 5xx 와 연결 오류는 조금 기다렸다 다시 보낸다.
+
+              오류 메시지와 traceback 에 웹훅 주소가 찍히지 않게 한다. 주소를 가진 사람은 누구나 채널에 쓸 수 있다.
+              """
+              url = re.sub(r"/github/?$", "", url.strip())  # 레포 웹훅의 Payload URL 을 그대로 넣어도 된다
+              for content in messages:
+                  payload = {"content": content, "username": username, "flags": 4, "allowed_mentions": {"parse": []}}
+                  _post(url, json.dumps(payload).encode("utf-8"), sleep, attempts)
+
+
+          def _post(url, data, sleep, attempts):
+              headers = {"Content-Type": "application/json", "User-Agent": USER_AGENT}
+              for attempt in range(1, attempts + 1):
+                  try:
+                      with urllib.request.urlopen(urllib.request.Request(url, data=data, headers=headers, method="POST"), timeout=15):
+                          return
+                  except urllib.error.HTTPError as err:
+                      body = err.read().decode("utf-8", "replace")
+                      if err.code == 429 and attempt < attempts:
+                          sleep(_retry_after(body, err.headers))
+                      elif err.code >= 500 and attempt < attempts:
+                          sleep(2 * attempt)
+                      else:
+                          raise SendError(f"디스코드가 {err.code} 로 거절했다: {body[:200]}") from None
+                  except Exception as err:  # 주소가 들어갈 수 있는 원래 메시지는 버린다
+                      if attempt == attempts:
+                          raise SendError(f"디스코드로 보내지 못했다: {type(err).__name__}") from None
+                      sleep(2 * attempt)
+
+
+          def _retry_after(body, headers):
+              try:
+                  return float(json.loads(body)["retry_after"])
+              except (ValueError, KeyError, TypeError):
+                  return float(headers.get("Retry-After") or 1)
+
+
+          def run(env, now, fetch_prs, count_sent, send):
+              event = env.get("GITHUB_EVENT_NAME") or "workflow_dispatch"
+              cron = (env.get("SCHEDULE") or None) if event == "schedule" else None
+              slot = resolve_slot(now, cron)
+              webhook = (env.get("DISCORD_WEBHOOK") or "").strip()
+              if not webhook.startswith("https://"):
+                  print("::error::DISCORD_WEBHOOK_TEAM 시크릿이 비었거나 https 주소가 아니다", file=sys.stderr)
+                  return 1
+              sent_before = event == "schedule" and count_sent(f"digest-sent-{slot.id}") > 0
+              ok, reason = decide(event, slot, now, sent_before)
+              print(reason)
+              if not ok:
+                  _write_outputs(env, sent="false", slot=slot.id)
+                  return 0
+
+              open_prs, merged_prs = fetch_prs()
+              messages = format_digest(slot, open_prs, merged_prs, parse_parts(env.get("PARTS", "")), now)
+              send(webhook, USERNAME[slot.kind], messages)
+              with open(os.path.join(env.get("RUNNER_TEMP") or ".", MARK_FILE), "w", encoding="utf-8") as f:
+                  f.write(slot.id + "\n")
+              _write_outputs(env, sent="true", slot=slot.id)
+              return 0
+
+
+          def _write_outputs(env, **values):
+              path = env.get("GITHUB_OUTPUT")
+              if not path:
+                  return
+              with open(path, "a", encoding="utf-8") as f:
+                  for key, value in values.items():
+                      f.write(f"{key}={value}\n")
+
+
+          def gh_api(path):
+              result = subprocess.run(["gh", "api", path], capture_output=True, text=True)
+              if result.returncode != 0:
+                  raise RuntimeError(f"gh api {path} 실패: {result.stderr.strip()}")
+              return json.loads(result.stdout)
+
+
+          def fetch_prs(repo):
+              opened = []
+              for raw in gh_api(f"repos/{repo}/pulls?state=open&per_page=100"):
+                  if raw.get("draft"):
+                      continue
+                  number = raw["number"]
+                  reviews = gh_api(f"repos/{repo}/pulls/{number}/reviews?per_page=100")
+                  comments = gh_api(f"repos/{repo}/issues/{number}/comments?per_page=100")
+                  opened.append(normalize_pr(raw, reviews, comments))
+              # 최근에 바뀐 순으로 100건이면 12시간 안에 머지된 PR 은 다 들어온다
+              closed = gh_api(f"repos/{repo}/pulls?state=closed&sort=updated&direction=desc&per_page=100")
+              merged = [normalize_pr(raw, [], []) for raw in closed if raw.get("merged_at")]
+              return opened, merged
+
+
+          def count_sent(repo, name):
+              return gh_api(f"repos/{repo}/actions/artifacts?name={name}&per_page=1")["total_count"]
+
+
+          def main():
+              repo = os.environ["GITHUB_REPOSITORY"]
+              return run(
+                  os.environ,
+                  datetime.now(KST),
+                  lambda: fetch_prs(repo),
+                  lambda name: count_sent(repo, name),
+                  send_messages,
+              )
+
+
+          if __name__ == "__main__":
+              sys.exit(main())
+
+      - name: Mark as sent
+        if: steps.send.outputs.sent == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: digest-sent-${{ steps.send.outputs.slot }}
+          path: ${{ runner.temp }}/digest-sent.txt
+          retention-days: 1
