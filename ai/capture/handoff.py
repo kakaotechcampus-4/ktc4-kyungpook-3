@@ -5,11 +5,12 @@ extractions.py). 봇이 이 전이를 순서대로 부른다.
 
   /record 직후       POST  /api/v1/meetings              created. 매니페스트 be.meeting_id
   트랙을 닫은 뒤     PATCH /api/v1/meetings/{id}/end     processing
+  전사가 닫힌 뒤     POST  /api/v1/meetings/{id}/sources 발화 저장(X-Service-Token). 같은 seq 는 BE 가 건너뛴다
   추출이 끝난 뒤     POST  /api/v1/extractions           done. 항목 저장, 담당자 매칭, 게이트 판정
   어느 단계든 실패   PATCH /api/v1/meetings/{id}/fail    failed, failed_stage
 
 판단 경로(MM_EXTRACT_PATH=judge)는 추출 도중에 1단계가 고른 finding 마다 유사 task 검색을 부른다. 전사록의 줄마다가
-아니다. 이 경로만 서비스 토큰을 요구한다.
+아니다. 발화 저장과 유사 검색이 서비스 토큰을 요구한다. 토큰이 없으면 발화 저장 단계는 건너뛴다(recorder.saves_sources).
 
   추출 도중          POST  /api/v1/workspaces/{id}/tasks/similar   X-Service-Token
 
