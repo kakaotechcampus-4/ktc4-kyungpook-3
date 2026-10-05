@@ -126,6 +126,14 @@ class Worker:
                 notes += f" 회의록 저장 {r['sources'].get('inserted', 0)}줄"
             if (r.get("skipped") or {}).get(STATUS_SOURCED):
                 notes += f" 건너뜀 회의록 저장({r['skipped'][STATUS_SOURCED]})"
+            ops = r.get("ops")
+            if ops:
+                # 처리 기록 한 줄. 모르는 값은 뺀다. 칸은 capture/ops_record.py
+                notes += f" 처리 {ops['wall_s']}초"
+                if ops.get("wait_s") is not None:
+                    notes += f" 대기 {ops['wait_s']}초"
+                if ops.get("peak_rss_bytes") is not None:
+                    notes += f" 최대 메모리 {ops['peak_rss_bytes'] / 1024 ** 2:.0f}MB"
             print(f"[worker] 세션 {r['session']} {r['status']} 이번에 {r['ran']} 실패 {r.get('attempts')}회{notes}",
                   flush=True)
 
