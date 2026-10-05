@@ -284,6 +284,46 @@ def test_rejected_sources_are_errors_with_the_be_codes():
     assert wrong_token.value.code == "UNAUTHENTICATED" and wrong_token.value.status == 401
 
 
+def _token_handoff(fake):
+    return H.Handoff(H.BeClient("http://be.local/", session=fake, service_token="svc-token"), "ws-1")
+
+
+def test_save_sources_secures_the_meeting_then_saves_the_lines_with_names(tmp_path):
+    fake = FakeBe()
+    m, tdir = _manifest(tmp_path, with_tasks=False)
+    be = _token_handoff(fake).save_sources(m, transcripts_dir=tdir, title="회의방 2026-09-19")
+    assert [(c[0], c[1]) for c in fake.calls] == [("POST", "/meetings"), ("PATCH", "/meetings/m1/end"),
+                                                   ("POST", "/meetings/m1/sources")]
+    sent = fake.calls[-1][2]
+    assert set(sent) == {"source", "segments", "speaker_names"}    # 계약 파일의 speakers 같은 다른 키는 안 보낸다
+    assert sent["speaker_names"] == {"101": "민수", "103": "재환"}   # 매니페스트 speakers 의 표시 이름
+    assert [s["seq"] for s in sent["segments"]] == [1, 2, 3, 4] and sent["source"] == "meeting"
+    assert be is m["be"] and be["sources"] == {"inserted": 4, "skipped": 0, "duration_ms": 26000}
+    assert fake.meetings["m1"]["status"] == "processing"
+
+
+def test_save_sources_moves_to_a_new_meeting_when_the_be_failed_it(tmp_path):
+    fake = FakeBe()
+    h = _token_handoff(fake)
+    m, tdir = _manifest(tmp_path, with_tasks=False)
+    h.end(m)
+    h.fail(m, "stt")                              # 포기해서 BE 에 실패를 알린 회의를 /recover 가 다시 돌렸다
+    be = h.save_sources(m, transcripts_dir=tdir)
+    assert be["meeting_id"] == "m2" and be["replaced"] == ["m1"]
+    assert len(fake.sources["m2"]) == 4 and "m1" not in fake.sources
+
+
+def test_save_sources_without_lines_saves_nothing(tmp_path):
+    fake = FakeBe()
+    h = _token_handoff(fake)
+    m, tdir = _manifest(tmp_path, with_tasks=False)
+    (tdir / "session_500.transcript.json").unlink()            # 말이 없어 계약 파일이 안 생긴 회의
+    assert h.save_sources(m, transcripts_dir=tdir)["sources"] == {"inserted": 0, "skipped": 0, "duration_ms": None}
+    (tdir / "session_500.transcript.json").write_text(json.dumps({"segments": []}), encoding="utf-8")
+    assert h.save_sources(m, transcripts_dir=tdir)["sources"]["inserted"] == 0
+    assert fake.calls == []
+
+
 def test_from_env_passes_the_service_token(monkeypatch):
     from shared import config
 

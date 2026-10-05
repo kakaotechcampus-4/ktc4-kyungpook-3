@@ -36,7 +36,7 @@ from typing import Any
 
 import requests
 
-from shared.schemas import NotionCandidate
+from shared.schemas import NotionCandidate, Transcript
 
 API_PREFIX = "/api/v1"
 TIMEOUT_S = 10.0
@@ -237,6 +237,24 @@ class Handoff:
             be = self._fresh(manifest, title)
             status = self.client.end_meeting(be["meeting_id"])
         be["status"] = status
+        return be
+
+    def save_sources(self, manifest: dict, *, transcripts_dir: Path, title: str | None = None) -> dict:
+        """전사 발화를 BE 에 저장한다. 회의를 processing 으로 확보한 뒤 보낸다(BE 가 failed 로 닫았으면 end 가 새 회의로 바꾼다).
+
+        발화가 없으면(계약 파일이 없거나 0줄) BE 를 부르지 않고 0줄로 남긴다. 계약 파일의 session·model·speakers 는
+        보내지 않고 Transcript 모양만 보낸다. 화자 이름은 매니페스트 speakers 의 표시 이름이다.
+        """
+        path = Path(manifest.get("transcript_json") or transcripts_dir / f"session_{manifest['session']}.transcript.json")
+        transcript = Transcript.from_dict(json.loads(path.read_text(encoding="utf-8"))).to_dict() if path.exists() else None
+        if not transcript or not transcript["segments"]:
+            be = manifest.setdefault("be", {})
+            be["sources"] = {"inserted": 0, "skipped": 0, "duration_ms": None}
+            return be
+        names = {str(e["user_id"]): e.get("display_name") or str(e["user_id"]) for e in manifest.get("speakers") or []}
+        be = self.end(manifest, title=title)
+        data = self.client.create_sources(be["meeting_id"], transcript, names)
+        be["sources"] = {k: data.get(k) for k in ("inserted", "skipped", "duration_ms")}
         return be
 
     def register(self, manifest: dict, *, transcripts_dir: Path, model_name: str | None,
