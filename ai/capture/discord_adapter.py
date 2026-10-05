@@ -61,6 +61,7 @@ import discord
 
 from capture.handoff import from_env as handoff_from_env
 from capture.judge_path import extract_path
+from capture.ops_record import summary_line
 from capture.recorder import (RECOVERY_INTERVAL_S, Claims, interrupted_meetings, manifest_path, queue_ahead,
                               recover_pass, recovery_targets, try_lock)
 from capture.worker import read_heartbeat, request_wake
@@ -641,7 +642,7 @@ class RecordingCog(discord.Cog):
             rec.done.set()
 
     async def _report(self, channel, session, result: dict) -> None:
-        """process_session 의 결과를 채널에 올린다. 이번에 끝낸 단계만 말한다."""
+        """process_session 의 결과를 채널에 올린다. 이번에 끝낸 단계만 말한다. 맨 끝에 처리 기록 한 줄을 붙인다."""
         tr = result.get("transcribe")
         if tr is not None:
             s = tr.get("summary")
@@ -698,3 +699,5 @@ class RecordingCog(discord.Cog):
             await self._notify(channel, f"⚠️ {label} 실패: {result['error']}\n트랙과 지금까지의 결과는 남아 있습니다. " +
                                self._next_try(result, auto="이 단계부터 자동으로 다시 시도합니다",
                                               by_hand="`/recover` 로 이 단계부터 다시 시도하세요."))
+        if result.get("ops"):
+            await self._notify(channel, summary_line(result["ops"]))

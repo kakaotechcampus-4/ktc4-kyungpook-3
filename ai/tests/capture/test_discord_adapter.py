@@ -503,6 +503,24 @@ async def test_a_failed_or_skipped_save_is_said_by_its_name(tmp_path):
     assert not any("sourced" in t or "sources" in t or t.startswith("🗂") for t in texts)
 
 
+async def test_the_report_ends_with_the_processing_line(tmp_path):
+    """처리 시간, 대기, 최대 메모리 한 줄이 결과 메시지 맨 끝에 온다. 기록이 없으면 그 줄도 없다."""
+    cog, guild, vc, channel, ctx = _setup(tmp_path)
+    ops = {"wall_s": 2395.0, "wait_s": 12.0, "peak_rss_bytes": int(2.2 * 1024 ** 3)}
+    await cog._report(channel, "77_500", _saved_result(ops=ops))
+    assert channel.sent[-1][0] == "⏱ 처리 39분 55초 · 대기 12초 · 최대 메모리 2.2GB"
+    channel.sent.clear()
+    await cog._report(channel, "77_500", _saved_result())
+    assert channel.sent and not any(t.startswith("⏱") for t, _ in channel.sent)
+
+
+async def test_stop_in_bot_mode_posts_the_processing_line_last(tmp_path):
+    cog, guild, vc, channel, ctx = _setup(tmp_path, extractor=first_person_extractor)
+    rec = await _record_and_stop(cog, ctx)
+    assert channel.sent[-1][0].startswith("⏱ 처리 ")
+    assert len(_manifest(tmp_path, rec)["ops"]) == 1
+
+
 # ── 판단 경로(MM_EXTRACT_PATH=judge). 추출기만 바뀌고 명령과 흐름은 같다 ─────────────────────────────
 
 def _judge_item(title, **over):
