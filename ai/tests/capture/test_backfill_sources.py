@@ -86,6 +86,21 @@ def test_a_missing_transcript_is_an_error_and_stays_a_target(tmp_path):
     assert [p for p, _ in BF.targets(rec)] == [done]
 
 
+def test_a_meeting_the_be_failed_after_handoff_is_an_error_not_a_new_meeting(tmp_path):
+    """인계 뒤 BE 가 회의를 failed 로 바꿨어도 소급은 새 회의를 만들지 않는다. 매니페스트의 회의가 done 이라 end 가 BE 를
+    부르지 않고, 발화 저장이 409 로 거절돼 오류로 남는다. 새 회의를 만들면 추출 등록은 옛 회의에만 남는다."""
+    fake = FakeBe()
+    rec, done = _handed_off_without_lines(tmp_path, fake)
+    fake.meetings["m1"]["status"] = "failed"
+    fake.calls.clear()
+    out = BF.backfill(rec, transcripts_dir=tmp_path / "transcripts", handoff=_be(fake))
+    assert out[0]["sent"] is False and "MEETING_FAILED" in out[0]["error"]
+    assert [(c[0], c[1]) for c in fake.calls] == [("POST", "/meetings/m1/sources")]
+    m = json.loads(done.read_text(encoding="utf-8"))
+    assert m["be"]["meeting_id"] == "m1" and "replaced" not in m["be"] and "sourced" not in m["stages"]
+    assert [p for p, _ in BF.targets(rec)] == [done]
+
+
 def test_main_refuses_without_the_be_settings_and_the_token(monkeypatch, tmp_path, capsys):
     monkeypatch.setattr(BF, "handoff_from_env", lambda: None)
     assert BF.main(["--recordings", str(tmp_path), "--dry-run"]) == 1
