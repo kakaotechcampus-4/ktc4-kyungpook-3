@@ -17,7 +17,7 @@ OAuth 연결 플로우(§4.3 `/integrations/{provider}/start`·`/callback`)는 �
 import httpx
 from sqlalchemy.orm import Session
 
-from app.models import Integration, Member, Task
+from app.models import Integration, Member, Task, TaskStatus
 
 NOTION_API_BASE = "https://api.notion.com/v1"
 NOTION_VERSION = "2022-06-28"
@@ -32,6 +32,17 @@ PROPERTY_NAMES = {
     "blocker": "Blocker",
     # 페이지와 Task를 잇는 키. 생성 결과가 불명확할 때 이 값으로 기존 페이지를 찾는다.
     "task_id": "Task ID",
+}
+
+# 대상 데이터베이스에 있어야 하는 속성과 그 종류. `build_properties`가 보내는 값의 종류와 같아야 한다.
+DATABASE_SCHEMA = {
+    PROPERTY_NAMES["title"]: "title",
+    PROPERTY_NAMES["status"]: "select",
+    PROPERTY_NAMES["assignee"]: "rich_text",
+    PROPERTY_NAMES["due_date"]: "date",
+    PROPERTY_NAMES["progress"]: "number",
+    PROPERTY_NAMES["blocker"]: "rich_text",
+    PROPERTY_NAMES["task_id"]: "rich_text",
 }
 
 
@@ -51,6 +62,10 @@ class NotionWriteError(Exception):
         self.outcome_uncertain = outcome_uncertain
         self.status_code = status_code
         self.retry_after = retry_after
+
+
+class TemplateNotReady(Exception):
+    """템플릿 복제가 아직 끝나지 않았다. 잠시 뒤 다시 보면 된다."""
 
 
 def get_notion_integration(db: Session, workspace_id: str) -> Integration | None:
@@ -126,9 +141,22 @@ def _send(
     body: dict[str, object],
     transport: httpx.BaseTransport | None,
 ) -> dict:
+    return _request(integration.access_token, method, path, transport, json=body)
+
+
+def _request(
+    access_token: str,
+    method: str,
+    path: str,
+    transport: httpx.BaseTransport | None,
+    *,
+    json: dict[str, object] | None = None,
+    params: dict[str, object] | None = None,
+) -> dict:
+    """토큰 문자열만으로 부른다. 연결을 저장하기 전(OAuth 직후)에도 쓸 수 있다."""
     try:
-        with _client(integration.access_token, transport=transport) as client:
-            response = client.request(method, path, json=body)
+        with _client(access_token, transport=transport) as client:
+            response = client.request(method, path, json=json, params=params)
             response.raise_for_status()
             return response.json()
     except httpx.HTTPStatusError as exc:
@@ -221,3 +249,73 @@ def find_page_by_task_id(
     )
     results = data.get("results") or []
     return results[0]["id"] if results else None
+
+
+def find_template_database(
+    access_token: str,
+    page_id: str,
+    *,
+    transport: httpx.BaseTransport | None = None,
+) -> str | None:
+    """템플릿을 복제한 페이지 바로 아래의 데이터베이스 ID. 템플릿에 DB가 없으면 None.
+
+    복제는 Notion 안에서 십몇 초 걸린다. 그동안은 페이지 안을 읽을 수 없거나(400
+    `copy_indicator`), DB 자리가 아직 `unsupported` 블록으로 보인다. 이때는 `TemplateNotReady`를 던진다.
+    """
+    saw_unsupported = False
+    params: dict[str, object] = {"page_size": 100}
+    while True:
+        try:
+            data = _request(access_token, "GET", f"/blocks/{page_id}/children", transport, params=params)
+        except NotionWriteError as exc:
+            if exc.status_code == 400 and "copy_indicator" in exc.reason:
+                raise TemplateNotReady(exc.reason) from exc
+            raise
+        for block in data.get("results") or []:
+            if block.get("type") == "child_database":
+                return block["id"]
+            if block.get("type") == "unsupported":
+                saw_unsupported = True
+        if not data.get("has_more") or not data.get("next_cursor"):
+            break
+        params = {"page_size": 100, "start_cursor": data["next_cursor"]}
+
+    if saw_unsupported:
+        raise TemplateNotReady("템플릿 복제가 아직 끝나지 않았습니다")
+    return None
+
+
+def verify_database_schema(
+    access_token: str,
+    database_id: str,
+    *,
+    transport: httpx.BaseTransport | None = None,
+) -> list[str]:
+    """데이터베이스가 워커가 쓰는 속성을 갖췄는지 본다. 어긋난 점의 목록이고, 비어 있으면 통과다.
+
+    속성이나 선택지가 더 있는 것은 괜찮다. 템플릿을 자유롭게 꾸밀 수 있게 하기 위해서다.
+    """
+    try:
+        data = _request(access_token, "GET", f"/databases/{database_id}", transport)
+    except NotionWriteError as exc:
+        if exc.status_code in (403, 404):
+            return ["접근할 수 없음"]
+        raise
+
+    properties = data.get("properties") or {}
+    problems = []
+    for name, expected in DATABASE_SCHEMA.items():
+        prop = properties.get(name)
+        if prop is None:
+            problems.append(f"'{name}' 속성이 없음")
+        elif prop.get("type") != expected:
+            problems.append(f"'{name}' 속성 종류가 {prop.get('type')}임 (필요: {expected})")
+
+    # 워커는 Task 상태 값을 그대로 선택지 이름으로 보낸다.
+    status = properties.get(PROPERTY_NAMES["status"]) or {}
+    if status.get("type") == "select":
+        options = {option.get("name") for option in (status.get("select") or {}).get("options") or []}
+        missing = [str(value) for value in TaskStatus if str(value) not in options]
+        if missing:
+            problems.append(f"'{PROPERTY_NAMES['status']}' 선택지가 없음: {', '.join(missing)}")
+    return problems
