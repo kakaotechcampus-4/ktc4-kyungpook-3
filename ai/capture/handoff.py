@@ -59,9 +59,9 @@ class BeError(Exception):
 
 
 class BeClient:
-    """회의 API 네 개와 유사 task 검색을 얇게 싼다. session 은 requests.Session 과 같은 request() 를 가진 것이면 된다.
+    """회의 API 네 개와 발화 저장, 유사 task 검색을 얇게 싼다. session 은 requests.Session 과 같은 request() 를 가진 것이면 된다.
 
-    service_token 은 사용자 세션 없이 부르는 경로(유사 검색)가 요구하는 X-Service-Token 값이다. 그 경로에만 싣는다.
+    service_token 은 사용자 세션 없이 부르는 경로(발화 저장, 유사 검색)가 요구하는 X-Service-Token 값이다. 그 경로에만 싣는다.
     """
 
     def __init__(self, base_url: str, *, session=None, timeout: float = TIMEOUT_S, service_token: str = "") -> None:
@@ -115,6 +115,15 @@ class BeClient:
         return self._call("POST", "/extractions", {"meeting_id": meeting_id, "workspace_id": workspace_id,
                                                     "transcript_path": transcript_path, "model_name": model_name,
                                                     "items": items})
+
+    def create_sources(self, meeting_id: str, transcript: dict, speaker_names: dict[str, str]) -> dict:
+        """전사 발화를 BE 에 저장한다(#130). 같은 seq 는 BE 가 건너뛰어 다시 보내도 쌓이지 않는다.
+
+        돌려주는 것: {meeting_id, inserted, skipped, duration_ms}. transcript 는 Transcript.to_dict() 모양이다.
+        """
+        headers = {"X-Service-Token": self.service_token} if self.service_token else None
+        return self._call("POST", f"/meetings/{meeting_id}/sources", {**transcript, "speaker_names": speaker_names},
+                          headers=headers)
 
     def similar_tasks(self, workspace_id: str, text: str) -> list[NotionCandidate]:
         """문장과 비슷한 기존 task 후보. 판단 파이프라인(judge.pipeline.CandidateSource)이 finding 마다 그 요약 문장으로 부른다.

@@ -246,6 +246,44 @@ def test_a_failed_similar_search_is_an_error_not_an_empty_list():
     assert down.value.code == "NETWORK"
 
 
+LINES = {"source": "meeting", "segments": [
+    {"speaker": "101", "start": 3.0, "end": 5.0, "text": "와이어프레임은 누가 하죠?", "seq": 1},
+    {"speaker": "103", "start": 12.0, "end": 14.5, "text": "제가 할게요. 금요일까지요", "seq": 2},
+]}
+
+
+def test_create_sources_posts_the_transcript_with_the_service_token_and_names():
+    fake = FakeBe()
+    client = H.BeClient("http://be.local", session=fake, service_token="svc-token")
+    mid = client.create_meeting("ws-1")["meeting_id"]
+    data = client.create_sources(mid, LINES, {"101": "민수", "103": "재환"})
+    assert fake.calls[-1] == ("POST", f"/meetings/{mid}/sources", {**LINES, "speaker_names": {"101": "민수", "103": "재환"}})
+    assert fake.headers[-1] == {"X-Service-Token": "svc-token"}
+    assert data == {"meeting_id": mid, "inserted": 2, "skipped": 0, "duration_ms": 14500}
+    # 다시 보내면 BE 가 같은 seq 를 건너뛴다. 재전송이 중복을 만들지 않는다
+    assert client.create_sources(mid, LINES, {})["skipped"] == 2 and len(fake.sources[mid]) == 2
+
+
+def test_rejected_sources_are_errors_with_the_be_codes():
+    fake = FakeBe()
+    client = H.BeClient("http://be.local", session=fake, service_token="svc-token")
+    with pytest.raises(H.BeError) as missing:
+        client.create_sources("없는-회의", LINES, {})
+    assert missing.value.code == "MEETING_NOT_FOUND" and missing.value.status == 404
+    mid = client.create_meeting("ws-1")["meeting_id"]
+    twice = {"source": "meeting", "segments": [LINES["segments"][0], LINES["segments"][0]]}
+    with pytest.raises(H.BeError) as invalid:
+        client.create_sources(mid, twice, {})               # 한 요청 안에서 seq 가 겹친다
+    assert invalid.value.code == "INVALID_REQUEST" and invalid.value.status == 400
+    fake.meetings[mid]["status"] = "failed"
+    with pytest.raises(H.BeError) as failed:
+        client.create_sources(mid, LINES, {})
+    assert failed.value.code == "MEETING_FAILED" and failed.value.status == 409
+    with pytest.raises(H.BeError) as wrong_token:
+        H.BeClient("http://be.local", session=fake, service_token="틀린 토큰").create_sources(mid, LINES, {})
+    assert wrong_token.value.code == "UNAUTHENTICATED" and wrong_token.value.status == 401
+
+
 def test_from_env_passes_the_service_token(monkeypatch):
     from shared import config
 
