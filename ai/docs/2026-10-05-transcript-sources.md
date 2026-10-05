@@ -10,7 +10,7 @@
 
 - `capture/handoff.py`
   - `BeClient.create_sources`: `POST /api/v1/meetings/{id}/sources` 를 `X-Service-Token` 으로 부른다(e356fdc)
-  - `Handoff.save_sources`: 회의를 확보하고 `transcript.json` 에서 Transcript 모양만 골라 `speaker_names`(매니페스트 `speakers` 의 표시 이름)와 보낸다. 발화가 없으면 BE 를 부르지 않는다(bed781b). 보낸 BE 회의 ID 를 `be.sources` 에 남기고, `_fresh` 는 그것을 지우고, `register` 가 같은 실행 안에서 새 회의로 옮길 때는 발화를 먼저 보낸다(1ceedd2). 400 의 `details.fields` 를 오류에 붙인다(3202fe0)
+  - `Handoff.save_sources`: 회의를 확보하고 `transcript.json` 에서 Transcript 모양만 골라 `speaker_names`(매니페스트 `speakers` 의 표시 이름)와 보낸다. 발화가 없으면 BE 를 부르지 않는다(bed781b). 보낸 BE 회의 ID 를 `be.sources` 에 남기고, `_fresh` 는 그것을 지우고, `register` 가 같은 실행 안에서 새 회의로 옮길 때는 발화를 먼저 보낸다(1ceedd2). 400 의 `details.fields` 를 오류에 붙인다(3202fe0). 전사가 쓴 계약 파일이 없으면 0줄로 닫지 않고 FileNotFoundError 를 낸다(71eb6fc)
 - `capture/recorder.py`
   - 전사와 추출 사이의 단계 `sourced`, `FAILED_STAGE` 의 `sources`, 토큰이 없으면 건너뛰기, 재전사 뒤 다시 보내기(80c282e)
   - 저장 완료 판정 `sources_saved`(1ceedd2), 뒤 단계 실패 횟수를 이어 세기(a9ac729), 중간 재전사에서 살아난 줄도 다시 보내기(f516352), 바로 포기는 (상태, 코드) 쌍으로(3202fe0)
@@ -28,16 +28,18 @@ BE 의 발화 저장 API(#130)를 봇이 부르지 않아 웹 회의록의 전�
 
 구현 뒤 다섯 관점(상태 흐름, BE 계약, 사용자와 운영, 테스트, 범위)으로 따로 리뷰하고 지적마다 반박 검증을 두 번 했다. 지적 27개 중 15개가 남았고 겹치는 것을 묶으면 9가지였다. 가장 큰 것은 추출에서 포기한 회의를 /recover 하면 새 BE 회의에 발화가 없는 경로였다. 9가지 모두 회귀 테스트를 먼저 쓰고 고쳤다.
 
+PR 리뷰에서 소급 명령에 대한 지적이 두 개 더 나왔고 코드로 확인했다. 하나는 맞았다. 전사 파일이 없는 회의를 0줄로 저장했다고 적으면 `sources_saved` 가 막아 파일을 되살려도 다시 보내지 못한다. 전사가 0줄이라 파일을 쓰지 않았다고 적은 회의(`transcript_json` 이 None)만 0줄로 닫고, 나머지는 오류로 둬서 다음 실행이 다시 보내게 했다(71eb6fc). 다른 하나는 소급이 failed 회의를 새 회의로 바꾸면 추출 등록이 옛 회의에만 남는다는 것이었는데, 지금 코드에서는 생기지 않는다. 소급 대상은 매니페스트의 BE 회의가 done 이라 `end` 가 BE 를 부르지 않는다. BE 가 따로 failed 로 바꾼 회의는 409 로 오류가 남고 새 회의를 만들지 않는 것을 테스트로 고정했다(f4a0513).
+
 ## 결과
 
 | 항목 | 값 |
 |---|---|
-| 테스트 | 804 통과(작업 전 develop 771 통과, 1 실패) |
-| 새 테스트 | 32개. handoff 5, recorder 14, 채널 2, 소급 9, 워커 1, judge wiring 1 |
+| 테스트 | 807 통과(작업 전 develop 771 통과, 1 실패) |
+| 새 테스트 | 35개. handoff 6, recorder 14, 채널 2, 소급 11, 워커 1, judge wiring 1 |
 | 서버 소급(10/5, t3.medium, develop 0517775 로 돈 10/2 21:04 회의) | 발화 7줄 저장, `meeting.duration_ms` 67540, 다시 돌리면 대상 0개 |
 
 ```
-cd ai && .venv/bin/python -m pytest        # 804 passed
+cd ai && .venv/bin/python -m pytest        # 807 passed
 python -m capture.backfill_sources --dry-run
 ```
 
