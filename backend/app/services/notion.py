@@ -10,8 +10,9 @@
   5xx 등). 페이지 생성(POST)에서 이 값이 참이면 페이지가 이미 만들어졌을 수 있으므로
   POST를 그대로 반복하면 안 되고, `find_page_by_task_id()`로 먼저 확인해야 한다.
 
-OAuth 연결 플로우(§4.3 `/integrations/{provider}/start`·`/callback`)는 이 모듈의
-범위가 아니다. 로컬 개발 중에는 `Integration` 행을 직접 넣어서 테스트한다:
+연결(`Integration` 행)은 OAuth로 만든다. `api/integrations.py`의 start → callback이
+토큰을 저장하고, `services/notion_connect.py`가 템플릿 복제가 끝난 뒤 대상 DB ID(`provider_channel_id`)를 채운다.
+OAuth 없이 시험할 때는 행을 직접 넣어도 된다:
 `Integration(workspace_id=..., provider="notion", access_token="secret_...", provider_channel_id="<database_id>")`.
 """
 import httpx
