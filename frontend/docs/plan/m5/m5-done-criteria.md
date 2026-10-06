@@ -3,7 +3,7 @@
 - 계획: `m5-meeting-upload-processing-and-minutes.md` (이하 "계획")
 - 구현: Claude Opus 5.5 (`claude-opus-5-5`, effort high). 검증: Codex (`gpt-6-sol`, reasoning high — 2026-10-02 U1 r2 도중 용량 부족으로 `gpt-6.1-sol` high 로 바꿈). 둘 다 Orca orchestration 워커로 띄운다.
 - 검증자는 구현자와 분리한다. 구현 에이전트의 자기 보고는 근거로 인정하지 않고, 명령은 검증자가 직접 실행한다.
-- 결정 근거: `docs/decision/frontend-decisions.md`(D-084~D-106), 계약 `docs/api/frontend-api-contract-draft.md` §2.3·§4.4·§4.7, 캔버스 `Upload`·`Processing`·`Meetings`·`EmptyMeetings`·`Settings`.
+- 결정 근거: `docs/decision/frontend-decisions.md`(D-084~D-106), 계약 `docs/contracts/frontend-api-contract.md` §2.3·§4.4·§4.7, 캔버스 `Upload`·`Processing`·`Meetings`·`EmptyMeetings`·`Settings`.
 
 ## 판정 규칙
 

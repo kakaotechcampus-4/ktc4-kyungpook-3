@@ -29,7 +29,7 @@ Chrome DevTools 네트워크 `Slow 4G`, 캐시 없는 새 컨텍스트, `/onboar
 
 ## 원인
 
-- `index.html`이 Regular·Bold를 `<link rel="preload">`로 미리 부른다(`docs/impl-decision/2026-09-16-font-url-and-preload.md`). 두 파일이 메인 JS와 **같은 순간(648ms)에 시작해** 대역폭을 나눠 쓴다.
+- `index.html`이 Regular·Bold를 `<link rel="preload">`로 미리 부른다(`docs/plan/m2/basis-for-decision/2026-09-16-font-url-and-preload.md`). 두 파일이 메인 JS와 **같은 순간(648ms)에 시작해** 대역폭을 나눠 쓴다.
 - 폰트 두 벌이 약 316KB로 첫 진입 전송량의 약 60%다. 한글 전체 글리프(완성형 11,172자 이상)를 담은 파일을 그대로 쓰고 있다.
 - 메인 JS가 3.9초에야 끝나 React 가 그 뒤에 그린다. 폰트가 없었다면 JS 는 대역폭을 혼자 써서 더 일찍 끝난다.
 - 폰트 네 벌(`src/shared/styles/fonts/`, 각 약 160KB) 중 preload 는 두 벌이다. Light(100–300)·ExtraBold(800–900)는 그 굵기를 쓰는 글자가 화면에 나올 때만 받는다.
@@ -45,11 +45,11 @@ Chrome DevTools 네트워크 `Slow 4G`, 캐시 없는 새 컨텍스트, `/onboar
    - 서브셋으로 파일이 충분히 작아지면 preload 를 유지해도 비용이 작다. 1번을 먼저 하고 다시 재서 정한다.
 3. **메인 번들** — 원본 약 398KB(전송 125KB). 폰트를 줄인 뒤 다음 병목이 된다. `vite build` 결과를 분석기(예: `rollup-plugin-visualizer`)로 열어 첫 화면에 필요 없는 모듈이 들어 있는지 본다. 이 문서의 범위 밖이며, 필요하면 별도 문서로 연다.
 
-관련 파일: `index.html`(preload 두 줄), `src/app/styles/fonts.css`(`@font-face` 네 벌), `src/shared/styles/fonts/*.woff2`, `docs/impl-decision/2026-09-16-font-url-and-preload.md`.
+관련 파일: `index.html`(preload 두 줄), `src/app/styles/fonts.css`(`@font-face` 네 벌), `src/shared/styles/fonts/*.woff2`, `docs/plan/m2/basis-for-decision/2026-09-16-font-url-and-preload.md`.
 
 ## 고칠 때 확인할 것
 
-- **U+2022(`•`) 글리프.** 원본 NanumSquare 의 U+2022 는 모양이 비어 있어 `fonts.css` 의 `unicode-range` 에서 뺐다(`docs/impl-decision/2026-09-29-nanum-bullet-glyph.md`, `src/app/styles/global.test.ts`). 서브셋을 새로 만들면 `unicode-range` 를 다시 쓰게 되는데, 이 제외가 빠지면 비밀번호 칸이 다시 빈칸으로 보인다. 서브셋에서 U+2022 를 아예 빼는 것도 방법이다.
+- **U+2022(`•`) 글리프.** 원본 NanumSquare 의 U+2022 는 모양이 비어 있어 `fonts.css` 의 `unicode-range` 에서 뺐다(`docs/plan/m4/basis-for-decision/2026-09-29-nanum-bullet-glyph.md`, `src/app/styles/global.test.ts`). 서브셋을 새로 만들면 `unicode-range` 를 다시 쓰게 되는데, 이 제외가 빠지면 비밀번호 칸이 다시 빈칸으로 보인다. 서브셋에서 U+2022 를 아예 빼는 것도 방법이다.
 - **굵기 매핑.** `@font-face` 의 weight 범위(100 300 / 400 500 / 600 700 / 800 900)가 "500 → Regular, 600 → Bold" 폴백을 만든다. 조각을 나눠도 범위를 그대로 둔다.
 - **바꾼 결정 기록.** preload 목록을 바꾸면 `2026-09-16-font-url-and-preload.md` 의 `다시 고민할 때` 에 따라 그 문서를 고친다.
 - **다시 잴 기준.** 같은 조건(프로덕션, Slow 4G, 캐시 없음)에서 DOMContentLoaded 와 woff2·`index-*.js` 의 끝 시각을 위 표와 비교한다. 폴백에서 NanumSquare 로 바뀔 때 레이아웃이 흔들리는지(CLS)도 본다.
