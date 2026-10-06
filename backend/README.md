@@ -53,7 +53,7 @@ docker compose -f docker-compose.prod.yml logs -f api
 | 프로세스 | uvicorn `--workers 1`, `--reload` 없음. Notion/임베딩 워커가 프로세스마다 뜨므로 워커를 늘리지 않는다 |
 | 포트 | api는 `127.0.0.1:8000`에만 열린다. 외부 공개는 같은 서버의 리버스 프록시(HTTPS)가 맡는다. db는 호스트에 열지 않는다 |
 | DB 접속 | api의 `DATABASE_URL`은 `.env`의 `POSTGRES_USER`/`POSTGRES_PASSWORD`/`POSTGRES_DB`로 다시 만든다(`db:5432`) |
-| 나머지 환경변수 | `NOTION_*`·`EMBEDDING_*`·`SERVICE_TOKEN` 등은 `.env`를 그대로 넘긴다 |
+| 나머지 환경변수 | `NOTION_*`·`DISCORD_*`·`EMBEDDING_*`·`SERVICE_TOKEN` 등은 `.env`를 그대로 넘긴다 |
 | 필수 값 | `OAUTH_STATE_SECRET`이 비어 있으면 `docker compose`가 기동 전에 멈춘다(Notion 연결용 서명 키) |
 | 데이터 | DB는 `mm-prod_pgdata` 볼륨에 남는다. 로컬 개발용 볼륨(`mm-pgdata`)과 따로다 |
 | 로그 | 컨테이너당 10MB × 3개까지만 남긴다(디스크 50GB 고정) |
@@ -103,6 +103,7 @@ docker compose -f docker-compose.prod.yml logs -f api
 | `EXTRACTION_FAILED` | 502 | 회의 분석 실패 *(아직 미구현 경로)* |
 | `NOTION_WRITE_FAILED` | 502 | Notion 페이지 생성/갱신 실패 *(Task API는 더 이상 내려주지 않음 — 아래 Notion 연동 참고)* |
 | `EMBEDDING_UNAVAILABLE` | 502 | 임베딩 서버 호출 실패 또는 임베딩 키 미설정 (유사 task 검색) |
+| `DISCORD_API_FAILED` | 502 | Discord 서버 사용자 목록을 가져오지 못함(봇 토큰 미설정·권한·네트워크). `details.status`에 Discord 응답 상태(응답이 없으면 null) |
 | `INTERNAL_ERROR` | 500 | 그 외 서버 내부 오류 |
 
 *(아직 미구현 경로)* 표시가 붙은 코드는 오디오 업로드/전사가 실제로 붙기
@@ -194,6 +195,61 @@ db.add(Integration(
 db.commit()
 ```
 
+## Discord 연동
+
+PM이 온보딩에서 Discord를 연결하면 녹음 봇이 팀 서버에 들어가고, 그 서버 ID가 `Integration` 행
+(`provider="discord"`, `provider_channel_id`=서버 ID)에 저장된다(#171). 이어지는 팀원 매핑 단계는 그 서버의
+실제 사용자 목록으로 디스코드 계정과 팀원을 잇는다. 이어진 계정으로 봇이 녹음한 화자를 팀원으로 찾는다
+(1인칭 담당자, 화자 이름).
+
+### Discord 연결 (봇 초대 OAuth)
+
+1. 프론트가 `GET /api/v1/workspaces/{workspace_id}/integrations/discord/start?state=<돌아올 앱 경로>`로
+   이동한다. PM만 통과하고, 서명한 state와 짝 쿠키(`discord_oauth_nonce`)를 만들어 Discord 허용 화면으로 보낸다.
+2. PM이 봇을 들일 서버를 고르고 허용한다.
+3. Discord가 `GET /api/v1/integrations/discord/callback`으로 돌려보낸다. state·짝 쿠키·로그인 사용자·PM 여부를
+   확인하고, code를 토큰으로 바꿔 **Discord가 확인해 준 서버 ID**를 저장한 뒤 `<앱 경로>?oauth=discord&oauth_result=success`로 보낸다.
+
+scope는 `bot applications.commands identify`다. 봇 초대 scope만 요청하면 Discord가 callback 없이 끝나서,
+`identify`를 더해 code grant로 이어지게 한다(Discord 문서 OAuth2 "Advanced Bot Authorization"). 토큰 응답에
+봇을 들인 서버(`guild`)가 담긴다. 받은 사용자 토큰은 쓰지 않아 저장하지 않는다.
+
+| 항목 | 동작 |
+|---|---|
+| 결과 | 항상 앱 화면으로의 302다. `oauth_result`는 `success` · `cancelled`(허용 화면에서 취소) · `failed`. JSON 오류를 보이지 않는다 |
+| 서버 확인 | 주소의 `guild_id`는 바꿀 수 있어서 믿지 않는다. 토큰 응답의 서버 ID와 다르면 `failed` |
+| 한 서버 한 워크스페이스 | 다른 워크스페이스에 이미 연결된 서버면 `failed`(DB 부분 유일 인덱스 `uq_integration_discord_guild`도 막는다). 같은 워크스페이스에서 다시 연결하면 서버 ID를 바꾼다 |
+| 봇 권한 | 채널 보기, 메시지·링크·파일 보내기, 메시지 기록 보기, 음성 채널 접속(`discord_oauth.DEFAULT_BOT_PERMISSIONS`). `DISCORD_BOT_PERMISSIONS`로 바꿀 수 있다 |
+| 보안 | Notion 연결과 같다. state는 제공자까지 서명해서 Notion 연결의 state로는 통과하지 못한다 |
+| 회의 인계 | 봇은 아직 `ai/.env`의 `BE_WORKSPACE_ID` 하나로 회의를 보낸다. 서버로 워크스페이스를 찾는 조회는 여러 워크스페이스 지원 때 붙인다 |
+
+### Discord 서버 사용자 목록
+
+`GET /api/v1/workspaces/{workspace_id}/discord/members` — 소속이면 누구나. 연결한 서버의 사용자(봇 포함)를
+`{discord_user_id, username, display_name, avatar_url, is_bot}`로 준다. 봇은 프론트가 걸러 낸다.
+
+| 항목 | 동작 |
+|---|---|
+| 조회 | 봇 토큰으로 Discord REST API `GET /guilds/{guild_id}/members`를 부른다(`app/services/discord.py`). 1000명씩 이어 받는다 |
+| 표시 이름 | 서버 별명 → 계정 표시 이름(global_name) → 사용자 이름. 녹음 봇이 화자 이름을 정하는 순서와 같다 |
+| 아바타 | 서버 전용 아바타 → 계정 아바타 → 없으면 `null` |
+| 미연결 | 연결 행이 없거나 서버 ID가 비어 있으면 409 `INTEGRATION_NOT_CONNECTED` |
+| 실패 | 봇 토큰이 없거나 Discord가 목록을 주지 않으면 502 `DISCORD_API_FAILED`(`details.status`). 401은 봇 토큰, 403은 Server Members Intent·권한, 404는 봇이 서버에 없는 경우가 많다 |
+
+**환경변수** (`.env.example` 참고)
+
+| 이름 | 값 |
+|---|---|
+| `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET` | Discord 개발자 포털 → 앱 → OAuth2 |
+| `DISCORD_REDIRECT_URI` | 프론트와 같은 주소의 callback. 로컬 `http://localhost:5173/api/v1/integrations/discord/callback`, 운영 `https://<서비스 주소>/api/v1/integrations/discord/callback` |
+| `DISCORD_BOT_TOKEN` | 녹음 봇(`ai/.env`)과 같은 봇의 토큰. 서버 사용자 목록을 읽는다 |
+| `OAUTH_STATE_SECRET` | Notion 연결과 같은 서명 키를 쓴다 |
+
+**Discord 개발자 포털 설정**
+
+- OAuth2 → Redirects에 위 `DISCORD_REDIRECT_URI`와 같은 값을 등록한다.
+- Bot → Privileged Gateway Intents에서 **Server Members Intent**를 켠다(녹음 봇도 이미 쓴다).
+
 ## 유사 task 검색과 AI 판단 접수
 
 회의에서 나온 말이 기존 task의 수정인데도 새 task가 생기는 것을 막기 위한 흐름이다(#102).
@@ -224,7 +280,7 @@ db.commit()
 
 | 구분 | API |
 |---|---|
-| PM 전용 | 승인·반려(`PATCH /approvals/{id}`), 할일 생성·수정(`POST /tasks`, `PATCH /tasks/{id}`), 되돌리기, Notion 재시도, 팀원 생성·수정, 별칭 생성·삭제, Notion 연결 시작·콜백(`GET .../integrations/notion/start`, `GET /integrations/notion/callback`), 연동 해제, 회의 업로드, 온보딩 저장 |
+| PM 전용 | 승인·반려(`PATCH /approvals/{id}`), 할일 생성·수정(`POST /tasks`, `PATCH /tasks/{id}`), 되돌리기, Notion 재시도, 팀원 생성·수정, 별칭 생성·삭제, Notion 연결 시작·콜백(`GET .../integrations/notion/start`, `GET /integrations/notion/callback`), Discord 연결 시작·콜백(`GET .../integrations/discord/start`, `GET /integrations/discord/callback`), 연동 해제, 회의 업로드, 온보딩 저장 |
 | 소속이면 누구나 | 조회 API 전부, 승인 요청 생성(`POST /approvals`) |
 
 - Notion 연결 시작·콜백은 브라우저 페이지 이동이라 403 대신 앱 화면의 `?oauth=notion&oauth_result=failed`로 돌려보낸다.
@@ -234,4 +290,4 @@ db.commit()
 
 ## 아직 없는 것
 
-Discord OAuth 연결, 워크스페이스 초대, 오디오 업로드·스트리밍, 메시지 로그.
+Discord 서버로 워크스페이스를 찾는 조회(봇은 `ai/.env`의 `BE_WORKSPACE_ID` 하나로 회의를 보낸다), 워크스페이스 초대, 오디오 업로드·스트리밍, 메시지 로그.
