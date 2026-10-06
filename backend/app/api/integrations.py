@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.errors import AppError, Envelope, ErrorCode, success
 from app.models import Integration
-from app.api.deps import get_current_member
+from app.api.deps import get_current_member, get_current_pm
 
 router = APIRouter(prefix="/workspaces", tags=["integrations"])
 
@@ -34,7 +34,7 @@ def get_integrations(
 def delete_integration(
     workspace_id: str,
     provider: str,
-    member = Depends(get_current_member),
+    member = Depends(get_current_pm),
     db: Session = Depends(get_db)
 ) -> None:
     integration = db.query(Integration).filter(

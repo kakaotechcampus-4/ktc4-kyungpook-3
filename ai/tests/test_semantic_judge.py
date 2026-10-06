@@ -86,6 +86,46 @@ def test_scorer_counts_unlabeled_and_duplicate_outputs():
     assert any("같은 앵커로 2건" in m for m in mistakes)
 
 
+def test_speaker_scorer_compares_the_resolved_person_not_the_type():
+    """담당자 채점이 호칭 분류가 아니라 **풀린 사람**을 정답과 비교하는지.
+
+    "제가 맡을게요"(지민) 뒤에 "네, 감사합니다"(하은)가 묶이면 assignee_type=first 는 맞지만
+    BE 는 근거 마지막 줄의 화자(하은)를 담당자로 찾는다. 분류만 보면 정답으로 보인다.
+    """
+    from judge.eval_golden_set import _score_speaker
+
+    case = {
+        "turns": [{"speaker": "지민", "text": "API 명세서는 제가 정리할게요."},
+                  {"speaker": "하은", "text": "네, 감사합니다."}],
+        "expected": [{"text": "API 명세서는 제가 정리할게요.", "should_flag": True, "assignee": "지민"},
+                     {"text": "네, 감사합니다.", "should_flag": False}],
+    }
+    claim, thanks = "API 명세서는 제가 정리할게요.", "네, 감사합니다."
+
+    bundled = JudgeFinding(text="", evidence=[claim, thanks], indices=[0, 1], speaker="하은", assignee_type="first")
+    out = _score_speaker(case, [bundled])
+    assert (len(out["correct"]), len(out["wrong"]), len(out["guard"])) == (0, 1, 1)
+
+    alone = JudgeFinding(text="", evidence=[claim], indices=[0], speaker="지민", assignee_type="first")
+    out = _score_speaker(case, [alone])
+    assert (len(out["correct"]), len(out["wrong"]), len(out["guard"])) == (1, 0, 0)
+
+    # 이름 호칭은 화자가 아니라 원문/해소 이름으로 풀린다. 존칭은 떼고 비교한다
+    by_name = JudgeFinding(text="", evidence=[claim, thanks], indices=[0, 1], speaker="하은",
+                           assignee_type="thirdname", assignee_raw="지민님")
+    assert len(_score_speaker(case, [by_name])["correct"]) == 1
+
+    # 같은 결정이 두 건으로 나오고 하나만 틀려도 wrong 이다 — BE 에는 두 항목이 다 간다.
+    # 앵커가 맞는 쪽만 보면 틀린 담당자를 놓친다(#137 CodeRabbit)
+    out = _score_speaker(case, [alone, bundled])
+    assert (len(out["correct"]), len(out["wrong"])) == (0, 1)
+
+    # 판정 보류와 놓침은 틀린 담당자와 따로 센다
+    held = JudgeFinding(text="", evidence=[claim], indices=[0], speaker="지민", assignee_type=None)
+    assert len(_score_speaker(case, [held])["unresolved"]) == 1
+    assert len(_score_speaker(case, [])["missed"]) == 1
+
+
 def test_scorer_separates_hit_from_anchor():
     """정답 판정(근거 어디에든)과 오탐 판정(앵커일 때만)을 분리하는지.
 
@@ -371,11 +411,20 @@ def test_llm_path_empty_transcript_returns_empty_without_calling():
     assert fake.prompts == []  # 빈 전사록이면 호출 자체를 안 함
 
 
-def test_llm_path_treats_missing_findings_key_as_empty():
-    # {} 처럼 findings 키 자체가 없으면 "0건"으로 정상 처리한다 — 실패가 아니다.
+def test_llm_path_treats_missing_findings_key_as_failure():
+    # {} 처럼 findings 키가 없는 응답을 0건으로 보면 모델 오류가 "후보 없음"으로 확정돼 회의가 빈 추출로
+    # 닫힌다(#128 리뷰). 명시적인 {"findings": []} 만 정상 0건이다.
     t = _transcript(TranscriptSegment(speaker="a", start=0.0, end=1.0, text="안녕하세요.", seq=0))
-    fake = FakeLLM(responses=[{}])
-    assert extract_findings_llm(t, fake) == []
+    assert extract_findings_llm(t, FakeLLM(responses=[{}])) is None
+    assert extract_findings_llm(t, FakeLLM(responses=[{"findings": []}])) == []
+    with pytest.raises(FindingExtractionUnavailableError):
+        import judge.semantic_judge as sj
+        original = sj.get_llm
+        sj.get_llm = lambda which: FakeLLM(responses=[{}])
+        try:
+            extract_findings(t)
+        finally:
+            sj.get_llm = original
 
 
 def test_llm_path_returns_none_when_findings_is_null():

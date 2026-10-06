@@ -98,6 +98,34 @@ def test_update_schedule_keeps_only_changed_due_date():
     assert item["status"] is None
 
 
+def test_update_carries_target_snapshot_of_all_four_fields():
+    # 마감만 바뀌어도 검색에서 본 값 넷을 다 보낸다 — 승인 때 BE 가 이 값을 기준으로 충돌을 본다(#160)
+    target = _target(assignee_member_id="mem_haeun", updated_at="2026-09-27T10:00:00+00:00")
+    item = to_item(_finding(), _result(), _drafted(due_date="2026-10-06"), target, TRANSCRIPT)
+    assert item["target_snapshot"] == {
+        "updated_at": "2026-09-27T10:00:00+00:00",
+        "due_date": "2026-09-28",
+        "status": "in_progress",
+        "assignee_member_id": "mem_haeun",
+    }
+    assert item["status"] is None  # 제안값은 지금처럼 바뀌는 필드만
+
+
+def test_update_target_snapshot_keeps_null_fields():
+    # 마감이 없던 Task — 키를 빼면 BE 가 "안 보냈다"로 읽는다
+    target = _target(due_date=None, status=None)
+    item = to_item(_finding(), _result(), _drafted(due_date="2026-10-06"), target, TRANSCRIPT)
+    assert item["target_snapshot"] == {
+        "updated_at": None, "due_date": None, "status": None, "assignee_member_id": None,
+    }
+
+
+def test_create_has_no_target_snapshot():
+    result = _result(category="decision", is_new=True, matched_task_id=None)
+    item = to_item(_finding(), result, _drafted(task="알림 설정 페이지 개발"), None, TRANSCRIPT)
+    assert "target_snapshot" not in item
+
+
 def test_update_status_is_kept_even_when_category_is_decision():
     # 상태만 바뀌면 Terra 가 category=decision 을 준다 — category 만 보면 status 가 빠진다(#99)
     result = _result(category="decision", status="done")

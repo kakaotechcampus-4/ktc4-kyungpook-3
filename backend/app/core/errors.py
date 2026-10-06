@@ -42,6 +42,7 @@ class ErrorCode(StrEnum):
     MEETING_PROCESSING_IN_PROGRESS = "MEETING_PROCESSING_IN_PROGRESS"
     AUDIO_TOO_LARGE = "AUDIO_TOO_LARGE"
     DISCORD_USER_ALREADY_MAPPED = "DISCORD_USER_ALREADY_MAPPED"
+    LAST_PM_REQUIRED = "LAST_PM_REQUIRED"
     EMBEDDING_UNAVAILABLE = "EMBEDDING_UNAVAILABLE"
 
 
@@ -79,6 +80,7 @@ ERROR_STATUS: dict[ErrorCode, int] = {
     ErrorCode.MEETING_PROCESSING_IN_PROGRESS: 409,
     ErrorCode.AUDIO_TOO_LARGE: 413,
     ErrorCode.DISCORD_USER_ALREADY_MAPPED: 409,
+    ErrorCode.LAST_PM_REQUIRED: 409,
     ErrorCode.EMBEDDING_UNAVAILABLE: 502,
 }
 
@@ -116,6 +118,7 @@ ERROR_MESSAGE: dict[ErrorCode, str] = {
     ErrorCode.MEETING_PROCESSING_IN_PROGRESS: "이미 처리 중인 회의가 있습니다.",
     ErrorCode.AUDIO_TOO_LARGE: "오디오 파일 용량이 너무 큽니다.",
     ErrorCode.DISCORD_USER_ALREADY_MAPPED: "이미 다른 팀원에 연결된 Discord 사용자입니다.",
+    ErrorCode.LAST_PM_REQUIRED: "워크스페이스에 PM이 한 명은 있어야 합니다. 다른 팀원을 먼저 PM으로 지정해 주세요.",
     ErrorCode.EMBEDDING_UNAVAILABLE: "임베딩 서버 호출에 실패했습니다. 잠시 후 다시 시도해 주세요.",
 }
 

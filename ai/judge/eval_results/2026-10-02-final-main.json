@@ -1,0 +1,394 @@
+{
+  "meta": {
+    "label": "final: v1 프롬프트 확정 후 메인 세트",
+    "at": "2026-10-02T10:46:45",
+    "model": "gpt-5.6-luna",
+    "prompt_version": "d7405fcfa281",
+    "groups": [
+      "short_sentences",
+      "long_sentences"
+    ],
+    "runs": 3,
+    "cases": 25
+  },
+  "runs": [
+    {
+      "short_sentences": {
+        "r_c": 10,
+        "r_t": 15,
+        "l_c": 14,
+        "l_t": 15,
+        "a_c": 1,
+        "a_t": 1,
+        "api_failures": 0,
+        "cases": 11,
+        "speaker": {
+          "correct": 0,
+          "wrong": 0,
+          "unresolved": 0,
+          "missed": 0,
+          "guard": 0
+        },
+        "mistakes": [
+          {
+            "case": "short_sentences/case_06",
+            "mistakes": [
+              "\"혹시 시간 되면 이번 주까지 해볼게요.\" — 기대=True 실제=False (불확실해도 일정 관련 약속이라 넉넉하게 포함)"
+            ]
+          },
+          {
+            "case": "short_sentences/case_08",
+            "mistakes": [
+              "\"그러니까 이번 주\" — 기대=True 실제=False (판단은 애매함. 크래시 없이 처리되는지 확인이 목적이라 통과율 계산에서 제외)"
+            ]
+          }
+        ]
+      },
+      "long_sentences": {
+        "r_c": 227,
+        "r_t": 325,
+        "l_c": 309,
+        "l_t": 325,
+        "a_c": 9,
+        "a_t": 9,
+        "api_failures": 0,
+        "cases": 13,
+        "speaker": {
+          "correct": 0,
+          "wrong": 0,
+          "unresolved": 0,
+          "missed": 0,
+          "guard": 0
+        },
+        "mistakes": [
+          {
+            "case": "long_sentences/case_01",
+            "mistakes": [
+              "\"저는 결제 API 연동 중인데 문서가 좀 헷갈리네요.\" — 기대=False 실제=True (상태 설명)"
+            ]
+          },
+          {
+            "case": "long_sentences/case_02",
+            "mistakes": [
+              "\"리뷰 남겨주신 거 확인했습니다.\" — 기대=False 실제=True (잡담)",
+              "\"QA 쪽에서 버그 리포트 몇 개 왔어요.\" — 기대=False 실제=True (진행상황)",
+              "\"네 그거 확인해볼게요.\" — 기대=False 실제=True (잡담)"
+            ]
+          },
+          {
+            "case": "long_sentences/case_03",
+            "mistakes": [
+              "\"회원가입 쪽 소셜 로그인은 이번 스프린트에서 빼기로 하죠.\" — 기대=True 실제=False (범위 변경)",
+              "\"리뷰 남겨주신 거 확인했습니다.\" — 기대=False 실제=True (잡담)"
+            ]
+          },
+          {
+            "case": "long_sentences/case_04",
+            "mistakes": [
+              "\"네 그거 확인해볼게요.\" — 기대=False 실제=True (잡담)"
+            ]
+          },
+          {
+            "case": "long_sentences/case_05",
+            "mistakes": [
+              "\"리뷰 남겨주신 거 확인했습니다.\" — 기대=False 실제=True (잡담)"
+            ]
+          },
+          {
+            "case": "long_sentences/case_06",
+            "mistakes": [
+              "\"QA 쪽에서 버그 리포트 몇 개 왔어요.\" — 기대=False 실제=True (진행상황)",
+              "\"네 그거 확인해볼게요.\" — 기대=False 실제=True (잡담)"
+            ]
+          },
+          {
+            "case": "long_sentences/case_07",
+            "mistakes": [
+              "\"리뷰 남겨주신 거 확인했습니다.\" — 기대=False 실제=True (잡담)"
+            ]
+          },
+          {
+            "case": "long_sentences/case_08",
+            "mistakes": [
+              "\"네 그거 확인해볼게요.\" — 기대=False 실제=True (잡담)"
+            ]
+          },
+          {
+            "case": "long_sentences/case_11",
+            "mistakes": [
+              "\"리뷰 남겨주신 거 확인했습니다.\" — 기대=False 실제=True (잡담)"
+            ]
+          },
+          {
+            "case": "long_sentences/case_12",
+            "mistakes": [
+              "\"네 그거 확인해볼게요.\" — 기대=False 실제=True (잡담)",
+              "\"오늘 다시 봐야 할 것 같아요.\" — 기대=False 실제=True (긴 진행상황 보고, 결정 없음 (3/3))"
+            ]
+          },
+          {
+            "case": "long_sentences/case_13",
+            "mistakes": [
+              "\"나중에 자료로 공유드릴게요.\" — 기대=False 실제=True (잡담)"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "short_sentences": {
+        "r_c": 10,
+        "r_t": 15,
+        "l_c": 14,
+        "l_t": 15,
+        "a_c": 1,
+        "a_t": 1,
+        "api_failures": 0,
+        "cases": 11,
+        "speaker": {
+          "correct": 0,
+          "wrong": 0,
+          "unresolved": 0,
+          "missed": 0,
+          "guard": 0
+        },
+        "mistakes": [
+          {
+            "case": "short_sentences/case_06",
+            "mistakes": [
+              "\"혹시 시간 되면 이번 주까지 해볼게요.\" — 기대=True 실제=False (불확실해도 일정 관련 약속이라 넉넉하게 포함)"
+            ]
+          },
+          {
+            "case": "short_sentences/case_08",
+            "mistakes": [
+              "\"그러니까 이번 주\" — 기대=True 실제=False (판단은 애매함. 크래시 없이 처리되는지 확인이 목적이라 통과율 계산에서 제외)"
+            ]
+          }
+        ]
+      },
+      "long_sentences": {
+        "r_c": 227,
+        "r_t": 325,
+        "l_c": 309,
+        "l_t": 325,
+        "a_c": 10,
+        "a_t": 10,
+        "api_failures": 0,
+        "cases": 13,
+        "speaker": {
+          "correct": 0,
+          "wrong": 0,
+          "unresolved": 0,
+          "missed": 0,
+          "guard": 0
+        },
+        "mistakes": [
+          {
+            "case": "long_sentences/case_01",
+            "mistakes": [
+              "\"저는 결제 API 연동 중인데 문서가 좀 헷갈리네요.\" — 기대=False 실제=True (상태 설명)"
+            ]
+          },
+          {
+            "case": "long_sentences/case_02",
+            "mistakes": [
+              "\"리뷰 남겨주신 거 확인했습니다.\" — 기대=False 실제=True (잡담)",
+              "\"네 그거 확인해볼게요.\" — 기대=False 실제=True (잡담)"
+            ]
+          },
+          {
+            "case": "long_sentences/case_03",
+            "mistakes": [
+              "\"리뷰 남겨주신 거 확인했습니다.\" — 기대=False 실제=True (잡담)"
+            ]
+          },
+          {
+            "case": "long_sentences/case_04",
+            "mistakes": [
+              "\"네 그거 확인해볼게요.\" — 기대=False 실제=True (잡담)"
+            ]
+          },
+          {
+            "case": "long_sentences/case_05",
+            "mistakes": [
+              "\"리뷰 남겨주신 거 확인했습니다.\" — 기대=False 실제=True (잡담)"
+            ]
+          },
+          {
+            "case": "long_sentences/case_06",
+            "mistakes": [
+              "\"네 그거 확인해볼게요.\" — 기대=False 실제=True (잡담)"
+            ]
+          },
+          {
+            "case": "long_sentences/case_07",
+            "mistakes": [
+              "\"리뷰 남겨주신 거 확인했습니다.\" — 기대=False 실제=True (잡담)",
+              "\"오늘 오후에 미팅이 하나 더 있어요.\" — 기대=False 실제=True (잡담)",
+              "\"저도 그거 참석해야 해요.\" — 기대=False 실제=True (잡담)"
+            ]
+          },
+          {
+            "case": "long_sentences/case_08",
+            "mistakes": [
+              "\"네 그거 확인해볼게요.\" — 기대=False 실제=True (잡담)"
+            ]
+          },
+          {
+            "case": "long_sentences/case_11",
+            "mistakes": [
+              "\"리뷰 남겨주신 거 확인했습니다.\" — 기대=False 실제=True (잡담)",
+              "\"저도 그거 참석해야 해요.\" — 기대=False 실제=True (잡담)"
+            ]
+          },
+          {
+            "case": "long_sentences/case_12",
+            "mistakes": [
+              "\"네 그거 확인해볼게요.\" — 기대=False 실제=True (잡담)",
+              "\"원인을 못 찾아서 좀 힘들었습니다.\" — 기대=False 실제=True (긴 진행상황 보고, 결정 없음 (2/3))"
+            ]
+          },
+          {
+            "case": "long_sentences/case_13",
+            "mistakes": [
+              "\"나중에 자료로 공유드릴게요.\" — 기대=False 실제=True (잡담)"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "short_sentences": {
+        "r_c": 10,
+        "r_t": 15,
+        "l_c": 14,
+        "l_t": 16,
+        "a_c": 1,
+        "a_t": 1,
+        "api_failures": 0,
+        "cases": 11,
+        "speaker": {
+          "correct": 0,
+          "wrong": 0,
+          "unresolved": 0,
+          "missed": 0,
+          "guard": 0
+        },
+        "mistakes": [
+          {
+            "case": "short_sentences/case_06",
+            "mistakes": [
+              "\"혹시 시간 되면 이번 주까지 해볼게요.\" — 기대=True 실제=False (불확실해도 일정 관련 약속이라 넉넉하게 포함)"
+            ]
+          },
+          {
+            "case": "short_sentences/case_08",
+            "mistakes": [
+              "\"그러니까 이번 주\" — 기대=True 실제=False (판단은 애매함. 크래시 없이 처리되는지 확인이 목적이라 통과율 계산에서 제외)"
+            ]
+          },
+          {
+            "case": "short_sentences/case_09",
+            "mistakes": [
+              "\"로그인은 내일까지 하고, 회원가입은 담당자를 다시 정하기로 했어요.\" — 같은 앵커로 2건 (한 결정이 쪼개졌을 수 있음)"
+            ]
+          }
+        ]
+      },
+      "long_sentences": {
+        "r_c": 227,
+        "r_t": 325,
+        "l_c": 306,
+        "l_t": 325,
+        "a_c": 9,
+        "a_t": 9,
+        "api_failures": 0,
+        "cases": 13,
+        "speaker": {
+          "correct": 0,
+          "wrong": 0,
+          "unresolved": 0,
+          "missed": 0,
+          "guard": 0
+        },
+        "mistakes": [
+          {
+            "case": "long_sentences/case_01",
+            "mistakes": [
+              "\"저는 결제 API 연동 중인데 문서가 좀 헷갈리네요.\" — 기대=False 실제=True (상태 설명)"
+            ]
+          },
+          {
+            "case": "long_sentences/case_02",
+            "mistakes": [
+              "\"리뷰 남겨주신 거 확인했습니다.\" — 기대=False 실제=True (잡담)",
+              "\"QA 쪽에서 버그 리포트 몇 개 왔어요.\" — 기대=False 실제=True (진행상황)",
+              "\"네 그거 확인해볼게요.\" — 기대=False 실제=True (잡담)"
+            ]
+          },
+          {
+            "case": "long_sentences/case_03",
+            "mistakes": [
+              "\"회원가입 쪽 소셜 로그인은 이번 스프린트에서 빼기로 하죠.\" — 기대=True 실제=False (범위 변경)",
+              "\"리뷰 남겨주신 거 확인했습니다.\" — 기대=False 실제=True (잡담)"
+            ]
+          },
+          {
+            "case": "long_sentences/case_04",
+            "mistakes": [
+              "\"QA 쪽에서 버그 리포트 몇 개 왔어요.\" — 기대=False 실제=True (진행상황)",
+              "\"네 그거 확인해볼게요.\" — 기대=False 실제=True (잡담)"
+            ]
+          },
+          {
+            "case": "long_sentences/case_05",
+            "mistakes": [
+              "\"리뷰 남겨주신 거 확인했습니다.\" — 기대=False 실제=True (잡담)"
+            ]
+          },
+          {
+            "case": "long_sentences/case_06",
+            "mistakes": [
+              "\"QA 쪽에서 버그 리포트 몇 개 왔어요.\" — 기대=False 실제=True (진행상황)",
+              "\"네 그거 확인해볼게요.\" — 기대=False 실제=True (잡담)"
+            ]
+          },
+          {
+            "case": "long_sentences/case_07",
+            "mistakes": [
+              "\"리뷰 남겨주신 거 확인했습니다.\" — 기대=False 실제=True (잡담)"
+            ]
+          },
+          {
+            "case": "long_sentences/case_08",
+            "mistakes": [
+              "\"네 그거 확인해볼게요.\" — 기대=False 실제=True (잡담)"
+            ]
+          },
+          {
+            "case": "long_sentences/case_11",
+            "mistakes": [
+              "\"리뷰 남겨주신 거 확인했습니다.\" — 기대=False 실제=True (잡담)",
+              "\"저도 그거 참석해야 해요.\" — 기대=False 실제=True (잡담)"
+            ]
+          },
+          {
+            "case": "long_sentences/case_12",
+            "mistakes": [
+              "\"QA 쪽에서 버그 리포트 몇 개 왔어요.\" — 기대=False 실제=True (진행상황)",
+              "\"네 그거 확인해볼게요.\" — 기대=False 실제=True (잡담)",
+              "\"원인을 못 찾아서 좀 힘들었습니다.\" — 기대=False 실제=True (긴 진행상황 보고, 결정 없음 (2/3))"
+            ]
+          },
+          {
+            "case": "long_sentences/case_13",
+            "mistakes": [
+              "\"나중에 자료로 공유드릴게요.\" — 기대=False 실제=True (잡담)"
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,181 @@
+{
+  "meta": {
+    "label": "baseline 재측정: develop 프롬프트를 고친 채점기로 (#137 CodeRabbit)",
+    "at": "2026-10-02T11:29:04",
+    "model": "gpt-5.6-luna",
+    "prompt_version": "6d8669ad8c94",
+    "groups": [
+      "speaker_dev",
+      "speaker_test"
+    ],
+    "runs": 3,
+    "cases": 16
+  },
+  "runs": [
+    {
+      "speaker_dev": {
+        "r_c": 19,
+        "r_t": 23,
+        "l_c": 22,
+        "l_t": 23,
+        "a_c": 8,
+        "a_t": 8,
+        "api_failures": 0,
+        "cases": 8,
+        "speaker": {
+          "correct": 10,
+          "wrong": 0,
+          "unresolved": 0,
+          "missed": 0,
+          "guard": 3
+        },
+        "mistakes": [
+          {
+            "case": "speaker_dev/case_02",
+            "mistakes": [
+              "\"오늘은 버그 위주로 볼게요.\" — 기대=False 실제=True (회의 진행 멘트)"
+            ]
+          }
+        ]
+      },
+      "speaker_test": {
+        "r_c": 22,
+        "r_t": 26,
+        "l_c": 26,
+        "l_t": 27,
+        "a_c": 8,
+        "a_t": 8,
+        "api_failures": 0,
+        "cases": 8,
+        "speaker": {
+          "correct": 11,
+          "wrong": 2,
+          "unresolved": 0,
+          "missed": 0,
+          "guard": 3
+        },
+        "mistakes": [
+          {
+            "case": "speaker_test/case_06",
+            "mistakes": [
+              "\"네, 둘 다 이번 주 금요일까지 부탁해요.\" — 같은 앵커로 2건 (한 결정이 쪼개졌을 수 있음)",
+              "담당자 wrong: \"회원가입 폼은 제가 맡을게요.\" — 정답 지민, 결과 하은 (type=first, 앵커 \"네, 둘 다 이번 주 금요일까지 부탁해요.\")",
+              "담당자 wrong: \"저는 비밀번호 찾기를 할게요.\" — 정답 도윤, 결과 하은 (type=first, 앵커 \"네, 둘 다 이번 주 금요일까지 부탁해요.\")"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "speaker_dev": {
+        "r_c": 19,
+        "r_t": 23,
+        "l_c": 21,
+        "l_t": 23,
+        "a_c": 8,
+        "a_t": 8,
+        "api_failures": 0,
+        "cases": 8,
+        "speaker": {
+          "correct": 9,
+          "wrong": 1,
+          "unresolved": 0,
+          "missed": 0,
+          "guard": 3
+        },
+        "mistakes": [
+          {
+            "case": "speaker_dev/case_02",
+            "mistakes": [
+              "\"오늘은 버그 위주로 볼게요.\" — 기대=False 실제=True (회의 진행 멘트)"
+            ]
+          },
+          {
+            "case": "speaker_dev/case_05",
+            "mistakes": [
+              "담당자 wrong: \"온보딩 화면 시안은 제가 만들게요.\" — 정답 지민, 결과 하은 (type=first, 앵커 \"그럼 마감은 다음 주 월요일로 할게요.\")"
+            ]
+          },
+          {
+            "case": "speaker_dev/case_08",
+            "mistakes": [
+              "\"네, 알겠습니다.\" — 기대=True 실제=False (지정받은 사람의 수락 — 앵커가 되어도 화자가 담당자)"
+            ]
+          }
+        ]
+      },
+      "speaker_test": {
+        "r_c": 22,
+        "r_t": 26,
+        "l_c": 26,
+        "l_t": 26,
+        "a_c": 10,
+        "a_t": 10,
+        "api_failures": 0,
+        "cases": 8,
+        "speaker": {
+          "correct": 13,
+          "wrong": 0,
+          "unresolved": 0,
+          "missed": 0,
+          "guard": 2
+        },
+        "mistakes": []
+      }
+    },
+    {
+      "speaker_dev": {
+        "r_c": 19,
+        "r_t": 23,
+        "l_c": 23,
+        "l_t": 23,
+        "a_c": 7,
+        "a_t": 7,
+        "api_failures": 0,
+        "cases": 8,
+        "speaker": {
+          "correct": 9,
+          "wrong": 1,
+          "unresolved": 0,
+          "missed": 0,
+          "guard": 2
+        },
+        "mistakes": [
+          {
+            "case": "speaker_dev/case_05",
+            "mistakes": [
+              "담당자 wrong: \"온보딩 화면 시안은 제가 만들게요.\" — 정답 지민, 결과 하은 (type=first, 앵커 \"그럼 마감은 다음 주 월요일로 할게요.\")"
+            ]
+          }
+        ]
+      },
+      "speaker_test": {
+        "r_c": 22,
+        "r_t": 26,
+        "l_c": 26,
+        "l_t": 27,
+        "a_c": 8,
+        "a_t": 8,
+        "api_failures": 0,
+        "cases": 8,
+        "speaker": {
+          "correct": 11,
+          "wrong": 2,
+          "unresolved": 0,
+          "missed": 0,
+          "guard": 5
+        },
+        "mistakes": [
+          {
+            "case": "speaker_test/case_06",
+            "mistakes": [
+              "\"네, 둘 다 이번 주 금요일까지 부탁해요.\" — 같은 앵커로 2건 (한 결정이 쪼개졌을 수 있음)",
+              "담당자 wrong: \"회원가입 폼은 제가 맡을게요.\" — 정답 지민, 결과 하은 (type=first, 앵커 \"네, 둘 다 이번 주 금요일까지 부탁해요.\")",
+              "담당자 wrong: \"저는 비밀번호 찾기를 할게요.\" — 정답 도윤, 결과 하은 (type=first, 앵커 \"네, 둘 다 이번 주 금요일까지 부탁해요.\")"
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -9,7 +9,7 @@
 명령
   /join     명령한 사람이 있는 음성 채널에 봇 입장
   /record   화자별 트랙 녹음 시작. 채널에 "녹음·전사 중" 을 알리고 BE 에 회의를 만든다
-  /stop     녹음 종료. 트랙을 닫고 전사 → 할일 추출 → BE 인계를 돌려 결과를 채널에 올린다(워커 모드는 저장까지)
+  /stop     녹음 종료. 트랙을 닫고 전사 → 회의록 저장 → 할일 추출 → BE 인계를 돌려 결과를 채널에 올린다(워커 모드는 저장까지)
   /leave    음성 채널 퇴장 (녹음 중에는 거절. 앞 회의의 후처리 중에는 된다)
   /end      자기 녹음의 후처리까지 끝나면 퇴장. 그 사이 새 녹음이 시작됐으면 남는다
   /recover  이 서버에서 끝까지 처리되지 않은 회의를 마지막 단계 다음부터 마저 처리한다(워커 모드는 워커를 깨운다)
@@ -65,7 +65,8 @@ from capture.recorder import (RECOVERY_INTERVAL_S, Claims, interrupted_meetings,
                               recover_pass, recovery_targets, try_lock)
 from capture.worker import read_heartbeat, request_wake
 from capture.recorder import (PARTIAL_RETRY_MAX, STATUS_EXTRACTED, STATUS_FAILED, STATUS_HANDED_OFF, STATUS_PARTIAL,
-                              STATUS_RECORDING, STATUS_SAVED, STATUS_TRANSCRIBED, NullSession, backend_from_env,
+                              STATUS_RECORDING, STATUS_SAVED, STATUS_SOURCED, STATUS_TRANSCRIBED, NullSession,
+                              backend_from_env,
                               build_extractor, meeting_title, process_session, recover, write_status)
 from capture.streaming_sink import StreamingSink
 from capture.track_writer import TrackPool
@@ -78,8 +79,9 @@ SessionSavedHook = Callable[[dict, Path], Awaitable[None]]
 
 NOTICE = "🔴 녹음·전사 중입니다. 이 음성 채널의 말은 화자별로 녹음되고 `/stop` 뒤 회의록이 여기 올라옵니다."
 FLUSH_EVERY_S = 0.2   # 재정렬 창에 갇힌 마지막 패킷을 이 주기로 비운다. 패킷은 20ms 마다 온다
-STAGE_LABEL = {STATUS_TRANSCRIBED: "전사", STATUS_EXTRACTED: "할일 추출", STATUS_HANDED_OFF: "BE 인계",
-               "stt": "전사", "extract": "할일 추출", "handoff": "BE 인계"}
+STAGE_LABEL = {STATUS_TRANSCRIBED: "전사", STATUS_SOURCED: "회의록 저장", STATUS_EXTRACTED: "할일 추출",
+               STATUS_HANDED_OFF: "BE 인계",
+               "stt": "전사", "sources": "회의록 저장", "extract": "할일 추출", "handoff": "BE 인계"}
 RESUME_NOTICE = ("⚠️ 봇이 다시 시작되어 끊긴 회의의 녹음된 부분을 처리합니다. "
                  "이어서 기록하려면 `/join` 뒤 `/record` 를 실행해 주세요.")
 SHOWN_MAX = 10      # 채널에 보이는 항목 수. 나머지는 "외 N건" 으로 줄인다
@@ -608,7 +610,7 @@ class RecordingCog(discord.Cog):
                 return
             await self._notify(rec.text_channel, f"✅ 저장 완료 (화자 {len(entries)}명). 전사 중입니다...{warn}")
 
-            # 전사 → 할일 추출 → BE 인계. 어느 단계가 죽어도 매니페스트에 남고 /recover 가 거기서 잇는다
+            # 전사 → 회의록 저장 → 할일 추출 → BE 인계. 어느 단계가 죽어도 매니페스트에 남고 /recover 가 거기서 잇는다
             backend, model_name, workers = self._stt_factory()
             async with self._post_sem:
                 result = await asyncio.to_thread(process_session, self.recordings_dir, manifest, backend=backend,
@@ -657,6 +659,12 @@ class RecordingCog(discord.Cog):
                 else:
                     text += f"\n⚠️ 다시 보내도 실패한 {tr['failed']}줄은 회의록에 없습니다. 구간은 매니페스트에 남아 있습니다."
             await self._notify(channel, text, file=discord.File(str(tr["markdown"])))
+        src = result.get("sources")
+        if STATUS_SOURCED in result["ran"] and src:
+            text = f"🗂 BE 회의록 저장 {src.get('inserted', 0)}줄"
+            if src.get("skipped"):
+                text += f", 이미 있던 {src['skipped']}줄"
+            await self._notify(channel, text)
         if result.get("partial"):
             await self._notify(channel, f"⚠️ 빠진 구간 {result.get('missing_units', 0)}개를 둔 채 진행했습니다 "
                                f"(재시도 {PARTIAL_RETRY_MAX}회). 구간은 매니페스트에 남아 있습니다.")

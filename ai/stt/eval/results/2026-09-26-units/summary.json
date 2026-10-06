@@ -1,0 +1,834 @@
+{
+ "noise": {
+  "local-large-v3|rearranged": {
+   "err": 0,
+   "lost": 0,
+   "punct_err": 0,
+   "edge_err": 0,
+   "halluc": 0,
+   "moved": 0,
+   "n_lines": 0,
+   "settings": [
+    "base"
+   ],
+   "n": 1,
+   "values": [
+    84
+   ]
+  },
+  "local-large-v3|aligned": {
+   "err": 0,
+   "lost": 0,
+   "punct_err": 0,
+   "edge_err": 0,
+   "halluc": 0,
+   "moved": 0,
+   "n_lines": 0,
+   "settings": [
+    "base"
+   ],
+   "n": 1,
+   "values": [
+    86
+   ]
+  },
+  "local-large-v3-turbo|rearranged": {
+   "err": 8,
+   "lost": 0,
+   "punct_err": 0,
+   "edge_err": 7,
+   "halluc": 0,
+   "moved": 4,
+   "n_lines": 0,
+   "settings": [
+    "base",
+    "dither1",
+    "dither2",
+    "dither3",
+    "dither4",
+    "dither5",
+    "dither6",
+    "dither7",
+    "dither8",
+    "dither9",
+    "dither10"
+   ],
+   "n": 11,
+   "values": [
+    94,
+    95,
+    98,
+    94,
+    94,
+    94,
+    101,
+    98,
+    93,
+    93,
+    94
+   ]
+  },
+  "local-large-v3-turbo|align-variant:PLACE_GAP_S": {
+   "err": 0,
+   "lost": 0,
+   "punct_err": 0,
+   "edge_err": 0,
+   "halluc": 0,
+   "moved": 0,
+   "n_lines": 0,
+   "settings": [
+    "base",
+    "dither1",
+    "dither2",
+    "dither3",
+    "dither4",
+    "dither5",
+    "dither6",
+    "dither7",
+    "dither8",
+    "dither9",
+    "dither10"
+   ],
+   "n": 1,
+   "values": [
+    243
+   ]
+  },
+  "local-large-v3-turbo|aligned": {
+   "err": 6,
+   "lost": 0,
+   "punct_err": 0,
+   "edge_err": 2,
+   "halluc": 0,
+   "moved": 0,
+   "n_lines": 0,
+   "settings": [
+    "base",
+    "dither1",
+    "dither2",
+    "dither3",
+    "dither4",
+    "dither5",
+    "dither6",
+    "dither7",
+    "dither8",
+    "dither9",
+    "dither10"
+   ],
+   "n": 11,
+   "values": [
+    80,
+    80,
+    85,
+    80,
+    80,
+    80,
+    80,
+    84,
+    80,
+    79,
+    83
+   ]
+  },
+  "local-medium|rearranged": {
+   "err": 0,
+   "lost": 0,
+   "punct_err": 0,
+   "edge_err": 0,
+   "halluc": 0,
+   "moved": 0,
+   "n_lines": 0,
+   "settings": [
+    "base"
+   ],
+   "n": 1,
+   "values": [
+    115
+   ]
+  },
+  "local-medium|aligned": {
+   "err": 0,
+   "lost": 0,
+   "punct_err": 0,
+   "edge_err": 0,
+   "halluc": 0,
+   "moved": 0,
+   "n_lines": 0,
+   "settings": [
+    "base"
+   ],
+   "n": 1,
+   "values": [
+    123
+   ]
+  },
+  "local-small|rearranged": {
+   "err": 0,
+   "lost": 0,
+   "punct_err": 0,
+   "edge_err": 0,
+   "halluc": 0,
+   "moved": 0,
+   "n_lines": 0,
+   "settings": [
+    "base"
+   ],
+   "n": 1,
+   "values": [
+    135
+   ]
+  },
+  "local-small|aligned": {
+   "err": 0,
+   "lost": 0,
+   "punct_err": 0,
+   "edge_err": 0,
+   "halluc": 0,
+   "moved": 0,
+   "n_lines": 0,
+   "settings": [
+    "base"
+   ],
+   "n": 1,
+   "values": [
+    137
+   ]
+  }
+ },
+ "verdicts": {
+  "stt.batch.CHUNK_MAX_S": [
+   {
+    "backend": "local-large-v3-turbo",
+    "group": "rearranged",
+    "label": "flat",
+    "direction": "",
+    "flat_lo": 15.0,
+    "flat_hi": 40.0,
+    "noise": 8,
+    "errors": [],
+    "lost_changed": [],
+    "values": [
+     15.0,
+     20.0,
+     24.0,
+     28.0,
+     30.0,
+     40.0
+    ]
+   },
+   {
+    "backend": "local-large-v3-turbo",
+    "group": "aligned",
+    "label": "slope",
+    "direction": "worse",
+    "flat_lo": 24.0,
+    "flat_hi": 30.0,
+    "noise": 6,
+    "errors": [],
+    "lost_changed": [],
+    "values": [
+     15.0,
+     20.0,
+     24.0,
+     28.0,
+     30.0,
+     40.0
+    ]
+   }
+  ],
+  "stt.batch.CHUNK_GAP_S": [
+   {
+    "backend": "local-large-v3-turbo",
+    "group": "rearranged",
+    "label": "flat",
+    "direction": "",
+    "flat_lo": 0.0,
+    "flat_hi": 1.5,
+    "noise": 8,
+    "errors": [],
+    "lost_changed": [],
+    "values": [
+     0.0,
+     0.1,
+     0.2,
+     0.4,
+     0.8,
+     1.5
+    ]
+   },
+   {
+    "backend": "local-large-v3-turbo",
+    "group": "aligned",
+    "label": "slope",
+    "direction": "worse",
+    "flat_lo": 0.0,
+    "flat_hi": 0.4,
+    "noise": 6,
+    "errors": [],
+    "lost_changed": [],
+    "values": [
+     0.0,
+     0.1,
+     0.2,
+     0.4,
+     0.8,
+     1.5
+    ]
+   }
+  ],
+  "stt.batch.TURN_GAP_S": [
+   {
+    "backend": "local-large-v3-turbo",
+    "group": "rearranged",
+    "label": "flat",
+    "direction": "",
+    "flat_lo": 0.5,
+    "flat_hi": 8.0,
+    "noise": 8,
+    "errors": [],
+    "lost_changed": [],
+    "values": [
+     0.5,
+     1.0,
+     2.0,
+     3.0,
+     5.0,
+     8.0
+    ]
+   },
+   {
+    "backend": "local-large-v3-turbo",
+    "group": "aligned",
+    "label": "flat",
+    "direction": "",
+    "flat_lo": 0.5,
+    "flat_hi": 8.0,
+    "noise": 6,
+    "errors": [],
+    "lost_changed": [],
+    "values": [
+     0.5,
+     1.0,
+     2.0,
+     3.0,
+     5.0,
+     8.0
+    ]
+   }
+  ],
+  "stt.batch.TAIL_PAD_S": [
+   {
+    "backend": "local-large-v3-turbo",
+    "group": "rearranged",
+    "label": "cliff",
+    "direction": "better",
+    "flat_lo": 0.0,
+    "flat_hi": 0.1,
+    "noise": 8,
+    "errors": [],
+    "lost_changed": [
+     0.2,
+     0.4,
+     0.8
+    ],
+    "values": [
+     0.0,
+     0.05,
+     0.1,
+     0.2,
+     0.4,
+     0.8
+    ]
+   },
+   {
+    "backend": "local-large-v3-turbo",
+    "group": "aligned",
+    "label": "flat",
+    "direction": "",
+    "flat_lo": 0.0,
+    "flat_hi": 0.8,
+    "noise": 6,
+    "errors": [],
+    "lost_changed": [],
+    "values": [
+     0.0,
+     0.05,
+     0.1,
+     0.2,
+     0.4,
+     0.8
+    ]
+   }
+  ],
+  "stt.batch.LONG_SPLIT_FROM_S": [
+   {
+    "backend": "local-large-v3-turbo",
+    "group": "rearranged",
+    "label": "inactive",
+    "direction": "",
+    "flat_lo": null,
+    "flat_hi": null,
+    "noise": 8,
+    "errors": [],
+    "lost_changed": [],
+    "values": [
+     5.0,
+     10.0,
+     15.0,
+     20.0,
+     25.0
+    ]
+   },
+   {
+    "backend": "local-large-v3-turbo",
+    "group": "aligned",
+    "label": "inactive",
+    "direction": "",
+    "flat_lo": null,
+    "flat_hi": null,
+    "noise": 6,
+    "errors": [],
+    "lost_changed": [],
+    "values": [
+     5.0,
+     10.0,
+     15.0,
+     20.0,
+     25.0
+    ]
+   }
+  ],
+  "stt.vad.SPEECH_RMS": [
+   {
+    "backend": "local-large-v3-turbo",
+    "group": "rearranged",
+    "label": "cliff",
+    "direction": "better",
+    "flat_lo": 0.003,
+    "flat_hi": 0.006,
+    "noise": 8,
+    "errors": [],
+    "lost_changed": [
+     0.009,
+     0.012
+    ],
+    "values": [
+     0.003,
+     0.0045,
+     0.006,
+     0.009,
+     0.012
+    ]
+   },
+   {
+    "backend": "local-large-v3-turbo",
+    "group": "aligned",
+    "label": "flat",
+    "direction": "",
+    "flat_lo": 0.003,
+    "flat_hi": 0.012,
+    "noise": 6,
+    "errors": [],
+    "lost_changed": [],
+    "values": [
+     0.003,
+     0.0045,
+     0.006,
+     0.009,
+     0.012
+    ]
+   }
+  ],
+  "stt.vad.NOISE_MARGIN": [
+   {
+    "backend": "local-large-v3-turbo",
+    "group": "rearranged",
+    "label": "inactive",
+    "direction": "",
+    "flat_lo": null,
+    "flat_hi": null,
+    "noise": 8,
+    "errors": [],
+    "lost_changed": [],
+    "values": [
+     1.2,
+     1.5,
+     1.8,
+     2.4,
+     3.0
+    ]
+   },
+   {
+    "backend": "local-large-v3-turbo",
+    "group": "aligned",
+    "label": "flat",
+    "direction": "",
+    "flat_lo": 1.2,
+    "flat_hi": 3.0,
+    "noise": 6,
+    "errors": [],
+    "lost_changed": [],
+    "values": [
+     1.2,
+     1.5,
+     1.8,
+     2.4,
+     3.0
+    ]
+   }
+  ],
+  "stt.vad.SILENCE_HOLD_MS": [
+   {
+    "backend": "local-large-v3-turbo",
+    "group": "rearranged",
+    "label": "slope",
+    "direction": "worse",
+    "flat_lo": 600,
+    "flat_hi": 1500,
+    "noise": 8,
+    "errors": [],
+    "lost_changed": [],
+    "values": [
+     400,
+     600,
+     800,
+     1000,
+     1500
+    ]
+   },
+   {
+    "backend": "local-large-v3-turbo",
+    "group": "aligned",
+    "label": "cliff",
+    "direction": "worse",
+    "flat_lo": 800,
+    "flat_hi": 1500,
+    "noise": 6,
+    "errors": [],
+    "lost_changed": [],
+    "values": [
+     400,
+     600,
+     800,
+     1000,
+     1500
+    ]
+   }
+  ],
+  "stt.vad.MIN_SPEECH_MS": [
+   {
+    "backend": "local-large-v3-turbo",
+    "group": "rearranged",
+    "label": "slope",
+    "direction": "both",
+    "flat_lo": 200,
+    "flat_hi": 480,
+    "noise": 8,
+    "errors": [],
+    "lost_changed": [
+     120,
+     640
+    ],
+    "values": [
+     120,
+     200,
+     320,
+     480,
+     640
+    ]
+   },
+   {
+    "backend": "local-large-v3-turbo",
+    "group": "aligned",
+    "label": "inactive",
+    "direction": "",
+    "flat_lo": null,
+    "flat_hi": null,
+    "noise": 6,
+    "errors": [],
+    "lost_changed": [],
+    "values": [
+     120,
+     200,
+     320,
+     480,
+     640
+    ]
+   }
+  ],
+  "stt.vad.ONSET_MS": [
+   {
+    "backend": "local-large-v3-turbo",
+    "group": "rearranged",
+    "label": "cliff",
+    "direction": "both",
+    "flat_lo": 20,
+    "flat_hi": 60,
+    "noise": 8,
+    "errors": [],
+    "lost_changed": [
+     100,
+     160
+    ],
+    "values": [
+     20,
+     40,
+     60,
+     100,
+     160
+    ]
+   },
+   {
+    "backend": "local-large-v3-turbo",
+    "group": "aligned",
+    "label": "cliff",
+    "direction": "worse",
+    "flat_lo": 20,
+    "flat_hi": 60,
+    "noise": 6,
+    "errors": [],
+    "lost_changed": [],
+    "values": [
+     20,
+     40,
+     60,
+     100,
+     160
+    ]
+   }
+  ],
+  "stt.vad.RESTART_SILENCE_MS": [
+   {
+    "backend": "local-large-v3-turbo",
+    "group": "rearranged",
+    "label": "slope",
+    "direction": "better",
+    "flat_lo": 300,
+    "flat_hi": 800,
+    "noise": 8,
+    "errors": [],
+    "lost_changed": [
+     200
+    ],
+    "values": [
+     200,
+     300,
+     400,
+     600,
+     800
+    ]
+   },
+   {
+    "backend": "local-large-v3-turbo",
+    "group": "aligned",
+    "label": "flat",
+    "direction": "",
+    "flat_lo": 200,
+    "flat_hi": 800,
+    "noise": 6,
+    "errors": [],
+    "lost_changed": [],
+    "values": [
+     200,
+     300,
+     400,
+     600,
+     800
+    ]
+   }
+  ],
+  "stt.vad.SOFT_CAP_MS": [
+   {
+    "backend": "local-large-v3-turbo",
+    "group": "rearranged",
+    "label": "flat",
+    "direction": "",
+    "flat_lo": 4000,
+    "flat_hi": 20000,
+    "noise": 8,
+    "errors": [],
+    "lost_changed": [],
+    "values": [
+     4000,
+     6000,
+     8000,
+     12000,
+     20000
+    ]
+   },
+   {
+    "backend": "local-large-v3-turbo",
+    "group": "aligned",
+    "label": "flat",
+    "direction": "",
+    "flat_lo": 4000,
+    "flat_hi": 20000,
+    "noise": 6,
+    "errors": [],
+    "lost_changed": [],
+    "values": [
+     4000,
+     6000,
+     8000,
+     12000,
+     20000
+    ]
+   }
+  ],
+  "stt.vad.SOFT_HOLD_MS": [
+   {
+    "backend": "local-large-v3-turbo",
+    "group": "rearranged",
+    "label": "flat",
+    "direction": "",
+    "flat_lo": 200,
+    "flat_hi": 800,
+    "noise": 8,
+    "errors": [],
+    "lost_changed": [],
+    "values": [
+     200,
+     300,
+     400,
+     600,
+     800
+    ]
+   },
+   {
+    "backend": "local-large-v3-turbo",
+    "group": "aligned",
+    "label": "flat",
+    "direction": "",
+    "flat_lo": 200,
+    "flat_hi": 800,
+    "noise": 6,
+    "errors": [],
+    "lost_changed": [],
+    "values": [
+     200,
+     300,
+     400,
+     600,
+     800
+    ]
+   }
+  ],
+  "stt.speech_gate.ENABLED": [
+   {
+    "backend": "local-large-v3-turbo",
+    "group": "rearranged",
+    "label": "cliff",
+    "direction": "better",
+    "flat_lo": true,
+    "flat_hi": true,
+    "noise": 8,
+    "errors": [],
+    "lost_changed": [
+     false
+    ],
+    "values": [
+     false,
+     true
+    ]
+   },
+   {
+    "backend": "local-large-v3-turbo",
+    "group": "aligned",
+    "label": "inactive",
+    "direction": "",
+    "flat_lo": null,
+    "flat_hi": null,
+    "noise": 6,
+    "errors": [],
+    "lost_changed": [],
+    "values": [
+     false,
+     true
+    ]
+   }
+  ],
+  "stt.speech_gate.THRESHOLD": [
+   {
+    "backend": "local-large-v3-turbo",
+    "group": "rearranged",
+    "label": "cliff",
+    "direction": "both",
+    "flat_lo": 0.95,
+    "flat_hi": 0.95,
+    "noise": 8,
+    "errors": [],
+    "lost_changed": [
+     0.5,
+     0.8,
+     0.98
+    ],
+    "values": [
+     0.5,
+     0.8,
+     0.95,
+     0.98
+    ]
+   },
+   {
+    "backend": "local-large-v3-turbo",
+    "group": "aligned",
+    "label": "inactive",
+    "direction": "",
+    "flat_lo": null,
+    "flat_hi": null,
+    "noise": 6,
+    "errors": [],
+    "lost_changed": [],
+    "values": [
+     0.5,
+     0.8,
+     0.95,
+     0.98
+    ]
+   }
+  ],
+  "stt.speech_gate.MIN_SPEECH_RATIO": [
+   {
+    "backend": "local-large-v3-turbo",
+    "group": "rearranged",
+    "label": "cliff",
+    "direction": "both",
+    "flat_lo": 0.6,
+    "flat_hi": 0.6,
+    "noise": 8,
+    "errors": [],
+    "lost_changed": [
+     0.3,
+     0.45,
+     0.75,
+     0.9
+    ],
+    "values": [
+     0.3,
+     0.45,
+     0.6,
+     0.75,
+     0.9
+    ]
+   },
+   {
+    "backend": "local-large-v3-turbo",
+    "group": "aligned",
+    "label": "slope",
+    "direction": "worse",
+    "flat_lo": 0.3,
+    "flat_hi": 0.75,
+    "noise": 6,
+    "errors": [],
+    "lost_changed": [],
+    "values": [
+     0.3,
+     0.45,
+     0.6,
+     0.75,
+     0.9
+    ]
+   }
+  ]
+ }
+}

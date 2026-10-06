@@ -103,8 +103,10 @@ class ExtractedTask(_Base):
     due_status: str = "missing"
 
 
-JudgeCategory = Literal["schedule", "assignee", "scope", "decision", "none"]
-JUDGE_CATEGORIES: tuple[str, ...] = ("schedule", "assignee", "scope", "decision", "none")
+# status 는 진행 상태만 바뀌는 발화("다 끝냈어요")다. 따로 두지 않으면 Terra 가 "그 외"인 decision 을 고르고,
+# decision 에 상태 변경 · 바뀌는 것 없음 · 필드에 안 담기는 결정이 섞인다(decision_log 0014)
+JudgeCategory = Literal["schedule", "assignee", "status", "scope", "decision", "none"]
+JUDGE_CATEGORIES: tuple[str, ...] = ("schedule", "assignee", "status", "scope", "decision", "none")
 
 # 담당자 호칭 분류. ExtractedTask.assignee_type 과 **같은 어휘를 쓴다** — 기준 원본은
 # extract/TASK_CRITERIA.md 다. 3인칭을 third 하나로 합치지 않는 이유는 BE 처리 경로가
@@ -219,7 +221,7 @@ class JudgeResult(_Base):
     """
 
     is_meaningful: bool
-    category: str  # schedule|assignee|scope|decision|none
+    category: str  # schedule|assignee|status|scope|decision|none
     is_new: bool = False  # True=새 Notion 항목 생성, False=matched_task_id 항목 수정
     matched_task_id: str | None = None  # is_new=False 일 때 수정 대상. is_new=True 면 None
     matched_notion_page_id: str | None = None  # matched_task_id가 None이어도(아직 우리 DB Task와

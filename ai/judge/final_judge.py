@@ -42,17 +42,25 @@ def _terra_user_prompt(judge_input: JudgeInput) -> str:
         "판단 기준:\n"
         "- 후보 중 하나와 내용이 같은 일을 가리키고, 발화가 그 후보의 현재 값과 실제로 다른 "
         "내용을 말하면 그 후보를 수정한다(is_new=false, matched_candidate_index=그 번호)\n"
-        "- 후보 중 하나와 같은 일을 가리키지만 발화 내용이 후보의 현재 값과 이미 같다면 "
-        "바꿀 게 없다(is_meaningful=false)\n"
+        "- 후보 중 하나와 같은 일을 가리키지만 **실제로 바뀌는 것이 하나도 없으면** 바꿀 게 없다"
+        "(is_meaningful=false). 바뀌는 것은 마감일 · 담당자 · 진행 상태 · 작업 범위, 그리고 새로 "
+        "정한 결정뿐이다. 아래는 모두 바뀌는 것이 없다:\n"
+        "  · 발화 내용이 후보의 현재 값과 이미 같음 (이미 진행 중인데 '계속 진행 중이에요')\n"
+        "  · 진행 중에 겪는 어려움 · 감상 · 근황 ('문서가 좀 헷갈리네요', '생각보다 오래 걸리네요')\n"
+        "  · 진척률만 말함 ('절반 정도 했어요') — 상태가 그대로면 바뀌는 것이 없다\n"
+        "  · 질문이나 확인 ('마감 언제였죠?')\n"
+        "- 단, 필드에 담기지 않아도 방식 · 형식 · 도구 · 규칙을 **새로 정했다면** 바뀌는 것이 있다"
+        "(is_meaningful=true, category=decision). 예: '응답은 JSON:API 형식으로 통일하기로 했어요'\n"
         "- 어느 후보와도 안 맞으면(또는 후보가 없으면) 새 항목이다(is_new=true, "
         "matched_candidate_index=null)\n"
         "- status 는 발화에서 진행 상태(할 일/진행 중/막힘/완료)가 명시적으로 언급됐을 때만 "
         "채우고, 언급 없으면 null\n"
         "- category 는 무엇이 바뀌는지로 고른다: 일정(마감일)이면 schedule, 담당자면 assignee, "
+        "진행 상태만 바뀌면(시작 · 완료 · 막힘 · 재개) status, "
         "하기로 했던 하위 작업/기능을 추가·제외·취소·확대·축소하면(예: '이번엔 안 넣기로 "
-        "했다') scope, 그 외 일정/담당자/범위가 아닌 합의·결정이면 decision\n\n"
+        "했다') scope, 그 외 일정/담당자/상태/범위가 아닌 합의·결정이면 decision\n\n"
         "JSON으로만 답하라:\n"
-        '{"is_meaningful": bool, "category": "schedule|assignee|scope|decision|none", '
+        '{"is_meaningful": bool, "category": "schedule|assignee|status|scope|decision|none", '
         '"is_new": bool, "matched_candidate_index": int|null, '
         '"status": "todo|in_progress|blocked|done"|null, "evidence": "왜 이렇게 판단했는지"}'
     )

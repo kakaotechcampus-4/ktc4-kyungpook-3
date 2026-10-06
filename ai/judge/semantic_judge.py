@@ -197,6 +197,12 @@ def _luna_user_prompt(numbered: str) -> str:
         "이유(reason)를 JSON으로만 답하라.\n\n"
         "하나의 결정이 여러 줄에 걸쳐 만들어지면(제안 → 합의, 지시 → 수락) 그 줄 번호를 모두 "
         "indices 에 담아라. 한 줄로 끝나면 번호 하나만 담는다. 서로 다른 결정은 따로 나눈다.\n\n"
+        "담당자가 1인칭(본인이 '제가/저는 ~할게요'라고 말함)이면, **그 사람이 말한 줄이 indices 의 "
+        "마지막 번호가 되게** 하라 — 다음 단계는 근거 마지막 줄을 말한 사람을 1인칭 담당자로 본다. "
+        "그래서 1인칭 발화 뒤에 다른 사람이 한 맞장구·감사·짧은 응답(예: '오케이', '네네', "
+        "'든든하네요')은 indices 에 넣지 않는다. 그 뒤에 다른 사람이 마감이나 범위 같은 새 내용을 "
+        "덧붙이면 그건 별개의 결정으로 따로 낸다. 다만 담당자 본인이 뒤에서 다시 답했다면(마감을 묻자 "
+        "본인이 그때까지 하겠다고 답함) 본인의 그 답까지 묶어서 본인 줄로 끝나게 한다.\n\n"
         '형식: {"findings": [{"indices": [1, 2], "summary": "...", '
         '"assignee_type": "thirdname", "assignee_raw": "지민님", "assignee_resolved": null, '
         '"reason": "..."}]}\n\n'
@@ -220,12 +226,11 @@ def extract_findings_llm(transcript: Transcript, client: LLMClient) -> list[Judg
     if result is None:
         return None
 
-    if "findings" not in result:
-        findings_raw: list = []  # 키 자체가 없으면 "0건"으로 정상 처리
-    else:
-        findings_raw = result.get("findings")
-        if not isinstance(findings_raw, list):
-            return None  # 값은 있는데 리스트가 아니면 신뢰 불가
+    # 명시적인 {"findings": []} 만 정상 0건이다. 키가 없는 응답({} 등)을 0건으로 보면 모델 오류가
+    # "후보 없음"으로 확정돼 회의가 빈 추출로 닫히고 다시 보낼 수 없다(#128 리뷰)
+    findings_raw = result.get("findings")
+    if not isinstance(findings_raw, list):
+        return None
 
     findings: list[JudgeFinding] = []
     for item in findings_raw:
@@ -237,8 +242,10 @@ def extract_findings_llm(transcript: Transcript, client: LLMClient) -> list[Judg
         summary = str(item.get("summary", "")).strip()
         evidence = [sentences[i] for i in idxs]
         # 마지막 줄을 앵커로 삼는다 — "제안 → 합의" 구조에선 결론을 말한 발화가 뒤에 오고,
-        # 1인칭("제가 할게요") 담당자 해소도 그 발화의 화자를 봐야 한다.
-        # ponytail: 앵커가 항상 마지막이라는 보장은 없다. 어긋나면 LLM 에 anchor 를 따로 받는다.
+        # 1인칭("제가 할게요") 담당자 해소도 그 발화의 화자를 봐야 한다. 1인칭 뒤의 맞장구가 묶여
+        # 엉뚱한 화자가 담당자가 되지 않도록 프롬프트가 "본인 줄로 끝나게" 시킨다(골든셋 speaker_*).
+        # ponytail: 프롬프트로만 지킨다(코드 검증 없음). speaker_* 에서 틀린 담당자가 다시 나오면
+        # LLM 에 담당자 줄 번호를 따로 받는다.
         anchor = idxs[-1]
         a_type, a_raw, a_resolved = _valid_assignee(item)
         findings.append(
