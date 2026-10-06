@@ -208,8 +208,9 @@ def notion_oauth_callback(
     integration.refresh_token = token.refresh_token
     if not keep_database:
         integration.provider_channel_id = None
-        # 읽을 때 이미 None이었으면 SQLAlchemy가 UPDATE에서 이 열을 뺀다. 그 사이 이전 작업이 저장한 DB ID도 확실히 비운다.
-        flag_modified(integration, "provider_channel_id")
+    # 이 callback이 정한 DB ID(새 토큰으로 확인한 DB 또는 None)를 UPDATE에 항상 넣는다. 읽을 때와 같은 값이면
+    # SQLAlchemy가 이 열을 빼서, 그 사이 다른 callback이나 이전 작업이 쓴 DB ID가 새 토큰과 함께 남을 수 있다.
+    flag_modified(integration, "provider_channel_id")
     try:
         db.commit()
     except IntegrityError:

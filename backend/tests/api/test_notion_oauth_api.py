@@ -273,6 +273,36 @@ def test_reconnect_clears_database_saved_by_previous_lookup_meanwhile(client, se
     assert calls["attach"] == [(seed["workspace_id"], "secret_new", "copied-page")]
 
 
+def test_reconnect_keeping_database_writes_it_even_if_cleared_meanwhile(client, seed, db, fake_notion, monkeypatch):
+    calls, state_ = fake_notion
+    db.add(Integration(workspace_id=seed["workspace_id"], provider="notion", access_token="secret_old", provider_channel_id="db-old"))
+    db.commit()
+    state_["verify"] = []  # 새 토큰으로도 옛 DB를 쓸 수 있다
+    find = notion.get_notion_integration
+
+    def read_then_other_callback_clears(session, workspace_id):
+        # 이 callback이 행을 읽은 직후, 거의 동시에 온 다른 callback이 DB를 비우고 저장한다(이 callback이 읽은 값은 그대로 db-old)
+        integration = find(session, workspace_id)
+        session.execute(
+            update(Integration)
+            .where(Integration.workspace_id == workspace_id)
+            .values(access_token="secret_other", provider_channel_id=None),
+            execution_options={"synchronize_session": False},
+        )
+        return integration
+
+    monkeypatch.setattr(notion, "get_notion_integration", read_then_other_callback_clears)
+    state, nonce = _signed(seed)
+
+    _callback(client, state=state, nonce=nonce, code="the-code")
+
+    db.expire_all()
+    row = db.query(Integration).filter(Integration.workspace_id == seed["workspace_id"]).one()
+    # 마지막에 저장한 토큰과, 그 토큰으로 확인한 DB가 짝으로 남는다. DB 없는 반쪽 연결이 되지 않는다.
+    assert (row.access_token, row.provider_channel_id) == ("secret_new", "db-old")
+    assert calls["attach"] == []
+
+
 def test_concurrent_first_connect_fails_without_overwriting(client, seed, db, fake_notion, monkeypatch):
     calls, _ = fake_notion
     # 다른 callback이 방금 행을 만들었는데, 이 callback은 그 전에 "행 없음"을 읽었다
