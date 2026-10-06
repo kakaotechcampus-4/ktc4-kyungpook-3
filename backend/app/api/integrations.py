@@ -106,7 +106,7 @@ def start_notion_connection(
         signed_state, nonce = notion_oauth.sign_state(workspace_id, user.user_id, return_path)
         location = notion_oauth.authorize_url(signed_state)
     except AppError as exc:
-        logger.info("Notion 연결 시작 실패 reason=%s", exc.code)
+        logger.warning("Notion 연결 시작 실패 reason=%s", exc.code)
         return RedirectResponse(notion_oauth.frontend_return_url(return_path, "failed"), status_code=302)
     except notion_oauth.OAuthConfigError as exc:
         logger.error("Notion 연결 시작 실패 reason=config: %s", exc)
@@ -127,7 +127,9 @@ def start_notion_connection(
 
 
 def _finish_notion_callback(return_path: str, result: str, reason: str) -> RedirectResponse:
-    logger.info("Notion 연결 callback result=%s reason=%s", result, reason)
+    # 성공·취소는 정상 흐름이라 info, 실패는 이유를 찾을 수 있게 경고로 남긴다.
+    log = logger.warning if result == "failed" else logger.info
+    log("Notion 연결 callback result=%s reason=%s", result, reason)
     response = RedirectResponse(notion_oauth.frontend_return_url(return_path, result), status_code=302)
     # 결과와 상관없이 짝 쿠키를 지운다. 같은 state로 다시 들어와도 통과하지 못한다.
     response.delete_cookie(

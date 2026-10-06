@@ -69,7 +69,11 @@ def attach_template_database(
     if changed == 0:
         result = AttachResult.SUPERSEDED
 
-    logger.info("Notion 대상 DB 연결 workspace_id=%s result=%s", workspace_id, result)
+    # 실패하면 연결이 조용히 사라진다. 이유를 찾을 수 있게 경고로 남긴다(info는 기본 설정에서 보이지 않는다).
+    if result is AttachResult.ATTACHED:
+        logger.info("Notion 대상 DB 연결 workspace_id=%s result=%s", workspace_id, result)
+    else:
+        logger.warning("Notion 대상 DB 연결 실패 workspace_id=%s result=%s", workspace_id, result)
     return result
 
 

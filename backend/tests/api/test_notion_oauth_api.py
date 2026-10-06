@@ -1,3 +1,4 @@
+import logging
 import time
 from datetime import datetime, timedelta, timezone
 from urllib.parse import parse_qsl, urlsplit
@@ -410,6 +411,41 @@ def test_callback_without_login_fails(client, seed, fake_notion):
     response = _callback(client, state=state, nonce=nonce, session=None, code="the-code")
 
     assert response.headers["location"] == f"/onboarding?{FAILED}"
+
+
+def _oauth_logs(caplog) -> list[tuple[int, str]]:
+    return [(r.levelno, r.getMessage()) for r in caplog.records if r.name == "app.api.integrations"]
+
+
+def test_callback_failure_is_logged_as_warning_with_reason(client, seed, fake_notion, caplog):
+    _, state_ = fake_notion
+    state_["token"] = NotionToken("secret_new", None, "개인 페이지", None)
+    state, nonce = _signed(seed)
+    caplog.set_level(logging.INFO, logger="app.api.integrations")
+
+    _callback(client, state=state, nonce=nonce, code="the-code")
+
+    assert _oauth_logs(caplog) == [
+        (logging.WARNING, "Notion 연결 callback result=failed reason=template_not_used")
+    ]
+
+
+@pytest.mark.parametrize(("params", "result"), [({"code": "the-code"}, "success"), ({"error": "access_denied"}, "cancelled")])
+def test_callback_success_and_cancel_are_logged_as_info(client, seed, fake_notion, caplog, params, result):
+    state, nonce = _signed(seed)
+    caplog.set_level(logging.INFO, logger="app.api.integrations")
+
+    _callback(client, state=state, nonce=nonce, **params)
+
+    assert [level for level, message in _oauth_logs(caplog) if f"result={result}" in message] == [logging.INFO]
+
+
+def test_start_rejection_is_logged_as_warning(client, seed, caplog):
+    caplog.set_level(logging.INFO, logger="app.api.integrations")
+
+    _start(client, seed["workspace_id"], session="bob-token")
+
+    assert _oauth_logs(caplog) == [(logging.WARNING, "Notion 연결 시작 실패 reason=FORBIDDEN")]
 
 
 def test_user_who_stopped_being_pm_meanwhile_fails(client, seed, db, fake_notion):

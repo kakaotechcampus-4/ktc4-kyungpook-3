@@ -1,3 +1,5 @@
+import logging
+
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -191,6 +193,29 @@ def test_connection_removed_meanwhile_is_left_alone(monkeypatch, session_factory
 
     assert _attach(workspace_id, session_factory, FakeClock()) is AttachResult.SUPERSEDED
     assert _row(session_factory, workspace_id) is None
+
+
+def test_success_is_logged_as_info(monkeypatch, session_factory, workspace_id, caplog):
+    _script(monkeypatch, find=["db-1"])
+    caplog.set_level(logging.INFO, logger="app.services.notion_connect")
+
+    _attach(workspace_id, session_factory, FakeClock())
+
+    assert [(r.levelno, r.getMessage()) for r in caplog.records] == [
+        (logging.INFO, f"Notion 대상 DB 연결 workspace_id={workspace_id} result=attached")
+    ]
+
+
+def test_failure_is_logged_as_warning_with_reason(monkeypatch, session_factory, workspace_id, caplog):
+    # 실패하면 연결이 지워지므로 이유가 기본 로그 설정(경고 이상)에서도 보여야 한다
+    _script(monkeypatch, find=[None])
+    caplog.set_level(logging.INFO, logger="app.services.notion_connect")
+
+    _attach(workspace_id, session_factory, FakeClock())
+
+    assert [(r.levelno, r.getMessage()) for r in caplog.records] == [
+        (logging.WARNING, f"Notion 대상 DB 연결 실패 workspace_id={workspace_id} result=database_not_found")
+    ]
 
 
 def test_failure_does_not_remove_connection_that_already_has_database(monkeypatch, session_factory, workspace_id):
