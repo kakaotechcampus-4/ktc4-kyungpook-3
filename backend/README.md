@@ -54,6 +54,7 @@ docker compose -f docker-compose.prod.yml logs -f api
 | 포트 | api는 `127.0.0.1:8000`에만 열린다. 외부 공개는 같은 서버의 리버스 프록시(HTTPS)가 맡는다. db는 호스트에 열지 않는다 |
 | DB 접속 | api의 `DATABASE_URL`은 `.env`의 `POSTGRES_USER`/`POSTGRES_PASSWORD`/`POSTGRES_DB`로 다시 만든다(`db:5432`) |
 | 나머지 환경변수 | `NOTION_*`·`EMBEDDING_*`·`SERVICE_TOKEN` 등은 `.env`를 그대로 넘긴다 |
+| 필수 값 | `OAUTH_STATE_SECRET`이 비어 있으면 `docker compose`가 기동 전에 멈춘다(Notion 연결용 서명 키) |
 | 데이터 | DB는 `mm-prod_pgdata` 볼륨에 남는다. 로컬 개발용 볼륨(`mm-pgdata`)과 따로다 |
 | 로그 | 컨테이너당 10MB × 3개까지만 남긴다(디스크 50GB 고정) |
 
@@ -130,8 +131,55 @@ docker compose -f docker-compose.prod.yml logs -f api
 
 워커는 프로세스당 하나만 도는 것을 전제로 한다(uvicorn 워커를 여러 개 띄우면 안 됨).
 
-OAuth 연결 화면(`GET/POST .../integrations/notion/start`·`/callback`)은 아직
-없다. 로컬에서 Upsert를 테스트하려면 `Integration` 행을 직접 만든다:
+### Notion 연결 (OAuth)
+
+PM이 온보딩에서 Notion을 연결하면 `Integration` 행(토큰 + 대상 DB ID)이 생긴다.
+
+1. 프론트가 `GET /api/v1/workspaces/{workspace_id}/integrations/notion/start?state=<돌아올 앱 경로>`로
+   이동한다. PM만 통과하고, 서명한 state와 짝 쿠키(`notion_oauth_nonce`)를 만들어 Notion 허용 화면으로 보낸다.
+2. PM이 Notion에서 **"템플릿 사용"**을 고르고 허용한다. Notion이 우리 템플릿을 PM 워크스페이스에 복제한다.
+3. Notion이 `GET /api/v1/integrations/notion/callback`으로 돌려보낸다. state·짝 쿠키·로그인 사용자·PM 여부를
+   확인하고 토큰을 저장한 뒤 **바로** `<앱 경로>?oauth=notion&oauth_result=success`로 보낸다.
+4. 템플릿 복제는 10초 남짓 걸린다. 그래서 응답 뒤에 서버가 2초마다 복제 페이지를 보고(최대 60초),
+   DB를 찾아 속성을 확인한 뒤 `provider_channel_id`에 저장한다(`app/services/notion_connect.py`).
+   이때부터 워커가 반영한다.
+
+callback은 워크스페이스별 경로가 아닌 고정 경로다. Notion에 등록하는 redirect URI는 한 글자도 달라질 수
+없어서 workspace_id를 넣지 못하고, 어느 워크스페이스인지는 서명한 state에서 꺼낸다.
+
+| 항목 | 동작 |
+|---|---|
+| 결과 | 항상 앱 화면으로의 302다. `oauth_result`는 `success` · `cancelled`(허용 화면에서 취소) · `failed`. JSON 오류를 보이지 않는다 |
+| 템플릿 미사용 | 허용 화면에서 기존 페이지를 고르면(Notion이 이 선택지를 숨길 수 없다) 저장하지 않고 `failed` |
+| 다시 연결 | 쓰던 DB를 새 토큰으로도 쓸 수 있으면 토큰만 바꾸고 DB는 그대로 둔다. Notion에는 템플릿 복제본이 하나 더 생긴다 |
+| 뒤의 작업 실패 | 60초 안에 DB를 못 찾거나, 템플릿에 DB가 없거나, 속성이 다르면 연결 행을 지운다. 이유는 경고 로그로 남는다(`Notion 대상 DB 연결 실패 … result=…`) |
+| 서버 재시작 | 뒤의 작업 도중 서버가 꺼지면 토큰만 있는 연결이 남는다. 다시 연결하면 된다 |
+| 보안 | state는 HMAC 서명(10분 만료)이고 짝 쿠키로 한 번만 쓰인다. callback에서 로그인 사용자와 PM 여부를 다시 확인한다. code·state·토큰은 로그에 남기지 않는다 |
+
+**환경변수** (`.env.example` 참고)
+
+| 이름 | 값 |
+|---|---|
+| `NOTION_CLIENT_ID`, `NOTION_CLIENT_SECRET` | Notion 개발자 페이지의 Public connection → Configuration 탭 |
+| `NOTION_REDIRECT_URI` | 프론트와 같은 주소의 callback. 로컬 `http://localhost:5173/api/v1/integrations/notion/callback`(Vite 프록시가 백엔드로 넘긴다), 운영 `https://<서비스 주소>/api/v1/integrations/notion/callback` |
+| `OAUTH_STATE_SECRET` | state 서명 키, 32자 이상. `python3 -c "import secrets;print(secrets.token_urlsafe(48))"`로 만든다. 없으면 연결 시작이 `failed`가 된다 |
+
+**Notion 개발자 페이지 설정** (Public connection)
+
+- Redirect URI에 위 `NOTION_REDIRECT_URI`와 같은 값을 등록한다.
+- "Notion URL for optional template"에 웹에 게시한 템플릿 페이지 주소를 넣는다.
+
+**템플릿 규칙** — 어긋나면 4번에서 연결이 지워진다(`notion.verify_database_schema`)
+
+- "회의 Task" 같은 페이지 **바로 아래**에 데이터베이스를 둔다(열·토글 안에 넣으면 찾지 못한다).
+- 속성 이름과 종류를 `app/services/notion.py`의 `DATABASE_SCHEMA`와 맞춘다: Name/title, Status/select,
+  Assignee/rich_text, Due Date/date, Progress/number, Blocker/rich_text, **Task ID/rich_text**.
+- Status 선택지에 `todo`·`in_progress`·`blocked`·`done`이 있어야 한다(색은 자유).
+- 속성·선택지를 더 넣거나 뷰·아이콘을 꾸미는 것은 자유다. 샘플 행은 지운다(복제된다).
+- 템플릿이 클수록 복제가 오래 걸려 60초를 넘길 수 있다.
+
+**OAuth 없이 시험할 때**는 `Integration` 행을 직접 만든다. 이때 해당 Notion 연결이 그 데이터베이스에
+공유돼 있어야 한다:
 
 ```python
 from app.models import Integration
@@ -143,11 +191,6 @@ db.add(Integration(
 ))
 db.commit()
 ```
-
-대상 Notion 데이터베이스에는 `app/services/notion.py`의 `PROPERTY_NAMES`와
-이름이 같은 속성(Name/title, Status/select, Assignee/rich_text, Due Date/date,
-Progress/number, Blocker/rich_text, **Task ID/rich_text**)이 있어야 하고, 해당 Integration이 그
-데이터베이스에 공유돼 있어야 한다.
 
 ## 유사 task 검색과 AI 판단 접수
 
@@ -173,6 +216,6 @@ Progress/number, Blocker/rich_text, **Task ID/rich_text**)이 있어야 하고, 
 
 ## 아직 없는 것
 
-로그인/인증, Discord 봇 연동, Notion OAuth 연결 화면, 오디오 업로드·스트리밍, 메시지 로그.
+로그인/인증, Discord 봇 연동, 오디오 업로드·스트리밍, 메시지 로그.
 현재 모든 엔드포인트는 `member_id`를 요청 바디/쿼리로 그대로 받는다 (예:
 `resolved_by`, `changed_by`) — PM 본인 확인 없이도 호출 가능한 상태이니 그렇게 알고 써야 한다.
