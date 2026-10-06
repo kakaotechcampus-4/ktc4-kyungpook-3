@@ -295,3 +295,115 @@ def test_request_without_base_values_keeps_old_behavior(client, db, seed):
 
     assert r.status_code == 200, r.text
     assert _login(db, seed).due_date == date(2026, 10, 6)
+
+
+# ── AI가 검색에서 본 값(target_snapshot)을 기준값으로 쓴다(#157) ──
+# 검색 → PM 수동 수정 → 추출 등록 → 승인 순서다. 등록 시점의 DB 값을 기준으로 쓰면 PM이 고친 값이
+# 기준값이 되어 승인할 때 충돌 없이 덮인다.
+
+def _snapshot(seed, **overrides) -> dict:
+    """AI가 유사 검색 응답에서 받아 둔 login task 값. 시드 직후의 값이다."""
+    login = seed["login"]
+    return {
+        "updated_at": login.updated_at.isoformat(),
+        "due_date": "2026-10-03",
+        "status": "in_progress",
+        "assignee_member_id": None,
+        **overrides,
+    }
+
+
+def test_pm_edit_between_search_and_registration_is_a_conflict(client, db, seed):
+    snapshot = _snapshot(seed)
+    # AI가 금요일(10/3)을 보고 판단하는 사이 PM이 수요일(10/1)로 고쳤다
+    _edit_task(client, seed["login"], due_date="2026-10-01")
+    approval = _propose(client, db, seed, due_date="2026-10-06", target_snapshot=snapshot)
+
+    assert json.loads(approval.payload)["base_values"] == {"due_date": "2026-10-03"}
+    r = _approve(client, approval)
+
+    assert r.status_code == 409
+    assert r.json()["error"]["details"]["conflicts"] == [
+        {"field": "due_date", "base": "2026-10-03", "current": "2026-10-01", "proposed": "2026-10-06"}
+    ]
+    assert _login(db, seed).due_date == date(2026, 10, 1)
+    assert _approval(db).status == "pending"
+
+
+def test_without_snapshot_the_edit_before_registration_is_missed(client, db, seed):
+    """target_snapshot이 없는 요청(AI 쪽 변경 전)은 예전처럼 등록 시점의 값이 기준이다."""
+    _edit_task(client, seed["login"], due_date="2026-10-01")
+    approval = _propose(client, db, seed, due_date="2026-10-06")
+
+    assert json.loads(approval.payload)["base_values"] == {"due_date": "2026-10-01"}
+    assert _approve(client, approval).status_code == 200
+    assert _login(db, seed).due_date == date(2026, 10, 6)
+
+
+def test_pm_already_set_the_proposed_value_before_registration(client, db, seed):
+    snapshot = _snapshot(seed)
+    _edit_task(client, seed["login"], due_date="2026-10-06")
+
+    r = client.post("/api/v1/extractions", json={
+        "meeting_id": seed["meeting"].meeting_id,
+        "workspace_id": seed["ws"].workspace_id,
+        "items": [{"action": "update", "target_task_id": seed["login"].task_id,
+                   "due_date": "2026-10-06", "target_snapshot": snapshot}],
+    })
+
+    assert r.status_code == 201, r.text
+    db.expire_all()
+    # 바꿀 것이 없어 승인 요청을 만들지 않는다
+    assert db.execute(select(ApprovalRequest).where(ApprovalRequest.type == "task_update")).first() is None
+
+
+def test_edit_of_other_field_after_search_does_not_block(client, db, seed):
+    snapshot = _snapshot(seed)
+    _edit_task(client, seed["login"], title="로그인 화면 시안 v2")
+    approval = _propose(client, db, seed, due_date="2026-10-06", target_snapshot=snapshot)
+
+    r = _approve(client, approval)
+
+    assert r.status_code == 200, r.text
+    task = _login(db, seed)
+    assert task.due_date == date(2026, 10, 6)
+    assert task.title == "로그인 화면 시안 v2"
+
+
+def test_null_in_snapshot_is_kept_as_the_base(client, db, seed):
+    """검색 때 마감이 없었으면 기준값도 null이다. 그 뒤 PM이 마감을 넣었으면 충돌이다."""
+    login = seed["login"]
+    login.due_date = None
+    db.commit()
+    snapshot = _snapshot(seed, due_date=None, updated_at=_login(db, seed).updated_at.isoformat())
+    _edit_task(client, login, due_date="2026-10-01")
+    approval = _propose(client, db, seed, due_date="2026-10-06", target_snapshot=snapshot)
+
+    assert json.loads(approval.payload)["base_values"] == {"due_date": None}
+    r = _approve(client, approval)
+
+    assert r.status_code == 409
+    assert r.json()["error"]["details"]["conflicts"][0]["current"] == "2026-10-01"
+
+
+def test_fields_missing_from_snapshot_use_the_registration_value(client, db, seed):
+    """snapshot에 없는 필드는 기준이 없으므로 등록 시점의 값을 쓴다."""
+    _edit_task(client, seed["login"], status="blocked")
+    approval = _propose(client, db, seed, status="done", target_snapshot={"due_date": "2026-10-03"})
+
+    assert json.loads(approval.payload)["base_values"] == {"status": "blocked"}
+
+
+def test_snapshot_conflict_on_status_and_assignee(client, db, seed):
+    snapshot = _snapshot(seed)
+    _edit_task(client, seed["login"], status="blocked", assignee_member_id=seed["minsu"].member_id)
+    approval = _propose(client, db, seed, status="done", assignee_raw="지민님", assignee_type="thirdname",
+                        target_snapshot=snapshot)
+
+    r = _approve(client, approval)
+
+    assert r.status_code == 409
+    fields = {c["field"]: c for c in r.json()["error"]["details"]["conflicts"]}
+    assert fields["status"]["base"] == "in_progress"
+    assert fields["assignee_member_id"]["base"] is None
+    assert _login(db, seed).status == "blocked"
