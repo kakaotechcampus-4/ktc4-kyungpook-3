@@ -71,6 +71,65 @@ it('빈 목록의 total도 0이다', async () => {
 })
 ```
 
+## 회의 정리 흐름 (M5)
+
+업로드한 회의가 `processing` → `done` | `failed` 로 바뀌는 흐름이다. 시간이 아니라 **상세 조회(`GET /meetings/{id}`)가 시계**다 — handler 가 답하기 전에 `tickMeeting()` 으로 처리 중 회의를 한 번 진행한다. 결정과 이유는 [구현 결정 2026-10-02-msw-meeting-flow](impl-decision/2026-10-02-msw-meeting-flow.md)에 있다.
+
+### 흐름 방식
+
+`db.meetingFlow.mode` 가 한 번의 상세 조회에 무엇을 할지 정한다.
+
+| mode | 상세 조회 한 번에 | 쓰는 곳 |
+|---|---|---|
+| `manual` | 아무것도 하지 않는다 | Vitest 기본값, M4 시나리오 5개 |
+| `staged` | 한 단계 (`audio_merged` → `transcribed` → `extracted` → `done`) | 브라우저 데모 |
+| `instant` | 바로 `done` | E2E |
+| `fail` | 바로 `failed` | 실패 흐름 |
+| `fail-notion-revoked` | `failed` + 그 공간 Notion `revoked` | 끊김 실패(D-099·D-100) |
+
+처리 화면과 앱 수준 추적기가 3초마다 상세를 부르므로 `staged` 는 3초 간격으로 단계가 보인다.
+
+### 브라우저에서 고르기
+
+주소에 `?msw-scenario=<이름>` 을 붙인다. 저장값을 버리고 그 시나리오로 시작하며 파라미터는 주소에서 바로 지워진다(`shared/mock/browserDb.ts`). 모두 `pm@example.com` / `mock-password` 로 `ws_01` 하나에 로그인한다.
+
+| 시나리오 | 역할 | mode | Notion | 해 볼 것 |
+|---|---|---|---|---|
+| `meeting-demo` | PM | `staged` | 연결됨 | 올리고 처리 화면에서 세 단계가 차례로 끝나는 것, 다른 화면으로 가서 완료 토스트 |
+| `meeting-instant` | PM | `instant` | 연결됨 | 올리자마자 회의록으로 |
+| `meeting-fail` | PM | `fail` | 연결됨 | 재업로드 토스트, 목록에서 빠진 회의 |
+| `meeting-fail-notion-revoked` | PM | `fail-notion-revoked` | 실패 때 끊김 | 재연결 모달 |
+| `meeting-notion-not-connected` | PM | `instant` | 미연결 | 회의 올리기 진입 차단 모달 → 설정 Notion 영역 → 모의 OAuth → 복귀 |
+| `meeting-notion-revoked` | PM | `instant` | 끊김 | 재연결 차단 모달 |
+| `meeting-member` | 일반 팀원 | `instant` | 연결됨 | 헤더 `정리 중`·회의록. 업로드 주소는 막힌다 |
+
+```text
+http://localhost:5173/workspaces/ws_01/meetings/upload?msw-scenario=meeting-demo
+```
+
+PM 시나리오는 픽스처의 처리 중 회의 `mt_10` 을 먼저 끝내 둔다 — 처리 중 회의가 있으면 업로드가 409 이고 진입이 처리 화면으로 바뀐다(D-088·D-090). 파일은 아무 짧은 음원이면 된다. 브라우저가 길이를 읽을 수 있어야 폼이 받는다 — 저장소의 `e2e/fixtures/short-meeting.wav`(1초, 8 KB)를 써도 된다. 원본 파일은 db 에도 sessionStorage 에도 남지 않는다. 남는 것은 참석자 ID(`db.meetingFlow.attendees`)뿐이다.
+
+### Vitest 에서 고르기
+
+Vitest 는 시나리오를 거치지 않는다. 기본 db 는 `manual` 이라 회의가 저절로 끝나지 않는다. 필요한 테스트만 도우미를 부른다 — 모두 `shared/mock/` 에 있고 `state` 를 받는다(기본 `db`).
+
+```ts
+import { completeMeeting, failMeeting, setMeetingFlowMode } from '@/shared/mock/meetingFlow'
+import { setMockRole } from '@/shared/mock/sessions'
+
+completeMeeting('mt_10') // done + 회의록·추출(항목 셋)·태스크·대기 승인을 같은 ID 로 잇는다
+failMeeting('mt_10', { notionRevoked: true }) // failed. 결과를 만들지 않는다. 끊김이면 그 공간 Notion 도 revoked
+setMeetingFlowMode('instant') // 다음 상세 조회에 끝나게 — 실제 polling 경로로 끝내고 싶을 때
+setMockRole('member') // ws_01 의 역할을 일반 팀원으로
+```
+
+`afterEach` 의 `resetDb()` 가 mode·역할까지 되돌린다.
+
+### Storybook·E2E 에서 고르기
+
+- Storybook: `parameters.scenario` 에 시나리오 이름, `parameters.setup` 에 그 위의 손질(`() => void completeMeeting('mt_10')`, `() => setMockRole('member')`)을 준다(`.storybook/preview.tsx`). 스토리를 열 때마다 db 를 다시 만든다.
+- E2E: `start(page, 'meeting-instant', '/workspaces/ws_01/meetings/upload')`(`e2e/support.ts`). 테스트마다 새 컨텍스트라 서로 상태를 나누지 않는다. 정리 중에 다른 화면으로 떠날 틈이 필요하면 `meeting-demo`(3초 × 4회)를 쓴다 — `instant` 는 처리 화면이 첫 조회에서 끝을 보고 회의록으로 옮긴다.
+
 승인 요청에는 계약 §2.5의 `resolved_by`도 보낸다.
 
 ```js
@@ -95,8 +154,11 @@ await fetch('/api/v1/approvals/ap_01', {
 - **로그인이 쿠키 세션이다.** 실 백엔드는 `Set-Cookie: session_token`(HttpOnly·Secure·SameSite=Lax)으로 응답하고, 이후 요청은 쿠키로 인증한다. MSW는 쿠키를 심지 않는다. 브라우저에서 두 모드를 오가면 로그인 상태가 이어지지 않는다.
 - **온보딩·Discord 사용자 목록·회의록 본문·회의 업로드가 실 API에서 스텁이다.** 엔드포인트는 응답하지만 값이 하드코딩이거나 저장을 하지 않는다. MSW 쪽이 더 완전하므로 이 네 화면은 mock으로 개발한다.
   회의록 본문은 비어 있는 게 아니라 **안내 문구 1줄**이 온다. extraction이 없을 때만 빈 배열이다.
-- **OAuth `start`·`callback`은 양쪽 다 없다.** Google 로그인과 Discord·Notion 연결은 아직 어느 쪽으로도 동작하지 않는다.
-- 실 백엔드는 업로드한 **파일을 저장하지 않는다.** 회의가 `processing`에 머물러 다음 업로드를 409로 막는다. MSW는 정상 흐름을 낸다.
+- **OAuth `start`·`callback`은 실 백엔드에도 MSW handler 에도 없다.** 실 백엔드에서는 Google 로그인과 Discord·Notion 연결이 동작하지 않는다.
+  MSW 모드(개발)에서는 Discord·Notion 연결만 프론트의 모의 OAuth 화면(`shared/mock/oauth/`, `devPaths.mockOAuth`)이 콜백을 흉내내 연결·취소·실패 뒤 원래 화면으로 돌려보낸다(위 「회의 정리 흐름」의 `meeting-notion-not-connected`).
+  Google 로그인은 MSW 모드에서도 비활성 버튼이다(D-007).
+- 실 백엔드는 업로드한 **파일을 저장하지 않고 큐에도 보내지 않는다.** 회의가 `processing`에 머물러 다음 업로드를 409로 막는다. MSW는 위 「회의 정리 흐름」으로 정상 흐름을 낸다.
+- 실 백엔드는 **업로드를 PM 에게만 허용하지 않는다**(소속만 본다). 프론트의 PM 가드는 화면만 막는다 — [계약 §4](api/frontend-api-contract-draft.md) 백엔드 요청 17.
 
 **세션 인증을 흉내낸다.** 로그아웃하면 보호된 엔드포인트가 401 을 낸다. 소속이 아닌 워크스페이스는 403 이다.
 `db.authenticated` 기본값이 `true` 라 평소에는 로그인 상태다. 붙인 곳은 [M1 사양서 §10-2](plan/m1-domain-model-and-msw.md)에 있다.

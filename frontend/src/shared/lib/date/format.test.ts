@@ -1,4 +1,10 @@
-import { formatSeoulDateTime, isDateOnly, readDateOnly, seoulDateOf } from './format'
+import {
+  formatSeoulDateTime,
+  isDateOnly,
+  readDateOnly,
+  seoulDateOf,
+  seoulMidnightIso,
+} from './format'
 
 describe('timestamp 는 한국 시간으로 보여 준다', () => {
   it('UTC 자정 전후에서 서울 날짜 경계를 넘는다', () => {
@@ -58,5 +64,21 @@ describe('날짜 전용 값', () => {
         expect(formatSeoulDateTime('2026-09-17T15:00:00Z')).toBe('2026-09-18 00:00')
       },
     )
+  })
+})
+
+describe('서울 자정', () => {
+  it('그 날 서울 0시는 UTC 로 전날 15시다', () => {
+    expect(seoulMidnightIso('2026-09-18')).toBe('2026-09-17T15:00:00.000Z')
+    expect(seoulMidnightIso('2026-01-01')).toBe('2025-12-31T15:00:00.000Z')
+  })
+
+  it('형식이 틀리면 null 이다', () => {
+    expect(seoulMidnightIso('2026-02-30')).toBeNull()
+    expect(seoulMidnightIso('')).toBeNull()
+  })
+
+  it('다시 서울 날짜로 읽으면 같은 날이다', () => {
+    expect(seoulDateOf(seoulMidnightIso('2026-09-18')!)).toBe('2026-09-18')
   })
 })

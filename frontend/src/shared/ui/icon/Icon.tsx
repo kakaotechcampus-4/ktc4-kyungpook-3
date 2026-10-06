@@ -108,6 +108,35 @@ const ICONS = {
       </>
     ),
   },
+  /* 아래 넷은 Upload 캔버스 그대로다 — 끌어다 놓는 칸·고른 파일 카드·파일 제거·회의 날짜 */
+  upload: {
+    strokeWidth: 1.7,
+    paths: (
+      <>
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+        <path d="M17 8l-5-5-5 5M12 3v12" />
+      </>
+    ),
+  },
+  mic: {
+    strokeWidth: 1.7,
+    paths: (
+      <>
+        <path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
+        <path d="M19 10v1a7 7 0 0 1-14 0v-1M12 18v4" />
+      </>
+    ),
+  },
+  close: { strokeWidth: 1.8, paths: <path d="M18 6 6 18M6 6l12 12" /> },
+  calendar: {
+    strokeWidth: 1.7,
+    paths: (
+      <>
+        <rect x="3" y="5" width="18" height="16" rx="2" />
+        <path d="M16 3v4M8 3v4M3 11h18" />
+      </>
+    ),
+  },
 } as const satisfies Record<string, IconShape>
 
 export type IconName = keyof typeof ICONS

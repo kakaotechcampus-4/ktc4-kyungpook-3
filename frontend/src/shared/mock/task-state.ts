@@ -1,5 +1,6 @@
 import type { TaskDto, TaskHistoryDto } from '@/shared/types/api/task'
 import { db } from './db'
+import type { MockDb } from './db'
 import { MOCK_NOW } from './fixtures/constants'
 import { nextId } from './utils'
 
@@ -28,15 +29,17 @@ export const approvalTaskUpdateFields: readonly TaskField[] = [
   'blocker',
   'due_date',
 ]
+/** `state` 를 주면 그 상태에 쓴다 — 시나리오가 `db` 에 넣기 전의 상태를 만들 때다. 기본은 `db` */
 export function createTask(
   input: Pick<TaskDto, 'workspace_id' | 'title'> & Partial<TaskDto>,
   actor: string | null,
   source = 'manual',
+  state: MockDb = db,
 ): TaskDto {
   const task: TaskDto = {
     task_id: nextId(
       'tk',
-      db.tasks.map(({ task_id }) => task_id),
+      state.tasks.map(({ task_id }) => task_id),
       90,
     ),
     workspace_id: input.workspace_id,
@@ -52,8 +55,8 @@ export function createTask(
     created_at: MOCK_NOW,
     updated_at: MOCK_NOW,
   }
-  db.tasks.push(task)
-  addHistory(task.task_id, 'title', null, task.title, actor, source)
+  state.tasks.push(task)
+  addHistory(task.task_id, 'title', null, task.title, actor, source, state)
   return task
 }
 export function addHistory(
@@ -63,11 +66,12 @@ export function addHistory(
   newValue: string | null,
   actor: string | null,
   source: string,
+  state: MockDb = db,
 ): TaskHistoryDto {
   const entry: TaskHistoryDto = {
     history_id: nextId(
       'hs',
-      db.taskHistory.map(({ history_id }) => history_id),
+      state.taskHistory.map(({ history_id }) => history_id),
       90,
     ),
     task_id: taskId,
@@ -81,7 +85,7 @@ export function addHistory(
     rolled_back_at: null,
     created_at: MOCK_NOW,
   }
-  db.taskHistory.push(entry)
+  state.taskHistory.push(entry)
   return entry
 }
 export function updateTask(
