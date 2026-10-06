@@ -6,6 +6,7 @@ import {
   updateMember,
 } from '@/entities/member'
 import type { DiscordUser, Member } from '@/entities/member'
+import { ApiError } from '@/shared/api/errors'
 
 /** 화면의 한 줄. Discord 사용자 옆에 PM 이 실제 팀원 이름을 적는다 (D-026) */
 export interface MappingRow {
@@ -165,9 +166,20 @@ function upsertMember(members: readonly Member[] | undefined, member: Member): M
 }
 
 /**
+ * 요청은 나갔는데 서버가 반영했는지 모르는 실패. 응답을 받지 못했거나, 읽을 수 없었거나, 서버 오류다.
+ * 4xx 는 서버가 거절한 것이라 반영된 게 없다.
+ */
+function mayHaveBeenApplied(error: unknown): boolean {
+  if (!(error instanceof ApiError)) return true
+  return error.kind === 'network' || error.kind === 'invalid_response' || error.status >= 500
+}
+
+/**
  * 줄을 위에서부터 **순서대로** 저장한다. 일괄 API 가 없다.
  * 요청 하나가 성공할 때마다 팀원 캐시에 그 결과를 넣고, 같은 줄의 다음 걸음과 다음 줄은 갱신된 캐시로 계획한다.
  * 실패하면 거기서 멈추고 `MappingSaveError` 로 던진다 — 다시 부르면 남은 걸음만 저장된다.
+ * 서버가 반영했는지 모르는 실패(응답 유실)면 캐시를 믿을 수 없다. 팀원 목록을 서버에서 다시 읽어 두고,
+ * 읽지 못했으면 다음 저장이 계획하기 전에 먼저 읽는다 — 이미 만든 팀원을 다시 POST 해 409 가 반복되지 않게 한다.
  * 돌려주는 값은 실제로 보낸 요청 수다.
  */
 export async function saveMemberMappings(
@@ -176,6 +188,9 @@ export async function saveMemberMappings(
   rows: readonly MappingRow[],
 ): Promise<number> {
   const { queryKey } = memberListQueryOptions(workspaceId)
+  if (queryClient.getQueryState(queryKey)?.isInvalidated) {
+    await queryClient.fetchQuery({ ...memberListQueryOptions(workspaceId), staleTime: 0 })
+  }
   let sent = 0
   for (const [index, row] of rows.entries()) {
     for (let step = 0; step < MAX_STEPS_PER_ROW; step += 1) {
@@ -185,6 +200,7 @@ export async function saveMemberMappings(
       try {
         saved = await sendOperation(workspaceId, operation)
       } catch (error) {
+        if (mayHaveBeenApplied(error)) await queryClient.invalidateQueries({ queryKey })
         throw new MappingSaveError(index, error)
       }
       sent += 1

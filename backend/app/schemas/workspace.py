@@ -1,7 +1,9 @@
 from datetime import datetime
-from typing import Optional, List
+from typing import List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from app.models import OnboardingStep
 
 
 class WorkspaceOnboardingStep(BaseModel):
@@ -16,8 +18,8 @@ class WorkspaceOnboarding(BaseModel):
 
 
 class WorkspaceOnboardingUpdateRequest(BaseModel):
-    step: str
-    action: str  # skip or complete
+    step: OnboardingStep
+    action: Literal["skip", "complete"]
 
 
 class WorkspaceCreateRequest(BaseModel):

@@ -1,6 +1,6 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { http } from 'msw'
+import { HttpResponse, http } from 'msw'
 import { rememberReturnWorkspace } from '@/shared/lib/return-workspace'
 import { hasUnsavedChanges } from '@/shared/lib/unsaved-changes'
 import { db } from '@/shared/mock/db'
@@ -41,6 +41,33 @@ const onboardingPatches = (requests: RecordedRequest[]) =>
   )
 
 const nameInput = (username: string) => screen.getByLabelText(`@${username}의 팀원 이름`)
+
+const memberListReads = (requests: RecordedRequest[]) =>
+  requests.filter(({ method, path }) => method === 'GET' && path.startsWith('/members?'))
+
+/** 서버는 팀원을 만들었는데 응답이 도중에 끊긴다. 화면은 만들어졌는지 모른다 */
+const createMemberButLoseResponse = () =>
+  http.post(
+    '/api/v1/members',
+    async ({ request }) => {
+      const body = (await request.json()) as {
+        workspace_id: string
+        display_name: string
+        discord_user_id: string
+      }
+      db.members.push({
+        member_id: `mb_${String(db.members.length + 1).padStart(2, '0')}`,
+        workspace_id: body.workspace_id,
+        display_name: body.display_name,
+        discord_user_id: body.discord_user_id,
+        notion_name: null,
+        role: 'member',
+        created_at: MOCK_NOW,
+      })
+      return HttpResponse.error()
+    },
+    { once: true },
+  )
 
 async function openMembers() {
   const app = renderApp('/onboarding/ws_03/connect_members')
@@ -218,6 +245,67 @@ describe('팀원 저장 규칙 (U3-9)', () => {
       .filter(({ workspace_id }) => workspace_id === 'ws_03')
       .map(({ display_name }) => display_name)
     expect(names).toEqual(['최진호', '박민수', '정지훈'])
+  })
+
+  it('서버는 팀원을 만들었는데 응답이 유실되면, 재시도는 목록을 다시 읽고 같은 POST 를 보내지 않는다', async () => {
+    server.use(createMemberButLoseResponse())
+    const log = recordRequests()
+    await openMembers()
+    await userEvent.type(nameInput('minsu'), '박민수')
+    await userEvent.click(screen.getByRole('button', { name: '1명 확인 완료' }))
+    await waitFor(() => expect(nameInput('minsu')).toHaveAttribute('aria-invalid', 'true'))
+
+    await userEvent.click(screen.getByRole('button', { name: '1명 확인 완료' }))
+    await screen.findByRole('heading', { name: '대시보드' })
+
+    // 유실된 POST 하나뿐이다. 재시도는 서버 목록에서 이미 만들어진 팀원을 보고 넘어간다 (409 가 반복되지 않는다)
+    expect(memberWrites(log.started)).toEqual(['POST /members'])
+    expect(onboardingPatches(log.started)).toHaveLength(1)
+    const created = db.members.filter(
+      ({ workspace_id, display_name }) => workspace_id === 'ws_03' && display_name === '박민수',
+    )
+    expect(created).toHaveLength(1)
+  })
+
+  it('서버가 거절한 요청(4xx)은 반영된 게 없으니 팀원 목록을 다시 읽지 않는다', async () => {
+    server.use(
+      http.post('/api/v1/members', () => fail('DISCORD_USER_ALREADY_MAPPED', 'x', 409), {
+        once: true,
+      }),
+    )
+    const log = recordRequests()
+    await openMembers()
+    await userEvent.type(nameInput('minsu'), '박민수')
+    await userEvent.click(screen.getByRole('button', { name: '1명 확인 완료' }))
+    await waitFor(() => expect(nameInput('minsu')).toHaveAttribute('aria-invalid', 'true'))
+
+    // 처음 화면을 열 때 한 번뿐이다
+    expect(memberListReads(log.started)).toHaveLength(1)
+  })
+
+  it('유실 직후 다시 읽기도 실패하면, 다음 저장은 목록을 읽기 전에는 POST 를 보내지 않는다', async () => {
+    const log = recordRequests()
+    await openMembers()
+    const listFails = () =>
+      http.get('/api/v1/members', () => fail('INVALID_REQUEST', 'x', 400), { once: true })
+    server.use(createMemberButLoseResponse(), listFails(), listFails())
+    await userEvent.type(nameInput('minsu'), '박민수')
+    await userEvent.click(screen.getByRole('button', { name: '1명 확인 완료' }))
+    await waitFor(() => expect(nameInput('minsu')).toHaveAttribute('aria-invalid', 'true'))
+    // 유실 직후 다시 읽기: 실패했다
+    expect(memberListReads(log.started)).toHaveLength(2)
+
+    // 두 번째 저장은 읽기부터 한다. 읽지 못하면 쓰기 없이 멈춘다
+    await userEvent.click(screen.getByRole('button', { name: '1명 확인 완료' }))
+    await screen.findByText('요청 내용을 다시 확인해 주세요.')
+    expect(memberListReads(log.started)).toHaveLength(3)
+    expect(memberWrites(log.started)).toEqual(['POST /members'])
+
+    // 세 번째는 읽기에 성공해 이미 만들어진 팀원을 알아보고 완료까지 간다
+    await userEvent.click(screen.getByRole('button', { name: '1명 확인 완료' }))
+    await screen.findByRole('heading', { name: '대시보드' })
+    expect(memberListReads(log.started)).toHaveLength(4)
+    expect(memberWrites(log.started)).toEqual(['POST /members'])
   })
 
   it('매핑은 모두 저장됐는데 완료 요청이 실패하면 재시도는 완료 요청만 보낸다', async () => {

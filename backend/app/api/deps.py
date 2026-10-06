@@ -5,7 +5,7 @@ from fastapi import Depends, Header, Request
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.errors import AppError, ErrorCode
-from app.models import Session as SessionModel, Task, User, Member
+from app.models import Session as SessionModel, Task, User, Member, MemberRole
 
 def get_current_user(
     request: Request,
@@ -48,6 +48,29 @@ def get_current_member(
     db: Session = Depends(get_db)
 ) -> Member:
     return require_member(db, user, workspace_id)
+
+
+def require_pm(db: Session, user: User, workspace_id: str) -> Member:
+    """require_member에 더해 PM인지 확인한다. 할일·팀원·연동을 바꾸는 쓰기 경로용.
+
+    비소속은 require_member가 403으로 막는다. 소속이지만 PM이 아니어도 403이다.
+    """
+    member = require_member(db, user, workspace_id)
+    if member.role != MemberRole.PM:
+        raise AppError(
+            ErrorCode.FORBIDDEN,
+            message="PM만 할 수 있는 작업입니다.",
+            details={"workspace_id": workspace_id},
+        )
+    return member
+
+
+def get_current_pm(
+    workspace_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+) -> Member:
+    return require_pm(db, user, workspace_id)
 
 
 def require_task_member(

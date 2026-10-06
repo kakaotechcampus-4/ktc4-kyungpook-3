@@ -5,11 +5,12 @@ extractions.py). 봇이 이 전이를 순서대로 부른다.
 
   /record 직후       POST  /api/v1/meetings              created. 매니페스트 be.meeting_id
   트랙을 닫은 뒤     PATCH /api/v1/meetings/{id}/end     processing
+  전사가 닫힌 뒤     POST  /api/v1/meetings/{id}/sources 발화 저장(X-Service-Token). 같은 seq 는 BE 가 건너뛴다
   추출이 끝난 뒤     POST  /api/v1/extractions           done. 항목 저장, 담당자 매칭, 게이트 판정
   어느 단계든 실패   PATCH /api/v1/meetings/{id}/fail    failed, failed_stage
 
 판단 경로(MM_EXTRACT_PATH=judge)는 추출 도중에 1단계가 고른 finding 마다 유사 task 검색을 부른다. 전사록의 줄마다가
-아니다. 이 경로만 서비스 토큰을 요구한다.
+아니다. 발화 저장과 유사 검색이 서비스 토큰을 요구한다. 토큰이 없으면 발화 저장 단계는 건너뛴다(recorder.saves_sources).
 
   추출 도중          POST  /api/v1/workspaces/{id}/tasks/similar   X-Service-Token
 
@@ -36,7 +37,7 @@ from typing import Any
 
 import requests
 
-from shared.schemas import NotionCandidate
+from shared.schemas import NotionCandidate, Transcript
 
 API_PREFIX = "/api/v1"
 TIMEOUT_S = 10.0
@@ -59,9 +60,9 @@ class BeError(Exception):
 
 
 class BeClient:
-    """회의 API 네 개와 유사 task 검색을 얇게 싼다. session 은 requests.Session 과 같은 request() 를 가진 것이면 된다.
+    """회의 API 네 개와 발화 저장, 유사 task 검색을 얇게 싼다. session 은 requests.Session 과 같은 request() 를 가진 것이면 된다.
 
-    service_token 은 사용자 세션 없이 부르는 경로(유사 검색)가 요구하는 X-Service-Token 값이다. 그 경로에만 싣는다.
+    service_token 은 사용자 세션 없이 부르는 경로(발화 저장, 유사 검색)가 요구하는 X-Service-Token 값이다. 그 경로에만 싣는다.
     """
 
     def __init__(self, base_url: str, *, session=None, timeout: float = TIMEOUT_S, service_token: str = "") -> None:
@@ -115,6 +116,15 @@ class BeClient:
         return self._call("POST", "/extractions", {"meeting_id": meeting_id, "workspace_id": workspace_id,
                                                     "transcript_path": transcript_path, "model_name": model_name,
                                                     "items": items})
+
+    def create_sources(self, meeting_id: str, transcript: dict, speaker_names: dict[str, str]) -> dict:
+        """전사 발화를 BE 에 저장한다(#130). 같은 seq 는 BE 가 건너뛰어 다시 보내도 쌓이지 않는다.
+
+        돌려주는 것: {meeting_id, inserted, skipped, duration_ms}. transcript 는 Transcript.to_dict() 모양이다.
+        """
+        headers = {"X-Service-Token": self.service_token} if self.service_token else None
+        return self._call("POST", f"/meetings/{meeting_id}/sources", {**transcript, "speaker_names": speaker_names},
+                          headers=headers)
 
     def similar_tasks(self, workspace_id: str, text: str) -> list[NotionCandidate]:
         """문장과 비슷한 기존 task 후보. 판단 파이프라인(judge.pipeline.CandidateSource)이 finding 마다 그 요약 문장으로 부른다.
@@ -214,8 +224,8 @@ class Handoff:
         old = be.get("meeting_id")
         if old:
             be.setdefault("replaced", []).append(old)
-        for k in ("meeting_id", "extraction_id", "item_count", "failed_stage", "error"):
-            be.pop(k, None)
+        for k in ("meeting_id", "extraction_id", "item_count", "failed_stage", "error", "sources"):
+            be.pop(k, None)                     # 발화도 옛 회의에만 있다. 새 회의에는 다시 보내야 한다
         return self.start(manifest, title=title)
 
     def end(self, manifest: dict, *, title: str | None = None) -> dict:
@@ -228,6 +238,38 @@ class Handoff:
             be = self._fresh(manifest, title)
             status = self.client.end_meeting(be["meeting_id"])
         be["status"] = status
+        return be
+
+    def save_sources(self, manifest: dict, *, transcripts_dir: Path, title: str | None = None) -> dict:
+        """전사 발화를 BE 에 저장한다. processing 이나 done 회의에 보낸다. end 로 회의를 확보하고, BE 가 failed 로 닫아
+        두었으면 end 가 새 회의로 바꾼다. be["sources"] 에 보낸 회의 ID 를 남겨, 회의가 뒤에 바뀌면 다시 보낼 수 있게 한다.
+
+        발화가 없으면(전사가 계약 파일을 쓰지 않았거나 0줄) BE 를 부르지 않고 0줄로 남긴다. 그 기록 없이 계약 파일이
+        없으면 FileNotFoundError 다. 계약 파일의 session·model·speakers 는 보내지 않고 Transcript 모양만 보낸다.
+        화자 이름은 매니페스트 speakers 의 표시 이름이다.
+        """
+        path = Path(manifest.get("transcript_json") or transcripts_dir / f"session_{manifest['session']}.transcript.json")
+        no_speech = "transcript_json" in manifest and manifest["transcript_json"] is None   # 전사가 0줄이라 파일을 안 썼다
+        if not path.exists() and not no_speech:
+            # 있어야 할 파일이 없다. 0줄로 닫으면 sources_saved 가 막아 파일을 되살려도 다시 보내지 못한다
+            raise FileNotFoundError(f"전사 계약 파일이 없다: {path}")
+        transcript = Transcript.from_dict(json.loads(path.read_text(encoding="utf-8"))).to_dict() if path.exists() else None
+        if not transcript or not transcript["segments"]:
+            be = manifest.setdefault("be", {})
+            be["sources"] = {"inserted": 0, "skipped": 0, "duration_ms": None, "meeting_id": be.get("meeting_id")}
+            return be
+        names = {str(e["user_id"]): e.get("display_name") or str(e["user_id"]) for e in manifest.get("speakers") or []}
+        be = self.end(manifest, title=title)
+        try:
+            data = self.client.create_sources(be["meeting_id"], transcript, names)
+        except BeError as e:
+            fields = e.details.get("fields")
+            if fields:   # 400 이 알려 주는 어느 줄의 어느 필드인지. 다시 보내도 같아 이것이 유일한 단서다(BE 명세)
+                raise BeError(e.code, f"{e.message} {json.dumps(fields, ensure_ascii=False)[:300]}", status=e.status,
+                              details=e.details) from e
+            raise
+        be["sources"] = {k: data.get(k) for k in ("inserted", "skipped", "duration_ms")}
+        be["sources"]["meeting_id"] = be["meeting_id"]
         return be
 
     def register(self, manifest: dict, *, transcripts_dir: Path, model_name: str | None,
@@ -257,7 +299,9 @@ class Handoff:
         except BeError as e:
             if e.code == "MEETING_NOT_PROCESSING" and e.details.get("status") == "failed":
                 be = self._fresh(manifest, title)
-                self.client.end_meeting(be["meeting_id"])
+                be = self.end(manifest, title=title)
+                if self.client.service_token:   # 발화 먼저(BE 명세). 옛 회의에 보낸 발화를 새 회의에도 둔다
+                    self.save_sources(manifest, transcripts_dir=transcripts_dir, title=title)
                 data = self._register(be["meeting_id"], transcript_json, model_name, items)
             else:
                 raise

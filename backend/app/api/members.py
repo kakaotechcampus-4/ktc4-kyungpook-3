@@ -8,6 +8,7 @@ from app.models import (
     AliasResolutionLog,
     Member,
     MemberAlias,
+    MemberRole,
     ResolutionResult,
     User,
     Workspace,
@@ -23,17 +24,43 @@ from app.schemas.member import (
     UnresolvedAliasListResponse,
     UnresolvedAliasResponse,
 )
-from app.api.deps import get_current_member, get_current_user, require_member
+from app.api.deps import get_current_member, get_current_user, require_member, require_pm
 from app.services.matching import resolved_alias_texts
 
 router = APIRouter(prefix="/members", tags=["members"])
 
-def _get_member(db: Session, member_id: str, user: User) -> Member:
+def _get_member(db: Session, member_id: str, user: User, *, pm: bool = False) -> Member:
+    """팀원을 찾고 요청자가 그 워크스페이스 소속인지(pm이면 PM인지) 확인한다."""
     member = db.get(Member, member_id)
     if member is None:
         raise AppError(ErrorCode.MEMBER_NOT_FOUND, details={"member_id": member_id})
-    require_member(db, user, member.workspace_id)
+    (require_pm if pm else require_member)(db, user, member.workspace_id)
     return member
+
+
+def _ensure_other_pm(db: Session, member: Member) -> None:
+    """member가 PM에서 내려가도 로그인할 수 있는 PM이 남는지 확인한다. 없으면 LAST_PM_REQUIRED.
+
+    로그인 계정이 없는 팀원(디스코드 연결로 만든 명단)은 PM이어도 웹에 들어올 수 없어 세지 않는다.
+    내리려는 팀원까지 포함해 PM 행을 모두 커밋까지 잠근다. 서로 다른 행만 잠그면, 두 PM이 동시에 서로를
+    내릴 때 둘 다 "다른 PM이 있다"고 보고 PM이 없어진다. 순서를 정해 잠가 교착을 피한다.
+    """
+    pm_ids = db.execute(
+        select(Member.member_id)
+        .where(
+            Member.workspace_id == member.workspace_id,
+            Member.role == str(MemberRole.PM),
+            Member.user_id.is_not(None),
+            Member.is_deleted.is_(False),
+        )
+        .order_by(Member.member_id)
+        .with_for_update()
+    ).scalars().all()
+    if not [pm_id for pm_id in pm_ids if pm_id != member.member_id]:
+        raise AppError(
+            ErrorCode.LAST_PM_REQUIRED,
+            details={"workspace_id": member.workspace_id, "member_id": member.member_id},
+        )
 
 
 @router.post("", status_code=201, response_model=Envelope[MemberResponse])
@@ -46,7 +73,7 @@ def create_member(
         raise AppError(
             ErrorCode.WORKSPACE_NOT_FOUND, details={"workspace_id": payload.workspace_id}
         )
-    require_member(db, user, payload.workspace_id)
+    require_pm(db, user, payload.workspace_id)
 
     if payload.discord_user_id:
         exists = db.execute(
@@ -167,7 +194,7 @@ def delete_alias(
     alias = db.get(MemberAlias, alias_id)
     if alias is None:
         raise AppError(ErrorCode.MEMBER_ALIAS_NOT_FOUND, details={"alias_id": alias_id})
-    require_member(db, user, alias.workspace_id)
+    require_pm(db, user, alias.workspace_id)
     db.delete(alias)
     db.commit()
 
@@ -189,9 +216,13 @@ def update_member(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
-    member = _get_member(db, member_id, user)
+    member = _get_member(db, member_id, user, pm=True)
 
     updates = {field: getattr(payload, field) for field in payload.model_fields_set}
+
+    # PM을 넘길 때는 다른 팀원을 먼저 PM으로 올리고 나서 자기를 내린다. 마지막 PM은 내릴 수 없다.
+    if updates.get("role") == MemberRole.MEMBER and member.role == MemberRole.PM:
+        _ensure_other_pm(db, member)
 
     if updates.get("discord_user_id"):
         exists = db.execute(
@@ -229,7 +260,7 @@ def create_alias(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
-    member = _get_member(db, member_id, user)
+    member = _get_member(db, member_id, user, pm=True)
 
     exists = db.execute(
         select(MemberAlias).where(

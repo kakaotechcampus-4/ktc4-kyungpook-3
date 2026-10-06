@@ -21,3 +21,6 @@
 # 셸 스크립트·git hook 은 CRLF 면 실행이 실패하니 LF 로 고정하는 게 좋습니다:
 #   *.sh        text eol=lf
 #   .githooks/* text eol=lf
+
+# 셸 스크립트는 CRLF 면 서버에서 실행이 깨진다
+*.sh text eol=lf

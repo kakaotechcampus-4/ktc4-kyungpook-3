@@ -1,0 +1,41 @@
+{
+  "case_id": "case_04",
+  "scenario": "ask_first_summary_by_name",
+  "description": "질문 → 1인칭 수락 → 질문자가 이름으로 정리",
+  "turns": [
+    {
+      "speaker": "하은",
+      "text": "스토리북 정리는 누가 하실래요?"
+    },
+    {
+      "speaker": "지민",
+      "text": "제가 할게요."
+    },
+    {
+      "speaker": "하은",
+      "text": "그럼 스토리북은 지민님이 맡는 걸로 정리할게요."
+    }
+  ],
+  "expected": [
+    {
+      "text": "스토리북 정리는 누가 하실래요?",
+      "should_flag": false,
+      "note": "질문"
+    },
+    {
+      "text": "제가 할게요.",
+      "should_flag": true,
+      "note": "1인칭 수락",
+      "assignee_type": "first",
+      "assignee": "지민"
+    },
+    {
+      "text": "그럼 스토리북은 지민님이 맡는 걸로 정리할게요.",
+      "should_flag": true,
+      "note": "이름으로 정리 — 화자는 담당자가 아님",
+      "assignee_type": "thirdname",
+      "assignee": "지민"
+    }
+  ],
+  "counts_toward_pass_rate": true
+}

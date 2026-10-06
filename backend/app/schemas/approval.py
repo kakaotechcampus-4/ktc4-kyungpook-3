@@ -11,7 +11,10 @@ class ApprovalCreateRequest(BaseModel):
     type: ApprovalType = Field(..., description="task_create | task_update | reminder_dm")
     payload: dict[str, Any] = Field(..., description="변경 내용 (JSON)")
     related_task_id: str | None = Field(None, description="연관 태스크 ID")
-    requested_by: str | None = Field(None, description="요청자 member_id (AI 자동이면 null)")
+    requested_by: str | None = Field(
+        None,
+        description="하위 호환용. 보내도 쓰지 않고, 요청자는 로그인한 팀원으로 기록한다.",
+    )
 
 
 class ApprovalResponse(BaseModel):
@@ -35,6 +38,12 @@ class ApprovalResolveRequest(BaseModel):
     )
     resolved_by: str | None = Field(
         None, description="하위 호환용. 승인/반려한 사람은 이 값 대신 로그인한 멤버(세션)로 기록한다."
+    )
+    confirm_task_version: int | None = Field(
+        None,
+        ge=1,
+        description="task_update 승인이 APPROVAL_CONFLICT(409)로 막혔을 때, 그 응답의 details.task_version. "
+        "충돌을 확인하고도 제안 값으로 덮어쓰려면 보낸다. 그 뒤 task가 또 바뀌었으면 다시 409다",
     )
 
 

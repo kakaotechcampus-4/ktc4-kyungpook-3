@@ -1,0 +1,41 @@
+{
+  "case_id": "case_06",
+  "scenario": "two_firsts_in_a_row",
+  "description": "두 사람이 연달아 각자 1인칭으로 맡음",
+  "turns": [
+    {
+      "speaker": "도윤",
+      "text": "프론트 연동은 제가 할게요."
+    },
+    {
+      "speaker": "민재",
+      "text": "그럼 저는 서버 쪽 API 붙일게요."
+    },
+    {
+      "speaker": "하은",
+      "text": "좋습니다."
+    }
+  ],
+  "expected": [
+    {
+      "text": "프론트 연동은 제가 할게요.",
+      "should_flag": true,
+      "note": "1인칭 담당",
+      "assignee_type": "first",
+      "assignee": "도윤"
+    },
+    {
+      "text": "그럼 저는 서버 쪽 API 붙일게요.",
+      "should_flag": true,
+      "note": "1인칭 담당 — 앞 결정과 별개",
+      "assignee_type": "first",
+      "assignee": "민재"
+    },
+    {
+      "text": "좋습니다.",
+      "should_flag": false,
+      "note": "단순 맞장구"
+    }
+  ],
+  "counts_toward_pass_rate": true
+}

@@ -246,6 +246,102 @@ def test_a_failed_similar_search_is_an_error_not_an_empty_list():
     assert down.value.code == "NETWORK"
 
 
+LINES = {"source": "meeting", "segments": [
+    {"speaker": "101", "start": 3.0, "end": 5.0, "text": "와이어프레임은 누가 하죠?", "seq": 1},
+    {"speaker": "103", "start": 12.0, "end": 14.5, "text": "제가 할게요. 금요일까지요", "seq": 2},
+]}
+
+
+def test_create_sources_posts_the_transcript_with_the_service_token_and_names():
+    fake = FakeBe()
+    client = H.BeClient("http://be.local", session=fake, service_token="svc-token")
+    mid = client.create_meeting("ws-1")["meeting_id"]
+    data = client.create_sources(mid, LINES, {"101": "민수", "103": "재환"})
+    assert fake.calls[-1] == ("POST", f"/meetings/{mid}/sources", {**LINES, "speaker_names": {"101": "민수", "103": "재환"}})
+    assert fake.headers[-1] == {"X-Service-Token": "svc-token"}
+    assert data == {"meeting_id": mid, "inserted": 2, "skipped": 0, "duration_ms": 14500}
+    # 다시 보내면 BE 가 같은 seq 를 건너뛴다. 재전송이 중복을 만들지 않는다
+    assert client.create_sources(mid, LINES, {})["skipped"] == 2 and len(fake.sources[mid]) == 2
+
+
+def test_rejected_sources_are_errors_with_the_be_codes():
+    fake = FakeBe()
+    client = H.BeClient("http://be.local", session=fake, service_token="svc-token")
+    with pytest.raises(H.BeError) as missing:
+        client.create_sources("없는-회의", LINES, {})
+    assert missing.value.code == "MEETING_NOT_FOUND" and missing.value.status == 404
+    mid = client.create_meeting("ws-1")["meeting_id"]
+    twice = {"source": "meeting", "segments": [LINES["segments"][0], LINES["segments"][0]]}
+    with pytest.raises(H.BeError) as invalid:
+        client.create_sources(mid, twice, {})               # 한 요청 안에서 seq 가 겹친다
+    assert invalid.value.code == "INVALID_REQUEST" and invalid.value.status == 400
+    fake.meetings[mid]["status"] = "failed"
+    with pytest.raises(H.BeError) as failed:
+        client.create_sources(mid, LINES, {})
+    assert failed.value.code == "MEETING_FAILED" and failed.value.status == 409
+    with pytest.raises(H.BeError) as wrong_token:
+        H.BeClient("http://be.local", session=fake, service_token="틀린 토큰").create_sources(mid, LINES, {})
+    assert wrong_token.value.code == "UNAUTHENTICATED" and wrong_token.value.status == 401
+
+
+def _token_handoff(fake):
+    return H.Handoff(H.BeClient("http://be.local/", session=fake, service_token="svc-token"), "ws-1")
+
+
+def test_save_sources_secures_the_meeting_then_saves_the_lines_with_names(tmp_path):
+    fake = FakeBe()
+    m, tdir = _manifest(tmp_path, with_tasks=False)
+    be = _token_handoff(fake).save_sources(m, transcripts_dir=tdir, title="회의방 2026-09-19")
+    assert [(c[0], c[1]) for c in fake.calls] == [("POST", "/meetings"), ("PATCH", "/meetings/m1/end"),
+                                                   ("POST", "/meetings/m1/sources")]
+    sent = fake.calls[-1][2]
+    assert set(sent) == {"source", "segments", "speaker_names"}    # 계약 파일의 speakers 같은 다른 키는 안 보낸다
+    assert sent["speaker_names"] == {"101": "민수", "103": "재환"}   # 매니페스트 speakers 의 표시 이름
+    assert [s["seq"] for s in sent["segments"]] == [1, 2, 3, 4] and sent["source"] == "meeting"
+    assert be is m["be"] and be["sources"] == {"inserted": 4, "skipped": 0, "duration_ms": 26000, "meeting_id": "m1"}
+    assert fake.meetings["m1"]["status"] == "processing"
+
+
+def test_save_sources_moves_to_a_new_meeting_when_the_be_failed_it(tmp_path):
+    fake = FakeBe()
+    h = _token_handoff(fake)
+    m, tdir = _manifest(tmp_path, with_tasks=False)
+    h.end(m)
+    h.fail(m, "stt")                              # 포기해서 BE 에 실패를 알린 회의를 /recover 가 다시 돌렸다
+    be = h.save_sources(m, transcripts_dir=tdir)
+    assert be["meeting_id"] == "m2" and be["replaced"] == ["m1"] and be["sources"]["meeting_id"] == "m2"
+    assert len(fake.sources["m2"]) == 4 and "m1" not in fake.sources
+
+
+def test_save_sources_without_lines_saves_nothing(tmp_path):
+    fake = FakeBe()
+    h = _token_handoff(fake)
+    m, tdir = _manifest(tmp_path, with_tasks=False)
+    m["transcript_json"] = None                                # 말이 없어 계약 파일이 안 생긴 회의. 전사가 이렇게 적는다
+    (tdir / "session_500.transcript.json").unlink()
+    assert h.save_sources(m, transcripts_dir=tdir)["sources"] == {"inserted": 0, "skipped": 0, "duration_ms": None,
+                                                                   "meeting_id": None}
+    (tdir / "session_500.transcript.json").write_text(json.dumps({"segments": []}), encoding="utf-8")
+    assert h.save_sources(m, transcripts_dir=tdir)["sources"]["inserted"] == 0
+    assert fake.calls == []
+
+
+def test_save_sources_raises_when_the_transcript_it_should_have_is_missing(tmp_path):
+    """전사가 쓴 계약 파일이 없으면 0줄로 닫지 않는다. 닫으면 파일을 되살려도 sources_saved 가 막아 다시 보내지 못한다."""
+    fake = FakeBe()
+    h = _token_handoff(fake)
+    m, tdir = _manifest(tmp_path, with_tasks=False)
+    contract = tdir / "session_500.transcript.json"
+    m["transcript_json"] = str(contract)
+    contract.unlink()                                          # 옮겨졌거나 지워졌다
+    with pytest.raises(FileNotFoundError):
+        h.save_sources(m, transcripts_dir=tdir)
+    del m["transcript_json"]                                   # 경로를 적기 전의 매니페스트는 transcripts_dir 에서 찾는다
+    with pytest.raises(FileNotFoundError):
+        h.save_sources(m, transcripts_dir=tdir)
+    assert fake.calls == [] and "sources" not in m.get("be", {})
+
+
 def test_from_env_passes_the_service_token(monkeypatch):
     from shared import config
 

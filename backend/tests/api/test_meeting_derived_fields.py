@@ -104,6 +104,55 @@ def test_minutes_attendees_are_distinct_members_in_speaking_order(client, seed):
     assert body["duration_ms"] == 90_000
 
 
+def test_minutes_transcript_lists_sources_in_seq_order_without_extraction(client, seed):
+    # spoken 회의에는 추출 결과가 없다. 전사본은 그래도 나온다
+    body = client.get(f"/api/v1/meetings/{seed['spoken']}/minutes").json()["data"]
+    lines = [
+        (t["at_ms"], t["speaker_member_id"], t["speaker_display_name"], t["text"])
+        for t in body["transcript"]
+    ]
+    assert lines == [
+        (0, seed["bob"], "bob", "발화 0"),
+        (1000, seed["alice"], "alice", "발화 1"),
+        (2000, seed["bob"], "bob", "발화 2"),
+        (3000, None, None, "발화 3"),
+    ]
+
+
+def test_minutes_transcript_falls_back_to_speaker_name_then_uid(client, db, seed):
+    meeting = Meeting(workspace_id=seed["ws"], status="done")
+    db.add(meeting)
+    db.flush()
+    # (uid, 디스코드 표시 이름, 팀원)
+    speakers = [
+        ("uid_bob", "밥", seed["bob"]),
+        ("uid_guest", "손님", None),
+        ("uid_nameless", None, None),
+        (None, None, None),
+    ]
+    for seq, (uid, name, member_id) in enumerate(speakers):
+        db.add(Source(
+            meeting_id=meeting.meeting_id, seq=seq, speaker_discord_user_id=uid, speaker_name=name,
+            member_id=member_id, start_ms=seq, end_ms=seq + 1, text="말",
+        ))
+    db.commit()
+
+    body = client.get(f"/api/v1/meetings/{meeting.meeting_id}/minutes").json()["data"]
+
+    # FE는 speaker_display_name ?? speaker_fallback으로 보여 주므로 팀원 이름이 먼저다
+    assert [(t["speaker_display_name"], t["speaker_fallback"]) for t in body["transcript"]] == [
+        ("bob", "밥"),
+        (None, "손님"),
+        (None, "uid_nameless"),
+        (None, "Unknown"),
+    ]
+
+
+def test_minutes_transcript_is_empty_without_source(client, seed):
+    body = client.get(f"/api/v1/meetings/{seed['empty']}/minutes").json()["data"]
+    assert body["transcript"] == []
+
+
 def test_workspace_meeting_list_counts_attendees_and_duration(client, seed):
     items = client.get(f"/api/v1/workspaces/{seed['ws']}/meetings").json()["data"]["items"]
     by_id = {i["meeting_id"]: i for i in items}

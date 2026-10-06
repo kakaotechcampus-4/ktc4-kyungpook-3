@@ -1,0 +1,39 @@
+{
+  "case_id": "case_07",
+  "scenario": "first_then_other_decision",
+  "description": "1인칭 담당 뒤에 다른 사람이 별개의 결정을 말함",
+  "turns": [
+    {
+      "speaker": "세영",
+      "text": "QA 시나리오는 제가 작성할게요."
+    },
+    {
+      "speaker": "하은",
+      "text": "그리고 데모 데이는 다음 주 금요일로 확정할게요."
+    },
+    {
+      "speaker": "지민",
+      "text": "알겠습니다."
+    }
+  ],
+  "expected": [
+    {
+      "text": "QA 시나리오는 제가 작성할게요.",
+      "should_flag": true,
+      "note": "1인칭 담당",
+      "assignee_type": "first",
+      "assignee": "세영"
+    },
+    {
+      "text": "그리고 데모 데이는 다음 주 금요일로 확정할게요.",
+      "should_flag": true,
+      "note": "별개의 일정 결정"
+    },
+    {
+      "text": "알겠습니다.",
+      "should_flag": false,
+      "note": "단순 맞장구"
+    }
+  ],
+  "counts_toward_pass_rate": true
+}

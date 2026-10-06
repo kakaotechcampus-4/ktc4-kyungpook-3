@@ -5,10 +5,10 @@ discord 이름은 여기 없다. capture/discord_adapter.py 가 이 함수들을
 
 매니페스트 recordings/session_<회의ID>.json. 회의 ID 는 <guild>_<ts> 다 (서버 둘이 같은 초에 시작해도 다르다).
 필드는 recording_store.write_manifest 와 같고 아래를 더한다.
-  status        recording | saved | transcribed | partial | extracted | handed_off | failed
-  stages        단계별 완료 시각 {"transcribed": iso, "extracted": iso, "handed_off": iso}
+  status        recording | saved | transcribed | partial | sourced | extracted | handed_off | failed
+  stages        단계별 완료 시각 {"transcribed": iso, "sourced": iso, "extracted": iso, "handed_off": iso}
   failed_units  partial 일 때 실패한 줄 [{"speaker", "start_ms", "end_ms", "error"}]. 다음 실행이 이 구간만 다시 보낸다
-  failed_stage  failed 일 때 어느 단계인지. stt | extract | handoff
+  failed_stage  failed 일 때 어느 단계인지. stt | sources | extract | handoff
   error         failed 일 때 예외 한 줄
   started_at    녹음 시작 벽시계(UTC ISO). 트랙 안의 위치는 이 시각부터 흐른 monotonic 시간이다
   timezone      회의가 열린 시간대. "내일" 같은 상대 날짜의 기준일은 이 시간대의 시작 날짜다
@@ -31,6 +31,10 @@ process_session 이 마지막으로 끝난 단계 다음부터 실행한다. /st
 같은 함수를 쓰므로 어디서 죽어도 같은 경로로 이어진다. 전사에서 실패한 줄이 있으면 완료로 닫지 않고
 partial 로 두며, 다음 실행이 그 줄만 다시 보낸다. 할일 추출(extract/, #30)과 BE 인계는 설정이
 없으면 그 단계에서 멈추고 매니페스트는 그 앞 상태로 남는다.
+
+전사가 닫히면 추출 전에 발화를 BE 에 저장한다(sourced, #146). BE 가 "발화 먼저, 추출 나중" 을 요구한다. BE 설정이나
+서비스 토큰이 없으면 이 단계만 건너뛰고 추출로 간다. BE 가 요청을 거절하면(INVALID_REQUEST, MEETING_FAILED) 다시 보내도
+같으니 바로 포기한다.
 
 추출 단계의 추출기는 둘 중 하나다(build_extractor). 기본은 extract_tasks, MM_EXTRACT_PATH=judge 면 판단
 파이프라인(capture/judge_path.py)이다. 봇과 워커가 같은 팩토리를 쓰므로 두 모드가 같이 바뀐다.
@@ -67,15 +71,20 @@ STATUS_RECORDING = "recording"
 STATUS_SAVED = "saved"
 STATUS_TRANSCRIBED = "transcribed"
 STATUS_PARTIAL = "partial"        # 전사는 돌았는데 실패한 줄이 남았다. failed_units 에 구간이 있다
+STATUS_SOURCED = "sourced"        # 전사 발화를 BE 에 저장했다
 STATUS_EXTRACTED = "extracted"
 STATUS_HANDED_OFF = "handed_off"
 STATUS_FAILED = "failed"
 
-STAGES = (STATUS_TRANSCRIBED, STATUS_EXTRACTED, STATUS_HANDED_OFF)
+STAGES = (STATUS_TRANSCRIBED, STATUS_SOURCED, STATUS_EXTRACTED, STATUS_HANDED_OFF)
 # partial 회의를 추출·인계로 넘기기 전에 실패 구간을 다시 보내는 횟수. 상한에 닿으면 빠진 구간을 둔 채 간다
 PARTIAL_RETRY_MAX = int(os.environ.get("MM_PARTIAL_RETRY_MAX", "3"))
 # 매니페스트와 BE 의 failed_stage 에 적는 이름
-FAILED_STAGE = {STATUS_TRANSCRIBED: "stt", STATUS_EXTRACTED: "extract", STATUS_HANDED_OFF: "handoff"}
+FAILED_STAGE = {STATUS_TRANSCRIBED: "stt", STATUS_SOURCED: "sources", STATUS_EXTRACTED: "extract",
+                STATUS_HANDED_OFF: "handoff"}
+# 발화 저장에서 BE 가 이 (상태, 코드) 로 거절하면 다시 보내도 같다. 기다리지 않고 바로 포기한다(노션 BE STT API 명세).
+# 코드만 보지 않는다. BE 는 경로가 없을 때(#130 전 배포)도 404 에 INVALID_REQUEST 를 주는데, 그건 재배포로 풀린다
+SOURCES_GIVE_UP = {(400, "INVALID_REQUEST"), (409, "MEETING_FAILED")}
 # 자동 복구. #83 의 retry_runs·PARTIAL_RETRY_MAX 와 따로 센다. 기본값의 근거는 decision_log/0013
 RECOVERY_INTERVAL_S = float(os.environ.get("MM_RECOVERY_INTERVAL_S", "60"))    # 봇 안 복구 루프의 주기. 0 이면 끈다
 RECOVERY_MAX_ATTEMPTS = int(os.environ.get("MM_RECOVERY_MAX_ATTEMPTS", "5"))   # 이만큼 실패하면 포기하고 BE 에 fail
@@ -459,17 +468,17 @@ def backoff_s(attempts: int) -> float:
     return min(RECOVERY_BACKOFF_S * 2 ** max(0, attempts - 1), RECOVERY_BACKOFF_CEIL_S)
 
 
-def _count_failure(manifest: dict, handoff, failed_stage: str) -> dict:
+def _count_failure(manifest: dict, handoff, failed_stage: str, *, give_up: bool = False) -> dict:
     """이번 실행이 단계를 닫지 못했다(failed 또는 partial). 실패 횟수를 올리고 다음 시도 시각을 적는다.
 
     RECOVERY_MAX_ATTEMPTS 에 닿으면 포기한다. 루프는 더 돌리지 않고, 이때 처음으로 BE 에 fail 을 보낸다.
     사람이 /recover 로 포기한 회의를 다시 돌렸다 또 실패하면 곧바로 다시 포기한다(그 사이 BE 에 새 회의가
-    생겼으면 그것도 failed 로 닫힌다).
+    생겼으면 그것도 failed 로 닫힌다). give_up 이면 다시 해도 같은 실패라 횟수와 상관없이 지금 포기한다.
     """
     state = manifest.setdefault("recovery", {})
     state["attempts"] = state.get("attempts", 0) + 1
     now = utcnow()
-    if state["attempts"] >= RECOVERY_MAX_ATTEMPTS:
+    if give_up or state["attempts"] >= RECOVERY_MAX_ATTEMPTS:
         state.pop("next_at", None)
         state["gave_up_at"] = _iso(now)
         state["failed_stage"] = failed_stage
@@ -488,7 +497,8 @@ def _count_dead_run(manifest: dict, handoff, holder: str) -> None:
     안 세면 다시 뜬 워커가 같은 회의를 곧바로 다시 집고 또 죽는다. 그 회의가 줄 맨 앞이라 뒤 회의도 멈춘다.
     """
     stages = manifest.get("stages") or {}
-    stage = next((s for s in STAGES if s not in stages), STATUS_HANDED_OFF)
+    stage = next((s for s in STAGES if s not in stages and (s != STATUS_SOURCED or saves_sources(handoff))),
+                 STATUS_HANDED_OFF)
     if manifest.get("failed_units"):
         stage = STATUS_TRANSCRIBED                     # 실패 구간을 다시 보내다 죽었다
     manifest["status"] = STATUS_FAILED
@@ -497,10 +507,23 @@ def _count_dead_run(manifest: dict, handoff, holder: str) -> None:
     _count_failure(manifest, handoff, manifest["failed_stage"])
 
 
+def saves_sources(handoff) -> bool:
+    """발화 저장 단계가 도는 설정인가. BE 설정과 서비스 토큰이 다 있어야 한다. BE 의 발화 저장 API 는 토큰을 요구한다."""
+    return handoff is not None and bool(getattr(handoff.client, "service_token", ""))
+
+
+def sources_saved(manifest: dict) -> bool:
+    """발화가 지금의 BE 회의에 저장돼 있는가. 저장한 뒤 BE 회의가 새 회의로 바뀌었으면(포기 뒤 /recover, 인계 중 교체)
+    새 회의에는 발화가 없으니 다시 보내야 한다."""
+    be = manifest.get("be") or {}
+    return STATUS_SOURCED in (manifest.get("stages") or {}) and \
+        (be.get("sources") or {}).get("meeting_id") == be.get("meeting_id")
+
+
 def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name: str, workers: int,
                     gate=None, transcripts_dir: Path | None = None, extractor=None, handoff=None,
                     name_of=None) -> dict:
-    """마지막으로 끝난 단계 다음부터 전사 → 추출 → BE 인계를 돈다. 스레드에서 부른다.
+    """마지막으로 끝난 단계 다음부터 전사 → 발화 저장 → 추출 → BE 인계를 돈다. 스레드에서 부른다.
 
     extractor(transcript, speaker_names, today) 와 handoff(capture.handoff.Handoff) 는 None 이면
     설정이 없는 것이다. 그 단계에서 멈추고 result["skipped"] 에 이유를 적는다. 전사에서 실패한 줄이
@@ -514,7 +537,8 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
 
     돌려주는 dict: session, status, ran(이번에 끝낸 단계), skipped, error, failed_stage,
     transcribe({markdown, failed, summary, lines}), retried(다시 보낸 줄 수), tasks(옛 경로의 목록),
-    items(판단 경로의 항목 목록. 옛 경로면 None), extract_failures(판단하지 못한 finding), be, speakers(명),
+    items(판단 경로의 항목 목록. 옛 경로면 None), extract_failures(판단하지 못한 finding), be,
+    sources(이번에 저장한 발화 {inserted, skipped, duration_ms}. 안 돌았으면 None), speakers(명),
     text_channel_id(결과를 올릴 채널), attempts, gave_up, retry_in_s(이번 실패로 잡힌 다음 시도까지 초).
     """
     tdir = transcripts_dir or TRANSCRIPTS_DIR
@@ -522,7 +546,7 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
     stages = manifest.setdefault("stages", {})
     result = {"session": manifest["session"], "status": manifest.get("status"), "ran": [], "skipped": {},
               "error": None, "failed_stage": None, "transcribe": None, "retried": 0, "tasks": None, "be": None,
-              "items": None, "extract_failures": [],
+              "items": None, "extract_failures": [], "sources": None,
               "speakers": len(manifest.get("speakers") or []), "text_channel_id": manifest.get("text_channel_id"),
               "partial": False, "missing_units": 0, "attempts": 0, "gave_up": False, "retry_in_s": None}
     stage = None
@@ -531,12 +555,13 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
     def save() -> None:
         save_manifest(path, manifest)
 
-    def finish(name: str) -> None:
+    def finish(name: str, *, keep_recovery: bool = False) -> None:
         stages[name] = now_iso()
         manifest["status"] = name
         manifest.pop("error", None)
         manifest.pop("failed_stage", None)
-        manifest.pop("recovery", None)                 # 단계가 닫혔다. 실패 횟수는 다음 단계에서 새로 센다
+        if not keep_recovery:
+            manifest.pop("recovery", None)             # 단계가 닫혔다. 실패 횟수는 다음 단계에서 새로 센다
         result["ran"].append(name)
         save()
 
@@ -595,6 +620,10 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
             result["retried"] = out["retried"]
             result["ran"].append("retried")
             changed = out["retried"] > out["failed"]          # 이번에 살아난 줄이 있다
+            if changed:
+                # 살아난 줄을 BE 에 더 보낸다(BE 는 없는 seq 만 넣는다). 아래에서 partial 로 일찍 돌아가도 표시가 남아,
+                # 단계가 닫힐 때 다시 보낸다
+                stages.pop(STATUS_SOURCED, None)
             if out["failed_units"]:
                 manifest["failed_units"] = out["failed_units"]
                 if out["failed"] >= len(out["lines"]) or manifest["retry_runs"] < PARTIAL_RETRY_MAX:
@@ -623,6 +652,19 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
             manifest["status"] = STATUS_TRANSCRIBED
             manifest.pop("recovery", None)             # 전사 단계가 닫혔다
             save()
+
+        if handoff is not None and not sources_saved(manifest):
+            # BE 설정이 아예 없으면 인계 단계가 "BE 설정 없음" 을 한 번 알린다. 토큰만 없으면 여기서 알린다
+            if not saves_sources(handoff):
+                result["skipped"][STATUS_SOURCED] = "BE_SERVICE_TOKEN 없음"
+            else:
+                stage = STATUS_SOURCED
+                # 뒤 단계(추출·인계)에서 실패하던 회의면 그 실패 횟수를 이어 센다. 지우면 포기한 회의를 /recover 로 다시
+                # 돌려 또 실패해도 곧바로 포기하지 않고, 배포 때 재시도 중이던 회의도 처음부터 다시 센다
+                later = manifest.get("failed_stage") in (FAILED_STAGE[STATUS_EXTRACTED], FAILED_STAGE[STATUS_HANDED_OFF])
+                be = handoff.save_sources(manifest, transcripts_dir=tdir, title=meeting_title(manifest))
+                result["sources"] = dict(be["sources"])
+                finish(STATUS_SOURCED, keep_recovery=later)
 
         if STATUS_EXTRACTED not in stages:
             if extractor is None:
@@ -659,7 +701,8 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
         manifest["error"] = f"{type(e).__name__}: {e}"
         result.update(error=manifest["error"], failed_stage=manifest["failed_stage"])
         # BE 에는 포기할 때만 알린다. 그 전에는 processing 으로 두고 다음 시도를 기다린다
-        _count_failure(manifest, handoff, manifest["failed_stage"])
+        rejected = stage == STATUS_SOURCED and (getattr(e, "status", None), getattr(e, "code", None)) in SOURCES_GIVE_UP
+        _count_failure(manifest, handoff, manifest["failed_stage"], give_up=rejected)
         counted = True
         save()
     finally:

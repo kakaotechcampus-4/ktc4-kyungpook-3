@@ -90,6 +90,28 @@ def test_llm_not_meaningful_when_already_reflected():
     assert result.is_meaningful is False
 
 
+def test_llm_accepts_status_category_for_state_only_change():
+    # 상태만 바뀌는 발화는 status category 로 받는다 — 없던 시절엔 decision 으로 섞였다(decision_log 0014)
+    ji = JudgeInput(source="meeting", text="로그인 화면 작업 다 끝냈습니다.", candidates=[_candidate()])
+    fake = FakeLLM(responses=[{
+        "is_meaningful": True, "category": "status", "is_new": False,
+        "matched_candidate_index": 0, "status": "done", "evidence": "완료 보고",
+    }])
+    result = judge_llm(ji, fake)
+    assert result.category == "status"
+    assert result.status == "done"
+
+
+def test_prompt_tells_terra_what_counts_as_no_change():
+    # "바뀌는 것이 하나도 없으면 is_meaningful=false" 기준과, 필드 없는 결정은 살린다는 예외가 프롬프트에 있어야 한다
+    from judge.final_judge import _terra_user_prompt
+    prompt = _terra_user_prompt(JudgeInput(source="meeting", text="x", candidates=[_candidate()]))
+    assert "실제로 바뀌는 것이 하나도 없으면" in prompt
+    assert "문서가 좀 헷갈리네요" in prompt
+    assert "새로 정했다면" in prompt
+    assert "status|scope" in prompt
+
+
 def test_llm_returns_none_on_invalid_category():
     ji = JudgeInput(source="meeting", text="x", candidates=[])
     fake = FakeLLM(responses=[{

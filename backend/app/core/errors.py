@@ -11,6 +11,7 @@ class ErrorCode(StrEnum):
     MEETING_NOT_FOUND = "MEETING_NOT_FOUND"
     MEETING_ALREADY_ENDED = "MEETING_ALREADY_ENDED"
     MEETING_NOT_PROCESSING = "MEETING_NOT_PROCESSING"
+    MEETING_FAILED = "MEETING_FAILED"
     AUDIO_UPLOAD_FAILED = "AUDIO_UPLOAD_FAILED"
     AUDIO_FORMAT_UNSUPPORTED = "AUDIO_FORMAT_UNSUPPORTED"
     TRANSCRIPTION_FAILED = "TRANSCRIPTION_FAILED"
@@ -18,6 +19,7 @@ class ErrorCode(StrEnum):
     EXTRACTION_NOT_FOUND = "EXTRACTION_NOT_FOUND"
     APPROVAL_NOT_FOUND = "APPROVAL_NOT_FOUND"
     APPROVAL_ALREADY_RESOLVED = "APPROVAL_ALREADY_RESOLVED"
+    APPROVAL_CONFLICT = "APPROVAL_CONFLICT"
     NOTION_WRITE_FAILED = "NOTION_WRITE_FAILED"
     WORKSPACE_NOT_FOUND = "WORKSPACE_NOT_FOUND"
     WORKSPACE_MISMATCH = "WORKSPACE_MISMATCH"
@@ -40,6 +42,7 @@ class ErrorCode(StrEnum):
     MEETING_PROCESSING_IN_PROGRESS = "MEETING_PROCESSING_IN_PROGRESS"
     AUDIO_TOO_LARGE = "AUDIO_TOO_LARGE"
     DISCORD_USER_ALREADY_MAPPED = "DISCORD_USER_ALREADY_MAPPED"
+    LAST_PM_REQUIRED = "LAST_PM_REQUIRED"
     EMBEDDING_UNAVAILABLE = "EMBEDDING_UNAVAILABLE"
 
 
@@ -48,6 +51,7 @@ ERROR_STATUS: dict[ErrorCode, int] = {
     ErrorCode.MEETING_NOT_FOUND: 404,
     ErrorCode.MEETING_ALREADY_ENDED: 409,
     ErrorCode.MEETING_NOT_PROCESSING: 409,
+    ErrorCode.MEETING_FAILED: 409,
     ErrorCode.AUDIO_UPLOAD_FAILED: 422,
     ErrorCode.AUDIO_FORMAT_UNSUPPORTED: 422,
     ErrorCode.TRANSCRIPTION_FAILED: 502,
@@ -55,6 +59,7 @@ ERROR_STATUS: dict[ErrorCode, int] = {
     ErrorCode.EXTRACTION_NOT_FOUND: 404,
     ErrorCode.APPROVAL_NOT_FOUND: 404,
     ErrorCode.APPROVAL_ALREADY_RESOLVED: 409,
+    ErrorCode.APPROVAL_CONFLICT: 409,
     ErrorCode.NOTION_WRITE_FAILED: 502,
     ErrorCode.WORKSPACE_NOT_FOUND: 404,
     ErrorCode.WORKSPACE_MISMATCH: 400,
@@ -75,6 +80,7 @@ ERROR_STATUS: dict[ErrorCode, int] = {
     ErrorCode.MEETING_PROCESSING_IN_PROGRESS: 409,
     ErrorCode.AUDIO_TOO_LARGE: 413,
     ErrorCode.DISCORD_USER_ALREADY_MAPPED: 409,
+    ErrorCode.LAST_PM_REQUIRED: 409,
     ErrorCode.EMBEDDING_UNAVAILABLE: 502,
 }
 
@@ -83,6 +89,7 @@ ERROR_MESSAGE: dict[ErrorCode, str] = {
     ErrorCode.MEETING_NOT_FOUND: "해당 회의 세션을 찾을 수 없습니다.",
     ErrorCode.MEETING_ALREADY_ENDED: "이미 종료된 회의 세션입니다.",
     ErrorCode.MEETING_NOT_PROCESSING: "회의가 분석 중(PROCESSING) 상태가 아닙니다.",
+    ErrorCode.MEETING_FAILED: "실패 처리된 회의입니다. 새 회의로 다시 시작해 주세요.",
     ErrorCode.AUDIO_UPLOAD_FAILED: "오디오 저장·병합에 실패했습니다.",
     ErrorCode.AUDIO_FORMAT_UNSUPPORTED: "지원하지 않는 오디오 형식입니다.",
     ErrorCode.TRANSCRIPTION_FAILED: "음성 전사에 실패했습니다.",
@@ -90,6 +97,7 @@ ERROR_MESSAGE: dict[ErrorCode, str] = {
     ErrorCode.EXTRACTION_NOT_FOUND: "해당 추출 결과를 찾을 수 없습니다.",
     ErrorCode.APPROVAL_NOT_FOUND: "해당 승인 요청을 찾을 수 없습니다.",
     ErrorCode.APPROVAL_ALREADY_RESOLVED: "이미 처리된 승인 요청입니다.",
+    ErrorCode.APPROVAL_CONFLICT: "제안 이후 task가 바뀌었습니다. 지금 값을 확인한 뒤 다시 승인해 주세요.",
     ErrorCode.NOTION_WRITE_FAILED: "Notion 반영에 실패했습니다.",
     ErrorCode.WORKSPACE_NOT_FOUND: "해당 워크스페이스를 찾을 수 없습니다.",
     ErrorCode.WORKSPACE_MISMATCH: "요청한 워크스페이스가 대상 리소스의 워크스페이스와 다릅니다.",
@@ -110,6 +118,7 @@ ERROR_MESSAGE: dict[ErrorCode, str] = {
     ErrorCode.MEETING_PROCESSING_IN_PROGRESS: "이미 처리 중인 회의가 있습니다.",
     ErrorCode.AUDIO_TOO_LARGE: "오디오 파일 용량이 너무 큽니다.",
     ErrorCode.DISCORD_USER_ALREADY_MAPPED: "이미 다른 팀원에 연결된 Discord 사용자입니다.",
+    ErrorCode.LAST_PM_REQUIRED: "워크스페이스에 PM이 한 명은 있어야 합니다. 다른 팀원을 먼저 PM으로 지정해 주세요.",
     ErrorCode.EMBEDDING_UNAVAILABLE: "임베딩 서버 호출에 실패했습니다. 잠시 후 다시 시도해 주세요.",
 }
 
