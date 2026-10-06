@@ -140,9 +140,9 @@ PM이 온보딩에서 Notion을 연결하면 `Integration` 행(토큰 + 대상 D
 2. PM이 Notion에서 **"템플릿 사용"**을 고르고 허용한다. Notion이 우리 템플릿을 PM 워크스페이스에 복제한다.
 3. Notion이 `GET /api/v1/integrations/notion/callback`으로 돌려보낸다. state·짝 쿠키·로그인 사용자·PM 여부를
    확인하고 토큰을 저장한 뒤 **바로** `<앱 경로>?oauth=notion&oauth_result=success`로 보낸다.
-4. 템플릿 복제는 10초 남짓 걸린다. 그래서 응답 뒤에 서버가 2초마다 복제 페이지를 보고(최대 60초),
-   DB를 찾아 속성을 확인한 뒤 `provider_channel_id`에 저장한다(`app/services/notion_connect.py`).
-   이때부터 워커가 반영한다.
+4. 템플릿 복제는 10초 남짓 걸린다. 그래서 응답 뒤에 서버가 **Notion DB 찾기 작업**을 따로 돌린다
+   (`app/services/notion_connect.py`, FastAPI `BackgroundTasks`). 2초마다 복제 페이지를 보고(최대 60초),
+   DB를 찾아 속성을 확인한 뒤 `provider_channel_id`에 저장한다. 이때부터 워커가 반영한다.
 
 callback은 워크스페이스별 경로가 아닌 고정 경로다. Notion에 등록하는 redirect URI는 한 글자도 달라질 수
 없어서 workspace_id를 넣지 못하고, 어느 워크스페이스인지는 서명한 state에서 꺼낸다.
@@ -152,8 +152,8 @@ callback은 워크스페이스별 경로가 아닌 고정 경로다. Notion에 �
 | 결과 | 항상 앱 화면으로의 302다. `oauth_result`는 `success` · `cancelled`(허용 화면에서 취소) · `failed`. JSON 오류를 보이지 않는다 |
 | 템플릿 미사용 | 허용 화면에서 기존 페이지를 고르면(Notion이 이 선택지를 숨길 수 없다) 저장하지 않고 `failed` |
 | 다시 연결 | 쓰던 DB를 새 토큰으로도 쓸 수 있으면 토큰만 바꾸고 DB는 그대로 둔다. Notion에는 템플릿 복제본이 하나 더 생긴다 |
-| 뒤의 작업 실패 | 60초 안에 DB를 못 찾거나, 템플릿에 DB가 없거나, 속성이 다르면 연결 행을 지운다. 이유는 경고 로그로 남는다(`Notion 대상 DB 연결 실패 … result=…`) |
-| 서버 재시작 | 뒤의 작업 도중 서버가 꺼지면 토큰만 있는 연결이 남는다. 다시 연결하면 된다 |
+| Notion DB 찾기 작업 실패 | 60초 안에 DB를 못 찾거나, 템플릿에 DB가 없거나, 속성이 다르면 연결 행을 지운다. 이유는 경고 로그로 남는다(`Notion 대상 DB 연결 실패 … result=…`) |
+| 서버 재시작 | Notion DB 찾기 작업 도중 서버가 꺼지면 토큰만 있는 연결이 남는다. 다시 연결하면 된다 |
 | 보안 | state는 HMAC 서명(10분 만료)이고 짝 쿠키로 한 번만 쓰인다. callback에서 로그인 사용자와 PM 여부를 다시 확인한다. code·state·토큰은 로그에 남기지 않는다 |
 
 **환경변수** (`.env.example` 참고)
