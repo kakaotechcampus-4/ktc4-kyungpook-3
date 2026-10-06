@@ -370,7 +370,7 @@ def test_metered_backend_books_the_cost_before_the_call_and_keeps_it_when_the_ca
     assert m.name == "fake/slow" and m.transcribe(_tone(3), SR).text == "네"
     assert seen == [1]
     (row,) = _ledger(spend)
-    assert set(row) == {"ts", "label", "audio_s", "krw"} and row["label"] == "seq-two"
+    assert set(row) == {"ts", "label", "audio_s", "billed_s", "krw"} and row["label"] == "seq-two"
     assert row["audio_s"] == 3.0 and row["krw"] == pytest.approx(3 * elice.WHISPER_KRW_PER_SEC)
     with pytest.raises(SttError):                         # 시간이 넘친 호출도 과금됐을 수 있다
         R.MeteredBackend(FailingStt(), spend, 10, label="seq-two").transcribe(_tone(2), SR)
@@ -669,7 +669,8 @@ def test_night3_runs_the_short_meetings_first_and_the_expensive_long_ones_last()
 
 def test_night3_books_every_transcription_on_one_ledger_under_a_cap():
     text = _night3()
-    assert 'ELICE=(--backend elice --spend-file "$RUN_DIR/elice_spend.jsonl" --cap-krw "${CAP_KRW:-1500}")' in text
+    assert ('ELICE=(--backend elice --spend-file "$RUN_DIR/elice_spend.jsonl" --cap-krw "${CAP_KRW:-1500}" '
+            '--min-bill-s "${MIN_BILL_S:-60}")') in text
     calls = [ln for ln in text.splitlines() if '"${RUNNER[@]}"' in ln and '"${RUNNER[@]}" env ' not in ln]
     assert len(calls) == 19                                # 워커 2개 시나리오는 프로세스 둘이다
     assert all('"${ELICE[@]}"' in ln for ln in calls)
@@ -737,3 +738,25 @@ def test_golden_turn_per_chunk_lines_do_not_overwrite_the_packed_run_lines(monke
                      save_lines=True, kind="elice", pack_turns=False)
     assert Path(a["lines_file"]).name == "lines-m01-elice.json"
     assert Path(b["lines_file"]).name == "lines-m01-elice-turn.json"
+
+
+def test_metered_backend_books_at_least_the_minimum_billed_seconds_per_call(tmp_path):
+    # 과금 단위를 모른다. 호출마다 최소 60초로 적으면 실제 과금이 어느 쪽이어도 장부보다 크지 않다
+    spend = tmp_path / "spend.jsonl"
+    m = R.MeteredBackend(SlowStt(), spend, 100, label="x", min_bill_s=60)
+    m.transcribe(_tone(2), SR)
+    row = _ledger(spend)[0]
+    assert row["audio_s"] == pytest.approx(2.0) and row["billed_s"] == 60
+    assert row["krw"] == pytest.approx(6.0)
+    with pytest.raises(R.CapReached):          # 남은 94원으로는 6원짜리 호출이 15번까지다
+        for _ in range(16):
+            m.transcribe(_tone(2), SR)
+    assert R.spent_krw(spend) == pytest.approx(96.0)
+
+
+def test_cli_passes_the_minimum_billed_seconds_to_the_ledger(monkeypatch, tmp_path):
+    _fake_elice(monkeypatch)
+    out, spend = tmp_path / "out", tmp_path / "spend.jsonl"
+    assert R.main(["seq", "--tracks-dir", str(_meeting(tmp_path / "m")), "--label", "t", "--backend", "elice",
+                   "--spend-file", str(spend), "--cap-krw", "100", "--min-bill-s", "60", "--out-dir", str(out)]) == 0
+    assert all(r["billed_s"] >= 60 for r in _ledger(spend))

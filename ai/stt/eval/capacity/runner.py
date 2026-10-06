@@ -155,13 +155,16 @@ class CapReached(SttError):
 class MeteredBackend:
     """유료 백엔드를 감싸 호출마다 비용을 장부(JSONL)에 먼저 예약한다. 예약 뒤 합이 상한을 넘으면 보내지 않는다.
 
-    예약은 오디오 초 × WHISPER_KRW_PER_SEC 이다. 실패하거나 시간이 넘친 호출도 과금됐을 수 있어 예약을 그대로
-    둔다. B.run 의 재시도는 호출마다 따로 예약된다. 장부 한 줄은 {"ts", "label", "audio_s", "krw"} 다.
+    예약은 max(오디오 초, min_bill_s) × WHISPER_KRW_PER_SEC 이다. 새 엔드포인트의 과금 단위를 확인하지 못해,
+    호출당 최소 과금이 있어도 실제 청구가 장부보다 크지 않게 min_bill_s 로 보수 계산할 수 있다. 실패하거나 시간이
+    넘친 호출도 과금됐을 수 있어 예약을 그대로 둔다. B.run 의 재시도는 호출마다 따로 예약된다. 장부 한 줄은
+    {"ts", "label", "audio_s", "billed_s", "krw"} 다.
     거절은 장부에 쓰지 않고 refused 로만 센다. B.run 은 거절도 재시도하므로 묶음 하나가 RETRIES + 1 번 센다.
     """
 
-    def __init__(self, inner, spend_file: Path, cap_krw: float, *, label: str):
+    def __init__(self, inner, spend_file: Path, cap_krw: float, *, label: str, min_bill_s: float = 0.0):
         self.inner, self.spend_file, self.cap_krw, self.label = inner, spend_file, cap_krw, label
+        self.min_bill_s = min_bill_s
         self.name = getattr(inner, "name", type(inner).__name__)
         self.refused = 0
         self._lock = threading.Lock()    # 워커 스레드 여럿이 refused 를 같이 센다
@@ -171,7 +174,8 @@ class MeteredBackend:
 
         flock 은 연 파일마다 걸린다. 호출마다 새로 열어서 같은 프로세스의 스레드끼리도 서로 막는다.
         """
-        krw = round(audio_s * WHISPER_KRW_PER_SEC, 4)
+        billed_s = max(audio_s, self.min_bill_s)
+        krw = round(billed_s * WHISPER_KRW_PER_SEC, 4)
         self.spend_file.parent.mkdir(parents=True, exist_ok=True)
         with self.spend_file.open("a+", encoding="utf-8") as f:
             fcntl.flock(f, fcntl.LOCK_EX)    # 파일을 닫으면 풀린다
@@ -181,8 +185,8 @@ class MeteredBackend:
                 with self._lock:
                     self.refused += 1
                 raise CapReached(f"비용 상한 {self.cap_krw}원: 예약 {spent:.1f}원에 {krw:.1f}원을 더하면 넘는다")
-            f.write(json.dumps({"ts": time.time(), "label": self.label, "audio_s": round(audio_s, 3), "krw": krw})
-                    + "\n")
+            f.write(json.dumps({"ts": time.time(), "label": self.label, "audio_s": round(audio_s, 3),
+                                "billed_s": round(billed_s, 3), "krw": krw}) + "\n")
 
     def transcribe(self, samples, sample_rate):
         self._reserve(len(samples) / sample_rate)   # 잠금은 예약까지만. 호출 중에 쥐면 동시 호출이 줄을 선다
@@ -427,6 +431,8 @@ def main(argv: list[str] | None = None) -> int:
     tx.add_argument("--spend-file", type=Path, default=None,
                     help="elice 호출마다 비용을 예약하는 장부(JSONL). 여러 프로세스가 같이 쓴다")
     tx.add_argument("--cap-krw", type=float, default=None, help="장부 합의 상한(원). 넘을 호출은 보내지 않는다")
+    tx.add_argument("--min-bill-s", type=float, default=0.0,
+                    help="장부에 호출마다 적는 최소 초. 과금 단위를 모를 때 보수 계산한다(예: 60)")
     ap = argparse.ArgumentParser(description="서버 처리 용량 측정 시나리오")
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("env", parents=[common], help="실행 환경만 env.json 으로")
@@ -481,7 +487,8 @@ def main(argv: list[str] | None = None) -> int:
     name = _result_name(args)
 
     def metered(*a, **kw):     # 예열 호출도 과금되므로 예열 전에 감싼다. 장부가 상한이면 예열에서 바로 멈춘다
-        return MeteredBackend(B.make_backend(*a, **kw), args.spend_file, args.cap_krw, label=name)
+        return MeteredBackend(B.make_backend(*a, **kw), args.spend_file, args.cap_krw, label=name,
+                              min_bill_s=args.min_bill_s)
 
     factory = metered if elice else B.make_backend   # 로컬은 돈이 들지 않는다
     backend, timing = warm_backend(args.backend, args.model, beam=args.beam, factory=factory)

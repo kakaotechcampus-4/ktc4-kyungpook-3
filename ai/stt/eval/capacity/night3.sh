@@ -42,7 +42,8 @@ EVENTS=$RUN_DIR/events.jsonl
 PIDS=$RUN_DIR/pids
 RUNNER=("$PY" -m stt.eval.capacity.runner)
 OUT=(--out-dir "$RUN_DIR" --pids-file "$PIDS")
-ELICE=(--backend elice --spend-file "$RUN_DIR/elice_spend.jsonl" --cap-krw "${CAP_KRW:-1500}")
+# 과금 단위를 확인하지 못해 장부는 호출마다 최소 MIN_BILL_S 초로 적는다(보수 계산). 실제 청구는 장부보다 크지 않다
+ELICE=(--backend elice --spend-file "$RUN_DIR/elice_spend.jsonl" --cap-krw "${CAP_KRW:-1500}" --min-bill-s "${MIN_BILL_S:-60}")
 NICE=(nice -n 10)
 : > "$PIDS"
 
