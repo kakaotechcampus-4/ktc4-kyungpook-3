@@ -209,7 +209,7 @@ def _segments(lines) -> list[dict]:
 
 
 def measure_run(label: str, tracks: list[B.Track], backend, *, out_dir: Path, gate_factory=SpeechGate,
-                lines_out: list | None = None, workers: int = 1) -> dict:
+                lines_out: list | None = None, workers: int = 1, pack_turns: bool = True) -> dict:
     """회의 하나를 전사하고 시각, 걸린 시간, CPU 초, 호출별 시간과 길이를 out_dir/<label>.json 에 쓴다.
 
     말 필터는 회의마다 새로 만든다. 봇과 워커도 회의마다 gate_factory() 를 부른다(capture/worker.py _speech_gate).
@@ -219,7 +219,7 @@ def measure_run(label: str, tracks: list[B.Track], backend, *, out_dir: Path, ga
         raise ValueError(f"{label}: 트랙이 없다. 데이터 폴더에 wav 가 있는지 확인한다")
     ru0 = resource.getrusage(resource.RUSAGE_SELF)
     started_at, t0 = time.time(), time.monotonic()
-    lines, stats = B.run(tracks, backend, mode="chunk", gate=gate_factory(), workers=workers)
+    lines, stats = B.run(tracks, backend, mode="chunk", gate=gate_factory(), workers=workers, pack_turns=pack_turns)
     wall_s, ended_at = time.monotonic() - t0, time.time()
     ru1 = resource.getrusage(resource.RUSAGE_SELF)
     if lines_out is not None:
@@ -238,7 +238,7 @@ def measure_run(label: str, tracks: list[B.Track], backend, *, out_dir: Path, ga
 
 # ─────────────────────────────────────────────────────────────── 시나리오
 def run_seq(tracks_dir: Path, label: str, *, repeat: int, backend, out_dir: Path, gate_factory=SpeechGate,
-            save_lines: bool = False, model: str | None = None, workers: int = 1) -> dict:
+            save_lines: bool = False, model: str | None = None, workers: int = 1, pack_turns: bool = True) -> dict:
     """같은 회의를 repeat 번 차례로. 회의 repeat 개가 같이 끝나 워커 1개 앞에 줄 선 경우와 같다.
 
     save_lines 면 실행마다 회의록 줄을 golden --save-lines 와 같은 모양으로 lines-<label>-<i>.json 에 쓴다.
@@ -249,7 +249,7 @@ def run_seq(tracks_dir: Path, label: str, *, repeat: int, backend, out_dir: Path
     for i in range(1, repeat + 1):
         lines: list | None = [] if save_lines else None
         r = measure_run(f"{label}-{i}", tracks, backend, out_dir=out_dir, gate_factory=gate_factory, lines_out=lines,
-                        workers=workers)
+                        workers=workers, pack_turns=pack_turns)
         r["wait_s"] = round(r["started_at"] - runs[0]["started_at"], 3) if runs else 0.0
         if save_lines:
             _write(out_dir, f"lines-{label}-{i}", {"session": label, "model": model, "segments": _segments(lines)})
@@ -284,7 +284,7 @@ def _file_model(kind: str, model: str) -> str:
 
 
 def run_golden(session: Path, *, model: str, tag: str, backend, out_dir: Path, beam: int | None = 5,
-               save_lines: bool = False, kind: str = "local", workers: int = 1) -> dict:
+               save_lines: bool = False, kind: str = "local", workers: int = 1, pack_turns: bool = True) -> dict:
     """정렬본을 CER 까지. score 의 wall_s·cpu_s 는 전사 구간이고, 바깥의 wall_s·cpu_s 는 채점까지 포함한다.
 
     score 는 결과 파일 이름에 회의 이름을 넣지 않는다. 같은 out_dir 에 m01·m02 를 쓰려면 tag 로 가른다.
@@ -294,12 +294,12 @@ def run_golden(session: Path, *, model: str, tag: str, backend, out_dir: Path, b
     started_at, t0 = time.time(), time.monotonic()
     lines: list = []
     score = golden.score(session, "chunk", kind, model, True, workers, True, backend=backend, tag=tag,
-                         out_dir=out_dir, beam=beam, lines_out=lines)
+                         out_dir=out_dir, beam=beam, lines_out=lines, pack_turns=pack_turns)
     wall_s, ended_at = time.monotonic() - t0, time.time()
     ru1 = resource.getrusage(resource.RUSAGE_SELF)
     lines_file = None
     if save_lines:     # 추출 비교(judge_diff)가 읽는다. 전사 문장이라 원자료 폴더에만 둔다
-        name = f"lines-{session.name}-{_file_model(kind, model)}"
+        name = f"lines-{session.name}-{_file_model(kind, model)}" + ("" if pack_turns else "-turn")   # 비교 실행이 덮어쓰지 않게
         _write(out_dir, name, {"session": session.name, "model": model, "segments": _segments(lines)})
         lines_file = str(out_dir / f"{name}.json")
     return {"scenario": "golden", "session": session.name, "model": model, "tag": tag, "beam": beam,
@@ -422,6 +422,8 @@ def main(argv: list[str] | None = None) -> int:
     tx = argparse.ArgumentParser(add_help=False)       # 전사하는 시나리오만
     tx.add_argument("--backend", choices=["local", "elice"], default="local")
     tx.add_argument("--workers", type=int, default=None, help="회의마다 동시 호출 수. 기본: elice 6, local 1")
+    tx.add_argument("--no-pack-turns", dest="pack_turns", action="store_false",
+                    help="턴마다 묶음 하나(seq, golden). 단어 시각이 없는 백엔드에서 묶음 한 줄이 다른 턴을 덮지 않게")
     tx.add_argument("--spend-file", type=Path, default=None,
                     help="elice 호출마다 비용을 예약하는 장부(JSONL). 여러 프로세스가 같이 쓴다")
     tx.add_argument("--cap-krw", type=float, default=None, help="장부 합의 상한(원). 넘을 호출은 보내지 않는다")
@@ -485,10 +487,11 @@ def main(argv: list[str] | None = None) -> int:
     backend, timing = warm_backend(args.backend, args.model, beam=args.beam, factory=factory)
     kw = {"backend": backend, "out_dir": args.out_dir, "workers": workers}
     if args.cmd == "seq":
-        result = run_seq(args.tracks_dir, args.label, repeat=args.repeat, save_lines=args.save_lines, model=model, **kw)
+        result = run_seq(args.tracks_dir, args.label, repeat=args.repeat, save_lines=args.save_lines, model=model,
+                         pack_turns=args.pack_turns, **kw)
     elif args.cmd == "golden":
         result = run_golden(args.session, model=model, tag=args.tag, beam=beam, save_lines=args.save_lines,
-                            kind=args.backend, **kw)
+                            kind=args.backend, pack_turns=args.pack_turns, **kw)
     elif args.cmd == "threads":
         result = run_threads(args.tracks_dir, **kw)
     elif args.cmd == "botlag":
@@ -496,7 +499,8 @@ def main(argv: list[str] | None = None) -> int:
     else:
         result = run_multi(args.tracks_dir, args.n, label=args.label or str(args.n), **kw)
     load_s, first_s = timing["load_s"], timing["first_decode_s"]
-    _write(args.out_dir, name, {**result, "backend": args.backend, "workers": workers, "model": model, "beam": beam,
+    _write(args.out_dir, name, {**result, "backend": args.backend, "workers": workers, "pack_turns": args.pack_turns,
+                                "model": model, "beam": beam,
                                 "load_s": None if load_s is None else round(load_s, 2),
                                 "first_decode_s": round(first_s, 2), "warm_failed_s": timing["warm_failed_s"],
                                 "refused": getattr(backend, "refused", None), "env": env})

@@ -136,6 +136,13 @@ scenario seq-m01-w3 "${NICE[@]}" "${RUNNER[@]}" seq --tracks-dir "$DATA_DIR/m01"
 # 실녹음은 회의록 줄(lines-real929-elice-1.json)을 남긴다. 판단 경로 추출 비교(judge_diff)의 입력이다
 scenario seq-real929 "${NICE[@]}" "${RUNNER[@]}" seq --tracks-dir "$DATA_DIR/real929" --label real929-elice --save-lines \
   "${ELICE[@]}" "${OUT[@]}"
+# 턴마다 묶음 하나(--no-pack-turns)로 한 번 더. 단어 시각이 없어 지금 설정의 묶음 한 줄이 다른 턴을 덮는지 견준다
+scenario golden-m01-elice-turn "${NICE[@]}" "${RUNNER[@]}" golden --session "$DATA_DIR/m01" --tag m01-turn --save-lines \
+  --no-pack-turns "${ELICE[@]}" "${OUT[@]}"
+scenario golden-m02-elice-turn "${NICE[@]}" "${RUNNER[@]}" golden --session "$DATA_DIR/m02" --tag m02-turn --save-lines \
+  --no-pack-turns "${ELICE[@]}" "${OUT[@]}"
+scenario seq-real929-turn "${NICE[@]}" "${RUNNER[@]}" seq --tracks-dir "$DATA_DIR/real929" --label real929-elice-turn \
+  --save-lines --no-pack-turns "${ELICE[@]}" "${OUT[@]}"
 # 비싼 긴 회의는 맨 뒤다. 상한에 걸려도 앞의 실측은 남는다
 scenario seq-long10 "${NICE[@]}" "${RUNNER[@]}" seq --tracks-dir "$DATA_DIR/long-10" --label long-10 --repeat 3 \
   "${ELICE[@]}" "${OUT[@]}"

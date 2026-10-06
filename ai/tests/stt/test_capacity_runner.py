@@ -644,6 +644,7 @@ def test_night3_runs_the_short_meetings_first_and_the_expensive_long_ones_last()
     order = re.findall(r"^scenario ([\w$-]+)", text, flags=re.M)
     assert order == ["env", "seq-two", "golden-m01-elice", "golden-m02-elice", "botlag-m01", "threads", "workers2",
                      "multi-2", "multi-3", "multi-5", "seq-m01-w1", "seq-m01-w3", "seq-real929",
+                     "golden-m01-elice-turn", "golden-m02-elice-turn", "seq-real929-turn",
                      "seq-long10", "seq-long30", "seq-long60"]
     assert re.search(r"^sleep 60$", text, flags=re.M)
     assert "--repeat 3" in _line(text, "seq-two") and "--repeat 3" in _line(text, "seq-long10")
@@ -654,7 +655,13 @@ def test_night3_runs_the_short_meetings_first_and_the_expensive_long_ones_last()
     for m in ("m01", "m02"):
         assert f"--tag {m}" in _line(text, f"golden-{m}-elice")
     saving = sorted(re.findall(r"^scenario (\S+) .*--save-lines", text, flags=re.M))
-    assert saving == ["golden-m01-elice", "golden-m02-elice", "seq-real929"]
+    assert saving == ["golden-m01-elice", "golden-m01-elice-turn", "golden-m02-elice", "golden-m02-elice-turn",
+                      "seq-real929", "seq-real929-turn"]
+    # 턴마다 묶음 하나로 다시 재는 비교 실행. 묶음 한 줄이 다른 턴을 덮는지 본다
+    turn = sorted(re.findall(r"^scenario (\S+) .*--no-pack-turns", text, flags=re.M))
+    assert turn == ["golden-m01-elice-turn", "golden-m02-elice-turn", "seq-real929-turn"]
+    assert "--tag m01-turn" in _line(text, "golden-m01-elice-turn") and "--label real929-elice-turn " in _line(
+        text, "seq-real929-turn")
     # 추출 비교(judge_diff --lines elice=lines-{session}-elice-1.json)가 읽는 이름. 둘째 밤의 real929-small 과 같은 꼴
     assert "--label real929-elice " in _line(text, "seq-real929")
     assert _line(text, "botlag-m01").startswith('scenario botlag-m01 "${RUNNER[@]}"')   # 봇처럼 nice 없이
@@ -664,7 +671,7 @@ def test_night3_books_every_transcription_on_one_ledger_under_a_cap():
     text = _night3()
     assert 'ELICE=(--backend elice --spend-file "$RUN_DIR/elice_spend.jsonl" --cap-krw "${CAP_KRW:-1500}")' in text
     calls = [ln for ln in text.splitlines() if '"${RUNNER[@]}"' in ln and '"${RUNNER[@]}" env ' not in ln]
-    assert len(calls) == 16                                # 워커 2개 시나리오는 프로세스 둘이다
+    assert len(calls) == 19                                # 워커 2개 시나리오는 프로세스 둘이다
     assert all('"${ELICE[@]}"' in ln for ln in calls)
     two = re.search(r"two_workers\(\) \{(.*?)\n\}", text, flags=re.S).group(1)
     assert two.count('"${ELICE[@]}"') == 2 and two.count("&\n") == 2 and "m01" in two and "m02" in two
@@ -686,3 +693,47 @@ def test_night3_stops_before_anything_without_the_elice_settings_and_never_print
     assert p.returncode == 1 and "ELICE_API_KEY" in p.stderr
     assert "mlapi.example" not in p.stdout + p.stderr
     assert not (tmp_path / "run").exists()                # 폴더도 만들지 않았다
+
+
+def test_cli_seq_no_pack_turns_sends_one_turn_per_chunk_and_says_so(monkeypatch, tmp_path):
+    # 단어 시각이 없는 백엔드는 묶음이 한 줄로 남는다. 턴마다 묶음 하나로 재는 비교 실행을 고를 수 있어야 한다
+    seen = {}
+    real_run = R.B.run
+
+    def spy(*a, **kw):
+        seen["pack_turns"] = kw.get("pack_turns", True)
+        return real_run(*a, **kw)
+
+    monkeypatch.setattr(R.B, "run", spy)
+    monkeypatch.setattr(R, "warm_backend",
+                        lambda kind, model, beam, **kw: (SlowStt(), {"load_s": 1.0, "first_decode_s": 0.5,
+                                                                  "warm_failed_s": []}))
+    monkeypatch.setattr(speech_gate, "ENABLED", False)
+    out = tmp_path / "out"
+    assert R.main(["seq", "--tracks-dir", str(_meeting(tmp_path / "m")), "--label", "t", "--no-pack-turns",
+                   "--out-dir", str(out)]) == 0
+    assert seen["pack_turns"] is False
+    assert json.loads((out / "seq-t.json").read_text(encoding="utf-8"))["pack_turns"] is False
+
+
+def test_golden_passes_pack_turns_to_score(monkeypatch, tmp_path):
+    seen = {}
+
+    def fake_score(session, mode, kind, model, gate_on, workers, yes, **kw):
+        seen.update(kw)
+        return {"cer": 0.05, "wall_s": 1.0, "cpu_s": 2.0}
+
+    monkeypatch.setattr(R.golden, "score", fake_score)
+    R.run_golden(tmp_path / "m01", model="small", tag="m01", backend=SlowStt(), out_dir=tmp_path / "o", pack_turns=False)
+    assert seen["pack_turns"] is False
+
+
+def test_golden_turn_per_chunk_lines_do_not_overwrite_the_packed_run_lines(monkeypatch, tmp_path):
+    monkeypatch.setattr(R.golden, "score", lambda *a, **kw: {"cer": 0.05, "wall_s": 1.0, "cpu_s": 2.0})
+    out = tmp_path / "o"
+    a = R.run_golden(tmp_path / "m01", model="elice/whisper-large-v3", tag="m01", backend=SlowStt(), out_dir=out,
+                     save_lines=True, kind="elice")
+    b = R.run_golden(tmp_path / "m01", model="elice/whisper-large-v3", tag="m01-turn", backend=SlowStt(), out_dir=out,
+                     save_lines=True, kind="elice", pack_turns=False)
+    assert Path(a["lines_file"]).name == "lines-m01-elice.json"
+    assert Path(b["lines_file"]).name == "lines-m01-elice-turn.json"
