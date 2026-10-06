@@ -73,7 +73,7 @@ def _fake_llms(monkeypatch, *, stage1, terra, drafts):
 
 
 def _transcribed(tmp_path, segments):
-    """전사까지 끝난 회의. 트랙은 없어도 된다(추출과 인계만 돈다)."""
+    """전사까지 끝난 회의. 트랙은 없어도 된다(발화 저장, 추출, 인계만 돈다)."""
     rec, tdir = tmp_path / "recordings", tmp_path / "transcripts"
     tdir.mkdir(parents=True)
     (tdir / "session_77_500.transcript.json").write_text(
@@ -85,9 +85,14 @@ def _transcribed(tmp_path, segments):
     return rec, tdir, path, manifest
 
 
-def _process(tmp_path, fake, segments=MEETING):
+def _process(tmp_path, fake, segments=MEETING, *, sourced=False):
+    """sourced 면 BE 회의를 만들고 발화 저장까지 끝난 회의에서 시작한다."""
     rec, tdir, path, manifest = _transcribed(tmp_path, segments)
     client = H.BeClient("http://be", session=fake, service_token="svc-token")
+    if sourced:
+        be = H.Handoff(client, "ws-1").end(manifest)
+        manifest["stages"]["sourced"] = "2026-09-28T01:31:00+00:00"
+        be["sources"] = {"inserted": len(segments), "skipped": 0, "duration_ms": None, "meeting_id": be["meeting_id"]}
     extractor = J.build_extractor(run=pipeline.run, candidates=client, cfg=_cfg())
     result = R.process_session(rec, manifest, backend=None, model_name="echo", workers=1, transcripts_dir=tdir,
                                extractor=extractor, handoff=H.Handoff(client, "ws-1"))
@@ -101,7 +106,9 @@ def test_a_meeting_goes_from_the_transcript_to_be_through_the_real_pipeline(tmp_
     fake.similar["검색"] = [_candidate("task_search", "검색 기능 성능 개선")]
     fake.similar["로그인"] = [_candidate("task_login", "로그인 화면 시안 마무리", due_date="2026-09-28")]
     result, saved = _process(tmp_path, fake)
-    assert result["ran"] == ["extracted", "handed_off"] and saved["status"] == "handed_off"
+    assert result["ran"] == ["sourced", "extracted", "handed_off"] and saved["status"] == "handed_off"
+    paths = [c[1] for c in fake.calls]
+    assert paths.index("/meetings/m1/sources") < paths.index("/extractions")      # 발화 먼저, 추출 등록 나중
 
     # 1단계 프롬프트에는 화자가 이름으로 보인다. uid 는 LLM 에 가지 않는다
     prompt = fakes["stage1"].prompts[0]
@@ -152,12 +159,24 @@ def test_a_first_person_item_carries_the_speaker_of_the_last_evidence_line(tmp_p
     assert item["assignee_type"] == "first" and item["evidence_speaker"] == "101"      # 맡겠다고 한 사람은 103 이다
 
 
-def test_a_wrong_service_token_never_registers_an_empty_extraction(tmp_path, monkeypatch):
-    """토큰이 틀리면 finding 마다 유사 검색이 401 이다. 파이프라인은 예외 없이 빈 결과를 돌려주지만 등록하지 않는다."""
-    _fake_llms(monkeypatch, stage1={"findings": FINDINGS}, terra=[], drafts=[])
+def test_a_wrong_service_token_stops_at_the_save_before_any_llm_call(tmp_path, monkeypatch):
+    """토큰이 틀리면 발화 저장이 401 로 먼저 멈춘다. 돈이 드는 LLM 호출은 하나도 나가지 않는다."""
+    fakes = _fake_llms(monkeypatch, stage1={"findings": FINDINGS}, terra=[], drafts=[])
     fake = FakeBe()
     fake.service_token = "다른 값"
     result, saved = _process(tmp_path, fake)
+    assert result["status"] == "failed" and result["failed_stage"] == "sources" and "UNAUTHENTICATED" in result["error"]
+    assert fakes["stage1"].prompts == [] and fake.extractions == {} and fake.sources == {}
+    assert saved["recovery"]["attempts"] == 1 and not result["gave_up"]          # 설정을 고치면 다음 시도가 잇는다
+
+
+def test_a_wrong_service_token_never_registers_an_empty_extraction(tmp_path, monkeypatch):
+    """발화 저장이 끝난 뒤 토큰이 바뀌었다. finding 마다 유사 검색이 401 이고, 파이프라인은 예외 없이 빈 결과를
+    돌려주지만 등록하지 않는다."""
+    _fake_llms(monkeypatch, stage1={"findings": FINDINGS}, terra=[], drafts=[])
+    fake = FakeBe()
+    fake.service_token = "다른 값"
+    result, saved = _process(tmp_path, fake, sourced=True)
     assert result["status"] == "failed" and result["failed_stage"] == "extract"
     assert "JudgeAllFailed" in result["error"] and "UNAUTHENTICATED" in result["error"]
     assert fake.extractions == {} and fake.meetings["m1"]["status"] == "processing"

@@ -43,6 +43,9 @@ class FakeBe:
         self.similar: dict[str, list[dict]] = {}   # 문장에 이 낱말이 있으면 이 후보들을 돌려준다
         self.embedding_down = False                # True 면 502 EMBEDDING_UNAVAILABLE
         self.tasks: set[str] = set()               # 수정 항목의 target_task_id 로 받아 주는 task
+        # 발화 저장 (backend/app/api/sources.py). 회의마다 {seq: 발화}
+        self.sources: dict[str, dict[int, dict]] = {}
+        self.sources_fail: tuple | None = None     # (상태, 코드) 를 넣으면 발화 저장이 그 오류로 실패한다
         self._n = 0
 
     def request(self, method: str, url: str, json=None, timeout=None, headers=None):
@@ -65,6 +68,8 @@ class FakeBe:
                              "started_at": "2026-09-19T00:00:00+00:00"})
         if method == "POST" and path == "/extractions":
             return self._create_extraction(body)
+        if method == "POST" and path.startswith("/meetings/") and path.endswith("/sources"):
+            return self._sources(path.split("/")[2], body, headers or {})
         if method == "PATCH" and path.startswith("/meetings/"):
             _, _, mid, action = path.split("/")
             m = self.meetings.get(mid)
@@ -107,6 +112,30 @@ class FakeBe:
         if item.get("action") == "update":
             return item.get("target_task_id") in self.tasks
         return bool((item.get("task_title") or "").strip())
+
+    def _sources(self, mid: str, body: dict, headers: dict):
+        """토큰 → 요청 검사(seq 겹침은 400) → 회의 → failed 는 409 MEETING_FAILED → 없는 seq 만 넣는다."""
+        if headers.get("X-Service-Token") != self.service_token:
+            return _err(401, "UNAUTHENTICATED")
+        if self.sources_fail:
+            return _err(*self.sources_fail)
+        segments = body.get("segments") or []
+        seqs = [s["seq"] for s in segments]
+        if len(set(seqs)) != len(seqs) or any(q < 0 for q in seqs):
+            return _err(400, "INVALID_REQUEST", {"fields": ["segments"]})
+        m = self.meetings.get(mid)
+        if m is None:
+            return _err(404, "MEETING_NOT_FOUND", {"meeting_id": mid})
+        if m["status"] == "failed":
+            return _err(409, "MEETING_FAILED", {"meeting_id": mid, "status": "failed"})
+        saved = self.sources.setdefault(mid, {})
+        names = body.get("speaker_names") or {}
+        new = [s for s in sorted(segments, key=lambda s: s["seq"]) if s["seq"] not in saved]
+        for s in new:
+            saved[s["seq"]] = {**s, "speaker_name": names.get(s.get("speaker"))}
+        ends = [round(s["end"] * 1000) for s in saved.values()]
+        return _ok(201, {"meeting_id": mid, "inserted": len(new), "skipped": len(segments) - len(new),
+                         "duration_ms": max(ends) if ends else None})
 
     def _similar(self, workspace_id: str, body: dict, headers: dict):
         if headers.get("X-Service-Token") != self.service_token:

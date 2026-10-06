@@ -1,0 +1,95 @@
+name: deploy
+# develop 에 push 되면 EC2 에 배포한다. OIDC 로 ktc-github-deploy 역할을 받고 SSM send-command 로 서버에서 실행한다.
+# 서버에서는 /opt/mm 을 이 커밋까지 fast-forward 한 뒤 deploy/ec2-deploy.sh 가 바뀐 파트만 다시 올린다.
+# 수동 실행(workflow_dispatch)에서 mode=all 을 고르면 세 파트를 모두 다시 올린다.
+
+on:
+  push:
+    branches: [develop]
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "changed: 바뀐 파트만, all: 전부 다시 배포"
+        type: choice
+        options: [changed, all]
+        default: changed
+
+permissions:
+  id-token: write   # OIDC 토큰 발급
+  contents: read
+
+# 배포가 겹치지 않게 하나씩 돈다. 앞의 배포를 취소하지 않는다(중간에 끊기면 서버가 반쯤 바뀐 채로 남는다)
+concurrency:
+  group: deploy-ec2
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    # 수동 실행은 Actions 화면에서 아무 브랜치나 고를 수 있다. 다른 브랜치 커밋이 서버에 올라가면
+    # 서버 develop 이 origin/develop 과 갈라져 이후 fast-forward 가 모두 실패한다
+    if: github.ref == 'refs/heads/develop'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60   # OIDC 세션 최대 1시간
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/ktc-github-deploy
+          aws-region: ap-northeast-2
+
+      - name: SSM 으로 서버 배포
+        env:
+          INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID }}
+          SHA: ${{ github.sha }}
+          MODE: ${{ inputs.mode || 'changed' }}
+        run: |
+          set -euo pipefail
+          # 서버의 git 갱신은 여기서 한다. 첫 배포에는 서버에 아직 배포 스크립트가 없고,
+          # 스크립트가 자기 파일을 git 으로 덮어쓰면 실행이 꼬이기 때문이다.
+          # AWS-RunShellScript 는 sh 로 돌 수 있어 POSIX 문법만 쓴다.
+          params=$(jq -n --arg sha "$SHA" --arg mode "$MODE" '{
+            commands: [
+              "set -e",
+              "exec 9>/tmp/mm-deploy.lock",
+              "flock 9",
+              "cd /opt/mm",
+              "OLD=$(sudo -u ubuntu git rev-parse HEAD)",
+              "sudo -u ubuntu git fetch --quiet origin",
+              "sudo -u ubuntu git merge-base --is-ancestor \($sha) origin/develop || { echo \"develop 에 없는 커밋이라 배포하지 않는다: \($sha)\" >&2; exit 1; }",
+              "sudo -u ubuntu git merge --ff-only \($sha)",
+              "sudo -iu ubuntu bash /opt/mm/deploy/ec2-deploy.sh \"$OLD\" \($mode)"
+            ],
+            executionTimeout: ["3000"]
+          }')
+
+          cmd_id=$(aws ssm send-command \
+            --instance-ids "$INSTANCE_ID" \
+            --document-name AWS-RunShellScript \
+            --comment "deploy ${SHA:0:7}" \
+            --parameters "$params" \
+            --query Command.CommandId --output text)
+          echo "SSM 명령 $cmd_id"
+
+          # 10초마다 최대 55분 기다린다(서버 쪽 executionTimeout 50분보다 조금 길게)
+          status=Pending
+          for _ in $(seq 1 330); do
+            sleep 10
+            if ! out=$(aws ssm get-command-invocation --command-id "$cmd_id" --instance-id "$INSTANCE_ID" \
+                  --query Status --output text 2>&1); then
+              # 보낸 직후에는 아직 조회되지 않는다. 그 밖의 오류(권한 등)는 기다려도 안 풀리니 바로 멈춘다
+              case "$out" in *InvocationDoesNotExist*) continue ;; esac
+              echo "$out" >&2
+              exit 1
+            fi
+            status=$out
+            case "$status" in Pending|InProgress|Delayed|Cancelling) continue ;; esac
+            break
+          done
+
+          echo "----- 서버 출력 -----"
+          aws ssm get-command-invocation --command-id "$cmd_id" --instance-id "$INSTANCE_ID" \
+            --query StandardOutputContent --output text
+          echo "----- 서버 오류 출력 -----"
+          aws ssm get-command-invocation --command-id "$cmd_id" --instance-id "$INSTANCE_ID" \
+            --query StandardErrorContent --output text
+          echo "결과: $status"
+          [ "$status" = Success ]
