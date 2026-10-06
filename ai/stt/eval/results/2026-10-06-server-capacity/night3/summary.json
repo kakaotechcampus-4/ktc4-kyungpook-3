@@ -523,7 +523,7 @@
      "end_s": 4.71
     }
    },
-   "sequential_wall_s": 6.0
+   "sequential_wall_s": 5.6
   },
   "workers2/seq-w2-m01": {
    "workers": 6,

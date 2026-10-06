@@ -147,6 +147,7 @@
  },
  "runs": {
   "prep-long60": {
+   "workers": 1,
    "model": null,
    "beam": null,
    "load_s": null,
@@ -162,6 +163,7 @@
    }
   },
   "seq-long10": {
+   "workers": 1,
    "beam": 5,
    "load_s": 16.1,
    "first_decode_s": 26.12,
@@ -182,6 +184,9 @@
      "retries": 0,
      "gated": 0,
      "wait_s": 0.0,
+     "audio_sent_s": 567.0,
+     "krw": 0.0,
+     "unmapped": 0,
      "peak_rss_mib": 2091.84
     },
     "long-10-2": {
@@ -200,6 +205,9 @@
      "retries": 0,
      "gated": 0,
      "wait_s": 841.28,
+     "audio_sent_s": 567.0,
+     "krw": 0.0,
+     "unmapped": 0,
      "peak_rss_mib": 2091.95
     },
     "long-10-3": {
@@ -218,11 +226,15 @@
      "retries": 0,
      "gated": 0,
      "wait_s": 1688.62,
+     "audio_sent_s": 567.0,
+     "krw": 0.0,
+     "unmapped": 0,
      "peak_rss_mib": 2091.96
     }
    }
   },
   "seq-long30": {
+   "workers": 1,
    "beam": 5,
    "load_s": 14.88,
    "first_decode_s": 24.86,
@@ -243,11 +255,15 @@
      "retries": 0,
      "gated": 0,
      "wait_s": 0.0,
+     "audio_sent_s": 1701.0,
+     "krw": 0.0,
+     "unmapped": 0,
      "peak_rss_mib": 2092.58
     }
    }
   },
   "seq-real929-turbo": {
+   "workers": 1,
    "beam": 5,
    "load_s": 14.37,
    "first_decode_s": 24.04,
@@ -268,11 +284,15 @@
      "retries": 0,
      "gated": 4,
      "wait_s": 0.0,
+     "audio_sent_s": 221.8,
+     "krw": 0.0,
+     "unmapped": 0,
      "peak_rss_mib": 2090.12
     }
    }
   },
   "seq-real929-small": {
+   "workers": 1,
    "beam": 1,
    "load_s": 4.41,
    "first_decode_s": 4.96,
@@ -293,6 +313,9 @@
      "retries": 0,
      "gated": 4,
      "wait_s": 0.0,
+     "audio_sent_s": 221.8,
+     "krw": 0.0,
+     "unmapped": 0,
      "peak_rss_mib": 806.36
     }
    }

@@ -183,6 +183,7 @@
  },
  "runs": {
   "seq-two": {
+   "workers": 1,
    "beam": 5,
    "load_s": 15.66,
    "first_decode_s": 27.6,
@@ -203,6 +204,9 @@
      "retries": 0,
      "gated": 0,
      "wait_s": 0.0,
+     "audio_sent_s": 50.8,
+     "krw": 0.0,
+     "unmapped": 0,
      "peak_rss_mib": 2089.59
     },
     "two-2": {
@@ -221,6 +225,9 @@
      "retries": 0,
      "gated": 0,
      "wait_s": 90.11,
+     "audio_sent_s": 50.8,
+     "krw": 0.0,
+     "unmapped": 0,
      "peak_rss_mib": 2089.9
     },
     "two-3": {
@@ -239,11 +246,15 @@
      "retries": 0,
      "gated": 0,
      "wait_s": 182.12,
+     "audio_sent_s": 50.8,
+     "krw": 0.0,
+     "unmapped": 0,
      "peak_rss_mib": 2089.91
     }
    }
   },
   "golden-m01-turbo": {
+   "workers": 1,
    "beam": 5,
    "load_s": 16.08,
    "first_decode_s": 24.46,
@@ -269,6 +280,7 @@
    "start_err_max_s": 0.0
   },
   "golden-m02-turbo": {
+   "workers": 1,
    "beam": 5,
    "load_s": 14.83,
    "first_decode_s": 24.41,
@@ -294,6 +306,7 @@
    "start_err_max_s": 0.0
   },
   "golden-m01-small": {
+   "workers": 1,
    "beam": 1,
    "load_s": 4.43,
    "first_decode_s": 5.16,
@@ -319,6 +332,7 @@
    "start_err_max_s": 0.0
   },
   "golden-m02-small": {
+   "workers": 1,
    "beam": 1,
    "load_s": 2.15,
    "first_decode_s": 4.93,
@@ -344,6 +358,7 @@
    "start_err_max_s": 0.0
   },
   "botlag-m01": {
+   "workers": 1,
    "beam": 5,
    "load_s": 14.85,
    "first_decode_s": 24.87,
@@ -376,11 +391,15 @@
      "retries": 0,
      "gated": 0,
      "wait_s": null,
+     "audio_sent_s": 138.0,
+     "krw": 0.0,
+     "unmapped": 0,
      "peak_rss_mib": 2122.72
     }
    }
   },
   "threads": {
+   "workers": 1,
    "beam": 5,
    "load_s": 14.28,
    "first_decode_s": 25.82,
@@ -397,6 +416,7 @@
    "sequential_wall_s": 423.5
   },
   "seq-long60": {
+   "workers": 1,
    "beam": 5,
    "load_s": 14.75,
    "first_decode_s": 24.25,
@@ -417,6 +437,9 @@
      "retries": 0,
      "gated": 0,
      "wait_s": 0.0,
+     "audio_sent_s": 3402.0,
+     "krw": 0.0,
+     "unmapped": 0,
      "peak_rss_mib": 2322.2
     }
    }
