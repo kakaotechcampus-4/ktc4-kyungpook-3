@@ -220,6 +220,21 @@ def test_run_metrics_threads_reports_end_times_from_the_common_start(run_dir):
     assert t["sequential_wall_s"] == pytest.approx(60.0 + 62.0)   # 같은 회의를 골든에서 하나씩 돌린 전사 시간 합
 
 
+def test_threads_sequential_sum_ignores_the_turn_per_chunk_golden_runs(run_dir):
+    # 턴마다 묶음 하나로 다시 돈 golden 은 threads 와 설정이 달라 하나씩 돌린 합에 넣지 않는다
+    for m, a in (("m01", 155.0), ("m02", 156.0)):
+        _js(run_dir / f"golden-{m}-turn-large-v3-turbo-{m}.json",
+            {"scenario": "golden", "session": m, "model": "large-v3-turbo", "tag": f"{m}-turn", "beam": 5,
+             "pack_turns": False, "started_at": a, "ended_at": a + 0.5, "wall_s": 1.0, "cpu_s": 1.0,
+             "score": _score(0.05, "0/7", 99.0, 1.0, 40.0), "load_s": 15.0, "first_decode_s": 25.0, "env": {}})
+    rows = [json.loads(l) for l in (run_dir / "events.jsonl").read_text().splitlines()]
+    rows += [{"ts": 154.9, "event": "start", "scenario": "golden-m01-turn"}, {"ts": 155.8, "event": "end",
+             "scenario": "golden-m01-turn", "rc": 0}, {"ts": 155.9, "event": "start", "scenario": "golden-m02-turn"},
+             {"ts": 156.8, "event": "end", "scenario": "golden-m02-turn", "rc": 0}]
+    _jl(run_dir / "events.jsonl", rows)
+    assert R.run_metrics(R.load_run(run_dir))["threads"]["sequential_wall_s"] == pytest.approx(60.0 + 62.0)
+
+
 def test_run_metrics_reads_old_results_as_local_with_one_worker(run_dir):
     # 첫째·둘째 밤 결과에는 backend 와 workers 칸이 없다. 그때는 전부 로컬 워커 1개였다
     runs = R.run_metrics(R.load_run(run_dir))

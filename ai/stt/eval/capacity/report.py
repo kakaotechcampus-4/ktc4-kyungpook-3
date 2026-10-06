@@ -200,7 +200,8 @@ def run_metrics(run: dict) -> dict:
         elif kind == "threads":
             names = [Path(x).name for x in d["tracks_dirs"]]
             alone = {g["session"]: g["score"]["wall_s"] for g in run["results"].values()
-                     if g["scenario"] == "golden" and g["model"] == d["model"] and g["beam"] == d["beam"]}
+                     if g["scenario"] == "golden" and g["model"] == d["model"] and g["beam"] == d["beam"]
+                     and g.get("pack_turns", True)}      # 턴마다 묶음 하나로 돈 비교 실행은 설정이 달라 뺀다
             out[name] = {**base, "data": "+".join(names), "wall_s": d["wall_s"], "cpu_s": d["cpu_s"],
                          "runs": {r["label"]: {"data": m, "end_s": r["ended_at"] - d["started_at"]}
                                   for r, m in zip(d["runs"], names)},
