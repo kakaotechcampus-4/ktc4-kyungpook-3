@@ -1,4 +1,4 @@
-export { AppHeader } from './ui/AppHeader'
+export { AppHeader, AppHeaderSkeleton } from './ui/AppHeader'
 export type { AppHeaderProps } from './ui/AppHeader'
 export { WorkspaceMenu } from './ui/WorkspaceMenu'
 export type { WorkspaceMenuProps } from './ui/WorkspaceMenu'

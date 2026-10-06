@@ -1,4 +1,5 @@
 export type {
+  DisconnectedStatus,
   Integration,
   Integrations,
   IntegrationProvider,

@@ -44,7 +44,7 @@ npm run test:e2e                  # Vite 개발 서버(MSW)를 5211 포트로 �
 E2E 는 매번 자기 개발 서버를 새로 띄운다 — 이미 떠 있는 서버를 재사용하지 않는다. 여러 worktree 를 함께 띄운 환경에서
 다른 worktree 의 서버가 5211 을 쓰고 있으면 시작이 실패한다. 그때는 `E2E_PORT=5212 npm run test:e2e` 처럼 다른 포트를 준다.
 
-테스트마다 `?msw-scenario=` 로 모의 데이터를 초기화한다 (`e2e/support.ts`). 실패하면 `playwright-report/`·`test-results/` 에 trace 가 남는다 — `npx playwright show-report`.
+테스트마다 `?msw-scenario=` 로 모의 데이터를 초기화한다 (`e2e/support.ts`). 실패하면 `playwright-report/`·`test-results/` 에 스크린샷이 남는다 — `npx playwright show-report`. trace 는 다시 돌릴 때만 기록한다(`on-first-retry`, CI 는 retries 1). 로컬에서 trace 가 필요하면 `npx playwright test <파일> --trace on`.
 
 ## 개발 모드의 모의 데이터
 

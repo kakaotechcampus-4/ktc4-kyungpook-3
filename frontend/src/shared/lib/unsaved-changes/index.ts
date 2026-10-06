@@ -4,6 +4,7 @@ export {
   clearUnsavedChanges,
   confirmLeave,
   guardLeave,
+  hasPendingLeave,
   hasUnsavedChanges,
   useUnsavedChangesStore,
 } from './store'

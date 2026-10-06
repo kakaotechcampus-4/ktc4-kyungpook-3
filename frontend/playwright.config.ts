@@ -23,8 +23,10 @@ export default defineConfig({
     : [['list'], ['html', { open: 'never' }]],
   use: {
     baseURL: `http://localhost:${PORT}`,
-    // 실패한 테스트만 trace 를 남긴다. CI 가 아티팩트로 올린다
-    trace: 'retain-on-failure',
+    // 실패한 테스트를 다시 돌릴 때만 trace 를 기록한다. CI(retries 1)가 아티팩트로 올린다. 로컬은 retries 0 이라
+    // 기록하지 않는다 — 필요하면 `--trace on`. retain-on-failure 는 통과할 테스트도 매번 기록해 context 정리가
+    // 30초 슬롯을 넘겼다 (2026-10-02, impl-decision/2026-09-29-storybook-e2e-setup.md)
+    trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     locale: 'ko-KR',
     timezoneId: 'Asia/Seoul',

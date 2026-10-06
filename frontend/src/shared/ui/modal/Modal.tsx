@@ -1,3 +1,4 @@
+import { useRef } from 'react'
 import type { ReactNode } from 'react'
 import * as DialogPrimitive from '@radix-ui/react-dialog'
 
@@ -61,6 +62,11 @@ const ACTIONS = 'flex justify-end gap-8 pt-6'
  *
  * 버튼을 안에 박지 않는다. `actions` 에 무엇이 들어올지는 호출부가 정한다 —
  * `취소`·`확인` 같은 문구도 컴포넌트가 갖지 않는다.
+ *
+ * **닫히면 연 요소로 포커스를 돌린다.** 열림을 호출자가 쥐어 Radix `Trigger` 가 없다 — Radix 는 Trigger 로만 돌려서
+ * 포커스가 `body` 로 떨어졌다. 열릴 때 포커스가 있던 요소를 기억했다가 닫힐 때 돌린다. 그 요소가 문서에서 사라졌거나
+ * 닫는 사이 다른 요소(이동한 새 화면)가 포커스를 가져갔으면 손대지 않는다.
+ * docs/impl-decision/2026-10-06-modal-focus-return.md
  */
 export function Modal({
   open,
@@ -73,6 +79,8 @@ export function Modal({
   closeLabel = '닫기',
   className,
 }: ModalProps) {
+  const opener = useRef<HTMLElement | null>(null)
+
   return (
     <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
       <DialogPrimitive.Portal>
@@ -82,6 +90,22 @@ export function Modal({
           <DialogPrimitive.Content
             className={[CARD, className].filter(Boolean).join(' ')}
             style={width === undefined ? undefined : { width }}
+            onOpenAutoFocus={() => {
+              // FocusScope 가 첫 요소로 옮기기 전이다 — 지금 포커스가 있는 요소가 모달을 연 요소다
+              const active = document.activeElement
+              opener.current =
+                active instanceof HTMLElement && active !== document.body ? active : null
+            }}
+            onCloseAutoFocus={(event) => {
+              const target = opener.current
+              opener.current = null
+              if (target === null || !target.isConnected) return
+              const active = document.activeElement
+              if (active !== null && active !== document.body) return
+              // Radix 의 기본 처리(Trigger 로 돌리기)를 막고 연 요소로 돌린다. 포커스를 받을 수 없으면 그대로 body 다
+              event.preventDefault()
+              target.focus()
+            }}
             {...(description === undefined ? { 'aria-describedby': undefined } : null)}
           >
             <DialogPrimitive.Title className={TITLE}>{title}</DialogPrimitive.Title>
