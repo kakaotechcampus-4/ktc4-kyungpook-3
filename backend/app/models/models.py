@@ -257,8 +257,13 @@ class Integration(Base):
 class Member(Base):
     __tablename__ = "member"
     __table_args__ = (
-        UniqueConstraint(
-            "workspace_id", "discord_user_id", name="uq_workspace_discord_user"
+        # 탈퇴(is_deleted)한 팀원은 과거 이력 때문에 행과 discord_user_id를 남긴다. 그래서 같은 디스코드 계정은
+        # 탈퇴하지 않은 팀원끼리만 겹치지 않게 막는다. API의 사전 검사(api/members.py)와 같은 범위다(#166).
+        Index(
+            "uq_workspace_discord_user", "workspace_id", "discord_user_id",
+            unique=True,
+            postgresql_where=text("is_deleted IS FALSE"),
+            sqlite_where=text("is_deleted IS FALSE"),
         ),
     )
 
