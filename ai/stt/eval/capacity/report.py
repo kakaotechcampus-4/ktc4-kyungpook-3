@@ -9,7 +9,8 @@
   sampler.jsonl  1초 서버 기록(stt/eval/capacity/sampler.py). 멈춤 장치가 켜지면 시각 없는 guard_stop 줄이 섞인다
   probe.jsonl    1초 BE /health 응답(stt/eval/capacity/probe.py)
   *.json         시나리오 결과(runner.py). 파일 이름과 구간 이름이 달라서(seq-long-60.json 은 seq-long60 구간)
-                 시작 시각이 든 구간에 붙인다
+                 시작 시각이 든 구간에 붙인다. backend·workers 칸이 없는 옛 결과(첫째·둘째 밤)는 로컬 워커 1개다
+  elice_spend.jsonl  Elice 호출마다 한 줄 {"ts","label","audio_s","krw"}. 있으면 합을 summary 와 표 첫머리에 쓴다
 
 사용 (ai/ 안에서):
   python -m stt.eval.capacity.report --run-dir <원자료 폴더> --out-dir stt/eval/results/<날짜>-server-capacity
@@ -24,6 +25,7 @@ import statistics
 import sys
 from pathlib import Path
 
+from stt.elice import whisper_krw
 from stt.eval.capacity.runner import DEFAULT_MODEL, _lag_summary
 
 MIB = 1024 * 1024
@@ -68,7 +70,8 @@ def _started_at(d: dict) -> float:
 def load_run(run_dir) -> dict:
     """원자료 묶음. results 는 {구간 이름: 시나리오 결과}. 결과 파일이 없는 구간(idle, 멈춤 장치에 꺼진 workers2)은 없다.
 
-    score_*.json 은 읽지 않는다. 화자별 전사 문장이 들어 있다. 쓰는 숫자는 golden 결과 안의 score 에 다 있다.
+    한 구간에 결과가 둘 이상이면(끝까지 돈 workers2 의 두 프로세스) 하나만 남기지 않고 {구간/파일 이름: 결과} 로
+    다 둔다. score_*.json 은 읽지 않는다. 화자별 전사 문장이 들어 있다. 쓰는 숫자는 golden 결과 안의 score 에 다 있다.
     """
     run_dir = Path(run_dir)
     samples, guards = [], []
@@ -79,7 +82,7 @@ def load_run(run_dir) -> dict:
         else:
             samples.append(row)
     win = windows(_jsonl(run_dir / "events.jsonl"))
-    results = {}
+    found: dict[str, list[tuple[str, dict]]] = {}
     for p in sorted(run_dir.glob("*.json")):
         if p.name.startswith("score_"):
             continue
@@ -89,11 +92,17 @@ def load_run(run_dir) -> dict:
         t = _started_at(d)
         name = next((n for n, (a, b, _) in win.items() if a <= t <= b), None)
         if name:
-            results[name] = d
-    results = {n: results[n] for n in win if n in results}     # night.sh 순서로
+            found.setdefault(name, []).append((p.stem, d))
+    results = {}
+    for n in win:                      # night.sh 순서로
+        rs = found.get(n, [])
+        if len(rs) == 1:
+            results[n] = rs[0][1]
+        else:
+            results.update({f"{n}/{stem}": d for stem, d in rs})
     env, commit = run_dir / "env.json", run_dir / "COMMIT"
     return {"windows": win, "samples": samples, "guards": guards, "probes": _jsonl(run_dir / "probe.jsonl"),
-            "results": results,
+            "results": results, "spend": _jsonl(run_dir / "elice_spend.jsonl"),
             "env": json.loads(env.read_text(encoding="utf-8")) if env.exists() else None,
             "commit": commit.read_text().strip() if commit.exists() else None}
 
@@ -138,11 +147,13 @@ def scenario_metrics(run: dict, name: str) -> dict:
 
 
 # ─────────────────────────────────────────────────────────────── 회의별 지표
-def _run_row(r: dict) -> dict:
+def _run_row(r: dict, backend: str) -> dict:
     """measure_run 결과 하나. 회의 길이는 트랙 길이 합 ÷ 트랙 수다(트랙마다 회의 처음부터 끝까지 담는다).
 
     RTF 는 둘이다. 말 기준(걸린 시간 ÷ 말한 시간)은 말 비율이 다른 회의끼리 견줄 때, 회의 길이 기준(걸린 시간 ÷
     회의 길이)은 "회의 1시간이면 전사가 몇 분" 을 셀 때 쓴다. 회의 길이 기준은 그 회의의 말 비율을 물려받는다.
+    비용은 Elice 만 보낸 오디오 초로 센다. 그 초는 묶음마다 한 번 센 값이라 재시도와 예열이 빠진다. unmapped 는
+    응답에 단어 시각이 없던 묶음 수다. Elice 는 그 묶음 전체를 한 줄로 두고, 로컬은 클립마다 다시 보낸다.
     """
     st = r["stats"]
     meeting = st["track_s"] / st["tracks"]
@@ -151,24 +162,29 @@ def _run_row(r: dict) -> dict:
             "rtf_speech": r["wall_s"] / st["speech_s"], "rtf_meeting": r["wall_s"] / meeting,
             "calls": st["calls"], "call_p95_s": st["transcribe_p95_s"], "calls_over_20s": st["calls_over_20s"],
             "failed": st["failed"], "retries": st["retries"], "gated": st["gated"], "wait_s": r.get("wait_s"),
-            "peak_rss_mib": r["peak_rss_lifetime_bytes"] / MIB}
+            "audio_sent_s": st["audio_sent_s"],
+            "krw": whisper_krw(st["audio_sent_s"]) if backend == "elice" else 0.0,
+            "unmapped": st["unmapped_chunks"], "peak_rss_mib": r["peak_rss_lifetime_bytes"] / MIB}
 
 
 def run_metrics(run: dict) -> dict:
-    """시나리오 결과 JSON 에서 {구간 이름: 지표}. kind 는 seq·golden·threads·botlag.
+    """시나리오 결과 JSON 에서 {구간 이름: 지표}. kind 는 seq·golden·threads·prep·botlag·multi.
 
     golden 은 score 에서 숫자만 고른다. cer_by_speaker 는 실명이 키라 쓰지 않는다. threads 의 회의별 CPU 초는 다른
     회의의 CPU 가 섞여 있어 쓰지 않고 프로세스 전체 값만 둔다. 끝 시각은 두 회의의 공통 시작에서 잰다.
     sequential_wall_s 는 같은 회의를 golden 에서 하나씩 돌린 전사 시간의 합이다(같은 모델·빔이 다 있을 때만).
+    multi 는 회의 n 개를 같이 시작해 회의마다 워커 workers 개로 전사한 것이다. end_s 는 runner 가 잰 회의별 끝
+    시각이고, 회의별 값을 첫 결과·마지막 결과·걸린 시간 중앙값과 최대·합으로 모은다.
     """
     out = {}
     for name, d in run["results"].items():
         kind = d["scenario"]
-        base = {"kind": kind, "model": d["model"], "beam": d["beam"], "load_s": d["load_s"],
-                "first_decode_s": d["first_decode_s"]}
+        backend = d.get("backend", "local")
+        base = {"kind": kind, "backend": backend, "workers": d.get("workers", 1), "model": d["model"],
+                "beam": d["beam"], "load_s": d["load_s"], "first_decode_s": d["first_decode_s"]}
         if kind == "seq":
             out[name] = {**base, "data": Path(d["tracks_dir"]).name,
-                         "runs": {r["label"]: _run_row(r) for r in d["runs"]}}
+                         "runs": {r["label"]: _run_row(r, backend) for r in d["runs"]}}
         elif kind == "golden":
             s = d["score"]
             lost, n = (int(x) for x in s["lost_utterances"].split("/"))
@@ -198,8 +214,29 @@ def run_metrics(run: dict) -> dict:
                                  "peak_rss_mib": r["peak_rss_lifetime_bytes"] / MIB}}
         elif kind == "botlag":
             out[name] = {**base, "data": Path(d["tracks_dir"]).name, "idle": d["idle"], "busy": d["busy"],
-                         "runs": {d["run"]["label"]: _run_row(d["run"])}}
+                         "runs": {d["run"]["label"]: _run_row(d["run"], backend)}}
+        elif kind == "multi":
+            rows = {r["label"]: {**_run_row(r, backend), "end_s": r["end_s"]} for r in d["runs"]}
+            v = list(rows.values())
+            out[name] = {**base, "data": Path(d["tracks_dir"]).name, "n": d["n"], "wall_s": d["wall_s"],
+                         "cpu_s": d["cpu_s"], "first_end_s": min(r["end_s"] for r in v),
+                         "last_end_s": max(r["end_s"] for r in v),
+                         "run_wall_median_s": statistics.median(r["wall_s"] for r in v),
+                         "run_wall_max_s": max(r["wall_s"] for r in v),
+                         # 호출이 없는 회의는 p95 가 비어 있다
+                         "call_p95_max_s": max((r["call_p95_s"] for r in v if r["call_p95_s"] is not None),
+                                               default=None),
+                         "failed": sum(r["failed"] for r in v), "retries": sum(r["retries"] for r in v),
+                         "audio_sent_s": sum(r["audio_sent_s"] for r in v), "krw": sum(r["krw"] for r in v),
+                         "runs": rows}
     return out
+
+
+def spend_total(rows: list[dict]) -> dict | None:
+    """Elice 지출 장부의 합. 장부가 없으면 None."""
+    if not rows:
+        return None
+    return {"calls": len(rows), "audio_s": sum(r["audio_s"] for r in rows), "krw": sum(r["krw"] for r in rows)}
 
 
 # ─────────────────────────────────────────────────────────────── 용량 계산
@@ -235,15 +272,17 @@ def capacity(run: dict) -> dict:
     라 빼지 않았다.
 
     메모리. 서버 전체에서 상시 사용(idle 최대)을 뺀 자리에 운영 모델 전사 프로세스(PSS 최대)가 몇 개 들어가는지.
-    스왑은 넣지 않는다. 프로세스 하나인 시나리오만 보므로 결과 파일이 없는 workers2 는 빠진다.
+    스왑은 넣지 않는다. 프로세스 하나인 시나리오만 본다. workers2 는 결과 파일이 없거나 둘이라(키가 구간/파일
+    이름) 빠진다.
 
-    긴 회의가 없는 밤(night2.sh)은 빈 dict 를 돌려준다.
+    긴 회의가 없는 밤(night2.sh)과 긴 회의를 Elice 로 전사한 밤은 빈 dict 를 돌려준다. Elice 전사는 서버 CPU 와
+    메모리를 거의 쓰지 않아서 위 식의 b_전사와 PSS 가 전사 모델의 값이 아니다.
     """
-    if LONG not in run["results"]:
+    if LONG not in run["results"] or run["results"][LONG].get("backend", "local") != "local":
         return {}
     long = run["results"][LONG]
     r = long["runs"][0]
-    row = _run_row(r)
+    row = _run_row(r, "local")
     rtf, meeting, wall = row["rtf_meeting"], row["meeting_s"], row["wall_s"]
     per_hour = rtf * 60
     load_s = long["load_s"]
@@ -291,7 +330,8 @@ def capacity(run: dict) -> dict:
 
     total = run["samples"][0]["mem_total"] / MIB
     idle_used = scenario_metrics(run, IDLE)["mem_used_max_mib"]
-    pss = [scenario_metrics(run, n)["pss_sum_max_mib"] for n, d in run["results"].items() if d["model"] == DEFAULT_MODEL]
+    pss = [scenario_metrics(run, n)["pss_sum_max_mib"] for n, d in run["results"].items()
+           if n in run["windows"] and d["model"] == DEFAULT_MODEL]
     pss_one = max(p for p in pss if p is not None)
     cap.update({
         "mem_total_mib": _c(total, "MemTotal"),
@@ -364,7 +404,12 @@ def _tables(run: dict, scen: dict, runs: dict, cap: dict, run_name: str) -> str:
     out = [f"# 서버 처리 용량 측정 {run_name}", "",
            f"커밋 {(run['commit'] or '-')[:7]}, faster-whisper {env.get('faster_whisper', '-')}, "
            f"ctranslate2 {env.get('ctranslate2', '-')}, vCPU {env.get('cpu_count', '-')}, 메모리 {total:.0f}MiB. "
-           "`python -m stt.eval.capacity.report` 가 원자료 폴더에서 만든 표다.", "",
+           "`python -m stt.eval.capacity.report` 가 원자료 폴더에서 만든 표다.", ""]
+    spend = spend_total(run["spend"])
+    if spend:
+        out += [f"Elice 지출 장부(elice_spend.jsonl) 합계는 호출 {spend['calls']}건, 보낸 오디오 "
+                f"{spend['audio_s']:.1f}초, {spend['krw']:.1f}원이다.", ""]
+    out += [
            "데이터 종류. 실녹음은 2인 디스코드 녹음, 정렬본은 6인 목소리에 시간축이 합성이고 대본 낭독이라 짧은 대답과 "
            "겹침이 없다. 반복 합성은 정렬본 둘을 이어 붙인 긴 회의라 시간과 자원만 보고 정확도 근거로 쓰지 않는다. "
            "실녹음(혼자 낭독)은 한 사람이 대본을 읽은 디스코드 녹음이다.", ""]
@@ -386,16 +431,21 @@ def _tables(run: dict, scen: dict, runs: dict, cap: dict, run_name: str) -> str:
         if d["kind"] not in ("seq", "botlag"):
             continue
         for label, r in d["runs"].items():
-            meeting_rows.append([n, label, _data(d["data"]), d["model"], d["beam"], r["meeting_s"], r["speech_s"],
-                                 r["speech_ratio"], r["wall_s"], r["cpu_s"], r["rtf_speech"], r["rtf_meeting"],
-                                 r["calls"], r["call_p95_s"], r["calls_over_20s"], r["failed"], r["retries"],
-                                 r["wait_s"], r["peak_rss_mib"]])
+            meeting_rows.append([n, label, _data(d["data"]), d["backend"], d["model"], d["beam"], d["workers"],
+                                 r["meeting_s"], r["speech_s"], r["speech_ratio"], r["wall_s"], r["cpu_s"],
+                                 r["rtf_speech"], r["rtf_meeting"], r["calls"], r["call_p95_s"], r["calls_over_20s"],
+                                 r["failed"], r["retries"], r["unmapped"], r["audio_sent_s"], r["krw"], r["wait_s"],
+                                 r["peak_rss_mib"]])
     out += ["## 회의별", "",
-            "워커 1개로 전사한 실행이다. botlag 는 봇처럼 asyncio.to_thread 로 돌렸다. 대기 초는 첫 실행 시작부터 그 실행 "
-            "시작까지다.", "",
-            _table(["시나리오", "회의", "데이터", "모델", "빔", "회의 길이 초", "말한 시간 초", "말 비율", "걸린 초",
-                    "CPU 초", "RTF(말 기준)", "RTF(회의 길이 기준)", "호출", "호출 p95 초", "20초 넘은 호출", "실패",
-                    "재시도", "대기 초", "프로세스 최대 RSS MiB"], meeting_rows), ""]
+            "회의 하나씩 전사한 실행이다. 워커는 회의 하나 안에서 같이 보내는 호출 수다. botlag 는 봇처럼 "
+            "asyncio.to_thread 로 돌렸다. 대기 초는 첫 실행 시작부터 그 실행 시작까지다. 단어 시각 없는 묶음은 응답에 "
+            "단어 시각이 없던 묶음 수다. Elice 는 그 묶음 전체를 한 줄로 두고, 로컬은 클립마다 다시 보내 한 줄로 남기지 "
+            "않는다. 보낸 오디오 초는 묶음마다 한 번 센 값이라 재시도와 예열은 빠지고, 상한에 걸려 보내지 않은 묶음은 "
+            "들어간다. 비용은 Elice 만 그 초 × 6원/60초로 셌고 로컬은 0 이다. 그래서 장부 합계와 다르다.", "",
+            _table(["시나리오", "회의", "데이터", "백엔드", "모델", "빔", "워커", "회의 길이 초", "말한 시간 초", "말 비율",
+                    "걸린 초", "CPU 초", "RTF(말 기준)", "RTF(회의 길이 기준)", "호출", "호출 p95 초", "20초 넘은 호출",
+                    "실패", "재시도", "단어 시각 없는 묶음", "보낸 오디오 초", "비용 원", "대기 초",
+                    "프로세스 최대 RSS MiB"], meeting_rows), ""]
 
     out += ["## 모델 로드", "",
             _table(["시나리오", "모델", "빔", "모델 로드 초", "첫 디코딩 초"],
@@ -427,6 +477,18 @@ def _tables(run: dict, scen: dict, runs: dict, cap: dict, run_name: str) -> str:
                        [[label, _data(r["data"]), r["end_s"]] for label, r in d["runs"].items()]
                        + [["전체", "-", d["wall_s"]], ["골든에서 하나씩 돌린 전사 시간 합", "-", d["sequential_wall_s"]]]),
                 ""]
+
+    multi = {n: d for n, d in runs.items() if d["kind"] == "multi"}
+    if multi:
+        out += ["## 동시 회의 (multi)", "",
+                "회의 N개를 같이 시작해 회의마다 워커를 따로 두고 전사했다. 결과 초는 runner 가 잰 회의별 끝 시각이다. "
+                "회의별 값은 위 회의별 표와 같은 셈이다.", "",
+                _table(["시나리오", "데이터", "백엔드", "N", "회의당 워커", "첫 결과 초", "마지막 결과 초",
+                        "회의별 걸린 초 중앙값", "회의별 걸린 초 최대", "호출 p95 최대 초", "실패 합", "재시도 합",
+                        "보낸 오디오 초 합", "비용 합 원"],
+                       [[n, _data(d["data"]), d["backend"], d["n"], d["workers"], d["first_end_s"], d["last_end_s"],
+                         d["run_wall_median_s"], d["run_wall_max_s"], d["call_p95_max_s"], d["failed"], d["retries"],
+                         d["audio_sent_s"], d["krw"]] for n, d in multi.items()]), ""]
 
     for n, d in runs.items():
         if d["kind"] != "botlag":
@@ -464,7 +526,10 @@ def write_report_files(run_dir, out_dir) -> dict:
     scen = {n: m for n in run["windows"] if (m := scenario_metrics(run, n))["samples"]}
     runs = run_metrics(run)
     cap = capacity(run)
-    summary = _numbers({"scenarios": scen, "runs": runs, "capacity": {k: v["value"] for k, v in cap.items()}})
+    summary = {"scenarios": scen, "runs": runs, "capacity": {k: v["value"] for k, v in cap.items()}}
+    if (spend := spend_total(run["spend"])) is not None:
+        summary["spend"] = spend
+    summary = _numbers(summary)
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
     (out_dir / "tables.md").write_text(_tables(run, scen, runs, cap, run_dir.name), encoding="utf-8")

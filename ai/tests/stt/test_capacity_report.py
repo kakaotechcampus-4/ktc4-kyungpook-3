@@ -21,9 +21,11 @@ def _sample(ts, used, *, swap=1, busy=0.1, steal=0.0, procs=None):
             "cgroups": {}, "swap_base": 1 * MIB}
 
 
-def _stats(*, tracks=2, track_s=240.0, speech_s=100.0, calls=4, p95=31.0, over=3, failed=0):
+def _stats(*, tracks=2, track_s=240.0, speech_s=100.0, calls=4, p95=31.0, over=3, failed=0, retries=0,
+           audio_sent_s=110.0, unmapped=0):
     return {"mode": "chunk", "tracks": tracks, "track_s": track_s, "speech_s": speech_s, "calls": calls,
-            "transcribe_p95_s": p95, "calls_over_20s": over, "failed": failed, "retries": 0, "gated": 0}
+            "transcribe_p95_s": p95, "calls_over_20s": over, "failed": failed, "retries": retries, "gated": 0,
+            "audio_sent_s": audio_sent_s, "unmapped_chunks": unmapped}
 
 
 def _measure(label, started, ended, wall, cpu, **kw):
@@ -218,6 +220,15 @@ def test_run_metrics_threads_reports_end_times_from_the_common_start(run_dir):
     assert t["sequential_wall_s"] == pytest.approx(60.0 + 62.0)   # 같은 회의를 골든에서 하나씩 돌린 전사 시간 합
 
 
+def test_run_metrics_reads_old_results_as_local_with_one_worker(run_dir):
+    # 첫째·둘째 밤 결과에는 backend 와 workers 칸이 없다. 그때는 전부 로컬 워커 1개였다
+    runs = R.run_metrics(R.load_run(run_dir))
+    assert {(d["backend"], d["workers"]) for d in runs.values()} == {("local", 1)}
+    row = runs["seq-long60"]["runs"]["long-60-1"]
+    assert (row["audio_sent_s"], row["unmapped"]) == (110.0, 0)
+    assert row["krw"] == 0.0                                    # 로컬은 호출 비용이 없다
+
+
 def test_run_metrics_botlag(run_dir):
     b = R.run_metrics(R.load_run(run_dir))["botlag-m01"]
     assert b["idle"] == {"n": 600, "p50_ms": 0.2, "p95_ms": 0.3, "max_ms": 3.0}
@@ -269,26 +280,28 @@ def test_credits_net_integrates_busy_over_time_minus_earnings():
     assert R.credits_net(samples) == pytest.approx(2 - 0.8)
 
 
+def _walk_numbers(x):
+    """summary.json 은 영문 키와 숫자만. 소수는 둘째 자리까지."""
+    if isinstance(x, dict):
+        for k, v in x.items():
+            assert k.isascii()
+            _walk_numbers(v)
+    elif isinstance(x, list):
+        for v in x:
+            _walk_numbers(v)
+    else:
+        assert x is None or isinstance(x, (int, float, bool)), x
+        if isinstance(x, float):
+            assert round(x, 2) == x
+
+
 def test_write_report_files_writes_numbers_only_and_korean_tables(run_dir, tmp_path):
     out = tmp_path / "out"
     R.write_report_files(run_dir, out)
     summary = json.loads((out / "summary.json").read_text(encoding="utf-8"))
     text = (out / "summary.json").read_text(encoding="utf-8")
 
-    def walk(x):
-        if isinstance(x, dict):
-            for k, v in x.items():
-                assert k.isascii()
-                walk(v)
-        elif isinstance(x, list):
-            for v in x:
-                walk(v)
-        else:
-            assert x is None or isinstance(x, (int, float, bool)), x
-            if isinstance(x, float):
-                assert round(x, 2) == x
-
-    walk(summary)
+    _walk_numbers(summary)
     assert summary["capacity"]["transcribe_hours_per_day_no_charge"] == 6.0
     assert summary["scenarios"]["workers2"]["guard_stop"] is True
     assert summary["runs"]["seq-long60"]["runs"]["long-60-1"]["rtf_meeting"] == 1.25
@@ -299,6 +312,8 @@ def test_write_report_files_writes_numbers_only_and_korean_tables(run_dir, tmp_p
     assert "바쁜 vCPU" in md and "(576 − " in md
     for leak in (SECRET_TEXT, SECRET_NAME):
         assert leak not in md and leak not in text
+    assert "spend" not in summary               # 지출 장부가 없는 밤
+    assert "Elice 지출 장부" not in md
 
 
 def test_main_writes_both_files(run_dir, tmp_path):
@@ -348,3 +363,121 @@ def test_report_reads_a_night_without_the_60_minute_meeting(night2_dir, tmp_path
     assert "## 준비 단계" in md and "반복 합성 long-10" in md and "실녹음(혼자 낭독) real929" in md
     assert "## 용량 계산" not in md and SECRET_TEXT not in md
     assert "## 골든 정확도" not in md        # 골든 실행이 없는 밤에 빈 표를 쓰지 않는다
+
+
+ELICE = {"backend": "elice", "model": "elice/whisper-large-v3", "beam": None, "load_s": 0.0, "first_decode_s": 0.8}
+
+
+@pytest.fixture
+def elice_dir(tmp_path):
+    """Elice 밤 모양. 60분 회의도 Elice 로 돌렸고, 회의 셋을 같이 전사한 multi 와 지출 장부가 있다."""
+    d = tmp_path / "elice"
+    d.mkdir()
+    ev = [("env", 99.0, 99.5, 0), ("idle", 100, 104, 0), ("seq-long60", 104, 124, 0), ("multi-n3", 124, 140, 0)]
+    rows = []
+    for name, a, b, rc in ev:
+        rows += [{"ts": a, "event": "start", "scenario": name}, {"ts": b, "event": "end", "scenario": name, "rc": rc}]
+    _jl(d / "events.jsonl", rows)
+    _jl(d / "sampler.jsonl", [_sample(100, 700, busy=None), _sample(102, 760), _sample(110, 900, busy=0.3,
+                                                                                         procs={"6": 300}),
+                              _sample(130, 950, busy=0.4, procs={"7": 320})])
+    _jl(d / "probe.jsonl", [{"ts": 101.0, "ms": 2.0, "status": 200}])
+    env = {"cpu_count": 2, "faster_whisper": "1.2.1", "ctranslate2": "4.8.2"}
+    _js(d / "env.json", env)
+    _js(d / "seq-long-60.json", {"scenario": "seq", "tracks_dir": "/data/long-60", "label": "long-60", "repeat": 1,
+                                  "workers": 6, **ELICE, "env": env,
+                                  "runs": [{**_measure("long-60-1", 106, 122, 16.0, 3.0, audio_sent_s=3600.0,
+                                                       unmapped=40), "wait_s": 0.0}]})
+    _js(d / "multi-n3.json", {
+        "scenario": "multi", "tracks_dir": "/data/two-person", "n": 3, "workers": 6, **ELICE, "env": env,
+        "started_at": 125.0, "ended_at": 139.0, "wall_s": 14.0, "cpu_s": 2.0,
+        "runs": [{**_measure("multi-1", 125, 133, 8.0, 0.6, audio_sent_s=100.0, p95=2.0), "end_s": 8.0},
+                 {**_measure("multi-2", 125, 136, 11.0, 0.7, audio_sent_s=100.0, p95=3.5, failed=1, retries=2),
+                  "end_s": 11.0},
+                 # 호출이 하나도 없으면 p95 가 비어 있다(BatchStats.summary)
+                 {**_measure("multi-3", 125, 139, 14.0, 0.7, audio_sent_s=100.0, p95=None, calls=0), "end_s": 14.0}]})
+    _jl(d / "elice_spend.jsonl", [{"ts": 106.5, "label": "long-60-1", "audio_s": 3600.0, "krw": 360.0},
+                                  {"ts": 125.5, "label": "multi-1", "audio_s": 300.0, "krw": 30.0}])
+    return d
+
+
+def test_run_metrics_elice_run_has_backend_workers_audio_cost_and_unmapped(elice_dir):
+    seq = R.run_metrics(R.load_run(elice_dir))["seq-long60"]
+    assert (seq["backend"], seq["workers"], seq["model"], seq["beam"]) == ("elice", 6, "elice/whisper-large-v3", None)
+    row = seq["runs"]["long-60-1"]
+    assert row["audio_sent_s"] == 3600.0 and row["unmapped"] == 40
+    assert row["krw"] == pytest.approx(3600 * 6 / 60)          # 보낸 오디오 초 × 6원/60초
+
+
+def test_run_metrics_multi_sums_meetings_that_start_together(elice_dir):
+    m = R.run_metrics(R.load_run(elice_dir))["multi-n3"]
+    assert (m["kind"], m["backend"], m["n"], m["workers"], m["data"]) == ("multi", "elice", 3, 6, "two-person")
+    assert (m["first_end_s"], m["last_end_s"]) == (8.0, 14.0)
+    assert (m["run_wall_median_s"], m["run_wall_max_s"]) == (11.0, 14.0)
+    assert m["call_p95_max_s"] == 3.5                           # 빈 p95 는 빼고 최대
+    assert (m["failed"], m["retries"]) == (1, 2)
+    assert m["audio_sent_s"] == pytest.approx(300.0) and m["krw"] == pytest.approx(30.0)
+    assert m["runs"]["multi-2"]["end_s"] == 11.0 and m["runs"]["multi-2"]["krw"] == pytest.approx(10.0)
+
+
+def test_capacity_is_empty_when_the_long_meeting_ran_on_elice(elice_dir):
+    # 크레딧·메모리 용량은 서버가 전사할 때의 식이다. Elice 밤의 60분 회의로는 셈하지 않는다
+    assert R.capacity(R.load_run(elice_dir)) == {}
+
+
+def test_report_for_an_elice_night_adds_spend_and_the_multi_table(elice_dir, tmp_path):
+    out = tmp_path / "out"
+    summary = R.write_report_files(elice_dir, out)
+    _walk_numbers(json.loads((out / "summary.json").read_text(encoding="utf-8")))
+    assert summary["capacity"] == {}
+    assert summary["spend"] == {"calls": 2, "audio_s": 3900.0, "krw": 390.0}
+    assert summary["runs"]["multi-n3"]["krw"] == 30.0 and summary["runs"]["seq-long60"]["workers"] == 6
+    md = (out / "tables.md").read_text(encoding="utf-8")
+    head = md.split("## ")[0]
+    assert "Elice 지출 장부" in head and "호출 2건" in head and "3900.0초" in head and "390.0원" in head
+    assert "## 용량 계산" not in md
+    assert "## 동시 회의 (multi)" in md
+    assert "| multi-n3 | 실녹음 two-person | elice | 3 | 6 | 8.00 | 14.00 | 11.00 | 14.00 | 3.50 | 1 | 2 | 300.00 " \
+           "| 30.00 |" in md
+    meeting = next(line for line in md.splitlines() if line.startswith("| seq-long60 | long-60-1 |"))
+    assert "| elice | elice/whisper-large-v3 | - | 6 |" in meeting and "| 40 | 3600.00 | 360.00 |" in meeting
+    # 로컬은 단어 시각이 없는 묶음을 클립마다 다시 보내 한 줄로 남기지 않는다. 칸 이름이 두 백엔드에 다 맞아야 한다
+    assert "| 단어 시각 없는 묶음 |" in md and "한 줄로 남은 묶음" not in md
+    # 회의별 비용은 묶음마다 한 번 센 값이라 장부 합계(재시도·예열 포함)와 다르다
+    assert "재시도와 예열은 빠지고" in md.split("## 회의별")[1].split("## ")[0]
+
+
+def _add_workers2(d, a, *, extra):
+    """workers2 구간(a 부터)에 두 프로세스가 쓴 seq 결과. night.sh·night3.sh 의 two_workers 가 이렇게 쓴다."""
+    for i, m in enumerate(("m01", "m02")):
+        t = a + 1 + i * 0.2
+        _js(d / f"seq-w2-{m}.json", {"scenario": "seq", "tracks_dir": f"/data/{m}", "label": f"w2-{m}", "repeat": 1,
+                                      "runs": [{**_measure(f"w2-{m}-1", t, t + 3, 3.0, 0.5), "wait_s": 0.0}],
+                                      "env": {}, **extra})
+
+
+def test_load_run_keeps_both_results_when_two_processes_share_a_window(elice_dir, tmp_path):
+    # Elice 는 멈춤 장치에 꺼지지 않아 workers2 의 두 프로세스가 같은 구간에 결과를 하나씩 남긴다
+    with (elice_dir / "events.jsonl").open("a", encoding="utf-8") as f:
+        f.write(json.dumps({"ts": 140, "event": "start", "scenario": "workers2"}) + "\n")
+        f.write(json.dumps({"ts": 150, "event": "end", "scenario": "workers2", "rc": 0}) + "\n")
+    _add_workers2(elice_dir, 140, extra={"workers": 6, **ELICE})
+    runs = R.run_metrics(R.load_run(elice_dir))
+    labels = [label for d in runs.values() if d["kind"] == "seq" for label in d["runs"]]
+    assert "w2-m01-1" in labels and "w2-m02-1" in labels
+    out = tmp_path / "out"
+    R.write_report_files(elice_dir, out)
+    _walk_numbers(json.loads((out / "summary.json").read_text(encoding="utf-8")))
+    md = (out / "tables.md").read_text(encoding="utf-8")
+    assert "| w2-m01-1 |" in md and "| w2-m02-1 |" in md
+
+
+def test_capacity_memory_fit_skips_a_window_with_two_processes(run_dir):
+    # 로컬 밤에 workers2 가 끝까지 돌아도 그 구간 PSS(두 프로세스 합 2400)는 하나짜리 값이 아니다
+    for p in run_dir.glob("*.json"):
+        d = json.loads(p.read_text(encoding="utf-8"))
+        if d.get("scenario") == "seq":
+            common = {k: d[k] for k in ("model", "beam", "load_s", "first_decode_s")}
+    _add_workers2(run_dir, 150, extra=common)
+    cap = R.capacity(R.load_run(run_dir))
+    assert _value(cap, "one_transcription_pss_max_mib") == pytest.approx(1500)
