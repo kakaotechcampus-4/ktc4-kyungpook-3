@@ -198,8 +198,16 @@ def notion_oauth_callback(
             keep_database = not notion.verify_database_schema(
                 token.access_token, integration.provider_channel_id
             )
-        except notion.NotionWriteError:
+        except notion.NotionWriteError as exc:
+            if exc.retryable:
+                # Notion이 잠깐 응답하지 못했다. 쓰던 DB를 못 쓴다고 단정하면 멀쩡한 연결이 새 DB로 바뀌므로
+                # 아무것도 바꾸지 않고 실패로 돌려보낸다. 잠시 뒤 다시 연결하면 된다.
+                return finish(path, "failed", "verify_database_unavailable")
             keep_database = False
+        except Exception:
+            # 예상 못 한 응답(예: JSON이 아닌 본문)이다. 500 화면 대신 실패로 돌려보내고 기존 연결은 그대로 둔다.
+            logger.exception("Notion 재연결 DB 확인 중 예상하지 못한 오류")
+            return finish(path, "failed", "verify_database_error")
 
     if integration is None:
         integration = Integration(workspace_id=payload.workspace_id, provider="notion")

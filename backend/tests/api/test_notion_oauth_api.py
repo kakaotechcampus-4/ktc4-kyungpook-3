@@ -89,6 +89,8 @@ def fake_notion(monkeypatch):
 
     def verify(access_token, database_id, *, transport=None):
         calls["verify"].append((access_token, database_id))
+        if isinstance(state["verify"], Exception):
+            raise state["verify"]
         return state["verify"]
 
     def attach(*args, **kwargs):
@@ -243,6 +245,30 @@ def test_reconnect_looks_up_new_database_when_old_one_is_unusable(client, seed, 
     row = _row(db, seed)
     assert (row.access_token, row.provider_channel_id) == ("secret_new", None)
     assert calls["attach"] == [(seed["workspace_id"], "secret_new", "copied-page")]
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        notion.NotionWriteError("Service Unavailable", retryable=True, status_code=503),
+        ValueError("JSON이 아닌 응답"),
+    ],
+    ids=["temporary_notion_error", "unexpected_error"],
+)
+def test_reconnect_keeps_existing_connection_when_database_check_fails(client, seed, db, fake_notion, error):
+    calls, state_ = fake_notion
+    db.add(Integration(workspace_id=seed["workspace_id"], provider="notion", access_token="secret_old", provider_channel_id="db-old"))
+    db.commit()
+    state_["verify"] = error  # 쓰던 DB를 확인하다 Notion이 잠깐 실패했거나 이상한 응답을 줬다
+    state, nonce = _signed(seed)
+
+    response = _callback(client, state=state, nonce=nonce, code="the-code")
+
+    # 쓰던 DB를 못 쓴다고 단정하지 않는다. 아무것도 바꾸지 않고 실패로 돌려보낸다.
+    assert response.headers["location"] == f"/onboarding?{FAILED}"
+    row = _row(db, seed)
+    assert (row.access_token, row.provider_channel_id) == ("secret_old", "db-old")
+    assert calls["attach"] == []
 
 
 def test_reconnect_clears_database_saved_by_previous_lookup_meanwhile(client, seed, db, fake_notion, monkeypatch):
