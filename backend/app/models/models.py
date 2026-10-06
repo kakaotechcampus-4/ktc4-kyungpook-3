@@ -236,6 +236,14 @@ class Integration(Base):
         UniqueConstraint(
             "workspace_id", "provider", name="uq_workspace_provider"
         ),
+        # Discord는 provider_channel_id에 연결한 서버(guild) ID를 둔다. 한 서버는 한 워크스페이스에만 연결한다.
+        # 서버 하나가 여러 워크스페이스에 붙으면 그 서버의 회의를 어느 워크스페이스로 보낼지 정할 수 없다.
+        Index(
+            "uq_integration_discord_guild", "provider_channel_id",
+            unique=True,
+            postgresql_where=text("provider = 'discord'"),
+            sqlite_where=text("provider = 'discord'"),
+        ),
     )
 
     integration_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
