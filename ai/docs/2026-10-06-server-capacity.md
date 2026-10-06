@@ -19,6 +19,9 @@
 - `real929.py`: 9/29 실녹음을 다시 전사한 줄 파일을 9/29 노트북 결과와 같은 방법으로 채점한다(9456ee0)
 - `stt/eval/golden.py`: 채점이 회의록 줄을 돌려준다(c8c1235)
 - `requirements.txt`: faster-whisper 1.2.1, ctranslate2 4.8.2 로 고정했다(9014ff9)
+- `stt/elice.py`: Elice 전사를 새 서버리스 엔드포인트로 옮겼다. 주소는 ELICE_STT_BASE_URL 에서 읽고, verbose_json 응답을 읽는다. 옛 주소는 9/29 부터 응답하지 않았다(67fa27e)
+- `runner.py`·`night3.sh`: `--backend elice`, 호출마다 비용을 먼저 적는 장부(호출당 최소 과금 초로 보수 계산 가능), 상한에서 멈춤, 같은 회의 N개 동시 실행(multi), 턴마다 묶음 하나 비교(`--no-pack-turns`)(496fc1b, 829c42a, d16647d)
+- `report.py`: Elice 결과, 동시 회의 표, 비용 장부 합(73c2a44, 0a30486)
 
 결과는 `stt/eval/results/2026-10-06-server-capacity/README.md` 에 있다. 레포에는 표와 숫자만 두고 원자료(1초 표본, 전사 줄, LLM 출력)는 레포 밖에 뒀다.
 
@@ -46,8 +49,10 @@
 | 하루 추가 요금 없이 전사(계산값) | 6.38시간 |
 | 9/29 실녹음 CER | 서버 turbo 21.9%, small 32.1%. 짧은 대답 5개 중 4개는 말 필터가 걸러 모델에 가지 않았다(추정) |
 | 추출 놓침(근거 문장 짝) | 6인 정렬본 6번 합 turbo 4, small 7. 9/29 평균 turbo 2.67, small 3.67(정답 대본끼리 0) |
-| 유료 호출 | 추출 45번, 보수 계산 4,917.6원(두 번 승인한 3,000원 상한 안) |
-| 테스트 | 901 통과. 새 테스트는 sampler, probe, synth, runner, report, judge_diff, real929, golden 에 있다 |
+| Elice 셋째 밤(같은 서버) | 62.42분 합성 65.07초, 6인 2.80초, CER 6.52%·4.86%, 9/29 21.2%. 회의 5개 동시 9.58초, 실패 0. 프로세스 120~490MiB |
+| Elice 의 단점 | 단어 시각이 없어 회의록이 묶음 단위(9/29 34줄 → 10줄, 2인 7턴 → 3줄). 옛 주소 약 7일 무응답 |
+| 유료 호출 | LLM 추출 55번 보수 6,111.3원, Elice STT 보수 3,384원(초 기준 약 1,042원). 각각 승인한 상한 안 |
+| 테스트 | 957 통과. 새 테스트는 sampler, probe, synth, runner, report, judge_diff, real929, golden 에 있다 |
 
 ```
 cd ai && .venv/bin/python -m pytest
@@ -59,7 +64,8 @@ python -m stt.eval.capacity.report --run-dir RUN --out-dir stt/eval/results/2026
 
 - 새 decision_log(MemoryMax, TimeoutStopSec, 워커 수, 운영 기본 전사 방식)
 - 여러 사람이 주고받는 실제 대화 녹음으로 CER, 짧은 대답, 추출 비교. 9/29 는 한 사람 낭독이다
-- Elice API 쪽 숫자. 9/29 부터 응답하지 않는다
+- Elice 를 운영 기본으로 둘지와, 단어 시각 없는 백엔드에서 묶음을 턴마다 둘지(batch.py) 결정
+- 새 엔드포인트의 단가와 과금 단위 확인. 지금 비용은 옛 단가로 센 값이다
 - cpu_threads 를 바꾼 비교, 워커 방식의 루프 지연, DB 를 거치는 API 영향
 - 실제 회의의 처리 기록(#153)이 쌓이면 측정값과 견준다
 
