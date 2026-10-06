@@ -1,13 +1,27 @@
 import axios from 'axios'
-import type { AxiosResponse } from 'axios'
+import type { AxiosProgressEvent, AxiosResponse } from 'axios'
 import type { Envelope } from '@/shared/types/api/envelope'
 import { config } from '@/shared/config/env'
 import { parseEnvelope, unwrap } from './envelope'
 import { ApiError, CLIENT_ERROR_CODES, createClientError } from './errors'
+import { captureSessionScope } from './sessionScope'
 
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
 
 export type QueryParamValue = string | number | boolean | null | undefined
+
+/**
+ * 업로드 전송 진행. `total` 이 null 이면 전체 크기를 모른다 — 화면은 불확정 진행으로 그린다.
+ * 전송률일 뿐이다. 100% 여도 서버가 응답하기 전이면 끝난 것이 아니다.
+ */
+export interface UploadProgress {
+  /** 지금까지 보낸 바이트 */
+  loaded: number
+  /** 전체 바이트. 모르면 null */
+  total: number | null
+}
+
+export type UploadProgressListener = (progress: UploadProgress) => void
 
 export interface RequestOptions {
   method?: HttpMethod
@@ -17,6 +31,8 @@ export interface RequestOptions {
   body?: unknown
   /** TanStack Query 의 signal 을 그대로 넘긴다 */
   signal?: AbortSignal
+  /** 본문 전송 진행. axios 이벤트를 넘기지 않고 `UploadProgress` 로 바꿔 준다 */
+  onUploadProgress?: UploadProgressListener
 }
 
 type UnauthorizedListener = (error: ApiError) => void
@@ -36,7 +52,10 @@ const client = axios.create({
   headers: { Accept: 'application/json' },
 })
 
-/** 401 응답마다 알린다. 세션 만료인지는 구독자(app)가 판단한다. 해제 함수를 돌려준다 */
+/**
+ * 지금 세션에서 출발한 요청의 401 마다 알린다. 세션 만료인지는 구독자(app)가 판단한다. 해제 함수를 돌려준다.
+ * 끝난 세션에서 출발한 요청의 401 은 알리지 않는다 — 그 401 은 이미 끝난 세션의 것이다 (sessionScope, U4 r3 M04)
+ */
 export function onUnauthorized(listener: UnauthorizedListener): () => void {
   unauthorizedListeners.add(listener)
   return () => {
@@ -49,6 +68,8 @@ export function onUnauthorized(listener: UnauthorizedListener): () => void {
  * 204 는 본문을 읽지 않고 `undefined` 다. 재시도하지 않는다 — 재시도는 Query 정책이 정한다.
  */
 export async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  // 출발한 세션. 로그아웃·재로그인 뒤에 늦게 온 401 이 새 세션을 끝내지 않게 알림 전에 본다
+  const session = captureSessionScope()
   let response: AxiosResponse<unknown>
   try {
     response = await client.request<unknown>({
@@ -57,6 +78,7 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
       params: options.params,
       data: options.body,
       signal: options.signal,
+      onUploadProgress: toAxiosProgressListener(options.onUploadProgress),
     })
   } catch (error) {
     throw toTransportError(error)
@@ -64,11 +86,39 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
   try {
     return readResponse<T>(response.status, response.data)
   } catch (error) {
-    if (error instanceof ApiError && error.kind === 'http' && error.status === 401) {
+    if (
+      error instanceof ApiError &&
+      error.kind === 'http' &&
+      error.status === 401 &&
+      session.isCurrent()
+    ) {
       for (const listener of unauthorizedListeners) listener(error)
     }
     throw error
   }
+}
+
+/**
+ * axios 진행 이벤트를 화면이 쓰는 값으로 바꾼다. 전체 크기를 모르거나(`lengthComputable` 거짓, `total` 없음·0)
+ * 숫자가 아니면 `total: null` 이다. 보낸 양은 0 이상, 전체를 알면 전체 이하로 자른다.
+ */
+export function toUploadProgress(event: {
+  loaded: number
+  total?: number
+  lengthComputable: boolean
+}): UploadProgress {
+  const loaded = Number.isFinite(event.loaded) ? Math.max(0, event.loaded) : 0
+  const { total } = event
+  if (!event.lengthComputable || total === undefined || !Number.isFinite(total) || total <= 0)
+    return { loaded, total: null }
+  return { loaded: Math.min(loaded, total), total }
+}
+
+function toAxiosProgressListener(
+  listener: UploadProgressListener | undefined,
+): ((event: AxiosProgressEvent) => void) | undefined {
+  if (listener === undefined) return undefined
+  return (event) => listener(toUploadProgress(event))
 }
 
 function toTransportError(error: unknown): unknown {

@@ -85,7 +85,7 @@
 - **전환:** 미저장 변경 시 취소·이동, 전환 후 이전 공간 데이터 비노출.
 - Playwright Chromium E2E로 가입부터 대시보드까지, 기존 사용자 선택·전환, 진행 상태 복원을 검증한다. MSW가 개발 모드에서만 동작하므로 E2E는 Vite 개발 서버로 실행한다.
 - Storybook에 M2 공통 UI와 M4 폼·메뉴·온보딩의 기본·로딩·오류·비활성 상태를 추가한다.
-- 기존 검사에 `build-storybook`과 `test:e2e`를 추가한다. CI에서 기존 검사 통과 후 앱·Storybook 빌드와 E2E를 실행하고 실패 시 브라우저 trace를 보관한다.
+- 기존 검사에 `build-storybook`과 `test:e2e`를 추가한다. CI에서 기존 검사 통과 후 앱·Storybook 빌드와 E2E를 실행하고 실패 시 브라우저 trace를 보관한다(실패한 테스트의 재시도 trace — 2026-10-02 `on-first-retry` 로 바꿈, `impl-decision/2026-09-29-storybook-e2e-setup.md`).
 - 1024·1280·1440px에서 레이아웃과 키보드 조작을 확인한다.
 
 ## 5. 문서와 구현 단위
@@ -110,7 +110,7 @@
   - `select-switch.e2e.ts` — ② 로그인 → 선택 화면 → 진입 → 미저장 변경이 있는 전환(계속 작성하기·버리고 나가기), 키보드만으로 메뉴 조작
   - `restore.e2e.ts` — ③ 가입·생성·단계가 새로고침 뒤 복원, OAuth 왕복 뒤 복원, 손상된 저장값은 비로그인 시작
   - `layout.e2e.ts` — 1024·1280·1440px 에서 랜딩·로그인·회원가입·선택·온보딩·대시보드의 가로 스크롤 없음, 헤더 76px 한 줄(스크린샷 첨부)
-- CI(`.github/workflows/frontend-ci.yml`): `check` 통과 뒤 앱 빌드·Storybook 빌드·E2E 를 병렬로 돌리고, E2E 실패 시 trace·HTML 리포트를 올린다.
+- CI(`.github/workflows/frontend-ci.yml`): `check` 통과 뒤 앱 빌드·Storybook 빌드·E2E 를 병렬로 돌리고, E2E 실패 시 재시도 trace·HTML 리포트를 올린다.
 - 구현 결정 기록: `../impl-decision/` 의 2026-09-28 `landing-scope` · `onboarding-layout`, 2026-09-29 `signup-scope` ·
   `msw-storage-oauth-mock` · `app-shell-scope` · `modal-inset-zero` · `storybook-e2e-setup`.
 

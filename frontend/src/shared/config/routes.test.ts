@@ -14,16 +14,29 @@ it.each([
   [paths.dashboard('ws_01'), '/workspaces/ws_01/dashboard'],
   [paths.meetings('ws_01'), '/workspaces/ws_01/meetings'],
   [paths.meetings('ws_01', 'mt_09'), '/workspaces/ws_01/meetings/mt_09'],
+  [paths.meetingUpload('ws_01'), '/workspaces/ws_01/meetings/upload'],
+  [paths.meetingProcessing('ws_01', 'mt_10'), '/workspaces/ws_01/meetings/mt_10/processing'],
   [paths.tasks('ws_01'), '/workspaces/ws_01/tasks'],
   [paths.tasks('ws_01', 'tk_01'), '/workspaces/ws_01/tasks/tk_01'],
   [paths.approval('ws_01', 'ap_01'), '/workspaces/ws_01/approvals/ap_01'],
   [paths.messages('ws_01'), '/workspaces/ws_01/messages'],
   [paths.members('ws_01'), '/workspaces/ws_01/members'],
   [paths.settings('ws_01'), '/workspaces/ws_01/settings'],
+  [paths.settingsNotion('ws_01'), '/workspaces/ws_01/settings?section=notion'],
+  [
+    paths.settingsNotion('ws_01', '/workspaces/ws_01/meetings/upload'),
+    '/workspaces/ws_01/settings?section=notion&next=%2Fworkspaces%2Fws_01%2Fmeetings%2Fupload',
+  ],
 ])('%s 를 만든다 (기대값 %s)', (actual, expected) => {
   expect(actual).toBe(expected)
 })
 
 it('ID 를 경로 조각으로 인코딩한다', () => {
   expect(paths.dashboard('a b/c')).toBe('/workspaces/a%20b%2Fc/dashboard')
+})
+
+it('처리 화면 경로도 회의 ID 를 인코딩한다', () => {
+  expect(paths.meetingProcessing('ws_01', 'a/b')).toBe(
+    '/workspaces/ws_01/meetings/a%2Fb/processing',
+  )
 })
