@@ -14,7 +14,7 @@
    선택된 항목을 누르는 동안 손잡이가 `#FAFAFA` 로 어두워진다. 트랙이 `#EDEDED` 라 "선택이 풀렸나"로 읽힌다.
 2. **어느 클래스가 이기는지 모른다.** `data-[state=on]:bg-surface` 와 `active:bg-surface-sunken` 은 둘 다 변형이다.
    생성 CSS 순서가 승자를 정하는데, 그 순서를 코드만 보고 알 수 없다
-   (docs/impl-decision/2026-09-16-no-cn-clsx-tailwind-merge.md).
+   (docs/plan/m2/basis-for-decision/2026-09-16-no-cn-clsx-tailwind-merge.md).
 
 ## 고른 길
 
@@ -52,4 +52,4 @@ hover / pressed 가 그려진 아트보드가 생기면 그 값으로 바꾼다.
 ## 그 뒤 (2026-09-23)
 
 pressed 면(`data-[state=off]:active:bg-surface-sunken`)은 없앴다. 미선택 항목에는 hover 글자 `text-ink` 만 남는다.
-누르는 순간 면이 밝아지는 효과가 필요 없다는 사용자 판단이다 — docs/impl-decision/2026-09-23-no-pressed-face-checkbox-segmented.md
+누르는 순간 면이 밝아지는 효과가 필요 없다는 사용자 판단이다 — docs/plan/m2/basis-for-decision/2026-09-23-no-pressed-face-checkbox-segmented.md

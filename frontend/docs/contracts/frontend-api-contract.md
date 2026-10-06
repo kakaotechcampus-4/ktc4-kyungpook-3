@@ -1,5 +1,53 @@
 # 프론트엔드 API 계약
 
+## 현재 코드 대조 (2026-10-07)
+
+이 파일은 프론트엔드–백엔드 API의 대표 계약이다. 제공자는 [백엔드 API](../../../backend/app/api), 소비자는 [프론트엔드 entities](../../src/entities)이며, 개발·테스트에서는 [MSW handlers](../../src/shared/mock/handlers)가 서버 응답을 모의한다. 아래는 현재 작업 트리 소스의 정적 확인 결과다. 실제 서비스 호출·OAuth·STT 성공이나 팀 간 신규 합의를 뜻하지 않는다.
+
+기존 §1~§8의 명세·요청·결정 근거는 보존했다. 그 내용은 아래에 표시한 현재 구현과 다를 수 있으므로 과거 구현 상태를 현재 사실로 읽지 않는다. 기존 D-159·D-160에 따른 프론트엔드 가정과 요청을 새 합의로 승격하지 않는다.
+
+### 공통 입출력과 소비 경계
+
+| 항목 | 현재 프론트엔드 구현 | 코드 근거 |
+|---|---|---|
+| API 루트·인증 | 기본 `/api/v1`, `VITE_API_BASE_URL`로 변경, 쿠키 포함 요청 | [환경 설정](../../src/shared/config/env.ts), [클라이언트](../../src/shared/api/client.ts) |
+| 성공·오류 | `{data, error}` 봉투에서 data 반환. 오류는 `ApiError`, 잘못된 봉투·네트워크·취소를 구분. 204는 `undefined` | [봉투](../../src/shared/api/envelope.ts), [오류 타입](../../src/shared/api/errors.ts), [서버 봉투](../../../backend/app/core/errors.py) |
+| 목록·표기 | DTO는 `snake_case`, 목록 `{items, total}`. 엔티티 mapper에서 화면 도메인 모델로 변환 | [DTO](../../src/shared/types/api), [회의 mapper](../../src/entities/meeting/model/mapper.ts) |
+| 캐시 | 업무 데이터 Query Key에 workspaceId 포함. 회의 상세 요청 경로에 공간이 없으므로 응답 workspaceId도 확인 | [Query Key](../../src/shared/api/queryKeys.ts), [회의 Query](../../src/entities/meeting/api/meetingQueries.ts), [처리 판정](../../src/features/meeting-processing/model/trackerOutcome.ts) |
+| 오류·권한 | 요청의 401을 현재 세션에 한해 알림. 소속·온보딩·PM 가드는 화면 접근을 제한하며 서버 권한 검사와 별개 | [클라이언트](../../src/shared/api/client.ts), [라우트](../../src/app/router/routes.tsx), [서버 권한](../../../backend/app/api/deps.py) |
+
+### 주요 API와 데이터 형식
+
+세부 필드와 화면별 요구는 아래 §2·§4·§5·§6에 유지한다. 현재 소비하는 주요 경계는 다음과 같다.
+
+| API (`/api/v1` 아래) | 입력·출력 | 소비 코드 |
+|---|---|---|
+| `POST /auth/signup`, `POST /auth/login`, `POST /auth/logout`, `GET /auth/me` | 가입 `{email,password,name}`, 로그인 `{email,password}`. 세션 DTO를 도메인 세션으로 변환, 토큰을 화면에 전달하지 않음 | [인증](../../src/entities/user/api/auth.ts), [세션](../../src/entities/user/api/session.ts), [인증 DTO](../../src/shared/types/api/auth.ts) |
+| `/workspaces` 목록·생성·상세, `PATCH /workspaces/{id}/onboarding` | 공간·역할·단계 상태를 사용. 단계 갱신 후 상세 재조회 | [공간 API](../../src/entities/workspace/api), [공간 DTO](../../src/shared/types/api/workspace.ts) |
+| `GET /workspaces/{id}/integrations`, `DELETE /workspaces/{id}/integrations/{provider}` | Discord·Notion 상태. 해제는 204 무본문 | [연동 API](../../src/entities/integration/api/integrations.ts), [연동 DTO](../../src/shared/types/api/integration.ts) |
+| `POST /workspaces/{id}/meetings/upload` | multipart `title`, ISO `started_at`, 참석자별 반복 `attendee_member_ids`, `file`. 202 data `{meeting_id,status}` | [업로드](../../src/entities/meeting/api/uploadMeeting.ts), [회의 DTO](../../src/shared/types/api/meeting.ts) |
+| `GET /workspaces/{id}/meetings`, `GET /meetings/{id}` | 목록은 `{items,total}`, nullable title. 상세는 workspace_id·status·progress·extraction_id·failed_stage | [회의 조회](../../src/entities/meeting/api/meetingQueries.ts), [회의 DTO](../../src/shared/types/api/meeting.ts) |
+| `GET /meetings/{id}/minutes` | nullable summary·title, 참석자 배열, 전사 배열, permissions `{can_review,can_undo}` | [회의록 조회](../../src/entities/minutes/api/minutesQuery.ts), [회의록 DTO](../../src/shared/types/api/minutes.ts) |
+| 회의 추출·대기 승인 조회 | 반영 항목과 확인 필요 항목을 조합. 일반 팀원은 대기 승인 조회·확인 필요 영역 제외 | [추출 조회](../../src/entities/extraction/api/extractionQuery.ts), [승인 조회](../../src/entities/approval/api/pendingApprovals.ts), [회의록 화면](../../src/pages/meetings) |
+
+업로드 화면의 형식·한도는 [uploadPolicy](../../src/entities/meeting/model/uploadPolicy.ts)의 MP3·WAV·M4A·OGG·WebM, 200 MiB·2시간이다. 브라우저 검증이 서버의 동일 검증을 보장하지 않는다. 전송 진행률 100%와 서버의 처리 완료는 다르며, 409 `MEETING_PROCESSING_IN_PROGRESS`는 `details.meeting_id`로 기존 처리 화면에 연결한다. 처리 상세는 3초 간격으로 추적하며 완료·실패·접근 상실 시 중단한다.
+
+### 기존 명세와 현재 서버의 차이
+
+| 기존 문서의 상태·요청 | 현재 코드에서 확인한 사실 | 남은 제약·합의 상태 |
+|---|---|---|
+| §4.2 온보딩 저장 스텁 | [workspaces.py](../../../backend/app/api/workspaces.py)의 `update_onboarding`은 PM 검사·행 잠금·단계 저장·완료 상태 갱신을 수행 | 실 API 재개 흐름은 이번 작업에서 실행 검증하지 않음 |
+| §4.3 OAuth start·callback 없음 | [integrations.py](../../../backend/app/api/integrations.py)에 Notion start와 `/integrations/notion/callback` 구현. [main.py](../../../backend/app/main.py)에 callback router 등록 | Google·Discord OAuth 경로는 해당 라우터에 없음. Notion의 실제 설정·외부 인증 성공은 미검증 |
+| §4.0-②-17 업로드 PM 권한 강제 요청 | [workspaces.py](../../../backend/app/api/workspaces.py)의 업로드 의존성이 `get_current_pm` | 기존 요청은 과거 기록으로 보존. 서버 권한 동작은 실행 검증하지 않음 |
+| §4.4 반복 참석자 multipart 필드 | 프론트는 참석자마다 필드를 반복. 서버 업로드 시그니처는 `attendee_member_ids: str = Form(...)`이며 값을 저장하지 않음 | 다중 참석자 해석·저장 차이 남음. 새 형식 합의 없음 |
+| §4.4 파일 저장·큐 전송 스텁 | 업로드는 processing 회의 행을 만들고 파일 저장·큐 전송 TODO 유지 | 실제 업로드부터 처리 완료까지 성공을 선언하지 않음 |
+| §4.0-②-11 회의록 본문 하드코딩·summary 미생성 | [meetings.py](../../../backend/app/api/meetings.py)는 Source에서 전사·참석자를 구성하고 Extraction.summary JSON을 읽음 | summary 저장 여부·실제 파이프라인 성공은 이 정적 확인만으로 검증하지 않음 |
+| §4.5 Discord 사용자 목록 스텁 | 연동 존재를 검사한 뒤 고정 사용자 2명을 반환 | 실제 Discord API 조회 없음 |
+
+이번 문서 구조화로 요청·합의 상태를 변경하지 않는다. 신규 확인은 정적 코드 대조이고, 실 연동 검증 결과와 담당 파트 합의는 별도 근거가 필요하다. 백엔드 요청 목록은 계속 이 문서 §4를 사용하며 [request 디렉터리](../requests)에 복제하지 않는다.
+
+---
+
 - 작성일 2026-09-17 · 개정 2026-09-21
 - **기준 커밋: `origin/develop` `f441ea4`** (PR #59 병합 이후)
 - 개발 계획의 M1-A 산출물
@@ -1163,5 +1211,5 @@ API 요청이 없으므로 계약도 모델도 픽스처도 필요 없다. 이 �
 ## 참고
 
 - 결정 기록: `frontend/docs/decision/frontend-decisions.md` (특히 D-160~D-168)
-- 개발 계획: `frontend/docs/plan/frontend-development-plan.md`
+- 개발 계획: [프론트엔드 전체 계획](../plan/frontend-plan.md)
 - 백엔드 실행과 Swagger: `backend/README.md`

@@ -73,7 +73,7 @@ it('빈 목록의 total도 0이다', async () => {
 
 ## 회의 정리 흐름 (M5)
 
-업로드한 회의가 `processing` → `done` | `failed` 로 바뀌는 흐름이다. 시간이 아니라 **상세 조회(`GET /meetings/{id}`)가 시계**다 — handler 가 답하기 전에 `tickMeeting()` 으로 처리 중 회의를 한 번 진행한다. 결정과 이유는 [구현 결정 2026-10-02-msw-meeting-flow](impl-decision/2026-10-02-msw-meeting-flow.md)에 있다.
+업로드한 회의가 `processing` → `done` | `failed` 로 바뀌는 흐름이다. 시간이 아니라 **상세 조회(`GET /meetings/{id}`)가 시계**다 — handler 가 답하기 전에 `tickMeeting()` 으로 처리 중 회의를 한 번 진행한다. 결정과 이유는 [구현 결정 2026-10-02-msw-meeting-flow](plan/m5/basis-for-decision/2026-10-02-msw-meeting-flow.md)에 있다.
 
 ### 흐름 방식
 
@@ -149,7 +149,7 @@ await fetch('/api/v1/approvals/ap_01', {
 
 ## 실 백엔드와 다른 점
 
-`VITE_ENABLE_MSW=false`로 붙일 때 어긋나는 것들이다. 전체 현황은 [계약 §4.0](api/frontend-api-contract-draft.md)에 있다.
+`VITE_ENABLE_MSW=false`로 붙일 때 어긋나는 것들이다. 전체 현황은 [계약 §4.0](contracts/frontend-api-contract.md)에 있다.
 
 - **로그인이 쿠키 세션이다.** 실 백엔드는 `Set-Cookie: session_token`(HttpOnly·Secure·SameSite=Lax)으로 응답하고, 이후 요청은 쿠키로 인증한다. MSW는 쿠키를 심지 않는다. 브라우저에서 두 모드를 오가면 로그인 상태가 이어지지 않는다.
 - **온보딩·Discord 사용자 목록·회의록 본문·회의 업로드가 실 API에서 스텁이다.** 엔드포인트는 응답하지만 값이 하드코딩이거나 저장을 하지 않는다. MSW 쪽이 더 완전하므로 이 네 화면은 mock으로 개발한다.
@@ -158,13 +158,13 @@ await fetch('/api/v1/approvals/ap_01', {
   MSW 모드(개발)에서는 Discord·Notion 연결만 프론트의 모의 OAuth 화면(`shared/mock/oauth/`, `devPaths.mockOAuth`)이 콜백을 흉내내 연결·취소·실패 뒤 원래 화면으로 돌려보낸다(위 「회의 정리 흐름」의 `meeting-notion-not-connected`).
   Google 로그인은 MSW 모드에서도 비활성 버튼이다(D-007).
 - 실 백엔드는 업로드한 **파일을 저장하지 않고 큐에도 보내지 않는다.** 회의가 `processing`에 머물러 다음 업로드를 409로 막는다. MSW는 위 「회의 정리 흐름」으로 정상 흐름을 낸다.
-- 실 백엔드는 **업로드를 PM 에게만 허용하지 않는다**(소속만 본다). 프론트의 PM 가드는 화면만 막는다 — [계약 §4](api/frontend-api-contract-draft.md) 백엔드 요청 17.
+- 실 백엔드는 **업로드를 PM 에게만 허용하지 않는다**(소속만 본다). 프론트의 PM 가드는 화면만 막는다 — [계약 §4](contracts/frontend-api-contract.md) 백엔드 요청 17.
 
 **세션 인증을 흉내낸다.** 로그아웃하면 보호된 엔드포인트가 401 을 낸다. 소속이 아닌 워크스페이스는 403 이다.
-`db.authenticated` 기본값이 `true` 라 평소에는 로그인 상태다. 붙인 곳은 [M1 사양서 §10-2](plan/m1-domain-model-and-msw.md)에 있다.
+`db.authenticated` 기본값이 `true` 라 평소에는 로그인 상태다. 붙인 곳은 [M1 사양서 §10-2](plan/m1/plan.md)에 있다.
 `tasks`·`approvals`·`extractions`·`members` 에는 **일부러 붙이지 않았다** — 백엔드에 인증이 없다.
 
-handler 35개를 실 API 와 대조한 결과는 [M1 사양서 §10-1](plan/m1-domain-model-and-msw.md)에 표로 있다.
+handler 35개를 실 API 와 대조한 결과는 [M1 사양서 §10-1](plan/m1/plan.md)에 표로 있다.
 
 태스크 쓰기 경로는 실 백엔드에 맞춰 두었다. 세 가지를 기억한다.
 
@@ -180,4 +180,4 @@ handler 35개를 실 API 와 대조한 결과는 [M1 사양서 §10-1](plan/m1-d
 - `server.resetHandlers()`만으로 테스트 상태를 초기화했다고 생각하지 않는다. `resetDb()`도 필요하다.
 - 화면 계층은 DTO를 직접 import하지 않는다. 엔티티의 공개 매퍼·도메인 타입과 파생 함수를 사용한다.
 
-엔드포인트와 픽스처 전체 목록은 [M1 사양서](plan/m1-domain-model-and-msw.md)의 §9~§11을 본다.
+엔드포인트와 픽스처 전체 목록은 [M1 사양서](plan/m1/plan.md)의 §9~§11을 본다.

@@ -1306,7 +1306,7 @@ Google 이외의 소셜 로그인은 현재 1차 개발 범위에 포함하지 �
 
 - 프론트엔드는 `WCAG 2.2 AA`를 웹 접근성 구현 기준으로 삼는다.
 - 키보드 조작, 명확한 포커스 표시, 의미 있는 HTML, 입력 레이블과 오류 연결, 텍스트·UI 명암 대비 및 색상 외 상태 표현을 기본 구현 범위에 포함한다.
-- 시각 포커스는 `:focus-visible` 의 `outline: 2px solid #171717; outline-offset: -1px` 이다 (2026-09-23, #73). 음수 offset 으로 기존 테두리 위에 겹쳐 그려 선이 두 겹이 되지 않게 한다. 먹 면 컨트롤만 면 안쪽 흰 선이다. 2026-09-16 에 `outline` 을 뺐다가 대체 표현이 없어 SC 2.4.7 이 미충족이던 구멍을 닫았다 — `docs/impl-decision/2026-09-23-focus-outline-over-border.md`. 키보드 이동·포커스 트랩은 그대로 지킨다.
+- 시각 포커스는 `:focus-visible` 의 `outline: 2px solid #171717; outline-offset: -1px` 이다 (2026-09-23, #73). 음수 offset 으로 기존 테두리 위에 겹쳐 그려 선이 두 겹이 되지 않게 한다. 먹 면 컨트롤만 면 안쪽 흰 선이다. 2026-09-16 에 `outline` 을 뺐다가 대체 표현이 없어 SC 2.4.7 이 미충족이던 구멍을 닫았다 — `docs/plan/m2/basis-for-decision/2026-09-23-focus-outline-over-border.md`. 키보드 이동·포커스 트랩은 그대로 지킨다.
 - 아이콘만 있는 버튼과 동적으로 바뀌는 로딩·성공·오류 상태에는 보조 기술이 이해할 수 있는 이름과 상태 정보를 제공한다.
 - Radix UI를 사용하는 모달·드롭다운 등에서도 포커스 이동과 키보드 동작을 실제 화면 흐름 기준으로 확인한다.
 - 1차에서는 외부 기관의 공식 접근성 인증과 전 항목 감사는 진행하지 않으며 `WCAG 2.2 AA 완전 준수`를 공식적으로 선언하지 않는다.
@@ -1520,7 +1520,7 @@ D-139 개정:
 
 영향:
 
-- `frontend/docs/plan/backend-alignment.md`(2026-09-15)를 삭제하고, 백엔드 요청을 `frontend/docs/api/frontend-api-contract-draft.md` §4 로 통합한다.
+- `frontend/docs/plan/backend-alignment.md`(2026-09-15)를 삭제하고, 백엔드 요청을 `frontend/docs/contracts/frontend-api-contract.md` §4 로 통합한다.
 - 요청 문서를 따로 두면 API 형태와 제약이 계약 문서와 양쪽에 존재해 한쪽만 고쳐질 때 어긋난다. 문서를 하나로 두고 백엔드를 향한 내용만 §4 에 모은다.
 - D-155 를 D-161 로, D-102 를 D-163 으로, D-151 을 D-165 로 개정한다.
 - D-157(회의 리소스 단일 유지)과 D-153(워크스페이스 생성 요청에서 팀원 정보 제외)은 요청 항목이 아니라 **이미 충족된 사실**로 격하한다. `meeting` 이 `workspace_id` 와 `source` 를, `WorkspaceCreateRequest` 가 `name` 만 갖는다.
@@ -1876,7 +1876,7 @@ D-159 가 예고한 대조를 수행했다. 기준은 `origin/develop` `f441ea4`
 - Discord 가 연결되지 않은 채 팀원 연결에 오면 불러올 Discord 사용자가 없다. 오류(`다시 시도` 뿐인 409) 대신
   `디스코드를 연결하지 않아 팀원을 불러올 수 없어요. 이전 단계에서 연결하거나 건너뛸 수 있어요.` 와 `건너뛰기` 를 보인다.
   `건너뛰기` 와 오른쪽 화살표는 `나중에 하기` 와 같은 저장(`connect_members` 건너뜀)이다. 왼쪽 화살표로 Notion·Discord 둘러보기에 가서
-  연결할 수 있고(`docs/impl-decision/2026-09-28-onboarding-layout.md`), 연결한 뒤 팀원 연결은 Discord 사용자를 정상으로 불러온다.
+  연결할 수 있고(`docs/plan/m4/basis-for-decision/2026-09-28-onboarding-layout.md`), 연결한 뒤 팀원 연결은 Discord 사용자를 정상으로 불러온다.
 - 연동 상태로 Discord 미연결을 이미 알면 Discord 사용자 조회를 보내지 않는다. 모르고 보냈다가 409 `INTEGRATION_NOT_CONNECTED` 를 받아도 같은 안내다.
 - 이미 `건너뜀` 으로 저장된 팀원 연결 단계는 그대로 둔다. 되돌리거나 옮기지 않는다.
 

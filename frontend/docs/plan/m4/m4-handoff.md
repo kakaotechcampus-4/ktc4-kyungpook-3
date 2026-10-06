@@ -23,8 +23,8 @@ F r1 에서 확인된 것: `npm ci` 뒤 typecheck·lint·format·build·build-st
 
 사용자 결정(구현에 반영됨):
 
-- 랜딩: 제품 미리보기는 정적 마크업으로 구현, 요금제·FAQ 제외 → `docs/impl-decision/2026-09-28-landing-scope.md`
-- 온보딩: 하단 이전/다음 버튼 없이 `n / 4` 만, 나가기는 좌측 상단 뒤로가기. Notion DB 선택 없음, 연동 완료 줄은 이름 없이 → `docs/impl-decision/2026-09-28-onboarding-layout.md`
+- 랜딩: 제품 미리보기는 정적 마크업으로 구현, 요금제·FAQ 제외 → `docs/plan/m4/basis-for-decision/2026-09-28-landing-scope.md`
+- 온보딩: 하단 이전/다음 버튼 없이 `n / 4` 만, 나가기는 좌측 상단 뒤로가기. Notion DB 선택 없음, 연동 완료 줄은 이름 없이 → `docs/plan/m4/basis-for-decision/2026-09-28-onboarding-layout.md`
 
 ## 2. 중단 시점 상태 (821e7e2 — 기록용)
 

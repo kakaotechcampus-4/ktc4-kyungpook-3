@@ -1,13 +1,24 @@
 # 프론트엔드 개발 시 고민
 
+## 기록 위치
+
+구현 결정 원문은 마일스톤별 `basis-for-decision/`에 있다. 이전 경로의 파일과 이동 안내는 삭제했으며 새 기록도 해당 마일스톤에 작성한다.
+
+- [M1 모델·MSW·계층 검사](m1/basis-for-decision)
+- [M2 토큰·공통 UI·포커스](m2/basis-for-decision)
+- [M4 인증·온보딩·앱 셸·검증 도구](m4/basis-for-decision)
+- [M5 업로드·처리·회의록](m5/basis-for-decision)
+
+새 결정은 해당 마일스톤의 `basis-for-decision/`에 기록한다. 아래 작성 기준과 양식은 유지한다.
+
 화면·컴포넌트·스타일을 만들 때 헷갈리거나, 두 길이 있어 고른 지점만 적는다.
 
 `docs/decision/`은 제품 범위·라우팅처럼 개발 전에 합의한 결정이다.
-여기에는 “이 버튼을 어떻게 짜지?”, “클래스를 어떻게 붙이지?”, “이 스펙 두 줄이 충돌하는데?”처럼 **코드를 짜는 사람의 고민**만 둔다.
+구현 결정에는 “이 버튼을 어떻게 짜지?”, “클래스를 어떻게 붙이지?”, “이 스펙 두 줄이 충돌하는데?”처럼 **코드를 짜는 사람의 고민**만 둔다.
 
 둘 다 결정 기록이고, 다른 것은 **층위와 시점**이다.
 
-| | `docs/decision/` | `docs/impl-decision/` |
+| | `docs/decision/` | `docs/plan/mN/basis-for-decision/` |
 |---|---|---|
 | 언제 | 개발 전에 합의 | 코드를 짜다 그 자리에서 |
 | 무엇 | 제품 범위·라우팅·스택 | 컴포넌트·클래스·토큰 |
@@ -51,5 +62,5 @@
 결정이 코드 모양을 바꿨으면 그 자리에 경로를 남긴다. 나중에 읽는 사람이 “왜 이렇게 짰지”를 여기서 찾는다.
 
 ```ts
-/* 근거: m2-design-tokens.md §7-1, docs/impl-decision/2026-09-16-no-cn-clsx-tailwind-merge.md */
+/* 근거: docs/plan/m2/plan.md §7-1, docs/plan/m2/basis-for-decision/2026-09-16-no-cn-clsx-tailwind-merge.md */
 ```

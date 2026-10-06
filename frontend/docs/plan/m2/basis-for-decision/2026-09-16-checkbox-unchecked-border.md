@@ -37,7 +37,7 @@ const BOX_TONE: Record<CheckboxTone, string> = {
 ## 왜
 
 `className` 을 배열 join 으로 붙이면 **HTML 에 나중에 적은 클래스가 이기지 않는다** — 생성된 CSS 순서가 이긴다
-(docs/impl-decision/2026-09-16-no-cn-clsx-tailwind-merge.md).
+(docs/plan/m2/basis-for-decision/2026-09-16-no-cn-clsx-tailwind-merge.md).
 `border-accent` 와 `data-[state=unchecked]:border-input-border` 를 같이 붙이면 변형 쪽이 뒤에 생성돼
 **오류 상태가 조용히 묻힌다.** 타입·린트·테스트 어디서도 잡히지 않는다.
 
@@ -58,4 +58,4 @@ DOM 에 안 쓰는 노드가 남고 테스트가 "무엇이 그려졌는가"를 
 
 ## 그 뒤 (2026-09-23)
 
-체크·중간 상태의 눌림 면 변화(`#171717` → `#5A5A5A`)는 없앴다. 미체크 테두리 hover / pressed 는 그대로다 — docs/impl-decision/2026-09-23-no-pressed-face-checkbox-segmented.md
+체크·중간 상태의 눌림 면 변화(`#171717` → `#5A5A5A`)는 없앴다. 미체크 테두리 hover / pressed 는 그대로다 — docs/plan/m2/basis-for-decision/2026-09-23-no-pressed-face-checkbox-segmented.md

@@ -43,4 +43,6 @@
 
 ## 현재 저장소
 
-파트 문서는 기존 경로를 유지하며 전체 재배치는 별도 초기 구조화 요청으로 진행한다. frontend/docs/plan/frontend-development-plan.md와 backend/docs/plan/backend-development-plan.md도 보호하는 전체 계획이다.
+Frontend 문서의 진입점은 [파트 README](../frontend/README.md)와 [문서 안내](../frontend/docs/README.md)다. 대표 계약은 `frontend/docs/contracts/`, 전체 계획과 새 마일스톤 구조는 `frontend/docs/plan/`에 있다. `frontend/docs/plan/frontend-plan.md`와 `backend/docs/plan/backend-development-plan.md`는 보호하는 전체 계획이다.
+
+Frontend의 기존 M0~M5 계획 원문은 `frontend/docs/plan/mN/plan.md`에 있다. 이전 경로의 파일과 이동 안내는 삭제했으며 문서는 현재 경로에서만 관리한다. M6~M8의 plan.md는 초기화한 빈 파일이다. 보호 계획에 남은 이동 전 경로 표기는 [연결 안내](../frontend/docs/plan/README.md)의 현재 문서 링크로 확인한다. Backend·AI 문서와 frontend 고유·공유 자료는 기존 위치를 유지한다.
