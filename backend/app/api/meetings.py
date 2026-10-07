@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import exists, select, update
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, require_member
 from app.core.database import get_db
 from app.core.errors import AppError, Envelope, ErrorCode, success
 from app.models import Extraction, Meeting, MeetingStatus, Member, Source, User
@@ -145,8 +145,14 @@ def fail_meeting(
 
 
 @router.get("/{meeting_id}", response_model=Envelope[MeetingDetailResponse])
-def get_meeting(meeting_id: str, db: Session = Depends(get_db)) -> dict:
+def get_meeting(
+    meeting_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    """웹의 회의 화면·처리 상태 화면이 부른다. 회의가 속한 워크스페이스 멤버만 읽는다. 봇은 이 경로를 쓰지 않는다."""
     meeting = _get_meeting(db, meeting_id)
+    require_member(db, user, meeting.workspace_id)
 
     extraction_id = None
     if meeting.status == MeetingStatus.DONE:
