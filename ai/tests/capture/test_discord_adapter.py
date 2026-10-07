@@ -34,10 +34,21 @@ class FakeMember:
         self.mention = f"<@{uid}>"
 
 
+class FakeMessage:
+    def __init__(self, text):
+        self.content = text
+        self.edits = []
+
+    async def edit(self, *, content):
+        self.edits.append(content)
+        self.content = content
+
+
 class FakeTextChannel:
     def __init__(self, cid=TEXT_ID):
         self.id = cid
         self.sent = []
+        self.messages = []         # sent 와 같은 순서의 메시지. 진행 표시가 고친 내용을 본다
         self.fail_first = 0        # 처음 몇 번의 send 를 실패시킨다
 
     async def send(self, text, file=None):
@@ -45,6 +56,8 @@ class FakeTextChannel:
             self.fail_first -= 1
             raise RuntimeError("디스코드 429")
         self.sent.append((text, file))
+        self.messages.append(FakeMessage(text))
+        return self.messages[-1]
 
 
 class FakeVoiceChannel:
@@ -519,6 +532,63 @@ async def test_stop_in_bot_mode_posts_the_processing_line_last(tmp_path):
     rec = await _record_and_stop(cog, ctx)
     assert channel.sent[-1][0].startswith("⏱ 처리 ")
     assert len(_manifest(tmp_path, rec)["ops"]) == 1
+
+
+# ── 진행 표시. 단계가 시작하면 새 메시지, 전사 중에는 그 메시지를 고쳐 묶음 수 ─────────────────────────
+
+async def test_progress_posts_a_message_per_stage_and_edits_the_transcription_one_at_most_every_15s():
+    channel = FakeTextChannel()
+    now = [0.0]
+    progress = A.StageProgress(asyncio.get_running_loop(), channel, clock=lambda: now[0])
+
+    def processing():        # 처리 스레드와 전사 워커 스레드에서 불린다
+        progress("stt")
+        for t, done in ((1, 1), (16, 2), (17, 3)):
+            now[0] = t
+            progress("stt", {"done": done, "sent": 4, "tracks": 1, "tracks_total": 2})
+        now[0] = 18
+        progress("sources")
+
+    await asyncio.to_thread(processing)
+    await progress.flush()
+    assert [t for t, _ in channel.sent] == ["🎧 전사 시작", "🗂 회의록 저장 시작"]
+    # 1초는 시작 메시지와 15초가 안 돼 건너뛰고, 17초에 들어온 마지막 수는 다음 단계가 시작할 때 보인다
+    assert channel.messages[0].edits == ["🎧 전사 · 트랙 1/2 읽음 · 묶음 2개 끝, 2개 처리 중",
+                                         "🎧 전사 · 트랙 1/2 읽음 · 묶음 3개 끝, 1개 처리 중"]
+
+
+async def test_progress_keeps_going_when_a_post_fails():
+    channel = FakeTextChannel()
+    channel.fail_first = 1               # 전사 시작 메시지가 올라가지 않는다
+    progress = A.StageProgress(asyncio.get_running_loop(), channel)
+
+    def processing():
+        progress("stt")
+        progress("stt", {"done": 1, "sent": 1, "tracks": 1, "tracks_total": 1})
+        progress("extract")
+
+    await asyncio.to_thread(processing)
+    await progress.flush()
+    assert [t for t, _ in channel.sent] == ["🔎 할일 추출 시작"]
+
+
+async def test_stop_shows_progress_by_default_before_the_results(tmp_path, monkeypatch):
+    monkeypatch.delenv("MM_PROGRESS", raising=False)        # 기본은 켜짐
+    cog, guild, vc, channel, ctx = _setup(tmp_path)
+    await _record_and_stop(cog, ctx)
+    texts = [t for t, _ in channel.sent]
+    assert texts[0].startswith("✅ 저장 완료") and texts[1] == "🎧 전사 시작" and texts[2].startswith("📝 회의록")
+    # 전사가 15초 안에 끝나 중간에는 고치지 않았고, 결과를 올리기 전에 마지막 수를 보였다
+    assert channel.messages[1].content == "🎧 전사 · 트랙 1/1 읽음 · 묶음 1개 끝, 0개 처리 중"
+
+
+async def test_stop_shows_no_progress_when_turned_off(tmp_path, monkeypatch):
+    monkeypatch.setenv("MM_PROGRESS", "off")
+    cog, guild, vc, channel, ctx = _setup(tmp_path)
+    await _record_and_stop(cog, ctx)
+    texts = [t for t, _ in channel.sent]
+    assert texts[0].startswith("✅ 저장 완료") and texts[1].startswith("📝 회의록")
+    assert not any(t.startswith("🎧") for t in texts)
 
 
 # ── 판단 경로(MM_EXTRACT_PATH=judge). 추출기만 바뀌고 명령과 흐름은 같다 ─────────────────────────────
