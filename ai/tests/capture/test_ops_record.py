@@ -12,7 +12,8 @@ from capture import ops_record as O
 MANIFEST = {"session": "77_500", "meeting_dir": "77_500", "timezone": "Asia/Seoul",
             "speakers": [{"user_id": "1", "file": "77_500/1_500.wav", "duration_sec": 12.0},
                          {"user_id": "2", "file": "77_500/2_500.wav", "duration_sec": 10.0}]}
-SUMMARY = {"calls": 4, "failed": 1, "retries": 2, "calls_over_20s": 1, "gated": 3, "speech_s": 6.0, "track_s": 22.0}
+SUMMARY = {"calls": 4, "failed": 1, "retries": 2, "calls_over_20s": 1, "gated": 3, "speech_s": 6.0, "track_s": 22.0,
+           "audio_sent_s": 60.0, "unmapped_chunks": 4}
 
 
 def _ago(seconds):
@@ -86,6 +87,22 @@ def test_a_record_has_the_capacity_fields(monkeypatch):
     assert entry["model_load_s"] is None and entry["llm_calls"] is None
     assert entry["cpu_s"] is None or entry["cpu_s"] >= 0
     assert "transcript" not in entry and "lines" not in entry                    # 숫자만. 전사 문장은 없다
+
+
+def test_a_record_has_the_sent_audio_its_cost_and_the_chunks_left_without_word_times():
+    # API 전사는 회의마다 비용이 든다. 보낸 소리로 센다. 단어 시각 없이 묶음째 한 줄로 남은 수도 남긴다
+    run = O.OpsRun(dict(MANIFEST), read=lambda: None)
+    elice = run.finish(dict(MANIFEST, status="transcribed"), _result(), model="elice", backend="elice/whisper-large-v3")
+    assert elice["audio_sent_s"] == 60.0 and elice["unmapped_chunks"] == 4
+    assert elice["stt_krw"] == pytest.approx(6.0)                               # 60초 × 6원/60초
+    run = O.OpsRun(dict(MANIFEST), read=lambda: None)
+    local = run.finish(dict(MANIFEST, status="transcribed"), _result(), model="large-v3-turbo",
+                       backend="local/large-v3-turbo-int8-b5")
+    assert local["stt_krw"] == 0.0                                              # 로컬은 호출 비용이 없다
+    run = O.OpsRun(dict(MANIFEST), read=lambda: None)
+    none = run.finish(dict(MANIFEST, status="partial"), _result(transcribe={"summary": None, "failed": 1, "lines": 3}),
+                      model="elice", backend="elice/whisper-large-v3")
+    assert (none["audio_sent_s"], none["unmapped_chunks"], none["stt_krw"]) == (None, None, None)
 
 
 def test_a_run_without_full_transcription_leaves_the_stt_fields_empty():
@@ -200,7 +217,8 @@ def test_the_readable_file_has_one_row_per_run_and_explains_its_terms(tmp_path):
              "wall_s": 2407.0, "wait_s": 12.0, "status": "partial", "failed_stage": None,
              "stages": {"stt": {"started_at": "a", "ended_at": "b", "s": 2395.0}}, "meeting_s": 3600.0,
              "speech_s": 1200.0, "rtf_meeting": 0.665, "rtf_speech": 1.996, "peak_rss_bytes": int(2.2 * 1024 ** 3),
-             "cpu_s": 4100.5, "calls": 120, "failed": 2, "retries": 3}
+             "cpu_s": 4100.5, "calls": 120, "failed": 2, "retries": 3, "audio_sent_s": 3402.0, "stt_krw": 340.2,
+             "unmapped_chunks": 120}
     second = {"run_started_at": "2026-10-06T12:41:10+00:00", "run_ended_at": "2026-10-06T12:41:40+00:00",
               "wall_s": 30.0, "wait_s": 2475.0, "status": "failed", "failed_stage": "extract",
               "stages": {"stt": {"s": 4.0}, "sources": {"s": 1.5}, "extract": {"s": 20.0}}, "meeting_s": 3600.0,
@@ -216,12 +234,14 @@ def test_the_readable_file_has_one_row_per_run_and_explains_its_terms(tmp_path):
     assert rows[0].startswith("| 10/06 21:00:00 |")                         # 회의 시간대(한국 시각)
     assert "40분 19초" in rows[0] and "39분 55초" in rows[0] and "2.2GB" in rows[0] and "120·2·3" in rows[0]
     assert "0.665 · 1.996" in rows[0] and "20분" in rows[0]
+    assert "| 56분 42초 · 340원 | 120 |" in rows[0]                          # 보낸 소리 · 전사 비용, 한 줄 묶음
     assert "| 대기 | 처리 | 전사 |" in text                                   # 처리 시간도 칸이 있다
     assert "| 12초 | 40분 7초 | 39분 55초 |" in rows[0] and "| 41분 15초 | 30초 |" in rows[1]
     assert "실패(추출)" in rows[1] and "41분 45초" in rows[1]                # 결과까지 = 대기 + 처리
     assert rows[1].count("|  |") >= 4                                        # 잴 수 없었던 칸은 비운다
     terms = text.split("## 용어", 1)[1]
-    for term in ("대기", "RTF", "최대 메모리", "CPU 초", "호출", "20초 넘은 호출", "말 필터가 거른 클립"):
+    for term in ("대기", "RTF", "최대 메모리", "CPU 초", "호출", "20초 넘은 호출", "말 필터가 거른 클립", "보낸 소리",
+                 "전사 비용", "단어 시각 없는 묶음"):
         assert f"| {term}" in terms, term
     for term in ("최대 메모리", "CPU 초"):                                    # 봇이 회의 둘을 같이 처리하면 섞인다
         assert "같이 처리한 회의" in next(ln for ln in terms.splitlines() if ln.startswith(f"| {term} |")), term

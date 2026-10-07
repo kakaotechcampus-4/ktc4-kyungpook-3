@@ -21,11 +21,14 @@ process_session 이 처리를 시작할 때 OpsRun 을 만들고 단계마다 be
                   이번 처리에서 돈 단계만 있다
   model_load_s    이번 처리에서 로컬 모델을 처음 올린 초. 전사 단계 초에는 들지 않는다. 안 올렸으면 None
   meeting_s       회의 길이. 매니페스트 speakers 의 duration_sec 최댓값
-  speech_s, track_s, calls, failed, retries, calls_over_20s, gated
-                  전사 요약(batch summary)에서. 이번 처리에서 전사를 처음부터 돌리지 않았으면 None 이다(추출부터
+  speech_s, track_s, calls, failed, retries, calls_over_20s, gated, audio_sent_s, unmapped_chunks
+                  전사 요약(batch summary)에서. audio_sent_s 는 보낸 소리 길이(묶음마다 한 번), unmapped_chunks 는
+                  단어 시각이 없어 묶음째 한 줄로 남은 수다. 이번 처리에서 전사를 처음부터 돌리지 않았으면 None 이다(추출부터
                   이었거나 실패한 줄만 다시 보냈다)
   rtf_meeting, rtf_speech   전사 단계 초 ÷ meeting_s, ÷ speech_s. 위와 같은 때 None 이다. 다시 보낸 몇 줄의 시간을
                   회의 길이로 나누면 회의끼리 견줄 수 없는 값이 나온다
+  stt_krw         전사 비용 추정(원). Elice 면 audio_sent_s × 6원/60초(옛 주소 단가, 새 엔드포인트 단가는 확인 못 함),
+                  로컬은 0. audio_sent_s 가 None 이면 None
   retried_lines   실패했던 줄을 다시 보낸 수
   peak_rss_bytes  처리하는 동안 이 프로세스의 상주 메모리 최대. 1초마다와 처리 앞뒤에 읽는다. 읽을 수 없는 OS 면 None
   cpu_s           처리 앞뒤 getrusage(RUSAGE_SELF) 의 사용자·커널 CPU 초 차. resource 가 없는 OS 면 None
@@ -56,7 +59,8 @@ SAMPLE_INTERVAL_S = 1.0              # 메모리 표본 간격
 SAMPLER_NAME = "ops-rss"             # 표본 스레드 이름. 테스트가 멈췄는지 이 이름으로 본다
 STATUS_FILE = Path("/proc/self/status")
 FILE_NAME = "처리기록.md"
-_STT_KEYS = ("speech_s", "track_s", "calls", "failed", "retries", "calls_over_20s", "gated")
+_STT_KEYS = ("speech_s", "track_s", "calls", "failed", "retries", "calls_over_20s", "gated", "audio_sent_s",
+             "unmapped_chunks")
 
 
 def read_rss(path: Path = STATUS_FILE) -> int | None:
@@ -104,6 +108,20 @@ def _since(raw: str | None, now: datetime) -> float | None:
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
     return round((now - dt).total_seconds(), 2)
+
+
+def _stt_krw(backend: str, audio_sent_s: float | None) -> float | None:
+    """전사 비용 추정(원). Elice 면 보낸 소리 × 단가, 로컬은 호출 비용이 없어 0. 보낸 소리를 모르면 None.
+
+    단가는 stt.elice 의 6원/60초(옛 주소 단가)다. 새 엔드포인트의 단가와 과금 단위는 확인하지 못했다. 보낸 소리는
+    묶음마다 한 번 센 값이라 재시도로 다시 보낸 몫은 빠진다(재시도 수는 retries 칸).
+    """
+    if audio_sent_s is None:
+        return None
+    if not str(backend).startswith("elice"):
+        return 0.0
+    from stt.elice import WHISPER_KRW_PER_SEC
+    return round(audio_sent_s * WHISPER_KRW_PER_SEC, 2)
 
 
 def _ratio(a: float | None, b: float | None) -> float | None:
@@ -222,6 +240,8 @@ class OpsRun:
             "rtf_meeting": _ratio(stt_s, meeting_s), "rtf_speech": _ratio(stt_s, stt["speech_s"]),
             "calls": stt["calls"], "failed": stt["failed"], "retries": stt["retries"],
             "calls_over_20s": stt["calls_over_20s"], "gated": stt["gated"],
+            "audio_sent_s": stt["audio_sent_s"], "stt_krw": _stt_krw(backend, stt["audio_sent_s"]),
+            "unmapped_chunks": stt["unmapped_chunks"],
             "retried_lines": result.get("retried", 0), "peak_rss_bytes": self._peak,
             "cpu_s": round(cpu1 - self._cpu0, 2) if cpu1 is not None and self._cpu0 is not None else None,
             "recovery_attempts": self._attempts, "llm_calls": llm_calls,
@@ -264,7 +284,7 @@ _STAGES = (("stt", "전사"), ("sources", "회의록 저장"), ("extract", "추�
 _STATUS = {"saved": "저장까지", "transcribed": "전사까지", "partial": "전사 일부 실패", "sourced": "회의록 저장까지",
            "extracted": "추출까지", "handed_off": "인계까지", "recording": "녹음 중"}
 _HEAD = ("시작", "상태", "대기", "처리", "전사", "회의록 저장", "추출", "인계", "결과까지", "말한 시간", "RTF 회의 · 말",
-         "최대 메모리", "CPU 초", "호출·실패·재시도")
+         "최대 메모리", "CPU 초", "호출·실패·재시도", "보낸 소리 · 전사 비용", "단어 시각 없는 묶음")
 _TERMS = (
     ("시작", "처리를 시작한 시각. 회의 시간대로 적는다", "run_started_at(UTC)"),
     ("상태", "처리가 끝났을 때 회의가 어디까지 갔나. 실패면 괄호 안이 실패한 단계다", "status, failed_stage"),
@@ -290,6 +310,11 @@ _TERMS = (
     ("재시도", "실패한 요청을 다시 보낸 횟수", "retries"),
     ("20초 넘은 호출", "한 번에 20초 넘게 걸린 전사 요청 수. 멈춘 것처럼 보이는 요청이다", "calls_over_20s"),
     ("말 필터가 거른 클립", "사람 말이 아니라고 보고 전사에 보내지 않은 소리 조각 수", "gated"),
+    ("보낸 소리", "전사에 보낸 소리 길이의 합. 묶음마다 한 번 센다. 재시도로 다시 보낸 몫은 빠진다", "audio_sent_s"),
+    ("전사 비용", "Elice 로 전사했을 때 보낸 소리 × 6원/60초로 센 추정. 새 엔드포인트의 단가와 과금 단위는 확인하지 "
+     "못했다. 로컬 전사는 0원", "stt_krw"),
+    ("단어 시각 없는 묶음", "응답에 단어 시각이 없어 묶음 전체(최대 28초)가 회의록 한 줄로 남은 수. 새 Elice 엔드포인트는 "
+     "모든 묶음이 여기 든다", "unmapped_chunks"),
     ("다시 보낸 줄", "앞선 처리에서 실패한 줄만 골라 다시 전사한 수", "retried_lines"),
     ("모델 올리기", "이번 처리에서 전사 모델을 처음 메모리에 올린 시간. 전사 시간에는 들지 않는다", "model_load_s"),
     ("복구 시도", "이번 처리 전에 단계를 끝내지 못한 실행 수", "recovery_attempts"),
@@ -316,7 +341,10 @@ def _row(entry: dict, tz: ZoneInfo) -> list[str]:
             _opt(entry.get("speech_s"), _dur),
             "" if rtf == (None, None) else " · ".join(_opt(x, str) for x in rtf),
             _opt(entry.get("peak_rss_bytes"), _mem), _opt(entry.get("cpu_s"), lambda x: f"{x:.1f}"),
-            "" if calls[0] is None else "·".join(str(x) for x in calls)]
+            "" if calls[0] is None else "·".join(str(x) for x in calls),
+            "" if entry.get("audio_sent_s") is None else
+            f"{_dur(entry['audio_sent_s'])} · {entry.get('stt_krw') or 0:.0f}원",
+            _opt(entry.get("unmapped_chunks"), str)]
 
 
 def write_markdown(meeting_dir: Path, title: str, manifest: dict) -> Path:
