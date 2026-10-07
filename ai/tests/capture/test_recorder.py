@@ -763,3 +763,24 @@ def test_a_broken_record_does_not_change_the_run(tmp_path, monkeypatch, capsys, 
         assert len(saved["ops"]) == 1 and not (rec / "77_500" / "처리기록.md").exists()
     else:
         assert r["ops"]["peak_rss_bytes"] is None
+
+
+def test_process_session_reports_each_stage_as_it_starts_and_the_transcription_count(tmp_path):
+    rec, path, manifest = _session(tmp_path)
+    events = []
+    _run(rec, manifest, tmp_path, extractor=lambda transcript, names, today: [],
+         progress=lambda stage, info=None: events.append((stage, info)))
+    starts = [stage for stage, info in events if info is None]
+    assert starts[:1] == ["stt"] and "extract" in starts
+    counts = [info for stage, info in events if stage == "stt" and info]
+    assert counts and counts[-1]["done"] == counts[-1]["sent"] and counts[-1]["tracks"] == counts[-1]["tracks_total"]
+
+
+def test_a_failing_progress_report_does_not_change_the_result(tmp_path):
+    rec, path, manifest = _session(tmp_path)
+
+    def boom(stage, info=None):
+        raise RuntimeError("채널이 막혔다")
+
+    result = _run(rec, manifest, tmp_path, progress=boom)
+    assert result["status"] == R.STATUS_TRANSCRIBED and result["error"] is None

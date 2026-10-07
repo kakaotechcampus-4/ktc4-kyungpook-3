@@ -306,7 +306,7 @@ def _wavs_and_names(recordings_dir: Path, manifest: dict) -> tuple[list[Path], d
 
 
 def transcribe_session(recordings_dir: Path, manifest: dict, *, backend, model_name: str, workers: int,
-                       gate=None, transcripts_dir: Path | None = None) -> dict:
+                       gate=None, transcripts_dir: Path | None = None, progress=None) -> dict:
     """매니페스트의 트랙을 chunk 모드로 전사해 회의록까지 쓴다. 스레드에서 부른다.
 
     산출물은 셋이다. transcripts/ 의 파일당 json 과 session_<회의ID>.transcript.json (BE 계약),
@@ -318,7 +318,8 @@ def transcribe_session(recordings_dir: Path, manifest: dict, *, backend, model_n
 
     wavs, names = _wavs_and_names(recordings_dir, manifest)
     run = run_session(wavs, names, backend, mode="chunk", model_name=model_name, gate=gate, workers=workers,
-                      out_dir=transcripts_dir or TRANSCRIPTS_DIR, session_id=str(manifest["session"]))
+                      out_dir=transcripts_dir or TRANSCRIPTS_DIR, session_id=str(manifest["session"]),
+                      progress=progress)
     meeting_dir = recordings_dir / manifest["meeting_dir"]
     md = write_transcript(run["lines"], meeting_dir, manifest["meeting_dir"])
     return {"markdown": md["markdown"], "jsonl": md["jsonl"], "failed": md["failed"],
@@ -524,7 +525,7 @@ def sources_saved(manifest: dict) -> bool:
 
 def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name: str, workers: int,
                     gate=None, transcripts_dir: Path | None = None, extractor=None, handoff=None,
-                    name_of=None) -> dict:
+                    name_of=None, progress=None) -> dict:
     """마지막으로 끝난 단계 다음부터 전사 → 발화 저장 → 추출 → BE 인계를 돈다. 스레드에서 부른다.
 
     extractor(transcript, speaker_names, today) 와 handoff(capture.handoff.Handoff) 는 None 이면
@@ -544,6 +545,10 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
     text_channel_id(결과를 올릴 채널), attempts, gave_up, retry_in_s(이번 실패로 잡힌 다음 시도까지 초),
     ops(이번 처리의 기록. 아무 단계도 돌지 않았거나 기록을 만들지 못했으면 없다).
 
+    progress(stage, info) 를 주면 단계가 시작할 때 progress(단계, None) 을, 전사 중에는 호출이 끝날 때마다
+    progress("stt", {done, sent, tracks, tracks_total}) 를 부른다. 단계 이름은 FAILED_STAGE 의 값(stt, sources,
+    extract, handoff)이다. 다른 스레드에서 불리고, 여기서 난 예외는 로그만 남긴다.
+
     처리 기록은 일찍 돌아가는 경로까지 finally 에서 남긴다(_keep_ops). 모델 올리기는 전사 단계 앞에서 따로 잰다.
     """
     tdir = transcripts_dir or TRANSCRIPTS_DIR
@@ -557,6 +562,19 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
     stage = None
     counted = False
     ops = ops_record.OpsRun(manifest)
+
+    def tell(name: str, info: dict | None = None) -> None:
+        """진행 표시. 봇이 채널에 올린다. 여기서 난 예외는 처리 결과를 바꾸지 않는다."""
+        if progress is None:
+            return
+        try:
+            progress(name, info)
+        except Exception as e:  # noqa: BLE001
+            print(f"[progress] 세션 {manifest.get('session')} 진행 표시 실패: {type(e).__name__}: {e}", flush=True)
+
+    def begin(name: str) -> None:
+        ops.begin(name)
+        tell(name)
 
     def save() -> None:
         save_manifest(path, manifest)
@@ -596,9 +614,12 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
         if STATUS_TRANSCRIBED not in stages:
             stage = STATUS_TRANSCRIBED
             ops.load_model(backend)
-            ops.begin(FAILED_STAGE[stage])
+            begin(FAILED_STAGE[stage])
+            counted_by = None if progress is None else (
+                lambda done, sent, tracks, total: tell("stt", {"done": done, "sent": sent, "tracks": tracks,
+                                                              "tracks_total": total}))
             out = transcribe_session(recordings_dir, manifest, backend=backend, model_name=model_name,
-                                     workers=workers, gate=gate, transcripts_dir=tdir)
+                                     workers=workers, gate=gate, transcripts_dir=tdir, progress=counted_by)
             ops.end()                                  # partial 이면 실패를 세며 BE 에 fail 을 보낼 수 있다. 전사 시간에 넣지 않는다
             manifest["transcript"] = str(Path(out["markdown"]).relative_to(recordings_dir))
             manifest["transcript_json"] = str(out["transcript_json"]) if out["transcript_json"] else None
@@ -623,7 +644,7 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
             # 상한에 닿으면 빠진 구간을 둔 채 추출·인계로 간다. 구간은 매니페스트에 남는다
             stage = STATUS_TRANSCRIBED
             ops.load_model(backend)
-            ops.begin(FAILED_STAGE[stage])
+            begin(FAILED_STAGE[stage])
             out = retry_failed(recordings_dir, manifest, backend=backend, model_name=model_name, transcripts_dir=tdir)
             ops.end()                                  # 이 길은 finish 를 지나지 않는다. 여기서 닫아야 다음 단계 준비가 안 섞인다
             manifest["retry_runs"] = manifest.get("retry_runs", 0) + 1
@@ -672,7 +693,7 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
                 result["skipped"][STATUS_SOURCED] = "BE_SERVICE_TOKEN 없음"
             else:
                 stage = STATUS_SOURCED
-                ops.begin(FAILED_STAGE[stage])
+                begin(FAILED_STAGE[stage])
                 # 뒤 단계(추출·인계)에서 실패하던 회의면 그 실패 횟수를 이어 센다. 지우면 포기한 회의를 /recover 로 다시
                 # 돌려 또 실패해도 곧바로 포기하지 않고, 배포 때 재시도 중이던 회의도 처음부터 다시 센다
                 later = manifest.get("failed_stage") in (FAILED_STAGE[STATUS_EXTRACTED], FAILED_STAGE[STATUS_HANDED_OFF])
@@ -687,7 +708,7 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
                 return result
             stage = STATUS_EXTRACTED
             ops.watch_llm()
-            ops.begin(FAILED_STAGE[stage])
+            begin(FAILED_STAGE[stage])
             out_path = extract_after_transcription(tdir, manifest, extractor=extractor)
             if out_path is None:
                 raise FileNotFoundError(f"전사 계약 파일이 없다: session_{manifest['session']}.transcript.json")
@@ -708,7 +729,7 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
                 result["status"] = manifest["status"]
                 return result
             stage = STATUS_HANDED_OFF
-            ops.begin(FAILED_STAGE[stage])
+            begin(FAILED_STAGE[stage])
             be = handoff.register(manifest, transcripts_dir=tdir, model_name=model_name, title=meeting_title(manifest))
             result["be"] = dict(be)
             finish(STATUS_HANDED_OFF)
