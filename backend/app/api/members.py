@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -36,6 +37,50 @@ def _get_member(db: Session, member_id: str, user: User, *, pm: bool = False) ->
         raise AppError(ErrorCode.MEMBER_NOT_FOUND, details={"member_id": member_id})
     (require_pm if pm else require_member)(db, user, member.workspace_id)
     return member
+
+
+def _discord_user_taken(
+    db: Session, workspace_id: str, discord_user_id: str, *, exclude_member_id: str | None = None
+) -> bool:
+    """탈퇴하지 않은 다른 팀원이 이 디스코드 계정에 연결돼 있는가. DB 유일 인덱스와 같은 범위를 본다."""
+    stmt = select(Member.member_id).where(
+        Member.workspace_id == workspace_id,
+        Member.discord_user_id == discord_user_id,
+        Member.is_deleted.is_(False),
+    )
+    if exclude_member_id is not None:
+        stmt = stmt.where(Member.member_id != exclude_member_id)
+    return db.execute(stmt.limit(1)).first() is not None
+
+
+def _ensure_discord_user_free(
+    db: Session, workspace_id: str, discord_user_id: str | None, *, exclude_member_id: str | None = None
+) -> None:
+    """연결하려는 디스코드 계정을 탈퇴하지 않은 다른 팀원이 쓰고 있으면 409. 값이 없으면(연결 해제) 확인하지 않는다."""
+    if discord_user_id and _discord_user_taken(
+        db, workspace_id, discord_user_id, exclude_member_id=exclude_member_id
+    ):
+        raise AppError(
+            ErrorCode.DISCORD_USER_ALREADY_MAPPED, details={"discord_user_id": discord_user_id}
+        )
+
+
+def _commit_member(db: Session, member: Member) -> None:
+    """팀원 변경을 커밋한다. 같은 계정을 동시에 연결해 사전 검사를 함께 통과했으면 DB 유일 인덱스에 걸린다.
+    이때 500 대신 사전 검사와 같은 409로 돌려준다. 다른 이유의 무결성 오류는 그대로 올린다.
+    """
+    workspace_id, discord_user_id, member_id = member.workspace_id, member.discord_user_id, member.member_id
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        if discord_user_id and _discord_user_taken(
+            db, workspace_id, discord_user_id, exclude_member_id=member_id
+        ):
+            raise AppError(
+                ErrorCode.DISCORD_USER_ALREADY_MAPPED, details={"discord_user_id": discord_user_id}
+            ) from None
+        raise
 
 
 def _ensure_other_pm(db: Session, member: Member) -> None:
@@ -75,19 +120,7 @@ def create_member(
         )
     require_pm(db, user, payload.workspace_id)
 
-    if payload.discord_user_id:
-        exists = db.execute(
-            select(Member).where(
-                Member.workspace_id == payload.workspace_id,
-                Member.discord_user_id == payload.discord_user_id,
-                Member.is_deleted.is_(False),
-            )
-        ).scalar_one_or_none()
-        if exists is not None:
-            raise AppError(
-                ErrorCode.DISCORD_USER_ALREADY_MAPPED,
-                details={"discord_user_id": payload.discord_user_id},
-            )
+    _ensure_discord_user_free(db, payload.workspace_id, payload.discord_user_id)
 
     member = Member(
         workspace_id=payload.workspace_id,
@@ -97,7 +130,7 @@ def create_member(
         role=str(payload.role),
     )
     db.add(member)
-    db.commit()
+    _commit_member(db, member)
     db.refresh(member)
     return success(MemberResponse.model_validate(member).model_dump(mode="json"))
 
@@ -224,20 +257,9 @@ def update_member(
     if updates.get("role") == MemberRole.MEMBER and member.role == MemberRole.PM:
         _ensure_other_pm(db, member)
 
-    if updates.get("discord_user_id"):
-        exists = db.execute(
-            select(Member).where(
-                Member.workspace_id == member.workspace_id,
-                Member.discord_user_id == updates["discord_user_id"],
-                Member.member_id != member_id,
-                Member.is_deleted.is_(False),
-            )
-        ).scalar_one_or_none()
-        if exists is not None:
-            raise AppError(
-                ErrorCode.DISCORD_USER_ALREADY_MAPPED,
-                details={"discord_user_id": updates["discord_user_id"]},
-            )
+    _ensure_discord_user_free(
+        db, member.workspace_id, updates.get("discord_user_id"), exclude_member_id=member_id
+    )
 
     for field, value in updates.items():
         if field == "role":
@@ -246,7 +268,7 @@ def update_member(
             continue
         setattr(member, field, value)
 
-    db.commit()
+    _commit_member(db, member)
     db.refresh(member)
     return success(MemberResponse.model_validate(member).model_dump(mode="json"))
 
