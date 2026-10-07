@@ -2,6 +2,12 @@
 
 회의 → 추출 → 매칭 → 게이트 → 승인 파이프라인 백엔드. FastAPI + SQLAlchemy + Alembic.
 
+## 문서
+
+- [문서 안내](docs/README.md): 문서 구조와 기존 문서 배치.
+- 계약: [AI(녹음 봇) 계약](docs/contracts/backend-ai-contract.md), 웹 화면용은 [프론트엔드 대표 계약](../frontend/docs/contracts/frontend-api-contract.md).
+- 계획: [전체 계획](docs/plan/backend-plan.md), [M0~M7 안내](docs/plan/README.md). 마일스톤별 plan.md는 아직 비어 있고 `result.md`는 없다. 진행 상태는 전체 계획의 마일스톤 개요(2026-10-02 기준)를 따른다.
+
 ## 실행
 
 DB는 PostgreSQL이다. 로컬에서는 Docker로 띄운다(Docker Desktop 필요).
