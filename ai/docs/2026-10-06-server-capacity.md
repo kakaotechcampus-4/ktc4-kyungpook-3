@@ -37,7 +37,7 @@
 - clip 모드는 재지 않았다. 0008 에서 chunk 가 CER 이 낮고 호출 수와 CPU 가 절반이라 운영에서 쓰지 않는다
 - 추출 비교의 짝짓기를 견줬다. 처음에는 제목 닮은 정도로 짝지었는데, 9/29 실녹음에서 같은 할 일이 제목만 바뀌어 다른 항목으로 세어졌다. 근거 문장으로 짝지으니 손으로 짝지은 값과 실행마다 같았고, 정답 대본끼리의 흔들림도 같은 규칙으로 잴 수 있었다. 두 규칙을 같이 낸다. 6인 정렬본은 제목으로 짝지을 때 small 이 turbo 보다 나쁘지 않아 보였지만, 근거 문장으로 짝지으니 small 만 놓친 결정 항목이 두 회의에 있었다. 짝짓는 규칙에 따라 결론이 바뀐 사례다
 
-결정(MemoryMax, TimeoutStopSec, 워커 수, 운영 기본 전사 방식)은 이 숫자로 새 decision_log 에서 한다. 0008 과 0013 은 고치지 않는다.
+운영 기본 전사 방식은 이 숫자로 [0018](../decision_log/0018-elice-api-default-local-fallback.md) 에서 정했다(Elice API 기본, 로컬은 장애 대응). MemoryMax, TimeoutStopSec, 워커 수는 아직 정하지 않았다. 0008 과 0013 은 고치지 않는다.
 
 ## 결과
 
@@ -62,9 +62,9 @@ python -m stt.eval.capacity.report --run-dir RUN --out-dir stt/eval/results/2026
 
 ## 남은 것
 
-- 새 decision_log(MemoryMax, TimeoutStopSec, 워커 수, 운영 기본 전사 방식)
+- 새 decision_log(MemoryMax, TimeoutStopSec, 워커 수). 운영 기본 전사 방식은 0018 로 정했다
 - 여러 사람이 주고받는 실제 대화 녹음으로 CER, 짧은 대답, 추출 비교. 9/29 는 한 사람 낭독이다
-- Elice 를 운영 기본으로 둘지와, 단어 시각 없는 백엔드에서 묶음을 턴마다 둘지(batch.py) 결정
+- 단어 시각 없는 백엔드에서 묶음을 턴마다 둘지(batch.py) 결정. 이름 힌트, 짧은 대답과 함께 전사 품질 개선 이슈에서 본다
 - 새 엔드포인트의 단가와 과금 단위 확인. 지금 비용은 옛 단가로 센 값이다
 - cpu_threads 를 바꾼 비교, 워커 방식의 루프 지연, DB 를 거치는 API 영향
 - 실제 회의의 처리 기록(#153)이 쌓이면 측정값과 견준다
