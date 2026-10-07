@@ -295,12 +295,12 @@ def test_llm_path_keeps_valid_indices_when_some_are_out_of_range():
     assert findings[0].evidence == ["그럼 그렇게 갑시다."]
 
 
-def test_llm_path_ignores_out_of_range_indices():
+def test_llm_path_treats_all_out_of_range_indices_as_failure():
     t = _transcript(
         TranscriptSegment(speaker="a", start=0.0, end=1.0, text="안녕하세요.", seq=0)
     )
     fake = FakeLLM(responses=[{"findings": [{"indices": [99], "reason": "존재하지 않는 번호"}]}])
-    assert extract_findings_llm(t, fake) == []
+    assert extract_findings_llm(t, fake) is None
 
 
 def test_progress_report_reaches_the_next_stage():
@@ -389,7 +389,7 @@ def test_golden_set_assignee_labels_are_valid():
     assert not problems, "골든셋 assignee_type 라벨 문제:\n  " + "\n  ".join(problems)
 
 
-def test_llm_path_ignores_bool_indices():
+def test_llm_path_treats_all_bool_indices_as_failure():
     # bool은 int의 서브클래스라 isinstance(i, int) 검사만으로는 True/False가 0/1번 문장으로
     # 잘못 통과할 수 있다 — type()으로 엄격히 걸러지는지 확인한다.
     t = _transcript(
@@ -397,7 +397,25 @@ def test_llm_path_ignores_bool_indices():
         TranscriptSegment(speaker="b", start=1.0, end=2.0, text="반갑습니다.", seq=1),
     )
     fake = FakeLLM(responses=[{"findings": [{"indices": [True, False], "reason": "타입 오염"}]}])
-    assert extract_findings_llm(t, fake) == []
+    assert extract_findings_llm(t, fake) is None
+
+
+def test_llm_path_treats_all_invalid_findings_as_failure():
+    # findings 가 비어 있지 않은데 검증 후 후보가 0개면 정상 0건이 아니라 실패다 — 전부 탈락을 0건으로 보면
+    # 회의가 빈 추출로 닫히고 재시도 기회를 잃는다(#128 리뷰). 명시적인 {"findings": []} 만 정상 0건이다.
+    t = _transcript(TranscriptSegment(speaker="a", start=0.0, end=1.0, text="안녕하세요.", seq=0))
+    assert extract_findings_llm(t, FakeLLM(responses=[{"findings": [None]}])) is None
+    assert extract_findings_llm(t, FakeLLM(responses=[{"findings": [{"indices": [99]}]}])) is None
+    assert extract_findings_llm(t, FakeLLM(responses=[{"findings": []}])) == []
+    for response in ({"findings": [None]}, {"findings": [{"indices": [99]}]}):
+        with pytest.raises(FindingExtractionUnavailableError):
+            import judge.semantic_judge as sj
+            original = sj.get_llm
+            sj.get_llm = lambda which, r=response: FakeLLM(responses=[r])
+            try:
+                extract_findings(t)
+            finally:
+                sj.get_llm = original
 
 
 def test_llm_path_returns_none_when_call_fails():
