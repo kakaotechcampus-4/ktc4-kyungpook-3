@@ -100,6 +100,7 @@ def seed(db):
         "task": task.task_id,
         "approval": approval.approval_id,
         "extraction": extraction.extraction_id,
+        "meeting": meeting.meeting_id,
         "processing_meeting": processing.meeting_id,
     }
 
@@ -117,6 +118,8 @@ def _requests(ids: dict) -> list[tuple[str, str, dict | None]]:
         ("GET", f"/api/v1/approvals/{ids['approval']}", None),
         ("PATCH", f"/api/v1/approvals/{ids['approval']}", {"status": "rejected", "resolved_by": ids["member"]}),
         ("GET", f"/api/v1/extractions/{ids['extraction']}", None),
+        ("GET", f"/api/v1/meetings/{ids['meeting']}", None),
+        ("GET", f"/api/v1/meetings/{ids['meeting']}/minutes", None),
         ("GET", f"/api/v1/members?workspace_id={ws}", None),
         ("POST", "/api/v1/members", {"workspace_id": ws, "display_name": "새 팀원"}),
         ("GET", f"/api/v1/members/aliases?workspace_id={ws}", None),
