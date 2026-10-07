@@ -241,7 +241,7 @@ def test_seq_saves_each_run_lines_in_the_golden_shape(tmp_path):
 
 
 def test_saved_lines_mark_the_lines_that_cover_a_whole_chunk(tmp_path):
-    # 단어 시각이 없으면(Elice) 묶음 전체가 한 줄이다. 뒤 도구(real929·judge_diff)가 그 줄을 가려낼 수 있어야 한다
+    # 단어 시각이 없으면(Elice) 묶음 전체가 한 줄이다. 뒤 도구(real929)가 그 줄을 가려낼 수 있어야 한다
     class NoWordsStt(SlowStt):
         def transcribe(self, samples, sample_rate):
             super().transcribe(samples, sample_rate)
@@ -306,7 +306,6 @@ def test_night2_runs_prep_long_meetings_then_the_real_recording():
     small = next(ln for ln in text.splitlines() if ln.startswith("scenario seq-real929-small"))
     assert "--model small --beam 1" in small and "--label real929-small" in small
     assert "--repeat 3" in next(ln for ln in text.splitlines() if ln.startswith("scenario seq-long10"))
-    assert "capacity.judge_diff" not in text                             # 유료 비교는 따로 승인받아 돈다
     for s in ("HF_HUB_OFFLINE=1", "/proc/self/cgroup", "stt.eval.capacity.sampler", "stt.eval.capacity.probe"):
         assert s in text
 
@@ -662,7 +661,7 @@ def test_night3_runs_the_short_meetings_first_and_the_expensive_long_ones_last()
     assert turn == ["golden-m01-elice-turn", "golden-m02-elice-turn", "seq-real929-turn"]
     assert "--tag m01-turn" in _line(text, "golden-m01-elice-turn") and "--label real929-elice-turn " in _line(
         text, "seq-real929-turn")
-    # 추출 비교(judge_diff --lines elice=lines-{session}-elice-1.json)가 읽는 이름. 둘째 밤의 real929-small 과 같은 꼴
+    # 9/29 채점(real929 --lines elice=lines-real929-elice-1.json)이 읽는 이름. 둘째 밤의 real929-small 과 같은 꼴
     assert "--label real929-elice " in _line(text, "seq-real929")
     assert _line(text, "botlag-m01").startswith('scenario botlag-m01 "${RUNNER[@]}"')   # 봇처럼 nice 없이
 
@@ -676,7 +675,6 @@ def test_night3_books_every_transcription_on_one_ledger_under_a_cap():
     assert all('"${ELICE[@]}"' in ln for ln in calls)
     two = re.search(r"two_workers\(\) \{(.*?)\n\}", text, flags=re.S).group(1)
     assert two.count('"${ELICE[@]}"') == 2 and two.count("&\n") == 2 and "m01" in two and "m02" in two
-    assert "capacity.judge_diff" not in text
     for s in ("two-person m01 m02 real929", "synth long-10 10", "synth long-30 30", "synth long-60 60",
               "stt.eval.capacity.synth", "/proc/self/cgroup", "stt.eval.capacity.sampler",
               "stt.eval.capacity.probe", "NICE=(nice -n 10)"):

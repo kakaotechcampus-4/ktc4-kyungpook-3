@@ -16,7 +16,6 @@
 # 장부와 상한은 보낸 오디오 초 × 6원/60초로 센 추정이다. 실제 청구액과 같은지는 아직 확인하지 않았다.
 # 비싼 긴 회의를 뒤에 두어 상한에 걸려도 앞의 실측을 잃지 않게 한다.
 # 회의록 줄(lines-*.json)은 RUN_DIR 에 남긴다. 전사 문장이라 레포 결과 폴더로 옮기지 않는다.
-# 판단 경로 추출 비교(judge_diff)는 유료라 여기서 돌리지 않는다. 따로 승인받은 상한으로 돈다.
 set -euo pipefail
 
 if [ $# -ne 2 ]; then
@@ -116,7 +115,7 @@ event end idle 0
 
 scenario seq-two "${NICE[@]}" "${RUNNER[@]}" seq --tracks-dir "$DATA_DIR/two-person" --label two --repeat 3 \
   "${ELICE[@]}" "${OUT[@]}"
-# golden.score 의 결과 파일 이름에는 회의 이름이 없어서 tag 로 가른다. 회의록 줄은 추출 비교의 입력이다
+# golden.score 의 결과 파일 이름에는 회의 이름이 없어서 tag 로 가른다.
 scenario golden-m01-elice "${NICE[@]}" "${RUNNER[@]}" golden --session "$DATA_DIR/m01" --tag m01 --save-lines \
   "${ELICE[@]}" "${OUT[@]}"
 scenario golden-m02-elice "${NICE[@]}" "${RUNNER[@]}" golden --session "$DATA_DIR/m02" --tag m02 --save-lines \
@@ -134,7 +133,7 @@ scenario seq-m01-w1 "${NICE[@]}" "${RUNNER[@]}" seq --tracks-dir "$DATA_DIR/m01"
   "${ELICE[@]}" "${OUT[@]}"
 scenario seq-m01-w3 "${NICE[@]}" "${RUNNER[@]}" seq --tracks-dir "$DATA_DIR/m01" --label m01-w3 --workers 3 \
   "${ELICE[@]}" "${OUT[@]}"
-# 실녹음은 회의록 줄(lines-real929-elice-1.json)을 남긴다. 판단 경로 추출 비교(judge_diff)의 입력이다
+# 실녹음은 회의록 줄(lines-real929-elice-1.json)을 남긴다. 9/29 채점(real929)의 입력이다
 scenario seq-real929 "${NICE[@]}" "${RUNNER[@]}" seq --tracks-dir "$DATA_DIR/real929" --label real929-elice --save-lines \
   "${ELICE[@]}" "${OUT[@]}"
 # 턴마다 묶음 하나(--no-pack-turns)로 한 번 더. 단어 시각이 없어 지금 설정의 묶음 한 줄이 다른 턴을 덮는지 견준다

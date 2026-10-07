@@ -162,7 +162,7 @@ def score(session: Path, mode: str, backend_kind: str, model: str, gate_on: bool
     preprocess: "highpass" 면 100~7500Hz 대역 제한을 트랙에 건다 (0007 의 필터).
     tag: 결과 파일 이름에 붙는 꼬리표. 같은 모드의 변형을 구분한다.
     backend: 이미 만든 백엔드를 쓴다(캐시로 감싼 것 등). 없으면 backend_kind·model 로 만든다.
-    lines_out: 주면 이 실행의 회의록 줄(Line)을 덧붙인다. 추출 비교가 다시 전사하지 않고 쓴다.
+    lines_out: 주면 이 실행의 회의록 줄(Line)을 덧붙인다. 줄을 남길 때 다시 전사하지 않고 쓴다.
     """
     from stt.eval.eval import SCORING_VERSION
 

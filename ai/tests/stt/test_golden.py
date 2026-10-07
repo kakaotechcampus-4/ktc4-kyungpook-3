@@ -59,7 +59,7 @@ def test_score_accepts_a_prebuilt_backend_and_keeps_its_output_file(tmp_path):
 
 
 def test_score_hands_back_the_lines_when_asked(tmp_path):
-    # 추출 비교는 CER 숫자가 아니라 회의록 줄이 필요하다. 다시 전사하지 않게 같은 실행의 줄을 받는다
+    # 회의록 줄을 남길 때(--save-lines) 다시 전사하지 않게 같은 실행의 줄을 받는다
     s = _session(tmp_path)
     got = []
     golden.score(s, "chunk", "local", "x", False, 1, True, backend=FixedStt(), out_dir=tmp_path / "out", lines_out=got)

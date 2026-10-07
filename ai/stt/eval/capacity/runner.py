@@ -204,7 +204,7 @@ def _write(out_dir: Path, name: str, data: dict) -> None:
 
 
 def _segments(lines) -> list[dict]:
-    """회의록 줄을 추출 비교(judge_diff)가 읽는 모양으로. 빈 줄은 뺀다.
+    """회의록 줄을 9/29 채점(real929)이 읽는 모양으로. 빈 줄은 뺀다.
 
     timing 이 "chunk" 인 줄은 단어 시각이 없어 묶음 전체를 덮는다. 시작 시각으로 자리를 보는 지표는 그 줄을 가려낸다.
     """
@@ -302,7 +302,7 @@ def run_golden(session: Path, *, model: str, tag: str, backend, out_dir: Path, b
     wall_s, ended_at = time.monotonic() - t0, time.time()
     ru1 = resource.getrusage(resource.RUSAGE_SELF)
     lines_file = None
-    if save_lines:     # 추출 비교(judge_diff)가 읽는다. 전사 문장이라 원자료 폴더에만 둔다
+    if save_lines:     # 9/29 채점(real929)이 읽는다. 전사 문장이라 원자료 폴더에만 둔다
         name = f"lines-{session.name}-{_file_model(kind, model)}" + ("" if pack_turns else "-turn")   # 비교 실행이 덮어쓰지 않게
         _write(out_dir, name, {"session": session.name, "model": model, "segments": _segments(lines)})
         lines_file = str(out_dir / f"{name}.json")

@@ -7,7 +7,6 @@
 # 구간 이름이 night.sh 와 겹쳐(env, idle) 같은 폴더에 쌓으면 보고서가 구간을 헷갈린다.
 # DATA_DIR 에는 m01, m02(합성 재료), real929(9/29 실녹음) 회의 폴더가 있다. long-60·long-10·long-30 은 없으면 만든다.
 # 실녹음 두 실행은 회의록 줄(lines-*.json)을 RUN_DIR 에 남긴다. 전사 문장이라 레포 결과 폴더로 옮기지 않는다.
-# 판단 경로 추출 비교(judge_diff)는 유료라 여기서 돌리지 않는다. 따로 승인받은 상한으로 돈다.
 set -euo pipefail
 
 if [ $# -ne 2 ]; then
@@ -88,7 +87,7 @@ scenario synth-long10 synth long-10 10
 scenario synth-long30 synth long-30 30
 scenario seq-long10 "${NICE[@]}" "${RUNNER[@]}" seq --tracks-dir "$DATA_DIR/long-10" --label long-10 --repeat 3 "${OUT[@]}"
 scenario seq-long30 "${NICE[@]}" "${RUNNER[@]}" seq --tracks-dir "$DATA_DIR/long-30" --label long-30 --repeat 1 "${OUT[@]}"
-# 실녹음은 회의록 줄을 남긴다. 판단 경로 추출 비교의 입력이다
+# 실녹음은 회의록 줄을 남긴다. 9/29 채점(real929)의 입력이다
 scenario seq-real929-turbo "${NICE[@]}" "${RUNNER[@]}" seq --tracks-dir "$DATA_DIR/real929" --label real929 \
   --save-lines "${OUT[@]}"
 scenario seq-real929-small "${NICE[@]}" "${RUNNER[@]}" seq --tracks-dir "$DATA_DIR/real929" --label real929-small \
