@@ -343,3 +343,22 @@ def test_over_the_hold_limit_earlier_tracks_are_collected_and_released_before_th
     lines, _ = B.run(B.discover(tmp_path), SlowEcho(), mode="chunk", gate=None, workers=1)
     assert len(lines) == 4 and len(refs) == 4
     assert leaks == []
+
+
+def test_run_reports_progress_each_time_a_call_finishes(tmp_path):
+    # 봇이 채널에 "전사 중 n/N" 을 보이는 데 쓴다. 끝난 호출, 보낸 호출, 읽은 트랙, 전체 트랙
+    seen = []
+    lines, stats = B.run(_session(tmp_path), EchoStt(), mode="chunk", gate=None, workers=2,
+                         progress=lambda done, sent, tracks, total: seen.append((done, sent, tracks, total)))
+    assert len(seen) == stats.calls
+    assert seen[-1] == (stats.calls, stats.calls, stats.tracks, stats.tracks)
+    assert all(done <= sent for done, sent, _, _ in seen)
+    assert [d for d, *_ in seen] == sorted(d for d, *_ in seen)       # 끝난 수가 뒤로 가지 않는다
+
+
+def test_a_failing_progress_report_does_not_stop_the_transcription(tmp_path):
+    def boom(*args):
+        raise RuntimeError("채널이 막혔다")
+
+    lines, stats = B.run(_session(tmp_path), EchoStt(), mode="chunk", gate=None, progress=boom)
+    assert stats.failed == 0 and lines
