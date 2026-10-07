@@ -80,7 +80,9 @@ def list_discord_members(
     bot_token = os.getenv("DISCORD_BOT_TOKEN", "")
     if not bot_token:
         logger.error("DISCORD_BOT_TOKEN이 없어 Discord 사용자 목록을 읽지 못했습니다")
-        raise AppError(ErrorCode.DISCORD_API_FAILED, details={"reason": "bot_token_missing"})
+        raise AppError(
+            ErrorCode.DISCORD_API_FAILED, details={"status": None, "reason": "bot_token_missing"}
+        )
     try:
         items = discord.list_guild_members(bot_token, integration.provider_channel_id)
     except discord.DiscordApiError as exc:

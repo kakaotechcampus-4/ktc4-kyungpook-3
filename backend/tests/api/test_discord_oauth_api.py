@@ -442,7 +442,10 @@ def test_members_without_bot_token_is_502(client, seed, db, fake_discord, monkey
     response = _members(client, seed["workspace_id"])
 
     assert response.status_code == 502
-    assert response.json()["error"]["code"] == "DISCORD_API_FAILED"
+    error = response.json()["error"]
+    assert (error["code"], error["details"]) == (
+        "DISCORD_API_FAILED", {"status": None, "reason": "bot_token_missing"}
+    )
     assert calls["members"] == []
 
 
