@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import logging
 import re
+from typing import Any
 
 from llm import LLMClient, get_llm
 from shared.schemas import ASSIGNEE_TYPES, JudgeFinding, Transcript
@@ -213,6 +214,18 @@ def _luna_user_prompt(numbered: str) -> str:
     )
 
 
+_BAD_INDICES_MAX = 20  # 회의 기록이 커지지 않게 틀린 번호는 이만큼만 남긴다
+
+
+def empty_drops() -> dict[str, Any]:
+    """1단계에서 검증에 탈락한 항목 기록. 원문은 남기지 않는다(#186).
+
+    not_dict · no_valid_indices 는 사유별 건수다. bad_indices 는 근거 번호가 틀려 탈락한 항목이 준 번호
+    그대로이고 lines 는 번호를 매긴 문장 수다(발화 수가 아니다) — 둘을 견주면 "1부터 셌다(번호 == lines)"인지 "지어냈다"인지 보인다.
+    """
+    return {"not_dict": 0, "no_valid_indices": 0, "bad_indices": [], "lines": 0}
+
+
 def extract_findings_llm(transcript: Transcript, client: LLMClient) -> list[JudgeFinding] | None:
     """Luna로 전사록 전체를 한 번에 훑어 JudgeFinding을 뽑는다.
 
@@ -220,27 +233,40 @@ def extract_findings_llm(transcript: Transcript, client: LLMClient) -> list[Judg
     (지민님의 Phase 1 추출기와 같은 방식). 호출 실패/파싱 실패, 또는 항목이 전부 검증에서 탈락해도 None —
     호출자(extract_findings)가 이걸 신뢰할 수 없는 응답으로 보고 FindingExtractionUnavailableError 를 던져야 한다.
     """
+    return _extract_findings_llm(transcript, client)[0]
+
+
+def _extract_findings_llm(
+    transcript: Transcript, client: LLMClient
+) -> tuple[list[JudgeFinding] | None, dict[str, Any]]:
+    """extract_findings_llm 과 같고, 검증에서 탈락한 항목 기록(empty_drops)을 함께 돌려준다."""
+    dropped = empty_drops()
     sentences, seqs, speakers = _flatten(transcript)
+    dropped["lines"] = len(sentences)
     if not sentences:
-        return []
+        return [], dropped
 
     prompt = _LUNA_SYSTEM_PROMPT + "\n\n" + _luna_user_prompt(_numbered_lines(sentences, speakers))
     result = client.generate_json(prompt, reasoning_effort="low")
     if result is None:
-        return None
+        return None, dropped
 
     # 명시적인 {"findings": []} 만 정상 0건이다. 키가 없는 응답({} 등)을 0건으로 보면 모델 오류가
     # "후보 없음"으로 확정돼 회의가 빈 추출로 닫히고 다시 보낼 수 없다(#128 리뷰)
     findings_raw = result.get("findings")
     if not isinstance(findings_raw, list):
-        return None
+        return None, dropped
 
     findings: list[JudgeFinding] = []
     for item in findings_raw:
         if not isinstance(item, dict):
+            dropped["not_dict"] += 1
             continue  # 항목 하나가 이상해도 나머지는 살림
         idxs = _valid_indices(item, len(sentences))
         if not idxs:
+            dropped["no_valid_indices"] += 1
+            if len(dropped["bad_indices"]) < _BAD_INDICES_MAX:
+                dropped["bad_indices"].append(item.get("indices", item.get("index")))
             continue  # Luna가 범위 밖 번호를 지어내면 그냥 무시 — 통째로 실패 처리하지 않는다
         summary = str(item.get("summary", "")).strip()
         evidence = [sentences[i] for i in idxs]
@@ -269,20 +295,28 @@ def extract_findings_llm(transcript: Transcript, client: LLMClient) -> list[Judg
     # findings 가 비어 있지 않은데 전부 탈락했으면 0건이 아니라 실패다. 이걸 0건으로 보면 모델 오류가
     # "후보 없음"으로 확정돼 회의가 빈 추출로 닫히고 재시도 기회를 잃는다(#128 리뷰)
     if findings_raw and not findings:
-        return None
+        return None, dropped
     if len(findings) < len(findings_raw):
+        # 어느 회의인지는 이 층에서 모른다 — 회의 기록(manifest["extract_dropped"])에 남기는 건 호출자 몫(#186)
         logger.warning(
-            "1단계 항목 %d개 중 %d개가 검증에서 탈락", len(findings_raw), len(findings_raw) - len(findings)
+            "1단계 항목 일부 탈락 total=%d not_dict=%d no_valid_indices=%d bad_indices=%s lines=%d",
+            len(findings_raw), dropped["not_dict"], dropped["no_valid_indices"], dropped["bad_indices"],
+            dropped["lines"],
         )
-    return findings
+    return findings, dropped
 
 
 def extract_findings(transcript: Transcript) -> list[JudgeFinding]:
     """Luna로 1단계 판단을 한다. 키가 없거나 호출/파싱이 실패하면 FindingExtractionUnavailableError."""
+    return extract_findings_counted(transcript)[0]
+
+
+def extract_findings_counted(transcript: Transcript) -> tuple[list[JudgeFinding], dict[str, Any]]:
+    """extract_findings 와 같고, 검증에서 탈락한 항목 기록(empty_drops)을 함께 돌려준다(#186)."""
     client = get_llm("luna")
     if client.name == "off":
         raise FindingExtractionUnavailableError("Luna API 키가 없어 1단계 판단을 할 수 없습니다.")
-    result = extract_findings_llm(transcript, client)
+    result, dropped = _extract_findings_llm(transcript, client)
     if result is None:
         raise FindingExtractionUnavailableError("Luna 응답을 파싱하지 못했습니다.")
-    return result
+    return result, dropped

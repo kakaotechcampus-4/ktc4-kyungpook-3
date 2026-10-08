@@ -3,6 +3,7 @@ import pytest
 from judge.semantic_judge import (
     FindingExtractionUnavailableError,
     extract_findings,
+    extract_findings_counted,
     extract_findings_llm,
     extract_findings_rules,
     split_sentences,
@@ -461,6 +462,41 @@ def test_llm_path_skips_non_dict_items_but_keeps_valid_ones():
     findings = extract_findings_llm(t, fake)
     assert len(findings) == 1
     assert findings[0].evidence == ["그럼 그렇게 갑시다."]
+
+
+def test_counted_path_reports_drops_by_reason(monkeypatch):
+    # 일부만 탈락하면 살린 항목과 함께 사유별 탈락 수를 돌려준다 — 회의 기록에 남겨 어느 회의에서 버려졌는지 본다(#186)
+    import judge.semantic_judge as sj
+    t = _transcript(
+        TranscriptSegment(speaker="a", start=0.0, end=1.0, text="안녕하세요.", seq=0),
+        TranscriptSegment(speaker="b", start=1.0, end=2.0, text="그럼 그렇게 갑시다.", seq=1),
+    )
+    response = {"findings": [{"indices": [1], "reason": "정상"}, {"indices": [7]}, "결제 관련 논의"]}
+    monkeypatch.setattr(sj, "get_llm", lambda which: FakeLLM(responses=[response]))
+
+    findings, dropped = extract_findings_counted(t)
+
+    assert [f.evidence for f in findings] == [["그럼 그렇게 갑시다."]]
+    # 틀린 번호와 줄 수를 같이 남겨 "1부터 셌는지 · 지어냈는지"를 원문 없이 본다
+    assert dropped == {"not_dict": 1, "no_valid_indices": 1, "bad_indices": [[7]], "lines": 2}
+
+
+def test_counted_path_reports_no_drops_when_all_valid(monkeypatch):
+    import judge.semantic_judge as sj
+    t = _transcript(TranscriptSegment(speaker="a", start=0.0, end=1.0, text="그럼 그렇게 갑시다.", seq=0))
+    monkeypatch.setattr(sj, "get_llm", lambda which: FakeLLM(responses=[{"findings": [{"indices": [0]}]}]))
+
+    assert extract_findings_counted(t)[1] == {"not_dict": 0, "no_valid_indices": 0, "bad_indices": [], "lines": 1}
+
+
+def test_counted_path_still_fails_when_all_dropped(monkeypatch):
+    # 전부 탈락은 집계와 상관없이 지금처럼 1단계 실패다(#155)
+    import judge.semantic_judge as sj
+    t = _transcript(TranscriptSegment(speaker="a", start=0.0, end=1.0, text="안녕하세요.", seq=0))
+    monkeypatch.setattr(sj, "get_llm", lambda which: FakeLLM(responses=[{"findings": [None, {"indices": [9]}]}]))
+
+    with pytest.raises(FindingExtractionUnavailableError):
+        extract_findings_counted(t)
 
 
 # ── extract_findings (디스패처: 규칙 기반 폴백 없음, Terra와 같은 원칙) ────────
