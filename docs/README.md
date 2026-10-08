@@ -26,7 +26,9 @@
 - [Backend](../backend/README.md)
 - [AI](../ai/README.md)
 
-Frontend는 [문서 안내](../frontend/docs/README.md), [대표 계약](../frontend/docs/contracts/frontend-api-contract.md), [전체 계획](../frontend/docs/plan/frontend-plan.md), [M0~M8 안내](../frontend/docs/plan/README.md)로 구조화했습니다. 기존 M0~M5 계획 원문과 완료 조건·인수인계·구현 결정 기록은 해당 마일스톤 폴더로 옮겼습니다. 이전 경로의 파일과 이동 안내는 삭제했습니다. 디자인·마스코트·성능 등 파트 고유 자료와 공유 기록은 유지합니다. Backend·AI 문서는 이번 작업에서 재배치하지 않았습니다.
+Frontend는 [문서 안내](../frontend/docs/README.md), [대표 계약](../frontend/docs/contracts/frontend-api-contract.md), [전체 계획](../frontend/docs/plan/frontend-plan.md), [M0~M8 안내](../frontend/docs/plan/README.md)로 구조화했습니다. 기존 M0~M5 계획 원문과 완료 조건·인수인계·구현 결정 기록은 해당 마일스톤 폴더로 옮겼습니다. 이전 경로의 파일과 이동 안내는 삭제했습니다. 디자인·마스코트·성능 등 파트 고유 자료와 공유 기록은 유지합니다.
+
+Backend는 [문서 안내](../backend/docs/README.md), [AI 계약](../backend/docs/contracts/backend-ai-contract.md), [전체 계획](../backend/docs/plan/backend-plan.md), [M0~M7 안내](../backend/docs/plan/README.md)로 구조화했습니다. 전체 계획은 `backend-development-plan.md`에서 이름만 바꿨고, M0~M7의 plan.md는 빈 초기화 파일입니다. AI 문서는 아직 재배치하지 않았습니다.
 
 ## 공통 문서 역할과 양식
 
