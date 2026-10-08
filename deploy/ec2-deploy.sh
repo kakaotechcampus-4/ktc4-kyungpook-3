@@ -16,6 +16,11 @@ set -euo pipefail
 REPO=/opt/mm
 FRONT_OUT=/srv/mm/frontend
 STATE="$REPO/.git/mm-deployed-sha"   # .git 안이라 git status 에 안 잡히고 fast-forward 를 막지 않는다
+# 녹음 확인부터 봇 재시작까지 쥐는 잠금. 봇이 새 녹음을 시작할 때 같은 파일을 잡아 보면 그 사이에 녹음이 시작되지 않는다.
+# 봇 쪽 사용 규칙은 backend/docs/requests/bot-restart-lock.md. ai/recordings 는 봇과 이 스크립트(ubuntu)가 함께 쓰고 git 이 무시한다.
+# /tmp 를 쓰지 않는 이유: deploy.yml 이 /tmp/mm-deploy.lock 을 root 로 배포 내내 쥐고, systemd 가 서비스마다 /tmp 를 나눌 수 있다
+RESTART_LOCK="$REPO/ai/recordings/restart.lock"
+RESTART_LOCK_WAIT=60   # 봇은 녹음을 시작하는 짧은 순간만 쥔다. 이보다 오래 못 잡으면 무언가 멈춘 것이다
 LOG="$HOME/mm-deploy.log"
 MODE=${2:-changed}
 
@@ -125,13 +130,23 @@ if changed ai; then
   fi
   # 워커는 SIGTERM 을 받으면 하던 회의를 마치고 끝난다(mm-worker.service TimeoutStopSec)
   restart_if_running mm-worker
-  if recording_now; then
+  mkdir -p ai/recordings
+  [ -e "$RESTART_LOCK" ] || : > "$RESTART_LOCK"
+  # 녹음 확인과 재시작 사이에 새 녹음이 시작되지 않게 잠금을 쥔 채로 둘을 한다.
+  # 재시작 뒤 살아났는지 기다리는 10초도 쥐고 있어서, 그동안 새 봇의 녹음 시작은 거절된다.
+  # 읽기로 연다. flock 은 쓰기 권한이 필요 없어서, 봇이 다른 사용자로 먼저 만든 파일도 잡을 수 있다
+  exec 8<"$RESTART_LOCK"
+  if ! flock -w "$RESTART_LOCK_WAIT" 8; then
+    complete=0
+    echo "::warning::${RESTART_LOCK_WAIT}초 안에 재시작 잠금을 잡지 못해 mm-bot 은 재시작하지 않았다. 다음 배포가 다시 올린다"
+  elif recording_now; then
     complete=0
     # ::warning:: 으로 시작하는 줄은 Actions 실행 화면에 경고로 뜬다
     echo "::warning::녹음 중이라 mm-bot 은 재시작하지 않았다. 녹음이 끝난 뒤 deploy 를 수동 실행하면 다시 올린다"
   else
     restart_if_running mm-bot
   fi
+  exec 8>&-   # 잠금을 놓는다
 else
   echo "== ai 변경 없음"
 fi
