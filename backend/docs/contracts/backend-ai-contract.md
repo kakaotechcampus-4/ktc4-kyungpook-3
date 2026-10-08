@@ -118,7 +118,7 @@ AI `Transcript.to_dict()` 모양에 화자 이름을 더해 보낸다. 한 회�
     "category": "schedule" | "assignee" | "scope" | "decision" | null,
     "status": "todo" | "in_progress" | "blocked" | "done" | null,
     "doc_text": "…" | null,
-    "target_snapshot": { "updated_at": "…", "due_date": "…", "status": "…", "assignee_member_id": "…" } | null
+    "target_snapshot": { "updated_at": "…", "due_date": "…", "status": "…", "assignee_member_id": "…", "title": "…" } | null
   } ]
 }
 // data
@@ -133,6 +133,7 @@ AI `Transcript.to_dict()` 모양에 화자 이름을 더해 보낸다. 한 회�
 | 담당자 | `assignee_type`이 `first`면 `evidence_speaker` uid로 `Member.discord_user_id`를 찾고, 그 외에는 `assignee_raw`를 별칭으로 매칭한다 |
 | 잘못된 항목 | update의 대상이 없거나 다른 워크스페이스 task, create의 제목이 비어 있으면 그 항목만 건너뛴다. `item_count`는 저장된 항목 수 |
 | update 처리 | 게이트·승인 생성 규칙과 `target_snapshot`의 충돌 기준값은 [Backend README 유사 task 검색과 AI 판단 접수](../../README.md#유사-task-검색과-ai-판단-접수)를 따른다 |
+| `target_snapshot.title` | 유사 검색 응답의 `title`을 그대로 보낸다. 제목을 바꾸는 값이 아니라 승인 때 대상 task가 그대로인지 확인하는 기준이다. 없거나 null이면 등록 시점의 제목을 쓴다. 필드 모양은 #185에서 AI·BE가 정했다 |
 
 ## 오류 코드 요약
 
