@@ -119,12 +119,18 @@ class TargetSnapshot(BaseModel):
     """AI가 유사 검색(SimilarTaskCandidate)에서 본 수정 대상 task의 값. 승인 충돌의 기준값으로 쓴다.
 
     보낸 필드만 기준값으로 쓴다. null은 "그때 값이 없었다"이고, 보내지 않은 필드는 등록 시점의 DB 값을 쓴다.
+    title은 예외다. task 제목은 비어 있을 수 없어서 null도 보내지 않은 것으로 보고 등록 시점의 제목을 쓴다.
     """
 
     updated_at: datetime | None = Field(None, description="검색 응답의 updated_at. 비교에는 쓰지 않고 기록용")
     due_date: date | None = None
     status: str | None = Field(None, max_length=16)
     assignee_member_id: str | None = Field(None, max_length=36)
+    title: str | None = Field(
+        None,
+        max_length=300,
+        description="AI가 이 task를 고른 근거가 된 제목. 바꿀 값이 아니라 승인 때 대상이 그대로인지 확인하는 기준이다",
+    )
 
 
 class ExtractionItemCreate(BaseModel):
