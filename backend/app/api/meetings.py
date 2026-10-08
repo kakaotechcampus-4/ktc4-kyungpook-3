@@ -230,7 +230,7 @@ def get_meeting_minutes(
         if extraction.summary:
             try:
                 summary = json.loads(extraction.summary)
-            except:
+            except ValueError:  # JSONDecodeError 포함. 깨진 요약은 없는 것으로 본다
                 pass
 
     return success(MeetingMinutesResponse(
