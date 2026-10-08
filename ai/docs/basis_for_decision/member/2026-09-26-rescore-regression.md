@@ -13,7 +13,7 @@
 - `stt/eval/eval.py` 에 채점 기준 버전 `SCORING_VERSION` 을 두었다. `rescore` 와 `golden score` 가 결과 파일에 `scoring_version` 을 적는다. 버전을 적기 전에 만든 결과는 1 로 본다
 - `tests/stt/test_rescore_results.py`: 저장된 결과 60개를 fixture 정답으로 다시 채점해 `cer`, `cer_by_speaker`, `insertion_rate` 가 저장값과 같은지 본다. 버전이 다른 결과는 이유를 달고 건너뛴다
 - `meeting-01-aligned/score_chunk_local-large-v3-turbo-perturn.json` 을 다시 채점했다. 정답 수정 전 값이 남아 있었다. `matrix.md` 의 같은 행도 다시 만들었다
-- `decision_log/0008` 표 3: m01 턴마다 묶음 6.31% 를 5.47% 로 고치고, "앞 턴의 문맥이 없어져서" 라는 원인 문장을 관찰한 사실로 바꿨다
+- `docs/basis_for_decision/member/2026-09-16-0008-batch-transcription-by-speaker-chunks.md` 표 3: m01 턴마다 묶음 6.31% 를 5.47% 로 고치고, "앞 턴의 문맥이 없어져서" 라는 원인 문장을 관찰한 사실로 바꿨다
 - 소급 로그 둘: `2026-09-18-batch-transcription-retro.md`(#42 #43 #44 #46 #48), `2026-09-19-review-45-1st-retro.md`(#57)
 
 ## 왜

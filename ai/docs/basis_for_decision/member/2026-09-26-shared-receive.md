@@ -14,7 +14,7 @@
 - `tests/capture/test_operating_boundary.py`: `run_recorder.build_bot()` 의 Cog 가 RecordingCog 하나인지, 운영 Cog 와 실행기를 새 프로세스에서 import 했을 때 `capture.realtime`·`stt.realtime` 모듈이 하나도 실리지 않는지 본다 (f58dea9)
 - `stt/realtime/bench.py`: 옮겨진 리플레이 하니스(`tests/capture/replay.py`)를 찾게 고치고 무과금 합성 실행을 `tests/stt/realtime/test_bench.py` 로 묶었다 (82377a3)
 - `capture/realtime/__init__.py`: 운영 Cog, 남긴 이유(비교 실행, 회귀 근거), 의존성, 유지 범위를 적었다. `stt/realtime/__init__.py` 와 `adapter.py`·`run.py`·`selftest.py` 의 낡은 경로와 설명, `.env.example` 의 인텐트·`LOG_LEVEL` 설명을 지금 코드에 맞췄다 (4447e97, 0d30693)
-- 결정: 실시간 경로는 이후 회의 중 전사를 다시 넣을 때 쓰려고 폴더로 보관한다. decision_log/0006 의 상태와 다시 볼 조건을 고쳤다
+- 결정: 실시간 경로는 이후 회의 중 전사를 다시 넣을 때 쓰려고 폴더로 보관한다. docs/basis_for_decision/member/2026-09-12-0006-two-capture-adapters-side-by-side.md 의 상태와 다시 볼 조건을 고쳤다
 
 ## 왜
 

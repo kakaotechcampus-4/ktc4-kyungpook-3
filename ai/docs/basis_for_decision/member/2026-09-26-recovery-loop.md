@@ -25,7 +25,7 @@
 - `MM_PIPELINE_MODE=worker` 의 봇: 저장까지만 하고 "처리되면 웹에서 확인(앞에 N건)" 을 올린다. `/recover` 는 워커를 깨우고 대기열과 워커 상태를 알린다. 전사 백엔드를 싣지 않는다. 다른 모드 값이면 시작할 때 멈춘다
 - 잠금은 플랫폼별로 나눴다. POSIX 는 fcntl.flock, 윈도는 msvcrt.locking(첫 1바이트, 기다리지 않음)이고 import 는 분기 안에서 한다. 모듈 맨 위에서 fcntl 을 부르면 윈도로 AI 코드를 돌리는 동료의 테스트가 capture 부터 깨진다. 윈도 이벤트 루프에는 add_signal_handler 가 없어 워커는 signal.signal 로 종료 신호를 받는다
 - `ai/deploy/systemd/`: 봇과 워커의 서버 설정 예시. 배포는 팀이 정한다
-- 결정과 기본값은 `decision_log/0013-recovery-worker-and-meeting-lock.md`
+- 결정과 기본값은 `docs/basis_for_decision/member/2026-09-26-0013-recovery-worker-and-meeting-lock.md`
 
 ## 왜
 

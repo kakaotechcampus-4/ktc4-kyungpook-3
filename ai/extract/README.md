@@ -235,7 +235,7 @@ seqs        = [1,                           1,                             2]   
 
 **40문장씩 끊어서 묻는다** (`_RELEVANCE_CHUNK_SIZE = 40`).
 한 번에 100문장 넘게 주면 애매한 문장("~하죠", "~기로 했어요")을 조용히 빠뜨린다 —
-실측에서 recall 이 96% → 79% 로 떨어졌다. 근거: `decision_log/0009`.
+실측에서 recall 이 96% → 79% 로 떨어졌다. 근거: `docs/basis_for_decision/member/2026-09-19-0009-bot-hands-off-to-be-api.md`.
 
 ### (3) `extract_structured()` — 세부 정보 뽑기 [LLM 호출 2]
 
@@ -274,7 +274,7 @@ LLM 응답 스키마 (`extract/llm.py :: ExtractionItem`, pydantic 으로 강제
 
 **관련 문장 20개씩 끊어서 묻는다** (`_CHUNK_SIZE = 20`).
 게이트웨이가 완료 토큰을 6000 에서 하드캡하는데 항목당 ~180 토큰이라 30개가 천장이고,
-넘기면 JSON 이 잘려 **그 회의의 할일이 전량 사라진다.** 근거: `decision_log/0009`.
+넘기면 JSON 이 잘려 **그 회의의 할일이 전량 사라진다.** 근거: `docs/basis_for_decision/member/2026-09-19-0009-bot-hands-off-to-be-api.md`.
 
 > ⚠️ 추출 프롬프트에는 **고른 문장만** 들어간다. 전체 대화록이 아니다.
 > "환님이 배포 담당이에요" 가 (2)에서 탈락하면 뒤의 "그분이 내일까지 해주세요" 를 풀 문맥이 없다

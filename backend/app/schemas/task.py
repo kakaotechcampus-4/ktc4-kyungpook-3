@@ -92,7 +92,7 @@ class SimilarTaskSearchRequest(BaseModel):
     k: int = Field(DEFAULT_K, ge=1, le=20, description="최대 후보 수")
     min_similarity: float = Field(
         DEFAULT_MIN_SIMILARITY, ge=0.0, le=1.0,
-        description="이 값 미만인 후보는 뺀다. 기본값 근거는 ai/decision_log/0010",
+        description="이 값 미만인 후보는 뺀다. 기본값 근거는 ai/docs/basis_for_decision/ai/2026-09-22-0010-embedding-similarity-threshold.md",
     )
 
 

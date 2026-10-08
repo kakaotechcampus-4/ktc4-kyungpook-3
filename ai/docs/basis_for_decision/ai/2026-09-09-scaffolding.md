@@ -19,7 +19,7 @@
 확정해야 했고, 이후 모든 PR이 공유할 테스트/설정 골격이 먼저 있어야 했다.
 
 `ai/`를 독립 프로젝트 루트로 둘지 폴더만 옮길지 고민했는데, 이후 별도 배포 가능성을 고려해
-독립 루트로 결정했다 — 자세한 근거는 `decision_log/0002-monorepo-restructure.md` 참고.
+독립 루트로 결정했다 — 자세한 근거는 `docs/basis_for_decision/member/2026-09-09-0002-monorepo-restructure.md` 참고.
 
 ## 결과
 

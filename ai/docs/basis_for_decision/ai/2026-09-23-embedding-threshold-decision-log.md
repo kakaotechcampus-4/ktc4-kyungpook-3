@@ -9,7 +9,7 @@
 ## 한 일
 
 PR #65 검증 결과를 바탕으로 임베딩 유사도 threshold를 0.4로 정한 근거를
-`decision_log/0010-embedding-similarity-threshold.md`에 남겼다.
+`docs/basis_for_decision/ai/2026-09-22-0010-embedding-similarity-threshold.md`에 남겼다.
 
 ## 왜
 
