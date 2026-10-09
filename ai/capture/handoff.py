@@ -10,7 +10,7 @@ extractions.py). 봇이 이 전이를 순서대로 부른다.
   어느 단계든 실패   PATCH /api/v1/meetings/{id}/fail    failed, failed_stage
 
 판단 경로(MM_EXTRACT_PATH=judge)는 추출 도중에 1단계가 고른 finding 마다 유사 task 검색을 부른다. 전사록의 줄마다가
-아니다. 발화 저장과 유사 검색이 서비스 토큰을 요구한다. 토큰이 없으면 발화 저장 단계는 건너뛴다(recorder.saves_sources).
+아니다. BE 는 봇이 부르는 경로 모두에서 서비스 토큰을 검사한다(#179). 토큰이 없으면 인계를 켜지 않는다(from_env).
 
   추출 도중          POST  /api/v1/workspaces/{id}/tasks/similar   X-Service-Token
 
@@ -62,7 +62,8 @@ class BeError(Exception):
 class BeClient:
     """회의 API 네 개와 발화 저장, 유사 task 검색을 얇게 싼다. session 은 requests.Session 과 같은 request() 를 가진 것이면 된다.
 
-    service_token 은 사용자 세션 없이 부르는 경로(발화 저장, 유사 검색)가 요구하는 X-Service-Token 값이다. 그 경로에만 싣는다.
+    service_token 은 사용자 세션 없이 부르는 봇 경로가 요구하는 X-Service-Token 값이다. BE 가 회의 생성·종료·실패,
+    추출 등록, 발화 저장, 유사 검색 모두에서 검사하므로(#179) 모든 요청에 싣는다.
     """
 
     def __init__(self, base_url: str, *, session=None, timeout: float = TIMEOUT_S, service_token: str = "") -> None:
@@ -73,6 +74,8 @@ class BeClient:
 
     def _call(self, method: str, path: str, body: dict | None = None, *, headers: dict | None = None,
               timeout: float | None = None) -> Any:
+        if self.service_token:
+            headers = {**(headers or {}), "X-Service-Token": self.service_token}
         extra = {"headers": headers} if headers else {}
         try:
             r = self._session.request(method, self.api + path, json=body, timeout=timeout or self.timeout, **extra)
@@ -122,9 +125,7 @@ class BeClient:
 
         돌려주는 것: {meeting_id, inserted, skipped, duration_ms}. transcript 는 Transcript.to_dict() 모양이다.
         """
-        headers = {"X-Service-Token": self.service_token} if self.service_token else None
-        return self._call("POST", f"/meetings/{meeting_id}/sources", {**transcript, "speaker_names": speaker_names},
-                          headers=headers)
+        return self._call("POST", f"/meetings/{meeting_id}/sources", {**transcript, "speaker_names": speaker_names})
 
     def similar_tasks(self, workspace_id: str, text: str) -> list[NotionCandidate]:
         """문장과 비슷한 기존 task 후보. 판단 파이프라인(judge.pipeline.CandidateSource)이 finding 마다 그 요약 문장으로 부른다.
@@ -132,9 +133,7 @@ class BeClient:
         후보 수와 유사도 하한은 BE 기본값(3개, 0.4)을 쓴다. 실패는 빈 목록이 아니라 BeError 다. 빈 목록은
         "비슷한 task 없음" 이라 실패를 그렇게 돌려주면 있는 task 가 새 항목으로 또 만들어진다.
         """
-        headers = {"X-Service-Token": self.service_token} if self.service_token else None
-        data = self._call("POST", f"/workspaces/{workspace_id}/tasks/similar", {"text": text}, headers=headers,
-                          timeout=SIMILAR_TIMEOUT_S)
+        data = self._call("POST", f"/workspaces/{workspace_id}/tasks/similar", {"text": text}, timeout=SIMILAR_TIMEOUT_S)
         items = data.get("items") if isinstance(data, dict) else None
         if not isinstance(items, list):
             raise BeError("BAD_RESPONSE", "유사 검색 응답에 items 목록이 없다")
@@ -300,8 +299,8 @@ class Handoff:
             if e.code == "MEETING_NOT_PROCESSING" and e.details.get("status") == "failed":
                 be = self._fresh(manifest, title)
                 be = self.end(manifest, title=title)
-                if self.client.service_token:   # 발화 먼저(BE 명세). 옛 회의에 보낸 발화를 새 회의에도 둔다
-                    self.save_sources(manifest, transcripts_dir=transcripts_dir, title=title)
+                # 발화 먼저(BE 명세). 옛 회의에 보낸 발화를 새 회의에도 둔다
+                self.save_sources(manifest, transcripts_dir=transcripts_dir, title=title)
                 data = self._register(be["meeting_id"], transcript_json, model_name, items)
             else:
                 raise
@@ -354,10 +353,14 @@ class Handoff:
 
 
 def from_env() -> Handoff | None:
-    """BE_BASE_URL 과 BE_WORKSPACE_ID 가 둘 다 있을 때만. 없으면 인계 단계를 건너뛴다."""
+    """BE_BASE_URL, BE_WORKSPACE_ID, BE_SERVICE_TOKEN 이 다 있을 때만. 하나라도 없으면 인계 단계를 건너뛴다.
+
+    토큰이 없으면 BE 가 봇의 모든 쓰기 요청을 401 로 거절한다(#179). 회의마다 실패하게 두지 않고 켜지 않는다.
+    """
     from shared.config import settings
 
     cfg = settings()
-    if not cfg.be_base_url or not cfg.be_workspace_id:
+    token = getattr(cfg, "be_service_token", "")
+    if not cfg.be_base_url or not cfg.be_workspace_id or not token:
         return None
-    return Handoff(BeClient(cfg.be_base_url, service_token=getattr(cfg, "be_service_token", "")), cfg.be_workspace_id)
+    return Handoff(BeClient(cfg.be_base_url, service_token=token), cfg.be_workspace_id)

@@ -32,8 +32,8 @@ process_session 이 마지막으로 끝난 단계 다음부터 실행한다. /st
 partial 로 두며, 다음 실행이 그 줄만 다시 보낸다. 할일 추출(extract/, #30)과 BE 인계는 설정이
 없으면 그 단계에서 멈추고 매니페스트는 그 앞 상태로 남는다.
 
-전사가 닫히면 추출 전에 발화를 BE 에 저장한다(sourced, #146). BE 가 "발화 먼저, 추출 나중" 을 요구한다. BE 설정이나
-서비스 토큰이 없으면 이 단계만 건너뛰고 추출로 간다. BE 가 요청을 거절하면(INVALID_REQUEST, MEETING_FAILED) 다시 보내도
+전사가 닫히면 추출 전에 발화를 BE 에 저장한다(sourced, #146). BE 가 "발화 먼저, 추출 나중" 을 요구한다. BE 설정이 없으면
+인계와 같이 건너뛴다(BE 주소·워크스페이스·서비스 토큰이 다 있어야 handoff 가 있다). BE 가 요청을 거절하면(INVALID_REQUEST, MEETING_FAILED) 다시 보내도
 같으니 바로 포기한다.
 
 추출 단계의 추출기는 둘 중 하나다(build_extractor). 기본은 extract_tasks, MM_EXTRACT_PATH=judge 면 판단
@@ -497,7 +497,7 @@ def _count_dead_run(manifest: dict, handoff, holder: str) -> None:
     안 세면 다시 뜬 워커가 같은 회의를 곧바로 다시 집고 또 죽는다. 그 회의가 줄 맨 앞이라 뒤 회의도 멈춘다.
     """
     stages = manifest.get("stages") or {}
-    stage = next((s for s in STAGES if s not in stages and (s != STATUS_SOURCED or saves_sources(handoff))),
+    stage = next((s for s in STAGES if s not in stages and (s != STATUS_SOURCED or handoff is not None)),
                  STATUS_HANDED_OFF)
     if manifest.get("failed_units"):
         stage = STATUS_TRANSCRIBED                     # 실패 구간을 다시 보내다 죽었다
@@ -505,11 +505,6 @@ def _count_dead_run(manifest: dict, handoff, holder: str) -> None:
     manifest["failed_stage"] = FAILED_STAGE[stage]
     manifest["error"] = f"처리 도중 프로세스가 끝났다({holder})"
     _count_failure(manifest, handoff, manifest["failed_stage"])
-
-
-def saves_sources(handoff) -> bool:
-    """발화 저장 단계가 도는 설정인가. BE 설정과 서비스 토큰이 다 있어야 한다. BE 의 발화 저장 API 는 토큰을 요구한다."""
-    return handoff is not None and bool(getattr(handoff.client, "service_token", ""))
 
 
 def sources_saved(manifest: dict) -> bool:
@@ -654,17 +649,14 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
             save()
 
         if handoff is not None and not sources_saved(manifest):
-            # BE 설정이 아예 없으면 인계 단계가 "BE 설정 없음" 을 한 번 알린다. 토큰만 없으면 여기서 알린다
-            if not saves_sources(handoff):
-                result["skipped"][STATUS_SOURCED] = "BE_SERVICE_TOKEN 없음"
-            else:
-                stage = STATUS_SOURCED
-                # 뒤 단계(추출·인계)에서 실패하던 회의면 그 실패 횟수를 이어 센다. 지우면 포기한 회의를 /recover 로 다시
-                # 돌려 또 실패해도 곧바로 포기하지 않고, 배포 때 재시도 중이던 회의도 처음부터 다시 센다
-                later = manifest.get("failed_stage") in (FAILED_STAGE[STATUS_EXTRACTED], FAILED_STAGE[STATUS_HANDED_OFF])
-                be = handoff.save_sources(manifest, transcripts_dir=tdir, title=meeting_title(manifest))
-                result["sources"] = dict(be["sources"])
-                finish(STATUS_SOURCED, keep_recovery=later)
+            # BE 설정이 없으면(handoff 가 None) 이 단계를 건너뛰고, 인계 단계가 "BE 설정 없음" 을 한 번 알린다
+            stage = STATUS_SOURCED
+            # 뒤 단계(추출·인계)에서 실패하던 회의면 그 실패 횟수를 이어 센다. 지우면 포기한 회의를 /recover 로 다시
+            # 돌려 또 실패해도 곧바로 포기하지 않고, 배포 때 재시도 중이던 회의도 처음부터 다시 센다
+            later = manifest.get("failed_stage") in (FAILED_STAGE[STATUS_EXTRACTED], FAILED_STAGE[STATUS_HANDED_OFF])
+            be = handoff.save_sources(manifest, transcripts_dir=tdir, title=meeting_title(manifest))
+            result["sources"] = dict(be["sources"])
+            finish(STATUS_SOURCED, keep_recovery=later)
 
         if STATUS_EXTRACTED not in stages:
             if extractor is None:

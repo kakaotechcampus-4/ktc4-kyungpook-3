@@ -145,19 +145,19 @@ def test_process_session_runs_every_stage_and_records_when(tmp_path):
     fake = FakeBe()
     seen = {}
     r = _run(rec, manifest, tmp_path, extractor=_extractor(seen),
-             handoff=H.Handoff(H.BeClient("http://be", session=fake), "ws-1"))
-    assert r["ran"] == ["transcribed", "extracted", "handed_off"] and r["status"] == "handed_off"
+             handoff=H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"), "ws-1"))
+    assert r["ran"] == ["transcribed", "sourced", "extracted", "handed_off"] and r["status"] == "handed_off"
     assert r["text_channel_id"] == "900"
     saved = json.loads(path.read_text(encoding="utf-8"))
-    assert saved["status"] == "handed_off" and set(saved["stages"]) == {"transcribed", "extracted", "handed_off"}
+    assert saved["status"] == "handed_off" and set(saved["stages"]) == {"transcribed", "sourced", "extracted", "handed_off"}
     assert saved["transcript"] == "77_500/transcript.md" and saved["tasks"].endswith("session_77_500.tasks.json")
     assert saved["be"]["meeting_id"] == "m1" and saved["be"]["status"] == "done" and saved["be"]["extraction_id"] == "e-m1"
     assert seen["today"] == date(2026, 9, 16) and seen["names"] == {"1": "민수", "2": "서연"} and seen["n"] == 3
-    # BE 에는 회의 생성 → 종료 → 추출 등록 순서로 갔고, 1인칭 항목에 그 트랙의 uid 가 실렸다
+    # BE 에는 회의 생성 → 종료 → 발화 저장 → 추출 등록 순서로 갔고, 1인칭 항목에 그 트랙의 uid 가 실렸다
     assert [(c[0], c[1]) for c in fake.calls] == [("POST", "/meetings"), ("PATCH", "/meetings/m1/end"),
-                                                   ("POST", "/extractions")]
+                                                   ("POST", "/meetings/m1/sources"), ("POST", "/extractions")]
     assert fake.calls[0][2]["title"] == "회의방 2026-09-16"
-    assert fake.calls[2][2]["items"][0]["evidence_speaker"] == "1"
+    assert fake.calls[3][2]["items"][0]["evidence_speaker"] == "1"
     assert R.pending_sessions(rec) == []
 
 
@@ -171,13 +171,13 @@ def test_process_session_stops_where_settings_are_missing_and_recover_resumes(tm
                         transcripts_dir=tmp_path / "transcripts", extractor=_extractor({}), handoff=None)
     assert [(x["session"], x["ran"], x["status"]) for x in results] == [("77_500", ["extracted"], "extracted")]
     assert results[0]["skipped"] == {"handed_off": "BE 설정 없음"}
-    # BE 까지 켜졌다. 인계만 한다
+    # BE 까지 켜졌다. 발화 저장과 인계를 한다
     fake = FakeBe()
     results = R.recover(rec, backend=EchoStt(), model_name="echo", workers=1, gate=None,
                         transcripts_dir=tmp_path / "transcripts", extractor=_extractor({}),
-                        handoff=H.Handoff(H.BeClient("http://be", session=fake), "ws-1"))
-    assert results[0]["ran"] == ["handed_off"] and results[0]["status"] == "handed_off"
-    assert [c[1] for c in fake.calls] == ["/meetings", "/meetings/m1/end", "/extractions"]
+                        handoff=H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"), "ws-1"))
+    assert results[0]["ran"] == ["sourced", "handed_off"] and results[0]["status"] == "handed_off"
+    assert [c[1] for c in fake.calls] == ["/meetings", "/meetings/m1/end", "/meetings/m1/sources", "/extractions"]
     assert R.pending_sessions(rec) == []
 
 
@@ -254,7 +254,7 @@ def test_when_no_line_survives_the_meeting_stays_partial(tmp_path, monkeypatch):
 def test_failed_stage_is_recorded_and_retried_from_there_on_the_same_be_meeting(tmp_path):
     rec, path, manifest = _session(tmp_path)
     fake = FakeBe()
-    h = H.Handoff(H.BeClient("http://be", session=fake), "ws-1")
+    h = H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"), "ws-1")
 
     def dying(transcript, names, today):
         raise RuntimeError("LLM 죽음")
@@ -361,7 +361,7 @@ def test_a_changed_transcript_invalidates_extraction_and_flags_a_stale_be_extrac
     monkeypatch.setattr(R, "PARTIAL_RETRY_MAX", 1)
     rec, path, manifest = _session(tmp_path)
     fake = FakeBe()
-    h = H.Handoff(H.BeClient("http://be", session=fake), "ws-1")
+    h = H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"), "ws-1")
     seen = {}
     stt = DiesOnLong()                                    # 화자 1 의 묶음(4.4초)만 죽는다
     r = _run(rec, manifest, tmp_path, backend=stt, extractor=_extractor(seen), handoff=h)
@@ -370,7 +370,7 @@ def test_a_changed_transcript_invalidates_extraction_and_flags_a_stale_be_extrac
               extractor=_extractor(seen), handoff=h)
     stt.limit_s = 1.0                                     # 재전사도 죽는다
     r2 = R.recover(rec, **kw)[0]
-    assert r2["ran"] == ["retried", "extracted", "handed_off"] and r2["partial"] is True
+    assert r2["ran"] == ["retried", "sourced", "extracted", "handed_off"] and r2["partial"] is True
     saved = json.loads(path.read_text(encoding="utf-8"))
     assert saved["status"] == "handed_off" and saved["partial"] is True and len(saved["failed_units"]) == 2
     n_partial = seen["n"]
@@ -380,7 +380,7 @@ def test_a_changed_transcript_invalidates_extraction_and_flags_a_stale_be_extrac
     assert R.pending_sessions(rec) == [path]              # 상한을 올리면 다시 집는다
     stt.limit_s = 3.5                                     # 이번엔 산다
     r3 = R.recover(rec, **kw)[0]
-    assert r3["ran"] == ["retried", "extracted", "handed_off"] and r3["retried"] == 2
+    assert r3["ran"] == ["retried", "sourced", "extracted", "handed_off"] and r3["retried"] == 2
     saved = json.loads(path.read_text(encoding="utf-8"))
     assert "failed_units" not in saved and not saved.get("partial") and seen["n"] > n_partial
     assert saved["be"]["stale_extraction"] is True and r3["be"]["stale_extraction"] is True
@@ -407,17 +407,6 @@ def test_lines_are_saved_to_the_be_between_transcription_and_extraction(tmp_path
     saved = json.loads(path.read_text(encoding="utf-8"))
     assert set(saved["stages"]) == {"transcribed", "sourced", "extracted", "handed_off"}
     assert saved["be"]["sources"]["inserted"] == 3
-
-
-def test_without_a_service_token_the_save_is_skipped_and_the_rest_runs(tmp_path):
-    """옛 추출 경로는 토큰 없이도 돌았다. 토큰이 없다는 이유로 추출과 인계까지 막지 않는다."""
-    rec, path, manifest = _session(tmp_path)
-    fake = FakeBe()
-    r = _run(rec, manifest, tmp_path, extractor=_extractor({}),
-             handoff=H.Handoff(H.BeClient("http://be", session=fake), "ws-1"))
-    assert r["ran"] == ["transcribed", "extracted", "handed_off"] and r["status"] == "handed_off"
-    assert r["skipped"] == {"sourced": "BE_SERVICE_TOKEN 없음"}
-    assert all(not c[1].endswith("/sources") for c in fake.calls)
 
 
 def test_a_failed_save_stops_before_extraction_and_the_next_run_resumes_there(tmp_path):
@@ -534,9 +523,8 @@ def test_a_meeting_failing_extraction_before_this_change_keeps_counting(tmp_path
     """배포 때 추출에서 두 번 실패해 있던 회의. 새 단계가 먼저 돌아도 실패 횟수는 이어서 센다."""
     rec, path, manifest = _session(tmp_path)
     fake = FakeBe()
-    no_token = H.Handoff(H.BeClient("http://be", session=fake), "ws-1")
-    _run(rec, manifest, tmp_path, extractor=_dying, handoff=no_token)
-    _run(rec, json.loads(path.read_text(encoding="utf-8")), tmp_path, extractor=_dying, handoff=no_token)
+    _run(rec, manifest, tmp_path, extractor=_dying, handoff=None)          # 발화 저장 단계가 없던 때처럼 바로 추출
+    _run(rec, json.loads(path.read_text(encoding="utf-8")), tmp_path, extractor=_dying, handoff=None)
     r = _run(rec, json.loads(path.read_text(encoding="utf-8")), tmp_path, extractor=_dying, handoff=_be(fake))
     assert r["ran"] == ["sourced"] and r["attempts"] == 3
 
