@@ -232,6 +232,9 @@ def get_meeting_minutes(
                 summary = json.loads(extraction.summary)
             except ValueError:  # JSONDecodeError 포함. 깨진 요약은 없는 것으로 본다
                 pass
+            # JSON으로는 맞아도 객체가 아니면(목록·문자열) 응답 스키마(dict | None)에서 500이 난다. 없는 것으로 본다
+            if not isinstance(summary, dict):
+                summary = None
 
     return success(MeetingMinutesResponse(
         meeting_id=meeting.meeting_id,
