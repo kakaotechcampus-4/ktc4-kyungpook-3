@@ -304,14 +304,14 @@ def _wavs_and_names(recordings_dir: Path, manifest: dict) -> tuple[list[Path], d
 
 
 def hinted(backend, manifest: dict):
-    """매니페스트의 hint_names(팀 멤버의 부르는 이름)로 이름 프롬프트를 건다(#195).
+    """매니페스트의 hint_names(디스코드 표시 이름)를 부르는 이름으로 바꿔 이름 프롬프트를 건다(#195).
 
     프롬프트를 받는 백엔드(accepts_prompt, 지금은 Elice)에만 건다. 로컬 백엔드와 이름이 없는 회의는 그대로다.
     근거는 결정 기록 0020.
     """
-    from stt.backend import Prompted, name_prompt
+    from stt.backend import Prompted, called_name, name_prompt
 
-    prompt = name_prompt(manifest.get("hint_names") or [])
+    prompt = name_prompt([c for c in map(called_name, manifest.get("hint_names") or []) if c])
     return Prompted(backend, prompt) if prompt and getattr(backend, "accepts_prompt", False) else backend
 
 

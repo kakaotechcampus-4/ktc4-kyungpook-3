@@ -615,6 +615,15 @@ def test_a_backend_that_takes_no_prompt_is_called_as_before(tmp_path):
     assert _run(rec, manifest, tmp_path)["status"] == "transcribed"
 
 
+def test_display_names_are_sent_as_called_names(tmp_path):
+    """매니페스트에는 디스코드 표시 이름이 그대로 남고, 프롬프트에는 부르는 이름으로 바꿔 싣는다."""
+    rec, path, manifest = _session(tmp_path)
+    manifest["hint_names"] = ["유재환", "geocangdongu5251", "김환"]
+    stt = PromptEcho()
+    _run(rec, manifest, tmp_path, backend=stt)
+    assert stt.prompts and set(stt.prompts) == {"재환님, 김환님."}
+
+
 def test_a_meeting_without_names_sends_no_prompt(tmp_path):
     rec, path, manifest = _session(tmp_path)
     stt = PromptEcho()

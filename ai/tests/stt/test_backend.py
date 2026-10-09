@@ -341,3 +341,16 @@ def test_name_prompt_dedupes_skips_blanks_and_caps_the_list():
     assert name_prompt([]) is None
     many = [f"사람{i}" for i in range(NAME_PROMPT_MAX + 5)]
     assert name_prompt(many).count("님") == NAME_PROMPT_MAX
+
+
+def test_called_name_drops_the_surname_of_a_three_syllable_name_and_skips_ids():
+    """회의에서는 성을 빼고 부른다. 성까지 넣은 프롬프트는 9/29 이름 자리 1/4, 부르는 이름은 3/4 였다(#195)."""
+    from stt.backend import called_name
+    assert called_name("유재환") == "재환"
+    assert called_name(" 김동우 ") == "동우"
+    assert called_name("김환") == "김환"              # 두 글자는 성인지 이름인지 알 수 없어 그대로 둔다
+    assert called_name("동우") == "동우"
+    assert called_name("남궁민수") == "남궁민수"
+    assert called_name("geocangdongu5251") is None    # 아이디 꼴은 들리는 소리와 달라 힌트가 되지 않는다
+    assert called_name("동우🔥") is None
+    assert called_name("") is None

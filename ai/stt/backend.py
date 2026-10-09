@@ -7,6 +7,7 @@ API 와 로컬 모델을 같은 모양 뒤에 둔다. 벤치마크가 두 백엔
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Protocol
 
@@ -55,6 +56,18 @@ def name_prompt(names: list[str]) -> str | None:
             seen.append(n)
     seen = seen[:NAME_PROMPT_MAX]
     return ", ".join(f"{n}님" for n in seen) + "." if seen else None
+
+
+def called_name(display_name: str) -> str | None:
+    """표시 이름을 회의에서 부르는 이름으로 바꾼다. 한글 세 글자면 성을 떼고, 한글이 아니면 뺀다(None).
+
+    9/29 실녹음에서 "유재환님" 꼴 프롬프트는 이름 자리 4개 중 1개, "재환님" 꼴은 3개를 고쳤다(결정 기록 0020).
+    두 글자는 성이 붙은 이름("김환")인지 이름만인지("동우") 알 수 없어 그대로 둔다.
+    """
+    n = (display_name or "").strip()
+    if not re.fullmatch(r"[가-힣]+", n):
+        return None
+    return n[1:] if len(n) == 3 else n
 
 
 class Prompted:
