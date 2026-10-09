@@ -585,7 +585,8 @@ def test_an_unconnected_server_stops_after_the_transcript_and_resumes_once_conne
     r = _run(rec, manifest, tmp_path, extractor=_extractor({}), handoff=h)
     assert r["status"] == "transcribed" and r["workspace"] == "not_connected"
     assert set(r["skipped"]) == {"sourced", "extracted", "handed_off"}
-    assert [c[1] for c in fake.calls] == ["/integrations/discord/guilds/77/workspace"] * 2   # 녹음 끝 알림과 이 단계
+    assert [c[1] for c in fake.calls] == ["/integrations/discord/guilds/77/workspace"]       # 묻는 곳은 한 곳이다
+    assert "error" not in json.loads(path.read_text(encoding="utf-8")).get("be", {})        # 연결 없음은 오류가 아니다
     fake.guilds = {"77": "ws-1"}                                                              # 웹에서 연결했다
     r2 = _run(rec, json.loads(path.read_text(encoding="utf-8")), tmp_path, extractor=_extractor({}), handoff=h)
     saved = json.loads(path.read_text(encoding="utf-8"))

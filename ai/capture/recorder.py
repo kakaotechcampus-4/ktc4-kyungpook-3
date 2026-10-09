@@ -576,8 +576,9 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
             result["speakers"] = len(entries)
             save()
 
-        if handoff is not None:
-            # 녹음이 끝났으니 BE 회의를 processing 으로 돌린다. 여기서 실패해도 전사는 하고 인계 단계가 다시 부른다
+        if handoff is not None and manifest.get("workspace_id"):
+            # 녹음이 끝났으니 BE 회의를 processing 으로 돌린다. 여기서 실패해도 전사는 하고 인계 단계가 다시 부른다.
+            # 워크스페이스가 아직 없으면 여기서 묻지 않는다. 발화 저장 앞에서 한 번 묻고, 회의는 발화 저장이 만든다
             try:
                 handoff.end(manifest, title=meeting_title(manifest))
             except Exception as e:  # noqa: BLE001
