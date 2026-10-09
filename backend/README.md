@@ -125,22 +125,26 @@ docker compose -f docker-compose.prod.yml logs -f api
 분리한다(outbox 패턴, `app/services/notion_sync.py`).
 
 1. Task 생성·수정·되돌리기(`app/services/tasks.py`)는 `Task.version`을 올리고, 같은
-   트랜잭션에 반영 작업(`notion_sync_job`) 한 줄을 쌓는다. **요청 안에서는 Notion을
-   호출하지 않으므로** Notion 장애가 Task API를 실패시키지 않는다.
+   트랜잭션에 "이 Task를 확인해 달라"는 요청(`notion_sync_job`) 한 줄을 쌓는다. 연결 상태와 상관없이
+   항상 쌓는다. **요청 안에서는 Notion을 호출하지 않으므로** Notion 장애가 Task API를 실패시키지 않는다.
 2. 서버 프로세스 안의 워커(`app/main.py` lifespan, `NOTION_SYNC_INTERVAL_SECONDS`마다,
-   기본 5초, 0이면 끔)가 대기 작업을 꺼내 Notion에 페이지를 만들거나(POST) 고친다(PATCH).
+   기본 5초, 0이면 끔)가 대기 요청을 꺼내 Task와 지금 연결을 보고 Notion에 페이지를 만들거나(POST)
+   고친다(PATCH). Task의 Notion 기록(`notion_page_id`·`notion_database_id`·`notion_synced_version`)은 워커만 고친다.
 
-`Integration(provider="notion")` 행이 없거나 `access_token`/`provider_channel_id`(대상
-데이터베이스 ID)가 비어 있으면 작업을 쌓지 않는다 — 연동은 선택 사항이다.
+`Integration(provider="notion")` 행이 없으면 워커가 요청을 건너뛴다 — 연동은 선택 사항이다. 행은 있는데
+`provider_channel_id`(대상 데이터베이스 ID)가 비어 있으면(DB를 찾는 중이거나 연결이 실패함) 요청을 꺼내지 않고
+두었다가, DB가 붙으면 처리한다.
 
 | 항목 | 동작 |
 |---|---|
 | 상태 | Task 응답의 `notion_sync_status`: `pending`(반영 대기) · `synced` · `failed` · `null`(미연동) |
 | 재시도 | 429·409·5xx·네트워크 오류는 지수 백오프(10초~10분, `Retry-After` 우선)로 최대 5회. 400·401·403·404는 바로 `failed` |
-| 순서·중복 | 항상 Task의 현재 값 전체를 보내고 `notion_synced_version`에 보낸 버전을 기록한다. 그 이하 버전 작업은 건너뛴다(`skipped`) |
-| 생성 타임아웃 | POST 직전에 `notion_create_attempted_at`을 커밋해 둔다. 결과를 모른 채 끝나면 다음 시도는 POST를 반복하지 않고 `Task ID` 속성으로 페이지를 먼저 조회한다 |
-| 워커 중단 | `in_progress`로 5분 넘게 남은 작업은 다시 대기열로 돌린다 |
-| 수동 재시도 | `POST /api/v1/tasks/{task_id}/notion-sync/retry` — `failed` 작업의 재시도 횟수를 초기화해 다시 대기열에 넣는다 |
+| 순서·중복 | 항상 Task의 현재 값 전체를 보내고 `notion_synced_version`에 보낸 버전을 기록한다. 같은 Task에 요청이 여러 줄 있어도 된다. Task의 지금 버전이 지금 DB에 이미 반영됐으면 Notion을 부르지 않고 건너뛴다(`skipped`) |
+| 대상 DB | 페이지를 보낸 DB를 `notion_database_id`에 함께 기록한다. 연결된 DB가 이와 다르면 옛 페이지는 쓰지 않고 지금 DB에 새로 만든다. 새 DB가 붙으면(`notion_sync.enqueue_workspace_sync`) 워크스페이스의 모든 Task에 요청을 하나씩 쌓는다. 옛 DB의 페이지는 지우지 않는다 |
+| 생성 타임아웃 | POST 직전에 `notion_create_attempted_at`을 커밋해 둔다. 결과를 모른 채 끝나면 다음 시도는 POST를 반복하지 않고 `Task ID` 속성으로 지금 DB에서 페이지를 먼저 조회한다 |
+| 워커 중단 | `in_progress`로 5분 넘게 남은 요청은 다시 대기열로 돌린다 |
+| 수동 재시도 | `POST /api/v1/tasks/{task_id}/notion-sync/retry` — `failed` 요청의 재시도 횟수를 초기화해 다시 대기열에 넣는다. Task의 지금 버전이 지금 DB에 이미 반영됐으면 거절한다 |
+| 쌓이는 행 | 끝난(`done`·`skipped`·`failed`) 요청은 지우지 않는다. Notion을 쓰지 않는 워크스페이스도 Task를 고칠 때마다 한 줄씩 쌓인다 |
 
 워커는 프로세스당 하나만 도는 것을 전제로 한다(uvicorn 워커를 여러 개 띄우면 안 됨).
 
@@ -156,6 +160,8 @@ PM이 온보딩에서 Notion을 연결하면 `Integration` 행(토큰 + 대상 D
 4. 템플릿 복제는 10초 남짓 걸린다. 그래서 응답 뒤에 서버가 **Notion DB 찾기 작업**을 따로 돌린다
    (`app/services/notion_connect.py`, FastAPI `BackgroundTasks`). 2초마다 복제 페이지를 보고(최대 60초),
    DB를 찾아 속성을 확인한 뒤 `provider_channel_id`에 저장한다. 이때부터 워커가 반영한다.
+   그동안 `GET /api/v1/workspaces/{workspace_id}/integrations`의 notion은 `connecting`이다(지금은 임시로
+   `connected`로 내려준다. 아래 "연동 조회 상태" 참고).
 
 callback은 워크스페이스별 경로가 아닌 고정 경로다. Notion에 등록하는 redirect URI는 한 글자도 달라질 수
 없어서 workspace_id를 넣지 못하고, 어느 워크스페이스인지는 서명한 state에서 꺼낸다.
@@ -164,9 +170,10 @@ callback은 워크스페이스별 경로가 아닌 고정 경로다. Notion에 �
 |---|---|
 | 결과 | 항상 앱 화면으로의 302다. `oauth_result`는 `success` · `cancelled`(허용 화면에서 취소) · `failed`. JSON 오류를 보이지 않는다 |
 | 템플릿 미사용 | 허용 화면에서 기존 페이지를 고르면(Notion이 이 선택지를 숨길 수 없다) 저장하지 않고 `failed` |
-| 다시 연결 | 쓰던 DB를 새 토큰으로도 쓸 수 있으면 토큰만 바꾸고 DB는 그대로 둔다. Notion에는 템플릿 복제본이 하나 더 생긴다 |
-| Notion DB 찾기 작업 실패 | 60초 안에 DB를 못 찾거나, 템플릿에 DB가 없거나, 속성이 다르면 연결 행을 지운다. 이유는 경고 로그로 남는다(`Notion 대상 DB 연결 실패 … result=…`) |
-| 서버 재시작 | Notion DB 찾기 작업 도중 서버가 꺼지면 토큰만 있는 연결이 남는다. 다시 연결하면 된다 |
+| 연동 조회 상태 | notion은 행이 없으면 `not_connected`, DB ID가 있으면 `connected`. DB ID가 없을 때 토큰이 있고 행이 마지막으로 바뀐 지 2분(DB 찾기 상한 60초 + 여유, `NOTION_CONNECTING_TIMEOUT`) 안이면 `connecting`("Notion 준비 중"), 토큰을 비웠거나 2분이 넘으면 `revoked`("Notion DB 연결 실패"). 지금 `revoked`는 DB 연결이 끝까지 안 된 경우에만 나온다. **임시:** 프론트가 `connecting`을 모르는 값으로 보고 OAuth 직후 "연결 실패"를 띄우므로, 프론트가 대응할 때까지 `connecting` 대신 `connected`("Notion 연결됨")로 내려준다. 찾는 사이 만든 Task도 DB가 붙으면 반영되므로 표시만 다르다 |
+| 다시 연결 | 쓰던 DB를 새 토큰으로도 쓸 수 있으면 토큰만 바꾸고 DB는 그대로 둔다. 쓸 수 없으면 DB ID를 비우고 새 템플릿에서 다시 찾는다(그동안 `connecting`). 새 DB가 붙으면 모든 Task가 새 DB에 새로 만들어진다. Notion에는 템플릿 복제본이 하나 더 생긴다 |
+| Notion DB 찾기 작업 실패 | 60초 안에 DB를 못 찾거나, 템플릿에 DB가 없거나, 속성이 다르면 행은 두고 토큰만 비운다. 연동 조회가 바로 `revoked`가 되고, 다시 연결하면 callback이 새 토큰을 채운다. DB를 붙이며 Task 요청을 쌓다 오류가 나면 DB 저장도 함께 되돌려져 2분 뒤 `revoked`가 된다. 이유는 경고 로그로 남는다(`Notion 대상 DB 연결 실패 … result=…`) |
+| 서버 재시작 | Notion DB 찾기 작업 도중 서버가 꺼지면 토큰만 있는 행이 남는다. 2분이 지나면 연동 조회가 `revoked`로 보이고, 다시 연결하면 callback이 그 행을 덮어쓴다 |
 | 보안 | state는 HMAC 서명(10분 만료)이고 짝 쿠키로 한 번만 쓰인다. callback에서 로그인 사용자와 PM 여부를 다시 확인한다. code·state·토큰은 로그에 남기지 않는다 |
 
 **환경변수** (`.env.example` 참고)
@@ -182,7 +189,7 @@ callback은 워크스페이스별 경로가 아닌 고정 경로다. Notion에 �
 - Redirect URI에 위 `NOTION_REDIRECT_URI`와 같은 값을 등록한다.
 - "Notion URL for optional template"에 웹에 게시한 템플릿 페이지 주소를 넣는다.
 
-**템플릿 규칙** — 어긋나면 4번에서 연결이 지워진다(`notion.verify_database_schema`)
+**템플릿 규칙** — 어긋나면 4번에서 연결이 실패한다(`revoked`, `notion.verify_database_schema`)
 
 - "회의 Task" 같은 페이지 **바로 아래**에 데이터베이스를 둔다(열·토글 안에 넣으면 찾지 못한다).
 - 속성 이름과 종류를 `app/services/notion.py`의 `DATABASE_SCHEMA`와 맞춘다: Name/title, Status/select,
