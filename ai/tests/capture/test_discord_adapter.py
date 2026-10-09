@@ -127,7 +127,7 @@ class Task:
                 "due_raw": "내일", "due_status": "certain"}
 
 
-def first_person_extractor(transcript, names, today):
+def first_person_extractor(transcript, names, today, workspace_id=None):
     return [Task(transcript.segments[0].text)]
 
 
@@ -525,7 +525,7 @@ def _judge_item(title, **over):
 def _judge_extractor(items, failures=()):
     from capture.judge_path import JudgeOutput
 
-    return lambda transcript, names, today: JudgeOutput(items=list(items), failures=list(failures))
+    return lambda transcript, names, today, workspace_id=None: JudgeOutput(items=list(items), failures=list(failures))
 
 
 async def _record_and_stop(cog, ctx):

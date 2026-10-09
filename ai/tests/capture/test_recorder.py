@@ -62,7 +62,7 @@ class Task:
 
 
 def _extractor(seen: dict):
-    def run(transcript, names, today):
+    def run(transcript, names, today, workspace_id=None):
         seen["names"], seen["n"], seen["today"] = names, len(transcript.segments), today
         return [Task(transcript.segments[0].text)]
     return run
@@ -257,7 +257,7 @@ def test_failed_stage_is_recorded_and_retried_from_there_on_the_same_be_meeting(
     fake = FakeBe()
     h = H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"))
 
-    def dying(transcript, names, today):
+    def dying(transcript, names, today, workspace_id=None):
         raise RuntimeError("LLM 죽음")
 
     r = _run(rec, manifest, tmp_path, extractor=dying, handoff=h)
@@ -342,7 +342,7 @@ def test_extract_after_transcription_uses_the_meeting_date_and_skips_without_ext
     assert out == tdir / "session_77_500.tasks.json"
     assert json.loads(out.read_text(encoding="utf-8"))[0]["task"] == "와이어프레임 그리기"
     assert seen["today"] == date(2026, 9, 17)                          # 한국 시각으로 다음 날
-    assert R.extract_after_transcription(tdir, manifest, extractor=lambda *a: [], today=date(2026, 1, 1)) == out
+    assert R.extract_after_transcription(tdir, manifest, extractor=lambda *a, **k: [], today=date(2026, 1, 1)) == out
     assert R.extract_after_transcription(tmp_path / "없음", manifest, extractor=_extractor({})) is None
 
 
@@ -469,7 +469,7 @@ def test_a_run_that_died_without_be_settings_is_counted_at_the_stage_it_was_in(t
     assert m["failed_stage"] == "extract"
 
 
-def _dying(transcript, names, today):
+def _dying(transcript, names, today, workspace_id=None):
     raise RuntimeError("LLM 죽음")
 
 
@@ -494,7 +494,7 @@ def test_a_meeting_the_be_failed_during_extraction_moves_with_its_lines(tmp_path
     rec, path, manifest = _session(tmp_path)
     fake = FakeBe()
 
-    def meanwhile_failed(transcript, names, today):
+    def meanwhile_failed(transcript, names, today, workspace_id=None):
         fake.meetings["m1"]["status"] = "failed"
         return [Task(transcript.segments[0].text)]
 
@@ -612,3 +612,15 @@ def test_a_rejected_service_token_skips_the_be_stages_as_a_setting_problem(tmp_p
     r = _run(rec, manifest, tmp_path, extractor=_extractor({}), handoff=h)
     assert r["status"] == "transcribed" and "workspace" not in r
     assert r["skipped"]["handed_off"] == R.TOKEN_REJECTED_REASON
+
+
+def test_the_extractor_gets_the_workspace_of_the_manifest(tmp_path):
+    seen = {}
+
+    def extractor(transcript, names, today, workspace_id=None):
+        seen["ws"] = workspace_id
+        return []
+
+    rec, path, manifest = _session(tmp_path)
+    _run(rec, manifest, tmp_path, extractor=extractor)
+    assert seen["ws"] == "ws-1"

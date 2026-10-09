@@ -18,7 +18,7 @@ NAMES = {"101": "민수", "103": "재환"}
 
 def _cfg(**over):
     base = dict(terra_api_key="k", terra_base_url="http://terra", luna_api_key="k", luna_base_url="http://luna",
-                be_base_url="http://be", be_workspace_id="ws-1", be_service_token="svc", llm_mode="")
+                be_base_url="http://be", be_service_token="svc", llm_mode="")
     base.update(over)
     return SimpleNamespace(**base)
 
@@ -73,11 +73,20 @@ def test_missing_settings_are_named_and_no_extractor_is_built():
     assert J.build_extractor(run=run, candidates=object(), cfg=_cfg()) is not None
 
 
+def test_the_pipeline_gets_the_workspace_of_the_meeting_not_a_setting():
+    """워크스페이스는 회의마다 다르다(#199). 설정에 없고 추출기를 부를 때 받는다."""
+    run = FakeRun([_item()])
+    extract, _ = _extractor(run)
+    extract(TRANSCRIPT, NAMES, date(2026, 9, 19), workspace_id="ws-7")
+    assert run.seen.workspace_id == "ws-7"
+    assert "BE_WORKSPACE_ID" not in [name for name, _ in J._REQUIRED]
+
+
 def test_speakers_reach_the_pipeline_as_names_and_come_back_as_uids():
     """LLM 은 "너가" 를 풀 이름이 필요하고 BE 는 1인칭 담당자를 uid 로 찾는다."""
     run = FakeRun([_item()])
     extract, candidates = _extractor(run)
-    out = extract(TRANSCRIPT, NAMES, date(2026, 9, 19))
+    out = extract(TRANSCRIPT, NAMES, date(2026, 9, 19), workspace_id="ws-1")
     assert [s.speaker for s in run.seen.transcript.segments] == ["민수", "재환", None]
     assert [s.speaker for s in TRANSCRIPT.segments] == ["101", "103", None]        # 원본은 그대로다
     assert [(s.text, s.seq, s.start) for s in run.seen.transcript.segments] == [(s.text, s.seq, s.start) for s in TRANSCRIPT.segments]

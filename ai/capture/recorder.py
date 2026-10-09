@@ -523,7 +523,7 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
                     name_of=None) -> dict:
     """마지막으로 끝난 단계 다음부터 전사 → 발화 저장 → 추출 → BE 인계를 돈다. 스레드에서 부른다.
 
-    extractor(transcript, speaker_names, today) 와 handoff(capture.handoff.Handoff) 는 None 이면
+    extractor(transcript, speaker_names, today, workspace_id) 와 handoff(capture.handoff.Handoff) 는 None 이면
     설정이 없는 것이다. 그 단계에서 멈추고 result["skipped"] 에 이유를 적는다. 전사에서 실패한 줄이
     있으면 partial 로 두고 멈춘다. 다음 실행이 그 줄만 다시 보내고, 그래도 남으면 그 줄이 빠진 채
     다음 단계로 간다 (구간은 failed_units 에 남는다). 어느 단계가 예외를 내면 매니페스트를 failed 로
@@ -944,7 +944,7 @@ def build_extractor():
         return None
     client = OpenAI(base_url=getattr(cfg, "llm_base_url", "") or None, api_key=cfg.llm_api_key)
 
-    def run(transcript, speaker_names, today):
+    def run(transcript, speaker_names, today, workspace_id=None):
         return extract_tasks(transcript, client=client, model=cfg.llm_model, today=today, speaker_names=speaker_names)
 
     return run
@@ -962,7 +962,8 @@ def extract_after_transcription(transcripts_dir: Path, manifest: dict, *, extrac
                                 today: date | None = None) -> Path | None:
     """전사 결과(Transcript)에서 할일을 뽑아 파일에 쓰고 그 경로를 돌려준다.
 
-    extractor(transcript, speaker_names, today) 가 돌려주는 것에 따라 둘로 갈린다.
+    extractor(transcript, speaker_names, today, workspace_id) 가 돌려주는 것에 따라 둘로 갈린다. workspace_id 는
+    매니페스트의 값이다(판단 경로의 유사 검색이 쓴다).
       list[ExtractedTask]   옛 경로. transcripts/session_<회의ID>.tasks.json
       JudgeOutput           판단 경로. transcripts/session_<회의ID>.items.json 에 쓰고 매니페스트에 items 와
                             extract_failures 를 적는다
@@ -981,7 +982,7 @@ def extract_after_transcription(transcripts_dir: Path, manifest: dict, *, extrac
     transcript = Transcript.from_dict(json.loads(src.read_text(encoding="utf-8")))
     names = {str(e["user_id"]): e["display_name"] for e in manifest["speakers"]}
     try:
-        tasks = extractor(transcript, names, today or meeting_date(manifest))
+        tasks = extractor(transcript, names, today or meeting_date(manifest), workspace_id=manifest.get("workspace_id"))
     except Exception as e:  # noqa: BLE001 - 파이프라인이 통째로 실패했다(전부 실패, LLM 키, 1단계)
         kept = _kept_judge_result(transcripts_dir, manifest)
         if kept is None or not _last_attempt(manifest):

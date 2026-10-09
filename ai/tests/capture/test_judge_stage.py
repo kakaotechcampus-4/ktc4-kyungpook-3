@@ -48,7 +48,7 @@ class Runs:
         self.outs = list(outs)
         self.calls = 0
 
-    def __call__(self, transcript, names, today):
+    def __call__(self, transcript, names, today, workspace_id=None):
         self.calls += 1
         out = self.outs.pop(0) if len(self.outs) > 1 else self.outs[0]
         if isinstance(out, Exception):

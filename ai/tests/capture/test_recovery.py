@@ -34,7 +34,7 @@ def _saved(path):
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def _dying(transcript, names, today):
+def _dying(transcript, names, today, workspace_id=None):
     raise RuntimeError("LLM 죽음")
 
 
@@ -127,7 +127,7 @@ def test_who_and_since_when_stay_in_the_manifest_while_the_meeting_is_processed(
     clock["t"] = T0 + timedelta(minutes=17)                      # 전사가 17분 걸렸다
     seen = {}
 
-    def extractor(transcript, names, today):
+    def extractor(transcript, names, today, workspace_id=None):
         seen.update(_saved(path))
         return []
 
@@ -177,9 +177,9 @@ def test_a_stage_that_finishes_starts_the_count_again(tmp_path, clock, limits):
     fake = FakeBe()
     revived = _extractor({})
 
-    def extract_then_be_goes_down(*args):              # 발화 저장과 추출은 끝났고 인계에서 BE 가 꺼져 있다
+    def extract_then_be_goes_down(*args, **kw):        # 발화 저장과 추출은 끝났고 인계에서 BE 가 꺼져 있다
         fake.down = True
-        return revived(*args)
+        return revived(*args, **kw)
 
     r = _run(rec, _saved(path), tmp_path, extractor=extract_then_be_goes_down, handoff=_handoff(fake))
     assert r["ran"] == ["sourced", "extracted"] and r["failed_stage"] == "handoff"
