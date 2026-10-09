@@ -459,6 +459,18 @@ def test_same_title_is_not_a_conflict(client, db, seed):
     assert _login(db, seed).due_date == date(2026, 10, 6)
 
 
+def test_title_that_differs_only_in_surrounding_spaces_is_not_a_conflict(client, db, seed):
+    """앞뒤 공백만 다듬은 제목은 같은 업무다. 다시 묻지 않는다."""
+    snapshot = _snapshot(seed)
+    _edit_task(client, seed["login"], title="  로그인 화면 시안 ")
+    approval = _propose(client, db, seed, due_date="2026-10-06", target_snapshot=snapshot)
+
+    r = _approve(client, approval)
+
+    assert r.status_code == 200, r.text
+    assert _login(db, seed).due_date == date(2026, 10, 6)
+
+
 def test_title_conflict_is_reported_with_field_conflicts(client, db, seed):
     snapshot = _snapshot(seed)
     _edit_task(client, seed["login"], title="결제 페이지 QA", due_date="2026-10-10")
