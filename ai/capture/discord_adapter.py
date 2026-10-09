@@ -253,7 +253,7 @@ class RecordingCog(discord.Cog):
                          text_channel=ctx.channel, guild_id=ctx.guild.id, voice_channel_id=vc.channel.id,
                          voice_channel_name=getattr(vc.channel, "name", None),
                          guild_name=ctx.guild.name if ctx.guild else None, started_at=now_iso(),
-                         text_channel_id=getattr(ctx.channel, "id", None), workspace_id=cfg.be_workspace_id or None,
+                         text_channel_id=getattr(ctx.channel, "id", None),
                          timezone=cfg.meeting_timezone, lock=lock)
         vc.start_recording(sink, self._on_recording_done, ctx)
         self._active[ctx.guild.id] = rec
@@ -261,14 +261,16 @@ class RecordingCog(discord.Cog):
         _, manifest = self._write_status(rec, STATUS_RECORDING, [])
         rec.flush_task = asyncio.create_task(self._flush_loop(rec))
         await ctx.respond(NOTICE)
-        # BE 에 회의를 먼저 만들어 둔다. 실패해도 녹음은 계속되고 인계 단계가 다시 만든다
+        # 이 서버의 워크스페이스를 찾아 BE 에 회의를 먼저 만들어 둔다. 실패해도 녹음은 계속되고 처리할 때 다시 한다
         handoff = self._handoff_factory()
         if handoff is not None:
+            meta = {"be": rec.be, "guild_id": str(ctx.guild.id)}
             try:
-                await asyncio.to_thread(handoff.start, {"be": rec.be}, title=meeting_title(manifest))
+                await asyncio.to_thread(handoff.start, meta, title=meeting_title(manifest))
             except Exception as e:  # noqa: BLE001
                 rec.be["error"] = f"{type(e).__name__}: {e}"
                 print(f"[be] 회의 생성 실패: {rec.be['error']}", flush=True)
+            rec.workspace_id = meta.get("workspace_id")
             if self._active.get(ctx.guild.id) is rec:   # 그 사이 끝나지 않았을 때만 다시 쓴다
                 self._write_status(rec, STATUS_RECORDING, [])
 

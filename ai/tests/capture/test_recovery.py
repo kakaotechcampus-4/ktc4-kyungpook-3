@@ -39,7 +39,7 @@ def _dying(transcript, names, today):
 
 
 def _handoff(fake):
-    return H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"), "ws-1")
+    return H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"))
 
 
 def _fails(fake):

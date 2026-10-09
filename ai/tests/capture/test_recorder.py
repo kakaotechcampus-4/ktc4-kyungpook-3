@@ -80,7 +80,8 @@ def _session(tmp_path, ts=500, started_at="2026-09-16T00:00:00Z", guild="77", st
         entries = []
     path, manifest = R.write_status(rec, f"{guild}_{ts}", status=status, entries=entries, guild="g", channel="회의방",
                                     library_version="x", started_at=started_at, meeting_dir=f"{guild}_{ts}",
-                                    extra={"timezone": "Asia/Seoul", "guild_id": guild, "text_channel_id": "900"})
+                                    extra={"timezone": "Asia/Seoul", "guild_id": guild, "text_channel_id": "900",
+                                           "workspace_id": "ws-1"})
     return rec, path, manifest
 
 
@@ -145,7 +146,7 @@ def test_process_session_runs_every_stage_and_records_when(tmp_path):
     fake = FakeBe()
     seen = {}
     r = _run(rec, manifest, tmp_path, extractor=_extractor(seen),
-             handoff=H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"), "ws-1"))
+             handoff=H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token")))
     assert r["ran"] == ["transcribed", "sourced", "extracted", "handed_off"] and r["status"] == "handed_off"
     assert r["text_channel_id"] == "900"
     saved = json.loads(path.read_text(encoding="utf-8"))
@@ -175,7 +176,7 @@ def test_process_session_stops_where_settings_are_missing_and_recover_resumes(tm
     fake = FakeBe()
     results = R.recover(rec, backend=EchoStt(), model_name="echo", workers=1, gate=None,
                         transcripts_dir=tmp_path / "transcripts", extractor=_extractor({}),
-                        handoff=H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"), "ws-1"))
+                        handoff=H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token")))
     assert results[0]["ran"] == ["sourced", "handed_off"] and results[0]["status"] == "handed_off"
     assert [c[1] for c in fake.calls] == ["/meetings", "/meetings/m1/end", "/meetings/m1/sources", "/extractions"]
     assert R.pending_sessions(rec) == []
@@ -254,7 +255,7 @@ def test_when_no_line_survives_the_meeting_stays_partial(tmp_path, monkeypatch):
 def test_failed_stage_is_recorded_and_retried_from_there_on_the_same_be_meeting(tmp_path):
     rec, path, manifest = _session(tmp_path)
     fake = FakeBe()
-    h = H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"), "ws-1")
+    h = H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"))
 
     def dying(transcript, names, today):
         raise RuntimeError("LLM 죽음")
@@ -361,7 +362,7 @@ def test_a_changed_transcript_invalidates_extraction_and_flags_a_stale_be_extrac
     monkeypatch.setattr(R, "PARTIAL_RETRY_MAX", 1)
     rec, path, manifest = _session(tmp_path)
     fake = FakeBe()
-    h = H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"), "ws-1")
+    h = H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"))
     seen = {}
     stt = DiesOnLong()                                    # 화자 1 의 묶음(4.4초)만 죽는다
     r = _run(rec, manifest, tmp_path, backend=stt, extractor=_extractor(seen), handoff=h)
@@ -390,7 +391,7 @@ def test_a_changed_transcript_invalidates_extraction_and_flags_a_stale_be_extrac
 # ─────────────────────────────────────────────────────────── 회의록 저장 단계 (#146)
 def _be(fake):
     """서비스 토큰까지 있는 BE 설정. 발화 저장 API 는 토큰이 있어야 받는다."""
-    return H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"), "ws-1")
+    return H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"))
 
 
 def test_lines_are_saved_to_the_be_between_transcription_and_extraction(tmp_path):
