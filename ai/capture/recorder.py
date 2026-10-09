@@ -85,6 +85,9 @@ FAILED_STAGE = {STATUS_TRANSCRIBED: "stt", STATUS_SOURCED: "sources", STATUS_EXT
 # 발화 저장에서 BE 가 이 (상태, 코드) 로 거절하면 다시 보내도 같다. 기다리지 않고 바로 포기한다(노션 BE STT API 명세).
 # 코드만 보지 않는다. BE 는 경로가 없을 때(#130 전 배포)도 404 에 INVALID_REQUEST 를 주는데, 그건 재배포로 풀린다
 SOURCES_GIVE_UP = {(400, "INVALID_REQUEST"), (409, "MEETING_FAILED")}
+# 워크스페이스를 정하지 못해 BE 단계(발화 저장·추출·인계)를 건너뛸 때 결과에 적는 이유(#199)
+NOT_CONNECTED_REASON = "워크스페이스 연결 없음"
+TOKEN_REJECTED_REASON = "BE 서비스 토큰 거절"
 # 자동 복구. #83 의 retry_runs·PARTIAL_RETRY_MAX 와 따로 센다. 기본값의 근거는 docs/basis_for_decision/member/2026-09-26-0013-recovery-worker-and-meeting-lock.md
 RECOVERY_INTERVAL_S = float(os.environ.get("MM_RECOVERY_INTERVAL_S", "60"))    # 봇 안 복구 루프의 주기. 0 이면 끈다
 RECOVERY_MAX_ATTEMPTS = int(os.environ.get("MM_RECOVERY_MAX_ATTEMPTS", "5"))   # 이만큼 실패하면 포기하고 BE 에 fail
@@ -647,6 +650,28 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
             manifest["status"] = STATUS_TRANSCRIBED
             manifest.pop("recovery", None)             # 전사 단계가 닫혔다
             save()
+
+        if handoff is not None:
+            # 회의의 워크스페이스를 확인한다. 비어 있으면 서버로 BE 에 묻는다. 연결이 없으면 전사까지만 하고 멈춘다.
+            # 복구가 다시 집을 때마다 묻는다. 웹에서 연결하면 그다음 바퀴에 이어진다. 일시 실패는 발화 저장의 실패로 센다
+            stage = STATUS_SOURCED
+            why = None
+            try:
+                if handoff.workspace(manifest) is None:
+                    why = NOT_CONNECTED_REASON
+            except Exception as e:  # noqa: BLE001 - 토큰 거절만 설정 문제로 건너뛰고 나머지는 단계 실패다
+                if getattr(e, "code", None) != "UNAUTHENTICATED":
+                    raise
+                why = TOKEN_REJECTED_REASON
+            save()                                      # 찾은 workspace_id 를 남긴다
+            if why is not None:
+                if why == NOT_CONNECTED_REASON:
+                    result["workspace"] = "not_connected"
+                for s in (STATUS_SOURCED, STATUS_EXTRACTED, STATUS_HANDED_OFF):
+                    if s not in stages:
+                        result["skipped"][s] = why
+                result["status"] = manifest["status"]
+                return result
 
         if handoff is not None and not sources_saved(manifest):
             # BE 설정이 없으면(handoff 가 None) 이 단계를 건너뛰고, 인계 단계가 "BE 설정 없음" 을 한 번 알린다

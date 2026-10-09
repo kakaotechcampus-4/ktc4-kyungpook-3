@@ -573,3 +573,42 @@ def test_a_missing_route_is_waited_out_not_given_up(tmp_path):
     r = _run(rec, manifest, tmp_path, extractor=_extractor({}), handoff=_be(fake))
     assert r["failed_stage"] == "sources" and r["attempts"] == 1 and not r["gave_up"]
     assert fake.meetings["m1"]["status"] == "processing"
+
+
+# ── 서버로 워크스페이스 찾기(#199). 처리할 때 비어 있으면 다시 묻고, 연결이 없으면 전사까지만 한다 ──────────────
+
+def test_an_unconnected_server_stops_after_the_transcript_and_resumes_once_connected(tmp_path):
+    fake = FakeBe()
+    rec, path, manifest = _session(tmp_path)
+    del manifest["workspace_id"]
+    h = H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"))
+    r = _run(rec, manifest, tmp_path, extractor=_extractor({}), handoff=h)
+    assert r["status"] == "transcribed" and r["workspace"] == "not_connected"
+    assert set(r["skipped"]) == {"sourced", "extracted", "handed_off"}
+    assert [c[1] for c in fake.calls] == ["/integrations/discord/guilds/77/workspace"] * 2   # 녹음 끝 알림과 이 단계
+    fake.guilds = {"77": "ws-1"}                                                              # 웹에서 연결했다
+    r2 = _run(rec, json.loads(path.read_text(encoding="utf-8")), tmp_path, extractor=_extractor({}), handoff=h)
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    assert r2["status"] == "handed_off" and saved["workspace_id"] == "ws-1"
+    assert fake.meetings["m1"]["workspace_id"] == "ws-1"
+
+
+def test_a_failed_lookup_is_a_sources_failure_that_retries(tmp_path):
+    fake = FakeBe()
+    rec, path, manifest = _session(tmp_path)
+    del manifest["workspace_id"]
+    fake.down = True
+    h = H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"))
+    r = _run(rec, manifest, tmp_path, extractor=_extractor({}), handoff=h)
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    assert r["status"] == "failed" and r["failed_stage"] == "sources" and "NETWORK" in r["error"]
+    assert saved["recovery"]["attempts"] == 1 and "transcribed" in saved["stages"]
+
+
+def test_a_rejected_service_token_skips_the_be_stages_as_a_setting_problem(tmp_path):
+    rec, path, manifest = _session(tmp_path)
+    del manifest["workspace_id"]
+    h = H.Handoff(H.BeClient("http://be", session=FakeBe(), service_token="wrong"))
+    r = _run(rec, manifest, tmp_path, extractor=_extractor({}), handoff=h)
+    assert r["status"] == "transcribed" and "workspace" not in r
+    assert r["skipped"]["handed_off"] == R.TOKEN_REJECTED_REASON
