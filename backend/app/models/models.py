@@ -576,17 +576,15 @@ class Task(Base):
 
 
 class NotionSyncJob(Base):
-    """Task 변경을 Notion에 반영하는 작업(outbox).
+    """Task를 Notion과 맞춰 달라는 확인 요청(outbox).
 
     Task 변경과 같은 트랜잭션에서 커밋되고, 실제 Notion 호출은 워커
-    (`services/notion_sync.py`)가 요청과 분리해서 처리한다. (task_id, task_version)은
-    한 번만 쌓이므로 같은 변경이 큐에 두 번 들어가지 않는다.
+    (`services/notion_sync.py`)가 요청과 분리해서 처리한다. 같은 Task에 여러 줄 있어도 된다.
+    워커가 Task의 Notion 기록과 지금 연결을 보고 할 일이 없으면 Notion을 부르지 않고 끝낸다.
+    `task_version`은 요청한 시점의 Task 버전이다(재시도·로그용).
     """
 
     __tablename__ = "notion_sync_job"
-    __table_args__ = (
-        UniqueConstraint("task_id", "task_version", name="uq_notion_sync_job_task_version"),
-    )
 
     job_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     task_id: Mapped[str] = mapped_column(

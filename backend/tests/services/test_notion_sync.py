@@ -53,7 +53,8 @@ def _later(minutes: int = 60) -> datetime:
     return datetime.now(timezone.utc) + timedelta(minutes=minutes)
 
 
-def _workspace(db, *, with_integration: bool = True) -> Workspace:
+def _workspace(db, *, with_integration: bool = True, database_id: str | None = "db_123") -> Workspace:
+    """`database_id=None`이면 연결 행은 있는데 DB를 찾는 중인 워크스페이스다."""
     workspace = Workspace(name="워크스페이스")
     db.add(workspace)
     db.flush()
@@ -63,7 +64,7 @@ def _workspace(db, *, with_integration: bool = True) -> Workspace:
                 workspace_id=workspace.workspace_id,
                 provider="notion",
                 access_token="secret_token",
-                provider_channel_id="db_123",
+                provider_channel_id=database_id,
             )
         )
     db.commit()
@@ -86,10 +87,19 @@ def _jobs(db, task: Task) -> list[NotionSyncJob]:
     ).scalars().all()
 
 
-def test_no_job_without_integration(db):
+def test_job_is_queued_even_without_integration_and_worker_skips_it(db):
     task = _create(db, _workspace(db, with_integration=False))
 
-    assert _jobs(db, task) == []
+    # 연동이 없어도 요청은 쌓는다. 표시는 반영 대기로 바꾸지 않는다
+    assert [(j.task_version, j.status) for j in _jobs(db, task)] == [(1, "pending")]
+    assert task.notion_sync_status is None
+
+    fake = FakeNotion()
+    notion_sync.process_due_jobs(db, transport=fake.transport)
+
+    db.refresh(task)
+    assert fake.requests == []
+    assert _jobs(db, task)[0].status == "skipped"
     assert task.notion_sync_status is None
 
 
@@ -355,7 +365,7 @@ def test_removed_integration_skips_pending_jobs(db):
 # ---------- 대상 DB가 바뀐 경우 ----------
 
 
-def _switch_database(db, workspace: Workspace, database_id: str) -> None:
+def _switch_database(db, workspace: Workspace, database_id: str | None) -> None:
     """PM이 다시 연결해 연결 행이 새 DB를 가리키게 됐다."""
     db.execute(
         update(Integration)
@@ -479,3 +489,135 @@ def test_retry_is_allowed_when_database_changed_even_if_version_was_synced(db):
     assert fake.requests[-1] == ("POST", "/v1/pages")
     assert fake.bodies[-1]["parent"] == {"database_id": "db_456"}
     assert (task.notion_page_id, task.notion_database_id) == ("page-2", "db_456")
+
+
+# ---------- 확인 요청: 연결 상태와 상관없이 쌓고, DB가 붙으면 모든 Task를 다시 확인한다 ----------
+
+
+def _attach(db, workspace: Workspace, database_id: str) -> None:
+    """새 DB가 붙었다. `notion_connect.attach_template_database`처럼 DB 저장과 요청 쌓기를 한 트랜잭션에서 한다."""
+    db.execute(
+        update(Integration)
+        .where(Integration.workspace_id == workspace.workspace_id, Integration.provider == "notion")
+        .values(provider_channel_id=database_id)
+    )
+    notion_sync.enqueue_workspace_sync(db, workspace.workspace_id)
+    db.commit()
+
+
+def test_task_made_while_finding_database_waits_then_goes_to_new_database(db):
+    workspace = _workspace(db, database_id=None)
+    task = _create(db, workspace)
+    fake = FakeNotion(_page())
+
+    # DB가 붙기 전에는 꺼내지 않는다. 연결 행이 있으므로 반영 대기로 보인다
+    assert notion_sync.process_due_jobs(db, transport=fake.transport) == 0
+    assert task.notion_sync_status == "pending"
+
+    _attach(db, workspace, "db_456")
+    notion_sync.process_due_jobs(db, transport=fake.transport)
+
+    db.refresh(task)
+    assert fake.requests == [("POST", "/v1/pages")]
+    assert fake.bodies[0]["parent"] == {"database_id": "db_456"}
+    assert (task.notion_page_id, task.notion_database_id, task.notion_sync_status) == ("page-1", "db_456", "synced")
+    # 자기 요청과 DB가 붙을 때 쌓인 요청 중 하나만 보내고 나머지는 건너뛴다
+    assert sorted(j.status for j in _jobs(db, task)) == ["done", "skipped"]
+
+
+def test_task_made_before_connecting_goes_once_database_is_attached(db):
+    workspace = _workspace(db, with_integration=False)
+    task = _create(db, workspace)
+    notion_sync.process_due_jobs(db, transport=FakeNotion().transport)  # 연동이 없어 건너뛴다
+    db.add(Integration(workspace_id=workspace.workspace_id, provider="notion", access_token="secret_token"))
+    db.commit()
+
+    _attach(db, workspace, "db_123")
+    fake = FakeNotion(_page())
+    notion_sync.process_due_jobs(db, transport=fake.transport)
+
+    db.refresh(task)
+    assert fake.requests == [("POST", "/v1/pages")]
+    assert (task.notion_database_id, task.notion_sync_status) == ("db_123", "synced")
+
+
+def test_reconnecting_to_new_database_recreates_every_task(db):
+    workspace = _workspace(db)
+    tasks = [_create(db, workspace), _create(db, workspace)]
+    notion_sync.process_due_jobs(db, transport=FakeNotion(_page("page-1"), _page("page-2")).transport)
+
+    _attach(db, workspace, "db_456")
+    fake = FakeNotion(_page("page-3"), _page("page-4"))
+    notion_sync.process_due_jobs(db, transport=fake.transport)
+
+    assert fake.requests == [("POST", "/v1/pages")] * 2
+    assert [body["parent"] for body in fake.bodies] == [{"database_id": "db_456"}] * 2
+    for task in tasks:
+        db.refresh(task)
+    assert sorted(t.notion_page_id for t in tasks) == ["page-3", "page-4"]
+    assert {(t.notion_database_id, t.notion_sync_status) for t in tasks} == {("db_456", "synced")}
+
+
+def test_database_attached_during_notion_call_ends_in_new_database(db, monkeypatch):
+    workspace = _workspace(db)
+    task = _create(db, workspace)
+    create_page = notion.create_page
+    attached = []
+
+    def attach_then_create(*args, **kwargs):
+        if not attached:
+            # 옛 DB로 보내는 도중 다시 연결이 끝나 새 DB가 붙었다
+            _attach(db, workspace, "db_456")
+            attached.append(True)
+        return create_page(*args, **kwargs)
+
+    monkeypatch.setattr(notion, "create_page", attach_then_create)
+    fake = FakeNotion(_page("page-1"), _page("page-2"))
+
+    notion_sync.process_due_jobs(db, transport=fake.transport)
+    db.refresh(task)
+    # 옛 DB에 보낸 결과는 사실대로 남고, 새 DB가 붙으며 쌓인 요청이 남아 있어 대기로 보인다
+    assert (task.notion_page_id, task.notion_database_id, task.notion_sync_status) == ("page-1", "db_123", "pending")
+
+    notion_sync.process_due_jobs(db, transport=fake.transport)
+    db.refresh(task)
+    assert [body["parent"] for body in fake.bodies] == [{"database_id": "db_123"}, {"database_id": "db_456"}]
+    assert (task.notion_page_id, task.notion_database_id, task.notion_sync_status) == ("page-2", "db_456", "synced")
+
+
+def test_duplicate_requests_call_notion_once(db):
+    workspace = _workspace(db)
+    task = _create(db, workspace)
+    notion_sync.enqueue_workspace_sync(db, workspace.workspace_id)
+    notion_sync.enqueue_workspace_sync(db, workspace.workspace_id)
+    db.commit()
+
+    fake = FakeNotion(_page())
+    notion_sync.process_due_jobs(db, transport=fake.transport)
+
+    db.refresh(task)
+    assert fake.requests == [("POST", "/v1/pages")]
+    assert sorted(j.status for j in _jobs(db, task)) == ["done", "skipped", "skipped"]
+    assert task.notion_sync_status == "synced"
+
+
+def test_job_claimed_right_before_database_is_cleared_goes_back_to_waiting(db, monkeypatch):
+    workspace = _workspace(db)
+    task = _create(db, workspace)
+    claim = notion_sync._claim
+
+    def claim_then_start_reconnecting(session, job_id, now):
+        claimed = claim(session, job_id, now)
+        # 꺼낸 직후 PM이 다시 연결해 callback이 DB ID를 비웠다
+        _switch_database(db, workspace, None)
+        return claimed
+
+    monkeypatch.setattr(notion_sync, "_claim", claim_then_start_reconnecting)
+    fake = FakeNotion()
+    notion_sync.process_due_jobs(db, transport=fake.transport)
+
+    job = _jobs(db, task)[0]
+    assert (job.status, job.attempts) == ("pending", 0)
+    assert fake.requests == []
+    # DB가 붙을 때까지 다시 꺼내지 않는다
+    assert notion_sync.process_due_jobs(db, transport=fake.transport) == 0

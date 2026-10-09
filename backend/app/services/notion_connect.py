@@ -6,6 +6,7 @@ OAuth callback은 토큰만 저장하고 바로 응답한다. Notion이 템플�
 
 - 복제가 끝날 때까지 `POLL_INTERVAL_SECONDS`마다 다시 보고, `WAIT_TIMEOUT_SECONDS`가 지나면 포기한다.
 - 찾은 DB의 속성이 워커가 쓰는 속성과 맞으면 `provider_channel_id`에 저장한다. 이때부터 워커가 반영한다.
+  같은 트랜잭션에서 워크스페이스의 모든 Task에 확인 요청을 쌓는다(`notion_sync.enqueue_workspace_sync`).
 - 실패하면 행은 남기고 토큰만 비운다. "연결됨인데 반영은 안 되는" 반쪽 연결을 남기지 않으면서, 행이 없는
   "연결한 적 없음"과 구분해 PM에게 끊김(`revoked`)으로 알린다. 다시 연결하면 callback이 새 토큰을 채운다.
 
@@ -23,7 +24,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import SessionLocal
 from app.models import Integration
-from app.services import notion
+from app.services import notion, notion_sync
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +71,10 @@ def attach_template_database(
         )
     with session_factory() as db:
         changed = db.execute(statement).rowcount
+        if result is AttachResult.ATTACHED and changed == 1:
+            # 새 DB가 붙었다. DB ID 저장과 같은 트랜잭션에서 모든 Task에 확인 요청을 쌓는다. 이 저장이 실패하면
+            # DB ID도 함께 되돌려져 "DB 없음"으로 남고, 연동 조회가 2분 뒤 끊김(revoked)으로 알린다.
+            notion_sync.enqueue_workspace_sync(db, workspace_id)
         db.commit()
     if changed == 0:
         result = AttachResult.SUPERSEDED

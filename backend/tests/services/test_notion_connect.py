@@ -1,13 +1,13 @@
 import logging
 
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.core.database import Base
-from app.models import Integration, Workspace
-from app.services import notion
+from app.models import Integration, NotionSyncJob, Task, Workspace
+from app.services import notion, notion_sync
 from app.services.notion_connect import AttachResult, attach_template_database
 
 TOKEN = "secret_new"
@@ -235,3 +235,40 @@ def test_failure_does_not_touch_connection_that_already_has_database(monkeypatch
     assert _attach(workspace_id, session_factory, FakeClock()) is AttachResult.SUPERSEDED
     row = _row(session_factory, workspace_id)
     assert (row.access_token, row.provider_channel_id) == (TOKEN, "db-existing")
+
+
+def test_attaching_database_asks_every_task_of_the_workspace_to_be_checked(monkeypatch, session_factory, workspace_id):
+    with session_factory() as db:
+        other = Workspace(name="다른 워크스페이스")
+        db.add(other)
+        db.flush()
+        for owner in (workspace_id, workspace_id, other.workspace_id):
+            db.add(Task(workspace_id=owner, title="할 일"))
+        db.commit()
+    _script(monkeypatch, find=["db-1"])
+
+    assert _attach(workspace_id, session_factory, FakeClock()) is AttachResult.ATTACHED
+
+    with session_factory() as db:
+        rows = db.execute(
+            select(Task.workspace_id, Task.notion_sync_status, NotionSyncJob.status)
+            .join(NotionSyncJob, NotionSyncJob.task_id == Task.task_id)
+        ).all()
+    # 이 워크스페이스의 Task에만 확인 요청을 쌓고 반영 대기로 보이게 한다
+    assert sorted(rows) == [(workspace_id, "pending", "pending")] * 2
+
+
+def test_database_is_not_saved_if_asking_tasks_to_be_checked_fails(monkeypatch, session_factory, workspace_id):
+    _script(monkeypatch, find=["db-1"])
+
+    def broken(db, workspace_id):
+        raise RuntimeError("DB 오류")
+
+    monkeypatch.setattr(notion_sync, "enqueue_workspace_sync", broken)
+
+    with pytest.raises(RuntimeError):
+        _attach(workspace_id, session_factory, FakeClock())
+
+    # DB ID도 함께 되돌려져 "DB 없음"으로 남는다. 연동 조회가 2분 뒤 끊김(revoked)으로 알린다
+    row = _row(session_factory, workspace_id)
+    assert (row.access_token, row.provider_channel_id) == (TOKEN, None)
