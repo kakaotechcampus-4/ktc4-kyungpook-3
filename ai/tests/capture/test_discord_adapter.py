@@ -250,6 +250,27 @@ async def test_be_being_down_at_record_does_not_stop_the_recording(tmp_path):
     await asyncio.wait_for(rec.done.wait(), 20)
     m = _manifest(tmp_path, rec)
     assert m["status"] == "handed_off" and m["be"]["meeting_id"] == "m1"     # 인계 단계가 회의를 만들었다
+    assert m["workspace_id"] == "ws-1"                                       # 처리할 때 다시 물어 찾았다
+    assert not any("연결돼 있지 않아" in t for t, _ in channel.sent)          # 조회 실패는 연결 없음이 아니다
+
+
+async def test_record_in_an_unconnected_server_records_and_says_how_to_connect(tmp_path):
+    """봇은 서버에 있는데 웹에서 연결이 없다(#199). 녹음과 회의록은 하고 BE 로는 보내지 않는다. 안내는 시작 때 한 번,
+    결과 보고에 한 줄이다."""
+    fake = FakeBe()                                             # 이 서버는 연결이 없다
+    handoff = H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"))
+    cog, guild, vc, channel, ctx = _setup(tmp_path, extractor=first_person_extractor, handoff=handoff)
+    await _run(A.RecordingCog.record, cog, ctx)
+    rec = cog._active[GUILD_ID]
+    assert rec.workspace_id is None and "meeting_id" not in rec.be and vc.started is not None
+    assert [t for t, _ in channel.sent] == [A.NOT_CONNECTED_NOTICE]
+    rec.sink.on_samples(1, _tone(2000), 0)
+    await _run(A.RecordingCog.stop, cog, ctx)
+    await asyncio.wait_for(rec.done.wait(), 20)
+    texts = [t for t, _ in channel.sent]
+    assert any(t.startswith("📝 회의록") for t in texts)
+    assert [t for t in texts if "연결" in t] == [A.NOT_CONNECTED_NOTICE, A.NOT_CONNECTED_RESULT]
+    assert "/meetings" not in [c[1] for c in fake.calls] and _manifest(tmp_path, rec)["status"] == "transcribed"
 
 
 async def test_channel_failures_do_not_block_processing_or_the_done_signal(tmp_path):

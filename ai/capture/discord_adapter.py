@@ -78,6 +78,11 @@ from stt.speech_gate import SpeechGate
 SessionSavedHook = Callable[[dict, Path], Awaitable[None]]
 
 NOTICE = "🔴 녹음·전사 중입니다. 이 음성 채널의 말은 화자별로 녹음되고 `/stop` 뒤 회의록이 여기 올라옵니다."
+# 봇은 서버에 있는데 웹에서 이 서버를 워크스페이스에 연결하지 않았다(#199). 시작 때 한 번, 결과 보고에 한 줄
+NOT_CONNECTED_NOTICE = ("⚠️ 이 디스코드 서버가 웹 워크스페이스에 연결돼 있지 않아 회의록이 이 채널에만 남습니다. "
+                        "웹 설정에서 디스코드를 연결하면 이 회의도 이어서 넘어갑니다.")
+NOT_CONNECTED_RESULT = ("ℹ️ 이 서버가 웹 워크스페이스에 연결돼 있지 않아 회의록 저장·할일 추출·BE 인계를 멈췄습니다. "
+                        "웹에서 이 서버를 연결하면 이어서 넘어갑니다.")
 FLUSH_EVERY_S = 0.2   # 재정렬 창에 갇힌 마지막 패킷을 이 주기로 비운다. 패킷은 20ms 마다 온다
 STAGE_LABEL = {STATUS_TRANSCRIBED: "전사", STATUS_SOURCED: "회의록 저장", STATUS_EXTRACTED: "할일 추출",
                STATUS_HANDED_OFF: "BE 인계",
@@ -266,7 +271,10 @@ class RecordingCog(discord.Cog):
         if handoff is not None:
             meta = {"be": rec.be, "guild_id": str(ctx.guild.id)}
             try:
-                await asyncio.to_thread(handoff.start, meta, title=meeting_title(manifest))
+                if await asyncio.to_thread(handoff.workspace, meta) is None:
+                    await self._notify(ctx.channel, NOT_CONNECTED_NOTICE)
+                else:
+                    await asyncio.to_thread(handoff.start, meta, title=meeting_title(manifest))
             except Exception as e:  # noqa: BLE001
                 rec.be["error"] = f"{type(e).__name__}: {e}"
                 print(f"[be] 회의 생성 실패: {rec.be['error']}", flush=True)
@@ -692,8 +700,11 @@ class RecordingCog(discord.Cog):
             if be.get("stale_extraction"):
                 await self._notify(channel, "⚠️ 전사가 바뀌어 할일을 다시 뽑았지만 BE 에는 예전 추출이 남아 있습니다. "
                                    "BE 에 다시 등록하는 경로가 필요합니다.")
-        for stage, why in result.get("skipped", {}).items():
-            await self._notify(channel, f"ℹ️ {STAGE_LABEL.get(stage, stage)}은 건너뜁니다 ({why}).")
+        if result.get("workspace") == "not_connected":
+            await self._notify(channel, NOT_CONNECTED_RESULT)        # 건너뛴 세 단계를 한 줄로
+        else:
+            for stage, why in result.get("skipped", {}).items():
+                await self._notify(channel, f"ℹ️ {STAGE_LABEL.get(stage, stage)}은 건너뜁니다 ({why}).")
         if result["status"] == STATUS_FAILED:
             label = STAGE_LABEL.get(result.get("failed_stage"), result.get("failed_stage"))
             print(f"[{result.get('failed_stage')}] 세션 {session} 실패: {result['error']}", flush=True)
