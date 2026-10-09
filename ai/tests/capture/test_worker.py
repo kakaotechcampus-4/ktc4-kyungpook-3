@@ -182,11 +182,26 @@ def _no_stt():
     raise AssertionError("워커 모드의 봇은 전사 백엔드를 부르면 안 된다")
 
 
-def _worker_cog(tmp_path):
+def _worker_cog(tmp_path, handoff=None):
     cog, guild, vc, channel, ctx = T._setup(tmp_path)
     return A.RecordingCog(cog.bot, recordings_dir=tmp_path / "recordings", transcripts_dir=tmp_path / "transcripts",
                           stt_factory=_no_stt, gate_factory=lambda: None, extractor_factory=lambda: None,
-                          handoff_factory=lambda: None, mode="worker"), guild, vc, channel, ctx
+                          handoff_factory=lambda: handoff, mode="worker"), guild, vc, channel, ctx
+
+
+async def test_worker_mode_in_an_unconnected_server_says_the_meeting_waits_for_the_connection(tmp_path):
+    """워커는 채널에 올리지 못한다(#199). 회의록이 채널에 남는다고 말하지 않고, 연결하면 처리한다고 말한다."""
+    fake = FakeBe()                                             # 이 서버는 연결이 없다
+    cog, guild, vc, channel, ctx = _worker_cog(
+        tmp_path, handoff=H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token")))
+    await T._run(A.RecordingCog.record, cog, ctx)
+    rec = cog._active[T.GUILD_ID]
+    assert [t for t, _ in channel.sent] == [A.NOT_CONNECTED_NOTICE_WORKER]
+    rec.sink.on_samples(1, T._tone(2000), 0)
+    await T._run(A.RecordingCog.stop, cog, ctx)
+    await asyncio.wait_for(rec.done.wait(), 20)
+    saved = [t for t, _ in channel.sent if "녹음을 저장했습니다" in t]
+    assert len(saved) == 1 and "웹에서 확인" not in saved[0] and "연결하면" in saved[0]
 
 
 def test_an_unknown_pipeline_mode_fails_at_start(tmp_path):

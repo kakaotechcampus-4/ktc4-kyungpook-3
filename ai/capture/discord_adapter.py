@@ -82,6 +82,8 @@ NOTICE = "🔴 녹음·전사 중입니다. 이 음성 채널의 말은 화자�
 # 봇은 서버에 있는데 웹에서 이 서버를 워크스페이스에 연결하지 않았다(#199). 시작 때 한 번, 결과 보고에 한 줄
 NOT_CONNECTED_NOTICE = ("⚠️ 이 디스코드 서버가 웹 워크스페이스에 연결돼 있지 않아 회의록이 이 채널에만 남습니다. "
                         "웹 설정에서 디스코드를 연결하면 이 회의도 이어서 넘어갑니다.")
+NOT_CONNECTED_NOTICE_WORKER = ("⚠️ 이 디스코드 서버가 웹 워크스페이스에 연결돼 있지 않습니다. 녹음은 저장해 두고, "
+                               "웹 설정에서 디스코드를 연결하면 그때 처리해 웹에 올립니다.")
 NOT_CONNECTED_RESULT = ("ℹ️ 이 서버가 웹 워크스페이스에 연결돼 있지 않아 회의록 저장·할일 추출·BE 인계를 멈췄습니다. "
                         "웹에서 이 서버를 연결하면 이어서 넘어갑니다.")
 FLUSH_EVERY_S = 0.2   # 재정렬 창에 갇힌 마지막 패킷을 이 주기로 비운다. 패킷은 20ms 마다 온다
@@ -142,6 +144,7 @@ class _Recording:
     started_at: str
     text_channel_id: int | None = None
     workspace_id: str | None = None
+    not_connected: bool = False                     # /record 때 BE 가 이 서버의 연결이 없다고 했다(#199)
     timezone: str = "Asia/Seoul"
     be: dict = field(default_factory=dict)          # BE 회의 상태. capture/handoff.py 가 채운다
     notified: set[int] = field(default_factory=set)
@@ -273,7 +276,9 @@ class RecordingCog(discord.Cog):
             meta = {"be": rec.be, "guild_id": str(ctx.guild.id)}
             try:
                 if await asyncio.to_thread(handoff.workspace, meta) is None:
-                    await self._notify(ctx.channel, NOT_CONNECTED_NOTICE)
+                    rec.not_connected = True
+                    await self._notify(ctx.channel, NOT_CONNECTED_NOTICE_WORKER if self._mode == "worker"
+                                       else NOT_CONNECTED_NOTICE)
                 else:
                     await asyncio.to_thread(handoff.start, meta, title=meeting_title(manifest))
             except Exception as e:  # noqa: BLE001
@@ -615,6 +620,11 @@ class RecordingCog(discord.Cog):
                 # saved 를 다 쓴 뒤에 잠금을 놓는다. 이제 워커가 집는다. 결과는 BE 를 거쳐 웹에서 본다
                 if rec.lock is not None:
                     rec.lock.release()
+                if rec.not_connected:
+                    # 워커는 연결될 때까지 전사하지 않는다. 대기열 수도 의미가 없다
+                    await self._notify(rec.text_channel, f"✅ 녹음을 저장했습니다(화자 {len(entries)}명). 웹에서 이 서버를 "
+                                       f"연결하면 처리해 웹에 올립니다.{warn}")
+                    return
                 ahead = queue_ahead(self.recordings_dir, rec.meeting_id, exclude=self._holding())
                 await self._notify(rec.text_channel, f"✅ 녹음을 저장했습니다(화자 {len(entries)}명). 회의록과 할일은 "
                                    f"처리되면 웹에서 확인할 수 있습니다(앞에 {ahead}건).{warn}")
