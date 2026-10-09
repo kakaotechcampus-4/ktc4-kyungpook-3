@@ -6,7 +6,9 @@
 
 - [문서 안내](docs/README.md): 문서 구조와 기존 문서 배치.
 - 계약: [AI(녹음 봇) 계약](docs/contracts/backend-ai-contract.md), 웹 화면용은 [프론트엔드 대표 계약](../frontend/docs/contracts/frontend-api-contract.md).
-- 계획: [전체 계획](docs/plan/backend-plan.md), [M0~M7 안내](docs/plan/README.md). 마일스톤별 plan.md는 아직 비어 있고 `result.md`는 없다. 진행 상태는 전체 계획의 마일스톤 개요(2026-10-02 기준)를 따른다.
+- 계획: [전체 계획](docs/plan/backend-plan.md), [M0~M7 안내](docs/plan/README.md). 마일스톤별 plan.md는 아직 비어 있다. 진행 상태는 전체 계획의 마일스톤 개요(2026-10-02 기준)를 따른다.
+- 결과: [M0](docs/plan/m0/result.md)(백엔드 CI 보완), [M7](docs/plan/m7/result.md)(배포 전 CI 검사, 봇 재시작 잠금, 되돌리기 문서). 둘 다 마일스톤 완료를 판정하지 않았다.
+- 배포: [배포 안내](../deploy/README.md). 요청: [녹음 시작 때 배포 재시작 잠금 확인](docs/requests/bot-restart-lock.md)(AI).
 
 ## 실행
 
@@ -14,7 +16,7 @@ DB는 PostgreSQL이다. 로컬에서는 Docker로 띄운다(Docker Desktop 필�
 
 ```bash
 uv venv --python 3.12 .venv
-uv pip install -r requirements-dev.txt   # requirements.txt(운영) + pytest
+uv pip install -r requirements-dev.txt   # requirements.txt(운영) + pytest, ruff
 cp .env.example .env
 
 docker compose up -d db         # PostgreSQL(pgvector 포함) 기동, 데이터는 mm-pgdata 볼륨에 남는다
@@ -30,6 +32,8 @@ docker compose up -d db         # PostgreSQL(pgvector 포함) 기동, 데이터�
 - `run.sh`는 `.env`를 읽어 alembic과 uvicorn에 환경변수로 넘긴다. `run.sh` 없이 직접 띄우면 `.env`를 읽지 않는다.
 - 테스트(`pytest`)는 sqlite in-memory로 돌아서 DB를 띄우지 않아도 된다. pgvector 검색 테스트만
   PostgreSQL이 필요해서 `TEST_DATABASE_URL`이 있을 때만 돈다(`tests/services/test_embedding_search_pg.py` 참고).
+- CI(`.github/workflows/backend-ci.yml`)는 ruff 린트, pytest, 빈 PostgreSQL에 `alembic upgrade head`·`alembic check`, 운영 이미지 빌드를 돌린다.
+  로컬에서 린트는 `.venv/bin/python -m ruff check .`(설정 `ruff.toml`).
 
 서버가 뜨면 `http://localhost:8000` 기준으로:
 
