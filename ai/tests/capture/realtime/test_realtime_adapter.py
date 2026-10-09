@@ -472,9 +472,11 @@ async def test_bot_kicked_from_the_room_keeps_the_last_reorder_window(tmp_path, 
         for x in (meeting.out_dir / "transcript.jsonl").read_text(encoding="utf-8").splitlines()
     ]
     assert len(records) == 1
-    # 1.2초 = 60패킷 × 20ms. 마지막 창 16개가 빠지면 0.88 이 된다.
-    assert records[0]["end"] == pytest.approx(1.2, abs=0.02)
-    assert saved[0]["speakers"][0]["duration_sec"] == pytest.approx(1.2, abs=0.02)
+    # 1.2초 = 60패킷 × 20ms. 마지막 창 16개가 빠지면 0.88 이 된다. 시작은 회의 시계로
+    # 첫 패킷이 도착한 때라 그 사이 GC 한 번이면 수십 ms 밀린다. 그래서 길이를 본다.
+    start = records[0]["start"]
+    assert records[0]["end"] - start == pytest.approx(1.2, abs=0.02)
+    assert saved[0]["speakers"][0]["duration_sec"] - start == pytest.approx(1.2, abs=0.02)
 
 
 async def test_person_leaving_drains_the_window_before_flushing_the_speaker(tmp_path, monkeypatch):
@@ -507,7 +509,7 @@ async def test_person_leaving_drains_the_window_before_flushing_the_speaker(tmp_
         for x in (meeting.out_dir / "transcript.jsonl").read_text(encoding="utf-8").splitlines()
     ]
     assert len(records) == 1
-    assert records[0]["end"] == pytest.approx(1.2, abs=0.02)
+    assert records[0]["end"] - records[0]["start"] == pytest.approx(1.2, abs=0.02)
 
 
 class _SharedStateVoiceClient(_FakeVoiceClient):
