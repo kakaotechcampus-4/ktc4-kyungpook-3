@@ -70,6 +70,23 @@ async def test_a_worker_pass_processes_only_due_meetings_and_hands_them_to_be(tm
     assert list(fake.extractions) == ["m1"]                        # 결과는 BE 로 갔다
 
 
+async def test_a_worker_leaves_a_meeting_of_an_unconnected_server_untranscribed(tmp_path):
+    """연결 없는 서버의 회의를 워커는 전사하지 않는다(#199). 웹에서 연결하면 다음 바퀴에 처음부터 처리한다."""
+    rec, path, _ = _session(tmp_path, ts=500)
+    m = json.loads(path.read_text(encoding="utf-8"))
+    m.pop("workspace_id")
+    R.save_manifest(path, m)
+    fake = FakeBe()
+    worker = _worker(tmp_path, extractor=_extractor({}),
+                     handoff=H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token")))
+    await worker.run_pass()
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    assert saved["status"] == "saved" and "transcribed" not in saved.get("stages", {}) and saved["workspace_wait"]
+    fake.guilds = {"77": "ws-1"}
+    await worker.run_pass()
+    assert _status(path) == "handed_off" and list(fake.extractions) == ["m1"]
+
+
 def _slow_process(monkeypatch, started, release, seen=None):
     real = R.process_session
 

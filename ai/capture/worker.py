@@ -134,7 +134,8 @@ class Worker:
                                       stt_factory=self._stt_factory, gate_factory=self._gate_factory,
                                       extractor_factory=self._extractor_factory, handoff_factory=self._handoff_factory,
                                       transcripts_dir=self.transcripts_dir, guild_id=guild_id, manual=manual,
-                                      stop=lambda: self._stopping, on_start=start, on_result=log)
+                                      stop=lambda: self._stopping, on_start=start, on_result=log,
+                                      wait_for_workspace=True)    # 채널에 올리지 못하니 연결 전에는 전사하지 않는다(#199)
         finally:
             self._current = None
 

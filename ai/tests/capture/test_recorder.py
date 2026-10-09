@@ -625,3 +625,22 @@ def test_the_extractor_gets_the_workspace_of_the_manifest(tmp_path):
     rec, path, manifest = _session(tmp_path)
     _run(rec, manifest, tmp_path, extractor=extractor)
     assert seen["ws"] == "ws-1"
+
+
+def test_waiting_for_the_workspace_skips_the_transcript_until_the_server_is_connected(tmp_path):
+    """워커 모드(#199). 워커는 채널에 올리지 못해 전사해도 보일 곳이 없다. 연결 전에는 전사하지 않고 기다린다.
+    기다리는 회의는 다른 회의의 "앞에 N건" 에 세지 않는다."""
+    fake = FakeBe()
+    rec, path, manifest = _session(tmp_path)
+    del manifest["workspace_id"]
+    _session(tmp_path, ts=600)                                   # 다른 서버가 뒤에 녹음한 회의
+    h = H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"))
+    r = _run(rec, manifest, tmp_path, extractor=_extractor({}), handoff=h, wait_for_workspace=True)
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    assert r["workspace"] == "not_connected" and r["ran"] == [] and "transcribed" not in saved.get("stages", {})
+    assert saved["status"] == "saved" and saved["workspace_wait"]
+    assert R.queue_ahead(rec, "77_600") == 0
+    fake.guilds = {"77": "ws-1"}
+    r2 = _run(rec, saved, tmp_path, extractor=_extractor({}), handoff=h, wait_for_workspace=True)
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    assert r2["status"] == "handed_off" and "workspace_wait" not in saved and saved["workspace_id"] == "ws-1"

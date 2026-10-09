@@ -520,8 +520,12 @@ def sources_saved(manifest: dict) -> bool:
 
 def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name: str, workers: int,
                     gate=None, transcripts_dir: Path | None = None, extractor=None, handoff=None,
-                    name_of=None) -> dict:
+                    name_of=None, wait_for_workspace: bool = False) -> dict:
     """마지막으로 끝난 단계 다음부터 전사 → 발화 저장 → 추출 → BE 인계를 돈다. 스레드에서 부른다.
+
+    BE 단계 앞에서 회의의 워크스페이스를 확인한다(handoff.workspace, #199). 서버에 연결된 워크스페이스가 없으면
+    BE 단계를 건너뛰고 manifest["workspace_wait"] 를 적는다. wait_for_workspace 면(워커) 전사도 하지 않는다.
+    워커는 채널에 올리지 못해 전사해도 보일 곳이 없다. 다음 실행이 다시 묻고, 연결되면 이어서 처리한다.
 
     extractor(transcript, speaker_names, today, workspace_id) 와 handoff(capture.handoff.Handoff) 는 None 이면
     설정이 없는 것이다. 그 단계에서 멈추고 result["skipped"] 에 이유를 적는다. 전사에서 실패한 줄이
@@ -563,6 +567,30 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
         result["ran"].append(name)
         save()
 
+    def missing_workspace() -> str | None:
+        """BE 단계를 건너뛸 이유. 워크스페이스가 있으면 None. 일시 실패(연결 실패, 5xx)는 예외로 올린다."""
+        try:
+            why = None if handoff.workspace(manifest) else NOT_CONNECTED_REASON
+        except Exception as e:  # noqa: BLE001 - 토큰 거절만 설정 문제로 건너뛰고 나머지는 단계 실패다
+            if getattr(e, "code", None) != "UNAUTHENTICATED":
+                raise
+            why = TOKEN_REJECTED_REASON
+        if why == NOT_CONNECTED_REASON:
+            manifest.setdefault("workspace_wait", now_iso())     # 연결을 기다린다. "앞에 N건" 에 세지 않는다
+        else:
+            manifest.pop("workspace_wait", None)
+        save()                                                    # 찾은 workspace_id 를 남긴다
+        return why
+
+    def skip_without_workspace(why: str, skipped_stages) -> dict:
+        if why == NOT_CONNECTED_REASON:
+            result["workspace"] = "not_connected"
+        for s in skipped_stages:
+            if s not in stages:
+                result["skipped"][s] = why
+        result["status"] = manifest["status"]
+        return result
+
     try:
         if not manifest.get("speakers"):
             # 녹음 중에 죽은 회의다. 트랙을 디렉토리에서 다시 찾는다
@@ -584,6 +612,12 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
             except Exception as e:  # noqa: BLE001
                 manifest.setdefault("be", {})["error"] = f"{type(e).__name__}: {e}"
             save()
+
+        if wait_for_workspace and handoff is not None and STATUS_TRANSCRIBED not in stages:
+            stage = STATUS_SOURCED                      # 조회의 일시 실패는 BE 단계의 실패로 센다
+            why = missing_workspace()
+            if why is not None:
+                return skip_without_workspace(why, STAGES)
 
         if STATUS_TRANSCRIBED not in stages:
             stage = STATUS_TRANSCRIBED
@@ -656,23 +690,9 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
             # 회의의 워크스페이스를 확인한다. 비어 있으면 서버로 BE 에 묻는다. 연결이 없으면 전사까지만 하고 멈춘다.
             # 복구가 다시 집을 때마다 묻는다. 웹에서 연결하면 그다음 바퀴에 이어진다. 일시 실패는 발화 저장의 실패로 센다
             stage = STATUS_SOURCED
-            why = None
-            try:
-                if handoff.workspace(manifest) is None:
-                    why = NOT_CONNECTED_REASON
-            except Exception as e:  # noqa: BLE001 - 토큰 거절만 설정 문제로 건너뛰고 나머지는 단계 실패다
-                if getattr(e, "code", None) != "UNAUTHENTICATED":
-                    raise
-                why = TOKEN_REJECTED_REASON
-            save()                                      # 찾은 workspace_id 를 남긴다
+            why = missing_workspace()
             if why is not None:
-                if why == NOT_CONNECTED_REASON:
-                    result["workspace"] = "not_connected"
-                for s in (STATUS_SOURCED, STATUS_EXTRACTED, STATUS_HANDED_OFF):
-                    if s not in stages:
-                        result["skipped"][s] = why
-                result["status"] = manifest["status"]
-                return result
+                return skip_without_workspace(why, (STATUS_SOURCED, STATUS_EXTRACTED, STATUS_HANDED_OFF))
 
         if handoff is not None and not sources_saved(manifest):
             # BE 설정이 없으면(handoff 가 None) 이 단계를 건너뛰고, 인계 단계가 "BE 설정 없음" 을 한 번 알린다
@@ -822,7 +842,7 @@ def recovery_targets(recordings_dir: Path, *, claims: Claims, guild_id=None, exc
 
 def recover_one(recordings_dir: Path, path: Path, *, claims: Claims, manual: bool = False, backend,
                 model_name: str, workers: int, gate=None, transcripts_dir: Path | None = None, extractor=None,
-                handoff=None, name_of=None) -> dict | None:
+                handoff=None, name_of=None, wait_for_workspace: bool = False) -> dict | None:
     """회의 하나를 잡아 돌리고 놓는다. 루프와 /recover 가 회의마다 지나는 경로다. 스레드에서 부른다.
 
     목록을 만든 뒤 시간이 흘렀으니(세마포어를 기다렸다) 회의 잠금을 먼저 잡고 매니페스트를 다시 읽어 아직 할 일인지
@@ -849,7 +869,8 @@ def recover_one(recordings_dir: Path, path: Path, *, claims: Claims, manual: boo
                 handoff.fail(m, state.get("failed_stage") or m.get("failed_stage") or "unknown")
             return None                                # 바뀐 be 는 아래 release 가 표시를 지우며 같이 저장한다
         return process_session(recordings_dir, m, backend=backend, model_name=model_name, workers=workers, gate=gate,
-                               transcripts_dir=transcripts_dir, extractor=extractor, handoff=handoff, name_of=name_of)
+                               transcripts_dir=transcripts_dir, extractor=extractor, handoff=handoff, name_of=name_of,
+                               wait_for_workspace=wait_for_workspace)
     finally:
         claims.release(path, m)
 
@@ -859,14 +880,15 @@ def queue_ahead(recordings_dir: Path, session, *, exclude=None) -> int:
     순서(시작 시각)를 쓴다. 지금 처리 중인(잠금이 걸린) 회의도 센다. 봇이 녹음 중인 회의는 exclude 로 뺀다."""
     mine = _queue_key(manifest_path(recordings_dir, session))
     due, busy = recovery_targets(recordings_dir, claims=Claims(owner="queue"), exclude=exclude)
-    ahead = sum(1 for p, m in due if m.get("guild_id") and _queue_key(p) < mine)
+    # 서버에 연결된 워크스페이스를 기다리는 회의(workspace_wait)는 연결될 때까지 처리되지 않으니 세지 않는다
+    ahead = sum(1 for p, m in due if m.get("guild_id") and not m.get("workspace_wait") and _queue_key(p) < mine)
     return ahead + sum(1 for b in busy if _queue_key(manifest_path(recordings_dir, b["session"])) < mine)
 
 
 async def recover_pass(recordings_dir: Path, *, claims: Claims, sem: asyncio.Semaphore, stt_factory, gate_factory,
                        extractor_factory, handoff_factory, transcripts_dir: Path | None = None, guild_id=None,
                        exclude=None, manual: bool = False, name_of_for=None, stop=None, on_start=None,
-                       on_result=None) -> tuple[list[dict], list[dict]]:
+                       on_result=None, wait_for_workspace: bool = False) -> tuple[list[dict], list[dict]]:
     """복구 한 바퀴. 봇(capture/discord_adapter.py)의 루프와 /recover, 워커(capture/worker.py)가 같이 쓴다.
 
     대상은 바퀴를 시작할 때 정한다(recovery_targets). 모든 서버를 보는 바퀴(guild_id=None)는 서버가 적히지 않은
@@ -890,7 +912,8 @@ async def recover_pass(recordings_dir: Path, *, claims: Claims, sem: asyncio.Sem
             r = await asyncio.to_thread(recover_one, recordings_dir, path, claims=claims, manual=manual,
                                         backend=backend, model_name=model_name, workers=workers, gate=gate_factory(),
                                         transcripts_dir=transcripts_dir, extractor=extractor_factory(),
-                                        handoff=handoff_factory(), name_of=name_of_for(m) if name_of_for else None)
+                                        handoff=handoff_factory(), name_of=name_of_for(m) if name_of_for else None,
+                                        wait_for_workspace=wait_for_workspace)
         if r is None:
             continue
         if r.get("busy"):
