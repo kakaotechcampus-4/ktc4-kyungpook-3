@@ -19,6 +19,7 @@ backend-ci 에 린트, 빈 Postgres 마이그레이션, 운영 이미지 빌드 
 - `requirements-dev.txt` 에 `ruff==0.14.0` 추가
 - 기존 위반 3건 수정
   - `app/api/meetings.py` 의 맨 `except:` 를 `except ValueError:` 로 바꿈(`json.loads` 실패만 받음)
+    - PR #190 리뷰 반영: JSON 으로는 맞지만 객체가 아닌 요약(목록·문자열·숫자)도 응답 스키마(`dict | None`)에서 500 이 나서 `None` 으로 바꿈. 테스트는 `tests/api/test_meeting_derived_fields.py`
   - `app/api/members.py`, `tests/api/test_task_actor.py` 의 쓰지 않는 import 삭제
 
 ## 완료조건 확인
@@ -41,6 +42,7 @@ M0 plan.md 가 비어 있어 완료조건이 없다. 마일스톤 완료를 판�
 - `pytest -q -rs`(pg 테스트 포함): 662 passed, 1 skipped(SQLite 의 FOR UPDATE 미지원으로 원래 건너뛰는 테스트)
 - `rhysd/actionlint:1.7.7`: 오류 없음
 - GitHub Actions 에서의 실제 실행은 PR 을 연 뒤 확인한다
+- PR #190 리뷰 반영 뒤(2026-10-09): 회의록 요약 테스트 5개 추가. 수정 전 코드로는 목록·문자열·숫자 3개가 실패하고 수정 뒤 통과. SQLite 전체 `pytest -q` 492 passed, 176 skipped. `ruff check .` 통과. pg 포함 전체 실행은 다시 하지 않았다
 
 ## 계획 대비 변경
 
