@@ -11,8 +11,8 @@
 
 - 경로 prefix는 `/api/v1`이고 응답은 백엔드 공통 봉투 `{data, error}`다 ([Backend README 응답 형식](../../README.md#응답-형식)).
 - 봇은 `error.code`로 분기한다. 봉투가 아닌 응답이나 4xx·5xx는 `HTTP_<status>`로 다룬다 (`BeClient._call`).
-- 봇의 연결 설정은 `ai/.env`의 `BE_BASE_URL`, `BE_WORKSPACE_ID`, 서비스 토큰이다. `BE_BASE_URL`과 `BE_WORKSPACE_ID`가 없으면 인계 단계를 건너뛴다 (`handoff.from_env`).
-- 봇은 아직 워크스페이스 하나(`BE_WORKSPACE_ID`)로만 회의를 보낸다. 디스코드 서버로 워크스페이스를 찾는 BE 조회는 있고([워크스페이스 찾기](#워크스페이스-찾기-get-integrationsdiscordguildsguild_idworkspace--200)), 봇이 이를 쓰는 작업은 AI 쪽 #180 후속이다.
+- 봇의 연결 설정은 `ai/.env`의 `BE_BASE_URL`과 서비스 토큰(`BE_SERVICE_TOKEN`)이다. 둘 중 하나라도 없으면 인계 단계를 건너뛴다 (`handoff.from_env`). 워크스페이스는 설정하지 않는다.
+- 봇은 회의마다 디스코드 서버로 워크스페이스를 찾아([워크스페이스 찾기](#워크스페이스-찾기-get-integrationsdiscordguildsguild_idworkspace--200)) 매니페스트의 `workspace_id`에 고정하고, 회의 생성·추출 등록·유사 검색에 쓴다 (AI #199).
 
 ## 호출 순서
 
@@ -150,12 +150,15 @@ AI `Transcript.to_dict()` 모양에 화자 이름을 더해 보낸다. 한 회�
 | 결과 | 한 서버는 한 워크스페이스에만 연결되므로(`uq_integration_discord_guild`) 하나다 |
 | 미연결 | 연결이 없거나 해제됐으면 409 `INTEGRATION_NOT_CONNECTED`, `details`는 `{provider: "discord", guild_id}` |
 
-- 합의 근거: BE가 이슈 #180의 흐름을 제안했고 AI 담당이 동의하며 아래를 덧붙였다(2026-10-09, 저장소 밖 대화). 이슈에는 아직 기록이 없다. 봇 구현 전까지는 합의된 계획이며 구현 사실이 아니다.
+- 합의 근거: BE가 이슈 #180의 흐름을 제안했고 AI 담당이 동의하며 아래를 덧붙였다(2026-10-09, 저장소 밖 대화). AI 쪽 구현 이슈 #199에 같은 내용을 적었다.
   - 봇은 `/record` 때 이 조회로 받은 워크스페이스를 매니페스트의 `workspace_id`에 고정하고, 회의 생성·추출 등록·유사 검색에 `.env` 값 대신 쓴다.
   - 미연결(`INTEGRATION_NOT_CONNECTED`)이면 녹음은 하고 BE 인계만 멈추며, 채널에 웹에서 서버를 연결하라고 안내한다.
   - 조회가 일시적으로 실패하면 `/record`를 막지 않고 처리할 때 다시 조회한다.
   - 이미 `.env` 워크스페이스로 들어간 옛 회의는 그대로 둔다.
-- 현재 구현: BE는 이 조회를 제공한다. 봇은 아직 부르지 않는다. AI 쪽 #180 작업은 `handoff.py`를 같이 고치는 #194가 머지된 뒤 시작한다.
+- 현재 구현: BE는 이 조회를 제공하고, 봇은 `/record` 때와 처리할 때 `workspace_id`가 비어 있으면 부른다 (`capture/handoff.py`의 `Handoff.workspace`, AI #199).
+  - 한 번 정한 값은 바꾸지 않는다. BE 회의를 만든 뒤 바뀌면 추출 등록이 `WORKSPACE_MISMATCH`가 된다.
+  - 미연결이면 `/record` 때 채널에 한 번 안내하고 BE 회의를 만들지 않는다. 처리는 전사까지 하고 발화 저장·추출·인계를 멈춘다. 합의는 "BE 인계만 멈춤"이었고, 봇은 보낼 워크스페이스가 없어 발화 저장과 추출도 멈춘다. BE가 받는 요청은 어느 쪽이든 조회뿐이다.
+  - 처리할 때마다 다시 조회하므로 웹에서 연결하면 다음 처리에서 이어진다. 조회의 일시 실패(연결 실패·5xx)는 발화 저장 단계의 실패로 세어 재시도하고, 401은 설정 문제로 BE 단계를 건너뛴다.
 
 ## 오류 코드 요약
 
@@ -169,7 +172,7 @@ AI `Transcript.to_dict()` 모양에 화자 이름을 더해 보낸다. 한 회�
 | `MEETING_FAILED` | 409 | sources | 실패 |
 | `MEETING_NOT_PROCESSING` | 409 | extractions | 실패 |
 | `EMBEDDING_UNAVAILABLE` | 502 | tasks/similar | 실패 (빈 목록으로 바꾸지 않음) |
-| `INTEGRATION_NOT_CONNECTED` | 409 | guilds/{guild_id}/workspace | 녹음은 두고 인계만 멈춤, 채널에 연결 안내 (합의된 계획, 봇 미구현) |
+| `INTEGRATION_NOT_CONNECTED` | 409 | guilds/{guild_id}/workspace | 녹음·전사는 하고 BE 단계를 멈춤, 채널에 연결 안내 |
 | `INVALID_REQUEST` | 400 | 요청 검증 실패 전부 | 실패 |
 
 ## 코드 근거
