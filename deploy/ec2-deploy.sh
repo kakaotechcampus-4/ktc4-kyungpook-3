@@ -131,12 +131,15 @@ if changed ai; then
   # 워커는 SIGTERM 을 받으면 하던 회의를 마치고 끝난다(mm-worker.service TimeoutStopSec)
   restart_if_running mm-worker
   mkdir -p ai/recordings
-  [ -e "$RESTART_LOCK" ] || : > "$RESTART_LOCK"
   # 녹음 확인과 재시작 사이에 새 녹음이 시작되지 않게 잠금을 쥔 채로 둘을 한다.
   # 재시작 뒤 살아났는지 기다리는 10초도 쥐고 있어서, 그동안 새 봇의 녹음 시작은 거절된다.
-  # 읽기로 연다. flock 은 쓰기 권한이 필요 없어서, 봇이 다른 사용자로 먼저 만든 파일도 잡을 수 있다
-  exec 8<"$RESTART_LOCK"
-  if ! flock -w "$RESTART_LOCK_WAIT" 8; then
+  # 읽기로 연다. flock 은 쓰기 권한이 필요 없어서, 봇이 다른 사용자로 먼저 만든 파일도 잡을 수 있다.
+  # 만들거나 열지 못하면(봇 계정이 바뀌어 권한이 다를 때) set -e 로 꺼지지 않고 60초 초과처럼 재시작만 건너뛴다.
+  # 묶음의 2>/dev/null 은 묶음 안에서만 적용되고, exec 로 연 8번은 묶음 뒤에도 남는다
+  if ! { { [ -e "$RESTART_LOCK" ] || : > "$RESTART_LOCK"; } 2>/dev/null && { exec 8<"$RESTART_LOCK"; } 2>/dev/null; }; then
+    complete=0
+    echo "::warning::재시작 잠금($RESTART_LOCK)을 만들거나 열지 못해 mm-bot 은 재시작하지 않았다. 파일 권한을 확인한다"
+  elif ! flock -w "$RESTART_LOCK_WAIT" 8; then
     complete=0
     echo "::warning::${RESTART_LOCK_WAIT}초 안에 재시작 잠금을 잡지 못해 mm-bot 은 재시작하지 않았다. 다음 배포가 다시 올린다"
   elif recording_now; then
@@ -146,7 +149,7 @@ if changed ai; then
   else
     restart_if_running mm-bot
   fi
-  exec 8>&-   # 잠금을 놓는다
+  exec 8>&-   # 잠금을 놓는다. 열지 못했으면 닫을 것이 없고, 열리지 않은 번호를 닫아도 오류가 아니다
 else
   echo "== ai 변경 없음"
 fi
