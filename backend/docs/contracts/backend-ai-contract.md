@@ -4,33 +4,37 @@
 
 - 제공자: Backend (`backend/app/api/`)
 - 소비자: AI 녹음 봇 (`ai/capture/handoff.py`의 `BeClient`·`Handoff`, 판단 파이프라인 `ai/judge/pipeline.py`)
-- 기준: 2026-10-08 develop 코드 대조
+- 기준: 2026-10-08 develop 코드 대조. 봇 회의 쓰기 경로의 서비스 토큰은 2026-10-09 #179 변경 코드로 다시 대조했다
 - 합의 근거: 인계 방식은 [AI 결정 0009](../../../ai/decision_log/0009-bot-hands-off-to-be-api.md), 발화 저장은 [AI 결정 0017](../../../ai/decision_log/0017-transcript-sources-stage.md)에 AI 쪽 기록이 있다. 이 문서는 그 이후의 필드·오류 세부를 코드에서 읽은 것이며, 별도 합의 문서가 없는 항목은 구현 사실로만 적는다.
 
 ## 공통
 
 - 경로 prefix는 `/api/v1`이고 응답은 백엔드 공통 봉투 `{data, error}`다 ([Backend README 응답 형식](../../README.md#응답-형식)).
 - 봇은 `error.code`로 분기한다. 봉투가 아닌 응답이나 4xx·5xx는 `HTTP_<status>`로 다룬다 (`BeClient._call`).
-- 봇의 연결 설정은 `ai/.env`의 `BE_BASE_URL`, `BE_WORKSPACE_ID`, 서비스 토큰이다. `BE_BASE_URL`과 `BE_WORKSPACE_ID`가 없으면 인계 단계를 건너뛴다 (`handoff.from_env`).
+- 봇의 연결 설정은 `ai/.env`의 `BE_BASE_URL`, `BE_WORKSPACE_ID`, `BE_SERVICE_TOKEN`이다. develop의 봇은 `BE_BASE_URL`과 `BE_WORKSPACE_ID`가 없으면 인계 단계를 건너뛴다. AI #193(PR #194, 미머지)부터는 `BE_SERVICE_TOKEN`까지 셋이 다 있어야 인계를 켠다 (`handoff.from_env`).
 - 봇은 아직 워크스페이스 하나(`BE_WORKSPACE_ID`)로만 회의를 보낸다. 디스코드 서버로 워크스페이스를 찾는 조회는 없다.
 
 ## 호출 순서
 
 | 시점 | 요청 | 회의 상태 | 인증 |
 |---|---|---|---|
-| `/record` 직후 | `POST /meetings` | `created` | 없음 |
-| 트랙을 닫은 뒤 | `PATCH /meetings/{meeting_id}/end` | `processing` | 없음 |
+| `/record` 직후 | `POST /meetings` | `created` | `X-Service-Token` |
+| 트랙을 닫은 뒤 | `PATCH /meetings/{meeting_id}/end` | `processing` | `X-Service-Token` |
 | 전사가 닫힌 뒤 | `POST /meetings/{meeting_id}/sources` | 변화 없음 | `X-Service-Token` |
 | 추출 도중 (항목마다) | `POST /workspaces/{workspace_id}/tasks/similar` | 변화 없음 | `X-Service-Token` |
-| 추출이 끝난 뒤 | `POST /extractions` | `done` | 없음 |
-| 어느 단계든 실패 | `PATCH /meetings/{meeting_id}/fail` | `failed` | 없음 |
+| 추출이 끝난 뒤 | `POST /extractions` | `done` | `X-Service-Token` |
+| 어느 단계든 실패 | `PATCH /meetings/{meeting_id}/fail` | `failed` | `X-Service-Token` |
 
 봇은 회의 상세 `GET /meetings/{meeting_id}`를 부르지 않는다.
 
 ## 인증
 
-- `X-Service-Token`: 발화 저장과 유사 task 검색에만 건다 (`deps.require_service_token`). 헤더 값을 서버의 `SERVICE_TOKEN`과 비교하고, 없거나 다르면 401 `UNAUTHENTICATED`다. 서버에 `SERVICE_TOKEN`이 비어 있으면 모든 요청을 거절한다.
-- 회의 생성·종료·실패와 추출 등록은 사용자 세션도 서비스 토큰도 확인하지 않는다. 운영에서는 리버스 프록시가 외부 접근을 막는다 ([Backend README 권한](../../README.md#권한)). 이 경로들에 서비스 토큰을 걸지는 정해지지 않았다.
+- `X-Service-Token`: 봇이 부르는 경로 전부(회의 생성·종료·실패, 발화 저장, 유사 task 검색, 추출 등록)에 건다 (`deps.require_service_token`). 헤더 값을 서버의 `SERVICE_TOKEN`과 비교하고, 없거나 다르면 401 `UNAUTHENTICATED`다. 서버에 `SERVICE_TOKEN`이 비어 있으면 모든 요청을 거절한다. 사용자 세션은 서비스 토큰을 대신하지 못한다.
+- 합의 근거: 이슈 #179(BE)와 #193(AI). 회의 생성·종료·실패와 추출 등록이 리버스 프록시 설정에만 기대던 것을 서비스 토큰으로 막는다.
+- 현재 구현
+  - BE(#179): 위 네 경로에 `require_service_token`을 건다. #179 전에는 발화 저장과 유사 검색에만 걸었다.
+  - AI(#193): `BeClient._call`이 모든 요청에 헤더를 싣는다. #193 전의 봇은 발화 저장과 유사 검색에만 싣는다.
+- 배포 순서: 봇(#193)을 먼저 배포하고 BE(#179)를 배포한다. 지금 BE는 네 경로의 헤더를 무시하므로 봇이 먼저 나가도 안전하다. 반대 순서면 기존 봇의 회의 생성·종료·실패·추출 등록이 모두 401로 멈춘다. 배포 전에 운영 `ai/.env`의 `BE_SERVICE_TOKEN`이 BE의 `SERVICE_TOKEN`과 같은지 확인한다.
 
 ## 회의
 
@@ -138,7 +142,7 @@ AI `Transcript.to_dict()` 모양에 화자 이름을 더해 보낸다. 한 회�
 
 | 코드 | HTTP | 나오는 경로 | 봇 처리 |
 |---|---|---|---|
-| `UNAUTHENTICATED` | 401 | sources, tasks/similar | 실패 |
+| `UNAUTHENTICATED` | 401 | 봇 경로 전부 | 실패 |
 | `MEETING_NOT_FOUND` | 404 | end, fail, sources, extractions | 실패 |
 | `WORKSPACE_NOT_FOUND` | 404 | tasks/similar | 실패 |
 | `WORKSPACE_MISMATCH` | 400 | extractions | 실패 |

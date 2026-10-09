@@ -202,9 +202,67 @@ def test_expired_session_is_rejected(db, seed):
     assert client.get(f"/api/v1/tasks?workspace_id={seed['ws']}").status_code == 401
 
 
-def test_bot_can_still_post_extraction_without_session(seed):
-    response = TestClient(app).post(
-        "/api/v1/extractions",
-        json={"meeting_id": seed["processing_meeting"], "workspace_id": seed["ws"], "items": []},
-    )
-    assert response.status_code == 201, response.text
+SERVICE_TOKEN = "test-service-token"
+
+
+def _bot_requests(ids: dict) -> list[tuple[str, str, dict]]:
+    """디스코드 봇이 사용자 세션 없이 부르는 회의 쓰기 경로(#179). 서비스 토큰으로만 막는다."""
+    return [
+        ("POST", "/api/v1/meetings", {"workspace_id": ids["ws"], "source": "discord"}),
+        ("PATCH", f"/api/v1/meetings/{ids['created_meeting']}/end", {}),
+        ("PATCH", f"/api/v1/meetings/{ids['failing_meeting']}/fail", {"failed_stage": "stt"}),
+        ("POST", "/api/v1/extractions",
+         {"meeting_id": ids["processing_meeting"], "workspace_id": ids["ws"], "items": []}),
+    ]
+
+
+@pytest.fixture
+def bot_seed(db, seed, monkeypatch):
+    monkeypatch.setenv("SERVICE_TOKEN", SERVICE_TOKEN)
+    created = Meeting(workspace_id=seed["ws"], status="created")
+    failing = Meeting(workspace_id=seed["ws"], status="processing")
+    db.add_all([created, failing])
+    db.commit()
+    return {**seed, "created_meeting": created.meeting_id, "failing_meeting": failing.meeting_id}
+
+
+@pytest.mark.parametrize(
+    "client_kwargs",
+    [
+        {},
+        {"headers": {"X-Service-Token": "wrong"}},
+        # 워크스페이스 멤버의 세션이 있어도 서비스 토큰을 대신하지 못한다.
+        {"cookies": {"session_token": "alice-token"}},
+    ],
+    ids=["missing-token", "wrong-token", "member-session-only"],
+)
+def test_bot_routes_reject_requests_without_valid_service_token(db, bot_seed, client_kwargs):
+    meetings_before = db.query(Meeting).count()
+    extractions_before = db.query(Extraction).count()
+    client = TestClient(app, **client_kwargs)
+    for method, url, body in _bot_requests(bot_seed):
+        response = client.request(method, url, json=body)
+        assert response.status_code == 401, (method, url, response.text)
+        assert response.json()["error"]["code"] == "UNAUTHENTICATED"
+
+    db.expire_all()
+    assert db.query(Meeting).count() == meetings_before
+    assert db.get(Meeting, bot_seed["created_meeting"]).status == "created"
+    assert db.get(Meeting, bot_seed["failing_meeting"]).status == "processing"
+    assert db.get(Meeting, bot_seed["processing_meeting"]).status == "processing"
+    assert db.query(Extraction).count() == extractions_before
+
+
+def test_bot_routes_accept_service_token_without_session(bot_seed):
+    client = TestClient(app, headers={"X-Service-Token": SERVICE_TOKEN})
+    expected = [201, 202, 200, 201]
+    for (method, url, body), status in zip(_bot_requests(bot_seed), expected):
+        response = client.request(method, url, json=body)
+        assert response.status_code == status, (method, url, response.text)
+
+
+def test_bot_routes_reject_all_requests_when_server_has_no_service_token(bot_seed, monkeypatch):
+    monkeypatch.delenv("SERVICE_TOKEN")
+    client = TestClient(app, headers={"X-Service-Token": SERVICE_TOKEN})
+    for method, url, body in _bot_requests(bot_seed):
+        assert client.request(method, url, json=body).status_code == 401, (method, url)

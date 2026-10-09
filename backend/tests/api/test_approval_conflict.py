@@ -29,6 +29,10 @@ from app.models import (
 
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
 
+# 추출 등록은 봇 경로라 서비스 토큰을 요구한다.
+SERVICE_TOKEN = "test-service-token"
+SERVICE_HEADERS = {"X-Service-Token": SERVICE_TOKEN}
+
 
 def _sqlite_engine():
     return create_engine(
@@ -103,7 +107,8 @@ def seed(db):
 
 
 @pytest.fixture
-def client(seed):
+def client(seed, monkeypatch):
+    monkeypatch.setenv("SERVICE_TOKEN", SERVICE_TOKEN)
     c = TestClient(app, base_url="https://testserver")
     c.cookies.set("session_token", "pm-token")
     return c
@@ -115,7 +120,7 @@ def _propose(client, db, seed, **fields) -> ApprovalRequest:
         "meeting_id": seed["meeting"].meeting_id,
         "workspace_id": seed["ws"].workspace_id,
         "items": [{"action": "update", "target_task_id": seed["login"].task_id, **fields}],
-    })
+    }, headers=SERVICE_HEADERS)
     assert r.status_code == 201, r.text
     return _approval(db)
 
@@ -349,7 +354,7 @@ def test_pm_already_set_the_proposed_value_before_registration(client, db, seed)
         "workspace_id": seed["ws"].workspace_id,
         "items": [{"action": "update", "target_task_id": seed["login"].task_id,
                    "due_date": "2026-10-06", "target_snapshot": snapshot}],
-    })
+    }, headers=SERVICE_HEADERS)
 
     assert r.status_code == 201, r.text
     db.expire_all()
