@@ -435,6 +435,8 @@ def main(argv: list[str] | None = None) -> int:
                     help="장부에 호출마다 적는 최소 초. 과금 단위를 모를 때 보수 계산한다(예: 60)")
     tx.add_argument("--prompt-names", default="",
                     help="쉼표로 나눈 부르는 이름. elice 호출마다 \"동우님, 재환님.\" 꼴의 프롬프트로 싣는다(#195)")
+    tx.add_argument("--prompt-text", default="",
+                    help="elice 호출마다 이 글을 손대지 않고 프롬프트로 싣는다. 프롬프트 꼴 비교용(#195)")
     ap = argparse.ArgumentParser(description="서버 처리 용량 측정 시나리오")
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("env", parents=[common], help="실행 환경만 env.json 으로")
@@ -470,9 +472,11 @@ def main(argv: list[str] | None = None) -> int:
         ap.error("--spend-file 과 --cap-krw 는 같이 준다. 상한 없는 장부는 비용을 막지 못한다")
     if getattr(args, "backend", None) == "elice" and args.spend_file is None:
         ap.error("--backend elice 는 --spend-file 과 --cap-krw 를 준다. 장부가 없으면 상한 없이 유료 호출이 나간다")
-    prompt = name_prompt(getattr(args, "prompt_names", "").split(","))
+    if getattr(args, "prompt_names", "") and getattr(args, "prompt_text", ""):
+        ap.error("--prompt-names 와 --prompt-text 는 하나만 준다")
+    prompt = getattr(args, "prompt_text", "") or name_prompt(getattr(args, "prompt_names", "").split(","))
     if prompt and args.backend != "elice":
-        ap.error("--prompt-names 는 --backend elice 에서만 쓴다. 로컬 백엔드는 프롬프트를 받지 않는다")
+        ap.error("--prompt-names, --prompt-text 는 --backend elice 에서만 쓴다. 로컬 백엔드는 프롬프트를 받지 않는다")
 
     _append_pid(args.pids_file)
     env = env_info(AI_DIR)

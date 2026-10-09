@@ -781,6 +781,33 @@ def test_cli_elice_sends_the_name_prompt_on_every_call_and_records_it(monkeypatc
     assert json.loads((out / "seq-two.json").read_text(encoding="utf-8"))["prompt"] == "동우님, 재환님."
 
 
+def test_cli_elice_sends_a_prompt_text_as_written(monkeypatch, tmp_path):
+    """프롬프트 꼴 비교(#195). 이름 목록 꼴이 아닌 글은 손대지 않고 그대로 싣는다."""
+    monkeypatch.delenv("ELICE_API_KEY", raising=False)
+    monkeypatch.setattr(speech_gate, "ENABLED", False)
+    seen = []
+
+    class PromptStt(SlowStt):
+        def transcribe(self, samples, sample_rate, prompt=None):
+            seen.append(prompt)
+            return super().transcribe(samples, sample_rate)
+
+    monkeypatch.setattr(B, "make_backend", lambda kind, model, mode="chunk", *, beam=5, **kw: PromptStt())
+    out, spend, text = tmp_path / "out", tmp_path / "spend.jsonl", "담당자 또는 발화자: 김동우, 유재환"
+    assert R.main(["seq", "--tracks-dir", str(_meeting(tmp_path / "m")), "--label", "two", "--backend", "elice",
+                   "--prompt-text", text, "--spend-file", str(spend), "--cap-krw", "10",
+                   "--out-dir", str(out)]) == 0
+    assert len(seen) == 3 and set(seen) == {text}
+    assert json.loads((out / "seq-two.json").read_text(encoding="utf-8"))["prompt"] == text
+
+
+def test_cli_refuses_both_prompt_forms_at_once(tmp_path):
+    with pytest.raises(SystemExit):
+        R.main(["seq", "--tracks-dir", str(tmp_path), "--label", "x", "--backend", "elice",
+                "--spend-file", str(tmp_path / "s.jsonl"), "--cap-krw", "1",
+                "--prompt-names", "동우", "--prompt-text", "동우님.", "--out-dir", str(tmp_path / "out")])
+
+
 def test_cli_refuses_a_name_prompt_for_the_local_backend(tmp_path):
     with pytest.raises(SystemExit):
         R.main(["seq", "--tracks-dir", str(tmp_path), "--label", "x", "--prompt-names", "동우",
