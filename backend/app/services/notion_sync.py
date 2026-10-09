@@ -14,6 +14,9 @@
 `notion_synced_version`에 기록한다. 그 이하 버전의 작업은 이미 반영된 것이라 건너뛴다.
 오래된 작업이 늦게 처리돼도 최신 값을 덮어쓰지 않는다.
 
+대상 DB: 페이지를 보낸 DB를 `Task.notion_database_id`에 함께 기록한다. 연결된 DB가 이와 다르면
+기록된 페이지와 반영 버전은 옛 DB의 것이므로 쓰지 않고, 지금 DB에 페이지를 새로 만든다.
+
 페이지 생성 타임아웃: POST 직전에 `Task.notion_create_attempted_at`을 먼저 커밋한다.
 POST 결과를 모르는 채로 끝나면(타임아웃·5xx·워커 중단) 이 값이 남아 있으므로, 다음 시도는
 POST를 반복하지 않고 `Task ID` 속성으로 이미 생긴 페이지가 있는지부터 조회한다.
@@ -30,7 +33,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import SessionLocal
 from app.core.errors import AppError, ErrorCode
-from app.models import NotionSyncJob, NotionSyncJobStatus, NotionSyncStatus, Task
+from app.models import Integration, NotionSyncJob, NotionSyncJobStatus, NotionSyncStatus, Task
 from app.services import notion
 
 logger = logging.getLogger(__name__)
@@ -63,7 +66,8 @@ def enqueue_task_sync(db: Session, task: Task) -> NotionSyncJob | None:
 
 def retry_failed_sync(db: Session, task: Task) -> NotionSyncJob:
     """`failed`로 끝난 가장 최근 작업을 다시 대기열에 넣는다 (재시도 횟수 초기화)."""
-    if not notion.is_configured(notion.get_notion_integration(db, task.workspace_id)):
+    integration = notion.get_notion_integration(db, task.workspace_id)
+    if not notion.is_configured(integration):
         raise AppError(ErrorCode.INTEGRATION_NOT_CONNECTED, details={"provider": "notion"})
 
     job = db.execute(
@@ -75,7 +79,13 @@ def retry_failed_sync(db: Session, task: Task) -> NotionSyncJob:
         .order_by(NotionSyncJob.task_version.desc())
         .limit(1)
     ).scalar_one_or_none()
-    if job is None or job.task_version <= (task.notion_synced_version or 0):
+    # 지금 DB에 이 버전 이후가 이미 반영됐으면 재시도할 것이 없다. DB가 바뀌었으면 새 DB에는 아직 없으므로 재시도한다.
+    already_synced = (
+        job is not None
+        and task.notion_database_id == integration.provider_channel_id
+        and job.task_version <= (task.notion_synced_version or 0)
+    )
+    if job is None or already_synced:
         raise AppError(
             ErrorCode.INVALID_REQUEST,
             message="재시도할 Notion 반영 실패 건이 없습니다.",
@@ -230,28 +240,41 @@ def _process(
         db.commit()
         return
 
-    # 이 버전(또는 그 이후 버전)이 이미 반영됐다 — 중복 전송하지 않는다.
-    if task.notion_synced_version is not None and job.task_version <= task.notion_synced_version:
-        _finish(job, NotionSyncJobStatus.SKIPPED, now)
-        db.commit()
-        return
-
-    integration = notion.get_notion_integration(db, task.workspace_id)
-    if not notion.is_configured(integration):
+    stored = notion.get_notion_integration(db, task.workspace_id)
+    if not notion.is_configured(stored):
         _finish(job, NotionSyncJobStatus.SKIPPED, now, "Notion 연동이 해제됐습니다.")
         _update_task_sync(db, task.task_id, notion_sync_status=None)
+        db.commit()
+        return
+    # 처리 시작 때의 연결 정보를 복사해 끝까지 이것으로만 보낸다. 세션의 객체는 커밋하면 다시 읽혀서, 그 사이 붙은
+    # 새 DB를 가리킬 수 있다. 그러면 Task에 기록하는 DB와 실제로 보낸 DB가 달라진다.
+    database_id = stored.provider_channel_id
+    integration = Integration(
+        workspace_id=task.workspace_id, provider="notion",
+        access_token=stored.access_token, provider_channel_id=database_id,
+    )
+    # 기록된 페이지와 반영 버전은 그 페이지가 지금 DB에 있을 때만 쓴다. DB가 바뀌었으면 새 DB에는 아직 아무것도 없다.
+    same_database = task.notion_database_id == database_id
+
+    # 이 버전(또는 그 이후 버전)이 지금 DB에 이미 반영됐다 — 중복 전송하지 않는다.
+    if (
+        same_database
+        and task.notion_synced_version is not None
+        and job.task_version <= task.notion_synced_version
+    ):
+        _finish(job, NotionSyncJobStatus.SKIPPED, now)
         db.commit()
         return
 
     task_id = task.task_id
     creating = False
     try:
-        page_id = task.notion_page_id
+        page_id = task.notion_page_id if same_database else None
         if page_id is None and task.notion_create_attempted_at is not None:
-            # 이전 POST의 결과를 모른다 — 다시 만들기 전에 이미 생긴 페이지가 있는지 본다.
+            # 이전 POST의 결과를 모른다 — 다시 만들기 전에 이미 생긴 페이지가 있는지 지금 DB에서 본다.
             page_id = notion.find_page_by_task_id(integration, task_id, transport=transport)
             if page_id is not None:
-                _update_task_sync(db, task_id, notion_page_id=page_id)
+                _update_task_sync(db, task_id, notion_page_id=page_id, notion_database_id=database_id)
 
         if page_id is not None:
             synced_version = task.version
@@ -263,7 +286,7 @@ def _process(
             db.commit()
             synced_version = task.version
             page_id = notion.create_page(db, integration, task, transport=transport)
-            _update_task_sync(db, task_id, notion_page_id=page_id)
+            _update_task_sync(db, task_id, notion_page_id=page_id, notion_database_id=database_id)
     except notion.NotionWriteError as exc:
         _handle_failure(db, job, task_id, exc, creating=creating, now=now)
         return

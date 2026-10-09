@@ -539,6 +539,9 @@ class Task(Base):
     start_date: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
     due_date: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
     notion_page_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # notion_page_id가 들어 있는 Notion DB(연결 행의 provider_channel_id). 연결된 DB가 바뀌면 이 값과 달라지고,
+    # 워커는 옛 페이지와 반영 버전을 쓰지 않고 새 DB에 페이지를 새로 만든다. 페이지 ID와 항상 함께 쓴다.
+    notion_database_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     # 변경이 반영될 때마다 1씩 올라간다. Notion 동기화 작업의 순서·중복 판단 기준.
     version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
     # Notion에 마지막으로 반영된 version. version보다 작으면 아직 반영 대기 중인 변경이 있다.
