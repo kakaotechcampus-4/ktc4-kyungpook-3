@@ -227,7 +227,7 @@ scope는 `bot applications.commands identify`다. 봇 초대 scope만 요청하�
 | 한 서버 한 워크스페이스 | 다른 워크스페이스에 이미 연결된 서버면 `failed`(DB 부분 유일 인덱스 `uq_integration_discord_guild`도 막는다). 같은 워크스페이스에서 다시 연결하면 서버 ID를 바꾼다 |
 | 봇 권한 | 채널 보기, 메시지·링크·파일 보내기, 메시지 기록 보기, 음성 채널 접속(`discord_oauth.DEFAULT_BOT_PERMISSIONS`). `DISCORD_BOT_PERMISSIONS`로 바꿀 수 있다 |
 | 보안 | Notion 연결과 같다. state는 제공자까지 서명해서 Notion 연결의 state로는 통과하지 못한다 |
-| 회의 인계 | 봇은 아직 `ai/.env`의 `BE_WORKSPACE_ID` 하나로 회의를 보낸다. 서버로 워크스페이스를 찾는 조회는 여러 워크스페이스 지원 때 붙인다 |
+| 회의 인계 | 봇은 아직 `ai/.env`의 `BE_WORKSPACE_ID` 하나로 회의를 보낸다. 봇이 아래 [서버로 워크스페이스 찾기](#서버로-워크스페이스-찾기)를 쓰도록 바꾸는 작업은 AI 쪽 #180 후속이며 #194 머지 뒤에 시작한다 |
 
 ### Discord 서버 사용자 목록
 
@@ -241,6 +241,17 @@ scope는 `bot applications.commands identify`다. 봇 초대 scope만 요청하�
 | 아바타 | 서버 전용 아바타 → 계정 아바타 → 없으면 `null` |
 | 미연결 | 연결 행이 없거나 서버 ID가 비어 있으면 409 `INTEGRATION_NOT_CONNECTED` |
 | 실패 | 봇 토큰이 없거나 Discord가 목록을 주지 않으면 502 `DISCORD_API_FAILED`(`details.status`). 401은 봇 토큰, 403은 Server Members Intent·권한, 404는 봇이 서버에 없는 경우가 많다 |
+
+### 서버로 워크스페이스 찾기
+
+`GET /api/v1/integrations/discord/guilds/{guild_id}/workspace` — 녹음 봇용(#180). 사용자 세션 대신 서비스 토큰(`X-Service-Token`)으로 막는다.
+봇이 `/record` 때 녹음하는 서버의 ID로 불러 회의를 보낼 워크스페이스를 정한다.
+
+| 항목 | 동작 |
+|---|---|
+| 응답 | `{guild_id, workspace_id}`. 한 서버는 한 워크스페이스에만 연결되므로(`uq_integration_discord_guild`) 결과는 하나다 |
+| 미연결 | 그 서버를 연결한 워크스페이스가 없으면(연결 해제 포함) 409 `INTEGRATION_NOT_CONNECTED`, `details`는 `{provider: "discord", guild_id}` |
+| 인증 | 토큰이 없거나 틀리면 401 `UNAUTHENTICATED`. 워크스페이스 멤버의 세션도 토큰을 대신하지 못한다 |
 
 **환경변수** (`.env.example` 참고)
 
@@ -296,4 +307,4 @@ scope는 `bot applications.commands identify`다. 봇 초대 scope만 요청하�
 
 ## 아직 없는 것
 
-Discord 서버로 워크스페이스를 찾는 조회(봇은 `ai/.env`의 `BE_WORKSPACE_ID` 하나로 회의를 보낸다), 워크스페이스 초대, 오디오 업로드·스트리밍, 메시지 로그.
+봇이 서버로 워크스페이스를 찾아 회의를 보내는 연결(BE 조회는 있고 봇은 아직 `ai/.env`의 `BE_WORKSPACE_ID` 하나로 보낸다, AI #180 후속), 워크스페이스 초대, 오디오 업로드·스트리밍, 메시지 로그.
