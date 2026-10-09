@@ -1,15 +1,21 @@
 """녹음 코어(capture/recorder.py). 매니페스트 상태, 단계 재개, 부분 실패 재전사, 트랙 재발견, 회의 날짜. 모델은 안 쓴다."""
 
 import json
+import re
 import shutil
-from datetime import date
+import threading
+import time
+from datetime import date, datetime, timedelta, timezone
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
 import soundfile as sf
 
 from capture import handoff as H
+from capture import ops_record as O
 from capture import recorder as R
+from capture.judge_path import JudgeOutput
 from stt import batch as B
 from stt.backend import SttResult, Word
 from tests.capture.fake_be import FakeBe
@@ -584,3 +590,197 @@ def test_a_missing_route_is_waited_out_not_given_up(tmp_path):
     r = _run(rec, manifest, tmp_path, extractor=_extractor({}), handoff=_be(fake))
     assert r["failed_stage"] == "sources" and r["attempts"] == 1 and not r["gave_up"]
     assert fake.meetings["m1"]["status"] == "processing"
+
+
+# ─────────────────────────────────────────────────────────── 회의마다 처리 기록 (#153)
+def _ops(path):
+    return json.loads(path.read_text(encoding="utf-8"))["ops"]
+
+
+def _md_rows(rec, meeting="77_500"):
+    md = (rec / meeting / "처리기록.md").read_text(encoding="utf-8")
+    return md, [ln for ln in md.splitlines() if re.match(r"\| \d\d/\d\d ", ln)]
+
+
+def _samplers():
+    return [t for t in threading.enumerate() if t.name == O.SAMPLER_NAME and t.is_alive()]
+
+
+class LazyEcho(EchoStt):
+    """로컬 백엔드처럼 _model 과 _load 가 있고, 전사 호출이 처음 부를 때 모델을 올린다."""
+
+    def __init__(self):
+        self._model = None
+
+    def _load(self):
+        if self._model is None:
+            self._model = object()
+        return self._model
+
+    def transcribe(self, samples, sample_rate):
+        self._load()
+        return super().transcribe(samples, sample_rate)
+
+
+def test_a_run_leaves_a_record_with_stage_times_in_the_manifest(tmp_path, monkeypatch):
+    monkeypatch.setattr(O, "read_rss", lambda: 300 * 1024 ** 2)
+    rec, path, manifest = _session(tmp_path)
+    r = _run(rec, manifest, tmp_path, extractor=_extractor({}), handoff=_be(FakeBe()))
+    assert r["ran"] == ["transcribed", "sourced", "extracted", "handed_off"] and r["status"] == "handed_off"
+    ops = _ops(path)
+    assert len(ops) == 1 and r["ops"] == ops[0]
+    entry = ops[0]
+    assert list(entry["stages"]) == ["stt", "sources", "extract", "handoff"]
+    times = [t for s in entry["stages"].values() for t in (s["started_at"], s["ended_at"])]
+    assert times == sorted(times) and entry["run_started_at"] <= times[0] and times[-1] <= entry["run_ended_at"]
+    assert all(s["s"] >= 0 for s in entry["stages"].values()) and entry["wall_s"] >= entry["stages"]["stt"]["s"]
+    assert (entry["status"], entry["failed_stage"], entry["model"], entry["backend"]) == ("handed_off", None, "echo", "echo")
+    assert entry["calls"] == 2 and entry["meeting_s"] == 12.0 and entry["rtf_meeting"] is not None
+    assert entry["peak_rss_bytes"] == 300 * 1024 ** 2
+    assert entry["model_load_s"] is None                        # EchoStt 는 올릴 모델이 없다
+    assert _samplers() == []
+
+
+def test_the_wait_runs_from_saving_the_recording_to_starting_the_run(tmp_path):
+    rec, path, manifest = _session(tmp_path)
+    manifest["recorded_at"] = (datetime.now(timezone.utc) - timedelta(minutes=2)).replace(microsecond=0).isoformat()
+    r = _run(rec, manifest, tmp_path)
+    assert 119 <= r["ops"]["wait_s"] < 150
+
+
+def test_runs_that_return_early_are_recorded_and_each_run_adds_a_row(tmp_path, monkeypatch):
+    """partial 로 돌아간 처리, 추출기가 없어 멈춘 처리, BE 설정이 없어 멈춘 처리도 기록이 남는다."""
+    monkeypatch.setattr(B, "RETRY_WAIT_S", 0.0)
+    rec, path, manifest = _session(tmp_path)
+    stt = DiesOnLong()                                    # 화자 1 의 묶음(4.4초)만 죽는다
+    r = _run(rec, manifest, tmp_path, backend=stt, extractor=None)
+    assert r["status"] == "partial" and r["ops"]["status"] == "partial" and list(r["ops"]["stages"]) == ["stt"]
+    assert r["ops"]["calls"] == 2 and r["ops"]["failed"] == 1
+    r2 = _run(rec, json.loads(path.read_text(encoding="utf-8")), tmp_path, backend=stt, extractor=None)
+    assert r2["ran"] == ["retried"] and r2["status"] == "transcribed"
+    assert r2["ops"]["retried_lines"] == 2 and r2["ops"]["recovery_attempts"] == 1
+    assert r2["ops"]["rtf_meeting"] is None and r2["ops"]["calls"] is None   # 다시 보낸 두 줄로 RTF 를 내지 않는다
+    r3 = _run(rec, json.loads(path.read_text(encoding="utf-8")), tmp_path, backend=stt, extractor=_extractor({}))
+    assert r3["status"] == "extracted" and r3["skipped"] == {"handed_off": "BE 설정 없음"}
+    assert list(r3["ops"]["stages"]) == ["extract"] and r3["ops"]["status"] == "extracted"
+    assert [o["status"] for o in _ops(path)] == ["partial", "transcribed", "extracted"]
+    md, rows = _md_rows(rec)
+    assert md.startswith("# 처리 기록: 회의방 2026-09-16") and len(rows) == 3
+    assert "전사 일부 실패" in rows[0] and "추출까지" in rows[2]
+
+
+def test_a_run_that_does_nothing_leaves_no_record(tmp_path):
+    """설정이 없어 멈춘 회의(추출기 없음, BE 설정 없음)는 recovery 가 없어 복구 바퀴마다 다시 집힌다. 아무 단계도
+    돌지 않은 처리까지 남기면 바퀴마다 한 줄씩 쌓인다(워커 10초 주기면 회의 하나에 하루 8,640줄)."""
+    rec, path, manifest = _session(tmp_path)
+
+    def loop_pass(extractor):
+        R.recover(rec, backend=EchoStt(), model_name="echo", workers=1, transcripts_dir=tmp_path / "transcripts",
+                  extractor=extractor, handoff=None, manual=False)
+
+    _run(rec, manifest, tmp_path, extractor=None)
+    for _ in range(3):
+        loop_pass(None)                                    # 추출기가 없어 전사에서 멈춘 회의
+    assert [o["status"] for o in _ops(path)] == ["transcribed"]
+    for _ in range(3):
+        loop_pass(_extractor({}))                          # 첫 바퀴는 추출하고 그 뒤는 BE 설정이 없어 멈춘 회의
+    assert [o["status"] for o in _ops(path)] == ["transcribed", "extracted"]
+    assert len(_md_rows(rec)[1]) == 2
+
+
+def test_stage_times_leave_out_the_failure_count_and_what_comes_after_the_stage(tmp_path, monkeypatch):
+    """실패 횟수 세기(포기하면 BE 에 fail 을 보낸다. 제한 시간 10초)와 다음 단계 준비는 단계 시간에 들지 않는다.
+    첫 전사의 partial, 재전사 뒤 추출, 예외로 끝난 추출을 본다."""
+    monkeypatch.setattr(B, "RETRY_WAIT_S", 0.0)
+    count = R._count_failure
+
+    def slow_count(*args, **kwargs):
+        time.sleep(0.5)
+        return count(*args, **kwargs)
+
+    monkeypatch.setattr(R, "_count_failure", slow_count)
+    rec, path, manifest = _session(tmp_path)
+    stt = DiesOnLong()
+    r = _run(rec, manifest, tmp_path, backend=stt, extractor=None)
+    assert r["status"] == "partial" and r["ops"]["stages"]["stt"]["s"] < 0.4
+    monkeypatch.setattr(O.OpsRun, "watch_llm", lambda self: time.sleep(0.5))
+    r2 = _run(rec, json.loads(path.read_text(encoding="utf-8")), tmp_path, backend=stt, extractor=_dying)
+    assert r2["ran"] == ["retried"] and r2["failed_stage"] == "extract"
+    assert r2["ops"]["stages"]["stt"]["s"] < 0.4 and r2["ops"]["stages"]["extract"]["s"] < 0.4
+    assert r2["ops"]["wall_s"] >= 1.0                     # 기다린 시간은 처리 시간에는 든다
+
+
+def test_the_model_is_loaded_before_the_stt_stage_and_not_for_a_later_stage(tmp_path):
+    """모델 올리기를 전사 단계 밖에서 따로 잰다. 추출부터 잇는 처리는 모델을 올리지 않는다(원래도 안 올렸다)."""
+    rec, path, manifest = _session(tmp_path)
+    r = _run(rec, manifest, tmp_path, backend=LazyEcho(), extractor=None)
+    assert r["status"] == "transcribed" and r["ops"]["model_load_s"] is not None
+    later = LazyEcho()
+    r2 = _run(rec, json.loads(path.read_text(encoding="utf-8")), tmp_path, backend=later, extractor=_extractor({}))
+    assert r2["ran"] == ["extracted"] and later._model is None and r2["ops"]["model_load_s"] is None
+
+
+def test_the_judge_path_counts_the_llm_calls_of_the_extract_stage(tmp_path, monkeypatch):
+    import llm
+
+    clients = {"terra": SimpleNamespace(calls=4), "luna": SimpleNamespace(calls=0)}
+    monkeypatch.setattr(llm, "get_llm", lambda which: clients[which])
+    monkeypatch.setenv("MM_EXTRACT_PATH", "judge")
+
+    def judging(transcript, names, today):
+        clients["terra"].calls += 2
+        clients["luna"].calls += 3
+        return JudgeOutput(items=[], failures=[])
+
+    rec, path, manifest = _session(tmp_path)
+    r = _run(rec, manifest, tmp_path, extractor=judging)
+    assert r["status"] == "extracted" and r["ops"]["llm_calls"] == {"terra": 2, "luna": 3}
+    assert r["ops"]["extract_path"] == "judge"
+
+
+def _raise(*args, **kwargs):
+    raise RuntimeError("기록 깨짐")
+
+
+@pytest.mark.parametrize("target", ["finish", "write_markdown", "read_rss"])
+def test_a_broken_record_does_not_change_the_run(tmp_path, monkeypatch, capsys, target):
+    """처리 기록은 곁가지다. 기록을 만들거나 쓰다 실패해도 회의 처리 결과와 매니페스트 상태는 그대로다."""
+    if target == "finish":
+        monkeypatch.setattr(O.OpsRun, "finish", _raise)
+    else:
+        monkeypatch.setattr(O, target, _raise)
+    rec, path, manifest = _session(tmp_path)
+    fake = FakeBe()
+    r = _run(rec, manifest, tmp_path, extractor=_extractor({}), handoff=_be(fake))
+    assert r["ran"] == ["transcribed", "sourced", "extracted", "handed_off"] and r["status"] == "handed_off"
+    assert r["error"] is None and fake.meetings["m1"]["status"] == "done"
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    assert saved["status"] == "handed_off" and "error" not in saved
+    assert _samplers() == []                               # 표본 스레드는 어느 경우든 멈춘다
+    if target == "finish":
+        assert r.get("ops") is None and "ops" not in saved and "기록 깨짐" in capsys.readouterr().out
+    elif target == "write_markdown":
+        assert len(saved["ops"]) == 1 and not (rec / "77_500" / "처리기록.md").exists()
+    else:
+        assert r["ops"]["peak_rss_bytes"] is None
+
+
+def test_process_session_reports_each_stage_as_it_starts_and_the_transcription_count(tmp_path):
+    rec, path, manifest = _session(tmp_path)
+    events = []
+    _run(rec, manifest, tmp_path, extractor=lambda transcript, names, today: [],
+         progress=lambda stage, info=None: events.append((stage, info)))
+    starts = [stage for stage, info in events if info is None]
+    assert starts[:1] == ["stt"] and "extract" in starts
+    counts = [info for stage, info in events if stage == "stt" and info]
+    assert counts and counts[-1]["done"] == counts[-1]["sent"] and counts[-1]["tracks"] == counts[-1]["tracks_total"]
+
+
+def test_a_failing_progress_report_does_not_change_the_result(tmp_path):
+    rec, path, manifest = _session(tmp_path)
+
+    def boom(stage, info=None):
+        raise RuntimeError("채널이 막혔다")
+
+    result = _run(rec, manifest, tmp_path, progress=boom)
+    assert result["status"] == R.STATUS_TRANSCRIBED and result["error"] is None

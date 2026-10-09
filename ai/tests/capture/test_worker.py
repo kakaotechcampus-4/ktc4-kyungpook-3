@@ -4,6 +4,7 @@
 import asyncio
 import json
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -13,6 +14,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from capture import handoff as H
+from capture import ops_record as O
 from capture import recorder as R
 from capture import worker as W
 from tests.capture.fake_be import FakeBe
@@ -68,6 +70,15 @@ async def test_a_worker_pass_processes_only_due_meetings_and_hands_them_to_be(tm
     assert [r["session"] for r in results] == ["77_500"] and _status(due) == "handed_off"
     assert [_status(p) for p in (later, gave_up, recording, old)] == ["failed", "failed", "recording", "saved"]
     assert list(fake.extractions) == ["m1"]                        # 결과는 BE 로 갔다
+
+
+async def test_the_log_line_ends_with_time_wait_and_memory(tmp_path, monkeypatch, capsys):
+    """워커 모드는 채널에 결과를 올리지 않는다. 처리 기록 한 줄은 로그 끝에 남긴다."""
+    monkeypatch.setattr(O, "read_rss", lambda: 2_000_000_000)
+    rec, path, _ = _session(tmp_path, ts=500)
+    await _worker(tmp_path).run_pass()
+    line = next(ln for ln in capsys.readouterr().out.splitlines() if ln.startswith("[worker] 세션 77_500"))
+    assert re.search(r" 처리 \d+(\.\d+)?초 대기 \d+(\.\d+)?초 최대 메모리 1907MB$", line), line
 
 
 def _slow_process(monkeypatch, started, release, seen=None):

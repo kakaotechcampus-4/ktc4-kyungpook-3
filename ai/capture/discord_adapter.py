@@ -33,6 +33,10 @@ BE 인계(capture/handoff.py)는 BE_BASE_URL 과 BE_WORKSPACE_ID 가 있을 때�
 on_session_saved(manifest, manifest_path) 훅은 그 뒤에 불린다. manifest["transcript"] 에 회의록
 경로가 있고 transcripts/session_<회의ID>.transcript.json 이 BE 가 읽는 Transcript 다.
 
+진행 표시. 봇 방식의 /stop 은 처리 단계가 시작할 때마다 채널에 새 메시지를 올리고, 전사 중에는 그 메시지를
+15초에 한 번 고쳐 읽은 트랙과 끝난 묶음 수를 보인다(StageProgress). 결과 메시지는 그 뒤에 올라간다.
+MM_PROGRESS=off 면 끈다. 복구(/recover, 자동 복구)와 워커 모드는 올리지 않는다.
+
 자동 복구. 봇이 준비되면(on_ready, 준비된 뒤에 붙었으면 붙는 자리에서) 루프가 MM_RECOVERY_INTERVAL_S
 (기본 60초)마다 끝나지 않은 회의를 훑어 마저 처리한다. /recover 와 같은 한 바퀴(recorder.recover_pass)이고
 회의마다 후처리 세마포어와 회의 잠금을 잡는다. 루프는 다음 시도 시각이 된 회의만, /recover 는 기다리지 않고
@@ -61,6 +65,7 @@ import discord
 
 from capture.handoff import from_env as handoff_from_env
 from capture.judge_path import extract_path
+from capture.ops_record import summary_line
 from capture.recorder import (RECOVERY_INTERVAL_S, Claims, interrupted_meetings, manifest_path, queue_ahead,
                               recover_pass, recovery_targets, try_lock)
 from capture.worker import read_heartbeat, request_wake
@@ -86,6 +91,9 @@ RESUME_NOTICE = ("⚠️ 봇이 다시 시작되어 끊긴 회의의 녹음된 �
                  "이어서 기록하려면 `/join` 뒤 `/record` 를 실행해 주세요.")
 SHOWN_MAX = 10      # 채널에 보이는 항목 수. 나머지는 "외 N건" 으로 줄인다
 LINE_MAX = 150      # 한 줄 길이. 디스코드 메시지는 2000자까지라 열 줄이 다 차도 넘지 않게 자른다
+PROGRESS_EVERY_S = 15.0   # 전사 진행으로 메시지를 고치는 최소 간격. 자주 고치면 채널이 디스코드 요청 제한에 걸릴 수 있다
+PROGRESS_START = {"stt": "🎧 전사 시작", "sources": "🗂 회의록 저장 시작", "extract": "🔎 할일 추출 시작",
+                  "handoff": "📨 BE 인계 시작"}
 
 
 def _clip(text, limit: int = LINE_MAX) -> str:
@@ -160,6 +168,68 @@ def _name_resolver(guild):
     return name_of
 
 
+def _stt_progress(info: dict) -> str:
+    return (f"🎧 전사 · 트랙 {info['tracks']}/{info['tracks_total']} 읽음 · "
+            f"묶음 {info['done']}개 끝, {info['sent'] - info['done']}개 처리 중")
+
+
+class StageProgress:
+    """봇 방식 /stop 의 진행 표시. process_session 의 progress 로 넘긴다.
+
+    단계가 시작하면 새 메시지를 올리고, 전사 중에는 그 메시지를 PROGRESS_EVERY_S 에 한 번 고쳐 트랙과 묶음 수를
+    보인다. 그 사이에 들어온 마지막 수는 다음 단계가 시작할 때나 flush 에서 보인다. 처리 스레드와 전사 워커
+    스레드에서 불리는데, 디스코드 호출은 봇의 이벤트 루프에 넘기고 기다리지 않는다. 디스코드가 느려도 처리가
+    막히지 않게 하려는 것이다. 루프에서는 잠금 하나가 넘긴 순서대로 올리고, 올리다 난 예외는 로그로만 남긴다.
+    """
+
+    def __init__(self, loop: asyncio.AbstractEventLoop, channel, *, clock=time.monotonic):
+        self._loop, self._channel, self._clock = loop, channel, clock
+        self._lock = asyncio.Lock()
+        self._message = None                # 지금 단계의 메시지. 전사 진행은 이걸 고친다
+        self._shown_at = clock()
+        self._unshown: dict | None = None   # 아직 보이지 않은 마지막 전사 진행
+
+    def __call__(self, stage: str, info: dict | None = None) -> None:
+        if info is None:                    # 단계 시작
+            self._show_unshown()
+            self._shown_at = self._clock()
+            self._submit(PROGRESS_START.get(stage, stage), edit=False)
+            return
+        self._unshown = info
+        now = self._clock()
+        if now - self._shown_at >= PROGRESS_EVERY_S:
+            self._shown_at = now
+            self._show_unshown()
+
+    async def flush(self) -> None:
+        """밀린 전사 진행을 보이고 넘긴 메시지가 다 올라갈 때까지 기다린다. 결과 메시지가 그 뒤에 붙는다."""
+        info, self._unshown = self._unshown, None
+        if info is not None:
+            await self._post(_stt_progress(info), edit=True)     # 잠금이 앞서 넘긴 것부터 올린다
+        else:
+            async with self._lock:
+                pass
+
+    def _show_unshown(self) -> None:
+        info, self._unshown = self._unshown, None
+        if info is not None:
+            self._submit(_stt_progress(info), edit=True)
+
+    def _submit(self, text: str, *, edit: bool) -> None:
+        asyncio.run_coroutine_threadsafe(self._post(text, edit=edit), self._loop)
+
+    async def _post(self, text: str, *, edit: bool) -> None:
+        async with self._lock:
+            try:
+                if not edit:
+                    self._message = None
+                    self._message = await self._channel.send(text)
+                elif self._message is not None:
+                    await self._message.edit(content=text)
+            except Exception as e:  # noqa: BLE001 - 진행 표시가 실패해도 처리와 결과 메시지는 그대로다
+                print(f"[progress] 진행 표시 실패: {type(e).__name__}: {e} :: {text[:60]}", flush=True)
+
+
 class RecordingCog(discord.Cog):
     def __init__(self, bot: discord.Bot, *, recordings_dir: Path = RECORDINGS_DIR,
                  transcripts_dir: Path = TRANSCRIPTS_DIR, on_session_saved: SessionSavedHook | None = None,
@@ -188,6 +258,7 @@ class RecordingCog(discord.Cog):
         self._mode = mode or os.environ.get("MM_PIPELINE_MODE", "bot")
         if self._mode not in ("bot", "worker"):
             raise ValueError(f"MM_PIPELINE_MODE 는 bot 또는 worker 다. 받은 값: {self._mode!r}")
+        self._progress = os.environ.get("MM_PROGRESS", "").strip() != "off"   # 봇 방식 /stop 의 진행 표시. 기본은 켜짐
         extract_path()      # MM_EXTRACT_PATH 가 모르는 값이면 여기서 멈춘다. 오타로 말없이 옛 추출기가 돌면 안 된다
         # 자동 복구. 루프와 /recover 가 같은 회의 잠금과 같은 한 바퀴(_recover_pass)를 쓴다
         self._claims = Claims()
@@ -612,12 +683,16 @@ class RecordingCog(discord.Cog):
 
             # 전사 → 회의록 저장 → 할일 추출 → BE 인계. 어느 단계가 죽어도 매니페스트에 남고 /recover 가 거기서 잇는다
             backend, model_name, workers = self._stt_factory()
+            progress = (StageProgress(asyncio.get_running_loop(), rec.text_channel)
+                        if self._progress and rec.text_channel is not None else None)
             async with self._post_sem:
                 result = await asyncio.to_thread(process_session, self.recordings_dir, manifest, backend=backend,
                                                  model_name=model_name, workers=workers, gate=self._gate_factory(),
                                                  transcripts_dir=self.transcripts_dir,
                                                  extractor=self._extractor_factory(), handoff=self._handoff_factory(),
-                                                 name_of=_name_resolver(guild))
+                                                 name_of=_name_resolver(guild), progress=progress)
+            if progress is not None:
+                await progress.flush()      # 진행 메시지가 다 올라간 뒤에 결과를 올린다
             await self._report(rec.text_channel, rec.meeting_id, result)
 
             if self.on_session_saved is not None:
@@ -641,7 +716,7 @@ class RecordingCog(discord.Cog):
             rec.done.set()
 
     async def _report(self, channel, session, result: dict) -> None:
-        """process_session 의 결과를 채널에 올린다. 이번에 끝낸 단계만 말한다."""
+        """process_session 의 결과를 채널에 올린다. 이번에 끝낸 단계만 말한다. 맨 끝에 처리 기록 한 줄을 붙인다."""
         tr = result.get("transcribe")
         if tr is not None:
             s = tr.get("summary")
@@ -698,3 +773,5 @@ class RecordingCog(discord.Cog):
             await self._notify(channel, f"⚠️ {label} 실패: {result['error']}\n트랙과 지금까지의 결과는 남아 있습니다. " +
                                self._next_try(result, auto="이 단계부터 자동으로 다시 시도합니다",
                                               by_hand="`/recover` 로 이 단계부터 다시 시도하세요."))
+        if result.get("ops"):
+            await self._notify(channel, summary_line(result["ops"]))
