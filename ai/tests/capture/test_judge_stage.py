@@ -76,7 +76,7 @@ def test_judge_items_are_saved_and_handed_off(tmp_path):
     rec, path, manifest = _session(tmp_path)
     fake = FakeBe()
     r = _run(rec, manifest, tmp_path, extractor=Runs(_out([A, B_])), handoff=_handoff(fake))
-    assert r["ran"] == ["transcribed", "extracted", "handed_off"] and r["status"] == "handed_off"
+    assert r["ran"] == ["transcribed", "sourced", "extracted", "handed_off"] and r["status"] == "handed_off"
     assert r["items"] == [A, B_] and r["tasks"] is None and r["extract_failures"] == []
     saved = _saved(path)
     assert saved["items"].endswith("session_77_500.items.json") and "tasks" not in saved
@@ -91,7 +91,7 @@ def test_partial_failures_hold_the_handoff_and_wait_for_a_rerun(tmp_path, clock,
     rec, path, manifest = _session(tmp_path)
     fake = FakeBe()
     r = _run(rec, manifest, tmp_path, extractor=Runs(_out([A], [F1])), handoff=_handoff(fake))
-    assert r["status"] == "failed" and r["failed_stage"] == "extract" and r["ran"] == ["transcribed"]
+    assert r["status"] == "failed" and r["failed_stage"] == "extract" and r["ran"] == ["transcribed", "sourced"]
     assert "ExtractIncomplete" in r["error"] and "1개" in r["error"]
     assert r["attempts"] == 1 and r["retry_in_s"] == 60.0 and r["gave_up"] is False
     saved = _saved(path)
@@ -313,7 +313,7 @@ def test_a_changed_transcript_drops_the_kept_judge_result(tmp_path, clock, limit
     monkeypatch.setattr(R, "PARTIAL_RETRY_MAX", 2)
     stt.limit_s = 3.5                                     # 이번엔 살아서 전사가 바뀐다
     r3 = _again(rec, tmp_path, ex, fake, clock, backend=stt)
-    assert r3["ran"] == ["retried", "extracted", "handed_off"]
+    assert r3["ran"] == ["retried", "sourced", "extracted", "handed_off"]
     assert _items_on_disk(path) == [C] and _saved(path)["extract_failures"] == [F2, F3]
     assert r3["be"]["stale_extraction"] is True           # BE 에는 옛 추출이 남아 있다
 
