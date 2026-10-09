@@ -620,3 +620,32 @@ def test_a_meeting_without_names_sends_no_prompt(tmp_path):
     stt = PromptEcho()
     _run(rec, manifest, tmp_path, backend=stt)
     assert stt.prompts and set(stt.prompts) == {None}
+
+
+class PromptDiesOnLong(DiesOnLong):
+    name = "elice/whisper-large-v3"
+    accepts_prompt = True
+
+    def __init__(self):
+        super().__init__()
+        self.prompts = []
+
+    def transcribe(self, samples, sample_rate, prompt=None):
+        self.prompts.append(prompt)
+        return super().transcribe(samples, sample_rate)
+
+
+def test_retrying_failed_clips_sends_the_same_name_prompt(tmp_path, monkeypatch):
+    """실패 구간 재전사도 처음 전사와 같은 이름 프롬프트로 보낸다. 이름은 디스크의 매니페스트에서 읽는다."""
+    monkeypatch.setattr(B, "RETRY_WAIT_S", 0.0)
+    rec, path, manifest = _session(tmp_path)
+    manifest["hint_names"] = ["동우"]
+    path.write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
+    stt = PromptDiesOnLong()
+    assert _run(rec, manifest, tmp_path, backend=stt, extractor=_extractor({}))["status"] == "partial"
+
+    stt.prompts.clear()
+    r2 = R.recover(rec, backend=stt, model_name="echo", workers=1, gate=None,
+                   transcripts_dir=tmp_path / "transcripts", extractor=_extractor({}), handoff=None)[0]
+    assert r2["ran"][0] == "retried" and r2["retried"] == 2
+    assert stt.prompts and set(stt.prompts) == {"동우님."}
