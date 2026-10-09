@@ -68,7 +68,8 @@ def _find_conflicts(task: Task, proposed: dict[str, object], base_values: object
 
     지금 값이 제안할 때 비교한 값(base_values)과 다르면 충돌이다. 다만 지금 값이 이미 제안 값과 같으면
     덮어써도 잃는 것이 없으므로 충돌로 보지 않는다. base_values가 없는 요청(이 기능 전에 만들어진 요청,
-    수동 생성)과 base_values에 없는 필드는 비교할 기준이 없어 확인하지 않는다.
+    base_values를 보내지 않은 수동 생성)과 base_values에 없는 필드는 비교할 기준이 없어 확인하지 않는다.
+    수동 생성(POST /approvals)은 받은 payload를 그대로 저장하므로 base_values를 보내면 확인한다.
     """
     if not isinstance(base_values, dict):
         return []
@@ -85,6 +86,21 @@ def _find_conflicts(task: Task, proposed: dict[str, object], base_values: object
                 "proposed": proposed_value,
             })
     return conflicts
+
+
+def _find_target_change(task: Task, base_title: object) -> dict | None:
+    """AI가 이 task를 고를 때 본 제목(base_title)과 지금 제목이 다르면 충돌 항목을 돌려준다(#185).
+
+    제목은 바꿀 값이 아니라 대상 확인용이라 _find_conflicts와 따로 본다. 제안 값이 없으므로
+    "이미 제안 값과 같으면 충돌 아님" 예외도 없다. 다르면 항상 PM이 다시 확인한다.
+    base_title이 없는 요청(이 기능 전에 만들어진 요청, base_title을 보내지 않은 수동 생성)은 기준이 없어
+    확인하지 않는다. 수동 생성도 payload에 base_title을 넣으면 확인한다.
+    앞뒤 공백만 다른 제목은 같은 업무로 보고 묻지 않는다. 제목은 저장할 때 공백을 지우지 않는다.
+    """
+    if not isinstance(base_title, str) or task.title.strip() == base_title.strip():
+        return None
+    # 다른 충돌 항목과 모양을 맞춘다. 제목은 제안하지 않으므로 proposed는 null이다
+    return {"field": "title", "base": base_title, "current": task.title, "proposed": None}
 
 
 def _apply_approval(
@@ -153,6 +169,9 @@ def _apply_approval(
             )
         updates = {k: v for k, v in payload.items() if k in _TASK_UPDATE_FIELDS}
         conflicts = _find_conflicts(task, updates, payload.get("base_values"))
+        target_change = _find_target_change(task, payload.get("base_title"))
+        if target_change is not None:
+            conflicts.append(target_change)
         # 확인한 뒤에 또 바뀌었으면 PM이 보지 못한 값이라 다시 확인받는다
         if conflicts and confirm_task_version != task.version:
             raise AppError(
