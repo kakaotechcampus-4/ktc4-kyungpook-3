@@ -12,7 +12,8 @@ from sqlalchemy.orm.attributes import flag_modified
 from app.core.database import get_db
 from app.core.errors import AppError, Envelope, ErrorCode, success
 from app.models import Integration, Member, MemberRole
-from app.api.deps import get_current_member, get_current_pm, get_current_user, require_member
+from app.api.deps import get_current_member, get_current_pm, get_current_user, require_member, require_service_token
+from app.schemas.workspace import DiscordGuildWorkspaceResponse
 from app.services import discord, discord_oauth, notion, notion_connect, notion_oauth, oauth_state
 
 logger = logging.getLogger(__name__)
@@ -21,6 +22,10 @@ router = APIRouter(prefix="/workspaces", tags=["integrations"])
 # OAuth callback 전용. Notion에 등록하는 redirect URI는 한 글자도 달라질 수 없어서 workspace_id를 넣지 못한다.
 # 그래서 `/workspaces/{id}/...` 아래가 아닌 고정 경로에 두고, 어느 워크스페이스인지는 서명한 state에서 꺼낸다.
 callback_router = APIRouter(prefix="/integrations", tags=["integrations"])
+# 디스코드 녹음 봇이 사용자 세션 없이 부르는 경로. 라우터 전체를 서비스 토큰으로 막는다.
+bot_router = APIRouter(
+    prefix="/integrations", tags=["integrations"], dependencies=[Depends(require_service_token)]
+)
 
 @router.get("/{workspace_id}/integrations", response_model=Envelope[dict])
 def get_integrations(
@@ -363,3 +368,26 @@ def discord_oauth_callback(
             return finish("failed", "guild_already_linked")
         return finish("failed", "concurrent_connect")
     return finish("success", "connected")
+
+
+@bot_router.get(
+    "/discord/guilds/{guild_id}/workspace",
+    response_model=Envelope[DiscordGuildWorkspaceResponse],
+)
+def get_discord_guild_workspace(guild_id: str, db: Session = Depends(get_db)) -> dict:
+    """이 디스코드 서버를 연결한 워크스페이스. 봇이 `/record` 때 회의를 보낼 워크스페이스를 정한다(#180).
+
+    한 서버는 한 워크스페이스에만 연결되므로(uq_integration_discord_guild) 결과는 하나다. 연결이 없으면
+    409 `INTEGRATION_NOT_CONNECTED`다. 봇은 이 코드로 "웹에서 서버를 연결해 달라" 고 안내한다.
+    """
+    workspace_id = db.execute(
+        select(Integration.workspace_id).where(
+            Integration.provider == discord_oauth.PROVIDER,
+            Integration.provider_channel_id == guild_id,
+        )
+    ).scalar_one_or_none()
+    if workspace_id is None:
+        raise AppError(
+            ErrorCode.INTEGRATION_NOT_CONNECTED, details={"provider": "discord", "guild_id": guild_id}
+        )
+    return success({"guild_id": guild_id, "workspace_id": workspace_id})
