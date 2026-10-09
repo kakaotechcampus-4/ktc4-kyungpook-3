@@ -36,7 +36,7 @@
 - clip 모드는 재지 않았다. 0008 에서 chunk 가 CER 이 낮고 호출 수와 CPU 가 절반이라 운영에서 쓰지 않는다
 - 할 일 추출 비교도 했지만 이 작업에서 뺐다. 정답 대본과 전사를 판단 경로에 넣어 나온 할 일을 견주는 것인데, 두 결과에서 같은 할 일을 짝짓는 규칙(제목이나 근거 문장의 닮은 정도 0.5 이상)에 따라 결론이 바뀌었다. 그 기준부터 다시 정해 이후 과제로 한다
 
-운영 기본 전사 방식은 이 숫자로 [0018](../decision_log/0018-elice-api-default-local-fallback.md) 에서 정했다(Elice API 기본, 로컬은 장애 대응). MemoryMax, TimeoutStopSec, 워커 수는 아직 정하지 않았다. 0008 과 0013 은 고치지 않는다.
+운영 기본 전사 방식은 이 숫자로 [0019](2026-10-07-0019-elice-api-default-local-fallback.md) 에서 정했다(Elice API 기본, 로컬은 장애 대응). MemoryMax, TimeoutStopSec, 워커 수는 아직 정하지 않았다. 0008 과 0013 은 고치지 않는다.
 
 ## 결과
 
@@ -60,7 +60,7 @@ python -m stt.eval.capacity.report --run-dir RUN --out-dir stt/eval/results/2026
 
 ## 남은 것
 
-- 새 decision_log(MemoryMax, TimeoutStopSec, 워커 수). 운영 기본 전사 방식은 0018 로 정했다
+- 새 decision_log(MemoryMax, TimeoutStopSec, 워커 수). 운영 기본 전사 방식은 0019 로 정했다
 - 여러 사람이 주고받는 실제 대화 녹음으로 CER 과 짧은 대답. 9/29 는 한 사람 낭독이다
 - 할 일 추출 비교. 같은 할 일을 짝짓는 기준을 다시 정한 뒤에 한다
 - 단어 시각 없는 백엔드에서 묶음을 턴마다 둘지(batch.py) 결정. 이름 힌트, 짧은 대답과 함께 전사 품질 개선 이슈에서 본다
