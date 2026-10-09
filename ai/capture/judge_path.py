@@ -145,6 +145,9 @@ def build_extractor(*, run=None, candidates=None, cfg=None):
 
     def extract(transcript: Transcript, speaker_names: dict[str, str] | None, today: date,
                 workspace_id: str | None = None) -> JudgeOutput:
+        if not workspace_id:
+            # 없으면 유사 검색이 /workspaces/None/... 로 가서 엉뚱한 404 나 판단 실패로 보인다
+            raise ValueError("유사 task 검색에 쓸 워크스페이스가 없다(매니페스트 workspace_id)")
         names = {str(k): v for k, v in (speaker_names or {}).items()}
         labels = speaker_labels(names)
         result = run(_relabel(transcript, labels), workspace_id=workspace_id, today=today, candidates=candidates)
