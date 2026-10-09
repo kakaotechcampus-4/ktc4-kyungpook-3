@@ -231,10 +231,12 @@ def bot_seed(db, seed, monkeypatch):
     [
         {},
         {"headers": {"X-Service-Token": "wrong"}},
+        # ASCII가 아닌 값도 500이 아니라 401이다. secrets.compare_digest는 비ASCII 문자열에 TypeError를 던진다.
+        {"headers": {"X-Service-Token": "é".encode()}},
         # 워크스페이스 멤버의 세션이 있어도 서비스 토큰을 대신하지 못한다.
         {"cookies": {"session_token": "alice-token"}},
     ],
-    ids=["missing-token", "wrong-token", "member-session-only"],
+    ids=["missing-token", "wrong-token", "non-ascii-token", "member-session-only"],
 )
 def test_bot_routes_reject_requests_without_valid_service_token(db, bot_seed, client_kwargs):
     meetings_before = db.query(Meeting).count()
