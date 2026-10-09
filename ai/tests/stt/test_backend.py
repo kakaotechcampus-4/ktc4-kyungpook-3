@@ -300,3 +300,44 @@ def test_elice_timeout_grows_with_audio_length():
     assert be.timeout_for(1.0) == 30.6
     assert be.timeout_for(28.0) == 30 + 0.6 * 28
     assert be.timeout_for(147.0) > 100
+
+
+# ── 이름 힌트(#195). 회의마다 팀 멤버 이름을 프롬프트로 싣는다 ─────────────────────────────
+
+def test_elice_sends_the_prompt_when_given(monkeypatch):
+    from stt.elice import EliceStt
+
+    monkeypatch.setenv("ELICE_API_KEY", "test-key")
+    monkeypatch.setenv("ELICE_STT_BASE_URL", URL)
+    seen = _capture_post(monkeypatch, {"text": " 안녕", "segments": [], "words": None})
+    EliceStt().transcribe(SAMPLES, 16_000, prompt="동우님, 재환님.")
+    assert ("prompt", "동우님, 재환님.") in _form_fields(seen["url"], seen["kwargs"])
+
+
+def test_prompted_backend_passes_the_prompt_and_keeps_the_inner_attributes():
+    from stt.backend import Prompted
+
+    class Inner:
+        name = "elice/whisper-large-v3"
+        reclip_unmapped = False
+
+        def __init__(self):
+            self.prompts = []
+
+        def transcribe(self, samples, sample_rate, prompt=None):
+            self.prompts.append(prompt)
+            return SttResult(text="안녕", words=[])
+
+    inner = Inner()
+    b = Prompted(inner, "동우님.")
+    assert b.transcribe(SAMPLES, 16_000).text == "안녕" and inner.prompts == ["동우님."]
+    assert b.name == "elice/whisper-large-v3" and b.reclip_unmapped is False
+
+
+def test_name_prompt_dedupes_skips_blanks_and_caps_the_list():
+    from stt.backend import NAME_PROMPT_MAX, name_prompt
+
+    assert name_prompt(["동우", " 재환 ", "동우", "", "  "]) == "동우님, 재환님."
+    assert name_prompt([]) is None
+    many = [f"사람{i}" for i in range(NAME_PROMPT_MAX + 5)]
+    assert name_prompt(many).count("님") == NAME_PROMPT_MAX
