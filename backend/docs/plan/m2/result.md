@@ -13,6 +13,7 @@ task_update 승인 때 AI 가 대상 task 를 고른 근거인 제목이 바뀌�
 | `TargetSnapshot` 에 `title`(최대 300자). null 은 보내지 않은 것으로 본다 | `app/schemas/meeting.py` |
 | 등록 때 payload 에 `base_title` 저장. 스냅샷 제목, 없으면 등록 시점 제목. 최상위 `title` 은 승인 때 반영되는 키라 쓰지 않음 | `app/api/extractions.py` `_request_task_update` |
 | 승인 때 `base_title` ≠ 지금 제목이면 `{"field": "title", "base", "current", "proposed": null}` 충돌 항목 추가. 제안 값 예외 없음. `base_title` 이 없는 요청은 확인 안 함 | `app/api/approvals.py` `_find_target_change` |
+| PR #191 리뷰 반영: 앞뒤 공백만 다른 제목은 충돌로 보지 않음(양쪽 `strip()` 비교). 충돌 항목에는 원래 값을 그대로 싣는다 | `app/api/approvals.py` `_find_target_change` |
 | 계약·설명 | [AI 계약](../../contracts/backend-ai-contract.md), [Backend README](../../../README.md) |
 
 ## 완료조건 확인
@@ -25,11 +26,13 @@ M2 plan.md 가 비어 있어 완료조건이 없다. 마일스톤 완료를 판�
 | 제목이 같으면 지금처럼 통과 | 충족 | `test_same_title_is_not_a_conflict` |
 | 스냅샷에 `title` 이 없으면 등록 시점 제목 기준 | 충족 | `test_without_snapshot_title_the_registration_title_is_the_base`, `test_without_snapshot_the_registration_title_is_the_base` |
 
-추가로 등록 뒤 제목 변경, 필드 충돌과 함께 보고, 확인 후 재승인 시 제목 유지, `base_title` 없는 기존 요청을 테스트했다.
+추가로 등록 뒤 제목 변경, 필드 충돌과 함께 보고, 확인 후 재승인 시 제목 유지, `base_title` 없는 기존 요청, 앞뒤 공백만 다른 제목(리뷰 반영)을 테스트했다.
 
 ## 검증 내역
 
 2026-10-09 로컬에서 `TEST_DATABASE_URL`(pgvector pg16)을 주고 `pytest -q -rs` 실행: 678 passed, 1 skipped(SQLite FOR UPDATE 미지원으로 원래 건너뛰는 테스트). `test_approval_conflict.py` 는 SQLite·PostgreSQL 각각 27개 통과.
+
+PR #191 리뷰 반영 뒤 같은 날 SQLite 로 다시 실행: `test_approval_conflict.py` 28 passed, 전체 496 passed, 185 skipped. 공백 비교를 되돌리면 새 테스트가 실패하는 것을 확인했다. PostgreSQL 은 다시 돌리지 않았다.
 
 ## 계획 대비 변경
 
@@ -37,8 +40,9 @@ M2 plan.md 가 비어 있어 완료조건이 없다. 마일스톤 완료를 판�
 
 ## 남은 작업과 제한 사항
 
-- FE 는 아직 충돌 내용을 표시하지 않는다. 표시할 때 `title` 항목은 `proposed` 가 null 이라는 점을 반영해야 한다
-- 표기만 다듬은 제목 수정도 매번 확인을 묻는다. 비용이 크면 운영 뒤 범위를 좁힌다(멘토 의견)
+- FE 는 아직 충돌 내용을 표시하지 않는다. 제목만 바뀌어도 409 가 나서 충돌이 잦을 수 있으므로, M6 승인 화면은 `APPROVAL_CONFLICT` 의 `details.conflicts` 를 보여 주고 `confirm_task_version` 으로 다시 승인하는 흐름을 함께 만들어야 한다. `title` 항목은 `proposed` 가 null 이다(PR #191 리뷰, FE 전달 필요)
+- 앞뒤 공백 외에 표기만 다듬은 제목 수정(띄어쓰기, 맞춤법)은 여전히 매번 확인을 묻는다. 비용이 크면 운영 뒤 범위를 좁힌다(멘토 의견)
+- 수동 생성(`POST /approvals`)은 payload 를 그대로 저장해 `base_title`·`base_values` 를 넣으면 확인한다. 지금은 FE·봇 모두 부르지 않는다. 팀원이 직접 변경을 요청하는 기능을 만들 때 받을 키를 정한다(PR #191 리뷰)
 - 이 기능 전에 만들어진 pending 승인 요청은 제목을 확인하지 않는다
 
 ## 관련 기록
