@@ -142,11 +142,21 @@ class _Recording:
     flush_task: asyncio.Task | None = None
     done: asyncio.Event = field(default_factory=asyncio.Event)
     lock: object | None = None                      # 회의 잠금(recorder.MeetingLock). 녹음하는 동안 쥔다
+    hint_names: list[str] = field(default_factory=list)   # 전사 이름 힌트(#195). 서버 멤버 표시 이름
 
 
 def _minutes(seconds) -> int:
     """흐른 분. 1분이 안 돼도 1 이다."""
     return max(1, int(seconds) // 60)
+
+
+def _member_names(guild) -> list[str]:
+    """전사 이름 힌트(#195). 서버 멤버의 표시 이름. 회의에 없는 사람도 이름으로 불리며 일을 맡는다. 봇 계정은 뺀다.
+
+    상한(20명)과 겹침 제거는 stt.backend.name_prompt 가 한다. 워크스페이스를 찾게 되면(#180) BE 멤버 이름으로 바꾼다.
+    """
+    return [m.display_name for m in getattr(guild, "members", None) or []
+            if not getattr(m, "bot", False) and getattr(m, "display_name", None)]
 
 
 def _name_resolver(guild):
@@ -254,7 +264,7 @@ class RecordingCog(discord.Cog):
                          voice_channel_name=getattr(vc.channel, "name", None),
                          guild_name=ctx.guild.name if ctx.guild else None, started_at=now_iso(),
                          text_channel_id=getattr(ctx.channel, "id", None), workspace_id=cfg.be_workspace_id or None,
-                         timezone=cfg.meeting_timezone, lock=lock)
+                         timezone=cfg.meeting_timezone, lock=lock, hint_names=_member_names(ctx.guild))
         vc.start_recording(sink, self._on_recording_done, ctx)
         self._active[ctx.guild.id] = rec
         # 시작 시점에 매니페스트를 먼저 쓴다. 봇이 죽어도 이 회의가 있었다는 기록과 트랙이 남는다
@@ -537,7 +547,7 @@ class RecordingCog(discord.Cog):
                             extra={"timezone": rec.timezone, "be": rec.be, "guild_id": str(rec.guild_id),
                                    "voice_channel_id": str(rec.voice_channel_id),
                                    "text_channel_id": str(rec.text_channel_id) if rec.text_channel_id else None,
-                                   "workspace_id": rec.workspace_id})
+                                   "workspace_id": rec.workspace_id, "hint_names": rec.hint_names})
 
     async def _notify(self, channel, text: str, file=None) -> bool:
         """채널에 올린다. 디스코드 쪽 실패는 로그로만 남긴다. 파일과 상태 처리가 알림에 막히지 않는다."""
