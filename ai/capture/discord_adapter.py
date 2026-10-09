@@ -29,7 +29,8 @@ started_at 에 한 번만 적는다. 실시간 게시 Cog(capture/realtime/)는 
 추출 경로가 판단 파이프라인(MM_EXTRACT_PATH=judge)이면 할일 목록 대신 판단 결과(새 항목, 수정)의 설명 문장과
 판단하지 못한 finding 을 올린다.
 BE 인계(capture/handoff.py)는 BE_BASE_URL 과 BE_SERVICE_TOKEN 이 있을 때만 돈다. 워크스페이스는 /record 때 서버로
-BE 에 물어 매니페스트에 고정한다. 연결이 없는 서버면 채널에 안내하고 전사까지만 한다(#199). 채널 알림은
+BE 에 물어 매니페스트에 고정한다. 연결이 없는 서버면 채널에 안내하고, 봇 모드는 전사까지만, 워커 모드는 연결될
+때까지 전사하지 않는다(#199). 채널 알림은
 전부 _notify 를 거쳐서, 디스코드 쪽 실패가 파일과 상태 처리를 막지 않는다.
 on_session_saved(manifest, manifest_path) 훅은 그 뒤에 불린다. manifest["transcript"] 에 회의록
 경로가 있고 transcripts/session_<회의ID>.transcript.json 이 BE 가 읽는 Transcript 다.

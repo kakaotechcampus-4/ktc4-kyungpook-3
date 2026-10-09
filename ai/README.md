@@ -29,7 +29,8 @@ recordings/         녹음 산출물 (git 제외)
 - BE 인계는 봇이 BE 회의 API 를 직접 부릅니다 (`docs/basis_for_decision/member/2026-09-19-0009-bot-hands-off-to-be-api.md`). `/record` 에서 `POST /api/v1/meetings`,
   트랙을 닫은 뒤 `PATCH /meetings/{id}/end`, 추출 뒤 `POST /extractions`, 어느 단계가 실패하면
   `PATCH /meetings/{id}/fail`. `BE_BASE_URL` 과 `BE_SERVICE_TOKEN` 이 없으면 이 단계에서 멈춥니다. 워크스페이스는
-  `/record` 때 디스코드 서버로 BE 에 물어 매니페스트에 고정하고, 웹에서 연결하지 않은 서버면 전사까지만 합니다(#199).
+  `/record` 때 디스코드 서버로 BE 에 물어 매니페스트에 고정합니다. 웹에서 연결하지 않은 서버면 봇 모드는 전사까지만
+  하고, 워커 모드는 연결될 때까지 전사하지 않습니다(#199).
 - 추출 단계의 추출기는 `MM_EXTRACT_PATH` 로 고릅니다 (`docs/basis_for_decision/member/2026-09-30-0016-judge-path-flag-and-unjudged-findings.md`). 기본(`legacy`)은 `extract/` 의
   `extract_tasks`, `judge` 는 판단 파이프라인(`judge/pipeline.py`)입니다. `judge` 는 1단계가 전사록에서 고른
   finding(결정이나 진척 보고 하나. 근거 줄 하나나 여러 줄과 요약 문장)마다 그 요약 문장으로 BE 의 유사 task 검색
