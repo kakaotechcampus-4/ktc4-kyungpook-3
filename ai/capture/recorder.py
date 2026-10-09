@@ -303,6 +303,18 @@ def _wavs_and_names(recordings_dir: Path, manifest: dict) -> tuple[list[Path], d
     return wavs, names
 
 
+def hinted(backend, manifest: dict):
+    """매니페스트의 hint_names(팀 멤버의 부르는 이름)로 이름 프롬프트를 건다(#195).
+
+    프롬프트를 받는 백엔드(accepts_prompt, 지금은 Elice)에만 건다. 로컬 백엔드와 이름이 없는 회의는 그대로다.
+    근거는 결정 기록 0020.
+    """
+    from stt.backend import Prompted, name_prompt
+
+    prompt = name_prompt(manifest.get("hint_names") or [])
+    return Prompted(backend, prompt) if prompt and getattr(backend, "accepts_prompt", False) else backend
+
+
 def transcribe_session(recordings_dir: Path, manifest: dict, *, backend, model_name: str, workers: int,
                        gate=None, transcripts_dir: Path | None = None) -> dict:
     """매니페스트의 트랙을 chunk 모드로 전사해 회의록까지 쓴다. 스레드에서 부른다.
@@ -315,7 +327,7 @@ def transcribe_session(recordings_dir: Path, manifest: dict, *, backend, model_n
     from stt.transcript_writer import write_transcript
 
     wavs, names = _wavs_and_names(recordings_dir, manifest)
-    run = run_session(wavs, names, backend, mode="chunk", model_name=model_name, gate=gate, workers=workers,
+    run = run_session(wavs, names, hinted(backend, manifest), mode="chunk", model_name=model_name, gate=gate, workers=workers,
                       out_dir=transcripts_dir or TRANSCRIPTS_DIR, session_id=str(manifest["session"]))
     meeting_dir = recordings_dir / manifest["meeting_dir"]
     md = write_transcript(run["lines"], meeting_dir, manifest["meeting_dir"])
@@ -331,7 +343,7 @@ def retry_failed(recordings_dir: Path, manifest: dict, *, backend, model_name: s
     from stt.transcript_writer import write_transcript
 
     wavs, names = _wavs_and_names(recordings_dir, manifest)
-    out = retry_failed_lines(wavs, names, backend, model_name=model_name, mode="chunk",
+    out = retry_failed_lines(wavs, names, hinted(backend, manifest), model_name=model_name, mode="chunk",
                              out_dir=transcripts_dir or TRANSCRIPTS_DIR, session=str(manifest["session"]))
     md = write_transcript(out["lines"], recordings_dir / manifest["meeting_dir"], manifest["meeting_dir"])
     return {"markdown": md["markdown"], "jsonl": md["jsonl"], "failed": out["still_failed"],

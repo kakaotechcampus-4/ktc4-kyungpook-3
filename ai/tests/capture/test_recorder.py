@@ -584,3 +584,39 @@ def test_a_missing_route_is_waited_out_not_given_up(tmp_path):
     r = _run(rec, manifest, tmp_path, extractor=_extractor({}), handoff=_be(fake))
     assert r["failed_stage"] == "sources" and r["attempts"] == 1 and not r["gave_up"]
     assert fake.meetings["m1"]["status"] == "processing"
+
+
+# ── 이름 힌트(#195). 매니페스트의 hint_names 로 프롬프트를 받는 백엔드에만 건다 ──────────────────────
+
+class PromptEcho(EchoStt):
+    name = "elice/whisper-large-v3"
+    accepts_prompt = True
+
+    def __init__(self):
+        self.prompts = []
+
+    def transcribe(self, samples, sample_rate, prompt=None):
+        self.prompts.append(prompt)
+        return super().transcribe(samples, sample_rate)
+
+
+def test_transcription_sends_the_team_names_as_a_prompt(tmp_path):
+    rec, path, manifest = _session(tmp_path)
+    manifest["hint_names"] = ["동우", "재환"]
+    stt = PromptEcho()
+    r = _run(rec, manifest, tmp_path, backend=stt)
+    assert r["status"] == "transcribed" and stt.prompts and set(stt.prompts) == {"동우님, 재환님."}
+
+
+def test_a_backend_that_takes_no_prompt_is_called_as_before(tmp_path):
+    """로컬 백엔드는 프롬프트를 받지 않는다. 이름이 있어도 지금처럼 부른다."""
+    rec, path, manifest = _session(tmp_path)
+    manifest["hint_names"] = ["동우"]
+    assert _run(rec, manifest, tmp_path)["status"] == "transcribed"
+
+
+def test_a_meeting_without_names_sends_no_prompt(tmp_path):
+    rec, path, manifest = _session(tmp_path)
+    stt = PromptEcho()
+    _run(rec, manifest, tmp_path, backend=stt)
+    assert stt.prompts and set(stt.prompts) == {None}

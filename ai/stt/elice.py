@@ -46,6 +46,7 @@ class EliceStt:
 
     name = "elice/whisper-large-v3"
 
+    accepts_prompt = True       # 회의마다 이름 프롬프트를 받는다(recorder.hinted, #195)
     TIMEOUT_PER_AUDIO_S = 0.6   # 오디오 1초당 더 기다리는 시간. 옛 주소 실측 0.45배에 여유
 
     def __init__(self, language: str = "ko", timeout: int = 30, word_timestamps: bool = True):
