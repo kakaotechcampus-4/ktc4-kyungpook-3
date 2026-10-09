@@ -5,7 +5,7 @@
 
 실행 (ai/ 디렉토리 안에서):  python -m capture.run_recorder
 전사 백엔드는 MM_STT_BACKEND=local|elice (기본 local), 모델은 MM_STT_MODEL (기본 large-v3-turbo).
-할일 추출은 LLM_API_KEY, BE 인계는 BE_BASE_URL 과 BE_WORKSPACE_ID 가 있을 때 돈다. 없으면 그 단계에서 멈춘다.
+할일 추출은 LLM_API_KEY, BE 인계는 BE_BASE_URL 과 BE_SERVICE_TOKEN 이 있을 때 돈다. 없으면 그 단계에서 멈춘다.
 """
 
 from __future__ import annotations

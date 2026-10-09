@@ -426,16 +426,14 @@ def test_from_env_needs_the_service_token(monkeypatch):
     """토큰이 없으면 BE 가 네 경로를 모두 거절한다. 회의마다 401 로 실패하게 두지 않고 인계를 켜지 않는다."""
     from shared import config
 
-    monkeypatch.setattr(config, "settings", lambda: type("S", (), {"be_base_url": "http://be", "be_workspace_id": "ws",
-                                                                  "be_service_token": ""})())
+    monkeypatch.setattr(config, "settings", lambda: type("S", (), {"be_base_url": "http://be", "be_service_token": ""})())
     assert H.from_env() is None
 
 
 def test_from_env_passes_the_service_token(monkeypatch):
     from shared import config
 
-    monkeypatch.setattr(config, "settings", lambda: type("S", (), {"be_base_url": "http://be", "be_workspace_id": "ws",
-                                                                  "be_service_token": "svc"})())
+    monkeypatch.setattr(config, "settings", lambda: type("S", (), {"be_base_url": "http://be", "be_service_token": "svc"})())
     assert H.from_env().client.service_token == "svc"
 
 

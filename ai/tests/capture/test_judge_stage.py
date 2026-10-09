@@ -210,7 +210,7 @@ def test_missing_judge_settings_skip_the_stage_by_name(tmp_path, monkeypatch):
     from shared import config
 
     cfg = SimpleNamespace(terra_api_key="k", terra_base_url="u", luna_api_key="k", luna_base_url="u", llm_mode="",
-                          be_base_url="http://be", be_workspace_id="ws-1", be_service_token="",
+                          be_base_url="http://be", be_service_token="",
                           llm_api_key="옛 추출기 키", llm_model="m", llm_base_url="")
     monkeypatch.setattr(config, "settings", lambda: cfg)
     monkeypatch.setenv("MM_EXTRACT_PATH", "judge")
