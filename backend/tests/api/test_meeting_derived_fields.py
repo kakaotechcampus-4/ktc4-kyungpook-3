@@ -187,3 +187,25 @@ def test_audio_merged_follows_source(client, db, seed):
     db.add(Extraction(meeting_id=seed["empty"]))
     db.commit()
     assert merged(seed["empty"]) is False
+
+
+@pytest.mark.parametrize(
+    ("stored", "expected"),
+    [
+        ('{"decisions": ["배포 일정 확정"]}', {"decisions": ["배포 일정 확정"]}),
+        ("{깨진 JSON", None),
+        ('["목록"]', None),
+        ('"문자열"', None),
+        ("3", None),
+    ],
+    ids=["object", "broken-json", "list", "string", "number"],
+)
+def test_minutes_summary_is_shown_only_when_it_is_a_json_object(client, db, seed, stored, expected):
+    """요약은 객체일 때만 보인다. 깨졌거나 객체가 아닌 JSON은 500 대신 없는 요약이다."""
+    db.add(Extraction(meeting_id=seed["empty"], summary=stored))
+    db.commit()
+
+    response = client.get(f"/api/v1/meetings/{seed['empty']}/minutes")
+
+    assert response.status_code == 200, response.text
+    assert response.json()["data"]["summary"] == expected
