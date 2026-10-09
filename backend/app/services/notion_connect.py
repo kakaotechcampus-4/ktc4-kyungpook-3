@@ -6,9 +6,10 @@ OAuth callback은 토큰만 저장하고 바로 응답한다. Notion이 템플�
 
 - 복제가 끝날 때까지 `POLL_INTERVAL_SECONDS`마다 다시 보고, `WAIT_TIMEOUT_SECONDS`가 지나면 포기한다.
 - 찾은 DB의 속성이 워커가 쓰는 속성과 맞으면 `provider_channel_id`에 저장한다. 이때부터 워커가 반영한다.
-- 실패하면 연결 행을 지운다. "연결됨인데 반영은 안 되는" 반쪽 연결을 남기지 않는다.
+- 실패하면 행은 남기고 토큰만 비운다. "연결됨인데 반영은 안 되는" 반쪽 연결을 남기지 않으면서, 행이 없는
+  "연결한 적 없음"과 구분해 PM에게 끊김(`revoked`)으로 알린다. 다시 연결하면 callback이 새 토큰을 채운다.
 
-저장이든 삭제든 행의 토큰이 시작할 때와 같을 때만 한다. 그 사이 다시 연결했다면 새 연결은 새 작업이 맡는다.
+저장이든 토큰 비우기든 행의 토큰이 시작할 때와 같을 때만 한다. 그 사이 다시 연결했다면 새 연결은 새 작업이 맡는다.
 기다리는 동안에는 DB 세션을 열어 두지 않고, 마지막에 한 번만 연다.
 """
 import logging
@@ -17,7 +18,7 @@ from collections.abc import Callable
 from enum import StrEnum
 
 import httpx
-from sqlalchemy import delete, update
+from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from app.core.database import SessionLocal
@@ -53,7 +54,7 @@ def attach_template_database(
 ) -> AttachResult:
     result, database_id = _wait_for_database(access_token, page_id, timeout, interval, sleep, clock, transport)
 
-    # 토큰 확인과 저장·삭제를 한 문장으로 한다. 읽은 뒤 따로 쓰면 그 사이 다시 연결한 새 행을 덮거나 지울 수 있다.
+    # 토큰 확인과 저장·토큰 비우기를 한 문장으로 한다. 읽은 뒤 따로 쓰면 그 사이 다시 연결한 새 행을 덮을 수 있다.
     same_connection = (
         Integration.workspace_id == workspace_id,
         Integration.provider == "notion",
@@ -62,14 +63,18 @@ def attach_template_database(
     if result is AttachResult.ATTACHED:
         statement = update(Integration).where(*same_connection).values(provider_channel_id=database_id)
     else:
-        statement = delete(Integration).where(*same_connection, Integration.provider_channel_id.is_(None))
+        statement = (
+            update(Integration)
+            .where(*same_connection, Integration.provider_channel_id.is_(None))
+            .values(access_token=None, refresh_token=None)
+        )
     with session_factory() as db:
         changed = db.execute(statement).rowcount
         db.commit()
     if changed == 0:
         result = AttachResult.SUPERSEDED
 
-    # 실패하면 연결이 조용히 사라진다. 이유를 찾을 수 있게 경고로 남긴다(info는 기본 설정에서 보이지 않는다).
+    # 화면에는 끊김으로만 보이고 이유는 나가지 않는다. 이유를 찾을 수 있게 경고로 남긴다(info는 기본 설정에서 보이지 않는다).
     if result is AttachResult.ATTACHED:
         logger.info("Notion 대상 DB 연결 workspace_id=%s result=%s", workspace_id, result)
     else:

@@ -82,6 +82,13 @@ def _row(session_factory, workspace_id) -> Integration | None:
         return notion.get_notion_integration(db, workspace_id)
 
 
+def _assert_token_cleared(session_factory, workspace_id) -> None:
+    """실패하면 행은 남기고 토큰만 비운다. 연동 조회가 이 행을 끊김(revoked)으로 내려준다."""
+    row = _row(session_factory, workspace_id)
+    assert row is not None
+    assert (row.access_token, row.refresh_token, row.provider_channel_id) == (None, None, None)
+
+
 def _not_ready():
     return notion.TemplateNotReady("복제 중")
 
@@ -102,32 +109,32 @@ def test_waits_while_copying_then_saves_database(monkeypatch, session_factory, w
     assert calls == {"find": 3, "verify": 1}
 
 
-def test_gives_up_after_timeout_and_removes_connection(monkeypatch, session_factory, workspace_id):
+def test_gives_up_after_timeout_and_clears_token(monkeypatch, session_factory, workspace_id):
     _script(monkeypatch, find=[_not_ready()])
     clock = FakeClock()
 
     result = _attach(workspace_id, session_factory, clock)
 
     assert result is AttachResult.TEMPLATE_NOT_READY
-    assert _row(session_factory, workspace_id) is None
+    _assert_token_cleared(session_factory, workspace_id)
     assert clock.now <= 60
     assert len(clock.sleeps) == 30
 
 
-def test_template_without_database_removes_connection(monkeypatch, session_factory, workspace_id):
+def test_template_without_database_clears_token(monkeypatch, session_factory, workspace_id):
     _script(monkeypatch, find=[None])
     clock = FakeClock()
 
     assert _attach(workspace_id, session_factory, clock) is AttachResult.DATABASE_NOT_FOUND
-    assert _row(session_factory, workspace_id) is None
+    _assert_token_cleared(session_factory, workspace_id)
     assert clock.sleeps == []
 
 
-def test_schema_mismatch_removes_connection(monkeypatch, session_factory, workspace_id):
+def test_schema_mismatch_clears_token(monkeypatch, session_factory, workspace_id):
     _script(monkeypatch, find=["db-1"], verify=[["'Task ID' 속성이 없음"]])
 
     assert _attach(workspace_id, session_factory, FakeClock()) is AttachResult.SCHEMA_MISMATCH
-    assert _row(session_factory, workspace_id) is None
+    _assert_token_cleared(session_factory, workspace_id)
 
 
 def test_retries_temporary_notion_errors(monkeypatch, session_factory, workspace_id):
@@ -147,25 +154,25 @@ def test_temporary_errors_until_timeout_are_reported_as_notion_error(monkeypatch
     _script(monkeypatch, find=[_notion_error(503, retryable=True)])
 
     assert _attach(workspace_id, session_factory, FakeClock()) is AttachResult.NOTION_ERROR
-    assert _row(session_factory, workspace_id) is None
+    _assert_token_cleared(session_factory, workspace_id)
 
 
-def test_permanent_notion_error_removes_connection(monkeypatch, session_factory, workspace_id):
+def test_permanent_notion_error_clears_token(monkeypatch, session_factory, workspace_id):
     _script(monkeypatch, find=[_notion_error(403, retryable=False)])
     clock = FakeClock()
 
     assert _attach(workspace_id, session_factory, clock) is AttachResult.NOTION_ERROR
-    assert _row(session_factory, workspace_id) is None
+    _assert_token_cleared(session_factory, workspace_id)
     assert clock.sleeps == []
 
 
-def test_unexpected_error_removes_connection(monkeypatch, session_factory, workspace_id, caplog):
-    # 예: Notion이 200에 JSON이 아닌 본문을 줬다. 멈추지 않고 반쪽 연결을 지운다.
+def test_unexpected_error_clears_token(monkeypatch, session_factory, workspace_id, caplog):
+    # 예: Notion이 200에 JSON이 아닌 본문을 줬다. 멈추지 않고 반쪽 연결의 토큰을 비운다.
     _script(monkeypatch, find=[ValueError("JSON이 아님")])
     clock = FakeClock()
 
     assert _attach(workspace_id, session_factory, clock) is AttachResult.NOTION_ERROR
-    assert _row(session_factory, workspace_id) is None
+    _assert_token_cleared(session_factory, workspace_id)
     assert clock.sleeps == []
     assert any(r.levelname == "ERROR" and r.exc_info for r in caplog.records)
 
@@ -207,7 +214,7 @@ def test_success_is_logged_as_info(monkeypatch, session_factory, workspace_id, c
 
 
 def test_failure_is_logged_as_warning_with_reason(monkeypatch, session_factory, workspace_id, caplog):
-    # 실패하면 연결이 지워지므로 이유가 기본 로그 설정(경고 이상)에서도 보여야 한다
+    # 화면에는 끊김으로만 보이므로 이유가 기본 로그 설정(경고 이상)에서도 보여야 한다
     _script(monkeypatch, find=[None])
     caplog.set_level(logging.INFO, logger="app.services.notion_connect")
 
@@ -218,7 +225,7 @@ def test_failure_is_logged_as_warning_with_reason(monkeypatch, session_factory, 
     ]
 
 
-def test_failure_does_not_remove_connection_that_already_has_database(monkeypatch, session_factory, workspace_id):
+def test_failure_does_not_touch_connection_that_already_has_database(monkeypatch, session_factory, workspace_id):
     with session_factory() as db:
         notion.get_notion_integration(db, workspace_id).provider_channel_id = "db-existing"
         db.commit()
@@ -226,4 +233,5 @@ def test_failure_does_not_remove_connection_that_already_has_database(monkeypatc
 
     # 이미 DB가 채워졌으면 이 작업이 맡을 연결이 아니다
     assert _attach(workspace_id, session_factory, FakeClock()) is AttachResult.SUPERSEDED
-    assert _row(session_factory, workspace_id).provider_channel_id == "db-existing"
+    row = _row(session_factory, workspace_id)
+    assert (row.access_token, row.provider_channel_id) == (TOKEN, "db-existing")

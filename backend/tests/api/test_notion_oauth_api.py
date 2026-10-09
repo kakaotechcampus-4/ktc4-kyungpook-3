@@ -9,6 +9,7 @@ from sqlalchemy import create_engine, update
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app.api.integrations import NOTION_CONNECTING_TIMEOUT
 from app.core.database import Base, get_db
 from app.main import app
 from app.models import Integration, Member, Session as SessionModel, User, Workspace
@@ -515,3 +516,105 @@ def test_user_who_stopped_being_pm_meanwhile_fails(client, seed, db, fake_notion
     assert response.headers["location"] == f"/onboarding?{FAILED}"
     assert _row(db, seed) is None
     assert calls["exchange"] == []
+
+
+# ---------- 연동 조회 ----------
+
+
+def _integrations(client, seed, session="bob-token"):
+    response = client.get(f"/api/v1/workspaces/{seed['workspace_id']}/integrations", headers=_cookie(session=session))
+    assert response.status_code == 200
+    return response.json()["data"]
+
+
+def _add_notion(db, seed, *, database_id, updated_ago, token="secret"):
+    db.add(Integration(
+        workspace_id=seed["workspace_id"], provider="notion", access_token=token,
+        provider_channel_id=database_id, updated_at=datetime.now(timezone.utc) - updated_ago,
+    ))
+    db.commit()
+
+
+REVOKED = {"status": "revoked", "display_name": "Notion DB 연결 실패", "connected_at": None}
+
+
+def test_notion_with_database_is_connected(client, seed, db):
+    _add_notion(db, seed, database_id="db-1", updated_ago=timedelta(hours=1))
+
+    notion_ = _integrations(client, seed)["notion"]
+
+    assert (notion_["status"], notion_["display_name"]) == ("connected", "Notion 연결됨")
+    assert notion_["connected_at"] is not None
+
+
+def test_notion_waiting_for_database_is_connected_until_frontend_supports_connecting(client, seed, db):
+    # 임시: 프론트가 `connecting`을 받을 준비가 될 때까지 `connected`로 내려준다
+    _add_notion(db, seed, database_id=None, updated_ago=timedelta(seconds=30))
+
+    notion_ = _integrations(client, seed)["notion"]
+
+    assert (notion_["status"], notion_["display_name"]) == ("connected", "Notion 연결됨")
+
+
+def test_notion_waiting_too_long_is_revoked_and_row_is_kept(client, seed, db):
+    # DB를 찾던 작업이 서버 재시작 등으로 사라졌다
+    _add_notion(db, seed, database_id=None, updated_ago=NOTION_CONNECTING_TIMEOUT + timedelta(seconds=1))
+
+    assert _integrations(client, seed)["notion"] == REVOKED
+    assert _row(db, seed) is not None
+
+
+def test_notion_whose_database_search_failed_is_revoked_right_away(client, seed, db):
+    # DB 찾기가 실패해 토큰을 비웠다. 2분을 기다리지 않고 바로 끊김으로 알린다
+    _add_notion(db, seed, database_id=None, updated_ago=timedelta(seconds=5), token=None)
+
+    assert _integrations(client, seed)["notion"] == REVOKED
+
+
+def test_notion_without_row_is_not_connected(client, seed, db):
+    assert _integrations(client, seed)["notion"] == {
+        "status": "not_connected", "display_name": None, "connected_at": None,
+    }
+
+
+def test_notion_is_connected_right_after_callback(client, seed, db, fake_notion):
+    # 프론트는 OAuth 직후 바로 상태를 묻고 `connected`가 아니면 실패로 안내한다
+    state, nonce = _signed(seed)
+    _callback(client, state=state, nonce=nonce, code="the-code")
+
+    assert _integrations(client, seed)["notion"]["status"] == "connected"
+
+
+def test_reconnect_to_new_database_is_connected(client, seed, db, fake_notion):
+    _, state_ = fake_notion
+    _add_notion(db, seed, database_id="db-old", updated_ago=timedelta(hours=1))
+    state_["verify"] = ["missing property"]  # 새 토큰으로 예전 DB를 쓸 수 없다
+    state, nonce = _signed(seed)
+
+    _callback(client, state=state, nonce=nonce, code="the-code")
+
+    assert _integrations(client, seed)["notion"]["status"] == "connected"
+
+
+def test_reconnect_after_revoked_is_connected_again(client, seed, db, fake_notion):
+    calls, _ = fake_notion
+    _add_notion(db, seed, database_id=None, updated_ago=timedelta(hours=1), token=None)
+    state, nonce = _signed(seed)
+
+    response = _callback(client, state=state, nonce=nonce, code="the-code")
+
+    assert response.headers["location"] == "/onboarding?oauth=notion&oauth_result=success"
+    assert _integrations(client, seed)["notion"]["status"] == "connected"
+    db.expire_all()
+    assert _row(db, seed).access_token == "secret_new"
+    assert len(calls["attach"]) == 1
+
+
+def test_discord_row_stays_connected(client, seed, db):
+    db.add(Integration(workspace_id=seed["workspace_id"], provider="discord", provider_channel_id="guild-1"))
+    db.commit()
+
+    data = _integrations(client, seed)
+
+    assert (data["discord"]["status"], data["discord"]["display_name"]) == ("connected", "Discord 연결됨")
+    assert data["notion"]["status"] == "not_connected"
