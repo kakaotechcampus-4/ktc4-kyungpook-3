@@ -322,6 +322,10 @@ def _request_task_update(
     판단하는 사이에 PM이 고친 값이 기준값이 되어, 승인할 때 충돌 없이 그 값을 덮는다(#157).
     target_snapshot이 없거나 그 필드를 보내지 않았으면 등록 시점의 DB 값을 쓴다.
     변경안에 넣을지는 지금 DB 값과 비교해 정한다. PM이 이미 같은 값으로 고쳤으면 바꿀 것이 없다.
+
+    AI가 이 task를 고른 근거인 제목도 base_title로 남긴다(#185). 바꿀 값이 아니라서 base_values와 나눈다.
+    승인할 때 제목이 달라졌으면 다른 업무가 됐을 수 있어 다시 확인받는다. 최상위 "title"에 두면
+    승인 때 반영되는 키(approvals._TASK_UPDATE_FIELDS)라서 제목이 그 값으로 바뀐다.
     """
     snapshot = raw_item.target_snapshot
     seen = snapshot.model_fields_set if snapshot is not None else set()
@@ -367,6 +371,8 @@ def _request_task_update(
         # version은 어느 필드가 바뀌어도 오르므로 비교에 쓰지 않고 참고로만 남긴다.
         "base_values": base_values,
         "base_task_version": target.version,
+        # 승인 시 대상 확인용. 검색 때 본 제목, 없으면 등록 시점의 제목이다. 반영되는 키가 아니다.
+        "base_title": snapshot.title if snapshot is not None and snapshot.title is not None else target.title,
         # 아래는 표시용이다. 승인 시 반영되는 키(approvals._TASK_UPDATE_FIELDS)와 겹치지 않게 둔다.
         # 특히 "title"은 반영 대상이라 대상 task 이름은 "task_title"로 싣는다.
         "task_title": target.title,

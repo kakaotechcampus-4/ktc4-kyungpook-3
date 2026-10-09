@@ -6,6 +6,8 @@ on:
     paths:
       - 'frontend/**'
       - '.github/workflows/frontend-ci.yml'
+  # deploy.yml 이 배포 전에 같은 커밋으로 부른다
+  workflow_call:
 
 defaults:
   run:

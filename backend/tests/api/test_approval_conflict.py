@@ -222,15 +222,15 @@ def test_confirm_version_without_conflict_is_ignored(client, db, seed):
 
 def test_pm_edit_of_other_field_does_not_block(client, db, seed):
     approval = _propose(client, db, seed, due_date="2026-10-06")
-    # version은 오르지만 제안한 필드(due_date)는 그대로다
-    _edit_task(client, seed["login"], title="로그인 화면 시안 v2")
+    # version은 오르지만 제안한 필드(due_date)와 대상 제목은 그대로다
+    _edit_task(client, seed["login"], blocker="디자인 리뷰 대기")
 
     r = _approve(client, approval)
 
     assert r.status_code == 200, r.text
     task = _login(db, seed)
     assert task.due_date == date(2026, 10, 6)
-    assert task.title == "로그인 화면 시안 v2"
+    assert task.blocker == "디자인 리뷰 대기"
 
 
 def test_pm_already_made_the_same_change_is_not_a_conflict(client, db, seed):
@@ -314,6 +314,7 @@ def _snapshot(seed, **overrides) -> dict:
         "due_date": "2026-10-03",
         "status": "in_progress",
         "assignee_member_id": None,
+        "title": "로그인 화면 시안",
         **overrides,
     }
 
@@ -364,7 +365,7 @@ def test_pm_already_set_the_proposed_value_before_registration(client, db, seed)
 
 def test_edit_of_other_field_after_search_does_not_block(client, db, seed):
     snapshot = _snapshot(seed)
-    _edit_task(client, seed["login"], title="로그인 화면 시안 v2")
+    _edit_task(client, seed["login"], blocker="디자인 리뷰 대기")
     approval = _propose(client, db, seed, due_date="2026-10-06", target_snapshot=snapshot)
 
     r = _approve(client, approval)
@@ -372,7 +373,7 @@ def test_edit_of_other_field_after_search_does_not_block(client, db, seed):
     assert r.status_code == 200, r.text
     task = _login(db, seed)
     assert task.due_date == date(2026, 10, 6)
-    assert task.title == "로그인 화면 시안 v2"
+    assert task.blocker == "디자인 리뷰 대기"
 
 
 def test_null_in_snapshot_is_kept_as_the_base(client, db, seed):
@@ -412,3 +413,135 @@ def test_snapshot_conflict_on_status_and_assignee(client, db, seed):
     assert fields["status"]["base"] == "in_progress"
     assert fields["assignee_member_id"]["base"] is None
     assert _login(db, seed).status == "blocked"
+
+
+# ── AI가 task를 고른 근거인 제목이 바뀌었으면 다시 확인한다(#185) ──
+# 제목은 바꿀 값이 아니라 대상 확인용이다. 마감 같은 제안 필드가 그대로여도, 제목이 다른 업무로 바뀌었으면
+# 회의에서 말한 업무가 아닌 task가 바뀔 수 있다.
+
+def _title_conflict(r) -> dict | None:
+    conflicts = r.json()["error"]["details"]["conflicts"]
+    return next((c for c in conflicts if c["field"] == "title"), None)
+
+
+def test_title_change_after_search_is_a_conflict(client, db, seed):
+    snapshot = _snapshot(seed)
+    # AI가 "로그인 화면 시안"을 보고 고른 사이 PM이 같은 task를 다른 업무로 바꿨다. 마감은 그대로다
+    _edit_task(client, seed["login"], title="결제 페이지 QA")
+    approval = _propose(client, db, seed, due_date="2026-10-06", target_snapshot=snapshot)
+
+    payload = json.loads(approval.payload)
+    assert payload["base_title"] == "로그인 화면 시안"
+    r = _approve(client, approval)
+
+    assert r.status_code == 409
+    assert r.json()["error"]["details"]["conflicts"] == [
+        {"field": "title", "base": "로그인 화면 시안", "current": "결제 페이지 QA", "proposed": None}
+    ]
+    assert _login(db, seed).due_date == date(2026, 10, 3)
+    assert _approval(db).status == "pending"
+
+
+def test_title_change_after_registration_is_a_conflict(client, db, seed):
+    snapshot = _snapshot(seed)
+    approval = _propose(client, db, seed, due_date="2026-10-06", target_snapshot=snapshot)
+    _edit_task(client, seed["login"], title="결제 페이지 QA")
+
+    r = _approve(client, approval)
+
+    assert r.status_code == 409
+    assert _title_conflict(r) == {
+        "field": "title", "base": "로그인 화면 시안", "current": "결제 페이지 QA", "proposed": None,
+    }
+
+
+def test_same_title_is_not_a_conflict(client, db, seed):
+    approval = _propose(client, db, seed, due_date="2026-10-06", target_snapshot=_snapshot(seed))
+
+    r = _approve(client, approval)
+
+    assert r.status_code == 200, r.text
+    assert _login(db, seed).due_date == date(2026, 10, 6)
+
+
+def test_title_that_differs_only_in_surrounding_spaces_is_not_a_conflict(client, db, seed):
+    """앞뒤 공백만 다듬은 제목은 같은 업무다. 다시 묻지 않는다."""
+    snapshot = _snapshot(seed)
+    _edit_task(client, seed["login"], title="  로그인 화면 시안 ")
+    approval = _propose(client, db, seed, due_date="2026-10-06", target_snapshot=snapshot)
+
+    r = _approve(client, approval)
+
+    assert r.status_code == 200, r.text
+    assert _login(db, seed).due_date == date(2026, 10, 6)
+
+
+def test_title_conflict_is_reported_with_field_conflicts(client, db, seed):
+    snapshot = _snapshot(seed)
+    _edit_task(client, seed["login"], title="결제 페이지 QA", due_date="2026-10-10")
+    approval = _propose(client, db, seed, due_date="2026-10-06", target_snapshot=snapshot)
+
+    r = _approve(client, approval)
+
+    assert r.status_code == 409
+    fields = [c["field"] for c in r.json()["error"]["details"]["conflicts"]]
+    assert fields == ["due_date", "title"]
+
+
+def test_confirm_after_title_conflict_applies_without_changing_title(client, db, seed):
+    snapshot = _snapshot(seed)
+    _edit_task(client, seed["login"], title="결제 페이지 QA")
+    approval = _propose(client, db, seed, due_date="2026-10-06", target_snapshot=snapshot)
+    seen = _approve(client, approval).json()["error"]["details"]["task_version"]
+
+    r = _approve(client, approval, confirm_task_version=seen)
+
+    assert r.status_code == 200, r.text
+    task = _login(db, seed)
+    assert task.due_date == date(2026, 10, 6)
+    # base_title은 반영되는 값이 아니다. PM이 바꾼 제목이 남는다
+    assert task.title == "결제 페이지 QA"
+    assert _approval(db).status == "approved"
+
+
+def test_without_snapshot_title_the_registration_title_is_the_base(client, db, seed):
+    """제목을 보내지 않는 요청(AI 쪽 변경 전)은 등록 시점의 제목이 기준이다. null도 보내지 않은 것으로 본다."""
+    _edit_task(client, seed["login"], title="결제 페이지 QA")
+    snapshot = _snapshot(seed, title=None)
+    approval = _propose(client, db, seed, due_date="2026-10-06", target_snapshot=snapshot)
+
+    assert json.loads(approval.payload)["base_title"] == "결제 페이지 QA"
+    assert _approve(client, approval).status_code == 200
+
+
+def test_without_snapshot_the_registration_title_is_the_base(client, db, seed):
+    approval = _propose(client, db, seed, due_date="2026-10-06")
+
+    assert json.loads(approval.payload)["base_title"] == "로그인 화면 시안"
+    _edit_task(client, seed["login"], title="결제 페이지 QA")
+    r = _approve(client, approval)
+
+    assert r.status_code == 409
+    assert _title_conflict(r)["base"] == "로그인 화면 시안"
+
+
+def test_request_without_base_title_skips_the_title_check(client, db, seed):
+    """이 기능 전에 만들어진 pending 요청은 기준 제목이 없어 제목을 확인하지 않는다."""
+    login = seed["login"]
+    approval = ApprovalRequest(
+        workspace_id=seed["ws"].workspace_id, type="task_update",
+        payload=json.dumps({
+            "due_date": "2026-10-06",
+            "base_values": {"due_date": "2026-10-03"},
+            "task_title": login.title,
+        }),
+        related_task_id=login.task_id,
+    )
+    db.add(approval)
+    db.commit()
+    _edit_task(client, login, title="결제 페이지 QA")
+
+    r = _approve(client, approval)
+
+    assert r.status_code == 200, r.text
+    assert _login(db, seed).due_date == date(2026, 10, 6)

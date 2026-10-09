@@ -58,6 +58,7 @@ app.include_router(approvals.router, prefix=API_PREFIX)
 app.include_router(tasks.router, prefix=API_PREFIX)
 app.include_router(integrations.router, prefix=API_PREFIX)
 app.include_router(integrations.callback_router, prefix=API_PREFIX)
+app.include_router(integrations.bot_router, prefix=API_PREFIX)
 app.include_router(similar_tasks.router, prefix=API_PREFIX)
 app.include_router(sources.router, prefix=API_PREFIX)
 

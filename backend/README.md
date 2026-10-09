@@ -6,7 +6,9 @@
 
 - [문서 안내](docs/README.md): 문서 구조와 기존 문서 배치.
 - 계약: [AI(녹음 봇) 계약](docs/contracts/backend-ai-contract.md), 웹 화면용은 [프론트엔드 대표 계약](../frontend/docs/contracts/frontend-api-contract.md).
-- 계획: [전체 계획](docs/plan/backend-plan.md), [M0~M7 안내](docs/plan/README.md). 마일스톤별 plan.md는 아직 비어 있고 `result.md`는 없다. 진행 상태는 전체 계획의 마일스톤 개요(2026-10-02 기준)를 따른다.
+- 계획: [전체 계획](docs/plan/backend-plan.md), [M0~M7 안내](docs/plan/README.md). 마일스톤별 plan.md는 아직 비어 있다. 진행 상태는 전체 계획의 마일스톤 개요(2026-10-02 기준)를 따른다.
+- 결과: [M0](docs/plan/m0/result.md)(백엔드 CI 보완), [M2](docs/plan/m2/result.md)(승인 때 대상 task 제목 확인), [M7](docs/plan/m7/result.md)(배포 전 CI 검사, 봇 재시작 잠금, 되돌리기 문서). 모두 마일스톤 완료를 판정하지 않았다.
+- 배포: [배포 안내](../deploy/README.md). 요청: [녹음 시작 때 배포 재시작 잠금 확인](docs/requests/bot-restart-lock.md)(AI).
 
 ## 실행
 
@@ -14,7 +16,7 @@ DB는 PostgreSQL이다. 로컬에서는 Docker로 띄운다(Docker Desktop 필�
 
 ```bash
 uv venv --python 3.12 .venv
-uv pip install -r requirements-dev.txt   # requirements.txt(운영) + pytest
+uv pip install -r requirements-dev.txt   # requirements.txt(운영) + pytest, ruff
 cp .env.example .env
 
 docker compose up -d db         # PostgreSQL(pgvector 포함) 기동, 데이터는 mm-pgdata 볼륨에 남는다
@@ -30,6 +32,8 @@ docker compose up -d db         # PostgreSQL(pgvector 포함) 기동, 데이터�
 - `run.sh`는 `.env`를 읽어 alembic과 uvicorn에 환경변수로 넘긴다. `run.sh` 없이 직접 띄우면 `.env`를 읽지 않는다.
 - 테스트(`pytest`)는 sqlite in-memory로 돌아서 DB를 띄우지 않아도 된다. pgvector 검색 테스트만
   PostgreSQL이 필요해서 `TEST_DATABASE_URL`이 있을 때만 돈다(`tests/services/test_embedding_search_pg.py` 참고).
+- CI(`.github/workflows/backend-ci.yml`)는 ruff 린트, pytest, 빈 PostgreSQL에 `alembic upgrade head`·`alembic check`, 운영 이미지 빌드를 돌린다.
+  로컬에서 린트는 `.venv/bin/python -m ruff check .`(설정 `ruff.toml`).
 
 서버가 뜨면 `http://localhost:8000` 기준으로:
 
@@ -99,7 +103,7 @@ docker compose -f docker-compose.prod.yml logs -f api
 | `MEETING_ALREADY_ENDED` | 409 | 이미 종료된 회의 |
 | `MEETING_NOT_PROCESSING` | 409 | 회의가 PROCESSING 상태가 아닌데 추출을 시도함 |
 | `APPROVAL_ALREADY_RESOLVED` | 409 | 이미 승인/반려 처리된 요청을 다시 처리하려 함 |
-| `APPROVAL_CONFLICT` | 409 | task_update 제안 이후 같은 필드가 바뀌어 승인하지 않음. `details.conflicts`에 필드별 기준값·지금 값·제안 값. 확인 후 `details.task_version`을 `confirm_task_version`에 담아 다시 승인하면 반영(그 사이 또 바뀌었으면 다시 409) |
+| `APPROVAL_CONFLICT` | 409 | task_update 제안 이후 같은 필드가 바뀌었거나 대상 task 제목이 바뀌어 승인하지 않음. `details.conflicts`에 필드별 기준값·지금 값·제안 값(`field: "title"`은 대상 확인용이라 `proposed`가 null). 확인 후 `details.task_version`을 `confirm_task_version`에 담아 다시 승인하면 반영(그 사이 또 바뀌었으면 다시 409) |
 | `TASK_HISTORY_ALREADY_ROLLED_BACK` | 409 | 이미 되돌린 변경을 다시 되돌리려 함 |
 | `LAST_PM_REQUIRED` | 409 | 워크스페이스의 마지막 PM(로그인 계정이 있는 PM)을 member로 내리려 함. 다른 팀원을 먼저 PM으로 지정해야 함 |
 | `DISCORD_USER_ALREADY_MAPPED` | 409 | 같은 워크스페이스에서 탈퇴하지 않은 다른 팀원에 이미 연결된 디스코드 계정(`details.discord_user_id`). 탈퇴(`is_deleted`)한 팀원의 계정은 다시 연결할 수 있음. `discord_user_id`의 앞뒤 공백은 지우고, 빈 값은 연결 없음(null)으로 저장. 64자를 넘으면 이 코드가 아니라 400 `INVALID_REQUEST` |
@@ -227,7 +231,7 @@ scope는 `bot applications.commands identify`다. 봇 초대 scope만 요청하�
 | 한 서버 한 워크스페이스 | 다른 워크스페이스에 이미 연결된 서버면 `failed`(DB 부분 유일 인덱스 `uq_integration_discord_guild`도 막는다). 같은 워크스페이스에서 다시 연결하면 서버 ID를 바꾼다 |
 | 봇 권한 | 채널 보기, 메시지·링크·파일 보내기, 메시지 기록 보기, 음성 채널 접속(`discord_oauth.DEFAULT_BOT_PERMISSIONS`). `DISCORD_BOT_PERMISSIONS`로 바꿀 수 있다 |
 | 보안 | Notion 연결과 같다. state는 제공자까지 서명해서 Notion 연결의 state로는 통과하지 못한다 |
-| 회의 인계 | 봇은 아직 `ai/.env`의 `BE_WORKSPACE_ID` 하나로 회의를 보낸다. 서버로 워크스페이스를 찾는 조회는 여러 워크스페이스 지원 때 붙인다 |
+| 회의 인계 | 봇은 아직 `ai/.env`의 `BE_WORKSPACE_ID` 하나로 회의를 보낸다. 봇이 아래 [서버로 워크스페이스 찾기](#서버로-워크스페이스-찾기)를 쓰도록 바꾸는 작업은 AI 쪽 #180 후속이며 #194 머지 뒤에 시작한다 |
 
 ### Discord 서버 사용자 목록
 
@@ -241,6 +245,17 @@ scope는 `bot applications.commands identify`다. 봇 초대 scope만 요청하�
 | 아바타 | 서버 전용 아바타 → 계정 아바타 → 없으면 `null` |
 | 미연결 | 연결 행이 없거나 서버 ID가 비어 있으면 409 `INTEGRATION_NOT_CONNECTED` |
 | 실패 | 봇 토큰이 없거나 Discord가 목록을 주지 않으면 502 `DISCORD_API_FAILED`(`details.status`). 401은 봇 토큰, 403은 Server Members Intent·권한, 404는 봇이 서버에 없는 경우가 많다 |
+
+### 서버로 워크스페이스 찾기
+
+`GET /api/v1/integrations/discord/guilds/{guild_id}/workspace` — 녹음 봇용(#180). 사용자 세션 대신 서비스 토큰(`X-Service-Token`)으로 막는다.
+봇이 `/record` 때 녹음하는 서버의 ID로 불러 회의를 보낼 워크스페이스를 정한다.
+
+| 항목 | 동작 |
+|---|---|
+| 응답 | `{guild_id, workspace_id}`. 한 서버는 한 워크스페이스에만 연결되므로(`uq_integration_discord_guild`) 결과는 하나다 |
+| 미연결 | 그 서버를 연결한 워크스페이스가 없으면(연결 해제 포함) 409 `INTEGRATION_NOT_CONNECTED`, `details`는 `{provider: "discord", guild_id}` |
+| 인증 | 토큰이 없거나 틀리면 401 `UNAUTHENTICATED`. 워크스페이스 멤버의 세션도 토큰을 대신하지 못한다 |
 
 **환경변수** (`.env.example` 참고)
 
@@ -276,6 +291,7 @@ scope는 `bot applications.commands identify`다. 봇 초대 scope만 요청하�
 | `action: update` | `target_task_id`의 task_update 승인 요청을 만든다(신뢰도와 무관하게 항상 PM 승인 대상). `task_title`은 없어도 되고, 와도 제목은 바꾸지 않는다 |
 | update 변경안 | 들어온 값 중 지금 task와 다른 `due_date`·`status`·`assignee_member_id`만 담는다. 담당자는 지금 task와 다를 때만 넣고 같으면 뺀다 |
 | update 충돌 기준값 | 변경 필드마다 `base_values`를 남겨 승인 시 그 뒤 수정과 충돌을 확인한다. 기준값은 AI가 유사 검색에서 본 값(`target_snapshot`의 `due_date`·`status`·`assignee_member_id`)이다. 보내지 않은 필드나 `target_snapshot`이 없는 요청은 등록 시점의 값을 쓴다. 검색과 등록 사이에 PM이 고친 값을 승인이 덮지 않게 하려는 것이다 |
+| update 대상 확인 | AI가 task를 고를 때 본 제목(`target_snapshot.title`, 없거나 null이면 등록 시점 제목)을 payload의 `base_title`에 남긴다. 승인할 때 지금 제목과 다르면 다른 필드가 그대로여도 `APPROVAL_CONFLICT`의 `title` 항목으로 알린다. 제목은 바꾸지 않는다. 앞뒤 공백만 다르면 같은 제목으로 본다. `base_title`이 없는 요청(이 기능 전에 만든 요청, `base_title`을 보내지 않은 수동 생성)은 제목을 확인하지 않는다. 수동 생성(`POST /approvals`)은 payload를 그대로 저장해서 `base_title`·`base_values`를 넣으면 확인한다(#185) |
 | update 승인 요청 생성 여부 | 담당자를 하나로 못 찾았으면(중의적이거나 없음) 다른 변경이 없어도 PM이 보도록 승인 요청을 만든다. `category: scope`(대응하는 task 필드가 없는 범위 결정)도 다른 변경이 없어도 승인 요청을 만든다. 그 외에 담당자까지 같거나 언급이 없고 다른 변경도 없으면 승인 요청 자체를 만들지 않는다(단 `doc_text`·근거는 ExtractionItem에 남는다) |
 | 잘못된 항목 | update의 `target_task_id`가 없거나 다른 워크스페이스 task면, create의 `task_title`이 비어 있으면 그 항목만 건너뛰고 나머지는 처리한다(응답 `item_count`는 저장된 항목 수) |
 
@@ -292,8 +308,8 @@ scope는 `bot applications.commands identify`다. 봇 초대 scope만 요청하�
 - Notion 연결 시작·콜백은 브라우저 페이지 이동이라 403 대신 앱 화면의 `?oauth=notion&oauth_result=failed`로 돌려보낸다.
 - 일반 팀원은 할일을 직접 바꾸지 못하고 승인 요청을 올려 PM의 승인을 받는다. 요청자(`requested_by`)는 바디 값이 아니라 로그인한 팀원으로 기록한다.
 - PM 역할은 `PATCH /members/{id}`의 `role`로 바꾼다. PM을 넘길 때는 다른 팀원을 먼저 PM으로 올린 뒤 자기를 내린다. 로그인 계정이 있는 PM이 한 명도 남지 않게 되면 409 `LAST_PM_REQUIRED`.
-- 봇 경로(회의 생성·종료·실패, 발화 저장, 유사 task 검색, 추출 등록)는 사용자 세션 대신 서비스 토큰(`X-Service-Token`, `deps.require_service_token`)으로 막는다. 없거나 틀리면 401 `UNAUTHENTICATED`. 자세한 내용은 [AI(녹음 봇) 계약](docs/contracts/backend-ai-contract.md#인증).
+- 봇 경로(회의 생성·종료·실패, 발화 저장, 유사 task 검색, 추출 등록, 서버로 워크스페이스 찾기)는 사용자 세션 대신 서비스 토큰(`X-Service-Token`, `deps.require_service_token`)으로 막는다. 없거나 틀리면 401 `UNAUTHENTICATED`. 자세한 내용은 [AI(녹음 봇) 계약](docs/contracts/backend-ai-contract.md#인증).
 
 ## 아직 없는 것
 
-Discord 서버로 워크스페이스를 찾는 조회(봇은 `ai/.env`의 `BE_WORKSPACE_ID` 하나로 회의를 보낸다), 워크스페이스 초대, 오디오 업로드·스트리밍, 메시지 로그.
+봇이 서버로 워크스페이스를 찾아 회의를 보내는 연결(BE 조회는 있고 봇은 아직 `ai/.env`의 `BE_WORKSPACE_ID` 하나로 보낸다, AI #180 후속), 워크스페이스 초대, 오디오 업로드·스트리밍, 메시지 로그.

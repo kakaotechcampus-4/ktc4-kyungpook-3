@@ -11,8 +11,8 @@
 
 - 경로 prefix는 `/api/v1`이고 응답은 백엔드 공통 봉투 `{data, error}`다 ([Backend README 응답 형식](../../README.md#응답-형식)).
 - 봇은 `error.code`로 분기한다. 봉투가 아닌 응답이나 4xx·5xx는 `HTTP_<status>`로 다룬다 (`BeClient._call`).
-- 봇의 연결 설정은 `ai/.env`의 `BE_BASE_URL`, `BE_WORKSPACE_ID`, `BE_SERVICE_TOKEN`이다. develop의 봇은 `BE_BASE_URL`과 `BE_WORKSPACE_ID`가 없으면 인계 단계를 건너뛴다. AI #193(PR #194, 미머지)부터는 `BE_SERVICE_TOKEN`까지 셋이 다 있어야 인계를 켠다 (`handoff.from_env`).
-- 봇은 아직 워크스페이스 하나(`BE_WORKSPACE_ID`)로만 회의를 보낸다. 디스코드 서버로 워크스페이스를 찾는 조회는 없다.
+- 봇의 연결 설정은 `ai/.env`의 `BE_BASE_URL`, `BE_WORKSPACE_ID`, `BE_SERVICE_TOKEN`이다. #193 전의 봇은 `BE_BASE_URL`과 `BE_WORKSPACE_ID`가 없으면 인계 단계를 건너뛰고, #193부터는 `BE_SERVICE_TOKEN`까지 셋이 다 있어야 인계를 켠다 (`handoff.from_env`).
+- 봇은 아직 워크스페이스 하나(`BE_WORKSPACE_ID`)로만 회의를 보낸다. 디스코드 서버로 워크스페이스를 찾는 BE 조회는 있고([워크스페이스 찾기](#워크스페이스-찾기-get-integrationsdiscordguildsguild_idworkspace--200)), 봇이 이를 쓰는 작업은 AI 쪽 #180 후속이다.
 
 ## 호출 순서
 
@@ -29,12 +29,12 @@
 
 ## 인증
 
-- `X-Service-Token`: 봇이 부르는 경로 전부(회의 생성·종료·실패, 발화 저장, 유사 task 검색, 추출 등록)에 건다 (`deps.require_service_token`). 헤더 값을 서버의 `SERVICE_TOKEN`과 비교하고, 없거나 다르면 401 `UNAUTHENTICATED`다. 서버에 `SERVICE_TOKEN`이 비어 있으면 모든 요청을 거절한다. 사용자 세션은 서비스 토큰을 대신하지 못한다.
+- `X-Service-Token`: 봇이 부르는 경로 전부(회의 생성·종료·실패, 발화 저장, 유사 task 검색, 추출 등록, 서버로 워크스페이스 찾기)에 건다 (`deps.require_service_token`). 헤더 값을 서버의 `SERVICE_TOKEN`과 비교하고, 없거나 다르면 401 `UNAUTHENTICATED`다. 서버에 `SERVICE_TOKEN`이 비어 있으면 모든 요청을 거절한다. 사용자 세션은 서비스 토큰을 대신하지 못한다.
 - 합의 근거: 이슈 #179(BE)와 #193(AI). 회의 생성·종료·실패와 추출 등록이 리버스 프록시 설정에만 기대던 것을 서비스 토큰으로 막는다.
 - 현재 구현
-  - BE(#179): 위 네 경로에 `require_service_token`을 건다. #179 전에는 발화 저장과 유사 검색에만 걸었다.
+  - BE(#179): 회의 생성·종료·실패와 추출 등록에 `require_service_token`을 건다. #179 전에는 발화 저장, 유사 검색, 서버로 워크스페이스 찾기에만 걸었다.
   - AI(#193): `BeClient._call`이 모든 요청에 헤더를 싣는다. #193 전의 봇은 발화 저장과 유사 검색에만 싣는다.
-- 배포 순서: 봇(#193)을 먼저 배포하고 BE(#179)를 배포한다. 지금 BE는 네 경로의 헤더를 무시하므로 봇이 먼저 나가도 안전하다. 반대 순서면 기존 봇의 회의 생성·종료·실패·추출 등록이 모두 401로 멈춘다. 배포 전에 운영 `ai/.env`의 `BE_SERVICE_TOKEN`이 BE의 `SERVICE_TOKEN`과 같은지 확인한다.
+- 배포 순서: 봇(#193)을 먼저 배포하고 BE(#179)를 배포한다. #179 전의 BE는 네 경로의 헤더를 무시하므로 봇이 먼저 나가도 안전하다. 반대 순서면 기존 봇의 회의 생성·종료·실패·추출 등록이 모두 401로 멈춘다. 배포 전에 운영 `ai/.env`의 `BE_SERVICE_TOKEN`이 BE의 `SERVICE_TOKEN`과 같은지 확인한다.
 
 ## 회의
 
@@ -122,7 +122,7 @@ AI `Transcript.to_dict()` 모양에 화자 이름을 더해 보낸다. 한 회�
     "category": "schedule" | "assignee" | "scope" | "decision" | null,
     "status": "todo" | "in_progress" | "blocked" | "done" | null,
     "doc_text": "…" | null,
-    "target_snapshot": { "updated_at": "…", "due_date": "…", "status": "…", "assignee_member_id": "…" } | null
+    "target_snapshot": { "updated_at": "…", "due_date": "…", "status": "…", "assignee_member_id": "…", "title": "…" } | null
   } ]
 }
 // data
@@ -137,6 +137,29 @@ AI `Transcript.to_dict()` 모양에 화자 이름을 더해 보낸다. 한 회�
 | 담당자 | `assignee_type`이 `first`면 `evidence_speaker` uid로 `Member.discord_user_id`를 찾고, 그 외에는 `assignee_raw`를 별칭으로 매칭한다 |
 | 잘못된 항목 | update의 대상이 없거나 다른 워크스페이스 task, create의 제목이 비어 있으면 그 항목만 건너뛴다. `item_count`는 저장된 항목 수 |
 | update 처리 | 게이트·승인 생성 규칙과 `target_snapshot`의 충돌 기준값은 [Backend README 유사 task 검색과 AI 판단 접수](../../README.md#유사-task-검색과-ai-판단-접수)를 따른다 |
+| `target_snapshot.title` | 유사 검색 응답의 `title`을 그대로 보낸다. 제목을 바꾸는 값이 아니라 승인 때 대상 task가 그대로인지 확인하는 기준이다. 없거나 null이면 등록 시점의 제목을 쓴다. 필드 모양은 #185에서 AI·BE가 정했다 |
+
+## 워크스페이스 찾기 `GET /integrations/discord/guilds/{guild_id}/workspace` → 200
+
+봇이 녹음하는 디스코드 서버(길드)에 연결된 워크스페이스를 찾는다. 서버 연결은 웹 온보딩의 Discord 연결이 `Integration(provider="discord")`의 `provider_channel_id`에 저장한다.
+
+```jsonc
+// 응답 data
+{ "guild_id": "900000000000000001", "workspace_id": "ws_..." }
+```
+
+| 항목 | 동작 |
+|---|---|
+| 인증 | `X-Service-Token`. 없거나 틀리면 401 `UNAUTHENTICATED`. 워크스페이스 멤버의 세션은 토큰을 대신하지 못한다 |
+| 결과 | 한 서버는 한 워크스페이스에만 연결되므로(`uq_integration_discord_guild`) 하나다 |
+| 미연결 | 연결이 없거나 해제됐으면 409 `INTEGRATION_NOT_CONNECTED`, `details`는 `{provider: "discord", guild_id}` |
+
+- 합의 근거: BE가 이슈 #180의 흐름을 제안했고 AI 담당이 동의하며 아래를 덧붙였다(2026-10-09, 저장소 밖 대화). 이슈에는 아직 기록이 없다. 봇 구현 전까지는 합의된 계획이며 구현 사실이 아니다.
+  - 봇은 `/record` 때 이 조회로 받은 워크스페이스를 매니페스트의 `workspace_id`에 고정하고, 회의 생성·추출 등록·유사 검색에 `.env` 값 대신 쓴다.
+  - 미연결(`INTEGRATION_NOT_CONNECTED`)이면 녹음은 하고 BE 인계만 멈추며, 채널에 웹에서 서버를 연결하라고 안내한다.
+  - 조회가 일시적으로 실패하면 `/record`를 막지 않고 처리할 때 다시 조회한다.
+  - 이미 `.env` 워크스페이스로 들어간 옛 회의는 그대로 둔다.
+- 현재 구현: BE는 이 조회를 제공한다. 봇은 아직 부르지 않는다. AI 쪽 #180 작업은 `handoff.py`를 같이 고치는 #194가 머지된 뒤 시작한다.
 
 ## 오류 코드 요약
 
@@ -150,9 +173,10 @@ AI `Transcript.to_dict()` 모양에 화자 이름을 더해 보낸다. 한 회�
 | `MEETING_FAILED` | 409 | sources | 실패 |
 | `MEETING_NOT_PROCESSING` | 409 | extractions | 실패 |
 | `EMBEDDING_UNAVAILABLE` | 502 | tasks/similar | 실패 (빈 목록으로 바꾸지 않음) |
+| `INTEGRATION_NOT_CONNECTED` | 409 | guilds/{guild_id}/workspace | 녹음은 두고 인계만 멈춤, 채널에 연결 안내 (합의된 계획, 봇 미구현) |
 | `INVALID_REQUEST` | 400 | 요청 검증 실패 전부 | 실패 |
 
 ## 코드 근거
 
-- Backend: `app/api/meetings.py`, `app/api/sources.py`, `app/api/similar_tasks.py`, `app/api/extractions.py`, `app/api/deps.py`의 `require_service_token`, `app/schemas/meeting.py`, `app/schemas/source.py`, `app/schemas/task.py`
+- Backend: `app/api/meetings.py`, `app/api/sources.py`, `app/api/similar_tasks.py`, `app/api/extractions.py`, `app/api/integrations.py`의 `get_discord_guild_workspace`, `app/api/deps.py`의 `require_service_token`, `app/schemas/meeting.py`, `app/schemas/source.py`, `app/schemas/task.py`, `app/schemas/workspace.py`
 - AI: `ai/capture/handoff.py`의 `BeClient`, `Handoff`, `from_env`
