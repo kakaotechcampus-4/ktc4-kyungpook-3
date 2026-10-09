@@ -343,14 +343,25 @@ def test_name_prompt_dedupes_skips_blanks_and_caps_the_list():
     assert name_prompt(many).count("님") == NAME_PROMPT_MAX
 
 
-def test_called_name_drops_the_surname_of_a_three_syllable_name_and_skips_ids():
-    """회의에서는 성을 빼고 부른다. 성까지 넣은 프롬프트는 9/29 이름 자리 1/4, 부르는 이름은 3/4 였다(#195)."""
-    from stt.backend import called_name
-    assert called_name("유재환") == "재환"
-    assert called_name(" 김동우 ") == "동우"
-    assert called_name("김환") == "김환"              # 두 글자는 성인지 이름인지 알 수 없어 그대로 둔다
-    assert called_name("동우") == "동우"
-    assert called_name("남궁민수") == "남궁민수"
-    assert called_name("geocangdongu5251") is None    # 아이디 꼴은 들리는 소리와 달라 힌트가 되지 않는다
-    assert called_name("동우🔥") is None
-    assert called_name("") is None
+def test_name_forms_put_the_called_name_with_and_without_nim_and_the_full_name():
+    """존칭 없이 부르는 회의도 있어 세 꼴을 다 넣는다. 9/29·10/2 이름 자리가 "동우님" 꼴 4/6, 세 꼴 5/6 이었다(#195).
+
+    성을 붙인 꼴만 넣으면 9/29 이름 자리가 1/4 라 부르는 이름이 꼭 들어가야 한다.
+    """
+    from stt.backend import name_forms
+    assert name_forms("유재환") == ["재환님", "재환", "유재환"]
+    assert name_forms(" 김동우 ") == ["동우님", "동우", "김동우"]
+    assert name_forms("김환") == ["김환님", "김환"]           # 두 글자는 성인지 이름인지 알 수 없어 떼지 않는다
+    assert name_forms("남궁민수") == ["남궁민수님", "남궁민수"]
+    assert name_forms("geocangdongu5251") == []              # 아이디 꼴은 들리는 소리와 달라 힌트가 되지 않는다
+    assert name_forms("동우🔥") == []
+    assert name_forms("") == []
+
+
+def test_hint_prompt_groups_forms_per_person_dedupes_and_caps_people():
+    from stt.backend import HINT_PEOPLE_MAX, hint_prompt
+    assert hint_prompt(["유재환", "geocangdongu5251", "김환", "유재환"]) == "재환님, 재환, 유재환, 김환님, 김환."
+    assert hint_prompt(["geocangdongu5251"]) is None
+    assert hint_prompt([]) is None
+    people = [f"김{chr(0xAC00 + i)}{chr(0xAC00 + i)}" for i in range(HINT_PEOPLE_MAX + 3)]
+    assert hint_prompt(people).count("님") == HINT_PEOPLE_MAX

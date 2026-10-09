@@ -605,7 +605,7 @@ def test_transcription_sends_the_team_names_as_a_prompt(tmp_path):
     manifest["hint_names"] = ["동우", "재환"]
     stt = PromptEcho()
     r = _run(rec, manifest, tmp_path, backend=stt)
-    assert r["status"] == "transcribed" and stt.prompts and set(stt.prompts) == {"동우님, 재환님."}
+    assert r["status"] == "transcribed" and stt.prompts and set(stt.prompts) == {"동우님, 동우, 재환님, 재환."}
 
 
 def test_a_backend_that_takes_no_prompt_is_called_as_before(tmp_path):
@@ -615,13 +615,13 @@ def test_a_backend_that_takes_no_prompt_is_called_as_before(tmp_path):
     assert _run(rec, manifest, tmp_path)["status"] == "transcribed"
 
 
-def test_display_names_are_sent_as_called_names(tmp_path):
-    """매니페스트에는 디스코드 표시 이름이 그대로 남고, 프롬프트에는 부르는 이름으로 바꿔 싣는다."""
+def test_display_names_are_sent_in_every_name_form(tmp_path):
+    """매니페스트에는 디스코드 표시 이름이 그대로 남고, 프롬프트에는 부르는 이름(님 붙임, 뺌)과 성 포함 이름을 싣는다."""
     rec, path, manifest = _session(tmp_path)
     manifest["hint_names"] = ["유재환", "geocangdongu5251", "김환"]
     stt = PromptEcho()
     _run(rec, manifest, tmp_path, backend=stt)
-    assert stt.prompts and set(stt.prompts) == {"재환님, 김환님."}
+    assert stt.prompts and set(stt.prompts) == {"재환님, 재환, 유재환, 김환님, 김환."}
 
 
 def test_a_meeting_without_names_sends_no_prompt(tmp_path):
@@ -657,4 +657,4 @@ def test_retrying_failed_clips_sends_the_same_name_prompt(tmp_path, monkeypatch)
     r2 = R.recover(rec, backend=stt, model_name="echo", workers=1, gate=None,
                    transcripts_dir=tmp_path / "transcripts", extractor=_extractor({}), handoff=None)[0]
     assert r2["ran"][0] == "retried" and r2["retried"] == 2
-    assert stt.prompts and set(stt.prompts) == {"동우님."}
+    assert stt.prompts and set(stt.prompts) == {"동우님, 동우."}

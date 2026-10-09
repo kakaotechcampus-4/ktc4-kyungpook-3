@@ -58,16 +58,39 @@ def name_prompt(names: list[str]) -> str | None:
     return ", ".join(f"{n}님" for n in seen) + "." if seen else None
 
 
-def called_name(display_name: str) -> str | None:
-    """표시 이름을 회의에서 부르는 이름으로 바꾼다. 한글 세 글자면 성을 떼고, 한글이 아니면 뺀다(None).
+HINT_PEOPLE_MAX = 15   # 세 꼴로 넣으면 15명에 약 170토큰. 위스퍼는 프롬프트 뒤쪽 224토큰만 본다(20명이면 231토큰)
 
-    9/29 실녹음에서 "유재환님" 꼴 프롬프트는 이름 자리 4개 중 1개, "재환님" 꼴은 3개를 고쳤다(결정 기록 0020).
-    두 글자는 성이 붙은 이름("김환")인지 이름만인지("동우") 알 수 없어 그대로 둔다.
+
+def name_forms(display_name: str) -> list[str]:
+    """표시 이름 하나를 프롬프트에 넣을 꼴들로 바꾼다. 부르는 이름에 님을 붙인 꼴, 뗀 꼴, 성 포함 이름 순이다.
+
+    한글 세 글자는 첫 글자를 성으로 보고 뗀다. 두 글자는 성인지 이름인지 알 수 없어 그대로 두고, 한글이
+    아니면(아이디 꼴) 넣지 않는다. 성 포함 이름만 넣으면 9/29 이름 자리 4개 중 1개, 부르는 이름을 넣으면
+    3개를 고쳤고, 세 꼴을 다 넣어도 나빠지지 않았다(결정 기록 0020).
     """
     n = (display_name or "").strip()
     if not re.fullmatch(r"[가-힣]+", n):
-        return None
-    return n[1:] if len(n) == 3 else n
+        return []
+    given = n[1:] if len(n) == 3 else n
+    return [f"{given}님", given] + ([n] if given != n else [])
+
+
+def hint_prompt(display_names: list[str]) -> str | None:
+    """표시 이름 목록으로 이름 프롬프트 글을 만든다. "재환님, 재환, 유재환, 김환님, 김환." 처럼 사람마다 묶는다.
+
+    겹치는 꼴은 한 번만 넣고, 넣을 꼴이 있는 사람만 HINT_PEOPLE_MAX 명까지 센다. 넣을 것이 없으면 None 이다.
+    """
+    forms: list[str] = []
+    people = 0
+    for name in display_names:
+        new = [f for f in name_forms(name) if f not in forms]
+        if not new:
+            continue
+        if people == HINT_PEOPLE_MAX:
+            break
+        forms += new
+        people += 1
+    return ", ".join(forms) + "." if forms else None
 
 
 class Prompted:
