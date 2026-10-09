@@ -29,7 +29,7 @@
 
 ## 인증
 
-- `X-Service-Token`: 발화 저장과 유사 task 검색에만 건다 (`deps.require_service_token`). 헤더 값을 서버의 `SERVICE_TOKEN`과 비교하고, 없거나 다르면 401 `UNAUTHENTICATED`다. 서버에 `SERVICE_TOKEN`이 비어 있으면 모든 요청을 거절한다.
+- `X-Service-Token`: 발화 저장, 유사 task 검색, 서버로 워크스페이스 찾기에만 건다 (`deps.require_service_token`). 헤더 값을 서버의 `SERVICE_TOKEN`과 비교하고, 없거나 다르면 401 `UNAUTHENTICATED`다. 서버에 `SERVICE_TOKEN`이 비어 있으면 모든 요청을 거절한다.
 - 회의 생성·종료·실패와 추출 등록은 사용자 세션도 서비스 토큰도 확인하지 않는다. 운영에서는 리버스 프록시가 외부 접근을 막는다 ([Backend README 권한](../../README.md#권한)). 이 경로들에 서비스 토큰을 걸지는 정해지지 않았다.
 
 ## 회의
@@ -160,7 +160,7 @@ AI `Transcript.to_dict()` 모양에 화자 이름을 더해 보낸다. 한 회�
 
 | 코드 | HTTP | 나오는 경로 | 봇 처리 |
 |---|---|---|---|
-| `UNAUTHENTICATED` | 401 | sources, tasks/similar | 실패 |
+| `UNAUTHENTICATED` | 401 | sources, tasks/similar, guilds/{guild_id}/workspace | 실패 |
 | `MEETING_NOT_FOUND` | 404 | end, fail, sources, extractions | 실패 |
 | `WORKSPACE_NOT_FOUND` | 404 | tasks/similar | 실패 |
 | `WORKSPACE_MISMATCH` | 400 | extractions | 실패 |
