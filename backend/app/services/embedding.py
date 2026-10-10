@@ -51,7 +51,7 @@ SEARCHABLE_STATUSES = (
     str(TaskStatus.BLOCKED),
     str(TaskStatus.DONE),
 )
-# decision_log 0010: 명확한 불일치 최고점 0.33, 명확한 매치 최저점 0.42
+# docs/basis_for_decision/ai/2026-09-22-0010-embedding-similarity-threshold.md: 명확한 불일치 최고점 0.33, 명확한 매치 최저점 0.42
 DEFAULT_MIN_SIMILARITY = 0.4
 DEFAULT_K = 3
 

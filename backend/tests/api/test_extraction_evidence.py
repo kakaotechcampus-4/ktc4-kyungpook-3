@@ -22,6 +22,11 @@ from app.models import (
 )
 
 
+# 추출 등록은 봇 경로라 서비스 토큰을 요구한다.
+SERVICE_TOKEN = "test-service-token"
+SERVICE_HEADERS = {"X-Service-Token": SERVICE_TOKEN}
+
+
 @pytest.fixture
 def db():
     engine = create_engine(
@@ -61,7 +66,8 @@ def seed(db):
 
 
 @pytest.fixture
-def client(db):
+def client(db, monkeypatch):
+    monkeypatch.setenv("SERVICE_TOKEN", SERVICE_TOKEN)
     c = TestClient(app, base_url="https://testserver")
     c.cookies.set("session_token", "pm-token")
     return c
@@ -77,7 +83,7 @@ def _extract(client, seed):
             "evidence_quote": "환불 기능은 제가 할게요.", "evidence_speaker": "discord_uid_a",
             "evidence_at_ms": 12_000,
         }],
-    })
+    }, headers=SERVICE_HEADERS)
     assert r.status_code == 201
     return r.json()["data"]["extraction_id"]
 

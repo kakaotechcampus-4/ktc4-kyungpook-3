@@ -17,10 +17,13 @@ Luna(get_llm("luna")) 없이는 이 판단을 대신할 방법이 없으므로, 
 
 from __future__ import annotations
 
+import logging
 import re
 
 from llm import LLMClient, get_llm
 from shared.schemas import ASSIGNEE_TYPES, JudgeFinding, Transcript
+
+logger = logging.getLogger(__name__)
 
 
 class FindingExtractionUnavailableError(RuntimeError):
@@ -214,8 +217,8 @@ def extract_findings_llm(transcript: Transcript, client: LLMClient) -> list[Judg
     """Luna로 전사록 전체를 한 번에 훑어 JudgeFinding을 뽑는다.
 
     청크로 안 쪼개고 전사록 전체를 한 번에 넣는다 — 경계에서 문맥이 끊기는 걸 피하기 위함
-    (지민님의 Phase 1 추출기와 같은 방식). 호출 실패/파싱 실패면 None — 호출자(extract_findings)가
-    이걸 신뢰할 수 없는 응답으로 보고 FindingExtractionUnavailableError 를 던져야 한다.
+    (지민님의 Phase 1 추출기와 같은 방식). 호출 실패/파싱 실패, 또는 항목이 전부 검증에서 탈락해도 None —
+    호출자(extract_findings)가 이걸 신뢰할 수 없는 응답으로 보고 FindingExtractionUnavailableError 를 던져야 한다.
     """
     sentences, seqs, speakers = _flatten(transcript)
     if not sentences:
@@ -262,6 +265,14 @@ def extract_findings_llm(transcript: Transcript, client: LLMClient) -> list[Judg
                 reason=str(item.get("reason", "")).strip()[:200],
                 method="llm",
             )
+        )
+    # findings 가 비어 있지 않은데 전부 탈락했으면 0건이 아니라 실패다. 이걸 0건으로 보면 모델 오류가
+    # "후보 없음"으로 확정돼 회의가 빈 추출로 닫히고 재시도 기회를 잃는다(#128 리뷰)
+    if findings_raw and not findings:
+        return None
+    if len(findings) < len(findings_raw):
+        logger.warning(
+            "1단계 항목 %d개 중 %d개가 검증에서 탈락", len(findings_raw), len(findings_raw) - len(findings)
         )
     return findings
 

@@ -39,7 +39,7 @@ def _dying(transcript, names, today):
 
 
 def _handoff(fake):
-    return H.Handoff(H.BeClient("http://be", session=fake), "ws-1")
+    return H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"), "ws-1")
 
 
 def _fails(fake):
@@ -175,9 +175,14 @@ def test_a_stage_that_finishes_starts_the_count_again(tmp_path, clock, limits):
         _run(rec, _saved(path), tmp_path, extractor=_dying)
     assert _saved(path)["recovery"]["attempts"] == 2
     fake = FakeBe()
-    fake.down = True                                    # 추출은 살아났고 인계에서 BE 가 꺼져 있다
-    r = _run(rec, _saved(path), tmp_path, extractor=_extractor({}), handoff=_handoff(fake))
-    assert r["ran"] == ["extracted"] and r["failed_stage"] == "handoff"
+    revived = _extractor({})
+
+    def extract_then_be_goes_down(*args):              # 발화 저장과 추출은 끝났고 인계에서 BE 가 꺼져 있다
+        fake.down = True
+        return revived(*args)
+
+    r = _run(rec, _saved(path), tmp_path, extractor=extract_then_be_goes_down, handoff=_handoff(fake))
+    assert r["ran"] == ["sourced", "extracted"] and r["failed_stage"] == "handoff"
     assert _saved(path)["recovery"]["attempts"] == 1 and r["attempts"] == 1
 
 
@@ -328,7 +333,7 @@ def test_hand_recovery_of_a_given_up_meeting_opens_a_new_be_meeting(tmp_path, cl
     assert fake.meetings["m1"]["status"] == "failed"
     results = R.recover(rec, backend=NoStt(), model_name="echo", workers=1, transcripts_dir=tmp_path / "transcripts",
                         extractor=_extractor({}), handoff=_handoff(fake))
-    assert results[0]["ran"] == ["extracted", "handed_off"] and results[0]["gave_up"] is False
+    assert results[0]["ran"] == ["sourced", "extracted", "handed_off"] and results[0]["gave_up"] is False
     saved = _saved(path)
     assert saved["be"]["meeting_id"] == "m2" and saved["be"]["replaced"] == ["m1"] and "recovery" not in saved
     assert fake.meetings["m2"]["status"] == "done"

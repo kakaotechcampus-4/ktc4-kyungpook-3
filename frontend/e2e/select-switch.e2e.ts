@@ -51,11 +51,15 @@ test('키보드만으로 워크스페이스 메뉴를 열고 고르고 닫는다
   const header = page.getByRole('banner')
   const trigger = header.getByRole('button', { name: /^워크스페이스 바꾸기/ })
   await expect(trigger).toBeVisible()
+  // `정리 중` 링크는 지금 공간 목록을 받은 뒤에 붙는다(비동기, M5 U4-9). 메뉴 트리거보다 늦을 수 있어 Tab 순서를 보기 전에
+  // 링크가 보일 때까지 기다린다 — 기다리지 않으면 링크가 붙기 전에 Tab 이 지나가 `태스크`에 포커스가 간다 (U4 r5 minor N02)
+  await expect(header.getByRole('link', { name: '정리 중', exact: true })).toBeVisible()
 
-  // 실제 Tab 으로 헤더를 차례로 지나간다 — 마크 → 탭 5개 → 워크스페이스 메뉴 → 내 계정
+  // 실제 Tab 으로 헤더를 차례로 지나간다 — 마크 → 탭 5개(회의록 다음에 `정리 중`) → 워크스페이스 메뉴 → 내 계정.
+  // 이 시나리오의 ws_01 에는 정리 중 회의(mt_10)가 있어 M5 U4-9 의 `정리 중` 링크가 회의록 탭 바로 뒤에 온다
   const headerOrder = [
     header.getByRole('link', { name: "Manager's Manager 대시보드" }),
-    ...['대시보드', '회의록', '태스크', '메시지', '팀'].map((name) =>
+    ...['대시보드', '회의록', '정리 중', '태스크', '메시지', '팀'].map((name) =>
       header.getByRole('link', { name, exact: true }),
     ),
     trigger,

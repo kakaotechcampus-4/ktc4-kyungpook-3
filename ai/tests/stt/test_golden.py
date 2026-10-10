@@ -56,3 +56,12 @@ def test_score_accepts_a_prebuilt_backend_and_keeps_its_output_file(tmp_path):
     assert out["backend"] == "fake/fixed" and out["calls"] == 2
     saved = json.loads((tmp_path / "out" / "score_chunk_local-x.json").read_text(encoding="utf-8"))
     assert saved["hyp_by_speaker"]["a"] == "안녕하세요"
+
+
+def test_score_hands_back_the_lines_when_asked(tmp_path):
+    # 회의록 줄을 남길 때(--save-lines) 다시 전사하지 않게 같은 실행의 줄을 받는다
+    s = _session(tmp_path)
+    got = []
+    golden.score(s, "chunk", "local", "x", False, 1, True, backend=FixedStt(), out_dir=tmp_path / "out", lines_out=got)
+    assert got and all(ln.text == "안녕하세요" for ln in got)
+    assert {ln.speaker_id for ln in got} == {"a", "b"}

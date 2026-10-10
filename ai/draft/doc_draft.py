@@ -135,7 +135,7 @@ def _parse_draft_response(raw: dict, result: JudgeResult, today: date) -> DraftR
     """Luna 응답을 검증해 DraftResult 로. 신뢰할 수 없는 응답이면 None.
 
     값을 버리는 것과 실패로 보는 것을 구분한다 — update 의 제목처럼 **있으면 안 되는 값**은
-    조용히 지우고, create 의 제목·doc_text 처럼 **없으면 승인 요청을 못 만드는 값**이 비면 실패다.
+    조용히 지우고, **없으면 승인 요청을 못 만드는 값**(create 의 제목·doc_text, 일정 변경의 마감일)이 비면 실패다.
     """
     doc_text = str(raw.get("doc_text") or "").strip()
     if not doc_text:
@@ -151,6 +151,8 @@ def _parse_draft_response(raw: dict, result: JudgeResult, today: date) -> DraftR
     due = sanity_check_due_date(due_raw if isinstance(due_raw, str) else None, today)
     if not result.is_new and result.category != "schedule":
         due = None  # 일정 변경이 아닌 수정에서 마감일을 채우면 관계없는 필드가 바뀐다
+    elif not result.is_new and due is None:
+        return None  # 일정 변경인데 마감일이 없으면 to_item() 이 "바뀌는 값 없음"으로 조용히 버린다
 
     return DraftResult(
         structured=DraftStructured(task=task, due_date=due.isoformat() if due else None),

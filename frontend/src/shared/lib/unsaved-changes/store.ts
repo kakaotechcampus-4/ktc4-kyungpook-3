@@ -31,6 +31,11 @@ export function hasUnsavedChanges(): boolean {
   return useUnsavedChangesStore.getState().sources.size > 0
 }
 
+/** 이탈 확인이 열려 있다 — 사용자가 다른 곳으로 가려다 고르는 중이다. 비동기로 끝난 일이 그 사이에 끼어들지 않는다 */
+export function hasPendingLeave(): boolean {
+  return useUnsavedChangesStore.getState().pendingLeave !== null
+}
+
 /** 세션 만료처럼 변경을 지킬 수 없는 이동 직전에 모든 등록과 저장해 둔 이동을 푼다 */
 export function clearUnsavedChanges(): void {
   useUnsavedChangesStore.getState().reset()

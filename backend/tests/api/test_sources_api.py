@@ -3,6 +3,7 @@
 같은 seq를 건너뛰는 INSERT가 DB마다 문법이 달라서, TEST_DATABASE_URL이 있으면 PostgreSQL에서도 돈다.
 """
 import os
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from fastapi.testclient import TestClient
@@ -13,7 +14,7 @@ from sqlalchemy.pool import StaticPool
 from app.api import sources as sources_api
 from app.core.database import Base, get_db
 from app.main import app
-from app.models import Meeting, MeetingStatus, Member, Source, Workspace
+from app.models import Meeting, MeetingStatus, Member, Session as SessionModel, Source, User, Workspace
 from app.schemas.source import MAX_SECONDS
 
 TOKEN = "test-service-token"
@@ -267,7 +268,25 @@ def test_duration_counts_all_saved_segments_and_never_shrinks(client, db, meetin
     assert r.json()["data"]["duration_ms"] == 25000
 
 
+def _login_member(client, db, workspace_id: str) -> None:
+    """회의 상세는 워크스페이스 멤버만 읽는다. 그 워크스페이스 멤버로 client에 세션 쿠키를 심는다."""
+    user = User(email="member@example.com", name="member")
+    db.add(user)
+    db.flush()
+    db.add_all([
+        Member(workspace_id=workspace_id, user_id=user.user_id, display_name="member"),
+        SessionModel(
+            user_id=user.user_id,
+            session_token="member-token",
+            expires_at=datetime.now(timezone.utc) + timedelta(days=1),
+        ),
+    ])
+    db.commit()
+    client.cookies.set("session_token", "member-token")
+
+
 def test_saved_sources_mark_meeting_as_transcribed(client, db, meeting):
+    _login_member(client, db, meeting.workspace_id)
     before = client.get(f"/api/v1/meetings/{meeting.meeting_id}").json()["data"]["progress"]
     _post(client, meeting.meeting_id, [_seg(0)])
 

@@ -87,6 +87,18 @@ def to_item(
     if result.is_new:
         return item
 
+    # 승인 시 충돌 확인 기준 — AI 가 검색에서 본 값. 등록 시점 DB 값을 기준으로 삼으면 그 사이 PM 이 고친
+    # 값을 승인이 말없이 덮는다(#128 리뷰). 아래에서 같은 값 필드를 지우는 것과 별개로 다 보내고,
+    # null 이어도 키를 빼지 않는다 — BE 가 "값이 없었다"와 "안 보냈다"를 구분한다(#160)
+    item["target_snapshot"] = {
+        "updated_at": target.updated_at,
+        "due_date": target.due_date,
+        "status": target.status,
+        "assignee_member_id": target.assignee_member_id,
+        # 바꾸는 값이 아니라 확인용 — AI 가 이 Task 를 고른 근거라, 그사이 제목이 바뀌면 다른 업무일 수 있다(#185)
+        "title": target.title,
+    }
+
     # ── update: 현재 값과 달라지는 필드만 남긴다
     if item["due_date"] == target.due_date:
         item["due_date"] = None

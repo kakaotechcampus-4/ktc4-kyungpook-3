@@ -1,5 +1,6 @@
-import { render, screen, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { useEffect, useRef, useState } from 'react'
 import { Modal } from './Modal'
 
 /** 오버레이는 카드의 부모다 — Content 를 Overlay 안에 넣어 가운데 정렬을 시켰기 때문이다 */
@@ -185,5 +186,115 @@ describe('Modal', () => {
     await user.keyboard('{Escape}')
 
     expect(screen.getByRole('dialog')).toBeInTheDocument()
+  })
+
+  describe('focus return — the caller owns open, so there is no Radix Trigger', () => {
+    /** Radix 는 닫은 뒤의 포커스를 타이머로 옮긴다 — 그 타이머가 돈 뒤를 본다 */
+    const flushCloseFocus = () =>
+      act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0))
+      })
+
+    /**
+     * `열기` 로 모달을 연다. `머물기`·Esc 는 닫기만, `나가기` 는 닫으면서 화면을 바꾼다.
+     * - keepOpener: 바뀐 화면에도 `열기` 가 남는다(헤더 링크처럼)
+     * - focusOnArrival: 바뀐 화면이 제목으로 포커스를 옮긴다(설정의 Notion 영역처럼)
+     */
+    function Screen({
+      keepOpener = false,
+      focusOnArrival = false,
+    }: {
+      keepOpener?: boolean
+      focusOnArrival?: boolean
+    }) {
+      const [open, setOpen] = useState(false)
+      const [left, setLeft] = useState(false)
+      return (
+        <>
+          {left && !keepOpener ? null : (
+            <button type="button" onClick={() => setOpen(true)}>
+              열기
+            </button>
+          )}
+          {left ? <Arrival focus={focusOnArrival} /> : null}
+          <Modal
+            open={open}
+            onOpenChange={setOpen}
+            title="나갈까요?"
+            actions={
+              <>
+                <button type="button" onClick={() => setOpen(false)}>
+                  머물기
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOpen(false)
+                    setLeft(true)
+                  }}
+                >
+                  나가기
+                </button>
+              </>
+            }
+          />
+        </>
+      )
+    }
+
+    function Arrival({ focus }: { focus: boolean }) {
+      const heading = useRef<HTMLHeadingElement>(null)
+      useEffect(() => {
+        if (focus) heading.current?.focus()
+      }, [focus])
+      return (
+        <h1 ref={heading} tabIndex={-1}>
+          새 화면
+        </h1>
+      )
+    }
+
+    it('returns focus to the element that opened it on Esc and on a closing action', async () => {
+      const user = userEvent.setup()
+      render(<Screen />)
+      const opener = screen.getByRole('button', { name: '열기' })
+
+      await user.click(opener)
+      // 열리면 포커스는 모달 안이다
+      await waitFor(() =>
+        expect(screen.getByRole('dialog')).toContainElement(document.activeElement as HTMLElement),
+      )
+      await user.keyboard('{Escape}')
+      await waitFor(() => expect(opener).toHaveFocus())
+
+      await user.click(opener)
+      await user.click(await screen.findByRole('button', { name: '머물기' }))
+      await waitFor(() => expect(opener).toHaveFocus())
+    })
+
+    it('leaves focus alone when the opener is gone after the close', async () => {
+      const user = userEvent.setup()
+      render(<Screen />)
+
+      await user.click(screen.getByRole('button', { name: '열기' }))
+      await user.click(await screen.findByRole('button', { name: '나가기' }))
+      await flushCloseFocus()
+
+      expect(screen.queryByRole('button', { name: '열기' })).toBeNull()
+      expect(document.activeElement).toBe(document.body)
+    })
+
+    it('does not take focus back from the screen the close moved to', async () => {
+      const user = userEvent.setup()
+      render(<Screen keepOpener focusOnArrival />)
+
+      await user.click(screen.getByRole('button', { name: '열기' }))
+      await user.click(await screen.findByRole('button', { name: '나가기' }))
+      await flushCloseFocus()
+
+      // `열기` 는 아직 문서에 있지만 새 화면이 옮긴 포커스가 그대로다
+      expect(screen.getByRole('button', { name: '열기' })).toBeInTheDocument()
+      expect(screen.getByRole('heading', { name: '새 화면' })).toHaveFocus()
+    })
   })
 })

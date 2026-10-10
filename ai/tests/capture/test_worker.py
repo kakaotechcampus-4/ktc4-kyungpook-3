@@ -62,7 +62,7 @@ async def test_a_worker_pass_processes_only_due_meetings_and_hands_them_to_be(tm
     m.pop("guild_id")
     R.save_manifest(old, m)                                        # 서버가 적히지 않은 옛 매니페스트
     fake = FakeBe()
-    worker = _worker(tmp_path, extractor=_extractor({}), handoff=H.Handoff(H.BeClient("http://be", session=fake), "ws-1"))
+    worker = _worker(tmp_path, extractor=_extractor({}), handoff=H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"), "ws-1"))
     results, busy = await worker.run_pass()
     held.release()
     assert [r["session"] for r in results] == ["77_500"] and _status(due) == "handed_off"
@@ -355,7 +355,7 @@ async def test_a_worker_pass_hands_judge_items_to_be(tmp_path):
     item = T._judge_item("결제 환불 기능 구현")
     fake = FakeBe()
     worker = _worker(tmp_path, extractor=lambda transcript, names, today: JudgeOutput(items=[item]),
-                     handoff=H.Handoff(H.BeClient("http://be", session=fake), "ws-1"))
+                     handoff=H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"), "ws-1"))
     results, busy = await worker.run_pass()
     assert _status(path) == "handed_off" and results[0]["items"] == [item] and busy == []
     assert fake.extractions["m1"]["items"] == [item]
@@ -371,10 +371,19 @@ async def test_the_worker_log_says_why_a_meeting_failed_and_what_was_left_unjudg
     unjudged = [{"stage": "judge", "text": "로그인 마감을 미루기로 함", "reason": "Terra 응답을 파싱하지 못했습니다."}]
     fake = FakeBe()
     worker = _worker(tmp_path, extractor=lambda transcript, names, today: JudgeOutput(items=[item], failures=unjudged),
-                     handoff=H.Handoff(H.BeClient("http://be", session=fake), "ws-1"))
+                     handoff=H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"), "ws-1"))
     await worker.run_pass()
     first = capsys.readouterr().out
     assert "failed" in first and "ExtractIncomplete" in first and "발화 1개를 판단하지 못했다" in first
     await worker.run_pass(guild_id="77", manual=True)         # 다음 시도. 상한(1회)에 닿아 남긴 채 인계한다
     second = capsys.readouterr().out
     assert "handed_off" in second and "판단하지 못한 발화 1건" in second and _status(path) == "handed_off"
+
+
+async def test_the_worker_log_says_how_many_lines_were_saved(tmp_path, capsys):
+    """워커 모드는 채널에 올리지 않는다. 회의록이 BE 에 갔는지가 로그에라도 있어야 한다."""
+    _session(tmp_path, ts=500)
+    fake = FakeBe()
+    with_token = H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"), "ws-1")
+    await _worker(tmp_path, extractor=_extractor({}), handoff=with_token).run_pass()
+    assert "회의록 저장 3줄" in capsys.readouterr().out and sorted(fake.sources["m1"]) == [1, 2, 3]

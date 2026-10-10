@@ -1,7 +1,9 @@
 import type { WorkspaceDto } from '@/shared/types/api/workspace'
 import { initialDb, replaceDb } from './db'
-import type { MockDb } from './db'
+import type { MeetingFlowMode, MockDb } from './db'
 import { MOCK_NOW } from './fixtures/constants'
+import { completeMeeting, setMeetingFlowMode } from './meetingFlow'
+import { setMockRole } from './sessions'
 
 /*
  * 브라우저·E2E 용 시작 상태. 모두 픽스처 계정 pm@example.com / mock-password 로 로그인한다.
@@ -15,6 +17,14 @@ export const MOCK_SCENARIOS = [
   'single-workspace',
   'multiple-workspaces',
   'incomplete-workspace',
+  // M5 회의 흐름. 모두 ws_01 하나에 로그인한다 — docs/impl-decision/2026-10-02-meeting-upload-policy.md
+  'meeting-demo',
+  'meeting-instant',
+  'meeting-fail',
+  'meeting-fail-notion-revoked',
+  'meeting-notion-not-connected',
+  'meeting-notion-revoked',
+  'meeting-member',
 ] as const
 export type MockScenario = (typeof MOCK_SCENARIOS)[number]
 
@@ -53,6 +63,24 @@ function signInWith(state: MockDb, workspaceIds: string[], lastWorkspaceId: stri
   state.authenticated = true
 }
 
+/**
+ * 회의를 올릴 수 있는 PM 의 ws_01. 픽스처의 처리 중 회의(mt_10)를 먼저 완료해 둔다 —
+ * 처리 중 회의가 있으면 업로드가 409 이고(D-088) 진입이 처리 화면으로 바뀐다(D-090).
+ */
+function readyToUpload(state: MockDb, mode: MeetingFlowMode): void {
+  signInWith(state, ['ws_01'], 'ws_01')
+  completeMeeting('mt_10', state)
+  setMeetingFlowMode(mode, state)
+}
+
+function setNotionStatus(state: MockDb, status: 'not_connected' | 'revoked'): void {
+  const integrations = state.integrations.ws_01
+  integrations.notion =
+    status === 'not_connected'
+      ? { status, display_name: null, connected_at: null }
+      : { ...integrations.notion, status }
+}
+
 export function createScenarioDb(scenario: MockScenario): MockDb {
   const state = initialDb()
   switch (scenario) {
@@ -85,6 +113,34 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
         notion: { status: 'not_connected', display_name: null, connected_at: null },
       }
       signInWith(state, ['ws_03'], 'ws_03')
+      break
+    case 'meeting-demo':
+      // 브라우저 데모: 상세 조회(처리 화면 polling)마다 한 단계씩 보인다
+      readyToUpload(state, 'staged')
+      break
+    case 'meeting-instant':
+      // E2E: 업로드 뒤 첫 상세 조회에 정리가 끝난다
+      readyToUpload(state, 'instant')
+      break
+    case 'meeting-fail':
+      readyToUpload(state, 'fail')
+      break
+    case 'meeting-fail-notion-revoked':
+      readyToUpload(state, 'fail-notion-revoked')
+      break
+    case 'meeting-notion-not-connected':
+      readyToUpload(state, 'instant')
+      setNotionStatus(state, 'not_connected')
+      break
+    case 'meeting-notion-revoked':
+      readyToUpload(state, 'instant')
+      setNotionStatus(state, 'revoked')
+      break
+    case 'meeting-member':
+      // 일반 팀원. 처리 중인 mt_10 은 그대로 두고 첫 상세 조회에 끝나게 한다 — 정리 중·회의록 보기를 함께 본다
+      signInWith(state, ['ws_01'], 'ws_01')
+      setMockRole('member', 'ws_01', state)
+      setMeetingFlowMode('instant', state)
       break
   }
   return state

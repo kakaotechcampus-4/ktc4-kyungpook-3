@@ -1,6 +1,6 @@
 # 2026-09-16 배치 전사 방식 비교 결과
 
-`decision_log/0008` 의 표가 여기서 나왔다. 설정마다 새 프로세스로 돌려 최대 RSS 를 따로 쟀다.
+`docs/basis_for_decision/member/2026-09-16-0008-batch-transcription-by-speaker-chunks.md` 의 표가 여기서 나왔다. 설정마다 새 프로세스로 돌려 최대 RSS 를 따로 쟀다.
 
 - `meeting-01-aligned/`, `meeting-02-aligned/`: 실제 6인 녹음 두 회의를 대본 순서대로 놓은 정렬본의 설정별 점수.
   파일 이름은 `score_<모드>_<백엔드>[-<모델>][-<변형>].json`. 화자별 전사(`hyp_by_speaker`)가 들어 있어

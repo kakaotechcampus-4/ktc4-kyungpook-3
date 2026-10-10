@@ -1,10 +1,12 @@
+from datetime import date
+
 import httpx
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.core.database import Base
-from app.models import Integration, Member, Task, Workspace
+from app.models import Integration, Member, Task, TaskStatus, Workspace
 from app.services import notion
 
 
@@ -160,3 +162,160 @@ def test_read_timeout_is_uncertain_but_connect_error_is_not(db):
     with pytest.raises(notion.NotionWriteError) as exc_info:
         notion.create_page(db, integration, task, transport=httpx.MockTransport(connect_error))
     assert exc_info.value.retryable and not exc_info.value.outcome_uncertain
+
+
+# ---------- 템플릿 DB 찾기 ----------
+
+
+def _transport(*responses: httpx.Response) -> tuple[list[httpx.Request], httpx.MockTransport]:
+    """응답을 차례로 돌려주고, 받은 요청을 기록한다."""
+    seen: list[httpx.Request] = []
+    queue = list(responses)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return queue.pop(0)
+
+    return seen, httpx.MockTransport(handler)
+
+
+def _children(*types: str, has_more: bool = False, next_cursor: str | None = None) -> httpx.Response:
+    results = [{"type": kind, "id": f"{kind}-{i}"} for i, kind in enumerate(types)]
+    return httpx.Response(200, json={"results": results, "has_more": has_more, "next_cursor": next_cursor})
+
+
+def test_find_template_database_returns_database_right_under_page():
+    seen, transport = _transport(_children("paragraph", "child_database"))
+
+    database_id = notion.find_template_database("secret_token", "page-1", transport=transport)
+
+    assert database_id == "child_database-1"
+    request = seen[0]
+    assert request.method == "GET"
+    assert request.url.path == "/v1/blocks/page-1/children"
+    assert request.url.params["page_size"] == "100"
+    assert request.headers["Authorization"] == "Bearer secret_token"
+
+
+def test_find_template_database_reads_next_page():
+    seen, transport = _transport(
+        _children("paragraph", has_more=True, next_cursor="cursor-2"),
+        _children("child_database"),
+    )
+
+    assert notion.find_template_database("t", "page-1", transport=transport) == "child_database-0"
+    assert seen[1].url.params["start_cursor"] == "cursor-2"
+
+
+def test_find_template_database_waits_while_page_is_being_copied():
+    # 복제 직후 실제로 받은 응답
+    _, transport = _transport(
+        httpx.Response(
+            400,
+            json={"code": "validation_error", "message": "Block type copy_indicator is not supported via the API."},
+        )
+    )
+
+    with pytest.raises(notion.TemplateNotReady):
+        notion.find_template_database("t", "page-1", transport=transport)
+
+
+def test_find_template_database_waits_while_database_is_unsupported_placeholder():
+    # 복제 2~7초쯤: 조회는 되지만 DB 자리가 아직 unsupported 블록이다
+    _, transport = _transport(_children("unsupported"))
+
+    with pytest.raises(notion.TemplateNotReady):
+        notion.find_template_database("t", "page-1", transport=transport)
+
+
+def test_find_template_database_returns_none_when_template_has_no_database():
+    _, transport = _transport(_children("paragraph", "heading_1"))
+
+    assert notion.find_template_database("t", "page-1", transport=transport) is None
+
+
+@pytest.mark.parametrize(("status", "retryable"), [(400, False), (403, False), (500, True)])
+def test_find_template_database_other_errors_keep_retry_classification(status, retryable):
+    _, transport = _transport(httpx.Response(status, json={"message": "nope"}))
+
+    with pytest.raises(notion.NotionWriteError) as exc_info:
+        notion.find_template_database("t", "page-1", transport=transport)
+
+    assert exc_info.value.retryable is retryable
+
+
+# ---------- 템플릿 DB 확인 ----------
+
+
+def _schema(**changes) -> dict:
+    """워커가 쓰는 속성을 모두 갖춘 DB 응답. changes로 속성을 바꾸거나(None이면 뺀다) 더한다."""
+    properties: dict[str, dict] = {name: {"type": kind} for name, kind in notion.DATABASE_SCHEMA.items()}
+    properties["Status"]["select"] = {"options": [{"name": str(s)} for s in TaskStatus]}
+    for name, value in changes.items():
+        name = name.replace("_", " ")
+        if value is None:
+            properties.pop(name, None)
+        else:
+            properties[name] = value
+    return {"object": "database", "properties": properties}
+
+
+def _verify(body: dict | httpx.Response) -> list[str]:
+    response = body if isinstance(body, httpx.Response) else httpx.Response(200, json=body)
+    seen, transport = _transport(response)
+    problems = notion.verify_database_schema("t", "db-1", transport=transport)
+    assert seen[0].method == "GET" and seen[0].url.path == "/v1/databases/db-1"
+    return problems
+
+
+def test_verify_database_schema_passes_for_matching_database():
+    assert _verify(_schema()) == []
+
+
+def test_verify_database_schema_reports_misspelled_property():
+    body = _schema(Task_ID=None)
+    body["properties"]["task id"] = {"type": "rich_text"}
+
+    assert _verify(body) == ["'Task ID' 속성이 없음"]
+
+
+def test_verify_database_schema_reports_wrong_property_type():
+    assert _verify(_schema(Progress={"type": "rich_text"})) == [
+        "'Progress' 속성 종류가 rich_text임 (필요: number)"
+    ]
+
+
+def test_verify_database_schema_reports_missing_status_options():
+    status = {"type": "select", "select": {"options": [{"name": "todo"}, {"name": "진행 중"}]}}
+
+    assert _verify(_schema(Status=status)) == ["'Status' 선택지가 없음: in_progress, blocked, done"]
+
+
+def test_verify_database_schema_allows_extra_properties_and_options():
+    status = {"type": "select", "select": {"options": [{"name": str(s)} for s in TaskStatus] + [{"name": "보류"}]}}
+
+    assert _verify(_schema(Status=status, Memo={"type": "rich_text"})) == []
+
+
+@pytest.mark.parametrize("status", [403, 404])
+def test_verify_database_schema_reports_inaccessible_database(status):
+    assert _verify(httpx.Response(status, json={"message": "no access"})) == ["접근할 수 없음"]
+
+
+def test_verify_database_schema_raises_on_server_error():
+    with pytest.raises(notion.NotionWriteError) as exc_info:
+        _verify(httpx.Response(500, json={"message": "oops"}))
+
+    assert exc_info.value.retryable
+
+
+def test_database_schema_matches_what_the_worker_writes(db):
+    # 한쪽만 고치면 깨진다. 확인하는 속성과 워커가 보내는 속성이 같아야 한다.
+    _, task = _make_task(db)
+    task.due_date = date(2026, 10, 5)
+
+    written = notion.build_properties(db, task)
+
+    assert written.keys() == notion.DATABASE_SCHEMA.keys()
+    for name, value in written.items():
+        assert list(value) == [notion.DATABASE_SCHEMA[name]], name

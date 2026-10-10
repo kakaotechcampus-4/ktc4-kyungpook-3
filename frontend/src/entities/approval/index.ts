@@ -9,3 +9,4 @@ export type {
 export { toApproval } from './model/mapper'
 export { sortByWaiting } from './lib/sortByWaiting'
 export { approvalDetailQueryOptions } from './api/approvalDetail'
+export { approvalIds, pendingApprovalListQueryOptions } from './api/pendingApprovals'

@@ -98,6 +98,37 @@ def test_update_schedule_keeps_only_changed_due_date():
     assert item["status"] is None
 
 
+def test_update_carries_target_snapshot_of_all_fields():
+    # 마감만 바뀌어도 검색에서 본 값을 다 보낸다 — 승인 때 BE 가 이 값을 기준으로 충돌을 본다(#160)
+    target = _target(assignee_member_id="mem_haeun", updated_at="2026-09-27T10:00:00+00:00")
+    item = to_item(_finding(), _result(), _drafted(due_date="2026-10-06"), target, TRANSCRIPT)
+    assert item["target_snapshot"] == {
+        "updated_at": "2026-09-27T10:00:00+00:00",
+        "due_date": "2026-09-28",
+        "status": "in_progress",
+        "assignee_member_id": "mem_haeun",
+        "title": "로그인 화면 시안 마무리 작업",  # 확인용 — 제안값에는 제목이 없다(#185)
+    }
+    assert item["status"] is None  # 제안값은 지금처럼 바뀌는 필드만
+    assert item["task_title"] == "로그인 화면 시안 마무리 작업"  # 표시용 제목도 그대로
+
+
+def test_update_target_snapshot_keeps_null_fields():
+    # 마감이 없던 Task — 키를 빼면 BE 가 "안 보냈다"로 읽는다
+    target = _target(due_date=None, status=None)
+    item = to_item(_finding(), _result(), _drafted(due_date="2026-10-06"), target, TRANSCRIPT)
+    assert item["target_snapshot"] == {
+        "updated_at": None, "due_date": None, "status": None, "assignee_member_id": None,
+        "title": "로그인 화면 시안 마무리 작업",
+    }
+
+
+def test_create_has_no_target_snapshot():
+    result = _result(category="decision", is_new=True, matched_task_id=None)
+    item = to_item(_finding(), result, _drafted(task="알림 설정 페이지 개발"), None, TRANSCRIPT)
+    assert "target_snapshot" not in item
+
+
 def test_update_status_is_kept_even_when_category_is_decision():
     # 상태만 바뀌면 Terra 가 category=decision 을 준다 — category 만 보면 status 가 빠진다(#99)
     result = _result(category="decision", status="done")
@@ -292,6 +323,17 @@ def test_run_draft_failure_is_recorded(monkeypatch):
     out = _run()
 
     assert [i["action"] for i in out.items] == ["create"]
+    assert [f.stage for f in out.failures] == ["draft"]
+
+
+def test_run_schedule_update_with_unusable_due_date_is_draft_failure(monkeypatch):
+    # Luna 가 없는 날짜("2026-10-40")를 주면 항목이 조용히 사라지지 않고 draft 실패로 남는다
+    _install(monkeypatch, stage1={"findings": [FINDINGS[1]]}, terra=[TERRA_OK[1]],
+             luna_draft=[{"task": None, "due_date": "2026-10-40", "doc_text": "로그인 화면 마감을 연기"}])
+
+    out = _run()
+
+    assert out.items == []
     assert [f.stage for f in out.failures] == ["draft"]
 
 

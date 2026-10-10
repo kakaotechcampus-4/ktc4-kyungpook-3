@@ -1,5 +1,9 @@
 import { screen, waitFor } from '@testing-library/react'
+import { getResponse, http } from 'msw'
 import { db } from '@/shared/mock/db'
+import { handlers } from '@/shared/mock/handlers'
+import { server } from '@/shared/mock/server'
+import { deferred } from '@/shared/test/deferred'
 import { businessRequests, recordRequests } from '@/shared/test/requests'
 import { renderApp } from '../test/renderApp'
 
@@ -241,5 +245,53 @@ describe('경로', () => {
       await screen.findByRole('heading', { name: '페이지를 찾을 수 없어요' }),
     ).toBeInTheDocument()
     expect(businessRequests(log.started)).toEqual([])
+  })
+})
+
+/*
+ * UX1-M01 — 가드가 세션·소속을 기다리는 단계에도 셸 안 경로는 헤더 자리(헤더 뼈대)가 먼저 있다.
+ * 없으면 셸이 뜰 때 화면 전체가 헤더 높이(76px)만큼 내려간다. 위치는 e2e/meeting-skeleton.e2e.ts 가 잰다.
+ */
+describe('가드 대기의 헤더 자리 (UX1-M01)', () => {
+  /** 이 경로의 GET 을 붙잡는다. 답은 요청을 받은 순간의 서버 상태다 */
+  function hold(path: string) {
+    const gate = deferred()
+    server.use(
+      http.get(path, async ({ request }) => {
+        const snapshot = await getResponse(handlers, request.clone())
+        await gate.promise
+        return snapshot
+      }),
+    )
+    return gate
+  }
+
+  it.each([
+    ['세션', '/api/v1/auth/me'],
+    ['소속 목록', '/api/v1/workspaces'],
+  ])(
+    '%s을 기다리는 동안 헤더 뼈대가 자리를 지키고, 셸이 뜨면 진짜 헤더가 그 자리를 잇는다',
+    async (_name, path) => {
+      const gate = hold(path)
+      renderApp('/workspaces/ws_01/meetings/mt_09')
+
+      expect(await screen.findByTestId('app-header-skeleton')).toHaveClass('h-header')
+      expect(screen.getByTestId('minutes-skeleton-aside')).toBeInTheDocument()
+      expect(screen.queryByRole('banner')).toBeNull()
+
+      gate.resolve()
+      expect(await screen.findByRole('navigation', { name: '주요 화면' })).toBeInTheDocument()
+      expect(screen.queryByTestId('app-header-skeleton')).toBeNull()
+    },
+  )
+
+  it('헤더 없는 경로(로그인)는 세션을 기다려도 헤더 뼈대가 없다', async () => {
+    db.authenticated = false
+    const gate = hold('/api/v1/auth/me')
+    renderApp('/login')
+    expect(await screen.findByRole('main')).toHaveAttribute('aria-busy', 'true')
+    expect(screen.queryByTestId('app-header-skeleton')).toBeNull()
+    gate.resolve()
+    expect(await screen.findByRole('heading', { name: '로그인' })).toBeInTheDocument()
   })
 })

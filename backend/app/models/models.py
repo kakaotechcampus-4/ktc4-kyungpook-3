@@ -236,6 +236,14 @@ class Integration(Base):
         UniqueConstraint(
             "workspace_id", "provider", name="uq_workspace_provider"
         ),
+        # Discord는 provider_channel_id에 연결한 서버(guild) ID를 둔다. 한 서버는 한 워크스페이스에만 연결한다.
+        # 서버 하나가 여러 워크스페이스에 붙으면 그 서버의 회의를 어느 워크스페이스로 보낼지 정할 수 없다.
+        Index(
+            "uq_integration_discord_guild", "provider_channel_id",
+            unique=True,
+            postgresql_where=text("provider = 'discord'"),
+            sqlite_where=text("provider = 'discord'"),
+        ),
     )
 
     integration_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
@@ -257,8 +265,13 @@ class Integration(Base):
 class Member(Base):
     __tablename__ = "member"
     __table_args__ = (
-        UniqueConstraint(
-            "workspace_id", "discord_user_id", name="uq_workspace_discord_user"
+        # 탈퇴(is_deleted)한 팀원은 과거 이력 때문에 행과 discord_user_id를 남긴다. 그래서 같은 디스코드 계정은
+        # 탈퇴하지 않은 팀원끼리만 겹치지 않게 막는다. API의 사전 검사(api/members.py)와 같은 범위다(#166).
+        Index(
+            "uq_workspace_discord_user", "workspace_id", "discord_user_id",
+            unique=True,
+            postgresql_where=text("is_deleted IS FALSE"),
+            sqlite_where=text("is_deleted IS FALSE"),
         ),
     )
 
@@ -526,6 +539,9 @@ class Task(Base):
     start_date: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
     due_date: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
     notion_page_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # notion_page_id가 들어 있는 Notion DB(연결 행의 provider_channel_id). 연결된 DB가 바뀌면 이 값과 달라지고,
+    # 워커는 옛 페이지와 반영 버전을 쓰지 않고 새 DB에 페이지를 새로 만든다. 페이지 ID와 항상 함께 쓴다.
+    notion_database_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     # 변경이 반영될 때마다 1씩 올라간다. Notion 동기화 작업의 순서·중복 판단 기준.
     version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
     # Notion에 마지막으로 반영된 version. version보다 작으면 아직 반영 대기 중인 변경이 있다.
@@ -560,17 +576,15 @@ class Task(Base):
 
 
 class NotionSyncJob(Base):
-    """Task 변경을 Notion에 반영하는 작업(outbox).
+    """Task를 Notion과 맞춰 달라는 확인 요청(outbox).
 
     Task 변경과 같은 트랜잭션에서 커밋되고, 실제 Notion 호출은 워커
-    (`services/notion_sync.py`)가 요청과 분리해서 처리한다. (task_id, task_version)은
-    한 번만 쌓이므로 같은 변경이 큐에 두 번 들어가지 않는다.
+    (`services/notion_sync.py`)가 요청과 분리해서 처리한다. 같은 Task에 여러 줄 있어도 된다.
+    워커가 Task의 Notion 기록과 지금 연결을 보고 할 일이 없으면 Notion을 부르지 않고 끝낸다.
+    `task_version`은 요청한 시점의 Task 버전이다(재시도·로그용).
     """
 
     __tablename__ = "notion_sync_job"
-    __table_args__ = (
-        UniqueConstraint("task_id", "task_version", name="uq_notion_sync_job_task_version"),
-    )
 
     job_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     task_id: Mapped[str] = mapped_column(

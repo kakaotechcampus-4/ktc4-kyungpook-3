@@ -46,11 +46,13 @@ describe('경로 표', () => {
 
   /* 기대값을 바꿨다 — 대기 화면은 경로에 맞는 뼈대를 고르는 RouteSkeleton 이다(온보딩은 가운데 열 뼈대).
      고르는 규칙은 RouteSkeleton.test.tsx 가 본다 */
-  it('주요 화면 13개는 지연 로드하고 Suspense 에 RouteSkeleton 을 쓴다', () => {
+  it('주요 화면 15개는 지연 로드하고 Suspense 에 RouteSkeleton 을 쓴다', () => {
     const lazyScreens = leaves(tree)
       .map(lazyScreen)
       .filter((element) => element !== null)
-    expect(lazyScreens).toHaveLength(13)
+    // M5 U3 가 회의 올리기 자리표시자를 지연 로드 화면으로 바꿔 13 → 14
+    // M5 U4 가 처리 화면 자리표시자를 지연 로드 화면(pages/meeting-processing)으로 바꿔 14 → 15
+    expect(lazyScreens).toHaveLength(15)
     for (const { props } of lazyScreens) {
       expect(isValidElement(props.fallback) && props.fallback.type === RouteSkeleton).toBe(true)
     }
@@ -74,8 +76,12 @@ describe('등록 경로', () => {
     ['/onboarding/create_workspace', '워크스페이스 만들기'],
     ['/onboarding/ws_02/connect_notion', 'PM이 워크스페이스 설정을 마무리하고 있어요'],
     ['/workspaces/ws_01/dashboard', '대시보드'],
-    ['/workspaces/ws_01/meetings', '회의'],
-    ['/workspaces/ws_01/meetings/mt_09', '회의'],
+    // M5 U5 가 회의 자리표시자(`회의`)를 회의록 화면으로 바꿨다 — 제목은 목록의 `회의록` 이다.
+    // 회의를 고르지 않은 `/meetings` 는 가장 최근 회의록으로 주소를 바꾸므로(U5-1) 아래 따로 본다
+    ['/workspaces/ws_01/meetings/mt_09', '회의록'],
+    // M5 처리 화면. U4 가 자리표시자(`회의 정리 중`)를 캔버스 제목의 실제 화면으로 바꿨다. 회의 올리기는 U3 부터 진입 판정이 있어 이 표에서 뺐다 —
+    // 픽스처의 정리 중 회의(mt_10) 때문에 처리 화면으로 간다. 등록·가드·해석은 meetingRoutes.test.tsx 가 본다
+    ['/workspaces/ws_01/meetings/mt_10/processing', '정리하고 있어요'],
     ['/workspaces/ws_01/tasks', '태스크'],
     ['/workspaces/ws_01/tasks/tk_01', '태스크'],
     ['/workspaces/ws_01/approvals/ap_01', '확인 필요'],
@@ -86,6 +92,12 @@ describe('등록 경로', () => {
     const app = renderApp(path)
     expect(await screen.findByRole('heading', { name: heading })).toBeInTheDocument()
     await app.expectPath(path)
+  })
+
+  it('로그인 /workspaces/ws_01/meetings → 회의록 — 가장 최근 회의록으로 주소를 바꾼다 (U5-1)', async () => {
+    const app = renderApp('/workspaces/ws_01/meetings')
+    expect(await screen.findByRole('heading', { name: '회의록' })).toBeInTheDocument()
+    await app.expectPath('/workspaces/ws_01/meetings/mt_09')
   })
 
   // Vitest 는 MSW 모드가 아니다. 모의 OAuth 화면은 개발·MSW 모드에서만 등록된다 (mockOAuthRoute.test.tsx)

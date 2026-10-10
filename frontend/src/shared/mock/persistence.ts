@@ -1,14 +1,16 @@
-import { db, initialDb, replaceDb } from './db'
+import { MEETING_FLOW_MODES, db, initialDb, replaceDb } from './db'
 import type { MockDb } from './db'
 
 /*
  * 브라우저 MSW 전용 영속. 같은 탭의 새로고침과 OAuth 왕복(현재 탭 이동) 뒤에도 가입 계정·세션·
  * 워크스페이스·온보딩·연동·팀원 상태가 남게 한다. Vitest 는 쓰지 않는다 — 테스트마다 resetDb() 다.
  * 픽스처나 MockDb 모양을 바꾸면 버전을 올린다. 버전이 다른 저장값은 버리고 시작 상태로 돌아간다.
+ * M5 에서 회의 정리 흐름(`meetingFlow`)과 그 생성 결과가 함께 남는다. 원본 음성 파일은 db 에 없어 저장되지 않는다.
  */
 
 export const MOCK_DB_STORAGE_KEY = 'msw-db'
-export const MOCK_DB_VERSION = 1
+/** 2: M5 의 `meetingFlow` 칸 추가 */
+export const MOCK_DB_VERSION = 2
 
 interface StoredDb {
   version: number
@@ -28,6 +30,17 @@ function isSession(value: unknown): boolean {
     isRecord(value) &&
     hasStrings(value.user, ['user_id', 'email', 'name']) &&
     typeof value.workspace_count === 'number'
+  )
+}
+
+function isMeetingFlow(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    (MEETING_FLOW_MODES as readonly unknown[]).includes(value.mode) &&
+    isRecord(value.attendees) &&
+    Object.values(value.attendees).every(
+      (ids) => Array.isArray(ids) && ids.every((id) => typeof id === 'string'),
+    )
   )
 }
 
@@ -64,7 +77,8 @@ function isMockDb(value: unknown): value is MockDb {
     Object.values(state.integrations).every(
       (integration) =>
         hasStrings(integration.discord, ['status']) && hasStrings(integration.notion, ['status']),
-    )
+    ) &&
+    isMeetingFlow(state.meetingFlow)
   )
 }
 

@@ -1,13 +1,20 @@
 import { expect } from '@playwright/test'
 import type { Page } from '@playwright/test'
 
-/** U1 의 E2E 시나리오 이름 (shared/mock/scenarios.ts 의 MOCK_SCENARIOS) */
+/** E2E 시나리오 이름 (shared/mock/scenarios.ts 의 MOCK_SCENARIOS). M4 U1 다섯 개 + M5 회의 흐름 */
 export type Scenario =
   | 'signed-out'
   | 'no-workspace'
   | 'single-workspace'
   | 'multiple-workspaces'
   | 'incomplete-workspace'
+  | 'meeting-demo'
+  | 'meeting-instant'
+  | 'meeting-fail'
+  | 'meeting-fail-notion-revoked'
+  | 'meeting-notion-not-connected'
+  | 'meeting-notion-revoked'
+  | 'meeting-member'
 
 /**
  * 모의 db 를 그 시나리오로 초기화하고 path 로 들어간다. 시나리오 파라미터는 저장값보다 앞서고
@@ -50,4 +57,20 @@ export async function expectNoHorizontalOverflow(page: Page): Promise<void> {
     () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
   )
   expect(overflow).toBeLessThanOrEqual(0)
+}
+
+/**
+ * 짧은 음원 픽스처 — 1초 · 8 kHz · 8비트 모노 PCM WAV(사인파 440 Hz), 8,044바이트.
+ * 브라우저가 길이를 읽을 수 있어야 업로드 폼이 받는다(U3-4). 다시 만들 때는 RIFF 머리 44바이트 + 표본 8,000개다
+ */
+export const SHORT_AUDIO = {
+  path: 'e2e/fixtures/short-meeting.wav',
+  name: 'short-meeting.wav',
+} as const
+
+/** 회의 올리기에서 고른 파일의 길이를 브라우저가 읽을 때까지 기다린다 — 그 전에는 제출이 막혀 있다 */
+export async function expectAudioReady(page: Page): Promise<void> {
+  await expect(page.getByText(SHORT_AUDIO.name, { exact: true })).toBeVisible()
+  // `00:01 · 0.1 MiB` 처럼 길이가 앞에 붙으면 받았다. 읽는 중은 `길이를 확인하고 있어요`
+  await expect(page.getByText(/^\d+:\d{2} · /)).toBeVisible()
 }
