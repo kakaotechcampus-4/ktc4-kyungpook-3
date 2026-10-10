@@ -203,7 +203,7 @@ describe('RequirePM', () => {
     expect(started).toBeGreaterThan(log.timeline.indexOf('answer GET /workspaces'))
   })
 
-  it('일반 팀원은 업무 API 0회로 태스크 목록에 가고 토스트를 한 번 본다', async () => {
+  it('일반 팀원은 승인 API 0회로 태스크 목록에 가고 토스트를 한 번 본다', async () => {
     workspaceDto('ws_01').role = 'member'
     const log = recordRequests()
     const app = renderApp('/workspaces/ws_01/approvals/ap_01')
@@ -216,7 +216,14 @@ describe('RequirePM', () => {
     expect(document.querySelector('[data-toast-key="access-denied"]')).toHaveTextContent(
       '접근 권한이 없어요',
     )
-    expect(businessRequests(log.started)).toEqual([])
+    // M3 의 태스크 자리표시자는 업무 API 를 부르지 않았다. M6 S3 부터 도착한 목록이 자기 조회(태스크·담당자 이름)를 한다 —
+    // 승인 상세·승인 목록은 여전히 0회다. 목록 조회 말고는 아무것도 없다
+    const listOnly = [
+      { method: 'GET', path: '/tasks?workspace_id=ws_01' },
+      { method: 'GET', path: '/members?workspace_id=ws_01' },
+    ]
+    await waitFor(() => expect(businessRequests(log.started)).toEqual(listOnly))
+    expect(log.started.filter(({ path }) => path.startsWith('/approvals'))).toEqual([])
   })
 })
 
