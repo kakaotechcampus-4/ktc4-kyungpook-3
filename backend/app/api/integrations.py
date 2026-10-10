@@ -1,6 +1,7 @@
 import hmac
 import logging
 import os
+from datetime import datetime, timedelta, timezone
 from types import ModuleType
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Request
@@ -27,6 +28,41 @@ bot_router = APIRouter(
     prefix="/integrations", tags=["integrations"], dependencies=[Depends(require_service_token)]
 )
 
+# Notion callback은 토큰만 저장하고, 대상 DB는 응답 뒤 백그라운드 작업이 찾아 붙인다. 그 작업은 길어야
+# WAIT_TIMEOUT_SECONDS 뒤 DB를 붙이거나, 실패하면 토큰을 비운다. 이 시간이 지나도 DB가 없으면 서버 재시작 등으로
+# 작업이 사라진 것으로 보고 끊긴 것으로 내려준다.
+NOTION_CONNECTING_TIMEOUT = timedelta(seconds=notion_connect.WAIT_TIMEOUT_SECONDS + 60)
+
+
+def _notion_status(integration: Integration, now: datetime) -> dict:
+    """연결 행이 있을 때의 Notion 상태. 행이 없으면(연결한 적 없음, PM이 끊음) 부르지 않는다 — `not_connected`다.
+
+    DB를 찾지 못했거나 찾는 작업이 사라진 연결은 `revoked`로 내려 PM이 다시 연결하게 한다.
+    """
+    connected = {
+        "status": "connected",
+        "display_name": "Notion 연결됨",
+        "connected_at": integration.created_at.isoformat() if integration.created_at else None,
+    }
+    if integration.provider_channel_id:
+        return connected
+    revoked = {"status": "revoked", "display_name": "Notion DB 연결 실패", "connected_at": None}
+    if not integration.access_token:
+        # DB 찾기가 실패해 토큰을 비웠다(`notion_connect.attach_template_database`).
+        return revoked
+    updated_at = integration.updated_at
+    if updated_at is not None and updated_at.tzinfo is None:
+        # SQLite는 시간대 없이 돌려준다. 저장한 값은 UTC다.
+        updated_at = updated_at.replace(tzinfo=timezone.utc)
+    if updated_at is not None and now - updated_at <= NOTION_CONNECTING_TIMEOUT:
+        # 임시: 프론트는 `connecting`을 모르는 값으로 보고 `not_connected`로 바꿔, OAuth 직후 매번 "연결 실패"를 띄운다.
+        # 프론트가 받을 준비가 될 때까지 `connected`로 내려준다. 찾는 사이 만든 Task도 DB가 붙으면 반영되므로
+        # (`notion_sync`) 표시만 다르다. 프론트가 대응하면 아래로 바꾼다.
+        # return {"status": "connecting", "display_name": "Notion 준비 중", "connected_at": None}
+        return connected
+    return revoked
+
+
 @router.get("/{workspace_id}/integrations", response_model=Envelope[dict])
 def get_integrations(
     workspace_id: str,
@@ -34,14 +70,17 @@ def get_integrations(
     db: Session = Depends(get_db)
 ) -> dict:
     integrations = db.query(Integration).filter(Integration.workspace_id == workspace_id).all()
-    
+
     resp = {
         "discord": {"status": "not_connected", "display_name": None, "connected_at": None},
         "notion": {"status": "not_connected", "display_name": None, "connected_at": None}
     }
-    
+
+    now = datetime.now(timezone.utc)
     for i in integrations:
-        if i.provider in resp:
+        if i.provider == "notion":
+            resp["notion"] = _notion_status(i, now)
+        elif i.provider in resp:
             resp[i.provider] = {
                 "status": "connected",
                 "display_name": f"{i.provider.capitalize()} 연결됨",
