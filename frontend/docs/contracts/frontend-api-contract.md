@@ -98,6 +98,15 @@ M6 S1에서 프론트 계약·데이터 계층을 현재 서버 코드에 맞췄
 - transport가 `msw`일 때만 approved `task_create` 본문에 싣는다. transport 인자가 빠지거나 모르는 값이면 `live`로 본다. 반려 본문과 `task_update`에는 싣지 않는다.
 - 현재 MSW 승인 handler는 이 필드를 아직 읽지 않고 `resolved_by`를 요구한다. MSW의 서버 의미 맞춤과 보완 적용은 M6 S2 범위이며 이 절의 구현 사실이 아니다.
 
+> 2026-10-11 S5 코드 대조: 바로 위 MSW 문장은 S1 시점 기록이다. 현재 [MSW 승인 handler](../../src/shared/mock/handlers/approval.ts)는 아래처럼 동작한다. 이는 개발·테스트용 모의 서버의 구현 사실이며, 실제 서버 구현이나 백엔드 합의가 아니다(아래 M6-1~M6-3은 여전히 합의 여부 확인 필요).
+>
+> - 본문 `resolved_by`를 요구하지 않는다. 처리자는 세션 팀원([sessions.ts](../../src/shared/mock/sessions.ts)의 고정 대응)이고 PM이 아니면 403이다. `confirm_task_version`은 정수 ≥ 1 또는 생략·`null`만 받는다.
+> - approved `task_create`에서 `task_overrides`를 읽는다. 세 필드가 모두 문자열인 객체가 아니면 400 `INVALID_REQUEST`(`details.field = "task_overrides"`)다. 보완값이 있으면 payload의 제목·담당자·마감을 대신한다.
+> - 보완값이 **없어도** 최종 제목(trim 후 1~300자)·담당자·마감(유효한 `YYYY-MM-DD`)을 검사하고, 실패하면 400 `INVALID_REQUEST`(`details.field`)다. 위 「현재 서버 구현」의 생성 승인 반영(필수 검사 없음)과 다르며, 요청안 M6-3을 모의한 동작이다.
+> - 추출 항목의 공간·연결 승인, 담당자·회의 소속을 모두 검증한 뒤에만 태스크 생성·이력·추출 항목 `task_id` 연결·승인 상태 변경을 한꺼번에 적용한다. 실패하면 아무것도 바꾸지 않는다(요청안 M6-2 모의). 추출 항목의 `approval_id`는 서버처럼 남긴다.
+> - 승인 목록·상세 조회는 서버처럼 공간 소속만 검사한다. PM 제한(요청안 M6-4)은 모의하지 않는다.
+> - 화면의 처리 경로(transport)는 개발 서버이고 `VITE_ENABLE_MSW=true`일 때만 `msw`다([transport](../../src/features/approval-resolve/model/transport.ts)). production 빌드와 Storybook 빌드는 `live`라 `task_overrides`를 보내지 않는다.
+
 #### 백엔드 요청 (합의 여부 확인 필요)
 
 | # | 요청 | 이유 |

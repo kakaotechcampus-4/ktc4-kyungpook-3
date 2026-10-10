@@ -1,7 +1,7 @@
 import { expect } from '@playwright/test'
 import type { Page } from '@playwright/test'
 
-/** E2E 시나리오 이름 (shared/mock/scenarios.ts 의 MOCK_SCENARIOS). M4 U1 다섯 개 + M5 회의 흐름 */
+/** E2E 시나리오 이름 (shared/mock/scenarios.ts 의 MOCK_SCENARIOS). M4 U1 다섯 개 + M5 회의 흐름 + M6 태스크·승인 */
 export type Scenario =
   | 'signed-out'
   | 'no-workspace'
@@ -15,6 +15,15 @@ export type Scenario =
   | 'meeting-notion-not-connected'
   | 'meeting-notion-revoked'
   | 'meeting-member'
+  | 'tasks-default'
+  | 'tasks-empty'
+  | 'approval-needs-input'
+  | 'approval-rejected'
+  | 'approval-resolved'
+  | 'approval-conflict'
+  | 'notion-sync-pending'
+  | 'notion-sync-failed'
+  | 'tasks-member'
 
 /**
  * 모의 db 를 그 시나리오로 초기화하고 path 로 들어간다. 시나리오 파라미터는 저장값보다 앞서고

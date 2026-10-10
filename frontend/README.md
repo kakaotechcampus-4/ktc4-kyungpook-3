@@ -69,7 +69,7 @@ cd ../backend && ./run.sh
 
 ## 디렉터리
 
-프론트엔드는 인증·공간 선택·온보딩·회의 업로드·처리 추적·회의록 표시를 담당한다. 백엔드와의 API 경계는 [대표 계약](docs/contracts/frontend-api-contract.md), 파트 간 처리 순서는 [전체 흐름](../docs/파트별%20전체%20흐름.md)에 정리한다.
+프론트엔드는 인증·공간 선택·온보딩·회의 업로드·처리 추적·회의록 표시와 태스크 목록·상세·확인 필요 승인을 담당한다. 백엔드와의 API 경계는 [대표 계약](docs/contracts/frontend-api-contract.md), 파트 간 처리 순서는 [전체 흐름](../docs/파트별%20전체%20흐름.md)에 정리한다.
 
 `src/`는 Feature-Sliced Design이다. 의존은 위에서 아래로만 흐른다.
 
@@ -79,7 +79,7 @@ cd ../backend && ./run.sh
 
 - [문서 안내](docs/README.md): 대표 경로, 기존 문서 대응과 유지한 자료.
 - [API 계약](docs/contracts/frontend-api-contract.md): 기존 백엔드 요청과 현재 코드 차이를 한 문서에서 관리.
-- [전체 계획](docs/plan/frontend-plan.md) · [마일스톤 상태·기록](docs/plan/README.md): M0~M8. M0~M5는 기존 계획 원문을 각 `plan.md`로 이동했고 M6~M8은 0바이트 초기화 파일이다.
+- [전체 계획](docs/plan/frontend-plan.md) · [마일스톤 상태·기록](docs/plan/README.md): M0~M8. M0~M5는 기존 계획 원문을 각 `plan.md`로 이동했다. M6는 [계획](docs/plan/m6/plan.md)과 [결과](docs/plan/m6/result.md)가 있고 M7·M8은 0바이트 초기화 파일이다.
 - [공통 작업 규칙](../docs/agent-rules.md) · [문서 양식](../docs/README.md).
 - `docs/requests/`: 실제 독립 요청 발생 시 기록. 기존 백엔드 요청은 API 계약 §4에 유지.
 - [제품·기술 결정](docs/decision/frontend-decisions.md) · [구현 결정 안내](docs/plan/basis-for-decision-guide.md): 구현 결정 원문은 해당 마일스톤의 `basis-for-decision/`에 있다.
@@ -88,4 +88,4 @@ cd ../backend && ./run.sh
 
 ### 마일스톤 상태
 
-M0~M3은 대응 코드가 있으나 이번 문서 작업에서 완료조건을 재검증하지 않았다. M4·M5는 기존 계획·인수인계에 **MSW 기준 완료 판정**이 기록되어 있다. M5 인수인계는 실제 백엔드 성공 흐름을 미검증으로 남겼다. M6~M8은 폴더 초기화만 진행했으며 구현 완료를 선언하지 않는다. 각 계획과 존재하는 검증 기록은 [마일스톤 안내](docs/plan/README.md)에서 연결한다.
+M0~M3은 대응 코드가 있으나 이번 문서 작업에서 완료조건을 재검증하지 않았다. M4·M5는 기존 계획·인수인계에 **MSW 기준 완료 판정**이 기록되어 있다. M5 인수인계는 실제 백엔드 성공 흐름을 미검증으로 남겼다. M6는 [계획](docs/plan/m6/plan.md)의 구현 순서 1~5를 진행했고 [결과](docs/plan/m6/result.md)에 완료조건별 상태와 검증을 기록했다. 최종 게이트는 Node 24가 아닌 Node v22.17.1에서만 실행해 Node 24 게이트는 미실행이고, 실 API 보완·승인 조회 PM 제한·실제 Notion 반영은 미검증 연동 과제로 남아 완료를 선언하지 않는다. M7·M8은 폴더 초기화만 진행했다. 각 계획과 존재하는 검증 기록은 [마일스톤 안내](docs/plan/README.md)에서 연결한다.
