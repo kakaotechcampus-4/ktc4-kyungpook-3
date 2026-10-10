@@ -115,9 +115,17 @@ describe('정리 완료 — 회의록·추출·태스크·승인이 같은 ID �
   it('생성한 승인을 승인하면 기존 승인 경로가 그 항목에 태스크를 잇는다', async () => {
     const id = await upload()
     const { extraction, approvalIds } = completeMeeting(id)
+    // 첫 확인 필요 항목은 마감이 비어 있다. MSW 보완값(미합의 task_overrides)으로 채워 승인한다
     const approved = await fetchDto<ApprovalDto>(
       `/approvals/${approvalIds[0]}`,
-      jsonRequest('PATCH', { status: 'approved', resolved_by: 'mb_01' }),
+      jsonRequest('PATCH', {
+        status: 'approved',
+        task_overrides: {
+          task_title: '후속 일정 확인',
+          assignee_member_id: extraction.items[1].assignee.member_id,
+          due_date: '2026-09-26',
+        },
+      }),
     )
     const item = (await fetchDto<ExtractionDto>(`/extractions/${extraction.extraction_id}`))
       .items[1]

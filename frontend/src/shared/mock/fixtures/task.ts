@@ -25,6 +25,9 @@ export const taskFixtures: TaskDto[] = seeds.map(
     due_date,
     start_date,
     notion_page_id: ['tk_01', 'tk_09'].includes(task_id) ? `notion_${task_id}` : null,
+    version: 1,
+    // 반영 완료는 페이지 ID 가 아니라 이 값으로 본다. 페이지가 있는 두 태스크만 synced 다
+    notion_sync_status: ['tk_01', 'tk_09'].includes(task_id) ? 'synced' : null,
     created_at: `${created}T04:00:00Z`,
     updated_at: '2026-09-17T04:00:00Z',
   }),

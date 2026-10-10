@@ -102,6 +102,20 @@ export function clearSavedDb(storage: Storage): void {
   }
 }
 
+/**
+ * M6 S1 에서 Task 에 `version`·`notion_sync_status` 가 생겼다. 칸 모양은 그대로라 버전은 올리지 않는다.
+ * 그 전에 저장된 태스크는 두 값이 없으므로 서버의 기본값(version 1, 미연동 null)으로 채워 복원한다.
+ * 이미 있는 값은 건드리지 않는다
+ */
+function withTaskDefaults(state: MockDb): MockDb {
+  for (const task of state.tasks as Partial<MockDb['tasks'][number]>[]) {
+    if (!isRecord(task)) continue
+    if (task.version === undefined) task.version = 1
+    if (task.notion_sync_status === undefined) task.notion_sync_status = null
+  }
+  return state
+}
+
 /** 저장값을 읽는다. 없거나, 버전이 다르거나, 손상됐으면 지우고 null */
 export function loadSavedDb(storage: Storage): MockDb | null {
   let raw: string | null
@@ -114,7 +128,7 @@ export function loadSavedDb(storage: Storage): MockDb | null {
   try {
     const parsed: unknown = JSON.parse(raw)
     if (isRecord(parsed) && parsed.version === MOCK_DB_VERSION && isMockDb(parsed.db))
-      return parsed.db
+      return withTaskDefaults(parsed.db)
   } catch {
     // JSON 이 아니다. 아래에서 지운다
   }
