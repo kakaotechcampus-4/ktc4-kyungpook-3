@@ -57,7 +57,7 @@ from pathlib import Path
 import numpy as np
 
 from stt import batch as B
-from stt.backend import SttError, SttResult
+from stt.backend import Prompted, SttError, SttResult, name_prompt
 from stt.elice import WHISPER_KRW_PER_SEC
 from stt.eval import golden
 from stt.eval.sysinfo import peak_rss_bytes
@@ -433,6 +433,10 @@ def main(argv: list[str] | None = None) -> int:
     tx.add_argument("--cap-krw", type=float, default=None, help="장부 합의 상한(원). 넘을 호출은 보내지 않는다")
     tx.add_argument("--min-bill-s", type=float, default=0.0,
                     help="장부에 호출마다 적는 최소 초. 과금 단위를 모를 때 보수 계산한다(예: 60)")
+    tx.add_argument("--prompt-names", default="",
+                    help="쉼표로 나눈 부르는 이름. elice 호출마다 \"동우님, 재환님.\" 꼴의 프롬프트로 싣는다(#195)")
+    tx.add_argument("--prompt-text", default="",
+                    help="elice 호출마다 이 글을 손대지 않고 프롬프트로 싣는다. 프롬프트 꼴 비교용(#195)")
     ap = argparse.ArgumentParser(description="서버 처리 용량 측정 시나리오")
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("env", parents=[common], help="실행 환경만 env.json 으로")
@@ -468,6 +472,11 @@ def main(argv: list[str] | None = None) -> int:
         ap.error("--spend-file 과 --cap-krw 는 같이 준다. 상한 없는 장부는 비용을 막지 못한다")
     if getattr(args, "backend", None) == "elice" and args.spend_file is None:
         ap.error("--backend elice 는 --spend-file 과 --cap-krw 를 준다. 장부가 없으면 상한 없이 유료 호출이 나간다")
+    if getattr(args, "prompt_names", "") and getattr(args, "prompt_text", ""):
+        ap.error("--prompt-names 와 --prompt-text 는 하나만 준다")
+    prompt = getattr(args, "prompt_text", "") or name_prompt(getattr(args, "prompt_names", "").split(","))
+    if prompt and args.backend != "elice":
+        ap.error("--prompt-names, --prompt-text 는 --backend elice 에서만 쓴다. 로컬 백엔드는 프롬프트를 받지 않는다")
 
     _append_pid(args.pids_file)
     env = env_info(AI_DIR)
@@ -487,7 +496,8 @@ def main(argv: list[str] | None = None) -> int:
     name = _result_name(args)
 
     def metered(*a, **kw):     # 예열 호출도 과금되므로 예열 전에 감싼다. 장부가 상한이면 예열에서 바로 멈춘다
-        return MeteredBackend(B.make_backend(*a, **kw), args.spend_file, args.cap_krw, label=name,
+        inner = B.make_backend(*a, **kw)
+        return MeteredBackend(Prompted(inner, prompt) if prompt else inner, args.spend_file, args.cap_krw, label=name,
                               min_bill_s=args.min_bill_s)
 
     factory = metered if elice else B.make_backend   # 로컬은 돈이 들지 않는다
@@ -510,7 +520,7 @@ def main(argv: list[str] | None = None) -> int:
                                 "model": model, "beam": beam,
                                 "load_s": None if load_s is None else round(load_s, 2),
                                 "first_decode_s": round(first_s, 2), "warm_failed_s": timing["warm_failed_s"],
-                                "refused": getattr(backend, "refused", None), "env": env})
+                                "refused": getattr(backend, "refused", None), "prompt": prompt, "env": env})
     print(f"[capacity] {name} 끝. 모델 로드 {load_s}초 · 첫 디코딩 {first_s:.1f}초 · 결과 "
           f"{args.out_dir / (name + '.json')}", flush=True)
     return 0

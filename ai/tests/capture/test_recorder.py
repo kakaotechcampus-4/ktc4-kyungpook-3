@@ -572,3 +572,77 @@ def test_a_missing_route_is_waited_out_not_given_up(tmp_path):
     r = _run(rec, manifest, tmp_path, extractor=_extractor({}), handoff=_be(fake))
     assert r["failed_stage"] == "sources" and r["attempts"] == 1 and not r["gave_up"]
     assert fake.meetings["m1"]["status"] == "processing"
+
+
+# ── 이름 힌트(#195). 매니페스트의 hint_names 로 프롬프트를 받는 백엔드에만 건다 ──────────────────────
+
+class PromptEcho(EchoStt):
+    name = "elice/whisper-large-v3"
+    accepts_prompt = True
+
+    def __init__(self):
+        self.prompts = []
+
+    def transcribe(self, samples, sample_rate, prompt=None):
+        self.prompts.append(prompt)
+        return super().transcribe(samples, sample_rate)
+
+
+def test_transcription_sends_the_team_names_as_a_prompt(tmp_path):
+    rec, path, manifest = _session(tmp_path)
+    manifest["hint_names"] = ["동우", "재환"]
+    stt = PromptEcho()
+    r = _run(rec, manifest, tmp_path, backend=stt)
+    assert r["status"] == "transcribed" and stt.prompts and set(stt.prompts) == {"동우님, 동우, 재환님, 재환."}
+
+
+def test_a_backend_that_takes_no_prompt_is_called_as_before(tmp_path):
+    """로컬 백엔드는 프롬프트를 받지 않는다. 이름이 있어도 지금처럼 부른다."""
+    rec, path, manifest = _session(tmp_path)
+    manifest["hint_names"] = ["동우"]
+    assert _run(rec, manifest, tmp_path)["status"] == "transcribed"
+
+
+def test_display_names_are_sent_in_every_name_form(tmp_path):
+    """매니페스트에는 디스코드 표시 이름이 그대로 남고, 프롬프트에는 부르는 이름(님 붙임, 뺌)과 성 포함 이름을 싣는다."""
+    rec, path, manifest = _session(tmp_path)
+    manifest["hint_names"] = ["유재환", "geocangdongu5251", "김환"]
+    stt = PromptEcho()
+    _run(rec, manifest, tmp_path, backend=stt)
+    assert stt.prompts and set(stt.prompts) == {"재환님, 재환, 유재환, 김환님, 김환."}
+
+
+def test_a_meeting_without_names_sends_no_prompt(tmp_path):
+    rec, path, manifest = _session(tmp_path)
+    stt = PromptEcho()
+    _run(rec, manifest, tmp_path, backend=stt)
+    assert stt.prompts and set(stt.prompts) == {None}
+
+
+class PromptDiesOnLong(DiesOnLong):
+    name = "elice/whisper-large-v3"
+    accepts_prompt = True
+
+    def __init__(self):
+        super().__init__()
+        self.prompts = []
+
+    def transcribe(self, samples, sample_rate, prompt=None):
+        self.prompts.append(prompt)
+        return super().transcribe(samples, sample_rate)
+
+
+def test_retrying_failed_clips_sends_the_same_name_prompt(tmp_path, monkeypatch):
+    """실패 구간 재전사도 처음 전사와 같은 이름 프롬프트로 보낸다. 이름은 디스크의 매니페스트에서 읽는다."""
+    monkeypatch.setattr(B, "RETRY_WAIT_S", 0.0)
+    rec, path, manifest = _session(tmp_path)
+    manifest["hint_names"] = ["동우"]
+    path.write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
+    stt = PromptDiesOnLong()
+    assert _run(rec, manifest, tmp_path, backend=stt, extractor=_extractor({}))["status"] == "partial"
+
+    stt.prompts.clear()
+    r2 = R.recover(rec, backend=stt, model_name="echo", workers=1, gate=None,
+                   transcripts_dir=tmp_path / "transcripts", extractor=_extractor({}), handoff=None)[0]
+    assert r2["ran"][0] == "retried" and r2["retried"] == 2
+    assert stt.prompts and set(stt.prompts) == {"동우님, 동우."}

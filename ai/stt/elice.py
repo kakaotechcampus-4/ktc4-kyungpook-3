@@ -46,6 +46,7 @@ class EliceStt:
 
     name = "elice/whisper-large-v3"
 
+    accepts_prompt = True       # 회의마다 이름 프롬프트를 받는다(recorder.hinted, #195)
     TIMEOUT_PER_AUDIO_S = 0.6   # 오디오 1초당 더 기다리는 시간. 옛 주소 실측 0.45배에 여유
 
     def __init__(self, language: str = "ko", timeout: int = 30, word_timestamps: bool = True):
@@ -56,7 +57,8 @@ class EliceStt:
     def timeout_for(self, audio_seconds: float) -> float:
         return self.timeout + self.TIMEOUT_PER_AUDIO_S * audio_seconds
 
-    def transcribe(self, samples: np.ndarray, sample_rate: int) -> SttResult:
+    def transcribe(self, samples: np.ndarray, sample_rate: int, prompt: str | None = None) -> SttResult:
+        """prompt 를 주면 폼에 싣는다(#195). vLLM 은 위스퍼가 학습한 앞 문맥 기호가 아니라 <|prev|> 뒤에 넣는다."""
         key = os.environ.get("ELICE_API_KEY")
         if not key:
             raise SttError("ELICE_API_KEY 환경변수가 없습니다.")
@@ -72,6 +74,8 @@ class EliceStt:
         # 같은 이름의 필드를 두 번 보내야 해서 dict 가 아니라 (이름, 값) 목록으로 둔다
         data = [("model", STT_MODEL), ("language", self.language), ("response_format", "verbose_json")]
         data += [("timestamp_granularities[]", g) for g in grans]
+        if prompt:
+            data.append(("prompt", prompt))
 
         try:
             r = requests.post(

@@ -89,6 +89,10 @@ class FakeGuild:
     def get_member(self, uid):
         return self._members.get(uid)
 
+    @property
+    def members(self):
+        return list(self._members.values())
+
 
 class FakeBot:
     def __init__(self, guild, channels=()):
@@ -589,3 +593,15 @@ async def test_a_judgement_waiting_for_a_rerun_is_said_as_a_retry(tmp_path, monk
     texts = [t for t, _ in channel.sent]
     assert any(t.startswith("⚠️ 할일 추출 실패") and "발화 1개를 판단하지 못했다" in t for t in texts)
     assert not any(t.startswith("📋") or t.startswith("📨") for t in texts)
+
+
+async def test_record_keeps_the_server_member_names_for_the_name_hint(tmp_path):
+    """이름 힌트(#195). 회의에 없는 사람도 이름으로 불리며 일을 맡으므로 서버 멤버 전체를 남긴다. 봇 계정은 뺀다."""
+    cog, guild, vc, channel, ctx = _setup(tmp_path)
+    helper = FakeMember(3, "녹음봇", guild)
+    helper.bot = True
+    guild._members[3] = helper
+    await _run(A.RecordingCog.record, cog, ctx)
+    rec = cog._active[GUILD_ID]
+    assert _manifest(tmp_path, rec)["hint_names"] == ["민수", "서연"]
+    rec.flush_task.cancel()
