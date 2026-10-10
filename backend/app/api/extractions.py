@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user, require_member
+from app.api.deps import get_current_user, require_member, require_service_token
 from app.core.database import get_db
 from app.core.errors import AppError, Envelope, ErrorCode, success
 from app.models import (
@@ -64,8 +64,13 @@ def _find_existing_extraction(db: Session, meeting_id: str) -> Extraction | None
     return db.execute(stmt).scalar_one_or_none()
 
 
-# 디스코드 봇(ai/capture/handoff.py)이 사용자 세션 없이 부르는 경로라 세션 인증을 걸지 않는다.
-@router.post("", status_code=201, response_model=Envelope[ExtractionCreateResponse])
+# 디스코드 봇(ai/capture/handoff.py)이 사용자 세션 없이 부르는 경로라 세션 대신 서비스 토큰으로 막는다.
+@router.post(
+    "",
+    status_code=201,
+    response_model=Envelope[ExtractionCreateResponse],
+    dependencies=[Depends(require_service_token)],
+)
 def create_extraction(
     payload: ExtractionCreateRequest,
     db: Session = Depends(get_db),
