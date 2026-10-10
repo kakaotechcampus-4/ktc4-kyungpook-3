@@ -197,10 +197,18 @@ describe('RequirePM', () => {
     renderApp('/workspaces/ws_01/approvals/ap_01')
     expect(await screen.findByText(title)).toBeInTheDocument()
 
-    expect(businessRequests(log.started)).toEqual([{ method: 'GET', path: '/approvals/ap_01' }])
-    const started = log.timeline.indexOf('start GET /approvals/ap_01')
-    expect(started).toBeGreaterThan(log.timeline.indexOf('answer GET /auth/me'))
-    expect(started).toBeGreaterThan(log.timeline.indexOf('answer GET /workspaces'))
+    // M6 S4 부터 상세가 담당자 이름·보완 판정에 쓰는 팀원 목록을 함께 받는다. 승인 상세와 팀원 목록 말고는 아무것도 없다
+    await waitFor(() =>
+      expect(businessRequests(log.started)).toEqual([
+        { method: 'GET', path: '/approvals/ap_01' },
+        { method: 'GET', path: '/members?workspace_id=ws_01' },
+      ]),
+    )
+    for (const request of ['start GET /approvals/ap_01', 'start GET /members?workspace_id=ws_01']) {
+      const started = log.timeline.indexOf(request)
+      expect(started).toBeGreaterThan(log.timeline.indexOf('answer GET /auth/me'))
+      expect(started).toBeGreaterThan(log.timeline.indexOf('answer GET /workspaces'))
+    }
   })
 
   it('일반 팀원은 승인 API 0회로 태스크 목록에 가고 토스트를 한 번 본다', async () => {

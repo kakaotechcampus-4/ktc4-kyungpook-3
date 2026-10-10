@@ -5,6 +5,7 @@ import { meetingListQueryOptions } from '@/entities/meeting'
 import { memberListQueryOptions } from '@/entities/member'
 import { taskDetailQueryOptions, taskHistoryQueryOptions } from '@/entities/task'
 import type { Task } from '@/entities/task'
+import { TaskNotionSyncStatus } from '@/features/task-notion-sync'
 import { TASK_STATUS_LABEL, TaskStatusControl, useTaskStatusOverlay } from '@/features/task-status'
 import { ApiError, ERROR_CODES } from '@/shared/api/errors'
 import { paths } from '@/shared/config/routes'
@@ -47,6 +48,7 @@ function isUnavailable(error: unknown): boolean {
 
 /**
  * 태스크 상세 (M6 §3-5). 담당자·상태·마감·진행률·막힌 사유·연결 회의·변경 이력을 읽는다.
+ * Notion 반영 상태는 서버 상태만 따르고, 반영 중이면 이 화면에 있는 동안 polling 한다. PM 은 반영 실패를 다시 요청한다 (§4-7, §4-8).
  * 담당자·마감이 없는 기존 태스크도 그대로 읽는다. PM 만 상태를 바꾼다 — 다른 필드 편집은 없다.
  * 진행 중인 상태 변경은 여기에도 먼저 보인다(`useTaskStatusOverlay`).
  */
@@ -146,6 +148,10 @@ function TaskBody({ workspaceId, task, isPm }: { workspaceId: string; task: Task
               {meetingTitle}
             </GuardedLink>
           )}
+        </dd>
+        <dt className={TERM}>Notion</dt>
+        <dd className={VALUE}>
+          <TaskNotionSyncStatus workspaceId={workspaceId} taskId={task.id} canRetry={isPm} />
         </dd>
       </dl>
       <TaskHistory workspaceId={workspaceId} taskId={task.id} names={names} />
