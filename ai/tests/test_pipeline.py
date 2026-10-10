@@ -98,8 +98,8 @@ def test_update_schedule_keeps_only_changed_due_date():
     assert item["status"] is None
 
 
-def test_update_carries_target_snapshot_of_all_four_fields():
-    # 마감만 바뀌어도 검색에서 본 값 넷을 다 보낸다 — 승인 때 BE 가 이 값을 기준으로 충돌을 본다(#160)
+def test_update_carries_target_snapshot_of_all_fields():
+    # 마감만 바뀌어도 검색에서 본 값을 다 보낸다 — 승인 때 BE 가 이 값을 기준으로 충돌을 본다(#160)
     target = _target(assignee_member_id="mem_haeun", updated_at="2026-09-27T10:00:00+00:00")
     item = to_item(_finding(), _result(), _drafted(due_date="2026-10-06"), target, TRANSCRIPT)
     assert item["target_snapshot"] == {
@@ -107,8 +107,10 @@ def test_update_carries_target_snapshot_of_all_four_fields():
         "due_date": "2026-09-28",
         "status": "in_progress",
         "assignee_member_id": "mem_haeun",
+        "title": "로그인 화면 시안 마무리 작업",  # 확인용 — 제안값에는 제목이 없다(#185)
     }
     assert item["status"] is None  # 제안값은 지금처럼 바뀌는 필드만
+    assert item["task_title"] == "로그인 화면 시안 마무리 작업"  # 표시용 제목도 그대로
 
 
 def test_update_target_snapshot_keeps_null_fields():
@@ -117,6 +119,7 @@ def test_update_target_snapshot_keeps_null_fields():
     item = to_item(_finding(), _result(), _drafted(due_date="2026-10-06"), target, TRANSCRIPT)
     assert item["target_snapshot"] == {
         "updated_at": None, "due_date": None, "status": None, "assignee_member_id": None,
+        "title": "로그인 화면 시안 마무리 작업",
     }
 
 
