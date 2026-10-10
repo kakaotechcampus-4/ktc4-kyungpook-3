@@ -313,6 +313,18 @@ def test_run_similar_search_failure_is_recorded(monkeypatch):
     assert "ConnectionError" in out.failures[0].reason
 
 
+def test_run_carries_stage1_drop_counts(monkeypatch):
+    # 1단계에서 탈락한 항목 수가 결과에 실려 회의 기록까지 갈 수 있다(#186)
+    _install(monkeypatch, stage1={"findings": [FINDINGS[1], {"indices": [99]}, "x"]}, terra=[TERRA_OK[1]],
+             luna_draft=[LUNA_DRAFT_OK[1]])
+
+    out = _run()
+
+    # lines 는 발화가 아니라 근거 번호를 매긴 문장 수다 — 발화 5개 중 하나가 두 문장이라 6
+    assert out.dropped == {"not_dict": 1, "no_valid_indices": 1, "bad_indices": [[99]], "lines": 6}
+    assert len(out.items) == 1
+
+
 def test_run_draft_failure_is_recorded(monkeypatch):
     _install(monkeypatch, stage1={"findings": FINDINGS[:2]}, terra=TERRA_OK[:2],
              luna_draft=[LUNA_DRAFT_OK[0], {"task": None, "due_date": None}])  # doc_text 없음

@@ -19,7 +19,7 @@ from typing import Any, Protocol
 
 from draft.doc_draft import DraftUnavailableError, draft
 from judge.final_judge import JudgeUnavailableError, judge
-from judge.semantic_judge import extract_findings
+from judge.semantic_judge import empty_drops, extract_findings_counted
 from llm import get_llm
 from shared.schemas import (
     DraftResult,
@@ -133,6 +133,8 @@ class PipelineFailure:
 class PipelineResult:
     items: list[dict[str, Any]] = field(default_factory=list)  # POST /extractions 로 보낼 item
     failures: list[PipelineFailure] = field(default_factory=list)
+    # 1단계에서 검증에 탈락한 항목 기록(semantic_judge.empty_drops). 회의 기록에 남겨 어느 회의에서 왜 버려졌는지 본다(#186)
+    dropped: dict[str, Any] = field(default_factory=empty_drops)
 
 
 class PipelineUnavailableError(RuntimeError):
@@ -160,9 +162,10 @@ def run(
     키가 없으면 PipelineUnavailableError, 1단계가 실패하면 FindingExtractionUnavailableError.
     """
     _check_llm_keys()
-    findings = extract_findings(transcript)  # 실패하면 그대로 올린다 — finding 자체가 없다
+    # 실패하면 그대로 올린다 — finding 자체가 없다
+    findings, dropped = extract_findings_counted(transcript)
 
-    out = PipelineResult()
+    out = PipelineResult(dropped=dropped)
     for finding in findings:
         try:
             cands = candidates.similar_tasks(workspace_id, finding.text)
