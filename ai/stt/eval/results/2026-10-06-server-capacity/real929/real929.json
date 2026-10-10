@@ -1,0 +1,272 @@
+{
+ "notebook_929_doc": {
+  "cer": 0.216,
+  "sub": 197,
+  "del": 61,
+  "ins": 17,
+  "ref_chars": 1272,
+  "korean_cer_clip_table": 0.197,
+  "korean_lines": 20,
+  "korean_chars": 426,
+  "short_present": 1,
+  "short_found": 0,
+  "lines": 34
+ },
+ "runs": {
+  "notebook": {
+   "cer": 0.2162,
+   "sub": 197,
+   "del": 61,
+   "ins": 17,
+   "ref_chars": 1272,
+   "hyp_chars": 1228,
+   "lines": 34,
+   "korean_lines": 20,
+   "korean_chars": 426,
+   "korean_cer_aligned": 0.1972,
+   "short_present": 1,
+   "short_found": 0,
+   "short": [
+    {
+     "answer": "네.",
+     "start_s": 106.66,
+     "end_s": 122.22,
+     "present": false,
+     "found": false
+    },
+    {
+     "answer": "맞습니다.",
+     "start_s": 182.18,
+     "end_s": 193.22,
+     "present": false,
+     "found": false
+    },
+    {
+     "answer": "음, 그렇죠.",
+     "start_s": 254.64,
+     "end_s": 266.34,
+     "present": false,
+     "found": false
+    },
+    {
+     "answer": "아니요, 아직 안 쟀습니다.",
+     "start_s": 348.34,
+     "end_s": 359.88,
+     "present": true,
+     "found": false
+    },
+    {
+     "answer": "그렇죠.",
+     "start_s": 444.48,
+     "end_s": 454.98,
+     "present": false,
+     "found": false
+    }
+   ]
+  },
+  "server-turbo": {
+   "cer": 0.2186,
+   "sub": 196,
+   "del": 62,
+   "ins": 20,
+   "ref_chars": 1272,
+   "hyp_chars": 1230,
+   "lines": 34,
+   "korean_lines": 20,
+   "korean_chars": 426,
+   "korean_cer_aligned": 0.2042,
+   "short_present": 1,
+   "short_found": 0,
+   "short": [
+    {
+     "answer": "네.",
+     "start_s": 106.66,
+     "end_s": 122.22,
+     "present": false,
+     "found": false
+    },
+    {
+     "answer": "맞습니다.",
+     "start_s": 182.18,
+     "end_s": 193.22,
+     "present": false,
+     "found": false
+    },
+    {
+     "answer": "음, 그렇죠.",
+     "start_s": 254.64,
+     "end_s": 266.34,
+     "present": false,
+     "found": false
+    },
+    {
+     "answer": "아니요, 아직 안 쟀습니다.",
+     "start_s": 348.34,
+     "end_s": 359.88,
+     "present": true,
+     "found": false
+    },
+    {
+     "answer": "그렇죠.",
+     "start_s": 444.48,
+     "end_s": 454.98,
+     "present": false,
+     "found": false
+    }
+   ]
+  },
+  "server-small": {
+   "cer": 0.3208,
+   "sub": 310,
+   "del": 73,
+   "ins": 25,
+   "ref_chars": 1272,
+   "hyp_chars": 1224,
+   "lines": 34,
+   "korean_lines": 20,
+   "korean_chars": 426,
+   "korean_cer_aligned": 0.2864,
+   "short_present": 1,
+   "short_found": 0,
+   "short": [
+    {
+     "answer": "네.",
+     "start_s": 106.66,
+     "end_s": 122.22,
+     "present": false,
+     "found": false
+    },
+    {
+     "answer": "맞습니다.",
+     "start_s": 182.18,
+     "end_s": 193.22,
+     "present": false,
+     "found": false
+    },
+    {
+     "answer": "음, 그렇죠.",
+     "start_s": 254.64,
+     "end_s": 266.34,
+     "present": false,
+     "found": false
+    },
+    {
+     "answer": "아니요, 아직 안 쟀습니다.",
+     "start_s": 348.34,
+     "end_s": 359.88,
+     "present": true,
+     "found": false
+    },
+    {
+     "answer": "그렇죠.",
+     "start_s": 444.48,
+     "end_s": 454.98,
+     "present": false,
+     "found": false
+    }
+   ]
+  },
+  "elice": {
+   "cer": 0.2123,
+   "sub": 192,
+   "del": 60,
+   "ins": 18,
+   "ref_chars": 1272,
+   "hyp_chars": 1230,
+   "lines": 10,
+   "korean_lines": 20,
+   "korean_chars": 426,
+   "korean_cer_aligned": 0.1761,
+   "short_present": 0,
+   "short_found": 0,
+   "short": [
+    {
+     "answer": "네.",
+     "start_s": 106.66,
+     "end_s": 122.22,
+     "present": false,
+     "found": false
+    },
+    {
+     "answer": "맞습니다.",
+     "start_s": 182.18,
+     "end_s": 193.22,
+     "present": false,
+     "found": false
+    },
+    {
+     "answer": "음, 그렇죠.",
+     "start_s": 254.64,
+     "end_s": 266.34,
+     "present": false,
+     "found": false
+    },
+    {
+     "answer": "아니요, 아직 안 쟀습니다.",
+     "start_s": 348.34,
+     "end_s": 359.88,
+     "present": false,
+     "found": false
+    },
+    {
+     "answer": "그렇죠.",
+     "start_s": 444.48,
+     "end_s": 454.98,
+     "present": false,
+     "found": false
+    }
+   ]
+  },
+  "elice-turn": {
+   "cer": 0.2343,
+   "sub": 217,
+   "del": 60,
+   "ins": 21,
+   "ref_chars": 1272,
+   "hyp_chars": 1233,
+   "lines": 34,
+   "korean_lines": 20,
+   "korean_chars": 426,
+   "korean_cer_aligned": 0.2347,
+   "short_present": 1,
+   "short_found": 0,
+   "short": [
+    {
+     "answer": "네.",
+     "start_s": 106.66,
+     "end_s": 122.22,
+     "present": false,
+     "found": false
+    },
+    {
+     "answer": "맞습니다.",
+     "start_s": 182.18,
+     "end_s": 193.22,
+     "present": false,
+     "found": false
+    },
+    {
+     "answer": "음, 그렇죠.",
+     "start_s": 254.64,
+     "end_s": 266.34,
+     "present": false,
+     "found": false
+    },
+    {
+     "answer": "아니요, 아직 안 쟀습니다.",
+     "start_s": 348.34,
+     "end_s": 359.88,
+     "present": true,
+     "found": false
+    },
+    {
+     "answer": "그렇죠.",
+     "start_s": 444.48,
+     "end_s": 454.98,
+     "present": false,
+     "found": false
+    }
+   ]
+  }
+ }
+}
