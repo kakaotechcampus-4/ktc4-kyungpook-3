@@ -21,6 +21,8 @@ discord 이름은 여기 없다. capture/discord_adapter.py 가 이 함수들을
   extract_runs       판단하지 못한 finding 을 남긴 채 끝난 실행 수. EXTRACT_RETRY_MAX 번까지 다시 돌린다
   extract_partial    다시 돌려도 남아서 판단하지 못한 finding 을 둔 채 인계로 갔다
   extract_error      포기 직전 차례에 파이프라인이 통째로 실패해 앞선 결과로 닫았을 때, 그 실패 한 줄
+  extract_dropped    남긴 판단 결과에서 1단계가 검증에 탈락시킨 항목 기록(#186). {"not_dict", "no_valid_indices",
+                     "bad_indices", "bad_indices_total", "lines"}. 원문은 없다
   be           BE 인계 상태 {"meeting_id", "status", "extraction_id", ...}. capture/handoff.py 가 쓴다
   claimed_by, claimed_at   누가 언제부터 이 회의를 처리 중인지 보여 주는 표시. 누가 처리할지는 회의 잠금
                 (session_<회의ID>.lock 의 OS 파일 잠금)만 정한다. 놓으면 지운다
