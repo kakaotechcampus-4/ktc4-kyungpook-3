@@ -17,7 +17,7 @@ from dataclasses import dataclass, field, replace
 from datetime import date
 from typing import Any, Protocol
 
-from draft.doc_draft import DOC_TEXT_MAX, DraftUnavailableError, draft
+from draft.doc_draft import DraftUnavailableError, draft
 from judge.final_judge import JudgeUnavailableError, judge
 from judge.semantic_judge import empty_drops, extract_findings_counted
 from llm import get_llm
@@ -167,7 +167,9 @@ def _merge_into(card: dict[str, Any], finding: JudgeFinding, result: JudgeResult
         card["status"] = result.status
     if result.category == "assignee":
         card["assignee_type"], card["assignee_raw"] = _assignee(finding)
-    card["doc_text"] = f"{card['doc_text']} / {drafted.doc_text}"[:DOC_TEXT_MAX]
+    # 합친 설명은 자르지 않는다 — DOC_TEXT_MAX 는 Luna 한 문장의 상한이고(BE doc_text 는 길이 제한 없음), 자르면
+    # 맨 뒤에 붙은 최신 결정부터 잘린다(PR #206 리뷰)
+    card["doc_text"] = f"{card['doc_text']} / {drafted.doc_text}"
     if base is not None:
         if card["due_date"] == base.due_date:
             card["due_date"] = None
@@ -233,6 +235,7 @@ def run(
     out = PipelineResult(dropped=dropped)
     new_cards: list[dict[str, Any]] = []                         # 이번 회의 새 항목 카드
     edits: dict[str, tuple[NotionCandidate, dict[str, Any]]] = {}  # task_id → (DB 원래 후보, 수정 카드)
+    scoped: set[str] = set()  # 수정 카드에 범위 결정이 합쳐진 task_id — 필드가 다 되돌려져도 결정은 남는다
     for finding in findings:
         try:
             found = candidates.similar_tasks(workspace_id, finding.text)
@@ -241,6 +244,10 @@ def run(
             continue
 
         shown = [_with_edit(*edits[c.task_id]) if c.task_id in edits else c for c in found]
+        # 검색이 못 찾은 수정 카드도 보여 준다 — "마감은 원래대로" 처럼 Task 이름 없이 오면 검색에 안 잡혀
+        # 번복을 못 알아본다(PR #206 리뷰). 새 항목 카드처럼 검색과 상관없이 넣는다
+        found_ids = {c.task_id for c in found}
+        shown += [_with_edit(base, card) for task_id, (base, card) in edits.items() if task_id not in found_ids]
         shown += [_new_card_candidate(n, card) for n, card in enumerate(new_cards)]
         # Terra 가 본 후보와 수정 대상을 꺼내는 후보가 같은 리스트여야 한다
         judge_input = JudgeInput(source=transcript.source, text=finding.text, candidates=shown)
@@ -278,9 +285,15 @@ def run(
         if task_id in edits:  # 같은 Task 수정 카드에 합친다 — 번복 · 재변경
             base, card = edits[task_id]
             _merge_into(card, finding, result, drafted, base=base)
-            if not _has_change(card) and card["category"] != "scope":  # 되돌려서 바꿀 게 없다
-                out.items = [i for i in out.items if i is not card]
-                del edits[task_id]
+            if result.category == "scope":
+                scoped.add(task_id)
+            if not _has_change(card):
+                if card["category"] == "scope" or task_id in scoped:
+                    # 필드는 다 되돌려졌어도 범위 결정이 남았다 — scope 로 보내야 BE 가 필드 없는 결정으로 받는다
+                    card["category"] = "scope"
+                else:  # 되돌려서 바꿀 게 없다
+                    out.items = [i for i in out.items if i is not card]
+                    del edits[task_id]
             continue
 
         item = to_item(finding, result, drafted, target, transcript)

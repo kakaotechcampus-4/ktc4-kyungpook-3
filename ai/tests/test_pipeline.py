@@ -561,3 +561,68 @@ def test_findings_are_handled_in_meeting_order(monkeypatch):
     out = _run_dedup()
 
     assert out.items == []
+
+
+def test_merged_description_is_not_cut(monkeypatch):
+    # 합친 설명을 300자(Luna 한 문장 상한)로 자르면 맨 뒤의 최신 결정부터 잘린다(PR #206 리뷰)
+    long_owner = "결제 환불 기능 구현을 지민님이 맡기로 함. " + "카드 결제만 먼저 지원한다. " * 20
+    _install(
+        monkeypatch, stage1={"findings": [REFUND_OWNER, REFUND_DUE]},
+        terra=[_terra(is_new=True, matched_candidate_index=None), _terra(category="schedule")],
+        luna_draft=[
+            {"task": "결제 환불 기능 구현", "due_date": None, "doc_text": long_owner},
+            {"task": None, "due_date": "2026-10-09", "doc_text": "결제 환불 기능 마감을 10/9로 정함"},
+        ],
+    )
+
+    out = _run_dedup()
+
+    assert out.items[0]["doc_text"].endswith("결제 환불 기능 마감을 10/9로 정함")
+
+
+class MissesEditedTask(DedupCandidates):
+    """Task 이름 없이 오는 짧은 발화는 검색에 앞서 수정한 Task 가 안 나온다."""
+
+    def similar_tasks(self, workspace_id, text):
+        return [] if "원래대로" in text else super().similar_tasks(workspace_id, text)
+
+
+def test_reverting_is_caught_even_when_search_misses_the_task(monkeypatch):
+    # 수정 카드는 검색 결과와 상관없이 후보에 보여야 번복을 알아본다(PR #206 리뷰)
+    keep_short = LOGIN_KEEP | {"summary": "마감은 원래대로 두기로 함"}
+    fakes = _install(
+        monkeypatch, stage1={"findings": [LOGIN_DELAY, keep_short]},
+        terra=[_terra(category="schedule"), _terra(category="schedule")],
+        luna_draft=[
+            {"task": None, "due_date": "2026-10-06", "doc_text": "로그인 화면 마감을 10/2에서 10/6으로 연기"},
+            {"task": None, "due_date": "2026-10-02", "doc_text": "로그인 화면 마감을 10/6에서 10/2로 되돌림"},
+        ],
+    )
+
+    out = run(DEDUP_MEETING, workspace_id="ws_1", today=date(2026, 9, 28), candidates=MissesEditedTask())
+
+    assert "2026-10-02 → 2026-10-06" in fakes["terra"].prompts[1]
+    assert out.items == []
+
+
+def test_scope_decision_survives_when_schedule_is_reverted(monkeypatch):
+    # 마감 변경 → 같은 Task 범위 결정 → 마감 원래대로. 마감은 지워져도 범위 결정은 남아야 하고,
+    # 필드 없는 결정이라 BE 가 받도록 category 를 scope 로(PR #206 리뷰)
+    scope = {"indices": [3], "summary": "로그인 화면에서 소셜 로그인은 이번 버전에서 빼기로 함",
+             "assignee_type": "none", "reason": "범위"}
+    _install(
+        monkeypatch, stage1={"findings": [LOGIN_DELAY, scope, LOGIN_KEEP]},
+        terra=[_terra(category="schedule"), _terra(category="scope"), _terra(category="schedule")],
+        luna_draft=[
+            {"task": None, "due_date": "2026-10-06", "doc_text": "로그인 화면 마감을 10/2에서 10/6으로 연기"},
+            {"task": None, "due_date": None, "doc_text": "소셜 로그인은 이번 버전 범위에서 제외"},
+            {"task": None, "due_date": "2026-10-02", "doc_text": "로그인 화면 마감을 10/6에서 10/2로 되돌림"},
+        ],
+    )
+
+    out = _run_dedup()
+
+    assert len(out.items) == 1
+    card = out.items[0]
+    assert (card["category"], card["due_date"]) == ("scope", None)
+    assert "소셜 로그인" in card["doc_text"]
