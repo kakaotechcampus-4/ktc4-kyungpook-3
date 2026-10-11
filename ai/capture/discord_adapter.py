@@ -82,11 +82,11 @@ SessionSavedHook = Callable[[dict, Path], Awaitable[None]]
 NOTICE = "🔴 녹음·전사 중입니다. 이 음성 채널의 말은 화자별로 녹음되고 `/stop` 뒤 회의록이 여기 올라옵니다."
 # 봇은 서버에 있는데 웹에서 이 서버를 워크스페이스에 연결하지 않았다(#199). 시작 때 한 번, 결과 보고에 한 줄
 NOT_CONNECTED_NOTICE = ("⚠️ 이 디스코드 서버가 웹 워크스페이스에 연결돼 있지 않아 회의록이 이 채널에만 남습니다. "
-                        "웹 설정에서 디스코드를 연결하면 이 회의도 이어서 넘어갑니다.")
+                        "PM 이 웹 온보딩의 디스코드 연결 단계에서 이 서버를 연결하면 이 회의도 이어서 넘어갑니다.")
 NOT_CONNECTED_NOTICE_WORKER = ("⚠️ 이 디스코드 서버가 웹 워크스페이스에 연결돼 있지 않습니다. 녹음은 저장해 두고, "
-                               "웹 설정에서 디스코드를 연결하면 그때 처리해 웹에 올립니다.")
+                               "PM 이 웹 온보딩의 디스코드 연결 단계에서 이 서버를 연결하면 그때 처리해 웹에 올립니다.")
 NOT_CONNECTED_RESULT = ("ℹ️ 이 서버가 웹 워크스페이스에 연결돼 있지 않아 회의록 저장·할일 추출·BE 인계를 멈췄습니다. "
-                        "웹에서 이 서버를 연결하면 이어서 넘어갑니다.")
+                        "PM 이 웹 온보딩의 디스코드 연결 단계에서 이 서버를 연결하면 이어서 넘어갑니다.")
 FLUSH_EVERY_S = 0.2   # 재정렬 창에 갇힌 마지막 패킷을 이 주기로 비운다. 패킷은 20ms 마다 온다
 STAGE_LABEL = {STATUS_TRANSCRIBED: "전사", STATUS_SOURCED: "회의록 저장", STATUS_EXTRACTED: "할일 추출",
                STATUS_HANDED_OFF: "BE 인계",
@@ -633,8 +633,8 @@ class RecordingCog(discord.Cog):
                     rec.lock.release()
                 if rec.not_connected:
                     # 워커는 연결될 때까지 전사하지 않는다. 대기열 수도 의미가 없다
-                    await self._notify(rec.text_channel, f"✅ 녹음을 저장했습니다(화자 {len(entries)}명). 웹에서 이 서버를 "
-                                       f"연결하면 처리해 웹에 올립니다.{warn}")
+                    await self._notify(rec.text_channel, f"✅ 녹음을 저장했습니다(화자 {len(entries)}명). PM 이 웹 온보딩에서 "
+                                       f"이 서버를 연결하면 처리해 웹에 올립니다.{warn}")
                     return
                 ahead = queue_ahead(self.recordings_dir, rec.meeting_id, exclude=self._holding())
                 await self._notify(rec.text_channel, f"✅ 녹음을 저장했습니다(화자 {len(entries)}명). 회의록과 할일은 "

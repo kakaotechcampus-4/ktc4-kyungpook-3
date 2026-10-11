@@ -258,6 +258,12 @@ async def test_be_being_down_at_record_does_not_stop_the_recording(tmp_path):
     assert not any("연결돼 있지 않아" in t for t, _ in channel.sent)          # 조회 실패는 연결 없음이 아니다
 
 
+def test_the_unconnected_notices_say_who_connects_it_and_where():
+    """연결은 PM 이 웹 온보딩의 디스코드 연결 단계에서 한다. 설정 화면에는 아직 디스코드 연결이 없다(#199)."""
+    for text in (A.NOT_CONNECTED_NOTICE, A.NOT_CONNECTED_NOTICE_WORKER, A.NOT_CONNECTED_RESULT):
+        assert "PM" in text and "온보딩" in text and "설정" not in text
+
+
 async def test_record_in_an_unconnected_server_records_and_says_how_to_connect(tmp_path):
     """봇은 서버에 있는데 웹에서 연결이 없다(#199). 녹음과 회의록은 하고 BE 로는 보내지 않는다. 안내는 시작 때 한 번,
     결과 보고에 한 줄이다."""
