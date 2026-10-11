@@ -219,16 +219,16 @@ describe('목록 안 확인 필요 카드 (시안)', () => {
 
     // 보류(ap_01)도 접힌 카드 안에서 같은 계약이다. 승인을 숨기거나 반려를 `제외` 로 바꾸지 않는다
     const held = cards.find((each) => each.textContent?.includes('알림 문구 검토'))!
-    expect(within(held).getByRole('button', { name: '승인', exact: true })).toBeDisabled()
-    expect(within(held).getByRole('button', { name: '반려', exact: true })).toBeEnabled()
+    expect(within(held).getByRole('button', { name: '승인' })).toBeDisabled()
+    expect(within(held).getByRole('button', { name: '반려' })).toBeEnabled()
     expect(within(held).queryByRole('button', { name: '제외' })).toBeNull()
     expect(within(held).queryByRole('button', { name: '직접 채우기' })).toBeNull()
     expect(held).toHaveTextContent(
       '승인하려면 담당자·마감 정보를 올바르게 채워야 해요. 지금 서버는 승인 전 보완을 지원하지 않아요.',
     )
-    expect(
-      within(held).getByRole('button', { name: '승인', exact: true }),
-    ).toHaveAccessibleDescription(/지금 서버는 승인 전 보완을 지원하지 않아요\.$/)
+    expect(within(held).getByRole('button', { name: '승인' })).toHaveAccessibleDescription(
+      /지금 서버는 승인 전 보완을 지원하지 않아요\.$/,
+    )
 
     await user.click(within(target).getByRole('button', { name: '반려' }))
     await waitFor(() =>
