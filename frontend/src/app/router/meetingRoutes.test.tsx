@@ -53,7 +53,7 @@ describe('회의 올리기 — PM 전용', () => {
     await app.expectPath('/workspaces/ws_01/meetings/upload')
   })
 
-  it('일반 팀원은 업무 API 0회로 태스크 목록에 가고 접근 권한 토스트를 본다', async () => {
+  it('일반 팀원은 업로드 API 0회로 태스크 목록에 가고 접근 권한 토스트를 본다', async () => {
     setMockRole('member')
     const log = recordRequests()
     const app = renderApp(paths.meetingUpload('ws_01'))
@@ -63,7 +63,14 @@ describe('회의 올리기 — PM 전용', () => {
     await waitFor(() =>
       expect(document.querySelectorAll('[data-toast-key="access-denied"]')).toHaveLength(1),
     )
-    expect(businessRequests(log.started)).toEqual([])
+    // M3 의 태스크 자리표시자는 업무 API 를 부르지 않았다. M6 S3 부터 도착한 목록이 자기 조회(태스크·담당자 이름)를 한다 —
+    // 업로드·연동·승인 요청은 여전히 0회다. 목록 조회 말고는 아무것도 없다
+    await waitFor(() =>
+      expect(businessRequests(log.started)).toEqual([
+        { method: 'GET', path: '/tasks?workspace_id=ws_01' },
+        { method: 'GET', path: '/members?workspace_id=ws_01' },
+      ]),
+    )
     expect(screen.queryByRole('heading', { name: '회의를 올려 주세요' })).toBeNull()
   })
 })

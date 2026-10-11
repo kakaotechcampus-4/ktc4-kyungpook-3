@@ -47,7 +47,8 @@ it('creates deterministic tasks, retrieves them and records actual changes', asy
   expect((await fetchDto<ListDto<TaskDto>>('/tasks?workspace_id=ws_01')).total).toBe(11)
   await fetchDto(
     `/tasks/${created.id}`,
-    jsonRequest('PATCH', { status: 'blocked', blocker: '권한 필요', changed_by: 'mb_01' }),
+    // 본문의 changed_by 는 무시한다. 변경자는 세션 팀원 mb_01 이다 (백엔드 update_task)
+    jsonRequest('PATCH', { status: 'blocked', blocker: '권한 필요', changed_by: 'mb_04' }),
   )
   expect(toTask(await fetchDto<TaskDto>(`/tasks/${created.id}`))).toMatchObject({
     status: 'blocked',
@@ -74,7 +75,8 @@ it('rolls back a history entry once, restores the field and appends an inverse h
   const before = await fetchDto<ListDto<TaskHistoryDto>>('/tasks/tk_01/history')
   expect(before.items.map(toTaskHistory).map(({ id }) => id)).toEqual(['hs_02', 'hs_01'])
   const restored = toTask(
-    await fetchDto<TaskDto>('/tasks/tk_01/history/hs_01/rollback?changed_by=mb_01', {
+    // 쿼리의 changed_by 는 하위 호환용일 뿐 기록되지 않는다
+    await fetchDto<TaskDto>('/tasks/tk_01/history/hs_01/rollback?changed_by=mb_04', {
       method: 'POST',
     }),
   )
@@ -107,7 +109,7 @@ it('clears a field when PATCH carries an explicit null and records it as a chang
   const cleared = toTask(
     await fetchDto<TaskDto>(
       '/tasks/tk_01',
-      jsonRequest('PATCH', { due_date: null, blocker: null, changed_by: 'mb_01' }),
+      jsonRequest('PATCH', { due_date: null, blocker: null }),
     ),
   )
   expect(cleared.dueDate).toBeNull()
@@ -140,10 +142,7 @@ it('refuses an explicit null for the fields the backend cannot clear', async () 
 
 // ChangedField.START_DATE 가 생겨서 시작일도 이력·되돌리기 대상이다 (계약 §4.7-6)
 it('records a start date change as its own history field and rolls it back', async () => {
-  await fetchDto(
-    '/tasks/tk_01',
-    jsonRequest('PATCH', { start_date: '2026-10-01', changed_by: 'mb_01' }),
-  )
+  await fetchDto('/tasks/tk_01', jsonRequest('PATCH', { start_date: '2026-10-01' }))
   const entry = (await fetchDto<ListDto<TaskHistoryDto>>('/tasks/tk_01/history')).items.map(
     toTaskHistory,
   )[0]

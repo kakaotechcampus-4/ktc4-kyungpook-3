@@ -3,7 +3,9 @@
 #   py-cord 2.8.x 는 start_recording 이 "reception is broken" 경고를 내고 수신이 안 된다.
 #   PR #3159 만 수신 가능. 2026-08-29 잠김(미병합, 릴리스 일정 없음). 이 커밋에 고정한다.
 py-cord[voice] @ git+https://github.com/Pycord-Development/pycord@10a5e8cf13bd8db21f95baf62cf866056d1e1091
-faster-whisper>=1.0
+# 서버 용량 측정(stt/eval/results/2026-10-06-server-capacity)을 이 두 버전으로 했다. 올리면 다시 잰다
+faster-whisper==1.2.1
+ctranslate2==4.8.2    # faster-whisper 가 끌어오는 추론 엔진. 속도가 이 버전을 따른다
 jiwer>=3.0            # WER/CER (ai/stt/eval)
 numpy>=1.26           # 오디오 배열 (capture/audio.py)
 soundfile>=0.12       # WAV 파일 I/O (capture/audio.py)

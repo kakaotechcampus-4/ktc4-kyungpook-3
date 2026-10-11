@@ -19,7 +19,7 @@ from typing import Any, Protocol
 
 from draft.doc_draft import DraftUnavailableError, draft
 from judge.final_judge import JudgeUnavailableError, judge
-from judge.semantic_judge import extract_findings
+from judge.semantic_judge import empty_drops, extract_findings_counted
 from llm import get_llm
 from shared.schemas import (
     DraftResult,
@@ -88,13 +88,15 @@ def to_item(
         return item
 
     # 승인 시 충돌 확인 기준 — AI 가 검색에서 본 값. 등록 시점 DB 값을 기준으로 삼으면 그 사이 PM 이 고친
-    # 값을 승인이 말없이 덮는다(#128 리뷰). 아래에서 같은 값 필드를 지우는 것과 별개로 넷 다 보내고,
+    # 값을 승인이 말없이 덮는다(#128 리뷰). 아래에서 같은 값 필드를 지우는 것과 별개로 다 보내고,
     # null 이어도 키를 빼지 않는다 — BE 가 "값이 없었다"와 "안 보냈다"를 구분한다(#160)
     item["target_snapshot"] = {
         "updated_at": target.updated_at,
         "due_date": target.due_date,
         "status": target.status,
         "assignee_member_id": target.assignee_member_id,
+        # 바꾸는 값이 아니라 확인용 — AI 가 이 Task 를 고른 근거라, 그사이 제목이 바뀌면 다른 업무일 수 있다(#185)
+        "title": target.title,
     }
 
     # ── update: 현재 값과 달라지는 필드만 남긴다
@@ -133,6 +135,8 @@ class PipelineFailure:
 class PipelineResult:
     items: list[dict[str, Any]] = field(default_factory=list)  # POST /extractions 로 보낼 item
     failures: list[PipelineFailure] = field(default_factory=list)
+    # 1단계에서 검증에 탈락한 항목 기록(semantic_judge.empty_drops). 회의 기록에 남겨 어느 회의에서 왜 버려졌는지 본다(#186)
+    dropped: dict[str, Any] = field(default_factory=empty_drops)
 
 
 class PipelineUnavailableError(RuntimeError):
@@ -160,9 +164,10 @@ def run(
     키가 없으면 PipelineUnavailableError, 1단계가 실패하면 FindingExtractionUnavailableError.
     """
     _check_llm_keys()
-    findings = extract_findings(transcript)  # 실패하면 그대로 올린다 — finding 자체가 없다
+    # 실패하면 그대로 올린다 — finding 자체가 없다
+    findings, dropped = extract_findings_counted(transcript)
 
-    out = PipelineResult()
+    out = PipelineResult(dropped=dropped)
     for finding in findings:
         try:
             cands = candidates.similar_tasks(workspace_id, finding.text)

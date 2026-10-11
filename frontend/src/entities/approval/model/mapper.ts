@@ -1,6 +1,15 @@
-import type { ApprovalDto } from '@/shared/types/api/approval'
+import { ApiError } from '@/shared/api/errors'
+import type { ApprovalDto, ApprovalResolveRequestDto } from '@/shared/types/api/approval'
 import { enumValue } from '@/shared/lib/enum'
-import type { Approval, ApprovalMissing } from './types'
+import { toApprovalTransport } from './resolution'
+import type { ApprovalResolution } from './resolution'
+import type {
+  Approval,
+  ApprovalConflict,
+  ApprovalMissing,
+  ApprovalResolveFailure,
+  ApprovalStatus,
+} from './types'
 
 function text(value: unknown): string | null {
   return typeof value === 'string' ? value : null
@@ -68,4 +77,81 @@ export function toApproval(dto: ApprovalDto): Approval {
         .map(([field, value]) => ({ field, value })),
     }
   return { ...base, kind: 'unsupported', type: dto.type }
+}
+
+/**
+ * 처리 내용을 `PATCH /approvals/{approval_id}` 본문으로 바꾼다. 처리자(`resolved_by`)는 넣지 않는다.
+ * `task_overrides` 는 `msw` 일 때만 싣는다 — 처리 내용에 들어 있어도 `live`·모르는 값이면 버린다.
+ * 반려 본문은 `status` 뿐이다
+ */
+export function toApprovalResolveRequestDto(
+  resolution: ApprovalResolution,
+  transport: unknown,
+): ApprovalResolveRequestDto {
+  if (resolution.status === 'rejected') return { status: 'rejected' }
+  const body: ApprovalResolveRequestDto = { status: 'approved' }
+  if (resolution.confirmTaskVersion !== undefined)
+    body.confirm_task_version = resolution.confirmTaskVersion
+  if (resolution.taskOverrides !== undefined && toApprovalTransport(transport) === 'msw')
+    body.task_overrides = {
+      task_title: resolution.taskOverrides.taskTitle,
+      assignee_member_id: resolution.taskOverrides.assigneeMemberId,
+      due_date: resolution.taskOverrides.dueDate,
+    }
+  return body
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function toConflict(value: unknown): ApprovalConflict | null {
+  if (!isRecord(value) || typeof value.field !== 'string') return null
+  if (!('base' in value) || !('current' in value) || !('proposed' in value)) return null
+  return { field: value.field, base: value.base, current: value.current, proposed: value.proposed }
+}
+
+/**
+ * 승인 처리 실패 중 화면이 따로 다룰 두 가지를 읽는다. 나머지(권한·검증·네트워크)는 null 이다.
+ * - 409 APPROVAL_CONFLICT: `details.task_version` 과 `details.conflicts[]`(field·base·current·proposed).
+ *   모양이 틀리면 재승인 기준이 없으므로 null 이다
+ * - 409 APPROVAL_ALREADY_RESOLVED: `details.current_status`. 모르는 값이면 null 로 둔다
+ */
+export function toApprovalResolveFailure(error: unknown): ApprovalResolveFailure | null {
+  if (!(error instanceof ApiError) || error.kind !== 'http' || error.status !== 409) return null
+  const details = error.details
+  if (error.code === 'APPROVAL_CONFLICT') {
+    if (
+      !isRecord(details) ||
+      typeof details.approval_id !== 'string' ||
+      typeof details.task_id !== 'string' ||
+      typeof details.task_version !== 'number' ||
+      !Number.isInteger(details.task_version) ||
+      details.task_version < 1 ||
+      !Array.isArray(details.conflicts)
+    )
+      return null
+    const conflicts = details.conflicts.map(toConflict)
+    if (conflicts.some((conflict) => conflict === null)) return null
+    return {
+      kind: 'conflict',
+      approvalId: details.approval_id,
+      taskId: details.task_id,
+      taskVersion: details.task_version,
+      conflicts: conflicts as ApprovalConflict[],
+    }
+  }
+  if (error.code === 'APPROVAL_ALREADY_RESOLVED') {
+    const statuses: readonly ApprovalStatus[] = ['pending', 'approved', 'rejected']
+    const current = isRecord(details) ? details.current_status : undefined
+    return {
+      kind: 'already_resolved',
+      approvalId:
+        isRecord(details) && typeof details.approval_id === 'string' ? details.approval_id : null,
+      currentStatus: (statuses as readonly unknown[]).includes(current)
+        ? (current as ApprovalStatus)
+        : null,
+    }
+  }
+  return null
 }

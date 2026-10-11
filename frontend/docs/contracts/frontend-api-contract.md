@@ -46,6 +46,82 @@
 
 이번 문서 구조화로 요청·합의 상태를 변경하지 않는다. 신규 확인은 정적 코드 대조이고, 실 연동 검증 결과와 담당 파트 합의는 별도 근거가 필요하다. 백엔드 요청 목록은 계속 이 문서 §4를 사용하며 [request 디렉터리](../requests)에 복제하지 않는다.
 
+### M6 태스크·승인 처리 경계 (2026-10-11 코드 대조)
+
+M6 S1에서 프론트 계약·데이터 계층을 현재 서버 코드에 맞췄다. 아래 「현재 서버 구현」은 [tasks.py](../../../backend/app/api/tasks.py), [approvals.py](../../../backend/app/api/approvals.py), [task 스키마](../../../backend/app/schemas/task.py), [approval 스키마](../../../backend/app/schemas/approval.py)의 정적 확인이다. 실 API 호출·실제 Notion 반영은 실행하지 않았다. 「미합의 요청안」은 프론트가 고정한 요청 형태일 뿐이며 백엔드와 합의된 사실이 아니다(합의 여부 확인 필요). 이 절은 §2.5·§2.6·§4.0-③·§4.8-1·§8의 처리자·Notion 판단 기록보다 최신 코드 대조이며, 이전 기록은 과거 상태로 보존한다.
+
+#### 현재 서버 구현
+
+| 항목 | 서버 코드에서 확인한 사실 |
+|---|---|
+| `TaskResponse.version` | 정수, 생성 시 1. 서버의 태스크 변경마다 1씩 오른다 (`services/tasks.py`) |
+| `TaskResponse.notion_sync_status` | `pending` \| `synced` \| `failed`, 미연동이면 `null` (`NotionSyncStatus`). `notion_page_id`와 별개 필드다 |
+| `PATCH /tasks/{task_id}` | PM 전용(`require_pm`). 변경자는 세션 팀원으로 기록하고 본문 `changed_by`는 무시한다(하위 호환 필드) |
+| `POST /tasks/{task_id}/notion-sync/retry` | PM 전용, 본문 없음. 응답은 `TaskResponse`. Notion 미설정이면 409 `INTEGRATION_NOT_CONNECTED`, 재시도할 실패 건이 없으면 400 `INVALID_REQUEST` |
+| `GET /tasks/{task_id}`, `GET /tasks/{task_id}/history` | 태스크 공간의 소속 팀원만 조회(`require_task_member`). 경로에 공간이 없고, 이력 응답에는 `workspace_id`가 없다 |
+| `PATCH /approvals/{approval_id}` 본문 | `ApprovalResolveRequest` = `status`(`approved`·`rejected`), `confirm_task_version?`(정수 ≥ 1), `resolved_by?`(하위 호환, 무시). 처리자는 세션 PM으로 정한다 |
+| 409 `APPROVAL_CONFLICT` | `task_update` 승인에서 제안 뒤 같은 필드가 바뀌면 반영하지 않고 pending으로 되돌린다. `details = {approval_id, task_id, task_version, conflicts: [{field, base, current, proposed}]}` (`_find_conflicts`). PM이 그 `task_version`을 `confirm_task_version`으로 보내면 태스크가 그 버전 그대로일 때만 덮어쓴다. 그 사이 또 바뀌면 다시 409다 |
+| 409 `APPROVAL_ALREADY_RESOLVED` | `details = {approval_id, current_status}` |
+| 승인 목록·상세 조회 | 목록은 `get_current_member`, 상세는 `require_member`. 공간 소속만 검사하고 PM 제한은 없다 |
+| 생성 승인 반영 | payload의 `task_title`·`assignee_member_id`·`due_date`를 그대로 쓴다. 승인 요청 입력으로 이 값을 바꾸는 필드는 없다. 담당자·마감 필수 검사도 없다 |
+
+`APPROVAL_CONFLICT`는 [서버 오류 코드](../../../backend/app/core/errors.py)에 있으나 프론트의 [오류 코드 목록](../../src/shared/api/errors.ts)과 §1의 31개 목록에는 아직 없다. 프론트는 승인 엔티티가 코드 문자열로 판별한다.
+
+#### 현재 프론트 구현
+
+| 항목 | 구현 | 코드 근거 |
+|---|---|---|
+| 태스크 Query | 목록 `['workspace', id, 'tasks', 'list']`, 상세 `[…, 'detail', taskId]`, 이력 `[…, 'history', taskId]`. 접두어 `taskKeys(workspaceId)`를 공유한다 | [taskApi](../../src/entities/task/api/taskApi.ts) |
+| 공간 확인 | 목록·상세·상태 변경·재시도 응답의 `workspace_id`가 요청 공간과 다르면 `WORKSPACE_MISMATCH`(kind `invalid_response`)로 던져 캐시에 성공 데이터로 넣지 않는다. 이력은 같은 태스크 상세(캐시 재사용)로 공간을 확인하고, 항목의 `task_id`가 다르면 `INVALID_RESPONSE`다 | [taskApi](../../src/entities/task/api/taskApi.ts) |
+| 상태 변경·재시도 본문 | 상태 변경은 `{status}`만, 재시도는 본문 없음. `changed_by`를 보내지 않는다 | [taskApi](../../src/entities/task/api/taskApi.ts) |
+| Task 매핑 | `version`이 정수가 아니면 `INVALID_RESPONSE`로 매핑 실패. `notionSyncStatus`는 세 값과 `null`만, 모르는 문자열은 `null`. 반영 완료 판단은 `isNotionSynced` = `synced`뿐이며 `notion_page_id` 존재로 판단하지 않는다 (§4.8-1을 대체) | [Task mapper](../../src/entities/task/model/mapper.ts), [Task DTO](../../src/shared/types/api/task.ts) |
+| 승인 처리 본문 | `resolveApproval`이 `planApprovalResolution` 판정을 통과한 본문만 보낸다. `resolved_by`를 보내지 않는다. `confirm_task_version`은 `task_update` 승인에서 호출자가 서버 버전(정수 ≥ 1)을 줄 때만 싣는다 | [resolveApproval](../../src/entities/approval/api/resolveApproval.ts), [판정](../../src/entities/approval/model/resolution.ts), [승인 DTO](../../src/shared/types/api/approval.ts) |
+| 409 해석 | `toApprovalResolveFailure`가 `conflict`(`taskVersion`, `conflicts[]`)와 `already_resolved`(`currentStatus`)를 구분한다. details 모양이 틀리면 null(일반 오류) | [승인 mapper](../../src/entities/approval/model/mapper.ts) |
+| 생성 승인 판정 | 제목 trim 후 1~300자(코드 포인트), 담당자는 호출자가 넘긴 현재 공간 팀원 ID 목록에 포함, 마감은 유효한 `YYYY-MM-DD`. 하나라도 아니면 승인 본문을 만들지 않고 이유 문자열을 돌려준다. 반려 본문은 `{status: "rejected"}`로 항상 만들 수 있다. 지원하지 않는 종류와 pending이 아닌 승인은 승인·반려 모두 만들지 않는다 | [판정](../../src/entities/approval/model/resolution.ts) |
+
+#### 미합의 요청안 — 생성 승인 보완 `task_overrides`
+
+현재 서버가 받는 입력이 아니다. 기존 `PATCH /approvals/{approval_id}`에 다음 필드를 추가하는 형태로 프론트가 고정했다. `status: "approved"`이고 승인 종류가 `task_create`일 때만 쓴다.
+
+```json
+{
+  "status": "approved",
+  "task_overrides": {
+    "task_title": "확정할 제목",
+    "assignee_member_id": "현재 공간의 팀원 ID",
+    "due_date": "2026-10-15"
+  }
+}
+```
+
+- 실 API(transport `live`)에는 이 필드를 보내지 않는다. 호출자가 보완값을 넘겨도 본문에서 제거하고, 기존 payload 값으로만 판정한다. 필수값이 이미 충족되면 보완 없이 `{status: "approved"}`로 승인하고, 아니면 승인 본문을 만들지 않는다. 미지원 필드가 조용히 무시된 채 승인되는 요청을 만들지 않기 위해서다.
+- transport가 `msw`일 때만 approved `task_create` 본문에 싣는다. transport 인자가 빠지거나 모르는 값이면 `live`로 본다. 반려 본문과 `task_update`에는 싣지 않는다.
+- 현재 MSW 승인 handler는 이 필드를 아직 읽지 않고 `resolved_by`를 요구한다. MSW의 서버 의미 맞춤과 보완 적용은 M6 S2 범위이며 이 절의 구현 사실이 아니다.
+
+> 2026-10-11 S5 코드 대조: 바로 위 MSW 문장은 S1 시점 기록이다. 현재 [MSW 승인 handler](../../src/shared/mock/handlers/approval.ts)는 아래처럼 동작한다. 이는 개발·테스트용 모의 서버의 구현 사실이며, 실제 서버 구현이나 백엔드 합의가 아니다(아래 M6-1~M6-3은 여전히 합의 여부 확인 필요).
+>
+> - 본문 `resolved_by`를 요구하지 않는다. 처리자는 세션 팀원([sessions.ts](../../src/shared/mock/sessions.ts)의 고정 대응)이고 PM이 아니면 403이다. `confirm_task_version`은 정수 ≥ 1 또는 생략·`null`만 받는다.
+> - approved `task_create`에서 `task_overrides`를 읽는다. 세 필드가 모두 문자열인 객체가 아니면 400 `INVALID_REQUEST`(`details.field = "task_overrides"`)다. 보완값이 있으면 payload의 제목·담당자·마감을 대신한다.
+> - 보완값이 **없어도** 최종 제목(trim 후 1~300자)·담당자·마감(유효한 `YYYY-MM-DD`)을 검사하고, 실패하면 400 `INVALID_REQUEST`(`details.field`)다. 위 「현재 서버 구현」의 생성 승인 반영(필수 검사 없음)과 다르며, 요청안 M6-3을 모의한 동작이다.
+> - 추출 항목의 공간·연결 승인, 담당자·회의 소속을 모두 검증한 뒤에만 태스크 생성·이력·추출 항목 `task_id` 연결·승인 상태 변경을 한꺼번에 적용한다. 실패하면 아무것도 바꾸지 않는다(요청안 M6-2 모의). 추출 항목의 `approval_id`는 서버처럼 남긴다.
+> - 승인 목록·상세 조회는 서버처럼 공간 소속만 검사한다. PM 제한(요청안 M6-4)은 모의하지 않는다.
+> - 화면의 처리 경로(transport)는 개발 서버이고 `VITE_ENABLE_MSW=true`일 때만 `msw`다([transport](../../src/features/approval-resolve/model/transport.ts)). production 빌드와 Storybook 빌드는 `live`라 `task_overrides`를 보내지 않는다.
+
+#### 백엔드 요청 (합의 여부 확인 필요)
+
+| # | 요청 | 이유 |
+|---|---|---|
+| M6-1 | `ApprovalResolveRequest`에 위 `task_overrides`를 추가하고 approved `task_create`에서만 받는다 | 담당자·마감이 없는 생성 승인을 PM이 보완 후 승인할 경로가 없다 |
+| M6-2 | 보완값 적용·승인 상태 변경·태스크 생성·추출 항목 `task_id` 연결을 한 트랜잭션으로 처리한다 | 일부만 반영되면 승인·태스크·회의록이 어긋난다 |
+| M6-3 | 생성 승인의 최종 제목(trim 후 1~300자)·담당자(같은 공간 팀원)·마감(유효 날짜)을 필수로 검증한다 | M6 제품 규칙. 현재 서버는 담당자·마감 없이 태스크를 만든다 |
+| M6-4 | 승인 목록·상세 조회를 PM으로 제한한다 | 프론트 가드와 요청 차단만으로는 일반 팀원의 직접 호출을 막지 못한다 |
+
+이 요청은 프론트 계약에 기록한 것이며 백엔드에 전달·합의된 근거는 이 문서에 없다. 실 API 보완 승인, 승인 조회 PM 제한, 실제 Notion 반영은 미검증 연동 과제로 남는다.
+
+#### 검증 범위
+
+S1에서 실행한 검증은 프론트 단위·MSW 테스트다([taskApi 테스트](../../src/entities/task/api/taskApi.test.ts), [Task mapper 테스트](../../src/entities/task/model/mapper.test.ts), [판정 테스트](../../src/entities/approval/model/resolution.test.ts), [승인 처리 테스트](../../src/entities/approval/api/resolveApproval.test.ts), [승인 mapper 테스트](../../src/entities/approval/model/mapper.test.ts)). 서버 응답 모양은 테스트 안의 MSW override로 재현했으며 실 백엔드 호출로 확인하지 않았다.
+
 ---
 
 - 작성일 2026-09-17 · 개정 2026-09-21
@@ -277,6 +353,8 @@ AUDIO_TOO_LARGE(413)              DISCORD_USER_ALREADY_MAPPED(409)
 // 이미 처리된 건 → 409 APPROVAL_ALREADY_RESOLVED
 ```
 
+> 2026-10-11 코드 대조: 위 `resolved_by`는 과거 기록이다. 현재 서버는 처리자를 세션으로 정하고 `confirm_task_version`·409 `APPROVAL_CONFLICT`를 지원한다. 상단 「M6 태스크·승인 처리 경계」를 따른다.
+
 #### payload — 가정이 아니라 사실
 
 회의에서 생성되는 `task_create` 승인의 payload 는 `api/extractions.py` 가 아래 키로 만든다.
@@ -335,6 +413,8 @@ AUDIO_TOO_LARGE(413)              DISCORD_USER_ALREADY_MAPPED(409)
  "due_date": "2026-09-20",
  "notion_page_id": null,
  "created_at": "...", "updated_at": "..."}
+// 2026-10-11 코드 대조: 현재 TaskResponse 에는 "version"(정수)과
+// "notion_sync_status"(pending|synced|failed|null)도 있다 → 상단 「M6 태스크·승인 처리 경계」
 
 // POST 요청 {workspace_id, title, meeting_id?, assignee_member_id?, start_date?, due_date?,
 //            status?, progress?, blocker?, created_by?}
@@ -888,7 +968,7 @@ POST .../meetings/upload            multipart/form-data
 
 | # | 항목 | 고정한 내용 | 근거 |
 |---|---|---|---|
-| 1 | Notion 반영 여부 | `task.notion_page_id` 가 `null` 이 아니면 반영 완료로 본다 | 다른 판단 근거가 스키마에 없다 |
+| 1 | Notion 반영 여부 | ~~`task.notion_page_id` 가 `null` 이 아니면 반영 완료로 본다~~ 2026-10-11: 서버 `notion_sync_status` 가 `synced` 일 때만 반영 완료로 본다 (상단 「M6 태스크·승인 처리 경계」) | ~~다른 판단 근거가 스키마에 없다~~ 서버에 `notion_sync_status` 가 생겼다 |
 | 2 | Notion 반영 시각 | 별도 필드를 요청하지 않는다. `task_history` 의 해당 변경 시각을 쓴다 | 반영은 태스크 변경과 함께 일어난다 |
 | 3 | Notion URL | 요청하지 않는다. `notion_page_id` 로 프론트엔드가 URL 을 만든다 | 페이지 ID 만으로 링크가 성립한다 |
 | 4 | `todo`·`blocked` 가 속할 탭 | 완료가 아닌 태스크를 모두 `진행 중` 탭에 넣는다 | 시안의 탭 개수 `13 = 3 + 7 + 3` (§3.2) |

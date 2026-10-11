@@ -23,6 +23,11 @@ from app.models import (
 )
 
 
+# 추출 등록은 봇 경로라 서비스 토큰을 요구한다.
+SERVICE_TOKEN = "test-service-token"
+SERVICE_HEADERS = {"X-Service-Token": SERVICE_TOKEN}
+
+
 @pytest.fixture
 def db():
     engine = create_engine(
@@ -43,7 +48,8 @@ def db():
 
 
 @pytest.fixture
-def client(db):
+def client(db, monkeypatch):
+    monkeypatch.setenv("SERVICE_TOKEN", SERVICE_TOKEN)
     return TestClient(app, base_url="https://testserver")
 
 
@@ -98,7 +104,7 @@ def _post(client, seed, items: list[dict]):
         "meeting_id": seed["meeting"].meeting_id,
         "workspace_id": seed["ws"].workspace_id,
         "items": items,
-    })
+    }, headers=SERVICE_HEADERS)
 
 
 def _approvals(db, type_: str) -> list[ApprovalRequest]:

@@ -206,10 +206,14 @@ describe('일반 팀원 (U3-11)', () => {
     await app.expectPath(paths.tasks('ws_01'))
     // U4 의 추적기는 업로드와 무관하게 모든 워크스페이스 화면에서 지금 공간의 회의 목록과 정리 중 회의 상세를 받는다.
     // 그 두 모양만 빼고 본다 — 업로드·연동·팀원 요청은 여전히 0회다. 추적기 요청은 meetingProcessing.test.tsx 가 단언한다
-    const related = log.started
-      .filter((request) => !isTrackerRequest(request))
-      .filter(({ path }) => /\/meetings|\/integrations|\/members/.test(path))
-    expect(related).toEqual([])
+    // M6 S3 부터 도착한 태스크 목록이 담당자 이름을 위해 팀원 목록을 한 번 받는다. 그 한 모양 말고 업로드·연동·팀원 요청은 0회다
+    const related = () =>
+      log.started
+        .filter((request) => !isTrackerRequest(request))
+        .filter(({ path }) => /\/meetings|\/integrations|\/members/.test(path))
+    await waitFor(() =>
+      expect(related()).toEqual([{ method: 'GET', path: '/members?workspace_id=ws_01' }]),
+    )
   })
 })
 

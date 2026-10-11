@@ -1,7 +1,7 @@
 import { expect } from '@playwright/test'
 import type { Page } from '@playwright/test'
 
-/** E2E 시나리오 이름 (shared/mock/scenarios.ts 의 MOCK_SCENARIOS). M4 U1 다섯 개 + M5 회의 흐름 */
+/** E2E 시나리오 이름 (shared/mock/scenarios.ts 의 MOCK_SCENARIOS). M4 U1 다섯 개 + M5 회의 흐름 + M6 태스크·승인 */
 export type Scenario =
   | 'signed-out'
   | 'no-workspace'
@@ -15,6 +15,15 @@ export type Scenario =
   | 'meeting-notion-not-connected'
   | 'meeting-notion-revoked'
   | 'meeting-member'
+  | 'tasks-default'
+  | 'tasks-empty'
+  | 'approval-needs-input'
+  | 'approval-rejected'
+  | 'approval-resolved'
+  | 'approval-conflict'
+  | 'notion-sync-pending'
+  | 'notion-sync-failed'
+  | 'tasks-member'
 
 /**
  * 모의 db 를 그 시나리오로 초기화하고 path 로 들어간다. 시나리오 파라미터는 저장값보다 앞서고
@@ -73,4 +82,19 @@ export async function expectAudioReady(page: Page): Promise<void> {
   await expect(page.getByText(SHORT_AUDIO.name, { exact: true })).toBeVisible()
   // `00:01 · 0.1 MiB` 처럼 길이가 앞에 붙으면 받았다. 읽는 중은 `길이를 확인하고 있어요`
   await expect(page.getByText(/^\d+:\d{2} · /)).toBeVisible()
+}
+
+/**
+ * 정리가 끝난 회의의 회의록이 열린다. 모의 `meeting-instant` 는 첫 조회에 바로 `done` 이라, 병렬 부하로 처리 화면(lazy)이
+ * 그려지기 전에 완료 응답이 오면 추적기는 자동 이동 없이 도착한 사람에게 `정리가 끝났어요 · 회의록 보기` 를 보인다
+ * (useProcessingTracker.leaveProcessingScreen — 그려진 처리 화면에서만 옮긴다). 둘 다 정상 결과라 링크가 보이면 눌러 회의록으로 간다.
+ * 자동 이동 자체의 시점은 추적기 통합 테스트가 고정된 순서로 본다 (lateAsyncRaces·processingTracker)
+ */
+export async function expectMinutesOpened(page: Page, timeout = 15_000): Promise<void> {
+  const minutes = /^\/workspaces\/ws_01\/meetings\/mt_\w+$/
+  const open = page.getByRole('link', { name: '회의록 보기' })
+  await expect(async () => {
+    if (!minutes.test(new URL(page.url()).pathname) && (await open.isVisible())) await open.click()
+    expect(minutes.test(new URL(page.url()).pathname)).toBe(true)
+  }).toPass({ timeout })
 }

@@ -90,8 +90,11 @@ def require_task_member(
 def require_service_token(x_service_token: str | None = Header(None)) -> None:
     """디스코드 봇처럼 사용자 세션 없이 부르는 경로용. X-Service-Token을 SERVICE_TOKEN과 비교한다.
 
-    SERVICE_TOKEN이 설정되지 않은 서버는 모든 요청을 거절한다.
+    SERVICE_TOKEN이 설정되지 않은 서버는 모든 요청을 거절한다. 바이트로 바꿔 비교한다. 문자열 그대로 넘기면
+    secrets.compare_digest가 ASCII가 아닌 헤더 값에 TypeError를 던져 401 대신 500이 난다.
     """
     expected = os.getenv("SERVICE_TOKEN")
-    if not expected or not x_service_token or not secrets.compare_digest(x_service_token, expected):
+    if not expected or not x_service_token or not secrets.compare_digest(
+        x_service_token.encode(), expected.encode()
+    ):
         raise AppError(ErrorCode.UNAUTHENTICATED, message="서비스 토큰이 없거나 올바르지 않습니다.")
