@@ -5,8 +5,10 @@
 0.0으로 저장돼 측정값 0과 구분되지 않았다.
 
 이미 저장된 추출은 요청에서 어떤 키를 보냈는지 남아 있지 않으므로 저장된 항목으로 경로를 채운다.
-judge 항목은 doc_text와 category가 항상 있고 legacy 항목은 둘 다 없다. 항목이 없는 추출은
-판별할 근거가 없어 NULL로 둔다. 기존 항목의 확신도 값은 바꾸지 않는다.
+judge 항목은 doc_text와 category가 항상 있고 legacy 항목은 둘 다 없다. 등록 때와 같이 모든 항목이
+같은 경로일 때만 채우고, 항목이 없거나 섞였으면 판별할 근거가 없어 NULL로 둔다. 요청 때 값이 null인 키는
+저장된 행에 흔적이 남지 않으므로, 둘 다 없는 항목을 legacy로 보는 것은 추정이다. 기존 항목의 확신도 값은
+바꾸지 않는다.
 
 Revision ID: b9e4d72a1c58
 Revises: ff910022550c
@@ -31,19 +33,21 @@ _CONFIDENCE_COLUMNS = ('task_confidence', 'due_confidence', 'confidence')
 def upgrade() -> None:
     """Upgrade schema."""
     op.add_column('extraction', sa.Column('extraction_path', sa.String(length=16), nullable=True))
+    # 등록 때의 판별(ExtractionCreateRequest.extraction_path)과 같게 모든 항목이 한 경로일 때만 채운다.
+    # 항목이 없거나 judge·legacy 항목이 섞였으면 NULL이다
     op.execute(sa.text(
         """
-        UPDATE extraction SET extraction_path = CASE
-            WHEN EXISTS (
-                SELECT 1 FROM extraction_item
-                WHERE extraction_item.extraction_id = extraction.extraction_id
-                  AND (extraction_item.doc_text IS NOT NULL OR extraction_item.category IS NOT NULL)
-            ) THEN 'judge'
-            WHEN EXISTS (
-                SELECT 1 FROM extraction_item
-                WHERE extraction_item.extraction_id = extraction.extraction_id
-            ) THEN 'legacy'
-        END
+        UPDATE extraction SET extraction_path = (
+            SELECT CASE
+                WHEN COUNT(*) = 0 THEN NULL
+                WHEN COUNT(CASE WHEN doc_text IS NOT NULL OR category IS NOT NULL THEN 1 END) = COUNT(*)
+                    THEN 'judge'
+                WHEN COUNT(CASE WHEN doc_text IS NOT NULL OR category IS NOT NULL THEN 1 END) = 0
+                    THEN 'legacy'
+            END
+            FROM extraction_item
+            WHERE extraction_item.extraction_id = extraction.extraction_id
+        )
         """
     ))
     with op.batch_alter_table('extraction_item') as batch_op:
