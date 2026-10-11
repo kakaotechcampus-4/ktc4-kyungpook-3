@@ -294,7 +294,8 @@ scope는 `bot applications.commands identify`다. 봇 초대 scope만 요청하�
 | 검색 대상 | 같은 워크스페이스에서 status가 todo·in_progress·blocked·done이고 임베딩이 있는 task. 코사인 유사도 상위 `k`(기본 3)개 중 `min_similarity`(기본 0.4, ai/docs/basis_for_decision/ai/2026-09-22-0010-embedding-similarity-threshold.md) 이상만 |
 | 검색 인증 | 봇이 세션 없이 부르므로 `X-Service-Token` 헤더를 `SERVICE_TOKEN`과 비교한다. 없거나 다르면 401 |
 | 검색 실패 | 임베딩 호출이 실패하면 빈 목록 대신 `EMBEDDING_UNAVAILABLE`(502). 빈 목록이면 호출한 쪽이 중복 task를 만들 수 있다 |
-| `action` 없음 / `create` | 예전과 같다. 게이트가 auto면 task 생성, 아니면 task_create 승인 요청 |
+| `action` 없음 / `create` | 게이트가 auto면 task 생성, 아니면 task_create 승인 요청. 게이트는 `decide_create_gate`가 정한다. judge 항목과 확신도를 측정하지 않은 항목은 auto로 가지 않고 BE가 계산한 담당자 확신도로만 정한다. 담당자를 한 명으로 찾았거나 언급이 없으면(`assignee_type`이 group·none·null) `review`, 언급했는데 찾지 못했으면(중의적·없음) `hold`다. `assignee_raw` 없이 `second`·`thirdpronoun`·`thirdrole`만 오거나 1인칭인데 화자가 없으면, 사람을 지목했지만 누군지 모르는 것이라 `hold`다(`mentions_assignee`). 그 밖에는 확신도로 정한다(#201) |
+| 추출 경로 | AI가 경로를 보내지 않으므로 항목이 보낸 키로 가린다. `action`·`category`·`doc_text`를 보냈으면 judge, 확신도를 보냈으면 legacy다(`ExtractionItemCreate.extraction_path`). 모든 항목이 같을 때만 `extraction.extraction_path`에 남기고 아니면 NULL. 확신도를 보내지 않으면 0.0이 아니라 NULL(측정 안 함)로 저장한다 |
 | `action: update` | `target_task_id`의 task_update 승인 요청을 만든다(신뢰도와 무관하게 항상 PM 승인 대상). `task_title`은 없어도 되고, 와도 제목은 바꾸지 않는다 |
 | update 변경안 | 들어온 값 중 지금 task와 다른 `due_date`·`status`·`assignee_member_id`만 담는다. 담당자는 지금 task와 다를 때만 넣고 같으면 뺀다 |
 | update 충돌 기준값 | 변경 필드마다 `base_values`를 남겨 승인 시 그 뒤 수정과 충돌을 확인한다. 기준값은 AI가 유사 검색에서 본 값(`target_snapshot`의 `due_date`·`status`·`assignee_member_id`)이다. 보내지 않은 필드나 `target_snapshot`이 없는 요청은 등록 시점의 값을 쓴다. 검색과 등록 사이에 PM이 고친 값을 승인이 덮지 않게 하려는 것이다 |
