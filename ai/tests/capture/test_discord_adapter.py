@@ -111,6 +111,10 @@ class FakeCtx:
     def __init__(self, guild, vc, channel):
         self.guild, self.voice_client, self.channel = guild, vc, channel
         self.responses = []
+        self.deferred = False
+
+    async def defer(self, ephemeral=False):
+        self.deferred = True
 
     async def respond(self, text, ephemeral=False):
         self.responses.append(text)
@@ -260,27 +264,56 @@ async def test_be_being_down_at_record_does_not_stop_the_recording(tmp_path):
 
 def test_the_unconnected_notices_say_who_connects_it_and_where():
     """연결은 PM 이 웹 온보딩의 디스코드 연결 단계에서 한다. 설정 화면에는 아직 디스코드 연결이 없다(#199)."""
-    for text in (A.NOT_CONNECTED_NOTICE, A.NOT_CONNECTED_NOTICE_WORKER, A.NOT_CONNECTED_RESULT):
+    for text in (A.NOT_CONNECTED_REFUSED, A.NOT_CONNECTED_RESULT):
         assert "PM" in text and "온보딩" in text and "설정" not in text
 
 
-async def test_record_in_an_unconnected_server_records_and_says_how_to_connect(tmp_path):
-    """봇은 서버에 있는데 웹에서 연결이 없다(#199). 녹음과 회의록은 하고 BE 로는 보내지 않는다. 안내는 시작 때 한 번,
-    결과 보고에 한 줄이다."""
+async def test_record_in_an_unconnected_server_refuses_and_says_how_to_connect(tmp_path):
+    """봇은 서버에 있는데 웹에서 연결이 없다(#199). 녹음을 시작하지 않고, 회의 전에 누가 어디서 연결하는지 알린다."""
     fake = FakeBe()                                             # 이 서버는 연결이 없다
     handoff = H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"))
     cog, guild, vc, channel, ctx = _setup(tmp_path, extractor=first_person_extractor, handoff=handoff)
     await _run(A.RecordingCog.record, cog, ctx)
-    rec = cog._active[GUILD_ID]
-    assert rec.workspace_id is None and "meeting_id" not in rec.be and vc.started is not None
-    assert [t for t, _ in channel.sent] == [A.NOT_CONNECTED_NOTICE]
-    rec.sink.on_samples(1, _tone(2000), 0)
-    await _run(A.RecordingCog.stop, cog, ctx)
-    await asyncio.wait_for(rec.done.wait(), 20)
-    texts = [t for t, _ in channel.sent]
-    assert any(t.startswith("📝 회의록") for t in texts)
-    assert [t for t in texts if "연결" in t] == [A.NOT_CONNECTED_NOTICE, A.NOT_CONNECTED_RESULT]
-    assert "/meetings" not in [c[1] for c in fake.calls] and _manifest(tmp_path, rec)["status"] == "transcribed"
+    assert ctx.deferred and ctx.responses == [A.NOT_CONNECTED_REFUSED]   # BE 를 묻는 동안 3초 응답 기한을 넘기지 않는다
+    assert vc.started is None and GUILD_ID not in cog._active
+    assert not list((tmp_path / "recordings").glob("session_*"))        # 매니페스트도 회의 잠금도 남기지 않는다
+    assert [c[1] for c in fake.calls] == [f"/integrations/discord/guilds/{GUILD_ID}/workspace"]
+
+
+class SlowHandoff:
+    """워크스페이스 조회가 풀어 줄 때까지 걸리는 인계. 조회 중에 다른 /record 가 들어오는 틈을 만든다."""
+
+    def __init__(self):
+        self.release = threading.Event()
+        self.asked = 0
+
+    def workspace(self, meta):
+        self.asked += 1
+        self.release.wait(5)
+        meta["workspace_id"] = "ws-1"
+        return "ws-1"
+
+    def start(self, meta, *, title=None):
+        return meta.setdefault("be", {})
+
+
+async def test_two_records_while_the_workspace_is_looked_up_start_only_one_recording(tmp_path):
+    """녹음 전에 BE 를 묻는 동안 같은 서버의 /record 가 하나 더 와도 녹음은 하나만 시작한다(#199)."""
+    handoff = SlowHandoff()
+    cog, guild, vc, channel, ctx = _setup(tmp_path, handoff=handoff)
+    other = FakeCtx(guild, vc, channel)
+    first = asyncio.create_task(_run(A.RecordingCog.record, cog, ctx))
+    second = asyncio.create_task(_run(A.RecordingCog.record, cog, other))
+    for _ in range(200):
+        if handoff.asked == 2:
+            break
+        await asyncio.sleep(0.01)
+    assert handoff.asked == 2                                   # 둘 다 조회까지 왔다
+    handoff.release.set()
+    await asyncio.gather(first, second)
+    assert sorted([ctx.responses, other.responses]) == sorted([[A.NOTICE], ["이미 녹음 중입니다. `/stop` 으로 먼저 종료하세요."]])
+    assert len(list((tmp_path / "recordings").glob("session_*.json"))) == 1
+    cog._active[GUILD_ID].flush_task.cancel()
 
 
 async def test_channel_failures_do_not_block_processing_or_the_done_signal(tmp_path):

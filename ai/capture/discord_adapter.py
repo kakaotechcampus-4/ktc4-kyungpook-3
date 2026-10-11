@@ -80,11 +80,10 @@ from stt.speech_gate import SpeechGate
 SessionSavedHook = Callable[[dict, Path], Awaitable[None]]
 
 NOTICE = "🔴 녹음·전사 중입니다. 이 음성 채널의 말은 화자별로 녹음되고 `/stop` 뒤 회의록이 여기 올라옵니다."
-# 봇은 서버에 있는데 웹에서 이 서버를 워크스페이스에 연결하지 않았다(#199). 시작 때 한 번, 결과 보고에 한 줄
-NOT_CONNECTED_NOTICE = ("⚠️ 이 디스코드 서버가 웹 워크스페이스에 연결돼 있지 않아 회의록이 이 채널에만 남습니다. "
-                        "PM 이 웹 온보딩의 디스코드 연결 단계에서 이 서버를 연결하면 이 회의도 이어서 넘어갑니다.")
-NOT_CONNECTED_NOTICE_WORKER = ("⚠️ 이 디스코드 서버가 웹 워크스페이스에 연결돼 있지 않습니다. 녹음은 저장해 두고, "
-                               "PM 이 웹 온보딩의 디스코드 연결 단계에서 이 서버를 연결하면 그때 처리해 웹에 올립니다.")
+# 봇은 서버에 있는데 웹에서 이 서버를 워크스페이스에 연결하지 않았다(#199). /record 는 녹음하지 않고 이렇게 답한다.
+# 결과 보고 줄은 녹음 시작 때 조회가 일시로 실패했고 처리할 때 연결이 없던 회의에 쓴다
+NOT_CONNECTED_REFUSED = ("⚠️ 이 디스코드 서버가 웹 워크스페이스에 연결돼 있지 않아 녹음을 시작하지 않았습니다. "
+                         "PM 이 웹 온보딩의 디스코드 연결 단계에서 이 서버를 연결한 뒤 다시 `/record` 해 주세요.")
 NOT_CONNECTED_RESULT = ("ℹ️ 이 서버가 웹 워크스페이스에 연결돼 있지 않아 회의록 저장·할일 추출·BE 인계를 멈췄습니다. "
                         "PM 이 웹 온보딩의 디스코드 연결 단계에서 이 서버를 연결하면 이어서 넘어갑니다.")
 FLUSH_EVERY_S = 0.2   # 재정렬 창에 갇힌 마지막 패킷을 이 주기로 비운다. 패킷은 20ms 마다 온다
@@ -145,7 +144,6 @@ class _Recording:
     started_at: str
     text_channel_id: int | None = None
     workspace_id: str | None = None
-    not_connected: bool = False                     # /record 때 BE 가 이 서버의 연결이 없다고 했다(#199)
     timezone: str = "Asia/Seoul"
     be: dict = field(default_factory=dict)          # BE 회의 상태. capture/handoff.py 가 채운다
     notified: set[int] = field(default_factory=set)
@@ -243,15 +241,38 @@ class RecordingCog(discord.Cog):
             await channel.connect(cls=SafeVoiceClient)
         await ctx.respond(f"`{channel.name}` 입장 완료. `/record` 로 녹음을 시작하세요.")
 
-    @discord.slash_command(name="record", description="화자별 트랙 녹음을 시작합니다")
-    async def record(self, ctx: discord.ApplicationContext) -> None:
+    def _record_blocked(self, ctx: discord.ApplicationContext) -> str | None:
+        """지금 녹음을 시작할 수 없는 이유. 없으면 None."""
         vc = ctx.voice_client
         if vc is None or not vc.is_connected():
-            await ctx.respond("봇이 음성채널에 없습니다. `/join` 먼저 실행해 주세요.", ephemeral=True)
-            return
+            return "봇이 음성채널에 없습니다. `/join` 먼저 실행해 주세요."
         if is_recording(vc) or ctx.guild.id in self._active:
-            await ctx.respond("이미 녹음 중입니다. `/stop` 으로 먼저 종료하세요.", ephemeral=True)
+            return "이미 녹음 중입니다. `/stop` 으로 먼저 종료하세요."
+        return None
+
+    @discord.slash_command(name="record", description="화자별 트랙 녹음을 시작합니다")
+    async def record(self, ctx: discord.ApplicationContext) -> None:
+        if (why := self._record_blocked(ctx)) is not None:
+            await ctx.respond(why, ephemeral=True)
             return
+        # 녹음 전에 이 서버의 워크스페이스를 찾는다. 연결이 없으면 녹음하지 않는다(#199). 조회가 일시로 실패하면
+        # 녹음은 하고 처리할 때 다시 묻는다. 다시 할 수 없는 회의를 BE 장애 때문에 잃지 않게 한다
+        handoff = self._handoff_factory()
+        meta = {"be": {}, "guild_id": str(ctx.guild.id)}
+        if handoff is not None:
+            await ctx.defer()                   # BE 를 묻는 동안 디스코드의 3초 응답 기한을 넘기지 않는다
+            try:
+                if await asyncio.to_thread(handoff.workspace, meta) is None:
+                    await ctx.respond(NOT_CONNECTED_REFUSED)
+                    return
+            except Exception as e:  # noqa: BLE001
+                meta["be"]["error"] = f"{type(e).__name__}: {e}"
+                print(f"[be] 워크스페이스 조회 실패: {meta['be']['error']}", flush=True)
+            # 묻는 사이 같은 서버의 다른 /record 가 먼저 시작했거나 봇이 채널을 떠났을 수 있다
+            if (why := self._record_blocked(ctx)) is not None:
+                await ctx.respond(why, ephemeral=True)
+                return
+        vc = ctx.voice_client
         # 회의 잠금을 먼저 잡고 recording 매니페스트를 쓴다. 워커는 봇 메모리를 못 보니 이 잠금으로 녹음 중인 회의를
         # 건너뛰고, 잠금 없는 recording 은 봇이 녹음 중에 죽은 회의로 읽는다
         ts = int(time.time())
@@ -274,28 +295,21 @@ class RecordingCog(discord.Cog):
                          voice_channel_name=getattr(vc.channel, "name", None),
                          guild_name=ctx.guild.name if ctx.guild else None, started_at=now_iso(),
                          text_channel_id=getattr(ctx.channel, "id", None),
-                         timezone=cfg.meeting_timezone, lock=lock, hint_names=_member_names(ctx.guild))
+                         timezone=cfg.meeting_timezone, lock=lock, hint_names=_member_names(ctx.guild),
+                         workspace_id=meta.get("workspace_id"), be=meta["be"])
         vc.start_recording(sink, self._on_recording_done, ctx)
         self._active[ctx.guild.id] = rec
         # 시작 시점에 매니페스트를 먼저 쓴다. 봇이 죽어도 이 회의가 있었다는 기록과 트랙이 남는다
         _, manifest = self._write_status(rec, STATUS_RECORDING, [])
         rec.flush_task = asyncio.create_task(self._flush_loop(rec))
         await ctx.respond(NOTICE)
-        # 이 서버의 워크스페이스를 찾아 BE 에 회의를 먼저 만들어 둔다. 실패해도 녹음은 계속되고 처리할 때 다시 한다
-        handoff = self._handoff_factory()
-        if handoff is not None:
-            meta = {"be": rec.be, "guild_id": str(ctx.guild.id)}
+        # BE 에 회의를 먼저 만들어 둔다. 실패해도 녹음은 계속되고 처리할 때 다시 한다
+        if handoff is not None and rec.workspace_id:
             try:
-                if await asyncio.to_thread(handoff.workspace, meta) is None:
-                    rec.not_connected = True
-                    await self._notify(ctx.channel, NOT_CONNECTED_NOTICE_WORKER if self._mode == "worker"
-                                       else NOT_CONNECTED_NOTICE)
-                else:
-                    await asyncio.to_thread(handoff.start, meta, title=meeting_title(manifest))
+                await asyncio.to_thread(handoff.start, meta, title=meeting_title(manifest))
             except Exception as e:  # noqa: BLE001
                 rec.be["error"] = f"{type(e).__name__}: {e}"
                 print(f"[be] 회의 생성 실패: {rec.be['error']}", flush=True)
-            rec.workspace_id = meta.get("workspace_id")
             if self._active.get(ctx.guild.id) is rec:   # 그 사이 끝나지 않았을 때만 다시 쓴다
                 self._write_status(rec, STATUS_RECORDING, [])
 
@@ -631,11 +645,6 @@ class RecordingCog(discord.Cog):
                 # saved 를 다 쓴 뒤에 잠금을 놓는다. 이제 워커가 집는다. 결과는 BE 를 거쳐 웹에서 본다
                 if rec.lock is not None:
                     rec.lock.release()
-                if rec.not_connected:
-                    # 워커는 연결될 때까지 전사하지 않는다. 대기열 수도 의미가 없다
-                    await self._notify(rec.text_channel, f"✅ 녹음을 저장했습니다(화자 {len(entries)}명). PM 이 웹 온보딩에서 "
-                                       f"이 서버를 연결하면 처리해 웹에 올립니다.{warn}")
-                    return
                 ahead = queue_ahead(self.recordings_dir, rec.meeting_id, exclude=self._holding())
                 await self._notify(rec.text_channel, f"✅ 녹음을 저장했습니다(화자 {len(entries)}명). 회의록과 할일은 "
                                    f"처리되면 웹에서 확인할 수 있습니다(앞에 {ahead}건).{warn}")
