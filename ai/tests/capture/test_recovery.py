@@ -472,3 +472,23 @@ def test_the_windows_branch_means_the_same_as_flock(tmp_path, monkeypatch):
         os.close(a)
         os.close(b)
     assert {(mode, n, at) for mode, n, at in fake.calls} == {(fake.LK_NBLCK, 1, 0), (fake.LK_UNLCK, 1, 0)}
+
+
+def test_a_meeting_waiting_for_the_workspace_asks_again_at_most_once_a_minute(tmp_path, clock):
+    """워커 루프는 10초마다 돈다. 연결을 기다리는 회의가 바퀴마다 BE 에 묻지 않게 1분에 한 번만 묻는다(#199)."""
+    fake = FakeBe()
+    rec, path, manifest = _session(tmp_path)
+    del manifest["workspace_id"]
+
+    def lookups():
+        return sum(1 for c in fake.calls if c[1].endswith("/workspace"))
+
+    def run():
+        return _run(rec, _saved(path), tmp_path, extractor=_extractor({}), handoff=_handoff(fake), wait_for_workspace=True)
+
+    _run(rec, manifest, tmp_path, extractor=_extractor({}), handoff=_handoff(fake), wait_for_workspace=True)
+    clock["t"] += timedelta(seconds=10)
+    assert run()["workspace"] == "not_connected" and lookups() == 1
+    fake.guilds = {"77": "ws-1"}                                   # 웹에서 연결했다
+    clock["t"] += timedelta(seconds=60)
+    assert run()["status"] == "handed_off" and lookups() == 2

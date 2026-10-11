@@ -641,6 +641,7 @@ def test_waiting_for_the_workspace_skips_the_transcript_until_the_server_is_conn
     assert saved["status"] == "saved" and saved["workspace_wait"]
     assert R.queue_ahead(rec, "77_600") == 0
     fake.guilds = {"77": "ws-1"}
+    saved["workspace_wait"] = "2026-01-01T00:00:00+00:00"          # 마지막으로 물은 지 1분이 지났다
     r2 = _run(rec, saved, tmp_path, extractor=_extractor({}), handoff=h, wait_for_workspace=True)
     saved = json.loads(path.read_text(encoding="utf-8"))
     assert r2["status"] == "handed_off" and "workspace_wait" not in saved and saved["workspace_id"] == "ws-1"

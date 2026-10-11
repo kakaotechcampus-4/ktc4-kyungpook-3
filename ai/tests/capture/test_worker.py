@@ -83,6 +83,7 @@ async def test_a_worker_leaves_a_meeting_of_an_unconnected_server_untranscribed(
     saved = json.loads(path.read_text(encoding="utf-8"))
     assert saved["status"] == "saved" and "transcribed" not in saved.get("stages", {}) and saved["workspace_wait"]
     fake.guilds = {"77": "ws-1"}
+    _edit(path, workspace_wait="2026-01-01T00:00:00+00:00")       # 마지막으로 물은 지 1분이 지났다
     await worker.run_pass()
     assert _status(path) == "handed_off" and list(fake.extractions) == ["m1"]
 

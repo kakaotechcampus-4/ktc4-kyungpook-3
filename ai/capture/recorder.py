@@ -88,6 +88,8 @@ SOURCES_GIVE_UP = {(400, "INVALID_REQUEST"), (409, "MEETING_FAILED")}
 # 워크스페이스를 정하지 못해 BE 단계(발화 저장·추출·인계)를 건너뛸 때 결과에 적는 이유(#199)
 NOT_CONNECTED_REASON = "워크스페이스 연결 없음"
 TOKEN_REJECTED_REASON = "BE 서비스 토큰 거절"
+# 워커가 연결을 기다리는 회의를 다시 묻는 최소 간격(초). 워커 루프(10초)가 바퀴마다 BE 에 묻지 않게 한다
+WORKSPACE_RECHECK_S = 60.0
 # 자동 복구. #83 의 retry_runs·PARTIAL_RETRY_MAX 와 따로 센다. 기본값의 근거는 docs/basis_for_decision/member/2026-09-26-0013-recovery-worker-and-meeting-lock.md
 RECOVERY_INTERVAL_S = float(os.environ.get("MM_RECOVERY_INTERVAL_S", "60"))    # 봇 안 복구 루프의 주기. 0 이면 끈다
 RECOVERY_MAX_ATTEMPTS = int(os.environ.get("MM_RECOVERY_MAX_ATTEMPTS", "5"))   # 이만큼 실패하면 포기하고 BE 에 fail
@@ -580,7 +582,14 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
         save()
 
     def missing_workspace() -> str | None:
-        """BE 단계를 건너뛸 이유. 워크스페이스가 있으면 None. 일시 실패(연결 실패, 5xx)는 예외로 올린다."""
+        """BE 단계를 건너뛸 이유. 워크스페이스가 있으면 None. 일시 실패(연결 실패, 5xx)는 예외로 올린다.
+
+        워커(wait_for_workspace)는 마지막으로 물은 지 WORKSPACE_RECHECK_S 가 지나지 않았으면 다시 묻지 않는다.
+        """
+        waited = manifest.get("workspace_wait")
+        if wait_for_workspace and waited and not manifest.get("workspace_id") and \
+                (utcnow() - _parse_time(waited)).total_seconds() < WORKSPACE_RECHECK_S:
+            return NOT_CONNECTED_REASON
         try:
             why = None if handoff.workspace(manifest) else NOT_CONNECTED_REASON
         except Exception as e:  # noqa: BLE001 - 토큰 거절만 설정 문제로 건너뛰고 나머지는 단계 실패다
@@ -588,7 +597,7 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
                 raise
             why = TOKEN_REJECTED_REASON
         if why == NOT_CONNECTED_REASON:
-            manifest.setdefault("workspace_wait", now_iso())     # 연결을 기다린다. "앞에 N건" 에 세지 않는다
+            manifest["workspace_wait"] = _iso(utcnow())          # 연결을 기다린다(마지막으로 물은 때). "앞에 N건" 에 세지 않는다
         else:
             manifest.pop("workspace_wait", None)
         save()                                                    # 찾은 workspace_id 를 남긴다
