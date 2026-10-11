@@ -94,7 +94,7 @@ RECOVERY_BACKOFF_CEIL_S = 3600.0                                                
 # 결과로 인계한다. 실패한 finding 만 다시 돌리는 진입점이 파이프라인에 없어 통째로 다시 돈다(docs/basis_for_decision/member/2026-09-30-0016-judge-path-flag-and-unjudged-findings.md)
 EXTRACT_RETRY_MAX = int(os.environ.get("MM_EXTRACT_RETRY_MAX") or "2")       # .env 에 빈 값으로 적혀 있어도 기본값
 # 판단 경로가 매니페스트에 적는 칸. 전사가 바뀌거나 옛 경로로 다시 뽑으면 같이 버린다
-_JUDGE_KEYS = ("items", "extract_failures", "extract_runs", "extract_partial", "extract_error")
+_JUDGE_KEYS = ("items", "extract_failures", "extract_runs", "extract_partial", "extract_error", "extract_dropped")
 # 끊긴 녹음의 마지막 트랙 쓰기가 이보다 오래됐으면 회의가 끝났다고 보고 재시작 안내를 하지 않는다. 잠정값이다
 RESUME_NOTICE_WINDOW_S = 3600.0
 
@@ -1018,6 +1018,8 @@ def _keep_judge_output(transcripts_dir: Path, manifest: dict, out: JudgeOutput) 
     if kept is None or (len(out.items), -len(out.failures)) > (kept_items, -len(kept)):
         path.write_text(json.dumps(out.items, ensure_ascii=False, indent=2), encoding="utf-8")
         kept = out.failures
+        # 1단계 탈락 기록(#186)도 이 결과의 것만 적는다. 바꿔 끼우지 않은 실행의 것이 남으면 항목과 맞지 않는다
+        manifest["extract_dropped"] = out.dropped
     manifest["items"] = str(path)
     manifest.pop("tasks", None)
     if not kept:
