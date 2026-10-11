@@ -19,3 +19,11 @@ export type {
   DueCondition,
   TaskBoard as TaskBoardModel,
 } from './lib/taskBoard'
+export {
+  DEFAULT_VIEW_QUERY,
+  TASK_VIEWS,
+  VIEW_PARAMS,
+  readViewQuery,
+  viewSearch,
+} from './lib/taskViews'
+export type { BoardPeriod, TaskView, ViewQuery } from './lib/taskViews'

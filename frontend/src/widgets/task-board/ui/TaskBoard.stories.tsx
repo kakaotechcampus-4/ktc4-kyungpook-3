@@ -2,9 +2,12 @@ import type { Meta, StoryObj } from '@storybook/react-vite'
 import { delay, http } from 'msw'
 import { useState } from 'react'
 import { expect, userEvent, within } from 'storybook/test'
+import { paths } from '@/shared/config/routes'
 import { fail } from '@/shared/mock/envelope'
 import { MOCK_TODAY } from '@/shared/mock/fixtures/constants'
 import type { BoardQuery } from '../lib/taskBoard'
+import { DEFAULT_VIEW_QUERY } from '../lib/taskViews'
+import type { ViewQuery } from '../lib/taskViews'
 import { TaskBoard } from './TaskBoard'
 import type { TaskBoardProps } from './TaskBoard'
 
@@ -16,7 +19,16 @@ import type { TaskBoardProps } from './TaskBoard'
 
 function BoardWithQuery(props: TaskBoardProps) {
   const [query, setQuery] = useState<BoardQuery>(props.query)
-  return <TaskBoard {...props} query={query} onQueryChange={setQuery} />
+  const [view, setView] = useState<ViewQuery>(props.view)
+  return (
+    <TaskBoard
+      {...props}
+      query={query}
+      onQueryChange={setQuery}
+      view={view}
+      onViewChange={setView}
+    />
+  )
 }
 
 const meta = {
@@ -29,6 +41,8 @@ const meta = {
     query: { tab: 'all', due: [] },
     today: MOCK_TODAY,
     onQueryChange: () => {},
+    view: DEFAULT_VIEW_QUERY,
+    onViewChange: () => {},
   },
   parameters: { scenario: 'tasks-default', route: '/workspaces/ws_01/tasks' },
 } satisfies Meta<typeof TaskBoard>
@@ -47,13 +61,17 @@ export const PM_기본: Story = {
     const canvas = within(canvasElement)
     const list = await canvas.findByRole('list', { name: '태스크 목록' })
     await expect(tabNames(canvasElement)).toEqual(['전체 13', '확인 필요 3', '진행 중 7', '완료 3'])
-    const rows = within(list).getAllByRole('listitem')
-    await expect(rows).toHaveLength(13)
-    await expect(rows.slice(0, 3).every((row) => row.dataset.kind === 'approval')).toBe(true)
-    await expect(within(rows[0]).getByRole('link')).toHaveAttribute(
-      'href',
-      '/workspaces/ws_01/approvals/ap_01',
+    // 확인 필요는 시안처럼 목록 안 카드로 먼저, 태스크는 그 아래 행이다
+    const cards = within(canvas.getByRole('list', { name: '확인 필요 목록' })).getAllByRole(
+      'article',
     )
+    await expect(cards).toHaveLength(3)
+    await expect(cards.every((card) => card.dataset.kind === 'approval')).toBe(true)
+    await expect(within(cards[0]).getByRole('link', { name: '알림 문구 검토' })).toHaveAttribute(
+      'href',
+      paths.approval('ws_01', 'ap_01'),
+    )
+    await expect(within(list).getAllByRole('listitem')).toHaveLength(10)
   },
 }
 
@@ -81,7 +99,7 @@ export const 탭_키보드: Story = {
     await expect(review).toHaveFocus()
     await expect(review).toHaveAttribute('aria-selected', 'true')
     await expect(
-      within(canvas.getByRole('list', { name: '태스크 목록' })).getAllByRole('listitem'),
+      within(await canvas.findByRole('list', { name: '확인 필요 목록' })).getAllByRole('article'),
     ).toHaveLength(3)
     await userEvent.keyboard('{End}')
     await expect(canvas.getByRole('tab', { name: /^완료/ })).toHaveFocus()

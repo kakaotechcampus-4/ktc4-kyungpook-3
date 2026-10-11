@@ -128,6 +128,16 @@ const ICONS = {
     ),
   },
   close: { strokeWidth: 1.8, paths: <path d="M18 6 6 18M6 6l12 12" /> },
+  /** Tasks 확인 필요 카드의 안내 문구 */
+  info: {
+    strokeWidth: 1.7,
+    paths: (
+      <>
+        <circle cx="12" cy="12" r="9" />
+        <path d="M12 16v-4M12 8h.01" />
+      </>
+    ),
+  },
   calendar: {
     strokeWidth: 1.7,
     paths: (

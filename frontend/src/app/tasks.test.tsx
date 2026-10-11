@@ -69,11 +69,21 @@ function tab(name: string) {
   return screen.getByRole('tab', { name: new RegExp(`^${name}`) })
 }
 function rows(): string[] {
-  const listbox = screen.queryByRole('list', { name: '태스크 목록' })
-  if (listbox === null) return []
-  return within(listbox)
-    .getAllByRole('link')
-    .map((link) => link.textContent ?? '')
+  // 확인 필요 카드(제목 h2)가 먼저, 다음이 태스크 행(제목 링크)이다
+  const cards = screen.queryByRole('list', { name: '확인 필요 목록' })
+  const tasks = screen.queryByRole('list', { name: '태스크 목록' })
+  return [
+    ...(cards === null
+      ? []
+      : within(cards)
+          .getAllByRole('article')
+          .map((card) => card.querySelector('h2')?.textContent ?? '')),
+    ...(tasks === null
+      ? []
+      : within(tasks)
+          .getAllByRole('link')
+          .map((link) => link.textContent ?? '')),
+  ]
 }
 /** 목록 행의 상태 배지. 태스크 행의 첫 글자 칸이다 */
 function rowStatus(title: string): string {
@@ -99,7 +109,8 @@ describe('역할별 탭·개수·병합·정렬 (AC-02)', () => {
     )
     expect(tab('전체')).toHaveAttribute('aria-selected', 'true')
     expect(rows()).toEqual(PM_ALL)
-    // 승인 항목은 승인 상세로, 태스크는 태스크 상세로 간다
+    // 승인 항목은 목록 안 카드에서 바로 처리하고, 태스크는 태스크 상세로 간다
+    expect(screen.getByRole('heading', { level: 2, name: '알림 문구 검토' })).toBeVisible()
     expect(screen.getByRole('link', { name: '알림 문구 검토' })).toHaveAttribute(
       'href',
       paths.approval('ws_01', 'ap_01'),
@@ -191,6 +202,83 @@ describe('역할별 탭·개수·병합·정렬 (AC-02)', () => {
  * MemoryRouter 는 window.history 를 쓰지 않는다. URL 복원은 jsdom 의 실제 기록 위에서 BrowserRouter 로 본다 —
  * 새로고침은 앱을 내리고 같은 주소로 처음부터 다시 띄우는 것이다.
  */
+describe('목록 안 확인 필요 카드 (시안)', () => {
+  it('실 API 에서는 필수값이 없으면 승인을 끄고 사유를 보인다. 반려는 목록 안에서 바로 처리하고 카드가 빠진다', async () => {
+    const user = userEvent.setup()
+    await openList(`${paths.tasks('ws_01')}?tab=needs_review`)
+    const cards = within(screen.getByRole('list', { name: '확인 필요 목록' })).getAllByRole(
+      'article',
+    )
+    expect(cards).toHaveLength(3)
+    const target = cards.find((each) => each.textContent?.includes('테스트 계획 정리'))!
+    // 읽기 전용 — 보완 입력이 없고 승인은 꺼져 있다. 사유는 보완 미지원 문장으로 끝난다
+    expect(within(target).getByRole('button', { name: '승인' })).toBeDisabled()
+    expect(target).toHaveTextContent('승인하려면 마감 정보를 올바르게 채워야 해요.')
+    expect(target).toHaveTextContent('지금 서버는 승인 전 보완을 지원하지 않아요.')
+    expect(within(target).getByRole('button', { name: '반려' })).toBeEnabled()
+
+    // 보류(ap_01)도 접힌 카드 안에서 같은 계약이다. 승인을 숨기거나 반려를 `제외` 로 바꾸지 않는다
+    const held = cards.find((each) => each.textContent?.includes('알림 문구 검토'))!
+    expect(within(held).getByRole('button', { name: '승인', exact: true })).toBeDisabled()
+    expect(within(held).getByRole('button', { name: '반려', exact: true })).toBeEnabled()
+    expect(within(held).queryByRole('button', { name: '제외' })).toBeNull()
+    expect(within(held).queryByRole('button', { name: '직접 채우기' })).toBeNull()
+    expect(held).toHaveTextContent(
+      '승인하려면 담당자·마감 정보를 올바르게 채워야 해요. 지금 서버는 승인 전 보완을 지원하지 않아요.',
+    )
+    expect(
+      within(held).getByRole('button', { name: '승인', exact: true }),
+    ).toHaveAccessibleDescription(/지금 서버는 승인 전 보완을 지원하지 않아요\.$/)
+
+    await user.click(within(target).getByRole('button', { name: '반려' }))
+    await waitFor(() =>
+      expect(
+        within(screen.getByRole('list', { name: '확인 필요 목록' })).getAllByRole('article'),
+      ).toHaveLength(2),
+    )
+    expect(tab('확인 필요')).toHaveTextContent('2')
+  })
+})
+
+describe('보기 전환 (Tasks 시안 4장)', () => {
+  it('리스트·보드·캘린더·간트를 오른쪽 위에서 고르고, 확인 필요 아래에 이미 반영된 일이 있다', async () => {
+    const user = userEvent.setup()
+    await openList(`${paths.tasks('ws_01')}?tab=needs_review`)
+    const switcher = screen.getByLabelText('보기 방식')
+    expect(
+      within(switcher)
+        .getAllByRole('radio')
+        .map((each) => each.textContent),
+    ).toEqual(['리스트', '보드', '캘린더', '간트'])
+    // 픽스처에서 Notion 에 반영된 태스크는 둘이다
+    const reflected = await screen.findByRole('list', { name: '이미 반영된 일 목록' })
+    expect(within(reflected).getAllByRole('listitem')).toHaveLength(2)
+
+    await user.click(within(switcher).getByRole('radio', { name: '보드' }))
+    expect(await screen.findByRole('region', { name: '시작 전' })).toBeVisible()
+    expect(screen.getByRole('region', { name: '진행 중' })).toBeVisible()
+    expect(screen.getByRole('region', { name: '완료' })).toBeVisible()
+
+    await user.click(within(switcher).getByRole('radio', { name: '캘린더' }))
+    expect(await screen.findByRole('grid', { name: /^\d{4}년 \d{1,2}월$/ })).toBeVisible()
+    expect(screen.getByRole('region', { name: '마감일 없음' })).toBeVisible()
+
+    await user.click(within(switcher).getByRole('radio', { name: '간트' }))
+    expect(await screen.findByRole('table', { name: '일정' })).toBeVisible()
+    expect(screen.getByRole('region', { name: '일정이 없는 일' })).toBeVisible()
+  })
+
+  it('담당자 콤보박스로 목록을 거른다', async () => {
+    const user = userEvent.setup()
+    await openList()
+    await user.click(screen.getByRole('button', { name: /^담당자:/ }))
+    await user.click(await screen.findByRole('menuitemradio', { name: '박민수' }))
+    await waitFor(() =>
+      expect(rows().slice(3)).toEqual(['회원가입 화면', '토큰 정리', '회의록 요약 검수']),
+    )
+  })
+})
+
 describe('URL 탭·날짜 조건 (AC-03)', () => {
   function renderInBrowser(url: string) {
     window.history.replaceState(null, '', url)
@@ -224,8 +312,19 @@ describe('URL 탭·날짜 조건 (AC-03)', () => {
   })
 
   const search = () => window.location.search
+  /** 마감 조건 콤보박스의 현재 값에 그 조건이 들어 있는가 */
   const pressed = (name: string) =>
-    screen.getByRole('button', { name }).getAttribute('aria-pressed')
+    String(
+      (
+        screen.getByRole('button', { name: /^마감 조건:/ }).getAttribute('aria-label') ?? ''
+      ).includes(name),
+    )
+  /** 콤보박스를 열어 조건 하나를 켜거나 끈다. 여러 개를 고르는 메뉴라 Esc 로 닫는다 */
+  async function toggleDue(user: ReturnType<typeof userEvent.setup>, name: string) {
+    await user.click(screen.getByRole('button', { name: /^마감 조건:/ }))
+    await user.click(await screen.findByRole('menuitemcheckbox', { name }))
+    await user.keyboard('{Escape}')
+  }
 
   const OVERDUE_IN_PROGRESS = ['온보딩 문구 수정', '회원가입 화면']
   const DUE_IN_PROGRESS = [
@@ -268,7 +367,7 @@ describe('URL 탭·날짜 조건 (AC-03)', () => {
 
     await user.click(tab('완료'))
     await expectView({ search: '?tab=done', tab: '완료', overdue: false, soon: false, rows: DONE })
-    await user.click(screen.getByRole('button', { name: '기한 지남' }))
+    await toggleDue(user, '기한 지남')
     const doneOverdue = {
       search: '?tab=done&due=overdue',
       tab: '완료',
@@ -287,7 +386,7 @@ describe('URL 탭·날짜 조건 (AC-03)', () => {
       rows: OVERDUE_IN_PROGRESS,
     }
     await expectView(progressOverdue)
-    await user.click(screen.getByRole('button', { name: '7일 안에 마감' }))
+    await toggleDue(user, '7일 안에 마감')
     await expectView({
       search: '?tab=in_progress&due=overdue,soon',
       tab: '진행 중',
@@ -346,9 +445,7 @@ describe('URL 탭·날짜 조건 (AC-03)', () => {
     expect(await screen.findByRole('heading', { name: '조건에 맞는 항목이 없어요' })).toBeVisible()
 
     // 빈 상태의 해제와 조건 줄의 해제가 같은 동작이다. 조건 줄의 것을 누른다
-    const clear = within(screen.getByRole('group', { name: '마감 조건' })).getByRole('button', {
-      name: '날짜 조건 해제',
-    })
+    const clear = screen.getAllByRole('button', { name: '날짜 조건 해제' })[0]
     await user.click(clear)
     await expectView({ search: '?tab=done', tab: '완료', overdue: false, soon: false, rows: DONE })
     expect(screen.queryByRole('button', { name: '날짜 조건 해제' })).toBeNull()

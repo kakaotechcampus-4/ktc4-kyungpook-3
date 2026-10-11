@@ -111,19 +111,21 @@ test('회의록의 확인 필요 항목을 보완·승인하고 돌아오면 회
     `${WORKSPACE}/tasks/${taskId}`,
   )
 
-  // 태스크 목록 — 승인 하나가 태스크 하나로 바뀌었다. 탭 개수와 목록이 같다
+  // 태스크 목록 — 승인 하나가 태스크 하나로 바뀌었다. 남은 확인 필요는 별도 목록이고, 만든 태스크는 태스크 목록에 있다
   await page.getByRole('banner').getByRole('link', { name: '태스크', exact: true }).click()
   await expect(page).toHaveURL(`${WORKSPACE}/tasks`)
   await expect(tabTexts(page)).toHaveText(['전체 13', '확인 필요 2', '진행 중 8', '완료 3'], {
     timeout: 15_000,
   })
+  const review = page.getByRole('list', { name: '확인 필요 목록' })
+  await expect(review.locator('[data-kind="approval"]')).toHaveCount(2)
+  await expect(review.locator(`a[href="${WORKSPACE}/approvals/ap_01"]`)).toHaveCount(0)
   const list = page.getByRole('list', { name: '태스크 목록' })
-  await expect(list.locator('li[data-kind="approval"]')).toHaveCount(2)
+  await expect(list.locator('[data-kind="approval"]')).toHaveCount(0)
   await expect(list.getByRole('link', { name: '알림 문구 검토' })).toHaveAttribute(
     'href',
     `${WORKSPACE}/tasks/${taskId}`,
   )
-  await expect(list.locator(`a[href="${WORKSPACE}/approvals/ap_01"]`)).toHaveCount(0)
 })
 
 /** 태스크 단건 조회 응답의 notion_sync_status. MSW 응답 봉투는 `{ data, error }` 다 */
