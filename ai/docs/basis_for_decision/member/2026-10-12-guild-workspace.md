@@ -1,0 +1,44 @@
+# 녹음 봇이 디스코드 서버로 워크스페이스를 찾는다
+
+- 날짜: 2026-10-12
+- 이슈: #199
+- PR: (올린 뒤 채운다)
+- 브랜치: feature/199-guild-workspace
+- 작성자: 김동우
+
+## 한 일
+
+- `capture/handoff.py`: `BeClient.guild_workspace`(BE #197 조회), `Handoff.workspace(manifest)`(비어 있으면 서버로 묻고 매니페스트에 고정, 연결 없으면 None). `Handoff` 는 워크스페이스를 들고 있지 않고 매니페스트 값을 쓴다. `from_env` 는 `BE_BASE_URL`, `BE_SERVICE_TOKEN` 만 본다 (2e07e35)
+- `capture/recorder.py` `process_session`: BE 단계 앞에서 워크스페이스를 확인한다. 연결이 없으면 전사까지 하고 발화 저장·추출·인계를 건너뛴다(f6dc53f). 워크스페이스가 정해지기 전에는 처리 시작에서 BE 회의를 건드리지 않는다(a71c8c4). 워커는 `wait_for_workspace` 로 연결 전에는 전사도 하지 않고, 기다리는 회의(`workspace_wait`)는 `queue_ahead` 에서 뺀다(168b2a0)
+- `capture/judge_path.py`: 추출기가 `workspace_id` 를 인자로 받아 유사 검색에 쓴다. 필수 설정에서 `BE_WORKSPACE_ID` 를 뺐고(2a8c0a5), 워크스페이스 없이 불리면 멈춘다(9746b5e)
+- `capture/discord_adapter.py`: `/record` 때 조회해 고정하고, 연결이 없으면 채널에 모드에 맞는 안내를 한 번 올린다. 결과 보고는 건너뛴 세 단계를 한 줄로 말한다(0415f7d, f7c3cfe)
+- `shared/config.py`, `.env.example`, `README.md`, 설명 주석: `BE_WORKSPACE_ID` 를 지웠다(b61e1c7, 9d1c296)
+- `backend/docs/contracts/backend-ai-contract.md`: "봇 미구현" 이라 적힌 곳과 설정 줄을 구현에 맞췄다(d3acde1, 9d1c296)
+- 테스트 대역 `tests/capture/fake_be.py` 가 서버 조회를 흉내 낸다(토큰 401, 연결 없음 409)
+
+## 왜
+
+결정과 버린 선택지는 [0021](2026-10-12-0021-guild-workspace.md) 에 적었다. 처음에는 연결 없는 서버도 전사까지 해 채널에 올리기로 했는데, 구현을 점검하다 운영이 워커 모드(`MM_PIPELINE_MODE=worker`)인 것을 확인했다. 워커는 채널에 올리지 못해 전사해도 보일 곳이 없어서 워커 모드만 연결 전에는 전사하지 않게 바꿨다.
+
+## 결과
+
+| 항목 | 값 |
+|---|---|
+| 테스트 | develop(4d982ec)을 합친 뒤 990 모두 통과. 시작할 때 develop(81f544b) 은 813, 합치기 전 브랜치는 828 |
+| 새 테스트 | 서버 조회와 고정, 연결 없음과 일시 실패와 토큰 거절, 연결 없는 회의가 전사 뒤 멈추고 연결되면 이어짐, 처리 시작에서 조회하지 않음, 판단 추출기가 회의 워크스페이스를 받음과 없으면 멈춤, `/record` 의 고정과 안내, 워커의 연결 대기와 대기열 제외, 워커 모드 안내 |
+| 운영 BE 조회 | 팀 서버 200, `.env` 와 같은 워크스페이스(10/10) |
+
+```
+cd ai && .venv/bin/python -m pytest
+```
+
+## 남은 것
+
+- 배포: 서버 `.env` 에서 `BE_WORKSPACE_ID` 와 `DISCORD_GUILD_ID` 를 빼고 봇·워커를 다시 띄운다. 팀 서버 1분 녹음이 같은 워크스페이스로 인계되는지, 명령이 모든 서버에 보이고 팀 서버에 두 번 보이지 않는지 본다
+- 연결 없는 서버는 테스트로만 확인했다. 디스코드에서 직접 해 보지 않았다
+- 이름 힌트를 BE 멤버 이름으로 바꾸는 일은 BE 에 봇용 멤버 조회가 생긴 뒤에 한다
+
+## 생각해볼 점
+
+- 열려 있는 #208 도 `judge_path.extract` 와 `recorder` 를 고친다. 나중에 머지되는 쪽이 충돌을 맞추고 전체 테스트를 다시 돌린다
+- 웹에서 연결을 해제해도 봇은 서버에 남는다. 해제 뒤 녹음은 연결 없음 안내로 끝나는데, 해제할 때 봇도 내보낼지는 BE 와 정할 일이다
