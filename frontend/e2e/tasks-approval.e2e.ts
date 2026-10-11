@@ -274,14 +274,15 @@ test('키보드 — 목록 탭은 화살표로 옮겨 URL 에 남고, 보완 폼
   const due = form.getByLabel('마감')
   await expect(due).toHaveAccessibleDescription('마감 날짜를 입력해 주세요.')
 
-  // 키보드로 고친다 — 제목 입력, 담당자는 화살표, 마감은 숫자로
+  // 키보드로 고친다 — 제목 입력, 담당자는 화살표, 마감은 포커스한 칸에 값 입력
   await page.keyboard.type('알림 문구 최종 검토')
   await expect(title).not.toHaveAttribute('aria-invalid', 'true')
   await tabTo(page, assignee)
   await page.keyboard.press('ArrowDown')
   await expect(assignee).not.toHaveValue('')
   await tabTo(page, due)
-  await page.keyboard.type('20261022')
+  // 날짜 칸의 연·월·일 순서는 브라우저·OS 로케일이 정한다 — CI 의 Chromium 은 `ko-KR` 이어도 월부터라 숫자를 쳐 넣으면 어긋난다
+  await due.fill('2026-10-22')
   await expect(due).toHaveValue('2026-10-22')
   await tabTo(page, done)
   await page.keyboard.press('Enter')
