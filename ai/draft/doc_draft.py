@@ -81,9 +81,9 @@ def _assignee_line(finding: JudgeFinding) -> str:
 
 def _current_values(candidate: NotionCandidate) -> str:
     status = _STATUS_KO.get(candidate.status or "", candidate.status or "없음")
-    return (
-        f"- 제목: {candidate.title} / 마감일: {candidate.due_date or '없음'} / 상태: {status}"
-    )
+    line = f"- 제목: {candidate.title} / 마감일: {candidate.due_date or '없음'} / 상태: {status}"
+    # 이번 회의 앞부분 제안이 덮인 값이면 원래 값을 함께 보여 준다 — 없으면 "원래대로"를 날짜로 못 바꾼다(#140)
+    return f"{line}\n  ({candidate.meeting_note})" if candidate.meeting_note else line
 
 
 def _draft_prompt(
@@ -122,6 +122,7 @@ def _draft_prompt(
         '   - "다음 주 수요일"처럼 "다음 주"가 붙으면 다음 주(월~일)의 그 요일\n'
         "   - 요일이 특정되지 않은 기간은 그 기간의 마지막 날:\n"
         '     "이번 주 안으로" → 이번 주 일요일, "다음 주까지" → 다음 주 일요일, "월말까지" → 그 달 마지막 날\n'
+        '   - "원래대로"처럼 되돌리자고 하면 현재 값 아래 괄호 메모의 원래 값(화살표 앞의 날짜)\n'
         "3. doc_text — PM 이 승인 화면에서 읽을 한 문장. 무엇이 어떻게 바뀌는지 쓴다.\n"
         '   기존 할일 수정이면 "현재 값 → 새 값"이 드러나게 쓴다. 단 작업 범위 변경은 바뀌는 값이 없으므로\n'
         "   화살표 없이 무엇이 범위에서 빠지거나 더해지는지만 쓴다. 근거 원문에 없는 내용은 쓰지 마라.\n\n"

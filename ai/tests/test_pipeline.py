@@ -381,3 +381,183 @@ def test_run_missing_key_fails_before_any_call(monkeypatch):
         _run(source)
     assert fakes["stage1"].prompts == []
     assert source.calls == []
+
+
+# ── 같은 회의 안 중복 · 번복 (#140) ─────────────────────────────────────────
+# run() 이 이번 회의에서 앞서 만든 카드를 기억해 다음 finding 의 후보에 보여 주고, Terra 가 그 후보를 고르면
+# 새 카드를 만들지 않고 합친다. 가짜 Terra 는 정해 둔 답을 내므로, "기억한 후보가 Terra 에게 보였는지"는
+# 프롬프트로, "합쳤는지"는 결과로 확인한다.
+
+DEDUP_MEETING = Transcript(segments=[
+    TranscriptSegment(speaker="uid_pm", start=1.0, end=3.0, text="결제 환불 기능은 지민님이 맡아 주세요.", seq=1),
+    TranscriptSegment(speaker="uid_pm", start=4.0, end=6.0, text="그 환불 기능은 다음 주 금요일까지 해 주세요.", seq=2),
+    TranscriptSegment(speaker="uid_pm", start=7.0, end=9.0, text="로그인 화면 마감 다음 주 화요일로 미뤄도 될까요?", seq=3),
+    TranscriptSegment(speaker="uid_haeun", start=9.5, end=10.0, text="네, 그렇게 해요.", seq=4),
+    TranscriptSegment(speaker="uid_pm", start=11.0, end=13.0, text="아 QA 일정 때문에 로그인 마감은 원래대로 둡시다.", seq=5),
+    TranscriptSegment(speaker="uid_pm", start=14.0, end=15.0, text="환불 기능 담당은 지민님 맞죠?", seq=6),
+    TranscriptSegment(speaker="uid_jimin", start=15.5, end=16.0, text="네, 맞아요.", seq=7),
+    TranscriptSegment(speaker="uid_pm", start=17.0, end=19.0, text="알림 설정 페이지도 새로 만들어야 해요.", seq=8),
+])
+# 문장 번호: 0 환불 담당 / 1 환불 마감 / 2 로그인 미룰까요 / 3 네 / 4 원래대로 / 5 환불 담당 맞죠 / 6 네 맞아요 /
+# 7 알림 설정(DB 에 없는 새 주제)
+
+REFUND_OWNER = {"indices": [0], "summary": "결제 환불 기능을 지민님이 맡기로 함",
+                "assignee_type": "thirdname", "assignee_raw": "지민님", "reason": "새 할일"}
+REFUND_DUE = {"indices": [1], "summary": "결제 환불 기능 마감을 다음 주 금요일로 정함",
+              "assignee_type": "none", "reason": "마감"}
+LOGIN_DELAY = {"indices": [2, 3], "summary": "로그인 화면 마감을 다음 주 화요일로 미루기로 함",
+               "assignee_type": "none", "reason": "일정 변경"}
+LOGIN_KEEP = {"indices": [4], "summary": "로그인 화면 마감을 원래대로 두기로 함",
+              "assignee_type": "none", "reason": "일정 번복"}
+# 재언급 근거에는 마감 얘기가 없다 — 마감 문장을 근거로 잡으면 Luna 가 마감을 끌어와 재언급이 아니게 된다
+REFUND_RESTATE = {"indices": [5, 6], "summary": "결제 환불 기능 담당이 지민님이 맞다고 다시 확인함",
+                  "assignee_type": "thirdname", "assignee_raw": "지민님", "reason": "재확인"}
+# DB 의 로그인 · 검색 Task 와 겹치지 않는 주제 — 겹치면 Terra 가 기존 Task 수정으로 본다
+NOTI_NEW = {"indices": [7], "summary": "알림 설정 페이지를 새로 만들기로 함",
+            "assignee_type": "none", "reason": "새 할일"}
+
+LOGIN_FRI = NotionCandidate(task_id="task_login", notion_page_id="n1", title="로그인 화면 시안 마무리 작업",
+                            due_date="2026-10-02", status="in_progress", assignee_member_id="mem_haeun",
+                            similarity=0.82)
+
+
+class DedupCandidates:
+    """DB 에는 로그인 · 검색 Task 만 있다. 환불은 이번 회의에서 처음 나온 일이라 DB 에 없다."""
+
+    def similar_tasks(self, workspace_id, text):
+        if "로그인" in text:
+            return [LOGIN_FRI]
+        if "검색" in text:
+            return [SEARCH]
+        return []
+
+
+def _run_dedup():
+    return run(DEDUP_MEETING, workspace_id="ws_1", today=date(2026, 9, 28), candidates=DedupCandidates())
+
+
+def test_same_new_item_twice_becomes_one_card(monkeypatch):
+    # 14:05 담당 → 14:20 마감. 두 번째를 판단할 때 첫 카드가 "이번 회의 후보"로 보여야 하고, 고르면 합친다
+    fakes = _install(
+        monkeypatch, stage1={"findings": [REFUND_OWNER, REFUND_DUE]},
+        terra=[_terra(is_new=True, matched_candidate_index=None), _terra(category="schedule")],
+        luna_draft=[
+            {"task": "결제 환불 기능 구현", "due_date": None, "doc_text": "결제 환불 기능 구현을 지민님이 맡기로 함"},
+            {"task": None, "due_date": "2026-10-09", "doc_text": "결제 환불 기능 마감을 10/9로 정함"},
+        ],
+    )
+
+    out = _run_dedup()
+
+    assert "이번 회의에서 새로 나온 항목" in fakes["terra"].prompts[1]
+    assert out.failures == []
+    assert len(out.items) == 1
+    card = out.items[0]
+    assert card["action"] == "create"
+    assert card["task_title"] == "결제 환불 기능 구현"   # 제목은 앞 카드
+    assert card["assignee_raw"] == "지민님"               # 담당은 앞 카드에서
+    assert card["due_date"] == "2026-10-09"              # 마감은 뒤 발화에서
+    assert "맡기로" in card["doc_text"] and "10/9" in card["doc_text"]
+
+
+def test_different_new_items_stay_separate(monkeypatch):
+    _install(
+        monkeypatch, stage1={"findings": [REFUND_OWNER, NOTI_NEW]},
+        terra=[_terra(is_new=True, matched_candidate_index=None), _terra(is_new=True, matched_candidate_index=None)],
+        luna_draft=[
+            {"task": "결제 환불 기능 구현", "due_date": None, "doc_text": "결제 환불 기능 구현"},
+            {"task": "알림 설정 페이지 개발", "due_date": None, "doc_text": "알림 설정 페이지 개발"},
+        ],
+    )
+
+    out = _run_dedup()
+
+    assert [i["task_title"] for i in out.items] == ["결제 환불 기능 구현", "알림 설정 페이지 개발"]
+
+
+def test_restating_the_same_new_item_is_dropped(monkeypatch):
+    # 같은 내용을 다시 말함 — Terra 가 앞 카드를 고르고 바뀌는 것 없음으로 본다
+    fakes = _install(
+        monkeypatch, stage1={"findings": [REFUND_OWNER, REFUND_RESTATE]},
+        terra=[_terra(is_new=True, matched_candidate_index=None),
+               _terra(is_meaningful=False, category="none")],
+        luna_draft=[{"task": "결제 환불 기능 구현", "due_date": None, "doc_text": "결제 환불 기능 구현"}],
+    )
+
+    out = _run_dedup()
+
+    assert "이번 회의에서 새로 나온 항목" in fakes["terra"].prompts[1]
+    assert len(out.items) == 1
+
+
+def test_reversed_change_in_same_meeting_leaves_no_card(monkeypatch):
+    # DB 마감 10/2(금). "10/6 으로 미루자" → "원래대로 두자". 두 번째를 판단할 때 후보가 앞의 제안(10/6)으로
+    # 보여야 하고, 합친 결과(10/2)가 DB 와 같아 남는 변경이 없으면 카드를 버린다
+    fakes = _install(
+        monkeypatch, stage1={"findings": [LOGIN_DELAY, LOGIN_KEEP]},
+        terra=[_terra(category="schedule"), _terra(category="schedule")],
+        luna_draft=[
+            {"task": None, "due_date": "2026-10-06", "doc_text": "로그인 화면 마감을 10/2에서 10/6으로 연기"},
+            {"task": None, "due_date": "2026-10-02", "doc_text": "로그인 화면 마감을 10/6에서 10/2로 되돌림"},
+        ],
+    )
+
+    out = _run_dedup()
+
+    second = fakes["terra"].prompts[1]
+    assert "2026-10-06" in second and "이번 회의" in second   # 앞의 제안이 반영돼 보인다
+    assert out.items == []
+    assert out.failures == []
+
+
+def test_changed_again_in_same_meeting_keeps_last_value(monkeypatch):
+    # 10/2 → 10/6 → 10/7. 카드는 하나, 마감은 마지막 값. 스냅샷은 덮어 보여 준 값이 아니라 DB 원래 값
+    _install(
+        monkeypatch, stage1={"findings": [LOGIN_DELAY, LOGIN_KEEP]},
+        terra=[_terra(category="schedule"), _terra(category="schedule")],
+        luna_draft=[
+            {"task": None, "due_date": "2026-10-06", "doc_text": "로그인 화면 마감을 10/6으로 연기"},
+            {"task": None, "due_date": "2026-10-07", "doc_text": "로그인 화면 마감을 다시 10/7로 조정"},
+        ],
+    )
+
+    out = _run_dedup()
+
+    assert len(out.items) == 1
+    card = out.items[0]
+    assert (card["action"], card["target_task_id"], card["due_date"]) == ("update", "task_login", "2026-10-07")
+    assert card["target_snapshot"]["due_date"] == "2026-10-02"
+    assert card["evidence_quote"] == "네, 그렇게 해요."   # 근거는 앞 카드
+
+
+def test_updates_to_different_tasks_are_not_merged(monkeypatch):
+    search_done = {"indices": [4], "summary": "검색 기능 성능 개선을 끝냈다고 보고함",
+                   "assignee_type": "none", "reason": "진척"}
+    _install(
+        monkeypatch, stage1={"findings": [LOGIN_DELAY, search_done]},
+        terra=[_terra(category="schedule"), _terra(category="status", status="done")],
+        luna_draft=[
+            {"task": None, "due_date": "2026-10-06", "doc_text": "로그인 화면 마감을 10/6으로 연기"},
+            {"task": None, "due_date": None, "doc_text": "검색 기능 성능 개선 완료"},
+        ],
+    )
+
+    out = _run_dedup()
+
+    assert [i["target_task_id"] for i in out.items] == ["task_login", "task_search"]
+
+
+def test_findings_are_handled_in_meeting_order(monkeypatch):
+    # 1단계가 순서를 섞어 줘도 회의 순서(seq)대로 판단해야 "나중에 말한 것이 최신"이 맞는다
+    _install(
+        monkeypatch, stage1={"findings": [LOGIN_KEEP, LOGIN_DELAY]},
+        terra=[_terra(category="schedule"), _terra(category="schedule")],
+        luna_draft=[
+            {"task": None, "due_date": "2026-10-06", "doc_text": "로그인 화면 마감을 10/6으로 연기"},
+            {"task": None, "due_date": "2026-10-02", "doc_text": "로그인 화면 마감을 10/2로 되돌림"},
+        ],
+    )
+
+    out = _run_dedup()
+
+    assert out.items == []
