@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
-import { expectAudioReady, SHORT_AUDIO, start } from './support'
+import { expectAudioReady, expectMinutesOpened, SHORT_AUDIO, start } from './support'
 
 /*
  * M5 U6-2 — 회의 올리기 → 정리 → 회의록. 상태는 MSW 시나리오(shared/mock/scenarios.ts)로만 만든다.
@@ -81,7 +81,7 @@ test('① 짧은 음원을 올리면 정리가 끝나고 그 회의의 회의록
   await uploadShortAudio(page)
 
   // 202 → 처리 화면 → 정리 완료 → 그 회의의 회의록 (U3-7, U4-5)
-  await expect(page).toHaveURL(/\/workspaces\/ws_01\/meetings\/mt_\w+$/, { timeout: 15_000 })
+  await expectMinutesOpened(page)
   const meetingId = new URL(page.url()).pathname.split('/').pop()
   expect(urls).toContain(`${WORKSPACE}/meetings/${meetingId}/processing`)
   expect(

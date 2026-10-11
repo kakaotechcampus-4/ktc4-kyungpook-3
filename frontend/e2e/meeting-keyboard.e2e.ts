@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 import type { Locator, Page } from '@playwright/test'
-import { expectAudioReady, SHORT_AUDIO, start } from './support'
+import { expectAudioReady, expectMinutesOpened, SHORT_AUDIO, start } from './support'
 
 /*
  * M5 U6-3 키보드 — 마우스 없이 파일을 고르고, 참석자를 고르고, 올린다. 모달은 포커스를 가두고 닫히면 연 요소로 돌아온다.
@@ -87,7 +87,7 @@ test('키보드만으로 파일을 고르고 참석자를 골라 올린다', asy
   const submit = page.getByRole('button', { name: '정리 시작하기' })
   await tabTo(page, submit)
   await page.keyboard.press('Enter')
-  await expect(page).toHaveURL(/\/workspaces\/ws_01\/meetings\/mt_\w+$/, FIRST_PAINT)
+  await expectMinutesOpened(page)
   const minutes = page.getByRole('article', { name: SHORT_AUDIO.name })
   await expect(minutes.getByRole('list', { name: '참석자' })).toContainText('박민수', FIRST_PAINT)
   await expect(minutes.getByRole('list', { name: '참석자' })).not.toContainText('정하늘')

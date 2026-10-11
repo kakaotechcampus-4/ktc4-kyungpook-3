@@ -4,6 +4,7 @@ import type { MeetingFlowMode, MockDb } from './db'
 import { MOCK_NOW } from './fixtures/constants'
 import { completeMeeting, setMeetingFlowMode } from './meetingFlow'
 import { setMockRole } from './sessions'
+import { createTask } from './task-state'
 
 /*
  * 브라우저·E2E 용 시작 상태. 모두 픽스처 계정 pm@example.com / mock-password 로 로그인한다.
@@ -25,6 +26,16 @@ export const MOCK_SCENARIOS = [
   'meeting-notion-not-connected',
   'meeting-notion-revoked',
   'meeting-member',
+  // M6 태스크·승인. 모두 ws_01 하나에 PM 으로 로그인한다(마지막만 일반 팀원). 전이는 handler 가 만든다
+  'tasks-default',
+  'tasks-empty',
+  'approval-needs-input',
+  'approval-rejected',
+  'approval-resolved',
+  'approval-conflict',
+  'notion-sync-pending',
+  'notion-sync-failed',
+  'tasks-member',
 ] as const
 export type MockScenario = (typeof MOCK_SCENARIOS)[number]
 
@@ -79,6 +90,102 @@ function setNotionStatus(state: MockDb, status: 'not_connected' | 'revoked'): vo
     status === 'not_connected'
       ? { status, display_name: null, connected_at: null }
       : { ...integrations.notion, status }
+}
+
+/** ws_01 의 태스크·이력·승인을 모두 비운다. 그 공간 추출 항목의 연결도 끊어 없는 태스크·승인을 가리키지 않게 한다 */
+function clearTasks(state: MockDb): void {
+  const taskIds = new Set(
+    state.tasks
+      .filter(({ workspace_id }) => workspace_id === 'ws_01')
+      .map(({ task_id }) => task_id),
+  )
+  state.tasks = state.tasks.filter(({ task_id }) => !taskIds.has(task_id))
+  state.taskHistory = state.taskHistory.filter(({ task_id }) => !taskIds.has(task_id))
+  state.approvals = state.approvals.filter(({ workspace_id }) => workspace_id !== 'ws_01')
+  const meetingIds = new Set(
+    state.meetings
+      .filter(({ workspace_id }) => workspace_id === 'ws_01')
+      .map(({ meeting_id }) => meeting_id),
+  )
+  for (const extraction of state.extractions) {
+    if (!meetingIds.has(extraction.meeting_id)) continue
+    for (const item of extraction.items) {
+      item.task_id = null
+      item.approval_id = null
+    }
+  }
+}
+
+function approvalOf(state: MockDb, approvalId: string) {
+  const approval = state.approvals.find(({ approval_id }) => approval_id === approvalId)
+  if (!approval) throw new Error(`mock approval ${approvalId} is missing`)
+  return approval
+}
+
+function taskOf(state: MockDb, taskId: string) {
+  const task = state.tasks.find(({ task_id }) => task_id === taskId)
+  if (!task) throw new Error(`mock task ${taskId} is missing`)
+  return task
+}
+
+/** 처리자는 handler 와 같은 세션 팀원 mb_01 이다 (sessions.ts) */
+function resolve(state: MockDb, approvalId: string, status: 'approved' | 'rejected'): void {
+  const approval = approvalOf(state, approvalId)
+  approval.status = status
+  approval.resolved_by = 'mb_01'
+  approval.resolved_at = MOCK_NOW
+}
+
+/**
+ * ap_02(테스트 계획 정리, 마감 없음)를 마감을 보완해 승인한 결과. handler 의 승인 성공과 같은 모양이다 —
+ * 태스크 하나, 생성 이력, 추출 항목 it_05 의 task_id. approval_id 는 남는다. Notion 은 연동돼 있어 pending 이다
+ */
+function resolvedCreateApproval(state: MockDb): void {
+  const approval = approvalOf(state, 'ap_02')
+  const task = createTask(
+    {
+      workspace_id: 'ws_01',
+      meeting_id: 'mt_09',
+      title: '테스트 계획 정리',
+      assignee_member_id: 'mb_02',
+      due_date: '2026-09-26',
+    },
+    'mb_01',
+    'meeting',
+    state,
+  )
+  resolve(state, 'ap_02', 'approved')
+  approval.related_task_id = task.task_id
+  const item = state.extractions
+    .flatMap(({ items }) => items)
+    .find(({ item_id }) => item_id === approval.payload.extraction_item_id)
+  if (item) item.task_id = task.task_id
+}
+
+/**
+ * tk_01 의 상태를 todo → done 으로 바꾸자는 변경 승인. 제안할 때 본 값(base_values)은 todo 인데 지금은
+ * in_progress 라 승인하면 409 APPROVAL_CONFLICT 다. progress 는 base 와 지금 값이 같아 충돌이 아니다
+ */
+function conflictingUpdateApproval(state: MockDb): void {
+  state.approvals.push({
+    approval_id: 'ap_04',
+    workspace_id: 'ws_01',
+    type: 'task_update',
+    payload: {
+      status: 'done',
+      progress: 100,
+      base_values: { status: 'todo', progress: 40 },
+      meeting_id: 'mt_09',
+      evidence_quote: '로그인 API 연동은 끝났어요.',
+      evidence_speaker: '김서연',
+    },
+    related_task_id: 'tk_01',
+    requested_by: 'mb_02',
+    status: 'pending',
+    resolved_by: null,
+    created_at: '2026-09-17T03:00:00Z',
+    resolved_at: null,
+  })
 }
 
 export function createScenarioDb(scenario: MockScenario): MockDb {
@@ -141,6 +248,51 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
       signInWith(state, ['ws_01'], 'ws_01')
       setMockRole('member', 'ws_01', state)
       setMeetingFlowMode('instant', state)
+      break
+    case 'tasks-default':
+      // 픽스처 그대로의 정상 목록: 태스크 10개(반영 완료 2개), 보완이 필요한 대기 생성 승인 3개
+      signInWith(state, ['ws_01'], 'ws_01')
+      break
+    case 'tasks-empty':
+      signInWith(state, ['ws_01'], 'ws_01')
+      clearTasks(state)
+      break
+    case 'approval-needs-input':
+      // ap_01 의 제목·담당자·마감이 모두 비어 있다. 보완 없이는 400 이다
+      signInWith(state, ['ws_01'], 'ws_01')
+      Object.assign(approvalOf(state, 'ap_01').payload, {
+        task_title: '',
+        assignee_member_id: null,
+        due_date: null,
+      })
+      break
+    case 'approval-rejected':
+      // 반려는 태스크를 만들지 않고 추출 항목도 그대로다
+      signInWith(state, ['ws_01'], 'ws_01')
+      resolve(state, 'ap_01', 'rejected')
+      break
+    case 'approval-resolved':
+      signInWith(state, ['ws_01'], 'ws_01')
+      resolvedCreateApproval(state)
+      break
+    case 'approval-conflict':
+      signInWith(state, ['ws_01'], 'ws_01')
+      conflictingUpdateApproval(state)
+      break
+    case 'notion-sync-pending':
+      // tk_04 가 반영 대기다. synced 로 넘기는 워커는 없다 — 테스트가 필드를 직접 바꾼다
+      signInWith(state, ['ws_01'], 'ws_01')
+      taskOf(state, 'tk_04').notion_sync_status = 'pending'
+      break
+    case 'notion-sync-failed':
+      // tk_04 가 반영 실패다. 재시도(POST /tasks/tk_04/notion-sync/retry)하면 pending 이 된다
+      signInWith(state, ['ws_01'], 'ws_01')
+      taskOf(state, 'tk_04').notion_sync_status = 'failed'
+      break
+    case 'tasks-member':
+      // setMockRole('member') 와 같은 결과. 조회는 되고 쓰기는 403 이다
+      signInWith(state, ['ws_01'], 'ws_01')
+      setMockRole('member', 'ws_01', state)
       break
   }
   return state

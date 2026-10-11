@@ -228,3 +228,45 @@ for (const storyId of M5_STORIES) {
     expect(unhandled).toEqual(INTENDED_404[storyId] ?? [])
   })
 }
+
+/*
+ * M6 태스크·승인 스토리도 play 가 끝까지 통과한다 (M6 §5-1). M5 와 같은 방식으로 막 빌드한 index.json 에서 읽는다.
+ * 목록·상세·확인 필요 상세·보완 폼·Notion 상태 다섯 묶음이다
+ */
+const M6_STORIES = Object.values(
+  (
+    JSON.parse(readFileSync(STORY_INDEX, 'utf8')) as {
+      entries: Record<string, { id: string; type: string }>
+    }
+  ).entries,
+)
+  .filter(({ id, type }) => type === 'story' && id.startsWith('m6-'))
+  .map(({ id }) => id)
+
+/** 없는 태스크·확인 요청 스토리 — handler 가 일부러 돌려준 404 다 */
+const M6_INTENDED_404: Record<string, string[]> = {
+  'm6-태스크-상세--볼-수-없음': ['/api/v1/tasks/tk_99'],
+  'm6-태스크-확인-필요-상세--찾을-수-없음': ['/api/v1/approvals/ap_99'],
+}
+
+test('M6 스토리가 index.json 에 다섯 묶음 모두 있다', () => {
+  const groups = new Set(M6_STORIES.map((id) => id.split('--')[0]))
+  expect([...groups].sort()).toEqual(
+    [
+      'm6-태스크-목록',
+      'm6-태스크-상세',
+      'm6-태스크-확인-필요-상세',
+      'm6-태스크-보완-폼',
+      'm6-태스크-notion-상태',
+    ].sort(),
+  )
+})
+
+for (const storyId of M6_STORIES) {
+  test(`play 통과 — ${storyId}`, async ({ page }) => {
+    const unhandled = watchUnhandled(page)
+    await page.goto(`/iframe.html?id=${encodeURIComponent(storyId)}&viewMode=story`)
+    await expectStoryFinished(page)
+    expect(unhandled).toEqual(M6_INTENDED_404[storyId] ?? [])
+  })
+}
