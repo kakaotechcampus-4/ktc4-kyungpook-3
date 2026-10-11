@@ -478,7 +478,7 @@ def test_counted_path_reports_drops_by_reason(monkeypatch):
 
     assert [f.evidence for f in findings] == [["그럼 그렇게 갑시다."]]
     # 틀린 번호와 줄 수를 같이 남겨 "1부터 셌는지 · 지어냈는지"를 원문 없이 본다
-    assert dropped == {"not_dict": 1, "no_valid_indices": 1, "bad_indices": [[7]], "lines": 2}
+    assert dropped == {"not_dict": 1, "no_valid_indices": 1, "bad_indices": [[7]], "bad_indices_total": 1, "lines": 2}
 
 
 def test_counted_path_reports_no_drops_when_all_valid(monkeypatch):
@@ -486,7 +486,32 @@ def test_counted_path_reports_no_drops_when_all_valid(monkeypatch):
     t = _transcript(TranscriptSegment(speaker="a", start=0.0, end=1.0, text="그럼 그렇게 갑시다.", seq=0))
     monkeypatch.setattr(sj, "get_llm", lambda which: FakeLLM(responses=[{"findings": [{"indices": [0]}]}]))
 
-    assert extract_findings_counted(t)[1] == {"not_dict": 0, "no_valid_indices": 0, "bad_indices": [], "lines": 1}
+    assert extract_findings_counted(t)[1] == {
+        "not_dict": 0, "no_valid_indices": 0, "bad_indices": [], "bad_indices_total": 0, "lines": 1,
+    }
+
+
+def test_bad_indices_keep_only_integers_and_cap_the_sample(monkeypatch):
+    # 번호 자리에 문장이 오면 회의 내용이 기록에 들어간다 — 정수만 남긴다. 고장 난 응답이 번호를 잔뜩 줘도
+    # 표본은 전체 20개까지, 실제 개수는 bad_indices_total 로 남긴다(PR #187 리뷰)
+    import judge.semantic_judge as sj
+    t = _transcript(TranscriptSegment(speaker="a", start=0.0, end=1.0, text="그럼 그렇게 갑시다.", seq=0))
+    response = {"findings": [
+        {"indices": [0]},
+        {"indices": "결제 API 는 JSON:API 로 통일하기로 함"},
+        {"indices": list(range(100, 1100))},
+        {"indices": [7.5, True, 9]},
+        {"index": 12},
+    ]}
+    monkeypatch.setattr(sj, "get_llm", lambda which: FakeLLM(responses=[response]))
+
+    findings, dropped = extract_findings_counted(t)
+
+    assert len(findings) == 1
+    assert dropped["no_valid_indices"] == 4
+    assert dropped["bad_indices"] == [list(range(100, 120))]   # 표본 20개에서 멈춘다
+    assert dropped["bad_indices_total"] == 1000 + 1 + 1          # 정수만 센다 — 9, 12
+    assert "JSON:API" not in str(dropped)
 
 
 def test_counted_path_still_fails_when_all_dropped(monkeypatch):

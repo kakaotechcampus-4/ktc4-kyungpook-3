@@ -214,16 +214,27 @@ def _luna_user_prompt(numbered: str) -> str:
     )
 
 
-_BAD_INDICES_MAX = 20  # 회의 기록이 커지지 않게 틀린 번호는 이만큼만 남긴다
+_BAD_INDICES_MAX = 20  # 틀린 번호는 회의 전체에서 이만큼만 표본으로 남긴다. 실제 개수는 bad_indices_total
 
 
 def empty_drops() -> dict[str, Any]:
     """1단계에서 검증에 탈락한 항목 기록. 원문은 남기지 않는다(#186).
 
-    not_dict · no_valid_indices 는 사유별 건수다. bad_indices 는 근거 번호가 틀려 탈락한 항목이 준 번호
-    그대로이고 lines 는 번호를 매긴 문장 수다(발화 수가 아니다) — 둘을 견주면 "1부터 셌다(번호 == lines)"인지 "지어냈다"인지 보인다.
+    not_dict · no_valid_indices 는 사유별 건수다. bad_indices 는 근거 번호가 틀려 탈락한 항목이 준 정수 번호의
+    표본(항목마다 목록, 전체 _BAD_INDICES_MAX 개까지)이고 bad_indices_total 은 잘리기 전 정수 번호 수다.
+    lines 는 번호를 매긴 문장 수다(발화 수가 아니다) — bad_indices 와 견주면 "1부터 셌다(번호 == lines)"인지
+    "지어냈다"인지 보인다. 정수가 아닌 값은 남기지 않는다 — 문자열이면 회의 내용이 기록에 들어간다.
     """
-    return {"not_dict": 0, "no_valid_indices": 0, "bad_indices": [], "lines": 0}
+    return {"not_dict": 0, "no_valid_indices": 0, "bad_indices": [], "bad_indices_total": 0, "lines": 0}
+
+
+def _record_bad_indices(dropped: dict[str, Any], raw: Any) -> None:
+    """탈락한 항목이 준 번호 중 정수만 남긴다. 전체 표본은 _BAD_INDICES_MAX 개까지, 총수는 따로 센다."""
+    nums = [v for v in (raw if isinstance(raw, list) else [raw]) if type(v) is int]  # bool 은 int 가 아니게 거른다
+    dropped["bad_indices_total"] += len(nums)
+    room = _BAD_INDICES_MAX - sum(len(b) for b in dropped["bad_indices"])
+    if nums and room > 0:
+        dropped["bad_indices"].append(nums[:room])
 
 
 def extract_findings_llm(transcript: Transcript, client: LLMClient) -> list[JudgeFinding] | None:
@@ -265,8 +276,7 @@ def _extract_findings_llm(
         idxs = _valid_indices(item, len(sentences))
         if not idxs:
             dropped["no_valid_indices"] += 1
-            if len(dropped["bad_indices"]) < _BAD_INDICES_MAX:
-                dropped["bad_indices"].append(item.get("indices", item.get("index")))
+            _record_bad_indices(dropped, item.get("indices", item.get("index")))
             continue  # Luna가 범위 밖 번호를 지어내면 그냥 무시 — 통째로 실패 처리하지 않는다
         summary = str(item.get("summary", "")).strip()
         evidence = [sentences[i] for i in idxs]
@@ -299,9 +309,9 @@ def _extract_findings_llm(
     if len(findings) < len(findings_raw):
         # 어느 회의인지는 이 층에서 모른다 — 회의 기록(manifest["extract_dropped"])에 남기는 건 호출자 몫(#186)
         logger.warning(
-            "1단계 항목 일부 탈락 total=%d not_dict=%d no_valid_indices=%d bad_indices=%s lines=%d",
+            "1단계 항목 일부 탈락 total=%d not_dict=%d no_valid_indices=%d bad_indices=%s bad_indices_total=%d lines=%d",
             len(findings_raw), dropped["not_dict"], dropped["no_valid_indices"], dropped["bad_indices"],
-            dropped["lines"],
+            dropped["bad_indices_total"], dropped["lines"],
         )
     return findings, dropped
 

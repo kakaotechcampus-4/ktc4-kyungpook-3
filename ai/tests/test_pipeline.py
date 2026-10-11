@@ -321,7 +321,7 @@ def test_run_carries_stage1_drop_counts(monkeypatch):
     out = _run()
 
     # lines 는 발화가 아니라 근거 번호를 매긴 문장 수다 — 발화 5개 중 하나가 두 문장이라 6
-    assert out.dropped == {"not_dict": 1, "no_valid_indices": 1, "bad_indices": [[99]], "lines": 6}
+    assert out.dropped == {"not_dict": 1, "no_valid_indices": 1, "bad_indices": [[99]], "bad_indices_total": 1, "lines": 6}
     assert len(out.items) == 1
 
 
