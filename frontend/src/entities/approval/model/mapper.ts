@@ -1,4 +1,4 @@
-import { ApiError } from '@/shared/api/errors'
+import { ApiError, ERROR_CODES } from '@/shared/api/errors'
 import type { ApprovalDto, ApprovalResolveRequestDto } from '@/shared/types/api/approval'
 import { enumValue } from '@/shared/lib/enum'
 import { toApprovalTransport } from './resolution'
@@ -63,11 +63,13 @@ export function toApproval(dto: ApprovalDto): Approval {
       gate,
     }
   }
+  // 대상 태스크 이름은 `task_title`(없으면 제안 때 본 `base_title`)이다. `title` 은 바꿀 제목이라 이름으로 쓰지 않는다
+  // (backend extractions.py 수정안 payload)
   if (dto.type === 'task_update')
     return {
       ...base,
       kind: 'task_update',
-      title: text(payload.title),
+      title: text(payload.task_title) || text(payload.base_title) || null,
       changes: Object.entries(payload)
         .filter(([field]) =>
           ['title', 'assignee_member_id', 'status', 'progress', 'blocker', 'due_date'].includes(
@@ -120,7 +122,7 @@ function toConflict(value: unknown): ApprovalConflict | null {
 export function toApprovalResolveFailure(error: unknown): ApprovalResolveFailure | null {
   if (!(error instanceof ApiError) || error.kind !== 'http' || error.status !== 409) return null
   const details = error.details
-  if (error.code === 'APPROVAL_CONFLICT') {
+  if (error.code === ERROR_CODES.APPROVAL_CONFLICT) {
     if (
       !isRecord(details) ||
       typeof details.approval_id !== 'string' ||

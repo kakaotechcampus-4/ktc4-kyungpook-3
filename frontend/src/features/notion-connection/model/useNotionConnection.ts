@@ -2,9 +2,11 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useLocation, useSearchParams } from 'react-router'
 import {
+  CONNECTING_POLL_MS,
   integrationStartUrl,
   integrationsQueryOptions,
   readIntegrationReturn,
+  waitWhileConnecting,
 } from '@/entities/integration'
 import type { Integration } from '@/entities/integration'
 import { captureSession } from '@/entities/user'
@@ -28,6 +30,8 @@ export interface NotionConnection {
   notice: NotionConnectionNotice | null
   /** 복귀 뒤 연동 상태를 다시 조회하는 중 */
   verifying: boolean
+  /** 복귀 확인 중 Notion 이 DB 를 붙이고 있다(`connecting`). 끝날 때까지 다시 묻는 중이다 */
+  preparing: boolean
   /** 연결이 끝나면 돌아갈 업로드 경로. 차단 모달에서 오지 않았으면 null */
   returnTo: string | null
   /** 현재 탭을 OAuth 로 옮긴다 (D-158). 복귀 경로는 이 설정 영역이고 `next` 를 그대로 싣는다 */
@@ -65,6 +69,7 @@ export function useNotionConnection(workspaceId: string): NotionConnection {
     returned !== null && returned.outcome !== 'success' ? returned.outcome : null,
   )
   const [verifying, setVerifying] = useState(() => returned?.outcome === 'success')
+  const [preparing, setPreparing] = useState(false)
   // 복귀 확인 중에는 구독이 따로 묻지 않는다 — 확인의 조회가 같은 Query 에 답을 쓴다
   const integrations = useQuery({ ...integrationsQueryOptions(workspaceId), enabled: !verifying })
   const handled = useRef(false)
@@ -90,11 +95,22 @@ export function useNotionConnection(workspaceId: string): NotionConnection {
         // 복귀한 **뒤의** 연동 상태로 확인한다 (fetchFresh). StrictMode 의 시험 재마운트가 이 영역의 구독을 잠깐 내려 진행 중
         // 조회가 취소돼도, 돌아온 이전 값은 답으로 치지 않고 다시 묻는다 — 확인은 끝까지 간다. 연동 캐시에 쓰는 것은 그 공유
         // Query 하나다 (U4 r4 M06). 세션이 끝나면 취소로 끝나고 다음 세션의 캐시에 쓰지 않는다 (U4 r3 M04)
-        const latest = await fetchFresh(queryClient, integrationsQueryOptions(workspaceId))
-        connected = latest.notion.status === 'connected'
+        // DB 를 붙이는 중(`connecting`)이면 끝날 때까지 다시 묻는다(#204). 이 영역을 떠나면 그만 묻는다 —
+        // 다른 화면은 연동 Query 의 자체 재조회가 맡는다
+        const latest = await waitWhileConnecting(
+          () => fetchFresh(queryClient, integrationsQueryOptions(workspaceId)),
+          'notion',
+          {
+            intervalMs: CONNECTING_POLL_MS,
+            shouldStop: () => !isCurrentSession() || !present.current,
+            onConnecting: () => setPreparing(true),
+          },
+        )
+        connected = latest?.notion.status === 'connected'
       } catch {
         // 확인하지 못했으면 연결된 것으로 보지 않는다
       }
+      setPreparing(false)
       if (!isCurrentSession()) return
       // 확인을 시작한 화면에 그대로 있고(가는 중인 이동도 없고), 다른 곳으로 가려고 고르는 중이 아닐 때만 옮긴다
       const stillHere = present.current && livePathname() === pathname
@@ -123,6 +139,7 @@ export function useNotionConnection(workspaceId: string): NotionConnection {
     retry: () => void integrations.refetch(),
     notice,
     verifying,
+    preparing,
     returnTo,
     connect,
   }

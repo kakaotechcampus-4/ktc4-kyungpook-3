@@ -49,6 +49,22 @@ it('narrows task-update changes to the contract fields present in payload includ
   })
 })
 
+it('names a task_update by the target task, not by the proposed title', () => {
+  const update = (payload: Record<string, unknown>) =>
+    toApproval({ ...approvalFixtures[0], type: 'task_update', payload })
+
+  expect(
+    update({ task_title: '로그인 API 연동', base_title: '로그인 연동', title: '새 제목' }),
+  ).toMatchObject({
+    title: '로그인 API 연동',
+    changes: [{ field: 'title', value: '새 제목' }],
+  })
+  expect(update({ base_title: '로그인 연동', status: 'done' })).toMatchObject({
+    title: '로그인 연동',
+  })
+  expect(update({ title: '새 제목' })).toMatchObject({ title: null })
+})
+
 it('marks reminder and unknown types unsupported and defaults unknown statuses', () => {
   const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
   try {

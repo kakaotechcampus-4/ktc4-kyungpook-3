@@ -175,9 +175,12 @@ function conflictingUpdateApproval(state: MockDb): void {
       status: 'done',
       progress: 100,
       base_values: { status: 'todo', progress: 40 },
+      // 서버 수정안처럼 대상 태스크 이름을 표시용으로 싣는다
+      base_title: '로그인 API 연동',
+      task_title: '로그인 API 연동',
       meeting_id: 'mt_09',
       evidence_quote: '로그인 API 연동은 끝났어요.',
-      evidence_speaker: '김서연',
+      evidence_speaker: '1123',
     },
     related_task_id: 'tk_01',
     requested_by: 'mb_02',

@@ -14,7 +14,7 @@ import type {
   UnsupportedApproval,
 } from '@/entities/approval'
 import { meetingListQueryOptions } from '@/entities/meeting'
-import { memberListQueryOptions } from '@/entities/member'
+import { memberListQueryOptions, speakerName } from '@/entities/member'
 import type { Member } from '@/entities/member'
 import { taskDetailQueryOptions } from '@/entities/task'
 import {
@@ -294,7 +294,7 @@ function TaskCreateReview({
           <dt className={TERM}>원문 마감</dt>
           <dd className={VALUE}>{approval.dueRaw ?? '없음'}</dd>
         </dl>
-        <Evidence workspaceId={workspaceId} approval={approval} />
+        <Evidence workspaceId={workspaceId} approval={approval} members={members} />
       </section>
 
       {pending ? (
@@ -330,9 +330,11 @@ function FieldValue({ value }: { value: string | null }) {
 function Evidence({
   workspaceId,
   approval,
+  members,
 }: {
   workspaceId: string
   approval: TaskCreateApproval
+  members: readonly Member[] | undefined
 }) {
   // 처리 추적이 이미 받는 목록이다 — 같은 key 라 따로 요청하지 않는다
   const meetings = useQuery(meetingListQueryOptions(workspaceId))
@@ -349,7 +351,8 @@ function Evidence({
         <blockquote className={QUOTE}>{quote}</blockquote>
       )}
       <figcaption className={META}>
-        화자 {speaker ?? '알 수 없음'} · 시각 {atMs === null ? '알 수 없음' : evidenceClock(atMs)}
+        화자 {speakerName(members, speaker) ?? '알 수 없음'} · 시각{' '}
+        {atMs === null ? '알 수 없음' : evidenceClock(atMs)}
         {approval.meetingId === null || meetingTitle === null ? null : (
           <>
             {' · '}

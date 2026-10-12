@@ -150,13 +150,22 @@ describe('진입 (U3-1)', () => {
     expect(app.visited().map(({ pathname }) => pathname)).toContain(paths.meetings('ws_01'))
   })
 
+  it('Notion 이 준비 중(connecting)이면 막지 않고 폼을 연다 — 그 사이 태스크도 DB 가 붙으면 반영된다 (#204)', async () => {
+    completeMeeting('mt_10')
+    db.integrations.ws_01.notion.status = 'connecting'
+    renderApp(UPLOAD_PATH)
+
+    expect(await screen.findByRole('button', { name: '정리 시작하기' })).toBeInTheDocument()
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
   it('Notion 끊김이면 D-100 모달 — 연결 버튼은 설정의 Notion 영역으로, 복귀는 업로드 경로다', async () => {
     completeMeeting('mt_10')
     db.integrations.ws_01.notion.status = 'revoked'
     const user = userEvent.setup()
     const app = renderApp(UPLOAD_PATH)
 
-    const dialog = await screen.findByRole('dialog', { name: 'Notion 연결이 끊어졌어요' })
+    const dialog = await screen.findByRole('dialog', { name: 'Notion 연결을 마치지 못했어요' })
     await user.click(within(dialog).getByRole('button', { name: 'Notion 다시 연결하기' }))
     await app.expectPath(paths.settings('ws_01'))
     await app.expectSearch(`?section=notion&next=${encodeURIComponent(UPLOAD_PATH)}`)
@@ -572,7 +581,7 @@ describe('업로드 오류 (U3-10)', () => {
 
   it.each([
     ['not_connected', 'Notion 연결이 필요해요'],
-    ['revoked', 'Notion 연결이 끊어졌어요'],
+    ['revoked', 'Notion 연결을 마치지 못했어요'],
   ] as const)('연동 오류(%s)는 차단 모달로 바뀐다', async (status, title) => {
     const { user, app } = await openUpload()
     await fillValid(user)
