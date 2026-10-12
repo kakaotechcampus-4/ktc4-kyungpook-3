@@ -12,6 +12,7 @@ from app.core.database import Base, get_db
 from app.main import app
 from app.models import (
     ApprovalRequest,
+    Extraction,
     ExtractionItem,
     Meeting,
     Member,
@@ -366,3 +367,178 @@ def test_approving_update_applies_only_proposed_changes(client, db, seed):
     assert login.due_date == date(2026, 9, 30)
     assert login.assignee_member_id == seed["jimin"].member_id
     assert login.title == "로그인 화면 시안"
+
+
+# ── 추출 경로별 게이트(#201) ──
+
+
+def _judge_create(title: str, **fields) -> dict:
+    """judge 경로의 새 항목. ai/judge/pipeline.py to_item처럼 값이 없어도 키를 보내고 확신도는 보내지 않는다."""
+    return {
+        "action": "create", "target_task_id": None, "category": "decision", "task_title": title,
+        "due_date": None, "status": None, "assignee_type": None, "assignee_raw": None,
+        "doc_text": f"{title}을 하기로 함", "evidence_quote": "이거 해야 해요",
+        "evidence_speaker": "discord_uid_haeun", "evidence_at_ms": 1000, **fields,
+    }
+
+
+def _legacy(title: str, task_confidence: float, **fields) -> dict:
+    """legacy 경로의 항목. ai/capture/handoff.py to_extraction_items처럼 확신도 둘을 항상 보낸다."""
+    return {
+        "task_title": title, "task_confidence": task_confidence, "assignee_raw": None,
+        "assignee_type": None, "due_date": None, "due_raw": None, "due_confidence": 0.0,
+        "evidence_quote": None, "evidence_speaker": None, "evidence_at_ms": None, **fields,
+    }
+
+
+def _item(db, title: str) -> ExtractionItem:
+    return db.execute(select(ExtractionItem).where(ExtractionItem.task_title == title)).scalar_one()
+
+
+def _extraction(db) -> Extraction:
+    return db.execute(select(Extraction)).scalar_one()
+
+
+@pytest.mark.parametrize(
+    ("assignee", "gate"),
+    [
+        ({"assignee_type": "thirdname", "assignee_raw": "지민님"}, "review"),  # 한 명으로 확정
+        # 특정 개인을 가리키지 않으면 언급 없음으로 보고 계산에서 뺀다
+        ({"assignee_type": "none", "assignee_raw": None}, "review"),
+        ({"assignee_type": "group", "assignee_raw": None}, "review"),
+        ({"assignee_type": None, "assignee_raw": None}, "review"),
+        ({"assignee_type": "thirdname", "assignee_raw": "민수님"}, "hold"),  # 두 명이라 미확정
+        ({"assignee_type": "thirdname", "assignee_raw": "하은님"}, "hold"),  # 등록된 별칭 없음
+        ({"assignee_type": "first", "assignee_raw": None}, "hold"),  # 화자 uid의 팀원 없음
+        ({"assignee_type": "first", "assignee_raw": None, "evidence_speaker": None}, "hold"),  # 화자 없음
+        # 사람을 지목했지만 AI가 이름으로 풀지 못해 호칭 없이 종류만 왔다
+        ({"assignee_type": "second", "assignee_raw": None}, "hold"),
+        ({"assignee_type": "thirdpronoun", "assignee_raw": None}, "hold"),
+        ({"assignee_type": "thirdrole", "assignee_raw": None}, "hold"),
+    ],
+    ids=[
+        "resolved", "none", "group", "type-missing", "ambiguous", "not-found",
+        "first-unknown-speaker", "first-without-speaker", "second-unresolved",
+        "thirdpronoun-unresolved", "thirdrole-unresolved",
+    ],
+)
+def test_judge_create_gate_follows_assignee_without_measured_confidence(client, db, seed, assignee, gate):
+    """judge는 할 일 확신도를 보내지 않는다. 0.0으로 보지 않고, BE가 계산한 담당자 확신도로만 정한다.
+
+    담당자를 한 명으로 찾았거나 언급이 없으면 review, 언급했는데 찾지 못했으면 PM이 채워야 하므로 hold다.
+    """
+    r = _post(client, seed, [_judge_create("결제 환불 기능 구현", due_date="2026-10-05", **assignee)])
+
+    assert r.status_code == 201
+    item = _item(db, "결제 환불 기능 구현")
+    assert item.gate == gate
+    assert (item.task_confidence, item.due_confidence, item.confidence) == (None, None, None)
+    [approval] = _approvals(db, "task_create")
+    assert _payload(approval)["gate"] == gate
+    assert db.query(Task).count() == 3
+    assert _extraction(db).extraction_path == "judge"
+
+
+def test_judge_create_with_first_person_resolved_by_speaker_goes_to_review(client, db, seed):
+    """1인칭은 assignee_raw 없이 오고 화자 uid로 찾는다. 찾았으면 호칭이 없어도 hold가 아니다."""
+    seed["jimin"].discord_user_id = "discord_uid_jimin"
+    db.commit()
+    _post(client, seed, [_judge_create(
+        "결제 환불 기능 구현", assignee_type="first", assignee_raw=None, evidence_speaker="discord_uid_jimin",
+    )])
+
+    item = _item(db, "결제 환불 기능 구현")
+    assert (item.gate, item.assignee_member_id) == ("review", seed["jimin"].member_id)
+
+
+def test_judge_create_never_auto_even_if_confidence_is_sent(client, db, seed):
+    """judge의 키가 있으면 확신도를 함께 보내도 judge 정책을 따른다. 정책을 바꾸기 전에는 바로 생성하지 않는다."""
+    _post(client, seed, [_judge_create(
+        "결제 환불 기능 구현", task_confidence=0.99, assignee_type="thirdname", assignee_raw="지민님",
+    )])
+
+    item = _item(db, "결제 환불 기능 구현")
+    assert item.gate == "review"
+    assert item.task_confidence == 0.99
+    assert db.query(Task).count() == 3
+
+
+def test_legacy_items_keep_confidence_gate(client, db, seed):
+    _post(client, seed, [
+        _legacy("결제 환불 기능 구현", 1.0, assignee_type="thirdname", assignee_raw="지민님"),
+        _legacy("디자인 검토", 0.6),
+        _legacy("배포 점검", 1.0, due_date="2026-10-05", due_raw="언젠가", due_confidence=0.0),
+    ])
+
+    assert _item(db, "결제 환불 기능 구현").gate == "auto"
+    assert _item(db, "디자인 검토").gate == "review"
+    hold = _item(db, "배포 점검")
+    assert (hold.gate, hold.confidence) == ("hold", 0.0)
+    assert _extraction(db).extraction_path == "legacy"
+
+
+def test_measured_zero_confidence_is_not_treated_as_unmeasured(client, db, seed):
+    """0.0을 보냈으면 측정값 0이다. 보내지 않은 것(null)과 달리 hold다."""
+    _post(client, seed, [_legacy("디자인 검토", 0.0)])
+
+    item = _item(db, "디자인 검토")
+    assert (item.task_confidence, item.confidence, item.gate) == (0.0, 0.0, "hold")
+
+
+@pytest.mark.parametrize(
+    ("assignee", "gate"),
+    [
+        ({"assignee_raw": "지민님"}, "review"),
+        ({}, "review"),
+        ({"assignee_raw": "민수님"}, "hold"),
+        ({"assignee_type": "thirdpronoun"}, "hold"),
+    ],
+    ids=["resolved", "no-assignee", "ambiguous", "thirdpronoun-unresolved"],
+)
+def test_item_of_unknown_path_without_confidence_follows_assignee(client, db, seed, assignee, gate):
+    """경로를 가릴 수 없어도 확신도를 측정하지 않았으면 judge와 같이 담당자로만 정한다."""
+    _post(client, seed, [{"task_title": "디자인 검토", **assignee}])
+
+    item = _item(db, "디자인 검토")
+    assert (item.gate, item.task_confidence, item.confidence) == (gate, None, None)
+    assert _extraction(db).extraction_path is None
+
+
+@pytest.mark.parametrize(
+    "items",
+    [
+        [],
+        [_judge_create("결제 환불 기능 구현"), _legacy("디자인 검토", 0.6)],
+        [_judge_create("결제 환불 기능 구현"), {"task_title": "디자인 검토"}],
+    ],
+    ids=["empty", "mixed", "with-unknown-item"],
+)
+def test_extraction_path_is_null_when_items_do_not_agree(client, db, seed, items):
+    r = _post(client, seed, items)
+
+    assert r.status_code == 201
+    assert _extraction(db).extraction_path is None
+
+
+def test_mixed_request_still_gates_each_item_by_its_own_path(client, db, seed):
+    _post(client, seed, [_judge_create("결제 환불 기능 구현"), _legacy("디자인 검토", 0.0)])
+
+    assert _item(db, "결제 환불 기능 구현").gate == "review"
+    assert _item(db, "디자인 검토").gate == "hold"
+
+
+def test_extraction_detail_returns_path_and_unmeasured_confidence_as_null(client, db, seed):
+    extraction_id = _post(client, seed, [
+        _judge_create("결제 환불 기능 구현", assignee_type="thirdname", assignee_raw="지민님"),
+    ]).json()["data"]["extraction_id"]
+
+    client.cookies.set("session_token", "pm-token")
+    body = client.get(f"/api/v1/extractions/{extraction_id}").json()["data"]
+
+    assert body["extraction_path"] == "judge"
+    [item] = body["items"]
+    assert item["task"]["confidence"] is None
+    assert item["due_date"]["confidence"] is None
+    assert item["confidence"] is None
+    assert item["assignee"]["confidence"] == 1.0
+    assert item["gate"] == "review"
