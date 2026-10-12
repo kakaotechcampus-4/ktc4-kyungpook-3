@@ -15,6 +15,8 @@
 | [로컬 FE에서는 OAuth 왕복이 실패함](2026-10-12-oauth-local-roundtrip.md) | 구성 제약 | 배포 주소에서 검증 |
 | [이미 연결된 Discord 서버를 고르면 이유 없이 실패로만 보임](2026-10-12-discord-guild-already-linked.md) | BE 요청 후보 | 미요청 |
 | [배포 주소에서 Swagger·OpenAPI를 볼 수 없음](2026-10-12-openapi-not-exposed.md) | BE 요청 후보 | 미요청 |
+| [온보딩 복귀 확인의 늦은 응답이 비운 캐시를 다시 씀](2026-10-12-onboarding-late-check-rewrites-cache.md) | FE 수정 (검증 발견) | 수정함 (커밋 전) |
+| [온보딩에서 공간을 바꾸면 이전 공간의 확인 결과로 다른 공간의 단계를 완료함](2026-10-12-onboarding-workspace-switch-completes-other.md) | FE 수정 (검증 발견) | 수정함 (커밋 전). 서버 검사는 BE 요청 후보 |
 | [Notion `revoked`가 실제로는 「연결 실패」만 뜻함](2026-10-12-notion-revoked-meaning.md) | 나중에 개선할 사항 | FE 문구 수정, BE 실패 이유·권한 해제 감지 미요청 |
 | [그 밖의 계약 차이](2026-10-12-minor-contract-gaps.md) | 기록 (Notion `connecting`은 #204로 FE 대응) | 동작 영향 확인 필요 |
 
