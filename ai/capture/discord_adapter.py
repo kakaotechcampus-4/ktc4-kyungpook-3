@@ -376,12 +376,14 @@ class RecordingCog(discord.Cog):
     async def _drain_outbox(self) -> None:
         """워커가 우편함에 쓴 알림을 그 채널에 이름 순서대로 올리고 지운다(capture.notify.FileOutbox).
 
-        올리지 못하면 거기서 멈추고 다음 바퀴에 다시 올린다. 같은 회의의 알림 순서를 지키려는 것이다.
-        OUTBOX_MAX_AGE_S 가 지난 것과 읽을 수 없는 것은 버린다.
+        올리지 못하면 그 채널의 뒤 알림은 이번 바퀴에 건너뛰고 다음 바퀴에 다시 올린다. 같은 채널의 순서를 지키려는
+        것이고 다른 채널은 계속 올린다. 디스코드가 4xx 로 거절한 것(권한 없음, 첨부가 큼)은 다시 해도 같아서 버린다.
+        봇이 볼 수 없는 채널, OUTBOX_MAX_AGE_S 가 지난 것, 읽을 수 없는 것도 버린다.
         """
         box = FileOutbox(self.recordings_dir).dir
         if not box.is_dir():
             return
+        held: set[str] = set()                      # 이번 바퀴에 실패해 뒤 알림을 미루는 채널
         for path in sorted(box.glob("*.json")):
             try:
                 note = json.loads(path.read_text(encoding="utf-8"))
@@ -392,15 +394,39 @@ class RecordingCog(discord.Cog):
                 print(f"[outbox] 오래된 알림을 버린다: {str(note.get('text'))[:60]}", flush=True)
                 path.unlink(missing_ok=True)
                 continue
-            channel = self._channel_for({"text_channel_id": note.get("channel_id")})
-            file = note.get("file")
-            attachment = discord.File(file) if file and Path(file).exists() else None
-            if not await self._notify(channel, note.get("text") or "", file=attachment):
-                if channel is None:                 # 봇이 볼 수 없는 채널이다. 다시 해도 같다
-                    path.unlink(missing_ok=True)
+            cid = str(note.get("channel_id"))
+            if cid in held:
+                continue
+            channel = self._channel_for({"text_channel_id": cid})
+            if channel is not None:                 # 볼 수 없는 채널이면 다시 해도 같아서 버린다
+                if await self._post_note(channel, note.get("text") or "", note.get("file")) == "retry":
+                    held.add(cid)
                     continue
-                break
             path.unlink(missing_ok=True)
+
+    async def _post_note(self, channel, text: str, file: str | None) -> str:
+        """우편함 알림 하나를 올린다. sent, drop(다시 해도 같은 거절), retry 중 하나. 첨부를 열지 못하면 글만 올린다."""
+        attachment = None
+        if file:
+            try:
+                attachment = discord.File(file)
+            except OSError as e:
+                print(f"[outbox] 첨부를 열지 못해 글만 올린다: {type(e).__name__}: {e}", flush=True)
+        try:
+            if attachment is not None:
+                await channel.send(text, file=attachment)
+            else:
+                await channel.send(text)
+            return "sent"
+        except discord.HTTPException as e:
+            if 400 <= e.status < 500 and e.status != 429:
+                print(f"[outbox] 디스코드가 거절해 버린다: {e} :: {text[:60]}", flush=True)
+                return "drop"
+            print(f"[outbox] 채널 알림 실패, 다음 바퀴에 다시: {e} :: {text[:60]}", flush=True)
+            return "retry"
+        except Exception as e:  # noqa: BLE001 - 연결이 끊기는 것 같은 일시 실패다
+            print(f"[outbox] 채널 알림 실패, 다음 바퀴에 다시: {type(e).__name__}: {e} :: {text[:60]}", flush=True)
+            return "retry"
 
     async def _notice_interrupted(self, *, guild_id=None) -> None:
         """봇이 뜨기 전에 녹음 중이던 회의의 채널에 재시작 안내를 한 번 올린다. 끊긴 지 한 시간 안일 때만."""

@@ -424,6 +424,59 @@ async def test_a_note_that_cannot_be_posted_waits_for_the_next_round_and_an_old_
     assert [t for t, _ in channel.sent] == ["하나", "둘"] and not list(box.dir.glob("*.json"))
 
 
+async def test_a_channel_that_keeps_failing_does_not_hold_back_other_channels(tmp_path):
+    """한 채널이 계속 실패해도 다른 채널의 알림은 같은 바퀴에 올라간다. 실패한 채널의 알림은 순서대로 남는다."""
+    from capture.notify import FileOutbox
+
+    cog, guild, vc, channel, ctx = _setup(tmp_path)
+    other = FakeTextChannel(cid=901)
+    cog.bot._channels[901] = other
+    box = FileOutbox(tmp_path / "recordings")
+    box.send(str(TEXT_ID), "하나")
+    box.send("901", "다른 서버")
+    box.send(str(TEXT_ID), "둘")
+    channel.fail_first = 10
+    await cog._drain_outbox()
+    assert [t for t, _ in other.sent] == ["다른 서버"] and channel.sent == []
+    assert len(list(box.dir.glob("*.json"))) == 2
+    channel.fail_first = 0
+    await cog._drain_outbox()
+    assert [t for t, _ in channel.sent] == ["하나", "둘"] and not list(box.dir.glob("*.json"))
+
+
+async def test_a_note_the_channel_refuses_is_dropped_instead_of_retried(tmp_path):
+    """권한이 없거나(403) 첨부가 너무 크면(413) 다시 보내도 같다. 2초마다 다시 보내면 디스코드의 잘못된 요청 한도에 닿는다."""
+    import types
+
+    from capture.notify import FileOutbox
+
+    cog, guild, vc, channel, ctx = _setup(tmp_path)
+    tries = []
+
+    async def refuse(text, file=None):
+        tries.append(text)
+        raise A.discord.Forbidden(types.SimpleNamespace(status=403, reason="Forbidden"), "Missing Permissions")
+
+    channel.send = refuse
+    box = FileOutbox(tmp_path / "recordings")
+    box.send(str(TEXT_ID), "하나")
+    box.send(str(TEXT_ID), "둘")
+    await cog._drain_outbox()
+    await cog._drain_outbox()
+    assert tries == ["하나", "둘"] and not list(box.dir.glob("*.json"))
+
+
+async def test_an_attachment_that_cannot_be_read_still_posts_the_text(tmp_path):
+    """디버그 알림의 회의록 파일을 열지 못해도 글은 올린다."""
+    from capture.notify import FileOutbox
+
+    cog, guild, vc, channel, ctx = _setup(tmp_path)
+    box = FileOutbox(tmp_path / "recordings")
+    box.send(str(TEXT_ID), "📝 전사를 마쳤습니다. 줄 3개.", file=tmp_path)          # 파일이 아니라 폴더다
+    await cog._drain_outbox()
+    assert channel.sent == [("📝 전사를 마쳤습니다. 줄 3개.", None)] and not list(box.dir.glob("*.json"))
+
+
 async def test_end_waits_for_its_own_session_and_keeps_a_new_recording_alive(tmp_path):
     """앞 회의를 저장하는 중에 새 녹음이 시작되면 /end 는 그 연결을 끊지 않는다."""
     cog, guild, vc, channel, ctx = _setup(tmp_path)
