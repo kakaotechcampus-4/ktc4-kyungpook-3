@@ -15,6 +15,7 @@
 | [로컬 FE에서는 OAuth 왕복이 실패함](2026-10-12-oauth-local-roundtrip.md) | 구성 제약 | 배포 주소에서 검증 |
 | [이미 연결된 Discord 서버를 고르면 이유 없이 실패로만 보임](2026-10-12-discord-guild-already-linked.md) | BE 요청 후보 | 미요청 |
 | [배포 주소에서 Swagger·OpenAPI를 볼 수 없음](2026-10-12-openapi-not-exposed.md) | BE 요청 후보 | 미요청 |
-| [그 밖의 계약 차이](2026-10-12-minor-contract-gaps.md) | 기록 (Notion `connecting`은 FE 수정 후보) | 동작 영향 확인 필요 |
+| [Notion `revoked`가 실제로는 「연결 실패」만 뜻함](2026-10-12-notion-revoked-meaning.md) | 나중에 개선할 사항 | FE 문구 수정, BE 실패 이유·권한 해제 감지 미요청 |
+| [그 밖의 계약 차이](2026-10-12-minor-contract-gaps.md) | 기록 (Notion `connecting`은 #204로 FE 대응) | 동작 영향 확인 필요 |
 
 FE에서 수정한 항목도 실제 서버 데이터로 화면을 확인하기 전까지는 실제 검증 완료로 보지 않는다. 검증 결과는 이 마일스톤의 `result.md`에 따로 기록한다.
