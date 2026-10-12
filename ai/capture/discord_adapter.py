@@ -1,4 +1,4 @@
-"""디스코드 음성 채널 화자별 녹음 어댑터 (py-cord Cog). 종료 뒤 배치 전사, 할일 추출, BE 인계까지 잇는다.
+"""디스코드 음성 채널 화자별 녹음 어댑터 (py-cord Cog). 녹음을 저장까지 하고, 처리는 워커(capture/worker.py)가 한다.
 
 "Discord" 라는 이름은 ai/ 안에서는 capture/ 안에만 있어야 한다.
 봇 프로세스(기동, 토큰, 상시 실행)는 backend/bot/main.py 가 소유하고, 이 Cog 를 add_cog 로 붙인다:
@@ -9,10 +9,9 @@
 명령
   /join     명령한 사람이 있는 음성 채널에 봇 입장
   /record   화자별 트랙 녹음 시작. 채널에 "녹음·전사 중" 을 알리고 BE 에 회의를 만든다
-  /stop     녹음 종료. 트랙을 닫고 전사 → 회의록 저장 → 할일 추출 → BE 인계를 돌려 결과를 채널에 올린다(워커 모드는 저장까지)
-  /leave    음성 채널 퇴장 (녹음 중에는 거절. 앞 회의의 후처리 중에는 된다)
-  /end      자기 녹음의 후처리까지 끝나면 퇴장. 그 사이 새 녹음이 시작됐으면 남는다
-  /recover  이 서버에서 끝까지 처리되지 않은 회의를 마지막 단계 다음부터 마저 처리한다(워커 모드는 워커를 깨운다)
+  /stop     녹음 종료. 트랙을 닫고 저장한 뒤 워커를 찌른다. 처리 진행은 워커가 이 채널에 알린다
+  /leave    음성 채널 퇴장 (녹음 중에는 거절)
+  /end      자기 녹음의 저장까지 끝나면 퇴장. 그 사이 새 녹음이 시작됐으면 남는다
 
 녹음은 StreamingSink + TrackWriter 다. 패킷을 받는 즉시 16kHz 모노로 바꿔 화자별 wav 에 흘리고
 (메모리가 회의 길이와 무관), 트랙 안의 위치는 녹음 시작부터 흐른 monotonic 시간이다. 그래서
@@ -20,44 +19,29 @@
 started_at 에 한 번만 적는다. 실시간 게시 Cog(capture/realtime/)는 이 프로세스에 올리지 않는다.
 음성 연결은 길드마다 하나라 녹음기 둘이 같이 돌 수 없다.
 
-세션은 둘로 나눠 든다. _active 는 녹음 중인 것(길드마다 하나), _processing 은 트랙을 닫고 후처리
-중인 것(회의 ID 마다). 앞 회의의 전사가 도는 동안에도 새 녹음을 받는다. 연달아 잡힌 회의에서 앞
-회의 전사(수 분)가 끝날 때까지 막으면 다음 회의 첫 발화를 잃기 때문이다. 후처리는 프로세스에서
-한 번에 하나만 돈다 (MM_MAX_CONCURRENT_MEETINGS, 기본 1). 로컬 모델은 CPU 를 다 쓴다.
+세션은 둘로 나눠 든다. _active 는 녹음 중인 것(길드마다 하나), _processing 은 트랙을 닫고 저장 중인 것(회의 ID
+마다). 앞 회의를 저장하는 동안에도 새 녹음을 받는다.
 
-종료 뒤 처리는 capture/recorder.py 의 process_session 이다. /stop 과 /recover 가 같은 함수를 쓴다.
-추출 경로가 판단 파이프라인(MM_EXTRACT_PATH=judge)이면 할일 목록 대신 판단 결과(새 항목, 수정)의 설명 문장과
-판단하지 못한 finding 을 올린다.
-BE 인계(capture/handoff.py)는 BE_BASE_URL 과 BE_SERVICE_TOKEN 이 있을 때만 돈다. 워크스페이스는 /record 때 서버로
-BE 에 물어 매니페스트에 고정한다. 연결이 없는 서버면 채널에 안내하고, 봇 모드는 전사까지만, 워커 모드는 연결될
-때까지 전사하지 않는다(#199). 채널 알림은
-전부 _notify 를 거쳐서, 디스코드 쪽 실패가 파일과 상태 처리를 막지 않는다.
-on_session_saved(manifest, manifest_path) 훅은 그 뒤에 불린다. manifest["transcript"] 에 회의록
-경로가 있고 transcripts/session_<회의ID>.transcript.json 이 BE 가 읽는 Transcript 다.
+처리 방식은 워커 하나다(결정 기록 0026). 봇은 saved 를 다 쓴 뒤 회의 잠금을 놓고 워커를 찌르고(request_nudge)
+on_session_saved(manifest, manifest_path) 훅을 부른다. 워커는 전사 → 회의록 저장 → 할일 추출 → BE 인계를 하면서
+단계가 끝날 때마다 그 회의의 채널에 알릴 글을 우편함(recordings/.worker/outbox)에 쓰고, 봇이 OUTBOX_POLL_S 마다
+그것을 채널에 올린다(_drain_outbox). 워커는 디스코드를 모르고, 디스코드에 글을 올리는 프로세스는 봇 하나다.
+워크스페이스는 /record 때 서버로 BE 에 물어 매니페스트에 고정한다. 연결이 없는 서버는 녹음하지 않는다(#199).
+채널 알림은 전부 _notify 를 거쳐서, 디스코드 쪽 실패가 파일과 상태 처리를 막지 않는다.
 
-진행 표시. 봇 방식의 /stop 은 처리 단계가 시작할 때마다 채널에 새 메시지를 올리고, 전사 중에는 그 메시지를
-15초에 한 번 고쳐 읽은 트랙과 끝난 묶음 수를 보인다(StageProgress). 결과 메시지는 그 뒤에 올라간다.
-MM_PROGRESS=off 면 끈다. 복구(/recover, 자동 복구)와 워커 모드는 올리지 않는다.
-
-자동 복구. 봇이 준비되면(on_ready, 준비된 뒤에 붙었으면 붙는 자리에서) 루프가 MM_RECOVERY_INTERVAL_S
-(기본 60초)마다 끝나지 않은 회의를 훑어 마저 처리한다. /recover 와 같은 한 바퀴(recorder.recover_pass)이고
-회의마다 후처리 세마포어와 회의 잠금을 잡는다. 루프는 다음 시도 시각이 된 회의만, /recover 는 기다리지 않고
-포기한 회의까지 돌린다. 서버가 적히지 않은 옛 매니페스트와 자동 복구 전에 failed 로 끝난 회의는 루프가
-집지 않는다. 봇이 녹음 중에 죽었다 한 시간 안에 다시 뜨면 회의 채널에 재시작 안내를 한 번 올린다.
+재시작 안내. 봇이 준비되면(on_ready, 준비된 뒤에 붙었으면 붙는 자리에서) 루프가 MM_RECOVERY_INTERVAL_S
+(기본 60초)마다 봇이 녹음 중에 죽어 recording 으로 남은 회의를 찾아, 한 시간 안에 끊긴 것이면 그 채널에 재시작
+안내를 한 번 올린다. 녹음된 부분은 워커가 처리한다.
 
 회의 잠금. 누가 회의를 처리할지는 회의마다의 OS 파일 잠금(recorder.try_lock)만 정한다. /record 는 잠금을
-먼저 잡고 recording 매니페스트를 쓰고, 봇 모드는 스스로 처리하는 동안까지 쥐고 있다가 놓는다.
-
-워커 모드(MM_PIPELINE_MODE=worker). 봇은 녹음을 저장까지만 하고 saved 를 다 쓴 뒤 잠금을 놓는다. 처리는
-python -m capture.worker 가 하고 결과는 BE 를 거쳐 웹에서 본다. 채널에는 "처리되면 웹에서 확인(앞에 N건)",
-재시작 안내, /recover 의 워커 상태만 올라간다. 이 모드의 봇은 전사 백엔드를 싣지 않고 on_session_saved 를
-부르지 않는다. 근거는 docs/basis_for_decision/member/2026-09-26-0013-recovery-worker-and-meeting-lock.md.
+먼저 잡고 recording 매니페스트를 쓰고, saved 를 다 쓴 뒤 놓는다. 근거는
+docs/basis_for_decision/member/2026-09-26-0013-recovery-worker-and-meeting-lock.md.
 """
 
 from __future__ import annotations
 
 import asyncio
-import os
+import json
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
@@ -66,58 +50,28 @@ from pathlib import Path
 import discord
 
 from capture.handoff import from_env as handoff_from_env
-from capture.judge_path import extract_path
-from capture.ops_record import summary_line
-from capture.recorder import (RECOVERY_INTERVAL_S, Claims, interrupted_meetings, manifest_path, queue_ahead,
-                              recover_pass, recovery_targets, try_lock, try_restart_lock)
-from capture.worker import read_heartbeat, request_wake
-from capture.recorder import (PARTIAL_RETRY_MAX, STATUS_EXTRACTED, STATUS_FAILED, STATUS_HANDED_OFF, STATUS_PARTIAL,
-                              STATUS_RECORDING, STATUS_SAVED, STATUS_SOURCED, STATUS_TRANSCRIBED, NullSession,
-                              backend_from_env,
-                              build_extractor, meeting_title, process_session, recover, write_status)
+from capture.notify import FileOutbox
+from capture.recorder import (RECOVERY_INTERVAL_S, STATUS_RECORDING, STATUS_SAVED, NullSession, interrupted_meetings,
+                              manifest_path, meeting_title, queue_ahead, try_lock, try_restart_lock, write_status)
 from capture.streaming_sink import StreamingSink
 from capture.track_writer import TrackPool
 from capture.voice_client import SafeVoiceClient
-from shared.config import RECORDINGS_DIR, TRANSCRIPTS_DIR, settings
+from capture.worker import request_nudge, worker_trouble
+from shared.config import RECORDINGS_DIR, settings
 from shared.schemas import now_iso
-from stt.speech_gate import SpeechGate
 
 SessionSavedHook = Callable[[dict, Path], Awaitable[None]]
 
 NOTICE = "🔴 녹음·전사 중입니다. 이 음성 채널의 말은 화자별로 녹음되고 `/stop` 뒤 회의록이 여기 올라옵니다."
-# 봇은 서버에 있는데 웹에서 이 서버를 워크스페이스에 연결하지 않았다(#199). /record 는 녹음하지 않고 이렇게 답한다.
-# 결과 보고 줄은 녹음 시작 때 조회가 일시로 실패했고 처리할 때 연결이 없던 회의에 쓴다
+# 봇은 서버에 있는데 웹에서 이 서버를 워크스페이스에 연결하지 않았다(#199). /record 는 녹음하지 않고 이렇게 답한다
 NOT_CONNECTED_REFUSED = ("⚠️ 이 디스코드 서버가 웹 워크스페이스에 연결돼 있지 않아 녹음을 시작하지 않았습니다. "
                          "PM 이 웹 온보딩의 디스코드 연결 단계에서 이 서버를 연결한 뒤 다시 `/record` 해 주세요.")
-NOT_CONNECTED_RESULT = ("ℹ️ 이 서버가 웹 워크스페이스에 연결돼 있지 않아 회의록 저장·할일 추출·BE 인계를 멈췄습니다. "
-                        "PM 이 웹 온보딩의 디스코드 연결 단계에서 이 서버를 연결하면 이어서 넘어갑니다.")
 DEPLOYING_NOTICE = "⏳ 새 버전을 배포하느라 봇이 곧 다시 시작됩니다. 1분쯤 뒤에 다시 `/record` 해 주세요."
 FLUSH_EVERY_S = 0.2   # 재정렬 창에 갇힌 마지막 패킷을 이 주기로 비운다. 패킷은 20ms 마다 온다
-STAGE_LABEL = {STATUS_TRANSCRIBED: "전사", STATUS_SOURCED: "회의록 저장", STATUS_EXTRACTED: "할일 추출",
-               STATUS_HANDED_OFF: "BE 인계",
-               "stt": "전사", "sources": "회의록 저장", "extract": "할일 추출", "handoff": "BE 인계"}
 RESUME_NOTICE = ("⚠️ 봇이 다시 시작되어 끊긴 회의의 녹음된 부분을 처리합니다. "
                  "이어서 기록하려면 `/join` 뒤 `/record` 를 실행해 주세요.")
-SHOWN_MAX = 10      # 채널에 보이는 항목 수. 나머지는 "외 N건" 으로 줄인다
-LINE_MAX = 150      # 한 줄 길이. 디스코드 메시지는 2000자까지라 열 줄이 다 차도 넘지 않게 자른다
-PROGRESS_EVERY_S = 15.0   # 전사 진행으로 메시지를 고치는 최소 간격. 자주 고치면 채널이 디스코드 요청 제한에 걸릴 수 있다
-PROGRESS_START = {"stt": "🎧 전사 시작", "sources": "🗂 회의록 저장 시작", "extract": "🔎 할일 추출 시작",
-                  "handoff": "📨 BE 인계 시작"}
-
-
-def _clip(text, limit: int = LINE_MAX) -> str:
-    text = " ".join(str(text or "").split())
-    return text if len(text) <= limit else text[:limit - 3] + "..."
-
-
-def _judge_text(items: list[dict]) -> str:
-    """판단 경로의 항목을 채널에 올릴 글로. doc_text 는 PM 에게 보일 문장으로 만들어진 값이라 그대로 쓴다."""
-    creates = sum(1 for x in items if x.get("action") != "update")
-    lines = [f"- {_clip(x.get('doc_text') or x.get('task_title') or '(설명 없음)')}" for x in items[:SHOWN_MAX]]
-    if len(items) > SHOWN_MAX:
-        lines.append(f"외 {len(items) - SHOWN_MAX}건")
-    return (f"📋 판단 결과 {len(items)}건 (새 항목 {creates}, 수정 {len(items) - creates})\n"
-            + ("\n".join(lines) or "- (없음)"))
+OUTBOX_POLL_S = 2.0        # 워커가 우편함에 쓴 알림을 채널에 올리는 주기
+OUTBOX_MAX_AGE_S = 1800.0  # 이보다 오래 올리지 못한 알림은 버린다. 봇이 오래 꺼져 있었으면 지난 진행은 의미가 없다
 
 
 def is_recording(vc) -> bool:
@@ -162,11 +116,6 @@ class _Recording:
     hint_names: list[str] = field(default_factory=list)   # 전사 이름 힌트(#195). 서버 멤버 표시 이름
 
 
-def _minutes(seconds) -> int:
-    """흐른 분. 1분이 안 돼도 1 이다."""
-    return max(1, int(seconds) // 60)
-
-
 def _member_names(guild) -> list[str]:
     """전사 이름 힌트(#195). 서버 멤버의 표시 이름. 회의에 없는 사람도 이름으로 불리며 일을 맡는다. 봇 계정은 뺀다.
 
@@ -176,113 +125,23 @@ def _member_names(guild) -> list[str]:
             if not getattr(m, "bot", False) and getattr(m, "display_name", None)]
 
 
-def _name_resolver(guild):
-    """uid → 서버 표시 이름. 복구로 되찾은 트랙의 이름을 채우는 데 쓴다."""
-    def name_of(uid: str):
-        try:
-            member = guild.get_member(int(uid)) if guild is not None else None
-        except (TypeError, ValueError):
-            member = None
-        return member.display_name if member is not None else None
-    return name_of
-
-
-def _stt_progress(info: dict) -> str:
-    return (f"🎧 전사 · 트랙 {info['tracks']}/{info['tracks_total']} 읽음 · "
-            f"묶음 {info['done']}개 끝, {info['sent'] - info['done']}개 처리 중")
-
-
-class StageProgress:
-    """봇 방식 /stop 의 진행 표시. process_session 의 progress 로 넘긴다.
-
-    단계가 시작하면 새 메시지를 올리고, 전사 중에는 그 메시지를 PROGRESS_EVERY_S 에 한 번 고쳐 트랙과 묶음 수를
-    보인다. 그 사이에 들어온 마지막 수는 다음 단계가 시작할 때나 flush 에서 보인다. 처리 스레드와 전사 워커
-    스레드에서 불리는데, 디스코드 호출은 봇의 이벤트 루프에 넘기고 기다리지 않는다. 디스코드가 느려도 처리가
-    막히지 않게 하려는 것이다. 루프에서는 잠금 하나가 넘긴 순서대로 올리고, 올리다 난 예외는 로그로만 남긴다.
-    """
-
-    def __init__(self, loop: asyncio.AbstractEventLoop, channel, *, clock=time.monotonic):
-        self._loop, self._channel, self._clock = loop, channel, clock
-        self._lock = asyncio.Lock()
-        self._message = None                # 지금 단계의 메시지. 전사 진행은 이걸 고친다
-        self._shown_at = clock()
-        self._unshown: dict | None = None   # 아직 보이지 않은 마지막 전사 진행
-
-    def __call__(self, stage: str, info: dict | None = None) -> None:
-        if info is None:                    # 단계 시작
-            self._show_unshown()
-            self._shown_at = self._clock()
-            self._submit(PROGRESS_START.get(stage, stage), edit=False)
-            return
-        self._unshown = info
-        now = self._clock()
-        if now - self._shown_at >= PROGRESS_EVERY_S:
-            self._shown_at = now
-            self._show_unshown()
-
-    async def flush(self) -> None:
-        """밀린 전사 진행을 보이고 넘긴 메시지가 다 올라갈 때까지 기다린다. 결과 메시지가 그 뒤에 붙는다."""
-        info, self._unshown = self._unshown, None
-        if info is not None:
-            await self._post(_stt_progress(info), edit=True)     # 잠금이 앞서 넘긴 것부터 올린다
-        else:
-            async with self._lock:
-                pass
-
-    def _show_unshown(self) -> None:
-        info, self._unshown = self._unshown, None
-        if info is not None:
-            self._submit(_stt_progress(info), edit=True)
-
-    def _submit(self, text: str, *, edit: bool) -> None:
-        asyncio.run_coroutine_threadsafe(self._post(text, edit=edit), self._loop)
-
-    async def _post(self, text: str, *, edit: bool) -> None:
-        async with self._lock:
-            try:
-                if not edit:
-                    self._message = None
-                    self._message = await self._channel.send(text)
-                elif self._message is not None:
-                    await self._message.edit(content=text)
-            except Exception as e:  # noqa: BLE001 - 진행 표시가 실패해도 처리와 결과 메시지는 그대로다
-                print(f"[progress] 진행 표시 실패: {type(e).__name__}: {e} :: {text[:60]}", flush=True)
-
-
 class RecordingCog(discord.Cog):
     def __init__(self, bot: discord.Bot, *, recordings_dir: Path = RECORDINGS_DIR,
-                 transcripts_dir: Path = TRANSCRIPTS_DIR, on_session_saved: SessionSavedHook | None = None,
-                 stt_factory=None, gate_factory=None, extractor_factory=None, handoff_factory=None,
-                 mode: str | None = None):
-        """stt_factory() 는 (백엔드, 모델 이름, 워커 수). 기본은 MM_STT_BACKEND 환경 변수를 본다.
+                 on_session_saved: SessionSavedHook | None = None, handoff_factory=None):
+        """handoff_factory() 는 capture.handoff.Handoff 또는 None (BE 설정 없음). 기본은 환경 변수다.
 
-        mode 는 bot(기본, 저장 뒤 봇이 스스로 처리한다. 개발용 한 프로세스) 또는 worker(봇은 저장까지만 하고
-        python -m capture.worker 가 처리한다). 기본은 MM_PIPELINE_MODE 이고 다른 값이면 시작할 때 멈춘다.
-
-        extractor_factory() 는 extract_tasks 를 부를 함수 또는 None (LLM 설정 없음).
-        handoff_factory() 는 capture.handoff.Handoff 또는 None (BE 설정 없음). 둘 다 기본은 환경 변수다.
+        /record 때 서버의 워크스페이스를 찾고 BE 회의를 먼저 만드는 데만 쓴다. 처리는 워커가 한다.
         """
         self.bot = bot
         self.recordings_dir = recordings_dir
-        self.transcripts_dir = transcripts_dir
         self.on_session_saved = on_session_saved
-        self._stt_factory = stt_factory or backend_from_env
-        self._gate_factory = gate_factory if gate_factory is not None else SpeechGate
-        self._extractor_factory = extractor_factory if extractor_factory is not None else build_extractor
         self._handoff_factory = handoff_factory if handoff_factory is not None else handoff_from_env
         self._active: dict[int, _Recording] = {}        # 길드 ID → 녹음 중
-        self._processing: dict[str, _Recording] = {}   # 회의 ID → 후처리 중
-        self._post_sem = asyncio.Semaphore(max(1, int(os.environ.get("MM_MAX_CONCURRENT_MEETINGS", "1"))))
+        self._processing: dict[str, _Recording] = {}   # 회의 ID → 저장 중
         self._tasks: set[asyncio.Task] = set()
-        self._mode = mode or os.environ.get("MM_PIPELINE_MODE", "bot")
-        if self._mode not in ("bot", "worker"):
-            raise ValueError(f"MM_PIPELINE_MODE 는 bot 또는 worker 다. 받은 값: {self._mode!r}")
-        self._progress = os.environ.get("MM_PROGRESS", "").strip() != "off"   # 봇 방식 /stop 의 진행 표시. 기본은 켜짐
-        extract_path()      # MM_EXTRACT_PATH 가 모르는 값이면 여기서 멈춘다. 오타로 말없이 옛 추출기가 돌면 안 된다
-        # 자동 복구. 루프와 /recover 가 같은 회의 잠금과 같은 한 바퀴(_recover_pass)를 쓴다
-        self._claims = Claims()
-        self._recovery_interval_s = RECOVERY_INTERVAL_S      # 0 이면 루프를 띄우지 않는다
+        self._recovery_interval_s = RECOVERY_INTERVAL_S      # 재시작 안내 주기. 0 이면 루프를 띄우지 않는다
         self._recovery_task: asyncio.Task | None = None
+        self._outbox_task: asyncio.Task | None = None
         self._started_at = now_iso()                         # 이보다 먼저 시작돼 recording 으로 남은 회의는 재시작으로 끊겼다
         self._resume_noticed: set[str] = set()
         # 봇 쪽이 준비된 뒤에 이 Cog 를 붙이면 on_ready 를 받지 못한다. 그때는 붙는 자리에서 루프를 띄운다
@@ -401,7 +260,7 @@ class RecordingCog(discord.Cog):
             await ctx.respond("진행 중인 녹음이 없습니다.", ephemeral=True)
             return
         # 먼저 답한다. stop_recording() 은 동기이고 라우터 join 에 최대 5초를 쓴다
-        await ctx.respond("⏹ 녹음 종료. 트랙을 닫고 전사합니다. 회의록이 이 채널에 올라옵니다.")
+        await ctx.respond("⏹ 녹음 종료. 트랙을 닫고 저장합니다. 처리 진행이 이 채널에 올라옵니다.")
         vc.stop_recording()
 
     @discord.slash_command(name="leave", description="봇이 음성채널에서 나갑니다")
@@ -411,13 +270,13 @@ class RecordingCog(discord.Cog):
             await ctx.respond("봇이 음성채널에 없습니다.", ephemeral=True)
             return
         if is_recording(vc) or ctx.guild.id in self._active:
-            await ctx.respond("녹음 중입니다. 먼저 `/stop` 으로 종료하거나, 전사까지 기다렸다가 나가려면 `/end` 를 사용하세요.",
+            await ctx.respond("녹음 중입니다. 먼저 `/stop` 으로 종료하거나, 저장까지 기다렸다가 나가려면 `/end` 를 사용하세요.",
                               ephemeral=True)
             return
         await vc.disconnect(force=True)
         await ctx.respond("음성채널에서 나갔습니다.")
 
-    @discord.slash_command(name="end", description="전사가 끝나면 음성채널에서 나갑니다")
+    @discord.slash_command(name="end", description="녹음 저장이 끝나면 음성채널에서 나갑니다")
     async def end(self, ctx: discord.ApplicationContext) -> None:
         vc = ctx.voice_client
         if vc is None:
@@ -426,7 +285,7 @@ class RecordingCog(discord.Cog):
         rec = self._active.get(ctx.guild.id)
         waiting = [r for r in self._processing.values() if r.guild_id == ctx.guild.id]
         if rec is not None and is_recording(vc):
-            await ctx.respond("⏹ 녹음 종료. 전사가 끝나면 나갑니다.")
+            await ctx.respond("⏹ 녹음 종료. 저장이 끝나면 나갑니다.")
             vc.stop_recording()
             await rec.done.wait()          # 자기 세션만 기다린다
             if ctx.guild.id in self._active:
@@ -434,8 +293,8 @@ class RecordingCog(discord.Cog):
                 await self._notify(ctx.channel, "새 녹음이 시작돼 음성채널에 남습니다.")
                 return
         elif waiting:
-            # 녹음은 끝났고 후처리가 도는 중이다. 설명대로 끝날 때까지 기다린다
-            await ctx.respond("후처리가 끝나면 나갑니다.")
+            # 녹음은 끝났고 저장이 도는 중이다. 설명대로 끝날 때까지 기다린다
+            await ctx.respond("저장이 끝나면 나갑니다.")
             for r in waiting:
                 await r.done.wait()
             if ctx.guild.id in self._active:
@@ -445,22 +304,6 @@ class RecordingCog(discord.Cog):
             await ctx.respond("음성채널에서 나가는 중...")
         await vc.disconnect(force=True)
         await self._notify(ctx.channel, "음성채널에서 나갔습니다.")
-
-    @discord.slash_command(name="recover", description="끝까지 처리되지 않은 녹음을 마저 처리합니다")
-    async def recover_cmd(self, ctx: discord.ApplicationContext) -> None:
-        if self._mode == "worker":
-            await ctx.respond("워커에게 이 서버의 남은 회의를 바로 다시 시도하라고 알립니다...")
-            await self._wake_worker(ctx.guild.id, ctx.channel)
-            return
-        await ctx.respond("이 서버의 남은 녹음을 찾아 마지막 단계 다음부터 마저 처리합니다...")
-        # 자동 복구 루프와 같은 한 바퀴다. 다음 시도 시각을 기다리지 않고 포기한 회의도 한 번 더 돌린다
-        results, busy = await self._recover_pass(guild_id=ctx.guild.id, manual=True, fallback=ctx.channel)
-        for b in busy:
-            await self._notify(ctx.channel, self._busy_text(b))
-        if not busy and not any(self._should_post(r, manual=True) for r in results):
-            waiting = len(results)   # 설정이 없어 그 자리에 그대로인 회의는 매번 알리지 않는다
-            await self._notify(ctx.channel, "마저 처리할 녹음이 없습니다." +
-                               (f" 설정이 없어 멈춘 회의 {waiting}개는 그대로입니다." if waiting else ""))
 
     # ------------------------------------------------------------------ 이벤트
     @discord.Cog.listener()
@@ -488,65 +331,76 @@ class RecordingCog(discord.Cog):
     async def on_ready(self) -> None:
         self.start_recovery_loop()
 
-    # ------------------------------------------------------------------ 자동 복구
+    # ------------------------------------------------------------------ 재시작 안내, 우편함
     def start_recovery_loop(self) -> asyncio.Task | None:
-        """자동 복구 루프를 띄운다. on_ready 가 재연결로 다시 와도 하나만 돈다. 주기가 0 이면 띄우지 않는다.
+        """재시작 안내 루프와 우편함 루프를 띄운다. on_ready 가 재연결로 다시 와도 하나씩만 돈다.
 
         정리는 둘이다. Cog 를 떼면 cog_unload 가 취소한다. bot.run() 이 끝나면 py-cord 가 남은 태스크를 모두
-        취소한다(Client.close 는 cog_unload 를 부르지 않는다). 취소돼도 스레드에서 돌던 회의는 끝까지 가고
-        회의 잠금은 그 스레드가 놓는다.
+        취소한다(Client.close 는 cog_unload 를 부르지 않는다). 재시작 안내 주기가 0 이면 그 루프만 띄우지 않는다.
         """
+        loop = asyncio.get_running_loop()
+        if self._outbox_task is None or self._outbox_task.done():
+            self._outbox_task = loop.create_task(self._outbox_loop())
         if self._recovery_interval_s <= 0:
             return None
         if self._recovery_task is None or self._recovery_task.done():
-            self._recovery_task = asyncio.get_running_loop().create_task(self._recovery_loop())
+            self._recovery_task = loop.create_task(self._recovery_loop())
         return self._recovery_task
 
     def cog_unload(self) -> None:
-        if self._recovery_task is not None:
-            self._recovery_task.cancel()
+        for task in (self._recovery_task, self._outbox_task):
+            if task is not None:
+                task.cancel()
 
     async def _recovery_loop(self) -> None:
         """첫 바퀴는 바로 돈다(재시작으로 끊긴 회의). 한 바퀴가 예외를 내도 로그만 남기고 다음 바퀴로 간다."""
         while True:
             try:
                 await self._tick()
-            except Exception as e:  # noqa: BLE001 - 깨진 매니페스트 하나가 자동 복구를 멈추면 안 된다
-                print(f"[recovery] 복구 바퀴 예외: {type(e).__name__}: {e}", flush=True)
+            except Exception as e:  # noqa: BLE001 - 깨진 매니페스트 하나가 안내를 멈추면 안 된다
+                print(f"[recovery] 재시작 안내 바퀴 예외: {type(e).__name__}: {e}", flush=True)
             await asyncio.sleep(self._recovery_interval_s)
 
     async def _tick(self) -> None:
-        """루프의 한 번. 워커 모드면 처리는 워커가 하고 봇은 재시작 안내만 올린다."""
-        if self._mode == "worker":
-            await self._notice_interrupted()
-        else:
-            await self._recover_pass()
+        """루프의 한 번. 처리는 워커가 하고 봇은 재시작 안내만 올린다."""
+        await self._notice_interrupted()
 
-    async def _recover_pass(self, *, guild_id=None, manual: bool = False, fallback=None) -> tuple[list[dict], list[dict]]:
-        """루프와 /recover 가 같이 쓰는 한 바퀴. (돌린 회의의 결과, 남이 잡고 있어 건너뛴 회의).
+    async def _outbox_loop(self) -> None:
+        while True:
+            try:
+                await self._drain_outbox()
+            except Exception as e:  # noqa: BLE001
+                print(f"[outbox] 우편함 바퀴 예외: {type(e).__name__}: {e}", flush=True)
+            await asyncio.sleep(OUTBOX_POLL_S)
 
-        처리는 recorder.recover_pass 다(워커도 같은 함수를 쓴다). 봇이 들고 있는 회의(녹음 중·후처리 중)는 이 순간의
-        집합으로 빼고, 후처리 세마포어는 회의마다 잡는다. 결과는 그 회의를 시작한 채널에 올린다. 루프(manual=False)는
-        단계가 움직였거나 포기했을 때만 올리고 예약된 재시도의 실패는 로그로만 남긴다. 처리하기 전에 재시작으로 끊긴
-        회의의 채널에 안내부터 올린다.
+    async def _drain_outbox(self) -> None:
+        """워커가 우편함에 쓴 알림을 그 채널에 이름 순서대로 올리고 지운다(capture.notify.FileOutbox).
+
+        올리지 못하면 거기서 멈추고 다음 바퀴에 다시 올린다. 같은 회의의 알림 순서를 지키려는 것이다.
+        OUTBOX_MAX_AGE_S 가 지난 것과 읽을 수 없는 것은 버린다.
         """
-        await self._notice_interrupted(guild_id=guild_id)
-
-        async def post(r: dict) -> None:
-            if self._should_post(r, manual=manual):
-                channel = self._channel_for(r) or fallback
-                await self._notify(channel, f"세션 `{r['session']}`")
-                await self._report(channel, r["session"], r)
-            elif r["status"] in (STATUS_FAILED, STATUS_PARTIAL):
-                print(f"[recovery] 세션 {r['session']} {r['status']}. 실패 {r.get('attempts')}회, "
-                      f"{r.get('retry_in_s')}초 뒤 다시 시도", flush=True)
-
-        return await recover_pass(self.recordings_dir, claims=self._claims, sem=self._post_sem,
-                                  stt_factory=self._stt_factory, gate_factory=self._gate_factory,
-                                  extractor_factory=self._extractor_factory, handoff_factory=self._handoff_factory,
-                                  transcripts_dir=self.transcripts_dir, guild_id=guild_id, exclude=self._holding(),
-                                  manual=manual, name_of_for=lambda m: _name_resolver(self._guild_of(m)),
-                                  on_result=post)
+        box = FileOutbox(self.recordings_dir).dir
+        if not box.is_dir():
+            return
+        for path in sorted(box.glob("*.json")):
+            try:
+                note = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                path.unlink(missing_ok=True)
+                continue
+            if time.time() - float(note.get("at") or 0) > OUTBOX_MAX_AGE_S:
+                print(f"[outbox] 오래된 알림을 버린다: {str(note.get('text'))[:60]}", flush=True)
+                path.unlink(missing_ok=True)
+                continue
+            channel = self._channel_for({"text_channel_id": note.get("channel_id")})
+            file = note.get("file")
+            attachment = discord.File(file) if file and Path(file).exists() else None
+            if not await self._notify(channel, note.get("text") or "", file=attachment):
+                if channel is None:                 # 봇이 볼 수 없는 채널이다. 다시 해도 같다
+                    path.unlink(missing_ok=True)
+                    continue
+                break
+            path.unlink(missing_ok=True)
 
     async def _notice_interrupted(self, *, guild_id=None) -> None:
         """봇이 뜨기 전에 녹음 중이던 회의의 채널에 재시작 안내를 한 번 올린다. 끊긴 지 한 시간 안일 때만."""
@@ -558,71 +412,14 @@ class RecordingCog(discord.Cog):
             self._resume_noticed.add(session)
             await self._notify(self._channel_for(m), RESUME_NOTICE)
 
+    def _worker_warning(self) -> str:
+        """저장 알림 끝에 붙이는 경고. 워커가 처리를 못 하고 있을 때만 쓴다. /recover 가 없어 이 자리가 유일하다."""
+        trouble = worker_trouble(self.recordings_dir)
+        return f"\n⚠️ {trouble}. 워커가 다시 돌면 이어서 처리합니다. 운영자에게 알려 주세요." if trouble else ""
+
     def _holding(self) -> set[str]:
-        """봇이 지금 들고 있는 회의 ID. 녹음 중(_active)과 후처리 중(_processing). 그 wav 를 복구가 집으면 안 된다."""
+        """봇이 지금 들고 있는 회의 ID. 녹음 중(_active)과 저장 중(_processing). 그 wav 를 워커가 집으면 안 된다."""
         return {r.meeting_id for r in self._active.values()} | set(self._processing)
-
-    def _guild_of(self, manifest: dict):
-        try:
-            return self.bot.get_guild(int(manifest.get("guild_id")))
-        except (TypeError, ValueError, AttributeError):
-            return None
-
-    @staticmethod
-    def _should_post(result: dict, *, manual: bool) -> bool:
-        """채널에 올릴 결과인가. 설정이 없어 그대로인 회의는 올리지 않는다."""
-        if manual:
-            return bool(result["ran"]) or result["status"] == STATUS_FAILED
-        moved = any(s != "retried" for s in result["ran"])     # 재전사만 하고 여전히 partial 이면 움직인 것이 아니다
-        return moved or bool(result.get("gave_up"))
-
-    @staticmethod
-    def _busy_text(b: dict) -> str:
-        if b.get("mine"):
-            return f"ℹ️ 세션 `{b['session']}`: 자동 복구가 지금 처리 중이라 건너뜁니다. 결과는 그 회의 채널에 올라옵니다."
-        who = f"`{b['claimed_by']}`" if b.get("claimed_by") else "다른 프로세스"
-        since = f"{_minutes(b['since_s'])}분째 " if b.get("since_s") is not None else ""
-        return f"ℹ️ 세션 `{b['session']}`: {who} 가 {since}처리 중이라 건너뜁니다."
-
-    async def _wake_worker(self, guild_id, channel) -> None:
-        """워커 모드의 /recover. 워커를 깨우고 대기열과 워커 상태를 알린다. 봇은 처리하지 않는다.
-
-        깨우면 워커가 이 서버의 회의를 사람이 친 /recover 처럼(포기한 회의까지) 바로 한 바퀴 돈다.
-        """
-        request_wake(self.recordings_dir, guild_id)
-        due, busy = recovery_targets(self.recordings_dir, claims=self._claims, exclude=self._holding())
-        waiting = sum(1 for _, m in due if m.get("guild_id"))
-        lines = [f"🔁 워커를 깨웠습니다. 대기 {waiting}건, 처리 중 {len(busy)}건."]
-        for b in busy[:3]:
-            since = f" {_minutes(b['since_s'])}분째" if b.get("since_s") is not None else ""
-            lines.append(f"처리 중: 세션 `{b['session']}`{since}")
-        lines.append(self._worker_state())
-        await self._notify(channel, "\n".join(lines))
-
-    def _worker_state(self) -> str:
-        """워커가 주기마다 남기는 살아 있다는 표시로 본 워커 상태. 주기의 여섯 배(최소 1분) 넘게 조용하면 경고한다."""
-        hb = read_heartbeat(self.recordings_dir)
-        if hb is None:
-            return "⚠️ 워커 신호가 없습니다. 워커가 떠 있는지 확인해 주세요."
-        if hb.get("state") == "stopped":
-            return "⚠️ 워커가 멈춰 있습니다. 워커를 다시 띄워 주세요."
-        age = max(0.0, time.time() - float(hb.get("at_ts") or 0))
-        if age > max(60.0, 6 * float(hb.get("interval_s") or 10)):
-            return f"⚠️ 워커가 {_minutes(age)}분째 응답이 없습니다."
-        return f"워커 마지막 신호 {int(age)}초 전."
-
-    def _loop_alive(self) -> bool:
-        return self._recovery_task is not None and not self._recovery_task.done()
-
-    def _next_try(self, result: dict, *, auto: str, by_hand: str) -> str:
-        """실패나 partial 뒤에 무엇이 일어나는지. 루프가 다시 하는지, 멈췄는지, 루프가 떠 있지 않은지."""
-        n = result.get("attempts") or 0
-        if result.get("gave_up"):
-            return f"실패 {n}회로 자동 재시도를 멈췄습니다. `/recover` 로 다시 시도할 수 있습니다."
-        if self._loop_alive() and result.get("retry_in_s"):
-            mins = max(1, int((result["retry_in_s"] + 59) // 60))
-            return f"{mins}분 뒤 {auto} (실패 {n}회). 바로 하려면 `/recover`."
-        return by_hand
 
     # ------------------------------------------------------------------ 종료
     def _on_recording_done(self, sink, ctx: discord.ApplicationContext) -> None:
@@ -687,8 +484,9 @@ class RecordingCog(discord.Cog):
     async def _finish(self, guild_id: int) -> None:
         """/stop, /end, 봇 퇴장, py-cord 콜백이 전부 여기로 온다. 표에서 먼저 꺼내 한 번만 돈다.
 
-        꺼낸 순간부터 이 길드는 새 녹음을 받을 수 있다. 이 세션은 _processing 에 옮겨 두고 끝나면
-        done 을 켠다. 완료 신호와 자원 정리는 무슨 일이 있어도 finally 에서 한다.
+        꺼낸 순간부터 이 길드는 새 녹음을 받을 수 있다. 이 세션은 _processing 에 옮겨 두고 저장이 끝나면 done 을
+        켠다. saved 를 다 쓴 뒤 회의 잠금을 놓고 워커를 찌른다. 처리와 그 진행 알림은 워커가 한다.
+        완료 신호와 자원 정리는 무슨 일이 있어도 finally 에서 한다.
         """
         rec = self._active.pop(guild_id, None)
         if rec is None:
@@ -722,110 +520,25 @@ class RecordingCog(discord.Cog):
                 warn += f"\n⚠️ 마지막 패킷 정리 실패 ({drain_error}). 회의 끝부분이 빠졌을 수 있습니다."
             if rec.pool.dropped:
                 warn += f"\n⚠️ 쓰기 큐가 넘쳐 조각 {rec.pool.dropped}개를 버렸습니다."
-            if self._mode == "worker":
-                # saved 를 다 쓴 뒤에 잠금을 놓는다. 이제 워커가 집는다. 결과는 BE 를 거쳐 웹에서 본다
-                if rec.lock is not None:
-                    rec.lock.release()
-                ahead = queue_ahead(self.recordings_dir, rec.meeting_id, exclude=self._holding())
-                await self._notify(rec.text_channel, f"✅ 녹음을 저장했습니다(화자 {len(entries)}명). 회의록과 할일은 "
-                                   f"처리되면 웹에서 확인할 수 있습니다(앞에 {ahead}건).{warn}")
-                return
-            await self._notify(rec.text_channel, f"✅ 저장 완료 (화자 {len(entries)}명). 전사 중입니다...{warn}")
-
-            # 전사 → 회의록 저장 → 할일 추출 → BE 인계. 어느 단계가 죽어도 매니페스트에 남고 /recover 가 거기서 잇는다
-            backend, model_name, workers = self._stt_factory()
-            progress = (StageProgress(asyncio.get_running_loop(), rec.text_channel)
-                        if self._progress and rec.text_channel is not None else None)
-            async with self._post_sem:
-                result = await asyncio.to_thread(process_session, self.recordings_dir, manifest, backend=backend,
-                                                 model_name=model_name, workers=workers, gate=self._gate_factory(),
-                                                 transcripts_dir=self.transcripts_dir,
-                                                 extractor=self._extractor_factory(), handoff=self._handoff_factory(),
-                                                 name_of=_name_resolver(guild), progress=progress)
-            if progress is not None:
-                await progress.flush()      # 진행 메시지가 다 올라간 뒤에 결과를 올린다
-            await self._report(rec.text_channel, rec.meeting_id, result)
+            # saved 를 다 쓴 뒤에 잠금을 놓는다. 이제 워커가 집는다. 찌르면 주기를 기다리지 않고 바로 돈다
+            if rec.lock is not None:
+                rec.lock.release()
+            request_nudge(self.recordings_dir)
+            ahead = queue_ahead(self.recordings_dir, rec.meeting_id, exclude=self._holding())
+            await self._notify(rec.text_channel, f"✅ 녹음을 저장했습니다(화자 {len(entries)}명). 처리 진행은 이 채널에 "
+                               f"올라옵니다(앞에 {ahead}건).{warn}{self._worker_warning()}")
 
             if self.on_session_saved is not None:
                 try:
                     await self.on_session_saved(manifest, path)
-                except Exception as e:  # BE 후처리 실패가 녹음·전사 결과까지 망치지 않게
+                except Exception as e:  # 훅 실패가 녹음 저장까지 망치지 않게
                     print(f"[warn] on_session_saved 훅 실패: {e!r}", flush=True)
-        except Exception as e:  # noqa: BLE001 - 여기 오면 파일 처리가 죽은 것이다. 신호는 아래서 켠다
-            print(f"[finish] 세션 {rec.meeting_id} 후처리 예외: {type(e).__name__}: {e}", flush=True)
-            if self._mode == "worker":
-                nxt = "끝나지 않은 단계는 워커가 이어서 처리합니다."
-            elif self._loop_alive():
-                nxt = "끝나지 않은 단계는 자동 복구가 다시 시도합니다. 바로 하려면 `/recover`."
-            else:
-                nxt = "`/recover` 로 다시 시도하세요."
-            await self._notify(rec.text_channel, f"⚠️ 후처리 중 예외: {type(e).__name__}: {e}. 트랙은 남아 있습니다. {nxt}")
+        except Exception as e:  # noqa: BLE001 - 여기 오면 파일 저장이 죽은 것이다. 신호는 아래서 켠다
+            print(f"[finish] 세션 {rec.meeting_id} 저장 예외: {type(e).__name__}: {e}", flush=True)
+            await self._notify(rec.text_channel, f"⚠️ 녹음 저장 중 예외: {type(e).__name__}: {e}. 트랙은 남아 있습니다. "
+                               "끝나지 않은 단계는 워커가 이어서 처리합니다.")
         finally:
             if rec.lock is not None:
-                rec.lock.release()          # 봇 모드는 스스로 처리하는 동안 쥐고 있다가 여기서 놓는다
+                rec.lock.release()          # 저장 중 예외로 위에서 놓지 못했을 때
             self._processing.pop(rec.meeting_id, None)
             rec.done.set()
-
-    async def _report(self, channel, session, result: dict) -> None:
-        """process_session 의 결과를 채널에 올린다. 이번에 끝낸 단계만 말한다. 맨 끝에 처리 기록 한 줄을 붙인다."""
-        tr = result.get("transcribe")
-        if tr is not None:
-            s = tr.get("summary")
-            text = f"📝 회의록 (세션 `{session}`, 화자 {result.get('speakers', 0)}명, 줄 {tr['lines']}개"
-            if s:
-                text += f", 전사 호출 {s['calls']}회, 보낸 오디오 {s['audio_sent_s']}초"
-            text += ")"
-            if result.get("retried"):
-                text += f"\n🔁 실패했던 {result['retried']}줄을 다시 보냈습니다."
-            if tr["failed"]:
-                if result["status"] == STATUS_PARTIAL:
-                    text += (f"\n⚠️ 전사 실패 {tr['failed']}줄. 이 회의는 완료로 닫지 않았습니다. " +
-                             self._next_try(result, auto="그 구간만 자동으로 다시 보냅니다",
-                                            by_hand="`/recover` 가 그 구간만 다시 보냅니다."))
-                else:
-                    text += f"\n⚠️ 다시 보내도 실패한 {tr['failed']}줄은 회의록에 없습니다. 구간은 매니페스트에 남아 있습니다."
-            await self._notify(channel, text, file=discord.File(str(tr["markdown"])))
-        src = result.get("sources")
-        if STATUS_SOURCED in result["ran"] and src:
-            text = f"🗂 BE 회의록 저장 {src.get('inserted', 0)}줄"
-            if src.get("skipped"):
-                text += f", 이미 있던 {src['skipped']}줄"
-            await self._notify(channel, text)
-        if result.get("partial"):
-            await self._notify(channel, f"⚠️ 빠진 구간 {result.get('missing_units', 0)}개를 둔 채 진행했습니다 "
-                               f"(재시도 {PARTIAL_RETRY_MAX}회). 구간은 매니페스트에 남아 있습니다.")
-        if STATUS_EXTRACTED in result["ran"] and result.get("items") is not None:
-            # 판단 경로(MM_EXTRACT_PATH=judge). 항목의 키가 옛 경로와 다르다
-            await self._notify(channel, _judge_text(result["items"]))
-            unjudged = result.get("extract_failures") or []
-            if unjudged:
-                shown = "\n".join(f"- {_clip(f.get('text'))}" for f in unjudged[:SHOWN_MAX])
-                await self._notify(channel, f"⚠️ 판단하지 못한 발화 {len(unjudged)}건은 결과에 없습니다. "
-                                   f"이유는 매니페스트에 남아 있습니다.\n{shown}")
-        elif STATUS_EXTRACTED in result["ran"]:
-            tasks = result.get("tasks") or []
-            shown = "\n".join(f"- {x.get('task')} / {x.get('assignee_resolved') or x.get('assignee_mention') or '담당 미정'} "
-                              f"/ {x.get('due_date') or '마감 미정'}" for x in tasks[:10]) or "- (없음)"
-            await self._notify(channel, f"📋 할일 {len(tasks)}건\n{shown}")
-        be = result.get("be")
-        if STATUS_HANDED_OFF in result["ran"] and be:
-            await self._notify(channel, f"📨 BE 인계 완료. 회의 `{be.get('meeting_id')}`, 항목 {be.get('item_count', 0)}건")
-            if be.get("dropped_items"):
-                await self._notify(channel, f"⚠️ BE 가 항목 {be['dropped_items']}건을 받지 않았습니다. "
-                                   "수정 대상 task 가 사라졌거나 제목이 빈 항목입니다.")
-            if be.get("stale_extraction"):
-                await self._notify(channel, "⚠️ 전사가 바뀌어 할일을 다시 뽑았지만 BE 에는 예전 추출이 남아 있습니다. "
-                                   "BE 에 다시 등록하는 경로가 필요합니다.")
-        if result.get("workspace") == "not_connected":
-            await self._notify(channel, NOT_CONNECTED_RESULT)        # 건너뛴 세 단계를 한 줄로
-        else:
-            for stage, why in result.get("skipped", {}).items():
-                await self._notify(channel, f"ℹ️ {STAGE_LABEL.get(stage, stage)}은 건너뜁니다 ({why}).")
-        if result["status"] == STATUS_FAILED:
-            label = STAGE_LABEL.get(result.get("failed_stage"), result.get("failed_stage"))
-            print(f"[{result.get('failed_stage')}] 세션 {session} 실패: {result['error']}", flush=True)
-            await self._notify(channel, f"⚠️ {label} 실패: {result['error']}\n트랙과 지금까지의 결과는 남아 있습니다. " +
-                               self._next_try(result, auto="이 단계부터 자동으로 다시 시도합니다",
-                                              by_hand="`/recover` 로 이 단계부터 다시 시도하세요."))
-        if result.get("ops"):
-            await self._notify(channel, summary_line(result["ops"]))

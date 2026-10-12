@@ -2,7 +2,7 @@
 → BE 인계한다(결정 기록 0026). 처리 방식은 이것 하나다.
 
     python -m capture.worker              # ai/ 안에서. --recordings, --transcripts, --interval 로 바꿀 수 있다
-    python -m capture.worker --retry <서버ID>   # 그 서버의 회의를 포기한 것까지 한 바퀴 돌리고 끝난다
+    python -m capture.worker --retry <서버ID>   # 떠 있는 워커가 그 서버를 포기한 것까지 돌게 깨운다
 
 디스코드를 모른다. discord 와 capture.discord_adapter 를 import 하지 않고 봇 토큰도 필요 없다. 회의마다 단계가 끝날
 때 그 회의의 채널에 알릴 글을 우편함(recordings/.worker/outbox, capture.notify.FileOutbox)에 쓰고, 디스코드에 붙어
@@ -13,8 +13,9 @@
 봇이 잠금을 쥐고 있어 건너뛴다. 봇이 녹음 중에 죽으면 OS 가 잠금을 풀고, 워커가 녹음된 부분을 처리한다.
 
 봇과는 파일로 말한다. recordings/.worker/heartbeat.json 에 주기마다 살아 있다는 표시(pid, 시각, 처리 중인
-회의)를 남긴다. 처리 스레드와 따로 도는 태스크가 쓰므로 긴 전사 중에도 끊기지 않는다. 봇의 /recover 가
-recordings/.worker/wake-<서버ID> 가 있으면 그 서버의 회의를 포기한 것까지 바로 돈다. 봇이 녹음을 저장하면
+회의)를 남긴다. 처리 스레드와 따로 도는 태스크가 쓰므로 긴 전사 중에도 끊기지 않는다. 봇은 이것으로 워커가
+조용한지 본다(worker_trouble). --retry 가 남긴 recordings/.worker/wake-<서버ID> 가 있으면 그 서버의 회의를 포기한
+것까지 바로 돈다. 봇이 녹음을 저장하면
 recordings/.worker/nudge 를 만들어(request_nudge) 다음 바퀴를 주기까지 기다리지 않게 한다.
 SIGTERM·SIGINT 를 받으면 새 회의를 집지 않고 하던 회의를 마친 뒤 끝난다.
 """
@@ -71,6 +72,22 @@ def read_heartbeat(recordings_dir: Path) -> dict | None:
         return None
 
 
+def worker_trouble(recordings_dir: Path) -> str | None:
+    """워커가 처리를 못 하고 있으면 그 한 줄, 살아 있으면 None. 주기의 여섯 배(최소 1분) 넘게 조용하면 응답이 없다고 본다.
+
+    봇의 저장 알림과 --retry 가 쓴다. 표시는 처리 스레드와 따로 도는 태스크가 남기므로 긴 전사 중에도 끊기지 않는다.
+    """
+    hb = read_heartbeat(recordings_dir)
+    if hb is None:
+        return "워커 신호가 없습니다"
+    if hb.get("state") == "stopped":
+        return "워커가 멈춰 있습니다"
+    age = max(0.0, time.time() - float(hb.get("at_ts") or 0))
+    if age > max(60.0, 6 * float(hb.get("interval_s") or 10)):
+        return f"워커가 {int(age // 60)}분째 응답이 없습니다"
+    return None
+
+
 def _on_stop_signals(loop, stop) -> None:
     """SIGTERM·SIGINT 에 stop 을 건다. 윈도의 이벤트 루프는 add_signal_handler 가 없어서(NotImplementedError)
     signal.signal 로 걸고 이벤트 루프로 넘긴다."""
@@ -94,7 +111,7 @@ class Worker:
 
         notifier 는 채널 알림을 받는다(send). 기본은 봇이 읽는 우편함이다. debug 기본은 MM_DEBUG_REPORT 다.
         """
-        extract_path()      # MM_EXTRACT_PATH 가 모르는 값이면 시작할 때 멈춘다. 봇과 같다
+        extract_path()      # MM_EXTRACT_PATH 가 모르는 값이면 시작할 때 멈춘다. 추출은 워커만 한다
         self.recordings_dir = recordings_dir
         self.transcripts_dir = transcripts_dir
         self._stt_factory = stt_factory or backend_from_env
@@ -136,7 +153,7 @@ class Worker:
             reporters[self._current].started()
 
         async def log(r: dict) -> None:
-            # 워커 모드는 채널에 결과를 올리지 않는다. 실패 이유와 빠진 것을 여기라도 남긴다
+            # 채널 알림과 따로 로그에도 남긴다. 실패 이유와 빠진 것, 처리 기록 한 줄
             notes = " 포기" if r.get("gave_up") else ""
             if r.get("error"):
                 notes += f" 오류: {r['error']}"
@@ -169,7 +186,7 @@ class Worker:
                                       transcripts_dir=self.transcripts_dir, guild_id=guild_id, manual=manual,
                                       stop=lambda: self._stopping, on_start=start, on_result=log,
                                       progress_for=lambda m: reporters[str(m.get("session"))].progress,
-                                      wait_for_workspace=True)    # 연결 전에는 보일 곳이 없어 전사하지 않는다(#199)
+                                      wait_for_workspace=True)    # 연결 전에는 올릴 웹이 없어 전사하지 않는다(#199)
         finally:
             self._current = None
 
@@ -204,12 +221,17 @@ class Worker:
             self._beat("stopped")
 
 
-def retry(recordings_dir: Path, guild_id: str, **kw) -> list[dict]:
-    """서버 하나의 회의를 포기한 것까지 한 바퀴 돌린다. 재시도를 다 써서 멈춘 회의를 사람이 다시 돌리는 자리다.
+def retry(recordings_dir: Path, guild_id: str) -> str:
+    """재시도를 다 써서 멈춘 회의를 사람이 다시 돌리는 자리다. 떠 있는 워커를 깨워 그 서버를 포기한 것까지 돌게 한다.
 
-    돌고 있는 워커와 같이 돌아도 회의 잠금으로 한 회의를 한쪽만 처리한다. kw 는 Worker 의 인자다.
+    여기서 직접 돌리지 않는다. 워커와 두 프로세스가 같이 전사하면 한 번에 한 회의가 깨지고 로컬 전사면 메모리가
+    두 배다. 결과는 워커가 그 회의의 채널에 알린다. 워커가 꺼져 있으면 깨우기가 남아 있다가 워커가 뜨면 돈다.
     """
-    return asyncio.run(Worker(recordings_dir, interval_s=0, **kw).run_pass(guild_id=str(guild_id), manual=True))[0]
+    request_wake(recordings_dir, guild_id)
+    trouble = worker_trouble(recordings_dir)
+    if trouble:
+        return f"{trouble}. 깨우기를 남겼습니다. 워커가 뜨면 서버 {guild_id} 의 회의를 돌립니다."
+    return f"워커가 곧 서버 {guild_id} 의 회의를 포기한 것까지 돌립니다. 결과는 그 회의의 채널에 올라옵니다."
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -218,11 +240,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--transcripts", default=str(TRANSCRIPTS_DIR))
     ap.add_argument("--interval", type=float, default=None, help="한 바퀴 주기(초). 기본 MM_WORKER_INTERVAL_S")
     ap.add_argument("--retry", metavar="서버ID", default=None,
-                    help="그 서버의 회의를 포기한 것까지 한 바퀴 돌리고 끝난다. 재시도를 다 써서 멈춘 회의에 쓴다")
+                    help="떠 있는 워커가 그 서버의 회의를 포기한 것까지 돌게 깨우고 끝난다. 재시도를 다 써서 멈춘 회의에 쓴다")
     args = ap.parse_args(argv)
     if args.retry:
-        results = retry(Path(args.recordings), args.retry, transcripts_dir=Path(args.transcripts))
-        print(f"[worker] --retry {args.retry}: 회의 {len(results)}개를 돌렸다", flush=True)
+        print(f"[worker] --retry {args.retry}: {retry(Path(args.recordings), args.retry)}", flush=True)
         return 0
     worker = Worker(Path(args.recordings), transcripts_dir=Path(args.transcripts), interval_s=args.interval)
 
