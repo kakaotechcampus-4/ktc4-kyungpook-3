@@ -1,7 +1,7 @@
 import { render, waitFor } from '@testing-library/react'
 import { StrictMode, useEffect, useLayoutEffect } from 'react'
-import { MemoryRouter, Routes, useLocation } from 'react-router'
-import type { Location } from 'react-router'
+import { MemoryRouter, Routes, useLocation, useNavigationType } from 'react-router'
+import type { Location, NavigationType } from 'react-router'
 import { expect, onTestFinished } from 'vitest'
 import { useGuardedNavigate } from '@/shared/lib/unsaved-changes'
 import type { GuardedNavigate } from '@/shared/lib/unsaved-changes'
@@ -15,7 +15,7 @@ import { appRoutes } from '../router/routes'
 import.meta.glob('../../pages/*/index.ts', { eager: true })
 
 interface RouterProbeProps {
-  onLocation: (location: Location) => void
+  onLocation: (location: Location, action: NavigationType) => void
   onNavigate: (navigate: GuardedNavigate) => void
 }
 
@@ -30,10 +30,11 @@ interface RouterProbeProps {
 // eslint-disable-next-line react-refresh/only-export-components
 function RouterProbe({ onLocation, onNavigate }: RouterProbeProps) {
   const location = useLocation()
+  const action = useNavigationType()
   const navigate = useGuardedNavigate()
   useLayoutEffect(() => {
-    onLocation(location)
-  }, [location, onLocation])
+    onLocation(location, action)
+  }, [location, action, onLocation])
   useEffect(() => {
     onNavigate(navigate)
   }, [navigate, onNavigate])
@@ -54,6 +55,8 @@ export function renderApp(initialPath: string, options: RenderAppOptions = {}) {
   onTestFinished(() => app.dispose())
 
   const visited: Location[] = []
+  /** visited 와 같은 순서로, 그 항목에 닿은 방식(PUSH·REPLACE·POP) */
+  const actions: NavigationType[] = []
   let guardedNavigate: GuardedNavigate | null = null
 
   const tree = (
@@ -61,9 +64,11 @@ export function renderApp(initialPath: string, options: RenderAppOptions = {}) {
       <MemoryRouter initialEntries={[initialPath]}>
         <Routes>{appRoutes}</Routes>
         <RouterProbe
-          onLocation={(location) => {
+          onLocation={(location, action) => {
             // StrictMode 는 마운트 때 효과를 두 번 돌린다. 같은 기록 항목(key)을 두 번 적지 않는다
-            if (visited.at(-1)?.key !== location.key) visited.push(location)
+            if (visited.at(-1)?.key === location.key) return
+            visited.push(location)
+            actions.push(action)
           }}
           onNavigate={(next) => {
             guardedNavigate = next
@@ -98,6 +103,8 @@ export function renderApp(initialPath: string, options: RenderAppOptions = {}) {
     },
     /** 거쳐 온 주소. 같은 경로라도 이동마다 key 가 다른 항목으로 남는다 */
     visited: (): readonly Location[] => [...visited],
+    /** `visited` 의 각 항목에 닿은 방식. 첫 항목은 POP 이다. `replace` 이동이면 REPLACE */
+    visitedActions: (): readonly NavigationType[] => [...actions],
     /** 코드 이동. 앱의 useGuardedNavigate 와 같아서 dirty 면 모달을 연다 */
     navigate(to: string): void {
       if (!guardedNavigate) throw new Error('router has not rendered yet')

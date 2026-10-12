@@ -12,6 +12,12 @@ function workspaceBase(workspaceId: string): string {
 /** 지난 온보딩 단계를 둘러보는 표시. `?review=1` 이면 가드가 저장된 지난 단계를 보여 준다 */
 export const ONBOARDING_REVIEW_PARAM = 'review'
 
+/**
+ * 설정 화면의 검색 파라미터. `section=notion` 이면 Notion 연결 영역으로 포커스를 옮기고,
+ * `next` 는 Notion 연결이 끝난 뒤 돌아갈 곳이다 — 그 공간의 업로드 경로만 받는다 (D-097, D-098)
+ */
+export const SETTINGS_PARAMS = { section: 'section', next: 'next' } as const
+
 function withOptionalId(base: string, id: string | undefined): string {
   return id === undefined ? base : `${base}/${segment(id)}`
 }
@@ -30,6 +36,11 @@ export const paths = {
   dashboard: (workspaceId: string) => `${workspaceBase(workspaceId)}/dashboard`,
   meetings: (workspaceId: string, meetingId?: string) =>
     withOptionalId(`${workspaceBase(workspaceId)}/meetings`, meetingId),
+  /** 회의 올리기. PM 전용이다 — docs/impl-decision/2026-10-02-meeting-upload-policy.md */
+  meetingUpload: (workspaceId: string) => `${workspaceBase(workspaceId)}/meetings/upload`,
+  /** 회의 정리 중. 워크스페이스 팀원 모두 볼 수 있다 */
+  meetingProcessing: (workspaceId: string, meetingId: string) =>
+    `${workspaceBase(workspaceId)}/meetings/${segment(meetingId)}/processing`,
   tasks: (workspaceId: string, taskId?: string) =>
     withOptionalId(`${workspaceBase(workspaceId)}/tasks`, taskId),
   approval: (workspaceId: string, approvalId: string) =>
@@ -37,6 +48,12 @@ export const paths = {
   messages: (workspaceId: string) => `${workspaceBase(workspaceId)}/messages`,
   members: (workspaceId: string) => `${workspaceBase(workspaceId)}/members`,
   settings: (workspaceId: string) => `${workspaceBase(workspaceId)}/settings`,
+  /** 설정의 Notion 연결 영역. `next` 를 주면 연결 성공 뒤 그곳으로 돌아간다 — 받는 쪽이 업로드 경로인지 다시 확인한다 */
+  settingsNotion: (workspaceId: string, next?: string) => {
+    const query = new URLSearchParams({ [SETTINGS_PARAMS.section]: 'notion' })
+    if (next !== undefined) query.set(SETTINGS_PARAMS.next, next)
+    return `${workspaceBase(workspaceId)}/settings?${query.toString()}`
+  },
 } as const
 
 /*

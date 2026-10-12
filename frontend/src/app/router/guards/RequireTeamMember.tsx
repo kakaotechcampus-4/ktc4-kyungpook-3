@@ -4,7 +4,7 @@ import { findMemberWorkspace, workspaceListQueryOptions } from '@/entities/works
 import { NoAccessPage } from '@/pages/no-access'
 import { NotFoundPage } from '@/pages/not-found'
 import { useRouteId } from '@/shared/lib/url'
-import { RouteSkeleton } from '../RouteSkeleton'
+import { GuardSkeleton } from '../RouteSkeleton'
 import { ScreenError } from './ScreenError'
 
 /**
@@ -20,7 +20,7 @@ export function RequireTeamMember() {
     return workspaces.isError ? (
       <ScreenError error={workspaces.error} onRetry={() => void workspaces.refetch()} />
     ) : (
-      <RouteSkeleton />
+      <GuardSkeleton />
     )
   }
   if (findMemberWorkspace(workspaces.data, workspaceId) === null) return <NoAccessPage />

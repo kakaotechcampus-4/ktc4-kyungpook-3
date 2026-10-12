@@ -14,7 +14,6 @@ from app.models import (
     ApprovalRequest,
     Member,
     Session as SessionModel,
-    Task,
     TaskHistory,
     User,
     Workspace,

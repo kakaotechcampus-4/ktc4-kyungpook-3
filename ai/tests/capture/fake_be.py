@@ -59,6 +59,9 @@ class FakeBe:
         body = json or {}
         if method == "POST" and path.startswith("/workspaces/") and path.endswith("/tasks/similar"):
             return self._similar(path.split("/")[2], body, headers or {})
+        if (method == "POST" and path in ("/meetings", "/extractions")) or method == "PATCH":
+            if (headers or {}).get("X-Service-Token") != self.service_token:   # 봇 쓰기 경로의 토큰 검사(#179)
+                return _err(401, "UNAUTHENTICATED")
         if method == "POST" and path == "/meetings":
             self._n += 1
             mid = f"m{self._n}"

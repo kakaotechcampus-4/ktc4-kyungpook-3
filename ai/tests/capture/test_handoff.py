@@ -43,7 +43,7 @@ def _manifest(tmp_path, *, with_tasks=True, be=None):
 
 
 def _handoff(fake):
-    return H.Handoff(H.BeClient("http://be.local/", session=fake), "ws-1")
+    return H.Handoff(H.BeClient("http://be.local/", session=fake, service_token="svc-token"), "ws-1")
 
 
 def test_first_person_item_carries_the_speaker_uid_and_time():
@@ -150,7 +150,7 @@ def test_register_without_tasks_refuses(tmp_path):
 
 def test_client_turns_error_envelopes_and_bad_bodies_into_be_error():
     fake = FakeBe()
-    c = H.BeClient("http://be.local", session=fake)
+    c = H.BeClient("http://be.local", session=fake, service_token="svc-token")
     with pytest.raises(H.BeError) as e:
         c.create_extraction("nope", "ws-1", transcript_path=None, model_name=None, items=[])
     assert e.value.code == "MEETING_NOT_FOUND" and e.value.status == 404
@@ -168,7 +168,8 @@ def test_from_env_needs_both_settings(monkeypatch):
 
     monkeypatch.setattr(config, "settings", lambda: type("S", (), {"be_base_url": "", "be_workspace_id": "ws"})())
     assert H.from_env() is None
-    monkeypatch.setattr(config, "settings", lambda: type("S", (), {"be_base_url": "http://be", "be_workspace_id": "ws"})())
+    monkeypatch.setattr(config, "settings", lambda: type("S", (), {"be_base_url": "http://be", "be_workspace_id": "ws",
+                                                                  "be_service_token": "svc"})())
     h = H.from_env()
     assert h is not None and h.workspace_id == "ws" and h.client.api == "http://be/api/v1"
 
@@ -222,8 +223,6 @@ def test_similar_search_sends_the_service_token_and_returns_candidates():
         [("task_login", "로그인 화면 시안 마무리", "2026-09-28", "in_progress", 0.8213)]
     assert found[0].notion_page_id is None                    # 승인 직후라 Notion 페이지가 아직 없는 task
     assert client.similar_tasks("ws-1", "환불 기능") == []     # 비슷한 task 가 없다. 새 항목이 된다
-    client.create_meeting("ws-1")
-    assert fake.headers[-1] == {}                             # 토큰은 요구하는 경로에만 싣는다
 
 
 def test_a_failed_similar_search_is_an_error_not_an_empty_list():
@@ -340,6 +339,37 @@ def test_save_sources_raises_when_the_transcript_it_should_have_is_missing(tmp_p
     with pytest.raises(FileNotFoundError):
         h.save_sources(m, transcripts_dir=tdir)
     assert fake.calls == [] and "sources" not in m.get("be", {})
+
+
+def test_every_be_call_carries_the_service_token():
+    """BE 가 회의 생성·종료·실패와 추출 등록에도 토큰을 검사한다(#179). 봇이 보내는 요청 전부에 싣는다."""
+    fake = FakeBe()
+    client = H.BeClient("http://be.local", session=fake, service_token="svc-token")
+    mid = client.create_meeting("ws-1")["meeting_id"]
+    client.end_meeting(mid)
+    client.create_extraction(mid, "ws-1", transcript_path=None, model_name=None, items=[])
+    other = client.create_meeting("ws-1")["meeting_id"]
+    client.fail_meeting(other, "stt")
+    assert [c[:2] for c in fake.calls] == [("POST", "/meetings"), ("PATCH", f"/meetings/{mid}/end"),
+                                           ("POST", "/extractions"), ("POST", "/meetings"),
+                                           ("PATCH", f"/meetings/{other}/fail")]
+    assert all(h == {"X-Service-Token": "svc-token"} for h in fake.headers)
+
+
+def test_the_be_refuses_meeting_calls_without_the_token():
+    fake = FakeBe()
+    with pytest.raises(H.BeError) as e:
+        H.BeClient("http://be.local", session=fake).create_meeting("ws-1")
+    assert e.value.code == "UNAUTHENTICATED" and e.value.status == 401
+
+
+def test_from_env_needs_the_service_token(monkeypatch):
+    """토큰이 없으면 BE 가 네 경로를 모두 거절한다. 회의마다 401 로 실패하게 두지 않고 인계를 켜지 않는다."""
+    from shared import config
+
+    monkeypatch.setattr(config, "settings", lambda: type("S", (), {"be_base_url": "http://be", "be_workspace_id": "ws",
+                                                                  "be_service_token": ""})())
+    assert H.from_env() is None
 
 
 def test_from_env_passes_the_service_token(monkeypatch):

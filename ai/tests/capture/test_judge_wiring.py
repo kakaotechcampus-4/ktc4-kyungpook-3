@@ -85,14 +85,16 @@ def _transcribed(tmp_path, segments):
     return rec, tdir, path, manifest
 
 
-def _process(tmp_path, fake, segments=MEETING, *, sourced=False):
-    """sourced 면 BE 회의를 만들고 발화 저장까지 끝난 회의에서 시작한다."""
+def _process(tmp_path, fake, segments=MEETING, *, sourced=False, then_token=None):
+    """sourced 면 BE 회의를 만들고 발화 저장까지 끝난 회의에서 시작한다. then_token 이면 그 뒤 BE 의 토큰이 바뀐다."""
     rec, tdir, path, manifest = _transcribed(tmp_path, segments)
     client = H.BeClient("http://be", session=fake, service_token="svc-token")
     if sourced:
         be = H.Handoff(client, "ws-1").end(manifest)
         manifest["stages"]["sourced"] = "2026-09-28T01:31:00+00:00"
         be["sources"] = {"inserted": len(segments), "skipped": 0, "duration_ms": None, "meeting_id": be["meeting_id"]}
+    if then_token is not None:
+        fake.service_token = then_token
     extractor = J.build_extractor(run=pipeline.run, candidates=client, cfg=_cfg())
     result = R.process_session(rec, manifest, backend=None, model_name="echo", workers=1, transcripts_dir=tdir,
                                extractor=extractor, handoff=H.Handoff(client, "ws-1"))
@@ -172,11 +174,10 @@ def test_a_wrong_service_token_stops_at_the_save_before_any_llm_call(tmp_path, m
 
 def test_a_wrong_service_token_never_registers_an_empty_extraction(tmp_path, monkeypatch):
     """발화 저장이 끝난 뒤 토큰이 바뀌었다. finding 마다 유사 검색이 401 이고, 파이프라인은 예외 없이 빈 결과를
-    돌려주지만 등록하지 않는다."""
+    돌려주지만 등록하지 않는다. 실패 통보도 401 이라 BE 회의는 processing 으로 남는다."""
     _fake_llms(monkeypatch, stage1={"findings": FINDINGS}, terra=[], drafts=[])
     fake = FakeBe()
-    fake.service_token = "다른 값"
-    result, saved = _process(tmp_path, fake, sourced=True)
+    result, saved = _process(tmp_path, fake, sourced=True, then_token="다른 값")
     assert result["status"] == "failed" and result["failed_stage"] == "extract"
     assert "JudgeAllFailed" in result["error"] and "UNAUTHENTICATED" in result["error"]
     assert fake.extractions == {} and fake.meetings["m1"]["status"] == "processing"

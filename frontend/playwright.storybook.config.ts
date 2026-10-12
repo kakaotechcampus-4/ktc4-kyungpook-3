@@ -22,7 +22,8 @@ export default defineConfig({
   expect: { timeout: 15_000 },
   use: {
     baseURL: `http://localhost:${PORT}`,
-    trace: 'retain-on-failure',
+    // 앱 E2E 와 같다 — 다시 돌릴 때만 기록한다 (playwright.config.ts)
+    trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     locale: 'ko-KR',
     timezoneId: 'Asia/Seoul',

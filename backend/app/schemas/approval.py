@@ -11,7 +11,10 @@ class ApprovalCreateRequest(BaseModel):
     type: ApprovalType = Field(..., description="task_create | task_update | reminder_dm")
     payload: dict[str, Any] = Field(..., description="변경 내용 (JSON)")
     related_task_id: str | None = Field(None, description="연관 태스크 ID")
-    requested_by: str | None = Field(None, description="요청자 member_id (AI 자동이면 null)")
+    requested_by: str | None = Field(
+        None,
+        description="하위 호환용. 보내도 쓰지 않고, 요청자는 로그인한 팀원으로 기록한다.",
+    )
 
 
 class ApprovalResponse(BaseModel):

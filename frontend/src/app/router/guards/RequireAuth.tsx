@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Navigate, Outlet } from 'react-router'
 import { sessionQueryOptions } from '@/entities/user'
 import { paths } from '@/shared/config/routes'
-import { RouteSkeleton } from '../RouteSkeleton'
+import { GuardSkeleton } from '../RouteSkeleton'
 import { ScreenError } from './ScreenError'
 
 /**
@@ -17,7 +17,7 @@ export function RequireAuth() {
     return session.isError ? (
       <ScreenError error={session.error} onRetry={() => void session.refetch()} />
     ) : (
-      <RouteSkeleton />
+      <GuardSkeleton />
     )
   }
   if (session.data === null) return <Navigate to={paths.login()} replace />

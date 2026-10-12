@@ -34,6 +34,7 @@ export function useLogout(): LogoutControl {
       // 지워진 목록을 다시 불러 401 을 한 번 더 만든다
       queryClient.setQueryData(SESSION_QUERY_KEY, null)
       void navigate(paths.login(), { replace: true })
+      // 같은 틱에 세션 세대를 올리고 요청을 취소한다. 취소로 떨어진 이전 화면의 뒷처리는 바뀐 세대를 보고 알리지 않는다
       await clearUserScope(queryClient)
     },
   })

@@ -1,5 +1,6 @@
 import type { QueryClient } from '@tanstack/react-query'
-import { SESSION_QUERY_KEY } from '@/entities/user'
+import { clearTrackedMeetings } from '@/entities/meeting'
+import { SESSION_QUERY_KEY, advanceSessionGeneration } from '@/entities/user'
 import { workspaceListQueryOptions } from '@/entities/workspace'
 import type { Workspace } from '@/entities/workspace'
 import { clearReturnWorkspace } from '@/shared/lib/return-workspace'
@@ -12,13 +13,18 @@ const isSessionQuery = (queryKey: readonly unknown[]) => queryKey[0] === SESSION
  * 사용자가 바뀌는 순간(로그인·가입·로그아웃) 이전 사용자의 흔적을 지운다.
  * 진행 중인 요청을 모두 취소하고 세션을 뺀 캐시를 전부 버린다. 저장하지 않은 변경 등록과 알림도 푼다.
  * 온보딩 뒤로가기의 복귀 공간 기억도 지운다 — 다음 사용자의 나가기가 앞 사용자의 공간으로 가지 않는다.
+ * 맨 먼저 세션 세대를 올린다. 아래 취소로 떨어지는 이전 사용자의 비동기 작업은 뒤따라 돌 때 세대가 바뀐 것을 보고
+ * 알림·모달·이동을 하지 않는다 — 이 함수가 비운 토스트를 그 뒷처리가 다시 띄우지 않는다 (U4 r1 M02).
  *
  * **세션 캐시는 여기서 지우지 않는다.** 세션 query 를 없애면 그것을 구독하는 가드가 `/auth/me` 를
  * 다시 불러 새 사용자를 먼저 보고 제멋대로 이동한다. 세션 값은 호출자가 이동과 같은 틱에 바꾼다.
  */
 export async function clearUserScope(queryClient: QueryClient): Promise<void> {
+  advanceSessionGeneration()
   clearUnsavedChanges()
   clearReturnWorkspace()
+  // 정리 추적은 이 사용자의 것이다. 다음 사용자의 화면에서 polling·알림이 이어지지 않는다 (U4-3)
+  clearTrackedMeetings()
   toast.clear()
   await queryClient.cancelQueries()
   queryClient.removeQueries({ predicate: ({ queryKey }) => !isSessionQuery(queryKey) })

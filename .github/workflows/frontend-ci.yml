@@ -6,6 +6,8 @@ on:
     paths:
       - 'frontend/**'
       - '.github/workflows/frontend-ci.yml'
+  # deploy.yml 이 배포 전에 같은 커밋으로 부른다
+  workflow_call:
 
 defaults:
   run:
@@ -108,7 +110,7 @@ jobs:
       - if: steps.playwright-cache.outputs.cache-hit == 'true'
         run: npx playwright install-deps chromium
       - run: npm run test:e2e
-      # 실패한 테스트의 trace(retain-on-failure)와 HTML 리포트를 남긴다
+      # 실패한 테스트의 재시도 trace(on-first-retry)와 HTML 리포트를 남긴다
       - uses: actions/upload-artifact@v4
         if: failure()
         with:

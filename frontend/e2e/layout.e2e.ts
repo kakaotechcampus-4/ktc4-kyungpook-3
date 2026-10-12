@@ -69,8 +69,22 @@ for (const width of VIEWPORTS) {
     test('앱 헤더 — 탭 5개와 두 메뉴가 한 줄에 보인다', async ({ page }) => {
       await start(page, 'multiple-workspaces', '/workspaces/ws_01/dashboard')
       const header = page.getByRole('banner')
-      const tabs = header.getByRole('navigation', { name: '주요 화면' }).getByRole('link')
-      await expect(tabs).toHaveCount(5)
+      const nav = header.getByRole('navigation', { name: '주요 화면' })
+      // 이 시나리오의 ws_01 에는 정리 중 회의(mt_10)가 있다. M5 U4-9 로 회의록 탭 바로 뒤에 `정리 중` 링크가 붙는다 —
+      // 탭 5개는 이름으로 정확히 보고, 링크는 따로 정확히 1개·회의록 다음·같은 줄임을 본다
+      const TAB_NAMES = ['대시보드', '회의록', '태스크', '메시지', '팀']
+      const tabs = TAB_NAMES.map((name) => nav.getByRole('link', { name, exact: true }))
+      for (const tab of tabs) await expect(tab).toHaveCount(1)
+      const processing = nav.getByRole('link', { name: '정리 중', exact: true })
+      await expect(processing).toHaveCount(1)
+      await expect(nav.getByRole('link')).toHaveText([
+        '대시보드',
+        '회의록',
+        '정리 중',
+        '태스크',
+        '메시지',
+        '팀',
+      ])
       const menus = [/^워크스페이스 바꾸기/, /^내 계정/].map((name) =>
         header.getByRole('button', { name }),
       )
@@ -82,11 +96,13 @@ for (const width of VIEWPORTS) {
         expect(box).not.toBeNull()
         return box!
       }
-      const tabBoxes = await Promise.all((await tabs.all()).map(boxOf))
+      // 화면에 놓인 순서 — 탭 사이에 `정리 중` 이 회의록 바로 뒤에 있다
+      const navItems = [tabs[0], tabs[1], processing, ...tabs.slice(2)]
+      const tabBoxes = await Promise.all(navItems.map(boxOf))
       for (const box of tabBoxes) expect(Math.abs(box.y - tabBoxes[0].y)).toBeLessThanOrEqual(1)
       const items = [
         header.getByRole('link', { name: "Manager's Manager 대시보드" }),
-        ...(await tabs.all()),
+        ...navItems,
         ...menus,
       ]
       const itemBoxes = await Promise.all(items.map(boxOf))

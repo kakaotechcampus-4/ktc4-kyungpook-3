@@ -1,0 +1,2 @@
+# backend-ci 의 lint 잡이 쓴다. 규칙은 ruff 기본값(E4, E7, E9, F)에서 시작한다.
+target-version = "py312"

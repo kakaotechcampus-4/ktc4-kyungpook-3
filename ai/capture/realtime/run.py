@@ -8,7 +8,7 @@
 실행 (ai/ 디렉토리 안에서):  python -m capture.realtime.run
 
 아래 절차는 2026-09-12 에 실제 서버에서 끝까지 돌렸다. 그때 명령 이름은 /record /stop 이었고 지금
-이름(/live /live-stop)으로는 아직 다시 돌리지 않았다 (decision_log/0006). 어디서 막히는지는 /selftest 가
+이름(/live /live-stop)으로는 아직 다시 돌리지 않았다 (docs/basis_for_decision/member/2026-09-12-0006-two-capture-adapters-side-by-side.md). 어디서 막히는지는 /selftest 가
 단계별로 알려 준다.
 
 한 번만 하는 준비

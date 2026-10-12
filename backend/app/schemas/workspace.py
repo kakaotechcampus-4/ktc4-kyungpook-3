@@ -39,3 +39,10 @@ class WorkspaceResponse(BaseModel):
 class WorkspaceListResponse(BaseModel):
     items: list[WorkspaceResponse]
     total: int
+
+
+class DiscordGuildWorkspaceResponse(BaseModel):
+    """디스코드 서버(길드)에 연결된 워크스페이스. 녹음 봇이 회의를 보낼 워크스페이스를 찾을 때 쓴다."""
+
+    guild_id: str
+    workspace_id: str

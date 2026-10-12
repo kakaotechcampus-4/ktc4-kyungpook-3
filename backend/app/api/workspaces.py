@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session, selectinload
 from datetime import datetime, timezone
 from typing import Optional
 
-from app.api.deps import get_current_user, get_current_member, require_member
+from app.api.deps import get_current_user, get_current_member, require_member, get_current_pm
 from app.core.database import get_db
 from app.core.errors import AppError, Envelope, ErrorCode, success
 from app.models import (
@@ -236,7 +236,7 @@ def upload_meeting(
     started_at: Optional[datetime] = Form(None),
     attendee_member_ids: str = Form(...),
     file: UploadFile = File(...),
-    member: Member = Depends(get_current_member),
+    member: Member = Depends(get_current_pm),
     db: Session = Depends(get_db)
 ) -> dict:
     

@@ -5,6 +5,13 @@ import type { TaskDto } from '@/shared/types/api/task'
 import { db } from '@/shared/mock/db'
 import { toApproval } from './model/mapper'
 
+// 픽스처 생성 승인은 모두 담당자나 마감이 비어 있다. MSW 는 보완값(미합의 task_overrides)으로 승인한다
+const overrides = {
+  task_title: '알림 문구 검토',
+  assignee_member_id: 'mb_02',
+  due_date: '2026-09-30',
+}
+
 it('returns scoped approvals newest first and maps detail', async () => {
   const approvals = await fetchDto<ListDto<ApprovalDto>>(
     '/approvals?workspace_id=ws_01&status=pending',
@@ -18,11 +25,16 @@ it('returns scoped approvals newest first and maps detail', async () => {
   })
 })
 
-it('approval creates a task once, closes the request and records the resolver', async () => {
+// 처리자는 본문의 resolved_by 가 아니라 세션 팀원 mb_01 이다 (백엔드 resolve_approval)
+it('approval creates a task once, closes the request and records the session member', async () => {
   const approval = toApproval(
     await fetchDto<ApprovalDto>(
       '/approvals/ap_01',
-      jsonRequest('PATCH', { status: 'approved', resolved_by: 'mb_01' }),
+      jsonRequest('PATCH', {
+        status: 'approved',
+        resolved_by: 'mb_04',
+        task_overrides: { ...overrides, task_title: '  알림 문구 검토  ' },
+      }),
     ),
   )
   expect(approval).toMatchObject({
@@ -32,22 +44,25 @@ it('approval creates a task once, closes the request and records the resolver', 
     resolvedAt: '2026-09-18T09:00:00+09:00',
   })
   expect((await fetchDto<ListDto<TaskDto>>('/tasks?workspace_id=ws_01')).total).toBe(11)
+  // 보완한 제목(trim)·담당자·마감으로 만든다
   expect(await fetchDto<TaskDto>('/tasks/tk_90')).toMatchObject({
     title: '알림 문구 검토',
     meeting_id: 'mt_09',
     status: 'todo',
-    assignee_member_id: null,
-    due_date: null,
+    assignee_member_id: 'mb_02',
+    due_date: '2026-09-30',
+    version: 1,
   })
   expect(
     (await fetchDto<ListDto<ApprovalDto>>('/approvals?workspace_id=ws_01&status=pending')).total,
   ).toBe(2)
   await expect(
-    fetchDto(
-      '/approvals/ap_01',
-      jsonRequest('PATCH', { status: 'rejected', resolved_by: 'mb_01' }),
-    ),
-  ).rejects.toMatchObject({ code: 'APPROVAL_ALREADY_RESOLVED', status: 409 })
+    fetchDto('/approvals/ap_01', jsonRequest('PATCH', { status: 'rejected' })),
+  ).rejects.toMatchObject({
+    code: 'APPROVAL_ALREADY_RESOLVED',
+    status: 409,
+    details: { approval_id: 'ap_01', current_status: 'approved' },
+  })
 })
 
 it('resets approval and task data between tests and rejects without creating a task', async () => {
@@ -57,12 +72,9 @@ it('resets approval and task data between tests and rejects without creating a t
   ).toBe(3)
   expect(
     toApproval(
-      await fetchDto<ApprovalDto>(
-        '/approvals/ap_01',
-        jsonRequest('PATCH', { status: 'rejected', resolved_by: 'mb_01' }),
-      ),
+      await fetchDto<ApprovalDto>('/approvals/ap_01', jsonRequest('PATCH', { status: 'rejected' })),
     ),
-  ).toMatchObject({ status: 'rejected', relatedTaskId: null })
+  ).toMatchObject({ status: 'rejected', relatedTaskId: null, resolvedBy: 'mb_01' })
   expect((await fetchDto<ListDto<TaskDto>>('/tasks?workspace_id=ws_01')).total).toBe(10)
 })
 
@@ -75,7 +87,7 @@ it('honours status and progress in a task_create payload and rejects invalid one
   }
   await fetchDto(
     '/approvals/ap_01',
-    jsonRequest('PATCH', { status: 'approved', resolved_by: 'mb_01' }),
+    jsonRequest('PATCH', { status: 'approved', task_overrides: overrides }),
   )
   expect(await fetchDto<TaskDto>('/tasks/tk_90')).toMatchObject({
     status: 'in_progress',
@@ -88,7 +100,10 @@ it('refuses an approval whose payload carries an invalid status or progress', as
   await expect(
     fetchDto(
       '/approvals/ap_02',
-      jsonRequest('PATCH', { status: 'approved', resolved_by: 'mb_01' }),
+      jsonRequest('PATCH', {
+        status: 'approved',
+        task_overrides: { ...overrides, task_title: '테스트 계획 정리' },
+      }),
     ),
   ).rejects.toMatchObject({ code: 'INVALID_REQUEST', status: 400 })
   // 실패한 승인은 그대로 pending 이고 태스크도 생기지 않는다
@@ -105,7 +120,7 @@ describe('task_create approval linking an extraction item', () => {
   const approve = () =>
     fetchDto<ApprovalDto>(
       '/approvals/ap_01',
-      jsonRequest('PATCH', { status: 'approved', resolved_by: 'mb_01' }),
+      jsonRequest('PATCH', { status: 'approved', task_overrides: overrides }),
     )
   const allItems = () => db.extractions.flatMap(({ items }) => items)
   const snapshot = () => ({
@@ -196,10 +211,7 @@ it('applies task-update payload instead of creating another task', async () => {
     due_date: null,
     start_date: '2020-01-01',
   }
-  await fetchDto(
-    '/approvals/ap_01',
-    jsonRequest('PATCH', { status: 'approved', resolved_by: 'mb_01' }),
-  )
+  await fetchDto('/approvals/ap_01', jsonRequest('PATCH', { status: 'approved' }))
   expect(await fetchDto('/tasks/tk_01')).toMatchObject({
     status: 'done',
     progress: 100,
@@ -215,10 +227,7 @@ it('refuses a task_update approval whose assignee does not exist', async () => {
   db.approvals[0].related_task_id = 'tk_01'
   db.approvals[0].payload = { assignee_member_id: 'mb_99' }
   await expect(
-    fetchDto(
-      '/approvals/ap_01',
-      jsonRequest('PATCH', { status: 'approved', resolved_by: 'mb_01' }),
-    ),
+    fetchDto('/approvals/ap_01', jsonRequest('PATCH', { status: 'approved' })),
   ).rejects.toMatchObject({ code: 'MEMBER_NOT_FOUND', status: 404 })
 
   // 실패했으므로 태스크도 승인도 그대로다
@@ -228,10 +237,13 @@ it('refuses a task_update approval whose assignee does not exist', async () => {
   ).toBe(3)
 })
 
-it('requires the resolver and reports absent approvals or invalid filters', async () => {
-  await expect(
-    fetchDto('/approvals/ap_01', jsonRequest('PATCH', { status: 'approved' })),
-  ).rejects.toMatchObject({ code: 'INVALID_REQUEST', status: 400 })
+// 처리자는 본문에 없어도 된다. 처리 상태가 없거나 pending 이거나 확인 버전이 1 미만이면 400 이다
+it('requires a resolution status and reports absent approvals or invalid filters', async () => {
+  for (const body of [{}, { status: 'pending' }, { status: 'approved', confirm_task_version: 0 }])
+    await expect(
+      fetchDto('/approvals/ap_01', jsonRequest('PATCH', { ...body, resolved_by: 'mb_01' })),
+    ).rejects.toMatchObject({ code: 'INVALID_REQUEST', status: 400 })
+  expect(db.approvals[0]).toMatchObject({ status: 'pending', resolved_by: null })
   await expect(fetchDto('/approvals/missing')).rejects.toMatchObject({
     code: 'APPROVAL_NOT_FOUND',
     status: 404,

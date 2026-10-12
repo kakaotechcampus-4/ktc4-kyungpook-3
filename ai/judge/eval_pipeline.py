@@ -29,7 +29,7 @@ from shared.schemas import NotionCandidate, Transcript
 
 FIXTURE_DIR = AI_ROOT / "judge" / "golden_set_pipeline"
 TOP_K = 3
-MIN_SIMILARITY = 0.4  # decision_log 0010
+MIN_SIMILARITY = 0.4  # docs/basis_for_decision/ai/2026-09-22-0010-embedding-similarity-threshold.md
 
 
 class EmbeddingCandidates:

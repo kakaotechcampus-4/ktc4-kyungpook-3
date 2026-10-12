@@ -16,6 +16,15 @@ it('adds provider names and preserves connected and null information', () => {
   })
 })
 
+it('keeps connecting distinct — the server sends it while the Notion database is being attached (#204)', () => {
+  expect(
+    toIntegrations({
+      discord: { status: 'connected', display_name: null, connected_at: null },
+      notion: { status: 'connecting', display_name: 'Notion 준비 중', connected_at: null },
+    }).notion.status,
+  ).toBe('connecting')
+})
+
 it('keeps revoked distinct and falls back unknown statuses with a development warning', () => {
   const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
   try {

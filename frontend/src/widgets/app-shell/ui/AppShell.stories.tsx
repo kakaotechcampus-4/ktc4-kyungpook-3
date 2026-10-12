@@ -2,7 +2,7 @@ import type { Meta, StoryObj } from '@storybook/react-vite'
 import { delay, http } from 'msw'
 import { expect, userEvent, within } from 'storybook/test'
 import { fail } from '@/shared/mock/envelope'
-import { AppHeader } from './AppHeader'
+import { AppHeader, AppHeaderSkeleton } from './AppHeader'
 import { WorkspaceChoiceList } from './WorkspaceChoiceList'
 
 /* 앱 셸 (M4 ④). 부팅 조회(세션·목록)만 쓴다 */
@@ -18,6 +18,40 @@ export default meta
 type Story = StoryObj<typeof meta>
 
 export const 헤더_기본: Story = {}
+
+/**
+ * UX1-M01 — 가드가 세션·소속을 기다리는 동안의 헤더 자리. 진짜 헤더와 같은 76px 상자(아래 선)라 셸이 떠도 아래 화면이 내려가지 않는다.
+ * 장식이라 랜드마크가 아니다
+ */
+export const 헤더_뼈대: Story = {
+  render: () => (
+    <div className="flex flex-col">
+      <AppHeaderSkeleton />
+      <AppHeader workspaceId="ws_01" />
+    </div>
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const skeleton = canvas.getByTestId('app-header-skeleton')
+    const header = await canvas.findByRole('banner')
+    await expect(skeleton.getBoundingClientRect().height).toBe(76)
+    await expect(skeleton.getBoundingClientRect().height).toBe(
+      header.getBoundingClientRect().height,
+    )
+    await expect(skeleton).toHaveAttribute('aria-hidden', 'true')
+    await expect(canvas.getAllByRole('banner')).toHaveLength(1)
+  },
+}
+
+/** M5 U4 — 이 공간에 정리 중 회의가 있으면 회의록 탭 옆에 `정리 중` 링크. 경로는 앱 계층이 넘긴다 */
+export const 헤더_정리_중: Story = {
+  args: { processingHref: '/workspaces/ws_01/meetings/mt_10/processing' },
+  play: async ({ canvasElement }) => {
+    await expect(
+      await within(canvasElement).findByRole('link', { name: '정리 중' }),
+    ).toHaveAttribute('href', '/workspaces/ws_01/meetings/mt_10/processing')
+  },
+}
 
 /** 워크스페이스 메뉴 — 미완료 공간 `설정 미완료`, 지금 공간 체크, 새 공간·설정·목록 */
 export const 워크스페이스_메뉴_열림: Story = {

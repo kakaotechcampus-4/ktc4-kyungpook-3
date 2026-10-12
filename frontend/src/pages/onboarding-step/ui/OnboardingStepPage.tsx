@@ -16,13 +16,15 @@ export function OnboardingStepPage() {
 
   if (workspace === null || step === null) return null
   if (workspace.role !== 'pm') return <WaitingStep step={step} />
+  // 연결 단계의 key 에 공간을 넣는다. 같은 단계에서 다른 공간으로 가면 화면을 새로 그려, 이전 공간의 확인·안내 상태를 넘기지 않는다
+  // (일반 화면의 WorkspaceLayout 과 같은 규칙. docs/plan/m6-api/errors/2026-10-12-onboarding-workspace-switch-completes-other.md)
   switch (step) {
     case 'create_workspace':
       return <ResumeCreateStep workspace={workspace} review={review} />
     case 'connect_discord':
       return (
         <IntegrationStep
-          key="discord"
+          key={`${workspace.id}:discord`}
           workspaceId={workspace.id}
           provider="discord"
           review={review}
@@ -31,7 +33,7 @@ export function OnboardingStepPage() {
     case 'connect_notion':
       return (
         <IntegrationStep
-          key="notion"
+          key={`${workspace.id}:notion`}
           workspaceId={workspace.id}
           provider="notion"
           review={review}

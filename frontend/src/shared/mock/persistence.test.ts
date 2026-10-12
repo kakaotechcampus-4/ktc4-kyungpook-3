@@ -3,6 +3,7 @@ import type { SessionDto } from '@/shared/types/api/auth'
 import type { ListDto } from '@/shared/types/api/envelope'
 import type { IntegrationsDto } from '@/shared/types/api/integration'
 import type { MemberDto } from '@/shared/types/api/member'
+import type { TaskDto } from '@/shared/types/api/task'
 import type { WorkspaceDto } from '@/shared/types/api/workspace'
 import { db, initialDb, resetDb } from './db'
 import { settleMockOAuth } from './oauth/mockOAuth'
@@ -132,6 +133,43 @@ describe('sessionStorage 영속', () => {
     expect(sessionStorage.getItem(MOCK_DB_STORAGE_KEY)).toBeNull()
     expect(restoreDb(sessionStorage)).toBe(false)
     expect(db).toEqual(initialDb())
+  })
+
+  // M6 S1: Task 에 version·notion_sync_status 가 생겼지만 저장 버전은 그대로다. 그 전에 저장된 데모 상태가
+  // 버려지거나, 버전 없는 태스크가 매핑 실패로 화면을 깨뜨리지 않아야 한다
+  it('version·notion_sync_status 가 없는 예전 태스크 저장본을 version 1, null 로 복원한다', async () => {
+    const legacy = initialDb()
+    for (const task of legacy.tasks as Partial<TaskDto>[]) {
+      delete task.version
+      delete task.notion_sync_status
+    }
+    legacy.tasks[1].title = '저장된 제목'
+    sessionStorage.setItem(
+      MOCK_DB_STORAGE_KEY,
+      JSON.stringify({ version: MOCK_DB_VERSION, db: legacy }),
+    )
+
+    expect(restoreDb(sessionStorage)).toBe(true)
+    expect(db.tasks).toHaveLength(legacy.tasks.length)
+    for (const task of db.tasks) {
+      expect(task.version).toBe(1)
+      expect(task.notion_sync_status).toBeNull()
+    }
+    const restored = await fetchDto<TaskDto>(`/tasks/${legacy.tasks[1].task_id}`)
+    expect(restored).toMatchObject({ title: '저장된 제목', version: 1, notion_sync_status: null })
+  })
+
+  it('이미 있는 version·notion_sync_status 는 복원할 때 바꾸지 않는다', () => {
+    const saved = initialDb()
+    saved.tasks[0].version = 4
+    saved.tasks[0].notion_sync_status = 'failed'
+    sessionStorage.setItem(
+      MOCK_DB_STORAGE_KEY,
+      JSON.stringify({ version: MOCK_DB_VERSION, db: saved }),
+    )
+
+    expect(restoreDb(sessionStorage)).toBe(true)
+    expect(db.tasks[0]).toMatchObject({ version: 4, notion_sync_status: 'failed' })
   })
 
   it('저장소가 막혀 있어도 던지지 않는다', () => {

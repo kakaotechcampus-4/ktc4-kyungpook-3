@@ -128,7 +128,9 @@ describe('앱 셸 (U4-2)', () => {
     const app = renderApp('/workspaces/ws_01/dashboard')
     const nav = await screen.findByRole('navigation', { name: '주요 화면' })
     for (const [tab, heading, path] of [
-      ['회의록', '회의', '/workspaces/ws_01/meetings'],
+      // M5 U5 가 회의 자리표시자를 회의록 화면으로 바꿨다. 회의록 탭은 가장 최근 회의록으로 주소를 바꾼다 (D-106, U5-1) —
+      // 탭(`/meetings`)은 그 하위 경로에서도 현재 위치로 표시된다
+      ['회의록', '회의록', '/workspaces/ws_01/meetings/mt_09'],
       ['태스크', '태스크', '/workspaces/ws_01/tasks'],
       ['메시지', '메시지는 준비 중이에요', '/workspaces/ws_01/messages'],
       ['팀', '팀원', '/workspaces/ws_01/members'],

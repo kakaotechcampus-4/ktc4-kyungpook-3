@@ -2,6 +2,8 @@ name: deploy
 # develop 에 push 되면 EC2 에 배포한다. OIDC 로 ktc-github-deploy 역할을 받고 SSM send-command 로 서버에서 실행한다.
 # 서버에서는 /opt/mm 을 이 커밋까지 fast-forward 한 뒤 deploy/ec2-deploy.sh 가 바뀐 파트만 다시 올린다.
 # 수동 실행(workflow_dispatch)에서 mode=all 을 고르면 세 파트를 모두 다시 올린다.
+# 배포 전에 같은 커밋으로 ai·backend·frontend CI 를 모두 돌리고, 하나라도 실패하면 배포하지 않는다.
+# 롤백과 마이그레이션 원칙은 deploy/README.md 에 있다.
 
 on:
   push:
@@ -15,19 +17,39 @@ on:
         default: changed
 
 permissions:
-  id-token: write   # OIDC 토큰 발급
   contents: read
 
 # 배포가 겹치지 않게 하나씩 돈다. 앞의 배포를 취소하지 않는다(중간에 끊기면 서버가 반쯤 바뀐 채로 남는다)
+# 잡이 아니라 워크플로 단위로 묶는다. 잡 단위면 CI 가 먼저 끝난 새 커밋의 배포가 대기하다가, 뒤늦게 CI 를
+# 마친 옛 커밋의 배포에 밀려 취소된다. 그러면 최신 커밋은 다음 push 까지 서버에 올라가지 않는다.
 concurrency:
   group: deploy-ec2
   cancel-in-progress: false
 
 jobs:
-  deploy:
-    # 수동 실행은 Actions 화면에서 아무 브랜치나 고를 수 있다. 다른 브랜치 커밋이 서버에 올라가면
-    # 서버 develop 이 origin/develop 과 갈라져 이후 fast-forward 가 모두 실패한다
+  # 바뀐 파트만 검사하지 않고 매번 세 파트를 모두 검사한다. 서버는 마지막 성공 배포 이후 바뀐 파트를 올리는데,
+  # 그 사이 CI 가 실패해 배포되지 않은 커밋이 있으면 이번 push 의 변경만 봐서는 검사 범위가 모자란다.
+  # 수동 실행은 Actions 화면에서 아무 브랜치나 고를 수 있다. 다른 브랜치 커밋이 서버에 올라가면
+  # 서버 develop 이 origin/develop 과 갈라져 이후 fast-forward 가 모두 실패한다. 그래서 검사부터 develop 에서만 돈다
+  ai-ci:
     if: github.ref == 'refs/heads/develop'
+    uses: ./.github/workflows/ai-ci.yml
+
+  backend-ci:
+    if: github.ref == 'refs/heads/develop'
+    uses: ./.github/workflows/backend-ci.yml
+
+  frontend-ci:
+    if: github.ref == 'refs/heads/develop'
+    uses: ./.github/workflows/frontend-ci.yml
+
+  deploy:
+    # 앞의 검사가 하나라도 실패하거나 건너뛰면 이 잡도 돌지 않는다
+    needs: [ai-ci, backend-ci, frontend-ci]
+    if: github.ref == 'refs/heads/develop'
+    permissions:
+      id-token: write   # OIDC 토큰 발급
+      contents: read
     runs-on: ubuntu-latest
     timeout-minutes: 60   # OIDC 세션 최대 1시간
     steps:

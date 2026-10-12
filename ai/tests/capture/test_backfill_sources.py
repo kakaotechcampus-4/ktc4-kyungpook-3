@@ -15,10 +15,16 @@ def _be(fake):
 
 
 def _handed_off_without_lines(tmp_path, fake, ts=500):
-    """#146 전에 끝난 회의. 토큰 없이 돌아 발화 저장을 건너뛰고 인계까지 갔다."""
+    """#146 전에 끝난 회의. 발화 저장 단계가 없던 때라 인계까지 갔는데 BE 에 발화가 없다.
+
+    지금은 인계가 켜지면 발화 저장이 늘 돈다. 끝까지 돌린 뒤 매니페스트와 BE 에서 발화 저장 흔적을 지워 그때 모양을 만든다.
+    """
     rec, path, manifest = _session(tmp_path, ts=ts)
-    _run(rec, manifest, tmp_path, extractor=_extractor({}),
-         handoff=H.Handoff(H.BeClient("http://be", session=fake), "ws-1"))
+    _run(rec, manifest, tmp_path, extractor=_extractor({}), handoff=_be(fake))
+    m = json.loads(path.read_text(encoding="utf-8"))
+    m["stages"].pop("sourced")
+    fake.sources.pop(m["be"].pop("sources")["meeting_id"])
+    path.write_text(json.dumps(m, ensure_ascii=False), encoding="utf-8")
     return rec, path
 
 
@@ -102,10 +108,8 @@ def test_a_meeting_the_be_failed_after_handoff_is_an_error_not_a_new_meeting(tmp
 
 
 def test_main_refuses_without_the_be_settings_and_the_token(monkeypatch, tmp_path, capsys):
-    monkeypatch.setattr(BF, "handoff_from_env", lambda: None)
+    monkeypatch.setattr(BF, "handoff_from_env", lambda: None)            # 셋 중 하나라도 없으면 from_env 가 None 이다
     assert BF.main(["--recordings", str(tmp_path), "--dry-run"]) == 1
-    monkeypatch.setattr(BF, "handoff_from_env", lambda: H.Handoff(H.BeClient("http://be", session=FakeBe()), "ws-1"))
-    assert BF.main(["--recordings", str(tmp_path), "--dry-run"]) == 1           # 토큰이 없다
     assert "BE_SERVICE_TOKEN" in capsys.readouterr().err
 
 

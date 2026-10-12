@@ -98,8 +98,8 @@ def test_update_schedule_keeps_only_changed_due_date():
     assert item["status"] is None
 
 
-def test_update_carries_target_snapshot_of_all_four_fields():
-    # 마감만 바뀌어도 검색에서 본 값 넷을 다 보낸다 — 승인 때 BE 가 이 값을 기준으로 충돌을 본다(#160)
+def test_update_carries_target_snapshot_of_all_fields():
+    # 마감만 바뀌어도 검색에서 본 값을 다 보낸다 — 승인 때 BE 가 이 값을 기준으로 충돌을 본다(#160)
     target = _target(assignee_member_id="mem_haeun", updated_at="2026-09-27T10:00:00+00:00")
     item = to_item(_finding(), _result(), _drafted(due_date="2026-10-06"), target, TRANSCRIPT)
     assert item["target_snapshot"] == {
@@ -107,8 +107,10 @@ def test_update_carries_target_snapshot_of_all_four_fields():
         "due_date": "2026-09-28",
         "status": "in_progress",
         "assignee_member_id": "mem_haeun",
+        "title": "로그인 화면 시안 마무리 작업",  # 확인용 — 제안값에는 제목이 없다(#185)
     }
     assert item["status"] is None  # 제안값은 지금처럼 바뀌는 필드만
+    assert item["task_title"] == "로그인 화면 시안 마무리 작업"  # 표시용 제목도 그대로
 
 
 def test_update_target_snapshot_keeps_null_fields():
@@ -117,6 +119,7 @@ def test_update_target_snapshot_keeps_null_fields():
     item = to_item(_finding(), _result(), _drafted(due_date="2026-10-06"), target, TRANSCRIPT)
     assert item["target_snapshot"] == {
         "updated_at": None, "due_date": None, "status": None, "assignee_member_id": None,
+        "title": "로그인 화면 시안 마무리 작업",
     }
 
 
@@ -313,6 +316,18 @@ def test_run_similar_search_failure_is_recorded(monkeypatch):
     assert "ConnectionError" in out.failures[0].reason
 
 
+def test_run_carries_stage1_drop_counts(monkeypatch):
+    # 1단계에서 탈락한 항목 수가 결과에 실려 회의 기록까지 갈 수 있다(#186)
+    _install(monkeypatch, stage1={"findings": [FINDINGS[1], {"indices": [99]}, "x"]}, terra=[TERRA_OK[1]],
+             luna_draft=[LUNA_DRAFT_OK[1]])
+
+    out = _run()
+
+    # lines 는 발화가 아니라 근거 번호를 매긴 문장 수다 — 발화 5개 중 하나가 두 문장이라 6
+    assert out.dropped == {"not_dict": 1, "no_valid_indices": 1, "bad_indices": [[99]], "bad_indices_total": 1, "lines": 6}
+    assert len(out.items) == 1
+
+
 def test_run_draft_failure_is_recorded(monkeypatch):
     _install(monkeypatch, stage1={"findings": FINDINGS[:2]}, terra=TERRA_OK[:2],
              luna_draft=[LUNA_DRAFT_OK[0], {"task": None, "due_date": None}])  # doc_text 없음
@@ -320,6 +335,17 @@ def test_run_draft_failure_is_recorded(monkeypatch):
     out = _run()
 
     assert [i["action"] for i in out.items] == ["create"]
+    assert [f.stage for f in out.failures] == ["draft"]
+
+
+def test_run_schedule_update_with_unusable_due_date_is_draft_failure(monkeypatch):
+    # Luna 가 없는 날짜("2026-10-40")를 주면 항목이 조용히 사라지지 않고 draft 실패로 남는다
+    _install(monkeypatch, stage1={"findings": [FINDINGS[1]]}, terra=[TERRA_OK[1]],
+             luna_draft=[{"task": None, "due_date": "2026-10-40", "doc_text": "로그인 화면 마감을 연기"}])
+
+    out = _run()
+
+    assert out.items == []
     assert [f.stage for f in out.failures] == ["draft"]
 
 
