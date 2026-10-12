@@ -911,6 +911,18 @@ def test_process_session_reports_each_stage_as_it_starts_and_the_transcription_c
     assert counts and counts[-1]["done"] == counts[-1]["sent"] and counts[-1]["tracks"] == counts[-1]["tracks_total"]
 
 
+def test_process_session_reports_each_stage_as_it_finishes_with_what_it_made(tmp_path):
+    """워커가 단계가 끝날 때마다 채널에 알린다(capture/notify.py). 끝난 단계와 그때까지의 결과를 넘긴다."""
+    rec, path, manifest = _session(tmp_path)
+    done = []
+    _run(rec, manifest, tmp_path, extractor=_extractor({}), handoff=_be(FakeBe()),
+         progress=lambda stage, info=None: done.append((info["stage"], dict(info["result"]))) if stage == "done" else None)
+    assert [s for s, _ in done] == ["transcribed", "sourced", "extracted", "handed_off"]
+    by = dict(done)
+    assert by["transcribed"]["transcribe"]["lines"] > 0 and by["sourced"]["sources"]["inserted"] > 0
+    assert by["handed_off"]["be"]["meeting_id"] == "m1"
+
+
 def test_a_failing_progress_report_does_not_change_the_result(tmp_path):
     rec, path, manifest = _session(tmp_path)
 

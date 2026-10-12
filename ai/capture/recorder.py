@@ -581,8 +581,9 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
     ops(이번 처리의 기록. 아무 단계도 돌지 않았거나 기록을 만들지 못했으면 없다).
 
     progress(stage, info) 를 주면 단계가 시작할 때 progress(단계, None) 을, 전사 중에는 호출이 끝날 때마다
-    progress("stt", {done, sent, tracks, tracks_total}) 를 부른다. 단계 이름은 FAILED_STAGE 의 값(stt, sources,
-    extract, handoff)이다. 다른 스레드에서 불리고, 여기서 난 예외는 로그만 남긴다.
+    progress("stt", {done, sent, tracks, tracks_total}) 를, 단계가 끝나면 progress("done", {stage, result}) 를 부른다.
+    시작 단계 이름은 FAILED_STAGE 의 값(stt, sources, extract, handoff)이고 끝난 단계는 상태 이름(transcribed 등)이다.
+    result 는 그때까지 채운 이 결과다. 다른 스레드에서 불리고, 여기서 난 예외는 로그만 남긴다.
 
     처리 기록은 일찍 돌아가는 경로까지 finally 에서 남긴다(_keep_ops). 모델 올리기는 전사 단계 앞에서 따로 잰다.
     """
@@ -624,6 +625,7 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
             manifest.pop("recovery", None)             # 단계가 닫혔다. 실패 횟수는 다음 단계에서 새로 센다
         result["ran"].append(name)
         save()
+        tell("done", {"stage": name, "result": result})   # 워커가 그 회의의 채널에 알린다(capture/notify.py)
 
     def missing_workspace() -> str | None:
         """BE 단계를 건너뛸 이유. 워크스페이스가 있으면 None. 일시 실패(연결 실패, 5xx)는 예외로 올린다.
@@ -949,7 +951,7 @@ def recovery_targets(recordings_dir: Path, *, claims: Claims, guild_id=None, exc
 
 def recover_one(recordings_dir: Path, path: Path, *, claims: Claims, manual: bool = False, backend,
                 model_name: str, workers: int, gate=None, transcripts_dir: Path | None = None, extractor=None,
-                handoff=None, name_of=None, wait_for_workspace: bool = False) -> dict | None:
+                handoff=None, name_of=None, wait_for_workspace: bool = False, progress=None) -> dict | None:
     """회의 하나를 잡아 돌리고 놓는다. 루프와 /recover 가 회의마다 지나는 경로다. 스레드에서 부른다.
 
     목록을 만든 뒤 시간이 흘렀으니(세마포어를 기다렸다) 회의 잠금을 먼저 잡고 매니페스트를 다시 읽어 아직 할 일인지
@@ -977,7 +979,7 @@ def recover_one(recordings_dir: Path, path: Path, *, claims: Claims, manual: boo
             return None                                # 바뀐 be 는 아래 release 가 표시를 지우며 같이 저장한다
         return process_session(recordings_dir, m, backend=backend, model_name=model_name, workers=workers, gate=gate,
                                transcripts_dir=transcripts_dir, extractor=extractor, handoff=handoff, name_of=name_of,
-                               wait_for_workspace=wait_for_workspace)
+                               wait_for_workspace=wait_for_workspace, progress=progress)
     finally:
         claims.release(path, m)
 
@@ -995,13 +997,15 @@ def queue_ahead(recordings_dir: Path, session, *, exclude=None) -> int:
 async def recover_pass(recordings_dir: Path, *, claims: Claims, sem: asyncio.Semaphore, stt_factory, gate_factory,
                        extractor_factory, handoff_factory, transcripts_dir: Path | None = None, guild_id=None,
                        exclude=None, manual: bool = False, name_of_for=None, stop=None, on_start=None,
-                       on_result=None, wait_for_workspace: bool = False) -> tuple[list[dict], list[dict]]:
+                       on_result=None, wait_for_workspace: bool = False,
+                       progress_for=None) -> tuple[list[dict], list[dict]]:
     """복구 한 바퀴. 봇(capture/discord_adapter.py)의 루프와 /recover, 워커(capture/worker.py)가 같이 쓴다.
 
     대상은 바퀴를 시작할 때 정한다(recovery_targets). 모든 서버를 보는 바퀴(guild_id=None)는 서버가 적히지 않은
     옛 매니페스트를 뺀다. 서버별 /recover 도 집지 못하던 것이다. 회의마다 sem 을 잡고 recover_one 을 스레드에서
     돌린다. stop() 이 참이 되면 새 회의를 집지 않는다. on_start(매니페스트)는 처리 직전에, on_result(결과)는 처리
-    뒤에 부른다. 돌려주는 것은 (돌린 회의의 결과, 남이 잡고 있어 건너뛴 회의)다.
+    뒤에 부른다. progress_for(매니페스트)를 주면 그 회의의 process_session progress 로 넘긴다(on_start 뒤에 부른다).
+    돌려주는 것은 (돌린 회의의 결과, 남이 잡고 있어 건너뛴 회의)다.
     """
     due, busy = recovery_targets(recordings_dir, claims=claims, guild_id=guild_id, exclude=exclude, manual=manual)
     if guild_id is None:
@@ -1020,7 +1024,8 @@ async def recover_pass(recordings_dir: Path, *, claims: Claims, sem: asyncio.Sem
                                         backend=backend, model_name=model_name, workers=workers, gate=gate_factory(),
                                         transcripts_dir=transcripts_dir, extractor=extractor_factory(),
                                         handoff=handoff_factory(), name_of=name_of_for(m) if name_of_for else None,
-                                        wait_for_workspace=wait_for_workspace)
+                                        wait_for_workspace=wait_for_workspace,
+                                        progress=progress_for(m) if progress_for else None)
         if r is None:
             continue
         if r.get("busy"):

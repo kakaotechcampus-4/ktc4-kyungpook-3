@@ -23,11 +23,11 @@ from tests.capture.test_recorder import EchoStt, _extractor, _session
 AI_DIR = Path(__file__).resolve().parents[2]
 
 
-def _worker(tmp_path, *, handoff=None, extractor=None, interval_s=3600.0, poll_s=0.02):
+def _worker(tmp_path, *, handoff=None, extractor=None, interval_s=3600.0, poll_s=0.02, notifier=None, debug=False):
     return W.Worker(tmp_path / "recordings", transcripts_dir=tmp_path / "transcripts",
                     stt_factory=lambda: (EchoStt(), "echo", 1), gate_factory=lambda: None,
                     extractor_factory=lambda: extractor, handoff_factory=lambda: handoff,
-                    interval_s=interval_s, poll_s=poll_s)
+                    interval_s=interval_s, poll_s=poll_s, notifier=notifier, debug=debug)
 
 
 def _status(path):
@@ -416,3 +416,76 @@ async def test_the_worker_log_says_how_many_lines_were_saved(tmp_path, capsys):
     with_token = H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"))
     await _worker(tmp_path, extractor=_extractor({}), handoff=with_token).run_pass()
     assert "회의록 저장 3줄" in capsys.readouterr().out and sorted(fake.sources["m1"]) == [1, 2, 3]
+
+
+# ── 채널 알림(capture/notify.py). 워커가 쓰고 봇이 올린다 ─────────────────────────────────────────────────
+
+class Notes:
+    def __init__(self):
+        self.sent = []
+
+    def send(self, channel_id, text, file=None):
+        self.sent.append((channel_id, text))
+        return True
+
+
+async def test_the_worker_tells_the_meetings_channel_each_stage_it_finished(tmp_path):
+    rec, path, _ = _session(tmp_path, ts=500)
+    notes = Notes()
+    worker = _worker(tmp_path, extractor=_extractor({}), notifier=notes,
+                     handoff=H.Handoff(H.BeClient("http://be", session=FakeBe(), service_token="svc-token")))
+    await worker.run_pass()
+    assert [t.split(" ", 1)[0] for _, t in notes.sent] == ["⏳", "📝", "🗂", "📋", "📨"]
+    assert {c for c, _ in notes.sent} == {"900"}
+
+
+async def test_passes_over_a_meeting_that_does_not_move_say_nothing(tmp_path):
+    """설정이 없어 전사에서 멈춘 회의를 워커는 바퀴마다 다시 집는다. 처음 처리 뒤로는 채널이 조용하다."""
+    rec, path, _ = _session(tmp_path, ts=500)
+    notes = Notes()
+    worker = _worker(tmp_path, notifier=notes)
+    await worker.run_pass()
+    first = list(notes.sent)
+    assert [t.split(" ", 1)[0] for _, t in first][:2] == ["⏳", "📝"] and any("건너뜁니다" in t for _, t in first)
+    for _ in range(3):
+        await worker.run_pass()
+    assert notes.sent == first
+
+
+async def test_the_debug_report_ends_with_the_processing_line(tmp_path):
+    rec, path, _ = _session(tmp_path, ts=500)
+    notes = Notes()
+    await _worker(tmp_path, notifier=notes, debug=True).run_pass()
+    assert notes.sent[-1][1].startswith("⏱ 처리")
+
+
+async def test_by_default_the_worker_writes_its_notes_to_the_outbox_for_the_bot(tmp_path, monkeypatch):
+    monkeypatch.delenv("MM_DEBUG_REPORT", raising=False)
+    rec, path, _ = _session(tmp_path, ts=500)
+    worker = W.Worker(tmp_path / "recordings", transcripts_dir=tmp_path / "transcripts",
+                      stt_factory=lambda: (EchoStt(), "echo", 1), gate_factory=lambda: None,
+                      extractor_factory=lambda: None, handoff_factory=lambda: None, interval_s=3600.0)
+    await worker.run_pass()
+    notes = sorted((tmp_path / "recordings" / ".worker" / "outbox").glob("*.json"))
+    texts = [json.loads(p.read_text(encoding="utf-8"))["text"] for p in notes]
+    assert texts[0] == "⏳ 회의 처리를 시작합니다." and texts[1].startswith("📝 전사를 마쳤습니다")
+
+
+async def test_a_nudge_from_the_bot_starts_the_next_pass_without_waiting(tmp_path):
+    """봇이 녹음을 저장하면 워커를 찔러 바로 처리하게 한다. 주기(여기서는 1시간)를 기다리지 않는다."""
+    worker = _worker(tmp_path)
+    W.request_nudge(tmp_path / "recordings")
+    t0 = time.monotonic()
+    await asyncio.wait_for(worker._nap(), 2)
+    assert time.monotonic() - t0 < 1.0
+
+
+def test_retry_runs_one_pass_for_a_server_including_given_up_meetings(tmp_path):
+    """/recover 를 없애고 포기한 회의는 서버에서 python -m capture.worker --retry <서버ID> 로 다시 돌린다."""
+    rec, path, _ = _session(tmp_path, ts=500)
+    _edit(path, status="failed", failed_stage="stt",
+          recovery={"attempts": 5, "gave_up_at": "2026-09-26T00:00:00+00:00", "failed_stage": "stt"})
+    results = W.retry(tmp_path / "recordings", "77", transcripts_dir=tmp_path / "transcripts",
+                      stt_factory=lambda: (EchoStt(), "echo", 1), gate_factory=lambda: None,
+                      extractor_factory=lambda: None, handoff_factory=lambda: None, notifier=Notes())
+    assert [r["session"] for r in results] == ["77_500"] and _status(path) == "transcribed"
