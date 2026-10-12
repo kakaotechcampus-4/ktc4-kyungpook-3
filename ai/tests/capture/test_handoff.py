@@ -365,7 +365,7 @@ def test_save_sources_moves_to_a_new_meeting_when_the_be_failed_it(tmp_path):
     h = _token_handoff(fake)
     m, tdir = _manifest(tmp_path, with_tasks=False)
     h.end(m)
-    h.fail(m, "stt")                              # 포기해서 BE 에 실패를 알린 회의를 /recover 가 다시 돌렸다
+    h.fail(m, "stt")                              # 포기해서 BE 에 실패를 알린 회의를 --retry 가 다시 돌렸다
     be = h.save_sources(m, transcripts_dir=tdir)
     assert be["meeting_id"] == "m2" and be["replaced"] == ["m1"] and be["sources"]["meeting_id"] == "m2"
     assert len(fake.sources["m2"]) == 4 and "m1" not in fake.sources

@@ -31,7 +31,7 @@ discord 이름은 여기 없다. capture/discord_adapter.py 가 이 함수들을
   ops           처리 한 번에 기록 한 건씩 쌓는 목록. 걸린 시간, 단계별 시각, 최대 메모리, CPU 초 같은 숫자만 든다.
                 칸은 capture/ops_record.py. 회의 폴더의 처리기록.md 가 같은 목록을 표로 보여 준다
 
-process_session 이 마지막으로 끝난 단계 다음부터 실행한다. /stop 뒤 처리, 봇 안의 복구 루프, /recover 가
+process_session 이 마지막으로 끝난 단계 다음부터 실행한다. 워커의 바퀴와 --retry 가 깨운 바퀴가
 같은 함수를 쓰므로 어디서 죽어도 같은 경로로 이어진다. 전사에서 실패한 줄이 있으면 완료로 닫지 않고
 partial 로 두며, 다음 실행이 그 줄만 다시 보낸다. 할일 추출(extract/, #30)과 BE 인계는 설정이
 없으면 그 단계에서 멈추고 매니페스트는 그 앞 상태로 남는다.
@@ -215,7 +215,7 @@ class MeetingLock:
 def try_lock(manifest: Path) -> MeetingLock | None:
     """회의 잠금을 기다리지 않고 잡는다. 남이 쥐고 있으면 None. manifest 는 session_<회의ID>.json 의 경로다.
 
-    같은 프로세스라도 따로 연 파일끼리는 부딪힌다. 그래서 봇의 루프와 /recover 도 이것으로 서로를 막는다.
+    같은 프로세스라도 따로 연 파일끼리는 부딪힌다. 그래서 한 프로세스 안의 바퀴끼리도 이것으로 서로를 막는다.
     """
     grab, drop = _lock_backend()
     lock = manifest.with_suffix(".lock")
@@ -444,9 +444,9 @@ def _is_pending(recordings_dir: Path, m: dict) -> bool:
 class Claims:
     """복구가 회의를 잡는다. 누가 처리할지는 회의 잠금(try_lock)만 정한다.
 
-    잡으면 매니페스트에 claimed_by·claimed_at 을 적는다. /recover 가 누가 몇 분째 처리 중인지 보여 주는 데만 쓰고
+    잡으면 매니페스트에 claimed_by·claimed_at 을 적는다. 누가 몇 분째 처리 중인지 보여 주는 데만 쓰고
     누가 처리할지 정하는 데는 쓰지 않는다. 죽은 프로세스가 남긴 표시는 잠금이 풀려 있으니 무시된다.
-    같은 프로세스의 루프와 /recover 도, 봇과 워커도 이 잠금으로 서로를 막는다.
+    같은 프로세스의 바퀴끼리도, 봇과 워커도 이 잠금으로 서로를 막는다.
     """
 
     def __init__(self, owner: str | None = None) -> None:
@@ -511,7 +511,7 @@ def _count_failure(manifest: dict, handoff, failed_stage: str, *, give_up: bool 
     """이번 실행이 단계를 닫지 못했다(failed 또는 partial). 실패 횟수를 올리고 다음 시도 시각을 적는다.
 
     RECOVERY_MAX_ATTEMPTS 에 닿으면 포기한다. 루프는 더 돌리지 않고, 이때 처음으로 BE 에 fail 을 보낸다.
-    사람이 /recover 로 포기한 회의를 다시 돌렸다 또 실패하면 곧바로 다시 포기한다(그 사이 BE 에 새 회의가
+    사람이 --retry 로 포기한 회의를 다시 돌렸다 또 실패하면 곧바로 다시 포기한다(그 사이 BE 에 새 회의가
     생겼으면 그것도 failed 로 닫힌다). give_up 이면 다시 해도 같은 실패라 횟수와 상관없이 지금 포기한다.
     """
     state = manifest.setdefault("recovery", {})
@@ -547,7 +547,7 @@ def _count_dead_run(manifest: dict, handoff, holder: str) -> None:
 
 
 def sources_saved(manifest: dict) -> bool:
-    """발화가 지금의 BE 회의에 저장돼 있는가. 저장한 뒤 BE 회의가 새 회의로 바뀌었으면(포기 뒤 /recover, 인계 중 교체)
+    """발화가 지금의 BE 회의에 저장돼 있는가. 저장한 뒤 BE 회의가 새 회의로 바뀌었으면(포기 뒤 --retry, 인계 중 교체)
     새 회의에는 발화가 없으니 다시 보내야 한다."""
     be = manifest.get("be") or {}
     return STATUS_SOURCED in (manifest.get("stages") or {}) and \
@@ -561,7 +561,7 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
 
     BE 단계 앞에서 회의의 워크스페이스를 확인한다(handoff.workspace, #199). 서버에 연결된 워크스페이스가 없으면
     BE 단계를 건너뛰고 manifest["workspace_wait"] 를 적는다. wait_for_workspace 면(워커) 전사도 하지 않는다.
-    워커는 채널에 올리지 못해 전사해도 보일 곳이 없다. 다음 실행이 다시 묻고, 연결되면 이어서 처리한다.
+    연결이 없으면 전사해도 올릴 웹이 없다. 다음 실행이 다시 묻고, 연결되면 이어서 처리한다.
 
     extractor(transcript, speaker_names, today, workspace_id) 와 handoff(capture.handoff.Handoff) 는 None 이면
     설정이 없는 것이다. 그 단계에서 멈추고 result["skipped"] 에 이유를 적는다. 전사에서 실패한 줄이
@@ -774,7 +774,7 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
             # BE 설정이 없으면(handoff 가 None) 이 단계를 건너뛰고, 인계 단계가 "BE 설정 없음" 을 한 번 알린다
             stage = STATUS_SOURCED
             begin(FAILED_STAGE[stage])
-            # 뒤 단계(추출·인계)에서 실패하던 회의면 그 실패 횟수를 이어 센다. 지우면 포기한 회의를 /recover 로 다시
+            # 뒤 단계(추출·인계)에서 실패하던 회의면 그 실패 횟수를 이어 센다. 지우면 포기한 회의를 --retry 로 다시
             # 돌려 또 실패해도 곧바로 포기하지 않고, 배포 때 재시도 중이던 회의도 처음부터 다시 센다
             later = manifest.get("failed_stage") in (FAILED_STAGE[STATUS_EXTRACTED], FAILED_STAGE[STATUS_HANDED_OFF])
             be = handoff.save_sources(manifest, transcripts_dir=tdir, title=meeting_title(manifest))
@@ -918,7 +918,7 @@ def _due(manifest: dict, now: datetime) -> bool:
     """루프가 이번 바퀴에 돌릴 때인가. 다음 시도 시각 전이면 아니다. 포기한 회의는 BE 에 fail 이 안 닿았을 때만이다.
 
     recovery 가 없는 failed 는 자동 복구가 생기기 전의 실패다. 그때 BE 에 바로 fail 을 보냈으니 포기한 회의처럼
-    두고 사람이 /recover 로 돌린다. 루프가 쓸어 가면 BE 에 새 회의가 줄줄이 생기고 원격 전사가 다시 과금된다.
+    두고 사람이 --retry 로 돌린다. 루프가 쓸어 가면 BE 에 새 회의가 줄줄이 생기고 원격 전사가 다시 과금된다.
     """
     if "recovery" not in manifest and manifest.get("status") == STATUS_FAILED:
         return False
@@ -934,7 +934,7 @@ def recovery_targets(recordings_dir: Path, *, claims: Claims, guild_id=None, exc
                      manual: bool = False) -> tuple[list[tuple[Path, dict]], list[dict]]:
     """이번 바퀴에 돌릴 회의 [(경로, 매니페스트)] 와, 남이 잡고 있어 건너뛸 회의 [{session, busy, claimed_by, ...}].
 
-    manual 은 사람이 친 /recover 다. 다음 시도 시각을 기다리지 않고 포기한 회의도 한 번 더 돌린다. 루프는 시각이
+    manual 은 사람이 친 --retry 다. 다음 시도 시각을 기다리지 않고 포기한 회의도 한 번 더 돌린다. 루프는 시각이
     안 됐거나 포기한 회의를 뺀다. 포기했는데 BE 에 fail 이 닿지 않은 회의만 그 fail 을 다시 보내려고 넣는다.
     exclude 는 봇이 지금 들고 있는 회의(녹음 중·후처리 중)다.
     """
@@ -952,7 +952,7 @@ def recovery_targets(recordings_dir: Path, *, claims: Claims, guild_id=None, exc
 def recover_one(recordings_dir: Path, path: Path, *, claims: Claims, manual: bool = False, backend,
                 model_name: str, workers: int, gate=None, transcripts_dir: Path | None = None, extractor=None,
                 handoff=None, name_of=None, wait_for_workspace: bool = False, progress=None) -> dict | None:
-    """회의 하나를 잡아 돌리고 놓는다. 루프와 /recover 가 회의마다 지나는 경로다. 스레드에서 부른다.
+    """회의 하나를 잡아 돌리고 놓는다. 워커의 바퀴가 회의마다 지나는 경로다. 스레드에서 부른다.
 
     목록을 만든 뒤 시간이 흘렀으니(세마포어를 기다렸다) 회의 잠금을 먼저 잡고 매니페스트를 다시 읽어 아직 할 일인지
     본다. 그 사이 남이 잡았으면 {"session", "busy": True, claimed_by, claimed_at, since_s, mine}, 끝났거나
@@ -999,10 +999,10 @@ async def recover_pass(recordings_dir: Path, *, claims: Claims, sem: asyncio.Sem
                        exclude=None, manual: bool = False, name_of_for=None, stop=None, on_start=None,
                        on_result=None, wait_for_workspace: bool = False,
                        progress_for=None) -> tuple[list[dict], list[dict]]:
-    """복구 한 바퀴. 봇(capture/discord_adapter.py)의 루프와 /recover, 워커(capture/worker.py)가 같이 쓴다.
+    """복구 한 바퀴. 워커(capture/worker.py)의 보통 바퀴와 --retry 가 깨운 바퀴(manual)가 쓴다.
 
     대상은 바퀴를 시작할 때 정한다(recovery_targets). 모든 서버를 보는 바퀴(guild_id=None)는 서버가 적히지 않은
-    옛 매니페스트를 뺀다. 서버별 /recover 도 집지 못하던 것이다. 회의마다 sem 을 잡고 recover_one 을 스레드에서
+    옛 매니페스트를 뺀다. 서버별 바퀴도 집지 못한다. 회의마다 sem 을 잡고 recover_one 을 스레드에서
     돌린다. stop() 이 참이 되면 새 회의를 집지 않는다. on_start(매니페스트)는 처리 직전에, on_result(결과)는 처리
     뒤에 부른다. progress_for(매니페스트)를 주면 그 회의의 process_session progress 로 넘긴다(on_start 뒤에 부른다).
     돌려주는 것은 (돌린 회의의 결과, 남이 잡고 있어 건너뛴 회의)다.
@@ -1042,9 +1042,8 @@ def recover(recordings_dir: Path, *, backend, model_name: str, workers: int, gat
             name_of=None, exclude=None, claims: Claims | None = None, manual: bool = True) -> list[dict]:
     """끝까지 가지 않은 회의를 마지막 단계 다음부터 마저 돌린다. 회의마다 process_session 의 결과.
 
-    한 바퀴다. recovery_targets 로 고르고 recover_one 으로 하나씩 돌린다. 봇의 루프와 /recover 는 같은 두
-    함수를 회의마다 후처리 세마포어를 잡고 부른다(capture/discord_adapter.py). 기본은 사람이 친 /recover 와
-    같다. 다음 시도 시각을 기다리지 않고 포기한 회의도 돌린다. 남이 잡고 있는 회의는 건너뛴다.
+    한 바퀴다. recovery_targets 로 고르고 recover_one 으로 하나씩 돌린다. 워커는 같은 두 함수를 recover_pass 로
+    부른다. 기본은 사람이 친 --retry 와 같다. 다음 시도 시각을 기다리지 않고 포기한 회의도 돌린다. 남이 잡고 있는 회의는 건너뛴다.
 
     guild_id 를 주면 그 서버의 회의만 본다. exclude 는 봇이 지금 들고 있는 회의 ID 다. 녹음 중인 wav 를 집어 가면 안 된다.
     """

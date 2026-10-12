@@ -276,7 +276,7 @@ def test_without_a_kept_result_the_last_attempt_still_gives_up(tmp_path, clock, 
 
 def test_a_manual_recover_after_giving_up_hands_the_kept_result_off(tmp_path, clock, limits):
     """가진 결과가 있는데도 포기로 끝난 회의다(처리 도중 프로세스가 죽어 센 실패로 포기하면 그렇게 된다).
-    결과 파일은 남아 있어서 사람이 /recover 를 치면 새 BE 회의에 그 결과로 인계한다."""
+    결과 파일은 남아 있어서 사람이 --retry 를 치면 새 BE 회의에 그 결과로 인계한다."""
     rec, path, manifest = _session(tmp_path)
     fake = FakeBe()
     ex = Runs(_out([A], [F1]), RuntimeError("1단계 응답을 읽지 못했다"))
