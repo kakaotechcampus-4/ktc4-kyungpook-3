@@ -95,7 +95,7 @@ TOKEN_REJECTED_REASON = "BE 서비스 토큰 거절"
 # 워커가 연결을 기다리는 회의를 다시 묻는 최소 간격(초). 워커 루프(10초)가 바퀴마다 BE 에 묻지 않게 한다
 WORKSPACE_RECHECK_S = 60.0
 # 자동 복구. #83 의 retry_runs·PARTIAL_RETRY_MAX 와 따로 센다. 기본값의 근거는 docs/basis_for_decision/member/2026-09-26-0013-recovery-worker-and-meeting-lock.md
-RECOVERY_INTERVAL_S = float(os.environ.get("MM_RECOVERY_INTERVAL_S", "60"))    # 봇 안 복구 루프의 주기. 0 이면 끈다
+RECOVERY_INTERVAL_S = float(os.environ.get("MM_RECOVERY_INTERVAL_S", "60"))    # 봇의 재시작 안내 루프 주기. 0 이면 끈다
 RECOVERY_MAX_ATTEMPTS = int(os.environ.get("MM_RECOVERY_MAX_ATTEMPTS", "5"))   # 이만큼 실패하면 포기하고 BE 에 fail
 RECOVERY_BACKOFF_S = float(os.environ.get("MM_RECOVERY_BACKOFF_S", "60"))      # 첫 실패 뒤 기다림. 실패마다 두 배
 RECOVERY_BACKOFF_CEIL_S = 3600.0                                                # 두 배로 늘려도 한 시간에서 멈춘다
