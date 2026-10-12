@@ -100,6 +100,17 @@ class BeClient:
         """디스코드 서버에 연결된 워크스페이스(#199, BE #197). 연결이 없으면 BeError(INTEGRATION_NOT_CONNECTED)."""
         return self._call("GET", f"/integrations/discord/guilds/{guild_id}/workspace")["workspace_id"]
 
+    def member_names(self, workspace_id: str) -> list[dict]:
+        """워크스페이스 팀원의 이름(PM 이 온보딩에서 정한 것)과 별칭. 전사 이름 힌트에 쓴다(BE 봇용 조회).
+
+        [{"member_id", "name", "discord_user_id", "aliases"}]. 탈퇴한 팀원은 BE 가 빼고 준다.
+        """
+        data = self._call("GET", f"/workspaces/{workspace_id}/members/names")
+        items = data.get("items") if isinstance(data, dict) else None
+        if not isinstance(items, list):
+            raise BeError("BAD_RESPONSE", "팀원 이름 응답에 items 목록이 없다")
+        return items
+
     def create_meeting(self, workspace_id: str, *, title: str | None = None, source: str = "discord") -> dict:
         return self._call("POST", "/meetings", {"workspace_id": workspace_id, "title": title, "source": source})
 

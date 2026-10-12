@@ -698,6 +698,38 @@ def test_a_meeting_without_names_sends_no_prompt(tmp_path):
     assert stt.prompts and set(stt.prompts) == {None}
 
 
+def _members(fake):
+    fake.members = {"ws-1": [{"member_id": "m1", "name": "김동우", "discord_user_id": "1", "aliases": []},
+                             {"member_id": "m2", "name": "유재환", "discord_user_id": "2", "aliases": ["재환이", "jh"]}]}
+    return fake
+
+
+def test_the_names_the_pm_set_are_the_hint_and_are_kept_for_retries(tmp_path):
+    """디스코드 표시 이름은 아이디 꼴이거나 성이 빠져 있다. 처리할 때 BE 에서 PM 이 정한 이름을 받아 프롬프트에
+    싣고, 실패 구간 재전사도 같은 이름을 쓰게 매니페스트에 남긴다."""
+    rec, path, manifest = _session(tmp_path)
+    manifest["hint_names"] = ["yujaehwan2261", "동우"]
+    fake = _members(FakeBe())
+    stt = PromptEcho()
+    _run(rec, manifest, tmp_path, backend=stt, extractor=_extractor({}), handoff=_be(fake))
+    assert set(stt.prompts) == {"동우님, 동우, 김동우, 재환님, 재환, 유재환, 재환이."}
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    assert saved["hint_members"] == [{"name": "김동우", "aliases": []}, {"name": "유재환", "aliases": ["재환이", "jh"]}]
+    assert ("GET", "/workspaces/ws-1/members/names") in [c[:2] for c in fake.calls]
+
+
+def test_without_names_from_the_be_the_discord_names_are_the_hint(tmp_path):
+    """BE 가 안 되거나 워크스페이스가 없으면 디스코드 표시 이름으로 돌아간다. 힌트 때문에 전사를 멈추지 않는다."""
+    rec, path, manifest = _session(tmp_path)
+    manifest["hint_names"] = ["동우"]
+    fake = FakeBe()
+    fake.down = True
+    stt = PromptEcho()
+    r = _run(rec, manifest, tmp_path, backend=stt, extractor=_extractor({}), handoff=_be(fake))
+    assert "transcribed" in r["ran"] and set(stt.prompts) == {"동우님, 동우."}
+    assert "hint_members" not in json.loads(path.read_text(encoding="utf-8"))
+
+
 class PromptDiesOnLong(DiesOnLong):
     name = "elice/whisper-large-v3"
     accepts_prompt = True

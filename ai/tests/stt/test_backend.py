@@ -374,3 +374,17 @@ def test_hint_prompt_groups_forms_per_person_dedupes_and_caps_people():
     assert hint_prompt([]) is None
     people = [f"김{chr(0xAC00 + i)}{chr(0xAC00 + i)}" for i in range(HINT_PEOPLE_MAX + 3)]
     assert hint_prompt(people).count("님") == HINT_PEOPLE_MAX
+
+
+def test_member_names_set_by_the_pm_are_hinted_in_three_forms():
+    """BE 에는 PM 이 온보딩에서 정한 실명이 있다. 디스코드 표시 이름과 달리 두 글자 이름도 첫 글자를 성으로 본다.
+    별칭은 한글인 것만 뒤에 붙인다(아이디 꼴은 들리는 소리와 글자가 달라 힌트가 안 된다)."""
+    from stt.backend import member_forms, member_prompt
+
+    assert member_forms("김동우") == ["동우님", "동우", "김동우"]
+    assert member_forms("김환") == ["환님", "환", "김환"]
+    assert member_forms("김환", ["환이", "Hwan", "환", " "]) == ["환님", "환", "김환", "환이"]
+    assert member_forms("sora") == []
+    assert member_prompt([{"name": "김동우", "aliases": []}, {"name": "김환", "aliases": ["환이"]}]) == \
+        "동우님, 동우, 김동우, 환님, 환, 김환, 환이."
+    assert member_prompt([]) is None and member_prompt([{"name": "sora", "aliases": []}]) is None
