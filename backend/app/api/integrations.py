@@ -37,7 +37,7 @@ NOTION_CONNECTING_TIMEOUT = timedelta(seconds=notion_connect.WAIT_TIMEOUT_SECOND
 def _notion_status(integration: Integration, now: datetime) -> dict:
     """연결 행이 있을 때의 Notion 상태. 행이 없으면(연결한 적 없음, PM이 끊음) 부르지 않는다 — `not_connected`다.
 
-    DB를 찾지 못했거나 찾는 작업이 사라진 연결은 `revoked`로 내려 PM이 다시 연결하게 한다.
+    토큰이 비었거나, DB를 찾지 못했거나 찾는 작업이 사라진 연결은 `revoked`로 내려 PM이 다시 연결하게 한다.
     """
     connected = {
         "status": "connected",
@@ -45,7 +45,10 @@ def _notion_status(integration: Integration, now: datetime) -> dict:
         "connected_at": integration.created_at.isoformat() if integration.created_at else None,
     }
     if integration.provider_channel_id:
-        return connected
+        if integration.access_token:
+            return connected
+        # 워커가 401을 받고 토큰 갱신도 거절돼 토큰을 비웠다(`notion_sync`). DB ID는 다시 연결할 때 이어 쓰려고 남겨 둔다.
+        return {"status": "revoked", "display_name": "Notion 연결 끊김", "connected_at": None}
     revoked = {"status": "revoked", "display_name": "Notion DB 연결 실패", "connected_at": None}
     if not integration.access_token:
         # DB 찾기가 실패해 토큰을 비웠다(`notion_connect.attach_template_database`).

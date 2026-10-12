@@ -173,6 +173,7 @@ def _request(
             reason,
             # 429(rate limit)·409(동시 수정 충돌)·5xx만 다시 보낼 가치가 있다.
             # 400(속성 불일치)·401/403(권한)·404(공유 해제)는 몇 번을 보내도 같다.
+            # 401은 워커가 토큰 갱신을 한 번 시도하고, 갱신되면 새 토큰으로 다시 보낸다(`notion_sync`).
             retryable=status in (409, 429) or status >= 500,
             # 5xx는 Notion 내부에서 처리가 끝났는데 응답만 실패했을 수도 있다.
             outcome_uncertain=status >= 500,
