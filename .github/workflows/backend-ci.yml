@@ -6,12 +6,26 @@ on:
     paths:
       - 'backend/**'
       - '.github/workflows/backend-ci.yml'
+  # deploy.yml 이 배포 전에 같은 커밋으로 부른다
+  workflow_call:
 
 defaults:
   run:
     working-directory: backend
 
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          python-version: "3.12"
+      - run: uv venv --python 3.12 .venv
+      - run: uv pip install --python .venv/bin/python -r requirements-dev.txt
+      # 설정은 backend/ruff.toml
+      - run: .venv/bin/python -m ruff check .
+
   test:
     runs-on: ubuntu-latest
     # pgvector 검색 테스트(tests/services/test_embedding_search_pg.py)는 TEST_DATABASE_URL이 있을 때만 돈다.
@@ -41,3 +55,43 @@ jobs:
       - run: uv pip install --python .venv/bin/python -r requirements-dev.txt
       # -rs: 건너뛴 테스트와 이유를 로그에 남긴다(pg 테스트가 skip되지 않았는지 확인용)
       - run: .venv/bin/python -m pytest -rs
+
+  # 테스트는 sqlite 로 스키마를 만들어서 마이그레이션을 거치지 않는다. 운영 컨테이너는 시작할 때
+  # alembic upgrade head 를 하므로(Dockerfile CMD), 여기서 빈 Postgres 에 먼저 올려 본다.
+  # test 잡의 DB 와 나눈 이유는 pg 테스트가 그 DB 에 테이블을 직접 만들고 지우기 때문이다.
+  migrations:
+    runs-on: ubuntu-latest
+    services:
+      db:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: mm
+          POSTGRES_PASSWORD: mm
+          POSTGRES_DB: mm_migrate
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U mm -d mm_migrate"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql+psycopg://mm:mm@localhost:5432/mm_migrate
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          python-version: "3.12"
+      - run: uv venv --python 3.12 .venv
+      - run: uv pip install --python .venv/bin/python -r requirements.txt
+      - run: .venv/bin/alembic upgrade head
+      # 모델을 바꾸고 마이그레이션을 빠뜨렸으면 여기서 실패한다
+      - run: .venv/bin/alembic check
+
+  # 운영 이미지가 빌드되고 앱을 import 할 수 있는지 본다. 서버에서는 배포 중에야 빌드한다
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t mm-api:ci .
+      - run: docker run --rm mm-api:ci python -c "import app.main"

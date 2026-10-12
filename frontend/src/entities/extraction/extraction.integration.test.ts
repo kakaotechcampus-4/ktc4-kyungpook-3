@@ -32,9 +32,17 @@ it('moves an approved item out of the pending list even though approval_id stays
   expect(target.appliedTaskId).toBeNull()
   expect(visibleItems(before, false).map(({ id }) => id)).not.toContain(target.id)
 
+  // 픽스처 ap_01 은 담당자·마감이 비어 있어 MSW 보완값(미합의 task_overrides)으로 승인한다
   await fetchDto(
     '/approvals/ap_01',
-    jsonRequest('PATCH', { status: 'approved', resolved_by: 'mb_01' }),
+    jsonRequest('PATCH', {
+      status: 'approved',
+      task_overrides: {
+        task_title: '알림 문구 검토',
+        assignee_member_id: 'mb_02',
+        due_date: '2026-09-30',
+      },
+    }),
   )
 
   const after = toExtraction(await fetchDto<ExtractionDto>('/extractions/ex_01'))
@@ -58,10 +66,7 @@ async function openApprovalIds(): Promise<ReadonlySet<string>> {
 // 반려는 extraction_item 을 전혀 건드리지 않는다. 항목만 보면 대기와 구분되지 않고,
 // 열린 승인 목록과 조인해야만 확인 필요에서 빠진다 (계약 §3.1, §4.0-②-12)
 it('drops a rejected item from the pending list even though the item never changes', async () => {
-  await fetchDto(
-    '/approvals/ap_01',
-    jsonRequest('PATCH', { status: 'rejected', resolved_by: 'mb_01' }),
-  )
+  await fetchDto('/approvals/ap_01', jsonRequest('PATCH', { status: 'rejected' }))
 
   const extraction = toExtraction(await fetchDto<ExtractionDto>('/extractions/ex_01'))
   const rejected = extraction.items.find(({ approvalId }) => approvalId === 'ap_01')!

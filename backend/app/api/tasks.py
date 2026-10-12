@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_member, get_current_user, require_member, require_task_member
+from app.api.deps import get_current_member, get_current_user, require_pm, require_task_member
 from app.core.database import get_db
 from app.core.errors import AppError, Envelope, ErrorCode, success
 from app.models import ChangeSource, Member, Task, TaskHistory, TaskStatus, User, Workspace
@@ -39,7 +39,7 @@ def create_task_endpoint(
         raise AppError(
             ErrorCode.WORKSPACE_NOT_FOUND, details={"workspace_id": payload.workspace_id}
         )
-    member = require_member(db, user, payload.workspace_id)
+    member = require_pm(db, user, payload.workspace_id)
 
     task = create_task(
         db,
@@ -107,7 +107,7 @@ def update_task(
     db: Session = Depends(get_db),
 ) -> dict:
     task = _get_task(db, task_id)
-    member = require_member(db, user, task.workspace_id)
+    member = require_pm(db, user, task.workspace_id)
 
     updates = payload.model_dump(
         exclude_unset=True, exclude={"changed_by"}
@@ -159,7 +159,7 @@ def rollback_history_endpoint(
     db: Session = Depends(get_db),
 ) -> dict:
     task = _get_task(db, task_id)
-    member = require_member(db, user, task.workspace_id)
+    member = require_pm(db, user, task.workspace_id)
     history = db.get(TaskHistory, history_id)
     if history is None or history.task_id != task_id:
         raise AppError(
@@ -173,9 +173,14 @@ def rollback_history_endpoint(
 
 
 @router.post("/{task_id}/notion-sync/retry", response_model=Envelope[TaskResponse])
-def retry_notion_sync(task_id: str, db: Session = Depends(get_db)) -> dict:
+def retry_notion_sync(
+    task_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
     """Notion 반영이 failed로 끝난 Task를 다시 대기열에 넣는다. 실제 전송은 워커가 한다."""
     task = _get_task(db, task_id)
+    require_pm(db, user, task.workspace_id)
     retry_failed_sync(db, task)
     db.commit()
     db.refresh(task)

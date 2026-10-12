@@ -89,6 +89,10 @@ class FakeGuild:
     def get_member(self, uid):
         return self._members.get(uid)
 
+    @property
+    def members(self):
+        return list(self._members.values())
+
 
 class FakeBot:
     def __init__(self, guild, channels=()):
@@ -209,7 +213,7 @@ async def test_stop_closes_tracks_transcribes_and_posts_the_script(tmp_path):
 
 async def test_record_creates_the_be_meeting_and_stop_hands_the_tasks_off(tmp_path):
     fake = FakeBe()
-    handoff = H.Handoff(H.BeClient("http://be", session=fake), "ws-1")
+    handoff = H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"), "ws-1")
     cog, guild, vc, channel, ctx = _setup(tmp_path, extractor=first_person_extractor, handoff=handoff)
     await _run(A.RecordingCog.record, cog, ctx)
     rec = cog._active[GUILD_ID]
@@ -220,19 +224,21 @@ async def test_record_creates_the_be_meeting_and_stop_hands_the_tasks_off(tmp_pa
     await _run(A.RecordingCog.stop, cog, ctx)
     await asyncio.wait_for(rec.done.wait(), 20)
     m = _manifest(tmp_path, rec)
-    assert m["status"] == "handed_off" and set(m["stages"]) == {"transcribed", "extracted", "handed_off"}
-    assert m["be"] == {"meeting_id": "m1", "status": "done", "extraction_id": "e-m1", "item_count": 1}
-    assert [c[1] for c in fake.calls] == ["/meetings", "/meetings/m1/end", "/extractions"]
-    sent = fake.calls[2][2]["items"][0]
+    assert m["status"] == "handed_off" and set(m["stages"]) == {"transcribed", "sourced", "extracted", "handed_off"}
+    assert m["be"] == {"meeting_id": "m1", "status": "done", "extraction_id": "e-m1", "item_count": 1,
+                       "sources": {"meeting_id": "m1", "inserted": 2, "skipped": 0, "duration_ms": 8000}}
+    assert [c[1] for c in fake.calls] == ["/meetings", "/meetings/m1/end", "/meetings/m1/sources", "/extractions"]
+    sent = fake.calls[3][2]["items"][0]
     assert sent["evidence_speaker"] == "1" and sent["assignee_type"] == "first" and sent["assignee_raw"] is None
     texts = [t for t, _ in channel.sent]
-    assert texts[1].startswith("📝 회의록") and texts[2].startswith("📋 할일 1건") and texts[3].startswith("📨 BE 인계 완료")
+    assert texts[1].startswith("📝 회의록") and texts[2].startswith("🗂 BE 회의록 저장 2줄")
+    assert texts[3].startswith("📋 할일 1건") and texts[4].startswith("📨 BE 인계 완료")
 
 
 async def test_be_being_down_at_record_does_not_stop_the_recording(tmp_path):
     fake = FakeBe()
     fake.down = True
-    handoff = H.Handoff(H.BeClient("http://be", session=fake), "ws-1")
+    handoff = H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"), "ws-1")
     cog, guild, vc, channel, ctx = _setup(tmp_path, extractor=first_person_extractor, handoff=handoff)
     await _run(A.RecordingCog.record, cog, ctx)
     rec = cog._active[GUILD_ID]
@@ -356,12 +362,13 @@ async def test_recover_reports_only_sessions_that_moved_and_posts_to_their_chann
     await _run(A.RecordingCog.recover_cmd, cog, ctx)             # 아직도 BE 가 없다. 조용하다
     assert [t for t, _ in channel.sent] == ["마저 처리할 녹음이 없습니다. 설정이 없어 멈춘 회의 1개는 그대로입니다."]
     fake = FakeBe()
-    cog._handoff_factory = lambda: H.Handoff(H.BeClient("http://be", session=fake), "ws-1")
+    cog._handoff_factory = lambda: H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"), "ws-1")
     other = FakeTextChannel(cid=901)                             # 명령은 다른 채널에서 쳤다
     ctx2 = FakeCtx(guild, vc, other)
-    await _run(A.RecordingCog.recover_cmd, cog, ctx2)            # BE 가 생겼다. 인계만 하고 원래 채널에 알린다
+    await _run(A.RecordingCog.recover_cmd, cog, ctx2)            # BE 가 생겼다. 회의록 저장과 인계를 하고 원래 채널에 알린다
     texts = [t for t, _ in channel.sent]
-    assert texts[1] == f"세션 `{rec.meeting_id}`" and texts[2].startswith("📨 BE 인계 완료")
+    assert texts[1] == f"세션 `{rec.meeting_id}`" and texts[2].startswith("🗂 BE 회의록 저장")
+    assert texts[3].startswith("📨 BE 인계 완료")
     assert other.sent == []
     assert _manifest(tmp_path, rec)["status"] == "handed_off"
 
@@ -471,6 +478,38 @@ async def test_report_says_how_many_units_a_partial_meeting_is_missing(tmp_path)
     assert any("빠진 구간 1개" in t for t, _ in channel.sent)
 
 
+def _saved_result(**over):
+    base = {"session": "77_500", "status": "handed_off", "ran": ["transcribed", "sourced", "extracted", "handed_off"],
+            "skipped": {}, "error": None, "failed_stage": None, "transcribe": None, "retried": 0, "tasks": [], "be": None,
+            "sources": {"inserted": 3, "skipped": 0, "duration_ms": 12000}, "speakers": 2,
+            "text_channel_id": str(TEXT_ID), "partial": False, "missing_units": 0, "attempts": 0, "gave_up": False,
+            "retry_in_s": None}
+    base.update(over)
+    return base
+
+
+async def test_report_says_how_many_lines_were_saved_to_the_be(tmp_path):
+    cog, guild, vc, channel, ctx = _setup(tmp_path)
+    await cog._report(channel, "77_500", _saved_result())
+    await cog._report(channel, "77_500", _saved_result(ran=["retried", "sourced"],
+                                                       sources={"inserted": 1, "skipped": 2, "duration_ms": 12000}))
+    saved = [t for t, _ in channel.sent if t.startswith("🗂")]
+    assert saved == ["🗂 BE 회의록 저장 3줄", "🗂 BE 회의록 저장 1줄, 이미 있던 2줄"]
+
+
+async def test_a_failed_or_skipped_save_is_said_by_its_name(tmp_path):
+    """단계 이름은 사람이 읽는 말로. sourced, sources 같은 내부 이름이 채널에 나가지 않는다."""
+    cog, guild, vc, channel, ctx = _setup(tmp_path)
+    await cog._report(channel, "77_500", _saved_result(status="failed", ran=[], sources=None, failed_stage="sources",
+                                                       error="BeError: SERVICE_UNAVAILABLE", attempts=1))
+    await cog._report(channel, "77_500", _saved_result(ran=["extracted", "handed_off"], sources=None,
+                                                       skipped={"sourced": "BE_SERVICE_TOKEN 없음"}))
+    texts = [t for t, _ in channel.sent]
+    assert any(t.startswith("⚠️ 회의록 저장 실패: BeError: SERVICE_UNAVAILABLE") for t in texts)
+    assert "ℹ️ 회의록 저장은 건너뜁니다 (BE_SERVICE_TOKEN 없음)." in texts
+    assert not any("sourced" in t or "sources" in t or t.startswith("🗂") for t in texts)
+
+
 # ── 판단 경로(MM_EXTRACT_PATH=judge). 추출기만 바뀌고 명령과 흐름은 같다 ─────────────────────────────
 
 def _judge_item(title, **over):
@@ -499,7 +538,7 @@ async def _record_and_stop(cog, ctx):
 async def test_stop_in_bot_mode_posts_the_judge_results(tmp_path):
     fake = FakeBe()
     fake.tasks.add("task_login")
-    handoff = H.Handoff(H.BeClient("http://be", session=fake), "ws-1")
+    handoff = H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"), "ws-1")
     items = [_judge_item("결제 환불 기능 구현"),
              _judge_item("로그인 화면 시안 마무리", action="update", target_task_id="task_login", category="schedule",
                          due_date="2026-10-06", assignee_type=None,
@@ -520,7 +559,7 @@ async def test_unjudged_findings_and_skipped_items_are_said_in_the_channel(tmp_p
     """끝내 판단하지 못한 finding 과 BE 가 받지 않은 항목은 그 회의 채널에서 말한다. 말하지 않으면 빠진 줄 아무도 모른다."""
     monkeypatch.setattr(R, "EXTRACT_RETRY_MAX", 0)
     fake = FakeBe()                                       # task_gone 이라는 task 가 없다
-    handoff = H.Handoff(H.BeClient("http://be", session=fake), "ws-1")
+    handoff = H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"), "ws-1")
     items = [_judge_item("결제 환불 기능 구현"), _judge_item("옛 작업", action="update", target_task_id="task_gone")]
     failures = [{"stage": "judge", "text": "소셜 로그인은 이번에 빼기로 함", "reason": "Terra 응답을 파싱하지 못했습니다."}]
     cog, guild, vc, channel, ctx = _setup(tmp_path, extractor=_judge_extractor(items, failures), handoff=handoff)
@@ -544,7 +583,7 @@ async def test_a_judgement_waiting_for_a_rerun_is_said_as_a_retry(tmp_path, monk
     """판단하지 못한 finding 이 있어 다시 돌릴 차례다. 채널에는 추출 실패와 다음 시도를 알리고 인계는 하지 않는다."""
     monkeypatch.setattr(R, "EXTRACT_RETRY_MAX", 2)       # 기본값. 환경 변수로 바뀌어도 기대값은 그대로다
     fake = FakeBe()
-    handoff = H.Handoff(H.BeClient("http://be", session=fake), "ws-1")
+    handoff = H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"), "ws-1")
     failures = [{"stage": "draft", "text": "문서를 정리하기로 함", "reason": "Luna 응답을 파싱하지 못했습니다."}]
     cog, guild, vc, channel, ctx = _setup(tmp_path, extractor=_judge_extractor([_judge_item("검색 개선")], failures),
                                           handoff=handoff)
@@ -554,3 +593,15 @@ async def test_a_judgement_waiting_for_a_rerun_is_said_as_a_retry(tmp_path, monk
     texts = [t for t, _ in channel.sent]
     assert any(t.startswith("⚠️ 할일 추출 실패") and "발화 1개를 판단하지 못했다" in t for t in texts)
     assert not any(t.startswith("📋") or t.startswith("📨") for t in texts)
+
+
+async def test_record_keeps_the_server_member_names_for_the_name_hint(tmp_path):
+    """이름 힌트(#195). 회의에 없는 사람도 이름으로 불리며 일을 맡으므로 서버 멤버 전체를 남긴다. 봇 계정은 뺀다."""
+    cog, guild, vc, channel, ctx = _setup(tmp_path)
+    helper = FakeMember(3, "녹음봇", guild)
+    helper.bot = True
+    guild._members[3] = helper
+    await _run(A.RecordingCog.record, cog, ctx)
+    rec = cog._active[GUILD_ID]
+    assert _manifest(tmp_path, rec)["hint_names"] == ["민수", "서연"]
+    rec.flush_task.cancel()

@@ -53,3 +53,11 @@ export function isDateOnly(value: string): boolean {
 export function readDateOnly(value: string | null | undefined): string | null {
   return typeof value === 'string' && isDateOnly(value) ? value : null
 }
+
+/**
+ * 날짜 전용 값의 서울 자정을 ISO 시각(UTC)으로 바꾼다. 서울은 일광 절약 시간이 없어 늘 +09:00 이다.
+ * 형식이 틀리면 null 이다. 예: `2026-09-18` → `2026-09-17T15:00:00.000Z`
+ */
+export function seoulMidnightIso(date: string): string | null {
+  return isDateOnly(date) ? new Date(`${date}T00:00:00+09:00`).toISOString() : null
+}

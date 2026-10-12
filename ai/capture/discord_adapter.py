@@ -9,7 +9,7 @@
 명령
   /join     명령한 사람이 있는 음성 채널에 봇 입장
   /record   화자별 트랙 녹음 시작. 채널에 "녹음·전사 중" 을 알리고 BE 에 회의를 만든다
-  /stop     녹음 종료. 트랙을 닫고 전사 → 할일 추출 → BE 인계를 돌려 결과를 채널에 올린다(워커 모드는 저장까지)
+  /stop     녹음 종료. 트랙을 닫고 전사 → 회의록 저장 → 할일 추출 → BE 인계를 돌려 결과를 채널에 올린다(워커 모드는 저장까지)
   /leave    음성 채널 퇴장 (녹음 중에는 거절. 앞 회의의 후처리 중에는 된다)
   /end      자기 녹음의 후처리까지 끝나면 퇴장. 그 사이 새 녹음이 시작됐으면 남는다
   /recover  이 서버에서 끝까지 처리되지 않은 회의를 마지막 단계 다음부터 마저 처리한다(워커 모드는 워커를 깨운다)
@@ -45,7 +45,7 @@ on_session_saved(manifest, manifest_path) 훅은 그 뒤에 불린다. manifest[
 워커 모드(MM_PIPELINE_MODE=worker). 봇은 녹음을 저장까지만 하고 saved 를 다 쓴 뒤 잠금을 놓는다. 처리는
 python -m capture.worker 가 하고 결과는 BE 를 거쳐 웹에서 본다. 채널에는 "처리되면 웹에서 확인(앞에 N건)",
 재시작 안내, /recover 의 워커 상태만 올라간다. 이 모드의 봇은 전사 백엔드를 싣지 않고 on_session_saved 를
-부르지 않는다. 근거는 decision_log/0013.
+부르지 않는다. 근거는 docs/basis_for_decision/member/2026-09-26-0013-recovery-worker-and-meeting-lock.md.
 """
 
 from __future__ import annotations
@@ -65,7 +65,8 @@ from capture.recorder import (RECOVERY_INTERVAL_S, Claims, interrupted_meetings,
                               recover_pass, recovery_targets, try_lock)
 from capture.worker import read_heartbeat, request_wake
 from capture.recorder import (PARTIAL_RETRY_MAX, STATUS_EXTRACTED, STATUS_FAILED, STATUS_HANDED_OFF, STATUS_PARTIAL,
-                              STATUS_RECORDING, STATUS_SAVED, STATUS_TRANSCRIBED, NullSession, backend_from_env,
+                              STATUS_RECORDING, STATUS_SAVED, STATUS_SOURCED, STATUS_TRANSCRIBED, NullSession,
+                              backend_from_env,
                               build_extractor, meeting_title, process_session, recover, write_status)
 from capture.streaming_sink import StreamingSink
 from capture.track_writer import TrackPool
@@ -78,8 +79,9 @@ SessionSavedHook = Callable[[dict, Path], Awaitable[None]]
 
 NOTICE = "🔴 녹음·전사 중입니다. 이 음성 채널의 말은 화자별로 녹음되고 `/stop` 뒤 회의록이 여기 올라옵니다."
 FLUSH_EVERY_S = 0.2   # 재정렬 창에 갇힌 마지막 패킷을 이 주기로 비운다. 패킷은 20ms 마다 온다
-STAGE_LABEL = {STATUS_TRANSCRIBED: "전사", STATUS_EXTRACTED: "할일 추출", STATUS_HANDED_OFF: "BE 인계",
-               "stt": "전사", "extract": "할일 추출", "handoff": "BE 인계"}
+STAGE_LABEL = {STATUS_TRANSCRIBED: "전사", STATUS_SOURCED: "회의록 저장", STATUS_EXTRACTED: "할일 추출",
+               STATUS_HANDED_OFF: "BE 인계",
+               "stt": "전사", "sources": "회의록 저장", "extract": "할일 추출", "handoff": "BE 인계"}
 RESUME_NOTICE = ("⚠️ 봇이 다시 시작되어 끊긴 회의의 녹음된 부분을 처리합니다. "
                  "이어서 기록하려면 `/join` 뒤 `/record` 를 실행해 주세요.")
 SHOWN_MAX = 10      # 채널에 보이는 항목 수. 나머지는 "외 N건" 으로 줄인다
@@ -140,11 +142,21 @@ class _Recording:
     flush_task: asyncio.Task | None = None
     done: asyncio.Event = field(default_factory=asyncio.Event)
     lock: object | None = None                      # 회의 잠금(recorder.MeetingLock). 녹음하는 동안 쥔다
+    hint_names: list[str] = field(default_factory=list)   # 전사 이름 힌트(#195). 서버 멤버 표시 이름
 
 
 def _minutes(seconds) -> int:
     """흐른 분. 1분이 안 돼도 1 이다."""
     return max(1, int(seconds) // 60)
+
+
+def _member_names(guild) -> list[str]:
+    """전사 이름 힌트(#195). 서버 멤버의 표시 이름. 회의에 없는 사람도 이름으로 불리며 일을 맡는다. 봇 계정은 뺀다.
+
+    상한(20명)과 겹침 제거는 stt.backend.name_prompt 가 한다. 워크스페이스를 찾게 되면(#180) BE 멤버 이름으로 바꾼다.
+    """
+    return [m.display_name for m in getattr(guild, "members", None) or []
+            if not getattr(m, "bot", False) and getattr(m, "display_name", None)]
 
 
 def _name_resolver(guild):
@@ -252,7 +264,7 @@ class RecordingCog(discord.Cog):
                          voice_channel_name=getattr(vc.channel, "name", None),
                          guild_name=ctx.guild.name if ctx.guild else None, started_at=now_iso(),
                          text_channel_id=getattr(ctx.channel, "id", None), workspace_id=cfg.be_workspace_id or None,
-                         timezone=cfg.meeting_timezone, lock=lock)
+                         timezone=cfg.meeting_timezone, lock=lock, hint_names=_member_names(ctx.guild))
         vc.start_recording(sink, self._on_recording_done, ctx)
         self._active[ctx.guild.id] = rec
         # 시작 시점에 매니페스트를 먼저 쓴다. 봇이 죽어도 이 회의가 있었다는 기록과 트랙이 남는다
@@ -535,7 +547,7 @@ class RecordingCog(discord.Cog):
                             extra={"timezone": rec.timezone, "be": rec.be, "guild_id": str(rec.guild_id),
                                    "voice_channel_id": str(rec.voice_channel_id),
                                    "text_channel_id": str(rec.text_channel_id) if rec.text_channel_id else None,
-                                   "workspace_id": rec.workspace_id})
+                                   "workspace_id": rec.workspace_id, "hint_names": rec.hint_names})
 
     async def _notify(self, channel, text: str, file=None) -> bool:
         """채널에 올린다. 디스코드 쪽 실패는 로그로만 남긴다. 파일과 상태 처리가 알림에 막히지 않는다."""
@@ -608,7 +620,7 @@ class RecordingCog(discord.Cog):
                 return
             await self._notify(rec.text_channel, f"✅ 저장 완료 (화자 {len(entries)}명). 전사 중입니다...{warn}")
 
-            # 전사 → 할일 추출 → BE 인계. 어느 단계가 죽어도 매니페스트에 남고 /recover 가 거기서 잇는다
+            # 전사 → 회의록 저장 → 할일 추출 → BE 인계. 어느 단계가 죽어도 매니페스트에 남고 /recover 가 거기서 잇는다
             backend, model_name, workers = self._stt_factory()
             async with self._post_sem:
                 result = await asyncio.to_thread(process_session, self.recordings_dir, manifest, backend=backend,
@@ -657,6 +669,12 @@ class RecordingCog(discord.Cog):
                 else:
                     text += f"\n⚠️ 다시 보내도 실패한 {tr['failed']}줄은 회의록에 없습니다. 구간은 매니페스트에 남아 있습니다."
             await self._notify(channel, text, file=discord.File(str(tr["markdown"])))
+        src = result.get("sources")
+        if STATUS_SOURCED in result["ran"] and src:
+            text = f"🗂 BE 회의록 저장 {src.get('inserted', 0)}줄"
+            if src.get("skipped"):
+                text += f", 이미 있던 {src['skipped']}줄"
+            await self._notify(channel, text)
         if result.get("partial"):
             await self._notify(channel, f"⚠️ 빠진 구간 {result.get('missing_units', 0)}개를 둔 채 진행했습니다 "
                                f"(재시도 {PARTIAL_RETRY_MAX}회). 구간은 매니페스트에 남아 있습니다.")

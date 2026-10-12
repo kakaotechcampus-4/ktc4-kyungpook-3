@@ -1,5 +1,9 @@
 import { screen, waitFor } from '@testing-library/react'
+import { getResponse, http } from 'msw'
 import { db } from '@/shared/mock/db'
+import { handlers } from '@/shared/mock/handlers'
+import { server } from '@/shared/mock/server'
+import { deferred } from '@/shared/test/deferred'
 import { businessRequests, recordRequests } from '@/shared/test/requests'
 import { renderApp } from '../test/renderApp'
 
@@ -193,13 +197,21 @@ describe('RequirePM', () => {
     renderApp('/workspaces/ws_01/approvals/ap_01')
     expect(await screen.findByText(title)).toBeInTheDocument()
 
-    expect(businessRequests(log.started)).toEqual([{ method: 'GET', path: '/approvals/ap_01' }])
-    const started = log.timeline.indexOf('start GET /approvals/ap_01')
-    expect(started).toBeGreaterThan(log.timeline.indexOf('answer GET /auth/me'))
-    expect(started).toBeGreaterThan(log.timeline.indexOf('answer GET /workspaces'))
+    // M6 S4 부터 상세가 담당자 이름·보완 판정에 쓰는 팀원 목록을 함께 받는다. 승인 상세와 팀원 목록 말고는 아무것도 없다
+    await waitFor(() =>
+      expect(businessRequests(log.started)).toEqual([
+        { method: 'GET', path: '/approvals/ap_01' },
+        { method: 'GET', path: '/members?workspace_id=ws_01' },
+      ]),
+    )
+    for (const request of ['start GET /approvals/ap_01', 'start GET /members?workspace_id=ws_01']) {
+      const started = log.timeline.indexOf(request)
+      expect(started).toBeGreaterThan(log.timeline.indexOf('answer GET /auth/me'))
+      expect(started).toBeGreaterThan(log.timeline.indexOf('answer GET /workspaces'))
+    }
   })
 
-  it('일반 팀원은 업무 API 0회로 태스크 목록에 가고 토스트를 한 번 본다', async () => {
+  it('일반 팀원은 승인 API 0회로 태스크 목록에 가고 토스트를 한 번 본다', async () => {
     workspaceDto('ws_01').role = 'member'
     const log = recordRequests()
     const app = renderApp('/workspaces/ws_01/approvals/ap_01')
@@ -212,7 +224,14 @@ describe('RequirePM', () => {
     expect(document.querySelector('[data-toast-key="access-denied"]')).toHaveTextContent(
       '접근 권한이 없어요',
     )
-    expect(businessRequests(log.started)).toEqual([])
+    // M3 의 태스크 자리표시자는 업무 API 를 부르지 않았다. M6 S3 부터 도착한 목록이 자기 조회(태스크·담당자 이름)를 한다 —
+    // 승인 상세·승인 목록은 여전히 0회다. 목록 조회 말고는 아무것도 없다
+    const listOnly = [
+      { method: 'GET', path: '/tasks?workspace_id=ws_01' },
+      { method: 'GET', path: '/members?workspace_id=ws_01' },
+    ]
+    await waitFor(() => expect(businessRequests(log.started)).toEqual(listOnly))
+    expect(log.started.filter(({ path }) => path.startsWith('/approvals'))).toEqual([])
   })
 })
 
@@ -241,5 +260,53 @@ describe('경로', () => {
       await screen.findByRole('heading', { name: '페이지를 찾을 수 없어요' }),
     ).toBeInTheDocument()
     expect(businessRequests(log.started)).toEqual([])
+  })
+})
+
+/*
+ * UX1-M01 — 가드가 세션·소속을 기다리는 단계에도 셸 안 경로는 헤더 자리(헤더 뼈대)가 먼저 있다.
+ * 없으면 셸이 뜰 때 화면 전체가 헤더 높이(76px)만큼 내려간다. 위치는 e2e/meeting-skeleton.e2e.ts 가 잰다.
+ */
+describe('가드 대기의 헤더 자리 (UX1-M01)', () => {
+  /** 이 경로의 GET 을 붙잡는다. 답은 요청을 받은 순간의 서버 상태다 */
+  function hold(path: string) {
+    const gate = deferred()
+    server.use(
+      http.get(path, async ({ request }) => {
+        const snapshot = await getResponse(handlers, request.clone())
+        await gate.promise
+        return snapshot
+      }),
+    )
+    return gate
+  }
+
+  it.each([
+    ['세션', '/api/v1/auth/me'],
+    ['소속 목록', '/api/v1/workspaces'],
+  ])(
+    '%s을 기다리는 동안 헤더 뼈대가 자리를 지키고, 셸이 뜨면 진짜 헤더가 그 자리를 잇는다',
+    async (_name, path) => {
+      const gate = hold(path)
+      renderApp('/workspaces/ws_01/meetings/mt_09')
+
+      expect(await screen.findByTestId('app-header-skeleton')).toHaveClass('h-header')
+      expect(screen.getByTestId('minutes-skeleton-aside')).toBeInTheDocument()
+      expect(screen.queryByRole('banner')).toBeNull()
+
+      gate.resolve()
+      expect(await screen.findByRole('navigation', { name: '주요 화면' })).toBeInTheDocument()
+      expect(screen.queryByTestId('app-header-skeleton')).toBeNull()
+    },
+  )
+
+  it('헤더 없는 경로(로그인)는 세션을 기다려도 헤더 뼈대가 없다', async () => {
+    db.authenticated = false
+    const gate = hold('/api/v1/auth/me')
+    renderApp('/login')
+    expect(await screen.findByRole('main')).toHaveAttribute('aria-busy', 'true')
+    expect(screen.queryByTestId('app-header-skeleton')).toBeNull()
+    gate.resolve()
+    expect(await screen.findByRole('heading', { name: '로그인' })).toBeInTheDocument()
   })
 })

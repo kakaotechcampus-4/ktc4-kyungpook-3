@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import exists, select, update
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, require_member, require_service_token
 from app.core.database import get_db
 from app.core.errors import AppError, Envelope, ErrorCode, success
 from app.models import Extraction, Meeting, MeetingStatus, Member, Source, User
@@ -49,7 +49,13 @@ def _compute_progress(db: Session, meeting: Meeting) -> MeetingProgress:
     )
 
 
-@router.post("", status_code=201, response_model=Envelope[MeetingCreateResponse])
+# 생성·종료·실패는 디스코드 봇(ai/capture/handoff.py)이 사용자 세션 없이 부른다. 세션 대신 서비스 토큰으로 막는다.
+@router.post(
+    "",
+    status_code=201,
+    response_model=Envelope[MeetingCreateResponse],
+    dependencies=[Depends(require_service_token)],
+)
 def create_meeting(
     payload: MeetingCreateRequest,
     db: Session = Depends(get_db),
@@ -70,7 +76,10 @@ def create_meeting(
 
 
 @router.patch(
-    "/{meeting_id}/end", status_code=202, response_model=Envelope[MeetingEndResponse]
+    "/{meeting_id}/end",
+    status_code=202,
+    response_model=Envelope[MeetingEndResponse],
+    dependencies=[Depends(require_service_token)],
 )
 def end_meeting(
     meeting_id: str,
@@ -95,7 +104,10 @@ def end_meeting(
 
 
 @router.patch(
-    "/{meeting_id}/fail", status_code=200, response_model=Envelope[MeetingDetailResponse]
+    "/{meeting_id}/fail",
+    status_code=200,
+    response_model=Envelope[MeetingDetailResponse],
+    dependencies=[Depends(require_service_token)],
 )
 def fail_meeting(
     meeting_id: str,
@@ -145,8 +157,14 @@ def fail_meeting(
 
 
 @router.get("/{meeting_id}", response_model=Envelope[MeetingDetailResponse])
-def get_meeting(meeting_id: str, db: Session = Depends(get_db)) -> dict:
+def get_meeting(
+    meeting_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    """웹의 회의 화면·처리 상태 화면이 부른다. 회의가 속한 워크스페이스 멤버만 읽는다. 봇은 이 경로를 쓰지 않는다."""
     meeting = _get_meeting(db, meeting_id)
+    require_member(db, user, meeting.workspace_id)
 
     extraction_id = None
     if meeting.status == MeetingStatus.DONE:
@@ -224,8 +242,11 @@ def get_meeting_minutes(
         if extraction.summary:
             try:
                 summary = json.loads(extraction.summary)
-            except:
+            except ValueError:  # JSONDecodeError 포함. 깨진 요약은 없는 것으로 본다
                 pass
+            # JSON으로는 맞아도 객체가 아니면(목록·문자열) 응답 스키마(dict | None)에서 500이 난다. 없는 것으로 본다
+            if not isinstance(summary, dict):
+                summary = None
 
     return success(MeetingMinutesResponse(
         meeting_id=meeting.meeting_id,

@@ -156,12 +156,13 @@ def session_tracks(session: Path) -> list:
 def score(session: Path, mode: str, backend_kind: str, model: str, gate_on: bool, workers: int | None,
           yes: bool, *, beam: int = 5, cond: bool | None = None, hst: float | None = None,
           preprocess: str | None = None, pack_turns: bool = True, merge: bool = True,
-          tag: str = "", out_dir: Path | None = None, backend=None) -> dict | None:
+          tag: str = "", out_dir: Path | None = None, backend=None, lines_out: list | None = None) -> dict | None:
     """정렬본 하나를 한 설정으로 전사해 지표를 JSON 으로 남긴다.
 
     preprocess: "highpass" 면 100~7500Hz 대역 제한을 트랙에 건다 (0007 의 필터).
     tag: 결과 파일 이름에 붙는 꼬리표. 같은 모드의 변형을 구분한다.
     backend: 이미 만든 백엔드를 쓴다(캐시로 감싼 것 등). 없으면 backend_kind·model 로 만든다.
+    lines_out: 주면 이 실행의 회의록 줄(Line)을 덧붙인다. 줄을 남길 때 다시 전사하지 않고 쓴다.
     """
     from stt.eval.eval import SCORING_VERSION
 
@@ -185,6 +186,8 @@ def score(session: Path, mode: str, backend_kind: str, model: str, gate_on: bool
     lines, stats = B.run(tracks, backend, mode=mode, gate=gate, workers=w, pack_turns=pack_turns,
                          merge=merge, preprocess=pre)
     ru1 = resource.getrusage(resource.RUSAGE_SELF)
+    if lines_out is not None:
+        lines_out.extend(lines)
     cpu_s = (ru1.ru_utime + ru1.ru_stime) - (ru0.ru_utime + ru0.ru_stime)
 
     m = session_metrics(session, lines, stats, backend_kind=backend_kind)

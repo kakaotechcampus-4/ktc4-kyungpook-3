@@ -13,7 +13,7 @@
   clip   클립 하나씩 전사. 실시간 경로가 보내던 단위와 같다.
   track  트랙 통째 (로컬 전용). 반복 환각을 누르는 옵션을 켜고, 무음 자리의 단어는 버린다.
   whole  예전 방식 그대로. 트랙 통째를 옵션 없이 넣는다. 비교용으로 남긴다.
-         네 모드의 차이와 측정치는 decision_log/0008.
+         네 모드의 차이와 측정치는 docs/basis_for_decision/member/2026-09-16-0008-batch-transcription-by-speaker-chunks.md.
   본체는 stt/batch.py 다. 여기서는 같은 출력 파일 형식으로 감싼다. 모델 호출은 SttBackend 뒤에
   있어서 이 파일은 faster-whisper 에 직접 의존하지 않는다.
 

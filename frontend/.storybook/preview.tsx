@@ -11,6 +11,7 @@ import { worker } from '../src/shared/mock/browser'
 import { applyScenario } from '../src/shared/mock/scenarios'
 import type { MockScenario } from '../src/shared/mock/scenarios'
 import { GlobalToaster, toast } from '../src/shared/ui/toast'
+import { watchStoryPlay } from './playOutcome'
 
 /*
  * 스토리마다 고르는 것:
@@ -20,6 +21,7 @@ import { GlobalToaster, toast } from '../src/shared/ui/toast'
  * - parameters.setup — 시나리오 위에 얹는 db 손질
  * 화면은 제품과 같은 request 경로로 MSW 를 부른다. 스토리를 열 때마다 handler·db·캐시를 처음 상태로 되돌린다 —
  * 스토리를 여는 순서와 상관없이 같은 화면이 나온다 (e2e/storybook/stories.sb.ts 가 지킨다).
+ * play 결과(단언 실패 포함)는 playOutcome.ts 가 iframe 에 남긴다 — 같은 테스트가 읽어 깨진 play 를 실패로 본다.
  */
 export interface StoryParameters {
   scenario?: MockScenario
@@ -33,6 +35,7 @@ let started: Promise<unknown> | null = null
 
 const mockLoader: Loader = async (context) => {
   const parameters = context.parameters as StoryParameters
+  watchStoryPlay(context.id)
   started ??= worker.start({
     onUnhandledRequest: 'bypass',
     quiet: true,

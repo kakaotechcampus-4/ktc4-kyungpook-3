@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select, func, update
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_member, get_current_user, require_member
+from app.api.deps import get_current_member, get_current_user, require_member, require_pm
 from app.core.database import get_db
 from app.core.errors import AppError, Envelope, ErrorCode, success
 from app.models import ApprovalRequest, ApprovalStatus, ApprovalType, ChangeSource, ExtractionItem, Member, Task, TaskStatus, User
@@ -68,7 +68,8 @@ def _find_conflicts(task: Task, proposed: dict[str, object], base_values: object
 
     지금 값이 제안할 때 비교한 값(base_values)과 다르면 충돌이다. 다만 지금 값이 이미 제안 값과 같으면
     덮어써도 잃는 것이 없으므로 충돌로 보지 않는다. base_values가 없는 요청(이 기능 전에 만들어진 요청,
-    수동 생성)과 base_values에 없는 필드는 비교할 기준이 없어 확인하지 않는다.
+    base_values를 보내지 않은 수동 생성)과 base_values에 없는 필드는 비교할 기준이 없어 확인하지 않는다.
+    수동 생성(POST /approvals)은 받은 payload를 그대로 저장하므로 base_values를 보내면 확인한다.
     """
     if not isinstance(base_values, dict):
         return []
@@ -85,6 +86,21 @@ def _find_conflicts(task: Task, proposed: dict[str, object], base_values: object
                 "proposed": proposed_value,
             })
     return conflicts
+
+
+def _find_target_change(task: Task, base_title: object) -> dict | None:
+    """AI가 이 task를 고를 때 본 제목(base_title)과 지금 제목이 다르면 충돌 항목을 돌려준다(#185).
+
+    제목은 바꿀 값이 아니라 대상 확인용이라 _find_conflicts와 따로 본다. 제안 값이 없으므로
+    "이미 제안 값과 같으면 충돌 아님" 예외도 없다. 다르면 항상 PM이 다시 확인한다.
+    base_title이 없는 요청(이 기능 전에 만들어진 요청, base_title을 보내지 않은 수동 생성)은 기준이 없어
+    확인하지 않는다. 수동 생성도 payload에 base_title을 넣으면 확인한다.
+    앞뒤 공백만 다른 제목은 같은 업무로 보고 묻지 않는다. 제목은 저장할 때 공백을 지우지 않는다.
+    """
+    if not isinstance(base_title, str) or task.title.strip() == base_title.strip():
+        return None
+    # 다른 충돌 항목과 모양을 맞춘다. 제목은 제안하지 않으므로 proposed는 null이다
+    return {"field": "title", "base": base_title, "current": task.title, "proposed": None}
 
 
 def _apply_approval(
@@ -153,6 +169,9 @@ def _apply_approval(
             )
         updates = {k: v for k, v in payload.items() if k in _TASK_UPDATE_FIELDS}
         conflicts = _find_conflicts(task, updates, payload.get("base_values"))
+        target_change = _find_target_change(task, payload.get("base_title"))
+        if target_change is not None:
+            conflicts.append(target_change)
         # 확인한 뒤에 또 바뀌었으면 PM이 보지 못한 값이라 다시 확인받는다
         if conflicts and confirm_task_version != task.version:
             raise AppError(
@@ -199,14 +218,28 @@ def create_approval(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
-    """승인 요청을 생성한다."""
-    require_member(db, user, payload.workspace_id)
+    """승인 요청을 생성한다. 워크스페이스 팀원이면 누구나 만들 수 있다.
+
+    일반 팀원은 할일을 직접 바꾸지 못하고 이 요청으로 PM의 승인을 받는다. 요청자는 바디의 requested_by가
+    아니라 로그인한 팀원으로 기록한다. 바디 값을 믿으면 다른 팀원 이름으로 요청을 올릴 수 있다.
+    """
+    member = require_member(db, user, payload.workspace_id)
+    if payload.related_task_id is not None:
+        # 승인할 때도 확인하지만(_apply_approval), 다른 워크스페이스의 task를 가리키는 요청이 PM 목록에 쌓이지 않게 먼저 막는다
+        task = db.get(Task, payload.related_task_id)
+        if task is None:
+            raise AppError(ErrorCode.TASK_NOT_FOUND, details={"task_id": payload.related_task_id})
+        if task.workspace_id != payload.workspace_id:
+            raise AppError(
+                ErrorCode.WORKSPACE_MISMATCH,
+                details={"approval_workspace_id": payload.workspace_id, "task_workspace_id": task.workspace_id},
+            )
     approval = ApprovalRequest(
         workspace_id=payload.workspace_id,
         type=str(payload.type),
         payload=json.dumps(payload.payload, ensure_ascii=False),
         related_task_id=payload.related_task_id,
-        requested_by=payload.requested_by,
+        requested_by=member.member_id,
     )
     db.add(approval)
     db.commit()
@@ -278,14 +311,14 @@ def resolve_approval(
             message="pending 상태로 변경할 수 없습니다.",
         )
 
-    # 상태를 바꾸는 조건부 UPDATE보다 먼저 소속을 확인해야 비소속 요청이 아무것도 바꾸지 못한다.
+    # 상태를 바꾸는 조건부 UPDATE보다 먼저 권한(소속·PM)을 확인해야 권한 없는 요청이 아무것도 바꾸지 못한다.
     target = db.get(ApprovalRequest, approval_id)
     if target is None:
         raise AppError(
             ErrorCode.APPROVAL_NOT_FOUND,
             details={"approval_id": approval_id},
         )
-    member = require_member(db, user, target.workspace_id)
+    member = require_pm(db, user, target.workspace_id)
 
     stmt = (
         update(ApprovalRequest)

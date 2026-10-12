@@ -7,7 +7,7 @@ function toIntegration(dto: IntegrationDto, provider: IntegrationProvider): Inte
     provider,
     status: enumValue(
       dto.status,
-      ['not_connected', 'connected', 'revoked'] as const,
+      ['not_connected', 'connecting', 'connected', 'revoked'] as const,
       'not_connected',
       'integration status',
     ),

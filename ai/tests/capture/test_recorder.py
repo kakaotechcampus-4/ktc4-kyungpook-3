@@ -5,6 +5,7 @@ import shutil
 from datetime import date
 
 import numpy as np
+import pytest
 import soundfile as sf
 
 from capture import handoff as H
@@ -144,19 +145,19 @@ def test_process_session_runs_every_stage_and_records_when(tmp_path):
     fake = FakeBe()
     seen = {}
     r = _run(rec, manifest, tmp_path, extractor=_extractor(seen),
-             handoff=H.Handoff(H.BeClient("http://be", session=fake), "ws-1"))
-    assert r["ran"] == ["transcribed", "extracted", "handed_off"] and r["status"] == "handed_off"
+             handoff=H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"), "ws-1"))
+    assert r["ran"] == ["transcribed", "sourced", "extracted", "handed_off"] and r["status"] == "handed_off"
     assert r["text_channel_id"] == "900"
     saved = json.loads(path.read_text(encoding="utf-8"))
-    assert saved["status"] == "handed_off" and set(saved["stages"]) == {"transcribed", "extracted", "handed_off"}
+    assert saved["status"] == "handed_off" and set(saved["stages"]) == {"transcribed", "sourced", "extracted", "handed_off"}
     assert saved["transcript"] == "77_500/transcript.md" and saved["tasks"].endswith("session_77_500.tasks.json")
     assert saved["be"]["meeting_id"] == "m1" and saved["be"]["status"] == "done" and saved["be"]["extraction_id"] == "e-m1"
     assert seen["today"] == date(2026, 9, 16) and seen["names"] == {"1": "민수", "2": "서연"} and seen["n"] == 3
-    # BE 에는 회의 생성 → 종료 → 추출 등록 순서로 갔고, 1인칭 항목에 그 트랙의 uid 가 실렸다
+    # BE 에는 회의 생성 → 종료 → 발화 저장 → 추출 등록 순서로 갔고, 1인칭 항목에 그 트랙의 uid 가 실렸다
     assert [(c[0], c[1]) for c in fake.calls] == [("POST", "/meetings"), ("PATCH", "/meetings/m1/end"),
-                                                   ("POST", "/extractions")]
+                                                   ("POST", "/meetings/m1/sources"), ("POST", "/extractions")]
     assert fake.calls[0][2]["title"] == "회의방 2026-09-16"
-    assert fake.calls[2][2]["items"][0]["evidence_speaker"] == "1"
+    assert fake.calls[3][2]["items"][0]["evidence_speaker"] == "1"
     assert R.pending_sessions(rec) == []
 
 
@@ -170,13 +171,13 @@ def test_process_session_stops_where_settings_are_missing_and_recover_resumes(tm
                         transcripts_dir=tmp_path / "transcripts", extractor=_extractor({}), handoff=None)
     assert [(x["session"], x["ran"], x["status"]) for x in results] == [("77_500", ["extracted"], "extracted")]
     assert results[0]["skipped"] == {"handed_off": "BE 설정 없음"}
-    # BE 까지 켜졌다. 인계만 한다
+    # BE 까지 켜졌다. 발화 저장과 인계를 한다
     fake = FakeBe()
     results = R.recover(rec, backend=EchoStt(), model_name="echo", workers=1, gate=None,
                         transcripts_dir=tmp_path / "transcripts", extractor=_extractor({}),
-                        handoff=H.Handoff(H.BeClient("http://be", session=fake), "ws-1"))
-    assert results[0]["ran"] == ["handed_off"] and results[0]["status"] == "handed_off"
-    assert [c[1] for c in fake.calls] == ["/meetings", "/meetings/m1/end", "/extractions"]
+                        handoff=H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"), "ws-1"))
+    assert results[0]["ran"] == ["sourced", "handed_off"] and results[0]["status"] == "handed_off"
+    assert [c[1] for c in fake.calls] == ["/meetings", "/meetings/m1/end", "/meetings/m1/sources", "/extractions"]
     assert R.pending_sessions(rec) == []
 
 
@@ -253,7 +254,7 @@ def test_when_no_line_survives_the_meeting_stays_partial(tmp_path, monkeypatch):
 def test_failed_stage_is_recorded_and_retried_from_there_on_the_same_be_meeting(tmp_path):
     rec, path, manifest = _session(tmp_path)
     fake = FakeBe()
-    h = H.Handoff(H.BeClient("http://be", session=fake), "ws-1")
+    h = H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"), "ws-1")
 
     def dying(transcript, names, today):
         raise RuntimeError("LLM 죽음")
@@ -360,7 +361,7 @@ def test_a_changed_transcript_invalidates_extraction_and_flags_a_stale_be_extrac
     monkeypatch.setattr(R, "PARTIAL_RETRY_MAX", 1)
     rec, path, manifest = _session(tmp_path)
     fake = FakeBe()
-    h = H.Handoff(H.BeClient("http://be", session=fake), "ws-1")
+    h = H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"), "ws-1")
     seen = {}
     stt = DiesOnLong()                                    # 화자 1 의 묶음(4.4초)만 죽는다
     r = _run(rec, manifest, tmp_path, backend=stt, extractor=_extractor(seen), handoff=h)
@@ -369,7 +370,7 @@ def test_a_changed_transcript_invalidates_extraction_and_flags_a_stale_be_extrac
               extractor=_extractor(seen), handoff=h)
     stt.limit_s = 1.0                                     # 재전사도 죽는다
     r2 = R.recover(rec, **kw)[0]
-    assert r2["ran"] == ["retried", "extracted", "handed_off"] and r2["partial"] is True
+    assert r2["ran"] == ["retried", "sourced", "extracted", "handed_off"] and r2["partial"] is True
     saved = json.loads(path.read_text(encoding="utf-8"))
     assert saved["status"] == "handed_off" and saved["partial"] is True and len(saved["failed_units"]) == 2
     n_partial = seen["n"]
@@ -379,8 +380,269 @@ def test_a_changed_transcript_invalidates_extraction_and_flags_a_stale_be_extrac
     assert R.pending_sessions(rec) == [path]              # 상한을 올리면 다시 집는다
     stt.limit_s = 3.5                                     # 이번엔 산다
     r3 = R.recover(rec, **kw)[0]
-    assert r3["ran"] == ["retried", "extracted", "handed_off"] and r3["retried"] == 2
+    assert r3["ran"] == ["retried", "sourced", "extracted", "handed_off"] and r3["retried"] == 2
     saved = json.loads(path.read_text(encoding="utf-8"))
     assert "failed_units" not in saved and not saved.get("partial") and seen["n"] > n_partial
     assert saved["be"]["stale_extraction"] is True and r3["be"]["stale_extraction"] is True
     assert len(fake.extractions) == 1                     # BE 는 새 항목을 받지 않았다
+
+
+# ─────────────────────────────────────────────────────────── 회의록 저장 단계 (#146)
+def _be(fake):
+    """서비스 토큰까지 있는 BE 설정. 발화 저장 API 는 토큰이 있어야 받는다."""
+    return H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"), "ws-1")
+
+
+def test_lines_are_saved_to_the_be_between_transcription_and_extraction(tmp_path):
+    rec, path, manifest = _session(tmp_path)
+    fake = FakeBe()
+    r = _run(rec, manifest, tmp_path, extractor=_extractor({}), handoff=_be(fake))
+    assert r["ran"] == ["transcribed", "sourced", "extracted", "handed_off"] and r["status"] == "handed_off"
+    # 발화 먼저, 추출 등록 나중 (BE 명세)
+    assert [(c[0], c[1]) for c in fake.calls] == [("POST", "/meetings"), ("PATCH", "/meetings/m1/end"),
+                                                   ("POST", "/meetings/m1/sources"), ("POST", "/extractions")]
+    assert sorted(fake.sources["m1"]) == [1, 2, 3]
+    assert [fake.sources["m1"][q]["speaker_name"] for q in (1, 2, 3)] == ["민수", "서연", "민수"]
+    assert r["sources"]["inserted"] == 3 and r["sources"]["skipped"] == 0
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    assert set(saved["stages"]) == {"transcribed", "sourced", "extracted", "handed_off"}
+    assert saved["be"]["sources"]["inserted"] == 3
+
+
+def test_a_failed_save_stops_before_extraction_and_the_next_run_resumes_there(tmp_path):
+    rec, path, manifest = _session(tmp_path)
+    fake = FakeBe()
+    fake.sources_fail = (503, "SERVICE_UNAVAILABLE")
+    seen = {}
+    r = _run(rec, manifest, tmp_path, extractor=_extractor(seen), handoff=_be(fake))
+    assert r["ran"] == ["transcribed"] and r["status"] == "failed" and r["failed_stage"] == "sources"
+    assert r["attempts"] == 1 and not r["gave_up"] and r["retry_in_s"] == R.backoff_s(1)
+    assert seen == {} and all(c[1] != "/extractions" for c in fake.calls)     # 추출은 돌지 않았다
+    assert fake.meetings["m1"]["status"] == "processing"                       # 재시도가 남아 BE 에는 아직 안 알린다
+    fake.sources_fail = None
+    again = _run(rec, json.loads(path.read_text(encoding="utf-8")), tmp_path, extractor=_extractor(seen),
+                 handoff=_be(fake))
+    assert again["ran"] == ["sourced", "extracted", "handed_off"] and again["status"] == "handed_off"
+
+
+@pytest.mark.parametrize("status, code", [(400, "INVALID_REQUEST"), (409, "MEETING_FAILED")])
+def test_a_save_the_be_rejects_gives_up_at_once(tmp_path, status, code):
+    """다시 보내도 같은 답이 오는 거절이다. 다섯 번 기다리지 않고 바로 포기하고 BE 에 알린다."""
+    rec, path, manifest = _session(tmp_path)
+    fake = FakeBe()
+    fake.sources_fail = (status, code)
+    r = _run(rec, manifest, tmp_path, extractor=_extractor({}), handoff=_be(fake))
+    assert r["failed_stage"] == "sources" and code in r["error"]
+    assert r["attempts"] == 1 and r["gave_up"] and r["retry_in_s"] is None
+    assert fake.meetings["m1"]["status"] == "failed" and fake.meetings["m1"]["failed_stage"] == "sources"
+
+
+def test_lines_that_come_back_on_a_later_retry_are_saved_again(tmp_path, monkeypatch):
+    """상한에 닿아 빠진 구간을 둔 채 저장까지 갔다. 상한을 올려 다시 돌려 살아난 줄은 BE 에 더 붙는다."""
+    monkeypatch.setattr(B, "RETRY_WAIT_S", 0.0)
+    monkeypatch.setattr(R, "PARTIAL_RETRY_MAX", 1)
+    rec, path, manifest = _session(tmp_path)
+    fake = FakeBe()
+    stt = DiesOnLong()                                    # 화자 1 의 묶음(4.4초)만 죽는다
+    r = _run(rec, manifest, tmp_path, backend=stt, extractor=_extractor({}), handoff=_be(fake))
+    assert r["status"] == "partial" and "sourced" not in r["ran"]       # 단계가 닫히기 전에는 보내지 않는다
+    kw = dict(backend=stt, model_name="echo", workers=1, gate=None, transcripts_dir=tmp_path / "transcripts",
+              extractor=_extractor({}), handoff=_be(fake))
+    stt.limit_s = 1.0                                     # 재전사도 죽는다. 상한에 닿아 빠진 채 간다
+    r2 = R.recover(rec, **kw)[0]
+    assert r2["ran"] == ["retried", "sourced", "extracted", "handed_off"] and sorted(fake.sources["m1"]) == [2]
+    monkeypatch.setattr(R, "PARTIAL_RETRY_MAX", 2)
+    stt.limit_s = 3.5                                     # 이번엔 산다
+    r3 = R.recover(rec, **kw)[0]
+    assert r3["ran"][:2] == ["retried", "sourced"]
+    assert (r3["sources"]["inserted"], r3["sources"]["skipped"], r3["sources"]["meeting_id"]) == (2, 1, "m1")
+    assert sorted(fake.sources["m1"]) == [1, 2, 3]
+
+
+def test_a_run_that_died_without_be_settings_is_counted_at_the_stage_it_was_in(tmp_path):
+    """BE 설정이 없으면 저장 단계는 돌지 않는다. 추출 중에 죽은 실행을 저장 단계 실패로 세면 안 된다."""
+    rec, path, manifest = _session(tmp_path)
+    _run(rec, manifest, tmp_path, extractor=None, handoff=None)
+    m = json.loads(path.read_text(encoding="utf-8"))
+    R._count_dead_run(m, None, "host:1")
+    assert m["failed_stage"] == "extract"
+
+
+def _dying(transcript, names, today):
+    raise RuntimeError("LLM 죽음")
+
+
+def test_lines_follow_the_meeting_when_the_be_meeting_is_replaced(tmp_path, monkeypatch):
+    """추출에서 포기해 BE m1 이 failed 가 된 뒤 /recover 하면 새 회의 m2 가 생긴다. 발화도 m2 에 먼저 다시 보낸다."""
+    monkeypatch.setattr(R, "RECOVERY_MAX_ATTEMPTS", 1)
+    rec, path, manifest = _session(tmp_path)
+    fake = FakeBe()
+    r = _run(rec, manifest, tmp_path, extractor=_dying, handoff=_be(fake))
+    assert r["ran"] == ["transcribed", "sourced"] and r["gave_up"] and fake.meetings["m1"]["status"] == "failed"
+    r2 = _run(rec, json.loads(path.read_text(encoding="utf-8")), tmp_path, extractor=_extractor({}), handoff=_be(fake))
+    assert r2["ran"] == ["sourced", "extracted", "handed_off"] and r2["status"] == "handed_off"
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    assert saved["be"]["meeting_id"] == "m2" and saved["be"]["sources"]["meeting_id"] == "m2"
+    assert sorted(fake.sources["m2"]) == [1, 2, 3]
+    paths = [c[1] for c in fake.calls]
+    assert paths.index("/meetings/m2/sources") < paths.index("/extractions")
+
+
+def test_a_meeting_the_be_failed_during_extraction_moves_with_its_lines(tmp_path):
+    """추출하는 사이 BE 가 회의를 failed 로 닫았다. 인계가 같은 실행 안에서 새 회의로 옮길 때 발화를 먼저 보낸다."""
+    rec, path, manifest = _session(tmp_path)
+    fake = FakeBe()
+
+    def meanwhile_failed(transcript, names, today):
+        fake.meetings["m1"]["status"] = "failed"
+        return [Task(transcript.segments[0].text)]
+
+    r = _run(rec, manifest, tmp_path, extractor=meanwhile_failed, handoff=_be(fake))
+    assert r["status"] == "handed_off" and r["be"]["meeting_id"] == "m2"
+    assert [c[1] for c in fake.calls][-4:] == ["/meetings", "/meetings/m2/end", "/meetings/m2/sources", "/extractions"]
+    assert sorted(fake.sources["m2"]) == [1, 2, 3] and list(fake.extractions) == ["m2"]
+    assert json.loads(path.read_text(encoding="utf-8"))["be"]["sources"]["meeting_id"] == "m2"
+
+
+def test_resending_the_lines_keeps_the_failure_count_of_a_later_stage(tmp_path, monkeypatch):
+    """포기한 회의를 /recover 로 다시 돌려 또 실패하면 곧바로 다시 포기한다. 발화를 새 회의에 다시 보내는 단계가
+    그 횟수를 지우면 네 번을 더 기다리고, 판단 경로면 그만큼 LLM 호출이 더 나간다."""
+    monkeypatch.setattr(R, "RECOVERY_MAX_ATTEMPTS", 3)
+    rec, path, manifest = _session(tmp_path)
+    fake = FakeBe()
+    for _ in range(3):
+        _run(rec, json.loads(path.read_text(encoding="utf-8")) if path.exists() else manifest, tmp_path,
+             extractor=_dying, handoff=_be(fake))
+    assert fake.meetings["m1"]["status"] == "failed"
+    r = _run(rec, json.loads(path.read_text(encoding="utf-8")), tmp_path, extractor=_dying, handoff=_be(fake))
+    assert r["ran"] == ["sourced"] and r["failed_stage"] == "extract" and r["attempts"] == 4 and r["gave_up"]
+    assert fake.meetings["m2"]["status"] == "failed"
+
+
+def test_a_meeting_failing_extraction_before_this_change_keeps_counting(tmp_path):
+    """배포 때 추출에서 두 번 실패해 있던 회의. 새 단계가 먼저 돌아도 실패 횟수는 이어서 센다."""
+    rec, path, manifest = _session(tmp_path)
+    fake = FakeBe()
+    _run(rec, manifest, tmp_path, extractor=_dying, handoff=None)          # 발화 저장 단계가 없던 때처럼 바로 추출
+    _run(rec, json.loads(path.read_text(encoding="utf-8")), tmp_path, extractor=_dying, handoff=None)
+    r = _run(rec, json.loads(path.read_text(encoding="utf-8")), tmp_path, extractor=_dying, handoff=_be(fake))
+    assert r["ran"] == ["sourced"] and r["attempts"] == 3
+
+
+def test_lines_revived_in_a_retry_that_stays_partial_are_sent_when_the_stage_closes(tmp_path, monkeypatch):
+    """인계까지 간 뒤 빠진 구간 둘이 남았다. 중간 재시도에서 한 줄이 살아났지만 다른 줄이 남아 partial 로 돌아갔고,
+    마지막 재시도에서는 더 살아난 줄이 없었다. 그래도 단계가 닫힐 때 발화를 다시 보내 살아났던 줄이 BE 에 간다."""
+    rec, path, manifest = _session(tmp_path)
+    fake = FakeBe()
+    _run(rec, manifest, tmp_path, extractor=_extractor({}), handoff=_be(fake))
+    m = json.loads(path.read_text(encoding="utf-8"))
+    units = [{"speaker": "1", "start_ms": 0, "end_ms": 2000, "error": "x"},
+             {"speaker": "2", "start_ms": 5000, "end_ms": 8000, "error": "x"}]
+    m.update(failed_units=units, partial=True, retry_runs=1)
+    R.save_manifest(path, m)
+    monkeypatch.setattr(R, "PARTIAL_RETRY_MAX", 3)
+    contract = tmp_path / "transcripts" / "session_77_500.transcript.json"
+    out = {"markdown": rec / "77_500" / "transcript.md", "transcript_json": contract, "lines": [1, 2, 3]}
+    runs = iter([dict(out, retried=2, failed=1, failed_units=units[1:]),      # 중간: 둘을 보내 하나 살아남
+                 dict(out, retried=1, failed=1, failed_units=units[1:])])     # 상한: 남은 하나도 그대로
+    monkeypatch.setattr(R, "retry_failed", lambda *a, **k: next(runs))
+    mid = _run(rec, json.loads(path.read_text(encoding="utf-8")), tmp_path, extractor=_extractor({}), handoff=_be(fake))
+    assert mid["status"] == "partial"
+    last = _run(rec, json.loads(path.read_text(encoding="utf-8")), tmp_path, extractor=_extractor({}), handoff=_be(fake))
+    assert "sourced" in last["ran"]
+
+
+def test_be_rejection_details_are_kept_so_the_field_is_known(tmp_path):
+    """400 은 다시 보내도 같아서 바로 포기한다. 어느 줄의 어느 필드인지 남기지 않으면 고칠 단서가 없다(BE 명세)."""
+    rec, path, manifest = _session(tmp_path)
+    fake = FakeBe()
+    fake.sources_fail = (400, "INVALID_REQUEST",
+                         {"fields": [{"loc": ["body", "segments", 2, "end"], "msg": "end must be >= start"}]})
+    r = _run(rec, manifest, tmp_path, extractor=_extractor({}), handoff=_be(fake))
+    assert r["gave_up"] and "segments" in r["error"] and "end must be >= start" in r["error"]
+    assert "end must be >= start" in json.loads(path.read_text(encoding="utf-8"))["error"]
+
+
+def test_a_missing_route_is_waited_out_not_given_up(tmp_path):
+    """#130 전 BE 처럼 경로가 없으면 BE 는 404 에 INVALID_REQUEST 를 준다. 요청 형식 거절(400)과 달리 BE 를 다시
+    배포하면 풀리니 기다렸다 다시 한다."""
+    rec, path, manifest = _session(tmp_path)
+    fake = FakeBe()
+    fake.sources_fail = (404, "INVALID_REQUEST")
+    r = _run(rec, manifest, tmp_path, extractor=_extractor({}), handoff=_be(fake))
+    assert r["failed_stage"] == "sources" and r["attempts"] == 1 and not r["gave_up"]
+    assert fake.meetings["m1"]["status"] == "processing"
+
+
+# ── 이름 힌트(#195). 매니페스트의 hint_names 로 프롬프트를 받는 백엔드에만 건다 ──────────────────────
+
+class PromptEcho(EchoStt):
+    name = "elice/whisper-large-v3"
+    accepts_prompt = True
+
+    def __init__(self):
+        self.prompts = []
+
+    def transcribe(self, samples, sample_rate, prompt=None):
+        self.prompts.append(prompt)
+        return super().transcribe(samples, sample_rate)
+
+
+def test_transcription_sends_the_team_names_as_a_prompt(tmp_path):
+    rec, path, manifest = _session(tmp_path)
+    manifest["hint_names"] = ["동우", "재환"]
+    stt = PromptEcho()
+    r = _run(rec, manifest, tmp_path, backend=stt)
+    assert r["status"] == "transcribed" and stt.prompts and set(stt.prompts) == {"동우님, 동우, 재환님, 재환."}
+
+
+def test_a_backend_that_takes_no_prompt_is_called_as_before(tmp_path):
+    """로컬 백엔드는 프롬프트를 받지 않는다. 이름이 있어도 지금처럼 부른다."""
+    rec, path, manifest = _session(tmp_path)
+    manifest["hint_names"] = ["동우"]
+    assert _run(rec, manifest, tmp_path)["status"] == "transcribed"
+
+
+def test_display_names_are_sent_in_every_name_form(tmp_path):
+    """매니페스트에는 디스코드 표시 이름이 그대로 남고, 프롬프트에는 부르는 이름(님 붙임, 뺌)과 성 포함 이름을 싣는다."""
+    rec, path, manifest = _session(tmp_path)
+    manifest["hint_names"] = ["유재환", "geocangdongu5251", "김환"]
+    stt = PromptEcho()
+    _run(rec, manifest, tmp_path, backend=stt)
+    assert stt.prompts and set(stt.prompts) == {"재환님, 재환, 유재환, 김환님, 김환."}
+
+
+def test_a_meeting_without_names_sends_no_prompt(tmp_path):
+    rec, path, manifest = _session(tmp_path)
+    stt = PromptEcho()
+    _run(rec, manifest, tmp_path, backend=stt)
+    assert stt.prompts and set(stt.prompts) == {None}
+
+
+class PromptDiesOnLong(DiesOnLong):
+    name = "elice/whisper-large-v3"
+    accepts_prompt = True
+
+    def __init__(self):
+        super().__init__()
+        self.prompts = []
+
+    def transcribe(self, samples, sample_rate, prompt=None):
+        self.prompts.append(prompt)
+        return super().transcribe(samples, sample_rate)
+
+
+def test_retrying_failed_clips_sends_the_same_name_prompt(tmp_path, monkeypatch):
+    """실패 구간 재전사도 처음 전사와 같은 이름 프롬프트로 보낸다. 이름은 디스크의 매니페스트에서 읽는다."""
+    monkeypatch.setattr(B, "RETRY_WAIT_S", 0.0)
+    rec, path, manifest = _session(tmp_path)
+    manifest["hint_names"] = ["동우"]
+    path.write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
+    stt = PromptDiesOnLong()
+    assert _run(rec, manifest, tmp_path, backend=stt, extractor=_extractor({}))["status"] == "partial"
+
+    stt.prompts.clear()
+    r2 = R.recover(rec, backend=stt, model_name="echo", workers=1, gate=None,
+                   transcripts_dir=tmp_path / "transcripts", extractor=_extractor({}), handoff=None)[0]
+    assert r2["ran"][0] == "retried" and r2["retried"] == 2
+    assert stt.prompts and set(stt.prompts) == {"동우님, 동우."}

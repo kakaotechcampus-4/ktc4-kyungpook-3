@@ -1,4 +1,5 @@
 export type {
+  DisconnectedStatus,
   Integration,
   Integrations,
   IntegrationProvider,
@@ -9,3 +10,8 @@ export { fetchIntegrations, integrationsQueryOptions } from './api/integrations'
 export { integrationStartUrl } from './api/oauth'
 export type { IntegrationReturn } from './lib/oauthReturn'
 export { readIntegrationReturn } from './lib/oauthReturn'
+export {
+  CONNECTING_POLL_MS,
+  CONNECTING_TIMEOUT_MS,
+  waitWhileConnecting,
+} from './lib/waitWhileConnecting'

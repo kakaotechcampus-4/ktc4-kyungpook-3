@@ -1,8 +1,13 @@
+import { File as NodeFile } from 'node:buffer'
 import { HttpResponse, delay, http } from 'msw'
+import { onTestFinished } from 'vitest'
 import { fail, ok } from '@/shared/mock/envelope'
 import { server } from '@/shared/mock/server'
-import { onUnauthorized, request } from './client'
+import { deferred } from '@/shared/test/deferred'
+import { onUnauthorized, request, toUploadProgress } from './client'
+import type { UploadProgress } from './client'
 import { ApiError } from './errors'
+import { endSessionScope } from './sessionScope'
 
 const probe = '/api/v1/probe'
 
@@ -122,5 +127,83 @@ describe('request', () => {
     await request('/a').catch(() => undefined)
     expect(listener).toHaveBeenCalledTimes(1)
     expect(listener).toHaveBeenCalledWith(expect.objectContaining({ status: 401 }))
+  })
+
+  it('끝난 세션에서 출발한 요청의 401 은 알리지 않는다 — 다시 로그인한 새 세션을 끝내지 않는다 (U4 r3 M04)', async () => {
+    const listener = vi.fn()
+    onTestFinished(onUnauthorized(listener))
+    const received = deferred()
+    const answer = deferred()
+    server.use(
+      http.get('/api/v1/late', async () => {
+        received.resolve()
+        await answer.promise
+        return fail('UNAUTHENTICATED', '로그인이 필요합니다.', 401)
+      }),
+    )
+    const late = request('/late').catch((error: unknown) => error)
+    // 서버가 요청을 받은 뒤 세션이 끝나고(로그아웃) 새 세션이 시작됐다(로그인)
+    await received.promise
+    endSessionScope()
+    endSessionScope()
+    answer.resolve()
+    // 호출자는 401 을 그대로 받는다. 세션 만료 알림만 없다
+    await expect(late).resolves.toMatchObject({ status: 401 })
+    expect(listener).not.toHaveBeenCalled()
+
+    // 대조군 — 지금 세션에서 출발한 요청의 401 은 그대로 알린다
+    server.use(http.get('/api/v1/now', () => fail('UNAUTHENTICATED', '로그인이 필요합니다.', 401)))
+    await request('/now').catch(() => undefined)
+    expect(listener).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('업로드 진행', () => {
+  it('전체 크기를 알면 보낸 양과 전체를 준다. 보낸 양은 전체를 넘지 않는다', () => {
+    expect(toUploadProgress({ loaded: 50, total: 200, lengthComputable: true })).toEqual({
+      loaded: 50,
+      total: 200,
+    })
+    expect(toUploadProgress({ loaded: 250, total: 200, lengthComputable: true })).toEqual({
+      loaded: 200,
+      total: 200,
+    })
+  })
+
+  it.each([
+    ['lengthComputable 이 거짓', { loaded: 50, total: 200, lengthComputable: false }],
+    ['total 이 없다', { loaded: 50, lengthComputable: true }],
+    ['total 이 0', { loaded: 50, total: 0, lengthComputable: true }],
+    ['total 이 숫자가 아니다', { loaded: 50, total: Number.NaN, lengthComputable: true }],
+  ])('전체 크기를 모르면 total 이 null 이다 — %s', (_label, event) => {
+    expect(toUploadProgress(event)).toEqual({ loaded: 50, total: null })
+  })
+
+  it('보낸 양이 음수나 숫자가 아니면 0 이다', () => {
+    expect(toUploadProgress({ loaded: -1, total: 10, lengthComputable: true }).loaded).toBe(0)
+    expect(toUploadProgress({ loaded: Number.NaN, lengthComputable: false }).loaded).toBe(0)
+  })
+
+  it('multipart 요청의 진행을 axios 이벤트가 아닌 UploadProgress 로 알린다', async () => {
+    // meeting.integration.test.ts 와 같은 이유로 이 테스트 동안만 Node File 을 쓴다
+    vi.stubGlobal('File', NodeFile)
+    onTestFinished(() => {
+      vi.unstubAllGlobals()
+    })
+    server.use(http.post(probe, () => ok({ accepted: true }, { status: 202 })))
+    const form = new FormData()
+    form.append('file', new Blob(['a'.repeat(1024)], { type: 'audio/mpeg' }), 'a.mp3')
+    const seen: UploadProgress[] = []
+    await expect(
+      request('/probe', {
+        method: 'POST',
+        body: form,
+        onUploadProgress: (progress) => seen.push(progress),
+      }),
+    ).resolves.toEqual({ accepted: true })
+    expect(seen.length).toBeGreaterThan(0)
+    for (const progress of seen) {
+      expect(Object.keys(progress).sort()).toEqual(['loaded', 'total'])
+    }
   })
 })

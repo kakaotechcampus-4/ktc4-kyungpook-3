@@ -5,6 +5,7 @@ import { ok, list, fail } from '../envelope'
 import { MOCK_NOW } from '../fixtures/constants'
 import { requireMember } from '../auth-guard'
 import { readJson, nextId } from '../utils'
+import { tickMeeting } from '../meetingFlow'
 
 export const meetingHandlers = [
   http.get('/api/v1/workspaces/:workspaceId/meetings', ({ params }) => {
@@ -34,6 +35,8 @@ export const meetingHandlers = [
     )
   }),
   http.get('/api/v1/meetings/:meetingId', ({ params }) => {
+    // 처리 중 회의는 흐름 방식(db.meetingFlow.mode)대로 진행한 뒤 답한다. Vitest 기본값 manual 은 그대로다
+    tickMeeting(String(params.meetingId))
     const meeting = db.meetings.find(({ meeting_id }) => meeting_id === params.meetingId)
     return meeting
       ? ok({ ...meeting, extraction_id: meeting.status === 'done' ? meeting.extraction_id : null })
@@ -161,6 +164,9 @@ export const meetingHandlers = [
       progress: { audio_merged: false, transcribed: false, extracted: false },
     }
     db.meetings.push(meeting)
+    // 실 API 는 참석자를 버린다(계약 §4.0-②-9). MSW 는 정리 결과의 참석자로 쓰려고 ID 만 남긴다.
+    // 파일은 어디에도 남기지 않는다 — sessionStorage 영속에도 원본이 들어가지 않는다
+    db.meetingFlow.attendees[meeting.meeting_id] = attendees.map(String)
     db.meetingSummaries.push({
       meeting_id: meeting.meeting_id,
       title,

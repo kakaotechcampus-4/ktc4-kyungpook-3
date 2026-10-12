@@ -74,3 +74,9 @@ implementation_plan_1.md
 
 # 폐기된 프로토타입 런타임 (이전 세대 디자인 기준, 폰트 TTF 11MB 포함)
 frontend/docs/design/site-runtime/
+
+# 팀 공통 스킬: 개인 Git exclude에 .agents/가 있어도 공유 파일은 추적 가능
+!/.agents/
+!/.agents/**
+!/AGENTS.md
+!/CLAUDE.md

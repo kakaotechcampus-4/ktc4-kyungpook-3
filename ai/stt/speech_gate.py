@@ -11,7 +11,7 @@
 자른다. VadOptions 의 두 0 은 바꾸면 안 된다. 패딩과 최소 길이가 붙으면 비율
 자체가 달라져 이 수치가 의미를 잃는다.
 
-무엇을 재지 않았는지는 decision_log/0005-speech-gate-before-stt.md 에 적어 두었다.
+무엇을 재지 않았는지는 docs/basis_for_decision/member/2026-09-12-0005-speech-gate-before-stt.md 에 적어 두었다.
 
 모델은 처음 쓸 때 한 번만 올린다. 워커 여럿이 같이 부르므로 적재와 판정을 같은
 잠금 안에 둔다. faster_whisper 의 get_vad_model 은 lru_cache 지만 lru_cache 는
