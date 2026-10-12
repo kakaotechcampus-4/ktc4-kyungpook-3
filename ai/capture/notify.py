@@ -7,6 +7,7 @@
 늘 알리는 것
   처음 처리를 시작할 때 한 줄, 단계가 끝날 때마다 한 줄(전사, 웹 회의록, 할 일 찾기, 웹에 올림)
   처음 실패했을 때와 자동 재시도를 멈췄을 때, 빠진 구간, 건너뛴 단계, BE·판단 경로의 경고
+  서버에 연결된 워크스페이스가 없어 기다리기 시작할 때 한 번
 MM_DEBUG_REPORT 를 켜면 더 알리는 것
   단계 시작 줄, 회의록 파일, 할 일 목록, 처리 시간·대기·최대 메모리 한 줄(capture/ops_record.summary_line)
 알리지 않는 것
@@ -33,6 +34,8 @@ STAGE_LABEL = {STATUS_TRANSCRIBED: "전사", STATUS_SOURCED: "회의록 저장",
                "stt": "전사", "sources": "회의록 저장", "extract": "할일 추출", "handoff": "BE 인계"}
 STAGE_START = {"stt": "🎧 전사 시작", "sources": "🗂 회의록 저장 시작", "extract": "🔎 할일 추출 시작",
                "handoff": "📨 BE 인계 시작"}
+NOT_CONNECTED_WAIT = ("ℹ️ 이 서버가 웹 워크스페이스에 연결돼 있지 않아 회의 처리를 멈췄습니다. "
+                      "PM 이 웹 온보딩의 디스코드 연결 단계에서 이 서버를 연결하면 이어서 처리합니다.")
 
 
 def debug_from_env() -> bool:
@@ -77,7 +80,9 @@ class MeetingReporter:
     def __init__(self, notifier, manifest: dict, *, debug: bool = False) -> None:
         self._notifier = notifier
         self._channel = manifest.get("text_channel_id")
-        self._first = manifest.get("status") in (STATUS_SAVED, None) and not manifest.get("stages")
+        self._waiting = bool(manifest.get("workspace_wait"))   # 이미 연결을 기다리던 회의. 다시 알리지 않는다
+        self._first = manifest.get("status") in (STATUS_SAVED, None) and not manifest.get("stages") \
+            and not self._waiting
         self._guild = manifest.get("guild_id")
         self.debug = debug
 
@@ -155,6 +160,8 @@ class MeetingReporter:
         return "다음 처리 때 다시 시도합니다."
 
     def finished(self, r: dict, *, manual: bool = False) -> None:
+        if r.get("workspace") == "not_connected" and not self._waiting:
+            self._send(NOT_CONNECTED_WAIT)
         if not self.should_tell(r, manual=manual):
             return
         unjudged = r.get("extract_failures") or []

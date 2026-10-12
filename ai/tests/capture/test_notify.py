@@ -75,8 +75,25 @@ def test_nothing_is_said_when_a_pass_changes_nothing():
     rep = N.MeetingReporter(n, dict(MANIFEST, status="transcribed"))
     rep.started()                                                    # 처음 처리가 아니다
     rep.finished({"session": "77_500", "status": "transcribed", "ran": [], "skipped": {"extracted": "LLM 설정 없음"}})
-    rep.finished({"session": "77_500", "status": "saved", "ran": [], "workspace": "not_connected"})
+    waiting = N.MeetingReporter(n, dict(MANIFEST, workspace_wait="2026-10-13T00:00:00+00:00"))
+    waiting.started()
+    waiting.finished({"session": "77_500", "status": "saved", "ran": [], "workspace": "not_connected"})
     assert n.sent == []
+
+
+def test_a_meeting_waiting_for_the_connection_is_said_once():
+    """연결이 없는 서버의 회의는 워커가 연결될 때까지 바퀴마다 다시 집는다. 기다리기 시작할 때 한 번만 알린다."""
+    n = FakeNotifier()
+    waiting = {"session": "77_500", "status": "saved", "ran": [], "workspace": "not_connected",
+               "skipped": {"sourced": "x", "extracted": "x", "handed_off": "x"}}
+    rep = N.MeetingReporter(n, dict(MANIFEST))
+    rep.started()
+    rep.finished(waiting)
+    assert _texts(n) == ["⏳ 회의 처리를 시작합니다.", N.NOT_CONNECTED_WAIT]
+    again = N.MeetingReporter(n, dict(MANIFEST, workspace_wait="2026-10-13T00:00:00+00:00"))
+    again.started()
+    again.finished(waiting)
+    assert len(n.sent) == 2
 
 
 def test_a_failure_is_said_the_first_time_and_when_the_retries_give_up():
