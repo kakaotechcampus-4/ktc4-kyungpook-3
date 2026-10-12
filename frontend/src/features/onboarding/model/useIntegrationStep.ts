@@ -3,14 +3,15 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate, useSearchParams } from 'react-router'
 import {
   CONNECTING_POLL_MS,
-  fetchIntegrations,
   integrationStartUrl,
   integrationsQueryOptions,
   readIntegrationReturn,
   waitWhileConnecting,
 } from '@/entities/integration'
 import type { Integration, IntegrationProvider, Integrations } from '@/entities/integration'
+import { captureSession } from '@/entities/user'
 import { workspaceDetailQueryOptions } from '@/entities/workspace'
+import { fetchFresh } from '@/shared/api/fetchFresh'
 import { paths } from '@/shared/config/routes'
 import { leaveApp } from '@/shared/lib/location'
 import { withoutOAuthResult } from '@/shared/lib/oauth'
@@ -77,7 +78,7 @@ export function useIntegrationStep(
   )
   const [verifying, setVerifying] = useState(() => returned?.outcome === 'success')
   const [preparing, setPreparing] = useState(false)
-  // 복귀 확인 중에는 구독 조회를 멈춘다 — 확인이 직접 받은 값을 캐시에 넣는다. 같은 조회가 겹쳐 나가지 않는다
+  // 복귀 확인 중에는 구독 조회를 멈춘다 — 확인이 같은 Query 로 묻고 그 답이 캐시에 쓰인다. 같은 조회가 겹쳐 나가지 않는다
   const integrations = useQuery({ ...integrationsQueryOptions(workspaceId), enabled: !verifying })
   // 건너뛰기 저장이 실패했다. PATCH 는 됐는데 뒤의 상세 재조회가 실패했을 수 있어, 서버는 이미 건너뜀인데
   // 화면은 pending 일 수 있다. 그 상태에서 연결하면 서버와 갈린다 — 그때만 건너뛰기 재시도만 허용한다.
@@ -93,6 +94,11 @@ export function useIntegrationStep(
       present.current = false
     }
   }, [])
+  // 지금 그리는 공간·제공자. 컴포넌트가 다른 공간에 재사용돼도 시작한 확인이 그 공간의 것인지 가린다
+  const showing = useRef({ workspaceId, provider })
+  useEffect(() => {
+    showing.current = { workspaceId, provider }
+  }, [workspaceId, provider])
 
   const { save } = onboarding
   useEffect(() => {
@@ -101,22 +107,28 @@ export function useIntegrationStep(
     // 복귀 표시를 지운다 — 새로고침이 같은 확인을 또 하지 않는다. 둘러보기 표시(`review=1`)는 남긴다
     void navigate({ pathname, search: withoutOAuthResult(searchParams) }, { replace: true })
     if (returned.outcome !== 'success') return
+    // 이 확인은 시작한 세션·공간·제공자의 것이다. 세션이 끝났거나, 화면을 떠났거나, 같은 컴포넌트가 다른 공간을
+    // 그리게 됐으면 답을 쓰지 않고 그만둔다 — 이전 공간의 확인으로 다른 공간을 완료 저장하지 않는다
+    const isCurrentSession = captureSession()
+    const started = { workspaceId, provider }
+    const stillMine = () =>
+      isCurrentSession() &&
+      present.current &&
+      showing.current.workspaceId === started.workspaceId &&
+      showing.current.provider === started.provider
     void (async () => {
       let connected = false
       try {
-        // 캐시 조회(fetchQuery)에 합치지 않고 직접 받는다. 화면의 구독이 잠깐 끊기면(StrictMode 재마운트 등)
-        // TanStack Query 가 진행 중 요청을 취소해 합쳐진 확인까지 실패로 끝난다
-        // Notion 이 DB 를 붙이는 중(`connecting`)이면 끝날 때까지 다시 묻는다(#204). 이 단계를 떠나면 그만 묻는다
+        // 복귀한 **뒤의** 상태를 공유 Query 로 묻는다(fetchFresh). 따로 요청해 캐시에 직접 쓰지 않는다 — 세션이 끝나면
+        // 그 정리(cancelQueries·clear)가 이 조회를 거두고, 늦은 답이 비운 캐시를 다시 만들지 않는다. StrictMode 재마운트로
+        // 조회가 취소되면 같은 세션 안에서 다시 묻는다 (설정의 useNotionConnection 과 같다)
+        // Notion 이 DB 를 붙이는 중(`connecting`)이면 끝날 때까지 다시 묻는다(#204)
         const latest = await waitWhileConnecting(
-          async () => {
-            const answer = await fetchIntegrations(workspaceId)
-            queryClient.setQueryData(integrationsQueryOptions(workspaceId).queryKey, answer)
-            return answer
-          },
+          () => fetchFresh(queryClient, integrationsQueryOptions(started.workspaceId)),
           provider,
           {
             intervalMs: CONNECTING_POLL_MS,
-            shouldStop: () => !present.current,
+            shouldStop: () => !stillMine(),
             onConnecting: () => setPreparing(true),
           },
         )
@@ -125,6 +137,7 @@ export function useIntegrationStep(
       } catch {
         // 확인하지 못했으면 연결된 것으로 보지 않는다
       }
+      if (!stillMine()) return
       setPreparing(false)
       if (!connected) {
         setNotice('failed')
