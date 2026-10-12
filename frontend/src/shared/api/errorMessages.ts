@@ -9,7 +9,7 @@ export const COMMON_MESSAGES = {
   fallback: '문제가 생겼어요. 잠시 후 다시 시도해 주세요.',
 } as const
 
-/* 서버 코드 31개 전부. `Record<ErrorCode, string>` 이라 코드가 늘면 여기서 타입 오류가 난다 */
+/* 서버 코드 36개 전부 (backend core/errors.py). `Record<ErrorCode, string>` 이라 코드가 늘면 여기서 타입 오류가 난다 */
 const SERVER_MESSAGES: Record<ErrorCode, string> = {
   INVALID_REQUEST: '요청 내용을 다시 확인해 주세요.',
   MEETING_NOT_FOUND: '회의를 찾을 수 없어요.',
@@ -42,6 +42,12 @@ const SERVER_MESSAGES: Record<ErrorCode, string> = {
   MEETING_PROCESSING_IN_PROGRESS: '이미 정리 중인 회의가 있어요.',
   AUDIO_TOO_LARGE: '파일이 너무 커요.',
   DISCORD_USER_ALREADY_MAPPED: '이미 다른 팀원과 연결된 Discord 계정이에요.',
+  MEETING_FAILED: '실패한 회의예요. 새 회의로 다시 시작해 주세요.',
+  APPROVAL_CONFLICT: '제안 뒤에 태스크가 바뀌었어요. 지금 값을 확인한 뒤 다시 승인해 주세요.',
+  LAST_PM_REQUIRED:
+    '워크스페이스에 PM이 한 명은 있어야 해요. 다른 팀원을 먼저 PM으로 지정해 주세요.',
+  EMBEDDING_UNAVAILABLE: '비슷한 태스크를 찾지 못했어요. 잠시 후 다시 시도해 주세요.',
+  DISCORD_API_FAILED: 'Discord 서버의 사용자 목록을 가져오지 못했어요. 잠시 후 다시 시도해 주세요.',
 }
 
 const CLIENT_MESSAGES: Record<ClientErrorCode, string> = {
