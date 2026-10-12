@@ -1,7 +1,7 @@
 # 온보딩에서 공간을 바꾸면 이전 공간의 확인 결과로 다른 공간의 단계를 완료함
 
 - 구분: FE 수정 필요 (검증에서 발견, 심각도 중간)
-- 상태: 수정함(2026-10-13, 커밋 전). 회귀 테스트 추가. 서버의 온보딩 완료 저장이 실제 연결 여부를 검사하지 않는 점은 BE 요청 후보로 남긴다.
+- 상태: 수정함(2026-10-13, `bc400cd`). 회귀 테스트 추가. 서버의 온보딩 완료 저장이 실제 연결 여부를 검사하지 않는 점은 BE 요청 후보로 남긴다.
 - 발견: 2026-10-12 브랜치 검증(Codex `gpt-6.1-sol`, 읽기 전용). 실제 `useIntegrationStep`·`useOnboardingSave`와 React·TanStack Query를 jsdom에서 실행해 재현했다. 실제 서버로 PATCH를 보내 확인하지는 않았다.
 
 ## 현상
@@ -11,7 +11,7 @@
 3. A의 확인 반복은 멈추지 않고 계속 A를 조회한다. B의 확인은 시작되지 않는다.
 4. A가 `connected`가 되면 기존 작업이 완료 저장을 부르는데, 그 저장이 **B 공간의 Notion 단계 완료**로 나간다.
 
-재현 결과(A 응답: `connecting` → 보류 → `connected`, 중간에 공간을 B로 바꿈):
+수정 전 재현 결과(A 응답: `connecting` → 보류 → `connected`, 중간에 공간을 B로 바꿈):
 
 ```json
 {"calls":["A","A"],"saves":[{"id":"B","step":"connect_notion","action":"complete"}],"workspaceB":{"verifying":false,"status":"not_connected"},"oldCache":"connected"}
