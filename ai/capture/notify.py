@@ -8,6 +8,7 @@
   처음 처리를 시작할 때 한 줄, 단계가 끝날 때마다 한 줄(전사, 웹 회의록, 할 일 찾기, 웹에 올림)
   처음 실패했을 때와 자동 재시도를 멈췄을 때, 빠진 구간, 건너뛴 단계, BE·판단 경로의 경고
   서버에 연결된 워크스페이스가 없어 기다리기 시작할 때 한 번
+  처음 집은 회의가 아무 단계도 돌지 못했으면(BE 토큰 거절처럼) 건너뛴 이유를 한 번
 MM_DEBUG_REPORT 를 켜면 더 알리는 것
   단계 시작 줄, 회의록 파일, 할 일 목록, 처리 시간·대기·최대 메모리 한 줄(capture/ops_record.summary_line)
 알리지 않는 것
@@ -75,14 +76,20 @@ class FileOutbox:
 
 
 class MeetingReporter:
-    """회의 하나의 처리 알림. started → progress(process_session 이 부른다) → finished 순서로 부른다."""
+    """회의 하나의 처리 알림. started → progress(process_session 이 부른다) → finished 순서로 부른다.
 
-    def __init__(self, notifier, manifest: dict, *, debug: bool = False) -> None:
+    announced 는 워커가 이번 실행 동안 처리 시작을 알린 회의 ID 다. 아무 단계도 돌지 못하는 회의를 바퀴마다
+    다시 집어도 시작과 건너뛴 이유는 한 번만 말한다. 워커를 다시 띄우면 한 번 더 말한다.
+    """
+
+    def __init__(self, notifier, manifest: dict, *, debug: bool = False, announced: set[str] | None = None) -> None:
         self._notifier = notifier
         self._channel = manifest.get("text_channel_id")
+        self._session = str(manifest.get("session"))
+        self._announced = announced if announced is not None else set()
         self._waiting = bool(manifest.get("workspace_wait"))   # 이미 연결을 기다리던 회의. 다시 알리지 않는다
         self._first = manifest.get("status") in (STATUS_SAVED, None) and not manifest.get("stages") \
-            and not self._waiting
+            and not self._waiting and self._session not in self._announced
         self._guild = manifest.get("guild_id")
         self.debug = debug
 
@@ -96,6 +103,7 @@ class MeetingReporter:
 
     def started(self) -> None:
         if self._first:
+            self._announced.add(self._session)
             self._send("⏳ 회의 처리를 시작합니다.")
 
     def progress(self, stage: str, info: dict | None = None) -> None:
@@ -162,7 +170,9 @@ class MeetingReporter:
     def finished(self, r: dict, *, manual: bool = False) -> None:
         if r.get("workspace") == "not_connected" and not self._waiting:
             self._send(NOT_CONNECTED_WAIT)
-        if not self.should_tell(r, manual=manual):
+            return
+        stuck_at_start = self._first and not r.get("ran")     # 처음 집었는데 아무 단계도 못 돌았다. 이유를 한 번 말한다
+        if not (self.should_tell(r, manual=manual) or stuck_at_start):
             return
         unjudged = r.get("extract_failures") or []
         if STATUS_EXTRACTED in (r.get("ran") or []) and unjudged:
@@ -171,8 +181,11 @@ class MeetingReporter:
                        if lines else f"⚠️ 판단하지 못한 발화 {len(unjudged)}건은 결과에 없습니다.")
         if r.get("partial"):
             self._send(f"⚠️ 빠진 구간 {r.get('missing_units', 0)}개를 둔 채 진행했습니다.")
+        by_reason: dict[str, list[str]] = {}
         for stage, why in (r.get("skipped") or {}).items():
-            self._send(f"ℹ️ {STAGE_LABEL.get(stage, stage)}은 건너뜁니다({why}).")
+            by_reason.setdefault(why, []).append(STAGE_LABEL.get(stage, stage))
+        for why, labels in by_reason.items():
+            self._send(f"ℹ️ 건너뛴 단계: {', '.join(labels)} ({why}).")
         if r.get("status") == STATUS_PARTIAL:
             failed = (r.get("transcribe") or {}).get("failed", 0)
             self._send(f"⚠️ 전사 실패 {failed}줄. 이 회의는 아직 끝나지 않았습니다. "

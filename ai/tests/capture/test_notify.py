@@ -102,9 +102,10 @@ def test_a_failure_is_said_the_first_time_and_when_the_retries_give_up():
             "error": "RuntimeError: Terra 응답 없음", "attempts": 1, "retry_in_s": 60.0}
     N.MeetingReporter(n, dict(MANIFEST)).finished(fail)
     assert _texts(n) == ["⚠️ 할일 추출 실패: RuntimeError: Terra 응답 없음. 1분 뒤 이 단계부터 자동으로 다시 시도합니다(실패 1회)."]
-    N.MeetingReporter(n, dict(MANIFEST)).finished(dict(fail, ran=[], attempts=2, retry_in_s=120.0))
+    failed = dict(MANIFEST, status="failed", stages={"transcribed": "x"})
+    N.MeetingReporter(n, failed).finished(dict(fail, ran=[], attempts=2, retry_in_s=120.0))
     assert len(n.sent) == 1                                          # 예약된 재시도의 실패는 로그로만
-    N.MeetingReporter(n, dict(MANIFEST)).finished(dict(fail, ran=[], attempts=5, retry_in_s=None, gave_up=True))
+    N.MeetingReporter(n, failed).finished(dict(fail, ran=[], attempts=5, retry_in_s=None, gave_up=True))
     assert "실패 5회로 자동 재시도를 멈췄습니다" in n.sent[-1][1]
     assert "python -m capture.worker --retry 77" in n.sent[-1][1]
 
@@ -118,7 +119,7 @@ def test_warnings_from_the_be_and_the_judge_are_said():
                   "partial": True, "missing_units": 2, "skipped": {"sourced": "BE_SERVICE_TOKEN 없음"}})
     texts = "\n".join(_texts(n))
     assert "BE 가 항목 1건을 받지 않았습니다" in texts and "예전 추출이 남아 있습니다" in texts
-    assert "판단하지 못한 발화 1건" in texts and "빠진 구간 2개" in texts and "회의록 저장은 건너뜁니다" in texts
+    assert "판단하지 못한 발화 1건" in texts and "빠진 구간 2개" in texts and "건너뛴 단계: 회의록 저장 (BE_SERVICE_TOKEN 없음)" in texts
 
 
 def test_a_partial_transcription_says_the_retry():

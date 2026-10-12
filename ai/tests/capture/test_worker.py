@@ -418,10 +418,29 @@ async def test_passes_over_a_meeting_that_does_not_move_say_nothing(tmp_path):
     worker = _worker(tmp_path, notifier=notes)
     await worker.run_pass()
     first = list(notes.sent)
-    assert [t.split(" ", 1)[0] for _, t in first][:2] == ["⏳", "📝"] and any("건너뜁니다" in t for _, t in first)
+    assert [t.split(" ", 1)[0] for _, t in first][:2] == ["⏳", "📝"] and any("건너뛴 단계" in t for _, t in first)
     for _ in range(3):
         await worker.run_pass()
     assert notes.sent == first
+
+
+async def test_a_meeting_whose_be_token_is_refused_says_start_and_why_once(tmp_path):
+    """서비스 토큰이 거절되면(401) 워커는 전사도 하지 않고 그 회의를 바퀴마다 다시 집는다. 처리 시작과 건너뛴 이유는
+    한 번만 말한다. 바퀴마다 "처리를 시작합니다" 가 10초 간격으로 쌓이면 안 된다."""
+    rec, path, _ = _session(tmp_path, ts=500)
+    _edit(path, workspace_id=None)
+
+    class Refused:
+        def workspace(self, meta):
+            raise H.BeError("UNAUTHENTICATED", "토큰 거절", status=401)
+
+    notes = Notes()
+    worker = _worker(tmp_path, handoff=Refused(), notifier=notes)
+    for _ in range(3):
+        await worker.run_pass()
+    texts = [t for _, t in notes.sent]
+    assert texts.count("⏳ 회의 처리를 시작합니다.") == 1 and len(texts) == 2
+    assert "BE 서비스 토큰 거절" in texts[1] and "전사" in texts[1]
 
 
 async def test_the_debug_report_ends_with_the_processing_line(tmp_path):

@@ -122,6 +122,7 @@ class Worker:
         self.poll_s = poll_s
         self._notifier = notifier if notifier is not None else FileOutbox(recordings_dir)
         self._debug = debug_from_env() if debug is None else debug
+        self._announced: set[str] = set()     # 이번 실행 동안 처리 시작을 알린 회의(capture.notify.MeetingReporter)
         self._claims = Claims()
         self._sem = asyncio.Semaphore(1)                  # 한 번에 한 회의
         self._stopping = False
@@ -149,7 +150,7 @@ class Worker:
 
         def start(m: dict) -> None:
             self._current = str(m.get("session"))
-            reporters[self._current] = MeetingReporter(self._notifier, m, debug=self._debug)
+            reporters[self._current] = MeetingReporter(self._notifier, m, debug=self._debug, announced=self._announced)
             reporters[self._current].started()
 
         async def log(r: dict) -> None:
