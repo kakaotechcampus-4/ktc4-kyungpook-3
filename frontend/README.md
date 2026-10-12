@@ -48,6 +48,8 @@ E2E 는 매번 자기 개발 서버를 새로 띄운다 — 이미 떠 있는 �
 
 ## 개발 모드의 모의 데이터
 
+모의 데이터는 `VITE_ENABLE_MSW=true`를 명시했을 때만 쓴다. E2E·Storybook·Vitest는 이 설정과 상관없이 MSW를 쓴다. 실제 API 호출이 실패해도 모의 응답으로 자동 전환하지 않는다.
+
 `VITE_ENABLE_MSW=true` 면 브라우저는 **비로그인**으로 시작하고, 가입·워크스페이스·온보딩 진행이 같은 탭의 sessionStorage 에 남는다(새로고침·OAuth 왕복).
 픽스처 계정은 `pm@example.com` / `mock-password` 다. 시작 상태를 고르려면 주소에 `?msw-scenario=` 를 붙인다 —
 `signed-out` · `no-workspace` · `single-workspace` · `multiple-workspaces` · `incomplete-workspace`.
@@ -57,13 +59,23 @@ Discord·Notion 연결은 모의 OAuth 화면(`/__mock/oauth/...`)으로 흉내 
 
 백엔드 FastAPI는 `:8000`, 경로 prefix는 `/api/v1`이다. CORS가 없으므로 브라우저는 백엔드를 직접 호출하지 않는다.
 
-개발 중에는 `VITE_API_BASE_URL`을 비워 두고 Vite proxy를 쓴다. `/api` 요청은 `http://localhost:8000`으로 전달된다.
+개발 서버는 기본으로 실제 API를 부른다(`VITE_ENABLE_MSW=false`). `VITE_API_BASE_URL`은 비워 두고 Vite proxy를 쓴다. `/api` 요청은 `API_PROXY_TARGET`으로 전달되며, 비워 두면 `http://localhost:8000`이다. 이 값은 개발 서버만 읽고 브라우저 번들에는 들어가지 않는다.
+
+로컬 백엔드에 붙일 때:
 
 ```bash
 cd ../backend && ./run.sh
 ```
 
-프록시 확인: `http://localhost:5173/api/v1/health`
+배포 백엔드에 붙일 때:
+
+```bash
+API_PROXY_TARGET=https://managers-manager.duckdns.org npm run dev
+```
+
+프록시 확인: `http://localhost:5173/api/v1/auth/me`가 백엔드의 `401 UNAUTHENTICATED` 봉투를 돌려주면 연결된 것이다. 백엔드 `/health`는 `/api` 밖이라 프록시로 확인할 수 없다.
+
+예전에 MSW로 띄운 브라우저에는 mock worker가 남아 있을 수 있다. 실제 API로 띄우면 앱이 시작할 때 그 worker를 해제하고 한 번 다시 불러온다. 이미 만든 `.env`가 `VITE_ENABLE_MSW=true`이면 실제 API로 바뀌지 않으니 값을 확인한다.
 
 환경 변수 예시는 `.env.example`. 비밀키와 OAuth client secret은 프론트엔드 환경 변수에 두지 않는다.
 
