@@ -125,6 +125,16 @@ def test_with_barriers_a_chunk_never_spans_where_another_speaker_starts():
     assert [[u.start_ms for _, u in c.pieces] for c in chunks] == [[0, 12_400], [25_900]]
 
 
+def test_with_no_other_speaker_the_chunks_are_the_same_as_before():
+    """혼자 말한 회의(9/29)는 경계가 없다. 그때 묶음이 예전과 같아야 문맥과 호출 수, CER 이 그대로다."""
+    cases = [_utts((0, 9), (9.5, 9.5), (40, 8)), _utts((0, 12), (12.4, 12), (25.9, 12)),
+             _utts((0, 10), (20, 10), (40, 10), (60, 5)), _utts(*[(i * 6.0, 4.0) for i in range(12)])]
+    for utts in cases:
+        before = [[u.start_ms for _, u in c.pieces] for c in B.build_chunks(utts, max_s=28.0)]
+        after = [[u.start_ms for _, u in c.pieces] for c in B.build_chunks(utts, max_s=28.0, barriers=[])]
+        assert after == before
+
+
 def test_long_clip_is_split_at_its_quietest_frame():
     """쉼이 없는 40초 클립은 15초 이후 가장 조용한 20ms 에서 갈린다. 단어 중간의 25초 강제 절단은 없다."""
     from stt.vad import Utterance

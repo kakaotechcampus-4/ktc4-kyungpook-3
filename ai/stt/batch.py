@@ -269,27 +269,24 @@ def build_chunks(utts: list[Utterance], max_s: float = CHUNK_MAX_S, gap_s: float
     한다. 다른 화자가 끼지 않은 구간은 턴이 여럿이어도 지금처럼 max_s 까지 묶는다.
     """
     gap = np.zeros(int(SR * gap_s), dtype=np.float32)
-    groups: list[list[Utterance]] = []
-    if barriers is not None:
-        for run_ in split_at_barriers(utts, barriers):
-            groups += _fit_turn(run_, max_s, gap_s)
-        pack_turns = False                       # 경계로 가른 구간끼리는 다시 묶지 않는다
-    else:
-        for turn in group_turns(utts, turn_gap_s):
-            groups += _fit_turn(turn, max_s, gap_s)
-
     packed: list[list[Utterance]] = []
-    cur: list[Utterance] = []
-    cur_len = 0.0
-    for grp in groups:
-        glen = sum(_sent_len(u, gap_s) for u in grp)
-        if cur and (not pack_turns or cur_len + glen > max_s):
+    # 경계로 가른 구간마다 예전 방식(턴으로 묶고 max_s 까지 채우기)을 쓴다. 구간끼리는 다시 묶지 않는다.
+    # 경계가 없으면 구간이 하나라 예전과 묶음이 같다
+    for run_ in (split_at_barriers(utts, barriers) if barriers is not None else [utts]):
+        groups: list[list[Utterance]] = []
+        for turn in group_turns(run_, turn_gap_s):
+            groups += _fit_turn(turn, max_s, gap_s)
+        cur: list[Utterance] = []
+        cur_len = 0.0
+        for grp in groups:
+            glen = sum(_sent_len(u, gap_s) for u in grp)
+            if cur and (not pack_turns or cur_len + glen > max_s):
+                packed.append(cur)
+                cur, cur_len = [], 0.0
+            cur += grp
+            cur_len += glen
+        if cur:
             packed.append(cur)
-            cur, cur_len = [], 0.0
-        cur += grp
-        cur_len += glen
-    if cur:
-        packed.append(cur)
 
     chunks: list[Chunk] = []
     for grp in packed:
