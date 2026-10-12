@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef } from 'react'
 import { useSearchParams } from 'react-router'
-import type { IntegrationStatus } from '@/entities/integration'
+import type { DisconnectedStatus, IntegrationStatus } from '@/entities/integration'
 import { SETTINGS_PARAMS } from '@/shared/config/routes'
 import { GuardedLink } from '@/shared/lib/unsaved-changes'
 import { Button } from '@/shared/ui/button'
@@ -18,11 +18,13 @@ export interface NotionConnectionSectionProps {
 
 const STATUS_LABEL: Record<IntegrationStatus, string> = {
   connected: '연결됨',
+  connecting: '준비 중',
   not_connected: '연결 안 됨',
-  revoked: '연결 끊김',
+  // 서버의 `revoked` 는 DB 찾기 실패·중단이다. 「끊김」이 아니다 (NotionRequiredModal 과 같은 까닭)
+  revoked: '연결 실패',
 }
 
-const CONNECT_LABEL: Record<Exclude<IntegrationStatus, 'connected'>, string> = {
+const CONNECT_LABEL: Record<DisconnectedStatus, string> = {
   not_connected: 'Notion 연결하기',
   revoked: 'Notion 다시 연결하기',
 }
@@ -46,6 +48,7 @@ const BADGE =
   'inline-flex h-20 items-center gap-5 rounded-6 bg-control px-8 text-[11px] leading-none font-semibold text-sub'
 const DOT: Record<IntegrationStatus, string> = {
   connected: 'h-5 w-5 rounded-999 bg-ink',
+  connecting: 'h-5 w-5 rounded-999 bg-dim',
   not_connected: 'h-5 w-5 rounded-999 bg-dashed',
   revoked: 'h-5 w-5 rounded-999 bg-accent',
 }
@@ -86,6 +89,10 @@ export function NotionConnectionSection({ workspaceId, canManage }: NotionConnec
 
   const status = connection.integration?.status ?? null
   const busy = connection.verifying
+  // 연결·재연결을 줄 상태. 준비 중(`connecting`)은 DB 를 붙이는 중이라 다시 연결하게 하지 않는다 (#204)
+  const disconnected: DisconnectedStatus | null =
+    status === 'not_connected' || status === 'revoked' ? status : null
+  const preparing = connection.preparing || status === 'connecting'
 
   return (
     <section aria-labelledby={headingId} className={SECTION} data-testid="notion-connection">
@@ -115,9 +122,9 @@ export function NotionConnectionSection({ workspaceId, canManage }: NotionConnec
               {STATUS_LABEL[status]}
             </span>
           </div>
-          {canManage && status !== 'connected' ? (
+          {canManage && disconnected ? (
             <Button variant="primary" loading={busy} onClick={connection.connect}>
-              {CONNECT_LABEL[status]}
+              {CONNECT_LABEL[disconnected]}
             </Button>
           ) : null}
           {canManage && status === 'connected' && connection.returnTo !== null ? (
@@ -128,13 +135,17 @@ export function NotionConnectionSection({ workspaceId, canManage }: NotionConnec
         </div>
       )}
 
-      {busy ? (
+      {preparing ? (
+        <p role="status" className={NOTE}>
+          Notion을 준비하고 있어요. 1분 정도 걸릴 수 있어요.
+        </p>
+      ) : busy ? (
         <p role="status" className={NOTE}>
           연결을 확인하고 있어요.
         </p>
       ) : null}
       <FormErrorPanel message={connection.notice === null ? null : NOTICE[connection.notice]} />
-      {!canManage && status !== null && status !== 'connected' ? (
+      {!canManage && disconnected !== null ? (
         <p className={NOTE}>
           Notion 연결은 PM만 할 수 있어요. 회의를 정리하려면 PM에게 Notion 연결을 요청해 주세요.
         </p>

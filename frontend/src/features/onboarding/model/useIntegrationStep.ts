@@ -2,10 +2,12 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate, useSearchParams } from 'react-router'
 import {
+  CONNECTING_POLL_MS,
   fetchIntegrations,
   integrationStartUrl,
   integrationsQueryOptions,
   readIntegrationReturn,
+  waitWhileConnecting,
 } from '@/entities/integration'
 import type { Integration, IntegrationProvider, Integrations } from '@/entities/integration'
 import { workspaceDetailQueryOptions } from '@/entities/workspace'
@@ -33,6 +35,8 @@ export interface IntegrationStep {
   notice: IntegrationNotice | null
   /** 복귀 뒤 연동 상태를 다시 조회하는 중 */
   verifying: boolean
+  /** 복귀 확인 중 Notion 이 DB 를 붙이고 있다(`connecting`). 끝날 때까지 다시 묻는 중이다 */
+  preparing: boolean
   /** 현재 탭을 OAuth 로 옮긴다 (D-158). 복귀 경로는 이 단계다 — 둘러보기면 둘러보기 주소다 */
   connect: () => void
   /** 연결된 상태에서 단계 완료를 저장한다 — 복귀 뒤 저장이 실패했을 때의 재시도 자리 */
@@ -72,6 +76,7 @@ export function useIntegrationStep(
     returned !== null && returned.outcome !== 'success' ? returned.outcome : null,
   )
   const [verifying, setVerifying] = useState(() => returned?.outcome === 'success')
+  const [preparing, setPreparing] = useState(false)
   // 복귀 확인 중에는 구독 조회를 멈춘다 — 확인이 직접 받은 값을 캐시에 넣는다. 같은 조회가 겹쳐 나가지 않는다
   const integrations = useQuery({ ...integrationsQueryOptions(workspaceId), enabled: !verifying })
   // 건너뛰기 저장이 실패했다. PATCH 는 됐는데 뒤의 상세 재조회가 실패했을 수 있어, 서버는 이미 건너뜀인데
@@ -80,6 +85,14 @@ export function useIntegrationStep(
   // (D-073 연쇄가 있던 때는 연쇄의 앞 요청만 성공한 경우가 주된 까닭이었다 — 2026-09-29 개정으로 연쇄는 없다)
   const [connectBlocked, setConnectBlocked] = useState(false)
   const handled = useRef(false)
+  // 지금 이 단계가 그려져 있나. 떠나면 false 다 — 준비 중 다시 묻기를 멈춘다
+  const present = useRef(false)
+  useEffect(() => {
+    present.current = true
+    return () => {
+      present.current = false
+    }
+  }, [])
 
   const { save } = onboarding
   useEffect(() => {
@@ -93,12 +106,26 @@ export function useIntegrationStep(
       try {
         // 캐시 조회(fetchQuery)에 합치지 않고 직접 받는다. 화면의 구독이 잠깐 끊기면(StrictMode 재마운트 등)
         // TanStack Query 가 진행 중 요청을 취소해 합쳐진 확인까지 실패로 끝난다
-        const latest = await fetchIntegrations(workspaceId)
-        queryClient.setQueryData(integrationsQueryOptions(workspaceId).queryKey, latest)
+        // Notion 이 DB 를 붙이는 중(`connecting`)이면 끝날 때까지 다시 묻는다(#204). 이 단계를 떠나면 그만 묻는다
+        const latest = await waitWhileConnecting(
+          async () => {
+            const answer = await fetchIntegrations(workspaceId)
+            queryClient.setQueryData(integrationsQueryOptions(workspaceId).queryKey, answer)
+            return answer
+          },
+          provider,
+          {
+            intervalMs: CONNECTING_POLL_MS,
+            shouldStop: () => !present.current,
+            onConnecting: () => setPreparing(true),
+          },
+        )
+        if (latest === null) return
         connected = latest[provider].status === 'connected'
       } catch {
         // 확인하지 못했으면 연결된 것으로 보지 않는다
       }
+      setPreparing(false)
       if (!connected) {
         setNotice('failed')
         setVerifying(false)
@@ -176,6 +203,7 @@ export function useIntegrationStep(
     retryIntegrations: () => void integrations.refetch(),
     notice,
     verifying,
+    preparing,
     connect,
     complete,
     skip,

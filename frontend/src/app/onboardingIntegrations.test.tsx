@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { http } from 'msw'
 import { leaveApp } from '@/shared/lib/location'
 import { db } from '@/shared/mock/db'
-import { fail } from '@/shared/mock/envelope'
+import { fail, ok } from '@/shared/mock/envelope'
 import { settleMockOAuth } from '@/shared/mock/oauth/mockOAuth'
 import { applyScenario } from '@/shared/mock/scenarios'
 import { server } from '@/shared/mock/server'
@@ -13,6 +13,11 @@ import { renderApp } from './test/renderApp'
 
 /* U3-3·U3-4·U3-5. 현재 탭 이동은 jsdom 이 못 하므로 leaveApp 만 바꿔 끼워 주소를 본다 */
 vi.mock('@/shared/lib/location', () => ({ leaveApp: vi.fn() }))
+// 준비 중 다시 묻기를 3초가 아니라 짧게 돈다 — 진짜 시간으로 기다린다
+vi.mock('@/entities/integration', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/entities/integration')>()),
+  CONNECTING_POLL_MS: 20,
+}))
 
 const ONBOARDING_PATCH = '/workspaces/ws_03/onboarding'
 
@@ -164,6 +169,30 @@ describe('Discord·Notion 연결 (U3-3)', () => {
     const url = new URL(vi.mocked(leaveApp).mock.calls[0][0], location.origin)
     expect(url.pathname).toBe('/api/v1/workspaces/ws_03/integrations/notion/start')
     expect(url.searchParams.get('state')).toBe('/onboarding/ws_03/connect_notion')
+  })
+
+  it('Notion 복귀 확인에서 준비 중(connecting)이면 기다렸다가, connected 가 되면 팀원 연결 단계로 간다 (#204)', async () => {
+    atNotion('completed')
+    settleMockOAuth({ workspaceId: 'ws_03', provider: 'notion', outcome: 'success' })
+    let asked = 0
+    server.use(
+      http.get('/api/v1/workspaces/ws_03/integrations', () => {
+        asked += 1
+        if (asked > 1) return undefined
+        return ok({
+          ...db.integrations.ws_03,
+          notion: { status: 'connecting', display_name: 'Notion 준비 중', connected_at: null },
+        })
+      }),
+    )
+    const app = renderApp('/onboarding/ws_03/connect_notion?oauth=notion&oauth_result=success')
+
+    expect(
+      await screen.findByText('노션을 준비하고 있어요. 1분 정도 걸릴 수 있어요.'),
+    ).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { level: 1, name: '팀원 연결' })).toBeInTheDocument()
+    await app.expectPath('/onboarding/ws_03/connect_members')
+    expect(asked).toBeGreaterThanOrEqual(2)
   })
 
   it('Notion 복귀 성공 → 팀원 연결 단계로 간다', async () => {

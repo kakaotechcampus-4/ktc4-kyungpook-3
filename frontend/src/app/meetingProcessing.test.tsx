@@ -626,7 +626,7 @@ describe('실패 (U4-6, U4-7)', () => {
 
     failMeeting('mt_10', { notionRevoked: true })
     await act(() => vi.advanceTimersByTimeAsync(3_000))
-    const dialog = await screen.findByRole('dialog', { name: 'Notion 연결이 끊어졌어요' })
+    const dialog = await screen.findByRole('dialog', { name: 'Notion 연결을 마치지 못했어요' })
     // 회의록 목록으로 옮겼다. U5 부터 목록은 가장 최근 회의록(mt_09)으로 주소를 바꾼다 (D-106, U5-1)
     await until(() => expect(app.visited().at(-1)?.pathname).toBe(paths.meetings('ws_01', 'mt_09')))
     expect(app.visited().map(({ pathname }) => pathname)).toContain(paths.meetings('ws_01'))
@@ -650,7 +650,7 @@ describe('실패 (U4-6, U4-7)', () => {
 
     failMeeting('mt_10', { notionRevoked: true })
     await act(() => vi.advanceTimersByTimeAsync(3_000))
-    const dialog = await screen.findByRole('dialog', { name: 'Notion 연결이 끊어졌어요' })
+    const dialog = await screen.findByRole('dialog', { name: 'Notion 연결을 마치지 못했어요' })
     expect(app.visited().map(({ pathname }) => pathname)).toEqual([paths.dashboard('ws_01')])
     await user.click(within(dialog).getByRole('button', { name: '취소' }))
     await until(() => expect(screen.queryByRole('dialog')).toBeNull())

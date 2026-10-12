@@ -50,7 +50,9 @@ export function useUploadEntry(workspaceId: string): UploadEntry {
     return { kind: 'error', error: integrations.error, retry: () => void integrations.refetch() }
   if (!integrationsChecked || integrations.data === undefined) return { kind: 'checking' }
   const { status } = integrations.data.notion
-  if (status !== 'connected') return { kind: 'blocked', reason: status }
+  // 준비 중(`connecting`)은 막지 않는다. 그 사이 만든 태스크도 DB 가 붙으면 반영 대기열에 오른다
+  // (backend integrations._notion_status 주석, #204)
+  if (status === 'not_connected' || status === 'revoked') return { kind: 'blocked', reason: status }
   // 렌더 중 상태 갱신은 같은 컴포넌트에서 한 번만 일어난다 — 다음 렌더부터 settled 다
   setSettled(true)
   return { kind: 'ready' }
