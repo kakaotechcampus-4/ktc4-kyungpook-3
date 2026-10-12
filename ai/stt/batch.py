@@ -87,6 +87,7 @@ class BatchStats:
     track_s: float = 0.0
     wall_s: float = 0.0
     unmapped: int = 0            # 단어 시각이 없어 통째로 첫 클립에 붙인 묶음 수
+    ordered: bool = False        # 묶음을 다른 화자가 말을 시작한 자리에서 갈랐나(run 의 ordered)
     hallucinated_words: int = 0  # VAD 가 말이 없다고 본 자리의 단어 수. track 은 버리고 whole 은 남긴다
     transcribe_s: list[float] = field(default_factory=list)
     call_len_s: list[float] = field(default_factory=list)
@@ -110,6 +111,7 @@ class BatchStats:
             "rtf_p50": None if not rtf else round(statistics.median(rtf), 3),
             "rtf_p95": None if not rtf else round(pct(rtf, 0.95), 3),
             "unmapped_chunks": self.unmapped, "hallucinated_words": self.hallucinated_words,
+            "ordered": self.ordered,
         }
 
 
@@ -235,16 +237,46 @@ def _fit_turn(turn: list[Utterance], max_s: float, gap_s: float) -> list[list[Ut
     return _fit_turn(turn[:k], max_s, gap_s) + _fit_turn(turn[k:], max_s, gap_s)
 
 
+def split_at_barriers(utts: list[Utterance], barriers: list[int]) -> list[list[Utterance]]:
+    """같은 화자의 클립을 다른 화자가 말을 시작한 자리(barriers, 회의 ms)에서 가른다.
+
+    앞 클립 끝과 다음 클립 시작 사이에 다른 화자의 시작이 있으면 거기서 가른다. 다른 화자가 이 화자의 클립
+    안에서 시작했으면(겹쳐 말함) 그 클립 뒤에서 가른다. 공백이 길어도 그 사이에 다른 화자가 없으면 가르지 않는다.
+    """
+    starts = sorted(barriers)
+    runs: list[list[Utterance]] = []
+    for u in utts:
+        if runs:
+            prev = runs[-1][-1]
+            i = bisect.bisect_right(starts, prev.start_ms)
+            if i < len(starts) and starts[i] < u.start_ms:
+                runs.append([u])
+                continue
+            runs[-1].append(u)
+        else:
+            runs.append([u])
+    return runs
+
+
 def build_chunks(utts: list[Utterance], max_s: float = CHUNK_MAX_S, gap_s: float = CHUNK_GAP_S,
-                 turn_gap_s: float = TURN_GAP_S, pack_turns: bool = True) -> list[Chunk]:
+                 turn_gap_s: float = TURN_GAP_S, pack_turns: bool = True,
+                 barriers: list[int] | None = None) -> list[Chunk]:
     """클립을 턴으로 묶고, 턴을 max_s 안으로 채운 묶음을 만든다.
 
     pack_turns=False 면 턴마다 묶음 하나다. 호출이 늘지만 묶음 안에 남의 턴이 안 섞인다.
+    barriers(다른 화자들의 클립 시작, 회의 ms)를 주면 그 자리를 사이에 둔 클립은 같은 묶음에 넣지 않는다.
+    단어 시각을 주지 않는 백엔드는 묶음 하나가 회의록 한 줄이 되는데, 그 줄이 다른 화자의 말을 건너뛰지 않게
+    한다. 다른 화자가 끼지 않은 구간은 턴이 여럿이어도 지금처럼 max_s 까지 묶는다.
     """
     gap = np.zeros(int(SR * gap_s), dtype=np.float32)
     groups: list[list[Utterance]] = []
-    for turn in group_turns(utts, turn_gap_s):
-        groups += _fit_turn(turn, max_s, gap_s)
+    if barriers is not None:
+        for run_ in split_at_barriers(utts, barriers):
+            groups += _fit_turn(run_, max_s, gap_s)
+        pack_turns = False                       # 경계로 가른 구간끼리는 다시 묶지 않는다
+    else:
+        for turn in group_turns(utts, turn_gap_s):
+            groups += _fit_turn(turn, max_s, gap_s)
 
     packed: list[list[Utterance]] = []
     cur: list[Utterance] = []
@@ -468,7 +500,8 @@ def merge_turns(lines: list[Line], gap_s: float = TURN_GAP_S) -> list[Line]:
 # ─────────────────────────────────────────────────────────────── 한 회의
 def run(tracks: list[Track], backend: SttBackend, *, mode: str = "chunk", gate: SpeechGate | None = None,
         workers: int = 1, pack_turns: bool = True, merge: bool = True,
-        preprocess=None, max_inflight: int | None = None) -> tuple[list[Line], BatchStats]:
+        preprocess=None, max_inflight: int | None = None,
+        ordered: bool | None = None) -> tuple[list[Line], BatchStats]:
     """트랙 목록을 전사해 회의 전체 순번이 매겨진 Line 목록과 통계를 돌려준다.
 
     트랙은 하나씩 읽는다. 자르고 보낼 조각(복사본)을 풀에 넣은 뒤 트랙 배열과 클립의 뷰를 놓고
@@ -483,11 +516,32 @@ def run(tracks: list[Track], backend: SttBackend, *, mode: str = "chunk", gate: 
     결과를 안 받은 트랙의 묶음이 HOLD_PCM_MB 를 넘으면 앞 트랙이 끝날 때까지 기다려 받는다. 그래서 붙잡는
     묶음은 회의 길이와 상관없이 상한과 트랙 하나 분 안팎이다. 트랙을 하나씩 끝까지 처리하지 않는 것은
     발화가 짧은 트랙이 많을 때 원격 API 의 병렬 이점을 잃지 않기 위해서다.
+    ordered 면(기본: 백엔드가 단어 시각을 주지 않을 때, gives_word_times=False) chunk 모드의 묶음을 다른 화자가
+    말을 시작한 자리에서 가른다. 단어 시각이 없으면 묶음 하나가 회의록 한 줄이 되고, 그 줄이 다른 화자의 말을
+    건너뛰면 회의록과 판단 1단계의 문장 번호가 말한 순서와 어긋난다. 다른 트랙의 클립 시작을 알아야 해서 트랙을
+    먼저 한 번 훑어 자르고 말 필터를 건다(VAD 는 에너지 기준이라 싸다). 필터 판정은 본 단계가 다시 쓴다.
     """
     if mode not in ("clip", "chunk", "track", "whole"):
         raise ValueError(f"mode 는 clip|chunk|track|whole 이다: {mode}")
     stats = BatchStats(mode=mode, backend=getattr(backend, "name", type(backend).__name__))
     t0 = time.monotonic()
+    if ordered is None:
+        ordered = not getattr(backend, "gives_word_times", True)
+    ordered = ordered and mode == "chunk"
+    stats.ordered = ordered
+    kept_seqs: dict[int, set[int]] = {}      # 트랙 순번 → 말 필터를 통과한 클립 seq (훑는 단계의 판정)
+    starts_of: dict[str, list[int]] = {}     # 화자 → 필터를 통과한 클립의 시작(회의 ms)
+    if ordered:
+        for k, tr in enumerate(tracks):
+            audio = load_track(tr.path)
+            if preprocess is not None:
+                audio = preprocess(audio, SR)
+            utts = cut(audio, tr.speaker_id)
+            if gate is not None:
+                utts = [u for u in utts if gate.accepts(u.pcm, SR, tag=f"{tr.speaker_name}#{u.seq}")]
+            kept_seqs[k] = {u.seq for u in utts}
+            starts_of.setdefault(tr.speaker_id, []).extend(u.start_ms for u in utts)
+            del audio, utts
     reclip = bool(getattr(backend, "reclip_unmapped", False)) and mode == "chunk"
 
     pending: deque = deque()   # 제출은 했고 결과는 아직 안 받은 트랙: (track, audio_s, utts, chunks, futures)
@@ -523,7 +577,7 @@ def run(tracks: list[Track], backend: SttBackend, *, mode: str = "chunk", gate: 
             all_lines.extend(_whole_lines(tr, audio_s, utts, results[0], stats))
 
     with ThreadPoolExecutor(max_workers=max(1, workers)) as ex:
-        for tr in tracks:
+        for k, tr in enumerate(tracks):
             audio = load_track(tr.path)
             if preprocess is not None:
                 audio = preprocess(audio, SR)
@@ -534,7 +588,8 @@ def run(tracks: list[Track], backend: SttBackend, *, mode: str = "chunk", gate: 
             if gate is not None:
                 kept = []
                 for u in utts:
-                    if gate.accepts(u.pcm, SR, tag=f"{tr.speaker_name}#{u.seq}"):
+                    passed = (u.seq in kept_seqs[k]) if ordered else gate.accepts(u.pcm, SR, tag=f"{tr.speaker_name}#{u.seq}")
+                    if passed:
                         kept.append(u)
                     else:
                         stats.gated += 1
@@ -546,7 +601,9 @@ def run(tracks: list[Track], backend: SttBackend, *, mode: str = "chunk", gate: 
             if mode == "clip":
                 units = [np.array(u.pcm, copy=True) for u in utts]
             elif mode == "chunk":
-                chunks = build_chunks(utts, pack_turns=pack_turns) if utts else []
+                barriers = ([t for spk, ts in starts_of.items() if spk != tr.speaker_id for t in ts]
+                            if ordered else None)
+                chunks = build_chunks(utts, pack_turns=pack_turns, barriers=barriers) if utts else []
                 units = [c.pcm for c in chunks]
             else:
                 units = [audio] if utts else []

@@ -101,6 +101,15 @@ def test_elice_without_word_timestamps_asks_only_segments(monkeypatch):
     assert grans == ["segment"]
 
 
+def test_elice_says_it_gives_no_word_times_and_a_prompt_wrapper_keeps_saying_so():
+    """vLLM 은 words 를 채우지 않는다. 배치 전사는 이 표시를 보고 묶음을 순서대로 자른다(stt.batch.run)."""
+    from stt.backend import Prompted
+    from stt.elice import EliceStt
+
+    assert EliceStt.gives_word_times is False
+    assert Prompted(EliceStt(), "동우님.").gives_word_times is False
+
+
 def test_elice_wraps_request_failure(monkeypatch):
     """requests 예외는 OSError 계열이라 감싸지 않으면 호출자의 except SttError 를 지나친다."""
     from stt.elice import EliceStt
