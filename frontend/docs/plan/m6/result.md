@@ -105,6 +105,7 @@ S1~S4의 통합 테스트와 브라우저 확인은 각 단계 감독 기록에 
 - **확인 필요 구역:** 대기 승인을 태스크 행 안에 끼우지 않고 `확인 필요 목록` 카드로 태스크 목록 위에 둔다. 탭 개수·정렬·팀원 승인 조회 0회는 같다. 근거는 [확인 필요를 카드 구역으로 두는 선택](basis-for-decision/2026-10-11-task-list-approval-section.md).
 - **목록에서 승인한 뒤:** 카드는 대기 줄에서 빠지고 만든 태스크는 `태스크 목록`에 온다. 처리 결과 문장·생성된 태스크의 Notion polling은 승인 상세와 태스크 상세에 남긴다(계획 §4-5·§4-8).
 - **리스트 본문 폭:** 리스트 `main`만 960px 이하로 가운데에 둔다. 보드·캘린더·간트는 셸 폭이다. AC-09 E2E가 보는 목록·상세·확인 필요 상세에는 넓은 보기가 없다.
+- **늦은 상태 변경 성공:** 공간 전환이나 역할 변경 뒤에도 세션이 살아 있으면, 도착한 성공은 아직 남아 있는 그 공간의 목록·상세 캐시를 서버 값으로 갱신한다. S3 검증은 이를 실패로 봤으나 §3.6의 정합으로 보고 재작업하지 않았다. [기록](basis-for-decision/2026-10-11-late-status-success-keeps-workspace-cache.md).
 
 ## 남은 작업과 제한 사항
 
@@ -117,6 +118,7 @@ S1~S4의 통합 테스트와 브라우저 확인은 각 단계 감독 기록에 
 ## 관련 기록
 
 - [확인 필요를 태스크 목록과 나란한 카드 구역으로 두는 선택](basis-for-decision/2026-10-11-task-list-approval-section.md)
+- [공간 전환·역할 변경 뒤 늦은 상태 변경 성공이 남아 있는 공간 캐시를 갱신하는 선택](basis-for-decision/2026-10-11-late-status-success-keeps-workspace-cache.md)
 - [보완값을 승인 요청 때까지 화면에 두는 선택](basis-for-decision/2026-10-11-approval-overrides-held-until-approve.md)
 - [조회 오류 뒤 Notion polling을 재진입까지 멈추는 선택](basis-for-decision/2026-10-11-notion-polling-stops-on-query-error.md)
 - [대표 계약](../../contracts/frontend-api-contract.md) 「M6 태스크·승인 처리 경계」
