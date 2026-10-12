@@ -48,6 +48,28 @@ function atNotion(discord: 'completed' | 'skipped') {
     settleMockOAuth({ workspaceId: 'ws_03', provider: 'discord', outcome: 'success' })
 }
 
+/**
+ * ws_03 연동 조회의 첫 답은 Notion 준비 중(connecting)이다(#204). 두 번째 조회는 `release` 할 때까지 붙잡았다가 모의 db 값으로 답한다 —
+ * 다시 묻는 간격이 짧아도 `준비 중` 표시를 다음 답이 지우기 전에 검사한다
+ */
+function connectingThenHold() {
+  const gate = deferred()
+  let asked = 0
+  server.use(
+    http.get('/api/v1/workspaces/ws_03/integrations', async () => {
+      asked += 1
+      if (asked === 1)
+        return ok({
+          ...db.integrations.ws_03,
+          notion: { status: 'connecting', display_name: 'Notion 준비 중', connected_at: null },
+        })
+      if (asked === 2) await gate.promise
+      return undefined
+    }),
+  )
+  return { asked: () => asked, release: () => gate.resolve() }
+}
+
 beforeEach(() => {
   applyScenario('incomplete-workspace')
   vi.mocked(leaveApp).mockClear()
@@ -180,25 +202,15 @@ describe('Discord·Notion 연결 (U3-3)', () => {
   it('Notion 복귀 확인에서 준비 중(connecting)이면 기다렸다가, connected 가 되면 팀원 연결 단계로 간다 (#204)', async () => {
     atNotion('completed')
     settleMockOAuth({ workspaceId: 'ws_03', provider: 'notion', outcome: 'success' })
-    let asked = 0
-    server.use(
-      http.get('/api/v1/workspaces/ws_03/integrations', () => {
-        asked += 1
-        if (asked > 1) return undefined
-        return ok({
-          ...db.integrations.ws_03,
-          notion: { status: 'connecting', display_name: 'Notion 준비 중', connected_at: null },
-        })
-      }),
-    )
+    const ws03 = connectingThenHold()
     const app = renderApp('/onboarding/ws_03/connect_notion?oauth=notion&oauth_result=success')
 
-    expect(
-      await screen.findByText('노션을 준비하고 있어요. 1분 정도 걸릴 수 있어요.'),
-    ).toBeInTheDocument()
+    // 두 번째 조회를 붙잡아 둔 동안 `준비 중` 이 보인다
+    await waitFor(() => expect(ws03.asked()).toBe(2))
+    expect(screen.getByText('노션을 준비하고 있어요. 1분 정도 걸릴 수 있어요.')).toBeInTheDocument()
+    ws03.release()
     expect(await screen.findByRole('heading', { level: 1, name: '팀원 연결' })).toBeInTheDocument()
     await app.expectPath('/onboarding/ws_03/connect_members')
-    expect(asked).toBeGreaterThanOrEqual(2)
   })
 
   it('Notion 복귀 성공 → 팀원 연결 단계로 간다', async () => {
@@ -478,26 +490,16 @@ describe('복귀 확인이 늦게 끝날 때', () => {
     atNotion('completed')
     addSecondIncompleteWorkspace()
     settleMockOAuth({ workspaceId: 'ws_03', provider: 'notion', outcome: 'success' })
-    let asked = 0
-    server.use(
-      http.get('/api/v1/workspaces/ws_03/integrations', () => {
-        asked += 1
-        if (asked > 2) return undefined
-        return ok({
-          ...db.integrations.ws_03,
-          notion: { status: 'connecting', display_name: 'Notion 준비 중', connected_at: null },
-        })
-      }),
-    )
+    const ws03 = connectingThenHold()
     const log = recordRequests()
     const app = renderApp(NOTION_RETURN)
-    expect(
-      await screen.findByText('노션을 준비하고 있어요. 1분 정도 걸릴 수 있어요.'),
-    ).toBeInTheDocument()
+    await waitFor(() => expect(ws03.asked()).toBe(2))
+    expect(screen.getByText('노션을 준비하고 있어요. 1분 정도 걸릴 수 있어요.')).toBeInTheDocument()
 
     act(() => app.navigate('/onboarding/ws_04/connect_notion'))
     await app.expectPath('/onboarding/ws_04/connect_notion')
-    // ws_03 은 그 뒤 연결된다. 이전 확인이 살아 있었다면 이 답을 받고 완료 저장을 부른다
+    // 붙잡아 둔 ws_03 의 답은 연결됨이다. 이전 확인이 살아 있었다면 이 답을 받고 완료 저장을 부른다
+    ws03.release()
     await act(() => new Promise((resolve) => setTimeout(resolve, 300)))
 
     const saves = log.started.filter(({ method }) => method === 'PATCH')

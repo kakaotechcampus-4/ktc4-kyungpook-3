@@ -43,13 +43,15 @@ function notion(status: 'connected' | 'not_connected' | 'revoked') {
 
 /**
  * 연동 조회의 처음 `times` 번은 Notion 을 준비 중(connecting)으로 답한다. 그 뒤로는 모의 db 의 값이다.
- * 실제 서버가 DB 를 붙이는 동안 내리는 값이다 (#204). 받은 조회 수를 돌려준다
+ * 실제 서버가 DB 를 붙이는 동안 내리는 값이다 (#204). 받은 조회 수를 돌려준다.
+ * `hold` 를 주면 그 다음 조회는 풀 때까지 붙잡는다 — `준비 중` 표시를 다음 답이 지우기 전에 검사한다
  */
-function connectingFirst(times: number): () => number {
+function connectingFirst(times: number, hold?: ReturnType<typeof deferred>): () => number {
   let asked = 0
   server.use(
-    http.get('/api/v1/workspaces/ws_01/integrations', () => {
+    http.get('/api/v1/workspaces/ws_01/integrations', async () => {
       asked += 1
+      if (asked === times + 1 && hold) await hold.promise
       if (asked > times) return undefined
       return ok({
         ...db.integrations.ws_01,
@@ -185,13 +187,15 @@ describe('차단 모달에서 시작한 연결 (U3-2, D-098)', () => {
 
   it('복귀 확인에서 준비 중(connecting)이면 실패로 보지 않고 기다렸다가, connected 가 되면 업로드로 돌아간다 (#204)', async () => {
     settleMockOAuth({ workspaceId: 'ws_01', provider: 'notion', outcome: 'success' })
-    const asked = connectingFirst(1)
+    const next = deferred()
+    const asked = connectingFirst(1, next)
     const app = renderApp(returnFrom(FROM_MODAL, 'success'))
 
     const area = await section()
-    expect(
-      await area.findByText('Notion을 준비하고 있어요. 1분 정도 걸릴 수 있어요.'),
-    ).toBeInTheDocument()
+    // 두 번째 조회를 붙잡아 둔 동안 `준비 중` 이 보인다
+    await waitFor(() => expect(asked()).toBe(2))
+    expect(area.getByText('Notion을 준비하고 있어요. 1분 정도 걸릴 수 있어요.')).toBeInTheDocument()
+    next.resolve()
     expect(await screen.findByRole('heading', { name: '회의를 올려 주세요' })).toBeInTheDocument()
     await app.expectPath(UPLOAD_PATH)
     expect(asked()).toBeGreaterThanOrEqual(2)
