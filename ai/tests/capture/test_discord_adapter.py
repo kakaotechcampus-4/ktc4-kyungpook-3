@@ -521,9 +521,9 @@ def _judge_item(title, **over):
 
 
 def _judge_extractor(items, failures=()):
-    from capture.judge_path import JudgeOutput
+    from tests.capture.test_judge_stage import _out
 
-    return lambda transcript, names, today: JudgeOutput(items=list(items), failures=list(failures))
+    return lambda transcript, names, today: _out(items, failures)
 
 
 async def _record_and_stop(cog, ctx):

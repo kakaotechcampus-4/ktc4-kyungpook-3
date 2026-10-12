@@ -38,17 +38,24 @@ def _failure(stage="judge", text="로그인 마감을 미루기로 함", reason=
 
 
 class FakeRun:
-    """judge.pipeline.run 자리. 받은 것을 적어 두고 정해 둔 결과를 돌려준다."""
+    """judge.pipeline.run 자리. 받은 것을 적어 두고 정해 둔 결과를 돌려준다.
 
-    def __init__(self, items=(), failures=(), dropped=None):
+    outcomes 를 주지 않으면 finding 하나가 항목이나 실패 하나가 됐다고 보고 서로 겹치지 않는 문장 번호를 붙인다.
+    """
+
+    def __init__(self, items=(), failures=(), dropped=None, outcomes=None):
         self.items, self.failures = list(items), list(failures)
         self.dropped = dropped if dropped is not None else empty_drops()
+        self.outcomes = outcomes if outcomes is not None else (
+            [SimpleNamespace(indices=[k], kind="item", item=k, failure=None) for k in range(len(self.items))]
+            + [SimpleNamespace(indices=[len(self.items) + k], kind="failure", item=None, failure=k)
+               for k in range(len(self.failures))])
         self.seen = None
 
     def __call__(self, transcript, *, workspace_id, today, candidates):
         self.seen = SimpleNamespace(transcript=transcript, workspace_id=workspace_id, today=today, candidates=candidates)
         return SimpleNamespace(items=[dict(i) for i in self.items], failures=list(self.failures),
-                               dropped=dict(self.dropped))
+                               dropped=dict(self.dropped), outcomes=list(self.outcomes))
 
 
 def _extractor(run, **cfg):
@@ -164,3 +171,82 @@ def test_the_default_candidate_source_is_the_be_client_with_the_service_token():
     extract(TRANSCRIPT, NAMES, date(2026, 9, 19))
     client = run.seen.candidates
     assert isinstance(client, BeClient) and client.api == "http://be.local/api/v1" and client.service_token == "svc"
+
+
+def test_each_finding_comes_back_with_its_sentences_and_what_became_of_it():
+    """다시 돌린 실행끼리 같은 얘기를 짝지으려면 finding 마다 근거 문장 번호와 결과가 있어야 한다(#217).
+    항목은 화자를 uid 로 되돌린 것을 붙인다. 파이프라인은 항목을 위치로 가리킨다."""
+    outcomes = [SimpleNamespace(indices=[2], kind="item", item=0, failure=None),
+                SimpleNamespace(indices=[1], kind="skip", item=None, failure=None),
+                SimpleNamespace(indices=[0, 1], kind="failure", item=None, failure=0)]
+    extract, _ = _extractor(FakeRun([_item()], [_failure()], outcomes=outcomes))
+    out = extract(TRANSCRIPT, NAMES, date(2026, 9, 19))
+    restored = _item(evidence_speaker="103")
+    failure = {"stage": "judge", "text": "로그인 마감을 미루기로 함", "reason": "Terra 응답을 파싱하지 못했습니다."}
+    assert out.outcomes == [{"indices": [2], "kind": "item", "item": restored, "failure": None},
+                            {"indices": [1], "kind": "skip", "item": None, "failure": None},
+                            {"indices": [0, 1], "kind": "failure", "item": None, "failure": failure}]
+    assert out.items == [restored] and out.failures == [failure]
+
+
+def _o(kind, value=None, *, at):
+    """finding 하나의 결과. at 은 근거 문장 번호다."""
+    return {"indices": list(at), "kind": kind, "item": value if kind == "item" else None,
+            "failure": value if kind == "failure" else None}
+
+
+A1, A2, B, C = (_item(task_title=t) for t in ("로그인 화면 마감 변경", "로그인 화면 담당 변경", "결제 API 문서", "색상표 정리"))
+FB, FB2 = ({"stage": "judge", "text": t, "reason": "Terra 응답을 파싱하지 못했습니다."} for t in ("결제 API 문서를 쓰기로 함", "결제 문서 작성"))
+
+
+def test_a_story_that_succeeds_only_in_the_rerun_is_kept():
+    """#128 멘토 리뷰의 예. 1회차는 A 관련 항목 2개와 B 실패, 2회차는 A 는 바꿀 것 없음과 B 항목이다.
+    항목 수로 실행 하나를 고르면 1회차가 남아 B 가 버려진다. 얘기마다 합치면 A 는 1회차, B 는 2회차의 것을 쓴다.
+    A 는 실행마다 판단이 엇갈렸지만 항목을 남긴다. judge 항목은 PM 검토로 간다."""
+    first = [_o("item", A1, at=[3]), _o("item", A2, at=[4]), _o("failure", FB, at=[9])]
+    second = [_o("skip", at=[3, 4]), _o("item", B, at=[9])]
+    assert J.merge_runs([first, second]) == ([A1, A2, B], [])
+
+
+def test_a_story_that_fails_in_every_run_stays_one_failure():
+    """모든 실행에서 실패한 얘기만 실패로 남긴다. 같은 얘기의 실패를 실행마다 하나씩 겹쳐 세지 않는다."""
+    first = [_o("item", A1, at=[3]), _o("failure", FB, at=[9])]
+    second = [_o("item", A1, at=[3]), _o("failure", FB2, at=[8, 9])]
+    assert J.merge_runs([first, second]) == ([A1], [FB])
+
+
+def test_an_item_stays_when_another_run_skips_the_same_story():
+    """한 실행에서는 항목 하나와 실패 하나로, 다른 실행에서는 통째로 바꿀 것 없음으로 끝난 얘기. 실패 없이 끝낸 실행이
+    있으니 실패로 세지 않고, 항목은 남긴다."""
+    first = [_o("item", A1, at=[3]), _o("failure", FB, at=[3, 4])]
+    second = [_o("skip", at=[3, 4])]
+    assert J.merge_runs([first, second]) == ([A1], [])
+
+
+def test_a_run_that_found_nothing_changes_nothing():
+    """1단계가 응답을 이상하게 줘 finding 을 하나도 못 고른 실행. 가진 결과를 지우지 않는다."""
+    first = [_o("item", A1, at=[3]), _o("failure", FB, at=[9])]
+    assert J.merge_runs([first, []]) == ([A1], [FB])
+
+
+def test_a_story_split_differently_in_each_run_is_one_story():
+    """1단계는 실행마다 얘기를 다르게 쪼갠다. 문장 번호가 겹치면 실행이 달라도 한 얘기로 묶는다."""
+    first = [_o("item", A1, at=[3, 4]), _o("item", A2, at=[5])]
+    second = [_o("failure", FB, at=[3, 4, 5])]
+    assert J.merge_runs([first, second]) == ([A1, A2], [])
+
+
+def test_the_same_story_from_two_runs_goes_out_once():
+    """두 실행이 같은 얘기를 둘 다 항목으로 만들면 실행 하나의 것만 쓴다. 둘 다 보내면 PM 앞에 같은 카드가 두 장 선다."""
+    other = _item(task_title="로그인 화면 마감을 금요일로")
+    assert J.merge_runs([[_o("item", A1, at=[3])], [_o("item", other, at=[3])]]) == ([A1], [])
+    # 실패 없이 끝난 실행의 항목을 먼저 쓴다
+    first = [_o("item", A1, at=[3]), _o("failure", FB, at=[3, 4])]
+    second = [_o("item", other, at=[3, 4])]
+    assert J.merge_runs([first, second]) == ([other], [])
+
+
+def test_a_story_every_run_skips_goes_nowhere_and_the_items_keep_the_sentence_order():
+    first = [_o("item", C, at=[7]), _o("skip", at=[1])]
+    second = [_o("skip", at=[1]), _o("item", B, at=[5])]
+    assert J.merge_runs([first, second]) == ([B, C], [])

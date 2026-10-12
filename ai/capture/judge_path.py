@@ -49,11 +49,73 @@ def extract_path() -> str:
 
 @dataclass
 class JudgeOutput:
-    """판단 경로의 추출 결과. items 는 POST /extractions 의 항목 모양 그대로다."""
+    """판단 경로의 추출 결과. finding 하나마다 결과 하나다(#217). 항목은 POST /extractions 의 항목 모양 그대로다.
 
-    items: list[dict] = field(default_factory=list)
-    failures: list[dict] = field(default_factory=list)     # 판단하지 못한 finding [{"stage", "text"(요약 문장), "reason"}]
+    outcomes 의 하나는 {"indices": 근거 문장 번호, "kind": "item" | "skip" | "failure", "item": 항목 또는 None,
+    "failure": {"stage", "text"(요약 문장), "reason"} 또는 None} 이다. skip 은 의미 없음이거나 바뀌는 것 없는 수정이다.
+    """
+
+    outcomes: list[dict] = field(default_factory=list)
     dropped: dict = field(default_factory=dict)            # 1단계에서 검증에 탈락한 항목 기록(PipelineResult.dropped, #186)
+
+    @property
+    def items(self) -> list[dict]:
+        return [o["item"] for o in self.outcomes if o["kind"] == "item"]
+
+    @property
+    def failures(self) -> list[dict]:
+        return [o["failure"] for o in self.outcomes if o["kind"] == "failure"]
+
+
+def merge_runs(runs: list[list[dict]]) -> tuple[list[dict], list[dict]]:
+    """다시 돌린 판단 실행들의 finding 별 결과를 얘기 단위로 합쳐 (항목, 판단하지 못한 finding) 을 돌려준다(#217).
+
+    1단계는 실행마다 발화를 다르게 묶고 요약 문장도 다시 쓴다. 근거 문장 번호는 같은 전사를 가리키므로, 번호가
+    하나라도 겹치는 finding 은 실행이 달라도 같은 얘기로 묶는다. 얘기마다 이렇게 정한다.
+      한 번이라도 항목이 나왔으면 항목을 남긴다. 같은 카드가 두 장 서지 않게 실행 하나의 것만 쓴다(실패 없이 끝난
+      실행, 항목이 많은 실행, 먼저 돈 실행 순). 실행마다 판단이 엇갈려도 남겨서 PM 이 본다
+      어느 실행에서든 실패 없이 끝났으면 실패로 세지 않는다. 모든 실행이 실패했을 때만 실패로 남긴다
+    finding 이 하나도 없는 실행(1단계가 응답을 이상하게 준 경우)은 아무것도 바꾸지 않는다. 항목은 근거 문장 순서다.
+    """
+    nodes = [(r, o) for r, run in enumerate(runs) for o in run]
+    parent = list(range(len(nodes)))
+
+    def root(i: int) -> int:
+        while parent[i] != i:
+            i = parent[i]
+        return i
+
+    for i, (run_i, a) in enumerate(nodes):
+        for j in range(i):
+            run_j, b = nodes[j]
+            if run_i != run_j and set(a["indices"]) & set(b["indices"]):
+                parent[root(i)] = root(j)
+    stories: dict[int, list[int]] = {}
+    for i in range(len(nodes)):
+        stories.setdefault(root(i), []).append(i)
+
+    items: list[dict] = []
+    failures: list[dict] = []
+    for members in sorted(stories.values(), key=lambda m: min(min(nodes[i][1]["indices"]) for i in m)):
+        by_run: dict[int, list[dict]] = {}
+        for i in members:
+            by_run.setdefault(nodes[i][0], []).append(nodes[i][1])
+
+        def count(r: int, kind: str) -> int:
+            return sum(o["kind"] == kind for o in by_run[r])
+
+        clean = [r for r in by_run if not count(r, "failure")]
+        with_items = [r for r in by_run if count(r, "item")]
+        if with_items:
+            pick = min(with_items, key=lambda r: (count(r, "failure") > 0, -count(r, "item"), r))
+        elif not clean:
+            pick = min(by_run, key=lambda r: (count(r, "failure"), r))
+        else:
+            continue                                   # 실패 없이 모두 건너뛴 얘기
+        items += [o["item"] for o in by_run[pick] if o["kind"] == "item"]
+        if not clean:
+            failures += [o["failure"] for o in by_run[pick] if o["kind"] == "failure"]
+    return items, failures
 
 
 class JudgeAllFailed(RuntimeError):
@@ -154,7 +216,10 @@ def build_extractor(*, run=None, candidates=None, cfg=None):
             raise JudgeAllFailed(f"등록할 항목이 없고 판단하지 못한 발화 {len(failures)}개만 남았다. "
                                  f"첫 실패({first['stage']}): {first['reason']}")
         speakers = {s.speaker for s in transcript.segments if s.speaker is not None}
-        return JudgeOutput(items=_restore(result.items, labels, names, speakers), failures=failures,
-                           dropped=result.dropped)
+        items = _restore(result.items, labels, names, speakers)
+        outcomes = [{"indices": list(o.indices), "kind": o.kind,
+                     "item": items[o.item] if o.kind == "item" else None,
+                     "failure": failures[o.failure] if o.kind == "failure" else None} for o in result.outcomes]
+        return JudgeOutput(outcomes=outcomes, dropped=result.dropped)
 
     return extract
