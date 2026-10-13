@@ -220,6 +220,23 @@ def try_lock(manifest: Path) -> MeetingLock | None:
     return MeetingLock(fd, drop)
 
 
+RESTART_LOCK = "restart.lock"   # 배포가 녹음 확인부터 봇 재시작까지 쥐는 잠금. 녹음 폴더에 있다(deploy/ec2-deploy.sh)
+
+
+def try_restart_lock(recordings_dir: Path) -> MeetingLock | None:
+    """배포 재시작 잠금을 기다리지 않고 잡는다. 배포가 쥐고 있으면 None(#215, backend/docs/requests/bot-restart-lock.md).
+
+    배포 스크립트가 만든 파일은 봇에게 쓰기 권한이 없을 수 있어 읽기로 연다. flock 은 읽기로 연 파일에도 걸린다.
+    """
+    grab, drop = _lock_backend()
+    recordings_dir.mkdir(parents=True, exist_ok=True)
+    fd = os.open(recordings_dir / RESTART_LOCK, os.O_RDONLY | os.O_CREAT, 0o644)
+    if not grab(fd):
+        os.close(fd)
+        return None
+    return MeetingLock(fd, drop)
+
+
 def is_locked(manifest: Path) -> bool:
     """누가 이 회의 잠금을 쥐고 있나. 잡아 보고 바로 놓는다. 쥔 쪽의 잠금은 그대로다(flock 은 여는 것마다 따로다)."""
     lock = try_lock(manifest)

@@ -67,7 +67,7 @@ from capture.handoff import from_env as handoff_from_env
 from capture.judge_path import extract_path
 from capture.ops_record import summary_line
 from capture.recorder import (RECOVERY_INTERVAL_S, Claims, interrupted_meetings, manifest_path, queue_ahead,
-                              recover_pass, recovery_targets, try_lock)
+                              recover_pass, recovery_targets, try_lock, try_restart_lock)
 from capture.worker import read_heartbeat, request_wake
 from capture.recorder import (PARTIAL_RETRY_MAX, STATUS_EXTRACTED, STATUS_FAILED, STATUS_HANDED_OFF, STATUS_PARTIAL,
                               STATUS_RECORDING, STATUS_SAVED, STATUS_SOURCED, STATUS_TRANSCRIBED, NullSession,
@@ -83,6 +83,7 @@ from stt.speech_gate import SpeechGate
 SessionSavedHook = Callable[[dict, Path], Awaitable[None]]
 
 NOTICE = "🔴 녹음·전사 중입니다. 이 음성 채널의 말은 화자별로 녹음되고 `/stop` 뒤 회의록이 여기 올라옵니다."
+DEPLOYING_NOTICE = "⏳ 새 버전을 배포하느라 봇이 곧 다시 시작됩니다. 1분쯤 뒤에 다시 `/record` 해 주세요."
 FLUSH_EVERY_S = 0.2   # 재정렬 창에 갇힌 마지막 패킷을 이 주기로 비운다. 패킷은 20ms 마다 온다
 STAGE_LABEL = {STATUS_TRANSCRIBED: "전사", STATUS_SOURCED: "회의록 저장", STATUS_EXTRACTED: "할일 추출",
                STATUS_HANDED_OFF: "BE 인계",
@@ -313,33 +314,42 @@ class RecordingCog(discord.Cog):
         if is_recording(vc) or ctx.guild.id in self._active:
             await ctx.respond("이미 녹음 중입니다. `/stop` 으로 먼저 종료하세요.", ephemeral=True)
             return
-        # 회의 잠금을 먼저 잡고 recording 매니페스트를 쓴다. 워커는 봇 메모리를 못 보니 이 잠금으로 녹음 중인 회의를
-        # 건너뛰고, 잠금 없는 recording 은 봇이 녹음 중에 죽은 회의로 읽는다
-        ts = int(time.time())
-        while True:
-            path = manifest_path(self.recordings_dir, f"{ctx.guild.id}_{ts}")
-            lock = try_lock(path)
-            if lock is not None and not path.exists():
-                break
-            if lock is not None:
-                lock.release()
-            ts += 1        # 같은 초에 시작한 앞 회의가 있다. 회의 ID 가 겹치면 그 매니페스트와 트랙을 덮어쓴다
-        meeting_id = f"{ctx.guild.id}_{ts}"
-        out_dir = self.recordings_dir / meeting_id
-        out_dir.mkdir(parents=True, exist_ok=True)
-        pool = TrackPool(out_dir, ts)
-        sink = StreamingSink(NullSession(), on_samples=pool.submit)
-        cfg = settings()
-        rec = _Recording(meeting_id=meeting_id, ts=ts, out_dir=out_dir, sink=sink, pool=pool,
-                         text_channel=ctx.channel, guild_id=ctx.guild.id, voice_channel_id=vc.channel.id,
-                         voice_channel_name=getattr(vc.channel, "name", None),
-                         guild_name=ctx.guild.name if ctx.guild else None, started_at=now_iso(),
-                         text_channel_id=getattr(ctx.channel, "id", None), workspace_id=cfg.be_workspace_id or None,
-                         timezone=cfg.meeting_timezone, lock=lock, hint_names=_member_names(ctx.guild))
-        vc.start_recording(sink, self._on_recording_done, ctx)
-        self._active[ctx.guild.id] = rec
-        # 시작 시점에 매니페스트를 먼저 쓴다. 봇이 죽어도 이 회의가 있었다는 기록과 트랙이 남는다
-        _, manifest = self._write_status(rec, STATUS_RECORDING, [])
+        # 배포는 녹음 확인부터 봇 재시작까지 이 잠금을 쥔다(#215). 쥐고 있으면 곧 재시작되니 녹음하지 않는다.
+        # 회의 잠금을 잡고 recording 매니페스트를 쓸 때까지 쥔다. 그래야 배포가 그 사이를 녹음 없음으로 보지 않는다
+        restart = try_restart_lock(self.recordings_dir)
+        if restart is None:
+            await ctx.respond(DEPLOYING_NOTICE, ephemeral=True)
+            return
+        try:
+            # 회의 잠금을 먼저 잡고 recording 매니페스트를 쓴다. 워커는 봇 메모리를 못 보니 이 잠금으로 녹음 중인 회의를
+            # 건너뛰고, 잠금 없는 recording 은 봇이 녹음 중에 죽은 회의로 읽는다
+            ts = int(time.time())
+            while True:
+                path = manifest_path(self.recordings_dir, f"{ctx.guild.id}_{ts}")
+                lock = try_lock(path)
+                if lock is not None and not path.exists():
+                    break
+                if lock is not None:
+                    lock.release()
+                ts += 1        # 같은 초에 시작한 앞 회의가 있다. 회의 ID 가 겹치면 그 매니페스트와 트랙을 덮어쓴다
+            meeting_id = f"{ctx.guild.id}_{ts}"
+            out_dir = self.recordings_dir / meeting_id
+            out_dir.mkdir(parents=True, exist_ok=True)
+            pool = TrackPool(out_dir, ts)
+            sink = StreamingSink(NullSession(), on_samples=pool.submit)
+            cfg = settings()
+            rec = _Recording(meeting_id=meeting_id, ts=ts, out_dir=out_dir, sink=sink, pool=pool,
+                             text_channel=ctx.channel, guild_id=ctx.guild.id, voice_channel_id=vc.channel.id,
+                             voice_channel_name=getattr(vc.channel, "name", None),
+                             guild_name=ctx.guild.name if ctx.guild else None, started_at=now_iso(),
+                             text_channel_id=getattr(ctx.channel, "id", None), workspace_id=cfg.be_workspace_id or None,
+                             timezone=cfg.meeting_timezone, lock=lock, hint_names=_member_names(ctx.guild))
+            vc.start_recording(sink, self._on_recording_done, ctx)
+            self._active[ctx.guild.id] = rec
+            # 시작 시점에 매니페스트를 먼저 쓴다. 봇이 죽어도 이 회의가 있었다는 기록과 트랙이 남는다
+            _, manifest = self._write_status(rec, STATUS_RECORDING, [])
+        finally:
+            restart.release()
         rec.flush_task = asyncio.create_task(self._flush_loop(rec))
         await ctx.respond(NOTICE)
         # BE 에 회의를 먼저 만들어 둔다. 실패해도 녹음은 계속되고 인계 단계가 다시 만든다

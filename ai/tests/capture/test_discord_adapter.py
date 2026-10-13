@@ -194,6 +194,58 @@ async def test_record_writes_a_recording_manifest_and_announces(tmp_path):
     rec.flush_task.cancel()
 
 
+async def test_record_during_a_deploy_restart_does_not_start_recording(tmp_path):
+    """배포는 녹음 확인부터 봇 재시작까지 재시작 잠금을 쥔다(#215). 그 사이 /record 는 곧 끊길 녹음을 시작하지 않는다."""
+    cog, guild, vc, channel, ctx = _setup(tmp_path)
+    deploy = R.try_restart_lock(tmp_path / "recordings")        # 배포 스크립트의 flock 자리
+    await _run(A.RecordingCog.record, cog, ctx)
+    assert ctx.responses == [A.DEPLOYING_NOTICE] and vc.started is None and GUILD_ID not in cog._active
+    assert not list((tmp_path / "recordings").glob("session_*"))
+    deploy.release()
+    await _run(A.RecordingCog.record, cog, ctx)                  # 배포가 끝나면 시작한다
+    assert ctx.responses[-1] == A.NOTICE and vc.started is not None
+    cog._active[GUILD_ID].flush_task.cancel()
+
+
+async def test_record_holds_the_restart_lock_until_the_recording_manifest_and_meeting_lock_exist(tmp_path, monkeypatch):
+    """배포는 재시작 잠금을 잡은 뒤 recording 매니페스트의 회의 잠금이 잡혀 있으면 녹음 중으로 보고 재시작을 건너뛴다.
+    그래서 봇은 회의 잠금을 잡고 매니페스트를 쓰기 전에는 재시작 잠금을 놓지 않는다(#215)."""
+    cog, guild, vc, channel, ctx = _setup(tmp_path)
+    recordings = tmp_path / "recordings"
+    seen = []
+    real = R.try_restart_lock
+
+    def spy(d):
+        seen.append(("잡음", [p.name for p in d.glob("session_*.json")]))
+        lock = real(d)
+        let_go = lock.release
+
+        def release():
+            m = next(d.glob("session_*.json"))
+            seen.append(("놓음", json.loads(m.read_text(encoding="utf-8"))["status"], R.try_lock(m) is None))
+            let_go()
+
+        lock.release = release
+        return lock
+
+    monkeypatch.setattr(A, "try_restart_lock", spy)
+    await _run(A.RecordingCog.record, cog, ctx)
+    assert seen == [("잡음", []), ("놓음", "recording", True)]
+    free = R.try_restart_lock(recordings)                        # /record 가 끝나면 놓여 있다
+    assert free is not None
+    free.release()
+    cog._active[GUILD_ID].flush_task.cancel()
+
+
+async def test_record_starts_without_a_restart_lock_file_and_leaves_one(tmp_path):
+    """배포가 한 번도 돌지 않아 잠금 파일이 없어도 녹음은 시작한다(#215)."""
+    cog, guild, vc, channel, ctx = _setup(tmp_path)
+    assert not (tmp_path / "recordings" / "restart.lock").exists()
+    await _run(A.RecordingCog.record, cog, ctx)
+    assert ctx.responses == [A.NOTICE] and (tmp_path / "recordings" / "restart.lock").exists()
+    cog._active[GUILD_ID].flush_task.cancel()
+
+
 async def test_stop_closes_tracks_transcribes_and_posts_the_script(tmp_path):
     cog, guild, vc, channel, ctx = _setup(tmp_path)
     hooked = []
