@@ -571,6 +571,29 @@ def test_notion_whose_database_search_failed_is_revoked_right_away(client, seed,
     assert _integrations(client, seed)["notion"] == REVOKED
 
 
+def test_notion_whose_token_was_cleared_after_refresh_failed_is_revoked(client, seed, db):
+    # 워커가 401을 받고 토큰 갱신도 거절돼 토큰만 비웠다. DB가 있어도 반영할 수 없으니 끊김으로 알린다
+    _add_notion(db, seed, database_id="db-1", updated_ago=timedelta(hours=1), token=None)
+
+    assert _integrations(client, seed)["notion"] == {
+        "status": "revoked", "display_name": "Notion 연결 끊김", "connected_at": None,
+    }
+
+
+def test_reconnect_after_token_cleared_keeps_database(client, seed, db, fake_notion):
+    calls, _ = fake_notion
+    _add_notion(db, seed, database_id="db-1", updated_ago=timedelta(hours=1), token=None)
+    state, nonce = _signed(seed)
+
+    _callback(client, state=state, nonce=nonce, code="the-code")
+
+    assert _integrations(client, seed)["notion"]["status"] == "connected"
+    db.expire_all()
+    row = _row(db, seed)
+    assert (row.access_token, row.refresh_token, row.provider_channel_id) == ("secret_new", "refresh_new", "db-1")
+    assert calls["attach"] == []
+
+
 def test_notion_without_row_is_not_connected(client, seed, db):
     assert _integrations(client, seed)["notion"] == {
         "status": "not_connected", "display_name": None, "connected_at": None,

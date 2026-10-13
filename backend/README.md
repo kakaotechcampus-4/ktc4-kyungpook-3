@@ -132,13 +132,14 @@ docker compose -f docker-compose.prod.yml logs -f api
    고친다(PATCH). Task의 Notion 기록(`notion_page_id`·`notion_database_id`·`notion_synced_version`)은 워커만 고친다.
 
 `Integration(provider="notion")` 행이 없으면 워커가 요청을 건너뛴다 — 연동은 선택 사항이다. 행은 있는데
-`provider_channel_id`(대상 데이터베이스 ID)가 비어 있으면(DB를 찾는 중이거나 연결이 실패함) 요청을 꺼내지 않고
-두었다가, DB가 붙으면 처리한다.
+`provider_channel_id`(대상 데이터베이스 ID)가 비어 있거나(DB를 찾는 중이거나 연결이 실패함) `access_token`이
+비어 있으면(토큰 갱신이 거절됨) 요청을 꺼내지 않고 두었다가, DB와 토큰이 모두 생기면 처리한다.
 
 | 항목 | 동작 |
 |---|---|
 | 상태 | Task 응답의 `notion_sync_status`: `pending`(반영 대기) · `synced` · `failed` · `null`(미연동) |
-| 재시도 | 429·409·5xx·네트워크 오류는 지수 백오프(10초~10분, `Retry-After` 우선)로 최대 5회. 400·401·403·404는 바로 `failed` |
+| 재시도 | 429·409·5xx·네트워크 오류는 지수 백오프(10초~10분, `Retry-After` 우선)로 최대 5회. 400·403·404는 바로 `failed`. 401은 아래 토큰 갱신 |
+| 토큰 갱신(401) | Notion이 401을 돌려주면 `integration`의 `refresh_token`으로 토큰을 한 번 갱신한다(`notion_sync._refresh_token`). 갱신하면 새 `access_token`·`refresh_token`을 바로 커밋하고 요청을 기다리지 않고 다시 보낸다. 마지막(5번째) 시도에서 갱신했으면 한 번 더 보낸다. 저장된 토큰이 실패한 토큰과 다르면(그 사이 다시 연결함) 갱신하지 않고 다시 보낸다. 갱신이 거절되거나(`invalid_grant`) `refresh_token`이 없으면 토큰 두 개를 비우고 DB ID는 남긴다. 연동 조회가 `revoked`가 되고, 요청은 시도로 세지 않고 다시 연결할 때까지 기다린다. 다시 연결하면 callback이 새 토큰으로 남겨 둔 DB를 읽어 본다. 읽을 수 있으면 그 DB를 이어 쓰고, 못 읽으면 새 템플릿 사본의 DB를 붙여 모든 Task를 다시 만든다. 네트워크·5xx·`invalid_client`·환경변수 누락은 토큰을 그대로 두고 백오프로 다시 시도한다. 갱신 응답을 받지 못했는데(타임아웃) Notion은 이미 새 토큰을 발급했다면, 옛 `refresh_token`만 남아 다음 갱신이 거절되고 다시 연결해야 할 수 있다 |
 | 순서·중복 | 항상 Task의 현재 값 전체를 보내고 `notion_synced_version`에 보낸 버전을 기록한다. 같은 Task에 요청이 여러 줄 있어도 된다. Task의 지금 버전이 지금 DB에 이미 반영됐으면 Notion을 부르지 않고 건너뛴다(`skipped`) |
 | 대상 DB | 페이지를 보낸 DB를 `notion_database_id`에 함께 기록한다. 연결된 DB가 이와 다르면 옛 페이지는 쓰지 않고 지금 DB에 새로 만든다. 새 DB가 붙으면(`notion_sync.enqueue_workspace_sync`) 워크스페이스의 모든 Task에 요청을 하나씩 쌓는다. 옛 DB의 페이지는 지우지 않는다 |
 | 생성 타임아웃 | POST 직전에 `notion_create_attempted_at`을 커밋해 둔다. 결과를 모른 채 끝나면 다음 시도는 POST를 반복하지 않고 `Task ID` 속성으로 지금 DB에서 페이지를 먼저 조회한다 |
@@ -170,7 +171,7 @@ callback은 워크스페이스별 경로가 아닌 고정 경로다. Notion에 �
 |---|---|
 | 결과 | 항상 앱 화면으로의 302다. `oauth_result`는 `success` · `cancelled`(허용 화면에서 취소) · `failed`. JSON 오류를 보이지 않는다 |
 | 템플릿 미사용 | 허용 화면에서 기존 페이지를 고르면(Notion이 이 선택지를 숨길 수 없다) 저장하지 않고 `failed` |
-| 연동 조회 상태 | notion은 행이 없으면 `not_connected`, DB ID가 있으면 `connected`. DB ID가 없을 때 토큰이 있고 행이 마지막으로 바뀐 지 2분(DB 찾기 상한 60초 + 여유, `NOTION_CONNECTING_TIMEOUT`) 안이면 `connecting`("Notion 준비 중"), 토큰을 비웠거나 2분이 넘으면 `revoked`("Notion DB 연결 실패"). 지금 `revoked`는 DB 연결이 끝까지 안 된 경우에만 나온다. **임시:** 프론트가 `connecting`을 모르는 값으로 보고 OAuth 직후 "연결 실패"를 띄우므로, 프론트가 대응할 때까지 `connecting` 대신 `connected`("Notion 연결됨")로 내려준다. 찾는 사이 만든 Task도 DB가 붙으면 반영되므로 표시만 다르다 |
+| 연동 조회 상태 | notion은 행이 없으면 `not_connected`, DB ID와 토큰이 있으면 `connected`, DB ID가 있는데 토큰을 비웠으면(토큰 갱신 거절) `revoked`("Notion 연결 끊김"). DB ID가 없을 때 토큰이 있고 행이 마지막으로 바뀐 지 2분(DB 찾기 상한 60초 + 여유, `NOTION_CONNECTING_TIMEOUT`) 안이면 `connecting`("Notion 준비 중"), 토큰을 비웠거나 2분이 넘으면 `revoked`("Notion DB 연결 실패"). **임시:** 프론트가 `connecting`을 모르는 값으로 보고 OAuth 직후 "연결 실패"를 띄우므로, 프론트가 대응할 때까지 `connecting` 대신 `connected`("Notion 연결됨")로 내려준다. 찾는 사이 만든 Task도 DB가 붙으면 반영되므로 표시만 다르다 |
 | 다시 연결 | 쓰던 DB를 새 토큰으로도 쓸 수 있으면 토큰만 바꾸고 DB는 그대로 둔다. 쓸 수 없으면 DB ID를 비우고 새 템플릿에서 다시 찾는다(그동안 `connecting`). 새 DB가 붙으면 모든 Task가 새 DB에 새로 만들어진다. Notion에는 템플릿 복제본이 하나 더 생긴다 |
 | Notion DB 찾기 작업 실패 | 60초 안에 DB를 못 찾거나, 템플릿에 DB가 없거나, 속성이 다르면 행은 두고 토큰만 비운다. 연동 조회가 바로 `revoked`가 되고, 다시 연결하면 callback이 새 토큰을 채운다. DB를 붙이며 Task 요청을 쌓다 오류가 나면 DB 저장도 함께 되돌려져 2분 뒤 `revoked`가 된다. 이유는 경고 로그로 남는다(`Notion 대상 DB 연결 실패 … result=…`) |
 | 서버 재시작 | Notion DB 찾기 작업 도중 서버가 꺼지면 토큰만 있는 행이 남는다. 2분이 지나면 연동 조회가 `revoked`로 보이고, 다시 연결하면 callback이 그 행을 덮어쓴다 |
@@ -180,7 +181,7 @@ callback은 워크스페이스별 경로가 아닌 고정 경로다. Notion에 �
 
 | 이름 | 값 |
 |---|---|
-| `NOTION_CLIENT_ID`, `NOTION_CLIENT_SECRET` | Notion 개발자 페이지의 Public connection → Configuration 탭 |
+| `NOTION_CLIENT_ID`, `NOTION_CLIENT_SECRET` | Notion 개발자 페이지의 Public connection → Configuration 탭. 워커의 토큰 갱신에도 쓴다. 없으면 401 때 갱신하지 못하고 error 로그를 남긴다 |
 | `NOTION_REDIRECT_URI` | 프론트와 같은 주소의 callback. 로컬 `http://localhost:5173/api/v1/integrations/notion/callback`(Vite 프록시가 백엔드로 넘긴다), 운영 `https://<서비스 주소>/api/v1/integrations/notion/callback` |
 | `OAUTH_STATE_SECRET` | state 서명 키, 32자 이상. `python3 -c "import secrets;print(secrets.token_urlsafe(48))"`로 만든다. 없으면 연결 시작이 `failed`가 된다 |
 
