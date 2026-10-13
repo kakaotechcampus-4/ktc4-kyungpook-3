@@ -265,7 +265,7 @@ async def test_the_loop_keeps_going_after_a_pass_raises(tmp_path, monkeypatch):
     await asyncio.wait([task], timeout=1)
 
 
-def _dying(transcript, names, today):
+def _dying(transcript, names, today, workspace_id=None):
     raise RuntimeError("LLM 죽음")
 
 

@@ -4,6 +4,7 @@
 import asyncio
 import json
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -13,6 +14,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from capture import handoff as H
+from capture import ops_record as O
 from capture import recorder as R
 from capture import worker as W
 from tests.capture.fake_be import FakeBe
@@ -62,12 +64,39 @@ async def test_a_worker_pass_processes_only_due_meetings_and_hands_them_to_be(tm
     m.pop("guild_id")
     R.save_manifest(old, m)                                        # 서버가 적히지 않은 옛 매니페스트
     fake = FakeBe()
-    worker = _worker(tmp_path, extractor=_extractor({}), handoff=H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"), "ws-1"))
+    worker = _worker(tmp_path, extractor=_extractor({}), handoff=H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token")))
     results, busy = await worker.run_pass()
     held.release()
     assert [r["session"] for r in results] == ["77_500"] and _status(due) == "handed_off"
     assert [_status(p) for p in (later, gave_up, recording, old)] == ["failed", "failed", "recording", "saved"]
     assert list(fake.extractions) == ["m1"]                        # 결과는 BE 로 갔다
+
+
+async def test_the_log_line_ends_with_time_wait_and_memory(tmp_path, monkeypatch, capsys):
+    """워커 모드는 채널에 결과를 올리지 않는다. 처리 기록 한 줄은 로그 끝에 남긴다."""
+    monkeypatch.setattr(O, "read_rss", lambda: 2_000_000_000)
+    rec, path, _ = _session(tmp_path, ts=500)
+    await _worker(tmp_path).run_pass()
+    line = next(ln for ln in capsys.readouterr().out.splitlines() if ln.startswith("[worker] 세션 77_500"))
+    assert re.search(r" 처리 \d+(\.\d+)?초 대기 \d+(\.\d+)?초 최대 메모리 1907MB$", line), line
+
+
+async def test_a_worker_leaves_a_meeting_of_an_unconnected_server_untranscribed(tmp_path):
+    """연결 없는 서버의 회의를 워커는 전사하지 않는다(#199). 웹에서 연결하면 다음 바퀴에 처음부터 처리한다."""
+    rec, path, _ = _session(tmp_path, ts=500)
+    m = json.loads(path.read_text(encoding="utf-8"))
+    m.pop("workspace_id")
+    R.save_manifest(path, m)
+    fake = FakeBe()
+    worker = _worker(tmp_path, extractor=_extractor({}),
+                     handoff=H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token")))
+    await worker.run_pass()
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    assert saved["status"] == "saved" and "transcribed" not in saved.get("stages", {}) and saved["workspace_wait"]
+    fake.guilds = {"77": "ws-1"}
+    _edit(path, workspace_wait="2026-01-01T00:00:00+00:00")       # 마지막으로 물은 지 1분이 지났다
+    await worker.run_pass()
+    assert _status(path) == "handed_off" and list(fake.extractions) == ["m1"]
 
 
 def _slow_process(monkeypatch, started, release, seen=None):
@@ -354,8 +383,8 @@ async def test_a_worker_pass_hands_judge_items_to_be(tmp_path):
     rec, path, _ = _session(tmp_path, ts=500)
     item = T._judge_item("결제 환불 기능 구현")
     fake = FakeBe()
-    worker = _worker(tmp_path, extractor=lambda transcript, names, today: JudgeOutput(items=[item]),
-                     handoff=H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"), "ws-1"))
+    worker = _worker(tmp_path, extractor=lambda transcript, names, today, workspace_id=None: JudgeOutput(items=[item]),
+                     handoff=H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token")))
     results, busy = await worker.run_pass()
     assert _status(path) == "handed_off" and results[0]["items"] == [item] and busy == []
     assert fake.extractions["m1"]["items"] == [item]
@@ -370,8 +399,8 @@ async def test_the_worker_log_says_why_a_meeting_failed_and_what_was_left_unjudg
     item = T._judge_item("결제 환불 기능 구현")
     unjudged = [{"stage": "judge", "text": "로그인 마감을 미루기로 함", "reason": "Terra 응답을 파싱하지 못했습니다."}]
     fake = FakeBe()
-    worker = _worker(tmp_path, extractor=lambda transcript, names, today: JudgeOutput(items=[item], failures=unjudged),
-                     handoff=H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"), "ws-1"))
+    worker = _worker(tmp_path, extractor=lambda transcript, names, today, workspace_id=None: JudgeOutput(items=[item], failures=unjudged),
+                     handoff=H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token")))
     await worker.run_pass()
     first = capsys.readouterr().out
     assert "failed" in first and "ExtractIncomplete" in first and "발화 1개를 판단하지 못했다" in first
@@ -384,6 +413,6 @@ async def test_the_worker_log_says_how_many_lines_were_saved(tmp_path, capsys):
     """워커 모드는 채널에 올리지 않는다. 회의록이 BE 에 갔는지가 로그에라도 있어야 한다."""
     _session(tmp_path, ts=500)
     fake = FakeBe()
-    with_token = H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"), "ws-1")
+    with_token = H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"))
     await _worker(tmp_path, extractor=_extractor({}), handoff=with_token).run_pass()
     assert "회의록 저장 3줄" in capsys.readouterr().out and sorted(fake.sources["m1"]) == [1, 2, 3]

@@ -126,6 +126,14 @@ class Worker:
                 notes += f" 회의록 저장 {r['sources'].get('inserted', 0)}줄"
             if (r.get("skipped") or {}).get(STATUS_SOURCED):
                 notes += f" 건너뜀 회의록 저장({r['skipped'][STATUS_SOURCED]})"
+            ops = r.get("ops")
+            if ops:
+                # 처리 기록 한 줄. 모르는 값은 뺀다. 칸은 capture/ops_record.py
+                notes += f" 처리 {ops['wall_s']}초"
+                if ops.get("wait_s") is not None:
+                    notes += f" 대기 {ops['wait_s']}초"
+                if ops.get("peak_rss_bytes") is not None:
+                    notes += f" 최대 메모리 {ops['peak_rss_bytes'] / 1024 ** 2:.0f}MB"
             print(f"[worker] 세션 {r['session']} {r['status']} 이번에 {r['ran']} 실패 {r.get('attempts')}회{notes}",
                   flush=True)
 
@@ -134,7 +142,8 @@ class Worker:
                                       stt_factory=self._stt_factory, gate_factory=self._gate_factory,
                                       extractor_factory=self._extractor_factory, handoff_factory=self._handoff_factory,
                                       transcripts_dir=self.transcripts_dir, guild_id=guild_id, manual=manual,
-                                      stop=lambda: self._stopping, on_start=start, on_result=log)
+                                      stop=lambda: self._stopping, on_start=start, on_result=log,
+                                      wait_for_workspace=True)    # 채널에 올리지 못하니 연결 전에는 전사하지 않는다(#199)
         finally:
             self._current = None
 

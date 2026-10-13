@@ -34,10 +34,21 @@ class FakeMember:
         self.mention = f"<@{uid}>"
 
 
+class FakeMessage:
+    def __init__(self, text):
+        self.content = text
+        self.edits = []
+
+    async def edit(self, *, content):
+        self.edits.append(content)
+        self.content = content
+
+
 class FakeTextChannel:
     def __init__(self, cid=TEXT_ID):
         self.id = cid
         self.sent = []
+        self.messages = []         # sent 와 같은 순서의 메시지. 진행 표시가 고친 내용을 본다
         self.fail_first = 0        # 처음 몇 번의 send 를 실패시킨다
 
     async def send(self, text, file=None):
@@ -45,6 +56,8 @@ class FakeTextChannel:
             self.fail_first -= 1
             raise RuntimeError("디스코드 429")
         self.sent.append((text, file))
+        self.messages.append(FakeMessage(text))
+        return self.messages[-1]
 
 
 class FakeVoiceChannel:
@@ -111,6 +124,10 @@ class FakeCtx:
     def __init__(self, guild, vc, channel):
         self.guild, self.voice_client, self.channel = guild, vc, channel
         self.responses = []
+        self.deferred = False
+
+    async def defer(self, ephemeral=False):
+        self.deferred = True
 
     async def respond(self, text, ephemeral=False):
         self.responses.append(text)
@@ -131,7 +148,7 @@ class Task:
                 "due_raw": "내일", "due_status": "certain"}
 
 
-def first_person_extractor(transcript, names, today):
+def first_person_extractor(transcript, names, today, workspace_id=None):
     return [Task(transcript.segments[0].text)]
 
 
@@ -181,6 +198,58 @@ async def test_record_writes_a_recording_manifest_and_announces(tmp_path):
     rec.flush_task.cancel()
 
 
+async def test_record_during_a_deploy_restart_does_not_start_recording(tmp_path):
+    """배포는 녹음 확인부터 봇 재시작까지 재시작 잠금을 쥔다(#215). 그 사이 /record 는 곧 끊길 녹음을 시작하지 않는다."""
+    cog, guild, vc, channel, ctx = _setup(tmp_path)
+    deploy = R.try_restart_lock(tmp_path / "recordings")        # 배포 스크립트의 flock 자리
+    await _run(A.RecordingCog.record, cog, ctx)
+    assert ctx.responses == [A.DEPLOYING_NOTICE] and vc.started is None and GUILD_ID not in cog._active
+    assert not list((tmp_path / "recordings").glob("session_*"))
+    deploy.release()
+    await _run(A.RecordingCog.record, cog, ctx)                  # 배포가 끝나면 시작한다
+    assert ctx.responses[-1] == A.NOTICE and vc.started is not None
+    cog._active[GUILD_ID].flush_task.cancel()
+
+
+async def test_record_holds_the_restart_lock_until_the_recording_manifest_and_meeting_lock_exist(tmp_path, monkeypatch):
+    """배포는 재시작 잠금을 잡은 뒤 recording 매니페스트의 회의 잠금이 잡혀 있으면 녹음 중으로 보고 재시작을 건너뛴다.
+    그래서 봇은 회의 잠금을 잡고 매니페스트를 쓰기 전에는 재시작 잠금을 놓지 않는다(#215)."""
+    cog, guild, vc, channel, ctx = _setup(tmp_path)
+    recordings = tmp_path / "recordings"
+    seen = []
+    real = R.try_restart_lock
+
+    def spy(d):
+        seen.append(("잡음", [p.name for p in d.glob("session_*.json")]))
+        lock = real(d)
+        let_go = lock.release
+
+        def release():
+            m = next(d.glob("session_*.json"))
+            seen.append(("놓음", json.loads(m.read_text(encoding="utf-8"))["status"], R.try_lock(m) is None))
+            let_go()
+
+        lock.release = release
+        return lock
+
+    monkeypatch.setattr(A, "try_restart_lock", spy)
+    await _run(A.RecordingCog.record, cog, ctx)
+    assert seen == [("잡음", []), ("놓음", "recording", True)]
+    free = R.try_restart_lock(recordings)                        # /record 가 끝나면 놓여 있다
+    assert free is not None
+    free.release()
+    cog._active[GUILD_ID].flush_task.cancel()
+
+
+async def test_record_starts_without_a_restart_lock_file_and_leaves_one(tmp_path):
+    """배포가 한 번도 돌지 않아 잠금 파일이 없어도 녹음은 시작한다(#215)."""
+    cog, guild, vc, channel, ctx = _setup(tmp_path)
+    assert not (tmp_path / "recordings" / "restart.lock").exists()
+    await _run(A.RecordingCog.record, cog, ctx)
+    assert ctx.responses == [A.NOTICE] and (tmp_path / "recordings" / "restart.lock").exists()
+    cog._active[GUILD_ID].flush_task.cancel()
+
+
 async def test_stop_closes_tracks_transcribes_and_posts_the_script(tmp_path):
     cog, guild, vc, channel, ctx = _setup(tmp_path)
     hooked = []
@@ -213,12 +282,15 @@ async def test_stop_closes_tracks_transcribes_and_posts_the_script(tmp_path):
 
 async def test_record_creates_the_be_meeting_and_stop_hands_the_tasks_off(tmp_path):
     fake = FakeBe()
-    handoff = H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"), "ws-1")
+    fake.guilds = {str(GUILD_ID): "ws-1"}           # 이 서버는 웹에서 ws-1 에 연결돼 있다
+    handoff = H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"))
     cog, guild, vc, channel, ctx = _setup(tmp_path, extractor=first_person_extractor, handoff=handoff)
     await _run(A.RecordingCog.record, cog, ctx)
     rec = cog._active[GUILD_ID]
     assert rec.be["meeting_id"] == "m1" and _manifest(tmp_path, rec)["be"]["meeting_id"] == "m1"
-    assert fake.calls[0][2]["title"].startswith("회의방 ")
+    assert rec.workspace_id == "ws-1" and _manifest(tmp_path, rec)["workspace_id"] == "ws-1"
+    assert fake.calls[0][:2] == ("GET", f"/integrations/discord/guilds/{GUILD_ID}/workspace")
+    assert fake.calls[1][2]["title"].startswith("회의방 ") and fake.calls[1][2]["workspace_id"] == "ws-1"
     rec.sink.on_samples(1, _tone(2000), 0)
     rec.sink.on_samples(2, _tone(3000), 5000)
     await _run(A.RecordingCog.stop, cog, ctx)
@@ -227,8 +299,9 @@ async def test_record_creates_the_be_meeting_and_stop_hands_the_tasks_off(tmp_pa
     assert m["status"] == "handed_off" and set(m["stages"]) == {"transcribed", "sourced", "extracted", "handed_off"}
     assert m["be"] == {"meeting_id": "m1", "status": "done", "extraction_id": "e-m1", "item_count": 1,
                        "sources": {"meeting_id": "m1", "inserted": 2, "skipped": 0, "duration_ms": 8000}}
-    assert [c[1] for c in fake.calls] == ["/meetings", "/meetings/m1/end", "/meetings/m1/sources", "/extractions"]
-    sent = fake.calls[3][2]["items"][0]
+    assert [c[1] for c in fake.calls] == [f"/integrations/discord/guilds/{GUILD_ID}/workspace", "/meetings",
+                                          "/meetings/m1/end", "/meetings/m1/sources", "/extractions"]
+    sent = fake.calls[4][2]["items"][0]
     assert sent["evidence_speaker"] == "1" and sent["assignee_type"] == "first" and sent["assignee_raw"] is None
     texts = [t for t, _ in channel.sent]
     assert texts[1].startswith("📝 회의록") and texts[2].startswith("🗂 BE 회의록 저장 2줄")
@@ -237,8 +310,9 @@ async def test_record_creates_the_be_meeting_and_stop_hands_the_tasks_off(tmp_pa
 
 async def test_be_being_down_at_record_does_not_stop_the_recording(tmp_path):
     fake = FakeBe()
+    fake.guilds = {str(GUILD_ID): "ws-1"}           # 이 서버는 웹에서 ws-1 에 연결돼 있다
     fake.down = True
-    handoff = H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"), "ws-1")
+    handoff = H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"))
     cog, guild, vc, channel, ctx = _setup(tmp_path, extractor=first_person_extractor, handoff=handoff)
     await _run(A.RecordingCog.record, cog, ctx)
     rec = cog._active[GUILD_ID]
@@ -249,6 +323,62 @@ async def test_be_being_down_at_record_does_not_stop_the_recording(tmp_path):
     await asyncio.wait_for(rec.done.wait(), 20)
     m = _manifest(tmp_path, rec)
     assert m["status"] == "handed_off" and m["be"]["meeting_id"] == "m1"     # 인계 단계가 회의를 만들었다
+    assert m["workspace_id"] == "ws-1"                                       # 처리할 때 다시 물어 찾았다
+    assert not any("연결돼 있지 않아" in t for t, _ in channel.sent)          # 조회 실패는 연결 없음이 아니다
+
+
+def test_the_unconnected_notices_say_who_connects_it_and_where():
+    """연결은 PM 이 웹 온보딩의 디스코드 연결 단계에서 한다. 설정 화면에는 아직 디스코드 연결이 없다(#199)."""
+    for text in (A.NOT_CONNECTED_REFUSED, A.NOT_CONNECTED_RESULT):
+        assert "PM" in text and "온보딩" in text and "설정" not in text
+
+
+async def test_record_in_an_unconnected_server_refuses_and_says_how_to_connect(tmp_path):
+    """봇은 서버에 있는데 웹에서 연결이 없다(#199). 녹음을 시작하지 않고, 회의 전에 누가 어디서 연결하는지 알린다."""
+    fake = FakeBe()                                             # 이 서버는 연결이 없다
+    handoff = H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"))
+    cog, guild, vc, channel, ctx = _setup(tmp_path, extractor=first_person_extractor, handoff=handoff)
+    await _run(A.RecordingCog.record, cog, ctx)
+    assert ctx.deferred and ctx.responses == [A.NOT_CONNECTED_REFUSED]   # BE 를 묻는 동안 3초 응답 기한을 넘기지 않는다
+    assert vc.started is None and GUILD_ID not in cog._active
+    assert not list((tmp_path / "recordings").glob("session_*"))        # 매니페스트도 회의 잠금도 남기지 않는다
+    assert [c[1] for c in fake.calls] == [f"/integrations/discord/guilds/{GUILD_ID}/workspace"]
+
+
+class SlowHandoff:
+    """워크스페이스 조회가 풀어 줄 때까지 걸리는 인계. 조회 중에 다른 /record 가 들어오는 틈을 만든다."""
+
+    def __init__(self):
+        self.release = threading.Event()
+        self.asked = 0
+
+    def workspace(self, meta):
+        self.asked += 1
+        self.release.wait(5)
+        meta["workspace_id"] = "ws-1"
+        return "ws-1"
+
+    def start(self, meta, *, title=None):
+        return meta.setdefault("be", {})
+
+
+async def test_two_records_while_the_workspace_is_looked_up_start_only_one_recording(tmp_path):
+    """녹음 전에 BE 를 묻는 동안 같은 서버의 /record 가 하나 더 와도 녹음은 하나만 시작한다(#199)."""
+    handoff = SlowHandoff()
+    cog, guild, vc, channel, ctx = _setup(tmp_path, handoff=handoff)
+    other = FakeCtx(guild, vc, channel)
+    first = asyncio.create_task(_run(A.RecordingCog.record, cog, ctx))
+    second = asyncio.create_task(_run(A.RecordingCog.record, cog, other))
+    for _ in range(200):
+        if handoff.asked == 2:
+            break
+        await asyncio.sleep(0.01)
+    assert handoff.asked == 2                                   # 둘 다 조회까지 왔다
+    handoff.release.set()
+    await asyncio.gather(first, second)
+    assert sorted([ctx.responses, other.responses]) == sorted([[A.NOTICE], ["이미 녹음 중입니다. `/stop` 으로 먼저 종료하세요."]])
+    assert len(list((tmp_path / "recordings").glob("session_*.json"))) == 1
+    cog._active[GUILD_ID].flush_task.cancel()
 
 
 async def test_channel_failures_do_not_block_processing_or_the_done_signal(tmp_path):
@@ -362,7 +492,8 @@ async def test_recover_reports_only_sessions_that_moved_and_posts_to_their_chann
     await _run(A.RecordingCog.recover_cmd, cog, ctx)             # 아직도 BE 가 없다. 조용하다
     assert [t for t, _ in channel.sent] == ["마저 처리할 녹음이 없습니다. 설정이 없어 멈춘 회의 1개는 그대로입니다."]
     fake = FakeBe()
-    cog._handoff_factory = lambda: H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"), "ws-1")
+    fake.guilds = {str(GUILD_ID): "ws-1"}           # 이 서버는 웹에서 ws-1 에 연결돼 있다
+    cog._handoff_factory = lambda: H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"))
     other = FakeTextChannel(cid=901)                             # 명령은 다른 채널에서 쳤다
     ctx2 = FakeCtx(guild, vc, other)
     await _run(A.RecordingCog.recover_cmd, cog, ctx2)            # BE 가 생겼다. 회의록 저장과 인계를 하고 원래 채널에 알린다
@@ -510,6 +641,81 @@ async def test_a_failed_or_skipped_save_is_said_by_its_name(tmp_path):
     assert not any("sourced" in t or "sources" in t or t.startswith("🗂") for t in texts)
 
 
+async def test_the_report_ends_with_the_processing_line(tmp_path):
+    """처리 시간, 대기, 최대 메모리 한 줄이 결과 메시지 맨 끝에 온다. 기록이 없으면 그 줄도 없다."""
+    cog, guild, vc, channel, ctx = _setup(tmp_path)
+    ops = {"wall_s": 2395.0, "wait_s": 12.0, "peak_rss_bytes": int(2.2 * 1024 ** 3)}
+    await cog._report(channel, "77_500", _saved_result(ops=ops))
+    assert channel.sent[-1][0] == "⏱ 처리 39분 55초 · 대기 12초 · 최대 메모리 2.2GB"
+    channel.sent.clear()
+    await cog._report(channel, "77_500", _saved_result())
+    assert channel.sent and not any(t.startswith("⏱") for t, _ in channel.sent)
+
+
+async def test_stop_in_bot_mode_posts_the_processing_line_last(tmp_path):
+    cog, guild, vc, channel, ctx = _setup(tmp_path, extractor=first_person_extractor)
+    rec = await _record_and_stop(cog, ctx)
+    assert channel.sent[-1][0].startswith("⏱ 처리 ")
+    assert len(_manifest(tmp_path, rec)["ops"]) == 1
+
+
+# ── 진행 표시. 단계가 시작하면 새 메시지, 전사 중에는 그 메시지를 고쳐 묶음 수 ─────────────────────────
+
+async def test_progress_posts_a_message_per_stage_and_edits_the_transcription_one_at_most_every_15s():
+    channel = FakeTextChannel()
+    now = [0.0]
+    progress = A.StageProgress(asyncio.get_running_loop(), channel, clock=lambda: now[0])
+
+    def processing():        # 처리 스레드와 전사 워커 스레드에서 불린다
+        progress("stt")
+        for t, done in ((1, 1), (16, 2), (17, 3)):
+            now[0] = t
+            progress("stt", {"done": done, "sent": 4, "tracks": 1, "tracks_total": 2})
+        now[0] = 18
+        progress("sources")
+
+    await asyncio.to_thread(processing)
+    await progress.flush()
+    assert [t for t, _ in channel.sent] == ["🎧 전사 시작", "🗂 회의록 저장 시작"]
+    # 1초는 시작 메시지와 15초가 안 돼 건너뛰고, 17초에 들어온 마지막 수는 다음 단계가 시작할 때 보인다
+    assert channel.messages[0].edits == ["🎧 전사 · 트랙 1/2 읽음 · 묶음 2개 끝, 2개 처리 중",
+                                         "🎧 전사 · 트랙 1/2 읽음 · 묶음 3개 끝, 1개 처리 중"]
+
+
+async def test_progress_keeps_going_when_a_post_fails():
+    channel = FakeTextChannel()
+    channel.fail_first = 1               # 전사 시작 메시지가 올라가지 않는다
+    progress = A.StageProgress(asyncio.get_running_loop(), channel)
+
+    def processing():
+        progress("stt")
+        progress("stt", {"done": 1, "sent": 1, "tracks": 1, "tracks_total": 1})
+        progress("extract")
+
+    await asyncio.to_thread(processing)
+    await progress.flush()
+    assert [t for t, _ in channel.sent] == ["🔎 할일 추출 시작"]
+
+
+async def test_stop_shows_progress_by_default_before_the_results(tmp_path, monkeypatch):
+    monkeypatch.delenv("MM_PROGRESS", raising=False)        # 기본은 켜짐
+    cog, guild, vc, channel, ctx = _setup(tmp_path)
+    await _record_and_stop(cog, ctx)
+    texts = [t for t, _ in channel.sent]
+    assert texts[0].startswith("✅ 저장 완료") and texts[1] == "🎧 전사 시작" and texts[2].startswith("📝 회의록")
+    # 전사가 15초 안에 끝나 중간에는 고치지 않았고, 결과를 올리기 전에 마지막 수를 보였다
+    assert channel.messages[1].content == "🎧 전사 · 트랙 1/1 읽음 · 묶음 1개 끝, 0개 처리 중"
+
+
+async def test_stop_shows_no_progress_when_turned_off(tmp_path, monkeypatch):
+    monkeypatch.setenv("MM_PROGRESS", "off")
+    cog, guild, vc, channel, ctx = _setup(tmp_path)
+    await _record_and_stop(cog, ctx)
+    texts = [t for t, _ in channel.sent]
+    assert texts[0].startswith("✅ 저장 완료") and texts[1].startswith("📝 회의록")
+    assert not any(t.startswith("🎧") for t in texts)
+
+
 # ── 판단 경로(MM_EXTRACT_PATH=judge). 추출기만 바뀌고 명령과 흐름은 같다 ─────────────────────────────
 
 def _judge_item(title, **over):
@@ -523,7 +729,7 @@ def _judge_item(title, **over):
 def _judge_extractor(items, failures=()):
     from capture.judge_path import JudgeOutput
 
-    return lambda transcript, names, today: JudgeOutput(items=list(items), failures=list(failures))
+    return lambda transcript, names, today, workspace_id=None: JudgeOutput(items=list(items), failures=list(failures))
 
 
 async def _record_and_stop(cog, ctx):
@@ -537,8 +743,9 @@ async def _record_and_stop(cog, ctx):
 
 async def test_stop_in_bot_mode_posts_the_judge_results(tmp_path):
     fake = FakeBe()
+    fake.guilds = {str(GUILD_ID): "ws-1"}           # 이 서버는 웹에서 ws-1 에 연결돼 있다
     fake.tasks.add("task_login")
-    handoff = H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"), "ws-1")
+    handoff = H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"))
     items = [_judge_item("결제 환불 기능 구현"),
              _judge_item("로그인 화면 시안 마무리", action="update", target_task_id="task_login", category="schedule",
                          due_date="2026-10-06", assignee_type=None,
@@ -559,7 +766,8 @@ async def test_unjudged_findings_and_skipped_items_are_said_in_the_channel(tmp_p
     """끝내 판단하지 못한 finding 과 BE 가 받지 않은 항목은 그 회의 채널에서 말한다. 말하지 않으면 빠진 줄 아무도 모른다."""
     monkeypatch.setattr(R, "EXTRACT_RETRY_MAX", 0)
     fake = FakeBe()                                       # task_gone 이라는 task 가 없다
-    handoff = H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"), "ws-1")
+    fake.guilds = {str(GUILD_ID): "ws-1"}           # 이 서버는 웹에서 ws-1 에 연결돼 있다
+    handoff = H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"))
     items = [_judge_item("결제 환불 기능 구현"), _judge_item("옛 작업", action="update", target_task_id="task_gone")]
     failures = [{"stage": "judge", "text": "소셜 로그인은 이번에 빼기로 함", "reason": "Terra 응답을 파싱하지 못했습니다."}]
     cog, guild, vc, channel, ctx = _setup(tmp_path, extractor=_judge_extractor(items, failures), handoff=handoff)
@@ -583,7 +791,8 @@ async def test_a_judgement_waiting_for_a_rerun_is_said_as_a_retry(tmp_path, monk
     """판단하지 못한 finding 이 있어 다시 돌릴 차례다. 채널에는 추출 실패와 다음 시도를 알리고 인계는 하지 않는다."""
     monkeypatch.setattr(R, "EXTRACT_RETRY_MAX", 2)       # 기본값. 환경 변수로 바뀌어도 기대값은 그대로다
     fake = FakeBe()
-    handoff = H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"), "ws-1")
+    fake.guilds = {str(GUILD_ID): "ws-1"}           # 이 서버는 웹에서 ws-1 에 연결돼 있다
+    handoff = H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"))
     failures = [{"stage": "draft", "text": "문서를 정리하기로 함", "reason": "Luna 응답을 파싱하지 못했습니다."}]
     cog, guild, vc, channel, ctx = _setup(tmp_path, extractor=_judge_extractor([_judge_item("검색 개선")], failures),
                                           handoff=handoff)

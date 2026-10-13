@@ -34,12 +34,12 @@ def _saved(path):
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def _dying(transcript, names, today):
+def _dying(transcript, names, today, workspace_id=None):
     raise RuntimeError("LLM 죽음")
 
 
 def _handoff(fake):
-    return H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"), "ws-1")
+    return H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"))
 
 
 def _fails(fake):
@@ -72,6 +72,18 @@ def test_probing_a_lock_does_not_let_it_go(tmp_path, clock):
     claims.acquire(path)
     assert [R.is_locked(path) for _ in range(3)] == [True, True, True]
     assert R.Claims(owner="other:9:b").acquire(path) is None
+
+
+def test_the_restart_lock_is_taken_through_a_read_only_open(tmp_path):
+    """배포 스크립트가 만든 재시작 잠금 파일은 봇에게 쓰기 권한이 없을 수 있다. 읽기로 열어 잡는다(#215)."""
+    (tmp_path / "restart.lock").touch()
+    (tmp_path / "restart.lock").chmod(0o444)
+    lock = R.try_restart_lock(tmp_path)
+    assert lock is not None and R.try_restart_lock(tmp_path) is None     # 쥔 동안 다른 쪽은 못 잡는다
+    lock.release()
+    again = R.try_restart_lock(tmp_path)
+    assert again is not None
+    again.release()
 
 
 def test_a_claim_left_in_the_manifest_without_a_lock_does_not_block(tmp_path, clock):
@@ -127,7 +139,7 @@ def test_who_and_since_when_stay_in_the_manifest_while_the_meeting_is_processed(
     clock["t"] = T0 + timedelta(minutes=17)                      # 전사가 17분 걸렸다
     seen = {}
 
-    def extractor(transcript, names, today):
+    def extractor(transcript, names, today, workspace_id=None):
         seen.update(_saved(path))
         return []
 
@@ -177,9 +189,9 @@ def test_a_stage_that_finishes_starts_the_count_again(tmp_path, clock, limits):
     fake = FakeBe()
     revived = _extractor({})
 
-    def extract_then_be_goes_down(*args):              # 발화 저장과 추출은 끝났고 인계에서 BE 가 꺼져 있다
+    def extract_then_be_goes_down(*args, **kw):        # 발화 저장과 추출은 끝났고 인계에서 BE 가 꺼져 있다
         fake.down = True
-        return revived(*args)
+        return revived(*args, **kw)
 
     r = _run(rec, _saved(path), tmp_path, extractor=extract_then_be_goes_down, handoff=_handoff(fake))
     assert r["ran"] == ["sourced", "extracted"] and r["failed_stage"] == "handoff"
@@ -472,3 +484,23 @@ def test_the_windows_branch_means_the_same_as_flock(tmp_path, monkeypatch):
         os.close(a)
         os.close(b)
     assert {(mode, n, at) for mode, n, at in fake.calls} == {(fake.LK_NBLCK, 1, 0), (fake.LK_UNLCK, 1, 0)}
+
+
+def test_a_meeting_waiting_for_the_workspace_asks_again_at_most_once_a_minute(tmp_path, clock):
+    """워커 루프는 10초마다 돈다. 연결을 기다리는 회의가 바퀴마다 BE 에 묻지 않게 1분에 한 번만 묻는다(#199)."""
+    fake = FakeBe()
+    rec, path, manifest = _session(tmp_path)
+    del manifest["workspace_id"]
+
+    def lookups():
+        return sum(1 for c in fake.calls if c[1].endswith("/workspace"))
+
+    def run():
+        return _run(rec, _saved(path), tmp_path, extractor=_extractor({}), handoff=_handoff(fake), wait_for_workspace=True)
+
+    _run(rec, manifest, tmp_path, extractor=_extractor({}), handoff=_handoff(fake), wait_for_workspace=True)
+    clock["t"] += timedelta(seconds=10)
+    assert run()["workspace"] == "not_connected" and lookups() == 1
+    fake.guilds = {"77": "ws-1"}                                   # 웹에서 연결했다
+    clock["t"] += timedelta(seconds=60)
+    assert run()["status"] == "handed_off" and lookups() == 2

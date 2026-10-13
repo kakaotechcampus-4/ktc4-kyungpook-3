@@ -497,7 +497,7 @@ def merge_turns(lines: list[Line], gap_s: float = TURN_GAP_S) -> list[Line]:
 # ─────────────────────────────────────────────────────────────── 한 회의
 def run(tracks: list[Track], backend: SttBackend, *, mode: str = "chunk", gate: SpeechGate | None = None,
         workers: int = 1, pack_turns: bool = True, merge: bool = True,
-        preprocess=None, max_inflight: int | None = None,
+        preprocess=None, max_inflight: int | None = None, progress=None,
         ordered: bool | None = None) -> tuple[list[Line], BatchStats]:
     """트랙 목록을 전사해 회의 전체 순번이 매겨진 Line 목록과 통계를 돌려준다.
 
@@ -513,6 +513,8 @@ def run(tracks: list[Track], backend: SttBackend, *, mode: str = "chunk", gate: 
     결과를 안 받은 트랙의 묶음이 HOLD_PCM_MB 를 넘으면 앞 트랙이 끝날 때까지 기다려 받는다. 그래서 붙잡는
     묶음은 회의 길이와 상관없이 상한과 트랙 하나 분 안팎이다. 트랙을 하나씩 끝까지 처리하지 않는 것은
     발화가 짧은 트랙이 많을 때 원격 API 의 병렬 이점을 잃지 않기 위해서다.
+    progress(done, sent, tracks, total) 를 주면 호출이 하나 끝날 때마다 부른다. 끝난 호출, 보낸 호출, 읽은 트랙,
+    전체 트랙 수다. 워커 스레드에서 불리므로 빨리 돌아와야 하고, 여기서 난 예외는 로그만 남기고 전사를 계속한다.
     ordered 면(기본: 백엔드가 단어 시각을 주지 않을 때, gives_word_times=False) chunk 모드의 묶음을 다른 화자가
     말을 시작한 자리에서 가른다. 단어 시각이 없으면 묶음 하나가 회의록 한 줄이 되고, 그 줄이 다른 화자의 말을
     건너뛰면 회의록과 판단 1단계의 문장 번호가 말한 순서와 어긋난다. 다른 트랙의 클립 시작을 알아야 해서 트랙을
@@ -544,15 +546,34 @@ def run(tracks: list[Track], backend: SttBackend, *, mode: str = "chunk", gate: 
     pending: deque = deque()   # 제출은 했고 결과는 아직 안 받은 트랙: (track, audio_s, utts, chunks, futures)
     all_lines: list[Line] = []
     inflight = threading.BoundedSemaphore(max_inflight or max(1, workers) * 2)
+    counts = {"done": 0, "sent": 0, "tracks": 0}
+    count_lock = threading.Lock()
+    report_lock = threading.Lock()   # 보고를 한 줄로 세운다. 두 호출이 거의 같이 끝나도 수가 뒤로 가지 않는다
+
+    def _report() -> None:
+        if progress is None:
+            return
+        with report_lock:
+            with count_lock:
+                now = (counts["done"], counts["sent"], counts["tracks"], len(tracks))
+            try:
+                progress(*now)
+            except Exception as e:  # noqa: BLE001 - 진행 표시가 막혀도 전사는 계속한다
+                print(f"[batch] 진행 보고 실패: {type(e).__name__}: {e}", flush=True)
 
     def _job(pcm, speaker):
         try:
             return _call(backend, pcm, stats, speaker)
         finally:
             inflight.release()
+            with count_lock:
+                counts["done"] += 1
+            _report()
 
     def _submit(ex, pcm, speaker):
         inflight.acquire()      # 자리가 날 때까지 다음 조각을 준비하지 않는다
+        with count_lock:
+            counts["sent"] += 1
         return ex.submit(_job, pcm, speaker)
 
     def _held_bytes(entries) -> int:
@@ -580,6 +601,8 @@ def run(tracks: list[Track], backend: SttBackend, *, mode: str = "chunk", gate: 
                 audio = preprocess(audio, SR)
             audio_s = len(audio) / SR
             stats.tracks += 1
+            with count_lock:
+                counts["tracks"] += 1
             stats.track_s += audio_s
             utts = cut(audio, tr.speaker_id, stats)
             if gate is not None:
