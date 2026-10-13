@@ -30,7 +30,7 @@
 
 ## 남은 것
 
-- BE 봇용 제목 조회 경로(`GET /workspaces/{id}/tasks/titles`)는 지금 쓰는 곳이 없다. BE PR 에 남길지는 BE 리뷰와 정한다
+- BE 봇용 제목 조회 경로(`GET /workspaces/{id}/tasks/titles`)는 만들었다가 쓰는 곳이 없어 BE PR 에서 뺐다
 - PM 이 적는 용어집이 생기면 다시 잰다
 
 ## 생각해볼 점
