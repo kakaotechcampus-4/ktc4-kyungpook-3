@@ -464,6 +464,17 @@ def get_extraction(
                 ),
             )
 
+    # 승인 상태는 승인 요청 행의 status를 그대로 싣는다. 항목마다 묻지 않고 한 번에 읽는다(#211).
+    approval_ids = {i.approval_id for i in items if i.approval_id}
+    approval_statuses: dict[str, str] = {}
+    if approval_ids:
+        rows = db.execute(
+            select(ApprovalRequest.approval_id, ApprovalRequest.status).where(
+                ApprovalRequest.approval_id.in_(approval_ids)
+            )
+        ).all()
+        approval_statuses = {aid: status for aid, status in rows}
+
     item_responses = [
         ExtractionItemResponse(
             item_id=i.item_id,
@@ -485,6 +496,7 @@ def get_extraction(
             ),
             task_id=i.task_id,
             approval_id=i.approval_id,
+            approval_status=approval_statuses.get(i.approval_id) if i.approval_id else None,
         )
         for i in items
     ]
