@@ -17,6 +17,8 @@ from app.services import notion, notion_connect, notion_oauth
 from app.services.notion_oauth import NONCE_COOKIE, NotionToken
 
 FAILED = "oauth=notion&oauth_result=failed"
+# 허용 화면에서 템플릿 대신 기존 페이지를 골랐을 때의 토큰(duplicated_template_id 없음)
+PAGES_TOKEN = NotionToken("secret_new", "refresh_new", "개인 페이지", None)
 
 
 @pytest.fixture
@@ -218,10 +220,28 @@ def test_callback_saves_token_and_schedules_database_lookup(client, seed, db, fa
     assert calls["attach"] == [(seed["workspace_id"], "secret_new", "copied-page")]
 
 
-def test_reconnect_keeps_database_that_still_works(client, seed, db, fake_notion):
+def test_reconnect_with_template_moves_to_new_database_even_if_old_one_works(client, seed, db, fake_notion):
     calls, state_ = fake_notion
     db.add(Integration(workspace_id=seed["workspace_id"], provider="notion", access_token="secret_old", provider_channel_id="db-old"))
     db.commit()
+    state_["verify"] = []  # 새 토큰으로도 예전 DB를 쓸 수 있다
+    state, nonce = _signed(seed)
+
+    response = _callback(client, state=state, nonce=nonce, code="the-code")
+
+    # 템플릿을 복제했으니 예전 DB를 확인하지 않고 새 사본의 DB를 찾는다. 새 사본이 빈 채로 남지 않는다.
+    assert response.headers["location"] == "/onboarding?oauth=notion&oauth_result=success"
+    row = _row(db, seed)
+    assert (row.access_token, row.provider_channel_id) == ("secret_new", None)
+    assert calls["verify"] == []
+    assert calls["attach"] == [(seed["workspace_id"], "secret_new", "copied-page")]
+
+
+def test_reconnect_with_pages_keeps_database_that_still_works(client, seed, db, fake_notion):
+    calls, state_ = fake_notion
+    db.add(Integration(workspace_id=seed["workspace_id"], provider="notion", access_token="secret_old", provider_channel_id="db-old"))
+    db.commit()
+    state_["token"] = PAGES_TOKEN
     state_["verify"] = []  # 새 토큰으로도 쓸 수 있다
     state, nonce = _signed(seed)
 
@@ -234,18 +254,36 @@ def test_reconnect_keeps_database_that_still_works(client, seed, db, fake_notion
     assert calls["attach"] == []
 
 
-def test_reconnect_looks_up_new_database_when_old_one_is_unusable(client, seed, db, fake_notion):
+@pytest.mark.parametrize(
+    ("verify", "logged"),
+    [
+        (["'Task ID' 속성이 없음"], "'Task ID' 속성이 없음"),
+        # verify_database_schema는 403·404를 이렇게 돌려준다
+        (["접근할 수 없음"], "접근할 수 없음"),
+        (notion.NotionWriteError("Bad Request", retryable=False, status_code=400), "status=400: Bad Request"),
+    ],
+    ids=["schema_mismatch", "not_shared", "other_notion_error"],
+)
+def test_reconnect_with_pages_fails_when_old_database_is_unusable(client, seed, db, fake_notion, caplog, verify, logged):
     calls, state_ = fake_notion
     db.add(Integration(workspace_id=seed["workspace_id"], provider="notion", access_token="secret_old", provider_channel_id="db-old"))
     db.commit()
-    state_["verify"] = ["접근할 수 없음"]
+    state_["token"] = PAGES_TOKEN
+    state_["verify"] = verify  # 고른 페이지에 예전 DB가 없거나, 속성이 바뀌었다
     state, nonce = _signed(seed)
 
-    _callback(client, state=state, nonce=nonce, code="the-code")
+    response = _callback(client, state=state, nonce=nonce, code="the-code")
 
+    # 새 DB로 옮길 곳이 없으니 아무것도 바꾸지 않고 실패로 돌려보낸다
+    assert response.headers["location"] == f"/onboarding?{FAILED}"
     row = _row(db, seed)
-    assert (row.access_token, row.provider_channel_id) == ("secret_new", None)
-    assert calls["attach"] == [(seed["workspace_id"], "secret_new", "copied-page")]
+    assert (row.access_token, row.provider_channel_id) == ("secret_old", "db-old")
+    assert calls["attach"] == []
+    # PM이 할 일(DB 공유·속성 고치기 등)을 가릴 수 있게 이유가 경고 로그에 남는다
+    assert any(
+        record.levelno == logging.WARNING and "쓰던 DB를 쓸 수 없음" in record.getMessage() and logged in record.getMessage()
+        for record in caplog.records
+    )
 
 
 @pytest.mark.parametrize(
@@ -256,10 +294,11 @@ def test_reconnect_looks_up_new_database_when_old_one_is_unusable(client, seed, 
     ],
     ids=["temporary_notion_error", "unexpected_error"],
 )
-def test_reconnect_keeps_existing_connection_when_database_check_fails(client, seed, db, fake_notion, error):
+def test_reconnect_with_pages_keeps_existing_connection_when_database_check_fails(client, seed, db, fake_notion, error):
     calls, state_ = fake_notion
     db.add(Integration(workspace_id=seed["workspace_id"], provider="notion", access_token="secret_old", provider_channel_id="db-old"))
     db.commit()
+    state_["token"] = PAGES_TOKEN
     state_["verify"] = error  # 쓰던 DB를 확인하다 Notion이 잠깐 실패했거나 이상한 응답을 줬다
     state, nonce = _signed(seed)
 
@@ -269,6 +308,24 @@ def test_reconnect_keeps_existing_connection_when_database_check_fails(client, s
     assert response.headers["location"] == f"/onboarding?{FAILED}"
     row = _row(db, seed)
     assert (row.access_token, row.provider_channel_id) == ("secret_old", "db-old")
+    assert calls["attach"] == []
+
+
+def test_reconnect_with_pages_fails_when_there_is_no_old_database(client, seed, db, fake_notion):
+    calls, state_ = fake_notion
+    # 지난 연결의 DB 찾기가 실패해 DB ID 없이 토큰만 비워져 있다(revoked)
+    db.add(Integration(workspace_id=seed["workspace_id"], provider="notion"))
+    db.commit()
+    state_["token"] = PAGES_TOKEN
+    state, nonce = _signed(seed)
+
+    response = _callback(client, state=state, nonce=nonce, code="the-code")
+
+    # 이어 쓸 DB가 없으니 템플릿을 복제해야 한다
+    assert response.headers["location"] == f"/onboarding?{FAILED}"
+    row = _row(db, seed)
+    assert (row.access_token, row.provider_channel_id) == (None, None)
+    assert calls["verify"] == []
     assert calls["attach"] == []
 
 
@@ -304,6 +361,7 @@ def test_reconnect_keeping_database_writes_it_even_if_cleared_meanwhile(client, 
     calls, state_ = fake_notion
     db.add(Integration(workspace_id=seed["workspace_id"], provider="notion", access_token="secret_old", provider_channel_id="db-old"))
     db.commit()
+    state_["token"] = PAGES_TOKEN
     state_["verify"] = []  # 새 토큰으로도 옛 DB를 쓸 수 있다
     find = notion.get_notion_integration
 
@@ -579,9 +637,10 @@ def test_notion_whose_token_was_cleared_after_refresh_failed_is_revoked(client, 
     }
 
 
-def test_reconnect_after_token_cleared_keeps_database(client, seed, db, fake_notion):
-    calls, _ = fake_notion
+def test_reconnect_with_pages_after_token_cleared_keeps_database(client, seed, db, fake_notion):
+    calls, state_ = fake_notion
     _add_notion(db, seed, database_id="db-1", updated_ago=timedelta(hours=1), token=None)
+    state_["token"] = PAGES_TOKEN
     state, nonce = _signed(seed)
 
     _callback(client, state=state, nonce=nonce, code="the-code")
@@ -608,10 +667,8 @@ def test_notion_is_connecting_right_after_callback(client, seed, db, fake_notion
 
 
 def test_reconnect_to_new_database_is_connecting(client, seed, db, fake_notion):
-    _, state_ = fake_notion
     _add_notion(db, seed, database_id="db-old", updated_ago=timedelta(hours=1))
-    state_["verify"] = ["missing property"]  # 새 토큰으로 예전 DB를 쓸 수 없다
-    state, nonce = _signed(seed)
+    state, nonce = _signed(seed)  # 템플릿을 복제해 새 DB로 옮긴다
 
     _callback(client, state=state, nonce=nonce, code="the-code")
 
