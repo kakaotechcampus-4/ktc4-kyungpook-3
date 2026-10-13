@@ -29,7 +29,7 @@
 
 ## 인증
 
-- `X-Service-Token`: 봇이 부르는 경로 전부(회의 생성·종료·실패, 발화 저장, 유사 task 검색, 추출 등록, 서버로 워크스페이스 찾기)와 웹 업로드 가져가기 세 경로에 건다 (`deps.require_service_token`). 헤더 값을 서버의 `SERVICE_TOKEN`과 비교하고, 없거나 다르면 401 `UNAUTHENTICATED`다. 서버에 `SERVICE_TOKEN`이 비어 있으면 모든 요청을 거절한다. 사용자 세션은 서비스 토큰을 대신하지 못한다.
+- `X-Service-Token`: 봇이 부르는 경로 전부(회의 생성·종료·실패, 발화 저장, 유사 task 검색, 추출 등록, 서버로 워크스페이스 찾기, 전사 힌트 조회)와 웹 업로드 가져가기 세 경로에 건다 (`deps.require_service_token`). 헤더 값을 서버의 `SERVICE_TOKEN`과 비교하고, 없거나 다르면 401 `UNAUTHENTICATED`다. 서버에 `SERVICE_TOKEN`이 비어 있으면 모든 요청을 거절한다. 사용자 세션은 서비스 토큰을 대신하지 못한다.
 - 합의 근거: 이슈 #179(BE)와 #193(AI). 회의 생성·종료·실패와 추출 등록이 리버스 프록시 설정에만 기대던 것을 서비스 토큰으로 막는다.
 - 현재 구현
   - BE(#179): 회의 생성·종료·실패와 추출 등록에 `require_service_token`을 건다. #179 전에는 발화 저장, 유사 검색, 서버로 워크스페이스 찾기에만 걸었다.
@@ -234,13 +234,40 @@ AI `Transcript.to_dict()` 모양에 화자 이름을 더해 보낸다. 한 회�
 - 업로드 녹음에는 Discord uid가 없다. 화자 분리 없이 전사하면 발화의 `speaker`는 null이고, 회의록 참석자는 발화에서 만들므로 비어 보인다. 업로드 참석자는 지금 `meeting_upload.attendees` 에만 있고 회의록은 이를 읽지 않는다.
 - AI 가 없거나 처리 도중 멈추면 업로드 회의가 `processing`에 남아 그 워크스페이스의 업로드가 409 로 막힌다. 멈춘 회의를 자동으로 정리하는 장치(sweeper)는 아직 없다. 그동안은 `PATCH /meetings/{meeting_id}/fail`(서비스 토큰)로 실패 처리하면 녹음 폴더가 지워지고 막힘이 풀린다.
 
+## 전사 힌트 조회
+
+봇이 전사(STT)에 이름 힌트를 걸 때 쓰는 읽기 경로다. 팀원 이름만 돌려주고 회의 발화나 추출 내용은 돌려주지 않는다.
+
+| 항목 | 동작 |
+|---|---|
+| 인증 | `X-Service-Token`. 없거나 틀리면 401 `UNAUTHENTICATED`. 워크스페이스 멤버의 세션은 토큰을 대신하지 못한다 |
+| 없는 워크스페이스 | 404 `WORKSPACE_NOT_FOUND`, `details`는 `{workspace_id}` |
+
+### 팀원 이름 `GET /workspaces/{workspace_id}/members/names` → 200
+
+```jsonc
+// 응답 data
+{ "items": [
+  { "member_id": "…", "name": "김동우", "discord_user_id": "…" | null, "aliases": ["동우", "…"] }
+] }
+```
+
+| 항목 | 동작 |
+|---|---|
+| `name` | PM이 온보딩에서 정한 `Member.display_name`. 디스코드 표시 이름이 아니다 |
+| 대상·순서 | 탈퇴(`is_deleted`)하지 않은 팀원. 만든 순서(`created_at`, 같으면 `member_id`) |
+| `aliases` | 그 팀원의 `MemberAlias.alias_text` 전부. 종류(`alias_type`)와 확인 여부를 가리지 않고 넣고, 확인한(`verified`) 별칭부터 만든 순서다. 한 팀원 안의 같은 별칭은 DB가 막는다(`uq_alias_per_member`). 없으면 빈 목록 |
+
+- 합의 근거: AI 담당이 STT 이름 힌트용으로 제안했다(2026-10-13). BE 리뷰 대기 중이라 합의 여부 확인 필요다. 목록 키는 다른 BE 목록 응답처럼 `items`다. task 제목도 용어 힌트로 재 봤지만 전사가 나아지지 않아 경로를 만들지 않는다(AI 결정 기록 0025).
+- 현재 구현: BE에 이 경로가 있다. 봇은 아직 부르지 않는다. 봇이 디스코드 표시 이름 대신 이 값을 힌트로 쓰는 작업은 AI 후속이다.
+
 ## 오류 코드 요약
 
 | 코드 | HTTP | 나오는 경로 | 봇 처리 |
 |---|---|---|---|
 | `UNAUTHENTICATED` | 401 | 봇 경로 전부 | 실패 |
 | `MEETING_NOT_FOUND` | 404 | end, fail, sources, extractions, uploads claim·file | 실패 |
-| `WORKSPACE_NOT_FOUND` | 404 | tasks/similar | 실패 |
+| `WORKSPACE_NOT_FOUND` | 404 | tasks/similar, members/names | 실패 |
 | `WORKSPACE_MISMATCH` | 400 | extractions | 실패 |
 | `MEETING_ALREADY_ENDED` | 409 | end, fail, uploads claim | 지금 상태로 보고 계속 (claim이면 다음 회의로) |
 | `MEETING_PROCESSING_IN_PROGRESS` | 409 | uploads claim | 이미 가져갔으니 다음 회의로. 내 재시도라면 이어서 처리 (AI 미구현) |
@@ -252,5 +279,5 @@ AI `Transcript.to_dict()` 모양에 화자 이름을 더해 보낸다. 한 회�
 
 ## 코드 근거
 
-- Backend: `app/api/meetings.py`, `app/api/sources.py`, `app/api/similar_tasks.py`, `app/api/extractions.py`, `app/api/integrations.py`의 `get_discord_guild_workspace`, `app/api/uploads.py`, `app/api/deps.py`의 `require_service_token`, `app/schemas/meeting.py`, `app/schemas/source.py`, `app/schemas/task.py`, `app/schemas/workspace.py`, `app/schemas/upload.py`, `app/services/upload_storage.py`
+- Backend: `app/api/meetings.py`, `app/api/sources.py`, `app/api/similar_tasks.py`, `app/api/extractions.py`, `app/api/integrations.py`의 `get_discord_guild_workspace`, `app/api/bot_lookups.py`, `app/api/uploads.py`, `app/api/deps.py`의 `require_service_token`, `app/schemas/meeting.py`, `app/schemas/member.py`, `app/schemas/source.py`, `app/schemas/task.py`, `app/schemas/workspace.py`, `app/schemas/upload.py`, `app/services/upload_storage.py`
 - AI: `ai/capture/handoff.py`의 `BeClient`, `Handoff`, `from_env`
