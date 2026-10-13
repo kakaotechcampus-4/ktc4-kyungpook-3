@@ -68,7 +68,7 @@ class Task:
 
 
 def _extractor(seen: dict):
-    def run(transcript, names, today):
+    def run(transcript, names, today, workspace_id=None):
         seen["names"], seen["n"], seen["today"] = names, len(transcript.segments), today
         return [Task(transcript.segments[0].text)]
     return run
@@ -86,7 +86,8 @@ def _session(tmp_path, ts=500, started_at="2026-09-16T00:00:00Z", guild="77", st
         entries = []
     path, manifest = R.write_status(rec, f"{guild}_{ts}", status=status, entries=entries, guild="g", channel="회의방",
                                     library_version="x", started_at=started_at, meeting_dir=f"{guild}_{ts}",
-                                    extra={"timezone": "Asia/Seoul", "guild_id": guild, "text_channel_id": "900"})
+                                    extra={"timezone": "Asia/Seoul", "guild_id": guild, "text_channel_id": "900",
+                                           "workspace_id": "ws-1"})
     return rec, path, manifest
 
 
@@ -151,7 +152,7 @@ def test_process_session_runs_every_stage_and_records_when(tmp_path):
     fake = FakeBe()
     seen = {}
     r = _run(rec, manifest, tmp_path, extractor=_extractor(seen),
-             handoff=H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"), "ws-1"))
+             handoff=H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token")))
     assert r["ran"] == ["transcribed", "sourced", "extracted", "handed_off"] and r["status"] == "handed_off"
     assert r["text_channel_id"] == "900"
     saved = json.loads(path.read_text(encoding="utf-8"))
@@ -181,7 +182,7 @@ def test_process_session_stops_where_settings_are_missing_and_recover_resumes(tm
     fake = FakeBe()
     results = R.recover(rec, backend=EchoStt(), model_name="echo", workers=1, gate=None,
                         transcripts_dir=tmp_path / "transcripts", extractor=_extractor({}),
-                        handoff=H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"), "ws-1"))
+                        handoff=H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token")))
     assert results[0]["ran"] == ["sourced", "handed_off"] and results[0]["status"] == "handed_off"
     assert [c[1] for c in fake.calls] == ["/meetings", "/meetings/m1/end", "/meetings/m1/sources", "/extractions"]
     assert R.pending_sessions(rec) == []
@@ -260,9 +261,9 @@ def test_when_no_line_survives_the_meeting_stays_partial(tmp_path, monkeypatch):
 def test_failed_stage_is_recorded_and_retried_from_there_on_the_same_be_meeting(tmp_path):
     rec, path, manifest = _session(tmp_path)
     fake = FakeBe()
-    h = H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"), "ws-1")
+    h = H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"))
 
-    def dying(transcript, names, today):
+    def dying(transcript, names, today, workspace_id=None):
         raise RuntimeError("LLM 죽음")
 
     r = _run(rec, manifest, tmp_path, extractor=dying, handoff=h)
@@ -347,7 +348,7 @@ def test_extract_after_transcription_uses_the_meeting_date_and_skips_without_ext
     assert out == tdir / "session_77_500.tasks.json"
     assert json.loads(out.read_text(encoding="utf-8"))[0]["task"] == "와이어프레임 그리기"
     assert seen["today"] == date(2026, 9, 17)                          # 한국 시각으로 다음 날
-    assert R.extract_after_transcription(tdir, manifest, extractor=lambda *a: [], today=date(2026, 1, 1)) == out
+    assert R.extract_after_transcription(tdir, manifest, extractor=lambda *a, **k: [], today=date(2026, 1, 1)) == out
     assert R.extract_after_transcription(tmp_path / "없음", manifest, extractor=_extractor({})) is None
 
 
@@ -367,7 +368,7 @@ def test_a_changed_transcript_invalidates_extraction_and_flags_a_stale_be_extrac
     monkeypatch.setattr(R, "PARTIAL_RETRY_MAX", 1)
     rec, path, manifest = _session(tmp_path)
     fake = FakeBe()
-    h = H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"), "ws-1")
+    h = H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"))
     seen = {}
     stt = DiesOnLong()                                    # 화자 1 의 묶음(4.4초)만 죽는다
     r = _run(rec, manifest, tmp_path, backend=stt, extractor=_extractor(seen), handoff=h)
@@ -396,7 +397,7 @@ def test_a_changed_transcript_invalidates_extraction_and_flags_a_stale_be_extrac
 # ─────────────────────────────────────────────────────────── 회의록 저장 단계 (#146)
 def _be(fake):
     """서비스 토큰까지 있는 BE 설정. 발화 저장 API 는 토큰이 있어야 받는다."""
-    return H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"), "ws-1")
+    return H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"))
 
 
 def test_lines_are_saved_to_the_be_between_transcription_and_extraction(tmp_path):
@@ -474,7 +475,7 @@ def test_a_run_that_died_without_be_settings_is_counted_at_the_stage_it_was_in(t
     assert m["failed_stage"] == "extract"
 
 
-def _dying(transcript, names, today):
+def _dying(transcript, names, today, workspace_id=None):
     raise RuntimeError("LLM 죽음")
 
 
@@ -499,7 +500,7 @@ def test_a_meeting_the_be_failed_during_extraction_moves_with_its_lines(tmp_path
     rec, path, manifest = _session(tmp_path)
     fake = FakeBe()
 
-    def meanwhile_failed(transcript, names, today):
+    def meanwhile_failed(transcript, names, today, workspace_id=None):
         fake.meetings["m1"]["status"] = "failed"
         return [Task(transcript.segments[0].text)]
 
@@ -578,6 +579,78 @@ def test_a_missing_route_is_waited_out_not_given_up(tmp_path):
     r = _run(rec, manifest, tmp_path, extractor=_extractor({}), handoff=_be(fake))
     assert r["failed_stage"] == "sources" and r["attempts"] == 1 and not r["gave_up"]
     assert fake.meetings["m1"]["status"] == "processing"
+
+
+# ── 서버로 워크스페이스 찾기(#199). 처리할 때 비어 있으면 다시 묻고, 연결이 없으면 전사까지만 한다 ──────────────
+
+def test_an_unconnected_server_stops_after_the_transcript_and_resumes_once_connected(tmp_path):
+    fake = FakeBe()
+    rec, path, manifest = _session(tmp_path)
+    del manifest["workspace_id"]
+    h = H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"))
+    r = _run(rec, manifest, tmp_path, extractor=_extractor({}), handoff=h)
+    assert r["status"] == "transcribed" and r["workspace"] == "not_connected"
+    assert set(r["skipped"]) == {"sourced", "extracted", "handed_off"}
+    assert [c[1] for c in fake.calls] == ["/integrations/discord/guilds/77/workspace"]       # 묻는 곳은 한 곳이다
+    assert "error" not in json.loads(path.read_text(encoding="utf-8")).get("be", {})        # 연결 없음은 오류가 아니다
+    fake.guilds = {"77": "ws-1"}                                                              # 웹에서 연결했다
+    r2 = _run(rec, json.loads(path.read_text(encoding="utf-8")), tmp_path, extractor=_extractor({}), handoff=h)
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    assert r2["status"] == "handed_off" and saved["workspace_id"] == "ws-1"
+    assert fake.meetings["m1"]["workspace_id"] == "ws-1"
+
+
+def test_a_failed_lookup_is_a_sources_failure_that_retries(tmp_path):
+    fake = FakeBe()
+    rec, path, manifest = _session(tmp_path)
+    del manifest["workspace_id"]
+    fake.down = True
+    h = H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"))
+    r = _run(rec, manifest, tmp_path, extractor=_extractor({}), handoff=h)
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    assert r["status"] == "failed" and r["failed_stage"] == "sources" and "NETWORK" in r["error"]
+    assert saved["recovery"]["attempts"] == 1 and "transcribed" in saved["stages"]
+
+
+def test_a_rejected_service_token_skips_the_be_stages_as_a_setting_problem(tmp_path):
+    rec, path, manifest = _session(tmp_path)
+    del manifest["workspace_id"]
+    h = H.Handoff(H.BeClient("http://be", session=FakeBe(), service_token="wrong"))
+    r = _run(rec, manifest, tmp_path, extractor=_extractor({}), handoff=h)
+    assert r["status"] == "transcribed" and "workspace" not in r
+    assert r["skipped"]["handed_off"] == R.TOKEN_REJECTED_REASON
+
+
+def test_the_extractor_gets_the_workspace_of_the_manifest(tmp_path):
+    seen = {}
+
+    def extractor(transcript, names, today, workspace_id=None):
+        seen["ws"] = workspace_id
+        return []
+
+    rec, path, manifest = _session(tmp_path)
+    _run(rec, manifest, tmp_path, extractor=extractor)
+    assert seen["ws"] == "ws-1"
+
+
+def test_waiting_for_the_workspace_skips_the_transcript_until_the_server_is_connected(tmp_path):
+    """워커 모드(#199). 워커는 채널에 올리지 못해 전사해도 보일 곳이 없다. 연결 전에는 전사하지 않고 기다린다.
+    기다리는 회의는 다른 회의의 "앞에 N건" 에 세지 않는다."""
+    fake = FakeBe()
+    rec, path, manifest = _session(tmp_path)
+    del manifest["workspace_id"]
+    _session(tmp_path, ts=600)                                   # 다른 서버가 뒤에 녹음한 회의
+    h = H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"))
+    r = _run(rec, manifest, tmp_path, extractor=_extractor({}), handoff=h, wait_for_workspace=True)
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    assert r["workspace"] == "not_connected" and r["ran"] == [] and "transcribed" not in saved.get("stages", {})
+    assert saved["status"] == "saved" and saved["workspace_wait"]
+    assert R.queue_ahead(rec, "77_600") == 0
+    fake.guilds = {"77": "ws-1"}
+    saved["workspace_wait"] = "2026-01-01T00:00:00+00:00"          # 마지막으로 물은 지 1분이 지났다
+    r2 = _run(rec, saved, tmp_path, extractor=_extractor({}), handoff=h, wait_for_workspace=True)
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    assert r2["status"] == "handed_off" and "workspace_wait" not in saved and saved["workspace_id"] == "ws-1"
 
 
 # ── 이름 힌트(#195). 매니페스트의 hint_names 로 프롬프트를 받는 백엔드에만 건다 ──────────────────────
@@ -789,7 +862,7 @@ def test_the_judge_path_counts_the_llm_calls_of_the_extract_stage(tmp_path, monk
     monkeypatch.setattr(llm, "get_llm", lambda which: clients[which])
     monkeypatch.setenv("MM_EXTRACT_PATH", "judge")
 
-    def judging(transcript, names, today):
+    def judging(transcript, names, today, workspace_id=None):
         clients["terra"].calls += 2
         clients["luna"].calls += 3
         return JudgeOutput(items=[], failures=[])

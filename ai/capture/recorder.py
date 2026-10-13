@@ -89,6 +89,11 @@ FAILED_STAGE = {STATUS_TRANSCRIBED: "stt", STATUS_SOURCED: "sources", STATUS_EXT
 # 발화 저장에서 BE 가 이 (상태, 코드) 로 거절하면 다시 보내도 같다. 기다리지 않고 바로 포기한다(노션 BE STT API 명세).
 # 코드만 보지 않는다. BE 는 경로가 없을 때(#130 전 배포)도 404 에 INVALID_REQUEST 를 주는데, 그건 재배포로 풀린다
 SOURCES_GIVE_UP = {(400, "INVALID_REQUEST"), (409, "MEETING_FAILED")}
+# 워크스페이스를 정하지 못해 BE 단계(발화 저장·추출·인계)를 건너뛸 때 결과에 적는 이유(#199)
+NOT_CONNECTED_REASON = "워크스페이스 연결 없음"
+TOKEN_REJECTED_REASON = "BE 서비스 토큰 거절"
+# 워커가 연결을 기다리는 회의를 다시 묻는 최소 간격(초). 워커 루프(10초)가 바퀴마다 BE 에 묻지 않게 한다
+WORKSPACE_RECHECK_S = 60.0
 # 자동 복구. #83 의 retry_runs·PARTIAL_RETRY_MAX 와 따로 센다. 기본값의 근거는 docs/basis_for_decision/member/2026-09-26-0013-recovery-worker-and-meeting-lock.md
 RECOVERY_INTERVAL_S = float(os.environ.get("MM_RECOVERY_INTERVAL_S", "60"))    # 봇 안 복구 루프의 주기. 0 이면 끈다
 RECOVERY_MAX_ATTEMPTS = int(os.environ.get("MM_RECOVERY_MAX_ATTEMPTS", "5"))   # 이만큼 실패하면 포기하고 BE 에 fail
@@ -551,10 +556,14 @@ def sources_saved(manifest: dict) -> bool:
 
 def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name: str, workers: int,
                     gate=None, transcripts_dir: Path | None = None, extractor=None, handoff=None,
-                    name_of=None, progress=None) -> dict:
+                    name_of=None, progress=None, wait_for_workspace: bool = False) -> dict:
     """마지막으로 끝난 단계 다음부터 전사 → 발화 저장 → 추출 → BE 인계를 돈다. 스레드에서 부른다.
 
-    extractor(transcript, speaker_names, today) 와 handoff(capture.handoff.Handoff) 는 None 이면
+    BE 단계 앞에서 회의의 워크스페이스를 확인한다(handoff.workspace, #199). 서버에 연결된 워크스페이스가 없으면
+    BE 단계를 건너뛰고 manifest["workspace_wait"] 를 적는다. wait_for_workspace 면(워커) 전사도 하지 않는다.
+    워커는 채널에 올리지 못해 전사해도 보일 곳이 없다. 다음 실행이 다시 묻고, 연결되면 이어서 처리한다.
+
+    extractor(transcript, speaker_names, today, workspace_id) 와 handoff(capture.handoff.Handoff) 는 None 이면
     설정이 없는 것이다. 그 단계에서 멈추고 result["skipped"] 에 이유를 적는다. 전사에서 실패한 줄이
     있으면 partial 로 두고 멈춘다. 다음 실행이 그 줄만 다시 보내고, 그래도 남으면 그 줄이 빠진 채
     다음 단계로 간다 (구간은 failed_units 에 남는다). 어느 단계가 예외를 내면 매니페스트를 failed 로
@@ -616,6 +625,37 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
         result["ran"].append(name)
         save()
 
+    def missing_workspace() -> str | None:
+        """BE 단계를 건너뛸 이유. 워크스페이스가 있으면 None. 일시 실패(연결 실패, 5xx)는 예외로 올린다.
+
+        워커(wait_for_workspace)는 마지막으로 물은 지 WORKSPACE_RECHECK_S 가 지나지 않았으면 다시 묻지 않는다.
+        """
+        waited = manifest.get("workspace_wait")
+        if wait_for_workspace and waited and not manifest.get("workspace_id") and \
+                (utcnow() - _parse_time(waited)).total_seconds() < WORKSPACE_RECHECK_S:
+            return NOT_CONNECTED_REASON
+        try:
+            why = None if handoff.workspace(manifest) else NOT_CONNECTED_REASON
+        except Exception as e:  # noqa: BLE001 - 토큰 거절만 설정 문제로 건너뛰고 나머지는 단계 실패다
+            if getattr(e, "code", None) != "UNAUTHENTICATED":
+                raise
+            why = TOKEN_REJECTED_REASON
+        if why == NOT_CONNECTED_REASON:
+            manifest["workspace_wait"] = _iso(utcnow())          # 연결을 기다린다(마지막으로 물은 때). "앞에 N건" 에 세지 않는다
+        else:
+            manifest.pop("workspace_wait", None)
+        save()                                                    # 찾은 workspace_id 를 남긴다
+        return why
+
+    def skip_without_workspace(why: str, skipped_stages) -> dict:
+        if why == NOT_CONNECTED_REASON:
+            result["workspace"] = "not_connected"
+        for s in skipped_stages:
+            if s not in stages:
+                result["skipped"][s] = why
+        result["status"] = manifest["status"]
+        return result
+
     try:
         if not manifest.get("speakers"):
             # 녹음 중에 죽은 회의다. 트랙을 디렉토리에서 다시 찾는다
@@ -629,13 +669,20 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
             result["speakers"] = len(entries)
             save()
 
-        if handoff is not None:
-            # 녹음이 끝났으니 BE 회의를 processing 으로 돌린다. 여기서 실패해도 전사는 하고 인계 단계가 다시 부른다
+        if handoff is not None and manifest.get("workspace_id"):
+            # 녹음이 끝났으니 BE 회의를 processing 으로 돌린다. 여기서 실패해도 전사는 하고 인계 단계가 다시 부른다.
+            # 워크스페이스가 아직 없으면 여기서 묻지 않는다. 발화 저장 앞에서 한 번 묻고, 회의는 발화 저장이 만든다
             try:
                 handoff.end(manifest, title=meeting_title(manifest))
             except Exception as e:  # noqa: BLE001
                 manifest.setdefault("be", {})["error"] = f"{type(e).__name__}: {e}"
             save()
+
+        if wait_for_workspace and handoff is not None and STATUS_TRANSCRIBED not in stages:
+            stage = STATUS_SOURCED                      # 조회의 일시 실패는 BE 단계의 실패로 센다
+            why = missing_workspace()
+            if why is not None:
+                return skip_without_workspace(why, STAGES)
 
         if STATUS_TRANSCRIBED not in stages:
             stage = STATUS_TRANSCRIBED
@@ -712,6 +759,14 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
             manifest["status"] = STATUS_TRANSCRIBED
             manifest.pop("recovery", None)             # 전사 단계가 닫혔다
             save()
+
+        if handoff is not None:
+            # 회의의 워크스페이스를 확인한다. 비어 있으면 서버로 BE 에 묻는다. 연결이 없으면 전사까지만 하고 멈춘다.
+            # 복구가 다시 집을 때마다 묻는다. 웹에서 연결하면 그다음 바퀴에 이어진다. 일시 실패는 발화 저장의 실패로 센다
+            stage = STATUS_SOURCED
+            why = missing_workspace()
+            if why is not None:
+                return skip_without_workspace(why, (STATUS_SOURCED, STATUS_EXTRACTED, STATUS_HANDED_OFF))
 
         if handoff is not None and not sources_saved(manifest):
             # BE 설정이 없으면(handoff 가 None) 이 단계를 건너뛰고, 인계 단계가 "BE 설정 없음" 을 한 번 알린다
@@ -894,7 +949,7 @@ def recovery_targets(recordings_dir: Path, *, claims: Claims, guild_id=None, exc
 
 def recover_one(recordings_dir: Path, path: Path, *, claims: Claims, manual: bool = False, backend,
                 model_name: str, workers: int, gate=None, transcripts_dir: Path | None = None, extractor=None,
-                handoff=None, name_of=None) -> dict | None:
+                handoff=None, name_of=None, wait_for_workspace: bool = False) -> dict | None:
     """회의 하나를 잡아 돌리고 놓는다. 루프와 /recover 가 회의마다 지나는 경로다. 스레드에서 부른다.
 
     목록을 만든 뒤 시간이 흘렀으니(세마포어를 기다렸다) 회의 잠금을 먼저 잡고 매니페스트를 다시 읽어 아직 할 일인지
@@ -921,7 +976,8 @@ def recover_one(recordings_dir: Path, path: Path, *, claims: Claims, manual: boo
                 handoff.fail(m, state.get("failed_stage") or m.get("failed_stage") or "unknown")
             return None                                # 바뀐 be 는 아래 release 가 표시를 지우며 같이 저장한다
         return process_session(recordings_dir, m, backend=backend, model_name=model_name, workers=workers, gate=gate,
-                               transcripts_dir=transcripts_dir, extractor=extractor, handoff=handoff, name_of=name_of)
+                               transcripts_dir=transcripts_dir, extractor=extractor, handoff=handoff, name_of=name_of,
+                               wait_for_workspace=wait_for_workspace)
     finally:
         claims.release(path, m)
 
@@ -931,14 +987,15 @@ def queue_ahead(recordings_dir: Path, session, *, exclude=None) -> int:
     순서(시작 시각)를 쓴다. 지금 처리 중인(잠금이 걸린) 회의도 센다. 봇이 녹음 중인 회의는 exclude 로 뺀다."""
     mine = _queue_key(manifest_path(recordings_dir, session))
     due, busy = recovery_targets(recordings_dir, claims=Claims(owner="queue"), exclude=exclude)
-    ahead = sum(1 for p, m in due if m.get("guild_id") and _queue_key(p) < mine)
+    # 서버에 연결된 워크스페이스를 기다리는 회의(workspace_wait)는 연결될 때까지 처리되지 않으니 세지 않는다
+    ahead = sum(1 for p, m in due if m.get("guild_id") and not m.get("workspace_wait") and _queue_key(p) < mine)
     return ahead + sum(1 for b in busy if _queue_key(manifest_path(recordings_dir, b["session"])) < mine)
 
 
 async def recover_pass(recordings_dir: Path, *, claims: Claims, sem: asyncio.Semaphore, stt_factory, gate_factory,
                        extractor_factory, handoff_factory, transcripts_dir: Path | None = None, guild_id=None,
                        exclude=None, manual: bool = False, name_of_for=None, stop=None, on_start=None,
-                       on_result=None) -> tuple[list[dict], list[dict]]:
+                       on_result=None, wait_for_workspace: bool = False) -> tuple[list[dict], list[dict]]:
     """복구 한 바퀴. 봇(capture/discord_adapter.py)의 루프와 /recover, 워커(capture/worker.py)가 같이 쓴다.
 
     대상은 바퀴를 시작할 때 정한다(recovery_targets). 모든 서버를 보는 바퀴(guild_id=None)는 서버가 적히지 않은
@@ -962,7 +1019,8 @@ async def recover_pass(recordings_dir: Path, *, claims: Claims, sem: asyncio.Sem
             r = await asyncio.to_thread(recover_one, recordings_dir, path, claims=claims, manual=manual,
                                         backend=backend, model_name=model_name, workers=workers, gate=gate_factory(),
                                         transcripts_dir=transcripts_dir, extractor=extractor_factory(),
-                                        handoff=handoff_factory(), name_of=name_of_for(m) if name_of_for else None)
+                                        handoff=handoff_factory(), name_of=name_of_for(m) if name_of_for else None,
+                                        wait_for_workspace=wait_for_workspace)
         if r is None:
             continue
         if r.get("busy"):
@@ -1017,7 +1075,7 @@ def build_extractor():
         return None
     client = OpenAI(base_url=getattr(cfg, "llm_base_url", "") or None, api_key=cfg.llm_api_key)
 
-    def run(transcript, speaker_names, today):
+    def run(transcript, speaker_names, today, workspace_id=None):
         return extract_tasks(transcript, client=client, model=cfg.llm_model, today=today, speaker_names=speaker_names)
 
     return run
@@ -1035,7 +1093,8 @@ def extract_after_transcription(transcripts_dir: Path, manifest: dict, *, extrac
                                 today: date | None = None) -> Path | None:
     """전사 결과(Transcript)에서 할일을 뽑아 파일에 쓰고 그 경로를 돌려준다.
 
-    extractor(transcript, speaker_names, today) 가 돌려주는 것에 따라 둘로 갈린다.
+    extractor(transcript, speaker_names, today, workspace_id) 가 돌려주는 것에 따라 둘로 갈린다. workspace_id 는
+    매니페스트의 값이다(판단 경로의 유사 검색이 쓴다).
       list[ExtractedTask]   옛 경로. transcripts/session_<회의ID>.tasks.json
       JudgeOutput           판단 경로. transcripts/session_<회의ID>.items.json 에 쓰고 매니페스트에 items 와
                             extract_failures 를 적는다
@@ -1054,7 +1113,7 @@ def extract_after_transcription(transcripts_dir: Path, manifest: dict, *, extrac
     transcript = Transcript.from_dict(json.loads(src.read_text(encoding="utf-8")))
     names = {str(e["user_id"]): e["display_name"] for e in manifest["speakers"]}
     try:
-        tasks = extractor(transcript, names, today or meeting_date(manifest))
+        tasks = extractor(transcript, names, today or meeting_date(manifest), workspace_id=manifest.get("workspace_id"))
     except Exception as e:  # noqa: BLE001 - 파이프라인이 통째로 실패했다(전부 실패, LLM 키, 1단계)
         kept = _kept_judge_result(transcripts_dir, manifest)
         if kept is None or not _last_attempt(manifest):

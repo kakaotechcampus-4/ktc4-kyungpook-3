@@ -64,9 +64,9 @@ class Settings:
     notion_api_key: str = env("NOTION_API_KEY")
     notion_database_id: str = env("NOTION_DATABASE_ID")
     llm_mode: str = env("PM_AGENT_LLM")  # "" | off
-    # BE 인계 (capture/handoff.py). 둘 다 있어야 봇이 회의 생성·종료·추출 등록을 부른다
+    # BE 인계 (capture/handoff.py). 아래 be_service_token 과 함께 있어야 봇이 회의 생성·종료·추출 등록을 부른다.
+    # 워크스페이스는 설정이 아니라 회의마다 capture/handoff.py 가 BE 에 묻는다(#199)
     be_base_url: str = env("BE_BASE_URL")
-    be_workspace_id: str = env("BE_WORKSPACE_ID")
     # 사용자 세션 없이 부르는 BE 경로(유사 task 검색)가 요구한다. BE 의 SERVICE_TOKEN 과 같은 값이다
     be_service_token: str = env("BE_SERVICE_TOKEN")
     # 회의 시작 시각을 이 시간대의 날짜로 바꿔 "내일" 같은 상대 날짜의 기준일로 쓴다

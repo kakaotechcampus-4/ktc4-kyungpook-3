@@ -34,12 +34,12 @@ def _saved(path):
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def _dying(transcript, names, today):
+def _dying(transcript, names, today, workspace_id=None):
     raise RuntimeError("LLM 죽음")
 
 
 def _handoff(fake):
-    return H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"), "ws-1")
+    return H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"))
 
 
 def _fails(fake):
@@ -139,7 +139,7 @@ def test_who_and_since_when_stay_in_the_manifest_while_the_meeting_is_processed(
     clock["t"] = T0 + timedelta(minutes=17)                      # 전사가 17분 걸렸다
     seen = {}
 
-    def extractor(transcript, names, today):
+    def extractor(transcript, names, today, workspace_id=None):
         seen.update(_saved(path))
         return []
 
@@ -189,9 +189,9 @@ def test_a_stage_that_finishes_starts_the_count_again(tmp_path, clock, limits):
     fake = FakeBe()
     revived = _extractor({})
 
-    def extract_then_be_goes_down(*args):              # 발화 저장과 추출은 끝났고 인계에서 BE 가 꺼져 있다
+    def extract_then_be_goes_down(*args, **kw):        # 발화 저장과 추출은 끝났고 인계에서 BE 가 꺼져 있다
         fake.down = True
-        return revived(*args)
+        return revived(*args, **kw)
 
     r = _run(rec, _saved(path), tmp_path, extractor=extract_then_be_goes_down, handoff=_handoff(fake))
     assert r["ran"] == ["sourced", "extracted"] and r["failed_stage"] == "handoff"
@@ -484,3 +484,23 @@ def test_the_windows_branch_means_the_same_as_flock(tmp_path, monkeypatch):
         os.close(a)
         os.close(b)
     assert {(mode, n, at) for mode, n, at in fake.calls} == {(fake.LK_NBLCK, 1, 0), (fake.LK_UNLCK, 1, 0)}
+
+
+def test_a_meeting_waiting_for_the_workspace_asks_again_at_most_once_a_minute(tmp_path, clock):
+    """워커 루프는 10초마다 돈다. 연결을 기다리는 회의가 바퀴마다 BE 에 묻지 않게 1분에 한 번만 묻는다(#199)."""
+    fake = FakeBe()
+    rec, path, manifest = _session(tmp_path)
+    del manifest["workspace_id"]
+
+    def lookups():
+        return sum(1 for c in fake.calls if c[1].endswith("/workspace"))
+
+    def run():
+        return _run(rec, _saved(path), tmp_path, extractor=_extractor({}), handoff=_handoff(fake), wait_for_workspace=True)
+
+    _run(rec, manifest, tmp_path, extractor=_extractor({}), handoff=_handoff(fake), wait_for_workspace=True)
+    clock["t"] += timedelta(seconds=10)
+    assert run()["workspace"] == "not_connected" and lookups() == 1
+    fake.guilds = {"77": "ws-1"}                                   # 웹에서 연결했다
+    clock["t"] += timedelta(seconds=60)
+    assert run()["status"] == "handed_off" and lookups() == 2
