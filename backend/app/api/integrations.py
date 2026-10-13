@@ -37,7 +37,8 @@ NOTION_CONNECTING_TIMEOUT = timedelta(seconds=notion_connect.WAIT_TIMEOUT_SECOND
 def _notion_status(integration: Integration, now: datetime) -> dict:
     """연결 행이 있을 때의 Notion 상태. 행이 없으면(연결한 적 없음, PM이 끊음) 부르지 않는다 — `not_connected`다.
 
-    토큰이 비었거나, DB를 찾지 못했거나 찾는 작업이 사라진 연결은 `revoked`로 내려 PM이 다시 연결하게 한다.
+    DB를 찾는 중이면 `connecting`이다. 토큰이 비었거나, DB를 찾지 못했거나 찾는 작업이 사라진 연결은 `revoked`로
+    내려 PM이 다시 연결하게 한다.
     """
     connected = {
         "status": "connected",
@@ -58,11 +59,8 @@ def _notion_status(integration: Integration, now: datetime) -> dict:
         # SQLite는 시간대 없이 돌려준다. 저장한 값은 UTC다.
         updated_at = updated_at.replace(tzinfo=timezone.utc)
     if updated_at is not None and now - updated_at <= NOTION_CONNECTING_TIMEOUT:
-        # 임시: 프론트는 `connecting`을 모르는 값으로 보고 `not_connected`로 바꿔, OAuth 직후 매번 "연결 실패"를 띄운다.
-        # 프론트가 받을 준비가 될 때까지 `connected`로 내려준다. 찾는 사이 만든 Task도 DB가 붙으면 반영되므로
-        # (`notion_sync`) 표시만 다르다. 프론트가 대응하면 아래로 바꾼다.
-        # return {"status": "connecting", "display_name": "Notion 준비 중", "connected_at": None}
-        return connected
+        # DB를 찾는 중이다. 프론트는 `connecting`인 동안 다시 묻고, 붙으면 `connected`, 실패하면 `revoked`를 받는다.
+        return {"status": "connecting", "display_name": "Notion 준비 중", "connected_at": None}
     return revoked
 
 
