@@ -11,7 +11,8 @@
 - `stt/backend.py`: `member_forms`(실명 하나 → 부르는 이름+님, 부르는 이름, 실명, 한글 별칭), `member_prompt`. 디스코드 표시 이름용 `hint_prompt` 와 같은 묶는 규칙(`_people_prompt`)을 같이 쓴다 (d682dec)
 - `capture/handoff.py`: `BeClient.member_names(workspace_id)`. BE 봇용 조회 `GET /workspaces/{workspace_id}/members/names` 의 `items` (d682dec)
 - `capture/recorder.py`: `remember_member_names` 가 전사 전에 팀원 이름을 받아 매니페스트 `hint_members` 에 남기고, `hinted` 가 그것을 먼저 쓴다. 실패하면 디스코드 표시 이름 (d682dec)
-- 측정 결과 `stt/eval/results/2026-10-13-member-hint/README.md`, 결정 기록 0024
+- `stt/eval/capacity/real929.py`: `--compare` 로 대본 줄마다 전사 구간과 줄별 오류 글자를 나란히 놓은 표를 레포 밖 파일에 쓴다(`line_texts`, `render_compare`). 정렬 DP 는 `_edit_ops` 로 빼서 CER 과 같이 쓴다 (d67b442)
+- 측정 결과 `stt/eval/results/2026-10-13-member-hint/README.md`(대본과 전사를 나란히 놓은 "실제 문장" 절 포함), 결정 기록 0024
 
 ## 왜
 
@@ -25,8 +26,9 @@
 | 9/29 CER | 21.07% → 21.38% |
 | m01 / m02 CER | 4.94% → 5.33% / 4.73% → 4.73% |
 | 실명 먼저 놓은 꼴 | 이름 자리 3/4, 9/29 CER 21.86%, m01 6.39% |
+| 이름 밖의 줄 | 운영 문자열과 다른 줄 17개 중 BE 이름이 나아진 줄 4(이름 줄 둘 포함), 나빠진 줄 10. 오류 글자 합 268 → 272 |
 | 비용 | 105호출, 보수 630원 |
-| 테스트 | 1040 통과(통합 브랜치 1036) |
+| 테스트 | 1045 통과(통합 브랜치 1036) |
 
 ```
 cd ai && .venv/bin/python -m pytest
