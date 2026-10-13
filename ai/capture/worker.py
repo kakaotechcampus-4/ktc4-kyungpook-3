@@ -1,18 +1,22 @@
-"""후처리 워커. MM_PIPELINE_MODE=worker 이면 봇은 녹음을 저장까지만 하고, 이 프로세스가 끝나지 않은 회의를
-전사 → 회의록 저장 → 할일 추출 → BE 인계한다.
+"""후처리 워커. 봇은 녹음을 저장까지만 하고, 이 프로세스가 끝나지 않은 회의를 전사 → 회의록 저장 → 할일 추출
+→ BE 인계한다(결정 기록 0026). 처리 방식은 이것 하나다.
 
-    python -m capture.worker            # ai/ 안에서. --recordings, --transcripts, --interval 로 바꿀 수 있다
+    python -m capture.worker              # ai/ 안에서. --recordings, --transcripts, --interval 로 바꿀 수 있다
+    python -m capture.worker --retry <서버ID>   # 떠 있는 워커가 그 서버를 포기한 것까지 돌게 깨운다
 
-디스코드를 모른다. discord 와 capture.discord_adapter 를 import 하지 않고 봇 토큰도 필요 없다. 결과는 BE 로만
-넘기고 사람은 웹에서 본다. 채널 안내는 봇이 한다.
+디스코드를 모른다. discord 와 capture.discord_adapter 를 import 하지 않고 봇 토큰도 필요 없다. 회의마다 단계가 끝날
+때 그 회의의 채널에 알릴 글을 우편함(recordings/.worker/outbox, capture.notify.FileOutbox)에 쓰고, 디스코드에 붙어
+있는 봇이 그것을 올린다. MM_DEBUG_REPORT 를 켜면 처리 시간·메모리 같은 디버그 줄도 쓴다.
 
 처리는 봇과 같은 recorder.recover_pass 이고 재시도·포기 규칙도 같다. 한 번에 한 회의만 처리한다
 (MM_MAX_CONCURRENT_MEETINGS 는 보지 않는다). 봇과는 회의 잠금(recorder.try_lock)으로 갈린다. 녹음 중인 회의는
 봇이 잠금을 쥐고 있어 건너뛴다. 봇이 녹음 중에 죽으면 OS 가 잠금을 풀고, 워커가 녹음된 부분을 처리한다.
 
 봇과는 파일로 말한다. recordings/.worker/heartbeat.json 에 주기마다 살아 있다는 표시(pid, 시각, 처리 중인
-회의)를 남긴다. 처리 스레드와 따로 도는 태스크가 쓰므로 긴 전사 중에도 끊기지 않는다. 봇의 /recover 가
-recordings/.worker/wake-<서버ID> 를 만들면 그 서버의 회의를 사람이 친 /recover 처럼(포기한 회의까지) 바로 돈다.
+회의)를 남긴다. 처리 스레드와 따로 도는 태스크가 쓰므로 긴 전사 중에도 끊기지 않는다. 봇은 이것으로 워커가
+조용한지 본다(worker_trouble). --retry 가 남긴 recordings/.worker/wake-<서버ID> 가 있으면 그 서버의 회의를 포기한
+것까지 바로 돈다. 봇이 녹음을 저장하면
+recordings/.worker/nudge 를 만들어(request_nudge) 다음 바퀴를 주기까지 기다리지 않게 한다.
 SIGTERM·SIGINT 를 받으면 새 회의를 집지 않고 하던 회의를 마친 뒤 끝난다.
 """
 
@@ -29,6 +33,7 @@ from pathlib import Path
 
 from capture.handoff import from_env as handoff_from_env
 from capture.judge_path import extract_path
+from capture.notify import FileOutbox, MeetingReporter, debug_from_env
 from capture.recorder import STATUS_SOURCED, Claims, backend_from_env, build_extractor, recover_pass, save_manifest
 from shared.config import RECORDINGS_DIR, TRANSCRIPTS_DIR
 from shared.schemas import now_iso
@@ -42,10 +47,19 @@ def worker_dir(recordings_dir: Path) -> Path:
 
 
 def request_wake(recordings_dir: Path, guild_id) -> Path:
-    """봇의 /recover 가 부른다. 워커가 다음 짧은 확인 때 이 서버의 회의를 바로 한 바퀴 돈다."""
+    """워커가 다음 짧은 확인 때 이 서버의 회의를 포기한 것까지 바로 한 바퀴 돈다."""
     d = worker_dir(recordings_dir)
     d.mkdir(parents=True, exist_ok=True)
     p = d / f"wake-{guild_id}"
+    p.touch()
+    return p
+
+
+def request_nudge(recordings_dir: Path) -> Path:
+    """봇이 녹음을 저장하면 부른다. 워커가 다음 짧은 확인 때(poll_s) 보통 한 바퀴를 바로 돈다."""
+    d = worker_dir(recordings_dir)
+    d.mkdir(parents=True, exist_ok=True)
+    p = d / "nudge"
     p.touch()
     return p
 
@@ -56,6 +70,22 @@ def read_heartbeat(recordings_dir: Path) -> dict | None:
         return json.loads((worker_dir(recordings_dir) / "heartbeat.json").read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return None
+
+
+def worker_trouble(recordings_dir: Path) -> str | None:
+    """워커가 처리를 못 하고 있으면 그 한 줄, 살아 있으면 None. 주기의 여섯 배(최소 1분) 넘게 조용하면 응답이 없다고 본다.
+
+    봇의 저장 알림과 --retry 가 쓴다. 표시는 처리 스레드와 따로 도는 태스크가 남기므로 긴 전사 중에도 끊기지 않는다.
+    """
+    hb = read_heartbeat(recordings_dir)
+    if hb is None:
+        return "워커 신호가 없습니다"
+    if hb.get("state") == "stopped":
+        return "워커가 멈춰 있습니다"
+    age = max(0.0, time.time() - float(hb.get("at_ts") or 0))
+    if age > max(60.0, 6 * float(hb.get("interval_s") or 10)):
+        return f"워커가 {int(age // 60)}분째 응답이 없습니다"
+    return None
 
 
 def _on_stop_signals(loop, stop) -> None:
@@ -76,9 +106,12 @@ def _speech_gate():
 class Worker:
     def __init__(self, recordings_dir: Path = RECORDINGS_DIR, *, transcripts_dir: Path = TRANSCRIPTS_DIR,
                  stt_factory=None, gate_factory=None, extractor_factory=None, handoff_factory=None,
-                 interval_s: float | None = None, poll_s: float = 1.0) -> None:
-        """팩토리는 봇(RecordingCog)과 같다. 기본은 환경 변수다. poll_s 는 깨우기와 종료 신호를 확인하는 간격이다."""
-        extract_path()      # MM_EXTRACT_PATH 가 모르는 값이면 시작할 때 멈춘다. 봇과 같다
+                 interval_s: float | None = None, poll_s: float = 1.0, notifier=None, debug: bool | None = None) -> None:
+        """팩토리 기본은 환경 변수다. poll_s 는 깨우기와 종료 신호를 확인하는 간격이다.
+
+        notifier 는 채널 알림을 받는다(send). 기본은 봇이 읽는 우편함이다. debug 기본은 MM_DEBUG_REPORT 다.
+        """
+        extract_path()      # MM_EXTRACT_PATH 가 모르는 값이면 시작할 때 멈춘다. 추출은 워커만 한다
         self.recordings_dir = recordings_dir
         self.transcripts_dir = transcripts_dir
         self._stt_factory = stt_factory or backend_from_env
@@ -87,6 +120,9 @@ class Worker:
         self._handoff_factory = handoff_factory if handoff_factory is not None else handoff_from_env
         self.interval_s = WORKER_INTERVAL_S if interval_s is None else interval_s
         self.poll_s = poll_s
+        self._notifier = notifier if notifier is not None else FileOutbox(recordings_dir)
+        self._debug = debug_from_env() if debug is None else debug
+        self._announced: set[str] = set()     # 이번 실행 동안 처리 시작을 알린 회의(capture.notify.MeetingReporter)
         self._claims = Claims()
         self._sem = asyncio.Semaphore(1)                  # 한 번에 한 회의
         self._stopping = False
@@ -109,12 +145,16 @@ class Worker:
             await asyncio.sleep(self.interval_s)
 
     async def run_pass(self, *, guild_id=None, manual: bool = False) -> tuple[list[dict], list[dict]]:
-        """한 바퀴. 결과는 process_session 이 BE 로 넘긴다. 여기서는 로그만 남긴다."""
+        """한 바퀴. 결과는 process_session 이 BE 로 넘긴다. 회의마다 그 채널에 단계가 끝날 때 알리고 로그를 남긴다."""
+        reporters: dict[str, MeetingReporter] = {}
+
         def start(m: dict) -> None:
             self._current = str(m.get("session"))
+            reporters[self._current] = MeetingReporter(self._notifier, m, debug=self._debug, announced=self._announced)
+            reporters[self._current].started()
 
         async def log(r: dict) -> None:
-            # 워커 모드는 채널에 결과를 올리지 않는다. 실패 이유와 빠진 것을 여기라도 남긴다
+            # 채널 알림과 따로 로그에도 남긴다. 실패 이유와 빠진 것, 처리 기록 한 줄
             notes = " 포기" if r.get("gave_up") else ""
             if r.get("error"):
                 notes += f" 오류: {r['error']}"
@@ -136,6 +176,9 @@ class Worker:
                     notes += f" 최대 메모리 {ops['peak_rss_bytes'] / 1024 ** 2:.0f}MB"
             print(f"[worker] 세션 {r['session']} {r['status']} 이번에 {r['ran']} 실패 {r.get('attempts')}회{notes}",
                   flush=True)
+            reporter = reporters.get(str(r["session"]))
+            if reporter is not None:
+                reporter.finished(r, manual=manual)
 
         try:
             return await recover_pass(self.recordings_dir, claims=self._claims, sem=self._sem,
@@ -143,7 +186,8 @@ class Worker:
                                       extractor_factory=self._extractor_factory, handoff_factory=self._handoff_factory,
                                       transcripts_dir=self.transcripts_dir, guild_id=guild_id, manual=manual,
                                       stop=lambda: self._stopping, on_start=start, on_result=log,
-                                      wait_for_workspace=True)    # 채널에 올리지 못하니 연결 전에는 전사하지 않는다(#199)
+                                      progress_for=lambda m: reporters[str(m.get("session"))].progress,
+                                      wait_for_workspace=True)    # 연결 전에는 올릴 웹이 없어 전사하지 않는다(#199)
         finally:
             self._current = None
 
@@ -151,10 +195,13 @@ class Worker:
         d = worker_dir(self.recordings_dir)
         return sorted(d.glob("wake-*")) if d.is_dir() else []
 
+    def _nudge(self) -> Path:
+        return worker_dir(self.recordings_dir) / "nudge"
+
     async def _nap(self) -> None:
-        """다음 바퀴까지 쉰다. 깨우기가 오거나 멈추라는 신호가 오면 바로 돌아온다."""
+        """다음 바퀴까지 쉰다. 깨우기나 찌르기가 오거나 멈추라는 신호가 오면 바로 돌아온다."""
         waited = 0.0
-        while not self._stopping and waited < self.interval_s and not self._wakes():
+        while not self._stopping and waited < self.interval_s and not self._wakes() and not self._nudge().exists():
             await asyncio.sleep(self.poll_s)
             waited += self.poll_s
 
@@ -162,6 +209,7 @@ class Worker:
         beat = asyncio.create_task(self._heartbeat_loop())
         try:
             while not self._stopping:
+                self._nudge().unlink(missing_ok=True)      # 이번 바퀴가 그 녹음까지 본다
                 await self.run_pass()
                 for wake in self._wakes():
                     if self._stopping:
@@ -174,12 +222,30 @@ class Worker:
             self._beat("stopped")
 
 
+def retry(recordings_dir: Path, guild_id: str) -> str:
+    """재시도를 다 써서 멈춘 회의를 사람이 다시 돌리는 자리다. 떠 있는 워커를 깨워 그 서버를 포기한 것까지 돌게 한다.
+
+    여기서 직접 돌리지 않는다. 워커와 두 프로세스가 같이 전사하면 한 번에 한 회의가 깨지고 로컬 전사면 메모리가
+    두 배다. 결과는 워커가 그 회의의 채널에 알린다. 워커가 꺼져 있으면 깨우기가 남아 있다가 워커가 뜨면 돈다.
+    """
+    request_wake(recordings_dir, guild_id)
+    trouble = worker_trouble(recordings_dir)
+    if trouble:
+        return f"{trouble}. 깨우기를 남겼습니다. 워커가 뜨면 서버 {guild_id} 의 회의를 돌립니다."
+    return f"워커가 곧 서버 {guild_id} 의 회의를 포기한 것까지 돌립니다. 결과는 그 회의의 채널에 올라옵니다."
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="회의 후처리 워커")
     ap.add_argument("--recordings", default=str(RECORDINGS_DIR))
     ap.add_argument("--transcripts", default=str(TRANSCRIPTS_DIR))
     ap.add_argument("--interval", type=float, default=None, help="한 바퀴 주기(초). 기본 MM_WORKER_INTERVAL_S")
+    ap.add_argument("--retry", metavar="서버ID", default=None,
+                    help="떠 있는 워커가 그 서버의 회의를 포기한 것까지 돌게 깨우고 끝난다. 재시도를 다 써서 멈춘 회의에 쓴다")
     args = ap.parse_args(argv)
+    if args.retry:
+        print(f"[worker] --retry {args.retry}: {retry(Path(args.recordings), args.retry)}", flush=True)
+        return 0
     worker = Worker(Path(args.recordings), transcripts_dir=Path(args.transcripts), interval_s=args.interval)
 
     async def run() -> None:

@@ -20,28 +20,30 @@ recordings/         녹음 산출물 (git 제외)
 - `capture/discord_adapter.py` 는 **봇을 띄우지 않습니다.** `RecordingCog` 를 export 하고, BE 의
   `backend/bot/main.py`(다른 디렉토리, 다른 프로젝트)가 `bot.add_cog(RecordingCog(bot, on_session_saved=...))`
   로 붙입니다. BE 가 준비되기 전에는 `capture/run_recorder.py` 로 같은 구성을 띄워 검증합니다.
-- `/stop` 이면 트랙을 닫고 `capture/recorder.py` 의 `process_session` 이 전사(`stt/batch.py`) → 할일 추출
-  (`extract/`) → BE 인계(`capture/handoff.py`)를 차례로 돌려 결과를 채널에 올린 뒤 `on_session_saved(manifest,
-  manifest_path)` 훅을 부릅니다. BE 가 읽는 전사는 `transcripts/session_{ts}.transcript.json` 입니다.
+- `/stop` 이면 봇은 트랙을 닫고 저장한 뒤 워커(`capture/worker.py`)를 찌르고 `on_session_saved(manifest,
+  manifest_path)` 훅을 부릅니다. 처리는 워커 하나가 합니다(`docs/basis_for_decision/member/2026-10-13-0026-worker-only.md`).
+  워커가 `capture/recorder.py` 의 `process_session` 으로 전사(`stt/batch.py`) → 회의록 저장 → 할일 추출 → BE 인계
+  (`capture/handoff.py`)를 돌리고, 단계가 끝날 때마다 그 채널에 알릴 글을 우편함(`recordings/.worker/outbox`)에
+  씁니다. 봇이 그 글을 채널에 올립니다. BE 가 읽는 전사는 `transcripts/session_{ts}.transcript.json` 입니다.
 - 운영에 올리는 Cog 는 `RecordingCog` 하나입니다. `capture/realtime/` 은 실행기에 등록하지 않고 공용 계층
   (`voice_client.py`, `streaming_sink.py`, `track_writer.py`)에 기댈 뿐이며 반대 방향 의존은 없습니다. 재연결
   키 갱신처럼 두 경로에 다 필요한 처리는 공용 계층에 있습니다.
-- BE 인계는 봇이 BE 회의 API 를 직접 부릅니다 (`docs/basis_for_decision/member/2026-09-19-0009-bot-hands-off-to-be-api.md`). `/record` 에서 `POST /api/v1/meetings`,
-  트랙을 닫은 뒤 `PATCH /meetings/{id}/end`, 추출 뒤 `POST /extractions`, 어느 단계가 실패하면
+- BE 인계는 봇과 워커가 BE 회의 API 를 직접 부릅니다 (`docs/basis_for_decision/member/2026-09-19-0009-bot-hands-off-to-be-api.md`). `/record` 에서 봇이 `POST /api/v1/meetings`,
+  워커가 `PATCH /meetings/{id}/end`, 추출 뒤 `POST /extractions`, 자동 재시도를 멈추면
   `PATCH /meetings/{id}/fail`. `BE_BASE_URL` 과 `BE_SERVICE_TOKEN` 이 없으면 이 단계에서 멈춥니다. 워크스페이스는
-  `/record` 때 디스코드 서버로 BE 에 물어 매니페스트에 고정합니다. 웹에서 연결하지 않은 서버면 봇 모드는 전사까지만
-  하고, 워커 모드는 연결될 때까지 전사하지 않습니다(#199).
+  `/record` 때 디스코드 서버로 BE 에 물어 매니페스트에 고정합니다. 웹에서 연결하지 않은 서버면 녹음을 시작하지 않고,
+  처리할 때 연결이 없으면 채널에 한 번 알리고 연결될 때까지 전사하지 않습니다(#199).
 - 추출 단계의 추출기는 `MM_EXTRACT_PATH` 로 고릅니다 (`docs/basis_for_decision/member/2026-09-30-0016-judge-path-flag-and-unjudged-findings.md`). 기본(`legacy`)은 `extract/` 의
   `extract_tasks`, `judge` 는 판단 파이프라인(`judge/pipeline.py`)입니다. `judge` 는 1단계가 전사록에서 고른
   finding(결정이나 진척 보고 하나. 근거 줄 하나나 여러 줄과 요약 문장)마다 그 요약 문장으로 BE 의 유사 task 검색
   (`POST /workspaces/{id}/tasks/similar`, 헤더 `X-Service-Token`)을 부릅니다. 전사록의 줄마다가 아닙니다. 나온 항목은
   회의마다 한 번 그대로 `POST /extractions` 로 보냅니다. 판단하지 못한 finding 이 남으면 인계를 미루고 다시 돌리며,
-  등록할 항목 없이 판단하지 못한 finding 만 남으면 빈 추출을 등록하지 않고 단계 실패로 셉니다. 봇 모드와 워커 모드가
-  같은 `process_session` 을 쓰므로 둘 다 같이 바뀝니다.
+  등록할 항목 없이 판단하지 못한 finding 만 남으면 빈 추출을 등록하지 않고 단계 실패로 셉니다.
 - 매니페스트 `recordings/session_{ts}.json` = `{"session", "status", "stages", "started_at", "timezone", "meeting_dir",
   "transcript", "tasks" 또는 "items", "be", "speakers": [{"user_id", "display_name", "file", "duration_sec"}]}`. `status` 는
-  recording → saved → transcribed → extracted → handed_off (실패 시 failed 와 `failed_stage`) 이고, 봇이 죽어도
-  `/recover` 가 마지막으로 끝난 단계 다음부터 마저 처리합니다. 상대 날짜("내일")의 기준일은 처리하는 날이 아니라
+  recording → saved → transcribed → extracted → handed_off (실패 시 failed 와 `failed_stage`) 이고, 워커가
+  마지막으로 끝난 단계 다음부터 마저 처리합니다. 실패 5회로 자동 재시도를 멈춘 회의는 서버에서
+  `python -m capture.worker --retry <서버ID>` 로 다시 돌립니다. 상대 날짜("내일")의 기준일은 처리하는 날이 아니라
   `started_at` 을 `timezone` 으로 바꾼 회의 날짜입니다.
 
 ## 설치 (이 디렉토리, `ai/` 안에서)
@@ -60,14 +62,14 @@ cp .env.example .env                 # DISCORD_BOT_TOKEN 채우기 (DISCORD_GUIL
 ## 실행
 
 ```bash
-python -m capture.run_recorder    # Discord 에서 /join → /record → (말하기) → /stop → 회의록이 채널에 올라옴
+python -m capture.run_recorder    # 봇. Discord 에서 /join → /record → (말하기) → /stop → 저장
+python -m capture.worker          # 워커. 저장된 회의를 처리하고 단계가 끝날 때마다 채널에 알린다(올리는 것은 봇)
 #    recordings/{guild}_{ts}/{user_id}_{ts}.wav · recordings/session_{ts}.json · transcripts/session_{ts}.transcript.json
 
-# 워커 모드. 봇은 저장까지만 하고 후처리는 워커가 한다 (docs/basis_for_decision/member/2026-09-26-0013-recovery-worker-and-meeting-lock.md)
-MM_PIPELINE_MODE=worker python -m capture.run_recorder
-python -m capture.worker
+python -m capture.worker --retry <서버ID>   # 자동 재시도를 멈춘 회의까지 그 서버만 한 바퀴 다시 돌린다
 
-# 판단 경로로 돌리려면 .env 에 MM_EXTRACT_PATH=judge 와 TERRA_*, LUNA_*, BE_* 를 채운다. 두 모드에 같이 적용된다
+# .env 에 MM_DEBUG_REPORT=1 이면 단계 시작, 회의록 파일, 할 일 목록, 처리 시간·대기·메모리 한 줄도 채널에 올린다(개발용)
+# 판단 경로로 돌리려면 .env 에 MM_EXTRACT_PATH=judge 와 TERRA_*, LUNA_*, BE_* 를 채운다
 ```
 
 ## 테스트

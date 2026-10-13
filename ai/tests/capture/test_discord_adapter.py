@@ -1,9 +1,8 @@
-"""녹음 Cog. 가짜 디스코드 객체로 /record → 트랙 → /stop → 전사 → 추출 → 인계 → 게시 흐름을 본다. 모델은 안 쓴다."""
+"""녹음 Cog. 가짜 디스코드 객체로 /record → 트랙 → /stop → 저장, 그 뒤 워커 한 바퀴 → 우편함 → 채널 흐름을 본다. 모델은 안 쓴다."""
 
 import asyncio
 import json
 import threading
-import time
 
 import numpy as np
 
@@ -157,7 +156,7 @@ async def _run(command, cog, ctx):
     return await command.callback(cog, ctx)
 
 
-def _setup(tmp_path, *, extractor=None, handoff=None):
+def _setup(tmp_path, *, handoff=None):
     room = FakeVoiceChannel()
     vc = FakeVC(room)
     members = {1: FakeMember(1, "민수"), 2: FakeMember(2, "서연")}
@@ -167,10 +166,17 @@ def _setup(tmp_path, *, extractor=None, handoff=None):
     channel = FakeTextChannel()
     bot = FakeBot(guild, channels=[channel])
     bot.user.guild = guild
-    cog = A.RecordingCog(bot, recordings_dir=tmp_path / "recordings", transcripts_dir=tmp_path / "transcripts",
-                         stt_factory=lambda: (EchoStt(), "echo", 1), gate_factory=lambda: None,
-                         extractor_factory=lambda: extractor, handoff_factory=lambda: handoff)
+    cog = A.RecordingCog(bot, recordings_dir=tmp_path / "recordings", handoff_factory=lambda: handoff)
     return cog, guild, vc, channel, FakeCtx(guild, vc, channel)
+
+
+def _worker(tmp_path, *, extractor=None, handoff=None):
+    """봇이 저장한 회의를 처리하는 워커. 알림은 봇이 읽는 우편함에 쓴다."""
+    from capture.worker import Worker
+
+    return Worker(tmp_path / "recordings", transcripts_dir=tmp_path / "transcripts",
+                  stt_factory=lambda: (EchoStt(), "echo", 1), gate_factory=lambda: None,
+                  extractor_factory=lambda: extractor, handoff_factory=lambda: handoff, interval_s=3600.0, debug=False)
 
 
 def _tone(ms, sr=16_000):
@@ -250,7 +256,8 @@ async def test_record_starts_without_a_restart_lock_file_and_leaves_one(tmp_path
     cog._active[GUILD_ID].flush_task.cancel()
 
 
-async def test_stop_closes_tracks_transcribes_and_posts_the_script(tmp_path):
+async def test_stop_saves_the_tracks_and_the_workers_notes_reach_the_channel(tmp_path):
+    """봇은 저장까지 하고 워커를 찌른다. 워커가 단계마다 우편함에 쓴 알림을 봇이 그 채널에 올린다(결정 기록 0026)."""
     cog, guild, vc, channel, ctx = _setup(tmp_path)
     hooked = []
 
@@ -267,24 +274,24 @@ async def test_stop_closes_tracks_transcribes_and_posts_the_script(tmp_path):
     await _run(A.RecordingCog.stop, cog, ctx)
     await asyncio.wait_for(rec.done.wait(), 20)
     m = _manifest(tmp_path, rec)
-    assert m["status"] == "transcribed" and m["transcript"] == f"{rec.meeting_id}/transcript.md"
-    assert [e["display_name"] for e in m["speakers"]] == ["민수", "서연"]
-    assert "transcribed" in m["stages"]
-    assert len(hooked) == 1 and hooked[0][0]["status"] == "transcribed"
+    assert m["status"] == "saved" and [e["display_name"] for e in m["speakers"]] == ["민수", "서연"]
+    assert len(hooked) == 1 and hooked[0][0]["status"] == "saved"
+    assert (tmp_path / "recordings" / ".worker" / "nudge").exists()             # 워커를 찔렀다
+    assert channel.sent[-1][0].startswith("✅ 녹음을 저장했습니다(화자 2명). 처리 진행은 이 채널에 올라옵니다(앞에 0건)")
+    assert not R.is_locked(R.manifest_path(tmp_path / "recordings", rec.meeting_id))   # 잠금을 놓았다
+    await _worker(tmp_path).run_pass()
+    await cog._drain_outbox()
     texts = [t for t, _ in channel.sent]
-    assert texts[0].startswith("✅ 저장 완료") and texts[1].startswith("📝 회의록")
-    assert channel.sent[1][1] is not None                       # 회의록 파일을 붙였다
-    assert texts[2].startswith("ℹ️ 할일 추출은 건너뜁니다")       # LLM 설정이 없다
-    contract = json.loads((tmp_path / "transcripts" / f"session_{rec.meeting_id}.transcript.json").read_text(encoding="utf-8"))
-    assert [s["speaker"] for s in contract["segments"]] == ["1", "2", "1"]
+    assert [t.split(" ", 1)[0] for t in texts[-3:]] == ["⏳", "📝", "ℹ️"]           # 시작, 전사, 건너뛴 단계
+    assert not list((tmp_path / "recordings" / ".worker" / "outbox").glob("*.json"))   # 올린 알림은 지운다
     assert GUILD_ID not in cog._active and rec.meeting_id not in cog._processing and vc.started is None
 
 
-async def test_record_creates_the_be_meeting_and_stop_hands_the_tasks_off(tmp_path):
+async def test_record_creates_the_be_meeting_and_the_worker_hands_the_tasks_off(tmp_path):
     fake = FakeBe()
     fake.guilds = {str(GUILD_ID): "ws-1"}           # 이 서버는 웹에서 ws-1 에 연결돼 있다
     handoff = H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"))
-    cog, guild, vc, channel, ctx = _setup(tmp_path, extractor=first_person_extractor, handoff=handoff)
+    cog, guild, vc, channel, ctx = _setup(tmp_path, handoff=handoff)
     await _run(A.RecordingCog.record, cog, ctx)
     rec = cog._active[GUILD_ID]
     assert rec.be["meeting_id"] == "m1" and _manifest(tmp_path, rec)["be"]["meeting_id"] == "m1"
@@ -295,17 +302,15 @@ async def test_record_creates_the_be_meeting_and_stop_hands_the_tasks_off(tmp_pa
     rec.sink.on_samples(2, _tone(3000), 5000)
     await _run(A.RecordingCog.stop, cog, ctx)
     await asyncio.wait_for(rec.done.wait(), 20)
+    await _worker(tmp_path, extractor=first_person_extractor, handoff=handoff).run_pass()
     m = _manifest(tmp_path, rec)
     assert m["status"] == "handed_off" and set(m["stages"]) == {"transcribed", "sourced", "extracted", "handed_off"}
-    assert m["be"] == {"meeting_id": "m1", "status": "done", "extraction_id": "e-m1", "item_count": 1,
-                       "sources": {"meeting_id": "m1", "inserted": 2, "skipped": 0, "duration_ms": 8000}}
     assert [c[1] for c in fake.calls] == [f"/integrations/discord/guilds/{GUILD_ID}/workspace", "/meetings",
                                           "/meetings/m1/end", "/meetings/m1/sources", "/extractions"]
     sent = fake.calls[4][2]["items"][0]
     assert sent["evidence_speaker"] == "1" and sent["assignee_type"] == "first" and sent["assignee_raw"] is None
-    texts = [t for t, _ in channel.sent]
-    assert texts[1].startswith("📝 회의록") and texts[2].startswith("🗂 BE 회의록 저장 2줄")
-    assert texts[3].startswith("📋 할일 1건") and texts[4].startswith("📨 BE 인계 완료")
+    await cog._drain_outbox()
+    assert [t.split(" ", 1)[0] for t, _ in channel.sent][-5:] == ["⏳", "📝", "🗂", "📋", "📨"]
 
 
 async def test_be_being_down_at_record_does_not_stop_the_recording(tmp_path):
@@ -313,23 +318,25 @@ async def test_be_being_down_at_record_does_not_stop_the_recording(tmp_path):
     fake.guilds = {str(GUILD_ID): "ws-1"}           # 이 서버는 웹에서 ws-1 에 연결돼 있다
     fake.down = True
     handoff = H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"))
-    cog, guild, vc, channel, ctx = _setup(tmp_path, extractor=first_person_extractor, handoff=handoff)
+    cog, guild, vc, channel, ctx = _setup(tmp_path, handoff=handoff)
     await _run(A.RecordingCog.record, cog, ctx)
     rec = cog._active[GUILD_ID]
     assert "meeting_id" not in rec.be and "NETWORK" in rec.be["error"] and vc.started is not None
-    fake.down = False                                           # 회의가 끝날 때는 BE 가 살아났다
     rec.sink.on_samples(1, _tone(2000), 0)
     await _run(A.RecordingCog.stop, cog, ctx)
     await asyncio.wait_for(rec.done.wait(), 20)
+    fake.down = False                                           # 워커가 처리할 때는 BE 가 살아났다
+    await _worker(tmp_path, extractor=first_person_extractor, handoff=handoff).run_pass()
     m = _manifest(tmp_path, rec)
     assert m["status"] == "handed_off" and m["be"]["meeting_id"] == "m1"     # 인계 단계가 회의를 만들었다
     assert m["workspace_id"] == "ws-1"                                       # 처리할 때 다시 물어 찾았다
-    assert not any("연결돼 있지 않아" in t for t, _ in channel.sent)          # 조회 실패는 연결 없음이 아니다
 
 
 def test_the_unconnected_notices_say_who_connects_it_and_where():
     """연결은 PM 이 웹 온보딩의 디스코드 연결 단계에서 한다. 설정 화면에는 아직 디스코드 연결이 없다(#199)."""
-    for text in (A.NOT_CONNECTED_REFUSED, A.NOT_CONNECTED_RESULT):
+    from capture.notify import NOT_CONNECTED_WAIT
+
+    for text in (A.NOT_CONNECTED_REFUSED, NOT_CONNECTED_WAIT):
         assert "PM" in text and "온보딩" in text and "설정" not in text
 
 
@@ -337,7 +344,7 @@ async def test_record_in_an_unconnected_server_refuses_and_says_how_to_connect(t
     """봇은 서버에 있는데 웹에서 연결이 없다(#199). 녹음을 시작하지 않고, 회의 전에 누가 어디서 연결하는지 알린다."""
     fake = FakeBe()                                             # 이 서버는 연결이 없다
     handoff = H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"))
-    cog, guild, vc, channel, ctx = _setup(tmp_path, extractor=first_person_extractor, handoff=handoff)
+    cog, guild, vc, channel, ctx = _setup(tmp_path, handoff=handoff)
     await _run(A.RecordingCog.record, cog, ctx)
     assert ctx.deferred and ctx.responses == [A.NOT_CONNECTED_REFUSED]   # BE 를 묻는 동안 3초 응답 기한을 넘기지 않는다
     assert vc.started is None and GUILD_ID not in cog._active
@@ -381,40 +388,114 @@ async def test_two_records_while_the_workspace_is_looked_up_start_only_one_recor
     cog._active[GUILD_ID].flush_task.cancel()
 
 
-async def test_channel_failures_do_not_block_processing_or_the_done_signal(tmp_path):
-    """저장 완료 알림과 회의록 게시가 둘 다 실패해도 전사는 돌고 상태는 맞고 done 은 켜진다."""
+async def test_a_failing_channel_does_not_block_the_save_or_the_done_signal(tmp_path):
+    """저장 완료 알림이 실패해도 매니페스트는 saved 이고 잠금은 놓이고 done 은 켜진다."""
     cog, guild, vc, channel, ctx = _setup(tmp_path)
     await _run(A.RecordingCog.record, cog, ctx)
     rec = cog._active[GUILD_ID]
     rec.sink.on_samples(1, _tone(2000), 0)
-    channel.fail_first = 2
+    channel.fail_first = 5
     await _run(A.RecordingCog.stop, cog, ctx)
     await asyncio.wait_for(rec.done.wait(), 20)
-    m = _manifest(tmp_path, rec)
-    assert m["status"] == "transcribed" and (tmp_path / "recordings" / rec.meeting_id / "transcript.md").exists()
-    assert channel.sent and channel.sent[0][0].startswith("ℹ️")     # 뒤의 알림은 정상적으로 나갔다
-    assert rec.meeting_id not in cog._processing
+    assert _manifest(tmp_path, rec)["status"] == "saved" and rec.meeting_id not in cog._processing
+    assert not R.is_locked(R.manifest_path(tmp_path / "recordings", rec.meeting_id))
 
 
-async def test_end_waits_for_its_own_session_and_keeps_a_new_recording_alive(tmp_path, monkeypatch):
-    """앞 회의의 후처리 중에 새 녹음이 시작되면 /end 는 그 연결을 끊지 않는다."""
+async def test_a_note_that_cannot_be_posted_waits_for_the_next_round_and_an_old_one_is_dropped(tmp_path):
+    """우편함 알림을 올리지 못하면 순서를 지키려고 거기서 멈추고 다음 바퀴에 다시 올린다. 오래된 것은 버린다."""
+    from capture.notify import FileOutbox
+
+    cog, guild, vc, channel, ctx = _setup(tmp_path)
+    box = FileOutbox(tmp_path / "recordings")
+    box.send(str(TEXT_ID), "하나")
+    box.send(str(TEXT_ID), "둘")
+    channel.fail_first = 1
+    await cog._drain_outbox()
+    assert channel.sent == [] and len(list(box.dir.glob("*.json"))) == 2
+    await cog._drain_outbox()
+    assert [t for t, _ in channel.sent] == ["하나", "둘"] and not list(box.dir.glob("*.json"))
+    box.send(str(TEXT_ID), "지난 알림")
+    (old,) = box.dir.glob("*.json")
+    note = json.loads(old.read_text(encoding="utf-8"))
+    note["at"] -= A.OUTBOX_MAX_AGE_S + 1
+    old.write_text(json.dumps(note, ensure_ascii=False), encoding="utf-8")
+    box.send("123456", "볼 수 없는 채널")
+    await cog._drain_outbox()
+    assert [t for t, _ in channel.sent] == ["하나", "둘"] and not list(box.dir.glob("*.json"))
+
+
+async def test_a_channel_that_keeps_failing_does_not_hold_back_other_channels(tmp_path):
+    """한 채널이 계속 실패해도 다른 채널의 알림은 같은 바퀴에 올라간다. 실패한 채널의 알림은 순서대로 남는다."""
+    from capture.notify import FileOutbox
+
+    cog, guild, vc, channel, ctx = _setup(tmp_path)
+    other = FakeTextChannel(cid=901)
+    cog.bot._channels[901] = other
+    box = FileOutbox(tmp_path / "recordings")
+    box.send(str(TEXT_ID), "하나")
+    box.send("901", "다른 서버")
+    box.send(str(TEXT_ID), "둘")
+    channel.fail_first = 10
+    await cog._drain_outbox()
+    assert [t for t, _ in other.sent] == ["다른 서버"] and channel.sent == []
+    assert len(list(box.dir.glob("*.json"))) == 2
+    channel.fail_first = 0
+    await cog._drain_outbox()
+    assert [t for t, _ in channel.sent] == ["하나", "둘"] and not list(box.dir.glob("*.json"))
+
+
+async def test_a_note_the_channel_refuses_is_dropped_instead_of_retried(tmp_path):
+    """권한이 없거나(403) 첨부가 너무 크면(413) 다시 보내도 같다. 2초마다 다시 보내면 디스코드의 잘못된 요청 한도에 닿는다."""
+    import types
+
+    from capture.notify import FileOutbox
+
+    cog, guild, vc, channel, ctx = _setup(tmp_path)
+    tries = []
+
+    async def refuse(text, file=None):
+        tries.append(text)
+        raise A.discord.Forbidden(types.SimpleNamespace(status=403, reason="Forbidden"), "Missing Permissions")
+
+    channel.send = refuse
+    box = FileOutbox(tmp_path / "recordings")
+    box.send(str(TEXT_ID), "하나")
+    box.send(str(TEXT_ID), "둘")
+    await cog._drain_outbox()
+    await cog._drain_outbox()
+    assert tries == ["하나", "둘"] and not list(box.dir.glob("*.json"))
+
+
+async def test_an_attachment_that_cannot_be_read_still_posts_the_text(tmp_path):
+    """디버그 알림의 회의록 파일을 열지 못해도 글은 올린다."""
+    from capture.notify import FileOutbox
+
+    cog, guild, vc, channel, ctx = _setup(tmp_path)
+    box = FileOutbox(tmp_path / "recordings")
+    box.send(str(TEXT_ID), "📝 전사를 마쳤습니다. 줄 3개.", file=tmp_path)          # 파일이 아니라 폴더다
+    await cog._drain_outbox()
+    assert channel.sent == [("📝 전사를 마쳤습니다. 줄 3개.", None)] and not list(box.dir.glob("*.json"))
+
+
+async def test_end_waits_for_its_own_session_and_keeps_a_new_recording_alive(tmp_path):
+    """앞 회의를 저장하는 중에 새 녹음이 시작되면 /end 는 그 연결을 끊지 않는다."""
     cog, guild, vc, channel, ctx = _setup(tmp_path)
     started = asyncio.Event()
     release = threading.Event()
-    real = A.process_session
-
-    def slow(*args, **kwargs):
-        cog.bot.loop.call_soon_threadsafe(started.set)
-        release.wait(5)
-        return real(*args, **kwargs)
-
-    monkeypatch.setattr(A, "process_session", slow)
     cog.bot.loop = asyncio.get_running_loop()
     await _run(A.RecordingCog.record, cog, ctx)
     first = cog._active[GUILD_ID]
+    real_close = first.pool.close
+
+    def slow_close():
+        cog.bot.loop.call_soon_threadsafe(started.set)
+        release.wait(5)
+        return real_close()
+
+    first.pool.close = slow_close
     first.sink.on_samples(1, _tone(2000), 0)
     end_task = asyncio.create_task(_run(A.RecordingCog.end, cog, ctx))
-    await asyncio.wait_for(started.wait(), 5)                   # 앞 회의가 후처리에 들어갔다
+    await asyncio.wait_for(started.wait(), 5)                   # 앞 회의를 저장하는 중이다
     assert first.meeting_id in cog._processing and GUILD_ID not in cog._active
     await _run(A.RecordingCog.record, cog, ctx)                 # 그 사이 새 녹음
     second = cog._active[GUILD_ID]
@@ -424,24 +505,6 @@ async def test_end_waits_for_its_own_session_and_keeps_a_new_recording_alive(tmp
     assert vc.disconnected == 0 and cog._active[GUILD_ID] is second      # 새 녹음은 산다
     assert any("새 녹음이 시작돼" in t for t, _ in channel.sent)
     second.flush_task.cancel()
-
-
-async def test_post_processing_runs_one_meeting_at_a_time(tmp_path, monkeypatch):
-    cog, guild, vc, channel, ctx = _setup(tmp_path)
-    seen = []
-
-    def guarded(*args, **kwargs):
-        seen.append(cog._post_sem.locked())
-        time.sleep(0.05)
-        return R.process_session(*args, **kwargs)
-
-    monkeypatch.setattr(A, "process_session", guarded)
-    await _run(A.RecordingCog.record, cog, ctx)
-    rec = cog._active[GUILD_ID]
-    rec.sink.on_samples(1, _tone(1500), 0)
-    await _run(A.RecordingCog.stop, cog, ctx)
-    await asyncio.wait_for(rec.done.wait(), 20)
-    assert seen == [True] and cog._post_sem._value == 1          # 후처리는 세마포어 안에서 돌고 끝나면 돌려준다
 
 
 async def test_late_joiner_is_told_once_and_bot_leaving_finishes(tmp_path):
@@ -458,265 +521,7 @@ async def test_late_joiner_is_told_once_and_bot_leaving_finishes(tmp_path):
     assert GUILD_ID not in cog._active
 
 
-async def test_transcription_failure_marks_manifest_failed_and_keeps_tracks(tmp_path):
-    cog, guild, vc, channel, ctx = _setup(tmp_path)
-
-    class Dead:
-        name = "dead"
-
-        def transcribe(self, samples, sample_rate):
-            raise RuntimeError("죽음")
-
-    cog._stt_factory = lambda: (Dead(), "dead", 1)
-    await _run(A.RecordingCog.record, cog, ctx)
-    rec = cog._active[GUILD_ID]
-    rec.sink.on_samples(1, _tone(1500), 0)
-    await _run(A.RecordingCog.stop, cog, ctx)
-    await asyncio.wait_for(rec.done.wait(), 30)
-    m = _manifest(tmp_path, rec)
-    # 호출 실패는 error 줄이 되고 회의는 partial 로 남는다. 전사 자체가 죽는 경우는 failed 다
-    assert m["status"] in ("partial", "failed")
-    assert (tmp_path / "recordings" / rec.meeting_id / f"1_{rec.ts}.wav").exists()
-    assert any("전사 실패" in t for t, _ in channel.sent)
-
-
-async def test_recover_reports_only_sessions_that_moved_and_posts_to_their_channel(tmp_path):
-    cog, guild, vc, channel, ctx = _setup(tmp_path, extractor=first_person_extractor)
-    await _run(A.RecordingCog.record, cog, ctx)
-    rec = cog._active[GUILD_ID]
-    rec.sink.on_samples(1, _tone(2000), 0)
-    await _run(A.RecordingCog.stop, cog, ctx)
-    await asyncio.wait_for(rec.done.wait(), 20)
-    assert _manifest(tmp_path, rec)["status"] == "extracted"     # BE 설정이 없어 여기까지
-    channel.sent.clear()
-    await _run(A.RecordingCog.recover_cmd, cog, ctx)             # 아직도 BE 가 없다. 조용하다
-    assert [t for t, _ in channel.sent] == ["마저 처리할 녹음이 없습니다. 설정이 없어 멈춘 회의 1개는 그대로입니다."]
-    fake = FakeBe()
-    fake.guilds = {str(GUILD_ID): "ws-1"}           # 이 서버는 웹에서 ws-1 에 연결돼 있다
-    cog._handoff_factory = lambda: H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"))
-    other = FakeTextChannel(cid=901)                             # 명령은 다른 채널에서 쳤다
-    ctx2 = FakeCtx(guild, vc, other)
-    await _run(A.RecordingCog.recover_cmd, cog, ctx2)            # BE 가 생겼다. 회의록 저장과 인계를 하고 원래 채널에 알린다
-    texts = [t for t, _ in channel.sent]
-    assert texts[1] == f"세션 `{rec.meeting_id}`" and texts[2].startswith("🗂 BE 회의록 저장")
-    assert texts[3].startswith("📨 BE 인계 완료")
-    assert other.sent == []
-    assert _manifest(tmp_path, rec)["status"] == "handed_off"
-
-
-async def test_recover_only_touches_this_guilds_meetings(tmp_path):
-    cog, guild, vc, channel, ctx = _setup(tmp_path)
-    for gid in ("77", "88"):
-        meeting = tmp_path / "recordings" / f"{gid}_500"
-        meeting.mkdir(parents=True)
-        import soundfile as sf
-        sf.write(str(meeting / "1_500.wav"), _tone(2000), 16_000, subtype="PCM_16")
-        R.write_status(tmp_path / "recordings", f"{gid}_500", status=R.STATUS_SAVED,
-                       entries=[{"user_id": "1", "display_name": "민수", "file": f"{gid}_500/1_500.wav", "duration_sec": 2.0}],
-                       guild="g", channel="c", library_version="x", started_at="2026-09-16T00:00:00Z",
-                       meeting_dir=f"{gid}_500", extra={"guild_id": gid, "text_channel_id": str(TEXT_ID)})
-    await _run(A.RecordingCog.recover_cmd, cog, ctx)
-    assert [t for t, _ in channel.sent][0] == "세션 `77_500`"
-    assert json.loads((tmp_path / "recordings" / "session_88_500.json").read_text(encoding="utf-8"))["status"] == "saved"
-
-
-async def test_recover_leaves_the_session_being_recorded_alone(tmp_path):
-    cog, guild, vc, channel, ctx = _setup(tmp_path)
-    await _run(A.RecordingCog.record, cog, ctx)
-    rec = cog._active[GUILD_ID]
-    rec.sink.on_samples(1, _tone(2000), 0)
-    await asyncio.sleep(0.3)                                          # 트랙 파일이 생길 시간
-    pending = [p.name for p in R.pending_sessions(tmp_path / "recordings")]
-    assert pending == [f"session_{rec.meeting_id}.json"]              # 전제: 복구 목록에 보이는 상태다
-    await _run(A.RecordingCog.recover_cmd, cog, ctx)
-    assert GUILD_ID in cog._active and _manifest(tmp_path, rec)["status"] == "recording"
-    assert all(not t.startswith("세션 `") for t, _ in channel.sent)
-    await _run(A.RecordingCog.stop, cog, ctx)
-    await asyncio.wait_for(rec.done.wait(), 20)
-    assert _manifest(tmp_path, rec)["status"] == "transcribed"
-
-
-async def test_recover_excludes_sessions_in_post_processing(tmp_path, monkeypatch):
-    cog, guild, vc, channel, ctx = _setup(tmp_path)
-    cog._post_sem = asyncio.Semaphore(2)                              # 동시 후처리를 허용했을 때
-    started = asyncio.Event()
-    release = threading.Event()
-    real = A.process_session
-
-    def slow(*args, **kwargs):
-        cog.bot.loop.call_soon_threadsafe(started.set)
-        release.wait(5)
-        return real(*args, **kwargs)
-
-    monkeypatch.setattr(A, "process_session", slow)
-    cog.bot.loop = asyncio.get_running_loop()
-    await _run(A.RecordingCog.record, cog, ctx)
-    rec = cog._active[GUILD_ID]
-    rec.sink.on_samples(1, _tone(2000), 0)
-    await _run(A.RecordingCog.stop, cog, ctx)
-    await asyncio.wait_for(started.wait(), 5)
-    assert rec.meeting_id in cog._processing
-    pending = [p.name for p in R.pending_sessions(tmp_path / "recordings")]
-    assert pending == [f"session_{rec.meeting_id}.json"]              # 전제: 복구 목록에 보이는 상태다
-    recovered = []
-
-    def watching(*args, **kwargs):
-        recovered.append(args[1]["session"])
-        return real(*args, **kwargs)
-
-    monkeypatch.setattr(R, "process_session", watching)               # 복구 경로(recover_one)가 부르는 것
-    await _run(A.RecordingCog.recover_cmd, cog, ctx)
-    assert recovered == []
-    release.set()
-    await asyncio.wait_for(rec.done.wait(), 20)
-
-
-async def test_end_after_stop_waits_for_post_processing_before_leaving(tmp_path, monkeypatch):
-    cog, guild, vc, channel, ctx = _setup(tmp_path)
-    started = asyncio.Event()
-    release = threading.Event()
-    real = A.process_session
-
-    def slow(*args, **kwargs):
-        cog.bot.loop.call_soon_threadsafe(started.set)
-        release.wait(5)
-        return real(*args, **kwargs)
-
-    monkeypatch.setattr(A, "process_session", slow)
-    cog.bot.loop = asyncio.get_running_loop()
-    await _run(A.RecordingCog.record, cog, ctx)
-    rec = cog._active[GUILD_ID]
-    rec.sink.on_samples(1, _tone(2000), 0)
-    await _run(A.RecordingCog.stop, cog, ctx)                         # 녹음은 끝났고 후처리가 도는 중
-    await asyncio.wait_for(started.wait(), 5)
-    end_task = asyncio.create_task(_run(A.RecordingCog.end, cog, ctx))
-    await asyncio.sleep(0.3)
-    assert vc.disconnected == 0                                       # 후처리가 끝나기 전에는 안 나간다
-    release.set()
-    await asyncio.wait_for(end_task, 20)
-    assert vc.disconnected == 1 and rec.done.is_set()
-
-
-async def test_report_says_how_many_units_a_partial_meeting_is_missing(tmp_path):
-    cog, guild, vc, channel, ctx = _setup(tmp_path)
-    md = tmp_path / "transcript.md"
-    md.write_text("# 회의록\n", encoding="utf-8")
-    result = {"session": "77_500", "status": "extracted", "ran": ["retried", "extracted"], "skipped": {}, "error": None,
-              "failed_stage": None, "transcribe": {"markdown": str(md), "failed": 1, "summary": None, "lines": 3},
-              "retried": 1, "tasks": [], "be": None, "speakers": 2, "text_channel_id": str(TEXT_ID),
-              "partial": True, "missing_units": 1}
-    await cog._report(channel, "77_500", result)
-    assert any("빠진 구간 1개" in t for t, _ in channel.sent)
-
-
-def _saved_result(**over):
-    base = {"session": "77_500", "status": "handed_off", "ran": ["transcribed", "sourced", "extracted", "handed_off"],
-            "skipped": {}, "error": None, "failed_stage": None, "transcribe": None, "retried": 0, "tasks": [], "be": None,
-            "sources": {"inserted": 3, "skipped": 0, "duration_ms": 12000}, "speakers": 2,
-            "text_channel_id": str(TEXT_ID), "partial": False, "missing_units": 0, "attempts": 0, "gave_up": False,
-            "retry_in_s": None}
-    base.update(over)
-    return base
-
-
-async def test_report_says_how_many_lines_were_saved_to_the_be(tmp_path):
-    cog, guild, vc, channel, ctx = _setup(tmp_path)
-    await cog._report(channel, "77_500", _saved_result())
-    await cog._report(channel, "77_500", _saved_result(ran=["retried", "sourced"],
-                                                       sources={"inserted": 1, "skipped": 2, "duration_ms": 12000}))
-    saved = [t for t, _ in channel.sent if t.startswith("🗂")]
-    assert saved == ["🗂 BE 회의록 저장 3줄", "🗂 BE 회의록 저장 1줄, 이미 있던 2줄"]
-
-
-async def test_a_failed_or_skipped_save_is_said_by_its_name(tmp_path):
-    """단계 이름은 사람이 읽는 말로. sourced, sources 같은 내부 이름이 채널에 나가지 않는다."""
-    cog, guild, vc, channel, ctx = _setup(tmp_path)
-    await cog._report(channel, "77_500", _saved_result(status="failed", ran=[], sources=None, failed_stage="sources",
-                                                       error="BeError: SERVICE_UNAVAILABLE", attempts=1))
-    await cog._report(channel, "77_500", _saved_result(ran=["extracted", "handed_off"], sources=None,
-                                                       skipped={"sourced": "BE_SERVICE_TOKEN 없음"}))
-    texts = [t for t, _ in channel.sent]
-    assert any(t.startswith("⚠️ 회의록 저장 실패: BeError: SERVICE_UNAVAILABLE") for t in texts)
-    assert "ℹ️ 회의록 저장은 건너뜁니다 (BE_SERVICE_TOKEN 없음)." in texts
-    assert not any("sourced" in t or "sources" in t or t.startswith("🗂") for t in texts)
-
-
-async def test_the_report_ends_with_the_processing_line(tmp_path):
-    """처리 시간, 대기, 최대 메모리 한 줄이 결과 메시지 맨 끝에 온다. 기록이 없으면 그 줄도 없다."""
-    cog, guild, vc, channel, ctx = _setup(tmp_path)
-    ops = {"wall_s": 2395.0, "wait_s": 12.0, "peak_rss_bytes": int(2.2 * 1024 ** 3)}
-    await cog._report(channel, "77_500", _saved_result(ops=ops))
-    assert channel.sent[-1][0] == "⏱ 처리 39분 55초 · 대기 12초 · 최대 메모리 2.2GB"
-    channel.sent.clear()
-    await cog._report(channel, "77_500", _saved_result())
-    assert channel.sent and not any(t.startswith("⏱") for t, _ in channel.sent)
-
-
-async def test_stop_in_bot_mode_posts_the_processing_line_last(tmp_path):
-    cog, guild, vc, channel, ctx = _setup(tmp_path, extractor=first_person_extractor)
-    rec = await _record_and_stop(cog, ctx)
-    assert channel.sent[-1][0].startswith("⏱ 처리 ")
-    assert len(_manifest(tmp_path, rec)["ops"]) == 1
-
-
-# ── 진행 표시. 단계가 시작하면 새 메시지, 전사 중에는 그 메시지를 고쳐 묶음 수 ─────────────────────────
-
-async def test_progress_posts_a_message_per_stage_and_edits_the_transcription_one_at_most_every_15s():
-    channel = FakeTextChannel()
-    now = [0.0]
-    progress = A.StageProgress(asyncio.get_running_loop(), channel, clock=lambda: now[0])
-
-    def processing():        # 처리 스레드와 전사 워커 스레드에서 불린다
-        progress("stt")
-        for t, done in ((1, 1), (16, 2), (17, 3)):
-            now[0] = t
-            progress("stt", {"done": done, "sent": 4, "tracks": 1, "tracks_total": 2})
-        now[0] = 18
-        progress("sources")
-
-    await asyncio.to_thread(processing)
-    await progress.flush()
-    assert [t for t, _ in channel.sent] == ["🎧 전사 시작", "🗂 회의록 저장 시작"]
-    # 1초는 시작 메시지와 15초가 안 돼 건너뛰고, 17초에 들어온 마지막 수는 다음 단계가 시작할 때 보인다
-    assert channel.messages[0].edits == ["🎧 전사 · 트랙 1/2 읽음 · 묶음 2개 끝, 2개 처리 중",
-                                         "🎧 전사 · 트랙 1/2 읽음 · 묶음 3개 끝, 1개 처리 중"]
-
-
-async def test_progress_keeps_going_when_a_post_fails():
-    channel = FakeTextChannel()
-    channel.fail_first = 1               # 전사 시작 메시지가 올라가지 않는다
-    progress = A.StageProgress(asyncio.get_running_loop(), channel)
-
-    def processing():
-        progress("stt")
-        progress("stt", {"done": 1, "sent": 1, "tracks": 1, "tracks_total": 1})
-        progress("extract")
-
-    await asyncio.to_thread(processing)
-    await progress.flush()
-    assert [t for t, _ in channel.sent] == ["🔎 할일 추출 시작"]
-
-
-async def test_stop_shows_progress_by_default_before_the_results(tmp_path, monkeypatch):
-    monkeypatch.delenv("MM_PROGRESS", raising=False)        # 기본은 켜짐
-    cog, guild, vc, channel, ctx = _setup(tmp_path)
-    await _record_and_stop(cog, ctx)
-    texts = [t for t, _ in channel.sent]
-    assert texts[0].startswith("✅ 저장 완료") and texts[1] == "🎧 전사 시작" and texts[2].startswith("📝 회의록")
-    # 전사가 15초 안에 끝나 중간에는 고치지 않았고, 결과를 올리기 전에 마지막 수를 보였다
-    assert channel.messages[1].content == "🎧 전사 · 트랙 1/1 읽음 · 묶음 1개 끝, 0개 처리 중"
-
-
-async def test_stop_shows_no_progress_when_turned_off(tmp_path, monkeypatch):
-    monkeypatch.setenv("MM_PROGRESS", "off")
-    cog, guild, vc, channel, ctx = _setup(tmp_path)
-    await _record_and_stop(cog, ctx)
-    texts = [t for t, _ in channel.sent]
-    assert texts[0].startswith("✅ 저장 완료") and texts[1].startswith("📝 회의록")
-    assert not any(t.startswith("🎧") for t in texts)
-
-
-# ── 판단 경로(MM_EXTRACT_PATH=judge). 추출기만 바뀌고 명령과 흐름은 같다 ─────────────────────────────
+# ── 판단 경로 항목. 워커 테스트(test_worker.py)가 같이 쓴다 ─────────────────────────────────────────
 
 def _judge_item(title, **over):
     base = {"action": "create", "target_task_id": None, "category": "decision", "task_title": title, "due_date": None,
@@ -724,84 +529,6 @@ def _judge_item(title, **over):
             "evidence_quote": "제가 할게요.", "evidence_speaker": "1", "evidence_at_ms": 0}
     base.update(over)
     return base
-
-
-def _judge_extractor(items, failures=()):
-    from capture.judge_path import JudgeOutput
-
-    return lambda transcript, names, today, workspace_id=None: JudgeOutput(items=list(items), failures=list(failures))
-
-
-async def _record_and_stop(cog, ctx):
-    await _run(A.RecordingCog.record, cog, ctx)
-    rec = cog._active[GUILD_ID]
-    rec.sink.on_samples(1, _tone(2000), 0)
-    await _run(A.RecordingCog.stop, cog, ctx)
-    await asyncio.wait_for(rec.done.wait(), 20)
-    return rec
-
-
-async def test_stop_in_bot_mode_posts_the_judge_results(tmp_path):
-    fake = FakeBe()
-    fake.guilds = {str(GUILD_ID): "ws-1"}           # 이 서버는 웹에서 ws-1 에 연결돼 있다
-    fake.tasks.add("task_login")
-    handoff = H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"))
-    items = [_judge_item("결제 환불 기능 구현"),
-             _judge_item("로그인 화면 시안 마무리", action="update", target_task_id="task_login", category="schedule",
-                         due_date="2026-10-06", assignee_type=None,
-                         doc_text="로그인 화면 시안 마무리 마감을 9/28에서 10/6으로 연기")]
-    cog, guild, vc, channel, ctx = _setup(tmp_path, extractor=_judge_extractor(items), handoff=handoff)
-    rec = await _record_and_stop(cog, ctx)
-    m = _manifest(tmp_path, rec)
-    assert m["status"] == "handed_off" and m["be"]["item_count"] == 2 and fake.calls[-1][2]["items"] == items
-    texts = [t for t, _ in channel.sent]
-    posted = next(t for t in texts if t.startswith("📋"))
-    assert posted.startswith("📋 판단 결과 2건 (새 항목 1, 수정 1)")
-    assert "결제 환불 기능 구현을 민수가 하기로 함" in posted and "9/28에서 10/6으로 연기" in posted
-    assert "None" not in posted and not any("판단하지 못한" in t or "받지 않았습니다" in t for t in texts)
-    assert any(t.startswith("📨 BE 인계 완료") for t in texts)
-
-
-async def test_unjudged_findings_and_skipped_items_are_said_in_the_channel(tmp_path, monkeypatch):
-    """끝내 판단하지 못한 finding 과 BE 가 받지 않은 항목은 그 회의 채널에서 말한다. 말하지 않으면 빠진 줄 아무도 모른다."""
-    monkeypatch.setattr(R, "EXTRACT_RETRY_MAX", 0)
-    fake = FakeBe()                                       # task_gone 이라는 task 가 없다
-    fake.guilds = {str(GUILD_ID): "ws-1"}           # 이 서버는 웹에서 ws-1 에 연결돼 있다
-    handoff = H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"))
-    items = [_judge_item("결제 환불 기능 구현"), _judge_item("옛 작업", action="update", target_task_id="task_gone")]
-    failures = [{"stage": "judge", "text": "소셜 로그인은 이번에 빼기로 함", "reason": "Terra 응답을 파싱하지 못했습니다."}]
-    cog, guild, vc, channel, ctx = _setup(tmp_path, extractor=_judge_extractor(items, failures), handoff=handoff)
-    await _record_and_stop(cog, ctx)
-    texts = [t for t, _ in channel.sent]
-    assert any(t.startswith("⚠️ 판단하지 못한 발화 1건") and "소셜 로그인은 이번에 빼기로 함" in t for t in texts)
-    assert any("BE 가 항목 1건을 받지 않았습니다" in t for t in texts)
-
-
-async def test_a_long_result_list_stays_under_the_message_limit(tmp_path):
-    """디스코드 메시지는 2000자까지다. 넘으면 send 가 실패해 목록이 통째로 안 올라간다."""
-    items = [_judge_item(f"작업 {n}", doc_text="가" * 300) for n in range(15)]
-    cog, guild, vc, channel, ctx = _setup(tmp_path, extractor=_judge_extractor(items))
-    await _record_and_stop(cog, ctx)
-    posted = next(t for t, _ in channel.sent if t.startswith("📋"))
-    assert posted.startswith("📋 판단 결과 15건 (새 항목 15, 수정 0)") and "외 5건" in posted
-    assert len(posted) <= 2000
-
-
-async def test_a_judgement_waiting_for_a_rerun_is_said_as_a_retry(tmp_path, monkeypatch):
-    """판단하지 못한 finding 이 있어 다시 돌릴 차례다. 채널에는 추출 실패와 다음 시도를 알리고 인계는 하지 않는다."""
-    monkeypatch.setattr(R, "EXTRACT_RETRY_MAX", 2)       # 기본값. 환경 변수로 바뀌어도 기대값은 그대로다
-    fake = FakeBe()
-    fake.guilds = {str(GUILD_ID): "ws-1"}           # 이 서버는 웹에서 ws-1 에 연결돼 있다
-    handoff = H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"))
-    failures = [{"stage": "draft", "text": "문서를 정리하기로 함", "reason": "Luna 응답을 파싱하지 못했습니다."}]
-    cog, guild, vc, channel, ctx = _setup(tmp_path, extractor=_judge_extractor([_judge_item("검색 개선")], failures),
-                                          handoff=handoff)
-    rec = await _record_and_stop(cog, ctx)
-    m = _manifest(tmp_path, rec)
-    assert m["status"] == "failed" and m["failed_stage"] == "extract" and fake.extractions == {}
-    texts = [t for t, _ in channel.sent]
-    assert any(t.startswith("⚠️ 할일 추출 실패") and "발화 1개를 판단하지 못했다" in t for t in texts)
-    assert not any(t.startswith("📋") or t.startswith("📨") for t in texts)
 
 
 async def test_record_keeps_the_server_member_names_for_the_name_hint(tmp_path):

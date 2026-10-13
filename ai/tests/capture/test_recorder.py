@@ -480,7 +480,7 @@ def _dying(transcript, names, today, workspace_id=None):
 
 
 def test_lines_follow_the_meeting_when_the_be_meeting_is_replaced(tmp_path, monkeypatch):
-    """추출에서 포기해 BE m1 이 failed 가 된 뒤 /recover 하면 새 회의 m2 가 생긴다. 발화도 m2 에 먼저 다시 보낸다."""
+    """추출에서 포기해 BE m1 이 failed 가 된 뒤 --retry 하면 새 회의 m2 가 생긴다. 발화도 m2 에 먼저 다시 보낸다."""
     monkeypatch.setattr(R, "RECOVERY_MAX_ATTEMPTS", 1)
     rec, path, manifest = _session(tmp_path)
     fake = FakeBe()
@@ -512,7 +512,7 @@ def test_a_meeting_the_be_failed_during_extraction_moves_with_its_lines(tmp_path
 
 
 def test_resending_the_lines_keeps_the_failure_count_of_a_later_stage(tmp_path, monkeypatch):
-    """포기한 회의를 /recover 로 다시 돌려 또 실패하면 곧바로 다시 포기한다. 발화를 새 회의에 다시 보내는 단계가
+    """포기한 회의를 --retry 로 다시 돌려 또 실패하면 곧바로 다시 포기한다. 발화를 새 회의에 다시 보내는 단계가
     그 횟수를 지우면 네 번을 더 기다리고, 판단 경로면 그만큼 LLM 호출이 더 나간다."""
     monkeypatch.setattr(R, "RECOVERY_MAX_ATTEMPTS", 3)
     rec, path, manifest = _session(tmp_path)
@@ -634,7 +634,7 @@ def test_the_extractor_gets_the_workspace_of_the_manifest(tmp_path):
 
 
 def test_waiting_for_the_workspace_skips_the_transcript_until_the_server_is_connected(tmp_path):
-    """워커 모드(#199). 워커는 채널에 올리지 못해 전사해도 보일 곳이 없다. 연결 전에는 전사하지 않고 기다린다.
+    """워커(#199). 연결이 없으면 전사해도 올릴 웹이 없다. 연결 전에는 전사하지 않고 기다린다.
     기다리는 회의는 다른 회의의 "앞에 N건" 에 세지 않는다."""
     fake = FakeBe()
     rec, path, manifest = _session(tmp_path)
@@ -909,6 +909,18 @@ def test_process_session_reports_each_stage_as_it_starts_and_the_transcription_c
     assert starts[:1] == ["stt"] and "extract" in starts
     counts = [info for stage, info in events if stage == "stt" and info]
     assert counts and counts[-1]["done"] == counts[-1]["sent"] and counts[-1]["tracks"] == counts[-1]["tracks_total"]
+
+
+def test_process_session_reports_each_stage_as_it_finishes_with_what_it_made(tmp_path):
+    """워커가 단계가 끝날 때마다 채널에 알린다(capture/notify.py). 끝난 단계와 그때까지의 결과를 넘긴다."""
+    rec, path, manifest = _session(tmp_path)
+    done = []
+    _run(rec, manifest, tmp_path, extractor=_extractor({}), handoff=_be(FakeBe()),
+         progress=lambda stage, info=None: done.append((info["stage"], dict(info["result"]))) if stage == "done" else None)
+    assert [s for s, _ in done] == ["transcribed", "sourced", "extracted", "handed_off"]
+    by = dict(done)
+    assert by["transcribed"]["transcribe"]["lines"] > 0 and by["sourced"]["sources"]["inserted"] > 0
+    assert by["handed_off"]["be"]["meeting_id"] == "m1"
 
 
 def test_a_failing_progress_report_does_not_change_the_result(tmp_path):

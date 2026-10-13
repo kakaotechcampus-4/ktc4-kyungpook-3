@@ -62,7 +62,7 @@ def test_a_claim_takes_the_meeting_lock_and_the_same_process_cannot_take_it_twic
     assert m is not None and m["session"] == "77_500"
     saved = _saved(path)
     assert saved["claimed_by"] == "host:1:a" and saved["claimed_at"] == "2026-09-26T03:00:00+00:00"   # 보여 주기용
-    assert claims.acquire(path) is None                  # 루프가 잡은 회의를 같은 프로세스의 /recover 가 못 잡는다
+    assert claims.acquire(path) is None                  # 한 바퀴가 잡은 회의를 같은 프로세스의 다른 바퀴가 못 잡는다
     assert R.Claims(owner="host:1:c").acquire(path) is None
 
 
@@ -133,7 +133,7 @@ def test_release_clears_the_claim_and_the_lock_so_another_owner_can_take_it_at_o
 
 
 def test_who_and_since_when_stay_in_the_manifest_while_the_meeting_is_processed(tmp_path, clock):
-    """/recover 가 "누가 몇 분째" 를 보여 줄 수 있게 처리 중에도 표시가 남는다. 시각은 잡은 때 그대로다."""
+    """"누가 몇 분째" 를 매니페스트에서 볼 수 있게 처리 중에도 표시가 남는다. 시각은 잡은 때 그대로다."""
     rec, path, _ = _session(tmp_path)
     m = R.Claims(owner="host:1:a").acquire(path)                 # 03:00:00
     clock["t"] = T0 + timedelta(minutes=17)                      # 전사가 17분 걸렸다
@@ -337,7 +337,7 @@ def test_the_loop_resends_only_the_fail_when_be_missed_it_at_give_up(tmp_path, c
 
 
 def test_hand_recovery_of_a_given_up_meeting_opens_a_new_be_meeting(tmp_path, clock, limits, monkeypatch):
-    """BE 의 failed 는 끝 상태다. 사람이 /recover 로 다시 돌리면 handoff 의 우회(새 회의, 옛 ID 는 replaced)로 간다."""
+    """BE 의 failed 는 끝 상태다. 사람이 --retry 로 다시 돌리면 handoff 의 우회(새 회의, 옛 ID 는 replaced)로 간다."""
     monkeypatch.setattr(R, "RECOVERY_MAX_ATTEMPTS", 2)
     rec, path, _ = _session(tmp_path)
     fake = FakeBe()
