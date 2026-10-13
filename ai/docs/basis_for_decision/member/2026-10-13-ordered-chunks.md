@@ -1,16 +1,16 @@
 # 단어 시각 없는 전사의 회의록을 말한 순서대로
 
 - 날짜: 2026-10-13
-- 이슈: #ISSUE
+- 이슈: #223
 - PR:
-- 브랜치: feature/ordered-chunks (열린 #181·#208·#209·#216 을 합친 브랜치 위)
+- 브랜치: fix/223-ordered-chunks
 - 작성자: 김동우
 
 ## 한 일
 
-- `stt/batch.py`: `split_at_barriers`, `build_chunks(barriers=...)`. 다른 화자가 말을 시작한 자리를 사이에 둔 클립은 같은 묶음에 넣지 않고, 가른 구간 안에서는 예전처럼 턴을 묶는다. `run(ordered=None)` 은 백엔드가 단어 시각을 주지 않으면 이 방식을 쓰고, 그러려고 트랙을 먼저 훑어 다른 화자의 클립 시작을 모은다. 말 필터는 한 번만 돈다 (ee22a65, 1237224)
+- `stt/batch.py`: `split_at_barriers`, `build_chunks(barriers=...)`. 다른 화자가 말을 시작한 자리를 사이에 둔 클립은 같은 묶음에 넣지 않고, 가른 구간 안에서는 예전처럼 턴을 묶는다. `run(ordered=None)` 은 백엔드가 단어 시각을 주지 않으면 이 방식을 쓰고, 그러려고 트랙을 먼저 훑어 다른 화자의 클립 시작을 모은다. 말 필터는 한 번만 돈다 (06fcbe4, 7d815cd)
 - `stt/elice.py`: `gives_word_times = False`
-- 측정 도구: `runner --order auto|on|off`, 장부 감싸개가 표시를 넘긴다(b4a78ed). 교차 대화 합성 `stt.eval.capacity.interleave`, 순서 채점 `stt.eval.capacity.order` (3a93137)
+- 측정 도구: `runner --order auto|on|off`, 장부 감싸개가 표시를 넘긴다(f6af0ea). 교차 대화 합성 `stt.eval.capacity.interleave`, 순서 채점 `stt.eval.capacity.order` (8b80cce)
 - 결정 기록 0023, 측정 결과 `stt/eval/results/2026-10-13-ordered-chunks/README.md`
 
 ## 왜
@@ -32,7 +32,7 @@
 | CER | m01 교차 5.33% → 5.20%, m02 교차 4.73% → 5.78% |
 | 호출 | 교차 대화 7 → 15·17, 10/2 3 → 7 |
 | 비용 | 62호출, 보수 372원(초 기준 약 67원) |
-| 테스트 | 1050 통과(통합 브랜치 1036) |
+| 테스트 | 988 통과(develop 1dde0cf 는 975) |
 
 ```
 cd ai && .venv/bin/python -m pytest
