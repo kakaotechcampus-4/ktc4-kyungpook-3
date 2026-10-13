@@ -50,6 +50,7 @@ class Settings:
     discord_bot_token: str = env("DISCORD_BOT_TOKEN")
     discord_channel_id: str = env("DISCORD_CHANNEL_ID")
     discord_guild_id: str = env("DISCORD_GUILD_ID")
+    chat_poll_bot_token: str = env("CHAT_POLL_BOT_TOKEN")  # capture/chat_poll.py 전용 테스트 봇. 음성 봇과 따로 둔다
     embedding_api_key: str = env("EMBEDDING_API_KEY")
     embedding_base_url: str = env("EMBEDDING_BASE_URL")
     terra_api_key: str = env("TERRA_API_KEY")
