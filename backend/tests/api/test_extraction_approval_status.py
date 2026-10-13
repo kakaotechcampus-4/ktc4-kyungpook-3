@@ -203,14 +203,13 @@ def test_create_items_keep_their_meaning(client, db, seed):
     assert (rejected["task_id"], rejected["approval_status"]) == (None, "rejected")
 
 
-def test_task_link_without_approval_has_null_status(client, db, seed):
-    """승인 요청 없이 태스크만 이어진 항목(자동 생성 등)은 approval_status가 null이다."""
-    item = _only_item(client, _extract(client, seed, [
-        _create("결제 환불 기능 구현", 1.0, assignee_type="thirdname", assignee_raw="지민님"),
-    ]))
+def test_update_without_change_has_target_task_and_null_status(client, db, seed):
+    """바뀔 값이 없는 수정안은 승인 요청을 만들지 않는다. 대상 task만 이어지고 approval_status는 null이다."""
+    item = _only_item(client, _extract(client, seed, [_update(seed, due_date="2026-10-03")]))
 
-    assert item["task_id"] is not None
+    assert item["task_id"] == seed["login"].task_id
     assert (item["approval_id"], item["approval_status"]) == (None, None)
+    assert _login(db, seed).version == 1
 
 
 def test_member_sees_the_same_status(client, db, seed):
