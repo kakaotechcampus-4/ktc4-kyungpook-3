@@ -237,8 +237,9 @@ def _check_callback(
 
 # ---------- Notion 연결 ----------
 #
-# callback은 토큰만 저장하고 바로 돌려보낸다. 템플릿 복제가 끝나야 대상 DB를 찾을 수 있어서,
-# 그 일은 응답 뒤에 `notion_connect.attach_template_database()`가 한다.
+# 템플릿을 복제했으면 callback은 토큰만 저장하고 바로 돌려보낸다. 복제가 끝나야 대상 DB를 찾을 수 있어서,
+# 그 일은 응답 뒤에 `notion_connect.attach_template_database()`가 한다. 다시 연결하며 기존 페이지를 골랐으면
+# 쓰던 DB를 새 토큰으로 확인해 이어 쓴다.
 
 
 @router.get("/{workspace_id}/integrations/notion/start")
@@ -279,28 +280,36 @@ def notion_oauth_callback(
         logger.warning("Notion 토큰 교환 실패: %s", exc)
         return finish(path, "failed", "token_exchange")
 
-    if token.duplicated_template_id is None:
-        # 허용 화면에서 템플릿 대신 기존 페이지를 골랐다. DB를 놓을 곳을 정할 수 없어 받지 않는다.
-        return finish(path, "failed", "template_not_used")
-
     integration = notion.get_notion_integration(db, payload.workspace_id)
-    keep_database = False
-    if integration is not None and integration.provider_channel_id:
-        # 다시 연결: 쓰던 DB를 새 토큰으로도 쓸 수 있으면 그대로 둔다. 이미 반영된 Task 페이지와 이어진다.
+    # 대상 DB는 PM이 허용 화면에서 고른 방식대로 정한다. 템플릿을 복제했으면 새 사본의 DB로 옮기고,
+    # 기존 페이지를 골랐으면 쓰던 DB를 이어 쓴다.
+    keep_database = token.duplicated_template_id is None
+    if keep_database:
+        if integration is None or not integration.provider_channel_id:
+            # 이어 쓸 DB가 없다. 고른 페이지 중 어디에 DB가 있는지 정할 수 없어 받지 않는다.
+            return finish(path, "failed", "template_not_used")
+        # 쓰던 DB를 새 토큰으로 읽어 본다. 못 쓰면 아무것도 바꾸지 않고 실패로 돌려보낸다. PM이 그 DB를 공유해
+        # 다시 연결하거나 템플릿을 복제하면 된다.
         try:
-            keep_database = not notion.verify_database_schema(
-                token.access_token, integration.provider_channel_id
-            )
+            problems = notion.verify_database_schema(token.access_token, integration.provider_channel_id)
         except notion.NotionWriteError as exc:
             if exc.retryable:
-                # Notion이 잠깐 응답하지 못했다. 쓰던 DB를 못 쓴다고 단정하면 멀쩡한 연결이 새 DB로 바뀌므로
-                # 아무것도 바꾸지 않고 실패로 돌려보낸다. 잠시 뒤 다시 연결하면 된다.
+                # Notion이 잠깐 응답하지 못했다. 잠시 뒤 다시 연결하면 된다.
                 return finish(path, "failed", "verify_database_unavailable")
-            keep_database = False
+            # 그 밖에 다시 해도 소용없는 오류(400·401 등)다. 403·404(고른 페이지에 쓰던 DB가 없음)는
+            # 위에서 "접근할 수 없음"으로 온다.
+            problems = [f"Notion 오류 status={exc.status_code}: {exc.reason}"]
         except Exception:
             # 예상 못 한 응답(예: JSON이 아닌 본문)이다. 500 화면 대신 실패로 돌려보내고 기존 연결은 그대로 둔다.
             logger.exception("Notion 재연결 DB 확인 중 예상하지 못한 오류")
             return finish(path, "failed", "verify_database_error")
+        if problems:
+            # 이유(DB 공유 안 됨·속성 다름·토큰 문제)마다 PM이 할 일이 달라 구분할 수 있게 남긴다.
+            logger.warning(
+                "Notion 재연결: 쓰던 DB를 쓸 수 없음 workspace_id=%s: %s",
+                payload.workspace_id, "; ".join(problems),
+            )
+            return finish(path, "failed", "old_database_unusable")
 
     if integration is None:
         integration = Integration(workspace_id=payload.workspace_id, provider="notion")
