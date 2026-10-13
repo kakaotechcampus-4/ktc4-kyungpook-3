@@ -496,7 +496,7 @@ def get_extraction(
             ),
             task_id=i.task_id,
             approval_id=i.approval_id,
-            approval_status=approval_statuses.get(i.approval_id) if i.approval_id else None,
+            approval_status=approval_statuses.get(i.approval_id),
         )
         for i in items
     ]
