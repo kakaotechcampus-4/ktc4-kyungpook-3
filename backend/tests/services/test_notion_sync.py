@@ -1,9 +1,10 @@
 import json
+import os
 from datetime import datetime, timedelta, timezone
 
 import httpx
 import pytest
-from sqlalchemy import create_engine, select, update
+from sqlalchemy import create_engine, select, text, update
 from sqlalchemy.orm import sessionmaker
 
 from app.core.database import Base
@@ -12,16 +13,45 @@ from app.models import Integration, NotionSyncJob, Task, Workspace
 from app.services import notion, notion_sync
 from app.services.tasks import apply_task_updates, create_task
 
+TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
+
+# 토큰 갱신은 `integration`을 FOR UPDATE로 잠근다. SQLite는 이 잠금을 무시하므로, 잠그는 테스트는
+# TEST_DATABASE_URL이 있으면 PostgreSQL에서도 돌린다.
+on_sqlite_and_postgresql = pytest.mark.parametrize(
+    "db",
+    [
+        "sqlite",
+        pytest.param(
+            "postgresql",
+            marks=pytest.mark.skipif(not TEST_DATABASE_URL, reason="TEST_DATABASE_URL(PostgreSQL)이 없습니다."),
+        ),
+    ],
+    indirect=True,
+)
+
+
+def _pg_engine():
+    engine = create_engine(TEST_DATABASE_URL)
+    with engine.begin() as conn:
+        conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+    Base.metadata.drop_all(engine)
+    return engine
+
 
 @pytest.fixture
-def db():
-    engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
+def db(request):
+    if getattr(request, "param", "sqlite") == "postgresql":
+        engine = _pg_engine()
+    else:
+        engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     session = sessionmaker(bind=engine)()
     try:
         yield session
     finally:
         session.close()
+        Base.metadata.drop_all(engine)
+        engine.dispose()
 
 
 class FakeNotion:
@@ -661,6 +691,7 @@ def _connection(db, workspace: Workspace) -> Integration:
     ).scalar_one()
 
 
+@on_sqlite_and_postgresql
 def test_unauthorized_refreshes_token_and_sends_again(db, oauth_env):
     workspace = _workspace(db, refresh_token="refresh_old")
     task = _create(db, workspace)
@@ -712,6 +743,7 @@ def test_refresh_without_new_refresh_token_keeps_old_one(db, oauth_env):
     assert (connection.access_token, connection.refresh_token) == ("secret_new", "refresh_old")
 
 
+@on_sqlite_and_postgresql
 def test_unauthorized_after_token_changed_meanwhile_does_not_refresh(db, oauth_env, monkeypatch):
     workspace = _workspace(db, refresh_token="refresh_old")
     task = _create(db, workspace)
@@ -772,6 +804,7 @@ def test_unauthorized_after_token_cleared_meanwhile_waits_for_reconnect(db, oaut
     assert "다시 연결을 기다립니다" in job.last_error
 
 
+@on_sqlite_and_postgresql
 def test_rejected_refresh_clears_tokens_and_waits_for_reconnect(db, oauth_env):
     workspace = _workspace(db, refresh_token="refresh_old")
     task = _create(db, workspace)
@@ -779,7 +812,7 @@ def test_rejected_refresh_clears_tokens_and_waits_for_reconnect(db, oauth_env):
 
     notion_sync.process_due_jobs(db, transport=fake.transport)
 
-    # 토큰만 비우고 DB ID는 남긴다. 다시 연결하면 이 DB를 이어 쓴다
+    # 토큰만 비우고 DB ID는 남긴다. 다시 연결할 때 새 토큰으로 읽을 수 있으면 이 DB를 이어 쓴다
     connection = _connection(db, workspace)
     assert (connection.access_token, connection.refresh_token, connection.provider_channel_id) == (
         None, None, "db_123",
