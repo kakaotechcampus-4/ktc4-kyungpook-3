@@ -53,6 +53,7 @@ class JudgeOutput:
 
     items: list[dict] = field(default_factory=list)
     failures: list[dict] = field(default_factory=list)     # 판단하지 못한 finding [{"stage", "text"(요약 문장), "reason"}]
+    dropped: dict = field(default_factory=dict)            # 1단계에서 검증에 탈락한 항목 기록(PipelineResult.dropped, #186)
 
 
 class JudgeAllFailed(RuntimeError):
@@ -153,6 +154,7 @@ def build_extractor(*, run=None, candidates=None, cfg=None):
             raise JudgeAllFailed(f"등록할 항목이 없고 판단하지 못한 발화 {len(failures)}개만 남았다. "
                                  f"첫 실패({first['stage']}): {first['reason']}")
         speakers = {s.speaker for s in transcript.segments if s.speaker is not None}
-        return JudgeOutput(items=_restore(result.items, labels, names, speakers), failures=failures)
+        return JudgeOutput(items=_restore(result.items, labels, names, speakers), failures=failures,
+                           dropped=result.dropped)
 
     return extract
