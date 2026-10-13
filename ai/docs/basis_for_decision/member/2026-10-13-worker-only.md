@@ -31,13 +31,13 @@
 
 | 항목 | 값 |
 |---|---|
-| 테스트 | 1026 모두 통과(기준 wip/base-1014 는 1036. 봇 모드 처리·보고·`/recover` 테스트를 지우고 알림·우편함·워커 테스트를 더했다) |
+| 테스트 | 1039 모두 통과(develop 8e78ed0 는 1049. 봇 모드 처리·보고·`/recover` 테스트를 지우고 알림·우편함·워커 테스트를 더했다) |
 | 끝에서 끝 | `/stop` → 저장 → 워커 한 바퀴 → 우편함 → 채널에 "⏳ 📝 🗂 📋 📨" 순서(`test_record_creates_the_be_meeting_and_the_worker_hands_the_tasks_off`) |
 | 바퀴 비용(M4) | 매니페스트 1,000개에 워커 한 바퀴 23.2ms, 5,000개에 123.1ms |
 | 끝나지 않는 경우 | 연결 대기(1분에 한 번 조회), 설정 없음(외부 호출 없음), 포기 뒤 BE fail 미전달(바퀴마다 재전송). 마지막 것은 따로 고친다 |
 
 ```
-cd ai && .venv/bin/python -m pytest                                   # 1026 passed
+cd ai && .venv/bin/python -m pytest                                   # 1039 passed
 cd ai && .venv/bin/python -m stt.eval.capacity.scan --counts 100 1000 5000
 ```
 
