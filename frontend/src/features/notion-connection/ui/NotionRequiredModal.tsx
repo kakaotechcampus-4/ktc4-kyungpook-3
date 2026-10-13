@@ -15,7 +15,7 @@ export interface NotionRequiredModalProps {
 }
 
 /*
- * 제목·버튼은 결정 문서 그대로다. 설명은 「회의를 정리하려면 Notion 을 먼저 연결해야 한다」는 D-097 의 내용을 옮긴 것이다.
+ * 제목·버튼은 결정 문서 그대로다(revoked 제목만 아래 까닭으로 바꿨다). 설명은 「회의를 정리하려면 Notion 을 먼저 연결해야 한다」는 D-097 의 내용을 옮긴 것이다.
  * 돌아오는 곳은 「이 화면」이 아니라 이름으로 적는다 — 연결이 끝나면 늘 회의 올리기로 돌아온다(D-098, D-100). 끊김 모달은
  * 업로드 화면 밖(정리 실패 뒤 회의록 목록·다른 화면)에서도 뜬다. 그때 「이 화면」은 실제 목적지와 다르다 (U4 r1 N01)
  */
@@ -25,8 +25,10 @@ const COPY: Record<DisconnectedStatus, { title: string; description: string; con
     description: '회의를 정리하려면 Notion을 먼저 연결해 주세요. 연결하면 회의 올리기로 돌아와요.',
     connect: 'Notion 연결하기',
   },
+  // D-100 의 제목은 「연결이 끊어졌어요」였다. 지금 서버의 `revoked` 는 연결 뒤 DB 찾기가 실패·중단된 경우뿐이고
+  // Notion 쪽 권한 해제는 감지하지 않는다 (backend integrations._notion_status). 실제 뜻에 맞춰 바꿨다 (2026-10-12, M6-API)
   revoked: {
-    title: 'Notion 연결이 끊어졌어요',
+    title: 'Notion 연결을 마치지 못했어요',
     description:
       'Notion을 다시 연결한 뒤 회의 파일을 올려 주세요. 연결하면 회의 올리기로 돌아와요.',
     connect: 'Notion 다시 연결하기',

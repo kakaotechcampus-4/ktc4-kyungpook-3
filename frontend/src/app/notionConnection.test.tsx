@@ -7,7 +7,7 @@ import { leaveApp } from '@/shared/lib/location'
 import { withOAuthResult } from '@/shared/lib/oauth'
 import type { OAuthOutcome } from '@/shared/lib/oauth'
 import { db } from '@/shared/mock/db'
-import { fail } from '@/shared/mock/envelope'
+import { fail, ok } from '@/shared/mock/envelope'
 import { completeMeeting } from '@/shared/mock/meetingFlow'
 import { settleMockOAuth } from '@/shared/mock/oauth/mockOAuth'
 import { server } from '@/shared/mock/server'
@@ -18,6 +18,11 @@ import { renderApp } from './test/renderApp'
 
 /* M5 U3-2·U3-3 — 설정의 Notion 연결 영역과 OAuth 복귀. 현재 탭 이동은 jsdom 이 못 해 leaveApp 만 바꿔 끼운다 */
 vi.mock('@/shared/lib/location', () => ({ leaveApp: vi.fn() }))
+// 준비 중 다시 묻기를 3초가 아니라 짧게 돈다 — 진짜 시간으로 기다린다
+vi.mock('@/entities/integration', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/entities/integration')>()),
+  CONNECTING_POLL_MS: 20,
+}))
 
 const UPLOAD_PATH = paths.meetingUpload('ws_01')
 const FROM_MODAL = paths.settingsNotion('ws_01', UPLOAD_PATH)
@@ -34,6 +39,27 @@ function notion(status: 'connected' | 'not_connected' | 'revoked') {
     display_name: status === 'connected' ? 'Notion 연결됨' : null,
     connected_at: status === 'connected' ? '2026-09-01T00:00:00Z' : null,
   }
+}
+
+/**
+ * 연동 조회의 처음 `times` 번은 Notion 을 준비 중(connecting)으로 답한다. 그 뒤로는 모의 db 의 값이다.
+ * 실제 서버가 DB 를 붙이는 동안 내리는 값이다 (#204). 받은 조회 수를 돌려준다.
+ * `hold` 를 주면 그 다음 조회는 풀 때까지 붙잡는다 — `준비 중` 표시를 다음 답이 지우기 전에 검사한다
+ */
+function connectingFirst(times: number, hold?: ReturnType<typeof deferred>): () => number {
+  let asked = 0
+  server.use(
+    http.get('/api/v1/workspaces/ws_01/integrations', async () => {
+      asked += 1
+      if (asked === times + 1 && hold) await hold.promise
+      if (asked > times) return undefined
+      return ok({
+        ...db.integrations.ws_01,
+        notion: { status: 'connecting', display_name: 'Notion 준비 중', connected_at: null },
+      })
+    }),
+  )
+  return () => asked
 }
 
 function returnFrom(path: string, outcome: OAuthOutcome) {
@@ -65,7 +91,7 @@ describe('설정의 Notion 연결 영역 (U3-3)', () => {
 
   it.each([
     ['not_connected', '연결 안 됨', 'Notion 연결하기'],
-    ['revoked', '연결 끊김', 'Notion 다시 연결하기'],
+    ['revoked', '연결 실패', 'Notion 다시 연결하기'],
   ] as const)('PM — %s 는 %s 와 `%s`', async (status, label, action) => {
     notion(status)
     const user = userEvent.setup()
@@ -94,6 +120,20 @@ describe('설정의 Notion 연결 영역 (U3-3)', () => {
       expect(area.queryByRole('link')).toBeNull()
     },
   )
+
+  it('복귀 없이 열어도 준비 중이면 `준비 중` 을 보이고 다시 연결하게 하지 않는다 (#204)', async () => {
+    db.integrations.ws_01.notion = {
+      status: 'connecting',
+      display_name: 'Notion 준비 중',
+      connected_at: null,
+    }
+    renderApp(paths.settings('ws_01'))
+
+    const area = await section()
+    expect(await area.findByText('준비 중')).toBeInTheDocument()
+    expect(area.getByText('Notion을 준비하고 있어요. 1분 정도 걸릴 수 있어요.')).toBeInTheDocument()
+    expect(area.queryByRole('button', { name: /Notion .*연결하기/ })).toBeNull()
+  })
 
   it('연동 상태를 불러오지 못하면 다시 시도를 준다', async () => {
     server.use(
@@ -143,6 +183,37 @@ describe('차단 모달에서 시작한 연결 (U3-2, D-098)', () => {
     const app = renderApp(returnFrom(FROM_MODAL, 'success'), { strict: true })
     await app.expectPath(UPLOAD_PATH)
     expect(await screen.findByRole('heading', { name: '회의를 올려 주세요' })).toBeInTheDocument()
+  })
+
+  it('복귀 확인에서 준비 중(connecting)이면 실패로 보지 않고 기다렸다가, connected 가 되면 업로드로 돌아간다 (#204)', async () => {
+    settleMockOAuth({ workspaceId: 'ws_01', provider: 'notion', outcome: 'success' })
+    const next = deferred()
+    const asked = connectingFirst(1, next)
+    const app = renderApp(returnFrom(FROM_MODAL, 'success'))
+
+    const area = await section()
+    // 두 번째 조회를 붙잡아 둔 동안 `준비 중` 이 보인다
+    await waitFor(() => expect(asked()).toBe(2))
+    expect(area.getByText('Notion을 준비하고 있어요. 1분 정도 걸릴 수 있어요.')).toBeInTheDocument()
+    next.resolve()
+    expect(await screen.findByRole('heading', { name: '회의를 올려 주세요' })).toBeInTheDocument()
+    await app.expectPath(UPLOAD_PATH)
+    expect(asked()).toBeGreaterThanOrEqual(2)
+  })
+
+  it('준비 중 뒤 revoked 가 오면 설정에 머물고 실패를 안내한다 — 다시 연결할 수 있다', async () => {
+    settleMockOAuth({ workspaceId: 'ws_01', provider: 'notion', outcome: 'success' })
+    notion('revoked')
+    connectingFirst(2)
+    const app = renderApp(returnFrom(FROM_MODAL, 'success'))
+
+    const area = await section()
+    expect(
+      await area.findByText('Notion을 연결하지 못했어요. 잠시 후 다시 시도해 주세요.'),
+    ).toBeInTheDocument()
+    expect(area.queryByText('Notion을 준비하고 있어요. 1분 정도 걸릴 수 있어요.')).toBeNull()
+    expect(await area.findByRole('button', { name: 'Notion 다시 연결하기' })).toBeInTheDocument()
+    await app.expectPath(paths.settings('ws_01'))
   })
 
   it('성공이라고 돌아왔어도 다시 조회한 상태가 connected 가 아니면 설정에 머물고 안내한다', async () => {

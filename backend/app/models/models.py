@@ -424,6 +424,8 @@ class Extraction(Base):
     )
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     model_name: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # AI가 어느 추출 경로로 만든 결과인지(ExtractionPath). 항목이 없거나 판별할 수 없으면 NULL
+    extraction_path: Mapped[str | None] = mapped_column(String(16), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
     meeting: Mapped["Meeting"] = relationship(back_populates="extractions")
@@ -439,6 +441,16 @@ class ExtractionAction(StrEnum):
     UPDATE = "update"
 
 
+class ExtractionPath(StrEnum):
+    """AI의 추출 경로(ai/capture/judge_path.py의 MM_EXTRACT_PATH).
+
+    legacy는 필드마다 확신도를 숫자로 보내고, judge는 확신도 없이 판단 결과(action·category·doc_text)를 보낸다.
+    """
+
+    LEGACY = "legacy"
+    JUDGE = "judge"
+
+
 class ExtractionItem(Base):
     __tablename__ = "extraction_item"
 
@@ -451,7 +463,8 @@ class ExtractionItem(Base):
     )
     # update 항목은 AI가 제목을 보내지 않으므로 대상 task의 현재 제목을 기록한다.
     task_title: Mapped[str] = mapped_column(String(300))
-    task_confidence: Mapped[float] = mapped_column(Float, default=0.0)
+    # 확신도는 AI가 보낸 값이다. NULL은 측정하지 않았다는 뜻이고 0.0(측정했는데 낮음)과 다르다
+    task_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
     assignee_raw: Mapped[str | None] = mapped_column(String(100), nullable=True)
     assignee_member_id: Mapped[str | None] = mapped_column(
         String(36), ForeignKey("member.member_id", ondelete="SET NULL"), nullable=True
@@ -460,8 +473,9 @@ class ExtractionItem(Base):
     assignee_needs_check: Mapped[bool] = mapped_column(Boolean, default=False)
     due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     due_raw: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    due_confidence: Mapped[float] = mapped_column(Float, default=0.0)
-    confidence: Mapped[float] = mapped_column(Float, default=0.0)
+    due_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # 항목 전체 확신도. task_confidence가 NULL이면 최솟값을 알 수 없어 NULL이다
+    confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
     gate: Mapped[str] = mapped_column(String(10), default=Gate.HOLD)
     # AI 판단 결과(JudgeResult.category/status)와 PM에게 보여 줄 설명(DraftResult.doc_text)
     category: Mapped[str | None] = mapped_column(String(16), nullable=True)

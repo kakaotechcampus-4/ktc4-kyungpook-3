@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from capture import judge_path as J
+from judge.semantic_judge import empty_drops
 from shared.schemas import Transcript, TranscriptSegment
 
 TRANSCRIPT = Transcript(segments=[
@@ -39,13 +40,15 @@ def _failure(stage="judge", text="로그인 마감을 미루기로 함", reason=
 class FakeRun:
     """judge.pipeline.run 자리. 받은 것을 적어 두고 정해 둔 결과를 돌려준다."""
 
-    def __init__(self, items=(), failures=()):
+    def __init__(self, items=(), failures=(), dropped=None):
         self.items, self.failures = list(items), list(failures)
+        self.dropped = dropped if dropped is not None else empty_drops()
         self.seen = None
 
     def __call__(self, transcript, *, workspace_id, today, candidates):
         self.seen = SimpleNamespace(transcript=transcript, workspace_id=workspace_id, today=today, candidates=candidates)
-        return SimpleNamespace(items=[dict(i) for i in self.items], failures=list(self.failures))
+        return SimpleNamespace(items=[dict(i) for i in self.items], failures=list(self.failures),
+                               dropped=dict(self.dropped))
 
 
 def _extractor(run, **cfg):
@@ -89,6 +92,13 @@ def test_the_pipeline_is_not_run_without_a_workspace():
     with pytest.raises(ValueError, match="워크스페이스"):
         extract(TRANSCRIPT, NAMES, date(2026, 9, 19))
     assert run.seen is None
+
+
+def test_the_drops_of_stage_one_come_back_with_the_items():
+    """1단계에서 검증에 탈락한 항목 기록을 회의 기록까지 올린다(#186). 회의 ID 는 recorder 만 안다."""
+    drops = {"not_dict": 1, "no_valid_indices": 1, "bad_indices": [[7]], "bad_indices_total": 1, "lines": 3}
+    extract, _ = _extractor(FakeRun([_item()], dropped=drops))
+    assert extract(TRANSCRIPT, NAMES, date(2026, 9, 19), workspace_id="ws-1").dropped == drops
 
 
 def test_speakers_reach_the_pipeline_as_names_and_come_back_as_uids():

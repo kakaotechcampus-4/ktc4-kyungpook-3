@@ -74,6 +74,18 @@ def test_probing_a_lock_does_not_let_it_go(tmp_path, clock):
     assert R.Claims(owner="other:9:b").acquire(path) is None
 
 
+def test_the_restart_lock_is_taken_through_a_read_only_open(tmp_path):
+    """배포 스크립트가 만든 재시작 잠금 파일은 봇에게 쓰기 권한이 없을 수 있다. 읽기로 열어 잡는다(#215)."""
+    (tmp_path / "restart.lock").touch()
+    (tmp_path / "restart.lock").chmod(0o444)
+    lock = R.try_restart_lock(tmp_path)
+    assert lock is not None and R.try_restart_lock(tmp_path) is None     # 쥔 동안 다른 쪽은 못 잡는다
+    lock.release()
+    again = R.try_restart_lock(tmp_path)
+    assert again is not None
+    again.release()
+
+
 def test_a_claim_left_in_the_manifest_without_a_lock_does_not_block(tmp_path, clock):
     """죽은 프로세스가 남긴 claimed_by·claimed_at 은 표시일 뿐이다. 잠금이 풀려 있으면 바로 잡는다."""
     rec, path, manifest = _session(tmp_path)

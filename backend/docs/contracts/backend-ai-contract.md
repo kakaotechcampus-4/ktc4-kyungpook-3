@@ -115,9 +115,9 @@ AI `Transcript.to_dict()` 모양에 화자 이름을 더해 보낸다. 한 회�
     "action": "create" | "update",            // 기본 create
     "target_task_id": "…" | null,             // update일 때 수정할 task
     "task_title": "…" | null,                 // create면 필수
-    "task_confidence": 0.0,
+    "task_confidence": 0.0 | null,            // legacy만 보낸다. 보내지 않으면 null(측정 안 함)
     "assignee_raw": "…" | null, "assignee_type": "first" | "second" | "thirdname" | "group" | "none" | null,
-    "due_date": "YYYY-MM-DD" | null, "due_raw": "…" | null, "due_confidence": 0.0,
+    "due_date": "YYYY-MM-DD" | null, "due_raw": "…" | null, "due_confidence": 0.0 | null,
     "evidence_quote": "…" | null, "evidence_speaker": "<Discord uid>" | null, "evidence_at_ms": 0 | null,
     "category": "schedule" | "assignee" | "scope" | "decision" | null,
     "status": "todo" | "in_progress" | "blocked" | "done" | null,
@@ -138,6 +138,12 @@ AI `Transcript.to_dict()` 모양에 화자 이름을 더해 보낸다. 한 회�
 | 잘못된 항목 | update의 대상이 없거나 다른 워크스페이스 task, create의 제목이 비어 있으면 그 항목만 건너뛴다. `item_count`는 저장된 항목 수 |
 | update 처리 | 게이트·승인 생성 규칙과 `target_snapshot`의 충돌 기준값은 [Backend README 유사 task 검색과 AI 판단 접수](../../README.md#유사-task-검색과-ai-판단-접수)를 따른다 |
 | `target_snapshot.title` | 유사 검색 응답의 `title`을 그대로 보낸다. 제목을 바꾸는 값이 아니라 승인 때 대상 task가 그대로인지 확인하는 기준이다. 없거나 null이면 등록 시점의 제목을 쓴다. 필드 모양은 #185에서 AI·BE가 정했다 |
+| 확신도 | `task_confidence`·`due_confidence`를 보내지 않으면 null(측정 안 함)로 저장하고 0.0(측정했는데 낮음)과 구분한다. 할 일 확신도가 null이면 항목 확신도도 null이다 |
+| 추출 경로 | AI가 경로를 따로 보내지 않으므로 BE가 항목이 보낸 키로 가린다. `action`·`category`·`doc_text` 중 하나라도 보냈으면 judge, 아니고 `task_confidence`·`due_confidence`를 보냈으면 legacy, 둘 다 아니면 판별 불가다. 모든 항목이 같은 경로일 때만 추출의 `extraction_path`에 기록하고, 항목이 없거나 섞였거나 판별 불가 항목이 있으면 null이다(#201) |
+| create 게이트 | judge 항목과 확신도를 측정하지 않은 항목은 auto로 가지 않는다. BE가 계산한 담당자 확신도로만 정해, 담당자를 한 명으로 찾았거나 언급이 없으면(`assignee_type`이 `group`·`none`·null) `review`, 언급했는데 찾지 못했으면 `hold`다. 이름으로 풀지 못해 `assignee_raw` 없이 `second`·`thirdpronoun`·`thirdrole`만 보낸 항목과 화자가 없는 1인칭 항목도 언급했는데 찾지 못한 것으로 보아 `hold`다. 그 밖에는 확신도로 정한다(0.8 이상이고 담당자 확인 불필요면 `auto`, 0.5 이상 `review`, 그 아래 `hold`). update는 지금처럼 항상 `review`다 |
+
+- 경로 판별의 전제: judge 항목(`ai/judge/pipeline.py`의 `to_item`)은 `action`·`category`·`doc_text`를 값이 null이어도 키째 보내고 확신도를 보내지 않는다. legacy 항목(`ai/capture/handoff.py`의 `to_extraction_items`)은 확신도 둘을 항상 보내고 judge의 키는 보내지 않는다. 판단 경로는 확신도를 만들지 않고 인계기에 임의 고정값을 넣지 않는다는 AI 쪽 기록(`ai/docs/plan/전체 계획.md`의 확신도 항목)을 따랐다.
+- 합의 여부 확인 필요: 위 키 모양을 판별 기준으로 쓰는 것은 #201에서 BE가 정했다. AI 코드는 바꾸지 않았다. 항목 모양이 바뀌면 판별이 틀어지므로 AI가 이 키를 바꿀 때 알려야 하고, AI가 경로를 직접 보내게 되면 그 값을 먼저 쓰도록 바꾼다.
 
 ## 워크스페이스 찾기 `GET /integrations/discord/guilds/{guild_id}/workspace` → 200
 

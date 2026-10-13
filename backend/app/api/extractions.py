@@ -40,9 +40,10 @@ from app.schemas.meeting import (
 )
 from app.services.matching import (
     MatchResult,
-    decide_gate,
+    decide_create_gate,
     item_confidence,
     log_resolution,
+    mentions_assignee,
     resolve_assignee,
     resolve_speaker,
 )
@@ -131,9 +132,11 @@ def create_extraction(
     # meeting 객체를 갱신하여 이후 참조 시 done 상태를 반영한다
     db.refresh(meeting)
 
+    extraction_path = payload.extraction_path()
     extraction = Extraction(
         meeting_id=payload.meeting_id,
         model_name=payload.model_name,
+        extraction_path=str(extraction_path) if extraction_path else None,
     )
     db.add(extraction)
     db.flush()
@@ -197,7 +200,18 @@ def create_extraction(
             # 기존 task 수정은 유사도·LLM 판단이 틀릴 수 있어 신뢰도와 무관하게 항상 PM 승인을 거친다.
             gate = Gate.REVIEW
         else:
-            gate = decide_gate(conf, needs_check=match.needs_check)
+            # 경로는 항목마다 가린다. 추출 전체의 경로는 섞이면 None이지만 항목의 정책은 정할 수 있다.
+            gate = decide_create_gate(
+                raw_item.extraction_path(),
+                conf,
+                needs_check=match.needs_check,
+                # 조회할 값이 없으면 match는 not_found(0.0)다. 사람을 지목했으면 그 값으로 hold가 된다
+                assignee_confidence=(
+                    match.confidence
+                    if mentions_assignee(raw_item.assignee_type, assignee_hint)
+                    else None
+                ),
+            )
 
         item = ExtractionItem(
             extraction_id=extraction.extraction_id,
@@ -478,6 +492,7 @@ def get_extraction(
     detail = ExtractionDetailResponse(
         extraction_id=extraction.extraction_id,
         meeting_id=extraction.meeting_id,
+        extraction_path=extraction.extraction_path,
         items=item_responses,
     )
     return success(detail.model_dump(mode="json"))

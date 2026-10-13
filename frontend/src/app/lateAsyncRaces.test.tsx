@@ -351,7 +351,7 @@ describe('세션이 끝난 뒤에는 이전 회의의 실패를 알리지 않는
     )
     answer.resolve()
     expect(
-      await screen.findByRole('dialog', { name: 'Notion 연결이 끊어졌어요' }),
+      await screen.findByRole('dialog', { name: 'Notion 연결을 마치지 못했어요' }),
     ).toBeInTheDocument()
     // 판정은 공유 Query 를 묻는다(U4 r4 M06). 취소돼 돌아온 값은 답이 아니라 같은 세션 안에서 한 번 더 묻는다 (fetchFresh) —
     // 3·4회차의 직접 요청은 취소되지 않아 1회였다
@@ -410,7 +410,7 @@ describe('설정 화면을 떠나도 정리 실패의 끊김 판정은 새 답�
 
       answer.resolve()
       expect(
-        await screen.findByRole('dialog', { name: 'Notion 연결이 끊어졌어요' }),
+        await screen.findByRole('dialog', { name: 'Notion 연결을 마치지 못했어요' }),
       ).toBeInTheDocument()
       await act(() => settle())
       expect(shownWith(show, PROCESSING_FAILED_TITLE)).toHaveLength(0)
@@ -525,9 +525,9 @@ describe('먼저 출발한 공유 연동 조회의 늦은 답이 끊김을 되�
       // 그 뒤 정리가 끊김으로 실패한다. 판정은 먼저 출발한 공유 조회를 거두고 새로 물어 바로 revoked 를 받는다(fetchFresh)
       failMeeting('mt_10', { notionRevoked: true })
       await nextPoll()
-      const dialog = await screen.findByRole('dialog', { name: 'Notion 연결이 끊어졌어요' })
+      const dialog = await screen.findByRole('dialog', { name: 'Notion 연결을 마치지 못했어요' })
       expect(integrationRequests(log)).toHaveLength(before + 2)
-      expect(area().getByText('연결 끊김')).toBeInTheDocument()
+      expect(area().getByText('연결 실패')).toBeInTheDocument()
 
       // 먼저 출발한 공유 조회의 connected 답이 이제 온다
       shared.resolve()
@@ -535,7 +535,7 @@ describe('먼저 출발한 공유 연동 조회의 늦은 답이 끊김을 되�
       expect(
         app.queryClient.getQueryData(integrationsQueryOptions('ws_01').queryKey)?.notion.status,
       ).toBe('revoked')
-      expect(area().getByText('연결 끊김')).toBeInTheDocument()
+      expect(area().getByText('연결 실패')).toBeInTheDocument()
       // 모달이 열려 있어 뒤 화면은 접근성 트리에서 가려져 있다
       expect(
         area().getByRole('button', { name: 'Notion 다시 연결하기', hidden: true }),
@@ -603,16 +603,16 @@ describe('먼저 출발한 판정 조회의 이전 답이 뒤에 받은 끊김�
         queryKey: integrationsQueryOptions('ws_01').queryKey,
       })
     })
-    const dialog = await screen.findByRole('dialog', { name: 'Notion 연결이 끊어졌어요' })
+    const dialog = await screen.findByRole('dialog', { name: 'Notion 연결을 마치지 못했어요' })
     expect(requests()).toBe(2)
     expect(cached()).toBe('revoked')
-    expect(area().getByText('연결 끊김')).toBeInTheDocument()
+    expect(area().getByText('연결 실패')).toBeInTheDocument()
 
     // 먼저 출발한 판정 조회의 connected 답이 이제 온다. 거둔 조회라 캐시에 닿지 않는다
     judgement.resolve()
     await act(() => settle(200))
     expect(cached()).toBe('revoked')
-    expect(area().getByText('연결 끊김')).toBeInTheDocument()
+    expect(area().getByText('연결 실패')).toBeInTheDocument()
     expect(area().queryByText('연결됨')).toBeNull()
     expect(
       area().getByRole('button', { name: 'Notion 다시 연결하기', hidden: true }),
@@ -652,7 +652,7 @@ describe('먼저 출발한 판정 조회의 이전 답이 뒤에 받은 끊김�
         queryKey: integrationsQueryOptions('ws_01').queryKey,
       })
     })
-    expect(await area().findByText('연결 끊김')).toBeInTheDocument()
+    expect(await area().findByText('연결 실패')).toBeInTheDocument()
     expect(cached()).toBe('revoked')
     expect(area().getByRole('button', { name: 'Notion 다시 연결하기' })).toBeInTheDocument()
     expect(requests()).toBe(2)

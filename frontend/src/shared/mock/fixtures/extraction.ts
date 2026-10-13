@@ -38,7 +38,7 @@ const items: ExtractionItemDto[] = seeds.map(
     gate,
     evidence: {
       quote: `${raw}님이 ${title}을 맡기로 했어요.`,
-      speaker: '김서연',
+      speaker: '1123',
       at_ms: 125000 + index * 10000,
     },
     task_id,

@@ -37,7 +37,7 @@ export const 끊김: Story = {
   args: { reason: 'revoked' },
   play: async () => {
     const dialog = await within(document.body).findByRole('dialog', {
-      name: 'Notion 연결이 끊어졌어요',
+      name: 'Notion 연결을 마치지 못했어요',
     })
     await expect(
       within(dialog).getByRole('button', { name: 'Notion 다시 연결하기' }),

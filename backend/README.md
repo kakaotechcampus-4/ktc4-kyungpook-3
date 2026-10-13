@@ -132,13 +132,14 @@ docker compose -f docker-compose.prod.yml logs -f api
    고친다(PATCH). Task의 Notion 기록(`notion_page_id`·`notion_database_id`·`notion_synced_version`)은 워커만 고친다.
 
 `Integration(provider="notion")` 행이 없으면 워커가 요청을 건너뛴다 — 연동은 선택 사항이다. 행은 있는데
-`provider_channel_id`(대상 데이터베이스 ID)가 비어 있으면(DB를 찾는 중이거나 연결이 실패함) 요청을 꺼내지 않고
-두었다가, DB가 붙으면 처리한다.
+`provider_channel_id`(대상 데이터베이스 ID)가 비어 있거나(DB를 찾는 중이거나 연결이 실패함) `access_token`이
+비어 있으면(토큰 갱신이 거절됨) 요청을 꺼내지 않고 두었다가, DB와 토큰이 모두 생기면 처리한다.
 
 | 항목 | 동작 |
 |---|---|
 | 상태 | Task 응답의 `notion_sync_status`: `pending`(반영 대기) · `synced` · `failed` · `null`(미연동) |
-| 재시도 | 429·409·5xx·네트워크 오류는 지수 백오프(10초~10분, `Retry-After` 우선)로 최대 5회. 400·401·403·404는 바로 `failed` |
+| 재시도 | 429·409·5xx·네트워크 오류는 지수 백오프(10초~10분, `Retry-After` 우선)로 최대 5회. 400·403·404는 바로 `failed`. 401은 아래 토큰 갱신 |
+| 토큰 갱신(401) | Notion이 401을 돌려주면 `integration`의 `refresh_token`으로 토큰을 한 번 갱신한다(`notion_sync._refresh_token`). 갱신하면 새 `access_token`·`refresh_token`을 바로 커밋하고 요청을 기다리지 않고 다시 보낸다. 마지막(5번째) 시도에서 갱신했으면 한 번 더 보낸다. 저장된 토큰이 실패한 토큰과 다르면(그 사이 다시 연결함) 갱신하지 않고 다시 보낸다. 갱신이 거절되거나(`invalid_grant`) `refresh_token`이 없으면 토큰 두 개를 비우고 DB ID는 남긴다. 연동 조회가 `revoked`가 되고, 요청은 시도로 세지 않고 다시 연결할 때까지 기다린다. 다시 연결할 때 기존 페이지를 고르면 남겨 둔 DB를 이어 쓰고, 템플릿을 복제하면 새 DB로 옮긴다(아래 "다시 연결"). 네트워크·5xx·`invalid_client`·환경변수 누락은 토큰을 그대로 두고 백오프로 다시 시도한다. 갱신 응답을 받지 못했는데(타임아웃) Notion은 이미 새 토큰을 발급했다면, 옛 `refresh_token`만 남아 다음 갱신이 거절되고 다시 연결해야 할 수 있다 |
 | 순서·중복 | 항상 Task의 현재 값 전체를 보내고 `notion_synced_version`에 보낸 버전을 기록한다. 같은 Task에 요청이 여러 줄 있어도 된다. Task의 지금 버전이 지금 DB에 이미 반영됐으면 Notion을 부르지 않고 건너뛴다(`skipped`) |
 | 대상 DB | 페이지를 보낸 DB를 `notion_database_id`에 함께 기록한다. 연결된 DB가 이와 다르면 옛 페이지는 쓰지 않고 지금 DB에 새로 만든다. 새 DB가 붙으면(`notion_sync.enqueue_workspace_sync`) 워크스페이스의 모든 Task에 요청을 하나씩 쌓는다. 옛 DB의 페이지는 지우지 않는다 |
 | 생성 타임아웃 | POST 직전에 `notion_create_attempted_at`을 커밋해 둔다. 결과를 모른 채 끝나면 다음 시도는 POST를 반복하지 않고 `Task ID` 속성으로 지금 DB에서 페이지를 먼저 조회한다 |
@@ -155,13 +156,13 @@ PM이 온보딩에서 Notion을 연결하면 `Integration` 행(토큰 + 대상 D
 1. 프론트가 `GET /api/v1/workspaces/{workspace_id}/integrations/notion/start?state=<돌아올 앱 경로>`로
    이동한다. PM만 통과하고, 서명한 state와 짝 쿠키(`notion_oauth_nonce`)를 만들어 Notion 허용 화면으로 보낸다.
 2. PM이 Notion에서 **"템플릿 사용"**을 고르고 허용한다. Notion이 우리 템플릿을 PM 워크스페이스에 복제한다.
+   다시 연결할 때는 템플릿 대신 쓰던 DB가 든 기존 페이지를 골라 그 DB를 이어 쓸 수도 있다(아래 "다시 연결").
 3. Notion이 `GET /api/v1/integrations/notion/callback`으로 돌려보낸다. state·짝 쿠키·로그인 사용자·PM 여부를
    확인하고 토큰을 저장한 뒤 **바로** `<앱 경로>?oauth=notion&oauth_result=success`로 보낸다.
 4. 템플릿 복제는 10초 남짓 걸린다. 그래서 응답 뒤에 서버가 **Notion DB 찾기 작업**을 따로 돌린다
    (`app/services/notion_connect.py`, FastAPI `BackgroundTasks`). 2초마다 복제 페이지를 보고(최대 60초),
    DB를 찾아 속성을 확인한 뒤 `provider_channel_id`에 저장한다. 이때부터 워커가 반영한다.
-   그동안 `GET /api/v1/workspaces/{workspace_id}/integrations`의 notion은 `connecting`이다(지금은 임시로
-   `connected`로 내려준다. 아래 "연동 조회 상태" 참고).
+   그동안 `GET /api/v1/workspaces/{workspace_id}/integrations`의 notion은 `connecting`이다(아래 "연동 조회 상태" 참고).
 
 callback은 워크스페이스별 경로가 아닌 고정 경로다. Notion에 등록하는 redirect URI는 한 글자도 달라질 수
 없어서 workspace_id를 넣지 못하고, 어느 워크스페이스인지는 서명한 state에서 꺼낸다.
@@ -169,18 +170,18 @@ callback은 워크스페이스별 경로가 아닌 고정 경로다. Notion에 �
 | 항목 | 동작 |
 |---|---|
 | 결과 | 항상 앱 화면으로의 302다. `oauth_result`는 `success` · `cancelled`(허용 화면에서 취소) · `failed`. JSON 오류를 보이지 않는다 |
-| 템플릿 미사용 | 허용 화면에서 기존 페이지를 고르면(Notion이 이 선택지를 숨길 수 없다) 저장하지 않고 `failed` |
-| 연동 조회 상태 | notion은 행이 없으면 `not_connected`, DB ID가 있으면 `connected`. DB ID가 없을 때 토큰이 있고 행이 마지막으로 바뀐 지 2분(DB 찾기 상한 60초 + 여유, `NOTION_CONNECTING_TIMEOUT`) 안이면 `connecting`("Notion 준비 중"), 토큰을 비웠거나 2분이 넘으면 `revoked`("Notion DB 연결 실패"). 지금 `revoked`는 DB 연결이 끝까지 안 된 경우에만 나온다. **임시:** 프론트가 `connecting`을 모르는 값으로 보고 OAuth 직후 "연결 실패"를 띄우므로, 프론트가 대응할 때까지 `connecting` 대신 `connected`("Notion 연결됨")로 내려준다. 찾는 사이 만든 Task도 DB가 붙으면 반영되므로 표시만 다르다 |
-| 다시 연결 | 쓰던 DB를 새 토큰으로도 쓸 수 있으면 토큰만 바꾸고 DB는 그대로 둔다. 쓸 수 없으면 DB ID를 비우고 새 템플릿에서 다시 찾는다(그동안 `connecting`). 새 DB가 붙으면 모든 Task가 새 DB에 새로 만들어진다. Notion에는 템플릿 복제본이 하나 더 생긴다 |
-| Notion DB 찾기 작업 실패 | 60초 안에 DB를 못 찾거나, 템플릿에 DB가 없거나, 속성이 다르면 행은 두고 토큰만 비운다. 연동 조회가 바로 `revoked`가 되고, 다시 연결하면 callback이 새 토큰을 채운다. DB를 붙이며 Task 요청을 쌓다 오류가 나면 DB 저장도 함께 되돌려져 2분 뒤 `revoked`가 된다. 이유는 경고 로그로 남는다(`Notion 대상 DB 연결 실패 … result=…`) |
-| 서버 재시작 | Notion DB 찾기 작업 도중 서버가 꺼지면 토큰만 있는 행이 남는다. 2분이 지나면 연동 조회가 `revoked`로 보이고, 다시 연결하면 callback이 그 행을 덮어쓴다 |
+| 템플릿 미사용 | 허용 화면에서 기존 페이지를 골랐는데(Notion이 이 선택지를 숨길 수 없다) 이어 쓸 DB가 없으면(처음 연결이거나 DB ID가 비어 있음) 저장하지 않고 `failed`. 쓰던 DB가 있으면 아래 "다시 연결"대로 한다 |
+| 연동 조회 상태 | notion은 행이 없으면 `not_connected`, DB ID와 토큰이 있으면 `connected`, DB ID가 있는데 토큰을 비웠으면(토큰 갱신 거절) `revoked`("Notion 연결 끊김"). DB ID가 없을 때 토큰이 있고 행이 마지막으로 바뀐 지 2분(DB 찾기 상한 60초 + 여유, `NOTION_CONNECTING_TIMEOUT`) 안이면 `connecting`("Notion 준비 중"), 토큰을 비웠거나 2분이 넘으면 `revoked`("Notion DB 연결 실패"). 찾는 사이 만든 Task도 DB가 붙으면 반영된다 |
+| 다시 연결 | PM이 허용 화면에서 고른 방식대로 대상 DB를 정한다. **템플릿 복제**: 쓰던 DB를 확인하지 않고 DB ID를 비운 뒤 새 사본에서 DB를 찾는다(그동안 `connecting`). 새 DB가 붙으면 모든 Task가 새 DB에 새로 만들어지고, 예전 DB의 페이지는 더 이상 갱신되지 않는다. 새 DB 찾기가 실패하면 예전 DB로 돌아갈 수 없어 템플릿을 다시 복제해야 한다. **기존 페이지**: 쓰던 DB를 새 토큰으로 읽어 본다. 읽히고 속성이 맞으면 토큰만 바꾸고 DB는 그대로 둔다. 고른 페이지에 그 DB가 없거나(403·404) 속성이 다르면 아무것도 바꾸지 않고 `failed`. Notion이 잠깐 응답하지 못해도 그대로 두고 `failed`다 |
+| Notion DB 찾기 작업 실패 | 60초 안에 DB를 못 찾거나, 템플릿에 DB가 없거나, 속성이 다르면 행은 두고 토큰만 비운다. 연동 조회가 바로 `revoked`가 되고, 템플릿을 복제해 다시 연결하면 callback이 새 토큰을 채운다. DB를 붙이며 Task 요청을 쌓다 오류가 나면 DB 저장도 함께 되돌려져 2분 뒤 `revoked`가 된다. 이유는 경고 로그로 남는다(`Notion 대상 DB 연결 실패 … result=…`) |
+| 서버 재시작 | Notion DB 찾기 작업 도중 서버가 꺼지면 토큰만 있는 행이 남는다. 2분이 지나면 연동 조회가 `revoked`로 보이고, 템플릿을 복제해 다시 연결하면 callback이 그 행을 덮어쓴다 |
 | 보안 | state는 HMAC 서명(10분 만료)이고 짝 쿠키로 한 번만 쓰인다. callback에서 로그인 사용자와 PM 여부를 다시 확인한다. code·state·토큰은 로그에 남기지 않는다 |
 
 **환경변수** (`.env.example` 참고)
 
 | 이름 | 값 |
 |---|---|
-| `NOTION_CLIENT_ID`, `NOTION_CLIENT_SECRET` | Notion 개발자 페이지의 Public connection → Configuration 탭 |
+| `NOTION_CLIENT_ID`, `NOTION_CLIENT_SECRET` | Notion 개발자 페이지의 Public connection → Configuration 탭. 워커의 토큰 갱신에도 쓴다. 없으면 401 때 갱신하지 못하고 error 로그를 남긴다 |
 | `NOTION_REDIRECT_URI` | 프론트와 같은 주소의 callback. 로컬 `http://localhost:5173/api/v1/integrations/notion/callback`(Vite 프록시가 백엔드로 넘긴다), 운영 `https://<서비스 주소>/api/v1/integrations/notion/callback` |
 | `OAUTH_STATE_SECRET` | state 서명 키, 32자 이상. `python3 -c "import secrets;print(secrets.token_urlsafe(48))"`로 만든다. 없으면 연결 시작이 `failed`가 된다 |
 
@@ -294,7 +295,8 @@ scope는 `bot applications.commands identify`다. 봇 초대 scope만 요청하�
 | 검색 대상 | 같은 워크스페이스에서 status가 todo·in_progress·blocked·done이고 임베딩이 있는 task. 코사인 유사도 상위 `k`(기본 3)개 중 `min_similarity`(기본 0.4, ai/docs/basis_for_decision/ai/2026-09-22-0010-embedding-similarity-threshold.md) 이상만 |
 | 검색 인증 | 봇이 세션 없이 부르므로 `X-Service-Token` 헤더를 `SERVICE_TOKEN`과 비교한다. 없거나 다르면 401 |
 | 검색 실패 | 임베딩 호출이 실패하면 빈 목록 대신 `EMBEDDING_UNAVAILABLE`(502). 빈 목록이면 호출한 쪽이 중복 task를 만들 수 있다 |
-| `action` 없음 / `create` | 예전과 같다. 게이트가 auto면 task 생성, 아니면 task_create 승인 요청 |
+| `action` 없음 / `create` | 게이트가 auto면 task 생성, 아니면 task_create 승인 요청. 게이트는 `decide_create_gate`가 정한다. judge 항목과 확신도를 측정하지 않은 항목은 auto로 가지 않고 BE가 계산한 담당자 확신도로만 정한다. 담당자를 한 명으로 찾았거나 언급이 없으면(`assignee_type`이 group·none·null) `review`, 언급했는데 찾지 못했으면(중의적·없음) `hold`다. `assignee_raw` 없이 `second`·`thirdpronoun`·`thirdrole`만 오거나 1인칭인데 화자가 없으면, 사람을 지목했지만 누군지 모르는 것이라 `hold`다(`mentions_assignee`). 그 밖에는 확신도로 정한다(#201) |
+| 추출 경로 | AI가 경로를 보내지 않으므로 항목이 보낸 키로 가린다. `action`·`category`·`doc_text`를 보냈으면 judge, 확신도를 보냈으면 legacy다(`ExtractionItemCreate.extraction_path`). 모든 항목이 같을 때만 `extraction.extraction_path`에 남기고 아니면 NULL. 확신도를 보내지 않으면 0.0이 아니라 NULL(측정 안 함)로 저장한다 |
 | `action: update` | `target_task_id`의 task_update 승인 요청을 만든다(신뢰도와 무관하게 항상 PM 승인 대상). `task_title`은 없어도 되고, 와도 제목은 바꾸지 않는다 |
 | update 변경안 | 들어온 값 중 지금 task와 다른 `due_date`·`status`·`assignee_member_id`만 담는다. 담당자는 지금 task와 다를 때만 넣고 같으면 뺀다 |
 | update 충돌 기준값 | 변경 필드마다 `base_values`를 남겨 승인 시 그 뒤 수정과 충돌을 확인한다. 기준값은 AI가 유사 검색에서 본 값(`target_snapshot`의 `due_date`·`status`·`assignee_member_id`)이다. 보내지 않은 필드나 `target_snapshot`이 없는 요청은 등록 시점의 값을 쓴다. 검색과 등록 사이에 PM이 고친 값을 승인이 덮지 않게 하려는 것이다 |

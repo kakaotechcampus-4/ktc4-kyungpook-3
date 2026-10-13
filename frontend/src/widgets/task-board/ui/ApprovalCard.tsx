@@ -10,6 +10,7 @@ import type {
   TaskCreateFields,
   TaskCreateIssue,
 } from '@/entities/approval'
+import { speakerName } from '@/entities/member'
 import type { Member } from '@/entities/member'
 import { currentApprovalTransport, useApprovalResolve } from '@/features/approval-resolve'
 import type { ApprovalResolve } from '@/features/approval-resolve'
@@ -230,7 +231,7 @@ function TaskCreateCard({
         <div className={EVIDENCE_HEAD}>
           <span className={EVIDENCE_META}>
             전사문{atClock === null ? '' : ` ${atClock}`} ·{' '}
-            {approval.evidence.speaker ?? '알 수 없음'}
+            {speakerName(members, approval.evidence.speaker) ?? '알 수 없음'}
           </span>
           {approval.meetingId === null ? null : (
             <GuardedLink

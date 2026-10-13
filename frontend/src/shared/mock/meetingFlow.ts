@@ -204,7 +204,7 @@ export function completeMeeting(meetingId: string, state: MockDb = db): Complete
       gate: seed.gate,
       evidence: {
         quote: TRANSCRIPT_LINES[index % TRANSCRIPT_LINES.length],
-        speaker: speaker(index)?.display_name ?? null,
+        speaker: speaker(index)?.discord_user_id ?? null,
         at_ms: index * 60_000,
       },
       task_id: null,

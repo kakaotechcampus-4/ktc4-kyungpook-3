@@ -178,6 +178,8 @@ REGISTRY: tuple[Const, ...] = (
           source="주석: 나머지는 \"외 N건\" 으로 줄인다"),
     Const("capture.discord_adapter", "LINE_MAX", DESIGN, "채널에 올리는 한 줄 길이", FIXED,
           source="주석: 디스코드 메시지 2000자 안에 열 줄이 들어가게"),
+    Const("capture.discord_adapter", "PROGRESS_EVERY_S", DESIGN, "전사 진행으로 채널 메시지를 고치는 최소 간격", FIXED,
+          source="주석: 자주 고치면 채널이 디스코드 요청 제한에 걸릴 수 있다"),
     # ── 평가. 정렬본을 만드는 값이라 평가 결과에 영향이 있다
     Const("stt.eval.golden", "SR", SPEC, "정렬본 표본율", FIXED, source="위스퍼 입력 16kHz"),
     Const("stt.eval.golden", "RUN_GAP_S", MEASURED, "정렬본을 만들 때 한 화자의 발화 덩어리를 나누는 공백", EVAL,

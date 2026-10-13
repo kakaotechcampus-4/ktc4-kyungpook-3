@@ -3,16 +3,24 @@ import userEvent from '@testing-library/user-event'
 import { http } from 'msw'
 import { leaveApp } from '@/shared/lib/location'
 import { db } from '@/shared/mock/db'
-import { fail } from '@/shared/mock/envelope'
+import { fail, ok } from '@/shared/mock/envelope'
 import { settleMockOAuth } from '@/shared/mock/oauth/mockOAuth'
 import { applyScenario } from '@/shared/mock/scenarios'
 import { server } from '@/shared/mock/server'
 import { recordRequestBodies, recordRequests } from '@/shared/test/requests'
 import type { RecordedRequest, RequestLog } from '@/shared/test/requests'
+import { integrationsQueryOptions } from '@/entities/integration'
+import { deferred } from '@/shared/test/deferred'
+import { expireSession } from './expireSession'
 import { renderApp } from './test/renderApp'
 
 /* U3-3·U3-4·U3-5. 현재 탭 이동은 jsdom 이 못 하므로 leaveApp 만 바꿔 끼워 주소를 본다 */
 vi.mock('@/shared/lib/location', () => ({ leaveApp: vi.fn() }))
+// 준비 중 다시 묻기를 3초가 아니라 짧게 돈다 — 진짜 시간으로 기다린다
+vi.mock('@/entities/integration', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/entities/integration')>()),
+  CONNECTING_POLL_MS: 20,
+}))
 
 const ONBOARDING_PATCH = '/workspaces/ws_03/onboarding'
 
@@ -38,6 +46,28 @@ function atNotion(discord: 'completed' | 'skipped') {
   ws03().onboarding.current_step = 'connect_notion'
   if (discord === 'completed')
     settleMockOAuth({ workspaceId: 'ws_03', provider: 'discord', outcome: 'success' })
+}
+
+/**
+ * ws_03 연동 조회의 첫 답은 Notion 준비 중(connecting)이다(#204). 두 번째 조회는 `release` 할 때까지 붙잡았다가 모의 db 값으로 답한다 —
+ * 다시 묻는 간격이 짧아도 `준비 중` 표시를 다음 답이 지우기 전에 검사한다
+ */
+function connectingThenHold() {
+  const gate = deferred()
+  let asked = 0
+  server.use(
+    http.get('/api/v1/workspaces/ws_03/integrations', async () => {
+      asked += 1
+      if (asked === 1)
+        return ok({
+          ...db.integrations.ws_03,
+          notion: { status: 'connecting', display_name: 'Notion 준비 중', connected_at: null },
+        })
+      if (asked === 2) await gate.promise
+      return undefined
+    }),
+  )
+  return { asked: () => asked, release: () => gate.resolve() }
 }
 
 beforeEach(() => {
@@ -98,8 +128,11 @@ describe('Discord·Notion 연결 (U3-3)', () => {
       const integrationGets = log.started.filter(
         ({ method, path }) => method === 'GET' && path === '/workspaces/ws_03/integrations',
       )
-      // 복귀 확인 한 번. Notion 단계는 그 결과(캐시)를 그대로 쓴다
-      expect(integrationGets).toHaveLength(1)
+      // 복귀 확인 한 번. Notion 단계는 그 결과(캐시)를 그대로 쓴다.
+      // StrictMode 는 시험 재마운트가 공유 Query 의 첫 조회를 취소하고, 복귀 확인(fetchFresh)이 같은 세션 안에서 한 번 더 묻는다.
+      // 늦은 답이 세션 정리 뒤 캐시를 다시 만들지 않도록 공유 Query 로 바꾼 대가다(M6-API errors/2026-10-12-onboarding-late-check-rewrites-cache.md).
+      // 시험 재마운트가 없는 실제 실행에서는 한 번이다
+      expect(integrationGets).toHaveLength(strict ? 2 : 1)
     },
   )
 
@@ -164,6 +197,20 @@ describe('Discord·Notion 연결 (U3-3)', () => {
     const url = new URL(vi.mocked(leaveApp).mock.calls[0][0], location.origin)
     expect(url.pathname).toBe('/api/v1/workspaces/ws_03/integrations/notion/start')
     expect(url.searchParams.get('state')).toBe('/onboarding/ws_03/connect_notion')
+  })
+
+  it('Notion 복귀 확인에서 준비 중(connecting)이면 기다렸다가, connected 가 되면 팀원 연결 단계로 간다 (#204)', async () => {
+    atNotion('completed')
+    settleMockOAuth({ workspaceId: 'ws_03', provider: 'notion', outcome: 'success' })
+    const ws03 = connectingThenHold()
+    const app = renderApp('/onboarding/ws_03/connect_notion?oauth=notion&oauth_result=success')
+
+    // 두 번째 조회를 붙잡아 둔 동안 `준비 중` 이 보인다
+    await waitFor(() => expect(ws03.asked()).toBe(2))
+    expect(screen.getByText('노션을 준비하고 있어요. 1분 정도 걸릴 수 있어요.')).toBeInTheDocument()
+    ws03.release()
+    expect(await screen.findByRole('heading', { level: 1, name: '팀원 연결' })).toBeInTheDocument()
+    await app.expectPath('/onboarding/ws_03/connect_members')
   })
 
   it('Notion 복귀 성공 → 팀원 연결 단계로 간다', async () => {
@@ -380,5 +427,84 @@ describe('연동 단계 저장은 한 번에 하나다', () => {
     expect(await screen.findByRole('heading', { name: 'Notion 연결' })).toBeInTheDocument()
     expect(patches(log.started)).toHaveLength(1)
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+})
+
+/* M6-API 검증에서 찾은 복귀 확인의 늦은 응답 문제
+   (docs/plan/m6-api/errors/2026-10-12-onboarding-late-check-rewrites-cache.md,
+   2026-10-12-onboarding-workspace-switch-completes-other.md) */
+describe('복귀 확인이 늦게 끝날 때', () => {
+  const NOTION_RETURN = '/onboarding/ws_03/connect_notion?oauth=notion&oauth_result=success'
+
+  /** ws_03 연동 조회의 다음 응답을 붙잡아 둔다. 풀면 그때의 모의 db 값으로 답한다 */
+  function holdWs03Integrations() {
+    const gate = deferred()
+    server.use(
+      http.get(
+        '/api/v1/workspaces/ws_03/integrations',
+        async () => {
+          await gate.promise
+          return ok(db.integrations.ws_03)
+        },
+        { once: true },
+      ),
+    )
+    return gate
+  }
+
+  /** 같은 PM 의 두 번째 미완료 공간 ws_04 를 만든다. Notion 단계에 있고 아무것도 연결하지 않았다 */
+  function addSecondIncompleteWorkspace() {
+    db.workspaces.push({ ...structuredClone(ws03()), workspace_id: 'ws_04', name: '두 번째 공간' })
+    const pm = db.members.find(({ workspace_id }) => workspace_id === 'ws_03')!
+    db.members.push({ ...pm, member_id: 'mb_91', workspace_id: 'ws_04' })
+    db.integrations.ws_04 = {
+      discord: { status: 'not_connected', display_name: null, connected_at: null },
+      notion: { status: 'not_connected', display_name: null, connected_at: null },
+    }
+    db.accounts[0].workspaceIds.push('ws_04')
+  }
+
+  it('확인 응답을 기다리는 사이 세션이 끝나면 늦게 온 답이 비운 연동 캐시를 다시 만들지 않는다', async () => {
+    atNotion('completed')
+    settleMockOAuth({ workspaceId: 'ws_03', provider: 'notion', outcome: 'success' })
+    const log = recordRequests()
+    const answer = holdWs03Integrations()
+    const app = renderApp(NOTION_RETURN)
+    await waitFor(() =>
+      expect(
+        log.started.filter(({ path }) => path === '/workspaces/ws_03/integrations'),
+      ).toHaveLength(1),
+    )
+
+    act(() => {
+      expireSession(app.queryClient)
+    })
+    answer.resolve()
+    await act(() => new Promise((resolve) => setTimeout(resolve, 200)))
+
+    expect(app.queryClient.getQueryData(integrationsQueryOptions('ws_03').queryKey)).toBeUndefined()
+    expect(patches(log.started)).toHaveLength(0)
+  })
+
+  it('준비 중 확인 사이 다른 공간의 같은 단계로 가면, 이전 공간이 연결돼도 새 공간을 완료로 저장하지 않는다', async () => {
+    atNotion('completed')
+    addSecondIncompleteWorkspace()
+    settleMockOAuth({ workspaceId: 'ws_03', provider: 'notion', outcome: 'success' })
+    const ws03 = connectingThenHold()
+    const log = recordRequests()
+    const app = renderApp(NOTION_RETURN)
+    await waitFor(() => expect(ws03.asked()).toBe(2))
+    expect(screen.getByText('노션을 준비하고 있어요. 1분 정도 걸릴 수 있어요.')).toBeInTheDocument()
+
+    act(() => app.navigate('/onboarding/ws_04/connect_notion'))
+    await app.expectPath('/onboarding/ws_04/connect_notion')
+    // 붙잡아 둔 ws_03 의 답은 연결됨이다. 이전 확인이 살아 있었다면 이 답을 받고 완료 저장을 부른다
+    ws03.release()
+    await act(() => new Promise((resolve) => setTimeout(resolve, 300)))
+
+    const saves = log.started.filter(({ method }) => method === 'PATCH')
+    expect(saves).toHaveLength(0)
+    expect(screen.queryByText('노션을 준비하고 있어요. 1분 정도 걸릴 수 있어요.')).toBeNull()
+    expect(await screen.findByRole('button', { name: '연결하기' })).toBeEnabled()
   })
 })

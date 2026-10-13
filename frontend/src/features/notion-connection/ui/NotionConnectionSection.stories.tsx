@@ -39,7 +39,7 @@ export const PM_끊김: Story = {
   parameters: { scenario: 'meeting-notion-revoked' },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await expect(await canvas.findByText('연결 끊김')).toBeInTheDocument()
+    await expect(await canvas.findByText('연결 실패')).toBeInTheDocument()
     await expect(canvas.getByRole('button', { name: 'Notion 다시 연결하기' })).toBeInTheDocument()
   },
 }
