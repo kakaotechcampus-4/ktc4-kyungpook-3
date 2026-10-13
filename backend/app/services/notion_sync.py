@@ -471,7 +471,8 @@ def _refresh_token(
     else:
         reason = "refresh_token이 없습니다"
 
-    # DB ID는 남긴다. 다시 연결하면 callback이 새 토큰으로 이 DB를 확인하고 이어 쓴다. 이미 만든 페이지도 이어진다.
+    # DB ID는 남긴다. 다시 연결하면 callback이 새 토큰으로 이 DB를 읽어 본다. 읽을 수 있으면 이 DB를 이어 쓰고(이미
+    # 만든 페이지도 이어진다), 못 읽으면 새 템플릿 사본의 DB를 붙여 모든 Task를 다시 만든다.
     stored.access_token = None
     stored.refresh_token = None
     logger.warning("Notion 토큰 갱신이 거절돼 연결을 끊음 workspace_id=%s: %s", workspace_id, reason)
