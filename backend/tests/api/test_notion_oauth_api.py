@@ -547,13 +547,12 @@ def test_notion_with_database_is_connected(client, seed, db):
     assert notion_["connected_at"] is not None
 
 
-def test_notion_waiting_for_database_is_connected_until_frontend_supports_connecting(client, seed, db):
-    # 임시: 프론트가 `connecting`을 받을 준비가 될 때까지 `connected`로 내려준다
+def test_notion_waiting_for_database_is_connecting(client, seed, db):
     _add_notion(db, seed, database_id=None, updated_ago=timedelta(seconds=30))
 
-    notion_ = _integrations(client, seed)["notion"]
-
-    assert (notion_["status"], notion_["display_name"]) == ("connected", "Notion 연결됨")
+    assert _integrations(client, seed)["notion"] == {
+        "status": "connecting", "display_name": "Notion 준비 중", "connected_at": None,
+    }
 
 
 def test_notion_waiting_too_long_is_revoked_and_row_is_kept(client, seed, db):
@@ -600,15 +599,15 @@ def test_notion_without_row_is_not_connected(client, seed, db):
     }
 
 
-def test_notion_is_connected_right_after_callback(client, seed, db, fake_notion):
-    # 프론트는 OAuth 직후 바로 상태를 묻고 `connected`가 아니면 실패로 안내한다
+def test_notion_is_connecting_right_after_callback(client, seed, db, fake_notion):
+    # 프론트는 OAuth 직후 바로 상태를 묻고, `connecting`이면 DB가 붙을 때까지 다시 묻는다
     state, nonce = _signed(seed)
     _callback(client, state=state, nonce=nonce, code="the-code")
 
-    assert _integrations(client, seed)["notion"]["status"] == "connected"
+    assert _integrations(client, seed)["notion"]["status"] == "connecting"
 
 
-def test_reconnect_to_new_database_is_connected(client, seed, db, fake_notion):
+def test_reconnect_to_new_database_is_connecting(client, seed, db, fake_notion):
     _, state_ = fake_notion
     _add_notion(db, seed, database_id="db-old", updated_ago=timedelta(hours=1))
     state_["verify"] = ["missing property"]  # 새 토큰으로 예전 DB를 쓸 수 없다
@@ -616,10 +615,10 @@ def test_reconnect_to_new_database_is_connected(client, seed, db, fake_notion):
 
     _callback(client, state=state, nonce=nonce, code="the-code")
 
-    assert _integrations(client, seed)["notion"]["status"] == "connected"
+    assert _integrations(client, seed)["notion"]["status"] == "connecting"
 
 
-def test_reconnect_after_revoked_is_connected_again(client, seed, db, fake_notion):
+def test_reconnect_after_revoked_is_connecting_again(client, seed, db, fake_notion):
     calls, _ = fake_notion
     _add_notion(db, seed, database_id=None, updated_ago=timedelta(hours=1), token=None)
     state, nonce = _signed(seed)
@@ -627,7 +626,7 @@ def test_reconnect_after_revoked_is_connected_again(client, seed, db, fake_notio
     response = _callback(client, state=state, nonce=nonce, code="the-code")
 
     assert response.headers["location"] == "/onboarding?oauth=notion&oauth_result=success"
-    assert _integrations(client, seed)["notion"]["status"] == "connected"
+    assert _integrations(client, seed)["notion"]["status"] == "connecting"
     db.expire_all()
     assert _row(db, seed).access_token == "secret_new"
     assert len(calls["attach"]) == 1
