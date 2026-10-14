@@ -221,7 +221,7 @@ def test_member_sees_the_same_status(client, db, seed):
     assert item["approval_status"] == "pending"
 
 
-def test_statuses_are_read_in_one_query(client, db, seed, engine):
+def test_statuses_are_read_with_items(client, db, seed, engine):
     extraction_id = _extract(client, seed, [
         _update(seed, due_date="2026-10-06"),
         _create("디자인 검토", 0.6),
@@ -239,5 +239,7 @@ def test_statuses_are_read_in_one_query(client, db, seed, engine):
         event.remove(engine, "before_cursor_execute", record)
 
     assert [i["approval_status"] for i in items] == ["pending"] * 3
-    approval_reads = [s for s in statements if "FROM approval_request" in s]
+    # 항목과 따로 읽으면 그 사이 승인이 커밋되어 task_id와 approval_status가 어긋날 수 있다
+    approval_reads = [s for s in statements if "approval_request" in s]
     assert len(approval_reads) == 1
+    assert "FROM extraction_item" in approval_reads[0]

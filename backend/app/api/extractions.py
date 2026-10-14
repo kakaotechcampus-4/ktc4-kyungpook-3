@@ -427,12 +427,17 @@ def get_extraction(
         )
     require_member(db, user, extraction.meeting.workspace_id)
 
+    # 승인 상태는 항목과 한 쿼리로 읽는다. 따로 읽으면 그 사이 승인이 커밋되어 task_id는 승인 전,
+    # approval_status는 승인 뒤 값으로 어긋날 수 있다(#211)
     stmt = (
-        select(ExtractionItem)
+        select(ExtractionItem, ApprovalRequest.status)
+        .outerjoin(ApprovalRequest, ApprovalRequest.approval_id == ExtractionItem.approval_id)
         .where(ExtractionItem.extraction_id == extraction_id)
         .order_by(ExtractionItem.created_at)
     )
-    items = db.execute(stmt).scalars().all()
+    rows = db.execute(stmt).all()
+    items = [item for item, _ in rows]
+    approval_statuses = {item.item_id: status for item, status in rows}
 
     member_ids = {i.assignee_member_id for i in items if i.assignee_member_id}
     names: dict[str, str] = {}
@@ -464,17 +469,6 @@ def get_extraction(
                 ),
             )
 
-    # 승인 상태는 승인 요청 행의 status를 그대로 싣는다. 항목마다 묻지 않고 한 번에 읽는다(#211).
-    approval_ids = {i.approval_id for i in items if i.approval_id}
-    approval_statuses: dict[str, str] = {}
-    if approval_ids:
-        rows = db.execute(
-            select(ApprovalRequest.approval_id, ApprovalRequest.status).where(
-                ApprovalRequest.approval_id.in_(approval_ids)
-            )
-        ).all()
-        approval_statuses = {aid: status for aid, status in rows}
-
     item_responses = [
         ExtractionItemResponse(
             item_id=i.item_id,
@@ -496,7 +490,7 @@ def get_extraction(
             ),
             task_id=i.task_id,
             approval_id=i.approval_id,
-            approval_status=approval_statuses.get(i.approval_id),
+            approval_status=approval_statuses[i.item_id],
         )
         for i in items
     ]
