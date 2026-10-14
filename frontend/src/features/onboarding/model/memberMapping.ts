@@ -14,9 +14,17 @@ export interface MappingRow {
   username: string
   /** 이미 연결된 팀원 이름으로 채워 둔다. 비어 있으면 저장하지 않는다 */
   name: string
+  /**
+   * 이 Discord 사용자에 이을 기존 PM 팀원 id (#228). 있으면 이름보다 앞선다 — 적은 이름이 PM 이름과 달라도
+   * 새로 만들지 않고 그 PM 에 잇는다. 없거나 null 이면 이름으로 잇는다
+   */
+  pmMemberId?: string | null
 }
 
-/** 줄을 만든다. 봇은 뺀다. 서버를 떠난 사용자(inactive)는 이 화면에서 고치지 않는다 (D-031) */
+/**
+ * 줄을 만든다. 봇은 뺀다. 서버를 떠난 사용자(inactive)는 이 화면에서 고치지 않는다 (D-031)
+ * PM 이 연결된 줄은 그 PM 을 골라 둔다 — 이름만 채우면 이름 칸 수정이 PM 이름을 바꾼다 (#228)
+ */
 export function buildMappingRows(discordUsers: DiscordUser[], members: Member[]): MappingRow[] {
   return linkDiscordUsers(discordUsers, members).flatMap((link) =>
     link.discordUser === null
@@ -26,18 +34,21 @@ export function buildMappingRows(discordUsers: DiscordUser[], members: Member[])
             discordUserId: link.discordUser.discordUserId,
             username: link.discordUser.username,
             name: link.member?.displayName ?? '',
+            ...(link.member?.role === 'pm' ? { pmMemberId: link.member.id } : {}),
           },
         ],
   )
 }
 
-export type MappingIssue = 'duplicated' | 'taken'
+export type MappingIssue = 'duplicated' | 'taken' | 'pmDuplicated' | 'pmClaimed'
 
 /**
  * 1:1 제약 (D-027). 빈 줄은 보지 않는다 — 일부만 적어도 저장할 수 있다 (D-029).
  * - duplicated: 두 줄에 같은 이름을 적었다
  * - taken: 이 화면에 없는 Discord 사용자(서버를 떠난 사람)와 이미 연결된 팀원 이름이다
- * 이름은 앞뒤 공백을 지우고 대소문자를 그대로 비교한다. 결과는 줄 번호 → 사유다.
+ * - pmDuplicated: 두 줄에서 같은 PM 을 골랐다
+ * - pmClaimed: 다른 줄에서 고른 PM 의 이름을 적었다 — 이름으로 그 PM 을 가져가지 못하게 막는다 (#228)
+ * PM 을 고른 줄은 이름을 보지 않는다. 이름은 앞뒤 공백을 지우고 대소문자를 그대로 비교한다. 결과는 줄 번호 → 사유다.
  */
 export function findMappingIssues(
   rows: readonly MappingRow[],
@@ -46,13 +57,26 @@ export function findMappingIssues(
   const issues = new Map<number, MappingIssue>()
   const shown = new Set(rows.map(({ discordUserId }) => discordUserId))
   const counts = new Map<string, number>()
+  const picks = new Map<string, number>()
   for (const row of rows) {
     const name = row.name.trim()
-    if (name) counts.set(name, (counts.get(name) ?? 0) + 1)
+    if (row.pmMemberId) picks.set(row.pmMemberId, (picks.get(row.pmMemberId) ?? 0) + 1)
+    else if (name) counts.set(name, (counts.get(name) ?? 0) + 1)
   }
+  const pickedNames = new Set(
+    members.filter(({ id }) => picks.has(id)).map(({ displayName }) => displayName),
+  )
   rows.forEach((row, index) => {
+    if (row.pmMemberId) {
+      if ((picks.get(row.pmMemberId) ?? 0) > 1) issues.set(index, 'pmDuplicated')
+      return
+    }
     const name = row.name.trim()
     if (!name) return
+    if (pickedNames.has(name)) {
+      issues.set(index, 'pmClaimed')
+      return
+    }
     if ((counts.get(name) ?? 0) > 1) {
       issues.set(index, 'duplicated')
       return
@@ -75,10 +99,17 @@ export type MappingOperation =
   | { kind: 'unlink'; memberId: string }
   | { kind: 'create'; displayName: string; discordUserId: string }
 
+/** 어느 줄에서든 PM 으로 고른 팀원이다. 그 줄이 id 로 가져가니 이름으로는 가져가지 않는다 */
+function isPicked(member: Member, rows: readonly MappingRow[]): boolean {
+  return rows.some(({ pmMemberId }) => pmMemberId === member.id)
+}
+
 /**
  * 이 줄의 이름을 가져갈 수 있는 기존 팀원. 새로 만들거나 이름을 바꾸면 같은 이름의 팀원이 둘 생기는 경우다.
  * - 같은 이름의 연결 안 된 팀원(생성자 PM 포함)
- * - 같은 이름의 팀원이 **이 화면에서 비운 줄**에 연결돼 있다 — 그 연결을 이 줄로 옮긴다
+ * - 같은 이름의 팀원이 **이 화면에서 비운 줄**이나 **PM 을 고른 줄**에 연결돼 있다 — 그 연결을 이 줄로 옮긴다.
+ *   PM 을 고른 줄은 그 연결을 어차피 풀고 PM 을 잇는다(덮어쓰기). 줄 순서와 상관없이 옮겨야 같은 이름이 둘 생기지 않는다
+ * PM 으로 고른 팀원은 뺀다 — 그 줄이 id 로 가져간다.
  */
 function reusableMember(
   name: string,
@@ -86,13 +117,36 @@ function reusableMember(
   rows: readonly MappingRow[],
   except?: Member,
 ): Member | undefined {
-  const others = members.filter((member) => member !== except && member.displayName === name)
+  const others = members.filter(
+    (member) => member !== except && member.displayName === name && !isPicked(member, rows),
+  )
   return (
     others.find(({ discordUserId }) => discordUserId === null) ??
     others.find(({ discordUserId }) =>
-      rows.some((other) => other.discordUserId === discordUserId && other.name.trim() === ''),
+      rows.some(
+        (other) =>
+          other.discordUserId === discordUserId &&
+          (Boolean(other.pmMemberId) || other.name.trim() === ''),
+      ),
     )
   )
+}
+
+/**
+ * PM 을 고른 줄의 다음 한 걸음 (#228). 이름은 보지 않는다.
+ * - 그 PM 이 이미 이 Discord 사용자에 연결돼 있으면 null
+ * - 이 Discord 사용자에 다른 팀원이 연결돼 있으면 그 연결을 먼저 푼다 — 덮어쓴다. 1:1 제약(409)에 걸리지 않게 한다
+ * - 아니면 PM 에 PATCH(Discord 사용자). 이름·role·로그인 계정 연결은 보내지 않는다
+ */
+function planPmRow(
+  pmMemberId: string,
+  row: MappingRow,
+  members: readonly Member[],
+): MappingOperation | null {
+  const linked = members.find(({ discordUserId }) => discordUserId === row.discordUserId)
+  if (linked?.id === pmMemberId) return null
+  if (linked) return { kind: 'unlink', memberId: linked.id }
+  return { kind: 'link', memberId: pmMemberId, discordUserId: row.discordUserId }
 }
 
 /**
@@ -103,6 +157,8 @@ function reusableMember(
  *   - 없으면 PATCH(이름)
  * - 연결된 팀원이 없고 이름을 가져갈 기존 팀원이 있으면 그 팀원에 PATCH(Discord 사용자)
  * - 없으면 POST 로 새 팀원
+ * PM 을 고른 줄은 이름 대신 그 PM 에 잇는다(`planPmRow`). 이 줄에 연결된 팀원을 다른 줄이 PM 으로 골랐으면
+ * 그 연결을 먼저 푼다 — PM 은 그 줄로 옮겨 가고, 이 줄은 이름으로 다시 잇는다.
  * 할 일이 없으면 null — 저장에 성공한 줄은 다시 계획해도 null 이라 재시도가 중복 생성하지 않는다.
  * `rows` 는 화면의 모든 줄이다. 옮기기를 알아보는 데 쓴다.
  */
@@ -111,10 +167,12 @@ export function planRow(
   members: readonly Member[],
   rows: readonly MappingRow[] = [],
 ): MappingOperation | null {
+  if (row.pmMemberId) return planPmRow(row.pmMemberId, row, members)
   const name = row.name.trim()
   if (!name) return null
   const linked = members.find(({ discordUserId }) => discordUserId === row.discordUserId)
   if (linked) {
+    if (isPicked(linked, rows)) return { kind: 'unlink', memberId: linked.id }
     if (linked.displayName === name) return null
     return reusableMember(name, members, rows, linked)
       ? { kind: 'unlink', memberId: linked.id }

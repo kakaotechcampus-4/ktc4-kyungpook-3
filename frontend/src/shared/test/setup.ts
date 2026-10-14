@@ -9,6 +9,16 @@ import { toast } from '@/shared/ui/toast'
 // 기다리는 조건은 그대로 두고 한도만 늘린다 — 따로 한도를 준 곳은 그 값을 쓴다
 configure({ asyncUtilTimeout: 3000 })
 
+// jsdom 에는 ResizeObserver 가 없다. Radix 체크박스는 form 안에서 숨은 input 의 크기를 재려고 쓴다 —
+// 재지 않는 빈 구현으로 둔다. 크기 변화를 보는 테스트는 vi.stubGlobal 로 바꿔 끼운다
+if (typeof globalThis.ResizeObserver === 'undefined') {
+  globalThis.ResizeObserver = class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  }
+}
+
 beforeAll(() => server.listen({ onUnhandledRequest: 'error' }))
 afterEach(() => {
   server.resetHandlers()
