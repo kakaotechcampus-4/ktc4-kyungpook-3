@@ -295,6 +295,21 @@ def test_processing_meeting_still_blocks_upload(db, seed):
     assert not _upload_root().exists()
 
 
+def test_ai_can_pick_up_what_the_upload_saved(db, seed, monkeypatch):
+    """업로드가 남긴 정보를 AI 경로가 그대로 읽는다: 대기 목록 → 가져가기 → 녹음 받기."""
+    monkeypatch.setenv("SERVICE_TOKEN", "svc")
+    ai = TestClient(app, base_url="https://testserver", headers={"X-Service-Token": "svc"})
+    meeting_id = _upload(seed, [seed["jimin"].member_id]).json()["data"]["meeting_id"]
+
+    [item] = ai.get("/api/v1/uploads/pending").json()["data"]["items"]
+    assert item["meeting_id"] == meeting_id
+    assert item["attendees"] == [{"member_id": seed["jimin"].member_id, "display_name": "지민"}]
+    assert ai.patch(f"/api/v1/uploads/{meeting_id}/claim").status_code == 200
+    r = ai.get(f"/api/v1/uploads/{meeting_id}/file")
+    assert r.status_code == 200, r.text
+    assert r.content == AUDIO
+
+
 @pytest.mark.parametrize(
     ("filename", "content", "stored"),
     [

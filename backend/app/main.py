@@ -10,7 +10,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app.api import approvals, extractions, meetings, members, similar_tasks, sources, tasks, workspaces, auth, integrations
+from app.api import approvals, extractions, meetings, members, similar_tasks, sources, tasks, uploads, workspaces, auth, integrations
 from app.core.errors import AppError, Envelope, ErrorCode, failure, success
 from app.services import embedding, notion_sync
 
@@ -53,6 +53,7 @@ app.include_router(auth.router, prefix=API_PREFIX)
 app.include_router(workspaces.router, prefix=API_PREFIX)
 app.include_router(members.router, prefix=API_PREFIX)
 app.include_router(meetings.router, prefix=API_PREFIX)
+app.include_router(uploads.router, prefix=API_PREFIX)
 app.include_router(extractions.router, prefix=API_PREFIX)
 app.include_router(approvals.router, prefix=API_PREFIX)
 app.include_router(tasks.router, prefix=API_PREFIX)
