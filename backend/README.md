@@ -66,6 +66,7 @@ docker compose -f docker-compose.prod.yml logs -f api
 | 나머지 환경변수 | `NOTION_*`·`DISCORD_*`·`EMBEDDING_*`·`SERVICE_TOKEN` 등은 `.env`를 그대로 넘긴다 |
 | 필수 값 | `OAUTH_STATE_SECRET`이 비어 있으면 `docker compose`가 기동 전에 멈춘다(Notion 연결용 서명 키) |
 | 데이터 | DB는 `mm-prod_pgdata` 볼륨에 남는다. 로컬 개발용 볼륨(`mm-pgdata`)과 따로다 |
+| 업로드 녹음 | `mm-prod_uploads` 볼륨(컨테이너의 `/data/uploads`)에 둔다. 회의가 done·failed가 되면 그 회의 폴더를 지운다 |
 | 로그 | 컨테이너당 10MB × 3개까지만 남긴다(디스크 50GB 고정) |
 
 ## 응답 형식
