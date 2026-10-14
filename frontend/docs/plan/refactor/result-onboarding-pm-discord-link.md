@@ -1,0 +1,98 @@
+# 결과 — 온보딩에서 기존 PM 멤버를 체크해 Discord 중복 멤버 생성 방지 (#228)
+
+- 기록일: 2026-10-14
+- 대상: [계획](plan-onboarding-pm-discord-link.md) 작업 순서 1~6과 완료조건 AC-01~05
+- 상태: **프론트 구현과 MSW 기준 검증을 마쳤다.** 실제 백엔드에 붙인 저장 확인은 실행하지 못했다(아래 「남은 작업과 제한 사항」).
+
+## 작업 근거와 요약
+
+워크스페이스를 만들면 로그인 계정 이름으로 PM 멤버가 먼저 생긴다. 팀원 연결 화면은 이름이 정확히 같을 때만 기존 멤버를 재사용해서, PM이 다른 이름을 적으면 PM과 별개의 멤버가 하나 더 생겼다.
+
+팀원 연결 화면의 줄마다 맨 앞에 PM 체크박스를 두었다. 체크한 줄은 이름 대신 **멤버 ID로** 기존 PM에 Discord 사용자만 잇는다. 나머지 줄은 지금처럼 이름으로 잇거나 만든다. 구현 중 사용자가 화면 방식과 완료 규칙을 바꿨다(「계획 대비 변경」).
+
+HEAD `1b850c3` 위 작업 트리에서 진행했다.
+
+## 실제 구현 및 관련 코드
+
+- **모델** — [memberMapping.ts](../../../src/features/onboarding/model/memberMapping.ts)
+  - `MappingRow.pmMemberId?: string | null`. 값이 있으면 이름보다 앞선다.
+  - `buildMappingRows`: 줄에 연결된 멤버가 `role === 'pm'`이면 `pmMemberId`를 그 멤버로 채운다(재진입 시 미리 체크).
+  - `planRow` → `planPmRow`: 그 PM이 이미 이 Discord 사용자에 연결돼 있으면 `null`. 이 Discord 사용자에 다른 멤버가 연결돼 있으면 `unlink`를 먼저 보낸다(덮어쓰기). 아니면 `link`(PATCH `discord_user_id`만). 한 줄은 많아야 두 걸음이라 `MAX_STEPS_PER_ROW`(3) 안이다.
+  - 이름 줄에 연결된 멤버를 다른 줄이 PM으로 골랐으면, 그 줄은 PM 이름을 바꾸지 않고 연결을 먼저 푼 뒤 이름으로 다시 잇는다.
+  - `reusableMember`: PM으로 고른 멤버는 이름 재사용 후보에서 뺀다. PM을 고른 줄의 Discord 사용자에 연결돼 있던 멤버는 "비운 줄"의 멤버처럼 옮길 수 있다.
+  - `findMappingIssues`: `pmDuplicated`(같은 PM을 두 줄에서 고름), `pmClaimed`(다른 줄에서 고른 PM의 이름을 적음). PM을 고른 줄은 이름을 보지 않는다.
+- **화면** — [MembersStep.tsx](../../../src/widgets/onboarding/ui/MembersStep.tsx)
+  - 줄 순서: `[체크박스] @아이디 [PM 라벨] → [이름 칸]`. 공용 [Checkbox](../../../src/shared/ui/checkbox/Checkbox.tsx)를 쓴다.
+  - 체크박스는 워크스페이스를 만든 PM(가장 먼저 만들어진 PM)을 가리킨다. 접근 이름은 `@아이디 — PM 이름`이다.
+  - 체크한 줄만 아이디 옆에 PM 라벨이 붙고, 이름 칸은 PM 이름으로 잠긴다. 적어 둔 이름은 지우지 않고 무시한다. 다른 줄 체크박스는 비활성이 된다.
+  - 목록 위 안내: "PM ○○님의 디스코드 계정을 찾아 체크해 주세요. 이름이 달라도 PM으로 연결돼요."
+  - `확인 완료`는 줄 오류가 없고 PM 체크가 있어야 저장한다. 없으면 "PM의 디스코드 계정을 체크해야 완료할 수 있어요."를 보이고 첫 체크박스로 포커스를 옮긴다. `나중에 하기`와 `온보딩 나가기` 저장은 막지 않는다.
+  - PM 줄의 검증·저장 오류는 이름 칸 아래에 두고 체크박스에 `aria-describedby`로 잇는다.
+- **공용 부품·테스트 설정**
+  - [Checkbox](../../../src/shared/ui/checkbox/Checkbox.tsx)가 `ref`를 받는다. React Hook Form이 오류 칸으로 포커스를 옮길 때 쓴다.
+  - [테스트 설정](../../../src/shared/test/setup.ts)에 `ResizeObserver` 빈 구현을 두었다. Radix 체크박스는 form 안에서 숨은 input의 크기를 재는데 jsdom에는 이 API가 없다.
+- **테스트**
+  - 단위: [onboardingModel.test.ts](../../../src/features/onboarding/model/onboardingModel.test.ts) 「PM 을 골라 잇기 (#228)」
+  - MSW 통합: [onboardingMembers.test.tsx](../../../src/app/onboardingMembers.test.tsx) 「PM 을 체크해 잇기 (#228)」
+  - 스토리: [OnboardingSteps.stories.tsx](../../../src/widgets/onboarding/ui/OnboardingSteps.stories.tsx) `팀원_PM_체크`·`팀원_PM_미체크`·`팀원_PM_저장_실패`·`팀원_PM_재진입`. play 회귀 목록은 [stories.sb.ts](../../../e2e/storybook/stories.sb.ts)
+  - E2E: [signup-onboarding.e2e.ts](../../../e2e/signup-onboarding.e2e.ts) #228 시나리오
+- **백엔드 확인(읽기만)** — `backend/app/api/members.py` `update_member`는 요청에 들어온 필드(`model_fields_set`)만 바꾼다. `role`·`user_id`는 그대로 두고, 같은 Discord 사용자를 다른 멤버가 쓰면 409 `DISCORD_USER_ALREADY_MAPPED`다. 계획의 가정과 맞아 백엔드는 바꾸지 않았다.
+
+## 완료조건 확인
+
+| ID | 상태 | 근거 |
+|---|---|---|
+| AC-01 | 충족 (MSW 기준) | 단위: `길동`·`홍 길동` 입력에서 PM을 고르면 `link` 한 번이고 멤버는 1명. MSW: 다른 이름을 적고 체크하면 `PATCH /members/mb_90` 한 번과 다른 줄 POST만 나가고 PM은 그대로 1명. E2E: 최종 멤버가 PM과 새 팀원 둘 |
+| AC-02 | 충족 (MSW 기준), 실서버 미검증 | MSW: PATCH 본문이 `{ discord_user_id }`뿐이고 `member_id`·`role: pm` 유지. E2E: 연결 뒤 대시보드 진입, 멤버 목록에서 `mb_90`·`role: pm` 유지. **로그인 계정 연결(`user_id`) 유지는 MSW 데이터에 없는 항목이라 실행으로 증명하지 못했다** — 백엔드 코드 읽기로만 확인 |
+| AC-03 | 변경됨 (사용자 결정) | PM을 고르지 않은 줄의 이름 입력·빈 줄 건너뛰기·기존 멤버 재사용·새 멤버 생성 규칙은 그대로다. 다만 `확인 완료`에 PM 체크가 필요해져 "기존 매핑 테스트 무수정 통과"는 지킬 수 없다. 기존 MSW 테스트 11개, 온보딩 흐름 테스트 1개, 가입 E2E 1개에 PM 체크를 넣고 늘어난 `PATCH /members/mb_90`을 기대값에 더했다. 이름 규칙 자체를 보는 단언은 바꾸지 않았다 |
+| AC-04 | 충족 | 단위: 같은 PM 중복 선택 → 두 줄 `pmDuplicated`, PM 이름 가로채기 → `pmClaimed`, 덮어쓰기 `unlink` → `link`. MSW: 다른 줄 체크박스 비활성, 가로채기 오류 문구와 요청 0건. 디스코드 1:1 제약 기존 테스트 통과 |
+| AC-05 | 충족 (MSW 기준) | 단위: 연결 풀기 뒤 잇기가 실패해도 다시 계획하면 잇기만 남고, 다 저장하면 `null`. MSW: PM PATCH 500 뒤 재시도는 풀기를 다시 보내지 않고 멤버 수 불변. 응답 유실 뒤 재시도는 목록을 다시 읽고 같은 PATCH를 보내지 않는다. 재진입하면 미리 체크된 채 요청 0건. E2E: 나가기 저장 → 새 문서로 재진입 → 체크·잠금 유지 → 완료 |
+
+## 검증 내역
+
+### 최종 실행 (2026-10-14 22:05~22:14, `frontend/`, 순차 실행)
+
+| 순서 | 명령 | exit | 결과 |
+|---|---|---|---|
+| 1 | `npm run typecheck` | 0 | |
+| 2 | `npm run format:check` | 0 | |
+| 3 | `npm run lint` | 0 | |
+| 4 | `npx vitest run --maxWorkers=2` | 0 | 151 files / 1658 tests 통과 |
+| 5 | `npx playwright test e2e/signup-onboarding.e2e.ts` | 0 | 3 통과(#228 시나리오 포함) |
+| 6 | `npm run test:storybook` | 0 | 91 통과. `팀원-pm-체크`·`팀원-pm-미체크`·`팀원-pm-저장-실패`·`팀원-pm-재진입` play 포함 |
+
+Node v24.11.0 · npm 11.6.1, HEAD `1b850c3` 위 작업 트리에서 실행했다.
+
+- **이번 작업 테스트 수**
+  - `onboardingModel.test.ts`: 28개 = 기존 17 + 신규 11
+  - `onboardingMembers.test.tsx`: 34개 = 기존 27 + 신규 7. 기존 27개 중 11개는 PM 필수 규칙 때문에 수정했다
+- **실행 환경 문제와 우회**
+  - 기본 병렬(`npm test`)은 1차 실행에서 vitest-pool의 worker 시작·종료 시간 초과가 났다. 같은 실행에서 무관한 3개 파일(meetingProcessing·meetingUpload·appShell)이 5초 테스트 한도로 실패했다.
+  - 그 3개 파일을 `--maxWorkers=1`로 따로 돌리면 90/90 통과했다. 그래서 코드가 아니라 부하 문제로 판단했다.
+  - 이후 전체 실행은 `--maxWorkers=2`로 했다. 한 번은 시스템 메모리 부족으로 도중에 중단돼 결과가 없다.
+- **E2E 범위**: 전체 `npm run test:e2e`는 실행하지 않았다. 바뀐 화면을 지나는 `signup-onboarding.e2e.ts`만 실행했다.
+- **화면 확인**: MSW 개발 서버에서 체크 전후 화면을 캡처해 확인했다. 체크박스와 이름 칸 정렬, 체크한 줄에만 PM 라벨, 다른 줄 비활성을 봤다.
+
+## 계획 대비 변경
+
+| 변경 | 이유 | 영향 |
+|---|---|---|
+| `pmMemberId`를 필수(`string \| null`)가 아닌 선택 항목(`?: string \| null`)으로 둠 | 필수로 하면 기존 단위 테스트의 `MappingRow` 리터럴과 `buildMappingRows` 비교가 깨진다(당시 AC-03 무수정 통과 조건) | 모델은 `pmMemberId`가 없거나 `null`이면 이름 줄로 본다. 폼 값은 `null`로 맞춘다 |
+| 화면을 줄별 선택 칸(`<select>`)에서 줄 맨 앞 체크박스로 바꿈 | 2026-10-14 사용자 지시: "PM인 사람을 체크할 수 있도록", "디스코드 왼쪽에 체크박스" | 체크박스는 가장 먼저 만들어진 PM 하나를 가리킨다. PM이 여럿인 공간에서 다른 PM을 고르는 방법은 없다(재진입 시 연결된 다른 PM은 체크된 채 유지) |
+| 체크박스 옆 "PM" 글자 대신, 체크한 줄의 아이디 옆에 PM 라벨 | 2026-10-14 사용자 지시 | 라벨은 회의록 상태 배지와 같은 모양이다 |
+| `확인 완료`에 PM 체크 필수 | 2026-10-14 사용자 결정. `나중에 하기`는 막지 않기로 함 — PM 계정이 디스코드 서버에 없을 때 온보딩을 끝낼 수 없게 되지 않도록 | D-029 "일부만 적어도 완료"는 PM 체크가 있을 때로 좁혀졌다. AC-03의 "기존 테스트 무수정"은 지킬 수 없게 됐다. 이름만 적어 PM을 잇던 흐름(PM 이름을 그대로 입력)으로는 완료할 수 없다 |
+| 이름 줄이 다른 줄에서 PM으로 고른 멤버에 연결돼 있으면 연결을 먼저 풂 | 계획에 없던 경우. 그대로 두면 이름 줄 수정이 PM 이름을 바꾼다 | 이름 줄은 연결 풀기 → 이름으로 잇기/만들기, 두 걸음 |
+| PM 줄에서 밀려나는 멤버를 다른 줄이 이름으로 가져갈 수 있게 함 | 그 줄이 PM 줄보다 위에 있으면 연결을 옮기지 못하고 기존 멤버 이름을 바꿔 같은 이름이 둘 생겼다 | 줄 순서와 상관없이 옮긴다. 단위 테스트 추가 |
+| 테스트 설정에 `ResizeObserver` 빈 구현, 공용 Checkbox의 `ref` | 체크박스를 폼 안에서 쓰려면 필요했다 | 모든 Vitest 파일에 적용된다. 크기 변화를 보는 `AttendeeRow` 테스트는 `vi.stubGlobal`로 바꿔 끼워 그대로 통과 |
+
+## 남은 작업과 제한 사항
+
+- **실서버 확인 미실행.** 배포 백엔드에 붙여 보려 했으나, 디스코드 OAuth 복귀 주소가 배포 도메인으로 고정돼 있어 로컬 화면에서 디스코드를 연결할 수 없었다. 사용자 결정으로 화면 확인은 MSW로 대신했다. AC-02의 로그인 계정 연결 유지와 실제 409 순서는 실서버 미검증이다.
+- **E2E 실패 주입 없음.** 부분 실패 재시도는 MSW 통합 테스트와 스토리로 확인했다. 앱 E2E는 MSW가 service worker로 돌아 Playwright 요청 가로채기가 닿지 않고, 실패 시나리오도 없다.
+- **PM이 여럿인 공간.** 체크박스는 가장 먼저 만들어진 PM만 가리킨다. 온보딩 중에는 생성자 PM 하나뿐이라 실제로 생기기 어렵지만, 다른 PM을 고르는 화면은 없다.
+- **이 문서의 연결.** `plan/refactor/`는 마일스톤 밖 수정 계획이라 [마일스톤 안내](../README.md)와 [파트 README](../../../README.md)에는 연결하지 않았다.
+
+## 관련 기록
+
+- 계획: [plan-onboarding-pm-discord-link.md](plan-onboarding-pm-discord-link.md)
+- 이슈 #228, 관련 #212
