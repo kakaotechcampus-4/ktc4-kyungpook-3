@@ -210,6 +210,13 @@ const M5_STORIES = Object.values(
   .filter(({ id, type }) => type === 'story' && id.startsWith('m5-'))
   .map(({ id }) => id)
   .concat('m4-메뉴-앱-셸--헤더-정리-중', 'm4-메뉴-앱-셸--헤더-뼈대')
+  // 팀원 연결의 PM 체크(#228)도 play 로 확인한다
+  .concat(
+    'm4-온보딩-단계--팀원-pm-체크',
+    'm4-온보딩-단계--팀원-pm-미체크',
+    'm4-온보딩-단계--팀원-pm-저장-실패',
+    'm4-온보딩-단계--팀원-pm-재진입',
+  )
 
 /** 스토리가 일부러 404 를 돌려주는 요청 — handler 가 받은 404 라 빠진 handler 가 아니다 */
 const INTENDED_404: Record<string, string[]> = {

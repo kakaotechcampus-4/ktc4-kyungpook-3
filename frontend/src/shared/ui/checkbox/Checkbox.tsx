@@ -1,10 +1,11 @@
 import { useId } from 'react'
-import type { ComponentPropsWithoutRef, ReactNode } from 'react'
+import type { ComponentPropsWithRef, ReactNode } from 'react'
 import * as CheckboxPrimitive from '@radix-ui/react-checkbox'
 
 export type CheckboxState = boolean | 'indeterminate'
 
-export interface CheckboxProps extends ComponentPropsWithoutRef<typeof CheckboxPrimitive.Root> {
+/* ref 는 체크 버튼(Root)으로 간다 — React Hook Form 이 오류 칸으로 포커스를 옮기는 데 쓴다 (D-142) */
+export interface CheckboxProps extends ComponentPropsWithRef<typeof CheckboxPrimitive.Root> {
   /** 약관 미체크처럼 승인을 막는 입력에만. 테두리가 강조색이 된다 */
   invalid?: boolean
   /** 라벨. 문구는 호출자가 준다 — 법적 고지 문구를 컴포넌트에 넣지 않는다 */
