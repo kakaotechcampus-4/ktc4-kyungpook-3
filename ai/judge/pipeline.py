@@ -13,7 +13,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date
 from typing import Any, Protocol
 
@@ -107,13 +107,74 @@ def to_item(
     if result.category != "assignee":
         # 일정 변경 발화에 담당자 호칭이 섞여 있어도 담당자는 바꾸지 않는다
         item["assignee_type"] = item["assignee_raw"] = None
-    changes = item["due_date"] or item["status"] or item["assignee_raw"] or item["assignee_type"] == "first"
+    changes = _has_change(item)
     # 범위 변경("소셜 로그인은 이번엔 빼기로")은 담을 Task 필드가 없지만 실제 결정이다 — 버리면
     # 조용히 사라지므로 doc_text 만으로 승인 요청을 만든다. 반영 위치는 doc_text 저장 위치가
     # 정해지면 따른다.
     if not changes and result.category != "scope":
         return None
     return item
+
+
+def _has_change(item: dict[str, Any]) -> bool:
+    """update item 에 바꿀 필드가 남아 있는지."""
+    return bool(item["due_date"] or item["status"] or item["assignee_raw"] or item["assignee_type"] == "first")
+
+
+# ── 같은 회의 안 중복 · 번복 (#140) ─────────────────────────────────────────
+# 유사 검색은 DB 의 task 만 본다. 같은 회의에서 앞서 만든 카드는 아직 BE 로 보내지 않아 검색에 안 잡히므로,
+# run() 이 기억해 두고 다음 finding 의 후보에 보여 준다. Terra 가 그 후보를 고르면 새 카드 대신 앞 카드에 합친다.
+
+_PENDING = "pending:"  # 이번 회의 새 항목 카드를 후보로 보여 줄 때의 task_id 접두어. BE 로 나가지 않는다
+
+
+def _with_edit(base: NotionCandidate, card: dict[str, Any]) -> NotionCandidate:
+    """수정 카드가 있는 DB 후보를 제안값으로 덮어 보여 준다. 원래 값은 메모로 남긴다(번복을 알아보게)."""
+    changes = []
+    if card["due_date"] is not None:
+        changes.append(f"마감을 {base.due_date} → {card['due_date']}")
+    if card["status"] is not None:
+        changes.append(f"상태를 {base.status} → {card['status']}")
+    if card["assignee_raw"] or card["assignee_type"] == "first":
+        changes.append(f"담당을 {card['assignee_raw'] or '말한 사람'}(으)로")
+    what = ", ".join(changes) + " 바꾸자고 함" if changes else "이 항목을 다룸"
+    return replace(
+        base,
+        due_date=card["due_date"] if card["due_date"] is not None else base.due_date,
+        status=card["status"] if card["status"] is not None else base.status,
+        meeting_note=f"이번 회의 앞부분에서 {what}. 아직 승인 전",
+    )
+
+
+def _new_card_candidate(n: int, card: dict[str, Any]) -> NotionCandidate:
+    """이번 회의 새 항목 카드를 후보 하나로."""
+    who = card["assignee_raw"] or ("말한 사람" if card["assignee_type"] == "first" else None)
+    note = "이번 회의에서 새로 나온 항목. 아직 Task 아님" + (f". 담당: {who}" if who else "")
+    return NotionCandidate(task_id=f"{_PENDING}{n}", title=card["task_title"] or "",
+                           due_date=card["due_date"], status=card["status"], meeting_note=note)
+
+
+def _merge_into(card: dict[str, Any], finding: JudgeFinding, result: JudgeResult, drafted: DraftResult,
+                base: NotionCandidate | None) -> None:
+    """앞 카드에 같은 일을 가리키는 뒤 발화를 합친다.
+
+    마감 · 상태 · 담당은 뒤 발화가 덮어쓴다 — 나중에 말한 것이 최신 결정이다. 제목 · 근거 · 스냅샷은 앞 카드 그대로.
+    base 는 수정 카드의 DB 원래 후보다. 합친 값이 원래 값과 같아지면(되돌림) 그 필드를 지운다.
+    """
+    if drafted.structured.due_date is not None:
+        card["due_date"] = drafted.structured.due_date
+    if result.status is not None:
+        card["status"] = result.status
+    if result.category == "assignee":
+        card["assignee_type"], card["assignee_raw"] = _assignee(finding)
+    # 합친 설명은 자르지 않는다 — DOC_TEXT_MAX 는 Luna 한 문장의 상한이고(BE doc_text 는 길이 제한 없음), 자르면
+    # 맨 뒤에 붙은 최신 결정부터 잘린다(PR #206 리뷰)
+    card["doc_text"] = f"{card['doc_text']} / {drafted.doc_text}"
+    if base is not None:
+        if card["due_date"] == base.due_date:
+            card["due_date"] = None
+        if card["status"] == base.status:
+            card["status"] = None
 
 
 class CandidateSource(Protocol):
@@ -162,21 +223,34 @@ def run(
 
     today 는 회의 날짜다 — "다음 주 화요일"을 날짜로 바꾸는 기준.
     키가 없으면 PipelineUnavailableError, 1단계가 실패하면 FindingExtractionUnavailableError.
+
+    같은 회의에서 앞서 만든 카드는 다음 finding 의 후보로 보여 주고, Terra 가 고르면 새 카드 대신 합친다(#140).
+    그래서 finding 은 회의 순서(seq)대로 판단한다 — 뒤에 말한 것이 앞을 덮어써야 한다.
     """
     _check_llm_keys()
     # 실패하면 그대로 올린다 — finding 자체가 없다
     findings, dropped = extract_findings_counted(transcript)
+    findings = sorted(findings, key=lambda f: float("inf") if f.seq is None else f.seq)
 
     out = PipelineResult(dropped=dropped)
+    new_cards: list[dict[str, Any]] = []                         # 이번 회의 새 항목 카드
+    edits: dict[str, tuple[NotionCandidate, dict[str, Any]]] = {}  # task_id → (DB 원래 후보, 수정 카드)
+    scoped: set[str] = set()  # 수정 카드에 범위 결정이 합쳐진 task_id — 필드가 다 되돌려져도 결정은 남는다
     for finding in findings:
         try:
-            cands = candidates.similar_tasks(workspace_id, finding.text)
+            found = candidates.similar_tasks(workspace_id, finding.text)
         except Exception as e:  # 검색 구현(HTTP 등)의 어떤 실패든 이 finding 만의 실패로 본다
             out.failures.append(PipelineFailure("similar", finding.text, f"{type(e).__name__}: {e}"))
             continue
 
+        shown = [_with_edit(*edits[c.task_id]) if c.task_id in edits else c for c in found]
+        # 검색이 못 찾은 수정 카드도 보여 준다 — "마감은 원래대로" 처럼 Task 이름 없이 오면 검색에 안 잡혀
+        # 번복을 못 알아본다(PR #206 리뷰). 새 항목 카드처럼 검색과 상관없이 넣는다
+        found_ids = {c.task_id for c in found}
+        shown += [_with_edit(base, card) for task_id, (base, card) in edits.items() if task_id not in found_ids]
+        shown += [_new_card_candidate(n, card) for n, card in enumerate(new_cards)]
         # Terra 가 본 후보와 수정 대상을 꺼내는 후보가 같은 리스트여야 한다
-        judge_input = JudgeInput(source=transcript.source, text=finding.text, candidates=cands)
+        judge_input = JudgeInput(source=transcript.source, text=finding.text, candidates=shown)
         try:
             result = judge(judge_input)
         except JudgeUnavailableError as e:
@@ -204,7 +278,30 @@ def run(
             out.failures.append(PipelineFailure("draft", finding.text, str(e)))
             continue
 
+        task_id = target.task_id if target is not None else None
+        if task_id is not None and task_id.startswith(_PENDING):  # 이번 회의 새 항목 카드에 합친다
+            _merge_into(new_cards[int(task_id[len(_PENDING):])], finding, result, drafted, base=None)
+            continue
+        if task_id in edits:  # 같은 Task 수정 카드에 합친다 — 번복 · 재변경
+            base, card = edits[task_id]
+            _merge_into(card, finding, result, drafted, base=base)
+            if result.category == "scope":
+                scoped.add(task_id)
+            if not _has_change(card):
+                if card["category"] == "scope" or task_id in scoped:
+                    # 필드는 다 되돌려졌어도 범위 결정이 남았다 — scope 로 보내야 BE 가 필드 없는 결정으로 받는다
+                    card["category"] = "scope"
+                else:  # 되돌려서 바꿀 게 없다
+                    out.items = [i for i in out.items if i is not card]
+                    del edits[task_id]
+            continue
+
         item = to_item(finding, result, drafted, target, transcript)
-        if item is not None:  # None 은 바뀌는 게 없는 update — 실패가 아니다
-            out.items.append(item)
+        if item is None:  # 바뀌는 게 없는 update — 실패가 아니다
+            continue
+        out.items.append(item)
+        if result.is_new:
+            new_cards.append(item)
+        else:
+            edits[task_id] = (target, item)  # 여기 오는 target 은 덮어 보이지 않은 DB 원래 후보다
     return out

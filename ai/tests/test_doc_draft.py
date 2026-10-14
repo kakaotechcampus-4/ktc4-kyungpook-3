@@ -49,6 +49,15 @@ def test_prompt_carries_meeting_date_evidence_and_current_values():
     assert "마감일: 2026-09-28" in prompt
 
 
+def test_prompt_shows_meeting_note_so_reverting_has_a_date():
+    # 앞 제안(10/6)이 덮인 후보만 보이면 "원래대로"를 날짜로 못 바꾼다 — 원래 값이 든 메모를 함께 보여 준다(#140)
+    cand = _candidate(due_date="2026-10-06",
+                      meeting_note="이번 회의 앞부분에서 마감을 2026-09-28 → 2026-10-06 바꾸자고 함. 아직 승인 전")
+    prompt = _draft_prompt(_finding(text="로그인 화면 마감을 원래대로 두기로 함"), _result(), cand, TODAY)
+    assert "2026-09-28 → 2026-10-06" in prompt
+    assert "원래대로" in prompt and "원래 값" in prompt
+
+
 def test_prompt_for_create_has_no_current_values_but_shows_assignee():
     f = _finding(
         text="결제 환불 기능을 지민님이 다음 주까지 구현하기로 함",
