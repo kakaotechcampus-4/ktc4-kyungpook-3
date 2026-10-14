@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user, require_member, require_service_token
 from app.core.database import get_db
 from app.core.errors import AppError, Envelope, ErrorCode, success
-from app.models import Extraction, Meeting, MeetingStatus, Member, Source, User
+from app.models import Extraction, Meeting, MeetingSource, MeetingStatus, Member, Source, User
 from app.schemas.meeting import (
     MeetingCreateRequest,
     MeetingCreateResponse,
@@ -17,6 +17,7 @@ from app.schemas.meeting import (
     MeetingMinutesResponse,
     MeetingProgress,
 )
+from app.services import upload_storage
 
 router = APIRouter(prefix="/meetings", tags=["meetings"])
 
@@ -141,6 +142,9 @@ def fail_meeting(
 
     db.commit()
     meeting = _get_meeting(db, meeting_id)
+    # 실패한 업로드 회의의 녹음은 다시 쓰지 않는다(처리 중에만 보관). 커밋이 성공한 뒤에 지운다
+    if meeting.source == MeetingSource.MANUAL_UPLOAD:
+        upload_storage.remove_upload(meeting_id)
 
     detail = MeetingDetailResponse(
         meeting_id=meeting.meeting_id,

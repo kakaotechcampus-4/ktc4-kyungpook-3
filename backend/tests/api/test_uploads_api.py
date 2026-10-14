@@ -247,3 +247,81 @@ def test_file_of_missing_audio_gets_404(db, ws):
         r = _client().get(f"/api/v1/uploads/{meeting_id}/file", headers=HEADERS)
         assert r.status_code == 404, r.text
         assert r.json()["error"]["code"] == "MEETING_NOT_FOUND"
+
+
+def _register_extraction(meeting: Meeting):
+    return _client().post("/api/v1/extractions", headers=HEADERS, json={
+        "meeting_id": meeting.meeting_id, "workspace_id": meeting.workspace_id, "items": [],
+    })
+
+
+def _fail(meeting: Meeting):
+    return _client().patch(
+        f"/api/v1/meetings/{meeting.meeting_id}/fail", headers=HEADERS, json={"failed_stage": "STT"}
+    )
+
+
+def test_done_upload_removes_its_folder(db, ws, other_ws):
+    meeting = _upload(db, ws)
+    other = _upload(db, other_ws)
+    _claim(meeting.meeting_id)
+
+    r = _register_extraction(meeting)
+
+    assert r.status_code == 201, r.text
+    db.expire_all()
+    assert meeting.status == "done"
+    assert not upload_storage.meeting_dir(meeting.meeting_id).exists()
+    assert upload_storage.meeting_dir(other.meeting_id).exists()
+
+
+@pytest.mark.parametrize("claimed", [False, True])
+def test_failed_upload_removes_its_folder(db, ws, claimed):
+    """가져가기 전이든 후든 실패 보고로 끝난다. AI가 없을 때 막힌 공간을 푸는 방법이기도 하다."""
+    meeting = _upload(db, ws, claimed_at=UPLOADED_AT if claimed else None)
+
+    r = _fail(meeting)
+
+    assert r.status_code == 200, r.text
+    db.expire_all()
+    assert meeting.status == "failed"
+    assert not upload_storage.meeting_dir(meeting.meeting_id).exists()
+    assert _pending() == []
+
+
+def test_failing_discord_meeting_leaves_upload_folders(db, ws, other_ws):
+    upload = _upload(db, ws)
+    discord = _meeting(db, other_ws, source="discord")
+
+    assert _fail(discord).status_code == 200
+    assert upload_storage.meeting_dir(upload.meeting_id).exists()
+
+
+def test_rejected_end_reports_keep_the_folder(db, ws, other_ws):
+    """이미 끝난 회의에 결과가 다시 와도(멱등 응답·409) 폴더를 건드리지 않는다. 폴더는 끝날 때 한 번만 지운다."""
+    done = _upload(db, ws)
+    assert _register_extraction(done).status_code == 201
+    # 끝난 뒤 폴더가 남은 경우(삭제 실패 등)를 만든다
+    upload_storage.meeting_dir(done.meeting_id).mkdir(parents=True)
+    failed = _upload(db, other_ws, status="failed")
+
+    assert _register_extraction(done).status_code == 201  # 멱등 응답
+    assert _fail(failed).status_code == 409
+
+    assert upload_storage.meeting_dir(done.meeting_id).exists()
+    assert upload_storage.meeting_dir(failed.meeting_id).exists()
+
+
+def test_folder_removal_failure_does_not_fail_the_report(db, ws, monkeypatch):
+    meeting = _upload(db, ws)
+
+    def broken_rmtree(path):
+        raise PermissionError("권한이 없습니다")
+
+    monkeypatch.setattr(upload_storage.shutil, "rmtree", broken_rmtree)
+
+    r = _fail(meeting)
+
+    assert r.status_code == 200, r.text
+    db.expire_all()
+    assert meeting.status == "failed"

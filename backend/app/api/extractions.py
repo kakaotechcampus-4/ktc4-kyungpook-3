@@ -22,6 +22,7 @@ from app.models import (
     ExtractionPath,
     Gate,
     Meeting,
+    MeetingSource,
     MeetingStatus,
     Member,
     Source,
@@ -52,6 +53,7 @@ from app.services.matching import (
     resolve_assignee,
     resolve_speaker,
 )
+from app.services import upload_storage
 from app.services.embedding import has_unsearchable_tasks
 from app.services.tasks import create_task, delete_task
 
@@ -334,6 +336,9 @@ def create_extraction(
 
     db.commit()
     db.refresh(extraction)
+    # 결과를 저장했으니 업로드 녹음은 더 필요 없다(처리 중에만 보관). 커밋이 성공한 뒤에 지운다
+    if meeting.source == MeetingSource.MANUAL_UPLOAD:
+        upload_storage.remove_upload(meeting.meeting_id)
 
     return success(
         ExtractionCreateResponse(
