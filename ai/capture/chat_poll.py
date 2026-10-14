@@ -25,12 +25,26 @@ from zoneinfo import ZoneInfo
 from shared.config import RUNS_DIR, settings
 from shared.schemas import Transcript, TranscriptSegment
 
-# (작성자 이름, 봇 여부, 보낸 시각, 본문)
+# (작성자 이름, 봇 여부, 보낸 시각, 본문). 리액션도 누른 사람의 메시지 한 줄로 담는다
 Message = tuple[str, bool, datetime, str]
 
 
+def clean_text(content: str, mentions: dict[int, str]) -> str:
+    """LLM 이 읽을 본문. 사용자 멘션 <@id> 를 @이름 으로, 줄바꿈을 공백으로 바꾼다.
+
+    줄바꿈이 남으면 1단계가 번호 매긴 한 줄이 여러 줄로 보인다.
+    """
+    # ponytail: 역할(<@&id>)·채널(<#id>) 멘션은 그대로 둔다. 쓰이면 m.role_mentions·channel_mentions 로 같이 바꾼다
+    for uid, name in mentions.items():
+        content = content.replace(f"<@{uid}>", f"@{name}").replace(f"<@!{uid}>", f"@{name}")
+    return " ".join(content.split())
+
+
 def to_transcript(messages: list[Message]) -> Transcript:
-    """사람이 쓴 본문 있는 메시지만 시간순 전사록으로. start 는 첫 메시지 기준 초다."""
+    """사람이 쓴 본문 있는 메시지만 시간순 전사록으로. start 는 첫 메시지 기준 초다.
+
+    리액션 줄은 원래 메시지와 시각이 같고 목록에서 바로 뒤에 있다. 정렬이 안정적이라 그 자리를 지킨다.
+    """
     kept = sorted((m for m in messages if not m[1] and m[3].strip()), key=lambda m: m[2])
     if not kept:
         return Transcript(segments=[], source="chat")
@@ -49,8 +63,18 @@ async def fetch_messages(token: str, channel_id: int, after: datetime) -> list[M
     await client.login(token)
     try:
         channel = await client.fetch_channel(channel_id)
-        return [(m.author.display_name, m.author.bot, m.created_at, m.content)
-                async for m in channel.history(after=after, oldest_first=True, limit=None)]
+        out: list[Message] = []
+        async for m in channel.history(after=after, oldest_first=True, limit=None):
+            text = clean_text(m.content, {u.id: u.display_name for u in m.mentions})
+            out.append((m.author.display_name, m.author.bot, m.created_at, text))
+            if m.author.bot or not text:
+                continue  # 빠지는 메시지에 단 리액션은 가리킬 말이 없다
+            # 리액션은 누른 시각을 주지 않아 원래 메시지 바로 뒤에 둔다. "네 그렇게 해요" 처럼 합의로 읽힌다
+            for r in m.reactions:
+                emoji = r.emoji if isinstance(r.emoji, str) else f":{r.emoji.name}:"
+                async for u in r.users():
+                    out.append((u.display_name, u.bot, m.created_at, f"{emoji} (위 메시지에 반응)"))
+        return out
     finally:
         await client.close()
 

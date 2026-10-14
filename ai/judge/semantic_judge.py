@@ -100,12 +100,17 @@ def split_sentences(text: str) -> list[str]:
 
 
 def _flatten(transcript: Transcript) -> tuple[list[str], list[int], list[str | None]]:
-    """세그먼트를 시간순으로 훑어 문장 단위 병렬 리스트(문장/seq/화자)를 만든다."""
+    """세그먼트를 시간순으로 훑어 문장 단위 병렬 리스트(문장/seq/화자)를 만든다.
+
+    채팅은 메시지 하나가 한 줄이다. 사람이 한 번에 보낸 말이라 이미 묶여 있고, 문장 부호로 나누면 URL·버전
+    번호("v1.2")가 조각난다. 음성은 STT 덩어리에 여러 문장이 들어 있어 나눈다.
+    """
     sentences: list[str] = []
     seqs: list[int] = []
     speakers: list[str | None] = []
     for seg in sorted(transcript.segments, key=lambda s: s.start):
-        for sentence in split_sentences(seg.text):
+        parts = [seg.text.strip()] if transcript.source == "chat" else split_sentences(seg.text)
+        for sentence in filter(None, parts):
             sentences.append(sentence)
             seqs.append(seg.seq)
             speakers.append(seg.speaker)
