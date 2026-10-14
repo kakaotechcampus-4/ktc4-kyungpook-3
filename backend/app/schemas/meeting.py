@@ -2,7 +2,7 @@ from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.models import ExtractionAction, ExtractionPath, MeetingSource, TaskStatus
+from app.models import ApprovalStatus, ExtractionAction, ExtractionPath, MeetingSource, TaskStatus
 
 
 class MeetingCreateRequest(BaseModel):
@@ -115,10 +115,10 @@ class ExtractionItemResponse(BaseModel):
     approval_id: str | None = Field(
         None, description="연결된 승인 요청 ID. 승인·반려 뒤에도 남는다. 승인 요청이 없으면 null"
     )
-    approval_status: str | None = Field(
+    approval_status: ApprovalStatus | None = Field(
         None,
         description=(
-            "연결된 승인 요청의 지금 상태(pending | approved | rejected). 승인 요청이 없으면 null. "
+            "연결된 승인 요청의 지금 상태. 승인 요청이 없으면 null. "
             "approved는 태스크 반영과 승인 처리가 함께 커밋된 상태다"
         ),
     )
