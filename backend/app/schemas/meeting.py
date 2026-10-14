@@ -2,7 +2,7 @@ from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.models import ExtractionAction, ExtractionPath, MeetingSource, TaskStatus
+from app.models import ApprovalStatus, ExtractionAction, ExtractionPath, MeetingSource, TaskStatus
 
 
 class MeetingCreateRequest(BaseModel):
@@ -105,9 +105,22 @@ class ExtractionItemResponse(BaseModel):
     )
     gate: str
     evidence: EvidenceInfo
-    task_id: str | None = Field(None, description="gate=auto — 바로 생성된 태스크 ID")
+    task_id: str | None = Field(
+        None,
+        description=(
+            "연결된 태스크 ID. 생성 항목은 태스크가 생긴 뒤(자동 생성 또는 생성 승인 뒤)에 채워진다. "
+            "수정 항목은 수정 대상 태스크라 승인 전에도 있다. 반영 여부는 approval_status로 본다"
+        ),
+    )
     approval_id: str | None = Field(
-        None, description="gate=review|hold — PM 승인이 필요한 승인 요청 ID"
+        None, description="연결된 승인 요청 ID. 승인·반려 뒤에도 남는다. 승인 요청이 없으면 null"
+    )
+    approval_status: ApprovalStatus | None = Field(
+        None,
+        description=(
+            "연결된 승인 요청의 지금 상태. 승인 요청이 없으면 null. "
+            "approved는 태스크 반영과 승인 처리가 함께 커밋된 상태다"
+        ),
     )
 
 
