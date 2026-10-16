@@ -52,6 +52,7 @@ from app.services.matching import (
     resolve_assignee,
     resolve_speaker,
 )
+from app.services.embedding import has_tasks_waiting_for_embedding
 from app.services.tasks import create_task, delete_task
 
 logger = logging.getLogger(__name__)
@@ -154,7 +155,13 @@ def create_extraction(
         # 반영되지 않는다. 그런 항목은 건너뛰고 나머지를 처리한다.
         target: Task | None = None
         if raw_item.action == ExtractionAction.UPDATE:
-            target = db.get(Task, raw_item.target_task_id) if raw_item.target_task_id else None
+            # 승인 요청을 만들 수 있으므로 커밋까지 잠근다. auto 되돌리기가 지우는 중이면 기다렸다가 지운 것을 본다
+            target = db.execute(
+                select(Task)
+                .where(Task.task_id == raw_item.target_task_id)
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            ).scalar_one_or_none() if raw_item.target_task_id else None
             if target is None or target.is_deleted or target.workspace_id != meeting.workspace_id:
                 # 검색 이후 task가 지워졌거나, 잘못된 ID
                 logger.warning(
@@ -215,6 +222,7 @@ def create_extraction(
                         task_status=raw_item.task_status,
                         due_status=raw_item.due_status,
                         similar_count=raw_item.similar_count,
+                        tasks_waiting_for_embedding=has_tasks_waiting_for_embedding(db, meeting.workspace_id),
                     ),
                     assignee_type=raw_item.assignee_type,
                     assignee=match if mentioned else None,
@@ -603,15 +611,19 @@ def get_extraction(
 
     # 승인 상태는 항목과 한 쿼리로 읽는다. 따로 읽으면 그 사이 승인이 커밋되어 task_id는 승인 전,
     # approval_status는 승인 뒤 값으로 어긋날 수 있다(#211)
+    # 지운 task는 연결하지 않은 것으로 내린다. 수정 항목이 가리키던 task가 auto 되돌리기로 지워지면, 그대로 내린 ID는
+    # 조회하면 404다. 생성 항목은 되돌릴 때 task_id를 이미 비운다
     stmt = (
-        select(ExtractionItem, ApprovalRequest.status)
+        select(ExtractionItem, ApprovalRequest.status, Task.is_deleted)
         .outerjoin(ApprovalRequest, ApprovalRequest.approval_id == ExtractionItem.approval_id)
+        .outerjoin(Task, Task.task_id == ExtractionItem.task_id)
         .where(ExtractionItem.extraction_id == extraction_id)
         .order_by(ExtractionItem.created_at)
     )
     rows = db.execute(stmt).all()
-    items = [item for item, _ in rows]
-    approval_statuses = {item.item_id: status for item, status in rows}
+    items = [item for item, _, _ in rows]
+    approval_statuses = {item.item_id: status for item, status, _ in rows}
+    deleted_task_items = {item.item_id for item, _, task_deleted in rows if task_deleted}
 
     member_ids = {i.assignee_member_id for i in items if i.assignee_member_id}
     names: dict[str, str] = {}
@@ -654,7 +666,7 @@ def get_extraction(
             similar_count=i.similar_count,
             top_similarity=i.top_similarity,
             reverted_at=i.reverted_at,
-            task_id=i.task_id,
+            task_id=None if i.item_id in deleted_task_items else i.task_id,
             approval_id=i.approval_id,
             approval_status=approval_statuses[i.item_id],
         )

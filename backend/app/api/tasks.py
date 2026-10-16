@@ -22,10 +22,23 @@ from app.services.tasks import apply_task_updates, create_task, rollback_task_hi
 router = APIRouter(prefix="/tasks", tags=["tasks"], dependencies=[Depends(require_task_member)])
 
 
-def _get_task(db: Session, task_id: str) -> Task:
-    task = db.get(Task, task_id)
-    # 지운 task(auto로 만들었다가 되돌린 task)는 없는 task로 본다. 조회·수정·이력 모두 같다
-    if task is None or task.is_deleted:
+def _get_task(db: Session, task_id: str, *, lock: bool = False, include_deleted: bool = False) -> Task:
+    """task를 찾는다. 지운 task(auto로 만들었다가 되돌린 task)는 없는 task로 본다.
+
+    task를 바꾸는 경로는 lock=True로 커밋까지 행을 잠근다. 잠그지 않으면 auto 되돌리기(revert_auto_item)가
+    지운 뒤에 수정이 반영되어, 200을 받고도 그 수정이 아무 데도 보이지 않는다. 잠근 뒤 다시 읽어 지웠는지 본다.
+    include_deleted는 지운 task에도 해야 할 일이 있는 경로(Notion 페이지 보관 재시도)만 쓴다.
+    """
+    if lock:
+        task = db.execute(
+            select(Task)
+            .where(Task.task_id == task_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        ).scalar_one_or_none()
+    else:
+        task = db.get(Task, task_id)
+    if task is None or (task.is_deleted and not include_deleted):
         raise AppError(ErrorCode.TASK_NOT_FOUND, details={"task_id": task_id})
     return task
 
@@ -107,7 +120,7 @@ def update_task(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
-    task = _get_task(db, task_id)
+    task = _get_task(db, task_id, lock=True)
     member = require_pm(db, user, task.workspace_id)
 
     updates = payload.model_dump(
@@ -159,7 +172,7 @@ def rollback_history_endpoint(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
-    task = _get_task(db, task_id)
+    task = _get_task(db, task_id, lock=True)
     member = require_pm(db, user, task.workspace_id)
     history = db.get(TaskHistory, history_id)
     if history is None or history.task_id != task_id:
@@ -179,8 +192,11 @@ def retry_notion_sync(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
-    """Notion 반영이 failed로 끝난 Task를 다시 대기열에 넣는다. 실제 전송은 워커가 한다."""
-    task = _get_task(db, task_id)
+    """Notion 반영이 failed로 끝난 Task를 다시 대기열에 넣는다. 실제 전송은 워커가 한다.
+
+    지운 Task도 받는다. 페이지 보관이 실패했으면 다시 시도할 곳이 여기뿐이다.
+    """
+    task = _get_task(db, task_id, include_deleted=True)
     require_pm(db, user, task.workspace_id)
     retry_failed_sync(db, task)
     db.commit()

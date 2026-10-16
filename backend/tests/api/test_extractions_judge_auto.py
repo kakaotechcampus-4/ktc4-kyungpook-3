@@ -11,6 +11,7 @@ from sqlalchemy.pool import StaticPool
 from app.core.database import Base, get_db
 from app.main import app
 from app.models import (
+    EMBEDDING_DIMENSIONS,
     ApprovalRequest,
     ExtractionItem,
     Meeting,
@@ -21,6 +22,9 @@ from app.models import (
     User,
     Workspace,
 )
+
+# 임베딩 워커가 이미 채운 task. 임베딩을 기다리는 task가 있으면 auto로 보내지 않으므로 시드 task에 넣는다
+EMBEDDED = [0.1] * EMBEDDING_DIMENSIONS
 
 SERVICE_TOKEN = "test-service-token"
 SERVICE_HEADERS = {"X-Service-Token": SERVICE_TOKEN}
@@ -80,7 +84,7 @@ def seed(db):
     _alias(db, ws, sua, "수아님", verified=False)
 
     login = Task(workspace_id=ws.workspace_id, title="로그인 화면 시안", status="in_progress",
-                 due_date=date(2026, 10, 3))
+                 due_date=date(2026, 10, 3), embedding=EMBEDDED)
     meeting = Meeting(workspace_id=ws.workspace_id, status="processing")
     db.add_all([login, meeting])
     db.commit()
@@ -201,6 +205,36 @@ def test_judge_item_failing_any_condition_goes_to_review(client, db, seed, field
     assert item["gate"] == "review"
     assert item["task_id"] is None
     assert item["approval_status"] == "pending"
+
+
+def test_task_waiting_for_embedding_blocks_auto(client, db, seed):
+    # 방금 만든 task는 임베딩이 채워지기 전까지 AI의 유사 검색에 잡히지 않는다
+    db.add(Task(workspace_id=seed["ws"].workspace_id, title="결제 API 붙이기"))
+    db.commit()
+
+    assert _gate(client, seed) == "review"
+
+
+def test_second_auto_candidate_in_same_meeting_goes_to_review(client, db, seed):
+    extraction_id = _extract(client, seed, [_judge(), _judge(task_title="결제 API 붙이기")])
+
+    items = client.get(f"/api/v1/extractions/{extraction_id}").json()["data"]["items"]
+    # 앞 항목이 만든 task는 아직 임베딩이 없어 뒤 항목의 similar_count=0을 믿을 수 없다
+    assert [i["gate"] for i in items] == ["auto", "review"]
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        pytest.param({"is_deleted": True}, id="deleted"),
+        pytest.param({"embedding_rejected_title": "결제 API 붙이기"}, id="rejected_by_embedding_api"),
+    ],
+)
+def test_task_that_will_never_be_embedded_does_not_block_auto(client, db, seed, fields):
+    db.add(Task(workspace_id=seed["ws"].workspace_id, title="결제 API 붙이기", **fields))
+    db.commit()
+
+    assert _gate(client, seed) == "auto"
 
 
 @pytest.mark.parametrize("missing", ["task_status", "due_status", "similar_count"])
@@ -396,3 +430,39 @@ def test_approval_cannot_target_deleted_task(client, seed):
 
     assert r.status_code == 404
     assert r.json()["error"]["code"] == "TASK_NOT_FOUND"
+
+
+def test_update_item_shows_no_task_after_target_is_deleted(client, db, seed):
+    extraction_id, item = _auto_item(client, seed)
+    meeting = Meeting(workspace_id=seed["ws"].workspace_id, status="processing")
+    db.add(meeting)
+    db.commit()
+    # 바뀔 값이 없는 수정 항목 — 승인 요청은 없고 task_id만 대상 task를 가리킨다
+    r = client.post("/api/v1/extractions", json={
+        "meeting_id": meeting.meeting_id,
+        "workspace_id": seed["ws"].workspace_id,
+        "items": [_judge(action="update", target_task_id=item["task_id"], assignee_raw=None)],
+    }, headers=SERVICE_HEADERS)
+    later_extraction_id = r.json()["data"]["extraction_id"]
+    assert _only_item(client, later_extraction_id)["task_id"] == item["task_id"]
+
+    assert _revert(client, extraction_id, item["item_id"]).status_code == 200
+
+    assert _only_item(client, later_extraction_id)["task_id"] is None
+
+
+def test_deleted_task_cannot_be_edited(client, seed):
+    task_id = _reverted_task_id(client, seed)
+
+    r = client.patch(f"/api/v1/tasks/{task_id}", json={"status": "in_progress"})
+
+    assert r.status_code == 404
+
+
+def test_notion_retry_still_reaches_deleted_task(client, seed):
+    task_id = _reverted_task_id(client, seed)
+
+    r = client.post(f"/api/v1/tasks/{task_id}/notion-sync/retry")
+
+    # 404가 아니라 재시도 자체의 판단까지 간다(이 워크스페이스는 Notion 미연동)
+    assert r.json()["error"]["code"] == "INTEGRATION_NOT_CONNECTED"
