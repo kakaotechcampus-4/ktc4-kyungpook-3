@@ -352,6 +352,13 @@ def _process(
             # POST 전에 먼저 커밋해 둬야, 응답을 못 받은 채 워커가 죽어도 흔적이 남는다.
             _update_task_sync(db, task_id, notion_create_attempted_at=now)
             db.commit()
+            # 커밋하면 Task를 다시 읽는다. 처음 읽은 뒤 지워졌으면(auto 되돌리기) 만들지 않는다. 그대로 만들면 지운 뒤의
+            # 버전까지 반영된 것으로 기록되어, 보관할 요청이 건너뛰어지고 페이지가 남는다
+            if task.is_deleted:
+                _update_task_sync(db, task_id, notion_create_attempted_at=None)
+                _finish(job, NotionSyncJobStatus.SKIPPED, now, "처리하는 사이 Task가 지워졌습니다.")
+                db.commit()
+                return
             synced_version = task.version
             page_id = notion.create_page(db, integration, task, transport=transport)
             _update_task_sync(db, task_id, notion_page_id=page_id, notion_database_id=database_id)

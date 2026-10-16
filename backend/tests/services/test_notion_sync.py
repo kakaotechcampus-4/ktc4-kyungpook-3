@@ -1005,3 +1005,44 @@ def test_attaching_new_database_skips_deleted_task(db):
     db.refresh(deleted)
     assert kept.notion_database_id == "db_456"
     assert deleted.notion_database_id == "db_123"
+
+
+def test_task_deleted_while_job_runs_is_not_created(db, monkeypatch):
+    task = _create(db, _workspace(db))
+    task_id = task.task_id
+    original = notion_sync._update_task_sync
+
+    def delete_meanwhile(session, tid, **values):
+        original(session, tid, **values)
+        if values.get("notion_create_attempted_at") is not None:
+            # 워커가 Task를 읽은 뒤, POST 직전 커밋 전에 auto 되돌리기가 지웠다
+            session.execute(
+                update(Task).where(Task.task_id == tid).values(is_deleted=True, version=Task.version + 1)
+            )
+
+    monkeypatch.setattr(notion_sync, "_update_task_sync", delete_meanwhile)
+    fake = FakeNotion()
+    notion_sync.process_due_jobs(db, transport=fake.transport)
+
+    task = db.get(Task, task_id)
+    assert fake.requests == []
+    assert task.notion_page_id is None
+    # 반영 버전을 남기지 않아 지운 뒤의 요청이 건너뛰어지지 않는다
+    assert task.notion_synced_version is None
+    assert task.notion_create_attempted_at is None
+    assert _jobs(db, task)[0].status == "skipped"
+
+
+@pytest.mark.parametrize("status", [400, 404])
+def test_archiving_page_that_is_already_gone_counts_as_done(db, status):
+    task = _create(db, _workspace(db))
+    notion_sync.process_due_jobs(db, transport=FakeNotion(_page()).transport)
+
+    _delete(db, task)
+    notion_sync.process_due_jobs(
+        db, transport=FakeNotion(httpx.Response(status, json={"message": "archived"})).transport
+    )
+
+    db.refresh(task)
+    assert [j.status for j in _jobs(db, task)][-1] == "done"
+    assert task.notion_sync_status == "synced"
