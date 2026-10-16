@@ -11,7 +11,7 @@ from app.core.database import Base
 from app.core.errors import AppError
 from app.models import Integration, NotionSyncJob, Task, Workspace
 from app.services import notion, notion_sync
-from app.services.tasks import apply_task_updates, create_task
+from app.services.tasks import apply_task_updates, create_task, delete_task
 
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
 
@@ -931,3 +931,77 @@ def test_unauthorized_even_after_refresh_stops_after_one_extra_attempt(db, oauth
     assert (job.status, job.attempts) == ("failed", notion_sync.MAX_ATTEMPTS + 1)
     assert task.notion_sync_status == "failed"
     assert fake.responses == []
+
+
+# ── 지운 Task (#232) ───────────────────────────────────────────────────────
+
+
+def _delete(db, task: Task) -> None:
+    delete_task(db, task)
+    db.commit()
+
+
+def test_deleted_task_archives_its_page(db):
+    task = _create(db, _workspace(db))
+    notion_sync.process_due_jobs(db, transport=FakeNotion(_page()).transport)
+
+    _delete(db, task)
+    fake = FakeNotion(_page())
+    notion_sync.process_due_jobs(db, transport=fake.transport)
+
+    db.refresh(task)
+    assert fake.requests == [("PATCH", "/v1/pages/page-1")]
+    assert fake.bodies == [{"archived": True}]
+    assert task.notion_synced_version == 2
+    assert task.notion_sync_status == "synced"
+
+
+def test_task_deleted_before_page_was_made_never_creates_one(db):
+    task = _create(db, _workspace(db))
+    _delete(db, task)
+
+    fake = FakeNotion()
+    notion_sync.process_due_jobs(db, transport=fake.transport)
+
+    db.refresh(task)
+    # 만들기 요청과 지우기 요청 모두 Notion을 부르지 않고 끝난다
+    assert fake.requests == []
+    assert task.notion_page_id is None
+    assert {j.status for j in _jobs(db, task)} == {"done"}
+
+
+def test_deleted_task_with_unknown_create_result_looks_up_page_to_archive(db):
+    task = _create(db, _workspace(db))
+    notion_sync.process_due_jobs(db, transport=FakeNotion(httpx.ReadTimeout("timed out")).transport)
+    db.refresh(task)
+    assert task.notion_create_attempted_at is not None
+
+    _delete(db, task)
+    fake = FakeNotion(httpx.Response(200, json={"results": [{"id": "page-1"}]}), _page())
+    notion_sync.process_due_jobs(db, transport=fake.transport, now=_later())
+
+    db.refresh(task)
+    assert fake.requests == [
+        ("POST", "/v1/databases/db_123/query"),
+        ("PATCH", "/v1/pages/page-1"),
+    ]
+    assert fake.bodies[-1] == {"archived": True}
+    assert task.notion_create_attempted_at is None
+
+
+def test_attaching_new_database_skips_deleted_task(db):
+    workspace = _workspace(db)
+    kept, deleted = _create(db, workspace), _create(db, workspace)
+    notion_sync.process_due_jobs(db, transport=FakeNotion(_page("page-1"), _page("page-2")).transport)
+    _delete(db, deleted)
+    notion_sync.process_due_jobs(db, transport=FakeNotion(_page()).transport)
+
+    _attach(db, workspace, "db_456")
+    fake = FakeNotion(_page("page-3"))
+    notion_sync.process_due_jobs(db, transport=fake.transport)
+
+    assert fake.requests == [("POST", "/v1/pages")]
+    db.refresh(kept)
+    db.refresh(deleted)
+    assert kept.notion_database_id == "db_456"
+    assert deleted.notion_database_id == "db_123"
