@@ -120,8 +120,9 @@ def update_task(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
+    member = require_pm(db, user, _get_task(db, task_id).workspace_id)
+    # PM인지 먼저 확인한다. 권한 없는 요청이 행을 잠가 승인·되돌리기를 기다리게 하지 않는다
     task = _get_task(db, task_id, lock=True)
-    member = require_pm(db, user, task.workspace_id)
 
     updates = payload.model_dump(
         exclude_unset=True, exclude={"changed_by"}
@@ -172,8 +173,9 @@ def rollback_history_endpoint(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
+    member = require_pm(db, user, _get_task(db, task_id).workspace_id)
+    # PM인지 먼저 확인한다. 권한 없는 요청이 행을 잠가 승인·되돌리기를 기다리게 하지 않는다
     task = _get_task(db, task_id, lock=True)
-    member = require_pm(db, user, task.workspace_id)
     history = db.get(TaskHistory, history_id)
     if history is None or history.task_id != task_id:
         raise AppError(
