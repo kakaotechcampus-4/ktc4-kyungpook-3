@@ -94,6 +94,7 @@ docker compose -f docker-compose.prod.yml logs -f api
 | `WORKSPACE_MISMATCH` | 400 | 요청한 workspace_id가 대상 리소스의 실제 workspace와 다름 |
 | `MEETING_NOT_FOUND` | 404 | 회의를 찾을 수 없음 |
 | `EXTRACTION_NOT_FOUND` | 404 | 추출 결과를 찾을 수 없음 |
+| `EXTRACTION_ITEM_NOT_FOUND` | 404 | 그 추출 결과에 해당 항목이 없음 (auto 되돌리기) |
 | `APPROVAL_NOT_FOUND` | 404 | 승인 요청을 찾을 수 없음 |
 | `WORKSPACE_NOT_FOUND` | 404 | 워크스페이스를 찾을 수 없음 |
 | `MEMBER_NOT_FOUND` | 404 | 팀원을 찾을 수 없음 |
@@ -105,6 +106,7 @@ docker compose -f docker-compose.prod.yml logs -f api
 | `APPROVAL_ALREADY_RESOLVED` | 409 | 이미 승인/반려 처리된 요청을 다시 처리하려 함 |
 | `APPROVAL_CONFLICT` | 409 | task_update 제안 이후 같은 필드가 바뀌었거나 대상 task 제목이 바뀌어 승인하지 않음. `details.conflicts`에 필드별 기준값·지금 값·제안 값(`field: "title"`은 대상 확인용이라 `proposed`가 null). 확인 후 `details.task_version`을 `confirm_task_version`에 담아 다시 승인하면 반영(그 사이 또 바뀌었으면 다시 409) |
 | `TASK_HISTORY_ALREADY_ROLLED_BACK` | 409 | 이미 되돌린 변경을 다시 되돌리려 함 |
+| `AUTO_TASK_NOT_REVERTIBLE` | 409 | auto로 만든 태스크를 되돌릴 수 없음. `details.reason`: `already_reverted`(이미 되돌림) · `not_auto_created`(auto로 만든 항목이 아님) · `task_missing`(태스크가 없음) · `task_changed`(만든 뒤 바뀜, `details.task_version`) · `pending_approval`(그 태스크의 처리 대기 승인 요청이 있음, `details.approval_id`). 태스크를 직접 고친다 |
 | `LAST_PM_REQUIRED` | 409 | 워크스페이스의 마지막 PM(로그인 계정이 있는 PM)을 member로 내리려 함. 다른 팀원을 먼저 PM으로 지정해야 함 |
 | `DISCORD_USER_ALREADY_MAPPED` | 409 | 같은 워크스페이스에서 탈퇴하지 않은 다른 팀원에 이미 연결된 디스코드 계정(`details.discord_user_id`). 탈퇴(`is_deleted`)한 팀원의 계정은 다시 연결할 수 있음. `discord_user_id`의 앞뒤 공백은 지우고, 빈 값은 연결 없음(null)으로 저장. 64자를 넘으면 이 코드가 아니라 400 `INVALID_REQUEST` |
 | `AUDIO_UPLOAD_FAILED` | 422 | 오디오 저장·병합 실패 *(아직 미구현 경로)* |
@@ -124,7 +126,7 @@ docker compose -f docker-compose.prod.yml logs -f api
 로컬 DB와 Notion은 하나의 트랜잭션으로 롤백할 수 없어서, Task 변경과 Notion 반영을
 분리한다(outbox 패턴, `app/services/notion_sync.py`).
 
-1. Task 생성·수정·되돌리기(`app/services/tasks.py`)는 `Task.version`을 올리고, 같은
+1. Task 생성·수정·되돌리기·지우기(`app/services/tasks.py`)는 `Task.version`을 올리고, 같은
    트랜잭션에 "이 Task를 확인해 달라"는 요청(`notion_sync_job`) 한 줄을 쌓는다. 연결 상태와 상관없이
    항상 쌓는다. **요청 안에서는 Notion을 호출하지 않으므로** Notion 장애가 Task API를 실패시키지 않는다.
 2. 서버 프로세스 안의 워커(`app/main.py` lifespan, `NOTION_SYNC_INTERVAL_SECONDS`마다,
@@ -146,6 +148,7 @@ docker compose -f docker-compose.prod.yml logs -f api
 | 워커 중단 | `in_progress`로 5분 넘게 남은 요청은 다시 대기열로 돌린다 |
 | 수동 재시도 | `POST /api/v1/tasks/{task_id}/notion-sync/retry` — `failed` 요청의 재시도 횟수를 초기화해 다시 대기열에 넣는다. Task의 지금 버전이 지금 DB에 이미 반영됐으면 거절한다 |
 | 쌓이는 행 | 끝난(`done`·`skipped`·`failed`) 요청은 지우지 않는다. Notion을 쓰지 않는 워크스페이스도 Task를 고칠 때마다 한 줄씩 쌓인다 |
+| 지운 Task | 지울 때(`tasks.delete_task`)도 버전을 올리고 요청을 쌓는다. 워커는 지금 DB에 페이지가 있으면 보관(`archived: true`)하고, 없으면 만들지 않는다. 결과를 모르는 POST가 있었으면 조회한 뒤 보관한다. 새 DB가 붙어도 지운 Task에는 요청을 쌓지 않는다(#232) |
 
 워커는 프로세스당 하나만 도는 것을 전제로 한다(uvicorn 워커를 여러 개 띄우면 안 됨).
 
@@ -292,16 +295,20 @@ scope는 `bot applications.commands identify`다. 봇 초대 scope만 요청하�
 |---|---|
 | 임베딩 저장 | task 제목의 임베딩을 `task.embedding`(pgvector, 1536차원)에 둔다. 생성·제목 변경 시 NULL로 비우고, 서버 안의 워커(`EMBEDDING_SYNC_INTERVAL_SECONDS`마다)가 채운다. 요청 안에서는 임베딩 API를 부르지 않는다 |
 | 워커 실패 | 제목이 비었거나 공백뿐인 task는 보내지 않는다. 입력 오류(400·413·422)면 하나씩 다시 보내 거절된 task만 건너뛴다. 그 외 실패(연결·타임아웃·5xx·429)는 연속 실패할수록 대기 간격을 두 배씩 늘리고(최대 5분, `Retry-After`가 있으면 우선), 성공하면 원래 간격으로 돌아간다. 401·403은 바로 5분 간격으로 늘리고 error 로그를 남긴다 |
-| 검색 대상 | 같은 워크스페이스에서 status가 todo·in_progress·blocked·done이고 임베딩이 있는 task. 코사인 유사도 상위 `k`(기본 3)개 중 `min_similarity`(기본 0.4, ai/docs/basis_for_decision/ai/2026-09-22-0010-embedding-similarity-threshold.md) 이상만 |
+| 검색 대상 | 같은 워크스페이스에서 status가 todo·in_progress·blocked·done이고 임베딩이 있는, 지우지 않은 task. 코사인 유사도 상위 `k`(기본 3)개 중 `min_similarity`(기본 0.4, ai/docs/basis_for_decision/ai/2026-09-22-0010-embedding-similarity-threshold.md) 이상만 |
 | 검색 인증 | 봇이 세션 없이 부르므로 `X-Service-Token` 헤더를 `SERVICE_TOKEN`과 비교한다. 없거나 다르면 401 |
 | 검색 실패 | 임베딩 호출이 실패하면 빈 목록 대신 `EMBEDDING_UNAVAILABLE`(502). 빈 목록이면 호출한 쪽이 중복 task를 만들 수 있다 |
-| `action` 없음 / `create` | 게이트가 auto면 task 생성, 아니면 task_create 승인 요청. 게이트는 `decide_create_gate`가 정한다. judge 항목과 확신도를 측정하지 않은 항목은 auto로 가지 않고 BE가 계산한 담당자 확신도로만 정한다. 담당자를 한 명으로 찾았거나 언급이 없으면(`assignee_type`이 group·none·null) `review`, 언급했는데 찾지 못했으면(중의적·없음) `hold`다. `assignee_raw` 없이 `second`·`thirdpronoun`·`thirdrole`만 오거나 1인칭인데 화자가 없으면, 사람을 지목했지만 누군지 모르는 것이라 `hold`다(`mentions_assignee`). 그 밖에는 확신도로 정한다(#201) |
+| `action` 없음 / `create` | 게이트가 auto면 task 생성, 아니면 task_create 승인 요청. 게이트는 `decide_create_gate`가 정한다. 먼저 BE가 계산한 담당자 확신도를 본다. 담당자를 언급했는데 찾지 못했으면(중의적·없음) `hold`다. `assignee_raw` 없이 `second`·`thirdpronoun`·`thirdrole`만 오거나 1인칭인데 화자가 없으면, 사람을 지목했지만 누군지 모르는 것이라 `hold`다(`mentions_assignee`). judge 항목은 그다음 아래 auto 조건을 모두 만족하면 `auto`, 아니면 `review`다. 경로를 가릴 수 없고 확신도도 없는 항목은 `review`, legacy는 확신도로 정한다(#201) |
+| judge auto 조건 | 숫자 점수가 아니라 조건을 모두 만족할 때만 `auto`다(`matching.auto_blockers`, #232). ① 새 항목 ② `task_status`가 certain ③ 담당자를 언급했으면 한 명으로 찾았고(검증된 별칭이나 화자) 확신도 0.8 이상 ④ `assignee_type`이 `second`·`thirdpronoun`·`thirdrole`이 아님(AI가 대명사·역할을 문맥으로 푼 이름) ⑤ `due_status`가 certain이거나 missing이고 `due_date` 유무와 맞음 ⑥ `similar_count`가 0. `task_status`·`due_status`·`similar_count` 중 하나라도 보내지 않으면 `review`다. 할 일 근거 상태는 LLM의 자기 표시라 걸러 내는 힘이 약해서, 중복 생성은 임베딩으로 계산한 유사 검색 결과로 막는다. `top_similarity`는 판단에 쓰지 않고 기록만 한다(유사도 기준값을 정할 근거). 못 맞춘 조건은 info 로그(`reasons=`)로 남긴다 |
+| auto 되돌리기 | `POST /api/v1/extractions/{extraction_id}/items/{item_id}/revert`(PM). auto로 만든 태스크를 지우고(`task.is_deleted`) 같은 내용의 task_create 승인 요청(`gate: review`, 표시용 `reverted_task_id`)을 만들어 항목에 잇는다. 항목의 `task_id`는 비우고 `reverted_at`·`reverted_by`를 남기며 `gate`는 처음 판단대로 `auto`다. 승인하면 새 태스크가 생겨 항목에 이어지고, 반려하면 태스크 없이 끝난다. 값 하나가 틀린 것은 태스크를 직접 고치면 되지만 중복·오판은 고칠 값이 없어서 PM이 승인·반려를 다시 고르게 한다. 만든 뒤 태스크가 바뀌었거나(`version`이 1이 아님) 그 태스크의 처리 대기 승인 요청이 있으면 409 `AUTO_TASK_NOT_REVERTIBLE`이다. 바뀐 값이 승인 요청에 담기지 않고 사라지기 때문이다. 근거는 저장된 근거 발화가 있을 때만 승인 요청에 담긴다(#229 전에는 비어 있다) |
+| 지운 task | 지금은 auto 되돌리기만 task를 지운다. 행은 남기고(Notion 페이지 보관, 추출 항목·이력 연결 유지) task 목록·조회·수정·이력·유사 검색·임베딩·승인 요청 대상에서 뺀다. 지운 task를 가리키는 조회는 404 `TASK_NOT_FOUND`, update 추출 항목은 건너뛴다 |
 | 추출 경로 | AI가 경로를 보내지 않으므로 항목이 보낸 키로 가린다. `action`·`category`·`doc_text`를 보냈으면 judge, 확신도를 보냈으면 legacy다(`ExtractionItemCreate.extraction_path`). 모든 항목이 같을 때만 `extraction.extraction_path`에 남기고 아니면 NULL. 확신도를 보내지 않으면 0.0이 아니라 NULL(측정 안 함)로 저장한다 |
 | `action: update` | `target_task_id`의 task_update 승인 요청을 만든다(신뢰도와 무관하게 항상 PM 승인 대상). `task_title`은 없어도 되고, 와도 제목은 바꾸지 않는다 |
 | update 변경안 | 들어온 값 중 지금 task와 다른 `due_date`·`status`·`assignee_member_id`만 담는다. 담당자는 지금 task와 다를 때만 넣고 같으면 뺀다 |
 | update 충돌 기준값 | 변경 필드마다 `base_values`를 남겨 승인 시 그 뒤 수정과 충돌을 확인한다. 기준값은 AI가 유사 검색에서 본 값(`target_snapshot`의 `due_date`·`status`·`assignee_member_id`)이다. 보내지 않은 필드나 `target_snapshot`이 없는 요청은 등록 시점의 값을 쓴다. 검색과 등록 사이에 PM이 고친 값을 승인이 덮지 않게 하려는 것이다 |
 | update 대상 확인 | AI가 task를 고를 때 본 제목(`target_snapshot.title`, 없거나 null이면 등록 시점 제목)을 payload의 `base_title`에 남긴다. 승인할 때 지금 제목과 다르면 다른 필드가 그대로여도 `APPROVAL_CONFLICT`의 `title` 항목으로 알린다. 제목은 바꾸지 않는다. 앞뒤 공백만 다르면 같은 제목으로 본다. `base_title`이 없는 요청(이 기능 전에 만든 요청, `base_title`을 보내지 않은 수동 생성)은 제목을 확인하지 않는다. 수동 생성(`POST /approvals`)은 payload를 그대로 저장해서 `base_title`·`base_values`를 넣으면 확인한다(#185) |
 | update 승인 요청 생성 여부 | 담당자를 하나로 못 찾았으면(중의적이거나 없음) 다른 변경이 없어도 PM이 보도록 승인 요청을 만든다. `category: scope`(대응하는 task 필드가 없는 범위 결정)도 다른 변경이 없어도 승인 요청을 만든다. 그 외에 담당자까지 같거나 언급이 없고 다른 변경도 없으면 승인 요청 자체를 만들지 않는다(단 `doc_text`·근거는 ExtractionItem에 남는다) |
+| 추출 조회의 auto 표시 | 항목의 `gate`가 `auto`면 승인 없이 만든 항목이다. 되돌렸으면 `reverted_at`이 있고 새 승인 요청이 `approval_id`·`approval_status`로 보인다. 판단 근거로 `task.evidence_status`·`due_date.evidence_status`·`similar_count`·`top_similarity`를 함께 싣는다(보내지 않았으면 null) |
 | 추출 조회의 반영 여부 | `GET /api/v1/extractions/{extraction_id}` 항목의 `task_id`는 연결된 task다. create는 task가 생긴 뒤에 채워지지만, update는 수정 대상이라 승인 전에도 있다. 그래서 반영 여부는 `approval_status`(연결된 승인 요청의 `status`: pending·approved·rejected, 승인 요청이 없으면 null)로 본다. approved는 task 반영과 같은 트랜잭션에서 커밋되고, 충돌로 반영하지 못하면 pending으로 남는다. 상태는 항목 조회에 승인 요청을 붙여 한 쿼리로 읽는다. 따로 읽으면 그 사이 승인이 커밋되어 `task_id`는 승인 전, `approval_status`는 승인 뒤 값으로 어긋날 수 있다(#211) |
 | 잘못된 항목 | update의 `target_task_id`가 없거나 다른 워크스페이스 task면, create의 `task_title`이 비어 있으면 그 항목만 건너뛰고 나머지는 처리한다(응답 `item_count`는 저장된 항목 수) |
 
@@ -312,7 +319,7 @@ scope는 `bot applications.commands identify`다. 봇 초대 scope만 요청하�
 
 | 구분 | API |
 |---|---|
-| PM 전용 | 승인·반려(`PATCH /approvals/{id}`), 할일 생성·수정(`POST /tasks`, `PATCH /tasks/{id}`), 되돌리기, Notion 재시도, 팀원 생성·수정, 별칭 생성·삭제, Notion 연결 시작·콜백(`GET .../integrations/notion/start`, `GET /integrations/notion/callback`), Discord 연결 시작·콜백(`GET .../integrations/discord/start`, `GET /integrations/discord/callback`), 연동 해제, 회의 업로드, 온보딩 저장 |
+| PM 전용 | 승인·반려(`PATCH /approvals/{id}`), 할일 생성·수정(`POST /tasks`, `PATCH /tasks/{id}`), 되돌리기, auto 되돌리기(`POST /extractions/{id}/items/{item_id}/revert`), Notion 재시도, 팀원 생성·수정, 별칭 생성·삭제, Notion 연결 시작·콜백(`GET .../integrations/notion/start`, `GET /integrations/notion/callback`), Discord 연결 시작·콜백(`GET .../integrations/discord/start`, `GET /integrations/discord/callback`), 연동 해제, 회의 업로드, 온보딩 저장 |
 | 소속이면 누구나 | 조회 API 전부, 승인 요청 생성(`POST /approvals`) |
 
 - Notion 연결 시작·콜백은 브라우저 페이지 이동이라 403 대신 앱 화면의 `?oauth=notion&oauth_result=failed`로 돌려보낸다.
