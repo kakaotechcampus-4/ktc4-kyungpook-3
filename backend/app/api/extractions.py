@@ -152,19 +152,14 @@ def create_extraction(
     # 임베딩을 기다리는 task가 있는지(judge auto 조건). 처음 judge 새 항목에서 한 번 읽고, 이 요청이 auto로 task를
     # 만들면 그 task가 기다리게 되므로 True로 바꾼다. 그 밖에는 이 요청 안에서 바뀌지 않는다
     waiting_for_embedding: bool | None = None
+    targets = _lock_update_targets(db, payload.items)
 
     for raw_item in payload.items:
         # 잘못된 항목 하나로 요청 전체를 실패시키면 봇이 같은 요청을 재시도하다 회의 전체가
         # 반영되지 않는다. 그런 항목은 건너뛰고 나머지를 처리한다.
         target: Task | None = None
         if raw_item.action == ExtractionAction.UPDATE:
-            # 승인 요청을 만들 수 있으므로 커밋까지 잠근다. auto 되돌리기가 지우는 중이면 기다렸다가 지운 것을 본다
-            target = db.execute(
-                select(Task)
-                .where(Task.task_id == raw_item.target_task_id)
-                .with_for_update()
-                .execution_options(populate_existing=True)
-            ).scalar_one_or_none() if raw_item.target_task_id else None
+            target = targets.get(raw_item.target_task_id) if raw_item.target_task_id else None
             if target is None or target.is_deleted or target.workspace_id != meeting.workspace_id:
                 # 검색 이후 task가 지워졌거나, 잘못된 ID
                 logger.warning(
@@ -334,6 +329,29 @@ def create_extraction(
             item_count=saved_count,
         ).model_dump(mode="json")
     )
+
+
+def _lock_update_targets(db: Session, items: list[ExtractionItemCreate]) -> dict[str, Task]:
+    """수정 항목이 가리키는 task를 ID 순서로 한 번에 잠근다. 승인 요청을 만들 수 있어 커밋까지 잠근다.
+
+    auto 되돌리기가 지우는 중이면 기다렸다가 지운 것을 본다. 항목 순서대로 하나씩 잠그면, 같은 task들을 반대
+    순서로 보낸 추출 요청 두 개가 서로를 기다리다 데드락이 난다. 그래서 ID로 정렬해 한 쿼리로 잠근다.
+    """
+    task_ids = sorted({
+        item.target_task_id
+        for item in items
+        if item.action == ExtractionAction.UPDATE and item.target_task_id
+    })
+    if not task_ids:
+        return {}
+    rows = db.execute(
+        select(Task)
+        .where(Task.task_id.in_(task_ids))
+        .order_by(Task.task_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    ).scalars().all()
+    return {task.task_id: task for task in rows}
 
 
 def _same_instant(a: datetime, b: datetime) -> bool:
