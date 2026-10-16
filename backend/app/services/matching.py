@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.models import (
     AliasResolutionLog,
+    EvidenceStatus,
     ExtractionPath,
     Gate,
     Member,
@@ -196,25 +197,81 @@ def mentions_assignee(assignee_type: str | None, assignee_hint: str | None) -> b
     return assignee_type is not None and assignee_type not in _NO_PERSON_ASSIGNEE_TYPES
 
 
+# AI가 대명사·역할("그분", "너", "디자이너분")을 문맥으로 풀어 이름을 보낸 담당자 종류. 이름이 한 명으로 찾아져도
+# LLM의 추측이라 auto로 보내지 않는다. legacy도 이 종류는 inferred로 본다(ai/extract/llm.py _assignee_status)
+_INFERRED_ASSIGNEE_TYPES = frozenset({"second", "thirdpronoun", "thirdrole"})
+
+
+@dataclass(frozen=True)
+class AutoSignals:
+    """judge 새 항목의 auto 판단 근거. AI가 보낸 값이고, 보내지 않은 값은 None이다."""
+
+    task_status: EvidenceStatus | None
+    due_status: EvidenceStatus | None
+    similar_count: int | None
+
+
+def auto_blockers(
+    signals: AutoSignals,
+    *,
+    assignee_type: str | None,
+    assignee: MatchResult | None,
+    has_due_date: bool,
+) -> list[str]:
+    """judge 새 항목을 auto로 보내지 못하는 이유. 빈 리스트면 auto로 보낼 수 있다.
+
+    숫자 점수 하나로 정하지 않고 조건을 모두 만족할 때만 auto다(#232). 할 일 근거 상태는 LLM의 자기 표시라
+    거의 certain으로 나오므로, 중복 생성은 임베딩으로 계산한 유사 검색 결과(similar_count)로 따로 막는다.
+    assignee는 담당자를 언급했을 때(mentions_assignee)의 매칭 결과이고, 언급이 없으면 None이다.
+    """
+    reasons = []
+    if signals.task_status is None or signals.due_status is None or signals.similar_count is None:
+        # 이 값을 보내기 전의 AI다. 판단할 근거가 없다
+        return ["missing_signals"]
+    if signals.task_status != EvidenceStatus.CERTAIN:
+        reasons.append("task_not_certain")
+    if assignee is not None and (
+        assignee.member_id is None
+        or assignee.needs_check
+        or assignee.confidence < GATE_AUTO_THRESHOLD
+    ):
+        reasons.append("assignee_not_confirmed")
+    if assignee_type in _INFERRED_ASSIGNEE_TYPES:
+        reasons.append("assignee_inferred")
+    if signals.due_status == EvidenceStatus.INFERRED:
+        reasons.append("due_not_certain")
+    elif (signals.due_status == EvidenceStatus.MISSING) == has_due_date:
+        # 마감이 없다면서 날짜를 보냈거나, 있다면서 날짜를 안 보냈다. 어느 쪽이 맞는지 모른다
+        reasons.append("due_mismatch")
+    if signals.similar_count > 0:
+        reasons.append("similar_task_found")
+    return reasons
+
+
 def decide_create_gate(
     path: ExtractionPath | None,
     confidence: float | None,
     *,
     needs_check: bool = False,
     assignee_confidence: float | None = None,
+    blockers: list[str] | None = None,
 ) -> Gate:
     """새 task 항목(action=create)의 게이트. 기존 task 수정은 이 함수를 거치지 않고 항상 REVIEW다.
 
-    judge 경로는 할 일 확신도를 측정하지 않으므로 AUTO로 보내지 않는다. 경로를 가릴 수 없는 항목도
-    확신도를 측정하지 않았으면(None) 같다. 측정하지 않은 값을 0.0으로 보면 무조건 HOLD가 되고, 1.0으로
-    보면 근거 없이 AUTO가 된다. 이때는 BE가 직접 계산한 담당자 확신도만 본다. assignee_confidence는
-    담당자를 언급했을 때(mentions_assignee)만 값이고 언급이 없으면 None이다. 언급했는데 한 명으로 찾지
-    못했으면(중의적·없음·이름으로 풀리지 않은 지칭) PM이 채워야 하므로 HOLD, 찾았거나 언급이 없으면
-    REVIEW다. 그 밖에는 신뢰도로 정한다(decide_gate).
+    judge 경로는 할 일 확신도를 측정하지 않는다. 대신 auto 조건(auto_blockers)을 모두 만족하면(blockers가
+    빈 리스트) AUTO다. 경로를 가릴 수 없는 항목은 확신도를 측정하지 않았으면(None) AUTO로 보내지 않는다.
+    측정하지 않은 값을 0.0으로 보면 무조건 HOLD가 되고, 1.0으로 보면 근거 없이 AUTO가 된다.
+
+    AUTO가 아니면 BE가 직접 계산한 담당자 확신도만 본다. assignee_confidence는 담당자를 언급했을 때
+    (mentions_assignee)만 값이고 언급이 없으면 None이다. 언급했는데 한 명으로 찾지 못했으면(중의적·없음·
+    이름으로 풀리지 않은 지칭) PM이 채워야 하므로 HOLD, 찾았거나 언급이 없으면 REVIEW다.
+    legacy는 신뢰도로 정한다(decide_gate).
     """
     if path == ExtractionPath.JUDGE or confidence is None:
         if assignee_confidence is not None and assignee_confidence < GATE_REVIEW_THRESHOLD:
             return Gate.HOLD
+        if path == ExtractionPath.JUDGE and blockers is not None and not blockers:
+            return Gate.AUTO
         return Gate.REVIEW
     return decide_gate(confidence, needs_check=needs_check)
 

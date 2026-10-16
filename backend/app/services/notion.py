@@ -229,6 +229,16 @@ def update_page(
     )
 
 
+def archive_page(
+    integration: Integration,
+    page_id: str,
+    *,
+    transport: httpx.BaseTransport | None = None,
+) -> None:
+    """페이지를 보관(archive)한다. 지운 Task의 페이지에 쓴다. Notion 휴지통으로 옮겨져 DB에서 빠지고, Notion에서 복원할 수 있다."""
+    _send(integration, "PATCH", f"/pages/{page_id}", {"archived": True}, transport)
+
+
 def find_page_by_task_id(
     integration: Integration,
     task_id: str,

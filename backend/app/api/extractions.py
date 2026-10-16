@@ -6,11 +6,12 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user, require_member, require_service_token
+from app.api.deps import get_current_user, require_member, require_pm, require_service_token
 from app.core.database import get_db
 from app.core.errors import AppError, Envelope, ErrorCode, success
 from app.models import (
     ApprovalRequest,
+    ApprovalStatus,
     ApprovalType,
     ChangeSource,
     Evidence,
@@ -18,6 +19,7 @@ from app.models import (
     Extraction,
     ExtractionAction,
     ExtractionItem,
+    ExtractionPath,
     Gate,
     Meeting,
     MeetingStatus,
@@ -36,10 +38,13 @@ from app.schemas.meeting import (
     ExtractionItemCreate,
     ExtractionDetailResponse,
     ExtractionItemResponse,
+    ExtractionItemRevertResponse,
     TaskInfo,
 )
 from app.services.matching import (
+    AutoSignals,
     MatchResult,
+    auto_blockers,
     decide_create_gate,
     item_confidence,
     log_resolution,
@@ -47,7 +52,7 @@ from app.services.matching import (
     resolve_assignee,
     resolve_speaker,
 )
-from app.services.tasks import create_task
+from app.services.tasks import create_task, delete_task
 
 logger = logging.getLogger(__name__)
 
@@ -150,7 +155,7 @@ def create_extraction(
         target: Task | None = None
         if raw_item.action == ExtractionAction.UPDATE:
             target = db.get(Task, raw_item.target_task_id) if raw_item.target_task_id else None
-            if target is None or target.workspace_id != meeting.workspace_id:
+            if target is None or target.is_deleted or target.workspace_id != meeting.workspace_id:
                 # 검색 이후 task가 지워졌거나, 잘못된 ID
                 logger.warning(
                     "수정 대상 task가 없거나 다른 워크스페이스라 추출 항목을 건너뜁니다. "
@@ -201,17 +206,34 @@ def create_extraction(
             gate = Gate.REVIEW
         else:
             # 경로는 항목마다 가린다. 추출 전체의 경로는 섞이면 None이지만 항목의 정책은 정할 수 있다.
+            path = raw_item.extraction_path()
+            mentioned = mentions_assignee(raw_item.assignee_type, assignee_hint)
+            blockers = None
+            if path == ExtractionPath.JUDGE:
+                blockers = auto_blockers(
+                    AutoSignals(
+                        task_status=raw_item.task_status,
+                        due_status=raw_item.due_status,
+                        similar_count=raw_item.similar_count,
+                    ),
+                    assignee_type=raw_item.assignee_type,
+                    assignee=match if mentioned else None,
+                    has_due_date=raw_item.due_date is not None,
+                )
             gate = decide_create_gate(
-                raw_item.extraction_path(),
+                path,
                 conf,
                 needs_check=match.needs_check,
                 # 조회할 값이 없으면 match는 not_found(0.0)다. 사람을 지목했으면 그 값으로 hold가 된다
-                assignee_confidence=(
-                    match.confidence
-                    if mentions_assignee(raw_item.assignee_type, assignee_hint)
-                    else None
-                ),
+                assignee_confidence=match.confidence if mentioned else None,
+                blockers=blockers,
             )
+            if blockers:
+                # auto 조건과 유사도 기준을 조정할 때 어떤 조건에서 많이 걸리는지 본다
+                logger.info(
+                    "judge 새 항목을 auto로 보내지 않습니다. meeting_id=%s gate=%s reasons=%s",
+                    meeting.meeting_id, gate, ",".join(blockers),
+                )
 
         item = ExtractionItem(
             extraction_id=extraction.extraction_id,
@@ -230,6 +252,10 @@ def create_extraction(
             category=raw_item.category,
             status=str(raw_item.status) if raw_item.status else None,
             doc_text=raw_item.doc_text,
+            task_evidence_status=str(raw_item.task_status) if raw_item.task_status else None,
+            due_evidence_status=str(raw_item.due_status) if raw_item.due_status else None,
+            similar_count=raw_item.similar_count,
+            top_similarity=raw_item.top_similarity,
         )
         db.add(item)
         db.flush()  # item_id 확보 (approval/task 연결에 필요)
@@ -240,7 +266,8 @@ def create_extraction(
                 db, meeting, item, raw_item, match, target, has_assignee=assignee_hint is not None
             )
         elif gate == Gate.AUTO:
-            # 신뢰도가 충분하므로 승인 없이 바로 태스크로 반영한다.
+            # 신뢰도가 충분하거나(legacy) auto 조건을 모두 만족해(judge) 승인 없이 바로 태스크로 반영한다.
+            # PM은 추출 조회의 gate=auto로 알아보고, 틀렸으면 되돌린다(revert_auto_item).
             task = create_task(
                 db,
                 workspace_id=meeting.workspace_id,
@@ -414,6 +441,153 @@ def _request_task_update(
     item.approval_id = approval.approval_id
 
 
+def _representative_evidence(db: Session, item_ids: list[str]) -> dict[str, EvidenceInfo]:
+    """항목마다 대표 근거 하나. 근거가 없는 항목은 결과에 없다.
+
+    항목마다 근거가 여러 개일 수 있지만 응답 계약은 하나뿐이라, 제목 근거 중 seq가 가장 작은 발화를 대표로 쓴다.
+    """
+    if not item_ids:
+        return {}
+    rows = db.execute(
+        select(Evidence.item_id, Source)
+        .join(Source, Evidence.source_id == Source.source_id)
+        .where(
+            Evidence.item_id.in_(item_ids),
+            Evidence.type == str(EvidenceType.TASK),
+        )
+        .order_by(Source.seq)
+    ).all()
+    evidence_by_item: dict[str, EvidenceInfo] = {}
+    for item_id, src in rows:
+        evidence_by_item.setdefault(
+            item_id,
+            EvidenceInfo(quote=src.text, speaker=src.speaker_discord_user_id, at_ms=src.start_ms),
+        )
+    return evidence_by_item
+
+
+def _not_revertible(item: ExtractionItem, reason: str, **details: object) -> AppError:
+    return AppError(
+        ErrorCode.AUTO_TASK_NOT_REVERTIBLE,
+        details={"item_id": item.item_id, "reason": reason, **details},
+    )
+
+
+@router.post(
+    "/{extraction_id}/items/{item_id}/revert",
+    response_model=Envelope[ExtractionItemRevertResponse],
+)
+def revert_auto_item(
+    extraction_id: str,
+    item_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    """auto로 만든 태스크를 되돌린다. 태스크를 지우고 같은 내용의 생성 승인 요청(review)을 만든다.
+
+    auto가 틀렸을 때 위험한 것은 값 하나가 틀린 경우보다 중복이거나 할 일이 아닌 경우다. 값이 틀렸으면 태스크를
+    직접 고치면 되지만, 중복·오판은 고칠 값이 없다. 그래서 처음부터 review였던 것처럼 PM이 승인·반려를 다시
+    고르게 한다. 승인하면 새 태스크가 생기고, 반려하면 태스크 없이 끝난다.
+
+    만든 뒤로 태스크가 바뀌었으면(버전이 1이 아님) 되돌리지 않는다. 진행 상황이나 PM이 고친 값이 승인 요청에
+    담기지 않고 사라진다. 그 태스크를 대상으로 처리 대기 중인 승인 요청이 있어도 같다. 이때는 태스크를 직접
+    고친다.
+    """
+    extraction = db.get(Extraction, extraction_id)
+    if extraction is None:
+        raise AppError(
+            ErrorCode.EXTRACTION_NOT_FOUND, details={"extraction_id": extraction_id}
+        )
+    member = require_pm(db, user, extraction.meeting.workspace_id)
+
+    # 같은 항목을 두 번 되돌리거나, 되돌리는 사이 태스크가 바뀌지 않게 커밋까지 잠근다
+    item = db.execute(
+        select(ExtractionItem)
+        .where(ExtractionItem.item_id == item_id, ExtractionItem.extraction_id == extraction_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    ).scalar_one_or_none()
+    if item is None:
+        raise AppError(ErrorCode.EXTRACTION_ITEM_NOT_FOUND, details={"item_id": item_id})
+    if item.reverted_at is not None:
+        raise _not_revertible(item, "already_reverted")
+    if (
+        item.gate != str(Gate.AUTO)
+        or item.action != str(ExtractionAction.CREATE)
+        or item.task_id is None
+    ):
+        raise _not_revertible(item, "not_auto_created")
+
+    task = db.execute(
+        select(Task)
+        .where(Task.task_id == item.task_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    ).scalar_one_or_none()
+    if task is None or task.is_deleted:
+        raise _not_revertible(item, "task_missing", task_id=item.task_id)
+    if task.version != 1:
+        raise _not_revertible(item, "task_changed", task_id=task.task_id, task_version=task.version)
+    pending = db.execute(
+        select(ApprovalRequest.approval_id).where(
+            ApprovalRequest.related_task_id == task.task_id,
+            ApprovalRequest.status == str(ApprovalStatus.PENDING),
+        )
+    ).first()
+    if pending is not None:
+        raise _not_revertible(
+            item, "pending_approval", task_id=task.task_id, approval_id=pending.approval_id
+        )
+
+    delete_task(db, task)
+
+    evidence = _representative_evidence(db, [item.item_id]).get(item.item_id)
+    # 처음부터 review였을 때의 생성 승인 요청과 같은 모양이다. 승인하면 _apply_approval이 이 항목에 새 태스크를 잇는다
+    approval_payload = {
+        "task_title": item.task_title,
+        "assignee_member_id": item.assignee_member_id,
+        "assignee_raw": item.assignee_raw,
+        "due_date": item.due_date.isoformat() if item.due_date else None,
+        "due_raw": item.due_raw,
+        "evidence_quote": evidence.quote if evidence else None,
+        "evidence_speaker": evidence.speaker if evidence else None,
+        "evidence_at_ms": evidence.at_ms if evidence else None,
+        "extraction_item_id": item.item_id,
+        "meeting_id": extraction.meeting_id,
+        "gate": str(Gate.REVIEW),
+        "doc_text": item.doc_text,
+        "category": item.category,
+        # 표시용. auto로 만들었다가 되돌린 요청임을 알린다. 승인 때 반영되는 키가 아니다
+        "reverted_task_id": task.task_id,
+    }
+    if item.status:
+        approval_payload["status"] = item.status
+    approval = ApprovalRequest(
+        workspace_id=task.workspace_id,
+        type=str(ApprovalType.TASK_CREATE),
+        payload=json.dumps(approval_payload, ensure_ascii=False),
+        related_task_id=None,
+        requested_by=None,
+    )
+    db.add(approval)
+    db.flush()
+
+    item.task_id = None
+    item.approval_id = approval.approval_id
+    item.reverted_at = datetime.now(timezone.utc)
+    item.reverted_by = member.member_id
+    db.commit()
+
+    return success(
+        ExtractionItemRevertResponse(
+            item_id=item.item_id,
+            reverted_task_id=task.task_id,
+            approval_id=approval.approval_id,
+            reverted_at=item.reverted_at,
+        ).model_dump(mode="json")
+    )
+
+
 @router.get("/{extraction_id}", response_model=Envelope[ExtractionDetailResponse])
 def get_extraction(
     extraction_id: str,
@@ -449,30 +623,16 @@ def get_extraction(
         ).all()
         names = {mid: name for mid, name in rows}
 
-    # 항목마다 근거가 여러 개일 수 있지만 응답 계약은 하나뿐이라, 제목 근거 중 seq가 가장 작은 발화를 대표로 쓴다.
-    evidence_by_item: dict[str, EvidenceInfo] = {}
-    if items:
-        rows = db.execute(
-            select(Evidence.item_id, Source)
-            .join(Source, Evidence.source_id == Source.source_id)
-            .where(
-                Evidence.item_id.in_([i.item_id for i in items]),
-                Evidence.type == str(EvidenceType.TASK),
-            )
-            .order_by(Source.seq)
-        ).all()
-        for item_id, src in rows:
-            evidence_by_item.setdefault(
-                item_id,
-                EvidenceInfo(
-                    quote=src.text, speaker=src.speaker_discord_user_id, at_ms=src.start_ms
-                ),
-            )
+    evidence_by_item = _representative_evidence(db, [i.item_id for i in items])
 
     item_responses = [
         ExtractionItemResponse(
             item_id=i.item_id,
-            task=TaskInfo(title=i.task_title, confidence=i.task_confidence),
+            task=TaskInfo(
+                title=i.task_title,
+                confidence=i.task_confidence,
+                evidence_status=i.task_evidence_status,
+            ),
             assignee=AssigneeInfo(
                 raw=i.assignee_raw,
                 member_id=i.assignee_member_id,
@@ -481,13 +641,19 @@ def get_extraction(
                 needs_check=i.assignee_needs_check,
             ),
             due_date=DueDateInfo(
-                value=i.due_date, raw=i.due_raw, confidence=i.due_confidence
+                value=i.due_date,
+                raw=i.due_raw,
+                confidence=i.due_confidence,
+                evidence_status=i.due_evidence_status,
             ),
             confidence=i.confidence,
             gate=i.gate,
             evidence=evidence_by_item.get(
                 i.item_id, EvidenceInfo(quote=None, speaker=None, at_ms=None)
             ),
+            similar_count=i.similar_count,
+            top_similarity=i.top_similarity,
+            reverted_at=i.reverted_at,
             task_id=i.task_id,
             approval_id=i.approval_id,
             approval_status=approval_statuses[i.item_id],

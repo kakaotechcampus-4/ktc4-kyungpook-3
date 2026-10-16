@@ -163,6 +163,7 @@ def process_missing_embeddings(
         select(Task.task_id, Task.title)
         .where(
             Task.embedding.is_(None),
+            Task.is_deleted.is_(False),  # 지운 task는 검색에서 빠지므로 임베딩할 필요가 없다
             func.trim(Task.title) != "",
             or_(
                 Task.embedding_rejected_title.is_(None),
@@ -269,7 +270,7 @@ def search_similar_tasks(
 ) -> list[tuple[Task, float]]:
     """코사인 유사도가 높은 순으로 최대 k개의 (task, 유사도)를 돌려준다.
 
-    todo·in_progress·blocked·done task가 대상이다. min_similarity 미만인 후보는 뺀다.
+    todo·in_progress·blocked·done task가 대상이다. 지운 task와 min_similarity 미만인 후보는 뺀다.
     남는 게 없으면 빈 목록이다.
     """
     distance = Task.embedding.cosine_distance(query_vector)
@@ -278,6 +279,7 @@ def search_similar_tasks(
         .where(
             Task.workspace_id == workspace_id,
             Task.status.in_(SEARCHABLE_STATUSES),
+            Task.is_deleted.is_(False),
             Task.embedding.is_not(None),
             distance <= 1 - min_similarity,
         )

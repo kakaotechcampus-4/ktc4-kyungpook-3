@@ -24,7 +24,8 @@ router = APIRouter(prefix="/tasks", tags=["tasks"], dependencies=[Depends(requir
 
 def _get_task(db: Session, task_id: str) -> Task:
     task = db.get(Task, task_id)
-    if task is None:
+    # 지운 task(auto로 만들었다가 되돌린 task)는 없는 task로 본다. 조회·수정·이력 모두 같다
+    if task is None or task.is_deleted:
         raise AppError(ErrorCode.TASK_NOT_FOUND, details={"task_id": task_id})
     return task
 
@@ -70,7 +71,7 @@ def list_tasks(
     _member: Member = Depends(get_current_member),
     db: Session = Depends(get_db),
 ) -> dict:
-    filters = [Task.workspace_id == workspace_id]
+    filters = [Task.workspace_id == workspace_id, Task.is_deleted.is_(False)]
     if status is not None:
         filters.append(Task.status == str(status))
     if assignee_member_id is not None:
