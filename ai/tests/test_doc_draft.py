@@ -123,6 +123,18 @@ def test_update_schedule_without_usable_due_date_is_failure(bad, monkeypatch):
         draft(_finding(), _result(), candidate=_candidate(), today=TODAY)
 
 
+
+def test_none_due_clears_the_due_only_on_a_schedule_update():
+    # "none" 은 마감을 없애자는 결정, null 은 못 정함. 일정 변경 수정에서 null 은 지금처럼 실패다(멘토 리뷰 #230)
+    def run(response, **result):
+        return draft_llm(_finding(), _result(**result), _candidate(), TODAY, FakeLLM(responses=[response]))
+
+    cleared = run({"task": None, "due_date": "none", "doc_text": "로그인 화면 마감을 미정으로 되돌림"})
+    assert cleared.structured == DraftStructured(task=None, due_date=None, due_cleared=True)
+    assert run({"task": None, "due_date": None, "doc_text": "마감 연기"}) is None
+    new = run({"task": "알림 설정", "due_date": "none", "doc_text": "알림 설정"}, is_new=True, matched_task_id=None)
+    assert new.structured.due_cleared is False and new.structured.due_date is None
+
 @pytest.mark.parametrize("response, is_new", [
     ({"task": "알림 설정 페이지 개발", "due_date": None, "doc_text": "  "}, True),  # doc_text 없음
     ({"task": "", "due_date": None, "doc_text": "알림 설정 페이지 개발"}, True),     # create 인데 제목 없음

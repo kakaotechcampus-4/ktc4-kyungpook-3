@@ -123,12 +123,13 @@ def _draft_prompt(
         "   - 요일이 특정되지 않은 기간은 그 기간의 마지막 날:\n"
         '     "이번 주 안으로" → 이번 주 일요일, "다음 주까지" → 다음 주 일요일, "월말까지" → 그 달 마지막 날\n'
         '   - "원래대로"처럼 되돌리자고 하면 현재 값 아래 괄호 메모의 원래 값(화살표 앞의 날짜)\n'
+        '   - 마감을 없애자고 하거나, 되돌릴 원래 값이 "없음"이면 "none"\n'
         "3. doc_text — PM 이 승인 화면에서 읽을 한 문장. 무엇이 어떻게 바뀌는지 쓴다.\n"
         '   기존 할일 수정이면 "현재 값 → 새 값"이 드러나게 쓴다. 단 작업 범위 변경은 바뀌는 값이 없으므로\n'
         "   화살표 없이 무엇이 범위에서 빠지거나 더해지는지만 쓴다. 근거 원문에 없는 내용은 쓰지 마라.\n\n"
         f"{_FEW_SHOT}\n\n"
         "JSON으로만 답하라:\n"
-        '{"task": str|null, "due_date": "YYYY-MM-DD"|null, "doc_text": str}'
+        '{"task": str|null, "due_date": "YYYY-MM-DD"|"none"|null, "doc_text": str}'
     )
 
 
@@ -149,14 +150,16 @@ def _parse_draft_response(raw: dict, result: JudgeResult, today: date) -> DraftR
         return None  # 제목 없는 새 Task 는 만들 수 없다
 
     due_raw = raw.get("due_date")
+    # "none" 은 마감을 없애자는 결정이다. null(못 정함·파싱 실패)과 구분한다. 새 Task 는 마감 없이 만들면 되므로 수정에서만
+    cleared = due_raw == "none" and not result.is_new and result.category == "schedule"
     due = sanity_check_due_date(due_raw if isinstance(due_raw, str) else None, today)
     if not result.is_new and result.category != "schedule":
         due = None  # 일정 변경이 아닌 수정에서 마감일을 채우면 관계없는 필드가 바뀐다
-    elif not result.is_new and due is None:
+    elif not result.is_new and due is None and not cleared:
         return None  # 일정 변경인데 마감일이 없으면 to_item() 이 "바뀌는 값 없음"으로 조용히 버린다
 
     return DraftResult(
-        structured=DraftStructured(task=task, due_date=due.isoformat() if due else None),
+        structured=DraftStructured(task=task, due_date=due.isoformat() if due else None, due_cleared=cleared),
         doc_text=doc_text[:DOC_TEXT_MAX],
     )
 
