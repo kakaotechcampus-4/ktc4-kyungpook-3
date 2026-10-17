@@ -122,6 +122,46 @@ M6 S1에서 프론트 계약·데이터 계층을 현재 서버 코드에 맞췄
 
 S1에서 실행한 검증은 프론트 단위·MSW 테스트다([taskApi 테스트](../../src/entities/task/api/taskApi.test.ts), [Task mapper 테스트](../../src/entities/task/model/mapper.test.ts), [판정 테스트](../../src/entities/approval/model/resolution.test.ts), [승인 처리 테스트](../../src/entities/approval/api/resolveApproval.test.ts), [승인 mapper 테스트](../../src/entities/approval/model/mapper.test.ts)). 서버 응답 모양은 테스트 안의 MSW override로 재현했으며 실 백엔드 호출로 확인하지 않았다.
 
+### M7 대시보드·항목 되돌리기 경계 (2026-10-17 코드 대조)
+
+M7 구현에서 소비하기 시작한 서버 인터페이스다. 「현재 서버 구현」은 [extractions.py](../../../backend/app/api/extractions.py)의 `revert_auto_item`·`get_extraction`, [meeting 스키마](../../../backend/app/schemas/meeting.py)의 `ExtractionItemResponse`·`ExtractionItemRevertResponse`, [태스크 삭제](../../../backend/app/services/tasks.py)의 정적 확인이다. 실 API 호출·실제 Notion 페이지 보관은 실행하지 않았다(미검증). 이 절은 아래 §2.4·§5.4의 이전 기록보다 최신이다.
+
+#### 현재 서버 구현
+
+| 항목 | 서버 코드에서 확인한 사실 |
+|---|---|
+| `ExtractionItemResponse.reverted_at` | auto로 만든 태스크를 PM이 되돌린 시각. 없으면 `null`. 되돌려도 `gate`는 `auto`로 남는다 |
+| `ExtractionItemResponse.approval_status` | 연결된 승인 요청의 지금 상태(`pending`·`approved`·`rejected`). 승인이 없으면 `null`. 항목과 한 쿼리로 읽는다(#211) |
+| 지운 태스크의 `task_id` | 조회 시 지운 태스크를 가리키면 `task_id`를 `null`로 내린다 |
+| `POST /extractions/{extraction_id}/items/{item_id}/revert` | 본문 없음. 추출 404 `EXTRACTION_NOT_FOUND` → 그 회의 공간의 PM(`require_pm`, 아니면 403 `FORBIDDEN`) → 항목 404 `EXTRACTION_ITEM_NOT_FOUND` 순서다. 통과하면 태스크를 지움 표시(`version` +1, Notion 동기화 요청 → 워커가 페이지 보관)하고, 같은 내용의 `TASK_CREATE` 승인(`gate: "review"`, 표시용 `reverted_task_id`)을 만들고, 항목의 `task_id`를 비우고 `approval_id`를 새 승인으로, `reverted_at`·`reverted_by`를 기록한다 |
+| 응답 | `{item_id, reverted_task_id, approval_id, reverted_at}`. 새 승인은 `pending`이다 |
+| 409 `AUTO_TASK_NOT_REVERTIBLE` | `details = {item_id, reason, …}`. `reason`은 `already_reverted`, `not_auto_created`(gate·action·task_id 조건), `task_missing`(+`task_id`), `task_changed`(태스크 `version != 1`, +`task_id`·`task_version`), `pending_approval`(그 태스크 대상 대기 승인, +`task_id`·`approval_id`) |
+| 새 승인을 승인하면 | 승인 반영이 그 항목에 새 태스크를 잇는다. `reverted_at`은 남는다 |
+
+#### 현재 프론트 구현
+
+| 항목 | 구현 | 코드 근거 |
+|---|---|---|
+| 추출 DTO·모델 | `reverted_at` → `revertedAt`, `approval_status` → `approvalStatus`. 필드가 없던 응답과 모르는 승인 상태는 `null` | [추출 DTO](../../src/shared/types/api/extraction.ts), [추출 mapper](../../src/entities/extraction/model/mapper.ts) |
+| 되돌리기 요청 | `revertAutoItem(extractionId, itemId)`. 경로 칸을 인코딩하고 본문을 보내지 않는다. 409 `AUTO_TASK_NOT_REVERTIBLE`만 `toAutoItemRevertRejection`이 사유로 읽고, 모르는 사유는 `unknown`이다. 나머지 실패는 공통 오류 문구다 | [revertAutoItem](../../src/entities/extraction/api/revertAutoItem.ts), [오류 코드](../../src/shared/api/errors.ts) |
+| 되돌리기 화면 | PM만. 확인 모달 → 서버 성공 뒤에만 반영(낙관적 업데이트 없음). 성공 응답을 그 추출 캐시 항목에 쓰고 태스크·승인·추출 캐시를 무효화한다. 실패(거절·403·404·네트워크)도 같은 캐시를 다시 받는다. 자동 재시도 없음 | [useAutoItemRevert](../../src/features/auto-item-revert/model/useAutoItemRevert.ts) |
+| 대시보드 조회 | 집계 API 없이 기존 조회를 조립한다(§4.6 철회 유지). 아래 §5.4 | [useDashboardData](../../src/widgets/dashboard/model/useDashboardData.ts) |
+| 프론트 오류 코드 | `EXTRACTION_ITEM_NOT_FOUND`·`AUTO_TASK_NOT_REVERTIBLE`을 추가해 서버 38개와 같다 | [오류 문구](../../src/shared/api/errorMessages.ts) |
+
+`approval_status`는 모델에 옮겼으나 M7 화면 판정에는 쓰지 않는다. 확인 필요 판정은 계속 대기 승인 목록과의 조인이다(§3.1, `pendingItems`).
+
+#### 모의 서버(MSW)
+
+[추출 handler](../../src/shared/mock/handlers/extraction.ts)가 위 순서·거절 사유·403/404를 재현한다. 차이는 다음과 같다(개발·테스트용 사실이며 서버 계약이 아니다).
+
+- 지운 태스크는 지움 표시 대신 목록에서 뺀다. 조회에서 빠지는 결과는 같다. Notion 페이지 보관은 흉내내지 않는다.
+- MSW 항목에 `action`이 없어 `not_auto_created`는 `gate`·`task_id`로만 판정한다.
+- 조회의 `approval_status`는 저장값이 아니라 지금 승인 상태로 채운다.
+
+#### 합의 상태
+
+새 요청은 없다. 서버가 이미 구현한 인터페이스에 프론트가 맞췄다(D-160). 실 API 되돌리기 성공·거절과 Notion 페이지 보관은 실행 검증하지 않았다. 검증 범위는 [M7 결과](../plan/m7/result.md)에 있다.
+
 ---
 
 - 작성일 2026-09-17 · 개정 2026-09-21
@@ -325,6 +365,7 @@ AUDIO_TOO_LARGE(413)              DISCORD_USER_ALREADY_MAPPED(409)
   **`approval_id` 를 비우지 않는다.** 같은 항목이 두 ID 를 동시에 갖는다 → §3.1, §4.0-②-12.
   화면은 `task_id` 를 우선으로 읽어 `task_id` 가 있으면 `반영됨` 으로 다룬다 (§6).
 - `assignee.member_id` 가 `null` 이면 `raw` 로 대체 표시한다.
+- **2026-10-17 코드 대조:** 항목에 `reverted_at`·`approval_status` 가 더 온다. auto 항목을 되돌리면 `gate` 는 `auto` 그대로, `task_id` 는 `null`, `approval_id` 는 새 생성 승인이다 — 생성 시점 배타성의 예외다. 되돌리기는 `POST /extractions/{extraction_id}/items/{item_id}/revert` 다 (위 「M7 대시보드·항목 되돌리기 경계」).
 
 ### 2.5 approvals — `확인 필요` 의 데이터 출처
 
@@ -1073,54 +1114,56 @@ members 에만 있고 Discord 목록에 없으면      → 비활성 (서버를 
 
 ### 5.4 대시보드
 
-**집계 API 없이 기존 API 로 조립한다** (§4.6). 진입 시 호출은 4번이다.
+> **2026-10-17 정정 (M7 구현).** 이전 판은 최근 반영을 태스크 이력의 `is_rolled_back` 으로 판정하고 필드 이력 rollback 으로 되돌린다고 적었다. 현재 구현은 **추출 항목 되돌리기**(`reverted_at`, `POST /extractions/{id}/items/{id}/revert`)와 **태스크의 `notion_sync_status`** 로 판정한다. 필드 이력 rollback(§2.6)은 대시보드에서 쓰지 않는다. 또 `gate="auto"` 는 승인 없이 태스크를 만들었다는 뜻이지 **Notion 반영 완료가 아니다** — 반영 여부는 따로 표시한다.
+
+**집계 API 없이 기존 API 로 조립한다** (§4.6). 서로 기다리지 않고 함께 시작하는 조회는 다섯이다. 일반 팀원은 2번을 부르지 않는다 (D-104, D-163).
 
 ```
-1. GET /api/v1/tasks?workspace_id=            태스크 전량
-2. GET /api/v1/approvals?workspace_id=&status=pending   확인 필요 전량
-3. GET /api/v1/workspaces/{id}/meetings       회의 목록        (구현됨 §4.4)
-4. GET /api/v1/members?workspace_id=          담당자 이름 조인용
+1. GET /api/v1/tasks?workspace_id=                       태스크 전량
+2. GET /api/v1/approvals?workspace_id=&status=pending    확인 필요 전량 (PM 만)
+3. GET /api/v1/workspaces/{id}/meetings                  회의 목록
+4. GET /api/v1/members?workspace_id=                     담당자 이름 조인용
+5. GET /api/v1/workspaces/{id}/integrations              Notion 연결 (빈 상태 판정)
 ```
 
-상단 요약 4개 (D-052~D-055):
+상단 요약 4개 (D-052~D-055). 모두 정보이며 누를 수 없다 (D-061). 실패한 조회의 숫자는 `0` 이 아니라 `–` 다.
 
 | 숫자 | 계산 |
 |---|---|
-| 확인 대기 | 2번 응답의 `total` |
+| 확인 대기 | 2번의 대기 항목 수 (PM 만) |
 | 기한 지남 | 1번에서 `status !== "done" && due_date < 오늘` |
 | 7일 이내 마감 | 1번에서 `status !== "done" && 오늘 <= due_date <= 오늘+6일` |
 | 막힌 일 | 1번에서 `status === "blocked"` |
 
-- `기한 지남` 과 `7일 이내 마감` 은 조건이 겹치지 않아 중복 집계가 없다 (D-054).
+- 오늘은 서울 날짜다. 날짜 계산은 태스크 목록과 같은 [shared/lib/date](../../src/shared/lib/date/days.ts)를 쓴다. `기한 지남` 과 `7일 이내 마감` 은 겹치지 않는다 (D-054).
 
 본문 세 영역:
 
 | 영역 | 조립 |
 |---|---|
-| 확인이 필요한 일 | 2번을 `created_at` **오름차순**으로 정렬해 5개 (D-050, D-051) |
-| 마감 임박 | 1번에서 기한 지남 먼저, 그다음 마감 가까운 순으로 5개 (D-044, D-045) |
+| 확인이 필요한 일 (PM) | 2번을 대기 시작(`created_at`) **오름차순**으로 5개 (D-050, D-051). 이동은 `/approvals/{approval_id}` (D-162). 전부 보기는 태스크 `?tab=needs_review` |
+| 마감 임박 | 1번에서 기한 지남 먼저, 그다음 마감 가까운 순으로 5개 (D-044, D-045). 넘치면 태스크 `?tab=in_progress&due=overdue,soon` (D-046) |
 | 최근 반영 | 아래 |
 
-`최근 반영` 은 가장 최근 회의 1건 기준이다 (D-038).
+`최근 반영` 은 시작 시각 기준 최신 완료 회의 1건이다 (D-038).
 
 ```
 3번에서 status="done" 인 최신 회의 1건
-  → GET /meetings/{meeting_id}          extraction_id 획득 (구현됨 §2.3)
-  → GET /extractions/{extraction_id}    항목 중 gate="auto" 인 것 = 자동 반영분
-  → 상위 3개의 task_id 로
-     GET /tasks/{task_id}/history        is_rolled_back 확인 (최대 3회)
+  → GET /meetings/{meeting_id}          extraction_id 획득 (응답 workspace_id 가 지금 공간인지 확인)
+  → GET /extractions/{extraction_id}    gate="auto" 항목을 응답 순서로 3개 (D-039 보류, 임시 3)
+  → 상태: reverted_at 이 있으면 `되돌림`, 아니면 1번에서 task_id 의 notion_sync_status
+          (pending 반영 대기 · failed 반영 실패 · synced 반영 완료 · null 반영 상태 없음)
 ```
 
-- 되돌리기는 `POST /tasks/{task_id}/history/{history_id}/rollback` 이다. **이미 구현돼 있다** (§2.6).
-- 빈 상태 원인 3갈래 (D-041, D-042):
+- 반영 대기 행이 있으면 1번을 3초마다 다시 받는다. 모두 끝나거나 조회가 실패하거나 화면을 떠나면 멈춘다. 태스크 상세·이력을 행마다 부르지 않는다.
+- 되돌리기는 PM 만, `POST /extractions/{extraction_id}/items/{item_id}/revert` 다. 성공한 행은 자리를 지키고 `되돌림` 과 새 확인 필요 링크(`approval_id`)를 보인다 (D-036, D-037). 거절 사유별 안내는 위 「M7 대시보드·항목 되돌리기 경계」.
+- 빈 상태는 다음 순서로 판정한다 (D-040~D-042). 회의 업로드·Notion 설정 이동은 PM 에게만 보인다.
 
-| 원인 | 판정 |
-|---|---|
-| `no_meeting` | 3번이 비었다 |
-| `no_applied_items` | 최신 회의에 `gate="auto"` 항목이 없다 |
-| `notion_not_connected` | `GET .../integrations` 의 notion 이 `connected` 가 아니다 |
-
-- 호출이 늘어나는 구간은 `최근 반영` 뿐이고 최대 3회다. 표시 개수가 3개로 묶여 있어 늘어나지 않는다 (D-039).
+| 순서 | 원인 | 판정 | 이동 |
+|---|---|---|---|
+| 1 | `no_meeting` | 3번에 정리 끝난 회의가 없다 | 회의 업로드 |
+| 2 | `notion_not_connected` | 5번의 notion 이 `connected` 가 아니다(연결 중·끊김 포함) | 설정 Notion 영역 |
+| 3 | `no_applied_items` | 최신 회의에 `gate="auto"` 항목이 없다 | 최근 회의록 |
 
 ### 5.5 회의 업로드 · 정리 중 · 회의록
 
