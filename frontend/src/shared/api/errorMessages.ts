@@ -9,7 +9,7 @@ export const COMMON_MESSAGES = {
   fallback: '문제가 생겼어요. 잠시 후 다시 시도해 주세요.',
 } as const
 
-/* 서버 코드 36개 전부 (backend core/errors.py). `Record<ErrorCode, string>` 이라 코드가 늘면 여기서 타입 오류가 난다 */
+/* 서버 코드 38개 전부 (backend core/errors.py). `Record<ErrorCode, string>` 이라 코드가 늘면 여기서 타입 오류가 난다 */
 const SERVER_MESSAGES: Record<ErrorCode, string> = {
   INVALID_REQUEST: '요청 내용을 다시 확인해 주세요.',
   MEETING_NOT_FOUND: '회의를 찾을 수 없어요.',
@@ -20,6 +20,8 @@ const SERVER_MESSAGES: Record<ErrorCode, string> = {
   TRANSCRIPTION_FAILED: '회의 음성을 글로 옮기지 못했어요.',
   EXTRACTION_FAILED: '회의에서 할 일을 정리하지 못했어요.',
   EXTRACTION_NOT_FOUND: '정리 결과를 찾을 수 없어요.',
+  EXTRACTION_ITEM_NOT_FOUND: '정리 결과의 항목을 찾을 수 없어요.',
+  AUTO_TASK_NOT_REVERTIBLE: '자동으로 만든 태스크를 되돌릴 수 없어요. 태스크를 직접 고쳐 주세요.',
   APPROVAL_NOT_FOUND: '확인 요청을 찾을 수 없어요.',
   APPROVAL_ALREADY_RESOLVED: '이미 처리된 확인 요청이에요.',
   NOTION_WRITE_FAILED: 'Notion에 반영하지 못했어요.',

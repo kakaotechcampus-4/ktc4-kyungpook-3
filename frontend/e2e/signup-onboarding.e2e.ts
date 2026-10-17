@@ -48,7 +48,8 @@ test('가입 → 워크스페이스 만들기 → Discord·Notion 모의 OAuth �
 
   // 새 공간의 대시보드 (D-013) — 헤더와 5개 탭이 있는 앱 셸
   await expect(page).toHaveURL(/\/workspaces\/ws_\d+\/dashboard$/)
-  await expect(page.getByRole('heading', { name: '확인할 일이 여기에 모여요' })).toBeVisible()
+  // M7 대시보드 — 회의가 없는 새 공간이라 최근 반영은 빈 상태 ①이다
+  await expect(page.getByRole('heading', { name: '최근 반영' })).toBeVisible()
   await expect(page.getByRole('navigation', { name: '주요 화면' }).getByRole('link')).toHaveCount(5)
   await expect(page.getByRole('button', { name: /^워크스페이스 바꾸기/ })).toContainText(
     '캡스톤 5조',
@@ -89,7 +90,8 @@ test('팀원 연결: 이름이 달라도 PM 을 체크해 잇고, 다시 들어�
 
   // 같은 PM 계정으로 대시보드에 들어간다
   await expect(page).toHaveURL('/workspaces/ws_03/dashboard')
-  await expect(page.getByRole('heading', { name: '확인할 일이 여기에 모여요' })).toBeVisible()
+  // M7 대시보드 — 회의가 없는 새 공간이라 최근 반영은 빈 상태 ①이다
+  await expect(page.getByRole('heading', { name: '최근 반영' })).toBeVisible()
 
   // 팀원은 PM 과 새 팀원 둘뿐이다 — PM 은 id·role 을 그대로 두고 Discord 사용자만 이었다
   const members = await page.evaluate(async () => {

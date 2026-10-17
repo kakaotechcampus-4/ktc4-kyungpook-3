@@ -4,7 +4,12 @@ import { expireSession } from '@/app/expireSession'
 import { useUnsavedChangesStore } from '@/shared/lib/unsaved-changes'
 import { db } from '@/shared/mock/db'
 import { MOCK_NOW } from '@/shared/mock/fixtures/constants'
-import { businessRequests, recordRequests } from '@/shared/test/requests'
+import {
+  businessRequests,
+  isDashboardRequest,
+  latestDoneExtractionId,
+  recordRequests,
+} from '@/shared/test/requests'
 import { renderApp } from './test/renderApp'
 
 /* U4-1~U4-5 와 이월(U3-r1 #1·#2). 제품과 같은 배선(renderApp) + MSW + 실제 request 경로 */
@@ -204,23 +209,25 @@ describe('메뉴 키보드 (U4-3)', () => {
   })
 })
 
-describe('대시보드 (U4-4)', () => {
-  it('빈 상태와 다음 행동 안내만 있고 집계·목록 API 요청은 0회다', async () => {
+describe('대시보드 (U4-4 → M7)', () => {
+  // M4 의 빈 상태 껍데기는 M7 대시보드로 바뀌었다. 화면 내용은 app/dashboard.test.tsx 가 본다.
+  // 여기서는 셸의 메뉴가 대시보드 조회 밖의 요청을 더하지 않는지만 본다
+  it('대시보드 조회만 있고, 메뉴를 열어도 새 업무 요청이 없다', async () => {
     const log = recordRequests()
     renderApp('/workspaces/ws_01/dashboard')
+    expect(await screen.findByRole('heading', { name: '대시보드' })).toBeInTheDocument()
+    await screen.findByRole('list', { name: '최근 반영 목록' })
+    const before = businessRequests(log.started).length
     expect(
-      await screen.findByRole('heading', { name: '확인할 일이 여기에 모여요' }),
-    ).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: '회의록으로 가기' })).toHaveAttribute(
-      'href',
-      '/workspaces/ws_01/meetings',
-    )
-    // 메뉴를 열어도 새 요청이 없다 — 부팅 조회 캐시만 쓴다
+      businessRequests(log.started).every((request) =>
+        isDashboardRequest(request, { extractionId: latestDoneExtractionId() }),
+      ),
+    ).toBe(true)
     await openWorkspaceMenu()
     await userEvent.keyboard('{Escape}')
     await userEvent.click(screen.getByRole('button', { name: '내 계정: 최진호' }))
     await screen.findByRole('menu', { name: /^내 계정/ })
-    expect(businessRequests(log.started)).toEqual([])
+    expect(businessRequests(log.started)).toHaveLength(before)
   })
 })
 

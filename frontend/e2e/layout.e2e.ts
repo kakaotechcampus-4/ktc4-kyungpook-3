@@ -14,7 +14,7 @@ const SCREENS: {
   name: string
   scenario: Scenario
   path: string
-  role: 'link' | 'button'
+  role: 'link' | 'button' | 'heading'
   landmark: string
 }[] = [
   { name: '랜딩', role: 'link', scenario: 'signed-out', path: '/', landmark: '시작하기' },
@@ -42,10 +42,11 @@ const SCREENS: {
   },
   {
     name: '대시보드',
-    role: 'link',
+    // M7 부터 빈 상태 껍데기가 아니라 대시보드 본문이다. 오른쪽 단의 `최근 반영` 머리가 화면 안에 있어야 한다
+    role: 'heading',
     scenario: 'multiple-workspaces',
     path: '/workspaces/ws_01/dashboard',
-    landmark: '회의록으로 가기',
+    landmark: '최근 반영',
   },
 ]
 

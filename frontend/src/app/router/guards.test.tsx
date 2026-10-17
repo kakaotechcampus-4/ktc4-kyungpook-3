@@ -4,7 +4,12 @@ import { db } from '@/shared/mock/db'
 import { handlers } from '@/shared/mock/handlers'
 import { server } from '@/shared/mock/server'
 import { deferred } from '@/shared/test/deferred'
-import { businessRequests, recordRequests } from '@/shared/test/requests'
+import {
+  businessRequests,
+  isDashboardRequest,
+  latestDoneExtractionId,
+  recordRequests,
+} from '@/shared/test/requests'
 import { renderApp } from '../test/renderApp'
 
 type RenderedApp = ReturnType<typeof renderApp>
@@ -84,7 +89,12 @@ describe('인증 화면 재접근 (RedirectIfAuthed)', () => {
     const log = recordRequests()
     const app = renderApp(from)
     await landsOn(app, to)
-    expect(businessRequests(log.started)).toEqual([])
+    // 대시보드로 착지하면 그 화면의 조회(M7)만 있다. 가드가 더하는 업무 요청은 없다
+    expect(
+      businessRequests(log.started).filter(
+        (request) => !isDashboardRequest(request, { extractionId: latestDoneExtractionId() }),
+      ),
+    ).toEqual([])
   })
 })
 

@@ -207,8 +207,10 @@ export function completeMeeting(meetingId: string, state: MockDb = db): Complete
         speaker: speaker(index)?.discord_user_id ?? null,
         at_ms: index * 60_000,
       },
+      reverted_at: null,
       task_id: null,
       approval_id: null,
+      approval_status: null,
     }
     if (seed.gate === 'auto') {
       const task = createTask(
@@ -257,6 +259,7 @@ export function completeMeeting(meetingId: string, state: MockDb = db): Complete
       }
       state.approvals.push(approval)
       item.approval_id = approval.approval_id
+      item.approval_status = 'pending'
       approvalIds.push(approval.approval_id)
     }
     return item

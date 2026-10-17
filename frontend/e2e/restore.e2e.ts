@@ -84,7 +84,7 @@ test('Notion 에서 `이전 단계` 로 연결한 Discord 를 둘러보고 `다�
 
 test('손상된 저장값은 버리고 비로그인으로 시작한다', async ({ page }) => {
   await start(page, 'multiple-workspaces', '/workspaces/ws_01/dashboard')
-  await expect(page.getByRole('heading', { name: '확인할 일이 여기에 모여요' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '최근 반영' })).toBeVisible()
 
   // 손상값은 다음 문서의 맨 앞(앱 스크립트보다 먼저)에서 한 번만 쓴다. 지금 문서에서 쓰면 늦게 끝난 모의 응답의
   // 저장(response:mocked)이 reload 전에 덮어쓸 수 있다. 앱이 읽은 값을 그대로 남겨 실제로 손상값에서 시작했는지 본다

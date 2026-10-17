@@ -10,14 +10,14 @@ import { isDueSoon, isOverdue, taskListQueryOptions, withAssigneeName } from '@/
 import type { Task, TaskTab } from '@/entities/task'
 import { TASK_STATUS_LABEL, useTaskStatusOverlay } from '@/features/task-status'
 import { paths } from '@/shared/config/routes'
-import { seoulDateOf } from '@/shared/lib/date'
+import { seoulDateOf, soonUntil } from '@/shared/lib/date'
 import { GuardedLink } from '@/shared/lib/unsaved-changes'
 import { Button } from '@/shared/ui/button'
 import { EmptyState } from '@/shared/ui/empty-state'
 import { Icon } from '@/shared/ui/icon'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
 import { Skeleton } from '@/shared/ui/skeleton'
-import { boardTabs, buildTaskBoard, soonUntil, withPendingStatus } from '../lib/taskBoard'
+import { boardTabs, buildTaskBoard, withPendingStatus } from '../lib/taskBoard'
 import type { BoardItem, BoardQuery } from '../lib/taskBoard'
 import {
   createApprovals,

@@ -277,3 +277,35 @@ for (const storyId of M6_STORIES) {
     expect(unhandled).toEqual(M6_INTENDED_404[storyId] ?? [])
   })
 }
+
+/*
+ * M7 대시보드 스토리도 play 가 끝까지 통과한다 (M7 §5). 같은 방식으로 막 빌드한 index.json 에서 읽는다
+ */
+const M7_STORIES = Object.values(
+  (
+    JSON.parse(readFileSync(STORY_INDEX, 'utf8')) as {
+      entries: Record<string, { id: string; type: string }>
+    }
+  ).entries,
+)
+  .filter(({ id, type }) => type === 'story' && id.startsWith('m7-'))
+  .map(({ id }) => id)
+
+/** 최신 완료 회의의 추출이 없는 부분 오류 스토리 — handler 가 일부러 돌려준 404 다 */
+const M7_INTENDED_404: Record<string, string[]> = {
+  'm7-대시보드-화면--부분-오류': ['/api/v1/extractions/ex_01'],
+}
+
+test('M7 대시보드 스토리가 index.json 에 있다', () => {
+  expect(M7_STORIES.length).toBeGreaterThanOrEqual(12)
+})
+
+for (const storyId of M7_STORIES) {
+  test(`play 통과 — ${storyId}`, async ({ page }) => {
+    const unhandled = watchUnhandled(page)
+    await page.goto(`/iframe.html?id=${encodeURIComponent(storyId)}&viewMode=story`)
+    await expectStoryFinished(page)
+    // 부분 오류는 Query 기본 재시도로 같은 404 가 여러 번 온다 — 경로 종류만 본다
+    expect([...new Set(unhandled)]).toEqual(M7_INTENDED_404[storyId] ?? [])
+  })
+}
