@@ -41,8 +41,11 @@ const items: ExtractionItemDto[] = seeds.map(
       speaker: '1123',
       at_ms: 125000 + index * 10000,
     },
+    reverted_at: null,
     task_id,
     approval_id,
+    // 조회 handler 가 지금 승인 상태로 다시 채운다. 저장값은 시작 상태다
+    approval_status: approval_id === null ? null : 'pending',
   }),
 )
 export const extractionFixtures: ExtractionDto[] = [

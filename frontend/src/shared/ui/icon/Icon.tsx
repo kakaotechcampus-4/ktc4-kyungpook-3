@@ -128,6 +128,16 @@ const ICONS = {
     ),
   },
   close: { strokeWidth: 1.8, paths: <path d="M18 6 6 18M6 6l12 12" /> },
+  /** Main 최근 반영의 되돌리기 */
+  undo: {
+    strokeWidth: 2,
+    paths: (
+      <>
+        <path d="M9 14 4 9l5-5" />
+        <path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5v0a5.5 5.5 0 0 1-5.5 5.5H11" />
+      </>
+    ),
+  },
   /** Tasks 확인 필요 카드의 안내 문구 */
   info: {
     strokeWidth: 1.7,

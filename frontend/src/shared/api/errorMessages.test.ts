@@ -13,9 +13,9 @@ describe('errorMessage', () => {
     )
   })
 
-  it('서버 코드 36개(backend core/errors.py)가 모두 전용 문구를 가진다', () => {
+  it('서버 코드 38개(backend core/errors.py)가 모두 전용 문구를 가진다', () => {
     const codes = Object.values(ERROR_CODES)
-    expect(codes).toHaveLength(36)
+    expect(codes).toHaveLength(38)
     for (const code of codes) {
       expect(errorMessage(serverError(code))).not.toBe(COMMON_MESSAGES.fallback)
     }

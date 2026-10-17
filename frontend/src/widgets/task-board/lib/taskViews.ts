@@ -2,9 +2,8 @@ import type { Approval, TaskCreateApproval } from '@/entities/approval'
 import type { Member } from '@/entities/member'
 import type { Task } from '@/entities/task'
 import { isDueSoon, isOverdue } from '@/entities/task'
-import { isDateOnly } from '@/shared/lib/date'
+import { addDays, isDateOnly, soonUntil } from '@/shared/lib/date'
 import { parseEnumParam } from '@/shared/lib/url'
-import { addDays, soonUntil } from './taskBoard'
 
 /*
  * 태스크 화면의 보기 전환 (Tasks · TasksBoard · TasksCalendar · TasksGantt 시안).
