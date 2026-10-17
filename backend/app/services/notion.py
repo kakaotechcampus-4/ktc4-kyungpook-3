@@ -15,10 +15,14 @@
 OAuth 없이 시험할 때는 행을 직접 넣어도 된다:
 `Integration(workspace_id=..., provider="notion", access_token="secret_...", provider_channel_id="<database_id>")`.
 """
+import logging
+
 import httpx
 from sqlalchemy.orm import Session
 
 from app.models import Integration, Member, Task, TaskStatus
+
+logger = logging.getLogger(__name__)
 
 NOTION_API_BASE = "https://api.notion.com/v1"
 NOTION_VERSION = "2022-06-28"
@@ -173,6 +177,7 @@ def _request(
             reason,
             # 429(rate limit)·409(동시 수정 충돌)·5xx만 다시 보낼 가치가 있다.
             # 400(속성 불일치)·401/403(권한)·404(공유 해제)는 몇 번을 보내도 같다.
+            # 401은 워커가 토큰 갱신을 한 번 시도하고, 갱신되면 새 토큰으로 다시 보낸다(`notion_sync`).
             retryable=status in (409, 429) or status >= 500,
             # 5xx는 Notion 내부에서 처리가 끝났는데 응답만 실패했을 수도 있다.
             outcome_uncertain=status >= 500,
@@ -226,6 +231,25 @@ def update_page(
         {"properties": build_properties(db, task)},
         transport,
     )
+
+
+def archive_page(
+    integration: Integration,
+    page_id: str,
+    *,
+    transport: httpx.BaseTransport | None = None,
+) -> None:
+    """페이지를 보관(archive)한다. 지운 Task의 페이지에 쓴다. Notion 휴지통으로 옮겨져 DB에서 빠지고, Notion에서 복원할 수 있다.
+
+    이미 보관됐거나 지워진 페이지는 400·404가 온다. 응답을 못 받아 다시 보낸 경우나 PM이 Notion에서 먼저 지운 경우다.
+    바라던 결과라 성공으로 본다. 보내는 값이 archived 하나뿐이라 400의 다른 원인은 거의 없다.
+    """
+    try:
+        _send(integration, "PATCH", f"/pages/{page_id}", {"archived": True}, transport)
+    except NotionWriteError as exc:
+        if exc.status_code not in (400, 404):
+            raise
+        logger.info("이미 보관됐거나 없는 Notion 페이지입니다. page_id=%s status=%s", page_id, exc.status_code)
 
 
 def find_page_by_task_id(

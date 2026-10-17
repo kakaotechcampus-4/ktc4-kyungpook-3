@@ -451,6 +451,14 @@ class ExtractionPath(StrEnum):
     JUDGE = "judge"
 
 
+class EvidenceStatus(StrEnum):
+    """추출 항목의 값이 원문에 얼마나 드러나 있는지(AI의 task_status·due_status). judge 새 항목의 auto 판단에 쓴다."""
+
+    CERTAIN = "certain"  # 원문에 명시
+    INFERRED = "inferred"  # 문맥으로 추측
+    MISSING = "missing"  # 원문에 없음
+
+
 class ExtractionItem(Base):
     __tablename__ = "extraction_item"
 
@@ -481,6 +489,17 @@ class ExtractionItem(Base):
     category: Mapped[str | None] = mapped_column(String(16), nullable=True)
     status: Mapped[str | None] = mapped_column(String(16), nullable=True)
     doc_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # judge 새 항목의 auto 판단 근거(EvidenceStatus, AI가 본 유사 검색 결과). 보내지 않았으면 NULL이다
+    task_evidence_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    due_evidence_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    similar_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    top_similarity: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # auto로 만든 task를 PM이 되돌린 시각과 PM. 되돌리면 task는 지워지고 같은 내용의 생성 승인 요청이 생긴다.
+    # gate는 auto로 남겨 처음 판단을 기록한다
+    reverted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    reverted_by: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("member.member_id", ondelete="SET NULL"), nullable=True
+    )
     # create: 만들어진 task / update: 수정 대상 task
     task_id: Mapped[str | None] = mapped_column(
         String(36), ForeignKey("task.task_id", ondelete="SET NULL"), nullable=True
@@ -576,6 +595,12 @@ class Task(Base):
     # 그 task를 다시 고르지 않는다(거절되는 task가 계속 앞자리를 차지해 뒤 task가 굶는 것을 막는다).
     # 제목이 바뀌면 값이 달라져 자동으로 대상에 돌아오므로 따로 지우지 않는다.
     embedding_rejected_title: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # 지운 task. 지금은 auto로 만든 task를 PM이 되돌릴 때만 지운다. 행은 남겨 Notion 동기화 워커가 페이지를
+    # 보관(archive)하게 하고, 추출 항목·이력과의 연결도 남긴다. 목록·조회·검색에서는 빠진다
+    is_deleted: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=text("false"), index=True
+    )
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_now, onupdate=_now

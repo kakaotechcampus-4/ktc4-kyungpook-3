@@ -36,6 +36,17 @@ export const MOCK_SCENARIOS = [
   'notion-sync-pending',
   'notion-sync-failed',
   'tasks-member',
+  // M7 대시보드. 모두 ws_01 하나에 로그인한다(dashboard-member 만 일반 팀원). 처리 중 회의 mt_10 은 그대로라
+  // 최신 완료 회의는 mt_09 이고 그 auto 항목이 it_01~it_03(tk_01~tk_03)이다
+  'dashboard-default',
+  'dashboard-no-meeting',
+  'dashboard-notion-not-connected',
+  'dashboard-no-auto',
+  'dashboard-sync-pending',
+  'dashboard-sync-failed',
+  'dashboard-revert-rejected',
+  'dashboard-member',
+  'dashboard-partial-error',
 ] as const
 export type MockScenario = (typeof MOCK_SCENARIOS)[number]
 
@@ -191,6 +202,28 @@ function conflictingUpdateApproval(state: MockDb): void {
   })
 }
 
+/** 최근 반영의 세 태스크(tk_01~tk_03)를 모두 반영 완료로 둔다. 픽스처는 tk_01 만 synced 다 */
+function syncRecentTasks(state: MockDb): void {
+  for (const id of ['tk_01', 'tk_02', 'tk_03']) taskOf(state, id).notion_sync_status = 'synced'
+}
+
+/** 그 회의를 회의 목록·상세·회의록·추출에서 뺀다. 정리 끝난 회의를 줄여 최신 완료 회의를 바꿀 때 쓴다 */
+function removeMeeting(state: MockDb, meetingId: string): void {
+  const extractionIds = new Set(
+    state.meetings
+      .filter(({ meeting_id }) => meeting_id === meetingId)
+      .map(({ extraction_id }) => extraction_id),
+  )
+  state.meetings = state.meetings.filter(({ meeting_id }) => meeting_id !== meetingId)
+  state.meetingSummaries = state.meetingSummaries.filter(
+    ({ meeting_id }) => meeting_id !== meetingId,
+  )
+  state.minutes = state.minutes.filter(({ meeting_id }) => meeting_id !== meetingId)
+  state.extractions = state.extractions.filter(
+    ({ extraction_id }) => !extractionIds.has(extraction_id),
+  )
+}
+
 export function createScenarioDb(scenario: MockScenario): MockDb {
   const state = initialDb()
   switch (scenario) {
@@ -296,6 +329,74 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
       // setMockRole('member') 와 같은 결과. 조회는 되고 쓰기는 403 이다
       signInWith(state, ['ws_01'], 'ws_01')
       setMockRole('member', 'ws_01', state)
+      break
+    case 'dashboard-default':
+      // 요약·확인 필요 3건·마감 임박 6건(전체 보기)·최근 반영 3건(모두 반영 완료, 되돌리기 가능)
+      signInWith(state, ['ws_01'], 'ws_01')
+      syncRecentTasks(state)
+      break
+    case 'dashboard-no-meeting':
+      // 정리 끝난 회의가 없다(mt_10 은 정리 중). 최근 반영 빈 상태 ① → 회의 업로드
+      signInWith(state, ['ws_01'], 'ws_01')
+      removeMeeting(state, 'mt_07')
+      removeMeeting(state, 'mt_09')
+      break
+    case 'dashboard-notion-not-connected':
+      // 최근 반영 빈 상태 ② → Notion 설정. auto 항목이 있어도 Notion 이 먼저다
+      signInWith(state, ['ws_01'], 'ws_01')
+      setNotionStatus(state, 'not_connected')
+      break
+    case 'dashboard-no-auto':
+      // 최신 완료 회의가 항목 0건인 mt_07 이다. 최근 반영 빈 상태 ③ → 최근 회의록
+      signInWith(state, ['ws_01'], 'ws_01')
+      removeMeeting(state, 'mt_09')
+      break
+    case 'dashboard-sync-pending':
+      // tk_02 가 반영 대기다 — 대시보드가 3초마다 태스크 목록을 다시 받는다. synced 로 넘기는 워커는 없다
+      signInWith(state, ['ws_01'], 'ws_01')
+      syncRecentTasks(state)
+      taskOf(state, 'tk_02').notion_sync_status = 'pending'
+      break
+    case 'dashboard-sync-failed':
+      signInWith(state, ['ws_01'], 'ws_01')
+      syncRecentTasks(state)
+      taskOf(state, 'tk_02').notion_sync_status = 'failed'
+      break
+    case 'dashboard-revert-rejected':
+      // tk_01 은 만든 뒤 바뀌어(version 2) task_changed, tk_02 는 대기 중인 변경 승인(ap_04 꼴)이 있어 pending_approval 이다.
+      // tk_03 은 되돌릴 수 있다
+      signInWith(state, ['ws_01'], 'ws_01')
+      syncRecentTasks(state)
+      taskOf(state, 'tk_01').version = 2
+      state.approvals.push({
+        approval_id: 'ap_05',
+        workspace_id: 'ws_01',
+        type: 'task_update',
+        payload: {
+          status: 'in_progress',
+          base_values: { status: 'todo' },
+          base_title: '회원가입 화면',
+          task_title: '회원가입 화면',
+          meeting_id: 'mt_09',
+        },
+        related_task_id: 'tk_02',
+        requested_by: 'mb_02',
+        status: 'pending',
+        resolved_by: null,
+        created_at: '2026-09-17T05:00:00Z',
+        resolved_at: null,
+      })
+      break
+    case 'dashboard-member':
+      // 일반 팀원. 확인 대기 수·확인 필요 영역·되돌리기·PM 전용 이동이 없고 승인 목록을 부르지 않는다
+      signInWith(state, ['ws_01'], 'ws_01')
+      syncRecentTasks(state)
+      setMockRole('member', 'ws_01', state)
+      break
+    case 'dashboard-partial-error':
+      // 최신 완료 회의(mt_09)의 추출이 없다 — 최근 반영만 조회 오류(404)이고 나머지 영역은 그대로다
+      signInWith(state, ['ws_01'], 'ws_01')
+      state.extractions = state.extractions.filter(({ extraction_id }) => extraction_id !== 'ex_01')
       break
   }
   return state

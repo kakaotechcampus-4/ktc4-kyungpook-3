@@ -2,6 +2,7 @@ import type { Approval } from '@/entities/approval'
 import { sortByWaiting } from '@/entities/approval'
 import type { Task, TaskStatus, TaskTab } from '@/entities/task'
 import { filterByTab, isDueSoon, isOverdue } from '@/entities/task'
+import { soonUntil } from '@/shared/lib/date'
 import { parseEnumParam } from '@/shared/lib/url'
 
 /*
@@ -16,8 +17,8 @@ export const BOARD_PARAMS = { tab: 'tab', due: 'due' } as const
 export type DueCondition = 'overdue' | 'soon'
 export const DUE_CONDITIONS = ['overdue', 'soon'] as const satisfies readonly DueCondition[]
 
-/** `soon` 의 마지막 날은 오늘에서 며칠 뒤인가. 오늘 포함 7개 날짜라 6이다 */
-export const SOON_LAST_DAY_OFFSET = 6
+// 날짜 계산은 대시보드(M7)와 함께 쓰려고 shared/lib/date 로 옮겼다. 기존 import 경로는 그대로 둔다
+export { SOON_LAST_DAY_OFFSET, addDays, soonUntil } from '@/shared/lib/date'
 
 const PM_TABS = ['all', 'needs_review', 'in_progress', 'done'] as const satisfies readonly TaskTab[]
 const MEMBER_TABS = ['all', 'in_progress', 'done'] as const satisfies readonly TaskTab[]
@@ -57,20 +58,6 @@ export function boardSearch(current: URLSearchParams, next: BoardQuery): string 
   if (due.length > 0) parts.push(`${BOARD_PARAMS.due}=${due.join(',')}`)
   const search = parts.filter(Boolean).join('&')
   return search === '' ? '' : `?${search}`
-}
-
-/**
- * 날짜 전용 값에 날짜를 더한다. UTC 자정으로만 계산해 실행 환경 시간대와 무관하다 —
- * 서울 날짜 문자열을 받아 서울 날짜 문자열을 돌려준다 (D-144)
- */
-export function addDays(date: string, days: number): string {
-  const [year, month, day] = date.split('-').map(Number)
-  return new Date(Date.UTC(year, month - 1, day + days)).toISOString().slice(0, 10)
-}
-
-/** `soon` 의 마지막 날 — 서울 오늘 + 6일 */
-export function soonUntil(today: string): string {
-  return addDays(today, SOON_LAST_DAY_OFFSET)
 }
 
 /**

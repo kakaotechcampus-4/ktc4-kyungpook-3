@@ -3,9 +3,9 @@ import type { TaskCreateApproval } from '@/entities/approval'
 import type { Member } from '@/entities/member'
 import type { Task } from '@/entities/task'
 import { paths } from '@/shared/config/routes'
+import { addDays } from '@/shared/lib/date'
 import { GuardedLink } from '@/shared/lib/unsaved-changes'
 import { Icon } from '@/shared/ui/icon'
-import { addDays } from '../lib/taskBoard'
 import {
   GANTT_DAYS,
   daysBetween,

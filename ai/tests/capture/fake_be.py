@@ -1,5 +1,6 @@
 """BE 회의 API 를 흉내 낸다. 상태 전이와 409 응답이 backend/app/api/meetings.py, extractions.py 와 같다.
 유사 task 검색(similar_tasks.py)은 서비스 토큰과 워크스페이스를 보고 401, 404, 502 를 같은 봉투로 낸다.
+서버로 워크스페이스 찾기(integrations.py get_discord_guild_workspace)는 토큰을 보고 401, 연결이 없으면 409 다.
 
 requests.Session 자리에 넣는다. 부른 순서를 calls 에 남기고 회의와 추출 결과를 메모리에 둔다.
 """
@@ -46,6 +47,8 @@ class FakeBe:
         # 발화 저장 (backend/app/api/sources.py). 회의마다 {seq: 발화}
         self.sources: dict[str, dict[int, dict]] = {}
         self.sources_fail: tuple | None = None     # (상태, 코드) 를 넣으면 발화 저장이 그 오류로 실패한다
+        # 서버로 워크스페이스 찾기 (backend/app/api/integrations.py). 서버 ID 문자열 → 워크스페이스. 없으면 연결 없음
+        self.guilds: dict[str, str] = {}
         self._n = 0
 
     def request(self, method: str, url: str, json=None, timeout=None, headers=None):
@@ -57,6 +60,8 @@ class FakeBe:
         self.headers.append(dict(headers or {}))
         self.timeouts.append(timeout)
         body = json or {}
+        if method == "GET" and path.startswith("/integrations/discord/guilds/") and path.endswith("/workspace"):
+            return self._guild_workspace(path.split("/")[4], headers or {})
         if method == "POST" and path.startswith("/workspaces/") and path.endswith("/tasks/similar"):
             return self._similar(path.split("/")[2], body, headers or {})
         if (method == "POST" and path in ("/meetings", "/extractions")) or method == "PATCH":
@@ -139,6 +144,13 @@ class FakeBe:
         ends = [round(s["end"] * 1000) for s in saved.values()]
         return _ok(201, {"meeting_id": mid, "inserted": len(new), "skipped": len(segments) - len(new),
                          "duration_ms": max(ends) if ends else None})
+
+    def _guild_workspace(self, guild_id: str, headers: dict):
+        if headers.get("X-Service-Token") != self.service_token:
+            return _err(401, "UNAUTHENTICATED")
+        if guild_id not in self.guilds:
+            return _err(409, "INTEGRATION_NOT_CONNECTED", {"provider": "discord", "guild_id": guild_id})
+        return _ok(200, {"guild_id": guild_id, "workspace_id": self.guilds[guild_id]})
 
     def _similar(self, workspace_id: str, body: dict, headers: dict):
         if headers.get("X-Service-Token") != self.service_token:

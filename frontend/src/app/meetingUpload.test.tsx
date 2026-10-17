@@ -130,6 +130,11 @@ describe('진입 (U3-1)', () => {
       }),
     )
     db.meetings[2].status = 'processing'
+    // 대시보드(M7)가 최신 완료 회의로 mt_10 의 `done` 상세를 받아 두었다. 끝난 회의가 다시 정리 중이 되는 것은
+    // 이 테스트가 만든 상황이라, 그 캐시를 지워 처리 화면이 서버의 지금 상태를 보게 한다
+    act(() =>
+      app.queryClient.removeQueries({ queryKey: ['workspace', 'ws_01', 'meetings', 'detail'] }),
+    )
     act(() => app.navigate(UPLOAD_PATH))
     expect(await screen.findByRole('heading', { name: PROCESSING_HEADING })).toBeInTheDocument()
     await app.expectPath(paths.meetingProcessing('ws_01', 'mt_10'))

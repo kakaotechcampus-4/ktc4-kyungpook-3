@@ -174,10 +174,15 @@ REGISTRY: tuple[Const, ...] = (
           source="주석", recheck=_PACKETS),
     Const("capture.discord_adapter", "FLUSH_EVERY_S", NOT_HERE, "재정렬 창을 비우는 주기", RECEIVE,
           source="주석(패킷 20ms 마다)", recheck=_PACKETS),
-    Const("capture.discord_adapter", "SHOWN_MAX", DESIGN, "채널에 보이는 판단 결과 항목 수", FIXED,
+    Const("capture.discord_adapter", "OUTBOX_POLL_S", DESIGN, "워커가 우편함에 쓴 알림을 봇이 채널에 올리는 주기", FIXED,
+          source="결정 기록 0026: 파일 몇 개를 읽는 일이라 2초도 싸다"),
+    Const("capture.discord_adapter", "OUTBOX_MAX_AGE_S", DESIGN, "이보다 오래 올리지 못한 알림은 버린다(30분)", FIXED,
+          source="주석: 봇이 오래 꺼져 있었으면 지난 진행 알림은 의미가 없다"),
+    Const("capture.notify", "MESSAGE_MAX", SPEC, "디스코드 메시지 한 개의 글자 수 상한", FIXED, source="디스코드 2000자"),
+    Const("capture.notify", "SHOWN_MAX", DESIGN, "채널에 보이는 할 일 항목 수", FIXED,
           source="주석: 나머지는 \"외 N건\" 으로 줄인다"),
-    Const("capture.discord_adapter", "LINE_MAX", DESIGN, "채널에 올리는 한 줄 길이", FIXED,
-          source="주석: 디스코드 메시지 2000자 안에 열 줄이 들어가게"),
+    Const("capture.notify", "LINE_MAX", DESIGN, "채널에 올리는 한 줄 길이", FIXED,
+          source="디스코드 메시지 2000자 안에 열 줄이 들어가게"),
     # ── 평가. 정렬본을 만드는 값이라 평가 결과에 영향이 있다
     Const("stt.eval.golden", "SR", SPEC, "정렬본 표본율", FIXED, source="위스퍼 입력 16kHz"),
     Const("stt.eval.golden", "RUN_GAP_S", MEASURED, "정렬본을 만들 때 한 화자의 발화 덩어리를 나누는 공백", EVAL,
@@ -195,7 +200,7 @@ EXCLUDED: dict[str, str] = {}
 SCANNED = (
     "stt/batch.py", "stt/vad.py", "stt/speech_gate.py", "stt/elice.py", "stt/transcribe.py",
     "capture/audio.py", "capture/recording_store.py", "capture/streaming_sink.py", "capture/timeline.py",
-    "capture/track_writer.py", "capture/discord_adapter.py", "stt/eval/golden.py",
+    "capture/track_writer.py", "capture/discord_adapter.py", "capture/notify.py", "stt/eval/golden.py",
 )
 _UPPER = re.compile(r"^[A-Z][A-Z0-9_]*$")
 

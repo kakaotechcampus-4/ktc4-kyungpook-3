@@ -715,6 +715,37 @@ def test_cli_seq_no_pack_turns_sends_one_turn_per_chunk_and_says_so(monkeypatch,
     assert json.loads((out / "seq-t.json").read_text(encoding="utf-8"))["pack_turns"] is False
 
 
+def test_cli_order_flag_reaches_the_batch_run_and_the_result(monkeypatch, tmp_path):
+    """단어 시각이 없는 Elice 는 운영에서 묶음을 순서대로 가른다(auto). 옛 묶음과 견주는 실행은 off 로 고른다."""
+    seen = []
+    real_run = R.B.run
+
+    def spy(*a, **kw):
+        seen.append(kw.get("ordered"))
+        return real_run(*a, **kw)
+
+    monkeypatch.setattr(R.B, "run", spy)
+    monkeypatch.setattr(R, "warm_backend",
+                        lambda kind, model, beam, **kw: (SlowStt(), {"load_s": 1.0, "first_decode_s": 0.5,
+                                                                  "warm_failed_s": []}))
+    monkeypatch.setattr(speech_gate, "ENABLED", False)
+    for flag, want in (("auto", None), ("on", True), ("off", False)):
+        out = tmp_path / flag
+        assert R.main(["seq", "--tracks-dir", str(_meeting(tmp_path / f"m-{flag}")), "--label", "t", "--order", flag,
+                       "--out-dir", str(out)]) == 0
+        assert seen[-1] is want
+        assert json.loads((out / "seq-t.json").read_text(encoding="utf-8"))["order"] == flag
+
+
+def test_metered_backend_keeps_saying_whether_it_gives_word_times(tmp_path):
+    """auto 가 운영과 같게 돌려면 장부 감싸개가 안쪽 백엔드의 표시를 그대로 보여야 한다."""
+    class NoWords(SlowStt):
+        gives_word_times = False
+
+    assert R.MeteredBackend(NoWords(), tmp_path / "s.jsonl", 10, label="x").gives_word_times is False
+    assert R.MeteredBackend(SlowStt(), tmp_path / "s.jsonl", 10, label="x").gives_word_times is True
+
+
 def test_golden_passes_pack_turns_to_score(monkeypatch, tmp_path):
     seen = {}
 

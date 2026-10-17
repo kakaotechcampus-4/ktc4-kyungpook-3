@@ -154,7 +154,7 @@ def _apply_approval(
             .with_for_update()
             .execution_options(populate_existing=True)
         ).scalar_one_or_none()
-        if task is None:
+        if task is None or task.is_deleted:
             raise AppError(
                 ErrorCode.TASK_NOT_FOUND, details={"task_id": approval.related_task_id}
             )
@@ -226,8 +226,15 @@ def create_approval(
     member = require_member(db, user, payload.workspace_id)
     if payload.related_task_id is not None:
         # 승인할 때도 확인하지만(_apply_approval), 다른 워크스페이스의 task를 가리키는 요청이 PM 목록에 쌓이지 않게 먼저 막는다
-        task = db.get(Task, payload.related_task_id)
-        if task is None:
+        # auto 되돌리기(revert_auto_item)가 이 task를 지우는 중이면 끝날 때까지 기다린다. 잠그지 않으면 지운 task를
+        # 가리키는 승인 요청이 남아, 승인할 때마다 TASK_NOT_FOUND가 된다
+        task = db.execute(
+            select(Task)
+            .where(Task.task_id == payload.related_task_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        ).scalar_one_or_none()
+        if task is None or task.is_deleted:
             raise AppError(ErrorCode.TASK_NOT_FOUND, details={"task_id": payload.related_task_id})
         if task.workspace_id != payload.workspace_id:
             raise AppError(

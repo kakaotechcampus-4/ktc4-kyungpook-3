@@ -2,7 +2,14 @@ from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.models import ExtractionAction, ExtractionPath, MeetingSource, TaskStatus
+from app.models import (
+    ApprovalStatus,
+    EvidenceStatus,
+    ExtractionAction,
+    ExtractionPath,
+    MeetingSource,
+    TaskStatus,
+)
 
 
 class MeetingCreateRequest(BaseModel):
@@ -73,6 +80,9 @@ class MeetingMinutesResponse(BaseModel):
 class TaskInfo(BaseModel):
     title: str
     confidence: float | None = Field(None, description="null이면 AI가 측정하지 않았다(judge 경로)")
+    evidence_status: EvidenceStatus | None = Field(
+        None, description="할 일이 원문에 얼마나 드러나 있는지(judge 새 항목). AI가 보내지 않았으면 null"
+    )
 
 
 class AssigneeInfo(BaseModel):
@@ -87,6 +97,9 @@ class DueDateInfo(BaseModel):
     value: date | None
     raw: str | None
     confidence: float | None = Field(None, description="null이면 AI가 측정하지 않았다(judge 경로)")
+    evidence_status: EvidenceStatus | None = Field(
+        None, description="마감이 원문에 얼마나 드러나 있는지(judge 새 항목). AI가 보내지 않았으면 null"
+    )
 
 
 class EvidenceInfo(BaseModel):
@@ -103,11 +116,39 @@ class ExtractionItemResponse(BaseModel):
     confidence: float | None = Field(
         None, description="언급된 값들의 확신도 최솟값. 할 일 확신도가 측정되지 않았으면 null"
     )
-    gate: str
+    gate: str = Field(
+        ...,
+        description="auto | review | hold. auto는 승인 없이 태스크를 바로 만든 항목이다. "
+        "PM이 되돌려도 처음 판단을 남기려고 auto로 둔다. 되돌렸는지는 reverted_at으로 본다",
+    )
     evidence: EvidenceInfo
-    task_id: str | None = Field(None, description="gate=auto — 바로 생성된 태스크 ID")
+    similar_count: int | None = Field(
+        None, description="AI가 판단할 때 본 비슷한 기존 태스크 수(judge 새 항목). 보내지 않았으면 null"
+    )
+    top_similarity: float | None = Field(
+        None, description="그 태스크들 중 가장 높은 유사도(0~1). 보내지 않았거나 검색 결과가 없으면 null"
+    )
+    reverted_at: datetime | None = Field(
+        None,
+        description="auto로 만든 태스크를 PM이 되돌린 시각. 되돌리면 태스크는 지워지고 같은 내용의 생성 승인 "
+        "요청이 approval_id로 연결된다. 되돌리지 않았으면 null",
+    )
+    task_id: str | None = Field(
+        None,
+        description=(
+            "연결된 태스크 ID. 생성 항목은 태스크가 생긴 뒤(자동 생성 또는 생성 승인 뒤)에 채워진다. "
+            "수정 항목은 수정 대상 태스크라 승인 전에도 있다. 반영 여부는 approval_status로 본다"
+        ),
+    )
     approval_id: str | None = Field(
-        None, description="gate=review|hold — PM 승인이 필요한 승인 요청 ID"
+        None, description="연결된 승인 요청 ID. 승인·반려 뒤에도 남는다. 승인 요청이 없으면 null"
+    )
+    approval_status: ApprovalStatus | None = Field(
+        None,
+        description=(
+            "연결된 승인 요청의 지금 상태. 승인 요청이 없으면 null. "
+            "approved는 태스크 반영과 승인 처리가 함께 커밋된 상태다"
+        ),
     )
 
 
@@ -116,6 +157,13 @@ class ExtractionDetailResponse(BaseModel):
     meeting_id: str
     extraction_path: str | None = Field(None, description="legacy | judge. 판별할 수 없었으면 null")
     items: list[ExtractionItemResponse]
+
+
+class ExtractionItemRevertResponse(BaseModel):
+    item_id: str
+    reverted_task_id: str = Field(..., description="지운 태스크 ID")
+    approval_id: str = Field(..., description="대신 만든 생성 승인 요청 ID(pending)")
+    reverted_at: datetime
 
 
 class TargetSnapshot(BaseModel):
@@ -179,6 +227,29 @@ class ExtractionItemCreate(BaseModel):
     )
     status: TaskStatus | None = Field(None, description="JudgeResult.status. 언급이 없으면 null")
     doc_text: str | None = Field(None, description="PM에게 보여 줄 설명 문장 (DraftResult.doc_text)")
+    task_status: EvidenceStatus | None = Field(
+        None,
+        description="할 일 근거 상태. judge 새 항목만 보낸다. certain이어야 auto가 될 수 있다. "
+        "보내지 않으면 null이고 auto로 보내지 않는다",
+    )
+    due_status: EvidenceStatus | None = Field(
+        None,
+        description="마감 근거 상태. judge 새 항목만 보낸다. 마감이 없으면 missing. "
+        "certain이거나 missing이어야 auto가 될 수 있다. 보내지 않으면 null이고 auto로 보내지 않는다",
+    )
+    similar_count: int | None = Field(
+        None,
+        ge=0,
+        description="AI가 판단할 때 유사 검색이 돌려준 기존 태스크 수. judge 새 항목만 보낸다. "
+        "0이어야 auto가 될 수 있다. 보내지 않으면 null이고 auto로 보내지 않는다",
+    )
+    top_similarity: float | None = Field(
+        None,
+        ge=0.0,
+        le=1.0,
+        description="그 태스크들 중 가장 높은 유사도. 기록용이라 게이트 판단에는 쓰지 않는다. "
+        "검색 결과가 없으면 null",
+    )
     target_snapshot: TargetSnapshot | None = Field(
         None,
         description="action이 update일 때 AI가 유사 검색에서 본 대상 task 값. 승인 충돌의 기준값이 된다. "

@@ -270,6 +270,17 @@ def apply_task_updates(
     return entries
 
 
+def delete_task(db: Session, task: Task) -> None:
+    """task를 지운다. 행은 남기고 지움 표시만 한다(Task.is_deleted).
+
+    버전을 올리고 Notion 동기화를 요청한다. 워커가 지운 task를 보고 이미 만든 페이지를 보관(archive)한다.
+    """
+    task.is_deleted = True
+    task.deleted_at = datetime.now(timezone.utc)
+    task.version += 1
+    notion_sync.enqueue_task_sync(db, task)
+
+
 def rollback_task_history(
     db: Session,
     task: Task,

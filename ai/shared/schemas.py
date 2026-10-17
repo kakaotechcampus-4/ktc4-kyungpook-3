@@ -180,6 +180,9 @@ class NotionCandidate(_Base):
     status: str | None = None  # 현재 진행 상태(todo/in_progress/done/blocked 등) — 비교 기준값
     similarity: float = 0.0  # 새 텍스트와의 벡터 유사도 (0.0~1.0). BE가 계산해서 넘겨줌
     updated_at: str | None = None  # 이 항목이 마지막으로 수정된 시각 — 오래된 정보인지 참고용
+    # 이번 회의 앞부분에서 만든 카드를 후보로 보여 줄 때의 설명("마감을 10/2 → 10/6 으로 바꾸자고 함"). 값이 DB 가 아니라
+    # 이번 회의 제안이라는 걸 Terra 가 알게 한다. 프롬프트에만 쓰고 BE 로 보내지 않는다(#140)
+    meeting_note: str = ""
 
 
 @dataclass
@@ -246,6 +249,8 @@ class DraftStructured(_Base):
 
     task: str | None = None  # 할일 제목. create 에서만 채움 — update 에서 채우면 기존 제목을 덮어씀
     due_date: str | None = None  # ISO 날짜(YYYY-MM-DD). 발화에 마감이 있을 때만
+    # 마감을 없애자는 결정("미정으로 되돌리자"). due_date=None 은 "바꾸지 않음"이라 따로 둔다. 수정에서만 True
+    due_cleared: bool = False
 
 
 @dataclass

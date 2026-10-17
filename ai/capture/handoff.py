@@ -44,6 +44,9 @@ TIMEOUT_S = 10.0
 # 유사 검색은 BE 가 임베딩 서버를 10초까지 기다린다. 그보다 길어야 BE 의 502 를 받고, 짧으면 이쪽이 먼저 끊는다
 SIMILAR_TIMEOUT_S = 15.0
 
+# 서버(길드)에 연결된 워크스페이스가 없을 때 BE 가 주는 코드(backend/app/api/integrations.py, #180)
+NOT_CONNECTED = "INTEGRATION_NOT_CONNECTED"
+
 # 추출기의 마감 상태를 BE 의 숫자 신뢰도로. BE 는 due_raw 가 없으면 이 값을 보지 않는다
 STATUS_CONFIDENCE = {"certain": 1.0, "inferred": 0.6, "missing": 0.0}
 
@@ -92,6 +95,10 @@ class BeClient:
         if r.status_code >= 400 or not isinstance(payload, dict):
             raise BeError(f"HTTP_{r.status_code}", (getattr(r, "text", "") or "")[:200], status=r.status_code)
         return payload.get("data")
+
+    def guild_workspace(self, guild_id: str) -> str:
+        """디스코드 서버에 연결된 워크스페이스(#199, BE #197). 연결이 없으면 BeError(INTEGRATION_NOT_CONNECTED)."""
+        return self._call("GET", f"/integrations/discord/guilds/{guild_id}/workspace")["workspace_id"]
 
     def create_meeting(self, workspace_id: str, *, title: str | None = None, source: str = "discord") -> dict:
         return self._call("POST", "/meetings", {"workspace_id": workspace_id, "title": title, "source": source})
@@ -203,17 +210,38 @@ def clean_item(item: dict) -> dict:
 # ─────────────────────────────────────────────────────────── 인계
 @dataclass
 class Handoff:
-    """한 워크스페이스로 인계한다. 매니페스트의 be 항목을 읽고 쓴다."""
+    """매니페스트의 워크스페이스로 인계한다. 매니페스트의 be 항목과 workspace_id 를 읽고 쓴다."""
 
     client: BeClient
-    workspace_id: str
+
+    def workspace(self, manifest: dict) -> str | None:
+        """회의의 워크스페이스. 비어 있으면 서버(guild_id)로 BE 에 묻고 매니페스트에 고정한다. 연결이 없으면 None.
+
+        정한 값은 바꾸지 않는다. BE 회의를 만든 뒤 바뀌면 추출 등록이 WORKSPACE_MISMATCH 로 막힌다.
+        연결 없음 밖의 오류(연결 실패, 5xx, 401)는 BeError 로 올린다.
+        """
+        if manifest.get("workspace_id"):
+            return manifest["workspace_id"]
+        if not manifest.get("guild_id"):
+            return None
+        try:
+            ws = self.client.guild_workspace(str(manifest["guild_id"]))
+        except BeError as e:
+            if e.code == NOT_CONNECTED:
+                return None
+            raise
+        manifest["workspace_id"] = ws
+        return ws
 
     def start(self, manifest: dict, *, title: str | None = None) -> dict:
         """BE 회의를 만든다. 이미 있으면 그대로. /record 직후와 인계 단계가 같이 부른다."""
         be = manifest.setdefault("be", {})
         if be.get("meeting_id"):
             return be
-        data = self.client.create_meeting(self.workspace_id, title=title)
+        ws = self.workspace(manifest)
+        if ws is None:
+            raise BeError(NOT_CONNECTED, "이 서버에 연결된 워크스페이스가 없다")
+        data = self.client.create_meeting(ws, title=title)
         be.update({"meeting_id": data["meeting_id"], "status": str(data.get("status", "created"))})
         be.pop("error", None)
         return be
@@ -294,14 +322,14 @@ class Handoff:
 
         be = self.end(manifest, title=title)
         try:
-            data = self._register(be["meeting_id"], transcript_json, model_name, items)
+            data = self._register(be["meeting_id"], manifest["workspace_id"], transcript_json, model_name, items)
         except BeError as e:
             if e.code == "MEETING_NOT_PROCESSING" and e.details.get("status") == "failed":
                 be = self._fresh(manifest, title)
                 be = self.end(manifest, title=title)
                 # 발화 먼저(BE 명세). 옛 회의에 보낸 발화를 새 회의에도 둔다
                 self.save_sources(manifest, transcripts_dir=transcripts_dir, title=title)
-                data = self._register(be["meeting_id"], transcript_json, model_name, items)
+                data = self._register(be["meeting_id"], manifest["workspace_id"], transcript_json, model_name, items)
             else:
                 raise
         be.update({"status": "done", "extraction_id": data["extraction_id"], "item_count": data.get("item_count", len(items))})
@@ -332,8 +360,9 @@ class Handoff:
             be.pop("missing_units", None)
         return be
 
-    def _register(self, meeting_id: str, transcript_json: Path, model_name: str | None, items: list[dict]) -> dict:
-        return self.client.create_extraction(meeting_id, self.workspace_id, transcript_path=str(transcript_json),
+    def _register(self, meeting_id: str, workspace_id: str, transcript_json: Path, model_name: str | None,
+                  items: list[dict]) -> dict:
+        return self.client.create_extraction(meeting_id, workspace_id, transcript_path=str(transcript_json),
                                              model_name=model_name, items=items)
 
     def fail(self, manifest: dict, failed_stage: str) -> None:
@@ -353,7 +382,8 @@ class Handoff:
 
 
 def from_env() -> Handoff | None:
-    """BE_BASE_URL, BE_WORKSPACE_ID, BE_SERVICE_TOKEN 이 다 있을 때만. 하나라도 없으면 인계 단계를 건너뛴다.
+    """BE_BASE_URL 과 BE_SERVICE_TOKEN 이 다 있을 때만. 하나라도 없으면 인계 단계를 건너뛴다.
+    워크스페이스는 설정이 아니라 회의마다 서버로 찾는다(Handoff.workspace, #199).
 
     토큰이 없으면 BE 가 봇의 모든 쓰기 요청을 401 로 거절한다(#179). 회의마다 실패하게 두지 않고 켜지 않는다.
     """
@@ -361,6 +391,6 @@ def from_env() -> Handoff | None:
 
     cfg = settings()
     token = getattr(cfg, "be_service_token", "")
-    if not cfg.be_base_url or not cfg.be_workspace_id or not token:
+    if not cfg.be_base_url or not token:
         return None
-    return Handoff(BeClient(cfg.be_base_url, service_token=token), cfg.be_workspace_id)
+    return Handoff(BeClient(cfg.be_base_url, service_token=token))
