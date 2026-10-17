@@ -190,6 +190,7 @@ def test_evidence_at_ms_is_none_when_seq_not_in_transcript():
 # 세 단계 모두 FakeLLM 을 끼워 실제 파싱 코드까지 거친다. 1단계와 Luna Phase 2 는 같은 Luna 지만
 # 모듈마다 get_llm 을 따로 부르므로 FakeLLM 도 따로 둔다.
 
+from dataclasses import replace  # noqa: E402
 from datetime import date  # noqa: E402
 
 import draft.doc_draft as doc_draft  # noqa: E402
@@ -509,6 +510,45 @@ def test_reversed_change_in_same_meeting_leaves_no_card(monkeypatch):
     assert out.items == []
     assert out.failures == []
 
+
+
+class NoDueCandidates:
+    """로그인 Task 에 원래 마감이 없다."""
+
+    def similar_tasks(self, workspace_id, text):
+        return [replace(LOGIN_FRI, due_date=None)] if "로그인" in text else []
+
+
+def test_reverting_to_no_due_in_same_meeting_leaves_no_card(monkeypatch):
+    # 원래 마감 없음. "10/16 까지" → "취소하고 원래처럼 미정으로". Luna 는 되돌릴 값이 없어 "none" 을 낸다.
+    # 전에는 Luna 의 null 이 초안 실패가 되어 10/16 제안이 남았다(멘토 리뷰 #230)
+    fakes = _install(
+        monkeypatch, stage1={"findings": [LOGIN_DELAY, LOGIN_KEEP]},
+        terra=[_terra(category="schedule"), _terra(category="schedule")],
+        luna_draft=[
+            {"task": None, "due_date": "2026-10-16", "doc_text": "로그인 화면 마감을 10/16으로 정함"},
+            {"task": None, "due_date": "none", "doc_text": "로그인 화면 마감을 다시 미정으로 되돌림"},
+        ],
+    )
+
+    out = run(DEDUP_MEETING, workspace_id="ws_1", today=date(2026, 9, 28), candidates=NoDueCandidates())
+
+    assert "마감을 없음 → 2026-10-16" in fakes["terra"].prompts[1]   # 원래 값이 "없음"으로 보인다
+    assert out.items == []
+    assert out.failures == []
+
+
+def test_clearing_an_existing_due_is_a_failure_not_a_silent_drop(monkeypatch):
+    # 원래 마감이 있는 Task 의 마감을 없애자는 결정은 BE 에 보낼 칸이 없다. 조용히 버리지 않고 실패로 남긴다
+    _install(
+        monkeypatch, stage1={"findings": [LOGIN_KEEP]}, terra=[_terra(category="schedule")],
+        luna_draft=[{"task": None, "due_date": "none", "doc_text": "로그인 화면 마감을 없앰"}],
+    )
+
+    out = _run_dedup()
+
+    assert out.items == []
+    assert [f.stage for f in out.failures] == ["draft"]
 
 def test_changed_again_in_same_meeting_keeps_last_value(monkeypatch):
     # 10/2 → 10/6 → 10/7. 카드는 하나, 마감은 마지막 값. 스냅샷은 덮어 보여 준 값이 아니라 DB 원래 값

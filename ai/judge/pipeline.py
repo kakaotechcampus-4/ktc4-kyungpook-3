@@ -132,7 +132,7 @@ def _with_edit(base: NotionCandidate, card: dict[str, Any]) -> NotionCandidate:
     """수정 카드가 있는 DB 후보를 제안값으로 덮어 보여 준다. 원래 값은 메모로 남긴다(번복을 알아보게)."""
     changes = []
     if card["due_date"] is not None:
-        changes.append(f"마감을 {base.due_date} → {card['due_date']}")
+        changes.append(f"마감을 {base.due_date or '없음'} → {card['due_date']}")
     if card["status"] is not None:
         changes.append(f"상태를 {base.status} → {card['status']}")
     if card["assignee_raw"] or card["assignee_type"] == "first":
@@ -160,8 +160,11 @@ def _merge_into(card: dict[str, Any], finding: JudgeFinding, result: JudgeResult
 
     마감 · 상태 · 담당은 뒤 발화가 덮어쓴다 — 나중에 말한 것이 최신 결정이다. 제목 · 근거 · 스냅샷은 앞 카드 그대로.
     base 는 수정 카드의 DB 원래 후보다. 합친 값이 원래 값과 같아지면(되돌림) 그 필드를 지운다.
+    마감을 없애자는 결정(due_cleared)은 앞 카드의 마감 제안을 지운다. 원래 마감이 없던 업무면 되돌림이 된다.
     """
-    if drafted.structured.due_date is not None:
+    if drafted.structured.due_cleared:
+        card["due_date"] = None
+    elif drafted.structured.due_date is not None:
         card["due_date"] = drafted.structured.due_date
     if result.status is not None:
         card["status"] = result.status
@@ -279,6 +282,14 @@ def run(
             continue
 
         task_id = target.task_id if target is not None else None
+        # 원래 마감이 있는 Task 의 마감을 없애자는 결정은 보낼 칸이 없다. BE 는 due_date=null 을 "바꾸지 않음"으로
+        # 받는다. 앞 카드에 합쳐 마감 제안을 지우는 것(원래 마감이 없던 업무의 되돌림)만 표현할 수 있다
+        if drafted.structured.due_cleared and (
+                task_id in edits and edits[task_id][0].due_date is not None
+                or task_id not in edits and not (task_id or "").startswith(_PENDING)):
+            out.failures.append(PipelineFailure(
+                "draft", finding.text, "마감을 없애는 변경은 아직 보낼 수 없습니다(BE 는 null 을 '바꾸지 않음'으로 받음)."))
+            continue
         if task_id is not None and task_id.startswith(_PENDING):  # 이번 회의 새 항목 카드에 합친다
             _merge_into(new_cards[int(task_id[len(_PENDING):])], finding, result, drafted, base=None)
             continue
