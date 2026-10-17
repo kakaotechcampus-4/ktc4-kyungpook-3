@@ -140,6 +140,32 @@ def embed_texts(
     return vectors
 
 
+def _waiting_for_embedding() -> tuple:
+    """임베딩 워커가 아직 채울 task의 조건. 지운 task, 빈 제목, 지금 제목으로 거절된 task는 기다리지 않는다."""
+    return (
+        Task.embedding.is_(None),
+        Task.is_deleted.is_(False),  # 지운 task는 검색에서 빠지므로 임베딩할 필요가 없다
+        func.trim(Task.title) != "",
+        or_(
+            Task.embedding_rejected_title.is_(None),
+            Task.embedding_rejected_title != Task.title,
+        ),
+    )
+
+
+def has_tasks_waiting_for_embedding(db: Session, workspace_id: str) -> bool:
+    """워크스페이스에 아직 임베딩을 기다리는 task가 있는지. 그 task는 유사 검색(search_similar_tasks)에 잡히지 않는다.
+
+    judge 새 항목의 auto 판단에 쓴다(#232). 방금 만든 task와 같은 할 일이 들어오면 검색이 못 봐서
+    similar_count가 0이 되므로, 기다리는 task가 있는 동안은 auto로 보내지 않는다.
+    """
+    return db.execute(
+        select(Task.task_id)
+        .where(Task.workspace_id == workspace_id, *_waiting_for_embedding())
+        .limit(1)
+    ).first() is not None
+
+
 def process_missing_embeddings(
     db: Session,
     *,
@@ -161,14 +187,7 @@ def process_missing_embeddings(
     """
     rows = db.execute(
         select(Task.task_id, Task.title)
-        .where(
-            Task.embedding.is_(None),
-            func.trim(Task.title) != "",
-            or_(
-                Task.embedding_rejected_title.is_(None),
-                Task.embedding_rejected_title != Task.title,
-            ),
-        )
+        .where(*_waiting_for_embedding())
         .order_by(Task.created_at)
         .limit(limit)
     ).all()
@@ -269,7 +288,7 @@ def search_similar_tasks(
 ) -> list[tuple[Task, float]]:
     """코사인 유사도가 높은 순으로 최대 k개의 (task, 유사도)를 돌려준다.
 
-    todo·in_progress·blocked·done task가 대상이다. min_similarity 미만인 후보는 뺀다.
+    todo·in_progress·blocked·done task가 대상이다. 지운 task와 min_similarity 미만인 후보는 뺀다.
     남는 게 없으면 빈 목록이다.
     """
     distance = Task.embedding.cosine_distance(query_vector)
@@ -278,6 +297,7 @@ def search_similar_tasks(
         .where(
             Task.workspace_id == workspace_id,
             Task.status.in_(SEARCHABLE_STATUSES),
+            Task.is_deleted.is_(False),
             Task.embedding.is_not(None),
             distance <= 1 - min_similarity,
         )

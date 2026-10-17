@@ -31,6 +31,9 @@
 POST 결과를 모르는 채로 끝나면(타임아웃·5xx·워커 중단) 이 값이 남아 있으므로, 다음 시도는
 POST를 반복하지 않고 `Task ID` 속성으로 이미 생긴 페이지가 있는지부터 조회한다.
 
+지운 Task(`Task.is_deleted`): 지울 때도 버전을 올려 요청을 넣는다. 워커는 지금 DB에 페이지가 있으면 보관(archive)하고,
+없으면 만들지 않는다. 새 DB가 붙어도 지운 Task에는 요청을 넣지 않는다.
+
 워커는 프로세스당 하나만 도는 것을 전제로 한다(`app/main.py` lifespan).
 """
 import logging
@@ -82,7 +85,10 @@ def enqueue_workspace_sync(db: Session, workspace_id: str) -> None:
     Task의 Notion 기록은 지우지 않는다. 워커가 기록된 DB와 새 DB가 다른 것을 보고 새 DB에 페이지를 만든다.
     여기서 못 본 Task(아직 커밋 전)는 자기 요청을 이미 갖고 있다(`enqueue_task_sync`).
     """
-    tasks = db.execute(select(Task.task_id, Task.version).where(Task.workspace_id == workspace_id)).all()
+    # 지운 task는 새 DB에 페이지가 없으니 보관할 것도 없다
+    tasks = db.execute(
+        select(Task.task_id, Task.version).where(Task.workspace_id == workspace_id, Task.is_deleted.is_(False))
+    ).all()
     if not tasks:
         return
     # job_id·상태·시각은 모델의 기본값으로 채운다.
@@ -92,7 +98,7 @@ def enqueue_workspace_sync(db: Session, workspace_id: str) -> None:
     )
     db.execute(
         update(Task)
-        .where(Task.workspace_id == workspace_id)
+        .where(Task.workspace_id == workspace_id, Task.is_deleted.is_(False))
         .values(notion_sync_status=str(NotionSyncStatus.PENDING), updated_at=Task.updated_at)
     )
 
@@ -333,7 +339,12 @@ def _process(
             if page_id is not None:
                 _update_task_sync(db, task_id, notion_page_id=page_id, notion_database_id=database_id)
 
-        if page_id is not None:
+        if task.is_deleted:
+            # 지운 task — 페이지가 있으면 보관하고, 없으면 새로 만들지 않는다
+            synced_version = task.version
+            if page_id is not None:
+                notion.archive_page(integration, page_id, transport=transport)
+        elif page_id is not None:
             synced_version = task.version
             notion.update_page(db, integration, task, page_id, transport=transport)
         else:
@@ -341,6 +352,13 @@ def _process(
             # POST 전에 먼저 커밋해 둬야, 응답을 못 받은 채 워커가 죽어도 흔적이 남는다.
             _update_task_sync(db, task_id, notion_create_attempted_at=now)
             db.commit()
+            # 커밋하면 Task를 다시 읽는다. 처음 읽은 뒤 지워졌으면(auto 되돌리기) 만들지 않는다. 그대로 만들면 지운 뒤의
+            # 버전까지 반영된 것으로 기록되어, 보관할 요청이 건너뛰어지고 페이지가 남는다
+            if task.is_deleted:
+                _update_task_sync(db, task_id, notion_create_attempted_at=None)
+                _finish(job, NotionSyncJobStatus.SKIPPED, now, "처리하는 사이 Task가 지워졌습니다.")
+                db.commit()
+                return
             synced_version = task.version
             page_id = notion.create_page(db, integration, task, transport=transport)
             _update_task_sync(db, task_id, notion_page_id=page_id, notion_database_id=database_id)

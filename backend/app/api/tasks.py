@@ -22,9 +22,23 @@ from app.services.tasks import apply_task_updates, create_task, rollback_task_hi
 router = APIRouter(prefix="/tasks", tags=["tasks"], dependencies=[Depends(require_task_member)])
 
 
-def _get_task(db: Session, task_id: str) -> Task:
-    task = db.get(Task, task_id)
-    if task is None:
+def _get_task(db: Session, task_id: str, *, lock: bool = False, include_deleted: bool = False) -> Task:
+    """task를 찾는다. 지운 task(auto로 만들었다가 되돌린 task)는 없는 task로 본다.
+
+    task를 바꾸는 경로는 lock=True로 커밋까지 행을 잠근다. 잠그지 않으면 auto 되돌리기(revert_auto_item)가
+    지운 뒤에 수정이 반영되어, 200을 받고도 그 수정이 아무 데도 보이지 않는다. 잠근 뒤 다시 읽어 지웠는지 본다.
+    include_deleted는 지운 task에도 해야 할 일이 있는 경로(Notion 페이지 보관 재시도)만 쓴다.
+    """
+    if lock:
+        task = db.execute(
+            select(Task)
+            .where(Task.task_id == task_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        ).scalar_one_or_none()
+    else:
+        task = db.get(Task, task_id)
+    if task is None or (task.is_deleted and not include_deleted):
         raise AppError(ErrorCode.TASK_NOT_FOUND, details={"task_id": task_id})
     return task
 
@@ -70,7 +84,7 @@ def list_tasks(
     _member: Member = Depends(get_current_member),
     db: Session = Depends(get_db),
 ) -> dict:
-    filters = [Task.workspace_id == workspace_id]
+    filters = [Task.workspace_id == workspace_id, Task.is_deleted.is_(False)]
     if status is not None:
         filters.append(Task.status == str(status))
     if assignee_member_id is not None:
@@ -106,8 +120,9 @@ def update_task(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
-    task = _get_task(db, task_id)
-    member = require_pm(db, user, task.workspace_id)
+    member = require_pm(db, user, _get_task(db, task_id).workspace_id)
+    # PM인지 먼저 확인한다. 권한 없는 요청이 행을 잠가 승인·되돌리기를 기다리게 하지 않는다
+    task = _get_task(db, task_id, lock=True)
 
     updates = payload.model_dump(
         exclude_unset=True, exclude={"changed_by"}
@@ -158,8 +173,9 @@ def rollback_history_endpoint(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
-    task = _get_task(db, task_id)
-    member = require_pm(db, user, task.workspace_id)
+    member = require_pm(db, user, _get_task(db, task_id).workspace_id)
+    # PM인지 먼저 확인한다. 권한 없는 요청이 행을 잠가 승인·되돌리기를 기다리게 하지 않는다
+    task = _get_task(db, task_id, lock=True)
     history = db.get(TaskHistory, history_id)
     if history is None or history.task_id != task_id:
         raise AppError(
@@ -178,8 +194,11 @@ def retry_notion_sync(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
-    """Notion 반영이 failed로 끝난 Task를 다시 대기열에 넣는다. 실제 전송은 워커가 한다."""
-    task = _get_task(db, task_id)
+    """Notion 반영이 failed로 끝난 Task를 다시 대기열에 넣는다. 실제 전송은 워커가 한다.
+
+    지운 Task도 받는다. 페이지 보관이 실패했으면 다시 시도할 곳이 여기뿐이다.
+    """
+    task = _get_task(db, task_id, include_deleted=True)
     require_pm(db, user, task.workspace_id)
     retry_failed_sync(db, task)
     db.commit()

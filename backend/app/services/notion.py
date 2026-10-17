@@ -15,10 +15,14 @@
 OAuth 없이 시험할 때는 행을 직접 넣어도 된다:
 `Integration(workspace_id=..., provider="notion", access_token="secret_...", provider_channel_id="<database_id>")`.
 """
+import logging
+
 import httpx
 from sqlalchemy.orm import Session
 
 from app.models import Integration, Member, Task, TaskStatus
+
+logger = logging.getLogger(__name__)
 
 NOTION_API_BASE = "https://api.notion.com/v1"
 NOTION_VERSION = "2022-06-28"
@@ -227,6 +231,25 @@ def update_page(
         {"properties": build_properties(db, task)},
         transport,
     )
+
+
+def archive_page(
+    integration: Integration,
+    page_id: str,
+    *,
+    transport: httpx.BaseTransport | None = None,
+) -> None:
+    """페이지를 보관(archive)한다. 지운 Task의 페이지에 쓴다. Notion 휴지통으로 옮겨져 DB에서 빠지고, Notion에서 복원할 수 있다.
+
+    이미 보관됐거나 지워진 페이지는 400·404가 온다. 응답을 못 받아 다시 보낸 경우나 PM이 Notion에서 먼저 지운 경우다.
+    바라던 결과라 성공으로 본다. 보내는 값이 archived 하나뿐이라 400의 다른 원인은 거의 없다.
+    """
+    try:
+        _send(integration, "PATCH", f"/pages/{page_id}", {"archived": True}, transport)
+    except NotionWriteError as exc:
+        if exc.status_code not in (400, 404):
+            raise
+        logger.info("이미 보관됐거나 없는 Notion 페이지입니다. page_id=%s status=%s", page_id, exc.status_code)
 
 
 def find_page_by_task_id(
