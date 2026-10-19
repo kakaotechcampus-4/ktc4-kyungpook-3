@@ -140,6 +140,14 @@ def embed_texts(
     return vectors
 
 
+def _searchable_tasks() -> tuple:
+    """유사 검색(search_similar_tasks)이 후보로 보는 task의 조건. auto 판단(has_unsearchable_tasks)도 같은 범위를 본다."""
+    return (
+        Task.status.in_(SEARCHABLE_STATUSES),
+        Task.is_deleted.is_(False),
+    )
+
+
 def _waiting_for_embedding() -> tuple:
     """임베딩 워커가 아직 채울 task의 조건. 지운 task, 빈 제목, 지금 제목으로 거절된 task는 기다리지 않는다."""
     return (
@@ -154,7 +162,7 @@ def _waiting_for_embedding() -> tuple:
 
 
 def has_unsearchable_tasks(db: Session, workspace_id: str) -> bool:
-    """워크스페이스에 유사 검색(search_similar_tasks)이 보지 못하는 활성 task가 있는지.
+    """워크스페이스에 유사 검색(search_similar_tasks)의 후보인데 임베딩이 없어 검색이 보지 못하는 task가 있는지.
 
     judge 새 항목의 auto 판단에 쓴다(#232). 임베딩이 없는 task와 같은 할 일이 들어오면 검색이 못 봐서
     similar_count가 0이 되므로, 그런 task가 있는 동안은 auto로 보내지 않는다.
@@ -167,8 +175,7 @@ def has_unsearchable_tasks(db: Session, workspace_id: str) -> bool:
         select(Task.task_id)
         .where(
             Task.workspace_id == workspace_id,
-            Task.status.in_(SEARCHABLE_STATUSES),
-            Task.is_deleted.is_(False),
+            *_searchable_tasks(),
             Task.embedding.is_(None),
             func.trim(Task.title) != "",
         )
@@ -306,8 +313,7 @@ def search_similar_tasks(
         select(Task, distance.label("distance"))
         .where(
             Task.workspace_id == workspace_id,
-            Task.status.in_(SEARCHABLE_STATUSES),
-            Task.is_deleted.is_(False),
+            *_searchable_tasks(),
             Task.embedding.is_not(None),
             distance <= 1 - min_similarity,
         )
