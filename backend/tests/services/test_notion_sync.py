@@ -1033,16 +1033,65 @@ def test_task_deleted_while_job_runs_is_not_created(db, monkeypatch):
     assert _jobs(db, task)[0].status == "skipped"
 
 
-@pytest.mark.parametrize("status", [400, 404])
-def test_archiving_page_that_is_already_gone_counts_as_done(db, status):
+def _deleted_task_with_page(db) -> Task:
     task = _create(db, _workspace(db))
     notion_sync.process_due_jobs(db, transport=FakeNotion(_page()).transport)
-
     _delete(db, task)
-    notion_sync.process_due_jobs(
-        db, transport=FakeNotion(httpx.Response(status, json={"message": "archived"})).transport
+    return task
+
+
+@pytest.mark.parametrize("status", [400, 404])
+@pytest.mark.parametrize("flag", ["archived", "in_trash"])
+def test_archiving_page_confirmed_already_archived_counts_as_done(db, status, flag):
+    task = _deleted_task_with_page(db)
+
+    fake = FakeNotion(
+        httpx.Response(status, json={"message": "Can't edit block that is archived."}),
+        httpx.Response(200, json={"id": "page-1", flag: True}),
     )
+    notion_sync.process_due_jobs(db, transport=fake.transport)
 
     db.refresh(task)
+    assert fake.requests == [("PATCH", "/v1/pages/page-1"), ("GET", "/v1/pages/page-1")]
     assert [j.status for j in _jobs(db, task)][-1] == "done"
     assert task.notion_sync_status == "synced"
+
+
+@pytest.mark.parametrize(
+    "status, check",
+    [
+        # 요청 검증 오류 — 페이지는 보관되지 않은 채 남아 있다
+        pytest.param(400, httpx.Response(200, json={"id": "page-1", "archived": False}), id="validation_error"),
+        # 연결에 공유되지 않았거나 영구 삭제됨 — 읽을 수도 없어 보관됐는지 모른다
+        pytest.param(404, httpx.Response(404, json={"message": "Could not find page"}), id="not_shared"),
+    ],
+)
+def test_archiving_page_not_confirmed_fails_with_reason(db, status, check):
+    task = _deleted_task_with_page(db)
+
+    fake = FakeNotion(httpx.Response(status, json={"message": "원래 오류"}), check)
+    notion_sync.process_due_jobs(db, transport=fake.transport)
+
+    db.refresh(task)
+    job = _jobs(db, task)[-1]
+    # 다시 보내도 같으므로 재시도하지 않고 실패로 남겨 원인을 보이게 한다
+    assert job.status == "failed"
+    assert f"[{status}] 원래 오류" in job.last_error
+    assert "확인하지 못했습니다" in job.last_error
+    assert task.notion_sync_status == "failed"
+    assert task.notion_synced_version != task.version
+
+
+def test_archive_check_failing_temporarily_is_retried(db):
+    task = _deleted_task_with_page(db)
+
+    fake = FakeNotion(
+        httpx.Response(400, json={"message": "Can't edit block that is archived."}),
+        httpx.Response(503, json={"message": "unavailable"}),
+    )
+    notion_sync.process_due_jobs(db, transport=fake.transport)
+
+    db.refresh(task)
+    # 보관 여부를 아직 모른다 — 완료로 보지 않고 다시 시도한다
+    assert _jobs(db, task)[-1].status == "pending"
+    assert task.notion_sync_status != "synced"

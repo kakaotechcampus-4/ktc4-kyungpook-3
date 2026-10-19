@@ -241,15 +241,39 @@ def archive_page(
 ) -> None:
     """페이지를 보관(archive)한다. 지운 Task의 페이지에 쓴다. Notion 휴지통으로 옮겨져 DB에서 빠지고, Notion에서 복원할 수 있다.
 
-    이미 보관됐거나 지워진 페이지는 400·404가 온다. 응답을 못 받아 다시 보낸 경우나 PM이 Notion에서 먼저 지운 경우다.
-    바라던 결과라 성공으로 본다. 보내는 값이 archived 하나뿐이라 400의 다른 원인은 거의 없다.
+    이미 보관된 페이지는 400이 온다. 응답을 못 받아 다시 보낸 경우나 PM이 Notion에서 먼저 지운 경우다.
+    하지만 400은 요청 검증 오류일 수 있고, 404는 연결에 페이지가 공유되지 않았을 때도 온다. 그래서 400·404를 받으면
+    페이지를 다시 읽어 보관된 것이 확인될 때만 성공으로 본다. 확인하지 못하면 받은 오류를 원인과 함께 올린다
+    (다시 보내도 같으므로 retryable은 그대로 거짓이다). 다시 읽다가 실패하면 그 오류를 올린다(5xx·네트워크면 재시도).
     """
     try:
         _send(integration, "PATCH", f"/pages/{page_id}", {"archived": True}, transport)
     except NotionWriteError as exc:
         if exc.status_code not in (400, 404):
             raise
-        logger.info("이미 보관됐거나 없는 Notion 페이지입니다. page_id=%s status=%s", page_id, exc.status_code)
+        if _is_archived(integration, page_id, transport):
+            logger.info("이미 보관된 Notion 페이지입니다. page_id=%s status=%s", page_id, exc.status_code)
+            return
+        raise NotionWriteError(
+            f"{exc.reason} — 페이지가 보관됐는지 확인하지 못했습니다"
+            " (연결에 공유되지 않았거나 영구 삭제됐거나 요청이 거부됨).",
+            retryable=exc.retryable,
+            status_code=exc.status_code,
+            retry_after=exc.retry_after,
+        ) from exc
+
+
+def _is_archived(
+    integration: Integration, page_id: str, transport: httpx.BaseTransport | None
+) -> bool:
+    """페이지를 읽어 보관(휴지통 포함)된 상태인지 본다. 404면 읽을 수 없어 확인하지 못한 것이다."""
+    try:
+        data = _request(integration.access_token, "GET", f"/pages/{page_id}", transport)
+    except NotionWriteError as exc:
+        if exc.status_code == 404:
+            return False
+        raise
+    return bool(data.get("archived") or data.get("in_trash"))
 
 
 def find_page_by_task_id(
