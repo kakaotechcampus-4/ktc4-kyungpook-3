@@ -52,7 +52,7 @@ from app.services.matching import (
     resolve_assignee,
     resolve_speaker,
 )
-from app.services.embedding import has_tasks_waiting_for_embedding
+from app.services.embedding import has_unsearchable_tasks
 from app.services.tasks import create_task, delete_task
 
 logger = logging.getLogger(__name__)
@@ -149,9 +149,9 @@ def create_extraction(
 
     resolved_cache: dict[tuple[str, str | None], MatchResult] = {}
     saved_count = 0
-    # 임베딩을 기다리는 task가 있는지(judge auto 조건). 처음 judge 새 항목에서 한 번 읽고, 이 요청이 auto로 task를
-    # 만들면 그 task가 기다리게 되므로 True로 바꾼다. 그 밖에는 이 요청 안에서 바뀌지 않는다
-    waiting_for_embedding: bool | None = None
+    # 유사 검색이 못 보는 task가 있는지(judge auto 조건). 처음 judge 새 항목에서 한 번 읽고, 이 요청이 auto로 task를
+    # 만들면 그 task도 임베딩 전이라 검색에 잡히지 않으므로 True로 바꾼다. 그 밖에는 이 요청 안에서 바뀌지 않는다
+    unsearched_tasks: bool | None = None
     targets = _lock_update_targets(db, payload.items)
 
     for raw_item in payload.items:
@@ -215,14 +215,14 @@ def create_extraction(
             mentioned = mentions_assignee(raw_item.assignee_type, assignee_hint)
             blockers = None
             if path == ExtractionPath.JUDGE:
-                if waiting_for_embedding is None:
-                    waiting_for_embedding = has_tasks_waiting_for_embedding(db, meeting.workspace_id)
+                if unsearched_tasks is None:
+                    unsearched_tasks = has_unsearchable_tasks(db, meeting.workspace_id)
                 blockers = auto_blockers(
                     AutoSignals(
                         task_status=raw_item.task_status,
                         due_status=raw_item.due_status,
                         similar_count=raw_item.similar_count,
-                        tasks_waiting_for_embedding=waiting_for_embedding,
+                        unsearched_tasks_exist=unsearched_tasks,
                     ),
                     assignee_type=raw_item.assignee_type,
                     assignee=match if mentioned else None,
@@ -288,7 +288,7 @@ def create_extraction(
                 changed_by=None,
             )
             item.task_id = task.task_id
-            waiting_for_embedding = True
+            unsearched_tasks = True
         else:
             # review/hold — PM 승인을 거쳐야 태스크가 생긴다.
             approval_payload = {

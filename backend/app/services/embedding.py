@@ -153,15 +153,25 @@ def _waiting_for_embedding() -> tuple:
     )
 
 
-def has_tasks_waiting_for_embedding(db: Session, workspace_id: str) -> bool:
-    """워크스페이스에 아직 임베딩을 기다리는 task가 있는지. 그 task는 유사 검색(search_similar_tasks)에 잡히지 않는다.
+def has_unsearchable_tasks(db: Session, workspace_id: str) -> bool:
+    """워크스페이스에 유사 검색(search_similar_tasks)이 보지 못하는 활성 task가 있는지.
 
-    judge 새 항목의 auto 판단에 쓴다(#232). 방금 만든 task와 같은 할 일이 들어오면 검색이 못 봐서
-    similar_count가 0이 되므로, 기다리는 task가 있는 동안은 auto로 보내지 않는다.
+    judge 새 항목의 auto 판단에 쓴다(#232). 임베딩이 없는 task와 같은 할 일이 들어오면 검색이 못 봐서
+    similar_count가 0이 되므로, 그런 task가 있는 동안은 auto로 보내지 않는다.
+    워커의 대상(_waiting_for_embedding)과 달리 임베딩 API가 제목을 거절한 task도 넣는다. 워커가 다시
+    시도하지 않을 뿐 검색에 빠져 있는 것은 같아서, 중복이 없다고 볼 수 없다. 이런 task는 제목이 바뀌어
+    임베딩이 채워지거나 지워질 때까지 auto를 막는다. 제목이 비었거나 공백뿐인 task는 같은 할 일일 수
+    없으므로 뺀다.
     """
     return db.execute(
         select(Task.task_id)
-        .where(Task.workspace_id == workspace_id, *_waiting_for_embedding())
+        .where(
+            Task.workspace_id == workspace_id,
+            Task.status.in_(SEARCHABLE_STATUSES),
+            Task.is_deleted.is_(False),
+            Task.embedding.is_(None),
+            func.trim(Task.title) != "",
+        )
         .limit(1)
     ).first() is not None
 
