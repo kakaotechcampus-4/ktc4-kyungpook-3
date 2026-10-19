@@ -143,7 +143,7 @@ def _send(
     integration: Integration,
     method: str,
     path: str,
-    body: dict[str, object],
+    body: dict[str, object] | None,
     transport: httpx.BaseTransport | None,
 ) -> dict:
     return _request(integration.access_token, method, path, transport, json=body)
@@ -268,7 +268,7 @@ def _is_archived(
 ) -> bool:
     """페이지를 읽어 보관(휴지통 포함)된 상태인지 본다. 404면 읽을 수 없어 확인하지 못한 것이다."""
     try:
-        data = _request(integration.access_token, "GET", f"/pages/{page_id}", transport)
+        data = _send(integration, "GET", f"/pages/{page_id}", None, transport)
     except NotionWriteError as exc:
         if exc.status_code == 404:
             return False

@@ -1033,8 +1033,8 @@ def test_task_deleted_while_job_runs_is_not_created(db, monkeypatch):
     assert _jobs(db, task)[0].status == "skipped"
 
 
-def _deleted_task_with_page(db) -> Task:
-    task = _create(db, _workspace(db))
+def _deleted_task_with_page(db, *, refresh_token: str | None = None) -> Task:
+    task = _create(db, _workspace(db, refresh_token=refresh_token))
     notion_sync.process_due_jobs(db, transport=FakeNotion(_page()).transport)
     _delete(db, task)
     return task
@@ -1095,3 +1095,27 @@ def test_archive_check_failing_temporarily_is_retried(db):
     # 보관 여부를 아직 모른다 — 완료로 보지 않고 다시 시도한다
     assert _jobs(db, task)[-1].status == "pending"
     assert task.notion_sync_status != "synced"
+
+
+def test_archive_check_unauthorized_refreshes_token_and_archives_again(db, oauth_env):
+    task = _deleted_task_with_page(db, refresh_token="refresh_old")
+    already_archived = httpx.Response(400, json={"message": "Can't edit block that is archived."})
+
+    fake = FakeNotion(
+        already_archived, _unauthorized(), _token(),
+        already_archived, httpx.Response(200, json={"id": "page-1", "archived": True}),
+    )
+    notion_sync.process_due_jobs(db, transport=fake.transport)
+    # 확인 조회의 401도 토큰을 갱신하고 기다리지 않고 바로 다시 보낸다
+    assert _jobs(db, task)[-1].status == "pending"
+    notion_sync.process_due_jobs(db, transport=fake.transport)
+
+    db.refresh(task)
+    # 다시 보낼 때는 보관 요청부터 새 토큰으로 처음부터 한다
+    assert fake.requests == [
+        ("PATCH", "/v1/pages/page-1"), ("GET", "/v1/pages/page-1"), ("POST", "/v1/oauth/token"),
+        ("PATCH", "/v1/pages/page-1"), ("GET", "/v1/pages/page-1"),
+    ]
+    assert fake.auths[3:] == ["Bearer secret_new", "Bearer secret_new"]
+    assert _jobs(db, task)[-1].status == "done"
+    assert task.notion_sync_status == "synced"
