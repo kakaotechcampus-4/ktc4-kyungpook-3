@@ -35,8 +35,7 @@ EXTRACT_PATHS = ("legacy", "judge")
 # 설정 이름과 Settings 의 칸. 빠진 것을 이 순서로 말한다
 _REQUIRED = (("TERRA_API_KEY", "terra_api_key"), ("TERRA_BASE_URL", "terra_base_url"),
              ("LUNA_API_KEY", "luna_api_key"), ("LUNA_BASE_URL", "luna_base_url"),
-             ("BE_BASE_URL", "be_base_url"), ("BE_WORKSPACE_ID", "be_workspace_id"),
-             ("BE_SERVICE_TOKEN", "be_service_token"))
+             ("BE_BASE_URL", "be_base_url"), ("BE_SERVICE_TOKEN", "be_service_token"))
 
 
 def extract_path() -> str:
@@ -53,6 +52,7 @@ class JudgeOutput:
 
     items: list[dict] = field(default_factory=list)
     failures: list[dict] = field(default_factory=list)     # 판단하지 못한 finding [{"stage", "text"(요약 문장), "reason"}]
+    dropped: dict = field(default_factory=dict)            # 1단계에서 검증에 탈락한 항목 기록(PipelineResult.dropped, #186)
 
 
 class JudgeAllFailed(RuntimeError):
@@ -127,7 +127,9 @@ def _restore(items: list[dict], labels: dict[str, str], names: dict[str, str], s
 
 
 def build_extractor(*, run=None, candidates=None, cfg=None):
-    """판단 추출기 extract(transcript, speaker_names, today) -> JudgeOutput. 설정이 없으면 None.
+    """판단 추출기 extract(transcript, speaker_names, today, workspace_id) -> JudgeOutput. 설정이 없으면 None.
+
+    workspace_id 는 회의의 워크스페이스다(매니페스트, #199). 유사 task 검색이 그 워크스페이스에서 찾는다.
 
     run 은 judge.pipeline.run, candidates 는 유사 task 검색(capture.handoff.BeClient)이다. 테스트가 바꿔 끼운다.
     """
@@ -141,9 +143,12 @@ def build_extractor(*, run=None, candidates=None, cfg=None):
     if candidates is None:
         from capture.handoff import BeClient
         candidates = BeClient(cfg.be_base_url, service_token=cfg.be_service_token)
-    workspace_id = cfg.be_workspace_id
 
-    def extract(transcript: Transcript, speaker_names: dict[str, str] | None, today: date) -> JudgeOutput:
+    def extract(transcript: Transcript, speaker_names: dict[str, str] | None, today: date,
+                workspace_id: str | None = None) -> JudgeOutput:
+        if not workspace_id:
+            # 없으면 유사 검색이 /workspaces/None/... 로 가서 엉뚱한 404 나 판단 실패로 보인다
+            raise ValueError("유사 task 검색에 쓸 워크스페이스가 없다(매니페스트 workspace_id)")
         names = {str(k): v for k, v in (speaker_names or {}).items()}
         labels = speaker_labels(names)
         result = run(_relabel(transcript, labels), workspace_id=workspace_id, today=today, candidates=candidates)
@@ -153,6 +158,7 @@ def build_extractor(*, run=None, candidates=None, cfg=None):
             raise JudgeAllFailed(f"등록할 항목이 없고 판단하지 못한 발화 {len(failures)}개만 남았다. "
                                  f"첫 실패({first['stage']}): {first['reason']}")
         speakers = {s.speaker for s in transcript.segments if s.speaker is not None}
-        return JudgeOutput(items=_restore(result.items, labels, names, speakers), failures=failures)
+        return JudgeOutput(items=_restore(result.items, labels, names, speakers), failures=failures,
+                           dropped=result.dropped)
 
     return extract

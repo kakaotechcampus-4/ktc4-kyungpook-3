@@ -13,18 +13,10 @@ import pytest
 
 from capture import voice_client
 from capture.discord_adapter import RecordingCog
-from stt.backend import SttResult
 from tests.capture.replay import ReplayTrack, replay
 
 GUILD_ID = 31
 ROOM_ID = 32
-
-
-class _Stt:
-    name = "fake"
-
-    def transcribe(self, samples, sample_rate):
-        return SttResult(text="말", words=[])
 
 
 class _Room:
@@ -101,10 +93,7 @@ class _Ctx:
 
 
 def _cog(tmp_path, guild):
-    return RecordingCog(_Bot(guild), recordings_dir=tmp_path / "recordings",
-                        transcripts_dir=tmp_path / "transcripts",
-                        stt_factory=lambda: (_Stt(), "fake", 1), gate_factory=lambda: None,
-                        extractor_factory=lambda: None, handoff_factory=lambda: None)
+    return RecordingCog(_Bot(guild), recordings_dir=tmp_path / "recordings", handoff_factory=lambda: None)
 
 
 def _tone(ms, sr=16_000):

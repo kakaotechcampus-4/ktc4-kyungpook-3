@@ -1,27 +1,57 @@
 import json
+import os
 from datetime import datetime, timedelta, timezone
 
 import httpx
 import pytest
-from sqlalchemy import create_engine, select, update
+from sqlalchemy import create_engine, select, text, update
 from sqlalchemy.orm import sessionmaker
 
 from app.core.database import Base
 from app.core.errors import AppError
 from app.models import Integration, NotionSyncJob, Task, Workspace
 from app.services import notion, notion_sync
-from app.services.tasks import apply_task_updates, create_task
+from app.services.tasks import apply_task_updates, create_task, delete_task
+
+TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
+
+# 토큰 갱신은 `integration`을 FOR UPDATE로 잠근다. SQLite는 이 잠금을 무시하므로, 잠그는 테스트는
+# TEST_DATABASE_URL이 있으면 PostgreSQL에서도 돌린다.
+on_sqlite_and_postgresql = pytest.mark.parametrize(
+    "db",
+    [
+        "sqlite",
+        pytest.param(
+            "postgresql",
+            marks=pytest.mark.skipif(not TEST_DATABASE_URL, reason="TEST_DATABASE_URL(PostgreSQL)이 없습니다."),
+        ),
+    ],
+    indirect=True,
+)
+
+
+def _pg_engine():
+    engine = create_engine(TEST_DATABASE_URL)
+    with engine.begin() as conn:
+        conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+    Base.metadata.drop_all(engine)
+    return engine
 
 
 @pytest.fixture
-def db():
-    engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
+def db(request):
+    if getattr(request, "param", "sqlite") == "postgresql":
+        engine = _pg_engine()
+    else:
+        engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     session = sessionmaker(bind=engine)()
     try:
         yield session
     finally:
         session.close()
+        Base.metadata.drop_all(engine)
+        engine.dispose()
 
 
 class FakeNotion:
@@ -31,10 +61,12 @@ class FakeNotion:
         self.responses = list(responses)
         self.requests: list[tuple[str, str]] = []
         self.bodies: list[dict | None] = []
+        self.auths: list[str | None] = []
 
     def __call__(self, request: httpx.Request) -> httpx.Response:
         self.requests.append((request.method, request.url.path))
         self.bodies.append(json.loads(request.content) if request.content else None)
+        self.auths.append(request.headers.get("Authorization"))
         result = self.responses.pop(0)
         if isinstance(result, Exception):
             raise result
@@ -53,7 +85,13 @@ def _later(minutes: int = 60) -> datetime:
     return datetime.now(timezone.utc) + timedelta(minutes=minutes)
 
 
-def _workspace(db, *, with_integration: bool = True, database_id: str | None = "db_123") -> Workspace:
+def _workspace(
+    db,
+    *,
+    with_integration: bool = True,
+    database_id: str | None = "db_123",
+    refresh_token: str | None = None,
+) -> Workspace:
     """`database_id=None`이면 연결 행은 있는데 DB를 찾는 중인 워크스페이스다."""
     workspace = Workspace(name="워크스페이스")
     db.add(workspace)
@@ -64,6 +102,7 @@ def _workspace(db, *, with_integration: bool = True, database_id: str | None = "
                 workspace_id=workspace.workspace_id,
                 provider="notion",
                 access_token="secret_token",
+                refresh_token=refresh_token,
                 provider_channel_id=database_id,
             )
         )
@@ -621,3 +660,389 @@ def test_job_claimed_right_before_database_is_cleared_goes_back_to_waiting(db, m
     assert fake.requests == []
     # DB가 붙을 때까지 다시 꺼내지 않는다
     assert notion_sync.process_due_jobs(db, transport=fake.transport) == 0
+
+
+# ---------- 401과 토큰 갱신 ----------
+
+
+@pytest.fixture
+def oauth_env(monkeypatch):
+    monkeypatch.setenv("NOTION_CLIENT_ID", "client-id")
+    monkeypatch.setenv("NOTION_CLIENT_SECRET", "client-secret")
+
+
+def _unauthorized() -> httpx.Response:
+    return httpx.Response(401, json={"message": "API token is invalid."})
+
+
+def _token(access_token: str = "secret_new", refresh_token: str | None = "refresh_new") -> httpx.Response:
+    return httpx.Response(200, json={"access_token": access_token, "refresh_token": refresh_token})
+
+
+def _token_error(status: int, code: str) -> httpx.Response:
+    """Notion 토큰 API의 오류 형식. 이유는 `code`에 있다."""
+    return httpx.Response(status, json={"object": "error", "status": status, "code": code, "message": "..."})
+
+
+def _connection(db, workspace: Workspace) -> Integration:
+    db.expire_all()
+    return db.execute(
+        select(Integration).where(Integration.workspace_id == workspace.workspace_id)
+    ).scalar_one()
+
+
+@on_sqlite_and_postgresql
+def test_unauthorized_refreshes_token_and_sends_again(db, oauth_env):
+    workspace = _workspace(db, refresh_token="refresh_old")
+    task = _create(db, workspace)
+    fake = FakeNotion(_unauthorized(), _token(), _page())
+
+    notion_sync.process_due_jobs(db, transport=fake.transport)
+
+    connection = _connection(db, workspace)
+    assert (connection.access_token, connection.refresh_token) == ("secret_new", "refresh_new")
+    assert fake.bodies[1] == {"grant_type": "refresh_token", "refresh_token": "refresh_old"}
+    job = _jobs(db, task)[0]
+    assert (job.status, job.attempts) == ("pending", 1)
+
+    # 기다리지 않고 바로 새 토큰으로 다시 보낸다
+    notion_sync.process_due_jobs(db, transport=fake.transport)
+
+    db.refresh(task)
+    assert fake.requests == [("POST", "/v1/pages"), ("POST", "/v1/oauth/token"), ("POST", "/v1/pages")]
+    assert fake.auths[2] == "Bearer secret_new"
+    assert (task.notion_page_id, task.notion_sync_status) == ("page-1", "synced")
+    assert _jobs(db, task)[0].attempts == 2
+
+
+def test_new_token_is_saved_even_if_worker_stops_right_after_refresh(db, oauth_env, monkeypatch):
+    workspace = _workspace(db, refresh_token="refresh_old")
+    _create(db, workspace)
+
+    def stop(*args, **kwargs):
+        raise RuntimeError("워커 중단")
+
+    # 갱신 직후, 요청 상태를 정리하기 전에 멈춘다
+    monkeypatch.setattr(notion_sync, "_finish", stop)
+    with pytest.raises(RuntimeError):
+        notion_sync.process_due_jobs(db, transport=FakeNotion(_unauthorized(), _token()).transport)
+    db.rollback()
+
+    # Notion은 refresh_old를 더는 받지 않으므로 새 토큰이 남아 있어야 한다
+    connection = _connection(db, workspace)
+    assert (connection.access_token, connection.refresh_token) == ("secret_new", "refresh_new")
+
+
+def test_refresh_without_new_refresh_token_keeps_old_one(db, oauth_env):
+    workspace = _workspace(db, refresh_token="refresh_old")
+    _create(db, workspace)
+
+    notion_sync.process_due_jobs(db, transport=FakeNotion(_unauthorized(), _token(refresh_token=None)).transport)
+
+    connection = _connection(db, workspace)
+    assert (connection.access_token, connection.refresh_token) == ("secret_new", "refresh_old")
+
+
+@on_sqlite_and_postgresql
+def test_unauthorized_after_token_changed_meanwhile_does_not_refresh(db, oauth_env, monkeypatch):
+    workspace = _workspace(db, refresh_token="refresh_old")
+    task = _create(db, workspace)
+    create_page = notion.create_page
+
+    def change_token_then_create(*args, **kwargs):
+        # 옛 토큰으로 보내는 사이 다른 워커가 갱신했다(또는 PM이 다시 연결했다)
+        db.execute(
+            update(Integration)
+            .where(Integration.workspace_id == workspace.workspace_id)
+            .values(access_token="secret_other", refresh_token="refresh_other")
+        )
+        db.commit()
+        return create_page(*args, **kwargs)
+
+    monkeypatch.setattr(notion, "create_page", change_token_then_create)
+    fake = FakeNotion(_unauthorized())
+    notion_sync.process_due_jobs(db, transport=fake.transport)
+
+    # 옛 refresh_token으로 갱신하지 않는다. 했다면 거절당해 새 토큰까지 지웠을 것이다
+    assert fake.requests == [("POST", "/v1/pages")]
+    connection = _connection(db, workspace)
+    assert (connection.access_token, connection.refresh_token) == ("secret_other", "refresh_other")
+    assert _jobs(db, task)[0].status == "pending"
+
+    monkeypatch.setattr(notion, "create_page", create_page)
+    fake = FakeNotion(_page())
+    notion_sync.process_due_jobs(db, transport=fake.transport)
+
+    db.refresh(task)
+    assert fake.auths == ["Bearer secret_other"]
+    assert task.notion_sync_status == "synced"
+
+
+def test_unauthorized_after_token_cleared_meanwhile_waits_for_reconnect(db, oauth_env, monkeypatch):
+    workspace = _workspace(db, refresh_token="refresh_old")
+    task = _create(db, workspace)
+    create_page = notion.create_page
+
+    def clear_token_then_create(*args, **kwargs):
+        # 옛 토큰으로 보내는 사이 다른 워커가 갱신을 거절당해 토큰을 비웠다
+        db.execute(
+            update(Integration)
+            .where(Integration.workspace_id == workspace.workspace_id)
+            .values(access_token=None, refresh_token=None)
+        )
+        db.commit()
+        return create_page(*args, **kwargs)
+
+    monkeypatch.setattr(notion, "create_page", clear_token_then_create)
+    fake = FakeNotion(_unauthorized())
+    notion_sync.process_due_jobs(db, transport=fake.transport)
+
+    # 새 토큰이 생긴 게 아니다 — 시도로 세지 않고 다시 연결을 기다린다
+    assert fake.requests == [("POST", "/v1/pages")]
+    job = _jobs(db, task)[0]
+    assert (job.status, job.attempts) == ("pending", 0)
+    assert "다시 연결을 기다립니다" in job.last_error
+
+
+@on_sqlite_and_postgresql
+def test_rejected_refresh_clears_tokens_and_waits_for_reconnect(db, oauth_env):
+    workspace = _workspace(db, refresh_token="refresh_old")
+    task = _create(db, workspace)
+    fake = FakeNotion(_unauthorized(), _token_error(400, "invalid_grant"))
+
+    notion_sync.process_due_jobs(db, transport=fake.transport)
+
+    # 토큰만 비우고 DB ID는 남긴다. 다시 연결할 때 새 토큰으로 읽을 수 있으면 이 DB를 이어 쓴다
+    connection = _connection(db, workspace)
+    assert (connection.access_token, connection.refresh_token, connection.provider_channel_id) == (
+        None, None, "db_123",
+    )
+    db.refresh(task)
+    job = _jobs(db, task)[0]
+    assert (job.status, job.attempts) == ("pending", 0)
+    assert "다시 연결을 기다립니다" in job.last_error
+    assert task.notion_sync_status == "pending"
+    assert task.notion_create_attempted_at is None
+
+    # 다시 연결할 때까지 꺼내지 않는다
+    assert notion_sync.process_due_jobs(db, transport=fake.transport, now=_later()) == 0
+
+    db.execute(
+        update(Integration)
+        .where(Integration.workspace_id == workspace.workspace_id)
+        .values(access_token="secret_reconnected", refresh_token="refresh_reconnected")
+    )
+    db.commit()
+    fake = FakeNotion(_page())
+    notion_sync.process_due_jobs(db, transport=fake.transport)
+
+    db.refresh(task)
+    assert fake.auths == ["Bearer secret_reconnected"]
+    assert (task.notion_database_id, task.notion_sync_status) == ("db_123", "synced")
+
+
+def test_unauthorized_without_refresh_token_clears_tokens(db, oauth_env):
+    workspace = _workspace(db, refresh_token=None)
+    task = _create(db, workspace)
+    fake = FakeNotion(_unauthorized())
+
+    notion_sync.process_due_jobs(db, transport=fake.transport)
+
+    assert fake.requests == [("POST", "/v1/pages")]
+    assert _connection(db, workspace).access_token is None
+    assert _jobs(db, task)[0].status == "pending"
+
+
+def test_other_jobs_of_revoked_workspace_go_back_to_waiting(db, oauth_env):
+    workspace = _workspace(db)
+    tasks = [_create(db, workspace), _create(db, workspace)]
+    fake = FakeNotion(_unauthorized())
+
+    # 한 번에 두 요청을 꺼냈다. 앞 요청에서 토큰을 비웠으니 뒤 요청은 Notion을 부르지 않고 대기로 돌아간다
+    assert notion_sync.process_due_jobs(db, transport=fake.transport) == 2
+
+    assert fake.requests == [("POST", "/v1/pages")]
+    assert [(j.status, j.attempts) for t in tasks for j in _jobs(db, t)] == [("pending", 0), ("pending", 0)]
+
+
+@pytest.mark.parametrize(
+    "token_response",
+    [httpx.Response(500, text="oops"), _token_error(401, "invalid_client")],
+)
+def test_refresh_unavailable_keeps_tokens_and_retries_later(db, oauth_env, token_response):
+    workspace = _workspace(db, refresh_token="refresh_old")
+    task = _create(db, workspace)
+    fake = FakeNotion(_unauthorized(), token_response)
+
+    notion_sync.process_due_jobs(db, transport=fake.transport)
+
+    connection = _connection(db, workspace)
+    assert (connection.access_token, connection.refresh_token) == ("secret_token", "refresh_old")
+    job = _jobs(db, task)[0]
+    assert (job.status, job.attempts) == ("pending", 1)
+    # 백오프 전에는 다시 시도하지 않는다
+    assert notion_sync.process_due_jobs(db, transport=fake.transport) == 0
+
+
+def test_refresh_without_client_settings_keeps_tokens(db, monkeypatch):
+    monkeypatch.delenv("NOTION_CLIENT_ID", raising=False)
+    workspace = _workspace(db, refresh_token="refresh_old")
+    task = _create(db, workspace)
+    fake = FakeNotion(_unauthorized())
+
+    notion_sync.process_due_jobs(db, transport=fake.transport)
+
+    assert _connection(db, workspace).access_token == "secret_token"
+    assert _jobs(db, task)[0].status == "pending"
+
+
+def test_refresh_on_last_attempt_sends_once_more(db, oauth_env):
+    workspace = _workspace(db, refresh_token="refresh_old")
+    task = _create(db, workspace)
+    rate_limited = httpx.Response(429, json={"message": "rate limited"})
+    fake = FakeNotion(*[rate_limited] * (notion_sync.MAX_ATTEMPTS - 1), _unauthorized(), _token(), _page())
+
+    for i in range(notion_sync.MAX_ATTEMPTS):
+        notion_sync.process_due_jobs(db, transport=fake.transport, now=_later(60 * (i + 1)))
+
+    # 마지막 시도였지만 새 토큰이 있으니 실패로 끝내지 않고 바로 다시 보낸다
+    job = _jobs(db, task)[0]
+    assert (job.status, job.attempts) == ("pending", notion_sync.MAX_ATTEMPTS)
+
+    notion_sync.process_due_jobs(db, transport=fake.transport, now=_later(60 * (notion_sync.MAX_ATTEMPTS + 1)))
+
+    db.refresh(task)
+    assert fake.auths[-1] == "Bearer secret_new"
+    assert task.notion_sync_status == "synced"
+    assert fake.responses == []
+
+
+def test_unauthorized_even_after_refresh_stops_after_one_extra_attempt(db, oauth_env):
+    workspace = _workspace(db, refresh_token="refresh_old")
+    task = _create(db, workspace)
+    # 갱신할 때마다 새 토큰을 받지만 계속 401이다. 마지막 시도 뒤 한 번만 더 보내고 멈춘다
+    fake = FakeNotion(*[_unauthorized(), _token()] * (notion_sync.MAX_ATTEMPTS + 1))
+
+    for _ in range(notion_sync.MAX_ATTEMPTS + 2):
+        notion_sync.process_due_jobs(db, transport=fake.transport)
+
+    db.refresh(task)
+    job = _jobs(db, task)[0]
+    assert (job.status, job.attempts) == ("failed", notion_sync.MAX_ATTEMPTS + 1)
+    assert task.notion_sync_status == "failed"
+    assert fake.responses == []
+
+
+# ── 지운 Task (#232) ───────────────────────────────────────────────────────
+
+
+def _delete(db, task: Task) -> None:
+    delete_task(db, task)
+    db.commit()
+
+
+def test_deleted_task_archives_its_page(db):
+    task = _create(db, _workspace(db))
+    notion_sync.process_due_jobs(db, transport=FakeNotion(_page()).transport)
+
+    _delete(db, task)
+    fake = FakeNotion(_page())
+    notion_sync.process_due_jobs(db, transport=fake.transport)
+
+    db.refresh(task)
+    assert fake.requests == [("PATCH", "/v1/pages/page-1")]
+    assert fake.bodies == [{"archived": True}]
+    assert task.notion_synced_version == 2
+    assert task.notion_sync_status == "synced"
+
+
+def test_task_deleted_before_page_was_made_never_creates_one(db):
+    task = _create(db, _workspace(db))
+    _delete(db, task)
+
+    fake = FakeNotion()
+    notion_sync.process_due_jobs(db, transport=fake.transport)
+
+    db.refresh(task)
+    # 만들기 요청과 지우기 요청 모두 Notion을 부르지 않고 끝난다
+    assert fake.requests == []
+    assert task.notion_page_id is None
+    assert {j.status for j in _jobs(db, task)} == {"done"}
+
+
+def test_deleted_task_with_unknown_create_result_looks_up_page_to_archive(db):
+    task = _create(db, _workspace(db))
+    notion_sync.process_due_jobs(db, transport=FakeNotion(httpx.ReadTimeout("timed out")).transport)
+    db.refresh(task)
+    assert task.notion_create_attempted_at is not None
+
+    _delete(db, task)
+    fake = FakeNotion(httpx.Response(200, json={"results": [{"id": "page-1"}]}), _page())
+    notion_sync.process_due_jobs(db, transport=fake.transport, now=_later())
+
+    db.refresh(task)
+    assert fake.requests == [
+        ("POST", "/v1/databases/db_123/query"),
+        ("PATCH", "/v1/pages/page-1"),
+    ]
+    assert fake.bodies[-1] == {"archived": True}
+    assert task.notion_create_attempted_at is None
+
+
+def test_attaching_new_database_skips_deleted_task(db):
+    workspace = _workspace(db)
+    kept, deleted = _create(db, workspace), _create(db, workspace)
+    notion_sync.process_due_jobs(db, transport=FakeNotion(_page("page-1"), _page("page-2")).transport)
+    _delete(db, deleted)
+    notion_sync.process_due_jobs(db, transport=FakeNotion(_page()).transport)
+
+    _attach(db, workspace, "db_456")
+    fake = FakeNotion(_page("page-3"))
+    notion_sync.process_due_jobs(db, transport=fake.transport)
+
+    assert fake.requests == [("POST", "/v1/pages")]
+    db.refresh(kept)
+    db.refresh(deleted)
+    assert kept.notion_database_id == "db_456"
+    assert deleted.notion_database_id == "db_123"
+
+
+def test_task_deleted_while_job_runs_is_not_created(db, monkeypatch):
+    task = _create(db, _workspace(db))
+    task_id = task.task_id
+    original = notion_sync._update_task_sync
+
+    def delete_meanwhile(session, tid, **values):
+        original(session, tid, **values)
+        if values.get("notion_create_attempted_at") is not None:
+            # 워커가 Task를 읽은 뒤, POST 직전 커밋 전에 auto 되돌리기가 지웠다
+            session.execute(
+                update(Task).where(Task.task_id == tid).values(is_deleted=True, version=Task.version + 1)
+            )
+
+    monkeypatch.setattr(notion_sync, "_update_task_sync", delete_meanwhile)
+    fake = FakeNotion()
+    notion_sync.process_due_jobs(db, transport=fake.transport)
+
+    task = db.get(Task, task_id)
+    assert fake.requests == []
+    assert task.notion_page_id is None
+    # 반영 버전을 남기지 않아 지운 뒤의 요청이 건너뛰어지지 않는다
+    assert task.notion_synced_version is None
+    assert task.notion_create_attempted_at is None
+    assert _jobs(db, task)[0].status == "skipped"
+
+
+@pytest.mark.parametrize("status", [400, 404])
+def test_archiving_page_that_is_already_gone_counts_as_done(db, status):
+    task = _create(db, _workspace(db))
+    notion_sync.process_due_jobs(db, transport=FakeNotion(_page()).transport)
+
+    _delete(db, task)
+    notion_sync.process_due_jobs(
+        db, transport=FakeNotion(httpx.Response(status, json={"message": "archived"})).transport
+    )
+
+    db.refresh(task)
+    assert [j.status for j in _jobs(db, task)][-1] == "done"
+    assert task.notion_sync_status == "synced"

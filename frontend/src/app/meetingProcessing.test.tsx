@@ -108,6 +108,16 @@ async function openDashboard(options: { strict?: boolean } = {}) {
   return app
 }
 
+/**
+ * 화면 자신의 업무 조회가 없는 셸 화면(메시지 준비 중). M7 부터 대시보드가 태스크·승인·회의 상세·추출을 부르므로,
+ * 추적기 요청만 따로 세는 테스트는 여기서 시작한다
+ */
+async function openQuietScreen() {
+  const app = renderApp(paths.messages('ws_01'))
+  await screen.findByRole('heading', { name: '메시지는 준비 중이에요' })
+  return app
+}
+
 async function openProcessing(options: { strict?: boolean } = {}) {
   const app = renderApp(PROCESSING_PATH, options)
   await screen.findByRole('heading', { name: PROCESSING_HEADING })
@@ -123,7 +133,7 @@ function processingLink() {
 describe('발견과 등록 (U4-1, U4-2)', () => {
   it('지금 공간 목록에서 정리 중 회의를 찾아 헤더에 `정리 중` 링크를 단다 — 업무 요청은 추적기 두 모양뿐이다', async () => {
     const log = recordRequests()
-    await openDashboard()
+    await openQuietScreen()
 
     const link = await waitFor(() => {
       const found = processingLink()
@@ -140,7 +150,7 @@ describe('발견과 등록 (U4-1, U4-2)', () => {
     await waitFor(() => expect(detailRequests(log)).toHaveLength(1))
     await settle()
 
-    // M4 U4-4 의 뜻(대시보드는 집계·목록을 부르지 않는다)은 그대로다 — 화면의 업무 요청은 0회다
+    // 시작 화면(메시지)은 업무 요청이 없다 — 추적기 요청만 남는다
     expect(businessRequests(log.started)).toEqual([])
     // 추적기 요청: 지금 공간 목록 1회, 상세는 정리 중 회의에만 1회(다음은 3초 뒤)
     expect(trackerRequests(log.started)).toEqual([
@@ -184,7 +194,7 @@ describe('발견과 등록 (U4-1, U4-2)', () => {
   it('정리 중 회의가 없으면 상세 요청은 0회이고 링크도 없다', async () => {
     completeMeeting('mt_10')
     const log = recordRequests()
-    const app = await openDashboard()
+    const app = await openQuietScreen()
     await waitFor(() =>
       expect(app.queryClient.getQueryState(meetingListQueryOptions('ws_01').queryKey)?.status).toBe(
         'success',
@@ -233,7 +243,7 @@ describe('발견과 등록 (U4-1, U4-2)', () => {
     addCompletedWorkspace()
     const log = recordRequests()
     const user = userEvent.setup()
-    const app = await openDashboard()
+    const app = await openQuietScreen()
     await waitFor(() => expect(processingLink()).not.toBeNull())
 
     await user.click(await screen.findByRole('button', { name: /^워크스페이스 바꾸기/ }))

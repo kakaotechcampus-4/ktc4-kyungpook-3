@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from capture import judge_path as J
+from judge.semantic_judge import empty_drops
 from shared.schemas import Transcript, TranscriptSegment
 
 TRANSCRIPT = Transcript(segments=[
@@ -18,7 +19,7 @@ NAMES = {"101": "민수", "103": "재환"}
 
 def _cfg(**over):
     base = dict(terra_api_key="k", terra_base_url="http://terra", luna_api_key="k", luna_base_url="http://luna",
-                be_base_url="http://be", be_workspace_id="ws-1", be_service_token="svc", llm_mode="")
+                be_base_url="http://be", be_service_token="svc", llm_mode="")
     base.update(over)
     return SimpleNamespace(**base)
 
@@ -39,13 +40,15 @@ def _failure(stage="judge", text="로그인 마감을 미루기로 함", reason=
 class FakeRun:
     """judge.pipeline.run 자리. 받은 것을 적어 두고 정해 둔 결과를 돌려준다."""
 
-    def __init__(self, items=(), failures=()):
+    def __init__(self, items=(), failures=(), dropped=None):
         self.items, self.failures = list(items), list(failures)
+        self.dropped = dropped if dropped is not None else empty_drops()
         self.seen = None
 
     def __call__(self, transcript, *, workspace_id, today, candidates):
         self.seen = SimpleNamespace(transcript=transcript, workspace_id=workspace_id, today=today, candidates=candidates)
-        return SimpleNamespace(items=[dict(i) for i in self.items], failures=list(self.failures))
+        return SimpleNamespace(items=[dict(i) for i in self.items], failures=list(self.failures),
+                               dropped=dict(self.dropped))
 
 
 def _extractor(run, **cfg):
@@ -73,11 +76,36 @@ def test_missing_settings_are_named_and_no_extractor_is_built():
     assert J.build_extractor(run=run, candidates=object(), cfg=_cfg()) is not None
 
 
+def test_the_pipeline_gets_the_workspace_of_the_meeting_not_a_setting():
+    """워크스페이스는 회의마다 다르다(#199). 설정에 없고 추출기를 부를 때 받는다."""
+    run = FakeRun([_item()])
+    extract, _ = _extractor(run)
+    extract(TRANSCRIPT, NAMES, date(2026, 9, 19), workspace_id="ws-7")
+    assert run.seen.workspace_id == "ws-7"
+    assert "BE_WORKSPACE_ID" not in [name for name, _ in J._REQUIRED]
+
+
+def test_the_pipeline_is_not_run_without_a_workspace():
+    """워크스페이스 없이 부르면 유사 검색이 /workspaces/None/... 로 간다. 그 전에 분명한 오류로 멈춘다."""
+    run = FakeRun([_item()])
+    extract, _ = _extractor(run)
+    with pytest.raises(ValueError, match="워크스페이스"):
+        extract(TRANSCRIPT, NAMES, date(2026, 9, 19))
+    assert run.seen is None
+
+
+def test_the_drops_of_stage_one_come_back_with_the_items():
+    """1단계에서 검증에 탈락한 항목 기록을 회의 기록까지 올린다(#186). 회의 ID 는 recorder 만 안다."""
+    drops = {"not_dict": 1, "no_valid_indices": 1, "bad_indices": [[7]], "bad_indices_total": 1, "lines": 3}
+    extract, _ = _extractor(FakeRun([_item()], dropped=drops))
+    assert extract(TRANSCRIPT, NAMES, date(2026, 9, 19), workspace_id="ws-1").dropped == drops
+
+
 def test_speakers_reach_the_pipeline_as_names_and_come_back_as_uids():
     """LLM 은 "너가" 를 풀 이름이 필요하고 BE 는 1인칭 담당자를 uid 로 찾는다."""
     run = FakeRun([_item()])
     extract, candidates = _extractor(run)
-    out = extract(TRANSCRIPT, NAMES, date(2026, 9, 19))
+    out = extract(TRANSCRIPT, NAMES, date(2026, 9, 19), workspace_id="ws-1")
     assert [s.speaker for s in run.seen.transcript.segments] == ["민수", "재환", None]
     assert [s.speaker for s in TRANSCRIPT.segments] == ["101", "103", None]        # 원본은 그대로다
     assert [(s.text, s.seq, s.start) for s in run.seen.transcript.segments] == [(s.text, s.seq, s.start) for s in TRANSCRIPT.segments]
@@ -88,7 +116,7 @@ def test_speakers_reach_the_pipeline_as_names_and_come_back_as_uids():
 def test_a_speaker_without_a_name_stays_as_the_uid():
     run = FakeRun([_item(evidence_speaker="103")])
     extract, _ = _extractor(run)
-    out = extract(TRANSCRIPT, {"101": "민수"}, date(2026, 9, 19))
+    out = extract(TRANSCRIPT, {"101": "민수"}, date(2026, 9, 19), workspace_id="ws-1")
     assert [s.speaker for s in run.seen.transcript.segments] == ["민수", "103", None]
     assert out.items[0]["evidence_speaker"] == "103"
 
@@ -100,7 +128,7 @@ def test_two_speakers_with_one_name_stay_apart():
     run = FakeRun([_item(evidence_speaker="민수(2)"),
                    _item(assignee_type="second", assignee_raw="민수(2)", evidence_speaker="민수")])
     extract, _ = _extractor(run)
-    out = extract(TRANSCRIPT, {"101": "민수", "103": "민수"}, date(2026, 9, 19))
+    out = extract(TRANSCRIPT, {"101": "민수", "103": "민수"}, date(2026, 9, 19), workspace_id="ws-1")
     assert [i["evidence_speaker"] for i in out.items] == ["103", "101"]
     assert out.items[1]["assignee_raw"] == "민수"
 
@@ -110,7 +138,7 @@ def test_a_name_tag_does_not_reach_the_text_the_pm_reads():
     run = FakeRun([_item(assignee_type="thirdname", assignee_raw="민수(2)님", task_title="민수(2) 와이어프레임 검토",
                          doc_text="와이어프레임을 민수(2)가 9/25까지 그리기로 함", evidence_speaker="민수")])
     extract, _ = _extractor(run)
-    item = extract(TRANSCRIPT, {"101": "민수", "103": "민수"}, date(2026, 9, 19)).items[0]
+    item = extract(TRANSCRIPT, {"101": "민수", "103": "민수"}, date(2026, 9, 19), workspace_id="ws-1").items[0]
     assert item["assignee_raw"] == "민수님" and item["task_title"] == "민수 와이어프레임 검토"
     assert item["doc_text"] == "와이어프레임을 민수가 9/25까지 그리기로 함" and item["evidence_speaker"] == "101"
     assert item["evidence_quote"] == "네, 제가 할게요."                     # 전사 원문은 건드리지 않는다
@@ -120,14 +148,14 @@ def test_an_unknown_speaker_in_an_item_is_dropped_for_pm_review():
     """되돌릴 수 없는 화자를 uid 자리에 그대로 두면 BE 가 엉뚱한 값으로 팀원을 찾는다. 비워서 PM 확인으로 보낸다."""
     run = FakeRun([_item(evidence_speaker="모르는 사람"), _item(evidence_speaker=None)])
     extract, _ = _extractor(run)
-    out = extract(TRANSCRIPT, NAMES, date(2026, 9, 19))
+    out = extract(TRANSCRIPT, NAMES, date(2026, 9, 19), workspace_id="ws-1")
     assert [i["evidence_speaker"] for i in out.items] == [None, None]
 
 
 def test_failures_keep_their_stage_text_and_reason():
     run = FakeRun([_item()], [_failure(), _failure("similar", "환불 기능을 만들기로 함", "BeError: NETWORK")])
     extract, _ = _extractor(run)
-    out = extract(TRANSCRIPT, NAMES, date(2026, 9, 19))
+    out = extract(TRANSCRIPT, NAMES, date(2026, 9, 19), workspace_id="ws-1")
     assert len(out.items) == 1
     assert out.failures == [
         {"stage": "judge", "text": "로그인 마감을 미루기로 함", "reason": "Terra 응답을 파싱하지 못했습니다."},
@@ -138,10 +166,10 @@ def test_a_run_with_failures_and_no_items_raises():
     """BE 가 꺼졌거나 토큰이 틀리면 finding 이 모두 실패하고 항목이 0개로 돌아온다. 그대로 등록하면 빈 추출로 회의가 닫힌다."""
     extract, _ = _extractor(FakeRun([], [_failure("similar", "a", "BeError: UNAUTHENTICATED"), _failure("similar", "b", "x")]))
     with pytest.raises(J.JudgeAllFailed) as e:
-        extract(TRANSCRIPT, NAMES, date(2026, 9, 19))
+        extract(TRANSCRIPT, NAMES, date(2026, 9, 19), workspace_id="ws-1")
     assert "2" in str(e.value) and "UNAUTHENTICATED" in str(e.value)
     extract, _ = _extractor(FakeRun([], []))                     # 결정이 없는 회의. 실패가 아니다
-    out = extract(TRANSCRIPT, NAMES, date(2026, 9, 19))
+    out = extract(TRANSCRIPT, NAMES, date(2026, 9, 19), workspace_id="ws-1")
     assert out.items == [] and out.failures == []
 
 
@@ -151,6 +179,6 @@ def test_the_default_candidate_source_is_the_be_client_with_the_service_token():
 
     run = FakeRun([_item()])
     extract = J.build_extractor(run=run, cfg=_cfg(be_base_url="http://be.local/", be_service_token="svc"))
-    extract(TRANSCRIPT, NAMES, date(2026, 9, 19))
+    extract(TRANSCRIPT, NAMES, date(2026, 9, 19), workspace_id="ws-1")
     client = run.seen.candidates
     assert isinstance(client, BeClient) and client.api == "http://be.local/api/v1" and client.service_token == "svc"

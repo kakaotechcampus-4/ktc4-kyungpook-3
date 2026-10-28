@@ -352,5 +352,49 @@
       ]
     },
     "expected": {"is_meaningful": true, "is_new": false, "matched_task_id": "task_login", "status": "blocked"}
+  },
+  {
+    "description": "같은 회의 안 번복 — 앞부분에서 제안된 마감(메모)을 원래대로 되돌림 (#140)",
+    "judge_input": {
+      "source": "meeting",
+      "text": "QA 일정 때문에 로그인 화면 마감은 원래대로 두기로 했다.",
+      "candidates": [
+        {"notion_page_id": "n2", "task_id": "task_login", "title": "로그인 화면 시안 마무리 작업", "due_date": "2026-10-06", "status": "in_progress", "meeting_note": "이번 회의 앞부분에서 마감을 2026-10-02 → 2026-10-06 바꾸자고 함. 아직 승인 전"}
+      ]
+    },
+    "expected": {"is_meaningful": true, "is_new": false, "matched_task_id": "task_login", "category": "schedule"}
+  },
+  {
+    "description": "같은 회의의 새 항목 카드에 마감 추가 — 새 항목을 또 만들지 않고 그 카드를 고름 (#140)",
+    "judge_input": {
+      "source": "meeting",
+      "text": "결제 환불 기능 마감을 다음 주 금요일로 정했다.",
+      "candidates": [
+        {"task_id": "pending:0", "title": "결제 환불 기능 개발", "meeting_note": "이번 회의에서 새로 나온 항목. 아직 Task 아님. 담당: 지민님"}
+      ]
+    },
+    "expected": {"is_meaningful": true, "is_new": false, "matched_task_id": "pending:0", "category": "schedule"}
+  },
+  {
+    "description": "같은 회의의 새 항목 카드를 다시 확인만 함 — 바뀌는 것 없음 (#140)",
+    "judge_input": {
+      "source": "meeting",
+      "text": "결제 환불 기능 담당이 지민님이 맞다고 다시 확인했다.",
+      "candidates": [
+        {"task_id": "pending:0", "title": "결제 환불 기능 개발", "meeting_note": "이번 회의에서 새로 나온 항목. 아직 Task 아님. 담당: 지민님"}
+      ]
+    },
+    "expected": {"is_meaningful": false}
+  },
+  {
+    "description": "같은 회의의 새 항목 카드가 있지만 다른 일 — 억지로 합치지 않고 새 항목 (#140)",
+    "judge_input": {
+      "source": "meeting",
+      "text": "알림 설정 페이지를 새로 만들기로 했다.",
+      "candidates": [
+        {"task_id": "pending:0", "title": "결제 환불 기능 개발", "meeting_note": "이번 회의에서 새로 나온 항목. 아직 Task 아님. 담당: 지민님"}
+      ]
+    },
+    "expected": {"is_meaningful": true, "is_new": true, "matched_task_id": null}
   }
 ]

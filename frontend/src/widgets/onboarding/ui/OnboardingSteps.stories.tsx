@@ -267,6 +267,79 @@ export const 팀원_중복_오류: Story = {
 /** 아무것도 적지 않으면 확인 완료가 비활성이다 */
 export const 팀원_비활성: Story = { ...팀원_기본 }
 
+/** PM 을 체크하면 이름 칸이 PM 이름으로 잠기고, 다른 줄에서는 PM 을 체크할 수 없다 (#228) */
+export const 팀원_PM_체크: Story = {
+  ...팀원_기본,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.type(await canvas.findByLabelText('@seoyeon_01의 팀원 이름'), '진호')
+    await userEvent.click(canvas.getByRole('checkbox', { name: '@seoyeon_01 — PM 최진호' }))
+    await expect(canvas.getByLabelText('@seoyeon_01의 팀원 이름')).toBeDisabled()
+    await expect(canvas.getByLabelText('@seoyeon_01의 팀원 이름')).toHaveValue('최진호')
+    // 디스코드 아이디 옆에 PM 라벨이 붙는다
+    await expect(canvas.getAllByText('PM', { exact: true })).toHaveLength(1)
+    await expect(canvas.getByRole('checkbox', { name: '@minsu — PM 최진호' })).toBeDisabled()
+    await expect(canvas.getByRole('button', { name: '1명 확인 완료' })).toBeEnabled()
+  },
+}
+
+/** PM 을 체크하지 않으면 확인 완료를 막고 첫 체크박스로 포커스를 옮긴다 (#228) */
+export const 팀원_PM_미체크: Story = {
+  ...팀원_기본,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.type(await canvas.findByLabelText('@minsu의 팀원 이름'), '박민수')
+    await userEvent.click(canvas.getByRole('button', { name: '1명 확인 완료' }))
+    await expect(
+      await canvas.findByText('PM의 디스코드 계정을 체크해야 완료할 수 있어요.'),
+    ).toBeVisible()
+    await expect(canvas.getByRole('checkbox', { name: '@seoyeon_01 — PM 최진호' })).toHaveFocus()
+  },
+}
+
+/** PM 잇기가 실패하면 그 줄의 PM 체크에 오류를 두고 입력은 남긴다 (#228) */
+export const 팀원_PM_저장_실패: Story = {
+  ...팀원_기본,
+  parameters: {
+    route: '/onboarding/ws_03/connect_members',
+    setup: atMembers,
+    msw: [http.patch('/api/v1/members/:memberId', () => fail('INTERNAL_ERROR', 'x', 500))],
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(await canvas.findByRole('checkbox', { name: '@seoyeon_01 — PM 최진호' }))
+    await userEvent.click(canvas.getByRole('button', { name: '1명 확인 완료' }))
+    await expect(
+      await canvas.findByText('일부 팀원을 저장하지 못했어요. 남은 줄만 다시 저장해요.'),
+    ).toBeVisible()
+    const check = canvas.getByRole('checkbox', { name: '@seoyeon_01 — PM 최진호' })
+    await expect(check).toHaveAttribute('aria-invalid', 'true')
+    await expect(check).toBeChecked()
+  },
+}
+
+/** 다시 들어오면 PM 이 연결된 줄은 PM 을 체크해 두고 이름 칸을 잠근다 (#228) */
+export const 팀원_PM_재진입: Story = {
+  ...팀원_기본,
+  parameters: {
+    route: '/onboarding/ws_03/connect_members',
+    setup: () => {
+      atMembers()
+      const pm = db.members.find(({ member_id }) => member_id === 'mb_90')
+      if (pm) pm.discord_user_id = '1123'
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(
+      await canvas.findByRole('checkbox', { name: '@seoyeon_01 — PM 최진호' }),
+    ).toBeChecked()
+    await expect(canvas.getByLabelText('@seoyeon_01의 팀원 이름')).toBeDisabled()
+    await expect(canvas.getByLabelText('@seoyeon_01의 팀원 이름')).toHaveValue('최진호')
+    await expect(canvas.getByRole('button', { name: '1명 확인 완료' })).toBeEnabled()
+  },
+}
+
 /** 일반 팀원 — 입력도 버튼도 없다 */
 export const 대기_일반_팀원: Story = {
   render: () => <WaitingStep step="connect_notion" />,

@@ -15,7 +15,7 @@ import pytest
 from capture import judge_path as J
 from capture import recorder as R
 from tests.capture.fake_be import FakeBe
-from tests.capture.test_recorder import DiesOnLong, EchoStt, _run, _session
+from tests.capture.test_recorder import DiesOnLong, EchoStt, _extractor, _run, _session
 from tests.capture.test_recovery import _fails, _handoff, _saved, clock, limits  # noqa: F401 - clock, limits 는 fixture
 
 
@@ -48,7 +48,7 @@ class Runs:
         self.outs = list(outs)
         self.calls = 0
 
-    def __call__(self, transcript, names, today):
+    def __call__(self, transcript, names, today, workspace_id=None):
         self.calls += 1
         out = self.outs.pop(0) if len(self.outs) > 1 else self.outs[0]
         if isinstance(out, Exception):
@@ -56,8 +56,13 @@ class Runs:
         return out
 
 
-def _out(items, failures=()):
-    return J.JudgeOutput(items=list(items), failures=list(failures))
+def _out(items, failures=(), dropped=None):
+    return J.JudgeOutput(items=list(items), failures=list(failures), dropped=dict(dropped or {}))
+
+
+# 1단계에서 검증에 탈락한 항목 기록(#186). 실행마다 다르다
+D1 = {"not_dict": 0, "no_valid_indices": 2, "bad_indices": [[7], [9]], "bad_indices_total": 2, "lines": 5}
+D2 = {"not_dict": 1, "no_valid_indices": 0, "bad_indices": [], "bad_indices_total": 0, "lines": 5}
 
 
 def _items_on_disk(path):
@@ -210,7 +215,7 @@ def test_missing_judge_settings_skip_the_stage_by_name(tmp_path, monkeypatch):
     from shared import config
 
     cfg = SimpleNamespace(terra_api_key="k", terra_base_url="u", luna_api_key="k", luna_base_url="u", llm_mode="",
-                          be_base_url="http://be", be_workspace_id="ws-1", be_service_token="",
+                          be_base_url="http://be", be_service_token="",
                           llm_api_key="옛 추출기 키", llm_model="m", llm_base_url="")
     monkeypatch.setattr(config, "settings", lambda: cfg)
     monkeypatch.setenv("MM_EXTRACT_PATH", "judge")
@@ -271,7 +276,7 @@ def test_without_a_kept_result_the_last_attempt_still_gives_up(tmp_path, clock, 
 
 def test_a_manual_recover_after_giving_up_hands_the_kept_result_off(tmp_path, clock, limits):
     """가진 결과가 있는데도 포기로 끝난 회의다(처리 도중 프로세스가 죽어 센 실패로 포기하면 그렇게 된다).
-    결과 파일은 남아 있어서 사람이 /recover 를 치면 새 BE 회의에 그 결과로 인계한다."""
+    결과 파일은 남아 있어서 사람이 --retry 를 치면 새 BE 회의에 그 결과로 인계한다."""
     rec, path, manifest = _session(tmp_path)
     fake = FakeBe()
     ex = Runs(_out([A], [F1]), RuntimeError("1단계 응답을 읽지 못했다"))
@@ -345,3 +350,39 @@ def test_empty_values_copied_from_the_env_example_mean_the_defaults():
                          capture_output=True, text=True, timeout=120)
     assert out.returncode == 0, out.stderr
     assert out.stdout.split() == ["2", "legacy"]
+
+
+# ── 1단계 탈락 기록(#186). 남기기로 고른 결과의 것만 매니페스트에 적는다 ──────────────────────────────────
+
+def test_the_drops_of_stage_one_are_kept_with_the_meeting(tmp_path):
+    rec, path, manifest = _session(tmp_path)
+    r = _run(rec, manifest, tmp_path, extractor=Runs(_out([A, B_], dropped=D1)), handoff=_handoff(FakeBe()))
+    assert r["status"] == "handed_off" and _saved(path)["extract_dropped"] == D1
+
+
+def test_a_rerun_that_replaces_the_result_replaces_its_drops_too(tmp_path, clock, limits):
+    """항목은 2회차 결과인데 탈락 기록은 1회차 것이면 서로 맞지 않는다."""
+    rec, path, manifest = _session(tmp_path)
+    fake = FakeBe()
+    ex = Runs(_out([A], [F1], dropped=D1), _out([A, B_], dropped=D2))
+    _run(rec, manifest, tmp_path, extractor=ex, handoff=_handoff(fake))
+    assert _saved(path)["extract_dropped"] == D1
+    r2 = _again(rec, tmp_path, ex, fake, clock)
+    assert r2["status"] == "handed_off" and _items_on_disk(path) == [A, B_] and _saved(path)["extract_dropped"] == D2
+
+
+def test_a_rerun_that_keeps_the_result_keeps_its_drops(tmp_path, clock, limits):
+    rec, path, manifest = _session(tmp_path)
+    fake = FakeBe()
+    ex = Runs(_out([A, B_], [F1], dropped=D1), _out([A], [F1, F2], dropped=D2))
+    _run(rec, manifest, tmp_path, extractor=ex, handoff=_handoff(fake))
+    _again(rec, tmp_path, ex, fake, clock)
+    assert _items_on_disk(path) == [A, B_] and _saved(path)["extract_dropped"] == D1
+
+
+def test_the_legacy_path_leaves_no_drops(tmp_path):
+    """옛 경로로 뽑으면 앞서 판단 경로가 남긴 탈락 기록도 판단 결과와 같이 지운다."""
+    rec, path, manifest = _session(tmp_path)
+    manifest["extract_dropped"] = D1
+    _run(rec, manifest, tmp_path, extractor=_extractor({}))
+    assert "tasks" in _saved(path) and "extract_dropped" not in _saved(path)

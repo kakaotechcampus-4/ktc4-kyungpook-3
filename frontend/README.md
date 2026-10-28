@@ -91,7 +91,8 @@ API_PROXY_TARGET=https://managers-manager.duckdns.org npm run dev
 
 - [문서 안내](docs/README.md): 대표 경로, 기존 문서 대응과 유지한 자료.
 - [API 계약](docs/contracts/frontend-api-contract.md): 기존 백엔드 요청과 현재 코드 차이를 한 문서에서 관리.
-- [전체 계획](docs/plan/frontend-plan.md) · [마일스톤 상태·기록](docs/plan/README.md): M0~M8. M0~M5는 기존 계획 원문을 각 `plan.md`로 이동했다. M6는 [계획](docs/plan/m6/plan.md)과 [결과](docs/plan/m6/result.md)가 있고 M7·M8은 0바이트 초기화 파일이다.
+- [전체 계획](docs/plan/frontend-plan.md) · [마일스톤 상태·기록](docs/plan/README.md): M0~M8. M0~M5는 기존 계획 원문을 각 `plan.md`로 이동했다. M6·M7은 계획과 결과([M6](docs/plan/m6/result.md), [M7](docs/plan/m7/result.md))가 있고 M8은 0바이트 초기화 파일이다.
+- 마일스톤 밖 수정: 온보딩에서 기존 PM을 체크해 Discord 중복 멤버 생성 방지(#228) — [계획](docs/plan/refactor/plan-onboarding-pm-discord-link.md) · [결과](docs/plan/refactor/result-onboarding-pm-discord-link.md). MSW 기준 검증, 실서버 미검증.
 - [공통 작업 규칙](../docs/agent-rules.md) · [문서 양식](../docs/README.md).
 - `docs/requests/`: 실제 독립 요청 발생 시 기록. 기존 백엔드 요청은 API 계약 §4에 유지.
 - [제품·기술 결정](docs/decision/frontend-decisions.md) · [구현 결정 안내](docs/plan/basis-for-decision-guide.md): 구현 결정 원문은 해당 마일스톤의 `basis-for-decision/`에 있다.
@@ -100,4 +101,4 @@ API_PROXY_TARGET=https://managers-manager.duckdns.org npm run dev
 
 ### 마일스톤 상태
 
-M0~M3은 대응 코드가 있으나 이번 문서 작업에서 완료조건을 재검증하지 않았다. M4·M5는 기존 계획·인수인계에 **MSW 기준 완료 판정**이 기록되어 있다. M5 인수인계는 실제 백엔드 성공 흐름을 미검증으로 남겼다. M6는 [계획](docs/plan/m6/plan.md)의 구현 순서 1~5를 진행했고 [결과](docs/plan/m6/result.md)에 완료조건별 상태와 검증을 기록했다. 목록의 확인 필요 카드, 실 API 보류의 비활성 승인, 키보드 상세 진입, 리스트 본문 폭은 완료 검증 뒤에 현재 화면에 맞춰 다시 확인했다. 최종 게이트는 Node 24가 아닌 Node v22.17.1에서만 실행해 Node 24 게이트는 미실행이고, 실 API 보완·승인 조회 PM 제한·실제 Notion 반영은 미검증 연동 과제로 남아 완료를 선언하지 않는다. M7·M8은 폴더 초기화만 진행했다. 각 계획과 존재하는 검증 기록은 [마일스톤 안내](docs/plan/README.md)에서 연결한다.
+M0~M3은 대응 코드가 있으나 이번 문서 작업에서 완료조건을 재검증하지 않았다. M4·M5는 기존 계획·인수인계에 **MSW 기준 완료 판정**이 기록되어 있다. M5 인수인계는 실제 백엔드 성공 흐름을 미검증으로 남겼다. M6는 [계획](docs/plan/m6/plan.md)의 구현 순서 1~5를 진행했고 [결과](docs/plan/m6/result.md)에 완료조건별 상태와 검증을 기록했다. 목록의 확인 필요 카드, 실 API 보류의 비활성 승인, 키보드 상세 진입, 리스트 본문 폭은 완료 검증 뒤에 현재 화면에 맞춰 다시 확인했다. 최종 게이트는 Node 24가 아닌 Node v22.17.1에서만 실행해 Node 24 게이트는 미실행이고, 실 API 보완·승인 조회 PM 제한·실제 Notion 반영은 미검증 연동 과제로 남아 완료를 선언하지 않는다. M7은 [계획](docs/plan/m7/plan.md)의 구현 순서 1~5를 진행했고 [결과](docs/plan/m7/result.md)에 AC-01~AC-06의 프론트·MSW 기준 충족과, 리뷰 지적 E-01~E-05 수정 뒤 Node v24.21.0 전체 게이트 재실행 통과(2026-10-18)를 기록했다(커밋 전). 실 API 되돌리기와 실제 Notion 페이지 보관은 미검증 연동 과제다. M8은 폴더 초기화만 진행했다. 각 계획과 존재하는 검증 기록은 [마일스톤 안내](docs/plan/README.md)에서 연결한다.

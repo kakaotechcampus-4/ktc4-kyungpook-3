@@ -4,15 +4,15 @@
 
 - 제공자: Backend (`backend/app/api/`)
 - 소비자: AI 녹음 봇 (`ai/capture/handoff.py`의 `BeClient`·`Handoff`, 판단 파이프라인 `ai/judge/pipeline.py`)
-- 기준: 2026-10-08 develop 코드 대조. 봇 회의 쓰기 경로의 서비스 토큰은 2026-10-09 #179 변경 코드로 다시 대조했다
+- 기준: 2026-10-08 develop 코드 대조. 봇 회의 쓰기 경로의 서비스 토큰은 2026-10-09 #179 변경 코드로, 추출 등록의 auto 판단 키는 2026-10-16 #232 변경 코드로 다시 대조했다
 - 합의 근거: 인계 방식은 [AI 결정 0009](../../../ai/decision_log/0009-bot-hands-off-to-be-api.md), 발화 저장은 [AI 결정 0017](../../../ai/decision_log/0017-transcript-sources-stage.md)에 AI 쪽 기록이 있다. 이 문서는 그 이후의 필드·오류 세부를 코드에서 읽은 것이며, 별도 합의 문서가 없는 항목은 구현 사실로만 적는다.
 
 ## 공통
 
 - 경로 prefix는 `/api/v1`이고 응답은 백엔드 공통 봉투 `{data, error}`다 ([Backend README 응답 형식](../../README.md#응답-형식)).
 - 봇은 `error.code`로 분기한다. 봉투가 아닌 응답이나 4xx·5xx는 `HTTP_<status>`로 다룬다 (`BeClient._call`).
-- 봇의 연결 설정은 `ai/.env`의 `BE_BASE_URL`, `BE_WORKSPACE_ID`, `BE_SERVICE_TOKEN`이다. #193 전의 봇은 `BE_BASE_URL`과 `BE_WORKSPACE_ID`가 없으면 인계 단계를 건너뛰고, #193부터는 `BE_SERVICE_TOKEN`까지 셋이 다 있어야 인계를 켠다 (`handoff.from_env`).
-- 봇은 아직 워크스페이스 하나(`BE_WORKSPACE_ID`)로만 회의를 보낸다. 디스코드 서버로 워크스페이스를 찾는 BE 조회는 있고([워크스페이스 찾기](#워크스페이스-찾기-get-integrationsdiscordguildsguild_idworkspace--200)), 봇이 이를 쓰는 작업은 AI 쪽 #180 후속이다.
+- 봇의 연결 설정은 `ai/.env`의 `BE_BASE_URL`과 서비스 토큰(`BE_SERVICE_TOKEN`)이다. 둘 중 하나라도 없으면 인계 단계를 건너뛴다 (`handoff.from_env`). 워크스페이스는 설정하지 않는다. #199 전의 봇은 `BE_WORKSPACE_ID`까지 있어야 인계를 켰다.
+- 봇은 회의마다 디스코드 서버로 워크스페이스를 찾아([워크스페이스 찾기](#워크스페이스-찾기-get-integrationsdiscordguildsguild_idworkspace--200)) 매니페스트의 `workspace_id`에 고정하고, 회의 생성·추출 등록·유사 검색에 쓴다 (AI #199).
 
 ## 호출 순서
 
@@ -122,6 +122,10 @@ AI `Transcript.to_dict()` 모양에 화자 이름을 더해 보낸다. 한 회�
     "category": "schedule" | "assignee" | "scope" | "decision" | null,
     "status": "todo" | "in_progress" | "blocked" | "done" | null,
     "doc_text": "…" | null,
+    "task_status": "certain" | "inferred" | "missing" | null,   // judge 새 항목만. 할 일 근거 상태
+    "due_status": "certain" | "inferred" | "missing" | null,    // judge 새 항목만. 마감이 없으면 missing
+    "similar_count": 0 | null,                // judge 새 항목만. 판단할 때 유사 검색이 돌려준 기존 task 수
+    "top_similarity": 0.0 | null,             // 그중 가장 높은 유사도. 결과가 없으면 null. 기록용
     "target_snapshot": { "updated_at": "…", "due_date": "…", "status": "…", "assignee_member_id": "…", "title": "…" } | null
   } ]
 }
@@ -140,9 +144,12 @@ AI `Transcript.to_dict()` 모양에 화자 이름을 더해 보낸다. 한 회�
 | `target_snapshot.title` | 유사 검색 응답의 `title`을 그대로 보낸다. 제목을 바꾸는 값이 아니라 승인 때 대상 task가 그대로인지 확인하는 기준이다. 없거나 null이면 등록 시점의 제목을 쓴다. 필드 모양은 #185에서 AI·BE가 정했다 |
 | 확신도 | `task_confidence`·`due_confidence`를 보내지 않으면 null(측정 안 함)로 저장하고 0.0(측정했는데 낮음)과 구분한다. 할 일 확신도가 null이면 항목 확신도도 null이다 |
 | 추출 경로 | AI가 경로를 따로 보내지 않으므로 BE가 항목이 보낸 키로 가린다. `action`·`category`·`doc_text` 중 하나라도 보냈으면 judge, 아니고 `task_confidence`·`due_confidence`를 보냈으면 legacy, 둘 다 아니면 판별 불가다. 모든 항목이 같은 경로일 때만 추출의 `extraction_path`에 기록하고, 항목이 없거나 섞였거나 판별 불가 항목이 있으면 null이다(#201) |
-| create 게이트 | judge 항목과 확신도를 측정하지 않은 항목은 auto로 가지 않는다. BE가 계산한 담당자 확신도로만 정해, 담당자를 한 명으로 찾았거나 언급이 없으면(`assignee_type`이 `group`·`none`·null) `review`, 언급했는데 찾지 못했으면 `hold`다. 이름으로 풀지 못해 `assignee_raw` 없이 `second`·`thirdpronoun`·`thirdrole`만 보낸 항목과 화자가 없는 1인칭 항목도 언급했는데 찾지 못한 것으로 보아 `hold`다. 그 밖에는 확신도로 정한다(0.8 이상이고 담당자 확인 불필요면 `auto`, 0.5 이상 `review`, 그 아래 `hold`). update는 지금처럼 항상 `review`다 |
+| create 게이트 | 담당자를 언급했는데 BE가 한 명으로 찾지 못했으면 `hold`다. 이름으로 풀지 못해 `assignee_raw` 없이 `second`·`thirdpronoun`·`thirdrole`만 보낸 항목과 화자가 없는 1인칭 항목도 언급했는데 찾지 못한 것으로 본다. judge 항목은 그다음 아래 auto 조건을 모두 만족하면 `auto`, 아니면 `review`다. 경로를 가릴 수 없고 확신도도 없는 항목은 `review`, legacy는 확신도로 정한다(0.8 이상이고 담당자 확인 불필요면 `auto`, 0.5 이상 `review`, 그 아래 `hold`). update는 지금처럼 항상 `review`다 |
+| judge auto 조건 | `task_status`가 certain, 담당자를 언급했으면 BE가 한 명으로 확정(검증된 별칭·화자, 확신도 0.8 이상), `assignee_type`이 `second`·`thirdpronoun`·`thirdrole`이 아님, `due_status`가 certain이거나 missing이고 `due_date` 유무와 맞음(missing인데 날짜가 있거나 certain인데 날짜가 없으면 탈락), `similar_count`가 0이고 워크스페이스에 임베딩을 기다리는 task가 없음(그런 task는 유사 검색에 잡히지 않는다. 같은 요청에서 앞 항목이 auto로 만든 task도 해당). `task_status`·`due_status`·`similar_count` 중 하나라도 null이면 `review`라, 이 키를 보내지 않는 AI에서는 지금 동작이 그대로다. 상태 값이 셋 중 하나가 아니면 400 `INVALID_REQUEST`, `similar_count`가 음수거나 `top_similarity`가 0~1 밖이어도 400이다(#232) |
+| 근거 상태·유사 검색 값 | `similar_count`는 그 finding을 판단할 때 유사 검색 응답의 후보 수다(BE가 이미 `min_similarity` 미만을 뺀 결과). 같은 회의 앞부분 카드(pending)는 세지 않는다. update 항목은 보내지 않아도 되고 보내도 게이트에 쓰지 않는다. 값은 추출 항목에 저장되고 추출 조회에 실린다 |
 
 - 경로 판별의 전제: judge 항목(`ai/judge/pipeline.py`의 `to_item`)은 `action`·`category`·`doc_text`를 값이 null이어도 키째 보내고 확신도를 보내지 않는다. legacy 항목(`ai/capture/handoff.py`의 `to_extraction_items`)은 확신도 둘을 항상 보내고 judge의 키는 보내지 않는다. 판단 경로는 확신도를 만들지 않고 인계기에 임의 고정값을 넣지 않는다는 AI 쪽 기록(`ai/docs/plan/전체 계획.md`의 확신도 항목)을 따랐다.
+- auto 조건과 새 키 이름(`task_status`·`due_status`·`similar_count`·`top_similarity`)은 #232 이슈에서 AI·BE 공동 작업으로 정했고, 조건 구성은 멘토 피드백으로 확인했다. AI가 값을 만드는 방법(Luna 애매 표시, 마감 원문 확인, 카드 합치기)은 AI 쪽 작업이며 이 문서는 BE가 받는 모양만 적는다. 새 키는 judge만 보내므로 경로 판별은 바뀌지 않는다.
 - 합의 여부 확인 필요: 위 키 모양을 판별 기준으로 쓰는 것은 #201에서 BE가 정했다. AI 코드는 바꾸지 않았다. 항목 모양이 바뀌면 판별이 틀어지므로 AI가 이 키를 바꿀 때 알려야 하고, AI가 경로를 직접 보내게 되면 그 값을 먼저 쓰도록 바꾼다.
 
 ## 워크스페이스 찾기 `GET /integrations/discord/guilds/{guild_id}/workspace` → 200
@@ -160,12 +167,15 @@ AI `Transcript.to_dict()` 모양에 화자 이름을 더해 보낸다. 한 회�
 | 결과 | 한 서버는 한 워크스페이스에만 연결되므로(`uq_integration_discord_guild`) 하나다 |
 | 미연결 | 연결이 없거나 해제됐으면 409 `INTEGRATION_NOT_CONNECTED`, `details`는 `{provider: "discord", guild_id}` |
 
-- 합의 근거: BE가 이슈 #180의 흐름을 제안했고 AI 담당이 동의하며 아래를 덧붙였다(2026-10-09, 저장소 밖 대화). 이슈에는 아직 기록이 없다. 봇 구현 전까지는 합의된 계획이며 구현 사실이 아니다.
+- 합의 근거: BE가 이슈 #180의 흐름을 제안했고 AI 담당이 동의하며 아래를 덧붙였다(2026-10-09, 저장소 밖 대화). AI 쪽 구현 이슈 #199에 같은 내용을 적었다.
   - 봇은 `/record` 때 이 조회로 받은 워크스페이스를 매니페스트의 `workspace_id`에 고정하고, 회의 생성·추출 등록·유사 검색에 `.env` 값 대신 쓴다.
   - 미연결(`INTEGRATION_NOT_CONNECTED`)이면 녹음은 하고 BE 인계만 멈추며, 채널에 웹에서 서버를 연결하라고 안내한다.
   - 조회가 일시적으로 실패하면 `/record`를 막지 않고 처리할 때 다시 조회한다.
   - 이미 `.env` 워크스페이스로 들어간 옛 회의는 그대로 둔다.
-- 현재 구현: BE는 이 조회를 제공한다. 봇은 아직 부르지 않는다. AI 쪽 #180 작업은 `handoff.py`를 같이 고치는 #194가 머지된 뒤 시작한다.
+- 현재 구현: BE는 이 조회를 제공하고, 봇은 `/record` 때와 처리할 때 `workspace_id`가 비어 있으면 부른다 (`capture/handoff.py`의 `Handoff.workspace`, AI #199).
+  - 한 번 정한 값은 바꾸지 않는다. BE 회의를 만든 뒤 바뀌면 추출 등록이 `WORKSPACE_MISMATCH`가 된다.
+  - 미연결이면 `/record`가 녹음을 시작하지 않고, PM이 웹 온보딩에서 서버를 연결한 뒤 다시 하라고 답한다. 합의는 "녹음은 하고 BE 인계만 멈춤"이었는데, main PR #175 리뷰가 미연결 서버의 녹음 거절을 권해 바꿨다. BE가 받는 요청은 어느 쪽이든 조회뿐이다.
+  - 조회가 일시적으로 실패하면(연결 실패·5xx) 녹음은 하고 처리할 때 다시 조회한다. 그 실패는 발화 저장 단계의 실패로 세어 재시도하고, 401은 설정 문제로 BE 단계를 건너뛴다. 처리할 때 미연결이면 발화 저장·추출·인계를 멈추고, 워커가 그 채널에 한 번 알린 뒤 연결될 때까지 전사하지 않고 1분에 한 번 다시 묻는다.
 
 ## 오류 코드 요약
 
@@ -179,7 +189,7 @@ AI `Transcript.to_dict()` 모양에 화자 이름을 더해 보낸다. 한 회�
 | `MEETING_FAILED` | 409 | sources | 실패 |
 | `MEETING_NOT_PROCESSING` | 409 | extractions | 실패 |
 | `EMBEDDING_UNAVAILABLE` | 502 | tasks/similar | 실패 (빈 목록으로 바꾸지 않음) |
-| `INTEGRATION_NOT_CONNECTED` | 409 | guilds/{guild_id}/workspace | 녹음은 두고 인계만 멈춤, 채널에 연결 안내 (합의된 계획, 봇 미구현) |
+| `INTEGRATION_NOT_CONNECTED` | 409 | guilds/{guild_id}/workspace | `/record`는 녹음을 시작하지 않고 연결 안내. 처리할 때는 BE 단계를 멈춤 |
 | `INVALID_REQUEST` | 400 | 요청 검증 실패 전부 | 실패 |
 
 ## 코드 근거

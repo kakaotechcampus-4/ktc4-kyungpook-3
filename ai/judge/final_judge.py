@@ -26,11 +26,26 @@ def _numbered_candidates(judge_input: JudgeInput) -> str:
         return "(없음)"
     lines = []
     for i, c in enumerate(judge_input.candidates):
+        # 이번 회의 카드는 검색 결과가 아니라 유사도가 없다 — 대신 어디서 온 값인지 적는다(#140)
+        tail = f"({c.meeting_note})" if c.meeting_note else f"유사도={c.similarity:.2f}"
         lines.append(
             f"[{i}] title={c.title!r}, 본문={c.content_snippet!r}, 담당자={c.assignee_member_id}, "
-            f"마감일={c.due_date}, 상태={c.status}, 유사도={c.similarity:.2f}"
+            f"마감일={c.due_date}, 상태={c.status}, {tail}"
         )
     return "\n".join(lines)
+
+
+# 이번 회의 앞부분 카드가 후보에 있을 때만 넣는다 — 일반 판단의 프롬프트는 그대로 둬야 기존 판단이 흔들리지 않는다.
+# 늘 넣었더니 메모가 없는 진척 보고("정리하고 있어요")까지 바뀌는 것 없음으로 보는 경우가 늘었다(골든셋 25번, #140)
+_MEETING_CARD_RULE = (
+    "- 후보 끝에 '(이번 회의 …)' 메모가 있으면 그 후보는 이번 회의 앞부분에서 나온 카드이고, 표시된 값은 "
+    "그때 제안된 값이다. 발화가 같은 일을 가리키면 새 항목을 만들지 말고 그 후보를 고른다(is_new=false). "
+    "제안된 값을 다시 바꾸거나 **원래 값으로 되돌리자는 말도 바뀌는 것이다**(마감을 되돌리면 schedule)\n"
+)
+
+
+def _meeting_card_rule(judge_input: JudgeInput) -> str:
+    return _MEETING_CARD_RULE if any(c.meeting_note for c in judge_input.candidates) else ""
 
 
 def _terra_user_prompt(judge_input: JudgeInput) -> str:
@@ -51,6 +66,7 @@ def _terra_user_prompt(judge_input: JudgeInput) -> str:
         "  · 질문이나 확인 ('마감 언제였죠?')\n"
         "- 단, 필드에 담기지 않아도 방식 · 형식 · 도구 · 규칙을 **새로 정했다면** 바뀌는 것이 있다"
         "(is_meaningful=true, category=decision). 예: '응답은 JSON:API 형식으로 통일하기로 했어요'\n"
+        f"{_meeting_card_rule(judge_input)}"
         "- 어느 후보와도 안 맞으면(또는 후보가 없으면) 새 항목이다(is_new=true, "
         "matched_candidate_index=null)\n"
         "- status 는 발화에서 진행 상태(할 일/진행 중/막힘/완료)가 명시적으로 언급됐을 때만 "

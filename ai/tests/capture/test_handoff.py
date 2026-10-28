@@ -33,7 +33,8 @@ def _manifest(tmp_path, *, with_tasks=True, be=None):
     tdir.mkdir(exist_ok=True)
     (tdir / "session_500.transcript.json").write_text(json.dumps(TRANSCRIPT, ensure_ascii=False), encoding="utf-8")
     m = {"session": "500", "channel": "회의방", "started_at": "2026-09-19T05:00:00+00:00", "timezone": "Asia/Seoul",
-         "speakers": [{"user_id": "101", "display_name": "민수"}, {"user_id": "103", "display_name": "재환"}]}
+         "speakers": [{"user_id": "101", "display_name": "민수"}, {"user_id": "103", "display_name": "재환"}],
+         "workspace_id": "ws-1"}
     if with_tasks:
         (tdir / "session_500.tasks.json").write_text(json.dumps([_task()], ensure_ascii=False), encoding="utf-8")
         m["tasks"] = str(tdir / "session_500.tasks.json")
@@ -43,7 +44,7 @@ def _manifest(tmp_path, *, with_tasks=True, be=None):
 
 
 def _handoff(fake):
-    return H.Handoff(H.BeClient("http://be.local/", session=fake, service_token="svc-token"), "ws-1")
+    return H.Handoff(H.BeClient("http://be.local/", session=fake, service_token="svc-token"))
 
 
 def test_first_person_item_carries_the_speaker_uid_and_time():
@@ -163,15 +164,73 @@ def test_client_turns_error_envelopes_and_bad_bodies_into_be_error():
     assert e3.value.code == "NETWORK"
 
 
-def test_from_env_needs_both_settings(monkeypatch):
+def test_from_env_needs_the_base_url(monkeypatch):
     from shared import config
 
-    monkeypatch.setattr(config, "settings", lambda: type("S", (), {"be_base_url": "", "be_workspace_id": "ws"})())
+    monkeypatch.setattr(config, "settings", lambda: type("S", (), {"be_base_url": "", "be_service_token": "svc"})())
     assert H.from_env() is None
-    monkeypatch.setattr(config, "settings", lambda: type("S", (), {"be_base_url": "http://be", "be_workspace_id": "ws",
-                                                                  "be_service_token": "svc"})())
+
+
+def _client(fake, token="svc-token"):
+    return H.BeClient("http://be.local/", session=fake, service_token=token)
+
+
+def test_workspace_is_looked_up_by_server_and_pinned_in_the_manifest():
+    """회의마다 서버로 워크스페이스를 찾는다(#199). 한 번 정하면 연결이 바뀌어도 그대로다. BE 회의를 만든 뒤 바뀌면
+    추출 등록이 WORKSPACE_MISMATCH 로 막힌다."""
+    fake = FakeBe()
+    fake.guilds = {"900": "ws-9"}
+    h = H.Handoff(_client(fake))
+    m = {"guild_id": "900"}
+    assert h.workspace(m) == "ws-9" and m["workspace_id"] == "ws-9"
+    assert fake.calls == [("GET", "/integrations/discord/guilds/900/workspace", None)]
+    assert fake.headers[0]["X-Service-Token"] == "svc-token"
+    fake.guilds = {"900": "ws-other"}
+    assert h.workspace(m) == "ws-9" and len(fake.calls) == 1
+
+
+def test_an_unconnected_server_has_no_workspace_and_other_errors_raise():
+    fake = FakeBe()
+    h = H.Handoff(_client(fake))
+    m = {"guild_id": "901"}
+    assert h.workspace(m) is None and "workspace_id" not in m
+    assert H.Handoff(_client(fake)).workspace({}) is None          # 서버가 적히지 않은 매니페스트
+    fake.down = True
+    with pytest.raises(H.BeError) as e:
+        h.workspace({"guild_id": "900"})
+    assert e.value.code == "NETWORK"
+    with pytest.raises(H.BeError) as e:
+        H.Handoff(_client(FakeBe(), token="wrong")).workspace({"guild_id": "900"})
+    assert e.value.code == "UNAUTHENTICATED"
+
+
+def test_the_meeting_is_created_in_the_workspace_of_the_manifest(tmp_path):
+    fake = FakeBe()
+    fake.guilds = {"900": "ws-9"}
+    m, _ = _manifest(tmp_path)
+    del m["workspace_id"]
+    m["guild_id"] = "900"
+    H.Handoff(_client(fake)).start(m)
+    assert [c[1] for c in fake.calls] == ["/integrations/discord/guilds/900/workspace", "/meetings"]
+    assert fake.calls[1][2]["workspace_id"] == "ws-9" and m["workspace_id"] == "ws-9"
+
+
+def test_no_meeting_is_created_without_a_workspace(tmp_path):
+    fake = FakeBe()
+    m, _ = _manifest(tmp_path)
+    del m["workspace_id"]
+    m["guild_id"] = "901"
+    with pytest.raises(H.BeError) as e:
+        H.Handoff(_client(fake)).start(m)
+    assert e.value.code == H.NOT_CONNECTED and "/meetings" not in [c[1] for c in fake.calls]
+
+
+def test_from_env_needs_the_base_url_and_the_token_only(monkeypatch):
+    from shared import config
+
+    monkeypatch.setattr(config, "settings", lambda: type("S", (), {"be_base_url": "http://be", "be_service_token": "svc"})())
     h = H.from_env()
-    assert h is not None and h.workspace_id == "ws" and h.client.api == "http://be/api/v1"
+    assert h is not None and h.client.api == "http://be/api/v1" and not hasattr(h, "workspace_id")
 
 
 def test_unresolved_second_person_and_pronouns_are_not_sent_as_aliases():
@@ -284,7 +343,7 @@ def test_rejected_sources_are_errors_with_the_be_codes():
 
 
 def _token_handoff(fake):
-    return H.Handoff(H.BeClient("http://be.local/", session=fake, service_token="svc-token"), "ws-1")
+    return H.Handoff(H.BeClient("http://be.local/", session=fake, service_token="svc-token"))
 
 
 def test_save_sources_secures_the_meeting_then_saves_the_lines_with_names(tmp_path):
@@ -306,7 +365,7 @@ def test_save_sources_moves_to_a_new_meeting_when_the_be_failed_it(tmp_path):
     h = _token_handoff(fake)
     m, tdir = _manifest(tmp_path, with_tasks=False)
     h.end(m)
-    h.fail(m, "stt")                              # 포기해서 BE 에 실패를 알린 회의를 /recover 가 다시 돌렸다
+    h.fail(m, "stt")                              # 포기해서 BE 에 실패를 알린 회의를 --retry 가 다시 돌렸다
     be = h.save_sources(m, transcripts_dir=tdir)
     assert be["meeting_id"] == "m2" and be["replaced"] == ["m1"] and be["sources"]["meeting_id"] == "m2"
     assert len(fake.sources["m2"]) == 4 and "m1" not in fake.sources
@@ -367,16 +426,14 @@ def test_from_env_needs_the_service_token(monkeypatch):
     """토큰이 없으면 BE 가 네 경로를 모두 거절한다. 회의마다 401 로 실패하게 두지 않고 인계를 켜지 않는다."""
     from shared import config
 
-    monkeypatch.setattr(config, "settings", lambda: type("S", (), {"be_base_url": "http://be", "be_workspace_id": "ws",
-                                                                  "be_service_token": ""})())
+    monkeypatch.setattr(config, "settings", lambda: type("S", (), {"be_base_url": "http://be", "be_service_token": ""})())
     assert H.from_env() is None
 
 
 def test_from_env_passes_the_service_token(monkeypatch):
     from shared import config
 
-    monkeypatch.setattr(config, "settings", lambda: type("S", (), {"be_base_url": "http://be", "be_workspace_id": "ws",
-                                                                  "be_service_token": "svc"})())
+    monkeypatch.setattr(config, "settings", lambda: type("S", (), {"be_base_url": "http://be", "be_service_token": "svc"})())
     assert H.from_env().client.service_token == "svc"
 
 

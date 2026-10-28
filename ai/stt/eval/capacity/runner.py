@@ -166,6 +166,7 @@ class MeteredBackend:
         self.inner, self.spend_file, self.cap_krw, self.label = inner, spend_file, cap_krw, label
         self.min_bill_s = min_bill_s
         self.name = getattr(inner, "name", type(inner).__name__)
+        self.gives_word_times = getattr(inner, "gives_word_times", True)   # B.run 이 묶음을 순서대로 가를지 본다
         self.refused = 0
         self._lock = threading.Lock()    # 워커 스레드 여럿이 refused 를 같이 센다
 
@@ -213,7 +214,8 @@ def _segments(lines) -> list[dict]:
 
 
 def measure_run(label: str, tracks: list[B.Track], backend, *, out_dir: Path, gate_factory=SpeechGate,
-                lines_out: list | None = None, workers: int = 1, pack_turns: bool = True) -> dict:
+                lines_out: list | None = None, workers: int = 1, pack_turns: bool = True,
+                ordered: bool | None = None) -> dict:
     """회의 하나를 전사하고 시각, 걸린 시간, CPU 초, 호출별 시간과 길이를 out_dir/<label>.json 에 쓴다.
 
     말 필터는 회의마다 새로 만든다. 봇과 워커도 회의마다 gate_factory() 를 부른다(capture/worker.py _speech_gate).
@@ -223,7 +225,8 @@ def measure_run(label: str, tracks: list[B.Track], backend, *, out_dir: Path, ga
         raise ValueError(f"{label}: 트랙이 없다. 데이터 폴더에 wav 가 있는지 확인한다")
     ru0 = resource.getrusage(resource.RUSAGE_SELF)
     started_at, t0 = time.time(), time.monotonic()
-    lines, stats = B.run(tracks, backend, mode="chunk", gate=gate_factory(), workers=workers, pack_turns=pack_turns)
+    lines, stats = B.run(tracks, backend, mode="chunk", gate=gate_factory(), workers=workers, pack_turns=pack_turns,
+                         ordered=ordered)
     wall_s, ended_at = time.monotonic() - t0, time.time()
     ru1 = resource.getrusage(resource.RUSAGE_SELF)
     if lines_out is not None:
@@ -242,7 +245,8 @@ def measure_run(label: str, tracks: list[B.Track], backend, *, out_dir: Path, ga
 
 # ─────────────────────────────────────────────────────────────── 시나리오
 def run_seq(tracks_dir: Path, label: str, *, repeat: int, backend, out_dir: Path, gate_factory=SpeechGate,
-            save_lines: bool = False, model: str | None = None, workers: int = 1, pack_turns: bool = True) -> dict:
+            save_lines: bool = False, model: str | None = None, workers: int = 1, pack_turns: bool = True,
+            ordered: bool | None = None) -> dict:
     """같은 회의를 repeat 번 차례로. 회의 repeat 개가 같이 끝나 워커 1개 앞에 줄 선 경우와 같다.
 
     save_lines 면 실행마다 회의록 줄을 golden --save-lines 와 같은 모양으로 lines-<label>-<i>.json 에 쓴다.
@@ -253,7 +257,7 @@ def run_seq(tracks_dir: Path, label: str, *, repeat: int, backend, out_dir: Path
     for i in range(1, repeat + 1):
         lines: list | None = [] if save_lines else None
         r = measure_run(f"{label}-{i}", tracks, backend, out_dir=out_dir, gate_factory=gate_factory, lines_out=lines,
-                        workers=workers, pack_turns=pack_turns)
+                        workers=workers, pack_turns=pack_turns, ordered=ordered)
         r["wait_s"] = round(r["started_at"] - runs[0]["started_at"], 3) if runs else 0.0
         if save_lines:
             _write(out_dir, f"lines-{label}-{i}", {"session": label, "model": model, "segments": _segments(lines)})
@@ -288,7 +292,8 @@ def _file_model(kind: str, model: str) -> str:
 
 
 def run_golden(session: Path, *, model: str, tag: str, backend, out_dir: Path, beam: int | None = 5,
-               save_lines: bool = False, kind: str = "local", workers: int = 1, pack_turns: bool = True) -> dict:
+               save_lines: bool = False, kind: str = "local", workers: int = 1, pack_turns: bool = True,
+               ordered: bool | None = None) -> dict:
     """정렬본을 CER 까지. score 의 wall_s·cpu_s 는 전사 구간이고, 바깥의 wall_s·cpu_s 는 채점까지 포함한다.
 
     score 는 결과 파일 이름에 회의 이름을 넣지 않는다. 같은 out_dir 에 m01·m02 를 쓰려면 tag 로 가른다.
@@ -298,7 +303,7 @@ def run_golden(session: Path, *, model: str, tag: str, backend, out_dir: Path, b
     started_at, t0 = time.time(), time.monotonic()
     lines: list = []
     score = golden.score(session, "chunk", kind, model, True, workers, True, backend=backend, tag=tag,
-                         out_dir=out_dir, beam=beam, lines_out=lines, pack_turns=pack_turns)
+                         out_dir=out_dir, beam=beam, lines_out=lines, pack_turns=pack_turns, ordered=ordered)
     wall_s, ended_at = time.monotonic() - t0, time.time()
     ru1 = resource.getrusage(resource.RUSAGE_SELF)
     lines_file = None
@@ -426,6 +431,8 @@ def main(argv: list[str] | None = None) -> int:
     tx = argparse.ArgumentParser(add_help=False)       # 전사하는 시나리오만
     tx.add_argument("--backend", choices=["local", "elice"], default="local")
     tx.add_argument("--workers", type=int, default=None, help="회의마다 동시 호출 수. 기본: elice 6, local 1")
+    tx.add_argument("--order", choices=["auto", "on", "off"], default="auto",
+                    help="seq, golden: 묶음을 다른 화자가 말을 시작한 자리에서 가를지. auto 는 운영처럼 단어 시각이 없는 백엔드만 가른다")
     tx.add_argument("--no-pack-turns", dest="pack_turns", action="store_false",
                     help="턴마다 묶음 하나(seq, golden). 단어 시각이 없는 백엔드에서 묶음 한 줄이 다른 턴을 덮지 않게")
     tx.add_argument("--spend-file", type=Path, default=None,
@@ -503,12 +510,13 @@ def main(argv: list[str] | None = None) -> int:
     factory = metered if elice else B.make_backend   # 로컬은 돈이 들지 않는다
     backend, timing = warm_backend(args.backend, args.model, beam=args.beam, factory=factory)
     kw = {"backend": backend, "out_dir": args.out_dir, "workers": workers}
+    ordered = {"auto": None, "on": True, "off": False}[args.order]
     if args.cmd == "seq":
         result = run_seq(args.tracks_dir, args.label, repeat=args.repeat, save_lines=args.save_lines, model=model,
-                         pack_turns=args.pack_turns, **kw)
+                         pack_turns=args.pack_turns, ordered=ordered, **kw)
     elif args.cmd == "golden":
         result = run_golden(args.session, model=model, tag=args.tag, beam=beam, save_lines=args.save_lines,
-                            kind=args.backend, pack_turns=args.pack_turns, **kw)
+                            kind=args.backend, pack_turns=args.pack_turns, ordered=ordered, **kw)
     elif args.cmd == "threads":
         result = run_threads(args.tracks_dir, **kw)
     elif args.cmd == "botlag":
@@ -517,6 +525,7 @@ def main(argv: list[str] | None = None) -> int:
         result = run_multi(args.tracks_dir, args.n, label=args.label or str(args.n), **kw)
     load_s, first_s = timing["load_s"], timing["first_decode_s"]
     _write(args.out_dir, name, {**result, "backend": args.backend, "workers": workers, "pack_turns": args.pack_turns,
+                                "order": args.order,
                                 "model": model, "beam": beam,
                                 "load_s": None if load_s is None else round(load_s, 2),
                                 "first_decode_s": round(first_s, 2), "warm_failed_s": timing["warm_failed_s"],

@@ -11,7 +11,7 @@ from tests.capture.test_recorder import _extractor, _run, _session
 
 
 def _be(fake):
-    return H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"), "ws-1")
+    return H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"))
 
 
 def _handed_off_without_lines(tmp_path, fake, ts=500):

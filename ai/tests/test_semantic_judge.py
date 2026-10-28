@@ -1,6 +1,7 @@
 import pytest
 
 from judge.semantic_judge import (
+    _flatten,
     FindingExtractionUnavailableError,
     extract_findings,
     extract_findings_counted,
@@ -561,3 +562,11 @@ def test_dispatcher_raises_when_llm_call_fails(monkeypatch):
     )
     with pytest.raises(FindingExtractionUnavailableError):
         extract_findings(t)
+
+
+def test_chat_message_stays_one_line_but_meeting_splits_into_sentences():
+    text = "https://github.com/x/y.git 보고 v1.2 올릴게요. 금요일까지요."
+    seg = TranscriptSegment(speaker="u1", start=0.0, end=0.0, text=text, seq=1)
+
+    assert _flatten(Transcript(segments=[seg], source="chat"))[0] == [text]
+    assert len(_flatten(Transcript(segments=[seg], source="meeting"))[0]) > 1

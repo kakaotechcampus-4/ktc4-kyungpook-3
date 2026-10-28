@@ -17,6 +17,8 @@ class ErrorCode(StrEnum):
     TRANSCRIPTION_FAILED = "TRANSCRIPTION_FAILED"
     EXTRACTION_FAILED = "EXTRACTION_FAILED"
     EXTRACTION_NOT_FOUND = "EXTRACTION_NOT_FOUND"
+    EXTRACTION_ITEM_NOT_FOUND = "EXTRACTION_ITEM_NOT_FOUND"
+    AUTO_TASK_NOT_REVERTIBLE = "AUTO_TASK_NOT_REVERTIBLE"
     APPROVAL_NOT_FOUND = "APPROVAL_NOT_FOUND"
     APPROVAL_ALREADY_RESOLVED = "APPROVAL_ALREADY_RESOLVED"
     APPROVAL_CONFLICT = "APPROVAL_CONFLICT"
@@ -58,6 +60,8 @@ ERROR_STATUS: dict[ErrorCode, int] = {
     ErrorCode.TRANSCRIPTION_FAILED: 502,
     ErrorCode.EXTRACTION_FAILED: 502,
     ErrorCode.EXTRACTION_NOT_FOUND: 404,
+    ErrorCode.EXTRACTION_ITEM_NOT_FOUND: 404,
+    ErrorCode.AUTO_TASK_NOT_REVERTIBLE: 409,
     ErrorCode.APPROVAL_NOT_FOUND: 404,
     ErrorCode.APPROVAL_ALREADY_RESOLVED: 409,
     ErrorCode.APPROVAL_CONFLICT: 409,
@@ -97,6 +101,8 @@ ERROR_MESSAGE: dict[ErrorCode, str] = {
     ErrorCode.TRANSCRIPTION_FAILED: "음성 전사에 실패했습니다.",
     ErrorCode.EXTRACTION_FAILED: "회의 분석에 실패했습니다.",
     ErrorCode.EXTRACTION_NOT_FOUND: "해당 추출 결과를 찾을 수 없습니다.",
+    ErrorCode.EXTRACTION_ITEM_NOT_FOUND: "해당 추출 항목을 찾을 수 없습니다.",
+    ErrorCode.AUTO_TASK_NOT_REVERTIBLE: "자동으로 만든 태스크를 되돌릴 수 없습니다. 태스크를 직접 수정해 주세요.",
     ErrorCode.APPROVAL_NOT_FOUND: "해당 승인 요청을 찾을 수 없습니다.",
     ErrorCode.APPROVAL_ALREADY_RESOLVED: "이미 처리된 승인 요청입니다.",
     ErrorCode.APPROVAL_CONFLICT: "제안 이후 task가 바뀌었습니다. 지금 값을 확인한 뒤 다시 승인해 주세요.",

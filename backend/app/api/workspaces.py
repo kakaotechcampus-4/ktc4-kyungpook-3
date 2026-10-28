@@ -72,9 +72,9 @@ def create_workspace(
     db: Session = Depends(get_db),
 ) -> dict:
     # 중복 이름 검사 (공백 제거 후 대소문자 무시 비교 등 로직 추가 가능)
-    existing = db.query(Workspace).filter(Workspace.name == payload.name).first()
-    if existing:
-         raise AppError(ErrorCode.WORKSPACE_NAME_DUPLICATED, details={"msg": "Workspace name duplicated"})
+    # existing = db.query(Workspace).filter(Workspace.name == payload.name).first()
+    # if existing:
+    #      raise AppError(ErrorCode.WORKSPACE_NAME_DUPLICATED, details={"msg": "Workspace name duplicated"})
 
     workspace = Workspace(name=payload.name)
     db.add(workspace)

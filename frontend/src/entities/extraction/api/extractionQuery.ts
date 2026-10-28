@@ -5,6 +5,11 @@ import { workspaceKey } from '@/shared/api/queryKeys'
 import type { ExtractionDto } from '@/shared/types/api/extraction'
 import { toExtraction } from '../model/mapper'
 
+/** 추출 캐시 전체의 접두어. 되돌리기 뒤에 이 key 로 그 공간의 추출 결과를 함께 무효화한다 */
+export function extractionKeys(workspaceId: string) {
+  return workspaceKey(workspaceId, 'extractions')
+}
+
 /**
  * 추출 결과. 회의 상세의 `extractionId` 로 부른다 — `done` 일 때만 채워진다 (계약 §2.3).
  * 승인되면 항목의 `task_id` 가 바뀌므로 기본 최신 시간(30초)을 쓴다.

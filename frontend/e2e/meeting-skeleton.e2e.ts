@@ -269,9 +269,8 @@ test.describe('첫 진입 — 첫 가드 프레임부터 완성까지 헤더·�
     await lagRequests(page, '/api/v1/auth/me$', GUARD_LAG)
     await recordPlaces(page)
     await start(page, 'single-workspace', '/workspaces/ws_01/dashboard')
-    await expect(page.getByRole('link', { name: '회의록으로 가기', exact: true })).toBeVisible(
-      FIRST_PAINT,
-    )
+    // M7 대시보드 본문이 다 그려졌다 — 최근 반영 행까지 왔다
+    await expect(page.getByRole('list', { name: '최근 반영 목록' })).toBeVisible(FIRST_PAINT)
     await expect(page.locator('[aria-busy="true"]')).toHaveCount(0)
     const samples = await closePlaces(page)
 
