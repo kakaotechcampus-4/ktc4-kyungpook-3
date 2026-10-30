@@ -8,6 +8,7 @@ import { GuardedLink } from '@/shared/lib/unsaved-changes'
 import { Icon } from '@/shared/ui/icon'
 import {
   GANTT_DAYS,
+  assigneeLabel,
   daysBetween,
   ganttDays,
   ganttTitle,
@@ -33,7 +34,9 @@ const BAR: Record<TaskTone, string> = {
 
 interface Group {
   key: string
+  /** 이니셜 원에 쓰는 이름. 모르면 null */
   name: string | null
+  label: string
   note: string
   tasks: Task[]
   approvals: TaskCreateApproval[]
@@ -50,7 +53,10 @@ export interface GanttViewProps {
   onFromChange: (from: string) => void
 }
 
-/** 팀원별로 묶는다. 담당자가 없는 일은 `미지정` 이 모은다. 일정이 없는 일은 아래 목록으로 간다 */
+/**
+ * 팀원별로 묶는다. 담당자가 없는 일은 `미지정` 이, 팀원 목록에서 찾지 못한 담당자의 일(팀원 조회 실패 포함)은
+ * `알 수 없는 담당자` 가 모은다 — 받지 못한 담당자를 미지정으로 그리지 않는다. 일정이 없는 일은 아래 목록으로 간다
+ */
 function groupRows(
   members: readonly Member[],
   tasks: readonly Task[],
@@ -61,24 +67,32 @@ function groupRows(
   const groups: Group[] = members.map((member) => ({
     key: member.id,
     name: member.displayName,
+    label: member.displayName,
     note: member.role === 'pm' ? 'PM' : '팀원',
     tasks: scheduledTasks.filter((task) => task.assigneeMemberId === member.id),
     approvals: scheduledApprovals.filter((approval) => approval.assigneeMemberId === member.id),
   }))
   const known = new Set(members.map(({ id }) => id))
-  const orphanTasks = scheduledTasks.filter(
-    (task) => task.assigneeMemberId === null || !known.has(task.assigneeMemberId),
+  const unknown = ({ assigneeMemberId }: { assigneeMemberId: string | null }) =>
+    assigneeMemberId !== null && !known.has(assigneeMemberId)
+  groups.push(
+    {
+      key: 'unknown',
+      name: null,
+      label: '알 수 없는 담당자',
+      note: '팀원 정보를 찾지 못했어요',
+      tasks: scheduledTasks.filter(unknown),
+      approvals: scheduledApprovals.filter(unknown),
+    },
+    {
+      key: 'unassigned',
+      name: null,
+      label: '미지정',
+      note: '승인하면 담당자가 붙습니다',
+      tasks: scheduledTasks.filter((task) => task.assigneeMemberId === null),
+      approvals: scheduledApprovals.filter((approval) => approval.assigneeMemberId === null),
+    },
   )
-  const orphanApprovals = scheduledApprovals.filter(
-    (approval) => approval.assigneeMemberId === null || !known.has(approval.assigneeMemberId),
-  )
-  groups.push({
-    key: 'unassigned',
-    name: null,
-    note: '승인하면 담당자가 붙습니다',
-    tasks: orphanTasks,
-    approvals: orphanApprovals,
-  })
   return {
     groups: groups.filter(({ tasks: t, approvals: a }) => t.length + a.length > 0),
     unscheduledTasks: tasks.filter((task) => task.dueDate === null),
@@ -105,6 +119,11 @@ export function GanttView({
     return day === 0 || day === 6 ? [index] : []
   })
   const unscheduledCount = unscheduledTasks.length + unscheduledApprovals.length
+  const emptyWindow = groups.every(
+    (group) =>
+      group.tasks.every((task) => taskBarRange(task, from) === null) &&
+      group.approvals.every((approval) => approvalChipRange(approval, from) === null),
+  )
   return (
     <>
       <RangeHeader
@@ -122,6 +141,9 @@ export function GanttView({
           </>
         }
       />
+      {emptyWindow ? (
+        <p className="text-caption text-dim">이 3주에는 일정이 있는 일이 없어요.</p>
+      ) : null}
       <div
         role="table"
         aria-label="일정"
@@ -209,11 +231,8 @@ export function GanttView({
                   ? '마감이 언급되지 않았어요'
                   : `마감이 "${approval.dueRaw}"으로만 언급됨`
               }
-              assignee={
-                approval.assigneeMemberId === null
-                  ? null
-                  : (names.get(approval.assigneeMemberId) ?? null)
-              }
+              memberId={approval.assigneeMemberId}
+              names={names}
               to={`${paths.tasks(workspaceId)}?tab=needs_review`}
             />
           ))}
@@ -222,9 +241,8 @@ export function GanttView({
               key={task.id}
               title={task.title}
               note="마감일이 정해지지 않았어요"
-              assignee={
-                task.assigneeMemberId === null ? null : (names.get(task.assigneeMemberId) ?? null)
-              }
+              memberId={task.assigneeMemberId}
+              names={names}
               to={paths.tasks(workspaceId, task.id)}
             />
           ))}
@@ -258,7 +276,7 @@ function GroupRows({
           style={{ flex: `0 0 ${LABEL_WIDTH}px` }}
         >
           <Avatar name={group.name} />
-          <span className="text-caption font-semibold text-ink">{group.name ?? '미지정'}</span>
+          <span className="text-caption font-semibold text-ink">{group.label}</span>
           <span className="min-w-[0px] flex-1 text-[11px] text-dim">{group.note}</span>
           <span className="text-[11px] text-dim tabular-nums">
             {group.tasks.length + group.approvals.length}건
@@ -331,13 +349,28 @@ function clampRange(from: string, start: string, end: string): [number, number] 
   return [Math.max(first, 0) + 1, Math.min(last, GANTT_DAYS - 1) + 2]
 }
 
-function TaskBar({ task, from, today }: { task: Task; from: string; today: string }) {
+/** 태스크 막대가 차지하는 칸. 창 밖이거나 마감이 없으면 null */
+function taskBarRange(task: Task, from: string): [number, number] | null {
   if (task.dueDate === null) return null
-  const tone = taskTone(task, today)
   const start = task.startDate <= task.dueDate ? task.startDate : task.dueDate
   // 완료는 막대가 아니라 마감 앞 며칠을 옅게 깔아 `MM/DD 완료` 라벨이 보이게 한다
-  const range = clampRange(from, tone === 'done' ? addDays(task.dueDate, -3) : start, task.dueDate)
+  return clampRange(from, task.status === 'done' ? addDays(task.dueDate, -3) : start, task.dueDate)
+}
+
+/** 생성 승인 칩이 차지하는 칸. 마감 하루를 앞으로 넓혀 그린다 */
+function approvalChipRange(approval: TaskCreateApproval, from: string): [number, number] | null {
+  if (approval.dueDate === null) return null
+  const range = clampRange(from, approval.dueDate, approval.dueDate)
   if (range === null) return null
+  const start = Math.max(range[0] - 1, 1)
+  return [start, Math.min(start + 3, GANTT_DAYS + 1)]
+}
+
+function TaskBar({ task, from, today }: { task: Task; from: string; today: string }) {
+  const range = taskBarRange(task, from)
+  if (task.dueDate === null || range === null) return null
+  const tone = taskTone(task, today)
+  const start = task.startDate <= task.dueDate ? task.startDate : task.dueDate
   const label =
     tone === 'done'
       ? `${shortDate(task.dueDate)} 완료`
@@ -363,15 +396,12 @@ function TaskBar({ task, from, today }: { task: Task; from: string; today: strin
 }
 
 function ApprovalChip({ approval, from }: { approval: TaskCreateApproval; from: string }) {
-  if (approval.dueDate === null) return null
-  const range = clampRange(from, approval.dueDate, approval.dueDate)
-  if (range === null) return null
-  // 막대 하나가 아니라 마감 하루 칸을 넓혀 그린다
-  const start = Math.max(range[0] - 1, 1)
+  const range = approvalChipRange(approval, from)
+  if (approval.dueDate === null || range === null) return null
   return (
     <span
       className="mx-3 flex h-26 items-center justify-center rounded-7 border-2 border-dashed bg-surface px-9 text-[10.5px] whitespace-nowrap text-dim tabular-nums"
-      style={{ gridColumn: `${start} / ${Math.min(start + 3, GANTT_DAYS + 1)}` }}
+      style={{ gridColumn: `${range[0]} / ${range[1]}` }}
     >
       마감 {shortDate(approval.dueDate)}
     </span>
@@ -381,12 +411,14 @@ function ApprovalChip({ approval, from }: { approval: TaskCreateApproval; from: 
 function UnscheduledRow({
   title,
   note,
-  assignee,
+  memberId,
+  names,
   to,
 }: {
   title: string
   note: string
-  assignee: string | null
+  memberId: string | null
+  names: ReadonlyMap<string, string>
   to: string
 }) {
   return (
@@ -397,8 +429,8 @@ function UnscheduledRow({
       <span className="text-[14px] font-semibold text-ink">{title}</span>
       <span className="flex-1 text-right text-caption text-dim">{note}</span>
       <span className="inline-flex items-center gap-7 text-caption text-dim">
-        <Avatar name={assignee} />
-        {assignee ?? '미지정'}
+        <Avatar name={memberId === null ? null : (names.get(memberId) ?? null)} />
+        {assigneeLabel(memberId, names, '미지정')}
       </span>
       <GuardedLink
         to={to}

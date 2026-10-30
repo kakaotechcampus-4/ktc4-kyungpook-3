@@ -209,3 +209,31 @@ export function memberNames(members: readonly Member[] | undefined): Map<string,
 export function assigneeOf(task: Task, names: ReadonlyMap<string, string>): string | null {
   return task.assigneeMemberId === null ? null : (names.get(task.assigneeMemberId) ?? null)
 }
+
+/**
+ * 담당자 표시 문구. 담당자가 없으면 `none`, 팀원 목록에서 찾지 못하면(팀원 조회 실패 포함) `알 수 없는 담당자`다 —
+ * 받지 못한 이름을 `담당자 없음` 으로 쓰지 않는다 (AC-A-05). 리스트 행과 같은 문구다
+ */
+export function assigneeLabel(
+  memberId: string | null,
+  names: ReadonlyMap<string, string>,
+  none = '담당자 없음',
+): string {
+  return memberId === null ? none : (names.get(memberId) ?? '알 수 없는 담당자')
+}
+
+/* ---------- 조회 상태 ---------- */
+
+/**
+ * 조회 하나를 화면 상태로 읽는다. widgets/dashboard 의 `queryView` 와 같은 판정이다 — 위젯끼리는 서로 가져다 쓰지 않아
+ * 여기 따로 둔다. #236 에서 shared 로 옮겨지면 그쪽으로 바꾼다.
+ * - `loading` 데이터도 오류도 아직 없다 · `error` 처음부터 받지 못했다
+ * - `ready` 마지막 조회가 성공했다 · `refreshFailed` 데이터는 있으나 마지막 재조회가 실패했다
+ */
+export type QueryView = 'loading' | 'error' | 'ready' | 'refreshFailed'
+
+export function queryView({ data, error }: { data: unknown; error: unknown }): QueryView {
+  const failed = error !== null && error !== undefined
+  if (data !== undefined) return failed ? 'refreshFailed' : 'ready'
+  return failed ? 'error' : 'loading'
+}

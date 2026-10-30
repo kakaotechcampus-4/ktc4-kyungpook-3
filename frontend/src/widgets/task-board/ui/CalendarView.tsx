@@ -2,7 +2,14 @@ import type { TaskCreateApproval } from '@/entities/approval'
 import type { Task } from '@/entities/task'
 import { paths } from '@/shared/config/routes'
 import { GuardedLink } from '@/shared/lib/unsaved-changes'
-import { addMonths, assigneeOf, calendarGrid, monthTitle, taskTone } from '../lib/taskViews'
+import {
+  addMonths,
+  assigneeLabel,
+  calendarGrid,
+  monthOf,
+  monthTitle,
+  taskTone,
+} from '../lib/taskViews'
 import type { TaskTone } from '../lib/taskViews'
 import { LegendItem, RangeHeader } from './viewParts'
 
@@ -52,6 +59,9 @@ export function CalendarView({
     ...approvals.filter((approval) => approval.dueDate === null),
     ...tasks.filter((task) => task.dueDate === null),
   ]
+  const dueInMonth = (item: { dueDate: string | null }) =>
+    item.dueDate !== null && monthOf(item.dueDate) === month
+  const emptyMonth = !tasks.some(dueInMonth) && !approvals.some(dueInMonth)
   return (
     <>
       <RangeHeader
@@ -69,6 +79,7 @@ export function CalendarView({
           </>
         }
       />
+      {emptyMonth ? <p className="text-caption text-dim">이 달에는 마감인 일이 없어요.</p> : null}
       <div
         role="grid"
         aria-label={monthTitle(month)}
@@ -119,9 +130,7 @@ export function CalendarView({
                         {approval.title}
                       </span>
                       <span className="text-[10.5px] text-surface tabular-nums">
-                        {approval.assigneeMemberId === null
-                          ? '담당자 미정'
-                          : (names.get(approval.assigneeMemberId) ?? '확인 필요')}
+                        {assigneeLabel(approval.assigneeMemberId, names, '담당자 미정')}
                       </span>
                     </GuardedLink>
                   ))}
@@ -171,7 +180,7 @@ export function CalendarView({
                   <span className="text-[10.5px] text-surface">
                     {item.assigneeMemberId === null
                       ? '담당자 · 마감 모두 미정'
-                      : `${names.get(item.assigneeMemberId) ?? '담당자'} · 날짜를 정해 주세요`}
+                      : `${assigneeLabel(item.assigneeMemberId, names)} · 날짜를 정해 주세요`}
                   </span>
                 </GuardedLink>
               </li>
@@ -183,7 +192,7 @@ export function CalendarView({
                 >
                   <span className="text-[12px] leading-[1.4] text-sub">{item.title}</span>
                   <span className="text-[10.5px] text-dim">
-                    {assigneeOf(item, names) ?? '담당자 없음'} · 마감 없음
+                    {assigneeLabel(item.assigneeMemberId, names)} · 마감 없음
                   </span>
                 </GuardedLink>
               </li>
@@ -212,8 +221,10 @@ function TaskChip({
 }) {
   const tone = taskTone(task, today)
   const style = CHIP[tone]
-  const assignee = assigneeOf(task, names)
-  const meta = [assignee ?? '담당자 없음', task.progress === null ? null : `${task.progress}%`]
+  const meta = [
+    assigneeLabel(task.assigneeMemberId, names),
+    task.progress === null ? null : `${task.progress}%`,
+  ]
     .filter(Boolean)
     .join(' · ')
   return (
