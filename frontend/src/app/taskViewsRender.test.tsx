@@ -50,6 +50,23 @@ const VIEWS = {
   calendar: () => screen.queryByRole('grid', { name: '2026년 9월' }),
   gantt: () => screen.queryByRole('table', { name: '일정' }),
 } as const
+/** tk_01 이 완료로 바뀐 모습 — 보드는 완료 칸, 캘린더는 취소선 칩, 간트는 완료 막대 */
+const SHOWN_DONE = {
+  board: () =>
+    expect(
+      within(screen.getByRole('region', { name: '완료' })).getByRole('link', {
+        name: '로그인 API 연동',
+      }),
+    ).toBeVisible(),
+  calendar: () =>
+    expect(
+      within(screen.getByRole('link', { name: /로그인 API 연동/ })).getByText('로그인 API 연동'),
+    ).toHaveClass('line-through'),
+  gantt: () =>
+    expect(
+      within(screen.getByRole('row', { name: /로그인 API 연동/ })).getByText(/ 완료$/),
+    ).toBeVisible(),
+} as const
 
 describe.each(Object.keys(VIEWS) as (keyof typeof VIEWS)[])('%s 보기 (AC-A-04)', (view) => {
   async function open() {
@@ -65,12 +82,7 @@ describe.each(Object.keys(VIEWS) as (keyof typeof VIEWS)[])('%s 보기 (AC-A-04)
     act(() => holdStatusChange(app, 'ws_01', 'tk_01'))
     await settle()
     expect(taskLinkRenders()).toEqual([[TARGET, 1]])
-    if (view === 'board')
-      expect(
-        within(screen.getByRole('region', { name: '완료' })).getByRole('link', {
-          name: '로그인 API 연동',
-        }),
-      ).toBeVisible()
+    SHOWN_DONE[view]()
   })
 
   it('다른 공간의 상태 변경이나 같은 데이터의 재조회는 아무것도 다시 그리지 않는다', async () => {
