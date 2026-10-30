@@ -18,6 +18,9 @@ export const ONBOARDING_REVIEW_PARAM = 'review'
  */
 export const SETTINGS_PARAMS = { section: 'section', next: 'next' } as const
 
+/** 메시지 화면의 검색 파라미터. `review` 는 고른 보내기 전 확인 항목이다 — 임시 표현이다 (paths.messageReview) */
+export const MESSAGE_PARAMS = { review: 'review' } as const
+
 function withOptionalId(base: string, id: string | undefined): string {
   return id === undefined ? base : `${base}/${segment(id)}`
 }
@@ -46,6 +49,15 @@ export const paths = {
   approval: (workspaceId: string, approvalId: string) =>
     `${workspaceBase(workspaceId)}/approvals/${segment(approvalId)}`,
   messages: (workspaceId: string) => `${workspaceBase(workspaceId)}/messages`,
+  /*
+   * 메시지 API 가 없는 동안의 임시 표현이라 규약이 아니다 — 결정 4 뒤 바뀔 수 있다 (M8 계획 C-6, C-10).
+   * 보내기 전 확인 항목은 경로 구조를 정하지 않으려고 검색 파라미터로 고른다
+   */
+  messageReview: (workspaceId: string, reviewId: string) =>
+    `${workspaceBase(workspaceId)}/messages?${new URLSearchParams({ [MESSAGE_PARAMS.review]: reviewId }).toString()}`,
+  /** 사람별 대화 */
+  messageThread: (workspaceId: string, threadId: string) =>
+    `${workspaceBase(workspaceId)}/messages/threads/${segment(threadId)}`,
   members: (workspaceId: string) => `${workspaceBase(workspaceId)}/members`,
   settings: (workspaceId: string) => `${workspaceBase(workspaceId)}/settings`,
   /** 설정의 Notion 연결 영역. `next` 를 주면 연결 성공 뒤 그곳으로 돌아간다 — 받는 쪽이 업로드 경로인지 다시 확인한다 */
