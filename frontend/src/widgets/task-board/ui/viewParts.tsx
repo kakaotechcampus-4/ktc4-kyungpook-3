@@ -1,3 +1,4 @@
+import { useLayoutEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Icon } from '@/shared/ui/icon'
 
@@ -58,6 +59,41 @@ export function RangeHeader({
       <ul className="flex flex-wrap items-center gap-16" aria-label="범례">
         {legend}
       </ul>
+    </div>
+  )
+}
+
+/**
+ * 보기 영역의 가로 스크롤 (D-124). 내용이 영역보다 넓으면 페이지가 아니라 이 안에서 가로로 민다.
+ * 넘칠 때만 Tab 자리가 되어 키보드(←·→)로도 민다 — 넘치지 않으면 Tab 자리를 늘리지 않는다.
+ * 넘쳤는지는 그린 뒤 재고, 폭이 바뀌면 ResizeObserver 로 다시 잰다 (MinutesTitle 과 같은 방식)
+ */
+export function HorizontalScroll({ label, children }: { label: string; children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [overflowing, setOverflowing] = useState(false)
+
+  useLayoutEffect(() => {
+    const area = ref.current
+    if (area === null) return
+    const measure = () => setOverflowing(area.scrollWidth > area.clientWidth)
+    measure()
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(measure)
+    observer.observe(area)
+    return () => observer.disconnect()
+  }, [])
+
+  return (
+    <div
+      ref={ref}
+      role="region"
+      aria-label={label}
+      // 넘칠 때만 Tab 자리다 — 안에 포커스 받을 것이 없는 칸(막대·날짜)까지 키보드로 밀려면 영역이 포커스를 받아야 한다
+      // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex
+      tabIndex={overflowing ? 0 : undefined}
+      className="overflow-x-auto rounded-16"
+    >
+      {children}
     </div>
   )
 }

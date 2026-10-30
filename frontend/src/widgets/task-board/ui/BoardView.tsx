@@ -152,7 +152,7 @@ function TaskCard({
       <div className="flex items-start justify-between gap-8">
         <GuardedLink
           to={paths.tasks(workspaceId, task.id)}
-          className={`min-w-[0px] text-[13px] leading-[1.45] ${
+          className={`min-w-[0px] text-[13px] leading-[1.45] wrap-anywhere ${
             done ? 'font-normal text-dim line-through' : 'font-semibold text-ink'
           }`}
         >
@@ -174,9 +174,9 @@ function TaskCard({
           className={`inline-flex min-w-[0px] items-center gap-6 text-meta ${done ? 'text-dim' : 'text-sub'}`}
         >
           <Avatar name={assigneeOf(task, names)} size={21} muted={done} />
-          {assigneeLabel(task.assigneeMemberId, names)}
+          <span className="truncate">{assigneeLabel(task.assigneeMemberId, names)}</span>
         </span>
-        <span className="text-meta text-dim tabular-nums">
+        <span className="shrink-0 text-meta text-dim tabular-nums">
           {task.dueDate === null ? '마감 없음' : shortDate(task.dueDate)}
         </span>
       </div>

@@ -17,10 +17,16 @@ import {
   taskTone,
 } from '../lib/taskViews'
 import type { TaskTone } from '../lib/taskViews'
-import { Avatar, LegendItem, RangeHeader } from './viewParts'
+import { Avatar, HorizontalScroll, LegendItem, RangeHeader } from './viewParts'
 
 const LABEL_WIDTH = 252
-const GRID: CSSProperties = { gridTemplateColumns: `repeat(${GANTT_DAYS}, minmax(0, 1fr))` }
+/* 날짜 칸은 시안 셸 폭(본문 1264px)에서의 칸 폭 48px 아래로 줄이지 않는다. 1024px 에서 균등 분할(32px)은 막대 라벨 잘림을
+   3건으로 늘렸다(1440px·1920px 1건, tasks-default 실측). 그보다 좁은 영역에서는 표 영역 안에서 가로로 민다 (D-124) */
+const DAY_MIN_WIDTH = 48
+const TABLE_MIN_WIDTH = LABEL_WIDTH + GANTT_DAYS * DAY_MIN_WIDTH + 2
+const GRID: CSSProperties = {
+  gridTemplateColumns: `repeat(${GANTT_DAYS}, minmax(${DAY_MIN_WIDTH}px, 1fr))`,
+}
 const BAR_BASE =
   'flex h-26 items-center justify-between gap-8 overflow-hidden rounded-7 px-9 text-[10.5px] whitespace-nowrap'
 
@@ -144,78 +150,81 @@ export function GanttView({
       {emptyWindow ? (
         <p className="text-caption text-dim">이 3주에는 일정이 있는 일이 없어요.</p>
       ) : null}
-      <div
-        role="table"
-        aria-label="일정"
-        className="relative overflow-hidden rounded-16 border border-line bg-surface"
-      >
-        <div aria-hidden="true" className="absolute inset-0 z-0 flex">
-          <div style={{ flex: `0 0 ${LABEL_WIDTH}px` }} />
-          <div className="relative grid flex-1" style={GRID}>
-            {weekends.map((index) => (
-              <span key={index} className="bg-surface-sunken" style={{ gridColumn: index + 1 }} />
-            ))}
-            {todayIndex === -1 ? null : (
-              <span
-                className="absolute top-0 bottom-0 w-px bg-ink"
-                style={{ left: `${((todayIndex + 0.5) / GANTT_DAYS) * 100}%` }}
-              />
-            )}
-          </div>
-        </div>
-        <div className="relative z-1">
-          <div className="flex items-stretch">
-            <div
-              className="flex items-center border-r border-line bg-surface-sunken px-14"
-              style={{ flex: `0 0 ${LABEL_WIDTH}px` }}
-            >
-              <span className="text-[10.5px] tracking-[0.08em] text-dim">담당자 · 태스크</span>
-            </div>
-            <div className="grid flex-1" style={GRID}>
-              {[0, 7, 14].map((offset) => (
+      <HorizontalScroll label="일정 표">
+        <div
+          role="table"
+          aria-label="일정"
+          className="relative overflow-hidden rounded-16 border border-line bg-surface"
+          style={{ minWidth: TABLE_MIN_WIDTH }}
+        >
+          <div aria-hidden="true" className="absolute inset-0 z-0 flex">
+            <div style={{ flex: `0 0 ${LABEL_WIDTH}px` }} />
+            <div className="relative grid flex-1" style={GRID}>
+              {weekends.map((index) => (
+                <span key={index} className="bg-surface-sunken" style={{ gridColumn: index + 1 }} />
+              ))}
+              {todayIndex === -1 ? null : (
                 <span
-                  key={offset}
-                  role="columnheader"
-                  className={`px-10 py-8 text-meta font-semibold text-sub ${offset > 0 ? 'border-l border-line' : ''}`}
-                  style={{ gridColumn: `${offset + 1} / ${offset + 8}` }}
-                >
-                  {weekLabel(days[offset])}
-                </span>
-              ))}
+                  className="absolute top-0 bottom-0 w-px bg-ink"
+                  style={{ left: `${((todayIndex + 0.5) / GANTT_DAYS) * 100}%` }}
+                />
+              )}
             </div>
           </div>
-          <div className="flex items-stretch border-t border-divider">
-            <div
-              className="border-r border-line bg-surface-sunken"
-              style={{ flex: `0 0 ${LABEL_WIDTH}px` }}
-            />
-            <div className="grid min-h-30 flex-1" style={GRID}>
-              {days.map((date) => (
-                <span key={date} className="flex items-center justify-center">
+          <div className="relative z-1">
+            <div className="flex items-stretch">
+              <div
+                className="flex items-center border-r border-line bg-surface-sunken px-14"
+                style={{ flex: `0 0 ${LABEL_WIDTH}px` }}
+              >
+                <span className="text-[10.5px] tracking-[0.08em] text-dim">담당자 · 태스크</span>
+              </div>
+              <div className="grid flex-1" style={GRID}>
+                {[0, 7, 14].map((offset) => (
                   <span
-                    className={
-                      date === today
-                        ? 'inline-flex h-20 min-w-[20px] items-center justify-center rounded-999 bg-ink px-5 text-[11px] leading-none font-semibold text-surface tabular-nums'
-                        : 'text-[11px] text-sub tabular-nums'
-                    }
+                    key={offset}
+                    role="columnheader"
+                    className={`px-10 py-8 text-meta font-semibold text-sub ${offset > 0 ? 'border-l border-line' : ''}`}
+                    style={{ gridColumn: `${offset + 1} / ${offset + 8}` }}
                   >
-                    {Number(date.slice(8, 10))}
+                    {weekLabel(days[offset])}
                   </span>
-                </span>
-              ))}
+                ))}
+              </div>
             </div>
+            <div className="flex items-stretch border-t border-divider">
+              <div
+                className="border-r border-line bg-surface-sunken"
+                style={{ flex: `0 0 ${LABEL_WIDTH}px` }}
+              />
+              <div className="grid min-h-30 flex-1" style={GRID}>
+                {days.map((date) => (
+                  <span key={date} className="flex items-center justify-center">
+                    <span
+                      className={
+                        date === today
+                          ? 'inline-flex h-20 min-w-[20px] items-center justify-center rounded-999 bg-ink px-5 text-[11px] leading-none font-semibold text-surface tabular-nums'
+                          : 'text-[11px] text-sub tabular-nums'
+                      }
+                    >
+                      {Number(date.slice(8, 10))}
+                    </span>
+                  </span>
+                ))}
+              </div>
+            </div>
+            {groups.map((group) => (
+              <GroupRows
+                key={group.key}
+                workspaceId={workspaceId}
+                group={group}
+                from={from}
+                today={today}
+              />
+            ))}
           </div>
-          {groups.map((group) => (
-            <GroupRows
-              key={group.key}
-              workspaceId={workspaceId}
-              group={group}
-              from={from}
-              today={today}
-            />
-          ))}
         </div>
-      </div>
+      </HorizontalScroll>
       <section aria-label="일정이 없는 일" className="flex flex-col gap-4">
         <h2 className="py-8 text-body font-semibold text-ink">
           일정이 없는 일{' '}
@@ -272,11 +281,13 @@ function GroupRows({
     <>
       <div className="flex items-stretch border-t border-line">
         <div
-          className="flex items-center gap-9 border-r border-line bg-surface-sunken px-14 py-8"
+          className="flex min-w-[0px] items-center gap-9 border-r border-line bg-surface-sunken px-14 py-8"
           style={{ flex: `0 0 ${LABEL_WIDTH}px` }}
         >
           <Avatar name={group.name} />
-          <span className="text-caption font-semibold text-ink">{group.label}</span>
+          <span className="min-w-[0px] truncate text-caption font-semibold text-ink">
+            {group.label}
+          </span>
           <span className="min-w-[0px] flex-1 text-[11px] text-dim">{group.note}</span>
           <span className="text-[11px] text-dim tabular-nums">
             {group.tasks.length + group.approvals.length}건
@@ -324,7 +335,7 @@ function Row({
   return (
     <div role="row" className="flex items-stretch border-t border-divider">
       <div
-        className="flex min-h-44 items-center gap-8 border-r border-line px-14"
+        className="flex min-h-44 min-w-[0px] items-center gap-8 border-r border-line px-14"
         style={{ flex: `0 0 ${LABEL_WIDTH}px` }}
       >
         {to === undefined ? (
@@ -426,7 +437,7 @@ function UnscheduledRow({
       <span className="inline-flex h-[22px] shrink-0 items-center rounded-6 border-2 border-dashed px-8 text-meta leading-none font-semibold text-dim">
         일정 없음
       </span>
-      <span className="text-[14px] font-semibold text-ink">{title}</span>
+      <span className="min-w-[0px] text-[14px] font-semibold wrap-anywhere text-ink">{title}</span>
       <span className="flex-1 text-right text-caption text-dim">{note}</span>
       <span className="inline-flex items-center gap-7 text-caption text-dim">
         <Avatar name={memberId === null ? null : (names.get(memberId) ?? null)} />

@@ -28,7 +28,8 @@ const CHIP: Record<TaskTone, { box: string; title: string; sub: string }> = {
   todo: { box: 'bg-surface-selected', title: 'text-ink', sub: 'text-sub' },
 }
 
-const CHIP_BASE = 'flex flex-col gap-1 rounded-6 px-8 py-6'
+/* 칸 폭은 7등분이다. 줄바꿈할 곳이 없는 긴 제목·이름도 칸 안에서 접어 잘리지 않게 한다 */
+const CHIP_BASE = 'flex flex-col gap-1 rounded-6 px-8 py-6 wrap-anywhere'
 
 export interface CalendarViewProps {
   workspaceId: string
@@ -147,7 +148,7 @@ export function CalendarView({
                     <GuardedLink
                       key={meeting.id}
                       to={paths.meetings(workspaceId, meeting.id)}
-                      className="flex items-center gap-6 rounded-6 border border-dashed px-8 py-6 text-[11.5px] leading-[1.4] text-sub"
+                      className="flex items-center gap-6 rounded-6 border border-dashed px-8 py-6 text-[11.5px] leading-[1.4] wrap-anywhere text-sub"
                     >
                       {meeting.title}
                     </GuardedLink>
@@ -172,7 +173,7 @@ export function CalendarView({
               <li key={item.id}>
                 <GuardedLink
                   to={`${paths.tasks(workspaceId)}?tab=needs_review`}
-                  className="flex flex-col gap-1 rounded-7 bg-ink px-11 py-7"
+                  className="flex flex-col gap-1 rounded-7 bg-ink px-11 py-7 wrap-anywhere"
                 >
                   <span className="text-[12px] leading-[1.4] font-bold text-surface">
                     {item.title}
@@ -188,7 +189,7 @@ export function CalendarView({
               <li key={item.id}>
                 <GuardedLink
                   to={paths.tasks(workspaceId, item.id)}
-                  className="flex flex-col gap-1 rounded-7 border-2 border-dashed px-11 py-7"
+                  className="flex flex-col gap-1 rounded-7 border-2 border-dashed px-11 py-7 wrap-anywhere"
                 >
                   <span className="text-[12px] leading-[1.4] text-sub">{item.title}</span>
                   <span className="text-[10.5px] text-dim">
