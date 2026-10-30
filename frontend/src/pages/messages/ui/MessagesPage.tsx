@@ -30,14 +30,14 @@ function MessagesComingSoon() {
 
 /**
  * 라우트 표의 `messages/*` 아래 하위 경로. `messages` 는 목록, `messages/threads/:threadId` 는 사람별 대화다.
- * 하위 경로는 임시라 규약이 아니다 (paths.messageThread)
+ * 그 밖의 하위 경로는 없는 대화로 알린다. 하위 경로는 임시라 규약이 아니다 (paths.messageThread)
  */
 function MessagesRoutes() {
   return (
     <Routes>
       <Route index element={<Messages />} />
       <Route path="threads/:threadId" element={<Messages />} />
-      <Route path="*" element={<Messages />} />
+      <Route path="*" element={<Messages unknownPath />} />
     </Routes>
   )
 }
@@ -46,18 +46,20 @@ function MessagesRoutes() {
  * 고른 대화는 경로가, 고른 보내기 전 확인 항목은 검색 파라미터 `review` 가 정한다. URL 값은 여기서 한 번 검증한다 (D-132).
  * 소속은 RequireTeamMember 가 이미 확인했다
  */
-function Messages() {
+function Messages({ unknownPath = false }: { unknownPath?: boolean }) {
   const workspaceId = useRouteId('workspaceId')
   const workspace = useMemberWorkspace(workspaceId)
-  const { threadId } = useParams()
+  const { threadId: rawThreadId } = useParams()
   const [searchParams] = useSearchParams()
   if (workspaceId === null || workspace === null) return null
+  const threadId = parseRouteId(rawThreadId)
   return (
     <MessageInbox
       workspaceId={workspaceId}
       botName={workspace.name}
-      threadId={parseRouteId(threadId)}
+      threadId={threadId}
       reviewId={parseRouteId(searchParams.get(MESSAGE_PARAMS.review) ?? undefined)}
+      invalidPath={unknownPath || (rawThreadId !== undefined && threadId === null)}
     />
   )
 }

@@ -3,9 +3,12 @@ import { messageInboxQueryOptions } from '@/entities/message'
 import type { MessageInbox as Inbox, MessageReview, MessageThreadSummary } from '@/entities/message'
 import { paths } from '@/shared/config/routes'
 import { GuardedLink } from '@/shared/lib/unsaved-changes'
+import { EmptyState } from '@/shared/ui/empty-state'
+import { QueryErrorState } from '@/shared/ui/query-error-state'
 import { avatarText, shortDate } from '../lib/format'
+import { InboxListSkeleton, ReviewSkeleton } from './MessageSkeletons'
 import { ReviewPreview } from './ReviewPreview'
-import { ThreadDetail } from './ThreadDetail'
+import { ThreadDetail, ThreadUnavailable } from './ThreadDetail'
 
 /* Messages 캔버스 실측 — 왼쪽 목록 308(위 18 · 좌우 12 · 아래 24, 영역 사이 18) · 오른쪽 선, 목록 제목 17px.
    화면 높이를 헤더 아래로 묶고 목록과 상세가 각자 세로로 스크롤한다 (D-124, 계획 C-6 6단계) */
@@ -30,6 +33,8 @@ const CHANNEL_AVATAR =
   'inline-flex shrink-0 items-center justify-center rounded-999 border border-line bg-surface text-dim'
 const DATE = 'mono text-[11px] text-dim'
 const EMPTY_DETAIL = 'flex flex-1 items-center justify-center px-36 pt-48 pb-96 text-body text-dim'
+/* EmptyMessages 캔버스 — 가운데 정렬(위 48 · 좌우 48 · 아래 96) */
+const EMPTY_PAGE = 'flex flex-1 items-center justify-center px-48 pt-48 pb-96'
 
 export interface MessageInboxProps {
   workspaceId: string
@@ -39,6 +44,8 @@ export interface MessageInboxProps {
   threadId: string | null
   /** 검색 파라미터가 가리키는 보내기 전 확인 항목. 목록에 없는 ID 는 선택 없음이다 */
   reviewId: string | null
+  /** 없는 하위 경로이거나 대화 ID 모양이 틀리다 */
+  invalidPath?: boolean
 }
 
 /**
@@ -46,18 +53,44 @@ export interface MessageInboxProps {
  * 고른 항목은 URL 이 정한다. 그래서 새로고침·뒤로가기에서 그대로다. 결정 전 부분이라 읽기만 한다 —
  * 발송·반려 같은 행동은 결정 4 뒤에 붙인다 (계획 C-6 7단계)
  */
-export function MessageInbox({ workspaceId, botName, threadId, reviewId }: MessageInboxProps) {
+export function MessageInbox({
+  workspaceId,
+  botName,
+  threadId,
+  reviewId,
+  invalidPath = false,
+}: MessageInboxProps) {
   const inbox = useQuery(messageInboxQueryOptions(workspaceId))
   const review =
     threadId === null && reviewId !== null
       ? (inbox.data?.reviews.find(({ id }) => id === reviewId) ?? null)
       : null
 
+  // 검토 항목도 대화도 없다 — EmptyMessages 캔버스 한 장. `알림 규칙 보기` 는 목적지가 없어 두지 않는다 (계획 C-6 5단계)
+  if (
+    threadId === null &&
+    !invalidPath &&
+    inbox.data !== undefined &&
+    inbox.data.reviews.length === 0 &&
+    inbox.data.threads.length === 0
+  )
+    return (
+      <main className={EMPTY_PAGE}>
+        <EmptyState
+          title="보낼 메시지가 없어요"
+          description="마감이 다가오거나 진행이 멈추면, 담당자에게 보낼 DM을 여기에 준비해 둘게요. 보내기 전에 항상 물어봅니다."
+        />
+      </main>
+    )
+
   let detail
-  if (threadId !== null)
+  if (invalidPath) detail = <ThreadUnavailable />
+  else if (threadId !== null)
     // 대화가 바뀌면 상세를 새로 마운트한다 — 이전 대화의 스크롤 자리를 들고 있지 않는다
     detail = <ThreadDetail key={threadId} workspaceId={workspaceId} threadId={threadId} />
   else if (review !== null) detail = <ReviewPreview review={review} botName={botName} />
+  else if (reviewId !== null && inbox.data === undefined && inbox.error === null)
+    detail = <ReviewSkeleton />
   else if (inbox.data !== undefined)
     detail = <p className={EMPTY_DETAIL}>왼쪽 목록에서 확인할 메시지나 대화를 골라 주세요.</p>
   else detail = null
@@ -66,13 +99,24 @@ export function MessageInbox({ workspaceId, botName, threadId, reviewId }: Messa
     <main className={SCREEN}>
       <aside aria-label="메시지 목록" className={ASIDE}>
         <h1 className={ASIDE_TITLE}>메시지</h1>
-        {inbox.data === undefined ? null : (
+        {inbox.data !== undefined ? (
           <InboxList
             workspaceId={workspaceId}
             inbox={inbox.data}
             threadId={threadId}
             reviewId={review?.id ?? null}
           />
+        ) : inbox.error !== null ? (
+          // 목록 오류는 목록 칸에만 알린다. 고른 대화는 따로 받아 그대로 보인다
+          <div className="px-8">
+            <QueryErrorState
+              error={inbox.error}
+              onRetry={() => void inbox.refetch()}
+              title="메시지 목록을 불러오지 못했어요"
+            />
+          </div>
+        ) : (
+          <InboxListSkeleton />
         )}
       </aside>
       <section aria-label="메시지 내용" className={DETAIL}>

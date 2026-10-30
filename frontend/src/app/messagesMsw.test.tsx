@@ -1,8 +1,11 @@
-import { screen, waitFor, within } from '@testing-library/react'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { http } from 'msw'
 import { paths } from '@/shared/config/routes'
 import { db } from '@/shared/mock/db'
 import { MOCK_NOW } from '@/shared/mock/fixtures/constants'
+import { server } from '@/shared/mock/server'
+import { deferred } from '@/shared/test/deferred'
 import { renderApp } from './test/renderApp'
 
 /*
@@ -184,5 +187,152 @@ describe('대화는 날짜 구분·보낸 쪽·시각·답장 대기를 구분�
     await detail().findByRole('heading', { level: 2, name: '박민수' })
     expect(days()).toEqual(['9월 9일 수요일', '오늘 · 9월 18일 금요일'])
     expect(detail().getByText('답장 기다리는 중')).toBeInTheDocument()
+  })
+})
+
+/** 그 조회의 응답을 붙잡는다. 풀면 기본 handler 가 답한다 */
+function hold(path: string) {
+  const gate = deferred()
+  server.use(
+    http.get(`/api/v1${path}`, async () => {
+      await gate.promise
+      return undefined
+    }),
+  )
+  return gate
+}
+const emptyWorkspace = (workspaceId: string) => {
+  db.messageReviews = db.messageReviews.filter(({ workspace_id }) => workspace_id !== workspaceId)
+  db.messageThreads = db.messageThreads.filter(({ workspace_id }) => workspace_id !== workspaceId)
+}
+
+describe('빈 상태·로딩·목록 오류·대화 오류가 서로 구분되고, 한쪽 오류가 다른 쪽을 막지 않는다 (AC-04)', () => {
+  it('검토도 대화도 없으면 EmptyMessages 한 장이다 — 알림 규칙 보기는 목적지가 없어 두지 않는다', async () => {
+    emptyWorkspace('ws_01')
+    renderApp(paths.messages('ws_01'))
+    expect(
+      await screen.findByRole('heading', { level: 1, name: '보낼 메시지가 없어요' }),
+    ).toBeVisible()
+    expect(
+      screen.getByText(
+        '마감이 다가오거나 진행이 멈추면, 담당자에게 보낼 DM을 여기에 준비해 둘게요. 보내기 전에 항상 물어봅니다.',
+      ),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('complementary', { name: '메시지 목록' })).toBeNull()
+    expect(screen.queryByRole('link', { name: '알림 규칙 보기' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '알림 규칙 보기' })).toBeNull()
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('한 영역만 비면 그 영역에 비었다고 쓴다', async () => {
+    db.messageReviews = []
+    await openInbox()
+    expect(within(reviewList()).getByRole('heading')).toHaveTextContent('보내기 전 확인 0')
+    expect(within(reviewList()).getByText('지금 확인할 메시지가 없어요.')).toBeInTheDocument()
+    expect(rowTexts(threadList())).toHaveLength(5)
+  })
+
+  it('목록을 받는 동안 목록 칸은 스켈레톤이다 — 빈 상태도 오류도 아니다', async () => {
+    const gate = hold('/workspaces/ws_01/messages')
+    renderApp(paths.messages('ws_01'))
+    const skeleton = await screen.findByTestId('message-list-skeleton')
+    expect(skeleton).toHaveAttribute('aria-busy', 'true')
+    expect(screen.queryByText('보낼 메시지가 없어요')).toBeNull()
+    expect(screen.queryByRole('alert')).toBeNull()
+    act(() => gate.resolve())
+    await screen.findByRole('region', { name: '대화' })
+    expect(screen.queryByTestId('message-list-skeleton')).toBeNull()
+  })
+
+  it('검토 항목 주소로 들어오면 목록을 받는 동안 상세 자리도 스켈레톤이다', async () => {
+    const gate = hold('/workspaces/ws_01/messages')
+    renderApp(paths.messageReview('ws_01', 'rv_01'))
+    expect(await screen.findByTestId('message-review-skeleton')).toBeInTheDocument()
+    act(() => gate.resolve())
+    expect(await detail().findByRole('heading', { name: '이 메시지, 보낼까요?' })).toBeVisible()
+  })
+
+  it('목록 오류는 목록 칸에서 다시 시도로 알리고, 고른 대화는 그대로 보인다', async () => {
+    db.messageFailures.inbox = true
+    renderApp(paths.messageThread('ws_01', 'th_01'))
+    expect(await screen.findByRole('heading', { level: 2, name: '이재환' })).toBeVisible()
+    const alert = await list().findByRole('alert', {}, { timeout: 4_000 })
+    expect(alert).toHaveTextContent('메시지 목록을 불러오지 못했어요')
+    expect(alert).toHaveTextContent('서버에 문제가 생겼어요. 잠시 후 다시 시도해 주세요.')
+    expect(screen.queryByText('보낼 메시지가 없어요')).toBeNull()
+    expect(detail().queryByRole('alert')).toBeNull()
+
+    db.messageFailures.inbox = false
+    await userEvent.click(within(alert).getByRole('button', { name: '다시 시도' }))
+    expect(await list().findByRole('region', { name: '대화' })).toBeInTheDocument()
+    expect(current()[0]).toHaveTextContent('이재환')
+  })
+
+  it('대화 오류는 상세 칸에서 다시 시도로 알리고, 목록은 그대로 고를 수 있다', async () => {
+    db.messageFailures.threadIds = ['th_01']
+    const app = await openInbox(paths.messageThread('ws_01', 'th_01'))
+    const alert = await detail().findByRole('alert', {}, { timeout: 4_000 })
+    expect(alert).toHaveTextContent('대화를 불러오지 못했어요')
+    expect(list().queryByRole('alert')).toBeNull()
+    expect(rowTexts(threadList())).toHaveLength(5)
+
+    await userEvent.click(within(threadList()).getByRole('link', { name: /박민수/ }))
+    await app.expectPath(paths.messageThread('ws_01', 'th_02'))
+    expect(await detail().findByRole('heading', { level: 2, name: '박민수' })).toBeVisible()
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('대화를 받는 동안 상세 칸만 스켈레톤이고 목록은 보인다', async () => {
+    const gate = hold('/workspaces/ws_01/messages/threads/th_02')
+    await openInbox(paths.messageThread('ws_01', 'th_02'))
+    expect(screen.getByTestId('message-thread-skeleton')).toHaveAttribute('aria-busy', 'true')
+    expect(current()[0]).toHaveTextContent('박민수')
+    act(() => gate.resolve())
+    expect(await detail().findByRole('heading', { level: 2, name: '박민수' })).toBeVisible()
+  })
+
+  it.each([
+    ['없는 대화', paths.messageThread('ws_01', 'th_99')],
+    ['다른 공간의 대화', paths.messageThread('ws_01', 'th_11')],
+    ['모양이 틀린 대화 ID', `${paths.messages('ws_01')}/threads/a.b`],
+    ['없는 하위 경로', `${paths.messages('ws_01')}/nope`],
+  ])('%s 는 찾을 수 없다고 알린다 — 다시 시도가 아니고 목록은 그대로다', async (_name, path) => {
+    await openInbox(path)
+    expect(
+      await detail().findByRole('heading', { level: 2, name: '대화를 찾을 수 없어요' }),
+    ).toBeVisible()
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(rowTexts(threadList())).toHaveLength(5)
+  })
+})
+
+describe('워크스페이스를 바꾸면 이전 공간의 메시지가 보이지 않는다 (AC-05)', () => {
+  beforeEach(() => {
+    db.workspaces.find(({ workspace_id }) => workspace_id === 'ws_02')!.onboarding.completed = true
+  })
+
+  it('새 공간의 목록을 받는 동안에도 이전 공간의 행을 들고 있지 않는다', async () => {
+    const app = await openInbox(paths.messageThread('ws_01', 'th_01'))
+    expect(await detail().findByRole('heading', { level: 2, name: '이재환' })).toBeVisible()
+
+    const gate = hold('/workspaces/ws_02/messages')
+    act(() => app.navigate(paths.messages('ws_02')))
+    await app.expectPath(paths.messages('ws_02'))
+    expect(await screen.findByTestId('message-list-skeleton')).toBeInTheDocument()
+    expect(screen.queryByText('이재환')).toBeNull()
+
+    act(() => gate.resolve())
+    await screen.findByRole('region', { name: '대화' })
+    expect(rowTexts(threadList())).toEqual(['한결랜딩 시안 공유드려요09/16'])
+    expect(within(reviewList()).queryAllByRole('link')).toEqual([])
+    expect(screen.queryByText(/이재환|박민수|정하늘/)).toBeNull()
+  })
+
+  it('이전 공간의 대화 ID 를 새 공간 주소에 붙이면 찾을 수 없다', async () => {
+    await openInbox(paths.messageThread('ws_02', 'th_01'))
+    expect(
+      await detail().findByRole('heading', { level: 2, name: '대화를 찾을 수 없어요' }),
+    ).toBeVisible()
+    expect(screen.queryByText('이재환')).toBeNull()
   })
 })

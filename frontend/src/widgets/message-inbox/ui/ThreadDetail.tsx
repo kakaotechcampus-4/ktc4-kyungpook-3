@@ -2,8 +2,12 @@ import { useQuery } from '@tanstack/react-query'
 import { useLayoutEffect, useRef } from 'react'
 import { messageThreadQueryOptions } from '@/entities/message'
 import type { Message, MessageThread } from '@/entities/message'
+import { ApiError } from '@/shared/api/errors'
 import { todayInSeoul } from '@/shared/lib/date'
+import { EmptyState } from '@/shared/ui/empty-state'
+import { QueryErrorState } from '@/shared/ui/query-error-state'
 import { avatarText, clockTime, dayLabel, groupByDay } from '../lib/format'
+import { ThreadSkeleton } from './MessageSkeletons'
 
 /* MessagesThread 캔버스 실측 — 머리 76(좌우 28, 아래 선), 대화 칸 눌린 면(위 24 · 좌우 28 · 아래 18, 간격 16),
    봇 말풍선 먹 면 최대 438 · 상대 말풍선 흰 면 선 최대 410, 둘 다 라운드 15 에 꼬리 쪽만 4 */
@@ -32,8 +36,32 @@ const WAITING_NOTE =
  */
 export function ThreadDetail({ workspaceId, threadId }: { workspaceId: string; threadId: string }) {
   const thread = useQuery(messageThreadQueryOptions(workspaceId, threadId))
-  if (thread.data === undefined) return null
-  return <ThreadView thread={thread.data} />
+  if (thread.data !== undefined) return <ThreadView thread={thread.data} />
+  if (thread.error === null) return <ThreadSkeleton />
+  // 없는 대화는 다시 받아도 없다 — 다시 시도 대신 찾을 수 없다고 알린다
+  if (thread.error instanceof ApiError && thread.error.status === 404) return <ThreadUnavailable />
+  return (
+    <div className="px-28 pt-28">
+      <QueryErrorState
+        error={thread.error}
+        onRetry={() => void thread.refetch()}
+        title="대화를 불러오지 못했어요"
+      />
+    </div>
+  )
+}
+
+/** 없는 대화이거나 주소가 틀렸다. 목록은 그대로 있어 다른 항목을 고를 수 있다 */
+export function ThreadUnavailable() {
+  return (
+    <div className="flex flex-1 items-center justify-center px-36 pt-48 pb-96">
+      <EmptyState
+        titleAs="h2"
+        title="대화를 찾을 수 없어요"
+        description="주소를 확인하거나 왼쪽 목록에서 다시 골라 주세요."
+      />
+    </div>
+  )
 }
 
 function ThreadView({ thread }: { thread: MessageThread }) {
