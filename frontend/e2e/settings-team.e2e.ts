@@ -4,7 +4,9 @@ import { expectNoHorizontalOverflow, finishOAuth, start } from './support'
 
 /*
  * M8-B B-1 — 설정에서 온보딩 때 건너뛴 Discord 를 연결한다 (D-011). 모의 OAuth 는 현재 탭 이동이다 (D-158).
- * settings-discord-skipped 는 ws_03 이 온보딩을 마쳤고 Discord·팀원 연결을 건너뛰었다. Notion 만 연결돼 있다
+ * settings-discord-skipped 는 ws_03 이 온보딩을 마쳤고 Discord·팀원 연결을 건너뛰었다. Notion 만 연결돼 있다.
+ * 브라우저에서만 볼 수 있는 것만 둔다 — 현재 탭 OAuth 왕복과 새로고침 뒤 상태, 너비·키보드.
+ * 취소·실패·재조회 불일치·조회 오류·일반 팀원은 app/settingsConnections.test.tsx 와 Discord 영역 스토리가 본다
  */
 
 const SETTINGS = '/workspaces/ws_03/settings'
@@ -43,40 +45,6 @@ test('PM 이 설정에서 Discord 를 연결한다 — 복귀 뒤 연결됨이�
   await expect(discordArea(page).getByText('연결됨')).toBeVisible(FIRST_PAINT)
   await expect(page.getByTestId('notion-connection').getByText('연결됨')).toBeVisible()
   expect(onboardingSaves()).toBe(0)
-})
-
-for (const [outcome, message] of [
-  ['취소', 'Discord 연결을 취소했어요. 연결하려면 다시 시도해 주세요.'],
-  ['실패 재현', 'Discord를 연결하지 못했어요. 잠시 후 다시 시도해 주세요.'],
-] as const) {
-  test(`모의 OAuth 에서 ${outcome} 하면 설정에 머물며 안내하고 다시 연결할 수 있다`, async ({
-    page,
-  }) => {
-    await start(page, 'settings-discord-skipped', SETTINGS)
-    await discordArea(page).getByRole('button', { name: 'Discord 연결하기' }).click()
-
-    await finishOAuth(page, '디스코드', outcome)
-    await expect(page).toHaveURL(SETTINGS)
-    const area = discordArea(page)
-    await expect(area.getByText(message)).toBeVisible(FIRST_PAINT)
-    await expect(area.getByText('연결 안 됨')).toBeVisible()
-    await expect(area.getByRole('button', { name: 'Discord 연결하기' })).toBeEnabled()
-
-    // 새로고침하면 안내는 남지 않는다 — 복귀 표시를 지웠다
-    await page.reload()
-    await expect(discordArea(page).getByText('연결 안 됨')).toBeVisible(FIRST_PAINT)
-    await expect(discordArea(page).getByText(message)).toBeHidden()
-  })
-}
-
-test('일반 팀원은 두 연결의 상태와 안내만 보고 연결 버튼이 없다', async ({ page }) => {
-  await start(page, 'settings-member', '/workspaces/ws_01/settings')
-  const discord = discordArea(page)
-  await expect(discord.getByText(/PM에게 Discord 연결을 요청해 주세요/)).toBeVisible()
-  await expect(discord.getByRole('button')).toHaveCount(0)
-  const notion = page.getByTestId('notion-connection')
-  await expect(notion.getByText('Notion 연결은 PM이 관리해요.')).toBeVisible()
-  await expect(notion.getByRole('button')).toHaveCount(0)
 })
 
 for (const width of [1024, 1440, 1920]) {
