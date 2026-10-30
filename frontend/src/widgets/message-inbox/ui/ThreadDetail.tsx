@@ -114,14 +114,16 @@ function ThreadView({ thread }: { thread: MessageThread }) {
           <p className="self-center pt-24 text-body text-dim">아직 주고받은 메시지가 없어요.</p>
         ) : (
           groupByDay(thread.messages).map((day) => (
-            <div key={day.date}>
-              <h3 className="flex items-center gap-12 py-4">
-                <span aria-hidden="true" className={DAY_RULE} />
-                <span className="mono text-[11px] font-normal text-dim">
-                  {dayLabel(day.date, today)}
-                </span>
-                <span aria-hidden="true" className={DAY_RULE} />
-              </h3>
+            <div key={day.date ?? ''}>
+              {day.date === null ? null : (
+                <h3 className="flex items-center gap-12 py-4">
+                  <span aria-hidden="true" className={DAY_RULE} />
+                  <span className="mono text-[11px] font-normal text-dim">
+                    {dayLabel(day.date, today)}
+                  </span>
+                  <span aria-hidden="true" className={DAY_RULE} />
+                </h3>
+              )}
               <ol className="flex flex-col gap-16 pt-16">
                 {day.messages.map((message) => (
                   <li key={message.id}>

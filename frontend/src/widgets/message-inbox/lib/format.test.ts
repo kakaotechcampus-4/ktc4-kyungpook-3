@@ -35,6 +35,19 @@ it('메시지를 한국 날짜별로 묶는다 — 자정을 넘긴 UTC 시각�
   ])
 })
 
+it('첫 메시지부터 시각을 읽을 수 없으면 날짜 없는 묶음으로 둔다', () => {
+  const days = groupByDay([
+    message('a', 'not-a-time'),
+    message('b', ''),
+    message('c', '2026-09-08T09:02:00+09:00'),
+    message('d', 'not-a-time'),
+  ])
+  expect(days.map(({ date, messages }) => [date, messages.map(({ id }) => id)])).toEqual([
+    [null, ['a', 'b']],
+    ['2026-09-08', ['c', 'd']],
+  ])
+})
+
 it('아바타 글자는 이름의 첫 글자, 채널은 # 이다', () => {
   expect(avatarText('이재환', 'direct')).toBe('이')
   expect(avatarText('  ', 'direct')).toBe('?')

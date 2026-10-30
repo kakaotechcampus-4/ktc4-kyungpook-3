@@ -27,19 +27,19 @@ export function dayLabel(date: string, today: string): string {
 }
 
 export interface MessageDay {
-  /** 서울 날짜 `YYYY-MM-DD` */
-  date: string
+  /** 서울 날짜 `YYYY-MM-DD`. 첫 메시지부터 시각을 읽을 수 없으면 null 이다 */
+  date: string | null
   messages: Message[]
 }
 
-/** 보낸 시각 순인 메시지를 서울 날짜별로 묶는다. 시각을 읽을 수 없는 메시지는 앞 묶음에 붙인다 */
+/** 보낸 시각 순인 메시지를 서울 날짜별로 묶는다. 시각을 읽을 수 없는 메시지는 앞 묶음에 붙이고, 앞 묶음이 없으면 날짜 없는 묶음을 연다 */
 export function groupByDay(messages: readonly Message[]): MessageDay[] {
   const days: MessageDay[] = []
   for (const message of messages) {
     const date = seoulDateOf(message.sentAt)
     const last = days.at(-1)
     if (last !== undefined && (date === null || date === last.date)) last.messages.push(message)
-    else days.push({ date: date ?? '', messages: [message] })
+    else days.push({ date, messages: [message] })
   }
   return days
 }
