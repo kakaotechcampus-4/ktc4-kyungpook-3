@@ -1,6 +1,7 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { paths } from '@/shared/config/routes'
+import { db } from '@/shared/mock/db'
 import { MOCK_NOW } from '@/shared/mock/fixtures/constants'
 import { renderApp } from './test/renderApp'
 
@@ -26,16 +27,13 @@ const list = () => within(screen.getByRole('complementary', { name: '메시지 �
 const detail = () => within(screen.getByRole('region', { name: '메시지 내용' }))
 const reviewList = () => list().getByRole('region', { name: /^보내기 전 확인/ })
 const threadList = () => list().getByRole('region', { name: '대화' })
-/** 행의 글자. 장식(aria-hidden 아바타 글자·답장 대기 점)은 빼고 읽는다 */
-function rowTexts(region: HTMLElement): string[] {
-  return within(region)
-    .getAllByRole('link')
-    .map((link) => {
-      const copy = link.cloneNode(true) as HTMLElement
-      copy.querySelectorAll('[aria-hidden="true"]').forEach((node) => node.remove())
-      return copy.textContent
-    })
+/** 화면 읽기가 읽는 글자. 장식(aria-hidden 아바타 글자·답장 대기 점)은 뺀다 */
+function readable(element: HTMLElement): string {
+  const copy = element.cloneNode(true) as HTMLElement
+  copy.querySelectorAll('[aria-hidden="true"]').forEach((node) => node.remove())
+  return copy.textContent
 }
+const rowTexts = (region: HTMLElement) => within(region).getAllByRole('link').map(readable)
 const current = () =>
   list()
     .getAllByRole('link')
@@ -132,5 +130,59 @@ describe('왼쪽 목록 두 영역과 오른쪽 상세의 2단이고, 선택은 
         .getAllByRole('link')
         .every((link) => link.getAttribute('aria-current') !== 'page'),
     ).toBe(true)
+  })
+})
+
+describe('대화는 날짜 구분·보낸 쪽·시각·답장 대기를 구분해 보인다 (AC-03)', () => {
+  const conversation = () => detail().getByRole('region', { name: '대화 내용' })
+  const days = () =>
+    within(conversation())
+      .getAllByRole('heading', { level: 3 })
+      .map((heading) => heading.textContent)
+  const messages = () => within(conversation()).getAllByRole('listitem').map(readable)
+
+  it('봇이 마지막으로 보낸 DM 은 날짜별로 묶이고, 보낸 쪽과 시각이 붙고, 답장 대기가 보인다', async () => {
+    await openInbox(paths.messageThread('ws_01', 'th_01'))
+    expect(await detail().findByRole('heading', { level: 2, name: '이재환' })).toBeVisible()
+    expect(detail().getByText('Discord 개인 메시지')).toBeInTheDocument()
+    expect(detail().getByText('답장 기다리는 중')).toBeInTheDocument()
+    expect(days()).toEqual(['9월 8일 화요일', '9월 10일 목요일'])
+    expect(messages()).toEqual([
+      '봇: 재환님, 3주차 회의에서 API 명세서를 9/24까지 정리해 주신다고 하셨어요.\nNotion 태스크로 올려 뒀습니다 🙂09:02',
+      '이재환: 네 확인했습니다. DB 스키마 확정되면 바로 붙일게요.09:31',
+      '봇: DB 스키마가 확정됐다고 들었어요. 명세서 작업은 시작하셨나요?18:00',
+    ])
+    expect(within(conversation()).getByText('여기서부터 답장을 기다리고 있어요')).toBeVisible()
+    // 정해지지 않은 상태 문구와 이동은 두지 않는다
+    expect(detail().queryByText(/자동 발송|승인|예정/)).toBeNull()
+    expect(detail().queryByRole('link', { name: /Discord에서 열기/ })).toBeNull()
+  })
+
+  it('상대가 답한 DM 과 채널은 답장 대기가 아니다', async () => {
+    const app = await openInbox(paths.messageThread('ws_01', 'th_02'))
+    expect(await detail().findByRole('heading', { level: 2, name: '박민수' })).toBeVisible()
+    expect(detail().queryByText('답장 기다리는 중')).toBeNull()
+    expect(detail().queryByText('여기서부터 답장을 기다리고 있어요')).toBeNull()
+
+    app.navigate(paths.messageThread('ws_01', 'th_05'))
+    expect(await detail().findByRole('heading', { level: 2, name: '#회의록 요약' })).toBeVisible()
+    expect(detail().getByText('Discord 채널')).toBeInTheDocument()
+    expect(messages()).toEqual(['봇: 3주차 정기회의 요약 게시19:00'])
+    expect(screen.queryByText('여기서부터 답장을 기다리고 있어요')).toBeNull()
+  })
+
+  it('오늘 보낸 메시지의 날짜 구분선은 오늘을 붙인다', async () => {
+    db.messageThreads
+      .find(({ thread_id }) => thread_id === 'th_02')!
+      .messages.push({
+        message_id: 'mg_90',
+        sender: 'bot',
+        body: '오늘 회의 전에 한 번 더 확인해요',
+        sent_at: MOCK_NOW,
+      })
+    await openInbox(paths.messageThread('ws_01', 'th_02'))
+    await detail().findByRole('heading', { level: 2, name: '박민수' })
+    expect(days()).toEqual(['9월 9일 수요일', '오늘 · 9월 18일 금요일'])
+    expect(detail().getByText('답장 기다리는 중')).toBeInTheDocument()
   })
 })

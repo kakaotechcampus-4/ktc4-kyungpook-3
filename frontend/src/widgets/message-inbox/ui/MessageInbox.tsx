@@ -5,6 +5,7 @@ import { paths } from '@/shared/config/routes'
 import { GuardedLink } from '@/shared/lib/unsaved-changes'
 import { avatarText, shortDate } from '../lib/format'
 import { ReviewPreview } from './ReviewPreview'
+import { ThreadDetail } from './ThreadDetail'
 
 /* Messages 캔버스 실측 — 왼쪽 목록 308(위 18 · 좌우 12 · 아래 24, 영역 사이 18) · 오른쪽 선, 목록 제목 17px.
    화면 높이를 헤더 아래로 묶고 목록과 상세가 각자 세로로 스크롤한다 (D-124, 계획 C-6 6단계) */
@@ -53,8 +54,11 @@ export function MessageInbox({ workspaceId, botName, threadId, reviewId }: Messa
       : null
 
   let detail
-  if (review !== null) detail = <ReviewPreview review={review} botName={botName} />
-  else if (inbox.data !== undefined && threadId === null)
+  if (threadId !== null)
+    // 대화가 바뀌면 상세를 새로 마운트한다 — 이전 대화의 스크롤 자리를 들고 있지 않는다
+    detail = <ThreadDetail key={threadId} workspaceId={workspaceId} threadId={threadId} />
+  else if (review !== null) detail = <ReviewPreview review={review} botName={botName} />
+  else if (inbox.data !== undefined)
     detail = <p className={EMPTY_DETAIL}>왼쪽 목록에서 확인할 메시지나 대화를 골라 주세요.</p>
   else detail = null
 
