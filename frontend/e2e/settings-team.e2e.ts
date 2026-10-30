@@ -51,19 +51,29 @@ for (const width of [1024, 1440, 1920]) {
   test(`${width}px 설정 화면은 가로로 넘치지 않고 연결 줄을 키보드로 다룬다`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 })
     await start(page, 'settings-discord-skipped', SETTINGS)
+    // 두 연결 버튼이 함께 보이도록 Notion 도 끊고(PM 의 DELETE) 다시 연다. 모의 db 는 응답마다 저장돼 새로고침에도 남는다
+    await page.evaluate(() =>
+      fetch('/api/v1/workspaces/ws_03/integrations/notion', { method: 'DELETE' }),
+    )
+    await page.reload()
     const discord = discordArea(page)
     const notion = page.getByTestId('notion-connection')
     // 상태는 점 색만이 아니라 문구로도 구분한다 (D-128)
-    await expect(discord.getByText('연결 안 됨')).toBeVisible()
-    await expect(notion.getByText('연결됨')).toBeVisible()
+    await expect(discord.getByText('연결 안 됨')).toBeVisible(FIRST_PAINT)
+    await expect(notion.getByText('연결 안 됨')).toBeVisible()
     await expect(discord).toBeInViewport()
     await expectNoHorizontalOverflow(page)
 
-    // 이름 칸 다음 Tab 은 Discord 연결 버튼이다(`되돌리기` 는 바꾼 것이 없어 꺼져 있다). Notion 은 연결돼 있어 버튼이 없다
+    // 이름 칸 → Discord 연결 → Notion 연결 순서다(`되돌리기` 는 바꾼 것이 없어 꺼져 있다)
     await page.getByLabel('워크스페이스 이름').focus()
     await page.keyboard.press('Tab')
-    const connect = discord.getByRole('button', { name: 'Discord 연결하기' })
-    await expect(connect).toBeFocused()
+    const connectDiscord = discord.getByRole('button', { name: 'Discord 연결하기' })
+    await expect(connectDiscord).toBeFocused()
+    await page.keyboard.press('Tab')
+    await expect(notion.getByRole('button', { name: 'Notion 연결하기' })).toBeFocused()
+    // Shift+Tab 으로 Discord 로 돌아와 Enter 로 연다
+    await page.keyboard.press('Shift+Tab')
+    await expect(connectDiscord).toBeFocused()
     await page.keyboard.press('Enter')
     await expect(page).toHaveURL(/\/__mock\/oauth\/ws_03\/discord/)
   })
