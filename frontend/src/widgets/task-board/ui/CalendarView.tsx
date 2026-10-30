@@ -50,6 +50,8 @@ export interface CalendarViewProps {
   tasks: readonly Task[]
   /** 확인 필요 생성 승인. PM 이 아니면 비어 있다 */
   approvals: readonly TaskCreateApproval[]
+  /** 확인 필요를 받지 못했다. 빈 달은 불러온 태스크 범위로만 말하고, 확인 필요가 빠진 개수는 보이지 않는다 */
+  approvalsMissing: boolean
   /** 회의. `YYYY-MM-DD`(서울) 에 점선 칩으로 놓는다 */
   meetings: readonly CalendarMeeting[]
   names: ReadonlyMap<string, string>
@@ -63,6 +65,7 @@ export function CalendarView({
   workspaceId,
   tasks,
   approvals,
+  approvalsMissing,
   meetings,
   names,
   today,
@@ -111,7 +114,13 @@ export function CalendarView({
           </>
         }
       />
-      {emptyMonth ? <p className="text-caption text-dim">이 달에는 마감인 일이 없어요.</p> : null}
+      {emptyMonth ? (
+        <p className="text-caption text-dim">
+          {approvalsMissing
+            ? '불러온 태스크에는 이 달에 마감인 일이 없어요.'
+            : '이 달에는 마감인 일이 없어요.'}
+        </p>
+      ) : null}
       <div
         role="grid"
         aria-label={monthTitle(month)}
@@ -198,7 +207,9 @@ export function CalendarView({
       >
         <div className="flex flex-col gap-2">
           <h2 className="text-control font-semibold text-ink">마감일 없음</h2>
-          <span className="text-meta text-dim tabular-nums">{undated.length}</span>
+          {approvalsMissing ? null : (
+            <span className="text-meta text-dim tabular-nums">{undated.length}</span>
+          )}
         </div>
         <ul className="flex flex-wrap items-center gap-10">
           {undated.map((item) =>

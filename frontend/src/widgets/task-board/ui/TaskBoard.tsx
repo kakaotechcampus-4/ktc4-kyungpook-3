@@ -182,6 +182,8 @@ export function TaskBoard({
   const memberList = members.data ?? []
   // 보기의 줄·칩은 memo 다. 부모가 다시 그려도 같은 배열을 넘겨야 바뀌지 않은 줄을 건너뛴다 (AC-A-04)
   const createList = useMemo(() => createApprovals(approvalList ?? []), [approvalList])
+  // PM 의 확인 필요를 처음부터 받지 못했다. 캘린더·간트는 빈 기간을 단정하지 않고 확인 필요가 빠진 개수를 숨긴다
+  const approvalsMissing = isPm && approvalList === null
   const calendarMeetings = useMemo(
     () =>
       (meetings.data ?? []).flatMap(({ id, title, startedAt }) => {
@@ -287,6 +289,7 @@ export function TaskBoard({
         workspaceId={workspaceId}
         tasks={overlaid}
         approvals={createList}
+        approvalsMissing={approvalsMissing}
         meetings={calendarMeetings}
         names={names}
         today={today}
@@ -302,6 +305,7 @@ export function TaskBoard({
         names={names}
         tasks={overlaid}
         approvals={createList}
+        approvalsMissing={approvalsMissing}
         today={today}
         from={view.from ?? mondayOf(today)}
         onFromChange={(from) => onViewChange({ ...view, from })}

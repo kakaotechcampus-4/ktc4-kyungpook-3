@@ -57,6 +57,8 @@ export interface GanttViewProps {
   tasks: readonly Task[]
   /** 확인 필요 생성 승인. PM 이 아니면 비어 있다 */
   approvals: readonly TaskCreateApproval[]
+  /** 확인 필요를 받지 못했다. 빈 3주는 불러온 태스크 범위로만 말하고, 확인 필요가 빠진 개수는 보이지 않는다 */
+  approvalsMissing: boolean
   today: string
   from: string
   onFromChange: (from: string) => void
@@ -116,6 +118,7 @@ export function GanttView({
   names,
   tasks,
   approvals,
+  approvalsMissing,
   today,
   from,
   onFromChange,
@@ -154,7 +157,11 @@ export function GanttView({
         }
       />
       {emptyWindow ? (
-        <p className="text-caption text-dim">이 3주에는 일정이 있는 일이 없어요.</p>
+        <p className="text-caption text-dim">
+          {approvalsMissing
+            ? '불러온 태스크에는 이 3주에 일정이 있는 일이 없어요.'
+            : '이 3주에는 일정이 있는 일이 없어요.'}
+        </p>
       ) : null}
       <HorizontalScroll label="일정 표">
         <div
@@ -224,6 +231,7 @@ export function GanttView({
                 key={group.key}
                 workspaceId={workspaceId}
                 group={group}
+                counted={!approvalsMissing}
                 from={from}
                 today={today}
               />
@@ -233,8 +241,10 @@ export function GanttView({
       </HorizontalScroll>
       <section aria-label="일정이 없는 일" className="flex flex-col gap-4">
         <h2 className="py-8 text-body font-semibold text-ink">
-          일정이 없는 일{' '}
-          <span className="font-normal text-dim tabular-nums">{unscheduledCount}</span>
+          일정이 없는 일
+          {approvalsMissing ? null : (
+            <span className="font-normal text-dim tabular-nums"> {unscheduledCount}</span>
+          )}
         </h2>
         <ul>
           {unscheduledApprovals.map((approval) => (
@@ -275,11 +285,14 @@ function weekLabel(monday: string): string {
 function GroupRows({
   workspaceId,
   group,
+  counted,
   from,
   today,
 }: {
   workspaceId: string
   group: Group
+  /** 건수를 보인다. 확인 필요를 받지 못했으면 건수가 전부가 아니라 숨긴다 */
+  counted: boolean
   from: string
   today: string
 }) {
@@ -295,9 +308,11 @@ function GroupRows({
             {group.label}
           </span>
           <span className="min-w-[0px] flex-1 text-[11px] text-dim">{group.note}</span>
-          <span className="text-[11px] text-dim tabular-nums">
-            {group.tasks.length + group.approvals.length}건
-          </span>
+          {counted ? (
+            <span className="text-[11px] text-dim tabular-nums">
+              {group.tasks.length + group.approvals.length}건
+            </span>
+          ) : null}
         </div>
         <div className="flex-1" />
       </div>

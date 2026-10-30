@@ -193,6 +193,66 @@ describe('캘린더·간트의 표시 기간 (AC-A-05)', () => {
   })
 })
 
+/** 기간 이동과 빈 기간 문구, 확인 필요가 들어가는 합계 */
+const PERIOD = {
+  calendar: {
+    next: '다음 달',
+    empty: '이 달에는 마감인 일이 없어요.',
+    loadedEmpty: '불러온 태스크에는 이 달에 마감인 일이 없어요.',
+    total: () => screen.getByRole('heading', { name: '마감일 없음' }).parentElement!.textContent,
+    title: '마감일 없음',
+  },
+  gantt: {
+    next: '다음 3주',
+    empty: '이 3주에는 일정이 있는 일이 없어요.',
+    loadedEmpty: '불러온 태스크에는 이 3주에 일정이 있는 일이 없어요.',
+    total: () => screen.getByRole('heading', { name: /^일정이 없는 일/ }).textContent,
+    title: '일정이 없는 일',
+  },
+} as const
+
+describe.each(['calendar', 'gantt'] as const)(
+  '%s — 확인 필요를 받지 못하면 빈 기간과 합계를 단정하지 않는다 (AC-A-05)',
+  (view) => {
+    const period = PERIOD[view]
+    const failApprovals = () =>
+      server.use(
+        http.get('/api/v1/approvals', () => fail('INVALID_REQUEST', 'x', 400), { once: true }),
+      )
+
+    it('일이 없는 기간은 불러온 태스크 범위로만 말하고 합계를 숨긴다. 다시 받으면 합계가 돌아온다', async () => {
+      const user = userEvent.setup()
+      failApprovals()
+      await openView(view)
+      expect(notice()).toHaveTextContent('확인 필요 정보를 불러오지 못했어요')
+      expect(period.total()).toBe(period.title)
+      // 간트 담당자 줄의 건수도 확인 필요가 빠진 수라 보이지 않는다
+      if (view === 'gantt') expect(screen.queryAllByText(/^\d+건$/)).toEqual([])
+
+      await user.click(screen.getByRole('button', { name: period.next }))
+      expect(await screen.findByText(period.loadedEmpty)).toBeVisible()
+      expect(screen.queryByText(period.empty)).toBeNull()
+
+      await user.click(within(notice()!).getByRole('button', { name: '다시 시도' }))
+      await waitFor(() => expect(notice()).toBeNull())
+      expect(screen.getByText(period.empty)).toBeVisible()
+      expect(period.total()).toMatch(new RegExp(`^${period.title} ?\\d+$`))
+      if (view === 'gantt') expect(screen.getAllByText(/^\d+건$/).length).toBeGreaterThan(0)
+    })
+
+    it('태스크가 없어도 빈 화면 대신 보기를 그리고 불러온 태스크 범위로 말한다', async () => {
+      db.tasks = db.tasks.filter(({ workspace_id }) => workspace_id !== 'ws_01')
+      failApprovals()
+      await openView(view)
+      expect(notice()).toHaveTextContent('확인 필요 정보를 불러오지 못했어요')
+      expect(screen.queryByRole('heading', { name: '아직 태스크가 없어요' })).toBeNull()
+      expect(screen.getByText(period.loadedEmpty)).toBeVisible()
+      expect(screen.queryByText(period.empty)).toBeNull()
+      expect(period.total()).toBe(period.title)
+    })
+  },
+)
+
 describe('역할·공간·상세 링크 (AC-A-06)', () => {
   it('PM 은 세 보기에서 확인 필요를 함께 보고, 승인 목록은 보기를 옮겨도 한 번만 받는다', async () => {
     const user = userEvent.setup()
