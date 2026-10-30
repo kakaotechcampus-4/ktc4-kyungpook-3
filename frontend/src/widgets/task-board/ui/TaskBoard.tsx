@@ -255,8 +255,12 @@ export function TaskBoard({
     sources.some(({ query }) => queryView(query) === 'loading')
   )
     body = <ViewLoading label="태스크를 불러오는 중" />
-  // 받은 태스크도 확인 필요도 없다. 확인 필요를 받지 못했으면 비었다고 하지 않는다
-  else if (overlaid.length === 0 && (!isPm || approvalList?.length === 0))
+  // 받은 태스크도 확인 필요도 없다. 확인 필요를 받지 못했으면 비었다고 하지 않는다. 캘린더는 받은 회의가 있으면 그대로 그린다
+  else if (
+    overlaid.length === 0 &&
+    (!isPm || approvalList?.length === 0) &&
+    (view.view !== 'calendar' || calendarMeetings.length === 0)
+  )
     body = (
       <div className="flex justify-center pt-32">
         <EmptyState

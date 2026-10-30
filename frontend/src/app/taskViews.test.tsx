@@ -66,9 +66,10 @@ describe.each(VIEWS)('%s 보기의 조회 상태 (AC-A-05)', (view) => {
     expect(screen.queryByRole('status', { name: '태스크를 불러오는 중' })).toBeNull()
   })
 
-  it('태스크도 확인 필요도 없으면 빈 보기 대신 `아직 태스크가 없어요` 다', async () => {
+  it('태스크도 확인 필요도 회의도 없으면 빈 보기 대신 `아직 태스크가 없어요` 다', async () => {
     db.tasks = db.tasks.filter(({ workspace_id }) => workspace_id !== 'ws_01')
     db.approvals = db.approvals.filter(({ workspace_id }) => workspace_id !== 'ws_01')
+    db.meetings = db.meetings.filter(({ workspace_id }) => workspace_id !== 'ws_01')
     renderApp(`${paths.tasks('ws_01')}?view=${view}`)
     expect(
       await screen.findByRole('heading', { name: '아직 태스크가 없어요' }, FIRST_PAINT),
@@ -136,6 +137,28 @@ describe.each(VIEWS)('%s 보기의 조회 상태 (AC-A-05)', (view) => {
 })
 
 describe('캘린더·간트의 표시 기간 (AC-A-05)', () => {
+  it.each(['pm', 'member'] as const)(
+    '캘린더 — 태스크·확인 필요가 없어도 받은 회의가 있으면 격자와 회의를 그리고 달을 옮긴다 (%s)',
+    async (role) => {
+      setMockRole(role)
+      db.tasks = db.tasks.filter(({ workspace_id }) => workspace_id !== 'ws_01')
+      db.approvals = db.approvals.filter(({ workspace_id }) => workspace_id !== 'ws_01')
+      const user = userEvent.setup()
+      await openView('calendar')
+      expect(screen.queryByRole('heading', { name: '아직 태스크가 없어요' })).toBeNull()
+      expect(screen.getByRole('link', { name: '2주차 정기회의' })).toHaveAttribute(
+        'href',
+        paths.meetings('ws_01', 'mt_07'),
+      )
+
+      await user.click(screen.getByRole('button', { name: '다음 달' }))
+      expect(await screen.findByRole('grid', { name: '2026년 10월' })).toBeVisible()
+      expect(screen.queryByRole('link', { name: '2주차 정기회의' })).toBeNull()
+      await user.click(screen.getByRole('button', { name: '이전 달' }))
+      expect(await screen.findByRole('link', { name: '2주차 정기회의' })).toBeVisible()
+    },
+  )
+
   it('캘린더 — 회의를 받지 못하면 알리고, 마감이 없는 달은 격자와 함께 그렇다고 알린다', async () => {
     server.use(
       http.get(
