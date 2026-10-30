@@ -150,6 +150,7 @@ describe('E2E 시나리오', () => {
     ).rejects.toMatchObject({ code: 'FORBIDDEN', status: 403 })
   })
 
+  // 시나리오 수의 제곱만큼 적용·비교한다. 시나리오가 늘어 기본 한도(5초)를 넘으므로 한도를 따로 둔다
   it('시나리오끼리 독립적이다 — 앞 시나리오의 변경이 다음 적용에 남지 않는다', async () => {
     for (const first of MOCK_SCENARIOS) {
       applyScenario(first)
@@ -168,7 +169,7 @@ describe('E2E 시나리오', () => {
         })
       }
     }
-  })
+  }, 30_000)
 
   it('만들 때마다 새 객체다 — 한 시나리오 값을 고쳐도 다른 값에 번지지 않는다', () => {
     const scenarios = MOCK_SCENARIOS.map((name: MockScenario) => createScenarioDb(name))
