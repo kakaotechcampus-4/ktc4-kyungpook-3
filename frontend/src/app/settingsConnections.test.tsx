@@ -125,7 +125,8 @@ describe('설정의 Discord 연결 영역 — PM', () => {
     renderApp(returnFrom('cancelled'))
     const area = await discordArea()
     expect(await area.findByRole('alert')).toBeInTheDocument()
-    await user.click(area.getByRole('button', { name: 'Discord 연결하기' }))
+    // 안내는 복귀를 읽자마자 보인다. 버튼은 연동 상태를 받은 뒤다
+    await user.click(await area.findByRole('button', { name: 'Discord 연결하기' }))
     expect(area.queryByRole('alert')).toBeNull()
     expect(leaveApp).toHaveBeenCalledOnce()
   })
@@ -200,7 +201,7 @@ describe('설정의 연결 영역 — 일반 팀원', () => {
     expect(
       await discord.findByText('Discord를 연결하지 못했어요. 잠시 후 다시 시도해 주세요.'),
     ).toBeInTheDocument()
-    expect(discord.getByText('연결 안 됨')).toBeInTheDocument()
+    expect(await discord.findByText('연결 안 됨')).toBeInTheDocument()
     expect(discord.queryByRole('button')).toBeNull()
   })
 })

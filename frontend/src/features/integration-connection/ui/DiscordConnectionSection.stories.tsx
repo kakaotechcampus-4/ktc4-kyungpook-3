@@ -53,7 +53,10 @@ export const PM_취소_복귀: Story = {
     await expect(
       await canvas.findByText('Discord 연결을 취소했어요. 연결하려면 다시 시도해 주세요.'),
     ).toBeInTheDocument()
-    await expect(canvas.getByRole('button', { name: 'Discord 연결하기' })).toBeInTheDocument()
+    // 안내는 복귀를 읽자마자 보인다. 버튼은 연동 상태를 받은 뒤다
+    await expect(
+      await canvas.findByRole('button', { name: 'Discord 연결하기' }),
+    ).toBeInTheDocument()
   },
 }
 
