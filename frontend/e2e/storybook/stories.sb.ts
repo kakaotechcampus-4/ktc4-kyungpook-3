@@ -309,3 +309,29 @@ for (const storyId of M7_STORIES) {
     expect([...new Set(unhandled)]).toEqual(M7_INTENDED_404[storyId] ?? [])
   })
 }
+
+/*
+ * M8-B 설정 Discord 영역 스토리도 play 가 끝까지 통과한다. 같은 방식으로 막 빌드한 index.json 에서 읽는다
+ */
+const M8_STORIES = Object.values(
+  (
+    JSON.parse(readFileSync(STORY_INDEX, 'utf8')) as {
+      entries: Record<string, { id: string; type: string }>
+    }
+  ).entries,
+)
+  .filter(({ id, type }) => type === 'story' && id.startsWith('m8-'))
+  .map(({ id }) => id)
+
+test('M8 설정 스토리가 index.json 에 있다', () => {
+  expect(M8_STORIES.length).toBeGreaterThanOrEqual(7)
+})
+
+for (const storyId of M8_STORIES) {
+  test(`play 통과 — ${storyId}`, async ({ page }) => {
+    const unhandled = watchUnhandled(page)
+    await page.goto(`/iframe.html?id=${encodeURIComponent(storyId)}&viewMode=story`)
+    await expectStoryFinished(page)
+    expect(unhandled).toEqual([])
+  })
+}
