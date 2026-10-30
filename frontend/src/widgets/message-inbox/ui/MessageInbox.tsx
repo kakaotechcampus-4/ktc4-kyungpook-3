@@ -11,10 +11,11 @@ import { ReviewPreview } from './ReviewPreview'
 import { ThreadDetail, ThreadUnavailable } from './ThreadDetail'
 
 /* Messages 캔버스 실측 — 왼쪽 목록 308(위 18 · 좌우 12 · 아래 24, 영역 사이 18) · 오른쪽 선, 목록 제목 17px.
-   화면 높이를 헤더 아래로 묶고 목록과 상세가 각자 세로로 스크롤한다 (D-124, 계획 C-6 6단계) */
+   화면 높이를 헤더 아래로 묶고 목록과 상세가 각자 세로로 스크롤한다 (D-124, 계획 C-6 6단계).
+   스크롤 칸은 relative 다 — 안의 sr-only 글자(absolute)가 칸 밖 문서 높이를 늘려 페이지가 스크롤되지 않게 한다 */
 const SCREEN = 'flex h-[calc(100dvh-var(--spacing-header))] items-stretch'
 const ASIDE =
-  'flex w-aside shrink-0 flex-col gap-18 overflow-y-auto border-r border-divider px-12 pt-18 pb-24'
+  'relative flex w-aside shrink-0 flex-col gap-18 overflow-y-auto border-r border-divider px-12 pt-18 pb-24'
 const ASIDE_TITLE = 'px-8 text-[17px] leading-[1.55] font-bold tracking-h2 text-ink'
 const DETAIL = 'flex min-w-[0px] flex-1 flex-col'
 const GROUP_LABEL = 'mono text-[10.5px] leading-[1.75] tracking-[0.1em] text-dim'

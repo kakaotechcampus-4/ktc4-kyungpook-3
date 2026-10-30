@@ -10,7 +10,8 @@ import { avatarText, clockTime, dayLabel, groupByDay } from '../lib/format'
 import { ThreadSkeleton } from './MessageSkeletons'
 
 /* MessagesThread 캔버스 실측 — 머리 76(좌우 28, 아래 선), 대화 칸 눌린 면(위 24 · 좌우 28 · 아래 18, 간격 16),
-   봇 말풍선 먹 면 최대 438 · 상대 말풍선 흰 면 선 최대 410, 둘 다 라운드 15 에 꼬리 쪽만 4 */
+   봇 말풍선 먹 면 최대 438 · 상대 말풍선 흰 면 선 최대 410, 둘 다 라운드 15 에 꼬리 쪽만 4.
+   대화 칸은 relative 다 — 말풍선의 sr-only 보낸 쪽 글자가 칸 밖으로 새어 페이지를 늘리지 않게 한다 */
 const HEAD =
   'flex h-header shrink-0 items-center justify-between gap-16 border-b border-divider px-28'
 const AVATAR =
@@ -21,7 +22,7 @@ const CHANNEL_AVATAR =
 const WAITING_BADGE =
   'inline-flex h-22 shrink-0 items-center gap-5 rounded-6 bg-control px-9 text-meta leading-none font-semibold text-sub'
 const BODY =
-  'flex min-h-[0px] flex-1 flex-col gap-16 overflow-y-auto bg-surface-sunken px-28 pt-24 pb-18'
+  'relative flex min-h-[0px] flex-1 flex-col gap-16 overflow-y-auto bg-surface-sunken px-28 pt-24 pb-18'
 const DAY_RULE = 'h-1 flex-1 bg-line'
 const BUBBLE = 'px-15 py-12 text-body leading-[1.75] whitespace-pre-line'
 const BOT_BUBBLE = `${BUBBLE} max-w-[438px] rounded-[15px_15px_4px_15px] bg-ink text-surface`

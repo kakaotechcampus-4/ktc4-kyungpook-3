@@ -336,3 +336,56 @@ describe('워크스페이스를 바꾸면 이전 공간의 메시지가 보이�
     expect(screen.queryByText('이재환')).toBeNull()
   })
 })
+
+describe('키보드만으로 목록 이동·선택·상세 확인이 되고, 이름과 색 외 상태 표현이 있다 (AC-07)', () => {
+  /** 포커스가 target 에 닿을 때까지 Tab 을 누른다. 화면 순서대로 닿아야 한다 */
+  async function tabTo(target: HTMLElement) {
+    for (let step = 0; step < 40 && document.activeElement !== target; step += 1)
+      await userEvent.tab()
+    expect(document.activeElement).toBe(target)
+  }
+
+  it('영역마다 접근 가능한 이름과 제목이 있다', async () => {
+    await openInbox()
+    expect(screen.getByRole('main')).toBeInTheDocument()
+    expect(list().getByRole('heading', { level: 1, name: '메시지' })).toBeInTheDocument()
+    expect(within(reviewList()).getByRole('heading', { level: 2 })).toBeInTheDocument()
+    expect(
+      within(threadList()).getByRole('heading', { level: 2, name: '대화' }),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: '메시지 내용' })).toBeInTheDocument()
+  })
+
+  it('Tab 으로 검토 항목에 가서 Enter 로 고르고, 다시 Tab 으로 대화를 골라 내용 칸까지 간다', async () => {
+    const app = await openInbox()
+    const review = within(reviewList()).getByRole('link', { name: /이재환/ })
+    await tabTo(review)
+    await userEvent.keyboard('{Enter}')
+    await app.expectSearch('?review=rv_01')
+    expect(await detail().findByRole('heading', { name: '이 메시지, 보낼까요?' })).toBeVisible()
+    // 고른 뒤에도 포커스가 목록에 남아 다음 항목으로 이어 간다
+    expect(document.activeElement).toBe(review)
+    expect(review).toHaveAttribute('aria-current', 'page')
+
+    const thread = within(threadList()).getByRole('link', { name: /이재환/ })
+    await tabTo(thread)
+    await userEvent.keyboard('{Enter}')
+    await app.expectPath(paths.messageThread('ws_01', 'th_01'))
+    expect(await detail().findByRole('heading', { level: 2, name: '이재환' })).toBeVisible()
+    expect(document.activeElement).toBe(thread)
+    expect(thread).toHaveAttribute('aria-current', 'page')
+
+    // 스크롤 칸인 대화 내용도 Tab 으로 닿는다 — 키보드로 내릴 수 있다
+    await tabTo(detail().getByRole('region', { name: '대화 내용' }))
+  })
+
+  it('답장 대기는 점의 색이 아니라 글자로도 읽힌다', async () => {
+    await openInbox(paths.messageThread('ws_01', 'th_01'))
+    const waiting = within(threadList()).getByRole('link', { name: /이재환/ })
+    expect(waiting).toHaveTextContent('답장 기다리는 중')
+    expect(within(threadList()).getByRole('link', { name: /박민수/ })).not.toHaveTextContent(
+      '답장 기다리는 중',
+    )
+    expect(await detail().findByText('답장 기다리는 중')).toBeVisible()
+  })
+})
