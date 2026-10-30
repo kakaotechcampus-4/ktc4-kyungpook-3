@@ -14,6 +14,13 @@ import { parseEnumParam } from '@/shared/lib/url'
 export const TASK_VIEWS = ['list', 'board', 'calendar', 'gantt'] as const
 export type TaskView = (typeof TASK_VIEWS)[number]
 
+export const VIEW_LABEL: Record<TaskView, string> = {
+  list: '리스트',
+  board: '보드',
+  calendar: '캘린더',
+  gantt: '간트',
+}
+
 export const VIEW_PARAMS = {
   view: 'view',
   assignee: 'assignee',

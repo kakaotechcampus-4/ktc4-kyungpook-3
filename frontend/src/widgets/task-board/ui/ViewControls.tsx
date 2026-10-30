@@ -9,15 +9,8 @@ import {
 import { Icon } from '@/shared/ui/icon'
 import { Segmented, SegmentedItem } from '@/shared/ui/segmented'
 import type { DueCondition } from '../lib/taskBoard'
-import { TASK_VIEWS } from '../lib/taskViews'
+import { TASK_VIEWS, VIEW_LABEL } from '../lib/taskViews'
 import type { BoardPeriod, TaskView } from '../lib/taskViews'
-
-const VIEW_LABEL: Record<TaskView, string> = {
-  list: '리스트',
-  board: '보드',
-  calendar: '캘린더',
-  gantt: '간트',
-}
 
 /** 화면 오른쪽 위 보기 전환 — 리스트·보드·캘린더·간트 */
 export function ViewSwitch({

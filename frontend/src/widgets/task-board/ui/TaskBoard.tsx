@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { useId, useMemo, useRef } from 'react'
+import { Suspense, lazy, useId, useMemo, useRef } from 'react'
 import type { KeyboardEvent, ReactNode } from 'react'
 import { pendingApprovalListQueryOptions } from '@/entities/approval'
 import type { Approval } from '@/entities/approval'
@@ -26,14 +26,23 @@ import {
   mondayOf,
   monthOf,
   shortDate,
+  VIEW_LABEL,
 } from '../lib/taskViews'
-import type { ViewQuery } from '../lib/taskViews'
+import type { TaskView, ViewQuery } from '../lib/taskViews'
 import { ApprovalCard } from './ApprovalCard'
-import { BoardView } from './BoardView'
-import { CalendarView } from './CalendarView'
-import { GanttView } from './GanttView'
 import { AssigneeFilter, DueFilter, PeriodFilter, ViewSwitch } from './ViewControls'
 import { Avatar } from './viewParts'
+
+/* 보드·캘린더·간트는 그 보기를 고를 때 코드를 받는다 (M8 AC-A-02). 리스트로 들어오면 셋 다 내려받지 않는다 */
+const BoardView = lazy(() =>
+  import('./BoardView').then(({ BoardView }) => ({ default: BoardView })),
+)
+const CalendarView = lazy(() =>
+  import('./CalendarView').then(({ CalendarView }) => ({ default: CalendarView })),
+)
+const GanttView = lazy(() =>
+  import('./GanttView').then(({ GanttView }) => ({ default: GanttView })),
+)
 
 /* Tasks 시안 — main 패딩 48/48/72, 블록 사이 28px.
  * 리스트 본문 단은 상세·확인 필요 상세와 같이 960px 이하로 가운데에 둔다.
@@ -289,11 +298,30 @@ export function TaskBoard({
                 />
               </div>
             ) : null}
-            <div className="flex flex-col gap-20">{body}</div>
+            <div className="flex flex-col gap-20">
+              {/* 보기마다 새 경계다 — 보기 전환(transition)에도 이전 보기를 붙잡지 않고 이 자리에 대기를 그린다 */}
+              <Suspense key={view.view} fallback={<ViewCodeLoading view={view.view} />}>
+                {body}
+              </Suspense>
+            </div>
           </>
         )}
       </div>
     </main>
+  )
+}
+
+/** 보기 코드를 받는 동안 그 자리를 지킨다. 이름으로 API 로딩과 구분된다 */
+function ViewCodeLoading({ view }: { view: TaskView }) {
+  return (
+    <div
+      role="status"
+      aria-busy="true"
+      aria-label={`${VIEW_LABEL[view]} 화면을 불러오는 중`}
+      className="flex flex-col gap-8"
+    >
+      <Skeleton lines={4} />
+    </div>
   )
 }
 
