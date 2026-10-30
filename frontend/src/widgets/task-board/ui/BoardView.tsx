@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import type { Task, TaskStatus } from '@/entities/task'
 import { paths } from '@/shared/config/routes'
 import { GuardedLink } from '@/shared/lib/unsaved-changes'
@@ -126,7 +127,8 @@ function ColumnHead({
   )
 }
 
-function TaskCard({
+/** 카드 한 장. 상태가 바뀐 태스크만 다시 그린다 — 나머지 카드는 같은 태스크 객체·이름 표를 받는다 (AC-A-04) */
+const TaskCard = memo(function TaskCard({
   workspaceId,
   task,
   names,
@@ -182,4 +184,4 @@ function TaskCard({
       </div>
     </article>
   )
-}
+})

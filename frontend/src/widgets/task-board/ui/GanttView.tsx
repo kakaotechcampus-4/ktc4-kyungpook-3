@@ -1,3 +1,4 @@
+import { memo, useMemo } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
 import type { TaskCreateApproval } from '@/entities/approval'
 import type { Member } from '@/entities/member'
@@ -51,6 +52,8 @@ interface Group {
 export interface GanttViewProps {
   workspaceId: string
   members: readonly Member[]
+  /** 팀원 ID → 이름 */
+  names: ReadonlyMap<string, string>
   tasks: readonly Task[]
   /** 확인 필요 생성 승인. PM 이 아니면 비어 있다 */
   approvals: readonly TaskCreateApproval[]
@@ -110,6 +113,7 @@ function groupRows(
 export function GanttView({
   workspaceId,
   members,
+  names,
   tasks,
   approvals,
   today,
@@ -118,8 +122,10 @@ export function GanttView({
 }: GanttViewProps) {
   const days = ganttDays(from)
   const todayIndex = days.indexOf(today)
-  const { groups, unscheduledTasks, unscheduledApprovals } = groupRows(members, tasks, approvals)
-  const names = new Map(members.map(({ id, displayName }) => [id, displayName]))
+  const { groups, unscheduledTasks, unscheduledApprovals } = useMemo(
+    () => groupRows(members, tasks, approvals),
+    [members, tasks, approvals],
+  )
   const weekends = days.flatMap((date, index) => {
     const day = new Date(`${date}T00:00:00Z`).getUTCDay()
     return day === 0 || day === 6 ? [index] : []
@@ -296,23 +302,48 @@ function GroupRows({
         <div className="flex-1" />
       </div>
       {group.approvals.map((approval) => (
-        <Row key={approval.id} title={approval.title}>
-          <ApprovalChip approval={approval} from={from} />
-        </Row>
+        <ApprovalRow key={approval.id} approval={approval} from={from} />
       ))}
       {group.tasks.map((task) => (
-        <Row
-          key={task.id}
-          title={task.title}
-          to={paths.tasks(workspaceId, task.id)}
-          done={task.status === 'done'}
-        >
-          <TaskBar task={task} from={from} today={today} />
-        </Row>
+        <TaskRow key={task.id} workspaceId={workspaceId} task={task} from={from} today={today} />
       ))}
     </>
   )
 }
+
+/* 줄 하나씩 memo 다. 묶음(`Group`)은 렌더마다 새로 만들어지지만 줄은 같은 태스크·승인 객체를 받아, 상태가 바뀐 줄만 다시 그린다 (AC-A-04) */
+
+const TaskRow = memo(function TaskRow({
+  workspaceId,
+  task,
+  from,
+  today,
+}: {
+  workspaceId: string
+  task: Task
+  from: string
+  today: string
+}) {
+  return (
+    <Row title={task.title} to={paths.tasks(workspaceId, task.id)} done={task.status === 'done'}>
+      <TaskBar task={task} from={from} today={today} />
+    </Row>
+  )
+})
+
+const ApprovalRow = memo(function ApprovalRow({
+  approval,
+  from,
+}: {
+  approval: TaskCreateApproval
+  from: string
+}) {
+  return (
+    <Row title={approval.title}>
+      <ApprovalChip approval={approval} from={from} />
+    </Row>
+  )
+})
 
 function Row({
   title,
@@ -419,7 +450,7 @@ function ApprovalChip({ approval, from }: { approval: TaskCreateApproval; from: 
   )
 }
 
-function UnscheduledRow({
+const UnscheduledRow = memo(function UnscheduledRow({
   title,
   note,
   memberId,
@@ -452,4 +483,4 @@ function UnscheduledRow({
       </GuardedLink>
     </li>
   )
-}
+})

@@ -180,6 +180,16 @@ export function TaskBoard({
   const isList = view.view === 'list'
   const wide = view.view === 'calendar' || view.view === 'gantt'
   const memberList = members.data ?? []
+  // 보기의 줄·칩은 memo 다. 부모가 다시 그려도 같은 배열을 넘겨야 바뀌지 않은 줄을 건너뛴다 (AC-A-04)
+  const createList = useMemo(() => createApprovals(approvalList ?? []), [approvalList])
+  const calendarMeetings = useMemo(
+    () =>
+      (meetings.data ?? []).flatMap(({ id, title, startedAt }) => {
+        const date = seoulDateOf(startedAt)
+        return date === null ? [] : [{ id, title, date }]
+      }),
+    [meetings.data],
+  )
 
   // 보드·캘린더·간트가 쓰는 조회 (M8 AC-A-05). 처음부터 받지 못한 태스크만 보기 전체 오류다. 확인 필요·팀원·회의를 받지 못했거나
   // 기존 데이터의 재조회가 실패하면 받은 데이터로 보기를 그리고 위에서 알린다 — 실패를 빈 목록이나 `담당자 없음` 으로 그리지 않는다
@@ -272,11 +282,8 @@ export function TaskBoard({
       <CalendarView
         workspaceId={workspaceId}
         tasks={overlaid}
-        approvals={createApprovals(approvalList ?? [])}
-        meetings={(meetings.data ?? []).flatMap(({ id, title, startedAt }) => {
-          const date = seoulDateOf(startedAt)
-          return date === null ? [] : [{ id, title, date }]
-        })}
+        approvals={createList}
+        meetings={calendarMeetings}
         names={names}
         today={today}
         month={view.month ?? monthOf(today)}
@@ -288,8 +295,9 @@ export function TaskBoard({
       <GanttView
         workspaceId={workspaceId}
         members={memberList}
+        names={names}
         tasks={overlaid}
-        approvals={createApprovals(approvalList ?? [])}
+        approvals={createList}
         today={today}
         from={view.from ?? mondayOf(today)}
         onFromChange={(from) => onViewChange({ ...view, from })}

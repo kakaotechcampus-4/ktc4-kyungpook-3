@@ -1,3 +1,4 @@
+import { memo, useMemo } from 'react'
 import type { TaskCreateApproval } from '@/entities/approval'
 import type { Task } from '@/entities/task'
 import { paths } from '@/shared/config/routes'
@@ -31,13 +32,26 @@ const CHIP: Record<TaskTone, { box: string; title: string; sub: string }> = {
 /* 칸 폭은 7등분이다. 줄바꿈할 곳이 없는 긴 제목·이름도 칸 안에서 접어 잘리지 않게 한다 */
 const CHIP_BASE = 'flex flex-col gap-1 rounded-6 px-8 py-6 wrap-anywhere'
 
+interface CalendarMeeting {
+  id: string
+  title: string
+  date: string
+}
+
+/** 한 날짜에 놓이는 것들 */
+interface DayItems {
+  tasks: Task[]
+  approvals: TaskCreateApproval[]
+  meetings: CalendarMeeting[]
+}
+
 export interface CalendarViewProps {
   workspaceId: string
   tasks: readonly Task[]
   /** 확인 필요 생성 승인. PM 이 아니면 비어 있다 */
   approvals: readonly TaskCreateApproval[]
   /** 회의. `YYYY-MM-DD`(서울) 에 점선 칩으로 놓는다 */
-  meetings: readonly { id: string; title: string; date: string }[]
+  meetings: readonly CalendarMeeting[]
   names: ReadonlyMap<string, string>
   today: string
   month: string
@@ -55,7 +69,24 @@ export function CalendarView({
   month,
   onMonthChange,
 }: CalendarViewProps) {
-  const grid = calendarGrid(month)
+  const grid = useMemo(() => calendarGrid(month), [month])
+  // 날짜 칸 42개가 저마다 배열 전체를 거르지 않게 마감일로 한 번만 묶는다
+  const byDate = useMemo(() => {
+    const index = new Map<string, DayItems>()
+    const at = (date: string) => {
+      let day = index.get(date)
+      if (day === undefined) {
+        day = { tasks: [], approvals: [], meetings: [] }
+        index.set(date, day)
+      }
+      return day
+    }
+    for (const task of tasks) if (task.dueDate !== null) at(task.dueDate).tasks.push(task)
+    for (const approval of approvals)
+      if (approval.dueDate !== null) at(approval.dueDate).approvals.push(approval)
+    for (const meeting of meetings) at(meeting.date).meetings.push(meeting)
+    return index
+  }, [tasks, approvals, meetings])
   const undated = [
     ...approvals.filter((approval) => approval.dueDate === null),
     ...tasks.filter((task) => task.dueDate === null),
@@ -99,9 +130,11 @@ export function CalendarView({
         ))}
         {grid.map(({ date, inMonth }) => {
           const isToday = date === today
-          const dayTasks = tasks.filter((task) => task.dueDate === date)
-          const dayApprovals = approvals.filter((approval) => approval.dueDate === date)
-          const dayMeetings = meetings.filter((meeting) => meeting.date === date)
+          const {
+            tasks: dayTasks = [],
+            approvals: dayApprovals = [],
+            meetings: dayMeetings = [],
+          } = byDate.get(date) ?? {}
           const day = Number(date.slice(8, 10))
           return (
             <div
@@ -186,17 +219,7 @@ export function CalendarView({
                 </GuardedLink>
               </li>
             ) : (
-              <li key={item.id}>
-                <GuardedLink
-                  to={paths.tasks(workspaceId, item.id)}
-                  className="flex flex-col gap-1 rounded-7 border-2 border-dashed px-11 py-7 wrap-anywhere"
-                >
-                  <span className="text-[12px] leading-[1.4] text-sub">{item.title}</span>
-                  <span className="text-[10.5px] text-dim">
-                    {assigneeLabel(item.assigneeMemberId, names)} · 마감 없음
-                  </span>
-                </GuardedLink>
-              </li>
+              <UndatedTask key={item.id} workspaceId={workspaceId} task={item} names={names} />
             ),
           )}
         </ul>
@@ -209,7 +232,33 @@ export function CalendarView({
   )
 }
 
-function TaskChip({
+/** `마감일 없음` 칸의 태스크 하나. 마감 없는 태스크는 데이터와 함께 늘어나 칩처럼 memo 다 (AC-A-04) */
+const UndatedTask = memo(function UndatedTask({
+  workspaceId,
+  task,
+  names,
+}: {
+  workspaceId: string
+  task: Task
+  names: ReadonlyMap<string, string>
+}) {
+  return (
+    <li>
+      <GuardedLink
+        to={paths.tasks(workspaceId, task.id)}
+        className="flex flex-col gap-1 rounded-7 border-2 border-dashed px-11 py-7 wrap-anywhere"
+      >
+        <span className="text-[12px] leading-[1.4] text-sub">{task.title}</span>
+        <span className="text-[10.5px] text-dim">
+          {assigneeLabel(task.assigneeMemberId, names)} · 마감 없음
+        </span>
+      </GuardedLink>
+    </li>
+  )
+})
+
+/** 칩 하나. 상태가 바뀐 태스크만 다시 그린다 (AC-A-04) */
+const TaskChip = memo(function TaskChip({
   workspaceId,
   task,
   names,
@@ -234,4 +283,4 @@ function TaskChip({
       <span className={`text-[10.5px] tabular-nums ${style.sub}`}>{meta}</span>
     </GuardedLink>
   )
-}
+})
