@@ -1,4 +1,5 @@
 from datetime import date, datetime
+from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -10,6 +11,7 @@ from app.models import (
     MeetingSource,
     TaskStatus,
 )
+from app.schemas.source import INT4_MAX
 
 
 class MeetingCreateRequest(BaseModel):
@@ -222,6 +224,12 @@ class ExtractionItemCreate(BaseModel):
         None, description="근거 문장을 말한 화자의 Discord uid (별칭 텍스트가 아님)"
     )
     evidence_at_ms: int | None = None
+    # 범위는 발화 저장 API의 seq와 같다. 벗어난 값은 DB 조회에서 터지므로 요청에서 막는다
+    evidence_seqs: list[Annotated[int, Field(ge=0, le=INT4_MAX)]] | None = Field(
+        None,
+        description="근거 발화의 seq 목록(발화 저장 API의 seq). 순서는 자유. 모두 evidence로 저장하고 "
+        "가장 큰 seq를 대표 근거로 쓴다. 이 회의에 없는 seq는 건너뛴다. 모르면 [] 또는 생략",
+    )
     category: str | None = Field(
         None, max_length=16, description="schedule / assignee / scope / decision (JudgeResult.category)"
     )

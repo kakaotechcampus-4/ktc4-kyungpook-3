@@ -153,6 +153,7 @@ def create_extraction(
     # 만들면 그 task도 임베딩 전이라 검색에 잡히지 않으므로 True로 바꾼다. 그 밖에는 이 요청 안에서 바뀌지 않는다
     unsearched_tasks: bool | None = None
     targets = _lock_update_targets(db, payload.items)
+    sources_by_seq = _sources_by_seq(db, meeting.meeting_id, payload.items)
 
     for raw_item in payload.items:
         # 잘못된 항목 하나로 요청 전체를 실패시키면 봇이 같은 요청을 재시도하다 회의 전체가
@@ -268,6 +269,7 @@ def create_extraction(
         db.add(item)
         db.flush()  # item_id 확보 (approval/task 연결에 필요)
         saved_count += 1
+        _add_item_evidence(db, meeting.meeting_id, item, raw_item.evidence_seqs, sources_by_seq)
 
         if target is not None:
             _request_task_update(
@@ -329,6 +331,40 @@ def create_extraction(
             item_count=saved_count,
         ).model_dump(mode="json")
     )
+
+
+def _sources_by_seq(db: Session, meeting_id: str, items: list[ExtractionItemCreate]) -> dict[int, Source]:
+    """요청의 모든 항목이 가리키는 근거 발화를 한 번에 읽는다. 이 회의에 없는 seq는 결과에 없다."""
+    seqs = {seq for raw_item in items for seq in raw_item.evidence_seqs or ()}
+    if not seqs:
+        return {}
+    rows = db.execute(
+        select(Source).where(Source.meeting_id == meeting_id, Source.seq.in_(seqs))
+    ).scalars()
+    return {src.seq: src for src in rows}
+
+
+def _add_item_evidence(
+    db: Session,
+    meeting_id: str,
+    item: ExtractionItem,
+    seqs: list[int] | None,
+    sources_by_seq: dict[int, Source],
+) -> None:
+    """항목의 근거 발화를 evidence로 저장한다. 없는 seq는 그 seq만 건너뛰고, 같은 seq는 한 번만 저장한다."""
+    missing: list[int] = []
+    for seq in sorted(set(seqs or ())):
+        src = sources_by_seq.get(seq)
+        if src is None:
+            missing.append(seq)
+            continue
+        db.add(Evidence(item_id=item.item_id, source_id=src.source_id, type=str(EvidenceType.TASK)))
+    if missing:
+        # 발화가 없는 회의면 모든 seq가 빠지므로 seq마다가 아니라 항목마다 한 줄로 남긴다
+        logger.warning(
+            "근거 발화가 없어 그 seq를 건너뜁니다. meeting_id=%s item_id=%s seqs=%s",
+            meeting_id, item.item_id, missing,
+        )
 
 
 def _lock_update_targets(db: Session, items: list[ExtractionItemCreate]) -> dict[str, Task]:
@@ -476,7 +512,8 @@ def _request_task_update(
 def _representative_evidence(db: Session, item_ids: list[str]) -> dict[str, EvidenceInfo]:
     """항목마다 대표 근거 하나. 근거가 없는 항목은 결과에 없다.
 
-    항목마다 근거가 여러 개일 수 있지만 응답 계약은 하나뿐이라, 제목 근거 중 seq가 가장 작은 발화를 대표로 쓴다.
+    항목마다 근거가 여러 개일 수 있지만 응답 계약은 하나뿐이라, 제목 근거 중 seq가 가장 큰 발화(결론을 말한
+    마지막 발화)를 대표로 쓴다.
     """
     if not item_ids:
         return {}
@@ -487,7 +524,7 @@ def _representative_evidence(db: Session, item_ids: list[str]) -> dict[str, Evid
             Evidence.item_id.in_(item_ids),
             Evidence.type == str(EvidenceType.TASK),
         )
-        .order_by(Source.seq)
+        .order_by(Source.seq.desc())
     ).all()
     evidence_by_item: dict[str, EvidenceInfo] = {}
     for item_id, src in rows:
