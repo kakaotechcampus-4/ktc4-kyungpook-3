@@ -145,7 +145,7 @@ await fetch('/api/v1/approvals/ap_01', {
 
 테스트는 `onUnhandledRequest: 'error'`이므로 등록하지 않은 요청이 실패한다. 로그의 method와 URL을 보고 `/api/v1` prefix, origin, handler 등록, 동적 경로 순서를 확인한다. `/members/aliases`와 `/members/unresolved-aliases`는 `/members/:id`보다 먼저 등록해야 한다.
 
-로컬 브라우저는 `warn`으로 경고하고 실제 네트워크로 보낸다. 의도한 mock에서 경고가 나면 handler 누락을 먼저 확인한다. OAuth `start`·`callback` 같은 302 네비게이션, AI→BE 전용 생성 경로, 메시지 API는 M1 mock 범위 밖이다.
+로컬 브라우저는 `warn`으로 경고하고 실제 네트워크로 보낸다. 의도한 mock에서 경고가 나면 handler 누락을 먼저 확인한다. OAuth `start`·`callback` 같은 302 네비게이션, AI→BE 전용 생성 경로는 M1 mock 범위 밖이다. 메시지는 실제 API 가 없어 M8 에서 임시 조회 경로(`/workspaces/{id}/messages`, `/workspaces/{id}/messages/threads/{id}`)만 MSW 에 두었다 — 계약이 아니고, 화면도 MSW 모드에서만 이 경로를 부른다(M8 계획 C-3, `messages-*` 시나리오).
 
 ## 실 백엔드와 다른 점
 
