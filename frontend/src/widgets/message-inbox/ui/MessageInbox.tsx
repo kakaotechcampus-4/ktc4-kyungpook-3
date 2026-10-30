@@ -1,0 +1,224 @@
+import { useQuery } from '@tanstack/react-query'
+import { messageInboxQueryOptions } from '@/entities/message'
+import type { MessageInbox as Inbox, MessageReview, MessageThreadSummary } from '@/entities/message'
+import { paths } from '@/shared/config/routes'
+import { GuardedLink } from '@/shared/lib/unsaved-changes'
+import { avatarText, shortDate } from '../lib/format'
+import { ReviewPreview } from './ReviewPreview'
+
+/* Messages 캔버스 실측 — 왼쪽 목록 308(위 18 · 좌우 12 · 아래 24, 영역 사이 18) · 오른쪽 선, 목록 제목 17px.
+   화면 높이를 헤더 아래로 묶고 목록과 상세가 각자 세로로 스크롤한다 (D-124, 계획 C-6 6단계) */
+const SCREEN = 'flex h-[calc(100dvh-var(--spacing-header))] items-stretch'
+const ASIDE =
+  'flex w-aside shrink-0 flex-col gap-18 overflow-y-auto border-r border-divider px-12 pt-18 pb-24'
+const ASIDE_TITLE = 'px-8 text-[17px] leading-[1.55] font-bold tracking-h2 text-ink'
+const DETAIL = 'flex min-w-[0px] flex-1 flex-col'
+const GROUP_LABEL = 'mono text-[10.5px] leading-[1.75] tracking-[0.1em] text-dim'
+const GROUP_NOTE = 'px-8 text-caption text-dim'
+const REVIEW_ROW =
+  'group flex w-full flex-col items-start gap-7 rounded-10 px-14 py-13 text-left hover:bg-surface-sunken aria-[current=page]:bg-surface-selected'
+const REVIEW_NAME =
+  'flex-1 text-body text-sub group-aria-[current=page]:font-semibold group-aria-[current=page]:text-ink'
+const REVIEW_SUMMARY = 'text-caption leading-[1.55] text-dim group-aria-[current=page]:text-sub'
+const THREAD_ROW =
+  'group flex w-full items-center gap-10 rounded-10 px-12 py-9 text-left hover:bg-surface-sunken aria-[current=page]:bg-surface-selected'
+const AVATAR =
+  'inline-flex shrink-0 items-center justify-center rounded-999 bg-divider font-semibold text-ink'
+/* 채널은 사람이 아니라 흰 바탕 선 원이다 (시안 `#회의록 요약`) */
+const CHANNEL_AVATAR =
+  'inline-flex shrink-0 items-center justify-center rounded-999 border border-line bg-surface text-dim'
+const DATE = 'mono text-[11px] text-dim'
+const EMPTY_DETAIL = 'flex flex-1 items-center justify-center px-36 pt-48 pb-96 text-body text-dim'
+
+export interface MessageInboxProps {
+  workspaceId: string
+  /** 미리보기의 봇 이름. 공간 이름을 쓴다 (Messages 시안의 `캡스톤 5조 봇`) */
+  botName: string
+  /** URL 이 가리키는 대화. 없으면 null */
+  threadId: string | null
+  /** 검색 파라미터가 가리키는 보내기 전 확인 항목. 목록에 없는 ID 는 선택 없음이다 */
+  reviewId: string | null
+}
+
+/**
+ * 메시지 화면 (M8, Messages·MessagesThread 시안) — 왼쪽 목록(보내기 전 확인 · 대화), 오른쪽 상세의 2단이다.
+ * 고른 항목은 URL 이 정한다. 그래서 새로고침·뒤로가기에서 그대로다. 결정 전 부분이라 읽기만 한다 —
+ * 발송·반려 같은 행동은 결정 4 뒤에 붙인다 (계획 C-6 7단계)
+ */
+export function MessageInbox({ workspaceId, botName, threadId, reviewId }: MessageInboxProps) {
+  const inbox = useQuery(messageInboxQueryOptions(workspaceId))
+  const review =
+    threadId === null && reviewId !== null
+      ? (inbox.data?.reviews.find(({ id }) => id === reviewId) ?? null)
+      : null
+
+  let detail
+  if (review !== null) detail = <ReviewPreview review={review} botName={botName} />
+  else if (inbox.data !== undefined && threadId === null)
+    detail = <p className={EMPTY_DETAIL}>왼쪽 목록에서 확인할 메시지나 대화를 골라 주세요.</p>
+  else detail = null
+
+  return (
+    <main className={SCREEN}>
+      <aside aria-label="메시지 목록" className={ASIDE}>
+        <h1 className={ASIDE_TITLE}>메시지</h1>
+        {inbox.data === undefined ? null : (
+          <InboxList
+            workspaceId={workspaceId}
+            inbox={inbox.data}
+            threadId={threadId}
+            reviewId={review?.id ?? null}
+          />
+        )}
+      </aside>
+      <section aria-label="메시지 내용" className={DETAIL}>
+        {detail}
+      </section>
+    </main>
+  )
+}
+
+function InboxList({
+  workspaceId,
+  inbox,
+  threadId,
+  reviewId,
+}: {
+  workspaceId: string
+  inbox: Inbox
+  threadId: string | null
+  reviewId: string | null
+}) {
+  const awaiting = inbox.threads.filter(({ awaitingReply }) => awaitingReply).length
+  return (
+    <>
+      <section aria-labelledby="messages-reviews" className="flex flex-col gap-6">
+        <h2 id="messages-reviews" className={`${GROUP_LABEL} px-8`}>
+          보내기 전 확인 {inbox.reviews.length}
+        </h2>
+        {inbox.reviews.length === 0 ? (
+          <p className={GROUP_NOTE}>지금 확인할 메시지가 없어요.</p>
+        ) : (
+          <ul className="flex flex-col gap-6">
+            {inbox.reviews.map((review) => (
+              <li key={review.id}>
+                <ReviewRow
+                  workspaceId={workspaceId}
+                  review={review}
+                  selected={review.id === reviewId}
+                />
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+      <section aria-labelledby="messages-threads" className="flex flex-col gap-4">
+        <div className="flex items-center justify-between gap-8 px-8">
+          <h2 id="messages-threads" className={GROUP_LABEL}>
+            대화
+          </h2>
+          {awaiting === 0 ? null : (
+            <span className="text-[10.5px] text-dim">답장 기다리는 중 {awaiting}</span>
+          )}
+        </div>
+        {inbox.threads.length === 0 ? (
+          <p className={GROUP_NOTE}>아직 주고받은 대화가 없어요.</p>
+        ) : (
+          <ul className="flex flex-col gap-4">
+            {inbox.threads.map((thread) => (
+              <li key={thread.id}>
+                <ThreadRow
+                  workspaceId={workspaceId}
+                  thread={thread}
+                  selected={thread.id === threadId}
+                />
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+    </>
+  )
+}
+
+/*
+ * 행은 GuardedLink(NavLink)다. NavLink 는 주소가 맞으면 스스로 aria-current 를 단다 — 검토 항목은 모두 `/messages` 라
+ * 검색 파라미터를 보지 않는 NavLink 에는 전부 맞는다. 그래서 `end` 로 대화 경로에서는 꺼 두고, 고른 행만 `page` 로 준다
+ */
+function ReviewRow({
+  workspaceId,
+  review,
+  selected,
+}: {
+  workspaceId: string
+  review: MessageReview
+  selected: boolean
+}) {
+  return (
+    <GuardedLink
+      to={paths.messageReview(workspaceId, review.id)}
+      end
+      aria-current={selected ? 'page' : 'false'}
+      className={REVIEW_ROW}
+    >
+      <span className="flex w-full items-center gap-9">
+        <span aria-hidden="true" className={`${AVATAR} size-24 text-[10px]`}>
+          {avatarText(review.recipientName, 'direct')}
+        </span>
+        <span className={REVIEW_NAME}>{review.recipientName}</span>
+        <span className={DATE}>{shortDate(review.createdAt)}</span>
+      </span>
+      <span className={REVIEW_SUMMARY}>{review.summary}</span>
+    </GuardedLink>
+  )
+}
+
+function ThreadRow({
+  workspaceId,
+  thread,
+  selected,
+}: {
+  workspaceId: string
+  thread: MessageThreadSummary
+  selected: boolean
+}) {
+  const last = thread.lastMessage
+  return (
+    <GuardedLink
+      to={paths.messageThread(workspaceId, thread.id)}
+      aria-current={selected ? 'page' : 'false'}
+      className={THREAD_ROW}
+    >
+      <span
+        aria-hidden="true"
+        className={
+          thread.kind === 'channel'
+            ? `${CHANNEL_AVATAR} size-30 text-[11px]`
+            : `${AVATAR} size-30 text-[11px] group-aria-[current=page]:bg-ink group-aria-[current=page]:text-surface`
+        }
+      >
+        {avatarText(thread.name, thread.kind)}
+      </span>
+      <span className="flex min-w-[0px] flex-1 flex-col gap-1">
+        <span className="text-control leading-[1.75] font-semibold text-ink">{thread.name}</span>
+        {last === null ? null : (
+          <span className="truncate text-meta leading-[1.5] text-dim">
+            {last.sender === 'bot' ? `나: ${last.body}` : last.body}
+          </span>
+        )}
+      </span>
+      <span className="flex shrink-0 flex-col items-end gap-4">
+        {last === null ? null : <span className={DATE}>{shortDate(last.sentAt)}</span>}
+        {thread.awaitingReply ? (
+          <>
+            <span
+              aria-hidden="true"
+              className="size-7 rounded-999 border-[1.5px] border-input-border"
+            />
+            <span className="sr-only">답장 기다리는 중</span>
+          </>
+        ) : null}
+      </span>
+    </GuardedLink>
+  )
+}

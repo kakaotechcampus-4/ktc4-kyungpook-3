@@ -1,6 +1,10 @@
-import { Route, Routes } from 'react-router'
+import { Route, Routes, useParams, useSearchParams } from 'react-router'
+import { useMemberWorkspace } from '@/entities/workspace'
 import { config } from '@/shared/config/env'
+import { MESSAGE_PARAMS } from '@/shared/config/routes'
+import { parseRouteId, useRouteId } from '@/shared/lib/url'
 import { EmptyState } from '@/shared/ui/empty-state'
+import { MessageInbox } from '@/widgets/message-inbox'
 
 const SCREEN = 'flex min-h-dvh items-center justify-center px-24 py-48'
 
@@ -38,10 +42,22 @@ function MessagesRoutes() {
   )
 }
 
+/**
+ * 고른 대화는 경로가, 고른 보내기 전 확인 항목은 검색 파라미터 `review` 가 정한다. URL 값은 여기서 한 번 검증한다 (D-132).
+ * 소속은 RequireTeamMember 가 이미 확인했다
+ */
 function Messages() {
+  const workspaceId = useRouteId('workspaceId')
+  const workspace = useMemberWorkspace(workspaceId)
+  const { threadId } = useParams()
+  const [searchParams] = useSearchParams()
+  if (workspaceId === null || workspace === null) return null
   return (
-    <main className="flex flex-1 items-stretch">
-      <h1 className="sr-only">메시지</h1>
-    </main>
+    <MessageInbox
+      workspaceId={workspaceId}
+      botName={workspace.name}
+      threadId={parseRouteId(threadId)}
+      reviewId={parseRouteId(searchParams.get(MESSAGE_PARAMS.review) ?? undefined)}
+    />
   )
 }
