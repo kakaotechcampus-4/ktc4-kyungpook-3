@@ -1,4 +1,5 @@
 """추출 근거는 evidence_seqs로 발화(source)를 이어 evidence에 저장하고, 상세 응답의 evidence는 source에서 읽는지 확인."""
+import json
 import logging
 from datetime import datetime, timedelta, timezone
 
@@ -11,6 +12,8 @@ from sqlalchemy.pool import StaticPool
 from app.core.database import Base, get_db
 from app.main import app
 from app.models import (
+    AliasResolutionLog,
+    ApprovalRequest,
     Evidence,
     Extraction,
     ExtractionItem,
@@ -18,6 +21,7 @@ from app.models import (
     Member,
     Session as SessionModel,
     Source,
+    Task,
     User,
     Workspace,
 )
@@ -239,3 +243,122 @@ def test_progress_transcribed_follows_source(client, db, seed):
     db.add(Source(meeting_id=seed["meeting"], seq=0, start_ms=0, end_ms=900, text="발화 0"))
     db.commit()
     assert transcribed() is True
+
+
+# ── 대표 근거 발화(가장 큰 seq)를 1인칭 매칭·승인 요청·별칭 로그에 쓴다 ──
+
+REQUEST_EVIDENCE = {
+    "evidence_quote": "요청 문장", "evidence_speaker": "uid_request", "evidence_at_ms": 99_000,
+}
+
+
+def _add_member(db, seed, name, discord_user_id):
+    member = Member(workspace_id=seed["ws"], display_name=name, role="member", discord_user_id=discord_user_id)
+    db.add(member)
+    db.commit()
+    return member.member_id
+
+
+def _post_items(client, seed, items):
+    r = client.post("/api/v1/extractions", json={
+        "meeting_id": seed["meeting"], "workspace_id": seed["ws"], "items": items,
+    }, headers=SERVICE_HEADERS)
+    assert r.status_code == 201
+
+
+def _approval_payload(db):
+    return json.loads(db.execute(select(ApprovalRequest)).scalar_one().payload)
+
+
+@pytest.mark.parametrize(("evidence_speaker", "evidence_seqs", "expected"), [
+    # 요청의 evidence_speaker가 있으면 근거 발화를 찾았어도 그 값이 먼저다
+    ("uid_request", [2, 3], "요청 화자"),
+    ("uid_request", [99], "요청 화자"),
+    # 없으면 찾은 발화 중 seq가 가장 큰 발화의 화자
+    (None, [2, 3], "화자3"),
+    # 가장 큰 seq가 빠져도 찾은 것 중 가장 큰 발화(2)의 화자로 찾는다
+    (None, [2, 99], "화자2"),
+    # 둘 다 없으면 화자가 없는 1인칭 항목이다
+    (None, [99], None),
+])
+def test_first_person_assignee_prefers_evidence_speaker(
+    client, db, seed, evidence_speaker, evidence_seqs, expected
+):
+    _add_sources(db, seed["meeting"], (2, 3))
+    members = {
+        "화자2": _add_member(db, seed, "화자2", "uid2"),
+        "화자3": _add_member(db, seed, "화자3", "uid3"),
+        "요청 화자": _add_member(db, seed, "요청 화자", "uid_request"),
+        None: None,
+    }
+
+    _post_items(client, seed, [{
+        "task_title": "환불 구현", "task_confidence": 0.6, "assignee_type": "first", "assignee_raw": "제가",
+        "evidence_seqs": evidence_seqs, **REQUEST_EVIDENCE, "evidence_speaker": evidence_speaker,
+    }])
+
+    assert db.execute(select(ExtractionItem)).scalar_one().assignee_member_id == members[expected]
+
+
+def test_first_person_source_without_speaker_uses_evidence_speaker(client, db, seed):
+    """찾은 발화의 화자가 비어 있어도 요청의 evidence_speaker로 찾는다. 승인 요청의 근거는 그 발화 그대로다."""
+    db.add(Source(meeting_id=seed["meeting"], seq=4, start_ms=4000, end_ms=4900, text="발화 4"))
+    db.commit()
+    member_id = _add_member(db, seed, "요청 화자", "uid_request")
+
+    _post_items(client, seed, [{
+        "task_title": "환불 구현", "task_confidence": 0.3, "assignee_type": "first",
+        "evidence_seqs": [4], **REQUEST_EVIDENCE,
+    }])
+
+    assert db.execute(select(ExtractionItem)).scalar_one().assignee_member_id == member_id
+    payload = _approval_payload(db)
+    assert (payload["evidence_quote"], payload["evidence_speaker"]) == ("발화 4", None)
+
+
+@pytest.mark.parametrize(("evidence_seqs", "expected"), [
+    ([2, 3], {"evidence_quote": "발화 3", "evidence_speaker": "uid3", "evidence_at_ms": 3000}),
+    ([99], REQUEST_EVIDENCE),
+    (None, REQUEST_EVIDENCE),
+])
+def test_create_approval_evidence_uses_representative_source(client, db, seed, evidence_seqs, expected):
+    _add_sources(db, seed["meeting"], (2, 3))
+    item = {"task_title": "환불 구현", "task_confidence": 0.3, **REQUEST_EVIDENCE}
+    if evidence_seqs is not None:
+        item["evidence_seqs"] = evidence_seqs
+    _post_items(client, seed, [item])
+
+    payload = _approval_payload(db)
+    assert {k: payload[k] for k in expected} == expected
+
+
+def test_update_approval_evidence_uses_representative_source(client, db, seed):
+    _add_sources(db, seed["meeting"], (2, 3))
+    target = Task(workspace_id=seed["ws"], title="환불 구현", status="todo")
+    db.add(target)
+    db.commit()
+
+    _post_items(client, seed, [{
+        "action": "update", "target_task_id": target.task_id, "due_date": "2026-11-01",
+        "evidence_seqs": [3, 2], **REQUEST_EVIDENCE,
+    }])
+
+    payload = _approval_payload(db)
+    assert payload["evidence_quote"] == "발화 3"
+    assert payload["evidence_speaker"] == "uid3"
+    assert payload["evidence_at_ms"] == 3000
+
+
+@pytest.mark.parametrize(("evidence_seqs", "expected_seq"), [([2, 3], 3), ([99], None)])
+def test_alias_log_records_representative_source(client, db, seed, evidence_seqs, expected_seq):
+    _add_sources(db, seed["meeting"], (2, 3))
+    _post_items(client, seed, [{
+        "task_title": "환불 구현", "task_confidence": 0.6, "assignee_type": "thirdname", "assignee_raw": "민수",
+        "evidence_seqs": evidence_seqs,
+    }])
+
+    log = db.execute(select(AliasResolutionLog)).scalar_one()
+    expected = None
+    if expected_seq is not None:
+        expected = db.execute(select(Source.source_id).where(Source.seq == expected_seq)).scalar_one()
+    assert log.source_id == expected

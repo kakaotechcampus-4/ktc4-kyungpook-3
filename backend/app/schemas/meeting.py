@@ -212,7 +212,8 @@ class ExtractionItemCreate(BaseModel):
     assignee_type: str | None = Field(
         None,
         description="'first'(1인칭), 'second', 'thirdname', 'group', 'none' 등. "
-        "first이면 assignee_raw 대신 evidence_speaker(Discord uid)로 Member.discord_user_id를 찾는다.",
+        "first이면 assignee_raw 대신 화자의 Discord uid로 Member.discord_user_id를 찾는다. "
+        "화자는 evidence_speaker이고, 없으면 evidence_seqs로 찾은 발화 중 seq가 가장 큰 발화의 화자다.",
     )
     due_date: date | None = None
     due_raw: str | None = None

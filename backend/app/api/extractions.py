@@ -176,9 +176,14 @@ def create_extraction(
             )
             continue
 
-        if raw_item.assignee_type == "first" and raw_item.evidence_speaker:
-            # 1인칭: evidence_speaker는 화자의 Discord uid다. 별칭이 아니라 Member.discord_user_id로 찾는다.
-            assignee_hint = raw_item.evidence_speaker
+        evidence_source = _representative_source(raw_item.evidence_seqs, sources_by_seq)
+        evidence = _request_evidence(raw_item, evidence_source)
+        # 1인칭 화자: AI가 결론을 말한 사람으로 직접 보낸 evidence_speaker가 먼저다. 근거 발화는 일부가 빠지면
+        # 더 앞 발화가 대표가 되어 다른 사람을 가리킬 수 있어서, evidence_speaker가 없을 때만 대표 근거 발화의 화자를 쓴다
+        speaker = raw_item.evidence_speaker or evidence.speaker
+        if raw_item.assignee_type == "first" and speaker:
+            # 1인칭: 화자의 Discord uid다. 별칭이 아니라 Member.discord_user_id로 찾는다.
+            assignee_hint = speaker
             cache_key = ("speaker", assignee_hint)
             if cache_key not in resolved_cache:
                 resolved_cache[cache_key] = resolve_speaker(db, meeting.workspace_id, assignee_hint)
@@ -198,6 +203,7 @@ def create_extraction(
                 alias_text=assignee_hint,
                 match=match,
                 meeting_id=payload.meeting_id,
+                source_id=evidence_source.source_id if evidence_source else None,
             )
 
         conf = item_confidence(
@@ -273,7 +279,7 @@ def create_extraction(
 
         if target is not None:
             _request_task_update(
-                db, meeting, item, raw_item, match, target, has_assignee=assignee_hint is not None
+                db, meeting, item, raw_item, match, target, evidence, has_assignee=assignee_hint is not None
             )
         elif gate == Gate.AUTO:
             # 신뢰도가 충분하거나(legacy) auto 조건을 모두 만족해(judge) 승인 없이 바로 태스크로 반영한다.
@@ -299,9 +305,9 @@ def create_extraction(
                 "assignee_raw": raw_item.assignee_raw,
                 "due_date": raw_item.due_date.isoformat() if raw_item.due_date else None,
                 "due_raw": raw_item.due_raw,
-                "evidence_quote": raw_item.evidence_quote,
-                "evidence_speaker": raw_item.evidence_speaker,
-                "evidence_at_ms": raw_item.evidence_at_ms,
+                "evidence_quote": evidence.quote,
+                "evidence_speaker": evidence.speaker,
+                "evidence_at_ms": evidence.at_ms,
                 "extraction_item_id": item.item_id,
                 "meeting_id": meeting.meeting_id,
                 "gate": str(gate),
@@ -342,6 +348,25 @@ def _sources_by_seq(db: Session, meeting_id: str, items: list[ExtractionItemCrea
         select(Source).where(Source.meeting_id == meeting_id, Source.seq.in_(seqs))
     ).scalars()
     return {src.seq: src for src in rows}
+
+
+def _representative_source(seqs: list[int] | None, sources_by_seq: dict[int, Source]) -> Source | None:
+    """항목의 대표 근거 발화. 찾은 발화 중 seq가 가장 큰 것(결론을 말한 마지막 발화)이고, 하나도 못 찾으면 None이다."""
+    found = [sources_by_seq[seq] for seq in seqs or () if seq in sources_by_seq]
+    return max(found, key=lambda src: src.seq, default=None)
+
+
+def _request_evidence(raw_item: ExtractionItemCreate, src: Source | None) -> EvidenceInfo:
+    """승인 요청에 보여 줄 근거. 대표 근거 발화가 있으면 그 발화를, 없으면 요청의 세 필드를 쓴다.
+
+    섞어 쓰지 않는다. 발화를 찾았으면 화자가 비어 있어도 요청의 evidence_speaker로 채우지 않는다.
+    1인칭 담당자는 이 값이 아니라 evidence_speaker를 먼저 쓴다(create_extraction).
+    """
+    if src is not None:
+        return EvidenceInfo(quote=src.text, speaker=src.speaker_discord_user_id, at_ms=src.start_ms)
+    return EvidenceInfo(
+        quote=raw_item.evidence_quote, speaker=raw_item.evidence_speaker, at_ms=raw_item.evidence_at_ms
+    )
 
 
 def _add_item_evidence(
@@ -405,6 +430,7 @@ def _request_task_update(
     raw_item: ExtractionItemCreate,
     match: MatchResult,
     target: Task,
+    evidence: EvidenceInfo,
     *,
     has_assignee: bool,
 ) -> None:
@@ -490,9 +516,9 @@ def _request_task_update(
         "assignee_raw": raw_item.assignee_raw,
         "assignee_needs_check": match.needs_check if has_assignee else False,
         "due_raw": raw_item.due_raw,
-        "evidence_quote": raw_item.evidence_quote,
-        "evidence_speaker": raw_item.evidence_speaker,
-        "evidence_at_ms": raw_item.evidence_at_ms,
+        "evidence_quote": evidence.quote,
+        "evidence_speaker": evidence.speaker,
+        "evidence_at_ms": evidence.at_ms,
         "extraction_item_id": item.item_id,
         "meeting_id": meeting.meeting_id,
         "gate": str(Gate.REVIEW),

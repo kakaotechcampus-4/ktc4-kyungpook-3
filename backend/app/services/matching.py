@@ -148,8 +148,9 @@ def log_resolution(
     alias_text: str | None,
     match: MatchResult,
     meeting_id: str | None = None,
+    source_id: str | None = None,
 ) -> AliasResolutionLog | None:
-    """판정 시도를 로그에 기록한다 (APPEND-ONLY)."""
+    """판정 시도를 로그에 기록한다 (APPEND-ONLY). source_id는 별칭이 나온 발화이고 모르면 None이다."""
     if not alias_text:
         return None
 
@@ -160,6 +161,7 @@ def log_resolution(
         result=str(match.result),
         candidate_count=match.candidate_count,
         meeting_id=meeting_id,
+        source_id=source_id,
     )
     db.add(log)
     return log
