@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMemberWorkspace } from '@/entities/workspace'
-import { NotionConnectionSection } from '@/features/notion-connection'
+import { NotionConnectionSection } from '@/features/integration-connection'
 import { useRouteId } from '@/shared/lib/url'
 import { useUnsavedChanges } from '@/shared/lib/unsaved-changes'
 import { Button } from '@/shared/ui/button'

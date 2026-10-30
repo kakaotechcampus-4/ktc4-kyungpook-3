@@ -9,6 +9,7 @@ import { QueryErrorState } from '@/shared/ui/query-error-state'
 import { Skeleton } from '@/shared/ui/skeleton'
 import { useNotionConnection } from '../model/useNotionConnection'
 import type { NotionConnectionNotice } from '../model/useNotionConnection'
+import { BADGE, DOT, HEADING, ICON_BOX, LEAD, NAME, NOTE, ROW, SECTION } from './connectionStyles'
 
 export interface NotionConnectionSectionProps {
   workspaceId: string
@@ -33,26 +34,6 @@ const NOTICE: Record<NotionConnectionNotice, string> = {
   cancelled: 'Notion 연결을 취소했어요. 연결하려면 다시 시도해 주세요.',
   failed: 'Notion을 연결하지 못했어요. 잠시 후 다시 시도해 주세요.',
 }
-
-/* Settings 캔버스의 `연결` 절에서 Notion 줄만 옮긴다. `속성 다시 맞추기`·`연결 끊기`·Discord 줄은 M8 이다 */
-const SECTION = 'flex flex-col gap-14 border-t border-divider pt-24'
-/* 17px 은 Settings 캔버스의 절 제목이다 — 모달 제목과 같은 단(docs/impl-decision/2026-09-16-modal-title-17px.md) */
-const HEADING = 'text-[17px] font-bold tracking-h2 text-ink focus-visible:outline-none'
-const LEAD = 'text-body text-sub'
-const ROW = 'flex items-center gap-14 rounded-16 border border-line bg-surface px-18 py-16'
-const ICON_BOX =
-  'inline-flex h-40 w-40 shrink-0 items-center justify-center rounded-10 bg-surface-sunken text-sub'
-const NAME = 'text-body font-semibold text-ink'
-/* 11px 배지는 Settings 캔버스 실측이다. 점은 연결됨 먹 · 미연결 점선 회색 · 끊김 강조(위험 배지) */
-const BADGE =
-  'inline-flex h-20 items-center gap-5 rounded-6 bg-control px-8 text-[11px] leading-none font-semibold text-sub'
-const DOT: Record<IntegrationStatus, string> = {
-  connected: 'h-5 w-5 rounded-999 bg-ink',
-  connecting: 'h-5 w-5 rounded-999 bg-dim',
-  not_connected: 'h-5 w-5 rounded-999 bg-dashed',
-  revoked: 'h-5 w-5 rounded-999 bg-accent',
-}
-const NOTE = 'text-caption text-dim'
 
 function NotionMark() {
   return (
