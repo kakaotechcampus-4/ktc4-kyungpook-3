@@ -12,9 +12,9 @@ import {
   buildMappingRows,
   findMappingIssues,
   saveMemberMappings,
-  useOnboardingSave,
-} from '@/features/onboarding'
-import type { MappingIssue, MappingRow } from '@/features/onboarding'
+} from '@/features/member-mapping'
+import type { MappingIssue, MappingRow } from '@/features/member-mapping'
+import { useOnboardingSave } from '@/features/onboarding'
 import { errorMessage } from '@/shared/api/errorMessages'
 import { ApiError, ERROR_CODES } from '@/shared/api/errors'
 import { useAppForm } from '@/shared/lib/form'
