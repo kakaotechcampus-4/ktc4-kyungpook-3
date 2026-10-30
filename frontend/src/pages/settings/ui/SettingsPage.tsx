@@ -1,6 +1,9 @@
 import { useState } from 'react'
 import { useMemberWorkspace } from '@/entities/workspace'
-import { NotionConnectionSection } from '@/features/integration-connection'
+import {
+  DiscordConnectionSection,
+  NotionConnectionSection,
+} from '@/features/integration-connection'
 import { useRouteId } from '@/shared/lib/url'
 import { useUnsavedChanges } from '@/shared/lib/unsaved-changes'
 import { Button } from '@/shared/ui/button'
@@ -10,8 +13,8 @@ import { TextField } from '@/shared/ui/text-field'
 const FORM = 'flex max-w-[420px] flex-col gap-12'
 
 /**
- * 설정 화면은 M8 이다. 지금은 이탈 확인을 눌러 볼 입력 한 칸과, M5 가 앞당긴 Notion 연결 영역만 둔다.
- * 저장 API 가 없어 `되돌리기`만 있다. 값이 처음과 다르면 dirty 다.
+ * 설정 화면. 지금은 이탈 확인을 눌러 볼 입력 한 칸과 Discord·Notion 연결 영역만 둔다 (M8-B B-1).
+ * 이름 칸은 저장 API 가 없어 `되돌리기`만 있다. 값이 처음과 다르면 dirty 다. 그 밖의 설정 항목은 결정 대기다.
  */
 export function SettingsPage() {
   const workspace = useMemberWorkspace(useRouteId('workspaceId'))
@@ -40,7 +43,7 @@ function SettingsDraft({ workspaceId, initialName, isPm }: SettingsDraftProps) {
   return (
     <PagePlaceholder
       title="설정"
-      description="설정 화면은 M8에서 만들어요. 지금은 이탈 확인을 점검하는 입력 한 칸과 Notion 연결만 있어요."
+      description="지금은 이탈 확인을 점검하는 입력 한 칸과 Discord·Notion 연결만 있어요. 나머지 설정은 준비 중이에요."
     >
       <div className={FORM}>
         <TextField
@@ -54,6 +57,7 @@ function SettingsDraft({ workspaceId, initialName, isPm }: SettingsDraftProps) {
           </Button>
         </div>
       </div>
+      <DiscordConnectionSection workspaceId={workspaceId} canManage={isPm} />
       <NotionConnectionSection workspaceId={workspaceId} canManage={isPm} />
     </PagePlaceholder>
   )

@@ -83,8 +83,9 @@ describe('설정의 Notion 연결 영역 (U3-3)', () => {
     expect(await area.findByText('연결됨')).toBeInTheDocument()
     expect(area.queryByRole('button')).toBeNull()
     expect(screen.getByLabelText('워크스페이스 이름')).toBeInTheDocument()
-    // Settings 캔버스의 다른 절(자동 반영·알림·팀 삭제·Discord)은 M8 이다
+    // M8-B B-1 에서 Discord 연결 영역이 함께 있다. Settings 캔버스의 그 밖의 절은 결정 대기다
     expect(screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent)).toEqual([
+      'Discord 연결',
       'Notion 연결',
     ])
   })
