@@ -516,3 +516,18 @@ def test_a_diarized_manifest_is_not_pending_until_it_is_saved(tmp_path):
     manifest["status"] = R.STATUS_SAVED
     path.write_text(json.dumps(manifest), encoding="utf-8")
     assert R.pending_sessions(tmp_path) == [path]
+
+
+def test_a_manual_upload_turned_saved_is_taken_by_the_unfiltered_loop_but_not_by_a_guild_retry(tmp_path, clock):
+    """업로드 매니페스트는 guild_id 가 없다. 길드를 지정한 바퀴(--retry <서버ID>)는 거르고, 길드 없는 자동 바퀴는 집는다."""
+    from tests.upload.test_prepare import FakeDiarizer, SEGS, STARTED, _audio
+    from upload.prepare import prepare_upload
+
+    rec = tmp_path / "rec"
+    path, m = prepare_upload(_audio(tmp_path), rec, diarizer=FakeDiarizer(SEGS), started_at=STARTED, timezone="Asia/Seoul")
+    claims = R.Claims(owner="host:1:a")
+    assert R.recovery_targets(rec, claims=claims)[0] == []                      # diarized 는 돌리지 않는다
+    m["status"] = R.STATUS_SAVED
+    R.save_manifest(path, m)
+    assert [p for p, _ in R.recovery_targets(rec, claims=claims)[0]] == [path]
+    assert R.recovery_targets(rec, claims=claims, guild_id="123", manual=True)[0] == []

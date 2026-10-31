@@ -44,6 +44,12 @@ def write_virtual_tracks(audio: np.ndarray, segments: list[Segment], out_dir: Pa
     for s in segments:
         labels.setdefault(s.label, []).append(s)
     n = len(audio)
+    ids: dict[str, str] = {}
+    for label in labels:
+        uid = speaker_label_id(label)
+        if uid in ids:
+            raise ValueError(f"서로 다른 화자 라벨이 같은 id {uid!r} 로 접힌다: {ids[uid]!r}, {label!r}")
+        ids[uid] = label
     entries: list[dict] = []
     for label, segs in labels.items():
         track = np.zeros(n, dtype=np.float32)

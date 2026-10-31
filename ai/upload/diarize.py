@@ -6,6 +6,7 @@ pyannoteAI 흐름 (https://docs.pyannote.ai/openapi.json 로 확인):
   POST /v1/diarize {url: media://..} -> {jobId}
   GET  /v1/jobs/{jobId} 폴링 -> status(succeeded|failed|canceled|...) 와 output.diarization[{speaker,start,end}]
 인증은 `Authorization: Bearer <PYANNOTEAI_API_KEY>`.
+확인: docs.pyannote.ai/openapi.json 을 2026-10-31 에 받아 url(media://), jobId, status 열거값, output.diarization[{speaker,start,end}] 를 대조했다.
 """
 
 from __future__ import annotations
@@ -18,6 +19,8 @@ from pathlib import Path
 from typing import Callable, Protocol
 
 API = "https://api.pyannote.ai"
+HTTP_TIMEOUT_S = 60.0
+UPLOAD_TIMEOUT_S = 600.0
 
 
 @dataclass(frozen=True)
@@ -28,6 +31,29 @@ class Segment:
 
 
 class Diarizer(Protocol):
+    @staticmethod
+    def _transient(exc: Exception) -> bool:
+        """폴링 중 다시 해볼 만한 오류: 연결·시간 초과, 429, 5xx."""
+        import requests
+
+        if isinstance(exc, (requests.ConnectionError, requests.Timeout)):
+            return True
+        code = getattr(getattr(exc, "response", None), "status_code", None)
+        return code == 429 or (code is not None and code >= 500)
+
+    def _poll(self, http, url: str, headers: dict) -> dict:
+        errors = 0
+        while True:
+            try:
+                r = http.get(url, headers=headers, timeout=HTTP_TIMEOUT_S)
+                r.raise_for_status()
+                return r.json()
+            except Exception as exc:
+                if not self._transient(exc) or errors >= self._poll_retries:
+                    raise
+                errors += 1
+                self._sleep(self._poll_s)
+
     def diarize(self, path: Path) -> list[Segment]: ...
 
 
@@ -62,12 +88,14 @@ class PyannoteAiDiarizer:
         sleep: Callable[[float], None] = time.sleep,
         poll_s: float = 10.0,
         timeout_s: float = 1800.0,
+        poll_retries: int = 5,
     ):
         self._key = api_key
         self._session = session
         self._sleep = sleep
         self._poll_s = poll_s
         self._timeout_s = timeout_s
+        self._poll_retries = poll_retries
 
     def _http(self):
         if self._session is None:
@@ -75,6 +103,29 @@ class PyannoteAiDiarizer:
 
             self._session = requests.Session()
         return self._session
+
+    @staticmethod
+    def _transient(exc: Exception) -> bool:
+        """폴링 중 다시 해볼 만한 오류: 연결·시간 초과, 429, 5xx."""
+        import requests
+
+        if isinstance(exc, (requests.ConnectionError, requests.Timeout)):
+            return True
+        code = getattr(getattr(exc, "response", None), "status_code", None)
+        return code == 429 or (code is not None and code >= 500)
+
+    def _poll(self, http, url: str, headers: dict) -> dict:
+        errors = 0
+        while True:
+            try:
+                r = http.get(url, headers=headers, timeout=HTTP_TIMEOUT_S)
+                r.raise_for_status()
+                return r.json()
+            except Exception as exc:
+                if not self._transient(exc) or errors >= self._poll_retries:
+                    raise
+                errors += 1
+                self._sleep(self._poll_s)
 
     def diarize(self, path: Path) -> list[Segment]:
         key = self._key or os.environ.get("PYANNOTEAI_API_KEY", "").strip()
@@ -84,20 +135,18 @@ class PyannoteAiDiarizer:
         headers = {"Authorization": f"Bearer {key}"}
         media = f"media://mm-upload/{uuid.uuid4().hex}"
 
-        r = http.post(f"{API}/v1/media/input", json={"url": media}, headers=headers)
+        r = http.post(f"{API}/v1/media/input", json={"url": media}, headers=headers, timeout=HTTP_TIMEOUT_S)
         r.raise_for_status()
         with open(path, "rb") as fh:
-            http.put(r.json()["url"], data=fh).raise_for_status()
+            http.put(r.json()["url"], data=fh, timeout=UPLOAD_TIMEOUT_S).raise_for_status()
 
-        r = http.post(f"{API}/v1/diarize", json={"url": media}, headers=headers)
+        r = http.post(f"{API}/v1/diarize", json={"url": media}, headers=headers, timeout=HTTP_TIMEOUT_S)
         r.raise_for_status()
         job_id = r.json()["jobId"]
 
         waited = 0.0
         while True:
-            r = http.get(f"{API}/v1/jobs/{job_id}", headers=headers)
-            r.raise_for_status()
-            body = r.json()
+            body = self._poll(http, f"{API}/v1/jobs/{job_id}", headers)
             status = body.get("status")
             if status == "succeeded":
                 return [

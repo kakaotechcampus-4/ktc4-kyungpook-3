@@ -108,3 +108,40 @@ def test_run_session_gives_per_label_speakers_inside_segments(tmp_path):
         r = run["results"][rec / by[label]["file"]]
         assert r["speaker"] == label and r["segments"]
         assert all(a - 0.3 <= s["start"] <= b for s in r["segments"])
+
+
+def test_started_at_without_timezone_is_rejected(tmp_path):
+    with pytest.raises(ValueError, match="시간대"):
+        prepare_upload(_audio(tmp_path), tmp_path / "rec", diarizer=FakeDiarizer(SEGS), started_at="2026-10-31T10:00:00")
+    assert not (tmp_path / "rec").exists()
+
+
+def test_given_session_that_already_exists_is_rejected(tmp_path):
+    _, rec, _p, m = _run(tmp_path)
+    with pytest.raises(ValueError, match="이미"):
+        prepare_upload(_audio(tmp_path), rec, diarizer=FakeDiarizer(SEGS), started_at=STARTED, session=m["session"])
+    (rec / "upload_dir_only").mkdir()
+    with pytest.raises(ValueError, match="이미"):
+        prepare_upload(_audio(tmp_path), rec, diarizer=FakeDiarizer(SEGS), started_at=STARTED, session="upload_dir_only")
+
+
+@pytest.mark.parametrize("bad", ["a/b", "..\\x", "../x"])
+def test_given_session_with_path_separator_is_rejected(tmp_path, bad):
+    with pytest.raises(ValueError, match="구분자|세션"):
+        prepare_upload(_audio(tmp_path), tmp_path / "rec", diarizer=FakeDiarizer(SEGS), started_at=STARTED, session=bad)
+
+
+def test_given_new_session_is_used(tmp_path):
+    p, m = prepare_upload(_audio(tmp_path), tmp_path / "rec", diarizer=FakeDiarizer(SEGS), started_at=STARTED, session="upload_mine")
+    assert m["session"] == "upload_mine" and p.exists()
+
+
+def test_overlapping_segments_keep_both_labels_inside_end_bound(tmp_path):
+    segs = [Segment(1, 5, "SPEAKER_00"), Segment(4, 8, "SPEAKER_01"), Segment(10, 99, "SPEAKER_00")]
+    d, rec, path, m = _run(tmp_path, segs)
+    dj = json.loads((rec / m["meeting_dir"] / "diarization.json").read_text(encoding="utf-8"))
+    got = [(s["start_s"], s["end_s"], s["label"]) for s in dj["segments"]]
+    assert got == [(1, 5, "SPEAKER_00"), (4, 8, "SPEAKER_01"), (10, 12, "SPEAKER_00")]
+    assert all(s["end_s"] <= dj["duration_sec"] == 12.0 for s in dj["segments"])
+    a = {e["user_id"]: sf.read(rec / e["file"])[0] for e in m["speakers"]}
+    assert np.any(a["SPEAKER00"][int(4.2 * SR):int(4.8 * SR)] != 0) and np.any(a["SPEAKER01"][int(4.2 * SR):int(4.8 * SR)] != 0)

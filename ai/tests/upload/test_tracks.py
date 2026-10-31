@@ -32,7 +32,6 @@ def test_virtual_tracks_have_only_own_segments(tmp_path):
     assert sra == SR and ta.ndim == 1 and len(ta) == len(a) == len(tb)
     info = sf.info(tmp_path / entries[0]["file"])
     assert info.subtype == "PCM_16"
-    q = lambda x: np.round(x * 32767) / 32767
     for t, ranges in ((ta, [(1, 3), (6, 7)]), (tb, [(2.5, 5)])):
         mask = np.zeros(len(a), bool)
         for s, e in ranges:
@@ -95,3 +94,27 @@ def test_labels_parse_as_distinct_ids_from_wav_stem(tmp_path):
     entries = write_virtual_tracks(_signal(), segs, tmp_path, "20260101T000000")
     got = {parse_wav_stem((tmp_path / e["file"]).stem)[0] for e in entries}
     assert got == {"SPEAKER00", "SPEAKER01"} == {e["user_id"] for e in entries}
+
+
+@pytest.mark.parametrize("a,b", [("SPEAKER_00", "SPEAKER0_0"), ("S1", "1")])
+def test_distinct_labels_folding_to_same_id_are_rejected(tmp_path, a, b):
+    segs = [Segment(1, 2, a), Segment(3, 4, b)]
+    with pytest.raises(ValueError, match="같은 id"):
+        write_virtual_tracks(_signal(), segs, tmp_path, "T")
+    assert not list(tmp_path.glob("*.wav"))
+
+
+def test_load_44k_rounds_length_to_16k_frames(tmp_path):
+    n = 44100 * 3 + 7
+    p = tmp_path / "x.wav"
+    sf.write(p, (0.3 * np.sin(np.arange(n) / 20)).astype(np.float32), 44100, subtype="PCM_16")
+    audio, total = load_mono_16k(p)
+    assert len(audio) == -(-n * 160 // 441) and total == len(audio) / SR
+    assert total == pytest.approx(n / 44100, abs=1 / SR)
+
+
+def test_load_flac(tmp_path):
+    p = tmp_path / "x.flac"
+    sf.write(p, np.full(SR, 0.25, dtype=np.float32), SR, format="FLAC")
+    audio, total = load_mono_16k(p)
+    assert len(audio) == SR and total == pytest.approx(1.0)

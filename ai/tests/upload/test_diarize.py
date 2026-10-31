@@ -24,6 +24,12 @@ def test_normalize_keeps_overlap_between_different_labels():
     assert out == [S(1, 3, "A"), S(2.5, 5, "B")]
 
 
+class HttpErr(Exception):
+    def __init__(self, code):
+        super().__init__(code)
+        self.response = type("R", (), {"status_code": code})()
+
+
 class FakeResp:
     def __init__(self, payload=None, status=200):
         self._p, self.status_code = payload or {}, status
@@ -33,7 +39,7 @@ class FakeResp:
 
     def raise_for_status(self):
         if self.status_code >= 400:
-            raise RuntimeError(self.status_code)
+            raise HttpErr(self.status_code)
 
 
 class FakeSession:
@@ -52,7 +58,12 @@ class FakeSession:
 
     def get(self, url, **kw):
         self.calls.append(("GET", url, kw))
-        return FakeResp(self.polls.pop(0))
+        item = self.polls.pop(0)
+        if isinstance(item, BaseException):
+            raise item
+        if isinstance(item, int):
+            return FakeResp({}, item)
+        return FakeResp(item)
 
 
 def _make(tmp_path, polls, **kw):
@@ -98,3 +109,35 @@ def test_pyannote_requires_key(tmp_path, monkeypatch):
     monkeypatch.delenv("PYANNOTEAI_API_KEY", raising=False)
     with pytest.raises(RuntimeError, match="PYANNOTEAI_API_KEY"):
         PyannoteAiDiarizer(session=FakeSession([])).diarize(tmp_path / "x.wav")
+
+
+OK = {"status": "succeeded", "output": {"diarization": [{"speaker": "A", "start": 0, "end": 1}]}}
+
+
+def test_every_request_has_a_timeout(tmp_path):
+    d, sess, _sl, f = _make(tmp_path, [OK])
+    d.diarize(f)
+    assert len(sess.calls) == 4 and all(c[2].get("timeout") for c in sess.calls)
+
+
+def test_transient_poll_errors_are_retried(tmp_path):
+    import requests
+
+    polls = [503, 429, requests.ConnectionError("x"), requests.Timeout("t"), OK]
+    d, sess, sleeps, f = _make(tmp_path, polls, poll_retries=5)
+    assert d.diarize(f) == [Segment(0, 1, "A")]
+    assert [c[0] for c in sess.calls].count("GET") == 5 and len(sleeps) == 4
+
+
+def test_poll_errors_beyond_retry_limit_raise(tmp_path):
+    d, sess, _sl, f = _make(tmp_path, [503, 503, 503, OK], poll_retries=2)
+    with pytest.raises(HttpErr):
+        d.diarize(f)
+    assert [c[0] for c in sess.calls].count("GET") == 3
+
+
+def test_non_transient_poll_error_is_not_retried(tmp_path):
+    d, sess, _sl, f = _make(tmp_path, [401, OK], poll_retries=5)
+    with pytest.raises(HttpErr):
+        d.diarize(f)
+    assert [c[0] for c in sess.calls].count("GET") == 1
