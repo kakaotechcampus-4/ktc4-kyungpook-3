@@ -7,6 +7,7 @@ import { ErrorText } from '@/shared/ui/error-text'
 import { FormErrorPanel } from '@/shared/ui/form-error-panel'
 import { Icon } from '@/shared/ui/icon'
 import { TextField } from '@/shared/ui/text-field'
+import type { FieldTone } from '@/shared/ui/text-field'
 import type { MappingFormValues, MemberMappingForm } from '../model/useMemberMappingForm'
 
 const ROW = 'flex items-start gap-10 border-b border-surface-selected py-10 last:border-b-0'
@@ -66,13 +67,15 @@ function PmCheck({ control, index, username, pm, takenElsewhere, errorId }: PmCh
 
 export interface MemberMappingFieldsProps {
   mapping: MemberMappingForm
+  /** 이름 칸 모양. 온보딩 카드는 `onboarding`, 제품 화면(팀 화면의 팀원 연결)은 `product` 다. 기본 `onboarding` */
+  tone?: FieldTone
 }
 
 /**
  * 팀원 연결 입력의 본문 — 폼 오류, PM 안내, 줄 목록. `<form>` 과 버튼은 담는 화면이 둔다.
  * PM 을 체크한 줄은 이름 칸을 PM 이름으로 잠근다 (#228).
  */
-export function MemberMappingFields({ mapping }: MemberMappingFieldsProps) {
+export function MemberMappingFields({ mapping, tone = 'onboarding' }: MemberMappingFieldsProps) {
   const { form, initialRows, pms, rows, formError } = mapping
   const {
     register,
@@ -126,7 +129,7 @@ export function MemberMappingFields({ mapping }: MemberMappingFieldsProps) {
                     {pmMemberId === null ? (
                       <TextField
                         key="name"
-                        tone="onboarding"
+                        tone={tone}
                         aria-label={`@${row.username}의 팀원 이름`}
                         placeholder="누구인가요?"
                         error={errors.rows?.[index]?.name?.message}
@@ -135,7 +138,7 @@ export function MemberMappingFields({ mapping }: MemberMappingFieldsProps) {
                     ) : (
                       <TextField
                         key="pm"
-                        tone="onboarding"
+                        tone={tone}
                         aria-label={`@${row.username}의 팀원 이름`}
                         value={picked?.displayName ?? ''}
                         disabled

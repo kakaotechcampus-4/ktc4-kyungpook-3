@@ -1,39 +1,41 @@
-import { useQuery } from '@tanstack/react-query'
-import { memberListQueryOptions } from '@/entities/member'
+import { useSearchParams } from 'react-router'
+import { useMemberWorkspace } from '@/entities/workspace'
+import { MEMBERS_PARAMS } from '@/shared/config/routes'
+import { todayInSeoul } from '@/shared/lib/date'
 import { useRouteId } from '@/shared/lib/url'
-import { PagePlaceholder } from '@/shared/ui/page-placeholder'
-import { QueryErrorState } from '@/shared/ui/query-error-state'
-import { Skeleton } from '@/shared/ui/skeleton'
+import { TeamOverview } from '@/widgets/team'
 
-const LIST = 'flex flex-col gap-6 text-body text-ink'
-
-/** 가드 뒤 업무 조회·인라인 오류·다시 시도·공간 전환을 보여 주는 최소 화면이다. 실제 화면은 이후 마일스톤이다 */
+/**
+ * `/workspaces/:workspaceId/members` — 팀 화면 (Team 캔버스). 라우트 조립만 한다. 설정과 따로 있는 화면이다(2026-10-30 사용자 답변).
+ * 팀원 연결 창은 주소의 `connect=members` 가 쥔다 — 설정에서 Discord 를 연결하면 이 주소로 온다 (D-074). 열 때는 기록을 남겨
+ * 뒤로 가기가 창을 닫고, 닫을 때는 그 표시만 지운다. 일반 팀원에게는 창이 없다
+ */
 export function MembersPage() {
   const workspaceId = useRouteId('workspaceId')
-  return (
-    <PagePlaceholder title="팀원" description="팀원 화면은 이후 마일스톤에서 만들어요.">
-      {workspaceId === null ? null : <MemberNames workspaceId={workspaceId} />}
-    </PagePlaceholder>
-  )
-}
+  const workspace = useMemberWorkspace(workspaceId)
+  const [searchParams, setSearchParams] = useSearchParams()
+  if (workspaceId === null || workspace === null) return null
 
-function MemberNames({ workspaceId }: { workspaceId: string }) {
-  const members = useQuery(memberListQueryOptions(workspaceId))
-
-  if (members.data === undefined) {
-    return members.isError ? (
-      <QueryErrorState error={members.error} onRetry={() => void members.refetch()} />
-    ) : (
-      <div aria-busy="true">
-        <Skeleton lines={3} />
-      </div>
+  const isPm = workspace.role === 'pm'
+  const setConnectOpen = (open: boolean) =>
+    setSearchParams(
+      (current) => {
+        const next = new URLSearchParams(current)
+        if (open) next.set(MEMBERS_PARAMS.connect, 'members')
+        else next.delete(MEMBERS_PARAMS.connect)
+        return next
+      },
+      { replace: !open },
     )
-  }
+
   return (
-    <ul className={LIST}>
-      {members.data.map((member) => (
-        <li key={member.id}>{member.displayName}</li>
-      ))}
-    </ul>
+    <TeamOverview
+      key={workspaceId}
+      workspaceId={workspaceId}
+      isPm={isPm}
+      today={todayInSeoul()}
+      connectOpen={isPm && searchParams.get(MEMBERS_PARAMS.connect) === 'members'}
+      onConnectOpenChange={setConnectOpen}
+    />
   )
 }

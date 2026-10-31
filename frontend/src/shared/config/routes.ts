@@ -18,6 +18,12 @@ export const ONBOARDING_REVIEW_PARAM = 'review'
  */
 export const SETTINGS_PARAMS = { section: 'section', next: 'next' } as const
 
+/**
+ * 팀 화면의 검색 파라미터. `connect=members` 면 팀원 연결 창을 연다 — 설정에서 Discord 를 연결한 뒤 오는 곳이다 (D-074).
+ * 창을 닫으면 지운다
+ */
+export const MEMBERS_PARAMS = { connect: 'connect' } as const
+
 function withOptionalId(base: string, id: string | undefined): string {
   return id === undefined ? base : `${base}/${segment(id)}`
 }
@@ -47,6 +53,9 @@ export const paths = {
     `${workspaceBase(workspaceId)}/approvals/${segment(approvalId)}`,
   messages: (workspaceId: string) => `${workspaceBase(workspaceId)}/messages`,
   members: (workspaceId: string) => `${workspaceBase(workspaceId)}/members`,
+  /** 팀 화면에서 팀원 연결 창을 연 채로 (D-074, D-075) */
+  membersConnect: (workspaceId: string) =>
+    `${workspaceBase(workspaceId)}/members?${MEMBERS_PARAMS.connect}=members`,
   settings: (workspaceId: string) => `${workspaceBase(workspaceId)}/settings`,
   /** 설정의 Notion 연결 영역. `next` 를 주면 연결 성공 뒤 그곳으로 돌아간다 — 받는 쪽이 업로드 경로인지 다시 확인한다 */
   settingsNotion: (workspaceId: string, next?: string) => {

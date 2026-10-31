@@ -138,7 +138,8 @@ describe('앱 셸 (U4-2)', () => {
       ['회의록', '회의록', '/workspaces/ws_01/meetings/mt_09'],
       ['태스크', '태스크', '/workspaces/ws_01/tasks'],
       ['메시지', '메시지는 준비 중이에요', '/workspaces/ws_01/messages'],
-      ['팀', '팀원', '/workspaces/ws_01/members'],
+      // M8-B 가 팀 자리표시자를 Team 캔버스 화면으로 바꿨다 — 제목은 `팀` 이다
+      ['팀', '팀', '/workspaces/ws_01/members'],
     ] as const) {
       await userEvent.click(within(nav).getByRole('link', { name: tab }))
       expect(await screen.findByRole('heading', { name: heading })).toBeInTheDocument()
@@ -277,7 +278,7 @@ describe('워크스페이스 전환 (U4-5)', () => {
     await screen.findByRole('heading', { name: '대시보드' })
     await userEvent.click(screen.getByRole('link', { name: '팀' }))
     await app.expectPath('/workspaces/ws_04/members')
-    await screen.findByRole('heading', { name: '팀원' })
+    await screen.findByRole('heading', { level: 1, name: '팀' })
     // 새 공간의 팀원 조회를 기다리는 동안에도, 받은 뒤에도 ws_01 팀원이 없다
     expect(screen.queryByText('김서연')).not.toBeInTheDocument()
     await waitFor(() =>
