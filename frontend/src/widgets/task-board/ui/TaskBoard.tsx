@@ -281,6 +281,8 @@ export function TaskBoard({
         today={today}
         period={view.period}
         pendingApprovals={approvalList?.length ?? 0}
+        canCreate={isPm}
+        assignee={view.assignee}
       />
     )
   else if (view.view === 'calendar')

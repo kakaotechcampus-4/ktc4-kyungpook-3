@@ -1,5 +1,6 @@
 import { memo } from 'react'
 import type { Task, TaskStatus } from '@/entities/task'
+import { TaskQuickAdd } from '@/features/task-create'
 import { paths } from '@/shared/config/routes'
 import { GuardedLink } from '@/shared/lib/unsaved-changes'
 import { sortTasks } from '../lib/taskBoard'
@@ -9,10 +10,21 @@ import { Avatar } from './viewParts'
 
 type Column = 'todo' | 'active' | 'done'
 
-const COLUMNS: readonly { key: Column; title: string; statuses: readonly TaskStatus[] }[] = [
-  { key: 'todo', title: '시작 전', statuses: ['todo'] },
-  { key: 'active', title: '진행 중', statuses: ['in_progress', 'blocked'] },
-  { key: 'done', title: '완료', statuses: ['done'] },
+/** 칸마다 담는 상태와, `직접 추가` 로 만든 태스크의 상태 */
+const COLUMNS: readonly {
+  key: Column
+  title: string
+  statuses: readonly TaskStatus[]
+  createAs: TaskStatus
+}[] = [
+  { key: 'todo', title: '시작 전', statuses: ['todo'], createAs: 'todo' },
+  {
+    key: 'active',
+    title: '진행 중',
+    statuses: ['in_progress', 'blocked'],
+    createAs: 'in_progress',
+  },
+  { key: 'done', title: '완료', statuses: ['done'], createAs: 'done' },
 ]
 
 const MARK: Record<Column, string> = {
@@ -31,6 +43,10 @@ export interface BoardViewProps {
   period: BoardPeriod
   /** 확인 필요 승인 수. PM 이 아니면 0 이다 */
   pendingApprovals: number
+  /** 칸마다 `직접 추가` 를 둔다. 태스크 생성은 서버에서 PM 전용이다 */
+  canCreate: boolean
+  /** 담당자 조건. 걸러 보는 중이면 직접 추가한 태스크의 담당자로 넣는다 */
+  assignee: string | null
 }
 
 /** 보드 (TasksBoard 시안). 승인이 끝난 태스크만 상태 세 칸으로 나뉜다 */
@@ -41,6 +57,8 @@ export function BoardView({
   today,
   period,
   pendingApprovals,
+  canCreate,
+  assignee,
 }: BoardViewProps) {
   const scoped =
     period === 'month'
@@ -49,7 +67,7 @@ export function BoardView({
   return (
     <>
       <div className="grid grid-cols-3 items-start gap-18">
-        {COLUMNS.map(({ key, title, statuses }) => {
+        {COLUMNS.map(({ key, title, statuses, createAs }) => {
           const inColumn = scoped.filter((task) => statuses.includes(task.status))
           const sorted =
             key === 'done'
@@ -70,6 +88,14 @@ export function BoardView({
                   </li>
                 ))}
               </ul>
+              {canCreate ? (
+                <TaskQuickAdd
+                  workspaceId={workspaceId}
+                  status={createAs}
+                  columnLabel={title}
+                  assigneeMemberId={assignee}
+                />
+              ) : null}
             </section>
           )
         })}
