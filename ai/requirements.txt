@@ -9,6 +9,7 @@ ctranslate2==4.8.2    # faster-whisper 가 끌어오는 추론 엔진. 속도가
 jiwer>=3.0            # WER/CER (ai/stt/eval)
 numpy>=1.26           # 오디오 배열 (capture/audio.py)
 soundfile>=0.12       # WAV 파일 I/O (capture/audio.py)
+scipy>=1.11           # 수동 업로드 16k 리샘플 (upload/tracks.py)
 requests>=2.31        # HTTP API (stt/elice.py 에서 쓸 예정, 아직 없음)
 
 # ── Phase 1~2: 임베딩 + LLM (전부 Elice MLAPI, OpenAI 호환 SDK 하나로 통일) ──
