@@ -307,9 +307,13 @@ function GroupRows({
           <span className="min-w-[0px] truncate text-caption font-semibold text-ink">
             {group.label}
           </span>
-          <span className="min-w-[0px] flex-1 text-[11px] text-dim">{group.note}</span>
+          {/* 시안대로 한 줄이다. 시안 값(252px 칸·간격 9)으로는 `승인하면 담당자가 붙습니다` 가 0.4px 모자라 줄이 바뀐다
+              (Chromium·NanumSquare 실측) — 자간을 1% 줄여 넣고, 건수가 길어 더 모자라면 말줄임한다 */}
+          <span className="min-w-[0px] flex-1 truncate text-[11px] tracking-[-0.01em] text-dim">
+            {group.note}
+          </span>
           {counted ? (
-            <span className="text-[11px] text-dim tabular-nums">
+            <span className="shrink-0 text-[11px] text-dim tabular-nums">
               {group.tasks.length + group.approvals.length}건
             </span>
           ) : null}
@@ -491,7 +495,7 @@ const UnscheduledRow = memo(function UnscheduledRow({
       </span>
       <GuardedLink
         to={to}
-        className="inline-flex items-center gap-3 text-control font-semibold text-ink"
+        className="inline-flex h-32 shrink-0 items-center gap-3 px-4 text-caption font-semibold text-ink"
       >
         날짜 넣기
         <Icon name="chevron-right" size={13} />
