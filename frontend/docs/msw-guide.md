@@ -141,18 +141,19 @@ await fetch('/api/v1/approvals/ap_01', {
 // 다음 tasks 조회는 11개, pending approvals는 2개. 같은 승인 재처리는 409.
 ```
 
-## 설정 연결 (M8-B)
+## 설정·팀 (M8-B)
 
-설정 화면의 Discord·Notion 연결을 확인하는 시나리오다. 위 「브라우저에서 고르기」처럼 `?msw-scenario=<이름>`을 붙인다. 결과는 [M8-B 결과](plan/m8/result-b.md)에 있다.
+설정 화면(Settings 캔버스)과 팀 화면(Team 캔버스)을 확인하는 시나리오다. 위 「브라우저에서 고르기」처럼 `?msw-scenario=<이름>`을 붙인다. 결과는 [M8-B 결과](plan/m8/result-b.md)에 있다.
 
 | 시나리오 | 역할 | 공간 | 해 볼 것 |
 |---|---|---|---|
-| `settings-discord-skipped` | PM | `ws_03`(온보딩 완료, Discord·팀원 연결 건너뜀, Notion 연결됨, 팀원은 생성자 PM 하나) | 설정에서 Discord 연결 → 모의 OAuth → 복귀 뒤 연결됨. 온보딩 단계는 그대로 `건너뜀`이다(D-173) |
-| `settings-unmapped` | PM | `ws_01` 픽스처 그대로(Discord 연결됨, 미매핑·서버를 떠난 사용자·봇 포함) | 미매핑 사용자를 다룰 팀 화면(B-2)의 시작 데이터. 그 화면은 아직 없다 |
-| `settings-member` | 일반 팀원 | `ws_01`(Discord 미연결, Notion 연결됨) | 연결 버튼 없이 상태와 요청 안내만 보인다 |
+| `settings-discord-skipped` | PM | `ws_03`(온보딩 완료, Discord·팀원 연결 건너뜀, Notion 연결됨, 팀원은 생성자 PM 하나) | 설정에서 Discord 연결 → 모의 OAuth → 연결이 확인되면 팀 화면의 팀원 연결 창으로 간다(D-074). 온보딩 단계는 그대로 `건너뜀`이다(D-173). 팀 화면의 `연결되지 않은 계정`은 Discord 미연결 안내다 |
+| `settings-unmapped` | PM | `ws_01` 픽스처 그대로(Discord 연결됨, 미매핑·서버를 떠난 사용자·봇 포함) | 팀 화면의 `연결되지 않은 계정`(`jihun_dev`)과 `팀원 관리`·`연결` → 팀원 연결 창. 정하늘은 서버를 떠난 팀원이다. 설정의 연결 카드에서 `연결 끊기` |
+| `settings-member` | 일반 팀원 | `ws_01`(Discord 미연결, Notion 연결됨) | 설정은 상태와 요청 안내만 보이고 선택지·토글이 꺼져 있다. 팀 화면에는 `팀원 관리`·`연결`이 없다 |
 
 ```text
 http://localhost:5173/workspaces/ws_03/settings?msw-scenario=settings-discord-skipped
+http://localhost:5173/workspaces/ws_01/members?msw-scenario=settings-unmapped
 ```
 
 **연결·매핑 쓰기는 PM만 한다.** 백엔드에 맞춰 다음 쓰기는 그 공간의 PM만 허용한다(`shared/mock/auth-guard.ts`의 `requirePmRole`).

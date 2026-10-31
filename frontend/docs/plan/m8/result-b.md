@@ -1,15 +1,130 @@
-# M8-B 구현 결과 — 설정·팀 연결 관리 (B-1)
+# M8-B 구현 결과 — 설정·팀 연결 관리
 
 - 기록일: 2026-10-31
-- 대상: [M8 계획](plan.md) B 절(이슈 #244)의 B-1, 구현 순서 1~7
-- 상태: **B-1의 프론트엔드·MSW 구현과 AC-B-01~AC-B-08의 근거를 확보했다.**
-  - 최종 게이트는 Node v24.11.0, HEAD `8d0cf3b`에서 실행했다. 전체 Vitest는 기본 설정에서 병렬 부하로 한 번에 통과하지 못했다. 그래서 `--maxWorkers=2`로 돌려 exit 0을 얻었다. 아래 「전체 Vitest」 절에 두 실행을 나눠 적었다.
-  - B-2(구현 순서 8~12)는 선행 결정 대기라 구현하지 않았다. 따라서 M8-B 전체의 완료로 기록하지 않는다.
+- 대상: [M8 계획](plan.md) B 절(이슈 #244). B-1(구현 순서 1~7)과, 결정 5 해결 뒤의 설정·팀 화면 재작업(구현 순서 8~12에 해당)
+- 상태: **설정·팀 화면을 디자인 캔버스(Settings·Team 아트보드) 기준으로 구현했다.**
+  - 결정 5는 2026-10-31 사용자 요청으로 "디자인 캔버스의 Settings·Team 아트보드를 기준으로 한다"로 풀렸다([결정 기록](basis-for-decision/2026-10-31-settings-team-follow-design-canvas.md)). 5-a·5-b도 아트보드로 정했다.
+  - 계획의 B-2 AC(`AC-B-1x`)는 계획에 아직 없다. 이 작업에서는 계획을 고치지 않으므로 재작업은 코디네이터 지시의 완료 기준(아래 「재작업 — 디자인 캔버스 기준」)으로 기록하고, M8-B 전체 완료로 표시하지 않는다.
+  - B-1의 AC-B-01~09 기록은 아래 B-1 절에 그대로 둔다. AC-B-05(성공 뒤 설정 유지)는 재작업의 D-074 이동으로 동작이 바뀌었다.
   - 실제 Discord·Notion 연동은 미검증 연동 과제로 남는다.
 
-## 작업 근거와 요약
+## 재작업 — 디자인 캔버스 기준 (결정 5 해결 뒤)
 
-코디네이터 지시에 따라 브랜치 `feature/244-m8-settings-team`에서 B-1을 구현했다. 기준은 develop `ff9467e`이고 커밋은 11개다. push·PR은 하지 않았다.
+### 작업 근거
+
+코디네이터 지시(2026-10-31): 사용자가 브라우저(MSW)에서 설정·팀 화면이 디자인과 다르다고 지적했다. 팀 화면은 자리표시자였고 설정은 이름 입력과 두 연결 영역뿐이었다. 두 화면을 `docs/design/canvas/Team.dc.html`·`Settings.dc.html` 그대로 만들고, API·MSW가 없는 동작은 정적으로라도 보이게 하며 그 차이를 이 문서에 적으라는 지시다. 완료 기준은 "아트보드와 항목·문구·상태가 일치함을 스크린샷과 차이표로 보이고 typecheck·lint·format:check·test(`--maxWorkers=2`)·build·test:storybook exit 0, 커밋 생성"이다.
+
+### 아트보드 영역·상태와 현재 화면의 차이
+
+시작 상태는 이 작업 전 HEAD `dd253ce`의 화면이다. "지금"은 이번 커밋 뒤다.
+
+**Team 아트보드**
+
+| 영역·상태 | 아트보드 | 작업 전 | 지금 |
+|---|---|---|---|
+| 제목·설명 | `팀` 28px, "진행률은 팀원이 직접 말한 값입니다. 옆에 적힌 기준 날짜를 함께 보세요." | `팀원` + "이후 마일스톤" 안내 | 같음. 인원수 없음(D-076) |
+| `팀원 관리` 버튼 | 우상단, 사람 아이콘 | 없음 | 같음. PM만. 팀원 연결 창을 연다 |
+| 팀원 머리 줄 | 이름 1~2자 원 30px, 이름 14.5px, 직무 12px, 상태 배지 | 이름 목록 | 원·이름·배지 같음. 직무 칸은 `PM`/`팀원`(직무 데이터 없음). 서버를 떠난 팀원은 `· Discord 서버를 나갔어요`(D-031) |
+| 상태 배지 `위험`·`주의`·`정상` | 강조색 점 배지·먹 점 배지·컨트롤 면 | 없음 | 같음. 판정은 막힘·기한 지남 → 위험, 7일 안 마감 → 주의 |
+| 맡은 일 줄 | 제목, `MM/DD 기준 · 출처`, 마감, 상태 칩 58px | 없음 | 제목·마감·상태 칩 같음. 기준 날짜는 태스크 수정일이고, 출처(`본인 발언` 등) 대신 진행률(`진행 40%`)이 있으면 붙인다. 출처는 태스크 이력을 태스크마다 불러야 해서 뺐다 |
+| 마감 없음 | `마감 미정 — 확인 필요`, 마감 칸 `— —` | 없음 | 같음 |
+| 상태 칩 문구 | `시작 전`·`진행 중`·`완료` | 없음 | 제품 공통 라벨 `할 일`·`진행 중`·`막힘`·`완료`(`TASK_STATUS_LABEL`) |
+| 먼저 챙길 것 | 강조 테두리 카드, 문장, `메시지 초안 보기` | 없음 | 같음. 기한 지남 → 막힘 → 곧 마감 순으로 한 건. 버튼은 메시지 화면 링크(메시지 화면은 준비 중, D-171). 챙길 일이 없으면 카드를 그리지 않는다 |
+| 연결되지 않은 계정 | `?` 원, 아이디, `연결`, DM 안내 | 없음 | 같음. 제목에 인원수 없음(D-076). 봇 제외. `연결`은 PM만 |
+| 연결되지 않은 계정 — 빈·미연결·오류·로딩 | 아트보드에 없음 | 없음 | 모두 연결됨 안내 / Discord 미연결 안내 + `설정에서 Discord 연결하기`(PM) / 인라인 오류·다시 시도 / Skeleton |
+| 앞으로 7일 | 7칸, 오늘 강조 테두리·`오늘`, 마감 칩(`이름 · 진행률`) | 없음 | 같음 |
+| 앞으로 7일 — 점선 칩(`09/15 → 09/17`) | 마감 변경 제안 | 없음 | **없음.** 마감 변경 승인 대기를 칸에 그리려면 승인 목록 조합이 필요해 이번 범위에서 뺐다 |
+| 로딩·오류 | 아트보드에 없음 | Skeleton·인라인 오류 | 팀원 목록 Skeleton, 팀원·태스크 조회 오류는 인라인 오류·다시 시도 |
+| 팀원 연결 창 | 아트보드에 없음(SetupMembers 줄 모양) | 없음 | 모달. 줄·PM 체크·검증은 온보딩과 같은 폼, 입력칸은 제품 모양. `나중에 하기`·`저장` |
+
+**Settings 아트보드**
+
+| 영역·상태 | 아트보드 | 작업 전 | 지금 |
+|---|---|---|---|
+| 목차 | `설정` 22px, 일반·연결·자동 반영·알림·팀원·내 계정, 지금 절은 선택 면 | 없음 | 같음. 절로 옮기고 제목에 포커스. `팀원`은 팀 화면 링크. `내 계정`은 누를 수 없는 항목(화면 없음, 헤더의 `내 계정` 메뉴가 계정 조작을 맡는다) |
+| 본문 첫 절 | `연결` | 이름 입력 | `일반`(워크스페이스 이름, 저장 API 없음, `되돌리기`)을 맨 앞에 두고 그 아래 `연결`이다. 목차 첫 항목이 `일반`이고 이 입력이 이탈 확인 회귀 테스트 대상이라 남겼다 |
+| 연결 머리 | `연결` + "연결을 끊으면…" | `Discord 연결`·`Notion 연결` 두 절 | 같음 |
+| 연결 카드 | 40px 아이콘 상자(입력 경계), 이름 14.5px, `연결됨` 배지, 설명 줄, 버튼 둘 | 둥근 줄, 배지, 연결 버튼 | 같음. 설명 줄은 연동 이름 + `연결 MM/DD HH:mm`(읽는 채널·마지막 쓰기 데이터 없음). 미연결이면 연결하면 하는 일 |
+| `채널 바꾸기`·`속성 다시 맞추기` | 컨트롤 면 버튼 | 없음 | 같음(PM). API가 없어 누르면 준비 중 토스트 |
+| `연결 끊기` | 투명 버튼 | 없음 | 같음(PM). 확인 모달 → `DELETE` 성공 뒤 미연결(D-137). 실패하면 모달에 오류 |
+| 미연결·끊김·준비 중·확인 중·취소·실패 | 아트보드에 없음 | 있음(B-1) | 배지 문구·연결 버튼(컨트롤 면)·안내를 카드 아래에 그대로 둔다 |
+| 자동 반영 기준 | 선택지 셋, 가운데 선택, 셋째는 지원하지 않음 | 없음 | 같음. 저장 API 없음 — 화면 안에서만 고르고 새로 열면 가운데 |
+| 알림 | 토글 셋(켬·켬·끔) | 없음 | 같음. 저장 API 없음 — 화면 안에서만 켜고 끈다 |
+| 이 팀 삭제하기 | 강조 테두리 카드, `팀 삭제` | 없음 | 같음(PM). API가 없어 준비 중 토스트 |
+| 일반 팀원 | 아트보드에 없음 | 상태·요청 안내 | 같은 안내. 관리 버튼·팀 삭제 없음, 선택지·토글 꺼짐 |
+
+**두 화면 공통**
+
+- 휴대폰 폭(390px)에서는 두 화면 모두 가로로 넘친다(문서 폭 650px). 기존 대시보드도 같은 폭에서 같다. <1024px은 범위 미결이라 휴대폰 배치를 만들지 않았다(D-123·D-124, 디자인 시스템 §10).
+- 날짜는 실행하는 날의 서울 오늘이다. MSW 픽스처의 마감이 9월이라 브라우저(2026-10-31)에서는 모든 팀원이 `위험`이고 앞으로 7일이 비어 있다. 스토리는 오늘을 픽스처 날짜(2026-09-18)로 고정해 아트보드처럼 채운다.
+- 코디네이터 지시의 시나리오 이름 `settings-discord-unmapped`·`settings-discord-member`는 저장소에 없다. 같은 용도의 `settings-unmapped`·`settings-member`로 확인했다.
+
+### 시각 확인
+
+이 워크트리의 개발 서버(`VITE_ENABLE_MSW=true npx vite --port 5222`)를 Playwright로 열어 아트보드 HTML과 나란히 비교했다. 스크린샷은 워크트리의 `.playwright-mcp/shots/`(커밋하지 않음)에 있다.
+
+| 파일 | 내용 |
+|---|---|
+| `design-Team-1440.png`, `design-Settings-1440.png` | 아트보드 |
+| `team-1440.png`, `team-1024.png`, `team-1360.png`, `team-390.png` | `settings-unmapped`의 팀 화면 |
+| `settings-1440.png`, `settings-1024.png`, `settings-1360.png`, `settings-390.png` | 같은 시나리오의 설정 |
+| `team-skipped-1440.png`, `settings-skipped-1440.png` | `settings-discord-skipped`(ws_03) |
+| `team-member-1440.png`, `settings-member-1440.png` | `settings-member` |
+| `team-dialog-1440.png` | 팀원 연결 창 |
+
+1024·1360px에서 두 화면의 `scrollWidth`는 `clientWidth`와 같았다. 390px은 650/390이다(위 공통 항목).
+
+### 구현
+
+경로는 `frontend/` 기준이다.
+
+- **팀 화면** — [widgets/team](../../../src/widgets/team/index.ts)
+  - 순수 판정 [team.ts](../../../src/widgets/team/lib/team.ts): 상태 배지, 팀원별 일 정렬, 먼저 챙길 것, 앞으로 7일, 연결되지 않은 계정·비활성 팀원, 아바타 글자.
+  - [TeamOverview](../../../src/widgets/team/ui/TeamOverview.tsx)는 팀원·태스크·연동·Discord 사용자를 함께 부르고 영역마다 로딩·오류를 그린다. Discord 미연결은 연동 상태나 409 `INTEGRATION_NOT_CONNECTED`로 안다.
+  - [MemberConnectDialog](../../../src/widgets/team/ui/MemberConnectDialog.tsx)는 `features/member-mapping`의 폼을 쓴다. 줄은 창을 연 때 한 번 만든다. PM 체크를 요구하지 않는다(D-075).
+  - [MembersPage](../../../src/pages/members/ui/MembersPage.tsx)는 `connect=members`로 창을 열고 닫는다(열 때 기록 추가, 닫을 때 replace). 일반 팀원에게는 창이 없다.
+- **설정 화면** — [SettingsPage](../../../src/pages/settings/ui/SettingsPage.tsx)와 같은 폴더의 목차·절 컴포넌트.
+- **연결 카드** — [DiscordConnectionSection](../../../src/features/integration-connection/ui/DiscordConnectionSection.tsx)·[NotionConnectionSection](../../../src/features/integration-connection/ui/NotionConnectionSection.tsx)을 캔버스 카드로 바꿨다. 제목은 `h3`이고 읽는 이름은 `Discord 연결`·`Notion 연결`이다(기존 포커스·테스트 이름 유지). Discord는 연결이 확인되면 `paths.membersConnect`로 간다(D-074).
+- **연결 끊기** — [disconnectIntegration](../../../src/entities/integration/api/integrations.ts), [useDisconnectIntegration](../../../src/features/integration-connection/model/useDisconnectIntegration.ts), [ConnectionActions](../../../src/features/integration-connection/ui/ConnectionActions.tsx).
+- **공용** — 아이콘 `users`·`alert`(Team 캔버스 경로), 날짜 `monthDayOf`·`formatSeoulMonthDayTime`, `MemberMappingFields`의 `tone`(기본 `onboarding`).
+- **테스트·스토리**
+  - 단위: [team.test.ts](../../../src/widgets/team/lib/team.test.ts)(10), 날짜 표기, 연동 해제 API.
+  - 통합: [team.test.tsx](../../../src/app/team.test.tsx)(7), [settingsPage.test.tsx](../../../src/app/settingsPage.test.tsx)(7).
+  - 스토리: `M8 팀/화면`(6: PM 기본·팀원·Discord 미연결·팀원 연결 창·로딩·오류), `M8 설정/화면`(3: PM 연결됨·PM Discord 미연결·팀원).
+  - E2E: 새 파일·사례 없음. [settings-team.e2e.ts](../../../e2e/settings-team.e2e.ts)의 OAuth 왕복을 D-074 도착으로 바꾸고, 세 너비 테스트에 팀 화면 넘침 검사를 더했다(테스트 수 4 그대로).
+  - Storybook 회귀 블록([stories.sb.ts](../../../e2e/storybook/stories.sb.ts))은 바꾸지 않았다. `m8-` 접두어로 새 스토리를 함께 모은다.
+
+### 기존 테스트 단언 변경
+
+| 위치 | 바꾼 것 | 이유 |
+|---|---|---|
+| `routes.test.tsx`, `appShell.test.tsx`(2곳), `lateAsyncRaces.test.tsx`, `meetingProcessing.test.tsx` | 팀 화면 제목 `팀원` → `팀` | 자리표시자 제목이 Team 아트보드의 `팀`이 됐다 |
+| `pages.test.tsx` 5xx 재시도 | 업무 요청 전체 2건 → 팀원 조회 2건 | 팀 화면이 태스크·연동·Discord 사용자도 함께 부른다. 재시도 규칙(1초 뒤 한 번)은 그대로 본다 |
+| `notionConnection.test.tsx` 첫 테스트 | 버튼 없음 → `속성 다시 맞추기`·`연결 끊기`, `h2` 목록 → 설정 절 다섯 + `h3` 두 카드 | 연결된 카드에 아트보드의 관리 버튼이 있고 절이 늘었다 |
+| `settingsConnections.test.tsx` | Notion 버튼 없음 → `연결하기` 없음, 성공 복귀 두 건 → 팀원 연결 창 도착 | 같은 관리 버튼, 그리고 D-074 이동 |
+| Discord·Notion 스토리 `PM_연결됨` | 버튼 없음 → 관리 버튼 둘 | 같은 관리 버튼 |
+| `settings-team.e2e.ts` 첫 테스트 | 성공 뒤 설정 유지 → 팀원 연결 창, 새로고침 뒤에도 창, `나중에 하기`, 설정에서 연결됨 | D-074 이동 |
+
+### 재작업 검증
+
+Node v24.11.0, `frontend/`. 무거운 명령은 공통 잠금 래퍼(`heavy.sh`) 아래에서 실행했다.
+
+| 명령 | exit | 결과 |
+|---|---|---|
+| `npm run typecheck` | 0 | 커밋 9daeb91·f8b6095 전 작업 트리 |
+| `npm run lint` | 0 | 같음. FSD 경계 포함 |
+| `npm run format:check` | 0 | 같음 |
+| `npx playwright test e2e/settings-team.e2e.ts e2e/signup-onboarding.e2e.ts e2e/select-switch.e2e.ts e2e/meeting-keyboard.e2e.ts --workers=2` (`E2E_PORT=5212`) | 1 → 0 | 첫 실행은 `settings-team` 첫 테스트가 `getByText('연결됨')` 두 요소(배지·설명 줄의 `Discord 연결됨`)로 strict 위반. `exact` 로 고친 뒤 12 통과 |
+| `npm run test -- --maxWorkers=2` (HEAD `35fc6b4`) | 1 | 165 files / 1846 tests 중 2 실패. ① `meetingProcessing.test.tsx` StrictMode 탭 이동 — 팀 탭 제목을 `팀원` 으로 기다리는 단언을 이번 변경에서 놓쳤다(실제 회귀). b7657e1 로 고친 뒤 단독 31/31 통과. ② `meetingRoutes.test.tsx` 일반 팀원 업로드 → 태스크 이동의 `findByRole` 미발견 — 단독 재실행 통과. 이 기계의 부하 실패로 본다 |
+| `npm run build` | 0 | |
+| `npm run test:storybook` (`STORYBOOK_E2E_PORT=6212`) | 미완료 | 실행 중 기계 메모리 부족으로 Claude Code 가 작업을 중단시켰다. 결과 없음 |
+
+- 변경 중 단독 실행: `team.test.ts` 10, `team.test.tsx` 7, `settingsPage.test.tsx` 7, `settingsConnections`·`notionConnection`·`pages` 45, `appShell`·`routes`·`lateAsyncRaces` 65 모두 통과.
+- b7657e1 뒤의 전체 Vitest 와 `test:storybook` 은 다시 실행하지 않았다(메모리 부족 중단 뒤 재실행 지시 대기).
+
+## B-1 작업 근거와 요약
+
+코디네이터 지시에 따라 브랜치 `feature/244-m8-settings-team`에서 B-1을 구현했다. 아래 B-1 절의 화면 설명(설정에 머무는 Discord 성공, 팀 자리표시자 등)은 그 시점의 기록이며 위 재작업으로 바뀌었다. 기준은 develop `ff9467e`이고 커밋은 11개다. push·PR은 하지 않았다.
 
 계획 파일은 작업 시작 전부터 미커밋 변경이 있었다. 구현·검증·이 기록 작업 모두 그 파일을 수정하거나 커밋하지 않았다. V3 리뷰 시점과 이 기록 작업 시작 시점의 SHA256이 `335e75d7…9499c4`로 같다.
 
@@ -152,28 +267,25 @@ typecheck·lint·format:check 0, build 0, `test:storybook` 0(112 통과), `npm r
 
 ## 남은 작업과 제한 사항
 
-### B-2 — 선행 결정 대기, 구현하지 않음
+### B-2 — 결정 5 해결 뒤 재작업으로 구현
 
-계획 구현 순서 8~12는 착수하지 않았다. 팀 페이지·라우트에 develop 대비 차이가 없다(V2·V3).
+B-1 기록 시점에는 계획 구현 순서 8~12가 선행 결정 대기였다. 2026-10-31 결정 5가 "디자인 캔버스의 Settings·Team 아트보드를 기준으로 한다"로 풀려(사용자 결정) 위 「재작업」에서 다음을 구현했다.
 
 - 8: 팀 화면 구성과 `연결되지 않은 계정` 영역(D-076, D-030, D-031)
-- 9: 온보딩 뒤의 팀원 연결 재진입 화면·경로와 무매핑 이탈(D-074·D-075)
-- 10: 설정에서 Discord 연결 성공 뒤 팀원 연결로 이동(D-074). 지금은 성공 뒤 설정에 머문다.
-- 11: `연결 끊기`·`속성 다시 맞추기`·`채널 바꾸기`(5-b)
-- 12: 일반 팀원의 팀·설정 표시 범위
+- 9: 팀 화면의 팀원 연결 창(재진입)과 무매핑 이탈(D-074·D-075)
+- 10: 설정에서 Discord 연결이 확인되면 팀원 연결 창으로 이동(D-074)
+- 11: `연결 끊기`(서버 반영), `속성 다시 맞추기`·`채널 바꾸기`(API 없음, 준비 중 안내)
+- 12: 일반 팀원의 팀·설정 표시 범위(읽기만, 쓰기 조작 없음)
 
-걸린 결정은 다음과 같다([계획](plan.md) B 「선행 결정」).
+남은 것:
 
-- **결정 5(열림):** 설정·팀 화면의 항목 범위와 권한. MSW의 PM 전용 쓰기는 서버 제약을 맞춘 것이다. 이 결정의 권한 기본값을 확정한 것이 아니다.
-- **결정 5-a(열림):** 팀원 연결 재진입과 `연결되지 않은 계정`을 팀과 설정 중 어디에 둘지. D-074의 이동 목적지와 재진입 형태도 이 결정으로 정해진다.
-- **결정 5-b(열림):** `연결 끊기`·`속성 다시 맞추기`·`채널 바꾸기`를 포함할지.
-- **확정된 사실(2026-10-30 사용자 답변):** 팀 화면은 설정과 **별도 페이지**다.
-
-`settings-unmapped` 시나리오와 `features/member-mapping`은 B-2가 쓸 준비물이다. 온보딩 뒤 매핑 화면의 PM 체크 정책(계획 질문 6)도 정하지 않았다.
+- 계획 B 절의 「선행 결정」 표와 B-2 AC(`AC-B-1x`)는 갱신하지 않았다. 계획 수정은 사용자 요청이 있을 때만 한다.
+- 아트보드와 다른 점(위 차이표의 "없음"·대체 표시)은 데이터나 API가 생길 때 다시 맞춘다.
+- 온보딩 뒤 팀원 연결 창은 PM 체크를 요구하지 않는다(계획 질문 6, [결정 기록](basis-for-decision/2026-10-31-settings-team-follow-design-canvas.md)). 사용자 확인 전 임시 판단이다.
 
 ### 계약 갱신 — 이번 작업 범위 밖
 
-[계약](../../contracts/frontend-api-contract.md) §4.3의 OAuth `start`·`callback` 표기와 현재 코드 대조 표가 백엔드 구현보다 뒤처져 있다. §5.8 설정 항목에도 이번 Discord 연결 영역이 반영되지 않았다. 계획 13단계의 `contract-update` 스킬 대상이며 이번 기록 작업에서는 수정하지 않았다.
+[계약](../../contracts/frontend-api-contract.md) §4.3의 OAuth `start`·`callback` 표기와 현재 코드 대조 표가 백엔드 구현보다 뒤처져 있다. §5.8 설정 항목에도 이번 Discord 연결 영역·연결 끊기·팀 화면이 반영되지 않았다. 자동 반영 기준·알림·팀 삭제·채널·속성 API가 없다는 사실도 계약에 적어야 한다. 계획 13단계의 `contract-update` 스킬 대상이며 이번 기록 작업에서는 수정하지 않았다.
 
 ### 미검증 연동 과제
 
@@ -213,19 +325,21 @@ M5 결정 기록과 인수인계에는 `features/notion-connection`이 링크가
 ### 그 밖의 제한
 
 - Discord 영역의 리드 문구, `revoked`의 `연결 끊김`, 일반 팀원 요청 안내는 온보딩 문구를 바탕으로 정했다. 제품 문구 검토를 받지 않았다.
-- `MemberMappingFields`는 온보딩 모양(`tone="onboarding"`)을 그대로 쓴다.
+- `MemberMappingFields`는 재작업에서 `tone`을 받게 됐다. 온보딩은 기본값(`onboarding`), 팀원 연결 창은 `product`다.
+- 팀 화면·설정의 새 문구(먼저 챙길 것 문장, 미연결 안내, 준비 중 토스트)도 제품 문구 검토를 받지 않았다.
 - [frontend/README.md](../../../README.md)의 시나리오 목록에 새 시나리오 세 개가 없다. 보호 대상이라 이번에 고치지 않았다. [MSW 안내](../../msw-guide.md)에는 추가했다.
 
 ### 파트 README 갱신 제안
 
 세 브랜치(#243·#244·#245) 병합 뒤 한 번에 반영할 문장 제안이다. 따옴표 안의 링크 경로는 각 README 기준이다.
 
-- [마일스톤 안내](../README.md)의 M8 행 상태 칸: "B(#244)는 B-1(설정 Discord·Notion 연결, MSW PM 전용 쓰기, 매핑 폼 분리)을 구현하고 `[B 결과](m8/result-b.md)`에 AC-B-01~08의 프론트·MSW 근거를 기록했다. B-2(팀 화면·팀원 연결 재진입·연결 끊기)는 결정 5·5-a·5-b 대기. 완료 판정 없음"
-- [Frontend README](../../../README.md) 상태 문단의 M8 문장: "M8-B는 `[결과](docs/plan/m8/result-b.md)`에 B-1의 AC-B-01~08 프론트·MSW 기준 근거와 Node v24.11.0 게이트(전체 Vitest는 `--maxWorkers=2`에서 통과, 기본 설정은 이 기계의 병렬 부하로 타임아웃)를 기록했다. B-2는 선행 결정 대기이고 실제 Discord·Notion 연동은 미검증이다."
+- [마일스톤 안내](../README.md)의 M8 행 상태 칸: "B(#244)는 B-1(설정 Discord·Notion 연결, MSW PM 전용 쓰기, 매핑 폼 분리)과 결정 5(디자인 캔버스 기준) 뒤의 설정·팀 화면(팀원 연결 재진입·연결 끊기)을 구현하고 `[B 결과](m8/result-b.md)`에 근거를 기록했다. 계획의 B-2 AC는 아직 없어 완료 판정 없음"
+- [Frontend README](../../../README.md) 상태 문단의 M8 문장: "M8-B는 `[결과](docs/plan/m8/result-b.md)`에 B-1의 AC-B-01~08 프론트·MSW 기준 근거와 Node v24.11.0 게이트(전체 Vitest는 `--maxWorkers=2`에서 통과, 기본 설정은 이 기계의 병렬 부하로 타임아웃)를 기록했다. 설정·팀 화면은 Settings·Team 아트보드 기준으로 만들었고(결정 5), 실제 Discord·Notion 연동은 미검증이다."
 
 ## 관련 기록
 
+- [설정·팀 화면을 디자인 캔버스로 정한 선택(결정 5)](basis-for-decision/2026-10-31-settings-team-follow-design-canvas.md)
 - [팀원 매핑·설정 연결 슬라이스 위치](basis-for-decision/2026-10-31-member-mapping-integration-connection-slices.md)
 - [MSW 연결 쓰기를 PM 전용으로 맞추는 선택](basis-for-decision/2026-10-31-msw-pm-only-connection-writes.md)
 - [M8 계획](plan.md) B 절
-- [MSW 사용 안내](../../msw-guide.md) 「설정 연결 (M8-B)」
+- [MSW 사용 안내](../../msw-guide.md) 「설정·팀 (M8-B)」
