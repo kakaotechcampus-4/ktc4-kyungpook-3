@@ -15,7 +15,11 @@ COPY alembic.ini .
 COPY migrations ./migrations
 COPY app ./app
 
-RUN useradd --create-home --uid 1000 mm
+# /data/uploads: 업로드 녹음 폴더(docker-compose.prod.yml의 uploads 볼륨). 새 볼륨은 이 폴더의 소유자(mm)를 물려받는다.
+RUN useradd --create-home --uid 1000 mm \
+    && mkdir -p /data/uploads && chown mm:mm /data/uploads
+# compose가 UPLOAD_DIR을 주지 않아도 위 폴더를 쓴다
+ENV UPLOAD_DIR=/data/uploads
 USER mm
 
 EXPOSE 8000

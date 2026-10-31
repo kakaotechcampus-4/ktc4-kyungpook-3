@@ -3,8 +3,8 @@
 디스코드 녹음 봇이 회의를 백엔드에 넘길 때 쓰는 API를 현재 코드 기준으로 정리한다. 웹 화면이 쓰는 API는 [프론트엔드 대표 계약](../../../frontend/docs/contracts/frontend-api-contract.md)에 있고 여기서 다시 적지 않는다.
 
 - 제공자: Backend (`backend/app/api/`)
-- 소비자: AI 녹음 봇 (`ai/capture/handoff.py`의 `BeClient`·`Handoff`, 판단 파이프라인 `ai/judge/pipeline.py`)
-- 기준: 2026-10-08 develop 코드 대조. 봇 회의 쓰기 경로의 서비스 토큰은 2026-10-09 #179 변경 코드로, 추출 등록의 auto 판단 키는 2026-10-16 #232 변경 코드로 다시 대조했다
+- 소비자: AI 녹음 봇 (`ai/capture/handoff.py`의 `BeClient`·`Handoff`, 판단 파이프라인 `ai/judge/pipeline.py`). [웹 업로드 가져가기](#웹-업로드-가져가기)의 소비자는 AI 쪽 업로드 처리 워커이며 아직 없다
+- 기준: 2026-10-08 develop 코드 대조. 봇 회의 쓰기 경로의 서비스 토큰은 2026-10-09 #179 변경 코드로, 추출 등록의 auto 판단 키는 2026-10-16 #232 변경 코드로 다시 대조했다. 웹 업로드 가져가기는 2026-10-14 #219 브랜치 코드 기준이다
 - 합의 근거: 인계 방식은 [AI 결정 0009](../../../ai/decision_log/0009-bot-hands-off-to-be-api.md), 발화 저장은 [AI 결정 0017](../../../ai/decision_log/0017-transcript-sources-stage.md)에 AI 쪽 기록이 있다. 이 문서는 그 이후의 필드·오류 세부를 코드에서 읽은 것이며, 별도 합의 문서가 없는 항목은 구현 사실로만 적는다.
 
 ## 공통
@@ -29,7 +29,7 @@
 
 ## 인증
 
-- `X-Service-Token`: 봇이 부르는 경로 전부(회의 생성·종료·실패, 발화 저장, 유사 task 검색, 추출 등록, 서버로 워크스페이스 찾기)에 건다 (`deps.require_service_token`). 헤더 값을 서버의 `SERVICE_TOKEN`과 비교하고, 없거나 다르면 401 `UNAUTHENTICATED`다. 서버에 `SERVICE_TOKEN`이 비어 있으면 모든 요청을 거절한다. 사용자 세션은 서비스 토큰을 대신하지 못한다.
+- `X-Service-Token`: 봇이 부르는 경로 전부(회의 생성·종료·실패, 발화 저장, 유사 task 검색, 추출 등록, 서버로 워크스페이스 찾기)와 웹 업로드 가져가기 세 경로에 건다 (`deps.require_service_token`). 헤더 값을 서버의 `SERVICE_TOKEN`과 비교하고, 없거나 다르면 401 `UNAUTHENTICATED`다. 서버에 `SERVICE_TOKEN`이 비어 있으면 모든 요청을 거절한다. 사용자 세션은 서비스 토큰을 대신하지 못한다.
 - 합의 근거: 이슈 #179(BE)와 #193(AI). 회의 생성·종료·실패와 추출 등록이 리버스 프록시 설정에만 기대던 것을 서비스 토큰으로 막는다.
 - 현재 구현
   - BE(#179): 회의 생성·종료·실패와 추출 등록에 `require_service_token`을 건다. #179 전에는 발화 저장, 유사 검색, 서버로 워크스페이스 찾기에만 걸었다.
@@ -180,15 +180,70 @@ AI `Transcript.to_dict()` 모양에 화자 이름을 더해 보낸다. 한 회�
   - 미연결이면 `/record`가 녹음을 시작하지 않고, PM이 웹 온보딩에서 서버를 연결한 뒤 다시 하라고 답한다. 합의는 "녹음은 하고 BE 인계만 멈춤"이었는데, main PR #175 리뷰가 미연결 서버의 녹음 거절을 권해 바꿨다. BE가 받는 요청은 어느 쪽이든 조회뿐이다.
   - 조회가 일시적으로 실패하면(연결 실패·5xx) 녹음은 하고 처리할 때 다시 조회한다. 그 실패는 발화 저장 단계의 실패로 세어 재시도하고, 401은 설정 문제로 BE 단계를 건너뛴다. 처리할 때 미연결이면 발화 저장·추출·인계를 멈추고, 워커가 그 채널에 한 번 알린 뒤 연결될 때까지 전사하지 않고 1분에 한 번 다시 묻는다.
 
+## 웹 업로드 가져가기
+
+웹에서 PM이 올린 녹음(`POST /workspaces/{id}/meetings/upload`, [프론트엔드 대표 계약](../../../frontend/docs/contracts/frontend-api-contract.md))을 AI가 가져가 처리하는 경로다.
+
+- 합의 상태: **BE 구현, AI 미합의·미구현.** #219에서 BE가 만들었고 AI 쪽과 아직 합의하지 않았다. AI가 이 방식을 쓰기로 정하기 전까지 형식이 바뀔 수 있다.
+- 업로드 회의는 `source=manual_upload`이고 **업로드하자마자 `processing`**이다. 프론트가 Discord 회의처럼 정리 중으로 추적하고, 끝날 때까지 그 워크스페이스의 다음 업로드는 409다(프론트 D-088·D-089). AI가 가져갔는지는 회의 상태가 아니라 `meeting_upload.claimed_at`으로 가린다.
+- 결과 보고는 Discord 회의와 같은 [발화 저장](#발화-저장-post-meetingsmeeting_idsources--201)·[추출 등록](#추출-등록-post-extractions--201)·[실패](#patch-meetingsmeeting_idfail--200)를 쓴다.
+- 녹음은 원본 그대로 서버 디스크(`UPLOAD_DIR/{meeting_id}/audio.<확장자>`)에 있고, 참석자·파일 정보는 DB `meeting_upload` 에 있다. 받는 형식은 wav·mp3·m4a·ogg·webm이고, BE는 확장자와 파일 첫 바이트만 확인한다. 실제로 디코딩되는지와 녹음 길이는 확인하지 않는다.
+
+| 순서 | 요청 | 회의 상태 |
+|---|---|---|
+| 1 | `GET /uploads/pending` | `processing` (변화 없음) |
+| 2 | `PATCH /uploads/{meeting_id}/claim` | `processing` (가져간 시각만 기록) |
+| 3 | `GET /uploads/{meeting_id}/file` | 변화 없음 |
+| 4 | `POST /meetings/{meeting_id}/sources` | 변화 없음 |
+| 5 | `POST /extractions` | `done` |
+| 실패 | `PATCH /meetings/{meeting_id}/fail` | `failed` |
+
+### `GET /uploads/pending` → 200
+
+아직 아무도 가져가지 않은 업로드 회의를 업로드 시각 순으로 준다. `processing`이고 `claimed_at`이 비어 있는 업로드 회의(`meeting_upload` 행이 있는 회의)만 나온다. DB 만 읽고 디스크는 보지 않는다. 페이지는 나누지 않는다.
+
+```jsonc
+// data
+{ "items": [ {
+  "meeting_id": "…", "workspace_id": "…", "title": "…" | null, "started_at": "…",
+  "attendees": [ { "member_id": "…", "display_name": "…" } ],   // 업로드 때 PM이 고른 참석자. 1명 이상
+  "original_filename": "…" | null, "stored_filename": "audio.wav",
+  "size_bytes": 1234, "content_type": "audio/wav" | null,       // content_type은 브라우저가 보낸 값 그대로다
+  "uploaded_at": "…"
+} ] }
+```
+
+### `PATCH /uploads/{meeting_id}/claim` → 200
+
+- `data`: `{meeting_id, status: "processing"}`
+- `claimed_at`이 비어 있고 회의가 `processing`일 때만 조건부 UPDATE로 `claimed_at`을 채운다. 동시에 여러 번 불러도 한 번만 성공한다.
+- 409 `MEETING_PROCESSING_IN_PROGRESS`(`details.meeting_id`는 그 회의): 이미 누가 가져갔다. 다음 회의로 넘어간다.
+- **claim 을 다시 보낼 때 주의:** BE 는 누가 가져갔는지 기록하지 않는다. 응답을 못 받아(시간 초과 등) 같은 회의를 다시 claim 해서 409 를 받았다면, 앞선 요청이 이미 성공했을 수 있다. 처리 워커가 하나라면 건너뛰지 말고 그 회의를 이어서 처리한다. 건너뛰면 그 회의는 `processing`에 남고 그 워크스페이스의 업로드도 막힌다.
+- `done`·`failed`면 409 `MEETING_ALREADY_ENDED`(`details.status`). 다음 회의로 넘어간다.
+- 없는 회의나 업로드 회의가 아니면(업로드 API 를 거치지 않아 `meeting_upload` 행이 없는 회의 포함) 404 `MEETING_NOT_FOUND`.
+
+### `GET /uploads/{meeting_id}/file` → 200
+
+- 녹음 원본을 그대로 스트리밍한다. Content-Type은 업로드 때 받은 값(없으면 `application/octet-stream`), 파일명은 `stored_filename`이다.
+- 상태는 보지 않는다. claim 전후 모두 받을 수 있고, 다시 받아도 된다.
+- 업로드 정보가 없거나 녹음 파일이 없으면 404 `MEETING_NOT_FOUND`. 녹음이 없으면 처리할 수 없으니 실패 보고를 한다.
+
+### 처리할 때 주의할 점
+
+- **녹음은 결과 보고 전에 받는다.** 추출 등록으로 `done`이 되거나 실패 보고로 `failed`가 되면 BE가 그 회의의 녹음 폴더를 바로 지운다.
+- 업로드 녹음에는 Discord uid가 없다. 화자 분리 없이 전사하면 발화의 `speaker`는 null이고, 회의록 참석자는 발화에서 만들므로 비어 보인다. 업로드 참석자는 지금 `meeting_upload.attendees` 에만 있고 회의록은 이를 읽지 않는다.
+- AI 가 없거나 처리 도중 멈추면 업로드 회의가 `processing`에 남아 그 워크스페이스의 업로드가 409 로 막힌다. 멈춘 회의를 자동으로 정리하는 장치(sweeper)는 아직 없다. 그동안은 `PATCH /meetings/{meeting_id}/fail`(서비스 토큰)로 실패 처리하면 녹음 폴더가 지워지고 막힘이 풀린다.
+
 ## 오류 코드 요약
 
 | 코드 | HTTP | 나오는 경로 | 봇 처리 |
 |---|---|---|---|
 | `UNAUTHENTICATED` | 401 | 봇 경로 전부 | 실패 |
-| `MEETING_NOT_FOUND` | 404 | end, fail, sources, extractions | 실패 |
+| `MEETING_NOT_FOUND` | 404 | end, fail, sources, extractions, uploads claim·file | 실패 |
 | `WORKSPACE_NOT_FOUND` | 404 | tasks/similar | 실패 |
 | `WORKSPACE_MISMATCH` | 400 | extractions | 실패 |
-| `MEETING_ALREADY_ENDED` | 409 | end, fail | 지금 상태로 보고 계속 |
+| `MEETING_ALREADY_ENDED` | 409 | end, fail, uploads claim | 지금 상태로 보고 계속 (claim이면 다음 회의로) |
+| `MEETING_PROCESSING_IN_PROGRESS` | 409 | uploads claim | 이미 가져갔으니 다음 회의로. 내 재시도라면 이어서 처리 (AI 미구현) |
 | `MEETING_FAILED` | 409 | sources | 실패 |
 | `MEETING_NOT_PROCESSING` | 409 | extractions | 실패 |
 | `EMBEDDING_UNAVAILABLE` | 502 | tasks/similar | 실패 (빈 목록으로 바꾸지 않음) |
@@ -197,5 +252,5 @@ AI `Transcript.to_dict()` 모양에 화자 이름을 더해 보낸다. 한 회�
 
 ## 코드 근거
 
-- Backend: `app/api/meetings.py`, `app/api/sources.py`, `app/api/similar_tasks.py`, `app/api/extractions.py`, `app/api/integrations.py`의 `get_discord_guild_workspace`, `app/api/deps.py`의 `require_service_token`, `app/schemas/meeting.py`, `app/schemas/source.py`, `app/schemas/task.py`, `app/schemas/workspace.py`
+- Backend: `app/api/meetings.py`, `app/api/sources.py`, `app/api/similar_tasks.py`, `app/api/extractions.py`, `app/api/integrations.py`의 `get_discord_guild_workspace`, `app/api/uploads.py`, `app/api/deps.py`의 `require_service_token`, `app/schemas/meeting.py`, `app/schemas/source.py`, `app/schemas/task.py`, `app/schemas/workspace.py`, `app/schemas/upload.py`, `app/services/upload_storage.py`
 - AI: `ai/capture/handoff.py`의 `BeClient`, `Handoff`, `from_env`

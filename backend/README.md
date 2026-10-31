@@ -7,7 +7,7 @@
 - [문서 안내](docs/README.md): 문서 구조와 기존 문서 배치.
 - 계약: [AI(녹음 봇) 계약](docs/contracts/backend-ai-contract.md), 웹 화면용은 [프론트엔드 대표 계약](../frontend/docs/contracts/frontend-api-contract.md).
 - 계획: [전체 계획](docs/plan/backend-plan.md), [M0~M7 안내](docs/plan/README.md). 마일스톤별 plan.md는 아직 비어 있다. 진행 상태는 전체 계획의 마일스톤 개요(2026-10-02 기준)를 따른다.
-- 결과: [M0](docs/plan/m0/result.md)(백엔드 CI 보완), [M2](docs/plan/m2/result.md)(승인 때 대상 task 제목 확인), [M3](docs/plan/m3/result.md)(추출 근거를 발화 seq로 저장), [M7](docs/plan/m7/result.md)(배포 전 CI 검사, 봇 재시작 잠금, 되돌리기 문서). 모두 마일스톤 완료를 판정하지 않았다.
+- 결과: [M0](docs/plan/m0/result.md)(백엔드 CI 보완), [M2](docs/plan/m2/result.md)(승인 때 대상 task 제목 확인), [M3](docs/plan/m3/result.md)(추출 근거를 발화 seq로 저장), [M5](docs/plan/m5/result.md)(녹음 업로드 저장과 AI 가져가기 API, AI 경로 미구현), [M7](docs/plan/m7/result.md)(배포 전 CI 검사, 봇 재시작 잠금, 되돌리기 문서). 모두 마일스톤 완료를 판정하지 않았다.
 - 배포: [배포 안내](../deploy/README.md). 요청: [녹음 시작 때 배포 재시작 잠금 확인](docs/requests/bot-restart-lock.md)(AI).
 
 ## 실행
@@ -66,6 +66,7 @@ docker compose -f docker-compose.prod.yml logs -f api
 | 나머지 환경변수 | `NOTION_*`·`DISCORD_*`·`EMBEDDING_*`·`SERVICE_TOKEN` 등은 `.env`를 그대로 넘긴다 |
 | 필수 값 | `OAUTH_STATE_SECRET`이 비어 있으면 `docker compose`가 기동 전에 멈춘다(Notion 연결용 서명 키) |
 | 데이터 | DB는 `mm-prod_pgdata` 볼륨에 남는다. 로컬 개발용 볼륨(`mm-pgdata`)과 따로다 |
+| 업로드 녹음 | `mm-prod_uploads` 볼륨(컨테이너의 `/data/uploads`)에 둔다. 회의가 done·failed가 되면 그 회의 폴더를 지운다 |
 | 로그 | 컨테이너당 10MB × 3개까지만 남긴다(디스크 50GB 고정) |
 
 ## 응답 형식
@@ -329,4 +330,4 @@ scope는 `bot applications.commands identify`다. 봇 초대 scope만 요청하�
 
 ## 아직 없는 것
 
-봇이 서버로 워크스페이스를 찾아 회의를 보내는 연결(BE 조회는 있고 봇은 아직 `ai/.env`의 `BE_WORKSPACE_ID` 하나로 보낸다, AI #180 후속), 워크스페이스 초대, 오디오 업로드·스트리밍, 메시지 로그.
+봇이 서버로 워크스페이스를 찾아 회의를 보내는 연결(BE 조회는 있고 봇은 아직 `ai/.env`의 `BE_WORKSPACE_ID` 하나로 보낸다, AI #180 후속), 워크스페이스 초대, 업로드 녹음을 AI가 처리하는 경로(BE 가져가기 API는 있고 AI 쪽이 없다, [M5 결과](docs/plan/m5/result.md)), 메시지 로그.
