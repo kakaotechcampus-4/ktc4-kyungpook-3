@@ -23,7 +23,7 @@ from app.models import (
     Workspace,
 )
 
-# 임베딩 워커가 이미 채운 task. 임베딩을 기다리는 task가 있으면 auto로 보내지 않으므로 시드 task에 넣는다
+# 임베딩 워커가 이미 채운 task. 임베딩이 없는 task가 있으면 auto로 보내지 않으므로 시드 task에 넣는다
 EMBEDDED = [0.1] * EMBEDDING_DIMENSIONS
 
 SERVICE_TOKEN = "test-service-token"
@@ -223,15 +223,31 @@ def test_second_auto_candidate_in_same_meeting_goes_to_review(client, db, seed):
     assert [i["gate"] for i in items] == ["auto", "review"]
 
 
+def test_task_rejected_by_embedding_api_blocks_auto(client, db, seed):
+    # 워커는 다시 시도하지 않지만 검색에 빠져 있으므로 같은 제목의 새 항목이 중복인지 알 수 없다
+    db.add(Task(
+        workspace_id=seed["ws"].workspace_id,
+        title="결제 API 붙이기",
+        embedding_rejected_title="결제 API 붙이기",
+    ))
+    db.commit()
+
+    item = _only_item(client, _extract(client, seed, [_judge(task_title="결제 API 붙이기")]))
+
+    assert item["gate"] == "review"
+    assert item["task_id"] is None
+
+
 @pytest.mark.parametrize(
     "fields",
     [
         pytest.param({"is_deleted": True}, id="deleted"),
-        pytest.param({"embedding_rejected_title": "결제 API 붙이기"}, id="rejected_by_embedding_api"),
+        # 제목이 없어 같은 할 일일 수 없다
+        pytest.param({"title": "   "}, id="blank_title"),
     ],
 )
-def test_task_that_will_never_be_embedded_does_not_block_auto(client, db, seed, fields):
-    db.add(Task(workspace_id=seed["ws"].workspace_id, title="결제 API 붙이기", **fields))
+def test_task_that_cannot_be_duplicate_does_not_block_auto(client, db, seed, fields):
+    db.add(Task(**{"workspace_id": seed["ws"].workspace_id, "title": "결제 API 붙이기", **fields}))
     db.commit()
 
     assert _gate(client, seed) == "auto"
