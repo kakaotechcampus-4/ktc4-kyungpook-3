@@ -1,8 +1,8 @@
 # M8-A 구현 결과 — 태스크 보기(보드·간트·캘린더)
 
-- 기록일: 2026-10-31
-- 대상: [M8 계획](plan.md) A 절, 이슈 #243. 구현 순서 3~7과 8(이 문서)
-- 상태: **AC-A-02~AC-A-06은 프론트·MSW 기준으로 충족했다. AC-A-01(보기 URL 표현)은 사용자 결정 대기라 미해결이다.** 브랜치 `feature/243-m8-task-views`의 develop 대비 9커밋(push·PR 전). 최종 게이트(2026-10-31, Node v24.11.0)는 모두 exit 0이었다. 다만 전체 Vitest는 기본 설정이 아닌 `--maxWorkers=2`로 통과했고, 기본 설정 실행은 실패 이력이 있다(아래 「전체 Vitest」). 실제 서버 연동은 검증하지 않았다. M8-A 완료나 M8 전체 완료를 선언하지 않는다.
+- 기록일: 2026-10-31, 디자인 차이 보완 2026-11-01
+- 대상: [M8 계획](plan.md) A 절, 이슈 #243. 구현 순서 3~7과 8(이 문서), 그리고 계획 밖 디자인 차이 보완(아래 「디자인 차이 보완」)
+- 상태: **AC-A-02~AC-A-06은 프론트·MSW 기준으로 충족했다. AC-A-01(보기 URL 표현)은 사용자 결정 대기라 미해결이다.** 브랜치 `feature/243-m8-task-views`(push·PR 전). 최종 게이트(2026-10-31, Node v24.11.0)는 모두 exit 0이었고, 디자인 차이 보완 뒤 게이트(2026-11-01)는 「디자인 차이 보완」의 검증 표에 따로 적었다. 다만 전체 Vitest는 기본 설정이 아닌 `--maxWorkers=2`로 통과했고, 기본 설정 실행은 실패 이력이 있다(아래 「전체 Vitest」). 실제 서버 연동은 검증하지 않았다. M8-A 완료나 M8 전체 완료를 선언하지 않는다.
 
 ## 작업 근거와 요약
 
@@ -33,8 +33,74 @@
 - **너비** — 보드·캘린더는 긴 문자열을 칸 안에서 접어 넘침을 없앴고 최소 폭을 두지 않았다. 간트는 왼쪽 칸 252px + 날짜 21칸 × 최소 48px을 표의 최소 폭으로 둔다. 이 폭이 영역보다 크면 [viewParts](../../../src/widgets/task-board/ui/viewParts.tsx)의 `HorizontalScroll` 영역 안에서 가로로 스크롤한다. 넘칠 때만 `tabIndex=0`이며 넘침은 `ResizeObserver`로 판정한다. 48px은 시안 셸 본문 1264px에서의 칸 폭이다. 1024px의 균등 분할(약 32px)에서는 `tasks-default` 실측으로 막대 라벨이 3건 잘렸다(1440·1920px은 1건).
 - **렌더** — 보드 `TaskCard`, 캘린더 `TaskChip`·`UndatedTask`, 간트 `TaskRow`·`ApprovalRow`·`UnscheduledRow`를 `memo`로 나눴다. 부모가 넘기는 이름 맵·상태 overlay·승인·회의 배열과 날짜별 묶음은 `useMemo`로 유지한다. 구독은 바꾸지 않았다(같은 데이터 재조회·다른 공간 mutation은 변경 전에도 커밋 0이었다).
 - **`queryView` 사본** — `widgets/dashboard/lib/queryView.ts`와 같은 판정을 `widgets/task-board/lib/taskViews.ts`에 따로 두었다. [사본 결정](basis-for-decision/2026-10-31-task-views-queryview-copy.md).
-- **테스트·스토리·MSW** — 통합 테스트는 [taskViews.test.tsx](../../../src/app/taskViews.test.tsx)(상태·역할·공간·상세 링크), [taskViewsCodeSplit.test.tsx](../../../src/app/taskViewsCodeSplit.test.tsx)(코드 분리), [taskViewsRender.test.tsx](../../../src/app/taskViewsRender.test.tsx)(렌더 횟수·변경 표시)다. 스토리는 [TaskViews.stories.tsx](../../../src/widgets/task-board/ui/TaskViews.stories.tsx) 12개로, [stories.sb.ts](../../../e2e/storybook/stories.sb.ts)가 play 회귀에 포함한다. 앱 E2E는 [task-views.e2e.ts](../../../e2e/task-views.e2e.ts) 9건이다. MSW 시나리오 `tasks-long-content`를 [scenarios.ts](../../../src/shared/mock/scenarios.ts)에 추가했다.
+- **테스트·스토리·MSW** — 통합 테스트는 [taskViews.test.tsx](../../../src/app/taskViews.test.tsx)(상태·역할·공간·상세 링크), [taskViewsCodeSplit.test.tsx](../../../src/app/taskViewsCodeSplit.test.tsx)(코드 분리), [taskViewsRender.test.tsx](../../../src/app/taskViewsRender.test.tsx)(렌더 횟수·변경 표시)이고, 디자인 차이 보완에서 [taskViewsCreate.test.tsx](../../../src/app/taskViewsCreate.test.tsx)(보드 직접 추가)를 더했다. 스토리는 [TaskViews.stories.tsx](../../../src/widgets/task-board/ui/TaskViews.stories.tsx) 12개(디자인 차이 보완 뒤 14개)로, [stories.sb.ts](../../../e2e/storybook/stories.sb.ts)가 play 회귀에 포함한다. 앱 E2E는 [task-views.e2e.ts](../../../e2e/task-views.e2e.ts) 9건이다. MSW 시나리오 `tasks-long-content`를 [scenarios.ts](../../../src/shared/mock/scenarios.ts)에 추가했다.
 - **보존한 것** — `?view=` URL 해석(`readViewQuery`·`viewSearch`), 보드 세 컬럼과 상태 묶음, 상태 전이, 간트 21일과 막대 범위 계산, 캘린더 마감일·회의일 기준, 필터·정렬을 보존했다. `taskBoard.ts` 모델, `task-status` feature, `TasksPage`·라우터, `ApprovalCard`는 diff에 없다(V2·V3 확인).
+
+## 디자인 차이 보완 (2026-11-01)
+
+### 작업 근거
+
+코디네이터가 보드·간트·캘린더를 시안([TasksBoard](../../design/canvas/TasksBoard.dc.html)·[TasksGantt](../../design/canvas/TasksGantt.dc.html)·[TasksCalendar](../../design/canvas/TasksCalendar.dc.html))과 비교해 차이를 찾았고, 사용자가 아래 1~3의 수정을 요청했다(코디네이터 전달). 계획 A 절의 구현 순서에 없는 작업이며, 계획 파일은 바꾸지 않았다. 보드 기간 필터 기본값은 시안(「이번 달」)과 달라도 「전체 기간」으로 유지하라는 사용자 결정이 있었다. 결정과 구현 워커의 기본값 선택은 [디자인 차이 보완 결정](basis-for-decision/2026-11-01-task-views-design-gaps.md)에 남겼다.
+
+| 커밋 | 내용 |
+|---|---|
+| `1e76047` | 캘린더 격자가 그 달의 날이 든 주만 그린다. `calendarGrid`가 고정 42칸 대신 `(1일의 요일 + 그 달 일수)`를 7로 올림한 주 수만 만든다 |
+| `dc6f9e9` | 보드 칸 아래 「직접 추가」. `entities/task`의 `createTask`(`POST /tasks`), `features/task-create`(`useTaskCreate`·`TaskQuickAdd`), 통합 테스트 `taskViewsCreate.test.tsx` |
+| `1aad909` | 간트 「미지정」 묶음 보조 문구 한 줄, 「날짜 넣기」 크기·높이 |
+| `320e35e` | 스토리 `보드_직접_추가`·`보드_직접_추가_실패` 추가, `캘린더_PM`·`간트_PM` play 단언 보강 |
+
+### 시안 대비 차이와 조치
+
+| 보기 | 시안 | 보완 전 | 보완 후 | 근거 |
+|---|---|---|---|---|
+| 보드 | 칸마다 맨 아래 점선 「직접 추가」(높이 38px, 1px 점선 `#BDBDBD`, 둥글기 12, 12px 600 `#666`, 14px 더하기 `#949494`) | 버튼 없음 | 같은 모양의 버튼(PM만). 누르면 그 자리에서 제목 입력이 펼쳐지고, 서버가 만든 뒤 그 칸 상태의 카드가 생긴다 | 1440px 스크린샷 비교, `taskViewsCreate.test.tsx` 9건, 스토리 2건 |
+| 캘린더 | 2026-09는 5주(35칸). 10월 날만 있는 주가 없다 | 항상 6주(42칸) | 2026-09는 35칸, 6주가 필요한 2026-08은 42칸, 2026-02는 28칸 | 단위 테스트 3건, 스토리 `캘린더_PM`, Playwright 실측 gridcell 35·42 |
+| 간트 | 「미지정 · 승인하면 담당자가 붙습니다 · N건」 한 줄 | 보조 문구가 두 줄(높이 38.5px = 줄 높이 19.25px × 2) | 한 줄(높이 19.25px) | Playwright 실측, 스토리 `간트_PM` |
+| 간트 | 「날짜 넣기」 12.5px 600 `#171717`, 높이 32, 좌우 4px, 13px 꺾쇠 | 14px 600, 높이 24.5px, 패딩 0, 꺾쇠 있음 | 12.5px 600, 높이 32px, 좌우 4px, 꺾쇠 있음 | Playwright 실측, 스토리 `간트_PM` |
+
+- **간트 보조 문구:** 시안 값(252px 칸, 좌우 14, 간격 9)에서 내용 폭은 223px이다. 아바타 20 + 「미지정」 34.1 + 문구 125.6 + 「2건」 16.6 + 간격 27 = 223.4px로 0.4px 모자라 줄이 바뀌었다(Chromium·NanumSquare 실측). 시안 HTML도 같은 브라우저에서는 두 줄로 그려진다. 문구 자간을 1%(`-0.01em`) 줄여 한 줄에 넣고, 건수가 길어 더 모자라면 줄바꿈 대신 말줄임한다.
+- **날짜 넣기의 14px:** 기존 클래스 `text-control`이 글자 크기가 아니라 색(`--color-control`)으로만 생성된다(개발 서버 CSS 확인: `.text-control { color: var(--color-control) }`). 그래서 상속된 14px로 그려졌다. 이 링크는 `text-caption`(12.5px)으로 바꿨다. 같은 클래스를 쓰는 다른 곳(src 32곳)은 이번 범위 밖이라 그대로 두었다(아래 「남은 작업」).
+- **굵기·아이콘:** 시안의 「날짜 넣기」는 600에 꺾쇠가 있다. 보완 전에도 600·꺾쇠였으므로 크기·높이·패딩만 바꿨다.
+
+### 직접 추가의 동작 — MSW 기준
+
+**실제 API로는 확인하지 않았다. 동작 근거는 MSW다.** 대표 계약 §2.6의 `POST /tasks`를 재사용했고 계약 문서는 바꾸지 않았다. 서버 코드(`backend/app/api/tasks.py`)는 PM 전용이라 버튼은 PM에게만 둔다.
+
+- 칸별 상태: 시작 전 `todo`, 진행 중 `in_progress`, 완료 `done`. 본문은 `{workspace_id, title, status}`이고, 담당자 조건으로 걸러 보는 중이면 `assignee_member_id`를 더한다. `created_by`는 보내지 않는다.
+- 서버 성공 뒤에만 반영한다. 돌려받은 태스크를 목록 캐시 끝에 넣고 목록을 다시 받는다. 응답 전에는 카드가 없다(테스트가 응답을 붙잡아 확인).
+- 빈 제목·공백만 있는 제목은 보내지 않는다(「추가」 비활성). 같은 칸의 요청은 mutation 캐시로 세어 Enter·「추가」를 거듭 눌러도 한 번이다. 실패하면 입력을 남기고 칸 안에 `role="alert"` 「태스크를 추가하지 못했어요. …」를 보이며, 다시 보내 성공하면 닫힌다. Esc·「취소」는 보내지 않고 닫는다. 닫히면 포커스가 「직접 추가」로 돌아온다.
+- MSW handler와 서버의 차이: handler는 인증·PM 검사를 하지 않고 생성자를 본문 `created_by`로 적는다. 프론트가 PM에게만 버튼을 두므로 화면 동작은 같지만, MSW 이력의 생성자는 비어 있다. 기존 MSW 테스트의 전제가 바뀌어 이번에 고치지 않았다.
+- 렌더: 다른 카드는 같은 태스크 객체를 받아 다시 그려지지 않는다(기존 `taskViewsRender.test.tsx` 통과, 아래 검증).
+
+### 보완 뒤 검증 (2026-11-01, Node v24.11.0)
+
+`frontend/`에서 HEAD `320e35e`(코드 4커밋 뒤)로 실행했다. 무거운 명령은 다른 워크트리와 함께 쓰는 직렬화 래퍼(`heavy.sh`) 아래에서 하나씩 실행했다.
+
+| 명령 | exit | 결과 |
+|---|---|---|
+| `node --version` | 0 | v24.11.0 |
+| `npm run typecheck` | 0 | |
+| `npm run lint` | 0 | |
+| `npm run format:check` | 0 | |
+| 관련 파일 `npx vitest run src/app/taskViewsCreate.test.tsx src/app/taskViews.test.tsx src/app/taskViewsRender.test.tsx src/app/taskViewsCodeSplit.test.tsx src/widgets/task-board src/entities/task src/shared/mock/taskApprovalFlow.test.ts --maxWorkers=2` | 0 | 11 files / 196 tests 통과 |
+| `npm run test -- --maxWorkers=2` | **1** | 163 files 중 4 실패 / 1849 tests 통과·4 실패, 2476.89초. 실패 4건은 모두 이번 변경이 닿지 않는 파일의 5초 타임아웃이다(아래) |
+| `npm run build` | 0 | `BoardView` 7.04kB(직접 추가 포함, 이전 4.04kB)·`CalendarView` 5.44kB·`GanttView` 9.55kB 별도 청크 유지 |
+| `STORYBOOK_E2E_PORT=6211 npm run test:storybook` | 0 | 119 통과(이전 117 + 새 스토리 2) |
+
+- **전체 Vitest 실패 4건:** `appShell.test.tsx` 「다른 마일스톤의 임시 화면도…」, `meetingProcessing.test.tsx` 「StrictMode 에서도…」, `landing.test.tsx` 「`시작하기` 는 모두 로그인으로 간다…」, `scenarios.test.ts` 「시나리오끼리 독립적이다」. 실행 동안 다른 워크트리의 무거운 명령이 이어졌고 빈 메모리가 약 2~3GB였다.
+- **단독 재실행(`--maxWorkers=1`):** `appShell`·`landing`은 통과했다. `meetingProcessing`·`scenarios`는 단독에서도 5초 타임아웃으로 실패했다. 이 둘은 위 「전체 Vitest」 절에서 기준 커밋 `ff9467e`에서도 단독 실패한다고 보고된 테스트다. 이번 변경은 MSW 시나리오·handler와 회의 처리 화면을 바꾸지 않았다. 무관한 테스트의 한도·기대값은 고치지 않았다.
+- **중단된 첫 실행:** 첫 전체 Vitest는 하네스가 시스템 메모리 부족으로 셸을 중단시켰다. 남은 프로세스가 29 files만 마치고 끝나(3 실패, 모두 타임아웃) 근거로 쓰지 않는다. 다시 실행은 래퍼 대기 뒤 위 실행 하나다.
+- build·Storybook 빌드의 `Unexpected token Delim('.')` 경고와 Storybook 500kB 초과 청크 안내는 이전 게이트와 같다.
+
+- 디자인 비교: 개발 서버(5221, 이 워크트리)를 Playwright Chromium 1440px로 열어 시안 HTML과 나란히 캡처했다(`?view=board`, `?view=calendar&month=2026-09`, `?view=gantt&from=2026-09-07`). 캡처는 작업 폴더의 임시 파일이며 저장소에는 없다.
+- 기존 단언 변경: `taskViews.test.ts`의 「캘린더 격자는 일요일부터 6주다」(42칸, 마지막 10/10)를 35칸·마지막 10/3으로 바꿨다. 사용자가 요청한 동작 변경이다. 나머지 기존 단언은 바꾸지 않았다.
+
+### 시안과 아직 다른 점
+
+- 보드 기간 필터 기본값: 시안 「이번 달」, 구현 「전체 기간」. **사용자 결정으로 유지한다.**
+- 보드 칸 머리의 표식: 시안은 8px·둥글기 2px의 네모(시작 전은 1.5px 실선 테두리)다. 구현은 시작 전 테두리가 점선이고, 1440px 캡처에서 세 표식이 둥근 점으로 보인다. 이번 요청 범위 밖이라 바꾸지 않았다.
+- 보드 완료 칸의 보조 문구: 시안 「최근 2주」, 구현 「최근 완료순」(기존 구현, 정책 미확정).
+- 「직접 추가」를 누른 뒤의 입력 모양은 시안에 없다. 시안 카드 틀을 따른 구현 워커의 선택이다.
 
 ## 완료조건 확인
 
@@ -161,6 +227,8 @@ V1(HEAD `2a44c02`)에서는 typecheck·lint·format:check·build·`test:storyboo
 - **렌더 측정 재현성:** 원시 자료에 변경 전 커밋 해시가 없다. 다시 측정하면 `3f75acc`와 `11fda7a`를 명시한다.
 - **제품 정책 미확정:** 보드 컬럼·상태 전이, 간트 기간, 캘린더 기준, 필터·정렬·페이지네이션, 상세 자동 오픈은 계획의 제외 범위다. 이번 회귀 확인은 정책 확정이 아니다.
 - **문서:** [MSW 안내](../../msw-guide.md)에 `tasks-long-content` 시나리오가 아직 없다. 이번 쓰기 범위 밖이다.
+- **`text-control` 클래스:** 글자 크기 토큰 `--text-control`(13px)과 색 토큰 `--color-control`이 같은 이름이라 `text-control`이 색으로만 생성된다. 이 클래스를 쓰는 곳(src 32곳)은 13px이 아니라 상속 크기로 그려진다. 간트 「날짜 넣기」만 고쳤고 나머지는 별도 과제다.
+- **직접 추가 실제 서버 확인:** `POST /tasks`의 실제 서버 응답·권한·Notion 반영은 확인하지 않았다. MSW handler의 인증·PM 검사와 생성자 기록을 서버와 맞추는 일도 남았다.
 
 ## README 반영 제안
 
@@ -183,4 +251,5 @@ A(#243): [결과](m8/result-a.md) — AC-A-01 결정 대기, 완료 판정 없�
 - [태스크 보기의 부분 조회 실패 방침](basis-for-decision/2026-10-31-task-views-partial-failure.md)
 - [확인 필요 미조회 동안 합계를 숨기고 빈 기간을 확인된 범위로 말하는 선택](basis-for-decision/2026-10-31-task-views-unconfirmed-approval-totals.md)
 - [`queryView` 판정을 task-board 안에 사본으로 두는 선택](basis-for-decision/2026-10-31-task-views-queryview-copy.md)
+- [태스크 보기의 디자인 차이 보완 — 보드 직접 추가와 기간 필터 기본값](basis-for-decision/2026-11-01-task-views-design-gaps.md)
 - [M7 결과](../m7/result.md): 대시보드의 영역별 실패 표시(AC-05)와 #236 분리([E-06](../m7/errors/E-06-m6-detail-refetch-error-hidden.md))
