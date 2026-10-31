@@ -143,26 +143,27 @@ await fetch('/api/v1/approvals/ap_01', {
 
 ## 메시지 화면 (M8, 임시)
 
-메시지 화면은 개발 서버 + `VITE_ENABLE_MSW=true` 일 때만 보인다. 그 밖에는 준비 중 안내다. 조회 경로·응답 모양·오류 코드(`MESSAGE_THREAD_NOT_FOUND`)는 계약이 아니다([M8-C 결과](plan/m8/result-c.md)). 시나리오는 위와 같이 `?msw-scenario=<이름>` 으로 고르며 모두 `ws_01` 하나에 PM 으로 로그인한다.
+메시지 화면은 개발 서버 + `VITE_ENABLE_MSW=true` 일 때만 보인다. 그 밖에는 준비 중 안내다. 화면은 디자인 캔버스 기준이고 동작은 MSW 목이다([결정 기록](plan/m8/basis-for-decision/2026-11-01-message-ui-scope-design-canvas-msw.md)). 경로·응답 모양·오류 코드(`MESSAGE_THREAD_NOT_FOUND`, `MESSAGE_REVIEW_NOT_FOUND`)는 계약이 아니다([M8-C 결과](plan/m8/result-c.md)). 시나리오는 위와 같이 `?msw-scenario=<이름>` 으로 고르며 모두 `ws_01` 하나에 PM 으로 로그인한다.
 
 | 시나리오 | 해 볼 것 |
 |---|---|
-| `messages-default` | 보내기 전 확인 2건, 대화 4건(이재환 `th_01` 이 답장 대기) + 채널 1건 |
+| `messages-default` | 보내기 전 확인 2건(이재환 `rv_01` 마감 하루 전 예약, 정하늘 `rv_02` 지금 바로), 대화 4건(이재환 `th_01` 이 오늘로 3일째 답장 없음, `rv_01` 이 그 대화에서 승인 대기) + 채널 1건. 발송·보내지 않음·고쳐 쓰기·발송 시점·승인·반려가 성공한다 |
 | `messages-empty` | `ws_01` 의 검토·대화가 모두 없음 → 빈 상태 |
 | `messages-list-error` | 목록만 5xx. 대화 주소로 바로 들어오면 대화는 보인다 |
 | `messages-thread-error` | 목록은 정상, `th_01` 대화만 5xx |
+| `messages-send-fail` | 조회는 정상, 발송·보내지 않음·고쳐 쓰기·발송 시점 변경만 5xx(db 는 그대로) |
 
 ```text
 http://localhost:5173/workspaces/ws_01/messages?msw-scenario=messages-default
 ```
 
-고른 대화는 `/messages/threads/<id>`, 고른 보내기 전 확인 항목은 `/messages?review=<id>` 다. 로딩은 시나리오가 아니라 테스트·스토리에서 응답을 붙잡아 재현한다.
+고른 대화는 `/messages/threads/<id>`, 고른 보내기 전 확인 항목은 `/messages?review=<id>` 다. `review` 없이 들어오면 첫 확인 항목이 골라진다. 로딩은 시나리오가 아니라 테스트·스토리에서 응답을 붙잡아 재현한다. `3일 전`·`답장 3일째 없음` 같은 상대 표기는 기기의 오늘로 계산한다 — 픽스처는 MOCK_NOW(2026-09-18) 기준이라 실제 날짜로 열면 숫자가 커진다.
 
 ## 미처리 요청 읽기
 
 테스트는 `onUnhandledRequest: 'error'`이므로 등록하지 않은 요청이 실패한다. 로그의 method와 URL을 보고 `/api/v1` prefix, origin, handler 등록, 동적 경로 순서를 확인한다. `/members/aliases`와 `/members/unresolved-aliases`는 `/members/:id`보다 먼저 등록해야 한다.
 
-로컬 브라우저는 `warn`으로 경고하고 실제 네트워크로 보낸다. 의도한 mock에서 경고가 나면 handler 누락을 먼저 확인한다. OAuth `start`·`callback` 같은 302 네비게이션, AI→BE 전용 생성 경로는 M1 mock 범위 밖이다. 메시지는 실제 API 가 없어 M8 에서 임시 조회 경로(`/workspaces/{id}/messages`, `/workspaces/{id}/messages/threads/{id}`)만 MSW 에 두었다 — 계약이 아니고, 화면도 MSW 모드에서만 이 경로를 부른다(M8 계획 C-3, `messages-*` 시나리오).
+로컬 브라우저는 `warn`으로 경고하고 실제 네트워크로 보낸다. 의도한 mock에서 경고가 나면 handler 누락을 먼저 확인한다. OAuth `start`·`callback` 같은 302 네비게이션, AI→BE 전용 생성 경로는 M1 mock 범위 밖이다. 메시지는 실제 API 가 없어 M8 에서 임시 경로(조회 `/workspaces/{id}/messages`, `/workspaces/{id}/messages/threads/{id}`, 행동 `PATCH /workspaces/{id}/messages/reviews/{id}`, `POST …/reviews/{id}/send`, `POST …/reviews/{id}/dismiss`)를 MSW 에만 두었다 — 계약이 아니고, 화면도 MSW 모드에서만 이 경로를 부른다(M8 계획 C-3, `messages-*` 시나리오).
 
 ## 실 백엔드와 다른 점
 
