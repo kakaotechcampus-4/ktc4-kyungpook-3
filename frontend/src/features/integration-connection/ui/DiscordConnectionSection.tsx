@@ -1,17 +1,32 @@
 import { useId } from 'react'
-import type { DisconnectedStatus, IntegrationStatus } from '@/entities/integration'
+import type { DisconnectedStatus, Integration, IntegrationStatus } from '@/entities/integration'
 import { paths } from '@/shared/config/routes'
+import { formatSeoulMonthDayTime } from '@/shared/lib/date'
 import { Button } from '@/shared/ui/button'
 import { FormErrorPanel } from '@/shared/ui/form-error-panel'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
 import { Skeleton } from '@/shared/ui/skeleton'
 import { useIntegrationConnection } from '../model/useIntegrationConnection'
 import type { IntegrationConnectionNotice } from '../model/useIntegrationConnection'
-import { BADGE, DOT, HEADING, ICON_BOX, LEAD, NAME, NOTE, ROW, SECTION } from './connectionStyles'
+import { ConnectionActions } from './ConnectionActions'
+import {
+  ACTIONS,
+  BADGE,
+  BODY,
+  CARD,
+  DOT,
+  ICON_BOX,
+  META,
+  META_VALUE,
+  NAME,
+  NOTE,
+  SECTION,
+  TITLE_ROW,
+} from './connectionStyles'
 
 export interface DiscordConnectionSectionProps {
   workspaceId: string
-  /** PM 만 연결·재연결한다. 서버의 연결 시작이 PM 이 아니면 실패로 돌려보낸다. 일반 팀원은 상태와 요청 안내만 본다 */
+  /** PM 만 연결·재연결·연결 끊기를 한다. 서버의 연결 시작이 PM 이 아니면 실패로 돌려보낸다. 일반 팀원은 상태와 요청 안내만 본다 */
   canManage: boolean
 }
 
@@ -41,10 +56,29 @@ function DiscordMark() {
   )
 }
 
+/** 카드의 설명 줄. 연결됐으면 서버 이름과 연결 시각, 아니면 연결하면 무엇을 하는지다. 캔버스의 `읽는 채널` 은 API 에 없다 */
+function DiscordMeta({ integration }: { integration: Integration }) {
+  if (integration.status !== 'connected')
+    return <span className={META}>팀 채널에 마감 리마인드와 회의록 요약을 보내요.</span>
+  const connectedAt =
+    integration.connectedAt === null ? '' : formatSeoulMonthDayTime(integration.connectedAt)
+  return (
+    <span className={META}>
+      {integration.displayName ?? 'Discord 서버'}
+      {connectedAt === '' ? null : (
+        <>
+          {' · 연결 '}
+          <span className={META_VALUE}>{connectedAt}</span>
+        </>
+      )}
+    </span>
+  )
+}
+
 /**
- * 워크스페이스 설정의 Discord 연결 영역. 온보딩에서 건너뛴 Discord 를 여기서 연결한다 (D-011).
+ * 워크스페이스 설정 `연결` 절의 Discord 카드 (Settings 캔버스). 온보딩에서 건너뛴 Discord 를 여기서 연결한다 (D-011).
  * 연결해도 온보딩 단계는 저장하지 않는다 — 건너뜀으로 저장된 단계는 그대로다 (D-173).
- * OAuth 는 설정으로 돌아오고, 연결이 확인되면 설정에 머문다.
+ * OAuth 는 설정으로 돌아오고, 연결이 확인되면 팀 화면의 팀원 연결로 간다 (D-074).
  */
 export function DiscordConnectionSection({
   workspaceId,
@@ -52,50 +86,60 @@ export function DiscordConnectionSection({
 }: DiscordConnectionSectionProps) {
   const connection = useIntegrationConnection(workspaceId, 'discord', {
     returnPath: paths.settings(workspaceId),
-    connectedTo: null,
+    connectedTo: paths.membersConnect(workspaceId),
   })
   const headingId = useId()
-  const status = connection.integration?.status ?? null
+  const integration = connection.integration
+  const status = integration?.status ?? null
   const busy = connection.verifying
   const disconnected: DisconnectedStatus | null =
     status === 'not_connected' || status === 'revoked' ? status : null
 
   return (
     <section aria-labelledby={headingId} className={SECTION} data-testid="discord-connection">
-      <h2 id={headingId} className={HEADING}>
-        Discord 연결
-      </h2>
-      <p className={LEAD}>
-        팀 채널에 마감 리마인드와 회의록 요약을 보내요. 팀원의 Discord 계정을 이어 두면 마감 하루
-        전에 DM이 나가요.
-      </p>
+      <div className={CARD}>
+        <span className={ICON_BOX}>
+          <DiscordMark />
+        </span>
+        <div className={BODY}>
+          <div className={TITLE_ROW}>
+            <h3 id={headingId} className={NAME}>
+              Discord <span className="sr-only">연결</span>
+            </h3>
+            {status === null ? null : (
+              <span className={BADGE}>
+                <span className={DOT[status]} aria-hidden="true" />
+                {STATUS_LABEL[status]}
+              </span>
+            )}
+          </div>
+          {integration === null ? (
+            connection.integrationError ? null : (
+              <div aria-busy="true">
+                <Skeleton width={220} />
+              </div>
+            )
+          ) : (
+            <DiscordMeta integration={integration} />
+          )}
+        </div>
+        {canManage && disconnected ? (
+          <div className={ACTIONS}>
+            <Button size="md-compact" loading={busy} onClick={connection.connect}>
+              {CONNECT_LABEL[disconnected]}
+            </Button>
+          </div>
+        ) : null}
+        {canManage && status === 'connected' ? (
+          <div className={ACTIONS}>
+            <ConnectionActions workspaceId={workspaceId} provider="discord" />
+          </div>
+        ) : null}
+      </div>
 
       {status === null && connection.integrationError ? (
         <QueryErrorState error={connection.integrationError} onRetry={connection.retry} />
-      ) : status === null ? (
-        <div aria-busy="true">
-          <Skeleton lines={2} />
-        </div>
-      ) : (
-        <div className={ROW}>
-          <span className={ICON_BOX}>
-            <DiscordMark />
-          </span>
-          <div className="flex min-w-[0px] flex-1 items-center gap-8">
-            <span className={NAME}>Discord</span>
-            <span className={BADGE}>
-              <span className={DOT[status]} aria-hidden="true" />
-              {STATUS_LABEL[status]}
-            </span>
-          </div>
-          {canManage && disconnected ? (
-            <Button variant="primary" loading={busy} onClick={connection.connect}>
-              {CONNECT_LABEL[disconnected]}
-            </Button>
-          ) : null}
-        </div>
-      )}
-
+      ) : null}
       {busy ? (
         <p role="status" className={NOTE}>
           연결을 확인하고 있어요.

@@ -49,7 +49,11 @@ export const PM_연결됨: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     await expect(await canvas.findByText('연결됨')).toBeInTheDocument()
-    await expect(canvas.queryByRole('button')).toBeNull()
+    // 연결된 카드는 연결 버튼 대신 관리 버튼이다 (Settings 캔버스)
+    await expect(canvas.getAllByRole('button').map((button) => button.textContent)).toEqual([
+      '속성 다시 맞추기',
+      '연결 끊기',
+    ])
   },
 }
 

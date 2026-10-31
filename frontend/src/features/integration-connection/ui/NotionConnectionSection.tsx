@@ -1,7 +1,8 @@
 import { useEffect, useId, useRef } from 'react'
 import { useSearchParams } from 'react-router'
-import type { DisconnectedStatus, IntegrationStatus } from '@/entities/integration'
+import type { DisconnectedStatus, Integration, IntegrationStatus } from '@/entities/integration'
 import { SETTINGS_PARAMS } from '@/shared/config/routes'
+import { formatSeoulMonthDayTime } from '@/shared/lib/date'
 import { GuardedLink } from '@/shared/lib/unsaved-changes'
 import { Button } from '@/shared/ui/button'
 import { FormErrorPanel } from '@/shared/ui/form-error-panel'
@@ -9,11 +10,25 @@ import { QueryErrorState } from '@/shared/ui/query-error-state'
 import { Skeleton } from '@/shared/ui/skeleton'
 import { useNotionConnection } from '../model/useNotionConnection'
 import type { NotionConnectionNotice } from '../model/useNotionConnection'
-import { BADGE, DOT, HEADING, ICON_BOX, LEAD, NAME, NOTE, ROW, SECTION } from './connectionStyles'
+import { ConnectionActions } from './ConnectionActions'
+import {
+  ACTIONS,
+  BADGE,
+  BODY,
+  CARD,
+  DOT,
+  ICON_BOX,
+  META,
+  META_VALUE,
+  NAME,
+  NOTE,
+  SECTION,
+  TITLE_ROW,
+} from './connectionStyles'
 
 export interface NotionConnectionSectionProps {
   workspaceId: string
-  /** PM 만 연결·재연결한다. 일반 팀원은 상태와 요청 안내만 본다 (U3-3) */
+  /** PM 만 연결·재연결·연결 끊기를 한다. 일반 팀원은 상태와 요청 안내만 본다 (U3-3) */
   canManage: boolean
 }
 
@@ -53,8 +68,27 @@ function NotionMark() {
   )
 }
 
+/** 카드의 설명 줄. 연결됐으면 연결한 곳과 시각이다. 캔버스의 `마지막 쓰기` 시각은 API 에 없다 */
+function NotionMeta({ integration }: { integration: Integration }) {
+  if (integration.status !== 'connected')
+    return <span className={META}>정리한 회의록과 태스크를 이 공간의 Notion에 반영해요.</span>
+  const connectedAt =
+    integration.connectedAt === null ? '' : formatSeoulMonthDayTime(integration.connectedAt)
+  return (
+    <span className={META}>
+      {integration.displayName ?? 'Notion'}
+      {connectedAt === '' ? null : (
+        <>
+          {' · 연결 '}
+          <span className={META_VALUE}>{connectedAt}</span>
+        </>
+      )}
+    </span>
+  )
+}
+
 /**
- * 워크스페이스 설정의 Notion 연결 영역. M8 설정 화면에서 이 영역만 앞당겼다 (계획 §1).
+ * 워크스페이스 설정 `연결` 절의 Notion 카드 (Settings 캔버스). M5 에서 앞당긴 영역을 캔버스 모양으로 옮겼다.
  * 차단 모달에서 오면(`section=notion`) 제목으로 포커스를 옮겨 바로 이 영역을 읽게 한다.
  */
 export function NotionConnectionSection({ workspaceId, canManage }: NotionConnectionSectionProps) {
@@ -68,7 +102,8 @@ export function NotionConnectionSection({ workspaceId, canManage }: NotionConnec
     if (focusHere) headingRef.current?.focus()
   }, [focusHere])
 
-  const status = connection.integration?.status ?? null
+  const integration = connection.integration
+  const status = integration?.status ?? null
   const busy = connection.verifying
   // 연결·재연결을 줄 상태. 준비 중(`connecting`)은 DB 를 붙이는 중이라 다시 연결하게 하지 않는다 (#204)
   const disconnected: DisconnectedStatus | null =
@@ -77,45 +112,54 @@ export function NotionConnectionSection({ workspaceId, canManage }: NotionConnec
 
   return (
     <section aria-labelledby={headingId} className={SECTION} data-testid="notion-connection">
-      <h2 id={headingId} ref={headingRef} tabIndex={-1} className={HEADING}>
-        Notion 연결
-      </h2>
-      <p className={LEAD}>
-        회의를 정리하려면 Notion이 연결돼 있어야 해요. 정리한 회의록과 태스크를 이 공간의 Notion에
-        반영해요.
-      </p>
+      <div className={CARD}>
+        <span className={ICON_BOX}>
+          <NotionMark />
+        </span>
+        <div className={BODY}>
+          <div className={TITLE_ROW}>
+            <h3 id={headingId} ref={headingRef} tabIndex={-1} className={NAME}>
+              Notion <span className="sr-only">연결</span>
+            </h3>
+            {status === null ? null : (
+              <span className={BADGE}>
+                <span className={DOT[status]} aria-hidden="true" />
+                {STATUS_LABEL[status]}
+              </span>
+            )}
+          </div>
+          {integration === null ? (
+            connection.integrationError ? null : (
+              <div aria-busy="true">
+                <Skeleton width={220} />
+              </div>
+            )
+          ) : (
+            <NotionMeta integration={integration} />
+          )}
+        </div>
+        {canManage && disconnected ? (
+          <div className={ACTIONS}>
+            <Button size="md-compact" loading={busy} onClick={connection.connect}>
+              {CONNECT_LABEL[disconnected]}
+            </Button>
+          </div>
+        ) : null}
+        {canManage && status === 'connected' ? (
+          <div className={ACTIONS}>
+            <ConnectionActions workspaceId={workspaceId} provider="notion" />
+          </div>
+        ) : null}
+      </div>
 
       {status === null && connection.integrationError ? (
         <QueryErrorState error={connection.integrationError} onRetry={connection.retry} />
-      ) : status === null ? (
-        <div aria-busy="true">
-          <Skeleton lines={2} />
-        </div>
-      ) : (
-        <div className={ROW}>
-          <span className={ICON_BOX}>
-            <NotionMark />
-          </span>
-          <div className="flex min-w-[0px] flex-1 items-center gap-8">
-            <span className={NAME}>Notion</span>
-            <span className={BADGE}>
-              <span className={DOT[status]} aria-hidden="true" />
-              {STATUS_LABEL[status]}
-            </span>
-          </div>
-          {canManage && disconnected ? (
-            <Button variant="primary" loading={busy} onClick={connection.connect}>
-              {CONNECT_LABEL[disconnected]}
-            </Button>
-          ) : null}
-          {canManage && status === 'connected' && connection.returnTo !== null ? (
-            <GuardedLink to={connection.returnTo} replace className={NOTE}>
-              회의 올리기로 돌아가기
-            </GuardedLink>
-          ) : null}
-        </div>
-      )}
-
+      ) : null}
+      {canManage && status === 'connected' && connection.returnTo !== null ? (
+        <GuardedLink to={connection.returnTo} replace className={`${NOTE} self-start`}>
+          회의 올리기로 돌아가기
+        </GuardedLink>
+      ) : null}
       {preparing ? (
         <p role="status" className={NOTE}>
           Notion을 준비하고 있어요. 1분 정도 걸릴 수 있어요.

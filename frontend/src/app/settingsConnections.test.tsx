@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from '@testing-library/react'
+import { screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http } from 'msw'
 import { paths } from '@/shared/config/routes'
@@ -58,8 +58,8 @@ describe('설정의 Discord 연결 영역 — PM', () => {
     const url = new URL(vi.mocked(leaveApp).mock.calls[0][0], location.origin)
     expect(url.pathname).toBe(`/api/v1/workspaces/${WS}/integrations/discord/start`)
     expect(url.searchParams.get('state')).toBe(SETTINGS)
-    // Notion 은 연결돼 있어 버튼이 없다
-    expect((await notionArea()).queryByRole('button')).toBeNull()
+    // Notion 은 연결돼 있어 연결 버튼이 없다. 연결된 카드의 관리 버튼(Settings 캔버스)만 있다
+    expect((await notionArea()).queryByRole('button', { name: /연결하기/ })).toBeNull()
   })
 
   it('끊긴(revoked) Discord 는 `연결 끊김` 과 `Discord 다시 연결하기` 다 — 문구로도 구분한다', async () => {
@@ -70,17 +70,15 @@ describe('설정의 Discord 연결 영역 — PM', () => {
     expect(area.getByRole('button', { name: 'Discord 다시 연결하기' })).toBeInTheDocument()
   })
 
-  it('성공 복귀는 연동을 다시 조회해 connected 일 때 연결됨이다. 설정에 머물고 복귀 표시는 지운다', async () => {
+  it('성공 복귀는 연동을 다시 조회해 connected 면 팀 화면의 팀원 연결 창으로 간다 (D-074)', async () => {
     settleMockOAuth({ workspaceId: WS, provider: 'discord', outcome: 'success' })
     const log = recordRequests()
     const app = renderApp(returnFrom('success'))
-    const area = await discordArea()
-    expect(await area.findByText('연결됨')).toBeInTheDocument()
-    await waitFor(() => expect(area.queryByText('연결을 확인하고 있어요.')).toBeNull())
-    expect(area.queryByRole('button')).toBeNull()
-    expect(area.queryByRole('alert')).toBeNull()
-    await app.expectPath(SETTINGS)
-    await app.expectSearch('')
+    expect(await screen.findByRole('dialog', { name: '팀원 연결' })).toBeInTheDocument()
+    await app.expectPath(paths.members(WS))
+    await app.expectSearch('?connect=members')
+    // 창 뒤는 팀 화면이다 — 모달이 열려 있어 나머지는 접근성 트리에서 가려져 있다
+    expect(screen.getByRole('heading', { level: 1, name: '팀', hidden: true })).toBeInTheDocument()
     expect(integrationReads(log).length).toBeGreaterThanOrEqual(1)
   })
 
@@ -89,8 +87,7 @@ describe('설정의 Discord 연결 영역 — PM', () => {
     settleMockOAuth({ workspaceId: WS, provider: 'discord', outcome: 'success' })
     const log = recordRequests()
     renderApp(returnFrom('success'))
-    expect(await (await discordArea()).findByText('연결됨')).toBeInTheDocument()
-    await waitFor(() => expect(screen.queryByText('연결을 확인하고 있어요.')).toBeNull())
+    expect(await screen.findByRole('dialog', { name: '팀원 연결' })).toBeInTheDocument()
     expect(log.started.filter(({ method }) => method === 'PATCH')).toEqual([])
     expect(onboardingOf(WS)).toEqual(before)
     expect(before?.steps).toContainEqual({ step: 'connect_discord', status: 'skipped' })

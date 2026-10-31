@@ -77,14 +77,24 @@ function startedState(): string | null {
 }
 
 describe('설정의 Notion 연결 영역 (U3-3)', () => {
-  it('설정 화면에는 기존 입력과 Notion 연결 영역만 있다 — 연결됨이면 연결 액션이 없다', async () => {
+  it('설정 화면은 Settings 캔버스의 절을 갖고, 연결된 Notion 에는 연결 액션 대신 관리 버튼만 있다', async () => {
     renderApp(paths.settings('ws_01'))
     const area = await section()
     expect(await area.findByText('연결됨')).toBeInTheDocument()
-    expect(area.queryByRole('button')).toBeNull()
+    expect(area.getAllByRole('button').map((button) => button.textContent)).toEqual([
+      '속성 다시 맞추기',
+      '연결 끊기',
+    ])
     expect(screen.getByLabelText('워크스페이스 이름')).toBeInTheDocument()
-    // M8-B B-1 에서 Discord 연결 영역이 함께 있다. Settings 캔버스의 그 밖의 절은 결정 대기다
+    // M8-B 에서 설정을 Settings 캔버스대로 만들었다. 연결 절 안에 Discord·Notion 카드가 있다
     expect(screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent)).toEqual([
+      '일반',
+      '연결',
+      '자동 반영 기준',
+      '알림',
+      '이 팀 삭제하기',
+    ])
+    expect(screen.getAllByRole('heading', { level: 3 }).map((h) => h.textContent)).toEqual([
       'Discord 연결',
       'Notion 연결',
     ])

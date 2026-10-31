@@ -4,7 +4,7 @@ import { workspaceKey } from '@/shared/api/queryKeys'
 import type { IntegrationsDto } from '@/shared/types/api/integration'
 import { CONNECTING_POLL_MS } from '../lib/waitWhileConnecting'
 import { toIntegrations } from '../model/mapper'
-import type { Integrations } from '../model/types'
+import type { IntegrationProvider, Integrations } from '../model/types'
 
 export async function fetchIntegrations(
   workspaceId: string,
@@ -32,4 +32,18 @@ export function integrationsQueryOptions(workspaceId: string) {
         ? CONNECTING_POLL_MS
         : false,
   })
+}
+
+/**
+ * 연동 해제. PM 만 할 수 있고 204 무본문이다 (계약 §4.3, §5.8). 이미 반영한 내용은 남고 새 내용만 쓰지 않는다.
+ * 지울 행이 없어도 204 다. 화면은 성공 뒤 연동 상태를 다시 받는다 (D-137)
+ */
+export async function disconnectIntegration(
+  workspaceId: string,
+  provider: IntegrationProvider,
+): Promise<void> {
+  await request<void>(
+    `/workspaces/${encodeURIComponent(workspaceId)}/integrations/${encodeURIComponent(provider)}`,
+    { method: 'DELETE' },
+  )
 }
