@@ -10,6 +10,7 @@ argument-hint: "[기능 설명 또는 이슈·계획 경로]"
 
 끝은 **develop 대상 PR 생성**이다. 머지는 사람이 PR 을 확인한 뒤 한다. 규칙은 `ai/CLAUDE.md` 와 `docs/agent-rules.md` 를 따른다.
 Superpowers 스킬을 쓰되, 이 문서가 정한 부분은 Superpowers 기본값보다 우선한다.
+설계는 1단계의 `ai-designer` 가 맡으므로 `superpowers:brainstorming` 은 부르지 않는다. `using-superpowers` 가 brainstorming 을 먼저 하라고 해도 이 문서의 1단계가 그 자리다.
 
 역할과 모델:
 

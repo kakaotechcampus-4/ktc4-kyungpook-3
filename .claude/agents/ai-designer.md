@@ -17,7 +17,7 @@ color: purple
 
 코드와 문서가 다르면 코드를 믿고, 다르다는 사실을 적는다.
 
-## 지킬 제약
+## 지킬 제약 (`ai/CLAUDE.md` 의 "깨면 안 되는 규칙" 전체를 따른다. 특히)
 
 - "Discord" 이름과 `discord` 객체는 `capture/` 안에만 둔다. `extract`·`judge`·`draft` 는 순수 dict 만 주고받는다.
 - `shared/schemas.py` 필드 이름·구조를 바꾸면 BE 계약 변경이다. 피할 수 있으면 피하고, 필요하면 그렇다고 분명히 적는다.
