@@ -3,30 +3,36 @@ import type {
   MessageInboxDto,
   MessageReviewDto,
   MessageThreadDto,
-  MessageThreadKindDto,
 } from '@/shared/types/api/message'
 import type { Message, MessageInbox, MessageReview, MessageThread } from './types'
 
-function toMessage(dto: MessageDto): Message {
-  return { id: dto.message_id, sender: dto.sender, body: dto.body, sentAt: dto.sent_at }
+export function toMessage(dto: MessageDto): Message {
+  return {
+    id: dto.message_id,
+    sender: dto.sender,
+    body: dto.body,
+    sentAt: dto.sent_at,
+    status: dto.status,
+    delivery: dto.delivery,
+    approvedBy: dto.approved_by,
+  }
 }
 
-function toMessageReview(dto: MessageReviewDto): MessageReview {
+export function toMessageReview(dto: MessageReviewDto): MessageReview {
   return {
     id: dto.review_id,
+    threadId: dto.thread_id,
     recipientName: dto.recipient_name,
     summary: dto.summary,
     body: dto.body,
     createdAt: dto.created_at,
+    deadline: dto.deadline,
+    reason: dto.reason,
+    reasonUrl: dto.reason_url,
+    sendTiming: dto.send_timing,
+    scheduledAt: dto.scheduled_at,
+    deadlineSendAt: dto.deadline_send_at,
   }
-}
-
-/**
- * 답장 대기 — 사람별 DM 에서 봇이 마지막으로 보냈고 그 뒤 답장이 없다 (결정 4 의 임시 기본값, D-057·D-058).
- * 며칠째인지는 계산 방식이 정해지지 않아 세지 않는다. 채널은 답장을 기다리지 않는다
- */
-function isAwaitingReply(kind: MessageThreadKindDto, last: MessageDto | null | undefined): boolean {
-  return kind === 'direct' && last?.sender === 'bot'
 }
 
 export function toMessageInbox(dto: MessageInboxDto): MessageInbox {
@@ -37,7 +43,7 @@ export function toMessageInbox(dto: MessageInboxDto): MessageInbox {
       kind: thread.kind,
       name: thread.name,
       lastMessage: thread.last_message === null ? null : toMessage(thread.last_message),
-      awaitingReply: isAwaitingReply(thread.kind, thread.last_message),
+      awaitingReplySince: thread.awaiting_reply_since,
     })),
   }
 }
@@ -47,7 +53,14 @@ export function toMessageThread(dto: MessageThreadDto): MessageThread {
     id: dto.thread_id,
     kind: dto.kind,
     name: dto.name,
+    teamRole: dto.team_role,
+    discordUrl: dto.discord_url,
     messages: dto.messages.map(toMessage),
-    awaitingReply: isAwaitingReply(dto.kind, dto.messages.at(-1)),
+    awaitingReplySince: dto.awaiting_reply_since,
+    pendingReviews: dto.pending_reviews.map(({ review_id, body, scheduled_at }) => ({
+      id: review_id,
+      body,
+      scheduledAt: scheduled_at,
+    })),
   }
 }

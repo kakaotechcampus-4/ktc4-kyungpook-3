@@ -47,11 +47,13 @@ export const MOCK_SCENARIOS = [
   'dashboard-revert-rejected',
   'dashboard-member',
   'dashboard-partial-error',
-  // M8 메시지(임시, 결정 전 부분만). 모두 ws_01 하나에 PM 으로 로그인한다. 로딩은 시나리오가 아니라 응답을 붙잡아 재현한다 (계획 C-7)
+  // M8 메시지(임시, 디자인 캔버스 기준 MSW 목). 모두 ws_01 하나에 PM 으로 로그인한다.
+  // 로딩은 시나리오가 아니라 응답을 붙잡아 재현한다. 발송 성공은 messages-default 로 본다 (계획 C-7)
   'messages-default',
   'messages-empty',
   'messages-list-error',
   'messages-thread-error',
+  'messages-send-fail',
 ] as const
 export type MockScenario = (typeof MOCK_SCENARIOS)[number]
 
@@ -404,7 +406,8 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
       state.extractions = state.extractions.filter(({ extraction_id }) => extraction_id !== 'ex_01')
       break
     case 'messages-default':
-      // 보내기 전 확인 2건, 대화 4건(이재환 th_01 이 답장 대기) + 채널 1건
+      // 보내기 전 확인 2건(이재환 rv_01 은 마감 하루 전 예약, 정하늘 rv_02 는 지금 바로), 대화 4건 + 채널 1건.
+      // 이재환 th_01 은 오늘로 3일째 답장이 없고 rv_01 이 그 대화에서 승인을 기다린다
       signInWith(state, ['ws_01'], 'ws_01')
       break
     case 'messages-empty':
@@ -425,6 +428,11 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
       // 목록은 정상이고 이재환과의 대화(th_01)만 5xx 다
       signInWith(state, ['ws_01'], 'ws_01')
       state.messageFailures.threadIds = ['th_01']
+      break
+    case 'messages-send-fail':
+      // 조회는 정상이고 발송·보내지 않음·고쳐 쓰기·발송 시점 변경만 5xx 다. db 는 바뀌지 않는다
+      signInWith(state, ['ws_01'], 'ws_01')
+      state.messageFailures.actions = true
       break
   }
   return state

@@ -1,47 +1,66 @@
-import type { MessageDto, MessageThreadDto } from '@/shared/types/api/message'
+import type { MessageDto, MessageReviewDto } from '@/shared/types/api/message'
 import { toMessageInbox, toMessageThread } from './mapper'
 
 const bot: MessageDto = {
   message_id: 'mg_01',
   sender: 'bot',
   body: '진행 상황 알려 주세요 🙂',
-  sent_at: '2026-09-10T18:00:00+09:00',
+  sent_at: '2026-09-16T18:00:00+09:00',
+  status: 'sent',
+  delivery: 'approved',
+  approved_by: '최진호',
 }
-const reply: MessageDto = { ...bot, message_id: 'mg_02', sender: 'counterpart', body: '네' }
-const thread = (kind: MessageThreadDto['kind'], messages: MessageDto[]): MessageThreadDto => ({
+const review: MessageReviewDto = {
+  review_id: 'rv_01',
   thread_id: 'th_01',
-  kind,
-  name: '이재환',
-  messages,
-})
+  recipient_name: '이재환',
+  summary: '진행 상황 DM',
+  body: '본문',
+  created_at: '2026-09-17T18:00:00+09:00',
+  deadline: '2026-09-24',
+  reason: '마감이 다가와요.',
+  reason_url: null,
+  send_timing: 'day_before_deadline',
+  scheduled_at: '2026-09-23T09:00:00+09:00',
+  deadline_send_at: '2026-09-23T09:00:00+09:00',
+}
 
-it('목록 DTO 를 도메인으로 옮기고 마지막 메시지로 답장 대기를 정한다', () => {
+it('목록 DTO 를 도메인으로 옮긴다 — 답장 대기는 서버가 준 시작 시각 그대로다', () => {
   expect(
     toMessageInbox({
-      reviews: [
-        {
-          review_id: 'rv_01',
-          recipient_name: '이재환',
-          summary: '진행 상황 DM',
-          body: '본문',
-          created_at: '2026-09-17T18:00:00+09:00',
-        },
-      ],
+      reviews: [review],
       threads: [
-        { thread_id: 'th_01', kind: 'direct', name: '이재환', last_message: bot },
-        { thread_id: 'th_02', kind: 'direct', name: '박민수', last_message: reply },
-        { thread_id: 'th_05', kind: 'channel', name: '#회의록 요약', last_message: bot },
-        { thread_id: 'th_06', kind: 'direct', name: '정하늘', last_message: null },
+        {
+          thread_id: 'th_01',
+          kind: 'direct',
+          name: '이재환',
+          last_message: bot,
+          awaiting_reply_since: bot.sent_at,
+        },
+        {
+          thread_id: 'th_06',
+          kind: 'direct',
+          name: '정하늘',
+          last_message: null,
+          awaiting_reply_since: null,
+        },
       ],
     }),
   ).toEqual({
     reviews: [
       {
         id: 'rv_01',
+        threadId: 'th_01',
         recipientName: '이재환',
         summary: '진행 상황 DM',
         body: '본문',
         createdAt: '2026-09-17T18:00:00+09:00',
+        deadline: '2026-09-24',
+        reason: '마감이 다가와요.',
+        reasonUrl: null,
+        sendTiming: 'day_before_deadline',
+        scheduledAt: '2026-09-23T09:00:00+09:00',
+        deadlineSendAt: '2026-09-23T09:00:00+09:00',
       },
     ],
     threads: [
@@ -53,25 +72,39 @@ it('목록 DTO 를 도메인으로 옮기고 마지막 메시지로 답장 대�
           id: 'mg_01',
           sender: 'bot',
           body: '진행 상황 알려 주세요 🙂',
-          sentAt: '2026-09-10T18:00:00+09:00',
+          sentAt: '2026-09-16T18:00:00+09:00',
+          status: 'sent',
+          delivery: 'approved',
+          approvedBy: '최진호',
         },
-        awaitingReply: true,
+        awaitingReplySince: '2026-09-16T18:00:00+09:00',
       },
-      expect.objectContaining({ id: 'th_02', awaitingReply: false }),
-      // 채널은 답장을 기다리지 않는다
-      expect.objectContaining({ id: 'th_05', awaitingReply: false }),
-      { id: 'th_06', kind: 'direct', name: '정하늘', lastMessage: null, awaitingReply: false },
+      { id: 'th_06', kind: 'direct', name: '정하늘', lastMessage: null, awaitingReplySince: null },
     ],
   })
 })
 
-it.each([
-  ['봇이 마지막으로 보낸 DM', thread('direct', [reply, bot]), true],
-  ['상대가 답한 DM', thread('direct', [bot, reply]), false],
-  ['봇이 보낸 채널', thread('channel', [bot]), false],
-  ['메시지가 없는 DM', thread('direct', []), false],
-])('대화: %s 의 답장 대기는 %s', (_name, dto, expected) => {
-  const mapped = toMessageThread(dto)
-  expect(mapped.awaitingReply).toBe(expected)
-  expect(mapped.messages.map(({ id }) => id)).toEqual(dto.messages.map((m) => m.message_id))
+it('대화 DTO 를 도메인으로 옮긴다 — 역할·Discord 주소·승인 대기 항목을 함께 싣는다', () => {
+  expect(
+    toMessageThread({
+      thread_id: 'th_01',
+      kind: 'direct',
+      name: '이재환',
+      team_role: '백엔드',
+      discord_url: 'https://discord.com/channels/@me/mock-th_01',
+      messages: [bot, { ...bot, message_id: 'mg_02', status: 'scheduled' }],
+      awaiting_reply_since: bot.sent_at,
+      pending_reviews: [{ review_id: 'rv_01', body: '본문', scheduled_at: null }],
+    }),
+  ).toMatchObject({
+    id: 'th_01',
+    teamRole: '백엔드',
+    discordUrl: 'https://discord.com/channels/@me/mock-th_01',
+    messages: [
+      { id: 'mg_01', status: 'sent' },
+      { id: 'mg_02', status: 'scheduled' },
+    ],
+    awaitingReplySince: '2026-09-16T18:00:00+09:00',
+    pendingReviews: [{ id: 'rv_01', body: '본문', scheduledAt: null }],
+  })
 })

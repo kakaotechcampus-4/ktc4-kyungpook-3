@@ -41,10 +41,14 @@ export interface MeetingFlowState {
   attendees: Record<string, string[]>
 }
 
-/** 메시지 조회를 일부러 실패(5xx)시킨다. `inbox` 는 목록, `threadIds` 는 그 대화만이다 — 계획 C-7 의 오류 시나리오 */
+/**
+ * 메시지 요청을 일부러 실패(5xx)시킨다 — 계획 C-7 의 오류 시나리오. `inbox` 는 목록, `threadIds` 는 그 대화만,
+ * `actions` 는 보내기 전 확인 항목의 발송·보내지 않음·고쳐 쓰기·발송 시점 변경이다(db 는 바뀌지 않는다)
+ */
 export interface MessageFailures {
   inbox: boolean
   threadIds: string[]
+  actions: boolean
 }
 
 interface MockAccount {
@@ -104,7 +108,7 @@ export function initialDb(): MockDb {
     meetingFlow: { mode: 'manual', attendees: {} },
     messageReviews: structuredClone(messageReviewFixtures),
     messageThreads: structuredClone(messageThreadFixtures),
-    messageFailures: { inbox: false, threadIds: [] },
+    messageFailures: { inbox: false, threadIds: [], actions: false },
   }
 }
 export const db: MockDb = initialDb()

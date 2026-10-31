@@ -1,6 +1,7 @@
 /*
- * 메시지 화면의 임시 응답 모양. 메시지 API 가 없어 시안에서 최소 필드만 골랐다 — 계약이 아니고
- * 결정 4·실제 API 가 생기면 OpenAPI 생성 타입으로 바뀐다 (M8 계획 C-3, C-8). 대표 계약 문서에 올리지 않는다.
+ * 메시지 화면의 임시 응답 모양. 메시지 API 가 없어 시안(Messages·MessagesThread)에 보이는 항목으로 골랐다 — 계약이 아니고
+ * 실제 API 가 생기면 OpenAPI 생성 타입으로 바뀐다 (M8 계획 C-8, 결정 4 의 UI 범위는 디자인 캔버스 기준 MSW 목).
+ * 대표 계약 문서에 올리지 않는다.
  */
 
 /** 봇이 보낸 메시지인가, 상대(사람·채널)가 보낸 메시지인가 */
@@ -9,29 +10,60 @@ export type MessageSenderDto = 'bot' | 'counterpart'
 /** 사람별 DM 대화인가, 채널 항목인가 */
 export type MessageThreadKindDto = 'direct' | 'channel'
 
+/** 이미 나갔는가, 승인을 받아 정한 시각을 기다리는가 */
+export type MessageStatusDto = 'sent' | 'scheduled'
+
+/** 봇 메시지가 어떻게 나갔는가 — 규칙에 따라 자동으로, 또는 사람이 승인해서 (시안 `자동 발송`·`지훈 승인`) */
+export type MessageDeliveryDto = 'auto' | 'approved'
+
 export interface MessageDto {
   message_id: string
   sender: MessageSenderDto
   body: string
+  /** 나간 시각. `scheduled` 이면 나갈 시각이다 */
   sent_at: string
+  status: MessageStatusDto
+  /** 봇 메시지만 있다. 상대 메시지는 null */
+  delivery: MessageDeliveryDto | null
+  /** `approved` 일 때 승인한 사람 이름 */
+  approved_by: string | null
 }
 
-/** 보내기 전 확인 항목. 수신자 한 명에게 가는 DM 한 건이다 (결정 4 의 임시 기본값) */
+/** 언제 보낼까 — 마감 하루 전 · 지금 바로 · 직접 정한 시각 (Messages 시안) */
+export type MessageSendTimingDto = 'day_before_deadline' | 'now' | 'custom'
+
+/** 보내기 전 확인 항목. 수신자 한 명에게 가는 DM 한 건이다 */
 export interface MessageReviewDto {
   review_id: string
+  /** 보내면 메시지가 쌓일 대화 */
+  thread_id: string
   recipient_name: string
   /** 목록 한 줄 요약 */
   summary: string
   /** 나갈 DM 본문 */
   body: string
   created_at: string
+  /** 관련 태스크의 마감일 `YYYY-MM-DD`. 없으면 null */
+  deadline: string | null
+  /** 왜 보내려 하는가 — 서버가 만든 한 문장 */
+  reason: string
+  /** 근거가 된 마지막 Discord 메시지 주소. 없으면 null */
+  reason_url: string | null
+  send_timing: MessageSendTimingDto
+  /** 나갈 시각. `now` 이면 null */
+  scheduled_at: string | null
+  /** `마감 하루 전` 을 고르면 나갈 시각. 마감이 없으면 null 이고 그 선택지는 고를 수 없다 */
+  deadline_send_at: string | null
 }
 
 export interface MessageThreadSummaryDto {
   thread_id: string
   kind: MessageThreadKindDto
   name: string
+  /** 마지막으로 나간(또는 받은) 메시지. 예약 메시지는 넣지 않는다 */
   last_message: MessageDto | null
+  /** 답장을 기다리기 시작한 때 — 상대의 마지막 답 뒤에 처음 나간 봇 메시지의 시각. 기다리지 않으면 null, 채널은 늘 null */
+  awaiting_reply_since: string | null
 }
 
 /** `GET /workspaces/{workspace_id}/messages` (임시) */
@@ -40,10 +72,37 @@ export interface MessageInboxDto {
   threads: MessageThreadSummaryDto[]
 }
 
+/** 대화 안에서 승인을 기다리는 보내기 전 확인 항목 (MessagesThread 시안의 점선 말풍선) */
+export interface PendingMessageReviewDto {
+  review_id: string
+  body: string
+  scheduled_at: string | null
+}
+
 /** `GET /workspaces/{workspace_id}/messages/threads/{thread_id}` (임시). 메시지는 보낸 시각 순이다 */
 export interface MessageThreadDto {
   thread_id: string
   kind: MessageThreadKindDto
   name: string
+  /** 상대가 팀에서 맡은 일(시안 `백엔드`). 채널이거나 모르면 null */
+  team_role: string | null
+  /** Discord 에서 이 대화를 여는 주소. 없으면 null */
+  discord_url: string | null
   messages: MessageDto[]
+  awaiting_reply_since: string | null
+  pending_reviews: PendingMessageReviewDto[]
+}
+
+/** `PATCH /workspaces/{workspace_id}/messages/reviews/{review_id}` (임시). 준 칸만 바꾼다 */
+export interface MessageReviewPatchDto {
+  body?: string
+  send_timing?: MessageSendTimingDto
+  /** `custom` 일 때만 쓴다 */
+  scheduled_at?: string
+}
+
+/** `POST /workspaces/{workspace_id}/messages/reviews/{review_id}/send` (임시) — 대화에 더한 메시지 */
+export interface MessageSendResultDto {
+  thread_id: string
+  message: MessageDto
 }
