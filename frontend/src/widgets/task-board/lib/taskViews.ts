@@ -153,11 +153,16 @@ export interface CalendarCell {
   inMonth: boolean
 }
 
-/** 일요일부터 시작하는 6주 격자. 시안과 같다 */
+/**
+ * 일요일부터 시작하는 격자. 그 달의 날이 든 주만 그린다 — 2026-09 는 5주(시안), 2026-08 은 6주다.
+ * 다음 달 날만 있는 주는 그리지 않는다
+ */
 export function calendarGrid(month: string): CalendarCell[] {
   const first = `${month}-01`
-  const start = addDays(first, -weekday(first))
-  return Array.from({ length: 42 }, (_, index) => {
+  const lead = weekday(first)
+  const days = daysBetween(first, `${addMonths(month, 1)}-01`)
+  const start = addDays(first, -lead)
+  return Array.from({ length: Math.ceil((lead + days) / 7) * 7 }, (_, index) => {
     const date = addDays(start, index)
     return { date, inMonth: monthOf(date) === month }
   })

@@ -73,7 +73,7 @@ export function CalendarView({
   onMonthChange,
 }: CalendarViewProps) {
   const grid = useMemo(() => calendarGrid(month), [month])
-  // 날짜 칸 42개가 저마다 배열 전체를 거르지 않게 마감일로 한 번만 묶는다
+  // 날짜 칸(4~6주)이 저마다 배열 전체를 거르지 않게 마감일로 한 번만 묶는다
   const byDate = useMemo(() => {
     const index = new Map<string, DayItems>()
     const at = (date: string) => {
