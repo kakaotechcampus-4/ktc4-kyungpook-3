@@ -151,7 +151,8 @@ describe('앱 셸 (U4-2)', () => {
     )
     expect(await screen.findByRole('heading', { name: '설정' })).toBeInTheDocument()
     expect(screen.getByRole('navigation', { name: '주요 화면' })).toBeInTheDocument()
-  })
+    // 탭 다섯과 설정을 차례로 그린다. M8-B 로 팀·설정이 자리표시자에서 실제 화면이 되어 전체 실행 부하에서 5초를 넘겼다
+  }, 10_000)
 })
 
 describe('메뉴 키보드 (U4-3)', () => {

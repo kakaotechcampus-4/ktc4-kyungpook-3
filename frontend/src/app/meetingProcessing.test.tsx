@@ -190,7 +190,8 @@ describe('발견과 등록 (U4-1, U4-2)', () => {
     expect(new Set(trackerRequests(log.started).map(({ path }) => path))).toEqual(
       new Set(['/workspaces/ws_01/meetings', '/meetings/mt_10', '/meetings/mt_09']),
     )
-  })
+    // StrictMode 로 탭 넷을 차례로 그린다. M8-B 로 팀 탭이 자리표시자에서 실제 화면이 되어 전체 실행 부하에서 5초를 넘겼다
+  }, 10_000)
 
   it('정리 중 회의가 없으면 상세 요청은 0회이고 링크도 없다', async () => {
     completeMeeting('mt_10')

@@ -11,6 +11,10 @@ import { renderApp } from './test/renderApp'
  * 날짜에 기대는 판정(위험·주의, 먼저 챙길 것, 앞으로 7일)은 widgets/team/lib/team.test.ts 가 본다
  */
 
+// 앱 전체를 그리고 조회 넷(팀원·태스크·연결·Discord 사용자)과 창을 실제로 거친다. 전체 실행 부하에서 기본 5초를 넘겼다 —
+// 다른 앱 수준 검사(dashboard)와 같은 15초를 준다
+vi.setConfig({ testTimeout: 15_000 })
+
 const TEAM = paths.members('ws_01')
 
 async function unlinkedArea() {

@@ -14,6 +14,9 @@ import { renderApp } from './test/renderApp'
  * Discord·Notion 연결·OAuth 복귀는 settingsConnections.test.tsx·notionConnection.test.tsx 가 본다
  */
 
+// 앱 전체를 그리고 확인 창·토스트까지 실제로 거친다. 전체 실행 부하에서 기본 5초를 넘겼다 — 다른 앱 수준 검사(dashboard)와 같은 15초를 준다
+vi.setConfig({ testTimeout: 15_000 })
+
 const SETTINGS = paths.settings('ws_01')
 
 async function notionArea() {
