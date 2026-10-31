@@ -504,3 +504,15 @@ def test_a_meeting_waiting_for_the_workspace_asks_again_at_most_once_a_minute(tm
     fake.guilds = {"77": "ws-1"}                                   # 웹에서 연결했다
     clock["t"] += timedelta(seconds=60)
     assert run()["status"] == "handed_off" and lookups() == 2
+
+
+def test_a_diarized_manifest_is_not_pending_until_it_is_saved(tmp_path):
+    (tmp_path / "111_1.wav").write_bytes(b"x")
+    path = tmp_path / "session_g_1.json"
+    manifest = {"session": "g_1", "guild_id": "g", "status": R.STATUS_DIARIZED,
+                "speakers": [{"user_id": "111", "file": "111_1.wav"}]}
+    path.write_text(json.dumps(manifest), encoding="utf-8")
+    assert R.pending_sessions(tmp_path) == []
+    manifest["status"] = R.STATUS_SAVED
+    path.write_text(json.dumps(manifest), encoding="utf-8")
+    assert R.pending_sessions(tmp_path) == [path]
