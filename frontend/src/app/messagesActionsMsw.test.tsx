@@ -1,0 +1,319 @@
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { paths } from '@/shared/config/routes'
+import { db } from '@/shared/mock/db'
+import { MOCK_NOW } from '@/shared/mock/fixtures/constants'
+import {
+  conversation,
+  current,
+  detail,
+  hold,
+  reviewList,
+  rowTexts,
+  threadList,
+} from './test/messageScreen'
+import { renderApp } from './test/renderApp'
+
+/*
+ * M8 메시지 — 보내기 전 확인 항목의 행동 (결정 4 의 UI 범위는 디자인 캔버스 기준 MSW 목, 계획 C-5).
+ * 모든 행동은 서버(MSW)가 성공한 뒤에만 화면을 바꾼다 — 응답을 붙잡아 「응답 전에는 그대로」와 중복 제출 방지를 본다 (D-137).
+ * 실패는 그 자리의 role=alert 와 다시 시도로 알린다
+ */
+vi.mock('@/shared/config/env', () => ({
+  config: { apiBaseUrl: '/api/v1', mswEnabled: true },
+}))
+
+vi.setConfig({ testTimeout: 15_000 })
+
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(new Date(MOCK_NOW))
+})
+afterEach(() => {
+  vi.useRealTimers()
+})
+
+const REVIEW_PATH = '/workspaces/ws_01/messages/reviews/rv_01'
+
+async function openReview(reviewId = 'rv_01') {
+  const app = renderApp(paths.messageReview('ws_01', reviewId))
+  await screen.findByRole('heading', { level: 2, name: '이 메시지, 보낼까요?' })
+  return app
+}
+async function openThread(threadId = 'th_01', name = '이재환') {
+  const app = renderApp(paths.messageThread('ws_01', threadId))
+  await screen.findByRole('region', { name: '대화' })
+  await detail().findByRole('heading', { level: 2, name })
+  return app
+}
+const button = (name: string) => detail().getByRole('button', { name })
+const reviewIds = () => db.messageReviews.map(({ review_id }) => review_id)
+
+describe('이대로 발송 — 서버가 성공한 뒤에만 목록과 대화가 바뀐다', () => {
+  it('응답 전에는 목록·상세가 그대로이고 행동이 모두 잠겨 두 번 눌러도 한 번만 보낸다', async () => {
+    const app = await openReview()
+    const request = hold(`${REVIEW_PATH}/send`, 'post')
+    await userEvent.click(button('이대로 발송'))
+
+    await waitFor(() => expect(button('이대로 발송')).toHaveAttribute('aria-busy', 'true'))
+    expect(button('이대로 발송')).toBeDisabled()
+    expect(button('보내지 않음')).toBeDisabled()
+    expect(button('고쳐 쓰기')).toBeDisabled()
+    expect(detail().getByRole('radio', { name: /지금 바로/ })).toBeDisabled()
+    // 낙관적으로 빼지 않는다
+    expect(rowTexts(reviewList())).toHaveLength(2)
+    await userEvent.click(button('이대로 발송'))
+    expect(request.calls()).toBe(1)
+
+    act(() => request.resolve())
+    // 처리한 항목의 주소를 떠나 다음 항목이 골라진다 (뒤로가기로 돌아오지 않게 바꿔 끼운다)
+    await app.expectSearch('')
+    await waitFor(() => expect(rowTexts(reviewList())).toHaveLength(1))
+    expect(within(reviewList()).getByRole('heading')).toHaveTextContent('보내기 전 확인 1')
+    expect(current()[0]).toHaveTextContent('정하늘')
+    expect(app.visitedActions().at(-1)).toBe('REPLACE')
+    expect(await screen.findByText('09/23 09:00에 이재환님에게 보낼게요')).toBeInTheDocument()
+    expect(reviewIds()).toEqual(['rv_02'])
+  })
+
+  it('보낸 메시지는 그 대화에 예약 메시지로 쌓이고 승인 대기에서 빠진다', async () => {
+    await openReview()
+    await userEvent.click(button('이대로 발송'))
+    await waitFor(() => expect(rowTexts(reviewList())).toHaveLength(1))
+
+    await userEvent.click(within(threadList()).getByRole('link', { name: /이재환/ }))
+    await detail().findByRole('heading', { level: 2, name: '이재환' })
+    const upcoming = within(conversation()).getByRole('list', { name: '아직 나가지 않은 메시지' })
+    expect(upcoming).toHaveTextContent('09/23 09:00 발송 예정 · 최진호 승인')
+    expect(within(upcoming).queryByRole('button')).toBeNull()
+    expect(detail().getByText(/메시지는 항상/)).toHaveTextContent(
+      '지금 승인을 기다리는 메시지는 없어요.',
+    )
+  })
+
+  it('지금 바로 보내면 대화의 마지막 메시지가 되고 그 대화가 목록 맨 위로 온다', async () => {
+    await openReview('rv_02')
+    await userEvent.click(button('이대로 발송'))
+    expect(await screen.findByText('정하늘님에게 메시지를 보냈어요')).toBeInTheDocument()
+    await waitFor(() =>
+      expect(rowTexts(threadList())[0]).toBe(
+        '정하늘나: 하늘님, 퍼블리싱은 어디까지 진행됐는지 알려주실 수 있을까요? 🙏09/18답장 기다리는 중',
+      ),
+    )
+  })
+
+  it('실패하면 그 자리에 다시 시도를 알리고 화면은 그대로다 — 다시 시도가 성공하면 반영된다', async () => {
+    db.messageFailures.actions = true
+    await openReview()
+    await userEvent.click(button('이대로 발송'))
+    const alert = await detail().findByRole('alert')
+    expect(alert).toHaveTextContent('메시지를 보내지 못했어요')
+    expect(alert).toHaveTextContent('서버에 문제가 생겼어요. 잠시 후 다시 시도해 주세요.')
+    expect(rowTexts(reviewList())).toHaveLength(2)
+    expect(current()[0]).toHaveTextContent('이재환')
+    expect(button('이대로 발송')).toBeEnabled()
+    expect(screen.queryByText(/보낼게요|보냈어요/)).toBeNull()
+
+    db.messageFailures.actions = false
+    await userEvent.click(within(alert).getByRole('button', { name: '다시 시도' }))
+    await waitFor(() => expect(rowTexts(reviewList())).toHaveLength(1))
+    expect(detail().queryByRole('alert')).toBeNull()
+  })
+
+  it('다른 곳에서 이미 처리한 항목이면 다시 시도 대신 목록을 새로 받게 한다', async () => {
+    await openReview()
+    db.messageReviews = db.messageReviews.filter(({ review_id }) => review_id !== 'rv_01')
+    await userEvent.click(button('이대로 발송'))
+    const alert = await detail().findByRole('alert')
+    expect(alert).toHaveTextContent('메시지를 보내지 못했어요')
+    expect(alert).toHaveTextContent(
+      '이미 처리했거나 사라진 메시지예요. 목록을 새로 받아 다시 확인해 주세요.',
+    )
+    expect(within(alert).queryByRole('button', { name: '다시 시도' })).toBeNull()
+    await userEvent.click(within(alert).getByRole('button', { name: '목록 새로 받기' }))
+    await waitFor(() => expect(rowTexts(reviewList())).toHaveLength(1))
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+})
+
+describe('보내지 않음', () => {
+  it('항목을 지우고 대화는 그대로다', async () => {
+    const app = await openReview()
+    const request = hold(`${REVIEW_PATH}/dismiss`, 'post')
+    await userEvent.click(button('보내지 않음'))
+    await waitFor(() => expect(button('보내지 않음')).toHaveAttribute('aria-busy', 'true'))
+    expect(button('이대로 발송')).toBeDisabled()
+    expect(rowTexts(reviewList())).toHaveLength(2)
+
+    act(() => request.resolve())
+    await app.expectSearch('')
+    await waitFor(() => expect(rowTexts(reviewList())).toHaveLength(1))
+    expect(
+      await screen.findByText('이재환님에게 보낼 메시지를 보내지 않기로 했어요'),
+    ).toBeInTheDocument()
+    expect(db.messageThreads.find(({ thread_id }) => thread_id === 'th_01')?.messages).toHaveLength(
+      3,
+    )
+  })
+})
+
+describe('고쳐 쓰기', () => {
+  it('고친 문구는 서버가 저장한 뒤에 미리보기에 보이고, 고치는 동안에는 보낼 수 없다', async () => {
+    await openReview()
+    await userEvent.click(button('고쳐 쓰기'))
+    const field = detail().getByRole('textbox', { name: '보낼 문구' })
+    expect(field).toHaveValue(
+      '재환님, API 명세서 마감이 다음 주 목요일(9/24)이에요 🙂\n혹시 막히는 부분 있으면 알려주세요. 필요하면 마감을 옮겨도 괜찮아요!',
+    )
+    expect(button('이대로 발송')).toBeDisabled()
+    expect(button('보내지 않음')).toBeDisabled()
+    expect(detail().getByText('고친 문구를 저장하거나 취소한 뒤에 보낼 수 있어요.')).toBeVisible()
+
+    await userEvent.clear(field)
+    await userEvent.type(field, '재환님, 명세서 진행 상황 알려 주세요 🙂')
+    const request = hold(REVIEW_PATH, 'patch')
+    await userEvent.click(button('저장'))
+    await waitFor(() => expect(button('저장')).toHaveAttribute('aria-busy', 'true'))
+    expect(field).toBeDisabled()
+
+    act(() => request.resolve())
+    await waitFor(() => expect(detail().queryByRole('textbox')).toBeNull())
+    expect(detail().getByRole('region', { name: '보낼 메시지 미리보기' })).toHaveTextContent(
+      '재환님, 명세서 진행 상황 알려 주세요 🙂',
+    )
+    expect(button('이대로 발송')).toBeEnabled()
+    expect(db.messageReviews[0].body).toBe('재환님, 명세서 진행 상황 알려 주세요 🙂')
+  })
+
+  it('빈 문구는 보내지 않고 그 자리에서 알린다. 취소하면 원래 문구 그대로다', async () => {
+    await openReview()
+    await userEvent.click(button('고쳐 쓰기'))
+    const field = detail().getByRole('textbox', { name: '보낼 문구' })
+    await userEvent.clear(field)
+    const request = hold(REVIEW_PATH, 'patch')
+    await userEvent.click(button('저장'))
+    expect(detail().getByText('보낼 문구를 입력해 주세요.')).toBeVisible()
+    expect(field).toHaveAttribute('aria-invalid', 'true')
+    expect(request.calls()).toBe(0)
+
+    await userEvent.click(button('취소'))
+    expect(detail().getByRole('region', { name: '보낼 메시지 미리보기' })).toHaveTextContent(
+      '재환님, API 명세서 마감이 다음 주 목요일(9/24)이에요 🙂',
+    )
+  })
+
+  it('저장에 실패하면 고치던 문구를 그대로 두고 알린다', async () => {
+    db.messageFailures.actions = true
+    await openReview()
+    await userEvent.click(button('고쳐 쓰기'))
+    const field = detail().getByRole('textbox', { name: '보낼 문구' })
+    await userEvent.clear(field)
+    await userEvent.type(field, '고친 문구')
+    await userEvent.click(button('저장'))
+    expect(await detail().findByRole('alert')).toHaveTextContent('고친 문구를 저장하지 못했어요')
+    expect(detail().getByRole('textbox', { name: '보낼 문구' })).toHaveValue('고친 문구')
+    expect(db.messageReviews[0].body).not.toBe('고친 문구')
+  })
+})
+
+describe('언제 보낼까요? — 고른 카드는 서버가 저장한 값이다', () => {
+  it('지금 바로를 누르면 응답 전에는 그대로이고, 저장되면 카드와 미리보기 시각이 바뀐다', async () => {
+    await openReview()
+    const request = hold(REVIEW_PATH, 'patch')
+    await userEvent.click(detail().getByRole('radio', { name: /지금 바로/ }))
+    await waitFor(() => expect(detail().getByRole('radio', { name: /지금 바로/ })).toBeDisabled())
+    expect(detail().getByRole('radio', { name: /마감 하루 전/ })).toBeChecked()
+    expect(button('이대로 발송')).toBeDisabled()
+
+    act(() => request.resolve())
+    await waitFor(() => expect(detail().getByRole('radio', { name: /지금 바로/ })).toBeChecked())
+    expect(detail().getByText('바로 발송')).toBeInTheDocument()
+    expect(db.messageReviews[0]).toMatchObject({ send_timing: 'now', scheduled_at: null })
+  })
+
+  it('직접 정하기는 시각을 정해야 저장한다 — 지난 시각은 알리고, 정한 시각이 카드와 미리보기에 보인다', async () => {
+    await openReview()
+    await userEvent.click(detail().getByRole('radio', { name: /직접 정하기/ }))
+    const input = detail().getByLabelText('보낼 날짜와 시각')
+    expect(input).toHaveValue('2026-09-19T09:00')
+    expect(db.messageReviews[0].send_timing).toBe('day_before_deadline')
+
+    const request = hold(REVIEW_PATH, 'patch')
+    // datetime-local 은 글자를 하나씩 치는 입력이 아니라 값이 한 번에 바뀐다
+    fireEvent.change(input, { target: { value: '2026-09-17T09:00' } })
+    await userEvent.click(button('이 시각으로 정하기'))
+    expect(detail().getByText('지금 이후의 날짜와 시각을 골라 주세요.')).toBeVisible()
+    expect(request.calls()).toBe(0)
+
+    fireEvent.change(input, { target: { value: '2026-09-25T14:30' } })
+    await userEvent.click(button('이 시각으로 정하기'))
+    act(() => request.resolve())
+    await waitFor(() => expect(detail().queryByLabelText('보낼 날짜와 시각')).toBeNull())
+    expect(detail().getByRole('radio', { name: '직접 정하기09/25 14:30' })).toBeChecked()
+    expect(detail().getByText('09/25 14:30 예정')).toBeInTheDocument()
+  })
+
+  it('바꾸지 못하면 원래 카드가 골라진 채로 알린다', async () => {
+    db.messageFailures.actions = true
+    await openReview()
+    await userEvent.click(detail().getByRole('radio', { name: /지금 바로/ }))
+    const alert = await detail().findByRole('alert')
+    expect(alert).toHaveTextContent('발송 시점을 바꾸지 못했어요')
+    expect(detail().getByRole('radio', { name: /마감 하루 전/ })).toBeChecked()
+  })
+})
+
+describe('대화 안의 승인·반려 (MessagesThread 시안)', () => {
+  it('승인하면 응답 뒤에 점선 말풍선이 예약 메시지가 되고 안내 바의 승인 대기가 사라진다', async () => {
+    await openThread()
+    const upcoming = () =>
+      within(conversation()).getByRole('list', { name: '아직 나가지 않은 메시지' })
+    const request = hold(`${REVIEW_PATH}/send`, 'post')
+    await userEvent.click(within(upcoming()).getByRole('button', { name: '승인' }))
+    await waitFor(() =>
+      expect(within(upcoming()).getByRole('button', { name: '승인' })).toHaveAttribute(
+        'aria-busy',
+        'true',
+      ),
+    )
+    expect(within(upcoming()).getByRole('button', { name: '반려' })).toBeDisabled()
+    await userEvent.click(within(upcoming()).getByRole('button', { name: '승인' }))
+    expect(request.calls()).toBe(1)
+
+    act(() => request.resolve())
+    await waitFor(() => expect(within(upcoming()).queryByRole('button')).toBeNull())
+    expect(upcoming()).toHaveTextContent('09/23 09:00 발송 예정 · 최진호 승인')
+    expect(detail().queryByRole('link', { name: '확인하기' })).toBeNull()
+    expect(rowTexts(reviewList())).toHaveLength(1)
+    // 승인 버튼이 사라져도 포커스를 잃지 않고 대화 칸으로 옮긴다
+    expect(document.activeElement).toBe(conversation())
+  })
+
+  it('반려하면 승인 대기만 사라지고 대화는 그대로다. 실패하면 그 말풍선 아래에 알린다', async () => {
+    db.messageFailures.actions = true
+    await openThread()
+    const upcoming = within(conversation()).getByRole('list', { name: '아직 나가지 않은 메시지' })
+    await userEvent.click(within(upcoming).getByRole('button', { name: '반려' }))
+    const alert = await within(upcoming).findByRole('alert')
+    expect(alert).toHaveTextContent('보내지 않음으로 처리하지 못했어요')
+    expect(within(upcoming).getByRole('button', { name: '승인' })).toBeEnabled()
+
+    db.messageFailures.actions = false
+    await userEvent.click(within(alert).getByRole('button', { name: '다시 시도' }))
+    await waitFor(() =>
+      expect(
+        within(conversation()).queryByRole('list', { name: '아직 나가지 않은 메시지' }),
+      ).toBeNull(),
+    )
+    expect(within(conversation()).getAllByRole('listitem')).toHaveLength(3)
+    expect(rowTexts(reviewList())).toHaveLength(1)
+  })
+
+  it('확인하기는 그 승인 대기 항목의 보내기 전 확인으로 간다', async () => {
+    const app = await openThread()
+    await userEvent.click(detail().getByRole('link', { name: '확인하기' }))
+    await app.expectPath(paths.messages('ws_01'))
+    await app.expectSearch('?review=rv_01')
+    expect(await detail().findByRole('heading', { name: '이 메시지, 보낼까요?' })).toBeVisible()
+  })
+})

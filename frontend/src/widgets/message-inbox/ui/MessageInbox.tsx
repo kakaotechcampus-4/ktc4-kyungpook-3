@@ -2,12 +2,13 @@ import { useQuery } from '@tanstack/react-query'
 import { messageInboxQueryOptions } from '@/entities/message'
 import type { MessageInbox as Inbox, MessageReview, MessageThreadSummary } from '@/entities/message'
 import { paths } from '@/shared/config/routes'
+import { todayInSeoul } from '@/shared/lib/date'
 import { GuardedLink } from '@/shared/lib/unsaved-changes'
 import { EmptyState } from '@/shared/ui/empty-state'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
-import { avatarText, shortDate } from '../lib/format'
+import { avatarText, reviewDateLabel, shortDate } from '../lib/format'
 import { InboxListSkeleton, ReviewSkeleton } from './MessageSkeletons'
-import { ReviewPreview } from './ReviewPreview'
+import { ReviewDetail } from './ReviewDetail'
 import { ThreadDetail, ThreadUnavailable } from './ThreadDetail'
 
 /* Messages 캔버스 실측 — 왼쪽 목록 308(위 18 · 좌우 12 · 아래 24, 영역 사이 18) · 오른쪽 선, 목록 제목 17px.
@@ -34,25 +35,30 @@ const CHANNEL_AVATAR =
   'inline-flex shrink-0 items-center justify-center rounded-999 border border-line bg-surface text-dim'
 const DATE = 'mono text-[11px] text-dim'
 const EMPTY_DETAIL = 'flex flex-1 items-center justify-center px-36 pt-48 pb-96 text-body text-dim'
-/* EmptyMessages 캔버스 — 가운데 정렬(위 48 · 좌우 48 · 아래 96) */
+/* EmptyMessages 캔버스 — 가운데 정렬(위 48 · 좌우 48 · 아래 96), 주 액션 먹 면 40 */
 const EMPTY_PAGE = 'flex flex-1 items-center justify-center px-48 pt-48 pb-96'
+const EMPTY_ACTION =
+  'inline-flex h-40 items-center justify-center rounded-9 bg-ink px-20 text-body font-semibold text-surface hover:bg-dim active:bg-sub'
 
 export interface MessageInboxProps {
   workspaceId: string
-  /** 미리보기의 봇 이름. 공간 이름을 쓴다 (Messages 시안의 `캡스톤 5조 봇`) */
+  /** 메시지를 보내는 봇의 이름. 공간 이름을 쓴다 (Messages 시안의 `캡스톤 5조 봇`) */
   botName: string
   /** URL 이 가리키는 대화. 없으면 null */
   threadId: string | null
-  /** 검색 파라미터가 가리키는 보내기 전 확인 항목. 목록에 없는 ID 는 선택 없음이다 */
-  reviewId: string | null
+  /**
+   * 검색 파라미터가 가리키는 보내기 전 확인 항목. 목록에 없는 ID 는 선택 없음이다.
+   * `undefined` 는 파라미터가 없다는 뜻이라 첫 항목이 골라지고, `null` 은 파라미터가 있지만 ID 모양이 아니라 선택 없음이다
+   */
+  reviewId: string | null | undefined
   /** 없는 하위 경로이거나 대화 ID 모양이 틀리다 */
   invalidPath?: boolean
 }
 
 /**
- * 메시지 화면 (M8, Messages·MessagesThread 시안) — 왼쪽 목록(보내기 전 확인 · 대화), 오른쪽 상세의 2단이다.
- * 고른 항목은 URL 이 정한다. 그래서 새로고침·뒤로가기에서 그대로다. 결정 전 부분이라 읽기만 한다 —
- * 발송·반려 같은 행동은 결정 4 뒤에 붙인다 (계획 C-6 7단계)
+ * 메시지 화면 (M8, Messages·MessagesThread·EmptyMessages 시안) — 왼쪽 목록(보내기 전 확인 · 대화), 오른쪽 상세의 2단이다.
+ * 고른 항목은 URL 이 정한다. 그래서 새로고침·뒤로가기에서 그대로다. 아무것도 고르지 않고 들어오면 Messages 시안처럼
+ * 첫 보내기 전 확인 항목이 골라진다. 결정 4 의 UI 범위는 디자인 캔버스 기준이고 행동은 MSW 목이다
  */
 export function MessageInbox({
   workspaceId,
@@ -62,12 +68,16 @@ export function MessageInbox({
   invalidPath = false,
 }: MessageInboxProps) {
   const inbox = useQuery(messageInboxQueryOptions(workspaceId))
+  const reviews = inbox.data?.reviews ?? []
   const review =
-    threadId === null && reviewId !== null
-      ? (inbox.data?.reviews.find(({ id }) => id === reviewId) ?? null)
-      : null
+    threadId !== null || invalidPath
+      ? null
+      : reviewId === undefined
+        ? (reviews.at(0) ?? null)
+        : (reviews.find(({ id }) => id === reviewId) ?? null)
 
-  // 검토 항목도 대화도 없다 — EmptyMessages 캔버스 한 장. `알림 규칙 보기` 는 목적지가 없어 두지 않는다 (계획 C-6 5단계)
+  // 검토 항목도 대화도 없다 — EmptyMessages 캔버스 한 장.
+  // `알림 규칙 보기` 화면은 아직 없어 가장 가까운 팀 설정으로 보낸다 (결과 문서 C 의 차이표)
   if (
     threadId === null &&
     !invalidPath &&
@@ -80,6 +90,11 @@ export function MessageInbox({
         <EmptyState
           title="보낼 메시지가 없어요"
           description="마감이 다가오거나 진행이 멈추면, 담당자에게 보낼 DM을 여기에 준비해 둘게요. 보내기 전에 항상 물어봅니다."
+          action={
+            <GuardedLink to={paths.settings(workspaceId)} className={EMPTY_ACTION}>
+              알림 규칙 보기
+            </GuardedLink>
+          }
         />
       </main>
     )
@@ -88,10 +103,20 @@ export function MessageInbox({
   if (invalidPath) detail = <ThreadUnavailable />
   else if (threadId !== null)
     // 대화가 바뀌면 상세를 새로 마운트한다 — 이전 대화의 스크롤 자리를 들고 있지 않는다
-    detail = <ThreadDetail key={threadId} workspaceId={workspaceId} threadId={threadId} />
-  else if (review !== null) detail = <ReviewPreview review={review} botName={botName} />
-  else if (reviewId !== null && inbox.data === undefined && inbox.error === null)
-    detail = <ReviewSkeleton />
+    detail = (
+      <ThreadDetail
+        key={threadId}
+        workspaceId={workspaceId}
+        threadId={threadId}
+        botName={botName}
+      />
+    )
+  else if (review !== null)
+    // 항목이 바뀌면 고쳐 쓰던 문구·직접 정하던 시각을 들고 가지 않는다
+    detail = (
+      <ReviewDetail key={review.id} workspaceId={workspaceId} botName={botName} review={review} />
+    )
+  else if (inbox.data === undefined && inbox.error === null) detail = <ReviewSkeleton />
   else if (inbox.data !== undefined)
     detail = <p className={EMPTY_DETAIL}>왼쪽 목록에서 확인할 메시지나 대화를 골라 주세요.</p>
   else detail = null
@@ -138,7 +163,10 @@ function InboxList({
   threadId: string | null
   reviewId: string | null
 }) {
-  const awaiting = inbox.threads.filter(({ awaitingReply }) => awaitingReply).length
+  const awaiting = inbox.threads.filter(
+    ({ awaitingReplySince }) => awaitingReplySince !== null,
+  ).length
+  const today = todayInSeoul()
   return (
     <>
       <section aria-labelledby="messages-reviews" className="flex flex-col gap-6">
@@ -154,6 +182,7 @@ function InboxList({
                 <ReviewRow
                   workspaceId={workspaceId}
                   review={review}
+                  dateLabel={reviewDateLabel(review, today)}
                   selected={review.id === reviewId}
                 />
               </li>
@@ -197,10 +226,13 @@ function InboxList({
 function ReviewRow({
   workspaceId,
   review,
+  dateLabel,
   selected,
 }: {
   workspaceId: string
   review: MessageReview
+  /** `09/24 마감` 또는 `3일 전` */
+  dateLabel: string
   selected: boolean
 }) {
   return (
@@ -215,7 +247,7 @@ function ReviewRow({
           {avatarText(review.recipientName, 'direct')}
         </span>
         <span className={REVIEW_NAME}>{review.recipientName}</span>
-        <span className={DATE}>{shortDate(review.createdAt)}</span>
+        <span className={DATE}>{dateLabel}</span>
       </span>
       <span className={REVIEW_SUMMARY}>{review.summary}</span>
     </GuardedLink>
@@ -258,7 +290,7 @@ function ThreadRow({
       </span>
       <span className="flex shrink-0 flex-col items-end gap-4">
         {last === null ? null : <span className={DATE}>{shortDate(last.sentAt)}</span>}
-        {thread.awaitingReply ? (
+        {thread.awaitingReplySince !== null ? (
           <>
             <span
               aria-hidden="true"

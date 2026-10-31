@@ -53,12 +53,13 @@ function Messages({ unknownPath = false }: { unknownPath?: boolean }) {
   const [searchParams] = useSearchParams()
   if (workspaceId === null || workspace === null) return null
   const threadId = parseRouteId(rawThreadId)
+  const rawReviewId = searchParams.get(MESSAGE_PARAMS.review)
   return (
     <MessageInbox
       workspaceId={workspaceId}
       botName={workspace.name}
       threadId={threadId}
-      reviewId={parseRouteId(searchParams.get(MESSAGE_PARAMS.review) ?? undefined)}
+      reviewId={rawReviewId === null ? undefined : parseRouteId(rawReviewId)}
       invalidPath={unknownPath || (rawThreadId !== undefined && threadId === null)}
     />
   )

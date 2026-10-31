@@ -1,16 +1,25 @@
 import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { http } from 'msw'
 import { paths } from '@/shared/config/routes'
 import { db } from '@/shared/mock/db'
 import { MOCK_NOW } from '@/shared/mock/fixtures/constants'
-import { server } from '@/shared/mock/server'
-import { deferred } from '@/shared/test/deferred'
+import {
+  conversation,
+  current,
+  detail,
+  hold,
+  list,
+  readable,
+  reviewList,
+  rowTexts,
+  threadList,
+} from './test/messageScreen'
 import { renderApp } from './test/renderApp'
 
 /*
- * M8 메시지 (계획 C-6 1~6단계, AC-01 ~ AC-07). 개발 서버 + VITE_ENABLE_MSW=true 를 흉내낸다 — 이 파일 안에서만 설정을 바꾼다.
- * 실 API 모드의 준비 중 안내는 라우트·가드·앱 셸 테스트가 그대로 본다 (AC-01)
+ * M8 메시지 (계획 C-6 1~6단계, AC-01 ~ AC-07 — 화면은 디자인 캔버스 기준). 개발 서버 + VITE_ENABLE_MSW=true 를 흉내낸다 —
+ * 이 파일 안에서만 설정을 바꾼다. 실 API 모드의 준비 중 안내는 라우트·가드·앱 셸 테스트가 그대로 본다 (AC-01).
+ * 보내기 전 확인 항목의 행동(발송·보내지 않음·고쳐 쓰기·발송 시점·승인·반려)은 messagesActionsMsw.test.tsx 가 본다
  */
 vi.mock('@/shared/config/env', () => ({
   config: { apiBaseUrl: '/api/v1', mswEnabled: true },
@@ -25,22 +34,6 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers()
 })
-
-const list = () => within(screen.getByRole('complementary', { name: '메시지 목록' }))
-const detail = () => within(screen.getByRole('region', { name: '메시지 내용' }))
-const reviewList = () => list().getByRole('region', { name: /^보내기 전 확인/ })
-const threadList = () => list().getByRole('region', { name: '대화' })
-/** 화면 읽기가 읽는 글자. 장식(aria-hidden 아바타 글자·답장 대기 점)은 뺀다 */
-function readable(element: HTMLElement): string {
-  const copy = element.cloneNode(true) as HTMLElement
-  copy.querySelectorAll('[aria-hidden="true"]').forEach((node) => node.remove())
-  return copy.textContent
-}
-const rowTexts = (region: HTMLElement) => within(region).getAllByRole('link').map(readable)
-const current = () =>
-  list()
-    .getAllByRole('link')
-    .filter((link) => link.getAttribute('aria-current') === 'page')
 
 async function openInbox(path = paths.messages('ws_01')) {
   const app = renderApp(path)
@@ -61,51 +54,103 @@ describe('MSW 모드에서만 새 화면이다 (AC-01)', () => {
 })
 
 describe('왼쪽 목록 두 영역과 오른쪽 상세의 2단이고, 선택은 URL 이 정한다 (AC-02)', () => {
-  it('보내기 전 확인 2건과 대화 5건(사람별 4 + 채널 1)이 시안 순서로 보이고, 고르기 전에는 상세가 비어 있다', async () => {
+  it('보내기 전 확인 2건과 대화 5건(사람별 4 + 채널 1)이 시안 순서로 보이고, 들어오면 첫 확인 항목이 골라져 있다', async () => {
     await openInbox()
     expect(within(reviewList()).getByRole('heading', { level: 2 })).toHaveTextContent(
       '보내기 전 확인 2',
     )
+    // 마감이 있는 항목은 마감일, 없는 항목은 만든 때를 오늘(MOCK_NOW 9/18) 기준으로 쓴다
     expect(rowTexts(reviewList())).toEqual([
-      '이재환09/17API 명세서 진행 상황을 물어보는 DM',
-      '정하늘09/15퍼블리싱 진행 상황 확인',
+      '이재환09/24 마감API 명세서 진행 상황을 물어보는 DM',
+      '정하늘3일 전퍼블리싱 진행 상황 확인',
     ])
     expect(rowTexts(threadList())).toEqual([
-      '이재환나: DB 스키마가 확정됐다고 들었어요. 명세서 작업은 시작하셨나요?09/10답장 기다리는 중',
+      '이재환나: DB 스키마가 확정됐다고 들었어요. 명세서 작업은 시작하셨나요?09/16답장 기다리는 중',
       '박민수STT 튜닝 결과 Notion에 붙였습니다09/09',
       '정하늘발표 순서 정리해서 올릴게요09/04',
       '박지훈확인했습니다09/02',
       '#회의록 요약나: 3주차 정기회의 요약 게시09/09',
     ])
-    expect(current()).toEqual([])
-    expect(
-      detail().getByText('왼쪽 목록에서 확인할 메시지나 대화를 골라 주세요.'),
-    ).toBeInTheDocument()
+    // Messages 시안처럼 아무것도 고르지 않고 들어와도 첫 보내기 전 확인 항목이 골라져 있다
+    expect(current()).toHaveLength(1)
+    expect(current()[0]).toHaveTextContent('이재환')
+    expect(detail().getByRole('heading', { level: 2, name: '이 메시지, 보낼까요?' })).toBeVisible()
+    expect(detail().getByRole('region', { name: '보낼 메시지 미리보기' })).toHaveTextContent(
+      '재환님, API 명세서 마감이 다음 주 목요일(9/24)이에요 🙂',
+    )
   })
 
-  it('검토 항목을 고르면 주소의 review 가 바뀌고, 그 행만 현재 항목이며 읽기 전용 미리보기가 보인다', async () => {
+  it('검토 항목을 고르면 주소의 review 가 바뀌고, 그 행만 현재 항목이며 그 항목의 보내기 전 확인이 보인다', async () => {
     const app = await openInbox()
     await userEvent.click(within(reviewList()).getByRole('link', { name: /정하늘/ }))
     await app.expectSearch('?review=rv_02')
     expect(current()).toHaveLength(1)
     expect(current()[0]).toHaveTextContent('정하늘')
     expect(detail().getByRole('heading', { level: 2, name: '이 메시지, 보낼까요?' })).toBeVisible()
-    const preview = detail().getByRole('region', { name: '보낼 메시지 미리보기' })
-    expect(preview).toHaveTextContent('Discord 개인 메시지 · 카테캠 3팀 봇')
-    // 본문 이모지를 그대로 보인다
-    expect(preview).toHaveTextContent(
-      '하늘님, 퍼블리싱은 어디까지 진행됐는지 알려주실 수 있을까요? 🙏',
+    expect(detail().getByText(/에게 Discord 개인 메시지로 나갑니다/)).toHaveTextContent(
+      '정하늘에게 Discord 개인 메시지로 나갑니다. 보낸 뒤에는 되돌릴 수 없어요.',
     )
-    // 결정 전이라 행동 버튼이 없다
-    expect(detail().queryByRole('button')).toBeNull()
+    const preview = detail().getByRole('region', { name: '보낼 메시지 미리보기' })
+    expect(readable(preview)).toBe(
+      'Discord 개인 메시지 · 카테캠 3팀 봇미리보기카테캠 3팀BOT바로 발송' +
+        // 본문 이모지를 그대로 보인다
+        '하늘님, 퍼블리싱은 어디까지 진행됐는지 알려주실 수 있을까요? 🙏' +
+        '문구는 그대로 고칠 수 있어요고쳐 쓰기',
+    )
+    // 근거 링크가 없는 항목은 `마지막 메시지 보기` 가 없다
+    const reason = detail().getByRole('region', { name: '왜 보내려 하나요' })
+    expect(reason).toHaveTextContent(
+      '퍼블리싱 태스크가 9/4 이후로 「진행 중」에서 바뀌지 않았어요.',
+    )
+    expect(within(reason).queryByRole('link')).toBeNull()
+    // 마감이 없어 `마감 하루 전` 은 고를 수 없고 서버가 정한 `지금 바로` 가 골라져 있다
+    expect(detail().getByRole('radio', { name: '마감 하루 전마감 없음' })).toBeDisabled()
+    expect(detail().getByRole('radio', { name: /지금 바로/ })).toBeChecked()
+  })
+
+  it('보내기 전 확인은 Messages 시안의 항목·문구를 모두 갖는다 — 미리보기·근거·발송 시점·행동·안내', async () => {
+    await openInbox(paths.messageReview('ws_01', 'rv_01'))
+    const preview = detail().getByRole('region', { name: '보낼 메시지 미리보기' })
+    expect(within(preview).getByText('Discord 개인 메시지 · 카테캠 3팀 봇')).toBeInTheDocument()
+    expect(within(preview).getByText('BOT')).toBeInTheDocument()
+    expect(within(preview).getByText('09/23 09:00 예정')).toBeInTheDocument()
+    expect(within(preview).getByText('문구는 그대로 고칠 수 있어요')).toBeInTheDocument()
+    expect(within(preview).getByRole('button', { name: '고쳐 쓰기' })).toBeEnabled()
+
+    const reason = detail().getByRole('region', { name: '왜 보내려 하나요' })
+    expect(reason).toHaveTextContent(
+      'API 명세서 마감이 9/24인데, 9/16 이후로 #개발 채널에 진행 소식이 없어요.',
+    )
+    const lastMessage = within(reason).getByRole('link', { name: /마지막 메시지 보기/ })
+    expect(lastMessage).toHaveAttribute('href', 'https://discord.com/channels/@me/mock-dev-last')
+    expect(lastMessage).toHaveAttribute('target', '_blank')
+
+    const timing = detail().getByRole('group', { name: '언제 보낼까요?' })
+    expect(
+      within(timing)
+        .getAllByRole('radio')
+        .map((radio) => radio.getAttribute('value')),
+    ).toEqual(['day_before_deadline', 'now', 'custom'])
+    expect(within(timing).getByRole('radio', { name: '마감 하루 전09/23 09:00' })).toBeChecked()
+    // 지금(MOCK_NOW 금 09:00)이 언제인지 쓴다
+    expect(within(timing).getByRole('radio', { name: '지금 바로금요일 아침' })).not.toBeChecked()
+    expect(within(timing).getByRole('radio', { name: '직접 정하기날짜 · 시각' })).not.toBeChecked()
+
+    expect(detail().getByRole('button', { name: '보내지 않음' })).toBeEnabled()
+    expect(detail().getByRole('button', { name: '이대로 발송' })).toBeEnabled()
+    expect(
+      detail().getByText(
+        '보낸 메시지는 되돌릴 수 없습니다. 이 화면에는 다른 작업을 두지 않았어요.',
+      ),
+    ).toBeInTheDocument()
   })
 
   it('주소로 바로 들어와도(새로고침) 같은 검토 항목이 골라져 있다', async () => {
-    await openInbox(paths.messageReview('ws_01', 'rv_01'))
+    await openInbox(paths.messageReview('ws_01', 'rv_02'))
     expect(current()).toHaveLength(1)
-    expect(current()[0]).toHaveTextContent('이재환')
+    expect(current()[0]).toHaveTextContent('정하늘')
     expect(detail().getByRole('region', { name: '보낼 메시지 미리보기' })).toHaveTextContent(
-      '재환님, API 명세서 마감이 다음 주 목요일(9/24)이에요 🙂',
+      '하늘님, 퍼블리싱은 어디까지 진행됐는지 알려주실 수 있을까요? 🙏',
     )
   })
 
@@ -119,6 +164,15 @@ describe('왼쪽 목록 두 영역과 오른쪽 상세의 2단이고, 선택은 
       detail().getByText('왼쪽 목록에서 확인할 메시지나 대화를 골라 주세요.'),
     ).toBeInTheDocument()
     expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('확인 항목이 없고 대화만 있으면 들어왔을 때 고를 것을 안내한다', async () => {
+    db.messageReviews = []
+    await openInbox()
+    expect(current()).toEqual([])
+    expect(
+      detail().getByText('왼쪽 목록에서 확인할 메시지나 대화를 골라 주세요.'),
+    ).toBeInTheDocument()
   })
 
   it('대화를 고르면 경로가 바뀌고 그 대화 행만 현재 항목이다 — 검토 항목은 현재 항목이 아니다', async () => {
@@ -136,45 +190,69 @@ describe('왼쪽 목록 두 영역과 오른쪽 상세의 2단이고, 선택은 
   })
 })
 
-describe('대화는 날짜 구분·보낸 쪽·시각·답장 대기를 구분해 보인다 (AC-03)', () => {
-  const conversation = () => detail().getByRole('region', { name: '대화 내용' })
+describe('대화는 날짜 구분·보낸 쪽·시각·답장 대기·승인 대기를 구분해 보인다 (AC-03)', () => {
   const days = () =>
     within(conversation())
       .getAllByRole('heading', { level: 3 })
       .map((heading) => heading.textContent)
   const messages = () => within(conversation()).getAllByRole('listitem').map(readable)
+  const footNote = () => detail().getByText(/메시지는 항상/)
 
-  it('봇이 마지막으로 보낸 DM 은 날짜별로 묶이고, 보낸 쪽과 시각이 붙고, 답장 대기가 보인다', async () => {
+  it('답장이 없는 DM 은 MessagesThread 시안대로 머리·말풍선 시각 줄·답장 없음 칩·승인 대기·안내 바를 보인다', async () => {
     await openInbox(paths.messageThread('ws_01', 'th_01'))
     expect(await detail().findByRole('heading', { level: 2, name: '이재환' })).toBeVisible()
-    expect(detail().getByText('Discord 개인 메시지')).toBeInTheDocument()
-    expect(detail().getByText('답장 기다리는 중')).toBeInTheDocument()
-    expect(days()).toEqual(['9월 8일 화요일', '9월 10일 목요일'])
+    expect(
+      detail().getByText('백엔드 · Discord 개인 메시지 · 카테캠 3팀 봇으로 보냄'),
+    ).toBeInTheDocument()
+    // 9/16 에 보내고 오늘(9/18)까지 답이 없다 — 보낸 날이 1일째다
+    expect(detail().getByText('답장 3일째 없음')).toBeVisible()
+    const discord = detail().getByRole('link', { name: /Discord에서 열기/ })
+    expect(discord).toHaveAttribute('href', 'https://discord.com/channels/@me/mock-th_01')
+    expect(discord).toHaveAttribute('target', '_blank')
+
+    expect(days()).toEqual(['9월 15일 화요일', '9월 16일 수요일', '오늘 · 9월 18일 금요일'])
     expect(messages()).toEqual([
-      '봇: 재환님, 3주차 회의에서 API 명세서를 9/24까지 정리해 주신다고 하셨어요.\nNotion 태스크로 올려 뒀습니다 🙂09:02',
+      '봇: 재환님, 3주차 회의에서 API 명세서를 9/24까지 정리해 주신다고 하셨어요.\nNotion 태스크로 올려 뒀습니다 🙂09:02 · 자동 발송',
       '이재환: 네 확인했습니다. DB 스키마 확정되면 바로 붙일게요.09:31',
-      '봇: DB 스키마가 확정됐다고 들었어요. 명세서 작업은 시작하셨나요?18:00',
+      '봇: DB 스키마가 확정됐다고 들었어요. 명세서 작업은 시작하셨나요?18:00 · 최진호 승인',
+      '봇(승인 대기): 재환님, API 명세서 마감이 다음 주 목요일(9/24)이에요 🙂\n혹시 막히는 부분 있으면 알려주세요. 필요하면 마감을 옮겨도 괜찮아요!09/23 09:00 발송 예정반려승인',
     ])
-    expect(within(conversation()).getByText('여기서부터 답장을 기다리고 있어요')).toBeVisible()
-    // 정해지지 않은 상태 문구와 이동은 두지 않는다
-    expect(detail().queryByText(/자동 발송|승인|예정/)).toBeNull()
-    expect(detail().queryByRole('link', { name: /Discord에서 열기/ })).toBeNull()
+    expect(
+      within(conversation()).getByText('여기서부터 답장이 없습니다 — 오늘로 3일째예요'),
+    ).toBeVisible()
+    const upcoming = within(conversation()).getByRole('list', { name: '아직 나가지 않은 메시지' })
+    expect(within(upcoming).getByRole('button', { name: '승인' })).toBeEnabled()
+    expect(within(upcoming).getByRole('button', { name: '반려' })).toBeEnabled()
+
+    // 아래 안내 바 — 직접 입력 칸 대신 승인 대기 항목으로 보낸다
+    expect(footNote()).toHaveTextContent(
+      '메시지는 항상 카테캠 3팀 봇이 보냅니다. 직접 입력하는 대신 승인 대기 중인 1건을 확인해 주세요.',
+    )
+    expect(detail().getByRole('link', { name: '확인하기' })).toHaveAttribute(
+      'href',
+      paths.messageReview('ws_01', 'rv_01'),
+    )
+    expect(detail().queryByRole('textbox')).toBeNull()
   })
 
-  it('상대가 답한 DM 과 채널은 답장 대기가 아니다', async () => {
+  it('상대가 답한 DM 과 채널은 답장 대기가 아니고, 승인 대기가 없으면 안내 바에 확인할 것이 없다고 쓴다', async () => {
     const app = await openInbox(paths.messageThread('ws_01', 'th_02'))
     expect(await detail().findByRole('heading', { level: 2, name: '박민수' })).toBeVisible()
-    expect(detail().queryByText('답장 기다리는 중')).toBeNull()
-    expect(detail().queryByText('여기서부터 답장을 기다리고 있어요')).toBeNull()
+    expect(detail().queryByText(/답장 \d+일째 없음/)).toBeNull()
+    expect(detail().queryByText(/여기서부터 답장이 없습니다/)).toBeNull()
+    expect(footNote()).toHaveTextContent(
+      '메시지는 항상 카테캠 3팀 봇이 보냅니다. 지금 승인을 기다리는 메시지는 없어요.',
+    )
+    expect(detail().queryByRole('link', { name: '확인하기' })).toBeNull()
 
     app.navigate(paths.messageThread('ws_01', 'th_05'))
     expect(await detail().findByRole('heading', { level: 2, name: '#회의록 요약' })).toBeVisible()
-    expect(detail().getByText('Discord 채널')).toBeInTheDocument()
-    expect(messages()).toEqual(['봇: 3주차 정기회의 요약 게시19:00'])
-    expect(screen.queryByText('여기서부터 답장을 기다리고 있어요')).toBeNull()
+    expect(detail().getByText('Discord 채널 · 카테캠 3팀 봇으로 보냄')).toBeInTheDocument()
+    expect(messages()).toEqual(['봇: 3주차 정기회의 요약 게시19:00 · 자동 발송'])
+    expect(screen.queryByText(/여기서부터 답장이 없습니다/)).toBeNull()
   })
 
-  it('오늘 보낸 메시지의 날짜 구분선은 오늘을 붙인다', async () => {
+  it('오늘 보낸 메시지의 날짜 구분선은 오늘을 붙이고, 오늘 보낸 날이 답장 없음 1일째다', async () => {
     db.messageThreads
       .find(({ thread_id }) => thread_id === 'th_02')!
       .messages.push({
@@ -182,32 +260,25 @@ describe('대화는 날짜 구분·보낸 쪽·시각·답장 대기를 구분�
         sender: 'bot',
         body: '오늘 회의 전에 한 번 더 확인해요',
         sent_at: MOCK_NOW,
+        status: 'sent',
+        delivery: 'auto',
+        approved_by: null,
       })
     await openInbox(paths.messageThread('ws_01', 'th_02'))
     await detail().findByRole('heading', { level: 2, name: '박민수' })
     expect(days()).toEqual(['9월 9일 수요일', '오늘 · 9월 18일 금요일'])
-    expect(detail().getByText('답장 기다리는 중')).toBeInTheDocument()
+    expect(detail().getByText('답장 1일째 없음')).toBeInTheDocument()
+    expect(detail().getByText('여기서부터 답장이 없습니다 — 오늘로 1일째예요')).toBeVisible()
   })
 })
 
-/** 그 조회의 응답을 붙잡는다. 풀면 기본 handler 가 답한다 */
-function hold(path: string) {
-  const gate = deferred()
-  server.use(
-    http.get(`/api/v1${path}`, async () => {
-      await gate.promise
-      return undefined
-    }),
-  )
-  return gate
-}
 const emptyWorkspace = (workspaceId: string) => {
   db.messageReviews = db.messageReviews.filter(({ workspace_id }) => workspace_id !== workspaceId)
   db.messageThreads = db.messageThreads.filter(({ workspace_id }) => workspace_id !== workspaceId)
 }
 
 describe('빈 상태·로딩·목록 오류·대화 오류가 서로 구분되고, 한쪽 오류가 다른 쪽을 막지 않는다 (AC-04)', () => {
-  it('검토도 대화도 없으면 EmptyMessages 한 장이다 — 알림 규칙 보기는 목적지가 없어 두지 않는다', async () => {
+  it('검토도 대화도 없으면 EmptyMessages 한 장이다 — 알림 규칙 보기는 가장 가까운 팀 설정으로 간다', async () => {
     emptyWorkspace('ws_01')
     renderApp(paths.messages('ws_01'))
     expect(
@@ -219,8 +290,10 @@ describe('빈 상태·로딩·목록 오류·대화 오류가 서로 구분되�
       ),
     ).toBeInTheDocument()
     expect(screen.queryByRole('complementary', { name: '메시지 목록' })).toBeNull()
-    expect(screen.queryByRole('link', { name: '알림 규칙 보기' })).toBeNull()
-    expect(screen.queryByRole('button', { name: '알림 규칙 보기' })).toBeNull()
+    expect(screen.getByRole('link', { name: '알림 규칙 보기' })).toHaveAttribute(
+      'href',
+      paths.settings('ws_01'),
+    )
     expect(screen.queryByRole('alert')).toBeNull()
   })
 
@@ -244,9 +317,12 @@ describe('빈 상태·로딩·목록 오류·대화 오류가 서로 구분되�
     expect(screen.queryByTestId('message-list-skeleton')).toBeNull()
   })
 
-  it('검토 항목 주소로 들어오면 목록을 받는 동안 상세 자리도 스켈레톤이다', async () => {
+  it.each([
+    ['검토 항목 주소', paths.messageReview('ws_01', 'rv_01')],
+    ['고른 것이 없는 주소(첫 항목이 골라진다)', paths.messages('ws_01')],
+  ])('%s 로 들어오면 목록을 받는 동안 상세 자리도 스켈레톤이다', async (_name, path) => {
     const gate = hold('/workspaces/ws_01/messages')
-    renderApp(paths.messageReview('ws_01', 'rv_01'))
+    renderApp(path)
     expect(await screen.findByTestId('message-review-skeleton')).toBeInTheDocument()
     act(() => gate.resolve())
     expect(await detail().findByRole('heading', { name: '이 메시지, 보낼까요?' })).toBeVisible()
@@ -358,10 +434,10 @@ describe('키보드만으로 목록 이동·선택·상세 확인이 되고, 이
 
   it('Tab 으로 검토 항목에 가서 Enter 로 고르고, 다시 Tab 으로 대화를 골라 내용 칸까지 간다', async () => {
     const app = await openInbox()
-    const review = within(reviewList()).getByRole('link', { name: /이재환/ })
+    const review = within(reviewList()).getByRole('link', { name: /정하늘/ })
     await tabTo(review)
     await userEvent.keyboard('{Enter}')
-    await app.expectSearch('?review=rv_01')
+    await app.expectSearch('?review=rv_02')
     expect(await detail().findByRole('heading', { name: '이 메시지, 보낼까요?' })).toBeVisible()
     // 고른 뒤에도 포커스가 목록에 남아 다음 항목으로 이어 간다
     expect(document.activeElement).toBe(review)
@@ -376,7 +452,14 @@ describe('키보드만으로 목록 이동·선택·상세 확인이 되고, 이
     expect(thread).toHaveAttribute('aria-current', 'page')
 
     // 스크롤 칸인 대화 내용도 Tab 으로 닿는다 — 키보드로 내릴 수 있다
-    await tabTo(detail().getByRole('region', { name: '대화 내용' }))
+    await tabTo(conversation())
+  })
+
+  it('발송 시점 카드는 Tab 으로 닿는 라디오이고, 서버가 정한 시점이 골라져 있다', async () => {
+    await openInbox(paths.messageReview('ws_01', 'rv_01'))
+    const deadline = detail().getByRole('radio', { name: /마감 하루 전/ })
+    await tabTo(deadline)
+    expect(deadline).toBeChecked()
   })
 
   it('답장 대기는 점의 색이 아니라 글자로도 읽힌다', async () => {
@@ -386,6 +469,7 @@ describe('키보드만으로 목록 이동·선택·상세 확인이 되고, 이
     expect(within(threadList()).getByRole('link', { name: /박민수/ })).not.toHaveTextContent(
       '답장 기다리는 중',
     )
-    expect(await detail().findByText('답장 기다리는 중')).toBeVisible()
+    // 대화 머리의 배지는 강조색에 더해 며칠째인지를 글자로 쓴다
+    expect(await detail().findByText('답장 3일째 없음')).toBeVisible()
   })
 })
