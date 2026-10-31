@@ -141,6 +141,28 @@ await fetch('/api/v1/approvals/ap_01', {
 // 다음 tasks 조회는 11개, pending approvals는 2개. 같은 승인 재처리는 409.
 ```
 
+## 설정 연결 (M8-B)
+
+설정 화면의 Discord·Notion 연결을 확인하는 시나리오다. 위 「브라우저에서 고르기」처럼 `?msw-scenario=<이름>`을 붙인다. 결과는 [M8-B 결과](plan/m8/result-b.md)에 있다.
+
+| 시나리오 | 역할 | 공간 | 해 볼 것 |
+|---|---|---|---|
+| `settings-discord-skipped` | PM | `ws_03`(온보딩 완료, Discord·팀원 연결 건너뜀, Notion 연결됨, 팀원은 생성자 PM 하나) | 설정에서 Discord 연결 → 모의 OAuth → 복귀 뒤 연결됨. 온보딩 단계는 그대로 `건너뜀`이다(D-173) |
+| `settings-unmapped` | PM | `ws_01` 픽스처 그대로(Discord 연결됨, 미매핑·서버를 떠난 사용자·봇 포함) | 미매핑 사용자를 다룰 팀 화면(B-2)의 시작 데이터. 그 화면은 아직 없다 |
+| `settings-member` | 일반 팀원 | `ws_01`(Discord 미연결, Notion 연결됨) | 연결 버튼 없이 상태와 요청 안내만 보인다 |
+
+```text
+http://localhost:5173/workspaces/ws_03/settings?msw-scenario=settings-discord-skipped
+```
+
+**연결·매핑 쓰기는 PM만 한다.** 백엔드에 맞춰 다음 쓰기는 그 공간의 PM만 허용한다(`shared/mock/auth-guard.ts`의 `requirePmRole`).
+
+- 연동 해제 `DELETE /workspaces/{id}/integrations/{provider}`
+- 팀원 생성·수정 `POST`·`PATCH /members`
+- 모의 OAuth의 연결 성공
+
+일반 팀원은 403을 받고 데이터가 바뀌지 않는다. 모의 OAuth 성공은 `failed`로 돌아간다. 조회는 소속 팀원이면 그대로 된다. `PATCH /members/{id}`는 대상 팀원이 없으면 권한보다 404가 먼저다. 아래 「실 백엔드와 다른 점」의 "`members`에는 일부러 붙이지 않았다"에서 `POST`·`PATCH /members`의 PM 검사는 예외다. 근거는 [결정 기록](plan/m8/basis-for-decision/2026-10-31-msw-pm-only-connection-writes.md)에 있다.
+
 ## 미처리 요청 읽기
 
 테스트는 `onUnhandledRequest: 'error'`이므로 등록하지 않은 요청이 실패한다. 로그의 method와 URL을 보고 `/api/v1` prefix, origin, handler 등록, 동적 경로 순서를 확인한다. `/members/aliases`와 `/members/unresolved-aliases`는 `/members/:id`보다 먼저 등록해야 한다.
