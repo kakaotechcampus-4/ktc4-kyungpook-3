@@ -84,3 +84,6 @@ frontend/docs/design/site-runtime/
 # Claude Code 개인 설정 (팀 공통은 .claude/settings.json)
 .claude/settings.local.json
 CLAUDE.local.md
+
+# Superpowers 작업 파일 (설계·계획·진행 ledger, 커밋하지 않음)
+.superpowers/
