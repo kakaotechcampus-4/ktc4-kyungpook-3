@@ -1,4 +1,4 @@
-"""채팅 폴링 검증 스크립트 — 채널의 최근 메시지를 한 번 읽어 판단 파이프라인(judge/pipeline.py)에 넣는다.
+"""채팅 폴링 검증 스크립트 — 채널의 최근 메시지를 한 번 읽어 봇·워커와 같은 판단 경로(capture/judge_path.py)에 넣는다.
 
 음성 회의의 전사록 자리에 채팅을 넣어 보는 실험용이다. 정식 진입점이 아니다. BE 에는 인계하지 않는다.
 유사 task 검색은 eval_pipeline 처럼 --tasks 의 task 목록을 실제 임베딩으로 검색해 흉내 낸다. 없으면 후보 없음.
@@ -18,7 +18,6 @@ import argparse
 import asyncio
 import json
 import sys
-from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
@@ -79,6 +78,20 @@ async def fetch_messages(token: str, channel_id: int, after: datetime) -> list[M
         await client.close()
 
 
+def judge_chat(transcript: Transcript, today, candidates, *, run=None, cfg=None):
+    """봇·워커와 같은 판단 경로(capture.judge_path)로 판단한다. (JudgeOutput, []) 또는 (None, 빠진 설정 이름).
+
+    유사 검색은 BE 대신 candidates 로 끼우므로 BE 설정은 보지 않는다. 채팅 화자는 이미 이름이라 이름 표는 넘기지
+    않는다. 등록할 항목 없이 판단 실패만 남으면 judge_path.JudgeAllFailed 가 난다.
+    """
+    from capture import judge_path
+
+    extract = judge_path.build_extractor(run=run, candidates=candidates, cfg=cfg)
+    if extract is None:
+        return None, judge_path.missing_settings(cfg, run=run, candidates=candidates)
+    return extract(transcript, None, today, workspace_id="chat_poll"), []
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--channel", help="채널 ID. 없으면 DISCORD_CHANNEL_ID")
@@ -107,12 +120,19 @@ def main() -> int:
     for s in transcript.segments:
         print(f"  {s.seq:>3} {s.speaker}: {s.text}")
 
+    from capture.judge_path import JudgeAllFailed
     from judge.eval_pipeline import EmbeddingCandidates
-    from judge.pipeline import run
 
     tasks = json.loads(open(args.tasks, encoding="utf-8").read())["tasks"] if args.tasks else []
     today = datetime.now(ZoneInfo(cfg.meeting_timezone)).date()
-    out = run(transcript, workspace_id="chat_poll", today=today, candidates=EmbeddingCandidates(tasks))
+    try:
+        out, missing = judge_chat(transcript, today, EmbeddingCandidates(tasks), cfg=cfg)
+    except JudgeAllFailed as e:
+        print(f"판단 실패: {e}", file=sys.stderr)
+        return 1
+    if out is None:
+        print(f"판단 경로 설정이 없습니다: {', '.join(missing)}", file=sys.stderr)
+        return 1
 
     print(f"\n[items {len(out.items)}건]")
     for i in out.items:
@@ -120,12 +140,12 @@ def main() -> int:
               f"due={i['due_date']} status={i['status']} assignee={i['assignee_raw']!r}\n         {i['doc_text']}")
     print(f"[failures {len(out.failures)}건]")
     for f in out.failures:
-        print(f"  {f.stage}: {f.finding_text!r} — {f.reason}")
+        print(f"  {f['stage']}: {f['text']!r} — {f['reason']}")
 
     RUNS_DIR.mkdir(parents=True, exist_ok=True)
     path = RUNS_DIR / f"chat_poll_{datetime.now():%Y%m%d_%H%M%S}.json"
     path.write_text(json.dumps({"transcript": transcript.to_dict(), "items": out.items,
-                                "failures": [asdict(f) for f in out.failures], "dropped": out.dropped},
+                                "failures": out.failures, "dropped": out.dropped},
                                ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"결과 저장: {path}")
     return 0
