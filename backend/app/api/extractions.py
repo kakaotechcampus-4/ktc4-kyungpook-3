@@ -153,6 +153,7 @@ def create_extraction(
     # 만들면 그 task도 임베딩 전이라 검색에 잡히지 않으므로 True로 바꾼다. 그 밖에는 이 요청 안에서 바뀌지 않는다
     unsearched_tasks: bool | None = None
     targets = _lock_update_targets(db, payload.items)
+    sources_by_seq = _sources_by_seq(db, meeting.meeting_id, payload.items)
 
     for raw_item in payload.items:
         # 잘못된 항목 하나로 요청 전체를 실패시키면 봇이 같은 요청을 재시도하다 회의 전체가
@@ -175,12 +176,22 @@ def create_extraction(
             )
             continue
 
-        if raw_item.assignee_type == "first" and raw_item.evidence_speaker:
-            # 1인칭: evidence_speaker는 화자의 Discord uid다. 별칭이 아니라 Member.discord_user_id로 찾는다.
-            assignee_hint = raw_item.evidence_speaker
-            cache_key = ("speaker", assignee_hint)
+        evidence_source = _representative_source(raw_item.evidence_seqs, sources_by_seq)
+        evidence = _request_evidence(raw_item, evidence_source)
+        # 1인칭 화자: AI가 결론을 말한 사람으로 직접 보낸 evidence_speaker가 먼저다. 없으면 대표 근거 발화의 화자를
+        # 쓰되, 그 발화가 요청한 seq 중 가장 큰 것(결론 발화)일 때만이다. 결론 발화가 빠지면 더 앞 발화(보통 일을
+        # 요청한 사람)가 대표가 되어 다른 사람이 담당자로 확정될 수 있어서, 그때는 화자가 없는 1인칭 항목으로 둔다
+        requested_max = max(raw_item.evidence_seqs or (), default=None)
+        found_conclusion = evidence_source is not None and evidence_source.seq == requested_max
+        speaker = raw_item.evidence_speaker or (evidence.speaker if found_conclusion else None)
+        if raw_item.assignee_type == "first":
+            # 1인칭: 화자의 Discord uid로 Member.discord_user_id를 찾는다. 화자를 모르면 누군지 모르는 것이라 not_found다.
+            # assignee_raw("제가")는 별칭이 아니라 조회하지 않는다. 별칭으로 찾으면 판정 로그에 쌓이고, 이름이 오면 화자를
+            # 모르는데도 그 사람으로 확정될 수 있다. 그래도 담당자를 언급한 것이라 화자가 없으면 원문을 힌트로 남겨 hold로 보낸다
+            assignee_hint = speaker or raw_item.assignee_raw
+            cache_key = ("speaker", speaker)
             if cache_key not in resolved_cache:
-                resolved_cache[cache_key] = resolve_speaker(db, meeting.workspace_id, assignee_hint)
+                resolved_cache[cache_key] = resolve_speaker(db, meeting.workspace_id, speaker)
             match = resolved_cache[cache_key]
         else:
             # 그 외: assignee_raw를 별칭 텍스트로 찾는다. raw가 없으면(group/none 등) 담당자 미지정이다.
@@ -197,6 +208,7 @@ def create_extraction(
                 alias_text=assignee_hint,
                 match=match,
                 meeting_id=payload.meeting_id,
+                source_id=evidence_source.source_id if evidence_source else None,
             )
 
         conf = item_confidence(
@@ -268,10 +280,11 @@ def create_extraction(
         db.add(item)
         db.flush()  # item_id 확보 (approval/task 연결에 필요)
         saved_count += 1
+        _add_item_evidence(db, meeting.meeting_id, item, raw_item.evidence_seqs, sources_by_seq)
 
         if target is not None:
             _request_task_update(
-                db, meeting, item, raw_item, match, target, has_assignee=assignee_hint is not None
+                db, meeting, item, raw_item, match, target, evidence, has_assignee=assignee_hint is not None
             )
         elif gate == Gate.AUTO:
             # 신뢰도가 충분하거나(legacy) auto 조건을 모두 만족해(judge) 승인 없이 바로 태스크로 반영한다.
@@ -297,9 +310,9 @@ def create_extraction(
                 "assignee_raw": raw_item.assignee_raw,
                 "due_date": raw_item.due_date.isoformat() if raw_item.due_date else None,
                 "due_raw": raw_item.due_raw,
-                "evidence_quote": raw_item.evidence_quote,
-                "evidence_speaker": raw_item.evidence_speaker,
-                "evidence_at_ms": raw_item.evidence_at_ms,
+                "evidence_quote": evidence.quote,
+                "evidence_speaker": evidence.speaker,
+                "evidence_at_ms": evidence.at_ms,
                 "extraction_item_id": item.item_id,
                 "meeting_id": meeting.meeting_id,
                 "gate": str(gate),
@@ -329,6 +342,59 @@ def create_extraction(
             item_count=saved_count,
         ).model_dump(mode="json")
     )
+
+
+def _sources_by_seq(db: Session, meeting_id: str, items: list[ExtractionItemCreate]) -> dict[int, Source]:
+    """요청의 모든 항목이 가리키는 근거 발화를 한 번에 읽는다. 이 회의에 없는 seq는 결과에 없다."""
+    seqs = {seq for raw_item in items for seq in raw_item.evidence_seqs or ()}
+    if not seqs:
+        return {}
+    rows = db.execute(
+        select(Source).where(Source.meeting_id == meeting_id, Source.seq.in_(seqs))
+    ).scalars()
+    return {src.seq: src for src in rows}
+
+
+def _representative_source(seqs: list[int] | None, sources_by_seq: dict[int, Source]) -> Source | None:
+    """항목의 대표 근거 발화. 찾은 발화 중 seq가 가장 큰 것(결론을 말한 마지막 발화)이고, 하나도 못 찾으면 None이다."""
+    found = [sources_by_seq[seq] for seq in seqs or () if seq in sources_by_seq]
+    return max(found, key=lambda src: src.seq, default=None)
+
+
+def _request_evidence(raw_item: ExtractionItemCreate, src: Source | None) -> EvidenceInfo:
+    """승인 요청에 보여 줄 근거. 대표 근거 발화가 있으면 그 발화를, 없으면 요청의 세 필드를 쓴다.
+
+    섞어 쓰지 않는다. 발화를 찾았으면 화자가 비어 있어도 요청의 evidence_speaker로 채우지 않는다.
+    1인칭 담당자는 이 값이 아니라 evidence_speaker를 먼저 쓴다(create_extraction).
+    """
+    if src is not None:
+        return EvidenceInfo(quote=src.text, speaker=src.speaker_discord_user_id, at_ms=src.start_ms)
+    return EvidenceInfo(
+        quote=raw_item.evidence_quote, speaker=raw_item.evidence_speaker, at_ms=raw_item.evidence_at_ms
+    )
+
+
+def _add_item_evidence(
+    db: Session,
+    meeting_id: str,
+    item: ExtractionItem,
+    seqs: list[int] | None,
+    sources_by_seq: dict[int, Source],
+) -> None:
+    """항목의 근거 발화를 evidence로 저장한다. 없는 seq는 그 seq만 건너뛰고, 같은 seq는 한 번만 저장한다."""
+    missing: list[int] = []
+    for seq in sorted(set(seqs or ())):
+        src = sources_by_seq.get(seq)
+        if src is None:
+            missing.append(seq)
+            continue
+        db.add(Evidence(item_id=item.item_id, source_id=src.source_id, type=str(EvidenceType.TASK)))
+    if missing:
+        # 발화가 없는 회의면 모든 seq가 빠지므로 seq마다가 아니라 항목마다 한 줄로 남긴다
+        logger.warning(
+            "근거 발화가 없어 그 seq를 건너뜁니다. meeting_id=%s item_id=%s seqs=%s",
+            meeting_id, item.item_id, missing,
+        )
 
 
 def _lock_update_targets(db: Session, items: list[ExtractionItemCreate]) -> dict[str, Task]:
@@ -369,6 +435,7 @@ def _request_task_update(
     raw_item: ExtractionItemCreate,
     match: MatchResult,
     target: Task,
+    evidence: EvidenceInfo,
     *,
     has_assignee: bool,
 ) -> None:
@@ -454,9 +521,9 @@ def _request_task_update(
         "assignee_raw": raw_item.assignee_raw,
         "assignee_needs_check": match.needs_check if has_assignee else False,
         "due_raw": raw_item.due_raw,
-        "evidence_quote": raw_item.evidence_quote,
-        "evidence_speaker": raw_item.evidence_speaker,
-        "evidence_at_ms": raw_item.evidence_at_ms,
+        "evidence_quote": evidence.quote,
+        "evidence_speaker": evidence.speaker,
+        "evidence_at_ms": evidence.at_ms,
         "extraction_item_id": item.item_id,
         "meeting_id": meeting.meeting_id,
         "gate": str(Gate.REVIEW),
@@ -476,7 +543,8 @@ def _request_task_update(
 def _representative_evidence(db: Session, item_ids: list[str]) -> dict[str, EvidenceInfo]:
     """항목마다 대표 근거 하나. 근거가 없는 항목은 결과에 없다.
 
-    항목마다 근거가 여러 개일 수 있지만 응답 계약은 하나뿐이라, 제목 근거 중 seq가 가장 작은 발화를 대표로 쓴다.
+    항목마다 근거가 여러 개일 수 있지만 응답 계약은 하나뿐이라, 제목 근거 중 seq가 가장 큰 발화(결론을 말한
+    마지막 발화)를 대표로 쓴다.
     """
     if not item_ids:
         return {}
@@ -487,7 +555,7 @@ def _representative_evidence(db: Session, item_ids: list[str]) -> dict[str, Evid
             Evidence.item_id.in_(item_ids),
             Evidence.type == str(EvidenceType.TASK),
         )
-        .order_by(Source.seq)
+        .order_by(Source.seq.desc())
     ).all()
     evidence_by_item: dict[str, EvidenceInfo] = {}
     for item_id, src in rows:

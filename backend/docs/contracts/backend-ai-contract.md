@@ -119,6 +119,7 @@ AI `Transcript.to_dict()` 모양에 화자 이름을 더해 보낸다. 한 회�
     "assignee_raw": "…" | null, "assignee_type": "first" | "second" | "thirdname" | "group" | "none" | null,
     "due_date": "YYYY-MM-DD" | null, "due_raw": "…" | null, "due_confidence": 0.0 | null,
     "evidence_quote": "…" | null, "evidence_speaker": "<Discord uid>" | null, "evidence_at_ms": 0 | null,
+    "evidence_seqs": [12, 13, 15] | null,     // 근거 발화의 seq(발화 저장 API의 seq). 0 ~ 2^31-1. 모르면 [] 또는 생략
     "category": "schedule" | "assignee" | "scope" | "decision" | null,
     "status": "todo" | "in_progress" | "blocked" | "done" | null,
     "doc_text": "…" | null,
@@ -138,7 +139,8 @@ AI `Transcript.to_dict()` 모양에 화자 이름을 더해 보낸다. 한 회�
 | 선점 | `processing` → `done`을 조건부 UPDATE로 한 번만 처리한다 |
 | 멱등 | 이미 `done`이고 추출이 있으면 기존 `extraction_id`와 항목 수를 그대로 돌려준다. 봇의 복구 재전송이 중복을 만들지 않는다 |
 | 상태 오류 | `processing`이 아니면 409 `MEETING_NOT_PROCESSING`. 회의가 없으면 404 `MEETING_NOT_FOUND`, 워크스페이스가 다르면 400 `WORKSPACE_MISMATCH` |
-| 담당자 | `assignee_type`이 `first`면 `evidence_speaker` uid로 `Member.discord_user_id`를 찾고, 그 외에는 `assignee_raw`를 별칭으로 매칭한다 |
+| 담당자 | `assignee_type`이 `first`면 화자의 Discord uid로 `Member.discord_user_id`를 찾고, 그 외에는 `assignee_raw`를 별칭으로 매칭한다. 화자는 `evidence_speaker`이고, 없으면 대표 근거 발화(아래 근거 행)의 `speaker_discord_user_id`다. 단, 대표 근거 발화가 `evidence_seqs` 중 가장 큰 seq(결론 발화)일 때만 쓰고, 그 발화를 찾지 못했으면 화자가 없는 1인칭 항목이다. 화자가 없는 1인칭 항목은 `assignee_raw`를 별칭으로 찾지 않고 담당자를 언급했는데 찾지 못한 것(`hold`)으로 본다. `evidence_speaker`는 AI가 결론을 말한 사람으로 직접 보낸 값이라 먼저 쓴다. 대표 근거 발화는 가장 큰 seq가 빠지면 더 앞 발화(보통 일을 요청한 사람)가 되어 다른 사람을 가리킬 수 있다 |
+| 근거 | `evidence_seqs`의 seq마다 이 회의의 발화(`source`)를 찾아 `evidence`(type=`task`) 한 줄씩 저장한다. 순서는 자유이고 같은 seq는 한 번만 저장한다. 이 회의에 없는 seq는 그 seq만 건너뛰고(항목마다 빠진 seq를 모아 경고 로그 한 줄) 요청은 그대로 받는다. seq가 0 ~ 2^31-1(발화 저장 API의 seq 범위) 밖이거나 항목 하나의 seq가 100개를 넘으면 400 `INVALID_REQUEST`다. 찾은 발화 중 seq가 가장 큰 것(결론을 말한 마지막 발화)이 대표 근거 발화다. 승인 요청 payload의 `evidence_quote`·`evidence_speaker`·`evidence_at_ms`, 별칭 판정 로그의 `source_id`, 추출 조회의 `evidence`에 쓰고, `evidence_speaker`가 없고 결론 발화(가장 큰 seq)를 찾았을 때 1인칭 담당자에도 쓴다. 하나도 못 찾으면 `evidence`는 만들지 않고 승인 요청 payload에 세 필드를 쓴다. 그래서 AI는 `evidence_seqs`와 세 필드를 항상 함께 보낸다 |
 | 잘못된 항목 | update의 대상이 없거나 다른 워크스페이스 task, create의 제목이 비어 있으면 그 항목만 건너뛴다. `item_count`는 저장된 항목 수 |
 | update 처리 | 게이트·승인 생성 규칙과 `target_snapshot`의 충돌 기준값은 [Backend README 유사 task 검색과 AI 판단 접수](../../README.md#유사-task-검색과-ai-판단-접수)를 따른다 |
 | `target_snapshot.title` | 유사 검색 응답의 `title`을 그대로 보낸다. 제목을 바꾸는 값이 아니라 승인 때 대상 task가 그대로인지 확인하는 기준이다. 없거나 null이면 등록 시점의 제목을 쓴다. 필드 모양은 #185에서 AI·BE가 정했다 |
@@ -150,6 +152,7 @@ AI `Transcript.to_dict()` 모양에 화자 이름을 더해 보낸다. 한 회�
 
 - 경로 판별의 전제: judge 항목(`ai/judge/pipeline.py`의 `to_item`)은 `action`·`category`·`doc_text`를 값이 null이어도 키째 보내고 확신도를 보내지 않는다. legacy 항목(`ai/capture/handoff.py`의 `to_extraction_items`)은 확신도 둘을 항상 보내고 judge의 키는 보내지 않는다. 판단 경로는 확신도를 만들지 않고 인계기에 임의 고정값을 넣지 않는다는 AI 쪽 기록(`ai/docs/plan/전체 계획.md`의 확신도 항목)을 따랐다.
 - auto 조건과 새 키 이름(`task_status`·`due_status`·`similar_count`·`top_similarity`)은 #232 이슈에서 AI·BE 공동 작업으로 정했고, 조건 구성은 멘토 피드백으로 확인했다. AI가 값을 만드는 방법(Luna 애매 표시, 마감 원문 확인, 카드 합치기)은 AI 쪽 작업이며 이 문서는 BE가 받는 모양만 적는다. 새 키는 judge만 보내므로 경로 판별은 바뀌지 않는다.
+- `evidence_seqs`의 모양과 규칙(배열, 순서 자유, 없는 seq 건너뛰기, 가장 큰 seq가 대표, 세 필드를 함께 보내고 빼지 않음, type은 모두 `task`)은 #229 이슈에서 AI·BE가 정했다. 1인칭 화자만 이슈의 "seq로 찾으면 seq 우선"과 달리 `evidence_speaker`를 먼저 쓴다. BE가 리뷰 중에 바꿨고, AI에는 PR로 알린다. BE는 받을 준비가 됐고, AI는 아직 이 키를 보내지 않는다(판단 경로의 `JudgeFinding.indices`, 기본 경로의 `locate_sentence` 결과를 seq로 바꾸는 작업이 남음). 보내기 전까지는 세 필드로 지금처럼 동작하고 `evidence`는 저장되지 않는다.
 - 합의 여부 확인 필요: 위 키 모양을 판별 기준으로 쓰는 것은 #201에서 BE가 정했다. AI 코드는 바꾸지 않았다. 항목 모양이 바뀌면 판별이 틀어지므로 AI가 이 키를 바꿀 때 알려야 하고, AI가 경로를 직접 보내게 되면 그 값을 먼저 쓰도록 바꾼다.
 
 ## 워크스페이스 찾기 `GET /integrations/discord/guilds/{guild_id}/workspace` → 200
