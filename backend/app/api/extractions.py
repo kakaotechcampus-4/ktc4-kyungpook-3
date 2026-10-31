@@ -178,15 +178,20 @@ def create_extraction(
 
         evidence_source = _representative_source(raw_item.evidence_seqs, sources_by_seq)
         evidence = _request_evidence(raw_item, evidence_source)
-        # 1인칭 화자: AI가 결론을 말한 사람으로 직접 보낸 evidence_speaker가 먼저다. 근거 발화는 일부가 빠지면
-        # 더 앞 발화가 대표가 되어 다른 사람을 가리킬 수 있어서, evidence_speaker가 없을 때만 대표 근거 발화의 화자를 쓴다
-        speaker = raw_item.evidence_speaker or evidence.speaker
-        if raw_item.assignee_type == "first" and speaker:
-            # 1인칭: 화자의 Discord uid다. 별칭이 아니라 Member.discord_user_id로 찾는다.
-            assignee_hint = speaker
-            cache_key = ("speaker", assignee_hint)
+        # 1인칭 화자: AI가 결론을 말한 사람으로 직접 보낸 evidence_speaker가 먼저다. 없으면 대표 근거 발화의 화자를
+        # 쓰되, 그 발화가 요청한 seq 중 가장 큰 것(결론 발화)일 때만이다. 결론 발화가 빠지면 더 앞 발화(보통 일을
+        # 요청한 사람)가 대표가 되어 다른 사람이 담당자로 확정될 수 있어서, 그때는 화자가 없는 1인칭 항목으로 둔다
+        requested_max = max(raw_item.evidence_seqs or (), default=None)
+        found_conclusion = evidence_source is not None and evidence_source.seq == requested_max
+        speaker = raw_item.evidence_speaker or (evidence.speaker if found_conclusion else None)
+        if raw_item.assignee_type == "first":
+            # 1인칭: 화자의 Discord uid로 Member.discord_user_id를 찾는다. 화자를 모르면 누군지 모르는 것이라 not_found다.
+            # assignee_raw("제가")는 별칭이 아니라 조회하지 않는다. 별칭으로 찾으면 판정 로그에 쌓이고, 이름이 오면 화자를
+            # 모르는데도 그 사람으로 확정될 수 있다. 그래도 담당자를 언급한 것이라 화자가 없으면 원문을 힌트로 남겨 hold로 보낸다
+            assignee_hint = speaker or raw_item.assignee_raw
+            cache_key = ("speaker", speaker)
             if cache_key not in resolved_cache:
-                resolved_cache[cache_key] = resolve_speaker(db, meeting.workspace_id, assignee_hint)
+                resolved_cache[cache_key] = resolve_speaker(db, meeting.workspace_id, speaker)
             match = resolved_cache[cache_key]
         else:
             # 그 외: assignee_raw를 별칭 텍스트로 찾는다. raw가 없으면(group/none 등) 담당자 미지정이다.

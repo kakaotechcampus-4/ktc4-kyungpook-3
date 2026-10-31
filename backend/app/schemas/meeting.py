@@ -13,6 +13,9 @@ from app.models import (
 )
 from app.schemas.source import INT4_MAX
 
+# 추출 항목 하나의 근거 발화 수 상한. 근거는 결론까지의 몇 줄이라 넉넉하다
+MAX_EVIDENCE_SEQS = 100
+
 
 class MeetingCreateRequest(BaseModel):
     workspace_id: str = Field(..., description="소속 워크스페이스 ID")
@@ -213,7 +216,8 @@ class ExtractionItemCreate(BaseModel):
         None,
         description="'first'(1인칭), 'second', 'thirdname', 'group', 'none' 등. "
         "first이면 assignee_raw 대신 화자의 Discord uid로 Member.discord_user_id를 찾는다. "
-        "화자는 evidence_speaker이고, 없으면 evidence_seqs로 찾은 발화 중 seq가 가장 큰 발화의 화자다.",
+        "화자는 evidence_speaker이고, 없으면 evidence_seqs 중 가장 큰 seq의 발화 화자다. "
+        "그 발화를 찾지 못하면 화자가 없다.",
     )
     due_date: date | None = None
     due_raw: str | None = None
@@ -228,7 +232,9 @@ class ExtractionItemCreate(BaseModel):
     # 범위는 발화 저장 API의 seq와 같다. 벗어난 값은 DB 조회에서 터지므로 요청에서 막는다
     evidence_seqs: list[Annotated[int, Field(ge=0, le=INT4_MAX)]] | None = Field(
         None,
-        description="근거 발화의 seq 목록(발화 저장 API의 seq). 순서는 자유. 모두 evidence로 저장하고 "
+        # 요청 전체의 seq를 IN 한 번으로 읽는다. 잘못 만든 항목 하나가 DB의 바인드 변수 한도를 넘기지 않게 막는다
+        max_length=MAX_EVIDENCE_SEQS,
+        description="근거 발화의 seq 목록(발화 저장 API의 seq). 순서는 자유, 최대 100개. 모두 evidence로 저장하고 "
         "가장 큰 seq를 대표 근거로 쓴다. 이 회의에 없는 seq는 건너뛴다. 모르면 [] 또는 생략",
     )
     category: str | None = Field(

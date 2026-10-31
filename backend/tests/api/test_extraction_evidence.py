@@ -19,12 +19,14 @@ from app.models import (
     ExtractionItem,
     Meeting,
     Member,
+    MemberAlias,
     Session as SessionModel,
     Source,
     Task,
     User,
     Workspace,
 )
+from app.schemas.meeting import MAX_EVIDENCE_SEQS
 
 
 # 추출 등록은 봇 경로라 서비스 토큰을 요구한다.
@@ -222,6 +224,22 @@ def test_evidence_seqs_out_of_range_rejected(client, db, seed, bad_seq):
     assert db.get(Meeting, seed["meeting"]).status == "processing"
 
 
+def test_evidence_seqs_too_many_rejected(client, db, seed):
+    """항목 하나의 seq가 상한을 넘으면 DB 조회 전에 요청에서 막는다. 상한까지는 받는다."""
+    def post(seqs):
+        return client.post("/api/v1/extractions", json={
+            "meeting_id": seed["meeting"], "workspace_id": seed["ws"],
+            "items": [{"task_title": "환불 구현", "task_confidence": 0.6, "evidence_seqs": seqs}],
+        }, headers=SERVICE_HEADERS)
+
+    r = post(list(range(MAX_EVIDENCE_SEQS + 1)))
+    assert r.status_code == 400
+    assert r.json()["error"]["code"] == "INVALID_REQUEST"
+    assert db.get(Meeting, seed["meeting"]).status == "processing"
+
+    assert post(list(range(MAX_EVIDENCE_SEQS))).status_code == 201
+
+
 @pytest.mark.parametrize("evidence_seqs", [None, []])
 def test_evidence_seqs_empty_or_omitted_saves_nothing(client, db, seed, evidence_seqs):
     _add_sources(db, seed["meeting"], (1,))
@@ -276,8 +294,8 @@ def _approval_payload(db):
     ("uid_request", [99], "요청 화자"),
     # 없으면 찾은 발화 중 seq가 가장 큰 발화의 화자
     (None, [2, 3], "화자3"),
-    # 가장 큰 seq가 빠져도 찾은 것 중 가장 큰 발화(2)의 화자로 찾는다
-    (None, [2, 99], "화자2"),
+    # 가장 큰 seq(결론 발화)가 빠지면 더 앞 발화(2)의 화자를 쓰지 않고 화자가 없는 1인칭 항목이다
+    (None, [2, 99], None),
     # 둘 다 없으면 화자가 없는 1인칭 항목이다
     (None, [99], None),
 ])
@@ -316,8 +334,34 @@ def test_first_person_source_without_speaker_uses_evidence_speaker(client, db, s
     assert (payload["evidence_quote"], payload["evidence_speaker"]) == ("발화 4", None)
 
 
+@pytest.mark.parametrize("evidence_seqs", [[2, 99], None])
+def test_first_person_without_speaker_skips_alias_lookup(client, db, seed, evidence_seqs):
+    """화자를 모르는 1인칭은 assignee_raw를 별칭으로 찾지 않는다. 등록된 별칭이어도 담당자 없이 hold이고 판정 로그도 없다."""
+    _add_sources(db, seed["meeting"], (2,))
+    member_id = _add_member(db, seed, "민수", "uid_minsu")
+    db.add(MemberAlias(
+        member_id=member_id, workspace_id=seed["ws"], alias_text="민수",
+        alias_type="nickname", source="manual", confidence=1.0, verified=True,
+    ))
+    db.commit()
+
+    item = {
+        "task_title": "환불 구현", "task_confidence": 0.9, "assignee_type": "first", "assignee_raw": "민수",
+        **REQUEST_EVIDENCE, "evidence_speaker": None,
+    }
+    if evidence_seqs is not None:
+        item["evidence_seqs"] = evidence_seqs
+    _post_items(client, seed, [item])
+
+    saved = db.execute(select(ExtractionItem)).scalar_one()
+    assert (saved.assignee_member_id, saved.gate) == (None, "hold")
+    assert db.execute(select(AliasResolutionLog)).scalars().all() == []
+
+
 @pytest.mark.parametrize(("evidence_seqs", "expected"), [
     ([2, 3], {"evidence_quote": "발화 3", "evidence_speaker": "uid3", "evidence_at_ms": 3000}),
+    # 결론 발화(99)가 빠져도 보여 주는 근거는 찾은 것 중 가장 큰 발화다. 1인칭 화자에만 쓰지 않는다
+    ([2, 99], {"evidence_quote": "발화 2", "evidence_speaker": "uid2", "evidence_at_ms": 2000}),
     ([99], REQUEST_EVIDENCE),
     (None, REQUEST_EVIDENCE),
 ])
