@@ -141,6 +141,23 @@ await fetch('/api/v1/approvals/ap_01', {
 // 다음 tasks 조회는 11개, pending approvals는 2개. 같은 승인 재처리는 409.
 ```
 
+## 메시지 화면 (M8, 임시)
+
+메시지 화면은 개발 서버 + `VITE_ENABLE_MSW=true` 일 때만 보인다. 그 밖에는 준비 중 안내다. 조회 경로·응답 모양·오류 코드(`MESSAGE_THREAD_NOT_FOUND`)는 계약이 아니다([M8-C 결과](plan/m8/result-c.md)). 시나리오는 위와 같이 `?msw-scenario=<이름>` 으로 고르며 모두 `ws_01` 하나에 PM 으로 로그인한다.
+
+| 시나리오 | 해 볼 것 |
+|---|---|
+| `messages-default` | 보내기 전 확인 2건, 대화 4건(이재환 `th_01` 이 답장 대기) + 채널 1건 |
+| `messages-empty` | `ws_01` 의 검토·대화가 모두 없음 → 빈 상태 |
+| `messages-list-error` | 목록만 5xx. 대화 주소로 바로 들어오면 대화는 보인다 |
+| `messages-thread-error` | 목록은 정상, `th_01` 대화만 5xx |
+
+```text
+http://localhost:5173/workspaces/ws_01/messages?msw-scenario=messages-default
+```
+
+고른 대화는 `/messages/threads/<id>`, 고른 보내기 전 확인 항목은 `/messages?review=<id>` 다. 로딩은 시나리오가 아니라 테스트·스토리에서 응답을 붙잡아 재현한다.
+
 ## 미처리 요청 읽기
 
 테스트는 `onUnhandledRequest: 'error'`이므로 등록하지 않은 요청이 실패한다. 로그의 method와 URL을 보고 `/api/v1` prefix, origin, handler 등록, 동적 경로 순서를 확인한다. `/members/aliases`와 `/members/unresolved-aliases`는 `/members/:id`보다 먼저 등록해야 한다.
