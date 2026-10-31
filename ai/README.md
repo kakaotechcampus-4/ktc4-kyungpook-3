@@ -45,6 +45,15 @@ recordings/         녹음 산출물 (git 제외)
   마지막으로 끝난 단계 다음부터 마저 처리합니다. 실패 5회로 자동 재시도를 멈춘 회의는 서버에서
   `python -m capture.worker --retry <서버ID>` 로 다시 돌립니다. 상대 날짜("내일")의 기준일은 처리하는 날이 아니라
   `started_at` 을 `timezone` 으로 바꾼 회의 날짜입니다.
+- 수동 업로드(`upload/`): 회의를 녹음하지 못했을 때 오디오 파일 하나를 `python -m upload.prepare <오디오> --started-at <ISO>`
+  (pyannoteAI 를 실제로 부르므로 `PYANNOTEAI_API_KEY` 가 필요하고 과금된다)로 화자 분리해 화자 라벨마다 원본 길이의 가상 트랙
+  `recordings/upload_{ts}/{id}_{ts}.wav` 와 `diarization.json`, 매니페스트를 만든다. 매니페스트는 `status` 가 `diarized`,
+  `source` 가 `upload` 이고 `diarized` 인 회의는 워커가 돌리지 않는다. 사람이 `speakers[].display_name` 을 실제 이름으로
+  고치고 `status` 를 `saved` 로 바꾼 뒤의 처리는 아직 정해지지 않았다. 길드 없는 자동 바퀴는 `saved` 를 집지만 `workspace_id` 가
+  없어 BE 인계는 안 되고, `--retry <서버ID>` 바퀴는 `guild_id` 없는 매니페스트를 거른다. 자동 이어받기·BE 인계는 다음 PR(PM 라벨 지정
+  흐름)에서 정한다. `diarized` 는 recording 과 saved 사이의 상태다. 이 경로는
+  디스코드 길드·채널이 없어 `guild`·`channel` 이 null 이고, 매니페스트에 `workspace_id` 와 BE 회의 정보가 없으므로
+  `partial`·`sourced` 단계와 BE 인계는 사람이 그 칸을 채워 줘야 돌 수 있다(이 변경은 그 부분을 다루지 않는다).
 
 ## 설치 (이 디렉토리, `ai/` 안에서)
 

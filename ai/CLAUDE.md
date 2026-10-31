@@ -26,6 +26,7 @@ lint/format 설정은 없다. 있다고 가정하지 않는다.
 |---|---|---|
 | `capture/` | Discord 녹음, 워커, 단계 진행, BE 인계 | `recorder.py`의 `process_session`, `worker.py`, `handoff.py` |
 | `stt/` | 화자별 트랙 전사 (운영 기본 Elice API, 로컬 faster-whisper는 장애 대응) | `batch.py`의 `run`, `transcribe.py` 상단 주석 |
+| `upload/` | 수동 업로드 오디오를 화자 분리해 화자별 가상 트랙과 `diarized` 매니페스트로 만든다 | `prepare.py`의 `prepare_upload` |
 | `judge/` | 판단 파이프라인: 1단계 → 유사 task 검색 → Terra → Luna Phase 2 | `pipeline.py` 상단 주석 |
 | `extract/` | 옛 추출 경로 (`MM_EXTRACT_PATH=legacy`, 기본값) | [extract/README.md](extract/README.md), [TASK_CRITERIA.md](extract/TASK_CRITERIA.md) |
 | `draft/` | 승인 항목의 제목·마감일·설명 초안 (Luna Phase 2) | `doc_draft.py` |

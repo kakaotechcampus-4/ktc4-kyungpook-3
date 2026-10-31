@@ -5,7 +5,7 @@ discord 이름은 여기 없다. capture/discord_adapter.py 가 이 함수들을
 
 매니페스트 recordings/session_<회의ID>.json. 회의 ID 는 <guild>_<ts> 다 (서버 둘이 같은 초에 시작해도 다르다).
 필드는 recording_store.write_manifest 와 같고 아래를 더한다.
-  status        recording | saved | transcribed | partial | sourced | extracted | handed_off | failed
+  status        recording | diarized | saved | transcribed | partial | sourced | extracted | handed_off | failed
   stages        단계별 완료 시각 {"transcribed": iso, "sourced": iso, "extracted": iso, "handed_off": iso}
   failed_units  partial 일 때 실패한 줄 [{"speaker", "start_ms", "end_ms", "error"}]. 다음 실행이 이 구간만 다시 보낸다
   failed_stage  failed 일 때 어느 단계인지. stt | sources | extract | handoff
@@ -73,6 +73,7 @@ from shared.schemas import now_iso
 
 STATUS_RECORDING = "recording"
 STATUS_SAVED = "saved"
+STATUS_DIARIZED = "diarized"      # 업로드 오디오를 화자별 트랙으로 나눴다. 사람이 확인하고 saved 로 바꾸기 전엔 돌지 않는다
 STATUS_TRANSCRIBED = "transcribed"
 STATUS_PARTIAL = "partial"        # 전사는 돌았는데 실패한 줄이 남았다. failed_units 에 구간이 있다
 STATUS_SOURCED = "sourced"        # 전사 발화를 BE 에 저장했다
@@ -433,6 +434,8 @@ def _pending(recordings_dir: Path, *, guild_id=None, exclude=None):
 
 def _is_pending(recordings_dir: Path, m: dict) -> bool:
     """끝까지 가지 않았고 돌릴 트랙이 있는 회의인가. 목록(pending_sessions)과 잡은 뒤의 재확인(recover_one)이 같이 쓴다."""
+    if m.get("status") == STATUS_DIARIZED:
+        return False
     if m.get("status") == STATUS_HANDED_OFF:
         if not (m.get("partial") and m.get("retry_runs", 0) < PARTIAL_RETRY_MAX):
             return False
