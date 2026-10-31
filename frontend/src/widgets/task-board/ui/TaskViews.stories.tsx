@@ -70,12 +70,51 @@ export const 보드_PM: Story = {
   },
 }
 
+/**
+ * 보드 직접 추가(PM) — 칸 아래 점선 `직접 추가` 를 누르면 그 자리에서 제목을 받는다. 서버(MSW `POST /tasks`)가 만든 뒤에
+ * 그 칸의 기본 상태(진행 중)로 카드가 생기고 입력이 닫힌다
+ */
+export const 보드_직접_추가: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const active = await canvas.findByRole('region', { name: '진행 중' }, LOADED)
+    await userEvent.click(within(active).getByRole('button', { name: '진행 중에 직접 추가' }))
+    const input = within(active).getByRole('textbox', { name: '새 태스크 제목' })
+    await expect(input).toHaveFocus()
+    await expect(within(active).getByRole('button', { name: '추가' })).toBeDisabled()
+    await userEvent.type(input, '배포 체크리스트{Enter}')
+    await expect(await within(active).findByRole('link', { name: '배포 체크리스트' })).toBeVisible()
+    await expect(within(active).queryByRole('textbox')).toBeNull()
+  },
+}
+
+/** 직접 추가 실패 — 입력을 남긴 채 칸 안에서 알리고 카드를 만들지 않는다 */
+export const 보드_직접_추가_실패: Story = {
+  parameters: {
+    msw: [http.post('/api/v1/tasks', () => fail('INTERNAL_ERROR', 'x', 500))],
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const todo = await canvas.findByRole('region', { name: '시작 전' }, LOADED)
+    await userEvent.click(within(todo).getByRole('button', { name: '시작 전에 직접 추가' }))
+    await userEvent.type(within(todo).getByRole('textbox'), '회의실 예약{Enter}')
+    await expect(await within(todo).findByRole('alert')).toHaveTextContent(
+      '태스크를 추가하지 못했어요.',
+    )
+    await expect(within(todo).getByRole('textbox')).toHaveValue('회의실 예약')
+    await expect(within(todo).queryByRole('link', { name: '회의실 예약' })).toBeNull()
+  },
+}
+
 /** 캘린더 PM — 마감일 칸에 태스크·확인 필요·회의가 놓이고, 마감 없는 일은 아래에 모인다 */
 export const 캘린더_PM: Story = {
   args: { view: calendar },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     const grid = await canvas.findByRole('grid', { name: '2026년 9월' }, LOADED)
+    // 9월은 다섯 주다 — 10월 날만 있는 여섯째 주(10/4~)는 그리지 않는다 (시안)
+    await expect(within(grid).getAllByRole('gridcell')).toHaveLength(35)
+    await expect(within(grid).queryByRole('gridcell', { name: '2026-10-04' })).toBeNull()
     const day = within(grid).getByRole('gridcell', { name: '2026-09-25' })
     await expect(within(day).getByRole('link', { name: /배포 문서 보완/ })).toHaveAttribute(
       'href',
@@ -94,9 +133,21 @@ export const 간트_PM: Story = {
     const canvas = within(canvasElement)
     await canvas.findByRole('table', { name: '일정' }, LOADED)
     await expect(canvas.getByRole('row', { name: /배포 문서 보완/ })).toBeVisible()
-    await expect(canvas.getByRole('region', { name: '일정이 없는 일' })).toHaveTextContent(
-      '알림 문구 검토',
+    const unscheduled = canvas.getByRole('region', { name: '일정이 없는 일' })
+    await expect(unscheduled).toHaveTextContent('알림 문구 검토')
+    // 시안: `미지정` 묶음의 보조 문구는 한 줄이고, `날짜 넣기` 는 12.5px·600·높이 32 에 꺾쇠가 붙는다
+    const note = canvas.getByText('승인하면 담당자가 붙습니다')
+    await expect(note.getBoundingClientRect().height).toBeLessThanOrEqual(
+      parseFloat(getComputedStyle(note).lineHeight) + 1,
     )
+    const dateLink = within(unscheduled).getAllByRole('link', { name: '날짜 넣기' })[0]
+    const linkStyle = getComputedStyle(dateLink)
+    await expect([linkStyle.fontSize, linkStyle.fontWeight, linkStyle.height]).toEqual([
+      '12.5px',
+      '600',
+      '32px',
+    ])
+    await expect(dateLink.querySelector('svg')).not.toBeNull()
   },
 }
 
