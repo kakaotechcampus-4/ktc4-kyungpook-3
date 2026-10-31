@@ -37,3 +37,17 @@ Claude Code 호출 예시:
 3. 두 폴더의 변경을 함께 검토하고 커밋합니다.
 
 별도의 동기화 스크립트는 사용하지 않습니다. 스킬 수정 작업을 에이전트에게 맡길 때도 양쪽 파일을 동일하게 반영하도록 요청합니다.
+
+## Claude Code AI 파트 하네스
+
+아래는 Claude Code 전용이라 `.agents/skills/` 원본 없이 `.claude/` 에만 둡니다. [Superpowers](https://github.com/obra/superpowers) 플러그인을 씁니다. 프로젝트 설정에 켜 두었으므로 처음 실행할 때 설치 안내가 나오면 설치합니다.
+
+| 명령 | 하는 일 |
+|---|---|
+| `/ai-feature <기능 설명>` | 설계 → 테스트 먼저 구현 → pytest → 셀프 리뷰 → develop 대상 PR 생성. PR 을 올리면 끝나고, 머지는 사람이 확인한 뒤 합니다 |
+| `/ai-pr-reply [PR번호]` | PR 리뷰를 모아 지적마다 판정하고, 맞는 지적은 고쳐서 push 한 뒤 답글을 답니다. 반박·질문 답글은 사용자 승인 후 답니다 |
+
+- 역할별 에이전트는 `.claude/agents/` 에 있고 모델이 고정돼 있습니다: `ai-designer`(opus, 설계 초안), `ai-implementer`(sonnet, 구현), `ai-reviewer`(sonnet, 리뷰). 팀 기본 모델은 sonnet 입니다.
+- 작은 작업(바뀌는 파일 2개 이하, 태스크 하나, 계약 변경 없음)은 서브에이전트 없이 메인 세션에서 처리하고, 큰 작업만 설계 승인 후 태스크별 구현·리뷰 에이전트를 씁니다.
+- `ai/` 아래 `.py` 가 바뀐 채로 응답을 끝내면 Stop 훅(`.claude/hooks/ai-tests-gate.sh`)이 pytest 를 돌리고, 실패하면 끝내지 못하게 막습니다. 같은 변경 상태로 통과했으면 다시 돌리지 않습니다.
+- 설계·계획 작업 파일은 git 에 올리지 않는 `.superpowers/` 에 둡니다.
