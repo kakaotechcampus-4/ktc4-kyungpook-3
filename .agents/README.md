@@ -48,6 +48,7 @@ Claude Code 호출 예시:
 | `/ai-pr-reply [PR번호]` | PR 리뷰를 모아 지적마다 판정하고, 맞는 지적은 고쳐서 push 한 뒤 답글을 답니다. 반박·질문 답글은 사용자 승인 후 답니다 |
 
 - 역할별 에이전트는 `.claude/agents/` 에 있고 모델이 고정돼 있습니다: `ai-designer`(opus, 설계 초안), `ai-implementer`(sonnet, 구현), `ai-reviewer`(sonnet, 리뷰). 팀 기본 모델은 sonnet 입니다.
-- 작은 작업(바뀌는 파일 2개 이하, 태스크 하나, 계약 변경 없음)은 서브에이전트 없이 메인 세션에서 처리하고, 큰 작업만 설계 승인 후 태스크별 구현·리뷰 에이전트를 씁니다.
+- 설계는 `ai-designer` 초안을 바탕으로 `grilling` 스킬(Matt Pocock 의 [grill-me](https://github.com/mattpocock/skills), MIT, `.claude/skills/grilling`·`grill-me` 에 출처와 LICENSE 포함)로 사용자와 같이 정합니다. 설계만 따로 다듬고 싶으면 `/grill-me` 를 직접 부를 수 있습니다.
+- 작은 작업(바뀌는 파일 2개 이하, 태스크 하나, 계약 변경 없음)은 정할 질문이 없으면 묻지 않고 메인 세션에서 처리하고, 큰 작업은 설계를 정한 뒤 태스크별 구현·리뷰 에이전트를 씁니다.
 - `ai/` 아래 `.py` 가 바뀐 채로 응답을 끝내면 Stop 훅(`.claude/hooks/ai-tests-gate.sh`)이 pytest 를 돌리고, 실패하면 끝내지 못하게 막습니다. 같은 변경 상태로 통과했으면 다시 돌리지 않습니다.
 - 설계·계획 작업 파일은 git 에 올리지 않는 `.superpowers/` 에 둡니다.

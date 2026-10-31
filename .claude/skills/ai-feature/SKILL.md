@@ -10,15 +10,17 @@ argument-hint: "[기능 설명 또는 이슈·계획 경로]"
 
 끝은 **develop 대상 PR 생성**이다. 머지는 사람이 PR 을 확인한 뒤 한다. 규칙은 `ai/CLAUDE.md` 와 `docs/agent-rules.md` 를 따른다.
 Superpowers 스킬을 쓰되, 이 문서가 정한 부분은 Superpowers 기본값보다 우선한다.
-설계는 1단계의 `ai-designer` 가 맡으므로 `superpowers:brainstorming` 은 부르지 않는다. `using-superpowers` 가 brainstorming 을 먼저 하라고 해도 이 문서의 1단계가 그 자리다.
+설계는 1단계(`ai-designer` 초안 + `grilling` 으로 사용자와 확정)가 맡으므로 `superpowers:brainstorming` 은 부르지 않는다. `using-superpowers` 가 brainstorming 을 먼저 하라고 해도 이 문서의 1단계가 그 자리다.
 
 역할과 모델:
 
-| 역할 | 에이전트 | 모델 |
-|---|---|---|
-| 설계 초안 | `ai-designer` | opus |
-| 태스크 구현 | `ai-implementer` | sonnet |
-| 리뷰 | `ai-reviewer` | sonnet |
+| 역할 | 누가 | 모델 | 쓰는 스킬 |
+|---|---|---|---|
+| 설계 초안 | `ai-designer` | opus | |
+| 설계 확정 (사용자와) | 메인 세션 | 세션 모델 | `grilling` |
+| 계획·태스크 실행 (large) | 메인 세션 | 세션 모델 | `superpowers:writing-plans`, `superpowers:subagent-driven-development` |
+| 태스크 구현 | `ai-implementer` (small 은 메인 세션) | sonnet | `superpowers:test-driven-development` (미리 로드) |
+| 리뷰 | `ai-reviewer` | sonnet | |
 
 에이전트를 부를 때는 브리프에 태스크 설명과 파일 경로만 넣는다. 파일 내용을 붙여 넣지 않는다.
 
@@ -30,13 +32,15 @@ Superpowers 스킬을 쓰되, 이 문서가 정한 부분은 Superpowers 기본�
 
 ## 1. 설계
 
-1. `ai-designer` 에게 요청과 관련 경로를 넘겨 설계 초안을 받는다.
+1. `ai-designer` 에게 요청과 관련 경로를 넘겨 설계 초안을 받는다. 코드 읽기는 여기서 끝낸다.
 2. 초안의 **크기 판정**으로 경로를 정한다. 판정이 애매하면 `large`.
-3. 사람에게 보여준다: 목표·완료 조건, 추천 접근안, 변경 범위, 계약 영향, 테스트 전략, 질문.
-   - 질문은 **한 번에 모아서** 묻는다 (brainstorming 의 "한 번에 하나" 대신).
-   - `large` 는 승인을 받을 때까지 멈춘다. 이 하네스에서 사람을 기다리는 곳은 여기 하나다.
-   - `small` 은 질문이 없으면 승인 없이 진행한다. 설계는 PR 본문에 남아 사람이 확인한다.
-4. `large` 는 승인된 설계를 `.superpowers/specs/YYYY-MM-DD-<slug>.md` 에 저장한다. git 에 올리지 않는 작업 파일이다.
+3. 사용자와 설계를 정한다. 이 하네스에서 사람을 기다리는 곳은 여기 하나다.
+   - `large`, 또는 `small` 인데 초안에 "사람이 정할 질문"이 있으면 `grilling` 스킬로 사용자와 같이 정한다.
+     초안을 먼저 짧게 보여주고(목표·추천 접근안·변경 범위·계약 영향), 초안의 질문과 기본값을 첫 라운드의 출발점으로 쓴다.
+     사실 확인이 더 필요하면 `Explore` 에이전트에 맡긴다. 초안에 이미 있는 사실은 다시 찾지 않는다.
+     `grilling` 이 끝나고 사용자가 합의를 확인하면 구현으로 넘어간다.
+   - `small` 이고 질문이 "없음"이면 묻지 않고 진행한다. 설계는 PR 본문에 남아 사람이 확인한다.
+4. `large` 는 합의된 설계(초안 + grilling 에서 정한 것)를 `.superpowers/specs/YYYY-MM-DD-<slug>.md` 에 저장한다. git 에 올리지 않는 작업 파일이다.
 
 다음 경우에는 크기와 상관없이 멈추고 묻는다: `shared/schemas.py` 나 BE API 계약 변경, 비용이 드는 실제 API 호출(LLM·STT·임베딩)이 필요할 때.
 
