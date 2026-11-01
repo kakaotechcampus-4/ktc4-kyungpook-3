@@ -5,7 +5,7 @@ import { paths } from '@/shared/config/routes'
 import { GuardedLink } from '@/shared/lib/unsaved-changes'
 import { sortTasks } from '../lib/taskBoard'
 import { assigneeLabel, assigneeOf, monthOf, shortDate, taskTone } from '../lib/taskViews'
-import type { BoardPeriod } from '../lib/taskViews'
+import type { BoardPeriod, TaskTone } from '../lib/taskViews'
 import { Avatar } from './viewParts'
 
 type Column = 'todo' | 'active' | 'done'
@@ -27,10 +27,12 @@ const COLUMNS: readonly {
   { key: 'done', title: '완료', statuses: ['done'], createAs: 'done' },
 ]
 
+/* 칸 머리 표식 — 8px·둥글기 2px 네모. 시작 전은 1.5px 실선 `#BDBDBD` 테두리, 완료는 `#E8E8E8` 면이다 (TasksBoard).
+   `border-dashed` 는 점선 모양까지 함께 주므로 시작 전은 색만 점선 토큰에서 가져온다. 2px 둥글기는 토큰에 없어 값으로 적는다 */
 const MARK: Record<Column, string> = {
-  todo: 'rounded-4 border-[1.5px] border-dashed bg-transparent',
-  active: 'rounded-4 bg-ink',
-  done: 'rounded-4 bg-inactive',
+  todo: 'rounded-[2px] border-[1.5px] border-(--color-dashed) bg-transparent',
+  active: 'rounded-[2px] bg-ink',
+  done: 'rounded-[2px] bg-line',
 }
 
 const CARD_BASE = 'flex flex-col gap-12 rounded-12 border px-13 py-12'
@@ -84,7 +86,13 @@ export function BoardView({
               <ul className="flex flex-col gap-10">
                 {sorted.map((task) => (
                   <li key={task.id}>
-                    <TaskCard workspaceId={workspaceId} task={task} names={names} today={today} />
+                    <TaskCard
+                      workspaceId={workspaceId}
+                      task={task}
+                      names={names}
+                      today={today}
+                      emphasized={key === 'active'}
+                    />
                   </li>
                 ))}
               </ul>
@@ -108,6 +116,15 @@ export function BoardView({
       ) : null}
     </>
   )
+}
+
+/** 카드 테두리·면. 완료는 눌린 면이고, 진행 중 칸과 마감 임박(위험·주의)은 강조 테두리다 — 시작 전 칸의 마감 임박은
+    시안에 예가 없어 지금 봐야 하는 카드로 강조한다 */
+function cardSurface(tone: TaskTone, emphasized: boolean): string {
+  if (tone === 'done') return 'border-divider bg-surface-sunken'
+  return emphasized || tone === 'danger' || tone === 'warn'
+    ? 'border-line-strong bg-surface'
+    : 'border-line bg-surface'
 }
 
 function columnNote(column: Column, tasks: readonly Task[], today: string): string {
@@ -135,11 +152,12 @@ function ColumnHead({
   return (
     <div className="flex flex-col gap-4 border-b border-line px-2 pb-12">
       <div className="flex items-center gap-8">
-        <span
-          aria-hidden="true"
-          className={`h-8 w-8 shrink-0 ${MARK[column]} ${column === 'todo' ? 'border-dashed' : ''}`}
-        />
-        <h2 className="flex-1 text-body font-semibold text-ink">{title}</h2>
+        <span aria-hidden="true" className={`h-8 w-8 shrink-0 ${MARK[column]}`} />
+        <h2
+          className={`flex-1 text-body font-semibold ${column === 'done' ? 'text-dim' : 'text-ink'}`}
+        >
+          {title}
+        </h2>
         <span
           className={`inline-flex h-[19px] min-w-[19px] items-center justify-center rounded-6 px-6 text-[11px] leading-none font-semibold tabular-nums ${
             column === 'active' ? 'bg-ink text-surface' : 'bg-divider text-sub'
@@ -159,24 +177,19 @@ const TaskCard = memo(function TaskCard({
   task,
   names,
   today,
+  emphasized,
 }: {
   workspaceId: string
   task: Task
   names: ReadonlyMap<string, string>
   today: string
+  /** 진행 중 칸의 카드다. 시안은 이 칸의 카드를 모두 강조 테두리(`#C9C9C9`)로 그린다 */
+  emphasized: boolean
 }) {
   const tone = taskTone(task, today)
   const done = tone === 'done'
   return (
-    <article
-      className={`${CARD_BASE} ${
-        done
-          ? 'border-divider bg-surface-sunken'
-          : tone === 'danger' || tone === 'warn'
-            ? 'border-line-strong bg-surface'
-            : 'border-line bg-surface'
-      }`}
-    >
+    <article className={`${CARD_BASE} ${cardSurface(tone, emphasized)}`}>
       <div className="flex items-start justify-between gap-8">
         <GuardedLink
           to={paths.tasks(workspaceId, task.id)}

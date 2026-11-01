@@ -31,7 +31,7 @@ import {
   shortDate,
   VIEW_LABEL,
 } from '../lib/taskViews'
-import type { ViewQuery } from '../lib/taskViews'
+import type { TaskView, ViewQuery } from '../lib/taskViews'
 import { ApprovalCard } from './ApprovalCard'
 import { AssigneeFilter, DueFilter, PeriodFilter, ViewSwitch } from './ViewControls'
 import { Avatar } from './viewParts'
@@ -52,8 +52,13 @@ const GanttView = lazy(() =>
  * 보드·캘린더·간트는 시안 셸 폭을 유지한다. */
 const PAGE = 'mx-auto flex w-full max-w-shell flex-1 justify-center px-48 pt-48 pb-72'
 const PAGE_LIST = 'mx-auto flex w-full max-w-[960px] flex-1 justify-center px-48 pt-48 pb-72'
-const COLUMN = 'flex w-full max-w-column flex-col gap-28'
-const COLUMN_WIDE = 'flex w-full flex-col gap-20'
+/* 블록 사이 — 리스트 28px, 보드 22px(TasksBoard), 캘린더·간트 20px(TasksCalendar·TasksGantt) */
+const COLUMN: Record<TaskView, string> = {
+  list: 'flex w-full max-w-column flex-col gap-28',
+  board: 'flex w-full max-w-column flex-col gap-22',
+  calendar: 'flex w-full flex-col gap-20',
+  gantt: 'flex w-full flex-col gap-20',
+}
 const TITLE = 'text-[28px] leading-[1.25] font-bold tracking-h1 text-ink'
 const DESCRIPTION = 'text-body text-sub'
 const TOOLBAR = 'flex flex-wrap items-center justify-between gap-16'
@@ -178,7 +183,6 @@ export function TaskBoard({
   )
 
   const isList = view.view === 'list'
-  const wide = view.view === 'calendar' || view.view === 'gantt'
   const memberList = members.data ?? []
   // 보기의 줄·칩은 memo 다. 부모가 다시 그려도 같은 배열을 넘겨야 바뀌지 않은 줄을 건너뛴다 (AC-A-04)
   const createList = useMemo(() => createApprovals(approvalList ?? []), [approvalList])
@@ -325,7 +329,7 @@ export function TaskBoard({
 
   return (
     <main className={view.view === 'list' ? PAGE_LIST : PAGE}>
-      <div className={wide ? COLUMN_WIDE : COLUMN}>
+      <div className={COLUMN[view.view]}>
         <header className="flex items-end justify-between gap-24">
           <div className="flex flex-col gap-5">
             <h1 className={TITLE}>태스크</h1>

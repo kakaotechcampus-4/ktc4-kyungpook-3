@@ -67,6 +67,34 @@ export const 보드_PM: Story = {
     )
     await expect(canvas.getByText(/리스트 뷰에서 승인하면 이 보드로 넘어옵니다/)).toBeVisible()
     await expect(canvas.queryByRole('alert')).toBeNull()
+
+    // 시안(TasksBoard) 값 — 블록 사이 22px, 필터 높이 36px
+    const header = canvas.getByRole('heading', { level: 1, name: '태스크' }).closest('header')!
+    const assignee = canvas.getByRole('button', { name: /^담당자:/ })
+    const filterBox = assignee.getBoundingClientRect()
+    await expect(filterBox.top - header.getBoundingClientRect().bottom).toBe(22)
+    await expect(filterBox.height).toBe(36)
+    // 칸 머리 표식은 2px 둥글기의 8px 네모 — 시작 전은 1.5px 실선 #BDBDBD, 완료는 #E8E8E8 면에 흐린 제목
+    const markOf = (name: string) =>
+      getComputedStyle(canvas.getByRole('heading', { name }).previousElementSibling!)
+    // (1.5px 테두리 폭은 Chromium 이 기기 픽셀로 내려 1px 로 계산하므로 폭은 보지 않는다 — 시안 HTML 도 같다)
+    const todoMark = markOf('시작 전')
+    await expect([
+      todoMark.borderTopStyle,
+      todoMark.borderTopColor,
+      todoMark.borderTopLeftRadius,
+    ]).toEqual(['solid', 'rgb(189, 189, 189)', '2px'])
+    await expect(markOf('완료').backgroundColor).toBe('rgb(232, 232, 232)')
+    await expect(getComputedStyle(canvas.getByRole('heading', { name: '완료' })).color).toBe(
+      'rgb(102, 102, 102)',
+    )
+    // 진행 중 칸의 카드는 모두 강조 테두리 #C9C9C9
+    const activeCards = within(canvas.getByRole('region', { name: '진행 중' })).getAllByRole(
+      'article',
+    )
+    await expect(activeCards.length).toBeGreaterThan(0)
+    for (const card of activeCards)
+      await expect(getComputedStyle(card).borderTopColor).toBe('rgb(201, 201, 201)')
   },
 }
 
