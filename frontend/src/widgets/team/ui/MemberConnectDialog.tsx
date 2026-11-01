@@ -33,6 +33,8 @@ interface MappingFormProps {
   members: Member[]
   onCancel: () => void
   onSaved: () => void
+  /** 저장을 시작하고 끝낼 때 알린다. 창은 저장하는 동안 Esc·바깥 클릭으로 닫히지 않는다 — 닫히면 실패를 보일 곳이 없다 */
+  onSavingChange: (saving: boolean) => void
 }
 
 /** PM 팀원. 먼저 만들어진 순서다 — 첫째가 워크스페이스를 만든 PM 이고 체크박스가 그 PM 을 가리킨다 (#228) */
@@ -47,7 +49,14 @@ function pmsOf(members: Member[]): Member[] {
  * 온보딩 `확인 완료` 와 달리 PM 체크를 요구하지 않는다 — 아무도 잇지 않고 나갈 수 있다 (D-075).
  * 줄은 창을 연 때의 팀원으로 한 번 만든다 — 저장하며 팀원 캐시가 바뀌어도 입력 중인 줄이 다시 짜이지 않는다
  */
-function MappingForm({ workspaceId, discordUsers, members, onCancel, onSaved }: MappingFormProps) {
+function MappingForm({
+  workspaceId,
+  discordUsers,
+  members,
+  onCancel,
+  onSaved,
+  onSavingChange,
+}: MappingFormProps) {
   const [initialRows] = useState(() => buildMappingRows(discordUsers, members))
   const [pms] = useState(() => pmsOf(members))
   const mapping = useMemberMappingForm(workspaceId, initialRows, pms)
@@ -62,7 +71,9 @@ function MappingForm({ workspaceId, discordUsers, members, onCancel, onSaved }: 
   } = mapping
   const onSubmit = (event: FormEvent<HTMLFormElement>) =>
     submit(async (values) => {
-      if (await save(values)) onSaved()
+      onSavingChange(true)
+      const saved = await save(values).finally(() => onSavingChange(false))
+      if (saved) onSaved()
     })(event)
 
   return (
@@ -98,7 +109,7 @@ export interface MemberConnectDialogProps {
 /**
  * 온보딩 뒤의 팀원 연결 (D-074, D-075). 팀 화면의 `팀원 관리`·`연결` 과 설정의 Discord 연결 성공이 이 창을 연다.
  * 창을 열 때마다 지금 팀원·Discord 사용자로 줄을 새로 만든다. 저장한 뒤에만 닫힌다 — 화면은 서버가 돌려준 팀원으로 바뀐다 (D-137).
- * 닫으면 적다 만 입력은 버린다
+ * 저장하는 동안에는 닫히지 않는다 — 실패하면 창 안의 줄에 오류를 둔다. 닫으면 적다 만 입력은 버린다
  */
 export function MemberConnectDialog({
   workspaceId,
@@ -106,7 +117,12 @@ export function MemberConnectDialog({
   onOpenChange,
   source,
 }: MemberConnectDialogProps) {
+  const [saving, setSaving] = useState(false)
   const close = () => onOpenChange(false)
+  const requestOpenChange = (next: boolean) => {
+    if (!next && saving) return
+    onOpenChange(next)
+  }
   const closeOnly = (
     <div className="flex justify-end pt-6">
       <Button variant="ghost" onClick={close}>
@@ -117,7 +133,7 @@ export function MemberConnectDialog({
   return (
     <Modal
       open={open}
-      onOpenChange={onOpenChange}
+      onOpenChange={requestOpenChange}
       title="팀원 연결"
       description={DESCRIPTION}
       width={WIDTH}
@@ -150,6 +166,7 @@ export function MemberConnectDialog({
           members={source.members}
           onCancel={close}
           onSaved={close}
+          onSavingChange={setSaving}
         />
       )}
     </Modal>

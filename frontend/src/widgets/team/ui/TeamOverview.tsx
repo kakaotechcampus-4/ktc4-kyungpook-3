@@ -86,13 +86,18 @@ export function TeamOverview({
     void integrations.refetch()
     void discordUsers.refetch()
   }
+  const retryMembers = () => void members.refetch()
+  // 받은 자료가 없을 때의 실패만 오류다 — 다시 받다 실패해도 열린 창의 입력을 지우지 않는다.
+  // 팀원 조회 실패도 본다. 팀원 없이는 줄을 만들 수 없어 창이 뼈대에 머문다
   const mappingSource: MappingSource = discordMissing
     ? { status: 'not_connected' }
-    : discordUsers.error
-      ? { status: 'error', error: discordUsers.error, retry: retryDiscord }
-      : discordUsers.data === undefined || members.data === undefined
-        ? { status: 'loading' }
-        : { status: 'ready', discordUsers: discordUsers.data, members: members.data }
+    : members.data === undefined && members.error
+      ? { status: 'error', error: members.error, retry: retryMembers }
+      : discordUsers.data === undefined && discordUsers.error
+        ? { status: 'error', error: discordUsers.error, retry: retryDiscord }
+        : discordUsers.data === undefined || members.data === undefined
+          ? { status: 'loading' }
+          : { status: 'ready', discordUsers: discordUsers.data, members: members.data }
   const unlinked: UnlinkedAccountsState =
     mappingSource.status === 'ready'
       ? {

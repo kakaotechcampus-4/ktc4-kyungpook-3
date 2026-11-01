@@ -1,8 +1,12 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { http } from 'msw'
 import { paths } from '@/shared/config/routes'
 import { db } from '@/shared/mock/db'
+import { fail } from '@/shared/mock/envelope'
 import { applyScenario } from '@/shared/mock/scenarios'
+import { server } from '@/shared/mock/server'
+import { deferred } from '@/shared/test/deferred'
 import { businessRequests, recordRequests } from '@/shared/test/requests'
 import { renderApp } from './test/renderApp'
 
@@ -19,6 +23,13 @@ const TEAM = paths.members('ws_01')
 
 async function unlinkedArea() {
   return within(await screen.findByRole('region', { name: '연결되지 않은 계정' }))
+}
+
+/** 창 바깥 덮개. 창이 열리면 Radix 가 창 밖을 접근성 트리에서 숨겨 역할로 찾지 못한다 */
+function scrimOf(dialog: HTMLElement): HTMLElement {
+  const scrim = dialog.parentElement?.querySelector<HTMLElement>(':scope > button')
+  if (!scrim) throw new Error('scrim not found')
+  return scrim
 }
 
 describe('팀 화면 — PM', () => {
@@ -99,6 +110,50 @@ describe('팀 화면 — PM', () => {
   it('주소의 `connect=members` 로 오면 창이 열려 있다 — 설정의 Discord 연결 성공이 오는 곳이다 (D-074)', async () => {
     renderApp(paths.membersConnect('ws_01'))
     expect(await screen.findByRole('dialog', { name: '팀원 연결' })).toBeInTheDocument()
+  })
+
+  it('저장하는 동안에는 Esc·바깥 클릭으로 창이 닫히지 않고, 실패하면 창 안에 오류가 남는다', async () => {
+    const user = userEvent.setup()
+    const gate = deferred()
+    server.use(
+      http.post('/api/v1/members', async () => {
+        await gate.promise
+        return fail('INTERNAL_ERROR', 'boom', 500)
+      }),
+    )
+    renderApp(TEAM)
+    await user.click(await screen.findByRole('button', { name: '팀원 관리' }))
+    const dialogElement = await screen.findByRole('dialog', { name: '팀원 연결' })
+    const dialog = within(dialogElement)
+    await user.type(await dialog.findByLabelText('@jihun_dev의 팀원 이름'), '최지훈')
+    await user.click(dialog.getByRole('button', { name: '저장' }))
+    await waitFor(() => expect(dialog.getByRole('button', { name: '나중에 하기' })).toBeDisabled())
+
+    await user.keyboard('{Escape}')
+    await user.click(scrimOf(dialogElement))
+    expect(screen.getByRole('dialog', { name: '팀원 연결' })).toBe(dialogElement)
+
+    gate.resolve()
+    expect(await dialog.findByRole('alert')).toHaveTextContent(
+      '일부 팀원을 저장하지 못했어요. 남은 줄만 다시 저장해요.',
+    )
+    expect(dialog.getByLabelText('@jihun_dev의 팀원 이름')).toHaveValue('최지훈')
+  })
+
+  it('팀원 조회가 실패하면 창도 뼈대에 머물지 않고 오류·다시 시도·닫기를 보인다', async () => {
+    const user = userEvent.setup()
+    server.use(
+      http.get('/api/v1/members', () => fail('FORBIDDEN', 'Forbidden: member check failed', 403), {
+        once: true,
+      }),
+    )
+    renderApp(TEAM)
+    await user.click(await screen.findByRole('button', { name: '팀원 관리' }))
+    const dialog = within(await screen.findByRole('dialog', { name: '팀원 연결' }))
+    const retry = await dialog.findByRole('button', { name: '다시 시도' })
+    expect(dialog.getByRole('button', { name: '닫기' })).toBeInTheDocument()
+    await user.click(retry)
+    expect(await dialog.findByLabelText('@minsu의 팀원 이름')).toHaveValue('박민수')
   })
 })
 
