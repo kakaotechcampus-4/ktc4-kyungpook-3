@@ -1,6 +1,6 @@
 # M8-C 구현 결과 — 메시지
 
-- 기록일: 2026-10-31 (2026-11-01 디자인 캔버스 기준 재작업과 검증 VR-C 발견 수정, 2026-11-02 Discord DM 카드 잘림 수정, 발송 시점 카드 hover·저장 중 버튼 깜빡임 수정 반영)
+- 기록일: 2026-10-31 (2026-11-01 디자인 캔버스 기준 재작업과 검증 VR-C 발견 수정, 2026-11-02 Discord DM 카드 잘림 수정, 발송 시점 카드 hover·저장 중 버튼 깜빡임 수정, 대화 미리 받기 반영)
 - 이슈: #245
 - 대상: [M8 계획](plan.md) C 절의 구현 순서 1~6(결정 전)과 최종 게이트, 2026-11-01 사용자 결정(결정 4의 UI 범위 = 디자인 캔버스 기준, MSW 목)에 따른 재작업
 - 상태: **AC-01~AC-07 충족(프론트·MSW 기준, UI/UX만), 목록·보내기 전 확인·대화·빈 상태가 디자인 캔버스의 항목·문구·상태와 일치(차이표, 남은 차이 4개는 아래).** 메시지 API가 없어 화면은 MSW 모드에서만 보이고, 실 API 모드와 production은 기존 「메시지는 준비 중이에요」 안내를 그대로 둔다. 보내기 전 확인의 행동(발송·보내지 않음·고쳐 쓰기·발송 시점, 대화의 승인·반려)은 MSW 목으로 서버 성공 뒤 반영한다. 권한 분기·상태 동기화(polling)·메시지 E2E는 하지 않았다. 전체 `test:e2e`는 실행하지 않았다. 실제 메시지 API 연동과 Discord 발송은 범위 밖이며 검증하지 않았다.
@@ -277,6 +277,52 @@ Node v24.11.0. 무거운 명령은 직렬화 wrapper로 하나씩 돌렸다. 계
 | 같은 명령(도우미 수정 뒤 2차) | 0 | 120개 모두 통과(M8 블록: index 확인 + `M8 메시지/화면` 스토리 15개 play 포함) |
 
 공용 Button은 바꾸지 않아 `shared/ui/button` 테스트와 전체 Vitest는 돌리지 않았다(지시 범위). `build`도 돌리지 않았다(Storybook build가 같은 컴포넌트를 컴파일했다).
+
+## 2026-11-02 대화 목록 가리키기·포커스 미리 받기
+
+### 근거와 범위
+
+사용자 요청(코디네이터 지시, 2026-11-02, 직전 커밋 `38faeac` 후속). 왼쪽 목록의 대화는 이름·한 줄 미리보기만 목록 응답에 있고, 말풍선은 [ThreadDetail](../../../src/widgets/message-inbox/ui/ThreadDetail.tsx)이 대화를 열 때 따로 받는다. 그래서 처음 여는 대화는 스켈레톤을 거쳤다.
+
+- **대화만 미리 받는다.** 보내기 전 확인 항목은 목록 응답(`messageInboxQueryOptions`)의 `reviews`에 상세가 다 들어 있어 골라도 요청이 없다. 미리 받을 것이 없어 범위에서 뺐다.
+- **방식은 회의록 목록과 같다**([MeetingMinutes](../../../src/widgets/meeting-minutes/ui/MeetingMinutes.tsx)의 `onPointerEnter`·`onFocus` → `prefetchMinutes`). 대화는 조회가 하나라 `lib/prefetchThread.ts`를 따로 만들지 않고 [MessageInbox](../../../src/widgets/message-inbox/ui/MessageInbox.tsx)의 대화 행에서 `queryClient.prefetchQuery(messageThreadQueryOptions(workspaceId, threadId))`를 바로 부른다. ThreadDetail과 같은 Query라 캐시에 쓰는 길도 그 하나다.
+- **staleTime은 앱 기본값**(`STALE_TIME.default`, [queryClient](../../../src/shared/api/queryClient.ts)에서 30초 확인)을 그대로 쓴다. 그 안에는 같은 행을 다시 가리켜도 요청하지 않는다.
+- **열린 대화(`aria-current`)는 건너뛴다.** ThreadDetail이 이미 받고 있고, staleTime이 지난 뒤 가리키기만으로 열린 대화를 다시 받지 않게 한다.
+- **실패는 조용히 버린다.** `prefetchQuery`는 거부하지 않는 promise를 돌려준다(오류를 삼킴). 고르면 ThreadDetail이 같은 Query로 다시 묻고 기존 오류 처리(다시 시도·찾을 수 없음)를 한다.
+- **무효화와 충돌하지 않는다.** 행동 성공 때의 `messageKeys` 무효화는 미리 받아 둔 대화도 무효로 표시한다(보이지 않는 대화라 바로 다시 받지는 않는다). 다시 가리키면 staleTime 안이어도 새로 받는다.
+
+### 회귀 테스트
+
+[messagesMsw](../../../src/app/messagesMsw.test.tsx) 「대화 행을 가리키거나 포커스하면 그 대화를 미리 받는다」 6개, [messagesActionsMsw](../../../src/app/messagesActionsMsw.test.tsx) 1개를 더했다.
+
+| 사례 | 수정 전 |
+|---|---|
+| 가리키면 그 대화를 한 번 받고, 고르면 스켈레톤 없이 바로 그리며 다시 묻지 않는다 | 실패(가리켜도 요청 없음) |
+| 같은 행을 다시 가리켜도 30초 안에는 다시 받지 않고, 지나면 다시 받는다 | 실패 |
+| 키보드로 포커스해도 미리 받는다 | 실패 |
+| 미리 받기가 실패해도 화면에 알리지 않고, 고르면 대화 칸이 그 오류를 알린다 | 수정 뒤 추가 |
+| 이미 열린 대화 행은 가리켜도 다시 받지 않는다 | 통과(지킴 단언) |
+| 보내기 전 확인 항목은 가리켜도·포커스해도 요청이 없다 | 통과(지킴 단언) |
+| 미리 받아 둔 대화도 발송 뒤에는 무효화돼 다시 가리키면 새로 받고, 고르면 보낸 메시지가 보인다 | 실패(가리켜도 요청 없음) |
+
+「스켈레톤 없이」 단언은 지운 뒤에도 남는 기록(MutationObserver)으로 본다. 가리키기 없이 누르면(`fireEvent.click`) 이 감시가 스켈레톤을 잡는 것을 임시 사례로 확인하고 지웠다. 바꾼 기존 단언은 없다.
+
+### 브라우저 확인 (2026-11-02, Playwright 한 탭, 포트 5223, `messages-default`)
+
+목록을 받은 뒤 요청 0 → `박민수` 행 가리키기 `threads/th_02` 1건 → 떠났다 다시 가리키기·보내기 전 확인 `정하늘` 가리키기 추가 0건 → `박민수` 클릭 직후 스켈레톤 0개·제목 `박민수`, 추가 요청 0건 → 대화 `정하늘` 행에 키보드 포커스 `threads/th_03` 1건.
+
+### 검증 (2026-11-02)
+
+Node v24.11.0. 계획 [plan.md](plan.md)는 읽기만 했다.
+
+| 명령 | 종료 코드 | 결과 |
+|---|---:|---|
+| 수정 전 `npx vitest run src/app/messagesMsw.test.tsx src/app/messagesActionsMsw.test.tsx -t "미리 받"` | 1 | 4개 실패·2개 통과(위 표) |
+| 수정 뒤 같은 명령(실패 사례 추가 뒤 `messagesMsw`만) | 0 | 6개 통과 |
+| `npm run typecheck`·`lint`·`format:check` | 0 | |
+| 메시지 3파일(`messagesMsw`·`messagesActionsMsw`·`widgets/message-inbox`) | 0 | 74개 통과(기존 67 + 새 7), 미처리 거부 경고 없음 |
+
+변경이 위젯 한 곳이라 전체 Vitest·`test:storybook`·`build`는 돌리지 않았다(지시 범위).
 
 ## 작업 근거와 요약 (2026-10-31 결정 전 부분)
 
