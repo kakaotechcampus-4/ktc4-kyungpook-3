@@ -48,10 +48,14 @@ recordings/         녹음 산출물 (git 제외)
 - 수동 업로드(`upload/`): 회의를 녹음하지 못했을 때 오디오 파일 하나를 `python -m upload.prepare <오디오> --started-at <ISO>`
   (pyannoteAI 를 실제로 부르므로 `PYANNOTEAI_API_KEY` 가 필요하고 과금된다)로 화자 분리해 화자 라벨마다 원본 길이의 가상 트랙
   `recordings/upload_{ts}/{id}_{ts}.wav` 와 `diarization.json`, 매니페스트를 만든다. 매니페스트는 `status` 가 `diarized`,
-  `source` 가 `upload` 이고 `diarized` 인 회의는 워커가 돌리지 않는다. 사람이 `speakers[].display_name` 을 실제 이름으로
-  고치고 `status` 를 `saved` 로 바꾼 뒤의 처리는 아직 정해지지 않았다. 워커의 바퀴(`recover_pass`)는 자동 바퀴든 `--retry <서버ID>`
-  바퀴든 `guild_id` 없는 매니페스트를 거르므로 지금은 집지 않는다. 다만 업로드를 막으려고 둔 필터가 아니라서 다음 PR 에서 명시적으로 막는다. 자동 이어받기·BE 인계는 다음 PR(PM 라벨 지정
-  흐름)에서 정한다. `diarized` 는 recording 과 saved 사이의 상태다. 이 경로는
+  `source` 가 `upload` 입니다. 이어서 화자 라벨을 멤버에 지정합니다:
+  `python -m upload.mapping <매니페스트> <mapping.json>` (`upload.map` 이 아니라 `upload.mapping` 입니다. 파이썬 내장 `map` 과 이름이 겹치지 않게 했습니다).
+  `mapping.json` 은 `{"mapping": {"SPEAKER_00": "멤버ID", "SPEAKER_01": null}}` 이거나 안쪽 객체 그대로이고, 키는 `SPEAKER_00` 도
+  `SPEAKER00` 도 됩니다. 모든 라벨을 한 번에 지정해야 하고(빠진·모르는 라벨, 빈 문자열 멤버 ID 는 거절하며 파일은 그대로),
+  `null` 은 외부 참석자, 같은 멤버를 여러 라벨에 지정해도 됩니다. 결과는 `speakers[].member_id`, 최상위 `mapped_at`, `status` 가
+  `mapped` 입니다. `user_id`(라벨 id)·`file`·wav 이름은 그대로이고 `mapped` 에서 다시 지정하면 덮어씁니다.
+  `diarized`·`mapped` 이거나 `source` 가 `upload` 인 매니페스트는 상태가 무엇이든(사람이 `saved` 로 고쳐도) 워커의 자동 바퀴·
+  `--retry` 바퀴·복구 어디서도 처리하지 않습니다. 업로드 회의의 BE 인계는 #254·#255 합의 뒤 다음 PR 에서 정합니다. 이 경로는
   디스코드 길드·채널이 없어 `guild`·`channel` 이 null 이고, 매니페스트에 `workspace_id` 와 BE 회의 정보가 없으므로
   `partial`·`sourced` 단계와 BE 인계는 사람이 그 칸을 채워 줘야 돌 수 있다(이 변경은 그 부분을 다루지 않는다).
 
