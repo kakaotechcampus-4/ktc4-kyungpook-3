@@ -177,6 +177,64 @@ export const 대화_오류: Story = {
   },
 }
 
+/* 긴 문구 — 여러 줄 본문, 줄바꿈 기회가 없는 긴 주소, 띄어 쓰지 않은 긴 이름 (전역 `keep-all` 이라 한글도 끊기지 않는다) */
+const UNBROKEN_URL = `https://discord.com/channels/@me/${'a1b2c3d4'.repeat(16)}`
+const LONG_NAME = '알렉산더막시밀리안몽고메리김백엔드리드개발자'
+const LONG_BOT_NAME = '카카오테크캠퍼스경북대학교3기세번째팀프로젝트공간'
+const LONG_BODY = [
+  ...Array.from(
+    { length: 12 },
+    (_, index) =>
+      `${index + 1}번째 줄이에요. 카드 폭보다 길게 써서 자동 줄바꿈이 일어나도 내용이 잘리지 않는지 봅니다.`,
+  ),
+  UNBROKEN_URL,
+].join('\n')
+
+const fillLongMessages = () => {
+  const review = db.messageReviews.find(({ review_id }) => review_id === 'rv_01')
+  const thread = db.messageThreads.find(({ thread_id }) => thread_id === 'th_01')
+  if (!review || !thread) throw new Error('mock review rv_01 or thread th_01 is missing')
+  review.recipient_name = LONG_NAME
+  review.body = LONG_BODY
+  review.reason = `${review.reason} ${UNBROKEN_URL}`
+  thread.name = LONG_NAME
+  thread.messages.push({
+    message_id: 'mg_80',
+    sender: 'counterpart',
+    body: `링크 남겨요\n${UNBROKEN_URL}`,
+    sent_at: '2026-09-16T19:00:00+09:00',
+    status: 'sent',
+    delivery: null,
+    approved_by: null,
+  })
+}
+
+/** 내용이 칸을 넘지 않는다 — 레이아웃은 jsdom 이 재지 못해 브라우저에서 실측한다 */
+const expectNoOverflow = async (element: Element) => {
+  await expect(element.scrollHeight).toBeLessThanOrEqual(element.clientHeight)
+  await expect(element.scrollWidth).toBeLessThanOrEqual(element.clientWidth)
+}
+const expectNoHorizontalOverflow = async (element: Element) => {
+  await expect(element.scrollWidth).toBeLessThanOrEqual(element.clientWidth)
+}
+
+/** 긴 문구의 Discord DM 미리보기 — 카드가 본문 높이만큼 늘어나고 긴 주소·이름은 칸 안에서 줄을 바꾼다 */
+export const 긴_문구_미리보기: Story = {
+  args: { reviewId: 'rv_01', botName: LONG_BOT_NAME },
+  parameters: { route: paths.messageReview('ws_01', 'rv_01'), setup: fillLongMessages },
+  play: async ({ canvasElement }) => {
+    const detail = detailOf(canvasElement)
+    const card = await detail.findByRole('region', { name: '보낼 메시지 미리보기' })
+    const body = await within(card).findByText(/12번째 줄이에요/)
+    await expectNoOverflow(card)
+    await expectNoHorizontalOverflow(body)
+    // 상세 칸은 세로로만 스크롤한다 — 가로로 넘치는 글자가 없다
+    const page = card.closest('article')?.parentElement
+    if (!page) throw new Error('review detail scroll pane is missing')
+    await expectNoHorizontalOverflow(page)
+  },
+}
+
 /** 며칠에 걸친 긴 대화 — 대화 칸만 세로로 스크롤하고 가장 최근 메시지부터 보인다 */
 export const 긴_대화: Story = {
   args: { threadId: 'th_02' },

@@ -14,9 +14,12 @@ import { ReviewMessageCard } from './ReviewMessageCard'
 import { SendTimingPicker } from './SendTimingPicker'
 
 /* Messages 캔버스 실측 — 가운데 604 열(위 44 · 좌우 36 · 아래 56, 간격 24), 제목 28px,
-   근거 블록(눌린 면 · 위아래 18 · 좌우 20 · 라운드 12 · 간격 10), 행동 줄 위 구분선 */
+   근거 블록(눌린 면 · 위아래 18 · 좌우 20 · 라운드 12 · 간격 10), 행동 줄 위 구분선.
+   열은 내용 높이를 따르고(`self-start`) 넘치면 PAGE 가 스크롤한다 — 칸 높이로 늘어나면(stretch) 세로 flex 가 자식을 줄이고,
+   overflow-hidden 인 미리보기 카드는 최소 높이가 0 이라 본문이 잘린다.
+   이름·사유·본문은 띄어 쓰지 않은 긴 글자(주소, 전역 `keep-all` 의 긴 한글)도 칸 안에서 줄을 바꾼다(`wrap-anywhere`) */
 const PAGE = 'flex flex-1 justify-center overflow-y-auto px-36 pt-44 pb-56'
-const COLUMN = 'flex w-full max-w-[604px] flex-col gap-24'
+const COLUMN = 'flex w-full max-w-[604px] flex-col gap-24 self-start'
 const TITLE = 'text-[28px] leading-[1.25] font-bold tracking-h1 text-ink'
 const REASON = 'flex flex-col items-start gap-10 rounded-12 bg-surface-sunken px-20 py-18'
 const REASON_LINK =
@@ -73,7 +76,7 @@ export function ReviewDetail({ workspaceId, botName, review, onSettled }: Review
           <h2 id={headingId} className={TITLE}>
             이 메시지, 보낼까요?
           </h2>
-          <p className="text-[14px] text-sub">
+          <p className="text-[14px] wrap-anywhere text-sub">
             <strong className="font-semibold text-ink">{review.recipientName}</strong>에게 Discord
             개인 메시지로 나갑니다. 보낸 뒤에는 되돌릴 수 없어요.
           </p>
@@ -96,7 +99,7 @@ export function ReviewDetail({ workspaceId, botName, review, onSettled }: Review
           <h3 id={reasonId} className="mono text-[11px] leading-[1.6] font-normal text-dim">
             왜 보내려 하나요
           </h3>
-          <p className="text-body leading-[1.75] text-ink">{review.reason}</p>
+          <p className="text-body leading-[1.75] wrap-anywhere text-ink">{review.reason}</p>
           {review.reasonUrl === null ? null : (
             <a href={review.reasonUrl} target="_blank" rel="noreferrer" className={REASON_LINK}>
               마지막 메시지 보기

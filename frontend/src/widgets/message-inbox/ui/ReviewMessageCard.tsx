@@ -10,7 +10,9 @@ import { DiscordGlyph } from './DiscordGlyph'
 import { LockedButton } from './LockedButton'
 
 /* Messages 캔버스 실측 — 카드 라운드 16 · 선, 머리(좌우 16 · 위아래 12 · 아래 선), 본문(위 18 · 좌우 18 · 아래 14, 간격 12),
-   아바타 34(매스), 이름 줄 간격 8, 밑단(좌우 18 · 위아래 12 · 위 구분선) */
+   아바타 34(매스), 이름 줄 간격 8, 밑단(좌우 18 · 위아래 12 · 위 구분선).
+   카드의 overflow-hidden 은 시안 그대로(라운드 안쪽 자르기)라 높이는 내용을 따라야 한다 — 열이 줄이지 않는다(ReviewDetail).
+   봇 이름·본문은 띄어 쓰지 않은 긴 글자도 카드 폭 안에서 줄을 바꾼다(`wrap-anywhere`) — 카드가 가로로 자르지 않는다 */
 const CARD = 'overflow-hidden rounded-16 border border-line bg-surface'
 const CARD_HEAD = 'flex items-center gap-10 border-b border-line px-16 py-12 text-ink'
 const BOT_BADGE =
@@ -70,14 +72,16 @@ export function ReviewMessageCard({
     <section aria-label="보낼 메시지 미리보기" className={CARD}>
       <div className={CARD_HEAD}>
         <DiscordGlyph />
-        <span className="flex-1 text-caption">Discord 개인 메시지 · {botName} 봇</span>
+        <span className="flex-1 text-caption wrap-anywhere">
+          Discord 개인 메시지 · {botName} 봇
+        </span>
         <span className="mono text-meta text-dim">미리보기</span>
       </div>
       <div className="flex gap-12 px-18 pt-18 pb-14">
         <Mascot size={34} className="shrink-0" />
         <div className="flex min-w-[0px] flex-1 flex-col gap-7">
           <div className="flex flex-wrap items-baseline gap-8">
-            <span className="text-body font-semibold text-ink">{botName}</span>
+            <span className="text-body font-semibold wrap-anywhere text-ink">{botName}</span>
             <span className={BOT_BADGE}>BOT</span>
             <span className="mono text-[11px] text-dim">
               {review.scheduledAt === null
@@ -94,7 +98,9 @@ export function ReviewMessageCard({
               failure={failure}
             />
           ) : (
-            <p className="text-[14px] leading-[1.8] whitespace-pre-line text-ink">{review.body}</p>
+            <p className="text-[14px] leading-[1.8] wrap-anywhere whitespace-pre-line text-ink">
+              {review.body}
+            </p>
           )}
         </div>
       </div>
