@@ -7,6 +7,7 @@
   - 계획의 B-2 AC(`AC-B-1x`)는 계획에 아직 없다. 이 작업에서는 계획을 고치지 않으므로 재작업은 코디네이터 지시의 완료 기준(아래 「재작업 — 디자인 캔버스 기준」)으로 기록하고, M8-B 전체 완료로 표시하지 않는다.
   - B-1의 AC-B-01~09 기록은 아래 B-1 절에 그대로 둔다. AC-B-05(성공 뒤 설정 유지)는 재작업의 D-074 이동으로 동작이 바뀌었다.
   - 실제 Discord·Notion 연동은 미검증 연동 과제로 남는다.
+  - 2026-11-01 검증(VR-B, FAIL·발견 10건) 뒤 수정 라운드에서 발견 10건을 모두 반영했다(아래 「수정 라운드 — VR-B 검증 결과 반영」). VR-08의 `팀 삭제` 좌우 패딩만 공용 버튼 크기 때문에 남겼다. 수정 뒤 typecheck·lint·format:check·전체 test(`--maxWorkers=2`)·build·test:storybook이 모두 exit 0이다.
 
 ## 재작업 — 디자인 캔버스 기준 (결정 5 해결 뒤)
 
@@ -51,7 +52,7 @@
 | 자동 반영 기준 | 선택지 셋, 가운데 선택, 셋째는 지원하지 않음 | 없음 | 같음. 저장 API 없음 — 화면 안에서만 고르고 새로 열면 가운데 |
 | 알림 | 토글 셋(켬·켬·끔) | 없음 | 같음. 저장 API 없음 — 화면 안에서만 켜고 끈다 |
 | 이 팀 삭제하기 | 강조 테두리 카드, `팀 삭제` | 없음 | 같음(PM). API가 없어 준비 중 토스트 |
-| 일반 팀원 | 아트보드에 없음 | 상태·요청 안내 | 같은 안내. 관리 버튼·팀 삭제 없음, 선택지·토글 꺼짐 |
+| 일반 팀원 | 아트보드에 없음 | 상태·요청 안내 | 같은 안내. 관리 버튼·팀 삭제·`되돌리기` 없음, 워크스페이스 이름·선택지·토글 꺼짐(이름 칸은 수정 라운드 VR-07에서 껐다) |
 
 **두 화면 공통**
 
@@ -82,14 +83,14 @@
   - 순수 판정 [team.ts](../../../src/widgets/team/lib/team.ts): 상태 배지, 팀원별 일 정렬, 먼저 챙길 것, 앞으로 7일, 연결되지 않은 계정·비활성 팀원, 아바타 글자.
   - [TeamOverview](../../../src/widgets/team/ui/TeamOverview.tsx)는 팀원·태스크·연동·Discord 사용자를 함께 부르고 영역마다 로딩·오류를 그린다. Discord 미연결은 연동 상태나 409 `INTEGRATION_NOT_CONNECTED`로 안다.
   - [MemberConnectDialog](../../../src/widgets/team/ui/MemberConnectDialog.tsx)는 `features/member-mapping`의 폼을 쓴다. 줄은 창을 연 때 한 번 만든다. PM 체크를 요구하지 않는다(D-075).
-  - [MembersPage](../../../src/pages/members/ui/MembersPage.tsx)는 `connect=members`로 창을 열고 닫는다(열 때 기록 추가, 닫을 때 replace). 일반 팀원에게는 창이 없다.
+  - [MembersPage](../../../src/pages/members/ui/MembersPage.tsx)는 `connect=members`로 창을 열고 닫는다. 열 때 기록을 추가하고 그 기록에 `connectPushed`를 남긴다. 닫을 때 그 표시가 있으면 기록을 한 칸 돌아가고, 없으면(주소로 바로 왔거나 D-074로 왔으면) replace로 파라미터만 지운다(수정 라운드 VR-06). 일반 팀원에게는 창이 없다.
 - **설정 화면** — [SettingsPage](../../../src/pages/settings/ui/SettingsPage.tsx)와 같은 폴더의 목차·절 컴포넌트.
 - **연결 카드** — [DiscordConnectionSection](../../../src/features/integration-connection/ui/DiscordConnectionSection.tsx)·[NotionConnectionSection](../../../src/features/integration-connection/ui/NotionConnectionSection.tsx)을 캔버스 카드로 바꿨다. 제목은 `h3`이고 읽는 이름은 `Discord 연결`·`Notion 연결`이다(기존 포커스·테스트 이름 유지). Discord는 연결이 확인되면 `paths.membersConnect`로 간다(D-074).
 - **연결 끊기** — [disconnectIntegration](../../../src/entities/integration/api/integrations.ts), [useDisconnectIntegration](../../../src/features/integration-connection/model/useDisconnectIntegration.ts), [ConnectionActions](../../../src/features/integration-connection/ui/ConnectionActions.tsx).
 - **공용** — 아이콘 `users`·`alert`(Team 캔버스 경로), 날짜 `monthDayOf`·`formatSeoulMonthDayTime`, `MemberMappingFields`의 `tone`(기본 `onboarding`).
 - **테스트·스토리**
   - 단위: [team.test.ts](../../../src/widgets/team/lib/team.test.ts)(10), 날짜 표기, 연동 해제 API.
-  - 통합: [team.test.tsx](../../../src/app/team.test.tsx)(7), [settingsPage.test.tsx](../../../src/app/settingsPage.test.tsx)(7).
+  - 통합: [team.test.tsx](../../../src/app/team.test.tsx)(재작업 7 → 수정 라운드 뒤 9), [settingsPage.test.tsx](../../../src/app/settingsPage.test.tsx)(7 → 9).
   - 스토리: `M8 팀/화면`(6: PM 기본·팀원·Discord 미연결·팀원 연결 창·로딩·오류), `M8 설정/화면`(3: PM 연결됨·PM Discord 미연결·팀원).
   - E2E: 새 파일·사례 없음. [settings-team.e2e.ts](../../../e2e/settings-team.e2e.ts)의 OAuth 왕복을 D-074 도착으로 바꾸고, 세 너비 테스트에 팀 화면 넘침 검사를 더했다(테스트 수 4 그대로).
   - Storybook 회귀 블록([stories.sb.ts](../../../e2e/storybook/stories.sb.ts))은 바꾸지 않았다. `m8-` 접두어로 새 스토리를 함께 모은다.
@@ -104,6 +105,9 @@
 | `settingsConnections.test.tsx` | Notion 버튼 없음 → `연결하기` 없음, 성공 복귀 두 건 → 팀원 연결 창 도착 | 같은 관리 버튼, 그리고 D-074 이동 |
 | Discord·Notion 스토리 `PM_연결됨` | 버튼 없음 → 관리 버튼 둘 | 같은 관리 버튼 |
 | `settings-team.e2e.ts` 첫 테스트 | 성공 뒤 설정 유지 → 팀원 연결 창, 새로고침 뒤에도 창, `나중에 하기`, 설정에서 연결됨 | D-074 이동 |
+| `appShell.test.tsx`(탭 다섯과 설정을 차례로 그리는 1건), `meetingProcessing.test.tsx`(StrictMode 탭 넷 1건) — a1ef0fc | 테스트 한도 기본 5초 → 10초. 단언은 그대로 | 팀·설정이 자리표시자에서 조회 넷과 창을 그리는 실제 화면이 되어 전체 실행 부하에서 5초를 넘겼다. 같은 저장소의 `lateAsyncRaces`·`meetingMinutes*`가 이미 10초다 |
+| `team.test.tsx`, `settingsPage.test.tsx` 파일 — a1ef0fc | `vi.setConfig({ testTimeout: 15_000 })`. 단언은 그대로 | 앱 전체를 그리고 조회·창·토스트를 실제로 거친다. `dashboard.test.tsx`·`tasks.test.tsx`와 같은 15초다. VR-B는 단언 삭제·완화가 없고 근본 원인이 jsdom의 앱 전체 렌더 비용이라 타당하다고 판정했다 |
+| 수정 라운드 | 단언 추가만 | 아래 「수정 라운드」의 「기존 테스트 변경」 |
 
 ### 재작업 검증
 
@@ -118,9 +122,74 @@ Node v24.11.0, `frontend/`. 무거운 명령은 공통 잠금 래퍼(`heavy.sh`)
 | `npm run test -- --maxWorkers=2` (HEAD `35fc6b4`) | 1 | 165 files / 1846 tests 중 2 실패. ① `meetingProcessing.test.tsx` StrictMode 탭 이동 — 팀 탭 제목을 `팀원` 으로 기다리는 단언을 이번 변경에서 놓쳤다(실제 회귀). b7657e1 로 고친 뒤 단독 31/31 통과. ② `meetingRoutes.test.tsx` 일반 팀원 업로드 → 태스크 이동의 `findByRole` 미발견 — 단독 재실행 통과. 이 기계의 부하 실패로 본다 |
 | `npm run build` | 0 | |
 | `npm run test:storybook` (`STORYBOOK_E2E_PORT=6212`) | 미완료 | 실행 중 기계 메모리 부족으로 Claude Code 가 작업을 중단시켰다. 결과 없음 |
+| (a1ef0fc) | — | 앱 수준 검사 네 곳의 시간 한도를 올렸다(「기존 테스트 단언 변경」의 a1ef0fc 두 줄). 이 커밋 뒤의 실행은 아래 VR-B 행과 「수정 라운드」의 검증 표에 있다 |
+| VR-B `npm run test -- --maxWorkers=2` (HEAD `a1ef0fc`, 검증 에이전트) | 1 | 165 files / 1846 tests 중 `onboardingMembers.test.tsx` 2건 5초 초과. 같은 파일 단독 2차 34/34 통과, develop `ff9467e` 스냅샷에서도 같은 파일이 4건 5초 초과로 실패했다 — 부하성이며 이 브랜치 결함이 아니다 |
+| VR-B `npm run build` (HEAD `a1ef0fc`) | 0 | |
+| VR-B `npm run test:storybook` (HEAD `a1ef0fc`) | 1 | 119 통과 / 2 실패. `M8 팀/화면`의 `로딩`·`오류`가 렌더에서 죽었다(VR-01). 수정 라운드에서 고쳤다 |
 
 - 변경 중 단독 실행: `team.test.ts` 10, `team.test.tsx` 7, `settingsPage.test.tsx` 7, `settingsConnections`·`notionConnection`·`pages` 45, `appShell`·`routes`·`lateAsyncRaces` 65 모두 통과.
 - b7657e1 뒤의 전체 Vitest 와 `test:storybook` 은 다시 실행하지 않았다(메모리 부족 중단 뒤 재실행 지시 대기).
+
+## 수정 라운드 — VR-B 검증 결과 반영
+
+### 작업 근거
+
+코디네이터 지시(2026-11-01): 검증 에이전트 보고서 VR-B(기준 `ff9467e...a1ef0fc`, 판정 FAIL, major 3·minor 7)의 발견을 코드에서 재현·확인한 뒤 고친다. 전체 vitest의 `onboardingMembers` 시간 초과는 develop에서도 나는 부하성이라 수정 대상이 아니다. 계획(`plan.md`)은 읽기만 했고 수정하지 않았다.
+
+### 발견별 처리
+
+| 발견 | 처리 | 확인한 원인 | 고친 것 | 잡는 테스트 |
+|---|---|---|---|---|
+| VR-01 major — 팀 스토리 `로딩`·`오류` 렌더 실패 | 수정 | `.storybook/preview.tsx`는 `parameters.msw`를 배열로 펼치는데 두 스토리가 `{ handlers: [...] }` 객체를 넘겼다 | [TeamOverview.stories.tsx](../../../src/widgets/team/ui/TeamOverview.stories.tsx)의 두 스토리가 배열을 넘긴다 | 두 스토리의 play(기존). `test:storybook` 121 통과 |
+| VR-02 major — 저장 중 Esc·바깥 클릭으로 창이 닫히고 실패가 사라짐 | 수정 | 저장 중 상태가 안쪽 폼에만 있고 창은 `onOpenChange`를 그대로 넘겼다. 닫히면 폼이 사라져 실패를 보일 곳이 없었다 | [MemberConnectDialog](../../../src/widgets/team/ui/MemberConnectDialog.tsx)가 저장 중 여부를 갖고(폼이 제출 처리 안에서 알린다) 그동안 Esc·덮개의 닫기 요청을 무시한다. `저장` 성공과 `나중에 하기`(저장 중 비활성)는 그대로 닫는다 | `team.test.tsx` 「저장하는 동안에는 Esc·바깥 클릭으로 창이 닫히지 않고, 실패하면 창 안에 오류가 남는다」 |
+| VR-03 major — 팀원 조회 실패 시 창이 계속 뼈대 | 수정 | 창 자료(`mappingSource`)가 Discord 사용자 오류만 보고 팀원 오류는 보지 않았다 | [TeamOverview](../../../src/widgets/team/ui/TeamOverview.tsx)가 받은 팀원이 없을 때의 팀원 오류를 먼저 보고 창에 오류·`다시 시도`(팀원 재조회)·`닫기`를 보인다. 받은 자료가 없을 때만 오류로 본다 — 다시 받다 실패해도 열린 창의 입력을 지우지 않는다(Discord 사용자에도 같은 규칙) | `team.test.tsx` 「팀원 조회가 실패하면 창도 뼈대에 머물지 않고 오류·다시 시도·닫기를 보인다」(다시 시도 뒤 줄이 보이는 것까지) |
+| VR-04 minor — 끊기 성공 뒤 재조회 실패면 `연결됨` 유지 | 수정 | 성공 뒤 `invalidateQueries`만 했다. 재조회 실패는 던지지 않아 이전 데이터가 남았다 | [useDisconnectIntegration](../../../src/features/integration-connection/model/useDisconnectIntegration.ts)이 서버 2xx 뒤 그 provider를 미연결(서버의 행 삭제와 같은 값)로 캐시에 쓰고 다시 받는다. 서버 성공 뒤 반영이라 D-137에 맞는다 | `settingsPage.test.tsx` 「끊은 뒤 연동 상태를 다시 받지 못해도 서버가 끊은 결과대로 미연결을 보이고 제목으로 포커스를 옮긴다」(Discord) |
+| VR-05 minor — 끊기 성공 뒤 포커스가 body | 수정 | 창을 연 `연결 끊기`가 끊기면 사라져 창이 포커스를 돌려줄 곳이 없었다 | [useFocusAfterDisconnect](../../../src/features/integration-connection/model/useFocusAfterDisconnect.ts): 끊기 성공을 알린 뒤 카드가 미연결로 다시 그려지면 카드 제목(`h3`, `tabIndex={-1}`)으로 옮긴다. Discord 제목에도 `tabIndex={-1}`을 줬다. 새 `연결하기` 버튼 대신 제목을 고른 이유: 공용 `Button`이 ref를 받지 않아 공용 변경이 필요하고, 제목 다음 Tab이 바로 그 버튼이다 | 기존 Notion 끊기 테스트에 `toHaveFocus()` 단언 추가, 위 VR-04 테스트(Discord) |
+| VR-06 minor — 버튼으로 닫으면 같은 주소 기록이 남음 | 수정 | 열 때 push, 닫을 때 replace라 `?connect` 없는 같은 주소가 한 칸 더 남았다 | [MembersPage](../../../src/pages/members/ui/MembersPage.tsx)가 열 때 기록 state에 `connectPushed`를 남기고, 닫을 때 그 표시가 있으면 `navigate(-1)`, 없으면(주소로 바로 왔거나 D-074) 지금처럼 replace | `team.test.tsx` 「`팀원 관리`로 연 창…」에 닫기가 POP으로 첫 기록에 돌아온다는 단언, 「주소의 `connect=members`로 오면…」에 `나중에 하기`가 REPLACE라는 단언 |
+| VR-07 minor — 일반 팀원도 이름 칸을 고칠 수 있음 | 수정(코드) | `WorkspaceNameField`가 역할을 받지 않았다. 결정 기록의 권한 항목(일반 팀원은 읽기만)과 다른 유일한 조작이었다 | [SettingsPage](../../../src/pages/settings/ui/SettingsPage.tsx)에서 일반 팀원에게 이름 칸을 `disabled`로 두고 `되돌리기`를 그리지 않는다. 선택지·토글과 같은 꺼짐이다(`readOnly`는 입력 모양이 그대로라 고칠 수 있는 칸으로 오해한다). 결정 기록의 권한 문장에 이름 칸을 명시했다 | `settingsPage.test.tsx` 일반 팀원 사례에 이름 칸 비활성·`되돌리기` 없음 단언 |
+| VR-08 minor — 목차·`팀 삭제` 글자 14px | 수정(부분) | 빌드 CSS가 `.text-control{color:var(--color-control)}`다. `--text-control`(13px)과 `--color-control`의 이름이 겹쳐 글자색만 만든다 | [SettingsNav](../../../src/pages/settings/ui/SettingsNav.tsx) 항목을 `text-[13px] leading-none`으로, [DeleteTeamSection](../../../src/pages/settings/ui/DeleteTeamSection.tsx) 버튼에 `text-[13px]`. 전역 `text-control`·공용 Button은 건드리지 않았다. **`팀 삭제` 좌우 패딩(시안 16, 앱 20)은 남겼다** — 공용 `md`의 `px-20`이 생성 CSS에서 `px-16`보다 뒤라 className으로 덮이지 않고, 클래스 덮어쓰기는 [클래스 결정](../m2/basis-for-decision/2026-09-16-no-cn-clsx-tailwind-merge.md)이 금한다. 폭은 80.8px이다(시안 72.8) | `settingsPage.test.tsx` 「캔버스 실측…」의 클래스 단언, 브라우저 실측 13px |
+| VR-09 minor — `md-compact` 버튼 34px | 수정 | 시안은 `height:34px; min-height:36px`, 공용 `md-compact`는 `h-34`뿐이다 | 팀 `팀원 관리`와 설정 카드 버튼 다섯 자리(`채널 바꾸기`·`속성 다시 맞추기`·`연결 끊기`·두 `연결하기`)에 `min-h-[36px]`(카드 버튼은 [connectionStyles](../../../src/features/integration-connection/ui/connectionStyles.ts)의 `CARD_BUTTON`). `팀원 관리`에는 `gap-7`도 준다(생성 CSS에서 `gap-6` 뒤라 적용됨, 실측 7px). 공용 `md-compact`는 바꾸지 않았다 | `settingsPage.test.tsx` 「캔버스 실측…」, Discord 끊기 테스트의 `연결하기`, `team.test.tsx` `팀원 관리`의 클래스 단언. 브라우저 실측 36px |
+| VR-10 minor — 결과 문서·결정 기록 | 수정 | — | 이 절, 「기존 테스트 단언 변경」의 a1ef0fc 두 줄, 「재작업 검증」의 a1ef0fc·VR-B 행. [결정 기록](basis-for-decision/2026-10-31-settings-team-follow-design-canvas.md) 30행의 절 이름을 「아트보드 영역·상태와 현재 화면의 차이」로 고쳤다 | — |
+
+공용 토큰 이름 충돌(`--text-control`과 `--color-control`)은 공용 `Button`의 `sm`/`md`에도 있다. develop부터 있던 문제이고 이 브랜치 범위 밖이라 별도 이슈 후보로 남긴다.
+
+### 기존 테스트 변경
+
+모두 단언 추가다. 기존 기대값을 바꾸거나 지운 것은 없다.
+
+- `team.test.tsx` 「`팀원 관리`로 연 창…」: 버튼 클래스(VR-09)와 닫은 뒤 POP·첫 기록 key(VR-06) 단언을 더했다.
+- `team.test.tsx` 「주소의 `connect=members`로 오면…」: 창이 열린다는 단언에 더해 `나중에 하기`가 replace로 파라미터만 지우는지 본다. VR-06 뒤에도 직접 도착은 뒤로 가지 않아야 하기 때문이다.
+- `settingsPage.test.tsx` 「연결 끊기는 확인을 거쳐…」: 제목 포커스 단언(VR-05).
+- `settingsPage.test.tsx` 일반 팀원 사례: 이름 칸·`되돌리기` 단언을 더하고 제목을 「이름·자동 반영 기준·알림은 읽기만 하고, 되돌리기·연결 끊기와 팀 삭제가 없다」로 바꿨다(VR-07).
+
+### 커밋
+
+| 커밋 | 발견 |
+|---|---|
+| 570d3f0 | VR-01 |
+| eaf1dd9 | VR-02, VR-03 |
+| 1175148 | VR-06 |
+| 13fa284 | VR-04, VR-05 |
+| 1b4b6ab | VR-07 |
+| a9321ab | VR-08, VR-09 |
+| 이 문서의 커밋 | VR-10 |
+
+### 검증
+
+Node v24.11.0, `frontend/`. 무거운 명령은 공통 잠금 래퍼(`heavy.sh`) 아래에서 하나씩 실행했다. 코드 커밋 a9321ab 뒤의 작업 트리다(이후는 문서만 바뀜).
+
+| 명령 | exit | 결과 |
+|---|---|---|
+| `npm run typecheck` | 0 | |
+| `npm run lint` | 0 | FSD 경계 포함 |
+| `npm run format:check` | 0 | |
+| `npm run test -- --maxWorkers=2` | 0 | 165 files / 1850 tests 통과, 503초. 이번 실행에서는 `onboardingMembers` 시간 초과도 없었다 |
+| `npm run build` | 0 | |
+| `npm run test:storybook` (`STORYBOOK_E2E_PORT=6212`) | 0 | 121 통과(VR-B의 실패 2건 포함) |
+| 브라우저 확인 (Vite 5212 + Playwright Chromium 한 탭, 스크립트로 실행한 뒤 서버 종료) | 0 | 1360px. 목차 13px·36px, `팀 삭제` 13px·36px(폭 80.8), 카드 버튼·`팀원 관리` 36px(간격 7px). Notion·Discord 끊기 뒤 포커스가 각 카드 `h3`. 연동 재조회 500에서도 `연결 안 됨`·`Notion 연결하기`. 저장 대기 중 Esc·덮개 클릭 뒤에도 창 1개, 실패 뒤 창 안에 「일부 팀원을 저장하지 못했어요…」와 입력 유지. 팀원 403에서 창에 `다시 시도`·`닫기`, 뼈대 없음. 대시보드 → 팀 → 창 열고 닫기 → 뒤로 한 번에 대시보드. 일반 팀원 이름 칸 비활성·`되돌리기` 없음 |
+
+- 변경 중 단독 실행: `team.test.tsx` 9, `settingsPage.test.tsx` 9, `settingsConnections`·`notionConnection` 39, `appShell`·`notionConnection`·`pages` 53 모두 통과. 새 테스트는 고치기 전에 실패하는 것을 먼저 확인했다(VR-02·03·04·05·06·07).
+- 전체 E2E(`npm run test:e2e`)는 이번 지시의 필수 명령이 아니라 돌리지 않았다. 새 E2E도 더하지 않았다.
 
 ## B-1 작업 근거와 요약
 
