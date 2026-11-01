@@ -152,11 +152,13 @@ describe('설정 화면 — 일반 팀원', () => {
     applyScenario('settings-member')
   })
 
-  it('자동 반영 기준·알림은 읽기만 하고, 연결 끊기와 팀 삭제가 없다', async () => {
+  it('이름·자동 반영 기준·알림은 읽기만 하고, 되돌리기·연결 끊기와 팀 삭제가 없다', async () => {
     renderApp(SETTINGS)
     expect(
       await (await notionArea()).findByText('Notion 연결은 PM이 관리해요.'),
     ).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: '워크스페이스 이름' })).toBeDisabled()
+    expect(screen.queryByRole('button', { name: '되돌리기' })).toBeNull()
     expect(screen.queryByRole('button', { name: '연결 끊기' })).toBeNull()
     for (const radio of screen.getAllByRole('radio')) expect(radio).toBeDisabled()
     for (const toggle of screen.getAllByRole('switch')) expect(toggle).toBeDisabled()

@@ -28,7 +28,7 @@ const CONTENT = 'flex min-w-[0px] flex-1 flex-col gap-40'
  * 설정 화면 (Settings 캔버스). 목차 · 일반 · 연결 · 자동 반영 기준 · 알림 · 이 팀 삭제하기.
  * 연결은 Discord·Notion 카드다 — 온보딩에서 건너뛴 연결을 여기서 마친다 (D-011).
  * 이름·자동 반영·알림·팀 삭제는 저장 API 가 없다. 이름은 `되돌리기` 만 있고 값이 처음과 다르면 dirty 다 — 이탈 확인을 건다.
- * 바꾸는 조작은 PM 만 한다. 일반 팀원은 지금 상태를 읽고 팀 삭제는 보지 않는다
+ * 바꾸는 조작은 PM 만 한다. 일반 팀원은 이름·선택지·토글을 꺼진 채로 읽고 팀 삭제는 보지 않는다
  */
 export function SettingsPage() {
   const workspace = useMemberWorkspace(useRouteId('workspaceId'))
@@ -74,7 +74,7 @@ function SettingsScreen({ workspaceId, initialName, isPm }: SettingsScreenProps)
         </aside>
         <div className={CONTENT}>
           <SettingsSection id="settings-general" title="일반">
-            <WorkspaceNameField initialName={initialName} />
+            <WorkspaceNameField initialName={initialName} canManage={isPm} />
           </SettingsSection>
           <SettingsSection
             id="settings-connections"
@@ -93,8 +93,14 @@ function SettingsScreen({ workspaceId, initialName, isPm }: SettingsScreenProps)
   )
 }
 
+interface WorkspaceNameFieldProps {
+  initialName: string
+  /** PM 만 고친다. 일반 팀원에게는 꺼진 칸이고 `되돌리기` 가 없다 — 다른 선택지·토글과 같다 */
+  canManage: boolean
+}
+
 /** 워크스페이스 이름. 저장 API 가 없어 `되돌리기` 만 있다. 바꾼 채로 나가려 하면 이탈 확인이 묻는다 */
-function WorkspaceNameField({ initialName }: { initialName: string }) {
+function WorkspaceNameField({ initialName, canManage }: WorkspaceNameFieldProps) {
   const [name, setName] = useState(initialName)
   const isDirty = name !== initialName
   useUnsavedChanges(isDirty)
@@ -103,13 +109,16 @@ function WorkspaceNameField({ initialName }: { initialName: string }) {
       <TextField
         label="워크스페이스 이름"
         value={name}
+        disabled={!canManage}
         onChange={(event) => setName(event.target.value)}
       />
-      <div>
-        <Button onClick={() => setName(initialName)} disabled={!isDirty}>
-          되돌리기
-        </Button>
-      </div>
+      {canManage ? (
+        <div>
+          <Button onClick={() => setName(initialName)} disabled={!isDirty}>
+            되돌리기
+          </Button>
+        </div>
+      ) : null}
     </div>
   )
 }
