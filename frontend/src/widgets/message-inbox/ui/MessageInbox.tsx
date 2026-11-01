@@ -1,6 +1,6 @@
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useRef } from 'react'
-import { messageInboxQueryOptions } from '@/entities/message'
+import { messageInboxQueryOptions, messageThreadQueryOptions } from '@/entities/message'
 import type { MessageInbox as Inbox, MessageReview, MessageThreadSummary } from '@/entities/message'
 import { paths } from '@/shared/config/routes'
 import { todayInSeoul } from '@/shared/lib/date'
@@ -275,12 +275,22 @@ function ThreadRow({
   thread: MessageThreadSummary
   selected: boolean
 }) {
+  const queryClient = useQueryClient()
   const last = thread.lastMessage
+  /* 고르기 직전(가리키기·포커스)에 그 대화를 미리 받는다 — 고른 뒤 스켈레톤 없이 바로 그린다 (회의록 목록의 prefetchMinutes 와 같은 방식).
+     ThreadDetail 과 같은 Query 라 staleTime(앱 기본) 안에는 다시 받지 않는다. 실패는 prefetchQuery 가 삼킨다 — 고르면 ThreadDetail 이
+     같은 Query 로 다시 묻고 그 오류를 그린다. 열린 대화는 ThreadDetail 이 이미 받고 있어 건너뛴다.
+     보내기 전 확인 항목은 목록 응답에 상세가 다 있어 미리 받을 것이 없다 */
+  const prefetch = selected
+    ? undefined
+    : () => void queryClient.prefetchQuery(messageThreadQueryOptions(workspaceId, thread.id))
   return (
     <GuardedLink
       to={paths.messageThread(workspaceId, thread.id)}
       aria-current={selected ? 'page' : 'false'}
       className={THREAD_ROW}
+      onPointerEnter={prefetch}
+      onFocus={prefetch}
     >
       <span
         aria-hidden="true"

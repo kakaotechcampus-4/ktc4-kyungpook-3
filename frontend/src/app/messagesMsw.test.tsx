@@ -1,8 +1,11 @@
 import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { messageThreadQueryOptions } from '@/entities/message'
+import { STALE_TIME } from '@/shared/api/queryClient'
 import { paths } from '@/shared/config/routes'
 import { db } from '@/shared/mock/db'
 import { MOCK_NOW } from '@/shared/mock/fixtures/constants'
+import { recordRequests } from '@/shared/test/requests'
 import {
   conversation,
   current,
@@ -410,6 +413,123 @@ describe('워크스페이스를 바꾸면 이전 공간의 메시지가 보이�
       await detail().findByRole('heading', { level: 2, name: '대화를 찾을 수 없어요' }),
     ).toBeVisible()
     expect(screen.queryByText('이재환')).toBeNull()
+  })
+})
+
+describe('대화 행을 가리키거나 포커스하면 그 대화를 미리 받는다', () => {
+  /* 보내기 전 확인 항목은 목록 응답에 상세가 다 있어 미리 받을 것이 없다 — 대화만 따로 받는다 */
+  const TH_02 = '/workspaces/ws_01/messages/threads/th_02'
+  const row = (name: RegExp) => within(threadList()).getByRole('link', { name })
+  const messageRequests = (log: ReturnType<typeof recordRequests>) =>
+    log.started.map(({ path }) => path).filter((path) => path.includes('/messages'))
+  const settle = () => act(() => new Promise((resolve) => setTimeout(resolve, 80)))
+
+  /** 상세 칸에 스켈레톤이 한 번이라도 붙었는지 지켜본다 — 붙었다 곧 떨어져도 기록의 붙은 노드로 잡는다 */
+  function watchSkeleton() {
+    let seen = false
+    const check = (records: MutationRecord[]) => {
+      for (const { addedNodes } of records)
+        for (const node of addedNodes)
+          if (node instanceof Element && node.closest('[data-testid="message-thread-skeleton"]'))
+            seen = true
+    }
+    const observer = new MutationObserver(check)
+    observer.observe(document.body, { childList: true, subtree: true })
+    return () => {
+      check(observer.takeRecords())
+      observer.disconnect()
+      return seen
+    }
+  }
+
+  it('가리키면 그 대화를 한 번 받고, 고르면 스켈레톤 없이 바로 그리며 다시 묻지 않는다', async () => {
+    const app = await openInbox()
+    const log = recordRequests()
+
+    await userEvent.hover(row(/박민수/))
+    await waitFor(() =>
+      expect(
+        app.queryClient.getQueryData(messageThreadQueryOptions('ws_01', 'th_02').queryKey),
+      ).toBeDefined(),
+    )
+    expect(messageRequests(log)).toEqual([TH_02])
+
+    const skeletonSeen = watchSkeleton()
+    await userEvent.click(row(/박민수/))
+    expect(detail().getByRole('heading', { level: 2, name: '박민수' })).toBeVisible()
+    await settle()
+    expect(skeletonSeen()).toBe(false)
+    expect(messageRequests(log)).toEqual([TH_02])
+  })
+
+  it('같은 행을 다시 가리켜도 staleTime(앱 기본 30초) 안에는 다시 받지 않고, 지나면 다시 받는다', async () => {
+    await openInbox()
+    const log = recordRequests()
+
+    await userEvent.hover(row(/박민수/))
+    await waitFor(() => expect(messageRequests(log)).toEqual([TH_02]))
+    await settle()
+    await userEvent.unhover(row(/박민수/))
+    await userEvent.hover(row(/박민수/))
+    await settle()
+    expect(messageRequests(log)).toEqual([TH_02])
+
+    vi.setSystemTime(Date.parse(MOCK_NOW) + STALE_TIME.default + 1)
+    await userEvent.unhover(row(/박민수/))
+    await userEvent.hover(row(/박민수/))
+    await waitFor(() => expect(messageRequests(log)).toEqual([TH_02, TH_02]))
+  })
+
+  it('키보드로 포커스해도 미리 받는다', async () => {
+    await openInbox()
+    const log = recordRequests()
+
+    act(() => row(/박민수/).focus())
+    await waitFor(() => expect(messageRequests(log)).toEqual([TH_02]))
+  })
+
+  it('미리 받기가 실패해도 화면에 알리지 않고, 고르면 대화 칸이 그 오류를 알린다', async () => {
+    db.messageFailures.threadIds = ['th_02']
+    await openInbox()
+    const log = recordRequests()
+
+    await userEvent.hover(row(/박민수/))
+    // 5xx 는 1초 뒤 한 번 더 묻는다 — 두 번 모두 실패할 때까지 기다린다
+    await waitFor(() => expect(log.answered.filter(({ path }) => path === TH_02)).toHaveLength(2), {
+      timeout: 4_000,
+    })
+    await settle()
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(detail().getByRole('heading', { level: 2, name: '이 메시지, 보낼까요?' })).toBeVisible()
+
+    await userEvent.click(row(/박민수/))
+    const alert = await detail().findByRole('alert', {}, { timeout: 4_000 })
+    expect(alert).toHaveTextContent('대화를 불러오지 못했어요')
+  })
+
+  it('이미 열린 대화 행은 가리켜도 다시 받지 않는다 — staleTime 이 지나도', async () => {
+    await openInbox(paths.messageThread('ws_01', 'th_02'))
+    await detail().findByRole('heading', { level: 2, name: '박민수' })
+    const log = recordRequests()
+
+    vi.setSystemTime(Date.parse(MOCK_NOW) + STALE_TIME.default + 1)
+    await userEvent.hover(row(/박민수/))
+    await settle()
+    expect(messageRequests(log)).toEqual([])
+  })
+
+  it('보내기 전 확인 항목은 가리켜도 요청이 없다 — 목록 응답에 상세가 다 있다', async () => {
+    await openInbox()
+    const log = recordRequests()
+
+    await userEvent.hover(within(reviewList()).getByRole('link', { name: /정하늘/ }))
+    act(() =>
+      within(reviewList())
+        .getByRole('link', { name: /정하늘/ })
+        .focus(),
+    )
+    await settle()
+    expect(messageRequests(log)).toEqual([])
   })
 })
 

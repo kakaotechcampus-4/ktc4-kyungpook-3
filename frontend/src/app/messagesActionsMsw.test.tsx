@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { paths } from '@/shared/config/routes'
 import { db } from '@/shared/mock/db'
 import { MOCK_NOW } from '@/shared/mock/fixtures/constants'
+import { recordRequests } from '@/shared/test/requests'
 import {
   conversation,
   current,
@@ -100,6 +101,30 @@ describe('이대로 발송 — 서버가 성공한 뒤에만 목록과 대화가
     expect(detail().getByText(/메시지는 항상/)).toHaveTextContent(
       '지금 승인을 기다리는 메시지는 없어요.',
     )
+  })
+
+  it('미리 받아 둔 대화도 발송 뒤에는 무효화돼 다시 가리키면 새로 받고, 고르면 보낸 메시지가 보인다', async () => {
+    await openReview()
+    const log = recordRequests()
+    const thread = () => within(threadList()).getByRole('link', { name: /이재환/ })
+    const threadRequests = () =>
+      log.started.filter(({ path }) => path === '/workspaces/ws_01/messages/threads/th_01')
+
+    await userEvent.hover(thread())
+    await waitFor(() => expect(threadRequests()).toHaveLength(1))
+    await userEvent.unhover(thread())
+    await userEvent.click(button('이대로 발송'))
+    await waitFor(() => expect(rowTexts(reviewList())).toHaveLength(1))
+    // 보이지 않는 대화는 무효화 때 바로 다시 받지 않는다 — 다시 가리킬 때 staleTime 안이어도 새로 받는다
+    expect(threadRequests()).toHaveLength(1)
+
+    await userEvent.hover(thread())
+    await waitFor(() => expect(threadRequests()).toHaveLength(2))
+    await userEvent.click(thread())
+    const upcoming = await within(conversation()).findByRole('list', {
+      name: '아직 나가지 않은 메시지',
+    })
+    expect(upcoming).toHaveTextContent('09/23 09:00 발송 예정 · 최진호 승인')
   })
 
   it('지금 바로 보내면 대화의 마지막 메시지가 되고 그 대화가 목록 맨 위로 온다', async () => {
