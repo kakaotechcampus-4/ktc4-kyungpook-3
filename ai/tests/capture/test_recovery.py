@@ -518,8 +518,10 @@ def test_a_diarized_manifest_is_not_pending_until_it_is_saved(tmp_path):
     assert R.pending_sessions(tmp_path) == [path]
 
 
-def test_a_manual_upload_turned_saved_is_taken_by_the_unfiltered_loop_but_not_by_a_guild_retry(tmp_path, clock):
-    """업로드 매니페스트는 guild_id 가 없다. 길드를 지정한 바퀴(--retry <서버ID>)는 거르고, 길드 없는 자동 바퀴는 집는다."""
+def test_a_manual_upload_turned_saved_is_listed_by_recovery_targets_but_not_by_a_guild_retry(tmp_path, clock):
+    """업로드 매니페스트는 guild_id 가 없다. recovery_targets 는 서버를 정하지 않으면 집지만 서버를 정하면 거른다.
+
+    실제 워커 바퀴(recover_pass)는 서버를 정하지 않아도 guild_id 없는 매니페스트를 한 번 더 거른다(test_worker 참고)."""
     from tests.upload.test_prepare import FakeDiarizer, SEGS, STARTED, _audio
     from upload.prepare import prepare_upload
 

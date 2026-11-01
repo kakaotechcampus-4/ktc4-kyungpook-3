@@ -1,7 +1,7 @@
 """수동 업로드 오디오를 화자별 가상 트랙과 diarized 매니페스트로 만든다.
 
-사람이 화자 이름을 확인하고 status 를 saved 로 바꾼 뒤의 처리는 이 모듈이 정하지 않는다. 길드 없는 자동 바퀴는 saved 를 집지만
-workspace_id·BE 회의 정보가 없어 BE 인계는 안 되고, `--retry <서버ID>` 바퀴는 guild_id 없는 매니페스트를 거른다.
+사람이 화자 이름을 확인하고 status 를 saved 로 바꾼 뒤의 처리는 이 모듈이 정하지 않는다. 워커 바퀴(recover_pass)는
+guild_id 없는 매니페스트를 자동 바퀴·`--retry <서버ID>` 바퀴 모두 거르므로 지금은 집지 않는다(업로드 전용 가드는 아니다).
 자동 이어받기와 BE 인계는 다음 PR(PM 라벨 지정 흐름)에서 정한다.
 실행: python -m upload.prepare <오디오> --started-at <ISO> [--timezone Asia/Seoul]  (pyannoteAI 를 실제로 부른다)
 """
