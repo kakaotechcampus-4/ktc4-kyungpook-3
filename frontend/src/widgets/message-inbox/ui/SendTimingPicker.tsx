@@ -4,17 +4,26 @@ import type { MessageReview, MessageReviewAction, MessageSendTiming } from '@/en
 import { todayInSeoul } from '@/shared/lib/date'
 import { Button } from '@/shared/ui/button'
 import { fromSeoulInputValue, initialCustomTime, nowLabel, shortDateTime } from '../lib/format'
+import { useShownAfter } from '../lib/useShownAfter'
 import { LockedButton } from './LockedButton'
 
 /* Messages 캔버스 실측 — 라벨 12.5 보조, 카드 3열 간격 9, 카드(위아래 13 · 좌우 15 · 라운드 16 · 선), 고른 카드는 먹 면 흰 글자.
    라디오는 숨기고 카드 전체가 라벨이다. 포커스 선은 카드에 긋는다 — 디자인 시스템대로 테두리 위(offset -1),
-   고른 먹 면 카드는 면 안쪽 흰 선(offset -3)이다. 캔버스의 offset 4px 는 옮기지 않는다 (design-system §3-3) */
-const CARD =
-  'flex cursor-pointer flex-col items-start gap-2 rounded-16 border border-line bg-surface px-15 py-13 text-left has-[input:checked]:border-ink has-[input:checked]:bg-ink has-[input:disabled]:cursor-not-allowed has-[input[aria-disabled=true]]:cursor-not-allowed has-[input:focus-visible]:outline-2 has-[input:focus-visible]:-outline-offset-1 has-[input:focus-visible]:outline-ink has-[input:checked]:has-[input:focus-visible]:-outline-offset-3 has-[input:checked]:has-[input:focus-visible]:outline-surface'
+   고른 먹 면 카드는 면 안쪽 흰 선(offset -3)이다. 캔버스의 offset 4px 는 옮기지 않는다 (design-system §3-3).
+   hover 면은 아웃라인 버튼과 같은 컨트롤 #EDEDED 이고 테두리는 그대로다 (design-system §7-12).
+   고르지 않은·고를 수 있는 카드에만 준다 — 고른 먹 면, 고를 수 없는(disabled) 카드, 잠긴(aria-disabled) 카드는 hover 로 바뀌지 않는다 */
+const CARD_HOVER =
+  'not-has-[input:checked]:not-has-[input:disabled]:not-has-[input[aria-disabled=true]]:hover:bg-control'
+const CARD = `${CARD_HOVER} relative flex cursor-pointer flex-col items-start gap-2 rounded-16 border border-line bg-surface px-15 py-13 text-left has-[input:checked]:border-ink has-[input:checked]:bg-ink has-[input:disabled]:cursor-not-allowed has-[input[aria-disabled=true]]:cursor-not-allowed has-[input:focus-visible]:outline-2 has-[input:focus-visible]:-outline-offset-1 has-[input:focus-visible]:outline-ink has-[input:checked]:has-[input:focus-visible]:-outline-offset-3 has-[input:checked]:has-[input:focus-visible]:outline-surface`
 const CARD_TITLE = 'text-body font-semibold text-sub group-has-[input:checked]:text-surface'
 const CARD_DETAIL = 'mono text-meta text-dim group-has-[input:checked]:text-surface'
 /* 고를 수 없는 카드(마감이 없는 항목의 `마감 하루 전`)는 눌린 면에 흐린 글자다 — 고를 수 있는 카드와 구분한다 */
 const UNAVAILABLE = 'bg-surface-sunken [&>span]:text-faint'
+/* 저장 중 표시 — 카드의 테두리·면·글자 색과 크기는 그대로 두고 오른쪽 위에 작게 얹는다(카드 높이가 변하지 않는다) */
+const SAVING_MARK =
+  'absolute top-13 right-15 text-meta text-dim group-has-[input:checked]:text-surface'
+/** 저장이 이보다 길 때만 `저장 중` 을 보인다 — 보통의 저장(수십~수백 ms)에서는 아무것도 번쩍이지 않고 카드만 바뀐다 */
+const SAVING_MARK_DELAY_MS = 400
 const CUSTOM_INPUT =
   'h-36 rounded-9 border border-input-border bg-surface px-10 text-body text-ink focus-visible:-outline-offset-1'
 
@@ -30,7 +39,7 @@ export interface SendTimingPickerProps {
   review: MessageReview
   /** 다른 행동이 진행 중이거나 문구를 고치는 중이라 고를 수 없다. 포커스는 남긴다(`aria-disabled`) */
   locked: boolean
-  /** 발송 시점을 저장하는 중이다 */
+  /** 발송 시점을 저장하는 중이다. 그동안 시점 묶음이 `aria-busy` 이고, 길어지면 저장 중인 카드에 `저장 중` 이 보인다 */
   saving: boolean
   /** 직접 정하는 시각 칸이 열려 있다 — 화면에 골라진 시점이 아직 서버 값이 아니다 */
   customOpen: boolean
@@ -62,14 +71,23 @@ export function SendTimingPicker({
   const name = useId()
   const cardsRef = useRef<HTMLDivElement>(null)
   const customRadioRef = useRef<HTMLInputElement>(null)
+  // 저장을 요청한 시점 — `saving` 인 동안 그 카드에 저장 중을 표시한다
+  const [requestedTiming, setRequestedTiming] = useState<MessageSendTiming | null>(null)
+  const showSaving = useShownAfter(saving, SAVING_MARK_DELAY_MS)
+  const savingTiming = showSaving ? requestedTiming : null
   const selected: MessageSendTiming = customOpen ? 'custom' : review.sendTiming
+
+  const save: SendTimingPickerProps['onChange'] = (action, onSaved) => {
+    setRequestedTiming(action.timing)
+    onChange(action, onSaved)
+  }
 
   const choose = (timing: MessageSendTiming) => {
     if (locked) return
     if (timing === 'custom') onCustomOpenChange(true)
     else {
       onCustomOpenChange(false)
-      if (timing !== review.sendTiming) onChange({ kind: 'schedule', timing }, () => undefined)
+      if (timing !== review.sendTiming) save({ kind: 'schedule', timing }, () => undefined)
     }
   }
 
@@ -94,13 +112,14 @@ export function SendTimingPicker({
   const card = {
     name,
     selected,
+    savingTiming,
     locked,
     onChoose: choose,
     onArrowKey: moveFocus,
   }
 
   return (
-    <fieldset className="flex flex-col gap-10">
+    <fieldset className="flex flex-col gap-10" aria-busy={saving || undefined}>
       <legend className="pb-10 text-caption text-sub">언제 보낼까요?</legend>
       <div ref={cardsRef} className="grid grid-cols-3 gap-9">
         <TimingCard
@@ -134,7 +153,7 @@ export function SendTimingPicker({
           saving={saving}
           onCancel={closeCustom}
           onSubmit={(scheduledAt) =>
-            onChange({ kind: 'schedule', timing: 'custom', scheduledAt }, closeCustom)
+            save({ kind: 'schedule', timing: 'custom', scheduledAt }, closeCustom)
           }
         />
       ) : null}
@@ -147,6 +166,7 @@ function TimingCard({
   name,
   value,
   selected,
+  savingTiming,
   locked,
   title,
   detail,
@@ -158,6 +178,8 @@ function TimingCard({
   name: string
   value: MessageSendTiming
   selected: MessageSendTiming
+  /** 저장 중을 표시할 카드. 없으면 null */
+  savingTiming: MessageSendTiming | null
   locked: boolean
   title: string
   detail: string
@@ -184,6 +206,7 @@ function TimingCard({
       />
       <span className={CARD_TITLE}>{title}</span>
       <span className={CARD_DETAIL}>{detail}</span>
+      {savingTiming === value ? <span className={SAVING_MARK}>저장 중</span> : null}
     </label>
   )
 }

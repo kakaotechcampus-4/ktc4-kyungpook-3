@@ -1,8 +1,9 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { delay, http } from 'msw'
-import { expect, userEvent, within } from 'storybook/test'
+import { expect, userEvent, waitFor, within } from 'storybook/test'
 import { paths } from '@/shared/config/routes'
 import { db } from '@/shared/mock/db'
+import { deferred } from '@/shared/test/deferred'
 import { MessageInbox } from './MessageInbox'
 
 /*
@@ -286,5 +287,111 @@ export const 긴_대화: Story = {
     const conversation = detail.getByRole('region', { name: '대화 내용' })
     await expect(conversation.scrollHeight).toBeGreaterThan(conversation.clientHeight)
     await expect(conversation.scrollTop).toBeGreaterThan(0)
+  },
+}
+
+/** 색 값(토큰 `var(...)` 포함)을 브라우저가 계산한 rgb 로 바꾼다 */
+const computedColor = (value: string) => {
+  const probe = document.createElement('span')
+  probe.style.backgroundColor = value
+  document.body.append(probe)
+  const color = getComputedStyle(probe).backgroundColor
+  probe.remove()
+  return color
+}
+
+/**
+ * 마우스를 올렸을 때 이 요소에 걸리는 배경색. 없으면 null.
+ * play 는 진짜 포인터를 움직이지 못해 `:hover` 를 켤 수 없다 — 불러온 CSS 의 `:hover` 규칙마다 `:hover` 를 뗀 선택자가
+ * 이 요소에 맞는지 브라우저에 묻는다. 고른·고를 수 없는·잠긴 카드를 빼는 조건도 그 선택자 안에 있다
+ */
+/* 가상 클래스 `:hover` 만 뗀다 — 클래스 이름 안의 이스케이프된 `\:hover`(`hover\:bg-control`)는 남긴다 */
+const HOVER_PSEUDO = /(?<!\\):hover/g
+
+const hoverBackground = (element: Element): string | null => {
+  let background: string | null = null
+  const visit = (rules: CSSRuleList) => {
+    for (const rule of rules) {
+      if (
+        rule instanceof CSSStyleRule &&
+        rule.selectorText.includes(':hover') &&
+        rule.style.backgroundColor !== '' &&
+        element.matches(rule.selectorText.replace(HOVER_PSEUDO, ''))
+      )
+        background = rule.style.backgroundColor
+      if ('cssRules' in rule) visit(rule.cssRules as CSSRuleList)
+    }
+  }
+  for (const sheet of document.styleSheets) visit(sheet.cssRules)
+  return background === null ? null : computedColor(background)
+}
+
+const timingCard = (detail: ReturnType<typeof detailOf>, name: RegExp) => {
+  const card = detail.getByRole('radio', { name }).closest('label')
+  if (!card) throw new Error('send timing card label is missing')
+  return card
+}
+
+/** 언제 보낼까요? 카드의 hover — 고를 수 있는 카드만 아웃라인 버튼과 같은 #EDEDED 면, 고른 카드·고를 수 없는 카드는 그대로 (design-system §7-12) */
+export const 발송_시점_hover: Story = {
+  args: { reviewId: 'rv_02' },
+  parameters: { route: paths.messageReview('ws_01', 'rv_02') },
+  play: async ({ canvasElement }) => {
+    const detail = detailOf(canvasElement)
+    await expect(await detail.findByRole('radio', { name: /지금 바로/ })).toBeChecked()
+    await expect(hoverBackground(timingCard(detail, /직접 정하기/))).toBe('rgb(237, 237, 237)')
+    await expect(hoverBackground(timingCard(detail, /지금 바로/))).toBeNull()
+    await expect(hoverBackground(timingCard(detail, /마감 하루 전/))).toBeNull()
+  },
+}
+
+/* 발송 시점 저장(PATCH)을 붙잡는 문과 그동안의 발송 요청 수 — play 가 시작할 때 새로 만든다 */
+let scheduleGate = deferred()
+let sendRequests = 0
+
+/**
+ * 발송 시점을 저장하는 동안 — `이대로 발송`·`보내지 않음` 은 잠기지만(aria-disabled, 누름은 버린다) 모양은 그대로다.
+ * 짧은 저장에서 버튼이 깜빡이지 않는다. 저장 중인 카드에는 잠시 뒤 `저장 중` 이 보이고, 잠긴 카드는 hover 면이 없다
+ */
+export const 발송_시점_저장_중: Story = {
+  args: { reviewId: 'rv_01' },
+  parameters: {
+    route: paths.messageReview('ws_01', 'rv_01'),
+    msw: [
+      http.patch('/api/v1/workspaces/:workspaceId/messages/reviews/:reviewId', async () => {
+        await scheduleGate.promise
+      }),
+      http.post('/api/v1/workspaces/:workspaceId/messages/reviews/:reviewId/send', () => {
+        sendRequests += 1
+      }),
+    ],
+  },
+  play: async ({ canvasElement }) => {
+    scheduleGate = deferred()
+    sendRequests = 0
+    const detail = detailOf(canvasElement)
+    const now = await detail.findByRole('radio', { name: /지금 바로/ })
+    const send = detail.getByRole('button', { name: '이대로 발송' })
+    const dismiss = detail.getByRole('button', { name: '보내지 않음' })
+    const sendFace = getComputedStyle(send).backgroundColor
+    const sendText = getComputedStyle(send).color
+    const dismissText = getComputedStyle(dismiss).color
+
+    await userEvent.click(now)
+    await waitFor(() => expect(send).toHaveAttribute('aria-disabled', 'true'))
+    await expect(dismiss).toHaveAttribute('aria-disabled', 'true')
+    await expect(getComputedStyle(send).backgroundColor).toBe(sendFace)
+    await expect(getComputedStyle(send).color).toBe(sendText)
+    await expect(getComputedStyle(dismiss).color).toBe(dismissText)
+    await expect(hoverBackground(timingCard(detail, /직접 정하기/))).toBeNull()
+    await userEvent.click(send)
+    await expect(sendRequests).toBe(0)
+    await expect(await within(timingCard(detail, /지금 바로/)).findByText('저장 중')).toBeVisible()
+
+    scheduleGate.resolve()
+    await expect(await detail.findByRole('radio', { name: /지금 바로/, checked: true })).toBe(now)
+    await expect(send).not.toHaveAttribute('aria-disabled')
+    await expect(detail.queryByText('저장 중')).toBeNull()
+    await expect(sendRequests).toBe(0)
   },
 }

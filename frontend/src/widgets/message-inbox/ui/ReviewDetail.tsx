@@ -45,7 +45,7 @@ function lockReason(editing: boolean, choosingTime: boolean): string | null {
  * 결정 4 의 UI 범위는 디자인 캔버스 기준이고 발송 정책은 MSW 목 동작이다. 모든 행동은 서버가 성공한 뒤에 화면을 바꾼다 —
  * 요청 중에는 행동이 모두 잠기고, 실패하면 그 자리에 다시 시도를 알린다 (D-137, 계획 C-5).
  * 문구를 고치거나 시각을 직접 정하는 중에도 발송이 잠긴다 — 화면에 보이는 문구·시점과 다르게 나가지 않게 한다.
- * 잠금은 `aria-disabled` 라 누른 버튼에서 포커스가 빠지지 않는다.
+ * 잠금은 `aria-disabled` 라 누른 버튼에서 포커스가 빠지지 않는다. 발송 시점 저장만으로 잠긴 동안은 버튼 모양을 그대로 둔다.
  * 보내거나 보내지 않으면 이 항목이 목록에서 빠지고 다음 항목이 골라진다
  */
 export function ReviewDetail({ workspaceId, botName, review, onSettled }: ReviewDetailProps) {
@@ -59,6 +59,9 @@ export function ReviewDetail({ workspaceId, botName, review, onSettled }: Review
   const busy = actions.pending !== null
   const lockHint = lockReason(editing, choosingTime)
   const decisionLocked = busy || lockHint !== null
+  // 발송 시점 저장만으로 잠긴 동안은 버튼 모양을 바꾸지 않는다 — 짧은 저장마다 버튼이 깜빡였다.
+  // 잠금(aria-disabled, 누름을 버림)은 그대로이고, 누름이 왜 안 되는지는 저장 중인 시점 카드가 보여 준다
+  const quietLock = actions.pending?.kind === 'schedule' && lockHint === null
   const pendingKind = actions.pending?.reviewId === review.id ? actions.pending.kind : null
   const failureOf = (...kinds: MessageReviewAction['kind'][]) => (
     <ReviewActionFailure reviewId={review.id} actions={actions} kinds={kinds} />
@@ -88,6 +91,7 @@ export function ReviewDetail({ workspaceId, botName, review, onSettled }: Review
           editing={editing}
           onEditingChange={setEditing}
           locked={busy || choosingTime}
+          keepLockedLook={quietLock}
           saving={pendingKind === 'edit'}
           onSave={(body, onSaved) =>
             actions.run(review.id, { kind: 'edit', body }, { onSuccess: onSaved })
@@ -129,6 +133,7 @@ export function ReviewDetail({ workspaceId, botName, review, onSettled }: Review
               aria-busy={pendingKind === 'dismiss' || undefined}
               aria-describedby={lockHint === null ? undefined : lockHintId}
               locked={decisionLocked}
+              keepLook={quietLock}
               onClick={() =>
                 actions.run(
                   review.id,
@@ -146,6 +151,7 @@ export function ReviewDetail({ workspaceId, botName, review, onSettled }: Review
               aria-busy={pendingKind === 'send' || undefined}
               aria-describedby={lockHint === null ? undefined : lockHintId}
               locked={decisionLocked}
+              keepLook={quietLock}
               onClick={() =>
                 actions.run(
                   review.id,

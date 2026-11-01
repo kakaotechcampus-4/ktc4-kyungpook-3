@@ -35,6 +35,8 @@ export interface ReviewMessageCardProps {
   onSave: (body: string, onSaved: () => void) => void
   /** 다른 행동이 진행 중이거나 발송 시각을 고르는 중이라 고쳐 쓸 수 없다. 포커스는 남긴다(`aria-disabled`) */
   locked: boolean
+  /** 잠겨도 `고쳐 쓰기` 의 모양을 바꾸지 않는다 — 발송 시점 저장처럼 짧고 이유가 다른 자리에 보이는 잠금 */
+  keepLockedLook: boolean
   /** 저장 요청 중이다 */
   saving: boolean
   /** 저장 실패 알림 자리 */
@@ -52,6 +54,7 @@ export function ReviewMessageCard({
   onEditingChange,
   onSave,
   locked,
+  keepLockedLook,
   saving,
   failure,
 }: ReviewMessageCardProps) {
@@ -112,6 +115,7 @@ export function ReviewMessageCard({
             size="message-edit"
             startIcon={<Icon name="edit" size={13} />}
             locked={locked}
+            keepLook={keepLockedLook}
             onClick={() => onEditingChange(true)}
           >
             고쳐 쓰기

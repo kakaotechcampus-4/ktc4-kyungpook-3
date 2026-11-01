@@ -260,6 +260,25 @@ describe('언제 보낼까요? — 고른 카드는 서버가 저장한 값이�
     expect(db.messageReviews[0]).toMatchObject({ send_timing: 'now', scheduled_at: null })
   })
 
+  it('저장이 늦을 때만 그 카드에 저장 중이 보인다 — 짧은 저장에서는 번쩍이지 않고, 저장되면 사라진다', async () => {
+    await openReview()
+    const request = hold(REVIEW_PATH, 'patch')
+    await userEvent.click(radio(/지금 바로/))
+    const timing = detail().getByRole('group', { name: '언제 보낼까요?' })
+    expect(detail().queryByText('저장 중')).toBeNull()
+    await waitFor(() => expect(timing).toHaveAttribute('aria-busy', 'true'))
+
+    const card = radio(/지금 바로/).closest('label')
+    if (card === null) throw new Error('send timing card label is missing')
+    expect(await within(card).findByText('저장 중')).toBeVisible()
+    expect(detail().getAllByText('저장 중')).toHaveLength(1)
+
+    act(() => request.resolve())
+    await waitFor(() => expect(radio(/지금 바로/)).toBeChecked())
+    expect(detail().queryByText('저장 중')).toBeNull()
+    expect(timing).not.toHaveAttribute('aria-busy')
+  })
+
   it('직접 정하기는 시각을 정해야 저장한다 — 지난 시각은 알리고, 정한 시각이 카드와 미리보기에 보인다', async () => {
     await openReview()
     await userEvent.click(detail().getByRole('radio', { name: /직접 정하기/ }))
