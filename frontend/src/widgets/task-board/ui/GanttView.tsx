@@ -28,6 +28,8 @@ const TABLE_MIN_WIDTH = LABEL_WIDTH + GANTT_DAYS * DAY_MIN_WIDTH + 2
 const GRID: CSSProperties = {
   gridTemplateColumns: `repeat(${GANTT_DAYS}, minmax(${DAY_MIN_WIDTH}px, 1fr))`,
 }
+/* 표의 열은 왼쪽 `담당자 · 태스크` 하나와 주 셋이다. 줄마다 왼쪽은 줄 머리, 오른쪽 날짜 칸은 주 셋에 걸친 칸 하나다 */
+const WEEK_COLUMNS = GANTT_DAYS / 7
 const BAR_BASE =
   'flex h-26 items-center justify-between gap-8 overflow-hidden rounded-7 px-9 text-[10.5px] whitespace-nowrap'
 
@@ -188,8 +190,9 @@ export function GanttView({
             </div>
           </div>
           <div className="relative z-1">
-            <div className="flex items-stretch">
+            <div role="row" className="flex items-stretch">
               <div
+                role="columnheader"
                 className="flex items-center border-r border-line bg-surface-sunken px-14"
                 style={{ flex: `0 0 ${LABEL_WIDTH}px` }}
               >
@@ -208,7 +211,8 @@ export function GanttView({
                 ))}
               </div>
             </div>
-            <div className="flex items-stretch border-t border-divider">
+            {/* 날짜 숫자 줄은 눈금이다 — 주는 위 머리가, 날짜는 막대 라벨(`09/14 → 09/18`)이 읽어 준다 */}
+            <div aria-hidden="true" className="flex items-stretch border-t border-divider">
               <div
                 className="border-r border-line bg-surface-sunken"
                 style={{ flex: `0 0 ${LABEL_WIDTH}px` }}
@@ -301,8 +305,9 @@ function GroupRows({
 }) {
   return (
     <>
-      <div className="flex items-stretch border-t border-line">
+      <div role="row" className="flex items-stretch border-t border-line">
         <div
+          role="rowheader"
           className="flex min-w-[0px] items-center gap-9 border-r border-line bg-surface-sunken px-14 py-8"
           style={{ flex: `0 0 ${LABEL_WIDTH}px` }}
         >
@@ -321,7 +326,7 @@ function GroupRows({
             </span>
           ) : null}
         </div>
-        <div className="flex-1" />
+        <div role="cell" aria-colspan={WEEK_COLUMNS} className="flex-1" />
       </div>
       {group.approvals.map((approval) => (
         <ApprovalRow key={approval.id} approval={approval} from={from} />
@@ -388,6 +393,7 @@ function Row({
   return (
     <div role="row" className="flex items-stretch border-t border-divider">
       <div
+        role="rowheader"
         className="flex min-h-44 min-w-[0px] items-center gap-8 border-r border-line px-14"
         style={{ flex: `0 0 ${LABEL_WIDTH}px` }}
       >
@@ -399,7 +405,12 @@ function Row({
           </GuardedLink>
         )}
       </div>
-      <div className="grid min-h-44 flex-1 items-center" style={GRID}>
+      <div
+        role="cell"
+        aria-colspan={WEEK_COLUMNS}
+        className="grid min-h-44 flex-1 items-center"
+        style={GRID}
+      >
         {children}
       </div>
     </div>

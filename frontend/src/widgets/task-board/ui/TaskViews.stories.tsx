@@ -120,11 +120,11 @@ export const 캘린더_PM: Story = {
   args: { view: calendar },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    const grid = await canvas.findByRole('grid', { name: '2026년 9월' }, LOADED)
+    const table = await canvas.findByRole('table', { name: '2026년 9월' }, LOADED)
     // 9월은 다섯 주다 — 10월 날만 있는 여섯째 주(10/4~)는 그리지 않는다 (시안)
-    await expect(within(grid).getAllByRole('gridcell')).toHaveLength(35)
-    await expect(within(grid).queryByRole('gridcell', { name: '2026-10-04' })).toBeNull()
-    const day = within(grid).getByRole('gridcell', { name: '2026-09-25' })
+    await expect(within(table).getAllByRole('cell')).toHaveLength(35)
+    await expect(within(table).queryByRole('cell', { name: '2026-10-04' })).toBeNull()
+    const day = within(table).getByRole('cell', { name: '2026-09-25' })
     await expect(within(day).getByRole('link', { name: /배포 문서 보완/ })).toHaveAttribute(
       'href',
       `${paths.tasks('ws_01')}?tab=needs_review`,
@@ -195,7 +195,7 @@ export const 조회_대기: Story = {
     await expect(
       await canvas.findByRole('status', { name: '태스크를 불러오는 중' }),
     ).toBeInTheDocument()
-    await expect(canvas.queryByRole('grid')).toBeNull()
+    await expect(canvas.queryByRole('table')).toBeNull()
   },
 }
 
@@ -262,7 +262,7 @@ export const 부분_실패_회의: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await canvas.findByRole('grid', { name: '2026년 9월' }, LOADED)
+    await canvas.findByRole('table', { name: '2026년 9월' }, LOADED)
     await expect(canvas.getByRole('alert')).toHaveTextContent('회의 정보를 불러오지 못했어요')
   },
 }
@@ -272,10 +272,10 @@ export const 캘린더_빈_달: Story = {
   args: { view: { ...calendar, month: '2026-10' } },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await canvas.findByRole('grid', { name: '2026년 10월' }, LOADED)
+    await canvas.findByRole('table', { name: '2026년 10월' }, LOADED)
     await expect(canvas.getByText('이 달에는 마감인 일이 없어요.')).toBeVisible()
     await userEvent.click(canvas.getByRole('button', { name: '이전 달' }))
-    await canvas.findByRole('grid', { name: '2026년 9월' })
+    await canvas.findByRole('table', { name: '2026년 9월' })
     await expect(canvas.queryByText('이 달에는 마감인 일이 없어요.')).toBeNull()
   },
 }

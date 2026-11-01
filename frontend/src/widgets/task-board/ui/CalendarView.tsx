@@ -15,6 +15,11 @@ import type { TaskTone } from '../lib/taskViews'
 import { LegendItem, RangeHeader } from './viewParts'
 
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'] as const
+const DAYS_PER_WEEK = WEEKDAYS.length
+
+/* 링크를 담은 읽기 전용 표다 — 칸 사이 이동은 Tab 이 링크를 따라간다(방향키 이동이 필요한 grid 가 아니다).
+   요일 머리·주마다 `row` 로 묶되, 보이는 배치는 바깥 7열 격자를 subgrid 로 그대로 잇는다 */
+const WEEK_ROW = 'col-span-full grid grid-cols-subgrid'
 
 /** 칩 색 — 진행 중은 회색, 마감 임박(주의·위험)은 강조색, 완료는 취소선 */
 const CHIP: Record<TaskTone, { box: string; title: string; sub: string }> = {
@@ -72,7 +77,12 @@ export function CalendarView({
   month,
   onMonthChange,
 }: CalendarViewProps) {
-  const grid = useMemo(() => calendarGrid(month), [month])
+  const weeks = useMemo(() => {
+    const grid = calendarGrid(month)
+    return Array.from({ length: grid.length / DAYS_PER_WEEK }, (_, week) =>
+      grid.slice(week * DAYS_PER_WEEK, (week + 1) * DAYS_PER_WEEK),
+    )
+  }, [month])
   // 날짜 칸(4~6주)이 저마다 배열 전체를 거르지 않게 마감일로 한 번만 묶는다
   const byDate = useMemo(() => {
     const index = new Map<string, DayItems>()
@@ -122,84 +132,80 @@ export function CalendarView({
         </p>
       ) : null}
       <div
-        role="grid"
+        role="table"
         aria-label={monthTitle(month)}
         className="grid grid-cols-7 gap-1 overflow-hidden rounded-16 border border-line bg-line"
       >
-        {WEEKDAYS.map((day, index) => (
-          <div
-            key={day}
-            role="columnheader"
-            className={`bg-surface-sunken px-10 py-9 text-meta font-semibold ${
-              index === 0 || index === 6 ? 'text-dim' : 'text-sub'
-            }`}
-          >
-            {day}
+        <div role="row" className={WEEK_ROW}>
+          {WEEKDAYS.map((day, index) => (
+            <div
+              key={day}
+              role="columnheader"
+              className={`bg-surface-sunken px-10 py-9 text-meta font-semibold ${
+                isWeekend(index) ? 'text-dim' : 'text-sub'
+              }`}
+            >
+              {day}
+            </div>
+          ))}
+        </div>
+        {weeks.map((week) => (
+          <div key={week[0].date} role="row" className={WEEK_ROW}>
+            {week.map(({ date, inMonth }) => {
+              const {
+                tasks: dayTasks = [],
+                approvals: dayApprovals = [],
+                meetings: dayMeetings = [],
+              } = byDate.get(date) ?? {}
+              return (
+                <div
+                  key={date}
+                  role="cell"
+                  aria-label={date}
+                  className={`flex min-h-[116px] flex-col gap-5 bg-surface ${inMonth ? 'p-9' : 'px-20 py-18'}`}
+                >
+                  <DayNumber date={date} today={date === today} inMonth={inMonth} />
+                  {inMonth ? (
+                    <>
+                      {dayApprovals.map((approval) => (
+                        <GuardedLink
+                          key={approval.id}
+                          to={`${paths.tasks(workspaceId)}?tab=needs_review`}
+                          className={`${CHIP_BASE} bg-ink`}
+                        >
+                          <span className="text-[11.5px] leading-[1.4] font-bold text-surface">
+                            {approval.title}
+                          </span>
+                          <span className="text-[10.5px] text-surface tabular-nums">
+                            {assigneeLabel(approval.assigneeMemberId, names, '담당자 미정')}
+                          </span>
+                        </GuardedLink>
+                      ))}
+                      {dayTasks.map((task) => (
+                        <TaskChip
+                          key={task.id}
+                          workspaceId={workspaceId}
+                          task={task}
+                          names={names}
+                          today={today}
+                        />
+                      ))}
+                      {dayMeetings.map((meeting) => (
+                        <GuardedLink
+                          key={meeting.id}
+                          to={paths.meetings(workspaceId, meeting.id)}
+                          className="flex items-center gap-6 rounded-6 border border-dashed px-8 py-6 text-[11.5px] leading-[1.4] wrap-anywhere text-sub"
+                        >
+                          {meeting.title}
+                        </GuardedLink>
+                      ))}
+                    </>
+                  ) : null}
+                </div>
+              )
+            })}
           </div>
         ))}
-        {grid.map(({ date, inMonth }) => {
-          const isToday = date === today
-          const {
-            tasks: dayTasks = [],
-            approvals: dayApprovals = [],
-            meetings: dayMeetings = [],
-          } = byDate.get(date) ?? {}
-          const day = Number(date.slice(8, 10))
-          return (
-            <div
-              key={date}
-              role="gridcell"
-              aria-label={date}
-              className={`flex min-h-[116px] flex-col gap-5 bg-surface ${inMonth ? 'p-9' : 'px-20 py-18'}`}
-            >
-              <span
-                className={
-                  isToday
-                    ? 'inline-flex h-22 min-w-[22px] items-center justify-center self-start rounded-999 bg-ink px-6 text-[12px] leading-none text-surface tabular-nums'
-                    : `text-[12px] tabular-nums ${inMonth ? 'text-sub' : 'text-dashed'}`
-                }
-              >
-                {day}
-              </span>
-              {inMonth ? (
-                <>
-                  {dayApprovals.map((approval) => (
-                    <GuardedLink
-                      key={approval.id}
-                      to={`${paths.tasks(workspaceId)}?tab=needs_review`}
-                      className={`${CHIP_BASE} bg-ink`}
-                    >
-                      <span className="text-[11.5px] leading-[1.4] font-bold text-surface">
-                        {approval.title}
-                      </span>
-                      <span className="text-[10.5px] text-surface tabular-nums">
-                        {assigneeLabel(approval.assigneeMemberId, names, '담당자 미정')}
-                      </span>
-                    </GuardedLink>
-                  ))}
-                  {dayTasks.map((task) => (
-                    <TaskChip
-                      key={task.id}
-                      workspaceId={workspaceId}
-                      task={task}
-                      names={names}
-                      today={today}
-                    />
-                  ))}
-                  {dayMeetings.map((meeting) => (
-                    <GuardedLink
-                      key={meeting.id}
-                      to={paths.meetings(workspaceId, meeting.id)}
-                      className="flex items-center gap-6 rounded-6 border border-dashed px-8 py-6 text-[11.5px] leading-[1.4] wrap-anywhere text-sub"
-                    >
-                      {meeting.title}
-                    </GuardedLink>
-                  ))}
-                </>
-              ) : null}
-            </div>
-          )
-        })}
       </div>
       <section
         aria-label="마감일 없음"
@@ -240,6 +246,27 @@ export function CalendarView({
         ) : null}
       </section>
     </>
+  )
+}
+
+/** 일·토(줄의 첫·끝 칸) — 요일 머리를 흐리게 쓴다 (시안) */
+function isWeekend(column: number): boolean {
+  return column === 0 || column === DAYS_PER_WEEK - 1
+}
+
+/** 날짜 칸의 숫자. 오늘은 먹 원, 다른 달은 점선 색이다 */
+function DayNumber({ date, today, inMonth }: { date: string; today: boolean; inMonth: boolean }) {
+  const tone = inMonth ? 'text-sub' : 'text-dashed'
+  return (
+    <span
+      className={
+        today
+          ? 'inline-flex h-22 min-w-[22px] items-center justify-center self-start rounded-999 bg-ink px-6 text-[12px] leading-none text-surface tabular-nums'
+          : `text-[12px] tabular-nums ${tone}`
+      }
+    >
+      {Number(date.slice(8, 10))}
+    </span>
   )
 }
 

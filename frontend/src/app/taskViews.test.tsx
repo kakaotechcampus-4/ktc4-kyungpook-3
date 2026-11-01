@@ -31,7 +31,7 @@ const VIEWS: readonly View[] = ['board', 'calendar', 'gantt']
 /** 그 보기가 다 그려졌다는 표식 */
 const shown: Record<View, () => HTMLElement | null> = {
   board: () => screen.queryByRole('region', { name: '시작 전' }),
-  calendar: () => screen.queryByRole('grid', { name: '2026년 9월' }),
+  calendar: () => screen.queryByRole('table', { name: '2026년 9월' }),
   gantt: () => screen.queryByRole('table', { name: '일정' }),
 }
 /** 파일의 첫 화면은 lazy 보기 모듈 변환이 겹쳐 기본 1초를 넘길 때가 있다 */
@@ -152,7 +152,7 @@ describe('캘린더·간트의 표시 기간 (AC-A-05)', () => {
       )
 
       await user.click(screen.getByRole('button', { name: '다음 달' }))
-      expect(await screen.findByRole('grid', { name: '2026년 10월' })).toBeVisible()
+      expect(await screen.findByRole('table', { name: '2026년 10월' })).toBeVisible()
       expect(screen.queryByRole('link', { name: '2주차 정기회의' })).toBeNull()
       await user.click(screen.getByRole('button', { name: '이전 달' }))
       expect(await screen.findByRole('link', { name: '2주차 정기회의' })).toBeVisible()
@@ -175,7 +175,7 @@ describe('캘린더·간트의 표시 기간 (AC-A-05)', () => {
 
     const user = userEvent.setup()
     await user.click(screen.getByRole('button', { name: '다음 달' }))
-    expect(await screen.findByRole('grid', { name: '2026년 10월' })).toBeVisible()
+    expect(await screen.findByRole('table', { name: '2026년 10월' })).toBeVisible()
     expect(screen.getByText('이 달에는 마감인 일이 없어요.')).toBeVisible()
     // 마감 없는 일은 그대로 아래에 모여 있다
     expect(screen.getByRole('region', { name: '마감일 없음' })).toHaveTextContent(
@@ -315,4 +315,51 @@ describe('역할·공간·상세 링크 (AC-A-06)', () => {
       expect(screen.queryByText(/로그인 API 연동/)).toBeNull()
     },
   )
+})
+
+describe('표 구조 — 줄·머리·칸 (VR-08)', () => {
+  it('캘린더는 요일 머리 한 줄과 주마다 날짜 일곱 칸인 표다', async () => {
+    await openView('calendar')
+    const rows = within(screen.getByRole('table', { name: '2026년 9월' })).getAllByRole('row')
+    // 요일 머리 + 9월의 다섯 주
+    expect(rows).toHaveLength(6)
+    expect(
+      within(rows[0])
+        .getAllByRole('columnheader')
+        .map((head) => head.textContent),
+    ).toEqual(['일', '월', '화', '수', '목', '금', '토'])
+    expect(within(rows[0]).queryAllByRole('cell')).toEqual([])
+    const days = rows.slice(1).map((row) =>
+      within(row)
+        .getAllByRole('cell')
+        .map((cell) => cell.getAttribute('aria-label')),
+    )
+    expect(days.map((week) => week.length)).toEqual([7, 7, 7, 7, 7])
+    expect(days[0][0]).toBe('2026-08-30')
+    expect(days[3]).toContain('2026-09-25')
+    expect(days[4][6]).toBe('2026-10-03')
+  })
+
+  it('간트는 열 머리 한 줄과, 줄마다 줄 머리 하나·주 셋에 걸친 날짜 칸 하나인 표다', async () => {
+    await openView('gantt', '&from=2026-09-14')
+    const [head, ...rows] = within(screen.getByRole('table', { name: '일정' })).getAllByRole('row')
+    const columns = within(head).getAllByRole('columnheader')
+    expect(columns.map((column) => column.textContent)).toEqual([
+      '담당자 · 태스크',
+      '9월 3주',
+      '9월 4주',
+      '9월 5주',
+    ])
+    expect(rows.length).toBeGreaterThan(0)
+    for (const row of rows) {
+      expect(within(row).getAllByRole('rowheader')).toHaveLength(1)
+      const cells = within(row).getAllByRole('cell')
+      expect(cells).toHaveLength(1)
+      expect(cells[0]).toHaveAttribute('aria-colspan', '3')
+    }
+    const task = screen.getByRole('row', { name: /로그인 API 연동/ })
+    expect(
+      within(within(task).getByRole('rowheader')).getByRole('link', { name: '로그인 API 연동' }),
+    ).toHaveAttribute('href', paths.tasks('ws_01', 'tk_01'))
+  })
 })

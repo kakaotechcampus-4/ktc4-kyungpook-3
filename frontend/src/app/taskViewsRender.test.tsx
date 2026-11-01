@@ -47,7 +47,7 @@ function holdStatusChange(app: App, workspaceId: string, taskId: string) {
 
 const VIEWS = {
   board: () => screen.queryByRole('region', { name: '시작 전' }),
-  calendar: () => screen.queryByRole('grid', { name: '2026년 9월' }),
+  calendar: () => screen.queryByRole('table', { name: '2026년 9월' }),
   gantt: () => screen.queryByRole('table', { name: '일정' }),
 } as const
 /** tk_01 이 완료로 바뀐 모습 — 보드는 완료 칸, 캘린더는 취소선 칩, 간트는 완료 막대 */

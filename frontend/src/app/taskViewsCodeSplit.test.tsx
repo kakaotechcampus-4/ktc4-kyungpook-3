@@ -71,7 +71,7 @@ describe('보기 코드 나누기 (AC-A-02)', () => {
     expect(modules.loaded).not.toContain('gantt')
 
     release('calendar')
-    expect(await screen.findByRole('grid', { name: '2026년 9월' }, FIRST_PAINT)).toBeVisible()
+    expect(await screen.findByRole('table', { name: '2026년 9월' }, FIRST_PAINT)).toBeVisible()
   })
 
   it('받아 둔 보기에서 간트로 옮기면 간트 코드만 기다린다. 다시 돌아오면 대기 없이 그린다', async () => {

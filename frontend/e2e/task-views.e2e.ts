@@ -27,7 +27,7 @@ const viewPath = (view: View) => `${TASKS}?view=${view}&month=2026-09&from=2026-
 /** 그 보기의 본문 영역 — 보드는 세 칸 격자, 캘린더는 날짜 격자, 간트는 표를 감싼 가로 스크롤 영역 */
 function areaOf(page: Page, view: View): Locator {
   if (view === 'board') return page.getByRole('region', { name: '시작 전' }).locator('..')
-  if (view === 'calendar') return page.getByRole('grid', { name: '2026년 9월' })
+  if (view === 'calendar') return page.getByRole('table', { name: '2026년 9월' })
   return page.getByRole('region', { name: '일정 표' })
 }
 
