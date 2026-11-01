@@ -8,6 +8,7 @@ import { MOCK_NOW } from '@/shared/mock/fixtures/constants'
 import { handlers } from '@/shared/mock/handlers'
 import { server } from '@/shared/mock/server'
 import { setMockRole } from '@/shared/mock/sessions'
+import { fetchDto, jsonRequest } from '@/shared/test/api'
 import { deferred } from '@/shared/test/deferred'
 import { renderApp } from './test/renderApp'
 
@@ -216,5 +217,14 @@ describe('보드 직접 추가', () => {
     setMockRole('member')
     await openBoard()
     expect(screen.queryByRole('button', { name: /직접 추가/ })).toBeNull()
+  })
+
+  it('일반 팀원이 직접 POST 해도 MSW 가 403 으로 막고 태스크를 만들지 않는다', async () => {
+    setMockRole('member')
+    const before = structuredClone(db.tasks)
+    await expect(
+      fetchDto('/tasks', jsonRequest('POST', { workspace_id: 'ws_01', title: '몰래 추가' })),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN', status: 403 })
+    expect(db.tasks).toEqual(before)
   })
 })
