@@ -71,7 +71,7 @@ const SIZE: Record<ButtonSize, string> = {
   auth: 'h-48 w-full gap-6 rounded-999 text-[15px]',
   'landing-hero': 'h-44 gap-6 rounded-999 px-24 text-landing',
   'landing-nav': 'h-[38px] gap-6 rounded-999 px-18 text-[15px]',
-  /* 메시지(M8) — Messages·MessagesThread 캔버스 실측. 제품 최소 높이 36(design-system §7-1)을 지킨다.
+  /* 메시지(M8) — Messages·MessagesThread 캔버스 실측. 제품 최소 높이 36(design-system §7-6)을 지킨다.
      13px 는 `text-control` 대신 길이로 적는다 — `text-control` 은 같은 이름의 색 토큰(--color-control)으로 풀려
      글자 크기가 바뀌지 않는다 */
   'message-edit': 'h-36 gap-6 rounded-9 px-11 text-[12px]',
