@@ -56,15 +56,20 @@ export const 검토_항목: Story = {
   },
 }
 
-/** 고쳐 쓰는 중 — 문구 칸이 열리고 발송은 잠긴다 */
+/** 고쳐 쓰는 중 — 문구 칸이 열려 포커스를 받고, 발송은 잠긴다(포커스를 남기는 aria-disabled) */
 export const 고쳐_쓰기: Story = {
   args: { reviewId: 'rv_01' },
   parameters: { route: paths.messageReview('ws_01', 'rv_01') },
   play: async ({ canvasElement }) => {
     const detail = detailOf(canvasElement)
     await userEvent.click(await detail.findByRole('button', { name: '고쳐 쓰기' }))
-    await expect(detail.getByRole('textbox', { name: '보낼 문구' })).toBeVisible()
-    await expect(detail.getByRole('button', { name: '이대로 발송' })).toBeDisabled()
+    const field = detail.getByRole('textbox', { name: '보낼 문구' })
+    await expect(field).toBeVisible()
+    await expect(field).toHaveFocus()
+    await expect(detail.getByRole('button', { name: '이대로 발송' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    )
   },
 }
 

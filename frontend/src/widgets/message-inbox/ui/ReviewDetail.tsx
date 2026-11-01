@@ -8,8 +8,8 @@ import {
   useMessageReviewAction,
 } from '@/features/message-review'
 import { paths } from '@/shared/config/routes'
-import { Button } from '@/shared/ui/button'
 import { Icon } from '@/shared/ui/icon'
+import { LockedButton } from './LockedButton'
 import { ReviewMessageCard } from './ReviewMessageCard'
 import { SendTimingPicker } from './SendTimingPicker'
 
@@ -26,28 +26,45 @@ export interface ReviewDetailProps {
   workspaceId: string
   botName: string
   review: MessageReview
+  /** 보내거나 보내지 않아 이 항목이 사라진다 — 누른 버튼도 사라지므로 포커스를 맡길 자리로 옮긴다 */
+  onSettled: () => void
+}
+
+/** 행동이 잠긴 이유. 잠긴 버튼의 설명(`aria-describedby`)으로도 읽힌다 */
+function lockReason(editing: boolean, choosingTime: boolean): string | null {
+  if (editing) return '고친 문구를 저장하거나 취소한 뒤에 보낼 수 있어요.'
+  if (choosingTime) return '정한 시각을 저장하거나 취소한 뒤에 보낼 수 있어요.'
+  return null
 }
 
 /**
  * 보내기 전 확인 — 나갈 DM 미리보기, 왜 보내려 하는지, 언제 보낼지, `보내지 않음`·`이대로 발송` (Messages 시안).
  * 결정 4 의 UI 범위는 디자인 캔버스 기준이고 발송 정책은 MSW 목 동작이다. 모든 행동은 서버가 성공한 뒤에 화면을 바꾼다 —
  * 요청 중에는 행동이 모두 잠기고, 실패하면 그 자리에 다시 시도를 알린다 (D-137, 계획 C-5).
+ * 문구를 고치거나 시각을 직접 정하는 중에도 발송이 잠긴다 — 화면에 보이는 문구·시점과 다르게 나가지 않게 한다.
+ * 잠금은 `aria-disabled` 라 누른 버튼에서 포커스가 빠지지 않는다.
  * 보내거나 보내지 않으면 이 항목이 목록에서 빠지고 다음 항목이 골라진다
  */
-export function ReviewDetail({ workspaceId, botName, review }: ReviewDetailProps) {
+export function ReviewDetail({ workspaceId, botName, review, onSettled }: ReviewDetailProps) {
   const headingId = useId()
   const reasonId = useId()
-  const editingHintId = useId()
+  const lockHintId = useId()
   const navigate = useNavigate()
   const actions = useMessageReviewAction(workspaceId)
   const [editing, setEditing] = useState(false)
+  const [choosingTime, setChoosingTime] = useState(false)
   const busy = actions.pending !== null
+  const lockHint = lockReason(editing, choosingTime)
+  const decisionLocked = busy || lockHint !== null
   const pendingKind = actions.pending?.reviewId === review.id ? actions.pending.kind : null
   const failureOf = (...kinds: MessageReviewAction['kind'][]) => (
     <ReviewActionFailure reviewId={review.id} actions={actions} kinds={kinds} />
   )
   // 처리한 항목의 주소에 머물지 않는다 — 목록의 다음 항목이 기본으로 골라진다
-  const leave = () => void navigate(paths.messages(workspaceId), { replace: true })
+  const leave = () => {
+    onSettled()
+    void navigate(paths.messages(workspaceId), { replace: true })
+  }
 
   return (
     <div className={PAGE}>
@@ -67,7 +84,7 @@ export function ReviewDetail({ workspaceId, botName, review }: ReviewDetailProps
           botName={botName}
           editing={editing}
           onEditingChange={setEditing}
-          busy={busy}
+          locked={busy || choosingTime}
           saving={pendingKind === 'edit'}
           onSave={(body, onSaved) =>
             actions.run(review.id, { kind: 'edit', body }, { onSuccess: onSaved })
@@ -91,7 +108,10 @@ export function ReviewDetail({ workspaceId, botName, review }: ReviewDetailProps
 
         <SendTimingPicker
           review={review}
-          disabled={busy || editing}
+          locked={busy || editing}
+          saving={pendingKind === 'schedule'}
+          customOpen={choosingTime}
+          onCustomOpenChange={setChoosingTime}
           onChange={(action, onSaved) => actions.run(review.id, action, { onSuccess: onSaved })}
           failure={failureOf('schedule')}
         />
@@ -100,13 +120,13 @@ export function ReviewDetail({ workspaceId, botName, review }: ReviewDetailProps
 
         <div className="flex flex-col gap-12">
           <div className="flex items-center justify-between gap-20">
-            <Button
+            <LockedButton
               variant="ghost"
               size="xl"
               className="px-18 text-[14px]"
-              loading={pendingKind === 'dismiss'}
-              disabled={busy || editing}
-              aria-describedby={editing ? editingHintId : undefined}
+              aria-busy={pendingKind === 'dismiss' || undefined}
+              aria-describedby={lockHint === null ? undefined : lockHintId}
+              locked={decisionLocked}
               onClick={() =>
                 actions.run(
                   review.id,
@@ -116,15 +136,15 @@ export function ReviewDetail({ workspaceId, botName, review }: ReviewDetailProps
               }
             >
               보내지 않음
-            </Button>
-            <Button
+            </LockedButton>
+            <LockedButton
               variant="primary"
               size="xl"
               className="px-24"
               endIcon={<Icon name="send" size={16} />}
-              loading={pendingKind === 'send'}
-              disabled={busy || editing}
-              aria-describedby={editing ? editingHintId : undefined}
+              aria-busy={pendingKind === 'send' || undefined}
+              aria-describedby={lockHint === null ? undefined : lockHintId}
+              locked={decisionLocked}
               onClick={() =>
                 actions.run(
                   review.id,
@@ -137,13 +157,13 @@ export function ReviewDetail({ workspaceId, botName, review }: ReviewDetailProps
               }
             >
               이대로 발송
-            </Button>
+            </LockedButton>
           </div>
-          {editing ? (
-            <p id={editingHintId} className="text-caption text-dim">
-              고친 문구를 저장하거나 취소한 뒤에 보낼 수 있어요.
+          {lockHint === null ? null : (
+            <p id={lockHintId} className="text-caption text-dim">
+              {lockHint}
             </p>
-          ) : null}
+          )}
           {failureOf('send', 'dismiss')}
         </div>
 

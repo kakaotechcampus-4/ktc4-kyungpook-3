@@ -1,4 +1,4 @@
-import { useId, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { MessageReview } from '@/entities/message'
 import { useUnsavedChanges } from '@/shared/lib/unsaved-changes'
@@ -7,6 +7,7 @@ import { Icon } from '@/shared/ui/icon'
 import { Mascot } from '@/shared/ui/mascot'
 import { shortDateTime } from '../lib/format'
 import { DiscordGlyph } from './DiscordGlyph'
+import { LockedButton } from './LockedButton'
 
 /* Messages 캔버스 실측 — 카드 라운드 16 · 선, 머리(좌우 16 · 위아래 12 · 아래 선), 본문(위 18 · 좌우 18 · 아래 14, 간격 12),
    아바타 34(매스), 이름 줄 간격 8, 밑단(좌우 18 · 위아래 12 · 위 구분선) */
@@ -30,8 +31,8 @@ export interface ReviewMessageCardProps {
   onEditingChange: (editing: boolean) => void
   /** 고친 문구를 서버에 보낸다. 성공하면 `onSaved` 를 부른다 */
   onSave: (body: string, onSaved: () => void) => void
-  /** 다른 행동이 진행 중이다 */
-  busy: boolean
+  /** 다른 행동이 진행 중이거나 발송 시각을 고르는 중이라 고쳐 쓸 수 없다. 포커스는 남긴다(`aria-disabled`) */
+  locked: boolean
   /** 저장 요청 중이다 */
   saving: boolean
   /** 저장 실패 알림 자리 */
@@ -40,7 +41,7 @@ export interface ReviewMessageCardProps {
 
 /**
  * 나갈 DM 미리보기 — Discord 에서 보일 모습 그대로(봇 이름 · BOT · 나갈 시각 · 본문). 밑단의 `고쳐 쓰기` 로 문구를 고친다.
- * 고친 문구는 서버가 저장한 뒤에만 미리보기에 보인다 (D-137)
+ * 고친 문구는 서버가 저장한 뒤에만 미리보기에 보인다 (D-137). 문구 칸을 열면 그 칸으로, 닫으면 `고쳐 쓰기` 로 포커스를 옮긴다
  */
 export function ReviewMessageCard({
   review,
@@ -48,10 +49,23 @@ export function ReviewMessageCard({
   editing,
   onEditingChange,
   onSave,
-  busy,
+  locked,
   saving,
   failure,
 }: ReviewMessageCardProps) {
+  const editButtonRef = useRef<HTMLButtonElement>(null)
+  const returnFocusRef = useRef(false)
+  // 문구 칸이 닫히며 그 안의 버튼이 사라진다 — 포커스를 연 자리(`고쳐 쓰기`)로 돌린다
+  useEffect(() => {
+    if (editing || !returnFocusRef.current) return
+    returnFocusRef.current = false
+    editButtonRef.current?.focus()
+  }, [editing])
+  const closeEditor = () => {
+    returnFocusRef.current = true
+    onEditingChange(false)
+  }
+
   return (
     <section aria-label="보낼 메시지 미리보기" className={CARD}>
       <div className={CARD_HEAD}>
@@ -74,7 +88,7 @@ export function ReviewMessageCard({
           {editing ? (
             <BodyEditor
               initialBody={review.body}
-              onCancel={() => onEditingChange(false)}
+              onClose={closeEditor}
               onSave={onSave}
               saving={saving}
               failure={failure}
@@ -87,15 +101,16 @@ export function ReviewMessageCard({
       {editing ? null : (
         <div className={CARD_FOOT}>
           <span>문구는 그대로 고칠 수 있어요</span>
-          <Button
+          <LockedButton
+            ref={editButtonRef}
             size="sm"
             className="text-[12px]"
             startIcon={<Icon name="edit" size={13} />}
-            disabled={busy}
+            locked={locked}
             onClick={() => onEditingChange(true)}
           >
             고쳐 쓰기
-          </Button>
+          </LockedButton>
         </div>
       )}
     </section>
@@ -104,19 +119,24 @@ export function ReviewMessageCard({
 
 function BodyEditor({
   initialBody,
-  onCancel,
+  onClose,
   onSave,
   saving,
   failure,
 }: {
   initialBody: string
-  onCancel: () => void
+  onClose: () => void
   onSave: (body: string, onSaved: () => void) => void
   saving: boolean
   failure: ReactNode
 }) {
   const fieldId = useId()
   const errorId = useId()
+  const fieldRef = useRef<HTMLTextAreaElement>(null)
+  // 열리면 바로 고칠 수 있게 문구 칸으로 포커스를 옮긴다
+  useEffect(() => {
+    fieldRef.current?.focus()
+  }, [])
   const [draft, setDraft] = useState(initialBody)
   const [empty, setEmpty] = useState(false)
   const changed = draft.trim() !== initialBody
@@ -129,12 +149,12 @@ function BodyEditor({
       return
     }
     if (body === initialBody) {
-      onCancel()
+      onClose()
       return
     }
     onSave(body, () => {
       unsaved.release()
-      onCancel()
+      onClose()
     })
   }
 
@@ -144,6 +164,7 @@ function BodyEditor({
         보낼 문구
       </label>
       <textarea
+        ref={fieldRef}
         id={fieldId}
         className={TEXTAREA}
         value={draft}
@@ -166,12 +187,12 @@ function BodyEditor({
           {draft.length}/{BODY_MAX_LENGTH}
         </span>
         <div className="flex items-center gap-8">
-          <Button variant="ghost" size="sm" disabled={saving} onClick={onCancel}>
+          <Button variant="ghost" size="sm" disabled={saving} onClick={onClose}>
             취소
           </Button>
-          <Button size="sm" loading={saving} onClick={save}>
+          <LockedButton size="sm" aria-busy={saving || undefined} locked={saving} onClick={save}>
             저장
-          </Button>
+          </LockedButton>
         </div>
       </div>
       {failure}

@@ -13,7 +13,6 @@ import { ApiError } from '@/shared/api/errors'
 import { paths } from '@/shared/config/routes'
 import { todayInSeoul } from '@/shared/lib/date'
 import { GuardedLink } from '@/shared/lib/unsaved-changes'
-import { Button } from '@/shared/ui/button'
 import { EmptyState } from '@/shared/ui/empty-state'
 import { Icon } from '@/shared/ui/icon'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
@@ -25,6 +24,7 @@ import {
   groupByDay,
   shortDateTime,
 } from '../lib/format'
+import { LockedButton } from './LockedButton'
 import { ThreadSkeleton } from './MessageSkeletons'
 
 /* MessagesThread 캔버스 실측 — 머리 76(좌우 28, 아래 선), 대화 칸 눌린 면(위 24 · 좌우 28 · 아래 18, 간격 16),
@@ -314,10 +314,10 @@ function PendingBubble({
           : `${shortDateTime(review.scheduledAt)} 발송 예정`}
       </span>
       <div className="flex items-center gap-9">
-        <Button
+        <LockedButton
           variant="ghost"
-          loading={pendingKind === 'dismiss'}
-          disabled={busy}
+          aria-busy={pendingKind === 'dismiss' || undefined}
+          locked={busy}
           onClick={() =>
             actions.run(
               review.id,
@@ -327,11 +327,11 @@ function PendingBubble({
           }
         >
           반려
-        </Button>
-        <Button
+        </LockedButton>
+        <LockedButton
           variant="primary"
-          loading={pendingKind === 'send'}
-          disabled={busy}
+          aria-busy={pendingKind === 'send' || undefined}
+          locked={busy}
           onClick={() =>
             actions.run(
               review.id,
@@ -341,7 +341,7 @@ function PendingBubble({
           }
         >
           승인
-        </Button>
+        </LockedButton>
       </div>
       <ReviewActionFailure reviewId={review.id} actions={actions} />
     </div>

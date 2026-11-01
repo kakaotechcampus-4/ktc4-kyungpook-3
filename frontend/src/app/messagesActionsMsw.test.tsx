@@ -47,6 +47,13 @@ async function openThread(threadId = 'th_01', name = '이재환') {
   return app
 }
 const button = (name: string) => detail().getByRole('button', { name })
+const radio = (name: RegExp | string) => detail().getByRole('radio', { name })
+const detailPane = () => screen.getByRole('region', { name: '메시지 내용' })
+/* 행동 잠금은 disabled 가 아니라 aria-disabled 다 — 누른 버튼·카드에서 포커스가 빠지지 않는다 (VR-03·VR-04) */
+const expectLocked = (element: HTMLElement) =>
+  expect(element).toHaveAttribute('aria-disabled', 'true')
+const expectUnlocked = (element: HTMLElement) =>
+  expect(element).not.toHaveAttribute('aria-disabled')
 const reviewIds = () => db.messageReviews.map(({ review_id }) => review_id)
 
 describe('이대로 발송 — 서버가 성공한 뒤에만 목록과 대화가 바뀐다', () => {
@@ -56,10 +63,12 @@ describe('이대로 발송 — 서버가 성공한 뒤에만 목록과 대화가
     await userEvent.click(button('이대로 발송'))
 
     await waitFor(() => expect(button('이대로 발송')).toHaveAttribute('aria-busy', 'true'))
-    expect(button('이대로 발송')).toBeDisabled()
-    expect(button('보내지 않음')).toBeDisabled()
-    expect(button('고쳐 쓰기')).toBeDisabled()
-    expect(detail().getByRole('radio', { name: /지금 바로/ })).toBeDisabled()
+    expectLocked(button('이대로 발송'))
+    expectLocked(button('보내지 않음'))
+    expectLocked(button('고쳐 쓰기'))
+    expectLocked(radio(/지금 바로/))
+    // 응답을 기다리는 동안에도 누른 버튼에 포커스가 남는다
+    expect(document.activeElement).toBe(button('이대로 발송'))
     // 낙관적으로 빼지 않는다
     expect(rowTexts(reviewList())).toHaveLength(2)
     await userEvent.click(button('이대로 발송'))
@@ -72,6 +81,8 @@ describe('이대로 발송 — 서버가 성공한 뒤에만 목록과 대화가
     expect(within(reviewList()).getByRole('heading')).toHaveTextContent('보내기 전 확인 1')
     expect(current()[0]).toHaveTextContent('정하늘')
     expect(app.visitedActions().at(-1)).toBe('REPLACE')
+    // 누른 버튼이 항목과 함께 사라져도 포커스는 상세 칸에 남는다 — 다음 Tab 이 새 항목으로 간다
+    expect(document.activeElement).toBe(detailPane())
     expect(await screen.findByText('09/23 09:00에 이재환님에게 보낼게요')).toBeInTheDocument()
     expect(reviewIds()).toEqual(['rv_02'])
   })
@@ -111,7 +122,9 @@ describe('이대로 발송 — 서버가 성공한 뒤에만 목록과 대화가
     expect(alert).toHaveTextContent('서버에 문제가 생겼어요. 잠시 후 다시 시도해 주세요.')
     expect(rowTexts(reviewList())).toHaveLength(2)
     expect(current()[0]).toHaveTextContent('이재환')
-    expect(button('이대로 발송')).toBeEnabled()
+    expectUnlocked(button('이대로 발송'))
+    // 실패해도 포커스는 누른 버튼에 그대로다 — 알림은 role=alert 로 읽힌다
+    expect(document.activeElement).toBe(button('이대로 발송'))
     expect(screen.queryByText(/보낼게요|보냈어요/)).toBeNull()
 
     db.messageFailures.actions = false
@@ -142,12 +155,14 @@ describe('보내지 않음', () => {
     const request = hold(`${REVIEW_PATH}/dismiss`, 'post')
     await userEvent.click(button('보내지 않음'))
     await waitFor(() => expect(button('보내지 않음')).toHaveAttribute('aria-busy', 'true'))
-    expect(button('이대로 발송')).toBeDisabled()
+    expectLocked(button('이대로 발송'))
+    expect(document.activeElement).toBe(button('보내지 않음'))
     expect(rowTexts(reviewList())).toHaveLength(2)
 
     act(() => request.resolve())
     await app.expectSearch('')
     await waitFor(() => expect(rowTexts(reviewList())).toHaveLength(1))
+    expect(document.activeElement).toBe(detailPane())
     expect(
       await screen.findByText('이재환님에게 보낼 메시지를 보내지 않기로 했어요'),
     ).toBeInTheDocument()
@@ -165,9 +180,14 @@ describe('고쳐 쓰기', () => {
     expect(field).toHaveValue(
       '재환님, API 명세서 마감이 다음 주 목요일(9/24)이에요 🙂\n혹시 막히는 부분 있으면 알려주세요. 필요하면 마감을 옮겨도 괜찮아요!',
     )
-    expect(button('이대로 발송')).toBeDisabled()
-    expect(button('보내지 않음')).toBeDisabled()
+    // 문구 칸이 열리면 바로 고칠 수 있게 포커스가 그 칸으로 간다
+    expect(document.activeElement).toBe(field)
+    expectLocked(button('이대로 발송'))
+    expectLocked(button('보내지 않음'))
     expect(detail().getByText('고친 문구를 저장하거나 취소한 뒤에 보낼 수 있어요.')).toBeVisible()
+    expect(button('이대로 발송')).toHaveAccessibleDescription(
+      '고친 문구를 저장하거나 취소한 뒤에 보낼 수 있어요.',
+    )
 
     await userEvent.clear(field)
     await userEvent.type(field, '재환님, 명세서 진행 상황 알려 주세요 🙂')
@@ -175,13 +195,16 @@ describe('고쳐 쓰기', () => {
     await userEvent.click(button('저장'))
     await waitFor(() => expect(button('저장')).toHaveAttribute('aria-busy', 'true'))
     expect(field).toBeDisabled()
+    expect(document.activeElement).toBe(button('저장'))
 
     act(() => request.resolve())
     await waitFor(() => expect(detail().queryByRole('textbox')).toBeNull())
     expect(detail().getByRole('region', { name: '보낼 메시지 미리보기' })).toHaveTextContent(
       '재환님, 명세서 진행 상황 알려 주세요 🙂',
     )
-    expect(button('이대로 발송')).toBeEnabled()
+    // 문구 칸이 닫히면 포커스는 연 자리(고쳐 쓰기)로 돌아간다
+    expect(document.activeElement).toBe(button('고쳐 쓰기'))
+    expectUnlocked(button('이대로 발송'))
     expect(db.messageReviews[0].body).toBe('재환님, 명세서 진행 상황 알려 주세요 🙂')
   })
 
@@ -200,6 +223,7 @@ describe('고쳐 쓰기', () => {
     expect(detail().getByRole('region', { name: '보낼 메시지 미리보기' })).toHaveTextContent(
       '재환님, API 명세서 마감이 다음 주 목요일(9/24)이에요 🙂',
     )
+    expect(document.activeElement).toBe(button('고쳐 쓰기'))
   })
 
   it('저장에 실패하면 고치던 문구를 그대로 두고 알린다', async () => {
@@ -212,6 +236,7 @@ describe('고쳐 쓰기', () => {
     await userEvent.click(button('저장'))
     expect(await detail().findByRole('alert')).toHaveTextContent('고친 문구를 저장하지 못했어요')
     expect(detail().getByRole('textbox', { name: '보낼 문구' })).toHaveValue('고친 문구')
+    expect(document.activeElement).toBe(button('저장'))
     expect(db.messageReviews[0].body).not.toBe('고친 문구')
   })
 })
@@ -220,13 +245,17 @@ describe('언제 보낼까요? — 고른 카드는 서버가 저장한 값이�
   it('지금 바로를 누르면 응답 전에는 그대로이고, 저장되면 카드와 미리보기 시각이 바뀐다', async () => {
     await openReview()
     const request = hold(REVIEW_PATH, 'patch')
-    await userEvent.click(detail().getByRole('radio', { name: /지금 바로/ }))
-    await waitFor(() => expect(detail().getByRole('radio', { name: /지금 바로/ })).toBeDisabled())
-    expect(detail().getByRole('radio', { name: /마감 하루 전/ })).toBeChecked()
-    expect(button('이대로 발송')).toBeDisabled()
+    await userEvent.click(radio(/지금 바로/))
+    await waitFor(() => expectLocked(radio(/지금 바로/)))
+    expect(radio(/마감 하루 전/)).toBeChecked()
+    expectLocked(button('이대로 발송'))
+    // 저장을 기다리는 동안 카드에서 포커스가 빠지지 않는다
+    expect(document.activeElement).toBe(radio(/지금 바로/))
 
     act(() => request.resolve())
-    await waitFor(() => expect(detail().getByRole('radio', { name: /지금 바로/ })).toBeChecked())
+    await waitFor(() => expect(radio(/지금 바로/)).toBeChecked())
+    expect(document.activeElement).toBe(radio(/지금 바로/))
+    expectUnlocked(radio(/지금 바로/))
     expect(detail().getByText('바로 발송')).toBeInTheDocument()
     expect(db.messageReviews[0]).toMatchObject({ send_timing: 'now', scheduled_at: null })
   })
@@ -249,8 +278,100 @@ describe('언제 보낼까요? — 고른 카드는 서버가 저장한 값이�
     await userEvent.click(button('이 시각으로 정하기'))
     act(() => request.resolve())
     await waitFor(() => expect(detail().queryByLabelText('보낼 날짜와 시각')).toBeNull())
-    expect(detail().getByRole('radio', { name: '직접 정하기09/25 14:30' })).toBeChecked()
+    expect(radio('직접 정하기09/25 14:30')).toBeChecked()
     expect(detail().getByText('09/25 14:30 예정')).toBeInTheDocument()
+    // 시각 칸이 닫히면 포커스는 직접 정하기 카드로 돌아간다
+    expect(document.activeElement).toBe(radio('직접 정하기09/25 14:30'))
+  })
+
+  it('저장한 직접 정하기 시각은 그 카드를 다시 눌러 고칠 수 있다 — 마우스와 Space 모두', async () => {
+    await openReview()
+    await userEvent.click(radio(/직접 정하기/))
+    fireEvent.change(detail().getByLabelText('보낼 날짜와 시각'), {
+      target: { value: '2026-09-25T14:30' },
+    })
+    await userEvent.click(button('이 시각으로 정하기'))
+    await waitFor(() => expect(detail().queryByLabelText('보낼 날짜와 시각')).toBeNull())
+
+    // 이미 골라진 라디오는 change 를 내지 않는다 — 누름(click)으로 다시 연다
+    await userEvent.click(radio(/직접 정하기/))
+    expect(detail().getByLabelText('보낼 날짜와 시각')).toHaveValue('2026-09-25T14:30')
+    await userEvent.click(button('취소'))
+    expect(detail().queryByLabelText('보낼 날짜와 시각')).toBeNull()
+
+    expect(document.activeElement).toBe(radio(/직접 정하기/))
+    await userEvent.keyboard(' ')
+    expect(detail().getByLabelText('보낼 날짜와 시각')).toHaveValue('2026-09-25T14:30')
+  })
+
+  it('직접 정하기를 연 동안에는 이대로 발송·보내지 않음·고쳐 쓰기가 잠기고, 취소하면 풀린다', async () => {
+    // 서버 값은 지금 바로다. 시각 칸을 연 채로 보내면 화면에 골라진 시점(직접 정하기)과 다르게 바로 나간다
+    await openReview('rv_02')
+    const send = hold('/workspaces/ws_01/messages/reviews/rv_02/send', 'post')
+    const dismiss = hold('/workspaces/ws_01/messages/reviews/rv_02/dismiss', 'post')
+    await userEvent.click(radio(/직접 정하기/))
+    fireEvent.change(detail().getByLabelText('보낼 날짜와 시각'), {
+      target: { value: '2026-09-25T14:30' },
+    })
+    expect(radio(/직접 정하기/)).toBeChecked()
+
+    const hint = '정한 시각을 저장하거나 취소한 뒤에 보낼 수 있어요.'
+    expect(detail().getByText(hint)).toBeVisible()
+    for (const name of ['이대로 발송', '보내지 않음']) {
+      expectLocked(button(name))
+      expect(button(name)).toHaveAccessibleDescription(hint)
+    }
+    expectLocked(button('고쳐 쓰기'))
+    await userEvent.click(button('이대로 발송'))
+    await userEvent.click(button('보내지 않음'))
+    await userEvent.click(button('고쳐 쓰기'))
+    expect(send.calls()).toBe(0)
+    expect(dismiss.calls()).toBe(0)
+    expect(detail().queryByRole('textbox', { name: '보낼 문구' })).toBeNull()
+
+    await userEvent.click(button('취소'))
+    expect(radio(/지금 바로/)).toBeChecked()
+    expect(detail().queryByText(hint)).toBeNull()
+    expectUnlocked(button('이대로 발송'))
+    expectUnlocked(button('보내지 않음'))
+    expectUnlocked(button('고쳐 쓰기'))
+    expect(document.activeElement).toBe(radio(/직접 정하기/))
+  })
+
+  it('화살표 키는 카드 사이를 옮겨 다닐 뿐 저장하지 않는다 — Space 로 골라야 저장한다', async () => {
+    await openReview()
+    const request = hold(REVIEW_PATH, 'patch')
+    act(() => radio(/마감 하루 전/).focus())
+
+    await userEvent.keyboard('{ArrowRight}')
+    expect(document.activeElement).toBe(radio(/지금 바로/))
+    await userEvent.keyboard('{ArrowRight}')
+    expect(document.activeElement).toBe(radio(/직접 정하기/))
+    expect(detail().queryByLabelText('보낼 날짜와 시각')).toBeNull()
+    // 끝에서는 처음으로 돈다. 왼쪽·위·아래도 같다
+    await userEvent.keyboard('{ArrowDown}')
+    expect(document.activeElement).toBe(radio(/마감 하루 전/))
+    await userEvent.keyboard('{ArrowLeft}')
+    expect(document.activeElement).toBe(radio(/직접 정하기/))
+    await userEvent.keyboard('{ArrowUp}')
+    expect(document.activeElement).toBe(radio(/지금 바로/))
+    expect(radio(/마감 하루 전/)).toBeChecked()
+    expect(request.calls()).toBe(0)
+
+    await userEvent.keyboard(' ')
+    await waitFor(() => expect(request.calls()).toBe(1))
+    act(() => request.resolve())
+    await waitFor(() => expect(radio(/지금 바로/)).toBeChecked())
+    expect(document.activeElement).toBe(radio(/지금 바로/))
+  })
+
+  it('화살표 키는 고를 수 없는 카드(마감 없음)를 건너뛴다', async () => {
+    await openReview('rv_02')
+    act(() => radio(/지금 바로/).focus())
+    await userEvent.keyboard('{ArrowLeft}')
+    expect(document.activeElement).toBe(radio(/직접 정하기/))
+    await userEvent.keyboard('{ArrowRight}')
+    expect(document.activeElement).toBe(radio(/지금 바로/))
   })
 
   it('바꾸지 못하면 원래 카드가 골라진 채로 알린다', async () => {
@@ -276,7 +397,8 @@ describe('대화 안의 승인·반려 (MessagesThread 시안)', () => {
         'true',
       ),
     )
-    expect(within(upcoming()).getByRole('button', { name: '반려' })).toBeDisabled()
+    expectLocked(within(upcoming()).getByRole('button', { name: '반려' }))
+    expect(document.activeElement).toBe(within(upcoming()).getByRole('button', { name: '승인' }))
     await userEvent.click(within(upcoming()).getByRole('button', { name: '승인' }))
     expect(request.calls()).toBe(1)
 
@@ -296,7 +418,9 @@ describe('대화 안의 승인·반려 (MessagesThread 시안)', () => {
     await userEvent.click(within(upcoming).getByRole('button', { name: '반려' }))
     const alert = await within(upcoming).findByRole('alert')
     expect(alert).toHaveTextContent('보내지 않음으로 처리하지 못했어요')
-    expect(within(upcoming).getByRole('button', { name: '승인' })).toBeEnabled()
+    expectUnlocked(within(upcoming).getByRole('button', { name: '승인' }))
+    // 실패해도 포커스는 누른 반려 버튼에 그대로다
+    expect(document.activeElement).toBe(within(upcoming).getByRole('button', { name: '반려' }))
 
     db.messageFailures.actions = false
     await userEvent.click(within(alert).getByRole('button', { name: '다시 시도' }))

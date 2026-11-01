@@ -1,4 +1,4 @@
-import type { ComponentPropsWithoutRef, ReactNode } from 'react'
+import type { ComponentProps, ReactNode } from 'react'
 
 export type ButtonVariant = 'primary' | 'default' | 'ghost' | 'text' | 'outline'
 
@@ -13,7 +13,8 @@ export type ButtonSize =
   | 'landing-hero'
   | 'landing-nav'
 
-export interface ButtonProps extends ComponentPropsWithoutRef<'button'> {
+/** `ref` 는 React 19 의 일반 prop 이라 `...rest` 로 `<button>` 에 그대로 간다 — 포커스를 옮길 자리에서 쓴다 */
+export interface ButtonProps extends ComponentProps<'button'> {
   /** 시각 변형. 기본 'default' */
   variant?: ButtonVariant
   /** 화면군별 크기. 기본 'md' */

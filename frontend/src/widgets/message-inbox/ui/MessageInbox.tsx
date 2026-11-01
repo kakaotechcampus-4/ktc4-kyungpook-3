@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
+import { useRef } from 'react'
 import { messageInboxQueryOptions } from '@/entities/message'
 import type { MessageInbox as Inbox, MessageReview, MessageThreadSummary } from '@/entities/message'
 import { paths } from '@/shared/config/routes'
@@ -68,6 +69,7 @@ export function MessageInbox({
   invalidPath = false,
 }: MessageInboxProps) {
   const inbox = useQuery(messageInboxQueryOptions(workspaceId))
+  const detailRef = useRef<HTMLElement>(null)
   const reviews = inbox.data?.reviews ?? []
   const review =
     threadId !== null || invalidPath
@@ -114,7 +116,13 @@ export function MessageInbox({
   else if (review !== null)
     // 항목이 바뀌면 고쳐 쓰던 문구·직접 정하던 시각을 들고 가지 않는다
     detail = (
-      <ReviewDetail key={review.id} workspaceId={workspaceId} botName={botName} review={review} />
+      <ReviewDetail
+        key={review.id}
+        workspaceId={workspaceId}
+        botName={botName}
+        review={review}
+        onSettled={() => detailRef.current?.focus()}
+      />
     )
   else if (inbox.data === undefined && inbox.error === null) detail = <ReviewSkeleton />
   else if (inbox.data !== undefined)
@@ -145,7 +153,8 @@ export function MessageInbox({
           <InboxListSkeleton />
         )}
       </aside>
-      <section aria-label="메시지 내용" className={DETAIL}>
+      {/* 처리한 항목이 버튼째 사라지면 포커스를 이 칸이 받는다 — 다음 Tab 이 새로 골라진 항목으로 간다 */}
+      <section ref={detailRef} aria-label="메시지 내용" tabIndex={-1} className={DETAIL}>
         {detail}
       </section>
     </main>
