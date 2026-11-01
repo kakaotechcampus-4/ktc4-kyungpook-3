@@ -104,14 +104,16 @@ docker compose -f docker-compose.prod.yml logs -f api
 | `TASK_HISTORY_NOT_FOUND` | 404 | 반영 로그(태스크 히스토리)를 찾을 수 없음 |
 | `MEETING_ALREADY_ENDED` | 409 | 이미 종료된 회의 |
 | `MEETING_NOT_PROCESSING` | 409 | 회의가 PROCESSING 상태가 아닌데 추출을 시도함 |
+| `MEETING_PROCESSING_IN_PROGRESS` | 409 | 같은 워크스페이스에 이미 처리 중인 회의가 있어 업로드를 받지 않음. `details.meeting_id` |
 | `APPROVAL_ALREADY_RESOLVED` | 409 | 이미 승인/반려 처리된 요청을 다시 처리하려 함 |
 | `APPROVAL_CONFLICT` | 409 | task_update 제안 이후 같은 필드가 바뀌었거나 대상 task 제목이 바뀌어 승인하지 않음. `details.conflicts`에 필드별 기준값·지금 값·제안 값(`field: "title"`은 대상 확인용이라 `proposed`가 null). 확인 후 `details.task_version`을 `confirm_task_version`에 담아 다시 승인하면 반영(그 사이 또 바뀌었으면 다시 409) |
 | `TASK_HISTORY_ALREADY_ROLLED_BACK` | 409 | 이미 되돌린 변경을 다시 되돌리려 함 |
 | `AUTO_TASK_NOT_REVERTIBLE` | 409 | auto로 만든 태스크를 되돌릴 수 없음. `details.reason`: `already_reverted`(이미 되돌림) · `not_auto_created`(auto로 만든 항목이 아님) · `task_missing`(태스크가 없음) · `task_changed`(만든 뒤 바뀜, `details.task_version`) · `pending_approval`(그 태스크의 처리 대기 승인 요청이 있음, `details.approval_id`). 태스크를 직접 고친다 |
 | `LAST_PM_REQUIRED` | 409 | 워크스페이스의 마지막 PM(로그인 계정이 있는 PM)을 member로 내리려 함. 다른 팀원을 먼저 PM으로 지정해야 함 |
 | `DISCORD_USER_ALREADY_MAPPED` | 409 | 같은 워크스페이스에서 탈퇴하지 않은 다른 팀원에 이미 연결된 디스코드 계정(`details.discord_user_id`). 탈퇴(`is_deleted`)한 팀원의 계정은 다시 연결할 수 있음. `discord_user_id`의 앞뒤 공백은 지우고, 빈 값은 연결 없음(null)으로 저장. 64자를 넘으면 이 코드가 아니라 400 `INVALID_REQUEST` |
-| `AUDIO_UPLOAD_FAILED` | 422 | 오디오 저장·병합 실패 *(아직 미구현 경로)* |
-| `AUDIO_FORMAT_UNSUPPORTED` | 422 | 지원하지 않는 오디오 형식 *(아직 미구현 경로)* |
+| `AUDIO_TOO_LARGE` | 413 | 업로드한 녹음이 한도(기본 100MiB, `UPLOAD_MAX_BYTES`)를 넘음. `details.size_bytes`·`max_bytes` |
+| `AUDIO_UPLOAD_FAILED` | 422 | 오디오 저장·병합 실패 |
+| `AUDIO_FORMAT_UNSUPPORTED` | 422 | 지원하지 않는 오디오 형식. `details.filename`·`supported` |
 | `TRANSCRIPTION_FAILED` | 502 | 음성 전사 실패 *(아직 미구현 경로)* |
 | `EXTRACTION_FAILED` | 502 | 회의 분석 실패 *(아직 미구현 경로)* |
 | `NOTION_WRITE_FAILED` | 502 | Notion 페이지 생성/갱신 실패 *(Task API는 더 이상 내려주지 않음 — 아래 Notion 연동 참고)* |
@@ -119,7 +121,7 @@ docker compose -f docker-compose.prod.yml logs -f api
 | `DISCORD_API_FAILED` | 502 | Discord 서버 사용자 목록을 가져오지 못함(봇 토큰 미설정·권한·네트워크). `details.status`에 Discord 응답 상태(응답이 없으면 null) |
 | `INTERNAL_ERROR` | 500 | 그 외 서버 내부 오류 |
 
-*(아직 미구현 경로)* 표시가 붙은 코드는 오디오 업로드/전사가 실제로 붙기
+*(아직 미구현 경로)* 표시가 붙은 코드는 음성 전사·회의 분석이 실제로 붙기
 전까지는 절대 내려오지 않는다.
 
 ## Notion 연동
