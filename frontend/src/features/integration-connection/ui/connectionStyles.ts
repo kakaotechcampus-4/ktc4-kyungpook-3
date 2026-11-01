@@ -22,4 +22,6 @@ export const DOT: Record<IntegrationStatus, string> = {
   revoked: 'h-5 w-5 rounded-999 bg-accent',
 }
 export const ACTIONS = 'flex shrink-0 items-center gap-8'
+/* 카드 버튼은 캔버스가 `height:34px; min-height:36px` 이다 — 제품 최소 36px(디자인 시스템). 공용 `md-compact` 는 34px 이라 높이만 채운다 */
+export const CARD_BUTTON = 'min-h-[36px]'
 export const NOTE = 'text-caption text-dim'

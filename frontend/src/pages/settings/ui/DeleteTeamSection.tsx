@@ -19,7 +19,11 @@ export function DeleteTeamSection() {
           회의록과 전사문이 모두 지워집니다. Notion에 이미 올라간 내용은 그대로 남아요.
         </p>
       </div>
-      <Button onClick={() => toast.show({ title: '팀 삭제는 아직 준비 중이에요.' })}>
+      {/* 캔버스 13px. 공용 `md` 의 `text-control` 은 색 토큰과 이름이 겹쳐 글자 크기를 만들지 못한다(SettingsNav 와 같은 까닭) */}
+      <Button
+        className="text-[13px]"
+        onClick={() => toast.show({ title: '팀 삭제는 아직 준비 중이에요.' })}
+      >
         팀 삭제
       </Button>
     </section>

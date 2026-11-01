@@ -17,6 +17,7 @@ import {
   BADGE,
   BODY,
   CARD,
+  CARD_BUTTON,
   DOT,
   ICON_BOX,
   META,
@@ -142,7 +143,12 @@ export function NotionConnectionSection({ workspaceId, canManage }: NotionConnec
         </div>
         {canManage && disconnected ? (
           <div className={ACTIONS}>
-            <Button size="md-compact" loading={busy} onClick={connection.connect}>
+            <Button
+              size="md-compact"
+              className={CARD_BUTTON}
+              loading={busy}
+              onClick={connection.connect}
+            >
               {CONNECT_LABEL[disconnected]}
             </Button>
           </div>

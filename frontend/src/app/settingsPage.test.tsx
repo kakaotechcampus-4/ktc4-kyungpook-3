@@ -83,7 +83,7 @@ describe('설정 화면 — PM', () => {
 
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     expect(await area.findByText('연결 안 됨')).toBeInTheDocument()
-    expect(area.getByRole('button', { name: 'Discord 연결하기' })).toBeInTheDocument()
+    expect(area.getByRole('button', { name: 'Discord 연결하기' })).toHaveClass('min-h-[36px]')
     expect(db.integrations.ws_01.discord.status).toBe('not_connected')
     await waitFor(() => expect(area.getByRole('heading', { name: 'Discord 연결' })).toHaveFocus())
   })
@@ -132,6 +132,16 @@ describe('설정 화면 — PM', () => {
     expect(silence).not.toBeChecked()
     await user.click(silence)
     expect(silence).toBeChecked()
+  })
+
+  it('캔버스 실측 — 카드 버튼은 최소 36px 이고, 목차와 `팀 삭제` 의 글자는 13px 이다', async () => {
+    renderApp(SETTINGS)
+    const area = await notionArea()
+    for (const name of ['속성 다시 맞추기', '연결 끊기'])
+      expect(await area.findByRole('button', { name })).toHaveClass('min-h-[36px]')
+    // `text-control` 은 같은 이름의 색 토큰과 겹쳐 글자 크기를 만들지 않는다 — 크기를 직접 쓴다
+    expect(screen.getByRole('link', { name: '일반' })).toHaveClass('text-[13px]')
+    expect(screen.getByRole('button', { name: '팀 삭제' })).toHaveClass('text-[13px]')
   })
 
   it('저장 API 가 없는 조작은 준비 중이라고만 알리고 요청하지 않는다', async () => {

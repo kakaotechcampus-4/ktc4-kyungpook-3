@@ -3,9 +3,10 @@ import { GuardedLink } from '@/shared/lib/unsaved-changes'
 import { SETTINGS_SECTIONS } from './settingsSections'
 import type { SettingsSectionId } from './settingsSections'
 
-/* Settings 캔버스 목차 — 높이 34(최소 36) · 좌우 10 · 13px 600, 지금 절은 선택 면에 먹 글자 */
+/* Settings 캔버스 목차 — 높이 34(최소 36) · 좌우 10 · 13px 600, 지금 절은 선택 면에 먹 글자.
+   13px 은 `text-control` 로 쓰지 않는다 — 같은 이름의 색 토큰(`--color-control`)과 겹쳐 Tailwind 가 글자색만 만든다 */
 const ITEM =
-  'flex h-34 min-h-[36px] w-full items-center rounded-9 px-10 text-control font-semibold text-sub hover:text-ink aria-disabled:hover:text-sub aria-[current=location]:bg-surface-selected aria-[current=location]:text-ink'
+  'flex h-34 min-h-[36px] w-full items-center rounded-9 px-10 text-[13px] leading-none font-semibold text-sub hover:text-ink aria-disabled:hover:text-sub aria-[current=location]:bg-surface-selected aria-[current=location]:text-ink'
 
 export interface SettingsNavProps {
   workspaceId: string

@@ -94,7 +94,10 @@ describe('팀 화면 — PM', () => {
   it('`팀원 관리` 로 연 창은 아무도 잇지 않고 `나중에 하기` 로 닫을 수 있다 (D-075)', async () => {
     const user = userEvent.setup()
     const app = renderApp(TEAM)
-    await user.click(await screen.findByRole('button', { name: '팀원 관리' }))
+    const manage = await screen.findByRole('button', { name: '팀원 관리' })
+    // 캔버스 `height:34px; min-height:36px`, 아이콘 간격 7px
+    expect(manage).toHaveClass('min-h-[36px]', 'gap-7')
+    await user.click(manage)
     const dialog = within(await screen.findByRole('dialog', { name: '팀원 연결' }))
     // 이미 이은 계정은 이름이 채워져 있고, 잇지 않은 계정은 비어 있다
     expect(await dialog.findByLabelText('@minsu의 팀원 이름')).toHaveValue('박민수')

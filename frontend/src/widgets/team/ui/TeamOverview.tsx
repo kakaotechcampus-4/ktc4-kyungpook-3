@@ -124,6 +124,8 @@ export function TeamOverview({
         {isPm ? (
           <Button
             size="md-compact"
+            // 캔버스는 `height:34px; min-height:36px`, 아이콘 간격 7px 이다. 공용 `md-compact` 는 34px·6px 이라 둘을 채운다
+            className="min-h-[36px] gap-7"
             startIcon={<Icon name="users" size={15} className="text-sub" />}
             onClick={() => onConnectOpenChange(true)}
           >

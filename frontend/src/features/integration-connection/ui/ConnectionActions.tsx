@@ -6,6 +6,7 @@ import { FormErrorPanel } from '@/shared/ui/form-error-panel'
 import { Modal } from '@/shared/ui/modal'
 import { toast } from '@/shared/ui/toast'
 import { useDisconnectIntegration } from '../model/useDisconnectIntegration'
+import { CARD_BUTTON } from './connectionStyles'
 
 const PROVIDER_NAME: Record<IntegrationProvider, string> = { discord: 'Discord', notion: 'Notion' }
 
@@ -50,11 +51,17 @@ export function ConnectionActions({
     <>
       <Button
         size="md-compact"
+        className={CARD_BUTTON}
         onClick={() => toast.show({ title: `${secondary}는 아직 준비 중이에요.` })}
       >
         {secondary}
       </Button>
-      <Button variant="ghost" size="md-compact" onClick={() => setConfirming(true)}>
+      <Button
+        variant="ghost"
+        size="md-compact"
+        className={CARD_BUTTON}
+        onClick={() => setConfirming(true)}
+      >
         연결 끊기
       </Button>
       <Modal
