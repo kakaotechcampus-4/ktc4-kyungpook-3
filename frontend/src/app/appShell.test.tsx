@@ -48,6 +48,18 @@ const openUserMenu = async () => {
   return screen.findByRole('menu', { name: /^내 계정/ })
 }
 
+/**
+ * 설정 화면에 도착한 뒤 포커스가 제목(h1)에 있고 아바타로 돌아가지 않았다.
+ * Radix 의 닫힘 포커스 복귀는 다음 태스크라서, 제목에 온 뒤 한 번 더 기다려 다시 본다
+ */
+async function expectSettingsTitleFocused(avatar: HTMLElement) {
+  const title = await screen.findByRole('heading', { level: 1, name: '설정' })
+  await waitFor(() => expect(title).toHaveFocus())
+  await act(() => new Promise((resolve) => setTimeout(resolve, 50)))
+  expect(title).toHaveFocus()
+  expect(avatar).not.toHaveFocus()
+}
+
 afterEach(() => sessionStorage.clear())
 
 describe('워크스페이스 선택 화면과 헤더 메뉴 (U4-1)', () => {
@@ -249,6 +261,8 @@ describe('프로필 메뉴의 설정 (#244)', () => {
     await userEvent.click(await screen.findByRole('button', { name: '변경 내용 버리고 나가기' }))
     expect(await screen.findByRole('heading', { name: '설정' })).toBeInTheDocument()
     await app.expectPath('/workspaces/ws_01/settings')
+    // 확인 창을 거쳐 옮겨 가도 포커스는 아바타가 아니라 설정 제목이다
+    await expectSettingsTitleFocused(screen.getByRole('button', { name: '내 계정: 최진호' }))
   })
 
   it('논모달이다 — 열려 있어도 본문을 가리거나 막지 않아 탭을 바로 누를 수 있다', async () => {
@@ -279,6 +293,42 @@ describe('프로필 메뉴의 설정 (#244)', () => {
     await waitFor(() => expect(within(menu).getByRole('menuitem', { name: '설정' })).toHaveFocus())
     await userEvent.click(await screen.findByRole('heading', { name: '대시보드' }))
     await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
+  })
+
+  it('마우스로 `설정` 을 고르면 포커스가 아바타에 남지 않고 설정 화면 제목으로 간다', async () => {
+    renderApp('/workspaces/ws_01/dashboard')
+    const avatar = await screen.findByRole('button', { name: '내 계정: 최진호' })
+    await userEvent.click(within(await openUserMenu()).getByRole('menuitem', { name: '설정' }))
+    await expectSettingsTitleFocused(avatar)
+  })
+
+  it('키보드(Enter)로 골라도 포커스가 설정 화면 제목으로 간다', async () => {
+    renderApp('/workspaces/ws_01/dashboard')
+    const avatar = await screen.findByRole('button', { name: '내 계정: 최진호' })
+    avatar.focus()
+    await userEvent.keyboard('{Enter}')
+    const menu = await screen.findByRole('menu', { name: /^내 계정/ })
+    await waitFor(() => expect(within(menu).getByRole('menuitem', { name: '설정' })).toHaveFocus())
+    await userEvent.keyboard('{Enter}')
+    await expectSettingsTitleFocused(avatar)
+  })
+
+  it('이동하지 않고 닫으면 아바타로 돌아온다 — Esc, 이탈 확인의 계속 작성하기', async () => {
+    const app = renderApp('/workspaces/ws_01/dashboard')
+    await screen.findByRole('heading', { name: '대시보드' })
+    const avatar = screen.getByRole('button', { name: '내 계정: 최진호' })
+
+    await openUserMenu()
+    await userEvent.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
+    await waitFor(() => expect(avatar).toHaveFocus())
+
+    useUnsavedChangesStore.getState().mark('test-form')
+    await userEvent.click(within(await openUserMenu()).getByRole('menuitem', { name: '설정' }))
+    await userEvent.click(await screen.findByRole('button', { name: '계속 작성하기' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    await waitFor(() => expect(avatar).toHaveFocus())
+    await app.expectPath('/workspaces/ws_01/dashboard')
   })
 
   it('공간을 고르기 전(선택 화면)의 프로필 메뉴에는 설정이 없다', async () => {

@@ -1,8 +1,9 @@
+import { useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { sessionQueryOptions } from '@/entities/user'
 import { LOGOUT_FAILED_MESSAGE, useLogout } from '@/features/auth'
 import { paths } from '@/shared/config/routes'
-import { useGuardedNavigate } from '@/shared/lib/unsaved-changes'
+import { hasPendingLeave, useGuardedNavigate } from '@/shared/lib/unsaved-changes'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -38,12 +39,22 @@ export interface UserMenuProps {
  * 로그아웃은 서버가 성공한 뒤에만 캐시를 지우고 로그인으로 간다 (useLogout). 실패하면 아바타 옆에 안내가 남는다.
  * 논모달이다(`modal={false}`) — 열려 있어도 뒤 화면을 aria-hidden·pointer-events·스크롤 잠금으로 막지 않는다.
  * 바깥 클릭·Esc 로 닫히고 Esc 로 닫으면 아바타로 포커스가 돌아오는 것은 Radix 가 그대로 한다.
+ * 다만 `설정` 으로 실제로 옮겨 갔으면 아바타로 돌리지 않는다 — 새 화면(설정)이 제목으로 포커스를 가져간다.
  */
 export function UserMenu({ workspaceId }: UserMenuProps) {
   const session = useQuery(sessionQueryOptions())
   const { requestLogout, isPending, error } = useLogout()
   const navigate = useGuardedNavigate()
   const user = session.data?.user
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  // 고른 항목이 다른 화면으로 옮겼는가. 닫힘 포커스 복귀(다음 태스크)에서 읽는다
+  const leftRef = useRef(false)
+
+  const openSettings = (id: string) => {
+    leftRef.current = navigate(paths.settings(id))
+    // 이탈 확인이 붙잡았으면 그 창을 연 요소가 아바타가 되게 먼저 옮긴다 — `계속 작성하기` 로 닫으면 아바타로 돌아온다
+    if (hasPendingLeave()) triggerRef.current?.focus()
+  }
 
   return (
     <span className="inline-flex items-center gap-8">
@@ -53,10 +64,21 @@ export function UserMenu({ workspaceId }: UserMenuProps) {
         </span>
       ) : null}
       <DropdownMenu modal={false}>
-        <DropdownMenuTrigger className={AVATAR} aria-label={`내 계정: ${user?.name ?? ''}`}>
+        <DropdownMenuTrigger
+          ref={triggerRef}
+          className={AVATAR}
+          aria-label={`내 계정: ${user?.name ?? ''}`}
+        >
           {user ? initials(user.name) : ''}
         </DropdownMenuTrigger>
-        <DropdownMenuContent className="w-[240px]">
+        <DropdownMenuContent
+          className="w-[240px]"
+          onCloseAutoFocus={(event) => {
+            if (!leftRef.current) return
+            leftRef.current = false
+            event.preventDefault()
+          }}
+        >
           {/* 묶음 제목(대문자 · 자간) 모양이 아니라 계정 정보라 Label 대신 평범한 칸이다 */}
           <div className="flex flex-col gap-2 px-10 py-5">
             <span className="text-control font-semibold text-ink">{user?.name}</span>
@@ -64,7 +86,7 @@ export function UserMenu({ workspaceId }: UserMenuProps) {
           </div>
           <DropdownMenuSeparator />
           {workspaceId === undefined ? null : (
-            <DropdownMenuItem onSelect={() => navigate(paths.settings(workspaceId))}>
+            <DropdownMenuItem onSelect={() => openSettings(workspaceId)}>
               <Icon name="settings" size={15} className={ITEM_ICON} />
               <span className={ITEM_TEXT}>설정</span>
             </DropdownMenuItem>

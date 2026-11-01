@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router'
 import { useMemberWorkspace } from '@/entities/workspace'
 import {
@@ -21,7 +21,9 @@ import { SettingsSection } from './SettingsSection'
 const MAIN = 'mx-auto flex w-full max-w-shell flex-1 justify-center px-48 pt-48 pb-72'
 const COLUMNS = 'flex w-full max-w-column items-start gap-44'
 const ASIDE = 'sticky top-[34px] flex w-[176px] shrink-0 flex-col gap-16'
-const TITLE = 'px-10 text-[22px] leading-[1.4] font-bold tracking-h1 text-ink'
+/* 제목은 들어올 때 포커스를 받는 자리다(tabIndex -1). 절 제목과 같이 포커스 표시는 없다 */
+const TITLE =
+  'px-10 text-[22px] leading-[1.4] font-bold tracking-h1 text-ink focus-visible:outline-none'
 const CONTENT = 'flex min-w-[0px] flex-1 flex-col gap-40'
 
 /**
@@ -51,12 +53,19 @@ interface SettingsScreenProps {
 
 function SettingsScreen({ workspaceId, initialName, isPm }: SettingsScreenProps) {
   const [searchParams] = useSearchParams()
-  // 차단 모달에서 Notion 연결로 왔으면 목차도 연결에 둔다
-  const [current, setCurrent] = useState<SettingsSectionId>(() =>
-    searchParams.get(SETTINGS_PARAMS.section) === 'notion'
-      ? 'settings-connections'
-      : 'settings-general',
+  // 차단 모달에서 Notion 연결로 왔는가. 들어온 주소로 한 번만 정한다
+  const [cameForNotion] = useState(() => searchParams.get(SETTINGS_PARAMS.section) === 'notion')
+  // 그렇다면 목차도 연결에 둔다
+  const [current, setCurrent] = useState<SettingsSectionId>(
+    cameForNotion ? 'settings-connections' : 'settings-general',
   )
+  const titleRef = useRef<HTMLHeadingElement>(null)
+
+  // 들어오면 화면 제목에서 읽기 시작한다 — 이전 화면의 메뉴 트리거나 body 에 포커스가 남지 않는다.
+  // Notion 연결로 왔으면 Notion 카드 제목이 포커스를 가져가므로 두지 않는다
+  useEffect(() => {
+    if (!cameForNotion) titleRef.current?.focus({ preventScroll: true })
+  }, [cameForNotion])
   const select = (id: SettingsSectionId) => {
     setCurrent(id)
     const section = document.getElementById(id)
@@ -69,7 +78,9 @@ function SettingsScreen({ workspaceId, initialName, isPm }: SettingsScreenProps)
     <main className={MAIN}>
       <div className={COLUMNS}>
         <aside className={ASIDE}>
-          <h1 className={TITLE}>설정</h1>
+          <h1 ref={titleRef} tabIndex={-1} className={TITLE}>
+            설정
+          </h1>
           <SettingsNav workspaceId={workspaceId} current={current} onSelect={select} />
         </aside>
         <div className={CONTENT}>

@@ -46,10 +46,15 @@ export function clearUnsavedChanges(): void {
  * 변경이 있으면 실행하지 않고 저장해 둔다 — 모달이 열리고 사용자가 고른다.
  * 이동 관문은 GuardedLink·useGuardedNavigate·useBrowserLeaveGuard 셋이다. 그 밖에는 화면을 떠나는
  * 동작(로그아웃, features/auth 의 useLogout)만 이 함수로 먼저 묻는다.
+ * 지금 실행했으면 true, 모달에 맡겼으면 false 다 — 호출한 쪽이 이동 뒤의 포커스를 정할 때 쓴다.
  */
-export function guardLeave(leave: () => void): void {
-  if (hasUnsavedChanges()) useUnsavedChangesStore.setState({ pendingLeave: leave })
-  else leave()
+export function guardLeave(leave: () => void): boolean {
+  if (hasUnsavedChanges()) {
+    useUnsavedChangesStore.setState({ pendingLeave: leave })
+    return false
+  }
+  leave()
+  return true
 }
 
 /** `변경 내용 버리고 나가기`. 저장해 둔 이동을 한 번만 실행한다 */
