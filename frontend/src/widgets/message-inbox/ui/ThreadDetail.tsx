@@ -316,6 +316,7 @@ function PendingBubble({
       <div className="flex items-center gap-9">
         <LockedButton
           variant="ghost"
+          size="message-thread-dismiss"
           aria-busy={pendingKind === 'dismiss' || undefined}
           locked={busy}
           onClick={() =>
@@ -330,6 +331,7 @@ function PendingBubble({
         </LockedButton>
         <LockedButton
           variant="primary"
+          size="message-thread-approve"
           aria-busy={pendingKind === 'send' || undefined}
           locked={busy}
           onClick={() =>

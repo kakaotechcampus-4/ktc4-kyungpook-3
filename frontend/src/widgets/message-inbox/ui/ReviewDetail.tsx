@@ -122,8 +122,7 @@ export function ReviewDetail({ workspaceId, botName, review, onSettled }: Review
           <div className="flex items-center justify-between gap-20">
             <LockedButton
               variant="ghost"
-              size="xl"
-              className="px-18 text-[14px]"
+              size="message-dismiss"
               aria-busy={pendingKind === 'dismiss' || undefined}
               aria-describedby={lockHint === null ? undefined : lockHintId}
               locked={decisionLocked}
@@ -139,8 +138,7 @@ export function ReviewDetail({ workspaceId, botName, review, onSettled }: Review
             </LockedButton>
             <LockedButton
               variant="primary"
-              size="xl"
-              className="px-24"
+              size="message-send"
               endIcon={<Icon name="send" size={16} />}
               aria-busy={pendingKind === 'send' || undefined}
               aria-describedby={lockHint === null ? undefined : lockHintId}

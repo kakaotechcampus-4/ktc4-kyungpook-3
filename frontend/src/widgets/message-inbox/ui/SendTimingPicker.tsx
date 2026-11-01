@@ -7,9 +7,10 @@ import { fromSeoulInputValue, initialCustomTime, nowLabel, shortDateTime } from 
 import { LockedButton } from './LockedButton'
 
 /* Messages 캔버스 실측 — 라벨 12.5 보조, 카드 3열 간격 9, 카드(위아래 13 · 좌우 15 · 라운드 16 · 선), 고른 카드는 먹 면 흰 글자.
-   라디오는 숨기고 카드 전체가 라벨이다. 포커스 선은 카드에 긋는다 */
+   라디오는 숨기고 카드 전체가 라벨이다. 포커스 선은 카드에 긋는다 — 디자인 시스템대로 테두리 위(offset -1),
+   고른 먹 면 카드는 면 안쪽 흰 선(offset -3)이다. 캔버스의 offset 4px 는 옮기지 않는다 (design-system §3-3) */
 const CARD =
-  'flex cursor-pointer flex-col items-start gap-2 rounded-16 border border-line bg-surface px-15 py-13 text-left has-[input:checked]:border-ink has-[input:checked]:bg-ink has-[input:disabled]:cursor-not-allowed has-[input[aria-disabled=true]]:cursor-not-allowed has-[input:focus-visible]:outline-2 has-[input:focus-visible]:outline-offset-4 has-[input:focus-visible]:outline-ink'
+  'flex cursor-pointer flex-col items-start gap-2 rounded-16 border border-line bg-surface px-15 py-13 text-left has-[input:checked]:border-ink has-[input:checked]:bg-ink has-[input:disabled]:cursor-not-allowed has-[input[aria-disabled=true]]:cursor-not-allowed has-[input:focus-visible]:outline-2 has-[input:focus-visible]:-outline-offset-1 has-[input:focus-visible]:outline-ink has-[input:checked]:has-[input:focus-visible]:-outline-offset-3 has-[input:checked]:has-[input:focus-visible]:outline-surface'
 const CARD_TITLE = 'text-body font-semibold text-sub group-has-[input:checked]:text-surface'
 const CARD_DETAIL = 'mono text-meta text-dim group-has-[input:checked]:text-surface'
 /* 고를 수 없는 카드(마감이 없는 항목의 `마감 하루 전`)는 눌린 면에 흐린 글자다 — 고를 수 있는 카드와 구분한다 */
@@ -231,10 +232,10 @@ function CustomTimeForm({
             setInvalid(false)
           }}
         />
-        <LockedButton size="sm" aria-busy={saving || undefined} locked={saving} onClick={submit}>
+        <LockedButton aria-busy={saving || undefined} locked={saving} onClick={submit}>
           이 시각으로 정하기
         </LockedButton>
-        <Button variant="ghost" size="sm" disabled={saving} onClick={onCancel}>
+        <Button variant="ghost" disabled={saving} onClick={onCancel}>
           취소
         </Button>
       </div>

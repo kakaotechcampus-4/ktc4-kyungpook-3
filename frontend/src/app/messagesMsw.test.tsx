@@ -473,3 +473,64 @@ describe('키보드만으로 목록 이동·선택·상세 확인이 되고, 이
     expect(await detail().findByText('답장 3일째 없음')).toBeVisible()
   })
 })
+
+/*
+ * 디자인 값 (VR-05 ~ VR-09). jsdom 은 Tailwind 를 계산하지 않아 클래스로 고정한다 — 실제 계산 값은 결과 문서 C 의 브라우저 측정이 본다
+ */
+describe('목록 라벨·발송 시점 포커스 선·버튼 크기가 디자인 시스템과 Messages 캔버스 값이다', () => {
+  it('목록 영역 라벨은 400 이다 — h2 기본 굵기를 받지 않는다', async () => {
+    await openInbox()
+    expect(within(reviewList()).getByRole('heading')).toHaveClass('font-normal')
+    expect(within(threadList()).getByRole('heading', { name: '대화' })).toHaveClass('font-normal')
+  })
+
+  it('발송 시점 카드의 포커스 선은 테두리 위(-1)이고, 고른 먹 면 카드는 안쪽 흰 선(-3)이다 — 양수 offset 이 없다', async () => {
+    await openInbox(paths.messageReview('ws_01', 'rv_01'))
+    const card = detail()
+      .getByRole('radio', { name: /지금 바로/ })
+      .closest('label')
+    expect(card).toHaveClass(
+      'has-[input:focus-visible]:-outline-offset-1',
+      'has-[input:focus-visible]:outline-ink',
+      'has-[input:checked]:has-[input:focus-visible]:-outline-offset-3',
+      'has-[input:checked]:has-[input:focus-visible]:outline-surface',
+    )
+    expect(card?.className).not.toMatch(/(^| )[^ ]*:outline-offset-\d/)
+  })
+
+  it('보내기 전 확인의 버튼은 캔버스 크기이고 모두 36px 이상이다 — 덮어쓰는 className 이 없다', async () => {
+    await openInbox(paths.messageReview('ws_01', 'rv_01'))
+    const button = (name: string) => detail().getByRole('button', { name })
+    expect(button('고쳐 쓰기')).toHaveClass('h-36', 'px-11', 'text-[12px]')
+    expect(button('보내지 않음')).toHaveClass('h-44', 'px-18', 'text-[14px]')
+    expect(button('보내지 않음')).not.toHaveClass('px-22')
+    expect(button('이대로 발송')).toHaveClass('h-44', 'px-24', 'gap-8', 'text-[14.5px]')
+    expect(button('이대로 발송')).not.toHaveClass('gap-6', 'px-22')
+
+    await userEvent.click(button('고쳐 쓰기'))
+    expect(button('취소')).toHaveClass('h-36')
+    expect(button('저장')).toHaveClass('h-36')
+    await userEvent.click(button('취소'))
+
+    await userEvent.click(detail().getByRole('radio', { name: /직접 정하기/ }))
+    expect(button('이 시각으로 정하기')).toHaveClass('h-36')
+    expect(button('취소')).toHaveClass('h-36')
+  })
+
+  it('대화의 반려·승인은 13px 이고 반려 좌우 16 · 승인 좌우 20 이다', async () => {
+    await openInbox(paths.messageThread('ws_01', 'th_01'))
+    const upcoming = within(
+      await within(conversation()).findByRole('list', { name: '아직 나가지 않은 메시지' }),
+    )
+    expect(upcoming.getByRole('button', { name: '반려' })).toHaveClass(
+      'h-36',
+      'px-16',
+      'text-(length:--text-control)',
+    )
+    expect(upcoming.getByRole('button', { name: '승인' })).toHaveClass(
+      'h-36',
+      'px-20',
+      'text-(length:--text-control)',
+    )
+  })
+})

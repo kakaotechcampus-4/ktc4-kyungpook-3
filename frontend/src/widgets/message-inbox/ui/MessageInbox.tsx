@@ -20,7 +20,7 @@ const ASIDE =
   'relative flex w-aside shrink-0 flex-col gap-18 overflow-y-auto border-r border-divider px-12 pt-18 pb-24'
 const ASIDE_TITLE = 'px-8 text-[17px] leading-[1.55] font-bold tracking-h2 text-ink'
 const DETAIL = 'flex min-w-[0px] flex-1 flex-col'
-const GROUP_LABEL = 'mono text-[10.5px] leading-[1.75] tracking-[0.1em] text-dim'
+const GROUP_LABEL = 'mono text-[10.5px] leading-[1.75] font-normal tracking-[0.1em] text-dim'
 const GROUP_NOTE = 'px-8 text-caption text-dim'
 const REVIEW_ROW =
   'group flex w-full flex-col items-start gap-7 rounded-10 px-14 py-13 text-left hover:bg-surface-sunken aria-[current=page]:bg-surface-selected'

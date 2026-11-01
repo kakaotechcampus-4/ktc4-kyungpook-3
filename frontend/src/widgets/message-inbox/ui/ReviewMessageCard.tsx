@@ -103,8 +103,7 @@ export function ReviewMessageCard({
           <span>문구는 그대로 고칠 수 있어요</span>
           <LockedButton
             ref={editButtonRef}
-            size="sm"
-            className="text-[12px]"
+            size="message-edit"
             startIcon={<Icon name="edit" size={13} />}
             locked={locked}
             onClick={() => onEditingChange(true)}
@@ -187,10 +186,10 @@ function BodyEditor({
           {draft.length}/{BODY_MAX_LENGTH}
         </span>
         <div className="flex items-center gap-8">
-          <Button variant="ghost" size="sm" disabled={saving} onClick={onClose}>
+          <Button variant="ghost" disabled={saving} onClick={onClose}>
             취소
           </Button>
-          <LockedButton size="sm" aria-busy={saving || undefined} locked={saving} onClick={save}>
+          <LockedButton aria-busy={saving || undefined} locked={saving} onClick={save}>
             저장
           </LockedButton>
         </div>
