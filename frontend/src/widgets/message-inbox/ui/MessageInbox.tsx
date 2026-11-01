@@ -24,9 +24,12 @@ const GROUP_LABEL = 'mono text-[10.5px] leading-[1.75] font-normal tracking-[0.1
 const GROUP_NOTE = 'px-8 text-caption text-dim'
 const REVIEW_ROW =
   'group flex w-full flex-col items-start gap-7 rounded-10 px-14 py-13 text-left hover:bg-surface-sunken aria-[current=page]:bg-surface-selected'
+/* 이름·요약은 띄어 쓰지 않은 긴 글자(전역 `keep-all` 의 긴 한글)도 행 안에서 줄을 바꾼다(`wrap-anywhere`) — 목록이 가로로 넘치지 않는다.
+   말줄임은 시안대로 대화 행의 한 줄 미리보기(최대 176)만 한다 */
 const REVIEW_NAME =
-  'flex-1 text-body text-sub group-aria-[current=page]:font-semibold group-aria-[current=page]:text-ink'
-const REVIEW_SUMMARY = 'text-caption leading-[1.55] text-dim group-aria-[current=page]:text-sub'
+  'flex-1 text-body wrap-anywhere text-sub group-aria-[current=page]:font-semibold group-aria-[current=page]:text-ink'
+const REVIEW_SUMMARY =
+  'text-caption leading-[1.55] wrap-anywhere text-dim group-aria-[current=page]:text-sub'
 const THREAD_ROW =
   'group flex w-full items-center gap-10 rounded-10 px-12 py-9 text-left hover:bg-surface-sunken aria-[current=page]:bg-surface-selected'
 const AVATAR =
@@ -290,7 +293,9 @@ function ThreadRow({
         {avatarText(thread.name, thread.kind)}
       </span>
       <span className="flex min-w-[0px] flex-1 flex-col gap-1">
-        <span className="text-control leading-[1.75] font-semibold text-ink">{thread.name}</span>
+        <span className="text-control leading-[1.75] font-semibold wrap-anywhere text-ink">
+          {thread.name}
+        </span>
         {last === null ? null : (
           <span className="truncate text-meta leading-[1.5] text-dim">
             {last.sender === 'bot' ? `나: ${last.body}` : last.body}

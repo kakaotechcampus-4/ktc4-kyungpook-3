@@ -30,7 +30,9 @@ import { ThreadSkeleton } from './MessageSkeletons'
 /* MessagesThread 캔버스 실측 — 머리 76(좌우 28, 아래 선), 대화 칸 눌린 면(위 24 · 좌우 28 · 아래 18, 간격 16),
    봇 말풍선 먹 면 최대 438 · 상대 말풍선 흰 면 선 최대 410, 둘 다 라운드 15 에 꼬리 쪽만 4,
    아직 나가지 않은 말풍선은 흰 면 점선(`border-dashed` 한 이름이 모양과 색을 낸다). 아래 안내 바(위 선 · 위 14 · 좌우 28 · 아래 20, 안쪽 카드 라운드 14).
-   대화 칸은 relative 다 — 말풍선의 sr-only 보낸 쪽 글자가 칸 밖으로 새어 페이지를 늘리지 않게 한다 */
+   대화 칸은 relative 다 — 말풍선의 sr-only 보낸 쪽 글자가 칸 밖으로 새어 페이지를 늘리지 않게 한다.
+   말풍선·안내 바의 글자는 띄어 쓰지 않은 긴 글자(주소, 전역 `keep-all` 의 긴 한글)도 줄을 바꾼다(`wrap-anywhere`) —
+   최대 폭을 넘어 대화 칸이 가로로 스크롤되지 않게 한다. 머리의 이름·부제는 높이가 정해진 한 줄이라 말줄임 그대로다 */
 const HEAD =
   'flex h-header shrink-0 items-center justify-between gap-16 border-b border-divider px-28'
 const AVATAR =
@@ -44,7 +46,7 @@ const DISCORD_LINK = 'inline-flex shrink-0 items-center gap-5 text-[12px] text-d
 const BODY =
   'relative flex min-h-[0px] flex-1 flex-col gap-16 overflow-y-auto bg-surface-sunken px-28 pt-24 pb-18'
 const DAY_RULE = 'h-1 flex-1 bg-line'
-const BUBBLE = 'px-15 py-12 text-body leading-[1.75] whitespace-pre-line'
+const BUBBLE = 'px-15 py-12 text-body leading-[1.75] wrap-anywhere whitespace-pre-line'
 const BOT_BUBBLE = `${BUBBLE} max-w-[438px] rounded-[15px_15px_4px_15px] bg-ink text-surface`
 const UPCOMING_BUBBLE = `${BUBBLE} max-w-[438px] rounded-[15px_15px_4px_15px] border border-dashed bg-surface text-sub`
 const COUNTERPART_BUBBLE = `${BUBBLE} max-w-[410px] rounded-[15px_15px_15px_4px] border border-line bg-surface text-ink`
@@ -365,7 +367,7 @@ function ThreadFoot({
     <div className={FOOT}>
       <div className={FOOT_CARD}>
         <Icon name="info" size={16} />
-        <p className="flex-1 text-caption leading-[1.6] text-sub">
+        <p className="flex-1 text-caption leading-[1.6] wrap-anywhere text-sub">
           메시지는 항상 <strong className="font-semibold text-ink">{botName} 봇</strong>이 보냅니다.{' '}
           {first === undefined ? (
             '지금 승인을 기다리는 메시지는 없어요.'

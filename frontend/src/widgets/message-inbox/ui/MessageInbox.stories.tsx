@@ -235,6 +235,26 @@ export const 긴_문구_미리보기: Story = {
   },
 }
 
+/** 긴 문구의 대화 — 말풍선이 최대 폭 안에서, 목록의 긴 이름이 행 안에서 줄을 바꿔 가로로 넘치지 않는다 */
+export const 긴_문구_대화: Story = {
+  args: { threadId: 'th_01', botName: LONG_BOT_NAME },
+  parameters: { route: paths.messageThread('ws_01', 'th_01'), setup: fillLongMessages },
+  play: async ({ canvasElement }) => {
+    const detail = detailOf(canvasElement)
+    const conversation = await detail.findByRole('region', { name: '대화 내용' })
+    const bubbles = await within(conversation).findAllByText((_, element) =>
+      Boolean(element?.matches('p') && element.textContent.includes(UNBROKEN_URL)),
+    )
+    await expect(bubbles).toHaveLength(2)
+    for (const bubble of bubbles) await expectNoHorizontalOverflow(bubble)
+    await expectNoHorizontalOverflow(conversation)
+    const footNote = detail.getByText(/메시지는 항상/)
+    await expectNoHorizontalOverflow(footNote)
+    const list = within(canvasElement).getByRole('complementary', { name: '메시지 목록' })
+    await expectNoHorizontalOverflow(list)
+  },
+}
+
 /** 며칠에 걸친 긴 대화 — 대화 칸만 세로로 스크롤하고 가장 최근 메시지부터 보인다 */
 export const 긴_대화: Story = {
   args: { threadId: 'th_02' },
