@@ -49,6 +49,9 @@ async function openBoard(search = '') {
 const column = (name: string) => screen.getByRole('region', { name })
 const addButton = (name: string) =>
   within(column(name)).getByRole('button', { name: `${name}에 직접 추가` })
+/** 칸마다 이름이 다르다 — 두 칸을 함께 펼쳐도 입력 목록에서 구별된다 */
+const titleInput = (name: string) =>
+  within(column(name)).getByRole('textbox', { name: `${name} 새 태스크 제목` })
 
 describe('보드 직접 추가', () => {
   it.each([
@@ -64,7 +67,7 @@ describe('보드 직접 추가', () => {
       await openBoard()
 
       await user.click(addButton(name))
-      const input = within(column(name)).getByRole('textbox', { name: '새 태스크 제목' })
+      const input = titleInput(name)
       expect(input).toHaveFocus()
       await user.type(input, '  회고 정리  {Enter}')
 
@@ -110,8 +113,11 @@ describe('보드 직접 추가', () => {
     await user.click(addButton('진행 중'))
     const form = within(column('진행 중')).getByRole('form', { name: '진행 중에 직접 추가' })
     await user.type(within(form).getByRole('textbox'), '배포 체크리스트{Enter}{Enter}')
-    await user.click(within(form).getByRole('button', { name: '추가' }))
     expect(form).toHaveAttribute('aria-busy', 'true')
+    // 보내는 동안의 Esc 는 닫지 않는다 — 응답이 닫거나 오류를 보인다
+    await user.keyboard('{Escape}')
+    expect(form).toBeVisible()
+    await user.click(within(form).getByRole('button', { name: '추가' }))
 
     act(() => gate.resolve())
     expect(
@@ -128,7 +134,7 @@ describe('보드 직접 추가', () => {
     )
     await openBoard()
     await user.click(addButton('시작 전'))
-    const input = within(column('시작 전')).getByRole('textbox', { name: '새 태스크 제목' })
+    const input = titleInput('시작 전')
     await user.type(input, '회의실 예약{Enter}')
 
     const alert = await within(column('시작 전')).findByRole('alert')
@@ -159,6 +165,39 @@ describe('보드 직접 추가', () => {
     await user.click(within(column('완료')).getByRole('button', { name: '취소' }))
     expect(within(column('완료')).queryByRole('textbox')).toBeNull()
     expect(bodies).toEqual([])
+  })
+
+  it('입력이 아니라 취소·추가에 포커스가 있어도 Esc 로 닫고 직접 추가로 돌아온다', async () => {
+    const user = userEvent.setup()
+    const bodies = recordCreates()
+    await openBoard()
+    await user.click(addButton('시작 전'))
+    await user.type(titleInput('시작 전'), '임시')
+    await user.tab()
+    expect(within(column('시작 전')).getByRole('button', { name: '취소' })).toHaveFocus()
+
+    await user.keyboard('{Escape}')
+    expect(within(column('시작 전')).queryByRole('form')).toBeNull()
+    await waitFor(() => expect(addButton('시작 전')).toHaveFocus())
+
+    await user.click(addButton('시작 전'))
+    await user.type(titleInput('시작 전'), '임시')
+    await user.tab()
+    await user.tab()
+    expect(within(column('시작 전')).getByRole('button', { name: '추가' })).toHaveFocus()
+    await user.keyboard('{Escape}')
+    expect(within(column('시작 전')).queryByRole('form')).toBeNull()
+    await waitFor(() => expect(addButton('시작 전')).toHaveFocus())
+    expect(bodies).toEqual([])
+  })
+
+  it('두 칸을 함께 펼쳐도 입력 이름이 칸마다 다르다', async () => {
+    const user = userEvent.setup()
+    await openBoard()
+    await user.click(addButton('시작 전'))
+    await user.click(addButton('진행 중'))
+    expect(titleInput('시작 전')).not.toBe(titleInput('진행 중'))
+    expect(screen.queryAllByRole('textbox', { name: '새 태스크 제목' })).toEqual([])
   })
 
   it('담당자로 걸러 보는 중이면 그 팀원을 담당자로 넣어 보드에 남긴다', async () => {

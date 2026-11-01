@@ -79,8 +79,17 @@ export const 보드_직접_추가: Story = {
     const canvas = within(canvasElement)
     const active = await canvas.findByRole('region', { name: '진행 중' }, LOADED)
     await userEvent.click(within(active).getByRole('button', { name: '진행 중에 직접 추가' }))
-    const input = within(active).getByRole('textbox', { name: '새 태스크 제목' })
+    const input = within(active).getByRole('textbox', { name: '진행 중 새 태스크 제목' })
     await expect(input).toHaveFocus()
+    // 입력에 포커스가 있으면 펼친 틀의 테두리 위에 2px 먹 outline 이 겹친다 (전역 포커스 규칙과 같은 모양)
+    const form = within(active).getByRole('form', { name: '진행 중에 직접 추가' })
+    const ring = getComputedStyle(form)
+    await expect([
+      ring.outlineStyle,
+      ring.outlineWidth,
+      ring.outlineColor,
+      ring.outlineOffset,
+    ]).toEqual(['solid', '2px', 'rgb(23, 23, 23)', '-1px'])
     await expect(within(active).getByRole('button', { name: '추가' })).toBeDisabled()
     await userEvent.type(input, '배포 체크리스트{Enter}')
     await expect(await within(active).findByRole('link', { name: '배포 체크리스트' })).toBeVisible()
