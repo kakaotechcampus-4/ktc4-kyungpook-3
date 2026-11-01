@@ -8,6 +8,7 @@
   - B-1의 AC-B-01~09 기록은 아래 B-1 절에 그대로 둔다. AC-B-05(성공 뒤 설정 유지)는 재작업의 D-074 이동으로 동작이 바뀌었다.
   - 실제 Discord·Notion 연동은 미검증 연동 과제로 남는다.
   - 2026-11-01 검증(VR-B, FAIL·발견 10건) 뒤 수정 라운드에서 발견 10건을 모두 반영했다(아래 「수정 라운드 — VR-B 검증 결과 반영」). VR-08의 `팀 삭제` 좌우 패딩만 공용 버튼 크기 때문에 남겼다. 수정 뒤 typecheck·lint·format:check·전체 test(`--maxWorkers=2`)·build·test:storybook이 모두 exit 0이다.
+  - 2026-11-02 사용자 추가 요청으로 설정 진입을 헤더 왼쪽 워크스페이스 메뉴에서 오른쪽 프로필(아바타) 메뉴로 옮기고, 그 메뉴를 논모달로 바꿨다(아래 「추가 요청 — 설정 진입을 프로필 메뉴로」).
 
 ## 재작업 — 디자인 캔버스 기준 (결정 5 해결 뒤)
 
@@ -190,6 +191,68 @@ Node v24.11.0, `frontend/`. 무거운 명령은 공통 잠금 래퍼(`heavy.sh`)
 
 - 변경 중 단독 실행: `team.test.tsx` 9, `settingsPage.test.tsx` 9, `settingsConnections`·`notionConnection` 39, `appShell`·`notionConnection`·`pages` 53 모두 통과. 새 테스트는 고치기 전에 실패하는 것을 먼저 확인했다(VR-02·03·04·05·06·07).
 - 전체 E2E(`npm run test:e2e`)는 이번 지시의 필수 명령이 아니라 돌리지 않았다. 새 E2E도 더하지 않았다.
+
+## 추가 요청 — 설정 진입을 프로필 메뉴로
+
+### 작업 근거
+
+코디네이터가 전한 사용자 요청(2026-11-02): "설정 페이지는 헤더 우측의 프로필을 눌렀을 때 논모달 창에서 접근할 수 있도록 한다." 그 전에는 설정이 왼쪽 워크스페이스 메뉴의 `워크스페이스 설정` 줄에만 있었고, 프로필 메뉴에는 `로그아웃` 하나뿐이었다. 계획(`plan.md`)은 읽기만 했다.
+
+### 결정
+
+- **옮긴다(둘 다 두지 않는다).** 워크스페이스 메뉴의 `워크스페이스 설정` 줄을 지우고 프로필 메뉴의 계정 정보 아래·`로그아웃` 위에 `설정`을 둔다. 아이콘은 기존 `settings`, 글자·간격은 `로그아웃` 줄과 같다.
+  - 디자인 캔버스와의 차이: [Main](../../design/canvas/Main.dc.html) 아트보드는 팀 메뉴 끝에 `팀 설정 · 초대` 줄을 두고, 아바타(`지훈`)는 메뉴가 없는 원이다. [Settings](../../design/canvas/Settings.dc.html) 아트보드의 아바타도 같다. 이번 변경은 캔버스보다 사용자 요청을 따른 것이다.
+  - 끊기는 진입이 없다: 프로필 메뉴는 워크스페이스 메뉴와 같은 [AppHeader](../../../src/widgets/app-shell/ui/AppHeader.tsx)에 역할과 무관하게 함께 그려진다. 따라서 PM·일반 팀원 모두 같은 화면에서 설정에 갈 수 있다. 온보딩 화면은 두 메뉴가 모두 없어 달라지는 것이 없다. 선택 화면(`/workspaces`)은 프로필 메뉴만 있고 아직 고른 공간이 없으므로 `설정`을 두지 않는다(`workspaceId`가 있을 때만 그린다). 팀 화면 `SideCards`·팀원 연결 창·대시보드·Notion 차단 모달의 설정 링크는 건드리지 않았다.
+- **논모달은 이 메뉴에만 `modal={false}`로 준다.** 공용 [DropdownMenu](../../../src/shared/ui/dropdown-menu/DropdownMenu.tsx)는 Radix 기본값(모달)이다. 모달일 때 Radix는 메뉴 밖을 `aria-hidden`으로 숨기고 body에 `pointer-events: none`과 스크롤 잠금을 건다. 공용 래퍼의 기본값은 바꾸지 않아 워크스페이스 메뉴는 그대로 모달이다. 논모달에서도 바깥 클릭·Esc로 닫히고, Esc로 닫으면 아바타로 포커스가 돌아오며, Enter/Space 열기·화살표 이동은 Radix가 그대로 한다.
+- **이동은 기존 관문을 탄다.** 워크스페이스 메뉴가 쓰던 `useGuardedNavigate`로 `paths.settings(workspaceId)`에 간다. 공간 id는 `AppHeader`가 워크스페이스 메뉴에 주던 것과 같은 prop으로 받는다.
+
+### 구현
+
+- [UserMenu](../../../src/widgets/app-shell/ui/UserMenu.tsx): 선택 prop `workspaceId`, `설정` 줄, `modal={false}`.
+- [AppHeader](../../../src/widgets/app-shell/ui/AppHeader.tsx): `UserMenu`에 `workspaceId`를 넘긴다.
+- [WorkspaceMenu](../../../src/widgets/app-shell/ui/WorkspaceMenu.tsx): `워크스페이스 설정` 줄을 지웠다. [WorkspaceBadge](../../../src/widgets/app-shell/ui/WorkspaceBadge.tsx)의 `DashedIcon`은 이제 `plus`만 받는다.
+
+### 테스트
+
+새 테스트는 [appShell.test.tsx](../../../src/app/appShell.test.tsx) 「프로필 메뉴의 설정 (#244)」 다섯 개다. 구현 전에는 앞의 네 개가 실패했다. 마지막 선택 화면 사례는 원래 통과한다. 공간 없이 `설정`을 그리지 않게 막는 회귀 테스트다. `modal={false}`만 되돌리면 논모달 사례와 바깥 클릭 사례가 다시 실패하는 것도 확인했다.
+
+- 아바타를 열면 항목이 `설정`·`로그아웃` 순서이고, `설정`을 고르면 `/workspaces/ws_01/settings`로 간다.
+- 저장하지 않은 변경이 있으면 이탈 확인을 거친다. `계속 작성하기`는 그대로 두고, `버리고 나가기`는 설정으로 간다.
+- 메뉴가 열려 있어도 주요 화면 탭과 본문 제목에 `aria-hidden`·`inert` 조상이 없고, body가 `pointer-events: none`이 아니다. 열린 채로 `태스크` 탭을 누르면 이동한다.
+- Space로 열리고 바깥을 누르면 닫힌다.
+- 선택 화면의 프로필 메뉴에는 `설정`이 없다.
+
+[AppShell 스토리](../../../src/widgets/app-shell/ui/AppShell.stories.tsx) `계정_메뉴_열림`의 play에 항목 순서와 헤더 비숨김 단언을 더했다. M8 회귀 블록(`stories.sb.ts`)은 건드리지 않았다.
+
+기존 단언 변경 — 모두 설정 위치가 바뀌어서다.
+
+- 「헤더에 5개 탭이 있고 설정은 탭이 아니라 워크스페이스 메뉴에 있다」 → 「…프로필 메뉴에 있다」. 워크스페이스 메뉴에 `워크스페이스 설정`·`설정`이 없고 프로필 메뉴에 `설정`이 있는지 본다.
+- 「다른 마일스톤의 임시 화면도 셸 안에서 탭으로 오간다」: 설정으로 가는 마지막 단계를 프로필 메뉴로 바꿨다.
+- 「계정 메뉴도 같은 규칙이다」: 열었을 때 처음 고른 항목이 `로그아웃`에서 `설정`으로 바뀌었다(위에 줄이 생겼다). 화살표로 `로그아웃`에 가는 단언을 더했다.
+- [select-switch.e2e.ts](../../../e2e/select-switch.e2e.ts): 설정에 들어가는 단계를 프로필 메뉴로 바꿨다. 새 E2E는 더하지 않았다.
+
+### 검증
+
+Node v24.11.0, `frontend/`. 코드 커밋 af4efd2의 작업 트리다. 다른 워커와 함께 돌아 메모리가 모자랐다. 앞 명령은 공통 잠금 래퍼(`heavy.sh`) 아래에서 실행했다. 23개 파일 재실행부터는 코디네이터 지시(메모리 여유 확인)에 따라 래퍼 없이 하나씩 실행했다.
+
+| 명령 | exit | 결과 |
+|---|---|---|
+| `npm run typecheck` | 0 | |
+| `npm run lint` | 0 | |
+| `npm run format:check` | 0 | |
+| `npx vitest run src/app/appShell.test.tsx` (변경 중) | 1 | 26개 중 25개 통과. 남은 1건 「헤더에서 미완료 공간에 들어가면…」은 5초 시간 초과다. 변경 전 HEAD에서도 같은 시간 초과가 나서 부하성으로 봤다 |
+| `npx playwright test e2e/select-switch.e2e.ts` (`E2E_PORT=5244`) | 1 | 두 시나리오 모두 첫 `page.goto`에서 30초 시간 초과가 났다(차가운 dev 서버) |
+| 같은 파일 `--workers=1` 재시도 | 1 | 키보드 시나리오는 통과했다. 설정 시나리오는 첫 `page.goto` 시간 초과였다 |
+| 설정 시나리오만 `--workers=1 --repeat-each=2` | 1 | 1회차는 `page.goto` 시간 초과, 2회차(서버가 데워진 뒤)는 프로필 메뉴 단계를 포함해 끝까지 통과했다 |
+| `npm run test -- --maxWorkers=2` (첫 시도) | — | 하네스가 메모리 부족으로 끊었다. 결과 없음 |
+| `npm run test -- --maxWorkers=2` (재시도) | 1 | 155 files 중 142 통과, 1795 tests 중 1763 통과, 4146초. 실패 32건은 5·10초 시간 초과 25건, 워커 응답 없음, 단언 1건(`tasks` 목록 0개)이다. 10개 파일은 워커가 뜨지 못했다 |
+| 실패·미실행 23개 파일 `npx vitest run --maxWorkers=1` | 1 | 21 files 중 19 통과(`appShell` 포함). `logout` 1건, `notionConnection` 9건이 실패했다(시간 초과 6건과 그 뒤 단언). 2개 파일은 워커가 뜨지 못했다 |
+| 남은 4개 파일 단독(`logout`·`meetingMinutesRaces`·`onboardingCreate`·`notionConnection`) | 0 | 각각 5·4·23·26 통과. 전체 실행의 실패는 모두 부하성이다 |
+| `npm run build` | 0 | |
+| `npm run test:storybook` (`STORYBOOK_E2E_PORT=6244`) | 0 | 121 통과. 이 묶음은 `계정_메뉴_열림` 스토리를 돌리지 않는다 |
+| 빌드한 Storybook에서 두 메뉴 스토리를 Playwright로 연 일회성 확인 | 0 | `계정_메뉴_열림`: play 오류 없음, 항목 `설정`·`로그아웃`, body `pointer-events` 비어 있음, 루트 숨김 없음, `overflow: visible`. `워크스페이스_메뉴_열림`: play 오류 없음, `pointer-events: none`, 루트 숨김, `overflow: hidden`. 워크스페이스 메뉴는 그대로 모달임을 확인했다 |
+
+- 일회성 확인 스크립트는 저장소 밖(작업 임시 폴더)에 두었다. M8 회귀 블록을 건드리지 않으려고 `stories.sb.ts`에 이 스토리를 더하지 않았다.
 
 ## B-1 작업 근거와 요약
 
