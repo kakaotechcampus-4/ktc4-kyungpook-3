@@ -43,6 +43,11 @@ const openWorkspaceMenu = async () => {
   return screen.findByRole('menu', { name: /^워크스페이스 바꾸기/ })
 }
 
+const openUserMenu = async () => {
+  await userEvent.click(await screen.findByRole('button', { name: '내 계정: 최진호' }))
+  return screen.findByRole('menu', { name: /^내 계정/ })
+}
+
 afterEach(() => sessionStorage.clear())
 
 describe('워크스페이스 선택 화면과 헤더 메뉴 (U4-1)', () => {
@@ -111,7 +116,7 @@ describe('워크스페이스 선택 화면과 헤더 메뉴 (U4-1)', () => {
 })
 
 describe('앱 셸 (U4-2)', () => {
-  it('헤더에 5개 탭이 있고 설정은 탭이 아니라 워크스페이스 메뉴에 있다', async () => {
+  it('헤더에 5개 탭이 있고 설정은 탭이 아니라 프로필 메뉴에 있다', async () => {
     renderApp('/workspaces/ws_01/dashboard')
     const nav = await screen.findByRole('navigation', { name: '주요 화면' })
     expect(
@@ -124,9 +129,12 @@ describe('앱 셸 (U4-2)', () => {
       'page',
     )
     expect(within(nav).queryByRole('link', { name: /설정/ })).toBeNull()
-    expect(
-      within(await openWorkspaceMenu()).getByRole('menuitem', { name: '워크스페이스 설정' }),
-    ).toBeInTheDocument()
+    // #244 사용자 요청: 설정은 워크스페이스 메뉴에서 프로필 메뉴로 옮겼다. 워크스페이스 메뉴에는 남지 않는다
+    const workspaceMenu = await openWorkspaceMenu()
+    expect(within(workspaceMenu).queryByRole('menuitem', { name: '워크스페이스 설정' })).toBeNull()
+    expect(within(workspaceMenu).queryByRole('menuitem', { name: '설정' })).toBeNull()
+    await userEvent.keyboard('{Escape}')
+    expect(within(await openUserMenu()).getByRole('menuitem', { name: '설정' })).toBeInTheDocument()
   })
 
   it('다른 마일스톤의 임시 화면도 셸 안에서 탭으로 오간다', async () => {
@@ -146,9 +154,7 @@ describe('앱 셸 (U4-2)', () => {
       await app.expectPath(path)
       expect(within(nav).getByRole('link', { name: tab })).toHaveAttribute('aria-current', 'page')
     }
-    await userEvent.click(
-      within(await openWorkspaceMenu()).getByRole('menuitem', { name: '워크스페이스 설정' }),
-    )
+    await userEvent.click(within(await openUserMenu()).getByRole('menuitem', { name: '설정' }))
     expect(await screen.findByRole('heading', { name: '설정' })).toBeInTheDocument()
     expect(screen.getByRole('navigation', { name: '주요 화면' })).toBeInTheDocument()
     // 탭 다섯과 설정을 차례로 그린다. M8-B 로 팀·설정이 자리표시자에서 실제 화면이 되어 전체 실행 부하에서 5초를 넘겼다
@@ -202,12 +208,85 @@ describe('메뉴 키보드 (U4-3)', () => {
     await userEvent.keyboard('{Enter}')
     const menu = await screen.findByRole('menu', { name: /^내 계정/ })
     expect(within(menu).getByText('pm@example.com')).toBeInTheDocument()
-    await waitFor(() =>
-      expect(within(menu).getByRole('menuitem', { name: '로그아웃' })).toHaveFocus(),
-    )
+    // #244 로 `설정` 이 로그아웃 위에 들어와 처음 고른 항목이 `설정` 이다
+    await waitFor(() => expect(within(menu).getByRole('menuitem', { name: '설정' })).toHaveFocus())
+    await userEvent.keyboard('{ArrowDown}')
+    expect(within(menu).getByRole('menuitem', { name: '로그아웃' })).toHaveFocus()
     await userEvent.keyboard('{Escape}')
     await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
     expect(trigger).toHaveFocus()
+  })
+})
+
+describe('프로필 메뉴의 설정 (#244)', () => {
+  it('아바타를 열면 계정 정보 아래·로그아웃 위에 `설정` 이 있고, 고르면 지금 공간의 설정으로 간다', async () => {
+    const app = renderApp('/workspaces/ws_01/dashboard')
+    const menu = await openUserMenu()
+    expect(
+      within(menu)
+        .getAllByRole('menuitem')
+        .map((item) => item.textContent),
+    ).toEqual(['설정', '로그아웃'])
+    await userEvent.click(within(menu).getByRole('menuitem', { name: '설정' }))
+    expect(await screen.findByRole('heading', { name: '설정' })).toBeInTheDocument()
+    await app.expectPath('/workspaces/ws_01/settings')
+  })
+
+  it('저장하지 않은 변경이 있으면 이탈 확인을 거친다 — 계속 작성하면 그대로, 버리면 설정', async () => {
+    const app = renderApp('/workspaces/ws_01/dashboard')
+    await screen.findByRole('heading', { name: '대시보드' })
+    useUnsavedChangesStore.getState().mark('test-form')
+
+    await userEvent.click(within(await openUserMenu()).getByRole('menuitem', { name: '설정' }))
+    expect(
+      await screen.findByRole('dialog', { name: '저장하지 않은 변경 내용이 있어요' }),
+    ).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: '계속 작성하기' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    await app.expectPath('/workspaces/ws_01/dashboard')
+
+    await userEvent.click(within(await openUserMenu()).getByRole('menuitem', { name: '설정' }))
+    await userEvent.click(await screen.findByRole('button', { name: '변경 내용 버리고 나가기' }))
+    expect(await screen.findByRole('heading', { name: '설정' })).toBeInTheDocument()
+    await app.expectPath('/workspaces/ws_01/settings')
+  })
+
+  it('논모달이다 — 열려 있어도 본문을 가리거나 막지 않아 탭을 바로 누를 수 있다', async () => {
+    const app = renderApp('/workspaces/ws_01/dashboard')
+    await screen.findByRole('heading', { name: '대시보드' })
+    await openUserMenu()
+    // 모달이면 메뉴 밖을 aria-hidden 으로 숨겨 접근성 트리에서 이 둘을 찾지 못한다
+    const nav = screen.getByRole('navigation', { name: '주요 화면' })
+    const heading = screen.getByRole('heading', { name: '대시보드' })
+    for (const region of [nav, heading]) {
+      expect(region.closest('[aria-hidden="true"]')).toBeNull()
+      expect(region.closest('[inert]')).toBeNull()
+    }
+    expect(document.body.style.pointerEvents).not.toBe('none')
+
+    // 모달이면 body 가 pointer-events: none 이라 이 클릭이 막힌다
+    await userEvent.click(within(nav).getByRole('link', { name: '태스크' }))
+    await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
+    await app.expectPath('/workspaces/ws_01/tasks')
+  })
+
+  it('Space 로도 열리고, 바깥을 누르면 닫힌다', async () => {
+    renderApp('/workspaces/ws_01/dashboard')
+    const trigger = await screen.findByRole('button', { name: '내 계정: 최진호' })
+    trigger.focus()
+    await userEvent.keyboard(' ')
+    const menu = await screen.findByRole('menu', { name: /^내 계정/ })
+    await waitFor(() => expect(within(menu).getByRole('menuitem', { name: '설정' })).toHaveFocus())
+    await userEvent.click(await screen.findByRole('heading', { name: '대시보드' }))
+    await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
+  })
+
+  it('공간을 고르기 전(선택 화면)의 프로필 메뉴에는 설정이 없다', async () => {
+    renderApp('/workspaces')
+    await screen.findByRole('heading', { name: '워크스페이스 선택' })
+    const menu = await openUserMenu()
+    expect(within(menu).queryByRole('menuitem', { name: '설정' })).toBeNull()
+    expect(within(menu).getByRole('menuitem', { name: '로그아웃' })).toBeInTheDocument()
   })
 })
 
