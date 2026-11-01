@@ -9,6 +9,7 @@
   - 실제 Discord·Notion 연동은 미검증 연동 과제로 남는다.
   - 2026-11-01 검증(VR-B, FAIL·발견 10건) 뒤 수정 라운드에서 발견 10건을 모두 반영했다(아래 「수정 라운드 — VR-B 검증 결과 반영」). VR-08의 `팀 삭제` 좌우 패딩만 공용 버튼 크기 때문에 남겼다. 수정 뒤 typecheck·lint·format:check·전체 test(`--maxWorkers=2`)·build·test:storybook이 모두 exit 0이다.
   - 2026-11-02 사용자 추가 요청으로 설정 진입을 헤더 왼쪽 워크스페이스 메뉴에서 오른쪽 프로필(아바타) 메뉴로 옮기고, 그 메뉴를 논모달로 바꿨다(아래 「추가 요청 — 설정 진입을 프로필 메뉴로」).
+  - 같은 날 후속 지적으로, 프로필 메뉴에서 설정으로 옮겨 가면 포커스가 아바타에 남던 것을 설정 제목으로 옮겼다(같은 절 「후속 — 설정으로 옮긴 뒤의 포커스」).
 
 ## 재작업 — 디자인 캔버스 기준 (결정 5 해결 뒤)
 
@@ -254,6 +255,49 @@ Node v24.11.0, `frontend/`. 코드 커밋 af4efd2의 작업 트리다. 다른 �
 
 - 일회성 확인 스크립트는 저장소 밖(작업 임시 폴더)에 두었다. M8 회귀 블록을 건드리지 않으려고 `stories.sb.ts`에 이 스토리를 더하지 않았다.
 
+### 후속 — 설정으로 옮긴 뒤의 포커스
+
+**지적.** 코디네이터가 전한 사용자 지적(2026-11-02): "설정 누르고 나서 프로필 아이콘 focus 되면 안되지 않나?" 프로필 메뉴에서 `설정`을 고르면 메뉴가 닫히면서 Radix 기본 동작(`onCloseAutoFocus`, 트리거로 복귀)이 아바타에 포커스를 돌려 포커스 표시가 보였다. 다른 화면으로 옮긴 뒤에는 이전 화면의 메뉴 트리거에 포커스가 남으면 안 된다.
+
+**처리**(커밋 d27f0de)
+
+- [UserMenu](../../../src/widgets/app-shell/ui/UserMenu.tsx): `설정`이 실제로 다른 경로로 옮겼을 때만 `onCloseAutoFocus`에서 `preventDefault()`로 트리거 복귀를 막는다. 이동 여부는 [useGuardedNavigate](../../../src/shared/lib/unsaved-changes/useGuardedNavigate.ts)가 돌려준다. 이 훅과 `guardLeave`가 "지금 다른 경로로 옮겼는가"를 boolean으로 돌려주게 했다. 기존 호출부는 반환값을 쓰지 않아 바뀌지 않는다. Esc·바깥 클릭, 설정 화면에서 다시 `설정`을 고른 경우(같은 경로)는 지금처럼 아바타로 돌아온다. 공용 [DropdownMenu](../../../src/shared/ui/dropdown-menu/DropdownMenu.tsx) 기본값은 바꾸지 않았다.
+- 이탈 확인의 `계속 작성하기`: 수정 전에도 아바타로 돌아오지 않고 body로 떨어졌다(새 테스트로 확인). 메뉴 항목이 사라진 뒤 확인 창이 열려, 공통 [Modal](../../../src/shared/ui/modal/Modal.tsx)이 기억할 "연 요소"가 없었기 때문이다. 이동이 확인 창에 붙잡히면 `UserMenu`가 먼저 아바타로 포커스를 옮긴다. 그래서 그 창을 연 요소가 아바타가 되고 닫으면 아바타로 돌아온다.
+- 도착 지점: [SettingsPage](../../../src/pages/settings/ui/SettingsPage.tsx)는 들어오면 화면 제목 `h1`(`tabIndex=-1`)에 `focus({ preventScroll: true })`를 준다. 목차가 절 제목에 포커스를 주는 방식과 같다. 포커스 표시는 절 제목과 같이 `focus-visible:outline-none`으로 끈다. `section=notion`으로 오면(차단 모달 → Notion 연결) 기존처럼 Notion 카드 제목이 포커스를 가져가므로 `h1`에는 두지 않는다. 이 값은 들어온 주소로 한 번만 정한다.
+- 앱에는 경로 이동 때 포커스를 옮기는 공통 장치가 없다. 지시에 따라 이번에는 설정 화면에만 두었다(아래 「남은 작업」).
+
+**WorkspaceMenu 확인(고치지 않음).** 같은 문제가 왼쪽 워크스페이스 메뉴의 이동 항목에도 있는지 일회성 테스트(저장소에 남기지 않음)로 확인했다.
+
+| 항목 | 옮긴 뒤 포커스 |
+|---|---|
+| 다른 완료 공간 고르기(대시보드로) | 워크스페이스 메뉴 트리거에 남는다. 같은 문제다 |
+| 미완료 공간 고르기(온보딩으로) | body. 온보딩 화면에는 헤더 메뉴가 없어 트리거가 사라진다 |
+| `새 워크스페이스 만들기` | body(위와 같은 이유) |
+| `워크스페이스 목록` | body(선택 화면에는 워크스페이스 메뉴가 없다) |
+
+**테스트.** [appShell.test.tsx](../../../src/app/appShell.test.tsx) 「프로필 메뉴의 설정 (#244)」에 세 개를 더했다.
+
+- 마우스로 `설정`을 고르면 설정 제목에 포커스가 있다. Radix 복귀는 다음 태스크라서, 제목에 온 뒤 50ms 더 기다려도 제목이고 아바타가 아님을 본다.
+- 키보드(Enter)로 골라도 같다.
+- 이동 없이 닫히면 아바타로 돌아온다. Esc와, 이탈 확인의 `계속 작성하기`다.
+
+수정 전에는 셋 모두 실패했다. 앞의 둘은 아바타 포커스, 셋째는 `계속 작성하기` 뒤 body 포커스 때문이다. `preventDefault()`만 빼면 앞의 둘이, 아바타로 먼저 옮기는 줄만 빼면 셋째가 다시 실패하는 것도 확인했다. 기존 「저장하지 않은 변경이 있으면 이탈 확인을 거친다」에는 `버리고 나가기` 뒤 설정 제목 포커스 단언을 덧붙였다. 기존 단언은 바꾸지 않았다. [unsavedChanges.test.tsx](../../../src/shared/lib/unsaved-changes/unsavedChanges.test.tsx)의 `guardLeave` 두 사례에는 반환값(true·false) 단언을 더했다. AppShell 스토리는 고치지 않았다.
+
+**검증**(Node v24.11.0, `frontend/`, 코드 커밋 d27f0de의 작업 트리)
+
+| 명령 | exit | 결과 |
+|---|---|---|
+| `npx vitest run src/app/appShell.test.tsx -t "프로필 메뉴의 설정"` (수정 전) | 1 | 8개 중 새 3개 실패 |
+| 같은 명령 (수정 뒤) | 0 | 8 통과 |
+| `npm run typecheck` | 0 | |
+| `npm run lint` | 0 | |
+| `npm run format:check` | 0 | |
+| `npx vitest run <파일> --maxWorkers=1`: `appShell`·`unsavedChanges`·`settingsConnections`·`notionConnection`·`UnsavedChangesPrompt`·`pages` | 0 (각각) | 29·8·13·26·16·6 통과. 뒤의 넷은 설정 화면의 첫 포커스와 관문 반환값 변경이 닿는 파일이라 함께 돌렸다 |
+| `npm run build` (잠금 래퍼 아래) | 0 | |
+| 5222 개발 서버(MSW)에서 Playwright 한 탭 | — | 대시보드에서 아바타를 마우스로 열고 `설정` 클릭 → `/workspaces/ws_01/settings`, `activeElement`는 `H1 설정`, 아바타 포커스 아님. 제목은 `:focus-visible`이지만 `outline-style: none`이고 스크린샷에도 테두리가 없다. Esc로 닫으면 아바타로 돌아왔다 |
+
+- 전체 Vitest와 `test:storybook`은 지시에 따라 돌리지 않았다(직전 커밋에서 실행, 변경이 작고 스토리 변경 없음).
+
 ## B-1 작업 근거와 요약
 
 코디네이터 지시에 따라 브랜치 `feature/244-m8-settings-team`에서 B-1을 구현했다. 아래 B-1 절의 화면 설명(설정에 머무는 Discord 성공, 팀 자리표시자 등)은 그 시점의 기록이며 위 재작업으로 바뀌었다. 기준은 develop `ff9467e`이고 커밋은 11개다. push·PR은 하지 않았다.
@@ -453,6 +497,14 @@ MSW 결과로 대체하지 않는다. 계획 「완료 판정과 미검증 연�
 - `frontend/docs/plan/refactor/result-onboarding-pm-discord-link.md:39`, `:71`(테스트 개수)
 
 M5 결정 기록과 인수인계에는 `features/notion-connection`이 링크가 아닌 코드 표기로 남아 있다.
+
+### 경로 이동 뒤 포커스 — 공통 장치 없음
+
+앱에는 경로를 옮긴 뒤 새 화면으로 포커스를 옮기는 공통 장치가 없다. 이번에는 프로필 메뉴의 `설정`만 고쳤다(위 「후속 — 설정으로 옮긴 뒤의 포커스」).
+
+- 설정 화면만 들어올 때 제목에 포커스를 둔다. 다른 화면은 메뉴 트리거나 body에 포커스가 남는다.
+- 워크스페이스 메뉴: 다른 완료 공간으로 옮기면 트리거에 남고, 온보딩·만들기·선택 화면으로 가면 body로 떨어진다.
+- 공통 장치(경로가 바뀌면 새 화면의 제목이나 `main`으로 옮기는 방식)와 메뉴의 트리거 복귀 끄기를 함께 정해야 한다.
 
 ### 그 밖의 제한
 
