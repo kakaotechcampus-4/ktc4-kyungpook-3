@@ -1,6 +1,6 @@
 # M8-C 구현 결과 — 메시지
 
-- 기록일: 2026-10-31 (2026-11-01 디자인 캔버스 기준 재작업과 검증 VR-C 발견 수정, 2026-11-02 Discord DM 카드 잘림 수정 반영)
+- 기록일: 2026-10-31 (2026-11-01 디자인 캔버스 기준 재작업과 검증 VR-C 발견 수정, 2026-11-02 Discord DM 카드 잘림 수정, 발송 시점 카드 hover·저장 중 버튼 깜빡임 수정 반영)
 - 이슈: #245
 - 대상: [M8 계획](plan.md) C 절의 구현 순서 1~6(결정 전)과 최종 게이트, 2026-11-01 사용자 결정(결정 4의 UI 범위 = 디자인 캔버스 기준, MSW 목)에 따른 재작업
 - 상태: **AC-01~AC-07 충족(프론트·MSW 기준, UI/UX만), 목록·보내기 전 확인·대화·빈 상태가 디자인 캔버스의 항목·문구·상태와 일치(차이표, 남은 차이 4개는 아래).** 메시지 API가 없어 화면은 MSW 모드에서만 보이고, 실 API 모드와 production은 기존 「메시지는 준비 중이에요」 안내를 그대로 둔다. 보내기 전 확인의 행동(발송·보내지 않음·고쳐 쓰기·발송 시점, 대화의 승인·반려)은 MSW 목으로 서버 성공 뒤 반영한다. 권한 분기·상태 동기화(polling)·메시지 E2E는 하지 않았다. 전체 `test:e2e`는 실행하지 않았다. 실제 메시지 API 연동과 Discord 발송은 범위 밖이며 검증하지 않았다.
@@ -230,6 +230,54 @@ Node v24.11.0, 커밋 `228eabb`·`c2b5fac` 뒤 작업 트리. 무거운 명령�
 
 전체 Vitest와 `test:storybook`은 이번에 한 번에 exit 0을 얻지 못했다. 실패한 항목을 단독으로 다시 돌려 통과한 것을 전체 통과로 보지 않는다. 다른 워크트리의 전체 Vitest가 약 75분간 잠금을 잡은 뒤에 돌았고, 같은 시간대에 다른 워커 둘이 함께 돌았다. `build`는 클래스만 바꾼 수정이라 돌리지 않았다(같은 컴포넌트를 Storybook build가 컴파일했다). 메시지 E2E는 더하지 않았다(D-117).
 
+## 2026-11-02 발송 시점 카드 hover와 저장 중 버튼 깜빡임 수정
+
+### 지적과 재현
+
+사용자 지적(코디네이터 지시, 2026-11-02, 직전 커밋 `0e45a43` 후속) 두 가지를 재현했다.
+
+1. **시점 카드에 hover 효과가 없음(결함).** [SendTimingPicker](../../../src/widgets/message-inbox/ui/SendTimingPicker.tsx)의 카드 클래스에 hover 지정이 없었다. [디자인 시스템](../../design/design-system.md) §7-12는 「선택 카드: hover 면은 아웃라인 버튼과 같은 `#EDEDED`, 테두리는 hover에서 바꾸지 않는다」다.
+2. **시점 카드를 누르면 `이대로 발송`이 깜빡임.** 카드를 누르면 바로 발송 시점을 저장하고(PATCH), 그동안 [ReviewDetail](../../../src/widgets/message-inbox/ui/ReviewDetail.tsx)의 행동 잠금으로 `이대로 발송`·`보내지 않음`·`고쳐 쓰기`가 공용 [Button](../../../src/shared/ui/button/Button.tsx)의 `aria-disabled` 모양이 된다. 코디네이터 실측(포트 5223, `messages-default`, `지금 바로`): 20ms에 `aria-disabled=true`·면 `rgb(240, 240, 240)`, 111ms에 풀려 `rgb(23, 23, 23)` — 약 90ms 깜빡임.
+
+### 수정
+
+| 지적 | 수정 | 회귀 테스트 |
+|---|---|---|
+| 1 hover 없음 | 카드에 `hover:bg-control`(아웃라인 버튼 hover와 같은 컨트롤 토큰 `#EDEDED`). 고른 먹 면·고를 수 없는(`disabled`, `마감 하루 전` 비활성)·잠긴(`aria-disabled`) 카드는 `not-has-[…]`로 뺀다. 테두리는 그대로 | 스토리 `발송_시점_hover` — 고를 수 있는 카드만 hover 면 `rgb(237, 237, 237)`, 고른 카드·고를 수 없는 카드는 hover 규칙이 걸리지 않음. `발송_시점_저장_중` — 잠긴 카드도 걸리지 않음 |
+| 2 깜빡임(사용자 결정 방식 A) | 시점 저장만으로 잠긴 동안 [LockedButton](../../../src/widgets/message-inbox/ui/LockedButton.tsx)의 새 옵션 `keepLook`이 버튼 모양을 유지한다. 잠금은 그대로 `aria-disabled="true"`이고 누름을 버린다. 시점 묶음(`fieldset`)에는 `aria-busy`. 시각 칸이 열림(lockHint)·문구 고치는 중·발송/보내지 않음 요청 중은 지금처럼 잠긴 모양이다. 공용 Button은 바꾸지 않았다 | 스토리 `발송_시점_저장_중` — PATCH를 붙잡고 `이대로 발송`이 `aria-disabled`이면서 면·글자 색이 잠금 전과 같음, `보내지 않음` 글자 색 같음, 그때 누른 발송 요청 0건. lockHint·고치는 중 잠금은 기존 단언([messagesActionsMsw](../../../src/app/messagesActionsMsw.test.tsx) 「직접 정하기를 연 동안에는 …」, 스토리 `고쳐_쓰기`) 그대로 |
+| 2 누름이 무시된 이유 | 저장이 400ms를 넘으면 저장 중인 카드 오른쪽 위에 `저장 중`을 작게 얹는다([useShownAfter](../../../src/widgets/message-inbox/lib/useShownAfter.ts)). 카드의 테두리·면·글자 색과 높이는 바꾸지 않고, 저장이 끝나면 바로 사라진다 | [messagesActionsMsw](../../../src/app/messagesActionsMsw.test.tsx) 「저장이 늦을 때만 그 카드에 저장 중이 보인다 …」(누른 직후 없음 → 잠시 뒤 그 카드에만 → 저장 뒤 사라짐, `aria-busy`), 스토리 `발송_시점_저장_중` |
+
+고른 방식과 이유 — 접근성 의미(버튼 `aria-disabled` + 묶음 `aria-busy`), 모양 유지를 위젯 전용 `LockedButton`에 둔 것, 저장 중 표시를 지연만 두고 최소 표시 시간을 두지 않은 것 — 는 [결정 기록](basis-for-decision/2026-11-02-schedule-save-lock-keeps-button-look.md)에 남겼다. 같은 이유로 깜빡이던 `고쳐 쓰기`(default 변형)도 함께 유지했다 — 지시가 이름 붙인 두 버튼 밖이지만 같은 잠금·같은 결함이라 포함했다.
+
+hover는 play에서 진짜 포인터로 켤 수 없어, 스토리가 불러온 CSS의 `:hover` 규칙에서 가상 클래스만 뗀 선택자가 카드에 맞는지 브라우저에 묻고 그 면 색을 계산한다. 처음 쓴 도우미는 클래스 이름 안의 이스케이프된 `\:hover`까지 지워 선택자가 깨졌다(수정 뒤 첫 `test:storybook`에서 hover 스토리 실패) — 가상 클래스만 떼도록 고쳤다.
+
+### 브라우저 확인 (2026-11-02, Playwright 한 탭, 포트 5223)
+
+| 확인 | 수정 전(코디네이터 실측) | 수정 뒤 |
+|---|---|---|
+| `지금 바로` 누름 — `이대로 발송` | 20ms `aria-disabled`·`rgb(240, 240, 240)` → 111ms 해제·`rgb(23, 23, 23)` | 62ms `aria-disabled`·`aria-busy` → 79ms 해제. 면 `rgb(23, 23, 23)`·글자 흰색 그대로, `보내지 않음` 글자·`고쳐 쓰기` 면·글자 그대로, `저장 중` 표시 없음 |
+| 진짜 마우스 hover(rv_02) | 변화 없음 | `직접 정하기` 흰 면 → `rgb(237, 237, 237)`, 테두리 `rgb(232, 232, 232)` 그대로. 고른 `지금 바로`(먹 면)·고를 수 없는 `마감 하루 전`(`rgb(250, 250, 250)`) 그대로 |
+| 시각 칸을 연 동안(lockHint) | `aria-disabled`·`rgb(240, 240, 240)` | 같음(`data-lock` 없음) |
+
+### 바꾼 기존 단언
+
+없다. 스토리 2개(`발송_시점_hover`·`발송_시점_저장_중`)와 통합 사례 1개를 더했다. Storybook 회귀 블록(`stories.sb.ts`의 M8 블록)은 건드리지 않았다.
+
+### 검증 (2026-11-02)
+
+Node v24.11.0. 무거운 명령은 직렬화 wrapper로 하나씩 돌렸다. 계획 [plan.md](plan.md)는 읽기만 했다.
+
+| 명령 | 종료 코드 | 결과 |
+|---|---:|---|
+| 수정 전 `npx vitest run src/app/messagesActionsMsw.test.tsx -t "저장이 늦을 때만"` | 1 | 재현 — `aria-busy` 없음 |
+| 수정 전 `test:storybook -- -g "발송-시점"` | 1 | 재현 — `expected null to be 'rgb(237, 237, 237)'`, `expected 'rgb(240, 240, 240)' to be 'rgb(23, 23, 23)'` |
+| `npm run typecheck`·`lint`·`format:check` | 0 | |
+| 메시지 3파일(`messagesMsw`·`messagesActionsMsw`·`widgets/message-inbox`) | 0 | 67개 통과 |
+| `STORYBOOK_E2E_PORT=6223 npm run test:storybook`(수정 뒤 1차) | 1 | 120개 중 119개 통과 — `발송_시점_hover` 실패(위 도우미 결함) |
+| 같은 명령(도우미 수정 뒤 2차) | 0 | 120개 모두 통과(M8 블록: index 확인 + `M8 메시지/화면` 스토리 15개 play 포함) |
+
+공용 Button은 바꾸지 않아 `shared/ui/button` 테스트와 전체 Vitest는 돌리지 않았다(지시 범위). `build`도 돌리지 않았다(Storybook build가 같은 컴포넌트를 컴파일했다).
+
 ## 작업 근거와 요약 (2026-10-31 결정 전 부분)
 
 
@@ -382,6 +430,7 @@ HEAD `58237a8`, `frontend/`에서 순차 실행했다. 무거운 명령은 다�
   - 8 권한 분기, 9 상태 전이와 동기화(D-136, polling 여부), 10 메시지 E2E 고정(D-117)은 하지 않았다.
   - 7단계의 화면·MSW 목 동작은 위 「동작 — MSW 목과 그 한계」 기준이다. 계획 C-9의 「결정 후 완료조건은 AC-08부터」는 계획에 아직 정의되지 않아 이 문서에서 새 AC를 만들지 않았다 — 이번 재작업은 코디네이터 지시의 완료 조건(차이표·스크린샷 근거·게이트·커밋)으로 기록했다.
 - **실제 API 연동** — 메시지 API가 생기면 별도 연동 과제다. 계획 C-8대로 `entities/message`의 경로·DTO·매퍼, MSW handler·픽스처, `MessagesPage` 모드 분기와 준비 중 문구에 기대는 테스트 6개, 대표 계약 §5.7을 함께 바꾼다. 실제 서버 응답·Discord 발송은 MSW 결과로 대체할 수 없어 미검증으로 남는다.
+- **발송 요청의 멱등성 키** — 메시지 API가 아직 없어 MSW 목 범위다. 화면은 요청 중 잠금과 `useMessageReviewAction`의 진행 중 확인으로 한 화면 안의 중복 제출만 막는다. 실제 API 연동 때 발송(`send`) 요청에 멱등성 키가 필요하다 — 응답을 잃은 뒤의 다시 시도·다른 탭에서 같은 항목을 보낼 때 Discord에 두 번 나가지 않게 서버가 같은 키를 한 번만 처리해야 한다. 이번에는 구현하지 않았다(계약 §5.7과 함께 정한다).
 - **화면 노출** — production은 계속 준비 중을 보인다. 2026-11-20까지의 시연에서 메시지 화면을 보여야 하는지는 확인이 필요하다(계획 C-10).
 - **D-171 개정** — 이번 구현은 2026-10-30 사용자 답변에 따라 엔티티·MSW 픽스처를 만들었다. [D-171](../../decision/frontend-decisions.md)의 「엔티티도 MSW 픽스처도 만들지 않는다」를 결정 기록에서 개정할지는 확인이 필요하다.
 - **전체 Vitest 환경** — 이 기계의 기본 설정 전체 실행은 병렬 부하로 무관한 테스트가 타임아웃한다. 게이트 통과는 `--maxWorkers=2` 실행 기준이다. 기본 설정에서 한 번에 통과하게 하는 일(실행 환경·동시성 조정, 부하에 민감한 테스트 정리)은 남아 있다.
@@ -398,6 +447,7 @@ HEAD `58237a8`, `frontend/`에서 순차 실행했다. 무거운 명령은 다�
 - [시각을 읽을 수 없는 첫 묶음은 날짜 구분선만 생략한 선택](basis-for-decision/2026-10-31-message-unknown-date-no-divider.md)
 - [결정 4의 UI 범위를 디자인 캔버스 기준·MSW 목으로 정한 사용자 결정](basis-for-decision/2026-11-01-message-ui-scope-design-canvas-msw.md)
 - [발송 시점 카드의 화살표 키는 포커스만 옮기고 잠금은 aria-disabled로 한 선택](basis-for-decision/2026-11-01-send-timing-arrow-keys-move-focus-only.md)
+- [발송 시점 저장 중의 발송 잠금은 모양을 바꾸지 않고, 저장 중 표시는 늦을 때만 보이는 선택](basis-for-decision/2026-11-02-schedule-save-lock-keeps-button-look.md)
 - [MSW 안내](../../msw-guide.md)의 메시지 절
 
 검증 보고서(구현 보고, V1·V2·V3)와 스크린샷(2026-10-31, 2026-11-01 디자인 비교 포함)은 저장소 밖 작업 폴더에 있어 링크하지 않는다.
