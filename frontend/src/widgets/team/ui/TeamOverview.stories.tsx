@@ -85,7 +85,7 @@ export const 팀원_연결_창: Story = {
 /** 팀원을 아직 받지 못했다 */
 export const 로딩: Story = {
   parameters: {
-    msw: { handlers: [http.get('/api/v1/members', () => delay('infinite'))] },
+    msw: [http.get('/api/v1/members', () => delay('infinite'))],
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
@@ -97,11 +97,9 @@ export const 로딩: Story = {
 /** 팀원 조회 실패 — 인라인 안내와 다시 시도. 연결되지 않은 계정 영역은 그리지 않는다 */
 export const 오류: Story = {
   parameters: {
-    msw: {
-      handlers: [
-        http.get('/api/v1/members', () => fail('FORBIDDEN', 'Forbidden: member check failed', 403)),
-      ],
-    },
+    msw: [
+      http.get('/api/v1/members', () => fail('FORBIDDEN', 'Forbidden: member check failed', 403)),
+    ],
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
