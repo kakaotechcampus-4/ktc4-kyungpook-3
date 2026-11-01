@@ -158,7 +158,9 @@ export const 간트_PM: Story = {
     await expect(note.getBoundingClientRect().height).toBeLessThanOrEqual(
       parseFloat(getComputedStyle(note).lineHeight) + 1,
     )
-    const dateLink = within(unscheduled).getAllByRole('link', { name: '날짜 넣기' })[0]
+    // 확인 필요의 `날짜 넣기` 는 그 승인 상세(보완·승인)로 간다. 읽는 이름에는 일의 제목이 붙는다
+    const dateLink = within(unscheduled).getByRole('link', { name: '알림 문구 검토 날짜 넣기' })
+    await expect(dateLink).toHaveAttribute('href', paths.approval('ws_01', 'ap_01'))
     const linkStyle = getComputedStyle(dateLink)
     await expect([linkStyle.fontSize, linkStyle.fontWeight, linkStyle.height]).toEqual([
       '12.5px',

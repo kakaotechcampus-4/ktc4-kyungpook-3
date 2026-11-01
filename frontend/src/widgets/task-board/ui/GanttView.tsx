@@ -265,7 +265,7 @@ export function GanttView({
               }
               memberId={approval.assigneeMemberId}
               names={names}
-              to={`${paths.tasks(workspaceId)}?tab=needs_review`}
+              to={paths.approval(workspaceId, approval.id)}
             />
           ))}
           {unscheduledTasks.map((task) => (
@@ -507,8 +507,11 @@ const UnscheduledRow = memo(function UnscheduledRow({
         <Avatar name={memberId === null ? null : (names.get(memberId) ?? null)} />
         {assigneeLabel(memberId, names, '미지정')}
       </span>
+      {/* 시안 문구 그대로 둔다. 확인 필요는 승인 상세(보완·승인)로, 태스크는 태스크 상세로 간다 — 태스크 상세는 아직
+          마감을 고칠 수 없다(result-a.md 「남은 작업」). 읽는 이름에는 어느 일의 링크인지 제목을 붙인다 */}
       <GuardedLink
         to={to}
+        aria-label={`${title} 날짜 넣기`}
         className="inline-flex h-32 shrink-0 items-center gap-3 px-4 text-caption font-semibold text-ink"
       >
         날짜 넣기

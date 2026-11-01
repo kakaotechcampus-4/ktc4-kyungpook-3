@@ -363,3 +363,24 @@ describe('표 구조 — 줄·머리·칸 (VR-08)', () => {
     ).toHaveAttribute('href', paths.tasks('ws_01', 'tk_01'))
   })
 })
+
+describe('간트 「일정이 없는 일」의 날짜 넣기 (VR-04 · VR-12)', () => {
+  it('확인 필요는 그 승인 상세로, 태스크는 그 태스크 상세로 가고 링크 이름이 일마다 다르다', async () => {
+    const user = userEvent.setup()
+    const app = await openView('gantt')
+    const list = screen.getByRole('region', { name: '일정이 없는 일' })
+    const links = within(list).getAllByRole('link', { name: /날짜 넣기$/ })
+    expect(
+      links.map((link) => [link.getAttribute('aria-label'), link.getAttribute('href')]),
+    ).toEqual([
+      ['테스트 계획 정리 날짜 넣기', paths.approval('ws_01', 'ap_02')],
+      ['알림 문구 검토 날짜 넣기', paths.approval('ws_01', 'ap_01')],
+      ['회의록 요약 검수 날짜 넣기', paths.tasks('ws_01', 'tk_05')],
+    ])
+    // 보이는 문구는 시안 그대로다
+    for (const link of links) expect(link).toHaveTextContent(/^날짜 넣기$/)
+
+    await user.click(links[1])
+    await app.expectPath(paths.approval('ws_01', 'ap_01'))
+  })
+})
