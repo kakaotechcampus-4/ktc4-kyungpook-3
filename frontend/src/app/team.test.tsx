@@ -105,11 +105,19 @@ describe('팀 화면 — PM', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     await app.expectSearch('')
     expect(businessRequests(log.started).filter(({ method }) => method !== 'GET')).toEqual([])
+    // 연 기록에서 한 칸 돌아와 닫는다 — 같은 주소의 기록이 하나 더 쌓이지 않아 다음 뒤로 가기가 이전 화면으로 간다
+    expect(app.visitedActions().at(-1)).toBe('POP')
+    expect(app.visited().at(-1)?.key).toBe(app.visited()[0]?.key)
   })
 
   it('주소의 `connect=members` 로 오면 창이 열려 있다 — 설정의 Discord 연결 성공이 오는 곳이다 (D-074)', async () => {
-    renderApp(paths.membersConnect('ws_01'))
-    expect(await screen.findByRole('dialog', { name: '팀원 연결' })).toBeInTheDocument()
+    const user = userEvent.setup()
+    const app = renderApp(paths.membersConnect('ws_01'))
+    const dialog = within(await screen.findByRole('dialog', { name: '팀원 연결' }))
+    // 이 화면이 기록을 쌓지 않았다 — 뒤로 가지 않고 주소의 표시만 지운다(앱 밖으로 나가지 않는다)
+    await user.click(await dialog.findByRole('button', { name: '나중에 하기' }))
+    await app.expectSearch('')
+    expect(app.visitedActions().at(-1)).toBe('REPLACE')
   })
 
   it('저장하는 동안에는 Esc·바깥 클릭으로 창이 닫히지 않고, 실패하면 창 안에 오류가 남는다', async () => {
