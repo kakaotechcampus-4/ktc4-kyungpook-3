@@ -131,8 +131,17 @@ export const 간트_PM: Story = {
   args: { view: gantt },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await canvas.findByRole('table', { name: '일정' }, LOADED)
+    const table = await canvas.findByRole('table', { name: '일정' }, LOADED)
     await expect(canvas.getByRole('row', { name: /배포 문서 보완/ })).toBeVisible()
+    // 오늘 선이 표 높이만큼 서고 머리의 오늘 날짜 원 가운데를 지난다 — `inset-0`·`top-0` 이 생성되지 않아 주말 음영과
+    // 함께 높이 0 으로 접혔던 회귀 (VR-10)
+    const todayLine = table.querySelector('[data-gantt-today]')!.getBoundingClientRect()
+    const todayMark = within(table).getByText(String(Number(MOCK_TODAY.slice(8, 10))))
+    const mark = todayMark.getBoundingClientRect()
+    await expect(Math.abs(todayLine.height - table.clientHeight)).toBeLessThanOrEqual(1)
+    await expect(
+      Math.abs(todayLine.left + todayLine.width / 2 - (mark.left + mark.width / 2)),
+    ).toBeLessThanOrEqual(1)
     const unscheduled = canvas.getByRole('region', { name: '일정이 없는 일' })
     await expect(unscheduled).toHaveTextContent('알림 문구 검토')
     // 시안: `미지정` 묶음의 보조 문구는 한 줄이고, `날짜 넣기` 는 12.5px·600·높이 32 에 꺾쇠가 붙는다
