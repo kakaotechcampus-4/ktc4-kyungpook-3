@@ -1,7 +1,7 @@
 """화자 라벨(SPEAKER_00 ...)을 멤버에 지정한다. 모든 라벨을 한 번에 지정해야 하고, 틀리면 매니페스트를 건드리지 않는다.
 
 지정은 speakers[].member_id (멤버 ID 문자열, 외부 참석자는 null) 와 최상위 mapped_at 을 더하고 status 를 mapped 로 바꾼다.
-user_id(라벨 id)·file·wav 파일명은 그대로라 parse_wav_stem 이 보는 화자 id 가 변하지 않는다. 멤버 ID 는 형식만 본다.
+user_id(라벨 id)·file·wav 파일명은 그대로라 parse_wav_stem 이 보는 화자 id 가 변하지 않는다. 멤버 ID 는 형식만 보고(비어 있거나 앞뒤 공백이 있으면 거절) 바꾸지 않는다.
 같은 멤버를 여러 라벨에 지정해도 된다. mapped 에서 다시 지정하면 덮어쓴다.
 지정 뒤의 처리(워커 이어받기·BE 인계)는 정해지지 않았고 워커는 업로드 회의를 집지 않는다(#254·#255 인계 합의 전까지).
 실행(내장 map 과 이름이 겹치지 않게 모듈 이름은 mapping): python -m upload.mapping <매니페스트> <mapping.json>
@@ -30,6 +30,8 @@ def _normalize(mapping: dict, known: list[str]) -> dict[str, str | None]:
             raise ValueError(f"같은 라벨을 두 번 지정했다: {key!r}")
         if member is not None and (not isinstance(member, str) or not member.strip()):
             raise ValueError(f"멤버 ID 는 비어 있지 않은 문자열이나 null 이어야 한다: {key!r}: {member!r}")
+        if member is not None and member != member.strip():
+            raise ValueError(f"멤버 ID 앞뒤에 공백이 있다(조용히 바꾸지 않는다): {key!r}: {member!r}")
         out[ident] = member
     unknown = sorted(set(out) - set(known))
     if unknown:
@@ -43,16 +45,22 @@ def _normalize(mapping: dict, known: list[str]) -> dict[str, str | None]:
 def apply_mapping(path: Path, mapping: dict) -> dict:
     """매니페스트에 지정을 쓰고 새 매니페스트를 돌려준다. 어떤 검사든 실패하면 ValueError 이고 파일은 그대로다."""
     path = Path(path)
+    if not path.is_file():
+        raise ValueError(f"매니페스트가 없다: {path}")
     lock = try_lock(path)
     if lock is None:
         raise ValueError(f"다른 프로세스가 이 회의를 쥐고 있다: {path.name}")
     try:
         manifest = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(manifest, dict):
+            raise ValueError("매니페스트 최상위가 객체가 아니다")
         if manifest.get("source") != "upload":
             raise ValueError("수동 업로드 회의가 아니다 (source != upload)")
         if manifest.get("status") not in (STATUS_DIARIZED, STATUS_MAPPED):
             raise ValueError(f"status 가 diarized/mapped 가 아니다: {manifest.get('status')!r}")
         speakers = manifest.get("speakers") or []
+        if not isinstance(speakers, list) or not all(isinstance(s, dict) and "user_id" in s for s in speakers):
+            raise ValueError("매니페스트 speakers 가 user_id 를 가진 객체의 목록이 아니다")
         chosen = _normalize(mapping, [s["user_id"] for s in speakers])
         for s in speakers:
             s["member_id"] = chosen[s["user_id"]]

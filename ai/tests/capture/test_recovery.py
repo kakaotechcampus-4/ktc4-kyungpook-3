@@ -530,7 +530,8 @@ def _upload(tmp_path, status):
     return rec, path
 
 
-@pytest.mark.parametrize("status", [R.STATUS_DIARIZED, R.STATUS_MAPPED, R.STATUS_SAVED])
+@pytest.mark.parametrize("status", [R.STATUS_DIARIZED, R.STATUS_MAPPED, R.STATUS_SAVED, R.STATUS_FAILED,
+                                    R.STATUS_HANDED_OFF, R.STATUS_RECORDING])
 def test_an_upload_manifest_is_never_picked_up_by_recovery(tmp_path, clock, status):
     """업로드는 화자 지정(#254)·인계(#255) 합의 전까지 어떤 복구 경로도 돌리지 않는다. 사람이 saved 로 고쳐도 그렇다."""
     rec, path = _upload(tmp_path, status)

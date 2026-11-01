@@ -129,3 +129,62 @@ def test_cli_error_returns_nonzero_and_keeps_file(tmp_path, capsys):
     mp.write_text(json.dumps({"SPEAKER_00": "u-1"}), encoding="utf-8")
     assert main([str(path), str(mp)]) != 0
     assert path.read_bytes() == raw and capsys.readouterr().err
+
+
+def test_keys_duplicating_after_normalization_rejected(tmp_path):
+    rec, path, _ = _make(tmp_path)
+    raw = path.read_bytes()
+    with pytest.raises(ValueError):
+        apply_mapping(path, {"SPEAKER_00": "u-1", "SPEAKER00": "u-2", "SPEAKER_01": "u-3"})
+    assert path.read_bytes() == raw
+
+
+@pytest.mark.parametrize("member", ["   ", " u-1 ", "u-1 ", "\tu-1"])
+def test_blank_or_padded_member_id_rejected(tmp_path, member):
+    rec, path, _ = _make(tmp_path)
+    raw = path.read_bytes()
+    with pytest.raises(ValueError):
+        apply_mapping(path, {"SPEAKER_00": member, "SPEAKER_01": None})
+    assert path.read_bytes() == raw
+
+
+def test_mapped_at_is_tz_aware_iso_and_refreshed_on_remap(tmp_path):
+    from datetime import datetime
+    rec, path, _ = _make(tmp_path)
+    first = apply_mapping(path, {"SPEAKER_00": "u-1", "SPEAKER_01": None})["mapped_at"]
+    assert datetime.fromisoformat(first).tzinfo is not None
+    import time
+    time.sleep(1.1)
+    second = apply_mapping(path, {"SPEAKER_00": "u-2", "SPEAKER_01": None})["mapped_at"]
+    assert datetime.fromisoformat(second).tzinfo is not None
+    assert datetime.fromisoformat(second) > datetime.fromisoformat(first)
+
+
+@pytest.mark.parametrize("bad", [[], "x", {"source": "upload", "status": "diarized", "speakers": "abc"},
+                                 {"source": "upload", "status": "diarized", "speakers": [{"file": "a"}]},
+                                 {"source": "upload", "status": "diarized", "speakers": ["SPEAKER00"]}])
+def test_malformed_manifest_raises_valueerror(tmp_path, bad):
+    rec, path, _ = _make(tmp_path)
+    path.write_text(json.dumps(bad), encoding="utf-8")
+    raw = path.read_bytes()
+    with pytest.raises(ValueError):
+        apply_mapping(path, {"SPEAKER_00": "u-1"})
+    assert path.read_bytes() == raw
+
+
+def test_cli_malformed_manifest_returns_one_without_traceback(tmp_path, capsys):
+    rec, path, _ = _make(tmp_path)
+    path.write_text("[]", encoding="utf-8")
+    mp = tmp_path / "m.json"
+    mp.write_text(json.dumps({"SPEAKER_00": "u-1"}), encoding="utf-8")
+    assert main([str(path), str(mp)]) == 1
+    assert "Traceback" not in capsys.readouterr().err
+
+
+def test_missing_manifest_raises_without_creating_lock_or_dir(tmp_path):
+    path = tmp_path / "nope" / "session_upload_x.json"
+    with pytest.raises(ValueError):
+        apply_mapping(path, {"SPEAKER_00": "u-1"})
+    assert not (tmp_path / "nope").exists()
+    assert main([str(path), str(tmp_path / "m.json")]) == 1
+    assert not (tmp_path / "nope").exists()
