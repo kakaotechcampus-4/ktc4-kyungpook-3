@@ -66,6 +66,26 @@ describe('설정 화면 — PM', () => {
     expect(await area.findByText('연결 안 됨')).toBeInTheDocument()
     expect(area.getByRole('button', { name: 'Notion 연결하기' })).toBeInTheDocument()
     expect(db.integrations.ws_01.notion.status).toBe('not_connected')
+    // 창을 연 `연결 끊기` 가 사라졌다 — 포커스는 body 가 아니라 이 카드의 제목에 있다
+    await waitFor(() => expect(area.getByRole('heading', { name: 'Notion 연결' })).toHaveFocus())
+  })
+
+  it('끊은 뒤 연동 상태를 다시 받지 못해도 서버가 끊은 결과대로 미연결을 보이고 제목으로 포커스를 옮긴다', async () => {
+    const user = userEvent.setup()
+    renderApp(SETTINGS)
+    const area = within(await screen.findByTestId('discord-connection'))
+    await user.click(await area.findByRole('button', { name: '연결 끊기' }))
+    const dialog = within(await screen.findByRole('dialog', { name: 'Discord 연결을 끊을까요?' }))
+    server.use(
+      http.get('/api/v1/workspaces/ws_01/integrations', () => fail('INTERNAL_ERROR', 'boom', 500)),
+    )
+    await user.click(dialog.getByRole('button', { name: '연결 끊기' }))
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(await area.findByText('연결 안 됨')).toBeInTheDocument()
+    expect(area.getByRole('button', { name: 'Discord 연결하기' })).toBeInTheDocument()
+    expect(db.integrations.ws_01.discord.status).toBe('not_connected')
+    await waitFor(() => expect(area.getByRole('heading', { name: 'Discord 연결' })).toHaveFocus())
   })
 
   it('끊기를 취소하면 요청이 없고, 실패하면 창에 남아 연결 상태가 그대로다', async () => {

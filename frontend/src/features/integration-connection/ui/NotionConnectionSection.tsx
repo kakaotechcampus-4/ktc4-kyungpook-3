@@ -8,6 +8,7 @@ import { Button } from '@/shared/ui/button'
 import { FormErrorPanel } from '@/shared/ui/form-error-panel'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
 import { Skeleton } from '@/shared/ui/skeleton'
+import { useFocusAfterDisconnect } from '../model/useFocusAfterDisconnect'
 import { useNotionConnection } from '../model/useNotionConnection'
 import type { NotionConnectionNotice } from '../model/useNotionConnection'
 import { ConnectionActions } from './ConnectionActions'
@@ -108,6 +109,7 @@ export function NotionConnectionSection({ workspaceId, canManage }: NotionConnec
   // 연결·재연결을 줄 상태. 준비 중(`connecting`)은 DB 를 붙이는 중이라 다시 연결하게 하지 않는다 (#204)
   const disconnected: DisconnectedStatus | null =
     status === 'not_connected' || status === 'revoked' ? status : null
+  const focusAfterDisconnect = useFocusAfterDisconnect(headingRef, disconnected !== null)
   const preparing = connection.preparing || status === 'connecting'
 
   return (
@@ -147,7 +149,11 @@ export function NotionConnectionSection({ workspaceId, canManage }: NotionConnec
         ) : null}
         {canManage && status === 'connected' ? (
           <div className={ACTIONS}>
-            <ConnectionActions workspaceId={workspaceId} provider="notion" />
+            <ConnectionActions
+              workspaceId={workspaceId}
+              provider="notion"
+              onDisconnected={focusAfterDisconnect}
+            />
           </div>
         ) : null}
       </div>

@@ -1,4 +1,4 @@
-import { useId } from 'react'
+import { useId, useRef } from 'react'
 import type { DisconnectedStatus, Integration, IntegrationStatus } from '@/entities/integration'
 import { paths } from '@/shared/config/routes'
 import { formatSeoulMonthDayTime } from '@/shared/lib/date'
@@ -6,6 +6,7 @@ import { Button } from '@/shared/ui/button'
 import { FormErrorPanel } from '@/shared/ui/form-error-panel'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
 import { Skeleton } from '@/shared/ui/skeleton'
+import { useFocusAfterDisconnect } from '../model/useFocusAfterDisconnect'
 import { useIntegrationConnection } from '../model/useIntegrationConnection'
 import type { IntegrationConnectionNotice } from '../model/useIntegrationConnection'
 import { ConnectionActions } from './ConnectionActions'
@@ -89,11 +90,13 @@ export function DiscordConnectionSection({
     connectedTo: paths.membersConnect(workspaceId),
   })
   const headingId = useId()
+  const headingRef = useRef<HTMLHeadingElement>(null)
   const integration = connection.integration
   const status = integration?.status ?? null
   const busy = connection.verifying
   const disconnected: DisconnectedStatus | null =
     status === 'not_connected' || status === 'revoked' ? status : null
+  const focusAfterDisconnect = useFocusAfterDisconnect(headingRef, disconnected !== null)
 
   return (
     <section aria-labelledby={headingId} className={SECTION} data-testid="discord-connection">
@@ -103,7 +106,7 @@ export function DiscordConnectionSection({
         </span>
         <div className={BODY}>
           <div className={TITLE_ROW}>
-            <h3 id={headingId} className={NAME}>
+            <h3 id={headingId} ref={headingRef} tabIndex={-1} className={NAME}>
               Discord <span className="sr-only">연결</span>
             </h3>
             {status === null ? null : (
@@ -132,7 +135,11 @@ export function DiscordConnectionSection({
         ) : null}
         {canManage && status === 'connected' ? (
           <div className={ACTIONS}>
-            <ConnectionActions workspaceId={workspaceId} provider="discord" />
+            <ConnectionActions
+              workspaceId={workspaceId}
+              provider="discord"
+              onDisconnected={focusAfterDisconnect}
+            />
           </div>
         ) : null}
       </div>

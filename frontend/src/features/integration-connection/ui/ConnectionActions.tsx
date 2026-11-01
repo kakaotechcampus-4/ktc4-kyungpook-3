@@ -22,15 +22,21 @@ const DISCONNECT_DESCRIPTION =
 export interface ConnectionActionsProps {
   workspaceId: string
   provider: IntegrationProvider
+  /** 서버가 끊은 뒤, 카드가 미연결로 바뀌기 직전에 부른다. 이 버튼들은 그때 사라진다 — 카드가 포커스를 받아 간다 */
+  onDisconnected?: () => void
 }
 
 /**
  * 연결된 카드의 PM 조작 — `채널 바꾸기`/`속성 다시 맞추기` 와 `연결 끊기` (Settings 캔버스).
  * 끊기는 확인 모달을 거친다. 서버가 끊은 뒤에만 상태가 바뀐다 (D-137). 실패하면 모달에 남아 다시 시도할 수 있다
  */
-export function ConnectionActions({ workspaceId, provider }: ConnectionActionsProps) {
+export function ConnectionActions({
+  workspaceId,
+  provider,
+  onDisconnected,
+}: ConnectionActionsProps) {
   const [confirming, setConfirming] = useState(false)
-  const disconnect = useDisconnectIntegration(workspaceId, provider)
+  const disconnect = useDisconnectIntegration(workspaceId, provider, onDisconnected)
   const name = PROVIDER_NAME[provider]
   const secondary = SECONDARY_ACTION[provider]
 
