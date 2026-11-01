@@ -91,6 +91,8 @@ export function TaskQuickAdd({
     )
 
   return (
+    // 폼은 안의 입력·버튼에서 올라온 Esc 만 받는다 — 폼 자체가 포커스를 받거나 조작되지는 않는다
+    // eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions
     <form
       aria-label={`${columnLabel}에 직접 추가`}
       aria-busy={pending}
