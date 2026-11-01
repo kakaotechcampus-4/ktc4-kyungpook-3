@@ -1,8 +1,8 @@
 # M8-A 구현 결과 — 태스크 보기(보드·간트·캘린더)
 
-- 기록일: 2026-10-31, 디자인 차이 보완 2026-11-01, 검증 VR-A 반영 2026-11-01
+- 기록일: 2026-10-31, 디자인 차이 보완 2026-11-01, 검증 VR-A 반영 2026-11-01, AC-A-01 사용자 결정 반영 2026-11-02
 - 대상: [M8 계획](plan.md) A 절, 이슈 #243. 구현 순서 3~7과 8(이 문서), 그리고 계획 밖 디자인 차이 보완(아래 「디자인 차이 보완」)
-- 상태: (2026-11-01 검증 VR-A 반영 뒤 기준은 아래 「검증 VR-A 반영」) **AC-A-02~AC-A-06은 프론트·MSW 기준으로 충족했다. AC-A-01(보기 URL 표현)은 사용자 결정 대기라 미해결이다.** 브랜치 `feature/243-m8-task-views`(push·PR 전). 최종 게이트(2026-10-31, Node v24.11.0)는 모두 exit 0이었고, 디자인 차이 보완 뒤 게이트(2026-11-01)는 「디자인 차이 보완」의 검증 표에 따로 적었다. 다만 전체 Vitest는 기본 설정이 아닌 `--maxWorkers=2`로 통과했고, 기본 설정 실행은 실패 이력이 있다(아래 「전체 Vitest」). 실제 서버 연동은 검증하지 않았다. M8-A 완료나 M8 전체 완료를 선언하지 않는다.
+- 상태: (2026-11-01 검증 VR-A 반영 뒤 기준은 아래 「검증 VR-A 반영」) **AC-A-02~AC-A-06은 프론트·MSW 기준으로 충족했다. AC-A-01(보기 URL 표현)은 `?view=` 유지로 사용자가 결정했고(2026-11-02) 결정 기록을 남겼다. 코드 변경은 없다.** 브랜치 `feature/243-m8-task-views`(push·PR 전). 최종 게이트(2026-10-31, Node v24.11.0)는 모두 exit 0이었고, 디자인 차이 보완 뒤 게이트(2026-11-01)는 「디자인 차이 보완」의 검증 표에 따로 적었다. 다만 전체 Vitest는 기본 설정이 아닌 `--maxWorkers=2`로 통과했고, 기본 설정 실행은 실패 이력이 있다(아래 「전체 Vitest」). 실제 서버 연동은 검증하지 않았다. M8-A 완료나 M8 전체 완료를 선언하지 않는다.
 
 ## 작업 근거와 요약
 
@@ -161,7 +161,7 @@
 
 | 계획의 ID | 상태 | 근거 |
 |---|---|---|
-| AC-A-01 | 미해결(사용자 결정 대기) | 보기 URL을 `?view=`로 둘지 별도 경로로 옮길지 정하지 않았다. 코드는 develop의 `?view=` 해석을 그대로 둔다(V2·V3가 `taskViews.ts`의 `readViewQuery`·`viewSearch` 의미 불변을 확인). 계획 구현 순서 1~2의 결정 기록 `…-task-view-url.md`는 작성하지 않았다 |
+| AC-A-01 | 결정 반영(코드 변경 없음) | 사용자가 `/workspaces/:id/tasks?view=list\|board\|calendar\|gantt` 유지를 결정했다(2026-11-02). [결정 기록](basis-for-decision/2026-11-02-task-view-url.md)에 결론·근거·D-132와의 관계를 적었다. 기존 `?view=` 링크는 바뀌지 않는다. 코드는 develop의 `?view=` 해석 그대로다(V2·V3가 `taskViews.ts`의 `readViewQuery`·`viewSearch` 의미 불변을 확인). 확인한 테스트: `lib/taskViews.test.ts` 「보기 조건 URL」 3건(읽기·쓰기·기본값), 직접 진입은 `task-views.e2e.ts`(V3 9/9)와 `taskViewsCodeSplit.test.tsx` 「캘린더 주소로 바로 들어오면」. 계획 검증 방법 중 **보기(`view`)의 새로고침·뒤로가기를 단언하는 테스트는 없다** — `tasks.test.tsx`의 새로고침·뒤로가기 테스트는 `tab`·`due`만 본다(아래 「남은 작업」). 이 반영에서 테스트를 다시 실행하지 않았다 |
 | AC-A-02 | 충족 | V3가 production build를 확인했다. `BoardView`(4046 bytes)·`CalendarView`(5445)·`GanttView`(9498)는 별도 청크다. `task-board` 청크가 세 청크를 동적 import하고, `index`·`tasks`·`task-board` 청크의 정적 import 그래프에 세 보기는 없다. `src` 전체에 정적 import·barrel 재노출이 없다. `taskViewsCodeSplit.test.tsx`는 리스트 진입 때 미로드, 고를 때 로드와 코드 대기 표시, 직접 진입, 재진입을 검증하며 전체 Vitest에 포함돼 통과했다. 브라우저 네트워크 요청 확인은 E2E 축소로 하지 않았다(계획 대비 변경) |
 | AC-A-03 | 충족 | `task-views.e2e.ts` 9/9 통과(V3). 세 보기 × 1024/1440/1920px에서 페이지 가로 넘침 0, 핵심 조작, 긴 내용 접기를 확인한다. 간트는 1024px에서만 영역 안 가로 스크롤, 키보드 →, 마지막 날짜 도달을 확인한다. 변경 전후 실측은 아래 「너비 측정」 |
 | AC-A-04 | 충족 | 렌더 횟수 전후 측정(아래 「렌더 측정」)에서 단일 태스크 상태 변경 때 다른 항목의 재렌더가 보드 309→0, 캘린더 315→6, 간트 311→0(310건 기준)이다. 회귀 테스트 `taskViewsRender.test.tsx`는 렌더 횟수와 각 보기의 변경 표시(보드 완료 컬럼·캘린더 취소선 칩·간트 완료 막대 라벨, V2-03 보완)를 단언한다. 시간 상한은 두지 않았다 |
@@ -271,11 +271,12 @@ V1(HEAD `2a44c02`)에서는 typecheck·lint·format:check·build·`test:storyboo
 - **구독 최소화:** 계획 단계 6의 후보였던 `useTaskStatusChange`는 측정에서 이미 최소(다른 공간 mutation 커밋 0)라 바꾸지 않았다.
 - **최종 게이트:** 계획의 게이트와 달라진 점이 셋 있다. `npm ci`는 생략했다(`node_modules` 존재). 전체 Vitest는 `--maxWorkers=2`로 실행했다. E2E는 `task-views`·`tasks-approval` 두 파일만 실행했고 `dashboard.e2e.ts`는 수정 전 실행에만 있다.
 - **결과 문서 이름과 README:** 계획 단계 8은 `result.md`와 파트 README 갱신을 적었다. 세 이슈(#243·#244·#245)가 서로 다른 브랜치에서 같은 `m8/` 폴더에 쓰므로, 병합 충돌을 피하려고 이 파일 이름을 `result-a.md`로 했다. README 갱신은 세 브랜치 병합 뒤 한 번에 한다.
-- **AC-A-01:** 계획 구현 순서 1~2(URL 결론·결정 기록·반영)는 사용자 결정 대기라 진행하지 않았다.
+- **AC-A-01:** 계획 구현 순서 1~2 중 URL 결론과 결정 기록은 사용자 결정(2026-11-02, `?view=` 유지) 뒤 [결정 기록](basis-for-decision/2026-11-02-task-view-url.md)으로 남겼다. 유지라 구현 순서 2의 코드 반영은 없다. 계획 구현 순서 1의 `plan.md` 갱신은 이 문서 작업 범위가 아니다.
 
 ## 남은 작업과 제한 사항
 
-- **AC-A-01 결정:** `?view=` 유지 또는 별도 경로 이동, 그리고 기존 `?view=` 링크 처리를 사용자가 정해야 한다. 결정에 따라 계획 구현 순서 1~2와 그 검증(URL Vitest, 직접 진입·새로고침·뒤로가기 E2E)이 남는다.
+- **AC-A-01 문서 문구(사람이 할 일):** `?view=` 유지 결정(2026-11-02)과 달리 [전체 계획](../frontend-plan.md) M8은 「보기 종류는 별도 경로로 표현」이라 적고 있다. 전체 계획 M8 문구와 [결정 문서](../../decision/frontend-decisions.md) D-132 문구 갱신은 사람이 한다. 에이전트는 두 문서를 수정하지 않았다. 별도 경로를 쓰지 않으므로 D-132의 「중복」 조건에는 해당하지 않는다고 판단했다([결정 기록](basis-for-decision/2026-11-02-task-view-url.md)).
+- **보기 새로고침·뒤로가기 테스트:** 계획의 AC-A-01 검증 방법(직접 진입·새로고침·뒤로가기 E2E) 중 `view` 파라미터의 새로고침·뒤로가기를 단언하는 테스트가 없다. 지금은 코드 구조(`TasksPage`가 매 렌더 URL에서 읽고 `replace` 없이 기록을 쓴다)와 `tab`·`due` 테스트에 기댄다. 추가 여부는 후속 판단이다.
 - **`queryView` 사본 교체:** #236에서 판정이 `shared`로 옮겨지면 `widgets/task-board/lib/taskViews.ts`의 사본을 그쪽으로 바꾼다([사본 결정](basis-for-decision/2026-10-31-task-views-queryview-copy.md)).
 - **전체 Vitest 환경:** 이 기계의 기본 설정 전체 실행은 병렬 부하로 무관한 테스트가 타임아웃한다. 기준 커밋에서도 단독 실패한다고 보고된 테스트(`scenarios` 독립성, `tasks` 첫 PM 탭, `appShell`, `meetingProcessing`)는 이번 범위 밖의 별도 과제 후보다. `meetingUpload` 단독 실패(구현 워커 보고)도 원인을 확정하지 않았다.
 - **미검증 연동 과제:** 실제 서버의 태스크·확인 필요·팀원·회의 조회 조합과 권한·오류·데이터 규모, 실제 Notion 반영, M6의 승인 보완·승인 조회 PM 제한. MSW 결과로 대신하지 않는다.
@@ -294,13 +295,13 @@ V1(HEAD `2a44c02`)에서는 typecheck·lint·format:check·build·`test:storyboo
 [파트 README](../../../README.md)의 마일스톤 상태 문단:
 
 ```markdown
-M8-A(#243)는 [계획](docs/plan/m8/plan.md) A 절의 구현 순서 3~7을 진행했고 [결과](docs/plan/m8/result-a.md)에 AC-A-02~AC-A-06의 프론트·MSW 기준 충족과 Node v24.11.0 최종 게이트 통과(전체 Vitest는 `--maxWorkers=2`, 2026-10-31)를 기록했다. AC-A-01(보기 URL 표현)은 사용자 결정 대기이고 실제 서버 조회 조합은 미검증 연동 과제다.
+M8-A(#243)는 [계획](docs/plan/m8/plan.md) A 절의 구현 순서 3~7을 진행했고 [결과](docs/plan/m8/result-a.md)에 AC-A-02~AC-A-06의 프론트·MSW 기준 충족과 Node v24.11.0 최종 게이트 통과(전체 Vitest는 `--maxWorkers=2`, 2026-10-31)를 기록했다. AC-A-01(보기 URL 표현)은 `?view=` 유지로 결정해 [결정 기록](docs/plan/m8/basis-for-decision/2026-11-02-task-view-url.md)을 남겼고, 실제 서버 조회 조합은 미검증 연동 과제다.
 ```
 
 [마일스톤 안내](../README.md)의 M8 행 상태 칸:
 
 ```markdown
-A(#243): [결과](m8/result-a.md) — AC-A-01 결정 대기, 완료 판정 없음
+A(#243): [결과](m8/result-a.md) — AC-A-01 `?view=` 유지 결정, 완료 판정 없음
 ```
 
 ## 관련 기록
@@ -308,5 +309,6 @@ A(#243): [결과](m8/result-a.md) — AC-A-01 결정 대기, 완료 판정 없�
 - [태스크 보기의 부분 조회 실패 방침](basis-for-decision/2026-10-31-task-views-partial-failure.md)
 - [확인 필요 미조회 동안 합계를 숨기고 빈 기간을 확인된 범위로 말하는 선택](basis-for-decision/2026-10-31-task-views-unconfirmed-approval-totals.md)
 - [`queryView` 판정을 task-board 안에 사본으로 두는 선택](basis-for-decision/2026-10-31-task-views-queryview-copy.md)
+- [태스크 보기 URL을 한 경로의 `?view=`로 유지하는 선택](basis-for-decision/2026-11-02-task-view-url.md)
 - [태스크 보기의 디자인 차이 보완 — 보드 직접 추가와 기간 필터 기본값](basis-for-decision/2026-11-01-task-views-design-gaps.md)
 - [M7 결과](../m7/result.md): 대시보드의 영역별 실패 표시(AC-05)와 #236 분리([E-06](../m7/errors/E-06-m6-detail-refetch-error-hidden.md))
