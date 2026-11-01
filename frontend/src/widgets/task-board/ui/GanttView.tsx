@@ -246,8 +246,8 @@ export function GanttView({
           </div>
         </div>
       </HorizontalScroll>
-      <section aria-label="일정이 없는 일" className="flex flex-col gap-4">
-        <h2 className="py-8 text-body font-semibold text-ink">
+      <section aria-label="일정이 없는 일" className="flex flex-col gap-10 pt-14">
+        <h2 className="text-[14px] font-semibold text-ink">
           일정이 없는 일
           {approvalsMissing ? null : (
             <span className="font-normal text-dim tabular-nums"> {unscheduledCount}</span>
@@ -497,11 +497,11 @@ const UnscheduledRow = memo(function UnscheduledRow({
   to: string
 }) {
   return (
-    <li className="flex items-center gap-14 border-b border-line py-14 last:border-b-0">
-      <span className="inline-flex h-[22px] shrink-0 items-center rounded-6 border-2 border-dashed px-8 text-meta leading-none font-semibold text-dim">
+    <li className="flex items-center gap-12 border-b border-divider py-13 last:border-b-0">
+      <span className="inline-flex h-[21px] shrink-0 items-center rounded-6 border-2 border-dashed px-8 text-[11px] leading-none font-semibold text-sub">
         일정 없음
       </span>
-      <span className="min-w-[0px] text-[14px] font-semibold wrap-anywhere text-ink">{title}</span>
+      <span className="min-w-[0px] text-body font-semibold wrap-anywhere text-ink">{title}</span>
       <span className="flex-1 text-right text-caption text-dim">{note}</span>
       <span className="inline-flex items-center gap-7 text-caption text-dim">
         <Avatar name={memberId === null ? null : (names.get(memberId) ?? null)} />

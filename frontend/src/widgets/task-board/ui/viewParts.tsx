@@ -2,7 +2,11 @@ import { useLayoutEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Icon } from '@/shared/ui/icon'
 
-/** 담당자 이니셜 원 — 시안의 20/21px 원. 이름이 없으면 `?` */
+/* 이름을 모르면 채우지 않은 점선 원에 `?` 다 — 시안의 `미지정` 원 (TasksGantt: 1px 점선 #BDBDBD, 10px #666) */
+const AVATAR_KNOWN = 'bg-divider text-[9.5px] font-semibold'
+const AVATAR_UNKNOWN = 'border border-dashed bg-transparent text-[10px] text-dim'
+
+/** 담당자 이니셜 원 — 시안의 20/21px 원. 이름이 없으면 점선 원에 `?` */
 export function Avatar({
   name,
   size = 20,
@@ -12,20 +16,22 @@ export function Avatar({
   size?: 20 | 21
   muted?: boolean
 }) {
+  const tone = name === null ? AVATAR_UNKNOWN : `${AVATAR_KNOWN} ${muted ? 'text-dim' : 'text-ink'}`
   return (
     <span
       aria-hidden="true"
-      className={`inline-flex shrink-0 items-center justify-center rounded-999 bg-divider text-[9.5px] leading-none font-semibold ${
+      className={`inline-flex shrink-0 items-center justify-center rounded-999 leading-none ${
         size === 21 ? 'h-[21px] w-[21px]' : 'h-20 w-20'
-      } ${muted ? 'text-dim' : 'text-ink'}`}
+      } ${tone}`}
     >
       {name === null ? '?' : [...name][0]}
     </span>
   )
 }
 
+/* 날짜 이동 — 시안 `width 30; height 30; min-height 36` 이라 30×36 으로 그려지고 15px 꺾쇠는 보조색(#5A5A5A)이다 */
 const NAV_BUTTON =
-  'inline-flex h-30 w-30 items-center justify-center rounded-9 bg-control text-ink hover:bg-line-strong'
+  'inline-flex h-30 min-h-36 w-30 items-center justify-center rounded-9 bg-control text-sub hover:bg-line-strong'
 
 /** 캘린더·간트 머리 — 제목과 이전·다음 버튼, 오른쪽에 범례 */
 export function RangeHeader({
@@ -49,10 +55,10 @@ export function RangeHeader({
         <h2 className="text-[19px] leading-[1.55] font-bold tracking-h2 text-ink">{title}</h2>
         <div className="flex items-center gap-4">
           <button type="button" aria-label={prevLabel} className={NAV_BUTTON} onClick={onPrev}>
-            <Icon name="chevron-left" size={14} />
+            <Icon name="chevron-left" size={15} />
           </button>
           <button type="button" aria-label={nextLabel} className={NAV_BUTTON} onClick={onNext}>
-            <Icon name="chevron-right" size={14} />
+            <Icon name="chevron-right" size={15} />
           </button>
         </div>
       </div>

@@ -21,15 +21,15 @@ const DAYS_PER_WEEK = WEEKDAYS.length
    요일 머리·주마다 `row` 로 묶되, 보이는 배치는 바깥 7열 격자를 subgrid 로 그대로 잇는다 */
 const WEEK_ROW = 'col-span-full grid grid-cols-subgrid'
 
-/** 칩 색 — 진행 중은 회색, 마감 임박(주의·위험)은 강조색, 완료는 취소선 */
+/** 칩 색 — 진행 중은 회색, 마감 임박(주의·위험)은 강조색에 굵은 제목(시안 600), 완료는 취소선 */
 const CHIP: Record<TaskTone, { box: string; title: string; sub: string }> = {
   done: {
     box: 'bg-surface-sunken',
     title: 'text-dim line-through',
     sub: 'text-dim',
   },
-  danger: { box: 'bg-accent', title: 'text-surface', sub: 'text-surface' },
-  warn: { box: 'bg-accent', title: 'text-surface', sub: 'text-surface' },
+  danger: { box: 'bg-accent', title: 'font-semibold text-surface', sub: 'text-surface' },
+  warn: { box: 'bg-accent', title: 'font-semibold text-surface', sub: 'text-surface' },
   active: { box: 'bg-surface-selected', title: 'text-ink', sub: 'text-sub' },
   todo: { box: 'bg-surface-selected', title: 'text-ink', sub: 'text-sub' },
 }
@@ -151,7 +151,7 @@ export function CalendarView({
         </div>
         {weeks.map((week) => (
           <div key={week[0].date} role="row" className={WEEK_ROW}>
-            {week.map(({ date, inMonth }) => {
+            {week.map(({ date, inMonth }, index) => {
               const {
                 tasks: dayTasks = [],
                 approvals: dayApprovals = [],
@@ -164,7 +164,12 @@ export function CalendarView({
                   aria-label={date}
                   className={`flex min-h-[116px] flex-col gap-5 bg-surface ${inMonth ? 'p-9' : 'px-20 py-18'}`}
                 >
-                  <DayNumber date={date} today={date === today} inMonth={inMonth} />
+                  <DayNumber
+                    date={date}
+                    today={date === today}
+                    inMonth={inMonth}
+                    weekend={isWeekend(index)}
+                  />
                   {inMonth ? (
                     <>
                       {dayApprovals.map((approval) => (
@@ -212,7 +217,8 @@ export function CalendarView({
         className="flex flex-wrap items-center gap-16 rounded-16 border border-line bg-surface px-18 py-16"
       >
         <div className="flex flex-col gap-2">
-          <h2 className="text-control font-semibold text-ink">마감일 없음</h2>
+          {/* `text-control` 은 같은 이름의 색 토큰과 겹쳐 글자 크기로 생성되지 않는다 — 시안 13px 을 직접 적는다 */}
+          <h2 className="text-[13px] leading-none font-semibold text-ink">마감일 없음</h2>
           {approvalsMissing ? null : (
             <span className="text-meta text-dim tabular-nums">{undated.length}</span>
           )}
@@ -249,14 +255,24 @@ export function CalendarView({
   )
 }
 
-/** 일·토(줄의 첫·끝 칸) — 요일 머리를 흐리게 쓴다 (시안) */
+/** 일·토(줄의 첫·끝 칸) — 요일 머리와 그 달 날짜 숫자를 흐리게 쓴다 (시안) */
 function isWeekend(column: number): boolean {
   return column === 0 || column === DAYS_PER_WEEK - 1
 }
 
-/** 날짜 칸의 숫자. 오늘은 먹 원, 다른 달은 점선 색이다 */
-function DayNumber({ date, today, inMonth }: { date: string; today: boolean; inMonth: boolean }) {
-  const tone = inMonth ? 'text-sub' : 'text-dashed'
+/** 날짜 칸의 숫자. 오늘은 먹 원, 다른 달은 점선 색, 그 달의 일·토는 흐림이다 (시안) */
+function DayNumber({
+  date,
+  today,
+  inMonth,
+  weekend,
+}: {
+  date: string
+  today: boolean
+  inMonth: boolean
+  weekend: boolean
+}) {
+  const tone = !inMonth ? 'text-dashed' : weekend ? 'text-dim' : 'text-sub'
   return (
     <span
       className={

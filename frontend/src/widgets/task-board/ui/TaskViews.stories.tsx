@@ -160,6 +160,27 @@ export const 캘린더_PM: Story = {
     await expect(canvas.getByRole('region', { name: '마감일 없음' })).toHaveTextContent(
       '회의록 요약 검수',
     )
+
+    // 시안(TasksCalendar) 값 — 날짜 이동 30×36·15px 꺾쇠 #5A5A5A, `마감일 없음` 13px,
+    // 그 달의 일·토 숫자 #666(평일 #5A5A5A), 마감 임박 칩 제목 600
+    const prev = canvas.getByRole('button', { name: '이전 달' })
+    const prevBox = prev.getBoundingClientRect()
+    await expect([prevBox.width, prevBox.height]).toEqual([30, 36])
+    await expect(prev.querySelector('svg')!.getAttribute('width')).toBe('15')
+    await expect(getComputedStyle(prev).color).toBe('rgb(90, 90, 90)')
+    await expect(
+      getComputedStyle(canvas.getByRole('heading', { name: '마감일 없음' })).fontSize,
+    ).toBe('13px')
+    const dayColor = (date: string) =>
+      getComputedStyle(within(table).getByRole('cell', { name: date }).firstElementChild!).color
+    await expect([dayColor('2026-09-06'), dayColor('2026-09-12'), dayColor('2026-09-07')]).toEqual([
+      'rgb(102, 102, 102)',
+      'rgb(102, 102, 102)',
+      'rgb(90, 90, 90)',
+    ])
+    const urgent = within(table).getByRole('link', { name: /온보딩 문구 수정/ })
+    await expect(getComputedStyle(urgent).backgroundColor).toBe('rgb(255, 105, 105)')
+    await expect(getComputedStyle(urgent.firstElementChild!).fontWeight).toBe('600')
   },
 }
 
@@ -196,6 +217,37 @@ export const 간트_PM: Story = {
       '32px',
     ])
     await expect(dateLink.querySelector('svg')).not.toBeNull()
+
+    // 시안(TasksGantt) 값 — 목록 위 14px·간격 10, 제목 14px. 줄은 간격 12·위아래 13·아래선 #EFEFEF,
+    // `일정 없음` 21px·11px #5A5A5A, 일 제목 13.5px, 담당자 미지정은 채우지 않은 점선 원
+    const listStyle = getComputedStyle(unscheduled)
+    await expect([listStyle.paddingTop, listStyle.rowGap]).toEqual(['14px', '10px'])
+    await expect(
+      getComputedStyle(within(unscheduled).getByRole('heading', { name: /일정이 없는 일/ }))
+        .fontSize,
+    ).toBe('14px')
+    const row = dateLink.closest('li')!
+    const rowStyle = getComputedStyle(row)
+    await expect([
+      rowStyle.columnGap,
+      rowStyle.paddingTop,
+      rowStyle.paddingBottom,
+      rowStyle.borderBottomColor,
+    ]).toEqual(['12px', '13px', '13px', 'rgb(239, 239, 239)'])
+    const badge = within(row).getByText('일정 없음')
+    await expect([
+      badge.getBoundingClientRect().height,
+      getComputedStyle(badge).fontSize,
+      getComputedStyle(badge).color,
+    ]).toEqual([21, '11px', 'rgb(90, 90, 90)'])
+    await expect(getComputedStyle(within(row).getByText('알림 문구 검토')).fontSize).toBe('13.5px')
+    const unknown = getComputedStyle(within(row).getByText('?'))
+    await expect([
+      unknown.borderTopStyle,
+      unknown.borderTopColor,
+      unknown.backgroundColor,
+      unknown.fontSize,
+    ]).toEqual(['dashed', 'rgb(189, 189, 189)', 'rgba(0, 0, 0, 0)', '10px'])
   },
 }
 
