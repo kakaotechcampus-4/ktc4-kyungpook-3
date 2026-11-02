@@ -43,6 +43,9 @@ API_PREFIX = "/api/v1"
 TIMEOUT_S = 10.0
 # 유사 검색은 BE 가 임베딩 서버를 10초까지 기다린다. 그보다 길어야 BE 의 502 를 받고, 짧으면 이쪽이 먼저 끊는다
 SIMILAR_TIMEOUT_S = 15.0
+# 녹음 내려받기의 읽기 제한. 스트리밍이라 청크 사이 무응답 시간이고 전체 시간이 아니다
+DOWNLOAD_TIMEOUT_S = 60.0
+DOWNLOAD_CHUNK = 1 << 20
 
 # 서버(길드)에 연결된 워크스페이스가 없을 때 BE 가 주는 코드(backend/app/api/integrations.py, #180)
 NOT_CONNECTED = "INTEGRATION_NOT_CONNECTED"
@@ -84,6 +87,11 @@ class BeClient:
             r = self._session.request(method, self.api + path, json=body, timeout=timeout or self.timeout, **extra)
         except requests.RequestException as e:
             raise BeError("NETWORK", f"{type(e).__name__}: {e}") from e
+        return self._unwrap(r)
+
+    @staticmethod
+    def _unwrap(r) -> Any:
+        """응답 봉투를 벗긴다. 오류 봉투와 4xx·5xx 는 BeError 다."""
         try:
             payload = r.json()
         except ValueError:
@@ -95,6 +103,59 @@ class BeClient:
         if r.status_code >= 400 or not isinstance(payload, dict):
             raise BeError(f"HTTP_{r.status_code}", (getattr(r, "text", "") or "")[:200], status=r.status_code)
         return payload.get("data")
+
+    def pending_uploads(self) -> list[dict]:
+        """웹 업로드 회의 중 아직 아무도 가져가지 않은 것(GET /uploads/pending), 먼저 올라온 순서.
+
+        항목: {meeting_id, workspace_id, title, started_at, attendees: [{member_id, display_name}], original_filename,
+        stored_filename, size_bytes, content_type, uploaded_at}.
+        """
+        data = self._call("GET", "/uploads/pending")
+        items = data.get("items") if isinstance(data, dict) else None
+        if not isinstance(items, list):
+            raise BeError("BAD_RESPONSE", "대기 목록 응답에 items 목록이 없다")
+        return items
+
+    def claim_upload(self, meeting_id: str) -> dict:
+        """업로드 회의를 가져간다(PATCH /uploads/{id}/claim). 성공하면 {meeting_id, status}.
+
+        돌려주지 않고 BeError 로 알리는 경우는 부르는 쪽이 판단한다. 409 MEETING_PROCESSING_IN_PROGRESS(이미 가져감,
+        앞선 응답을 놓친 재시도일 수 있다), 409 MEETING_ALREADY_ENDED(details.status), 404 MEETING_NOT_FOUND, NETWORK.
+        """
+        return self._call("PATCH", f"/uploads/{meeting_id}/claim")
+
+    def download_upload(self, meeting_id: str, dest: Path) -> int:
+        """업로드 녹음 원본을 dest 로 스트리밍으로 받고 바이트 수를 돌려준다(GET /uploads/{id}/file).
+
+        임시 파일에 받아 끝까지 성공해야 dest 로 바꾼다. 실패(오류 봉투, 연결 끊김, 디스크 오류)면 임시 파일을
+        지우고 BeError 를 올리며 dest 는 건드리지 않는다.
+        """
+        dest = Path(dest)
+        headers = {"X-Service-Token": self.service_token} if self.service_token else {}
+        try:
+            r = self._session.request("GET", f"{self.api}/uploads/{meeting_id}/file", timeout=DOWNLOAD_TIMEOUT_S,
+                                      headers=headers, stream=True)
+        except requests.RequestException as e:
+            raise BeError("NETWORK", f"{type(e).__name__}: {e}") from e
+        tmp = dest.with_name(dest.name + ".part")
+        try:
+            if r.status_code >= 400:
+                self._unwrap(r)
+                raise BeError(f"HTTP_{r.status_code}", "", status=r.status_code)
+            size = 0
+            with open(tmp, "wb") as f:
+                for chunk in r.iter_content(chunk_size=DOWNLOAD_CHUNK):
+                    f.write(chunk)
+                    size += len(chunk)
+            tmp.replace(dest)
+            return size
+        except requests.RequestException as e:
+            raise BeError("NETWORK", f"{type(e).__name__}: {e}") from e
+        finally:
+            tmp.unlink(missing_ok=True)
+            close = getattr(r, "close", None)
+            if close:
+                close()
 
     def guild_workspace(self, guild_id: str) -> str:
         """디스코드 서버에 연결된 워크스페이스(#199, BE #197). 연결이 없으면 BeError(INTEGRATION_NOT_CONNECTED)."""

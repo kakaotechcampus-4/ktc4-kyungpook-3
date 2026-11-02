@@ -9,10 +9,30 @@ from __future__ import annotations
 
 
 class _Resp:
-    def __init__(self, status: int, body: dict | None, text: str = ""):
+    def __init__(self, status: int, body: dict | None, text: str = "", *, raw: bytes | None = None,
+                 break_after: int | None = None):
         self.status_code = status
         self._body = body
         self.text = text
+        self._raw = raw                   # 스트리밍 응답의 본문(파일 바이트)
+        self._break_after = break_after   # 이만큼 보낸 뒤 연결이 끊긴 것처럼 군다
+        self.closed = False
+
+    def iter_content(self, chunk_size: int = 1):
+        raw = self._raw or b""
+        sent = 0
+        for i in range(0, len(raw), chunk_size):
+            chunk = raw[i:i + chunk_size]
+            if self._break_after is not None and sent + len(chunk) > self._break_after:
+                if self._break_after > sent:
+                    yield chunk[:self._break_after - sent]
+                import requests
+                raise requests.ConnectionError("스트림이 중간에 끊겼다")
+            sent += len(chunk)
+            yield chunk
+
+    def close(self):
+        self.closed = True
 
     def json(self):
         if self._body is None:
@@ -49,9 +69,28 @@ class FakeBe:
         self.sources_fail: tuple | None = None     # (상태, 코드) 를 넣으면 발화 저장이 그 오류로 실패한다
         # 서버로 워크스페이스 찾기 (backend/app/api/integrations.py). 서버 ID 문자열 → 워크스페이스. 없으면 연결 없음
         self.guilds: dict[str, str] = {}
+        # 웹 업로드 가져가기 (backend/app/api/uploads.py). 회의 ID → {"item": 대기 목록 항목, "claimed": bool, "audio": bytes | None}
+        self.uploads: dict[str, dict] = {}
+        self.claim_lost = False       # True 면 claim 은 서버에 반영되지만 응답이 오지 않는다(시간 초과)
+        self.file_break_after: int | None = None   # 파일을 이 바이트까지 보내고 연결이 끊긴다
         self._n = 0
 
-    def request(self, method: str, url: str, json=None, timeout=None, headers=None):
+    def add_upload(self, meeting_id: str, *, workspace_id: str = "ws-1", audio: bytes | None = b"RIFFfake-audio",
+                   attendees: list[dict] | None = None, status: str = "processing", **over) -> dict:
+        """업로드 회의 하나를 만든다. 회의 행(processing)과 업로드 정보를 함께 둔다. 대기 목록 항목을 돌려준다."""
+        item = {"meeting_id": meeting_id, "workspace_id": workspace_id, "title": "주간 회의",
+                "started_at": "2026-11-03T01:00:00+09:00",
+                "attendees": attendees if attendees is not None else [{"member_id": "u1", "display_name": "민수"}],
+                "original_filename": "회의.m4a", "stored_filename": "audio.m4a",
+                "size_bytes": len(audio or b""), "content_type": "audio/mp4",
+                "uploaded_at": "2026-11-03T02:00:00+00:00"}
+        item.update(over)
+        self.meetings[meeting_id] = {"meeting_id": meeting_id, "workspace_id": workspace_id, "status": status,
+                                     "title": item["title"]}
+        self.uploads[meeting_id] = {"item": item, "claimed": False, "audio": audio}
+        return item
+
+    def request(self, method: str, url: str, json=None, timeout=None, headers=None, stream=False):
         if self.down:
             import requests
             raise requests.ConnectionError("BE 가 꺼져 있다")
@@ -60,6 +99,8 @@ class FakeBe:
         self.headers.append(dict(headers or {}))
         self.timeouts.append(timeout)
         body = json or {}
+        if path.startswith("/uploads/"):
+            return self._uploads(method, path, headers or {})
         if method == "GET" and path.startswith("/integrations/discord/guilds/") and path.endswith("/workspace"):
             return self._guild_workspace(path.split("/")[4], headers or {})
         if method == "POST" and path.startswith("/workspaces/") and path.endswith("/tasks/similar"):
@@ -161,3 +202,33 @@ class FakeBe:
             return _err(502, "EMBEDDING_UNAVAILABLE", {"reason": "임베딩 API 호출 실패"})
         items = [c for word, cands in self.similar.items() if word in body["text"] for c in cands]
         return _ok(200, {"items": items})
+
+    def _uploads(self, method: str, path: str, headers: dict):
+        """토큰 → 대기 목록·claim·파일. 오류 코드는 uploads.py 와 같다."""
+        if headers.get("X-Service-Token") != self.service_token:
+            return _err(401, "UNAUTHENTICATED")
+        if method == "GET" and path == "/uploads/pending":
+            items = [u["item"] for mid, u in self.uploads.items()
+                     if not u["claimed"] and self.meetings[mid]["status"] == "processing"]
+            return _ok(200, {"items": items})
+        parts = path.split("/")      # ["", "uploads", mid, action]
+        mid, action = parts[2], parts[3] if len(parts) > 3 else ""
+        u = self.uploads.get(mid)
+        if method == "PATCH" and action == "claim":
+            if u is None:
+                return _err(404, "MEETING_NOT_FOUND", {"meeting_id": mid})
+            status = self.meetings[mid]["status"]
+            if status != "processing":
+                return _err(409, "MEETING_ALREADY_ENDED", {"meeting_id": mid, "status": status})
+            if u["claimed"]:
+                return _err(409, "MEETING_PROCESSING_IN_PROGRESS", {"meeting_id": mid})
+            u["claimed"] = True
+            if self.claim_lost:
+                import requests
+                raise requests.ConnectionError("claim 응답을 받지 못했다")
+            return _ok(200, {"meeting_id": mid, "status": "processing"})
+        if method == "GET" and action == "file":
+            if u is None or u["audio"] is None:
+                return _err(404, "MEETING_NOT_FOUND", {"meeting_id": mid})
+            return _Resp(200, None, raw=u["audio"], break_after=self.file_break_after)
+        return _Resp(404, None, "not found")
