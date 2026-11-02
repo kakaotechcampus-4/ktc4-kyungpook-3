@@ -20,6 +20,11 @@ const SIZE_CASES: Array<[ButtonSize, string]> = [
   ['auth', 'h-48 w-full rounded-999 text-[15px]'],
   ['landing-hero', 'h-44 rounded-999 px-24 text-landing'],
   ['landing-nav', 'h-[38px] rounded-999 px-18 text-[15px]'],
+  ['message-edit', 'h-36 gap-6 rounded-9 px-11 text-[12px]'],
+  ['message-dismiss', 'h-44 gap-6 rounded-9 px-18 text-[14px]'],
+  ['message-send', 'h-44 gap-8 rounded-9 px-24 text-[14.5px]'],
+  ['message-thread-dismiss', 'h-36 gap-6 rounded-9 px-16 text-(length:--text-control)'],
+  ['message-thread-approve', 'h-36 gap-6 rounded-9 px-20 text-(length:--text-control)'],
 ]
 
 describe('Button', () => {
@@ -45,6 +50,13 @@ describe('Button', () => {
     render(<Button size={size}>승인</Button>)
 
     expect(screen.getByRole('button')).toHaveClass(...expected.split(' '))
+  })
+
+  // 간격 클래스가 둘이면 생성 CSS 순서가 이겨 크기 표의 값이 적용되지 않는다 (VR-07의 `이대로 발송` 8px)
+  it.each(SIZE_CASES)('picks exactly one icon gap for the %s size', (size) => {
+    render(<Button size={size}>승인</Button>)
+
+    expect(screen.getByRole('button').className.match(/(^| )gap-\d+/g)).toHaveLength(1)
   })
 
   it('disables the button when disabled is passed', () => {

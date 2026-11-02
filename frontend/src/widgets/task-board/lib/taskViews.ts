@@ -14,6 +14,13 @@ import { parseEnumParam } from '@/shared/lib/url'
 export const TASK_VIEWS = ['list', 'board', 'calendar', 'gantt'] as const
 export type TaskView = (typeof TASK_VIEWS)[number]
 
+export const VIEW_LABEL: Record<TaskView, string> = {
+  list: '리스트',
+  board: '보드',
+  calendar: '캘린더',
+  gantt: '간트',
+}
+
 export const VIEW_PARAMS = {
   view: 'view',
   assignee: 'assignee',
@@ -146,11 +153,16 @@ export interface CalendarCell {
   inMonth: boolean
 }
 
-/** 일요일부터 시작하는 6주 격자. 시안과 같다 */
+/**
+ * 일요일부터 시작하는 격자. 그 달의 날이 든 주만 그린다 — 2026-09 는 5주(시안), 2026-08 은 6주다.
+ * 다음 달 날만 있는 주는 그리지 않는다
+ */
 export function calendarGrid(month: string): CalendarCell[] {
   const first = `${month}-01`
-  const start = addDays(first, -weekday(first))
-  return Array.from({ length: 42 }, (_, index) => {
+  const lead = weekday(first)
+  const days = daysBetween(first, `${addMonths(month, 1)}-01`)
+  const start = addDays(first, -lead)
+  return Array.from({ length: Math.ceil((lead + days) / 7) * 7 }, (_, index) => {
     const date = addDays(start, index)
     return { date, inMonth: monthOf(date) === month }
   })
@@ -201,4 +213,32 @@ export function memberNames(members: readonly Member[] | undefined): Map<string,
 
 export function assigneeOf(task: Task, names: ReadonlyMap<string, string>): string | null {
   return task.assigneeMemberId === null ? null : (names.get(task.assigneeMemberId) ?? null)
+}
+
+/**
+ * 담당자 표시 문구. 담당자가 없으면 `none`, 팀원 목록에서 찾지 못하면(팀원 조회 실패 포함) `알 수 없는 담당자`다 —
+ * 받지 못한 이름을 `담당자 없음` 으로 쓰지 않는다 (AC-A-05). 리스트 행과 같은 문구다
+ */
+export function assigneeLabel(
+  memberId: string | null,
+  names: ReadonlyMap<string, string>,
+  none = '담당자 없음',
+): string {
+  return memberId === null ? none : (names.get(memberId) ?? '알 수 없는 담당자')
+}
+
+/* ---------- 조회 상태 ---------- */
+
+/**
+ * 조회 하나를 화면 상태로 읽는다. widgets/dashboard 의 `queryView` 와 같은 판정이다 — 위젯끼리는 서로 가져다 쓰지 않아
+ * 여기 따로 둔다. #236 에서 shared 로 옮겨지면 그쪽으로 바꾼다.
+ * - `loading` 데이터도 오류도 아직 없다 · `error` 처음부터 받지 못했다
+ * - `ready` 마지막 조회가 성공했다 · `refreshFailed` 데이터는 있으나 마지막 재조회가 실패했다
+ */
+export type QueryView = 'loading' | 'error' | 'ready' | 'refreshFailed'
+
+export function queryView({ data, error }: { data: unknown; error: unknown }): QueryView {
+  const failed = error !== null && error !== undefined
+  if (data !== undefined) return failed ? 'refreshFailed' : 'ready'
+  return failed ? 'error' : 'loading'
 }
