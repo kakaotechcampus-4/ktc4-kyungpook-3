@@ -40,7 +40,7 @@
 | §4.3 OAuth start·callback 없음 | [integrations.py](../../../backend/app/api/integrations.py)에 Notion start와 `/integrations/notion/callback` 구현. [main.py](../../../backend/app/main.py)에 callback router 등록 | Google·Discord OAuth 경로는 해당 라우터에 없음. Notion의 실제 설정·외부 인증 성공은 미검증 |
 | §4.0-②-17 업로드 PM 권한 강제 요청 | [workspaces.py](../../../backend/app/api/workspaces.py)의 업로드 의존성이 `get_current_pm` | 기존 요청은 과거 기록으로 보존. 서버 권한 동작은 실행 검증하지 않음 |
 | §4.4 반복 참석자 multipart 필드 | 프론트는 참석자마다 필드를 반복. 서버 업로드 시그니처는 `attendee_member_ids: str = Form(...)`이며 값을 저장하지 않음 | 다중 참석자 해석·저장 차이 남음. 새 형식 합의 없음 |
-| §4.4 파일 저장·큐 전송 스텁 | 업로드는 processing 회의 행을 만들고 파일 저장·큐 전송 TODO 유지 | 실제 업로드부터 처리 완료까지 성공을 선언하지 않음 |
+| §4.4 파일 저장 | 업로드는 processing 회의 행을 만들고 녹음 파일과 참석자(`meeting_upload`)를 저장한다. 화자 지정은 §2.3.1 | 실제 업로드부터 처리 완료까지 성공을 선언하지 않음 |
 | §4.0-②-11 회의록 본문 하드코딩·summary 미생성 | [meetings.py](../../../backend/app/api/meetings.py)는 Source에서 전사·참석자를 구성하고 Extraction.summary JSON을 읽음 | summary 저장 여부·실제 파이프라인 성공은 이 정적 확인만으로 검증하지 않음 |
 | §4.5 Discord 사용자 목록 스텁 | 연동 존재를 검사한 뒤 고정 사용자 2명을 반환 | 실제 Discord API 조회 없음 |
 
@@ -374,7 +374,8 @@ AUDIO_TOO_LARGE(413)              DISCORD_USER_ALREADY_MAPPED(409)
 ```
 // GET /meetings/{meeting_id}/audio  → 200 (또는 Range 요청에 206)
 본문: 녹음 원본 바이트. 봉투로 감싸지 않는다. 오류만 봉투다.
-Content-Type: 업로드한 파일의 content-type (없으면 application/octet-stream)
+Content-Type: 서버가 저장한 확장자로 정한 audio/* 값(wav→audio/wav, mp3→audio/mpeg, m4a→audio/mp4, ogg→audio/ogg, webm→audio/webm). 목록 밖은 application/octet-stream. 업로드 때 클라이언트가 보낸 값은 쓰지 않는다
+X-Content-Type-Options: nosniff, Cache-Control: private, no-store
 Content-Disposition: 없음(내려받기 아님). Accept-Ranges: bytes
 ```
 
@@ -1227,7 +1228,7 @@ members 에만 있고 Discord 목록에 없으면      → 비활성 (서버를 
 |---|---|---|
 | 회의 올리기 진입 가드 | `GET /workspaces/{id}/integrations` 로 Notion 연결 확인 | **구현됨** §4.3 |
 | 참석자 선택 | `GET /members?workspace_id=` | **구현됨** §2.2 |
-| 업로드 | `POST /workspaces/{id}/meetings/upload` (multipart) | ⚠️ **스텁** §4.4 — 파일·참석자를 저장하지 않는다 |
+| 업로드 | `POST /workspaces/{id}/meetings/upload` (multipart) | **구현됨** — 파일·참석자 저장, 화자 지정은 §2.3.1 |
 | 정리 중 — 폴링 | `GET /meetings/{meeting_id}` | **구현됨** §2.3 — `progress` 포함 |
 | 화자 지정(`awaiting_speakers`) | `GET`·`PUT /meetings/{id}/speakers`, `GET /meetings/{id}/audio` | BE 구현됨, FE 합의 전 §2.3.1 |
 | 회의록 목록 | `GET /workspaces/{id}/meetings` | **구현됨** §4.4 |
