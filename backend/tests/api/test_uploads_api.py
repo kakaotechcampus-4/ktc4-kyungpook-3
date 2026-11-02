@@ -415,6 +415,15 @@ def _report(meeting_id: str, speakers=None):
     return _client().post(f"/api/v1/uploads/{meeting_id}/speakers", headers=HEADERS, json=body)
 
 
+def _report_raw(meeting_id: str, raw_json: str):
+    """NaN·Infinity 처럼 표준 JSON 이 아닌 원문을 그대로 보낸다."""
+    return _client().post(
+        f"/api/v1/uploads/{meeting_id}/speakers",
+        headers={**HEADERS, "Content-Type": "application/json"},
+        content=raw_json,
+    )
+
+
 def _resume(meeting_id: str):
     return _client().patch(f"/api/v1/uploads/{meeting_id}/resume", headers=HEADERS)
 
@@ -486,6 +495,33 @@ def test_different_report_gets_409_and_keeps_stored_labels(db, ws):
     assert json.loads(upload.speakers) == LABELS
 
 
+def test_same_report_with_samples_in_another_order_is_idempotent(db, ws):
+    meeting = _upload(db, ws, claimed_at=UPLOADED_AT)
+    assert _report(meeting.meeting_id).status_code == 200
+    shuffled = [
+        LABELS[0],
+        {**LABELS[1], "samples": list(reversed(LABELS[1]["samples"]))},
+    ]
+
+    r = _report(meeting.meeting_id, shuffled)
+
+    assert r.status_code == 200, r.text
+    assert r.json()["data"]["status"] == "awaiting_speakers"
+
+
+def test_same_report_after_assignment_is_idempotent_with_current_status(db, ws):
+    """멱등은 라벨 목록이 같을 때만이다. 지정이 제출돼 processing 으로 돌아온 뒤에도 같은 내용이면 200."""
+    meeting = _upload(db, ws, claimed_at=UPLOADED_AT)
+    assert _report(meeting.meeting_id).status_code == 200
+    _assign(db, meeting)
+
+    r = _report(meeting.meeting_id)
+
+    assert r.status_code == 200, r.text
+    assert r.json()["data"] == {"meeting_id": meeting.meeting_id, "status": "processing"}
+    assert _state(db, meeting)[0] == "processing"
+
+
 def test_report_after_assignment_gets_409_already_reported(db, ws):
     """지정이 제출돼 processing 으로 돌아온 뒤에도 다시 보고할 수 없다."""
     meeting = _upload(db, ws, claimed_at=UPLOADED_AT)
@@ -528,6 +564,8 @@ def test_report_of_ended_upload_gets_409(db, ws, status):
 def test_report_of_unknown_discord_or_rowless_meeting_gets_404(db, ws):
     discord = _meeting(db, ws, source="discord")
     rowless = _meeting(db, ws)
+    # 가져갔고 아직 보고하지 않은 다른 업로드가 있어도, EXISTS 가 대상 회의와 상관되지 않아 옮겨지면 안 된다
+    bystander = _upload(db, ws, claimed_at=UPLOADED_AT)
 
     for meeting in [discord, rowless]:
         r = _report(meeting.meeting_id)
@@ -536,6 +574,7 @@ def test_report_of_unknown_discord_or_rowless_meeting_gets_404(db, ws):
         db.expire_all()
         assert db.get(Meeting, meeting.meeting_id).status == "processing"
     assert _report("no-such-meeting").status_code == 404
+    assert _state(db, bystander)[0] == "processing"
 
 
 @pytest.mark.parametrize(
@@ -566,6 +605,25 @@ def test_report_validation_gets_400_and_changes_nothing(db, ws, speakers):
     status, upload = _state(db, meeting)
     assert status == "processing"
     assert upload.speakers is None
+
+
+@pytest.mark.parametrize("value", ["NaN", "Infinity", "-Infinity"])
+@pytest.mark.parametrize("field", ["total_sec", "start", "end"])
+def test_report_with_non_finite_number_in_raw_json_gets_400(db, ws, field, value):
+    meeting = _upload(db, ws, claimed_at=UPLOADED_AT)
+    numbers = {"total_sec": "10", "start": "1", "end": "5"}
+    numbers[field] = value
+    raw = (
+        '{"speakers":[{"label":"A","total_sec":%s,"samples":[{"start":%s,"end":%s}]}]}'
+        % (numbers["total_sec"], numbers["start"], numbers["end"])
+    )
+
+    r = _report_raw(meeting.meeting_id, raw)
+
+    assert r.status_code == 400, r.text
+    assert r.json()["error"]["code"] == "INVALID_REQUEST"
+    status, upload = _state(db, meeting)
+    assert status == "processing" and upload.speakers is None
 
 
 def test_assigned_lists_only_assigned_unresumed_processing_uploads_oldest_first(db, ws, other_ws):
@@ -609,10 +667,15 @@ def test_resume_succeeds_once_and_returns_mapping(db, ws):
     assert upload.resumed_at is not None
     assert _assigned() == []
 
+    resumed_at = upload.resumed_at
+
     again = _resume(meeting.meeting_id)
 
     assert again.status_code == 409, again.text
     assert again.json()["error"]["code"] == "MEETING_PROCESSING_IN_PROGRESS"
+    status, upload = _state(db, meeting)
+    assert status == "processing"
+    assert upload.resumed_at == resumed_at
 
 
 def test_resume_before_assignment_gets_409(db, ws):
@@ -637,7 +700,10 @@ def test_resume_of_ended_upload_gets_409(db, ws, status):
 
     assert r.status_code == 409, r.text
     assert r.json()["error"]["code"] == "MEETING_ALREADY_ENDED"
-    assert _state(db, meeting)[1].resumed_at is None
+    assert r.json()["error"]["details"]["status"] == status
+    state, upload = _state(db, meeting)
+    assert state == status
+    assert upload.resumed_at is None
 
 
 def test_resume_of_unknown_discord_or_rowless_meeting_gets_404(db, ws):
@@ -653,7 +719,9 @@ def test_resume_of_unknown_discord_or_rowless_meeting_gets_404(db, ws):
 def test_extraction_after_resume_finishes_and_removes_folder(db, ws):
     meeting = _upload(db, ws, claimed_at=UPLOADED_AT)
     assert _report(meeting.meeting_id).status_code == 200
-    assert _register_extraction(meeting).status_code == 409  # 지정 전에는 받지 않는다
+    early = _register_extraction(meeting)  # 지정 전에는 받지 않는다
+    assert early.status_code == 409, early.text
+    assert early.json()["error"]["code"] == "MEETING_NOT_PROCESSING"
     assert upload_storage.meeting_dir(meeting.meeting_id).exists()
     _assign(db, meeting)
     assert _resume(meeting.meeting_id).status_code == 200
