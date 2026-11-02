@@ -11,12 +11,26 @@ STARTED = "2026-10-31T01:00:00+00:00"
 
 
 class FakeDiarizer:
-    def __init__(self, segments):
+    def __init__(self, segments, *, pending_fetches=0):
         self.segments = segments
         self.calls = []
+        self.submits = []
+        self.fetches = []
+        self.pending_fetches = pending_fetches  # fetch 가 None(진행 중)을 돌려주는 횟수
 
     def diarize(self, path):
         self.calls.append(path)
+        return list(self.segments)
+
+    def submit(self, path):
+        self.submits.append(path)
+        return f"job-{len(self.submits)}"
+
+    def fetch(self, job_id):
+        self.fetches.append(job_id)
+        if self.pending_fetches > 0:
+            self.pending_fetches -= 1
+            return None
         return list(self.segments)
 
 
