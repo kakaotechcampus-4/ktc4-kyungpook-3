@@ -37,6 +37,7 @@ from capture.notify import FileOutbox, MeetingReporter, debug_from_env
 from capture.recorder import STATUS_SOURCED, Claims, backend_from_env, build_extractor, recover_pass, save_manifest
 from shared.config import RECORDINGS_DIR, TRANSCRIPTS_DIR
 from shared.schemas import now_iso
+from upload.intake import intake_one
 
 WORKER_INTERVAL_S = float(os.environ.get("MM_WORKER_INTERVAL_S", "10"))   # 한 바퀴 주기이자 살아 있다는 표시 주기
 WORKER_DIR = ".worker"
@@ -103,9 +104,24 @@ def _speech_gate():
     return SpeechGate()
 
 
+def intake_from_env():
+    """웹 업로드 가져오기에 쓸 (BE 클라이언트, 화자 분리기). BE_BASE_URL·BE_SERVICE_TOKEN·PYANNOTEAI_API_KEY 가 다 있을 때만,
+    하나라도 없으면 None(BE 도 pyannoteAI 도 부르지 않는다)."""
+    from capture.handoff import BeClient
+    from shared.config import settings
+    from upload.diarize import PyannoteAiDiarizer
+
+    cfg = settings()
+    token = getattr(cfg, "be_service_token", "")
+    key = os.environ.get("PYANNOTEAI_API_KEY", "").strip()
+    if not cfg.be_base_url or not token or not key:
+        return None
+    return BeClient(cfg.be_base_url, service_token=token), PyannoteAiDiarizer(key)
+
+
 class Worker:
     def __init__(self, recordings_dir: Path = RECORDINGS_DIR, *, transcripts_dir: Path = TRANSCRIPTS_DIR,
-                 stt_factory=None, gate_factory=None, extractor_factory=None, handoff_factory=None,
+                 stt_factory=None, gate_factory=None, extractor_factory=None, handoff_factory=None, intake_factory=None,
                  interval_s: float | None = None, poll_s: float = 1.0, notifier=None, debug: bool | None = None) -> None:
         """팩토리 기본은 환경 변수다. poll_s 는 깨우기와 종료 신호를 확인하는 간격이다.
 
@@ -118,6 +134,9 @@ class Worker:
         self._gate_factory = gate_factory if gate_factory is not None else _speech_gate
         self._extractor_factory = extractor_factory if extractor_factory is not None else build_extractor
         self._handoff_factory = handoff_factory if handoff_factory is not None else handoff_from_env
+        self._intake_factory = intake_factory if intake_factory is not None else intake_from_env
+        self._intake = None                               # (client, diarizer). 처음 필요할 때 만든다
+        self._intake_built = False
         self.interval_s = WORKER_INTERVAL_S if interval_s is None else interval_s
         self.poll_s = poll_s
         self._notifier = notifier if notifier is not None else FileOutbox(recordings_dir)
@@ -191,6 +210,29 @@ class Worker:
         finally:
             self._current = None
 
+    async def _intake_once(self) -> None:
+        """웹 업로드 가져오기를 한 건 한 단계. 정지 신호 뒤에는 새로 claim 하지 않는다. 한 번에 한 회의 자리(_sem) 안에서 돈다."""
+        if self._stopping:
+            return
+        if not self._intake_built:
+            self._intake, self._intake_built = self._intake_factory(), True
+        if self._intake is None:
+            return
+        client, diarizer = self._intake
+        async with self._sem:
+            if self._stopping:
+                return
+            self._current = "upload"
+            try:
+                progress = await asyncio.to_thread(intake_one, self.recordings_dir, client=client, diarizer=diarizer)
+            except Exception as e:  # noqa: BLE001 - intake_one 은 예외를 내지 않는 게 약속이지만 워커는 어떤 경우에도 계속 돈다
+                print(f"[worker] 업로드 가져오기 오류: {type(e).__name__}: {e}", flush=True)
+                return
+            finally:
+                self._current = None
+        if progress is not None:
+            print(f"[worker] 업로드 {progress.meeting_id} {progress.event}", flush=True)
+
     def _wakes(self) -> list[Path]:
         d = worker_dir(self.recordings_dir)
         return sorted(d.glob("wake-*")) if d.is_dir() else []
@@ -216,6 +258,7 @@ class Worker:
                         break
                     wake.unlink(missing_ok=True)
                     await self.run_pass(guild_id=wake.name[len("wake-"):], manual=True)
+                await self._intake_once()
                 await self._nap()
         finally:
             beat.cancel()

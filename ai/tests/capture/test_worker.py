@@ -12,6 +12,7 @@ import threading
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from types import SimpleNamespace
 
 from capture import handoff as H
 from capture import ops_record as O
@@ -23,11 +24,13 @@ from tests.capture.test_recorder import EchoStt, _extractor, _session
 AI_DIR = Path(__file__).resolve().parents[2]
 
 
-def _worker(tmp_path, *, handoff=None, extractor=None, interval_s=3600.0, poll_s=0.02, notifier=None, debug=False):
+def _worker(tmp_path, *, handoff=None, extractor=None, interval_s=3600.0, poll_s=0.02, notifier=None, debug=False,
+            intake=None):
     return W.Worker(tmp_path / "recordings", transcripts_dir=tmp_path / "transcripts",
                     stt_factory=lambda: (EchoStt(), "echo", 1), gate_factory=lambda: None,
                     extractor_factory=lambda: extractor, handoff_factory=lambda: handoff,
-                    interval_s=interval_s, poll_s=poll_s, notifier=notifier, debug=debug)
+                    interval_s=interval_s, poll_s=poll_s, notifier=notifier, debug=debug,
+                    intake_factory=lambda: intake)      # 기본은 intake 없음: 환경 변수에 기대지 않는다
 
 
 def _status(path):
@@ -494,3 +497,131 @@ def test_a_pass_never_lists_an_upload_manifest(tmp_path):
         assert asyncio.run(w.run_pass()) == ([], [])
         assert asyncio.run(w.run_pass(guild_id="123", manual=True)) == ([], [])
         assert _status(path) == status
+
+
+# ---- 웹 업로드 가져오기(upload.intake)를 바퀴 끝에서 한 번 돌린다 ----
+
+class _Intake:
+    """W.intake_one 자리에 끼우는 기록기. 부른 횟수와 그때 워커의 current 를 남긴다."""
+    def __init__(self, worker, events=(), after=None):
+        self.worker, self.events, self.calls, self.currents, self.after = worker, list(events), 0, [], after
+
+    def __call__(self, recordings_dir, *, client, diarizer, **kw):
+        self.calls += 1
+        self.currents.append(self.worker._current)
+        if self.after:
+            self.after(self.calls)
+        return self.events.pop(0) if self.events else None
+
+
+async def _laps(worker, n):
+    """n 바퀴 돌고 끝낸다(바퀴는 run_pass 한 번으로 센다)."""
+    real, seen = worker.run_pass, []
+
+    async def counted(**kw):
+        seen.append(1)
+        out = await real(**kw)
+        if len(seen) >= n:
+            worker.stop()
+        return out
+
+    worker.run_pass = counted
+    await asyncio.wait_for(worker.run(), 20)
+    return len(seen)
+
+
+async def test_each_lap_runs_intake_once_after_the_pass(tmp_path, monkeypatch):
+    w = _worker(tmp_path, intake=("client", "diarizer"), interval_s=0.05)
+    rec = _Intake(w)
+    monkeypatch.setattr(W, "intake_one", rec)
+    assert await _laps(w, 3) == 3
+    assert rec.calls == 2      # 세 번째 바퀴는 그 안에서 멈춤 신호를 받아 가져오지 않는다
+
+
+async def test_intake_does_not_run_without_a_factory_result(tmp_path, monkeypatch):
+    w = _worker(tmp_path, intake=None, interval_s=0.05)
+    rec = _Intake(w)
+    monkeypatch.setattr(W, "intake_one", rec)
+    await _laps(w, 2)
+    assert rec.calls == 0
+
+
+async def test_no_claim_after_the_stop_signal(tmp_path, monkeypatch):
+    w = _worker(tmp_path, intake=("client", "diarizer"))
+    rec = _Intake(w)
+    monkeypatch.setattr(W, "intake_one", rec)
+    w.stop()
+    await w._intake_once()
+    assert rec.calls == 0
+    w2 = _worker(tmp_path, intake=("client", "diarizer"))          # 바퀴 도중에 멈춘 경우
+    rec2 = _Intake(w2)
+    monkeypatch.setattr(W, "intake_one", rec2)
+    real = w2.run_pass
+
+    async def stop_during(**kw):
+        out = await real(**kw)
+        w2.stop()
+        return out
+
+    w2.run_pass = stop_during
+    await asyncio.wait_for(w2.run(), 20)
+    assert rec2.calls == 0
+
+
+async def test_intake_marks_the_heartbeat_while_it_runs_and_logs_a_line(tmp_path, monkeypatch, capsys):
+    w = _worker(tmp_path, intake=("client", "diarizer"))
+    rec = _Intake(w, events=[SimpleNamespace(meeting_id="m9", event="claimed")])
+    monkeypatch.setattr(W, "intake_one", rec)
+    await w._intake_once()
+    assert rec.currents == ["upload"]               # 부르는 동안 하트비트의 current. 끝나면 비운다
+    assert w._current is None
+    assert "[worker] 업로드 m9 claimed" in capsys.readouterr().out
+
+
+async def test_an_intake_crash_does_not_stop_the_worker(tmp_path, monkeypatch, capsys):
+    w = _worker(tmp_path, intake=("client", "diarizer"), interval_s=0.05)
+
+    def boom(*a, **k):
+        raise RuntimeError("터졌다")
+
+    monkeypatch.setattr(W, "intake_one", boom)
+    await _laps(w, 2)
+    assert "[worker] 업로드 가져오기 오류: RuntimeError: 터졌다" in capsys.readouterr().out
+
+
+async def test_an_imported_upload_is_never_picked_by_the_pass(tmp_path):
+    """가져오기가 만든 diarized 매니페스트는 같은 워커의 다음 run_pass 가 집지 않는다."""
+    import io
+    import numpy as np
+    import soundfile as sf
+    from tests.conftest import SEGS, FakeDiarizer
+
+    t = np.arange(12 * 16000) / 16000
+    buf = io.BytesIO()
+    sf.write(buf, (0.3 * np.sin(2 * np.pi * 220 * t)).astype(np.float32), 16000, format="WAV", subtype="PCM_16")
+    fake = FakeBe()
+    fake.add_upload("m1", audio=buf.getvalue(), stored_filename="a.wav", original_filename="회의.wav")
+    client = H.BeClient("http://be", session=fake, service_token="svc-token")
+    w = _worker(tmp_path, intake=(client, FakeDiarizer(SEGS)))
+    for _ in range(8):
+        await w._intake_once()
+    path = R.manifest_path(w.recordings_dir, "upload_m1")
+    assert _status(path) == "diarized"
+    assert await w.run_pass() == ([], [])
+    assert await w.run_pass(guild_id="1", manual=True) == ([], [])
+    assert _status(path) == "diarized"
+
+
+def test_default_intake_needs_be_url_token_and_pyannote_key(tmp_path, monkeypatch):
+    from shared import config
+    for url, token, key, on in [("http://be", "svc", "pk", True), ("", "svc", "pk", False),
+                                ("http://be", "", "pk", False), ("http://be", "svc", "", False)]:
+        monkeypatch.setattr(config, "settings", lambda u=url, t=token: type("S", (), {"be_base_url": u, "be_service_token": t})())
+        monkeypatch.setenv("PYANNOTEAI_API_KEY", key)
+        got = W.intake_from_env()
+        assert (got is not None) is on
+    from upload.diarize import PyannoteAiDiarizer
+    monkeypatch.setattr(config, "settings", lambda: type("S", (), {"be_base_url": "http://be", "be_service_token": "svc"})())
+    monkeypatch.setenv("PYANNOTEAI_API_KEY", "pk")
+    client, diarizer = W.intake_from_env()
+    assert isinstance(client, H.BeClient) and isinstance(diarizer, PyannoteAiDiarizer)
