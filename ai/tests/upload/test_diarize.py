@@ -141,3 +141,13 @@ def test_non_transient_poll_error_is_not_retried(tmp_path):
     with pytest.raises(HttpErr):
         d.diarize(f)
     assert [c[0] for c in sess.calls].count("GET") == 1
+
+
+def test_the_diarizer_protocol_only_declares_diarize():
+    """리뷰 반영 중 재시도 헬퍼가 Protocol 에 섞여 들어갔던 것을 막는다. 구현 세부는 PyannoteAiDiarizer 에만 있다."""
+    from upload.diarize import Diarizer, PyannoteAiDiarizer
+
+    declared = {n for n in vars(Diarizer) if not n.startswith("__") and not n.startswith("_abc")}
+    assert "diarize" in declared
+    assert not {"_transient", "_poll", "_poll_retries"} & declared
+    assert hasattr(PyannoteAiDiarizer, "_poll") and hasattr(PyannoteAiDiarizer, "_transient")
