@@ -315,4 +315,8 @@ def get_meeting_audio(
     meeting = _get_meeting(db, meeting_id)
     require_pm(db, user, meeting.workspace_id)
     path, content_type = speaker_assignment.get_audio_for_playback(db, meeting)
-    return FileResponse(path, media_type=content_type)
+    return FileResponse(
+        path,
+        media_type=content_type,
+        headers={"X-Content-Type-Options": "nosniff", "Cache-Control": "private, no-store"},
+    )

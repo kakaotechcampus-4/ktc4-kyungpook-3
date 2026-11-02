@@ -167,8 +167,22 @@ def get_speaker_view(db: Session, meeting: Meeting) -> dict:
         "speakers": speakers,
         "candidates": json.loads(upload.attendees),
         "mapping": json.loads(upload.speaker_mapping) if upload.speaker_mapping else None,
-        "audio": {"content_type": upload.content_type, "size_bytes": upload.size_bytes},
+        "audio": {"content_type": playback_content_type(upload.stored_filename), "size_bytes": upload.size_bytes},
     }
+
+
+# 재생 응답의 Content-Type 은 클라이언트가 올린 값이 아니라 저장한 확장자로 서버가 정한다(text/html 로 올려 스크립트가 실행되는 것을 막는다)
+_AUDIO_TYPES = {
+    "wav": "audio/wav",
+    "mp3": "audio/mpeg",
+    "m4a": "audio/mp4",
+    "ogg": "audio/ogg",
+    "webm": "audio/webm",
+}
+
+
+def playback_content_type(stored_filename: str) -> str:
+    return _AUDIO_TYPES.get(Path(stored_filename).suffix.lstrip(".").lower(), "application/octet-stream")
 
 
 def get_audio_for_playback(db: Session, meeting: Meeting) -> tuple[Path, str]:
@@ -177,7 +191,7 @@ def get_audio_for_playback(db: Session, meeting: Meeting) -> tuple[Path, str]:
     path = upload_storage.audio_path(meeting.meeting_id, upload.stored_filename)
     if not path.is_file():
         raise _not_found(meeting.meeting_id)
-    return path, upload.content_type or "application/octet-stream"
+    return path, playback_content_type(upload.stored_filename)
 
 
 def _inactive_member_ids(db: Session, workspace_id: str, member_ids: set[str]) -> list[str]:
