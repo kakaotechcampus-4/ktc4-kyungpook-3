@@ -7,9 +7,12 @@ import { taskDetailQueryOptions, taskHistoryQueryOptions } from '@/entities/task
 import type { Task } from '@/entities/task'
 import { TaskNotionSyncStatus } from '@/features/task-notion-sync'
 import { TASK_STATUS_LABEL, TaskStatusControl, useTaskStatusOverlay } from '@/features/task-status'
+import { COMMON_MESSAGES } from '@/shared/api/errorMessages'
 import { ApiError, ERROR_CODES } from '@/shared/api/errors'
 import { paths } from '@/shared/config/routes'
+import { queryView } from '@/shared/lib/query-view'
 import { GuardedLink } from '@/shared/lib/unsaved-changes'
+import { Button } from '@/shared/ui/button'
 import { EmptyState } from '@/shared/ui/empty-state'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
 import { Skeleton } from '@/shared/ui/skeleton'
@@ -54,13 +57,24 @@ function isUnavailable(error: unknown): boolean {
  */
 export function TaskDetail({ workspaceId, taskId, isPm }: TaskDetailProps) {
   const task = useQuery(taskDetailQueryOptions(workspaceId, taskId))
+  // 이미 받는 중이면 새 요청을 보내지 않는다
+  const retryRefresh = () => void task.refetch({ cancelRefetch: false })
+
+  const view = queryView(task)
 
   let body: ReactNode
   if (task.data !== undefined)
-    body = <TaskBody workspaceId={workspaceId} task={task.data} isPm={isPm} />
-  else if (task.error !== null && isUnavailable(task.error))
+    body = (
+      <>
+        {view === 'refreshFailed' ? (
+          <RefreshFailedNotice retrying={task.isFetching} onRetry={retryRefresh} />
+        ) : null}
+        <TaskBody workspaceId={workspaceId} task={task.data} isPm={isPm} />
+      </>
+    )
+  else if (view === 'error' && isUnavailable(task.error))
     body = <UnavailableTask workspaceId={workspaceId} />
-  else if (task.error !== null)
+  else if (view === 'error')
     body = (
       <QueryErrorState
         error={task.error}
@@ -85,6 +99,22 @@ export function TaskDetail({ workspaceId, taskId, isPm }: TaskDetailProps) {
       </div>
       {body}
     </main>
+  )
+}
+
+/**
+ * 데이터는 있으나 마지막 재조회가 실패했다 (#236, 대시보드 E-02 와 같은 판정). 본문은 그대로 두고 이 안내만 위에 둔다.
+ * 재조회가 성공하면 사라진다. 요청 중에는 버튼이 비활성이다
+ */
+function RefreshFailedNotice({ retrying, onRetry }: { retrying: boolean; onRetry: () => void }) {
+  return (
+    <div role="alert" className="flex flex-wrap items-center gap-8 text-caption text-dim">
+      <span>최신 상태를 받지 못했어요</span>
+      <span aria-hidden="true">·</span>
+      <Button size="sm" loading={retrying} onClick={onRetry}>
+        {COMMON_MESSAGES.retry}
+      </Button>
+    </div>
   )
 }
 

@@ -15,8 +15,8 @@ import { taskListQueryOptions } from '@/entities/task'
 import type { Task } from '@/entities/task'
 import { NOTION_SYNC_POLL_MS } from '@/features/task-notion-sync'
 import { createClientError, CLIENT_ERROR_CODES } from '@/shared/api/errors'
+import { queryView } from '@/shared/lib/query-view'
 import { hasPendingSync, latestDoneMeeting, recentAutoItems } from '../lib/dashboard'
-import { queryView } from '../lib/queryView'
 
 /** 데이터는 있으나 마지막 재조회가 실패했다 (E-02). 다시 시도하는 중이면 `retrying` 이다 */
 export interface RefreshFailure {
