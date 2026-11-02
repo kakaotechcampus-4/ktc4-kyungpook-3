@@ -97,7 +97,7 @@ def intake_one(recordings_dir: Path, *, client, diarizer: Diarizer, now: Callabl
     recordings_dir = Path(recordings_dir)
     t = now()
     for d, rec in _unfinished(recordings_dir):
-        if rec.get("fail_pending") or _due(rec, t):
+        if _due(rec, t):
             return _advance(recordings_dir, d, rec, client=client, diarizer=diarizer, now=now, timezone=timezone,
                             fresh=False)
     known = {p.name for p in (recordings_dir / ".uploads").iterdir()} if (recordings_dir / ".uploads").exists() else set()
@@ -121,7 +121,7 @@ def intake_one(recordings_dir: Path, *, client, diarizer: Diarizer, now: Callabl
 def _advance(recordings_dir, d: Path, rec: dict, *, client, diarizer, now, timezone, fresh: bool) -> Progress:
     mid = rec["meeting_id"]
     if rec.get("fail_pending"):
-        return _report_fail(d, rec, client)
+        return _report_fail(d, rec, client, now())
     if manifest_path(recordings_dir, f"upload_{mid}").exists():   # 매니페스트가 이미 있다: 분리하지 않고 정리만
         _cleanup(d)
         rec.update(state="done", next_at=None, error=None)
@@ -133,9 +133,9 @@ def _advance(recordings_dir, d: Path, rec: dict, *, client, diarizer, now, timez
         shutil.rmtree(d, ignore_errors=True)
         return Progress(mid, "skipped")
     except _Permanent as e:
-        return _fail(d, rec, client, str(e))
+        return _fail(d, rec, client, str(e), now())
     except ValueError as e:
-        return _fail(d, rec, client, f"{type(e).__name__}: {e}")
+        return _fail(d, rec, client, f"{type(e).__name__}: {e}", now())
     except Exception as e:  # noqa: BLE001 - 연결·5xx·분리기 오류: 다시 해 볼 일시 실패
         return _transient(d, rec, client, now(), f"{type(e).__name__}: {e}")
 
@@ -230,28 +230,33 @@ def _transient(d: Path, rec: dict, client, t: datetime, error: str) -> Progress:
     rec["attempts"] = rec.get("attempts", 0) + 1
     rec["error"] = error
     if rec["attempts"] >= RECOVERY_MAX_ATTEMPTS:
-        return _fail(d, rec, client, f"{error} (시도 {rec['attempts']}번)")
+        return _fail(d, rec, client, f"{error} (시도 {rec['attempts']}번)", t)
     rec["next_at"] = _iso(t + timedelta(seconds=backoff_s(rec["attempts"])))
     _save(d, rec)
     return Progress(rec["meeting_id"], "retry")
 
 
-def _fail(d: Path, rec: dict, client, error: str) -> Progress:
+def _fail(d: Path, rec: dict, client, error: str, t: datetime) -> Progress:
     _cleanup(d)   # 실패 보고가 되든 안 되든 원본·wav 는 더 쓸 데가 없다
     rec.update(error=error, next_at=None, fail_pending={"failed_stage": FAILED_STAGE})
     _save(d, rec)
-    return _report_fail(d, rec, client)
+    return _report_fail(d, rec, client, t)
 
 
-def _report_fail(d: Path, rec: dict, client) -> Progress:
+def _report_fail(d: Path, rec: dict, client, t: datetime) -> Progress:
+    """fail 을 보낸다. 보내지 못하면 fail_pending 을 두고 backoff 뒤(next_at)에 다시 보낸다. 그동안 다른 건을 처리한다.
+    BE 에 그 회의가 없으면(404) 보낼 곳이 없으니 끝난 것으로 본다(이미 끝난 409 를 BeClient 가 성공으로 보는 것과 같다)."""
     mid = rec["meeting_id"]
     try:
         client.fail_meeting(mid, rec["fail_pending"]["failed_stage"])
     except Exception as e:  # noqa: BLE001 - 다음 호출이 다시 보낸다
-        rec["error"] = f"fail 보고 실패: {type(e).__name__}: {e}"
-        _save(d, rec)
-        return Progress(mid, "fail_pending")
+        if not (isinstance(e, BeError) and (e.status == 404 or e.code == "MEETING_NOT_FOUND")):
+            n = rec["fail_pending"]["attempts"] = rec["fail_pending"].get("attempts", 0) + 1
+            rec["error"] = f"fail 보고 실패: {type(e).__name__}: {e}"
+            rec["next_at"] = _iso(t + timedelta(seconds=backoff_s(n)))
+            _save(d, rec)
+            return Progress(mid, "fail_pending")
     _cleanup(d)
-    rec.update(state="failed", fail_pending=None)
+    rec.update(state="failed", fail_pending=None, next_at=None)
     _save(d, rec)
     return Progress(mid, "failed")

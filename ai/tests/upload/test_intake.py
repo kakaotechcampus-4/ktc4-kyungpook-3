@@ -243,16 +243,56 @@ class FailOnce(BeClient):
         return super().fail_meeting(meeting_id, failed_stage)
 
 
-def test_failed_fail_report_is_kept_and_resent(env):
+def test_failed_fail_report_is_kept_and_resent_after_backoff(env):
     env.be.uploads[MID]["item"]["started_at"] = "2026-11-03T10:00:00"
     client = FailOnce(env.client)
     events = _drive(env, client=client)
     assert events[-1] == "fail_pending" and _state(env)["fail_pending"] and env.be.meetings[MID]["status"] == "processing"
     assert sorted(p.name for p in (env.rec / ".uploads" / MID).iterdir()) == ["intake.json"]   # 실패 보고 전에도 원본은 필요 없다
     client.up = True
+    assert _step(env, client=client) is None and client.sent == 1   # 아직 때가 아니다: 대기가 지나기 전에는 다시 보내지 않는다
+    env.clock.advance(backoff_s(1))
     assert _step(env, client=client).event == "failed"
     assert env.be.meetings[MID]["status"] == "failed" and client.sent == 2
     assert _state(env)["state"] == "failed" and not _state(env).get("fail_pending")
+
+
+def test_a_stuck_fail_report_does_not_block_other_uploads(env):
+    env.be.uploads[MID]["item"]["started_at"] = "2026-11-03T10:00:00"
+    env.be.add_upload("mtg-2", audio=env.audio, stored_filename="a.wav")
+    client = FailOnce(env.client)
+    assert _drive(env, client=client)[-1] == "fail_pending"
+    ev = _step(env, client=client)   # mtg-1 의 보고는 대기 중이다. 다른 건을 가져온다
+    assert ev.meeting_id == "mtg-2" and ev.event == "claimed" and client.sent == 1
+    env.clock.advance(backoff_s(1) + 1)
+    client.up = True
+    assert _step(env, client=client).meeting_id == MID   # 때가 되면 보고를 다시 보낸다
+    assert env.be.meetings[MID]["status"] == "failed"
+
+
+def test_fail_report_backoff_grows_with_each_failed_report(env):
+    env.be.uploads[MID]["item"]["started_at"] = "2026-11-03T10:00:00"
+    client = FailOnce(env.client)
+    _drive(env, client=client)
+    first = datetime.fromisoformat(_state(env)["next_at"])
+    assert first == env.clock.t + timedelta(seconds=backoff_s(1))
+    env.clock.advance(backoff_s(1))
+    assert _step(env, client=client).event == "fail_pending"
+    assert datetime.fromisoformat(_state(env)["next_at"]) == env.clock.t + timedelta(seconds=backoff_s(2))
+
+
+def test_fail_report_404_means_the_meeting_is_gone_so_we_are_done(env):
+    class Gone(FailOnce):
+        def fail_meeting(self, meeting_id, failed_stage):
+            self.sent += 1
+            raise BeError("MEETING_NOT_FOUND", "없다", status=404)
+
+    env.be.uploads[MID]["item"]["started_at"] = "2026-11-03T10:00:00"
+    client = Gone(env.client)
+    assert _drive(env, client=client)[-1] == "failed"
+    s = _state(env)
+    assert s["state"] == "failed" and not s.get("fail_pending") and client.sent == 1
+    assert _step(env, client=client) is None
 
 
 def test_restart_with_manifest_already_written_only_cleans_up(env):
