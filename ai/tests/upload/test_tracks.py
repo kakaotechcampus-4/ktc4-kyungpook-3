@@ -177,3 +177,45 @@ def test_to_wav_16k_writes_16k_mono_pcm16(tmp_path):
     info = sf.info(dst)
     assert (info.samplerate, info.channels, info.subtype) == (SR, 1, "PCM_16")
     assert info.duration == pytest.approx(2.0, abs=1 / SR * 2)
+
+
+def _many_small_chunks(total):
+    """잘게 쪼갠 디코딩 조각(초기 버퍼를 여러 번 넘기게). 값은 위치를 알 수 있게 오름차순."""
+    data = np.arange(total, dtype=np.float32) / total
+
+    def fake(path):
+        for i in range(0, total, 1000):
+            yield data[i:i + 1000]
+
+    return data, fake
+
+
+def test_to_wav_16k_streams_chunks_without_building_the_whole_array(tmp_path, monkeypatch):
+    from upload import tracks
+    data, fake = _many_small_chunks(5000)
+    monkeypatch.setattr(tracks, "_decode_mono_16k", fake)
+    monkeypatch.setattr(tracks.np, "concatenate", lambda *a, **k: pytest.fail("전체 배열을 만들면 안 된다"))
+    dst = tmp_path / "out.wav"
+    assert to_wav_16k(tmp_path / "ignored", dst) == pytest.approx(5000 / SR)
+    got, sr = sf.read(dst, dtype="float32")
+    assert sr == SR and len(got) == 5000 and np.allclose(got, data, atol=1e-4)
+
+
+def test_to_wav_16k_of_nothing_is_a_valueerror_and_leaves_no_file(tmp_path, monkeypatch):
+    from upload import tracks
+    monkeypatch.setattr(tracks, "_decode_mono_16k", lambda path: iter(()))
+    dst = tmp_path / "out.wav"
+    with pytest.raises(ValueError):
+        to_wav_16k(tmp_path / "ignored", dst)
+    assert not dst.exists()
+
+
+def test_load_mono_16k_keeps_every_sample_when_the_buffer_has_to_grow(tmp_path, monkeypatch):
+    from upload import tracks
+    total = 3_000_000   # 처음 잡는 버퍼보다 길다
+    data, fake = _many_small_chunks(total)
+    monkeypatch.setattr(tracks, "_decode_mono_16k", fake)
+    monkeypatch.setattr(tracks.np, "concatenate", lambda *a, **k: pytest.fail("리스트를 이어 붙이면 안 된다"))
+    got, secs = load_mono_16k(tmp_path / "ignored")
+    assert got.dtype == np.float32 and len(got) == total and secs == pytest.approx(total / SR)
+    assert np.array_equal(got, data)

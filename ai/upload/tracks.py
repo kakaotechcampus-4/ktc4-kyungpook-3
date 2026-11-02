@@ -37,21 +37,43 @@ def _decode_mono_16k(path: Path):
         container.close()
 
 
+_INITIAL_SAMPLES = 1 << 22   # 처음 잡는 버퍼(약 4분). 모자라면 두 배로 늘린다
+
+
 def load_mono_16k(path: Path) -> tuple[np.ndarray, float]:
     """(float32 mono 16k 배열, 길이 초). PyAV 로 어떤 형식이든 스트리밍 디코딩하고,
-    채널은 평균(mono 다운믹스), 16k 로 리샘플한다. 열거나 디코딩하지 못하면 ValueError."""
-    chunks = [c.astype(np.float32, copy=False) for c in _decode_mono_16k(path)]
-    audio = np.concatenate(chunks) if chunks else np.zeros(0, dtype=np.float32)
-    if len(audio) == 0:
+    채널은 평균(mono 다운믹스), 16k 로 리샘플한다. 열거나 디코딩하지 못하면 ValueError.
+
+    조각 리스트를 이어 붙이면 순간 메모리가 두 배가 되므로, 미리 잡은 버퍼에 채우고 모자라면 늘린다."""
+    buf = np.empty(_INITIAL_SAMPLES, dtype=np.float32)
+    n = 0
+    for chunk in _decode_mono_16k(path):
+        end = n + len(chunk)
+        if end > len(buf):
+            buf.resize(max(end, 2 * len(buf)), refcheck=False)
+        buf[n:end] = chunk
+        n = end
+    if n == 0:
         raise ValueError(f"디코딩된 오디오가 비어 있다: {path}")
-    return audio, len(audio) / SR
+    buf.resize(n, refcheck=False)   # 남는 칸을 돌려준다
+    return buf, n / SR
 
 
 def to_wav_16k(src: Path, dst: Path) -> float:
-    """src 를 16k mono PCM_16 wav 로 dst 에 쓴다. 길이(초)를 돌려준다."""
-    audio, total = load_mono_16k(src)
-    sf.write(str(dst), audio, SR, subtype="PCM_16")
-    return total
+    """src 를 16k mono PCM_16 wav 로 dst 에 쓴다. 길이(초)를 돌려준다. 조각을 바로 파일에 써서 전체 배열을 만들지 않는다.
+    열거나 디코딩하지 못하거나 비어 있으면 ValueError 이고 dst 를 남기지 않는다."""
+    n = 0
+    try:
+        with sf.SoundFile(str(dst), "w", samplerate=SR, channels=1, subtype="PCM_16") as out:
+            for chunk in _decode_mono_16k(src):
+                out.write(chunk.astype(np.float32, copy=False))
+                n += len(chunk)
+        if n == 0:
+            raise ValueError(f"디코딩된 오디오가 비어 있다: {src}")
+    except BaseException:
+        Path(dst).unlink(missing_ok=True)
+        raise
+    return n / SR
 
 
 def speaker_label_id(label: str) -> str:
