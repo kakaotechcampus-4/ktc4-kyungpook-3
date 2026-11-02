@@ -505,10 +505,12 @@ class _Intake:
     """W.intake_one 자리에 끼우는 기록기. 부른 횟수와 그때 워커의 current 를 남긴다."""
     def __init__(self, worker, events=(), after=None):
         self.worker, self.events, self.calls, self.currents, self.after = worker, list(events), 0, [], after
+        self.locked = []
 
     def __call__(self, recordings_dir, *, client, diarizer, **kw):
         self.calls += 1
         self.currents.append(self.worker._current)
+        self.locked.append(self.worker._sem.locked())
         if self.after:
             self.after(self.calls)
         return self.events.pop(0) if self.events else None
@@ -574,6 +576,7 @@ async def test_intake_marks_the_heartbeat_while_it_runs_and_logs_a_line(tmp_path
     monkeypatch.setattr(W, "intake_one", rec)
     await w._intake_once()
     assert rec.currents == ["upload"]               # 부르는 동안 하트비트의 current. 끝나면 비운다
+    assert rec.locked == [True] and not w._sem.locked()   # 한 번에 한 회의 자리(_sem) 안에서 돌고 끝나면 놓는다
     assert w._current is None
     assert "[worker] 업로드 m9 claimed" in capsys.readouterr().out
 
@@ -612,16 +615,43 @@ async def test_an_imported_upload_is_never_picked_by_the_pass(tmp_path):
     assert _status(path) == "diarized"
 
 
-def test_default_intake_needs_be_url_token_and_pyannote_key(tmp_path, monkeypatch):
+async def test_an_intake_factory_crash_is_logged_once_and_the_worker_keeps_going(tmp_path, monkeypatch, capsys):
+    calls = []
+
+    def bad_factory():
+        calls.append(1)
+        raise RuntimeError("설정이 틀렸다")
+
+    w = W.Worker(tmp_path / "recordings", transcripts_dir=tmp_path / "transcripts",
+                 stt_factory=lambda: (EchoStt(), "echo", 1), gate_factory=lambda: None, extractor_factory=lambda: None,
+                 handoff_factory=lambda: None, intake_factory=bad_factory, interval_s=0.05, poll_s=0.02, debug=False)
+    assert await _laps(w, 3) == 3
+    assert "[worker] 업로드 가져오기 오류: RuntimeError: 설정이 틀렸다" in capsys.readouterr().out
+    assert calls == [1]      # 매 바퀴 다시 만들어 로그를 채우지 않는다
+
+
+def _be_env(monkeypatch, url="http://be", token="svc", key="pk", flag="1"):
     from shared import config
+    monkeypatch.setattr(config, "settings", lambda: type("S", (), {"be_base_url": url, "be_service_token": token})())
+    monkeypatch.setenv("PYANNOTEAI_API_KEY", key)
+    if flag is None:
+        monkeypatch.delenv("MM_UPLOAD_INTAKE", raising=False)
+    else:
+        monkeypatch.setenv("MM_UPLOAD_INTAKE", flag)
+
+
+def test_default_intake_needs_the_flag_be_url_token_and_pyannote_key(monkeypatch):
+    from upload.diarize import PyannoteAiDiarizer
     for url, token, key, on in [("http://be", "svc", "pk", True), ("", "svc", "pk", False),
                                 ("http://be", "", "pk", False), ("http://be", "svc", "", False)]:
-        monkeypatch.setattr(config, "settings", lambda u=url, t=token: type("S", (), {"be_base_url": u, "be_service_token": t})())
-        monkeypatch.setenv("PYANNOTEAI_API_KEY", key)
-        got = W.intake_from_env()
-        assert (got is not None) is on
-    from upload.diarize import PyannoteAiDiarizer
-    monkeypatch.setattr(config, "settings", lambda: type("S", (), {"be_base_url": "http://be", "be_service_token": "svc"})())
-    monkeypatch.setenv("PYANNOTEAI_API_KEY", "pk")
+        _be_env(monkeypatch, url, token, key)
+        assert (W.intake_from_env() is not None) is on
+    _be_env(monkeypatch)
     client, diarizer = W.intake_from_env()
     assert isinstance(client, H.BeClient) and isinstance(diarizer, PyannoteAiDiarizer)
+
+
+def test_default_intake_is_off_without_the_flag_even_with_everything_else_set(monkeypatch):
+    for flag in (None, "", "0", "true", "yes"):    # 명시적 opt-in: 정확히 "1" 일 때만 켠다
+        _be_env(monkeypatch, flag=flag)
+        assert W.intake_from_env() is None, flag

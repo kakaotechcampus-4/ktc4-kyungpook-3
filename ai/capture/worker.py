@@ -105,8 +105,11 @@ def _speech_gate():
 
 
 def intake_from_env():
-    """웹 업로드 가져오기에 쓸 (BE 클라이언트, 화자 분리기). BE_BASE_URL·BE_SERVICE_TOKEN·PYANNOTEAI_API_KEY 가 다 있을 때만,
-    하나라도 없으면 None(BE 도 pyannoteAI 도 부르지 않는다)."""
+    """웹 업로드 가져오기에 쓸 (BE 클라이언트, 화자 분리기). 명시적 opt-in 이다: MM_UPLOAD_INTAKE=1 이고
+    BE_BASE_URL·BE_SERVICE_TOKEN·PYANNOTEAI_API_KEY 가 다 있을 때만, 하나라도 없으면 None(BE 도 pyannoteAI 도 부르지 않는다).
+    BE 의 claim 계약은 워커가 한 대라는 전제라서 운영 서버 한 대에서만 켠다."""
+    if os.environ.get("MM_UPLOAD_INTAKE", "").strip() != "1":
+        return None
     from capture.handoff import BeClient
     from shared.config import settings
     from upload.diarize import PyannoteAiDiarizer
@@ -215,7 +218,11 @@ class Worker:
         if self._stopping:
             return
         if not self._intake_built:
-            self._intake, self._intake_built = self._intake_factory(), True
+            self._intake_built = True      # 실패해도 한 번만 시도하고 로그를 남긴다(설정은 재시작해야 바뀐다)
+            try:
+                self._intake = self._intake_factory()
+            except Exception as e:  # noqa: BLE001 - 가져오기를 못 만들어도 워커는 계속 돈다
+                print(f"[worker] 업로드 가져오기 오류: {type(e).__name__}: {e}", flush=True)
         if self._intake is None:
             return
         client, diarizer = self._intake
