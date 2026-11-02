@@ -2,7 +2,7 @@
 
 - 날짜: 2026-11-02
 - 이슈: #232
-- PR: (이 PR)
+- PR: #261
 - 브랜치: feature/confidence-passthrough
 - 작성자: 윤지민 (Claude Code)
 
