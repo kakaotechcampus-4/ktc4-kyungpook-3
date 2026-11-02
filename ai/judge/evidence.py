@@ -29,10 +29,28 @@ def task_status(lines: list[str]) -> str:
     return INFERRED
 
 
+_DUE_TAILS = ("까지", "에", "는", "날")
+
+
+def _quoted_whole(line: str, raw: str) -> bool:
+    """줄(squash)에 마감 표현(squash)이 말 그대로 나오는가. 앞이 숫자("1월 5일" ⊂ "11월 5일")나
+    뒤에 꼬리가 더 붙은 것("화요일쯤", "화요일이나 수요일")은 원문 표현이 아니다. 줄 사이는 잇지 않는다."""
+    if not raw:
+        return False
+    start = line.find(raw)
+    while start != -1:
+        end = start + len(raw)
+        if not (start > 0 and line[start - 1].isdigit()) and (
+                raw.endswith("까지") or end == len(line) or line.startswith(_DUE_TAILS, end)):
+            return True
+        start = line.find(raw, start + 1)
+    return False
+
+
 def due_status(lines: list[str], due_raw: str | None, due_date: str | None, today: date) -> str:
     if due_date is None:
         return MISSING
-    if not due_raw or _squash(due_raw) not in _squash("".join(lines)):
+    if not due_raw or not any(_quoted_whole(_squash(line), _squash(due_raw)) for line in lines):
         return INFERRED
     try:
         expected = date.fromisoformat(due_date)

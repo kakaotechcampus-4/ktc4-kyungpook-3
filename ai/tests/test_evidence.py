@@ -32,6 +32,13 @@ def test_task_status(lines, expected):
     (["할게요."], None, None, "missing"),
     (["금요일까지 할게요."], "금요일까지", None, "missing"),
     (["이번 주 금요일까지 할게요."], "이번 주 금요일까지", "내일쯤", "inferred"),
+    (["다음 주 화요일에 할게요."], "다음 주 화요일", "2026-03-10", "certain"),
+    # 경계: 꼬리말·숫자 앞뒤·줄 걸침이면 원문 그대로가 아니다
+    (["다음 주 화요일쯤 할게요."], "다음 주 화요일", "2026-03-10", "inferred"),
+    (["다음 주 화요일이나 수요일까지 할게요."], "다음 주 화요일", "2026-03-10", "inferred"),
+    (["금요일 전후로 할게요."], "금요일", "2026-03-06", "inferred"),
+    (["11월 5일까지 할게요."], "1월 5일", "2027-01-05", "inferred"),
+    (["다음 주", "화요일까지 할게요."], "다음 주 화요일까지", "2026-03-10", "inferred"),
 ])
 def test_due_status(lines, raw, due, expected):
     assert due_status(lines, raw, due, TODAY) == expected

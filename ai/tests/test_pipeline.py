@@ -761,3 +761,66 @@ def test_run_merge_due_cleared_sets_missing(monkeypatch):
 
     card = out.items[0]
     assert (card["due_status"], card["due_raw"], card["due_date"]) == ("missing", None, None)
+
+
+def test_evidence_fields_without_evidence_lines_do_not_fall_back_to_summary():
+    # 근거 줄이 비면 LLM 요약("...하기로 함")으로 대신 대조하지 않는다 — 원문 대조가 원칙
+    finding = _finding(text="결제 환불 기능을 지민님이 구현하기로 했음", evidence=[])
+
+    fields = pipeline._evidence_fields(finding, _drafted(task="환불 구현"), date(2026, 9, 28))
+
+    assert fields["task_status"] == "inferred"
+
+
+class SequenceCandidates:
+    """호출마다 정해 둔 검색 결과를 차례로 돌려준다."""
+
+    def __init__(self, *results):
+        self.results = list(results)
+
+    def similar_tasks(self, workspace_id, text):
+        return list(self.results.pop(0))
+
+
+def test_run_merge_keeps_first_certain_due_when_later_finding_has_none(monkeypatch):
+    meeting = _one_line_meeting("그건 제가 다음 주 화요일까지 할게요.", "그 환불 기능 설명은 조금 더 붙일게요.")
+    _install(monkeypatch, stage1={"findings": [_stage1(0), _stage1(1, summary="환불 기능 설명을 더함")]},
+             terra=[NEW, _terra(category="decision", matched_candidate_index=0)],
+             luna_draft=[{"task": "환불 구현", "due_date": "2026-10-06", "due_raw": "다음 주 화요일",
+                          "doc_text": "환불 구현"},
+                         {"task": None, "due_date": None, "due_raw": None, "doc_text": "설명 추가"}])
+
+    out = run(meeting, workspace_id="ws_1", today=date(2026, 9, 28), candidates=ListCandidates([]))
+
+    assert len(out.items) == 1
+    card = out.items[0]
+    assert (card["due_date"], card["due_status"], card["due_raw"]) == ("2026-10-06", "certain", "다음 주 화요일")
+
+
+def test_merged_update_card_has_no_evidence_keys(monkeypatch):
+    _install(
+        monkeypatch, stage1={"findings": [LOGIN_DELAY, LOGIN_KEEP]},
+        terra=[_terra(category="schedule"), _terra(category="schedule")],
+        luna_draft=[{"task": None, "due_date": "2026-10-06", "doc_text": "로그인 화면 마감을 10/6으로 연기"},
+                    {"task": None, "due_date": "2026-10-07", "doc_text": "로그인 화면 마감을 다시 10/7로 조정"}],
+    )
+
+    out = _run_dedup()
+
+    assert len(out.items) == 1 and out.items[0]["action"] == "update"
+    assert not {"task_status", "due_status", "due_raw", "similar_count", "top_similarity"} & out.items[0].keys()
+
+
+def test_run_merge_takes_max_similar_count_and_top_similarity(monkeypatch):
+    meeting = _one_line_meeting("결제 환불 기능은 제가 할게요.", "그 환불 기능은 다음 주 화요일까지 가능할까요?")
+    _install(monkeypatch, stage1={"findings": [_stage1(0), _stage1(1, summary="환불 기능 마감을 정함")]},
+             terra=[NEW, _terra(category="schedule", matched_candidate_index=2)],  # 검색 후보 2개 뒤가 이번 회의 카드
+             luna_draft=[{"task": "환불 구현", "due_date": None, "due_raw": None, "doc_text": "환불 구현"},
+                         {"task": None, "due_date": "2026-10-06", "due_raw": "다음 주 화요일",
+                          "doc_text": "마감을 10/6으로"}])
+
+    out = run(meeting, workspace_id="ws_1", today=date(2026, 9, 28),
+              candidates=SequenceCandidates([_sim(0.6)], [_sim(0.3), _sim(0.8)]))
+
+    card = out.items[0]
+    assert (card["similar_count"], card["top_similarity"]) == (2, 0.8)

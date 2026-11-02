@@ -158,7 +158,7 @@ def _new_card_candidate(n: int, card: dict[str, Any]) -> NotionCandidate:
 
 def _evidence_fields(finding: JudgeFinding, drafted: DraftResult, today: date) -> dict[str, Any]:
     """create 항목의 근거 상태 — 근거 원문과 Luna 의 마감 표현을 대조한다."""
-    lines = finding.evidence or [finding.text]
+    lines = finding.evidence  # 비면 빈 채로 — LLM 요약(finding.text)으로 대신 대조하지 않는다
     s = drafted.structured
     return {"task_status": task_status(lines),
             "due_status": due_status(lines, s.due_raw, s.due_date, today),  # due_date 는 None 그대로 — 빈 문자열이면 inferred

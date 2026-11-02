@@ -15,7 +15,7 @@ TODAY = date(2026, 3, 2)  # 월요일
     ("이번 주 금요일까지", date(2026, 3, 6)), ("이번주 금요일", date(2026, 3, 6)),
     ("다음 주 화요일", date(2026, 3, 10)), ("담주 화요일까지", date(2026, 3, 10)),
     ("3월 16일까지", date(2026, 3, 16)), ("3/16", date(2026, 3, 16)), ("1월 5일", date(2027, 1, 5)),
-    ("  금요일 까지 ", date(2026, 3, 6)),
+    ("  금요일 까지 ", date(2026, 3, 6)), ("금요일까지는", date(2026, 3, 6)),
 ])
 def test_resolves_single_date_expressions(raw, expected):
     assert resolve_due_raw(raw, TODAY) == expected
