@@ -448,6 +448,9 @@ def _resolve(members, value):
         {"evidence_speaker": "uid_b"}, {"uid": "uid_c", "member_id": "@C"}, "@B", id="2_uid_before_source_member_id",
     ),
     pytest.param({}, {"uid": None, "member_id": "@C"}, "@C", id="3a_conclusion_source_member_id"),
+    pytest.param(
+        {}, {"uid": "uid_b", "member_id": "@C"}, "@C", id="3_source_member_id_before_source_uid"
+    ),
     pytest.param({}, {"uid": "uid_b", "member_id": None}, "@B", id="3b_uid_fallback_when_member_id_null"),
     pytest.param({}, {"uid": "uid_b", "member_id": "@gone"}, "@B", id="3c_deleted_source_member_uses_uid"),
     pytest.param(
@@ -500,6 +503,21 @@ def test_wrong_evidence_speaker_member_id_holds_only_that_item(client, db, seed,
     saved = {i.task_title: i for i in db.execute(select(ExtractionItem)).scalars()}
     assert (saved["틀린 화자"].assignee_member_id, saved["틀린 화자"].gate) == (None, "hold")
     assert (saved["정상 화자"].assignee_member_id, saved["정상 화자"].gate) == (members["@B"], "review")
+
+
+@pytest.mark.parametrize("wrong", ["no-such-member", "@gone"])
+def test_wrong_evidence_speaker_member_id_does_not_fall_through_to_conclusion_source(client, db, seed, wrong):
+    """(1)이 실패하면 활성 멤버가 연결된 결론 발화가 있어도 (3)으로 넘어가지 않는다."""
+    members = _add_speaker_members(db, seed)
+    _add_source_with_member(db, seed, 3, uid="uid_c", member_id=members["@C"])
+
+    _post_items(client, seed, [{
+        "task_title": "환불 구현", "task_confidence": 0.6, "assignee_type": "first", "assignee_raw": "제가",
+        "evidence_seqs": [3], "evidence_speaker_member_id": _resolve(members, wrong),
+    }])
+
+    saved = db.execute(select(ExtractionItem)).scalar_one()
+    assert (saved.assignee_member_id, saved.gate) == (None, "hold")
 
 
 @pytest.mark.parametrize(("sent", "expected"), [
