@@ -21,7 +21,12 @@ from app.services import upload_storage
 
 router = APIRouter(prefix="/meetings", tags=["meetings"])
 
-_ENDED_STATUSES = {MeetingStatus.PROCESSING, MeetingStatus.DONE, MeetingStatus.FAILED}
+_ENDED_STATUSES = {
+    MeetingStatus.PROCESSING,
+    MeetingStatus.AWAITING_SPEAKERS,
+    MeetingStatus.DONE,
+    MeetingStatus.FAILED,
+}
 
 
 def _get_meeting(db: Session, meeting_id: str) -> Meeting:
