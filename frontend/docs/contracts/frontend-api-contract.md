@@ -329,9 +329,65 @@ AUDIO_TOO_LARGE(413)              DISCORD_USER_ALREADY_MAPPED(409)
 ```
 
 - `status` 는 `created` → `recording` → `processing` → `done` \| `failed`.
+- 웹 업로드 회의에는 상태가 하나 더 있다. `awaiting_speakers`(화자 지정 대기)다. 업로드 회의는 `processing` 에서 시작해, AI 가 화자 라벨을 보내면 `awaiting_speakers` 가 되고, PM 이 지정을 제출하면 `processing` 으로 돌아와 `done` \| `failed` 로 끝난다. 이 상태에서는 추출이 등록되지 않고, 같은 공간의 새 업로드를 막지도 않는다. 자세한 흐름과 PM 용 API 는 아래 §2.3.1 이다.
 - `extraction_id` 는 `status: done` 일 때만 채워진다.
 - ~~`progress` 가 응답에서 빠졌다.~~ **PR #59 가 §4.7-1 을 반영했다.** `progress`(audio_merged·transcribed·extracted)가 **필수 필드**로 온다. 진행률 UI 가 이 값을 쓴다.
 - 이미 종료된 회의에 `/end` 를 호출하면 409 `MEETING_ALREADY_ENDED`.
+
+### 2.3.1 업로드 회의 화자 지정 — PM 경로 (#266)
+
+> **상태: BE 구현됨, FE 합의 전.** 아래는 `backend/app/api/meetings.py` 와 `backend/app/services/speaker_assignment.py` 의 구현 사실이다. 프론트와 합의된 규약이 아니며 경로·필드는 바뀔 수 있다(요청: #256). AI 쪽 경로는 [backend-ai-contract.md](../../../backend/docs/contracts/backend-ai-contract.md) 에 있고 프론트는 호출하지 않는다. 실제 서버를 띄운 호출은 검증하지 않았고 테스트([test_speaker_assignment_api.py](../../../backend/tests/api/test_speaker_assignment_api.py))로 확인했다.
+
+세 경로 모두 로그인 세션이 필요하고 그 회의 워크스페이스의 PM 만 쓴다. 미로그인은 401, PM 이 아니면(일반 팀원, 다른 공간의 PM) 403 `FORBIDDEN`. 회의가 없거나 웹 업로드 회의가 아니거나 `meeting_upload` 행이 없으면 404 `MEETING_NOT_FOUND`.
+
+| Method | Path | 용도 |
+|---|---|---|
+| GET | `/api/v1/meetings/{meeting_id}/speakers` | 화자 라벨·후보 참석자·저장된 지정 조회 |
+| PUT | `/api/v1/meetings/{meeting_id}/speakers` | 라벨별 팀원 지정 제출 |
+| GET | `/api/v1/meetings/{meeting_id}/audio` | 원본 녹음 재생 |
+
+```
+// GET /meetings/{meeting_id}/speakers  → 200 (봉투 data)
+{"meeting_id": "...", "status": "awaiting_speakers",
+ "speakers": [{"label": "SPEAKER_01", "total_sec": 120.5, "samples": [{"start": 10.0, "end": 14.0}]}],
+ "candidates": [{"member_id": "...", "display_name": "지민"}],
+ "mapping": null,
+ "audio": {"content_type": "audio/wav", "size_bytes": 1234}}
+```
+
+- `speakers` 는 `total_sec` 내림차순, 같으면 `label` 오름차순이다. AI 가 아직 라벨을 보내지 않았으면 `[]` 다. `samples` 의 `start`·`end` 는 초 단위이고 원본 녹음 안의 위치다.
+- `candidates` 는 업로드할 때 고른 참석자 그대로다.
+- `mapping` 은 지정을 제출하기 전에는 `null`, 제출한 뒤에는 `{label: member_id | null}` 이다.
+
+```
+// PUT /meetings/{meeting_id}/speakers
+{"mapping": {"SPEAKER_00": "<member_id>", "SPEAKER_01": null}}
+  → 200 {"meeting_id": "...", "status": "processing"}
+```
+
+- `mapping` 의 키는 `speakers` 의 라벨과 정확히 같아야 한다. 일부 라벨만 보내면 안 된다. 지정하지 않을 라벨은 값을 `null` 로 보낸다. 같은 멤버를 두 라벨에 지정하는 것은 허용한다.
+- 값이 `null` 이 아니면 그 회의 워크스페이스의 탈퇴하지 않은 멤버여야 한다.
+- 400 `INVALID_REQUEST`, `details` 에 이유: `unknown_labels`(모르는 라벨), `missing_labels`(빠진 라벨), `member_ids`(틀린 멤버 ID). 이때 아무것도 바뀌지 않는다.
+- 409 `MEETING_NOT_AWAITING_SPEAKERS`, `details.status` — 회의가 대기 상태가 아니다(이미 처리 중·종료, 또는 이미 저장된 것과 다른 지정을 다시 냄).
+- 이미 저장된 지정과 같은 `mapping` 을 다시 보내면 409 가 아니라 200 이고 `status` 는 회의의 현재 상태다. 요청이 겹치거나 응답이 유실돼 다시 보내도 안전하다.
+
+```
+// GET /meetings/{meeting_id}/audio  → 200 (또는 Range 요청에 206)
+본문: 녹음 원본 바이트. 봉투로 감싸지 않는다. 오류만 봉투다.
+Content-Type: 업로드한 파일의 content-type (없으면 application/octet-stream)
+Content-Disposition: 없음(내려받기 아님). Accept-Ranges: bytes
+```
+
+- `<audio>` 로 재생하고 `samples` 구간으로 이동해 들려준다. 서버는 구간을 자르지 않는다. 요청한 `Range` 에는 206 과 `Content-Range` 로 답한다.
+- 상태는 보지 않는다. 녹음 폴더가 있는 동안은 받을 수 있다. 처리가 `done`·`failed` 로 끝나 폴더가 지워지면 404 `MEETING_NOT_FOUND` 다.
+- 쿠키 세션으로 인증하므로 같은 출처에서 `<audio src>` 로 바로 쓸 수 있다. 헤더를 붙여야 하는 방식은 쓸 수 없다.
+
+프론트가 맞춰야 할 것(요청, 합의 전):
+
+- `awaiting_speakers` 를 회의 상태로 표시한다. 알 수 없는 상태를 `created` 처럼 읽으면 안 된다.
+- 처리 추적이 이 상태에서 멈추면 안 된다. 현재 [trackerOutcome.ts](../../src/features/meeting-processing/model/trackerOutcome.ts) 는 `processing`·`done`·`failed` 외의 상태를 `lost` 로 보고 polling 을 멈춘다. `awaiting_speakers` 는 PM 의 지정을 기다리는 정상 진행이므로 계속 지켜보거나 지정 화면으로 안내해야 한다.
+- 이 경로를 쓰는 화면은 PM 에게만 보인다.
+- 새 오류 코드 중 PM 경로에서 오는 것은 `MEETING_NOT_AWAITING_SPEAKERS` 하나다. `UPLOAD_NOT_CLAIMED`·`SPEAKERS_ALREADY_REPORTED`·`SPEAKERS_NOT_ASSIGNED` 는 AI 경로 코드다. 위 「오류 코드」 목록의 개수(31개)에는 이 새 코드들이 들어 있지 않다.
 
 ### 2.4 extractions
 
@@ -1173,6 +1229,7 @@ members 에만 있고 Discord 목록에 없으면      → 비활성 (서버를 
 | 참석자 선택 | `GET /members?workspace_id=` | **구현됨** §2.2 |
 | 업로드 | `POST /workspaces/{id}/meetings/upload` (multipart) | ⚠️ **스텁** §4.4 — 파일·참석자를 저장하지 않는다 |
 | 정리 중 — 폴링 | `GET /meetings/{meeting_id}` | **구현됨** §2.3 — `progress` 포함 |
+| 화자 지정(`awaiting_speakers`) | `GET`·`PUT /meetings/{id}/speakers`, `GET /meetings/{id}/audio` | BE 구현됨, FE 합의 전 §2.3.1 |
 | 회의록 목록 | `GET /workspaces/{id}/meetings` | **구현됨** §4.4 |
 | 회의록 본문 | `GET /meetings/{meeting_id}/minutes` | ⚠️ **스텁** §4.4 — `transcript` 가 안내 문구 1줄, `summary` 는 항상 `null` |
 | 회의록의 태스크 영역 | `GET /extractions/{extraction_id}` | **구현됨** §2.4 |
