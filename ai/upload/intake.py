@@ -134,8 +134,6 @@ def _advance(recordings_dir, d: Path, rec: dict, *, client, diarizer, now, timez
         return Progress(mid, "skipped")
     except _Permanent as e:
         return _fail(d, rec, client, str(e), now())
-    except ValueError as e:
-        return _fail(d, rec, client, f"{type(e).__name__}: {e}", now())
     except Exception as e:  # noqa: BLE001 - 연결·5xx·분리기 오류: 다시 해 볼 일시 실패
         return _transient(d, rec, client, now(), f"{type(e).__name__}: {e}")
 
@@ -187,7 +185,10 @@ def _step(recordings_dir, d, rec, *, client, diarizer, now, timezone, fresh) -> 
         if expected is not None and size != expected:
             src.unlink(missing_ok=True)
             raise OSError(f"받은 크기 {size} 가 올린 크기 {expected} 와 다르다")
-        to_wav_16k(src, _wav(d))   # 디코딩 실패는 ValueError(영구)
+        try:
+            to_wav_16k(src, _wav(d))
+        except ValueError as e:   # 디코딩할 수 없는 파일: 다시 받아도 같다
+            raise _Permanent(f"{type(e).__name__}: {e}") from e
         _set(d, rec, "converted")
         return Progress(mid, "converted")
     if state == "converted":
@@ -206,15 +207,19 @@ def _step(recordings_dir, d, rec, *, client, diarizer, now, timezone, fresh) -> 
             rec["state"], rec["job_id"], rec["submitted_at"] = "converted", None, None
             raise _Retry(f"결과가 {SUBMIT_TIMEOUT_S:.0f}초 안에 나오지 않았다")
         return Progress(mid, "waiting")
-    audio, total = load_mono_16k(_wav(d))
-    shutil.rmtree(recordings_dir / f"upload_{mid}", ignore_errors=True)   # 매니페스트 없이 남은 트랙 폴더
-    prepare_from_segments(
-        audio, total, normalize(segs, total), recordings_dir, source_name=str(item.get("original_filename") or ""),
-        started_at=item["started_at"], timezone=timezone, session=f"upload_{mid}",
-        meta={"be": {"meeting_id": mid, "status": "processing"}, "workspace_id": item.get("workspace_id"),
-              "title": item.get("title"), "attendees": item.get("attendees") or [],
-              "upload": {k: item.get(k) for k in ("original_filename", "stored_filename", "content_type",
-                                                  "size_bytes", "uploaded_at")}})
+    try:
+        audio, total = load_mono_16k(_wav(d))
+        segments = normalize(segs, total)
+        shutil.rmtree(recordings_dir / f"upload_{mid}", ignore_errors=True)   # 매니페스트 없이 남은 트랙 폴더
+        prepare_from_segments(
+            audio, total, segments, recordings_dir, source_name=str(item.get("original_filename") or ""),
+            started_at=item["started_at"], timezone=timezone, session=f"upload_{mid}",
+            meta={"be": {"meeting_id": mid, "status": "processing"}, "workspace_id": item.get("workspace_id"),
+                  "title": item.get("title"), "attendees": item.get("attendees") or [],
+                  "upload": {k: item.get(k) for k in ("original_filename", "stored_filename", "content_type",
+                                                      "size_bytes", "uploaded_at")}})
+    except ValueError as e:   # 변환 wav 를 못 읽거나 화자 구간이 없다: 다시 해도 같다
+        raise _Permanent(f"{type(e).__name__}: {e}") from e
     _cleanup(d)
     rec.update(state="done", next_at=None, error=None)
     _save(d, rec)

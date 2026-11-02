@@ -359,3 +359,26 @@ def test_unfinished_local_record_is_continued_before_asking_be(env):
     env.be.calls.clear()
     assert _step(env).meeting_id == MID
     assert not any(p == "/uploads/pending" for _, p, _ in env.be.calls)
+
+
+def _json_error():
+    return json.JSONDecodeError("Expecting value", "", 0)   # requests.JSONDecodeError 도 ValueError 하위다
+
+
+def test_a_valueerror_from_the_diarizer_submit_is_transient_not_a_fail(env):
+    class BadJsonSubmit(FakeDiarizer):
+        def submit(self, path):
+            raise _json_error()
+
+    assert _drive(env, BadJsonSubmit(SEGS))[-1] == "retry"
+    assert _state(env)["state"] == "converted" and _state(env)["attempts"] == 1
+    assert env.be.meetings[MID]["status"] == "processing" and not _state(env).get("fail_pending")
+
+
+def test_a_valueerror_from_the_diarizer_fetch_is_transient_not_a_fail(env):
+    class BadJsonFetch(FakeDiarizer):
+        def fetch(self, job_id):
+            raise _json_error()
+
+    assert _drive(env, BadJsonFetch(SEGS), limit=4)[-1] == "retry"
+    assert env.be.meetings[MID]["status"] == "processing" and not _state(env).get("fail_pending")
