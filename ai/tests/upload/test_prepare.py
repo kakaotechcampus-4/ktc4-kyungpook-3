@@ -125,3 +125,27 @@ def test_overlapping_segments_keep_both_labels_inside_end_bound(tmp_path):
     assert all(s["end_s"] <= dj["duration_sec"] == 12.0 for s in dj["segments"])
     a = {e["user_id"]: sf.read(rec / e["file"])[0] for e in m["speakers"]}
     assert np.any(a["SPEAKER00"][int(4.2 * SR):int(4.8 * SR)] != 0) and np.any(a["SPEAKER01"][int(4.2 * SR):int(4.8 * SR)] != 0)
+
+
+def test_meta_is_merged_into_the_manifest_in_one_save(tmp_path):
+    meta = {"be": {"meeting_id": "mtg-9", "status": "processing"}, "workspace_id": "ws-1", "title": "주간",
+            "attendees": [{"member_id": "u1", "display_name": "민수"}], "upload": {"size_bytes": 5}}
+    rec = tmp_path / "rec"
+    path, m = prepare_upload(_audio(tmp_path), rec, diarizer=FakeDiarizer(SEGS), started_at=STARTED,
+                             timezone="Asia/Seoul", meta=meta)
+    assert json.loads(path.read_text(encoding="utf-8")) == m
+    assert {k: m[k] for k in meta} == meta and m["status"] == STATUS_DIARIZED and m["started_at"] == STARTED
+
+
+def test_manifest_from_existing_segments_does_not_call_the_diarizer(tmp_path):
+    from upload.prepare import prepare_from_segments
+    from upload.tracks import load_mono_16k
+    audio_path = _audio(tmp_path)
+    audio, total = load_mono_16k(audio_path)
+    rec = tmp_path / "rec"
+    path, m = prepare_from_segments(audio, total, SEGS, rec, source_name="회의.wav", started_at=STARTED,
+                                    timezone="Asia/Seoul", session="upload_mtg-9", meta={"workspace_id": "ws-1"})
+    assert path == rec / "session_upload_mtg-9.json" and m["session"] == "upload_mtg-9"
+    assert m["workspace_id"] == "ws-1" and m["meeting_dir"] == "upload_mtg-9"
+    assert [s["file"].split("/")[0] for s in m["speakers"]] == ["upload_mtg-9"] * 2
+    assert json.loads((rec / "upload_mtg-9" / "diarization.json").read_text(encoding="utf-8"))["source"] == "회의.wav"
