@@ -1,9 +1,9 @@
 # 기존 할 일 제목 전사 힌트 측정
 
 - 날짜: 2026-10-13
-- 이슈: #ISSUE
+- 이슈: #275
 - PR:
-- 브랜치: feature/task-title-hints (이름 힌트 브랜치 위)
+- 브랜치: feature/275-title-hint-decision (develop 위). 이름 힌트는 #274
 - 작성자: 김동우
 
 ## 한 일
