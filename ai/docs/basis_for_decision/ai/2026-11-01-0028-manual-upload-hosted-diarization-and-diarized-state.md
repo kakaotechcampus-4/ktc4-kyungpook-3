@@ -40,6 +40,8 @@
 
 - `shared/schemas.py` 와 BE API 호출은 바뀌지 않았다. 매니페스트(AI 내부 문서 계약)에 상태 `diarized`, 최상위 `source`, 회의 폴더의 `diarization.json` 이 추가됐다.
 - 다음 PR(PM 라벨 지정 흐름)에서 정할 것: 라벨 → 멤버 지정 방식, 업로드 회의를 명시적으로 막는 가드와 `workspace_id`, 인계 시 `evidence_speaker` 가 디스코드 uid 라는 전제.
+- 라벨을 멤버로 바꾸는 지점: 전사는 화자를 매니페스트가 아니라 wav 파일명에서 읽고(`stt/transcribe.py` `parse_wav_stem`), 인계는 `evidence_speaker` 에 그 트랙의 id 를 넣는다(`capture/handoff.py`). 그래서 `user_id`·파일명을 라벨로 둔 채 인계하면 BE 는 모든 업로드 회의에서 `SPEAKER00` 을 받는다. 인계 PR 은 전사 결과나 인계 직전에 매니페스트의 지정(`speakers[].member_id`)으로 화자를 바꿔야 한다. 어디서 바꿀지는 인계 PR 에서 정한다(요청 이슈 #258).
+- 겹친 발화는 [0027](2026-10-30-0027-manual-upload-overlap-deferred.md) 선택지 C 대로 다른 라벨의 겹친 구간을 두 트랙에 모두 남기므로 같은 말이 두 화자로 두 번 전사될 수 있다. 의도된 동작이고 처리는 미뤘다.
 - 재검토: 실제 호출 비용·지연을 재 본 뒤, 또는 호스팅 서비스 정책이 바뀌면.
 
 ## 근거와 관련 문서
