@@ -25,16 +25,20 @@ def _with_status(code: ErrorCode, meeting_id: str, status: str) -> AppError:
 
 
 def normalize_speakers(speakers: list[SpeakerLabel] | list[dict]) -> list[dict]:
-    """라벨 순서와 숫자 표기(1 과 1.0)에 상관없이 같은 내용이면 같게 만든다. 저장과 비교에 쓴다."""
+    """라벨과 샘플의 순서, 숫자 표기(1 과 1.0)에 상관없이 같은 내용이면 같게 만든다. 저장과 비교에 쓴다."""
     items = [s.model_dump() if isinstance(s, SpeakerLabel) else s for s in speakers]
     return sorted(
         (
             {
                 "label": item["label"],
                 "total_sec": float(item["total_sec"]),
-                "samples": [
-                    {"start": float(x["start"]), "end": float(x["end"])} for x in item["samples"]
-                ],
+                "samples": sorted(
+                    (
+                        {"start": float(x["start"]), "end": float(x["end"])}
+                        for x in item["samples"]
+                    ),
+                    key=lambda x: (x["start"], x["end"]),
+                ),
             }
             for item in items
         ),

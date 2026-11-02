@@ -35,8 +35,8 @@ class UploadClaimResponse(BaseModel):
 class SpeakerSample(BaseModel):
     """한 화자의 대표 발화 구간(초). PM 이 목소리를 들어 보는 데 쓴다."""
 
-    start: float = Field(..., ge=0)
-    end: float
+    start: float = Field(..., ge=0, allow_inf_nan=False)
+    end: float = Field(..., allow_inf_nan=False)
 
     @model_validator(mode="after")
     def _end_after_start(self) -> "SpeakerSample":
@@ -47,7 +47,7 @@ class SpeakerSample(BaseModel):
 
 class SpeakerLabel(BaseModel):
     label: str = Field(..., min_length=1, max_length=64)
-    total_sec: float = Field(..., ge=0)
+    total_sec: float = Field(..., ge=0, allow_inf_nan=False)
     samples: list[SpeakerSample] = Field(default_factory=list)
 
     @field_validator("label")
