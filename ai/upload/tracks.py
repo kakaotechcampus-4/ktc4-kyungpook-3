@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+import av
 import numpy as np
 import soundfile as sf
 
@@ -13,18 +14,44 @@ from upload.diarize import Segment
 SR = 16000
 
 
+def _decode_mono_16k(path: Path):
+    """PyAV 로 스트리밍 디코딩하며 16k 로 리샘플한다. 프레임 조각(float32 mono)을 낸다."""
+    try:
+        container = av.open(str(path))
+    except (av.error.FFmpegError, OSError, ValueError) as e:
+        raise ValueError(f"오디오를 열 수 없다: {path} ({e})") from e
+    try:
+        stream = next((s for s in container.streams if s.type == "audio"), None)
+        if stream is None:
+            raise ValueError(f"오디오 스트림이 없다: {path}")
+        resampler = av.AudioResampler(format="fltp", rate=SR)  # 레이아웃은 그대로 둔다: swresample 다운믹스 계수(0.707)를 피하고 직접 평균한다
+        try:
+            for frame in container.decode(stream):
+                for out in resampler.resample(frame):
+                    yield out.to_ndarray().mean(axis=0)
+            for out in resampler.resample(None):
+                yield out.to_ndarray().mean(axis=0)
+        except (av.error.FFmpegError, OSError) as e:
+            raise ValueError(f"오디오 디코딩에 실패했다: {path} ({e})") from e
+    finally:
+        container.close()
+
+
 def load_mono_16k(path: Path) -> tuple[np.ndarray, float]:
-    """(float32 mono 16k 배열, 길이 초). 채널은 평균, 16k 가 아니면 resample_poly."""
-    data, sr = sf.read(str(path), dtype="float32", always_2d=True)
-    audio = data.mean(axis=1)
-    if sr != SR:
-        from math import gcd
-
-        from scipy.signal import resample_poly
-
-        g = gcd(SR, sr)
-        audio = resample_poly(audio, SR // g, sr // g).astype(np.float32)
+    """(float32 mono 16k 배열, 길이 초). PyAV 로 어떤 형식이든 스트리밍 디코딩하고,
+    채널은 평균(mono 다운믹스), 16k 로 리샘플한다. 열거나 디코딩하지 못하면 ValueError."""
+    chunks = [c.astype(np.float32, copy=False) for c in _decode_mono_16k(path)]
+    audio = np.concatenate(chunks) if chunks else np.zeros(0, dtype=np.float32)
+    if len(audio) == 0:
+        raise ValueError(f"디코딩된 오디오가 비어 있다: {path}")
     return audio, len(audio) / SR
+
+
+def to_wav_16k(src: Path, dst: Path) -> float:
+    """src 를 16k mono PCM_16 wav 로 dst 에 쓴다. 길이(초)를 돌려준다."""
+    audio, total = load_mono_16k(src)
+    sf.write(str(dst), audio, SR, subtype="PCM_16")
+    return total
 
 
 def speaker_label_id(label: str) -> str:
