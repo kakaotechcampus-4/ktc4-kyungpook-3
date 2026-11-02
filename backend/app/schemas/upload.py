@@ -94,3 +94,28 @@ class ResumeResponse(BaseModel):
     meeting_id: str
     status: str
     mapping: dict[str, str | None]
+
+
+class SpeakerAssignRequest(BaseModel):
+    mapping: dict[str, str | None] = Field(..., description="라벨 -> member_id(지정하지 않으면 null)")
+
+
+class SpeakerAssignResponse(BaseModel):
+    meeting_id: str
+    status: str
+
+
+class SpeakerAudioInfo(BaseModel):
+    content_type: str | None
+    size_bytes: int
+
+
+class SpeakerViewResponse(BaseModel):
+    """PM 이 화자를 지정하는 화면용. 라벨을 아직 못 받았으면 speakers 는 빈 목록이다."""
+
+    meeting_id: str
+    status: str
+    speakers: list[SpeakerLabel]
+    candidates: list[UploadAttendee]
+    mapping: dict[str, str | None] | None
+    audio: SpeakerAudioInfo

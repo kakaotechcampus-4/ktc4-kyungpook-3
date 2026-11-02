@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import exists, select, update
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user, require_member, require_service_token
+from app.api.deps import get_current_user, require_member, require_pm, require_service_token
 from app.core.database import get_db
 from app.core.errors import AppError, Envelope, ErrorCode, success
 from app.models import Extraction, Meeting, MeetingSource, MeetingStatus, Member, Source, User
@@ -17,7 +17,8 @@ from app.schemas.meeting import (
     MeetingMinutesResponse,
     MeetingProgress,
 )
-from app.services import upload_storage
+from app.schemas.upload import SpeakerAssignRequest, SpeakerAssignResponse, SpeakerViewResponse
+from app.services import speaker_assignment, upload_storage
 
 router = APIRouter(prefix="/meetings", tags=["meetings"])
 
@@ -269,3 +270,31 @@ def get_meeting_minutes(
         permissions={"can_review": member.role == "pm", "can_undo": member.role == "pm"}
     ).model_dump(mode="json"))
 
+
+@router.get("/{meeting_id}/speakers", response_model=Envelope[SpeakerViewResponse])
+def get_meeting_speakers(
+    meeting_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    """업로드 회의의 화자 라벨과 지정 상태. 그 워크스페이스 PM 만 본다."""
+    meeting = _get_meeting(db, meeting_id)
+    require_pm(db, user, meeting.workspace_id)
+    view = speaker_assignment.get_speaker_view(db, meeting)
+    return success(SpeakerViewResponse.model_validate(view).model_dump(mode="json"))
+
+
+@router.put("/{meeting_id}/speakers", response_model=Envelope[SpeakerAssignResponse])
+def assign_meeting_speakers(
+    meeting_id: str,
+    payload: SpeakerAssignRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    """PM 이 라벨마다 팀원(또는 null)을 지정하고 처리를 이어 가게 한다. 같은 지정을 다시 보내도 성공한다."""
+    meeting = _get_meeting(db, meeting_id)
+    require_pm(db, user, meeting.workspace_id)
+    updated = speaker_assignment.assign_speakers(db, meeting, payload.mapping)
+    return success(
+        SpeakerAssignResponse(meeting_id=updated.meeting_id, status=updated.status).model_dump(mode="json")
+    )
