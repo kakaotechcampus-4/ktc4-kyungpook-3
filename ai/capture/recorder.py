@@ -67,6 +67,7 @@ import soundfile as sf
 
 from capture import judge_path, ops_record
 from capture.judge_path import JudgeOutput
+from capture.handoff import speaker_names
 from shared.config import TRANSCRIPTS_DIR, settings
 from shared.config import today as config_today
 from shared.schemas import now_iso
@@ -325,8 +326,7 @@ def failed_units(lines) -> list[dict]:
 
 def _wavs_and_names(recordings_dir: Path, manifest: dict) -> tuple[list[Path], dict[str, str]]:
     wavs = [recordings_dir / e["file"] for e in manifest["speakers"]]
-    names = {str(e["user_id"]): e["display_name"] for e in manifest["speakers"]}
-    return wavs, names
+    return wavs, speaker_names(manifest)
 
 
 def hinted(backend, manifest: dict):
@@ -343,23 +343,22 @@ def hinted(backend, manifest: dict):
     return Prompted(backend, prompt) if prompt and getattr(backend, "accepts_prompt", False) else backend
 
 
-def remember_member_names(manifest: dict, handoff, backend) -> bool:
+def remember_member_names(manifest: dict, handoff) -> bool:
     """BE 에서 PM 이 정한 팀원 이름을 받아 매니페스트 hint_members 에 남긴다. 남겼으면 True.
 
-    디스코드 표시 이름은 아이디 꼴이거나 성이 빠져 있어 이름 힌트가 덜 맞는다(결정 기록 0024). 실패 구간 재전사도
-    같은 이름을 쓰게 매니페스트에 둔다. 이미 있거나, 프롬프트를 받지 않는 백엔드거나, BE·워크스페이스가 없으면
-    묻지 않는다. 조회가 실패해도 전사는 디스코드 표시 이름으로 간다.
+    디스코드 표시 이름은 아이디 꼴이거나 성이 빠져 있어 이름 힌트가 덜 맞는다(결정 기록 0024). 회의록 화자 이름도
+    이것으로 쓴다(handoff.speaker_names). 실패 구간 재전사도 같은 이름을 쓰게 매니페스트에 둔다. 이미 있거나
+    BE·워크스페이스가 없으면 묻지 않는다. 조회가 실패해도 전사와 회의록은 디스코드 표시 이름으로 간다.
     """
-    if (manifest.get("hint_members") is not None or handoff is None or not manifest.get("workspace_id")
-            or not getattr(backend, "accepts_prompt", False)):
+    if manifest.get("hint_members") is not None or handoff is None or not manifest.get("workspace_id"):
         return False
     try:
         members = handoff.client.member_names(manifest["workspace_id"])
     except Exception as e:  # noqa: BLE001 - 힌트 때문에 전사를 멈추지 않는다
         print(f"[hint] 팀원 이름 조회 실패. 디스코드 표시 이름으로 전사한다: {type(e).__name__}: {e}", flush=True)
         return False
-    manifest["hint_members"] = [{"name": m.get("name") or "", "aliases": list(m.get("aliases") or [])}
-                                for m in members]
+    manifest["hint_members"] = [{"name": m.get("name") or "", "aliases": list(m.get("aliases") or []),
+                                 "discord_user_id": m.get("discord_user_id")} for m in members]
     return True
 
 
@@ -710,7 +709,7 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
 
         if STATUS_TRANSCRIBED not in stages:
             stage = STATUS_TRANSCRIBED
-            if remember_member_names(manifest, handoff, backend):
+            if remember_member_names(manifest, handoff):
                 save()
             ops.load_model(backend)
             begin(FAILED_STAGE[stage])
@@ -1139,7 +1138,7 @@ def extract_after_transcription(transcripts_dir: Path, manifest: dict, *, extrac
     if extractor is None:
         return None
     transcript = Transcript.from_dict(json.loads(src.read_text(encoding="utf-8")))
-    names = {str(e["user_id"]): e["display_name"] for e in manifest["speakers"]}
+    names = speaker_names(manifest)
     try:
         tasks = extractor(transcript, names, today or meeting_date(manifest), workspace_id=manifest.get("workspace_id"))
     except Exception as e:  # noqa: BLE001 - 파이프라인이 통째로 실패했다(전부 실패, LLM 키, 1단계)

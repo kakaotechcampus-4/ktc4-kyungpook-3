@@ -62,6 +62,15 @@ class BeError(Exception):
         self.details = details or {}
 
 
+def speaker_names(manifest: dict) -> dict[str, str]:
+    """화자 uid -> 회의록에 쓸 이름. BE 에서 받은 팀원 이름(hint_members)에 그 uid 가 있으면 PM 이 정한 이름,
+    없으면 디스코드 표시 이름이다. 매니페스트의 speakers 는 디스코드 표시 이름 그대로 둔다."""
+    pm = {str(m["discord_user_id"]): m["name"] for m in manifest.get("hint_members") or []
+          if m.get("discord_user_id") and m.get("name")}
+    return {str(e["user_id"]): pm.get(str(e["user_id"])) or e.get("display_name") or str(e["user_id"])
+            for e in manifest.get("speakers") or []}
+
+
 class BeClient:
     """회의 API 네 개와 발화 저장, 유사 task 검색을 얇게 싼다. session 은 requests.Session 과 같은 request() 를 가진 것이면 된다.
 
@@ -296,7 +305,7 @@ class Handoff:
             be = manifest.setdefault("be", {})
             be["sources"] = {"inserted": 0, "skipped": 0, "duration_ms": None, "meeting_id": be.get("meeting_id")}
             return be
-        names = {str(e["user_id"]): e.get("display_name") or str(e["user_id"]) for e in manifest.get("speakers") or []}
+        names = speaker_names(manifest)
         be = self.end(manifest, title=title)
         try:
             data = self.client.create_sources(be["meeting_id"], transcript, names)
