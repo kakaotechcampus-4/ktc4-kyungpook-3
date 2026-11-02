@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class UploadAttendee(BaseModel):
@@ -30,3 +30,67 @@ class PendingUploadListResponse(BaseModel):
 class UploadClaimResponse(BaseModel):
     meeting_id: str
     status: str
+
+
+class SpeakerSample(BaseModel):
+    """한 화자의 대표 발화 구간(초). PM 이 목소리를 들어 보는 데 쓴다."""
+
+    start: float = Field(..., ge=0)
+    end: float
+
+    @model_validator(mode="after")
+    def _end_after_start(self) -> "SpeakerSample":
+        if self.end <= self.start:
+            raise ValueError("end 는 start 보다 커야 합니다")
+        return self
+
+
+class SpeakerLabel(BaseModel):
+    label: str = Field(..., min_length=1, max_length=64)
+    total_sec: float = Field(..., ge=0)
+    samples: list[SpeakerSample] = Field(default_factory=list)
+
+    @field_validator("label")
+    @classmethod
+    def _not_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("label 은 공백만으로 이루어질 수 없습니다")
+        return value
+
+
+class SpeakersReportRequest(BaseModel):
+    speakers: list[SpeakerLabel] = Field(..., min_length=1)
+
+    @field_validator("speakers")
+    @classmethod
+    def _unique_labels(cls, speakers: list[SpeakerLabel]) -> list[SpeakerLabel]:
+        labels = [s.label for s in speakers]
+        if len(set(labels)) != len(labels):
+            raise ValueError("label 이 중복되었습니다")
+        return speakers
+
+
+class SpeakersReportResponse(BaseModel):
+    meeting_id: str
+    status: str
+
+
+class AssignedUpload(BaseModel):
+    """PM 이 화자 지정을 끝내 AI 가 이어서 처리할 업로드 회의 하나."""
+
+    meeting_id: str
+    workspace_id: str
+    title: str | None
+    started_at: datetime
+    mapping: dict[str, str | None] = Field(..., description="라벨 -> member_id(없으면 null)")
+    assigned_at: datetime
+
+
+class AssignedUploadListResponse(BaseModel):
+    items: list[AssignedUpload]
+
+
+class ResumeResponse(BaseModel):
+    meeting_id: str
+    status: str
+    mapping: dict[str, str | None]
