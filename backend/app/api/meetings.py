@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends
+from fastapi.responses import FileResponse
 from sqlalchemy import exists, select, update
 from sqlalchemy.orm import Session
 
@@ -298,3 +299,20 @@ def assign_meeting_speakers(
     return success(
         SpeakerAssignResponse(meeting_id=updated.meeting_id, status=updated.status).model_dump(mode="json")
     )
+
+
+@router.get(
+    "/{meeting_id}/audio",
+    response_class=FileResponse,
+    responses={200: {"content": {"application/octet-stream": {}}, "description": "업로드한 녹음 원본(Range 지원)"}},
+)
+def get_meeting_audio(
+    meeting_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> FileResponse:
+    """PM 이 화자를 가리려고 듣는 원본. 폴더가 있는 동안 상태와 무관하게 준다. Range 는 starlette 가 처리한다."""
+    meeting = _get_meeting(db, meeting_id)
+    require_pm(db, user, meeting.workspace_id)
+    path, content_type = speaker_assignment.get_audio_for_playback(db, meeting)
+    return FileResponse(path, media_type=content_type)

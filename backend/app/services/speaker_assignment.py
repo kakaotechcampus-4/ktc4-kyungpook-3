@@ -5,6 +5,7 @@
 """
 import json
 from datetime import datetime, timezone
+from pathlib import Path
 
 from sqlalchemy import exists, select, update
 from sqlalchemy.orm import Session
@@ -12,6 +13,7 @@ from sqlalchemy.orm import Session
 from app.core.errors import AppError, ErrorCode
 from app.models import Meeting, MeetingSource, MeetingStatus, MeetingUpload, Member
 from app.schemas.upload import SpeakerLabel
+from app.services import upload_storage
 
 _ENDED = (str(MeetingStatus.DONE), str(MeetingStatus.FAILED))
 
@@ -167,6 +169,15 @@ def get_speaker_view(db: Session, meeting: Meeting) -> dict:
         "mapping": json.loads(upload.speaker_mapping) if upload.speaker_mapping else None,
         "audio": {"content_type": upload.content_type, "size_bytes": upload.size_bytes},
     }
+
+
+def get_audio_for_playback(db: Session, meeting: Meeting) -> tuple[Path, str]:
+    """PM 재생용 원본 경로와 content-type. 상태는 보지 않는다. 폴더나 파일이 없으면 404."""
+    _, upload = _read_upload_meeting(db, meeting.meeting_id)
+    path = upload_storage.audio_path(meeting.meeting_id, upload.stored_filename)
+    if not path.is_file():
+        raise _not_found(meeting.meeting_id)
+    return path, upload.content_type or "application/octet-stream"
 
 
 def _inactive_member_ids(db: Session, workspace_id: str, member_ids: set[str]) -> list[str]:
