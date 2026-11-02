@@ -77,8 +77,8 @@ def main(argv: list[str] | None = None) -> int:
     from upload.diarize import PyannoteAiDiarizer
     path, m = prepare_upload(a.audio, a.recordings_dir, diarizer=PyannoteAiDiarizer(),
                              started_at=a.started_at, timezone=a.timezone)
-    print(f"{path}  화자 {len(m['speakers'])}명. 라벨을 멤버에 지정하세요: python -m upload.mapping {path} <mapping.json> "
-          "(워커는 업로드 회의를 아직 집지 않는다).")
+    print(f"{path}  화자 {len(m['speakers'])}명. 개발용으로 라벨을 멤버에 지정하려면: python -m upload.mapping {path} <mapping.json> "
+          "(PM 의 지정 경로는 BE 와 정하는 중이다. 워커는 업로드 회의를 아직 집지 않는다).")
     return 0
 
 
