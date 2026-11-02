@@ -31,29 +31,6 @@ class Segment:
 
 
 class Diarizer(Protocol):
-    @staticmethod
-    def _transient(exc: Exception) -> bool:
-        """폴링 중 다시 해볼 만한 오류: 연결·시간 초과, 429, 5xx."""
-        import requests
-
-        if isinstance(exc, (requests.ConnectionError, requests.Timeout)):
-            return True
-        code = getattr(getattr(exc, "response", None), "status_code", None)
-        return code == 429 or (code is not None and code >= 500)
-
-    def _poll(self, http, url: str, headers: dict) -> dict:
-        errors = 0
-        while True:
-            try:
-                r = http.get(url, headers=headers, timeout=HTTP_TIMEOUT_S)
-                r.raise_for_status()
-                return r.json()
-            except Exception as exc:
-                if not self._transient(exc) or errors >= self._poll_retries:
-                    raise
-                errors += 1
-                self._sleep(self._poll_s)
-
     def diarize(self, path: Path) -> list[Segment]: ...
 
 
