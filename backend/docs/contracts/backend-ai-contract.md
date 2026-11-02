@@ -52,7 +52,7 @@
 ### `PATCH /meetings/{meeting_id}/end` → 202
 
 - `data`: `{meeting_id, status: "processing", ended_at}`
-- 이미 `processing`·`done`·`failed`면 409 `MEETING_ALREADY_ENDED`, `details.status`에 지금 상태. 봇은 이 값을 지금 상태로 받아들이고 계속한다.
+- 이미 `processing`·`awaiting_speakers`·`done`·`failed`면 409 `MEETING_ALREADY_ENDED`, `details.status`에 지금 상태. 봇은 이 값을 지금 상태로 받아들이고 계속한다. `awaiting_speakers`는 웹 업로드 회의가 PM의 화자 지정을 기다리는 상태다(#266). 상태 값만 생겼고 이 상태로 바꾸는 API는 아직 없다. 디스코드 회의는 이 상태가 되지 않는다.
 - 없는 회의는 404 `MEETING_NOT_FOUND`.
 
 ### `PATCH /meetings/{meeting_id}/fail` → 200
