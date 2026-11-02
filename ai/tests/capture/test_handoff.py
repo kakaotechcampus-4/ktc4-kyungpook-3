@@ -654,6 +654,7 @@ def test_download_streams_the_bytes_to_dest_and_returns_the_size(tmp_path):
     assert _upload_client(fake).download_upload("m-up1", dest) == len(audio)
     assert dest.read_bytes() == audio
     assert fake.calls[-1][:2] == ("GET", "/uploads/m-up1/file")
+    assert fake.streams[-1] is True      # 스트리밍으로 받는다(큰 파일을 메모리에 올리지 않는다)
     assert [p.name for p in dest.parent.iterdir()] == ["audio.m4a"]      # 임시 파일이 남지 않는다
 
 

@@ -127,8 +127,8 @@ class BeClient:
     def download_upload(self, meeting_id: str, dest: Path) -> int:
         """업로드 녹음 원본을 dest 로 스트리밍으로 받고 바이트 수를 돌려준다(GET /uploads/{id}/file).
 
-        임시 파일에 받아 끝까지 성공해야 dest 로 바꾼다. 실패(오류 봉투, 연결 끊김, 디스크 오류)면 임시 파일을
-        지우고 BeError 를 올리며 dest 는 건드리지 않는다.
+        임시 파일에 받아 끝까지 성공해야 dest 로 바꾼다. 실패하면 임시 파일을 지우고 dest 는 건드리지 않는다.
+        오류 봉투와 연결 끊김은 BeError 로 올리고, 디스크 오류(OSError)는 그대로 나간다.
         """
         dest = Path(dest)
         headers = {"X-Service-Token": self.service_token} if self.service_token else {}

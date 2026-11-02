@@ -72,6 +72,7 @@ class FakeBe:
         # 웹 업로드 가져가기 (backend/app/api/uploads.py). 회의 ID → {"item": 대기 목록 항목, "claimed": bool, "audio": bytes | None}
         self.uploads: dict[str, dict] = {}
         self.claim_lost = False       # True 면 claim 은 서버에 반영되지만 응답이 오지 않는다(시간 초과)
+        self.streams: list[bool] = []             # 호출마다 받은 stream 인자(원본을 메모리에 다 올리지 않고 받는지 확인용)
         self.file_break_after: int | None = None   # 파일을 이 바이트까지 보내고 연결이 끊긴다
         self._n = 0
 
@@ -98,6 +99,7 @@ class FakeBe:
         self.calls.append((method, path, json))
         self.headers.append(dict(headers or {}))
         self.timeouts.append(timeout)
+        self.streams.append(stream)
         body = json or {}
         if path.startswith("/uploads/"):
             return self._uploads(method, path, headers or {})
