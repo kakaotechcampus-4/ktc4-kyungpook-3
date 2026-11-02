@@ -69,19 +69,22 @@ def test_speaker_columns_default_to_none(db):
 
 
 def test_speaker_columns_round_trip(db):
-    at = datetime(2026, 11, 2, 9, 0, tzinfo=timezone.utc)
+    reported = datetime(2026, 11, 2, 9, 0, tzinfo=timezone.utc)
+    assigned = datetime(2026, 11, 2, 10, 30, tzinfo=timezone.utc)
+    resumed = datetime(2026, 11, 2, 11, 45, tzinfo=timezone.utc)
     upload = _upload(
         db,
         speakers='["SPEAKER_00"]',
         speaker_mapping='{"SPEAKER_00": "m1"}',
-        speakers_reported_at=at,
-        speakers_assigned_at=at,
-        resumed_at=at,
+        speakers_reported_at=reported,
+        speakers_assigned_at=assigned,
+        resumed_at=resumed,
     )
     db.expire_all()
     got = db.get(MeetingUpload, upload.meeting_id)
     assert got.speakers == '["SPEAKER_00"]'
     assert got.speaker_mapping == '{"SPEAKER_00": "m1"}'
-    assert got.speakers_reported_at is not None
-    assert got.speakers_assigned_at is not None
-    assert got.resumed_at is not None
+    # sqlite 는 tz 를 버리므로 벽시계 값으로 비교한다. 컬럼마다 시각이 서로 달라 뒤바뀜을 잡는다
+    assert got.speakers_reported_at.replace(tzinfo=None) == reported.replace(tzinfo=None)
+    assert got.speakers_assigned_at.replace(tzinfo=None) == assigned.replace(tzinfo=None)
+    assert got.resumed_at.replace(tzinfo=None) == resumed.replace(tzinfo=None)
