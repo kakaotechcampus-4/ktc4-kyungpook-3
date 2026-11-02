@@ -461,6 +461,17 @@ def test_saves_speaker_member_id_as_member_id(client, db, meeting):
     )
 
 
+def test_upload_shaped_segment_saves_only_member_id(client, db, meeting):
+    """업로드 회의 모양(uid 없이 speaker_member_id 만)은 member_id 만 저장하고 uid·이름은 비운다."""
+    minsu = _member(db, meeting.workspace_id, "uid_minsu")
+
+    r = _post(client, meeting.meeting_id, [_seg_m(0, minsu.member_id, speaker=None)])
+
+    assert r.status_code == 201
+    [row] = _sources(db, meeting.meeting_id)
+    assert (row.member_id, row.speaker_discord_user_id, row.speaker_name) == (minsu.member_id, None, None)
+
+
 def test_speaker_member_id_wins_over_uid_match(client, db, meeting):
     a = _member(db, meeting.workspace_id, "uid_a", name="A")
     b = _member(db, meeting.workspace_id, "uid_b", name="B")

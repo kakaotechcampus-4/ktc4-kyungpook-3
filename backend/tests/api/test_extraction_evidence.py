@@ -520,6 +520,46 @@ def test_wrong_evidence_speaker_member_id_does_not_fall_through_to_conclusion_so
     assert (saved.assignee_member_id, saved.gate) == (None, "hold")
 
 
+# 새 항목의 경로. 법칙은 같지만 게이트를 정하는 갈래(legacy·judge·경로 불명)가 달라 각각 확인한다
+_PATH_FIELDS = {
+    "legacy": {"task_confidence": 0.9},
+    "judge": {
+        "action": "create", "category": "decision", "doc_text": "설명", "task_status": "certain",
+        "due_status": "missing", "similar_count": 0,
+    },
+    "unknown": {},
+}
+
+
+@pytest.mark.parametrize("path", list(_PATH_FIELDS))
+def test_valid_member_id_speaker_is_not_hold_on_any_path(client, db, seed, path):
+    """아래 hold 테스트의 대조군. 같은 항목이 멤버 ID 가 맞으면 hold 가 아니다."""
+    members = _add_speaker_members(db, seed)
+
+    _post_items(client, seed, [{
+        "task_title": "환불 구현", "assignee_type": "first", "assignee_raw": "제가",
+        "evidence_speaker_member_id": members["@A"], **_PATH_FIELDS[path],
+    }])
+
+    saved = db.execute(select(ExtractionItem)).scalar_one()
+    assert (saved.assignee_member_id, saved.gate != "hold") == (members["@A"], True)
+
+
+@pytest.mark.parametrize("path", list(_PATH_FIELDS))
+@pytest.mark.parametrize("wrong", ["no-such-member", "@gone"])
+def test_wrong_evidence_speaker_member_id_is_hold_on_every_path(client, db, seed, path, wrong):
+    members = _add_speaker_members(db, seed)
+
+    _post_items(client, seed, [{
+        "task_title": "환불 구현", "assignee_type": "first", "assignee_raw": "제가",
+        "evidence_speaker": "uid_a", "evidence_speaker_member_id": _resolve(members, wrong),
+        **_PATH_FIELDS[path],
+    }])
+
+    saved = db.execute(select(ExtractionItem)).scalar_one()
+    assert (saved.assignee_member_id, saved.gate) == (None, "hold")
+
+
 @pytest.mark.parametrize(("sent", "expected"), [
     pytest.param("@A", "@A", id="valid_member_id"),
     pytest.param("no-such-member", None, id="wrong_member_id"),
