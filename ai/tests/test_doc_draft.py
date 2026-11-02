@@ -103,6 +103,44 @@ def test_update_outside_schedule_drops_due_date():
     assert drafted.structured == DraftStructured()
 
 
+def _create_response(**extra) -> dict:
+    return {"task": "API 에러 코드 목록 정리", "due_date": "2026-10-02", "doc_text": "API 에러 코드 목록 정리", **extra}
+
+
+def _draft_create(response: dict):
+    result = _result(category="decision", is_new=True, matched_task_id=None)
+    return draft_llm(_finding(), result, None, TODAY, FakeLLM(responses=[response]))
+
+
+def test_due_raw_is_parsed():
+    drafted = _draft_create(_create_response(due_raw="이번 주 금요일까지"))
+    assert drafted.structured.due_raw == "이번 주 금요일까지"
+
+
+@pytest.mark.parametrize("blank", ["", "  ", 3, None, "missing"])
+def test_due_raw_blank_or_not_str_is_none(blank):
+    response = _create_response() if blank == "missing" else _create_response(due_raw=blank)
+    drafted = _draft_create(response)
+    assert drafted is not None
+    assert drafted.structured.due_raw is None
+
+
+def test_due_raw_dropped_when_due_date_is_none():
+    drafted = _draft_create(_create_response(due_date=None, due_raw="금요일"))
+    assert drafted.structured.due_raw is None
+
+
+def test_due_raw_dropped_when_update_clears_due():
+    fake = FakeLLM(responses=[{"task": None, "due_date": "2026-10-02", "due_raw": "금요일", "doc_text": "완료"}])
+    result = _result(category="decision", status="done")
+    drafted = draft_llm(_finding(), result, _candidate(), TODAY, fake)
+    assert drafted.structured.due_raw is None
+
+
+def test_prompt_asks_for_due_raw():
+    assert "due_raw" in _draft_prompt(_finding(), _result(), _candidate(), TODAY)
+
+
 @pytest.mark.parametrize("bad", ["2020-01-01", "다음 주 화요일", "2026-13-01", 20261006, None])
 def test_invalid_due_date_becomes_none_without_failing(bad):
     # 날짜만 틀렸으면 마감만 비우고 나머지는 살린다
