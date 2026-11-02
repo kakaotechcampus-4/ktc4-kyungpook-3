@@ -1,6 +1,8 @@
 import {
   formatSeoulDateTime,
+  formatSeoulMonthDayTime,
   isDateOnly,
+  monthDayOf,
   readDateOnly,
   seoulDateOf,
   seoulMidnightIso,
@@ -14,6 +16,12 @@ describe('timestamp 는 한국 시간으로 보여 준다', () => {
 
   it('오프셋이 붙은 값도 서울 시각이다', () => {
     expect(formatSeoulDateTime('2026-09-18T09:00:00+09:00')).toBe('2026-09-18 09:00')
+  })
+
+  it('짧은 표기는 MM/DD 와 MM/DD HH:mm 이다', () => {
+    expect(monthDayOf('2026-09-08')).toBe('09/08')
+    expect(formatSeoulMonthDayTime('2026-09-11T05:22:00Z')).toBe('09/11 14:22')
+    expect(formatSeoulMonthDayTime('not a date')).toBe('')
   })
 
   it('서울 기준 날짜를 뽑는다', () => {

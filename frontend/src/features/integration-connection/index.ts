@@ -1,4 +1,6 @@
 export { uploadReturnTarget } from './lib/uploadReturn'
+export { DiscordConnectionSection } from './ui/DiscordConnectionSection'
+export type { DiscordConnectionSectionProps } from './ui/DiscordConnectionSection'
 export { useNotionConnection } from './model/useNotionConnection'
 export type { NotionConnection, NotionConnectionNotice } from './model/useNotionConnection'
 export { NotionConnectionSection } from './ui/NotionConnectionSection'

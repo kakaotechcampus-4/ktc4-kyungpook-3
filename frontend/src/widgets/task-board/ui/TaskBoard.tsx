@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
-import { useId, useMemo, useRef } from 'react'
+import type { RefetchOptions } from '@tanstack/react-query'
+import { Suspense, lazy, useId, useMemo, useRef } from 'react'
 import type { KeyboardEvent, ReactNode } from 'react'
 import { pendingApprovalListQueryOptions } from '@/entities/approval'
 import type { Approval } from '@/entities/approval'
@@ -9,6 +10,7 @@ import type { Member } from '@/entities/member'
 import { isDueSoon, isOverdue, taskListQueryOptions, withAssigneeName } from '@/entities/task'
 import type { Task, TaskTab } from '@/entities/task'
 import { TASK_STATUS_LABEL, useTaskStatusOverlay } from '@/features/task-status'
+import { COMMON_MESSAGES } from '@/shared/api/errorMessages'
 import { paths } from '@/shared/config/routes'
 import { seoulDateOf, soonUntil } from '@/shared/lib/date'
 import { GuardedLink } from '@/shared/lib/unsaved-changes'
@@ -25,23 +27,38 @@ import {
   memberNames,
   mondayOf,
   monthOf,
+  queryView,
   shortDate,
+  VIEW_LABEL,
 } from '../lib/taskViews'
-import type { ViewQuery } from '../lib/taskViews'
+import type { TaskView, ViewQuery } from '../lib/taskViews'
 import { ApprovalCard } from './ApprovalCard'
-import { BoardView } from './BoardView'
-import { CalendarView } from './CalendarView'
-import { GanttView } from './GanttView'
 import { AssigneeFilter, DueFilter, PeriodFilter, ViewSwitch } from './ViewControls'
 import { Avatar } from './viewParts'
+
+/* 보드·캘린더·간트는 그 보기를 고를 때 코드를 받는다 (M8 AC-A-02). 리스트로 들어오면 셋 다 내려받지 않는다 */
+const BoardView = lazy(() =>
+  import('./BoardView').then(({ BoardView }) => ({ default: BoardView })),
+)
+const CalendarView = lazy(() =>
+  import('./CalendarView').then(({ CalendarView }) => ({ default: CalendarView })),
+)
+const GanttView = lazy(() =>
+  import('./GanttView').then(({ GanttView }) => ({ default: GanttView })),
+)
 
 /* Tasks 시안 — main 패딩 48/48/72, 블록 사이 28px.
  * 리스트 본문 단은 상세·확인 필요 상세와 같이 960px 이하로 가운데에 둔다.
  * 보드·캘린더·간트는 시안 셸 폭을 유지한다. */
 const PAGE = 'mx-auto flex w-full max-w-shell flex-1 justify-center px-48 pt-48 pb-72'
 const PAGE_LIST = 'mx-auto flex w-full max-w-[960px] flex-1 justify-center px-48 pt-48 pb-72'
-const COLUMN = 'flex w-full max-w-column flex-col gap-28'
-const COLUMN_WIDE = 'flex w-full flex-col gap-20'
+/* 블록 사이 — 리스트 28px, 보드 22px(TasksBoard), 캘린더·간트 20px(TasksCalendar·TasksGantt) */
+const COLUMN: Record<TaskView, string> = {
+  list: 'flex w-full max-w-column flex-col gap-28',
+  board: 'flex w-full max-w-column flex-col gap-22',
+  calendar: 'flex w-full flex-col gap-20',
+  gantt: 'flex w-full flex-col gap-20',
+}
 const TITLE = 'text-[28px] leading-[1.25] font-bold tracking-h1 text-ink'
 const DESCRIPTION = 'text-body text-sub'
 const TOOLBAR = 'flex flex-wrap items-center justify-between gap-16'
@@ -79,6 +96,17 @@ const DESCRIPTIONS: Record<ViewQuery['view'], (isPm: boolean) => string> = {
   board: () => '승인이 끝난 일만 올라옵니다 — Notion 보드와 같은 상태예요.',
   calendar: () => '마감일 기준입니다. 날짜가 없는 일은 아래 칸에 모아 뒀어요.',
   gantt: () => '간트차트로 일정을 한 눈에 볼 수 있어요.',
+}
+
+/** 보기가 쓰는 조회 하나. 받지 못했을 때 알리는 이름과 다시 부를 조회다 */
+interface ViewSource {
+  name: string
+  query: {
+    data: unknown
+    error: unknown
+    isFetching: boolean
+    refetch: (options?: RefetchOptions) => Promise<unknown>
+  }
 }
 
 export interface TaskBoardProps {
@@ -154,53 +182,41 @@ export function TaskBoard({
     [filtered, approvalList, query.due, query.tab, today, isPm],
   )
 
-  const failed = tasks.error ?? (isPm ? approvals.error : null)
   const isList = view.view === 'list'
-  const wide = view.view === 'calendar' || view.view === 'gantt'
   const memberList = members.data ?? []
+  // 보기의 줄·칩은 memo 다. 부모가 다시 그려도 같은 배열을 넘겨야 바뀌지 않은 줄을 건너뛴다 (AC-A-04)
+  const createList = useMemo(() => createApprovals(approvalList ?? []), [approvalList])
+  // PM 의 확인 필요를 처음부터 받지 못했다. 캘린더·간트는 빈 기간을 단정하지 않고 확인 필요가 빠진 개수를 숨긴다
+  const approvalsMissing = isPm && approvalList === null
+  const calendarMeetings = useMemo(
+    () =>
+      (meetings.data ?? []).flatMap(({ id, title, startedAt }) => {
+        const date = seoulDateOf(startedAt)
+        return date === null ? [] : [{ id, title, date }]
+      }),
+    [meetings.data],
+  )
+
+  // 보드·캘린더·간트가 쓰는 조회 (M8 AC-A-05). 처음부터 받지 못한 태스크만 보기 전체 오류다. 확인 필요·팀원·회의를 받지 못했거나
+  // 기존 데이터의 재조회가 실패하면 받은 데이터로 보기를 그리고 위에서 알린다 — 실패를 빈 목록이나 `담당자 없음` 으로 그리지 않는다
+  const sources: ViewSource[] = [
+    { name: '태스크', query: tasks },
+    ...(isPm ? [{ name: '확인 필요', query: approvals }] : []),
+    { name: '팀원', query: members },
+    ...(view.view === 'calendar' ? [{ name: '회의', query: meetings }] : []),
+  ]
+  const missing =
+    isList || queryView(tasks) === 'error'
+      ? []
+      : sources.filter(({ query }) => {
+          const state = queryView(query)
+          return state === 'refreshFailed' || state === 'error'
+        })
 
   let body: ReactNode
-  if (ready && board !== null && filtered !== null && overlaid !== null) {
-    if (view.view === 'board')
-      body = (
-        <BoardView
-          workspaceId={workspaceId}
-          tasks={filtered}
-          names={names}
-          today={today}
-          period={view.period}
-          pendingApprovals={approvalList?.length ?? 0}
-        />
-      )
-    else if (view.view === 'calendar')
-      body = (
-        <CalendarView
-          workspaceId={workspaceId}
-          tasks={overlaid}
-          approvals={createApprovals(approvalList ?? [])}
-          meetings={(meetings.data ?? []).flatMap(({ id, title, startedAt }) => {
-            const date = seoulDateOf(startedAt)
-            return date === null ? [] : [{ id, title, date }]
-          })}
-          names={names}
-          today={today}
-          month={view.month ?? monthOf(today)}
-          onMonthChange={(month) => onViewChange({ ...view, month })}
-        />
-      )
-    else if (view.view === 'gantt')
-      body = (
-        <GanttView
-          workspaceId={workspaceId}
-          members={memberList}
-          tasks={overlaid}
-          approvals={createApprovals(approvalList ?? [])}
-          today={today}
-          from={view.from ?? mondayOf(today)}
-          onFromChange={(from) => onViewChange({ ...view, from })}
-        />
-      )
-    else
+  if (isList) {
+    const failed = tasks.error ?? (isPm ? approvals.error : null)
+    if (ready && board !== null && filtered !== null)
       body = (
         <BoardList
           workspaceId={workspaceId}
@@ -214,22 +230,92 @@ export function TaskBoard({
           onQueryChange={onQueryChange}
         />
       )
-  } else if (failed !== null)
+    else if (failed !== null)
+      body = (
+        <QueryErrorState
+          error={failed}
+          title="태스크 목록을 불러오지 못했어요"
+          onRetry={() => {
+            if (tasks.error !== null) void tasks.refetch()
+            if (isPm && approvals.error !== null) void approvals.refetch()
+          }}
+        />
+      )
+    else
+      body = (
+        <div aria-busy="true" className="flex flex-col gap-8">
+          <Skeleton lines={4} />
+        </div>
+      )
+  } else if (queryView(tasks) === 'error')
     body = (
       <QueryErrorState
-        error={failed}
+        error={tasks.error}
         title="태스크 목록을 불러오지 못했어요"
-        onRetry={() => {
-          if (tasks.error !== null) void tasks.refetch()
-          if (isPm && approvals.error !== null) void approvals.refetch()
-        }}
+        onRetry={() => void tasks.refetch()}
+      />
+    )
+  else if (
+    overlaid === null ||
+    filtered === null ||
+    sources.some(({ query }) => queryView(query) === 'loading')
+  )
+    body = <ViewLoading label="태스크를 불러오는 중" />
+  // 받은 태스크도 확인 필요도 없다. 확인 필요를 받지 못했으면 비었다고 하지 않는다. 캘린더는 받은 회의가 있으면 그대로 그린다
+  else if (
+    overlaid.length === 0 &&
+    (!isPm || approvalList?.length === 0) &&
+    (view.view !== 'calendar' || calendarMeetings.length === 0)
+  )
+    body = (
+      <div className="flex justify-center pt-32">
+        <EmptyState
+          titleAs="h2"
+          title="아직 태스크가 없어요"
+          description="회의를 정리하면 할 일이 여기에 모여요."
+        />
+      </div>
+    )
+  else if (view.view === 'board')
+    body = (
+      <BoardView
+        workspaceId={workspaceId}
+        tasks={filtered}
+        names={names}
+        today={today}
+        period={view.period}
+        pendingApprovals={approvalList?.length ?? 0}
+        canCreate={isPm}
+        assignee={view.assignee}
+      />
+    )
+  else if (view.view === 'calendar')
+    body = (
+      <CalendarView
+        workspaceId={workspaceId}
+        tasks={overlaid}
+        approvals={createList}
+        approvalsMissing={approvalsMissing}
+        meetings={calendarMeetings}
+        names={names}
+        today={today}
+        month={view.month ?? monthOf(today)}
+        onMonthChange={(month) => onViewChange({ ...view, month })}
       />
     )
   else
     body = (
-      <div aria-busy="true" className="flex flex-col gap-8">
-        <Skeleton lines={4} />
-      </div>
+      <GanttView
+        workspaceId={workspaceId}
+        members={memberList}
+        names={names}
+        tasks={overlaid}
+        approvals={createList}
+        approvalsMissing={approvalsMissing}
+        today={today}
+        from={view.from ?? mondayOf(today)}
+        onFromChange={(from) => onViewChange({ ...view, from })}
+      />
     )
 
   const assigneeFilter = (
@@ -243,7 +329,7 @@ export function TaskBoard({
 
   return (
     <main className={view.view === 'list' ? PAGE_LIST : PAGE}>
-      <div className={wide ? COLUMN_WIDE : COLUMN}>
+      <div className={COLUMN[view.view]}>
         <header className="flex items-end justify-between gap-24">
           <div className="flex flex-col gap-5">
             <h1 className={TITLE}>태스크</h1>
@@ -289,11 +375,57 @@ export function TaskBoard({
                 />
               </div>
             ) : null}
-            <div className="flex flex-col gap-20">{body}</div>
+            <div className="flex flex-col gap-20">
+              {missing.length === 0 ? null : (
+                <PartialFailureNotice
+                  names={missing.map(({ name }) => name)}
+                  retrying={missing.some(({ query }) => query.isFetching)}
+                  onRetry={() => {
+                    // 진행 중인 조회는 새로 보내지 않고 기다린다 — 두 번 눌러도 요청이 늘지 않는다
+                    for (const { query } of missing) void query.refetch({ cancelRefetch: false })
+                  }}
+                />
+              )}
+              {/* 보기마다 새 경계다 — 보기 전환(transition)에도 이전 보기를 붙잡지 않고 이 자리에 대기를 그린다 */}
+              <Suspense
+                key={view.view}
+                fallback={<ViewLoading label={`${VIEW_LABEL[view.view]} 화면을 불러오는 중`} />}
+              >
+                {body}
+              </Suspense>
+            </div>
           </>
         )}
       </div>
     </main>
+  )
+}
+
+/** 보기 자리의 대기. 이름으로 코드 대기(`보드 화면을 불러오는 중`)와 조회 대기(`태스크를 불러오는 중`)를 구분한다 */
+function ViewLoading({ label }: { label: string }) {
+  return (
+    <div role="status" aria-busy="true" aria-label={label} className="flex flex-col gap-8">
+      <Skeleton lines={4} />
+    </div>
+  )
+}
+
+interface PartialFailureNoticeProps {
+  /** 받지 못한 조회 이름. `확인 필요·팀원` 처럼 잇는다 */
+  names: readonly string[]
+  retrying: boolean
+  onRetry: () => void
+}
+
+/** 일부 조회를 받지 못했다 — 받은 데이터로 그린 보기 위에 둔다. 다시 시도는 받지 못한 조회만 다시 부른다 */
+function PartialFailureNotice({ names, retrying, onRetry }: PartialFailureNoticeProps) {
+  return (
+    <div role="alert" className="flex flex-wrap items-center gap-8 text-caption text-dim">
+      <span>{names.join('·')} 정보를 불러오지 못했어요. 보이는 내용이 전부가 아닐 수 있어요.</span>
+      <Button size="sm" loading={retrying} onClick={onRetry}>
+        {COMMON_MESSAGES.retry}
+      </Button>
+    </div>
   )
 }
 

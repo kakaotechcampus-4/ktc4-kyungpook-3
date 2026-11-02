@@ -148,6 +148,48 @@ const ICONS = {
       </>
     ),
   },
+  /* 아래 넷은 Messages·MessagesThread 캔버스 그대로다 — 고쳐 쓰기·이대로 발송·답장 없음 칩·Discord 바깥 링크 */
+  edit: {
+    strokeWidth: 1.8,
+    paths: (
+      <>
+        <path d="M12 20h9" />
+        <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+      </>
+    ),
+  },
+  send: { strokeWidth: 2, paths: <path d="M22 2 11 13M22 2l-7 20-4-9-9-4Z" /> },
+  clock: {
+    strokeWidth: 1.8,
+    paths: (
+      <>
+        <circle cx="12" cy="12" r="9" />
+        <path d="M12 8v4l3 2" />
+      </>
+    ),
+  },
+  'link-out': { strokeWidth: 2, paths: <path d="M15 3h6v6M10 14 21 3" /> },
+  /** Team 의 `팀원 관리` */
+  users: {
+    strokeWidth: 1.8,
+    paths: (
+      <>
+        <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+        <circle cx="9" cy="7" r="4" />
+        <path d="M22 21v-2a4 4 0 0 0-3-3.9" />
+      </>
+    ),
+  },
+  /** Team 의 `먼저 챙길 것` */
+  alert: {
+    strokeWidth: 1.8,
+    paths: (
+      <>
+        <circle cx="12" cy="12" r="9" />
+        <path d="M12 8v5M12 16h.01" />
+      </>
+    ),
+  },
   calendar: {
     strokeWidth: 1.7,
     paths: (

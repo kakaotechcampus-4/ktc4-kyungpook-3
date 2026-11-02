@@ -1,4 +1,4 @@
-import type { ComponentPropsWithoutRef, ReactNode } from 'react'
+import type { ComponentProps, ReactNode } from 'react'
 
 export type ButtonVariant = 'primary' | 'default' | 'ghost' | 'text' | 'outline'
 
@@ -12,8 +12,14 @@ export type ButtonSize =
   | 'auth'
   | 'landing-hero'
   | 'landing-nav'
+  | 'message-edit'
+  | 'message-dismiss'
+  | 'message-send'
+  | 'message-thread-dismiss'
+  | 'message-thread-approve'
 
-export interface ButtonProps extends ComponentPropsWithoutRef<'button'> {
+/** `ref` 는 React 19 의 일반 prop 이라 `...rest` 로 `<button>` 에 그대로 간다 — 포커스를 옮길 자리에서 쓴다 */
+export interface ButtonProps extends ComponentProps<'button'> {
   /** 시각 변형. 기본 'default' */
   variant?: ButtonVariant
   /** 화면군별 크기. 기본 'md' */
@@ -29,7 +35,8 @@ export interface ButtonProps extends ComponentPropsWithoutRef<'button'> {
 /* 표는 모듈 스코프에 둔다 — 렌더마다 다시 만들지 않는다.
    근거: m2-design-tokens.md §7-1, docs/impl-decision/2026-09-16-no-cn-clsx-tailwind-merge.md */
 
-const BASE = 'inline-flex items-center justify-center gap-6 whitespace-nowrap'
+/* 아이콘 간격(gap)은 크기 표가 고른다 — 여기와 표에 같이 두면 생성 CSS 순서가 이긴다 */
+const BASE = 'inline-flex items-center justify-center whitespace-nowrap'
 
 /* 먹 면에는 전역 먹 선이 묻힌다 — 면 안쪽에 흰 선을 긋는다.
    aria-disabled 면은 밝아서 흰 선이 안 보이므로 전역 값으로 되돌린다.
@@ -54,16 +61,24 @@ const VARIANT: Record<ButtonVariant, string> = {
 }
 
 const SIZE: Record<ButtonSize, string> = {
-  sm: 'h-32 rounded-9 px-12 text-control',
-  md: 'h-36 rounded-9 px-20 text-control',
-  'md-compact': 'h-34 rounded-9 px-13 text-caption',
-  lg: 'h-40 rounded-9 px-20 text-body',
-  'lg-onboarding': 'h-40 rounded-8 px-18 text-body',
+  sm: 'h-32 gap-6 rounded-9 px-12 text-control',
+  md: 'h-36 gap-6 rounded-9 px-20 text-control',
+  'md-compact': 'h-34 gap-6 rounded-9 px-13 text-caption',
+  lg: 'h-40 gap-6 rounded-9 px-20 text-body',
+  'lg-onboarding': 'h-40 gap-6 rounded-8 px-18 text-body',
   // 14.5px · 38px · 15px 는 토큰 스케일 밖이다 — docs/impl-decision/2026-09-16-values-outside-token-scale.md
-  xl: 'h-44 rounded-9 px-22 text-[14.5px]',
-  auth: 'h-48 w-full rounded-999 text-[15px]',
-  'landing-hero': 'h-44 rounded-999 px-24 text-landing',
-  'landing-nav': 'h-[38px] rounded-999 px-18 text-[15px]',
+  xl: 'h-44 gap-6 rounded-9 px-22 text-[14.5px]',
+  auth: 'h-48 w-full gap-6 rounded-999 text-[15px]',
+  'landing-hero': 'h-44 gap-6 rounded-999 px-24 text-landing',
+  'landing-nav': 'h-[38px] gap-6 rounded-999 px-18 text-[15px]',
+  /* 메시지(M8) — Messages·MessagesThread 캔버스 실측. 제품 최소 높이 36(design-system §7-6)을 지킨다.
+     13px 는 `text-control` 대신 길이로 적는다 — `text-control` 은 같은 이름의 색 토큰(--color-control)으로 풀려
+     글자 크기가 바뀌지 않는다 */
+  'message-edit': 'h-36 gap-6 rounded-9 px-11 text-[12px]',
+  'message-dismiss': 'h-44 gap-6 rounded-9 px-18 text-[14px]',
+  'message-send': 'h-44 gap-8 rounded-9 px-24 text-[14.5px]',
+  'message-thread-dismiss': 'h-36 gap-6 rounded-9 px-16 text-(length:--text-control)',
+  'message-thread-approve': 'h-36 gap-6 rounded-9 px-20 text-(length:--text-control)',
 }
 
 /**

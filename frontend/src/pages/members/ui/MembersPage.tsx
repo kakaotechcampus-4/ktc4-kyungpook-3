@@ -1,39 +1,55 @@
-import { useQuery } from '@tanstack/react-query'
-import { memberListQueryOptions } from '@/entities/member'
+import { useLocation, useNavigate, useSearchParams } from 'react-router'
+import { useMemberWorkspace } from '@/entities/workspace'
+import { MEMBERS_PARAMS } from '@/shared/config/routes'
+import { todayInSeoul } from '@/shared/lib/date'
 import { useRouteId } from '@/shared/lib/url'
-import { PagePlaceholder } from '@/shared/ui/page-placeholder'
-import { QueryErrorState } from '@/shared/ui/query-error-state'
-import { Skeleton } from '@/shared/ui/skeleton'
+import { TeamOverview } from '@/widgets/team'
 
-const LIST = 'flex flex-col gap-6 text-body text-ink'
-
-/** 가드 뒤 업무 조회·인라인 오류·다시 시도·공간 전환을 보여 주는 최소 화면이다. 실제 화면은 이후 마일스톤이다 */
-export function MembersPage() {
-  const workspaceId = useRouteId('workspaceId')
-  return (
-    <PagePlaceholder title="팀원" description="팀원 화면은 이후 마일스톤에서 만들어요.">
-      {workspaceId === null ? null : <MemberNames workspaceId={workspaceId} />}
-    </PagePlaceholder>
-  )
+/** 이 화면이 창을 열며 쌓은 기록에 남기는 표시. 주소로 바로 왔거나 D-074 로 온 기록에는 없다 */
+interface ConnectHistoryState {
+  connectPushed?: boolean
 }
 
-function MemberNames({ workspaceId }: { workspaceId: string }) {
-  const members = useQuery(memberListQueryOptions(workspaceId))
+/**
+ * `/workspaces/:workspaceId/members` — 팀 화면 (Team 캔버스). 라우트 조립만 한다. 설정과 따로 있는 화면이다(2026-10-30 사용자 답변).
+ * 팀원 연결 창은 주소의 `connect=members` 가 쥔다 — 설정에서 Discord 를 연결하면 이 주소로 온다 (D-074). 열 때는 기록을 남겨
+ * 뒤로 가기가 창을 닫는다. 닫을 때는 그 기록에서 한 칸 돌아온다 — 같은 주소의 기록이 남지 않는다. 이 화면이 쌓은 기록이 아니면
+ * (주소로 바로 왔거나 D-074 로 왔으면) 뒤로 가지 않고 표시만 지운다. 일반 팀원에게는 창이 없다
+ */
+export function MembersPage() {
+  const workspaceId = useRouteId('workspaceId')
+  const workspace = useMemberWorkspace(workspaceId)
+  const [searchParams, setSearchParams] = useSearchParams()
+  const location = useLocation()
+  const navigate = useNavigate()
+  if (workspaceId === null || workspace === null) return null
 
-  if (members.data === undefined) {
-    return members.isError ? (
-      <QueryErrorState error={members.error} onRetry={() => void members.refetch()} />
-    ) : (
-      <div aria-busy="true">
-        <Skeleton lines={3} />
-      </div>
+  const isPm = workspace.role === 'pm'
+  const pushedHere = (location.state as ConnectHistoryState | null)?.connectPushed === true
+  const setConnectOpen = (open: boolean) => {
+    if (!open && pushedHere) {
+      void navigate(-1)
+      return
+    }
+    setSearchParams(
+      (current) => {
+        const next = new URLSearchParams(current)
+        if (open) next.set(MEMBERS_PARAMS.connect, 'members')
+        else next.delete(MEMBERS_PARAMS.connect)
+        return next
+      },
+      open ? { state: { connectPushed: true } satisfies ConnectHistoryState } : { replace: true },
     )
   }
+
   return (
-    <ul className={LIST}>
-      {members.data.map((member) => (
-        <li key={member.id}>{member.displayName}</li>
-      ))}
-    </ul>
+    <TeamOverview
+      key={workspaceId}
+      workspaceId={workspaceId}
+      isPm={isPm}
+      today={todayInSeoul()}
+      connectOpen={isPm && searchParams.get(MEMBERS_PARAMS.connect) === 'members'}
+      onConnectOpenChange={setConnectOpen}
+    />
   )
 }

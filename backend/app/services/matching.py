@@ -148,8 +148,9 @@ def log_resolution(
     alias_text: str | None,
     match: MatchResult,
     meeting_id: str | None = None,
+    source_id: str | None = None,
 ) -> AliasResolutionLog | None:
-    """판정 시도를 로그에 기록한다 (APPEND-ONLY)."""
+    """판정 시도를 로그에 기록한다 (APPEND-ONLY). source_id는 별칭이 나온 발화이고 모르면 None이다."""
     if not alias_text:
         return None
 
@@ -160,6 +161,7 @@ def log_resolution(
         result=str(match.result),
         candidate_count=match.candidate_count,
         meeting_id=meeting_id,
+        source_id=source_id,
     )
     db.add(log)
     return log
@@ -209,8 +211,8 @@ class AutoSignals:
     task_status: EvidenceStatus | None
     due_status: EvidenceStatus | None
     similar_count: int | None
-    # BE가 등록 시점에 본 값. 임베딩을 기다리는 task는 AI의 유사 검색에 잡히지 않았다
-    tasks_waiting_for_embedding: bool = False
+    # BE가 등록 시점에 본 값. 임베딩이 없는 task(기다리는 중이거나 임베딩 API가 거절한)는 AI의 유사 검색에 잡히지 않았다
+    unsearched_tasks_exist: bool = False
 
 
 def auto_blockers(
@@ -247,7 +249,7 @@ def auto_blockers(
         reasons.append("due_mismatch")
     if signals.similar_count > 0:
         reasons.append("similar_task_found")
-    elif signals.tasks_waiting_for_embedding:
+    elif signals.unsearched_tasks_exist:
         # 검색이 못 본 task가 있어 similar_count=0을 믿을 수 없다. 같은 회의에서 앞서 auto로 만든 task도 여기 걸린다
         reasons.append("unsearched_task_exists")
     return reasons

@@ -33,9 +33,10 @@ from shared.schemas import Transcript
 
 EXTRACT_PATHS = ("legacy", "judge")
 # 설정 이름과 Settings 의 칸. 빠진 것을 이 순서로 말한다
-_REQUIRED = (("TERRA_API_KEY", "terra_api_key"), ("TERRA_BASE_URL", "terra_base_url"),
-             ("LUNA_API_KEY", "luna_api_key"), ("LUNA_BASE_URL", "luna_base_url"),
-             ("BE_BASE_URL", "be_base_url"), ("BE_SERVICE_TOKEN", "be_service_token"))
+_REQUIRED_LLM = (("TERRA_API_KEY", "terra_api_key"), ("TERRA_BASE_URL", "terra_base_url"),
+                 ("LUNA_API_KEY", "luna_api_key"), ("LUNA_BASE_URL", "luna_base_url"))
+# 유사 task 검색(BeClient)에만 쓴다. 검색을 밖에서 끼우면(candidates) 보지 않는다
+_REQUIRED_BE = (("BE_BASE_URL", "be_base_url"), ("BE_SERVICE_TOKEN", "be_service_token"))
 
 
 def extract_path() -> str:
@@ -59,14 +60,19 @@ class JudgeAllFailed(RuntimeError):
     """등록할 항목이 하나도 없는데 판단하지 못한 finding 이 있다. 빈 추출로 닫지 않고 회의 전체의 실패로 본다."""
 
 
-def missing_settings(cfg=None, *, run=None) -> list[str]:
-    """판단 경로에 없는 설정의 이름. 비어 있으면 돌 수 있다. run 을 밖에서 끼웠으면 모듈은 확인하지 않는다."""
+def missing_settings(cfg=None, *, run=None, candidates=None) -> list[str]:
+    """판단 경로에 없는 설정의 이름. 비어 있으면 돌 수 있다. run 을 밖에서 끼웠으면 모듈은 확인하지 않는다.
+
+    candidates(유사 task 검색)를 밖에서 끼웠으면 BE 설정은 확인하지 않는다. BE 없이 판단만 돌리는 채팅 폴링 검증
+    (capture/chat_poll.py)이 그렇다. 봇과 워커는 끼우지 않으므로 지금처럼 BE 설정까지 요구한다.
+    """
     if cfg is None:
         from shared.config import settings
         cfg = settings()
     if (getattr(cfg, "llm_mode", "") or "").lower() == "off":
         return ["PM_AGENT_LLM=off"]
-    missing = [name for name, attr in _REQUIRED if not getattr(cfg, attr, "")]
+    required = _REQUIRED_LLM + (_REQUIRED_BE if candidates is None else ())
+    missing = [name for name, attr in required if not getattr(cfg, attr, "")]
     if run is None:
         try:
             import judge.pipeline  # noqa: F401
@@ -136,7 +142,7 @@ def build_extractor(*, run=None, candidates=None, cfg=None):
     if cfg is None:
         from shared.config import settings
         cfg = settings()
-    if missing_settings(cfg, run=run):
+    if missing_settings(cfg, run=run, candidates=candidates):
         return None
     if run is None:
         from judge.pipeline import run

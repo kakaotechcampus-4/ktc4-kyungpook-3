@@ -51,12 +51,29 @@ describe('날짜 계산', () => {
     expect(addMonths('2026-01', -1)).toBe('2025-12')
   })
 
-  it('캘린더 격자는 일요일부터 6주다 — 2026-09 는 8/30 부터', () => {
+  it('캘린더 격자는 일요일부터 그 달의 날이 든 주만 그린다 — 2026-09 는 8/30 부터 5주(시안)', () => {
     const grid = calendarGrid('2026-09')
-    expect(grid).toHaveLength(42)
+    expect(grid).toHaveLength(35)
     expect(grid[0]).toEqual({ date: '2026-08-30', inMonth: false })
     expect(grid[2]).toEqual({ date: '2026-09-01', inMonth: true })
-    expect(grid.at(-1)?.date).toBe('2026-10-10')
+    // 9/30(수)이 든 주가 마지막이다. 10월 날만 있는 10/4 주는 그리지 않는다
+    expect(grid.at(-1)).toEqual({ date: '2026-10-03', inMonth: false })
+  })
+
+  it('달이 여섯 주에 걸치면 6주를 그대로 그린다 — 2026-08 은 8/1(토)부터 8/31(월)까지', () => {
+    const grid = calendarGrid('2026-08')
+    expect(grid).toHaveLength(42)
+    expect(grid[0]).toEqual({ date: '2026-07-26', inMonth: false })
+    expect(grid[6]).toEqual({ date: '2026-08-01', inMonth: true })
+    expect(grid[36]).toEqual({ date: '2026-08-31', inMonth: true })
+    expect(grid.at(-1)?.date).toBe('2026-09-05')
+  })
+
+  it('일요일에 시작하는 28일 달은 앞뒤 달 없이 4주다 — 2026-02', () => {
+    const grid = calendarGrid('2026-02')
+    expect(grid).toHaveLength(28)
+    expect(grid.every(({ inMonth }) => inMonth)).toBe(true)
+    expect(grid.at(-1)?.date).toBe('2026-02-28')
   })
 
   it('주는 월요일에 시작한다', () => {

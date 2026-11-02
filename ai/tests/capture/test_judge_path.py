@@ -72,8 +72,20 @@ def test_missing_settings_are_named_and_no_extractor_is_built():
     assert J.missing_settings(_cfg(), run=run) == []
     assert J.missing_settings(_cfg(be_service_token="", terra_api_key=""), run=run) == ["TERRA_API_KEY", "BE_SERVICE_TOKEN"]
     assert J.missing_settings(_cfg(llm_mode="off"), run=run) == ["PM_AGENT_LLM=off"]
-    assert J.build_extractor(run=run, candidates=object(), cfg=_cfg(be_base_url="")) is None
+    assert J.build_extractor(run=run, cfg=_cfg(be_base_url="")) is None
     assert J.build_extractor(run=run, candidates=object(), cfg=_cfg()) is not None
+
+
+def test_injected_candidates_do_not_need_be_settings():
+    """유사 검색을 밖에서 끼우면(채팅 폴링 검증) BE 설정을 요구하지 않는다. 끼우지 않는 봇·워커는 지금처럼 요구한다."""
+    run = FakeRun([_item()])
+    no_be = _cfg(be_base_url="", be_service_token="")
+    assert J.missing_settings(no_be, run=run) == ["BE_BASE_URL", "BE_SERVICE_TOKEN"]
+    assert J.missing_settings(no_be, run=run, candidates=object()) == []
+    no_be_no_terra = _cfg(be_base_url="", be_service_token="", terra_api_key="")
+    assert J.missing_settings(no_be_no_terra, run=run, candidates=object()) == ["TERRA_API_KEY"]
+    assert J.build_extractor(run=run, candidates=object(), cfg=no_be) is not None
+    assert J.build_extractor(run=run, cfg=no_be) is None
 
 
 def test_the_pipeline_gets_the_workspace_of_the_meeting_not_a_setting():
@@ -82,7 +94,7 @@ def test_the_pipeline_gets_the_workspace_of_the_meeting_not_a_setting():
     extract, _ = _extractor(run)
     extract(TRANSCRIPT, NAMES, date(2026, 9, 19), workspace_id="ws-7")
     assert run.seen.workspace_id == "ws-7"
-    assert "BE_WORKSPACE_ID" not in [name for name, _ in J._REQUIRED]
+    assert "BE_WORKSPACE_ID" not in [name for name, _ in J._REQUIRED_LLM + J._REQUIRED_BE]
 
 
 def test_the_pipeline_is_not_run_without_a_workspace():

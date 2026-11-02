@@ -260,7 +260,7 @@ describe('보기 전환 (Tasks 시안 4장)', () => {
     expect(screen.getByRole('region', { name: '완료' })).toBeVisible()
 
     await user.click(within(switcher).getByRole('radio', { name: '캘린더' }))
-    expect(await screen.findByRole('grid', { name: /^\d{4}년 \d{1,2}월$/ })).toBeVisible()
+    expect(await screen.findByRole('table', { name: /^\d{4}년 \d{1,2}월$/ })).toBeVisible()
     expect(screen.getByRole('region', { name: '마감일 없음' })).toBeVisible()
 
     await user.click(within(switcher).getByRole('radio', { name: '간트' }))
