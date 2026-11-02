@@ -547,6 +547,20 @@ describe('상세·이력과 PM 의 상태 변경 (AC-04)', () => {
     )
   })
 
+  it('처음부터 조회가 실패하면 일반 팀원도 다시 시도 버튼으로 복구한다 (#236)', async () => {
+    setMockRole('member')
+    server.use(http.get('/api/v1/tasks/:taskId', () => fail('INTERNAL_ERROR', 'boom', 500)))
+    renderApp(paths.tasks('ws_01', 'tk_01'))
+    expect(
+      await screen.findByText('태스크를 불러오지 못했어요', {}, { timeout: 5_000 }),
+    ).toBeVisible()
+    expect(screen.queryByText('최신 상태를 받지 못했어요')).toBeNull()
+    server.resetHandlers()
+    fireEvent.click(screen.getByRole('button', { name: '다시 시도' }))
+    expect(await screen.findByRole('heading', { level: 2, name: '로그인 API 연동' })).toBeVisible()
+    expect(screen.queryByText('태스크를 불러오지 못했어요')).toBeNull()
+  })
+
   it('일반 팀원은 상태를 바꿀 수 없다 — 고르는 칸이 없고 PATCH 도 없다', async () => {
     setMockRole('member')
     const log = recordRequests()
