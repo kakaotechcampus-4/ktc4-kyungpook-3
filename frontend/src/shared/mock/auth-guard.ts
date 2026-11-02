@@ -31,6 +31,21 @@ export function requireMember(workspaceId: string): Denied | null {
     : fail('FORBIDDEN', '이 작업을 수행할 권한이 없습니다.', 403)
 }
 
+/** 백엔드 `deps.get_current_pm` 과 `require_pm` 의 권한 검사에 대응한다. 인증 + 소속 + 그 공간의 PM 이어야 한다.
+ *
+ * `requirePm` 과 달리 세션 팀원을 정하지 않는다 — 변경자를 기록하지 않는 쓰기(연동 해제, 팀원 생성·수정, 모의 OAuth
+ * 완료)에 쓴다. 새로 만든 공간은 세션 팀원 대응(sessions.ts)이 없지만 PM 이면 온보딩을 마칠 수 있어야 한다.
+ * 통과하면 `null`, 막히면 401·403 응답을 돌려준다.
+ */
+export function requirePmRole(workspaceId: string): Denied | null {
+  const denied = requireMember(workspaceId)
+  if (denied) return denied
+  const workspace = db.workspaces.find(({ workspace_id }) => workspace_id === workspaceId)
+  return workspace?.role === 'pm'
+    ? null
+    : fail('FORBIDDEN', 'PM만 할 수 있는 작업입니다.', 403, { workspace_id: workspaceId })
+}
+
 /** 백엔드 `deps.require_pm` 에 대응한다. 인증 + 소속 + 그 공간의 PM 이어야 한다.
  *
  * 역할은 워크스페이스 행의 `role` 로 본다(sessions.ts — `setMockRole` 이 바꾸는 값). 통과하면 기록에 쓸

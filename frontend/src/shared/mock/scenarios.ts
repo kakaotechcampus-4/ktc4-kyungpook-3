@@ -56,6 +56,10 @@ export const MOCK_SCENARIOS = [
   'messages-list-error',
   'messages-thread-error',
   'messages-send-fail',
+  // M8-B 설정·팀 연결 관리. settings-discord-skipped 만 새로 만든 공간(ws_03)이고 나머지는 ws_01 이다
+  'settings-discord-skipped',
+  'settings-unmapped',
+  'settings-member',
 ] as const
 export type MockScenario = (typeof MOCK_SCENARIOS)[number]
 
@@ -82,6 +86,45 @@ const incompleteWorkspace: WorkspaceDto = {
       { step: 'connect_members', status: 'pending' },
     ],
   },
+}
+
+/**
+ * 온보딩에서 Discord 연결과 팀원 연결을 건너뛰고 마친 PM 공간. Notion 만 연결했다.
+ * 팀원은 생성자 PM 하나라 Discord 를 연결하면 사용자가 모두 미매핑이다
+ */
+const discordSkippedWorkspace: WorkspaceDto = {
+  workspace_id: 'ws_03',
+  name: '연결을 미룬 팀',
+  role: 'pm',
+  created_at: '2026-09-03T00:00:00Z',
+  onboarding: {
+    completed: true,
+    current_step: null,
+    steps: [
+      { step: 'create_workspace', status: 'completed' },
+      { step: 'connect_discord', status: 'skipped' },
+      { step: 'connect_notion', status: 'completed' },
+      { step: 'connect_members', status: 'skipped' },
+    ],
+  },
+}
+
+/** 새로 만든 공간을 넣는다. 백엔드처럼 생성자가 PM 팀원으로 있고 연동은 아직 없다 */
+function addCreatedWorkspace(state: MockDb, workspace: WorkspaceDto): void {
+  state.workspaces.push(structuredClone(workspace))
+  state.members.push({
+    member_id: 'mb_90',
+    workspace_id: workspace.workspace_id,
+    display_name: state.accounts[0].session.user.name,
+    discord_user_id: null,
+    notion_name: null,
+    role: 'pm',
+    created_at: MOCK_NOW,
+  })
+  state.integrations[workspace.workspace_id] = {
+    discord: { status: 'not_connected', display_name: null, connected_at: null },
+    notion: { status: 'not_connected', display_name: null, connected_at: null },
+  }
 }
 
 /** 픽스처 계정을 로그인시키고 소속을 workspaceIds 로 맞춘다. 마지막 공간은 마지막 소속이다 */
@@ -273,21 +316,7 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
       // initialDb() 가 이미 ws_01·ws_02 소속으로 로그인한 상태다
       break
     case 'incomplete-workspace':
-      state.workspaces.push(structuredClone(incompleteWorkspace))
-      // 백엔드처럼 생성자가 PM 팀원으로 있다
-      state.members.push({
-        member_id: 'mb_90',
-        workspace_id: 'ws_03',
-        display_name: state.accounts[0].session.user.name,
-        discord_user_id: null,
-        notion_name: null,
-        role: 'pm',
-        created_at: MOCK_NOW,
-      })
-      state.integrations.ws_03 = {
-        discord: { status: 'not_connected', display_name: null, connected_at: null },
-        notion: { status: 'not_connected', display_name: null, connected_at: null },
-      }
+      addCreatedWorkspace(state, incompleteWorkspace)
       signInWith(state, ['ws_03'], 'ws_03')
       break
     case 'meeting-demo':
@@ -464,6 +493,30 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
       // 조회는 정상이고 발송·보내지 않음·고쳐 쓰기·발송 시점 변경만 5xx 다. db 는 바뀌지 않는다
       signInWith(state, ['ws_01'], 'ws_01')
       state.messageFailures.actions = true
+      break
+    case 'settings-discord-skipped':
+      // 설정에서 Discord 를 연결한다. 연결해도 건너뜀으로 저장된 단계는 그대로다 (D-173)
+      addCreatedWorkspace(state, discordSkippedWorkspace)
+      state.integrations.ws_03.notion = {
+        status: 'connected',
+        display_name: 'Notion 연결됨',
+        connected_at: MOCK_NOW,
+      }
+      signInWith(state, ['ws_03'], 'ws_03')
+      break
+    case 'settings-unmapped':
+      // 픽스처 그대로의 ws_01 이다. Discord 연결됨, 1125(지훈)는 미매핑, mb_04 의 1126 은 서버를 떠났다(inactive), 1199 는 봇이다
+      signInWith(state, ['ws_01'], 'ws_01')
+      break
+    case 'settings-member':
+      // 일반 팀원. Discord 는 미연결(요청 안내), Notion 은 연결됨(PM 이 관리한다는 안내)이다. 연결·매핑 쓰기는 PM 만 한다
+      signInWith(state, ['ws_01'], 'ws_01')
+      setMockRole('member', 'ws_01', state)
+      state.integrations.ws_01.discord = {
+        status: 'not_connected',
+        display_name: null,
+        connected_at: null,
+      }
       break
   }
   return state

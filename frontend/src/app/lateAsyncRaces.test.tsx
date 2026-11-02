@@ -697,7 +697,7 @@ describe('U3 의 같은 종류 경합', () => {
     await act(() => settle())
 
     paint.release()
-    expect(await screen.findByRole('heading', { name: '팀원' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { level: 1, name: '팀' })).toBeInTheDocument()
     await act(() => settle())
     expect(pathsOf(app).at(-1)).toBe(paths.members('ws_01'))
     expect(pathsOf(app)).not.toContain(UPLOAD_PATH)

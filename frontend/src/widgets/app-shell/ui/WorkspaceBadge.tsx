@@ -38,8 +38,8 @@ export function WorkspaceRowContent({ workspace, current }: WorkspaceRowContentP
   )
 }
 
-/** `새 워크스페이스 만들기` · `워크스페이스 설정` 줄의 점선 아이콘 칸 */
-export function DashedIcon({ name }: { name: 'plus' | 'settings' }) {
+/** `새 워크스페이스 만들기` 줄의 점선 아이콘 칸. 설정 줄은 #244 로 프로필 메뉴(UserMenu)로 옮겼다 */
+export function DashedIcon({ name }: { name: 'plus' }) {
   return (
     <span
       aria-hidden="true"
