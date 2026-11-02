@@ -149,3 +149,15 @@ def test_manifest_from_existing_segments_does_not_call_the_diarizer(tmp_path):
     assert m["workspace_id"] == "ws-1" and m["meeting_dir"] == "upload_mtg-9"
     assert [s["file"].split("/")[0] for s in m["speakers"]] == ["upload_mtg-9"] * 2
     assert json.loads((rec / "upload_mtg-9" / "diarization.json").read_text(encoding="utf-8"))["source"] == "회의.wav"
+
+
+def test_track_file_ts_follows_the_session_ts_when_the_name_collides(tmp_path):
+    rec = tmp_path / "rec"
+    _, first = prepare_upload(_audio(tmp_path), rec, diarizer=FakeDiarizer(SEGS), started_at=STARTED, timezone="Asia/Seoul")
+    _, second = prepare_upload(_audio(tmp_path), rec, diarizer=FakeDiarizer(SEGS), started_at=STARTED, timezone="Asia/Seoul")
+    assert second["session"] != first["session"]
+    session_ts = second["session"].split("_")[-1]
+    assert int(session_ts) == int(first["session"].split("_")[-1]) + 1
+    for s in second["speakers"]:
+        stem = s["file"].rsplit("/", 1)[-1].removesuffix(".wav")
+        assert T.parse_wav_stem(stem) == (s["user_id"], session_ts)   # 트랙 파일의 ts 가 세션 이름의 ts 와 같다

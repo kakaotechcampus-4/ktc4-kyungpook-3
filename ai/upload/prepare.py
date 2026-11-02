@@ -47,17 +47,18 @@ def prepare_upload(audio_path: Path, recordings_dir: Path, *, diarizer: Diarizer
             ts += 1
         session = f"upload_{ts}"
     return prepare_from_segments(audio, total, segments, recordings_dir, source_name=audio_path.name,
-                                 started_at=started_at, timezone=timezone, session=str(session), meta=meta)
+                                 started_at=started_at, timezone=timezone, session=str(session), meta=meta, ts=ts)
 
 
 def prepare_from_segments(audio, total: float, segments: list[Segment], recordings_dir: Path, *, source_name: str,
                           started_at: str, timezone: str | None, session: str,
-                          meta: dict | None = None) -> tuple[Path, dict]:
+                          meta: dict | None = None, ts: int | None = None) -> tuple[Path, dict]:
     """이미 분리된(normalize 를 거친) 구간 목록으로 가상 트랙과 diarized 매니페스트를 한 번에 쓴다.
     업로드 가져오기(upload.intake)는 분리기를 따로 불러 두었다가 이 경로로 저장한다. meta 의 키는 매니페스트에 그대로 얹는다
-    (be, workspace_id, title, attendees, upload 등). 구간이 없으면 ValueError 이고 아무것도 쓰지 않는다."""
+    (be, workspace_id, title, attendees, upload 등). 구간이 없으면 ValueError 이고 아무것도 쓰지 않는다.
+    ts 는 트랙 파일 이름({id}_{ts}.wav)에 쓴다. 기본은 started_at 의 epoch 초이고, 세션 이름의 ts 를 이름 충돌로 올렸다면 같은 값을 넘긴다."""
     recordings_dir = Path(recordings_dir)
-    ts = _epoch(started_at)
+    ts = _epoch(started_at) if ts is None else ts
     if not segments:
         raise ValueError("화자 구간이 없다: 사람 목소리를 찾지 못했다")
     if timezone is None:
