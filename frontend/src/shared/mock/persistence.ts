@@ -9,8 +9,11 @@ import type { MockDb } from './db'
  */
 
 export const MOCK_DB_STORAGE_KEY = 'msw-db'
-/** 2: M5 의 `meetingFlow` 칸 추가 */
-export const MOCK_DB_VERSION = 2
+/**
+ * 2: M5 의 `meetingFlow` 칸 추가. 3: M8 의 메시지 칸(`messageReviews`·`messageThreads`·`messageFailures`) 추가.
+ * 4: M8 메시지를 디자인 캔버스대로 다시 만들며 검토·메시지 필드와 `messageFailures.actions` 추가
+ */
+export const MOCK_DB_VERSION = 4
 
 interface StoredDb {
   version: number
