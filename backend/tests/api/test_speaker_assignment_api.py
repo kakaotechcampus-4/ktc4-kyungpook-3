@@ -15,6 +15,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.core.database import Base, get_db
 from app.main import app
+from app.services import upload_storage
 from app.models import Meeting, MeetingUpload, Member, Session as SessionModel, User, Workspace
 
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
@@ -443,3 +444,152 @@ def test_concurrent_submits_transition_only_once(monkeypatch):
         app.dependency_overrides.pop(get_db, None)
         Base.metadata.drop_all(engine)
         engine.dispose()
+
+
+# ── 원본 재생 ──
+
+AUDIO = b"OggS" + bytes(range(256)) * 4
+WAV = b"RIFF" + (36).to_bytes(4, "little") + b"WAVE" + bytes(range(256)) * 4
+
+
+def _put_audio(meeting, content=AUDIO):
+    folder = upload_storage.meeting_dir(meeting.meeting_id)
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "audio.ogg").write_bytes(content)
+
+
+def _audio(meeting_id, token="pm-token", **headers):
+    return _client(token).get(f"/api/v1/meetings/{meeting_id}/audio", headers=headers)
+
+
+def test_pm_plays_the_whole_audio_inline(db, seed):
+    meeting = _meeting(db, seed)
+    _put_audio(meeting)
+
+    r = _audio(meeting.meeting_id)
+
+    assert r.status_code == 200, r.text
+    assert r.content == AUDIO
+    assert r.headers["content-type"] == "audio/ogg"
+    assert "attachment" not in r.headers.get("content-disposition", "")
+    assert r.headers["accept-ranges"] == "bytes"
+
+
+def test_audio_range_request_gets_206_with_exact_bytes(db, seed):
+    meeting = _meeting(db, seed)
+    _put_audio(meeting)
+
+    r = _audio(meeting.meeting_id, Range="bytes=0-99")
+
+    assert r.status_code == 206, r.text
+    assert r.headers["content-range"] == f"bytes 0-99/{len(AUDIO)}"
+    assert r.content == AUDIO[:100]
+    assert len(r.content) == 100
+
+
+@pytest.mark.parametrize("status", ["awaiting_speakers", "processing"])
+def test_audio_is_served_regardless_of_status_while_folder_exists(db, seed, status):
+    meeting = _meeting(db, seed, status=status)
+    _put_audio(meeting)
+
+    assert _audio(meeting.meeting_id).status_code == 200
+
+
+@pytest.mark.parametrize("token", ["member-token", "other-pm-token"])
+def test_audio_requires_pm_of_the_workspace(db, seed, token):
+    meeting = _meeting(db, seed)
+    _put_audio(meeting)
+
+    r = _audio(meeting.meeting_id, token=token)
+
+    assert r.status_code == 403, r.text
+    assert r.json()["error"]["code"] == "FORBIDDEN"
+
+
+def test_audio_without_login_gets_401(db, seed):
+    meeting = _meeting(db, seed)
+    _put_audio(meeting)
+
+    assert _audio(meeting.meeting_id, token=None).status_code == 401
+
+
+@pytest.mark.parametrize("kind", ["not_upload", "no_upload_row", "missing", "no_folder", "no_file"])
+def test_audio_gets_404_when_there_is_nothing_to_play(db, seed, kind):
+    if kind == "not_upload":
+        meeting = _meeting(db, seed, source="discord_realtime")
+        _put_audio(meeting)
+        meeting_id = meeting.meeting_id
+    elif kind == "no_upload_row":
+        meeting = _meeting(db, seed, upload=False)
+        _put_audio(meeting)
+        meeting_id = meeting.meeting_id
+    elif kind == "missing":
+        meeting_id = "00000000-0000-0000-0000-000000000000"
+    elif kind == "no_folder":
+        meeting_id = _meeting(db, seed).meeting_id
+    else:
+        meeting = _meeting(db, seed)
+        _put_audio(meeting)
+        (upload_storage.meeting_dir(meeting.meeting_id) / "audio.ogg").unlink()
+        meeting_id = meeting.meeting_id
+
+    r = _audio(meeting_id)
+
+    assert r.status_code == 404, r.text
+    assert r.json()["error"]["code"] == "MEETING_NOT_FOUND"
+
+
+# ── 전체 흐름 ──
+
+def test_upload_to_done_flow_with_speaker_assignment(db, seed):
+    ai = TestClient(app, base_url="https://testserver")
+    headers = {"X-Service-Token": SERVICE_TOKEN}
+    pm = _client()
+
+    up = pm.post(
+        f"/api/v1/workspaces/{seed['ws'].workspace_id}/meetings/upload",
+        data={"title": "주간 회의", "attendee_member_ids": [seed["jimin"].member_id]},
+        files={"file": ("회의.wav", WAV, "audio/wav")},
+    )
+    assert up.status_code == 202, up.text
+    meeting_id = up.json()["data"]["meeting_id"]
+    folder = upload_storage.meeting_dir(meeting_id)
+
+    assert ai.patch(f"/api/v1/uploads/{meeting_id}/claim", headers=headers).status_code == 200
+    labels = ai.post(f"/api/v1/uploads/{meeting_id}/speakers", headers=headers, json={"speakers": REPORTED})
+    assert labels.status_code == 200, labels.text
+    assert labels.json()["data"]["status"] == "awaiting_speakers"
+
+    view = pm.get(f"/api/v1/meetings/{meeting_id}/speakers")
+    assert view.status_code == 200, view.text
+    assert [s["label"] for s in view.json()["data"]["speakers"]] == ["SPEAKER_01", "SPEAKER_00", "SPEAKER_02"]
+    assert pm.get(f"/api/v1/meetings/{meeting_id}/audio").content == WAV
+
+    def register():
+        return ai.post("/api/v1/extractions", headers=headers, json={
+            "meeting_id": meeting_id, "workspace_id": seed["ws"].workspace_id, "items": [],
+        })
+
+    early = register()
+    assert early.status_code == 409, early.text
+    assert early.json()["error"]["code"] == "MEETING_NOT_PROCESSING"
+    assert folder.exists()
+
+    mapping = {
+        "SPEAKER_00": seed["jimin"].member_id, "SPEAKER_01": seed["pm"].member_id, "SPEAKER_02": None,
+    }
+    put = pm.put(f"/api/v1/meetings/{meeting_id}/speakers", json={"mapping": mapping})
+    assert put.status_code == 200, put.text
+    assert put.json()["data"]["status"] == "processing"
+
+    assigned = ai.get("/api/v1/uploads/assigned", headers=headers).json()["data"]["items"]
+    assert [i["meeting_id"] for i in assigned] == [meeting_id]
+    assert assigned[0]["mapping"] == mapping
+    resumed = ai.patch(f"/api/v1/uploads/{meeting_id}/resume", headers=headers)
+    assert resumed.status_code == 200, resumed.text
+
+    done = register()
+    assert done.status_code == 201, done.text
+    assert _status(db, Meeting(meeting_id=meeting_id)) == "done"
+    assert not folder.exists()
+    assert pm.get(f"/api/v1/meetings/{meeting_id}/audio").status_code == 404
