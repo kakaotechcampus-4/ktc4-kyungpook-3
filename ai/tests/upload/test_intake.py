@@ -222,6 +222,7 @@ def test_size_mismatch_is_transient_and_leaves_no_partial_file(env):
     ev = _step(env)
     assert ev.event == "retry" and _state(env)["state"] == "claimed" and _state(env)["attempts"] == 1
     assert env.be.meetings[MID]["status"] == "processing"
+    assert sorted(p.name for p in (env.rec / ".uploads" / MID).iterdir()) == ["intake.json"]   # .part·원본이 남지 않는다
 
 
 def test_download_cut_off_is_transient(env):
@@ -382,3 +383,48 @@ def test_a_valueerror_from_the_diarizer_fetch_is_transient_not_a_fail(env):
 
     assert _drive(env, BadJsonFetch(SEGS), limit=4)[-1] == "retry"
     assert env.be.meetings[MID]["status"] == "processing" and not _state(env).get("fail_pending")
+
+
+def test_job_not_found_submits_a_second_time_after_backoff(env):
+    class Gone(FakeDiarizer):
+        def fetch(self, job_id):
+            if len(self.submits) < 2:
+                raise JobNotFound(job_id)
+            return super().fetch(job_id)
+
+    diar = Gone(SEGS)
+    _drive(env, diar, limit=4)
+    assert len(diar.submits) == 1
+    env.clock.advance(backoff_s(1))
+    assert _drive(env, diar)[-1] == "done" and len(diar.submits) == 2
+
+
+@pytest.mark.parametrize("how", ["ended", "gone"])
+def test_claiming_record_with_claim_ended_or_missing_is_dropped(env, how):
+    env.be.claim_lost = True
+    assert _step(env).event == "retry" and _state(env)["state"] == "claiming"   # fresh=False 로 이어 갈 기록
+    if how == "ended":
+        env.be.meetings[MID]["status"] = "done"
+    else:
+        del env.be.uploads[MID]
+    env.clock.advance(backoff_s(1) + 1)
+    assert _step(env).event == "skipped" and not (env.rec / ".uploads" / MID).exists()
+    assert not any(m == "PATCH" and p.endswith("/fail") for m, p, _ in env.be.calls)
+
+
+@pytest.mark.parametrize("content", [None, "{not json", "[]", '{"meeting_id": "mtg-1"}'])
+def test_a_folder_with_no_usable_record_is_claimed_again(env, content):
+    d = env.rec / ".uploads" / MID
+    d.mkdir(parents=True)
+    if content is not None:
+        (d / "intake.json").write_text(content, encoding="utf-8")
+    assert _drive(env)[-1] == "done"
+
+
+def test_a_garbled_next_at_means_due_now_and_never_escapes(env):
+    diar = FlakySubmit(SEGS, 1)
+    assert _drive(env, diar)[-1] == "retry"
+    s = _state(env)
+    s["next_at"] = "not-a-time"
+    (env.rec / ".uploads" / MID / "intake.json").write_text(json.dumps(s), encoding="utf-8")
+    assert _drive(env, diar)[-1] == "done"

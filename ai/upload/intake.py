@@ -52,17 +52,25 @@ def _save(d: Path, rec: dict) -> None:
 
 
 def _load(d: Path) -> dict | None:
+    """진행 기록. 없거나 깨졌거나 꼴이 틀리면 None(그 폴더는 기록이 없는 것으로 본다)."""
     try:
-        return json.loads((d / "intake.json").read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+        rec = json.loads((d / "intake.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
         return None
+    ok = (isinstance(rec, dict) and isinstance(rec.get("meeting_id"), str) and isinstance(rec.get("state"), str)
+          and isinstance(rec.get("item"), dict))
+    return rec if ok else None
 
 
 def _cleanup(d: Path) -> None:
     """원본과 변환 wav(와 받다 만 조각)를 지운다. intake.json 은 남긴다."""
     for p in d.iterdir() if d.exists() else ():
-        if p.name != "intake.json":
-            p.unlink(missing_ok=True) if p.is_file() else shutil.rmtree(p, ignore_errors=True)
+        if p.name == "intake.json":
+            continue
+        if p.is_file():
+            p.unlink(missing_ok=True)
+        else:
+            shutil.rmtree(p, ignore_errors=True)
 
 
 def _source(d: Path, rec: dict) -> Path:
@@ -75,7 +83,12 @@ def _wav(d: Path) -> Path:
 
 def _due(rec: dict, now: datetime) -> bool:
     nxt = rec.get("next_at")
-    return not nxt or datetime.fromisoformat(nxt) <= now
+    if not nxt:
+        return True
+    try:
+        return datetime.fromisoformat(nxt) <= now
+    except (ValueError, TypeError):   # 깨진 시각은 지금 처리할 수 있는 것으로 본다
+        return True
 
 
 def _unfinished(recordings_dir: Path) -> list[tuple[Path, dict]]:
@@ -100,7 +113,9 @@ def intake_one(recordings_dir: Path, *, client, diarizer: Diarizer, now: Callabl
         if _due(rec, t):
             return _advance(recordings_dir, d, rec, client=client, diarizer=diarizer, now=now, timezone=timezone,
                             fresh=False)
-    known = {p.name for p in (recordings_dir / ".uploads").iterdir()} if (recordings_dir / ".uploads").exists() else set()
+    root = recordings_dir / ".uploads"
+    # 쓸 수 있는 기록이 있는 폴더만 이미 가져온 것으로 본다. 기록이 없거나 깨진 폴더는 다시 claim 대상이다
+    known = {p.name for p in root.iterdir() if p.is_dir() and _load(p) is not None} if root.exists() else set()
     try:
         pending = client.pending_uploads()
     except Exception:  # noqa: BLE001 - BE 가 안 되면 다음 바퀴에 다시 본다
