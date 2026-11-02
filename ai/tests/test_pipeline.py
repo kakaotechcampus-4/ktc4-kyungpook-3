@@ -666,3 +666,98 @@ def test_scope_decision_survives_when_schedule_is_reverted(monkeypatch):
     card = out.items[0]
     assert (card["category"], card["due_date"]) == ("scope", None)
     assert "소셜 로그인" in card["doc_text"]
+
+
+# ── 근거 상태 · 유사 검색 값 (이슈 #232) ───────────────────────────────────
+
+class ListCandidates:
+    """검색 결과를 그대로 돌려준다."""
+
+    def __init__(self, found):
+        self.found = found
+
+    def similar_tasks(self, workspace_id, text):
+        return list(self.found)
+
+
+def _one_line_meeting(*texts):
+    return Transcript(segments=[
+        TranscriptSegment(speaker="uid_pm", start=1.0 + 3 * i, end=3.0 + 3 * i, text=t, seq=i + 1)
+        for i, t in enumerate(texts)])
+
+
+def _stage1(*indices, summary="결제 환불 기능 담당과 마감을 정함"):
+    return {"indices": list(indices), "summary": summary, "assignee_type": "none", "reason": "새 할일"}
+
+
+def _sim(similarity):
+    return replace(SEARCH, similarity=similarity)
+
+
+NEW = _terra(is_new=True, matched_candidate_index=None)
+
+
+def test_run_create_carries_evidence_and_similar_values(monkeypatch):
+    meeting = _one_line_meeting("그건 제가 이번 주 금요일까지 할게요.")
+    _install(monkeypatch, stage1={"findings": [_stage1(0)]}, terra=[NEW],
+             luna_draft=[{"task": "환불 구현", "due_date": "2026-10-02", "due_raw": "이번 주 금요일까지",
+                          "doc_text": "환불 구현을 10/2까지"}])
+
+    out = run(meeting, workspace_id="ws_1", today=date(2026, 9, 28),
+              candidates=ListCandidates([_sim(0.5), _sim(0.7)]))
+
+    item = out.items[0]
+    assert (item["task_status"], item["due_status"], item["due_raw"]) == ("certain", "certain", "이번 주 금요일까지")
+    assert (item["similar_count"], item["top_similarity"]) == (2, 0.7)
+
+
+def test_run_create_without_due_is_missing(monkeypatch):
+    meeting = _one_line_meeting("그건 제가 할게요.")
+    _install(monkeypatch, stage1={"findings": [_stage1(0)]}, terra=[NEW],
+             luna_draft=[{"task": "환불 구현", "due_date": None, "due_raw": None, "doc_text": "환불 구현"}])
+
+    out = run(meeting, workspace_id="ws_1", today=date(2026, 9, 28), candidates=ListCandidates([]))
+
+    item = out.items[0]
+    assert (item["due_status"], item["due_date"], item["due_raw"]) == ("missing", None, None)
+    assert (item["similar_count"], item["top_similarity"]) == (0, None)
+
+
+def test_run_update_has_no_evidence_keys(monkeypatch):
+    _install(monkeypatch, stage1={"findings": FINDINGS}, terra=TERRA_OK, luna_draft=LUNA_DRAFT_OK)
+
+    update = _run().items[1]
+
+    assert update["action"] == "update"
+    assert not {"task_status", "due_status", "due_raw", "similar_count", "top_similarity"} & update.keys()
+
+
+def test_run_merge_updates_create_card_status(monkeypatch):
+    meeting = _one_line_meeting("결제 환불 기능은 제가 할게요.", "그 환불 기능은 다음 주 화요일까지 가능할까요?")
+    _install(monkeypatch, stage1={"findings": [_stage1(0), _stage1(1, summary="환불 기능 마감을 정함")]},
+             terra=[NEW, _terra(category="schedule", matched_candidate_index=1)],  # 0 검색 후보, 1 이번 회의 카드,
+             luna_draft=[{"task": "환불 구현", "due_date": None, "due_raw": None, "doc_text": "환불 구현"},
+                         {"task": None, "due_date": "2026-10-06", "due_raw": "다음 주 화요일",
+                          "doc_text": "마감을 10/6으로"}])
+
+    out = run(meeting, workspace_id="ws_1", today=date(2026, 9, 28), candidates=ListCandidates([_sim(0.6)]))
+
+    assert len(out.items) == 1
+    card = out.items[0]
+    assert (card["due_status"], card["due_raw"], card["due_date"]) == ("certain", "다음 주 화요일", "2026-10-06")
+    assert card["task_status"] == "inferred"   # 앞은 certain, 뒤는 질문 → 나쁜 쪽
+    assert (card["similar_count"], card["top_similarity"]) == (1, 0.6)
+
+
+def test_run_merge_due_cleared_sets_missing(monkeypatch):
+    meeting = _one_line_meeting("그건 제가 다음 주 화요일까지 할게요.", "아 마감은 없던 걸로 합시다.")
+    _install(monkeypatch, stage1={"findings": [_stage1(0), _stage1(1, summary="환불 마감을 없앰")]},
+             terra=[NEW, _terra(category="schedule", matched_candidate_index=0)],
+             luna_draft=[{"task": "환불 구현", "due_date": "2026-10-06", "due_raw": "다음 주 화요일",
+                          "doc_text": "환불 구현"},
+                         {"task": None, "due_date": "none", "due_raw": None, "doc_text": "마감 취소"}])
+
+    out = run(meeting, workspace_id="ws_1", today=date(2026, 9, 28), candidates=ListCandidates([]))
+
+    card = out.items[0]
+    assert (card["due_status"], card["due_raw"], card["due_date"]) == ("missing", None, None)
