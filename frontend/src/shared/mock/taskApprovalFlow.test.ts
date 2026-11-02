@@ -96,10 +96,12 @@ describe('버전과 Notion 반영 상태 (services/tasks.py, notion_sync.enqueue
         jsonRequest('POST', { workspace_id: 'ws_01', title: '새 일' }),
       ),
     ).toMatchObject({ version: 1, notion_sync_status: 'pending' })
+    // 생성은 PM 의 세션 팀원이 있는 공간에서만 된다 — 연동 안 된 공간은 ws_01 의 연동을 끊어 만든다
+    setNotion('not_connected')
     expect(
       await fetchDto<TaskDto>(
         '/tasks',
-        jsonRequest('POST', { workspace_id: 'ws_02', title: '새 일' }),
+        jsonRequest('POST', { workspace_id: 'ws_01', title: '새 일' }),
       ),
     ).toMatchObject({ version: 1, notion_sync_status: null })
   })
@@ -169,10 +171,15 @@ describe('세션 팀원 기록 (본문·쿼리의 changed_by·resolved_by 무시
   })
 
   it('세션 팀원 대응이 없는 공간의 쓰기는 PM 이어도 403 이고 아무것도 바꾸지 않는다', async () => {
-    const created = await fetchDto<TaskDto>(
-      '/tasks',
-      jsonRequest('POST', { workspace_id: 'ws_02', title: '사이드 일' }),
-    )
+    // 그 공간의 태스크는 생성 API 로 만들 수 없어(아래 POST 가 403) db 에 직접 둔다
+    const created: TaskDto = {
+      ...structuredClone(task('tk_02')),
+      task_id: 'tk_80',
+      workspace_id: 'ws_02',
+      assignee_member_id: null,
+      meeting_id: null,
+    }
+    db.tasks.push(created)
     db.approvals.push({
       ...structuredClone(approval('ap_03')),
       approval_id: 'ap_80',
@@ -189,16 +196,41 @@ describe('세션 팀원 기록 (본문·쿼리의 changed_by·resolved_by 무시
       code: 'FORBIDDEN',
       status: 403,
     })
+    await expect(
+      fetchDto('/tasks', jsonRequest('POST', { workspace_id: 'ws_02', title: '사이드 일' })),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN', status: 403 })
     expect(snapshot()).toEqual(before)
+  })
+
+  it('태스크 생성은 본문 created_by 가 아니라 세션 팀원 mb_01 을 생성자로 남긴다', async () => {
+    const created = await fetchDto<TaskDto>(
+      '/tasks',
+      jsonRequest('POST', { workspace_id: 'ws_01', title: '회고 정리', created_by: 'mb_04' }),
+    )
+    expect(historyOf(created.task_id)).toEqual([
+      expect.objectContaining({
+        changed_field: 'title',
+        new_value: '회고 정리',
+        changed_by: 'mb_01',
+      }),
+    ])
   })
 })
 
 describe('PM 쓰기와 소속 조회', () => {
-  it('일반 팀원의 네 쓰기는 403 이고 태스크·승인·이력·추출이 그대로다', async () => {
+  it('일반 팀원의 쓰기(생성 포함)는 403 이고 태스크·승인·이력·추출이 그대로다', async () => {
     task('tk_04').notion_sync_status = 'failed'
     setMockRole('member')
     const before = snapshot()
     const writes: [string, () => Promise<unknown>][] = [
+      [
+        'POST task',
+        () =>
+          fetchDto(
+            '/tasks',
+            jsonRequest('POST', { workspace_id: 'ws_01', title: '새 일', created_by: 'mb_01' }),
+          ),
+      ],
       ['PATCH task', () => patchTask('tk_01', { status: 'done', changed_by: 'mb_01' })],
       [
         'rollback',
@@ -236,6 +268,9 @@ describe('PM 쓰기와 소속 조회', () => {
     const before = snapshot()
     await expect(fetchDto('/tasks?workspace_id=ws_01')).rejects.toMatchObject({ status: 401 })
     await expect(patchTask('tk_01', { status: 'done' })).rejects.toMatchObject({ status: 401 })
+    await expect(
+      fetchDto('/tasks', jsonRequest('POST', { workspace_id: 'ws_01', title: '새 일' })),
+    ).rejects.toMatchObject({ status: 401 })
     await expect(resolve('ap_01', { status: 'rejected' })).rejects.toMatchObject({ status: 401 })
     expect(snapshot()).toEqual(before)
   })

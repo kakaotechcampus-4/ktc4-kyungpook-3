@@ -36,6 +36,8 @@ export const MOCK_SCENARIOS = [
   'notion-sync-pending',
   'notion-sync-failed',
   'tasks-member',
+  // M8 태스크 보기(보드·캘린더·간트). ws_01 PM 이다
+  'tasks-long-content',
   // M7 대시보드. 모두 ws_01 하나에 로그인한다(dashboard-member 만 일반 팀원). 처리 중 회의 mt_10 은 그대로라
   // 최신 완료 회의는 mt_09 이고 그 auto 항목이 it_01~it_03(tk_01~tk_03)이다
   'dashboard-default',
@@ -101,6 +103,30 @@ function setNotionStatus(state: MockDb, status: 'not_connected' | 'revoked'): vo
     status === 'not_connected'
       ? { status, display_name: null, connected_at: null }
       : { ...integrations.notion, status }
+}
+
+function addLongContent(state: MockDb): void {
+  const member = state.members.find(({ member_id }) => member_id === 'mb_03')
+  if (member) member.display_name = '이재환프론트엔드디자인시스템접근성담당'
+  const titles = [
+    'https://notion.so/workspace/very-long-unbreakable-path-segment-for-task-board-layout-check-0123456789',
+    '회의에서 나온 긴 제목의 태스크로 담당자와 마감일과 진행률을 모두 함께 보여 주어야 하는 경우의 줄바꿈 확인',
+    'ABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZ',
+  ]
+  for (const [index, title] of titles.entries())
+    createTask(
+      {
+        workspace_id: 'ws_01',
+        title,
+        assignee_member_id: index === 1 ? 'mb_01' : 'mb_03',
+        status: (['todo', 'in_progress', 'blocked'] as const)[index],
+        start_date: '2026-09-18',
+        due_date: '2026-09-19',
+      },
+      null,
+      'manual',
+      state,
+    )
 }
 
 /** ws_01 의 태스크·이력·승인을 모두 비운다. 그 공간 추출 항목의 연결도 끊어 없는 태스크·승인을 가리키지 않게 한다 */
@@ -329,6 +355,11 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
       // setMockRole('member') 와 같은 결과. 조회는 되고 쓰기는 403 이다
       signInWith(state, ['ws_01'], 'ws_01')
       setMockRole('member', 'ws_01', state)
+      break
+    case 'tasks-long-content':
+      // 긴 제목·긴 담당자 이름·줄바꿈할 곳이 없는 문자열. 세 보기의 오늘(9/18) 근처 같은 날에 몰아 보기 폭을 시험한다
+      signInWith(state, ['ws_01'], 'ws_01')
+      addLongContent(state)
       break
     case 'dashboard-default':
       // 요약·확인 필요 3건·마감 임박 6건(전체 보기)·최근 반영 3건(모두 반영 완료, 되돌리기 가능)

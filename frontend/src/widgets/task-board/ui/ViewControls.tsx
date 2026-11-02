@@ -9,15 +9,8 @@ import {
 import { Icon } from '@/shared/ui/icon'
 import { Segmented, SegmentedItem } from '@/shared/ui/segmented'
 import type { DueCondition } from '../lib/taskBoard'
-import { TASK_VIEWS } from '../lib/taskViews'
+import { TASK_VIEWS, VIEW_LABEL } from '../lib/taskViews'
 import type { BoardPeriod, TaskView } from '../lib/taskViews'
-
-const VIEW_LABEL: Record<TaskView, string> = {
-  list: '리스트',
-  board: '보드',
-  calendar: '캘린더',
-  gantt: '간트',
-}
 
 /** 화면 오른쪽 위 보기 전환 — 리스트·보드·캘린더·간트 */
 export function ViewSwitch({
@@ -45,9 +38,10 @@ export function ViewSwitch({
   )
 }
 
-/* 리스트 시안은 테두리가 투명이고(`1px solid transparent`), 보드 시안만 `#E8E8E8` 테두리가 있다 */
+/* 리스트 시안은 테두리가 투명이고(`1px solid transparent`), 보드 시안만 `#E8E8E8` 테두리가 있다.
+   높이는 두 시안 모두 `height 32; min-height 36` 이라 36px 로 그려진다 */
 const TRIGGER =
-  'inline-flex h-32 items-center gap-7 rounded-9 border bg-surface px-12 text-caption font-semibold text-ink hover:bg-surface-sunken'
+  'inline-flex h-32 min-h-36 items-center gap-7 rounded-9 border bg-surface px-12 text-caption font-semibold text-ink hover:bg-surface-sunken'
 const TRIGGER_BORDER = { none: 'border-transparent', line: 'border-line' } as const
 
 interface FilterSelectProps {

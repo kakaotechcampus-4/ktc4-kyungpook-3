@@ -1,3 +1,4 @@
+import { db } from '@/shared/mock/db'
 import { fetchDto, jsonRequest } from '@/shared/test/api'
 import type { ListDto } from '@/shared/types/api/envelope'
 import type { TaskDto, TaskHistoryDto } from '@/shared/types/api/task'
@@ -180,7 +181,24 @@ it('refuses ids that do not exist or belong to another workspace', async () => {
       ),
     ).rejects.toMatchObject({ code, status })
   }
-  // ws_02 에는 태스크가 없으므로 ws_01 의 팀원을 붙이면 워크스페이스가 어긋난다
+  // 다른 공간(ws_02)의 팀원을 ws_01 태스크에 붙이면 워크스페이스가 어긋난다. 생성은 PM 검사가 소속 검사보다
+  // 먼저라(api/tasks.py) 세션 팀원이 있는 ws_01 에 만들고, 어긋나는 팀원은 ws_02 에 둔다
+  db.members.push({
+    ...structuredClone(db.members.find(({ member_id }) => member_id === 'mb_02')!),
+    member_id: 'mb_80',
+    workspace_id: 'ws_02',
+  })
+  await expect(
+    fetchDto(
+      '/tasks',
+      jsonRequest('POST', {
+        workspace_id: 'ws_01',
+        title: '남의 팀원',
+        assignee_member_id: 'mb_80',
+      }),
+    ),
+  ).rejects.toMatchObject({ code: 'WORKSPACE_MISMATCH', status: 400 })
+  // 세션 팀원이 없는 ws_02 의 생성은 소속 검사 전에 403 이다
   await expect(
     fetchDto(
       '/tasks',
@@ -190,7 +208,7 @@ it('refuses ids that do not exist or belong to another workspace', async () => {
         assignee_member_id: 'mb_01',
       }),
     ),
-  ).rejects.toMatchObject({ code: 'WORKSPACE_MISMATCH', status: 400 })
+  ).rejects.toMatchObject({ code: 'FORBIDDEN', status: 403 })
   await expect(
     fetchDto('/tasks/tk_01', jsonRequest('PATCH', { assignee_member_id: 'mb_99' })),
   ).rejects.toMatchObject({ code: 'MEMBER_NOT_FOUND', status: 404 })
