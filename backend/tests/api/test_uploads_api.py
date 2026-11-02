@@ -130,8 +130,11 @@ def _claim(meeting_id: str):
 )
 @pytest.mark.parametrize(
     ("method", "path"),
-    [("get", "/pending"), ("patch", "/m1/claim"), ("get", "/m1/file")],
-    ids=["pending", "claim", "file"],
+    [
+        ("get", "/pending"), ("patch", "/m1/claim"), ("get", "/m1/file"),
+        ("post", "/m1/speakers"), ("get", "/assigned"), ("patch", "/m1/resume"),
+    ],
+    ids=["pending", "claim", "file", "speakers", "assigned", "resume"],
 )
 def test_requires_service_token(db, headers, method, path):
     r = getattr(_client(), method)(f"/api/v1/uploads{path}", headers=headers)
@@ -395,3 +398,268 @@ def test_end_report_does_not_pull_an_awaiting_meeting_back_to_processing(db, ws)
     assert r.json()["error"]["details"]["status"] == "awaiting_speakers"
     db.expire_all()
     assert meeting.status == "awaiting_speakers"
+
+
+# ── 화자 라벨 전달·지정 결과 가져가기(#266 PR-2) ──
+# 지정 제출 API(PM, PR-3)는 아직 없으므로 지정 완료 상태는 컬럼을 직접 써서 만든다.
+
+LABELS = [
+    {"label": "SPEAKER_00", "total_sec": 120.5, "samples": [{"start": 1.0, "end": 6.5}]},
+    {"label": "SPEAKER_01", "total_sec": 30, "samples": [{"start": 10, "end": 14}, {"start": 20, "end": 25.5}]},
+]
+ASSIGNED_AT = datetime(2026, 10, 13, 2, 0, tzinfo=timezone.utc)
+
+
+def _report(meeting_id: str, speakers=None):
+    body = {"speakers": LABELS if speakers is None else speakers}
+    return _client().post(f"/api/v1/uploads/{meeting_id}/speakers", headers=HEADERS, json=body)
+
+
+def _resume(meeting_id: str):
+    return _client().patch(f"/api/v1/uploads/{meeting_id}/resume", headers=HEADERS)
+
+
+def _assigned() -> list[dict]:
+    r = _client().get("/api/v1/uploads/assigned", headers=HEADERS)
+    assert r.status_code == 200, r.text
+    return r.json()["data"]["items"]
+
+
+def _assign(db, meeting: Meeting, mapping=None, *, assigned_at=ASSIGNED_AT, status="processing"):
+    """PM 이 지정을 제출한 뒤의 상태: 회의는 processing, 지정 시각과 매핑이 저장된다."""
+    mapping = {"SPEAKER_00": "m1", "SPEAKER_01": None} if mapping is None else mapping
+    upload = db.get(MeetingUpload, meeting.meeting_id)
+    upload.speakers = json.dumps(LABELS)
+    upload.speakers_reported_at = UPLOADED_AT
+    upload.speaker_mapping = json.dumps(mapping)
+    upload.speakers_assigned_at = assigned_at
+    db.get(Meeting, meeting.meeting_id).status = status
+    db.commit()
+
+
+def _state(db, meeting: Meeting):
+    db.expire_all()
+    return db.get(Meeting, meeting.meeting_id).status, db.get(MeetingUpload, meeting.meeting_id)
+
+
+def test_report_moves_claimed_upload_to_awaiting_speakers(db, ws):
+    meeting = _upload(db, ws, claimed_at=UPLOADED_AT)
+
+    r = _report(meeting.meeting_id)
+
+    assert r.status_code == 200, r.text
+    assert r.json()["data"] == {"meeting_id": meeting.meeting_id, "status": "awaiting_speakers"}
+    status, upload = _state(db, meeting)
+    assert status == "awaiting_speakers"
+    assert json.loads(upload.speakers) == LABELS
+    assert upload.speakers_reported_at is not None
+    assert upload.speakers_assigned_at is None
+
+
+def test_same_report_again_is_idempotent_even_if_label_order_differs(db, ws):
+    meeting = _upload(db, ws, claimed_at=UPLOADED_AT)
+    assert _report(meeting.meeting_id).status_code == 200
+    _, before = _state(db, meeting)
+    reported_at = before.speakers_reported_at
+
+    r = _report(meeting.meeting_id, list(reversed(LABELS)))
+
+    assert r.status_code == 200, r.text
+    assert r.json()["data"]["status"] == "awaiting_speakers"
+    status, upload = _state(db, meeting)
+    assert status == "awaiting_speakers"
+    assert upload.speakers_reported_at == reported_at
+
+
+def test_different_report_gets_409_and_keeps_stored_labels(db, ws):
+    meeting = _upload(db, ws, claimed_at=UPLOADED_AT)
+    assert _report(meeting.meeting_id).status_code == 200
+
+    r = _report(meeting.meeting_id, [{"label": "SPEAKER_00", "total_sec": 1, "samples": []}])
+
+    assert r.status_code == 409, r.text
+    error = r.json()["error"]
+    assert error["code"] == "SPEAKERS_ALREADY_REPORTED"
+    assert error["details"]["status"] == "awaiting_speakers"
+    status, upload = _state(db, meeting)
+    assert status == "awaiting_speakers"
+    assert json.loads(upload.speakers) == LABELS
+
+
+def test_report_after_assignment_gets_409_already_reported(db, ws):
+    """지정이 제출돼 processing 으로 돌아온 뒤에도 다시 보고할 수 없다."""
+    meeting = _upload(db, ws, claimed_at=UPLOADED_AT)
+    assert _report(meeting.meeting_id).status_code == 200
+    _assign(db, meeting)
+
+    r = _report(meeting.meeting_id, [{"label": "X", "total_sec": 1, "samples": []}])
+
+    assert r.status_code == 409, r.text
+    assert r.json()["error"]["code"] == "SPEAKERS_ALREADY_REPORTED"
+    assert r.json()["error"]["details"]["status"] == "processing"
+    assert _state(db, meeting)[0] == "processing"
+
+
+def test_report_of_unclaimed_upload_gets_409(db, ws):
+    meeting = _upload(db, ws)
+
+    r = _report(meeting.meeting_id)
+
+    assert r.status_code == 409, r.text
+    assert r.json()["error"]["code"] == "UPLOAD_NOT_CLAIMED"
+    assert r.json()["error"]["details"]["status"] == "processing"
+    status, upload = _state(db, meeting)
+    assert status == "processing"
+    assert upload.speakers is None and upload.speakers_reported_at is None
+
+
+@pytest.mark.parametrize("status", ["done", "failed"])
+def test_report_of_ended_upload_gets_409(db, ws, status):
+    meeting = _upload(db, ws, status=status, claimed_at=UPLOADED_AT)
+
+    r = _report(meeting.meeting_id)
+
+    assert r.status_code == 409, r.text
+    assert r.json()["error"]["code"] == "MEETING_ALREADY_ENDED"
+    assert r.json()["error"]["details"]["status"] == status
+    assert _state(db, meeting)[0] == status
+
+
+def test_report_of_unknown_discord_or_rowless_meeting_gets_404(db, ws):
+    discord = _meeting(db, ws, source="discord")
+    rowless = _meeting(db, ws)
+
+    for meeting in [discord, rowless]:
+        r = _report(meeting.meeting_id)
+        assert r.status_code == 404, r.text
+        assert r.json()["error"]["code"] == "MEETING_NOT_FOUND"
+        db.expire_all()
+        assert db.get(Meeting, meeting.meeting_id).status == "processing"
+    assert _report("no-such-meeting").status_code == 404
+
+
+@pytest.mark.parametrize(
+    "speakers",
+    [
+        [],
+        [LABELS[0], LABELS[0]],
+        [{"label": "   ", "total_sec": 1, "samples": []}],
+        [{"label": "", "total_sec": 1, "samples": []}],
+        [{"label": "x" * 65, "total_sec": 1, "samples": []}],
+        [{"label": "A", "total_sec": -1, "samples": []}],
+        [{"label": "A", "total_sec": 1, "samples": [{"start": 5, "end": 5}]}],
+        [{"label": "A", "total_sec": 1, "samples": [{"start": 6, "end": 5}]}],
+        [{"label": "A", "total_sec": 1, "samples": [{"start": -1, "end": 5}]}],
+    ],
+    ids=[
+        "empty", "duplicate", "blank-label", "empty-label", "long-label", "negative-total",
+        "start-equals-end", "start-after-end", "negative-start",
+    ],
+)
+def test_report_validation_gets_400_and_changes_nothing(db, ws, speakers):
+    meeting = _upload(db, ws, claimed_at=UPLOADED_AT)
+
+    r = _report(meeting.meeting_id, speakers)
+
+    assert r.status_code == 400, r.text
+    assert r.json()["error"]["code"] == "INVALID_REQUEST"
+    status, upload = _state(db, meeting)
+    assert status == "processing"
+    assert upload.speakers is None
+
+
+def test_assigned_lists_only_assigned_unresumed_processing_uploads_oldest_first(db, ws, other_ws):
+    later = _upload(db, ws, claimed_at=UPLOADED_AT)
+    _assign(db, later, assigned_at=ASSIGNED_AT + timedelta(minutes=5))
+    earlier = _upload(db, other_ws, claimed_at=UPLOADED_AT)
+    _assign(db, earlier, {"SPEAKER_00": None, "SPEAKER_01": "m1"})
+    awaiting = _upload(db, other_ws, status="awaiting_speakers", claimed_at=UPLOADED_AT)
+    _assign(db, awaiting, status="awaiting_speakers")  # 지정 시각이 있어도 대기 상태면 제외
+    resumed = _upload(db, other_ws, claimed_at=UPLOADED_AT)
+    _assign(db, resumed)
+    assert _resume(resumed.meeting_id).status_code == 200
+    done = _upload(db, other_ws, claimed_at=UPLOADED_AT)
+    _assign(db, done, status="done")
+    _upload(db, other_ws, claimed_at=UPLOADED_AT)  # 지정 전
+
+    items = _assigned()
+
+    assert [item["meeting_id"] for item in items] == [earlier.meeting_id, later.meeting_id]
+    item = items[0]
+    assert item["workspace_id"] == other_ws.workspace_id
+    assert item["title"] == "주간 회의"
+    assert item["mapping"] == {"SPEAKER_00": None, "SPEAKER_01": "m1"}
+    assert item["assigned_at"].startswith("2026-10-13T02:00:00")
+    assert "started_at" in item
+
+
+def test_resume_succeeds_once_and_returns_mapping(db, ws):
+    meeting = _upload(db, ws, claimed_at=UPLOADED_AT)
+    _assign(db, meeting)
+
+    r = _resume(meeting.meeting_id)
+
+    assert r.status_code == 200, r.text
+    assert r.json()["data"] == {
+        "meeting_id": meeting.meeting_id, "status": "processing",
+        "mapping": {"SPEAKER_00": "m1", "SPEAKER_01": None},
+    }
+    status, upload = _state(db, meeting)
+    assert status == "processing"
+    assert upload.resumed_at is not None
+    assert _assigned() == []
+
+    again = _resume(meeting.meeting_id)
+
+    assert again.status_code == 409, again.text
+    assert again.json()["error"]["code"] == "MEETING_PROCESSING_IN_PROGRESS"
+
+
+def test_resume_before_assignment_gets_409(db, ws):
+    waiting = _upload(db, ws, status="awaiting_speakers", claimed_at=UPLOADED_AT)
+    other = _upload(db, ws, claimed_at=UPLOADED_AT)
+
+    for meeting, status in [(waiting, "awaiting_speakers"), (other, "processing")]:
+        r = _resume(meeting.meeting_id)
+        assert r.status_code == 409, r.text
+        assert r.json()["error"]["code"] == "SPEAKERS_NOT_ASSIGNED"
+        assert r.json()["error"]["details"]["status"] == status
+        state, upload = _state(db, meeting)
+        assert state == status and upload.resumed_at is None
+
+
+@pytest.mark.parametrize("status", ["done", "failed"])
+def test_resume_of_ended_upload_gets_409(db, ws, status):
+    meeting = _upload(db, ws, claimed_at=UPLOADED_AT)
+    _assign(db, meeting, status=status)
+
+    r = _resume(meeting.meeting_id)
+
+    assert r.status_code == 409, r.text
+    assert r.json()["error"]["code"] == "MEETING_ALREADY_ENDED"
+    assert _state(db, meeting)[1].resumed_at is None
+
+
+def test_resume_of_unknown_discord_or_rowless_meeting_gets_404(db, ws):
+    discord = _meeting(db, ws, source="discord")
+    rowless = _meeting(db, ws)
+
+    for meeting_id in ["no-such-meeting", discord.meeting_id, rowless.meeting_id]:
+        r = _resume(meeting_id)
+        assert r.status_code == 404, r.text
+        assert r.json()["error"]["code"] == "MEETING_NOT_FOUND"
+
+
+def test_extraction_after_resume_finishes_and_removes_folder(db, ws):
+    meeting = _upload(db, ws, claimed_at=UPLOADED_AT)
+    assert _report(meeting.meeting_id).status_code == 200
+    assert _register_extraction(meeting).status_code == 409  # 지정 전에는 받지 않는다
+    assert upload_storage.meeting_dir(meeting.meeting_id).exists()
+    _assign(db, meeting)
+    assert _resume(meeting.meeting_id).status_code == 200
+
+    r = _register_extraction(meeting)
+
+    assert r.status_code == 201, r.text
+    assert _state(db, meeting)[0] == "done"
+    assert not upload_storage.meeting_dir(meeting.meeting_id).exists()
