@@ -321,6 +321,19 @@ def test_same_mapping_again_is_idempotent(db, seed):
     assert _upload_row(db, meeting).speakers_assigned_at == first_at
 
 
+def test_same_mapping_again_is_200_even_after_a_member_left(db, seed):
+    meeting = _meeting(db, seed)
+    mapping = _full(seed)
+    assert _put(meeting.meeting_id, mapping).status_code == 200
+    seed["jimin"].is_deleted = True
+    db.commit()
+
+    r = _put(meeting.meeting_id, mapping)
+
+    assert r.status_code == 200, r.text
+    assert r.json()["data"]["status"] == "processing"
+
+
 def test_different_mapping_after_submit_gets_409(db, seed):
     meeting = _meeting(db, seed)
     mapping = _full(seed)
@@ -487,6 +500,34 @@ def test_audio_range_request_gets_206_with_exact_bytes(db, seed):
     assert len(r.content) == 100
 
 
+def _stored(db, meeting, *, filename, content_type):
+    upload = db.get(MeetingUpload, meeting.meeting_id)
+    upload.stored_filename = filename
+    upload.content_type = content_type
+    db.commit()
+    folder = upload_storage.meeting_dir(meeting.meeting_id)
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / filename).write_bytes(AUDIO)
+
+
+@pytest.mark.parametrize("ext,expected", [
+    ("wav", "audio/wav"), ("mp3", "audio/mpeg"), ("m4a", "audio/mp4"),
+    ("ogg", "audio/ogg"), ("webm", "audio/webm"), ("bin", "application/octet-stream"),
+])
+def test_audio_content_type_comes_from_the_stored_extension_not_the_client(db, seed, ext, expected):
+    meeting = _meeting(db, seed)
+    _stored(db, meeting, filename=f"audio.{ext}", content_type="text/html")
+
+    r = _audio(meeting.meeting_id)
+
+    assert r.status_code == 200, r.text
+    assert r.headers["content-type"] == expected
+    assert r.headers["x-content-type-options"] == "nosniff"
+    assert r.headers["cache-control"] == "private, no-store"
+    view = _get(meeting.meeting_id).json()["data"]
+    assert view["audio"]["content_type"] == expected
+
+
 @pytest.mark.parametrize("status", ["awaiting_speakers", "processing"])
 def test_audio_is_served_regardless_of_status_while_folder_exists(db, seed, status):
     meeting = _meeting(db, seed, status=status)
@@ -573,6 +614,7 @@ def test_upload_to_done_flow_with_speaker_assignment(db, seed):
     early = register()
     assert early.status_code == 409, early.text
     assert early.json()["error"]["code"] == "MEETING_NOT_PROCESSING"
+    assert early.json()["error"]["details"]["status"] == "awaiting_speakers"
     assert folder.exists()
 
     mapping = {
