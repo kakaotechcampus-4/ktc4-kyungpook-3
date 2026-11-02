@@ -151,7 +151,13 @@ AI `Transcript.to_dict()` 모양에 화자 이름을 더해 보낸다. 한 회�
 | 근거 상태·유사 검색 값 | `similar_count`는 그 finding을 판단할 때 유사 검색 응답의 후보 수다(BE가 이미 `min_similarity` 미만을 뺀 결과). 같은 회의 앞부분 카드(pending)는 세지 않는다. update 항목은 보내지 않아도 되고 보내도 게이트에 쓰지 않는다. 값은 추출 항목에 저장되고 추출 조회에 실린다 |
 
 - 경로 판별의 전제: judge 항목(`ai/judge/pipeline.py`의 `to_item`)은 `action`·`category`·`doc_text`를 값이 null이어도 키째 보내고 확신도를 보내지 않는다. legacy 항목(`ai/capture/handoff.py`의 `to_extraction_items`)은 확신도 둘을 항상 보내고 judge의 키는 보내지 않는다. 판단 경로는 확신도를 만들지 않고 인계기에 임의 고정값을 넣지 않는다는 AI 쪽 기록(`ai/docs/plan/전체 계획.md`의 확신도 항목)을 따랐다.
-- auto 조건과 새 키 이름(`task_status`·`due_status`·`similar_count`·`top_similarity`)은 #232 이슈에서 AI·BE 공동 작업으로 정했고, 조건 구성은 멘토 피드백으로 확인했다. AI가 값을 만드는 방법(Luna 애매 표시, 마감 원문 확인, 카드 합치기)은 AI 쪽 작업이며 이 문서는 BE가 받는 모양만 적는다. 새 키는 judge만 보내므로 경로 판별은 바뀌지 않는다.
+- auto 조건과 새 키 이름(`task_status`·`due_status`·`similar_count`·`top_similarity`)은 #232 이슈에서 AI·BE 공동 작업으로 정했고, 조건 구성은 멘토 피드백으로 확인했다. AI가 값을 만드는 방법은 아래 "근거 상태의 뜻"에 적는다. 새 키는 judge만 보내므로 경로 판별은 바뀌지 않는다.
+- 근거 상태의 뜻 (현재 구현, `ai/judge/evidence.py`): `certain`은 **원문으로 확인됐다**는 뜻이지 정답일 통계적 확률이 아니다. LLM이 스스로 매기지 않고 코드가 근거 원문과 대조해 정한다(#232의 A안).
+  - `task_status`: 근거 발화 줄에 약속·결정·완료 표현(하겠습니다·할게요·해 주세요·하기로 했·완료했 등 합의한 목록)이 있고 그 줄이 질문·조건("?", "~까요", "시간 되면" 등)이 아니면 certain, 아니면 inferred다.
+  - `due_status`: 마감이 없으면 missing이다. 마감이 있으면 Luna가 낸 마감 원문 표현(`due_raw`)이 근거 줄에 그대로 있고, 날짜 하나로 정해지는 표현(오늘·내일·모레, (이번·다음 주) X요일, M월 D일, M/D)이며, 그 표현을 회의 날짜 기준으로 다시 계산한 날짜가 `due_date`와 같을 때만 certain이고 나머지는 inferred다. "이번 주 안에"·"다음 주쯤"·"월말까지" 같은 기간·근사 표현은 inferred다.
+  - 한계: 원문에 있는 표현인지만 보므로 다른 업무의 날짜를 가져온 경우, 나중에 번복된 결정, "아직 못 했습니다" 같은 부정은 잡지 못한다.
+  - 같은 회의의 새 항목 카드에 뒤 발화를 합치면 `task_status`는 둘 중 낮은 쪽(certain > inferred > missing), `due_status`·`due_raw`는 마감을 정한 뒤 발화 기준이며 마감을 없애면 missing, `similar_count`·`top_similarity`는 큰 쪽이다.
+  - BE 확인 필요: `backend/app/services/matching.py`의 auto 게이트 주석은 "할 일 근거 상태는 LLM의 자기 표시라 거의 certain"이라고 전제한다. 지금은 코드 대조라 이 전제가 맞지 않는다.
 - `evidence_seqs`의 모양과 규칙(배열, 순서 자유, 없는 seq 건너뛰기, 가장 큰 seq가 대표, 세 필드를 함께 보내고 빼지 않음, type은 모두 `task`)은 #229 이슈에서 AI·BE가 정했다. 1인칭 화자만 이슈의 "seq로 찾으면 seq 우선"과 달리 `evidence_speaker`를 먼저 쓴다. BE가 리뷰 중에 바꿨고, AI에는 PR로 알린다. BE는 받을 준비가 됐고, AI는 아직 이 키를 보내지 않는다(판단 경로의 `JudgeFinding.indices`, 기본 경로의 `locate_sentence` 결과를 seq로 바꾸는 작업이 남음). 보내기 전까지는 세 필드로 지금처럼 동작하고 `evidence`는 저장되지 않는다.
 - 합의 여부 확인 필요: 위 키 모양을 판별 기준으로 쓰는 것은 #201에서 BE가 정했다. AI 코드는 바꾸지 않았다. 항목 모양이 바뀌면 판별이 틀어지므로 AI가 이 키를 바꿀 때 알려야 하고, AI가 경로를 직접 보내게 되면 그 값을 먼저 쓰도록 바꾼다.
 
