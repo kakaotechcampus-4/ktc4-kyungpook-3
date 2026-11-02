@@ -34,7 +34,7 @@ recordings/         녹음 산출물 (git 제외)
   `/record` 때 디스코드 서버로 BE 에 물어 매니페스트에 고정합니다. 웹에서 연결하지 않은 서버면 녹음을 시작하지 않고,
   처리할 때 연결이 없으면 채널에 한 번 알리고 연결될 때까지 전사하지 않습니다(#199).
 - 웹 업로드 회의 가져오기도 워커가 BE 를 직접 부릅니다. 대기 목록·claim·파일은 `GET /uploads/pending`,
-  `POST /uploads/{id}/claim`, `GET /uploads/{id}/file`(헤더 `X-Service-Token`)이고, 분리에 실패하면
+  `PATCH /uploads/{id}/claim`, `GET /uploads/{id}/file`(헤더 `X-Service-Token`)이고, 분리에 실패하면
   `PATCH /meetings/{id}/fail` 에 `failed_stage=diarize` 를 보냅니다. 진행은 `recordings/.uploads/<meeting_id>/intake.json`,
   결과는 세션 `upload_<meeting_id>` 의 `diarized` 매니페스트(`be`, `workspace_id`, `attendees`, `upload` 포함)입니다. 자세한 흐름은 아래
   "수동 업로드" 항목에 있습니다.
@@ -63,14 +63,14 @@ recordings/         녹음 산출물 (git 제외)
   회의 정보가 없고 디스코드 길드·채널이 없어 `guild`·`channel` 이 null 입니다. 업로드 회의의 인계(전사 이후)는 #254·#255
   합의 뒤 다음 PR 에서 정합니다.
 - 웹 업로드 가져오기(`upload/intake.py`): PM 이 웹에 올린 오디오 회의를 워커가 가져와 같은 `diarized` 매니페스트로 만듭니다.
-  `BE_BASE_URL`·`BE_SERVICE_TOKEN`·`PYANNOTEAI_API_KEY` 가 모두 있을 때만 켜지고 하나라도 없으면 BE 도 pyannoteAI 도
-  부르지 않습니다. 워커가 바퀴 끝(정지 신호가 없을 때만)에 한 번 `intake_one` 을 부르며, 한 번에 한 건을 한 단계만 진전시킵니다.
-  흐름은 BE `GET /uploads/pending` → `POST /uploads/{id}/claim`(조건부 한 번) → 원본 내려받기(`size_bytes` 확인) → 16kHz mono
-  wav 변환 → pyannoteAI 제출(`job_id` 기록, 같은 건을 다시 제출하지 않아 과금이 한 번입니다) → 결과 조회 → 트랙·매니페스트
+  명시적 opt-in 입니다. 환경 변수 `MM_UPLOAD_INTAKE=1` 이고 `BE_BASE_URL`·`BE_SERVICE_TOKEN`·`PYANNOTEAI_API_KEY` 가 모두 있을 때만 켜지고,
+  아니면 BE 도 pyannoteAI 도 부르지 않습니다. **운영 서버 한 대에서만 켭니다(BE 의 claim 계약은 단일 워커를 전제로 합니다).** 워커가 바퀴 끝(정지 신호가 없을 때만)에 한 번 `intake_one` 을 부르며, 한 번에 한 건을 한 단계만 진전시킵니다.
+  흐름은 BE `GET /uploads/pending` → `PATCH /uploads/{id}/claim`(조건부 한 번) → 원본 내려받기(`size_bytes` 확인) → 16kHz mono
+  wav 변환 → pyannoteAI 제출(`job_id` 기록. `job_id` 를 적은 뒤에는 재시작해도 다시 제출하지 않습니다. 다만 제출 응답을 받기 전에 끊기거나 30분이 지나도 결과가 없거나 job 이 실패하면 다시 제출(과금)될 수 있습니다) → 결과 조회 → 트랙·매니페스트
   작성 → 원본·wav 삭제입니다. 진행 기록은 `recordings/.uploads/<meeting_id>/intake.json`(상태 `claiming`·`claimed`·`converted`·
   `submitted`·`done`·`failed`)이라 재시작해도 이어 갑니다. 일시 실패는 복구와 같은 시도 한도·대기로 다시 하고, 영구 실패나 한도 초과는
   BE 에 `PATCH /meetings/{id}/fail`(`failed_stage=diarize`)을 보냅니다. 보내지 못하면 다음 바퀴에 다시 보냅니다. 세션 이름은
-  `upload_<meeting_id>` 이고 매니페스트(`recordings/upload_<meeting_id>.json`)는 `be`(`{meeting_id, status}`), `workspace_id`,
+  `upload_<meeting_id>` 이고 매니페스트(`recordings/session_upload_<meeting_id>.json`)는 `be`(`{meeting_id, status}`), `workspace_id`,
   `title`, `attendees`, `upload`(원본 파일 정보)를 더해 `status` 가 `diarized` 입니다. 이 매니페스트도 위와 같이 워커의 처리 바퀴가
   집지 않습니다(화자 지정과 이후 인계는 #254·#255). 워커 로그에는 `[worker] 업로드 <meeting_id> <진행>` 한 줄이 남고,
   하트비트 `current` 는 가져오는 동안 `upload` 입니다.
