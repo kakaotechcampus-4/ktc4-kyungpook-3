@@ -307,6 +307,18 @@ def test_pm_member_cannot_be_invited(db, seed):
     assert _list(seed["ws"]) == []
 
 
+def test_non_ascii_member_email_blocks_inviting_it_again(db, seed):
+    jiyoung_user = db.query(User).filter(User.email == "jiyoung@example.com").one()
+    jiyoung_user.email = "Émile@example.com"
+    seed["jiyoung"].user_id = jiyoung_user.user_id
+    db.commit()
+
+    res = _invite(seed["ws"], seed["minsu"].member_id, "Émile@example.com")
+
+    assert res.status_code == 409
+    assert _code(res) == "ALREADY_WORKSPACE_MEMBER"
+
+
 def test_accept_refused_when_the_member_got_linked_meanwhile(db, seed):
     invitation_id = _invite_id(seed["ws"], seed["jiyoung"].member_id, "jiyoung@example.com")
     outsider = db.query(User).filter(User.email == "outsider@example.com").one()
