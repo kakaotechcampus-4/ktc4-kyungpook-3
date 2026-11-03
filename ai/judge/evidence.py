@@ -74,7 +74,8 @@ def _yes(answers: dict[str, Any] | None, key: str) -> bool:
 def verify(lines: list[str], task: str | None, due_date: str | None, due_raw: str | None,
            today: date, client: JevClient) -> tuple[str, str]:
     """(task_status, due_status). 마감이 없으면 마감은 묻지 않고 missing. 근거 줄이 없으면 묻지 않고 inferred."""
-    no_due = MISSING if due_date is None else INFERRED
+    # 날짜는 없는데 원문 표현이 있으면 마감을 뽑았다가 걸러진 것이다. 마감 없음(missing)과 구분해 inferred 로 둔다
+    no_due = MISSING if due_date is None and not due_raw else INFERRED
     if not lines:
         return INFERRED, no_due
     questions = {"task": QUESTIONS["task"]}
@@ -83,7 +84,7 @@ def verify(lines: list[str], task: str | None, due_date: str | None, due_raw: st
     answers = client.decide(_state(lines, task, due_date, due_raw, today), questions)
     task_status = CERTAIN if _yes(answers, "task") else INFERRED
     if due_date is None:
-        return task_status, MISSING
+        return task_status, no_due
     return task_status, CERTAIN if _yes(answers, "due") else INFERRED
 
 

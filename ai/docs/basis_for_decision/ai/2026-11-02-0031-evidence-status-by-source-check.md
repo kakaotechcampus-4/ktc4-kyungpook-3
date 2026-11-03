@@ -32,6 +32,7 @@
 - 응답이 실행마다 조금 다르다(같은 대사에서 yes 0.78 ↔ 0.82). 기준 근처 항목은 실행에 따라 certain/inferred 가 바뀔 수 있다.
 - Jev 는 달력 계산이 약했다. "금요일까지"인데 토요일 날짜를 yes 0.82 로 통과시켜, 마감 날짜의 요일을 함께 주도록 바꿨다. 이후 같은 평가에서 잘못된 certain 은 0건이었다.
 - pytest 로는 가짜 Jev 만 검증한다. 실제 판정 품질은 `judge/eval_evidence.py` 로 잰다.
+- Luna 가 마감을 뽑았는데 날짜가 검증에서 걸러지면(과거 날짜 등) 표현만 남겨 due_status 를 missing 이 아닌 inferred 로 둔다. BE 가 due_not_certain 으로 막는다.
 - 키가 없거나 호출이 실패하면 inferred 다. 운영에 `JEV_API_KEY` 가 없으면 auto 가 열리지 않는다.
 
 ## 영향 범위와 재검토 조건

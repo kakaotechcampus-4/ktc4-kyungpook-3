@@ -125,12 +125,13 @@ def test_due_raw_blank_or_not_str_is_none(blank):
     assert drafted.structured.due_raw is None
 
 
-def test_due_raw_dropped_when_due_date_is_none():
+def test_due_raw_kept_when_due_date_is_rejected():
+    # 마감 표현이 있었는데 날짜가 걸러진 경우(과거 날짜 등). 표현이 남아야 evidence 가 missing 이 아니라 inferred 로 둔다
     drafted = _draft_create(_create_response(due_date=None, due_raw="금요일"))
-    assert drafted.structured.due_raw is None
+    assert drafted.structured.due_date is None and drafted.structured.due_raw == "금요일"
 
 
-def test_due_raw_dropped_when_update_clears_due():
+def test_due_raw_dropped_for_updates():
     fake = FakeLLM(responses=[{"task": None, "due_date": "2026-10-02", "due_raw": "금요일", "doc_text": "완료"}])
     result = _result(category="decision", status="done")
     drafted = draft_llm(_finding(), result, _candidate(), TODAY, fake)

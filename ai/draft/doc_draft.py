@@ -161,7 +161,7 @@ def _parse_draft_response(raw: dict, result: JudgeResult, today: date) -> DraftR
         return None  # 일정 변경인데 마감일이 없으면 to_item() 이 "바뀌는 값 없음"으로 조용히 버린다
 
     quote = raw.get("due_raw")
-    due_raw = quote.strip() if isinstance(quote, str) and quote.strip() and due else None  # 최종 due 가 없으면 근거 표현도 없다
+    due_raw = quote.strip() if isinstance(quote, str) and quote.strip() and (due or result.is_new) else None  # due 가 걸러져도 표현은 남긴다: 마감이 있었다는 신호(judge/evidence.py 가 inferred 로 둔다)
 
     return DraftResult(
         structured=DraftStructured(

@@ -73,3 +73,10 @@ def test_worse():
     assert worse("certain", "inferred") == "inferred"
     assert worse("missing", "certain") == "missing"
     assert worse("certain", "certain") == "certain"
+
+
+def test_rejected_due_date_with_quote_is_inferred_not_missing():
+    # 원문에 마감 표현이 있었는데 날짜가 걸러졌다. BE 가 due_not_certain 으로 막도록 missing 이 아니어야 한다
+    jev = FakeJev([_ans(0.95), _ans(0.95)])
+    assert verify(LINES, "x", None, "이번 주 금요일까지", TODAY, jev) == ("certain", "inferred")
+    assert verify([], "x", None, "이번 주 금요일까지", TODAY, jev) == ("inferred", "inferred")
