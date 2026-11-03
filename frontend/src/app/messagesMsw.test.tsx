@@ -301,7 +301,7 @@ describe('빈 상태·로딩·목록 오류·대화 오류가 서로 구분되�
     ).toBeVisible()
     expect(
       screen.getByText(
-        '마감이 다가오거나 진행이 멈추면, 담당자에게 보낼 DM을 여기에 준비해 둘게요. 보내기 전에 항상 물어봅니다.',
+        '마감이 다가오거나 진행이 멈추면, 담당자에게 보낼 DM을 여기에 준비해 둘게요. 재촉 자동 승인을 켜지 않으면 보내기 전에 물어봅니다.',
       ),
     ).toBeInTheDocument()
     expect(screen.queryByRole('complementary', { name: '메시지 목록' })).toBeNull()

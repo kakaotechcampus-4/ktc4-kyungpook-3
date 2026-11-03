@@ -159,8 +159,8 @@ export const 답장_확인_필요: Story = {
   parameters: { route: paths.messageThread('ws_01', 'th_02') },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    const threads = canvas.getByRole('region', { name: '대화' })
-    await expect(await within(threads).findByText('답장 확인 필요')).toBeVisible()
+    const threads = await canvas.findByRole('region', { name: '대화' })
+    await expect(within(threads).getByText('답장 확인 필요')).toBeVisible()
     const detail = detailOf(canvasElement)
     await expect(await detail.findByText('어느 태스크에 대한 답장인가요?')).toBeVisible()
     await expect(

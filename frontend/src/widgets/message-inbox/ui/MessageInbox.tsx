@@ -107,7 +107,7 @@ export function MessageInbox({
         {policy.reviews ? (
           <EmptyState
             title="보낼 메시지가 없어요"
-            description="마감이 다가오거나 진행이 멈추면, 담당자에게 보낼 DM을 여기에 준비해 둘게요. 보내기 전에 항상 물어봅니다."
+            description="마감이 다가오거나 진행이 멈추면, 담당자에게 보낼 DM을 여기에 준비해 둘게요. 재촉 자동 승인을 켜지 않으면 보내기 전에 물어봅니다."
             action={
               <GuardedLink to={paths.settings(workspaceId)} className={EMPTY_ACTION}>
                 알림 규칙 보기
