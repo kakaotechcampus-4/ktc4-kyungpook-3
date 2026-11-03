@@ -114,12 +114,17 @@ def _lock_thread(db: Session, thread_id: str) -> None:
 
 
 def bundle_reminders(db: Session, bundle_id: str, status: str = ReminderStatus.SCHEDULED) -> list[Reminder]:
+    """묶음 안의 그 상태 리마인드. 취소면 묶음이 닫힐 때 같이 취소된 것만이다.
+
+    먼저 뺀 리마인드도 취소 상태로 남는다. 묶음을 닫는 취소는 남은 리마인드에 같은 시각을 찍으므로,
+    가장 늦은 cancelled_at 과 같은 것이 함께 취소된 리마인드다.
+    """
     db.flush()
-    return list(db.scalars(
-        select(Reminder)
-        .where(Reminder.bundle_id == bundle_id, Reminder.status == status)
-        .order_by(Reminder.created_at, Reminder.reminder_id)
-    ).all())
+    stmt = select(Reminder).where(Reminder.bundle_id == bundle_id, Reminder.status == status)
+    if status == ReminderStatus.CANCELLED:
+        closed_at = select(func.max(Reminder.cancelled_at)).where(Reminder.bundle_id == bundle_id)
+        stmt = stmt.where(Reminder.cancelled_at == closed_at.scalar_subquery())
+    return list(db.scalars(stmt.order_by(Reminder.created_at, Reminder.reminder_id)).all())
 
 
 def _bundle_at(db: Session, thread_id: str, scheduled_at: datetime) -> ReminderBundle | None:

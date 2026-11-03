@@ -53,7 +53,7 @@ def _reminder_dict(reminder: Reminder) -> dict:
 
 
 def _bundle_dict(db: Session, bundle: ReminderBundle) -> dict:
-    """묶음과 그 안의 리마인드. 리마인드는 묶음과 같은 상태인 것만 보인다(예정 묶음이면 예정 리마인드)."""
+    """묶음과 그 안의 리마인드. 리마인드는 묶음과 같은 상태인 것만 보인다(예정 묶음이면 예정 리마인드, 취소 묶음이면 함께 취소된 것)."""
     member = bundle.thread.member
     return BundleResponse(
         bundle_id=bundle.bundle_id, thread_id=bundle.thread_id, member_id=member.member_id,

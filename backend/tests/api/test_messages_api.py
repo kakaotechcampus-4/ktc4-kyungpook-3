@@ -597,3 +597,21 @@ def test_approve_needs_the_draft_version_on_screen_and_refuses_a_changed_text(md
     approved = pm.post(url, json={"draft_version": current}).json()["data"]
     assert approved["approved"] is True and approved["body"] == "AI 가 새로 쓴 문구"
     assert pm.post(url, json={"draft_version": shown["draft_version"]}).status_code == 200
+
+
+def test_cancelled_bundle_lists_only_the_reminders_cancelled_with_it(mdb, mseed):
+    pm = client("pm")
+    at = _future()
+    reminders = f"{P}/workspaces/{mseed['ws']}/messages/reminders"
+    for close_by in ("bundle", "last reminder"):
+        first = _create(pm, mseed, task=0, at=at)
+        second = _create(pm, mseed, task=1, at=at)
+        bid, removed, kept = (first["bundle"]["bundle_id"], first["reminder"]["reminder_id"],
+                              second["reminder"]["reminder_id"])
+        assert pm.post(f"{reminders}/{removed}/cancel").status_code == 200
+        if close_by == "bundle":
+            closed = pm.post(f"{_bundles_url(mseed, bid)}/cancel").json()["data"]
+        else:
+            closed = pm.post(f"{reminders}/{kept}/cancel").json()["data"]["bundle"]
+        assert closed["status"] == "cancelled", close_by
+        assert [r["reminder_id"] for r in closed["reminders"]] == [kept], close_by
