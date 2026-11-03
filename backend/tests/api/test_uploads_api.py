@@ -340,13 +340,18 @@ def test_awaiting_speakers_status_is_saved_and_read_back(db, ws):
     assert db.get(Meeting, meeting.meeting_id).status == "awaiting_speakers"
 
 
-def test_awaiting_upload_is_not_pending_and_cannot_be_claimed(db, ws):
-    meeting = _upload(db, ws, status="awaiting_speakers", claimed_at=UPLOADED_AT)
+@pytest.mark.parametrize("claimed_at", [None, UPLOADED_AT], ids=["unclaimed", "claimed"])
+def test_awaiting_upload_is_not_pending_and_cannot_be_claimed(db, ws, claimed_at):
+    """claimed_at 이 비어 있어도 상태만으로 빠져야 한다. claimed_at 조건만 보면 상태를 잘못 다뤄도 통과한다."""
+    meeting = _upload(db, ws, status="awaiting_speakers", claimed_at=claimed_at)
 
     assert _pending() == []
     r = _claim(meeting.meeting_id)
 
     assert r.status_code == 409, r.text
+    error = r.json()["error"]
+    assert error["code"] == "MEETING_ALREADY_ENDED"
+    assert error["details"]["status"] == "awaiting_speakers"
 
 
 def test_awaiting_upload_file_is_still_served(db, ws):
