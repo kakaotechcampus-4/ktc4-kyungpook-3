@@ -8,7 +8,7 @@ from sqlalchemy import event, select
 from sqlalchemy.orm import sessionmaker
 
 from app.core.errors import AppError, ErrorCode
-from app.models import ReminderBundle, ThreadMessage
+from app.models import MessageThread, ReminderBundle, ThreadMessage
 from app.services import messages as svc
 
 
@@ -96,3 +96,35 @@ def test_pm_action_on_due_bundle_while_bot_claims_it_is_rejected_not_deadlocked(
     mdb.expire_all()
     sent = mdb.scalars(select(ThreadMessage)).all()
     assert [m.body for m in sent] == [mdb.get(ReminderBundle, bid).body]
+
+
+def test_first_two_dms_from_a_member_without_thread_are_both_saved(mdb, mseed):
+    _postgres_only(mdb)
+    Session = sessionmaker(bind=mdb.get_bind(), autoflush=False)
+    first_flushed = threading.Event()
+    now = datetime.now(timezone.utc)
+
+    def ingest(mid):
+        def run(db):
+            svc.ingest_discord_reply(db, discord_user_id="d_alice", discord_message_id=mid, body=mid,
+                                     sent_at=now, now=now)
+            if mid == "m1":
+                first_flushed.set()
+                time.sleep(0.5)
+            return "ok"
+        return run
+
+    def second(db):
+        first_flushed.wait(5)
+        return ingest("m2")(db)
+
+    results = {}
+    _run_threads(
+        ("first", lambda: results.update(first=_outcome(ingest("m1"), Session))),
+        ("second", lambda: results.update(second=_outcome(second, Session))),
+    )
+    assert results == {"first": "ok", "second": "ok"}
+    mdb.expire_all()
+    (thread,) = mdb.scalars(select(MessageThread)).all()
+    assert sorted(m.body for m in mdb.scalars(select(ThreadMessage)).all()) == ["m1", "m2"]
+    assert {m.thread_id for m in mdb.scalars(select(ThreadMessage)).all()} == {thread.thread_id}

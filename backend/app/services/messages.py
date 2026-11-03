@@ -89,15 +89,19 @@ def rule_line(name: str, title: str, due: date | None) -> str:
 
 
 def get_or_create_thread(db: Session, workspace_id: str, member_id: str) -> MessageThread:
-    thread = db.scalar(
-        select(MessageThread).where(
-            MessageThread.workspace_id == workspace_id, MessageThread.member_id == member_id
-        )
+    query = select(MessageThread).where(
+        MessageThread.workspace_id == workspace_id, MessageThread.member_id == member_id
     )
-    if thread is None:
-        thread = MessageThread(workspace_id=workspace_id, member_id=member_id)
-        db.add(thread)
-        db.flush()
+    thread = db.scalar(query)
+    if thread is not None:
+        return thread
+    try:
+        with db.begin_nested():
+            thread = MessageThread(workspace_id=workspace_id, member_id=member_id)
+            db.add(thread)
+    except IntegrityError:
+        # 첫 DM 두 통이나 첫 리마인드가 겹쳐 다른 요청이 먼저 만들었다.
+        return db.scalars(query).one()
     return thread
 
 

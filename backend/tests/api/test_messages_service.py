@@ -468,6 +468,27 @@ def test_ingest_unknown_or_deleted_discord_user_is_404(mdb, mseed):
     assert e.value.code == ErrorCode.MEMBER_NOT_FOUND
 
 
+def test_thread_made_by_another_request_meanwhile_is_reused(mdb, mseed, monkeypatch):
+    from sqlalchemy import insert
+
+    from app.models import MessageThread
+    real_scalar, raced = mdb.scalar, []
+
+    def scalar(stmt, *args, **kwargs):
+        found = real_scalar(stmt, *args, **kwargs)
+        if found is None and not raced and stmt.column_descriptions[0]["entity"] is MessageThread:
+            raced.append(True)
+            mdb.execute(insert(MessageThread).values(
+                thread_id="made-by-other", workspace_id=mseed["ws"], member_id=mseed["alice"].member_id,
+            ))
+        return found
+
+    monkeypatch.setattr(mdb, "scalar", scalar)
+    msg, created = _ingest(mdb, "m1")
+    assert raced and created and msg.thread_id == "made-by-other"
+    assert mdb.query(MessageThread).count() == 1 and mdb.query(ThreadMessage).count() == 1
+
+
 def _alice_in_workspace_b(mdb, created_at, name="B"):
     """워크스페이스 B 에도 같은 디스코드 계정의 앨리스가 있다. B 의 PM 이 리마인드를 만들 수 있게 태스크도 둔다."""
     from app.models import Task
