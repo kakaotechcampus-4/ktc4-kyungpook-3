@@ -100,8 +100,11 @@ def get_or_create_thread(db: Session, workspace_id: str, member_id: str) -> Mess
 
 
 def _lock_thread(db: Session, thread_id: str) -> None:
-    # PM 조작은 대화 → 묶음 → 리마인드 순서로 잠근다. 발송과 초안 쓰기는 묶음부터 잠그므로 순서가 엇갈리지 않는다.
-    db.execute(select(MessageThread.thread_id).where(MessageThread.thread_id == thread_id).with_for_update())
+    # PM 조작끼리만 줄 세운다. 발송은 묶음을 잠근 채 thread_message 를 넣고, 그 FK 검사가 대화 행에 KEY SHARE 를
+    # 건다. FOR UPDATE 는 KEY SHARE 와 부딪혀 교착이 나므로 부딪히지 않는 FOR NO KEY UPDATE 로 잠근다.
+    db.execute(
+        select(MessageThread.thread_id).where(MessageThread.thread_id == thread_id).with_for_update(key_share=True)
+    )
 
 
 def bundle_reminders(db: Session, bundle_id: str, status: str = ReminderStatus.SCHEDULED) -> list[Reminder]:
