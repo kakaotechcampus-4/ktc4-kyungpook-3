@@ -14,7 +14,7 @@ from app.api.deps import get_current_pm, get_current_user, require_pm
 from app.api.members import _ensure_other_pm
 from app.core.database import get_db
 from app.core.errors import AppError, Envelope, ErrorCode, success
-from app.models import Invitation, InvitationStatus, Member, User, Workspace
+from app.models import Invitation, InvitationStatus, Member, MemberRole, User, Workspace
 from app.schemas.invitation import (
     InvitationAcceptResponse,
     InvitationCreateRequest,
@@ -172,6 +172,9 @@ def create_invitation(
         raise AppError(ErrorCode.MEMBER_NOT_FOUND, details={"member_id": payload.member_id})
     if member.user_id is not None:
         raise AppError(ErrorCode.MEMBER_ALREADY_LINKED, details={"member_id": member.member_id})
+    # 수락한 계정이 바로 PM 이 되면 원래 PM 을 내려 연결 끊기를 막을 수 있다(결정 0035).
+    if member.role == str(MemberRole.PM):
+        raise AppError(ErrorCode.PM_MEMBER_NOT_INVITABLE, details={"member_id": member.member_id})
     if _email_in_workspace(db, workspace_id, payload.email):
         raise AppError(ErrorCode.ALREADY_WORKSPACE_MEMBER, details={"email": payload.email})
     if _email_pending_for_other_member(db, workspace_id, payload.email, member.member_id):

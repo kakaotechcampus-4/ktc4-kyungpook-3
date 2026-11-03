@@ -66,6 +66,7 @@ class ErrorCode(StrEnum):
     MEMBER_ALREADY_LINKED = "MEMBER_ALREADY_LINKED"
     ALREADY_WORKSPACE_MEMBER = "ALREADY_WORKSPACE_MEMBER"
     EMAIL_ALREADY_INVITED = "EMAIL_ALREADY_INVITED"
+    PM_MEMBER_NOT_INVITABLE = "PM_MEMBER_NOT_INVITABLE"
 
 
 ERROR_STATUS: dict[ErrorCode, int] = {
@@ -122,6 +123,7 @@ ERROR_STATUS: dict[ErrorCode, int] = {
     ErrorCode.MEMBER_ALREADY_LINKED: 409,
     ErrorCode.ALREADY_WORKSPACE_MEMBER: 409,
     ErrorCode.EMAIL_ALREADY_INVITED: 409,
+    ErrorCode.PM_MEMBER_NOT_INVITABLE: 409,
 }
 
 ERROR_MESSAGE: dict[ErrorCode, str] = {
@@ -178,6 +180,7 @@ ERROR_MESSAGE: dict[ErrorCode, str] = {
     ErrorCode.MEMBER_ALREADY_LINKED: "이미 로그인 계정이 연결된 팀원입니다.",
     ErrorCode.ALREADY_WORKSPACE_MEMBER: "이미 이 워크스페이스의 팀원인 계정입니다.",
     ErrorCode.EMAIL_ALREADY_INVITED: "이 이메일로 다른 팀원에게 보낸 초대가 대기 중입니다.",
+    ErrorCode.PM_MEMBER_NOT_INVITABLE: "PM 인 팀원은 초대할 수 없습니다. 팀원으로 바꿔 초대하고, 수락한 뒤 PM 으로 바꿔 주세요.",
 }
 
 

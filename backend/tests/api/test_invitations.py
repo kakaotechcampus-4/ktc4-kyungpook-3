@@ -295,6 +295,18 @@ def test_member_already_linked_cannot_be_invited(seed):
     assert _code(res) == "MEMBER_ALREADY_LINKED"
 
 
+def test_pm_member_cannot_be_invited(db, seed):
+    # 초대로 들어온 계정이 바로 PM 이 되면 원래 PM 을 내려 연결 끊기를 막을 수 있다.
+    seed["minsu"].role = "pm"
+    db.commit()
+
+    res = _invite(seed["ws"], seed["minsu"].member_id, "jiyoung@example.com")
+
+    assert res.status_code == 409
+    assert _code(res) == "PM_MEMBER_NOT_INVITABLE"
+    assert _list(seed["ws"]) == []
+
+
 def test_accept_refused_when_the_member_got_linked_meanwhile(db, seed):
     invitation_id = _invite_id(seed["ws"], seed["jiyoung"].member_id, "jiyoung@example.com")
     outsider = db.query(User).filter(User.email == "outsider@example.com").one()
@@ -415,10 +427,10 @@ def test_reinvite_after_revoke_links_again(seed):
 
 
 def test_revoking_the_last_web_pm_is_refused(db, seed):
-    seed["minsu"].role = "pm"
-    db.commit()
     invitation_id = _invite_id(seed["ws"], seed["minsu"].member_id, "jiyoung@example.com")
     assert _act(invitation_id, "accept", "jiyoung-token").status_code == 200
+    seed["minsu"].role = "pm"
+    db.commit()
     demote = _client("pm-token").patch(f"/api/v1/members/{seed['pm'].member_id}", json={"role": "member"})
     assert demote.status_code == 200
 
@@ -431,10 +443,10 @@ def test_revoking_the_last_web_pm_is_refused(db, seed):
 
 
 def test_revoking_a_pm_is_allowed_while_another_web_pm_remains(db, seed):
-    seed["minsu"].role = "pm"
-    db.commit()
     invitation_id = _invite_id(seed["ws"], seed["minsu"].member_id, "jiyoung@example.com")
     assert _act(invitation_id, "accept", "jiyoung-token").status_code == 200
+    seed["minsu"].role = "pm"
+    db.commit()
 
     assert _act(invitation_id, "revoke", "pm-token").status_code == 200
     assert _workspace_ids("jiyoung-token") == []
