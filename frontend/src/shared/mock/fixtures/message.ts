@@ -166,6 +166,24 @@ export const messageReviewFixtures: MockMessageReview[] = [
   },
 ]
 
+/** 기본 목록에 넣지 않는다. `messages-schedule-passed` 만 더한다. 마감은 오늘이라 만료가 아니다 */
+export const schedulePassedReview: MockMessageReview = {
+  review_id: 'rv_06',
+  workspace_id: 'ws_01',
+  thread_id: 'th_01',
+  recipient_name: '이재환',
+  summary: '지난 예약 재촉',
+  body: '재환님, 어제 보내려던 확인이 아직 나가지 않았어요.',
+  created_at: '2026-09-17T09:00:00+09:00',
+  deadline: '2026-09-18',
+  reason: '마감 하루 전 시각이 지났는데, 재촉 자동 승인이 꺼져 있어 나가지 않았어요.',
+  reason_url: null,
+  send_timing: 'day_before_deadline',
+  scheduled_at: '2026-09-17T09:00:00+09:00',
+  deadline_send_at: '2026-09-17T09:00:00+09:00',
+  ...open,
+}
+
 export const messageThreadFixtures: MockMessageThread[] = [
   {
     thread_id: 'th_01',

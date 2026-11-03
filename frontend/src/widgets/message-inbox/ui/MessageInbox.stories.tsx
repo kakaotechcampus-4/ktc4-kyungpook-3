@@ -128,6 +128,27 @@ export const 대화_취소_만료: Story = {
   },
 }
 
+/** 예정 시각이 지난 재촉 — 이대로 발송은 거절되고 다시 시도는 없다 */
+export const 예정_시각_지남: Story = {
+  args: { reviewId: 'rv_06' },
+  parameters: {
+    scenario: 'messages-schedule-passed',
+    route: paths.messageReview('ws_01', 'rv_06'),
+  },
+  play: async ({ canvasElement }) => {
+    const detail = detailOf(canvasElement)
+    await userEvent.click(await detail.findByRole('button', { name: '이대로 발송' }))
+    const alert = await detail.findByRole('alert', {}, { timeout: 4_000 })
+    await expect(alert).toHaveTextContent('예정 시각이 지났어요')
+    await expect(within(alert).queryByRole('button', { name: '다시 시도' })).toBeNull()
+    await expect(detail.getByRole('button', { name: '이대로 발송' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    )
+    await expect(detail.getByText('09/17 09:00 · 지남')).toBeInTheDocument()
+  },
+}
+
 /** 검토도 대화도 없다 — EmptyMessages, `알림 규칙 보기` 는 팀 설정으로 간다 */
 export const 빈_상태: Story = {
   parameters: { scenario: 'messages-empty' },

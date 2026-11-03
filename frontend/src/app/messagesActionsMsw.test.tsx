@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { paths } from '@/shared/config/routes'
 import { db } from '@/shared/mock/db'
 import { MOCK_NOW } from '@/shared/mock/fixtures/constants'
+import { applyScenario } from '@/shared/mock/scenarios'
 import { recordRequests } from '@/shared/test/requests'
 import {
   conversation,
@@ -447,5 +448,42 @@ describe('언제 보낼까요? — 고른 카드는 서버가 저장한 값이�
     const alert = await detail().findByRole('alert')
     expect(alert).toHaveTextContent('발송 시점을 바꾸지 못했어요')
     expect(detail().getByRole('radio', { name: /마감 하루 전/ })).toBeChecked()
+  })
+})
+
+describe('예정 시각이 지난 재촉', () => {
+  it('발송은 거절되고, 시각을 지금 바로로 고르면 보낼 수 있다', async () => {
+    applyScenario('messages-schedule-passed')
+    await openReview('rv_06')
+    const passed = detail().getByRole('radio', { name: /마감 하루 전/ })
+    expect(passed).toBeDisabled()
+    expect(passed).toBeChecked()
+    expect(detail().getByText('09/17 09:00 · 지남')).toBeVisible()
+
+    const before = structuredClone(db.messageReviews)
+    await userEvent.click(button('이대로 발송'))
+    const alert = await detail().findByRole('alert')
+    expect(alert).toHaveTextContent('예정 시각이 지났어요')
+    expect(alert).toHaveTextContent('보내려던 시각이 이미 지났어요. 언제 보낼지 다시 골라 주세요.')
+    expect(within(alert).queryByRole('button', { name: '다시 시도' })).toBeNull()
+    expectLocked(button('이대로 발송'))
+    expect(detail().getByText('보낼 시각을 다시 고른 뒤에 보낼 수 있어요.')).toBeVisible()
+    expect(button('이대로 발송')).toHaveAttribute('aria-describedby')
+    expect(rowTexts(reviewList())).toHaveLength(3)
+    expect(db.messageReviews).toEqual(before)
+
+    await userEvent.click(radio(/지금 바로/))
+    await waitFor(() => expect(radio(/지금 바로/)).toBeChecked())
+    expect(detail().queryByRole('alert')).toBeNull()
+    expectUnlocked(button('이대로 발송'))
+
+    await userEvent.click(button('이대로 발송'))
+    expect(await screen.findByText('이재환님에게 메시지를 보냈어요')).toBeInTheDocument()
+    await waitFor(() => expect(rowTexts(reviewList())).toHaveLength(2))
+    expect(reviewList()).not.toHaveTextContent('지난 예약 재촉')
+    expect(db.messageReviews.find(({ review_id }) => review_id === 'rv_06')).toMatchObject({
+      state: 'sent',
+      closed_at: MOCK_NOW,
+    })
   })
 })

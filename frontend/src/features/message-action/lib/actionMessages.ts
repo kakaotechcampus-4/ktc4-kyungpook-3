@@ -15,6 +15,11 @@ export const ACTION_FAILURE_TITLE: Record<MessageAction['kind'], string> = {
 export const REVIEW_GONE_MESSAGE =
   '이미 처리했거나 사라진 메시지예요. 목록을 새로 받아 다시 확인해 주세요.'
 
+/** 409 MESSAGE_SCHEDULE_PASSED. 다시 시도는 없고, 시각을 다시 고르면 풀린다 */
+export const TIME_PASSED_TITLE = '예정 시각이 지났어요'
+export const TIME_PASSED_MESSAGE = '보내려던 시각이 이미 지났어요. 언제 보낼지 다시 골라 주세요.'
+export const TIME_PASSED_LOCK = '보낼 시각을 다시 고른 뒤에 보낼 수 있어요.'
+
 /** 발송(승인) 성공 알림. 정해 둔 시각이 있으면 예약이다 */
 export function sendNotice(recipientName: string, scheduledAt: string | null): string {
   if (scheduledAt === null) return `${recipientName}님에게 메시지를 보냈어요`

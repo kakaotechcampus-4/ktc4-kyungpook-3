@@ -64,7 +64,9 @@ export interface MessageActionControl {
 const mutationKeyOf = (workspaceId: string) => ['message-review-action', workspaceId] as const
 
 function causeOf(error: unknown): MessageActionFailure['cause'] {
-  if (error instanceof ApiError && error.status === 404) return 'gone'
+  if (!(error instanceof ApiError)) return 'error'
+  if (error.status === 404) return 'gone'
+  if (error.status === 409 && error.code === 'MESSAGE_SCHEDULE_PASSED') return 'time_passed'
   return 'error'
 }
 

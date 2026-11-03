@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router'
 import type { MessageAction, MessageReview } from '@/entities/message'
 import {
   ActionFailure,
+  TIME_PASSED_LOCK,
   dismissNotice,
   sendNotice,
   useMessageAction,
@@ -35,9 +36,10 @@ export interface ReviewDetailProps {
 }
 
 /** 행동이 잠긴 이유. 잠긴 버튼의 설명(`aria-describedby`)으로도 읽힌다 */
-function lockReason(editing: boolean, choosingTime: boolean): string | null {
+function lockReason(editing: boolean, choosingTime: boolean, timePassed: boolean): string | null {
   if (editing) return '고친 문구를 저장하거나 취소한 뒤에 보낼 수 있어요.'
   if (choosingTime) return '정한 시각을 저장하거나 취소한 뒤에 보낼 수 있어요.'
+  if (timePassed) return TIME_PASSED_LOCK
   return null
 }
 
@@ -58,8 +60,14 @@ export function ReviewDetail({ workspaceId, botName, review, onSettled }: Review
   const [editing, setEditing] = useState(false)
   const [choosingTime, setChoosingTime] = useState(false)
   const busy = actions.pending !== null
-  const lockHint = lockReason(editing, choosingTime)
+  const timePassed =
+    actions.failure?.cause === 'time_passed' &&
+    actions.failure.action.kind === 'send' &&
+    actions.failure.action.reviewId === review.id
+  const lockHint = lockReason(editing, choosingTime, false)
+  const sendLockHint = lockReason(editing, choosingTime, timePassed)
   const decisionLocked = busy || lockHint !== null
+  const sendLocked = busy || sendLockHint !== null
   // 발송 시점 저장만으로 잠긴 동안은 버튼 모양을 바꾸지 않는다 — 짧은 저장마다 버튼이 깜빡였다.
   // 잠금(aria-disabled, 누름을 버림)은 그대로이고, 누름이 왜 안 되는지는 저장 중인 시점 카드가 보여 준다
   const quietLock = actions.pending?.kind === 'schedule' && lockHint === null
@@ -166,8 +174,8 @@ export function ReviewDetail({ workspaceId, botName, review, onSettled }: Review
                 size="message-send"
                 endIcon={<Icon name="send" size={16} />}
                 aria-busy={pendingKind === 'send' || undefined}
-                aria-describedby={lockHint === null ? undefined : lockHintId}
-                locked={decisionLocked}
+                aria-describedby={sendLockHint === null ? undefined : lockHintId}
+                locked={sendLocked}
                 keepLook={quietLock}
                 onClick={() =>
                   actions.run(
@@ -183,9 +191,9 @@ export function ReviewDetail({ workspaceId, botName, review, onSettled }: Review
               </LockedButton>
             )}
           </div>
-          {lockHint === null ? null : (
+          {sendLockHint === null ? null : (
             <p id={lockHintId} className="text-caption text-dim">
-              {lockHint}
+              {sendLockHint}
             </p>
           )}
           {failureOf('send', 'dismiss')}

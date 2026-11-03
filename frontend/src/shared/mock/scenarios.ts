@@ -2,6 +2,7 @@ import type { WorkspaceDto } from '@/shared/types/api/workspace'
 import { initialDb, replaceDb } from './db'
 import type { MeetingFlowMode, MockDb } from './db'
 import { MOCK_NOW } from './fixtures/constants'
+import { schedulePassedReview } from './fixtures/message'
 import { completeMeeting, setMeetingFlowMode } from './meetingFlow'
 import { setMockRole } from './sessions'
 import { createTask } from './task-state'
@@ -58,6 +59,7 @@ export const MOCK_SCENARIOS = [
   'messages-thread-error',
   'messages-send-fail',
   'messages-member',
+  'messages-schedule-passed',
   // M8-B 설정·팀 연결 관리. settings-discord-skipped 만 새로 만든 공간(ws_03)이고 나머지는 ws_01 이다
   'settings-discord-skipped',
   'settings-unmapped',
@@ -524,6 +526,11 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
       // 일반 팀원. 조회는 되고 발송·보내지 않음·고쳐 쓰기·발송 시점은 403 이다
       signInWith(state, ['ws_01'], 'ws_01')
       setMockRole('member', 'ws_01', state)
+      break
+    case 'messages-schedule-passed':
+      // rv_06 은 마감 하루 전 시각이 이미 지났다. 마감은 오늘이라 만료가 아니고, 발송은 409 다
+      signInWith(state, ['ws_01'], 'ws_01')
+      state.messageReviews.push(structuredClone(schedulePassedReview))
       break
     case 'settings-discord-skipped':
       // 설정에서 Discord 를 연결한다. 연결해도 건너뜀으로 저장된 단계는 그대로다 (D-173)

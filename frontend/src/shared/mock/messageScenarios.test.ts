@@ -22,6 +22,7 @@ const MESSAGE_SCENARIOS = [
   'messages-thread-error',
   'messages-send-fail',
   'messages-member',
+  'messages-schedule-passed',
 ] as const satisfies readonly MockScenario[]
 
 afterEach(() => sessionStorage.clear())
@@ -284,6 +285,24 @@ describe('메시지 시나리오', () => {
       expect(error.status).toBe(403)
       expect(error.message).toBe('PM만 할 수 있는 작업입니다.')
     }
+    expect(snapshot()).toEqual(before)
+  })
+
+  it('messages-schedule-passed: 지난 예약 발송은 409 이고 마감 하루 전으로 되돌리기는 400 이다', async () => {
+    applyScenario('messages-schedule-passed')
+    const before = snapshot()
+    const denied = await failure(sendReview('rv_06'))
+    expect(denied.status).toBe(409)
+    expect(denied.code).toBe('MESSAGE_SCHEDULE_PASSED')
+    expect(denied.message).toBe('예정 시각이 지났습니다. 발송 시각을 다시 골라 주세요.')
+    expect((await inbox()).reviews.map(({ review_id }) => review_id)).toEqual([
+      'rv_01',
+      'rv_02',
+      'rv_06',
+    ])
+    expect(
+      (await failure(patchReview('rv_06', { send_timing: 'day_before_deadline' }))).status,
+    ).toBe(400)
     expect(snapshot()).toEqual(before)
   })
 
