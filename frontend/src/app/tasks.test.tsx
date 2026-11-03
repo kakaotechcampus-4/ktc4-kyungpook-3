@@ -445,10 +445,10 @@ describe('URL 탭·날짜 조건 (AC-03)', () => {
     expect(await screen.findByRole('heading', { name: '조건에 맞는 항목이 없어요' })).toBeVisible()
 
     // 빈 상태의 해제와 조건 줄의 해제가 같은 동작이다. 조건 줄의 것을 누른다
-    const clear = screen.getAllByRole('button', { name: '날짜 조건 해제' })[0]
+    const clear = screen.getAllByRole('button', { name: '마감 조건 해제' })[0]
     await user.click(clear)
     await expectView({ search: '?tab=done', tab: '완료', overdue: false, soon: false, rows: DONE })
-    expect(screen.queryByRole('button', { name: '날짜 조건 해제' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '마감 조건 해제' })).toBeNull()
 
     await user.click(tab('전체'))
     await expectView({ search: '', tab: '전체', overdue: false, soon: false, rows: PM_ALL })
@@ -464,6 +464,46 @@ describe('URL 탭·날짜 조건 (AC-03)', () => {
       soon: false,
       rows: [],
     })
+  })
+
+  it('막힘 조건으로 들어오면 막힌 태스크만 보이고, 메뉴에서 켜고 끄면 주소에 남는다 (D-176)', async () => {
+    const user = userEvent.setup()
+    open(`${paths.tasks('ws_01')}?tab=in_progress&due=blocked`)
+    await waitFor(() => {
+      expect(rows()).toEqual(['DB 스키마 정리'])
+      expect(tab('진행 중')).toHaveAttribute('aria-selected', 'true')
+    })
+    expect(screen.getByRole('button', { name: '마감 조건: 막힘' })).toBeVisible()
+    expect(tabTexts()).toEqual(['전체 4', '확인 필요 3', '진행 중 1', '완료 0'])
+
+    await toggleDue(user, '7일 안에 마감')
+    await waitFor(() => {
+      expect(search()).toBe('?tab=in_progress&due=soon,blocked')
+      expect(rows()).toEqual([
+        'STT 정확도 측정',
+        '로그인 API 연동',
+        'DB 스키마 정리',
+        '배포 스크립트',
+      ])
+    })
+    expect(
+      screen.getByRole('button', { name: '마감 조건: 7일 안에 마감 · 막힘' }),
+    ).toBeInTheDocument()
+
+    await toggleDue(user, '막힘')
+    await waitFor(() => expect(search()).toBe('?tab=in_progress&due=soon'))
+    act(() => window.history.back())
+    await waitFor(() => expect(search()).toBe('?tab=in_progress&due=soon,blocked'))
+  })
+
+  it('막힘으로 비면 마감 조건 해제로 조건을 푼다', async () => {
+    const user = userEvent.setup()
+    open(`${paths.tasks('ws_01')}?tab=done&due=blocked`)
+    expect(await screen.findByRole('heading', { name: '조건에 맞는 항목이 없어요' })).toBeVisible()
+    expect(screen.getByText('마감 조건을 풀면 다른 항목을 볼 수 있어요.')).toBeVisible()
+
+    await user.click(screen.getByRole('button', { name: '마감 조건 해제' }))
+    await expectView({ search: '?tab=done', tab: '완료', overdue: false, soon: false, rows: DONE })
   })
 })
 

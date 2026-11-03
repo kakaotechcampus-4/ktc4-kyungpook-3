@@ -1126,7 +1126,7 @@ members 에만 있고 Discord 목록에 없으면      → 비활성 (서버를 
 5. GET /api/v1/workspaces/{id}/integrations              Notion 연결 (빈 상태 판정)
 ```
 
-상단 요약 4개 (D-052~D-055). 모두 정보이며 누를 수 없다 (D-061). 실패한 조회의 숫자는 `0` 이 아니라 `–` 다.
+상단 요약 4개 (D-052~D-055). 네 숫자 모두 그 수만큼 보이는 태스크 목록으로 가는 링크다 (D-178, D-061 개정) — `확인 대기` `?tab=needs_review`, `기한 지남` `?tab=in_progress&due=overdue`, `7일 이내 마감` `?tab=in_progress&due=soon`, `막힌 일` `?tab=in_progress&due=blocked`. 숫자를 안 뒤에만 링크이며 0 도 링크다. 불러오는 중이거나 실패한 조회는 링크가 아니다. 실패한 조회의 숫자는 `0` 이 아니라 `–` 다.
 
 | 숫자 | 계산 |
 |---|---|
@@ -1150,12 +1150,13 @@ members 에만 있고 Discord 목록에 없으면      → 비활성 (서버를 
 ```
 3번에서 status="done" 인 최신 회의 1건
   → GET /meetings/{meeting_id}          extraction_id 획득 (응답 workspace_id 가 지금 공간인지 확인)
-  → GET /extractions/{extraction_id}    gate="auto" 항목을 응답 순서로 3개 (D-039 보류, 임시 3)
+  → GET /extractions/{extraction_id}    gate="auto" 항목 전부, 응답 순서 (D-038). 화면이 첫 화면 높이로 재서 3~8개를 보인다 (D-176)
   → 상태: reverted_at 이 있으면 `되돌림`, 아니면 1번에서 task_id 의 notion_sync_status
           (pending 반영 대기 · failed 반영 실패 · synced 반영 완료 · null 반영 상태 없음)
 ```
 
-- 반영 대기 행이 있으면 1번을 3초마다 다시 받는다. 모두 끝나거나 조회가 실패하거나 화면을 떠나면 멈춘다. 태스크 상세·이력을 행마다 부르지 않는다.
+- 보이는 행보다 auto 항목이 많으면 목록 아래 `외 N건 · 회의록에서 보기` 가 그 회의의 회의록(`/meetings/{meeting_id}`)으로 간다. N 은 보이지 않는 auto 항목 수다 (D-176).
+- 반영 대기 행이 있으면(보이지 않는 auto 항목 포함) 1번을 3초마다 다시 받는다. 모두 끝나거나 조회가 실패하거나 화면을 떠나면 멈춘다. 태스크 상세·이력을 행마다 부르지 않는다.
 - 되돌리기는 PM 만, `POST /extractions/{extraction_id}/items/{item_id}/revert` 다. 성공한 행은 자리를 지키고 `되돌림` 과 새 확인 필요 링크(`approval_id`)를 보인다 (D-036, D-037). 거절 사유별 안내는 위 「M7 대시보드·항목 되돌리기 경계」.
 - 빈 상태는 다음 순서로 판정한다 (D-040~D-042). 회의 업로드·Notion 설정 이동은 PM 에게만 보인다.
 
