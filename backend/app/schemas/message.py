@@ -1,0 +1,138 @@
+from datetime import datetime
+from typing import Literal
+
+from pydantic import AwareDatetime, BaseModel, ConfigDict, field_validator, model_validator
+
+from app.models import DmFailureReason
+
+
+def _non_blank(value: str) -> str:
+    value = value.strip()
+    if not value:
+        raise ValueError("내용이 비어 있습니다.")
+    return value
+
+
+class ReminderCreateRequest(BaseModel):
+    member_id: str
+    task_id: str
+    body: str
+    scheduled_at: AwareDatetime
+
+    _strip_body = field_validator("body")(_non_blank)
+
+
+class ReminderUpdateRequest(BaseModel):
+    body: str | None = None
+    scheduled_at: AwareDatetime | None = None
+
+    @field_validator("body")
+    @classmethod
+    def _strip_body(cls, value: str | None) -> str | None:
+        return None if value is None else _non_blank(value)
+
+    @model_validator(mode="after")
+    def _something_to_change(self) -> "ReminderUpdateRequest":
+        if self.body is None and self.scheduled_at is None:
+            raise ValueError("body 나 scheduled_at 중 하나는 있어야 합니다.")
+        return self
+
+
+class ReplyCreateRequest(BaseModel):
+    body: str
+
+    _strip_body = field_validator("body")(_non_blank)
+
+
+class ReminderResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    reminder_id: str
+    thread_id: str
+    member_id: str
+    task_id: str | None
+    task_title: str | None
+    kind: str
+    origin: str
+    body: str
+    scheduled_at: datetime
+    status: str
+    approved: bool
+    approved_at: datetime | None
+    created_at: datetime
+
+
+class MessageResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    message_id: str
+    thread_id: str
+    sender: str
+    body: str
+    created_at: datetime
+    reply_channel: str | None
+    dm_status: str | None
+    dm_failure_reason: str | None
+    scheduled_at: datetime | None
+
+
+class LastMessage(BaseModel):
+    message_id: str
+    sender: str
+    body: str
+    created_at: datetime
+
+
+class ThreadSummary(BaseModel):
+    thread_id: str
+    member_id: str
+    name: str
+    last_message: LastMessage | None
+    awaiting_reply_since: datetime | None
+    dm_failed: bool
+
+
+class InboxResponse(BaseModel):
+    threads: list[ThreadSummary]
+    reminders: list[ReminderResponse] | None
+
+
+class ThreadDetailResponse(BaseModel):
+    thread: ThreadSummary
+    messages: list[MessageResponse]
+    reminders: list[ReminderResponse] | None
+
+
+class ClaimedMessageResponse(BaseModel):
+    message_id: str
+    workspace_id: str
+    member_id: str
+    discord_user_id: str
+    body: str
+    scheduled_at: datetime | None
+
+
+class ClaimResponse(BaseModel):
+    items: list[ClaimedMessageResponse]
+    total: int
+
+
+class DmResultRequest(BaseModel):
+    status: Literal["delivered", "failed"]
+    failure_reason: DmFailureReason | None = None
+
+
+class BotReplyRequest(BaseModel):
+    discord_user_id: str
+    discord_message_id: str
+    body: str
+    sent_at: AwareDatetime
+
+    _strip_body = field_validator("body")(_non_blank)
+
+
+class BotReplyResponse(BaseModel):
+    message_id: str
+    thread_id: str
+    workspace_id: str
+    member_id: str

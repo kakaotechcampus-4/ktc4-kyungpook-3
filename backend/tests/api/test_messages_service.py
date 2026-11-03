@@ -9,7 +9,6 @@ from app.models import (
     DmStatus,
     Member,
     MessageSender,
-    Reminder,
     ReminderStatus,
     ThreadMessage,
 )

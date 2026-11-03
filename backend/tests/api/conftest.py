@@ -3,7 +3,6 @@ import os
 from datetime import datetime, timedelta, timezone
 
 import pytest
-from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -84,11 +83,3 @@ def mseed(mdb):
     mdb.commit()
     return {"ws": wid, "pm": pm, "alice": alice, "bob": bob, "carol": carol, "tasks": tasks}
 
-
-def client(token: str | None = None, *, service: bool = False) -> TestClient:
-    c = TestClient(app, base_url="https://testserver")
-    if token:
-        c.cookies.set("session_token", f"{token}-token")
-    if service:
-        c.headers["X-Service-Token"] = SERVICE_TOKEN
-    return c
