@@ -21,7 +21,7 @@ def _item(**overrides) -> dict:
     return base
 
 
-GOOD = ("재환님, API 명세서 작성 마감이 11/14(금)이라 한번 여쭤봐요. 로그인 화면 QA도 11/20(금)까지인데 "
+GOOD = ("재환님, API 명세서 작성 마감이 11/14(토)이라 한번 여쭤봐요. 로그인 화면 QA도 11/20(금)까지인데 "
         "디자인 시안 바뀐 부분도 같이 봐 주시면 좋겠어요. 막힌 게 있으면 편하게 말씀 주세요!")
 
 
@@ -35,7 +35,7 @@ def test_prompt_carries_name_titles_due_dates_and_notes():
     prompt = fake.prompts[0]
     assert "재환" in prompt
     assert '"API 명세서 작성"' in prompt and '"로그인 화면 QA"' in prompt
-    assert "11/14(금)" in prompt and "11/20(금)" in prompt
+    assert "11/14(토)" in prompt and "11/20(금)" in prompt
     assert "디자인 시안 바뀐 부분도 같이 봐 주세요" in prompt
     assert "막힘" in prompt
 
@@ -84,6 +84,49 @@ def test_bad_body_is_rejected(body):
     assert _run({"body": body})[0] is None
 
 
+LISTED = "재환님, 챙겨 주세요.\n{0} API 명세서 작성 11/14\n{1} 로그인 화면 QA 11/20"
+
+
+@pytest.mark.parametrize("body", [
+    GOOD.replace("재환님", "지민님"),                                 # 다른 사람 이름(말투 예시에서 섞임)
+    GOOD + " 초안은 11/10까지 먼저 주실 수 있을까요?",                   # 태스크에 없는 날짜
+    GOOD.replace("11/20(금)까지", "11/20(금)에서 11/27로 미뤄졌는데"),  # 없는 날짜로 바꿔 씀
+    GOOD.replace("11/14(토)", "11/14(월)"),                          # 틀린 요일
+    GOOD.replace("11/14(토)", "11/14 월요일"),
+    LISTED.format("1)", "2)"),
+    LISTED.format("①", "②"),
+    LISTED.format("·", "·"),
+    GOOD + " (인공지능이 정리했어요)",
+    GOOD + " ChatGPT로 다듬었어요.",
+    GOOD + " 자동으로 작성된 메시지예요.",
+    GOOD + " 자동 작성 메시지예요.",
+])
+def test_wrong_facts_lists_and_ai_mentions_are_rejected(body):
+    assert _run({"body": body})[0] is None
+
+
+def test_weekday_written_in_full_or_left_out_is_fine():
+    for body in (GOOD.replace("11/14(토)", "11/14(토요일)"), GOOD.replace("11/14(토)", "11/14")):
+        assert _run({"body": body})[0] == body
+
+
+def test_short_title_inside_a_longer_title_must_appear_on_its_own():
+    tasks = [
+        {"task_id": "t1", "title": "API 명세서", "due_date": "2026-11-14", "status": "todo", "note": None},
+        {"task_id": "t2", "title": "API", "due_date": "2026-11-20", "status": "todo", "note": None},
+    ]
+    dropped = "재환님, API 명세서 마감이 11/14(토)이고 11/20(금)도 챙겨 주세요!"
+    both = "재환님, API 명세서는 11/14(토), API 연동은 11/20(금)까지예요. 편하게 알려 주세요!"
+    assert _run({"body": dropped}, _item(tasks=tasks))[0] is None
+    assert _run({"body": both}, _item(tasks=tasks))[0] == both
+
+
+def test_date_inside_a_title_is_not_read_as_an_extra_date():
+    tasks = [{"task_id": "t1", "title": "11/20 배포 점검", "due_date": "2026-11-14", "status": "todo", "note": None}]
+    body = "재환님, 11/20 배포 점검 마감이 11/14(토)이라 한번 여쭤봐요!"
+    assert _run({"body": body}, _item(tasks=tasks))[0] == body
+
+
 def test_date_check_does_not_match_inside_a_longer_date():
     tasks = [{"task_id": "t1", "title": "배포 점검", "due_date": "2026-01-14", "status": "todo", "note": None}]
     assert _run({"body": "재환님, 배포 점검 마감이 11/14 이에요."}, _item(tasks=tasks))[0] is None
@@ -92,7 +135,7 @@ def test_date_check_does_not_match_inside_a_longer_date():
 def test_banned_word_inside_a_title_is_allowed():
     # 이 서비스는 봇·AI 작업이 많다. 제목을 그대로 옮긴 건 금지어로 보지 않는다
     tasks = [{"task_id": "t1", "title": "봇 DM 발송 AI 연동", "due_date": "2026-11-14", "status": "todo", "note": None}]
-    body = "재환님, 봇 DM 발송 AI 연동 마감이 11/14(금)이라 한번 여쭤봐요!"
+    body = "재환님, 봇 DM 발송 AI 연동 마감이 11/14(토)이라 한번 여쭤봐요!"
     assert _run({"body": body}, _item(tasks=tasks))[0] == body
 
 
