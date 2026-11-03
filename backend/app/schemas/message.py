@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, field_validator, model_validator
@@ -13,16 +13,38 @@ def _non_blank(value: str) -> str:
     return value
 
 
+def _note(value: str | None) -> str | None:
+    """빈 메모는 메모가 없는 것으로 본다."""
+    if value is None:
+        return None
+    return value.strip() or None
+
+
 class ReminderCreateRequest(BaseModel):
     member_id: str
     task_id: str
-    body: str
     scheduled_at: AwareDatetime
+    note: str | None = None
 
-    _strip_body = field_validator("body")(_non_blank)
+    _strip_note = field_validator("note")(_note)
 
 
 class ReminderUpdateRequest(BaseModel):
+    """note 를 null 이나 빈 글로 보내면 메모를 지운다. 보내지 않으면 그대로 둔다."""
+
+    note: str | None = None
+    scheduled_at: AwareDatetime | None = None
+
+    _strip_note = field_validator("note")(_note)
+
+    @model_validator(mode="after")
+    def _something_to_change(self) -> "ReminderUpdateRequest":
+        if "note" not in self.model_fields_set and self.scheduled_at is None:
+            raise ValueError("note 나 scheduled_at 중 하나는 있어야 합니다.")
+        return self
+
+
+class BundleUpdateRequest(BaseModel):
     body: str | None = None
     scheduled_at: AwareDatetime | None = None
 
@@ -32,7 +54,7 @@ class ReminderUpdateRequest(BaseModel):
         return None if value is None else _non_blank(value)
 
     @model_validator(mode="after")
-    def _something_to_change(self) -> "ReminderUpdateRequest":
+    def _something_to_change(self) -> "BundleUpdateRequest":
         if self.body is None and self.scheduled_at is None:
             raise ValueError("body 나 scheduled_at 중 하나는 있어야 합니다.")
         return self
@@ -45,21 +67,36 @@ class ReplyCreateRequest(BaseModel):
 
 
 class ReminderResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
     reminder_id: str
-    thread_id: str
-    member_id: str
+    bundle_id: str
     task_id: str | None
     task_title: str | None
+    due_date: date | None
+    note: str | None
+    status: str
     kind: str
     origin: str
-    body: str
+    created_at: datetime
+
+
+class BundleResponse(BaseModel):
+    bundle_id: str
+    thread_id: str
+    member_id: str
+    recipient_name: str
     scheduled_at: datetime
     status: str
     approved: bool
     approved_at: datetime | None
-    created_at: datetime
+    body: str
+    body_source: str
+    draft_status: str
+    reminders: list[ReminderResponse]
+
+
+class ReminderWithBundleResponse(BaseModel):
+    reminder: ReminderResponse
+    bundle: BundleResponse
 
 
 class MessageResponse(BaseModel):
@@ -94,13 +131,13 @@ class ThreadSummary(BaseModel):
 
 class InboxResponse(BaseModel):
     threads: list[ThreadSummary]
-    reminders: list[ReminderResponse] | None
+    bundles: list[BundleResponse] | None
 
 
 class ThreadDetailResponse(BaseModel):
     thread: ThreadSummary
     messages: list[MessageResponse]
-    reminders: list[ReminderResponse] | None
+    bundles: list[BundleResponse] | None
 
 
 class ClaimedMessageResponse(BaseModel):
@@ -135,3 +172,4 @@ class BotReplyResponse(BaseModel):
     thread_id: str
     workspace_id: str
     member_id: str
+

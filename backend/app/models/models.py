@@ -784,7 +784,7 @@ class MessageThread(Base):
 
 
 class ThreadMessage(Base):
-    """대화에 들어간 메시지 한 통. 봇이 보낸 DM(합쳐진 리마인드)이거나 팀원의 답장이다.
+    """대화에 들어간 메시지 한 통. 봇이 보낸 DM(발송된 묶음)이거나 팀원의 답장이다.
 
     created_at 은 대화에 들어온 시각이다. 팀원 메시지의 reply_channel·discord_message_id·received_at 과
     봇 메시지의 dm_*·claimed_at·scheduled_at 은 보낸 쪽에 따라 한쪽만 채운다.
@@ -817,10 +817,66 @@ class ThreadMessage(Base):
     thread: Mapped["MessageThread"] = relationship()
 
 
-class Reminder(Base):
-    """리마인드. 태스크 하나 x 수신자 한 명이고 PM 이 검토·수정·승인·취소하는 단위다.
+class BodySource(StrEnum):
+    PM = "pm"
+    AI = "ai"
+    RULE = "rule"
 
-    발송 시각이 되면 같은 대화·같은 시각의 승인된 리마인드가 봇 메시지 한 통(message_id)으로 합쳐진다.
+
+class DraftStatus(StrEnum):
+    NEEDED = "needed"
+    CLAIMED = "claimed"
+    DONE = "done"
+
+
+class ReminderBundle(Base):
+    """보낼 메시지. 같은 대화·같은 발송 시각의 리마인드를 묶은 한 통이고 PM 이 문구를 보고 고치고 승인하는 단위다.
+
+    구성(리마인드 더하기·빼기·시각 이동)이 바뀔 때마다 규칙 문구로 다시 만들고 draft_version 을 올리고 승인을 푼다.
+    AI 초안은 draft_version 이 그대로일 때만 받는다. 발송되면 봇 메시지 한 통(message_id)이 된다.
+    """
+
+    __tablename__ = "reminder_bundle"
+    __table_args__ = (
+        # 한 대화의 같은 시각에 예정인 묶음은 하나다. 지난 묶음(발송·취소·만료)은 겹쳐도 된다.
+        Index(
+            "uq_reminder_bundle_scheduled_slot", "thread_id", "scheduled_at", unique=True,
+            postgresql_where=text("status = 'scheduled'"),
+            sqlite_where=text("status = 'scheduled'"),
+        ),
+    )
+
+    bundle_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    workspace_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("workspace.workspace_id", ondelete="CASCADE"), index=True
+    )
+    thread_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("message_thread.thread_id", ondelete="CASCADE"), index=True
+    )
+    scheduled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    status: Mapped[str] = mapped_column(String(16), default=ReminderStatus.SCHEDULED, index=True)
+    body: Mapped[str] = mapped_column(Text)
+    body_source: Mapped[str] = mapped_column(String(8))
+    draft_status: Mapped[str] = mapped_column(String(16), index=True)
+    draft_version: Mapped[int] = mapped_column(Integer, default=0)
+    draft_claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    approved_by: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("member.member_id", ondelete="SET NULL"), nullable=True
+    )
+    message_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("thread_message.message_id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
+
+    thread: Mapped["MessageThread"] = relationship()
+
+
+class Reminder(Base):
+    """리마인드. 태스크 하나 x 수신자 한 명이다. 수신자와 발송 시각은 속한 묶음(bundle)이 정한다.
+
+    note 는 PM 이 이 태스크에 대해 따로 쓴 말이다. 스케줄러가 만든 리마인드에는 없다.
     """
 
     __tablename__ = "reminder"
@@ -829,8 +885,8 @@ class Reminder(Base):
     workspace_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("workspace.workspace_id", ondelete="CASCADE"), index=True
     )
-    thread_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("message_thread.thread_id", ondelete="CASCADE"), index=True
+    bundle_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("reminder_bundle.bundle_id", ondelete="CASCADE"), index=True
     )
     task_id: Mapped[str | None] = mapped_column(
         String(36), ForeignKey("task.task_id", ondelete="SET NULL"), nullable=True, index=True
@@ -840,17 +896,13 @@ class Reminder(Base):
     created_by: Mapped[str | None] = mapped_column(
         String(36), ForeignKey("member.member_id", ondelete="SET NULL"), nullable=True
     )
-    body: Mapped[str] = mapped_column(Text)
-    scheduled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(16), default=ReminderStatus.SCHEDULED, index=True)
-    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    approved_by: Mapped[str | None] = mapped_column(
-        String(36), ForeignKey("member.member_id", ondelete="SET NULL"), nullable=True
-    )
     cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     expired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    message_id: Mapped[str | None] = mapped_column(
-        String(36), ForeignKey("thread_message.message_id", ondelete="SET NULL"), nullable=True
-    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
+
+    bundle: Mapped["ReminderBundle"] = relationship()
+    task: Mapped["Task | None"] = relationship()
+

@@ -36,7 +36,8 @@ def mdb(request, monkeypatch):
             "sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool
         )
     Base.metadata.create_all(engine)
-    session = sessionmaker(bind=engine)()
+    # 앱 세션(SessionLocal)과 같이 autoflush 를 끈다. 서비스가 조회 전에 flush 를 빠뜨리면 여기서 드러난다.
+    session = sessionmaker(bind=engine, autoflush=False)()
 
     def override_get_db():
         yield session

@@ -2,9 +2,10 @@
 
 PM 이 팀원에게 보내는 마감 리마인드와 그 대화를 저장한다(#310).
 message_thread(워크스페이스 x 팀원 한 명의 대화), thread_message(대화에 들어간 메시지: 봇 DM, 팀원 답장),
-reminder(태스크 하나 x 수신자 한 명, PM 이 검토하는 단위)를 만든다.
+reminder_bundle(같은 대화·시각의 리마인드를 묶은 보낼 메시지, PM 이 검토·승인하는 단위),
+reminder(태스크 하나 x 수신자 한 명)를 만든다.
 
-되돌리면 세 테이블과 저장된 리마인드·대화가 모두 지워진다.
+되돌리면 네 테이블과 저장된 리마인드·대화가 모두 지워진다.
 
 Revision ID: d5b8c3e7a914
 Revises: c7a2e91b4d36
@@ -63,34 +64,60 @@ def upgrade() -> None:
     op.create_index('uq_thread_message_discord_message', 'thread_message', ['discord_message_id'], unique=True)
 
     op.create_table(
+        'reminder_bundle',
+        sa.Column('bundle_id', sa.String(length=36), nullable=False),
+        sa.Column('workspace_id', sa.String(length=36), nullable=False),
+        sa.Column('thread_id', sa.String(length=36), nullable=False),
+        sa.Column('scheduled_at', sa.DateTime(timezone=True), nullable=False),
+        sa.Column('status', sa.String(length=16), nullable=False),
+        sa.Column('body', sa.Text(), nullable=False),
+        sa.Column('body_source', sa.String(length=8), nullable=False),
+        sa.Column('draft_status', sa.String(length=16), nullable=False),
+        sa.Column('draft_version', sa.Integer(), nullable=False),
+        sa.Column('draft_claimed_at', sa.DateTime(timezone=True), nullable=True),
+        sa.Column('approved_at', sa.DateTime(timezone=True), nullable=True),
+        sa.Column('approved_by', sa.String(length=36), nullable=True),
+        sa.Column('message_id', sa.String(length=36), nullable=True),
+        sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
+        sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False),
+        sa.ForeignKeyConstraint(['workspace_id'], ['workspace.workspace_id'], name=op.f('fk_reminder_bundle_workspace_id_workspace'), ondelete='CASCADE'),
+        sa.ForeignKeyConstraint(['thread_id'], ['message_thread.thread_id'], name=op.f('fk_reminder_bundle_thread_id_message_thread'), ondelete='CASCADE'),
+        sa.ForeignKeyConstraint(['approved_by'], ['member.member_id'], name=op.f('fk_reminder_bundle_approved_by_member'), ondelete='SET NULL'),
+        sa.ForeignKeyConstraint(['message_id'], ['thread_message.message_id'], name=op.f('fk_reminder_bundle_message_id_thread_message'), ondelete='SET NULL'),
+        sa.PrimaryKeyConstraint('bundle_id', name=op.f('pk_reminder_bundle')),
+    )
+    op.create_index(op.f('ix_reminder_bundle_workspace_id'), 'reminder_bundle', ['workspace_id'], unique=False)
+    op.create_index(op.f('ix_reminder_bundle_thread_id'), 'reminder_bundle', ['thread_id'], unique=False)
+    op.create_index(op.f('ix_reminder_bundle_status'), 'reminder_bundle', ['status'], unique=False)
+    op.create_index(op.f('ix_reminder_bundle_draft_status'), 'reminder_bundle', ['draft_status'], unique=False)
+    op.create_index(
+        'uq_reminder_bundle_scheduled_slot', 'reminder_bundle', ['thread_id', 'scheduled_at'], unique=True,
+        postgresql_where=sa.text("status = 'scheduled'"), sqlite_where=sa.text("status = 'scheduled'"),
+    )
+
+    op.create_table(
         'reminder',
         sa.Column('reminder_id', sa.String(length=36), nullable=False),
         sa.Column('workspace_id', sa.String(length=36), nullable=False),
-        sa.Column('thread_id', sa.String(length=36), nullable=False),
+        sa.Column('bundle_id', sa.String(length=36), nullable=False),
         sa.Column('task_id', sa.String(length=36), nullable=True),
         sa.Column('kind', sa.String(length=16), nullable=False),
         sa.Column('origin', sa.String(length=16), nullable=False),
         sa.Column('created_by', sa.String(length=36), nullable=True),
-        sa.Column('body', sa.Text(), nullable=False),
-        sa.Column('scheduled_at', sa.DateTime(timezone=True), nullable=False),
+        sa.Column('note', sa.Text(), nullable=True),
         sa.Column('status', sa.String(length=16), nullable=False),
-        sa.Column('approved_at', sa.DateTime(timezone=True), nullable=True),
-        sa.Column('approved_by', sa.String(length=36), nullable=True),
         sa.Column('cancelled_at', sa.DateTime(timezone=True), nullable=True),
         sa.Column('expired_at', sa.DateTime(timezone=True), nullable=True),
-        sa.Column('message_id', sa.String(length=36), nullable=True),
         sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
         sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False),
         sa.ForeignKeyConstraint(['workspace_id'], ['workspace.workspace_id'], name=op.f('fk_reminder_workspace_id_workspace'), ondelete='CASCADE'),
-        sa.ForeignKeyConstraint(['thread_id'], ['message_thread.thread_id'], name=op.f('fk_reminder_thread_id_message_thread'), ondelete='CASCADE'),
+        sa.ForeignKeyConstraint(['bundle_id'], ['reminder_bundle.bundle_id'], name=op.f('fk_reminder_bundle_id_reminder_bundle'), ondelete='CASCADE'),
         sa.ForeignKeyConstraint(['task_id'], ['task.task_id'], name=op.f('fk_reminder_task_id_task'), ondelete='SET NULL'),
         sa.ForeignKeyConstraint(['created_by'], ['member.member_id'], name=op.f('fk_reminder_created_by_member'), ondelete='SET NULL'),
-        sa.ForeignKeyConstraint(['approved_by'], ['member.member_id'], name=op.f('fk_reminder_approved_by_member'), ondelete='SET NULL'),
-        sa.ForeignKeyConstraint(['message_id'], ['thread_message.message_id'], name=op.f('fk_reminder_message_id_thread_message'), ondelete='SET NULL'),
         sa.PrimaryKeyConstraint('reminder_id', name=op.f('pk_reminder')),
     )
     op.create_index(op.f('ix_reminder_workspace_id'), 'reminder', ['workspace_id'], unique=False)
-    op.create_index(op.f('ix_reminder_thread_id'), 'reminder', ['thread_id'], unique=False)
+    op.create_index(op.f('ix_reminder_bundle_id'), 'reminder', ['bundle_id'], unique=False)
     op.create_index(op.f('ix_reminder_task_id'), 'reminder', ['task_id'], unique=False)
     op.create_index(op.f('ix_reminder_status'), 'reminder', ['status'], unique=False)
 
@@ -98,5 +125,6 @@ def upgrade() -> None:
 def downgrade() -> None:
     """Downgrade schema."""
     op.drop_table('reminder')
+    op.drop_table('reminder_bundle')
     op.drop_table('thread_message')
     op.drop_table('message_thread')

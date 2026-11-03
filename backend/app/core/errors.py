@@ -52,6 +52,7 @@ class ErrorCode(StrEnum):
     REMINDER_NOT_FOUND = "REMINDER_NOT_FOUND"
     REMINDER_NOT_EDITABLE = "REMINDER_NOT_EDITABLE"
     REMINDER_SCHEDULED_AT_PASSED = "REMINDER_SCHEDULED_AT_PASSED"
+    REMINDER_BUNDLE_NOT_FOUND = "REMINDER_BUNDLE_NOT_FOUND"
     MESSAGE_THREAD_NOT_FOUND = "MESSAGE_THREAD_NOT_FOUND"
     MESSAGE_NOT_FOUND = "MESSAGE_NOT_FOUND"
     MESSAGE_RESULT_CONFLICT = "MESSAGE_RESULT_CONFLICT"
@@ -99,6 +100,7 @@ ERROR_STATUS: dict[ErrorCode, int] = {
     ErrorCode.REMINDER_NOT_FOUND: 404,
     ErrorCode.REMINDER_NOT_EDITABLE: 409,
     ErrorCode.REMINDER_SCHEDULED_AT_PASSED: 409,
+    ErrorCode.REMINDER_BUNDLE_NOT_FOUND: 404,
     ErrorCode.MESSAGE_THREAD_NOT_FOUND: 404,
     ErrorCode.MESSAGE_NOT_FOUND: 404,
     ErrorCode.MESSAGE_RESULT_CONFLICT: 409,
@@ -146,6 +148,7 @@ ERROR_MESSAGE: dict[ErrorCode, str] = {
     ErrorCode.REMINDER_NOT_FOUND: "해당 리마인드를 찾을 수 없습니다.",
     ErrorCode.REMINDER_NOT_EDITABLE: "예정 상태의 리마인드만 고치거나 승인하거나 취소할 수 있습니다.",
     ErrorCode.REMINDER_SCHEDULED_AT_PASSED: "예정 시각이 지났어요. 시각을 다시 골라 주세요.",
+    ErrorCode.REMINDER_BUNDLE_NOT_FOUND: "해당 보낼 메시지를 찾을 수 없습니다.",
     ErrorCode.MESSAGE_THREAD_NOT_FOUND: "해당 대화를 찾을 수 없습니다.",
     ErrorCode.MESSAGE_NOT_FOUND: "해당 봇 메시지를 찾을 수 없습니다.",
     ErrorCode.MESSAGE_RESULT_CONFLICT: "이미 다른 결과가 보고된 메시지이거나 아직 가져가지 않은 메시지입니다.",

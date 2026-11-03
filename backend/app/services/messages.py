@@ -1,11 +1,14 @@
-"""리마인드와 대화 메시지의 상태 전이.
+"""리마인드, 보낼 메시지(묶음), 대화 메시지의 상태 전이.
 
 라우트와 앞으로 붙을 스케줄러가 같은 함수를 부른다. 시각(now)은 부르는 쪽이 넘기고, 함수는 flush 까지만 하며
 commit 은 부르는 쪽 몫이다. 시각은 UTC 로 바꿔 저장한다. sqlite 는 시간대를 떼고 저장하므로 비교가 어긋나지 않게
-들어오는 값을 모두 UTC 로 맞춘다.
+들어오는 값을 모두 UTC 로 맞춘다. 앱 세션은 autoflush 를 끄므로 조회 전에 직접 flush 한다.
+
+같은 대화·같은 발송 시각의 예정 리마인드는 언제나 묶음 하나에 들어 있다. PM 은 묶음 문구를 보고 고치고 승인한다.
+묶음 구성이 바뀌면 _rebuild 가 규칙 문구로 다시 만들고 승인을 푼다.
 """
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
@@ -13,12 +16,15 @@ from sqlalchemy.orm import Session
 
 from app.core.errors import AppError, ErrorCode
 from app.models import (
+    BodySource,
     DmFailureReason,
     DmStatus,
+    DraftStatus,
     Member,
     MessageSender,
     MessageThread,
     Reminder,
+    ReminderBundle,
     ReminderKind,
     ReminderOrigin,
     ReminderStatus,
@@ -29,9 +35,10 @@ from app.models import (
 
 # 봇이 가져간 뒤 결과 보고가 이 시간 안에 없으면 못 보냄(알 수 없음)으로 닫는다. 다시 주지 않는다(최대 한 번).
 CLAIM_TIMEOUT = timedelta(minutes=10)
+_WEEKDAYS = "월화수목금토일"
 
 _S = ReminderStatus
-# 리마인드 동작이 어느 상태에서 가능한지와 끝난 뒤 상태. 목표 상태가 None 이면 상태는 그대로다.
+# 리마인드와 묶음의 동작이 어느 상태에서 가능한지와 끝난 뒤 상태. 목표 상태가 None 이면 상태는 그대로다.
 _TRANSITIONS: dict[str, tuple[frozenset[ReminderStatus], ReminderStatus | None]] = {
     "edit": (frozenset({_S.SCHEDULED}), None),
     "approve": (frozenset({_S.SCHEDULED}), None),
@@ -39,6 +46,9 @@ _TRANSITIONS: dict[str, tuple[frozenset[ReminderStatus], ReminderStatus | None]]
     "expire": (frozenset({_S.SCHEDULED}), _S.EXPIRED),
     "send": (frozenset({_S.SCHEDULED}), _S.SENT),
 }
+
+# PATCH 에서 note 를 보내지 않은 것과 null 로 지운 것을 가른다.
+KEEP = object()
 
 
 def utc(value: datetime) -> datetime:
@@ -48,20 +58,28 @@ def utc(value: datetime) -> datetime:
     return value.astimezone(timezone.utc)
 
 
-def _transition(reminder: Reminder, action: str) -> None:
+def _transition(obj: Reminder | ReminderBundle, action: str) -> None:
     allowed_from, target = _TRANSITIONS[action]
-    if reminder.status not in allowed_from:
+    if obj.status not in allowed_from:
+        key = "bundle_id" if isinstance(obj, ReminderBundle) else "reminder_id"
         raise AppError(
-            ErrorCode.REMINDER_NOT_EDITABLE,
-            details={"reminder_id": reminder.reminder_id, "status": str(reminder.status)},
+            ErrorCode.REMINDER_NOT_EDITABLE, details={key: getattr(obj, key), "status": str(obj.status)}
         )
     if target is not None:
-        reminder.status = target
+        obj.status = target
 
 
 def _require_future(scheduled_at: datetime, now: datetime) -> None:
     if scheduled_at <= now:
         raise AppError(ErrorCode.REMINDER_SCHEDULED_AT_PASSED)
+
+
+def rule_line(name: str, title: str, due: date | None) -> str:
+    """기본 페르소나의 규칙 문구. AI 초안이 없거나 쓸 수 없을 때 이대로 나간다."""
+    if due is None:
+        return f"{name}님, {title} 진행 상황 한번 여쭤봐요. 지금 어디까지 됐는지 편하게 알려 주세요!"
+    when = f"{due.month}/{due.day}({_WEEKDAYS[due.weekday()]})"
+    return f"{name}님, {title} 마감이 {when}이라 한번 여쭤봐요. 지금 어디까지 됐는지 편하게 알려 주세요!"
 
 
 def get_or_create_thread(db: Session, workspace_id: str, member_id: str) -> MessageThread:
@@ -77,12 +95,97 @@ def get_or_create_thread(db: Session, workspace_id: str, member_id: str) -> Mess
     return thread
 
 
+def _lock_thread(db: Session, thread_id: str) -> None:
+    # PM 조작은 대화 → 묶음 → 리마인드 순서로 잠근다. 발송과 초안 쓰기는 묶음부터 잠그므로 순서가 엇갈리지 않는다.
+    db.execute(select(MessageThread.thread_id).where(MessageThread.thread_id == thread_id).with_for_update())
+
+
+def bundle_reminders(db: Session, bundle_id: str, status: str = ReminderStatus.SCHEDULED) -> list[Reminder]:
+    db.flush()
+    return list(db.scalars(
+        select(Reminder)
+        .where(Reminder.bundle_id == bundle_id, Reminder.status == status)
+        .order_by(Reminder.created_at, Reminder.reminder_id)
+    ).all())
+
+
+def _bundle_at(db: Session, thread_id: str, scheduled_at: datetime) -> ReminderBundle | None:
+    db.flush()
+    return db.scalar(
+        select(ReminderBundle)
+        .where(
+            ReminderBundle.thread_id == thread_id,
+            ReminderBundle.scheduled_at == scheduled_at,
+            ReminderBundle.status == ReminderStatus.SCHEDULED,
+        )
+        .with_for_update()
+    )
+
+
+def _slot_bundle(db: Session, thread: MessageThread, scheduled_at: datetime, now: datetime) -> ReminderBundle:
+    """그 대화·시각의 예정 묶음. 없으면 만든다. 부르는 쪽이 대화를 잠근 뒤 부른다."""
+    bundle = _bundle_at(db, thread.thread_id, scheduled_at)
+    if bundle is None:
+        bundle = ReminderBundle(
+            workspace_id=thread.workspace_id, thread_id=thread.thread_id, scheduled_at=scheduled_at,
+            status=ReminderStatus.SCHEDULED, body="", body_source=BodySource.RULE,
+            draft_status=DraftStatus.NEEDED, draft_version=0, created_at=now, updated_at=now,
+        )
+        db.add(bundle)
+        db.flush()
+    return bundle
+
+
+def _rebuild(db: Session, bundle: ReminderBundle, now: datetime, closing: str = "cancel") -> None:
+    """묶음 구성이 바뀐 뒤 부른다. 문구를 규칙으로 다시 만들고 초안 판을 올리고 승인을 푼다.
+
+    예정 리마인드가 하나도 남지 않으면 묶음을 닫는다(closing: cancel 또는 expire).
+    """
+    reminders = bundle_reminders(db, bundle.bundle_id)
+    bundle.draft_version += 1
+    bundle.draft_claimed_at = None
+    bundle.approved_at = None
+    bundle.approved_by = None
+    bundle.updated_at = now
+    if not reminders:
+        _transition(bundle, closing)
+    elif len(reminders) == 1 and reminders[0].note:
+        bundle.body, bundle.body_source, bundle.draft_status = reminders[0].note, BodySource.PM, DraftStatus.DONE
+    else:
+        bundle.body = rule_body(bundle, reminders)
+        bundle.body_source, bundle.draft_status = BodySource.RULE, DraftStatus.NEEDED
+    db.flush()
+
+
+def rule_body(bundle: ReminderBundle, reminders: list[Reminder]) -> str:
+    name = bundle.thread.member.display_name
+    return "\n\n".join(r.note or rule_line(name, r.task.title, r.task.due_date) for r in reminders)
+
+
 def get_reminder(db: Session, workspace_id: str, reminder_id: str) -> Reminder:
-    """다른 워크스페이스의 리마인드는 없는 것으로 본다. 상태를 바꾸는 쪽이 부르므로 행을 잠근다."""
-    reminder = db.get(Reminder, reminder_id, with_for_update=True)
+    """다른 워크스페이스의 리마인드는 없는 것으로 본다. 상태를 바꾸는 쪽이 부르므로 대화부터 잠근다."""
+    reminder = db.get(Reminder, reminder_id)
     if reminder is None or reminder.workspace_id != workspace_id:
         raise AppError(ErrorCode.REMINDER_NOT_FOUND, details={"reminder_id": reminder_id})
+    return _lock_reminder(db, reminder)
+
+
+def _lock_reminder(db: Session, reminder: Reminder) -> Reminder:
+    _lock_thread(db, reminder.bundle.thread_id)
+    # 대화를 잠근 뒤에야 묶음 이동이 멈추므로 그때의 묶음을 다시 읽는다.
+    db.refresh(reminder)
+    db.refresh(reminder.bundle, with_for_update=True)
+    db.refresh(reminder, with_for_update=True)
     return reminder
+
+
+def get_bundle(db: Session, workspace_id: str, bundle_id: str) -> ReminderBundle:
+    bundle = db.get(ReminderBundle, bundle_id)
+    if bundle is None or bundle.workspace_id != workspace_id:
+        raise AppError(ErrorCode.REMINDER_BUNDLE_NOT_FOUND, details={"bundle_id": bundle_id})
+    _lock_thread(db, bundle.thread_id)
+    db.refresh(bundle, with_for_update=True)
+    return bundle
 
 
 def create_reminder(
@@ -91,12 +194,13 @@ def create_reminder(
     workspace_id: str,
     task_id: str,
     member_id: str,
-    body: str,
     scheduled_at: datetime,
+    note: str | None,
     created_by: str | None,
     now: datetime,
     origin: ReminderOrigin = ReminderOrigin.PM,
 ) -> Reminder:
+    """리마인드를 만들어 그 대화·시각의 묶음에 넣는다."""
     now, scheduled_at = utc(now), utc(scheduled_at)
     task = db.get(Task, task_id)
     if task is None or task.workspace_id != workspace_id or task.is_deleted:
@@ -107,43 +211,40 @@ def create_reminder(
     _require_future(scheduled_at, now)
 
     thread = get_or_create_thread(db, workspace_id, member_id)
+    _lock_thread(db, thread.thread_id)
+    bundle = _slot_bundle(db, thread, scheduled_at, now)
     reminder = Reminder(
-        workspace_id=workspace_id, thread_id=thread.thread_id, task_id=task_id, kind=ReminderKind.NUDGE,
-        origin=origin, created_by=created_by, body=body, scheduled_at=scheduled_at,
-        created_at=now, updated_at=now,
+        workspace_id=workspace_id, bundle=bundle, task_id=task_id, kind=ReminderKind.NUDGE,
+        origin=origin, created_by=created_by, note=note, created_at=now, updated_at=now,
     )
     db.add(reminder)
-    db.flush()
+    _rebuild(db, bundle, now)
     return reminder
 
 
 def edit_reminder(
-    db: Session, reminder: Reminder, *, body: str | None, scheduled_at: datetime | None, now: datetime
+    db: Session, reminder: Reminder, *, now: datetime, note: object = KEEP, scheduled_at: datetime | None = None
 ) -> Reminder:
-    """문구나 시각을 고친다. 승인은 그대로 유지한다."""
+    """메모를 고치거나 다른 시각으로 옮긴다. 옮기면 그 시각의 묶음에 들어간다. 묶음 문구가 바뀌므로 승인이 풀린다."""
     now = utc(now)
     _transition(reminder, "edit")
+    source = reminder.bundle
+    target = source
     if scheduled_at is not None:
         scheduled_at = utc(scheduled_at)
         _require_future(scheduled_at, now)
-        reminder.scheduled_at = scheduled_at
-    if body is not None:
-        reminder.body = body
+        if scheduled_at != utc(source.scheduled_at):
+            target = _slot_bundle(db, source.thread, scheduled_at, now)
+    note_changed = note is not KEEP and note != reminder.note
+    if note_changed:
+        reminder.note = note
+    reminder.bundle = target
     reminder.updated_at = now
-    db.flush()
-    return reminder
-
-
-def approve_reminder(db: Session, reminder: Reminder, *, approved_by: str | None, now: datetime) -> Reminder:
-    now = utc(now)
-    _transition(reminder, "approve")
-    if reminder.approved_at is not None:
-        return reminder
-    _require_future(utc(reminder.scheduled_at), now)
-    reminder.approved_at = now
-    reminder.approved_by = approved_by
-    reminder.updated_at = now
-    db.flush()
+    if target is not source:
+        _rebuild(db, source, now)
+        _rebuild(db, target, now)
+    elif note_changed:
+        _rebuild(db, source, now)
     return reminder
 
 
@@ -152,61 +253,120 @@ def cancel_reminder(db: Session, reminder: Reminder, *, now: datetime) -> Remind
     _transition(reminder, "cancel")
     reminder.cancelled_at = now
     reminder.updated_at = now
-    db.flush()
+    _rebuild(db, reminder.bundle, now)
     return reminder
 
 
 def expire_reminder(db: Session, reminder_id: str, now: datetime) -> Reminder:
     """놓친 예약을 만료로 닫는다. 라우트는 없고 스케줄러가 부른다."""
     now = utc(now)
-    reminder = db.get(Reminder, reminder_id, with_for_update=True)
+    reminder = db.get(Reminder, reminder_id)
     if reminder is None:
         raise AppError(ErrorCode.REMINDER_NOT_FOUND, details={"reminder_id": reminder_id})
+    _lock_reminder(db, reminder)
     _transition(reminder, "expire")
     reminder.expired_at = now
     reminder.updated_at = now
-    db.flush()
+    _rebuild(db, reminder.bundle, now, closing="expire")
     return reminder
 
 
+def edit_bundle(
+    db: Session, bundle: ReminderBundle, *, body: str | None, scheduled_at: datetime | None, now: datetime
+) -> ReminderBundle:
+    """PM 이 묶음 문구나 시각을 고친다. 승인은 유지한다.
+
+    옮긴 시각에 이미 예정 묶음이 있으면 그쪽으로 합치고 합쳐진 묶음을 돌려준다. 합치면 구성이 바뀌므로
+    문구를 다시 만들고 승인이 풀린다. 이때 같이 보낸 문구는 남지 않는다.
+    """
+    now = utc(now)
+    _transition(bundle, "edit")
+    if scheduled_at is not None:
+        scheduled_at = utc(scheduled_at)
+        _require_future(scheduled_at, now)
+    if body is not None:
+        bundle.body, bundle.body_source, bundle.draft_status = body, BodySource.PM, DraftStatus.DONE
+        bundle.draft_version += 1
+        bundle.draft_claimed_at = None
+    bundle.updated_at = now
+    if scheduled_at is None or scheduled_at == utc(bundle.scheduled_at):
+        db.flush()
+        return bundle
+    other = _bundle_at(db, bundle.thread_id, scheduled_at)
+    if other is None:
+        bundle.scheduled_at = scheduled_at
+        db.flush()
+        return bundle
+    for reminder in bundle_reminders(db, bundle.bundle_id):
+        reminder.bundle = other
+        reminder.updated_at = now
+    _rebuild(db, bundle, now)
+    _rebuild(db, other, now)
+    return other
+
+
+def approve_bundle(db: Session, bundle: ReminderBundle, *, approved_by: str | None, now: datetime) -> ReminderBundle:
+    """PM 이 보고 있는 문구 그대로 승인한다. 초안을 기다리는 중이어도 된다. 승인 뒤에는 AI 초안을 받지 않는다."""
+    now = utc(now)
+    _transition(bundle, "approve")
+    if bundle.approved_at is not None:
+        return bundle
+    _require_future(utc(bundle.scheduled_at), now)
+    bundle.approved_at = now
+    bundle.approved_by = approved_by
+    bundle.updated_at = now
+    db.flush()
+    return bundle
+
+
+def cancel_bundle(db: Session, bundle: ReminderBundle, *, now: datetime) -> ReminderBundle:
+    now = utc(now)
+    reminders = bundle_reminders(db, bundle.bundle_id)
+    _transition(bundle, "cancel")
+    for reminder in reminders:
+        _transition(reminder, "cancel")
+        reminder.cancelled_at = now
+        reminder.updated_at = now
+    bundle.updated_at = now
+    db.flush()
+    return bundle
+
+
 def dispatch_due(db: Session, now: datetime) -> list[ThreadMessage]:
-    """승인됐고 발송 시각이 된 리마인드를 (대화, 발송 시각)이 같은 것끼리 봇 메시지 한 통으로 합친다."""
+    """승인됐고 발송 시각이 된 묶음마다 봇 메시지 한 통을 만든다. 문구는 묶음 문구 그대로다."""
     now = utc(now)
     due = db.scalars(
-        select(Reminder)
+        select(ReminderBundle)
         .where(
-            Reminder.status == ReminderStatus.SCHEDULED,
-            Reminder.approved_at.is_not(None),
-            Reminder.message_id.is_(None),
-            Reminder.scheduled_at <= now,
+            ReminderBundle.status == ReminderStatus.SCHEDULED,
+            ReminderBundle.approved_at.is_not(None),
+            ReminderBundle.scheduled_at <= now,
         )
-        .order_by(Reminder.created_at, Reminder.reminder_id)
+        .order_by(ReminderBundle.scheduled_at, ReminderBundle.created_at)
         .with_for_update(skip_locked=True)
     ).all()
 
-    groups: dict[tuple[str, datetime], list[Reminder]] = {}
-    for reminder in due:
-        groups.setdefault((reminder.thread_id, utc(reminder.scheduled_at)), []).append(reminder)
-
     messages = []
-    for (thread_id, scheduled_at), reminders in groups.items():
-        member = db.get(MessageThread, thread_id).member
+    for bundle in due:
+        member = bundle.thread.member
         linked = bool(member.discord_user_id) and not member.is_deleted
         message = ThreadMessage(
-            thread_id=thread_id,
+            thread_id=bundle.thread_id,
             sender=MessageSender.BOT,
-            body="\n\n".join(r.body for r in reminders),
+            body=bundle.body,
             created_at=now,
-            scheduled_at=scheduled_at,
+            scheduled_at=utc(bundle.scheduled_at),
             dm_status=DmStatus.PENDING if linked else DmStatus.FAILED,
             dm_failure_reason=None if linked else DmFailureReason.DISCORD_NOT_LINKED,
         )
         db.add(message)
         db.flush()
-        for reminder in reminders:
+        for reminder in bundle_reminders(db, bundle.bundle_id):
             _transition(reminder, "send")
-            reminder.message_id = message.message_id
             reminder.updated_at = now
+        _transition(bundle, "send")
+        bundle.message_id = message.message_id
+        bundle.updated_at = now
         messages.append(message)
     db.flush()
     return messages

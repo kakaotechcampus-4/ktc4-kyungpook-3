@@ -1,8 +1,7 @@
 """리마인드·대화 메시지 웹 API(PM, 팀원)와 봇 서비스 API. 시각이 된 상태는 DB의 발송 시각을 과거로 돌려 만든다."""
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
-from app.models import DmStatus, Reminder, ReminderStatus, ThreadMessage
-from app.services import messages as svc
+from app.models import DmStatus, Reminder, ReminderBundle, ReminderStatus, ThreadMessage
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -27,24 +26,29 @@ def _iso(dt):
     return dt.isoformat()
 
 
-def _create(c, seed, who="alice", task=0, at=None, body="마감 확인 부탁해요"):
-    r = c.post(f"{P}/workspaces/{seed['ws']}/messages/reminders", json={
-        "member_id": seed[who].member_id, "task_id": seed["tasks"][task].task_id,
-        "body": body, "scheduled_at": _iso(at or _future()),
-    })
+def _create(c, seed, who="alice", task=0, at=None, note=None):
+    body = {"member_id": seed[who].member_id, "task_id": seed["tasks"][task].task_id,
+            "scheduled_at": _iso(at or _future())}
+    if note is not None:
+        body["note"] = note
+    r = c.post(f"{P}/workspaces/{seed['ws']}/messages/reminders", json=body)
     assert r.status_code == 201, r.text
     return r.json()["data"]
 
 
-def _approve(c, seed, rid):
-    return c.post(f"{P}/workspaces/{seed['ws']}/messages/reminders/{rid}/approve")
+def _bundles_url(seed, bid=""):
+    return f"{P}/workspaces/{seed['ws']}/messages/bundles" + (f"/{bid}" if bid else "")
 
 
-def _due(db, *reminder_ids, at=None):
+def _approve(c, seed, bid):
+    return c.post(f"{_bundles_url(seed, bid)}/approve")
+
+
+def _due(db, *bundle_ids, at=None):
     """발송 시각이 된 것으로 만든다."""
     at = at or datetime.now(timezone.utc) - timedelta(minutes=1)
-    for rid in reminder_ids:
-        db.get(Reminder, rid).scheduled_at = at
+    for bid in bundle_ids:
+        db.get(ReminderBundle, bid).scheduled_at = at
     db.commit()
 
 
@@ -54,28 +58,31 @@ def _claim():
     return r.json()["data"]["items"]
 
 
-def _sent_message(db, seed, who="alice"):
+def _sent_message(db, seed, who="alice", note="마감 확인 부탁해요"):
     pm = client("pm")
-    rid = _create(pm, seed, who)["reminder_id"]
-    assert _approve(pm, seed, rid).status_code == 200
-    _due(db, rid)
-    return rid
+    bid = _create(pm, seed, who, note=note)["bundle"]["bundle_id"]
+    assert _approve(pm, seed, bid).status_code == 200
+    _due(db, bid)
+    return bid
 
 
 # 권한
 
-def test_only_pm_can_create_edit_approve_cancel(mdb, mseed):
-    rid = _create(client("pm"), mseed)["reminder_id"]
+def test_only_pm_can_touch_reminders_and_bundles(mdb, mseed):
+    created = _create(client("pm"), mseed)
+    rid, bid = created["reminder"]["reminder_id"], created["bundle"]["bundle_id"]
     base = f"{P}/workspaces/{mseed['ws']}/messages/reminders"
     for who in ("alice", "outsider"):
         c = client(who)
         assert c.post(base, json={
             "member_id": mseed["alice"].member_id, "task_id": mseed["tasks"][0].task_id,
-            "body": "x", "scheduled_at": _iso(_future()),
+            "scheduled_at": _iso(_future()),
         }).status_code == 403
-        assert c.patch(f"{base}/{rid}", json={"body": "y"}).status_code == 403
-        assert c.post(f"{base}/{rid}/approve").status_code == 403
+        assert c.patch(f"{base}/{rid}", json={"note": "y"}).status_code == 403
         assert c.post(f"{base}/{rid}/cancel").status_code == 403
+        assert c.patch(_bundles_url(mseed, bid), json={"body": "y"}).status_code == 403
+        assert c.post(f"{_bundles_url(mseed, bid)}/approve").status_code == 403
+        assert c.post(f"{_bundles_url(mseed, bid)}/cancel").status_code == 403
     assert client().get(f"{P}/workspaces/{mseed['ws']}/messages").status_code == 401
 
 
@@ -86,11 +93,11 @@ def test_member_sees_only_own_thread(mdb, mseed):
     ws = mseed["ws"]
 
     inbox = pm.get(f"{P}/workspaces/{ws}/messages").json()["data"]
-    assert len(inbox["threads"]) == 2 and len(inbox["reminders"]) == 2
+    assert len(inbox["threads"]) == 2 and len(inbox["bundles"]) == 2
 
     mine = client("alice").get(f"{P}/workspaces/{ws}/messages").json()["data"]
     assert [t["member_id"] for t in mine["threads"]] == [mseed["alice"].member_id]
-    assert mine["reminders"] is None
+    assert mine["bundles"] is None
 
     bob_thread = next(t for t in inbox["threads"] if t["member_id"] == mseed["bob"].member_id)
     assert client("alice").get(f"{P}/workspaces/{ws}/messages/threads/{bob_thread['thread_id']}").status_code == 403
@@ -100,14 +107,14 @@ def test_member_sees_only_own_thread(mdb, mseed):
     assert r.status_code == 404 and r.json()["error"]["code"] == "MESSAGE_THREAD_NOT_FOUND"
 
 
-def test_member_thread_hides_reminders(mdb, mseed):
+def test_member_thread_hides_bundles(mdb, mseed):
     pm = client("pm")
     _create(pm, mseed, "alice")
     ws = mseed["ws"]
     tid = client("alice").get(f"{P}/workspaces/{ws}/messages").json()["data"]["threads"][0]["thread_id"]
     mine = client("alice").get(f"{P}/workspaces/{ws}/messages/threads/{tid}").json()["data"]
-    assert mine["reminders"] is None
-    assert len(pm.get(f"{P}/workspaces/{ws}/messages/threads/{tid}").json()["data"]["reminders"]) == 1
+    assert mine["bundles"] is None
+    assert len(pm.get(f"{P}/workspaces/{ws}/messages/threads/{tid}").json()["data"]["bundles"]) == 1
 
 
 def test_bot_routes_require_service_token(mdb, mseed):
@@ -120,115 +127,199 @@ def test_bot_routes_require_service_token(mdb, mseed):
     assert client("pm").post(f"{P}/bot/messages/claim").status_code == 401
 
 
-# 만들기, 고치기, 시각
+# 만들기와 묶음
+
+def test_create_returns_reminder_in_its_bundle(mdb, mseed):
+    mseed["tasks"][0].due_date = date(2026, 11, 13)
+    mdb.commit()
+    at = _future()
+    data = _create(client("pm"), mseed, at=at)
+    reminder, bundle = data["reminder"], data["bundle"]
+    assert reminder["bundle_id"] == bundle["bundle_id"] and reminder["note"] is None
+    assert reminder["task_title"] == "할일0" and reminder["due_date"] == "2026-11-13"
+    assert bundle["recipient_name"] == "앨리스" and bundle["member_id"] == mseed["alice"].member_id
+    assert datetime.fromisoformat(bundle["scheduled_at"]) == at
+    assert bundle["body"] == "앨리스님, 할일0 마감이 11/13(금)이라 한번 여쭤봐요. 지금 어디까지 됐는지 편하게 알려 주세요!"
+    assert (bundle["status"], bundle["approved"], bundle["body_source"], bundle["draft_status"]) == (
+        "scheduled", False, "rule", "needed")
+    assert [r["reminder_id"] for r in bundle["reminders"]] == [reminder["reminder_id"]]
+
 
 def test_create_validation(mdb, mseed):
     pm = client("pm")
     url = f"{P}/workspaces/{mseed['ws']}/messages/reminders"
-    body = {"member_id": mseed["alice"].member_id, "task_id": mseed["tasks"][0].task_id, "body": "x"}
+    body = {"member_id": mseed["alice"].member_id, "task_id": mseed["tasks"][0].task_id}
     past = pm.post(url, json={**body, "scheduled_at": _iso(datetime.now(timezone.utc) - timedelta(hours=1))})
     assert past.status_code == 409 and past.json()["error"]["code"] == "REMINDER_SCHEDULED_AT_PASSED"
     assert pm.post(url, json={**body, "scheduled_at": "2030-01-01T09:00:00"}).status_code == 400
-    assert pm.post(url, json={**body, "body": "  ", "scheduled_at": _iso(_future())}).status_code == 400
     assert pm.post(url, json={**body, "task_id": "nope", "scheduled_at": _iso(_future())}).status_code == 404
     assert pm.post(url, json={**body, "member_id": "nope", "scheduled_at": _iso(_future())}).status_code == 404
+    blank = pm.post(url, json={**body, "note": "  ", "scheduled_at": _iso(_future())})
+    assert blank.status_code == 201 and blank.json()["data"]["reminder"]["note"] is None
 
 
-def test_edit_keeps_approval_and_rejects_past_time(mdb, mseed):
+def test_same_recipient_and_time_merge_and_unapprove(mdb, mseed):
     pm = client("pm")
-    rid = _create(pm, mseed)["reminder_id"]
-    assert _approve(pm, mseed, rid).json()["data"]["approved"] is True
-    url = f"{P}/workspaces/{mseed['ws']}/messages/reminders/{rid}"
-    new_at = _future(3)
-    r = pm.patch(url, json={"body": "바뀐 문구", "scheduled_at": _iso(new_at)})
-    data = r.json()["data"]
-    assert r.status_code == 200 and data["body"] == "바뀐 문구" and data["approved"] is True
-    assert datetime.fromisoformat(data["scheduled_at"]) == new_at
+    at = _future()
+    first = _create(pm, mseed, task=0, at=at, note="첫째")
+    bid = first["bundle"]["bundle_id"]
+    assert first["bundle"]["body_source"] == "pm" and first["bundle"]["draft_status"] == "done"
+    assert _approve(pm, mseed, bid).json()["data"]["approved"] is True
+
+    second = _create(pm, mseed, task=1, at=at, note="둘째")
+    bundle = second["bundle"]
+    assert bundle["bundle_id"] == bid and bundle["approved"] is False
+    assert bundle["body"] == "첫째\n\n둘째" and bundle["draft_status"] == "needed"
+    assert len(pm.get(f"{P}/workspaces/{mseed['ws']}/messages").json()["data"]["bundles"]) == 1
+
+
+def test_reminder_edit_moves_to_other_bundle_and_rejects_past_time(mdb, mseed):
+    pm = client("pm")
+    at = _future()
+    stay = _create(pm, mseed, task=0, at=at, note="남음")
+    move = _create(pm, mseed, task=1, at=at, note="옮김")["reminder"]["reminder_id"]
+    url = f"{P}/workspaces/{mseed['ws']}/messages/reminders/{move}"
+
+    r = pm.patch(url, json={"scheduled_at": _iso(_future(3))})
+    assert r.status_code == 200
+    moved = r.json()["data"]["bundle"]
+    assert moved["bundle_id"] != stay["bundle"]["bundle_id"] and moved["body"] == "옮김"
+    inbox = {b["bundle_id"]: b for b in pm.get(f"{P}/workspaces/{mseed['ws']}/messages").json()["data"]["bundles"]}
+    assert inbox[stay["bundle"]["bundle_id"]]["body"] == "남음"
+
+    cleared = pm.patch(url, json={"note": None}).json()["data"]
+    assert cleared["reminder"]["note"] is None and cleared["bundle"]["body_source"] == "rule"
     past = pm.patch(url, json={"scheduled_at": _iso(datetime.now(timezone.utc) - timedelta(minutes=1))})
     assert past.status_code == 409 and past.json()["error"]["code"] == "REMINDER_SCHEDULED_AT_PASSED"
     assert pm.patch(url, json={}).status_code == 400
-    assert pm.patch(f"{P}/workspaces/{mseed['ws']}/messages/reminders/nope", json={"body": "x"}).status_code == 404
+    assert pm.patch(f"{P}/workspaces/{mseed['ws']}/messages/reminders/nope", json={"note": "x"}).status_code == 404
+
+
+def test_cancelling_last_reminder_cancels_bundle(mdb, mseed):
+    pm = client("pm")
+    data = _create(pm, mseed)
+    r = pm.post(f"{P}/workspaces/{mseed['ws']}/messages/reminders/{data['reminder']['reminder_id']}/cancel")
+    assert r.status_code == 200
+    assert r.json()["data"]["reminder"]["status"] == "cancelled"
+    assert r.json()["data"]["bundle"]["status"] == "cancelled"
+    assert pm.get(f"{P}/workspaces/{mseed['ws']}/messages").json()["data"]["bundles"] == []
+
+
+# 묶음 고치기, 승인, 취소
+
+def test_bundle_body_edit_keeps_approval_and_time_move_merges(mdb, mseed):
+    pm = client("pm")
+    a = _create(pm, mseed, task=0, at=_future(2), note="가")["bundle"]["bundle_id"]
+    b = _create(pm, mseed, task=1, at=_future(3), note="나")["bundle"]["bundle_id"]
+    assert _approve(pm, mseed, a).status_code == 200
+
+    edited = pm.patch(_bundles_url(mseed, a), json={"body": "  고친 문구  "}).json()["data"]
+    assert edited["body"] == "고친 문구" and edited["approved"] is True and edited["body_source"] == "pm"
+
+    merged = pm.patch(_bundles_url(mseed, a), json={"scheduled_at": _iso(_future(3))}).json()["data"]
+    assert merged["bundle_id"] == b and merged["approved"] is False
+    assert merged["body"] == "가\n\n나" and len(merged["reminders"]) == 2
+    assert [x["bundle_id"] for x in pm.get(f"{P}/workspaces/{mseed['ws']}/messages").json()["data"]["bundles"]] == [b]
+
+
+def test_bundle_edit_validation(mdb, mseed):
+    pm = client("pm")
+    bid = _create(pm, mseed)["bundle"]["bundle_id"]
+    url = _bundles_url(mseed, bid)
+    assert pm.patch(url, json={}).status_code == 400
+    assert pm.patch(url, json={"body": "  "}).status_code == 400
+    past = pm.patch(url, json={"scheduled_at": _iso(datetime.now(timezone.utc) - timedelta(minutes=1))})
+    assert past.status_code == 409 and past.json()["error"]["code"] == "REMINDER_SCHEDULED_AT_PASSED"
+    missing = pm.patch(_bundles_url(mseed, "nope"), json={"body": "x"})
+    assert missing.status_code == 404 and missing.json()["error"]["code"] == "REMINDER_BUNDLE_NOT_FOUND"
 
 
 def test_approve_after_time_passed_asks_for_new_time_and_is_idempotent(mdb, mseed):
     pm = client("pm")
-    rid = _create(pm, mseed)["reminder_id"]
-    _due(mdb, rid)
-    r = _approve(pm, mseed, rid)
+    late = _create(pm, mseed, task=0)["bundle"]["bundle_id"]
+    _due(mdb, late)
+    r = _approve(pm, mseed, late)
     assert r.status_code == 409 and r.json()["error"]["code"] == "REMINDER_SCHEDULED_AT_PASSED"
 
-    ok = _create(pm, mseed, task=1)["reminder_id"]
+    ok = _create(pm, mseed, who="carol", task=1)["bundle"]["bundle_id"]
     assert _approve(pm, mseed, ok).status_code == 200
     _due(mdb, ok)
     assert _approve(pm, mseed, ok).status_code == 200
 
 
-def test_reminder_of_other_workspace_is_not_found(mdb, mseed):
+def test_bundle_of_other_workspace_is_not_found(mdb, mseed):
     from app.models import Member, Workspace
     other = Workspace(name="B")
     mdb.add(other)
     mdb.flush()
     mdb.add(Member(workspace_id=other.workspace_id, user_id=mseed["pm"].user_id, display_name="PM", role="pm"))
     mdb.commit()
-    rid = _create(client("pm"), mseed)["reminder_id"]
-    r = client("pm").post(f"{P}/workspaces/{other.workspace_id}/messages/reminders/{rid}/cancel")
+    data = _create(client("pm"), mseed)
+    base = f"{P}/workspaces/{other.workspace_id}/messages"
+    r = client("pm").post(f"{base}/bundles/{data['bundle']['bundle_id']}/cancel")
+    assert r.status_code == 404 and r.json()["error"]["code"] == "REMINDER_BUNDLE_NOT_FOUND"
+    r = client("pm").post(f"{base}/reminders/{data['reminder']['reminder_id']}/cancel")
     assert r.status_code == 404 and r.json()["error"]["code"] == "REMINDER_NOT_FOUND"
 
 
-# 상태 흐름
+def test_bundle_cancel_cancels_reminders_and_closed_bundles_are_locked(mdb, mseed):
+    pm = client("pm")
+    data = _create(pm, mseed, task=0)
+    bid, rid = data["bundle"]["bundle_id"], data["reminder"]["reminder_id"]
+    cancelled = pm.post(f"{_bundles_url(mseed, bid)}/cancel").json()["data"]
+    assert cancelled["status"] == "cancelled" and [r["status"] for r in cancelled["reminders"]] == ["cancelled"]
+    sent = _sent_message(mdb, mseed, who="carol")
+    _claim()
+
+    for target in (bid, sent):
+        for r in (
+            pm.patch(_bundles_url(mseed, target), json={"body": "x"}),
+            pm.post(f"{_bundles_url(mseed, target)}/approve"),
+            pm.post(f"{_bundles_url(mseed, target)}/cancel"),
+        ):
+            assert r.status_code == 409 and r.json()["error"]["code"] == "REMINDER_NOT_EDITABLE"
+    for r in (
+        pm.patch(f"{P}/workspaces/{mseed['ws']}/messages/reminders/{rid}", json={"note": "x"}),
+        pm.post(f"{P}/workspaces/{mseed['ws']}/messages/reminders/{rid}/cancel"),
+    ):
+        assert r.status_code == 409 and r.json()["error"]["code"] == "REMINDER_NOT_EDITABLE"
+
+
+# 발송
 
 def test_scheduled_to_sent_through_claim(mdb, mseed):
     pm = client("pm")
-    rid = _sent_message(mdb, mseed)
+    bid = _sent_message(mdb, mseed)
     (item,) = _claim()
     assert item["body"] == "마감 확인 부탁해요" and item["discord_user_id"] == "d_alice"
     assert item["member_id"] == mseed["alice"].member_id and item["workspace_id"] == mseed["ws"]
     mdb.expire_all()
-    assert mdb.get(Reminder, rid).status == ReminderStatus.SENT
+    assert mdb.get(ReminderBundle, bid).status == ReminderStatus.SENT
+    assert {r.status for r in mdb.query(Reminder).filter_by(bundle_id=bid)} == {ReminderStatus.SENT}
     inbox = pm.get(f"{P}/workspaces/{mseed['ws']}/messages").json()["data"]
-    assert inbox["reminders"] == []
+    assert inbox["bundles"] == []
     assert inbox["threads"][0]["last_message"]["body"] == "마감 확인 부탁해요"
 
 
-def test_cancel_and_non_scheduled_reminders_are_locked(mdb, mseed):
-    pm = client("pm")
-    base = f"{P}/workspaces/{mseed['ws']}/messages/reminders"
-    cancelled = _create(pm, mseed, task=0)["reminder_id"]
-    assert pm.post(f"{base}/{cancelled}/cancel").json()["data"]["status"] == "cancelled"
-    sent = _sent_message(mdb, mseed)
-    _claim()
-    expired = _create(pm, mseed, task=2)["reminder_id"]
-    svc.expire_reminder(mdb, expired, datetime.now(timezone.utc))
-    mdb.commit()
-
-    for rid in (cancelled, sent, expired):
-        for r in (
-            pm.patch(f"{base}/{rid}", json={"body": "x"}),
-            pm.post(f"{base}/{rid}/approve"),
-            pm.post(f"{base}/{rid}/cancel"),
-        ):
-            assert r.status_code == 409 and r.json()["error"]["code"] == "REMINDER_NOT_EDITABLE"
-
-
-def test_cancelled_reminder_is_never_sent(mdb, mseed):
-    pm = client("pm")
-    rid = _create(pm, mseed)["reminder_id"]
-    assert _approve(pm, mseed, rid).status_code == 200
-    pm.post(f"{P}/workspaces/{mseed['ws']}/messages/reminders/{rid}/cancel")
-    _due(mdb, rid)
-    assert _claim() == []
-
-
-def test_same_recipient_and_time_merge_into_one_message(mdb, mseed):
+def test_dispatch_sends_the_bundle_text_the_pm_approved(mdb, mseed):
     pm = client("pm")
     at = _future()
-    a = _create(pm, mseed, task=0, at=at, body="첫째")["reminder_id"]
-    b = _create(pm, mseed, task=1, at=at, body="둘째")["reminder_id"]
-    for rid in (a, b):
-        _approve(pm, mseed, rid)
-    _due(mdb, a, b)
+    bid = _create(pm, mseed, task=0, at=at)["bundle"]["bundle_id"]
+    _create(pm, mseed, task=1, at=at)
+    pm.patch(_bundles_url(mseed, bid), json={"body": "두 가지 다 어때요?"})
+    _approve(pm, mseed, bid)
+    _due(mdb, bid)
     items = _claim()
-    assert len(items) == 1 and items[0]["body"] == "첫째\n\n둘째"
+    assert [i["body"] for i in items] == ["두 가지 다 어때요?"]
+
+
+def test_cancelled_bundle_is_never_sent(mdb, mseed):
+    pm = client("pm")
+    bid = _create(pm, mseed)["bundle"]["bundle_id"]
+    assert _approve(pm, mseed, bid).status_code == 200
+    pm.post(f"{_bundles_url(mseed, bid)}/cancel")
+    _due(mdb, bid)
+    assert _claim() == []
 
 
 def test_claim_twice_never_returns_same_message(mdb, mseed):
@@ -266,11 +357,12 @@ def test_report_result_routes(mdb, mseed):
     url = f"{P}/bot/messages/{item['message_id']}/result"
     assert bot.post(url, json={"status": "failed"}).status_code == 400
     assert bot.post(url, json={"status": "failed", "failure_reason": "discord_not_linked"}).status_code == 400
-    assert bot.post(url, json={"status": "failed", "failure_reason": "dm_blocked"}).status_code == 200
-    assert bot.post(url, json={"status": "failed", "failure_reason": "dm_blocked"}).status_code == 200
-    again = bot.post(url, json={"status": "delivered"})
+    assert bot.post(url, json={"status": "delivered"}).status_code == 200
+    assert bot.post(url, json={"status": "delivered"}).status_code == 200
+    again = bot.post(url, json={"status": "failed", "failure_reason": "dm_blocked"})
     assert again.status_code == 409 and again.json()["error"]["code"] == "MESSAGE_RESULT_CONFLICT"
-    assert bot.post(f"{P}/bot/messages/nope/result", json={"status": "delivered"}).status_code == 404
+    missing = bot.post(f"{P}/bot/messages/nope/result", json={"status": "delivered"})
+    assert missing.status_code == 404
 
 
 def test_dm_failure_shows_in_inbox_and_awaiting_reply(mdb, mseed):
@@ -327,11 +419,11 @@ def test_web_reply_only_by_thread_owner_and_never_goes_to_bot(mdb, mseed):
     assert [m["body"] for m in msgs] == ["웹으로 답해요"]
 
 
-def test_deleted_member_reminders_leave_inbox_with_their_thread(mdb, mseed):
+def test_deleted_member_bundles_leave_inbox_with_their_thread(mdb, mseed):
     pm = client("pm")
     _create(pm, mseed, "alice")
     mseed["alice"].is_deleted = True
     mdb.commit()
     data = pm.get(f"{P}/workspaces/{mseed['ws']}/messages").json()["data"]
     assert data["threads"] == []
-    assert data["reminders"] == []
+    assert data["bundles"] == []

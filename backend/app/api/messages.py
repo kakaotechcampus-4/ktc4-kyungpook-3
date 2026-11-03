@@ -14,17 +14,20 @@ from app.models import (
     MessageSender,
     MessageThread,
     Reminder,
+    ReminderBundle,
     ReminderStatus,
-    Task,
     ThreadMessage,
     User,
 )
 from app.schemas.message import (
+    BundleResponse,
+    BundleUpdateRequest,
     InboxResponse,
     MessageResponse,
     ReminderCreateRequest,
     ReminderResponse,
     ReminderUpdateRequest,
+    ReminderWithBundleResponse,
     ReplyCreateRequest,
     ThreadDetailResponse,
     ThreadSummary,
@@ -38,33 +41,44 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _reminder_dict(db: Session, reminder: Reminder, member_id: str) -> dict:
-    task = db.get(Task, reminder.task_id) if reminder.task_id else None
+def _reminder_dict(reminder: Reminder) -> dict:
+    task = reminder.task
     return ReminderResponse(
-        reminder_id=reminder.reminder_id, thread_id=reminder.thread_id, member_id=member_id,
-        task_id=reminder.task_id, task_title=task.title if task else None,
-        kind=reminder.kind, origin=reminder.origin, body=reminder.body,
-        scheduled_at=svc.utc(reminder.scheduled_at), status=reminder.status,
-        approved=reminder.approved_at is not None, approved_at=reminder.approved_at,
-        created_at=reminder.created_at,
+        reminder_id=reminder.reminder_id, bundle_id=reminder.bundle_id, task_id=reminder.task_id,
+        task_title=task.title if task else None, due_date=task.due_date if task else None,
+        note=reminder.note, status=reminder.status, kind=reminder.kind, origin=reminder.origin,
+        created_at=svc.utc(reminder.created_at),
     ).model_dump(mode="json")
 
 
-def _scheduled_reminders(db: Session, workspace_id: str, thread_id: str | None = None) -> list[dict]:
+def _bundle_dict(db: Session, bundle: ReminderBundle) -> dict:
+    """묶음과 그 안의 리마인드. 리마인드는 묶음과 같은 상태인 것만 보인다(예정 묶음이면 예정 리마인드)."""
+    member = bundle.thread.member
+    return BundleResponse(
+        bundle_id=bundle.bundle_id, thread_id=bundle.thread_id, member_id=member.member_id,
+        recipient_name=member.display_name, scheduled_at=svc.utc(bundle.scheduled_at), status=bundle.status,
+        approved=bundle.approved_at is not None,
+        approved_at=bundle.approved_at and svc.utc(bundle.approved_at),
+        body=bundle.body, body_source=bundle.body_source, draft_status=bundle.draft_status,
+        reminders=[_reminder_dict(r) for r in svc.bundle_reminders(db, bundle.bundle_id, bundle.status)],
+    ).model_dump(mode="json")
+
+
+def _scheduled_bundles(db: Session, workspace_id: str, thread_id: str | None = None) -> list[dict]:
     stmt = (
-        select(Reminder, MessageThread.member_id)
-        .join(MessageThread, MessageThread.thread_id == Reminder.thread_id)
+        select(ReminderBundle)
+        .join(MessageThread, MessageThread.thread_id == ReminderBundle.thread_id)
         .join(Member, Member.member_id == MessageThread.member_id)
         .where(
-            Reminder.workspace_id == workspace_id,
-            Reminder.status == ReminderStatus.SCHEDULED,
+            ReminderBundle.workspace_id == workspace_id,
+            ReminderBundle.status == ReminderStatus.SCHEDULED,
             Member.is_deleted.is_(False),
         )
-        .order_by(Reminder.scheduled_at, Reminder.created_at)
+        .order_by(ReminderBundle.scheduled_at, ReminderBundle.created_at)
     )
     if thread_id is not None:
-        stmt = stmt.where(Reminder.thread_id == thread_id)
-    return [_reminder_dict(db, r, member_id) for r, member_id in db.execute(stmt).all()]
+        stmt = stmt.where(ReminderBundle.thread_id == thread_id)
+    return [_bundle_dict(db, b) for b in db.scalars(stmt).all()]
 
 
 def _summary(db: Session, thread: MessageThread) -> dict:
@@ -117,7 +131,7 @@ def get_inbox(
     member: Member = Depends(get_current_member),
     db: Session = Depends(get_db),
 ) -> dict:
-    """PM 은 모든 대화와 아직 예정인 리마인드를, 팀원은 자기 대화만 본다."""
+    """PM 은 모든 대화와 아직 예정인 보낼 메시지(묶음)를, 팀원은 자기 대화만 본다."""
     is_pm = member.role == MemberRole.PM
     stmt = (
         select(MessageThread)
@@ -127,14 +141,14 @@ def get_inbox(
     if not is_pm:
         stmt = stmt.where(MessageThread.member_id == member.member_id)
     threads = [_summary(db, t) for t in db.scalars(stmt).all()]
-    # 최근 대화가 위로. 메시지가 없는 대화(예정 리마인드만 있음)는 아래로 간다.
+    # 최근 대화가 위로. 메시지가 없는 대화(예정 묶음만 있음)는 아래로 간다.
     with_message = sorted(
         (t for t in threads if t["last_message"]), key=lambda t: t["last_message"]["created_at"], reverse=True
     )
     without = [t for t in threads if not t["last_message"]]
     return success({
         "threads": with_message + without,
-        "reminders": _scheduled_reminders(db, workspace_id) if is_pm else None,
+        "bundles": _scheduled_bundles(db, workspace_id) if is_pm else None,
     })
 
 
@@ -156,33 +170,31 @@ def get_thread(
     return success({
         "thread": _summary(db, thread),
         "messages": [MessageResponse.model_validate(m).model_dump(mode="json") for m in rows],
-        "reminders": _scheduled_reminders(db, workspace_id, thread_id) if member.role == MemberRole.PM else None,
+        "bundles": _scheduled_bundles(db, workspace_id, thread_id) if member.role == MemberRole.PM else None,
     })
 
 
-@router.post("/reminders", status_code=201, response_model=Envelope[ReminderResponse])
+def _with_bundle(db: Session, reminder: Reminder) -> dict:
+    return success({"reminder": _reminder_dict(reminder), "bundle": _bundle_dict(db, reminder.bundle)})
+
+
+@router.post("/reminders", status_code=201, response_model=Envelope[ReminderWithBundleResponse])
 def create_reminder(
     workspace_id: str,
     payload: ReminderCreateRequest,
     pm: Member = Depends(get_current_pm),
     db: Session = Depends(get_db),
 ) -> dict:
+    """리마인드를 만들어 그 팀원·시각의 보낼 메시지에 넣는다. 같은 시각의 메시지가 있으면 합쳐지고 승인이 풀린다."""
     reminder = svc.create_reminder(
         db, workspace_id=workspace_id, task_id=payload.task_id, member_id=payload.member_id,
-        body=payload.body, scheduled_at=payload.scheduled_at, created_by=pm.member_id, now=_now(),
+        scheduled_at=payload.scheduled_at, note=payload.note, created_by=pm.member_id, now=_now(),
     )
     db.commit()
-    return success(_reminder_dict(db, reminder, payload.member_id))
+    return _with_bundle(db, reminder)
 
 
-def _reminder_action(db: Session, workspace_id: str, reminder_id: str, act) -> dict:
-    reminder = svc.get_reminder(db, workspace_id, reminder_id)
-    act(reminder)
-    db.commit()
-    return success(_reminder_dict(db, reminder, db.get(MessageThread, reminder.thread_id).member_id))
-
-
-@router.patch("/reminders/{reminder_id}", response_model=Envelope[ReminderResponse])
+@router.patch("/reminders/{reminder_id}", response_model=Envelope[ReminderWithBundleResponse])
 def update_reminder(
     workspace_id: str,
     reminder_id: str,
@@ -190,35 +202,69 @@ def update_reminder(
     _pm: Member = Depends(get_current_pm),
     db: Session = Depends(get_db),
 ) -> dict:
-    return _reminder_action(
-        db, workspace_id, reminder_id,
-        lambda r: svc.edit_reminder(db, r, body=payload.body, scheduled_at=payload.scheduled_at, now=_now()),
-    )
+    """메모를 고치거나 다른 시각으로 옮긴다. 보낼 메시지 문구가 바뀌므로 승인이 풀린다."""
+    reminder = svc.get_reminder(db, workspace_id, reminder_id)
+    note = payload.note if "note" in payload.model_fields_set else svc.KEEP
+    svc.edit_reminder(db, reminder, note=note, scheduled_at=payload.scheduled_at, now=_now())
+    db.commit()
+    return _with_bundle(db, reminder)
 
 
-@router.post("/reminders/{reminder_id}/approve", response_model=Envelope[ReminderResponse])
-def approve_reminder(
-    workspace_id: str,
-    reminder_id: str,
-    pm: Member = Depends(get_current_pm),
-    db: Session = Depends(get_db),
-) -> dict:
-    return _reminder_action(
-        db, workspace_id, reminder_id,
-        lambda r: svc.approve_reminder(db, r, approved_by=pm.member_id, now=_now()),
-    )
-
-
-@router.post("/reminders/{reminder_id}/cancel", response_model=Envelope[ReminderResponse])
+@router.post("/reminders/{reminder_id}/cancel", response_model=Envelope[ReminderWithBundleResponse])
 def cancel_reminder(
     workspace_id: str,
     reminder_id: str,
     _pm: Member = Depends(get_current_pm),
     db: Session = Depends(get_db),
 ) -> dict:
-    return _reminder_action(
-        db, workspace_id, reminder_id, lambda r: svc.cancel_reminder(db, r, now=_now())
+    """리마인드 하나를 뺀다. 마지막 하나였으면 보낼 메시지도 취소된다."""
+    reminder = svc.get_reminder(db, workspace_id, reminder_id)
+    svc.cancel_reminder(db, reminder, now=_now())
+    db.commit()
+    return _with_bundle(db, reminder)
+
+
+def _bundle_action(db: Session, workspace_id: str, bundle_id: str, act) -> dict:
+    bundle = act(svc.get_bundle(db, workspace_id, bundle_id))
+    db.commit()
+    return success(_bundle_dict(db, bundle))
+
+
+@router.patch("/bundles/{bundle_id}", response_model=Envelope[BundleResponse])
+def update_bundle(
+    workspace_id: str,
+    bundle_id: str,
+    payload: BundleUpdateRequest,
+    _pm: Member = Depends(get_current_pm),
+    db: Session = Depends(get_db),
+) -> dict:
+    """문구나 시각을 고친다. 승인은 유지한다. 옮긴 시각에 다른 보낼 메시지가 있으면 합쳐진 쪽을 돌려준다."""
+    return _bundle_action(
+        db, workspace_id, bundle_id,
+        lambda b: svc.edit_bundle(db, b, body=payload.body, scheduled_at=payload.scheduled_at, now=_now()),
     )
+
+
+@router.post("/bundles/{bundle_id}/approve", response_model=Envelope[BundleResponse])
+def approve_bundle(
+    workspace_id: str,
+    bundle_id: str,
+    pm: Member = Depends(get_current_pm),
+    db: Session = Depends(get_db),
+) -> dict:
+    return _bundle_action(
+        db, workspace_id, bundle_id, lambda b: svc.approve_bundle(db, b, approved_by=pm.member_id, now=_now())
+    )
+
+
+@router.post("/bundles/{bundle_id}/cancel", response_model=Envelope[BundleResponse])
+def cancel_bundle(
+    workspace_id: str,
+    bundle_id: str,
+    _pm: Member = Depends(get_current_pm),
+    db: Session = Depends(get_db),
+) -> dict:
+    return _bundle_action(db, workspace_id, bundle_id, lambda b: svc.cancel_bundle(db, b, now=_now()))
 
 
 @router.post("/threads/{thread_id}/replies", status_code=201, response_model=Envelope[MessageResponse])
