@@ -701,3 +701,13 @@ def test_rolling_back_override_to_other_workspace_assignee_is_400(client, db, se
     assert r.status_code == 400, r.text
     db.expire_all()
     assert db.get(Task, task.task_id).assignee_member_id == seed["jimin"].member_id
+
+
+def test_task_create_uses_change_source_from_payload(client, db, seed):
+    approval_id = _new_create(client, seed, change_source="reminder_reply")
+
+    assert _resolve(client, approval_id).status_code == 200
+
+    [row] = _history(db, _task_of(db, approval_id).task_id)
+    assert row.change_source == "reminder_reply"
+

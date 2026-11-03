@@ -230,7 +230,8 @@ def _apply_approval(
             assignee_member_id=final["assignee_member_id"],
             due_date=parse_date(final["due_date"], field="due_date"),
             status=str(TaskStatus.TODO),
-            change_source=str(ChangeSource.MEETING if payload.get("meeting_id") else ChangeSource.MANUAL),
+            change_source=payload.get("change_source")
+            or str(ChangeSource.MEETING if payload.get("meeting_id") else ChangeSource.MANUAL),
             changed_by=approval.resolved_by,
             history_title=proposal["task_title"],
         )
