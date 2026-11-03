@@ -140,7 +140,7 @@ def list_assigned_uploads(db: Session = Depends(get_db)) -> dict:
 
 @router.patch("/{meeting_id}/resume", response_model=Envelope[ResumeResponse])
 def resume_upload(meeting_id: str, db: Session = Depends(get_db)) -> dict:
-    """지정 결과를 가져간다(`resumed_at` 기록). 두 번 불러도 한 번만 성공한다."""
+    """지정 결과를 가져간다(`resumed_at`은 처음 한 번만 기록). 다시 불러도 같은 mapping 으로 200 이다."""
     meeting, upload = speaker_assignment.resume_upload(db, meeting_id)
     return success(
         ResumeResponse(

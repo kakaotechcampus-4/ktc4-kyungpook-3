@@ -100,10 +100,18 @@ def report_speakers(
         raise _with_status(ErrorCode.MEETING_ALREADY_ENDED, meeting_id, meeting.status)
     if upload.claimed_at is None:
         raise _with_status(ErrorCode.UPLOAD_NOT_CLAIMED, meeting_id, meeting.status)
-    if upload.speakers_reported_at is not None and upload.speakers is not None:
-        if normalize_speakers(json.loads(upload.speakers)) == normalized:
-            return meeting
-    raise _with_status(ErrorCode.SPEAKERS_ALREADY_REPORTED, meeting_id, meeting.status)
+    stored = normalize_speakers(json.loads(upload.speakers)) if upload.speakers is not None else []
+    if upload.speakers_reported_at is not None and stored == normalized:
+        return meeting
+    # 저장된 라벨을 함께 준다. AI 가 분리를 다시 돌려 라벨이 달라졌으면 이것으로 어긋남을 알아챈다
+    raise AppError(
+        ErrorCode.SPEAKERS_ALREADY_REPORTED,
+        details={
+            "meeting_id": meeting_id,
+            "status": meeting.status,
+            "labels": [item["label"] for item in stored],
+        },
+    )
 
 
 def list_assigned(db: Session) -> list[tuple[Meeting, MeetingUpload]]:
@@ -125,7 +133,11 @@ def list_assigned(db: Session) -> list[tuple[Meeting, MeetingUpload]]:
 def resume_upload(
     db: Session, meeting_id: str, now: datetime | None = None
 ) -> tuple[Meeting, MeetingUpload]:
-    """지정 결과를 한 번만 가져가게 한다(resumed_at 기록). 둘째 호출은 409."""
+    """지정 결과를 가져간다(resumed_at 은 처음 한 번만 기록).
+
+    이미 가져갔고 회의가 아직 processing 이면 같은 mapping 으로 200 을 준다. resume 은 응답에 실린
+    mapping 이 있어야 이어서 처리할 수 있어서, 커밋 뒤 응답을 잃은 재시도도 다시 받게 한다.
+    """
     now = now or datetime.now(timezone.utc)
     result = db.execute(
         update(MeetingUpload)
@@ -151,8 +163,8 @@ def resume_upload(
     meeting, upload = _read_upload_meeting(db, meeting_id)
     if meeting.status in _ENDED:
         raise _with_status(ErrorCode.MEETING_ALREADY_ENDED, meeting_id, meeting.status)
-    if upload.resumed_at is not None:
-        raise AppError(ErrorCode.MEETING_PROCESSING_IN_PROGRESS, details={"meeting_id": meeting_id})
+    if upload.resumed_at is not None and meeting.status == str(MeetingStatus.PROCESSING):
+        return meeting, upload
     raise _with_status(ErrorCode.SPEAKERS_NOT_ASSIGNED, meeting_id, meeting.status)
 
 
