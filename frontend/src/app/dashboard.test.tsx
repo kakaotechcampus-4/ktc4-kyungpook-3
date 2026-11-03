@@ -88,6 +88,15 @@ function summary(): Record<string, string> {
     ]),
   )
 }
+/** 요약 안의 링크 — 이름과 주소 */
+function summaryLinks(): [string | null, string | null][] {
+  const list = document.querySelector<HTMLElement>('dl[aria-label="현황 요약"]')
+  if (list === null) throw new Error('summary is missing')
+  return within(list)
+    .queryAllByRole('link')
+    .map((link) => [link.getAttribute('aria-label'), link.getAttribute('href')])
+}
+const TASKS = paths.tasks('ws_01')
 function headline(): string {
   return (
     screen.getByText(/확인이 필요한 일이|워크스페이스 현황/, { selector: 'p' }).textContent ?? ''
@@ -132,7 +141,7 @@ async function openDashboard(path = DASHBOARD) {
 }
 
 describe('요약·제목·회의 안내 (AC-01 · AC-05)', () => {
-  it('PM 은 요약 넷을 전체 데이터로 보고, 제목에는 개수가 없다. 요약은 막힌 일만 누를 수 있다', async () => {
+  it('PM 은 요약 넷을 전체 데이터로 보고, 제목에는 개수가 없다. 네 숫자 모두 그 조건의 목록으로 간다', async () => {
     await openDashboard()
     await waitFor(() =>
       expect(summary()).toEqual({
@@ -147,11 +156,14 @@ describe('요약·제목·회의 안내 (AC-01 · AC-05)', () => {
       '9월 15일 3주차 정기회의를 정리했어요 · 46분 분량',
     )
     expect(screen.getByText('2026-09-18 금요일')).toBeInTheDocument()
-    // 요약은 정보다 (D-061). 막힌 일만 태스크 목록의 막힘 조건으로 간다 (D-176)
+    // 숫자마다 그 수만큼 보이는 태스크 목록 조건으로 간다 (D-178)
+    expect(summaryLinks()).toEqual([
+      ['확인 대기 3', `${TASKS}?tab=needs_review`],
+      ['기한 지남 2', `${TASKS}?tab=in_progress&due=overdue`],
+      ['7일 이내 마감 4', `${TASKS}?tab=in_progress&due=soon`],
+      ['막힌 일 1', `${TASKS}?tab=in_progress&due=blocked`],
+    ])
     const list = screen.getByText('확인 대기').closest('dl')!
-    const links = within(list).getAllByRole('link')
-    expect(links.map((link) => link.getAttribute('aria-label'))).toEqual(['막힌 일 1'])
-    expect(links[0]).toHaveAttribute('href', `${paths.tasks('ws_01')}?tab=in_progress&due=blocked`)
     expect(within(list).queryAllByRole('button')).toEqual([])
     // 마감 임박은 5개만 보여도 집계는 6이다 (D-052)
     expect(dueTitles()).toHaveLength(5)
@@ -164,6 +176,56 @@ describe('요약·제목·회의 안내 (AC-01 · AC-05)', () => {
     expect(summary()['확인 대기']).toBe('0')
     expect(screen.getByText('지금 확인할 일이 없어요.')).toBeInTheDocument()
   })
+
+  /*
+   * 요약 숫자를 누르면 그 수만큼 보이는 목록이다 (D-178). 수는 누르기 전 요약에서 읽는다.
+   * 확인 대기는 확인 필요 카드, 나머지는 진행 중 탭의 태스크 행이다
+   */
+  it.each([
+    {
+      label: '확인 대기',
+      search: '?tab=needs_review',
+      tab: /^확인 필요/,
+      due: '마감 조건: 마감 전체',
+      rows: () =>
+        within(screen.getByRole('list', { name: '확인 필요 목록' })).getAllByRole('article'),
+    },
+    {
+      label: '기한 지남',
+      search: '?tab=in_progress&due=overdue',
+      tab: /^진행 중/,
+      due: '마감 조건: 기한 지남',
+      rows: () => within(screen.getByRole('list', { name: '태스크 목록' })).getAllByRole('link'),
+    },
+    {
+      label: '7일 이내 마감',
+      search: '?tab=in_progress&due=soon',
+      tab: /^진행 중/,
+      due: '마감 조건: 7일 안에 마감',
+      rows: () => within(screen.getByRole('list', { name: '태스크 목록' })).getAllByRole('link'),
+    },
+    {
+      label: '막힌 일',
+      search: '?tab=in_progress&due=blocked',
+      tab: /^진행 중/,
+      due: '마감 조건: 막힘',
+      rows: () => within(screen.getByRole('list', { name: '태스크 목록' })).getAllByRole('link'),
+    },
+  ])(
+    '$label 숫자를 누르면 태스크 목록의 그 조건이고 같은 수가 보인다 (D-178)',
+    async ({ label, search, tab, due, rows }) => {
+      const user = userEvent.setup()
+      const app = await openDashboard()
+      await waitFor(() => expect(summary()['확인 대기']).toBe('3'))
+      const count = Number(summary()[label])
+      await user.click(screen.getByRole('link', { name: `${label} ${count}` }))
+      await app.expectPath(TASKS)
+      await app.expectSearch(search)
+      await waitFor(() => expect(rows()).toHaveLength(count))
+      expect(screen.getByRole('tab', { name: tab })).toHaveAttribute('aria-selected', 'true')
+      expect(screen.getByRole('button', { name: due })).toBeInTheDocument()
+    },
+  )
 
   it('정리한 회의가 없으면 안내 문구만 있다 (D-065)', async () => {
     useScenario('dashboard-no-meeting')
@@ -185,6 +247,11 @@ describe('역할 (AC-05)', () => {
 
     expect(headline()).toBe('워크스페이스 현황')
     expect(Object.keys(summary())).toEqual(['기한 지남', '7일 이내 마감', '막힌 일'])
+    expect(summaryLinks()).toEqual([
+      ['기한 지남 2', `${TASKS}?tab=in_progress&due=overdue`],
+      ['7일 이내 마감 4', `${TASKS}?tab=in_progress&due=soon`],
+      ['막힌 일 1', `${TASKS}?tab=in_progress&due=blocked`],
+    ])
     expect(screen.queryByRole('heading', { name: '확인이 필요한 일' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /되돌리기$/ })).not.toBeInTheDocument()
     expect(screen.getByRole('heading', { name: '마감 임박' })).toBeInTheDocument()
@@ -311,23 +378,7 @@ describe('마감 임박 (AC-02)', () => {
     expect(screen.queryByRole('list', { name: '확인 필요 목록' })).not.toBeInTheDocument()
   })
 
-  it('막힌 일을 누르면 태스크 목록의 진행 중 + 막힘 조건이다 — 요약과 같은 수가 보인다 (D-176)', async () => {
-    const user = userEvent.setup()
-    const app = await openDashboard()
-    await user.click(screen.getByRole('link', { name: '막힌 일 1' }))
-    await app.expectPath(paths.tasks('ws_01'))
-    await app.expectSearch('?tab=in_progress&due=blocked')
-    const list = await screen.findByRole('list', { name: '태스크 목록' })
-    expect(screen.getByRole('tab', { name: /^진행 중/ })).toHaveAttribute('aria-selected', 'true')
-    expect(screen.getByRole('button', { name: '마감 조건: 막힘' })).toBeInTheDocument()
-    expect(
-      within(list)
-        .getAllByRole('link')
-        .map((link) => link.textContent),
-    ).toEqual(['DB 스키마 정리'])
-  })
-
-  it('태스크를 받는 중에는 막힌 일이 링크가 아니다', async () => {
+  it('태스크를 받는 중에는 태스크 요약 숫자가 링크가 아니다', async () => {
     const gate = deferred()
     onTestFinished(() => gate.resolve())
     server.use(
@@ -338,9 +389,40 @@ describe('마감 임박 (AC-02)', () => {
     )
     renderApp(DASHBOARD)
     await waitFor(() => expect(summary()['막힌 일']).toBe('불러오는 중'))
-    expect(screen.queryByRole('link', { name: /^막힌 일/ })).toBeNull()
+    await waitFor(() => expect(summary()['확인 대기']).toBe('3'))
+    expect(summaryLinks()).toEqual([['확인 대기 3', `${TASKS}?tab=needs_review`]])
     gate.resolve()
     expect(await screen.findByRole('link', { name: '막힌 일 1' })).toBeInTheDocument()
+    expect(summaryLinks().map(([name]) => name)).toEqual([
+      '확인 대기 3',
+      '기한 지남 2',
+      '7일 이내 마감 4',
+      '막힌 일 1',
+    ])
+  })
+
+  it('승인을 받는 중이거나 받지 못하면 확인 대기는 링크가 아니다', async () => {
+    const gate = deferred()
+    onTestFinished(() => gate.resolve())
+    server.use(
+      http.get('/api/v1/approvals', async () => {
+        await gate.promise
+        return fail('INTERNAL_ERROR', 'boom', 500)
+      }),
+    )
+    renderApp(DASHBOARD)
+    await waitFor(() => expect(summary()['기한 지남']).toBe('2'))
+    expect(summary()['확인 대기']).toBe('불러오는 중')
+    expect(screen.queryByRole('link', { name: /^확인 대기/ })).toBeNull()
+    gate.resolve()
+    await waitFor(() => expect(summary()['확인 대기']).toBe('–불러오지 못했어요'), {
+      timeout: 8_000,
+    })
+    expect(summaryLinks().map(([name]) => name)).toEqual([
+      '기한 지남 2',
+      '7일 이내 마감 4',
+      '막힌 일 1',
+    ])
   })
 
   it('행을 누르면 태스크 상세로 간다', async () => {
@@ -786,12 +868,8 @@ describe('부분 오류·공간 전환 (AC-05)', () => {
     expect(summary()['확인 대기']).toBe('3')
     for (const label of ['기한 지남', '7일 이내 마감', '막힌 일'])
       expect(summary()[label]).toBe('–불러오지 못했어요')
-    // 숫자를 모르면 막힌 일도 링크가 아니다
-    expect(
-      within(document.querySelector<HTMLElement>('dl[aria-label="현황 요약"]')!).queryAllByRole(
-        'link',
-      ),
-    ).toEqual([])
+    // 숫자를 모르면 링크가 아니다. 받은 확인 대기만 링크다 (D-178)
+    expect(summaryLinks()).toEqual([['확인 대기 3', `${TASKS}?tab=needs_review`]])
     expect(await screen.findByText(/반영 상태를 알 수 없어요/)).toBeInTheDocument()
   })
 

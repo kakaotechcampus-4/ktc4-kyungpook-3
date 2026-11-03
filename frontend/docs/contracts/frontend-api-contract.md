@@ -1126,7 +1126,7 @@ members 에만 있고 Discord 목록에 없으면      → 비활성 (서버를 
 5. GET /api/v1/workspaces/{id}/integrations              Notion 연결 (빈 상태 판정)
 ```
 
-상단 요약 4개 (D-052~D-055). 정보이며 누를 수 없다 (D-061). `막힌 일` 만 예외로, 숫자가 있으면 태스크 `?tab=in_progress&due=blocked` 로 간다 (D-176). 실패한 조회의 숫자는 `0` 이 아니라 `–` 이고 링크가 아니다.
+상단 요약 4개 (D-052~D-055). 네 숫자 모두 그 수만큼 보이는 태스크 목록으로 가는 링크다 (D-178, D-061 개정) — `확인 대기` `?tab=needs_review`, `기한 지남` `?tab=in_progress&due=overdue`, `7일 이내 마감` `?tab=in_progress&due=soon`, `막힌 일` `?tab=in_progress&due=blocked`. 숫자를 안 뒤에만 링크이며 0 도 링크다. 불러오는 중이거나 실패한 조회는 링크가 아니다. 실패한 조회의 숫자는 `0` 이 아니라 `–` 다.
 
 | 숫자 | 계산 |
 |---|---|
