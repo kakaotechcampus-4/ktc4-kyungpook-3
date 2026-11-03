@@ -23,6 +23,7 @@ it('maps detail and summary independently including the required progress', () =
     durationMs: null,
     attendeeCount: 4,
     processedAt: null,
+    failedStage: null,
   })
 })
 

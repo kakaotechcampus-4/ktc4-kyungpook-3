@@ -11,6 +11,7 @@ function summary(id: string, status: MeetingSummary['status']): MeetingSummary {
     durationMs: null,
     attendeeCount: 1,
     processedAt: null,
+    failedStage: null,
   }
 }
 

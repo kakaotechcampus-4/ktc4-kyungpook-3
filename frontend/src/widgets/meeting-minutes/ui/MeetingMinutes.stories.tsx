@@ -5,6 +5,7 @@ import { expect, userEvent, waitFor, within } from 'storybook/test'
 import { db } from '@/shared/mock/db'
 import { setMockRole } from '@/shared/mock/sessions'
 import { MeetingMinutes } from './MeetingMinutes'
+import { failMeeting } from '@/shared/mock/meetingFlow'
 
 /*
  * 회의록 (M5 U5). ws_01 하나에 로그인한 상태 — 완료 회의 mt_07·mt_09 와 정리 중 mt_10 이 있다.
@@ -95,6 +96,27 @@ const meta = {
 
 export default meta
 type Story = StoryObj<typeof meta>
+
+export const 화자_지정_기한_만료: Story = {
+  args: { meetingId: 'mt_10' },
+  parameters: {
+    route: '/workspaces/ws_01/meetings/mt_10',
+    setup: () => failMeeting('mt_10', { failedStage: 'speaker_assignment_expired' }),
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(
+      await canvas.findByRole('heading', { name: '화자 지정 기한이 지났어요' }),
+    ).toBeInTheDocument()
+    await expect(canvas.getByRole('list', { name: '화자 지정 기한 만료' })).toHaveTextContent(
+      '기획 논의 녹음',
+    )
+    await expect(canvas.getByRole('link', { name: '다시 업로드' })).toHaveAttribute(
+      'href',
+      '/workspaces/ws_01/meetings/upload',
+    )
+  },
+}
 
 /** PM — 목록 머리에 `회의 올리기`, 진행 중 항목은 처리 화면으로 */
 export const PM_완료: Story = {

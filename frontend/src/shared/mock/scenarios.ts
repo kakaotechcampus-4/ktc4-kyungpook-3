@@ -2,7 +2,7 @@ import type { WorkspaceDto } from '@/shared/types/api/workspace'
 import { initialDb, replaceDb } from './db'
 import type { MeetingFlowMode, MockDb } from './db'
 import { MOCK_NOW } from './fixtures/constants'
-import { completeMeeting, setMeetingFlowMode } from './meetingFlow'
+import { completeMeeting, failMeeting, setMeetingFlowMode } from './meetingFlow'
 import { setMockRole } from './sessions'
 import { createTask } from './task-state'
 
@@ -22,6 +22,9 @@ export const MOCK_SCENARIOS = [
   'meeting-demo',
   'meeting-instant',
   'meeting-fail',
+  'meeting-fail-diarize',
+  'meeting-fail-expired',
+  'meeting-expired-member',
   'meeting-fail-notion-revoked',
   'meeting-notion-not-connected',
   'meeting-notion-revoked',
@@ -348,6 +351,17 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
       break
     case 'meeting-fail':
       readyToUpload(state, 'fail')
+      break
+    case 'meeting-fail-diarize':
+      readyToUpload(state, 'fail-diarize')
+      break
+    case 'meeting-fail-expired':
+      readyToUpload(state, 'fail-expired')
+      break
+    case 'meeting-expired-member':
+      signInWith(state, ['ws_01'], 'ws_01')
+      setMockRole('member', 'ws_01', state)
+      failMeeting('mt_10', { failedStage: 'speaker_assignment_expired' }, state)
       break
     case 'meeting-fail-notion-revoked':
       readyToUpload(state, 'fail-notion-revoked')
