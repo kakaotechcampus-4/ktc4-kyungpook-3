@@ -415,6 +415,25 @@ async def test_backfill_reads_history_before_a_new_dm_moves_the_mark_past_it(tmp
     assert _recipients(tmp_path)[str(USER_ID)]["after_id"] == "8001"
 
 
+async def test_the_running_bot_backfills_before_its_first_send(tmp_path, monkeypatch):
+    monkeypatch.setattr(D, "DM_POLL_S", 3600.0)
+    monkeypatch.setattr(D, "DRAFT_POLL_S", 3600.0)
+    user = FakeUser(USER_ID, history=[FakeMsg(6002, FakeAuthor(USER_ID), "꺼진 동안 쓴 답")])
+    user.next_id = 8000
+    _recipients_file(tmp_path, {str(USER_ID): {"last_dm_at": datetime.now(timezone.utc).isoformat(),
+                                               "after_id": "6000"}})
+    cog, be = _cog(tmp_path, FakeBot([user]))
+    be.claims.append([_item()])
+    await cog.on_ready()
+    for _ in range(200):
+        if be.sent("/bot/messages/msg-1/result"):
+            break
+        await asyncio.sleep(0.01)
+    cog.cog_unload()
+    assert [b["discord_message_id"] for _, b in be.sent("/bot/replies")] == ["6002"]
+    assert _recipients(tmp_path)[str(USER_ID)]["after_id"] == "8001"
+
+
 async def test_backfill_keeps_going_when_one_person_fails(tmp_path):
     now = datetime.now(timezone.utc).isoformat()
     ok = FakeUser(USER_ID, history=[FakeMsg(6002, FakeAuthor(USER_ID), "답")])
