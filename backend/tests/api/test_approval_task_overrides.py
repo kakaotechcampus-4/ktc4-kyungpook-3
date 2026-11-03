@@ -670,3 +670,34 @@ def test_target_title_change_is_still_a_conflict_with_overrides(client, db, seed
 
     assert r.status_code == 409
     assert r.json()["error"]["details"]["conflicts"][0]["field"] == "title"
+
+
+def _rollback(client, task_id, history_id):
+    return client.post(f"/api/v1/tasks/{task_id}/history/{history_id}/rollback")
+
+
+def test_rolling_back_override_to_invalid_proposed_due_date_is_400(client, db, seed):
+    approval_id = _new_create(client, seed, due_date="내일까지")
+    assert _resolve(client, approval_id, task_overrides={"due_date": "2026-10-22"}).status_code == 200
+    task = _task_of(db, approval_id)
+    line = {h.changed_field: h for h in _history(db, task.task_id)}["due_date"]
+
+    r = _rollback(client, task.task_id, line.history_id)
+
+    assert r.status_code == 400, r.text
+    db.expire_all()
+    assert db.get(Task, task.task_id).due_date == date(2026, 10, 22)
+
+
+def test_rolling_back_override_to_other_workspace_assignee_is_400(client, db, seed):
+    approval_id = _new_create(client, seed, assignee_member_id=seed["outsider"].member_id)
+    overrides = {"assignee_member_id": seed["jimin"].member_id}
+    assert _resolve(client, approval_id, task_overrides=overrides).status_code == 200
+    task = _task_of(db, approval_id)
+    line = {h.changed_field: h for h in _history(db, task.task_id)}["assignee"]
+
+    r = _rollback(client, task.task_id, line.history_id)
+
+    assert r.status_code == 400, r.text
+    db.expire_all()
+    assert db.get(Task, task.task_id).assignee_member_id == seed["jimin"].member_id

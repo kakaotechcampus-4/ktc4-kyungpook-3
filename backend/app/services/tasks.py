@@ -134,14 +134,6 @@ def _serialize(value: object) -> str | None:
     return str(value)
 
 
-def _deserialize(field: str, value: str | None) -> object:
-    if value is None:
-        return None
-    if field in {"due_date", "start_date"}:
-        return date.fromisoformat(value)
-    return value
-
-
 def _clear_embedding(task: Task) -> None:
     """제목이 바뀌면 옛 제목의 임베딩을 지운다. 임베딩 워커가 새 제목으로 다시 채운다."""
     task.embedding = None
@@ -334,7 +326,15 @@ def rollback_task_history(
             },
         )
 
-    restored_value = _deserialize(field, history.old_value)
+    # 승인하면서 PM이 고친 줄의 old_value는 검증하지 않은 제안 값일 수 있다(형식이 틀린 날짜, 다른 공간 담당자)
+    if field in {"due_date", "start_date"}:
+        restored_value = parse_date(history.old_value, field=field)
+    else:
+        restored_value = history.old_value
+        if restored_value is not None:
+            validate_task_fields({field: restored_value})
+            if field == "assignee_member_id":
+                validate_workspace_ownership(db, task.workspace_id, assignee_member_id=restored_value)
     setattr(task, field, restored_value)
     if field == "title":
         _clear_embedding(task)
