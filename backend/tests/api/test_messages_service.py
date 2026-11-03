@@ -438,13 +438,13 @@ def test_ingest_unknown_or_deleted_discord_user_is_404(mdb, mseed):
     assert e.value.code == ErrorCode.MEMBER_NOT_FOUND
 
 
-def _alice_in_workspace_b(mdb, created_at):
+def _alice_in_workspace_b(mdb, created_at, name="B"):
     """워크스페이스 B 에도 같은 디스코드 계정의 앨리스가 있다. B 의 PM 이 리마인드를 만들 수 있게 태스크도 둔다."""
     from app.models import Task
-    ws = Workspace(name="B")
+    ws = Workspace(name=name)
     mdb.add(ws)
     mdb.flush()
-    member = Member(workspace_id=ws.workspace_id, display_name="앨리스B", role="member",
+    member = Member(workspace_id=ws.workspace_id, display_name=f"앨리스{name}", role="member",
                     discord_user_id="d_alice", created_at=created_at)
     task = Task(workspace_id=ws.workspace_id, title="B할일", status="todo")
     mdb.add_all([member, task])
@@ -483,14 +483,16 @@ def test_reply_routing_prefers_replied_dm_then_preceding_dm(mdb, mseed):
     assert unknown_target.thread.member_id == mseed["alice"].member_id
 
 
-def test_reply_to_dm_of_member_who_left_falls_through(mdb, mseed):
+def test_reply_to_dm_of_member_who_left_falls_through_to_preceding_dm(mdb, mseed):
     b = _alice_in_workspace_b(mdb, created_at=NOW)
+    c = _alice_in_workspace_b(mdb, created_at=NOW, name="C")
     _delivered_to(mdb, mseed, ["dm_a"], reported_at=LATER)
+    _delivered_to(mdb, c, ["dm_c"], reported_at=LATER + timedelta(minutes=30))
     _delivered_to(mdb, b, ["dm_b"], reported_at=LATER + timedelta(hours=1))
     mseed["alice"].is_deleted = True
     mdb.commit()
-    msg, _ = _ingest(mdb, "m1", sent_at=LATER + timedelta(hours=2), reply_to="dm_a")
-    assert msg.thread.member_id == b["alice"].member_id
+    msg, _ = _ingest(mdb, "m1", sent_at=LATER + timedelta(minutes=45), reply_to="dm_a")
+    assert msg.thread.member_id == c["alice"].member_id
 
 
 def test_reply_routing_falls_back_to_latest_bot_message_else_newest_member(mdb, mseed):
