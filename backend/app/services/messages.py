@@ -281,13 +281,22 @@ def edit_bundle(
     """PM 이 묶음 문구나 시각을 고친다. 승인은 유지한다.
 
     옮긴 시각에 이미 예정 묶음이 있으면 그쪽으로 합치고 합쳐진 묶음을 돌려준다. 합치면 구성이 바뀌므로
-    문구를 다시 만들고 승인이 풀린다. 이때 같이 보낸 문구는 남지 않는다.
+    문구를 다시 만들고 승인이 풀린다. 합쳐지면 같이 보낸 문구가 쓸 곳이 없으므로 그 조합은 400 으로 막는다.
     """
     now = utc(now)
     _transition(bundle, "edit")
     if scheduled_at is not None:
         scheduled_at = utc(scheduled_at)
         _require_future(scheduled_at, now)
+        if (
+            body is not None
+            and scheduled_at != utc(bundle.scheduled_at)
+            and _bundle_at(db, bundle.thread_id, scheduled_at) is not None
+        ):
+            raise AppError(
+                ErrorCode.INVALID_REQUEST,
+                message="다른 보낼 메시지와 합쳐지는 시각으로 옮길 때는 문구를 같이 고칠 수 없습니다. 시각부터 옮겨 주세요.",
+            )
     if body is not None:
         bundle.body, bundle.body_source, bundle.draft_status = body, BodySource.PM, DraftStatus.DONE
         bundle.draft_version += 1

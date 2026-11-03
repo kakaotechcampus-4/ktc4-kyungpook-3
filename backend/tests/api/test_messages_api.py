@@ -547,3 +547,14 @@ def test_deleted_member_bundles_leave_inbox_with_their_thread(mdb, mseed):
     data = pm.get(f"{P}/workspaces/{mseed['ws']}/messages").json()["data"]
     assert data["threads"] == []
     assert data["bundles"] == []
+
+
+def test_body_edit_with_merging_time_move_is_rejected_and_keeps_both_bundles(mdb, mseed):
+    pm = client("pm")
+    a = _create(pm, mseed, task=0, at=_future(2), note="가")["bundle"]["bundle_id"]
+    b = _create(pm, mseed, task=1, at=_future(3), note="나")["bundle"]["bundle_id"]
+    r = pm.patch(_bundles_url(mseed, a), json={"body": "고친 문구", "scheduled_at": _iso(_future(3))})
+    assert r.status_code == 400 and r.json()["error"]["code"] == "INVALID_REQUEST"
+    bundles = pm.get(f"{P}/workspaces/{mseed['ws']}/messages").json()["data"]["bundles"]
+    assert sorted(x["bundle_id"] for x in bundles) == sorted([a, b])
+    assert {x["bundle_id"]: x["body"] for x in bundles}[a] == "가"
