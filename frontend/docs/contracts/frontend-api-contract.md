@@ -59,7 +59,7 @@ M6 S1에서 프론트 계약·데이터 계층을 현재 서버 코드에 맞췄
 | `PATCH /tasks/{task_id}` | PM 전용(`require_pm`). 변경자는 세션 팀원으로 기록하고 본문 `changed_by`는 무시한다(하위 호환 필드) |
 | `POST /tasks/{task_id}/notion-sync/retry` | PM 전용, 본문 없음. 응답은 `TaskResponse`. Notion 미설정이면 409 `INTEGRATION_NOT_CONNECTED`, 재시도할 실패 건이 없으면 400 `INVALID_REQUEST` |
 | `GET /tasks/{task_id}`, `GET /tasks/{task_id}/history` | 태스크 공간의 소속 팀원만 조회(`require_task_member`). 경로에 공간이 없고, 이력 응답에는 `workspace_id`가 없다 |
-| `PATCH /approvals/{approval_id}` 본문 | `ApprovalResolveRequest` = `status`(`approved`·`rejected`), `task_overrides?`(아래 「승인하면서 고치기」), `confirm_task_version?`(정수 ≥ 1), `resolved_by?`(하위 호환, 무시). 처리자는 세션 PM으로 정한다 |
+| `PATCH /approvals/{approval_id}` 본문 | `ApprovalResolveRequest` = `status`(`approved`·`rejected`), `task_overrides?`(아래 「제안 값을 고쳐 승인」), `confirm_task_version?`(정수 ≥ 1), `resolved_by?`(하위 호환, 무시). 처리자는 세션 PM으로 정한다 |
 | 409 `APPROVAL_CONFLICT` | `task_update` 승인에서 제안 뒤 같은 필드가 바뀌면 반영하지 않고 pending으로 되돌린다. `details = {approval_id, task_id, task_version, conflicts: [{field, base, current, proposed}]}` (`_find_conflicts`). PM이 그 `task_version`을 `confirm_task_version`으로 보내면 태스크가 그 버전 그대로일 때만 덮어쓴다. 그 사이 또 바뀌면 다시 409다 |
 | 409 `APPROVAL_ALREADY_RESOLVED` | `details = {approval_id, current_status}` |
 | 승인 목록·상세 조회 | 목록은 `get_current_member`, 상세는 `require_member`. 공간 소속만 검사하고 PM 제한은 없다 |
@@ -79,7 +79,7 @@ M6 S1에서 프론트 계약·데이터 계층을 현재 서버 코드에 맞췄
 | 409 해석 | `toApprovalResolveFailure`가 `conflict`(`taskVersion`, `conflicts[]`)와 `already_resolved`(`currentStatus`)를 구분한다. details 모양이 틀리면 null(일반 오류) | [승인 mapper](../../src/entities/approval/model/mapper.ts) |
 | 생성 승인 판정 | 제목 trim 후 1~300자(코드 포인트), 담당자는 호출자가 넘긴 현재 공간 팀원 ID 목록에 포함, 마감은 유효한 `YYYY-MM-DD`. 하나라도 아니면 승인 본문을 만들지 않고 이유 문자열을 돌려준다. 반려 본문은 `{status: "rejected"}`로 항상 만들 수 있다. 지원하지 않는 종류와 pending이 아닌 승인은 승인·반려 모두 만들지 않는다 | [판정](../../src/entities/approval/model/resolution.ts) |
 
-#### 승인하면서 고치기 `task_overrides` (#303 에서 서버 구현)
+#### 제안 값을 고쳐 승인 `task_overrides` (#303 에서 서버 구현)
 
 아래 요청안의 이름과 생성 승인 키를 그대로 받아 서버가 구현했다. 요청안과 다른 점은 수정 제안(`task_update`)도 받는 것과, 담당자·마감을 필수로 하지 않는 것(M6-3 미채택)이다. 근거는 [결정 기록 0032](../../../ai/docs/basis_for_decision/ai/2026-11-04-0032-approval-overrides-and-progress-drop.md).
 

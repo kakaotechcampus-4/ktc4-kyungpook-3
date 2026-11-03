@@ -1,4 +1,4 @@
-# 진행률 빼기와 승인하면서 고치기 (P0)
+# 진행률 빼기와 제안 값을 고쳐 승인하기
 
 - 날짜: 2026-11-04
 - 이슈: #303, FE 요청 #305
@@ -13,11 +13,11 @@ BE 에서 Task 진행률(progress)을 뺐다. 칼럼(마이그레이션 `c7a2e91
 
 수정 제안을 반영할 때 이력 출처를 회의로 고정하던 것을 승인 요청 payload 의 `change_source` 로 바꿨다(없으면 회의). `POST /approvals` 는 정해진 값이 아닌 `change_source` 와 미리 넣은 `task_overrides` 를 400 으로 막는다.
 
-이력 되돌리기가 되살릴 값을 다시 검증한다. 승인하면서 고친 줄의 이전 값은 검증하지 않은 제안 값이라, 형식이 틀린 날짜는 500, 다른 공간 담당자는 그대로 되살아났다. 둘 다 재현 테스트를 먼저 쓰고 400 으로 막았다.
+이력 되돌리기가 되살릴 값을 다시 검증한다. PM 이 제안 값을 고쳐 승인한 이력 줄의 이전 값은 검증하지 않은 제안 값이라, 형식이 틀린 날짜는 500, 다른 공간 담당자는 그대로 되살아났다. 둘 다 재현 테스트를 먼저 쓰고 400 으로 막았다.
 
 새 태스크 승인도 payload `change_source` 를 생성 이력 출처로 쓴다. 제안 제목이 문자열이 아닐 때 PM 이 제목을 고쳐 승인하면 500 이 나던 것과, 그 고친 줄을 되돌리면 이상한 제목이 돌아오던 것도 리뷰에서 찾아 재현 테스트와 함께 고쳤다.
 
-FE 계약(`frontend-api-contract.md`)에 「승인하면서 고치기 `task_overrides`」 절을 더하고 progress 서술을 고쳤다. `backend/README.md` 의 노션 템플릿 필수 속성 안내에서도 Progress 를 뺐다. `backend-ai-contract.md` 에는 progress, 승인 payload, ChangedField 서술이 없어 고치지 않았다.
+FE 계약(`frontend-api-contract.md`)에 「제안 값을 고쳐 승인 `task_overrides`」 절을 더하고 progress 서술을 고쳤다. `backend/README.md` 의 노션 템플릿 필수 속성 안내에서도 Progress 를 뺐다. `backend-ai-contract.md` 에는 progress, 승인 payload, ChangedField 서술이 없어 고치지 않았다.
 
 ## 왜
 
@@ -36,5 +36,5 @@ FE 계약(`frontend-api-contract.md`)에 「승인하면서 고치기 `task_over
 ## 다음
 
 - FE 가 #305 로 진행률 표시를 지우고 `task_overrides` 를 실 API 에서 켠다
-- P1(메시지)이 이 브랜치 위에서 시작한다. P4 가 답장으로 승인 요청을 만들 때 payload 에 `change_source: "reminder_reply"` 를 싣는다
+- 리마인드 메시지 작업이 이 브랜치 위에서 시작한다. 리마인드 답장 판단이 답장으로 승인 요청을 만들 때 payload 에 `change_source: "reminder_reply"` 를 싣는다
 - `api/extractions.py` 는 새 태스크 승인 payload 에 `status` 를 계속 싣는다. 승인은 읽지 않으므로 그대로 뒀다
