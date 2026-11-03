@@ -1234,7 +1234,31 @@ members 에만 있고 Discord 목록에 없으면      → 비활성 (서버를 
 ~~**1차에서 화면을 만들지 않는다** (D-171).~~ D-171 은 D-174 로 대체됐다(2026-11-03).
 
 **현재 구현.** production 과 실 API 모드에서는 `준비 중` 안내를 표시한다. 개발 서버에서 MSW 를 켠 경우에만 시안 화면이 나온다.
-화면에 쓰는 임시 DTO·경로·오류 코드는 MSW 목일 뿐 계약이 아니다([M8-C 결과](../plan/m8/result-c.md)). 메시지 API 는 백엔드에 없다.
+화면에 쓰는 임시 DTO·경로·오류 코드는 MSW 목일 뿐 계약이 아니다([M8-C 결과](../plan/m8/result-c.md)).
+
+**백엔드 메시지 API** (#310 에서 BE 구현, 프론트엔드 미연결). 결정 근거는 [결정 0034](../../../ai/docs/basis_for_decision/ai/2026-11-04-0034-reminder-and-thread-message.md). 봇 쪽 경로는 [backend-ai 계약](../../../backend/docs/contracts/backend-ai-contract.md)의 「리마인드 DM」에 있다. 경로 prefix 는 `/api/v1/workspaces/{workspace_id}/messages` 다.
+
+| 요청 | 누가 | 하는 일 |
+|---|---|---|
+| `GET /messages` | 소속 팀원 | 대화 목록. PM 은 모든 대화와 예정 리마인드, 팀원은 자기 대화만(`reminders: null`) |
+| `GET /messages/threads/{thread_id}` | PM, 대화 주인 | 대화 하나의 메시지(시각 순). PM 에게만 그 대화의 예정 리마인드를 싣는다. 남의 대화는 403 |
+| `POST /messages/reminders` → 201 | PM | 재촉 만들기 `{member_id, task_id, body, scheduled_at}` |
+| `PATCH /messages/reminders/{reminder_id}` | PM | 문구·시각 고치기 `{body?, scheduled_at?}`. 승인은 그대로 남는다 |
+| `POST /messages/reminders/{reminder_id}/approve` | PM | 승인. 이미 승인했으면 그대로 200 |
+| `POST /messages/reminders/{reminder_id}/cancel` | PM | 보내지 않음 |
+| `POST /messages/threads/{thread_id}/replies` → 201 | 대화 주인 | 웹 답장 `{body}`. PM 도 남의 대화에는 쓸 수 없다. 디스코드로 보내지 않는다 |
+
+- 리마인드 하나는 태스크 하나 × 수신자 한 명이다. 상태는 `scheduled`(예정)·`sent`(발송됨)·`cancelled`(취소됨)·`expired`(만료됨)이고, 승인 여부는 `approved`(boolean)로 따로 준다. 승인 전 제안과 승인 뒤 예정이 모두 `scheduled` 다.
+- 고치기·승인·취소는 `scheduled` 에서만 된다. 다른 상태면 409 `REMINDER_NOT_EDITABLE`.
+- `scheduled_at` 은 시간대가 있는 ISO 시각이어야 하고(없으면 400) UTC 로 돌려준다. 지금보다 이른 시각으로 만들거나 고치거나, 시각이 지난 리마인드를 승인하면 409 `REMINDER_SCHEDULED_AT_PASSED` 다. 화면은 `예정 시각이 지났어요` 를 보이고 시각을 다시 고르게 한다(D-174 정책 3).
+- 발송 시각이 되면 같은 수신자·같은 시각의 승인된 리마인드가 대화 메시지 한 통으로 묶인다. 문구는 만든 순서대로 빈 줄로 이어 붙인다. 리마인드는 `sent` 가 된다. 지금은 봇이 가져갈 때 묶이므로, 봇이 꺼져 있으면 웹 대화에도 늦게 나타난다. 스케줄러가 생기면 시각에 맞춰 묶는다.
+- 대화 메시지(`messages[]`)는 `{message_id, thread_id, sender: "bot"|"member", body, created_at, reply_channel: "discord"|"web"|null, dm_status, dm_failure_reason, scheduled_at}` 이다.
+  - 팀원 메시지의 `reply_channel` 이 `web` 이면 `웹에서 답장` 표시를 붙인다.
+  - 봇 메시지의 `dm_status` 는 `pending`·`claimed`(봇이 보내는 중)·`delivered`·`failed` 다. `failed` 면 `dm_failure_reason` 이 `dm_blocked`(팀원이 서버 DM 을 막음)·`discord_not_linked`(디스코드 미연결)·`unknown` 중 하나이고, 화면은 `DM 못 보냄` 을 보인다. 웹 대화에는 들어갔으므로 리마인드 상태는 `sent` 다.
+- 대화 목록 한 줄은 `{thread_id, member_id, name, last_message, awaiting_reply_since, dm_failed}` 다. `dm_failed` 는 그 팀원에게 마지막으로 나간 봇 메시지가 `failed` 인지다. 최근 메시지 순이고, 메시지가 없는 대화는 아래에 둔다.
+- 팀원이 봇 DM 창에 쓴 글은 리마인드에 대한 답인지와 상관없이 모두 대화에 들어가 PM 이 본다. 팀원 화면에 이를 안내해야 한다.
+- 팀원 권한은 로그인 계정이 연결된 팀원(`member.user_id`) 기준이다. 계정이 연결되지 않은 팀원은 웹 답장을 할 수 없다.
+- 아직 없는 것: 답장의 태스크 판정 입력(`답장 확인 필요`)과 판정 결과, 태스크 안내 DM·#회의록 요약, 스케줄러(3일 전 제안, 발송 직전 재확인, 5분 합치기, 만료 처리), 알림 설정. MSW 의 `reviews/{id}/send|dismiss` 는 `reminders/{id}/approve|cancel` 로 바뀐다.
 
 **프론트엔드가 정한 정책** (D-174, 백엔드·AI 합의 여부 확인 필요). 서버가 해 줘야 하는 일만 적는다. 정책 전문은 D-174 에 있다.
 
@@ -1281,7 +1305,7 @@ D-117(E2E)과 D-136(polling)은 실제 API 가 생길 때까지 계속 보류한
 | 5.5 회의 | 가능 | 업로드·회의록 본문 mock |
 | 5.1 로그인 | 가능 | 전부 mock |
 | 5.6 보드·간트 | **가능** | 없음 — D-170·D-175 로 확정 |
-| 5.7 메시지 | 가능(MSW) | 메시지 API·DM 발송이 없어 production 은 `준비 중`이다 (D-174) |
+| 5.7 메시지 | 가능 | 메시지 API 는 BE 구현(§5.7), 봇 DM 발송이 없어 production 은 `준비 중`이다 (D-174) |
 
 ---
 
@@ -1373,6 +1397,7 @@ D-117(E2E)과 D-136(polling)은 실제 API 가 생길 때까지 계속 보류한
 
 - **백엔드**
   - 메시지 기록 API: 대화 목록과 사람별 대화 조회, 재촉 제안의 승인·수정·취소·시각 변경, 팀원의 웹 답장, 답장의 태스크 판정 입력. 권한은 D-174 정책 4 를 따른다.
+    2026-11-04 #310 에서 답장의 태스크 판정 입력을 뺀 나머지를 BE 가 구현했다(§5.7).
   - 스케줄러: 예약 발송, 5분 합치기, 3일 전 제안, 발송 직전 재확인, 72시간 판정과 시계 멈춤, 놓친 예약 처리.
   - 알림 설정 저장 API: 알림 세 토글, 재촉 규칙, PM 알림 방식(웹 / DM / 둘 다), 재촉 자동 승인.
     지금 설정 화면은 이 값들을 화면 안에서만 바꾼다([M8-B 근거](../plan/m8/basis-for-decision/2026-10-31-settings-team-follow-design-canvas.md)).
