@@ -188,7 +188,7 @@ def _apply_approval(
             db,
             task,
             updates,
-            change_source=str(ChangeSource.MEETING),
+            change_source=payload.get("change_source") or str(ChangeSource.MEETING),
             changed_by=approval.resolved_by,
         )
 
@@ -223,6 +223,14 @@ def create_approval(
     아니라 로그인한 팀원으로 기록한다. 바디 값을 믿으면 다른 팀원 이름으로 요청을 올릴 수 있다.
     """
     member = require_member(db, user, payload.workspace_id)
+    # 반영할 때 이력의 출처로 그대로 쓰므로 들어올 때 걸러 둔다
+    change_source = payload.payload.get("change_source")
+    if change_source is not None and change_source not in [str(s) for s in ChangeSource]:
+        raise AppError(
+            ErrorCode.INVALID_REQUEST,
+            message=f"유효하지 않은 change_source 값입니다: {change_source}",
+            details={"field": "change_source", "allowed": sorted(str(s) for s in ChangeSource)},
+        )
     if payload.related_task_id is not None:
         # 승인할 때도 확인하지만(_apply_approval), 다른 워크스페이스의 task를 가리키는 요청이 PM 목록에 쌓이지 않게 먼저 막는다
         # auto 되돌리기(revert_auto_item)가 이 task를 지우는 중이면 끝날 때까지 기다린다. 잠그지 않으면 지운 task를
