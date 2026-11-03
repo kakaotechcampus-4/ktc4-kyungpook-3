@@ -654,7 +654,8 @@ def test_assigned_lists_only_assigned_unresumed_processing_uploads_oldest_first(
     assert "started_at" in item
 
 
-def test_resume_succeeds_once_and_returns_mapping(db, ws):
+def test_resume_records_once_and_returns_the_same_mapping_again(db, ws):
+    """resume 이 커밋된 뒤 응답을 잃은 재시도도 mapping 을 다시 받아야 이어서 처리할 수 있다."""
     meeting = _upload(db, ws, claimed_at=UPLOADED_AT)
     _assign(db, meeting)
 
@@ -674,8 +675,8 @@ def test_resume_succeeds_once_and_returns_mapping(db, ws):
 
     again = _resume(meeting.meeting_id)
 
-    assert again.status_code == 409, again.text
-    assert again.json()["error"]["code"] == "MEETING_PROCESSING_IN_PROGRESS"
+    assert again.status_code == 200, again.text
+    assert again.json()["data"] == r.json()["data"]
     status, upload = _state(db, meeting)
     assert status == "processing"
     assert upload.resumed_at == resumed_at
@@ -692,6 +693,22 @@ def test_resume_before_assignment_gets_409(db, ws):
         assert r.json()["error"]["details"]["status"] == status
         state, upload = _state(db, meeting)
         assert state == status and upload.resumed_at is None
+
+
+@pytest.mark.parametrize("status", ["done", "failed"])
+def test_resume_again_after_the_meeting_ended_gets_409(db, ws, status):
+    """멱등 응답은 processing 일 때만이다. 이미 끝난 회의는 다시 가져가도 이어 갈 것이 없다."""
+    meeting = _upload(db, ws, claimed_at=UPLOADED_AT)
+    _assign(db, meeting)
+    assert _resume(meeting.meeting_id).status_code == 200
+    db.get(Meeting, meeting.meeting_id).status = status
+    db.commit()
+
+    r = _resume(meeting.meeting_id)
+
+    assert r.status_code == 409, r.text
+    assert r.json()["error"]["code"] == "MEETING_ALREADY_ENDED"
+    assert r.json()["error"]["details"]["status"] == status
 
 
 @pytest.mark.parametrize("status", ["done", "failed"])

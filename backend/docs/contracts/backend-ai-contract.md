@@ -278,13 +278,12 @@ PM이 지정을 끝냈고(`speakers_assigned_at` 있음) 아직 다시 가져가
 
 ### `PATCH /uploads/{meeting_id}/resume` → 200
 
-지정 결과를 가져가고 이어서 처리하겠다는 표시다(`resumed_at` 기록). 두 번 불러도 한 번만 성공한다.
+지정 결과를 가져가고 이어서 처리하겠다는 표시다(`resumed_at` 기록). `resumed_at`은 처음 한 번만 기록하고, 이미 가져갔어도 회의가 `processing`이면 같은 `mapping`으로 200을 다시 준다. 응답을 잃은 재시도도 `mapping`을 받아 이어서 처리할 수 있게 하려는 것이다(#269 리뷰).
 
 - `data`: `{meeting_id, status: "processing", mapping}`. `mapping`은 `GET /uploads/assigned`와 같은 모양이다.
 - `resumed_at`이 비어 있고 지정이 끝났고 회의가 `processing`일 때만 조건부 UPDATE로 기록한다. 회의 행을 잠그지 않으므로 동시에 온 실패 보고와 겹치면 이 응답은 200인데 회의가 이미 `failed`일 수 있다. 이어지는 발화 저장·추출 등록이 409로 막아 데이터는 깨지지 않는다.
 - 404 `MEETING_NOT_FOUND`: 없는 회의, 업로드 회의가 아님.
 - 409 `MEETING_ALREADY_ENDED`(`details.status`): `done`·`failed`.
-- 409 `MEETING_PROCESSING_IN_PROGRESS`: 이미 가져갔다. claim 과 같이 응답을 못 받은 재시도일 수 있으니, 이어서 처리한다.
 - 409 `SPEAKERS_NOT_ASSIGNED`(`details.status`): 아직 PM이 지정하지 않았다(`awaiting_speakers`이거나 지정 시각이 없다).
 
 ### 처리할 때 주의할 점
@@ -302,7 +301,7 @@ PM이 지정을 끝냈고(`speakers_assigned_at` 있음) 아직 다시 가져가
 | `WORKSPACE_NOT_FOUND` | 404 | tasks/similar | 실패 |
 | `WORKSPACE_MISMATCH` | 400 | extractions | 실패 |
 | `MEETING_ALREADY_ENDED` | 409 | end, fail, uploads claim·speakers·resume | 지금 상태로 보고 계속 (claim이면 다음 회의로) |
-| `MEETING_PROCESSING_IN_PROGRESS` | 409 | uploads claim·resume | 이미 가져갔으니 다음 회의로. 내 재시도라면 이어서 처리 (AI 미구현) |
+| `MEETING_PROCESSING_IN_PROGRESS` | 409 | uploads claim | 이미 가져갔으니 다음 회의로. 내 재시도라면 이어서 처리 (AI 미구현) |
 | `UPLOAD_NOT_CLAIMED` | 409 | uploads speakers | 먼저 claim 한다 (AI 미구현) |
 | `SPEAKERS_ALREADY_REPORTED` | 409 | uploads speakers | 다른 내용의 라벨이 이미 저장됨. 재전송하지 않고 지정 결과 조회로 넘어감. `details.labels`가 내 라벨과 다르면 어긋난 것 (AI 미구현) |
 | `SPEAKERS_NOT_ASSIGNED` | 409 | uploads resume | 아직 지정 전. 다음 조회 때 다시 (AI 미구현) |
