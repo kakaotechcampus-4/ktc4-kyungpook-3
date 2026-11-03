@@ -2,7 +2,7 @@
 
 - 날짜: 2026-11-04
 - 이슈: #207
-- PR: #
+- PR: #308
 - 브랜치: fix/207-implicit-progress-status
 - 작성자: 김동우
 
