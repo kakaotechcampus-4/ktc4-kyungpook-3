@@ -15,6 +15,7 @@ import type { BubbleItem } from '../model/conversation'
 import { VIEWER_POLICY } from '../model/viewer'
 import type { MessageViewer } from '../model/viewer'
 import { ThreadSkeleton } from './MessageSkeletons'
+import { AttributionPicker } from './AttributionPicker'
 import { ReplyForm } from './ReplyForm'
 
 /* MessagesThread 캔버스 실측 — 머리 76(좌우 28, 아래 선), 대화 칸 눌린 면(위 24 · 좌우 28 · 아래 18, 간격 16),
@@ -172,7 +173,7 @@ function ThreadView({
             <ol className="flex flex-col gap-16 pt-16">
               {day.items.map((item) => (
                 <li key={item.id}>
-                  <Bubble workspaceId={workspaceId} item={item} />
+                  <Bubble workspaceId={workspaceId} item={item} pickTask={policy.reviews} />
                 </li>
               ))}
             </ol>
@@ -192,7 +193,7 @@ function ThreadView({
             <ol aria-label="아직 나가지 않은 메시지" className="flex flex-col gap-16 pt-16">
               {view.upcoming.map((item) => (
                 <li key={item.id}>
-                  <Bubble workspaceId={workspaceId} item={item} />
+                  <Bubble workspaceId={workspaceId} item={item} pickTask={policy.reviews} />
                 </li>
               ))}
             </ol>
@@ -226,7 +227,16 @@ const BUBBLE_CLASS = {
 } as const
 
 /** 보낸 쪽은 자리와 면으로, 화면 읽기에는 숨긴 글자로 구분한다 — 색에만 기대지 않는다 (D-128) */
-function Bubble({ workspaceId, item }: { workspaceId: string; item: BubbleItem }) {
+function Bubble({
+  workspaceId,
+  item,
+  pickTask,
+}: {
+  workspaceId: string
+  item: BubbleItem
+  /** PM 만 태스크를 고른다 */
+  pickTask: boolean
+}) {
   const timeId = useId()
   const column = (
     <div
@@ -239,6 +249,13 @@ function Bubble({ workspaceId, item }: { workspaceId: string; item: BubbleItem }
         {item.body}
       </p>
       {item.taskLine === null ? null : <p className={TIME}>{item.taskLine}</p>}
+      {pickTask && item.attribution?.status === 'needs_pm' ? (
+        <AttributionPicker
+          workspaceId={workspaceId}
+          messageId={item.id}
+          candidates={item.attribution.candidates}
+        />
+      ) : null}
       <span id={timeId} className={TIME}>
         {item.timeLine}
       </span>

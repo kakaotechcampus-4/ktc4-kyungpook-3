@@ -35,6 +35,9 @@ const REVIEW_SUMMARY =
   'text-caption leading-[1.55] wrap-anywhere text-dim group-aria-[current=page]:text-sub'
 const THREAD_ROW =
   'group flex w-full items-center gap-10 rounded-10 px-12 py-9 text-left hover:bg-surface-sunken aria-[current=page]:bg-surface-selected'
+/* 답장 확인 필요 — 대화 머리의 답장 대기 배지와 같은 강조색 면 */
+const ATTRIBUTION_CHIP =
+  'inline-flex h-22 shrink-0 items-center rounded-6 bg-accent px-9 text-meta leading-none font-semibold text-surface'
 const AVATAR =
   'inline-flex shrink-0 items-center justify-center rounded-999 bg-divider font-semibold text-ink'
 /* 채널은 사람이 아니라 흰 바탕 선 원이다 (시안 `#회의록 요약`) */
@@ -333,8 +336,13 @@ function ThreadRow({
         {avatarText(title, thread.kind)}
       </span>
       <span className="flex min-w-[0px] flex-1 flex-col gap-1">
-        <span className="text-control leading-[1.75] font-semibold wrap-anywhere text-ink">
-          {title}
+        <span className="flex flex-wrap items-center gap-6">
+          <span className="text-control leading-[1.75] font-semibold wrap-anywhere text-ink">
+            {title}
+          </span>
+          {thread.needsAttribution ? (
+            <span className={ATTRIBUTION_CHIP}>답장 확인 필요</span>
+          ) : null}
         </span>
         {last === null ? null : (
           <span className="truncate text-meta leading-[1.5] text-dim">

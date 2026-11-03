@@ -153,6 +153,28 @@ export const 팀원_내_대화: Story = {
   },
 }
 
+/** AI 가 정하지 못한 답장 — 태스크를 고르면 칩과 고르기가 사라진다 */
+export const 답장_확인_필요: Story = {
+  args: { threadId: 'th_02' },
+  parameters: { route: paths.messageThread('ws_01', 'th_02') },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const threads = canvas.getByRole('region', { name: '대화' })
+    await expect(await within(threads).findByText('답장 확인 필요')).toBeVisible()
+    const detail = detailOf(canvasElement)
+    await expect(await detail.findByText('어느 태스크에 대한 답장인가요?')).toBeVisible()
+    await expect(
+      detail.getByText('AI가 어느 태스크에 대한 답장인지 정하지 못했어요.'),
+    ).toBeVisible()
+    await expect(detail.getByRole('radio', { name: '해당 없음' })).toBeInTheDocument()
+    await userEvent.click(detail.getByRole('radio', { name: '회원가입 화면' }))
+    await userEvent.click(detail.getByRole('button', { name: '정하기' }))
+    await expect(await detail.findByText('태스크: 회원가입 화면')).toBeVisible()
+    await expect(detail.queryByText('어느 태스크에 대한 답장인가요?')).toBeNull()
+    await expect(within(threads).queryByText('답장 확인 필요')).toBeNull()
+  },
+}
+
 /** 예정 시각이 지난 재촉 — 이대로 발송은 거절되고 다시 시도는 없다 */
 export const 예정_시각_지남: Story = {
   args: { reviewId: 'rv_06' },

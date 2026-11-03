@@ -74,6 +74,7 @@ export function reply(
   body: string,
   sent_at: string,
   source: 'discord' | 'web' = 'discord',
+  attribution: MockAttribution | null = null,
 ): MockThreadMessage {
   return {
     message_id,
@@ -82,7 +83,7 @@ export function reply(
     sent_at,
     approved_by: null,
     source,
-    attribution: null,
+    attribution,
   }
 }
 
@@ -221,8 +222,18 @@ export const messageThreadFixtures: MockMessageThread[] = [
     team_role: 'AI',
     discord_url: discordUrl('th_02'),
     messages: [
-      botMessage('mg_04', '민수님, STT 튜닝은 어떻게 되고 있나요?', '2026-09-09T10:00:00+09:00'),
-      reply('mg_05', 'STT 튜닝 결과 Notion에 붙였습니다', '2026-09-09T14:20:00+09:00'),
+      botMessage(
+        'mg_04',
+        '민수님, 회원가입 화면과 회의록 요약 검수는 어떻게 되고 있나요?',
+        '2026-09-09T10:00:00+09:00',
+      ),
+      reply(
+        'mg_05',
+        '거의 다 됐어요. 내일 오전에 올릴게요',
+        '2026-09-09T14:20:00+09:00',
+        'discord',
+        { status: 'needs_pm', candidate_task_ids: ['tk_02', 'tk_05'] },
+      ),
     ],
   },
   {

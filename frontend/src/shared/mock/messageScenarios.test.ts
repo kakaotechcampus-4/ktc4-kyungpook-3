@@ -45,6 +45,11 @@ const replyTo = (threadId: string, body: unknown, workspaceId = 'ws_01') =>
     `/workspaces/${workspaceId}/messages/threads/${threadId}/replies`,
     jsonRequest('POST', { body }),
   )
+const attribute = (messageId: string, taskId: unknown, workspaceId = 'ws_01') =>
+  fetchDto<{ message_id: string }>(
+    `/workspaces/${workspaceId}/messages/replies/${messageId}/attribution`,
+    jsonRequest('POST', { task_id: taskId }),
+  )
 const snapshot = () => structuredClone({ reviews: db.messageReviews, threads: db.messageThreads })
 
 async function failure(promise: Promise<unknown>): Promise<ApiError> {
@@ -69,6 +74,14 @@ describe('메시지 조회 handler', () => {
       ['th_05', 'channel'],
     ])
     expect(threads[0].last_message?.message_id).toBe('mg_03')
+    expect(threads.map(({ needs_attribution }) => needs_attribution)).toEqual([
+      false,
+      true,
+      false,
+      false,
+      false,
+    ])
+    expect(threads[1]?.last_message?.body).toBe('거의 다 됐어요. 내일 오전에 올릴게요')
     expect(JSON.stringify({ reviews, threads })).not.toContain('workspace_id')
   })
 
@@ -115,7 +128,19 @@ describe('메시지 조회 handler', () => {
     ])
     expect(detail.messages[2]).toMatchObject({ approved_by: '최진호' })
     expect(detail.messages[3]).toMatchObject({ review_id: 'rv_01' })
-    expect((await thread('th_02')).messages.every(({ status }) => status === 'sent')).toBe(true)
+    expect(
+      (await thread('th_02')).messages.find(({ message_id }) => message_id === 'mg_05'),
+    ).toMatchObject({
+      body: '거의 다 됐어요. 내일 오전에 올릴게요',
+      source: 'discord',
+      attribution: {
+        status: 'needs_pm',
+        candidates: [
+          { task_id: 'tk_02', title: '회원가입 화면' },
+          { task_id: 'tk_05', title: '회의록 요약 검수' },
+        ],
+      },
+    })
     expect((await failure(thread('th_11'))).status).toBe(404)
     expect((await failure(thread('th_99'))).status).toBe(404)
   })
@@ -288,10 +313,12 @@ describe('메시지 시나리오', () => {
     expect(listed.reviews).toEqual([])
     expect(listed.threads.map(({ thread_id }) => thread_id)).toEqual(['th_06'])
     expect(listed.threads[0]?.awaiting_reply_since).toBeNull()
+    expect(listed.threads[0]?.needs_attribution).toBe(false)
     const hidden = await thread('th_06')
     expect(hidden.awaiting_reply_since).toBeNull()
     expect(hidden.messages.map(({ status }) => status)).not.toContain('pending')
     expect(hidden.messages.every(({ approved_by }) => approved_by === null)).toBe(true)
+    expect(hidden.messages.every(({ attribution }) => attribution === null)).toBe(true)
     expect(JSON.stringify(hidden)).not.toContain('팀원에게 숨긴 재촉')
     const missing = await failure(thread('th_01'))
     expect(missing.status).toBe(404)
@@ -302,6 +329,7 @@ describe('메시지 시나리오', () => {
       dismissReview('rv_01'),
       patchReview('rv_01', { body: '고친 문구' }),
       patchReview('rv_01', { send_timing: 'now' }),
+      attribute('mg_05', 'tk_02'),
     ]) {
       const error = await failure(request)
       expect(error.status).toBe(403)
@@ -369,6 +397,49 @@ describe('메시지 시나리오', () => {
     expect(snapshot()).toEqual(before)
   })
 
+  it('답장 판정은 후보나 해당 없음만 받고, 두 번째는 404 이며 재촉은 그대로다', async () => {
+    const reviews = structuredClone(db.messageReviews)
+    const before = snapshot()
+    const missing = await failure(attribute('mg_99', null))
+    expect(missing.status).toBe(404)
+    expect(missing.code).toBe('MESSAGE_REPLY_NOT_FOUND')
+    expect(missing.message).toBe('확인할 답장을 찾을 수 없습니다.')
+    expect((await failure(attribute('mg_04', null))).code).toBe('MESSAGE_REPLY_NOT_FOUND')
+    expect((await failure(attribute('mg_05', 'tk_01'))).message).toBe('후보에 없는 태스크입니다.')
+    expect((await failure(attribute('mg_05', 1))).message).toBe('후보에 없는 태스크입니다.')
+    expect(snapshot()).toEqual(before)
+
+    const resolved = await attribute('mg_05', 'tk_02')
+    expect(resolved.message_id).toBe('mg_05')
+    expect(
+      db.messageThreads
+        .find(({ thread_id }) => thread_id === 'th_02')
+        ?.messages.find(({ message_id }) => message_id === 'mg_05')?.attribution,
+    ).toEqual({ status: 'resolved', task_id: 'tk_02' })
+    expect(db.messageReviews).toEqual(reviews)
+    expect(
+      (await thread('th_02')).messages.find(({ message_id }) => message_id === 'mg_05')
+        ?.attribution,
+    ).toEqual({ status: 'resolved', task: { task_id: 'tk_02', title: '회원가입 화면' } })
+    expect(
+      (await inbox()).threads.find(({ thread_id }) => thread_id === 'th_02')?.needs_attribution,
+    ).toBe(false)
+    const again = await failure(attribute('mg_05', null))
+    expect(again.status).toBe(404)
+    expect(again.code).toBe('MESSAGE_REPLY_NOT_FOUND')
+    expect(again.message).toBe('확인할 답장을 찾을 수 없습니다.')
+  })
+
+  it('해당 없음도 답장 판정이다', async () => {
+    const resolved = await attribute('mg_05', null)
+    expect(resolved.message_id).toBe('mg_05')
+    expect(
+      (await thread('th_02')).messages.find(({ message_id }) => message_id === 'mg_05')
+        ?.attribution,
+    ).toEqual({ status: 'resolved', task: null })
+    expect((await failure(attribute('mg_05', 'tk_02'))).status).toBe(404)
+  })
+
   it('messages-send-fail: 조회는 되고 행동은 모두 5xx 이며 db 는 그대로다', async () => {
     applyScenario('messages-send-fail')
     expect((await inbox()).reviews).toHaveLength(2)
@@ -377,6 +448,7 @@ describe('메시지 시나리오', () => {
     expect((await failure(dismissReview('rv_01'))).status).toBe(500)
     expect((await failure(patchReview('rv_01', { body: '고친 문구' }))).status).toBe(500)
     expect((await failure(patchReview('rv_01', { send_timing: 'now' }))).status).toBe(500)
+    expect((await failure(attribute('mg_05', 'tk_02'))).status).toBe(500)
     expect(snapshot()).toEqual(before)
   })
 

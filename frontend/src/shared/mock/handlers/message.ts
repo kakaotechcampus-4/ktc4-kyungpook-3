@@ -31,6 +31,7 @@ const actionError = () => fail('INTERNAL_ERROR', '메시지 요청을 처리하�
 const invalid = (message: string) => fail('INVALID_REQUEST', message, 400)
 const reviewNotFound = () =>
   fail('MESSAGE_REVIEW_NOT_FOUND', '보내기 전 확인 항목을 찾을 수 없습니다.', 404)
+const replyNotFound = () => fail('MESSAGE_REPLY_NOT_FOUND', '확인할 답장을 찾을 수 없습니다.', 404)
 
 /** Discord DM 한 건의 글자 수 한도 */
 const BODY_MAX_LENGTH = 2000
@@ -104,7 +105,7 @@ export const messageHandlers = [
     const threads = db.messageThreads
       .filter(({ workspace_id }) => workspace_id === workspaceId)
       .filter((thread) => viewer === 'pm' || (ownerId !== null && thread.member_id === ownerId))
-      .map((thread) => threadSummaryOf(thread, reviews, MOCK_NOW, viewer))
+      .map((thread) => threadSummaryOf(thread, reviews, MOCK_NOW, viewer, db.tasks))
       .sort(byInboxOrder)
     return ok({
       reviews:
@@ -132,7 +133,7 @@ export const messageHandlers = [
       return fail('MESSAGE_THREAD_NOT_FOUND', '대화를 찾을 수 없습니다.', 404)
     if (db.messageFailures.threadIds.includes(thread.thread_id)) return serverError()
     const reviews = db.messageReviews.filter((review) => review.workspace_id === workspaceId)
-    return ok(threadDtoOf(thread, reviews, MOCK_NOW, viewer))
+    return ok(threadDtoOf(thread, reviews, MOCK_NOW, viewer, db.tasks))
   }),
 
   /** 그 대화의 팀원만 웹에서 답한다. Discord 로는 나가지 않고, 재촉 상태는 바꾸지 않는다 */
@@ -165,6 +166,33 @@ export const messageHandlers = [
       )
       thread.messages.push(reply(messageId, body, MOCK_NOW, 'web'))
       return ok({ message_id: messageId })
+    },
+  ),
+
+  /** PM 만 답장의 태스크를 정한다. 한 번 정하면 다시 고르지 않고, 재촉 상태는 바꾸지 않는다 */
+  http.post(
+    '/api/v1/workspaces/:workspaceId/messages/replies/:messageId/attribution',
+    async ({ params, request }) => {
+      const workspaceId = String(params.workspaceId)
+      const denied = requirePmRole(workspaceId)
+      if (denied) return denied
+      const message = db.messageThreads
+        .filter(({ workspace_id }) => workspace_id === workspaceId)
+        .flatMap((thread) => thread.messages)
+        .find((item) => item.message_id === params.messageId && item.sender === 'member')
+      const attribution = message?.attribution
+      if (!message || attribution?.status !== 'needs_pm') return replyNotFound()
+      const input = await readJson(request)
+      if (input === null || !('task_id' in input)) return invalid('후보에 없는 태스크입니다.')
+      const taskId: unknown = input.task_id
+      if (
+        taskId !== null &&
+        (typeof taskId !== 'string' || !attribution.candidate_task_ids.includes(taskId))
+      )
+        return invalid('후보에 없는 태스크입니다.')
+      if (db.messageFailures.actions) return actionError()
+      message.attribution = { status: 'resolved', task_id: taskId }
+      return ok({ message_id: message.message_id })
     },
   ),
 

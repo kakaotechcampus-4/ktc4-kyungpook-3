@@ -7,6 +7,13 @@ import type {
 } from '@/shared/types/api/message'
 import type { MockMessageReview, MockMessageThread, MockThreadMessage } from './fixtures/message'
 
+/** 태스크 제목을 답장 판정에 붙일 때 쓰는 칸. 태스크 DTO 전체가 필요하지 않다 */
+interface TaskTitle {
+  task_id: string
+  workspace_id: string
+  title: string
+}
+
 /*
  * 재촉 한 건의 단계와 화면 자리. handler 가 부른다. db 에는 쓰지 않는다 (task-state 와 같은 자리).
  * 재촉 자동 승인은 꺼져 있다. 예약 시각이 지나도 스스로 나가지 않는다 (#298 이 설정을 바꾼다).
@@ -111,7 +118,41 @@ export function reviewDtoOf(review: MockMessageReview, now: string): MessageRevi
   }
 }
 
-export function historyMessage(message: MockThreadMessage): MessageDto {
+function taskRef(tasks: readonly TaskTitle[], workspaceId: string, taskId: string) {
+  const task = tasks.find((item) => item.task_id === taskId && item.workspace_id === workspaceId)
+  return task === undefined ? null : { task_id: task.task_id, title: task.title }
+}
+
+/** 저장한 판정을 응답 모양으로. 팀원 답장만 가지고, 없는 태스크는 후보에서 뺀다 */
+function attributionOf(
+  message: MockThreadMessage,
+  tasks: readonly TaskTitle[],
+  workspaceId: string,
+): MessageDto['attribution'] {
+  if (message.sender !== 'member' || message.attribution === null) return null
+  if (message.attribution.status === 'resolved') {
+    return {
+      status: 'resolved',
+      task:
+        message.attribution.task_id === null
+          ? null
+          : taskRef(tasks, workspaceId, message.attribution.task_id),
+    }
+  }
+  return {
+    status: 'needs_pm',
+    candidates: message.attribution.candidate_task_ids.flatMap((taskId) => {
+      const task = taskRef(tasks, workspaceId, taskId)
+      return task === null ? [] : [task]
+    }),
+  }
+}
+
+export function historyMessage(
+  message: MockThreadMessage,
+  tasks: readonly TaskTitle[] = [],
+  workspaceId = '',
+): MessageDto {
   const member = message.sender === 'member'
   return {
     message_id: message.message_id,
@@ -123,7 +164,7 @@ export function historyMessage(message: MockThreadMessage): MessageDto {
     review_id: null,
     cancel_reason: null,
     source: member ? message.source : null,
-    attribution: null,
+    attribution: attributionOf(message, tasks, workspaceId),
   }
 }
 
@@ -163,9 +204,10 @@ export function deliveredMessages(
   thread: MockMessageThread,
   reviews: readonly MockMessageReview[],
   now: string,
+  tasks: readonly TaskTitle[] = [],
 ): MessageDto[] {
   return [
-    ...thread.messages.map(historyMessage),
+    ...thread.messages.map((message) => historyMessage(message, tasks, thread.workspace_id)),
     ...reviewsOf(thread, reviews)
       .filter((review) => reminderStatus(review, now) === 'sent')
       .map((review) => reminderMessage(review, now)),
@@ -176,9 +218,10 @@ export function threadMessages(
   thread: MockMessageThread,
   reviews: readonly MockMessageReview[],
   now: string,
+  tasks: readonly TaskTitle[] = [],
 ): MessageDto[] {
   return [
-    ...thread.messages.map(historyMessage),
+    ...thread.messages.map((message) => historyMessage(message, tasks, thread.workspace_id)),
     ...reviewsOf(thread, reviews).map((review) => reminderMessage(review, now)),
   ].sort(byAt)
 }
@@ -201,13 +244,22 @@ function forMember(message: MessageDto): MessageDto {
   return { ...message, approved_by: null, attribution: null }
 }
 
+/** 전달된 팀원 답장 중에 태스크를 아직 정하지 못한 것이 있는가. 팀원에게는 항상 아니다 */
+function needsAttribution(messages: readonly MessageDto[], viewer: 'pm' | 'member'): boolean {
+  if (viewer === 'member') return false
+  return messages.some(
+    (message) => message.sender === 'member' && message.attribution?.status === 'needs_pm',
+  )
+}
+
 export function threadSummaryOf(
   thread: MockMessageThread,
   reviews: readonly MockMessageReview[],
   now: string,
   viewer: 'pm' | 'member' = 'pm',
+  tasks: readonly TaskTitle[] = [],
 ): MessageThreadSummaryDto {
-  const delivered = deliveredMessages(thread, reviews, now)
+  const delivered = deliveredMessages(thread, reviews, now, tasks)
   const last = delivered.at(-1) ?? null
   return {
     thread_id: thread.thread_id,
@@ -215,7 +267,7 @@ export function threadSummaryOf(
     name: thread.name,
     last_message: viewer === 'member' && last !== null ? forMember(last) : last,
     awaiting_reply_since: viewer === 'member' ? null : awaitingReplySince(delivered, thread.kind),
-    needs_attribution: false,
+    needs_attribution: needsAttribution(delivered, viewer),
   }
 }
 
@@ -224,15 +276,17 @@ export function threadDtoOf(
   reviews: readonly MockMessageReview[],
   now: string,
   viewer: 'pm' | 'member' = 'pm',
+  tasks: readonly TaskTitle[] = [],
 ): MessageThreadDto {
-  const delivered = deliveredMessages(thread, reviews, now)
+  const delivered = deliveredMessages(thread, reviews, now, tasks)
   return {
     thread_id: thread.thread_id,
     kind: thread.kind,
     name: thread.name,
     team_role: thread.team_role,
     discord_url: thread.discord_url,
-    messages: viewer === 'member' ? delivered.map(forMember) : threadMessages(thread, reviews, now),
+    messages:
+      viewer === 'member' ? delivered.map(forMember) : threadMessages(thread, reviews, now, tasks),
     awaiting_reply_since: viewer === 'member' ? null : awaitingReplySince(delivered, thread.kind),
   }
 }

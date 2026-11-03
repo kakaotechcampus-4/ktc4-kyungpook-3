@@ -522,7 +522,7 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
       state.messageFailures.threadIds = ['th_01']
       break
     case 'messages-send-fail':
-      // 조회는 정상이고 발송·보내지 않음·고쳐 쓰기·발송 시점·답장만 5xx 다. db 는 바뀌지 않는다
+      // 조회는 정상이고 발송·보내지 않음·고쳐 쓰기·발송 시점·답장·답장 판정만 5xx 다. db 는 바뀌지 않는다
       signInWith(state, ['ws_01'], 'ws_01')
       state.messageFailures.actions = true
       break

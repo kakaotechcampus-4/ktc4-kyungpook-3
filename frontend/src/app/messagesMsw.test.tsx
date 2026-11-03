@@ -71,7 +71,7 @@ describe('왼쪽 목록 두 영역과 오른쪽 상세의 2단이고, 선택은 
     ])
     expect(rowTexts(threadList())).toEqual([
       '이재환나: DB 스키마가 확정됐다고 들었어요. 명세서 작업은 시작하셨나요?09/16답장 기다리는 중',
-      '박민수STT 튜닝 결과 Notion에 붙였습니다09/09',
+      '박민수답장 확인 필요거의 다 됐어요. 내일 오전에 올릴게요09/09',
       '정하늘발표 순서 정리해서 올릴게요09/04',
       '박지훈확인했습니다09/02',
       '#회의록 요약나: 3주차 정기회의 요약 게시09/09',
@@ -715,5 +715,60 @@ describe('팀원은 자기 대화만 보고 웹에서 답장한다', () => {
     applyScenario('messages-member')
     await openInbox(paths.messageThread('ws_01', 'th_01'))
     expect(await detail().findByRole('heading', { name: '대화를 찾을 수 없어요' })).toBeVisible()
+  })
+})
+
+describe('PM 은 정하지 못한 답장의 태스크를 고른다', () => {
+  const picker = () =>
+    within(conversation()).getByRole('group', { name: '어느 태스크에 대한 답장인가요?' })
+
+  it('화살표는 보내지 않고, 회원가입 화면을 정하면 칩과 고르기가 사라진다', async () => {
+    await openInbox(paths.messageThread('ws_01', 'th_02'))
+    expect(
+      await detail().findByRole('group', { name: '어느 태스크에 대한 답장인가요?' }),
+    ).toBeVisible()
+    expect(within(threadList()).getByText('답장 확인 필요')).toBeVisible()
+    expect(
+      within(picker()).getByText('AI가 어느 태스크에 대한 답장인지 정하지 못했어요.'),
+    ).toBeVisible()
+    expect(detail().queryByRole('textbox', { name: '답장' })).toBeNull()
+
+    const log = recordRequests()
+    within(picker()).getByRole('radio', { name: '회원가입 화면' }).focus()
+    await userEvent.keyboard('{ArrowDown}')
+    await userEvent.keyboard('{ArrowRight}')
+    expect(log.started.some((request) => request.path.includes('/attribution'))).toBe(false)
+
+    await userEvent.click(within(picker()).getByRole('radio', { name: '회원가입 화면' }))
+    await userEvent.click(within(conversation()).getByRole('button', { name: '정하기' }))
+    expect(await within(conversation()).findByText('태스크: 회원가입 화면')).toBeVisible()
+    expect(
+      within(conversation()).queryByRole('group', { name: '어느 태스크에 대한 답장인가요?' }),
+    ).toBeNull()
+    expect(within(threadList()).queryByText('답장 확인 필요')).toBeNull()
+  })
+
+  it('해당 없음으로 정할 수 있다', async () => {
+    await openInbox(paths.messageThread('ws_01', 'th_02'))
+    expect(
+      await detail().findByRole('group', { name: '어느 태스크에 대한 답장인가요?' }),
+    ).toBeVisible()
+    await userEvent.click(within(picker()).getByRole('radio', { name: '해당 없음' }))
+    await userEvent.click(within(conversation()).getByRole('button', { name: '정하기' }))
+    expect(await within(conversation()).findByText('태스크: 해당 없음')).toBeVisible()
+    expect(within(threadList()).queryByText('답장 확인 필요')).toBeNull()
+  })
+
+  it('정하지 못하면 고르기를 남긴다', async () => {
+    db.messageFailures.actions = true
+    await openInbox(paths.messageThread('ws_01', 'th_02'))
+    expect(
+      await detail().findByRole('group', { name: '어느 태스크에 대한 답장인가요?' }),
+    ).toBeVisible()
+    await userEvent.click(within(picker()).getByRole('radio', { name: '회원가입 화면' }))
+    await userEvent.click(within(conversation()).getByRole('button', { name: '정하기' }))
+    expect(await detail().findByRole('alert')).toHaveTextContent('태스크를 정하지 못했어요')
+    expect(within(picker()).getByRole('radio', { name: '해당 없음' })).toBeVisible()
+    expect(within(threadList()).getByText('답장 확인 필요')).toBeVisible()
   })
 })
