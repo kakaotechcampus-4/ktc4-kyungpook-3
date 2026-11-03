@@ -16,7 +16,6 @@ _FIELD_MAP: dict[str, ChangedField] = {
     "title": ChangedField.TITLE,
     "assignee_member_id": ChangedField.ASSIGNEE,
     "status": ChangedField.STATUS,
-    "progress": ChangedField.PROGRESS,
     "blocker": ChangedField.BLOCKER,
     "start_date": ChangedField.START_DATE,
     "due_date": ChangedField.DUE_DATE,
@@ -27,7 +26,7 @@ _VALID_STATUSES = {str(s) for s in TaskStatus}
 
 
 def validate_task_fields(updates: dict[str, object]) -> None:
-    """status·progress 등 업무 규칙을 검증한다.
+    """status·title 등 업무 규칙을 검증한다.
 
     PATCH API, 승인 반영, 자동 반영 모든 경로가 이 함수를 거쳐야 한다.
     """
@@ -40,23 +39,6 @@ def validate_task_fields(updates: dict[str, object]) -> None:
                 details={"field": "status", "value": status_val, "allowed": sorted(_VALID_STATUSES)},
             )
         updates["status"] = status_val
-
-    if "progress" in updates and updates["progress"] is not None:
-        try:
-            progress_val = int(updates["progress"])
-        except (TypeError, ValueError):
-            raise AppError(
-                ErrorCode.INVALID_REQUEST,
-                message=f"progress는 정수여야 합니다: {updates['progress']}",
-                details={"field": "progress", "value": str(updates["progress"])},
-            )
-        if not (0 <= progress_val <= 100):
-            raise AppError(
-                ErrorCode.INVALID_REQUEST,
-                message=f"progress는 0~100 범위여야 합니다: {progress_val}",
-                details={"field": "progress", "value": progress_val},
-            )
-        updates["progress"] = progress_val
 
     if "title" in updates:
         title_val = updates["title"]
@@ -155,8 +137,6 @@ def _serialize(value: object) -> str | None:
 def _deserialize(field: str, value: str | None) -> object:
     if value is None:
         return None
-    if field == "progress":
-        return int(value)
     if field in {"due_date", "start_date"}:
         return date.fromisoformat(value)
     return value
@@ -177,7 +157,6 @@ def create_task(
     start_date: date | None = None,
     due_date: date | None = None,
     status: str = TaskStatus.TODO,
-    progress: int | None = None,
     blocker: str | None = None,
     change_source: str,
     changed_by: str | None = None,
@@ -187,11 +166,10 @@ def create_task(
     수동 생성, 승인 반영, 자동 반영 모든 경로가 이 함수에서 같은 도메인 검증을 거친다.
     embedding은 NULL로 생기고 임베딩 워커가 채운다(app/services/embedding.py).
     """
-    fields: dict[str, object] = {"title": title, "status": status, "progress": progress}
+    fields: dict[str, object] = {"title": title, "status": status}
     validate_task_fields(fields)
     title = fields["title"]
     status = fields["status"]
-    progress = fields["progress"]
 
     validate_workspace_ownership(
         db, workspace_id,
@@ -207,7 +185,6 @@ def create_task(
         start_date=start_date,
         due_date=due_date,
         status=str(status),
-        progress=progress,
         blocker=blocker,
         version=1,
     )

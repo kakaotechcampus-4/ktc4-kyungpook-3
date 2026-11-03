@@ -19,7 +19,7 @@ from app.services.tasks import apply_task_updates, create_task, parse_date
 
 router = APIRouter(prefix="/approvals", tags=["approvals"])
 
-_TASK_UPDATE_FIELDS = {"title", "assignee_member_id", "status", "progress", "blocker", "due_date"}
+_TASK_UPDATE_FIELDS = {"title", "assignee_member_id", "status", "blocker", "due_date"}
 
 
 def _get_linkable_extraction_item(
@@ -122,7 +122,7 @@ def _apply_approval(
             else None
         )
 
-        # 제목·status·progress 검증은 create_task가 공통으로 수행한다.
+        # 제목·status 검증은 create_task가 공통으로 수행한다.
         task = create_task(
             db,
             workspace_id=approval.workspace_id,
@@ -131,7 +131,6 @@ def _apply_approval(
             assignee_member_id=payload.get("assignee_member_id"),
             due_date=parse_date(payload.get("due_date"), field="due_date"),
             status=payload.get("status") or str(TaskStatus.TODO),
-            progress=payload.get("progress"),
             change_source=str(ChangeSource.MEETING if payload.get("meeting_id") else ChangeSource.MANUAL),
             changed_by=approval.resolved_by,
         )
