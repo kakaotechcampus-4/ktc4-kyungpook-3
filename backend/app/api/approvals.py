@@ -238,6 +238,9 @@ def _apply_approval(
         )
         for field, new_value in changed.items():
             old_value = proposal[field]
+            # 문자열이 아닌 제안 제목은 되돌릴 값이 못 된다. None 이면 되돌리기가 최초 생성 이력으로 보고 막는다
+            if field == "task_title" and not isinstance(old_value, str):
+                old_value = None
             log_manual_edit(
                 db, task, "title" if field == "task_title" else field,
                 old_value=None if old_value is None else str(old_value),

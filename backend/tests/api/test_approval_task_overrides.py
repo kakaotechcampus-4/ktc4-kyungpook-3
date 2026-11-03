@@ -719,3 +719,15 @@ def test_task_create_with_non_string_proposed_title_can_be_fixed_by_override(cli
 
     assert r.status_code == 200, r.text
     assert _task_of(db, approval_id).title == "결제 API"
+
+
+def test_rolling_back_title_override_of_non_string_proposal_is_400(client, db, seed):
+    approval_id = _new_create(client, seed, task_title=["결제"])
+    assert _resolve(client, approval_id, task_overrides={"task_title": "결제 API"}).status_code == 200
+    task = _task_of(db, approval_id)
+    [line] = [h for h in _history(db, task.task_id) if h.change_source == "manual"]
+
+    r = _rollback(client, task.task_id, line.history_id)
+
+    assert r.status_code == 400, r.text
+    assert _task_of(db, approval_id).title == "결제 API"
