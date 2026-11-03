@@ -93,7 +93,7 @@ M6 S1에서 프론트 계약·데이터 계층을 현재 서버 코드에 맞췄
 | 그 밖의 키, 잘못된 날짜·상태 | 400 `INVALID_REQUEST`. 새 태스크 승인에 `title` 키를 보내도 400(`task_title` 을 쓴다). 승인은 pending 으로 남는다 |
 | 다른 공간 담당자, 없는 팀원 | 400 `WORKSPACE_MISMATCH`, 없는 팀원 id 는 404 `MEMBER_NOT_FOUND`. 승인은 pending 으로 남는다 |
 | 충돌 검사 | 고친 값을 반영한 최종 값으로 기존 `APPROVAL_CONFLICT` 검사를 한다 |
-| 이력 | 고친 필드는 `change_source: "manual"`, `changed_by` 는 승인한 PM. 수정 제안은 지금 값에서 PM 값으로, 새 태스크는 생성 줄 다음에 제안 값에서 PM 값으로. 고치지 않은 필드는 승인 요청의 출처(payload `change_source`, 없으면 `meeting`) |
+| 이력 | 고친 필드는 `change_source: "manual"`, `changed_by` 는 승인한 PM. 수정 제안은 지금 값에서 PM 값으로, 새 태스크는 생성 줄 다음에 제안 값에서 PM 값으로. 고치지 않은 필드는 승인 요청의 출처(payload `change_source`). 없으면 수정 제안은 `meeting`, 새 태스크는 `meeting_id` 가 있으면 `meeting` 없으면 `manual` |
 | 승인 기록 | payload 의 원래 제안과 근거는 그대로 두고, 제안과 다른 값만 `payload.task_overrides` 에 남는다. 조회 응답에서 볼 수 있다 |
 | `POST /approvals` | payload 에 `task_overrides` 키가 있거나 `change_source` 가 정해진 값(`meeting`·`chat`·`checkin`·`notion`·`reminder_reply`·`manual`)이 아니면 400 |
 
@@ -434,7 +434,7 @@ AUDIO_TOO_LARGE(413)              DISCORD_USER_ALREADY_MAPPED(409)
 
 승인 시 백엔드가 읽는 키는 `api/approvals.py` 의 `_apply_approval` 에 있다.
 
-- `task_create` → `task_title`(없으면 `title`), `meeting_id`, `assignee_member_id`, `due_date`. #303 부터 `status` 는 읽지 않고 항상 `todo` 이며 `progress` 는 없다. `task_overrides` 가 있으면 그 값이 먼저다. `validate_task_fields` 를 거치므로 **잘못된 값이면 승인이 400 으로 실패한다.**
+- `task_create` → `task_title`(없으면 `title`), `meeting_id`, `assignee_member_id`, `due_date`. #303 부터 `status` 는 읽지 않고 항상 `todo` 이며 `progress` 는 없다. `task_overrides` 가 있으면 그 값이 먼저다. 생성 이력 출처는 payload `change_source`, 없으면 `meeting_id` 유무로 `meeting`·`manual`. `validate_task_fields` 를 거치므로 **잘못된 값이면 승인이 400 으로 실패한다.**
   반영 뒤 `extraction_item.task_id` 도 채워진다 (§3.1).
   `extraction_item_id` 는 Task 를 만들기 **전에** 검증한다. 항목의 워크스페이스가 승인과 다르면 400 `WORKSPACE_MISMATCH`, 항목의 `approval_id` 가 이 승인이 아니면 400 `INVALID_REQUEST` 이고 아무것도 바뀌지 않는다.
   항목이 없으면 연결 없이 Task 만 만든다. 이 검사가 제목 검증보다 먼저다.
