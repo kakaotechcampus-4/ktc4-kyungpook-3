@@ -2,7 +2,7 @@
 
 - 날짜: 2026-11-04
 - 이슈: #303, FE 요청 #305
-- PR: (PR 번호)
+- PR: #307
 - 브랜치: `feature/303-drop-progress-approve-edit`
 
 ## 한 일
