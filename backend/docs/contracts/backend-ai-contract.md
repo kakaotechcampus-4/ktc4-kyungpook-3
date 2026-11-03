@@ -238,8 +238,8 @@ AI `Transcript.to_dict()` 모양에 화자 이름을 더해 보낸다. 한 회�
 
 PM 이 웹에서 승인한 리마인드를 봇이 팀원에게 디스코드 DM 으로 보내고, 팀원이 봇에게 보낸 DM 을 백엔드에 넘기는 경로다. 리마인드 문구 초안을 AI 가 써 넣는 경로도 여기 있다. 웹 쪽 조작(만들기·고치기·승인·취소, 대화 조회, 웹 답장)은 [프론트엔드 대표 계약](../../../frontend/docs/contracts/frontend-api-contract.md) §5.7 에 있다.
 
-- 합의 상태: **BE 구현, 봇·초안 워커 미구현.** #310 에서 BE 와 AI 쪽 초안 모듈(`ai/draft/reminder_draft.py`)을 만들었다. 봇의 DM 발송·수신과 BE 를 불러 초안을 채우는 워커는 아직 없다.
-- 결정 근거: [결정 0034](../../../ai/docs/basis_for_decision/ai/2026-11-04-0034-reminder-and-thread-message.md), FE 메시지 정책(D-174)
+- 합의 상태: **BE·봇·초안 워커 구현.** #310 에서 BE 와 AI 쪽 초안 모듈(`ai/draft/reminder_draft.py`)을 만들었고, #317 에서 봇의 DM 발송·수신과 초안 워커(`ai/capture/dm.py`)를 붙였다.
+- 결정 근거: [결정 0034](../../../ai/docs/basis_for_decision/ai/2026-11-04-0034-reminder-and-thread-message.md), [결정 0035](../../../ai/docs/basis_for_decision/ai/2026-11-04-0035-bot-dm-local-journal-and-backfill.md), FE 메시지 정책(D-174)
 - 리마인드 하나는 태스크 하나 × 받는 사람 한 명이다. 같은 받는 사람·같은 발송 시각의 리마인드는 "보낼 메시지"(묶음) 하나로 모이고, PM 은 묶음 문구를 보고 승인한다. 봇이 보내는 것은 승인된 묶음 문구 그대로다.
 - 봇이 BE 를 주기적으로 불러 보낼 메시지를 가져간다. 봇이 꺼져 있는 동안 발송 시각이 된 메시지는 사라지지 않고 다음 가져가기에서 나온다. 받는 DM 은 디스코드 이벤트를 받는 즉시 넘긴다.
 - 보내는 사람은 웹과 디스코드 모두 봇이다. 봇 DM 창에 팀원이 쓴 글은 리마인드에 대한 답인지와 상관없이 모두 그 팀원의 대화에 저장되고 PM 이 본다.
@@ -363,4 +363,4 @@ AI 가 문구를 써야 하는 묶음을 준다. 요청 본문은 없다. 승인
 ## 코드 근거
 
 - Backend: `app/api/meetings.py`, `app/api/sources.py`, `app/api/similar_tasks.py`, `app/api/extractions.py`, `app/api/integrations.py`의 `get_discord_guild_workspace`, `app/api/uploads.py`, `app/api/deps.py`의 `require_service_token`, `app/schemas/meeting.py`, `app/schemas/source.py`, `app/schemas/task.py`, `app/schemas/workspace.py`, `app/schemas/upload.py`, `app/services/upload_storage.py`, `app/api/bot_messages.py`, `app/services/messages.py`, `app/schemas/message.py`
-- AI: `ai/capture/handoff.py`의 `BeClient`, `Handoff`, `from_env`, `ai/draft/reminder_draft.py`의 `draft_reminder`
+- AI: `ai/capture/handoff.py`의 `BeClient`, `Handoff`, `from_env`, `ai/draft/reminder_draft.py`의 `draft_reminder`, `ai/capture/dm.py`의 `DmCog`
