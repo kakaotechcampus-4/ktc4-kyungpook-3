@@ -83,7 +83,7 @@ def _scheduled_bundles(db: Session, workspace_id: str, thread_id: str | None = N
     return [_bundle_dict(db, b) for b in db.scalars(stmt).all()]
 
 
-def _summary(db: Session, thread: MessageThread) -> dict:
+def _summary(db: Session, thread: MessageThread) -> ThreadSummary:
     def messages():
         return select(ThreadMessage).where(ThreadMessage.thread_id == thread.thread_id)
 
@@ -112,7 +112,7 @@ def _summary(db: Session, thread: MessageThread) -> dict:
         },
         awaiting_reply_since=awaiting_since and svc.utc(awaiting_since),
         dm_failed=last_bot is not None and last_bot.dm_status == DmStatus.FAILED,
-    ).model_dump(mode="json")
+    )
 
 
 def _get_thread(db: Session, workspace_id: str, thread_id: str) -> MessageThread:
@@ -145,11 +145,11 @@ def get_inbox(
     threads = [_summary(db, t) for t in db.scalars(stmt).all()]
     # 최근 대화가 위로. 메시지가 없는 대화(예정 묶음만 있음)는 아래로 간다.
     with_message = sorted(
-        (t for t in threads if t["last_message"]), key=lambda t: t["last_message"]["created_at"], reverse=True
+        (t for t in threads if t.last_message), key=lambda t: t.last_message.created_at, reverse=True
     )
-    without = [t for t in threads if not t["last_message"]]
+    without = [t for t in threads if not t.last_message]
     return success({
-        "threads": with_message + without,
+        "threads": [t.model_dump(mode="json") for t in with_message + without],
         "bundles": _scheduled_bundles(db, workspace_id) if is_pm else None,
     })
 
@@ -170,7 +170,7 @@ def get_thread(
         .order_by(ThreadMessage.created_at, ThreadMessage.message_id)
     ).all()
     return success({
-        "thread": _summary(db, thread),
+        "thread": _summary(db, thread).model_dump(mode="json"),
         "messages": [MessageResponse.model_validate(m).model_dump(mode="json") for m in rows],
         "bundles": _scheduled_bundles(db, workspace_id, thread_id) if member.role == MemberRole.PM else None,
     })

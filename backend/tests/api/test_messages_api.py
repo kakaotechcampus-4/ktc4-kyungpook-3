@@ -615,3 +615,14 @@ def test_cancelled_bundle_lists_only_the_reminders_cancelled_with_it(mdb, mseed)
             closed = pm.post(f"{reminders}/{kept}/cancel").json()["data"]["bundle"]
         assert closed["status"] == "cancelled", close_by
         assert [r["reminder_id"] for r in closed["reminders"]] == [kept], close_by
+
+
+def test_inbox_orders_threads_by_last_message_time_within_the_same_second(mdb, mseed):
+    from app.services import messages as svc
+    at = datetime(2026, 11, 10, 9, 0, 3, tzinfo=timezone.utc)
+    for who, created_at in (("carol", at), ("alice", at + timedelta(milliseconds=500))):
+        thread = svc.get_or_create_thread(mdb, mseed["ws"], mseed[who].member_id)
+        mdb.add(ThreadMessage(thread_id=thread.thread_id, sender="member", body=who, created_at=created_at))
+    mdb.commit()
+    threads = client("pm").get(f"{P}/workspaces/{mseed['ws']}/messages").json()["data"]["threads"]
+    assert [t["name"] for t in threads] == ["앨리스", "캐럴"]
