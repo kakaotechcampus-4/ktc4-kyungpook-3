@@ -22,6 +22,7 @@ const MESSAGE_SCENARIOS = [
   'messages-list-error',
   'messages-thread-error',
   'messages-send-fail',
+  'messages-member',
 ] as const satisfies readonly MockScenario[]
 
 afterEach(() => sessionStorage.clear())
@@ -195,11 +196,15 @@ describe('보내기 전 확인 항목의 행동 handler — 성공할 때만 db 
     expect(snapshot()).toEqual(before)
   })
 
-  it('없는 항목·다른 공간의 항목은 404 다 — 이미 처리한 항목을 다시 보내도 같다', async () => {
+  it('없는 항목은 404 다 — 이미 처리한 항목을 다시 보내도 같다. PM 이 아닌 공간은 403 이다', async () => {
     await sendReview('rv_01')
     expect((await failure(sendReview('rv_01'))).status).toBe(404)
     expect((await failure(dismissReview('rv_99'))).status).toBe(404)
-    expect((await failure(patchReview('rv_02', { body: '가' }, 'ws_02'))).status).toBe(404)
+    const before = snapshot()
+    const denied = await failure(patchReview('rv_02', { body: '가' }, 'ws_02'))
+    expect(denied.status).toBe(403)
+    expect(denied.message).toBe('PM만 할 수 있는 작업입니다.')
+    expect(snapshot()).toEqual(before)
   })
 })
 
@@ -220,6 +225,23 @@ describe('메시지 시나리오', () => {
     expect((await inbox()).threads).toHaveLength(5)
     expect((await failure(thread('th_01'))).status).toBe(500)
     expect((await thread('th_02')).thread_id).toBe('th_02')
+  })
+
+  it('messages-member: 조회는 되고 발송·보내지 않음·고쳐 쓰기는 403 이며 db 는 그대로다', async () => {
+    applyScenario('messages-member')
+    expect((await inbox()).reviews).toHaveLength(2)
+    const before = snapshot()
+    for (const request of [
+      sendReview('rv_01'),
+      dismissReview('rv_01'),
+      patchReview('rv_01', { body: '고친 문구' }),
+      patchReview('rv_01', { send_timing: 'now' }),
+    ]) {
+      const error = await failure(request)
+      expect(error.status).toBe(403)
+      expect(error.message).toBe('PM만 할 수 있는 작업입니다.')
+    }
+    expect(snapshot()).toEqual(before)
   })
 
   it('messages-send-fail: 조회는 되고 행동은 모두 5xx 이며 db 는 그대로다', async () => {

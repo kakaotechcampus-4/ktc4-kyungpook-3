@@ -9,7 +9,7 @@ import type {
 } from '@/shared/types/api/message'
 import { db } from '../db'
 import { ok, fail } from '../envelope'
-import { requireMember } from '../auth-guard'
+import { requireMember, requirePmRole } from '../auth-guard'
 import { MOCK_NOW } from '../fixtures/constants'
 import type { MockMessageReview, MockMessageThread } from '../fixtures/message'
 import { nextId, readJson } from '../utils'
@@ -17,7 +17,7 @@ import { nextId, readJson } from '../utils'
 /*
  * M8 메시지. 메시지 API 가 없어 경로·응답 모양·오류 코드 모두 임시다 — 계약이 아니다 (계획 C-2, C-8).
  * 상태를 바꾸는 요청(발송·보내지 않음·고쳐 쓰기·발송 시점)은 성공 응답을 낼 때만 db 를 바꾼다 (D-137, 계획 C-5).
- * 발송 정책은 목 동작이다 — 소속 팀원이면 누구나 보낼 수 있고, 예약 시각이 지나도 스스로 나가지 않는다.
+ * 발송·고쳐 쓰기·보내지 않음·발송 시점은 PM 만 한다. 예약 시각이 지나도 스스로 나가지 않는다.
  * 시각은 MOCK_NOW, ID 는 nextId 다 (msw-guide 「지킬 규칙」)
  */
 
@@ -174,7 +174,7 @@ export const messageHandlers = [
     '/api/v1/workspaces/:workspaceId/messages/reviews/:reviewId',
     async ({ params, request }) => {
       const workspaceId = String(params.workspaceId)
-      const denied = requireMember(workspaceId)
+      const denied = requirePmRole(workspaceId)
       if (denied) return denied
       const review = findReview(workspaceId, params.reviewId)
       if (!review) return reviewNotFound()
@@ -189,7 +189,7 @@ export const messageHandlers = [
   /** 승인해서 보낸다. 시각을 정해 두었으면 그 시각을 기다리는 예약 메시지가 된다 */
   http.post('/api/v1/workspaces/:workspaceId/messages/reviews/:reviewId/send', ({ params }) => {
     const workspaceId = String(params.workspaceId)
-    const denied = requireMember(workspaceId)
+    const denied = requirePmRole(workspaceId)
     if (denied) return denied
     const review = findReview(workspaceId, params.reviewId)
     if (!review) return reviewNotFound()
@@ -216,7 +216,7 @@ export const messageHandlers = [
   /** 보내지 않는다(반려). 항목만 지우고 대화는 그대로다 */
   http.post('/api/v1/workspaces/:workspaceId/messages/reviews/:reviewId/dismiss', ({ params }) => {
     const workspaceId = String(params.workspaceId)
-    const denied = requireMember(workspaceId)
+    const denied = requirePmRole(workspaceId)
     if (denied) return denied
     const review = findReview(workspaceId, params.reviewId)
     if (!review) return reviewNotFound()
