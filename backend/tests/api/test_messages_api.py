@@ -215,14 +215,15 @@ def test_cancelling_last_reminder_cancels_bundle(mdb, mseed):
 
 def test_bundle_body_edit_keeps_approval_and_time_move_merges(mdb, mseed):
     pm = client("pm")
+    later = _future(3)
     a = _create(pm, mseed, task=0, at=_future(2), note="가")["bundle"]["bundle_id"]
-    b = _create(pm, mseed, task=1, at=_future(3), note="나")["bundle"]["bundle_id"]
+    b = _create(pm, mseed, task=1, at=later, note="나")["bundle"]["bundle_id"]
     assert _approve(pm, mseed, a).status_code == 200
 
     edited = pm.patch(_bundles_url(mseed, a), json={"body": "  고친 문구  "}).json()["data"]
     assert edited["body"] == "고친 문구" and edited["approved"] is True and edited["body_source"] == "pm"
 
-    merged = pm.patch(_bundles_url(mseed, a), json={"scheduled_at": _iso(_future(3))}).json()["data"]
+    merged = pm.patch(_bundles_url(mseed, a), json={"scheduled_at": _iso(later)}).json()["data"]
     assert merged["bundle_id"] == b and merged["approved"] is False
     assert merged["body"] == "가\n\n나" and len(merged["reminders"]) == 2
     assert [x["bundle_id"] for x in pm.get(f"{P}/workspaces/{mseed['ws']}/messages").json()["data"]["bundles"]] == [b]
@@ -559,9 +560,10 @@ def test_deleted_member_bundles_leave_inbox_with_their_thread(mdb, mseed):
 
 def test_body_edit_with_merging_time_move_is_rejected_and_keeps_both_bundles(mdb, mseed):
     pm = client("pm")
+    later = _future(3)
     a = _create(pm, mseed, task=0, at=_future(2), note="가")["bundle"]["bundle_id"]
-    b = _create(pm, mseed, task=1, at=_future(3), note="나")["bundle"]["bundle_id"]
-    r = pm.patch(_bundles_url(mseed, a), json={"body": "고친 문구", "scheduled_at": _iso(_future(3))})
+    b = _create(pm, mseed, task=1, at=later, note="나")["bundle"]["bundle_id"]
+    r = pm.patch(_bundles_url(mseed, a), json={"body": "고친 문구", "scheduled_at": _iso(later)})
     assert r.status_code == 400 and r.json()["error"]["code"] == "INVALID_REQUEST"
     bundles = pm.get(f"{P}/workspaces/{mseed['ws']}/messages").json()["data"]["bundles"]
     assert sorted(x["bundle_id"] for x in bundles) == sorted([a, b])
