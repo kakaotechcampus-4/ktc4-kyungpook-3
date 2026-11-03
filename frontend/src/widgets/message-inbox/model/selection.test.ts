@@ -2,10 +2,17 @@ import type { MessageInbox, MessageReview, MessageThreadSummary } from '@/entiti
 import { selectDetail } from './selection'
 import { VIEWER_POLICY } from './viewer'
 
-const review = (id: string) => ({ id }) as MessageReview
+const review = (id: string, status: 'pending' | 'scheduled' = 'pending') =>
+  ({
+    id,
+    state:
+      status === 'scheduled'
+        ? { status: 'scheduled', approvedBy: '최진호' }
+        : { status: 'pending' },
+  }) as MessageReview
 const summary = (id: string) => ({ id }) as MessageThreadSummary
 const inbox = (reviews: string[], threads: string[]): MessageInbox => ({
-  reviews: reviews.map(review),
+  reviews: reviews.map((id) => review(id)),
   threads: threads.map(summary),
 })
 
@@ -96,7 +103,7 @@ it('팀원은 검토 파라미터를 무시하고 첫 대화를 연다', () => {
   ).toBe('choose')
 })
 
-it('PM 은 파라미터가 없으면 첫 검토를, 없으면 고르지 않은 칸을 연다', () => {
+it('PM 은 파라미터가 없으면 아직 결정하지 않은 첫 검토를, 없으면 고르지 않은 칸을 연다', () => {
   const loaded = inbox(['rv_01', 'rv_02'], ['th_01'])
   expect(
     selectDetail({
@@ -107,6 +114,32 @@ it('PM 은 파라미터가 없으면 첫 검토를, 없으면 고르지 않은 �
       policy: pm,
     }),
   ).toEqual({ kind: 'review', review: loaded.reviews[0] })
+  const scheduledFirst: MessageInbox = {
+    reviews: [review('rv_01', 'scheduled'), review('rv_02')],
+    threads: [summary('th_01')],
+  }
+  expect(
+    selectDetail({
+      inbox: scheduledFirst,
+      threadId: null,
+      reviewId: undefined,
+      invalidPath: false,
+      policy: pm,
+    }),
+  ).toEqual({ kind: 'review', review: scheduledFirst.reviews[1] })
+  const allScheduled: MessageInbox = {
+    reviews: [review('rv_01', 'scheduled'), review('rv_02', 'scheduled')],
+    threads: [],
+  }
+  expect(
+    selectDetail({
+      inbox: allScheduled,
+      threadId: null,
+      reviewId: undefined,
+      invalidPath: false,
+      policy: pm,
+    }),
+  ).toEqual({ kind: 'review', review: allScheduled.reviews[0] })
   expect(
     selectDetail({
       inbox: loaded,

@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { useCallback, useState } from 'react'
+import { useCallback, useState, useSyncExternalStore } from 'react'
 import { messageKeys, requestMessageAction } from '@/entities/message'
 import type { MessageAction } from '@/entities/message'
 import { captureSession } from '@/entities/user'
@@ -55,10 +55,57 @@ export interface MessageActionControl {
   /** 진행 중인 행동. 없으면 null */
   pending: { target: string; kind: ActionKind } | null
   failure: MessageActionFailure | null
+  /**
+   * 그 항목의 발송이 예정 시각이 지나 거절됐는가.
+   * 그 항목의 시각 저장이 성공하기 전에는 다른 쓰기가 풀지 못한다
+   */
+  isTimePassed: (reviewId: string) => boolean
   /** 실패한 행동을 같은 내용으로 다시 보낸다 */
   retry: () => void
   /** 실패를 지우고 메시지 목록·대화를 서버에서 새로 받는다 */
   refresh: () => void
+}
+
+/** 지난 시각으로 거절된 발송. 메시지 캐시 무효화에 같이 지워지지 않게 메시지 key 밖에 둔다 */
+function timePassedKey(workspaceId: string) {
+  return ['message-send-time-passed', workspaceId] as const
+}
+
+const EMPTY_LOCKS: ReadonlySet<string> = new Set()
+
+function useTimePassedLocks(workspaceId: string): ReadonlySet<string> {
+  const queryClient = useQueryClient()
+  const key = timePassedKey(workspaceId)
+  return useSyncExternalStore(
+    (onStoreChange) => queryClient.getQueryCache().subscribe(onStoreChange),
+    () => queryClient.getQueryData<ReadonlySet<string>>(key) ?? EMPTY_LOCKS,
+  )
+}
+
+function rememberTimePassed(
+  queryClient: ReturnType<typeof useQueryClient>,
+  workspaceId: string,
+  reviewId: string,
+) {
+  const key = timePassedKey(workspaceId)
+  const current = queryClient.getQueryData<ReadonlySet<string>>(key) ?? EMPTY_LOCKS
+  if (current.has(reviewId)) return
+  const next = new Set(current)
+  next.add(reviewId)
+  queryClient.setQueryData(key, next)
+}
+
+function forgetTimePassed(
+  queryClient: ReturnType<typeof useQueryClient>,
+  workspaceId: string,
+  reviewId: string,
+) {
+  const key = timePassedKey(workspaceId)
+  const current = queryClient.getQueryData<ReadonlySet<string>>(key)
+  if (current === undefined || !current.has(reviewId)) return
+  const next = new Set(current)
+  next.delete(reviewId)
+  queryClient.setQueryData(key, next)
 }
 
 const mutationKeyOf = (workspaceId: string) => ['message-review-action', workspaceId] as const
@@ -80,6 +127,7 @@ function causeOf(error: unknown): MessageActionFailure['cause'] {
  */
 export function useMessageAction(workspaceId: string): MessageActionControl {
   const queryClient = useQueryClient()
+  const timePassedLocks = useTimePassedLocks(workspaceId)
   const mutationKey = mutationKeyOf(workspaceId)
   const [failure, setFailure] = useState<MessageActionFailure | null>(null)
   const [lastRun, setLastRun] = useState<{ action: MessageAction; options: RunOptions } | null>(
@@ -98,13 +146,17 @@ export function useMessageAction(workspaceId: string): MessageActionControl {
     onSuccess: (_result, { isCurrentSession }) => (isCurrentSession() ? syncMessages() : undefined),
     onError: (error, { action, isCurrentSession }) => {
       if (!isCurrentSession()) return
+      const cause = causeOf(error)
+      // 서버가 지난 시각으로 거절한 발송만 잠근다. 시계는 보지 않고, 그 항목의 시각 저장이 성공해야 풀린다
+      if (cause === 'time_passed' && action.kind === 'send')
+        rememberTimePassed(queryClient, workspaceId, action.reviewId)
       // 이미 처리됐거나 사라진 항목이면 다시 보내도 같다. 목록은 사람이 알림을 읽은 뒤 새로 받는다 —
       // 바로 받으면 항목과 함께 알림 자리도 사라진다
       setFailure({
         action,
         title: ACTION_FAILURE_TITLE[action.kind],
         error,
-        cause: causeOf(error),
+        cause,
       })
     },
   })
@@ -121,6 +173,8 @@ export function useMessageAction(workspaceId: string): MessageActionControl {
         {
           onSuccess: () => {
             if (!isCurrentSession()) return
+            if (action.kind === 'schedule')
+              forgetTimePassed(queryClient, workspaceId, action.reviewId)
             if (options.notice !== undefined)
               toast.show({ key: 'message-review-action', title: options.notice })
             options.onSuccess?.()
@@ -147,6 +201,7 @@ export function useMessageAction(workspaceId: string): MessageActionControl {
         ? { target: actionTarget(variables.action), kind: variables.action.kind }
         : null,
     failure,
+    isTimePassed: (reviewId) => timePassedLocks.has(reviewId),
     retry,
     refresh,
   }

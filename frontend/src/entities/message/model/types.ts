@@ -28,6 +28,8 @@ export interface PendingBotMessage {
   reviewId: string
   /** 나갈 시각. 승인하면 바로 보내면 null */
   scheduledAt: string | null
+  /** 나갈 시각이 지났는가. 서버가 정한다 */
+  schedulePassed: boolean
 }
 export interface ScheduledBotMessage {
   sender: 'bot'

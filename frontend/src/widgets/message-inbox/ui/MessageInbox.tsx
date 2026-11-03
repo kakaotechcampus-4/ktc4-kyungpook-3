@@ -60,7 +60,7 @@ export interface MessageInboxProps {
   threadId: string | null
   /**
    * 검색 파라미터가 가리키는 보내기 전 확인 항목. 목록에 없는 ID 는 선택 없음이다.
-   * `undefined` 는 파라미터가 없다는 뜻이라 첫 항목이 골라지고, `null` 은 파라미터가 있지만 ID 모양이 아니라 선택 없음이다
+   * `undefined` 는 파라미터가 없다는 뜻이라 아직 결정하지 않은 첫 항목이 골라지고, `null` 은 파라미터가 있지만 ID 모양이 아니라 선택 없음이다
    */
   reviewId: string | null | undefined
   /** 없는 하위 경로이거나 대화 ID 모양이 틀리다 */
@@ -69,8 +69,8 @@ export interface MessageInboxProps {
 
 /**
  * 메시지 화면 (M8, Messages·MessagesThread·EmptyMessages 시안) — 왼쪽 목록(보내기 전 확인 · 대화), 오른쪽 상세의 2단이다.
- * 고른 항목은 URL 이 정한다. 그래서 새로고침·뒤로가기에서 그대로다. 아무것도 고르지 않고 들어오면 Messages 시안처럼
- * 첫 보내기 전 확인 항목이 골라진다. 결정 4 의 UI 범위는 디자인 캔버스 기준이고 행동은 MSW 목이다
+ * 고른 항목은 URL 이 정한다. 그래서 새로고침·뒤로가기에서 그대로다. 아무것도 고르지 않고 들어오면
+ * 아직 결정하지 않은 첫 보내기 전 확인 항목이 골라진다. 결정 4 의 UI 범위는 디자인 캔버스 기준이고 행동은 MSW 목이다
  */
 export function MessageInbox({
   workspaceId,

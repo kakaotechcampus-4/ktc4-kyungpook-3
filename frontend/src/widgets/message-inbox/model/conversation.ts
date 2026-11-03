@@ -56,10 +56,11 @@ const BOT_STATUS_VIEW: {
     look: 'upcoming',
     speaker: '봇(승인 대기)',
     at: (message) => message.scheduledAt,
-    line: (message) =>
-      message.scheduledAt === null
-        ? '승인하면 바로 발송'
-        : `${shortDateTime(message.scheduledAt)} 발송 예정`,
+    line: (message) => {
+      if (message.scheduledAt === null) return '승인하면 바로 발송'
+      const when = `${shortDateTime(message.scheduledAt)} 발송 예정`
+      return message.schedulePassed ? `${when} · 지남` : when
+    },
   },
   scheduled: {
     place: 'upcoming',

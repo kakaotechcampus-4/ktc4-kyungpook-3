@@ -76,14 +76,12 @@ describe('이대로 발송 — 서버가 성공한 뒤에만 목록과 대화가
     await waitFor(() => expect(rowTexts(reviewList())[0]).toContain('09/23 발송 예정'))
     expect(rowTexts(reviewList())).toHaveLength(2)
     expect(within(reviewList()).getByRole('heading')).toHaveTextContent('보내기 전 확인 2')
-    expect(current()[0]).toHaveTextContent('이재환')
+    expect(current()[0]).toHaveTextContent('정하늘')
     expect(app.visitedActions().at(-1)).toBe('REPLACE')
     expect(document.activeElement).toBe(detailPane())
     expect(await screen.findByText('09/23 09:00에 이재환님에게 보낼게요')).toBeInTheDocument()
-    expect(
-      detail().getByRole('heading', { level: 2, name: '보낼 예정인 메시지예요' }),
-    ).toBeVisible()
-    expect(detail().queryByRole('button', { name: '이대로 발송' })).toBeNull()
+    expect(detail().getByRole('heading', { level: 2, name: '이 메시지, 보낼까요?' })).toBeVisible()
+    expect(button('이대로 발송')).toBeVisible()
     expect(reviewIds()).toEqual(['rv_01', 'rv_02', 'rv_03', 'rv_04'])
   })
 
@@ -91,10 +89,12 @@ describe('이대로 발송 — 서버가 성공한 뒤에만 목록과 대화가
     await openReview()
     await userEvent.click(button('이대로 발송'))
     await waitFor(() => expect(rowTexts(reviewList())[0]).toContain('09/23 발송 예정'))
-    expect(
-      detail().getByRole('heading', { level: 2, name: '보낼 예정인 메시지예요' }),
-    ).toBeVisible()
-    expect(detail().queryByRole('button', { name: '이대로 발송' })).toBeNull()
+    await waitFor(() =>
+      expect(
+        detail().getByRole('heading', { level: 2, name: '이 메시지, 보낼까요?' }),
+      ).toBeVisible(),
+    )
+    expect(current()[0]).toHaveTextContent('정하늘')
 
     await userEvent.click(within(threadList()).getByRole('link', { name: /이재환/ }))
     await detail().findByRole('heading', { level: 2, name: '이재환' })
@@ -172,9 +172,11 @@ describe('이대로 발송 — 서버가 성공한 뒤에만 목록과 대화가
     await userEvent.click(within(alert).getByRole('button', { name: '다시 시도' }))
     await waitFor(() =>
       expect(
-        detail().getByRole('heading', { level: 2, name: '보낼 예정인 메시지예요' }),
+        detail().getByRole('heading', { level: 2, name: '이 메시지, 보낼까요?' }),
       ).toBeVisible(),
     )
+    expect(rowTexts(reviewList())[0]).toContain('09/23 발송 예정')
+    expect(current()[0]).toHaveTextContent('정하늘')
     expect(rowTexts(reviewList())).toHaveLength(2)
     expect(detail().queryByRole('alert')).toBeNull()
   })
@@ -467,7 +469,11 @@ describe('예정 시각이 지난 재촉', () => {
     expect(alert).toHaveTextContent('보내려던 시각이 이미 지났어요. 언제 보낼지 다시 골라 주세요.')
     expect(within(alert).queryByRole('button', { name: '다시 시도' })).toBeNull()
     expectLocked(button('이대로 발송'))
-    expect(detail().getByText('보낼 시각을 다시 고른 뒤에 보낼 수 있어요.')).toBeVisible()
+    const lockLine = detail().getByText('보낼 시각을 다시 고른 뒤에 보낼 수 있어요.')
+    expect(lockLine).toBeVisible()
+    expect(alert.compareDocumentPosition(lockLine) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    )
     expect(button('이대로 발송')).toHaveAttribute('aria-describedby')
     expect(rowTexts(reviewList())).toHaveLength(3)
     expect(db.messageReviews).toEqual(before)
@@ -485,5 +491,38 @@ describe('예정 시각이 지난 재촉', () => {
       state: 'sent',
       closed_at: MOCK_NOW,
     })
+  })
+
+  it('문구를 고치거나 시각 저장이 실패하거나 다른 항목을 다녀와도 발송은 잠겨 있다', async () => {
+    applyScenario('messages-schedule-passed')
+    await openReview('rv_06')
+    await userEvent.click(button('이대로 발송'))
+    expect(await detail().findByRole('alert')).toHaveTextContent('예정 시각이 지났어요')
+
+    await userEvent.click(button('고쳐 쓰기'))
+    await userEvent.type(detail().getByRole('textbox', { name: '보낼 문구' }), '!')
+    await userEvent.click(detail().getByRole('button', { name: '저장' }))
+    await waitFor(() => expect(button('고쳐 쓰기')).toBeVisible())
+    expect(detail().getByText(/재환님, 어제/)).toHaveTextContent('!')
+    expect(detail().getByRole('alert')).toHaveTextContent('예정 시각이 지났어요')
+    expectLocked(button('이대로 발송'))
+    expect(detail().getByText('보낼 시각을 다시 고른 뒤에 보낼 수 있어요.')).toBeVisible()
+
+    db.messageFailures.actions = true
+    await userEvent.click(radio(/지금 바로/))
+    await waitFor(() => expect(detail().getByText('발송 시점을 바꾸지 못했어요')).toBeVisible())
+    expect(detail().getByText('예정 시각이 지났어요')).toBeVisible()
+    expectLocked(button('이대로 발송'))
+    db.messageFailures.actions = false
+
+    await userEvent.click(within(reviewList()).getByRole('link', { name: /정하늘/ }))
+    expect(
+      await detail().findByRole('heading', { level: 2, name: '이 메시지, 보낼까요?' }),
+    ).toBeVisible()
+    expect(detail().queryByText('예정 시각이 지났어요')).toBeNull()
+    await userEvent.click(within(reviewList()).getByRole('link', { name: /지난 예약/ }))
+    expect(await detail().findByText('09/17 09:00 · 지남')).toBeVisible()
+    expect(detail().getByRole('alert')).toHaveTextContent('예정 시각이 지났어요')
+    expectLocked(button('이대로 발송'))
   })
 })

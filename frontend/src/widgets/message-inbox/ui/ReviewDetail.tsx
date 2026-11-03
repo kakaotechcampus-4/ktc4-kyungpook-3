@@ -4,6 +4,8 @@ import type { MessageAction, MessageReview } from '@/entities/message'
 import {
   ActionFailure,
   TIME_PASSED_LOCK,
+  TIME_PASSED_MESSAGE,
+  TIME_PASSED_TITLE,
   dismissNotice,
   sendNotice,
   useMessageAction,
@@ -60,10 +62,7 @@ export function ReviewDetail({ workspaceId, botName, review, onSettled }: Review
   const [editing, setEditing] = useState(false)
   const [choosingTime, setChoosingTime] = useState(false)
   const busy = actions.pending !== null
-  const timePassed =
-    actions.failure?.cause === 'time_passed' &&
-    actions.failure.action.kind === 'send' &&
-    actions.failure.action.reviewId === review.id
+  const timePassed = actions.isTimePassed(review.id)
   const lockHint = lockReason(editing, choosingTime, false)
   const sendLockHint = lockReason(editing, choosingTime, timePassed)
   const decisionLocked = busy || lockHint !== null
@@ -191,6 +190,13 @@ export function ReviewDetail({ workspaceId, botName, review, onSettled }: Review
               </LockedButton>
             )}
           </div>
+          {/* 지난 시각 알림을 잠금 이유보다 먼저 읽는다 */}
+          {timePassed ? (
+            <div role="alert" className="flex flex-col items-start gap-10">
+              <p className="text-body font-semibold text-ink">{TIME_PASSED_TITLE}</p>
+              <p className="text-caption text-dim">{TIME_PASSED_MESSAGE}</p>
+            </div>
+          ) : null}
           {sendLockHint === null ? null : (
             <p id={lockHintId} className="text-caption text-dim">
               {sendLockHint}

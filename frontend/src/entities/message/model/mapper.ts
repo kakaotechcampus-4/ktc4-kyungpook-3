@@ -54,6 +54,7 @@ export function toMessage(dto: MessageDto): Message {
         body: dto.body,
         reviewId: dto.review_id,
         scheduledAt: dto.at,
+        schedulePassed: dto.schedule_passed,
       }
     case 'scheduled':
       if (dto.review_id === null || dto.at === null || dto.approved_by === null) invalidMessage(dto)

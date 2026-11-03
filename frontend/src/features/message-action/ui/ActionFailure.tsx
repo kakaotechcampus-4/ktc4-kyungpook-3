@@ -1,6 +1,6 @@
 import { Button } from '@/shared/ui/button'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
-import { REVIEW_GONE_MESSAGE, TIME_PASSED_MESSAGE, TIME_PASSED_TITLE } from '../lib/actionMessages'
+import { REVIEW_GONE_MESSAGE } from '../lib/actionMessages'
 import { actionTarget } from '../model/useMessageAction'
 import type { MessageAction } from '@/entities/message'
 import type { MessageActionControl } from '../model/useMessageAction'
@@ -26,13 +26,8 @@ export function ActionFailure({
   const failure = actions.failure
   if (failure === null || actionTarget(failure.action) !== target) return null
   if (kinds !== undefined && !kinds.includes(failure.action.kind)) return null
-  if (failure.cause === 'time_passed')
-    return (
-      <div role="alert" className={GONE}>
-        <p className="text-body font-semibold text-ink">{TIME_PASSED_TITLE}</p>
-        <p className="text-caption text-dim">{TIME_PASSED_MESSAGE}</p>
-      </div>
-    )
+  // 지난 시각 알림은 보내기 전 확인이 잠금 이유와 순서를 정해 그린다
+  if (failure.cause === 'time_passed') return null
   if (failure.cause === 'gone')
     return (
       <div role="alert" className={GONE}>

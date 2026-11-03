@@ -80,6 +80,16 @@ it('승인 대기·예약은 아직 나가지 않은 칸에, 취소·만료는 �
         body: '대기',
         reviewId: 'rv_01',
         scheduledAt: '2026-09-23T09:00:00+09:00',
+        schedulePassed: false,
+      },
+      {
+        sender: 'bot',
+        status: 'pending',
+        id: 'rv_06',
+        body: '지난 예약',
+        reviewId: 'rv_06',
+        scheduledAt: '2026-09-17T09:00:00+09:00',
+        schedulePassed: true,
       },
       {
         sender: 'bot',
@@ -112,6 +122,7 @@ it('승인 대기·예약은 아직 나가지 않은 칸에, 취소·만료는 �
     view.upcoming.map(({ body, look, reviewId, timeLine }) => [body, look, reviewId, timeLine]),
   ).toEqual([
     ['대기', 'upcoming', 'rv_01', '09/23 09:00 발송 예정'],
+    ['지난 예약', 'upcoming', 'rv_06', '09/17 09:00 발송 예정 · 지남'],
     ['예약', 'upcoming', 'rv_02', '09/23 09:00 발송 예정 · 최진호 승인'],
   ])
   expect(

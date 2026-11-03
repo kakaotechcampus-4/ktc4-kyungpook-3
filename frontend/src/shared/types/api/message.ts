@@ -42,6 +42,8 @@ export interface MessageDto {
   source: 'discord' | 'web' | null
   /** 팀원 답장만, PM 에게만 */
   attribution: MessageAttributionDto | null
+  /** 승인 대기의 나갈 시각이 지금이거나 그 전인가. 서버가 정한다. 그 밖은 false */
+  schedule_passed: boolean
 }
 
 /** 언제 보낼까 — 마감 하루 전 · 지금 바로 · 직접 정한 시각 (Messages 시안) */

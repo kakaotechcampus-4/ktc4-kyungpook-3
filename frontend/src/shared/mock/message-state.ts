@@ -165,6 +165,7 @@ export function historyMessage(
     cancel_reason: null,
     source: member ? message.source : null,
     attribution: attributionOf(message, tasks, workspaceId),
+    schedule_passed: false,
   }
 }
 
@@ -183,6 +184,10 @@ export function reminderMessage(review: MockMessageReview, now: string): Message
     cancel_reason: status === 'cancelled' ? review.cancel_reason : null,
     source: null,
     attribution: null,
+    schedule_passed:
+      status === 'pending' &&
+      review.scheduled_at !== null &&
+      Date.parse(review.scheduled_at) <= Date.parse(now),
   }
 }
 

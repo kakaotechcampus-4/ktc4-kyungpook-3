@@ -12,6 +12,7 @@ const sent = (patch: Partial<MessageDto> = {}): MessageDto => ({
   cancel_reason: null,
   source: null,
   attribution: null,
+  schedule_passed: false,
   ...patch,
 })
 
@@ -144,6 +145,7 @@ it('대화의 재촉·답장을 상태별 메시지로 옮긴다', () => {
       body: '진행 상황 알려 주세요 🙂',
       reviewId: 'rv_01',
       scheduledAt: null,
+      schedulePassed: false,
     },
     {
       sender: 'bot',
