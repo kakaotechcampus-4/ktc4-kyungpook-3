@@ -814,6 +814,8 @@ class ThreadMessage(Base):
     dm_reported_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     scheduled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
+    thread: Mapped["MessageThread"] = relationship()
+
 
 class Reminder(Base):
     """리마인드. 태스크 하나 x 수신자 한 명이고 PM 이 검토·수정·승인·취소하는 단위다.
