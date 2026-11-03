@@ -21,6 +21,15 @@ KST = timezone(timedelta(hours=9))
 TAIL = "지금 어디까지 됐는지 편하게 알려 주세요!"
 
 
+def _first(middle, who="앨리스", pm="PM(이)에요"):
+    """그 대화의 첫 봇 DM 틀. 시드의 PM 표시 이름은 한글이 아니라 조사가 (이)에요 다."""
+    return f"안녕하세요 {who}님, A {pm}.\n앞으로 확인용 메시지는 이 봇으로 보낼게요.\n\n{middle}\n여기로 답장하시면 저한테 바로 전달돼요."
+
+
+def _rule(title):
+    return f"'{title}' 진행 상황 한번 여쭤봐요.\n{TAIL}"
+
+
 def _make(db, seed, who="alice", task=0, at=LATER, note=None, made=NOW):
     r = svc.create_reminder(
         db, workspace_id=seed["ws"], task_id=seed["tasks"][task].task_id, member_id=seed[who].member_id,
@@ -69,8 +78,10 @@ def test_rule_body_uses_default_persona_with_weekday_and_joins_in_created_order(
     b = _make(mdb, mseed, task=1, made=NOW + timedelta(minutes=1))
     bundle = _bundle(mdb, mseed, a)
     assert bundle.body == (
-        f"앨리스님, 할일0 마감이 11/14(토)이라 한번 여쭤봐요. {TAIL}\n\n"
-        f"앨리스님, 할일1 진행 상황 한번 여쭤봐요. {TAIL}"
+        "안녕하세요 앨리스님, A PM(이)에요.\n앞으로 확인용 메시지는 이 봇으로 보낼게요.\n\n"
+        "'할일0' 마감이 11/14(토)이라 한번 여쭤봐요.\n지금 어디까지 됐는지 편하게 알려 주세요!\n\n"
+        "'할일1' 진행 상황 한번 여쭤봐요.\n지금 어디까지 됐는지 편하게 알려 주세요!\n"
+        "여기로 답장하시면 저한테 바로 전달돼요."
     )
     assert (bundle.body_source, bundle.draft_status) == ("rule", "needed")
     assert b.bundle_id == bundle.bundle_id
@@ -79,11 +90,11 @@ def test_rule_body_uses_default_persona_with_weekday_and_joins_in_created_order(
 def test_single_reminder_with_note_is_pm_text_and_needs_no_draft(mdb, mseed):
     r = _make(mdb, mseed, note="API 명세서 어디까지 됐어요?")
     bundle = _bundle(mdb, mseed, r)
-    assert (bundle.body, bundle.body_source, bundle.draft_status) == ("API 명세서 어디까지 됐어요?", "pm", "done")
+    assert (bundle.body, bundle.body_source, bundle.draft_status) == (_first("API 명세서 어디까지 됐어요?"), "pm", "done")
 
     _make(mdb, mseed, task=1, made=NOW + timedelta(minutes=1))
     mdb.refresh(bundle)
-    assert bundle.body == f"API 명세서 어디까지 됐어요?\n\n앨리스님, 할일1 진행 상황 한번 여쭤봐요. {TAIL}"
+    assert bundle.body == _first(f"API 명세서 어디까지 됐어요?\n\n{_rule('할일1')}")
     assert (bundle.body_source, bundle.draft_status) == ("rule", "needed")
 
 
@@ -105,7 +116,7 @@ def test_cancel_one_rebuilds_and_cancel_last_closes_bundle(mdb, mseed):
     svc.cancel_reminder(mdb, svc.get_reminder(mdb, mseed["ws"], b.reminder_id), now=NOW)
     mdb.commit()
     bundle = _bundle(mdb, mseed, a)
-    assert bundle.status == ReminderStatus.SCHEDULED and bundle.body == "첫째"
+    assert bundle.status == ReminderStatus.SCHEDULED and bundle.body == _first("첫째")
 
     svc.cancel_reminder(mdb, svc.get_reminder(mdb, mseed["ws"], a.reminder_id), now=NOW)
     mdb.commit()
@@ -136,9 +147,9 @@ def test_moving_a_reminder_leaves_old_bundle_and_joins_the_one_at_new_time(mdb, 
     source = _bundle(mdb, mseed, stay)
     mdb.refresh(target)
     assert move.bundle_id == target.bundle_id
-    assert source.body == "남음" and source.body_source == "pm"
+    assert source.body == _first("남음") and source.body_source == "pm"
     assert target.approved_at is None
-    assert target.body == f"저쪽\n\n앨리스님, 할일1 진행 상황 한번 여쭤봐요. {TAIL}"
+    assert target.body == _first(f"저쪽\n\n{_rule('할일1')}")
 
 
 def test_note_edit_rebuilds_text_and_clears_approval(mdb, mseed):
@@ -147,12 +158,12 @@ def test_note_edit_rebuilds_text_and_clears_approval(mdb, mseed):
     svc.edit_reminder(mdb, svc.get_reminder(mdb, mseed["ws"], r.reminder_id), note="바꿈", now=NOW)
     mdb.commit()
     bundle = _bundle(mdb, mseed, r)
-    assert bundle.body == "바꿈" and bundle.approved_at is None
+    assert bundle.body == _first("바꿈") and bundle.approved_at is None
 
     svc.edit_reminder(mdb, svc.get_reminder(mdb, mseed["ws"], r.reminder_id), note=None, now=NOW)
     mdb.commit()
     mdb.refresh(bundle)
-    assert bundle.body == f"앨리스님, 할일0 진행 상황 한번 여쭤봐요. {TAIL}" and bundle.draft_status == "needed"
+    assert bundle.body == _first(_rule("할일0")) and bundle.draft_status == "needed"
 
 
 def test_bundle_time_move_keeps_approval_or_merges_into_existing_bundle(mdb, mseed):
@@ -169,7 +180,7 @@ def test_bundle_time_move_keeps_approval_or_merges_into_existing_bundle(mdb, mse
     mdb.commit()
     mdb.refresh(first)
     assert merged.bundle_id == b.bundle_id and first.status == ReminderStatus.CANCELLED
-    assert merged.body == "가\n\n나"
+    assert merged.body == _first("가\n\n나")
     assert merged.approved_at is None
     assert {r.reminder_id for r in svc.bundle_reminders(mdb, merged.bundle_id)} == {a.reminder_id, b.reminder_id}
 
@@ -215,6 +226,55 @@ def test_create_rejects_past_time_and_foreign_task_and_deleted_member(mdb, mseed
     assert e.value.code == ErrorCode.TASK_NOT_FOUND
 
 
+# 첫 DM 소개와 PM 이름
+
+def test_after_a_delivered_dm_the_thread_gets_the_short_frame_but_a_failed_dm_does_not_count(mdb, mseed):
+    mseed["pm"].display_name = "재환"
+    mseed["tasks"][1].due_date = date(2026, 11, 14)
+    mdb.commit()
+    _deliver(mdb, _claimed(mdb, mseed, "alice"), ["dm1"])
+    blocked = _claimed(mdb, mseed, "carol")
+    svc.report_result(mdb, blocked.message_id, delivered=False, failure_reason=DmFailureReason.DM_BLOCKED,
+                      discord_message_ids=[], now=LATER)
+    mdb.commit()
+
+    alice = _bundle(mdb, mseed, _make(mdb, mseed, who="alice", task=1, at=LATER + timedelta(days=1)))
+    carol = _bundle(mdb, mseed, _make(mdb, mseed, who="carol", task=1, at=LATER + timedelta(days=1)))
+    assert alice.body == "앨리스님, 재환이에요.\n'할일1' 마감이 11/14(토)이라 한번 여쭤봐요.\n지금 어디까지 됐는지 편하게 알려 주세요!"
+    assert carol.body.startswith("안녕하세요 캐럴님, A 재환이에요.\n")
+
+
+def test_pm_name_is_the_creator_else_the_earliest_pm_else_pm_with_matching_josa(mdb, mseed):
+    mseed["pm"].display_name = "재환"
+    early = Member(workspace_id=mseed["ws"], display_name="동우", role="pm",
+                   created_at=datetime(2020, 1, 1, tzinfo=timezone.utc))
+    late = Member(workspace_id=mseed["ws"], display_name="Kim", role="pm",
+                  created_at=datetime(2099, 1, 1, tzinfo=timezone.utc))
+    mdb.add_all([early, late])
+    mdb.commit()
+
+    def body(created_by, hours):
+        r = svc.create_reminder(
+            mdb, workspace_id=mseed["ws"], task_id=mseed["tasks"][0].task_id, member_id=mseed["alice"].member_id,
+            scheduled_at=LATER + timedelta(hours=hours), note="확인 부탁해요", created_by=created_by, now=NOW,
+        )
+        mdb.commit()
+        return _bundle(mdb, mseed, r).body
+
+    assert body(mseed["pm"].member_id, 0) == (
+        "안녕하세요 앨리스님, A 재환이에요.\n앞으로 확인용 메시지는 이 봇으로 보낼게요.\n\n"
+        "확인 부탁해요\n여기로 답장하시면 저한테 바로 전달돼요."
+    )
+    assert body(late.member_id, 1).startswith("안녕하세요 앨리스님, A Kim(이)에요.\n")
+    assert body(None, 2).startswith("안녕하세요 앨리스님, A 동우예요.\n")
+    early.is_deleted = True
+    mdb.commit()
+    assert body(early.member_id, 3).startswith("안녕하세요 앨리스님, A 재환이에요.\n")
+    mseed["pm"].is_deleted = late.is_deleted = True
+    mdb.commit()
+    assert body(None, 4).startswith("안녕하세요 앨리스님, A PM(이)에요.\n")
+
+
 # 발송
 
 def test_dispatch_skips_unapproved_future_and_cancelled(mdb, mseed):
@@ -254,7 +314,7 @@ def test_dispatch_marks_unlinked_member_failed_without_offering_to_bot(mdb, msee
 def test_claim_never_returns_same_message_twice(mdb, mseed):
     _sendable(mdb, mseed)
     first = svc.claim_for_bot(mdb, LATER)
-    assert [m.message.body for m in first] == ["마감 확인 부탁해요"]
+    assert [m.message.body for m in first] == [_first("마감 확인 부탁해요")]
     assert first[0].discord_user_id == "d_alice"
     assert svc.claim_for_bot(mdb, LATER) == []
 
@@ -304,13 +364,31 @@ def test_draft_write_back_sets_ai_text_or_keeps_rule_text(mdb, mseed):
     rule_text = items[c.bundle_id].bundle.body
 
     ai = svc.write_draft(mdb, a.bundle_id, draft_version=items[a.bundle_id].bundle.draft_version,
-                         body="앨리스님 할일0 어때요?", now=NOW)
+                         body="'할일0' 어디까지 됐는지 궁금해요!", now=NOW)
     kept = svc.write_draft(mdb, c.bundle_id, draft_version=items[c.bundle_id].bundle.draft_version,
                            body=None, now=NOW)
     mdb.commit()
-    assert (ai.body, ai.body_source, ai.draft_status) == ("앨리스님 할일0 어때요?", "ai", "done")
+    assert ai.body == (
+        "안녕하세요 앨리스님, A PM(이)에요.\n앞으로 확인용 메시지는 이 봇으로 보낼게요.\n\n"
+        "'할일0' 어디까지 됐는지 궁금해요!\n여기로 답장하시면 저한테 바로 전달돼요."
+    )
+    assert (ai.body_source, ai.draft_status) == ("ai", "done")
     assert (kept.body, kept.body_source, kept.draft_status) == (rule_text, "rule", "done")
     assert svc.claim_drafts(mdb, NOW + timedelta(hours=1)) == []
+
+
+def test_draft_over_the_limit_once_framed_is_refused_and_leaves_the_bundle(mdb, mseed):
+    r = _make(mdb, mseed)
+    (item,) = svc.claim_drafts(mdb, NOW)
+    version = item.bundle.draft_version
+    room = 2000 - len(_first(""))
+    with pytest.raises(AppError) as e:
+        svc.write_draft(mdb, r.bundle_id, draft_version=version, body="가" * (room + 1), now=NOW)
+    assert e.value.code == ErrorCode.INVALID_REQUEST
+    assert (item.bundle.body, item.bundle.draft_version) == (_first(_rule("할일0")), version)
+
+    written = svc.write_draft(mdb, r.bundle_id, draft_version=version, body="가" * room, now=NOW)
+    assert len(written.body) == 2000 and written.body_source == "ai"
 
 
 def test_draft_write_back_is_stale_after_membership_change_approval_or_pm_edit(mdb, mseed):
@@ -361,7 +439,7 @@ def test_approve_is_refused_when_the_text_changed_after_the_pm_saw_it(mdb, mseed
 
     current = _bundle(mdb, mseed, a)
     approved = svc.approve_bundle(mdb, current, draft_version=current.draft_version, approved_by=None, now=NOW)
-    assert approved.body == "AI 가 새로 쓴 문구" and approved.approved_at is not None
+    assert approved.body == _first("AI 가 새로 쓴 문구") and approved.approved_at is not None
     again = svc.approve_bundle(mdb, approved, draft_version=seen["a"], approved_by=None, now=NOW + timedelta(hours=1))
     assert svc.utc(again.approved_at) == NOW
 
@@ -378,7 +456,7 @@ def test_style_examples_are_recent_pm_texts_that_were_approved_or_sent(mdb, msee
 
     (item,) = svc.claim_drafts(mdb, LATER)
     assert item.bundle.bundle_id == needs_draft.bundle_id
-    assert item.style_examples == ["보낸 PM 글", "승인한 PM 글"]
+    assert item.style_examples == [_first("보낸 PM 글"), _first("승인한 PM 글", who="밥")]
 
 
 # 결과 보고와 답장
@@ -404,6 +482,39 @@ def test_report_result_is_idempotent_with_same_ids_and_final(mdb, mseed):
             svc.report_result(mdb, msg.message_id, delivered=delivered, failure_reason=reason,
                               discord_message_ids=ids, now=LATER)
         assert e.value.code == ErrorCode.MESSAGE_RESULT_CONFLICT
+
+
+def test_first_delivered_dm_reframes_the_threads_unapproved_rule_and_ai_bundles_only(mdb, mseed):
+    ai = _make(mdb, mseed, task=1, at=LATER + timedelta(days=2))
+    (item,) = svc.claim_drafts(mdb, NOW)
+    svc.write_draft(mdb, ai.bundle_id, draft_version=item.bundle.draft_version, body="AI 가 쓴 가운데", now=NOW)
+    mdb.commit()
+    rule = _make(mdb, mseed, task=2, at=LATER + timedelta(days=1))
+    pm = _make(mdb, mseed, task=0, at=LATER + timedelta(days=3), note="PM 메모")
+    approved = _make(mdb, mseed, task=1, at=LATER + timedelta(days=4))
+    _approve(mdb, mseed, approved)
+    other = _make(mdb, mseed, who="carol", task=2, at=LATER + timedelta(days=1))
+    bundles = {k: _bundle(mdb, mseed, r) for k, r in
+               (("ai", ai), ("rule", rule), ("pm", pm), ("approved", approved), ("other", other))}
+    before = {k: (b.body, b.draft_version) for k, b in bundles.items()}
+    assert bundles["ai"].body_source == "ai"
+
+    _deliver(mdb, _claimed(mdb, mseed), ["dm1"])
+    for b in bundles.values():
+        mdb.refresh(b)
+    short = "앨리스님, PM(이)에요.\n'{}' 진행 상황 한번 여쭤봐요.\n지금 어디까지 됐는지 편하게 알려 주세요!"
+    for k, title in (("rule", "할일2"), ("ai", "할일1")):
+        b = bundles[k]
+        assert (b.body, b.body_source, b.draft_status) == (short.format(title), "rule", "needed"), k
+        assert b.draft_version == before[k][1] + 1, k
+    for k in ("pm", "approved", "other"):
+        assert (bundles[k].body, bundles[k].draft_version) == before[k], k
+
+    after = {k: b.draft_version for k, b in bundles.items()}
+    _deliver(mdb, _claimed(mdb, mseed), ["dm2"])
+    for b in bundles.values():
+        mdb.refresh(b)
+    assert {k: b.draft_version for k, b in bundles.items()} == after
 
 
 def test_report_rejects_ids_already_recorded_for_another_message(mdb, mseed):

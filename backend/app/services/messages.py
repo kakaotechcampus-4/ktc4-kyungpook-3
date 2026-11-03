@@ -6,6 +6,10 @@ commit 은 부르는 쪽 몫이다. 시각은 UTC 로 바꿔 저장한다. sqlit
 
 같은 대화·같은 발송 시각의 예정 리마인드는 언제나 묶음 하나에 들어 있다. PM 은 묶음 문구를 보고 고치고 승인한다.
 묶음 구성이 바뀌면 _rebuild 가 규칙 문구로 다시 만들고 승인을 풀며, AI 초안은 그 뒤 비어 있는 자리에 들어온다.
+
+봇 이름으로 온 DM 만으로는 누가 보낸 연락인지 모르므로, 규칙 문구·메모·AI 초안은 가운데에 두고 BE 가 앞뒤 틀을
+씌워 저장한다. 그 대화에 나간(delivered) 봇 DM 이 없으면 PM 소개와 맺음을, 있으면 PM 이름만 붙인다. PM 이 고친
+문구는 보이는 전체를 고친 것이라 틀을 다시 씌우지 않는다.
 """
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
@@ -22,6 +26,7 @@ from app.models import (
     DmStatus,
     DraftStatus,
     Member,
+    MemberRole,
     MessageSender,
     MessageThread,
     Reminder,
@@ -32,6 +37,7 @@ from app.models import (
     ReplyChannel,
     Task,
     ThreadMessage,
+    Workspace,
 )
 
 # 봇이 가져간 뒤 결과 보고가 이 시간 안에 없으면 못 보냄(알 수 없음)으로 닫는다. 다시 주지 않는다(최대 한 번).
@@ -39,6 +45,8 @@ CLAIM_TIMEOUT = timedelta(minutes=10)
 # 초안은 다시 써도 해가 없으므로, 맡긴 뒤 이 시간 안에 안 돌아오면 다시 맡긴다.
 DRAFT_CLAIM_TIMEOUT = timedelta(minutes=10)
 STYLE_EXAMPLE_LIMIT = 5
+# 디스코드 DM 한 통의 한도. 초안은 틀을 씌운 전체가 이 안이어야 한다.
+DRAFT_MAX_LENGTH = 2000
 # 디스코드 메시지 id(snowflake)는 앞 비트에 이 기준 이후 ms 를 담는다.
 DISCORD_EPOCH_MS = 1420070400000
 _WEEKDAYS = "월화수목금토일"
@@ -80,12 +88,59 @@ def _require_future(scheduled_at: datetime, now: datetime) -> None:
         raise AppError(ErrorCode.REMINDER_SCHEDULED_AT_PASSED)
 
 
-def rule_line(name: str, title: str, due: date | None) -> str:
-    """기본 페르소나의 규칙 문구. AI 초안이 없거나 쓸 수 없을 때 이대로 나간다."""
+def rule_line(title: str, due: date | None) -> str:
+    """기본 페르소나의 규칙 문구(가운데). AI 초안이 없거나 쓸 수 없을 때 틀을 씌워 이대로 나간다."""
     if due is None:
-        return f"{name}님, {title} 진행 상황 한번 여쭤봐요. 지금 어디까지 됐는지 편하게 알려 주세요!"
+        return f"'{title}' 진행 상황 한번 여쭤봐요.\n지금 어디까지 됐는지 편하게 알려 주세요!"
     when = f"{due.month}/{due.day}({_WEEKDAYS[due.weekday()]})"
-    return f"{name}님, {title} 마감이 {when}이라 한번 여쭤봐요. 지금 어디까지 됐는지 편하게 알려 주세요!"
+    return f"'{title}' 마감이 {when}이라 한번 여쭤봐요.\n지금 어디까지 됐는지 편하게 알려 주세요!"
+
+
+def _copula(name: str) -> str:
+    """이름 뒤 '이에요/예요'. 마지막 글자가 한글이 아니면 받침을 알 수 없다."""
+    last = name[-1:]
+    if not "가" <= last <= "힣":
+        return "(이)에요"
+    return "이에요" if (ord(last) - ord("가")) % 28 else "예요"
+
+
+def _pm_name(db: Session, workspace_id: str, created_by: str | None) -> str:
+    """리마인드를 만든 PM, 없거나 탈퇴했으면 가장 먼저 등록된 PM, 그도 없으면 'PM'."""
+    member = db.get(Member, created_by) if created_by else None
+    if member is None or member.is_deleted:
+        member = db.scalar(
+            select(Member)
+            .where(Member.workspace_id == workspace_id, Member.role == MemberRole.PM, Member.is_deleted.is_(False))
+            .order_by(Member.created_at, Member.member_id)
+            .limit(1)
+        )
+    return member.display_name if member is not None else "PM"
+
+
+def _has_delivered_dm(db: Session, thread_id: str) -> bool:
+    db.flush()
+    return db.scalar(
+        select(ThreadMessage.message_id)
+        .where(
+            ThreadMessage.thread_id == thread_id,
+            ThreadMessage.sender == MessageSender.BOT,
+            ThreadMessage.dm_status == DmStatus.DELIVERED,
+        )
+        .limit(1)
+    ) is not None
+
+
+def framed_body(db: Session, bundle: ReminderBundle, reminders: list[Reminder], middle: str) -> str:
+    """가운데 문구에 첫 DM 이면 PM 소개와 맺음을, 아니면 PM 이름을 씌운다. PM 은 묶음의 첫 리마인드를 만든 사람이다."""
+    recipient = bundle.thread.member.display_name
+    pm = _pm_name(db, bundle.workspace_id, reminders[0].created_by)
+    if _has_delivered_dm(db, bundle.thread_id):
+        return f"{recipient}님, {pm}{_copula(pm)}.\n{middle}"
+    workspace = db.get(Workspace, bundle.workspace_id).name
+    return (
+        f"안녕하세요 {recipient}님, {workspace} {pm}{_copula(pm)}.\n앞으로 확인용 메시지는 이 봇으로 보낼게요.\n\n"
+        f"{middle}\n여기로 답장하시면 저한테 바로 전달돼요."
+    )
 
 
 def get_or_create_thread(db: Session, workspace_id: str, member_id: str) -> MessageThread:
@@ -168,16 +223,16 @@ def _rebuild(db: Session, bundle: ReminderBundle, now: datetime, closing: str = 
     if not reminders:
         _transition(bundle, closing)
     elif len(reminders) == 1 and reminders[0].note:
-        bundle.body, bundle.body_source, bundle.draft_status = reminders[0].note, BodySource.PM, DraftStatus.DONE
+        bundle.body = framed_body(db, bundle, reminders, reminders[0].note)
+        bundle.body_source, bundle.draft_status = BodySource.PM, DraftStatus.DONE
     else:
-        bundle.body = rule_body(bundle, reminders)
+        bundle.body = framed_body(db, bundle, reminders, rule_middle(reminders))
         bundle.body_source, bundle.draft_status = BodySource.RULE, DraftStatus.NEEDED
     db.flush()
 
 
-def rule_body(bundle: ReminderBundle, reminders: list[Reminder]) -> str:
-    name = bundle.thread.member.display_name
-    return "\n\n".join(r.note or rule_line(name, r.task.title, r.task.due_date) for r in reminders)
+def rule_middle(reminders: list[Reminder]) -> str:
+    return "\n\n".join(r.note or rule_line(r.task.title, r.task.due_date) for r in reminders)
 
 
 def get_reminder(db: Session, workspace_id: str, reminder_id: str) -> Reminder:
@@ -476,7 +531,7 @@ def _style_examples(db: Session, workspace_id: str) -> list[str]:
 def write_draft(
     db: Session, bundle_id: str, *, draft_version: int, body: str | None, now: datetime
 ) -> ReminderBundle:
-    """AI 초안을 넣는다. body 가 None 이면 AI 가 못 쓴 것이라 규칙 문구를 둔다.
+    """AI 초안(가운데)에 틀을 씌워 넣는다. body 가 None 이면 AI 가 못 쓴 것이라 규칙 문구를 둔다.
 
     맡긴 뒤 구성이 바뀌었거나(판이 다름), 이미 승인·발송됐거나, PM 이 문구를 직접 쓴 묶음에는 넣지 않는다.
     """
@@ -495,7 +550,12 @@ def write_draft(
             details={"bundle_id": bundle_id, "draft_version": bundle.draft_version, "status": str(bundle.status)},
         )
     if body is not None:
-        bundle.body, bundle.body_source = body, BodySource.AI
+        framed = framed_body(db, bundle, bundle_reminders(db, bundle_id), body)
+        if len(framed) > DRAFT_MAX_LENGTH:
+            raise AppError(
+                ErrorCode.INVALID_REQUEST, message=f"앞뒤 안내를 붙인 초안은 {DRAFT_MAX_LENGTH}자 이하여야 합니다."
+            )
+        bundle.body, bundle.body_source = framed, BodySource.AI
         bundle.draft_version += 1
     bundle.draft_status = DraftStatus.DONE
     bundle.updated_at = now
@@ -557,6 +617,7 @@ def report_result(
     """봇의 발송 결과. 가져간 메시지에만 받는다. 시간 초과로 닫힌 메시지는 늦은 보고가 실제 결과로 덮어쓴다.
 
     discord_message_ids 는 실제로 나간 DM 들의 id 다. 답장의 워크스페이스를 찾는 데 쓴다.
+    그 대화에 처음 나간 DM 이면, 첫 DM 틀로 만들어 둔 승인 전 규칙·AI 묶음을 두 번째 틀로 다시 만든다.
     """
     now = utc(now)
     message = db.get(ThreadMessage, message_id, with_for_update=True)
@@ -583,12 +644,39 @@ def report_result(
         raise AppError(ErrorCode.MESSAGE_RESULT_CONFLICT, details={"message_id": message_id})
     if ids and db.scalar(select(BotDmPart.discord_message_id).where(BotDmPart.discord_message_id.in_(ids))):
         raise AppError(ErrorCode.MESSAGE_RESULT_CONFLICT, details={"message_id": message_id})
+    first_delivery = False
+    if delivered:
+        # PM 조작과 같이 대화를 잠근 뒤 본다. 겹친 보고나 PM 조작이 첫 DM 판정을 엇갈려 보지 않는다.
+        _lock_thread(db, message.thread_id)
+        first_delivery = not _has_delivered_dm(db, message.thread_id)
     message.dm_status = status
     message.dm_failure_reason = reason
     message.dm_reported_at = now
     db.add_all(BotDmPart(discord_message_id=i, message_id=message_id, created_at=now) for i in ids)
     db.flush()
+    if first_delivery:
+        _reframe_unapproved(db, message.thread_id, now)
     return message
+
+
+def _reframe_unapproved(db: Session, thread_id: str, now: datetime) -> None:
+    """PM 이 쓰지 않은 승인 전 묶음을 규칙 문구로 다시 만든다. 판이 오르고 AI 초안을 다시 받는다.
+
+    PM 이 쓴 문구와 승인한 문구는 PM 이 본 그대로 나가야 하므로 건드리지 않는다.
+    """
+    bundles = db.scalars(
+        select(ReminderBundle)
+        .where(
+            ReminderBundle.thread_id == thread_id,
+            ReminderBundle.status == ReminderStatus.SCHEDULED,
+            ReminderBundle.approved_at.is_(None),
+            ReminderBundle.body_source.in_([BodySource.RULE, BodySource.AI]),
+        )
+        .order_by(ReminderBundle.scheduled_at, ReminderBundle.bundle_id)
+        .with_for_update()
+    ).all()
+    for bundle in bundles:
+        _rebuild(db, bundle, now)
 
 
 def ingest_discord_reply(
