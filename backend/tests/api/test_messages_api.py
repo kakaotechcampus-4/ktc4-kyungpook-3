@@ -303,6 +303,13 @@ def test_discord_reply_is_stored_once_and_clears_awaiting(mdb, mseed):
     assert _reply(discord_user_id="stranger", discord_message_id="m2").status_code == 404
 
 
+def test_discord_dm_with_empty_or_padded_text_is_stored_as_is(mdb, mseed):
+    assert _reply(discord_message_id="e1", body="").status_code == 201
+    assert _reply(discord_message_id="e2", body="  네  ").status_code == 201
+    bodies = {m.discord_message_id: m.body for m in mdb.query(ThreadMessage).all()}
+    assert bodies == {"e1": "", "e2": "  네  "}
+
+
 def test_web_reply_only_by_thread_owner_and_never_goes_to_bot(mdb, mseed):
     pm = client("pm")
     _create(pm, mseed, "alice")

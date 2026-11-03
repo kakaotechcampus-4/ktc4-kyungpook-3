@@ -127,8 +127,7 @@ class BotReplyRequest(BaseModel):
     discord_message_id: str
     body: str
     sent_at: AwareDatetime
-
-    _strip_body = field_validator("body")(_non_blank)
+    # 첨부만 있는 DM 은 글이 비어 있다. 봇 DM 은 전부 저장하므로 원문 그대로 받는다.
 
 
 class BotReplyResponse(BaseModel):
