@@ -22,7 +22,7 @@
 - `tests/conftest.py`(새 파일): `.env` 에 Jev 키가 있어도 테스트가 실제 Jev 를 부르지 않게 막는다
 - [backend-ai 계약](../../../../backend/docs/contracts/backend-ai-contract.md): "근거 상태의 뜻"(certain 은 원문에 명시됐다고 확인됐다는 뜻이지 정답 확률이 아님, 묻는 방법, 평가 결과, 한계)
 
-처음에는 코드 규칙(표현 목록·정규식·날짜 계산기)으로 대조하는 A안을 구현했다가, 말의 모양이 조금만 바뀌어도 못 알아봐서 B안으로 바꿨다. A안 코드(`extract/dates.py` 의 `resolve_due_raw` 와 그 테스트)는 지웠다. 이유는 [0028](2026-11-02-0028-evidence-status-by-source-check.md).
+처음에는 코드 규칙(표현 목록·정규식·날짜 계산기)으로 대조하는 A안을 구현했다가, 말의 모양이 조금만 바뀌어도 못 알아봐서 B안으로 바꿨다. A안 코드(`extract/dates.py` 의 `resolve_due_raw` 와 그 테스트)는 지웠다. 이유는 [0031](2026-11-02-0031-evidence-status-by-source-check.md).
 
 ## 왜
 
