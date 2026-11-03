@@ -26,6 +26,8 @@ _AI_WORD = re.compile(r"(?<![A-Za-z])AI(?![A-Za-z])|봇|인공지능|(?i:chatgpt
 _DATE = re.compile(r"(?<!\d)(\d{1,2})/(\d{1,2})(?!\d)(?:\s*\(([월화수목금토일])(?:요일)?\)|\s+([월화수목금토일])요일)?")
 # 지운 제목 자리. 앞뒤 글자가 붙어 없던 날짜나 금지어가 생기지 않게 빈 글 대신 넣는다.
 _TITLE_MARK = "\0"
+# 제목마다 다른 자리 표시. 숫자·한글과 겹치지 않는 사용자 정의 영역 글자다.
+_MARK_BASE = 0xE000
 
 _DEFAULT_EXAMPLE = "재환님, API 명세서 마감이 11/14(토)이라 한번 여쭤봐요. 지금 어디까지 됐는지 편하게 알려 주세요!"
 
@@ -83,6 +85,40 @@ def _reminder_prompt(item: dict) -> str:
     )
 
 
+def _dates_follow_titles(text: str, marks: dict[str, str], tasks: list[dict]) -> bool:
+    """마감이 제 태스크에 붙어 있는지 본다. 두 마감을 서로 바꿔 쓴 글을 거른다.
+
+    한 글 안에서는 "제목 뒤에 날짜"("API 명세서는 11/14")나 "날짜 뒤에 제목"("11/14 마감인 API 명세서") 중
+    한 가지로 쓴다고 보고, 둘 중 하나로 읽었을 때 날짜가 붙은 제목마다 그 날짜가 그 태스크 마감이면 통과한다.
+    """
+    dues: dict[str, set[tuple[int, int]]] = {}
+    for task in tasks:
+        if task.get("due_date"):
+            d = date.fromisoformat(task["due_date"])
+            dues.setdefault(task["title"], set()).add((d.month, d.day))
+    positions = sorted((text.index(mark), title) for title, mark in marks.items())
+    cuts = [p for p, _ in positions]
+
+    def reads(after: bool) -> bool:
+        # 제목 하나가 맡는 구간: 제목 뒤 읽기면 그 제목부터 다음 제목 전까지, 날짜 뒤 읽기면 앞 제목 뒤부터
+        # 그 제목까지. 구간 밖(첫 제목 앞이나 마지막 제목 뒤)에 날짜가 있으면 그 읽기는 맞지 않는다.
+        bounds = [-1, *cuts, len(text)]
+        owned = range(1, len(bounds) - 1) if after else range(0, len(bounds) - 2)
+        for k in range(len(bounds) - 1):
+            segment = text[bounds[k] + 1 : bounds[k + 1]]
+            found = {(int(m[1]), int(m[2])) for m in _DATE.finditer(segment)}
+            if not found:
+                continue
+            if k not in owned:
+                return False
+            title = positions[k - 1][1] if after else positions[k][1]
+            if not found <= dues.get(title, set()):
+                return False
+        return True
+
+    return reads(after=True) or reads(after=False)
+
+
 def _parse_reminder_response(raw: object, item: dict) -> str | None:
     """Luna 응답을 검증해 본문으로. 검사를 못 넘으면 None."""
     if not isinstance(raw, dict) or not isinstance(raw.get("body"), str):
@@ -97,10 +133,15 @@ def _parse_reminder_response(raw: object, item: dict) -> str | None:
     # 긴 제목부터 지운다. "API 명세서" 를 지운 뒤에도 "API" 가 남아 있어야 "API" 태스크를 쓴 것이다.
     # 제목에 "봇 DM 발송"처럼 금지어나 날짜가 들어 있어도 제목을 그대로 옮긴 건 통과시킨다.
     unquoted = body
-    for title in sorted({t["title"] for t in item["tasks"]}, key=len, reverse=True):
+    marks: dict[str, str] = {}
+    for i, title in enumerate(sorted({t["title"] for t in item["tasks"]}, key=len, reverse=True)):
         if title not in unquoted:
             return None
-        unquoted = unquoted.replace(title, _TITLE_MARK)
+        marks[title] = chr(_MARK_BASE + i)
+        unquoted = unquoted.replace(title, marks[title])
+    if not _dates_follow_titles(unquoted, marks, item["tasks"]):
+        return None
+    unquoted = re.sub(f"[{chr(_MARK_BASE)}-{chr(_MARK_BASE + len(marks))}]", _TITLE_MARK, unquoted)
 
     weekdays: dict[tuple[int, int], set[str]] = {}
     for task in item["tasks"]:

@@ -156,3 +156,15 @@ def test_uses_luna_by_default(monkeypatch):
     monkeypatch.setattr(rd, "get_llm", lambda which: seen.append(which) or fake)
     assert draft_reminder(_item()) == GOOD
     assert seen == ["luna"]
+
+
+def test_swapped_due_dates_between_tasks_are_rejected():
+    swapped = ("재환님, API 명세서 작성은 11/20(금), 로그인 화면 QA는 11/14(토)까지라 한번 여쭤봐요. "
+               "막힌 게 있으면 편하게 말씀 주세요!")
+    assert _run({"body": swapped})[0] is None
+
+
+def test_date_written_before_its_title_still_passes():
+    before = ("재환님, 11/14(토) 마감인 API 명세서 작성이랑 11/20(금)까지인 로그인 화면 QA 한번 여쭤봐요. "
+              "디자인 시안 바뀐 부분도 같이 봐 주세요!")
+    assert _run({"body": before})[0] == before
