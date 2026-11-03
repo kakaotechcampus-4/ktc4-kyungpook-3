@@ -30,7 +30,7 @@ lint/format 설정은 없다. 있다고 가정하지 않는다.
 | `extract/` | 옛 추출 경로 (`MM_EXTRACT_PATH=legacy`, 기본값) | [extract/README.md](extract/README.md), [TASK_CRITERIA.md](extract/TASK_CRITERIA.md) |
 | `draft/` | 승인 항목의 제목·마감일·설명 초안 (Luna Phase 2) | `doc_draft.py` |
 | `shared/` | BE와 공유하는 타입 계약, `.env` 로딩 | `schemas.py`, `config.py` |
-| `llm.py`, `embedding.py` | Terra·Luna·임베딩 클라이언트 (Elice MLAPI) | 파일 상단 주석 |
+| `llm.py`, `embedding.py`, `jev.py` | Terra·Luna·임베딩·Jev(판정 API) 클라이언트 (Elice MLAPI) | 파일 상단 주석 |
 | `deploy/systemd/` | 운영 서비스 `mm-bot`, `mm-worker` | |
 
 추출 경로는 `MM_EXTRACT_PATH`로 고른다(`capture/judge_path.py`). 매니페스트 형식과 단계 상태(recording →

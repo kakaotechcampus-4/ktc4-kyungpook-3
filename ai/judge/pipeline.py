@@ -9,7 +9,7 @@
   - 담당자, 근거 원문·화자        → JudgeFinding (1단계가 전사록 전체를 보고 판정)
   - 새 항목/수정, 대상, 상태, 분류 → JudgeResult  (Terra 가 후보와 비교해 판정)
   - 제목, 마감일, 설명 문장        → DraftResult  (Luna 가 생성)
-  - 근거 상태                      → judge/evidence.py 가 근거 원문과 Luna 의 due_raw 를 대조
+  - 근거 상태                      → judge/evidence.py 가 Jev 에게 근거 원문에 명시됐는지 다시 물음
 """
 
 from __future__ import annotations
@@ -19,7 +19,8 @@ from datetime import date
 from typing import Any, Protocol
 
 from draft.doc_draft import DraftUnavailableError, draft
-from judge.evidence import due_status, task_status, worse
+from jev import get_jev
+from judge.evidence import verify, worse
 from judge.final_judge import JudgeUnavailableError, judge
 from judge.semantic_judge import empty_drops, extract_findings_counted
 from llm import get_llm
@@ -156,13 +157,14 @@ def _new_card_candidate(n: int, card: dict[str, Any]) -> NotionCandidate:
                            due_date=card["due_date"], status=card["status"], meeting_note=note)
 
 
-def _evidence_fields(finding: JudgeFinding, drafted: DraftResult, today: date) -> dict[str, Any]:
-    """create 항목의 근거 상태 — 근거 원문과 Luna 의 마감 표현을 대조한다."""
-    lines = finding.evidence  # 비면 빈 채로 — LLM 요약(finding.text)으로 대신 대조하지 않는다
+def _evidence_fields(finding: JudgeFinding, drafted: DraftResult, task: str | None, today: date) -> dict[str, Any]:
+    """create 항목의 근거 상태 — 근거 원문에 명시됐는지 Jev 에게 다시 묻는다(호출 1회).
+
+    근거는 finding.evidence 원문만 준다. 비어 있어도 LLM 요약(finding.text)으로 대신하지 않는다.
+    """
     s = drafted.structured
-    return {"task_status": task_status(lines),
-            "due_status": due_status(lines, s.due_raw, s.due_date, today),  # due_date 는 None 그대로 — 빈 문자열이면 inferred
-            "due_raw": s.due_raw}
+    task_status, due_status = verify(finding.evidence, task, s.due_date, s.due_raw, today, get_jev())
+    return {"task_status": task_status, "due_status": due_status, "due_raw": s.due_raw}
 
 
 def _search_fields(found: list[NotionCandidate]) -> dict[str, Any]:
@@ -182,7 +184,7 @@ def _merge_into(card: dict[str, Any], finding: JudgeFinding, result: JudgeResult
     elif drafted.structured.due_date is not None:
         card["due_date"] = drafted.structured.due_date
     if card["action"] == "create":
-        ev = _evidence_fields(finding, drafted, today)
+        ev = _evidence_fields(finding, drafted, card["task_title"], today)
         card["task_status"] = worse(card["task_status"], ev["task_status"])
         if drafted.structured.due_cleared:
             card["due_status"], card["due_raw"] = "missing", None
@@ -338,7 +340,7 @@ def run(
             continue
         out.items.append(item)
         if result.is_new:
-            item.update(_evidence_fields(finding, drafted, today))
+            item.update(_evidence_fields(finding, drafted, item["task_title"], today))
             item.update(_search_fields(found))
             new_cards.append(item)
         else:
