@@ -58,6 +58,7 @@ function Messages({ unknownPath = false }: { unknownPath?: boolean }) {
     <MessageInbox
       workspaceId={workspaceId}
       botName={workspace.name}
+      viewer={workspace.role}
       threadId={threadId}
       reviewId={rawReviewId === null ? undefined : parseRouteId(rawReviewId)}
       invalidPath={unknownPath || (rawThreadId !== undefined && threadId === null)}

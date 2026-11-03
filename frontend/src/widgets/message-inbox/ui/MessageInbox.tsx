@@ -8,6 +8,9 @@ import { GuardedLink } from '@/shared/lib/unsaved-changes'
 import { EmptyState } from '@/shared/ui/empty-state'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
 import { avatarText, reviewDateLabel, shortDate } from '../lib/format'
+import { selectDetail } from '../model/selection'
+import { VIEWER_POLICY } from '../model/viewer'
+import type { MessageViewer, ViewerPolicy } from '../model/viewer'
 import { InboxListSkeleton, ReviewSkeleton } from './MessageSkeletons'
 import { ReviewDetail } from './ReviewDetail'
 import { ThreadDetail, ThreadUnavailable } from './ThreadDetail'
@@ -48,6 +51,8 @@ export interface MessageInboxProps {
   workspaceId: string
   /** 메시지를 보내는 봇의 이름. 공간 이름을 쓴다 (Messages 시안의 `캡스톤 5조 봇`) */
   botName: string
+  /** 이 공간에서 화면을 보는 사람. 아래는 역할 표만 본다 */
+  viewer: MessageViewer
   /** URL 이 가리키는 대화. 없으면 null */
   threadId: string | null
   /**
@@ -67,70 +72,80 @@ export interface MessageInboxProps {
 export function MessageInbox({
   workspaceId,
   botName,
+  viewer,
   threadId,
   reviewId,
   invalidPath = false,
 }: MessageInboxProps) {
   const inbox = useQuery(messageInboxQueryOptions(workspaceId))
   const detailRef = useRef<HTMLElement>(null)
-  const reviews = inbox.data?.reviews ?? []
-  const review =
-    threadId !== null || invalidPath
-      ? null
-      : reviewId === undefined
-        ? (reviews.at(0) ?? null)
-        : (reviews.find(({ id }) => id === reviewId) ?? null)
+  const policy = VIEWER_POLICY[viewer]
+  const selection = selectDetail({
+    inbox: inbox.data,
+    threadId,
+    reviewId,
+    invalidPath,
+    policy,
+  })
+  const selectedThreadId = selection.kind === 'thread' ? selection.threadId : null
 
-  // 검토 항목도 대화도 없다 — EmptyMessages 캔버스 한 장.
+  // 볼 것이 없다 — EmptyMessages 캔버스 한 장. 팀원은 받은 대화가 없을 때, PM 은 검토와 대화가 모두 없을 때.
   // `알림 규칙 보기` 화면은 아직 없어 가장 가까운 팀 설정으로 보낸다 (결과 문서 C 의 차이표)
   if (
     threadId === null &&
     !invalidPath &&
     inbox.data !== undefined &&
-    inbox.data.reviews.length === 0 &&
-    inbox.data.threads.length === 0
+    (policy.reviews
+      ? inbox.data.reviews.length === 0 && inbox.data.threads.length === 0
+      : inbox.data.threads.length === 0)
   )
     return (
       <main className={EMPTY_PAGE}>
-        <EmptyState
-          title="보낼 메시지가 없어요"
-          description="마감이 다가오거나 진행이 멈추면, 담당자에게 보낼 DM을 여기에 준비해 둘게요. 보내기 전에 항상 물어봅니다."
-          action={
-            <GuardedLink to={paths.settings(workspaceId)} className={EMPTY_ACTION}>
-              알림 규칙 보기
-            </GuardedLink>
-          }
-        />
+        {policy.reviews ? (
+          <EmptyState
+            title="보낼 메시지가 없어요"
+            description="마감이 다가오거나 진행이 멈추면, 담당자에게 보낼 DM을 여기에 준비해 둘게요. 보내기 전에 항상 물어봅니다."
+            action={
+              <GuardedLink to={paths.settings(workspaceId)} className={EMPTY_ACTION}>
+                알림 규칙 보기
+              </GuardedLink>
+            }
+          />
+        ) : (
+          <EmptyState
+            title="받은 메시지가 없어요"
+            description={`${botName} 봇이 메시지를 보내면 여기에서 보고 답장할 수 있어요.`}
+          />
+        )}
       </main>
     )
 
   let detail
-  if (invalidPath) detail = <ThreadUnavailable />
-  else if (threadId !== null)
+  if (selection.kind === 'invalid') detail = <ThreadUnavailable />
+  else if (selection.kind === 'thread')
     // 대화가 바뀌면 상세를 새로 마운트한다 — 이전 대화의 스크롤 자리를 들고 있지 않는다
     detail = (
       <ThreadDetail
-        key={threadId}
+        key={selection.threadId}
         workspaceId={workspaceId}
-        threadId={threadId}
+        threadId={selection.threadId}
         botName={botName}
+        viewer={viewer}
       />
     )
-  else if (review !== null)
+  else if (selection.kind === 'review')
     // 항목이 바뀌면 고쳐 쓰던 문구·직접 정하던 시각을 들고 가지 않는다
     detail = (
       <ReviewDetail
-        key={review.id}
+        key={selection.review.id}
         workspaceId={workspaceId}
         botName={botName}
-        review={review}
+        review={selection.review}
         onSettled={() => detailRef.current?.focus()}
       />
     )
-  else if (inbox.data === undefined && inbox.error === null) detail = <ReviewSkeleton />
-  else if (inbox.data !== undefined)
-    detail = <p className={EMPTY_DETAIL}>왼쪽 목록에서 확인할 메시지나 대화를 골라 주세요.</p>
-  else detail = null
+  else if (selection.kind === 'loading') detail = inbox.error === null ? <ReviewSkeleton /> : null
+  else detail = <p className={EMPTY_DETAIL}>왼쪽 목록에서 확인할 메시지나 대화를 골라 주세요.</p>
 
   return (
     <main className={SCREEN}>
@@ -139,9 +154,11 @@ export function MessageInbox({
         {inbox.data !== undefined ? (
           <InboxList
             workspaceId={workspaceId}
+            botName={botName}
             inbox={inbox.data}
-            threadId={threadId}
-            reviewId={review?.id ?? null}
+            policy={policy}
+            threadId={selectedThreadId}
+            reviewId={selection.kind === 'review' ? selection.review.id : null}
           />
         ) : inbox.error !== null ? (
           // 목록 오류는 목록 칸에만 알린다. 고른 대화는 따로 받아 그대로 보인다
@@ -166,12 +183,16 @@ export function MessageInbox({
 
 function InboxList({
   workspaceId,
+  botName,
   inbox,
+  policy,
   threadId,
   reviewId,
 }: {
   workspaceId: string
+  botName: string
   inbox: Inbox
+  policy: ViewerPolicy
   threadId: string | null
   reviewId: string | null
 }) {
@@ -181,27 +202,29 @@ function InboxList({
   const today = todayInSeoul()
   return (
     <>
-      <section aria-labelledby="messages-reviews" className="flex flex-col gap-6">
-        <h2 id="messages-reviews" className={`${GROUP_LABEL} px-8`}>
-          보내기 전 확인 {inbox.reviews.length}
-        </h2>
-        {inbox.reviews.length === 0 ? (
-          <p className={GROUP_NOTE}>지금 확인할 메시지가 없어요.</p>
-        ) : (
-          <ul className="flex flex-col gap-6">
-            {inbox.reviews.map((review) => (
-              <li key={review.id}>
-                <ReviewRow
-                  workspaceId={workspaceId}
-                  review={review}
-                  dateLabel={reviewDateLabel(review, today)}
-                  selected={review.id === reviewId}
-                />
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+      {policy.reviews ? (
+        <section aria-labelledby="messages-reviews" className="flex flex-col gap-6">
+          <h2 id="messages-reviews" className={`${GROUP_LABEL} px-8`}>
+            보내기 전 확인 {inbox.reviews.length}
+          </h2>
+          {inbox.reviews.length === 0 ? (
+            <p className={GROUP_NOTE}>지금 확인할 메시지가 없어요.</p>
+          ) : (
+            <ul className="flex flex-col gap-6">
+              {inbox.reviews.map((review) => (
+                <li key={review.id}>
+                  <ReviewRow
+                    workspaceId={workspaceId}
+                    review={review}
+                    dateLabel={reviewDateLabel(review, today)}
+                    selected={review.id === reviewId}
+                  />
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      ) : null}
       <section aria-labelledby="messages-threads" className="flex flex-col gap-4">
         <div className="flex items-center justify-between gap-8 px-8">
           <h2 id="messages-threads" className={GROUP_LABEL}>
@@ -219,7 +242,9 @@ function InboxList({
               <li key={thread.id}>
                 <ThreadRow
                   workspaceId={workspaceId}
+                  botName={botName}
                   thread={thread}
+                  ownSender={policy.ownSender}
                   selected={thread.id === threadId}
                 />
               </li>
@@ -268,13 +293,18 @@ function ReviewRow({
 
 function ThreadRow({
   workspaceId,
+  botName,
   thread,
+  ownSender,
   selected,
 }: {
   workspaceId: string
+  botName: string
   thread: MessageThreadSummary
+  ownSender: ViewerPolicy['ownSender']
   selected: boolean
 }) {
+  const title = ownSender === 'member' && thread.kind === 'direct' ? `${botName} 봇` : thread.name
   const queryClient = useQueryClient()
   const last = thread.lastMessage
   /* 고르기 직전(가리키기·포커스)에 그 대화를 미리 받는다 — 고른 뒤 스켈레톤 없이 바로 그린다 (회의록 목록의 prefetchMinutes 와 같은 방식).
@@ -300,15 +330,15 @@ function ThreadRow({
             : `${AVATAR} size-30 text-[11px] group-aria-[current=page]:bg-ink group-aria-[current=page]:text-surface`
         }
       >
-        {avatarText(thread.name, thread.kind)}
+        {avatarText(title, thread.kind)}
       </span>
       <span className="flex min-w-[0px] flex-1 flex-col gap-1">
         <span className="text-control leading-[1.75] font-semibold wrap-anywhere text-ink">
-          {thread.name}
+          {title}
         </span>
         {last === null ? null : (
           <span className="truncate text-meta leading-[1.5] text-dim">
-            {last.sender === 'bot' ? `나: ${last.body}` : last.body}
+            {last.sender === ownSender ? `나: ${last.body}` : last.body}
           </span>
         )}
       </span>

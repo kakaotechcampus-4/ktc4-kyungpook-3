@@ -2,7 +2,11 @@ import type { WorkspaceDto } from '@/shared/types/api/workspace'
 import { initialDb, replaceDb } from './db'
 import type { MeetingFlowMode, MockDb } from './db'
 import { MOCK_NOW } from './fixtures/constants'
-import { schedulePassedReview } from './fixtures/message'
+import {
+  messagesMemberReview,
+  messagesMemberThread,
+  schedulePassedReview,
+} from './fixtures/message'
 import { completeMeeting, setMeetingFlowMode } from './meetingFlow'
 import { setMockRole } from './sessions'
 import { createTask } from './task-state'
@@ -518,14 +522,16 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
       state.messageFailures.threadIds = ['th_01']
       break
     case 'messages-send-fail':
-      // 조회는 정상이고 발송·보내지 않음·고쳐 쓰기·발송 시점 변경만 5xx 다. db 는 바뀌지 않는다
+      // 조회는 정상이고 발송·보내지 않음·고쳐 쓰기·발송 시점·답장만 5xx 다. db 는 바뀌지 않는다
       signInWith(state, ['ws_01'], 'ws_01')
       state.messageFailures.actions = true
       break
     case 'messages-member':
-      // 일반 팀원. 조회는 되고 발송·보내지 않음·고쳐 쓰기·발송 시점은 403 이다
+      // 일반 팀원(mb_01). 자기 대화 th_06 만 보이고, 그 대화의 승인 대기 rv_05 는 보이지 않는다
       signInWith(state, ['ws_01'], 'ws_01')
       setMockRole('member', 'ws_01', state)
+      state.messageThreads.push(structuredClone(messagesMemberThread))
+      state.messageReviews.push(structuredClone(messagesMemberReview))
       break
     case 'messages-schedule-passed':
       // rv_06 은 마감 하루 전 시각이 이미 지났다. 마감은 오늘이라 만료가 아니고, 발송은 409 다

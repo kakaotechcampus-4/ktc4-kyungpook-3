@@ -17,7 +17,13 @@ import { MessageInbox } from './MessageInbox'
 const meta = {
   title: 'M8 메시지/화면',
   component: MessageInbox,
-  args: { workspaceId: 'ws_01', botName: '카테캠 3팀', threadId: null, reviewId: undefined },
+  args: {
+    workspaceId: 'ws_01',
+    botName: '카테캠 3팀',
+    viewer: 'pm',
+    threadId: null,
+    reviewId: undefined,
+  },
   parameters: { scenario: 'messages-default', route: paths.messages('ws_01') },
 } satisfies Meta<typeof MessageInbox>
 
@@ -125,6 +131,25 @@ export const 대화_취소_만료: Story = {
       'href',
       paths.messageReview('ws_01', 'rv_02'),
     )
+  },
+}
+
+/** 팀원은 자기 대화만 보고, 점선 재촉 없이 웹에서 답한다 */
+export const 팀원_내_대화: Story = {
+  args: { viewer: 'member' },
+  parameters: { scenario: 'messages-member', route: paths.messages('ws_01') },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const detail = detailOf(canvasElement)
+    await expect(
+      await detail.findByRole('heading', { level: 2, name: '카테캠 3팀 봇' }),
+    ).toBeVisible()
+    await expect(canvas.queryByText(/보내기 전 확인/)).toBeNull()
+    await expect(detail.getByText('14:20 · 웹에서 답장')).toBeVisible()
+    await expect(detail.queryByText(/자동 발송/)).toBeNull()
+    await expect(detail.queryByRole('link', { name: '확인하기' })).toBeNull()
+    await expect(detail.getByRole('button', { name: '답장 보내기' })).toBeEnabled()
+    await expect(canvas.queryByText('팀원에게 숨긴 재촉')).toBeNull()
   },
 }
 

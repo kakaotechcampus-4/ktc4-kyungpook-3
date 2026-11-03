@@ -281,3 +281,42 @@ export const messageThreadFixtures: MockMessageThread[] = [
     messages: [reply('mg_21', '랜딩 시안 공유드려요', '2026-09-16T13:00:00+09:00')],
   },
 ]
+
+/**
+ * 기본 목록에 넣지 않는다. `messages-member` 만 더한다.
+ * 세션 팀원(mb_01)의 대화라 그 사람만 보고, 대기 중인 rv_05 는 전달된 메시지에 없다.
+ */
+export const messagesMemberThread: MockMessageThread = {
+  thread_id: 'th_06',
+  workspace_id: 'ws_01',
+  member_id: 'mb_01',
+  kind: 'direct',
+  name: '김서연',
+  team_role: '기획',
+  discord_url: discordUrl('th_06'),
+  messages: [
+    botMessage('mg_11', '서연님, 이번 주 할 일을 정리해 뒀어요.', '2026-09-15T09:00:00+09:00'),
+    botMessage('mg_12', '서연님, 명세서는 시작하셨나요?', '2026-09-16T18:00:00+09:00', PM_NAME),
+    reply('mg_13', '디스코드에서 답했어요', '2026-09-16T19:00:00+09:00'),
+    reply('mg_14', '웹에서 남긴 답장이에요', '2026-09-17T14:20:00+09:00', 'web'),
+    botMessage('mg_15', '서연님, 오늘 남은 확인만 부탁드려요.', '2026-09-17T18:00:00+09:00'),
+  ],
+}
+
+/** th_06 에 매달린 승인 대기. 팀원 목록·대화에는 나오지 않고, 웹 답장으로 취소되지도 않는다 */
+export const messagesMemberReview: MockMessageReview = {
+  review_id: 'rv_05',
+  workspace_id: 'ws_01',
+  thread_id: 'th_06',
+  recipient_name: '김서연',
+  summary: '팀원에게 숨긴 재촉',
+  body: '서연님, 이 재촉은 보내기 전 확인에만 있어요.',
+  created_at: '2026-09-17T18:00:00+09:00',
+  deadline: '2026-09-24',
+  reason: '이번 주 할 일 안내 이후 웹 답장은 있었지만, 이 재촉은 아직 승인 전이에요.',
+  reason_url: null,
+  send_timing: 'day_before_deadline',
+  scheduled_at: '2026-09-23T09:00:00+09:00',
+  deadline_send_at: '2026-09-23T09:00:00+09:00',
+  ...open,
+}

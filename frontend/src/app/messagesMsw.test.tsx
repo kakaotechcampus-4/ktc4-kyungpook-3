@@ -6,6 +6,7 @@ import { paths } from '@/shared/config/routes'
 import { db } from '@/shared/mock/db'
 import { MOCK_NOW } from '@/shared/mock/fixtures/constants'
 import { botMessage } from '@/shared/mock/fixtures/message'
+import { applyScenario } from '@/shared/mock/scenarios'
 import { recordRequests } from '@/shared/test/requests'
 import {
   conversation,
@@ -412,10 +413,8 @@ describe('워크스페이스를 바꾸면 이전 공간의 메시지가 보이�
     expect(screen.queryByText('이재환')).toBeNull()
 
     act(() => gate.resolve())
-    await screen.findByRole('region', { name: '대화' })
-    expect(rowTexts(threadList())).toEqual(['한결랜딩 시안 공유드려요09/16'])
-    expect(within(reviewList()).queryAllByRole('link')).toEqual([])
-    expect(screen.queryByText(/이재환|박민수|정하늘/)).toBeNull()
+    expect(await screen.findByRole('heading', { name: '받은 메시지가 없어요' })).toBeVisible()
+    expect(screen.queryByText(/이재환|박민수|정하늘|한결/)).toBeNull()
   })
 
   it('이전 공간의 대화 ID 를 새 공간 주소에 붙이면 찾을 수 없다', async () => {
@@ -646,5 +645,75 @@ describe('목록 라벨·발송 시점 포커스 선·버튼 크기가 디자인
     await userEvent.click(detail().getByRole('radio', { name: /직접 정하기/ }))
     expect(button('이 시각으로 정하기')).toHaveClass('h-36')
     expect(button('취소')).toHaveClass('h-36')
+  })
+})
+
+describe('팀원은 자기 대화만 보고 웹에서 답장한다', () => {
+  const columnOf = (text: string) =>
+    within(conversation()).getByText(text).closest('p')?.parentElement
+
+  it('받은 대화가 없으면 답장 안내만 있다', async () => {
+    applyScenario('messages-member')
+    db.messageThreads = db.messageThreads.filter(({ member_id }) => member_id !== 'mb_01')
+    renderApp(paths.messages('ws_01'))
+    expect(await screen.findByRole('heading', { name: '받은 메시지가 없어요' })).toBeVisible()
+    expect(
+      screen.getByText('카테캠 3팀 봇이 메시지를 보내면 여기에서 보고 답장할 수 있어요.'),
+    ).toBeVisible()
+    expect(screen.queryByRole('link', { name: '알림 규칙 보기' })).toBeNull()
+  })
+
+  it('첫 대화를 열고 점선 재촉은 보이지 않는다', async () => {
+    applyScenario('messages-member')
+    const app = await openInbox()
+    await app.expectPath(paths.messages('ws_01'))
+    expect(list().queryByRole('region', { name: /^보내기 전 확인/ })).toBeNull()
+    expect(current()).toHaveLength(1)
+    expect(current()[0]).toHaveTextContent('카테캠 3팀 봇')
+    expect(await detail().findByRole('heading', { level: 2, name: '카테캠 3팀 봇' })).toBeVisible()
+    expect(detail().getByText('Discord 개인 메시지 · 웹에서도 답장할 수 있어요')).toBeVisible()
+    expect(columnOf('서연님, 이번 주 할 일을 정리해 뒀어요.')).toHaveClass('items-start')
+    expect(columnOf('디스코드에서 답했어요')).toHaveClass('items-end')
+    expect(columnOf('웹에서 남긴 답장이에요')).toHaveClass('items-end')
+    expect(within(conversation()).getByText('14:20 · 웹에서 답장')).toBeVisible()
+    expect(within(conversation()).queryByText(/자동 발송/)).toBeNull()
+    expect(within(conversation()).queryByText(/최진호 승인/)).toBeNull()
+    expect(detail().queryByRole('link', { name: '확인하기' })).toBeNull()
+    expect(screen.queryByText('팀원에게 숨긴 재촉')).toBeNull()
+    expect(screen.queryByText('서연님, 이 재촉은 보내기 전 확인에만 있어요.')).toBeNull()
+  })
+
+  it('빈 답장은 보내지 않고, 적은 답장은 대화에 남고 칸은 비운다', async () => {
+    applyScenario('messages-member')
+    await openInbox()
+    const field = await detail().findByRole('textbox', { name: '답장' })
+    const log = recordRequests()
+    await userEvent.click(detail().getByRole('button', { name: '답장 보내기' }))
+    expect(detail().getByText('답장을 입력해 주세요.')).toBeVisible()
+    expect(log.started.some((request) => request.path.includes('/replies'))).toBe(false)
+
+    await userEvent.type(field, '웹에서 한 줄 더')
+    await userEvent.click(detail().getByRole('button', { name: '답장 보내기' }))
+    expect(await within(conversation()).findByText('웹에서 한 줄 더')).toBeVisible()
+    expect(within(conversation()).getByText('09:00 · 웹에서 답장')).toBeVisible()
+    expect(field).toHaveValue('')
+  })
+
+  it('답장을 보내지 못하면 쓰던 글을 남긴다', async () => {
+    applyScenario('messages-member')
+    db.messageFailures.actions = true
+    await openInbox()
+    const field = await detail().findByRole('textbox', { name: '답장' })
+    await userEvent.type(field, '남겨 둘 답장')
+    await userEvent.click(detail().getByRole('button', { name: '답장 보내기' }))
+    const alert = await detail().findByRole('alert')
+    expect(alert).toHaveTextContent('답장을 보내지 못했어요')
+    expect(field).toHaveValue('남겨 둘 답장')
+  })
+
+  it('남의 대화 주소는 찾을 수 없다고 알린다', async () => {
+    applyScenario('messages-member')
+    await openInbox(paths.messageThread('ws_01', 'th_01'))
+    expect(await detail().findByRole('heading', { name: '대화를 찾을 수 없어요' })).toBeVisible()
   })
 })

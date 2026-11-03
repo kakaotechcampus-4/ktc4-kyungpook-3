@@ -13,7 +13,9 @@ import { awaitingDays, dayLabel } from '../lib/format'
 import { buildConversation } from '../model/conversation'
 import type { BubbleItem } from '../model/conversation'
 import { VIEWER_POLICY } from '../model/viewer'
+import type { MessageViewer } from '../model/viewer'
 import { ThreadSkeleton } from './MessageSkeletons'
+import { ReplyForm } from './ReplyForm'
 
 /* MessagesThread 캔버스 실측 — 머리 76(좌우 28, 아래 선), 대화 칸 눌린 면(위 24 · 좌우 28 · 아래 18, 간격 16),
    봇 말풍선 먹 면 최대 438 · 상대 말풍선 흰 면 선 최대 410, 둘 다 라운드 15 에 꼬리 쪽만 4,
@@ -57,14 +59,23 @@ export function ThreadDetail({
   workspaceId,
   threadId,
   botName,
+  viewer,
 }: {
   workspaceId: string
   threadId: string
   botName: string
+  viewer: MessageViewer
 }) {
   const thread = useQuery(messageThreadQueryOptions(workspaceId, threadId))
   if (thread.data !== undefined)
-    return <ThreadView workspaceId={workspaceId} botName={botName} thread={thread.data} />
+    return (
+      <ThreadView
+        workspaceId={workspaceId}
+        botName={botName}
+        thread={thread.data}
+        viewer={viewer}
+      />
+    )
   if (thread.error === null) return <ThreadSkeleton />
   // 없는 대화는 다시 받아도 없다 — 다시 시도 대신 찾을 수 없다고 알린다
   if (thread.error instanceof ApiError && thread.error.status === 404) return <ThreadUnavailable />
@@ -96,10 +107,12 @@ function ThreadView({
   workspaceId,
   botName,
   thread,
+  viewer,
 }: {
   workspaceId: string
   botName: string
   thread: MessageThread
+  viewer: MessageViewer
 }) {
   const bodyRef = useRef<HTMLElement>(null)
   // 대화를 열면 가장 최근 메시지부터 보인다. 대화가 바뀌면 화면이 새로 마운트된다 (MessageInbox 의 key)
@@ -108,7 +121,8 @@ function ThreadView({
     if (body !== null) body.scrollTop = body.scrollHeight
   }, [])
   const today = todayInSeoul()
-  const view = buildConversation(thread, { policy: VIEWER_POLICY.pm, botName, today })
+  const policy = VIEWER_POLICY[viewer]
+  const view = buildConversation(thread, { policy, botName, today })
   const waitingDays =
     thread.awaitingReplySince === null ? null : awaitingDays(thread.awaitingReplySince, today)
 
@@ -185,7 +199,11 @@ function ThreadView({
           </div>
         )}
       </section>
-      <ThreadNotice botName={botName} />
+      {policy.foot === 'reply' ? (
+        <ReplyForm workspaceId={workspaceId} threadId={thread.id} botName={botName} />
+      ) : (
+        <ThreadNotice botName={botName} />
+      )}
     </div>
   )
 }

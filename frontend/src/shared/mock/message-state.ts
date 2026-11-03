@@ -196,18 +196,25 @@ function awaitingReplySince(
   return since
 }
 
+/** 팀원에게는 이미 전달된 것만 남기고, 승인·답장 대기·태스크 판정은 비운다 */
+function forMember(message: MessageDto): MessageDto {
+  return { ...message, approved_by: null, attribution: null }
+}
+
 export function threadSummaryOf(
   thread: MockMessageThread,
   reviews: readonly MockMessageReview[],
   now: string,
+  viewer: 'pm' | 'member' = 'pm',
 ): MessageThreadSummaryDto {
   const delivered = deliveredMessages(thread, reviews, now)
+  const last = delivered.at(-1) ?? null
   return {
     thread_id: thread.thread_id,
     kind: thread.kind,
     name: thread.name,
-    last_message: delivered.at(-1) ?? null,
-    awaiting_reply_since: awaitingReplySince(delivered, thread.kind),
+    last_message: viewer === 'member' && last !== null ? forMember(last) : last,
+    awaiting_reply_since: viewer === 'member' ? null : awaitingReplySince(delivered, thread.kind),
     needs_attribution: false,
   }
 }
@@ -216,6 +223,7 @@ export function threadDtoOf(
   thread: MockMessageThread,
   reviews: readonly MockMessageReview[],
   now: string,
+  viewer: 'pm' | 'member' = 'pm',
 ): MessageThreadDto {
   const delivered = deliveredMessages(thread, reviews, now)
   return {
@@ -224,7 +232,7 @@ export function threadDtoOf(
     name: thread.name,
     team_role: thread.team_role,
     discord_url: thread.discord_url,
-    messages: threadMessages(thread, reviews, now),
-    awaiting_reply_since: awaitingReplySince(delivered, thread.kind),
+    messages: viewer === 'member' ? delivered.map(forMember) : threadMessages(thread, reviews, now),
+    awaiting_reply_since: viewer === 'member' ? null : awaitingReplySince(delivered, thread.kind),
   }
 }

@@ -4,7 +4,9 @@ import { db } from '../db'
 import { ok, fail } from '../envelope'
 import { requireMember, requirePmRole } from '../auth-guard'
 import { MOCK_NOW } from '../fixtures/constants'
+import { reply } from '../fixtures/message'
 import type { MockMessageReview } from '../fixtures/message'
+import { sessionMemberId } from '../sessions'
 import {
   applyPatch,
   approve,
@@ -15,7 +17,7 @@ import {
   threadDtoOf,
   threadSummaryOf,
 } from '../message-state'
-import { readJson } from '../utils'
+import { nextId, readJson } from '../utils'
 
 /*
  * M8 메시지. 메시지 API 가 없어 경로·응답 모양·오류 코드 모두 임시다 — 계약이 아니다 (계획 C-2, C-8).
@@ -33,6 +35,11 @@ const reviewNotFound = () =>
 /** Discord DM 한 건의 글자 수 한도 */
 const BODY_MAX_LENGTH = 2000
 const SEND_TIMINGS: readonly MessageSendTimingDto[] = ['day_before_deadline', 'now', 'custom']
+
+function viewerOf(workspaceId: string): 'pm' | 'member' {
+  const workspace = db.workspaces.find(({ workspace_id }) => workspace_id === workspaceId)
+  return workspace?.role === 'member' ? 'member' : 'pm'
+}
 
 function byInboxOrder(
   left: { kind: string; last_message: { at: string | null } | null },
@@ -91,15 +98,21 @@ export const messageHandlers = [
     const denied = requireMember(workspaceId)
     if (denied) return denied
     if (db.messageFailures.inbox) return serverError()
+    const viewer = viewerOf(workspaceId)
+    const ownerId = sessionMemberId(workspaceId)
     const reviews = db.messageReviews.filter((review) => review.workspace_id === workspaceId)
     const threads = db.messageThreads
       .filter(({ workspace_id }) => workspace_id === workspaceId)
-      .map((thread) => threadSummaryOf(thread, reviews, MOCK_NOW))
+      .filter((thread) => viewer === 'pm' || (ownerId !== null && thread.member_id === ownerId))
+      .map((thread) => threadSummaryOf(thread, reviews, MOCK_NOW, viewer))
       .sort(byInboxOrder)
     return ok({
-      reviews: reviews
-        .filter((review) => isOpen(review, MOCK_NOW))
-        .map((review) => reviewDtoOf(review, MOCK_NOW)),
+      reviews:
+        viewer === 'member'
+          ? []
+          : reviews
+              .filter((review) => isOpen(review, MOCK_NOW))
+              .map((review) => reviewDtoOf(review, MOCK_NOW)),
       threads,
     })
   }),
@@ -113,10 +126,47 @@ export const messageHandlers = [
         thread_id === params.threadId && workspace_id === workspaceId,
     )
     if (!thread) return fail('MESSAGE_THREAD_NOT_FOUND', '대화를 찾을 수 없습니다.', 404)
+    const viewer = viewerOf(workspaceId)
+    const ownerId = sessionMemberId(workspaceId)
+    if (viewer === 'member' && (ownerId === null || thread.member_id !== ownerId))
+      return fail('MESSAGE_THREAD_NOT_FOUND', '대화를 찾을 수 없습니다.', 404)
     if (db.messageFailures.threadIds.includes(thread.thread_id)) return serverError()
     const reviews = db.messageReviews.filter((review) => review.workspace_id === workspaceId)
-    return ok(threadDtoOf(thread, reviews, MOCK_NOW))
+    return ok(threadDtoOf(thread, reviews, MOCK_NOW, viewer))
   }),
+
+  /** 그 대화의 팀원만 웹에서 답한다. Discord 로는 나가지 않고, 재촉 상태는 바꾸지 않는다 */
+  http.post(
+    '/api/v1/workspaces/:workspaceId/messages/threads/:threadId/replies',
+    async ({ params, request }) => {
+      const workspaceId = String(params.workspaceId)
+      const denied = requireMember(workspaceId)
+      if (denied) return denied
+      const thread = db.messageThreads.find(
+        ({ thread_id, workspace_id }) =>
+          thread_id === params.threadId && workspace_id === workspaceId,
+      )
+      const ownerId = sessionMemberId(workspaceId)
+      if (
+        viewerOf(workspaceId) !== 'member' ||
+        ownerId === null ||
+        !thread ||
+        thread.member_id !== ownerId
+      )
+        return fail('FORBIDDEN', '자기 대화에만 답장할 수 있습니다.', 403)
+      const input = await readJson(request)
+      const body = typeof input?.body === 'string' ? input.body.trim() : null
+      if (body === null || body.length === 0 || body.length > BODY_MAX_LENGTH)
+        return invalid(`답장은 1자 이상 ${String(BODY_MAX_LENGTH)}자 이하입니다.`)
+      if (db.messageFailures.actions) return actionError()
+      const messageId = nextId(
+        'mg',
+        db.messageThreads.flatMap((item) => item.messages.map(({ message_id }) => message_id)),
+      )
+      thread.messages.push(reply(messageId, body, MOCK_NOW, 'web'))
+      return ok({ message_id: messageId })
+    },
+  ),
 
   http.patch(
     '/api/v1/workspaces/:workspaceId/messages/reviews/:reviewId',
