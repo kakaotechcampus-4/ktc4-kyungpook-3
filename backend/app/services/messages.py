@@ -130,11 +130,18 @@ def _has_delivered_dm(db: Session, thread_id: str) -> bool:
     ) is not None
 
 
-def framed_body(db: Session, bundle: ReminderBundle, reminders: list[Reminder], middle: str) -> str:
-    """가운데 문구에 첫 DM 이면 PM 소개와 맺음을, 아니면 PM 이름을 씌운다. PM 은 묶음의 첫 리마인드를 만든 사람이다."""
+def framed_body(
+    db: Session, bundle: ReminderBundle, reminders: list[Reminder], middle: str, *, first: bool | None = None
+) -> str:
+    """가운데 문구에 첫 DM 이면 PM 소개와 맺음을, 아니면 PM 이름을 씌운다. PM 은 묶음의 첫 리마인드를 만든 사람이다.
+
+    first 를 주지 않으면 그 대화에 나간 봇 DM 이 있는지로 정한다.
+    """
     recipient = bundle.thread.member.display_name
     pm = _pm_name(db, bundle.workspace_id, reminders[0].created_by)
-    if _has_delivered_dm(db, bundle.thread_id):
+    if first is None:
+        first = not _has_delivered_dm(db, bundle.thread_id)
+    if not first:
         return f"{recipient}님, {pm}{_copula(pm)}.\n{middle}"
     workspace = db.get(Workspace, bundle.workspace_id).name
     return (
@@ -660,9 +667,9 @@ def report_result(
 
 
 def _reframe_unapproved(db: Session, thread_id: str, now: datetime) -> None:
-    """PM 이 쓰지 않은 승인 전 묶음을 규칙 문구로 다시 만든다. 판이 오르고 AI 초안을 다시 받는다.
+    """승인 전 묶음을 두 번째 틀로 다시 만든다. 규칙·AI 문구는 판이 오르고 AI 초안을 다시 받는다.
 
-    PM 이 쓴 문구와 승인한 문구는 PM 이 본 그대로 나가야 하므로 건드리지 않는다.
+    PM 이 고친 글과 승인한 글은 PM 이 본 그대로 나가야 하므로 건드리지 않는다. 메모에 틀만 씌운 글은 PM 이 고친 글이 아니다.
     """
     bundles = db.scalars(
         select(ReminderBundle)
@@ -670,13 +677,20 @@ def _reframe_unapproved(db: Session, thread_id: str, now: datetime) -> None:
             ReminderBundle.thread_id == thread_id,
             ReminderBundle.status == ReminderStatus.SCHEDULED,
             ReminderBundle.approved_at.is_(None),
-            ReminderBundle.body_source.in_([BodySource.RULE, BodySource.AI]),
         )
         .order_by(ReminderBundle.scheduled_at, ReminderBundle.bundle_id)
         .with_for_update()
     ).all()
     for bundle in bundles:
-        _rebuild(db, bundle, now)
+        if bundle.body_source != BodySource.PM or _is_framed_note(db, bundle):
+            _rebuild(db, bundle, now)
+
+
+def _is_framed_note(db: Session, bundle: ReminderBundle) -> bool:
+    reminders = bundle_reminders(db, bundle.bundle_id)
+    if len(reminders) != 1 or not reminders[0].note:
+        return False
+    return bundle.body == framed_body(db, bundle, reminders, reminders[0].note, first=True)
 
 
 def ingest_discord_reply(

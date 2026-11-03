@@ -484,18 +484,20 @@ def test_report_result_is_idempotent_with_same_ids_and_final(mdb, mseed):
         assert e.value.code == ErrorCode.MESSAGE_RESULT_CONFLICT
 
 
-def test_first_delivered_dm_reframes_the_threads_unapproved_rule_and_ai_bundles_only(mdb, mseed):
+def test_first_delivered_dm_reframes_unapproved_bundles_but_not_text_the_pm_edited(mdb, mseed):
     ai = _make(mdb, mseed, task=1, at=LATER + timedelta(days=2))
     (item,) = svc.claim_drafts(mdb, NOW)
     svc.write_draft(mdb, ai.bundle_id, draft_version=item.bundle.draft_version, body="AI 가 쓴 가운데", now=NOW)
     mdb.commit()
     rule = _make(mdb, mseed, task=2, at=LATER + timedelta(days=1))
-    pm = _make(mdb, mseed, task=0, at=LATER + timedelta(days=3), note="PM 메모")
+    note = _make(mdb, mseed, task=0, at=LATER + timedelta(days=3), note="PM 메모")
+    edited = _make(mdb, mseed, task=2, at=LATER + timedelta(days=5))
+    svc.edit_bundle(mdb, _bundle(mdb, mseed, edited), body="PM 이 고친 글", scheduled_at=None, now=NOW)
     approved = _make(mdb, mseed, task=1, at=LATER + timedelta(days=4))
     _approve(mdb, mseed, approved)
     other = _make(mdb, mseed, who="carol", task=2, at=LATER + timedelta(days=1))
     bundles = {k: _bundle(mdb, mseed, r) for k, r in
-               (("ai", ai), ("rule", rule), ("pm", pm), ("approved", approved), ("other", other))}
+               (("ai", ai), ("rule", rule), ("note", note), ("edited", edited), ("approved", approved), ("other", other))}
     before = {k: (b.body, b.draft_version) for k, b in bundles.items()}
     assert bundles["ai"].body_source == "ai"
 
@@ -507,7 +509,9 @@ def test_first_delivered_dm_reframes_the_threads_unapproved_rule_and_ai_bundles_
         b = bundles[k]
         assert (b.body, b.body_source, b.draft_status) == (short.format(title), "rule", "needed"), k
         assert b.draft_version == before[k][1] + 1, k
-    for k in ("pm", "approved", "other"):
+    assert (bundles["note"].body, bundles["note"].body_source) == ("앨리스님, PM(이)에요.\nPM 메모", "pm")
+    assert bundles["note"].draft_version == before["note"][1] + 1
+    for k in ("edited", "approved", "other"):
         assert (bundles[k].body, bundles[k].draft_version) == before[k], k
 
     after = {k: b.draft_version for k, b in bundles.items()}
