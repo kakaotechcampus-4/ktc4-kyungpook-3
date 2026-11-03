@@ -85,6 +85,7 @@ def required_intents() -> discord.Intents:
     """이 Cog 가 동작하는 데 필요한 인텐트. backend/bot/main.py 가 Bot 생성 시 사용.
 
     message_content 는 필요 없다. 슬래시 명령과 채널 게시는 그 인텐트 없이 된다.
+    리마인드 DM(capture/dm.py)의 dm_messages 는 default() 에 있고, DM 글은 message_content 없이도 본문이 온다.
     """
     intents = discord.Intents.default()
     intents.voice_states = True
