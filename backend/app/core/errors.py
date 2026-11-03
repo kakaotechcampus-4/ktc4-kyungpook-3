@@ -48,6 +48,14 @@ class ErrorCode(StrEnum):
     EMBEDDING_UNAVAILABLE = "EMBEDDING_UNAVAILABLE"
     DISCORD_API_FAILED = "DISCORD_API_FAILED"
 
+    # 리마인드·대화 메시지
+    REMINDER_NOT_FOUND = "REMINDER_NOT_FOUND"
+    REMINDER_NOT_EDITABLE = "REMINDER_NOT_EDITABLE"
+    REMINDER_SCHEDULED_AT_PASSED = "REMINDER_SCHEDULED_AT_PASSED"
+    MESSAGE_THREAD_NOT_FOUND = "MESSAGE_THREAD_NOT_FOUND"
+    MESSAGE_NOT_FOUND = "MESSAGE_NOT_FOUND"
+    MESSAGE_RESULT_CONFLICT = "MESSAGE_RESULT_CONFLICT"
+
 
 ERROR_STATUS: dict[ErrorCode, int] = {
     ErrorCode.INVALID_REQUEST: 400,
@@ -88,6 +96,12 @@ ERROR_STATUS: dict[ErrorCode, int] = {
     ErrorCode.LAST_PM_REQUIRED: 409,
     ErrorCode.EMBEDDING_UNAVAILABLE: 502,
     ErrorCode.DISCORD_API_FAILED: 502,
+    ErrorCode.REMINDER_NOT_FOUND: 404,
+    ErrorCode.REMINDER_NOT_EDITABLE: 409,
+    ErrorCode.REMINDER_SCHEDULED_AT_PASSED: 409,
+    ErrorCode.MESSAGE_THREAD_NOT_FOUND: 404,
+    ErrorCode.MESSAGE_NOT_FOUND: 404,
+    ErrorCode.MESSAGE_RESULT_CONFLICT: 409,
 }
 
 ERROR_MESSAGE: dict[ErrorCode, str] = {
@@ -129,6 +143,12 @@ ERROR_MESSAGE: dict[ErrorCode, str] = {
     ErrorCode.LAST_PM_REQUIRED: "워크스페이스에 PM이 한 명은 있어야 합니다. 다른 팀원을 먼저 PM으로 지정해 주세요.",
     ErrorCode.EMBEDDING_UNAVAILABLE: "임베딩 서버 호출에 실패했습니다. 잠시 후 다시 시도해 주세요.",
     ErrorCode.DISCORD_API_FAILED: "Discord 서버의 사용자 목록을 가져오지 못했습니다. 잠시 후 다시 시도해 주세요.",
+    ErrorCode.REMINDER_NOT_FOUND: "해당 리마인드를 찾을 수 없습니다.",
+    ErrorCode.REMINDER_NOT_EDITABLE: "예정 상태의 리마인드만 고치거나 승인하거나 취소할 수 있습니다.",
+    ErrorCode.REMINDER_SCHEDULED_AT_PASSED: "예정 시각이 지났어요. 시각을 다시 골라 주세요.",
+    ErrorCode.MESSAGE_THREAD_NOT_FOUND: "해당 대화를 찾을 수 없습니다.",
+    ErrorCode.MESSAGE_NOT_FOUND: "해당 봇 메시지를 찾을 수 없습니다.",
+    ErrorCode.MESSAGE_RESULT_CONFLICT: "이미 다른 결과가 보고된 메시지이거나 아직 가져가지 않은 메시지입니다.",
 }
 
 
