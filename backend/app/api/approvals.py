@@ -233,7 +233,8 @@ def _apply_approval(
             change_source=payload.get("change_source")
             or str(ChangeSource.MEETING if payload.get("meeting_id") else ChangeSource.MANUAL),
             changed_by=approval.resolved_by,
-            history_title=proposal["task_title"],
+            # 제안 제목은 검증하지 않은 payload 값이라 문자열이 아닐 수 있다. 이력 칸에 맞게 문자열로 남긴다
+            history_title=str(proposal["task_title"]),
         )
         for field, new_value in changed.items():
             old_value = proposal[field]

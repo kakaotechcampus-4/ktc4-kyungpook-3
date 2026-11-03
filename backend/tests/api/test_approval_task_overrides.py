@@ -711,3 +711,11 @@ def test_task_create_uses_change_source_from_payload(client, db, seed):
     [row] = _history(db, _task_of(db, approval_id).task_id)
     assert row.change_source == "reminder_reply"
 
+
+def test_task_create_with_non_string_proposed_title_can_be_fixed_by_override(client, db, seed):
+    approval_id = _new_create(client, seed, task_title=["결제"])
+
+    r = _resolve(client, approval_id, task_overrides={"task_title": "결제 API"})
+
+    assert r.status_code == 200, r.text
+    assert _task_of(db, approval_id).title == "결제 API"
