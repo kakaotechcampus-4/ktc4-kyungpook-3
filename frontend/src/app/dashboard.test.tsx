@@ -372,7 +372,7 @@ describe('최근 반영 (AC-03)', () => {
     expect(screen.getByRole('button', { name: '전체 로그' })).toBeDisabled()
   })
 
-  it('auto 항목이 3개를 넘어도 앞의 3개만이다', async () => {
+  it('화면 높이를 모르면 앞의 3개만 보이고, 나머지 수는 그 회의록으로 이어진다 (D-176)', async () => {
     const extraction = db.extractions.find(({ extraction_id }) => extraction_id === 'ex_01')!
     extraction.items.push({
       ...structuredClone(extraction.items[0]),
@@ -383,6 +383,74 @@ describe('최근 반영 (AC-03)', () => {
     await openDashboard()
     expect(recentText()).toHaveLength(3)
     expect(screen.queryByText('네 번째 자동 항목')).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '외 1건 · 회의록에서 보기' })).toHaveAttribute(
+      'href',
+      paths.meetings('ws_01', 'mt_09'),
+    )
+  })
+
+  it('모두 보이면 외 N건 줄이 없다', async () => {
+    await openDashboard()
+    expect(recentText()).toHaveLength(3)
+    expect(screen.queryByRole('link', { name: /^외 \d+건/ })).toBeNull()
+  })
+
+  describe('첫 화면에 들어가는 만큼 보인다 (D-176)', () => {
+    /** 최근 반영 목록 위쪽과 행 높이만 정한다. 나머지 요소는 jsdom 처럼 크기가 없다 */
+    function stubLayout(layout: { innerHeight: number; listTop: number; rowHeight: number }) {
+      const rect = (top: number, height: number) =>
+        ({
+          x: 0,
+          y: top,
+          top,
+          left: 0,
+          right: 0,
+          bottom: top + height,
+          width: 0,
+          height,
+          toJSON: () => ({}),
+        }) as DOMRect
+      vi.stubGlobal('innerHeight', layout.innerHeight)
+      const spy = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (
+        this: Element,
+      ) {
+        if (this.matches('ul[aria-label="최근 반영 목록"]')) return rect(layout.listTop, 0)
+        if (this.matches('[data-testid="recent-row"]')) return rect(0, layout.rowHeight)
+        return rect(0, 0)
+      })
+      onTestFinished(() => {
+        spy.mockRestore()
+        vi.unstubAllGlobals()
+      })
+    }
+
+    it('남은 300px 에 50px 행 5개와 외 N건 줄이 들어간다. 창이 커지면 다시 잰다', async () => {
+      useScenario('dashboard-recent-overflow')
+      stubLayout({ innerHeight: 900, listTop: 600, rowHeight: 50 })
+      await openDashboard()
+      await waitFor(() => expect(recentText()).toHaveLength(5))
+      expect(recentText()[3]).toContain('자동 반영 4')
+      const more = screen.getByRole('link', { name: '외 7건 · 회의록에서 보기' })
+      expect(more).toHaveAttribute('href', paths.meetings('ws_01', 'mt_09'))
+
+      vi.stubGlobal('innerHeight', 1000)
+      fireEvent(window, new Event('resize'))
+      await waitFor(() => expect(recentText()).toHaveLength(7))
+      expect(screen.getByRole('link', { name: '외 5건 · 회의록에서 보기' })).toBeInTheDocument()
+    })
+
+    it('아주 좁아도 3개, 아주 넓어도 8개다', async () => {
+      useScenario('dashboard-recent-overflow')
+      stubLayout({ innerHeight: 900, listTop: 880, rowHeight: 50 })
+      await openDashboard()
+      await waitFor(() => expect(recentText()).toHaveLength(3))
+      expect(screen.getByRole('link', { name: '외 9건 · 회의록에서 보기' })).toBeInTheDocument()
+
+      vi.stubGlobal('innerHeight', 3000)
+      fireEvent(window, new Event('resize'))
+      await waitFor(() => expect(recentText()).toHaveLength(8))
+      expect(screen.getByRole('link', { name: '외 4건 · 회의록에서 보기' })).toBeInTheDocument()
+    })
   })
 
   it.each([
