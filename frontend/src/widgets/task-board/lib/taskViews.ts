@@ -109,6 +109,21 @@ export function taskTone(task: Task, today: string): TaskTone {
   return task.status === 'in_progress' ? 'active' : 'todo'
 }
 
+/** 보드 카드의 배지. `taskTone` 의 위험(막힘 또는 기한 지남)을 원인별로 나눈다 */
+export type CardBadge = 'blocked' | 'danger' | 'warn'
+
+/**
+ * 보드 카드에 붙는 배지 (D-175). 막혔으면 `막힘`, 기한도 지났으면 `위험` 을 함께 단다.
+ * 막힌 태스크에는 `주의` 를 달지 않는다 — 위험이 주의보다 앞서던 지금 규칙 그대로다.
+ * 캘린더·간트는 `taskTone` 을 그대로 쓴다 (막힘도 위험)
+ */
+export function cardBadges(task: Task, today: string): readonly CardBadge[] {
+  if (task.status === 'done') return []
+  if (task.status === 'blocked') return isOverdue(task, today) ? ['blocked', 'danger'] : ['blocked']
+  const tone = taskTone(task, today)
+  return tone === 'danger' || tone === 'warn' ? [tone] : []
+}
+
 /** 담당자로 거른다. 담당자를 고르지 않았으면 모두 맞다 */
 export function filterTasksByAssignee(tasks: readonly Task[], assignee: string | null): Task[] {
   return assignee === null ? [...tasks] : tasks.filter((task) => task.assigneeMemberId === assignee)

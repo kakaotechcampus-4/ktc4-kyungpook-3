@@ -317,6 +317,57 @@ describe('역할·공간·상세 링크 (AC-A-06)', () => {
   )
 })
 
+describe('보드 카드의 막힘 배지 (D-175)', () => {
+  const card = (title: string) =>
+    screen.getByRole('link', { name: title }).closest('article') as HTMLElement
+
+  it('막힌 카드는 위험 대신 막힘이고, 누르면 막힌 사유를 보인다. Esc 로 닫으면 배지로 돌아온다', async () => {
+    const user = userEvent.setup()
+    await openView('board')
+    const blocked = card('DB 스키마 정리')
+    expect(within(blocked).queryByText('위험')).toBeNull()
+    // 기한이 지난 카드는 그대로 위험이다
+    expect(within(card('회원가입 화면')).getByText('위험')).toBeVisible()
+    expect(within(card('회원가입 화면')).queryByRole('button', { name: /^막힘/ })).toBeNull()
+    expect(screen.getByRole('region', { name: '진행 중' })).toHaveTextContent(
+      '막힘 1 · 위험 0 · 주의 3',
+    )
+
+    const badge = within(blocked).getByRole('button', { name: '막힘, 막힌 사유 보기' })
+    badge.focus()
+    await user.keyboard('{Enter}')
+    const dialog = await screen.findByRole('dialog', { name: '막힌 사유' })
+    expect(dialog).toHaveTextContent('Notion 권한 대기')
+
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(badge).toHaveFocus()
+  })
+
+  it.each([null, '  '])('막힌 사유가 비었으면(%j) 적힌 사유가 없다고 알린다', async (blocker) => {
+    const user = userEvent.setup()
+    db.tasks.find(({ task_id }) => task_id === 'tk_03')!.blocker = blocker
+    await openView('board')
+    await user.click(
+      within(card('DB 스키마 정리')).getByRole('button', { name: '막힘, 막힌 사유 보기' }),
+    )
+    expect(await screen.findByRole('dialog', { name: '막힌 사유' })).toHaveTextContent(
+      '적힌 사유가 없어요',
+    )
+  })
+
+  it('막혔고 기한도 지났으면 막힘과 위험을 함께 단다', async () => {
+    db.tasks.find(({ task_id }) => task_id === 'tk_03')!.due_date = '2026-09-17'
+    await openView('board')
+    const blocked = card('DB 스키마 정리')
+    expect(within(blocked).getByRole('button', { name: /^막힘/ })).toBeVisible()
+    expect(within(blocked).getByText('위험')).toBeVisible()
+    expect(screen.getByRole('region', { name: '진행 중' })).toHaveTextContent(
+      '막힘 1 · 위험 1 · 주의 3',
+    )
+  })
+})
+
 describe('보드 정렬 (D-175)', () => {
   const column = (name: string) => screen.getByRole('region', { name })
   const titles = (name: string) =>

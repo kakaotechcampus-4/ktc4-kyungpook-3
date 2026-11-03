@@ -1,12 +1,20 @@
-import { memo } from 'react'
+import { memo, useId } from 'react'
 import type { Task, TaskStatus } from '@/entities/task'
 import { TaskQuickAdd } from '@/features/task-create'
 import { paths } from '@/shared/config/routes'
 import { GuardedLink } from '@/shared/lib/unsaved-changes'
+import { Popover, PopoverContent, PopoverTrigger } from '@/shared/ui/popover'
 import { doneColumnNote, sortDoneColumn, sortTasks } from '../lib/taskSort'
 import type { TaskSort } from '../lib/taskSort'
-import { assigneeLabel, assigneeOf, monthOf, shortDate, taskTone } from '../lib/taskViews'
-import type { BoardPeriod, TaskTone } from '../lib/taskViews'
+import {
+  assigneeLabel,
+  assigneeOf,
+  cardBadges,
+  monthOf,
+  shortDate,
+  taskTone,
+} from '../lib/taskViews'
+import type { BoardPeriod, CardBadge, TaskTone } from '../lib/taskViews'
 import { Avatar } from './viewParts'
 
 type Column = 'todo' | 'active' | 'done'
@@ -37,6 +45,9 @@ const MARK: Record<Column, string> = {
 }
 
 const CARD_BASE = 'flex flex-col gap-12 rounded-12 border px-13 py-12'
+const PILL = 'inline-flex h-20 shrink-0 items-center rounded-6 px-7 text-[10.5px] leading-none'
+/* 막힘은 누르는 배지라 채운 `위험` 과 달리 테두리만 accent 로 그린다. 시안이 없어 위험 배지의 색·크기를 따른다 */
+const BLOCKED_PILL = `${PILL} cursor-pointer border border-accent bg-surface font-bold text-accent hover:bg-accent hover:text-surface data-[state=open]:bg-accent data-[state=open]:text-surface`
 
 export interface BoardViewProps {
   workspaceId: string
@@ -139,9 +150,9 @@ function columnNote(column: Column, tasks: readonly Task[], today: string, sort:
     return due === null ? '마감일 없음' : `가장 이른 마감 ${shortDate(due)}`
   }
   if (column === 'done') return doneColumnNote(sort)
-  const danger = tasks.filter((task) => taskTone(task, today) === 'danger').length
-  const warn = tasks.filter((task) => taskTone(task, today) === 'warn').length
-  return `위험 ${danger} · 주의 ${warn}`
+  const badges = tasks.flatMap((task) => cardBadges(task, today))
+  const count = (badge: CardBadge) => badges.filter((each) => each === badge).length
+  return `막힘 ${count('blocked')} · 위험 ${count('danger')} · 주의 ${count('warn')}`
 }
 
 function ColumnHead({
@@ -193,6 +204,7 @@ const TaskCard = memo(function TaskCard({
   emphasized: boolean
 }) {
   const tone = taskTone(task, today)
+  const badges = cardBadges(task, today)
   const done = tone === 'done'
   return (
     <article className={`${CARD_BASE} ${cardSurface(tone, emphasized)}`}>
@@ -205,16 +217,17 @@ const TaskCard = memo(function TaskCard({
         >
           {task.title}
         </GuardedLink>
-        {tone === 'danger' ? (
-          <span className="inline-flex h-20 shrink-0 items-center rounded-6 bg-accent px-7 text-[10.5px] leading-none font-bold text-surface">
-            위험
-          </span>
-        ) : tone === 'warn' ? (
-          <span className="inline-flex h-20 shrink-0 items-center gap-3 rounded-6 bg-ink px-7 text-[10.5px] leading-none font-semibold text-surface">
-            <span aria-hidden="true" className="mr-3 h-5 w-5 rounded-999 bg-current" />
-            주의
-          </span>
-        ) : null}
+        {badges.length === 0 ? null : (
+          <div className="flex shrink-0 items-center gap-4">
+            {badges.map((badge) =>
+              badge === 'blocked' ? (
+                <BlockedBadge key={badge} blocker={task.blocker} />
+              ) : (
+                <TonePill key={badge} tone={badge} />
+              ),
+            )}
+          </div>
+        )}
       </div>
       <div className="flex items-center justify-between gap-8">
         <span
@@ -230,3 +243,35 @@ const TaskCard = memo(function TaskCard({
     </article>
   )
 })
+
+function TonePill({ tone }: { tone: 'danger' | 'warn' }) {
+  return tone === 'danger' ? (
+    <span className={`${PILL} bg-accent font-bold text-surface`}>위험</span>
+  ) : (
+    <span className={`${PILL} gap-3 bg-ink font-semibold text-surface`}>
+      <span aria-hidden="true" className="mr-3 h-5 w-5 rounded-999 bg-current" />
+      주의
+    </span>
+  )
+}
+
+/** `막힘` 배지. 누르면 막힌 사유를 보인다. 제목 링크 옆에 둔다 — 링크 안에는 버튼을 둘 수 없다 */
+function BlockedBadge({ blocker }: { blocker: string | null }) {
+  const headingId = useId()
+  const reason = blocker?.trim() ?? ''
+  return (
+    <Popover>
+      <PopoverTrigger className={BLOCKED_PILL} aria-label="막힘, 막힌 사유 보기">
+        막힘
+      </PopoverTrigger>
+      <PopoverContent aria-labelledby={headingId}>
+        <p id={headingId} className="text-meta leading-none font-semibold text-dim">
+          막힌 사유
+        </p>
+        <p className="text-caption text-ink wrap-anywhere">
+          {reason === '' ? '적힌 사유가 없어요' : reason}
+        </p>
+      </PopoverContent>
+    </Popover>
+  )
+}
