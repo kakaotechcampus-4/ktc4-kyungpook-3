@@ -183,7 +183,7 @@ function ThreadView({
             <ol className="flex flex-col gap-16 pt-16">
               {day.items.map((item) => (
                 <li key={item.id}>
-                  <Bubble workspaceId={workspaceId} item={item} pickTask={policy.reviews} />
+                  <Bubble workspaceId={workspaceId} item={item} pickTask={policy.attribution} />
                 </li>
               ))}
             </ol>
@@ -203,7 +203,7 @@ function ThreadView({
             <ol aria-label="아직 나가지 않은 메시지" className="flex flex-col gap-16 pt-16">
               {view.upcoming.map((item) => (
                 <li key={item.id}>
-                  <Bubble workspaceId={workspaceId} item={item} pickTask={policy.reviews} />
+                  <Bubble workspaceId={workspaceId} item={item} pickTask={policy.attribution} />
                 </li>
               ))}
             </ol>

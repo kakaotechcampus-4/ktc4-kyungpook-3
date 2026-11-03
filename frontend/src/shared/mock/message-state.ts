@@ -21,7 +21,7 @@ interface TaskTitle {
 
 export const REMINDER_AUTO_APPROVE = false
 
-export type ReminderPhase = 'pending' | 'approved' | 'sent' | 'cancelled' | 'expired'
+type ReminderPhase = 'pending' | 'approved' | 'sent' | 'cancelled' | 'expired'
 
 const earlier = (left: string, right: string) =>
   Date.parse(left) <= Date.parse(right) ? left : right
@@ -148,7 +148,7 @@ function attributionOf(
   }
 }
 
-export function historyMessage(
+function historyMessage(
   message: MockThreadMessage,
   tasks: readonly TaskTitle[] = [],
   workspaceId = '',
@@ -169,7 +169,7 @@ export function historyMessage(
   }
 }
 
-export function reminderMessage(review: MockMessageReview, now: string): MessageDto {
+function reminderMessage(review: MockMessageReview, now: string): MessageDto {
   const phase = reminderStatus(review, now)
   const status = phase === 'approved' ? 'scheduled' : phase
   const open = status === 'pending' || status === 'scheduled'
@@ -207,7 +207,7 @@ function reviewsOf(thread: MockMessageThread, reviews: readonly MockMessageRevie
 }
 
 /** 이미 대화에 남은 것 — 기록과 발송된 재촉. 목록 미리보기·답장 대기가 이것만 본다 */
-export function deliveredMessages(
+function deliveredMessages(
   thread: MockMessageThread,
   reviews: readonly MockMessageReview[],
   now: string,
@@ -221,7 +221,7 @@ export function deliveredMessages(
   ].sort(byAt)
 }
 
-export function threadMessages(
+function threadMessages(
   thread: MockMessageThread,
   reviews: readonly MockMessageReview[],
   now: string,

@@ -1222,7 +1222,7 @@ members 에만 있고 Discord 목록에 없으면      → 비활성 (서버를 
 **MSW 동작 (임시, 합의 전).** 아래는 개발 서버 목의 현재 구현이다. 백엔드와 합의한 규약이 아니고, 합의 여부 확인 필요. 재촉 자동 승인은 목에서 꺼져 있으며, 예약 시각이 지나도 스스로 나가지 않는다.
 
 - 경로. `GET /workspaces/{id}/messages`, `GET …/messages/threads/{thread_id}`, `PATCH …/messages/reviews/{review_id}`, `POST …/reviews/{id}/send`, `POST …/reviews/{id}/dismiss`, `POST …/messages/threads/{thread_id}/replies`, `POST …/messages/replies/{message_id}/attribution`.
-- 상태. 재촉 한 건의 저장 단계는 `pending`·`approved`·`sent`·`cancelled` 다. `expired` 는 저장하지 않고, 마감일이 오늘(서울 날짜)보다 앞인 `pending` 을 읽을 때 계산한다. `보내기 전 확인` 은 열린 항목(`pending`·`approved`)만 담는다. 화면에서 승인 대기와 예약은 `예정`, 그 밖은 `발송됨`·`취소됨`·`만료됨` 이다.
+- 상태. 재촉 한 건의 저장 단계는 `pending`·`approved`·`sent`·`cancelled` 다. `expired` 는 저장하지 않고, 마감일이 오늘(서울 날짜)보다 앞인 `pending` 을 읽을 때 계산한다. `보내기 전 확인` 은 열린 항목(`pending`·`approved`)만 담는다. 화면에서 승인 대기와 예약은 `예정`, 취소됨·만료됨만 그 상태 말을 붙인다. 발송된 항목은 상태 말 없이 시각 줄이 있는 말풍선이다.
 - 자리. 승인 대기·예약은 나갈 시각 `scheduled_at` 이다. `지금 바로` 는 null 이라 아직 나가지 않은 묶음에 둔다. 발송됨·취소됨은 `closed_at` 이다. 취소는 `min(scheduled_at, 취소한 시각)` 에 놓는다. 만료는 `min(scheduled_at, 마감 다음 날 00:00)` 에 놓는다.
 - 권한. 승인·고쳐 쓰기·보내지 않음·발송 시점·답장 판정은 PM 만 한다. 아니면 403 `PM만 할 수 있는 작업입니다.` 이고 기록은 그대로다. 답장은 그 대화의 팀원만 한다. 아니면 403 `자기 대화에만 답장할 수 있습니다.`
 - 팀원 조회. 목록은 `reviews: []` 와, `member_id` 가 그 공간의 세션 팀원과 같은 대화만이다. 세션 팀원을 정할 수 없으면 대화가 없다. 남의 대화 조회는 404 `MESSAGE_THREAD_NOT_FOUND` 다. 팀원에게는 이미 전달된 메시지만 주고, 승인·답장 대기·태스크 판정은 비운다.

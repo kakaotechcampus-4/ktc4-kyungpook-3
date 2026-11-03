@@ -102,6 +102,11 @@ const BOT_STATUS_VIEW: {
   },
 }
 
+/** `solid` 는 보낸 쪽 말풍선이다. 표의 나머지 모양은 그대로 쓴다 */
+function bubbleLook(look: 'solid' | 'upcoming' | 'muted', side: 'own' | 'other'): Look {
+  return look === 'solid' ? side : look
+}
+
 function botBubble(
   message: BotMessage,
   side: 'own' | 'other',
@@ -123,7 +128,7 @@ function botBubble(
         at: BOT_STATUS_VIEW.pending.at(message),
         item: {
           ...base,
-          look: 'upcoming',
+          look: bubbleLook(BOT_STATUS_VIEW.pending.look, side),
           speaker: BOT_STATUS_VIEW.pending.speaker,
           timeLine: BOT_STATUS_VIEW.pending.line(message, deliveryNote),
           reviewId: message.reviewId,
@@ -135,7 +140,7 @@ function botBubble(
         at: BOT_STATUS_VIEW.scheduled.at(message),
         item: {
           ...base,
-          look: 'upcoming',
+          look: bubbleLook(BOT_STATUS_VIEW.scheduled.look, side),
           speaker: BOT_STATUS_VIEW.scheduled.speaker,
           timeLine: BOT_STATUS_VIEW.scheduled.line(message, deliveryNote),
           reviewId: message.reviewId,
@@ -147,7 +152,7 @@ function botBubble(
         at: BOT_STATUS_VIEW.sent.at(message),
         item: {
           ...base,
-          look: side,
+          look: bubbleLook(BOT_STATUS_VIEW.sent.look, side),
           speaker: BOT_STATUS_VIEW.sent.speaker,
           timeLine: BOT_STATUS_VIEW.sent.line(message, deliveryNote),
           reviewId: null,
@@ -159,7 +164,7 @@ function botBubble(
         at: BOT_STATUS_VIEW.cancelled.at(message),
         item: {
           ...base,
-          look: 'muted',
+          look: bubbleLook(BOT_STATUS_VIEW.cancelled.look, side),
           speaker: BOT_STATUS_VIEW.cancelled.speaker,
           timeLine: BOT_STATUS_VIEW.cancelled.line(message, deliveryNote),
           reviewId: null,
@@ -171,7 +176,7 @@ function botBubble(
         at: BOT_STATUS_VIEW.expired.at(message),
         item: {
           ...base,
-          look: 'muted',
+          look: bubbleLook(BOT_STATUS_VIEW.expired.look, side),
           speaker: BOT_STATUS_VIEW.expired.speaker,
           timeLine: BOT_STATUS_VIEW.expired.line(message, deliveryNote),
           reviewId: null,

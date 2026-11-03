@@ -2,7 +2,9 @@ import { queryOptions } from '@tanstack/react-query'
 import { request } from '@/shared/api/client'
 import { workspaceKey } from '@/shared/api/queryKeys'
 import type {
+  MessageAttributionRequestDto,
   MessageInboxDto,
+  MessageReplyRequestDto,
   MessageReviewPatchDto,
   MessageThreadDto,
 } from '@/shared/types/api/message'
@@ -76,12 +78,12 @@ const ROUTE: {
   reply: (action) => ({
     method: 'POST',
     path: `threads/${enc(action.threadId)}/replies`,
-    body: { body: action.body },
+    body: { body: action.body } satisfies MessageReplyRequestDto,
   }),
   attribute: (action) => ({
     method: 'POST',
     path: `replies/${enc(action.messageId)}/attribution`,
-    body: { task_id: action.taskId },
+    body: { task_id: action.taskId } satisfies MessageAttributionRequestDto,
   }),
 }
 

@@ -1,7 +1,6 @@
 export type {
   BotMessage,
   BotMessageStatus,
-  DeliveredMessage,
   Message,
   MessageAction,
   MessageInbox,
@@ -12,8 +11,6 @@ export type {
   MessageThreadKind,
   MessageThreadSummary,
   ReplyAttribution,
-  ReviewState,
-  TaskRef,
 } from './model/types'
 export { MESSAGE_BODY_MAX_LENGTH } from './model/types'
 export {
