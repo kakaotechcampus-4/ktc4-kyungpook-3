@@ -308,6 +308,23 @@ def test_pm_member_cannot_be_invited(db, seed):
     assert _list(seed["ws"]) == []
 
 
+def test_member_promoted_to_pm_while_pending_cannot_be_accepted(seed):
+    invitation_id = _invite_id(seed["ws"], seed["jiyoung"].member_id, "jiyoung@example.com")
+    member_url = f"/api/v1/members/{seed['jiyoung'].member_id}"
+    assert _client("pm-token").patch(member_url, json={"role": "pm"}).status_code == 200
+
+    assert _mine("jiyoung-token") == []
+    res = _act(invitation_id, "accept", "jiyoung-token")
+
+    assert res.status_code == 409
+    assert _code(res) == "PM_MEMBER_NOT_INVITABLE"
+    assert _workspace_count("jiyoung-token") == 0
+
+    assert _client("pm-token").patch(member_url, json={"role": "member"}).status_code == 200
+    assert len(_mine("jiyoung-token")) == 1
+    assert _act(invitation_id, "accept", "jiyoung-token").status_code == 200
+
+
 def test_non_ascii_member_email_blocks_inviting_it_again(db, seed):
     jiyoung_user = db.query(User).filter(User.email == "jiyoung@example.com").one()
     jiyoung_user.email = "Émile@example.com"

@@ -258,6 +258,7 @@ def list_my_invitations(
             Invitation.email == normalize_email(user.email),
             Invitation.status == str(InvitationStatus.PENDING),
             Member.is_deleted.is_(False),
+            Member.role != str(MemberRole.PM),
         )
         .order_by(Invitation.created_at.desc())
     ).all()
@@ -289,14 +290,22 @@ def accept_invitation(
         raise AppError(ErrorCode.ALREADY_WORKSPACE_MEMBER, details={"workspace_id": workspace_id})
 
     # 두 사람이 같은 초대를 동시에 수락해도(대소문자만 다른 두 계정) 한 계정만 이어지도록 조건부로 고친다.
+    # 초대를 만든 뒤 PM 으로 올린 팀원도 여기서 막는다. 수락한 계정이 PM 이 되면 연결 끊기를 막을 수 있다(결정 0035).
     linked = db.execute(
         update(Member)
-        .where(Member.member_id == member_id, Member.user_id.is_(None), Member.is_deleted.is_(False))
+        .where(
+            Member.member_id == member_id,
+            Member.user_id.is_(None),
+            Member.is_deleted.is_(False),
+            Member.role != str(MemberRole.PM),
+        )
         .values(user_id=user.user_id)
     )
     if linked.rowcount != 1:
         db.rollback()
-        raise AppError(ErrorCode.MEMBER_ALREADY_LINKED, details={"member_id": member_id})
+        is_pm = db.get(Member, member_id).role == str(MemberRole.PM)
+        code = ErrorCode.PM_MEMBER_NOT_INVITABLE if is_pm else ErrorCode.MEMBER_ALREADY_LINKED
+        raise AppError(code, details={"member_id": member_id})
     _move(db, invitation_id, InvitationStatus.ACCEPTED, accepted_user_id=user.user_id)
     db.commit()
     return success(InvitationAcceptResponse(workspace_id=workspace_id, member_id=member_id).model_dump())
