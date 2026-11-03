@@ -4,6 +4,7 @@ import type { Approval } from '@/entities/approval'
 import type { Member } from '@/entities/member'
 import type { Task } from '@/entities/task'
 import { isOverdue } from '@/entities/task'
+import { FILL_IN_ARRIVAL } from '@/features/approval-resolve'
 import { TASK_STATUS_LABEL } from '@/features/task-status'
 import { paths } from '@/shared/config/routes'
 import { seoulDateOf } from '@/shared/lib/date'
@@ -308,10 +309,11 @@ function ReviewRow({ workspaceId, approval }: { workspaceId: string; approval: A
         </div>
         <p className="text-control font-normal text-sub">{approvalReason(approval)}</p>
       </div>
-      {/* D-034·D-162: 처리는 확인 필요 상세에서 한다. 보류는 `채워 넣기` 다 */}
+      {/* D-034·D-162: 처리는 확인 필요 상세에서 한다. 보류는 `채워 넣기` 다 — 보완 폼을 열고 간다 (D-176) */}
       {/* 행마다 같은 글자라 읽는 이름에 제목을 붙인다. 보이는 글자로 시작한다 */}
       <GuardedLink
         to={paths.approval(workspaceId, approval.id)}
+        state={hold ? FILL_IN_ARRIVAL : undefined}
         className={ACTION_LINK}
         aria-label={`${hold ? '채워 넣기' : '확인하기'} — ${title}`}
       >

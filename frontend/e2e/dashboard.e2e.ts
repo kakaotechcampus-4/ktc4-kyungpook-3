@@ -96,6 +96,36 @@ test('키보드로 되돌리기를 열고 닫고, 확인하면 행이 `되돌림
   await expect(page).toHaveURL(/\/workspaces\/ws_01\/approvals\/ap_\d+$/)
 })
 
+test('막힌 일은 목록의 막힘 조건으로, 채워 넣기는 보완 폼이 열린 상세로 간다. 새로고침하면 읽기다 (D-176)', async ({
+  page,
+}) => {
+  await openDashboard(page, 'dashboard-default')
+  await page.getByRole('link', { name: '막힌 일 1' }).click()
+  await expect(page).toHaveURL('/workspaces/ws_01/tasks?tab=in_progress&due=blocked')
+  await expect(page.getByRole('list', { name: '태스크 목록' }).getByRole('link')).toHaveText(
+    ['DB 스키마 정리'],
+    FIRST_PAINT,
+  )
+  await page.goBack()
+
+  await page.getByRole('link', { name: '채워 넣기 — 알림 문구 검토' }).click()
+  await expect(page).toHaveURL('/workspaces/ws_01/approvals/ap_01')
+  const form = page.getByRole('group', { name: '확정할 값 보완' })
+  await expect(form).toBeVisible(FIRST_PAINT)
+  await expect(page.getByRole('combobox', { name: '담당자' })).toBeFocused()
+
+  await page.reload()
+  await expect(page.getByRole('button', { name: '보완하기' })).toBeEnabled(FIRST_PAINT)
+  await expect(form).toHaveCount(0)
+
+  // 뒤로 갔다 앞으로 와도 읽기다
+  await page.goBack()
+  await expect(page).toHaveURL(DASHBOARD)
+  await page.goForward()
+  await expect(page.getByRole('button', { name: '보완하기' })).toBeEnabled(FIRST_PAINT)
+  await expect(form).toHaveCount(0)
+})
+
 test('일반 팀원은 확인 필요·되돌리기가 없고 승인 목록을 부르지 않는다', async ({ page }) => {
   const approvals: string[] = []
   page.on('request', (request) => {

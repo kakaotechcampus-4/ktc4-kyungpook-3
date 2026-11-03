@@ -67,6 +67,11 @@ const PANEL = 'flex flex-col gap-12 rounded-16 border border-line-strong px-24 p
 export interface ApprovalReviewProps {
   workspaceId: string
   approvalId: string
+  /**
+   * 대시보드 `채워 넣기` 로 들어왔다 (D-176). 마운트할 때 한 번만 읽는다 — 페이지가 곧 기록에서 지워 false 가 된다.
+   * key=approvalId 라 승인마다 새로 읽는다
+   */
+  fillInOnArrival?: boolean
 }
 
 function isUnavailable(error: unknown): boolean {
@@ -82,12 +87,17 @@ function isUnavailable(error: unknown): boolean {
  * 최초 진입은 읽기다. 생성 승인은 근거·원문·확정할 값을, 변경 승인은 현재값·제안값을 보인다.
  * 승인·반려는 서버 성공 뒤에 반영하고, 처리된 승인은 결과와 태스크·Notion 상태를 같은 화면에 남긴다
  */
-export function ApprovalReview({ workspaceId, approvalId }: ApprovalReviewProps) {
+export function ApprovalReview({
+  workspaceId,
+  approvalId,
+  fillInOnArrival = false,
+}: ApprovalReviewProps) {
   const approval = useQuery(approvalDetailQueryOptions(workspaceId, approvalId))
+  const [fillIn] = useState(fillInOnArrival)
 
   let body: ReactNode
   if (approval.data !== undefined)
-    body = <ApprovalBody workspaceId={workspaceId} approval={approval.data} />
+    body = <ApprovalBody workspaceId={workspaceId} approval={approval.data} fillIn={fillIn} />
   else if (approval.error !== null && isUnavailable(approval.error))
     body = <UnavailableApproval workspaceId={workspaceId} />
   else if (approval.error !== null)
@@ -142,7 +152,15 @@ function useMemberNames(members: readonly Member[] | undefined): ReadonlyMap<str
   )
 }
 
-function ApprovalBody({ workspaceId, approval }: { workspaceId: string; approval: Approval }) {
+function ApprovalBody({
+  workspaceId,
+  approval,
+  fillIn,
+}: {
+  workspaceId: string
+  approval: Approval
+  fillIn: boolean
+}) {
   const members = useQuery(memberListQueryOptions(workspaceId))
   const memberIds = useMemo(() => (members.data ?? []).map(({ id }) => id), [members.data])
   const names = useMemberNames(members.data)
@@ -163,6 +181,7 @@ function ApprovalBody({ workspaceId, approval }: { workspaceId: string; approval
           members={members.data}
           names={names}
           resolver={resolver}
+          fillInOnArrival={fillIn}
         />
       ) : approval.kind === 'task_update' ? (
         <TaskUpdateReview
@@ -193,17 +212,23 @@ function problemMessage(problem: ApprovalResolveProblem | null): string | null {
 const EDITING_REASON = '보완을 끝내거나 취소하면 승인할 수 있어요.'
 const MEMBERS_LOADING_REASON = '팀원 목록을 불러온 뒤 승인할 수 있어요.'
 
+/** 보완 폼 상태. `requested` 는 대시보드 `채워 넣기` 로 열린 것이다 — 첫 빈 칸에 포커스를 둔다 (D-176) */
+type EditMode = 'read' | 'manual' | 'requested'
+
 interface TaskCreateReviewProps {
   workspaceId: string
   approval: TaskCreateApproval
   members: readonly Member[] | undefined
   names: ReadonlyMap<string, string>
   resolver: ApprovalResolve
+  /** 대시보드 `채워 넣기` 로 들어왔다. 보완할 수 있을 때만(대기 중·개발 MSW) 폼을 열고 시작한다 */
+  fillInOnArrival: boolean
 }
 
 /**
  * 생성 승인 (계획 §4-1, §4-2). 원문 담당자·마감과 근거(인용·화자·시각)는 확정할 값과 나눠 보인다.
  * - 개발 MSW 에서만 `보완하기` 가 있다. 보완 완료한 값은 승인 한 번에 함께 실린다 — 그 전까지는 저장되지 않은 변경이다
+ * - 대시보드 `채워 넣기` 로 오면 보완 폼이 열려 있다. 주소로 바로 오거나 새로고침하면 읽기다 (D-176)
  * - 실 API 는 기존 값이 필수조건을 채울 때만 승인할 수 있다. 아니면 `승인` 을 끄고 이유를 보인다. `반려` 는 늘 누를 수 있다
  */
 function TaskCreateReview({
@@ -212,10 +237,16 @@ function TaskCreateReview({
   members,
   names,
   resolver,
+  fillInOnArrival,
 }: TaskCreateReviewProps) {
   const transport = currentApprovalTransport()
   const pending = approval.status === 'pending'
-  const [editing, setEditing] = useState(false)
+  const fillInAvailable = pending && transport === 'msw'
+  const [mode, setMode] = useState<EditMode>(() =>
+    fillInOnArrival && fillInAvailable ? 'requested' : 'read',
+  )
+  // 팀원 목록이 와야 폼을 그린다. 그 전에는 열려 있어도 읽기처럼 보이고 승인 사유도 팀원 목록을 기다린다
+  const formOpen = pending && mode !== 'read' && members !== undefined
   const [overrides, setOverrides] = useState<TaskCreateFields | null>(null)
   useUnsavedChanges(pending && overrides !== null)
 
@@ -231,7 +262,7 @@ function TaskCreateReview({
     memberIds,
     overrides: pending ? overrides : null,
   })
-  const blockedReason = editing
+  const blockedReason = formOpen
     ? EDITING_REASON
     : members === undefined
       ? MEMBERS_LOADING_REASON
@@ -244,17 +275,17 @@ function TaskCreateReview({
       <section className={SECTION}>
         <div className="flex items-center justify-between gap-12">
           <h3 className={SECTION_TITLE}>{pending ? '확정할 값' : '요청한 값'}</h3>
-          {pending && transport === 'msw' && !editing ? (
+          {fillInAvailable && !formOpen ? (
             <Button
               variant="default"
-              onClick={() => setEditing(true)}
+              onClick={() => setMode('manual')}
               disabled={resolver.pending || members === undefined}
             >
               보완하기
             </Button>
           ) : null}
         </div>
-        {pending && overrides !== null && !editing ? (
+        {pending && overrides !== null && !formOpen ? (
           <p className={NOTE}>보완한 값이에요. 승인해야 저장돼요.</p>
         ) : null}
         <dl aria-label={pending ? '확정할 값' : '요청한 값'} className={FIELDS}>
@@ -273,15 +304,16 @@ function TaskCreateReview({
         </dl>
       </section>
 
-      {pending && editing && members !== undefined ? (
+      {formOpen ? (
         <TaskCreateOverridesForm
           initial={confirmed}
           members={members}
           disabled={resolver.pending}
-          onCancel={() => setEditing(false)}
+          autoFocusFirstEmpty={mode === 'requested'}
+          onCancel={() => setMode('read')}
           onConfirm={(fields) => {
             setOverrides(fields)
-            setEditing(false)
+            setMode('read')
           }}
         />
       ) : null}

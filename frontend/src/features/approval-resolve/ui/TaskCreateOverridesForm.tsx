@@ -1,4 +1,4 @@
-import { useId, useMemo } from 'react'
+import { useEffect, useId, useMemo, useRef } from 'react'
 import type { TaskCreateFields } from '@/entities/approval'
 import type { Member } from '@/entities/member'
 import { useAppForm } from '@/shared/lib/form'
@@ -25,10 +25,26 @@ export interface TaskCreateOverridesFormProps {
   onCancel: () => void
   /** 승인·반려 요청 중이면 잠근다 */
   disabled?: boolean
+  /** 열릴 때 화면 순서로 첫 빈 칸에 포커스를 둔다. 빈 칸이 없으면 첫 칸이다 (D-176 `채워 넣기`) */
+  autoFocusFirstEmpty?: boolean
 }
 
 /**
- * 생성 승인의 제목·담당자·마감 보완 (계획 §4-1, §4-2). 개발 MSW 에서 PM 이 `보완하기` 를 눌렀을 때만 열린다.
+ * 화면 순서로 첫 빈 칸. 보이는 값으로 판단한다 — 공백뿐인 제목, 목록에 없는 담당자(select 의 value 가 ''),
+ * 브라우저가 지운 잘못된 날짜도 빈 칸이다
+ */
+function firstEmptyControl(form: HTMLFormElement): HTMLElement | null {
+  const controls = Array.from(form.elements).filter(
+    (element): element is HTMLInputElement | HTMLSelectElement =>
+      (element instanceof HTMLInputElement || element instanceof HTMLSelectElement) &&
+      !element.matches(':disabled'),
+  )
+  return controls.find((control) => control.value.trim() === '') ?? controls[0] ?? null
+}
+
+/**
+ * 생성 승인의 제목·담당자·마감 보완 (계획 §4-1, §4-2). 개발 MSW 에서 PM 이 `보완하기` 를 누르거나
+ * 대시보드 `채워 넣기` 로 들어왔을 때 열린다.
  * 값은 서버로 바로 가지 않는다 — `보완 완료` 로 확정하면 승인 한 번에 함께 실린다.
  * 바꾼 값이 있는 동안 떠나려 하면 기존 이탈 확인을 묻는다
  */
@@ -38,6 +54,7 @@ export function TaskCreateOverridesForm({
   onConfirm,
   onCancel,
   disabled = false,
+  autoFocusFirstEmpty = false,
 }: TaskCreateOverridesFormProps) {
   const memberIds = useMemo(() => members.map(({ id }) => id), [members])
   const schema = useMemo(() => overridesSchema(memberIds), [memberIds])
@@ -46,6 +63,15 @@ export function TaskCreateOverridesForm({
   useUnsavedChanges(isDirty)
   const assigneeId = useId()
   const assigneeErrorId = `${assigneeId}-error`
+  const formRef = useRef<HTMLFormElement>(null)
+  const focused = useRef(false)
+
+  // register 의 ref 가 값을 먼저 채운다 — 효과가 돌 때 칸의 값은 지금 값이다
+  useEffect(() => {
+    if (!autoFocusFirstEmpty || focused.current || formRef.current === null) return
+    focused.current = true
+    firstEmptyControl(formRef.current)?.focus()
+  }, [autoFocusFirstEmpty])
 
   // 서버로 보내지 않는다 — 확정한 값을 화면 상태로 넘길 뿐이다
   const confirm = submit((values) => {
@@ -54,7 +80,7 @@ export function TaskCreateOverridesForm({
   })
 
   return (
-    <form className={ROOT} noValidate onSubmit={(event) => void confirm(event)}>
+    <form ref={formRef} className={ROOT} noValidate onSubmit={(event) => void confirm(event)}>
       <fieldset className="flex flex-col gap-18" disabled={disabled}>
         <legend className="mb-4 text-[17px] leading-[1.55] font-bold tracking-h2 text-ink">
           확정할 값 보완
