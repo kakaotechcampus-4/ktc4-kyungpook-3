@@ -33,6 +33,7 @@ from app.models import (
     Task,
     ThreadMessage,
 )
+from app.services import scheduler
 
 # 봇이 가져간 뒤 결과 보고가 이 시간 안에 없으면 못 보냄(알 수 없음)으로 닫는다. 다시 주지 않는다(최대 한 번).
 CLAIM_TIMEOUT = timedelta(minutes=10)
@@ -372,6 +373,7 @@ def cancel_bundle(db: Session, bundle: ReminderBundle, *, now: datetime) -> Remi
 def dispatch_due(db: Session, now: datetime) -> list[ThreadMessage]:
     """승인됐고 발송 시각이 된 묶음마다 봇 메시지 한 통을 만든다. 문구는 묶음 문구 그대로다."""
     now = utc(now)
+    scheduler.before_dispatch(db, now)
     due = db.scalars(
         select(ReminderBundle)
         .where(

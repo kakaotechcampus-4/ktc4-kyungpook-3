@@ -135,15 +135,26 @@ def test_gone_subscription_is_removed_and_notification_stays(mdb, mseed):
     assert len(_list("alice", mseed)["items"]) == 1
 
 
-def test_push_failure_keeps_notification_in_list(mdb, mseed):
+def test_push_failure_retries_three_times_and_keeps_notification(mdb, mseed):
     _subscribe("alice", mseed["ws"], "https://push.example/broken")
     n = _notify(mdb, mseed, "alice")
 
     sender = FakeSender(fail={"https://push.example/broken": RuntimeError("network down")})
+    for expected in ("pending", "pending", "failed"):
+        svc.send_pending_pushes(mdb, now=NOW, send=sender)
+        mdb.commit()
+        assert mdb.get(Notification, n.notification_id).push_status == expected
     svc.send_pending_pushes(mdb, now=NOW, send=sender)
-    mdb.commit()
+    assert mdb.get(Notification, n.notification_id).push_attempts == 3
+    assert len(_list("alice", mseed)["items"]) == 1
 
-    assert mdb.get(Notification, n.notification_id).push_status == "failed"
+
+def test_no_push_key_skips_push_and_keeps_notification(mdb, mseed):
+    _subscribe("alice", mseed["ws"], "https://push.example/a")
+    n = _notify(mdb, mseed, "alice")
+    svc.send_pending_pushes(mdb, now=NOW, send=None)
+    mdb.commit()
+    assert mdb.get(Notification, n.notification_id).push_status == "skipped"
     assert len(_list("alice", mseed)["items"]) == 1
 
 

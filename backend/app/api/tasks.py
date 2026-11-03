@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select
@@ -16,6 +16,7 @@ from app.schemas.task import (
     TaskResponse,
     TaskUpdateRequest,
 )
+from app.services import scheduler
 from app.services.notion_sync import retry_failed_sync
 from app.services.tasks import apply_task_updates, create_task, rollback_task_history
 
@@ -182,6 +183,21 @@ def rollback_history_endpoint(
         )
 
     rollback_task_history(db, task, history, changed_by=member.member_id)
+    db.commit()
+    db.refresh(task)
+    return success(TaskResponse.model_validate(task).model_dump(mode="json"))
+
+
+@router.post("/{task_id}/auto-block/undo", response_model=Envelope[TaskResponse])
+def undo_auto_block(
+    task_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    """리마인드 무응답으로 스케줄러가 건 막힘을 막기 전 상태·사유로 되돌린다. 그 뒤 바뀌었으면 409."""
+    member = require_pm(db, user, _get_task(db, task_id).workspace_id)
+    task = _get_task(db, task_id, lock=True)
+    scheduler.undo_auto_block(db, task, changed_by=member.member_id, now=datetime.now(timezone.utc))
     db.commit()
     db.refresh(task)
     return success(TaskResponse.model_validate(task).model_dump(mode="json"))

@@ -13,12 +13,12 @@ from sqlalchemy.orm import Session
 
 from app.core.errors import AppError, ErrorCode
 from app.models import Member, MemberRole, Notification, PushStatus, PushSubscription
-from app.services import push
-from app.services.messages import utc
+from app.services import messages, push
 
 logger = logging.getLogger(__name__)
 
 PUSH_BATCH = 100
+PUSH_MAX_ATTEMPTS = 3
 
 
 def notify(
@@ -41,7 +41,7 @@ def notify(
     notification = Notification(
         workspace_id=member.workspace_id, member_id=member_id, kind=kind, text=text,
         link_type=link_type, link_id=link_id, dedupe_key=dedupe_key,
-        push_status=PushStatus.PENDING, created_at=utc(now),
+        push_status=PushStatus.PENDING, created_at=messages.utc(now),
     )
     try:
         with db.begin_nested():
@@ -97,7 +97,7 @@ def mark_read(db: Session, member: Member, notification_id: str, *, now: datetim
     if notification is None or notification.member_id != member.member_id:
         raise AppError(ErrorCode.NOTIFICATION_NOT_FOUND, details={"notification_id": notification_id})
     if notification.read_at is None:
-        notification.read_at = utc(now)
+        notification.read_at = messages.utc(now)
         db.flush()
     return notification
 
@@ -106,7 +106,7 @@ def subscribe(db: Session, *, user_id: str, endpoint: str, p256dh: str, auth: st
     """같은 브라우저가 다시 등록하면 키를 바꾸고, 다른 계정으로 로그인했으면 그 계정으로 옮긴다."""
     sub = db.scalar(select(PushSubscription).where(PushSubscription.endpoint == endpoint))
     if sub is None:
-        sub = PushSubscription(user_id=user_id, endpoint=endpoint, p256dh=p256dh, auth=auth, created_at=utc(now))
+        sub = PushSubscription(user_id=user_id, endpoint=endpoint, p256dh=p256dh, auth=auth, created_at=messages.utc(now))
         db.add(sub)
     else:
         sub.user_id, sub.p256dh, sub.auth = user_id, p256dh, auth
@@ -133,10 +133,14 @@ def payload(notification: Notification) -> dict:
 
 
 def send_pending_pushes(
-    db: Session, *, now: datetime, send: Callable[[PushSubscription, dict], None] = push.send
+    db: Session, *, now: datetime, send: Callable[[PushSubscription, dict], None] | None
 ) -> int:
-    """아직 푸시를 안 보낸 알림을 받는 사람 기기 모두로 보낸다. 한 번만 시도한다. 보낸 알림 수를 돌려준다."""
-    now = utc(now)
+    """아직 푸시를 안 보낸 알림을 받는 사람 기기 모두로 보낸다. 다룬 알림 수를 돌려준다.
+
+    한 기기에도 못 보냈고 일시 오류가 있었으면 다음 틱에 다시 보낸다(최대 PUSH_MAX_ATTEMPTS 번). 한 기기라도
+    받았으면 다시 보내지 않는다. send 가 None 이면 서버에 푸시 키가 없는 것이라 보내지 않고 건너뛴다.
+    """
+    now = messages.utc(now)
     pending = db.scalars(
         select(Notification)
         .where(Notification.push_status == PushStatus.PENDING)
@@ -146,7 +150,7 @@ def send_pending_pushes(
     ).all()
     for notification in pending:
         user_id = notification.member.user_id
-        subs = [] if user_id is None else list(db.scalars(
+        subs = [] if user_id is None or send is None else list(db.scalars(
             select(PushSubscription).where(PushSubscription.user_id == user_id).order_by(PushSubscription.created_at)
         ).all())
         delivered = failed = False
@@ -159,9 +163,13 @@ def send_pending_pushes(
             except Exception:
                 logger.warning("push failed", exc_info=True)
                 failed = True
-        notification.push_status = (
-            PushStatus.SENT if delivered else PushStatus.FAILED if failed else PushStatus.SKIPPED
-        )
+        notification.push_attempts += 1
+        if delivered:
+            notification.push_status = PushStatus.SENT
+        elif not failed:
+            notification.push_status = PushStatus.SKIPPED
+        elif notification.push_attempts >= PUSH_MAX_ATTEMPTS:
+            notification.push_status = PushStatus.FAILED
         notification.pushed_at = now
     db.flush()
     return len(pending)
