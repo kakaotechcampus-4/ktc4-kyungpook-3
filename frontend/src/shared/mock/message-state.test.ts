@@ -9,6 +9,7 @@ import {
   placedAt,
   reminderStatus,
   sendCheck,
+  threadDtoOf,
 } from './message-state'
 
 const review = (patch: Partial<MockMessageReview> = {}): MockMessageReview => ({
@@ -96,5 +97,26 @@ describe('approve · dismiss · applyPatch · sendCheck', () => {
     expect(sendCheck(passed, NOW)).toBe('time_passed')
     expect(passed).toEqual(before)
     expect(sendCheck(review({ scheduled_at: NOW }), NOW)).toBe('time_passed')
+  })
+
+  it('시각이 없는 재촉 둘은 들어온 순서를 유지한다', () => {
+    const messages = threadDtoOf(
+      {
+        thread_id: 'th_x',
+        workspace_id: 'ws_01',
+        member_id: null,
+        kind: 'direct',
+        name: '가',
+        team_role: null,
+        discord_url: null,
+        messages: [],
+      },
+      [
+        review({ review_id: 'rv_a', thread_id: 'th_x', scheduled_at: null, send_timing: 'now' }),
+        review({ review_id: 'rv_b', thread_id: 'th_x', scheduled_at: null, send_timing: 'now' }),
+      ],
+      NOW,
+    ).messages
+    expect(messages.map(({ message_id }) => message_id)).toEqual(['rv_a', 'rv_b'])
   })
 })

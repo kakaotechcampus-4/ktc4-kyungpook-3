@@ -191,7 +191,9 @@ export function reminderMessage(review: MockMessageReview, now: string): Message
   }
 }
 
+/** 시각이 없으면 뒤로 보낸다. 둘 다 없으면 0 이라 들어온 순서가 유지된다 */
 function byAt(left: MessageDto, right: MessageDto): number {
+  if (left.at === null && right.at === null) return 0
   if (left.at === null) return 1
   if (right.at === null) return -1
   return Date.parse(left.at) - Date.parse(right.at)

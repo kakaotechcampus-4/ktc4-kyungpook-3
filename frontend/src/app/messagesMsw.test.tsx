@@ -7,6 +7,7 @@ import { db } from '@/shared/mock/db'
 import { MOCK_NOW } from '@/shared/mock/fixtures/constants'
 import { botMessage } from '@/shared/mock/fixtures/message'
 import { applyScenario } from '@/shared/mock/scenarios'
+import { setMockRole } from '@/shared/mock/sessions'
 import { recordRequests } from '@/shared/test/requests'
 import {
   conversation,
@@ -400,6 +401,7 @@ describe('빈 상태·로딩·목록 오류·대화 오류가 서로 구분되�
 describe('워크스페이스를 바꾸면 이전 공간의 메시지가 보이지 않는다 (AC-05)', () => {
   beforeEach(() => {
     db.workspaces.find(({ workspace_id }) => workspace_id === 'ws_02')!.onboarding.completed = true
+    setMockRole('pm', 'ws_02')
   })
 
   it('새 공간의 목록을 받는 동안에도 이전 공간의 행을 들고 있지 않는다', async () => {
@@ -413,8 +415,8 @@ describe('워크스페이스를 바꾸면 이전 공간의 메시지가 보이�
     expect(screen.queryByText('이재환')).toBeNull()
 
     act(() => gate.resolve())
-    expect(await screen.findByRole('heading', { name: '받은 메시지가 없어요' })).toBeVisible()
-    expect(screen.queryByText(/이재환|박민수|정하늘|한결/)).toBeNull()
+    await waitFor(() => expect(rowTexts(threadList())).toEqual(['한결랜딩 시안 공유드려요09/16']))
+    expect(screen.queryByText(/이재환|박민수|정하늘/)).toBeNull()
   })
 
   it('이전 공간의 대화 ID 를 새 공간 주소에 붙이면 찾을 수 없다', async () => {

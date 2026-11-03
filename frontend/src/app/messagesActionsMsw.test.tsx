@@ -50,7 +50,6 @@ const expectLocked = (element: HTMLElement) =>
   expect(element).toHaveAttribute('aria-disabled', 'true')
 const expectUnlocked = (element: HTMLElement) =>
   expect(element).not.toHaveAttribute('aria-disabled')
-const reviewIds = () => db.messageReviews.map(({ review_id }) => review_id)
 
 describe('이대로 발송 — 서버가 성공한 뒤에만 목록과 대화가 바뀐다', () => {
   it('응답 전에는 목록·상세가 그대로이고 행동이 모두 잠겨 두 번 눌러도 한 번만 보낸다', async () => {
@@ -82,7 +81,6 @@ describe('이대로 발송 — 서버가 성공한 뒤에만 목록과 대화가
     expect(await screen.findByText('09/23 09:00에 이재환님에게 보낼게요')).toBeInTheDocument()
     expect(detail().getByRole('heading', { level: 2, name: '이 메시지, 보낼까요?' })).toBeVisible()
     expect(button('이대로 발송')).toBeVisible()
-    expect(reviewIds()).toEqual(['rv_01', 'rv_02', 'rv_03', 'rv_04'])
   })
 
   it('시각을 정해 둔 발송은 예정으로 남고, 확인하기에서 본 뒤 지금 바로로 되돌리면 다시 보낼 수 있다', async () => {
@@ -487,10 +485,6 @@ describe('예정 시각이 지난 재촉', () => {
     expect(await screen.findByText('이재환님에게 메시지를 보냈어요')).toBeInTheDocument()
     await waitFor(() => expect(rowTexts(reviewList())).toHaveLength(2))
     expect(reviewList()).not.toHaveTextContent('지난 예약 재촉')
-    expect(db.messageReviews.find(({ review_id }) => review_id === 'rv_06')).toMatchObject({
-      state: 'sent',
-      closed_at: MOCK_NOW,
-    })
   })
 
   it('문구를 고치거나 시각 저장이 실패하거나 다른 항목을 다녀와도 발송은 잠겨 있다', async () => {

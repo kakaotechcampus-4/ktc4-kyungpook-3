@@ -38,8 +38,10 @@ const patchReview = (reviewId: string, body: unknown, workspaceId?: string) =>
   fetchDto<MessageReviewDto>(reviewPath(reviewId, workspaceId), jsonRequest('PATCH', body))
 const sendReview = (reviewId: string, workspaceId?: string) =>
   fetchDto<{ review_id: string }>(`${reviewPath(reviewId, workspaceId)}/send`, { method: 'POST' })
-const dismissReview = (reviewId: string) =>
-  fetchDto<{ review_id: string }>(`${reviewPath(reviewId)}/dismiss`, { method: 'POST' })
+const dismissReview = (reviewId: string, workspaceId?: string) =>
+  fetchDto<{ review_id: string }>(`${reviewPath(reviewId, workspaceId)}/dismiss`, {
+    method: 'POST',
+  })
 const replyTo = (threadId: string, body: unknown, workspaceId = 'ws_01') =>
   fetchDto<{ message_id: string }>(
     `/workspaces/${workspaceId}/messages/threads/${threadId}/replies`,
@@ -284,6 +286,24 @@ describe('보내기 전 확인 항목의 행동 handler — 성공할 때만 db 
     const denied = await failure(patchReview('rv_02', { body: '가' }, 'ws_02'))
     expect(denied.status).toBe(403)
     expect(denied.message).toBe('PM만 할 수 있는 작업입니다.')
+    expect(snapshot()).toEqual(before)
+  })
+
+  it('다른 공간의 PM 이 이 공간의 검토와 답장 판정을 하면 404 이고 db 는 그대로다', async () => {
+    setMockRole('pm', 'ws_02')
+    const before = snapshot()
+    const patched = await failure(patchReview('rv_01', { body: '고친 문구' }, 'ws_02'))
+    expect(patched.status).toBe(404)
+    expect(patched.code).toBe('MESSAGE_REVIEW_NOT_FOUND')
+    const sent = await failure(sendReview('rv_01', 'ws_02'))
+    expect(sent.status).toBe(404)
+    expect(sent.code).toBe('MESSAGE_REVIEW_NOT_FOUND')
+    const dismissed = await failure(dismissReview('rv_01', 'ws_02'))
+    expect(dismissed.status).toBe(404)
+    expect(dismissed.code).toBe('MESSAGE_REVIEW_NOT_FOUND')
+    const judged = await failure(attribute('mg_05', 'tk_02', 'ws_02'))
+    expect(judged.status).toBe(404)
+    expect(judged.code).toBe('MESSAGE_REPLY_NOT_FOUND')
     expect(snapshot()).toEqual(before)
   })
 })

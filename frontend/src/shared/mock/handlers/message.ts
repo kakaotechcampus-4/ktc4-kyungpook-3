@@ -39,7 +39,7 @@ const SEND_TIMINGS: readonly MessageSendTimingDto[] = ['day_before_deadline', 'n
 
 function viewerOf(workspaceId: string): 'pm' | 'member' {
   const workspace = db.workspaces.find(({ workspace_id }) => workspace_id === workspaceId)
-  return workspace?.role === 'member' ? 'member' : 'pm'
+  return workspace?.role === 'pm' ? 'pm' : 'member'
 }
 
 function byInboxOrder(
