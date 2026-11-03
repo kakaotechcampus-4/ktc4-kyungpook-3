@@ -585,5 +585,16 @@
       ]
     },
     "expected": {"is_meaningful": false}
+  },
+  {
+    "description": "시작 전 작업을 거의 다 함 — done 이 아니라 in_progress (#207)",
+    "judge_input": {
+      "source": "chat",
+      "text": "알림 설정 페이지 거의 다 만들었어요",
+      "candidates": [
+        {"notion_page_id": "n10", "task_id": "task_noti", "title": "알림 설정 페이지 만들기", "status": "todo", "similarity": 0.7}
+      ]
+    },
+    "expected": {"is_meaningful": true, "is_new": false, "matched_task_id": "task_noti", "status": "in_progress"}
   }
 ]
