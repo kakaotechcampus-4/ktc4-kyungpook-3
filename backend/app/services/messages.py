@@ -327,6 +327,8 @@ def approve_bundle(db: Session, bundle: ReminderBundle, *, approved_by: str | No
     _require_future(utc(bundle.scheduled_at), now)
     bundle.approved_at = now
     bundle.approved_by = approved_by
+    # 승인한 문구가 그대로 나가므로 오던 AI 초안은 더 받지 않는다. 화면에 초안 대기로 남지 않게 닫는다.
+    bundle.draft_status = DraftStatus.DONE
     bundle.updated_at = now
     db.flush()
     return bundle

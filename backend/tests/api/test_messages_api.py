@@ -558,3 +558,11 @@ def test_body_edit_with_merging_time_move_is_rejected_and_keeps_both_bundles(mdb
     bundles = pm.get(f"{P}/workspaces/{mseed['ws']}/messages").json()["data"]["bundles"]
     assert sorted(x["bundle_id"] for x in bundles) == sorted([a, b])
     assert {x["bundle_id"]: x["body"] for x in bundles}[a] == "가"
+
+
+def test_approving_while_draft_is_pending_freezes_the_text(mdb, mseed):
+    pm = client("pm")
+    bundle = _create(pm, mseed)["bundle"]
+    assert bundle["draft_status"] == "needed"
+    approved = _approve(pm, mseed, bundle["bundle_id"]).json()["data"]
+    assert approved["approved"] is True and approved["draft_status"] == "done"
