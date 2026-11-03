@@ -207,6 +207,35 @@ def test_recent_utterance_keeps_a_long_resumed_upload_alive(db, ws):
     assert _folder(meeting).exists()
 
 
+def test_old_utterance_does_not_keep_a_stalled_upload_alive(db, ws):
+    """발화가 있다는 것만으로 살리지 않는다. 마지막 발화도 3시간이 지났으면 정리한다."""
+    meeting = _upload(
+        db, ws, claimed_at=NOW - 2 * DAY, speakers_assigned_at=NOW - DAY, resumed_at=NOW - 4 * HOUR,
+    )
+    db.add(Source(
+        meeting_id=meeting.meeting_id, seq=0, start_ms=0, end_ms=1, text="안녕",
+        created_at=NOW - 3 * HOUR - timedelta(seconds=1),
+    ))
+    db.commit()
+
+    assert upload_sweeper.sweep_stalled_uploads(db, now=NOW) == [(meeting.meeting_id, "diarize")]
+
+    assert _state(db, meeting) == ("failed", "diarize")
+
+
+def test_exactly_at_the_limit_is_not_swept_yet(db, ws):
+    """한도는 '지나야' 정리한다. 정확히 3시간·7일인 회의는 남긴다."""
+    claimed = _upload(db, ws, claimed_at=NOW - 3 * HOUR)
+    waiting = _upload(
+        db, ws, status="awaiting_speakers", claimed_at=NOW - 8 * DAY, speakers_reported_at=NOW - 7 * DAY,
+    )
+
+    assert upload_sweeper.sweep_stalled_uploads(db, now=NOW) == []
+
+    assert _state(db, claimed) == ("processing", None)
+    assert _state(db, waiting) == ("awaiting_speakers", None)
+
+
 def test_discord_and_ended_meetings_are_untouched(db, ws):
     old = NOW - 20 * DAY
     discord = _upload(db, ws, source="discord", row=False)

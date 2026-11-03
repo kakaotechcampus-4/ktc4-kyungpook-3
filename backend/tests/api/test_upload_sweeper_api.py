@@ -196,3 +196,26 @@ def test_same_workspace_can_upload_again_after_sweep(db, seed):
 
     r = upload()
     assert r.status_code == 202, r.text
+
+
+def test_ai_resume_after_sweep_gets_409_already_ended(db, seed):
+    meeting = _swept_processing(db, seed)
+
+    r = _client().patch(f"/api/v1/uploads/{meeting.meeting_id}/resume", headers=HEADERS)
+
+    assert r.status_code == 409, r.text
+    assert r.json()["error"]["code"] == "MEETING_ALREADY_ENDED"
+    assert r.json()["error"]["details"]["status"] == "failed"
+
+
+def test_ai_transcript_after_sweep_gets_409_meeting_failed(db, seed):
+    meeting = _swept_processing(db, seed)
+
+    r = _client().post(
+        f"/api/v1/meetings/{meeting.meeting_id}/sources",
+        headers=HEADERS,
+        json={"segments": [{"seq": 0, "speaker": None, "start": 0, "end": 1, "text": "안녕"}]},
+    )
+
+    assert r.status_code == 409, r.text
+    assert r.json()["error"]["code"] == "MEETING_FAILED"
