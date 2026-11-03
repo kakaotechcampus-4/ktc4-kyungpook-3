@@ -149,6 +149,9 @@ def split_long(u: Utterance, max_s: float = CHUNK_MAX_S, search_from_s: float = 
     return out
 
 
+BATCH_MIN_SPEECH_MS = 100   # 배치 VAD 가 버리는 소리 길이. 0.14초 "네." 를 살린다. 실시간 경로는 vad.MIN_SPEECH_MS(0031)
+
+
 def cut(audio: np.ndarray, speaker_id: str, stats: BatchStats | None = None) -> list[Utterance]:
     """실시간 경로와 같은 VAD 로 자른다. 샘플 위치가 회의 시각이므로 offset 은 그대로 준다.
 
@@ -156,7 +159,7 @@ def cut(audio: np.ndarray, speaker_id: str, stats: BatchStats | None = None) -> 
     보낸다). 배치에서는 start~end 에 100ms 만 더한 만큼으로 자른다. 1.5초 발화에 2.3초를 보내던
     것이 1.6초가 되고, 무음이 모델에 안 들어간다. 25초 강제 절단은 끄고 split_long 에 맡긴다.
     """
-    v = StreamingVAD(speaker_id=speaker_id, sample_rate=SR, max_segment_ms=10 ** 9)
+    v = StreamingVAD(speaker_id=speaker_id, sample_rate=SR, max_segment_ms=10 ** 9, min_speech_ms=BATCH_MIN_SPEECH_MS)
     n = SR * 20 // 1000
     raw: list[Utterance] = []
     for i in range(0, len(audio) - n + 1, n):
@@ -308,7 +311,7 @@ RETRY_WAIT_S = 2.0     # 재시도 사이 대기. API 가 잠시 막힌 것이�
 
 
 def _call(backend: SttBackend, pcm: np.ndarray, stats: BatchStats,
-          speaker: str = "") -> tuple[SttResult | None, float, str | None]:
+          speaker: str = "", context: str | None = None) -> tuple[SttResult | None, float, str | None]:
     """한 번 호출. 실패하면 RETRIES 만큼 다시 보낸다. 시간은 성공한 호출(또는 마지막 실패)만 센다.
 
     회의 중 전사에서는 재시도가 stall 을 두 배로 늘려서 안 했다. 배치는 마감이 없고 한 묶음이
@@ -318,7 +321,7 @@ def _call(backend: SttBackend, pcm: np.ndarray, stats: BatchStats,
     for attempt in range(RETRIES + 1):
         t0 = time.monotonic()
         try:
-            r = backend.transcribe(pcm, SR)
+            r = backend.transcribe(pcm, SR, context=context) if context is not None else backend.transcribe(pcm, SR)
             err = None
         except Exception as e:  # SttError 도, 예상 못 한 것도 줄 하나의 실패로만 남긴다
             r, err = None, f"{type(e).__name__}: {e}"
@@ -542,6 +545,9 @@ def run(tracks: list[Track], backend: SttBackend, *, mode: str = "chunk", gate: 
             starts_of.setdefault(tr.speaker_id, []).extend(u.start_ms for u in utts)
             del audio, utts
     reclip = bool(getattr(backend, "reclip_unmapped", False)) and mode == "chunk"
+    # 앞 줄을 받는 백엔드(운영 Prompted)면 min_s 보다 짧은 묶음은 나머지를 다 받은 뒤 시간순으로 보낸다(0031)
+    defer_s = getattr(backend, "min_s", 0.0) if ordered and getattr(backend, "takes_context", False) else 0.0
+    deferred: list[tuple[Track, Chunk]] = []
 
     pending: deque = deque()   # 제출은 했고 결과는 아직 안 받은 트랙: (track, audio_s, utts, chunks, futures)
     all_lines: list[Line] = []
@@ -624,6 +630,9 @@ def run(tracks: list[Track], backend: SttBackend, *, mode: str = "chunk", gate: 
                 barriers = ([t for spk, ts in starts_of.items() if spk != tr.speaker_id for t in ts]
                             if ordered else None)
                 chunks = build_chunks(utts, pack_turns=pack_turns, barriers=barriers) if utts else []
+                if defer_s:
+                    deferred += [(tr, c) for c in chunks if len(c.pcm) < SR * defer_s]
+                    chunks = [c for c in chunks if len(c.pcm) >= SR * defer_s]
                 units = [c.pcm for c in chunks]
             else:
                 units = [audio] if utts else []
@@ -641,6 +650,18 @@ def run(tracks: list[Track], backend: SttBackend, *, mode: str = "chunk", gate: 
                 _collect(ex, *pending.popleft())
         while pending:
             _collect(ex, *pending.popleft())
+
+    for tr, c in sorted(deferred, key=lambda d: d[1].pieces[0][1].start_ms):
+        start = c.pieces[0][1].start_ms
+        before = [ln for ln in all_lines if ln.start_ms < start and ln.text.strip()]
+        context = max(before, key=lambda ln: ln.start_ms).text.strip() if before else None
+        with count_lock:
+            counts["sent"] += 1
+        r = _call(backend, c.pcm, stats, tr.speaker_id, context=context)
+        with count_lock:
+            counts["done"] += 1
+        _report()
+        all_lines.extend(_chunk_lines(tr, [c], [r], stats))
 
     if merge:
         all_lines = merge_turns(all_lines)
