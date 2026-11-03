@@ -59,6 +59,14 @@ class ErrorCode(StrEnum):
     MESSAGE_NOT_FOUND = "MESSAGE_NOT_FOUND"
     MESSAGE_RESULT_CONFLICT = "MESSAGE_RESULT_CONFLICT"
 
+    # 팀원 초대
+    INVITATION_NOT_FOUND = "INVITATION_NOT_FOUND"
+    INVITATION_NOT_PENDING = "INVITATION_NOT_PENDING"
+    INVITATION_NOT_ACCEPTED = "INVITATION_NOT_ACCEPTED"
+    MEMBER_ALREADY_LINKED = "MEMBER_ALREADY_LINKED"
+    ALREADY_WORKSPACE_MEMBER = "ALREADY_WORKSPACE_MEMBER"
+    EMAIL_ALREADY_INVITED = "EMAIL_ALREADY_INVITED"
+
 
 ERROR_STATUS: dict[ErrorCode, int] = {
     ErrorCode.INVALID_REQUEST: 400,
@@ -108,6 +116,12 @@ ERROR_STATUS: dict[ErrorCode, int] = {
     ErrorCode.MESSAGE_THREAD_NOT_FOUND: 404,
     ErrorCode.MESSAGE_NOT_FOUND: 404,
     ErrorCode.MESSAGE_RESULT_CONFLICT: 409,
+    ErrorCode.INVITATION_NOT_FOUND: 404,
+    ErrorCode.INVITATION_NOT_PENDING: 409,
+    ErrorCode.INVITATION_NOT_ACCEPTED: 409,
+    ErrorCode.MEMBER_ALREADY_LINKED: 409,
+    ErrorCode.ALREADY_WORKSPACE_MEMBER: 409,
+    ErrorCode.EMAIL_ALREADY_INVITED: 409,
 }
 
 ERROR_MESSAGE: dict[ErrorCode, str] = {
@@ -158,6 +172,12 @@ ERROR_MESSAGE: dict[ErrorCode, str] = {
     ErrorCode.MESSAGE_THREAD_NOT_FOUND: "해당 대화를 찾을 수 없습니다.",
     ErrorCode.MESSAGE_NOT_FOUND: "해당 봇 메시지를 찾을 수 없습니다.",
     ErrorCode.MESSAGE_RESULT_CONFLICT: "이미 다른 결과가 보고된 메시지이거나 아직 가져가지 않은 메시지입니다.",
+    ErrorCode.INVITATION_NOT_FOUND: "해당 초대를 찾을 수 없습니다.",
+    ErrorCode.INVITATION_NOT_PENDING: "이미 수락·거절·취소된 초대입니다.",
+    ErrorCode.INVITATION_NOT_ACCEPTED: "수락한 초대만 연결을 끊을 수 있습니다.",
+    ErrorCode.MEMBER_ALREADY_LINKED: "이미 로그인 계정이 연결된 팀원입니다.",
+    ErrorCode.ALREADY_WORKSPACE_MEMBER: "이미 이 워크스페이스의 팀원인 계정입니다.",
+    ErrorCode.EMAIL_ALREADY_INVITED: "이 이메일로 다른 팀원에게 보낸 초대가 대기 중입니다.",
 }
 
 
