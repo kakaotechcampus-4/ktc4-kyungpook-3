@@ -31,16 +31,31 @@ PM 이 마감 리마인드를 PM 말투로 부담 없이 보내고 팀원 답장
 
 | 항목 | 값 |
 |---|---|
-| `cd backend && .venv/bin/python -m pytest -q` (sqlite) | 857 passed, 375 skipped (시작 전 792 passed, 310 skipped. 늘어난 skip 은 PostgreSQL 판) |
-| 같은 명령, `TEST_DATABASE_URL` 에 pgvector/pgvector:pg16 컨테이너 | 1229 passed, 1 skipped (마지막 수정 한 건 전 커밋에서) |
+| `cd backend && .venv/bin/python -m pytest -q` (sqlite) | 867 passed, 393 skipped (시작 전 792 passed, 310 skipped. 늘어난 skip 은 PostgreSQL 판과 PostgreSQL 전용 동시성 테스트) |
+| 같은 명령, `TEST_DATABASE_URL` 에 pgvector/pgvector:pg16 컨테이너 | 1255 passed, 5 skipped |
 | PostgreSQL 에서 `alembic upgrade head`, `alembic check`, `downgrade c7a2e91b4d36` 후 다시 `upgrade head` | 모두 통과, `check` 는 "No new upgrade operations detected." |
 | 실제 서버(uvicorn + PostgreSQL)에서 봇 경로 | 토큰 없으면 401, 가져가기 둘은 빈 목록, 모르는 디스코드 계정 답장은 404 `MEMBER_NOT_FOUND` |
-| `cd ai && .venv/bin/python -m pytest -q` | 실패 없음(종료 코드 0). 초안 모듈 테스트 26개는 FakeLLM 으로 돈다 |
+| `cd ai && .venv/bin/python -m pytest -o addopts="" -q` | 1108 passed. 초안 모듈 테스트는 FakeLLM 으로 돈다 |
 | 보낼 메시지 하나의 상태 모델(TLA+, 상태 372개) | 나간 글은 PM 이 승인한 글이다, 승인된 예정 묶음의 문구는 승인한 문구다, PM 이 고친 문구를 AI 가 덮지 않는다, 리마인드가 없는 묶음은 예정이 아니다. 넷 모두 지켜진다 |
 | 실제 Luna 출력 | 아직 안 봤다 |
 | 유료 호출 | 0원 |
 
 상태 모델을 그리다가 초안을 기다리던 묶음을 승인하면 초안 대기로 남는 것을 찾아, 승인하면 초안 대기를 닫게 고쳤다.
+
+리뷰에서 찾아 재현 테스트를 먼저 쓰고 고친 것은 아래와 같다.
+
+| 무엇이 깨졌나 | 고친 것 |
+|---|---|
+| PostgreSQL 에서 PM 이 발송 시각이 된 묶음을 바꾸는 순간 봇이 가져가면 교착으로 한쪽이 500 | 대화 행 잠금을 `FOR NO KEY UPDATE` 로 |
+| 초안 대기 중인 묶음을 PM 이 승인하기 직전에 AI 초안이 들어오면 PM 이 못 본 글이 승인됨 | 승인에 PM 이 본 `draft_version` 을 받고 다르면 409 `BUNDLE_CHANGED`. AI 초안이 들어와도 판이 올라간다 |
+| 봇의 결과 보고가 답장보다 늦으면 답장이 다른 워크스페이스로 감 | 바로 앞 봇 DM 을 보고 시각이 아니라 디스코드 id 에 든 보낸 시각으로 고른다 |
+| 대화가 없는 팀원의 DM 두 통이 동시에 오면 한 통이 500 으로 사라짐 | 대화 만들기가 겹치면 먼저 만든 대화를 다시 읽는다 |
+| AI 초안 검사가 다른 이름이 섞인 글, 빠진 태스크, 없는 날짜, 틀린 요일, 서로 바꿔 쓴 마감을 통과시킴 | 받는 사람 이름, 마감 날짜와 요일, 제목마다 그 마감이 붙었는지, 목록 기호, 금지어를 본다 |
+| 시각이 지난 묶음의 문구만 고쳐도 바뀌지 않은 시각을 같이 보내면 409 | 시각이 그대로면 지난 시각 검사를 하지 않는다 |
+| 태스크를 뺀 뒤 묶음을 취소하면 응답에 뺀 태스크가 다시 나옴 | 함께 취소된 리마인드만 싣는다 |
+| 같은 초에 온 두 대화 순서가 뒤집힘 | 직렬화 전 시각으로 정렬 |
+
+기본 말투 예시의 "11/14(금)" 은 2026-11-14 가 토요일이라 "11/14(토)" 로 바로잡았다.
 
 ## 다음
 
