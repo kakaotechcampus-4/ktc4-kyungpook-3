@@ -243,11 +243,11 @@ def edit_reminder(
     _transition(reminder, "edit")
     source = reminder.bundle
     target = source
-    if scheduled_at is not None:
+    # 화면이 폼 전체를 보내면 바뀌지 않은 시각도 온다. 같은 시각이면 옮기는 것이 아니므로 미래 검사를 하지 않는다.
+    if scheduled_at is not None and utc(scheduled_at) != utc(source.scheduled_at):
         scheduled_at = utc(scheduled_at)
         _require_future(scheduled_at, now)
-        if scheduled_at != utc(source.scheduled_at):
-            target = _slot_bundle(db, source.thread, scheduled_at, now)
+        target = _slot_bundle(db, source.thread, scheduled_at, now)
     note_changed = note is not KEEP and note != reminder.note
     if note_changed:
         reminder.note = note
@@ -294,14 +294,13 @@ def edit_bundle(
     """
     now = utc(now)
     _transition(bundle, "edit")
+    # 바뀌지 않은 시각은 보내지 않은 것으로 본다(edit_reminder 와 같은 까닭).
+    if scheduled_at is not None and utc(scheduled_at) == utc(bundle.scheduled_at):
+        scheduled_at = None
     if scheduled_at is not None:
         scheduled_at = utc(scheduled_at)
         _require_future(scheduled_at, now)
-        if (
-            body is not None
-            and scheduled_at != utc(bundle.scheduled_at)
-            and _bundle_at(db, bundle.thread_id, scheduled_at) is not None
-        ):
+        if body is not None and _bundle_at(db, bundle.thread_id, scheduled_at) is not None:
             raise AppError(
                 ErrorCode.INVALID_REQUEST,
                 message="다른 보낼 메시지와 합쳐지는 시각으로 옮길 때는 문구를 같이 고칠 수 없습니다. 시각부터 옮겨 주세요.",
@@ -311,7 +310,7 @@ def edit_bundle(
         bundle.draft_version += 1
         bundle.draft_claimed_at = None
     bundle.updated_at = now
-    if scheduled_at is None or scheduled_at == utc(bundle.scheduled_at):
+    if scheduled_at is None:
         db.flush()
         return bundle
     other = _bundle_at(db, bundle.thread_id, scheduled_at)

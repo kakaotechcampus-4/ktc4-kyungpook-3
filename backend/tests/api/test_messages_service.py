@@ -185,6 +185,19 @@ def test_bundle_edit_and_approve_reject_past_time(mdb, mseed):
     assert e.value.code == ErrorCode.REMINDER_SCHEDULED_AT_PASSED
 
 
+def test_resending_the_unchanged_time_with_an_edit_after_it_passed_is_not_a_time_change(mdb, mseed):
+    r = _make(mdb, mseed, at=LATER)
+    after = LATER + timedelta(minutes=1)
+    same_time = LATER.astimezone(KST)
+
+    svc.edit_reminder(mdb, svc.get_reminder(mdb, mseed["ws"], r.reminder_id), note="메모만", scheduled_at=same_time,
+                      now=after)
+    mdb.commit()
+    bundle = svc.edit_bundle(mdb, _bundle(mdb, mseed, r), body="문구만", scheduled_at=same_time, now=after)
+    mdb.commit()
+    assert (r.note, bundle.body, svc.utc(bundle.scheduled_at)) == ("메모만", "문구만", LATER)
+
+
 def test_create_rejects_past_time_and_foreign_task_and_deleted_member(mdb, mseed):
     with pytest.raises(AppError) as e:
         _make(mdb, mseed, at=NOW)
