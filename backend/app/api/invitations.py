@@ -169,7 +169,7 @@ def create_invitation(
         raise AppError(ErrorCode.MEMBER_NOT_FOUND, details={"member_id": payload.member_id})
     if member.user_id is not None:
         raise AppError(ErrorCode.MEMBER_ALREADY_LINKED, details={"member_id": member.member_id})
-    # 수락한 계정이 바로 PM 이 되면 원래 PM 을 내려 연결 끊기를 막을 수 있다(결정 0035).
+    # 수락한 계정이 바로 PM 이 되면 원래 PM 을 내려 연결 끊기를 막을 수 있다(결정 0036).
     if member.role == str(MemberRole.PM):
         raise AppError(ErrorCode.PM_MEMBER_NOT_INVITABLE, details={"member_id": member.member_id})
     if _email_in_workspace(db, workspace_id, payload.email):
@@ -300,7 +300,7 @@ def accept_invitation(
         raise AppError(ErrorCode.ALREADY_WORKSPACE_MEMBER, details={"workspace_id": workspace_id})
 
     # 두 사람이 같은 초대를 동시에 수락해도(대소문자만 다른 두 계정) 한 계정만 이어지도록 조건부로 고친다.
-    # 초대를 만든 뒤 PM 으로 올린 팀원도 여기서 막는다. 수락한 계정이 PM 이 되면 연결 끊기를 막을 수 있다(결정 0035).
+    # 초대를 만든 뒤 PM 으로 올린 팀원도 여기서 막는다. 수락한 계정이 PM 이 되면 연결 끊기를 막을 수 있다(결정 0036).
     linked = db.execute(
         update(Member)
         .where(
