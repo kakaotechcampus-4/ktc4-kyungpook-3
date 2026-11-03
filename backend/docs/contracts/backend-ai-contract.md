@@ -184,7 +184,7 @@ AI `Transcript.to_dict()` 모양에 화자 이름을 더해 보낸다. 한 회�
 
 웹에서 PM이 올린 녹음(`POST /workspaces/{id}/meetings/upload`, [프론트엔드 대표 계약](../../../frontend/docs/contracts/frontend-api-contract.md))을 AI가 가져가 처리하는 경로다.
 
-- 합의 상태: **BE 구현됨, AI 합의 전.** 가져가기(#219)와 화자 지정 경로(#266)를 BE가 만들었고 AI 쪽과 아직 합의하지 않았다. AI가 이 방식을 쓰기로 정하기 전까지 형식이 바뀔 수 있다.
+- 합의 상태: **합의됨(#255).** 가져가기(#219)와 화자 지정 경로(#266)를 BE가 만들었고 AI·BE 계약 부분은 #255에서 합의했다. AI는 아직 구현하지 않았다(표의 "AI 미구현").
 - 업로드 회의는 `source=manual_upload`이고 **업로드하자마자 `processing`**이다. 프론트가 Discord 회의처럼 정리 중으로 추적하고, 끝날 때까지 그 워크스페이스의 다음 업로드는 409다(프론트 D-088·D-089). 다만 `awaiting_speakers`(PM 지정 대기)는 막지 않는다. AI가 가져갔는지는 회의 상태가 아니라 `meeting_upload.claimed_at`으로 가린다.
 - 결과 보고는 Discord 회의와 같은 [발화 저장](#발화-저장-post-meetingsmeeting_idsources--201)·[추출 등록](#추출-등록-post-extractions--201)·[실패](#patch-meetingsmeeting_idfail--200)를 쓴다.
 - 녹음은 원본 그대로 서버 디스크(`UPLOAD_DIR/{meeting_id}/audio.<확장자>`)에 있고, 참석자·파일 정보는 DB `meeting_upload` 에 있다. 받는 형식은 wav·mp3·m4a·ogg·webm이고, BE는 확장자와 파일 첫 바이트만 확인한다. 실제로 디코딩되는지와 녹음 길이는 확인하지 않는다.
@@ -271,7 +271,7 @@ PM이 지정을 끝냈고(`speakers_assigned_at` 있음) 아직 다시 가져가
 // data
 { "items": [ {
   "meeting_id": "…", "workspace_id": "…", "title": "…" | null, "started_at": "…",
-  "mapping": { "SPEAKER_00": "member_id" | null },  // 라벨 → 멤버. null 은 지정하지 않음
+  "mapping": { "SPEAKER_00": "member_id" | null },  // 라벨 → 멤버. null 은 외부 참석자(멤버 아님)로 지정함. 모든 라벨이 키로 온다
   "assigned_at": "…"
 } ] }
 ```
@@ -281,7 +281,7 @@ PM이 지정을 끝냈고(`speakers_assigned_at` 있음) 아직 다시 가져가
 지정 결과를 가져가고 이어서 처리하겠다는 표시다(`resumed_at` 기록). 두 번 불러도 한 번만 성공한다.
 
 - `data`: `{meeting_id, status: "processing", mapping}`. `mapping`은 `GET /uploads/assigned`와 같은 모양이다.
-- `resumed_at`이 비어 있고 지정이 끝났고 회의가 `processing`일 때만 조건부 UPDATE로 기록한다.
+- `resumed_at`이 비어 있고 지정이 끝났고 회의가 `processing`일 때만 조건부 UPDATE로 기록한다. 회의 행을 잠그지 않으므로 동시에 온 실패 보고와 겹치면 이 응답은 200인데 회의가 이미 `failed`일 수 있다. 이어지는 발화 저장·추출 등록이 409로 막아 데이터는 깨지지 않는다.
 - 404 `MEETING_NOT_FOUND`: 없는 회의, 업로드 회의가 아님.
 - 409 `MEETING_ALREADY_ENDED`(`details.status`): `done`·`failed`.
 - 409 `MEETING_PROCESSING_IN_PROGRESS`: 이미 가져갔다. claim 과 같이 응답을 못 받은 재시도일 수 있으니, 이어서 처리한다.
