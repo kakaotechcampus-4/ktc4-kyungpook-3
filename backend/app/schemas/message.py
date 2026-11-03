@@ -173,3 +173,46 @@ class BotReplyResponse(BaseModel):
     workspace_id: str
     member_id: str
 
+
+class DraftTask(BaseModel):
+    task_id: str | None
+    title: str
+    due_date: date | None
+    status: str
+    note: str | None
+
+
+class DraftClaimItem(BaseModel):
+    bundle_id: str
+    draft_version: int
+    workspace_id: str
+    recipient_name: str
+    scheduled_at: datetime
+    tasks: list[DraftTask]
+    style_examples: list[str]
+    fallback_body: str
+
+
+class DraftClaimResponse(BaseModel):
+    items: list[DraftClaimItem]
+    total: int
+
+
+DRAFT_MAX_LENGTH = 2000
+
+
+class DraftWriteRequest(BaseModel):
+    """body 가 null 이면 AI 가 초안을 못 쓴 것이다. 규칙 문구를 그대로 둔다."""
+
+    draft_version: int
+    body: str | None
+
+    @field_validator("body")
+    @classmethod
+    def _check_body(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = _non_blank(value)
+        if len(value) > DRAFT_MAX_LENGTH:
+            raise ValueError(f"초안은 {DRAFT_MAX_LENGTH}자 이하여야 합니다.")
+        return value

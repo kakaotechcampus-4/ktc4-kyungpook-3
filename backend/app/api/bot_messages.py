@@ -11,6 +11,8 @@ from app.schemas.message import (
     BotReplyResponse,
     ClaimResponse,
     DmResultRequest,
+    DraftClaimResponse,
+    DraftWriteRequest,
 )
 from app.services import messages as svc
 
@@ -67,3 +69,38 @@ def ingest_reply(payload: BotReplyRequest, response: Response, db: Session = Dep
         "message_id": message.message_id, "thread_id": thread.thread_id,
         "workspace_id": thread.workspace_id, "member_id": thread.member_id,
     })
+
+
+@router.post("/drafts/claim", response_model=Envelope[DraftClaimResponse])
+def claim_drafts(db: Session = Depends(get_db)) -> dict:
+    """AI 가 문구 초안을 쓸 보낼 메시지를 맡긴다. 10분 안에 초안이 돌아오지 않으면 다시 맡긴다."""
+    claimed = svc.claim_drafts(db, _now())
+    items = [
+        {
+            "bundle_id": c.bundle.bundle_id,
+            "draft_version": c.bundle.draft_version,
+            "workspace_id": c.bundle.workspace_id,
+            "recipient_name": c.recipient_name,
+            "scheduled_at": svc.utc(c.bundle.scheduled_at),
+            "tasks": [
+                {
+                    "task_id": r.task_id, "title": r.task.title, "due_date": r.task.due_date,
+                    "status": r.task.status, "note": r.note,
+                }
+                for r in c.reminders
+            ],
+            "style_examples": c.style_examples,
+            "fallback_body": c.bundle.body,
+        }
+        for c in claimed
+    ]
+    db.commit()
+    return success(DraftClaimResponse(items=items, total=len(items)).model_dump(mode="json"))
+
+
+@router.post("/drafts/{bundle_id}", response_model=Envelope[None])
+def write_draft(bundle_id: str, payload: DraftWriteRequest, db: Session = Depends(get_db)) -> dict:
+    """초안을 넣는다. 맡긴 뒤 구성이 바뀌었거나 승인됐거나 PM 이 직접 쓴 메시지면 DRAFT_STALE 이다."""
+    svc.write_draft(db, bundle_id, draft_version=payload.draft_version, body=payload.body, now=_now())
+    db.commit()
+    return success(None)

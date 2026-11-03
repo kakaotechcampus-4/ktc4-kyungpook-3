@@ -253,6 +253,91 @@ def test_stale_claim_becomes_failed_unknown_and_is_not_reoffered(mdb, mseed):
     assert claimed.message.dm_failure_reason == DmFailureReason.UNKNOWN
 
 
+# AI 초안
+
+def test_draft_claim_offers_needed_bundles_once_and_again_after_ten_minutes(mdb, mseed):
+    mseed["tasks"][0].due_date = date(2026, 11, 14)
+    mdb.commit()
+    r = _make(mdb, mseed, task=0)
+    _make(mdb, mseed, task=1, note="메모", made=NOW + timedelta(minutes=1))
+    (item,) = svc.claim_drafts(mdb, NOW)
+    mdb.commit()
+    assert item.bundle.bundle_id == r.bundle_id and item.recipient_name == "앨리스"
+    assert [(x.task.title, x.task.due_date, x.note) for x in item.reminders] == [
+        ("할일0", date(2026, 11, 14), None), ("할일1", None, "메모"),
+    ]
+    assert svc.claim_drafts(mdb, NOW + timedelta(minutes=9)) == []
+    (again,) = svc.claim_drafts(mdb, NOW + timedelta(minutes=11))
+    assert again.bundle.bundle_id == r.bundle_id
+
+
+def test_draft_claim_skips_approved_pm_written_past_and_deleted_member_bundles(mdb, mseed):
+    _approve(mdb, mseed, _make(mdb, mseed, who="alice"))
+    _make(mdb, mseed, who="bob", note="PM 이 씀")
+    _make(mdb, mseed, who="carol", at=NOW + timedelta(minutes=5))
+    assert svc.claim_drafts(mdb, NOW + timedelta(minutes=6)) == []
+    mseed["carol"].is_deleted = True
+    mdb.commit()
+    assert svc.claim_drafts(mdb, NOW) == []
+
+
+def test_draft_write_back_sets_ai_text_or_keeps_rule_text(mdb, mseed):
+    a = _make(mdb, mseed, who="alice")
+    c = _make(mdb, mseed, who="carol")
+    items = {i.bundle.bundle_id: i for i in svc.claim_drafts(mdb, NOW)}
+    rule_text = items[c.bundle_id].bundle.body
+
+    ai = svc.write_draft(mdb, a.bundle_id, draft_version=items[a.bundle_id].bundle.draft_version,
+                         body="앨리스님 할일0 어때요?", now=NOW)
+    kept = svc.write_draft(mdb, c.bundle_id, draft_version=items[c.bundle_id].bundle.draft_version,
+                           body=None, now=NOW)
+    mdb.commit()
+    assert (ai.body, ai.body_source, ai.draft_status) == ("앨리스님 할일0 어때요?", "ai", "done")
+    assert (kept.body, kept.body_source, kept.draft_status) == (rule_text, "rule", "done")
+    assert svc.claim_drafts(mdb, NOW + timedelta(hours=1)) == []
+
+
+def test_draft_write_back_is_stale_after_membership_change_approval_or_pm_edit(mdb, mseed):
+    r = _make(mdb, mseed, task=0)
+    (item,) = svc.claim_drafts(mdb, NOW)
+    version = item.bundle.draft_version
+    _make(mdb, mseed, task=1)
+    with pytest.raises(AppError) as e:
+        svc.write_draft(mdb, r.bundle_id, draft_version=version, body="늦은 초안", now=NOW)
+    assert e.value.code == ErrorCode.DRAFT_STALE
+
+    bundle = _bundle(mdb, mseed, r)
+    approved = _approve(mdb, mseed, r)
+    with pytest.raises(AppError) as e:
+        svc.write_draft(mdb, r.bundle_id, draft_version=approved.draft_version, body="x", now=NOW)
+    assert e.value.code == ErrorCode.DRAFT_STALE
+
+    edited = svc.edit_bundle(mdb, bundle, body="PM 이 고침", scheduled_at=None, now=NOW)
+    mdb.commit()
+    assert edited.approved_at is not None and edited.body_source == "pm"
+    with pytest.raises(AppError) as e:
+        svc.write_draft(mdb, r.bundle_id, draft_version=edited.draft_version, body="x", now=NOW)
+    assert e.value.code == ErrorCode.DRAFT_STALE
+    with pytest.raises(AppError) as e:
+        svc.write_draft(mdb, "nope", draft_version=1, body="x", now=NOW)
+    assert e.value.code == ErrorCode.REMINDER_BUNDLE_NOT_FOUND
+
+
+def test_style_examples_are_recent_pm_texts_that_were_approved_or_sent(mdb, mseed):
+    _sendable(mdb, mseed, who="alice", note="보낸 PM 글")
+    svc.dispatch_due(mdb, LATER)
+    mdb.commit()
+    approved = _make(mdb, mseed, who="bob", at=LATER + timedelta(days=1), note="승인한 PM 글",
+                     made=NOW + timedelta(hours=1))
+    _approve(mdb, mseed, approved, now=NOW + timedelta(hours=1))
+    _make(mdb, mseed, who="carol", at=LATER + timedelta(days=1), note="승인 안 한 PM 글")
+    needs_draft = _make(mdb, mseed, who="alice", task=1, at=LATER + timedelta(days=2))
+
+    (item,) = svc.claim_drafts(mdb, LATER)
+    assert item.bundle.bundle_id == needs_draft.bundle_id
+    assert item.style_examples == ["보낸 PM 글", "승인한 PM 글"]
+
+
 # 결과 보고와 답장
 
 def _claimed(mdb, mseed, who="alice"):

@@ -124,6 +124,8 @@ def test_bot_routes_require_service_token(mdb, mseed):
     assert c.post(f"{P}/bot/replies", json={
         "discord_user_id": "d_alice", "discord_message_id": "1", "body": "x", "sent_at": _iso(_future(0)),
     }).status_code == 401
+    assert c.post(f"{P}/bot/drafts/claim").status_code == 401
+    assert c.post(f"{P}/bot/drafts/x", json={"draft_version": 1, "body": None}).status_code == 401
     assert client("pm").post(f"{P}/bot/messages/claim").status_code == 401
 
 
@@ -346,6 +348,94 @@ def test_unlinked_member_is_marked_without_reaching_bot(mdb, mseed):
     tid = pm.get(f"{P}/workspaces/{mseed['ws']}/messages").json()["data"]["threads"][0]["thread_id"]
     (msg,) = pm.get(f"{P}/workspaces/{mseed['ws']}/messages/threads/{tid}").json()["data"]["messages"]
     assert msg["dm_status"] == "failed" and msg["dm_failure_reason"] == "discord_not_linked"
+
+
+# AI 초안
+
+def _draft_claim():
+    r = client(service=True).post(f"{P}/bot/drafts/claim")
+    assert r.status_code == 200, r.text
+    return r.json()["data"]
+
+
+def test_draft_claim_item_shape(mdb, mseed):
+    mseed["tasks"][0].due_date = date(2026, 11, 14)
+    mdb.commit()
+    pm = client("pm")
+    at = _future()
+    _create(pm, mseed, "carol", task=2, at=at, note="PM 이 쓴 말투예요")
+    _approve(pm, mseed, _create(pm, mseed, "carol", task=2, at=_future(4), note="PM 이 쓴 말투예요")["bundle"]["bundle_id"])
+    bundle = _create(pm, mseed, task=0, at=at)["bundle"]
+    _create(pm, mseed, task=1, at=at, note="메모")
+
+    data = _draft_claim()
+    (item,) = [i for i in data["items"] if i["bundle_id"] == bundle["bundle_id"]]
+    assert data["total"] == len(data["items"])
+    assert set(item) == {"bundle_id", "draft_version", "workspace_id", "recipient_name", "scheduled_at",
+                         "tasks", "style_examples", "fallback_body"}
+    assert item["workspace_id"] == mseed["ws"] and item["recipient_name"] == "앨리스"
+    assert datetime.fromisoformat(item["scheduled_at"]) == at
+    assert item["tasks"] == [
+        {"task_id": mseed["tasks"][0].task_id, "title": "할일0", "due_date": "2026-11-14", "status": "todo", "note": None},
+        {"task_id": mseed["tasks"][1].task_id, "title": "할일1", "due_date": None, "status": "todo", "note": "메모"},
+    ]
+    assert item["style_examples"] == ["PM 이 쓴 말투예요"]
+    assert item["fallback_body"].startswith("앨리스님, 할일0 마감이 11/14(토)이라") and item["fallback_body"].endswith("\n\n메모")
+    assert _draft_claim()["items"] == []
+
+
+def test_draft_claim_is_offered_again_after_ten_minutes(mdb, mseed):
+    _create(client("pm"), mseed)
+    (item,) = _draft_claim()["items"]
+    assert _draft_claim()["items"] == []
+    mdb.get(ReminderBundle, item["bundle_id"]).draft_claimed_at = datetime.now(timezone.utc) - timedelta(minutes=11)
+    mdb.commit()
+    assert [i["bundle_id"] for i in _draft_claim()["items"]] == [item["bundle_id"]]
+
+
+def test_draft_write_back_routes(mdb, mseed):
+    pm = client("pm")
+    _create(pm, mseed)
+    (item,) = _draft_claim()["items"]
+    bot = client(service=True)
+    url = f"{P}/bot/drafts/{item['bundle_id']}"
+    assert bot.post(url, json={"draft_version": item["draft_version"], "body": "  "}).status_code == 400
+    assert bot.post(url, json={"draft_version": item["draft_version"], "body": "가" * 2001}).status_code == 400
+    assert bot.post(url, json={"draft_version": item["draft_version"]}).status_code == 400
+    stale = bot.post(url, json={"draft_version": item["draft_version"] + 1, "body": "x"})
+    assert stale.status_code == 409 and stale.json()["error"]["code"] == "DRAFT_STALE"
+    missing = bot.post(f"{P}/bot/drafts/nope", json={"draft_version": 1, "body": "x"})
+    assert missing.status_code == 404 and missing.json()["error"]["code"] == "REMINDER_BUNDLE_NOT_FOUND"
+
+    assert bot.post(url, json={"draft_version": item["draft_version"], "body": " 앨리스님, 할일0 어때요? "}).status_code == 200
+    (bundle,) = pm.get(f"{P}/workspaces/{mseed['ws']}/messages").json()["data"]["bundles"]
+    assert (bundle["body"], bundle["body_source"], bundle["draft_status"]) == ("앨리스님, 할일0 어때요?", "ai", "done")
+
+
+def test_pm_edit_or_approval_blocks_ai_write_back(mdb, mseed):
+    pm = client("pm")
+    a = _create(pm, mseed, "alice")["bundle"]["bundle_id"]
+    c = _create(pm, mseed, "carol")["bundle"]["bundle_id"]
+    versions = {i["bundle_id"]: i["draft_version"] for i in _draft_claim()["items"]}
+    pm.patch(_bundles_url(mseed, a), json={"body": "PM 이 직접"})
+    _approve(pm, mseed, c)
+    bot = client(service=True)
+    for bid in (a, c):
+        r = bot.post(f"{P}/bot/drafts/{bid}", json={"draft_version": versions[bid], "body": "AI 초안"})
+        assert r.status_code == 409 and r.json()["error"]["code"] == "DRAFT_STALE"
+    bodies = {b["bundle_id"]: b["body"] for b in pm.get(f"{P}/workspaces/{mseed['ws']}/messages").json()["data"]["bundles"]}
+    assert bodies[a] == "PM 이 직접" and "AI 초안" not in bodies[c]
+
+
+def test_ai_could_not_draft_keeps_rule_text(mdb, mseed):
+    pm = client("pm")
+    rule = _create(pm, mseed)["bundle"]["body"]
+    (item,) = _draft_claim()["items"]
+    r = client(service=True).post(f"{P}/bot/drafts/{item['bundle_id']}",
+                                  json={"draft_version": item["draft_version"], "body": None})
+    assert r.status_code == 200
+    (bundle,) = pm.get(f"{P}/workspaces/{mseed['ws']}/messages").json()["data"]["bundles"]
+    assert (bundle["body"], bundle["body_source"], bundle["draft_status"]) == (rule, "rule", "done")
 
 
 # 결과 보고

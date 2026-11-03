@@ -5,12 +5,12 @@ commit 은 부르는 쪽 몫이다. 시각은 UTC 로 바꿔 저장한다. sqlit
 들어오는 값을 모두 UTC 로 맞춘다. 앱 세션은 autoflush 를 끄므로 조회 전에 직접 flush 한다.
 
 같은 대화·같은 발송 시각의 예정 리마인드는 언제나 묶음 하나에 들어 있다. PM 은 묶음 문구를 보고 고치고 승인한다.
-묶음 구성이 바뀌면 _rebuild 가 규칙 문구로 다시 만들고 승인을 푼다.
+묶음 구성이 바뀌면 _rebuild 가 규칙 문구로 다시 만들고 승인을 풀며, AI 초안은 그 뒤 비어 있는 자리에 들어온다.
 """
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -35,6 +35,9 @@ from app.models import (
 
 # 봇이 가져간 뒤 결과 보고가 이 시간 안에 없으면 못 보냄(알 수 없음)으로 닫는다. 다시 주지 않는다(최대 한 번).
 CLAIM_TIMEOUT = timedelta(minutes=10)
+# 초안은 다시 써도 해가 없으므로, 맡긴 뒤 이 시간 안에 안 돌아오면 다시 맡긴다.
+DRAFT_CLAIM_TIMEOUT = timedelta(minutes=10)
+STYLE_EXAMPLE_LIMIT = 5
 _WEEKDAYS = "월화수목금토일"
 
 _S = ReminderStatus
@@ -370,6 +373,99 @@ def dispatch_due(db: Session, now: datetime) -> list[ThreadMessage]:
         messages.append(message)
     db.flush()
     return messages
+
+
+@dataclass
+class DraftRequest:
+    bundle: ReminderBundle
+    recipient_name: str
+    reminders: list[Reminder]
+    style_examples: list[str]
+
+
+def claim_drafts(db: Session, now: datetime) -> list[DraftRequest]:
+    """AI 가 초안을 쓸 묶음을 맡긴다. 아직 승인 전이고 시각이 남은 묶음만 준다(지난 묶음은 승인할 수 없다)."""
+    now = utc(now)
+    bundles = db.scalars(
+        select(ReminderBundle)
+        .join(MessageThread, MessageThread.thread_id == ReminderBundle.thread_id)
+        .join(Member, Member.member_id == MessageThread.member_id)
+        .where(
+            ReminderBundle.status == ReminderStatus.SCHEDULED,
+            ReminderBundle.approved_at.is_(None),
+            ReminderBundle.scheduled_at > now,
+            Member.is_deleted.is_(False),
+            or_(
+                ReminderBundle.draft_status == DraftStatus.NEEDED,
+                and_(
+                    ReminderBundle.draft_status == DraftStatus.CLAIMED,
+                    ReminderBundle.draft_claimed_at < now - DRAFT_CLAIM_TIMEOUT,
+                ),
+            ),
+        )
+        .order_by(ReminderBundle.scheduled_at, ReminderBundle.created_at)
+        .with_for_update(skip_locked=True, of=ReminderBundle)
+    ).all()
+    examples: dict[str, list[str]] = {}
+    claimed = []
+    for bundle in bundles:
+        bundle.draft_status = DraftStatus.CLAIMED
+        bundle.draft_claimed_at = now
+        bundle.updated_at = now
+        if bundle.workspace_id not in examples:
+            examples[bundle.workspace_id] = _style_examples(db, bundle.workspace_id)
+        claimed.append(DraftRequest(
+            bundle, bundle.thread.member.display_name, bundle_reminders(db, bundle.bundle_id),
+            examples[bundle.workspace_id],
+        ))
+    db.flush()
+    return claimed
+
+
+def _style_examples(db: Session, workspace_id: str) -> list[str]:
+    """PM 이 쓰거나 고쳐서 승인한 문구. 최근 것부터."""
+    return list(db.scalars(
+        select(ReminderBundle.body)
+        .where(
+            ReminderBundle.workspace_id == workspace_id,
+            ReminderBundle.body_source == BodySource.PM,
+            or_(
+                ReminderBundle.status == ReminderStatus.SENT,
+                and_(ReminderBundle.status == ReminderStatus.SCHEDULED, ReminderBundle.approved_at.is_not(None)),
+            ),
+        )
+        .order_by(ReminderBundle.updated_at.desc(), ReminderBundle.bundle_id)
+        .limit(STYLE_EXAMPLE_LIMIT)
+    ).all())
+
+
+def write_draft(
+    db: Session, bundle_id: str, *, draft_version: int, body: str | None, now: datetime
+) -> ReminderBundle:
+    """AI 초안을 넣는다. body 가 None 이면 AI 가 못 쓴 것이라 규칙 문구를 둔다.
+
+    맡긴 뒤 구성이 바뀌었거나(판이 다름), 이미 승인·발송됐거나, PM 이 문구를 직접 쓴 묶음에는 넣지 않는다.
+    """
+    now = utc(now)
+    bundle = db.get(ReminderBundle, bundle_id, with_for_update=True)
+    if bundle is None:
+        raise AppError(ErrorCode.REMINDER_BUNDLE_NOT_FOUND, details={"bundle_id": bundle_id})
+    if (
+        bundle.draft_version != draft_version
+        or bundle.status != ReminderStatus.SCHEDULED
+        or bundle.approved_at is not None
+        or bundle.body_source == BodySource.PM
+    ):
+        raise AppError(
+            ErrorCode.DRAFT_STALE,
+            details={"bundle_id": bundle_id, "draft_version": bundle.draft_version, "status": str(bundle.status)},
+        )
+    if body is not None:
+        bundle.body, bundle.body_source = body, BodySource.AI
+    bundle.draft_status = DraftStatus.DONE
+    bundle.updated_at = now
+    db.flush()
+    return bundle
 
 
 @dataclass
