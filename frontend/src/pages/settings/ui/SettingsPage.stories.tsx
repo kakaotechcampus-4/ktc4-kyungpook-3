@@ -26,7 +26,7 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-/** PM — 연결된 두 카드에 관리 버튼, 자동 반영 기준 가운데 선택, 알림 둘 켜짐, 팀 삭제 */
+/** PM — 연결된 두 카드에 관리 버튼, 자동 반영 기준 가운데 선택, 알림 세 토글 켜짐·재촉 자동 승인 꺼짐·PM 알림 방식 둘 다, 팀 삭제 */
 export const PM_연결됨: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)

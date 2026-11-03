@@ -122,16 +122,23 @@ describe('설정 화면 — PM', () => {
     expect(group.getByRole('radio', { name: /전부 내가 확인한다/ })).toBeChecked()
   })
 
-  it('알림은 캔버스의 처음 상태이고 켜고 끌 수 있다', async () => {
+  it('알림은 D-174 기본값이다 — 세 토글 켜짐, 재촉 자동 승인 꺼짐, PM 알림 방식 둘 다', async () => {
     const user = userEvent.setup()
     renderApp(SETTINGS)
     const silence = await screen.findByRole('switch', {
       name: '사흘 넘게 응답이 없으면 나에게만 알려주기',
     })
     expect(screen.getByRole('switch', { name: '마감 하루 전에 담당자에게 DM' })).toBeChecked()
-    expect(silence).not.toBeChecked()
-    await user.click(silence)
+    expect(screen.getByRole('switch', { name: /회의 정리가 끝나면/ })).toBeChecked()
     expect(silence).toBeChecked()
+    expect(screen.getByRole('switch', { name: '재촉 자동 승인' })).not.toBeChecked()
+    expect(
+      within(screen.getByRole('radiogroup', { name: 'PM 알림 방식' })).getByRole('radio', {
+        name: /^둘 다/,
+      }),
+    ).toBeChecked()
+    await user.click(silence)
+    expect(silence).not.toBeChecked()
   })
 
   it('캔버스 실측 — 카드 버튼은 최소 36px 이고, 목차와 `팀 삭제` 의 글자는 13px 이다', async () => {
@@ -153,7 +160,43 @@ describe('설정 화면 — PM', () => {
     expect(await screen.findByText('팀 삭제는 아직 준비 중이에요.')).toBeInTheDocument()
     await user.click(await screen.findByRole('button', { name: '채널 바꾸기' }))
     expect(await screen.findByText('채널 바꾸기는 아직 준비 중이에요.')).toBeInTheDocument()
+    await user.click(screen.getByRole('switch', { name: '재촉 자동 승인' }))
+    await user.click(screen.getByRole('switch', { name: '마감 하루 전에 담당자에게 DM' }))
+    await user.click(
+      within(screen.getByRole('radiogroup', { name: 'PM 알림 방식' })).getByRole('radio', {
+        name: /^웹/,
+      }),
+    )
     expect(businessRequests(log.started).filter(({ method }) => method !== 'GET')).toEqual([])
+  })
+
+  it('알림 토글은 꺼짐 안내를 읽고, 재촉 자동 승인과 마감 알림은 서로 끄지 않는다', async () => {
+    const user = userEvent.setup()
+    renderApp(SETTINGS)
+    const due = await screen.findByRole('switch', { name: '마감 하루 전에 담당자에게 DM' })
+    const auto = screen.getByRole('switch', { name: '재촉 자동 승인' })
+    const minutes = screen.getByRole('switch', { name: /회의 정리가 끝나면/ })
+    const silence = screen.getByRole('switch', {
+      name: '사흘 넘게 응답이 없으면 나에게만 알려주기',
+    })
+    expect(due).toHaveAccessibleDescription(/끄면 재촉 제안을 만들지 않습니다/)
+    expect(auto).toHaveAccessibleDescription(/끄면 승인하지 않은 재촉 제안은 그대로 남습니다/)
+    expect(minutes).toHaveAccessibleDescription(/끄면 채널에 올리지 않습니다/)
+    expect(silence).toHaveAccessibleDescription(/끄면 PM 알림만 보내지 않습니다/)
+
+    await user.click(due)
+    expect(due).not.toBeChecked()
+    expect(auto).toBeEnabled()
+    expect(auto).not.toBeChecked()
+    await user.click(auto)
+    expect(auto).toBeChecked()
+    expect(due).toBeEnabled()
+    expect(due).not.toBeChecked()
+
+    const method = within(screen.getByRole('radiogroup', { name: 'PM 알림 방식' }))
+    await user.click(method.getByRole('radio', { name: /^웹/ }))
+    expect(method.getByRole('radio', { name: /^웹/ })).toBeChecked()
+    expect(method.getByRole('radio', { name: /^둘 다/ })).not.toBeChecked()
   })
 })
 
