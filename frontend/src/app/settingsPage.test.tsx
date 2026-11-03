@@ -18,6 +18,7 @@ import { renderApp } from './test/renderApp'
 vi.setConfig({ testTimeout: 15_000 })
 
 const SETTINGS = paths.settings('ws_01')
+const NOTICE = 'Discord가 연결되지 않아 웹으로만 알려요'
 
 async function notionArea() {
   return within(await screen.findByTestId('notion-connection'))
@@ -198,6 +199,83 @@ describe('설정 화면 — PM', () => {
     expect(method.getByRole('radio', { name: /^웹/ })).toBeChecked()
     expect(method.getByRole('radio', { name: /^둘 다/ })).not.toBeChecked()
   })
+
+  it('워크스페이스 Discord 가 연결돼 있어도 만든 PM 의 계정이 없으면 웹으로만 알린다고 안내한다', async () => {
+    const creator = db.members.find((member) => member.member_id === 'mb_01')
+    if (creator === undefined) throw new Error('mb_01 missing')
+    creator.discord_user_id = null
+    renderApp(SETTINGS)
+    const discord = within(await screen.findByTestId('discord-connection'))
+    expect(await discord.findByText('연결됨')).toBeInTheDocument()
+    expect(await screen.findByText(NOTICE)).toBeInTheDocument()
+    expect(screen.getByRole('radiogroup', { name: 'PM 알림 방식' })).toHaveAccessibleDescription(
+      NOTICE,
+    )
+  })
+
+  it('Discord 를 건너뛴 공간은 웹으로만 안내하고 Discord DM 과 둘 다는 고를 수 있다', async () => {
+    applyScenario('settings-discord-skipped')
+    renderApp(paths.settings('ws_03'))
+    expect(await screen.findByText(NOTICE)).toBeInTheDocument()
+    const method = within(screen.getByRole('radiogroup', { name: 'PM 알림 방식' }))
+    expect(method.getByRole('radio', { name: /^Discord DM/ })).toBeEnabled()
+    expect(method.getByRole('radio', { name: /^둘 다/ })).toBeEnabled()
+    expect(method.getByRole('radio', { name: /^둘 다/ })).toBeChecked()
+  })
+
+  it('만든 PM 의 Discord 계정이 있으면 웹으로만 안내를 보이지 않는다', async () => {
+    const log = recordRequests()
+    renderApp(SETTINGS)
+    await waitFor(() =>
+      expect(
+        log.answered.some(
+          (request) => request.method === 'GET' && request.path.startsWith('/members'),
+        ),
+      ).toBe(true),
+    )
+    expect(screen.queryByText(NOTICE)).toBeNull()
+  })
+
+  it('나중에 만든 PM 만 Discord 계정이 없어도 안내하지 않는다', async () => {
+    db.members.push({
+      member_id: 'mb_91',
+      workspace_id: 'ws_01',
+      display_name: '이후 PM',
+      discord_user_id: null,
+      notion_name: null,
+      role: 'pm',
+      created_at: '2026-09-02T00:00:00Z',
+    })
+    const log = recordRequests()
+    renderApp(SETTINGS)
+    await waitFor(() =>
+      expect(
+        log.answered.some(
+          (request) => request.method === 'GET' && request.path.startsWith('/members'),
+        ),
+      ).toBe(true),
+    )
+    expect(screen.queryByText(NOTICE)).toBeNull()
+  })
+
+  it('팀원 조회가 실패하면 웹으로만 안내와 다시 시도를 보이지 않는다', async () => {
+    server.use(http.get('/api/v1/members', () => fail('INTERNAL_ERROR', 'boom', 500)))
+    const log = recordRequests()
+    renderApp(SETTINGS)
+    await waitFor(() =>
+      expect(
+        log.answered.some(
+          (request) => request.method === 'GET' && request.path.startsWith('/members'),
+        ),
+      ).toBe(true),
+    )
+    expect(screen.queryByText(NOTICE)).toBeNull()
+    expect(
+      within(screen.getByRole('region', { name: '알림' })).queryByRole('button', {
+        name: '다시 시도',
+      }),
+    ).toBeNull()
+  })
 })
 
 describe('설정 화면 — 일반 팀원', () => {
@@ -210,6 +288,7 @@ describe('설정 화면 — 일반 팀원', () => {
     expect(
       await (await notionArea()).findByText('Notion 연결은 PM이 관리해요.'),
     ).toBeInTheDocument()
+    expect(await screen.findByText(NOTICE)).toBeInTheDocument()
     expect(screen.getByRole('textbox', { name: '워크스페이스 이름' })).toBeDisabled()
     expect(screen.queryByRole('button', { name: '되돌리기' })).toBeNull()
     expect(screen.queryByRole('button', { name: '연결 끊기' })).toBeNull()

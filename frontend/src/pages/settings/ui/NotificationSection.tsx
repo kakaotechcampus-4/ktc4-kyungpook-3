@@ -1,5 +1,10 @@
+import { useQuery } from '@tanstack/react-query'
 import { useId, useState } from 'react'
 import type { ReactNode } from 'react'
+import { integrationsQueryOptions } from '@/entities/integration'
+import type { IntegrationStatus } from '@/entities/integration'
+import { memberListQueryOptions, pmsOf } from '@/entities/member'
+import type { Member } from '@/entities/member'
 import { OPTION_CARD, OPTION_DESCRIPTION, OPTION_TITLE } from './settingsStyles'
 import { RadioCardGroup } from './RadioCardGroup'
 import type { RadioCardOption } from './RadioCardGroup'
@@ -71,16 +76,39 @@ const KNOB = 'h-[17px] w-[17px] rounded-999 bg-surface'
    (docs/impl-decision/2026-09-16-border-dashed-name-collision.md) */
 const KNOB_OFF = 'border border-(--color-dashed)'
 
+const NOTICE = 'Discord가 연결되지 않아 웹으로만 알려요'
+
+/** D-177 `웹으로만` notice. undefined = loading or failed → false. Not `connected` (incl. connecting/revoked) → true.
+ *  Otherwise true iff the creator PM (pmsOf[0]) has no Discord account. inactive is not checked (no Discord-users query here).
+ *  The backend decides real routing (contract §8). This only drives the notice. */
+function pmWebOnly(
+  discord: IntegrationStatus | undefined,
+  members: readonly Member[] | undefined,
+): boolean {
+  if (discord === undefined) return false
+  if (discord !== 'connected') return true
+  if (members === undefined) return false
+  return pmsOf(members)[0]?.discordUserId === null
+}
+
 export interface NotificationSectionProps {
+  workspaceId: string
   /** PM 만 바꾼다. 일반 팀원은 지금 상태를 읽기만 한다 */
   canManage: boolean
 }
 
 /** 알림 (D-174 설정 알림 항목, D-177 안내). 저장 API 가 없어 화면 안에서만 바꾼다 — 새로 열면 D-174 기본값(세 토글 켜짐, 재촉 자동 승인 꺼짐, 둘 다)이다 */
-export function NotificationSection({ canManage }: NotificationSectionProps) {
+export function NotificationSection({ workspaceId, canManage }: NotificationSectionProps) {
+  const integrations = useQuery(integrationsQueryOptions(workspaceId))
+  const members = useQuery(memberListQueryOptions(workspaceId))
+  const webOnly = pmWebOnly(
+    integrations.isError ? undefined : integrations.data?.discord.status,
+    members.isError ? undefined : members.data,
+  )
   const [enabled, setEnabled] = useState(INITIAL)
   const [method, setMethod] = useState<PmAlertMethod>('both')
   const methodLabelId = useId()
+  const noticeId = useId()
   return (
     <SettingsSection id="settings-notifications" title="알림">
       {SWITCHES.map(({ key, title, description, offEffect }) => {
@@ -119,8 +147,14 @@ export function NotificationSection({ canManage }: NotificationSectionProps) {
       <p id={methodLabelId} className={OPTION_TITLE}>
         PM 알림 방식
       </p>
+      {webOnly ? (
+        <p id={noticeId} className="text-caption text-sub">
+          {NOTICE}
+        </p>
+      ) : null}
       <RadioCardGroup
         labelledBy={methodLabelId}
+        describedBy={webOnly ? noticeId : undefined}
         options={METHODS}
         value={method}
         onChange={setMethod}

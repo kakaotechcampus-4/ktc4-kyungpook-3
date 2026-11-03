@@ -96,7 +96,7 @@ function SettingsScreen({ workspaceId, initialName, isPm }: SettingsScreenProps)
             <NotionConnectionSection workspaceId={workspaceId} canManage={isPm} />
           </SettingsSection>
           <AutoApplySection canManage={isPm} />
-          <NotificationSection canManage={isPm} />
+          <NotificationSection workspaceId={workspaceId} canManage={isPm} />
           {isPm ? <DeleteTeamSection /> : null}
         </div>
       </div>

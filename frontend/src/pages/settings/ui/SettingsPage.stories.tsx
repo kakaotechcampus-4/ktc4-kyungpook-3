@@ -49,6 +49,9 @@ export const PM_Discord_미연결: Story = {
     await expect(
       await discord.findByRole('button', { name: 'Discord 연결하기' }),
     ).toBeInTheDocument()
+    await expect(
+      await canvas.findByText('Discord가 연결되지 않아 웹으로만 알려요'),
+    ).toBeInTheDocument()
   },
 }
 
@@ -58,6 +61,9 @@ export const 팀원: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     await expect(await canvas.findByText('Notion 연결은 PM이 관리해요.')).toBeInTheDocument()
+    await expect(
+      await canvas.findByText('Discord가 연결되지 않아 웹으로만 알려요'),
+    ).toBeInTheDocument()
     await expect(canvas.queryByRole('button', { name: '연결 끊기' })).toBeNull()
     await expect(canvas.queryByRole('button', { name: '팀 삭제' })).toBeNull()
     for (const toggle of canvas.getAllByRole('switch')) await expect(toggle).toBeDisabled()
