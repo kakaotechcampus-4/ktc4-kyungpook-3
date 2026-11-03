@@ -48,7 +48,8 @@ def report_result(message_id: str, payload: DmResultRequest, db: Session = Depen
     if not delivered and payload.failure_reason is None:
         raise AppError(ErrorCode.INVALID_REQUEST, message="실패 보고에는 failure_reason 이 필요합니다.")
     svc.report_result(
-        db, message_id, delivered=delivered, failure_reason=payload.failure_reason, now=_now()
+        db, message_id, delivered=delivered, failure_reason=payload.failure_reason,
+        discord_message_ids=payload.discord_message_ids, now=_now(),
     )
     db.commit()
     return success(None)
@@ -60,6 +61,7 @@ def ingest_reply(payload: BotReplyRequest, response: Response, db: Session = Dep
     message, created = svc.ingest_discord_reply(
         db, discord_user_id=payload.discord_user_id, discord_message_id=payload.discord_message_id,
         body=payload.body, sent_at=payload.sent_at, now=_now(),
+        reply_to_discord_message_id=payload.reply_to_discord_message_id,
     )
     db.commit()
     if not created:

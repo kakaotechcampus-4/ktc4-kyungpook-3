@@ -3,9 +3,9 @@
 PM 이 팀원에게 보내는 마감 리마인드와 그 대화를 저장한다(#310).
 message_thread(워크스페이스 x 팀원 한 명의 대화), thread_message(대화에 들어간 메시지: 봇 DM, 팀원 답장),
 reminder_bundle(같은 대화·시각의 리마인드를 묶은 보낼 메시지, PM 이 검토·승인하는 단위),
-reminder(태스크 하나 x 수신자 한 명)를 만든다.
+reminder(태스크 하나 x 수신자 한 명), bot_dm_part(봇이 보낸 디스코드 DM id 와 그 메시지)를 만든다.
 
-되돌리면 네 테이블과 저장된 리마인드·대화가 모두 지워진다.
+되돌리면 다섯 테이블과 저장된 리마인드·대화가 모두 지워진다.
 
 Revision ID: d5b8c3e7a914
 Revises: c7a2e91b4d36
@@ -121,9 +121,20 @@ def upgrade() -> None:
     op.create_index(op.f('ix_reminder_task_id'), 'reminder', ['task_id'], unique=False)
     op.create_index(op.f('ix_reminder_status'), 'reminder', ['status'], unique=False)
 
+    op.create_table(
+        'bot_dm_part',
+        sa.Column('discord_message_id', sa.String(length=64), nullable=False),
+        sa.Column('message_id', sa.String(length=36), nullable=False),
+        sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
+        sa.ForeignKeyConstraint(['message_id'], ['thread_message.message_id'], name=op.f('fk_bot_dm_part_message_id_thread_message'), ondelete='CASCADE'),
+        sa.PrimaryKeyConstraint('discord_message_id', name=op.f('pk_bot_dm_part')),
+    )
+    op.create_index(op.f('ix_bot_dm_part_message_id'), 'bot_dm_part', ['message_id'], unique=False)
+
 
 def downgrade() -> None:
     """Downgrade schema."""
+    op.drop_table('bot_dm_part')
     op.drop_table('reminder')
     op.drop_table('reminder_bundle')
     op.drop_table('thread_message')

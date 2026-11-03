@@ -447,11 +447,13 @@ def test_report_result_routes(mdb, mseed):
     url = f"{P}/bot/messages/{item['message_id']}/result"
     assert bot.post(url, json={"status": "failed"}).status_code == 400
     assert bot.post(url, json={"status": "failed", "failure_reason": "discord_not_linked"}).status_code == 400
-    assert bot.post(url, json={"status": "delivered"}).status_code == 200
-    assert bot.post(url, json={"status": "delivered"}).status_code == 200
+    assert bot.post(url, json={"status": "delivered"}).status_code == 400
+    assert bot.post(url, json={"status": "delivered", "discord_message_ids": []}).status_code == 400
+    assert bot.post(url, json={"status": "delivered", "discord_message_ids": ["dm1", "dm2"]}).status_code == 200
+    assert bot.post(url, json={"status": "delivered", "discord_message_ids": ["dm1", "dm2"]}).status_code == 200
     again = bot.post(url, json={"status": "failed", "failure_reason": "dm_blocked"})
     assert again.status_code == 409 and again.json()["error"]["code"] == "MESSAGE_RESULT_CONFLICT"
-    missing = bot.post(f"{P}/bot/messages/nope/result", json={"status": "delivered"})
+    missing = bot.post(f"{P}/bot/messages/nope/result", json={"status": "delivered", "discord_message_ids": ["x"]})
     assert missing.status_code == 404
 
 
@@ -483,6 +485,34 @@ def test_discord_reply_is_stored_once_and_clears_awaiting(mdb, mseed):
     thread = client("pm").get(f"{P}/workspaces/{mseed['ws']}/messages").json()["data"]["threads"][0]
     assert thread["awaiting_reply_since"] is None and thread["last_message"]["sender"] == "member"
     assert _reply(discord_user_id="stranger", discord_message_id="m2").status_code == 404
+
+
+def test_reply_to_a_bot_dm_lands_in_that_workspace(mdb, mseed):
+    from app.models import Member, Workspace
+    other = Workspace(name="B")
+    mdb.add(other)
+    mdb.flush()
+    alice_b = Member(workspace_id=other.workspace_id, display_name="앨리스B", role="member", discord_user_id="d_alice",
+                     created_at=datetime.now(timezone.utc) + timedelta(days=1))
+    mdb.add(alice_b)
+    mdb.commit()
+    _sent_message(mdb, mseed)
+    (item,) = _claim()
+    client(service=True).post(f"{P}/bot/messages/{item['message_id']}/result",
+                              json={"status": "delivered", "discord_message_ids": ["dm_a"]})
+
+    from app.services import messages as svc
+    later = datetime.now(timezone.utc) + timedelta(minutes=5)
+    mdb.add(ThreadMessage(
+        thread_id=svc.get_or_create_thread(mdb, other.workspace_id, alice_b.member_id).thread_id,
+        sender="bot", body="B 의 DM", created_at=later, dm_status="delivered", dm_reported_at=later,
+    ))
+    mdb.commit()
+
+    replied = _reply(discord_message_id="r1", reply_to_discord_message_id="dm_a", sent_at=_iso(later))
+    assert replied.status_code == 201 and replied.json()["data"]["workspace_id"] == mseed["ws"]
+    plain = _reply(discord_message_id="r2", sent_at=_iso(later))
+    assert plain.json()["data"]["workspace_id"] == other.workspace_id
 
 
 def test_discord_dm_with_empty_or_padded_text_is_stored_as_is(mdb, mseed):

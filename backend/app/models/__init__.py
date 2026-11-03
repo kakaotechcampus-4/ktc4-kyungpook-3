@@ -41,6 +41,7 @@ from app.models.models import (
     Integration,
     Source,
     BodySource,
+    BotDmPart,
     DmFailureReason,
     DmStatus,
     DraftStatus,
@@ -66,6 +67,6 @@ __all__ = [
     "OnboardingStep", "OnboardingStepStatus",
     "ResolutionResult", "ReviewDecision", "Task", "TaskHistory", "TaskStatus",
     "Workspace", "WorkspaceOnboardingStepState", "User", "Session", "Integration", "Source",
-    "BodySource", "DmFailureReason", "DmStatus", "DraftStatus", "MessageSender", "MessageThread",
+    "BodySource", "BotDmPart", "DmFailureReason", "DmStatus", "DraftStatus", "MessageSender", "MessageThread",
     "Reminder", "ReminderBundle", "ReminderKind", "ReminderOrigin", "ReminderStatus", "ReplyChannel", "ThreadMessage",
 ]

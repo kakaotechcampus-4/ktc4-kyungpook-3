@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 from app.core.errors import AppError, ErrorCode
 from app.models import (
     BodySource,
+    BotDmPart,
     DmFailureReason,
     DmStatus,
     DraftStatus,
@@ -516,9 +517,13 @@ def report_result(
     *,
     delivered: bool,
     failure_reason: DmFailureReason | None,
+    discord_message_ids: list[str],
     now: datetime,
 ) -> ThreadMessage:
-    """봇의 발송 결과. 가져간 메시지에만 받는다. 시간 초과로 닫힌 메시지는 늦은 보고가 실제 결과로 덮어쓴다."""
+    """봇의 발송 결과. 가져간 메시지에만 받는다. 시간 초과로 닫힌 메시지는 늦은 보고가 실제 결과로 덮어쓴다.
+
+    discord_message_ids 는 실제로 나간 DM 들의 id 다. 답장의 워크스페이스를 찾는 데 쓴다.
+    """
     now = utc(now)
     message = db.get(ThreadMessage, message_id, with_for_update=True)
     if message is None or message.sender != MessageSender.BOT:
@@ -526,10 +531,12 @@ def report_result(
     if not delivered and failure_reason in (None, DmFailureReason.DISCORD_NOT_LINKED):
         raise AppError(ErrorCode.INVALID_REQUEST, message="실패 사유는 dm_blocked 또는 unknown 이어야 합니다.")
 
+    ids = list(dict.fromkeys(discord_message_ids))
     status = DmStatus.DELIVERED if delivered else DmStatus.FAILED
     reason = None if delivered else failure_reason
     if message.dm_reported_at is not None:
-        if (message.dm_status, message.dm_failure_reason) == (status, reason):
+        stored = set(db.scalars(select(BotDmPart.discord_message_id).where(BotDmPart.message_id == message_id)))
+        if (message.dm_status, message.dm_failure_reason, stored) == (status, reason, set(ids)):
             return message
         raise AppError(ErrorCode.MESSAGE_RESULT_CONFLICT, details={"message_id": message_id})
 
@@ -540,9 +547,12 @@ def report_result(
     )
     if message.dm_status != DmStatus.CLAIMED and not timed_out:
         raise AppError(ErrorCode.MESSAGE_RESULT_CONFLICT, details={"message_id": message_id})
+    if ids and db.scalar(select(BotDmPart.discord_message_id).where(BotDmPart.discord_message_id.in_(ids))):
+        raise AppError(ErrorCode.MESSAGE_RESULT_CONFLICT, details={"message_id": message_id})
     message.dm_status = status
     message.dm_failure_reason = reason
     message.dm_reported_at = now
+    db.add_all(BotDmPart(discord_message_id=i, message_id=message_id, created_at=now) for i in ids)
     db.flush()
     return message
 
@@ -555,6 +565,7 @@ def ingest_discord_reply(
     body: str,
     sent_at: datetime,
     now: datetime,
+    reply_to_discord_message_id: str | None = None,
 ) -> tuple[ThreadMessage, bool]:
     """봇 DM 창에 온 팀원의 글을 대화에 넣는다. 리마인드에 대한 답인지 가리지 않고 전부 저장한다.
 
@@ -565,7 +576,9 @@ def ingest_discord_reply(
     if existing is not None:
         return existing, False
 
-    member = _pick_member_for_discord_user(db, discord_user_id)
+    member = _pick_member_for_discord_user(
+        db, discord_user_id, reply_to=reply_to_discord_message_id, sent_at=sent_at
+    )
     thread = get_or_create_thread(db, member.workspace_id, member.member_id)
     message = ThreadMessage(
         thread_id=thread.thread_id, sender=MessageSender.MEMBER, body=body,
@@ -585,8 +598,14 @@ def _message_by_discord_id(db: Session, discord_message_id: str) -> ThreadMessag
     return db.scalar(select(ThreadMessage).where(ThreadMessage.discord_message_id == discord_message_id))
 
 
-def _pick_member_for_discord_user(db: Session, discord_user_id: str) -> Member:
-    """같은 디스코드 계정이 여러 워크스페이스에 있으면 봇이 가장 최근에 말을 건 쪽, 없으면 가장 나중에 만든 팀원."""
+def _pick_member_for_discord_user(
+    db: Session, discord_user_id: str, *, reply_to: str | None, sent_at: datetime
+) -> Member:
+    """DM 에는 서버 id 가 없어서 같은 디스코드 계정이 여러 워크스페이스에 있으면 어느 대화인지 골라야 한다.
+
+    답장 기능으로 고른 봇 DM, 그 DM 창에서 이 글 바로 앞에 봇이 보낸 DM, 봇이 가장 최근에 말을 건 쪽,
+    가장 나중에 만든 팀원 순서로 정한다. 봇 DM 시각은 발송 결과를 받은 시각(dm_reported_at)으로 본다.
+    """
     members = db.scalars(
         select(Member).where(Member.discord_user_id == discord_user_id, Member.is_deleted.is_(False))
     ).all()
@@ -594,14 +613,37 @@ def _pick_member_for_discord_user(db: Session, discord_user_id: str) -> Member:
         raise AppError(ErrorCode.MEMBER_NOT_FOUND, details={"discord_user_id": discord_user_id})
     if len(members) == 1:
         return members[0]
+    by_id = {m.member_id: m for m in members}
+
+    def bot_messages():
+        return (
+            select(MessageThread.member_id)
+            .join(ThreadMessage, ThreadMessage.thread_id == MessageThread.thread_id)
+            .where(MessageThread.member_id.in_(by_id), ThreadMessage.sender == MessageSender.BOT)
+        )
+
+    if reply_to is not None:
+        owner = db.scalar(
+            bot_messages()
+            .join(BotDmPart, BotDmPart.message_id == ThreadMessage.message_id)
+            .where(BotDmPart.discord_message_id == reply_to)
+        )
+        if owner is not None:
+            return by_id[owner]
+    preceding = db.scalar(
+        bot_messages()
+        .where(ThreadMessage.dm_status == DmStatus.DELIVERED, ThreadMessage.dm_reported_at <= sent_at)
+        .order_by(ThreadMessage.dm_reported_at.desc())
+        .limit(1)
+    )
+    if preceding is not None:
+        return by_id[preceding]
+
     last_bot = dict(
         db.execute(
             select(MessageThread.member_id, func.max(ThreadMessage.created_at))
             .join(ThreadMessage, ThreadMessage.thread_id == MessageThread.thread_id)
-            .where(
-                MessageThread.member_id.in_([m.member_id for m in members]),
-                ThreadMessage.sender == MessageSender.BOT,
-            )
+            .where(MessageThread.member_id.in_(by_id), ThreadMessage.sender == MessageSender.BOT)
             .group_by(MessageThread.member_id)
         ).all()
     )

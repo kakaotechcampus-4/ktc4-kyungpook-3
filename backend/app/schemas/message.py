@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from typing import Literal
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, field_validator, model_validator
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.models import DmFailureReason
 
@@ -157,6 +157,14 @@ class ClaimResponse(BaseModel):
 class DmResultRequest(BaseModel):
     status: Literal["delivered", "failed"]
     failure_reason: DmFailureReason | None = None
+    # 실제로 나간 DM 들의 디스코드 메시지 id. 2,000자를 넘으면 여러 통이다. 나눠 보내다 실패했으면 나간 것만 싣는다.
+    discord_message_ids: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _delivered_has_ids(self) -> "DmResultRequest":
+        if self.status == "delivered" and not self.discord_message_ids:
+            raise ValueError("보냄 보고에는 discord_message_ids 가 필요합니다.")
+        return self
 
 
 class BotReplyRequest(BaseModel):
@@ -165,6 +173,7 @@ class BotReplyRequest(BaseModel):
     body: str
     sent_at: AwareDatetime
     # 첨부만 있는 DM 은 글이 비어 있다. 봇 DM 은 전부 저장하므로 원문 그대로 받는다.
+    reply_to_discord_message_id: str | None = None
 
 
 class BotReplyResponse(BaseModel):

@@ -346,25 +346,36 @@ def _claimed(mdb, mseed, who="alice"):
     return c.message
 
 
-def _deliver(mdb, msg, now=LATER):
-    svc.report_result(mdb, msg.message_id, delivered=True, failure_reason=None, now=now)
+def _deliver(mdb, msg, ids, now=LATER):
+    svc.report_result(mdb, msg.message_id, delivered=True, failure_reason=None, discord_message_ids=ids, now=now)
     mdb.commit()
 
 
-def test_report_result_is_idempotent_and_final(mdb, mseed):
+def test_report_result_is_idempotent_with_same_ids_and_final(mdb, mseed):
     msg = _claimed(mdb, mseed)
-    _deliver(mdb, msg)
-    _deliver(mdb, msg)
+    _deliver(mdb, msg, ["dm1", "dm2"])
+    _deliver(mdb, msg, ["dm2", "dm1"])
     assert msg.dm_status == DmStatus.DELIVERED and msg.dm_reported_at is not None
+    for ids, delivered, reason in ((["dm1"], True, None), ([], False, DmFailureReason.DM_BLOCKED)):
+        with pytest.raises(AppError) as e:
+            svc.report_result(mdb, msg.message_id, delivered=delivered, failure_reason=reason,
+                              discord_message_ids=ids, now=LATER)
+        assert e.value.code == ErrorCode.MESSAGE_RESULT_CONFLICT
+
+
+def test_report_rejects_ids_already_recorded_for_another_message(mdb, mseed):
+    _deliver(mdb, _claimed(mdb, mseed, "alice"), ["dm1"])
+    other = _claimed(mdb, mseed, "carol")
     with pytest.raises(AppError) as e:
-        svc.report_result(mdb, msg.message_id, delivered=False, failure_reason=DmFailureReason.DM_BLOCKED, now=LATER)
+        svc.report_result(mdb, other.message_id, delivered=True, failure_reason=None,
+                          discord_message_ids=["dm1"], now=LATER)
     assert e.value.code == ErrorCode.MESSAGE_RESULT_CONFLICT
 
 
 def test_late_report_after_timeout_wins(mdb, mseed):
     msg = _claimed(mdb, mseed)
     svc.claim_for_bot(mdb, LATER + timedelta(minutes=11))
-    _deliver(mdb, msg, now=LATER + timedelta(minutes=12))
+    _deliver(mdb, msg, ["dm1"], now=LATER + timedelta(minutes=12))
     assert msg.dm_status == DmStatus.DELIVERED and msg.dm_failure_reason is None
 
 
@@ -372,26 +383,27 @@ def test_report_failure_keeps_reason_and_rejects_unclaimed_or_unlinked(mdb, msee
     msg = _claimed(mdb, mseed)
     for _ in range(2):
         svc.report_result(mdb, msg.message_id, delivered=False, failure_reason=DmFailureReason.DM_BLOCKED,
-                          now=LATER)
+                          discord_message_ids=[], now=LATER)
     assert msg.dm_failure_reason == DmFailureReason.DM_BLOCKED
 
     _sendable(mdb, mseed, who="bob")
     (unlinked,) = svc.dispatch_due(mdb, LATER)
     with pytest.raises(AppError) as e:
-        _deliver(mdb, unlinked)
+        _deliver(mdb, unlinked, ["dm9"])
     assert e.value.code == ErrorCode.MESSAGE_RESULT_CONFLICT
 
     _sendable(mdb, mseed, who="carol")
     svc.dispatch_due(mdb, LATER)
     pending = mdb.query(ThreadMessage).filter_by(dm_status=DmStatus.PENDING).one()
     with pytest.raises(AppError) as e:
-        _deliver(mdb, pending)
+        _deliver(mdb, pending, ["dm8"])
     assert e.value.code == ErrorCode.MESSAGE_RESULT_CONFLICT
 
 
-def _ingest(mdb, mid, sent_at=LATER, user="d_alice"):
+def _ingest(mdb, mid, sent_at=LATER, reply_to=None, user="d_alice"):
     msg, created = svc.ingest_discord_reply(
         mdb, discord_user_id=user, discord_message_id=mid, body="네", sent_at=sent_at, now=sent_at,
+        reply_to_discord_message_id=reply_to,
     )
     mdb.commit()
     return msg, created
@@ -399,11 +411,11 @@ def _ingest(mdb, mid, sent_at=LATER, user="d_alice"):
 
 def test_report_unknown_or_member_message_is_404(mdb, mseed):
     with pytest.raises(AppError) as e:
-        svc.report_result(mdb, "nope", delivered=True, failure_reason=None, now=LATER)
+        svc.report_result(mdb, "nope", delivered=True, failure_reason=None, discord_message_ids=["x"], now=LATER)
     assert e.value.code == ErrorCode.MESSAGE_NOT_FOUND
     reply, _ = _ingest(mdb, "m1")
     with pytest.raises(AppError) as e:
-        _deliver(mdb, reply)
+        _deliver(mdb, reply, ["x"])
     assert e.value.code == ErrorCode.MESSAGE_NOT_FOUND
 
 
@@ -427,15 +439,58 @@ def test_ingest_unknown_or_deleted_discord_user_is_404(mdb, mseed):
 
 
 def _alice_in_workspace_b(mdb, created_at):
-    """워크스페이스 B 에도 같은 디스코드 계정의 앨리스가 있다."""
+    """워크스페이스 B 에도 같은 디스코드 계정의 앨리스가 있다. B 의 PM 이 리마인드를 만들 수 있게 태스크도 둔다."""
+    from app.models import Task
     ws = Workspace(name="B")
     mdb.add(ws)
     mdb.flush()
     member = Member(workspace_id=ws.workspace_id, display_name="앨리스B", role="member",
                     discord_user_id="d_alice", created_at=created_at)
-    mdb.add(member)
+    task = Task(workspace_id=ws.workspace_id, title="B할일", status="todo")
+    mdb.add_all([member, task])
     mdb.commit()
-    return {"ws": ws.workspace_id, "alice": member}
+    return {"ws": ws.workspace_id, "alice": member, "pm": member, "tasks": [task]}
+
+
+def _delivered_to(mdb, seed, ids, reported_at):
+    """seed 의 앨리스에게 봇 DM 한 통이 나가 reported_at 에 보냄 보고가 왔다."""
+    r = svc.create_reminder(
+        mdb, workspace_id=seed["ws"], task_id=seed["tasks"][0].task_id, member_id=seed["alice"].member_id,
+        scheduled_at=LATER, note="확인", created_by=None, now=NOW,
+    )
+    mdb.commit()
+    _approve(mdb, seed, r)
+    (claimed,) = [c for c in svc.claim_for_bot(mdb, reported_at) if c.member_id == seed["alice"].member_id]
+    _deliver(mdb, claimed.message, ids, now=reported_at)
+    return claimed.message
+
+
+def test_reply_routing_prefers_replied_dm_then_preceding_dm(mdb, mseed):
+    b = _alice_in_workspace_b(mdb, created_at=NOW)
+    _delivered_to(mdb, mseed, ["dm_a"], reported_at=LATER)
+    _delivered_to(mdb, b, ["dm_b"], reported_at=LATER + timedelta(hours=1))
+
+    to_a, _ = _ingest(mdb, "m1", sent_at=LATER + timedelta(hours=2), reply_to="dm_a")
+    assert to_a.thread.member_id == mseed["alice"].member_id
+
+    to_b, _ = _ingest(mdb, "m2", sent_at=LATER + timedelta(hours=2))
+    assert to_b.thread.member_id == b["alice"].member_id
+
+    between, _ = _ingest(mdb, "m3", sent_at=LATER + timedelta(minutes=30))
+    assert between.thread.member_id == mseed["alice"].member_id
+
+    unknown_target, _ = _ingest(mdb, "m4", sent_at=LATER + timedelta(minutes=30), reply_to="not_ours")
+    assert unknown_target.thread.member_id == mseed["alice"].member_id
+
+
+def test_reply_to_dm_of_member_who_left_falls_through(mdb, mseed):
+    b = _alice_in_workspace_b(mdb, created_at=NOW)
+    _delivered_to(mdb, mseed, ["dm_a"], reported_at=LATER)
+    _delivered_to(mdb, b, ["dm_b"], reported_at=LATER + timedelta(hours=1))
+    mseed["alice"].is_deleted = True
+    mdb.commit()
+    msg, _ = _ingest(mdb, "m1", sent_at=LATER + timedelta(hours=2), reply_to="dm_a")
+    assert msg.thread.member_id == b["alice"].member_id
 
 
 def test_reply_routing_falls_back_to_latest_bot_message_else_newest_member(mdb, mseed):

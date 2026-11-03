@@ -906,3 +906,17 @@ class Reminder(Base):
     bundle: Mapped["ReminderBundle"] = relationship()
     task: Mapped["Task | None"] = relationship()
 
+
+class BotDmPart(Base):
+    """봇이 보낸 디스코드 DM 한 통. 2,000자를 넘는 메시지는 여러 통으로 나뉜다.
+
+    DM 에는 서버 id 가 없어서, 팀원이 답장 기능으로 고른 DM 이 어느 대화의 메시지인지 이 표로 찾는다.
+    """
+
+    __tablename__ = "bot_dm_part"
+
+    discord_message_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    message_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("thread_message.message_id", ondelete="CASCADE"), index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
