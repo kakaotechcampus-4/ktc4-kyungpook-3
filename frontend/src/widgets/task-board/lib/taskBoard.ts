@@ -1,13 +1,14 @@
 import type { Approval } from '@/entities/approval'
-import { sortByWaiting } from '@/entities/approval'
 import type { Task, TaskStatus, TaskTab } from '@/entities/task'
 import { filterByTab, isDueSoon, isOverdue } from '@/entities/task'
 import { soonUntil } from '@/shared/lib/date'
 import { parseEnumParam } from '@/shared/lib/url'
+import { sortApprovals, sortTasks } from './taskSort'
+import type { TaskSort } from './taskSort'
 
 /*
  * 태스크 목록의 조립 (계획 §3-2 ~ §3-4). 대기 승인과 태스크 두 엔티티를 잇는 자리라 widget 에 있다.
- * 목록과 탭 개수는 같은 함수(`boardItems`)로 만든다 — 개수와 목록이 어긋날 수 없다.
+ * 목록과 탭 개수는 같은 함수(`selectTab`)로 만든다 — 개수와 목록이 어긋날 수 없다. 정렬은 고른 탭의 목록에만 한다.
  */
 
 /** URL 의 검색 파라미터 이름. 탭 값은 기존 TaskTab 그대로다 */
@@ -72,18 +73,6 @@ export function matchesDue(task: Task, due: readonly DueCondition[], today: stri
   )
 }
 
-/** 마감 오름차순, 마감 없는 항목은 마지막, 같은 마감은 생성 시각 내림차순. 새 배열을 돌려준다 */
-export function sortTasks(tasks: readonly Task[]): Task[] {
-  return [...tasks].sort((a, b) => {
-    if (a.dueDate !== b.dueDate) {
-      if (a.dueDate === null) return 1
-      if (b.dueDate === null) return -1
-      return a.dueDate < b.dueDate ? -1 : 1
-    }
-    return Date.parse(b.createdAt) - Date.parse(a.createdAt)
-  })
-}
-
 /** 진행 중인 상태 변경을 겹친다. 겹칠 것이 없는 태스크는 그대로다 */
 export function withPendingStatus(
   tasks: readonly Task[],
@@ -104,33 +93,40 @@ export interface BoardInput {
   due: readonly DueCondition[]
   /** 서울 오늘 (`todayInSeoul`) */
   today: string
+  /** 승인·태스크 각 묶음의 순서. 탭 개수는 이 값과 무관하다 */
+  sort: TaskSort
 }
 
 /**
- * 한 탭의 항목. 날짜 조건은 태스크에만 걸고 승인에는 걸지 않는다.
- * - 전체: 대기 승인(대기 시작 오래된 순) 다음 태스크
+ * 한 탭에 드는 승인과 태스크, 받은 순서 그대로. 날짜 조건은 태스크에만 걸고 승인에는 걸지 않는다.
+ * - 전체: 대기 승인과 태스크
  * - 확인 필요: 대기 승인만
  * - 진행 중(todo·in_progress·blocked)·완료: 태스크만 (filterByTab)
  */
-export function boardItems(input: BoardInput, tab: TaskTab): BoardItem[] {
-  const approvals: BoardItem[] =
-    input.approvals === null
-      ? []
-      : sortByWaiting(input.approvals.filter(({ status }) => status === 'pending')).map(
-          (approval) => ({ kind: 'approval', approval }),
-        )
-  const tasks = sortTasks(input.tasks.filter((task) => matchesDue(task, input.due, input.today)))
-  const asItems = (list: readonly Task[]): BoardItem[] =>
-    list.map((task) => ({ kind: 'task', task }))
+function selectTab(input: BoardInput, tab: TaskTab): { approvals: Approval[]; tasks: Task[] } {
+  const approvals = input.approvals?.filter(({ status }) => status === 'pending') ?? []
+  const tasks = input.tasks.filter((task) => matchesDue(task, input.due, input.today))
   switch (tab) {
     case 'all':
-      return [...approvals, ...asItems(tasks)]
+      return { approvals, tasks }
     case 'needs_review':
-      return approvals
+      return { approvals, tasks: [] }
     case 'in_progress':
     case 'done':
-      return asItems(filterByTab(tasks, tab))
+      return { approvals: [], tasks: filterByTab(tasks, tab) }
   }
+}
+
+/** 한 탭의 항목. 대기 승인 다음 태스크이고, 두 묶음은 섞지 않고 각각 `input.sort` 로 정렬한다 */
+export function boardItems(input: BoardInput, tab: TaskTab): BoardItem[] {
+  const { approvals, tasks } = selectTab(input, tab)
+  return [
+    ...sortApprovals(approvals, input.sort).map((approval): BoardItem => ({
+      kind: 'approval',
+      approval,
+    })),
+    ...sortTasks(tasks, input.sort).map((task): BoardItem => ({ kind: 'task', task })),
+  ]
 }
 
 export interface TaskBoard {
@@ -139,11 +135,15 @@ export interface TaskBoard {
   items: BoardItem[]
 }
 
-/** 고른 탭의 목록과 모든 탭의 개수. 개수는 각 탭의 `boardItems` 길이다 */
+/** 고른 탭의 목록과 모든 탭의 개수. 개수는 각 탭의 `selectTab` 길이다 — 정렬하지 않고 센다 */
 export function buildTaskBoard(input: BoardInput, isPm: boolean, tab: TaskTab): TaskBoard {
   const board = isPm ? input : { ...input, approvals: null }
+  const count = (each: TaskTab) => {
+    const { approvals, tasks } = selectTab(board, each)
+    return approvals.length + tasks.length
+  }
   return {
-    tabs: boardTabs(isPm).map((each) => ({ tab: each, count: boardItems(board, each).length })),
+    tabs: boardTabs(isPm).map((each) => ({ tab: each, count: count(each) })),
     items: boardItems(board, boardTabs(isPm).includes(tab) ? tab : 'all'),
   }
 }

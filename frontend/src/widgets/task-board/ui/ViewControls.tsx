@@ -9,6 +9,8 @@ import {
 import { Icon } from '@/shared/ui/icon'
 import { Segmented, SegmentedItem } from '@/shared/ui/segmented'
 import type { DueCondition } from '../lib/taskBoard'
+import { TASK_SORTS, sortLabel } from '../lib/taskSort'
+import type { TaskSort } from '../lib/taskSort'
 import { TASK_VIEWS, VIEW_LABEL } from '../lib/taskViews'
 import type { BoardPeriod, TaskView } from '../lib/taskViews'
 
@@ -201,6 +203,27 @@ export function PeriodFilter({
       {(['all', 'month'] as const).map((period) => (
         <Option key={period} selected={value === period} onSelect={() => onChange(period)}>
           {PERIOD_LABEL[period]}
+        </Option>
+      ))}
+    </FilterSelect>
+  )
+}
+
+/** 리스트·보드의 정렬 (D-175) */
+export function SortFilter({
+  value,
+  bordered = false,
+  onChange,
+}: {
+  value: TaskSort
+  bordered?: boolean
+  onChange: (sort: TaskSort) => void
+}) {
+  return (
+    <FilterSelect label={sortLabel(value)} ariaLabel="정렬" bordered={bordered}>
+      {TASK_SORTS.map((sort) => (
+        <Option key={sort} selected={value === sort} onSelect={() => onChange(sort)}>
+          {sortLabel(sort)}
         </Option>
       ))}
     </FilterSelect>

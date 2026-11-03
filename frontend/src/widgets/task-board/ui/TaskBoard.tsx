@@ -33,7 +33,7 @@ import {
 } from '../lib/taskViews'
 import type { TaskView, ViewQuery } from '../lib/taskViews'
 import { ApprovalCard } from './ApprovalCard'
-import { AssigneeFilter, DueFilter, PeriodFilter, ViewSwitch } from './ViewControls'
+import { AssigneeFilter, DueFilter, PeriodFilter, SortFilter, ViewSwitch } from './ViewControls'
 import { Avatar } from './viewParts'
 
 /* 보드·캘린더·간트는 그 보기를 고를 때 코드를 받는다 (M8 AC-A-02). 리스트로 들어오면 셋 다 내려받지 않는다 */
@@ -119,7 +119,7 @@ export interface TaskBoardProps {
   today: string
   /** 탭·날짜 조건을 바꾼다. 페이지가 URL 에 쓴다 */
   onQueryChange: (next: BoardQuery) => void
-  /** URL 이 정한 보기·담당자·기간 */
+  /** URL 이 정한 보기·담당자·기간·정렬 */
   view: ViewQuery
   onViewChange: (next: ViewQuery) => void
 }
@@ -175,11 +175,11 @@ export function TaskBoard({
       filtered === null
         ? null
         : buildTaskBoard(
-            { tasks: filtered, approvals: approvalList, due: query.due, today },
+            { tasks: filtered, approvals: approvalList, due: query.due, today, sort: view.sort },
             isPm,
             query.tab,
           ),
-    [filtered, approvalList, query.due, query.tab, today, isPm],
+    [filtered, approvalList, query.due, query.tab, today, isPm, view.sort],
   )
 
   const isList = view.view === 'list'
@@ -284,6 +284,7 @@ export function TaskBoard({
         names={names}
         today={today}
         period={view.period}
+        sort={view.sort}
         pendingApprovals={approvalList?.length ?? 0}
         canCreate={isPm}
         assignee={view.assignee}
@@ -326,6 +327,13 @@ export function TaskBoard({
       onChange={(assignee) => onViewChange({ ...view, assignee })}
     />
   )
+  const sortFilter = (
+    <SortFilter
+      bordered={view.view === 'board'}
+      value={view.sort}
+      onChange={(sort) => onViewChange({ ...view, sort })}
+    />
+  )
 
   return (
     <main className={view.view === 'list' ? PAGE_LIST : PAGE}>
@@ -360,6 +368,7 @@ export function TaskBoard({
                   />
                 </div>
                 {assigneeFilter}
+                {sortFilter}
               </div>
             }
             panel={body}
@@ -373,6 +382,7 @@ export function TaskBoard({
                   value={view.period}
                   onChange={(period) => onViewChange({ ...view, period })}
                 />
+                {sortFilter}
               </div>
             ) : null}
             <div className="flex flex-col gap-20">
