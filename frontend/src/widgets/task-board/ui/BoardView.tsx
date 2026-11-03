@@ -3,7 +3,8 @@ import type { Task, TaskStatus } from '@/entities/task'
 import { TaskQuickAdd } from '@/features/task-create'
 import { paths } from '@/shared/config/routes'
 import { GuardedLink } from '@/shared/lib/unsaved-changes'
-import { sortTasks } from '../lib/taskBoard'
+import { doneColumnNote, sortDoneColumn, sortTasks } from '../lib/taskSort'
+import type { TaskSort } from '../lib/taskSort'
 import { assigneeLabel, assigneeOf, monthOf, shortDate, taskTone } from '../lib/taskViews'
 import type { BoardPeriod, TaskTone } from '../lib/taskViews'
 import { Avatar } from './viewParts'
@@ -43,6 +44,8 @@ export interface BoardViewProps {
   names: ReadonlyMap<string, string>
   today: string
   period: BoardPeriod
+  /** 칸 안의 순서. 완료 칸은 정렬마다 따로 정한 순서다 */
+  sort: TaskSort
   /** 확인 필요 승인 수. PM 이 아니면 0 이다 */
   pendingApprovals: number
   /** 칸마다 `직접 추가` 를 둔다. 태스크 생성은 서버에서 PM 전용이다 */
@@ -58,6 +61,7 @@ export function BoardView({
   names,
   today,
   period,
+  sort,
   pendingApprovals,
   canCreate,
   assignee,
@@ -71,17 +75,14 @@ export function BoardView({
       <div className="grid grid-cols-3 items-start gap-18">
         {COLUMNS.map(({ key, title, statuses, createAs }) => {
           const inColumn = scoped.filter((task) => statuses.includes(task.status))
-          const sorted =
-            key === 'done'
-              ? [...inColumn].sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))
-              : sortTasks(inColumn)
+          const sorted = key === 'done' ? sortDoneColumn(inColumn, sort) : sortTasks(inColumn, sort)
           return (
             <section key={key} aria-label={title} className="flex flex-col gap-10">
               <ColumnHead
                 column={key}
                 title={title}
                 count={sorted.length}
-                note={columnNote(key, sorted, today)}
+                note={columnNote(key, sorted, today, sort)}
               />
               <ul className="flex flex-col gap-10">
                 {sorted.map((task) => (
@@ -127,12 +128,17 @@ function cardSurface(tone: TaskTone, emphasized: boolean): string {
     : 'border-line bg-surface'
 }
 
-function columnNote(column: Column, tasks: readonly Task[], today: string): string {
+function columnNote(column: Column, tasks: readonly Task[], today: string, sort: TaskSort): string {
   if (column === 'todo') {
-    const due = tasks.find((task) => task.dueDate !== null)?.dueDate
-    return due === undefined || due === null ? '마감일 없음' : `가장 이른 마감 ${shortDate(due)}`
+    // 칸 순서는 정렬마다 달라 첫 마감이 가장 이르다고 볼 수 없다
+    const due = tasks.reduce<string | null>(
+      (earliest, { dueDate }) =>
+        dueDate !== null && (earliest === null || dueDate < earliest) ? dueDate : earliest,
+      null,
+    )
+    return due === null ? '마감일 없음' : `가장 이른 마감 ${shortDate(due)}`
   }
-  if (column === 'done') return '최근 완료순'
+  if (column === 'done') return doneColumnNote(sort)
   const danger = tasks.filter((task) => taskTone(task, today) === 'danger').length
   const warn = tasks.filter((task) => taskTone(task, today) === 'warn').length
   return `위험 ${danger} · 주의 ${warn}`

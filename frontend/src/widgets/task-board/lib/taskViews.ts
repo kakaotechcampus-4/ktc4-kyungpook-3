@@ -4,10 +4,12 @@ import type { Task } from '@/entities/task'
 import { isDueSoon, isOverdue } from '@/entities/task'
 import { addDays, isDateOnly, soonUntil } from '@/shared/lib/date'
 import { parseEnumParam } from '@/shared/lib/url'
+import { TASK_SORTS } from './taskSort'
+import type { TaskSort } from './taskSort'
 
 /*
  * 태스크 화면의 보기 전환 (Tasks · TasksBoard · TasksCalendar · TasksGantt 시안).
- * 보기·담당자·기간은 탭·날짜 조건과 같은 URL 에 둔다 — 새로고침·뒤로가기가 그대로 되살린다.
+ * 보기·담당자·기간·정렬은 탭·날짜 조건과 같은 URL 에 둔다 — 새로고침·뒤로가기가 그대로 되살린다.
  * 탭·날짜 조건은 `boardSearch` 가, 이 파라미터는 `viewSearch` 가 쓴다. 서로의 파라미터는 건드리지 않는다.
  */
 
@@ -27,6 +29,7 @@ export const VIEW_PARAMS = {
   month: 'month',
   from: 'from',
   period: 'period',
+  sort: 'sort',
 } as const
 
 export const BOARD_PERIODS = ['all', 'month'] as const
@@ -42,6 +45,8 @@ export interface ViewQuery {
   from: string | null
   /** 보드의 기간. `month` 는 이번 달 마감만 본다 */
   period: BoardPeriod
+  /** 리스트·보드의 순서. 캘린더·간트는 쓰지 않고 URL 에 그대로 둔다 */
+  sort: TaskSort
 }
 
 export const DEFAULT_VIEW_QUERY: ViewQuery = {
@@ -50,6 +55,7 @@ export const DEFAULT_VIEW_QUERY: ViewQuery = {
   month: null,
   from: null,
   period: 'all',
+  sort: 'due',
 }
 
 const MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/
@@ -65,6 +71,9 @@ export function readViewQuery(params: URLSearchParams): ViewQuery {
     month: month !== null && MONTH_PATTERN.test(month) ? month : null,
     from: from !== null && isDateOnly(from) ? from : null,
     period: parseEnumParam(params.get(VIEW_PARAMS.period) ?? undefined, BOARD_PERIODS) ?? 'all',
+    sort:
+      parseEnumParam(params.get(VIEW_PARAMS.sort) ?? undefined, TASK_SORTS) ??
+      DEFAULT_VIEW_QUERY.sort,
   }
 }
 
@@ -77,6 +86,7 @@ export function viewSearch(current: URLSearchParams, next: ViewQuery): string {
   if (next.month !== null) rest.set(VIEW_PARAMS.month, next.month)
   if (next.from !== null) rest.set(VIEW_PARAMS.from, next.from)
   if (next.period !== 'all') rest.set(VIEW_PARAMS.period, next.period)
+  if (next.sort !== DEFAULT_VIEW_QUERY.sort) rest.set(VIEW_PARAMS.sort, next.sort)
   const search = rest.toString().replace(/%2C/g, ',')
   return search === '' ? '' : `?${search}`
 }

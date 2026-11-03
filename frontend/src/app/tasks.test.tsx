@@ -467,6 +467,73 @@ describe('URL 탭·날짜 조건 (AC-03)', () => {
   })
 })
 
+describe('정렬 (D-175)', () => {
+  const sortButton = () => screen.getByRole('button', { name: /^정렬:/ })
+  async function chooseSort(user: ReturnType<typeof userEvent.setup>, name: string) {
+    await user.click(sortButton())
+    await user.click(await screen.findByRole('menuitemradio', { name }))
+  }
+  const taskRequests = (log: Log) => log.started.filter(({ path }) => path.startsWith('/tasks'))
+
+  it('기본은 마감 빠른 순이다. 최근 생성순을 고르면 URL 에 남고 승인·태스크가 각각 생성 최신순이 된다. 탭 개수는 그대로다', async () => {
+    const user = userEvent.setup()
+    const app = await openList()
+    await waitFor(() => expect(rows()).toEqual(PM_ALL))
+    expect(sortButton()).toHaveAccessibleName('정렬: 마감 빠른 순')
+    const log = recordRequests()
+
+    await chooseSort(user, '최근 생성순')
+    await app.expectSearch('?sort=created')
+    expect(sortButton()).toHaveAccessibleName('정렬: 최근 생성순')
+    await waitFor(() =>
+      expect(rows().slice(0, 4)).toEqual([
+        '배포 문서 보완',
+        '테스트 계획 정리',
+        '알림 문구 검토',
+        '배포 스크립트',
+      ]),
+    )
+    const createdAt = new Map(db.tasks.map(({ title, created_at }) => [title, created_at]))
+    const taskCreated = rows()
+      .slice(3)
+      .map((title) => createdAt.get(title))
+    expect(taskCreated).toEqual([...taskCreated].sort().reverse())
+    expect(tabTexts()).toEqual(['전체 13', '확인 필요 3', '진행 중 7', '완료 3'])
+
+    await user.click(tab('완료'))
+    await app.expectSearch('?sort=created&tab=done')
+    await waitFor(() => expect(rows()).toEqual(['토큰 정리', '폰트 적용', '랜딩 카피']))
+
+    await chooseSort(user, '마감 빠른 순')
+    await app.expectSearch('?tab=done')
+    await waitFor(() => expect(rows()).toEqual(['랜딩 카피', '폰트 적용', '토큰 정리']))
+    // 정렬은 받은 목록 안에서만 한다 — 다시 부르지 않는다
+    expect(taskRequests(log)).toEqual([])
+  })
+
+  it('주소로 최근 변경순을 열면 가장 최근에 바뀐 태스크가 태스크 중 맨 앞이다', async () => {
+    db.tasks.find(({ task_id }) => task_id === 'tk_06')!.updated_at = '2026-09-18T01:00:00Z'
+    await openList(`${paths.tasks('ws_01')}?sort=updated`)
+    expect(sortButton()).toHaveAccessibleName('정렬: 최근 변경순')
+    // 승인은 변경 시각이 없어 생성 최신순이다. 나머지 태스크는 변경 시각이 같아 생성 최신순이다
+    await waitFor(() =>
+      expect(rows().slice(0, 5)).toEqual([
+        '배포 문서 보완',
+        '테스트 계획 정리',
+        '알림 문구 검토',
+        'STT 정확도 측정',
+        '배포 스크립트',
+      ]),
+    )
+  })
+
+  it('모르는 정렬 값은 마감 빠른 순이다', async () => {
+    await openList(`${paths.tasks('ws_01')}?sort=priority`)
+    expect(sortButton()).toHaveAccessibleName('정렬: 마감 빠른 순')
+    await waitFor(() => expect(rows()).toEqual(PM_ALL))
+  })
+})
+
 describe('상세·이력과 PM 의 상태 변경 (AC-04)', () => {
   function info() {
     return screen.getByLabelText('태스크 정보')

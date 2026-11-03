@@ -20,8 +20,11 @@ describe('보기 조건 URL', () => {
       month: null,
       from: null,
       period: 'all',
+      sort: 'due',
     })
-    expect(read('?view=table&month=2026-13&from=2026-02-30&period=week')).toEqual(read(''))
+    expect(read('?view=table&month=2026-13&from=2026-02-30&period=week&sort=priority')).toEqual(
+      read(''),
+    )
   })
 
   it('쓴 값을 그대로 읽고, 탭·날짜 조건 파라미터는 건드리지 않는다', () => {
@@ -31,16 +34,19 @@ describe('보기 조건 URL', () => {
       month: '2026-09',
       from: null,
       period: 'month' as const,
+      sort: 'updated' as const,
     }
     const written = viewSearch(new URLSearchParams('?tab=done&due=overdue,soon'), next)
     expect(written).toBe(
-      '?tab=done&due=overdue,soon&view=calendar&assignee=mb_02&month=2026-09&period=month',
+      '?tab=done&due=overdue,soon&view=calendar&assignee=mb_02&month=2026-09&period=month&sort=updated',
     )
     expect(read(written)).toEqual(next)
   })
 
   it('기본값으로 돌아오면 파라미터가 남지 않는다', () => {
-    expect(viewSearch(new URLSearchParams('?view=board&assignee=mb_01'), read(''))).toBe('')
+    expect(
+      viewSearch(new URLSearchParams('?view=board&assignee=mb_01&sort=created'), read('')),
+    ).toBe('')
     expect(viewSearch(new URLSearchParams('?tab=done&view=board'), read(''))).toBe('?tab=done')
   })
 })

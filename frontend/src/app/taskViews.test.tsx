@@ -317,6 +317,44 @@ describe('역할·공간·상세 링크 (AC-A-06)', () => {
   )
 })
 
+describe('보드 정렬 (D-175)', () => {
+  const column = (name: string) => screen.getByRole('region', { name })
+  const titles = (name: string) =>
+    within(column(name))
+      .getAllByRole('link')
+      .map((link) => link.textContent)
+
+  it('리스트와 같은 정렬을 쓰고, 완료 칸과 칸 머리 문구도 고른 정렬을 따른다. 보기를 옮겨도 정렬은 남는다', async () => {
+    const user = userEvent.setup()
+    const app = await openView('board')
+    expect(column('완료')).toHaveTextContent('최근 완료순')
+    expect(column('시작 전')).toHaveTextContent('가장 이른 마감 09/10')
+
+    await user.click(screen.getByRole('button', { name: '정렬: 마감 빠른 순' }))
+    await user.click(await screen.findByRole('menuitemradio', { name: '최근 생성순' }))
+    await app.expectSearch('?view=board&sort=created')
+    await waitFor(() => expect(titles('완료')).toEqual(['토큰 정리', '폰트 적용', '랜딩 카피']))
+    expect(titles('시작 전')).toEqual(['회의록 요약 검수', '회원가입 화면', '온보딩 문구 수정'])
+    expect(column('완료')).toHaveTextContent('최근 생성순')
+    // 첫 카드의 마감이 아니라 칸에서 가장 이른 마감이다
+    expect(column('시작 전')).toHaveTextContent('가장 이른 마감 09/10')
+
+    await user.click(
+      within(screen.getByLabelText('보기 방식')).getByRole('radio', { name: '캘린더' }),
+    )
+    await app.expectSearch('?view=calendar&sort=created')
+    await waitFor(() => expect(shown.calendar()).toBeVisible(), FIRST_PAINT)
+    expect(screen.queryByRole('button', { name: /^정렬:/ })).toBeNull()
+
+    await user.click(
+      within(screen.getByLabelText('보기 방식')).getByRole('radio', { name: '보드' }),
+    )
+    await waitFor(() => expect(shown.board()).toBeVisible(), FIRST_PAINT)
+    await app.expectSearch('?view=board&sort=created')
+    expect(screen.getByRole('button', { name: '정렬: 최근 생성순' })).toBeVisible()
+  })
+})
+
 describe('표 구조 — 줄·머리·칸 (VR-08)', () => {
   it('캘린더는 요일 머리 한 줄과 주마다 날짜 일곱 칸인 표다', async () => {
     await openView('calendar')
