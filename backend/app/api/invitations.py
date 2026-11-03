@@ -239,6 +239,16 @@ def revoke_invitation(
             .values(user_id=None)
         )
     _move(db, invitation_id, InvitationStatus.REVOKED)
+    # 끊긴 계정이 같은 이메일의 남은 대기 초대로 돌아오지 못하게 함께 닫는다.
+    db.execute(
+        update(Invitation)
+        .where(
+            Invitation.workspace_id == invitation.workspace_id,
+            Invitation.email == invitation.email,
+            Invitation.status == str(InvitationStatus.PENDING),
+        )
+        .values(status=str(InvitationStatus.CANCELED), responded_at=_now())
+    )
     db.commit()
     return _invitation_response(db, invitation_id)
 

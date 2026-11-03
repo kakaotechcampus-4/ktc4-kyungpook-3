@@ -444,6 +444,27 @@ def test_revoke_unlinks_the_account_and_keeps_the_member(seed):
     assert _code(_act(invitation_id, "revoke", "pm-token")) == "INVITATION_NOT_ACCEPTED"
 
 
+def test_revoke_closes_a_leftover_pending_invite_for_the_same_email(db, seed):
+    # 수락과 새 초대가 겹치면 같은 이메일의 대기 초대가 남을 수 있다. 끊긴 계정이 그 초대로 돌아오면 안 된다.
+    invitation_id = _invite_id(seed["ws"], seed["minsu"].member_id, "jiyoung@example.com")
+    assert _act(invitation_id, "accept", "jiyoung-token").status_code == 200
+    leftover = Invitation(
+        workspace_id=seed["ws"], member_id=seed["jiyoung"].member_id, email="jiyoung@example.com"
+    )
+    db.add(leftover)
+    db.commit()
+    leftover_id = leftover.invitation_id
+
+    assert _act(invitation_id, "revoke", "pm-token").status_code == 200
+
+    assert _mine("jiyoung-token") == []
+    res = _act(leftover_id, "accept", "jiyoung-token")
+    assert res.status_code == 409
+    assert _code(res) == "INVITATION_NOT_PENDING"
+    assert _workspace_count("jiyoung-token") == 0
+    assert {i["invitation_id"]: i["status"] for i in _list(seed["ws"])}[leftover_id] == "canceled"
+
+
 def test_revoke_only_applies_to_accepted_invites(seed):
     invitation_id = _invite_id(seed["ws"], seed["jiyoung"].member_id, "jiyoung@example.com")
 
