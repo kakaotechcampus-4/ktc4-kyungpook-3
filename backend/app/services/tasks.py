@@ -8,7 +8,7 @@ from datetime import date, datetime, timezone
 from sqlalchemy.orm import Session
 
 from app.core.errors import AppError, ErrorCode
-from app.models import ChangedField, Meeting, Member, Task, TaskHistory, TaskStatus
+from app.models import ChangedField, ChangeSource, Meeting, Member, Task, TaskHistory, TaskStatus
 from app.services import notion_sync
 
 # TaskUpdateRequest/승인 payload의 필드명 -> ChangedField 매핑
@@ -160,8 +160,11 @@ def create_task(
     blocker: str | None = None,
     change_source: str,
     changed_by: str | None = None,
+    history_title: str | None = None,
 ) -> Task:
     """태스크를 새로 만들고, 생성 사실을 반영 로그 한 줄로 남긴다.
+
+    생성 줄에는 history_title(없으면 title)을 남긴다. 승인에서 PM이 제목을 고쳤을 때 제안한 제목을 남기려고 쓴다.
 
     수동 생성, 승인 반영, 자동 반영 모든 경로가 이 함수에서 같은 도메인 검증을 거친다.
     embedding은 NULL로 생기고 임베딩 워커가 채운다(app/services/embedding.py).
@@ -196,13 +199,35 @@ def create_task(
             task_id=task.task_id,
             changed_field=str(ChangedField.TITLE),
             old_value=None,
-            new_value=title,
+            new_value=title if history_title is None else history_title,
             change_source=str(change_source),
             changed_by=changed_by,
         )
     )
     notion_sync.enqueue_task_sync(db, task)
     return task
+
+
+def log_manual_edit(
+    db: Session,
+    task: Task,
+    field: str,
+    *,
+    old_value: str | None,
+    new_value: str | None,
+    changed_by: str | None,
+) -> None:
+    """이미 task에 들어간 값을 PM이 고친 것으로 반영 로그 한 줄만 남긴다(값은 바꾸지 않는다)."""
+    db.add(
+        TaskHistory(
+            task_id=task.task_id,
+            changed_field=str(_FIELD_MAP[field]),
+            old_value=old_value,
+            new_value=new_value,
+            change_source=str(ChangeSource.MANUAL),
+            changed_by=changed_by,
+        )
+    )
 
 
 def apply_task_updates(

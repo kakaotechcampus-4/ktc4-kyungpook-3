@@ -15,11 +15,29 @@ from app.schemas.approval import (
     ApprovalResolveRequest,
     ApprovalResponse,
 )
-from app.services.tasks import apply_task_updates, create_task, parse_date
+from app.services.tasks import (
+    apply_task_updates,
+    create_task,
+    log_manual_edit,
+    parse_date,
+    validate_task_fields,
+)
 
 router = APIRouter(prefix="/approvals", tags=["approvals"])
 
 _TASK_UPDATE_FIELDS = {"title", "assignee_member_id", "status", "blocker", "due_date"}
+
+# 승인하면서 PM이 고칠 수 있는 필드. 승인 유형마다 다르다
+_EDITABLE_FIELDS: dict[str, frozenset[str]] = {
+    str(ApprovalType.TASK_CREATE): frozenset({"task_title", "assignee_member_id", "due_date"}),
+    str(ApprovalType.TASK_UPDATE): frozenset({"status", "due_date"}),
+    str(ApprovalType.REMINDER_DM): frozenset(),
+}
+# null 은 "미정"으로 두겠다는 뜻이다. 값이 꼭 있어야 하는 필드(task_title, status)는 null 을 받지 않는다
+_UNDETERMINABLE_FIELDS = frozenset({"due_date", "assignee_member_id"})
+
+# 제안에 그 필드가 없다는 표시. 제안이 null 인 것과 구분한다
+_ABSENT = object()
 
 
 def _get_linkable_extraction_item(
@@ -56,6 +74,71 @@ def _get_linkable_extraction_item(
             },
         )
     return ext_item
+
+
+def _normalize_edit(field: str, value: object) -> object:
+    """고친 값 하나를 검증하고 payload에 저장하는 모양(날짜는 ISO 문자열)으로 맞춘다."""
+    if value is None:
+        if field not in _UNDETERMINABLE_FIELDS:
+            raise AppError(
+                ErrorCode.INVALID_REQUEST,
+                message=f"{field}는 미정(null)으로 둘 수 없습니다.",
+                details={"field": field},
+            )
+        return None
+    if field == "due_date":
+        return parse_date(value, field=field).isoformat()
+    if field == "assignee_member_id":
+        if not isinstance(value, str):
+            raise AppError(
+                ErrorCode.INVALID_REQUEST,
+                message="assignee_member_id는 문자열이어야 합니다.",
+                details={"field": field},
+            )
+        return value
+    # task_title 은 Task.title 과 같은 검증을 받는다
+    key = "title" if field == "task_title" else field
+    checked = {key: value}
+    validate_task_fields(checked)
+    return checked[key]
+
+
+def _normalize_overrides(
+    approval_type: str, status: ApprovalStatus, overrides: dict[str, object] | None
+) -> dict[str, object]:
+    """승인하면서 고친 값을 검증한다. 상태를 바꾸기 전에 불러야 잘못된 요청이 아무것도 커밋하지 못한다."""
+    if not overrides:
+        return {}
+    if status != ApprovalStatus.APPROVED:
+        raise AppError(
+            ErrorCode.INVALID_REQUEST,
+            message="고친 값(task_overrides)은 승인할 때만 보낼 수 있습니다.",
+            details={"status": str(status)},
+        )
+    allowed = _EDITABLE_FIELDS.get(approval_type, frozenset())
+    outside = sorted(set(overrides) - allowed)
+    if outside:
+        raise AppError(
+            ErrorCode.INVALID_REQUEST,
+            message=f"{approval_type} 승인에서 고칠 수 없는 필드입니다: {', '.join(outside)}",
+            details={"fields": outside, "allowed": sorted(allowed)},
+        )
+    return {field: _normalize_edit(field, value) for field, value in overrides.items()}
+
+
+def _changed_overrides(overrides: dict[str, object], proposal: dict[str, object]) -> dict[str, object]:
+    """고친 값 중 제안과 다른 것만 돌려준다. 제안의 날짜가 형식이 틀려도 비교는 그대로 한다(그 값을 고치는 중일 수 있다)."""
+    changed = {}
+    for field, value in overrides.items():
+        proposed = proposal.get(field, _ABSENT)
+        if field == "due_date" and proposed not in (None, _ABSENT):
+            try:
+                proposed = parse_date(proposed, field=field).isoformat()
+            except AppError:
+                pass
+        if value != proposed:
+            changed[field] = value
+    return changed
 
 
 def _comparable(value: object) -> object:
@@ -104,14 +187,21 @@ def _find_target_change(task: Task, base_title: object) -> dict | None:
 
 
 def _apply_approval(
-    db: Session, approval: ApprovalRequest, *, confirm_task_version: int | None = None
+    db: Session,
+    approval: ApprovalRequest,
+    *,
+    overrides: dict[str, object],
+    confirm_task_version: int | None = None,
 ) -> None:
     """승인된 요청을 실제 Task 생성/수정으로 반영한다.
 
+    overrides는 _normalize_overrides를 거친, PM이 승인하면서 고친 값이다. 제안과 다른 것만 제안 대신 쓰고,
+    task 이력에 PM이 직접 바꾼 것으로 남기고, payload.task_overrides에 저장한다. 원래 제안은 payload에 그대로 둔다.
     task_update는 제안 뒤에 같은 필드가 바뀌었으면 반영하지 않고 APPROVAL_CONFLICT를 낸다.
     PM이 그 충돌을 본 task 버전(confirm_task_version)을 보내면, task가 그 버전 그대로일 때만 덮어쓴다.
     """
     payload = json.loads(approval.payload)
+    changed: dict[str, object] = {}
 
     if approval.type == str(ApprovalType.TASK_CREATE):
         # Task를 만들기 전에 연결 대상부터 검증한다.
@@ -122,18 +212,36 @@ def _apply_approval(
             else None
         )
 
-        # 제목·status 검증은 create_task가 공통으로 수행한다.
+        proposal = {
+            "task_title": payload.get("task_title") or payload.get("title") or "",
+            "assignee_member_id": payload.get("assignee_member_id"),
+            "due_date": payload.get("due_date"),
+        }
+        changed = _changed_overrides(overrides, proposal)
+        final = {**proposal, **changed}
+
+        # 제안으로 먼저 만들고 고치면, PM이 바로잡는 중인 잘못된 담당자·날짜에서 먼저 막힌다. 최종 값으로 한 번에 만든다.
+        # 상태는 고르지 않는다. 제안에 status가 실려 있어도 항상 todo다. 제목·status 검증은 create_task가 공통으로 수행한다.
         task = create_task(
             db,
             workspace_id=approval.workspace_id,
-            title=payload.get("task_title") or payload.get("title") or "",
+            title=final["task_title"],
             meeting_id=payload.get("meeting_id"),
-            assignee_member_id=payload.get("assignee_member_id"),
-            due_date=parse_date(payload.get("due_date"), field="due_date"),
-            status=payload.get("status") or str(TaskStatus.TODO),
+            assignee_member_id=final["assignee_member_id"],
+            due_date=parse_date(final["due_date"], field="due_date"),
+            status=str(TaskStatus.TODO),
             change_source=str(ChangeSource.MEETING if payload.get("meeting_id") else ChangeSource.MANUAL),
             changed_by=approval.resolved_by,
+            history_title=proposal["task_title"],
         )
+        for field, new_value in changed.items():
+            old_value = proposal[field]
+            log_manual_edit(
+                db, task, "title" if field == "task_title" else field,
+                old_value=None if old_value is None else str(old_value),
+                new_value=None if new_value is None else str(new_value),
+                changed_by=approval.resolved_by,
+            )
         approval.related_task_id = task.task_id
 
         if ext_item is not None:
@@ -167,7 +275,9 @@ def _apply_approval(
                 },
             )
         updates = {k: v for k, v in payload.items() if k in _TASK_UPDATE_FIELDS}
-        conflicts = _find_conflicts(task, updates, payload.get("base_values"))
+        changed = _changed_overrides(overrides, updates)
+        # 충돌은 PM이 최종으로 정한 값 기준으로 본다. 지금 값이 그 값과 같으면 덮어써도 잃는 것이 없다
+        conflicts = _find_conflicts(task, {**updates, **changed}, payload.get("base_values"))
         target_change = _find_target_change(task, payload.get("base_title"))
         if target_change is not None:
             conflicts.append(target_change)
@@ -182,17 +292,31 @@ def _apply_approval(
                     "conflicts": conflicts,
                 },
             )
-        if "due_date" in updates:
-            updates["due_date"] = parse_date(updates["due_date"], field="due_date")
+        proposed = {k: v for k, v in updates.items() if k not in changed}
+        if "due_date" in proposed:
+            proposed["due_date"] = parse_date(proposed["due_date"], field="due_date")
         apply_task_updates(
             db,
             task,
-            updates,
+            proposed,
             change_source=payload.get("change_source") or str(ChangeSource.MEETING),
+            changed_by=approval.resolved_by,
+        )
+        edited = dict(changed)
+        if edited.get("due_date") is not None:
+            edited["due_date"] = parse_date(edited["due_date"], field="due_date")
+        apply_task_updates(
+            db,
+            task,
+            edited,
+            change_source=str(ChangeSource.MANUAL),
             changed_by=approval.resolved_by,
         )
 
     # REMINDER_DM: 태스크에 반영할 내용이 없다 — 실제 발송은 알림 채널(디스코드 봇)의 책임
+
+    if changed:
+        approval.payload = json.dumps({**payload, "task_overrides": changed}, ensure_ascii=False)
 
 
 def _to_response(row: ApprovalRequest) -> ApprovalResponse:
@@ -223,6 +347,13 @@ def create_approval(
     아니라 로그인한 팀원으로 기록한다. 바디 값을 믿으면 다른 팀원 이름으로 요청을 올릴 수 있다.
     """
     member = require_member(db, user, payload.workspace_id)
+    # task_overrides는 승인하는 PM의 요청에서만 받는다. 요청 단계에서 미리 넣어 두면 PM이 고친 값처럼 읽힐 수 있다
+    if "task_overrides" in payload.payload:
+        raise AppError(
+            ErrorCode.INVALID_REQUEST,
+            message="payload에 task_overrides를 넣을 수 없습니다. 고친 값은 승인할 때 보냅니다.",
+            details={"field": "task_overrides"},
+        )
     # 반영할 때 이력의 출처로 그대로 쓰므로 들어올 때 걸러 둔다
     change_source = payload.payload.get("change_source")
     if change_source is not None and change_source not in [str(s) for s in ChangeSource]:
@@ -333,6 +464,7 @@ def resolve_approval(
             details={"approval_id": approval_id},
         )
     member = require_pm(db, user, target.workspace_id)
+    overrides = _normalize_overrides(target.type, payload.status, payload.task_overrides)
 
     stmt = (
         update(ApprovalRequest)
@@ -364,7 +496,7 @@ def resolve_approval(
 
     if payload.status == ApprovalStatus.APPROVED:
         try:
-            _apply_approval(db, approval, confirm_task_version=payload.confirm_task_version)
+            _apply_approval(db, approval, overrides=overrides, confirm_task_version=payload.confirm_task_version)
         except AppError:
             # 반영하지 못했으면 승인 처리도 되돌려 pending으로 남긴다. 충돌을 확인한 PM이 다시 처리할 수 있다
             db.rollback()
