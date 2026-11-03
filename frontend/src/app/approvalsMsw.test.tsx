@@ -389,3 +389,68 @@ describe('보완 승인은 한 번에, 실패는 흔적 없이 (AC-05)', () => {
     expect(bodies).toEqual([{ status: 'approved' }])
   })
 })
+
+describe('대시보드 채워 넣기로 오면 보완 폼이 열려 있다 (D-176)', () => {
+  const DASHBOARD = paths.dashboard('ws_01')
+
+  async function arriveFromDashboard(name: string, options: { strict?: boolean } = {}) {
+    const app = renderApp(DASHBOARD, options)
+    await userEvent.click(await screen.findByRole('link', { name }))
+    await app.expectPath(paths.approval('ws_01', 'ap_01'))
+    await screen.findByRole('heading', { level: 2, name: '새 태스크 확인' })
+    return app
+  }
+
+  it('첫 빈 칸(담당자)에 포커스가 있고, 보완 중이라 승인할 수 없다. 기록의 표시는 지워져 있다', async () => {
+    const app = await arriveFromDashboard('채워 넣기 — 알림 문구 검토', { strict: true })
+    await screen.findByRole('group', { name: '확정할 값 보완' })
+    await waitFor(() => expect(assigneeSelect()).toHaveFocus())
+    expect(titleInput()).toHaveValue('알림 문구 검토')
+    expect(screen.queryByRole('button', { name: '보완하기' })).toBeNull()
+    expect(approveButton()).toHaveAccessibleDescription(
+      '보완을 끝내거나 취소하면 승인할 수 있어요.',
+    )
+
+    // 같은 주소를 replace 해 표시를 지운다 — 새로고침·뒤로/앞으로 가기로 다시 오면 읽기다
+    await waitFor(() => expect(app.visited().at(-1)?.state ?? null).toBeNull())
+    expect(app.visitedActions().at(-1)).toBe('REPLACE')
+    expect(app.visited().at(-1)?.pathname).toBe(paths.approval('ws_01', 'ap_01'))
+    // 표시를 지워도 열린 폼은 그대로다
+    await settle()
+    expect(screen.getByRole('group', { name: '확정할 값 보완' })).toBeInTheDocument()
+  })
+
+  it.each([
+    ['제목이 공백뿐이면 제목', { task_title: '   ' }, () => titleInput()],
+    [
+      '빈 칸이 없으면 첫 칸(제목)',
+      { assignee_member_id: 'mb_02', due_date: '2026-09-30' },
+      () => titleInput(),
+    ],
+  ] as const)('%s 에 포커스가 간다', async (_, patch, expected) => {
+    Object.assign(approvalOf('ap_01').payload, patch)
+    renderApp(DASHBOARD)
+    const links = await screen.findAllByRole('link', { name: /^채워 넣기/ })
+    expect(links).toHaveLength(1)
+    await userEvent.click(links[0])
+    await screen.findByRole('group', { name: '확정할 값 보완' })
+    await waitFor(() => expect(expected()).toHaveFocus())
+  })
+
+  it('확인하기로 오면 읽기다', async () => {
+    renderApp(DASHBOARD)
+    await userEvent.click(await screen.findByRole('link', { name: '확인하기 — 테스트 계획 정리' }))
+    await screen.findByRole('heading', { level: 2, name: '새 태스크 확인' })
+    await waitFor(() => expect(screen.getByRole('button', { name: '보완하기' })).toBeEnabled())
+    expect(screen.queryByRole('group', { name: '확정할 값 보완' })).toBeNull()
+  })
+
+  it('취소하면 읽기로 돌아오고, 다시 보완하기로 열 수 있다', async () => {
+    await arriveFromDashboard('채워 넣기 — 알림 문구 검토')
+    await screen.findByRole('group', { name: '확정할 값 보완' })
+    fireEvent.click(screen.getByRole('button', { name: '취소' }))
+    await waitFor(() => expect(screen.queryByRole('group', { name: '확정할 값 보완' })).toBeNull())
+    await openForm()
+    expect(assigneeSelect()).toHaveValue('')
+  })
+})

@@ -8,6 +8,7 @@ import {
 } from '@/shared/ui/dropdown-menu'
 import { Icon } from '@/shared/ui/icon'
 import { Segmented, SegmentedItem } from '@/shared/ui/segmented'
+import { DUE_CONDITIONS } from '../lib/taskBoard'
 import type { DueCondition } from '../lib/taskBoard'
 import { TASK_SORTS, sortLabel } from '../lib/taskSort'
 import type { TaskSort } from '../lib/taskSort'
@@ -140,12 +141,16 @@ export function AssigneeFilter({
   )
 }
 
-const DUE_OPTIONS = [
-  ['overdue', '기한 지남'],
-  ['soon', '7일 안에 마감'],
-] as const satisfies readonly (readonly [DueCondition, string])[]
+/** 마감 조건 필터의 이름. 묶음·버튼·빈 상태가 같은 이름을 쓴다 */
+export const DUE_FILTER_NAME = '마감 조건'
 
-/** 마감 조건 — 둘 다 고를 수 있다. 고른 조건이 없으면 `마감 전체` 다 */
+const DUE_LABEL: Record<DueCondition, string> = {
+  overdue: '기한 지남',
+  soon: '7일 안에 마감',
+  blocked: '막힘',
+}
+
+/** 마감 조건 — 여러 개를 고를 수 있다. 고른 조건이 없으면 `마감 전체` 다 */
 export function DueFilter({
   value,
   today,
@@ -161,8 +166,8 @@ export function DueFilter({
   const label =
     value.length === 0
       ? '마감 전체'
-      : DUE_OPTIONS.filter(([condition]) => value.includes(condition))
-          .map(([, text]) => text)
+      : DUE_CONDITIONS.filter((condition) => value.includes(condition))
+          .map((condition) => DUE_LABEL[condition])
           .join(' · ')
   const toggle = (condition: DueCondition) =>
     onChange(
@@ -171,18 +176,20 @@ export function DueFilter({
         : [...value, condition],
     )
   return (
-    <FilterSelect label={label} ariaLabel="마감 조건">
+    <FilterSelect label={label} ariaLabel={DUE_FILTER_NAME}>
       <Option selected={value.length === 0} onSelect={() => onChange([])}>
         마감 전체
       </Option>
-      {DUE_OPTIONS.map(([condition, text]) => (
+      {DUE_CONDITIONS.map((condition) => (
         <Option
           key={condition}
           role="menuitemcheckbox"
           selected={value.includes(condition)}
           onSelect={() => toggle(condition)}
         >
-          <span title={condition === 'soon' ? `${today} ~ ${last}` : undefined}>{text}</span>
+          <span title={condition === 'soon' ? `${today} ~ ${last}` : undefined}>
+            {DUE_LABEL[condition]}
+          </span>
         </Option>
       ))}
     </FilterSelect>

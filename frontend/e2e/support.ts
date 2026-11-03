@@ -34,6 +34,7 @@ export type Scenario =
   | 'dashboard-revert-rejected'
   | 'dashboard-member'
   | 'dashboard-partial-error'
+  | 'dashboard-recent-overflow'
   | 'settings-discord-skipped'
   | 'settings-unmapped'
   | 'settings-member'

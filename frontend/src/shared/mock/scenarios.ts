@@ -49,6 +49,7 @@ export const MOCK_SCENARIOS = [
   'dashboard-revert-rejected',
   'dashboard-member',
   'dashboard-partial-error',
+  'dashboard-recent-overflow',
   // M8 메시지(임시, 디자인 캔버스 기준 MSW 목). 모두 ws_01 하나에 PM 으로 로그인한다.
   // 로딩은 시나리오가 아니라 응답을 붙잡아 재현한다. 발송 성공은 messages-default 로 본다 (계획 C-7)
   'messages-default',
@@ -283,6 +284,24 @@ function syncRecentTasks(state: MockDb): void {
   for (const id of ['tk_01', 'tk_02', 'tk_03']) taskOf(state, id).notion_sync_status = 'synced'
 }
 
+/**
+ * 최신 완료 회의의 추출(ex_01)에 첫 auto 항목(it_01, tk_01 반영 완료)의 사본을 붙여 auto 항목을 12개로 만든다.
+ * 최근 반영이 첫 화면에 다 들어가지 않는 경우다 (D-176). 사본은 it_21 부터, 제목에 번호를 붙여 행을 구분한다
+ */
+function addRecentOverflow(state: MockDb): void {
+  const extraction = state.extractions.find(({ extraction_id }) => extraction_id === 'ex_01')
+  if (!extraction) throw new Error('mock extraction ex_01 is missing')
+  const first = extraction.items.find(({ gate }) => gate === 'auto')
+  if (!first) throw new Error('mock extraction ex_01 has no auto item')
+  const autoCount = extraction.items.filter(({ gate }) => gate === 'auto').length
+  for (let index = autoCount + 1; index <= 12; index += 1) {
+    const copy = structuredClone(first)
+    copy.item_id = `it_${20 + index - autoCount}`
+    copy.task.title = `자동 반영 ${index}`
+    extraction.items.push(copy)
+  }
+}
+
 /** 그 회의를 회의 목록·상세·회의록·추출에서 뺀다. 정리 끝난 회의를 줄여 최신 완료 회의를 바꿀 때 쓴다 */
 function removeMeeting(state: MockDb, meetingId: string): void {
   const extractionIds = new Set(
@@ -459,6 +478,12 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
       signInWith(state, ['ws_01'], 'ws_01')
       syncRecentTasks(state)
       setMockRole('member', 'ws_01', state)
+      break
+    case 'dashboard-recent-overflow':
+      // dashboard-default 에 최근 반영 auto 항목이 12개다 — 첫 화면에 들어가는 만큼 보이고 `외 N건` 이 회의록으로 간다 (D-176)
+      signInWith(state, ['ws_01'], 'ws_01')
+      syncRecentTasks(state)
+      addRecentOverflow(state)
       break
     case 'dashboard-partial-error':
       // 최신 완료 회의(mt_09)의 추출이 없다 — 최근 반영만 조회 오류(404)이고 나머지 영역은 그대로다

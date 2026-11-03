@@ -109,13 +109,13 @@ export const 탭_키보드: Story = {
   },
 }
 
-/** 날짜 조건으로 비었다 — 조건 해제 액션이 있다 */
-export const 날짜_조건_빈_결과: Story = {
+/** 마감 조건으로 비었다 — 조건 해제 액션이 있다 */
+export const 마감_조건_빈_결과: Story = {
   args: { query: { tab: 'done', due: ['overdue'] } },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     await expect(await canvas.findByText('조건에 맞는 항목이 없어요')).toBeInTheDocument()
-    const clear = canvas.getAllByRole('button', { name: '날짜 조건 해제' })
+    const clear = canvas.getAllByRole('button', { name: '마감 조건 해제' })
     await expect(clear.length).toBeGreaterThan(0)
   },
 }

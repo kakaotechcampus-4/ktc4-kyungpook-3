@@ -25,9 +25,9 @@ export function workspaceEntryPath(workspace: Workspace): string {
     : onboardingResumePath(workspace)
 }
 
-/** 로그인 완료 직후. 0개 → 생성 온보딩, 1개 → 그 공간, 여러 개 → 선택 화면 (D-010) */
+/** 로그인 완료 직후. 0개 → 시작 작업 선택, 1개 → 그 공간, 여러 개 → 공간 선택 */
 export function postLoginPath(workspaces: readonly Workspace[]): string {
-  if (workspaces.length === 0) return paths.onboardingCreate()
+  if (workspaces.length === 0) return paths.onboardingStart()
   if (workspaces.length === 1) return workspaceEntryPath(workspaces[0])
   return paths.workspaceSelect()
 }
