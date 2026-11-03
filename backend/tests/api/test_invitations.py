@@ -13,6 +13,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app.api import invitations
 from app.core.database import Base, get_db
 from app.main import app
 from app.models import Invitation, Member, Session as SessionModel, User, Workspace
@@ -385,6 +386,17 @@ def test_same_email_cannot_be_pending_for_two_members(seed):
     assert res.status_code == 409
     assert _code(res) == "EMAIL_ALREADY_INVITED"
     assert len(_list(seed["ws"])) == 1
+
+
+def test_same_email_race_lost_at_the_db_is_409_not_500(seed, monkeypatch):
+    # 다른 팀원에게 같은 이메일 초대가 사전 검사와 저장 사이에 생기고, 재확인 전에 닫힌 경우를 흉내 낸다.
+    _invite_id(seed["ws"], seed["minsu"].member_id, "same@example.com")
+    monkeypatch.setattr(invitations, "_email_pending_for_other_member", lambda *args: False)
+
+    res = _invite(seed["ws"], seed["jiyoung"].member_id, "same@example.com")
+
+    assert res.status_code == 409
+    assert _code(res) == "EMAIL_ALREADY_INVITED"
 
 
 def test_reinvite_after_decline_works(seed):

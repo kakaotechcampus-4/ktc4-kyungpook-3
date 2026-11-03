@@ -189,11 +189,10 @@ def create_invitation(
     try:
         db.commit()
     except IntegrityError:
-        # 다른 팀원에게 같은 이메일로 동시에 초대해 둘 다 사전 검사를 통과했다.
+        # 다른 팀원에게 같은 이메일로 동시에 초대해 둘 다 사전 검사를 통과했다. 같은 팀원 쪽 인덱스는 팀원 행
+        # 잠금으로 차례가 정해져 여기 오지 않는다. 이긴 쪽 초대가 그새 닫혔을 수 있어 다시 보지 않고 409 로 돌린다.
         db.rollback()
-        if _email_pending_for_other_member(db, workspace_id, payload.email, payload.member_id):
-            raise AppError(ErrorCode.EMAIL_ALREADY_INVITED, details={"email": payload.email}) from None
-        raise
+        raise AppError(ErrorCode.EMAIL_ALREADY_INVITED, details={"email": payload.email}) from None
     return _invitation_response(db, invitation.invitation_id)
 
 
