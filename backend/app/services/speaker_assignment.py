@@ -98,10 +98,18 @@ def report_speakers(
         raise _with_status(ErrorCode.MEETING_ALREADY_ENDED, meeting_id, meeting.status)
     if upload.claimed_at is None:
         raise _with_status(ErrorCode.UPLOAD_NOT_CLAIMED, meeting_id, meeting.status)
-    if upload.speakers_reported_at is not None and upload.speakers is not None:
-        if normalize_speakers(json.loads(upload.speakers)) == normalized:
-            return meeting
-    raise _with_status(ErrorCode.SPEAKERS_ALREADY_REPORTED, meeting_id, meeting.status)
+    stored = normalize_speakers(json.loads(upload.speakers)) if upload.speakers is not None else []
+    if upload.speakers_reported_at is not None and stored == normalized:
+        return meeting
+    # 저장된 라벨을 함께 준다. AI 가 분리를 다시 돌려 라벨이 달라졌으면 이것으로 어긋남을 알아챈다
+    raise AppError(
+        ErrorCode.SPEAKERS_ALREADY_REPORTED,
+        details={
+            "meeting_id": meeting_id,
+            "status": meeting.status,
+            "labels": [item["label"] for item in stored],
+        },
+    )
 
 
 def list_assigned(db: Session) -> list[tuple[Meeting, MeetingUpload]]:

@@ -261,7 +261,7 @@ AI가 화자 분리로 얻은 라벨을 보낸다. 회의가 `awaiting_speakers`
 - 404 `MEETING_NOT_FOUND`: 없는 회의, 업로드 회의가 아님, `meeting_upload` 행 없음.
 - 409 `MEETING_ALREADY_ENDED`(`details.status`): `done`·`failed`.
 - 409 `UPLOAD_NOT_CLAIMED`(`details.status`): 아직 claim 하지 않았다.
-- 409 `SPEAKERS_ALREADY_REPORTED`(`details.status`): 이미 다른 내용의 라벨을 받았다. 지정이 제출돼 `processing`으로 돌아온 뒤에도 같다.
+- 409 `SPEAKERS_ALREADY_REPORTED`(`details.status`, `details.labels`): 이미 다른 내용의 라벨을 받았다. 지정이 제출돼 `processing`으로 돌아온 뒤에도 같다. `details.labels`는 저장된 라벨 이름을 이름 순으로 담는다. AI가 분리를 다시 돌려 라벨이 달라졌는지 이것으로 알 수 있다.
 
 ### `GET /uploads/assigned` → 200
 
@@ -304,7 +304,7 @@ PM이 지정을 끝냈고(`speakers_assigned_at` 있음) 아직 다시 가져가
 | `MEETING_ALREADY_ENDED` | 409 | end, fail, uploads claim·speakers·resume | 지금 상태로 보고 계속 (claim이면 다음 회의로) |
 | `MEETING_PROCESSING_IN_PROGRESS` | 409 | uploads claim·resume | 이미 가져갔으니 다음 회의로. 내 재시도라면 이어서 처리 (AI 미구현) |
 | `UPLOAD_NOT_CLAIMED` | 409 | uploads speakers | 먼저 claim 한다 (AI 미구현) |
-| `SPEAKERS_ALREADY_REPORTED` | 409 | uploads speakers | 다른 내용의 라벨이 이미 저장됨. 재전송하지 않고 지정 결과 조회로 넘어감 (AI 미구현) |
+| `SPEAKERS_ALREADY_REPORTED` | 409 | uploads speakers | 다른 내용의 라벨이 이미 저장됨. 재전송하지 않고 지정 결과 조회로 넘어감. `details.labels`가 내 라벨과 다르면 어긋난 것 (AI 미구현) |
 | `SPEAKERS_NOT_ASSIGNED` | 409 | uploads resume | 아직 지정 전. 다음 조회 때 다시 (AI 미구현) |
 | `MEETING_FAILED` | 409 | sources | 실패 |
 | `MEETING_NOT_PROCESSING` | 409 | extractions | 실패 |

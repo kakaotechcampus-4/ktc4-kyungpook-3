@@ -490,6 +490,8 @@ def test_different_report_gets_409_and_keeps_stored_labels(db, ws):
     error = r.json()["error"]
     assert error["code"] == "SPEAKERS_ALREADY_REPORTED"
     assert error["details"]["status"] == "awaiting_speakers"
+    # AI 가 분리를 다시 돌려 라벨이 달라졌는지 알 수 있게 저장된 라벨을 준다
+    assert error["details"]["labels"] == ["SPEAKER_00", "SPEAKER_01"]
     status, upload = _state(db, meeting)
     assert status == "awaiting_speakers"
     assert json.loads(upload.speakers) == LABELS
@@ -533,6 +535,7 @@ def test_report_after_assignment_gets_409_already_reported(db, ws):
     assert r.status_code == 409, r.text
     assert r.json()["error"]["code"] == "SPEAKERS_ALREADY_REPORTED"
     assert r.json()["error"]["details"]["status"] == "processing"
+    assert r.json()["error"]["details"]["labels"] == ["SPEAKER_00", "SPEAKER_01"]
     assert _state(db, meeting)[0] == "processing"
 
 
