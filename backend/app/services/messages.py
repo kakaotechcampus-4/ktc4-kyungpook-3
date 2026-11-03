@@ -321,12 +321,21 @@ def edit_bundle(
     return other
 
 
-def approve_bundle(db: Session, bundle: ReminderBundle, *, approved_by: str | None, now: datetime) -> ReminderBundle:
-    """PM 이 보고 있는 문구 그대로 승인한다. 초안을 기다리는 중이어도 된다. 승인 뒤에는 AI 초안을 받지 않는다."""
+def approve_bundle(
+    db: Session, bundle: ReminderBundle, *, draft_version: int, approved_by: str | None, now: datetime
+) -> ReminderBundle:
+    """PM 이 보고 있는 문구 그대로 승인한다. 초안을 기다리는 중이어도 된다. 승인 뒤에는 AI 초안을 받지 않는다.
+
+    draft_version 은 PM 화면의 판이다. 그 뒤 AI 초안이 들어왔거나 다른 PM 이 바꿨으면 본 적 없는 문구이므로 거절한다.
+    """
     now = utc(now)
     _transition(bundle, "approve")
     if bundle.approved_at is not None:
         return bundle
+    if draft_version != bundle.draft_version:
+        raise AppError(
+            ErrorCode.BUNDLE_CHANGED, details={"bundle_id": bundle.bundle_id, "draft_version": bundle.draft_version}
+        )
     _require_future(utc(bundle.scheduled_at), now)
     bundle.approved_at = now
     bundle.approved_by = approved_by
@@ -477,6 +486,7 @@ def write_draft(
         )
     if body is not None:
         bundle.body, bundle.body_source = body, BodySource.AI
+        bundle.draft_version += 1
     bundle.draft_status = DraftStatus.DONE
     bundle.updated_at = now
     db.flush()

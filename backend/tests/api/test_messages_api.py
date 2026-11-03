@@ -40,8 +40,12 @@ def _bundles_url(seed, bid=""):
     return f"{P}/workspaces/{seed['ws']}/messages/bundles" + (f"/{bid}" if bid else "")
 
 
-def _approve(c, seed, bid):
-    return c.post(f"{_bundles_url(seed, bid)}/approve")
+def _approve(c, seed, bid, draft_version=None):
+    """draft_version 을 주지 않으면 PM 화면처럼 받은편지함에 보이는 판으로 승인한다."""
+    if draft_version is None:
+        shown = c.get(f"{P}/workspaces/{seed['ws']}/messages").json()["data"]["bundles"] or []
+        draft_version = next((b["draft_version"] for b in shown if b["bundle_id"] == bid), 0)
+    return c.post(f"{_bundles_url(seed, bid)}/approve", json={"draft_version": draft_version})
 
 
 def _due(db, *bundle_ids, at=None):
@@ -81,7 +85,7 @@ def test_only_pm_can_touch_reminders_and_bundles(mdb, mseed):
         assert c.patch(f"{base}/{rid}", json={"note": "y"}).status_code == 403
         assert c.post(f"{base}/{rid}/cancel").status_code == 403
         assert c.patch(_bundles_url(mseed, bid), json={"body": "y"}).status_code == 403
-        assert c.post(f"{_bundles_url(mseed, bid)}/approve").status_code == 403
+        assert c.post(f"{_bundles_url(mseed, bid)}/approve", json={"draft_version": 1}).status_code == 403
         assert c.post(f"{_bundles_url(mseed, bid)}/cancel").status_code == 403
     assert client().get(f"{P}/workspaces/{mseed['ws']}/messages").status_code == 401
 
@@ -276,7 +280,7 @@ def test_bundle_cancel_cancels_reminders_and_closed_bundles_are_locked(mdb, msee
     for target in (bid, sent):
         for r in (
             pm.patch(_bundles_url(mseed, target), json={"body": "x"}),
-            pm.post(f"{_bundles_url(mseed, target)}/approve"),
+            pm.post(f"{_bundles_url(mseed, target)}/approve", json={"draft_version": 1}),
             pm.post(f"{_bundles_url(mseed, target)}/cancel"),
         ):
             assert r.status_code == 409 and r.json()["error"]["code"] == "REMINDER_NOT_EDITABLE"
@@ -566,3 +570,26 @@ def test_approving_while_draft_is_pending_freezes_the_text(mdb, mseed):
     assert bundle["draft_status"] == "needed"
     approved = _approve(pm, mseed, bundle["bundle_id"]).json()["data"]
     assert approved["approved"] is True and approved["draft_status"] == "done"
+
+
+def test_approve_needs_the_draft_version_on_screen_and_refuses_a_changed_text(mdb, mseed):
+    pm, bot = client("pm"), client(service=True)
+    shown = _create(pm, mseed)["bundle"]
+    url = f"{_bundles_url(mseed, shown['bundle_id'])}/approve"
+    assert pm.post(url).status_code == 400
+
+    (item,) = bot.post(f"{P}/bot/drafts/claim").json()["data"]["items"]
+    written = bot.post(f"{P}/bot/drafts/{item['bundle_id']}",
+                       json={"draft_version": item["draft_version"], "body": "AI 가 새로 쓴 문구"})
+    assert written.status_code == 200
+
+    stale = pm.post(url, json={"draft_version": shown["draft_version"]})
+    assert stale.status_code == 409 and stale.json()["error"]["code"] == "BUNDLE_CHANGED"
+    current = stale.json()["error"]["details"]["draft_version"]
+    assert current != shown["draft_version"]
+    (on_screen,) = pm.get(f"{P}/workspaces/{mseed['ws']}/messages").json()["data"]["bundles"]
+    assert on_screen["draft_version"] == current and on_screen["approved"] is False
+
+    approved = pm.post(url, json={"draft_version": current}).json()["data"]
+    assert approved["approved"] is True and approved["body"] == "AI 가 새로 쓴 문구"
+    assert pm.post(url, json={"draft_version": shown["draft_version"]}).status_code == 200

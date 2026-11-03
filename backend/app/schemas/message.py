@@ -60,6 +60,12 @@ class BundleUpdateRequest(BaseModel):
         return self
 
 
+class BundleApproveRequest(BaseModel):
+    """PM 화면에 보이는 묶음의 draft_version. 그 사이 문구나 구성이 바뀌었으면 승인하지 않는다."""
+
+    draft_version: int
+
+
 class ReplyCreateRequest(BaseModel):
     body: str
 
@@ -91,6 +97,7 @@ class BundleResponse(BaseModel):
     body: str
     body_source: str
     draft_status: str
+    draft_version: int
     reminders: list[ReminderResponse]
 
 

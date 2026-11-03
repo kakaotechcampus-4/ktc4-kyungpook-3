@@ -20,6 +20,7 @@ from app.models import (
     User,
 )
 from app.schemas.message import (
+    BundleApproveRequest,
     BundleResponse,
     BundleUpdateRequest,
     InboxResponse,
@@ -60,6 +61,7 @@ def _bundle_dict(db: Session, bundle: ReminderBundle) -> dict:
         approved=bundle.approved_at is not None,
         approved_at=bundle.approved_at and svc.utc(bundle.approved_at),
         body=bundle.body, body_source=bundle.body_source, draft_status=bundle.draft_status,
+        draft_version=bundle.draft_version,
         reminders=[_reminder_dict(r) for r in svc.bundle_reminders(db, bundle.bundle_id, bundle.status)],
     ).model_dump(mode="json")
 
@@ -249,11 +251,16 @@ def update_bundle(
 def approve_bundle(
     workspace_id: str,
     bundle_id: str,
+    payload: BundleApproveRequest,
     pm: Member = Depends(get_current_pm),
     db: Session = Depends(get_db),
 ) -> dict:
+    """PM 이 본 판(draft_version)이 지금 판과 다르면 409 BUNDLE_CHANGED. 이미 승인했으면 판과 상관없이 그대로 200."""
     return _bundle_action(
-        db, workspace_id, bundle_id, lambda b: svc.approve_bundle(db, b, approved_by=pm.member_id, now=_now())
+        db, workspace_id, bundle_id,
+        lambda b: svc.approve_bundle(
+            db, b, draft_version=payload.draft_version, approved_by=pm.member_id, now=_now()
+        ),
     )
 
 

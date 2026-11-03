@@ -36,7 +36,10 @@ def _bundle(db, seed, reminder):
 
 
 def _approve(db, seed, reminder, now=NOW):
-    bundle = svc.approve_bundle(db, _bundle(db, seed, reminder), approved_by=seed["pm"].member_id, now=now)
+    bundle = _bundle(db, seed, reminder)
+    bundle = svc.approve_bundle(
+        db, bundle, draft_version=bundle.draft_version, approved_by=seed["pm"].member_id, now=now
+    )
     db.commit()
     return bundle
 
@@ -178,7 +181,7 @@ def test_bundle_edit_and_approve_reject_past_time(mdb, mseed):
         svc.edit_bundle(mdb, bundle, body=None, scheduled_at=NOW, now=NOW)
     assert e.value.code == ErrorCode.REMINDER_SCHEDULED_AT_PASSED
     with pytest.raises(AppError) as e:
-        svc.approve_bundle(mdb, bundle, approved_by=None, now=LATER)
+        svc.approve_bundle(mdb, bundle, draft_version=bundle.draft_version, approved_by=None, now=LATER)
     assert e.value.code == ErrorCode.REMINDER_SCHEDULED_AT_PASSED
 
 
@@ -216,7 +219,7 @@ def test_dispatch_sends_bundle_body_once_and_marks_everything_sent(mdb, mseed):
     b = _make(mdb, mseed, task=1, made=NOW + timedelta(minutes=1))
     bundle = _bundle(mdb, mseed, a)
     svc.edit_bundle(mdb, bundle, body="둘 다 어때요?", scheduled_at=None, now=NOW)
-    svc.approve_bundle(mdb, bundle, approved_by=None, now=NOW)
+    svc.approve_bundle(mdb, bundle, draft_version=bundle.draft_version, approved_by=None, now=NOW)
     mdb.commit()
 
     (msg,) = svc.dispatch_due(mdb, LATER)
@@ -321,6 +324,33 @@ def test_draft_write_back_is_stale_after_membership_change_approval_or_pm_edit(m
     with pytest.raises(AppError) as e:
         svc.write_draft(mdb, "nope", draft_version=1, body="x", now=NOW)
     assert e.value.code == ErrorCode.REMINDER_BUNDLE_NOT_FOUND
+
+
+def test_approve_is_refused_when_the_text_changed_after_the_pm_saw_it(mdb, mseed):
+    a = _make(mdb, mseed, who="alice")
+    c = _make(mdb, mseed, who="carol")
+    seen = {b: _bundle(mdb, mseed, r).draft_version for b, r in (("a", a), ("c", c))}
+    items = {i.bundle.bundle_id: i for i in svc.claim_drafts(mdb, NOW)}
+    svc.write_draft(mdb, a.bundle_id, draft_version=items[a.bundle_id].bundle.draft_version,
+                    body="AI 가 새로 쓴 문구", now=NOW)
+    svc.write_draft(mdb, c.bundle_id, draft_version=items[c.bundle_id].bundle.draft_version, body=None, now=NOW)
+    mdb.commit()
+
+    with pytest.raises(AppError) as e:
+        svc.approve_bundle(mdb, _bundle(mdb, mseed, a), draft_version=seen["a"], approved_by=None, now=NOW)
+    assert e.value.code == ErrorCode.BUNDLE_CHANGED
+    assert e.value.details["draft_version"] == seen["a"] + 1
+    mdb.rollback()
+    assert _bundle(mdb, mseed, a).approved_at is None
+
+    kept = svc.approve_bundle(mdb, _bundle(mdb, mseed, c), draft_version=seen["c"], approved_by=None, now=NOW)
+    assert kept.approved_at is not None and kept.body_source == "rule"
+
+    current = _bundle(mdb, mseed, a)
+    approved = svc.approve_bundle(mdb, current, draft_version=current.draft_version, approved_by=None, now=NOW)
+    assert approved.body == "AI 가 새로 쓴 문구" and approved.approved_at is not None
+    again = svc.approve_bundle(mdb, approved, draft_version=seen["a"], approved_by=None, now=NOW + timedelta(hours=1))
+    assert svc.utc(again.approved_at) == NOW
 
 
 def test_style_examples_are_recent_pm_texts_that_were_approved_or_sent(mdb, mseed):

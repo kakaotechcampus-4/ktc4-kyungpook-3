@@ -52,7 +52,7 @@ def test_pm_action_on_due_bundle_while_bot_claims_it_is_rejected_not_deadlocked(
         scheduled_at=now + timedelta(days=1), note=None, created_by=mseed["pm"].member_id, now=now,
     )
     bundle = svc.get_bundle(mdb, mseed["ws"], r.bundle_id)
-    svc.approve_bundle(mdb, bundle, approved_by=None, now=now)
+    svc.approve_bundle(mdb, bundle, draft_version=bundle.draft_version, approved_by=None, now=now)
     rid, bid = r.reminder_id, r.bundle_id
     mdb.get(ReminderBundle, bid).scheduled_at = now - timedelta(minutes=1)
     mdb.commit()
