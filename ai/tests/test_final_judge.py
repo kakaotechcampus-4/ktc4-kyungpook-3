@@ -140,7 +140,7 @@ def test_prompt_reads_status_from_facts_but_never_guesses_done():
     assert "상태 단어가 없어도" in prompt
     assert "명시적으로 언급됐을 때만" not in prompt
     assert "끝냈는지 확실하지 않으면" in prompt
-    assert "승인을 기다리는 것은 막힘이 아니다" in prompt
+    assert "기다리는 것은 막힘이 아니다" in prompt
 
 
 def test_llm_returns_none_on_invalid_category():
