@@ -1,6 +1,7 @@
 import { useId, useState } from 'react'
 import type { FormEvent } from 'react'
 import type { DiscordUser, Member } from '@/entities/member'
+import { pmsOf } from '@/entities/member'
 import {
   MemberMappingFields,
   buildMappingRows,
@@ -35,13 +36,6 @@ interface MappingFormProps {
   onSaved: () => void
   /** 저장을 시작하고 끝낼 때 알린다. 창은 저장하는 동안 Esc·바깥 클릭으로 닫히지 않는다 — 닫히면 실패를 보일 곳이 없다 */
   onSavingChange: (saving: boolean) => void
-}
-
-/** PM 팀원. 먼저 만들어진 순서다 — 첫째가 워크스페이스를 만든 PM 이고 체크박스가 그 PM 을 가리킨다 (#228) */
-function pmsOf(members: Member[]): Member[] {
-  return members
-    .filter(({ role }) => role === 'pm')
-    .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
 }
 
 /**
