@@ -7,6 +7,7 @@ import {
   buildMappingRows,
   useMemberMappingForm,
 } from '@/features/member-mapping'
+import type { MemberMappingForm } from '@/features/member-mapping'
 import { paths } from '@/shared/config/routes'
 import { GuardedLink } from '@/shared/lib/unsaved-changes'
 import { Button } from '@/shared/ui/button'
@@ -17,6 +18,7 @@ import { LINK_BUTTON } from './teamStyles'
 
 /* 온보딩 팀원 연결 카드와 같은 문구다 (SetupMembers 캔버스) */
 const DESCRIPTION = '디스코드 계정과 이름을 이어 두면 마감 하루 전에 DM이 나갑니다.'
+const PM_UNCHECKED = 'PM 줄을 체크하지 않으면 Discord 알림을 받을 수 없어요.'
 const WIDTH = 560
 /* 줄이 많으면 창 안에서 넘긴다 — 화면 위아래 여백(24px)만큼 남긴다 */
 const SCROLL = 'max-h-[calc(100vh-48px)] overflow-y-auto'
@@ -27,6 +29,16 @@ export type MappingSource =
   | { status: 'error'; error: unknown; retry: () => void }
   | { status: 'not_connected' }
   | { status: 'ready'; discordUsers: DiscordUser[]; members: Member[] }
+
+/** Creator PM has no Discord account, there is at least one row, and no row is PM-checked (live `rows`).
+ *  Saving is still allowed (D-177). Lives here, never in MemberMappingFields: onboarding requires the check. */
+function pmLeftUnchecked({ pms, initialRows, rows }: MemberMappingForm): boolean {
+  return (
+    pms[0]?.discordUserId === null &&
+    initialRows.length > 0 &&
+    rows.every(({ pmMemberId }) => pmMemberId === null)
+  )
+}
 
 interface MappingFormProps {
   workspaceId: string
@@ -54,7 +66,9 @@ function MappingForm({
   const [initialRows] = useState(() => buildMappingRows(discordUsers, members))
   const [pms] = useState(() => pmsOf(members))
   const mapping = useMemberMappingForm(workspaceId, initialRows, pms)
+  const hintShown = pmLeftUnchecked(mapping)
   const formId = useId()
+  const hintId = useId()
   const {
     submit,
     save,
@@ -75,6 +89,11 @@ function MappingForm({
       <form id={formId} noValidate onSubmit={(event) => void onSubmit(event)}>
         <MemberMappingFields mapping={mapping} tone="product" />
       </form>
+      {hintShown ? (
+        <p id={hintId} className="pt-6 text-caption text-dim">
+          {PM_UNCHECKED}
+        </p>
+      ) : null}
       <div className="flex justify-end gap-8 pt-6">
         <Button variant="ghost" disabled={isSubmitting} onClick={onCancel}>
           나중에 하기
@@ -85,6 +104,7 @@ function MappingForm({
           variant="primary"
           loading={isSubmitting}
           disabled={filled === 0}
+          aria-describedby={hintShown ? hintId : undefined}
         >
           저장
         </Button>
