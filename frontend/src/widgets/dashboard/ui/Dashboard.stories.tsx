@@ -21,6 +21,7 @@ const meta = {
     today: MOCK_TODAY,
     needsReviewHref: `${paths.tasks('ws_01')}?tab=needs_review`,
     dueSoonHref: `${paths.tasks('ws_01')}?tab=in_progress&due=overdue,soon`,
+    blockedHref: `${paths.tasks('ws_01')}?tab=in_progress&due=blocked`,
   },
   parameters: { scenario: 'dashboard-default', route: '/workspaces/ws_01/dashboard' },
 } satisfies Meta<typeof Dashboard>
