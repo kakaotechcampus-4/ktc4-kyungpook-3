@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { useId, useLayoutEffect, useRef } from 'react'
+import { useId, useLayoutEffect, useRef, useState } from 'react'
 import { messageThreadQueryOptions } from '@/entities/message'
 import type { MessageThread } from '@/entities/message'
 import { ApiError } from '@/shared/api/errors'
@@ -116,11 +116,21 @@ function ThreadView({
   viewer: MessageViewer
 }) {
   const bodyRef = useRef<HTMLElement>(null)
+  // 자기 답장을 보내기 직전의 메시지 수. 그 답장이 그려진 뒤에만 그 줄로 내리고, 다른 갱신에는 자리를 움직이지 않는다
+  const replyAnchor = useRef<number | null>(null)
+  const [replyTick, setReplyTick] = useState(0)
   // 대화를 열면 가장 최근 메시지부터 보인다. 대화가 바뀌면 화면이 새로 마운트된다 (MessageInbox 의 key)
   useLayoutEffect(() => {
     const body = bodyRef.current
     if (body !== null) body.scrollTop = body.scrollHeight
   }, [])
+  useLayoutEffect(() => {
+    const anchor = replyAnchor.current
+    const body = bodyRef.current
+    if (anchor === null || body === null || thread.messages.length <= anchor) return
+    body.scrollTop = body.scrollHeight
+    replyAnchor.current = null
+  }, [replyTick, thread])
   const today = todayInSeoul()
   const policy = VIEWER_POLICY[viewer]
   const view = buildConversation(thread, { policy, botName, today })
@@ -201,7 +211,17 @@ function ThreadView({
         )}
       </section>
       {policy.foot === 'reply' ? (
-        <ReplyForm workspaceId={workspaceId} threadId={thread.id} botName={botName} />
+        <div className={FOOT}>
+          <ReplyForm
+            workspaceId={workspaceId}
+            threadId={thread.id}
+            botName={botName}
+            onSent={() => {
+              replyAnchor.current = thread.messages.length
+              setReplyTick((tick) => tick + 1)
+            }}
+          />
+        </div>
       ) : (
         <ThreadNotice botName={botName} />
       )}

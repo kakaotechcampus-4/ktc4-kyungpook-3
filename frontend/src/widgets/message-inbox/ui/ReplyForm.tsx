@@ -19,10 +19,13 @@ export function ReplyForm({
   workspaceId,
   threadId,
   botName,
+  onSent,
 }: {
   workspaceId: string
   threadId: string
   botName: string
+  /** 서버가 답장을 받은 뒤. 그 대화를 최근 메시지로 내리는 데 쓴다 */
+  onSent?: () => void
 }) {
   const fieldId = useId()
   const blankId = useId()
@@ -46,6 +49,7 @@ export function ReplyForm({
           unsaved.release()
           setDraft('')
           setBlank(false)
+          onSent?.()
         },
       },
     )

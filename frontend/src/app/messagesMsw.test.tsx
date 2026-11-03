@@ -693,9 +693,18 @@ describe('팀원은 자기 대화만 보고 웹에서 답장한다', () => {
     expect(log.started.some((request) => request.path.includes('/replies'))).toBe(false)
 
     await userEvent.type(field, '웹에서 한 줄 더')
+    const threadBody = conversation()
+    threadBody.scrollTop = 0
+    Object.defineProperty(threadBody, 'scrollHeight', { configurable: true, get: () => 480 })
+    expect(detail().getByRole('form', { name: '답장' }).parentElement).toHaveClass(
+      'border-t',
+      'border-divider',
+      'px-28',
+    )
     await userEvent.click(detail().getByRole('button', { name: '답장 보내기' }))
     expect(await within(conversation()).findByText('웹에서 한 줄 더')).toBeVisible()
     expect(within(conversation()).getByText('09:00 · 웹에서 답장')).toBeVisible()
+    expect(conversation().scrollTop).toBe(480)
     expect(field).toHaveValue('')
   })
 
