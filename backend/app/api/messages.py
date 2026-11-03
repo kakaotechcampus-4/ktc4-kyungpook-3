@@ -54,7 +54,12 @@ def _scheduled_reminders(db: Session, workspace_id: str, thread_id: str | None =
     stmt = (
         select(Reminder, MessageThread.member_id)
         .join(MessageThread, MessageThread.thread_id == Reminder.thread_id)
-        .where(Reminder.workspace_id == workspace_id, Reminder.status == ReminderStatus.SCHEDULED)
+        .join(Member, Member.member_id == MessageThread.member_id)
+        .where(
+            Reminder.workspace_id == workspace_id,
+            Reminder.status == ReminderStatus.SCHEDULED,
+            Member.is_deleted.is_(False),
+        )
         .order_by(Reminder.scheduled_at, Reminder.created_at)
     )
     if thread_id is not None:

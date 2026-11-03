@@ -325,3 +325,13 @@ def test_web_reply_only_by_thread_owner_and_never_goes_to_bot(mdb, mseed):
     assert _claim() == []
     msgs = pm.get(f"{P}/workspaces/{ws}/messages/threads/{tid}").json()["data"]["messages"]
     assert [m["body"] for m in msgs] == ["웹으로 답해요"]
+
+
+def test_deleted_member_reminders_leave_inbox_with_their_thread(mdb, mseed):
+    pm = client("pm")
+    _create(pm, mseed, "alice")
+    mseed["alice"].is_deleted = True
+    mdb.commit()
+    data = pm.get(f"{P}/workspaces/{mseed['ws']}/messages").json()["data"]
+    assert data["threads"] == []
+    assert data["reminders"] == []
