@@ -78,9 +78,9 @@ const KNOB_OFF = 'border border-(--color-dashed)'
 
 const NOTICE = 'Discord가 연결되지 않아 웹으로만 알려요'
 
-/** D-177 `웹으로만` notice. undefined = loading or failed → false. Not `connected` (incl. connecting/revoked) → true.
- *  Otherwise true iff the creator PM (pmsOf[0]) has no Discord account. inactive is not checked (no Discord-users query here).
- *  The backend decides real routing (contract §8). This only drives the notice. */
+/** D-177 `웹으로만` 안내. 불러오는 중이거나 실패하면 보이지 않는다. Discord 가 `connected` 가 아니면(연결 중·끊김 포함) 보이고,
+ *  연결돼 있으면 만든 PM(pmsOf[0])의 Discord 계정이 없을 때만 보인다. 서버를 떠난 계정(inactive)은 이 화면에서 보지 않는다.
+ *  실제로 어디로 알릴지는 백엔드가 정한다(계약 §8). 여기서는 안내만 정한다 */
 function pmWebOnly(
   discord: IntegrationStatus | undefined,
   members: readonly Member[] | undefined,

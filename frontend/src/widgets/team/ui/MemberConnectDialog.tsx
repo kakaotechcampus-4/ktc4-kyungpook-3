@@ -30,8 +30,8 @@ export type MappingSource =
   | { status: 'not_connected' }
   | { status: 'ready'; discordUsers: DiscordUser[]; members: Member[] }
 
-/** Creator PM has no Discord account, there is at least one row, and no row is PM-checked (live `rows`).
- *  Saving is still allowed (D-177). Lives here, never in MemberMappingFields: onboarding requires the check. */
+/** 만든 PM 의 Discord 계정이 없고, 줄이 하나 이상이며, 지금 어느 줄도 PM 체크가 없을 때 안내한다. 저장은 그대로 된다 (D-177).
+ *  온보딩은 PM 체크를 요구하므로 MemberMappingFields 가 아니라 이 창에만 둔다 */
 function pmLeftUnchecked({ pms, initialRows, rows }: MemberMappingForm): boolean {
   return (
     pms[0]?.discordUserId === null &&
