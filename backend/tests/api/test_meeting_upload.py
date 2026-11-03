@@ -229,7 +229,8 @@ def test_started_at_with_timezone_is_accepted(db, seed, started_at):
     r = _upload(seed, [seed["pm"].member_id], started_at=started_at)
 
     assert r.status_code == 202, r.text
-    assert len(_meetings(db)) == 1
+    [meeting] = _meetings(db)
+    assert _as_utc(meeting.started_at) == datetime(2026, 10, 13, 1, tzinfo=timezone.utc)
 
 
 @pytest.mark.parametrize("started_at", [None, ""])

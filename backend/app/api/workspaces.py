@@ -307,7 +307,8 @@ def upload_meeting(
         title=title,
         source=str(MeetingSource.MANUAL_UPLOAD),
         status=str(MeetingStatus.PROCESSING),
-        started_at=started_at or now,
+        # UTC로 맞춰 저장한다. 시간대를 못 담는 DB(SQLite)에서도 같은 순간이 같은 값으로 남는다
+        started_at=started_at.astimezone(timezone.utc) if started_at else now,
         # Discord 회의의 `/end`처럼 녹음이 끝나고 정리를 시작한 시각이다
         ended_at=now,
     )
