@@ -7,7 +7,7 @@ import type {
   MessageThreadDto,
 } from '@/shared/types/api/message'
 import { toMessageInbox, toMessageThread } from '../model/mapper'
-import type { MessageReviewAction } from '../model/types'
+import type { MessageAction } from '../model/types'
 
 /*
  * 메시지 조회와 보내기 전 확인 항목의 행동. 경로는 MSW 에만 있는 임시 경로라 계약이 아니다 — 실제 API 가 생기면 바꾼다
@@ -46,22 +46,74 @@ export function messageThreadQueryOptions(workspaceId: string, threadId: string)
   })
 }
 
-function patchOf(action: Extract<MessageReviewAction, { kind: 'edit' | 'schedule' }>) {
-  if (action.kind === 'edit') return { body: action.body } satisfies MessageReviewPatchDto
-  return {
-    send_timing: action.timing,
-    scheduled_at: action.timing === 'custom' ? action.scheduledAt : undefined,
-  } satisfies MessageReviewPatchDto
+function enc(id: string): string {
+  return encodeURIComponent(id)
 }
 
-/** 보내기 전 확인 항목에 행동 하나를 요청한다. 응답 본문은 쓰지 않는다 — 부른 쪽이 캐시를 무효화해 서버 상태로 다시 그린다 */
-export async function requestMessageReviewAction(
+/** 행동 종류마다 경로가 하나다. 종류를 더하면 이 표가 빠져 빌드가 깨진다 */
+const ROUTE: {
+  [K in MessageAction['kind']]: (action: Extract<MessageAction, { kind: K }>) => {
+    method: 'POST' | 'PATCH'
+    path: string
+    body?: unknown
+  }
+} = {
+  send: (action) => ({ method: 'POST', path: `reviews/${enc(action.reviewId)}/send` }),
+  dismiss: (action) => ({ method: 'POST', path: `reviews/${enc(action.reviewId)}/dismiss` }),
+  edit: (action) => ({
+    method: 'PATCH',
+    path: `reviews/${enc(action.reviewId)}`,
+    body: { body: action.body } satisfies MessageReviewPatchDto,
+  }),
+  schedule: (action) => ({
+    method: 'PATCH',
+    path: `reviews/${enc(action.reviewId)}`,
+    body: {
+      send_timing: action.timing,
+      scheduled_at: action.timing === 'custom' ? action.scheduledAt : undefined,
+    } satisfies MessageReviewPatchDto,
+  }),
+  reply: (action) => ({
+    method: 'POST',
+    path: `threads/${enc(action.threadId)}/replies`,
+    body: { body: action.body },
+  }),
+  attribute: (action) => ({
+    method: 'POST',
+    path: `replies/${enc(action.messageId)}/attribution`,
+    body: { task_id: action.taskId },
+  }),
+}
+
+function routeOf(action: MessageAction): {
+  method: 'POST' | 'PATCH'
+  path: string
+  body?: unknown
+} {
+  switch (action.kind) {
+    case 'send':
+      return ROUTE.send(action)
+    case 'dismiss':
+      return ROUTE.dismiss(action)
+    case 'edit':
+      return ROUTE.edit(action)
+    case 'schedule':
+      return ROUTE.schedule(action)
+    case 'reply':
+      return ROUTE.reply(action)
+    case 'attribute':
+      return ROUTE.attribute(action)
+  }
+}
+
+/** 메시지 쓰기 하나를 요청한다. 응답 본문은 쓰지 않는다 — 부른 쪽이 캐시를 무효화해 서버 상태로 다시 그린다 */
+export async function requestMessageAction(
   workspaceId: string,
-  reviewId: string,
-  action: MessageReviewAction,
+  action: MessageAction,
 ): Promise<void> {
-  const reviewPath = `${messagesPath(workspaceId)}/reviews/${encodeURIComponent(reviewId)}`
-  if (action.kind === 'send' || action.kind === 'dismiss')
-    await request(`${reviewPath}/${action.kind}`, { method: 'POST' })
-  else await request(reviewPath, { method: 'PATCH', body: patchOf(action) })
+  const route = routeOf(action)
+  await request(`${messagesPath(workspaceId)}/${route.path}`, {
+    method: route.method,
+    body: route.body,
+  })
 }

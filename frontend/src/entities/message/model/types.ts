@@ -82,10 +82,18 @@ export interface MessageThread {
   pendingReviews: PendingMessageReview[]
 }
 
-/** 보내기 전 확인 항목에 대한 행동. 모두 서버가 성공해야 화면이 바뀐다 (D-137) */
-export type MessageReviewAction =
-  | { kind: 'send' }
-  | { kind: 'dismiss' }
-  | { kind: 'edit'; body: string }
-  | { kind: 'schedule'; timing: Exclude<MessageSendTiming, 'custom'> }
-  | { kind: 'schedule'; timing: 'custom'; scheduledAt: string }
+/** 발송 시점을 바꾸는 요청. 직접 정하기만 시각을 함께 보낸다 */
+export type MessageSchedule =
+  { timing: Exclude<MessageSendTiming, 'custom'> } | { timing: 'custom'; scheduledAt: string }
+
+/**
+ * 메시지 쓰기 전부. 대상 ID 가 행동 안에 있다 — 어느 항목의 행동인지 따로 넘기지 않는다.
+ * 모두 서버가 성공해야 화면이 바뀐다 (D-137)
+ */
+export type MessageAction =
+  | { kind: 'send'; reviewId: string }
+  | { kind: 'dismiss'; reviewId: string }
+  | { kind: 'edit'; reviewId: string; body: string }
+  | ({ kind: 'schedule'; reviewId: string } & MessageSchedule)
+  | { kind: 'reply'; threadId: string; body: string }
+  | { kind: 'attribute'; messageId: string; taskId: string | null }

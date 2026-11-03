@@ -3,12 +3,12 @@ import { useLayoutEffect, useRef } from 'react'
 import { messageThreadQueryOptions } from '@/entities/message'
 import type { Message, MessageThread, PendingMessageReview } from '@/entities/message'
 import {
-  ReviewActionFailure,
+  ActionFailure,
   dismissNotice,
   sendNotice,
-  useMessageReviewAction,
-} from '@/features/message-review'
-import type { MessageReviewActionControl } from '@/features/message-review'
+  useMessageAction,
+} from '@/features/message-action'
+import type { MessageActionControl } from '@/features/message-action'
 import { ApiError } from '@/shared/api/errors'
 import { paths } from '@/shared/config/routes'
 import { todayInSeoul } from '@/shared/lib/date'
@@ -118,7 +118,7 @@ function ThreadView({
     const body = bodyRef.current
     if (body !== null) body.scrollTop = body.scrollHeight
   }, [])
-  const actions = useMessageReviewAction(workspaceId)
+  const actions = useMessageAction(workspaceId)
   const today = todayInSeoul()
   const days = groupByDay(thread.messages.filter(({ status }) => status === 'sent'))
   const scheduled = thread.messages.filter(({ status }) => status === 'scheduled')
@@ -299,11 +299,11 @@ function PendingBubble({
 }: {
   review: PendingMessageReview
   recipientName: string
-  actions: MessageReviewActionControl
+  actions: MessageActionControl
   onSettled: () => void
 }) {
   const busy = actions.pending !== null
-  const pendingKind = actions.pending?.reviewId === review.id ? actions.pending.kind : null
+  const pendingKind = actions.pending?.target === review.id ? actions.pending.kind : null
   return (
     <div className="flex flex-col items-end gap-8">
       <p className={UPCOMING_BUBBLE}>
@@ -323,8 +323,7 @@ function PendingBubble({
           locked={busy}
           onClick={() =>
             actions.run(
-              review.id,
-              { kind: 'dismiss' },
+              { kind: 'dismiss', reviewId: review.id },
               { notice: dismissNotice(recipientName), onSuccess: onSettled },
             )
           }
@@ -338,8 +337,7 @@ function PendingBubble({
           locked={busy}
           onClick={() =>
             actions.run(
-              review.id,
-              { kind: 'send' },
+              { kind: 'send', reviewId: review.id },
               { notice: sendNotice(recipientName, review.scheduledAt), onSuccess: onSettled },
             )
           }
@@ -347,7 +345,7 @@ function PendingBubble({
           승인
         </LockedButton>
       </div>
-      <ReviewActionFailure reviewId={review.id} actions={actions} />
+      <ActionFailure target={review.id} actions={actions} />
     </div>
   )
 }

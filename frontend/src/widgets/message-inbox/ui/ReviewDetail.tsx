@@ -1,12 +1,12 @@
 import { useId, useState } from 'react'
 import { useNavigate } from 'react-router'
-import type { MessageReview, MessageReviewAction } from '@/entities/message'
+import type { MessageAction, MessageReview } from '@/entities/message'
 import {
-  ReviewActionFailure,
+  ActionFailure,
   dismissNotice,
   sendNotice,
-  useMessageReviewAction,
-} from '@/features/message-review'
+  useMessageAction,
+} from '@/features/message-action'
 import { paths } from '@/shared/config/routes'
 import { Icon } from '@/shared/ui/icon'
 import { LockedButton } from './LockedButton'
@@ -53,7 +53,7 @@ export function ReviewDetail({ workspaceId, botName, review, onSettled }: Review
   const reasonId = useId()
   const lockHintId = useId()
   const navigate = useNavigate()
-  const actions = useMessageReviewAction(workspaceId)
+  const actions = useMessageAction(workspaceId)
   const [editing, setEditing] = useState(false)
   const [choosingTime, setChoosingTime] = useState(false)
   const busy = actions.pending !== null
@@ -62,9 +62,9 @@ export function ReviewDetail({ workspaceId, botName, review, onSettled }: Review
   // 발송 시점 저장만으로 잠긴 동안은 버튼 모양을 바꾸지 않는다 — 짧은 저장마다 버튼이 깜빡였다.
   // 잠금(aria-disabled, 누름을 버림)은 그대로이고, 누름이 왜 안 되는지는 저장 중인 시점 카드가 보여 준다
   const quietLock = actions.pending?.kind === 'schedule' && lockHint === null
-  const pendingKind = actions.pending?.reviewId === review.id ? actions.pending.kind : null
-  const failureOf = (...kinds: MessageReviewAction['kind'][]) => (
-    <ReviewActionFailure reviewId={review.id} actions={actions} kinds={kinds} />
+  const pendingKind = actions.pending?.target === review.id ? actions.pending.kind : null
+  const failureOf = (...kinds: MessageAction['kind'][]) => (
+    <ActionFailure target={review.id} actions={actions} kinds={kinds} />
   )
   // 처리한 항목의 주소에 머물지 않는다 — 목록의 다음 항목이 기본으로 골라진다
   const leave = () => {
@@ -94,7 +94,7 @@ export function ReviewDetail({ workspaceId, botName, review, onSettled }: Review
           keepLockedLook={quietLock}
           saving={pendingKind === 'edit'}
           onSave={(body, onSaved) =>
-            actions.run(review.id, { kind: 'edit', body }, { onSuccess: onSaved })
+            actions.run({ kind: 'edit', reviewId: review.id, body }, { onSuccess: onSaved })
           }
           failure={failureOf('edit')}
         />
@@ -119,7 +119,7 @@ export function ReviewDetail({ workspaceId, botName, review, onSettled }: Review
           saving={pendingKind === 'schedule'}
           customOpen={choosingTime}
           onCustomOpenChange={setChoosingTime}
-          onChange={(action, onSaved) => actions.run(review.id, action, { onSuccess: onSaved })}
+          onChange={(action, onSaved) => actions.run(action, { onSuccess: onSaved })}
           failure={failureOf('schedule')}
         />
 
@@ -136,8 +136,7 @@ export function ReviewDetail({ workspaceId, botName, review, onSettled }: Review
               keepLook={quietLock}
               onClick={() =>
                 actions.run(
-                  review.id,
-                  { kind: 'dismiss' },
+                  { kind: 'dismiss', reviewId: review.id },
                   { notice: dismissNotice(review.recipientName), onSuccess: leave },
                 )
               }
@@ -154,8 +153,7 @@ export function ReviewDetail({ workspaceId, botName, review, onSettled }: Review
               keepLook={quietLock}
               onClick={() =>
                 actions.run(
-                  review.id,
-                  { kind: 'send' },
+                  { kind: 'send', reviewId: review.id },
                   {
                     notice: sendNotice(review.recipientName, review.scheduledAt),
                     onSuccess: leave,

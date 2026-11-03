@@ -3,7 +3,7 @@ export type {
   MessageDelivery,
   MessageInbox,
   MessageReview,
-  MessageReviewAction,
+  MessageAction,
   MessageSendTiming,
   MessageSender,
   MessageStatus,
@@ -16,5 +16,5 @@ export {
   messageInboxQueryOptions,
   messageKeys,
   messageThreadQueryOptions,
-  requestMessageReviewAction,
+  requestMessageAction,
 } from './api/messageQueries'

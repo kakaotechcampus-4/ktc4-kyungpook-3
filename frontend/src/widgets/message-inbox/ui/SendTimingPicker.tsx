@@ -1,6 +1,6 @@
 import { useId, useRef, useState } from 'react'
 import type { KeyboardEvent, ReactNode, Ref } from 'react'
-import type { MessageReview, MessageReviewAction, MessageSendTiming } from '@/entities/message'
+import type { MessageAction, MessageReview, MessageSendTiming } from '@/entities/message'
 import { todayInSeoul } from '@/shared/lib/date'
 import { Button } from '@/shared/ui/button'
 import { fromSeoulInputValue, initialCustomTime, nowLabel, shortDateTime } from '../lib/format'
@@ -45,10 +45,7 @@ export interface SendTimingPickerProps {
   customOpen: boolean
   onCustomOpenChange: (open: boolean) => void
   /** 서버에 새 발송 시점을 요청한다. 성공하면 `onSaved` 를 부른다 */
-  onChange: (
-    action: Extract<MessageReviewAction, { kind: 'schedule' }>,
-    onSaved: () => void,
-  ) => void
+  onChange: (action: Extract<MessageAction, { kind: 'schedule' }>, onSaved: () => void) => void
   /** 변경 실패 알림 자리 */
   failure: ReactNode
 }
@@ -87,7 +84,8 @@ export function SendTimingPicker({
     if (timing === 'custom') onCustomOpenChange(true)
     else {
       onCustomOpenChange(false)
-      if (timing !== review.sendTiming) save({ kind: 'schedule', timing }, () => undefined)
+      if (timing !== review.sendTiming)
+        save({ kind: 'schedule', reviewId: review.id, timing }, () => undefined)
     }
   }
 
@@ -153,7 +151,10 @@ export function SendTimingPicker({
           saving={saving}
           onCancel={closeCustom}
           onSubmit={(scheduledAt) =>
-            save({ kind: 'schedule', timing: 'custom', scheduledAt }, closeCustom)
+            save(
+              { kind: 'schedule', reviewId: review.id, timing: 'custom', scheduledAt },
+              closeCustom,
+            )
           }
         />
       ) : null}
