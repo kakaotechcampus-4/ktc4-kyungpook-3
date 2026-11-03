@@ -1,14 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
-import { useLayoutEffect, useRef } from 'react'
+import { useId, useLayoutEffect, useRef } from 'react'
 import { messageThreadQueryOptions } from '@/entities/message'
 import type { Message, MessageThread, PendingMessageReview } from '@/entities/message'
-import {
-  ActionFailure,
-  dismissNotice,
-  sendNotice,
-  useMessageAction,
-} from '@/features/message-action'
-import type { MessageActionControl } from '@/features/message-action'
 import { ApiError } from '@/shared/api/errors'
 import { paths } from '@/shared/config/routes'
 import { todayInSeoul } from '@/shared/lib/date'
@@ -24,7 +17,6 @@ import {
   groupByDay,
   shortDateTime,
 } from '../lib/format'
-import { LockedButton } from './LockedButton'
 import { ThreadSkeleton } from './MessageSkeletons'
 
 /* MessagesThread 캔버스 실측 — 머리 76(좌우 28, 아래 선), 대화 칸 눌린 면(위 24 · 좌우 28 · 아래 18, 간격 16),
@@ -61,8 +53,8 @@ const FOOT_LINK =
 
 /**
  * 사람별 대화(채널 포함) — MessagesThread 시안. 목록과 따로 받는다 — 목록 오류가 대화를 막지 않는다 (계획 C-6 5단계).
- * 아직 나가지 않은 메시지(승인 대기·예약)는 오늘 아래 점선 말풍선이고, 승인 대기는 그 자리에서 `승인`·`반려` 한다 —
- * 서버가 성공한 뒤에만 대화가 바뀐다 (D-137)
+ * 아직 나가지 않은 메시지(승인 대기·예약)는 오늘 아래 점선 말풍선이다. 보내기·고치기·보내지 않음은 그 말풍선의
+ * `확인하기` 가 여는 보내기 전 확인에서만 한다
  */
 export function ThreadDetail({
   workspaceId,
@@ -118,7 +110,6 @@ function ThreadView({
     const body = bodyRef.current
     if (body !== null) body.scrollTop = body.scrollHeight
   }, [])
-  const actions = useMessageAction(workspaceId)
   const today = todayInSeoul()
   const days = groupByDay(thread.messages.filter(({ status }) => status === 'sent'))
   const scheduled = thread.messages.filter(({ status }) => status === 'scheduled')
@@ -200,23 +191,14 @@ function ThreadView({
               ))}
               {thread.pendingReviews.map((review) => (
                 <li key={review.id}>
-                  <PendingBubble
-                    review={review}
-                    recipientName={thread.name}
-                    actions={actions}
-                    onSettled={() => bodyRef.current?.focus()}
-                  />
+                  <PendingBubble workspaceId={workspaceId} review={review} />
                 </li>
               ))}
             </ol>
           </div>
         ) : null}
       </section>
-      <ThreadFoot
-        workspaceId={workspaceId}
-        botName={botName}
-        pendingReviews={thread.pendingReviews}
-      />
+      <ThreadNotice botName={botName} />
     </div>
   )
 }
@@ -290,99 +272,49 @@ function ScheduledBubble({ message }: { message: Message }) {
   )
 }
 
-/** 승인을 기다리는 보내기 전 확인 항목 — `승인` 하면 정한 시각에 나가고 `반려` 하면 보내지 않는다 */
+/** 승인을 기다리는 보내기 전 확인 항목. 점선은 아직 나가지 않았다는 뜻이고, 보내려면 `확인하기` 로 연다 */
 function PendingBubble({
+  workspaceId,
   review,
-  recipientName,
-  actions,
-  onSettled,
 }: {
+  workspaceId: string
   review: PendingMessageReview
-  recipientName: string
-  actions: MessageActionControl
-  onSettled: () => void
 }) {
-  const busy = actions.pending !== null
-  const pendingKind = actions.pending?.target === review.id ? actions.pending.kind : null
+  const timeId = useId()
+  const timeLine =
+    review.scheduledAt === null
+      ? '승인하면 바로 발송'
+      : `${shortDateTime(review.scheduledAt)} 발송 예정`
   return (
     <div className="flex flex-col items-end gap-8">
       <p className={UPCOMING_BUBBLE}>
         <span className="sr-only">봇(승인 대기): </span>
         {review.body}
       </p>
-      <span className={TIME}>
-        {review.scheduledAt === null
-          ? '승인하면 바로 발송'
-          : `${shortDateTime(review.scheduledAt)} 발송 예정`}
+      <span id={timeId} className={TIME}>
+        {timeLine}
       </span>
-      <div className="flex items-center gap-9">
-        <LockedButton
-          variant="ghost"
-          size="message-thread-dismiss"
-          aria-busy={pendingKind === 'dismiss' || undefined}
-          locked={busy}
-          onClick={() =>
-            actions.run(
-              { kind: 'dismiss', reviewId: review.id },
-              { notice: dismissNotice(recipientName), onSuccess: onSettled },
-            )
-          }
-        >
-          반려
-        </LockedButton>
-        <LockedButton
-          variant="primary"
-          size="message-thread-approve"
-          aria-busy={pendingKind === 'send' || undefined}
-          locked={busy}
-          onClick={() =>
-            actions.run(
-              { kind: 'send', reviewId: review.id },
-              { notice: sendNotice(recipientName, review.scheduledAt), onSuccess: onSettled },
-            )
-          }
-        >
-          승인
-        </LockedButton>
-      </div>
-      <ActionFailure target={review.id} actions={actions} />
+      <GuardedLink
+        to={paths.messageReview(workspaceId, review.id)}
+        aria-describedby={timeId}
+        className={FOOT_LINK}
+      >
+        확인하기
+      </GuardedLink>
     </div>
   )
 }
 
-/** 메시지는 봇만 보낸다 — 입력 칸 대신 승인 대기 항목으로 안내한다 (MessagesThread 시안의 아래 안내 바) */
-function ThreadFoot({
-  workspaceId,
-  botName,
-  pendingReviews,
-}: {
-  workspaceId: string
-  botName: string
-  pendingReviews: readonly PendingMessageReview[]
-}) {
-  const first = pendingReviews.at(0)
+/** 메시지는 봇만 보낸다. 승인·고쳐 쓰기·보내지 않음은 보내기 전 확인에서 한다 */
+function ThreadNotice({ botName }: { botName: string }) {
   return (
     <div className={FOOT}>
       <div className={FOOT_CARD}>
         <Icon name="info" size={16} />
         <p className="flex-1 text-caption leading-[1.6] wrap-anywhere text-sub">
-          메시지는 항상 <strong className="font-semibold text-ink">{botName} 봇</strong>이 보냅니다.{' '}
-          {first === undefined ? (
-            '지금 승인을 기다리는 메시지는 없어요.'
-          ) : (
-            <>
-              직접 입력하는 대신 승인 대기 중인{' '}
-              <strong className="font-semibold text-ink">{pendingReviews.length}건</strong>을 확인해
-              주세요.
-            </>
-          )}
+          메시지는 항상 <strong className="font-semibold text-ink">{botName} 봇</strong>이 보냅니다.
+          승인·고쳐 쓰기·보내지 않음은 보내기 전 확인에서 해요.
         </p>
-        {first === undefined ? null : (
-          <GuardedLink to={paths.messageReview(workspaceId, first.id)} className={FOOT_LINK}>
-            확인하기
-            <Icon name="chevron-right" size={13} />
-          </GuardedLink>
-        )}
       </div>
     </div>
   )

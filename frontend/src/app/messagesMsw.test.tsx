@@ -22,7 +22,7 @@ import { renderApp } from './test/renderApp'
 /*
  * M8 메시지 (계획 C-6 1~6단계, AC-01 ~ AC-07 — 화면은 디자인 캔버스 기준). 개발 서버 + VITE_ENABLE_MSW=true 를 흉내낸다 —
  * 이 파일 안에서만 설정을 바꾼다. 실 API 모드의 준비 중 안내는 라우트·가드·앱 셸 테스트가 그대로 본다 (AC-01).
- * 보내기 전 확인 항목의 행동(발송·보내지 않음·고쳐 쓰기·발송 시점·승인·반려)은 messagesActionsMsw.test.tsx 가 본다
+ * 보내기 전 확인 항목의 행동(발송·보내지 않음·고쳐 쓰기·발송 시점)은 messagesActionsMsw.test.tsx 가 본다
  */
 vi.mock('@/shared/config/env', () => ({
   config: { apiBaseUrl: '/api/v1', mswEnabled: true },
@@ -218,22 +218,21 @@ describe('대화는 날짜 구분·보낸 쪽·시각·답장 대기·승인 대
       '봇: 재환님, 3주차 회의에서 API 명세서를 9/24까지 정리해 주신다고 하셨어요.\nNotion 태스크로 올려 뒀습니다 🙂09:02 · 자동 발송',
       '이재환: 네 확인했습니다. DB 스키마 확정되면 바로 붙일게요.09:31',
       '봇: DB 스키마가 확정됐다고 들었어요. 명세서 작업은 시작하셨나요?18:00 · 최진호 승인',
-      '봇(승인 대기): 재환님, API 명세서 마감이 다음 주 목요일(9/24)이에요 🙂\n혹시 막히는 부분 있으면 알려주세요. 필요하면 마감을 옮겨도 괜찮아요!09/23 09:00 발송 예정반려승인',
+      '봇(승인 대기): 재환님, API 명세서 마감이 다음 주 목요일(9/24)이에요 🙂\n혹시 막히는 부분 있으면 알려주세요. 필요하면 마감을 옮겨도 괜찮아요!09/23 09:00 발송 예정확인하기',
     ])
     expect(
       within(conversation()).getByText('여기서부터 답장이 없습니다 — 오늘로 3일째예요'),
     ).toBeVisible()
     const upcoming = within(conversation()).getByRole('list', { name: '아직 나가지 않은 메시지' })
-    expect(within(upcoming).getByRole('button', { name: '승인' })).toBeEnabled()
-    expect(within(upcoming).getByRole('button', { name: '반려' })).toBeEnabled()
-
-    // 아래 안내 바 — 직접 입력 칸 대신 승인 대기 항목으로 보낸다
-    expect(footNote()).toHaveTextContent(
-      '메시지는 항상 카테캠 3팀 봇이 보냅니다. 직접 입력하는 대신 승인 대기 중인 1건을 확인해 주세요.',
-    )
-    expect(detail().getByRole('link', { name: '확인하기' })).toHaveAttribute(
+    expect(within(upcoming).queryByRole('button', { name: '승인' })).toBeNull()
+    expect(within(upcoming).queryByRole('button', { name: '반려' })).toBeNull()
+    expect(within(upcoming).getByRole('link', { name: '확인하기' })).toHaveAttribute(
       'href',
       paths.messageReview('ws_01', 'rv_01'),
+    )
+
+    expect(footNote()).toHaveTextContent(
+      '메시지는 항상 카테캠 3팀 봇이 보냅니다. 승인·고쳐 쓰기·보내지 않음은 보내기 전 확인에서 해요.',
     )
     expect(detail().queryByRole('textbox')).toBeNull()
   })
@@ -244,7 +243,7 @@ describe('대화는 날짜 구분·보낸 쪽·시각·답장 대기·승인 대
     expect(detail().queryByText(/답장 \d+일째 없음/)).toBeNull()
     expect(detail().queryByText(/여기서부터 답장이 없습니다/)).toBeNull()
     expect(footNote()).toHaveTextContent(
-      '메시지는 항상 카테캠 3팀 봇이 보냅니다. 지금 승인을 기다리는 메시지는 없어요.',
+      '메시지는 항상 카테캠 3팀 봇이 보냅니다. 승인·고쳐 쓰기·보내지 않음은 보내기 전 확인에서 해요.',
     )
     expect(detail().queryByRole('link', { name: '확인하기' })).toBeNull()
 
@@ -635,22 +634,5 @@ describe('목록 라벨·발송 시점 포커스 선·버튼 크기가 디자인
     await userEvent.click(detail().getByRole('radio', { name: /직접 정하기/ }))
     expect(button('이 시각으로 정하기')).toHaveClass('h-36')
     expect(button('취소')).toHaveClass('h-36')
-  })
-
-  it('대화의 반려·승인은 13px 이고 반려 좌우 16 · 승인 좌우 20 이다', async () => {
-    await openInbox(paths.messageThread('ws_01', 'th_01'))
-    const upcoming = within(
-      await within(conversation()).findByRole('list', { name: '아직 나가지 않은 메시지' }),
-    )
-    expect(upcoming.getByRole('button', { name: '반려' })).toHaveClass(
-      'h-36',
-      'px-16',
-      'text-(length:--text-control)',
-    )
-    expect(upcoming.getByRole('button', { name: '승인' })).toHaveClass(
-      'h-36',
-      'px-20',
-      'text-(length:--text-control)',
-    )
   })
 })

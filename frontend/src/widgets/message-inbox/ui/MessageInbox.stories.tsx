@@ -9,7 +9,7 @@ import { MessageInbox } from './MessageInbox'
 /*
  * 메시지 (M8, Messages·MessagesThread·EmptyMessages 시안 그대로). ws_01 하나에 PM 으로 로그인한 상태다.
  * 데이터는 임시 MSW handler 다 — 경로·모양은 계약이 아니다. 시작 db 는 shared/mock/scenarios.ts 의 `messages-*` 시나리오다.
- * 행동(발송·보내지 않음·고쳐 쓰기·발송 시점·승인·반려)은 MSW 목이 성공한 뒤에만 화면을 바꾼다 (D-137).
+ * 행동(발송·보내지 않음·고쳐 쓰기·발송 시점)은 MSW 목이 성공한 뒤에만 화면을 바꾼다 (D-137).
  * Storybook 은 시계를 MOCK_NOW 로 고정하지 않는다 — 오늘 기준 상대 표기(`3일 전`, `답장 N일째 없음`)의 숫자는 단언하지 않는다
  */
 
@@ -88,7 +88,7 @@ export const 발송_실패: Story = {
   },
 }
 
-/** 답장이 없는 사람별 대화 — 머리 부제·답장 없음 배지·Discord에서 열기, 시각 줄, 답장 없음 칩, 승인 대기 점선 말풍선, 안내 바 */
+/** 답장이 없는 사람별 대화 — 머리 부제·답장 없음 배지·Discord에서 열기, 시각 줄, 답장 없음 칩, 점선 미리보기와 확인하기 */
 export const 대화: Story = {
   args: { threadId: 'th_01' },
   parameters: { route: paths.messageThread('ws_01', 'th_01') },
@@ -100,20 +100,26 @@ export const 대화: Story = {
     await expect(detail.getByRole('link', { name: /Discord에서 열기/ })).toBeInTheDocument()
     await expect(detail.getByText('09:02 · 자동 발송')).toBeInTheDocument()
     await expect(detail.getByText(/여기서부터 답장이 없습니다/)).toBeInTheDocument()
-    await expect(detail.getByRole('button', { name: '승인' })).toBeEnabled()
-    await expect(detail.getByRole('link', { name: '확인하기' })).toBeInTheDocument()
+    await expect(detail.queryByRole('button', { name: '승인' })).toBeNull()
+    await expect(detail.getByRole('link', { name: '확인하기' })).toHaveAttribute(
+      'href',
+      paths.messageReview('ws_01', 'rv_01'),
+    )
   },
 }
 
-/** 승인 대기를 승인했다 — 서버가 성공한 뒤 점선 말풍선이 예약 메시지가 된다 */
+/** 점선 미리보기에는 승인·반려가 없고 확인하기만 있다. 스토리 인자로 고르므로 링크를 눌러도 이 화면은 그대로다 */
 export const 대화_승인: Story = {
   args: { threadId: 'th_01' },
   parameters: { route: paths.messageThread('ws_01', 'th_01') },
   play: async ({ canvasElement }) => {
     const detail = detailOf(canvasElement)
-    await userEvent.click(await detail.findByRole('button', { name: '승인' }))
-    await expect(await detail.findByText(/발송 예정 · 최진호 승인/)).toBeInTheDocument()
     await expect(detail.queryByRole('button', { name: '승인' })).toBeNull()
+    await expect(detail.queryByRole('button', { name: '반려' })).toBeNull()
+    await expect(await detail.findByRole('link', { name: '확인하기' })).toHaveAttribute(
+      'href',
+      paths.messageReview('ws_01', 'rv_01'),
+    )
   },
 }
 

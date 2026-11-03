@@ -41,12 +41,6 @@ async function openReview(reviewId = 'rv_01') {
   await screen.findByRole('heading', { level: 2, name: '이 메시지, 보낼까요?' })
   return app
 }
-async function openThread(threadId = 'th_01', name = '이재환') {
-  const app = renderApp(paths.messageThread('ws_01', threadId))
-  await screen.findByRole('region', { name: '대화' })
-  await detail().findByRole('heading', { level: 2, name })
-  return app
-}
 const button = (name: string) => detail().getByRole('button', { name })
 const radio = (name: RegExp | string) => detail().getByRole('radio', { name })
 const detailPane = () => screen.getByRole('region', { name: '메시지 내용' })
@@ -99,7 +93,7 @@ describe('이대로 발송 — 서버가 성공한 뒤에만 목록과 대화가
     expect(upcoming).toHaveTextContent('09/23 09:00 발송 예정 · 최진호 승인')
     expect(within(upcoming).queryByRole('button')).toBeNull()
     expect(detail().getByText(/메시지는 항상/)).toHaveTextContent(
-      '지금 승인을 기다리는 메시지는 없어요.',
+      '메시지는 항상 카테캠 3팀 봇이 보냅니다. 승인·고쳐 쓰기·보내지 않음은 보내기 전 확인에서 해요.',
     )
   })
 
@@ -425,63 +419,5 @@ describe('언제 보낼까요? — 고른 카드는 서버가 저장한 값이�
     const alert = await detail().findByRole('alert')
     expect(alert).toHaveTextContent('발송 시점을 바꾸지 못했어요')
     expect(detail().getByRole('radio', { name: /마감 하루 전/ })).toBeChecked()
-  })
-})
-
-describe('대화 안의 승인·반려 (MessagesThread 시안)', () => {
-  it('승인하면 응답 뒤에 점선 말풍선이 예약 메시지가 되고 안내 바의 승인 대기가 사라진다', async () => {
-    await openThread()
-    const upcoming = () =>
-      within(conversation()).getByRole('list', { name: '아직 나가지 않은 메시지' })
-    const request = hold(`${REVIEW_PATH}/send`, 'post')
-    await userEvent.click(within(upcoming()).getByRole('button', { name: '승인' }))
-    await waitFor(() =>
-      expect(within(upcoming()).getByRole('button', { name: '승인' })).toHaveAttribute(
-        'aria-busy',
-        'true',
-      ),
-    )
-    expectLocked(within(upcoming()).getByRole('button', { name: '반려' }))
-    expect(document.activeElement).toBe(within(upcoming()).getByRole('button', { name: '승인' }))
-    await userEvent.click(within(upcoming()).getByRole('button', { name: '승인' }))
-    expect(request.calls()).toBe(1)
-
-    act(() => request.resolve())
-    await waitFor(() => expect(within(upcoming()).queryByRole('button')).toBeNull())
-    expect(upcoming()).toHaveTextContent('09/23 09:00 발송 예정 · 최진호 승인')
-    expect(detail().queryByRole('link', { name: '확인하기' })).toBeNull()
-    expect(rowTexts(reviewList())).toHaveLength(1)
-    // 승인 버튼이 사라져도 포커스를 잃지 않고 대화 칸으로 옮긴다
-    expect(document.activeElement).toBe(conversation())
-  })
-
-  it('반려하면 승인 대기만 사라지고 대화는 그대로다. 실패하면 그 말풍선 아래에 알린다', async () => {
-    db.messageFailures.actions = true
-    await openThread()
-    const upcoming = within(conversation()).getByRole('list', { name: '아직 나가지 않은 메시지' })
-    await userEvent.click(within(upcoming).getByRole('button', { name: '반려' }))
-    const alert = await within(upcoming).findByRole('alert')
-    expect(alert).toHaveTextContent('보내지 않음으로 처리하지 못했어요')
-    expectUnlocked(within(upcoming).getByRole('button', { name: '승인' }))
-    // 실패해도 포커스는 누른 반려 버튼에 그대로다
-    expect(document.activeElement).toBe(within(upcoming).getByRole('button', { name: '반려' }))
-
-    db.messageFailures.actions = false
-    await userEvent.click(within(alert).getByRole('button', { name: '다시 시도' }))
-    await waitFor(() =>
-      expect(
-        within(conversation()).queryByRole('list', { name: '아직 나가지 않은 메시지' }),
-      ).toBeNull(),
-    )
-    expect(within(conversation()).getAllByRole('listitem')).toHaveLength(3)
-    expect(rowTexts(reviewList())).toHaveLength(1)
-  })
-
-  it('확인하기는 그 승인 대기 항목의 보내기 전 확인으로 간다', async () => {
-    const app = await openThread()
-    await userEvent.click(detail().getByRole('link', { name: '확인하기' }))
-    await app.expectPath(paths.messages('ws_01'))
-    await app.expectSearch('?review=rv_01')
-    expect(await detail().findByRole('heading', { name: '이 메시지, 보낼까요?' })).toBeVisible()
   })
 })
