@@ -507,10 +507,14 @@ def test_reply_to_a_bot_dm_lands_in_that_workspace(mdb, mseed):
 
     from app.services import messages as svc
     later = datetime.now(timezone.utc) + timedelta(minutes=5)
-    mdb.add(ThreadMessage(
+    from app.models import BotDmPart
+    b_dm = ThreadMessage(
         thread_id=svc.get_or_create_thread(mdb, other.workspace_id, alice_b.member_id).thread_id,
-        sender="bot", body="B 의 DM", created_at=later, dm_status="delivered", dm_reported_at=later,
-    ))
+        sender="bot", body="B 의 DM", created_at=later, dm_status="delivered", claimed_at=later, dm_reported_at=later,
+    )
+    mdb.add(b_dm)
+    mdb.flush()
+    mdb.add(BotDmPart(discord_message_id="dm_b", message_id=b_dm.message_id, created_at=later))
     mdb.commit()
 
     replied = _reply(discord_message_id="r1", reply_to_discord_message_id="dm_a", sent_at=_iso(later))

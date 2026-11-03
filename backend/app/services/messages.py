@@ -39,6 +39,8 @@ CLAIM_TIMEOUT = timedelta(minutes=10)
 # 초안은 다시 써도 해가 없으므로, 맡긴 뒤 이 시간 안에 안 돌아오면 다시 맡긴다.
 DRAFT_CLAIM_TIMEOUT = timedelta(minutes=10)
 STYLE_EXAMPLE_LIMIT = 5
+# 디스코드 메시지 id(snowflake)는 앞 비트에 이 기준 이후 ms 를 담는다.
+DISCORD_EPOCH_MS = 1420070400000
 _WEEKDAYS = "월화수목금토일"
 
 _S = ReminderStatus
@@ -601,7 +603,8 @@ def ingest_discord_reply(
         return existing, False
 
     member = _pick_member_for_discord_user(
-        db, discord_user_id, reply_to=reply_to_discord_message_id, sent_at=sent_at
+        db, discord_user_id, reply_to=reply_to_discord_message_id,
+        reply_at=_discord_time(discord_message_id, sent_at),
     )
     thread = get_or_create_thread(db, member.workspace_id, member.member_id)
     message = ThreadMessage(
@@ -622,13 +625,21 @@ def _message_by_discord_id(db: Session, discord_message_id: str) -> ThreadMessag
     return db.scalar(select(ThreadMessage).where(ThreadMessage.discord_message_id == discord_message_id))
 
 
+def _discord_time(discord_message_id: str, fallback: datetime) -> datetime:
+    """디스코드 메시지를 보낸 시각. id 가 snowflake 가 아니면 fallback."""
+    if not (discord_message_id.isascii() and discord_message_id.isdigit()):
+        return utc(fallback)
+    return datetime.fromtimestamp(((int(discord_message_id) >> 22) + DISCORD_EPOCH_MS) / 1000, tz=timezone.utc)
+
+
 def _pick_member_for_discord_user(
-    db: Session, discord_user_id: str, *, reply_to: str | None, sent_at: datetime
+    db: Session, discord_user_id: str, *, reply_to: str | None, reply_at: datetime
 ) -> Member:
     """DM 에는 서버 id 가 없어서 같은 디스코드 계정이 여러 워크스페이스에 있으면 어느 대화인지 골라야 한다.
 
     답장 기능으로 고른 봇 DM, 그 DM 창에서 이 글 바로 앞에 봇이 보낸 DM, 봇이 가장 최근에 말을 건 쪽,
-    가장 나중에 만든 팀원 순서로 정한다. 봇 DM 시각은 발송 결과를 받은 시각(dm_reported_at)으로 본다.
+    가장 나중에 만든 팀원 순서로 정한다. 봇 DM 시각은 디스코드 id 에 든 보낸 시각이다. 결과 보고는 답장보다
+    늦게 올 수 있으므로, 가져갔지만 보고가 없는 메시지(시간 초과 포함)는 가져간 시각에 나간 것으로 본다.
     """
     members = db.scalars(
         select(Member).where(Member.discord_user_id == discord_user_id, Member.is_deleted.is_(False))
@@ -654,14 +665,23 @@ def _pick_member_for_discord_user(
         )
         if owner is not None:
             return by_id[owner]
-    preceding = db.scalar(
+    sent_before = []
+    for member_id, claimed_at, reported_at, part_id in db.execute(
         bot_messages()
-        .where(ThreadMessage.dm_status == DmStatus.DELIVERED, ThreadMessage.dm_reported_at <= sent_at)
-        .order_by(ThreadMessage.dm_reported_at.desc())
-        .limit(1)
-    )
-    if preceding is not None:
-        return by_id[preceding]
+        .add_columns(ThreadMessage.claimed_at, ThreadMessage.dm_reported_at, BotDmPart.discord_message_id)
+        .outerjoin(BotDmPart, BotDmPart.message_id == ThreadMessage.message_id)
+        .where(ThreadMessage.claimed_at.is_not(None))
+    ).all():
+        if part_id is not None:
+            at = _discord_time(part_id, claimed_at)
+        elif reported_at is None:
+            at = utc(claimed_at)
+        else:
+            continue  # 보고는 왔고 나간 DM 이 없다
+        if at <= reply_at:
+            sent_before.append((at, member_id))
+    if sent_before:
+        return by_id[max(sent_before)[1]]
 
     last_bot = dict(
         db.execute(

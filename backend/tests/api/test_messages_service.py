@@ -535,3 +535,83 @@ def test_reply_routing_falls_back_to_latest_bot_message_else_newest_member(mdb, 
     mdb.commit()
     msg2, _ = _ingest(mdb, "m2", sent_at=LATER)
     assert msg2.thread.member_id == mseed["alice"].member_id
+
+
+DISCORD_EPOCH_MS = 1420070400000
+
+
+def _snowflake(at):
+    """그 시각에 보낸 디스코드 메시지의 id. 앞 비트가 보낸 시각(ms)이다."""
+    return str((int(at.timestamp() * 1000) - DISCORD_EPOCH_MS) << 22)
+
+
+def _claimed_in_a(mdb, seed, at):
+    """워크스페이스 A 의 앨리스에게 갈 봇 DM 을 at 에 봇이 가져갔다(보고는 아직)."""
+    r = svc.create_reminder(
+        mdb, workspace_id=seed["ws"], task_id=seed["tasks"][1].task_id, member_id=seed["alice"].member_id,
+        scheduled_at=at, note="확인2", created_by=None, now=NOW,
+    )
+    mdb.commit()
+    _approve(mdb, seed, r)
+    (c,) = [c for c in svc.claim_for_bot(mdb, at) if c.member_id == seed["alice"].member_id]
+    mdb.commit()
+    return c.message
+
+
+def test_preceding_dm_is_the_one_sent_before_the_reply_even_if_reported_after_it(mdb, mseed):
+    b = _alice_in_workspace_b(mdb, created_at=NOW)
+    _delivered_to(mdb, b, [_snowflake(LATER)], reported_at=LATER)
+    t = LATER + timedelta(hours=1)
+    msg_a = _claimed_in_a(mdb, mseed, t)
+    _deliver(mdb, msg_a, [_snowflake(t + timedelta(milliseconds=500))], now=t + timedelta(seconds=2))
+
+    reply, _ = _ingest(mdb, _snowflake(t + timedelta(seconds=1)), sent_at=t + timedelta(seconds=1))
+    assert reply.thread.member_id == mseed["alice"].member_id
+
+    earlier, _ = _ingest(mdb, _snowflake(t - timedelta(minutes=1)), sent_at=t - timedelta(minutes=1))
+    assert earlier.thread.member_id == b["alice"].member_id
+
+
+def test_reply_while_the_dm_is_claimed_and_not_yet_reported_goes_to_that_dm(mdb, mseed):
+    b = _alice_in_workspace_b(mdb, created_at=NOW)
+    _delivered_to(mdb, b, [_snowflake(LATER)], reported_at=LATER)
+    t = LATER + timedelta(hours=1)
+    _claimed_in_a(mdb, mseed, t)
+
+    reply, _ = _ingest(mdb, _snowflake(t + timedelta(seconds=1)), sent_at=t + timedelta(seconds=1))
+    assert reply.thread.member_id == mseed["alice"].member_id
+
+
+def test_reply_after_a_timed_out_dm_goes_to_it_before_and_after_the_late_report(mdb, mseed):
+    b = _alice_in_workspace_b(mdb, created_at=NOW)
+    _delivered_to(mdb, b, [_snowflake(LATER)], reported_at=LATER)
+    t = LATER + timedelta(hours=1)
+    msg_a = _claimed_in_a(mdb, mseed, t)
+    svc.claim_for_bot(mdb, t + timedelta(minutes=11))
+    mdb.commit()
+
+    during, _ = _ingest(mdb, _snowflake(t + timedelta(minutes=3)), sent_at=t + timedelta(minutes=3))
+    assert during.thread.member_id == mseed["alice"].member_id
+
+    _deliver(mdb, msg_a, [_snowflake(t + timedelta(seconds=1))], now=t + timedelta(minutes=15))
+    after, _ = _ingest(mdb, _snowflake(t + timedelta(minutes=4)), sent_at=t + timedelta(minutes=4))
+    assert after.thread.member_id == mseed["alice"].member_id
+
+
+def test_dm_that_failed_without_sending_anything_is_not_the_preceding_dm(mdb, mseed):
+    b = _alice_in_workspace_b(mdb, created_at=NOW)
+    _delivered_to(mdb, mseed, [_snowflake(LATER)], reported_at=LATER)
+    t = LATER + timedelta(hours=1)
+    r = svc.create_reminder(
+        mdb, workspace_id=b["ws"], task_id=b["tasks"][0].task_id, member_id=b["alice"].member_id,
+        scheduled_at=t, note="B 확인", created_by=None, now=NOW,
+    )
+    mdb.commit()
+    _approve(mdb, b, r)
+    (blocked,) = svc.claim_for_bot(mdb, t)
+    svc.report_result(mdb, blocked.message.message_id, delivered=False, failure_reason=DmFailureReason.DM_BLOCKED,
+                      discord_message_ids=[], now=t)
+    mdb.commit()
+
+    reply, _ = _ingest(mdb, _snowflake(t + timedelta(minutes=1)), sent_at=t + timedelta(minutes=1))
+    assert reply.thread.member_id == mseed["alice"].member_id
