@@ -596,5 +596,16 @@
       ]
     },
     "expected": {"is_meaningful": true, "is_new": false, "matched_task_id": "task_noti", "status": "in_progress"}
+  },
+  {
+    "description": "막혔던 작업을 다시 해서 일부 함 — done 이 아니라 in_progress (#207)",
+    "judge_input": {
+      "source": "chat",
+      "text": "권한 받아서 배포 파이프라인 절반쯤 해 놨어요",
+      "candidates": [
+        {"notion_page_id": "n12", "task_id": "task_deploy", "title": "배포 파이프라인 구성", "status": "blocked", "similarity": 0.7}
+      ]
+    },
+    "expected": {"is_meaningful": true, "is_new": false, "matched_task_id": "task_deploy", "status": "in_progress"}
   }
 ]
