@@ -920,3 +920,54 @@ class BotDmPart(Base):
         String(36), ForeignKey("thread_message.message_id", ondelete="CASCADE"), index=True
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class PushStatus(StrEnum):
+    PENDING = "pending"
+    SENT = "sent"
+    FAILED = "failed"
+    SKIPPED = "skipped"
+
+
+class Notification(Base):
+    """웹 안 알림 하나. 만들면 목록과 배지에 들어가고, 받는 사람 기기 모두로 푸시가 나간다(push_status).
+
+    받는 사람은 워크스페이스의 팀원(member)이다. 푸시는 그 팀원의 계정(user)에 등록된 기기로 간다.
+    dedupe_key 가 있으면 같은 일로 두 번 알리지 않는다.
+    """
+
+    __tablename__ = "notification"
+
+    notification_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    workspace_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("workspace.workspace_id", ondelete="CASCADE"), index=True
+    )
+    member_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("member.member_id", ondelete="CASCADE"), index=True
+    )
+    kind: Mapped[str] = mapped_column(String(32))
+    text: Mapped[str] = mapped_column(Text)
+    link_type: Mapped[str] = mapped_column(String(16))
+    link_id: Mapped[str] = mapped_column(String(36))
+    dedupe_key: Mapped[str | None] = mapped_column(String(120), nullable=True, unique=True)
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    push_status: Mapped[str] = mapped_column(String(16), default=PushStatus.PENDING, index=True)
+    pushed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+    member: Mapped["Member"] = relationship()
+
+
+class PushSubscription(Base):
+    """브라우저 한 곳의 웹 푸시 구독. 계정 단위라 그 사람의 모든 워크스페이스 알림이 이 기기로 온다."""
+
+    __tablename__ = "push_subscription"
+
+    subscription_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("user.user_id", ondelete="CASCADE"), index=True
+    )
+    endpoint: Mapped[str] = mapped_column(String(2048), unique=True)
+    p256dh: Mapped[str] = mapped_column(String(255))
+    auth: Mapped[str] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)

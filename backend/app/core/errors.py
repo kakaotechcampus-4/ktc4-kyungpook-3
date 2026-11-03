@@ -58,6 +58,7 @@ class ErrorCode(StrEnum):
     MESSAGE_THREAD_NOT_FOUND = "MESSAGE_THREAD_NOT_FOUND"
     MESSAGE_NOT_FOUND = "MESSAGE_NOT_FOUND"
     MESSAGE_RESULT_CONFLICT = "MESSAGE_RESULT_CONFLICT"
+    NOTIFICATION_NOT_FOUND = "NOTIFICATION_NOT_FOUND"
 
 
 ERROR_STATUS: dict[ErrorCode, int] = {
@@ -108,6 +109,7 @@ ERROR_STATUS: dict[ErrorCode, int] = {
     ErrorCode.MESSAGE_THREAD_NOT_FOUND: 404,
     ErrorCode.MESSAGE_NOT_FOUND: 404,
     ErrorCode.MESSAGE_RESULT_CONFLICT: 409,
+    ErrorCode.NOTIFICATION_NOT_FOUND: 404,
 }
 
 ERROR_MESSAGE: dict[ErrorCode, str] = {
@@ -158,6 +160,7 @@ ERROR_MESSAGE: dict[ErrorCode, str] = {
     ErrorCode.MESSAGE_THREAD_NOT_FOUND: "해당 대화를 찾을 수 없습니다.",
     ErrorCode.MESSAGE_NOT_FOUND: "해당 봇 메시지를 찾을 수 없습니다.",
     ErrorCode.MESSAGE_RESULT_CONFLICT: "이미 다른 결과가 보고된 메시지이거나 아직 가져가지 않은 메시지입니다.",
+    ErrorCode.NOTIFICATION_NOT_FOUND: "알림을 찾을 수 없습니다.",
 }
 
 

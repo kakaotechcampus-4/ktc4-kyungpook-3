@@ -10,6 +10,9 @@ from app.models.models import (
     ChangedField,
     ChangeSource,
     Evidence,
+    Notification,
+    PushStatus,
+    PushSubscription,
     EvidenceStatus,
     EvidenceType,
     Extraction,
@@ -69,4 +72,5 @@ __all__ = [
     "Workspace", "WorkspaceOnboardingStepState", "User", "Session", "Integration", "Source",
     "BodySource", "BotDmPart", "DmFailureReason", "DmStatus", "DraftStatus", "MessageSender", "MessageThread",
     "Reminder", "ReminderBundle", "ReminderKind", "ReminderOrigin", "ReminderStatus", "ReplyChannel", "ThreadMessage",
+    "Notification", "PushStatus", "PushSubscription",
 ]
