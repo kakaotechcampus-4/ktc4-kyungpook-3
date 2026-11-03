@@ -13,6 +13,8 @@ test('가입한 계정·세션·만든 공간·온보딩 단계가 새로고침 
   await page.getByLabel('이메일').fill('restore@example.com')
   await page.getByLabel('비밀번호', { exact: true }).fill('pass1234')
   await page.getByRole('button', { name: '계정 만들기' }).click()
+  await expect(page).toHaveURL('/onboarding/start')
+  await page.getByRole('link', { name: /PM으로 팀 만들기/ }).click()
   await expect(page).toHaveURL('/onboarding/create_workspace')
 
   await page.getByLabel('팀 이름').fill('복원 팀')

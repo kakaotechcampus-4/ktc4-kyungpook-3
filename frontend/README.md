@@ -89,6 +89,7 @@ API_PROXY_TARGET=https://managers-manager.duckdns.org npm run dev
 
 ## 문서
 
+- 로그인 후 시작 방식 선택 추가·디자인 통일(2026-11-03): 소속이 없는 계정은 팀원 작업과 PM 생성을 먼저 고른다. 기존 온보딩 프레임·매스 말풍선·카드를 재사용한다. 타입·린트·빌드·포맷과 Chromium E2E 12개가 통과했다. 전체 단위 묶음은 시간 초과가 남았으며, [M4 추가 결과](docs/plan/m4/result.md)에 원본 검사와 단독 재검사 근거를 기록한다. 초대·가입 API와 실제 외부 연동은 미검증이다.
 - [문서 안내](docs/README.md): 대표 경로, 기존 문서 대응과 유지한 자료.
 - [API 계약](docs/contracts/frontend-api-contract.md): 기존 백엔드 요청과 현재 코드 차이를 한 문서에서 관리.
 - [전체 계획](docs/plan/frontend-plan.md) · [마일스톤 상태·기록](docs/plan/README.md): M0~M8. M0~M5는 기존 계획 원문을 각 `plan.md`로 이동했다. M6·M7은 계획과 결과([M6](docs/plan/m6/result.md), [M7](docs/plan/m7/result.md))가 있고 M8은 0바이트 초기화 파일이다.

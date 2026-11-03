@@ -15,6 +15,7 @@
 | milestone-result | 구현 결과와 파트 README 갱신 |
 | decision-record | 실제 구현 선택과 근거 기록 |
 | docs-audit | 구조·링크·완료조건·보호 문서 읽기 전용 검사 |
+| verify-managers-manager | 웹 UI의 Playwright·MSW 검증과 증거 보관. [실행 절차](../.cursor/skills/verify-managers-manager/SKILL.md) |
 
 Codex 호출 예시:
 
