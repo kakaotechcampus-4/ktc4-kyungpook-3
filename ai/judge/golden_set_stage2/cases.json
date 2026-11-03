@@ -508,7 +508,7 @@
     "expected": {"is_meaningful": true, "is_new": false, "matched_task_id": "task_fe_api", "status": "blocked", "category": "status"}
   },
   {
-    "description": "경계 완료 아님 — PR 올리고 리뷰 대기(#207)",
+    "description": "사실 보고 완료 — PR 올리고 리뷰 대기, 리뷰 대기는 막힘 아님(#207, 11/4 정함)",
     "judge_input": {
       "source": "meeting",
       "text": "결제 API 연동 PR 올렸어요, 지금 리뷰 기다리고 있어요.",
@@ -516,10 +516,10 @@
         {"notion_page_id": "n3", "task_id": "task_payment", "title": "결제 API 연동", "status": "in_progress", "similarity": 0.7}
       ]
     },
-    "expected": {"is_meaningful": false}
+    "expected": {"is_meaningful": true, "is_new": false, "matched_task_id": "task_payment", "status": "done", "category": "status"}
   },
   {
-    "description": "경계 완료 아님 — PR 만 올림(#207, 11/3 정함)",
+    "description": "사실 보고 완료 — PR 만 올림(#207, 11/4 정함)",
     "judge_input": {
       "source": "meeting",
       "text": "결제 API 연동 PR 올렸어요.",
@@ -527,7 +527,7 @@
         {"notion_page_id": "n3", "task_id": "task_payment", "title": "결제 API 연동", "status": "in_progress", "similarity": 0.7}
       ]
     },
-    "expected": {"is_meaningful": false}
+    "expected": {"is_meaningful": true, "is_new": false, "matched_task_id": "task_payment", "status": "done", "category": "status"}
   },
   {
     "description": "경계 완료 아님 — 거의 붙임(#207)",
