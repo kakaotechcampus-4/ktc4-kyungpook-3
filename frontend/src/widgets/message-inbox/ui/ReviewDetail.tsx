@@ -9,6 +9,7 @@ import {
 } from '@/features/message-action'
 import { paths } from '@/shared/config/routes'
 import { Icon } from '@/shared/ui/icon'
+import { shortDateTime } from '../lib/format'
 import { LockedButton } from './LockedButton'
 import { ReviewMessageCard } from './ReviewMessageCard'
 import { SendTimingPicker } from './SendTimingPicker'
@@ -63,6 +64,7 @@ export function ReviewDetail({ workspaceId, botName, review, onSettled }: Review
   // 잠금(aria-disabled, 누름을 버림)은 그대로이고, 누름이 왜 안 되는지는 저장 중인 시점 카드가 보여 준다
   const quietLock = actions.pending?.kind === 'schedule' && lockHint === null
   const pendingKind = actions.pending?.target === review.id ? actions.pending.kind : null
+  const state = review.state
   const failureOf = (...kinds: MessageAction['kind'][]) => (
     <ActionFailure target={review.id} actions={actions} kinds={kinds} />
   )
@@ -77,12 +79,27 @@ export function ReviewDetail({ workspaceId, botName, review, onSettled }: Review
       <article aria-labelledby={headingId} className={COLUMN}>
         <div className="flex flex-col gap-8">
           <h2 id={headingId} className={TITLE}>
-            이 메시지, 보낼까요?
+            {state.status === 'scheduled' ? '보낼 예정인 메시지예요' : '이 메시지, 보낼까요?'}
           </h2>
           <p className="text-[14px] wrap-anywhere text-sub">
-            <strong className="font-semibold text-ink">{review.recipientName}</strong>에게 Discord
-            개인 메시지로 나갑니다. 보낸 뒤에는 되돌릴 수 없어요.
+            {state.status === 'scheduled' ? (
+              <>
+                <strong className="font-semibold text-ink">{review.recipientName}</strong>
+                에게 {review.scheduledAt === null ? '' : shortDateTime(review.scheduledAt)}에
+                Discord 개인 메시지로 나갑니다. {state.approvedBy}님이 승인했어요.
+              </>
+            ) : (
+              <>
+                <strong className="font-semibold text-ink">{review.recipientName}</strong>에게
+                Discord 개인 메시지로 나갑니다. 보낸 뒤에는 되돌릴 수 없어요.
+              </>
+            )}
           </p>
+          {state.status === 'scheduled' ? (
+            <p className="text-caption text-dim">
+              문구나 시각을 바꾸면 다시 승인해야 보낼 수 있어요.
+            </p>
+          ) : null}
         </div>
 
         <ReviewMessageCard
@@ -143,26 +160,28 @@ export function ReviewDetail({ workspaceId, botName, review, onSettled }: Review
             >
               보내지 않음
             </LockedButton>
-            <LockedButton
-              variant="primary"
-              size="message-send"
-              endIcon={<Icon name="send" size={16} />}
-              aria-busy={pendingKind === 'send' || undefined}
-              aria-describedby={lockHint === null ? undefined : lockHintId}
-              locked={decisionLocked}
-              keepLook={quietLock}
-              onClick={() =>
-                actions.run(
-                  { kind: 'send', reviewId: review.id },
-                  {
-                    notice: sendNotice(review.recipientName, review.scheduledAt),
-                    onSuccess: leave,
-                  },
-                )
-              }
-            >
-              이대로 발송
-            </LockedButton>
+            {state.status === 'scheduled' ? null : (
+              <LockedButton
+                variant="primary"
+                size="message-send"
+                endIcon={<Icon name="send" size={16} />}
+                aria-busy={pendingKind === 'send' || undefined}
+                aria-describedby={lockHint === null ? undefined : lockHintId}
+                locked={decisionLocked}
+                keepLook={quietLock}
+                onClick={() =>
+                  actions.run(
+                    { kind: 'send', reviewId: review.id },
+                    {
+                      notice: sendNotice(review.recipientName, review.scheduledAt),
+                      onSuccess: leave,
+                    },
+                  )
+                }
+              >
+                이대로 발송
+              </LockedButton>
+            )}
           </div>
           {lockHint === null ? null : (
             <p id={lockHintId} className="text-caption text-dim">

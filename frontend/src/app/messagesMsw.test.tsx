@@ -5,6 +5,7 @@ import { STALE_TIME } from '@/shared/api/queryClient'
 import { paths } from '@/shared/config/routes'
 import { db } from '@/shared/mock/db'
 import { MOCK_NOW } from '@/shared/mock/fixtures/constants'
+import { botMessage } from '@/shared/mock/fixtures/message'
 import { recordRequests } from '@/shared/test/requests'
 import {
   conversation,
@@ -237,6 +238,25 @@ describe('대화는 날짜 구분·보낸 쪽·시각·답장 대기·승인 대
     expect(detail().queryByRole('textbox')).toBeNull()
   })
 
+  it('취소됨·만료됨은 그날 묶음에 있고 목록 미리보기와 보내기 전 확인은 그대로다', async () => {
+    const app = await openInbox(paths.messageThread('ws_01', 'th_03'))
+    expect(await detail().findByRole('heading', { level: 3, name: /9월 8일/ })).toBeVisible()
+    expect(detail().getByText('09:00 · 자동 취소됨 · 보내기 전에 응답이 있었어요')).toBeVisible()
+    expect(rowTexts(threadList()).find((row) => row.startsWith('정하늘'))).toBe(
+      '정하늘발표 순서 정리해서 올릴게요09/04',
+    )
+    expect(rowTexts(reviewList())).toHaveLength(2)
+    expect(reviewList()).not.toHaveTextContent('회의록 템플릿 검토는 끝나셨나요')
+
+    app.navigate(paths.messageThread('ws_01', 'th_04'))
+    expect(await detail().findByRole('heading', { level: 2, name: '박지훈' })).toBeVisible()
+    expect(detail().getByRole('heading', { level: 3, name: /9월 9일/ })).toBeVisible()
+    expect(detail().getByText('18:00 · 만료됨 · 마감이 지나 보내지 않았어요')).toBeVisible()
+    expect(rowTexts(threadList()).find((row) => row.startsWith('박지훈'))).toBe(
+      '박지훈확인했습니다09/02',
+    )
+  })
+
   it('상대가 답한 DM 과 채널은 답장 대기가 아니고, 승인 대기가 없으면 안내 바에 확인할 것이 없다고 쓴다', async () => {
     const app = await openInbox(paths.messageThread('ws_01', 'th_02'))
     expect(await detail().findByRole('heading', { level: 2, name: '박민수' })).toBeVisible()
@@ -257,15 +277,7 @@ describe('대화는 날짜 구분·보낸 쪽·시각·답장 대기·승인 대
   it('오늘 보낸 메시지의 날짜 구분선은 오늘을 붙이고, 오늘 보낸 날이 답장 없음 1일째다', async () => {
     db.messageThreads
       .find(({ thread_id }) => thread_id === 'th_02')!
-      .messages.push({
-        message_id: 'mg_90',
-        sender: 'bot',
-        body: '오늘 회의 전에 한 번 더 확인해요',
-        sent_at: MOCK_NOW,
-        status: 'sent',
-        delivery: 'auto',
-        approved_by: null,
-      })
+      .messages.push(botMessage('mg_90', '오늘 회의 전에 한 번 더 확인해요', MOCK_NOW))
     await openInbox(paths.messageThread('ws_01', 'th_02'))
     await detail().findByRole('heading', { level: 2, name: '박민수' })
     expect(days()).toEqual(['9월 9일 수요일', '오늘 · 9월 18일 금요일'])

@@ -1,18 +1,21 @@
 import { http } from 'msw'
-import type {
-  MessageDto,
-  MessageReviewDto,
-  MessageSendResultDto,
-  MessageSendTimingDto,
-  MessageThreadDto,
-  MessageThreadSummaryDto,
-} from '@/shared/types/api/message'
+import type { MessageSendTimingDto } from '@/shared/types/api/message'
 import { db } from '../db'
 import { ok, fail } from '../envelope'
 import { requireMember, requirePmRole } from '../auth-guard'
 import { MOCK_NOW } from '../fixtures/constants'
-import type { MockMessageReview, MockMessageThread } from '../fixtures/message'
-import { nextId, readJson } from '../utils'
+import type { MockMessageReview } from '../fixtures/message'
+import {
+  applyPatch,
+  approve,
+  dismiss,
+  isOpen,
+  reviewDtoOf,
+  sendCheck,
+  threadDtoOf,
+  threadSummaryOf,
+} from '../message-state'
+import { readJson } from '../utils'
 
 /*
  * M8 메시지. 메시지 API 가 없어 경로·응답 모양·오류 코드 모두 임시다 — 계약이 아니다 (계획 C-2, C-8).
@@ -31,39 +34,17 @@ const reviewNotFound = () =>
 const BODY_MAX_LENGTH = 2000
 const SEND_TIMINGS: readonly MessageSendTimingDto[] = ['day_before_deadline', 'now', 'custom']
 
-/** 사람별 대화가 먼저, 채널은 뒤다(시안 목록). 같은 종류끼리는 마지막 메시지가 최근인 순이다 */
-function byInboxOrder(a: MessageThreadSummaryDto, b: MessageThreadSummaryDto): number {
-  if (a.kind !== b.kind) return a.kind === 'direct' ? -1 : 1
-  const at = (thread: MessageThreadSummaryDto) =>
-    thread.last_message === null ? 0 : Date.parse(thread.last_message.sent_at)
-  return at(b) - at(a)
-}
-
-const sentMessages = (thread: MockMessageThread) =>
-  thread.messages.filter(({ status }) => status === 'sent')
-
-/**
- * 답장 대기 — 사람별 DM 에서 상대의 마지막 답 뒤에 나간 봇 메시지가 있으면 그 첫 메시지의 시각이다.
- * 채널은 답장을 기다리지 않는다. 예약 메시지는 아직 나가지 않아 세지 않는다
- */
-function awaitingReplySince(thread: MockMessageThread): string | null {
-  if (thread.kind !== 'direct') return null
-  let since: string | null = null
-  for (const message of sentMessages(thread)) {
-    if (message.sender === 'counterpart') since = null
-    else since ??= message.sent_at
+function byInboxOrder(
+  left: { kind: string; last_message: { at: string | null } | null },
+  right: { kind: string; last_message: { at: string | null } | null },
+): number {
+  if (left.kind !== right.kind) return left.kind === 'direct' ? -1 : 1
+  const at = (thread: { last_message: { at: string | null } | null }) => {
+    const stamp = thread.last_message?.at
+    return stamp === null || stamp === undefined ? 0 : Date.parse(stamp)
   }
-  return since
+  return at(right) - at(left)
 }
-
-/** 응답에는 저장용 칸(workspace_id)을 싣지 않는다 */
-function withoutWorkspace<T extends { workspace_id: string }>(row: T): Omit<T, 'workspace_id'> {
-  const copy: Partial<T> = { ...row }
-  delete copy.workspace_id
-  return copy as Omit<T, 'workspace_id'>
-}
-
-const toReviewDto = (review: MockMessageReview): MessageReviewDto => withoutWorkspace(review)
 
 function findReview(workspaceId: string, reviewId: unknown) {
   return db.messageReviews.find(
@@ -75,9 +56,9 @@ function findReview(workspaceId: string, reviewId: unknown) {
 function readPatch(
   review: MockMessageReview,
   input: Record<string, unknown> | null,
-): Partial<MockMessageReview> | string {
+): Partial<Pick<MockMessageReview, 'body' | 'send_timing' | 'scheduled_at'>> | string {
   if (input === null) return '요청 본문이 없습니다.'
-  const patch: Partial<MockMessageReview> = {}
+  const patch: Partial<Pick<MockMessageReview, 'body' | 'send_timing' | 'scheduled_at'>> = {}
   if (input.body !== undefined) {
     if (typeof input.body !== 'string') return '문구가 올바르지 않습니다.'
     const body = input.body.trim()
@@ -90,6 +71,8 @@ function readPatch(
     if (timing === undefined) return '발송 시점이 올바르지 않습니다.'
     if (timing === 'day_before_deadline') {
       if (review.deadline_send_at === null) return '마감이 없는 항목입니다.'
+      if (Date.parse(review.deadline_send_at) <= Date.parse(MOCK_NOW))
+        return '마감 하루 전 시각이 이미 지났습니다.'
       patch.scheduled_at = review.deadline_send_at
     } else if (timing === 'now') patch.scheduled_at = null
     else {
@@ -102,50 +85,23 @@ function readPatch(
   return Object.keys(patch).length === 0 ? '바꿀 내용이 없습니다.' : patch
 }
 
-/** 보낸 메시지가 쌓일 대화. 대화가 아직 없으면 수신자 이름으로 연다 */
-function threadFor(review: MockMessageReview): MockMessageThread {
-  const existing = db.messageThreads.find(
-    ({ thread_id, workspace_id }) =>
-      thread_id === review.thread_id && workspace_id === review.workspace_id,
-  )
-  if (existing) return existing
-  const created: MockMessageThread = {
-    thread_id: review.thread_id,
-    workspace_id: review.workspace_id,
-    kind: 'direct',
-    name: review.recipient_name,
-    team_role: null,
-    discord_url: null,
-    messages: [],
-  }
-  db.messageThreads.push(created)
-  return created
-}
-
-function removeReview(review: MockMessageReview): void {
-  db.messageReviews = db.messageReviews.filter((candidate) => candidate !== review)
-}
-
 export const messageHandlers = [
   http.get('/api/v1/workspaces/:workspaceId/messages', ({ params }) => {
     const workspaceId = String(params.workspaceId)
     const denied = requireMember(workspaceId)
     if (denied) return denied
     if (db.messageFailures.inbox) return serverError()
-    const reviews = db.messageReviews
-      .filter(({ workspace_id }) => workspace_id === workspaceId)
-      .map(toReviewDto)
+    const reviews = db.messageReviews.filter((review) => review.workspace_id === workspaceId)
     const threads = db.messageThreads
       .filter(({ workspace_id }) => workspace_id === workspaceId)
-      .map((thread): MessageThreadSummaryDto => ({
-        thread_id: thread.thread_id,
-        kind: thread.kind,
-        name: thread.name,
-        last_message: sentMessages(thread).at(-1) ?? null,
-        awaiting_reply_since: awaitingReplySince(thread),
-      }))
+      .map((thread) => threadSummaryOf(thread, reviews, MOCK_NOW))
       .sort(byInboxOrder)
-    return ok({ reviews, threads })
+    return ok({
+      reviews: reviews
+        .filter((review) => isOpen(review, MOCK_NOW))
+        .map((review) => reviewDtoOf(review, MOCK_NOW)),
+      threads,
+    })
   }),
 
   http.get('/api/v1/workspaces/:workspaceId/messages/threads/:threadId', ({ params }) => {
@@ -158,16 +114,8 @@ export const messageHandlers = [
     )
     if (!thread) return fail('MESSAGE_THREAD_NOT_FOUND', '대화를 찾을 수 없습니다.', 404)
     if (db.messageFailures.threadIds.includes(thread.thread_id)) return serverError()
-    return ok({
-      ...withoutWorkspace(thread),
-      awaiting_reply_since: awaitingReplySince(thread),
-      pending_reviews: db.messageReviews
-        .filter(
-          ({ thread_id, workspace_id }) =>
-            thread_id === thread.thread_id && workspace_id === workspaceId,
-        )
-        .map(({ review_id, body, scheduled_at }) => ({ review_id, body, scheduled_at })),
-    } satisfies MessageThreadDto)
+    const reviews = db.messageReviews.filter((review) => review.workspace_id === workspaceId)
+    return ok(threadDtoOf(thread, reviews, MOCK_NOW))
   }),
 
   http.patch(
@@ -177,51 +125,44 @@ export const messageHandlers = [
       const denied = requirePmRole(workspaceId)
       if (denied) return denied
       const review = findReview(workspaceId, params.reviewId)
-      if (!review) return reviewNotFound()
+      if (!review || !isOpen(review, MOCK_NOW)) return reviewNotFound()
       const patch = readPatch(review, await readJson(request))
       if (typeof patch === 'string') return invalid(patch)
       if (db.messageFailures.actions) return actionError()
-      Object.assign(review, patch)
-      return ok(toReviewDto(review))
+      applyPatch(review, patch)
+      return ok(reviewDtoOf(review, MOCK_NOW))
     },
   ),
 
-  /** 승인해서 보낸다. 시각을 정해 두었으면 그 시각을 기다리는 예약 메시지가 된다 */
+  /** 승인해서 보낸다. 시각이 있으면 그 시각의 예약으로 같은 항목이 남고, 없으면 지금 나간다 */
   http.post('/api/v1/workspaces/:workspaceId/messages/reviews/:reviewId/send', ({ params }) => {
     const workspaceId = String(params.workspaceId)
     const denied = requirePmRole(workspaceId)
     if (denied) return denied
     const review = findReview(workspaceId, params.reviewId)
     if (!review) return reviewNotFound()
+    const check = sendCheck(review, MOCK_NOW)
+    if (check === 'gone') return reviewNotFound()
+    if (check === 'time_passed')
+      return fail(
+        'MESSAGE_SCHEDULE_PASSED',
+        '예정 시각이 지났습니다. 발송 시각을 다시 골라 주세요.',
+        409,
+      )
     if (db.messageFailures.actions) return actionError()
-    const sentAt = review.scheduled_at ?? MOCK_NOW
-    const message: MessageDto = {
-      message_id: nextId(
-        'mg',
-        db.messageThreads.flatMap(({ messages }) => messages.map(({ message_id }) => message_id)),
-      ),
-      sender: 'bot',
-      body: review.body,
-      sent_at: sentAt,
-      status: Date.parse(sentAt) > Date.parse(MOCK_NOW) ? 'scheduled' : 'sent',
-      delivery: 'approved',
-      approved_by: db.session.user.name,
-    }
-    const thread = threadFor(review)
-    thread.messages.push(message)
-    removeReview(review)
-    return ok({ thread_id: thread.thread_id, message } satisfies MessageSendResultDto)
+    approve(review, db.session.user.name, MOCK_NOW)
+    return ok({ review_id: review.review_id })
   }),
 
-  /** 보내지 않는다(반려). 항목만 지우고 대화는 그대로다 */
+  /** 보내지 않는다. 항목을 지우지 않고 취소된 기록으로 남긴다 */
   http.post('/api/v1/workspaces/:workspaceId/messages/reviews/:reviewId/dismiss', ({ params }) => {
     const workspaceId = String(params.workspaceId)
     const denied = requirePmRole(workspaceId)
     if (denied) return denied
     const review = findReview(workspaceId, params.reviewId)
-    if (!review) return reviewNotFound()
+    if (!review || !isOpen(review, MOCK_NOW)) return reviewNotFound()
     if (db.messageFailures.actions) return actionError()
-    removeReview(review)
+    dismiss(review, MOCK_NOW)
     return ok({ review_id: review.review_id })
   }),
 ]

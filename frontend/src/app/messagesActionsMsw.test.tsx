@@ -70,31 +70,52 @@ describe('이대로 발송 — 서버가 성공한 뒤에만 목록과 대화가
     expect(request.calls()).toBe(1)
 
     act(() => request.resolve())
-    // 처리한 항목의 주소를 떠나 다음 항목이 골라진다 (뒤로가기로 돌아오지 않게 바꿔 끼운다)
+    // 시각이 있으면 항목은 예정으로 남는다. 주소만 목록으로 바꿔 끼운다
     await app.expectSearch('')
-    await waitFor(() => expect(rowTexts(reviewList())).toHaveLength(1))
-    expect(within(reviewList()).getByRole('heading')).toHaveTextContent('보내기 전 확인 1')
-    expect(current()[0]).toHaveTextContent('정하늘')
+    await waitFor(() => expect(rowTexts(reviewList())[0]).toContain('09/23 발송 예정'))
+    expect(rowTexts(reviewList())).toHaveLength(2)
+    expect(within(reviewList()).getByRole('heading')).toHaveTextContent('보내기 전 확인 2')
+    expect(current()[0]).toHaveTextContent('이재환')
     expect(app.visitedActions().at(-1)).toBe('REPLACE')
-    // 누른 버튼이 항목과 함께 사라져도 포커스는 상세 칸에 남는다 — 다음 Tab 이 새 항목으로 간다
     expect(document.activeElement).toBe(detailPane())
     expect(await screen.findByText('09/23 09:00에 이재환님에게 보낼게요')).toBeInTheDocument()
-    expect(reviewIds()).toEqual(['rv_02'])
+    expect(
+      detail().getByRole('heading', { level: 2, name: '보낼 예정인 메시지예요' }),
+    ).toBeVisible()
+    expect(detail().queryByRole('button', { name: '이대로 발송' })).toBeNull()
+    expect(reviewIds()).toEqual(['rv_01', 'rv_02', 'rv_03', 'rv_04'])
   })
 
-  it('보낸 메시지는 그 대화에 예약 메시지로 쌓이고 승인 대기에서 빠진다', async () => {
+  it('시각을 정해 둔 발송은 예정으로 남고, 확인하기에서 본 뒤 지금 바로로 되돌리면 다시 보낼 수 있다', async () => {
     await openReview()
     await userEvent.click(button('이대로 발송'))
-    await waitFor(() => expect(rowTexts(reviewList())).toHaveLength(1))
+    await waitFor(() => expect(rowTexts(reviewList())[0]).toContain('09/23 발송 예정'))
+    expect(
+      detail().getByRole('heading', { level: 2, name: '보낼 예정인 메시지예요' }),
+    ).toBeVisible()
+    expect(detail().queryByRole('button', { name: '이대로 발송' })).toBeNull()
 
     await userEvent.click(within(threadList()).getByRole('link', { name: /이재환/ }))
     await detail().findByRole('heading', { level: 2, name: '이재환' })
     const upcoming = within(conversation()).getByRole('list', { name: '아직 나가지 않은 메시지' })
     expect(upcoming).toHaveTextContent('09/23 09:00 발송 예정 · 최진호 승인')
     expect(within(upcoming).queryByRole('button')).toBeNull()
+    const confirm = within(upcoming).getByRole('link', { name: '확인하기' })
+    expect(confirm).toHaveAttribute('href', paths.messageReview('ws_01', 'rv_01'))
     expect(detail().getByText(/메시지는 항상/)).toHaveTextContent(
       '메시지는 항상 카테캠 3팀 봇이 보냅니다. 승인·고쳐 쓰기·보내지 않음은 보내기 전 확인에서 해요.',
     )
+
+    await userEvent.click(confirm)
+    expect(
+      await detail().findByRole('heading', { level: 2, name: '보낼 예정인 메시지예요' }),
+    ).toBeVisible()
+    expect(detail().queryByRole('button', { name: '이대로 발송' })).toBeNull()
+    await userEvent.click(radio(/지금 바로/))
+    expect(
+      await detail().findByRole('heading', { level: 2, name: '이 메시지, 보낼까요?' }),
+    ).toBeVisible()
+    expect(button('이대로 발송')).toBeEnabled()
   })
 
   it('미리 받아 둔 대화도 발송 뒤에는 무효화돼 다시 가리키면 새로 받고, 고르면 보낸 메시지가 보인다', async () => {
@@ -108,7 +129,7 @@ describe('이대로 발송 — 서버가 성공한 뒤에만 목록과 대화가
     await waitFor(() => expect(threadRequests()).toHaveLength(1))
     await userEvent.unhover(thread())
     await userEvent.click(button('이대로 발송'))
-    await waitFor(() => expect(rowTexts(reviewList())).toHaveLength(1))
+    await waitFor(() => expect(rowTexts(reviewList())[0]).toContain('09/23 발송 예정'))
     // 보이지 않는 대화는 무효화 때 바로 다시 받지 않는다 — 다시 가리킬 때 staleTime 안이어도 새로 받는다
     expect(threadRequests()).toHaveLength(1)
 
@@ -148,7 +169,12 @@ describe('이대로 발송 — 서버가 성공한 뒤에만 목록과 대화가
 
     db.messageFailures.actions = false
     await userEvent.click(within(alert).getByRole('button', { name: '다시 시도' }))
-    await waitFor(() => expect(rowTexts(reviewList())).toHaveLength(1))
+    await waitFor(() =>
+      expect(
+        detail().getByRole('heading', { level: 2, name: '보낼 예정인 메시지예요' }),
+      ).toBeVisible(),
+    )
+    expect(rowTexts(reviewList())).toHaveLength(2)
     expect(detail().queryByRole('alert')).toBeNull()
   })
 
@@ -169,7 +195,7 @@ describe('이대로 발송 — 서버가 성공한 뒤에만 목록과 대화가
 })
 
 describe('보내지 않음', () => {
-  it('항목을 지우고 대화는 그대로다', async () => {
+  it('항목은 목록에서 빠지고 대화에는 오늘 취소됨으로 남는다', async () => {
     const app = await openReview()
     const request = hold(`${REVIEW_PATH}/dismiss`, 'post')
     await userEvent.click(button('보내지 않음'))
@@ -185,9 +211,11 @@ describe('보내지 않음', () => {
     expect(
       await screen.findByText('이재환님에게 보낼 메시지를 보내지 않기로 했어요'),
     ).toBeInTheDocument()
-    expect(db.messageThreads.find(({ thread_id }) => thread_id === 'th_01')?.messages).toHaveLength(
-      3,
-    )
+    await userEvent.click(within(threadList()).getByRole('link', { name: /이재환/ }))
+    const today = await detail().findByRole('heading', { level: 3, name: /오늘/ })
+    expect(today).toBeVisible()
+    expect(conversation()).toHaveTextContent('봇(취소됨):')
+    expect(detail().getByText('09:00 · 취소됨')).toBeVisible()
   })
 })
 

@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { useId, useLayoutEffect, useRef } from 'react'
 import { messageThreadQueryOptions } from '@/entities/message'
-import type { Message, MessageThread, PendingMessageReview } from '@/entities/message'
+import type { MessageThread } from '@/entities/message'
 import { ApiError } from '@/shared/api/errors'
 import { paths } from '@/shared/config/routes'
 import { todayInSeoul } from '@/shared/lib/date'
@@ -9,14 +9,10 @@ import { GuardedLink } from '@/shared/lib/unsaved-changes'
 import { EmptyState } from '@/shared/ui/empty-state'
 import { Icon } from '@/shared/ui/icon'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
-import {
-  avatarText,
-  awaitingDays,
-  clockTime,
-  dayLabel,
-  groupByDay,
-  shortDateTime,
-} from '../lib/format'
+import { awaitingDays, dayLabel } from '../lib/format'
+import { buildConversation } from '../model/conversation'
+import type { BubbleItem } from '../model/conversation'
+import { VIEWER_POLICY } from '../model/viewer'
 import { ThreadSkeleton } from './MessageSkeletons'
 
 /* MessagesThread 캔버스 실측 — 머리 76(좌우 28, 아래 선), 대화 칸 눌린 면(위 24 · 좌우 28 · 아래 18, 간격 16),
@@ -41,6 +37,7 @@ const DAY_RULE = 'h-1 flex-1 bg-line'
 const BUBBLE = 'px-15 py-12 text-body leading-[1.75] wrap-anywhere whitespace-pre-line'
 const BOT_BUBBLE = `${BUBBLE} max-w-[438px] rounded-[15px_15px_4px_15px] bg-ink text-surface`
 const UPCOMING_BUBBLE = `${BUBBLE} max-w-[438px] rounded-[15px_15px_4px_15px] border border-dashed bg-surface text-sub`
+const MUTED_BUBBLE = `${BUBBLE} max-w-[438px] rounded-[15px_15px_4px_15px] border border-dashed bg-surface text-faint`
 const COUNTERPART_BUBBLE = `${BUBBLE} max-w-[410px] rounded-[15px_15px_15px_4px] border border-line bg-surface text-ink`
 const TIME = 'mono text-[10.5px] text-dim'
 const WAITING_NOTE =
@@ -111,12 +108,9 @@ function ThreadView({
     if (body !== null) body.scrollTop = body.scrollHeight
   }, [])
   const today = todayInSeoul()
-  const days = groupByDay(thread.messages.filter(({ status }) => status === 'sent'))
-  const scheduled = thread.messages.filter(({ status }) => status === 'scheduled')
-  const hasUpcoming = scheduled.length > 0 || thread.pendingReviews.length > 0
+  const view = buildConversation(thread, { policy: VIEWER_POLICY.pm, botName, today })
   const waitingDays =
     thread.awaitingReplySince === null ? null : awaitingDays(thread.awaitingReplySince, today)
-  const channelOrDm = thread.kind === 'channel' ? 'Discord 채널' : 'Discord 개인 메시지'
 
   return (
     <div className="flex min-h-[0px] flex-1 flex-col">
@@ -125,22 +119,18 @@ function ThreadView({
           <span
             aria-hidden="true"
             className={
-              thread.kind === 'channel'
+              view.channel
                 ? `${CHANNEL_AVATAR} size-34 text-[12px]`
                 : `${AVATAR} size-34 text-[12px]`
             }
           >
-            {avatarText(thread.name, thread.kind)}
+            {view.avatar}
           </span>
           <div className="flex min-w-[0px] flex-col gap-2">
             <h2 className="truncate text-[15px] leading-[1.4] font-semibold tracking-h3 text-ink">
-              {thread.name}
+              {view.title}
             </h2>
-            <p className="truncate text-meta leading-[1.4] text-dim">
-              {[thread.teamRole, channelOrDm, `${botName} 봇으로 보냄`]
-                .filter((part) => part !== null)
-                .join(' · ')}
-            </p>
+            <p className="truncate text-meta leading-[1.4] text-dim">{view.subtitle}</p>
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-12">
@@ -159,16 +149,16 @@ function ThreadView({
       {/* 스크롤 칸이라 키보드로도 내릴 수 있게 Tab 자리를 준다 (WCAG 2.1.1) */}
       {/* eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex */}
       <section ref={bodyRef} aria-label="대화 내용" tabIndex={0} className={BODY}>
-        {thread.messages.length === 0 && !hasUpcoming ? (
+        {view.days.length === 0 && view.upcoming.length === 0 ? (
           <p className="self-center pt-24 text-body text-dim">아직 주고받은 메시지가 없어요.</p>
         ) : null}
-        {days.map((day) => (
+        {view.days.map((day) => (
           <div key={day.date ?? ''}>
-            {day.date === null ? null : <DayDivider label={dayLabel(day.date, today)} />}
+            {day.date === null ? null : <DayDivider label={day.label} />}
             <ol className="flex flex-col gap-16 pt-16">
-              {day.messages.map((message) => (
-                <li key={message.id}>
-                  <Bubble message={message} counterpart={thread.name} kind={thread.kind} />
+              {day.items.map((item) => (
+                <li key={item.id}>
+                  <Bubble workspaceId={workspaceId} item={item} />
                 </li>
               ))}
             </ol>
@@ -180,23 +170,20 @@ function ThreadView({
             여기서부터 답장이 없습니다 — 오늘로 {waitingDays}일째예요
           </p>
         )}
-        {hasUpcoming ? (
+        {view.upcoming.length === 0 ? null : (
           <div>
-            {days.at(-1)?.date === today ? null : <DayDivider label={dayLabel(today, today)} />}
+            {view.days.at(-1)?.date === today ? null : (
+              <DayDivider label={dayLabel(today, today)} />
+            )}
             <ol aria-label="아직 나가지 않은 메시지" className="flex flex-col gap-16 pt-16">
-              {scheduled.map((message) => (
-                <li key={message.id}>
-                  <ScheduledBubble message={message} />
-                </li>
-              ))}
-              {thread.pendingReviews.map((review) => (
-                <li key={review.id}>
-                  <PendingBubble workspaceId={workspaceId} review={review} />
+              {view.upcoming.map((item) => (
+                <li key={item.id}>
+                  <Bubble workspaceId={workspaceId} item={item} />
                 </li>
               ))}
             </ol>
           </div>
-        ) : null}
+        )}
       </section>
       <ThreadNotice botName={botName} />
     </div>
@@ -213,94 +200,48 @@ function DayDivider({ label }: { label: string }) {
   )
 }
 
-/** 봇 메시지 아래 줄 — `09:02 · 자동 발송`, `18:00 · 최진호 승인` (MessagesThread 시안) */
-function botTimeLine(message: Message): string {
-  const time = clockTime(message.sentAt)
-  if (message.delivery === 'auto') return `${time} · 자동 발송`
-  return message.approvedBy === null ? time : `${time} · ${message.approvedBy} 승인`
-}
+const BUBBLE_CLASS = {
+  own: BOT_BUBBLE,
+  other: COUNTERPART_BUBBLE,
+  upcoming: UPCOMING_BUBBLE,
+  muted: MUTED_BUBBLE,
+} as const
 
-/** 보낸 쪽은 자리(오른쪽 봇 · 왼쪽 상대)와 면(먹 · 흰 선)으로, 화면 읽기에는 숨긴 글자로 구분한다 — 색에만 기대지 않는다 (D-128) */
-function Bubble({
-  message,
-  counterpart,
-  kind,
-}: {
-  message: Message
-  counterpart: string
-  kind: MessageThread['kind']
-}) {
-  if (message.sender === 'bot')
-    return (
-      <div className="flex flex-col items-end gap-5">
-        <p className={BOT_BUBBLE}>
-          <span className="sr-only">봇: </span>
-          {message.body}
-        </p>
-        <span className={TIME}>{botTimeLine(message)}</span>
-      </div>
-    )
+/** 보낸 쪽은 자리와 면으로, 화면 읽기에는 숨긴 글자로 구분한다 — 색에만 기대지 않는다 (D-128) */
+function Bubble({ workspaceId, item }: { workspaceId: string; item: BubbleItem }) {
+  const timeId = useId()
+  const column = (
+    <div
+      className={
+        item.side === 'own' ? 'flex flex-col items-end gap-8' : 'flex flex-col items-start gap-5'
+      }
+    >
+      <p className={BUBBLE_CLASS[item.look]}>
+        <span className="sr-only">{item.speaker}: </span>
+        {item.body}
+      </p>
+      {item.taskLine === null ? null : <p className={TIME}>{item.taskLine}</p>}
+      <span id={timeId} className={TIME}>
+        {item.timeLine}
+      </span>
+      {item.reviewId === null ? null : (
+        <GuardedLink
+          to={paths.messageReview(workspaceId, item.reviewId)}
+          aria-describedby={timeId}
+          className={FOOT_LINK}
+        >
+          확인하기
+        </GuardedLink>
+      )}
+    </div>
+  )
+  if (item.side === 'own' || item.avatar === null) return column
   return (
     <div className="flex items-end gap-8">
       <span aria-hidden="true" className={`${AVATAR} size-28 text-[10px]`}>
-        {avatarText(counterpart, kind)}
+        {item.avatar}
       </span>
-      <div className="flex flex-col items-start gap-5">
-        <p className={COUNTERPART_BUBBLE}>
-          <span className="sr-only">{counterpart}: </span>
-          {message.body}
-        </p>
-        <span className={TIME}>{clockTime(message.sentAt)}</span>
-      </div>
-    </div>
-  )
-}
-
-/** 승인을 받아 정한 시각을 기다리는 메시지. 점선은 아직 나가지 않았다는 뜻이다 */
-function ScheduledBubble({ message }: { message: Message }) {
-  const approved = message.approvedBy === null ? '' : ` · ${message.approvedBy} 승인`
-  return (
-    <div className="flex flex-col items-end gap-5">
-      <p className={UPCOMING_BUBBLE}>
-        <span className="sr-only">봇(예약): </span>
-        {message.body}
-      </p>
-      <span className={TIME}>
-        {shortDateTime(message.sentAt)} 발송 예정{approved}
-      </span>
-    </div>
-  )
-}
-
-/** 승인을 기다리는 보내기 전 확인 항목. 점선은 아직 나가지 않았다는 뜻이고, 보내려면 `확인하기` 로 연다 */
-function PendingBubble({
-  workspaceId,
-  review,
-}: {
-  workspaceId: string
-  review: PendingMessageReview
-}) {
-  const timeId = useId()
-  const timeLine =
-    review.scheduledAt === null
-      ? '승인하면 바로 발송'
-      : `${shortDateTime(review.scheduledAt)} 발송 예정`
-  return (
-    <div className="flex flex-col items-end gap-8">
-      <p className={UPCOMING_BUBBLE}>
-        <span className="sr-only">봇(승인 대기): </span>
-        {review.body}
-      </p>
-      <span id={timeId} className={TIME}>
-        {timeLine}
-      </span>
-      <GuardedLink
-        to={paths.messageReview(workspaceId, review.id)}
-        aria-describedby={timeId}
-        className={FOOT_LINK}
-      >
-        확인하기
-      </GuardedLink>
+      {column}
     </div>
   )
 }

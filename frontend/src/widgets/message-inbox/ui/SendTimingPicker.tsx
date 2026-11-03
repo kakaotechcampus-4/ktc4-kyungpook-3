@@ -125,9 +125,13 @@ export function SendTimingPicker({
           value="day_before_deadline"
           title="마감 하루 전"
           detail={
-            review.deadlineSendAt === null ? '마감 없음' : shortDateTime(review.deadlineSendAt)
+            review.deadlineSend.status === 'none'
+              ? '마감 없음'
+              : review.deadlineSend.status === 'passed'
+                ? `${shortDateTime(review.deadlineSend.at)} · 지남`
+                : shortDateTime(review.deadlineSend.at)
           }
-          unavailable={review.deadlineSendAt === null}
+          unavailable={review.deadlineSend.status !== 'open'}
         />
         <TimingCard {...card} value="now" title="지금 바로" detail={nowLabel(new Date())} />
         <TimingCard

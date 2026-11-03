@@ -1,59 +1,100 @@
-import type { MessageDto, MessageReviewDto, MessageThreadDto } from '@/shared/types/api/message'
+import type { MessageReviewDto, MessageThreadDto } from '@/shared/types/api/message'
 
 /*
  * M8 메시지의 임시 픽스처. 계약이 아니다 (shared/types/api/message.ts). 기준 시각은 MOCK_NOW(2026-09-18 금 09:00)다.
  * 시안(Messages·MessagesThread, 기준일 9/11 금)의 날짜를 MOCK_NOW 주로 옮겼다 — 마감 9/24, 마감 하루 전 발송 9/23 09:00,
  * 이재환에게 마지막으로 보낸 날 9/16(오늘로 3일째 답장 없음), 정하늘 항목은 3일 전(9/15)에 만들어졌다.
- * ws_01: 보내기 전 확인 2건, 대화 4건(이재환은 답장 대기) + 채널 1건 (계획 C-7 `messages-default`).
+ * 재촉은 검토 행 하나로 승인 대기·예약·발송·취소·만료를 지난다. 만료는 마감일로 읽을 때 계산하고 저장하지 않는다.
+ * ws_01: 보내기 전 확인 2건(rv_01·rv_02). rv_03 은 취소됨, rv_04 는 만료라 목록에 없다.
+ * 대화 4건(이재환은 답장 대기) + 채널 1건 (계획 C-7 `messages-default`).
  * ws_02: 대화 1건 — 공간을 바꾸면 이전 공간의 메시지가 보이지 않는지 확인한다 (AC-05)
  */
 
-export interface MockMessageReview extends MessageReviewDto {
-  workspace_id: string
-}
-
-/** 답장 대기·승인 대기는 저장하지 않는다 — handler 가 메시지와 검토 항목에서 그때그때 계산한다 */
-export interface MockMessageThread extends Omit<
-  MessageThreadDto,
-  'awaiting_reply_since' | 'pending_reviews'
+export interface MockMessageReview extends Omit<
+  MessageReviewDto,
+  'status' | 'approved_by' | 'deadline_send_passed'
 > {
   workspace_id: string
+  /** 만료는 여기 없다. 마감이 지난 승인 대기를 읽을 때 만료로 본다 */
+  state: 'pending' | 'approved' | 'sent' | 'cancelled'
+  approved_by: string | null
+  cancel_reason: 'dismissed' | 'responded' | null
+  /** 나간 시각, 또는 취소된 기록을 놓는 시각 */
+  closed_at: string | null
+}
+
+export type MockAttribution =
+  | { status: 'needs_pm'; candidate_task_ids: string[] }
+  | { status: 'resolved'; task_id: string | null }
+
+/** 대화에 이미 쌓인 메시지. 재촉의 단계는 검토 행이 가진다 */
+export interface MockThreadMessage {
+  message_id: string
+  sender: 'bot' | 'member'
+  body: string
+  sent_at: string
+  approved_by: string | null
+  source: 'discord' | 'web' | null
+  attribution: MockAttribution | null
+}
+
+/** 답장 대기·재촉의 단계는 저장하지 않는다 — handler 가 메시지와 검토 항목에서 그때그때 계산한다 */
+export interface MockMessageThread extends Omit<
+  MessageThreadDto,
+  'awaiting_reply_since' | 'messages'
+> {
+  workspace_id: string
+  /** 이 대화의 팀원. 채널이거나 팀원에 없으면 null */
+  member_id: string | null
+  messages: MockThreadMessage[]
 }
 
 /** 모의 세션의 PM(최진호)이 승인했다 — 시안의 `지훈 승인` 자리 */
 const PM_NAME = '최진호'
 
-function botMessage(
+export function botMessage(
   message_id: string,
   body: string,
   sent_at: string,
   approvedBy: string | null = null,
-): MessageDto {
+): MockThreadMessage {
   return {
     message_id,
     sender: 'bot',
     body,
     sent_at,
-    status: 'sent',
-    delivery: approvedBy === null ? 'auto' : 'approved',
     approved_by: approvedBy,
+    source: null,
+    attribution: null,
   }
 }
 
-function reply(message_id: string, body: string, sent_at: string): MessageDto {
+export function reply(
+  message_id: string,
+  body: string,
+  sent_at: string,
+  source: 'discord' | 'web' = 'discord',
+): MockThreadMessage {
   return {
     message_id,
-    sender: 'counterpart',
+    sender: 'member',
     body,
     sent_at,
-    status: 'sent',
-    delivery: null,
     approved_by: null,
+    source,
+    attribution: null,
   }
 }
 
 /** 실제 Discord 주소가 아니다 — 새 창에서 Discord 를 열 뿐 그 대화는 없다 */
 const discordUrl = (id: string) => `https://discord.com/channels/@me/mock-${id}`
+
+const open = {
+  state: 'pending',
+  approved_by: null,
+  cancel_reason: null,
+  closed_at: null,
+} as const
 
 export const messageReviewFixtures: MockMessageReview[] = [
   {
@@ -70,6 +111,7 @@ export const messageReviewFixtures: MockMessageReview[] = [
     send_timing: 'day_before_deadline',
     scheduled_at: '2026-09-23T09:00:00+09:00',
     deadline_send_at: '2026-09-23T09:00:00+09:00',
+    ...open,
   },
   {
     review_id: 'rv_02',
@@ -85,6 +127,42 @@ export const messageReviewFixtures: MockMessageReview[] = [
     send_timing: 'now',
     scheduled_at: null,
     deadline_send_at: null,
+    ...open,
+  },
+  {
+    review_id: 'rv_03',
+    workspace_id: 'ws_01',
+    thread_id: 'th_03',
+    recipient_name: '정하늘',
+    summary: '발표 자료 진행 확인',
+    body: '하늘님, 발표 자료는 어디까지 됐나요?',
+    created_at: '2026-09-07T09:00:00+09:00',
+    deadline: null,
+    reason: '발표 자료 태스크에 9/8 오전까지 소식이 없어 묻기로 했다가, 보내기 전에 답이 왔어요.',
+    reason_url: null,
+    send_timing: 'custom',
+    scheduled_at: '2026-09-08T09:00:00+09:00',
+    deadline_send_at: null,
+    state: 'cancelled',
+    approved_by: null,
+    cancel_reason: 'responded',
+    closed_at: '2026-09-08T09:00:00+09:00',
+  },
+  {
+    review_id: 'rv_04',
+    workspace_id: 'ws_01',
+    thread_id: 'th_04',
+    recipient_name: '박지훈',
+    summary: '회의록 템플릿 검토 확인',
+    body: '지훈님, 회의록 템플릿 검토는 끝나셨나요?',
+    created_at: '2026-09-09T10:00:00+09:00',
+    deadline: '2026-09-10',
+    reason: '회의록 템플릿 마감이 9/10인데, 그 전에 보내지 못했어요.',
+    reason_url: null,
+    send_timing: 'day_before_deadline',
+    scheduled_at: '2026-09-09T18:00:00+09:00',
+    deadline_send_at: '2026-09-09T18:00:00+09:00',
+    ...open,
   },
 ]
 
@@ -92,6 +170,7 @@ export const messageThreadFixtures: MockMessageThread[] = [
   {
     thread_id: 'th_01',
     workspace_id: 'ws_01',
+    member_id: 'mb_03',
     kind: 'direct',
     name: '이재환',
     team_role: '백엔드',
@@ -118,6 +197,7 @@ export const messageThreadFixtures: MockMessageThread[] = [
   {
     thread_id: 'th_02',
     workspace_id: 'ws_01',
+    member_id: 'mb_02',
     kind: 'direct',
     name: '박민수',
     team_role: 'AI',
@@ -130,6 +210,7 @@ export const messageThreadFixtures: MockMessageThread[] = [
   {
     thread_id: 'th_03',
     workspace_id: 'ws_01',
+    member_id: 'mb_04',
     kind: 'direct',
     name: '정하늘',
     team_role: '프론트엔드',
@@ -147,6 +228,7 @@ export const messageThreadFixtures: MockMessageThread[] = [
   {
     thread_id: 'th_04',
     workspace_id: 'ws_01',
+    member_id: null,
     kind: 'direct',
     name: '박지훈',
     team_role: '디자인',
@@ -163,6 +245,7 @@ export const messageThreadFixtures: MockMessageThread[] = [
   {
     thread_id: 'th_05',
     workspace_id: 'ws_01',
+    member_id: null,
     kind: 'channel',
     name: '#회의록 요약',
     team_role: null,
@@ -172,6 +255,7 @@ export const messageThreadFixtures: MockMessageThread[] = [
   {
     thread_id: 'th_11',
     workspace_id: 'ws_02',
+    member_id: null,
     kind: 'direct',
     name: '한결',
     team_role: '디자인',

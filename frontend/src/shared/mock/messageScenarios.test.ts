@@ -3,12 +3,11 @@ import { fetchDto, jsonRequest } from '@/shared/test/api'
 import type {
   MessageInboxDto,
   MessageReviewDto,
-  MessageSendResultDto,
   MessageThreadDto,
 } from '@/shared/types/api/message'
-import { db, replaceDb, resetDb } from './db'
+import { db, initialDb, replaceDb, resetDb } from './db'
 import { MOCK_NOW } from './fixtures/constants'
-import { restoreDb, saveDb } from './persistence'
+import { MOCK_DB_STORAGE_KEY, restoreDb, saveDb } from './persistence'
 import { applyScenario, createScenarioDb } from './scenarios'
 import type { MockScenario } from './scenarios'
 
@@ -36,7 +35,7 @@ const reviewPath = (reviewId: string, workspaceId = 'ws_01') =>
 const patchReview = (reviewId: string, body: unknown, workspaceId?: string) =>
   fetchDto<MessageReviewDto>(reviewPath(reviewId, workspaceId), jsonRequest('PATCH', body))
 const sendReview = (reviewId: string, workspaceId?: string) =>
-  fetchDto<MessageSendResultDto>(`${reviewPath(reviewId, workspaceId)}/send`, { method: 'POST' })
+  fetchDto<{ review_id: string }>(`${reviewPath(reviewId, workspaceId)}/send`, { method: 'POST' })
 const dismissReview = (reviewId: string) =>
   fetchDto<{ review_id: string }>(`${reviewPath(reviewId)}/dismiss`, { method: 'POST' })
 const snapshot = () => structuredClone({ reviews: db.messageReviews, threads: db.messageThreads })
@@ -85,7 +84,7 @@ describe('메시지 조회 handler', () => {
     expect(threads.map(({ thread_id }) => thread_id)).toEqual(['th_11'])
   })
 
-  it('대화는 메시지·역할·Discord 주소와 그 대화의 승인 대기 항목을 싣는다. 다른 공간의 대화나 없는 대화는 404 다', async () => {
+  it('대화는 메시지·역할·Discord 주소와 그 대화의 재촉을 시각 순으로 싣는다. 다른 공간의 대화나 없는 대화는 404 다', async () => {
     const detail = await thread('th_01')
     expect(detail).toMatchObject({
       thread_id: 'th_01',
@@ -93,16 +92,44 @@ describe('메시지 조회 handler', () => {
       name: '이재환',
       team_role: '백엔드',
       awaiting_reply_since: '2026-09-16T18:00:00+09:00',
-      pending_reviews: [{ review_id: 'rv_01', scheduled_at: '2026-09-23T09:00:00+09:00' }],
     })
-    expect(detail.messages.map(({ sender, delivery }) => [sender, delivery])).toEqual([
-      ['bot', 'auto'],
-      ['counterpart', null],
-      ['bot', 'approved'],
+    expect(
+      detail.messages.map(({ message_id, sender, status, at }) => [message_id, sender, status, at]),
+    ).toEqual([
+      ['mg_01', 'bot', 'sent', '2026-09-15T09:02:00+09:00'],
+      ['mg_02', 'member', 'sent', '2026-09-15T09:31:00+09:00'],
+      ['mg_03', 'bot', 'sent', '2026-09-16T18:00:00+09:00'],
+      ['rv_01', 'bot', 'pending', '2026-09-23T09:00:00+09:00'],
     ])
-    expect((await thread('th_02')).pending_reviews).toEqual([])
+    expect(detail.messages[2]).toMatchObject({ approved_by: '최진호' })
+    expect(detail.messages[3]).toMatchObject({ review_id: 'rv_01' })
+    expect((await thread('th_02')).messages.every(({ status }) => status === 'sent')).toBe(true)
     expect((await failure(thread('th_11'))).status).toBe(404)
     expect((await failure(thread('th_99'))).status).toBe(404)
+  })
+
+  it('취소됨·만료됨은 확인 목록에 없고, 대화의 기록으로만 남으며 미리보기는 바뀌지 않는다', async () => {
+    expect((await inbox()).reviews.map(({ review_id }) => review_id)).toEqual(['rv_01', 'rv_02'])
+    expect(
+      (await thread('th_03')).messages.find(({ message_id }) => message_id === 'rv_03'),
+    ).toMatchObject({
+      status: 'cancelled',
+      cancel_reason: 'responded',
+      at: '2026-09-08T09:00:00+09:00',
+    })
+    expect(
+      (await thread('th_04')).messages.find(({ message_id }) => message_id === 'rv_04'),
+    ).toMatchObject({
+      status: 'expired',
+      at: '2026-09-09T18:00:00+09:00',
+    })
+    const { threads } = await inbox()
+    expect(threads.find(({ thread_id }) => thread_id === 'th_03')?.last_message?.message_id).toBe(
+      'mg_07',
+    )
+    expect(threads.find(({ thread_id }) => thread_id === 'th_04')?.last_message?.message_id).toBe(
+      'mg_09',
+    )
   })
 
   it('소속이 아닌 공간은 403 이다', async () => {
@@ -119,42 +146,58 @@ describe('메시지 조회 handler', () => {
 })
 
 describe('보내기 전 확인 항목의 행동 handler — 성공할 때만 db 를 바꾼다 (D-137)', () => {
-  it('발송: 정해 둔 시각이 MOCK_NOW 뒤면 예약 메시지로 대화에 더하고 항목을 지운다', async () => {
-    const result = await sendReview('rv_01')
-    expect(result).toEqual({
-      thread_id: 'th_01',
-      message: {
-        message_id: 'mg_22',
-        sender: 'bot',
-        body: expect.stringContaining('API 명세서 마감이 다음 주 목요일(9/24)') as string,
-        sent_at: '2026-09-23T09:00:00+09:00',
-        status: 'scheduled',
-        delivery: 'approved',
-        approved_by: '최진호',
-      },
+  it('발송: 정해 둔 시각이 MOCK_NOW 뒤면 예약으로 남고 새 메시지는 만들지 않는다', async () => {
+    expect(await sendReview('rv_01')).toEqual({ review_id: 'rv_01' })
+    expect(db.messageReviews.find(({ review_id }) => review_id === 'rv_01')).toMatchObject({
+      state: 'approved',
+      approved_by: '최진호',
+      scheduled_at: '2026-09-23T09:00:00+09:00',
     })
-    expect((await inbox()).reviews.map(({ review_id }) => review_id)).toEqual(['rv_02'])
-    const detail = await thread('th_01')
-    expect(detail.pending_reviews).toEqual([])
-    expect(detail.messages.at(-1)?.status).toBe('scheduled')
+    expect(
+      db.messageThreads
+        .find(({ thread_id }) => thread_id === 'th_01')
+        ?.messages.map(({ message_id }) => message_id),
+    ).toEqual(['mg_01', 'mg_02', 'mg_03'])
+    expect((await inbox()).reviews.map(({ review_id }) => review_id)).toEqual(['rv_01', 'rv_02'])
+    expect((await inbox()).reviews[0]).toMatchObject({ status: 'scheduled', approved_by: '최진호' })
+    expect((await thread('th_01')).messages.at(-1)).toMatchObject({
+      message_id: 'rv_01',
+      status: 'scheduled',
+      at: '2026-09-23T09:00:00+09:00',
+    })
     // 예약은 아직 나가지 않았다 — 목록의 마지막 메시지와 답장 대기는 그대로다
     const summary = (await inbox()).threads.find(({ thread_id }) => thread_id === 'th_01')
     expect(summary?.last_message?.message_id).toBe('mg_03')
     expect(summary?.awaiting_reply_since).toBe('2026-09-16T18:00:00+09:00')
   })
 
-  it('발송: 지금 바로면 MOCK_NOW 에 나간 메시지이고 그 대화는 답장을 기다린다', async () => {
-    const result = await sendReview('rv_02')
-    expect(result.message).toMatchObject({ sent_at: MOCK_NOW, status: 'sent' })
+  it('발송: 지금 바로면 MOCK_NOW 에 나간 재촉이고 그 대화는 답장을 기다린다', async () => {
+    expect(await sendReview('rv_02')).toEqual({ review_id: 'rv_02' })
+    expect((await thread('th_03')).messages.at(-1)).toMatchObject({
+      message_id: 'rv_02',
+      status: 'sent',
+      at: MOCK_NOW,
+    })
     expect((await thread('th_03')).awaiting_reply_since).toBe(MOCK_NOW)
     expect((await inbox()).threads[0].thread_id).toBe('th_03')
+    expect((await inbox()).reviews.map(({ review_id }) => review_id)).toEqual(['rv_01'])
   })
 
-  it('보내지 않음: 항목만 지우고 대화는 그대로다', async () => {
-    const before = (await thread('th_01')).messages
+  it('보내지 않음: 취소된 기록으로 남고 확인 목록에서는 빠진다', async () => {
     expect(await dismissReview('rv_01')).toEqual({ review_id: 'rv_01' })
+    expect(db.messageReviews.find(({ review_id }) => review_id === 'rv_01')).toMatchObject({
+      state: 'cancelled',
+      cancel_reason: 'dismissed',
+      closed_at: MOCK_NOW,
+    })
     expect((await inbox()).reviews.map(({ review_id }) => review_id)).toEqual(['rv_02'])
-    expect((await thread('th_01')).messages).toEqual(before)
+    expect(
+      (await thread('th_01')).messages.find(({ message_id }) => message_id === 'rv_01'),
+    ).toMatchObject({
+      status: 'cancelled',
+      at: MOCK_NOW,
+      cancel_reason: 'dismissed',
+    })
   })
 
   it('고쳐 쓰기: 앞뒤 공백을 지운 문구를 저장한다. 빈 문구·너무 긴 문구는 400 이고 db 는 그대로다', async () => {
@@ -253,6 +296,12 @@ describe('메시지 시나리오', () => {
     expect((await failure(patchReview('rv_01', { body: '고친 문구' }))).status).toBe(500)
     expect((await failure(patchReview('rv_01', { send_timing: 'now' }))).status).toBe(500)
     expect(snapshot()).toEqual(before)
+  })
+
+  it('저장 버전 4 는 버린다', () => {
+    sessionStorage.setItem(MOCK_DB_STORAGE_KEY, JSON.stringify({ version: 4, db: initialDb() }))
+    expect(restoreDb(sessionStorage)).toBe(false)
+    expect(db).toEqual(initialDb())
   })
 
   it.each(MESSAGE_SCENARIOS)('%s 는 sessionStorage 에서 그대로 복원된다', (scenario) => {

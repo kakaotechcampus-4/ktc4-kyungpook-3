@@ -3,6 +3,7 @@ import { delay, http } from 'msw'
 import { expect, userEvent, waitFor, within } from 'storybook/test'
 import { paths } from '@/shared/config/routes'
 import { db } from '@/shared/mock/db'
+import { botMessage, reply } from '@/shared/mock/fixtures/message'
 import { deferred } from '@/shared/test/deferred'
 import { MessageInbox } from './MessageInbox'
 
@@ -108,17 +109,21 @@ export const 대화: Story = {
   },
 }
 
-/** 점선 미리보기에는 승인·반려가 없고 확인하기만 있다. 스토리 인자로 고르므로 링크를 눌러도 이 화면은 그대로다 */
-export const 대화_승인: Story = {
-  args: { threadId: 'th_01' },
-  parameters: { route: paths.messageThread('ws_01', 'th_01') },
+/** 취소된 재촉은 그날 묶음에 남고, 보내기 전 확인의 점선에는 확인하기만 있다. 만료(th_04)는 화면 테스트가 본다 */
+export const 대화_취소_만료: Story = {
+  args: { threadId: 'th_03' },
+  parameters: { route: paths.messageThread('ws_01', 'th_03') },
   play: async ({ canvasElement }) => {
     const detail = detailOf(canvasElement)
+    await expect(await detail.findByText(/9월 8일/)).toBeInTheDocument()
+    await expect(
+      detail.getByText('09:00 · 자동 취소됨 · 보내기 전에 응답이 있었어요'),
+    ).toBeVisible()
     await expect(detail.queryByRole('button', { name: '승인' })).toBeNull()
     await expect(detail.queryByRole('button', { name: '반려' })).toBeNull()
-    await expect(await detail.findByRole('link', { name: '확인하기' })).toHaveAttribute(
+    await expect(detail.getByRole('link', { name: '확인하기' })).toHaveAttribute(
       'href',
-      paths.messageReview('ws_01', 'rv_01'),
+      paths.messageReview('ws_01', 'rv_02'),
     )
   },
 }
@@ -205,15 +210,7 @@ const fillLongMessages = () => {
   review.body = LONG_BODY
   review.reason = `${review.reason} ${UNBROKEN_URL}`
   thread.name = LONG_NAME
-  thread.messages.push({
-    message_id: 'mg_80',
-    sender: 'counterpart',
-    body: `링크 남겨요\n${UNBROKEN_URL}`,
-    sent_at: '2026-09-16T19:00:00+09:00',
-    status: 'sent',
-    delivery: null,
-    approved_by: null,
-  })
+  thread.messages.push(reply('mg_80', `링크 남겨요\n${UNBROKEN_URL}`, '2026-09-16T19:00:00+09:00'))
 }
 
 /** 내용이 칸을 넘지 않는다 — 레이아웃은 jsdom 이 재지 못해 브라우저에서 실측한다 */
@@ -272,18 +269,16 @@ export const 긴_대화: Story = {
       if (!thread) throw new Error('mock thread th_02 is missing')
       for (let index = 0; index < 30; index += 1) {
         const day = String(10 + Math.floor(index / 4)).padStart(2, '0')
-        thread.messages.push({
-          message_id: `mg_${String(50 + index)}`,
-          sender: index % 3 === 0 ? 'counterpart' : 'bot',
-          body:
-            index % 3 === 0
-              ? `${index + 1}번째 답장이에요. 확인했습니다.`
-              : `${index + 1}번째 메시지예요. 진행 상황을 한 번 더 알려 주세요 🙂\n막히는 부분이 있으면 편하게 말해 주세요.`,
-          sent_at: `2026-09-${day}T${String(9 + (index % 4)).padStart(2, '0')}:00:00+09:00`,
-          status: 'sent',
-          delivery: index % 3 === 0 ? null : 'auto',
-          approved_by: null,
-        })
+        const at = `2026-09-${day}T${String(9 + (index % 4)).padStart(2, '0')}:00:00+09:00`
+        const body =
+          index % 3 === 0
+            ? `${index + 1}번째 답장이에요. 확인했습니다.`
+            : `${index + 1}번째 메시지예요. 진행 상황을 한 번 더 알려 주세요 🙂\n막히는 부분이 있으면 편하게 말해 주세요.`
+        thread.messages.push(
+          index % 3 === 0
+            ? reply(`mg_${String(50 + index)}`, body, at)
+            : botMessage(`mg_${String(50 + index)}`, body, at),
+        )
       }
     },
   },

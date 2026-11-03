@@ -4,29 +4,44 @@
  * 대표 계약 문서에 올리지 않는다.
  */
 
-/** 봇이 보낸 메시지인가, 상대(사람·채널)가 보낸 메시지인가 */
-export type MessageSenderDto = 'bot' | 'counterpart'
+/** 봇이 보낸 메시지인가, 팀원이 보낸 메시지인가 */
+export type MessageSenderDto = 'bot' | 'member'
 
 /** 사람별 DM 대화인가, 채널 항목인가 */
 export type MessageThreadKindDto = 'direct' | 'channel'
 
-/** 이미 나갔는가, 승인을 받아 정한 시각을 기다리는가 */
-export type MessageStatusDto = 'sent' | 'scheduled'
+/** 재촉 한 건의 단계. 팀원 답장은 항상 `sent` 다 */
+export type MessageStatusDto = 'pending' | 'scheduled' | 'sent' | 'cancelled' | 'expired'
 
-/** 봇 메시지가 어떻게 나갔는가 — 규칙에 따라 자동으로, 또는 사람이 승인해서 (시안 `자동 발송`·`지훈 승인`) */
-export type MessageDeliveryDto = 'auto' | 'approved'
+export interface TaskRefDto {
+  task_id: string
+  title: string
+}
+
+/** 팀원 답장이 어느 태스크인지. PM 만 받는다 */
+export type MessageAttributionDto =
+  { status: 'needs_pm'; candidates: TaskRefDto[] } | { status: 'resolved'; task: TaskRefDto | null }
 
 export interface MessageDto {
+  /** 재촉 행은 검토 ID(`rv_*`)를 그대로 쓴다. 대화에 쌓인 메시지(`mg_*`)와 겹치지 않는다 */
   message_id: string
   sender: MessageSenderDto
   body: string
-  /** 나간 시각. `scheduled` 이면 나갈 시각이다 */
-  sent_at: string
   status: MessageStatusDto
-  /** 봇 메시지만 있다. 상대 메시지는 null */
-  delivery: MessageDeliveryDto | null
-  /** `approved` 일 때 승인한 사람 이름 */
+  /**
+   * 자리의 시각. 승인 대기·예약은 나갈 시각(승인 대기의 지금 바로는 null).
+   * 발송됨은 나간 시각. 취소됨·만료됨은 화면에 놓는 시각
+   */
+  at: string | null
+  /** 발송됨·예약의 승인자. 발송됨의 null 은 자동 발송 */
   approved_by: string | null
+  /** 승인 대기·예약만. `확인하기` 가 연다 */
+  review_id: string | null
+  cancel_reason: 'dismissed' | 'responded' | null
+  /** 팀원 답장만 */
+  source: 'discord' | 'web' | null
+  /** 팀원 답장만, PM 에게만 */
+  attribution: MessageAttributionDto | null
 }
 
 /** 언제 보낼까 — 마감 하루 전 · 지금 바로 · 직접 정한 시각 (Messages 시안) */
@@ -54,16 +69,24 @@ export interface MessageReviewDto {
   scheduled_at: string | null
   /** `마감 하루 전` 을 고르면 나갈 시각. 마감이 없으면 null 이고 그 선택지는 고를 수 없다 */
   deadline_send_at: string | null
+  /** 승인 전인가, 승인한 뒤 시각을 기다리는가 */
+  status: 'pending' | 'scheduled'
+  /** `scheduled` 일 때 승인한 사람 이름 */
+  approved_by: string | null
+  /** `deadline_send_at` 이 지금이거나 그 전인가. 서버가 정한다 */
+  deadline_send_passed: boolean
 }
 
 export interface MessageThreadSummaryDto {
   thread_id: string
   kind: MessageThreadKindDto
   name: string
-  /** 마지막으로 나간(또는 받은) 메시지. 예약 메시지는 넣지 않는다 */
+  /** 이미 대화에 남은 마지막 메시지. 아직 나가지 않은 재촉은 넣지 않는다 */
   last_message: MessageDto | null
   /** 답장을 기다리기 시작한 때 — 상대의 마지막 답 뒤에 처음 나간 봇 메시지의 시각. 기다리지 않으면 null, 채널은 늘 null */
   awaiting_reply_since: string | null
+  /** 태스크를 정하지 못한 답장이 있는가. PM 만 true 가 된다 */
+  needs_attribution: boolean
 }
 
 /** `GET /workspaces/{workspace_id}/messages` (임시) */
@@ -72,14 +95,7 @@ export interface MessageInboxDto {
   threads: MessageThreadSummaryDto[]
 }
 
-/** 대화 안에서 승인을 기다리는 보내기 전 확인 항목 (MessagesThread 시안의 점선 말풍선) */
-export interface PendingMessageReviewDto {
-  review_id: string
-  body: string
-  scheduled_at: string | null
-}
-
-/** `GET /workspaces/{workspace_id}/messages/threads/{thread_id}` (임시). 메시지는 보낸 시각 순이다 */
+/** `GET /workspaces/{workspace_id}/messages/threads/{thread_id}` (임시). 메시지는 자리 시각 순이다 */
 export interface MessageThreadDto {
   thread_id: string
   kind: MessageThreadKindDto
@@ -90,7 +106,6 @@ export interface MessageThreadDto {
   discord_url: string | null
   messages: MessageDto[]
   awaiting_reply_since: string | null
-  pending_reviews: PendingMessageReviewDto[]
 }
 
 /** `PATCH /workspaces/{workspace_id}/messages/reviews/{review_id}` (임시). 준 칸만 바꾼다 */
@@ -101,8 +116,12 @@ export interface MessageReviewPatchDto {
   scheduled_at?: string
 }
 
-/** `POST /workspaces/{workspace_id}/messages/reviews/{review_id}/send` (임시) — 대화에 더한 메시지 */
-export interface MessageSendResultDto {
-  thread_id: string
-  message: MessageDto
+/** `POST /workspaces/{workspace_id}/messages/threads/{thread_id}/replies` (임시) */
+export interface MessageReplyRequestDto {
+  body: string
+}
+
+/** `POST /workspaces/{workspace_id}/messages/replies/{message_id}/attribution` (임시) */
+export interface MessageAttributionRequestDto {
+  task_id: string | null
 }
