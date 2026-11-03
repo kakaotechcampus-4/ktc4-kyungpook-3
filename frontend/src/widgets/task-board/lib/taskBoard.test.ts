@@ -113,6 +113,44 @@ describe('날짜 조건 — 서울 날짜 문자열로 판정한다', () => {
   })
 })
 
+describe('막힘 조건 (D-176)', () => {
+  const today = '2026-09-18'
+
+  it.each([
+    ['막힘·마감 없음', null, 'blocked', true],
+    ['막힘·기한 지남', '2026-09-10', 'blocked', true],
+    ['막힘·먼 마감', '2026-10-30', 'blocked', true],
+    ['진행 중·기한 지남', '2026-09-10', 'in_progress', false],
+    ['할 일·마감 없음', null, 'todo', false],
+    ['완료', '2026-09-10', 'done', false],
+  ] as const)('%s', (_, dueDate, status, expected) => {
+    expect(matchesDue(task('tk_x', { dueDate, status }), ['blocked'], today)).toBe(expected)
+  })
+
+  it('다른 조건과 함께 고르면 어느 하나에 맞는 태스크다(OR)', () => {
+    const soonOnly = task('tk_a', { dueDate: '2026-09-20', status: 'todo' })
+    const blockedOnly = task('tk_b', { dueDate: null, status: 'blocked' })
+    const neither = task('tk_c', { dueDate: '2026-10-30', status: 'in_progress' })
+    const done = task('tk_d', { dueDate: '2026-09-20', status: 'done' })
+    expect(
+      [soonOnly, blockedOnly, neither, done].map((each) =>
+        matchesDue(each, ['soon', 'blocked'], today),
+      ),
+    ).toEqual([true, true, false, false])
+  })
+
+  it('픽스처에서는 막힌 태스크 하나(tk_03)만 남고, 진행 중 탭에 든다', () => {
+    const board = buildTaskBoard(input(['blocked']), true, 'in_progress')
+    expect(ids(board.items)).toEqual(['tk_03'])
+    expect(board.tabs).toEqual([
+      { tab: 'all', count: 4 },
+      { tab: 'needs_review', count: 3 },
+      { tab: 'in_progress', count: 1 },
+      { tab: 'done', count: 0 },
+    ])
+  })
+})
+
 describe('정렬', () => {
   it('PM 의 전체는 대기 승인(대기 시작 오래된 순)을 먼저, 그 다음 태스크다 — 서버 순서와 무관하다', () => {
     const reversed: BoardInput = { ...input(), approvals: [...approvals].reverse() }
@@ -250,6 +288,21 @@ describe('URL 조건', () => {
     expect(read('?due=soon,overdue').due).toEqual(['overdue', 'soon'])
     expect(read('?due=overdue%2Csoon,soon').due).toEqual(['overdue', 'soon'])
     expect(read('?due=soon').due).toEqual(['soon'])
+    expect(read('?due=blocked').due).toEqual(['blocked'])
+    expect(read('?due=blocked,overdue').due).toEqual(['overdue', 'blocked'])
+  })
+
+  it('막힘은 날짜 조건 뒤에 쓴다 — 날짜 조건만 고른 주소는 그대로다', () => {
+    const empty = new URLSearchParams()
+    expect(boardSearch(empty, { tab: 'in_progress', due: ['blocked', 'soon', 'overdue'] })).toBe(
+      '?tab=in_progress&due=overdue,soon,blocked',
+    )
+    expect(boardSearch(empty, { tab: 'in_progress', due: ['soon', 'overdue'] })).toBe(
+      '?tab=in_progress&due=overdue,soon',
+    )
+    expect(boardSearch(empty, { tab: 'in_progress', due: ['blocked'] })).toBe(
+      '?tab=in_progress&due=blocked',
+    )
   })
 
   it('쓸 때는 전체·빈 조건을 빼고 쉼표를 그대로 둔다. 다른 파라미터는 남는다', () => {

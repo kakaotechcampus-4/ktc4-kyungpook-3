@@ -14,9 +14,12 @@ import type { TaskSort } from './taskSort'
 /** URL 의 검색 파라미터 이름. 탭 값은 기존 TaskTab 그대로다 */
 export const BOARD_PARAMS = { tab: 'tab', due: 'due' } as const
 
-/** 날짜 조건. `overdue` 기한 지남, `soon` 서울 오늘부터 6일 뒤까지(오늘 포함 7개 날짜). D-046 의 조합을 `due=overdue,soon` 으로 쓴다 */
-export type DueCondition = 'overdue' | 'soon'
-export const DUE_CONDITIONS = ['overdue', 'soon'] as const satisfies readonly DueCondition[]
+/**
+ * 마감 조건 (D-046, D-176). 날짜 둘과 상태 하나 — `overdue` 기한 지남, `soon` 서울 오늘부터 6일 뒤까지(오늘 포함 7개 날짜),
+ * `blocked` 막힘. D-046 의 조합을 `due=overdue,soon` 으로 쓴다. 이 순서가 URL 에 쓰는 순서다 — 새 조건은 끝에 붙인다
+ */
+export const DUE_CONDITIONS = ['overdue', 'soon', 'blocked'] as const
+export type DueCondition = (typeof DUE_CONDITIONS)[number]
 
 // 날짜 계산은 대시보드(M7)와 함께 쓰려고 shared/lib/date 로 옮겼다. 기존 import 경로는 그대로 둔다
 export { SOON_LAST_DAY_OFFSET, addDays, soonUntil } from '@/shared/lib/date'
@@ -31,13 +34,13 @@ export function boardTabs(isPm: boolean): readonly TaskTab[] {
 
 export interface BoardQuery {
   tab: TaskTab
-  /** 고른 날짜 조건. DUE_CONDITIONS 순서로 중복 없이 담는다. 비었으면 조건 없음 */
+  /** 고른 마감 조건. DUE_CONDITIONS 순서로 중복 없이 담는다. 비었으면 조건 없음 */
   due: readonly DueCondition[]
 }
 
 /**
  * URL 검색 파라미터를 목록 조건으로 읽는다. 역할이 볼 수 없는 탭·모르는 값은 `전체` 다.
- * 날짜 조건은 쉼표로 나눈 값 중 아는 것만 받는다 — 순서·중복과 무관하게 같은 조건이다
+ * 마감 조건은 쉼표로 나눈 값 중 아는 것만 받는다 — 순서·중복과 무관하게 같은 조건이다
  */
 export function readBoardQuery(params: URLSearchParams, isPm: boolean): BoardQuery {
   const tab = parseEnumParam(params.get(BOARD_PARAMS.tab) ?? undefined, boardTabs(isPm)) ?? 'all'
@@ -46,8 +49,8 @@ export function readBoardQuery(params: URLSearchParams, isPm: boolean): BoardQue
 }
 
 /**
- * 목록 조건을 검색 문자열로 쓴다. `전체` 탭과 빈 날짜 조건은 적지 않는다 — 해제하면 파라미터가 사라진다.
- * 다른 파라미터는 그대로 둔다. 날짜 조건의 쉼표는 인코딩하지 않는다(`due=overdue,soon`)
+ * 목록 조건을 검색 문자열로 쓴다. `전체` 탭과 빈 마감 조건은 적지 않는다 — 해제하면 파라미터가 사라진다.
+ * 다른 파라미터는 그대로 둔다. 마감 조건의 쉼표는 인코딩하지 않는다(`due=overdue,soon`)
  */
 export function boardSearch(current: URLSearchParams, next: BoardQuery): string {
   const rest = new URLSearchParams(current)
@@ -61,16 +64,20 @@ export function boardSearch(current: URLSearchParams, next: BoardQuery): string 
   return search === '' ? '' : `?${search}`
 }
 
+/** 조건마다 맞는 태스크. Record 라 조건을 더하면 여기를 채워야 빌드된다 */
+const DUE_MATCH: Record<DueCondition, (task: Task, today: string) => boolean> = {
+  overdue: (task, today) => isOverdue(task, today),
+  soon: (task, today) => isDueSoon(task, today, soonUntil(today)),
+  blocked: (task) => task.status === 'blocked',
+}
+
 /**
- * 날짜 조건에 맞는 태스크인가. 조건이 없으면 모두 맞다. 조건이 있으면 미완료이면서 고른 조건 중 하나에 맞아야 한다 —
- * 완료 태스크와 마감 없는 태스크는 어느 조건에도 맞지 않는다 (isOverdue·isDueSoon)
+ * 마감 조건에 맞는 태스크인가. 조건이 없으면 모두 맞다. 고른 조건 중 하나라도 맞으면 맞다(OR).
+ * 완료 태스크는 어느 조건에도 맞지 않는다 — 날짜 조건은 isOverdue·isDueSoon 이 미완료·마감 있는 태스크만 보고,
+ * `blocked` 는 상태라 완료일 수 없다
  */
 export function matchesDue(task: Task, due: readonly DueCondition[], today: string): boolean {
-  if (due.length === 0) return true
-  return (
-    (due.includes('overdue') && isOverdue(task, today)) ||
-    (due.includes('soon') && isDueSoon(task, today, soonUntil(today)))
-  )
+  return due.length === 0 || due.some((condition) => DUE_MATCH[condition](task, today))
 }
 
 /** 진행 중인 상태 변경을 겹친다. 겹칠 것이 없는 태스크는 그대로다 */
@@ -98,7 +105,7 @@ export interface BoardInput {
 }
 
 /**
- * 한 탭에 드는 승인과 태스크, 받은 순서 그대로. 날짜 조건은 태스크에만 걸고 승인에는 걸지 않는다.
+ * 한 탭에 드는 승인과 태스크, 받은 순서 그대로. 마감 조건은 태스크에만 걸고 승인에는 걸지 않는다.
  * - 전체: 대기 승인과 태스크
  * - 확인 필요: 대기 승인만
  * - 진행 중(todo·in_progress·blocked)·완료: 태스크만 (filterByTab)
