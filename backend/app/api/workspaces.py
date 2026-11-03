@@ -2,6 +2,7 @@ import json
 import logging
 import uuid
 from fastapi import APIRouter, Depends, UploadFile, File, Form
+from pydantic import AwareDatetime
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 from datetime import datetime, timezone
@@ -242,7 +243,8 @@ def upload_meeting(
     workspace_id: str,
     # meeting.title 칼럼 길이. 넘으면 파일을 저장하기 전에 400으로 거절한다
     title: str = Form(..., max_length=200),
-    started_at: Optional[datetime] = Form(None),
+    # 시간대가 없으면 PostgreSQL이 UTC로 읽어 어긋난 시각이 AI까지 가므로 400으로 거절한다(#288)
+    started_at: Optional[AwareDatetime] = Form(None),
     # 프론트는 참석자마다 같은 이름의 필드를 반복해 보낸다
     attendee_member_ids: list[str] = Form(...),
     file: UploadFile = File(...),

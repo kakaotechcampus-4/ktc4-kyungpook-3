@@ -90,16 +90,15 @@ def seed(db):
     return {"ws": ws, "pm": pm, "jimin": jimin, "minsu": minsu, "left": left, "outsider": outsider}
 
 
-def _upload(seed, attendee_ids, filename="회의.wav", content=AUDIO):
+def _upload(seed, attendee_ids, filename="회의.wav", content=AUDIO, started_at="2026-10-13T10:00:00+09:00"):
     c = TestClient(app, base_url="https://testserver")
     c.cookies.set("session_token", "pm-token")
+    data = {"title": "주간 회의", "attendee_member_ids": attendee_ids}
+    if started_at is not None:
+        data["started_at"] = started_at
     return c.post(
         f"/api/v1/workspaces/{seed['ws'].workspace_id}/meetings/upload",
-        data={
-            "title": "주간 회의",
-            "started_at": "2026-10-13T10:00:00+09:00",
-            "attendee_member_ids": attendee_ids,
-        },
+        data=data,
         files={"file": (filename, content, "audio/wav")},
     )
 
@@ -206,6 +205,41 @@ def test_title_longer_than_the_column_gets_400_before_saving(db, seed):
     assert not _upload_root().exists()
     assert post("가" * 200).status_code == 202
 
+
+
+def _as_utc(value: datetime) -> datetime:
+    # SQLite는 시간대를 버리고 돌려준다. 여기서 비교하는 값은 서버가 만든 UTC 시각이라 UTC를 다시 붙인다
+    return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
+
+
+def test_started_at_without_timezone_gets_400_before_saving(db, seed):
+    # 시간대가 없으면 PostgreSQL이 UTC로 읽어 한국 시각이 9시간 어긋난 채 저장된다(#288)
+    r = _upload(seed, [seed["pm"].member_id], started_at="2026-10-13T10:00:00")
+
+    assert r.status_code == 400, r.text
+    error = r.json()["error"]
+    assert error["code"] == "INVALID_REQUEST"
+    assert [f["loc"] for f in error["details"]["fields"]] == [["body", "started_at"]]
+    assert _meetings(db) == []
+    assert not _upload_root().exists()
+
+
+@pytest.mark.parametrize("started_at", ["2026-10-13T01:00:00Z", "2026-10-13T10:00:00+09:00"])
+def test_started_at_with_timezone_is_accepted(db, seed, started_at):
+    r = _upload(seed, [seed["pm"].member_id], started_at=started_at)
+
+    assert r.status_code == 202, r.text
+    assert len(_meetings(db)) == 1
+
+
+@pytest.mark.parametrize("started_at", [None, ""])
+def test_missing_started_at_falls_back_to_upload_time(db, seed, started_at):
+    r = _upload(seed, [seed["pm"].member_id], started_at=started_at)
+
+    assert r.status_code == 202, r.text
+    [meeting] = _meetings(db)
+    upload = db.get(MeetingUpload, meeting.meeting_id)
+    assert _as_utc(meeting.started_at) == _as_utc(upload.uploaded_at)
 
 def test_db_connection_is_released_while_saving_audio(db, seed, monkeypatch):
     """녹음을 복사하는 동안 트랜잭션을 열어 두지 않는다. 동시 업로드가 연결 풀을 다 쓰지 않게 한다."""
