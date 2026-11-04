@@ -3,9 +3,8 @@
 지정은 speakers[].member_id (멤버 ID 문자열, 외부 참석자는 null) 와 최상위 mapped_at 을 더하고 status 를 mapped 로 바꾼다.
 user_id(라벨 id)·file·wav 파일명은 그대로라 parse_wav_stem 이 보는 화자 id 가 변하지 않는다. 멤버 ID 는 형식만 보고(비어 있거나 앞뒤 공백이 있으면 거절) 바꾸지 않는다.
 같은 멤버를 여러 라벨에 지정해도 된다. mapped 에서 다시 지정하면 덮어쓴다.
-지정 뒤의 처리(워커 이어받기·BE 인계)는 정해지지 않았고 워커는 업로드 회의를 집지 않는다(#254·#255 인계 합의 전까지).
+PM 의 지정은 upload.assign.assign_one 이 BE 의 resume 응답 mapping 으로 이 함수를 불러 매니페스트에 쓴다. 지정 뒤의 처리(워커 이어받기·BE 인계)는 아직 정해지지 않았고 워커의 처리 바퀴는 업로드 회의를 집지 않는다.
 이 함수가 지정 결과를 매니페스트에 쓰는 유일한 자리이고, CLI 는 개발·운영용 입구다. PM 이 쓰는 경로가 아니다(PM 은 AI 서버 셸에 들어가지 않고 CLI 에는 샘플 구간도 없다).
-PM 의 지정을 웹으로 받는 BE 경로(#269·#270)와 이 함수를 어떻게 잇는지(예: resume 응답의 mapping 을 이 함수로 매니페스트에 쓴다)는 #255 에서 BE 와 정한다.
 실행(내장 map 과 이름이 겹치지 않게 모듈 이름은 mapping): python -m upload.mapping <매니페스트> <mapping.json>
 mapping.json 은 {"mapping": {"SPEAKER_00": "멤버ID", "SPEAKER_01": null}} 또는 안쪽 dict 그대로. 키는 SPEAKER_00 도 SPEAKER00 도 된다.
 """
@@ -20,6 +19,10 @@ from pathlib import Path
 from capture.recorder import STATUS_DIARIZED, STATUS_MAPPED, save_manifest, try_lock
 from shared.schemas import now_iso
 from upload.tracks import speaker_label_id
+
+
+class MappingBusy(ValueError):
+    """다른 프로세스가 이 회의 매니페스트를 쥐고 있다(잠금 실패). 다른 ValueError 와 달리 기다렸다 다시 하면 된다."""
 
 
 def _normalize(mapping: dict, known: list[str]) -> dict[str, str | None]:
@@ -45,13 +48,14 @@ def _normalize(mapping: dict, known: list[str]) -> dict[str, str | None]:
 
 
 def apply_mapping(path: Path, mapping: dict) -> dict:
-    """매니페스트에 지정을 쓰고 새 매니페스트를 돌려준다. 어떤 검사든 실패하면 ValueError 이고 파일은 그대로다."""
+    """매니페스트에 지정을 쓰고 새 매니페스트를 돌려준다. 어떤 검사든 실패하면 ValueError 이고 파일은 그대로다.
+    잠금 경합만 ValueError 의 하위 MappingBusy 라서 부르는 쪽이 일시 실패(다시 시도)와 영구 실패(다시 해도 같다)를 가른다."""
     path = Path(path)
     if not path.is_file():
         raise ValueError(f"매니페스트가 없다: {path}")
     lock = try_lock(path)
     if lock is None:
-        raise ValueError(f"다른 프로세스가 이 회의를 쥐고 있다: {path.name}")
+        raise MappingBusy(f"다른 프로세스가 이 회의를 쥐고 있다: {path.name}")
     try:
         manifest = json.loads(path.read_text(encoding="utf-8"))
         if not isinstance(manifest, dict):
