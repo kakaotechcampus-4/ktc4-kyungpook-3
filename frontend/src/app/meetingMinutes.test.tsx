@@ -350,6 +350,21 @@ describe('회의록 상세 (U5-3)', () => {
     expect(summaryTab).toHaveFocus()
     expect(summaryTab).toHaveAttribute('aria-selected', 'true')
   })
+  it('Tab 은 글만 있는 요약 패널에는 패널로, 링크가 있는 추출된 일 패널에서는 패널을 건너 첫 링크로 간다 (#337)', async () => {
+    const user = userEvent.setup()
+    renderApp(MT_09)
+    await screen.findByRole('heading', { level: 2, name: '3주차 정기회의' }, { timeout: 5_000 })
+
+    act(() => screen.getByRole('tab', { name: '요약' }).focus())
+    await user.tab()
+    expect(screen.getByRole('tabpanel')).toHaveFocus()
+
+    const tasks = await openTab(user, /추출된 일/)
+    const first = await within(tasks).findByRole('link', { name: '로그인 API 연동' })
+    expect(screen.getByRole('tab', { name: /추출된 일/ })).toHaveFocus()
+    await user.tab()
+    expect(first).toHaveFocus()
+  })
 })
 
 describe('공간 확인 (U5-4)', () => {
