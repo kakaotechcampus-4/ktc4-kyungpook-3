@@ -274,7 +274,6 @@ def run(
     out = PipelineResult(dropped=dropped)
     new_cards: list[dict[str, Any]] = []                         # 이번 회의 새 항목 카드
     edits: dict[str, tuple[NotionCandidate, dict[str, Any]]] = {}  # task_id → (DB 원래 후보, 수정 카드)
-    scoped: set[str] = set()  # 수정 카드에 범위 결정이 합쳐진 task_id — 필드가 다 되돌려져도 결정은 남는다
     for finding in findings:
         try:
             found = candidates.similar_tasks(workspace_id, finding.text)
@@ -332,14 +331,12 @@ def run(
             base, card = edits[task_id]
             _merge_into(card, finding, result, drafted, base=base, today=today, found=found)
             if result.category == "scope":
-                scoped.add(task_id)
-            if not _has_change(card):
-                if card["category"] == "scope" or task_id in scoped:
-                    # 필드는 다 되돌려졌어도 범위 결정이 남았다 — scope 로 보내야 BE 가 필드 없는 결정으로 받는다
-                    card["category"] = "scope"
-                else:  # 되돌려서 바꿀 게 없다
-                    out.items = [i for i in out.items if i is not card]
-                    del edits[task_id]
+                # 합치는 순서와 상관없이 범위 결정이 남는다. 필드가 다 되돌려져도 BE 가 필드 없는 결정으로 받고,
+                # 답장 판단(judge/reply.py)은 run 이 주는 합친 카드에서 이 값으로만 범위 결정을 알아본다
+                card["category"] = "scope"
+            if not _has_change(card) and card["category"] != "scope":  # 되돌려서 바꿀 게 없다
+                out.items = [i for i in out.items if i is not card]
+                del edits[task_id]
             continue
 
         item = to_item(finding, result, drafted, target, transcript)

@@ -149,7 +149,7 @@ def test_every_field_of_an_item_is_its_own_line_and_jev_is_called_once():
     item = _update(status="done", due_date="2026-11-14", assignee_type="thirdname", assignee_raw="지민", category="scope")
     body = _judge(FakeRun(item), jev=jev)
 
-    assert _shape(body) == [("t_api", "status", "done", "certain"), ("t_api", "due_date", "2026-11-14", None),
+    assert _shape(body) == [("t_api", "status", "done", "inferred"), ("t_api", "due_date", "2026-11-14", None),
                             ("t_api", "assignee", "지민", None), ("t_api", "scope", None, None)]
     assignee = body["changes"][2]
     assert (assignee["assignee_type"], assignee["assignee_raw"]) == ("thirdname", "지민")
@@ -472,6 +472,23 @@ def test_the_real_run_splits_one_reply_into_a_line_per_task(monkeypatch):
         {"sender": "member", "text": "API 는 다 했고 로그인은 다음 주 금요일까지요"}]), jev=jev)
 
     assert _shape(body) == [("t_api", "status", "done", "certain"), ("t_login", "due_date", "2026-11-13", None)]
+
+
+@pytest.mark.parametrize("order", [("status", "scope"), ("scope", "status")])
+def test_the_real_run_keeps_a_scope_merged_with_a_status_and_never_auto_applies_it(monkeypatch, order):
+    reply = "소셜 로그인은 빼기로 했고 나머지는 다 했어요"
+    said = {"status": ({"indices": [1], "summary": "API 명세서를 끝냄", "assignee_type": "none", "reason": "진척"},
+                       _terra(category="status", status="done"), {"task": None, "due_date": None, "doc_text": "API 명세서 완료"}),
+            "scope": ({"indices": [1], "summary": "소셜 로그인을 뺌", "assignee_type": "none", "reason": "범위"},
+                      _terra(category="scope"), {"task": None, "due_date": None, "doc_text": "소셜 로그인 제외"})}
+    findings, terras, drafts = zip(*(said[kind] for kind in order))
+    _install(monkeypatch, stage1={"findings": list(findings)}, terra=list(terras), luna_draft=list(drafts))
+
+    body = judge_reply(_claim(lines=[{"sender": "pm", "text": "API 명세서는요?"}, {"sender": "member", "text": reply}]),
+                       jev=FakeJev([_yes(status=0.95)]))
+
+    assert _shape(body) == [("t_api", "status", "done", "inferred"), ("t_api", "scope", None, None)]
+    assert "소셜 로그인 제외" in body["changes"][1]["summary"]
 
 
 def test_the_real_run_makes_no_line_from_an_earlier_reply(monkeypatch):

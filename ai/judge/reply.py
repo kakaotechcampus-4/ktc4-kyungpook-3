@@ -20,7 +20,7 @@ from typing import Any
 
 from jev import JevClient
 from judge import pipeline
-from judge.evidence import verify_reply
+from judge.evidence import INFERRED, verify_reply
 from shared.schemas import JudgeFinding, JudgeInput, NotionCandidate, Transcript, TranscriptSegment
 
 logger = logging.getLogger(__name__)
@@ -60,7 +60,9 @@ def _field_lines(item: dict[str, Any], evidence_status: str) -> list[dict[str, A
             "base": item["target_snapshot"]}
     lines = []
     if item["status"] is not None:
-        lines.append(_line("status", **same, new_value=item["status"], evidence_status=evidence_status))
+        # 범위 내용은 PM 이 봐야 해서 같은 카드의 status 도 자동 반영되지 않게 한다
+        lines.append(_line("status", **same, new_value=item["status"],
+                           evidence_status=INFERRED if item["category"] == "scope" else evidence_status))
     if item["due_date"] is not None:
         lines.append(_line("due_date", **same, new_value=item["due_date"]))
     if item["assignee_raw"] or item["assignee_type"] == "first":
