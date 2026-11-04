@@ -162,9 +162,10 @@ def test_process_session_runs_every_stage_and_records_when(tmp_path):
     assert seen["today"] == date(2026, 9, 16) and seen["names"] == {"1": "민수", "2": "서연"} and seen["n"] == 3
     # BE 에는 회의 생성 → 종료 → 발화 저장 → 추출 등록 순서로 갔고, 1인칭 항목에 그 트랙의 uid 가 실렸다
     assert [(c[0], c[1]) for c in fake.calls] == [("POST", "/meetings"), ("PATCH", "/meetings/m1/end"),
+                                                   ("GET", "/workspaces/ws-1/members/names"),
                                                    ("POST", "/meetings/m1/sources"), ("POST", "/extractions")]
     assert fake.calls[0][2]["title"] == "회의방 2026-09-16"
-    assert fake.calls[3][2]["items"][0]["evidence_speaker"] == "1"
+    assert fake.calls[4][2]["items"][0]["evidence_speaker"] == "1"
     assert R.pending_sessions(rec) == []
 
 
@@ -407,6 +408,7 @@ def test_lines_are_saved_to_the_be_between_transcription_and_extraction(tmp_path
     assert r["ran"] == ["transcribed", "sourced", "extracted", "handed_off"] and r["status"] == "handed_off"
     # 발화 먼저, 추출 등록 나중 (BE 명세)
     assert [(c[0], c[1]) for c in fake.calls] == [("POST", "/meetings"), ("PATCH", "/meetings/m1/end"),
+                                                   ("GET", "/workspaces/ws-1/members/names"),
                                                    ("POST", "/meetings/m1/sources"), ("POST", "/extractions")]
     assert sorted(fake.sources["m1"]) == [1, 2, 3]
     assert [fake.sources["m1"][q]["speaker_name"] for q in (1, 2, 3)] == ["민수", "서연", "민수"]
@@ -698,6 +700,65 @@ def test_a_meeting_without_names_sends_no_prompt(tmp_path):
     assert stt.prompts and set(stt.prompts) == {None}
 
 
+def _members(fake):
+    fake.members = {"ws-1": [{"member_id": "m1", "name": "김동우", "discord_user_id": "1", "aliases": []},
+                             {"member_id": "m2", "name": "유재환", "discord_user_id": "2", "aliases": ["재환이", "jh"]}]}
+    return fake
+
+
+def test_the_names_the_pm_set_are_the_hint_and_are_kept_for_retries(tmp_path):
+    """디스코드 표시 이름은 아이디 꼴이거나 성이 빠져 있다. 처리할 때 BE 에서 PM 이 정한 이름을 받아 프롬프트에
+    싣고, 실패 구간 재전사도 같은 이름을 쓰게 매니페스트에 남긴다."""
+    rec, path, manifest = _session(tmp_path)
+    manifest["hint_names"] = ["yujaehwan2261", "동우"]
+    fake = _members(FakeBe())
+    stt = PromptEcho()
+    _run(rec, manifest, tmp_path, backend=stt, extractor=_extractor({}), handoff=_be(fake))
+    assert set(stt.prompts) == {"동우님, 동우, 김동우, 재환님, 재환, 유재환, 재환이."}
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    assert saved["hint_members"] == [{"name": "김동우", "aliases": [], "discord_user_id": "1"},
+                                     {"name": "유재환", "aliases": ["재환이", "jh"], "discord_user_id": "2"}]
+    assert ("GET", "/workspaces/ws-1/members/names") in [c[:2] for c in fake.calls]
+
+
+def test_without_names_from_the_be_the_discord_names_are_the_hint(tmp_path):
+    """BE 가 안 되거나 워크스페이스가 없으면 디스코드 표시 이름으로 돌아간다. 힌트 때문에 전사를 멈추지 않는다."""
+    rec, path, manifest = _session(tmp_path)
+    manifest["hint_names"] = ["동우"]
+    fake = FakeBe()
+    fake.down = True
+    stt = PromptEcho()
+    r = _run(rec, manifest, tmp_path, backend=stt, extractor=_extractor({}), handoff=_be(fake))
+    assert "transcribed" in r["ran"] and set(stt.prompts) == {"동우님, 동우."}
+    assert "hint_members" not in json.loads(path.read_text(encoding="utf-8"))
+
+
+def test_the_minutes_use_the_names_the_pm_set(tmp_path):
+    """회의록(BE 발화 저장, 대본 파일, 추출)의 화자 이름도 디스코드 표시 이름 대신 PM 이 정한 이름이다.
+    프롬프트를 받지 않는 로컬 백엔드여도 같다. 팀원 목록에 없는 화자는 디스코드 표시 이름 그대로다."""
+    rec, path, manifest = _session(tmp_path)
+    fake = FakeBe()
+    fake.members = {"ws-1": [{"member_id": "m1", "name": "김동우", "discord_user_id": "1", "aliases": []},
+                             {"member_id": "m3", "name": "윤지민", "discord_user_id": None, "aliases": []}]}
+    seen = {}
+    _run(rec, manifest, tmp_path, extractor=_extractor(seen), handoff=_be(fake))
+    assert [fake.sources["m1"][q]["speaker_name"] for q in (1, 2, 3)] == ["김동우", "서연", "김동우"]
+    assert seen["names"] == {"1": "김동우", "2": "서연"}
+    md = (rec / manifest["meeting_dir"] / "transcript.md").read_text(encoding="utf-8")
+    assert "김동우" in md and "민수" not in md
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    assert saved["speakers"][0]["display_name"] == "민수"     # 디스코드 표시 이름은 매니페스트에 그대로 남긴다
+
+
+def test_without_names_from_the_be_the_minutes_keep_the_discord_names(tmp_path):
+    rec, path, manifest = _session(tmp_path)
+    fake = FakeBe()
+    fake.down = True
+    _run(rec, manifest, tmp_path, extractor=_extractor({}), handoff=_be(fake))
+    md = (rec / manifest["meeting_dir"] / "transcript.md").read_text(encoding="utf-8")
+    assert "민수" in md and "서연" in md
+
+
 class PromptDiesOnLong(DiesOnLong):
     name = "elice/whisper-large-v3"
     accepts_prompt = True
@@ -931,3 +992,10 @@ def test_a_failing_progress_report_does_not_change_the_result(tmp_path):
 
     result = _run(rec, manifest, tmp_path, progress=boom)
     assert result["status"] == R.STATUS_TRANSCRIBED and result["error"] is None
+
+
+def test_the_production_hint_skips_short_chunks():
+    """운영 전사는 PROMPT_MIN_S 보다 짧은 묶음에 프롬프트를 싣지 않는다(결정 기록 0030)."""
+    from stt.backend import PROMPT_MIN_S
+
+    assert R.hinted(PromptEcho(), {"hint_names": ["동우"]}).min_s == PROMPT_MIN_S

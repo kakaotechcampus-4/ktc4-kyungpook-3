@@ -40,6 +40,7 @@ from app.models import (
     ThreadMessage,
     Workspace,
 )
+from app.services import scheduler
 
 # 봇이 가져간 뒤 결과 보고가 이 시간 안에 없으면 못 보냄(알 수 없음)으로 닫는다. 다시 주지 않는다(최대 한 번).
 CLAIM_TIMEOUT = timedelta(minutes=10)
@@ -299,6 +300,10 @@ def create_reminder(
     thread = get_or_create_thread(db, workspace_id, member_id)
     _lock_thread(db, thread.thread_id)
     bundle = _slot_bundle(db, thread, scheduled_at, now)
+    # 만들기를 두 번 눌러도 한 묶음에 같은 태스크가 두 번 들어가 문구가 겹치지 않게 한다.
+    for reminder in bundle_reminders(db, bundle.bundle_id):
+        if reminder.task_id == task_id:
+            return reminder
     reminder = Reminder(
         workspace_id=workspace_id, bundle=bundle, task_id=task_id, kind=ReminderKind.NUDGE,
         origin=origin, created_by=created_by, note=note, created_at=now, updated_at=now,
@@ -438,14 +443,16 @@ def cancel_bundle(db: Session, bundle: ReminderBundle, *, now: datetime) -> Remi
 
 
 def dispatch_due(db: Session, now: datetime) -> list[ThreadMessage]:
-    """승인됐고 발송 시각이 된 묶음마다 봇 메시지 한 통을 만든다. 문구는 묶음 문구 그대로다."""
+    """승인됐고 발송 시각이 된 묶음마다 봇 메시지 한 통을 만든다. 문구는 묶음 문구 그대로다. 탈퇴한 팀원의 묶음은 취소한다."""
     now = utc(now)
+    unchecked = scheduler.before_dispatch(db, now)
     due = db.scalars(
         select(ReminderBundle)
         .where(
             ReminderBundle.status == ReminderStatus.SCHEDULED,
             ReminderBundle.approved_at.is_not(None),
             ReminderBundle.scheduled_at <= now,
+            ReminderBundle.bundle_id.notin_(unchecked),
         )
         .order_by(ReminderBundle.scheduled_at, ReminderBundle.created_at)
         .with_for_update(skip_locked=True)
@@ -454,7 +461,10 @@ def dispatch_due(db: Session, now: datetime) -> list[ThreadMessage]:
     messages = []
     for bundle in due:
         member = bundle.thread.member
-        linked = bool(member.discord_user_id) and not member.is_deleted
+        if member.is_deleted:
+            cancel_bundle(db, bundle, now=now)
+            continue
+        linked = bool(member.discord_user_id)
         message = ThreadMessage(
             thread_id=bundle.thread_id,
             sender=MessageSender.BOT,

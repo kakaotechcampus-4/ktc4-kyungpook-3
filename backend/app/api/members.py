@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -7,6 +7,8 @@ from app.core.database import get_db
 from app.core.errors import AppError, Envelope, ErrorCode, success
 from app.models import (
     AliasResolutionLog,
+    Invitation,
+    InvitationStatus,
     Member,
     MemberAlias,
     MemberRole,
@@ -64,6 +66,20 @@ def _ensure_discord_user_free(
         )
 
 
+def _ensure_no_pending_invitation(db: Session, member: Member) -> None:
+    """대기 초대가 있는 팀원은 PM 으로 올리지 않는다. 수락한 계정이 바로 PM 이 되면 원래 PM 을 내려 연결 끊기를 막을 수
+    있다(결정 0036). 초대 만들기와 같은 팀원 행을 잠가, 확인과 역할 변경 사이에 초대가 생기지 않게 한다."""
+    db.execute(select(Member.member_id).where(Member.member_id == member.member_id).with_for_update()).first()
+    pending = db.execute(
+        select(Invitation.invitation_id).where(
+            Invitation.member_id == member.member_id,
+            Invitation.status == str(InvitationStatus.PENDING),
+        ).limit(1)
+    ).first()
+    if pending is not None:
+        raise AppError(ErrorCode.MEMBER_HAS_PENDING_INVITATION, details={"member_id": member.member_id})
+
+
 def _commit_member(db: Session, member: Member) -> None:
     """팀원 변경을 커밋한다. 같은 계정을 동시에 연결해 사전 검사를 함께 통과했으면 DB 유일 인덱스에 걸린다.
     이때 500 대신 사전 검사와 같은 409로 돌려준다. 다른 이유의 무결성 오류는 그대로 올린다.
@@ -88,14 +104,20 @@ def _ensure_other_pm(db: Session, member: Member) -> None:
     로그인 계정이 없는 팀원(디스코드 연결로 만든 명단)은 PM이어도 웹에 들어올 수 없어 세지 않는다.
     내리려는 팀원까지 포함해 PM 행을 모두 커밋까지 잠근다. 서로 다른 행만 잠그면, 두 PM이 동시에 서로를
     내릴 때 둘 다 "다른 PM이 있다"고 보고 PM이 없어진다. 순서를 정해 잠가 교착을 피한다.
+    member는 지금 PM이 아니어도 함께 잠근다. 따로 잠그면 이 순서를 벗어나 역할을 바꾸는 요청과 교착한다.
     """
     pm_ids = db.execute(
         select(Member.member_id)
         .where(
-            Member.workspace_id == member.workspace_id,
-            Member.role == str(MemberRole.PM),
-            Member.user_id.is_not(None),
-            Member.is_deleted.is_(False),
+            or_(
+                Member.member_id == member.member_id,
+                and_(
+                    Member.workspace_id == member.workspace_id,
+                    Member.role == str(MemberRole.PM),
+                    Member.user_id.is_not(None),
+                    Member.is_deleted.is_(False),
+                ),
+            )
         )
         .order_by(Member.member_id)
         .with_for_update()
@@ -255,6 +277,8 @@ def update_member(
     # PM을 넘길 때는 다른 팀원을 먼저 PM으로 올리고 나서 자기를 내린다. 마지막 PM은 내릴 수 없다.
     if updates.get("role") == MemberRole.MEMBER and member.role == MemberRole.PM:
         _ensure_other_pm(db, member)
+    if updates.get("role") == MemberRole.PM and member.role != MemberRole.PM:
+        _ensure_no_pending_invitation(db, member)
 
     _ensure_discord_user_free(
         db, member.workspace_id, updates.get("discord_user_id"), exclude_member_id=member_id

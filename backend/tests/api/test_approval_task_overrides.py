@@ -13,6 +13,8 @@ from app.core.database import Base, get_db
 from app.main import app
 from app.models import (
     ApprovalRequest,
+    Extraction,
+    ExtractionItem,
     Meeting,
     Member,
     Session as SessionModel,
@@ -731,3 +733,148 @@ def test_rolling_back_title_override_of_non_string_proposal_is_400(client, db, s
 
     assert r.status_code == 400, r.text
     assert _task_of(db, approval_id).title == "결제 API"
+
+
+# ---------- 탈퇴 팀원 담당자 ----------
+
+
+def _leave(db, member):
+    member.is_deleted = True
+    member.deleted_at = datetime.now(timezone.utc)
+    db.commit()
+
+
+def test_task_create_override_with_left_member_is_404(client, db, seed):
+    left_id = seed["minsu"].member_id
+    approval_id = _new_create(client, seed)
+    _leave(db, seed["minsu"])
+
+    r = _resolve(client, approval_id, task_overrides={"assignee_member_id": left_id})
+
+    assert r.status_code == 404
+    assert r.json()["error"]["code"] == "MEMBER_NOT_FOUND"
+    assert _pending(db, approval_id)
+
+
+def test_task_create_override_can_replace_left_member_in_proposal(client, db, seed):
+    approval_id = _new_create(client, seed, assignee_member_id=seed["minsu"].member_id)
+    _leave(db, seed["minsu"])
+    assert _resolve(client, approval_id).status_code == 404
+
+    r = _resolve(client, approval_id, task_overrides={"assignee_member_id": seed["jimin"].member_id})
+
+    assert r.status_code == 200, r.text
+    assert _task_of(db, approval_id).assignee_member_id == seed["jimin"].member_id
+
+
+def test_rolling_back_to_left_assignee_is_404(client, db, seed):
+    approval_id = _new_create(client, seed, assignee_member_id=seed["minsu"].member_id)
+    overrides = {"assignee_member_id": seed["jimin"].member_id}
+    assert _resolve(client, approval_id, task_overrides=overrides).status_code == 200
+    task = _task_of(db, approval_id)
+    line = {h.changed_field: h for h in _history(db, task.task_id)}["assignee"]
+    _leave(db, seed["minsu"])
+
+    r = _rollback(client, task.task_id, line.history_id)
+
+    assert r.status_code == 404, r.text
+    db.expire_all()
+    assert db.get(Task, task.task_id).assignee_member_id == seed["jimin"].member_id
+
+
+def test_patch_keeping_left_assignee_still_saves_other_fields(client, db, seed):
+    login = seed["login"]
+    login.assignee_member_id = seed["minsu"].member_id
+    db.commit()
+    _leave(db, seed["minsu"])
+
+    r = client.patch(f"/api/v1/tasks/{login.task_id}", json={
+        "title": "로그인 화면 시안 2차", "assignee_member_id": seed["minsu"].member_id,
+    })
+
+    assert r.status_code == 200, r.text
+
+
+# ---------- 처리 순서 ----------
+
+
+def test_resolved_approval_with_bad_override_is_409_not_400(client, db, seed):
+    approval_id = _new_create(client, seed)
+    assert _resolve(client, approval_id, "rejected").status_code == 200
+
+    r = _resolve(client, approval_id, task_overrides={"due_date": "다음 주"})
+
+    assert r.status_code == 409
+    assert r.json()["error"]["code"] == "APPROVAL_ALREADY_RESOLVED"
+
+
+# ---------- 출처는 PM 만 ----------
+
+
+@pytest.fixture
+def member_client(db, seed):
+    user = User(email="jimin@example.com", name="지민")
+    db.add(user)
+    db.flush()
+    db.add(SessionModel(
+        user_id=user.user_id, session_token="jimin-token",
+        expires_at=datetime.now(timezone.utc) + timedelta(days=1),
+    ))
+    seed["jimin"].user_id = user.user_id
+    db.commit()
+    c = TestClient(app, base_url="https://testserver")
+    c.cookies.set("session_token", "jimin-token")
+    return c
+
+
+def test_member_cannot_choose_change_source(member_client, seed):
+    r = _request(member_client, seed, "task_update", {"status": "done", "change_source": "meeting"},
+                 related_task_id=seed["login"].task_id)
+
+    assert r.status_code == 400
+    assert r.json()["error"]["details"]["field"] == "change_source"
+
+
+def test_member_request_without_change_source_still_works(member_client, seed):
+    r = _request(member_client, seed, "task_update", {"status": "done"},
+                 related_task_id=seed["login"].task_id)
+
+    assert r.status_code == 201, r.text
+
+
+# ---------- 추출 항목 연결 ----------
+
+
+def _linked_create(client, db, seed) -> tuple[str, str]:
+    extraction = Extraction(meeting_id=seed["meeting"].meeting_id)
+    db.add(extraction)
+    db.flush()
+    item = ExtractionItem(extraction_id=extraction.extraction_id, task_title="결제 API")
+    db.add(item)
+    db.commit()
+    approval_id = _new_create(client, seed, extraction_item_id=item.item_id)
+    item.approval_id = approval_id
+    db.commit()
+    return approval_id, item.item_id
+
+
+def test_task_create_with_override_links_extraction_item(client, db, seed):
+    approval_id, item_id = _linked_create(client, db, seed)
+
+    r = _resolve(client, approval_id, task_overrides={"task_title": "결제 API 연동"})
+
+    assert r.status_code == 200, r.text
+    db.expire_all()
+    assert db.get(ExtractionItem, item_id).task_id == _task_of(db, approval_id).task_id
+
+
+def test_rejected_override_assignee_leaves_extraction_item_unlinked(client, db, seed):
+    approval_id, item_id = _linked_create(client, db, seed)
+
+    r = _resolve(client, approval_id, task_overrides={"assignee_member_id": "no-such-member"})
+
+    assert r.status_code == 404
+    db.expire_all()
+    assert db.get(ExtractionItem, item_id).task_id is None
+    assert _pending(db, approval_id)
+    assert _task_count(db) == 1

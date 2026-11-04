@@ -125,6 +125,7 @@ class ChangeSource(StrEnum):
     NOTION = "notion"
     REMINDER_REPLY = "reminder_reply"
     MANUAL = "manual"
+    SCHEDULER = "scheduler"
 
 
 class ApprovalType(StrEnum):
@@ -934,3 +935,173 @@ class BotDmPart(Base):
         String(36), ForeignKey("thread_message.message_id", ondelete="CASCADE"), index=True
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class PushStatus(StrEnum):
+    PENDING = "pending"
+    SENT = "sent"
+    FAILED = "failed"
+    SKIPPED = "skipped"
+
+
+class Notification(Base):
+    """웹 안 알림 하나. 만들면 목록과 배지에 들어가고, 받는 사람 기기 모두로 푸시가 나간다(push_status).
+
+    받는 사람은 워크스페이스의 팀원(member)이다. 푸시는 그 팀원의 계정(user)에 등록된 기기로 간다.
+    dedupe_key 가 있으면 같은 일로 두 번 알리지 않는다.
+    """
+
+    __tablename__ = "notification"
+
+    notification_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    workspace_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("workspace.workspace_id", ondelete="CASCADE"), index=True
+    )
+    member_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("member.member_id", ondelete="CASCADE"), index=True
+    )
+    kind: Mapped[str] = mapped_column(String(32))
+    text: Mapped[str] = mapped_column(Text)
+    link_type: Mapped[str] = mapped_column(String(16))
+    link_id: Mapped[str] = mapped_column(String(36))
+    dedupe_key: Mapped[str | None] = mapped_column(String(120), nullable=True, unique=True)
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    push_status: Mapped[str] = mapped_column(String(16), default=PushStatus.PENDING, index=True)
+    push_attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    pushed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+    member: Mapped["Member"] = relationship()
+
+
+class PushSubscription(Base):
+    """브라우저 한 곳의 웹 푸시 구독. 계정 단위라 그 사람의 모든 워크스페이스 알림이 이 기기로 온다."""
+
+    __tablename__ = "push_subscription"
+
+    subscription_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("user.user_id", ondelete="CASCADE"), index=True
+    )
+    endpoint: Mapped[str] = mapped_column(String(2048), unique=True)
+    p256dh: Mapped[str] = mapped_column(String(255))
+    auth: Mapped[str] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class WatchState(StrEnum):
+    WATCHING = "watching"
+    ANSWERED = "answered"
+    BLOCKED = "blocked"
+    RELEASED = "released"
+    STOPPED = "stopped"
+
+
+class ReminderWatch(Base):
+    """나간 리마인드 하나의 72시간 시계. 응답이 없으면 태스크를 막힘으로 바꾸고, 답이 오면 푼다.
+
+    같은 태스크에 리마인드가 다시 나가면 이전 시계는 멈추고(stopped) 새 시계가 센다. 자동 막힘이 걸린 채면 새 시계가
+    applied·prev_* 를 이어받는다.
+    applied 는 스케줄러가 태스크를 직접 막힘으로 바꿨는지다. 이미 막힘이던 태스크는 알리기만 한다.
+    prev_status·prev_blocker 는 막기 전 값이라 PM 이 자동 막힘을 되돌릴 때 쓴다.
+    paused_at 은 답장 확인을 기다리는 동안 시계를 멈추는 자리다(D-174 정책 2). 멈춘 시계는 막지 않는다.
+    """
+
+    __tablename__ = "reminder_watch"
+
+    watch_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    workspace_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("workspace.workspace_id", ondelete="CASCADE"), index=True
+    )
+    reminder_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("reminder.reminder_id", ondelete="CASCADE"), unique=True
+    )
+    task_id: Mapped[str] = mapped_column(String(36), ForeignKey("task.task_id", ondelete="CASCADE"), index=True)
+    thread_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("message_thread.thread_id", ondelete="CASCADE"), index=True
+    )
+    message_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("thread_message.message_id", ondelete="CASCADE"), index=True
+    )
+    sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    # DM 전달 보고가 온 뒤에 정해진다. 그 전에는 비어 있다.
+    deadline_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    paused_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    state: Mapped[str] = mapped_column(String(16), default=WatchState.WATCHING, index=True)
+    applied: Mapped[bool] = mapped_column(Boolean, default=False)
+    prev_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    prev_blocker: Mapped[str | None] = mapped_column(Text, nullable=True)
+    blocked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+    task: Mapped["Task"] = relationship()
+    message: Mapped["ThreadMessage"] = relationship()
+
+
+class SchedulerSuggestion(Base):
+    """스케줄러가 태스크의 한 마감·담당자에게 재촉을 제안했다는 기록. PM 이 취소해도 다시 제안하지 않는다."""
+
+    __tablename__ = "scheduler_suggestion"
+    __table_args__ = (UniqueConstraint("task_id", "due_date", "member_id", name="uq_scheduler_suggestion_task_due_member"),)
+
+    suggestion_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    task_id: Mapped[str] = mapped_column(String(36), ForeignKey("task.task_id", ondelete="CASCADE"), index=True)
+    due_date: Mapped[date] = mapped_column(Date)
+    member_id: Mapped[str] = mapped_column(String(36), ForeignKey("member.member_id", ondelete="CASCADE"))
+    reminder_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("reminder.reminder_id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class InvitationStatus(StrEnum):
+    PENDING = "pending"
+    ACCEPTED = "accepted"
+    DECLINED = "declined"
+    CANCELED = "canceled"
+    REVOKED = "revoked"
+
+
+class Invitation(Base):
+    """PM 이 로그인 계정 없는 팀원에게 가입 이메일로 보낸 초대. 그 이메일로 로그인한 사람이 수락하면 팀원과 계정이 이어진다.
+
+    email 은 앞뒤 공백을 지우고 소문자로 바꿔 저장한다. 끊은(revoked) 초대도 accepted_user_id 를 남겨 누가 들어왔었는지 보인다.
+    """
+
+    __tablename__ = "invitation"
+    __table_args__ = (
+        # 한 팀원에 열린 초대 하나, 한 워크스페이스에서 같은 이메일의 열린 초대 하나. 둘째가 있어야 한 계정이
+        # 한 워크스페이스에서 두 팀원에 이어지지 않는다(수락할 때의 소속 확인과 함께).
+        Index(
+            "uq_invitation_pending_member", "member_id",
+            unique=True,
+            postgresql_where=text("status = 'pending'"),
+            sqlite_where=text("status = 'pending'"),
+        ),
+        Index(
+            "uq_invitation_pending_email", "workspace_id", "email",
+            unique=True,
+            postgresql_where=text("status = 'pending'"),
+            sqlite_where=text("status = 'pending'"),
+        ),
+    )
+
+    invitation_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    workspace_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("workspace.workspace_id", ondelete="CASCADE"), index=True
+    )
+    member_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("member.member_id", ondelete="CASCADE"), index=True
+    )
+    email: Mapped[str] = mapped_column(String(255), index=True)
+    status: Mapped[str] = mapped_column(String(16), default=InvitationStatus.PENDING)
+    invited_by_user_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("user.user_id", ondelete="SET NULL"), nullable=True
+    )
+    accepted_user_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("user.user_id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    # 마지막으로 상태가 바뀐 시각. 끊으면 수락 시각 대신 끊은 시각이 된다.
+    responded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
