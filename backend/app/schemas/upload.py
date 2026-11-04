@@ -118,4 +118,4 @@ class SpeakerViewResponse(BaseModel):
     speakers: list[SpeakerLabel]
     candidates: list[UploadAttendee]
     mapping: dict[str, str | None] | None
-    audio: SpeakerAudioInfo
+    audio: SpeakerAudioInfo | None = Field(..., description="재생할 녹음이 없으면(done·failed 로 지워짐) null")
