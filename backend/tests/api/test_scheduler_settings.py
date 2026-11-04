@@ -6,6 +6,7 @@ from datetime import date, datetime, timedelta, timezone
 
 from app.models import (
     Member,
+    MessageSender,
     Notification,
     Reminder,
     ReminderBundle,
@@ -173,3 +174,146 @@ def test_silence_alert_off_blocks_without_pm_notice(mdb, mseed):
     mdb.refresh(task)
     assert task.status == "blocked"
     assert _notes(mdb, mseed, kind="silence_blocked") == []
+
+
+# 자동 승인
+
+
+def _turn_on(db, workspace_id, now=PROPOSE - timedelta(days=30)):
+    message_settings.update_settings(db, workspace_id, {"reminder_auto_approve": True}, updated_by="tester", now=now)
+    db.commit()
+
+
+def _messages(db):
+    return db.query(ThreadMessage).filter(ThreadMessage.sender == MessageSender.BOT).all()
+
+
+def test_auto_approve_sends_without_pm(mdb, mseed):
+    _assign(mdb, mseed)
+    _turn_on(mdb, mseed["ws"])
+    tick(mdb, PROPOSE)
+
+    tick(mdb, SLOT)
+
+    assert len(_messages(mdb)) == 1
+    [bundle] = _bundles(mdb)
+    assert messages.utc(bundle.approved_at) == SLOT
+    assert bundle.approved_by is None
+    assert bundle.status == ReminderStatus.SENT
+
+
+def test_auto_approve_via_bot_claim(mdb, mseed):
+    _assign(mdb, mseed)
+    _turn_on(mdb, mseed["ws"])
+    tick(mdb, PROPOSE)
+
+    claimed = messages.claim_for_bot(mdb, SLOT)
+
+    assert len(claimed) == 1
+    assert len(_messages(mdb)) == 1
+
+
+def test_auto_approve_applies_to_pm_made_reminder(mdb, mseed):
+    task = _assign(mdb, mseed)
+    _turn_on(mdb, mseed["ws"])
+    messages.create_reminder(
+        mdb, workspace_id=mseed["ws"], task_id=task.task_id, member_id=mseed["alice"].member_id,
+        scheduled_at=SLOT, note=None, created_by=mseed["pm"].member_id, now=PROPOSE,
+    )
+    mdb.commit()
+
+    tick(mdb, SLOT)
+
+    assert len(_messages(mdb)) == 1
+
+
+def test_auto_approve_skips_cancelled_bundle(mdb, mseed):
+    _assign(mdb, mseed)
+    _turn_on(mdb, mseed["ws"])
+    tick(mdb, PROPOSE)
+    [bundle] = _bundles(mdb)
+    messages.cancel_bundle(mdb, bundle, now=PROPOSE + H)
+    mdb.commit()
+
+    tick(mdb, SLOT)
+
+    assert _messages(mdb) == []
+
+
+def test_auto_approve_skips_replied_reminder(mdb, mseed):
+    _assign(mdb, mseed)
+    _turn_on(mdb, mseed["ws"])
+    tick(mdb, PROPOSE)
+    thread = messages.get_or_create_thread(mdb, mseed["ws"], mseed["alice"].member_id)
+    messages.add_web_reply(mdb, thread, body="했어요", now=SLOT - H)
+    mdb.commit()
+
+    tick(mdb, SLOT)
+
+    assert _messages(mdb) == []
+    assert [r.status for r in mdb.query(Reminder).all()] == [ReminderStatus.CANCELLED]
+
+
+def test_auto_approve_ignores_bundles_due_before_turning_on(mdb, mseed):
+    _assign(mdb, mseed)
+    tick(mdb, PROPOSE)
+    tick(mdb, SLOT - H)
+    _turn_on(mdb, mseed["ws"], now=SLOT + H)
+
+    tick(mdb, SLOT + 2 * H)
+
+    assert _messages(mdb) == []
+    [bundle] = _bundles(mdb)
+    assert bundle.approved_at is None
+
+
+def test_auto_approve_is_per_workspace(mdb, mseed):
+    _assign(mdb, mseed)
+    ws_b = Workspace(name="B")
+    mdb.add(ws_b)
+    mdb.flush()
+    member_b = Member(workspace_id=ws_b.workspace_id, display_name="비", role="member", discord_user_id="d_b")
+    mdb.add(member_b)
+    mdb.flush()
+    mdb.add(Task(
+        workspace_id=ws_b.workspace_id, title="B할일", status="todo",
+        assignee_member_id=member_b.member_id, due_date=DUE,
+    ))
+    mdb.commit()
+    _turn_on(mdb, mseed["ws"])
+    tick(mdb, PROPOSE)
+
+    tick(mdb, SLOT)
+
+    [message] = _messages(mdb)
+    sent = {b.thread.workspace_id for b in _bundles(mdb) if b.status == ReminderStatus.SENT}
+    assert sent == {mseed["ws"]}
+    assert message.thread.workspace_id == mseed["ws"]
+    [pending] = [b for b in _bundles(mdb) if b.status == ReminderStatus.SCHEDULED]
+    assert pending.approved_at is None
+
+
+def test_auto_approve_off_keeps_manual_flow(mdb, mseed):
+    _assign(mdb, mseed)
+    tick(mdb, PROPOSE)
+
+    tick(mdb, SLOT)
+
+    assert _messages(mdb) == []
+
+
+def test_suggestion_notice_says_auto_send_when_on(mdb, mseed):
+    _assign(mdb, mseed)
+    _turn_on(mdb, mseed["ws"])
+    tick(mdb, PROPOSE)
+
+    [note] = _notes(mdb, mseed, kind="nudge_suggested")
+    assert "발송 시각에 자동으로 나가요" in note.text
+
+
+def test_suggestion_notice_asks_approval_when_off(mdb, mseed):
+    _assign(mdb, mseed)
+    tick(mdb, PROPOSE)
+
+    [note] = _notes(mdb, mseed, kind="nudge_suggested")
+    assert "승인해 주세요" in note.text
