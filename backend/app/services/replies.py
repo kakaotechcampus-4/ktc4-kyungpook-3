@@ -329,7 +329,7 @@ def _judged(db: Session, row: ReplyJudgment, changes: list[ReplyChangeRequest], 
         outcome = ReplyChangeOutcome.SKIPPED if task.is_deleted else _gate(
             change, value, _current(db, change, task),
             owned=task.assignee_member_id == owner_id, blocked=task.status == TaskStatus.BLOCKED,
-            unchanged=_unchanged(row, task),
+            unchanged=_unchanged(db, row, task),
         )
         line = _line(db, row, change, outcome, now, new_value=value)
         lines.append(line)
@@ -388,9 +388,26 @@ def _claimed_status(row: ReplyJudgment, task: Task) -> str | None:
     return json.loads(row.claimed_statuses).get(task.task_id)
 
 
-def _unchanged(row: ReplyJudgment, task: Task) -> bool:
-    """맡긴 뒤 실제 상태가 그대로인가. _judge_status 는 사람이 건 막힘도 막기 전 상태로 보여 이것을 대신하지 못한다."""
-    return _claimed_status(row, task) == task.status
+def _unchanged(db: Session, row: ReplyJudgment, task: Task) -> bool:
+    """맡긴 뒤 실제 상태가 그대로이고 옛 답장이 새 답장을 덮을 일이 없는가.
+
+    _judge_status 는 사람이 건 막힘도 막기 전 상태로 보여 이것을 대신하지 못한다. PM 이 고른 답장은 큐 끝으로 가므로
+    맡길 때 값이 이미 더 새 답장의 반영값일 수 있다.
+    """
+    if _claimed_status(row, task) != task.status:
+        return False
+    if row.picked_task_id is None:
+        return True
+    return db.scalar(
+        select(ReplyChange.change_id)
+        .join(ThreadMessage, ThreadMessage.message_id == ReplyChange.message_id)
+        .where(
+            ReplyChange.task_id == task.task_id,
+            ReplyChange.outcome.in_((ReplyChangeOutcome.APPLIED, ReplyChangeOutcome.PROPOSED)),
+            ThreadMessage.created_at > messages.utc(row.message.created_at),
+        )
+        .limit(1)
+    ) is None
 
 
 def _current(db: Session, change: ReplyChangeRequest, task: Task) -> str | None:

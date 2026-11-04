@@ -620,3 +620,33 @@ def test_card_stays_approvable_while_a_followup_reply_holds_the_clock(mdb, mseed
     _reply(mdb, mseed, follow_up_at, body="그리고 금요일에 다시 볼게요")
     tick(mdb, follow_up_at + timedelta(minutes=1))
     assert _resolve(approval_id).status_code == 200
+
+
+def test_requeued_older_reply_does_not_override_a_newer_reply(mdb, mseed, two):
+    a, _ = two
+    item = _unknown(mdb, mseed, body="그거 아직 진행 중이에요")
+    _reply(mdb, mseed, AT + H, body="API 명세서 다 했어요")
+    newer = _claim()
+    _judge(newer, _change(a, "status", "done", evidence="certain", claimed=newer))
+    mdb.expire_all()
+    assert a.status == "done"
+
+    _attribute(item, a, seed=mseed)
+    again = _claim()
+    _judge(again, _change(a, "status", "in_progress", evidence="certain", claimed=again))
+    mdb.expire_all()
+    assert a.status == "done"
+    assert ("status", "proposed") in _outcomes(mdb, again)
+
+
+def test_rejudgment_still_applies_when_no_newer_reply_touched_the_task(mdb, mseed, two):
+    a, b = two
+    item = _unknown(mdb, mseed)
+    _reply(mdb, mseed, AT + H, body="로그인 다 했어요")
+    newer = _claim()
+    _judge(newer, _change(b, "status", "done", evidence="certain", claimed=newer))
+    _attribute(item, a, seed=mseed)
+    again = _claim()
+    _judge(again, _change(a, "status", "done", evidence="certain", claimed=again))
+    mdb.expire_all()
+    assert a.status == "done"
