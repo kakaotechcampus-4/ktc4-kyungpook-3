@@ -33,6 +33,7 @@ export type { TrackedMeeting } from './model/processingTracker'
 export {
   clearTrackedMeetings,
   finishMeeting,
+  promptSpeakers,
   trackMeeting,
   untrackMeeting,
   useMeetingTrackerStore,

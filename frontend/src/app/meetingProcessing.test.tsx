@@ -388,7 +388,7 @@ describe('polling (U4-3)', () => {
     await user.click(await screen.findByRole('menuitem', { name: '로그아웃' }))
     await screen.findByRole('heading', { name: '로그인' })
     await app.expectPath('/login')
-    expect(useMeetingTrackerStore.getState()).toEqual({ meetings: [], finished: [] })
+    expect(useMeetingTrackerStore.getState()).toEqual({ meetings: [], finished: [], prompted: [] })
 
     // 다음 polling 시점이 지나도 이전 사용자의 회의를 묻지 않는다
     completeMeeting('mt_10')
@@ -407,7 +407,7 @@ describe('polling (U4-3)', () => {
       expireSession(app.queryClient)
     })
     await screen.findByRole('heading', { name: '로그인' })
-    expect(useMeetingTrackerStore.getState()).toEqual({ meetings: [], finished: [] })
+    expect(useMeetingTrackerStore.getState()).toEqual({ meetings: [], finished: [], prompted: [] })
   })
 })
 
