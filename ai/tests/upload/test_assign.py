@@ -278,3 +278,12 @@ def test_manifest_gone_after_resuming_record_fails_diarize_once(env):
     assert _intake(env)["resume"]["state"] == "failed"
     assert _go(env) is None and _count(env, "/fail") == 1
 
+
+def test_assigned_is_skipped_until_intake_record_is_done(env):
+    d = env.rec / ".uploads" / MID
+    rec = _intake(env)
+    rec["state"] = "submitted"      # 매니페스트를 쓴 뒤 done 저장 전에 죽은 모양
+    (d / "intake.json").write_text(json.dumps(rec), encoding="utf-8")
+    env.be.assign(MID, GOOD)
+    assert _go(env) is None
+    assert _count(env, "/resume") == 0 and "resume" not in _intake(env)

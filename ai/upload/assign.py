@@ -70,6 +70,8 @@ def assign_one(recordings_dir: Path, *, client, now: Callable[[], datetime] = ut
         rec = _load(d)
         if rec is not None and "resume" in rec:   # 기록이 있다: 이어 가는 일은 위에서 한다(기다리는 중이거나 끝났다)
             continue
+        if rec is not None and rec.get("state") != "done":   # 매니페스트를 쓴 뒤 done 저장 전에 죽었을 수 있다: intake 가 끝낸 뒤에 본다
+            continue
         if rec is None or not manifest_path(recordings_dir, f"upload_{mid}").exists():
             if mid not in _skip_logged:
                 _skip_logged.add(mid)
