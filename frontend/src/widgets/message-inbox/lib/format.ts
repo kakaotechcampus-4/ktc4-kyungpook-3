@@ -1,4 +1,4 @@
-import type { Message, MessageReview, MessageThreadKind } from '@/entities/message'
+import type { MessageReview, MessageThreadKind } from '@/entities/message'
 import { addDays, formatSeoulDateTime, seoulDateOf } from '@/shared/lib/date'
 
 /* 시각은 모두 한국 시간이다 (D-144). formatSeoulDateTime 은 `YYYY-MM-DD HH:mm` 이다 */
@@ -32,8 +32,10 @@ export function relativeDay(timestamp: string, today: string): string {
   return days === 1 ? '어제' : `${String(days)}일 전`
 }
 
-/** 보내기 전 확인 행의 오른쪽 글자 — 마감이 있으면 `09/24 마감`, 없으면 만든 때 `3일 전` (Messages 시안) */
+/** 보내기 전 확인 행의 오른쪽 글자 — 예약은 `09/23 발송 예정`, 마감이 있으면 `09/24 마감`, 없으면 만든 때 `3일 전` */
 export function reviewDateLabel(review: MessageReview, today: string): string {
+  if (review.state.status === 'scheduled' && review.scheduledAt !== null)
+    return `${shortDate(review.scheduledAt)} 발송 예정`
   if (review.deadline === null) return relativeDay(review.createdAt, today)
   return `${review.deadline.slice(5).replace('-', '/')} 마감`
 }
@@ -92,20 +94,20 @@ export function dayLabel(date: string, today: string): string {
   return date === today ? `오늘 · ${label}` : label
 }
 
-export interface MessageDay {
-  /** 서울 날짜 `YYYY-MM-DD`. 첫 메시지부터 시각을 읽을 수 없으면 null 이다 */
+export interface DayGroup<T> {
+  /** 서울 날짜 `YYYY-MM-DD`. 첫 항목부터 시각을 읽을 수 없으면 null 이다 */
   date: string | null
-  messages: Message[]
+  items: T[]
 }
 
-/** 보낸 시각 순인 메시지를 서울 날짜별로 묶는다. 시각을 읽을 수 없는 메시지는 앞 묶음에 붙이고, 앞 묶음이 없으면 날짜 없는 묶음을 연다 */
-export function groupByDay(messages: readonly Message[]): MessageDay[] {
-  const days: MessageDay[] = []
-  for (const message of messages) {
-    const date = seoulDateOf(message.sentAt)
+/** `at` 순인 항목을 서울 날짜별로 묶는다. 시각을 읽을 수 없는 항목은 앞 묶음에 붙이고, 앞 묶음이 없으면 날짜 없는 묶음을 연다 */
+export function groupByDay<T extends { at: string }>(entries: readonly T[]): DayGroup<T>[] {
+  const days: DayGroup<T>[] = []
+  for (const entry of entries) {
+    const date = seoulDateOf(entry.at)
     const last = days.at(-1)
-    if (last !== undefined && (date === null || date === last.date)) last.messages.push(message)
-    else days.push({ date, messages: [message] })
+    if (last !== undefined && (date === null || date === last.date)) last.items.push(entry)
+    else days.push({ date, items: [entry] })
   }
   return days
 }

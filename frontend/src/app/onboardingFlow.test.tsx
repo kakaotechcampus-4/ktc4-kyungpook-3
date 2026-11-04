@@ -40,6 +40,8 @@ describe('온보딩 전체 흐름 (U3-11)', { timeout: 15_000 }, () => {
     applyScenario('no-workspace')
     const bodies = recordRequestBodies('PATCH', '/workspaces/ws_03/onboarding')
     let app = renderApp('/login')
+    await screen.findByRole('heading', { name: '어떻게 시작할까요?' })
+    await userEvent.click(screen.getByRole('link', { name: /PM으로 팀 만들기/ }))
     expect(await screen.findByRole('heading', { name: '워크스페이스 만들기' })).toBeInTheDocument()
 
     await userEvent.type(screen.getByLabelText('팀 이름'), '캡스톤 5조')

@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
+import { MESSAGE_BODY_MAX_LENGTH } from '@/entities/message'
 import type { MessageReview } from '@/entities/message'
 import { useUnsavedChanges } from '@/shared/lib/unsaved-changes'
 import { Button } from '@/shared/ui/button'
@@ -21,9 +22,6 @@ const CARD_FOOT =
   'flex items-center justify-between gap-12 border-t border-divider px-18 py-12 text-[12px] text-dim'
 const TEXTAREA =
   'min-h-[112px] w-full resize-y rounded-9 border border-input-border bg-surface px-12 py-10 text-[14px] leading-[1.8] text-ink focus-visible:-outline-offset-1'
-
-/** Discord DM 한 건의 글자 수 한도. 서버도 같은 한도로 다시 확인한다 */
-export const BODY_MAX_LENGTH = 2000
 
 export interface ReviewMessageCardProps {
   review: MessageReview
@@ -177,7 +175,7 @@ function BodyEditor({
         id={fieldId}
         className={TEXTAREA}
         value={draft}
-        maxLength={BODY_MAX_LENGTH}
+        maxLength={MESSAGE_BODY_MAX_LENGTH}
         disabled={saving}
         aria-invalid={empty || undefined}
         aria-describedby={empty ? errorId : undefined}
@@ -193,7 +191,7 @@ function BodyEditor({
       ) : null}
       <div className="flex items-center justify-between gap-12">
         <span className="mono text-meta text-dim">
-          {draft.length}/{BODY_MAX_LENGTH}
+          {draft.length}/{MESSAGE_BODY_MAX_LENGTH}
         </span>
         <div className="flex items-center gap-8">
           <Button variant="ghost" disabled={saving} onClick={onClose}>

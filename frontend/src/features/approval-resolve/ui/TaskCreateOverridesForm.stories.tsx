@@ -3,11 +3,6 @@ import { expect, fn, userEvent, within } from 'storybook/test'
 import type { Member } from '@/entities/member'
 import { TaskCreateOverridesForm } from './TaskCreateOverridesForm'
 
-/*
- * 생성 승인 보완 폼 (M6 §4-1, §4-2, §5-1). 개발 MSW 의 확인 필요 상세에서 `보완하기` 를 눌렀을 때 열린다.
- * Storybook 빌드에는 그 버튼이 없어(처리 경로 `live`) 폼만 따로 그린다. 값은 서버로 가지 않고 onConfirm 으로 넘어간다.
- */
-
 function member(id: string, displayName: string, role: Member['role']): Member {
   return {
     id,
@@ -65,13 +60,8 @@ export const 입력_오류: Story = {
     await expect(title).toHaveAttribute('aria-invalid', 'true')
     await expect(title).toHaveAccessibleDescription('제목을 입력해 주세요.')
     const assignee = canvas.getByLabelText('담당자')
-    await expect(assignee).toHaveAttribute('aria-invalid', 'true')
-    await expect(assignee).toHaveAccessibleDescription(
-      '이 워크스페이스의 팀원 중에서 담당자를 골라 주세요.',
-    )
-    await expect(canvas.getByLabelText('마감')).toHaveAccessibleDescription(
-      '마감 날짜를 입력해 주세요.',
-    )
+    await expect(assignee).not.toHaveAttribute('aria-invalid', 'true')
+    await expect(canvas.getByLabelText('마감')).not.toHaveAttribute('aria-invalid', 'true')
     await expect(args.onConfirm).not.toHaveBeenCalled()
   },
 }

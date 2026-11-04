@@ -11,11 +11,6 @@ import { deferred } from '@/shared/test/deferred'
 import { recordRequestBodies, recordRequests } from '@/shared/test/requests'
 import { renderApp } from './test/renderApp'
 
-/*
- * M6 S4 — 개발 MSW 의 생성 승인 보완 (계획 §4-1, §4-2, §4-5, AC-05 MSW 분기).
- * 개발 서버 + VITE_ENABLE_MSW=true 를 흉내낸다. 이 파일 안에서만 설정을 바꾼다 — 화면은 `msw` 로 동작해
- * `보완하기` 가 있고, 확정한 보완값을 승인 본문의 미합의 `task_overrides` 로 싣는다. 실 API 분기는 approvals.test.tsx 가 본다.
- */
 vi.mock('@/shared/config/env', () => ({
   config: { apiBaseUrl: '/api/v1', mswEnabled: true },
 }))
@@ -86,16 +81,12 @@ const snapshot = () =>
   })
 
 describe('보완하기는 PM 이 열고, 확정값은 원문·근거와 나뉜다 (AC-05)', () => {
-  it('최초 진입은 읽기다 — 편집이 자동으로 열리지 않고, 필수값이 없으면 승인이 꺼져 있다', async () => {
+  it('최초 진입은 읽기이며 선택값이 미정이어도 승인할 수 있다', async () => {
     await openApproval('ap_01')
     expect(screen.queryByRole('textbox')).toBeNull()
     expect(screen.queryByRole('combobox')).toBeNull()
-    const reason = '승인하려면 담당자·마감 정보를 올바르게 채워야 해요.'
-    expect(approveButton()).toBeDisabled()
-    expect(approveButton()).toHaveAccessibleDescription(reason)
-    expect(screen.getByText(reason)).toBeVisible()
-    // MSW 에서는 실 API 의 미지원 사유를 붙이지 않는다
-    expect(screen.queryByText(/지금 서버는 승인 전 보완을 지원하지 않아요/)).toBeNull()
+    expect(approveButton()).toBeEnabled()
+    expect(approveButton()).not.toHaveAccessibleDescription()
     expect(rejectButton()).toBeEnabled()
   })
 
@@ -146,15 +137,15 @@ describe('보완 값 검증 — 필드에 연결된 오류 (AC-05)', () => {
     expect(input).toHaveAccessibleDescription(message)
   }
 
-  it('비어 있는 담당자·마감과 공백뿐인 제목은 각 칸의 오류다. 요청을 보내지 않는다', async () => {
+  it('담당자·마감은 미정을 허용하고 공백뿐인 제목은 오류다. 요청을 보내지 않는다', async () => {
     const log = recordRequests()
     await openApproval('ap_01')
     await openForm()
     fill({ title: '   ' })
     await confirmForm()
     await expectFieldError(titleInput(), '제목을 입력해 주세요.')
-    await expectFieldError(assigneeSelect(), '이 워크스페이스의 팀원 중에서 담당자를 골라 주세요.')
-    await expectFieldError(dueInput(), '마감 날짜를 입력해 주세요.')
+    expect(assigneeSelect()).not.toHaveAttribute('aria-invalid')
+    expect(dueInput()).not.toHaveAttribute('aria-invalid')
     // 폼은 열린 채이고 승인은 여전히 꺼져 있다
     expect(titleInput()).toBeVisible()
     expect(approveButton()).toBeDisabled()
@@ -387,5 +378,70 @@ describe('보완 승인은 한 번에, 실패는 흔적 없이 (AC-05)', () => {
     await userEvent.click(approveButton())
     expect(await screen.findByTestId('approval-result')).toHaveTextContent('승인했어요')
     expect(bodies).toEqual([{ status: 'approved' }])
+  })
+})
+
+describe('대시보드 채워 넣기로 오면 보완 폼이 열려 있다 (D-176)', () => {
+  const DASHBOARD = paths.dashboard('ws_01')
+
+  async function arriveFromDashboard(name: string, options: { strict?: boolean } = {}) {
+    const app = renderApp(DASHBOARD, options)
+    await userEvent.click(await screen.findByRole('link', { name }))
+    await app.expectPath(paths.approval('ws_01', 'ap_01'))
+    await screen.findByRole('heading', { level: 2, name: '새 태스크 확인' })
+    return app
+  }
+
+  it('첫 빈 칸(담당자)에 포커스가 있고, 보완 중이라 승인할 수 없다. 기록의 표시는 지워져 있다', async () => {
+    const app = await arriveFromDashboard('채워 넣기 — 알림 문구 검토', { strict: true })
+    await screen.findByRole('group', { name: '확정할 값 보완' })
+    await waitFor(() => expect(assigneeSelect()).toHaveFocus())
+    expect(titleInput()).toHaveValue('알림 문구 검토')
+    expect(screen.queryByRole('button', { name: '보완하기' })).toBeNull()
+    expect(approveButton()).toHaveAccessibleDescription(
+      '보완을 끝내거나 취소하면 승인할 수 있어요.',
+    )
+
+    // 같은 주소를 replace 해 표시를 지운다 — 새로고침·뒤로/앞으로 가기로 다시 오면 읽기다
+    await waitFor(() => expect(app.visited().at(-1)?.state ?? null).toBeNull())
+    expect(app.visitedActions().at(-1)).toBe('REPLACE')
+    expect(app.visited().at(-1)?.pathname).toBe(paths.approval('ws_01', 'ap_01'))
+    // 표시를 지워도 열린 폼은 그대로다
+    await settle()
+    expect(screen.getByRole('group', { name: '확정할 값 보완' })).toBeInTheDocument()
+  })
+
+  it.each([
+    ['제목이 공백뿐이면 제목', { task_title: '   ' }, () => titleInput()],
+    [
+      '빈 칸이 없으면 첫 칸(제목)',
+      { assignee_member_id: 'mb_02', due_date: '2026-09-30' },
+      () => titleInput(),
+    ],
+  ] as const)('%s 에 포커스가 간다', async (_, patch, expected) => {
+    Object.assign(approvalOf('ap_01').payload, patch)
+    renderApp(DASHBOARD)
+    const links = await screen.findAllByRole('link', { name: /^채워 넣기/ })
+    expect(links).toHaveLength(1)
+    await userEvent.click(links[0])
+    await screen.findByRole('group', { name: '확정할 값 보완' })
+    await waitFor(() => expect(expected()).toHaveFocus())
+  })
+
+  it('확인하기로 오면 읽기다', async () => {
+    renderApp(DASHBOARD)
+    await userEvent.click(await screen.findByRole('link', { name: '확인하기 — 테스트 계획 정리' }))
+    await screen.findByRole('heading', { level: 2, name: '새 태스크 확인' })
+    await waitFor(() => expect(screen.getByRole('button', { name: '보완하기' })).toBeEnabled())
+    expect(screen.queryByRole('group', { name: '확정할 값 보완' })).toBeNull()
+  })
+
+  it('취소하면 읽기로 돌아오고, 다시 보완하기로 열 수 있다', async () => {
+    await arriveFromDashboard('채워 넣기 — 알림 문구 검토')
+    await screen.findByRole('group', { name: '확정할 값 보완' })
+    fireEvent.click(screen.getByRole('button', { name: '취소' }))
+    await waitFor(() => expect(screen.queryByRole('group', { name: '확정할 값 보완' })).toBeNull())
+    await openForm()
+    expect(assigneeSelect()).toHaveValue('')
   })
 })

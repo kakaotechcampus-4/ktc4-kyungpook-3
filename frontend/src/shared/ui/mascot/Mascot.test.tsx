@@ -16,8 +16,6 @@ const ALL_POSES: MascotPose[] = [
   'dial',
 ]
 
-/* jsdom 에는 matchMedia 가 아예 없다. 줄이기를 켠 사람을 흉내 내려면 테스트가 직접 깔아야 한다.
-   setup.ts 는 T0 소유라 손대지 않고 이 파일 안에서만 세운다. */
 function installMatchMedia(initial: boolean) {
   const listeners = new Set<(event: MediaQueryListEvent) => void>()
   const query = {
@@ -64,6 +62,14 @@ afterEach(() => {
 })
 
 describe('Mascot', () => {
+  it('keeps decorative motion off in the default test browser', () => {
+    const raf = vi.spyOn(window, 'requestAnimationFrame')
+
+    render(<Mascot />)
+
+    expect(raf).not.toHaveBeenCalled()
+  })
+
   /* §8-3 의 9개 숫자. Login.dc.html 의 정적 SVG 와 글자 그대로 같아야 포팅이 맞는 것이다. */
   it('draws idle at the nine artboard numbers', () => {
     const { container } = render(<Mascot pose="idle" />)
@@ -363,6 +369,8 @@ describe('Mascot', () => {
     })
 
     it('survives a missing matchMedia', () => {
+      vi.stubGlobal('matchMedia', undefined)
+      expect(typeof window.matchMedia).toBe('undefined')
       const { container } = render(<Mascot />)
 
       expect(part(container, 'inner')).toHaveAttribute('cy', '113.91')

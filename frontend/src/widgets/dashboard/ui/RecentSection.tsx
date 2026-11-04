@@ -1,4 +1,5 @@
-import { useEffect, useId, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import type { RefObject } from 'react'
 import type { ExtractionItem } from '@/entities/extraction'
 import type { Task } from '@/entities/task'
 import { RevertConfirmModal, useAutoItemRevert } from '@/features/auto-item-revert'
@@ -7,10 +8,17 @@ import { paths } from '@/shared/config/routes'
 import { GuardedLink } from '@/shared/lib/unsaved-changes'
 import { Button } from '@/shared/ui/button'
 import { Icon } from '@/shared/ui/icon'
-import { recentEmptyReason, recentSyncState, revertOutcome } from '../lib/dashboard'
+import {
+  RECENT_MORE_LINE_PX,
+  RECENT_ROWS,
+  fitRecentRows,
+  recentEmptyReason,
+  recentSyncState,
+  revertOutcome,
+} from '../lib/dashboard'
 import type { RecentEmptyReason, RecentSyncState } from '../lib/dashboard'
 import type { DashboardData, Loadable } from '../model/useDashboardData'
-import { BADGE, EMPTY_NOTE, SECTION_HEAD, SECTION_TITLE, SectionBody } from './parts'
+import { BADGE, EMPTY_NOTE, HEAD_LINK, SECTION_HEAD, SECTION_TITLE, SectionBody } from './parts'
 
 const ROW = 'flex flex-col gap-6 border-b border-line px-18 py-12 last:border-b-0'
 const ROW_MAIN = 'flex items-center gap-10'
@@ -24,6 +32,8 @@ const EMPTY = 'flex flex-col items-start gap-10 py-18'
 const EMPTY_TITLE = 'text-body font-semibold text-ink'
 const EMPTY_LINK =
   'inline-flex h-32 items-center justify-center rounded-9 bg-control px-12 text-control font-semibold text-ink hover:bg-line-strong'
+/** `외 N건` 줄. 높이가 RECENT_MORE_LINE_PX 다 */
+const MORE_LINE = 'flex h-32 items-center px-18'
 
 /** 행 상태 문구. `synced` 만 반영 완료다. 되돌림이 가장 먼저다 (계획 §3) */
 const SYNC_LABEL: Record<RecentSyncState, string> = {
@@ -51,7 +61,8 @@ export interface RecentSectionProps {
 }
 
 /**
- * 최근 반영 (Main 시안 오른쪽 아래, D-035~D-042). 최신 완료 회의 한 건의 `gate=auto` 항목만 응답 순서로 3개까지 보인다.
+ * 최근 반영 (Main 시안 오른쪽 아래, D-035~D-042). 최신 완료 회의 한 건의 `gate=auto` 항목만 응답 순서로 보인다.
+ * 첫 화면에 들어가는 만큼 3~8개를 보이고, 남은 항목은 `외 N건 · 회의록에서 보기` 로 그 회의록에 넘긴다 (D-176).
  * 상태는 연결된 태스크의 `notion_sync_status` 로 구분하고, PM 은 행에서 바로 되돌린다(확인 모달 → 서버 성공 뒤 `되돌림`).
  * `전체 로그` 는 1차 범위 밖이라 비활성이다
  */
@@ -115,6 +126,7 @@ function RecentBody({ workspaceId, isPm, data }: RecentSectionProps) {
                 <RecentList
                   workspaceId={workspaceId}
                   isPm={isPm}
+                  meetingId={recent.meeting.id}
                   extractionId={extraction.id}
                   items={autoItems}
                   tasks={data.tasks}
@@ -178,12 +190,89 @@ function RecentEmpty({ workspaceId, isPm, reason, latestId }: RecentEmptyProps) 
 interface RecentListProps {
   workspaceId: string
   isPm: boolean
+  /** 항목이 나온 회의. 넘친 항목은 이 회의록에서 본다 */
+  meetingId: string
   extractionId: string
+  /** auto 항목 전부. 앞에서 들어가는 만큼만 그린다 */
   items: readonly ExtractionItem[]
   tasks: Loadable<Task[]>
 }
 
-function RecentList({ workspaceId, isPm, extractionId, items, tasks }: RecentListProps) {
+/**
+ * 첫 화면에 들어가는 행 수 (D-176). 처음엔 최대 8행까지 그려 재고, 칠하기 전(layout effect)에 줄인다.
+ * 위치는 문서 기준이라 스크롤로는 다시 재지 않는다. 다시 재는 때: 창 크기, 목록 크기,
+ * 그리고 목록 위에 놓인 것들(목록에서 main 까지 각 조상의 앞 형제 — 머리·요약·마감 임박)의 크기.
+ * main 은 화면 높이를 채우고(flex-1), 왼쪽 칸이 더 길면 오른쪽 칸이 자라도 높이가 그대로라 main 만 봐서는 위치 변화를 놓친다.
+ * 행 높이는 항목마다 기억한다 — 줄여서 지운 행도 다시 늘릴 때 그 높이로 친다
+ */
+function useFittedRowCount(
+  listRef: RefObject<HTMLUListElement | null>,
+  items: readonly ExtractionItem[],
+): number {
+  const [shown, setShown] = useState(() => Math.min(items.length, RECENT_ROWS.max))
+  const heights = useRef(new Map<string, number>())
+  const itemsRef = useRef(items)
+
+  const measure = useCallback(() => {
+    const list = listRef.current
+    if (list === null) return
+    const all = itemsRef.current
+    Array.from(list.children).forEach((row, index) => {
+      const item = all[index]
+      const height = row.getBoundingClientRect().height
+      // 레이아웃이 없으면(jsdom·숨은 화면) 0 이다. 잰 것으로 치지 않는다
+      if (item !== undefined && height > 0) heights.current.set(item.id, height)
+    })
+    const top = list.getBoundingClientRect().top + window.scrollY
+    setShown(
+      fitRecentRows({
+        available: window.innerHeight - top,
+        heights: all.slice(0, RECENT_ROWS.max).map(({ id }) => heights.current.get(id)),
+        total: all.length,
+        moreLine: RECENT_MORE_LINE_PX,
+      }),
+    )
+  }, [listRef])
+
+  useLayoutEffect(() => {
+    itemsRef.current = items
+    measure()
+  }, [measure, items, shown])
+
+  useEffect(() => {
+    const list = listRef.current
+    if (list === null) return
+    let frame: number | null = null
+    // 관찰 콜백에서 바로 그리면 ResizeObserver loop 경고가 난다. 한 프레임에 한 번만 잰다
+    const schedule = () => {
+      if (frame !== null) return
+      frame = requestAnimationFrame(() => {
+        frame = null
+        measure()
+      })
+    }
+    window.addEventListener('resize', schedule)
+    const observer = new ResizeObserver(schedule)
+    observer.observe(list)
+    const main = list.closest('main')
+    for (let node: Element | null = list; node !== null && node !== main; node = node.parentElement)
+      for (let before = node.previousElementSibling; before; before = before.previousElementSibling)
+        observer.observe(before)
+    if (main !== null) observer.observe(main)
+    return () => {
+      window.removeEventListener('resize', schedule)
+      observer.disconnect()
+      if (frame !== null) cancelAnimationFrame(frame)
+    }
+  }, [listRef, measure])
+
+  return Math.min(shown, items.length)
+}
+
+function RecentList({ workspaceId, isPm, meetingId, extractionId, items, tasks }: RecentListProps) {
+  const listRef = useRef<HTMLUListElement>(null)
+  const shown = useFittedRowCount(listRef, items)
+  const hidden = items.length - shown
   const control = useAutoItemRevert(workspaceId)
   const [confirming, setConfirming] = useState<ExtractionItem | null>(null)
   const tasksById = useMemo(
@@ -198,8 +287,8 @@ function RecentList({ workspaceId, isPm, extractionId, items, tasks }: RecentLis
 
   return (
     <>
-      <ul aria-label="최근 반영 목록">
-        {items.map((item) => (
+      <ul ref={listRef} aria-label="최근 반영 목록">
+        {items.slice(0, shown).map((item) => (
           <RecentRow
             key={item.id}
             workspaceId={workspaceId}
@@ -215,6 +304,14 @@ function RecentList({ workspaceId, isPm, extractionId, items, tasks }: RecentLis
           />
         ))}
       </ul>
+      {hidden > 0 ? (
+        <div className={MORE_LINE}>
+          <GuardedLink to={paths.meetings(workspaceId, meetingId)} className={HEAD_LINK}>
+            외 {hidden}건 · 회의록에서 보기
+            <Icon name="chevron-right" size={13} />
+          </GuardedLink>
+        </div>
+      ) : null}
       {tasks.status === 'error' ? (
         <p className={EMPTY_NOTE}>태스크 목록을 불러오지 못해 반영 상태를 알 수 없어요.</p>
       ) : null}
