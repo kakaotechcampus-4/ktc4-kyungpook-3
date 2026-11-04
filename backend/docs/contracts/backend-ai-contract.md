@@ -42,12 +42,29 @@
 
 ```jsonc
 // 요청
-{ "workspace_id": "…", "title": "…" | null, "source": "discord" }   // source: discord | manual_upload, 기본 discord
+{ "workspace_id": "…", "title": "…" | null, "source": "discord", "started_at": "…" | null }
+// source: discord | manual_upload | chat, 기본 discord. started_at: 시간대가 있는 시각, 없으면 지금
 // data
 { "meeting_id": "…", "workspace_id": "…", "status": "created", "started_at": "…" }
 ```
 
 봇은 `meeting_id`를 매니페스트 `be.meeting_id`에 남기고 이후 모든 단계의 재시도 키로 쓴다.
+
+- `source: "chat"`과 `started_at`은 디스코드 채팅 자동 수집용이다(구현됨, BE 담당 리뷰 대기). `started_at`은 그날 대화의 시작 시각이고, 채팅 회의의 발화 `start`·`end`(초)는 이 시각에서 잰 값이다.
+- 채팅 회의가 `processing`으로 남아도 웹 업로드를 막지 않는다. 업로드 409 검사(`MEETING_PROCESSING_IN_PROGRESS`)는 `source`가 `chat`인 회의를 세지 않는다.
+- 합의 상태: 사용자(PM 역할 기획자)가 이 PR에서 승인했다. BE 담당 리뷰 전이라 BE·AI 합의 여부는 확인 필요.
+
+### `GET /workspaces/{workspace_id}/chat-cursor` → 200
+
+봇이 마지막으로 처리한 채팅 위치를 묻는다. `X-Service-Token` 필요. 모르는 워크스페이스는 404.
+
+```jsonc
+// data. 끝난 채팅 회의가 없으면 data가 null
+{ "meeting_id": "…", "last_message_at": "2026-11-04T01:00:00+00:00" }
+```
+
+- `done`인 채팅 회의 중 `started_at`이 가장 늦은 것의 `started_at + duration_ms`다(UTC). 봇은 이 뒤의 메시지부터 모은다.
+- 구현됨(`app/api/bot_lookups.py`), BE 담당 리뷰 대기. AI는 아직 부르지 않는다.
 
 ### `PATCH /meetings/{meeting_id}/end` → 202
 
@@ -69,7 +86,7 @@ AI `Transcript.to_dict()` 모양에 화자 이름을 더해 보낸다. 한 회�
 ```jsonc
 // 요청
 {
-  "source": "meeting",                       // meeting만 받는다
+  "source": "meeting",                       // meeting | chat, 기본 meeting
   "segments": [
     { "speaker": "<Discord uid>" | null, "speaker_member_id": "<멤버 ID>" | null,   // speaker_member_id: 선택
       "start": 0.0, "end": 3.2, "text": "…", "seq": 0 }
@@ -82,13 +99,21 @@ AI `Transcript.to_dict()` 모양에 화자 이름을 더해 보낸다. 한 회�
 
 | 항목 | 동작 |
 |---|---|
-| 시각 | 초 단위, 0 이상 24시간 이하, `end >= start` |
+| 시각 | 초 단위, 0 이상, `end >= start`. `source: "meeting"`은 24시간 이하, `"chat"`은 14일 이하(하루치 대화를 며칠 뒤에 올릴 수 있어 회의 시작 기준 오프셋이 더 크다). 구현됨, BE 담당 리뷰 대기 |
 | `seq` | 0 이상 int4 범위. 한 요청 안에서 겹치면 400. 사이가 비어도 된다 |
 | 재전송 | `(meeting_id, seq)`가 이미 있으면 덮어쓰지 않고 건너뛴다 (`skipped`). 같은 seq의 `speaker_names`도 다시 반영하지 않으므로 처음 보낼 때 같이 보낸다 |
 | 화자 | 빈 문자열은 null. `speaker_member_id`가 없는 세그먼트만 uid로 그 워크스페이스 팀원을 찾아 `member_id`를 채운다. 이름이 uid와 같으면 이름을 버린다 |
 | `speaker_member_id` | 선택. 있으면 uid 조회보다 먼저 써서 그 값을 `member_id`로 저장한다(`speaker`와 둘 다 있으면 멤버 ID가 이긴다). 이 세그먼트의 uid로는 팀원을 찾지 않는다. 이 워크스페이스의 탈퇴하지 않은 팀원이 아닌 ID(없는 ID·다른 워크스페이스·탈퇴한 팀원)가 요청에 하나라도 있으면 요청 전체가 400 `INVALID_REQUEST`이고 `details.member_ids`에 틀린 ID를 요청에 처음 나온 순서로 담는다(중복 제거). 정상 세그먼트가 섞여 있어도 하나도 저장하지 않고 `duration_ms`도 바뀌지 않는다. 이미 저장된 seq를 다시 보낸 세그먼트의 ID도 검사한다. 재전송은 덮어쓰지 않고 건너뛰므로 멤버 ID는 처음 보낼 때 같이 보낸다. 첫 요청이 저장된 뒤 응답을 잃고 그사이 팀원이 탈퇴해 재시도가 이 400을 받으면, AI는 `details.member_ids`의 ID를 null로 바꿔 다시 보낸다(이미 저장된 seq는 건너뛰므로 저장된 `member_id`는 그대로다). 참석자로 제한하지 않는다. 응답 모양은 그대로다 |
 | `duration_ms` | 저장된 발화 전체의 `end_ms` 최댓값 |
 | 상태 | `done` 회의도 받는다. `failed` 회의는 409 `MEETING_FAILED` (`MEETING_ALREADY_ENDED`와 다르다. 저장되지 않았으니 새 회의로 다시 올려야 한다) |
+
+## 채팅 회의의 반영 규칙 (구현됨, BE 담당 리뷰 대기)
+
+`source`가 `chat`인 회의의 추출 항목은 PM 승인을 거쳐야 task에 반영된다. 사용자가 이 PR에서 정한 규칙이다.
+
+- 추출 등록(`POST /extractions`)에서 새 항목의 게이트가 `auto`가 되면 `review`로 낮춘다. `hold`는 그대로다. 수정 항목은 원래 항상 `review`다.
+- 승인으로 task가 생기거나 바뀌면 `TaskHistory.change_source`가 `chat`이다(그 외 회의는 기존대로 `meeting`·`manual`). 이력 응답의 `is_auto`는 `changed_by`로 계산하므로 승인한 PM이 기록된다.
+- 응답 모양은 바뀌지 않는다. AI의 게이트 판단 코드는 그대로 두고 BE가 낮춘다.
 
 ## 유사 task 검색 `POST /workspaces/{workspace_id}/tasks/similar` → 200
 
@@ -361,5 +386,5 @@ PM이 지정을 끝냈고(`speakers_assigned_at` 있음) 아직 다시 가져가
 
 ## 코드 근거
 
-- Backend: `app/api/meetings.py`, `app/api/sources.py`, `app/api/similar_tasks.py`, `app/api/extractions.py`, `app/api/integrations.py`의 `get_discord_guild_workspace`, `app/api/bot_lookups.py`, `app/api/uploads.py`, `app/services/speaker_assignment.py`, `app/api/deps.py`의 `require_service_token`, `app/schemas/meeting.py`, `app/schemas/member.py`, `app/schemas/source.py`, `app/schemas/task.py`, `app/schemas/workspace.py`, `app/schemas/upload.py`, `app/services/upload_storage.py`
+- Backend: `app/api/meetings.py`, `app/api/sources.py`, `app/api/similar_tasks.py`, `app/api/extractions.py`, `app/api/integrations.py`의 `get_discord_guild_workspace`, `app/api/bot_lookups.py`(`chat-cursor` 포함), `app/api/approvals.py`(채팅 이력 출처), `app/api/workspaces.py`(업로드 가드), `app/api/uploads.py`, `app/services/speaker_assignment.py`, `app/api/deps.py`의 `require_service_token`, `app/schemas/meeting.py`, `app/schemas/member.py`, `app/schemas/source.py`, `app/schemas/task.py`, `app/schemas/workspace.py`, `app/schemas/upload.py`, `app/services/upload_storage.py`
 - AI: `ai/capture/handoff.py`의 `BeClient`, `Handoff`, `from_env`
