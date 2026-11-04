@@ -74,6 +74,18 @@ recordings/         녹음 산출물 (git 제외)
   `title`, `attendees`, `upload`(원본 파일 정보)를 더해 `status` 가 `diarized` 입니다. 이 매니페스트도 위와 같이 워커의 처리 바퀴가
   집지 않습니다(화자 지정과 이후 인계는 #254·#255). 워커 로그에는 `[worker] 업로드 <meeting_id> <진행>` 한 줄이 남고,
   하트비트 `current` 는 가져오는 동안 `upload` 입니다.
+- 지정 받기(`upload/assign.py`): PM 이 웹에서 화자 지정을 끝낸 업로드 회의를 워커가 `mapped` 로 바꿉니다. 같은 opt-in 이고, 워커가 같은
+  자리(한 번에 한 회의)에서 `intake_one` 보다 먼저 `assign_one` 을 한 번 부릅니다. 한 번에 한 건을 한 단계만 진전시킵니다.
+  흐름은 BE `GET /uploads/assigned` → `PATCH /uploads/{id}/resume` 직전에 로컬 기록(`recordings/.uploads/<meeting_id>/intake.json` 의
+  `resume` 키, 상태 `resuming`)을 남김 → resume 응답의 mapping 으로 `apply_mapping` → `mapped` 기록입니다. assigned 는 resume 하지
+  않은 건만 주므로, resume 응답을 잃거나 죽어도 로컬 기록을 보고 다시 resume 합니다(resume 은 멱등입니다). 때가 된 `resuming` 기록을
+  assigned 보다 먼저 이어 갑니다. 409 `SPEAKERS_NOT_ASSIGNED` 는 매니페스트를 그대로 두고 fail 도 보내지 않고 다음에 다시 봅니다.
+  409 `MEETING_ALREADY_ENDED` 와 404 는 BE 가 이미 끝낸 회의라 로컬 매니페스트·트랙·잠금을 지우고 `ended` 로 기록하며 fail 을 보내지
+  않습니다. 연결 실패·5xx·`apply_mapping` 잠금 경합은 일시 실패라 대기 뒤 다시 하고 포기 한도는 없습니다. assigned 에 나왔는데 로컬
+  매니페스트가 없으면 resume 하지 않고 건너뜁니다(로그는 실행 동안 회의마다 한 번). resume 은 됐는데 지정을 쓸 수 없으면(라벨 불일치 등)
+  `PATCH /meetings/{id}/fail`(`failed_stage=diarize`)을 보내고(409 ended 는 성공으로 봅니다) 로컬을 정리해 `failed` 로 기록하며,
+  fail 을 보내지 못하면 기록에 남겨 다음에 다시 보냅니다. `mapped` 매니페스트도 워커의 처리 바퀴가 집지 않습니다. 로그는 같은
+  `[worker] 업로드 <meeting_id> <진행>` 한 줄입니다.
 
 ## 설치 (이 디렉토리, `ai/` 안에서)
 

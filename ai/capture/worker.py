@@ -37,6 +37,7 @@ from capture.notify import FileOutbox, MeetingReporter, debug_from_env
 from capture.recorder import STATUS_SOURCED, Claims, backend_from_env, build_extractor, recover_pass, save_manifest
 from shared.config import RECORDINGS_DIR, TRANSCRIPTS_DIR
 from shared.schemas import now_iso
+from upload.assign import assign_one
 from upload.intake import intake_one
 
 WORKER_INTERVAL_S = float(os.environ.get("MM_WORKER_INTERVAL_S", "10"))   # 한 바퀴 주기이자 살아 있다는 표시 주기
@@ -214,7 +215,8 @@ class Worker:
             self._current = None
 
     async def _intake_once(self) -> None:
-        """웹 업로드 가져오기를 한 건 한 단계. 정지 신호 뒤에는 새로 claim 하지 않는다. 한 번에 한 회의 자리(_sem) 안에서 돈다."""
+        """웹 업로드 가져오기를 한 건 한 단계. 정지 신호 뒤에는 새로 claim 하지 않는다. 한 번에 한 회의 자리(_sem) 안에서 돈다.
+        같은 자리에서 intake_one 보다 먼저 assign_one(PM 이 지정을 끝낸 회의를 mapped 로)을 한 번 부른다."""
         if self._stopping:
             return
         if not self._intake_built:
@@ -230,15 +232,19 @@ class Worker:
             if self._stopping:
                 return
             self._current = "upload"
+            progresses = []
             try:
-                progress = await asyncio.to_thread(intake_one, self.recordings_dir, client=client, diarizer=diarizer)
-            except Exception as e:  # noqa: BLE001 - intake_one 은 예외를 내지 않는 게 약속이지만 워커는 어떤 경우에도 계속 돈다
-                print(f"[worker] 업로드 가져오기 오류: {type(e).__name__}: {e}", flush=True)
-                return
+                for call in (lambda: assign_one(self.recordings_dir, client=client),
+                             lambda: intake_one(self.recordings_dir, client=client, diarizer=diarizer)):
+                    try:
+                        progresses.append(await asyncio.to_thread(call))
+                    except Exception as e:  # noqa: BLE001 - 둘 다 예외를 내지 않는 게 약속이지만 워커는 어떤 경우에도 계속 돈다
+                        print(f"[worker] 업로드 가져오기 오류: {type(e).__name__}: {e}", flush=True)
             finally:
                 self._current = None
-        if progress is not None:
-            print(f"[worker] 업로드 {progress.meeting_id} {progress.event}", flush=True)
+        for progress in progresses:
+            if progress is not None:
+                print(f"[worker] 업로드 {progress.meeting_id} {progress.event}", flush=True)
 
     def _wakes(self) -> list[Path]:
         d = worker_dir(self.recordings_dir)
