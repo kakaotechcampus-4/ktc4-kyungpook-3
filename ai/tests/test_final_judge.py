@@ -133,6 +133,16 @@ def test_prompt_tells_terra_what_counts_as_no_change():
     assert "status|scope" in prompt
 
 
+def test_prompt_reads_status_from_facts_but_never_guesses_done():
+    # 상태 단어가 없어도 발화가 드러내는 상태를 채우되, 끝났는지 확실하지 않으면 done 으로 올리지 않는다(#207)
+    from judge.final_judge import _terra_user_prompt
+    prompt = _terra_user_prompt(JudgeInput(source="meeting", text="x", candidates=[_candidate()]))
+    assert "상태 단어가 없어도" in prompt
+    assert "명시적으로 언급됐을 때만" not in prompt
+    assert "끝냈는지 확실하지 않으면" in prompt
+    assert "기다리는 것은 막힘이 아니다" in prompt
+
+
 def test_llm_returns_none_on_invalid_category():
     ji = JudgeInput(source="meeting", text="x", candidates=[])
     fake = FakeLLM(responses=[{
