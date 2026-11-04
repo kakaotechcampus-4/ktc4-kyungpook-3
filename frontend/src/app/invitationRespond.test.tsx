@@ -45,13 +45,14 @@ describe('받은 초대', () => {
   })
 
   it('초대받은 이메일로 가입하면 시작 화면과 팀 확인 화면에 받은 초대가 보인다', async () => {
-    await signUpAsInvitee()
+    const app = await signUpAsInvitee()
 
     const row = await invitationRow('카테캠 3팀')
     expect(row.getByText('팀원 이름 이재환 · 초대한 사람 최진호')).toBeInTheDocument()
     expect(screen.queryByText('PM에게 가입한 이메일로 초대를 요청하세요.')).toBeNull()
 
     await userEvent.click(screen.getByRole('link', { name: /팀원으로 시작/ }))
+    await app.expectPath('/onboarding/member')
     expect(
       (await invitationRow('카테캠 3팀')).getByRole('button', { name: '수락' }),
     ).toBeInTheDocument()
