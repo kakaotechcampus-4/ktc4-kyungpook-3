@@ -257,6 +257,8 @@ def test_auto_approve_skips_cancelled_bundle(mdb, mseed):
     tick(mdb, SLOT)
 
     assert _messages(mdb) == []
+    mdb.refresh(bundle)
+    assert bundle.approved_at is None
 
 
 def test_auto_approve_skips_replied_reminder(mdb, mseed):
@@ -271,6 +273,8 @@ def test_auto_approve_skips_replied_reminder(mdb, mseed):
 
     assert _messages(mdb) == []
     assert [r.status for r in mdb.query(Reminder).all()] == [ReminderStatus.CANCELLED]
+    [bundle] = _bundles(mdb)
+    assert bundle.approved_at is None
 
 
 def test_auto_approve_ignores_bundles_due_before_turning_on(mdb, mseed):
