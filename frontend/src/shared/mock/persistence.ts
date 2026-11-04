@@ -13,9 +13,10 @@ export const MOCK_DB_STORAGE_KEY = 'msw-db'
  * 2: M5 의 `meetingFlow` 칸 추가. 3: M8 의 메시지 칸(`messageReviews`·`messageThreads`·`messageFailures`) 추가.
  * 4: M8 메시지를 디자인 캔버스대로 다시 만들며 검토·메시지 필드와 `messageFailures.actions` 추가.
  * 5: 재촉을 검토 행 하나로 두고 대화 메시지에서 발송 단계를 빼다.
+ * 6: 팀원 초대(`invitations`) 칸 추가. 수락한 초대가 계정과 팀원을 잇는다.
  * 올리면 e2e/restore.e2e.ts 의 버전 단언도 같이 고친다 (E2E 는 src 를 가져오지 않는다)
  */
-export const MOCK_DB_VERSION = 5
+export const MOCK_DB_VERSION = 6
 
 interface StoredDb {
   version: number

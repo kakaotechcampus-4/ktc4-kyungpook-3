@@ -239,4 +239,18 @@ describe('팀 화면 — 일반 팀원', () => {
     expect(screen.queryByRole('button', { name: '팀원 관리' })).toBeNull()
     expect(screen.queryByRole('dialog')).toBeNull()
   })
+
+  it('팀원 초대 상태와 조작이 없고 PM 전용 초대 목록을 부르지 않는다', async () => {
+    const log = recordRequests()
+    renderApp(TEAM)
+    expect(await screen.findByRole('heading', { name: '앞으로 7일' })).toBeInTheDocument()
+    for (const name of ['김서연', '박민수', '이재환', '정하늘'])
+      expect(
+        within(screen.getByRole('region', { name })).queryByRole('button', {
+          name: /초대|연결 끊기/,
+        }),
+        name,
+      ).toBeNull()
+    expect(log.started.filter(({ path }) => path.includes('/invitations'))).toEqual([])
+  })
 })

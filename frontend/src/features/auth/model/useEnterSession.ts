@@ -2,7 +2,8 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useCallback } from 'react'
 import { SESSION_QUERY_KEY } from '@/entities/user'
 import type { Session } from '@/entities/user'
-import { clearUserScope, fetchFreshWorkspaces } from '../lib/userScope'
+import { fetchFreshWorkspaces } from '@/entities/workspace'
+import { clearUserScope } from '../lib/userScope'
 
 /**
  * 로그인·가입이 성공한 뒤의 공통 경로.

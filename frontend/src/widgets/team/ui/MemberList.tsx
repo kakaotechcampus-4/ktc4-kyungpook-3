@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import type { Member } from '@/entities/member'
 import type { Task } from '@/entities/task'
 import { isOverdue } from '@/entities/task'
@@ -65,10 +66,12 @@ export interface MemberSectionProps {
   today: string
   /** Discord 서버를 떠난 팀원이다 (D-031) */
   inactive: boolean
+  /** 역할 줄 아래의 초대 상태·조작. 이름 칸 안이라 길면 줄을 바꾸고 줄 폭을 늘리지 않는다 */
+  invite?: ReactNode
 }
 
 /** 팀원 한 명 — 이름·역할·상태 배지와 맡은 일 (Team 캔버스). 상태는 색만이 아니라 글자로도 구분한다 (D-128) */
-export function MemberSection({ member, tasks, today, inactive }: MemberSectionProps) {
+export function MemberSection({ member, tasks, today, inactive, invite }: MemberSectionProps) {
   const risk = memberRisk(tasks, today)
   const headingId = `team-member-${member.id}`
   return (
@@ -85,6 +88,7 @@ export function MemberSection({ member, tasks, today, inactive }: MemberSectionP
             {member.role === 'pm' ? 'PM' : '팀원'}
             {inactive ? ' · Discord 서버를 나갔어요' : null}
           </div>
+          {invite}
         </div>
         <span className={`${BADGE} ${RISK_CLASS[risk]}`}>
           {risk === 'normal' ? null : <span aria-hidden="true" className={BADGE_DOT} />}

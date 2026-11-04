@@ -1,6 +1,6 @@
 import type { WorkspaceDto } from '@/shared/types/api/workspace'
 import { initialDb, replaceDb } from './db'
-import type { MeetingFlowMode, MockDb } from './db'
+import type { MeetingFlowMode, MockDb, MockInvitation } from './db'
 import { MOCK_NOW } from './fixtures/constants'
 import {
   messagesMemberReview,
@@ -71,6 +71,9 @@ export const MOCK_SCENARIOS = [
   'settings-discord-skipped',
   'settings-unmapped',
   'settings-member',
+  // #320 팀원 초대. team-invitations 는 ws_01 PM 이 보는 초대 상태, invitation-pending 은 초대받은 사람의 가입 전이다
+  'team-invitations',
+  'invitation-pending',
 ] as const
 export type MockScenario = (typeof MOCK_SCENARIOS)[number]
 
@@ -324,6 +327,55 @@ function removeMeeting(state: MockDb, meetingId: string): void {
   )
 }
 
+/** ws_01 PM(us_01)이 보낸 초대. iv_02 는 이재환(mb_03)에게 jaehwan@example.com 으로 보낸 대기 초대다 */
+function invitation(
+  id: string,
+  memberId: string,
+  email: string,
+  status: MockInvitation['status'],
+  createdAt: string,
+): MockInvitation {
+  return {
+    invitation_id: id,
+    workspace_id: 'ws_01',
+    member_id: memberId,
+    email,
+    status,
+    invited_by_user_id: 'us_01',
+    accepted_user_id: null,
+    created_at: createdAt,
+    responded_at: status === 'pending' ? null : createdAt.replace('T09', 'T10'),
+  }
+}
+
+const pendingInvitation = () =>
+  invitation('iv_02', 'mb_03', 'jaehwan@example.com', 'pending', '2026-09-16T09:00:00Z')
+
+/**
+ * 팀원마다 최근 초대가 다르다. 박민수(mb_02)는 us_02 가 수락했고, 이재환(mb_03)은 대기, 정하늘(mb_04)은 거절이다.
+ * 이재환에게는 오타로 보냈다가 취소한 더 오래된 초대(iv_00)도 있다 — 화면은 최근 것만 본다
+ */
+function addTeamInvitations(state: MockDb): void {
+  state.accounts.push({
+    session: {
+      user: { user_id: 'us_02', email: 'minsu@example.com', name: '박민수', avatar_url: null },
+      workspace_count: 0,
+      last_workspace_id: null,
+    },
+    password: 'mock-password',
+    workspaceIds: [],
+  })
+  state.invitations.push(
+    invitation('iv_00', 'mb_03', 'jaehwan@exmaple.com', 'canceled', '2026-09-14T09:00:00Z'),
+    {
+      ...invitation('iv_01', 'mb_02', 'minsu@example.com', 'accepted', '2026-09-15T09:00:00Z'),
+      accepted_user_id: 'us_02',
+    },
+    pendingInvitation(),
+    invitation('iv_03', 'mb_04', 'haneul@example.com', 'declined', '2026-09-17T09:00:00Z'),
+  )
+}
+
 export function createScenarioDb(scenario: MockScenario): MockDb {
   const state = initialDb()
   switch (scenario) {
@@ -570,6 +622,15 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
         display_name: null,
         connected_at: null,
       }
+      break
+    case 'team-invitations':
+      signInWith(state, ['ws_01'], 'ws_01')
+      addTeamInvitations(state)
+      break
+    case 'invitation-pending':
+      // 비로그인. jaehwan@example.com 으로 가입하면 iv_02 가 내 초대에 보인다
+      state.authenticated = false
+      state.invitations.push(pendingInvitation())
       break
   }
   return state
