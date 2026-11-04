@@ -127,7 +127,7 @@ HF_HOME=/opt/m/hf /opt/m/vllm-env/bin/vllm serve openai/whisper-large-v3 \
   --gpu-memory-utilization 0.6 --limit-mm-per-prompt '{"audio":1}'
 ```
 
-측정은 `ai/` 에서 한다. turbo 는 위 서빙 명령의 첫 인자만 `openai/whisper-large-v3-turbo` 로 바꾼다. `$DATA` 는 녹음 폴더, `$RUN` 은 결과 폴더, `$OUT` 은 9/29 채점 결과 폴더이고 `$SCRIPT` 는 레포 밖의 9/29 대본이다.
+측정은 `ai/` 에서 한다. turbo 는 위 서빙 명령의 첫 인자만 `openai/whisper-large-v3-turbo` 로 바꾼다. `$DATA` 는 녹음 폴더, `$RUN` 은 모델별 결과 폴더, `$OUT` 은 9/29 채점 결과 폴더이고 `$SCRIPT` 는 레포 밖의 9/29 대본이다. `$V3_RUN`, `$TURBO_RUN` 은 두 모델의 `$RUN` 이다.
 
 ```bash
 export ELICE_API_KEY=$(cat /opt/m/api.key) ELICE_STT_BASE_URL=https://localhost:8000 REQUESTS_CA_BUNDLE=/opt/m/cert.pem
@@ -142,7 +142,7 @@ $R seq --tracks-dir $DATA/m01 --label m01-w3 --workers 3 $E $O
 $R seq --tracks-dir $DATA/real929 --label real929 --save-lines $E $O
 $PY -m stt.eval.capacity.synth --source $DATA/m01 --source $DATA/m02 --out $DATA/long-60 --minutes 60 --gap 5
 $R seq --tracks-dir $DATA/long-60 --label long-60 $E $O
-$PY -m stt.eval.capacity.real929 --lines large-v3=$RUN/lines-real929-1.json --script $SCRIPT --out $OUT
+$PY -m stt.eval.capacity.real929 --lines large-v3=$V3_RUN/lines-real929-1.json --lines turbo=$TURBO_RUN/lines-real929-1.json --script $SCRIPT --out $OUT
 ```
 
 `--spend-file` 장부는 서버 안에서 쓰는 자리값이다. 실제 비용은 인스턴스 시간으로 계산한다. macOS 에서 만든 tar 를 풀면 `._*.wav` 가 섞여 시나리오가 바로 끝나므로 지운 뒤 돌린다. 콜드 스타트는 AMI 로 새 인스턴스를 만들고 부팅 스크립트에서 위 서빙 명령을 띄운 뒤 시각을 남겼다. 초기화 속도는 `--block-device-mappings 'DeviceName=/dev/sda1,Ebs={VolumeInitializationRate=300,DeleteOnTermination=true}'` 로 지정했다.
