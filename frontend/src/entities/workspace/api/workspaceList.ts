@@ -1,4 +1,5 @@
 import { queryOptions, useQuery } from '@tanstack/react-query'
+import type { QueryClient } from '@tanstack/react-query'
 import { request } from '@/shared/api/client'
 import { STALE_TIME } from '@/shared/api/queryClient'
 import type { ListDto } from '@/shared/types/api/envelope'
@@ -23,6 +24,11 @@ export function workspaceListQueryOptions() {
     queryFn: ({ signal }) => fetchWorkspaces(signal),
     staleTime: STALE_TIME.long,
   })
+}
+
+/** 새 사용자의 워크스페이스 목록을 서버에서 새로 받는다. 이 목록으로 로그인 뒤 갈 곳을 정한다 (D-010) */
+export function fetchFreshWorkspaces(queryClient: QueryClient): Promise<Workspace[]> {
+  return queryClient.fetchQuery({ ...workspaceListQueryOptions(), staleTime: 0 })
 }
 
 /** 소속 공간 하나. 가드와 같은 목록 캐시를 구독해서 고른다. 소속이 아니면 null */
