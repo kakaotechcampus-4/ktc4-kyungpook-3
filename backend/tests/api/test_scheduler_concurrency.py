@@ -62,7 +62,7 @@ def test_tick_and_bot_claim_at_send_time_send_once_and_block_once(mdb, mseed):
     assert mdb.query(ThreadMessage).filter(ThreadMessage.sender == "bot").count() == 1
 
     message = mdb.query(ThreadMessage).filter(ThreadMessage.sender == "bot").one()
-    message.dm_status = "delivered"
+    message.dm_status, message.dm_reported_at = "delivered", SLOT
     mdb.commit()
     later = SLOT + timedelta(hours=72)
     _together(mdb, _tick(later), _tick(later), _tick(later))

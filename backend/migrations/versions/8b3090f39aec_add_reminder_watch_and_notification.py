@@ -1,7 +1,7 @@
 """add reminder watch and notification
 
 리마인드 스케줄러와 알림을 저장한다(#318).
-reminder_watch(나간 리마인드 하나의 72시간 시계와 자동 막힘), scheduler_suggestion(태스크 x 마감마다 재촉을 제안했다는 기록),
+reminder_watch(나간 리마인드 하나의 72시간 시계와 자동 막힘), scheduler_suggestion(태스크 x 마감 x 담당자마다 재촉을 제안했다는 기록),
 notification(웹 안 알림과 푸시 발송 상태), push_subscription(브라우저 웹 푸시 구독)을 만든다.
 
 되돌리면 네 테이블과 저장된 알림·구독·시계가 모두 지워진다. 태스크에 이미 걸린 자동 막힘은 태스크에 그대로 남는다.
@@ -69,7 +69,7 @@ def upgrade() -> None:
     sa.Column('thread_id', sa.String(length=36), nullable=False),
     sa.Column('message_id', sa.String(length=36), nullable=False),
     sa.Column('sent_at', sa.DateTime(timezone=True), nullable=False),
-    sa.Column('deadline_at', sa.DateTime(timezone=True), nullable=False),
+    sa.Column('deadline_at', sa.DateTime(timezone=True), nullable=True),
     sa.Column('paused_at', sa.DateTime(timezone=True), nullable=True),
     sa.Column('state', sa.String(length=16), nullable=False),
     sa.Column('applied', sa.Boolean(), nullable=False),
@@ -95,12 +95,14 @@ def upgrade() -> None:
     sa.Column('suggestion_id', sa.String(length=36), nullable=False),
     sa.Column('task_id', sa.String(length=36), nullable=False),
     sa.Column('due_date', sa.Date(), nullable=False),
+    sa.Column('member_id', sa.String(length=36), nullable=False),
     sa.Column('reminder_id', sa.String(length=36), nullable=True),
     sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
+    sa.ForeignKeyConstraint(['member_id'], ['member.member_id'], name=op.f('fk_scheduler_suggestion_member_id_member'), ondelete='CASCADE'),
     sa.ForeignKeyConstraint(['reminder_id'], ['reminder.reminder_id'], name=op.f('fk_scheduler_suggestion_reminder_id_reminder'), ondelete='SET NULL'),
     sa.ForeignKeyConstraint(['task_id'], ['task.task_id'], name=op.f('fk_scheduler_suggestion_task_id_task'), ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('suggestion_id', name=op.f('pk_scheduler_suggestion')),
-    sa.UniqueConstraint('task_id', 'due_date', name='uq_scheduler_suggestion_task_due')
+    sa.UniqueConstraint('task_id', 'due_date', 'member_id', name='uq_scheduler_suggestion_task_due_member')
     )
     op.create_index(op.f('ix_scheduler_suggestion_task_id'), 'scheduler_suggestion', ['task_id'], unique=False)
     # ### end Alembic commands ###
