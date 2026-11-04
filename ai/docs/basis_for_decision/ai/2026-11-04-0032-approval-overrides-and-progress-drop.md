@@ -32,7 +32,7 @@ PM 은 승인 카드에서 AI 제안을 그대로 승인하거나 반려만 할 
 - 진행률 칼럼을 마이그레이션으로 지우고 Task 응답과 요청에서 뺀다. 요청 본문에 progress 가 와도 오류 없이 무시한다. 노션 연결 검사는 Progress 속성을 더는 요구하지 않고, 이미 있는 속성은 지우지도 쓰지도 않는다. 옛 진행률 이력 줄은 남고 되돌리기는 400 으로 막힌다
 - 고친 필드만 PM 한 줄(출처 manual, 변경자는 승인한 PM)로 남긴다. 고치지 않은 필드는 승인 요청의 출처로 남는다. 제안 값과 같은 값은 `task_overrides` 에 넣지 않아, 값을 건드리지 않은 승인이 고친 승인으로 세지지 않는다. "제안 값을 고쳐 승인한 건수" 같은 지표는 `approval_request` 에서 `task_overrides` 가 있는 승인 건으로 센다
 - 고친 값 필드 이름은 FE 가 먼저 정해 둔 요청안(`frontend/docs/contracts/frontend-api-contract.md` 「미합의 요청안」 M6-1)의 `task_overrides` 로 맞춘다. 새 태스크 키는 `task_title`·`assignee_member_id`·`due_date`, 수정 제안은 `status`·`due_date`.
-- 마감과 담당자는 "미정"(`task_overrides` 에 null)으로 고를 수 있다. FE 요청안 M6-3(새 태스크 승인에 담당자·마감 필수)은 받지 않는다. 마감 없이 나온 일을 지어낸 날짜로 승인하지 않게 하려는 것이다. 태스크명과 상태의 null 은 400. 새 태스크 승인의 상태는 제안과 상관없이 항상 todo 다
+- 마감과 담당자는 "미정"(`task_overrides` 에 null)으로 고를 수 있다. FE 요청안 M6-3(새 태스크 승인에 담당자·마감 필수)은 받지 않는다. 마감 없이 나온 일을 지어낸 날짜로 승인하지 않게 하려는 것이다. 태스크명과 상태의 null 은 400. 새 태스크 승인의 상태는 제안과 상관없이 항상 todo 다(승인 없이 바로 만드는 auto 경로는 AI 가 보낸 상태를 그대로 쓴다. 회의에서 "이미 끝났다" 고 확실히 나온 일을 todo 로 내리지 않기 위해서다)
 - 승인 요청의 출처는 payload 키 `change_source` 로 두고, 없으면 회의로 본다. POST /approvals 는 ChangeSource 값이 아닌 출처와, PM 이 고친 것처럼 보이게 하는 `task_overrides` 키를 400 으로 막는다
 
 ## 다시 볼 조건
