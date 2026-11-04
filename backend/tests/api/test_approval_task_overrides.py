@@ -13,6 +13,8 @@ from app.core.database import Base, get_db
 from app.main import app
 from app.models import (
     ApprovalRequest,
+    Extraction,
+    ExtractionItem,
     Meeting,
     Member,
     Session as SessionModel,
@@ -838,3 +840,41 @@ def test_member_request_without_change_source_still_works(member_client, seed):
                  related_task_id=seed["login"].task_id)
 
     assert r.status_code == 201, r.text
+
+
+# ---------- 추출 항목 연결 ----------
+
+
+def _linked_create(client, db, seed) -> tuple[str, str]:
+    extraction = Extraction(meeting_id=seed["meeting"].meeting_id)
+    db.add(extraction)
+    db.flush()
+    item = ExtractionItem(extraction_id=extraction.extraction_id, task_title="결제 API")
+    db.add(item)
+    db.commit()
+    approval_id = _new_create(client, seed, extraction_item_id=item.item_id)
+    item.approval_id = approval_id
+    db.commit()
+    return approval_id, item.item_id
+
+
+def test_task_create_with_override_links_extraction_item(client, db, seed):
+    approval_id, item_id = _linked_create(client, db, seed)
+
+    r = _resolve(client, approval_id, task_overrides={"task_title": "결제 API 연동"})
+
+    assert r.status_code == 200, r.text
+    db.expire_all()
+    assert db.get(ExtractionItem, item_id).task_id == _task_of(db, approval_id).task_id
+
+
+def test_rejected_override_assignee_leaves_extraction_item_unlinked(client, db, seed):
+    approval_id, item_id = _linked_create(client, db, seed)
+
+    r = _resolve(client, approval_id, task_overrides={"assignee_member_id": "no-such-member"})
+
+    assert r.status_code == 404
+    db.expire_all()
+    assert db.get(ExtractionItem, item_id).task_id is None
+    assert _pending(db, approval_id)
+    assert _task_count(db) == 1
