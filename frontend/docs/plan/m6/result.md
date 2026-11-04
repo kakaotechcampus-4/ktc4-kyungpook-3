@@ -107,6 +107,49 @@ S1~S4의 통합 테스트와 브라우저 확인은 각 단계 감독 기록에 
 - **리스트 본문 폭:** 리스트 `main`만 960px 이하로 가운데에 둔다. 보드·캘린더·간트는 셸 폭이다. AC-09 E2E가 보는 목록·상세·확인 필요 상세에는 넓은 보기가 없다.
 - **늦은 상태 변경 성공:** 공간 전환이나 역할 변경 뒤에도 세션이 살아 있으면, 도착한 성공은 아직 남아 있는 그 공간의 목록·상세 캐시를 서버 값으로 갱신한다. S3 검증은 이를 실패로 봤으나 §3.6의 정합으로 보고 재작업하지 않았다. [기록](basis-for-decision/2026-10-11-late-status-success-keeps-workspace-cache.md).
 
+## 태스크 상세 재조회 실패 안내 (#236, 2026-10-18)
+
+[계획](../refactor/plan-task-detail-refetch-error.md)에 따라 M6 구현 이후 발견된 결함을 수정했다. 상세를 연 채 Notion `반영 대기`를 polling하다 재조회가 실패하면 polling은 멈추는데 화면은 안내 없이 마지막 `반영 대기`를 보였다([E-06](../m7/errors/E-06-m6-detail-refetch-error-hidden.md)).
+
+### 변경
+
+- `queryView`와 단위 테스트를 `widgets/dashboard/lib`에서 `shared/lib/query-view`(공개 `index.ts`)로 옮겼다. 판정 로직은 그대로이고, 대시보드는 공통 경로를 참조하며 기존 위치 파일은 삭제했다.
+- `notionSyncRefetchInterval`의 입력을 `{ state: { data, error } }`로 바꿨다. `queryView(state) === 'ready'`이면서 Notion 상태가 `pending`일 때만 3초이고, `loading`·`error`·`refreshFailed`와 `synced | failed | null`은 `false`다.
+- `TaskDetail`이 같은 `queryView`로 판정한다. `refreshFailed`이면 기존 본문 위에 `role="alert"` 안내 `최신 상태를 받지 못했어요`와 공통 `Button`의 `다시 시도`를 둔다. 버튼은 `task.refetch({ cancelRefetch: false })`를 부르고 요청 중 로딩·비활성이며, 성공하면 안내가 사라지고 재실패하면 남는다. 토스트는 쓰지 않았다.
+- 최초 조회 실패(`QueryErrorState`)와 접근 불가 화면은 그대로다. 백엔드·DTO 변경은 없다.
+
+### 테스트
+
+- [notionSyncLabel.test.ts](../../../src/features/task-notion-sync/lib/notionSyncLabel.test.ts): polling 간격을 새 입력으로 갱신(AC-02).
+- [notionSyncPolling.test.tsx](../../../src/app/notionSyncPolling.test.tsx) 「재조회 실패 안내 (#236)」: 500·네트워크 오류 각 1건(AC-03), 연속 클릭·요청 중 비활성·성공 시 안내 제거·`pending` polling 재개(AC-04·AC-06), 재실패 유지 뒤 회복(AC-05), PM·일반 팀원 × `synced`·`failed`(AC-06·AC-07).
+- [tasks.test.tsx](../../../src/app/tasks.test.tsx): 처음부터 조회가 실패하면 일반 팀원도 `다시 시도`로 복구(AC-07).
+- 구현 에이전트 보고: 수정 전에는 통합 테스트 8건이 안내를 찾지 못해 실패했고(polling 입력 단위 테스트 1건도 실패), 수정 후 통과했다. 수정 전 실패 원문은 남아 있지 않아 독립 확인하지 못했다.
+
+### 검증 (Node v24.11.0, `frontend/`)
+
+| 명령 | exit | 결과 |
+|---|---|---|
+| `npm run typecheck` | 0 | 오류 없음 |
+| `npm run lint` | 0 | 경계 규칙 포함 오류 없음 |
+| `npm run format:check` | 0 | 모든 파일 통과 |
+| `npm test` | 0 | 159개 파일·1806건 통과 |
+| `npx vitest run src/app/notionSyncPolling.test.tsx src/app/tasks.test.tsx` 5회 반복 | 0 | 구현 에이전트 보고: 매회 38건 통과, 불안정 없음(반복 로그가 없어 독립 확인하지 못했다) |
+| `npm run build` | 0 | 빌드 성공 |
+| `npx playwright test e2e/tasks-approval.e2e.ts e2e/dashboard.e2e.ts` | 0 | 17건 통과 |
+| `npm run test:storybook` | 0 | 104건 통과(구현 시점의 기존 스토리) |
+
+- 이 게이트는 #236 관련 범위(전체 Vitest·build·관련 E2E·Storybook)의 Node 24 실행이며, 위 M6 최종 게이트의 Node 24 재실행이나 M6 전체 E2E·production 번들 검증 완료를 뜻하지 않는다.
+
+### 후속 (2026-10-30)
+
+- [TaskDetail.stories.tsx](../../../src/widgets/task-detail/ui/TaskDetail.stories.tsx)에 갱신 실패 스토리 `갱신_실패`를 추가했고 Storybook은 105건 통과했다. 끊어졌던 `queryView` 링크 5개도 연결했다.
+- Codex 읽기 전용 독립 검증: AC-01~08 충족(AC-03은 MSW 기준), AC-09는 착수 전 기준 대비 보존이 검증불가다. 최초 전체 Vitest·관련 E2E에서 timeout 각 1건이 있었고 단독·겹침 없는 재실행에서 통과했다. 세부와 제한은 [#236 결과](../refactor/result-task-detail-refetch-error.md)에 있다.
+
+### 계획 대비 변경
+
+- 구현은 계획 대비 달라진 점이 없다. 작업 트리에 `node_modules`가 없어 `npm ci`로 설치한 뒤 실행했다. 2026-10-30의 스토리 추가·링크 연결은 계획 밖 사용자 요청 후속이다.
+- 미실행·미검증: 실제 백엔드와 Notion 기준 확인은 하지 않았다(MSW 기준).
+
 ## 남은 작업과 제한 사항
 
 - Node 24 환경에서 최종 게이트 재실행.
@@ -121,5 +164,6 @@ S1~S4의 통합 테스트와 브라우저 확인은 각 단계 감독 기록에 
 - [공간 전환·역할 변경 뒤 늦은 상태 변경 성공이 남아 있는 공간 캐시를 갱신하는 선택](basis-for-decision/2026-10-11-late-status-success-keeps-workspace-cache.md)
 - [보완값을 승인 요청 때까지 화면에 두는 선택](basis-for-decision/2026-10-11-approval-overrides-held-until-approve.md)
 - [조회 오류 뒤 Notion polling을 재진입까지 멈추는 선택](basis-for-decision/2026-10-11-notion-polling-stops-on-query-error.md)
+- [태스크 상세 재조회 실패 안내 계획 (#236)](../refactor/plan-task-detail-refetch-error.md) · [결과](../refactor/result-task-detail-refetch-error.md)
 - [대표 계약](../../contracts/frontend-api-contract.md) 「M6 태스크·승인 처리 경계」
 - [M5 인수인계](../m5/m5-handoff.md)

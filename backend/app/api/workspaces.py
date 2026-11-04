@@ -1,3 +1,6 @@
+import json
+import logging
+import uuid
 from fastapi import APIRouter, Depends, UploadFile, File, Form
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
@@ -14,12 +17,15 @@ from app.models import (
     MemberRole,
     User,
     Meeting,
+    MeetingSource,
     MeetingStatus,
+    MeetingUpload,
     OnboardingStep,
     OnboardingStepStatus,
     Source,
 )
 from app.schemas.meeting import MeetingListResponse
+from app.services import upload_storage
 from app.schemas.workspace import (
     WorkspaceCreateRequest,
     WorkspaceListResponse,
@@ -28,6 +34,8 @@ from app.schemas.workspace import (
     WorkspaceOnboarding,
     WorkspaceOnboardingStep
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/workspaces", tags=["workspaces"])
 
@@ -232,14 +240,21 @@ def list_workspace_meetings(
 @router.post("/{workspace_id}/meetings/upload", status_code=202, response_model=Envelope[dict])
 def upload_meeting(
     workspace_id: str,
-    title: str = Form(...),
+    # meeting.title 칼럼 길이. 넘으면 파일을 저장하기 전에 400으로 거절한다
+    title: str = Form(..., max_length=200),
     started_at: Optional[datetime] = Form(None),
-    attendee_member_ids: str = Form(...),
+    # 프론트는 참석자마다 같은 이름의 필드를 반복해 보낸다
+    attendee_member_ids: list[str] = Form(...),
     file: UploadFile = File(...),
     member: Member = Depends(get_current_pm),
     db: Session = Depends(get_db)
 ) -> dict:
-    
+    """녹음을 디스크에 저장하고 `processing` 회의와 업로드 정보(`meeting_upload`)를 만든다.
+
+    처음부터 `processing`이라 프론트가 Discord 회의처럼 정리 중으로 추적하고, 끝날 때까지 이 공간의 다음
+    업로드는 409다(D-088·D-089). AI가 가져갔는지는 `meeting_upload.claimed_at`으로 가린다.
+    녹음을 먼저 저장하고 두 행은 마지막에 함께 커밋한다. 순서는 `upload_storage` 설명 참고.
+    """
     processing = db.query(Meeting).filter(
         Meeting.workspace_id == workspace_id, 
         Meeting.status == MeetingStatus.PROCESSING
@@ -249,18 +264,98 @@ def upload_meeting(
             ErrorCode.MEETING_PROCESSING_IN_PROGRESS,
             details={"meeting_id": processing.meeting_id}
         )
-        
+
+    # 참석자를 고른 뒤 팀원이 삭제됐을 수 있다. 서버에서 다시 확인한다
+    attendee_ids = list(dict.fromkeys(attendee_member_ids))
+    attendees = {
+        m.member_id: m
+        for m in db.query(Member).filter(
+            Member.workspace_id == workspace_id,
+            Member.member_id.in_(attendee_ids),
+            Member.is_deleted.is_(False),
+        )
+    }
+    unknown_ids = [member_id for member_id in attendee_ids if member_id not in attendees]
+    if unknown_ids:
+        raise AppError(
+            ErrorCode.INVALID_REQUEST,
+            message="워크스페이스 팀원이 아닌 참석자가 있습니다.",
+            details={"attendee_member_ids": unknown_ids},
+        )
+
+    if not upload_storage.is_supported_audio(file.filename, file.file):
+        raise AppError(
+            ErrorCode.AUDIO_FORMAT_UNSUPPORTED,
+            details={"filename": file.filename, "supported": upload_storage.SUPPORTED_EXTENSIONS},
+        )
+
+    size_bytes = upload_storage.file_size(file.file)
+    max_bytes = upload_storage.max_bytes()
+    if size_bytes > max_bytes:
+        raise AppError(
+            ErrorCode.AUDIO_TOO_LARGE,
+            details={"size_bytes": size_bytes, "max_bytes": max_bytes},
+        )
+
+    # 같은 순간을 뜻하는 시각(회의 시작 기본값, 정리 시작, 업로드)은 한 번 읽은 값을 같이 쓴다
+    now = datetime.now(timezone.utc)
     meeting = Meeting(
+        meeting_id=str(uuid.uuid4()),
         workspace_id=workspace_id,
         title=title,
-        source="manual_upload",
-        status=MeetingStatus.PROCESSING,
-        started_at=started_at or datetime.now(timezone.utc)
+        source=str(MeetingSource.MANUAL_UPLOAD),
+        status=str(MeetingStatus.PROCESSING),
+        started_at=started_at or now,
+        # Discord 회의의 `/end`처럼 녹음이 끝나고 정리를 시작한 시각이다
+        ended_at=now,
     )
-    db.add(meeting)
-    db.commit()
-    db.refresh(meeting)
-    
-    # TODO: 파일 저장 및 큐 전송 등 비동기 처리 연결
-    
+    upload = MeetingUpload(
+        meeting_id=meeting.meeting_id,
+        # 칼럼 길이에 맞춘다. 사용자가 보낸 값이라 길어도 업로드를 거절하지 않는다
+        original_filename=file.filename[:255] if file.filename else None,
+        content_type=file.content_type[:100] if file.content_type else None,
+        uploaded_by_member_id=member.member_id,
+        uploaded_at=now,
+        attendees=json.dumps(
+            [
+                {"member_id": member_id, "display_name": attendees[member_id].display_name}
+                for member_id in attendee_ids
+            ],
+            ensure_ascii=False,
+        ),
+    )
+    # 녹음을 복사하는 동안(100MiB면 몇 초) DB 연결을 붙잡지 않도록 읽기 트랜잭션을 끝내 풀에 돌려준다.
+    # 그 사이 바뀐 것은 아래 커밋 직전 잠금과 재확인이 잡는다
+    db.rollback()
+    try:
+        upload.stored_filename, upload.size_bytes = upload_storage.save_upload(
+            meeting.meeting_id, file.file, file.filename
+        )
+    except OSError:
+        logger.exception("업로드 녹음을 저장하지 못했습니다: meeting_id=%s", meeting.meeting_id)
+        raise AppError(ErrorCode.AUDIO_UPLOAD_FAILED)
+
+    try:
+        # 위의 409 검사는 녹음을 받기 전에 한 번 본 것이라, 같은 공간에 동시에 온 업로드가 둘 다 통과할 수 있다.
+        # 워크스페이스 행을 커밋까지 잠그고 다시 확인해 하나만 받는다(SQLite는 FOR UPDATE를 무시한다)
+        db.execute(
+            select(Workspace.workspace_id)
+            .where(Workspace.workspace_id == workspace_id)
+            .with_for_update()
+        )
+        busy_id = db.scalar(
+            select(Meeting.meeting_id).where(
+                Meeting.workspace_id == workspace_id,
+                Meeting.status == str(MeetingStatus.PROCESSING),
+            )
+        )
+        if busy_id is not None:
+            raise AppError(ErrorCode.MEETING_PROCESSING_IN_PROGRESS, details={"meeting_id": busy_id})
+        db.add_all([meeting, upload])
+        db.commit()
+    except Exception:
+        db.rollback()
+        upload_storage.remove_upload(meeting.meeting_id)
+        raise
+
     return success({"meeting_id": meeting.meeting_id, "status": meeting.status})

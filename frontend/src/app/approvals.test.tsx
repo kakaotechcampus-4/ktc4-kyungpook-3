@@ -204,6 +204,23 @@ describe('읽기 진입과 실 API 의 생성 승인 (AC-05)', () => {
   })
 })
 
+describe('실 API 에서는 대시보드 채워 넣기로 와도 읽기다 (D-176)', () => {
+  it('보완 폼도 보완하기도 없다', async () => {
+    const app = renderApp(paths.dashboard('ws_01'))
+    await userEvent.click(await screen.findByRole('link', { name: '채워 넣기 — 알림 문구 검토' }))
+    await app.expectPath(paths.approval('ws_01', 'ap_01'))
+    await screen.findByRole('heading', { level: 2, name: '새 태스크 확인' })
+    await waitFor(() =>
+      expect(approveButton()).toHaveAccessibleDescription(
+        `승인하려면 담당자·마감 정보를 올바르게 채워야 해요. ${LIVE_UNSUPPORTED}`,
+      ),
+    )
+    expect(screen.queryByRole('group', { name: '확정할 값 보완' })).toBeNull()
+    expect(screen.queryByRole('textbox')).toBeNull()
+    expect(screen.queryByRole('button', { name: '보완하기' })).toBeNull()
+  })
+})
+
 describe('승인·반려는 서버 성공 뒤에, 한 번만 (AC-05 · AC-06)', () => {
   it('요청 중에는 두 버튼이 잠기고 같은 틱의 두 번째 누름도 보내지 않는다. 응답 전에는 결과를 그리지 않는다', async () => {
     approvalOf('ap_02').payload.due_date = '2026-09-30'

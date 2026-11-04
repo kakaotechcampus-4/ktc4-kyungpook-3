@@ -11,7 +11,6 @@ export {
   matchesDue,
   readBoardQuery,
   soonUntil,
-  sortTasks,
 } from './lib/taskBoard'
 export type {
   BoardItem,
@@ -27,3 +26,5 @@ export {
   viewSearch,
 } from './lib/taskViews'
 export type { BoardPeriod, TaskView, ViewQuery } from './lib/taskViews'
+export { TASK_SORTS, sortTasks } from './lib/taskSort'
+export type { TaskSort } from './lib/taskSort'

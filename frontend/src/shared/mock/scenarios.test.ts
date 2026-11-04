@@ -1,6 +1,7 @@
 import { fetchDto, fetchSessionDto, jsonRequest } from '@/shared/test/api'
 import type { SessionDto } from '@/shared/types/api/auth'
 import type { ListDto } from '@/shared/types/api/envelope'
+import type { DiscordUserDto, MemberDto } from '@/shared/types/api/member'
 import type { WorkspaceDto } from '@/shared/types/api/workspace'
 import { db, initialDb } from './db'
 import { MOCK_SCENARIOS, applyScenario, createScenarioDb } from './scenarios'
@@ -84,6 +85,72 @@ describe('E2E 시나리오', () => {
     ).resolves.toEqual({})
   })
 
+  it('Discord 를 건너뛴 설정: 온보딩을 마친 ws_03 에서 Discord 만 미연결이고 팀원은 생성자 PM 하나다', async () => {
+    applyScenario('settings-discord-skipped')
+    await expect(listedWorkspaces()).resolves.toEqual([
+      { id: 'ws_03', role: 'pm', completed: true },
+    ])
+    await expect(fetchDto<WorkspaceDto>('/workspaces/ws_03')).resolves.toMatchObject({
+      onboarding: {
+        steps: [
+          { step: 'create_workspace', status: 'completed' },
+          { step: 'connect_discord', status: 'skipped' },
+          { step: 'connect_notion', status: 'completed' },
+          { step: 'connect_members', status: 'skipped' },
+        ],
+      },
+    })
+    await expect(fetchDto('/workspaces/ws_03/integrations')).resolves.toMatchObject({
+      discord: { status: 'not_connected' },
+      notion: { status: 'connected' },
+    })
+    await expect(fetchDto('/members?workspace_id=ws_03')).resolves.toMatchObject({
+      total: 1,
+      items: [{ role: 'pm', discord_user_id: null }],
+    })
+    await expect(fetchDto('/workspaces/ws_03/discord/members')).rejects.toMatchObject({
+      code: 'INTEGRATION_NOT_CONNECTED',
+    })
+  })
+
+  it('미매핑 설정: ws_01 의 Discord 가 연결돼 있고 미매핑·서버를 떠난 사용자가 있다', async () => {
+    applyScenario('settings-unmapped')
+    await expect(listedWorkspaces()).resolves.toEqual([
+      { id: 'ws_01', role: 'pm', completed: true },
+    ])
+    const { items: users } = await fetchDto<ListDto<DiscordUserDto>>(
+      '/workspaces/ws_01/discord/members',
+    )
+    const { items: members } = await fetchDto<ListDto<MemberDto>>('/members?workspace_id=ws_01')
+    const mapped = new Set(members.map(({ discord_user_id }) => discord_user_id))
+    const listed = new Set(users.map(({ discord_user_id }) => discord_user_id))
+    // 미매핑: 목록에 있는데 잇는 팀원이 없다. 봇은 뺀다
+    expect(
+      users.filter(({ is_bot, discord_user_id }) => !is_bot && !mapped.has(discord_user_id)),
+    ).toMatchObject([{ discord_user_id: '1125' }])
+    // 서버를 떠났다(inactive): 팀원은 이어져 있는데 목록에 없다
+    expect(
+      members.filter(
+        ({ discord_user_id }) => discord_user_id !== null && !listed.has(discord_user_id),
+      ),
+    ).toMatchObject([{ member_id: 'mb_04', discord_user_id: '1126' }])
+  })
+
+  it('일반 팀원 설정: ws_01 의 일반 팀원이다. 연동 조회는 되고 연결 쓰기는 403 이다', async () => {
+    applyScenario('settings-member')
+    await expect(listedWorkspaces()).resolves.toEqual([
+      { id: 'ws_01', role: 'member', completed: true },
+    ])
+    await expect(fetchDto('/workspaces/ws_01/integrations')).resolves.toMatchObject({
+      discord: { status: 'not_connected' },
+      notion: { status: 'connected' },
+    })
+    await expect(
+      fetchDto('/workspaces/ws_01/integrations/notion', { method: 'DELETE' }),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN', status: 403 })
+  })
+
+  // 시나리오 수의 제곱만큼 적용·비교한다. 시나리오가 늘어 기본 한도(5초)를 넘으므로 한도를 따로 둔다
   it('시나리오끼리 독립적이다 — 앞 시나리오의 변경이 다음 적용에 남지 않는다', async () => {
     for (const first of MOCK_SCENARIOS) {
       applyScenario(first)
@@ -102,7 +169,7 @@ describe('E2E 시나리오', () => {
         })
       }
     }
-  })
+  }, 30_000)
 
   it('만들 때마다 새 객체다 — 한 시나리오 값을 고쳐도 다른 값에 번지지 않는다', () => {
     const scenarios = MOCK_SCENARIOS.map((name: MockScenario) => createScenarioDb(name))
