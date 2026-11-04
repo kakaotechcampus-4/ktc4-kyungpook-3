@@ -175,6 +175,11 @@ class FakeBe:
         return _Resp(404, None, "not found")
 
     def _create_extraction(self, body: dict):
+        fields = [{"loc": ["body", "items", i, "evidence_speaker_member_id"], "msg": "String should have at most 36 characters"}
+                  for i, it in enumerate(body.get("items") or [])
+                  if len(it.get("evidence_speaker_member_id") or "") > MEMBER_ID_MAX]
+        if fields:                      # 요청 검증은 회의 확인보다 먼저다
+            return _err(400, "INVALID_REQUEST", {"fields": fields})
         mid = body["meeting_id"]
         m = self.meetings.get(mid)
         if m is None:
@@ -206,19 +211,28 @@ class FakeBe:
         if self.sources_fail:
             return _err(*self.sources_fail)
         segments = body.get("segments") or []
-        seqs = [s["seq"] for s in segments]
-        if len(set(seqs)) != len(seqs) or any(q < 0 for q in seqs):
-            return _err(400, "INVALID_REQUEST", {"fields": ["segments"]})
+        fields = _segment_problems(segments)
+        if fields:
+            return _err(400, "INVALID_REQUEST", {"fields": fields})
         m = self.meetings.get(mid)
         if m is None:
             return _err(404, "MEETING_NOT_FOUND", {"meeting_id": mid})
         if m["status"] == "failed":
             return _err(409, "MEETING_FAILED", {"meeting_id": mid, "status": "failed"})
+        # 요청에 처음 나온 순서로, 중복 없이. 틀린 ID 가 하나라도 있으면 아무것도 저장하지 않는다(이미 저장된 seq 도 본다)
+        active = {x["member_id"] for x in self.members.get(m["workspace_id"], []) if not x.get("deleted")}
+        asked = list(dict.fromkeys(s["speaker_member_id"] for s in segments if s.get("speaker_member_id")))
+        unknown = [x for x in asked if x not in active]
+        if unknown:
+            return _err(400, "INVALID_REQUEST", {"member_ids": unknown})
+        by_uid = {x["discord_user_id"]: x["member_id"] for x in self.members.get(m["workspace_id"], [])
+                  if x.get("discord_user_id") and not x.get("deleted")}
         saved = self.sources.setdefault(mid, {})
         names = body.get("speaker_names") or {}
         new = [s for s in sorted(segments, key=lambda s: s["seq"]) if s["seq"] not in saved]
         for s in new:
-            saved[s["seq"]] = {**s, "speaker_name": names.get(s.get("speaker"))}
+            saved[s["seq"]] = {**s, "speaker_name": names.get(s.get("speaker")),
+                               "member_id": s.get("speaker_member_id") or by_uid.get(s.get("speaker"))}
         ends = [round(s["end"] * 1000) for s in saved.values()]
         return _ok(201, {"meeting_id": mid, "inserted": len(new), "skipped": len(segments) - len(new),
                          "duration_ms": max(ends) if ends else None})
@@ -347,6 +361,25 @@ def normalize_speakers(speakers: list[dict]) -> list[dict]:
                     "samples": sorted(({"start": float(x["start"]), "end": float(x["end"])} for x in s.get("samples") or []),
                                       key=lambda x: (x["start"], x["end"]))} for s in speakers),
                   key=lambda s: s["label"])
+
+
+MEMBER_ID_MAX = 36
+
+
+def _segment_problems(segments: list[dict]) -> list[dict]:
+    """schemas/source.py(TranscriptCreateRequest) 의 검증을 BE 400 의 details.fields 모양({loc, msg})으로."""
+    out: list[dict] = []
+    for i, s in enumerate(segments):
+        at = ["body", "segments", i]
+        if s["seq"] < 0:
+            out.append({"loc": at + ["seq"], "msg": "Input should be greater than or equal to 0"})
+        if len(s.get("speaker_member_id") or "") > MEMBER_ID_MAX:
+            out.append({"loc": at + ["speaker_member_id"], "msg": "String should have at most 36 characters"})
+    seqs = [s["seq"] for s in segments]
+    dup = sorted({q for q in seqs if seqs.count(q) > 1})
+    if dup:
+        out.append({"loc": ["body"], "msg": f"Value error, 한 요청 안에 seq가 겹친다: {dup}"})
+    return out
 
 
 def _num(v) -> bool:
