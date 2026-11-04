@@ -76,7 +76,7 @@ def update_settings(
                 db.flush()
         except IntegrityError:
             # 다른 요청이 먼저 첫 행을 만들었다. 그 행을 읽어 이어서 적용한다.
-            db.expunge(row)
+            # SAVEPOINT 롤백이 새 객체를 이미 세션에서 뗐다.
             row = db.execute(
                 select(WorkspaceMessageSettings).where(WorkspaceMessageSettings.workspace_id == workspace_id)
             ).scalar_one()

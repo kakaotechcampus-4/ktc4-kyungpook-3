@@ -127,3 +127,32 @@ def test_settings_are_per_workspace(mdb, mseed):
     assert r.status_code == 200, r.text
     b = svc.get_settings(mdb, other.workspace_id)
     assert b.due_reminder is True and b.saved is False
+
+
+def test_first_save_race_applies_changes_to_row_created_meanwhile(mdb, mseed, monkeypatch):
+    """서비스가 행 없음으로 읽은 뒤 다른 요청이 먼저 첫 행을 만든 경우, 그 행에 이어서 적용한다."""
+    from sqlalchemy import insert
+
+    from app.models import WorkspaceMessageSettings
+
+    wid, pm = mseed["ws"], mseed["pm"].member_id
+    mdb.execute(insert(WorkspaceMessageSettings).values(
+        workspace_id=wid, silence_alert=False, nudge_hour=18, updated_at=NOW,
+    ))
+    mdb.commit()
+
+    real_get = mdb.get
+    calls = []
+
+    def stale_get(entity, ident, *a, **kw):
+        if not calls:
+            calls.append(1)
+            return None
+        return real_get(entity, ident, *a, **kw)
+
+    monkeypatch.setattr(mdb, "get", stale_get)
+    s = svc.update_settings(mdb, wid, {"due_reminder": False}, updated_by=pm, now=NOW)
+    mdb.commit()
+    assert s.due_reminder is False
+    assert s.silence_alert is False and s.nudge_hour == 18
+    assert s.updated_by == pm
