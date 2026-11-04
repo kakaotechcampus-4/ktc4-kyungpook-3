@@ -864,6 +864,28 @@ async def test_a_pass_processes_a_mapped_upload_before_discord_meetings(tmp_path
     assert _status(upath) == "handed_off" and _status(dpath) == "handed_off"
 
 
+async def test_a_pass_waits_for_assign_to_close_the_resume_record_before_picking_a_mapped_upload(tmp_path):
+    """apply_mapping 이 매니페스트를 mapped 로 썼어도 resume 기록이 resuming 이면 바퀴는 집지 않는다. 지정 받기 재시도가
+    그 회의의 로컬을 지울 수 있기 때문이다. assign_one 이 mapped 로 닫은 뒤에야 집는다."""
+    from datetime import datetime, timezone
+    from tests.capture.test_recorder import _mapped_upload
+    from upload import assign as A
+    rec, upath, m = _mapped_upload(tmp_path, resume="resuming", session="upload_m-up1")
+    fake = FakeBe()
+    fake.add_upload("m-up1")
+    fake.members["ws-1"] = [{"member_id": "u1", "name": "민수", "discord_user_id": None, "aliases": []}]
+    fake.mark_reported("m-up1", ["SPEAKER_00", "SPEAKER_01"])
+    fake.assign("m-up1", {"SPEAKER_00": "u1", "SPEAKER_01": None})
+    client = H.BeClient("http://be", session=fake, service_token="svc-token")
+    w = _worker(tmp_path, extractor=_extractor({}), handoff=H.Handoff(client))
+    assert await w.run_pass() == ([], [])
+    assert _status(upath) == "mapped"
+    prog = A.assign_one(rec, client=client, now=lambda: datetime.now(timezone.utc))
+    assert prog is not None and prog.event == "mapped"
+    results, _ = await w.run_pass()
+    assert [r["session"] for r in results] == [m["session"]] and results[0]["status"] == "handed_off"
+
+
 async def test_an_upload_ended_in_be_is_dropped_by_the_pass_and_logged_without_a_failure(tmp_path, capsys):
     from tests.capture.test_recorder import _mapped_upload
     rec, upath, m = _mapped_upload(tmp_path)

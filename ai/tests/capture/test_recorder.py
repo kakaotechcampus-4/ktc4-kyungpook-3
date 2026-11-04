@@ -1002,9 +1002,21 @@ def test_the_production_hint_skips_short_chunks():
 
 
 # ───────────────────────────────────────────── mapped 업로드 회의 처리 (#286)
-def _mapped_upload(tmp_path, *, be=None, mapping=None, drop=()):
+def _write_intake(rec, meeting_id, resume):
+    """recordings/.uploads/<id>/intake.json 에 가져오기 기록을 쓴다. resume 이 None 이면 resume 키를 두지 않고,
+    문자열이면 {"state": resume} 로 둔다(그 밖의 값은 그대로 쓴다)."""
+    d = rec / ".uploads" / meeting_id
+    d.mkdir(parents=True, exist_ok=True)
+    body = {"meeting_id": meeting_id, "state": "done", "item": {"meeting_id": meeting_id}}
+    if resume is not None:
+        body["resume"] = {"state": resume, "attempts": 0, "next_at": None, "error": None} if isinstance(resume, str) else resume
+    (d / "intake.json").write_text(json.dumps(body, ensure_ascii=False), encoding="utf-8")
+
+
+def _mapped_upload(tmp_path, *, be=None, mapping=None, drop=(), resume="mapped", session=None):
     """prepare_upload 로 만든 진짜 트랙에 지정을 쓴 mapped 업로드. 라벨 SPEAKER_00 → u1, SPEAKER_01 → 외부 참석자.
-    drop 에 적은 키는 매니페스트에서 뺀다(대상 조건 확인용)."""
+    drop 에 적은 키는 매니페스트에서 뺀다(대상 조건 확인용). resume 은 지정 받기 기록(intake.json)의 resume.state 다
+    (None 이면 resume 키 없이, False 면 기록 파일 없이 둔다)."""
     from tests.conftest import SEGS, STARTED, FakeDiarizer, _audio
     from upload.mapping import apply_mapping
     from upload.prepare import prepare_upload
@@ -1013,12 +1025,14 @@ def _mapped_upload(tmp_path, *, be=None, mapping=None, drop=()):
     meta = {"be": be if be is not None else {"meeting_id": "m-up1", "status": "processing"}, "workspace_id": "ws-1",
             "title": "주간 회의", "attendees": [{"member_id": "u1", "display_name": "민수"}]}
     path, _ = prepare_upload(_audio(tmp_path), rec, diarizer=FakeDiarizer(SEGS), started_at=STARTED, timezone="Asia/Seoul",
-                             meta=meta)
+                             meta=meta, session=session)
     apply_mapping(path, mapping or {"SPEAKER_00": "u1", "SPEAKER_01": None})
     m = json.loads(path.read_text(encoding="utf-8"))
     for key in drop:
         m.pop(key, None)
     R.save_manifest(path, m)
+    if resume is not False:
+        _write_intake(rec, (m.get("be") or {}).get("meeting_id") or "m-up1", resume)
     return rec, path, m
 
 
@@ -1063,6 +1077,32 @@ def test_an_upload_is_pending_only_when_mapped_and_ready_for_handoff(tmp_path, n
     rec, path, m = _mapped_upload(tmp_path, **kw)
     assert R._is_pending(rec, m) is expected
     assert (R.pending_sessions(rec) == [path]) is expected
+
+
+def test_an_upload_is_not_pending_until_the_resume_record_says_mapped(tmp_path):
+    """매니페스트가 mapped 여도 지정 받기(upload.assign)가 resume.state 를 mapped 로 닫기 전에는 집지 않는다.
+    resuming 인 동안 처리를 시작하면 assign 의 재시도가 같은 회의의 로컬을 지울 수 있다."""
+    rec, path, m = _mapped_upload(tmp_path, resume="resuming")
+    assert R._is_pending(rec, m) is False and R.pending_sessions(rec) == []
+    _write_intake(rec, "m-up1", "mapped")
+    assert R._is_pending(rec, m) is True
+
+
+@pytest.mark.parametrize("record", ["missing", "broken", "no_resume", "not_a_dict"])
+def test_an_upload_without_a_usable_resume_record_is_not_pending(tmp_path, record):
+    rec, path, m = _mapped_upload(tmp_path, resume="mapped")
+    f = rec / ".uploads" / "m-up1" / "intake.json"
+    if record == "missing":
+        f.unlink()
+    elif record == "broken":
+        f.write_text("{not json", encoding="utf-8")
+    elif record == "no_resume":
+        _write_intake(rec, "m-up1", None)
+    else:
+        body = json.loads(f.read_text(encoding="utf-8"))
+        body["resume"] = "mapped"                   # resume 이 dict 가 아니면 state 를 못 읽는다
+        f.write_text(json.dumps(body), encoding="utf-8")
+    assert R._is_pending(rec, m) is False
 
 
 def test_an_upload_with_a_speaker_missing_the_member_id_key_is_not_pending(tmp_path):

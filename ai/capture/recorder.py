@@ -465,11 +465,24 @@ def drop_local(recordings_dir: Path, session: str) -> None:
     shutil.rmtree(recordings_dir / session, ignore_errors=True)
 
 
-def _upload_ready(m: dict) -> bool:
-    """업로드가 BE 로 넘길 수 있는가: 지정이 끝났고(mapped_at, 모든 화자에 member_id 키), 웹 업로드가 만든 BE 회의가 처리 중이다."""
+def _resume_mapped(recordings_dir: Path, meeting_id: str) -> bool:
+    """지정 받기(upload.assign)가 이 업로드의 resume.state 를 mapped 로 닫았는가. 기록이 없거나 깨졌으면 False.
+    resuming 인 동안 처리를 시작하면 assign 의 재시도(ended·failing)가 같은 회의의 로컬을 지울 수 있다."""
+    try:
+        rec = json.loads((recordings_dir / ".uploads" / meeting_id / "intake.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    r = rec.get("resume") if isinstance(rec, dict) else None
+    return isinstance(r, dict) and r.get("state") == "mapped"
+
+
+def _upload_ready(recordings_dir: Path, m: dict) -> bool:
+    """업로드가 BE 로 넘길 수 있는가: 지정이 끝났고(mapped_at, 모든 화자에 member_id 키, 지정 받기 기록이 mapped),
+    웹 업로드가 만든 BE 회의가 처리 중이다."""
     be = m.get("be") or {}
     return bool(m.get("mapped_at") and m.get("workspace_id") and be.get("meeting_id") and be.get("status") == "processing"
-                and m.get("speakers") and all("member_id" in e for e in m["speakers"]))
+                and m.get("speakers") and all("member_id" in e for e in m["speakers"])
+                and _resume_mapped(recordings_dir, str(be["meeting_id"])))
 
 
 def _pending(recordings_dir: Path, *, guild_id=None, exclude=None):
@@ -489,7 +502,7 @@ def _is_pending(recordings_dir: Path, m: dict) -> bool:
     # 업로드 회의는 지정이 끝나고 BE 회의가 처리 중일 때만 돌린다(#286). diarized 는 지정 전이라 사람이 saved 로 고쳐도 안 돌린다.
     # 지정 시각·화자별 member_id 가 없는 업로드는 status 만 고쳐서는 돌지 않는다
     if m.get("source") == "upload":
-        if m.get("status") == STATUS_DIARIZED or not _upload_ready(m):
+        if m.get("status") == STATUS_DIARIZED or not _upload_ready(recordings_dir, m):
             return False
     elif m.get("status") in (STATUS_DIARIZED, STATUS_MAPPED):
         return False
