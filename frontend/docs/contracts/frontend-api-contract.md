@@ -1353,10 +1353,28 @@ members 에만 있고 Discord 목록에 없으면      → 비활성 (서버를 
 
 ~~**1차에서 화면을 만들지 않는다** (D-171).~~ D-171 은 D-174 로 대체됐다(2026-11-03).
 
-**현재 구현.** production 과 실 API 모드에서는 `준비 중` 안내를 표시한다. 개발 서버에서 MSW 를 켠 경우에만 시안 화면이 나온다.
-화면에 쓰는 임시 DTO·경로·오류 코드는 MSW 목일 뿐 계약이 아니다([M8-C 결과](../plan/m8/result-c.md)).
+**현재 구현 (#315, 2026-11-04).** 프론트엔드는 아래 백엔드 메시지 API 를 production 을 포함한 모든 모드에서 부른다. `준비 중` 안내와 MSW 모드 분기는 지웠다([M8-C 결과](../plan/m8/result-c.md#2026-11-04-실제-메시지-api-연결-315)).
 
-**백엔드 메시지 API** (#310 에서 BE 구현, 프론트엔드 미연결). 결정 근거는 [결정 0034](../../../ai/docs/basis_for_decision/ai/2026-11-04-0034-reminder-and-thread-message.md). 봇·AI 쪽 경로는 [backend-ai 계약](../../../backend/docs/contracts/backend-ai-contract.md)의 「리마인드 DM」에 있다. 경로 prefix 는 `/api/v1/workspaces/{workspace_id}/messages` 다.
+- 쓰는 경로: `GET /messages`, `GET /messages/threads/{thread_id}`, `PATCH /messages/bundles/{bundle_id}`(`body` 또는 `scheduled_at` 하나), `POST /messages/bundles/{bundle_id}/approve`(`{draft_version}`), `POST /messages/bundles/{bundle_id}/cancel`, `POST /messages/threads/{thread_id}/replies`. 재촉 만들기와 리마인드 하나 고치기·빼기(`/messages/reminders…`)는 화면에서 부르지 않는다.
+- 응답 타입은 [message.ts](../../src/shared/types/api/message.ts)가 `schemas/message.py` 와 칸을 1:1 로 맞춘다. 매퍼는 목록을 `bundles` 가 `null` 인지로 PM·팀원 두 모양으로 나누고, 묶음의 화면 단계(승인 대기·승인함·초안 대기)를 `status`·`approved`·`draft_status` 에서 한 번 정한다. `scheduled` 가 아닌 묶음은 그리지 않는다.
+- 보낼 시각은 `마감 하루 전`(묶은 태스크 중 가장 이른 `due_date` 의 전날 09:00 KST)과 `직접 정한 시각` 둘이고, 화면이 시각을 계산해 `scheduled_at` 으로 보낸다. 마감이 없거나 그 시각이 지났으면 `마감 하루 전` 을 고를 수 없다. 시안의 `지금 바로` 는 대응 경로가 없어 지웠다.
+- 오류 코드 처리는 한 표([actionMessages.ts](../../src/features/message-action/lib/actionMessages.ts)의 `KNOWN_FAILURES`)에 있다.
+
+| 코드 | 화면 | 다음 |
+|---|---|---|
+| 409 `BUNDLE_CHANGED` | 행동 자리에 `보낼 메시지가 바뀌었어요. 다시 확인해 주세요.` | 메시지 캐시를 다시 받는다. 다시 시도는 없다 |
+| 409 `REMINDER_SCHEDULED_AT_PASSED` | 승인이면 `예정 시각이 지났어요` 와 승인 잠금 | 그 묶음의 시각 저장이 성공할 때까지 승인을 잠근다 |
+| 409 `REMINDER_NOT_EDITABLE`, 404 `REMINDER_BUNDLE_NOT_FOUND` | 토스트 `이미 처리된 메시지예요. 목록을 다시 불러올게요.` | 메시지 캐시를 다시 받는다 |
+| 대화 조회 403·404 | `대화를 찾을 수 없어요` | 다시 시도 없음 |
+| 그 밖 | 행동 자리에 오류 문구와 `다시 시도` | 같은 요청을 다시 보낸다 |
+
+- 화면 표시: `draft_status` 가 `needed`·`claimed` 면 `문구 다듬는 중`, `body` 는 줄바꿈 그대로(`whitespace-pre-line`), `body_source` 는 미리보기 밑단의 작은 글자(`직접 고친 문구`·`AI 초안`·`기본 문구`)다. 봇 메시지 `dm_status: failed` 는 말풍선 아래 `DM 못 보냄 · {이유}`(`dm_blocked` 서버 DM 이 막혀 있어요, `discord_not_linked` Discord 계정이 연결되지 않았어요, `unknown` 이유를 알 수 없어요), 목록 행의 `dm_failed` 는 `DM 못 보냄` 표시다. 팀원 메시지 `reply_channel: web` 은 `웹에서 답장` 을 붙인다.
+- 대화 화면은 메시지와(PM 에게만) 예정 묶음을 나갈 시각 순으로 섞는다. 취소·만료된 재촉 줄은 응답에 없어 그리지 않는다.
+- 팀원 화면: 자기 대화를 보고 웹 답장을 쓴다. 답장 칸 아래에 `봇 DM 창에 쓴 글은 모두 PM 대화에 보여요.` 를 보인다. PM 은 남의 대화만 보므로 답장 칸 대신 안내 바를 보인다. 화면은 로그인 계정의 `member_id` 를 받지 않아 **PM 자신의 대화**(PM 이 리마인드를 받는 경우)에도 답장 칸이 없다.
+- 화면에서 뺀 것은 [결정 기록](../plan/m8/basis-for-decision/2026-11-04-messages-real-api-drop-unbacked-ui.md)에 있다: 답장의 태스크 판정, `지금 바로`, 채널 대화, 팀 역할, Discord 대화 주소, 재촉 이유 문장·근거 링크·요약, 취소·만료 재촉 줄, 승인자 이름.
+- 검증: MSW 기준 단위·화면 테스트와 브라우저 확인만 했다. 실제 서버(배포 BE)에 붙인 확인은 하지 않았다.
+
+**백엔드 메시지 API** (#310 에서 BE 구현, #315 에서 프론트엔드 연결). 결정 근거는 [결정 0034](../../../ai/docs/basis_for_decision/ai/2026-11-04-0034-reminder-and-thread-message.md). 봇·AI 쪽 경로는 [backend-ai 계약](../../../backend/docs/contracts/backend-ai-contract.md)의 「리마인드 DM」에 있다. 경로 prefix 는 `/api/v1/workspaces/{workspace_id}/messages` 다.
 
 | 요청 | 누가 | 하는 일 |
 |---|---|---|
@@ -1394,7 +1412,7 @@ members 에만 있고 Discord 목록에 없으면      → 비활성 (서버를 
 - 대화 목록 한 줄은 `{thread_id, member_id, name, last_message, awaiting_reply_since, dm_failed}` 다. `dm_failed` 는 그 팀원에게 마지막으로 나간 봇 메시지가 `failed` 인지다. 최근 메시지 순이고, 메시지가 없는 대화는 아래에 둔다.
 - 팀원이 봇 DM 창에 쓴 글은 리마인드에 대한 답인지와 상관없이 모두 대화에 들어가 PM 이 본다. 팀원 화면에 이를 안내해야 한다.
 - 팀원 권한은 로그인 계정이 연결된 팀원(`member.user_id`) 기준이다. 계정이 연결되지 않은 팀원은 웹 답장을 할 수 없다. 대화 주인은 팀원 행으로 판단하므로, 탈퇴했다가 새 팀원 행으로 돌아온 계정은 예전 행의 대화를 열 수 없다.
-- 아직 없는 것: 답장의 태스크 판정 입력(`답장 확인 필요`)과 판정 결과, 태스크 안내 DM·#회의록 요약, `지금 바로` 5분 합치기, 알림 설정, AI 초안 워커, 시안의 `지금 바로`(`send_timing: now`)에 대응하는 BE 경로. MSW 의 `reviews/{id}/send|dismiss` 는 `bundles/{id}/approve|cancel` 로 바뀐다. 프론트엔드 요청은 #315.
+- 아직 없는 것: 답장의 태스크 판정 입력(`답장 확인 필요`)과 판정 결과, 태스크 안내 DM·#회의록 요약, `지금 바로` 5분 합치기, 알림 설정, AI 초안 워커, 시안의 `지금 바로`(`send_timing: now`)에 대응하는 BE 경로. 프론트엔드는 #315 에서 MSW 임시 경로 `reviews/{id}/send|dismiss` 를 `bundles/{id}/approve|cancel` 로 옮겼다.
 
 **스케줄러** (#318 에서 BE 구현). 결정 근거는 [결정 0038](../../../ai/docs/basis_for_decision/ai/2026-11-04-0038-reminder-scheduler-and-notifications.md). 시각 기준은 한국 시간이다.
 
@@ -1438,15 +1456,10 @@ members 에만 있고 Discord 목록에 없으면      → 비활성 (서버를 
 - 계정이 연결되지 않은 팀원은 목록에만 쌓인다. 푸시가 실패해도 목록에는 남는다.
 - 일시 오류는 최대 3번 다시 보낸다. 기기가 꺼져 있으면 푸시 서비스가 24시간까지 붙잡아 두고, 그 뒤에는 버린다. 푸시 서비스가 구독이 없어졌다고 답하면(404·410) 그 구독을 지운다. 요청을 거절하면(400·401·403) 다시 보내지 않고 구독은 남긴다. VAPID 키를 바꾸면 기존 구독이 이렇게 거절되니 브라우저에서 다시 구독한다.
 
-**MSW 동작 (임시, 합의 전).** 아래는 개발 서버 목의 현재 구현이다. 백엔드와 합의한 규약이 아니고, 합의 여부 확인 필요. 재촉 자동 승인은 목에서 꺼져 있으며, 예약 시각이 지나도 스스로 나가지 않는다.
+**MSW 동작.** 개발 서버·테스트·Storybook 의 목([handlers/message.ts](../../src/shared/mock/handlers/message.ts))은 위 백엔드 경로·응답 모양·오류 코드를 그대로 쓴다(#315).
 
-- 경로. `GET /workspaces/{id}/messages`, `GET …/messages/threads/{thread_id}`, `PATCH …/messages/reviews/{review_id}`, `POST …/reviews/{id}/send`, `POST …/reviews/{id}/dismiss`, `POST …/messages/threads/{thread_id}/replies`, `POST …/messages/replies/{message_id}/attribution`.
-- 상태. 재촉 한 건의 저장 단계는 `pending`·`approved`·`sent`·`cancelled` 다. `expired` 는 저장하지 않고, 마감일이 오늘(서울 날짜)보다 앞인 `pending` 을 읽을 때 계산한다. `보내기 전 확인` 은 열린 항목(`pending`·`approved`)만 담는다. 화면에서 승인 대기와 예약은 `예정`, 취소됨·만료됨만 그 상태 말을 붙인다. 발송된 항목은 상태 말 없이 시각 줄이 있는 말풍선이다.
-- 자리. 승인 대기·예약은 나갈 시각 `scheduled_at` 이다. `지금 바로` 는 null 이라 아직 나가지 않은 묶음에 둔다. 발송됨·취소됨은 `closed_at` 이다. 취소는 `min(scheduled_at, 취소한 시각)` 에 놓는다. 만료는 `min(scheduled_at, 마감 다음 날 00:00)` 에 놓는다.
-- 권한. 승인·고쳐 쓰기·보내지 않음·발송 시점·답장 판정은 PM 만 한다. 아니면 403 `PM만 할 수 있는 작업입니다.` 이고 기록은 그대로다. 답장은 그 대화의 팀원만 한다. 아니면 403 `자기 대화에만 답장할 수 있습니다.`
-- 팀원 조회. 목록은 `reviews: []` 와, `member_id` 가 그 공간의 세션 팀원과 같은 대화만이다. 세션 팀원을 정할 수 없으면 대화가 없다. 남의 대화 조회는 404 `MESSAGE_THREAD_NOT_FOUND` 다. 팀원에게는 이미 전달된 메시지만 주고, 승인·답장 대기·태스크 판정은 비운다.
-- 발송과 수정. 승인 대기가 아니면 발송은 404 다. 예약 시각이 지났으면 409 `MESSAGE_SCHEDULE_PASSED` 이고 기록은 그대로다. 시각이 없으면 지금 발송되고, 있으면 같은 항목이 예약으로 목록에 남는다. 승인된 항목을 고치거나 시각을 바꾸면 다시 승인 대기가 된다. `이대로 발송` 만 보낸다.
-- 웹 답장. 그 대화에만 남고 Discord 로 나가지 않으며 재촉 상태를 바꾸지 않는다. 태스크 판정은 비어 있다. PM 화면에는 목록을 다시 받을 때만 보인다 (D-136).
+- 흉내 내는 것: 승인 때 `draft_version` 비교(다르면 409 `BUNDLE_CHANGED`, 이미 승인했으면 그대로 200), 지난 시각 승인·시각 고치기 409 `REMINDER_SCHEDULED_AT_PASSED`, 예정이 아닌 묶음 409 `REMINDER_NOT_EDITABLE`, 없는 묶음 404 `REMINDER_BUNDLE_NOT_FOUND`, 문구를 고치면 `body_source: pm`·판 올림·승인 유지, 시각만 옮기면 판 그대로, 팀원에게 `bundles: null`, 남의 대화 조회·답장 403 `FORBIDDEN`(PM 의 답장 포함), 시간대 없는 `scheduled_at` 400, 시각은 UTC 로 응답.
+- 흉내 내지 않는 것: 같은 시각으로 옮겼을 때 묶음 합치기, 스케줄러의 발송·만료·자동 취소, AI 초안 도착, `POST /messages/reminders` 와 리마인드 하나 고치기·빼기 경로, 봇 경로.
 
 **프론트엔드가 정한 정책** (D-174, 백엔드·AI 합의 여부 확인 필요). 서버가 해 줘야 하는 일만 적는다. 정책 전문은 D-174 에 있다.
 
@@ -1466,7 +1479,7 @@ members 에만 있고 Discord 목록에 없으면      → 비활성 (서버를 
   - 일반 팀원은 자기 대화만 조회하고 답장할 수 있다.
 - 화면에 필요한 메시지 상태: `예정` · `발송됨` · `취소됨` · `만료됨`, 그리고 `답장 확인 필요`.
 
-D-117(E2E)과 D-136(polling)은 실제 API 가 생길 때까지 계속 보류한다.
+실제 API 는 #315 에서 연결했다. D-117(메시지 E2E)과 D-136(polling)은 이번에도 하지 않았다.
 
 ### 5.8 워크스페이스 관리 · 설정
 
@@ -1548,7 +1561,7 @@ D-117(E2E)과 D-136(polling)은 실제 API 가 생길 때까지 계속 보류한
 | 5.5 회의 | 가능 | 업로드·회의록 본문 mock |
 | 5.1 로그인 | 가능 | 전부 mock |
 | 5.6 보드·간트 | **가능** | 없음 — D-170·D-175 로 확정 |
-| 5.7 메시지 | 가능 | 메시지 API 는 BE 구현(§5.7), 봇 DM 발송이 없어 production 은 `준비 중`이다 (D-174) |
+| 5.7 메시지 | 가능 | 메시지 API 는 BE 구현(§5.7), #315 에서 production 화면을 실제 API 에 연결했다 (D-174) |
 | 5.9 팀원 초대 | 가능 | 없음. 초대 API 는 BE 구현(§5.9) |
 
 ---

@@ -2,18 +2,17 @@ import { queryOptions } from '@tanstack/react-query'
 import { request } from '@/shared/api/client'
 import { workspaceKey } from '@/shared/api/queryKeys'
 import type {
-  MessageAttributionRequestDto,
-  MessageInboxDto,
-  MessageReplyRequestDto,
-  MessageReviewPatchDto,
-  MessageThreadDto,
+  BundleApproveRequestDto,
+  BundleUpdateRequestDto,
+  InboxDto,
+  ReplyCreateRequestDto,
+  ThreadDetailDto,
 } from '@/shared/types/api/message'
 import { toMessageInbox, toMessageThread } from '../model/mapper'
 import type { MessageAction } from '../model/types'
 
 /*
- * 메시지 조회와 보내기 전 확인 항목의 행동. 경로는 MSW 에만 있는 임시 경로라 계약이 아니다 — 실제 API 가 생기면 바꾼다
- * (M8 계획 C-8). 상태 동기화(polling)는 두지 않는다 — 행동이 성공하면 아래 key 를 무효화해 다시 받는다.
+ * 메시지 조회와 쓰기 (계약 §5.7). 상태 동기화(polling)는 두지 않는다 (D-136) — 행동이 성공하면 아래 key 를 무효화해 다시 받는다
  */
 
 function messagesPath(workspaceId: string): string {
@@ -25,12 +24,12 @@ export function messageKeys(workspaceId: string) {
   return workspaceKey(workspaceId, 'messages')
 }
 
-/** 왼쪽 목록 — 보내기 전 확인 항목과 대화 요약 */
+/** 왼쪽 목록 — 보낼 메시지(PM 만)와 대화 요약 */
 export function messageInboxQueryOptions(workspaceId: string) {
   return queryOptions({
     queryKey: workspaceKey(workspaceId, 'messages', 'inbox'),
     queryFn: async ({ signal }) =>
-      toMessageInbox(await request<MessageInboxDto>(messagesPath(workspaceId), { signal })),
+      toMessageInbox(await request<InboxDto>(messagesPath(workspaceId), { signal })),
   })
 }
 
@@ -40,7 +39,7 @@ export function messageThreadQueryOptions(workspaceId: string, threadId: string)
     queryKey: workspaceKey(workspaceId, 'messages', 'threads', threadId),
     queryFn: async ({ signal }) =>
       toMessageThread(
-        await request<MessageThreadDto>(
+        await request<ThreadDetailDto>(
           `${messagesPath(workspaceId)}/threads/${encodeURIComponent(threadId)}`,
           { signal },
         ),
@@ -52,59 +51,51 @@ function enc(id: string): string {
   return encodeURIComponent(id)
 }
 
+interface Route {
+  method: 'POST' | 'PATCH'
+  path: string
+  body?: unknown
+}
+
 /** 행동 종류마다 경로가 하나다. 종류를 더하면 이 표가 빠져 빌드가 깨진다 */
 const ROUTE: {
-  [K in MessageAction['kind']]: (action: Extract<MessageAction, { kind: K }>) => {
-    method: 'POST' | 'PATCH'
-    path: string
-    body?: unknown
-  }
+  [K in MessageAction['kind']]: (action: Extract<MessageAction, { kind: K }>) => Route
 } = {
-  send: (action) => ({ method: 'POST', path: `reviews/${enc(action.reviewId)}/send` }),
-  dismiss: (action) => ({ method: 'POST', path: `reviews/${enc(action.reviewId)}/dismiss` }),
+  approve: (action) => ({
+    method: 'POST',
+    path: `bundles/${enc(action.bundleId)}/approve`,
+    body: { draft_version: action.draftVersion } satisfies BundleApproveRequestDto,
+  }),
+  cancel: (action) => ({ method: 'POST', path: `bundles/${enc(action.bundleId)}/cancel` }),
   edit: (action) => ({
     method: 'PATCH',
-    path: `reviews/${enc(action.reviewId)}`,
-    body: { body: action.body } satisfies MessageReviewPatchDto,
+    path: `bundles/${enc(action.bundleId)}`,
+    body: { body: action.body } satisfies BundleUpdateRequestDto,
   }),
   schedule: (action) => ({
     method: 'PATCH',
-    path: `reviews/${enc(action.reviewId)}`,
-    body: {
-      send_timing: action.timing,
-      scheduled_at: action.timing === 'custom' ? action.scheduledAt : undefined,
-    } satisfies MessageReviewPatchDto,
+    path: `bundles/${enc(action.bundleId)}`,
+    body: { scheduled_at: action.scheduledAt } satisfies BundleUpdateRequestDto,
   }),
   reply: (action) => ({
     method: 'POST',
     path: `threads/${enc(action.threadId)}/replies`,
-    body: { body: action.body } satisfies MessageReplyRequestDto,
-  }),
-  attribute: (action) => ({
-    method: 'POST',
-    path: `replies/${enc(action.messageId)}/attribution`,
-    body: { task_id: action.taskId } satisfies MessageAttributionRequestDto,
+    body: { body: action.body } satisfies ReplyCreateRequestDto,
   }),
 }
 
-function routeOf(action: MessageAction): {
-  method: 'POST' | 'PATCH'
-  path: string
-  body?: unknown
-} {
+function routeOf(action: MessageAction): Route {
   switch (action.kind) {
-    case 'send':
-      return ROUTE.send(action)
-    case 'dismiss':
-      return ROUTE.dismiss(action)
+    case 'approve':
+      return ROUTE.approve(action)
+    case 'cancel':
+      return ROUTE.cancel(action)
     case 'edit':
       return ROUTE.edit(action)
     case 'schedule':
       return ROUTE.schedule(action)
     case 'reply':
       return ROUTE.reply(action)
-    case 'attribute':
-      return ROUTE.attribute(action)
   }
 }
 

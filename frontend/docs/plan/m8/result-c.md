@@ -1,9 +1,96 @@
 # M8-C 구현 결과 — 메시지
 
-- 기록일: 2026-10-31 (2026-11-01 디자인 캔버스 기준 재작업과 검증 VR-C 발견 수정, 2026-11-02 Discord DM 카드 잘림 수정, 발송 시점 카드 hover·저장 중 버튼 깜빡임 수정, 대화 미리 받기 반영)
-- 이슈: #245
+- 기록일: 2026-10-31 (2026-11-01 디자인 캔버스 기준 재작업과 검증 VR-C 발견 수정, 2026-11-02 Discord DM 카드 잘림 수정, 발송 시점 카드 hover·저장 중 버튼 깜빡임 수정, 대화 미리 받기 반영, 2026-11-04 실제 메시지 API 연결)
+- 이슈: #245, 후속 #315(실제 API 연결)
 - 대상: [M8 계획](plan.md) C 절의 구현 순서 1~6(결정 전)과 최종 게이트, 2026-11-01 사용자 결정(결정 4의 UI 범위 = 디자인 캔버스 기준, MSW 목)에 따른 재작업
-- 상태: **AC-01~AC-07 충족(프론트·MSW 기준, UI/UX만), 목록·보내기 전 확인·대화·빈 상태가 디자인 캔버스의 항목·문구·상태와 일치(차이표, 남은 차이 4개는 아래).** 메시지 API가 없어 화면은 MSW 모드에서만 보이고, 실 API 모드와 production은 기존 「메시지는 준비 중이에요」 안내를 그대로 둔다. 보내기 전 확인의 행동(발송·보내지 않음·고쳐 쓰기·발송 시점, 대화의 승인·반려)은 MSW 목으로 서버 성공 뒤 반영한다. 권한 분기·상태 동기화(polling)·메시지 E2E는 하지 않았다. 전체 `test:e2e`는 실행하지 않았다. 실제 메시지 API 연동과 Discord 발송은 범위 밖이며 검증하지 않았다.
+- 상태 (2026-11-04, #315): **화면을 계약 §5.7 의 실제 메시지 API 로 옮기고 production 을 포함한 모든 모드에서 연다.** 준비 중 안내와 MSW 모드 분기는 지웠다. 서버에 경로·값이 없는 시안 항목(답장 판정, `지금 바로`, 채널, 재촉 이유 등)은 뺐다. typecheck·lint·format·build·전체 테스트와 브라우저 확인은 MSW 기준으로 통과했고, 실제 서버 연동은 미검증이다(아래 2026-11-04 절). 아래 2026-11-02 까지의 상태 문장은 그때 기록이다.
+- 상태 (2026-11-02 까지): **AC-01~AC-07 충족(프론트·MSW 기준, UI/UX만), 목록·보내기 전 확인·대화·빈 상태가 디자인 캔버스의 항목·문구·상태와 일치(차이표, 남은 차이 4개는 아래).** 메시지 API가 없어 화면은 MSW 모드에서만 보이고, 실 API 모드와 production은 기존 「메시지는 준비 중이에요」 안내를 그대로 둔다. 보내기 전 확인의 행동(발송·보내지 않음·고쳐 쓰기·발송 시점, 대화의 승인·반려)은 MSW 목으로 서버 성공 뒤 반영한다. 권한 분기·상태 동기화(polling)·메시지 E2E는 하지 않았다. 전체 `test:e2e`는 실행하지 않았다. 실제 메시지 API 연동과 Discord 발송은 범위 밖이며 검증하지 않았다.
+
+## 2026-11-04 실제 메시지 API 연결 (#315)
+
+### 근거와 요약
+
+배포 서버에 백엔드 메시지 API(#310·#314)가 올라갔고 봇 DM 발송(#324)·스케줄러(#329)가 병합돼, 이슈 #315 본문의 「production 은 계속 준비 중」 조건이 풀렸다. 이슈의 작업 계획 댓글(2026-11-04)과 코디네이터 작업 지시에 따라 화면을 [계약 §5.7](../../contracts/frontend-api-contract.md)의 실제 경로·모양으로 옮기고 모든 모드에서 연다. 계획 [plan.md](plan.md)는 읽기만 했다. 계획 C-8(실제 API 가 생기면 함께 바꿀 것)과 C-10(화면 노출)의 후속이며, 계획에 이 작업의 완료조건은 없어 새 AC 를 만들지 않았다.
+
+| 커밋 | 요지 |
+|---|---|
+| `c3eb1ab0` | 응답 타입·매퍼·요청을 §5.7 로, 오류 코드 표, 화면(묶음·DM 실패·초안 대기·팀원 안내), MSW handler·픽스처·상태, 준비 중 게이트 제거, 테스트·스토리 |
+| 문서 커밋(이 기록) | 계약 §5.7, [MSW 안내](../../msw-guide.md) 메시지 절, 이 결과와 [결정 기록](basis-for-decision/2026-11-04-messages-real-api-drop-unbacked-ui.md) |
+
+### 바꾼 데이터 모양
+
+- **응답 타입** [message.ts](../../../src/shared/types/api/message.ts) — `schemas/message.py` 의 `ReminderResponse`·`BundleResponse`·`MessageResponse`·`LastMessage`·`ThreadSummary`·`InboxResponse`·`ThreadDetailResponse` 와 요청 3개를 칸 그대로 옮겼다. 값이 정해진 칸은 `app/models` 의 StrEnum 값이다.
+- **목록** — `{viewer: 'pm', bundles, threads}` 와 `{viewer: 'member', threads}` 의 판별 유니온이다. `bundles === null` 은 매퍼에서만 본다.
+- **묶음(`Bundle`)** — `stage` 는 `awaitingApproval`(예정·미승인)·`approved`(예정·승인, `approvedAt` 포함) 둘이고 `drafting`(`draft_status` 가 `needed`·`claimed`)을 따로 둔다. 매퍼가 한 번 정하고 화면은 원문 칸 조합을 다시 보지 않는다. 예정이 아닌 묶음은 매퍼가 버린다. 리마인드는 `tasks`(제목·마감·메모)다.
+- **대화 메시지** — `sender` 로 갈린다. 봇은 `dm`(`pending`·`claimed`·`delivered`, 또는 `failed`+이유), 팀원은 `replyChannel`.
+- **대화 줄** — 메시지와 (PM 에게만) 예정 묶음을 나갈 시각 순으로 섞고 서울 날짜로 묶는다. `여기서부터 답장이 없습니다` 는 마지막 메시지 바로 뒤에 둔다. 예전의 「아직 나가지 않은 메시지」 별도 목록은 없앴다.
+- **행동** — `approve(draftVersion)`·`cancel`·`edit(body)`·`schedule(scheduledAt)`·`reply`. 보낼 시각은 서버에 시각만 보내고, 카드 선택은 저장된 시각이 `마감 하루 전` 시각과 같은지로 화면이 정한다.
+
+### 오류 처리
+
+코드 → (문구, 다음 동작)을 [actionMessages.ts](../../../src/features/message-action/lib/actionMessages.ts)의 `KNOWN_FAILURES` 표 하나에 두고 [행동 훅](../../../src/features/message-action/model/useMessageAction.ts)·[ActionFailure](../../../src/features/message-action/ui/ActionFailure.tsx)가 그 표만 읽는다.
+
+| 코드 | 화면 | 다음 |
+|---|---|---|
+| 409 `BUNDLE_CHANGED` | 그 자리에 `보낼 메시지가 바뀌었어요. 다시 확인해 주세요.` | 메시지 캐시를 다시 받아 새 문구를 보인다 |
+| 409 `REMINDER_SCHEDULED_AT_PASSED` | 승인이면 `예정 시각이 지났어요` 와 잠금(기존 `TIME_PASSED_LOCK`·`useTimePassedLocks`) | 그 묶음의 시각 저장이 성공해야 풀린다 |
+| 409 `REMINDER_NOT_EDITABLE`, 404 `REMINDER_BUNDLE_NOT_FOUND` | 토스트 `이미 처리된 메시지예요. 목록을 다시 불러올게요.` | 메시지 캐시를 다시 받는다. 사라질 항목이라 그 자리에 알리지 않는다 |
+
+대화 조회의 403(남의 대화)은 404 처럼 `대화를 찾을 수 없어요` 다. 예전의 `목록 새로 받기` 버튼과 `MESSAGE_SCHEDULE_PASSED` 처리는 지웠다.
+
+### 화면
+
+- 보내기 전 확인: 미리보기 본문 줄바꿈 그대로, `문구 다듬는 중`, 밑단의 문구 출처(`직접 고친 문구`·`AI 초안`·`기본 문구`), `묶은 태스크 N`(제목·마감·메모), `언제 보낼까요?` 두 카드, `보내지 않음`·`이대로 발송`. 승인한 묶음은 `보낼 예정인 메시지예요` 와 「승인한 뒤에도 문구와 시각을 고칠 수 있어요…」(BE 는 문구를 고쳐도 승인을 유지한다).
+- 대화: 봇 메시지 `DM 못 보냄 · {이유}`, 팀원 웹 답장 `· 웹에서 답장`, 예정 묶음 점선 말풍선(`발송 예정`·`· 지남`·`· 승인함`, `문구 다듬는 중`, `확인하기`). 목록 행에 `DM 못 보냄`.
+- 팀원: 자기 대화, 웹 답장, 답장 칸 아래 `봇 DM 창에 쓴 글은 모두 PM 대화에 보여요.` PM 은 답장 칸 대신 안내 바다.
+- 지운 것: 답장 태스크 판정(`AttributionPicker`·`답장 확인 필요`), `지금 바로`, 채널 대화, 팀 역할, `Discord에서 열기`, 재촉 이유·근거 링크·요약, 취소·만료 줄, `자동 발송`·`○○ 승인`. 이유는 [결정 기록](basis-for-decision/2026-11-04-messages-real-api-drop-unbacked-ui.md).
+- [MessagesPage](../../../src/pages/messages/ui/MessagesPage.tsx)의 `import.meta.env.DEV && config.mswEnabled` 게이트와 `MessagesComingSoon` 을 지웠다. [2026-10-31 결정](basis-for-decision/2026-10-31-messages-screen-msw-mode-only.md)의 재검토 조건이 충족됐다.
+
+### MSW
+
+[handler](../../../src/shared/mock/handlers/message.ts)·[픽스처](../../../src/shared/mock/fixtures/message.ts)·[상태](../../../src/shared/mock/message-state.ts)를 BE 경로·모양·오류 코드로 옮겼다. 승인의 `draft_version` 비교, 지난 시각 409, 예정 아닌 묶음 409, 팀원 `bundles: null`, 남의 대화 조회·답장 403(PM 포함), 시간대 없는 시각 400, UTC 응답을 흉내 낸다. 묶음 합치기·스케줄러·AI 초안 도착·리마인드 경로는 흉내 내지 않는다. 모의 DB 모양이 바뀌어 저장 버전을 6→7 로 올리고 [restore.e2e.ts](../../../e2e/restore.e2e.ts)의 기대값을 맞췄다.
+
+### 바꾼 기존 단언과 이유
+
+| 위치 | 이전 | 지금 | 이유 |
+|---|---|---|---|
+| [routes.test.tsx](../../../src/app/router/routes.test.tsx), [appShell.test.tsx](../../../src/app/appShell.test.tsx), [lateAsyncRaces](../../../src/app/lateAsyncRaces.test.tsx), [meetingMinutesRaces](../../../src/app/meetingMinutesRaces.test.tsx) | 제목 `메시지는 준비 중이에요` | 목록 제목 `메시지` | 준비 중 안내 제거 |
+| [guards.test.tsx](../../../src/app/router/guards.test.tsx) | 메시지는 준비 중이고 API 를 부르지 않는다 | 메시지 목록과 그 대화만 부른다 | 화면이 실제 API 를 부른다 |
+| [meetingProcessing.test.tsx](../../../src/app/meetingProcessing.test.tsx) 「업무 요청은 추적기 두 모양뿐」 | 시작 화면(메시지)의 업무 요청 0 | 메시지 조회를 뺀 업무 요청 0 | 같은 이유. 추적기 요청 단언은 그대로 |
+| [messagesMsw](../../../src/app/messagesMsw.test.tsx)·[messagesActionsMsw](../../../src/app/messagesActionsMsw.test.tsx) | MSW 모드 흉내(`vi.mock` 설정), 검토 항목·지금 바로·사유·채널·답장 판정·취소/만료 줄 | 설정 흉내 없음, 묶음·태스크·두 카드·DM 실패·초안 대기·`BUNDLE_CHANGED`·이미 처리됨 | 계약 모양과 화면 범위 변경 |
+| mapper·conversation·selection·format·message-state·messageScenarios 단위 테스트 | 임시 모양 | §5.7 모양 | 같은 이유 |
+| [MessageInbox.stories.tsx](../../../src/widgets/message-inbox/ui/MessageInbox.stories.tsx) | `답장_확인_필요`·`대화_취소_만료` | `초안_대기`·`DM_못_보냄`·`발송_시점_고를_수_없음` | 같은 이유 |
+
+### 검증 (2026-11-04)
+
+Node v24.11.0. 계획 [plan.md](plan.md)는 읽기만 했다. 다른 워크트리의 테스트가 함께 도는 기계라 vitest 는 `--maxWorkers=2` 로 돌렸다.
+
+| 명령 | 종료 코드 | 결과 |
+|---|---:|---|
+| `npm run typecheck` | 0 | |
+| `npm run lint` | 0 | 처음 실행에서 4건(렌더 중 `Date.now()` 2건, 쓰지 않는 변수, 불필요한 타입 단언)이 나와 고쳤다. 고친 뒤 바꾼 파일 전체 0건 |
+| `npm run format:check` | 0 | 바꾼 파일 15개를 prettier 로 맞췄다. 남은 경고는 저장소에 올리지 않는 로컬 보고서(`.verify/`) 하나다 |
+| `npx vitest run --maxWorkers=2` (전체) | 1 | 185파일 중 181, 2221개 중 2207개 통과. 실패 14개 중 9개는 `taskScenarios` 의 저장 버전 기대값 6(이번에 7로 올림)이라 고쳤다. 나머지 5개(`appShell` 2·`meetingUpload` 2·`meetingMinutesSelection` 1)는 시간 초과·찾기 실패였다 |
+| `npx vitest run --maxWorkers=1` 위 실패 파일 4개 + `messageScenarios` | 0 | 5파일 126개 통과. 남은 5개 실패는 부하 탓이었다 |
+| `npm run build` | 0 | CSS 경고 1건은 기존 `[color:var(...)]`([M2 기록](../m2/basis-for-decision/2026-09-16-docs-prose-makes-the-build-warn.md)). `dist/assets/*.js` 에 `메시지는 준비 중이에요` 0건 |
+| `npm run test:storybook` (CI, PR #363 첫 실행) | 1 | 158개 중 4개 실패(`기본`·`대화`·`발송_시점_hover`·`발송_시점_저장_중`). 화면은 실제 시계로, 목은 `MOCK_NOW`(2026-09)로 지난 시각을 판단해 `마감 하루 전` 이 모두 지난 것으로 나왔다. `기본` 은 `09/24 마감` 이 목록과 묶은 태스크에 두 번 보여 찾기가 실패했다 |
+| `storybook build` 후 `playwright test -c playwright.storybook.config.ts` | 0 | 브라우저 MSW 에서 화면 시계를 `MOCK_NOW` 에 고정하고(`fixClock`) `기본` 의 단언을 목록 링크로 좁힌 뒤 158개 통과 |
+| `npx vitest run --maxWorkers=2` 메시지 화면·위젯·엔티티·mock·date | 0 | 11파일 154개 통과 |
+
+브라우저 확인(Vite MSW 모드, Playwright, 2026-11-05):
+
+- PM(`messages-default`): 메시지 탭이 열리고 `보내기 전 확인 2`(묶은 태스크·`AI 초안` 표시·보낼 시각 두 카드), 대화 목록의 `DM 못 보냄` 이 보인다. `이대로 발송` 은 `POST …/bundles/bd_01/approve` 200 뒤 목록을 다시 받아 `09/23 발송 예정` 으로 바뀐다. 남의 대화(`th_04`)에는 답장 칸이 없고 말풍선에 `DM 못 보냄 · 서버 DM이 막혀 있어요` 가 붙는다.
+- 팀원(`messages-member`): 자기 대화 하나만 보이고 `웹에서 답장`, `DM 못 보냄 · Discord 계정이 연결되지 않았어요`, 답장 칸 아래 안내가 보인다. 답장은 `POST …/threads/th_06/replies` 201 뒤 목록·대화를 다시 받는다.
+- 콘솔 오류는 `favicon.ico` 404 하나다.
+
+### 남은 문제
+
+- **실제 서버 확인 없음** — 모든 확인은 MSW 기준이다. 배포 BE 에 붙여 PM·팀원 계정으로 목록·승인·답장을 해 보지 않았다. 대신 [message.ts](../../../src/shared/types/api/message.ts)의 칸 이름이 모두 백엔드 `schemas/message.py` 응답·요청 모델에 있는지 대조했다.
+- **오늘 기준 상대 표기** — 브라우저 MSW(개발 서버·Storybook)에서 보낼 시각이 지났는지는 목과 같은 고정 시각 `MOCK_NOW` 로 판단한다([clock.ts](../../../src/shared/lib/date/clock.ts)). `답장 N일째 없음` 같은 오늘 기준 표기는 여전히 실제 날짜라, 개발 서버에서는 숫자가 크게 나온다.
+- **PM 자신의 대화** — 화면은 로그인 계정의 `member_id` 를 받지 않아, PM 이 리마인드를 받는 팀원이기도 하면 자기 대화에서도 답장 칸이 없다. 대화 주인 판정에 쓸 값(예: 워크스페이스 응답의 내 `member_id`)이 필요하다.
+- **묶음 합치기** — 시각을 다른 예정 묶음과 같은 시각으로 옮기면 BE 가 합친 묶음을 돌려주지만, 화면은 주소의 묶음 ID 를 그대로 들고 있다가 다시 받은 목록에 없어 「골라 주세요」로 바뀐다. MSW 는 합치기를 흉내 내지 않아 테스트가 없다.
+- **`문구 다듬는 중` 갱신** — polling(D-136)이 없어 AI 초안이 와도 다시 받기 전에는 보이지 않는다. 승인하면 `BUNDLE_CHANGED` 로 새 문구를 받는다.
+- 메시지 E2E(D-117), 재촉 만들기·태스크 하나 빼기 화면, 알림·푸시(#330), 알림 설정(#339)은 하지 않았다.
 
 ## 2026-11-01 재작업 — 디자인 캔버스 기준
 
@@ -494,6 +581,7 @@ HEAD `58237a8`, `frontend/`에서 순차 실행했다. 무거운 명령은 다�
 - [결정 4의 UI 범위를 디자인 캔버스 기준·MSW 목으로 정한 사용자 결정](basis-for-decision/2026-11-01-message-ui-scope-design-canvas-msw.md)
 - [발송 시점 카드의 화살표 키는 포커스만 옮기고 잠금은 aria-disabled로 한 선택](basis-for-decision/2026-11-01-send-timing-arrow-keys-move-focus-only.md)
 - [발송 시점 저장 중의 발송 잠금은 모양을 바꾸지 않고, 저장 중 표시는 늦을 때만 보이는 선택](basis-for-decision/2026-11-02-schedule-save-lock-keeps-button-look.md)
+- [실제 메시지 API 연결 때 서버에 경로·값이 없는 화면 요소를 뺀 선택](basis-for-decision/2026-11-04-messages-real-api-drop-unbacked-ui.md)
 - [MSW 안내](../../msw-guide.md)의 메시지 절
 
 검증 보고서(구현 보고, V1·V2·V3)와 스크린샷(2026-10-31, 2026-11-01 디자인 비교 포함)은 저장소 밖 작업 폴더에 있어 링크하지 않는다.

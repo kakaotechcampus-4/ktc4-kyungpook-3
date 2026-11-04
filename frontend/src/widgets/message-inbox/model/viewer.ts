@@ -5,31 +5,18 @@ import type { Role } from '@/shared/types/common'
 export type MessageViewer = Role
 
 export interface ViewerPolicy {
-  /** 보내기 전 확인 영역을 보이고, 아무것도 고르지 않았으면 첫 항목을 고른다 */
-  reviews: boolean
-  /** 답장의 태스크를 고른다. 보내기 전 확인과 따로다 */
-  attribution: boolean
   /** 오른쪽 먹 면에 그리는 보낸 쪽 */
   ownSender: MessageSender
-  /** 봇 말풍선 시각 줄에 `자동 발송`·`… 승인` 을 붙인다 */
-  deliveryNote: boolean
-  /** 대화 아래 — PM 은 안내 바, 팀원은 답장 입력 */
+  /**
+   * 대화 아래 — PM 은 안내 바, 팀원은 답장 입력. 답장은 대화 주인만 할 수 있다(계약 §5.7).
+   * 팀원이 여는 대화는 모두 자기 대화이고, PM 은 남의 대화를 본다
+   */
   foot: 'notice' | 'reply'
+  /** 답장 기다림(머리 배지·목록 점·`여기서부터 답장이 없습니다`)을 보인다 */
+  awaiting: boolean
 }
 
 export const VIEWER_POLICY: Record<MessageViewer, ViewerPolicy> = {
-  pm: {
-    reviews: true,
-    attribution: true,
-    ownSender: 'bot',
-    deliveryNote: true,
-    foot: 'notice',
-  },
-  member: {
-    reviews: false,
-    attribution: false,
-    ownSender: 'member',
-    deliveryNote: false,
-    foot: 'reply',
-  },
+  pm: { ownSender: 'bot', foot: 'notice', awaiting: true },
+  member: { ownSender: 'member', foot: 'reply', awaiting: false },
 }

@@ -1,159 +1,107 @@
-/*
- * 메시지 화면의 임시 도메인 모델. 메시지 API 가 없어 디자인 캔버스(Messages·MessagesThread)에 보이는 항목으로 골랐다 —
- * 계약이 아니고 실제 API 뒤 바뀐다 (M8 계획 C-8, 결정 4 의 UI 범위는 디자인 캔버스 기준 MSW 목). 화면은 DTO 대신 이 타입만 쓴다.
- */
+/* 메시지 화면의 도메인 모델 (계약 §5.7). 화면은 DTO 대신 이 타입만 쓴다 */
 
 export type MessageSender = 'bot' | 'member'
 
-export type MessageThreadKind = 'direct' | 'channel'
+export type ReplyChannel = 'discord' | 'web'
 
-export interface TaskRef {
-  id: string
-  title: string
-}
+export type DmFailureReason = 'dm_blocked' | 'discord_not_linked' | 'unknown'
 
-export type ReplySource = 'discord' | 'web'
+/** 봇 메시지가 Discord DM 으로 나갔는가. 실패해도 웹 대화에는 남는다 */
+export type DmDelivery =
+  { status: 'pending' | 'claimed' | 'delivered' } | { status: 'failed'; reason: DmFailureReason }
 
-/** AI 가 정하지 못한 답장만 있다. 고른 뒤에는 바꾸지 않는다 */
-export type ReplyAttribution =
-  | { status: 'needs_pm'; candidates: readonly TaskRef[] }
-  | { status: 'resolved'; task: TaskRef | null }
-
-/** 봇 메시지. 상태마다 가진 칸이 다르다 */
-export interface PendingBotMessage {
+export interface BotMessage {
   sender: 'bot'
-  status: 'pending'
   id: string
   body: string
-  reviewId: string
-  /** 나갈 시각. 승인하면 바로 보내면 null */
-  scheduledAt: string | null
-  /** 나갈 시각이 지났는가. 서버가 정한다 */
-  schedulePassed: boolean
+  createdAt: string
+  dm: DmDelivery
 }
-export interface ScheduledBotMessage {
-  sender: 'bot'
-  status: 'scheduled'
-  id: string
-  body: string
-  reviewId: string
-  scheduledAt: string
-  approvedBy: string
-}
-export interface SentBotMessage {
-  sender: 'bot'
-  status: 'sent'
-  id: string
-  body: string
-  sentAt: string
-  /** null 이면 자동 발송 */
-  approvedBy: string | null
-}
-export interface CancelledBotMessage {
-  sender: 'bot'
-  status: 'cancelled'
-  id: string
-  body: string
-  /** 화면에 놓는 시각. 나가려던 시각이 나중이면 취소한 때로 당긴다 */
-  at: string
-  reason: 'dismissed' | 'responded'
-}
-export interface ExpiredBotMessage {
-  sender: 'bot'
-  status: 'expired'
-  id: string
-  body: string
-  /** 화면에 놓는 시각 */
-  at: string
-}
-export type BotMessage =
-  PendingBotMessage | ScheduledBotMessage | SentBotMessage | CancelledBotMessage | ExpiredBotMessage
-export type BotMessageStatus = BotMessage['status']
 
-export interface MemberReply {
+export interface MemberMessage {
   sender: 'member'
   id: string
   body: string
-  sentAt: string
-  source: ReplySource
-  attribution: ReplyAttribution | null
+  createdAt: string
+  replyChannel: ReplyChannel
 }
-export type Message = BotMessage | MemberReply
-/** 이미 대화에 남은 것 — 목록 미리보기가 보는 것 */
-export type DeliveredMessage = SentBotMessage | MemberReply
 
-/** `마감 하루 전` 선택지. 지났는지는 서버가 정한다 */
-export type DeadlineSend =
-  { status: 'none' } | { status: 'open'; at: string } | { status: 'passed'; at: string }
+export type Message = BotMessage | MemberMessage
 
-/** 언제 보낼까 — 마감 하루 전 · 지금 바로 · 직접 정한 시각 */
-export type MessageSendTiming = 'day_before_deadline' | 'now' | 'custom'
+/** 묶음 안의 태스크 하나. 태스크가 지워졌으면 제목·마감이 null 이다 */
+export interface BundleTask {
+  reminderId: string
+  taskId: string | null
+  title: string | null
+  /** `YYYY-MM-DD` */
+  dueDate: string | null
+  note: string | null
+}
 
-/** 보내기 전 확인 항목의 단계. 승인 뒤에도 같은 항목이다 */
-export type ReviewState = { status: 'pending' } | { status: 'scheduled'; approvedBy: string }
+export type BodySource = 'pm' | 'ai' | 'rule'
 
-/** 보내기 전 확인 항목 — 수신자 한 명에게 가는 DM 한 건 */
-export interface MessageReview {
+/**
+ * 화면이 다루는 묶음의 단계. 응답의 status·approved 조합에서 매퍼가 한 번만 정한다.
+ * 예정(`scheduled`)이 아닌 묶음은 목록·대화 응답에 오지 않는다
+ */
+export type BundleStage = { stage: 'awaitingApproval' } | { stage: 'approved'; approvedAt: string }
+
+/** 보낼 메시지 — 같은 받는 사람·같은 발송 시각의 리마인드를 묶은 DM 한 통 */
+export type Bundle = BundleStage & {
   id: string
   threadId: string
+  memberId: string
   recipientName: string
-  summary: string
+  scheduledAt: string
+  body: string
+  bodySource: BodySource
+  /** AI 초안이 아직 오는 중이라 문구가 바뀔 수 있다 */
+  drafting: boolean
+  /** 승인할 때 그대로 돌려보내는 문구의 판 */
+  draftVersion: number
+  tasks: BundleTask[]
+}
+
+export interface LastMessage {
+  id: string
+  sender: MessageSender
   body: string
   createdAt: string
-  /** 관련 태스크의 마감일 `YYYY-MM-DD`. 없으면 null */
-  deadline: string | null
-  /** 왜 보내려 하는가 */
-  reason: string
-  /** 근거가 된 마지막 Discord 메시지 주소 */
-  reasonUrl: string | null
-  sendTiming: MessageSendTiming
-  /** 나갈 시각. 지금 바로 보내면 null */
-  scheduledAt: string | null
-  deadlineSend: DeadlineSend
-  state: ReviewState
 }
 
 export interface MessageThreadSummary {
   id: string
-  kind: MessageThreadKind
+  memberId: string
   name: string
-  lastMessage: DeliveredMessage | null
+  lastMessage: LastMessage | null
   /** 답장을 기다리기 시작한 때. 서버가 정한다 — 기다리지 않으면 null */
   awaitingReplySince: string | null
-  needsAttribution: boolean
+  /** 그 팀원에게 마지막으로 나간 봇 메시지가 DM 으로 가지 못했다 */
+  dmFailed: boolean
 }
 
-export interface MessageInbox {
-  reviews: MessageReview[]
-  threads: MessageThreadSummary[]
-}
+/** 목록은 보는 사람으로 갈린다. 팀원은 보낼 메시지를 받지 않는다 */
+export type MessageInbox =
+  | { viewer: 'pm'; bundles: Bundle[]; threads: MessageThreadSummary[] }
+  | { viewer: 'member'; threads: MessageThreadSummary[] }
 
-export interface MessageThread {
-  id: string
-  kind: MessageThreadKind
-  name: string
-  /** 상대가 팀에서 맡은 일(시안 `백엔드`) */
-  teamRole: string | null
-  discordUrl: string | null
+export interface MessageThread extends MessageThreadSummary {
+  /** 시각 순 */
   messages: Message[]
-  awaitingReplySince: string | null
+  /** 이 대화의 예정 묶음. PM 에게만 오고 팀원에게는 비어 있다 */
+  upcoming: Bundle[]
 }
 
 /** Discord DM 한 건의 글자 수 한도. 미리보기와 답장이 같이 쓴다 */
 export const MESSAGE_BODY_MAX_LENGTH = 2000
-
-/** 발송 시점을 바꾸는 요청. 직접 정하기만 시각을 함께 보낸다 */
-export type MessageSchedule =
-  { timing: Exclude<MessageSendTiming, 'custom'> } | { timing: 'custom'; scheduledAt: string }
 
 /**
  * 메시지 쓰기 전부. 대상 ID 가 행동 안에 있다 — 어느 항목의 행동인지 따로 넘기지 않는다.
  * 모두 서버가 성공해야 화면이 바뀐다 (D-137)
  */
 export type MessageAction =
-  | { kind: 'send'; reviewId: string }
-  | { kind: 'dismiss'; reviewId: string }
-  | { kind: 'edit'; reviewId: string; body: string }
-  | ({ kind: 'schedule'; reviewId: string } & MessageSchedule)
+  | { kind: 'approve'; bundleId: string; draftVersion: number }
+  | { kind: 'cancel'; bundleId: string }
+  | { kind: 'edit'; bundleId: string; body: string }
+  | { kind: 'schedule'; bundleId: string; scheduledAt: string }
   | { kind: 'reply'; threadId: string; body: string }
-  | { kind: 'attribute'; messageId: string; taskId: string | null }

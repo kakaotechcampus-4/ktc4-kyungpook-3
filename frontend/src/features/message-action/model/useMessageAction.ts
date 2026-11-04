@@ -5,7 +5,8 @@ import type { MessageAction } from '@/entities/message'
 import { captureSession } from '@/entities/user'
 import { ApiError } from '@/shared/api/errors'
 import { toast } from '@/shared/ui/toast'
-import { ACTION_FAILURE_TITLE } from '../lib/actionMessages'
+import { ACTION_FAILURE_TITLE, KNOWN_FAILURES } from '../lib/actionMessages'
+import type { KnownFailure } from '../lib/actionMessages'
 
 type ActionKind = MessageAction['kind']
 
@@ -14,19 +15,9 @@ interface ActionVariables {
   isCurrentSession: () => boolean
 }
 
-/** 행동의 대상 — 보내기 전 확인 항목, 대화, 또는 답장 */
+/** 행동의 대상 — 보낼 메시지(묶음) 또는 대화 */
 export function actionTarget(action: MessageAction): string {
-  switch (action.kind) {
-    case 'send':
-    case 'dismiss':
-    case 'edit':
-    case 'schedule':
-      return action.reviewId
-    case 'reply':
-      return action.threadId
-    case 'attribute':
-      return action.messageId
-  }
+  return action.kind === 'reply' ? action.threadId : action.bundleId
 }
 
 /** 마지막 행동의 실패. 다시 시도하면 같은 요청을 다시 보낸다 */
@@ -34,12 +25,8 @@ export interface MessageActionFailure {
   action: MessageAction
   title: string
   error: unknown
-  /**
-   * gone: 404 → 목록 새로 받기
-   * time_passed: 409 MESSAGE_SCHEDULE_PASSED → 예정 시각이 지났어요, 다시 시도 없음
-   * error: 다시 시도
-   */
-  cause: 'gone' | 'time_passed' | 'error'
+  /** 화면이 따로 다루는 거절(KNOWN_FAILURES). null 이면 다시 시도할 수 있는 실패다 */
+  known: KnownFailure | null
 }
 
 export interface RunOptions {
@@ -56,17 +43,17 @@ export interface MessageActionControl {
   pending: { target: string; kind: ActionKind } | null
   failure: MessageActionFailure | null
   /**
-   * 그 항목의 발송이 예정 시각이 지나 거절됐는가.
-   * 그 항목의 시각 저장이 성공하기 전에는 다른 쓰기가 풀지 못한다
+   * 그 묶음의 승인이 예정 시각이 지나 거절됐는가.
+   * 그 묶음의 시각 저장이 성공하기 전에는 다른 쓰기가 풀지 못한다
    */
-  isTimePassed: (reviewId: string) => boolean
+  isTimePassed: (bundleId: string) => boolean
   /** 실패한 행동을 같은 내용으로 다시 보낸다 */
   retry: () => void
   /** 실패를 지우고 메시지 목록·대화를 서버에서 새로 받는다 */
   refresh: () => void
 }
 
-/** 지난 시각으로 거절된 발송. 메시지 캐시 무효화에 같이 지워지지 않게 메시지 key 밖에 둔다 */
+/** 지난 시각으로 거절된 승인. 메시지 캐시 무효화에 같이 지워지지 않게 메시지 key 밖에 둔다 */
 function timePassedKey(workspaceId: string) {
   return ['message-send-time-passed', workspaceId] as const
 }
@@ -85,43 +72,42 @@ function useTimePassedLocks(workspaceId: string): ReadonlySet<string> {
 function rememberTimePassed(
   queryClient: ReturnType<typeof useQueryClient>,
   workspaceId: string,
-  reviewId: string,
+  bundleId: string,
 ) {
   const key = timePassedKey(workspaceId)
   const current = queryClient.getQueryData<ReadonlySet<string>>(key) ?? EMPTY_LOCKS
-  if (current.has(reviewId)) return
+  if (current.has(bundleId)) return
   const next = new Set(current)
-  next.add(reviewId)
+  next.add(bundleId)
   queryClient.setQueryData(key, next)
 }
 
 function forgetTimePassed(
   queryClient: ReturnType<typeof useQueryClient>,
   workspaceId: string,
-  reviewId: string,
+  bundleId: string,
 ) {
   const key = timePassedKey(workspaceId)
   const current = queryClient.getQueryData<ReadonlySet<string>>(key)
-  if (current === undefined || !current.has(reviewId)) return
+  if (current === undefined || !current.has(bundleId)) return
   const next = new Set(current)
-  next.delete(reviewId)
+  next.delete(bundleId)
   queryClient.setQueryData(key, next)
 }
 
 const mutationKeyOf = (workspaceId: string) => ['message-review-action', workspaceId] as const
 
-function causeOf(error: unknown): MessageActionFailure['cause'] {
-  if (!(error instanceof ApiError)) return 'error'
-  if (error.status === 404) return 'gone'
-  if (error.status === 409 && error.code === 'MESSAGE_SCHEDULE_PASSED') return 'time_passed'
-  return 'error'
+function knownFailureOf(error: unknown): KnownFailure | null {
+  if (!(error instanceof ApiError) || !Object.hasOwn(KNOWN_FAILURES, error.code)) return null
+  return KNOWN_FAILURES[error.code]
 }
 
 /**
- * 메시지 쓰기 — 발송·보내지 않음·고쳐 쓰기·발송 시점·답장·답장 판정 (M8, 결정 4 의 UI 범위는 디자인 캔버스 기준 MSW 목).
+ * 메시지 쓰기 — 승인·보내지 않음·문구·보낼 시각·답장 (계약 §5.7).
  * - 서버 성공 뒤에만 반영한다. 낙관적 업데이트는 없다 — 메시지 캐시를 무효화해 서버 상태로 다시 그린다 (D-137, 계획 C-5)
  * - 다시 받기까지 끝나야 mutation 이 끝난다. 그래서 성공 뒤 이동이 처리 전 목록을 잠깐 보이지 않는다
  * - 실패하면 화면은 그대로이고 실패를 남긴다. 자동 재시도는 없고 `retry` 로 다시 보낸다. `run` 은 이전 실패를 지운다
+ * - 화면이 따로 다루는 거절은 KNOWN_FAILURES 표대로 알리고 다시 받거나 승인을 잠근다
  * - 요청 중 세션이 끝났으면 늦은 응답은 캐시에도 결과에도 남기지 않는다
  * - 한 공간에서는 한 번에 하나의 쓰기만 나간다
  */
@@ -146,17 +132,19 @@ export function useMessageAction(workspaceId: string): MessageActionControl {
     onSuccess: (_result, { isCurrentSession }) => (isCurrentSession() ? syncMessages() : undefined),
     onError: (error, { action, isCurrentSession }) => {
       if (!isCurrentSession()) return
-      const cause = causeOf(error)
-      // 서버가 지난 시각으로 거절한 발송만 잠근다. 시계는 보지 않고, 그 항목의 시각 저장이 성공해야 풀린다
-      if (cause === 'time_passed' && action.kind === 'send')
-        rememberTimePassed(queryClient, workspaceId, action.reviewId)
-      // 이미 처리됐거나 사라진 항목이면 다시 보내도 같다. 목록은 사람이 알림을 읽은 뒤 새로 받는다 —
-      // 바로 받으면 항목과 함께 알림 자리도 사라진다
+      const known = knownFailureOf(error)
+      // 서버가 지난 시각으로 거절한 승인만 잠근다. 시계는 보지 않고, 그 묶음의 시각 저장이 성공해야 풀린다
+      if (known?.then === 'lockApproval' && action.kind === 'approve')
+        rememberTimePassed(queryClient, workspaceId, action.bundleId)
+      if (known?.then === 'refetch') void syncMessages()
+      // 다시 받으면 사라질 항목이다. 그 자리에 알리면 항목과 함께 알림도 사라진다
+      if (known?.place === 'toast')
+        toast.show({ key: 'message-review-action', title: known.message })
       setFailure({
         action,
         title: ACTION_FAILURE_TITLE[action.kind],
         error,
-        cause,
+        known,
       })
     },
   })
@@ -174,7 +162,7 @@ export function useMessageAction(workspaceId: string): MessageActionControl {
           onSuccess: () => {
             if (!isCurrentSession()) return
             if (action.kind === 'schedule')
-              forgetTimePassed(queryClient, workspaceId, action.reviewId)
+              forgetTimePassed(queryClient, workspaceId, action.bundleId)
             if (options.notice !== undefined)
               toast.show({ key: 'message-review-action', title: options.notice })
             options.onSuccess?.()
@@ -201,7 +189,7 @@ export function useMessageAction(workspaceId: string): MessageActionControl {
         ? { target: actionTarget(variables.action), kind: variables.action.kind }
         : null,
     failure,
-    isTimePassed: (reviewId) => timePassedLocks.has(reviewId),
+    isTimePassed: (bundleId) => timePassedLocks.has(bundleId),
     retry,
     refresh,
   }

@@ -88,7 +88,8 @@ describe('등록 경로', () => {
     ['/workspaces/ws_01/tasks', '태스크'],
     ['/workspaces/ws_01/tasks/tk_01', '태스크'],
     ['/workspaces/ws_01/approvals/ap_01', '확인 필요'],
-    ['/workspaces/ws_01/messages', '메시지는 준비 중이에요'],
+    // #315 가 준비 중 안내를 지우고 메시지 화면을 모든 모드에서 연다 — 제목은 목록의 `메시지` 다
+    ['/workspaces/ws_01/messages', '메시지'],
     // M8-B 가 팀 자리표시자(`팀원`)를 Team 캔버스의 실제 화면으로 바꿨다 — 제목은 캔버스의 `팀` 이다
     ['/workspaces/ws_01/members', '팀'],
     ['/workspaces/ws_01/settings', '설정'],

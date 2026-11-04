@@ -1,122 +1,114 @@
 import { MOCK_NOW } from './fixtures/constants'
-import { messageReviewFixtures } from './fixtures/message'
-import type { MockMessageReview } from './fixtures/message'
 import {
-  applyPatch,
-  approve,
-  dismiss,
-  isOpen,
-  placedAt,
-  reminderStatus,
-  sendCheck,
-  threadDtoOf,
-} from './message-state'
+  botMessage,
+  messageBundleFixtures,
+  messageThreadFixtures,
+  reply,
+  schedulePassedBundle,
+} from './fixtures/message'
+import type { MockBundle, MockMessageThread } from './fixtures/message'
+import { approveBundle, cancelBundle, editBundle, threadSummaryOf } from './message-state'
 
-const review = (patch: Partial<MockMessageReview> = {}): MockMessageReview => ({
-  ...structuredClone(messageReviewFixtures[0]),
-  ...patch,
+/* 메시지 상태 전이 — 백엔드 services/messages.py 와 같은 규칙인지 본다 */
+
+const bundle = (): MockBundle => structuredClone(messageBundleFixtures[0])
+
+describe('threadSummaryOf', () => {
+  const thread = (messages: MockMessageThread['messages']): MockMessageThread => ({
+    ...structuredClone(messageThreadFixtures[0]),
+    messages,
+  })
+
+  it('답장 대기는 팀원의 마지막 답 뒤에 처음 나간 봇 메시지의 시각이고, 시각은 UTC 로 낸다', () => {
+    const summary = threadSummaryOf(
+      thread([
+        botMessage('mg_1', 'a', '2026-09-15T09:00:00+09:00'),
+        reply('mg_2', 'b', '2026-09-15T10:00:00+09:00'),
+        botMessage('mg_3', 'c', '2026-09-16T18:00:00+09:00'),
+        botMessage('mg_4', 'd', '2026-09-17T18:00:00+09:00'),
+      ]),
+    )
+    expect(summary.awaiting_reply_since).toBe('2026-09-16T09:00:00.000Z')
+    expect(summary.last_message).toMatchObject({ message_id: 'mg_4', sender: 'bot' })
+    expect(threadSummaryOf(thread([reply('mg_2', 'b', MOCK_NOW)])).awaiting_reply_since).toBeNull()
+    expect(threadSummaryOf(thread([])).last_message).toBeNull()
+  })
+
+  it('dm_failed 는 마지막 봇 메시지만 본다', () => {
+    const failed = { status: 'failed', reason: 'dm_blocked' } as const
+    expect(
+      threadSummaryOf(thread([botMessage('mg_1', 'a', '2026-09-15T09:00:00+09:00', failed)]))
+        .dm_failed,
+    ).toBe(true)
+    expect(
+      threadSummaryOf(
+        thread([
+          botMessage('mg_1', 'a', '2026-09-15T09:00:00+09:00', failed),
+          botMessage('mg_2', 'b', '2026-09-16T09:00:00+09:00'),
+          reply('mg_3', 'c', '2026-09-17T09:00:00+09:00'),
+        ]),
+      ).dm_failed,
+    ).toBe(false)
+  })
 })
 
-const NOW = MOCK_NOW
-
-describe('reminderStatus · placedAt', () => {
-  it('마감이 오늘보다 앞인 승인 대기만 만료다', () => {
-    expect(reminderStatus(review(), NOW)).toBe('pending')
-    expect(reminderStatus(review({ state: 'approved' }), NOW)).toBe('approved')
-    expect(reminderStatus(review({ state: 'sent' }), NOW)).toBe('sent')
-    expect(reminderStatus(review({ state: 'cancelled' }), NOW)).toBe('cancelled')
-    expect(reminderStatus(review({ deadline: '2026-09-18' }), NOW)).toBe('pending')
-    expect(reminderStatus(review({ deadline: '2026-09-17' }), NOW)).toBe('expired')
-    expect(reminderStatus(review({ deadline: null }), NOW)).toBe('pending')
+describe('approveBundle', () => {
+  it('보는 판이 맞으면 승인하고 초안 대기를 닫는다', () => {
+    const target = { ...bundle(), draft_status: 'needed' as const }
+    expect(approveBundle(target, target.draft_version, MOCK_NOW)).toBeNull()
+    expect(target).toMatchObject({ approved: true, approved_at: MOCK_NOW, draft_status: 'done' })
   })
 
-  it('자리는 단계마다 다르다 — 만료는 예정과 마감 다음 날 중 이른 쪽이다', () => {
-    expect(placedAt(review(), NOW)).toBe('2026-09-23T09:00:00+09:00')
-    expect(placedAt(review({ state: 'approved' }), NOW)).toBe('2026-09-23T09:00:00+09:00')
-    expect(placedAt(review({ state: 'sent', closed_at: NOW }), NOW)).toBe(NOW)
-    expect(
-      placedAt(review({ state: 'cancelled', closed_at: '2026-09-08T09:00:00+09:00' }), NOW),
-    ).toBe('2026-09-08T09:00:00+09:00')
-    const expired = review({ deadline: '2026-09-10', scheduled_at: '2026-09-09T18:00:00+09:00' })
-    expect(reminderStatus(expired, NOW)).toBe('expired')
-    expect(placedAt(expired, NOW)).toBe('2026-09-09T18:00:00+09:00')
-    expect(
-      placedAt(review({ deadline: '2026-09-10', scheduled_at: '2026-09-12T09:00:00+09:00' }), NOW),
-    ).toBe('2026-09-11T00:00:00+09:00')
-    expect(placedAt(review({ scheduled_at: null }), NOW)).toBeNull()
+  it('판이 다르면 changed, 시각이 지났으면 time_passed 이고 묶음은 그대로다', () => {
+    const target = bundle()
+    const before = structuredClone(target)
+    expect(approveBundle(target, target.draft_version - 1, MOCK_NOW)).toBe('changed')
+    const passed = structuredClone(schedulePassedBundle)
+    expect(approveBundle(passed, passed.draft_version, MOCK_NOW)).toBe('time_passed')
+    expect(target).toEqual(before)
+    expect(passed).toEqual(schedulePassedBundle)
   })
 
-  it('열려 있는 것은 승인 대기와 예약뿐이다', () => {
-    expect(isOpen(review(), NOW)).toBe(true)
-    expect(isOpen(review({ state: 'approved' }), NOW)).toBe(true)
-    expect(isOpen(review({ deadline: '2026-09-10' }), NOW)).toBe(false)
-    expect(isOpen(review({ state: 'sent' }), NOW)).toBe(false)
-    expect(isOpen(review({ state: 'cancelled' }), NOW)).toBe(false)
+  it('이미 승인했으면 판과 상관없이 그대로 성공이다. 예정이 아니면 not_editable 이다', () => {
+    const target = { ...bundle(), approved: true, approved_at: '2026-09-17T09:00:00+09:00' }
+    expect(approveBundle(target, 999, MOCK_NOW)).toBeNull()
+    expect(target.approved_at).toBe('2026-09-17T09:00:00+09:00')
+    expect(approveBundle({ ...bundle(), status: 'cancelled' }, 2, MOCK_NOW)).toBe('not_editable')
   })
 })
 
-describe('approve · dismiss · applyPatch · sendCheck', () => {
-  it('시각이 없으면 지금 보내고, 있으면 승인된 예약으로 남긴다', () => {
-    const later = review()
-    approve(later, '최진호', NOW)
-    expect(later).toMatchObject({ state: 'approved', approved_by: '최진호', closed_at: null })
-    const now = review({ scheduled_at: null, send_timing: 'now' })
-    approve(now, '최진호', NOW)
-    expect(now).toMatchObject({ state: 'sent', approved_by: '최진호', closed_at: NOW })
-  })
-
-  it('보내지 않음은 예정 시각과 지금 중 이른 쪽에 취소로 놓는다', () => {
-    const future = review()
-    dismiss(future, NOW)
-    expect(future).toMatchObject({
-      state: 'cancelled',
-      cancel_reason: 'dismissed',
-      closed_at: NOW,
+describe('editBundle · cancelBundle', () => {
+  it('문구를 고치면 PM 문구가 되고 판이 오르며 승인은 그대로다', () => {
+    const target = { ...bundle(), approved: true, approved_at: MOCK_NOW }
+    expect(editBundle(target, { body: '고친 문구' }, MOCK_NOW)).toBeNull()
+    expect(target).toMatchObject({
+      body: '고친 문구',
+      body_source: 'pm',
+      draft_version: 3,
+      approved: true,
     })
-    const past = review({ scheduled_at: '2026-09-08T09:00:00+09:00' })
-    dismiss(past, NOW)
-    expect(past.closed_at).toBe('2026-09-08T09:00:00+09:00')
   })
 
-  it('승인된 항목을 고치면 다시 승인 대기가 되고 승인자는 빠진다', () => {
-    const approved = review({ state: 'approved', approved_by: '최진호' })
-    applyPatch(approved, { body: '고친 문구' })
-    expect(approved).toMatchObject({ state: 'pending', approved_by: null, body: '고친 문구' })
-    const pending = review()
-    applyPatch(pending, { send_timing: 'now', scheduled_at: null })
-    expect(pending).toMatchObject({ state: 'pending', send_timing: 'now', scheduled_at: null })
+  it('시각만 옮기면 판은 그대로이고, 지난 시각으로는 옮기지 못한다', () => {
+    const target = bundle()
+    expect(editBundle(target, { scheduled_at: '2026-09-25T14:30:00+09:00' }, MOCK_NOW)).toBeNull()
+    expect(target).toMatchObject({ scheduled_at: '2026-09-25T14:30:00+09:00', draft_version: 2 })
+    expect(editBundle(target, { scheduled_at: '2026-09-17T09:00:00+09:00' }, MOCK_NOW)).toBe(
+      'time_passed',
+    )
+    // 같은 시각을 문구와 같이 보내는 것은 시각을 고친 것이 아니다
+    const passed = structuredClone(schedulePassedBundle)
+    expect(
+      editBundle(passed, { body: '새 문구', scheduled_at: passed.scheduled_at }, MOCK_NOW),
+    ).toBeNull()
   })
 
-  it('발송은 승인 대기만 받고, 지난 예약 시각은 바꾸지 않은 채 거절한다', () => {
-    expect(sendCheck(review(), NOW)).toBe('ok')
-    expect(sendCheck(review({ scheduled_at: null }), NOW)).toBe('ok')
-    expect(sendCheck(review({ state: 'approved' }), NOW)).toBe('gone')
-    expect(sendCheck(review({ deadline: '2026-09-10' }), NOW)).toBe('gone')
-    const passed = review({ scheduled_at: '2026-09-17T09:00:00+09:00' })
-    const before = structuredClone(passed)
-    expect(sendCheck(passed, NOW)).toBe('time_passed')
-    expect(passed).toEqual(before)
-    expect(sendCheck(review({ scheduled_at: NOW }), NOW)).toBe('time_passed')
-  })
-
-  it('시각이 없는 재촉 둘은 들어온 순서를 유지한다', () => {
-    const messages = threadDtoOf(
-      {
-        thread_id: 'th_x',
-        workspace_id: 'ws_01',
-        member_id: null,
-        kind: 'direct',
-        name: '가',
-        team_role: null,
-        discord_url: null,
-        messages: [],
-      },
-      [
-        review({ review_id: 'rv_a', thread_id: 'th_x', scheduled_at: null, send_timing: 'now' }),
-        review({ review_id: 'rv_b', thread_id: 'th_x', scheduled_at: null, send_timing: 'now' }),
-      ],
-      NOW,
-    ).messages
-    expect(messages.map(({ message_id }) => message_id)).toEqual(['rv_a', 'rv_b'])
+  it('보내지 않으면 묶음과 안의 리마인드가 모두 취소되고, 두 번째는 not_editable 이다', () => {
+    const target = bundle()
+    expect(cancelBundle(target)).toBeNull()
+    expect(target.status).toBe('cancelled')
+    expect(target.reminders.map(({ status }) => status)).toEqual(['cancelled'])
+    expect(cancelBundle(target)).toBe('not_editable')
+    expect(editBundle(target, { body: 'x' }, MOCK_NOW)).toBe('not_editable')
   })
 })

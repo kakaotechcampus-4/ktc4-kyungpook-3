@@ -109,13 +109,18 @@ async function openDashboard(options: { strict?: boolean } = {}) {
 }
 
 /**
- * 화면 자신의 업무 조회가 없는 셸 화면(메시지 준비 중). M7 부터 대시보드가 태스크·승인·회의 상세·추출을 부르므로,
- * 추적기 요청만 따로 세는 테스트는 여기서 시작한다
+ * 회의 조회가 없는 셸 화면(메시지). M7 부터 대시보드가 태스크·승인·회의 상세·추출을 부르므로,
+ * 추적기 요청만 따로 세는 테스트는 여기서 시작한다. 메시지 화면은 자기 메시지 조회만 한다 (quietBusinessRequests)
  */
 async function openQuietScreen() {
   const app = renderApp(paths.messages('ws_01'))
-  await screen.findByRole('heading', { name: '메시지는 준비 중이에요' })
+  await screen.findByRole('heading', { level: 1, name: '메시지' })
   return app
+}
+
+/** 시작 화면(메시지)의 메시지 조회를 뺀 업무 요청 */
+function quietBusinessRequests(log: ReturnType<typeof recordRequests>) {
+  return businessRequests(log.started).filter(({ path }) => !path.includes('/messages'))
 }
 
 async function openProcessing(options: { strict?: boolean } = {}) {
@@ -150,8 +155,8 @@ describe('발견과 등록 (U4-1, U4-2)', () => {
     await waitFor(() => expect(detailRequests(log)).toHaveLength(1))
     await settle()
 
-    // 시작 화면(메시지)은 업무 요청이 없다 — 추적기 요청만 남는다
-    expect(businessRequests(log.started)).toEqual([])
+    // 시작 화면(메시지)은 메시지 조회 밖의 업무 요청이 없다 — 추적기 요청만 남는다
+    expect(quietBusinessRequests(log)).toEqual([])
     // 추적기 요청: 지금 공간 목록 1회, 상세는 정리 중 회의에만 1회(다음은 3초 뒤)
     expect(trackerRequests(log.started)).toEqual([
       { method: 'GET', path: '/workspaces/ws_01/meetings' },

@@ -1,212 +1,177 @@
-import type { MessageDto, MessageReviewDto, MessageThreadDto } from '@/shared/types/api/message'
-import { toMessage, toMessageInbox, toMessageReview, toMessageThread } from './mapper'
+import type { BundleDto, MessageDto, ThreadSummaryDto } from '@/shared/types/api/message'
+import { toBundle, toMessage, toMessageInbox, toMessageThread } from './mapper'
 
-const sent = (patch: Partial<MessageDto> = {}): MessageDto => ({
+const botDto = (patch: Partial<MessageDto> = {}): MessageDto => ({
   message_id: 'mg_01',
+  thread_id: 'th_01',
   sender: 'bot',
   body: '진행 상황 알려 주세요 🙂',
-  status: 'sent',
-  at: '2026-09-16T18:00:00+09:00',
-  approved_by: '최진호',
-  review_id: null,
-  cancel_reason: null,
-  source: null,
-  attribution: null,
-  schedule_passed: false,
+  created_at: '2026-09-16T09:00:00Z',
+  reply_channel: null,
+  dm_status: 'delivered',
+  dm_failure_reason: null,
+  scheduled_at: '2026-09-16T09:00:00Z',
   ...patch,
 })
 
-const review = (patch: Partial<MessageReviewDto> = {}): MessageReviewDto => ({
-  review_id: 'rv_01',
+const memberDto = (patch: Partial<MessageDto> = {}): MessageDto => ({
+  ...botDto(),
+  message_id: 'mg_02',
+  sender: 'member',
+  body: '네',
+  reply_channel: 'web',
+  dm_status: null,
+  scheduled_at: null,
+  ...patch,
+})
+
+const bundleDto = (patch: Partial<BundleDto> = {}): BundleDto => ({
+  bundle_id: 'bd_01',
   thread_id: 'th_01',
+  member_id: 'mb_03',
   recipient_name: '이재환',
-  summary: '진행 상황 DM',
-  body: '본문',
-  created_at: '2026-09-17T18:00:00+09:00',
-  deadline: '2026-09-24',
-  reason: '마감이 다가와요.',
-  reason_url: null,
-  send_timing: 'day_before_deadline',
-  scheduled_at: '2026-09-23T09:00:00+09:00',
-  deadline_send_at: '2026-09-23T09:00:00+09:00',
-  status: 'pending',
-  approved_by: null,
-  deadline_send_passed: false,
+  scheduled_at: '2026-09-23T00:00:00Z',
+  status: 'scheduled',
+  approved: false,
+  approved_at: null,
+  body: '재환님,\n진행 상황 알려 주세요',
+  body_source: 'ai',
+  draft_status: 'done',
+  draft_version: 2,
+  reminders: [
+    {
+      reminder_id: 'rm_01',
+      bundle_id: 'bd_01',
+      task_id: 'tk_01',
+      task_title: 'API 명세서',
+      due_date: '2026-09-24',
+      note: null,
+      status: 'scheduled',
+      kind: 'nudge',
+      origin: 'scheduler',
+      created_at: '2026-09-15T00:00:00Z',
+    },
+  ],
   ...patch,
 })
 
-const thread = (messages: MessageDto[]): MessageThreadDto => ({
+const summaryDto: ThreadSummaryDto = {
   thread_id: 'th_01',
-  kind: 'direct',
+  member_id: 'mb_03',
   name: '이재환',
-  team_role: '백엔드',
-  discord_url: 'https://discord.com/channels/@me/mock-th_01',
-  messages,
-  awaiting_reply_since: '2026-09-16T18:00:00+09:00',
-})
+  last_message: {
+    message_id: 'mg_01',
+    sender: 'bot',
+    body: '진행 상황 알려 주세요 🙂',
+    created_at: '2026-09-16T09:00:00Z',
+  },
+  awaiting_reply_since: '2026-09-16T09:00:00Z',
+  dm_failed: true,
+}
 
-it('목록 DTO 를 상태별 도메인으로 옮긴다', () => {
-  expect(
-    toMessageInbox({
-      reviews: [
-        review(),
-        review({ review_id: 'rv_02', status: 'scheduled', approved_by: '최진호' }),
-      ],
-      threads: [
-        {
-          thread_id: 'th_01',
-          kind: 'direct',
-          name: '이재환',
-          last_message: sent(),
-          awaiting_reply_since: '2026-09-16T18:00:00+09:00',
-          needs_attribution: false,
-        },
-        {
-          thread_id: 'th_06',
-          kind: 'direct',
-          name: '정하늘',
-          last_message: null,
-          awaiting_reply_since: null,
-          needs_attribution: true,
-        },
-      ],
-    }),
-  ).toMatchObject({
-    reviews: [
-      { id: 'rv_01', state: { status: 'pending' }, deadlineSend: { status: 'open' } },
-      { id: 'rv_02', state: { status: 'scheduled', approvedBy: '최진호' } },
-    ],
-    threads: [
-      {
-        id: 'th_01',
-        needsAttribution: false,
-        lastMessage: { sender: 'bot', status: 'sent', approvedBy: '최진호' },
+it('목록은 bundles 로 보는 사람을 가른다 — PM 은 묶음과 대화, 팀원은 대화만이다', () => {
+  const pm = toMessageInbox({ threads: [summaryDto], bundles: [bundleDto()] })
+  expect(pm.viewer).toBe('pm')
+  expect(pm.threads).toEqual([
+    {
+      id: 'th_01',
+      memberId: 'mb_03',
+      name: '이재환',
+      lastMessage: {
+        id: 'mg_01',
+        sender: 'bot',
+        body: '진행 상황 알려 주세요 🙂',
+        createdAt: '2026-09-16T09:00:00Z',
       },
-      { id: 'th_06', lastMessage: null, needsAttribution: true },
-    ],
-  })
-})
-
-it('대화의 재촉·답장을 상태별 메시지로 옮긴다', () => {
-  expect(
-    toMessageThread(
-      thread([
-        sent(),
-        sent({
-          message_id: 'mg_02',
-          sender: 'member',
-          approved_by: null,
-          source: 'web',
-          attribution: { status: 'resolved', task: null },
-        }),
-        sent({
-          message_id: 'rv_01',
-          status: 'pending',
-          at: null,
-          approved_by: null,
-          review_id: 'rv_01',
-        }),
-        sent({
-          message_id: 'rv_03',
-          status: 'cancelled',
-          at: '2026-09-08T09:00:00+09:00',
-          approved_by: null,
-          cancel_reason: 'responded',
-        }),
-        sent({
-          message_id: 'rv_04',
-          status: 'expired',
-          at: '2026-09-09T18:00:00+09:00',
-          approved_by: null,
-        }),
-      ]),
-    ).messages,
-  ).toEqual([
-    {
-      sender: 'bot',
-      status: 'sent',
-      id: 'mg_01',
-      body: '진행 상황 알려 주세요 🙂',
-      sentAt: '2026-09-16T18:00:00+09:00',
-      approvedBy: '최진호',
-    },
-    {
-      sender: 'member',
-      id: 'mg_02',
-      body: '진행 상황 알려 주세요 🙂',
-      sentAt: '2026-09-16T18:00:00+09:00',
-      source: 'web',
-      attribution: { status: 'resolved', task: null },
-    },
-    {
-      sender: 'bot',
-      status: 'pending',
-      id: 'rv_01',
-      body: '진행 상황 알려 주세요 🙂',
-      reviewId: 'rv_01',
-      scheduledAt: null,
-      schedulePassed: false,
-    },
-    {
-      sender: 'bot',
-      status: 'cancelled',
-      id: 'rv_03',
-      body: '진행 상황 알려 주세요 🙂',
-      at: '2026-09-08T09:00:00+09:00',
-      reason: 'responded',
-    },
-    {
-      sender: 'bot',
-      status: 'expired',
-      id: 'rv_04',
-      body: '진행 상황 알려 주세요 🙂',
-      at: '2026-09-09T18:00:00+09:00',
+      awaitingReplySince: '2026-09-16T09:00:00Z',
+      dmFailed: true,
     },
   ])
+  expect(pm.viewer === 'pm' && pm.bundles.map(({ id }) => id)).toEqual(['bd_01'])
+
+  const member = toMessageInbox({ threads: [summaryDto], bundles: null })
+  expect(member).toEqual({ viewer: 'member', threads: pm.threads })
 })
 
-it('마감 하루 전은 없음·열림·지남으로 나눈다', () => {
-  expect(toMessageReview(review({ deadline_send_at: null })).deadlineSend).toEqual({
-    status: 'none',
+it('묶음의 단계는 status·approved 에서, 초안 대기는 draft_status 에서 한 번만 정한다', () => {
+  expect(toBundle(bundleDto())).toEqual({
+    stage: 'awaitingApproval',
+    id: 'bd_01',
+    threadId: 'th_01',
+    memberId: 'mb_03',
+    recipientName: '이재환',
+    scheduledAt: '2026-09-23T00:00:00Z',
+    body: '재환님,\n진행 상황 알려 주세요',
+    bodySource: 'ai',
+    drafting: false,
+    draftVersion: 2,
+    tasks: [
+      {
+        reminderId: 'rm_01',
+        taskId: 'tk_01',
+        title: 'API 명세서',
+        dueDate: '2026-09-24',
+        note: null,
+      },
+    ],
   })
-  expect(toMessageReview(review()).deadlineSend).toEqual({
-    status: 'open',
-    at: '2026-09-23T09:00:00+09:00',
-  })
-  expect(toMessageReview(review({ deadline_send_passed: true })).deadlineSend).toEqual({
-    status: 'passed',
-    at: '2026-09-23T09:00:00+09:00',
+  expect(
+    toBundle(bundleDto({ approved: true, approved_at: '2026-09-18T00:00:00Z' })),
+  ).toMatchObject({ stage: 'approved', approvedAt: '2026-09-18T00:00:00Z' })
+  expect(toBundle(bundleDto({ draft_status: 'needed' }))?.drafting).toBe(true)
+  expect(toBundle(bundleDto({ draft_status: 'claimed' }))?.drafting).toBe(true)
+  // 예정이 아닌 묶음은 그리지 않는다
+  expect(toBundle(bundleDto({ status: 'cancelled' }))).toBeNull()
+  expect(toMessageInbox({ threads: [], bundles: [bundleDto({ status: 'sent' })] })).toEqual({
+    viewer: 'pm',
+    bundles: [],
+    threads: [],
   })
 })
 
-it('상태와 칸이 맞지 않으면 던진다', () => {
-  expect(() => toMessage(sent({ status: 'scheduled', review_id: null }))).toThrow(/rv_|mg_01|상태/)
-  expect(() => toMessage(sent({ status: 'cancelled', cancel_reason: null }))).toThrow(/상태/)
-  expect(() => toMessage(sent({ sender: 'member', source: null }))).toThrow(/상태/)
-  expect(() =>
-    toMessageInbox({
-      reviews: [],
-      threads: [
-        {
-          thread_id: 'th_01',
-          kind: 'direct',
-          name: '이재환',
-          last_message: sent({
-            status: 'pending',
-            at: null,
-            review_id: 'rv_01',
-            approved_by: null,
-          }),
-          awaiting_reply_since: null,
-          needs_attribution: false,
-        },
-      ],
-    }),
-  ).toThrow(/마지막 메시지/)
-  expect(() => toMessageReview(review({ status: 'scheduled', approved_by: null }))).toThrow(
-    /승인자/,
+it('승인한 묶음에 승인 시각이 없으면 던진다', () => {
+  expect(() => toBundle(bundleDto({ approved: true }))).toThrow(/승인 시각/)
+})
+
+it('대화 메시지는 보낸 쪽으로 갈린다 — 봇은 DM 상태, 팀원은 답장 경로를 갖는다', () => {
+  expect(toMessage(botDto())).toEqual({
+    sender: 'bot',
+    id: 'mg_01',
+    body: '진행 상황 알려 주세요 🙂',
+    createdAt: '2026-09-16T09:00:00Z',
+    dm: { status: 'delivered' },
+  })
+  expect(toMessage(botDto({ dm_status: 'failed', dm_failure_reason: 'dm_blocked' }))).toMatchObject(
+    { dm: { status: 'failed', reason: 'dm_blocked' } },
   )
-  expect(() =>
-    toMessageReview(review({ deadline_send_at: null, deadline_send_passed: true })),
-  ).toThrow(/마감이 없는/)
+  // 이유 없이 실패로 오면 모르는 이유다
+  expect(toMessage(botDto({ dm_status: 'failed' }))).toMatchObject({
+    dm: { status: 'failed', reason: 'unknown' },
+  })
+  expect(toMessage(memberDto())).toEqual({
+    sender: 'member',
+    id: 'mg_02',
+    body: '네',
+    createdAt: '2026-09-16T09:00:00Z',
+    replyChannel: 'web',
+  })
+})
+
+it('보낸 쪽과 칸이 맞지 않으면 던진다', () => {
+  expect(() => toMessage(botDto({ dm_status: null }))).toThrow(/mg_01/)
+  expect(() => toMessage(memberDto({ reply_channel: null }))).toThrow(/mg_02/)
+})
+
+it('대화는 요약·메시지·예정 묶음이다 — 팀원의 bundles null 은 빈 예정이다', () => {
+  const pm = toMessageThread({
+    thread: summaryDto,
+    messages: [botDto(), memberDto()],
+    bundles: [bundleDto()],
+  })
+  expect(pm.messages.map(({ sender }) => sender)).toEqual(['bot', 'member'])
+  expect(pm.upcoming.map(({ id }) => id)).toEqual(['bd_01'])
+  expect(pm).toMatchObject({ id: 'th_01', name: '이재환', dmFailed: true })
+
+  const member = toMessageThread({ thread: summaryDto, messages: [], bundles: null })
+  expect(member.upcoming).toEqual([])
 })
