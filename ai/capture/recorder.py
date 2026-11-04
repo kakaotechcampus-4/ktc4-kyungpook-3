@@ -1075,12 +1075,14 @@ def recover_one(recordings_dir: Path, path: Path, *, claims: Claims, manual: boo
 
 
 def queue_ahead(recordings_dir: Path, session, *, exclude=None) -> int:
-    """워커가 이 회의보다 먼저 처리할 회의 수. 워커의 루프 바퀴와 같은 목록(recovery_targets 에서 서버가 적힌 것)과
-    순서(시작 시각)를 쓴다. 지금 처리 중인(잠금이 걸린) 회의도 센다. 봇이 녹음 중인 회의는 exclude 로 뺀다."""
+    """워커가 이 회의보다 먼저 처리할 회의 수. 워커의 루프 바퀴와 같은 목록(recovery_targets 에서 서버가 적혔거나
+    업로드인 것, recover_pass 와 같다)과 순서(_queue_key: 업로드가 앞, 디스코드는 시작 시각)를 쓴다.
+    지금 처리 중인(잠금이 걸린) 회의도 센다. 봇이 녹음 중인 회의는 exclude 로 뺀다."""
     mine = _queue_key(manifest_path(recordings_dir, session))
     due, busy = recovery_targets(recordings_dir, claims=Claims(owner="queue"), exclude=exclude)
     # 서버에 연결된 워크스페이스를 기다리는 회의(workspace_wait)는 연결될 때까지 처리되지 않으니 세지 않는다
-    ahead = sum(1 for p, m in due if m.get("guild_id") and not m.get("workspace_wait") and _queue_key(p) < mine)
+    ahead = sum(1 for p, m in due
+                if (m.get("guild_id") or m.get("source") == "upload") and not m.get("workspace_wait") and _queue_key(p) < mine)
     return ahead + sum(1 for b in busy if _queue_key(manifest_path(recordings_dir, b["session"])) < mine)
 
 

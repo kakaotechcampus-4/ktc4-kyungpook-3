@@ -635,6 +635,15 @@ def test_the_extractor_gets_the_workspace_of_the_manifest(tmp_path):
     assert seen["ws"] == "ws-1"
 
 
+def test_queue_ahead_counts_pending_uploads_that_run_before_a_discord_meeting(tmp_path):
+    """업로드 회의(서버가 없다)는 디스코드 회의보다 먼저 처리되니 디스코드 회의의 "앞에 N건" 에 센다."""
+    rec, _, _ = _mapped_upload(tmp_path, session="upload_m-up1")
+    _mapped_upload(tmp_path, session="upload_m-up2", be={"meeting_id": "m-up2", "status": "processing"})
+    _session(tmp_path, ts=600)
+    assert len(R.pending_sessions(rec)) == 3
+    assert R.queue_ahead(rec, "77_600") == 2
+
+
 def test_waiting_for_the_workspace_skips_the_transcript_until_the_server_is_connected(tmp_path):
     """워커(#199). 연결이 없으면 전사해도 올릴 웹이 없다. 연결 전에는 전사하지 않고 기다린다.
     기다리는 회의는 다른 회의의 "앞에 N건" 에 세지 않는다."""
