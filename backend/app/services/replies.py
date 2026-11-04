@@ -557,6 +557,10 @@ def _ask(row: ReplyChange, task: Task) -> str:
     return f"{task.title} 범위 변경을 확인해 주세요"
 
 
+def _live_tasks(db: Session, task_ids: list[str]) -> set[str]:
+    return set(db.scalars(select(Task.task_id).where(Task.task_id.in_(task_ids), Task.is_deleted.is_(False))).all())
+
+
 def attribute(db: Session, workspace_id: str, message_id: str, task_id: str | None, now: datetime) -> None:
     """PM 이 태스크를 모르는 답장의 태스크를 고른다. 고르면 그 태스크만 후보로 다시 판단하고 task_id 가 None 이면 닫는다."""
     row = db.get(ReplyJudgment, message_id, with_for_update=True, populate_existing=True)
@@ -564,7 +568,7 @@ def attribute(db: Session, workspace_id: str, message_id: str, task_id: str | No
         raise AppError(ErrorCode.REPLY_JUDGMENT_NOT_FOUND, details={"message_id": message_id})
     if row.state != ReplyJudgmentState.NEEDS_PM:
         raise AppError(ErrorCode.REPLY_ATTRIBUTION_NOT_NEEDED, details={"message_id": message_id, "state": row.state})
-    if task_id is not None and task_id not in json.loads(row.candidates):
+    if task_id is not None and task_id not in _live_tasks(db, json.loads(row.candidates)):
         raise AppError(ErrorCode.INVALID_REQUEST, message="후보에 없는 태스크입니다.", details={"task_id": task_id})
     for line in db.scalars(
         select(ReplyChange).where(
@@ -599,12 +603,16 @@ def attributions(db: Session, workspace_id: str, thread_id: str) -> list[dict]:
         task_id for row, _ in judgments.values() for task_id in [*json.loads(row.candidates), row.picked_task_id]
     }
     titles = dict(db.execute(select(Task.task_id, Task.title).where(Task.task_id.in_(task_ids - {None}))).all())
+    live = _live_tasks(db, list(titles))
 
     def ref(task_id: str) -> dict:
         return {"task_id": task_id, "title": titles[task_id]}
 
     return [
-        {"message_id": row.message_id, "status": "needs_pm", "candidates": [ref(t) for t in json.loads(row.candidates)]}
+        {
+            "message_id": row.message_id, "status": "needs_pm",
+            "candidates": [ref(t) for t in json.loads(row.candidates) if t in live],
+        }
         if outcome == ReplyChangeOutcome.UNKNOWN
         else {"message_id": row.message_id, "status": "resolved", "task": row.picked_task_id and ref(row.picked_task_id)}
         for row, outcome in judgments.values()

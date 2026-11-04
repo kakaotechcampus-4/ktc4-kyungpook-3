@@ -14,6 +14,7 @@ from app.models import (
     WatchState,
 )
 from app.services import messages, replies, scheduler
+from app.services import tasks as task_service
 from tests.api.test_messages_api import P, client
 from tests.api.test_replies import _remind, _reply
 from tests.api.test_reply_clock import DEADLINE, _auto_blocked
@@ -750,3 +751,17 @@ def test_reason_falls_back_to_a_plain_phrase_without_a_summary(mdb, mseed, two):
     a, _ = two
     _blocked_reply(mdb, mseed, a, summary=None)
     assert a.blocker == "팀원이 막혔다고 답했어요"
+
+
+# 지운 태스크
+
+def test_deleted_task_is_not_offered_and_cannot_be_picked(mdb, mseed, two):
+    a, b = two
+    item = _unknown(mdb, mseed)
+    task_service.delete_task(mdb, a)
+    mdb.commit()
+
+    [entry] = _attributions(mseed, _row(mdb, item).thread_id).json()["data"]["items"]
+    assert [c["task_id"] for c in entry["candidates"]] == [b.task_id]
+    assert _attribute(item, a, seed=mseed).status_code == 400
+    assert _claim() is None
