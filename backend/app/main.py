@@ -10,12 +10,16 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app.api import approvals, bot_messages, extractions, messages, meetings, members, similar_tasks, sources, tasks, uploads, workspaces, auth, integrations
+from app.api import approvals, bot_messages, extractions, invitations, messages, meetings, members, similar_tasks, sources, tasks, uploads, workspaces, auth, integrations
+from app.api import notifications
+from app.services import scheduler
 from app.core.errors import AppError, Envelope, ErrorCode, failure, success
 from app.services import embedding, notion_sync
 
 logger = logging.getLogger(__name__)
 
+# 리마인드 스케줄러(제안·발송 직전 재확인·72시간 무응답)와 푸시 발송 주기(초). 0 이하면 워커를 띄우지 않는다.
+REMINDER_SCHEDULER_INTERVAL_SECONDS = float(os.getenv("REMINDER_SCHEDULER_INTERVAL_SECONDS", "60"))
 # Notion 반영 대기열을 훑는 주기(초). 0 이하면 워커를 띄우지 않는다.
 NOTION_SYNC_INTERVAL_SECONDS = float(os.getenv("NOTION_SYNC_INTERVAL_SECONDS", "5"))
 # 임베딩이 없는 task를 채우는 주기(초). 0 이하이거나 임베딩 키가 없으면 워커를 띄우지 않는다.
@@ -25,6 +29,8 @@ EMBEDDING_SYNC_INTERVAL_SECONDS = float(os.getenv("EMBEDDING_SYNC_INTERVAL_SECON
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     workers: list[tuple[threading.Thread, threading.Event]] = []
+    if REMINDER_SCHEDULER_INTERVAL_SECONDS > 0:
+        workers.append(scheduler.start_worker(REMINDER_SCHEDULER_INTERVAL_SECONDS))
     if NOTION_SYNC_INTERVAL_SECONDS > 0:
         workers.append(notion_sync.start_worker(NOTION_SYNC_INTERVAL_SECONDS))
     if EMBEDDING_SYNC_INTERVAL_SECONDS > 0:
@@ -52,6 +58,7 @@ API_PREFIX = "/api/v1"
 app.include_router(auth.router, prefix=API_PREFIX)
 app.include_router(workspaces.router, prefix=API_PREFIX)
 app.include_router(members.router, prefix=API_PREFIX)
+app.include_router(invitations.router, prefix=API_PREFIX)
 app.include_router(meetings.router, prefix=API_PREFIX)
 app.include_router(uploads.router, prefix=API_PREFIX)
 app.include_router(extractions.router, prefix=API_PREFIX)
@@ -64,6 +71,8 @@ app.include_router(similar_tasks.router, prefix=API_PREFIX)
 app.include_router(sources.router, prefix=API_PREFIX)
 app.include_router(messages.router, prefix=API_PREFIX)
 app.include_router(bot_messages.router, prefix=API_PREFIX)
+app.include_router(notifications.router, prefix=API_PREFIX)
+app.include_router(notifications.push_router, prefix=API_PREFIX)
 
 
 @app.exception_handler(AppError)
