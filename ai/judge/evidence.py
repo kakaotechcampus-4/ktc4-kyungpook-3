@@ -90,3 +90,86 @@ def verify(lines: list[str], task: str | None, due_date: str | None, due_raw: st
 
 def worse(a: str, b: str) -> str:
     return a if _RANK[a] <= _RANK[b] else b
+
+
+# 답장의 상태 변경. 자동 반영이 여기에 달려 있어서 상태마다 무엇이 yes 인지 좁게 적는다
+REPLY_STATUS_CRITERIA: dict[str, dict[str, str]] = {
+    "done": {
+        "yes": "이 태스크를 끝냈다, 완료했다, 다 했다고 직접 말했다",
+        "no": "올렸다, 넘겼다, 붙였다처럼 한 일만 말했고 끝났다는 말은 없거나, 끝나지 않았다고 했다",
+        "unclear": "거의, 일부, 예정, 조건부라서 끝났는지 정해지지 않았다",
+    },
+    "blocked": {
+        "yes": "무엇이 오지 않았거나 막혀서 이 태스크를 더 진행하지 못한다고 직접 말했다",
+        "no": "막혔다는 말이 없거나, 남의 검토나 확인을 기다릴 뿐이다",
+        "unclear": "막힐 것 같다, 어렵다 정도라서 지금 멈췄는지 정해지지 않았다",
+    },
+    "in_progress": {
+        "yes": "이 태스크를 시작했거나 지금 하고 있다고 직접 말했다",
+        "no": "시작했다는 말이 없거나, 끝냈다거나 못 한다고 했다",
+        "unclear": "할 예정이거나 조건부라서 시작했는지 정해지지 않았다",
+    },
+    "todo": {
+        "yes": "이 태스크를 아직 시작하지 않았거나 처음으로 되돌렸다고 직접 말했다",
+        "no": "그런 말이 없거나, 이미 하고 있다고 했다",
+        "unclear": "시작했는지 알 수 없다",
+    },
+}
+REPLY_TARGET_QUESTION: dict[str, Any] = {
+    "type": "choice",
+    "instructions": "이번 답장의 말이 위 태스크를 가리키는 것이 다른 후보 태스크와 구분되게 분명한가?",
+    "criteria": {
+        "yes": "답장에 이 태스크의 이름이나 내용이 있거나, 앞선 PM 말이 이 태스크 하나만 물었다",
+        "no": "다른 후보 태스크를 가리킨다",
+        "unclear": "'다 했어요'처럼 어느 후보를 말하는지 알 수 없다",
+    },
+}
+
+
+def _status_question(status: str) -> dict[str, Any]:
+    return {"type": "choice",
+            "instructions": "이번 답장에서 이 태스크에 대한 부분만 본다. 팀원이 이 태스크가 제안 상태라고 원문으로 "
+                            "명시했는가? 다른 태스크에 대한 말은 근거가 아니다.",
+            "criteria": REPLY_STATUS_CRITERIA[status]}
+
+
+def _reply_state(lines: list[dict[str, str]], task: str | None, status: str | None, others: list[str],
+                 today: date) -> str:
+    parts = [f"답장 날짜: {today.isoformat()} ({_weekday(today)}요일)", f"태스크: {task or '(제목 없음)'}"]
+    if status is not None:
+        parts.append(f"제안 상태: {status}")
+    if others:
+        parts += ["다른 후보 태스크:", *(f"- {title}" for title in others)]
+    # 앞 답장은 넣지 않는다. 앞 답장에 있는 말을 이번 답장의 근거로 치면 안 된다
+    pm_lines = [line for line in lines[:-1] if line["sender"] == "pm"]
+    if pm_lines:
+        parts += ["PM 이 한 말:", *(f'- "{line["text"]}"' for line in pm_lines)]
+    parts += ["이번 답장:", f'- "{lines[-1]["text"]}"']
+    return "\n".join(parts)
+
+
+def _target_yes(answers: dict[str, Any] | None) -> float | None:
+    try:
+        return float(answers["target"]["probabilities"]["yes"])
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def verify_reply(lines: list[dict[str, str]], task: str | None, *, status: str | None, others: list[str],
+                 today: date, client: JevClient) -> tuple[str, bool]:
+    """(status 근거, target_clear). lines 는 시간순이고 마지막이 이번 답장, others 는 나머지 후보의 제목이다.
+
+    status 가 없고 다른 후보도 없으면 물을 것이 없어 부르지 않는다. 호출이 실패하면 inferred, target_clear=True 다.
+    대상을 확인하지 못한 것이지 모호한 것이 아니고, inferred 라 PM 이 본다.
+    """
+    questions: dict[str, dict[str, Any]] = {}
+    if status is not None:
+        questions["status"] = _status_question(status)
+    if others:
+        questions["target"] = REPLY_TARGET_QUESTION
+    if not questions:
+        return INFERRED, True
+    answers = client.decide(_reply_state(lines, task, status, others, today), questions)
+    target_yes = _target_yes(answers)
+    certain = _yes(answers, "status") and (not others or target_yes is not None)
+    return (CERTAIN if certain else INFERRED), target_yes is None or target_yes >= YES_THRESHOLD
