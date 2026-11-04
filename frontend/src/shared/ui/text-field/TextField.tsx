@@ -114,7 +114,7 @@ export function TextField({
   // 경계색·플레이스홀더색·포커스 선 색은 한 곳에서만 고른다 — 두 클래스를 같이 붙이면 CSS 순서가 이긴다
   const accent = Boolean(error) || blocking
   const borderColor = accent ? 'border-accent' : TONE_BORDER[tone]
-  const placeholderColor = accent ? 'placeholder:text-accent-soft' : 'placeholder:text-faint'
+  const placeholderColor = accent ? 'placeholder:text-accent-soft' : 'placeholder:text-dim'
   const inputFocusColor = accent ? INPUT_FOCUS_ACCENT : undefined
   const adornedFocusColor = accent ? ADORNED_FOCUS_ACCENT : ADORNED_FOCUS
 
