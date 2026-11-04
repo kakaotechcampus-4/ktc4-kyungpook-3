@@ -308,20 +308,49 @@ def test_pm_member_cannot_be_invited(db, seed):
     assert _list(seed["ws"]) == []
 
 
-def test_member_promoted_to_pm_while_pending_cannot_be_accepted(seed):
+def test_member_with_pending_invite_cannot_be_promoted_until_accepted(db, seed):
     invitation_id = _invite_id(seed["ws"], seed["jiyoung"].member_id, "jiyoung@example.com")
     member_url = f"/api/v1/members/{seed['jiyoung'].member_id}"
-    assert _client("pm-token").patch(member_url, json={"role": "pm"}).status_code == 200
 
-    assert _mine("jiyoung-token") == []
-    res = _act(invitation_id, "accept", "jiyoung-token")
+    res = _client("pm-token").patch(member_url, json={"role": "pm"})
 
     assert res.status_code == 409
-    assert _code(res) == "PM_MEMBER_NOT_INVITABLE"
-    assert _workspace_count("jiyoung-token") == 0
-
-    assert _client("pm-token").patch(member_url, json={"role": "member"}).status_code == 200
+    assert _code(res) == "MEMBER_HAS_PENDING_INVITATION"
+    db.expire_all()
+    assert db.get(Member, seed["jiyoung"].member_id).role == "member"
     assert len(_mine("jiyoung-token")) == 1
+
+    assert _act(invitation_id, "accept", "jiyoung-token").status_code == 200
+    assert _client("pm-token").patch(member_url, json={"role": "pm"}).status_code == 200
+
+
+def test_member_can_be_promoted_after_the_pending_invite_is_canceled(seed):
+    invitation_id = _invite_id(seed["ws"], seed["jiyoung"].member_id, "jiyoung@example.com")
+    assert _client("pm-token").post(f"/api/v1/invitations/{invitation_id}/cancel").status_code == 200
+
+    res = _client("pm-token").patch(f"/api/v1/members/{seed['jiyoung'].member_id}", json={"role": "pm"})
+
+    assert res.status_code == 200
+
+
+def test_pending_invite_does_not_block_other_member_updates(seed):
+    _invite_id(seed["ws"], seed["jiyoung"].member_id, "jiyoung@example.com")
+
+    res = _client("pm-token").patch(
+        f"/api/v1/members/{seed['jiyoung'].member_id}", json={"display_name": "지영2", "role": "member"}
+    )
+
+    assert res.status_code == 200
+
+
+def test_pm_of_another_workspace_can_be_invited_as_a_member(db, seed):
+    jiyoung_user = db.query(User).filter(User.email == "jiyoung@example.com").one()
+    seed["other"].user_id = jiyoung_user.user_id
+    seed["other"].role = "pm"
+    db.commit()
+
+    invitation_id = _invite_id(seed["ws"], seed["minsu"].member_id, "jiyoung@example.com")
+
     assert _act(invitation_id, "accept", "jiyoung-token").status_code == 200
 
 

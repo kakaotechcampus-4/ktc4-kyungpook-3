@@ -7,6 +7,8 @@ from app.core.database import get_db
 from app.core.errors import AppError, Envelope, ErrorCode, success
 from app.models import (
     AliasResolutionLog,
+    Invitation,
+    InvitationStatus,
     Member,
     MemberAlias,
     MemberRole,
@@ -62,6 +64,20 @@ def _ensure_discord_user_free(
         raise AppError(
             ErrorCode.DISCORD_USER_ALREADY_MAPPED, details={"discord_user_id": discord_user_id}
         )
+
+
+def _ensure_no_pending_invitation(db: Session, member: Member) -> None:
+    """대기 초대가 있는 팀원은 PM 으로 올리지 않는다. 수락한 계정이 바로 PM 이 되면 원래 PM 을 내려 연결 끊기를 막을 수
+    있다(결정 0036). 초대 만들기와 같은 팀원 행을 잠가, 확인과 역할 변경 사이에 초대가 생기지 않게 한다."""
+    db.execute(select(Member.member_id).where(Member.member_id == member.member_id).with_for_update()).first()
+    pending = db.execute(
+        select(Invitation.invitation_id).where(
+            Invitation.member_id == member.member_id,
+            Invitation.status == str(InvitationStatus.PENDING),
+        ).limit(1)
+    ).first()
+    if pending is not None:
+        raise AppError(ErrorCode.MEMBER_HAS_PENDING_INVITATION, details={"member_id": member.member_id})
 
 
 def _commit_member(db: Session, member: Member) -> None:
@@ -255,6 +271,8 @@ def update_member(
     # PM을 넘길 때는 다른 팀원을 먼저 PM으로 올리고 나서 자기를 내린다. 마지막 PM은 내릴 수 없다.
     if updates.get("role") == MemberRole.MEMBER and member.role == MemberRole.PM:
         _ensure_other_pm(db, member)
+    if updates.get("role") == MemberRole.PM and member.role != MemberRole.PM:
+        _ensure_no_pending_invitation(db, member)
 
     _ensure_discord_user_free(
         db, member.workspace_id, updates.get("discord_user_id"), exclude_member_id=member_id
