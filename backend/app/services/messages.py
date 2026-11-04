@@ -397,6 +397,8 @@ def _auto_approve_due(db: Session, now: datetime, exclude: list[str]) -> None:
     for bundle in bundles:
         bundle.approved_at = now
         bundle.approved_by = None
+        # approve_bundle 과 같이 오던 AI 초안을 닫는다. 보낸 묶음이 초안 대기로 남지 않게 한다.
+        bundle.draft_status = DraftStatus.DONE
         bundle.updated_at = now
     db.flush()
 

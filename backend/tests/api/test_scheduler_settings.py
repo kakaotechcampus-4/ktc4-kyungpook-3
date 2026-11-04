@@ -5,6 +5,7 @@
 from datetime import date, datetime, timedelta, timezone
 
 from app.models import (
+    DraftStatus,
     Member,
     MessageSender,
     Notification,
@@ -204,6 +205,20 @@ def test_auto_approve_sends_without_pm(mdb, mseed):
     assert messages.utc(bundle.approved_at) == SLOT
     assert bundle.approved_by is None
     assert bundle.status == ReminderStatus.SENT
+
+
+def test_auto_approve_closes_pending_draft_like_manual_approve(mdb, mseed):
+    _assign(mdb, mseed)
+    _turn_on(mdb, mseed)
+    tick(mdb, PROPOSE)
+    [bundle] = _bundles(mdb)
+    assert bundle.draft_status == DraftStatus.NEEDED
+
+    tick(mdb, SLOT)
+
+    mdb.refresh(bundle)
+    assert bundle.status == ReminderStatus.SENT
+    assert bundle.draft_status == DraftStatus.DONE
 
 
 def test_auto_approve_via_bot_claim(mdb, mseed):
