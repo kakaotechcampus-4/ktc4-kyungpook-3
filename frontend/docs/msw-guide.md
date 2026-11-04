@@ -143,15 +143,17 @@ await fetch('/api/v1/approvals/ap_01', {
 
 ## 메시지 화면 (M8, 임시)
 
-메시지 화면은 개발 서버 + `VITE_ENABLE_MSW=true` 일 때만 보인다. 그 밖에는 준비 중 안내다. 화면은 디자인 캔버스 기준이고 동작은 MSW 목이다([결정 기록](plan/m8/basis-for-decision/2026-11-01-message-ui-scope-design-canvas-msw.md)). 경로·응답 모양·오류 코드(`MESSAGE_THREAD_NOT_FOUND`, `MESSAGE_REVIEW_NOT_FOUND`)는 계약이 아니다([M8-C 결과](plan/m8/result-c.md)). 시나리오는 위와 같이 `?msw-scenario=<이름>` 으로 고르며 모두 `ws_01` 하나에 PM 으로 로그인한다.
+메시지 화면은 개발 서버 + `VITE_ENABLE_MSW=true` 일 때만 보인다. 그 밖에는 준비 중 안내다. 화면은 디자인 캔버스 기준이고 동작은 MSW 목이다([결정 기록](plan/m8/basis-for-decision/2026-11-01-message-ui-scope-design-canvas-msw.md)). 경로·응답 모양·오류 코드(`MESSAGE_THREAD_NOT_FOUND`, `MESSAGE_REVIEW_NOT_FOUND`, `MESSAGE_SCHEDULE_PASSED`, `MESSAGE_REPLY_NOT_FOUND`)는 계약이 아니다([M8-C 결과](plan/m8/result-c.md)). 시나리오는 위와 같이 `?msw-scenario=<이름>` 으로 고른다. `messages-member` 만 팀원이고, 나머지는 `ws_01` 의 PM 이다. 재촉은 한 기록으로 `예정`·`발송됨`·`취소됨`·`만료됨` 을 지난다. 만료는 마감일로 계산하고 저장하지 않는다.
 
 | 시나리오 | 해 볼 것 |
 |---|---|
-| `messages-default` | 보내기 전 확인 2건(이재환 `rv_01` 마감 하루 전 예약, 정하늘 `rv_02` 지금 바로), 대화 4건(이재환 `th_01` 이 오늘로 3일째 답장 없음, `rv_01` 이 그 대화에서 승인 대기) + 채널 1건. 발송·보내지 않음·고쳐 쓰기·발송 시점·승인·반려가 성공한다 |
+| `messages-default` | 보내기 전 확인 2건(이재환 `rv_01` 마감 하루 전 예약, 정하늘 `rv_02` 지금 바로), 대화 4건(이재환 `th_01` 이 오늘로 3일째 답장 없음, `rv_01` 이 그 대화에서 승인 대기) + 채널 1건. 박민수 대화에는 `답장 확인 필요` 가 있다. 발송·보내지 않음·고쳐 쓰기·발송 시점이 성공한다 |
 | `messages-empty` | `ws_01` 의 검토·대화가 모두 없음 → 빈 상태 |
 | `messages-list-error` | 목록만 5xx. 대화 주소로 바로 들어오면 대화는 보인다 |
 | `messages-thread-error` | 목록은 정상, `th_01` 대화만 5xx |
-| `messages-send-fail` | 조회는 정상, 발송·보내지 않음·고쳐 쓰기·발송 시점 변경만 5xx(db 는 그대로) |
+| `messages-send-fail` | 조회는 정상, 발송·보내지 않음·고쳐 쓰기·발송 시점·답장·답장 판정만 5xx(db 는 그대로) |
+| `messages-member` | 팀원. 자기 대화 `th_06` 만 보이고 보내기 전 확인은 없다. 웹 답장은 그 대화에만 남는다 |
+| `messages-schedule-passed` | `rv_06` 은 예약 시각이 지났고 마감은 오늘이라 만료가 아니다. 이대로 발송은 409 이고, 시각을 다시 고른 뒤에 보낼 수 있다 |
 
 ```text
 http://localhost:5173/workspaces/ws_01/messages?msw-scenario=messages-default
@@ -186,7 +188,7 @@ http://localhost:5173/workspaces/ws_01/members?msw-scenario=settings-unmapped
 
 테스트는 `onUnhandledRequest: 'error'`이므로 등록하지 않은 요청이 실패한다. 로그의 method와 URL을 보고 `/api/v1` prefix, origin, handler 등록, 동적 경로 순서를 확인한다. `/members/aliases`와 `/members/unresolved-aliases`는 `/members/:id`보다 먼저 등록해야 한다.
 
-로컬 브라우저는 `warn`으로 경고하고 실제 네트워크로 보낸다. 의도한 mock에서 경고가 나면 handler 누락을 먼저 확인한다. OAuth `start`·`callback` 같은 302 네비게이션, AI→BE 전용 생성 경로는 M1 mock 범위 밖이다. 메시지는 실제 API 가 없어 M8 에서 임시 경로(조회 `/workspaces/{id}/messages`, `/workspaces/{id}/messages/threads/{id}`, 행동 `PATCH /workspaces/{id}/messages/reviews/{id}`, `POST …/reviews/{id}/send`, `POST …/reviews/{id}/dismiss`)를 MSW 에만 두었다 — 계약이 아니고, 화면도 MSW 모드에서만 이 경로를 부른다(M8 계획 C-3, `messages-*` 시나리오).
+로컬 브라우저는 `warn`으로 경고하고 실제 네트워크로 보낸다. 의도한 mock에서 경고가 나면 handler 누락을 먼저 확인한다. OAuth `start`·`callback` 같은 302 네비게이션, AI→BE 전용 생성 경로는 M1 mock 범위 밖이다. 메시지는 실제 API 가 없어 M8 에서 임시 경로(조회 `/workspaces/{id}/messages`, `/workspaces/{id}/messages/threads/{id}`, 행동 `PATCH /workspaces/{id}/messages/reviews/{id}`, `POST …/reviews/{id}/send`, `POST …/reviews/{id}/dismiss`, `POST …/messages/threads/{id}/replies`, `POST …/messages/replies/{id}/attribution`)를 MSW 에만 두었다 — 계약이 아니고, 화면도 MSW 모드에서만 이 경로를 부른다(M8 계획 C-3, `messages-*` 시나리오).
 
 ## 실 백엔드와 다른 점
 
