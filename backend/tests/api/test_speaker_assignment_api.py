@@ -167,6 +167,7 @@ def _status(db, meeting):
 
 def test_pm_reads_speakers_sorted_with_candidates_and_audio(db, seed):
     meeting = _meeting(db, seed)
+    _put_audio(meeting)
 
     r = _get(meeting.meeting_id)
 
@@ -180,6 +181,36 @@ def test_pm_reads_speakers_sorted_with_candidates_and_audio(db, seed):
     assert data["candidates"] == [{"member_id": seed["jimin"].member_id, "display_name": "지민"}]
     assert data["mapping"] is None
     assert data["audio"] == {"content_type": "audio/ogg", "size_bytes": 1234}
+
+
+def test_candidates_leave_out_members_who_left_after_upload(db, seed):
+    # 제출은 탈퇴하지 않은 멤버만 받으므로, 조회 후보도 같은 기준으로 뺀다(고르면 400 이 되는 후보를 보여 주지 않는다)
+    meeting = _meeting(db, seed)
+    upload = db.get(MeetingUpload, meeting.meeting_id)
+    upload.attendees = json.dumps([
+        {"member_id": seed["left"].member_id, "display_name": "탈퇴"},
+        {"member_id": seed["jimin"].member_id, "display_name": "지민"},
+        {"member_id": seed["outsider"].member_id, "display_name": "외부"},
+    ], ensure_ascii=False)
+    db.commit()
+
+    data = _get(meeting.meeting_id).json()["data"]
+
+    assert data["candidates"] == [{"member_id": seed["jimin"].member_id, "display_name": "지민"}]
+
+
+@pytest.mark.parametrize("kind", ["no_folder", "no_file"])
+def test_audio_info_is_null_when_the_recording_is_gone(db, seed, kind):
+    # done·failed 로 폴더가 지워지면 재생할 수 없으므로 audio 를 null 로 줘서 "회의 없음"과 가른다
+    meeting = _meeting(db, seed, status="failed")
+    if kind == "no_file":
+        _put_audio(meeting)
+        (upload_storage.meeting_dir(meeting.meeting_id) / "audio.ogg").unlink()
+
+    r = _get(meeting.meeting_id)
+
+    assert r.status_code == 200, r.text
+    assert r.json()["data"]["audio"] is None
 
 
 def test_speakers_is_empty_before_labels_are_reported(db, seed):

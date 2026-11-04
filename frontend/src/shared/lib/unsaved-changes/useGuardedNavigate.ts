@@ -3,7 +3,8 @@ import { resolvePath, useLocation, useNavigate } from 'react-router'
 import type { NavigateOptions, To } from 'react-router'
 import { guardLeave } from './store'
 
-export type GuardedNavigate = (to: To, options?: NavigateOptions) => void
+/** 지금 다른 경로로 옮겼으면 true. 검색 파라미터만 바꿨거나 이탈 확인에 맡겼으면 false 다 */
+export type GuardedNavigate = (to: To, options?: NavigateOptions) => boolean
 
 /**
  * 코드에서 옮길 때는 useNavigate 대신 이것을 쓴다 (D-138). 앱 안 이동의 관문이다.
@@ -19,8 +20,9 @@ export function useGuardedNavigate(): GuardedNavigate {
   return useCallback(
     (to, options) => {
       const go = () => void navigate(to, options)
-      if (resolvePath(to, pathname).pathname === pathname) go()
-      else guardLeave(go)
+      if (resolvePath(to, pathname).pathname !== pathname) return guardLeave(go)
+      go()
+      return false
     },
     [navigate, pathname],
   )

@@ -53,7 +53,7 @@ export const 헤더_정리_중: Story = {
   },
 }
 
-/** 워크스페이스 메뉴 — 미완료 공간 `설정 미완료`, 지금 공간 체크, 새 공간·설정·목록 */
+/** 워크스페이스 메뉴 — 미완료 공간 `설정 미완료`, 지금 공간 체크, 새 공간·목록. 설정은 계정 메뉴에 있다 (#244) */
 export const 워크스페이스_메뉴_열림: Story = {
   play: async ({ canvasElement }) => {
     await userEvent.click(
@@ -63,10 +63,19 @@ export const 워크스페이스_메뉴_열림: Story = {
   },
 }
 
+/** 계정(프로필) 메뉴 — 계정 정보 아래 `설정`·`로그아웃`. 논모달이라 열려 있어도 헤더를 숨기거나 막지 않는다 (#244) */
 export const 계정_메뉴_열림: Story = {
   play: async ({ canvasElement }) => {
     await userEvent.click(await within(canvasElement).findByRole('button', { name: /^내 계정/ }))
-    await expect(await within(document.body).findByRole('menu')).toBeInTheDocument()
+    const menu = await within(document.body).findByRole('menu')
+    await expect(
+      within(menu)
+        .getAllByRole('menuitem')
+        .map((item) => item.textContent),
+    ).toEqual(['설정', '로그아웃'])
+    const header = within(canvasElement).getByRole('banner')
+    await expect(header.closest('[aria-hidden="true"]')).toBeNull()
+    await expect(document.body.style.pointerEvents).not.toBe('none')
   },
 }
 

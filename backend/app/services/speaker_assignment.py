@@ -169,32 +169,36 @@ def resume_upload(
 
 
 def get_speaker_view(db: Session, meeting: Meeting) -> dict:
-    """PM 이 화자를 지정하는 화면에 필요한 것: 라벨(말한 시간 많은 순), 후보 참석자, 저장된 지정, 녹음 정보."""
+    """PM 이 화자를 지정하는 화면에 필요한 것: 라벨(말한 시간 많은 순), 후보 참석자, 저장된 지정, 녹음 정보.
+
+    후보는 업로드 때 저장한 참석자 중 제출이 받는 멤버(이 워크스페이스의 탈퇴하지 않은 멤버)만 준다.
+    녹음 정보는 재생할 파일이 있을 때만 주고, 폴더가 지워졌으면(done·failed) null 이다.
+    """
     _, upload = _read_upload_meeting(db, meeting.meeting_id)
     speakers = json.loads(upload.speakers) if upload.speakers else []
     speakers.sort(key=lambda s: (-s["total_sec"], s["label"]))
+    attendees = json.loads(upload.attendees)
+    inactive = set(_inactive_member_ids(db, meeting.workspace_id, {a["member_id"] for a in attendees}))
+    path = upload_storage.audio_path(meeting.meeting_id, upload.stored_filename)
+    audio = (
+        {"content_type": playback_content_type(upload.stored_filename), "size_bytes": upload.size_bytes}
+        if path.is_file()
+        else None
+    )
     return {
         "meeting_id": meeting.meeting_id,
         "status": meeting.status,
         "speakers": speakers,
-        "candidates": json.loads(upload.attendees),
+        "candidates": [a for a in attendees if a["member_id"] not in inactive],
         "mapping": json.loads(upload.speaker_mapping) if upload.speaker_mapping else None,
-        "audio": {"content_type": playback_content_type(upload.stored_filename), "size_bytes": upload.size_bytes},
+        "audio": audio,
     }
 
 
 # 재생 응답의 Content-Type 은 클라이언트가 올린 값이 아니라 저장한 확장자로 서버가 정한다(text/html 로 올려 스크립트가 실행되는 것을 막는다)
-_AUDIO_TYPES = {
-    "wav": "audio/wav",
-    "mp3": "audio/mpeg",
-    "m4a": "audio/mp4",
-    "ogg": "audio/ogg",
-    "webm": "audio/webm",
-}
-
-
 def playback_content_type(stored_filename: str) -> str:
-    return _AUDIO_TYPES.get(Path(stored_filename).suffix.lstrip(".").lower(), "application/octet-stream")
+    extension = Path(stored_filename).suffix.lstrip(".").lower()
+    return upload_storage.PLAYBACK_CONTENT_TYPES.get(extension, "application/octet-stream")
 
 
 def get_audio_for_playback(db: Session, meeting: Meeting) -> tuple[Path, str]:
