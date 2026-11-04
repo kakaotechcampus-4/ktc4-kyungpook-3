@@ -14,6 +14,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.api import invitations
+from app.api.members import _ensure_no_pending_invitation, _ensure_other_pm
 from app.core.database import Base, get_db
 from app.main import app
 from app.models import Invitation, Member, Session as SessionModel, User, Workspace
@@ -572,3 +573,39 @@ def test_db_allows_one_pending_invite_per_member_and_per_workspace_email(db, see
         Invitation(workspace_id=wid, member_id=jiyoung, email="a@example.com", status="declined"),
     ])
     db.commit()
+
+
+def _row_is_locked(db, member_id: str) -> bool:
+    """다른 연결에서 이 팀원 행을 잠글 수 없으면 True."""
+    with db.get_bind().connect() as other:
+        free = other.execute(
+            text("SELECT member_id FROM member WHERE member_id = :id FOR UPDATE SKIP LOCKED"), {"id": member_id}
+        ).first()
+    return free is None
+
+
+def test_revoke_lock_covers_the_target_member_with_the_pms(db, seed):
+    # 대상이 PM 이 아니어도 PM 행과 한 쿼리로 member_id 순으로 잠가야, 역할을 바꾸는 요청과 교착하지 않는다.
+    if db.get_bind().dialect.name != "postgresql":
+        pytest.skip("SQLite 는 FOR UPDATE 를 무시한다.")
+
+    _ensure_other_pm(db, seed["jimin"])
+
+    try:
+        assert _row_is_locked(db, seed["jimin"].member_id)
+        assert _row_is_locked(db, seed["pm"].member_id)
+    finally:
+        db.rollback()
+
+
+def test_promotion_check_locks_the_member_row_shared_with_invite_creation(db, seed):
+    # 이 잠금이 없으면 초대 만들기와 동시에 들어온 승격이 PM 역할에 대기 초대를 남긴다.
+    if db.get_bind().dialect.name != "postgresql":
+        pytest.skip("SQLite 는 FOR UPDATE 를 무시한다.")
+
+    _ensure_no_pending_invitation(db, seed["minsu"])
+
+    try:
+        assert _row_is_locked(db, seed["minsu"].member_id)
+    finally:
+        db.rollback()

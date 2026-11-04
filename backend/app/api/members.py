@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -104,14 +104,20 @@ def _ensure_other_pm(db: Session, member: Member) -> None:
     로그인 계정이 없는 팀원(디스코드 연결로 만든 명단)은 PM이어도 웹에 들어올 수 없어 세지 않는다.
     내리려는 팀원까지 포함해 PM 행을 모두 커밋까지 잠근다. 서로 다른 행만 잠그면, 두 PM이 동시에 서로를
     내릴 때 둘 다 "다른 PM이 있다"고 보고 PM이 없어진다. 순서를 정해 잠가 교착을 피한다.
+    member는 지금 PM이 아니어도 함께 잠근다. 따로 잠그면 이 순서를 벗어나 역할을 바꾸는 요청과 교착한다.
     """
     pm_ids = db.execute(
         select(Member.member_id)
         .where(
-            Member.workspace_id == member.workspace_id,
-            Member.role == str(MemberRole.PM),
-            Member.user_id.is_not(None),
-            Member.is_deleted.is_(False),
+            or_(
+                Member.member_id == member.member_id,
+                and_(
+                    Member.workspace_id == member.workspace_id,
+                    Member.role == str(MemberRole.PM),
+                    Member.user_id.is_not(None),
+                    Member.is_deleted.is_(False),
+                ),
+            )
         )
         .order_by(Member.member_id)
         .with_for_update()

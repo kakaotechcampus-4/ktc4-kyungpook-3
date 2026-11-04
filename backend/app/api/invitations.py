@@ -229,7 +229,7 @@ def revoke_invitation(
     invitation = _pm_invitation(db, invitation_id, user)
     _check_can_move(invitation, InvitationStatus.REVOKED)
     member = db.get(Member, invitation.member_id)
-    # PM 행을 member_id 순으로 잠그므로 팀원 행을 고치기 전에 부른다. PM 이 아닌 팀원이면 요청한 PM 이 남아 늘 통과한다.
+    # PM 행과 이 팀원 행을 member_id 순으로 잠그므로 팀원 행을 고치기 전에 부른다. PM 이 아닌 팀원이면 요청한 PM 이 남아 늘 통과한다.
     _ensure_other_pm(db, member)
     # 계정이 지워져 accepted_user_id 가 비었으면 그사이 다시 이어진 다른 계정을 끊지 않는다.
     if invitation.accepted_user_id is not None:
