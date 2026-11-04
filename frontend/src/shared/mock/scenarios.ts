@@ -10,7 +10,7 @@ import {
 import { completeMeeting, failMeeting, setMeetingFlowMode } from './meetingFlow'
 import { notificationFixtures } from './fixtures/notification'
 import { setMockRole } from './sessions'
-import { createTask } from './task-state'
+import { blockBySilence, createTask } from './task-state'
 
 /*
  * 브라우저·E2E 용 시작 상태. 모두 픽스처 계정 pm@example.com / mock-password 로 로그인한다.
@@ -575,9 +575,10 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
       }
       break
     case 'notifications-default':
-      // 안 읽은 알림 4건(모르는 종류 1건 포함)과 읽은 알림 1건
+      // 안 읽은 알림 4건(모르는 종류 1건 포함)과 읽은 알림 1건. tk_06 은 무응답으로 자동 막혔다
       signInWith(state, ['ws_01'], 'ws_01')
       state.notifications = structuredClone(notificationFixtures)
+      blockBySilence(taskOf(state, 'tk_06'), '2026-09-18T08:30:00+09:00', state)
       break
   }
   return state

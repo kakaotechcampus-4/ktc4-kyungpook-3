@@ -5,6 +5,7 @@ import { meetingListQueryOptions } from '@/entities/meeting'
 import { memberListQueryOptions } from '@/entities/member'
 import { taskDetailQueryOptions, taskHistoryQueryOptions } from '@/entities/task'
 import type { Task } from '@/entities/task'
+import { TaskAutoBlockNotice } from '@/features/task-auto-block'
 import { TaskNotionSyncStatus } from '@/features/task-notion-sync'
 import { TASK_STATUS_LABEL, TaskStatusControl, useTaskStatusOverlay } from '@/features/task-status'
 import { COMMON_MESSAGES } from '@/shared/api/errorMessages'
@@ -166,7 +167,10 @@ function TaskBody({ workspaceId, task, isPm }: { workspaceId: string; task: Task
         <dt className={TERM}>마감</dt>
         <dd className={VALUE}>{task.dueDate ?? '마감 없음'}</dd>
         <dt className={TERM}>막힌 사유</dt>
-        <dd className={VALUE}>{task.blocker ?? '없음'}</dd>
+        <dd className={`${VALUE} flex flex-col items-start gap-8`}>
+          <span>{task.blocker ?? '없음'}</span>
+          <TaskAutoBlockNotice workspaceId={workspaceId} task={task} isPm={isPm} />
+        </dd>
         <dt className={TERM}>연결 회의</dt>
         <dd className={VALUE}>
           {task.meetingId === null || meetingTitle === null ? (

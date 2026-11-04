@@ -51,6 +51,8 @@ const SERVER_MESSAGES: Record<ErrorCode, string> = {
   EMBEDDING_UNAVAILABLE: '비슷한 태스크를 찾지 못했어요. 잠시 후 다시 시도해 주세요.',
   DISCORD_API_FAILED: 'Discord 서버의 사용자 목록을 가져오지 못했어요. 잠시 후 다시 시도해 주세요.',
   NOTIFICATION_NOT_FOUND: '알림을 찾을 수 없어요.',
+  AUTO_BLOCK_NOT_FOUND:
+    '막힌 뒤 상태나 사유가 바뀌어 되돌릴 수 없어요. 최신 태스크를 다시 불러왔어요.',
 }
 
 const CLIENT_MESSAGES: Record<ClientErrorCode, string> = {
