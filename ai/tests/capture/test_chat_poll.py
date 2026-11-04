@@ -68,11 +68,12 @@ class FakeReader:
 
     def read(self, after, before):
         self.read_args = (after, before)
-        return list(self.messages)
+        return [m for m in self.messages if after < m[3] < before]   # Discord history 처럼 열린 구간
 
     def read_before(self, before, limit):
         self.before_args = (before, limit)
-        return list(self.before)
+        older = sorted((m for m in self.before if m[3] < before), key=lambda m: m[3])
+        return older[-limit:]
 
 
 class FakeExtract:
