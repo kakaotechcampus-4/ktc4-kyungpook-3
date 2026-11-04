@@ -1,7 +1,7 @@
 import { expect } from '@playwright/test'
 import type { Page } from '@playwright/test'
 
-/** E2E 시나리오 이름 (shared/mock/scenarios.ts 의 MOCK_SCENARIOS). M4 U1 다섯 개 + M5 회의 흐름 + M6 태스크·승인 + M7 대시보드 + M8 태스크 보기·설정 */
+/** E2E 시나리오 이름 (shared/mock/scenarios.ts 의 MOCK_SCENARIOS). M4 U1 다섯 개 + M5 회의 흐름 + M6 태스크·승인 + M7 대시보드 + M8 태스크 보기·설정 + #320 팀원 초대 */
 export type Scenario =
   | 'signed-out'
   | 'no-workspace'
@@ -41,6 +41,8 @@ export type Scenario =
   | 'settings-discord-skipped'
   | 'settings-unmapped'
   | 'settings-member'
+  | 'team-invitations'
+  | 'invitation-pending'
 
 /**
  * 모의 db 를 그 시나리오로 초기화하고 path 로 들어간다. 시나리오 파라미터는 저장값보다 앞서고

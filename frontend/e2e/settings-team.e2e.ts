@@ -99,4 +99,18 @@ for (const width of [1024, 1440, 1920]) {
     await expect(page.getByRole('heading', { name: '앞으로 7일' })).toBeVisible(FIRST_PAINT)
     await expectNoHorizontalOverflow(page)
   })
+
+  test(`${width}px 팀원마다 초대 상태와 조작이 붙어도 팀 화면은 가로로 넘치지 않는다`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 900 })
+    await start(page, 'team-invitations', '/workspaces/ws_01/members')
+    const minsu = page.getByRole('region', { name: '박민수' })
+    await expect(minsu.getByText('박민수 · minsu@example.com')).toBeVisible(FIRST_PAINT)
+    await expect(minsu.getByRole('button', { name: '연결 끊기' })).toBeVisible()
+    await expect(
+      page.getByRole('region', { name: '이재환' }).getByRole('button', { name: '초대 취소' }),
+    ).toBeVisible()
+    await expectNoHorizontalOverflow(page)
+  })
 }

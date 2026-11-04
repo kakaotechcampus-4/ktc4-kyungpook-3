@@ -1,4 +1,5 @@
-import { useQuery } from '@tanstack/react-query'
+import { useIsFetching, useQuery, useQueryClient } from '@tanstack/react-query'
+import { myInvitationsQueryOptions } from '@/entities/invitation'
 import { workspaceListQueryOptions } from '@/entities/workspace'
 import { useStartNewWorkspace } from '@/features/onboarding'
 import { useEnterWorkspace } from '@/features/workspace-switch'
@@ -7,6 +8,7 @@ import { GuardedLink } from '@/shared/lib/unsaved-changes'
 import { Button } from '@/shared/ui/button'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
 import { Skeleton } from '@/shared/ui/skeleton'
+import { MyInvitations } from './MyInvitations'
 import { DashedIcon, WorkspaceRowContent } from './WorkspaceBadge'
 
 const LIST = 'flex flex-col gap-1 rounded-[14px] border border-line bg-surface p-8'
@@ -28,6 +30,14 @@ export function WorkspaceChoiceList({
   const workspaces = useQuery(workspaceListQueryOptions())
   const enter = useEnterWorkspace()
   const startNew = useStartNewWorkspace()
+  const queryClient = useQueryClient()
+  const invitationsKey = myInvitationsQueryOptions().queryKey
+  const invitationsFetching = useIsFetching({ queryKey: invitationsKey }) > 0
+  // 초대는 메일로 오지 않는다 — 다시 확인하면 소속과 받은 초대를 함께 다시 받는다
+  const refetchAll = () => {
+    void workspaces.refetch()
+    void queryClient.refetchQueries({ queryKey: invitationsKey })
+  }
 
   if (workspaces.data === undefined) {
     return workspaces.isError ? (
@@ -41,6 +51,7 @@ export function WorkspaceChoiceList({
 
   return (
     <div className={variant === 'onboarding' ? 'flex flex-col gap-1' : LIST}>
+      <MyInvitations />
       {workspaces.data.length === 0 ? (
         <div className="flex flex-col items-start gap-12 px-10 py-9">
           <p className="text-body text-dim">아직 소속된 워크스페이스가 없어요.</p>
@@ -79,14 +90,14 @@ export function WorkspaceChoiceList({
           <Button
             variant="primary"
             size="lg-onboarding"
-            loading={workspaces.isFetching}
-            onClick={() => void workspaces.refetch()}
+            loading={workspaces.isFetching || invitationsFetching}
+            onClick={refetchAll}
           >
             목록 다시 확인
           </Button>
         </div>
       ) : (
-        <Button loading={workspaces.isFetching} onClick={() => void workspaces.refetch()}>
+        <Button loading={workspaces.isFetching || invitationsFetching} onClick={refetchAll}>
           목록 다시 확인
         </Button>
       )}

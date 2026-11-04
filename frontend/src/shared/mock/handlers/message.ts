@@ -6,7 +6,7 @@ import { requireMember, requirePmRole } from '../auth-guard'
 import { MOCK_NOW } from '../fixtures/constants'
 import { reply } from '../fixtures/message'
 import type { MockMessageReview } from '../fixtures/message'
-import { sessionMemberId } from '../sessions'
+import { roleIn, sessionMemberId } from '../sessions'
 import {
   applyPatch,
   approve,
@@ -38,8 +38,7 @@ const BODY_MAX_LENGTH = 2000
 const SEND_TIMINGS: readonly MessageSendTimingDto[] = ['day_before_deadline', 'now', 'custom']
 
 function viewerOf(workspaceId: string): 'pm' | 'member' {
-  const workspace = db.workspaces.find(({ workspace_id }) => workspace_id === workspaceId)
-  return workspace?.role === 'pm' ? 'pm' : 'member'
+  return roleIn(workspaceId) === 'pm' ? 'pm' : 'member'
 }
 
 function byInboxOrder(
