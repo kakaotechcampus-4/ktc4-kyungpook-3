@@ -147,4 +147,4 @@ $PY -m stt.eval.capacity.real929 --lines large-v3=$V3_RUN/lines-real929-1.json -
 
 `--spend-file` 장부는 서버 안에서 쓰는 자리값이다. 실제 비용은 인스턴스 시간으로 계산한다. macOS 에서 만든 tar 를 풀면 `._*.wav` 가 섞여 시나리오가 바로 끝나므로 지운 뒤 돌린다. 콜드 스타트는 AMI 로 새 인스턴스를 만들고 부팅 스크립트에서 위 서빙 명령을 띄운 뒤 시각을 남겼다. 초기화 속도는 `--block-device-mappings 'DeviceName=/dev/sda1,Ebs={VolumeInitializationRate=300,DeleteOnTermination=true}'` 로 지정했다.
 
-원자료는 레포 밖 `mm/eval-runs/2026-11-04-gpu-serving/` 에 있다. 녹음은 측정 뒤 서버와 임시 저장소에서 지운 다음 AMI 를 만들었다. 지운 파일의 블록이 AMI 스냅샷에 남았을 수 있다. AMI 는 비공개이고 학습 후 측정이 끝나면 지운다.
+원자료는 레포 밖 `mm/eval-runs/2026-11-04-gpu-serving/` 에 있다. 녹음은 측정 뒤 서버와 임시 저장소에서 지운 다음 AMI 를 만들었다. 지운 파일의 블록이 AMI 스냅샷에 남았을 수 있지만, 측정 녹음은 참여한 팀원이 모두 동의한 자료라 AMI 를 다시 만들지 않는다. AMI 는 비공개이고 학습 후 측정이 끝나면 지운다.
