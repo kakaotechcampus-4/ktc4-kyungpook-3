@@ -74,7 +74,8 @@ export function MeetingMinutes({
     !selected &&
     list.data !== undefined &&
     list.data.minutes.length === 0 &&
-    list.data.inProgress.length === 0
+    list.data.inProgress.length === 0 &&
+    list.data.expired.length === 0
   )
     return (
       <main className={EMPTY_PAGE}>
@@ -105,8 +106,16 @@ export function MeetingMinutes({
       <div className="flex justify-center px-36 pt-72 pb-56">
         <EmptyState
           titleAs="h2"
-          title="아직 정리가 끝난 회의가 없어요"
-          description="정리가 끝나면 여기에서 회의록을 볼 수 있어요."
+          title={
+            list.data.expired.length > 0
+              ? '화자 지정 기한이 지난 회의가 있어요'
+              : '아직 정리가 끝난 회의가 없어요'
+          }
+          description={
+            list.data.expired.length > 0
+              ? '목록에서 회의를 선택해 만료 사유를 확인해 주세요.'
+              : '정리가 끝나면 여기에서 회의록을 볼 수 있어요.'
+          }
         />
       </div>
     )
@@ -215,6 +224,26 @@ function MeetingList({
             </li>
           ))}
         </ul>
+      )}
+      {list.expired.length === 0 ? null : (
+        <div className="flex flex-col gap-4">
+          <p id="meetings-expired" className={GROUP_LABEL}>
+            화자 지정 기한 만료
+          </p>
+          <ul aria-labelledby="meetings-expired" className={LIST}>
+            {list.expired.map((meeting) => (
+              <li key={meeting.id}>
+                <GuardedLink to={paths.meetings(workspaceId, meeting.id)} className={ROW}>
+                  <span className={ROW_TITLE}>
+                    {meeting.title === '' ? '제목 없는 회의' : meeting.title}
+                  </span>
+                  <span className={STATUS_BADGE}>화자 지정 기한 만료</span>
+                  <span className={ROW_META}>{listMeta(meeting)}</span>
+                </GuardedLink>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
     </div>
   )

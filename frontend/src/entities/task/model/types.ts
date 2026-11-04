@@ -1,4 +1,5 @@
-export type TaskStatus = 'todo' | 'in_progress' | 'blocked' | 'done'
+import type { TaskStatus } from '@/shared/types/common'
+export type { TaskStatus } from '@/shared/types/common'
 /** 서버 NotionSyncStatus. 미연동이면 Task 의 값이 null 이다. `synced` 만 반영 완료다 */
 export type NotionSyncStatus = 'pending' | 'synced' | 'failed'
 export interface Task {
@@ -8,7 +9,6 @@ export interface Task {
   title: string
   assigneeMemberId: string | null
   status: TaskStatus
-  progress: number | null
   blocker: string | null
   dueDate: string | null
   startDate: string

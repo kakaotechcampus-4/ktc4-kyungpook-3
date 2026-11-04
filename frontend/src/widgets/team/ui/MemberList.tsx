@@ -47,7 +47,6 @@ function TaskRow({ task, today }: TaskRowProps) {
         ) : (
           <div className={`${TASK_META} text-dim`}>
             {updated === null ? '' : `${monthDayOf(updated)} 기준`}
-            {task.progress === null ? null : ` · 진행 ${task.progress}%`}
           </div>
         )}
       </div>
