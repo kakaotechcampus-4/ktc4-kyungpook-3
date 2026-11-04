@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_member, get_current_pm, get_current_user
+from app.api.deps import get_current_member, get_current_pm
 from app.core.database import get_db
 from app.core.errors import AppError, Envelope, ErrorCode, success
 from app.models import (
@@ -17,7 +17,6 @@ from app.models import (
     ReminderBundle,
     ReminderStatus,
     ThreadMessage,
-    User,
 )
 from app.schemas.message import (
     BundleApproveRequest,
@@ -124,8 +123,8 @@ def _get_thread(db: Session, workspace_id: str, thread_id: str) -> MessageThread
     return thread
 
 
-def _check_thread_access(thread: MessageThread, member: Member, user: User) -> None:
-    if member.role != MemberRole.PM and thread.member.user_id != user.user_id:
+def _check_thread_access(thread: MessageThread, member: Member) -> None:
+    if member.role != MemberRole.PM and thread.member_id != member.member_id:
         raise AppError(ErrorCode.FORBIDDEN, details={"thread_id": thread.thread_id})
 
 
@@ -161,11 +160,10 @@ def get_thread(
     workspace_id: str,
     thread_id: str,
     member: Member = Depends(get_current_member),
-    user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
     thread = _get_thread(db, workspace_id, thread_id)
-    _check_thread_access(thread, member, user)
+    _check_thread_access(thread, member)
     rows = db.scalars(
         select(ThreadMessage)
         .where(ThreadMessage.thread_id == thread_id)
@@ -282,12 +280,11 @@ def post_reply(
     thread_id: str,
     payload: ReplyCreateRequest,
     member: Member = Depends(get_current_member),
-    user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
     """대화 주인인 팀원의 웹 답장. PM 도 남의 대화에는 쓸 수 없다. 웹 답장은 디스코드로 보내지 않는다."""
     thread = _get_thread(db, workspace_id, thread_id)
-    if thread.member.user_id != user.user_id:
+    if thread.member_id != member.member_id:
         raise AppError(ErrorCode.FORBIDDEN, details={"thread_id": thread_id})
     message = svc.add_web_reply(db, thread, body=payload.body, now=_now())
     db.commit()

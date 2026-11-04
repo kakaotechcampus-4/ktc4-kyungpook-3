@@ -10,11 +10,11 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app.api import approvals, bot_messages, extractions, invitations, messages, meetings, members, similar_tasks, sources, tasks, uploads, workspaces, auth, integrations
+from app.api import approvals, bot_lookups, bot_messages, extractions, invitations, messages, meetings, members, similar_tasks, sources, tasks, uploads, workspaces, auth, integrations
 from app.api import notifications
 from app.services import scheduler
 from app.core.errors import AppError, Envelope, ErrorCode, failure, success
-from app.services import embedding, notion_sync
+from app.services import embedding, notion_sync, upload_sweeper
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +24,8 @@ REMINDER_SCHEDULER_INTERVAL_SECONDS = float(os.getenv("REMINDER_SCHEDULER_INTERV
 NOTION_SYNC_INTERVAL_SECONDS = float(os.getenv("NOTION_SYNC_INTERVAL_SECONDS", "5"))
 # 임베딩이 없는 task를 채우는 주기(초). 0 이하이거나 임베딩 키가 없으면 워커를 띄우지 않는다.
 EMBEDDING_SYNC_INTERVAL_SECONDS = float(os.getenv("EMBEDDING_SYNC_INTERVAL_SECONDS", "5"))
+# 멈춘 업로드 회의를 failed 로 정리하는 주기(초). 0 이하면 워커를 띄우지 않는다.
+UPLOAD_SWEEP_INTERVAL_SECONDS = float(os.getenv("UPLOAD_SWEEP_INTERVAL_SECONDS", "300"))
 
 
 @asynccontextmanager
@@ -38,6 +40,8 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
             workers.append(embedding.start_worker(EMBEDDING_SYNC_INTERVAL_SECONDS))
         else:
             logger.warning("EMBEDDING_API_KEY/EMBEDDING_BASE_URL이 없어 task 임베딩 워커를 띄우지 않습니다.")
+    if UPLOAD_SWEEP_INTERVAL_SECONDS > 0:
+        workers.append(upload_sweeper.start_worker(UPLOAD_SWEEP_INTERVAL_SECONDS))
     try:
         yield
     finally:
@@ -73,6 +77,7 @@ app.include_router(messages.router, prefix=API_PREFIX)
 app.include_router(bot_messages.router, prefix=API_PREFIX)
 app.include_router(notifications.router, prefix=API_PREFIX)
 app.include_router(notifications.push_router, prefix=API_PREFIX)
+app.include_router(bot_lookups.router, prefix=API_PREFIX)
 
 
 @app.exception_handler(AppError)

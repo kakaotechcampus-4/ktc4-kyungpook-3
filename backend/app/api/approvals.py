@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_member, get_current_user, require_member, require_pm
 from app.core.database import get_db
 from app.core.errors import AppError, Envelope, ErrorCode, success
-from app.models import ApprovalRequest, ApprovalStatus, ApprovalType, ChangeSource, ExtractionItem, Member, Task, TaskStatus, User
+from app.models import ApprovalRequest, ApprovalStatus, ApprovalType, ChangeSource, ExtractionItem, Member, MemberRole, Task, TaskStatus, User
 from app.schemas.approval import (
     ApprovalCreateRequest,
     ApprovalListResponse,
@@ -370,6 +370,13 @@ def create_approval(
             message=f"유효하지 않은 change_source 값입니다: {change_source}",
             details={"field": "change_source", "allowed": sorted(str(s) for s in ChangeSource)},
         )
+    # 일반 팀원이 회의나 답장에서 나온 변경처럼 이력을 남기지 못하게 한다. 출처를 정하는 쪽은 PM 과 서버 경로뿐이다
+    if change_source is not None and member.role != MemberRole.PM:
+        raise AppError(
+            ErrorCode.INVALID_REQUEST,
+            message="change_source는 PM만 정할 수 있습니다.",
+            details={"field": "change_source"},
+        )
     if payload.related_task_id is not None:
         # 승인할 때도 확인하지만(_apply_approval), 다른 워크스페이스의 task를 가리키는 요청이 PM 목록에 쌓이지 않게 먼저 막는다
         # auto 되돌리기(revert_auto_item)가 이 task를 지우는 중이면 끝날 때까지 기다린다. 잠그지 않으면 지운 task를
@@ -472,6 +479,12 @@ def resolve_approval(
             details={"approval_id": approval_id},
         )
     member = require_pm(db, user, target.workspace_id)
+    # 이미 처리한 카드에는 고친 값이 틀렸다는 안내보다 처리됐다는 안내가 맞다. 경합은 아래 조건부 UPDATE 가 막는다
+    if target.status != str(ApprovalStatus.PENDING):
+        raise AppError(
+            ErrorCode.APPROVAL_ALREADY_RESOLVED,
+            details={"approval_id": approval_id, "current_status": target.status},
+        )
     overrides = _normalize_overrides(target.type, payload.status, payload.task_overrides)
 
     stmt = (

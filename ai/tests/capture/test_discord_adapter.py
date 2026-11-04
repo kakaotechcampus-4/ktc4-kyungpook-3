@@ -306,8 +306,9 @@ async def test_record_creates_the_be_meeting_and_the_worker_hands_the_tasks_off(
     m = _manifest(tmp_path, rec)
     assert m["status"] == "handed_off" and set(m["stages"]) == {"transcribed", "sourced", "extracted", "handed_off"}
     assert [c[1] for c in fake.calls] == [f"/integrations/discord/guilds/{GUILD_ID}/workspace", "/meetings",
-                                          "/meetings/m1/end", "/meetings/m1/sources", "/extractions"]
-    sent = fake.calls[4][2]["items"][0]
+                                          "/meetings/m1/end", "/workspaces/ws-1/members/names",
+                                          "/meetings/m1/sources", "/extractions"]
+    sent = fake.calls[5][2]["items"][0]
     assert sent["evidence_speaker"] == "1" and sent["assignee_type"] == "first" and sent["assignee_raw"] is None
     await cog._drain_outbox()
     assert [t.split(" ", 1)[0] for t, _ in channel.sent][-5:] == ["⏳", "📝", "🗂", "📋", "📨"]

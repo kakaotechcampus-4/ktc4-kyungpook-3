@@ -61,6 +61,13 @@ def test_cut_keeps_absolute_meeting_time(tmp_path):
     assert 6_400 <= utts[0].end_ms <= 6_600
 
 
+def test_batch_cut_keeps_a_short_reply(tmp_path):
+    """배치의 최소 발화는 BATCH_MIN_SPEECH_MS(100ms)다. 실시간 경로의 320ms 와 따로 둔다(결정 기록 0031)."""
+    p = tmp_path / "7_100.wav"
+    write_track(p, [silence(1_000), tone(200), silence(2_000)])
+    assert B.BATCH_MIN_SPEECH_MS == 100 and len(B.cut(B.load_track(p), "7")) == 1
+
+
 def test_discover_reads_uid_from_filename_and_manifest_names(tmp_path):
     write_track(tmp_path / "111_500.wav", [tone(500)])
     write_track(tmp_path / "222_500.wav", [tone(500)])
@@ -399,6 +406,53 @@ def test_without_word_times_lines_follow_the_speaking_order(tmp_path):
     assert stats.calls == 3
     old, old_stats = B.run(_dialogue(tmp_path), NoWordsStt(), mode="chunk", gate=None, ordered=False)
     assert [ln.speaker_id for ln in old] == ["a", "b"] and _jumps(old) == 1 and old_stats.calls == 2
+
+
+class ContextStt(NoWordsStt):
+    """운영 Prompted 처럼 min_s 보다 짧은 묶음은 앞 줄(context)을 프롬프트로 받는다."""
+
+    takes_context = True
+    min_s = 1.5
+
+    def __init__(self):
+        super().__init__()
+        self.sent = []
+
+    def transcribe(self, samples, sample_rate, context=None):
+        dur = len(samples) / sample_rate
+        self.sent.append((round(dur, 1), context))
+        return SttResult(text=f"{'짧음' if dur < self.min_s else '김'}{len(self.sent)}", words=[])
+
+
+def _reply(tmp_path):
+    """b 가 말하고(0~2초), a 가 짧게 대답하고(3초), b 가 다시 말한다(5~7초). 트랙은 a(짧은 대답)부터 읽는다."""
+    write_track(tmp_path / "a.wav", [silence(3_000), tone(400), silence(4_600)])
+    write_track(tmp_path / "b.wav", [tone(2_000), silence(3_000), tone(2_000), silence(1_000)])
+    return B.discover(tmp_path)
+
+
+def test_short_chunks_go_last_with_the_line_before_them_as_context(tmp_path):
+    """짧은 묶음은 나머지를 전사한 뒤 보내고, 시간순으로 바로 앞 줄의 전사문을 프롬프트로 받는다(결정 기록 0031)."""
+    stt = ContextStt()
+    lines, stats = B.run(_reply(tmp_path), stt, mode="chunk", gate=None, merge=False)
+    assert [d >= 1.5 for d, _ in stt.sent] == [True, True, False] and all(c is None for _, c in stt.sent[:2])
+    first_b = next(ln for ln in lines if ln.speaker_id == "b")
+    assert stt.sent[2][1] == first_b.text
+    assert [ln.speaker_id for ln in lines] == ["b", "a", "b"] and stats.calls == 3
+
+
+def test_a_short_chunk_with_no_line_before_it_gets_no_context(tmp_path):
+    write_track(tmp_path / "b.wav", [silence(500), tone(400), silence(2_000)])
+    stt = ContextStt()
+    B.run(B.discover(tmp_path), stt, mode="chunk", gate=None)
+    assert len(stt.sent) == 1 and stt.sent[0][1] is None
+
+
+def test_backends_without_context_keep_the_old_order(tmp_path):
+    """앞 줄을 받지 않는 백엔드(로컬, 프롬프트 없는 Elice)는 지금처럼 트랙 순서대로 한 번에 보낸다."""
+    stt = NoWordsStt()
+    B.run(_reply(tmp_path), stt, mode="chunk", gate=None)
+    assert [d >= 1.5 for d in stt.calls] == [False, True, True]
 
 
 def test_ordering_runs_the_speech_filter_once_and_noise_is_no_barrier(tmp_path):
