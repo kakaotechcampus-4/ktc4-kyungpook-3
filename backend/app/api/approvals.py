@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_member, get_current_user, require_member, require_pm
 from app.core.database import get_db
 from app.core.errors import AppError, Envelope, ErrorCode, success
-from app.models import ApprovalRequest, ApprovalStatus, ApprovalType, ChangeSource, ExtractionItem, Member, Task, TaskStatus, User
+from app.models import ApprovalRequest, ApprovalStatus, ApprovalType, ChangeSource, ExtractionItem, Meeting, MeetingSource, Member, Task, TaskStatus, User
 from app.schemas.approval import (
     ApprovalCreateRequest,
     ApprovalListResponse,
@@ -20,6 +20,12 @@ from app.services.tasks import apply_task_updates, create_task, parse_date
 router = APIRouter(prefix="/approvals", tags=["approvals"])
 
 _TASK_UPDATE_FIELDS = {"title", "assignee_member_id", "status", "progress", "blocker", "due_date"}
+
+
+def _change_source(db: Session, meeting_id: str | None, default: ChangeSource) -> str:
+    """채팅 회의에서 나온 항목이면 이력 출처를 chat으로, 아니면 default로 남긴다."""
+    meeting = db.get(Meeting, meeting_id) if meeting_id else None
+    return str(ChangeSource.CHAT if meeting and meeting.source == MeetingSource.CHAT else default)
 
 
 def _get_linkable_extraction_item(
@@ -132,7 +138,11 @@ def _apply_approval(
             due_date=parse_date(payload.get("due_date"), field="due_date"),
             status=payload.get("status") or str(TaskStatus.TODO),
             progress=payload.get("progress"),
-            change_source=str(ChangeSource.MEETING if payload.get("meeting_id") else ChangeSource.MANUAL),
+            change_source=_change_source(
+                db,
+                payload.get("meeting_id"),
+                ChangeSource.MEETING if payload.get("meeting_id") else ChangeSource.MANUAL,
+            ),
             changed_by=approval.resolved_by,
         )
         approval.related_task_id = task.task_id
@@ -189,7 +199,7 @@ def _apply_approval(
             db,
             task,
             updates,
-            change_source=str(ChangeSource.MEETING),
+            change_source=_change_source(db, payload.get("meeting_id"), ChangeSource.MEETING),
             changed_by=approval.resolved_by,
         )
 

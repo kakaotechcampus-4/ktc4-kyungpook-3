@@ -488,3 +488,13 @@ def test_awaiting_speakers_meeting_does_not_block_upload(db, seed):
     r = _upload(seed, [seed["pm"].member_id])
 
     assert r.status_code == 202, r.text
+
+
+def test_upload_allowed_while_chat_meeting_processing(db, seed):
+    """채팅 회의는 processing 에 오래 남을 수 있어 녹음 업로드를 막지 않는다."""
+    db.add(Meeting(workspace_id=seed["ws"].workspace_id, source="chat", status="processing"))
+    db.commit()
+
+    r = _upload(seed, [seed["pm"].member_id])
+
+    assert r.status_code == 202, r.text

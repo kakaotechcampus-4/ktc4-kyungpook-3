@@ -253,6 +253,9 @@ def create_extraction(
                 assignee_confidence=match.confidence if mentioned else None,
                 blockers=blockers,
             )
+            if meeting.source == MeetingSource.CHAT and gate == Gate.AUTO:
+                # 채팅에서 나온 항목은 PM이 보지 않고 반영하지 않는다. hold는 그대로 둔다
+                gate = Gate.REVIEW
             if blockers:
                 # auto 조건과 유사도 기준을 조정할 때 어떤 조건에서 많이 걸리는지 본다
                 logger.info(
