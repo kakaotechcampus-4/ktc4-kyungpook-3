@@ -123,18 +123,26 @@ def member_prompt(members: list[dict]) -> str | None:
     return _people_prompt([member_forms(m.get("name") or "", m.get("aliases") or ()) for m in members])
 
 
+PROMPT_MIN_S = 1.5   # 운영에서 이보다 짧은 묶음은 프롬프트 없이 보낸다. 그 밑에서 프롬프트의 이름을 되풀이하는 환각이 났다(0030)
+
+
 class Prompted:
     """회의마다 다른 프롬프트를 백엔드 호출에 싣는 감싸개. 백엔드 자체는 프로세스에서 같이 쓰므로 바꾸지 않는다.
 
     transcribe 말고 다른 속성(name, reclip_unmapped 등)은 안의 백엔드 것을 그대로 보인다.
     """
 
-    def __init__(self, inner, prompt: str) -> None:
+    def __init__(self, inner, prompt: str, *, min_s: float = 0.0) -> None:
         self.inner = inner
         self.prompt = prompt
+        self.min_s = min_s     # 이보다 짧은 묶음은 프롬프트 없이 보낸다. 운영은 PROMPT_MIN_S
 
-    def transcribe(self, samples: np.ndarray, sample_rate: int) -> SttResult:
-        return self.inner.transcribe(samples, sample_rate, prompt=self.prompt)
+    takes_context = True   # batch.run 이 짧은 묶음을 나중에 앞 줄(context)과 함께 보낸다(0031)
+
+    def transcribe(self, samples: np.ndarray, sample_rate: int, context: str | None = None) -> SttResult:
+        """min_s 보다 짧은 묶음은 이름 대신 앞 줄을 프롬프트로 싣고, 앞 줄이 없으면 프롬프트 없이 보낸다."""
+        prompt = self.prompt if len(samples) >= sample_rate * self.min_s else context
+        return self.inner.transcribe(samples, sample_rate, prompt=prompt)
 
     def __getattr__(self, name: str):
         return getattr(self.inner, name)
