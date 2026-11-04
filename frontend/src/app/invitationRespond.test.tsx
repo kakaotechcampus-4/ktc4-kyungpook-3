@@ -1,8 +1,11 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { http } from 'msw'
 import { paths } from '@/shared/config/routes'
 import { db } from '@/shared/mock/db'
+import { list } from '@/shared/mock/envelope'
 import { applyScenario } from '@/shared/mock/scenarios'
+import { server } from '@/shared/mock/server'
 import { recordRequests } from '@/shared/test/requests'
 import { renderApp } from './test/renderApp'
 
@@ -65,6 +68,37 @@ describe('받은 초대', () => {
     app.navigate(paths.members('ws_01'))
     expect(await screen.findByRole('region', { name: '이재환' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '팀원 관리' })).toBeNull()
+  })
+
+  it('수락 전에 시작한 목록 다시 확인이 늦게 끝나도 수락 뒤 새로 받은 목록으로 그 공간에 들어간다', async () => {
+    const app = await signUpAsInvitee()
+    await userEvent.click(screen.getByRole('link', { name: /팀원으로 시작/ }))
+    await invitationRow('카테캠 3팀')
+    let release = () => {}
+    const released = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    server.use(
+      http.get(
+        '/api/v1/workspaces',
+        async () => {
+          const beforeAccept = list([])
+          await released
+          return beforeAccept
+        },
+        { once: true },
+      ),
+    )
+    const log = recordRequests()
+
+    await userEvent.click(screen.getByRole('button', { name: '목록 다시 확인' }))
+    await waitFor(() => expect(log.timeline).toContain('start GET /workspaces'))
+    await userEvent.click((await invitationRow('카테캠 3팀')).getByRole('button', { name: '수락' }))
+    await waitFor(() => expect(log.timeline).toContain('answer POST /invitations/iv_02/accept'))
+    release()
+
+    await app.expectPath(paths.dashboard('ws_01'))
+    expect(screen.queryByText('이 초대는 더 이상 수락할 수 없어요. PM에게 문의하세요.')).toBeNull()
   })
 
   it('거절은 먼저 묻고, 거절하면 줄이 빠지고 초대를 요청하라는 안내가 보인다', async () => {

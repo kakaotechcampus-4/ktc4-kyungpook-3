@@ -26,8 +26,12 @@ export function workspaceListQueryOptions() {
   })
 }
 
-/** 새 사용자의 워크스페이스 목록을 서버에서 새로 받는다. 이 목록으로 로그인 뒤 갈 곳을 정한다 (D-010) */
-export function fetchFreshWorkspaces(queryClient: QueryClient): Promise<Workspace[]> {
+/**
+ * 새 사용자의 워크스페이스 목록을 서버에서 새로 받는다. 이 목록으로 로그인·초대 수락 뒤 갈 곳을 정한다 (D-010).
+ * 진행 중인 목록 요청은 먼저 취소한다 — fetchQuery 는 그 요청을 그대로 이어받는데, 그 응답은 로그인·수락 전 소속이다
+ */
+export async function fetchFreshWorkspaces(queryClient: QueryClient): Promise<Workspace[]> {
+  await queryClient.cancelQueries({ queryKey: WORKSPACE_LIST_QUERY_KEY, exact: true })
   return queryClient.fetchQuery({ ...workspaceListQueryOptions(), staleTime: 0 })
 }
 
