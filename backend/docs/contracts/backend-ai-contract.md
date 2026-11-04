@@ -124,7 +124,7 @@ AI `Transcript.to_dict()` 모양에 화자 이름을 더해 보낸다. 한 회�
     "evidence_speaker_member_id": "<멤버 ID>" | null,   // 선택. 근거 문장을 말한 팀원의 멤버 ID
     "evidence_seqs": [12, 13, 15] | null,     // 근거 발화의 seq(발화 저장 API의 seq). 0 ~ 2^31-1. 모르면 [] 또는 생략
     "category": "schedule" | "assignee" | "scope" | "decision" | null,
-    "status": "todo" | "in_progress" | "blocked" | "done" | null,
+    "status": "todo" | "in_progress" | "blocked" | "done" | null,   // 새 항목: auto 로 바로 만들면 이 값을 쓰고, 승인으로 만들면 쓰지 않고 항상 todo
     "doc_text": "…" | null,
     "task_status": "certain" | "inferred" | "missing" | null,   // judge 새 항목만. 할 일 근거 상태
     "due_status": "certain" | "inferred" | "missing" | null,    // judge 새 항목만. 마감이 없으면 missing
