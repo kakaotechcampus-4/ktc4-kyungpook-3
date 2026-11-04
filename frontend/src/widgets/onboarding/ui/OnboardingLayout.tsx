@@ -6,22 +6,22 @@ import type { StepNavProps } from './StepNav'
 
 export const ONBOARDING_STEP_COUNT = 4
 
-export interface OnboardingLayoutProps {
-  /** 1~4. 단계 점과 `n / 4` 가 이 값으로 그려진다 */
-  stepNumber: number
+interface OnboardingLayoutCommonProps {
   /** 화면 이름 — `워크스페이스 만들기` · `Discord 연결` … 캔버스 카드 제목(`팀 만들기`)과 달라서 숨은 제목이다 */
   title: string
   /** 왼쪽 위 나가기 화살표 (D-069). 일반 팀원 대기 화면에도 둔다 */
   exit?: ReactNode
+  accountMenu?: ReactNode
   /** 매스 말풍선 위 한 줄 — `디스코드 연동 완료` */
   notice?: string
   /** 매스 말풍선. 위에서부터 */
   messages: readonly string[]
   /** 단계 카드 */
   children: ReactNode
-  /** `n / 4` 양옆의 `이전 단계` · `다음 단계` 화살표. 없으면 카운터만 둔다 — 일반 팀원 대기 화면 */
-  nav?: StepNavProps
 }
+
+export type OnboardingLayoutProps = OnboardingLayoutCommonProps &
+  ({ stepNumber: number; nav?: StepNavProps } | { stepNumber?: never; nav?: never })
 
 /* SetupTeam·SetupDiscord·SetupNotion·SetupMembers 실측. 512px 열 · 34px 간격 · 말풍선 38px 매스 */
 const SCREEN = 'relative flex min-h-dvh items-center justify-center bg-surface px-48 py-64 text-ink'
@@ -58,6 +58,7 @@ export function OnboardingLayout({
   stepNumber,
   title,
   exit,
+  accountMenu,
   notice,
   messages,
   children,
@@ -71,17 +72,22 @@ export function OnboardingLayout({
   return (
     <main className={SCREEN}>
       {exit === undefined ? null : <div className={EXIT_SLOT}>{exit}</div>}
+      {accountMenu === undefined ? null : (
+        <div className="absolute top-24 right-24">{accountMenu}</div>
+      )}
       <div className={COLUMN}>
         <h1 className="sr-only">{title}</h1>
-        <div
-          className={DOTS}
-          role="img"
-          aria-label={`${ONBOARDING_STEP_COUNT}단계 중 ${stepNumber}단계`}
-        >
-          {Array.from({ length: ONBOARDING_STEP_COUNT }, (_dot, index) => (
-            <span key={index} className={index + 1 === stepNumber ? DOT_CURRENT : DOT} />
-          ))}
-        </div>
+        {stepNumber === undefined ? null : (
+          <div
+            className={DOTS}
+            role="img"
+            aria-label={`${ONBOARDING_STEP_COUNT}단계 중 ${stepNumber}단계`}
+          >
+            {Array.from({ length: ONBOARDING_STEP_COUNT }, (_dot, index) => (
+              <span key={index} className={index + 1 === stepNumber ? DOT_CURRENT : DOT} />
+            ))}
+          </div>
+        )}
 
         <div className={BUBBLES}>
           {notice === undefined ? null : (
@@ -100,9 +106,11 @@ export function OnboardingLayout({
 
         <div className="flex flex-col gap-28">
           {children}
-          <div className="flex items-center pt-4">
-            {nav === undefined ? counter : <StepNav {...nav}>{counter}</StepNav>}
-          </div>
+          {stepNumber === undefined ? null : (
+            <div className="flex items-center pt-4">
+              {nav === undefined ? counter : <StepNav {...nav}>{counter}</StepNav>}
+            </div>
+          )}
         </div>
       </div>
     </main>

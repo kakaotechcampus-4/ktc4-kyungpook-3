@@ -1,11 +1,16 @@
 import { describe, expect, it } from 'vitest'
+import { toTask } from '@/entities/task'
+import type { Task } from '@/entities/task'
+import { taskFixtures } from '@/shared/mock/fixtures/task'
 import {
   addMonths,
   calendarGrid,
+  cardBadges,
   daysBetween,
   ganttTitle,
   mondayOf,
   readViewQuery,
+  taskTone,
   viewSearch,
   weekOfMonth,
 } from './taskViews'
@@ -20,8 +25,11 @@ describe('보기 조건 URL', () => {
       month: null,
       from: null,
       period: 'all',
+      sort: 'due',
     })
-    expect(read('?view=table&month=2026-13&from=2026-02-30&period=week')).toEqual(read(''))
+    expect(read('?view=table&month=2026-13&from=2026-02-30&period=week&sort=priority')).toEqual(
+      read(''),
+    )
   })
 
   it('쓴 값을 그대로 읽고, 탭·날짜 조건 파라미터는 건드리지 않는다', () => {
@@ -31,17 +39,46 @@ describe('보기 조건 URL', () => {
       month: '2026-09',
       from: null,
       period: 'month' as const,
+      sort: 'updated' as const,
     }
     const written = viewSearch(new URLSearchParams('?tab=done&due=overdue,soon'), next)
     expect(written).toBe(
-      '?tab=done&due=overdue,soon&view=calendar&assignee=mb_02&month=2026-09&period=month',
+      '?tab=done&due=overdue,soon&view=calendar&assignee=mb_02&month=2026-09&period=month&sort=updated',
     )
     expect(read(written)).toEqual(next)
   })
 
   it('기본값으로 돌아오면 파라미터가 남지 않는다', () => {
-    expect(viewSearch(new URLSearchParams('?view=board&assignee=mb_01'), read(''))).toBe('')
+    expect(
+      viewSearch(new URLSearchParams('?view=board&assignee=mb_01&sort=created'), read('')),
+    ).toBe('')
     expect(viewSearch(new URLSearchParams('?tab=done&view=board'), read(''))).toBe('?tab=done')
+  })
+})
+
+describe('보드 카드 배지', () => {
+  const today = '2026-09-18'
+  const task = (status: Task['status'], dueDate: string | null): Task => ({
+    ...toTask(taskFixtures[0]),
+    status,
+    dueDate,
+  })
+
+  it.each([
+    ['막힘', 'blocked', '2026-10-30', ['blocked']],
+    ['막힘 + 기한 지남', 'blocked', '2026-09-17', ['blocked', 'danger']],
+    ['막힘 + 7일 안 마감', 'blocked', '2026-09-20', ['blocked']],
+    ['막힘 + 마감 없음', 'blocked', null, ['blocked']],
+    ['기한 지남', 'in_progress', '2026-09-17', ['danger']],
+    ['7일 안 마감', 'todo', '2026-09-24', ['warn']],
+    ['여유 있음', 'in_progress', '2026-10-30', []],
+    ['완료(과거 마감)', 'done', '2026-09-10', []],
+  ] as const)('%s', (_, status, dueDate, expected) => {
+    expect(cardBadges(task(status, dueDate), today)).toEqual(expected)
+  })
+
+  it('캘린더·간트가 쓰는 색 구분에서는 막힌 태스크가 여전히 위험이다', () => {
+    expect(taskTone(task('blocked', '2026-10-30'), today)).toBe('danger')
   })
 })
 

@@ -139,6 +139,26 @@ describe('목록과 기본 선택 (U5-1)', () => {
 })
 
 describe('상태 항목과 빈 상태 (U5-2)', () => {
+  it('만료 이력만 있어도 빈 목록으로 숨기지 않고, 선택하면 사유와 PM 재업로드 동선을 제공한다', async () => {
+    const user = userEvent.setup()
+    failMeeting('mt_10', { failedStage: 'speaker_assignment_expired' })
+    db.meetings = db.meetings.filter(({ meeting_id }) => meeting_id === 'mt_10')
+    const log = recordRequests()
+    renderApp(paths.meetings('ws_01'))
+    const expired = await screen.findByRole('list', { name: '화자 지정 기한 만료' })
+    expect(screen.queryByText('아직 올린 회의가 없어요')).toBeNull()
+    await user.click(within(expired).getByRole('link', { name: /기획 논의 녹음/ }))
+    expect(
+      await screen.findByRole('heading', { name: '화자 지정 기한이 지났어요' }),
+    ).toBeInTheDocument()
+    expect(within(detail()).getByRole('link', { name: '다시 업로드' })).toHaveAttribute(
+      'href',
+      paths.meetingUpload('ws_01'),
+    )
+    expect(minutesRequests(log)).toEqual([])
+    expect(extractionRequests(log)).toEqual([])
+  })
+
   it('정리 중 회의는 진행 중 항목으로 처리 화면에 잇고, 정리된 회의에는 없다', async () => {
     await openMinutes(paths.meetings('ws_01'), '3주차 정기회의')
 

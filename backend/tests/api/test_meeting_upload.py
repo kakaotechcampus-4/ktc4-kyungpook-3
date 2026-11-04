@@ -475,3 +475,16 @@ def test_concurrent_uploads_to_one_workspace_accept_only_one(monkeypatch):
         app.dependency_overrides.pop(get_db, None)
         Base.metadata.drop_all(engine)
         engine.dispose()
+
+
+def test_awaiting_speakers_meeting_does_not_block_upload(db, seed):
+    """화자 지정을 기다리는 회의는 동시 처리 제한(D-088)에서 뺀다. 대기 회의가 여러 개여도 업로드를 받는다."""
+    for _ in range(2):
+        db.add(Meeting(
+            workspace_id=seed["ws"].workspace_id, source="manual_upload", status="awaiting_speakers"
+        ))
+    db.commit()
+
+    r = _upload(seed, [seed["pm"].member_id])
+
+    assert r.status_code == 202, r.text

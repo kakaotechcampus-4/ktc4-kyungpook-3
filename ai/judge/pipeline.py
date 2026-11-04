@@ -9,6 +9,7 @@
   - 담당자, 근거 원문·화자        → JudgeFinding (1단계가 전사록 전체를 보고 판정)
   - 새 항목/수정, 대상, 상태, 분류 → JudgeResult  (Terra 가 후보와 비교해 판정)
   - 제목, 마감일, 설명 문장        → DraftResult  (Luna 가 생성)
+  - 근거 상태                      → judge/evidence.py 가 Jev 에게 근거 원문에 명시됐는지 다시 물음
 """
 
 from __future__ import annotations
@@ -18,6 +19,8 @@ from datetime import date
 from typing import Any, Protocol
 
 from draft.doc_draft import DraftUnavailableError, draft
+from jev import get_jev
+from judge.evidence import verify, worse
 from judge.final_judge import JudgeUnavailableError, judge
 from judge.semantic_judge import empty_drops, extract_findings_counted
 from llm import get_llm
@@ -154,8 +157,22 @@ def _new_card_candidate(n: int, card: dict[str, Any]) -> NotionCandidate:
                            due_date=card["due_date"], status=card["status"], meeting_note=note)
 
 
+def _evidence_fields(finding: JudgeFinding, drafted: DraftResult, task: str | None, today: date) -> dict[str, Any]:
+    """create 항목의 근거 상태 — 근거 원문에 명시됐는지 Jev 에게 다시 묻는다(호출 1회).
+
+    근거는 finding.evidence 원문만 준다. 비어 있어도 LLM 요약(finding.text)으로 대신하지 않는다.
+    """
+    s = drafted.structured
+    task_status, due_status = verify(finding.evidence, task, s.due_date, s.due_raw, today, get_jev())
+    return {"task_status": task_status, "due_status": due_status, "due_raw": s.due_raw}
+
+
+def _search_fields(found: list[NotionCandidate]) -> dict[str, Any]:
+    return {"similar_count": len(found), "top_similarity": max((c.similarity for c in found), default=None)}
+
+
 def _merge_into(card: dict[str, Any], finding: JudgeFinding, result: JudgeResult, drafted: DraftResult,
-                base: NotionCandidate | None) -> None:
+                base: NotionCandidate | None, today: date, found: list[NotionCandidate]) -> None:
     """앞 카드에 같은 일을 가리키는 뒤 발화를 합친다.
 
     마감 · 상태 · 담당은 뒤 발화가 덮어쓴다 — 나중에 말한 것이 최신 결정이다. 제목 · 근거 · 스냅샷은 앞 카드 그대로.
@@ -166,6 +183,17 @@ def _merge_into(card: dict[str, Any], finding: JudgeFinding, result: JudgeResult
         card["due_date"] = None
     elif drafted.structured.due_date is not None:
         card["due_date"] = drafted.structured.due_date
+    if card["action"] == "create":
+        ev = _evidence_fields(finding, drafted, card["task_title"], today)
+        card["task_status"] = worse(card["task_status"], ev["task_status"])
+        if drafted.structured.due_cleared:
+            card["due_status"], card["due_raw"] = "missing", None
+        elif drafted.structured.due_date is not None:
+            card["due_status"], card["due_raw"] = ev["due_status"], ev["due_raw"]
+        now = _search_fields(found)
+        card["similar_count"] = max(card["similar_count"], now["similar_count"])
+        tops = [t for t in (card["top_similarity"], now["top_similarity"]) if t is not None]
+        card["top_similarity"] = max(tops, default=None)
     if result.status is not None:
         card["status"] = result.status
     if result.category == "assignee":
@@ -291,11 +319,11 @@ def run(
                 "draft", finding.text, "마감을 없애는 변경은 아직 보낼 수 없습니다(BE 는 null 을 '바꾸지 않음'으로 받음)."))
             continue
         if task_id is not None and task_id.startswith(_PENDING):  # 이번 회의 새 항목 카드에 합친다
-            _merge_into(new_cards[int(task_id[len(_PENDING):])], finding, result, drafted, base=None)
+            _merge_into(new_cards[int(task_id[len(_PENDING):])], finding, result, drafted, base=None, today=today, found=found)
             continue
         if task_id in edits:  # 같은 Task 수정 카드에 합친다 — 번복 · 재변경
             base, card = edits[task_id]
-            _merge_into(card, finding, result, drafted, base=base)
+            _merge_into(card, finding, result, drafted, base=base, today=today, found=found)
             if result.category == "scope":
                 scoped.add(task_id)
             if not _has_change(card):
@@ -312,6 +340,8 @@ def run(
             continue
         out.items.append(item)
         if result.is_new:
+            item.update(_evidence_fields(finding, drafted, item["task_title"], today))
+            item.update(_search_fields(found))
             new_cards.append(item)
         else:
             edits[task_id] = (target, item)  # 여기 오는 target 은 덮어 보이지 않은 DB 원래 후보다
