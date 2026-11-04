@@ -313,7 +313,7 @@ def test_one_candidate_is_never_supplemented():
 
 
 @pytest.mark.parametrize("failure", [JudgeUnavailableError("x"), DraftUnavailableError("x")])
-def test_a_failed_supplement_skips_that_candidate_and_keeps_the_rest(failure, caplog):
+def test_a_failed_supplement_marks_that_candidate_and_keeps_the_rest(failure, caplog):
     def draft(finding, result, *, candidate, today):
         if candidate.task_id == "t_api" and isinstance(failure, DraftUnavailableError):
             raise failure
@@ -323,8 +323,17 @@ def test_a_failed_supplement_skips_that_candidate_and_keeps_the_rest(failure, ca
     body = _judge(FakeRun(), _claim(API, LOGIN), jev=FakeJev([_yes(status=0.9, target=0.9)]),
                   judge=FakeJudge(verdicts), draft=draft)
 
-    assert _shape(body) == [("t_login", "status", "done", "certain")]
+    assert _shape(body) == [("t_login", "status", "done", "certain"), ("t_api", "failed", None, None)]
     assert "t_api" in caplog.text and REPLY not in caplog.text
+
+
+def test_a_failed_supplement_next_to_a_run_change_is_a_failed_line_for_that_task():
+    jev = FakeJev([_yes(status=0.9, target=0.9)])
+    judge = FakeJudge({"t_login": JudgeUnavailableError("x")})
+    body = _judge(FakeRun(_update(status="done")), _claim(API, LOGIN), jev=jev, judge=judge)
+
+    assert _shape(body) == [("t_api", "status", "done", "certain"), ("t_login", "failed", None, None)]
+    assert body["changes"][1]["evidence_quote"] == REPLY and body["failure_reason"] is None
 
 
 def test_nothing_found_and_a_failed_supplement_is_a_failed_judgment():

@@ -101,14 +101,14 @@ def _changes(result: pipeline.PipelineResult, claim: dict[str, Any], jev: JevCli
 
 
 def _supplement(result: pipeline.PipelineResult, found: list[NotionCandidate], transcript: Transcript, *, today: date,
-                judge, draft) -> tuple[list[dict[str, Any]], int]:
-    """run 이 고르지 않은 후보의 update item 과 보충에 실패한 후보 수. 후보를 하나만 주므로 run 과 같은 태스크가 나올 수 없다."""
+                judge, draft) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """run 이 고르지 않은 후보의 update item 과 item 이 되지 못한 줄. 후보를 하나만 주므로 run 과 같은 태스크가 나올 수 없다."""
     reply = transcript.segments[-1]
     finding = JudgeFinding(text=reply.text, evidence=[reply.text], source="chat", seq=reply.seq, speaker=reply.speaker,
                            method="llm")
     chosen = {item["target_task_id"] for item in result.items}
     items = []
-    missed = 0
+    lines = []
     for target in found:
         if target.task_id in chosen:
             continue
@@ -119,12 +119,12 @@ def _supplement(result: pipeline.PipelineResult, found: list[NotionCandidate], t
             drafted = draft(finding, verdict, candidate=target, today=today)
         except (pipeline.JudgeUnavailableError, pipeline.DraftUnavailableError) as e:
             logger.warning("보충 판단을 건너뛴다: task=%s %s", target.task_id, type(e).__name__)
-            missed += 1
+            lines.append(_line("failed", reply.text, reply.text, task_id=target.task_id))
             continue
         item = pipeline.to_item(finding, verdict, drafted, target, transcript)
         if item is not None:
             items.append(item)
-    return items, missed
+    return items, lines
 
 
 def judge_reply(item: dict[str, Any], *, run=None, jev: JevClient | None = None, judge=None,
@@ -142,14 +142,13 @@ def judge_reply(item: dict[str, Any], *, run=None, jev: JevClient | None = None,
     candidates = _FixedCandidates(item["candidates"])
     result = (run or pipeline.run)(transcript, workspace_id=item["workspace_id"], today=today, candidates=candidates,
                                    judge_seq=len(item["lines"]))
-    missed = 0
+    lines = []
     if len(item["candidates"]) > 1:
         found = candidates.similar_tasks(item["workspace_id"], transcript.segments[-1].text)
-        added, missed = _supplement(result, found, transcript, today=today, judge=judge or pipeline.judge,
+        added, lines = _supplement(result, found, transcript, today=today, judge=judge or pipeline.judge,
                                     draft=draft or pipeline.draft)
         result.items += added
-    changes = _changes(result, item, jev or pipeline.get_jev())
-    if all(c["field"] == "failed" for c in changes) and (changes or missed):
-        # 비었는데 보충이 실패했으면 바꿀 것 없음으로 닫지 않는다. PM 이 답장을 모르게 된다
-        raise ReplyJudgeFailed(f"판단하지 못한 finding {len(changes) + missed}개만 남았다")
+    changes = _changes(result, item, jev or pipeline.get_jev()) + lines
+    if changes and all(c["field"] == "failed" for c in changes):
+        raise ReplyJudgeFailed(f"판단하지 못한 finding {len(changes)}개만 남았다")
     return {"attempt": item["attempt"], "failure_reason": None, "model_name": MODEL_NAME, "changes": changes}
