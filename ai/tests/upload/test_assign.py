@@ -81,6 +81,7 @@ def env(tmp_path):
         if ev is None or ev.event == "done":
             break
     assert manifest_path(rec, f"upload_{MID}").exists()
+    be.mark_reported(MID, ["SPEAKER_00", "SPEAKER_01"])   # 가져가고 보고한 뒤라야 지정을 받는다(awaiting_speakers)
     A._skip_logged.clear()
     return type("Env", (), {"be": be, "client": client, "wrapped": Wrapped(client), "rec": rec, "clock": clock})
 
@@ -203,6 +204,7 @@ def test_ended_or_missing_cleans_local_without_fail(env, how):
 
 def test_assigned_without_local_manifest_is_skipped_and_logged_once(env, caplog):
     env.be.add_upload("other", audio=b"x")
+    env.be.mark_reported("other", ["SPEAKER_00", "SPEAKER_01"])
     env.be.assign("other", GOOD)
     caplog.set_level(logging.WARNING)
     assert _go(env) is None and _go(env) is None
@@ -212,12 +214,14 @@ def test_assigned_without_local_manifest_is_skipped_and_logged_once(env, caplog)
 
 def test_skips_item_without_manifest_and_takes_next(env):
     env.be.add_upload("other", audio=b"x")
+    env.be.mark_reported("other", ["SPEAKER_00", "SPEAKER_01"])
     env.be.assign("other", GOOD)
     env.be.assign(MID, GOOD)
     assert _go(env) == A.Progress(MID, "mapped")
 
 
 def test_label_mismatch_reports_fail_diarize_and_cleans(env):
+    env.be.mark_reported(MID, ["SPEAKER_00"])   # BE 가 가진 라벨이 로컬 매니페스트와 어긋난다
     env.be.assign(MID, {"SPEAKER_00": "u1"})   # SPEAKER_01 이 빠졌다
     assert _go(env) == A.Progress(MID, "failed")
     assert ("PATCH", f"/meetings/{MID}/fail", {"failed_stage": "diarize"}) in env.be.calls
@@ -228,6 +232,7 @@ def test_label_mismatch_reports_fail_diarize_and_cleans(env):
 
 
 def test_fail_report_error_is_kept_and_retried(env):
+    env.be.mark_reported(MID, ["SPEAKER_00"])   # BE 가 가진 라벨이 로컬 매니페스트와 어긋난다
     env.be.assign(MID, {"SPEAKER_00": "u1"})
     env.wrapped.fail_error = requests.ConnectionError("down")
     assert _go(env, env.wrapped) == A.Progress(MID, "fail_pending")

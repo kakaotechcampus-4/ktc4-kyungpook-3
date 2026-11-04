@@ -762,6 +762,7 @@ async def test_diarized_upload_becomes_mapped_through_the_worker_and_the_pass_le
         await w._intake_once()
     path = R.manifest_path(w.recordings_dir, "upload_m1")
     assert _status(path) == "diarized"
+    fake.mark_reported("m1", ["SPEAKER_00", "SPEAKER_01"])   # 가져가고 보고한 뒤에야 지정을 받는다
     fake.assign("m1", {"SPEAKER_00": "u1", "SPEAKER_01": None})
     await w._intake_once()
     assert _status(path) == "mapped"

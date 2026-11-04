@@ -133,6 +133,18 @@ class BeClient:
         """
         return self._call("PATCH", f"/uploads/{meeting_id}/claim")
 
+    def report_speakers(self, meeting_id: str, speakers: list[dict]) -> dict:
+        """화자 분리가 끝난 업로드 회의의 라벨과 샘플 구간을 보고한다(POST /uploads/{id}/speakers). 성공하면 {meeting_id, status}.
+
+        speakers: [{label, total_sec, samples: [{start, end}]}]. 같은 내용을 다시 보내면 BE 가 200 을 주고(status 는 현재 값)
+        응답을 잃은 재시도가 안전하다. BeError: 409 SPEAKERS_ALREADY_REPORTED(details.labels 가 저장된 라벨),
+        409 MEETING_ALREADY_ENDED(details.status), 409 UPLOAD_NOT_CLAIMED, 404 MEETING_NOT_FOUND, 400(details.fields), NETWORK.
+        """
+        data = self._call("POST", f"/uploads/{meeting_id}/speakers", {"speakers": speakers})
+        if not isinstance(data, dict):
+            raise BeError("BAD_RESPONSE", "라벨 보고 응답에 data 객체가 없다")
+        return data
+
     def assigned_uploads(self) -> list[dict]:
         """PM 이 화자 지정을 끝냈고 아직 resume 하지 않은 업로드 회의(GET /uploads/assigned), 지정 순서.
 

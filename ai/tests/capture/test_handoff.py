@@ -700,8 +700,11 @@ def test_an_upload_meeting_can_be_failed_through_fail_meeting():
 
 # ─────────────────────────────────────────────────────────── 화자 지정 결과 받기
 def _assigned_upload(fake, mid, mapping=None, **kw):
+    """가져가고 보고한 뒤 지정한다(가짜 BE 의 assign 은 awaiting_speakers 이고 라벨 집합이 같을 때만 받는다)."""
+    mapping = mapping or {"SPEAKER_00": "u1"}
     fake.add_upload(mid, **kw)
-    fake.assign(mid, mapping or {"SPEAKER_00": "u1"})
+    fake.mark_reported(mid, sorted(mapping))
+    fake.assign(mid, mapping)
 
 
 def test_assigned_uploads_lists_assigned_not_resumed_in_assign_order_with_the_token():
@@ -816,3 +819,161 @@ def test_member_names_come_from_the_meetings_workspace():
     with pytest.raises(H.BeError) as e:
         client.member_names("ws-9")
     assert e.value.code == "WORKSPACE_NOT_FOUND"
+
+
+# ─────────────────────────────────────────────────────────── 화자 라벨 보고
+def _spk(label, total=10.0, samples=((1.0, 4.0),)):
+    return {"label": label, "total_sec": total, "samples": [{"start": a, "end": b} for a, b in samples]}
+
+
+def _claimed(fake, mid="m-up1", **kw):
+    fake.add_upload(mid, **kw)
+    _upload_client(fake).claim_upload(mid)
+
+
+def _post(fake, mid, body, token="svc-token"):
+    r = fake.request("POST", f"http://be/api/v1/uploads/{mid}/speakers", json=body, headers={"X-Service-Token": token})
+    return r.status_code, r.json()
+
+
+def test_report_speakers_posts_the_body_with_the_token_and_returns_meeting_and_status():
+    fake = FakeBe()
+    _claimed(fake)
+    body = [_spk("SPEAKER_00"), _spk("SPEAKER_01", 3.5)]
+    got = _upload_client(fake).report_speakers("m-up1", body)
+    assert got == {"meeting_id": "m-up1", "status": "awaiting_speakers"}
+    assert fake.calls[-1] == ("POST", "/uploads/m-up1/speakers", {"speakers": body})
+    assert fake.headers[-1]["X-Service-Token"] == "svc-token"
+    assert fake.meetings["m-up1"]["status"] == "awaiting_speakers"
+
+
+def test_report_speakers_without_a_dict_data_is_bad_response():
+    class Odd(FakeBe):
+        def _uploads(self, *a, **k):
+            return fake_be._ok(200, None)
+    with pytest.raises(H.BeError) as e:
+        _upload_client(Odd()).report_speakers("m", [_spk("A")])
+    assert e.value.code == "BAD_RESPONSE"
+
+
+def test_fake_same_content_in_another_order_and_notation_is_200_and_keeps_the_status():
+    fake = FakeBe()
+    _claimed(fake)
+    client = _upload_client(fake)
+    client.report_speakers("m-up1", [_spk("B", 2, ((5, 6), (1, 2))), _spk("A", 1)])
+    again = client.report_speakers("m-up1", [_spk("A", 1.0), _spk("B", 2.0, ((1.0, 2.0), (5.0, 6.0)))])
+    assert again == {"meeting_id": "m-up1", "status": "awaiting_speakers"}
+    assert fake.uploads["m-up1"]["speakers"] == [_spk("A", 1.0),
+                                                 _spk("B", 2.0, ((1.0, 2.0), (5.0, 6.0)))]
+
+
+def test_fake_different_content_is_already_reported_409_with_sorted_labels():
+    fake = FakeBe()
+    _claimed(fake)
+    client = _upload_client(fake)
+    client.report_speakers("m-up1", [_spk("SPEAKER_01"), _spk("SPEAKER_00")])
+    with pytest.raises(H.BeError) as e:
+        client.report_speakers("m-up1", [_spk("SPEAKER_00", 99.0)])
+    assert (e.value.status, e.value.code) == (409, "SPEAKERS_ALREADY_REPORTED")
+    assert e.value.details["labels"] == ["SPEAKER_00", "SPEAKER_01"]
+    assert e.value.details["status"] == "awaiting_speakers"
+
+
+def test_fake_unclaimed_upload_is_not_claimed_409():
+    fake = FakeBe()
+    fake.add_upload("m-up1")
+    with pytest.raises(H.BeError) as e:
+        _upload_client(fake).report_speakers("m-up1", [_spk("A")])
+    assert (e.value.status, e.value.code) == (409, "UPLOAD_NOT_CLAIMED")
+    assert fake.uploads["m-up1"]["speakers"] is None
+
+
+@pytest.mark.parametrize("status", ["done", "failed"])
+def test_fake_ended_meeting_is_checked_before_not_claimed(status):
+    fake = FakeBe()
+    fake.add_upload("m-up1")                         # 가져가지 않았다
+    fake.meetings["m-up1"]["status"] = status
+    with pytest.raises(H.BeError) as e:
+        _upload_client(fake).report_speakers("m-up1", [_spk("A")])
+    assert (e.value.status, e.value.code) == (409, "MEETING_ALREADY_ENDED")
+    assert e.value.details["status"] == status
+
+
+def test_fake_unknown_meeting_is_404():
+    with pytest.raises(H.BeError) as e:
+        _upload_client(FakeBe()).report_speakers("nope", [_spk("A")])
+    assert (e.value.status, e.value.code) == (404, "MEETING_NOT_FOUND")
+
+
+def test_fake_wrong_token_is_unauthenticated():
+    fake = FakeBe()
+    _claimed(fake)
+    with pytest.raises(H.BeError) as e:
+        _upload_client(fake, token="wrong").report_speakers("m-up1", [_spk("A")])
+    assert e.value.code == "UNAUTHENTICATED"
+
+
+@pytest.mark.parametrize("speakers", [
+    [],
+    [_spk("")],
+    [_spk("   ")],
+    [_spk("x" * 65)],
+    [_spk("A"), _spk("A")],
+    [_spk("A", -1.0)],
+    [_spk("A", float("nan"))],
+    [_spk("A", float("inf"))],
+    [_spk("A", 1.0, ((-0.5, 1.0),))],
+    [_spk("A", 1.0, ((2.0, 2.0),))],
+    [_spk("A", 1.0, ((3.0, 2.0),))],
+    [_spk("A", 1.0, ((1.0, float("inf")),))],
+])
+def test_fake_invalid_body_is_400_invalid_request_with_fields_before_the_meeting_check(speakers):
+    fake = FakeBe()                                  # 회의가 없어도 검증이 먼저다
+    status, payload = _post(fake, "nope", {"speakers": speakers})
+    assert status == 400
+    assert payload["error"]["code"] == "INVALID_REQUEST"
+    assert payload["error"]["details"]["fields"]
+
+
+def test_fake_label_of_64_chars_and_zero_total_are_valid():
+    fake = FakeBe()
+    _claimed(fake)
+    assert _upload_client(fake).report_speakers("m-up1", [_spk("x" * 64, 0.0, ())])["status"] == "awaiting_speakers"
+
+
+def test_fake_same_content_after_assign_is_200_with_the_current_status():
+    fake = FakeBe()
+    _claimed(fake)
+    client = _upload_client(fake)
+    client.report_speakers("m-up1", [_spk("SPEAKER_00")])
+    fake.assign("m-up1", {"SPEAKER_00": "u1"})
+    assert client.report_speakers("m-up1", [_spk("SPEAKER_00")])["status"] == "processing"
+    assert fake.meetings["m-up1"]["status"] == "processing"
+
+
+def test_fake_report_lost_applies_on_the_server_but_the_response_is_lost():
+    fake = FakeBe()
+    _claimed(fake)
+    fake.speakers_lost = True
+    with pytest.raises(H.BeError) as e:
+        _upload_client(fake).report_speakers("m-up1", [_spk("A")])
+    assert e.value.code == "NETWORK"
+    assert fake.meetings["m-up1"]["status"] == "awaiting_speakers"
+    fake.speakers_lost = False
+    assert _upload_client(fake).report_speakers("m-up1", [_spk("A")])["status"] == "awaiting_speakers"
+
+
+def test_fake_assign_is_strict_about_state_and_label_set_and_repeat_is_a_noop():
+    fake = FakeBe()
+    fake.add_upload("m-up1")
+    with pytest.raises(AssertionError):              # 아직 보고 전이라 awaiting_speakers 가 아니다
+        fake.assign("m-up1", {"SPEAKER_00": "u1"})
+    _claimed(fake, "m-up2")
+    _upload_client(fake).report_speakers("m-up2", [_spk("SPEAKER_00"), _spk("SPEAKER_01")])
+    with pytest.raises(AssertionError):              # 라벨 집합이 다르다
+        fake.assign("m-up2", {"SPEAKER_00": "u1"})
+    assert fake.meetings["m-up2"]["status"] == "awaiting_speakers"
+    fake.assign("m-up2", {"SPEAKER_00": "u1", "SPEAKER_01": None})
+    n = fake._assign_n
+    fake.assign("m-up2", {"SPEAKER_00": "u1", "SPEAKER_01": None})   # 같은 지정 반복
+    assert fake._assign_n == n and fake.meetings["m-up2"]["status"] == "processing"
