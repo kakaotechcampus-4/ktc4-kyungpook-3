@@ -3,7 +3,9 @@ import {
   fetchPushPublicKey,
   findPushSubscription,
   savePushSubscription,
+  trackPushSubscribing,
 } from '@/entities/notification'
+import { captureSession } from '@/entities/user'
 import { applicationServerKey, registerPushWorker } from '../lib/pushWorker'
 
 /**
@@ -46,14 +48,27 @@ function environmentState(): PushState {
   return { status: 'idle', publicKey: null }
 }
 
-async function serverState(): Promise<PushState> {
-  const [publicKey, subscription] = await Promise.all([
-    fetchPushPublicKey(),
-    findPushSubscription(),
-  ])
-  if (publicKey === null) return { status: 'no-server-key' }
-  if (subscription && Notification.permission === 'granted') return { status: 'subscribed' }
-  return { status: 'idle', publicKey }
+/**
+ * 서버에 물어 정하는 상태. 허용돼 있고 브라우저 구독이 있으면 지금 계정으로 다시 등록한 뒤에 `subscribed` 다 —
+ * 브라우저 구독만 보고 켜졌다고 하면, 서버 등록이 실패했던 기기가 다시 열 때 켜진 것처럼 보이고 다시 시도할 길이 없다 (#330 검증 2).
+ * 같은 endpoint 를 다시 보내면 지금 계정으로 옮기므로 열 때마다 보내도 된다. 재등록이 실패하면 `error` 라 다시 시도할 수 있다
+ */
+function serverState(): Promise<PushState> {
+  const isCurrentSession = captureSession()
+  return trackPushSubscribing(async (): Promise<PushState> => {
+    const [publicKey, subscription] = await Promise.all([
+      fetchPushPublicKey(),
+      findPushSubscription(),
+    ])
+    if (publicKey === null) return { status: 'no-server-key' }
+    if (!subscription || Notification.permission !== 'granted') return { status: 'idle', publicKey }
+    try {
+      const saved = await savePushSubscription(subscription, isCurrentSession)
+      return saved ? { status: 'subscribed' } : { status: 'idle', publicKey }
+    } catch {
+      return { status: 'error', publicKey }
+    }
+  })
 }
 
 export interface BrowserPush {
@@ -91,26 +106,22 @@ export function useBrowserPush(): BrowserPush {
       return
     }
     setState({ status: 'subscribing' })
-    void (async () => {
-      try {
-        const permission = await Notification.requestPermission()
-        if (permission !== 'granted') {
-          setState(permission === 'denied' ? { status: 'denied' } : { status: 'idle', publicKey })
-          return
-        }
-        const registration = await registerPushWorker()
-        const subscription =
-          (await registration.pushManager.getSubscription()) ??
-          (await registration.pushManager.subscribe({
-            userVisibleOnly: true,
-            applicationServerKey: applicationServerKey(publicKey),
-          }))
-        await savePushSubscription(subscription)
-        setState({ status: 'subscribed' })
-      } catch {
-        setState({ status: 'error', publicKey })
-      }
-    })()
+    // 시작한 세션을 잡아 둔다. 끝나기 전에 세션이 바뀌면 서버에 보내지 않고 브라우저 구독을 푼다
+    const isCurrentSession = captureSession()
+    void trackPushSubscribing(async (): Promise<PushState> => {
+      const permission = await Notification.requestPermission()
+      if (permission !== 'granted')
+        return permission === 'denied' ? { status: 'denied' } : { status: 'idle', publicKey }
+      const registration = await registerPushWorker()
+      const subscription =
+        (await registration.pushManager.getSubscription()) ??
+        (await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: applicationServerKey(publicKey),
+        }))
+      const saved = await savePushSubscription(subscription, isCurrentSession)
+      return saved ? { status: 'subscribed' } : { status: 'idle', publicKey }
+    }).then(setState, () => setState({ status: 'error', publicKey }))
   }, [state])
 
   return { state, enable }

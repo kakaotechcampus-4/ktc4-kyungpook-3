@@ -29,7 +29,8 @@ export function useLogout(): LogoutControl {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const mutation = useMutation({
-    // 세션이 있어야 서버 구독을 지울 수 있어 로그아웃 요청보다 먼저 한다. 실패해도 로그아웃은 이어 간다
+    // 세션이 있어야 서버 구독을 지울 수 있어 로그아웃 요청보다 먼저 한다. 켜는 중인 구독을 기다리고 3초를 넘거나 실패해도
+    // 로그아웃은 이어 간다
     onMutate: () => removePushSubscription().catch(() => undefined),
     mutationFn: logout,
     onSuccess: async () => {

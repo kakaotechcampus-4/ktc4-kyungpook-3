@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from '@testing-library/react'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http } from 'msw'
 import { onTestFinished } from 'vitest'
@@ -6,6 +6,7 @@ import { paths } from '@/shared/config/routes'
 import { db } from '@/shared/mock/db'
 import { fail } from '@/shared/mock/envelope'
 import { server } from '@/shared/mock/server'
+import { deferred } from '@/shared/test/deferred'
 import { recordRequestBodies, recordRequests } from '@/shared/test/requests'
 import { renderApp } from './test/renderApp'
 
@@ -21,17 +22,24 @@ interface PushBrowserOptions {
   permission?: NotificationPermission
   answer?: NotificationPermission
   subscribed?: boolean
+  /** 주면 서비스 워커 등록이 이 약속이 풀릴 때까지 끝나지 않는다 */
+  registerGate?: Promise<void>
+  /** 브라우저 구독 해제가 끝나지 않는다 */
+  unsubscribeHangs?: boolean
 }
 
 function installPushBrowser({
   permission = 'default',
   answer = 'granted',
   subscribed = false,
+  registerGate,
+  unsubscribeHangs = false,
 }: PushBrowserOptions = {}) {
   const subscription = {
     endpoint: ENDPOINT,
     toJSON: () => ({ endpoint: ENDPOINT, expirationTime: null, keys: KEYS }),
     unsubscribe: vi.fn(() => {
+      if (unsubscribeHangs) return new Promise<boolean>(() => {})
       current = null
       return Promise.resolve(true)
     }),
@@ -48,9 +56,10 @@ function installPushBrowser({
   const registration = { active: {}, installing: null, waiting: null, pushManager }
   const container = {
     register: vi.fn<(url: string, options: RegistrationOptions) => Promise<typeof registration>>(
-      () => {
+      async () => {
+        await registerGate
         registered = true
-        return Promise.resolve(registration)
+        return registration
       },
     ),
     getRegistrations: vi.fn(() => Promise.resolve(registered ? [registration] : [])),
@@ -163,27 +172,181 @@ describe('설정의 브라우저 푸시 (#330)', () => {
     expect(db.push.subscriptions).toHaveLength(1)
   })
 
-  it('이미 구독한 기기는 켜져 있다고 보인다', async () => {
+  it('이미 구독한 기기는 지금 계정으로 다시 등록하고 켜져 있다고 보인다', async () => {
     db.push.publicKey = 'AQID'
     installPushBrowser({ permission: 'granted', subscribed: true })
+    const bodies = recordRequestBodies('POST', '/push/subscriptions')
     const { control } = await openSettings()
     await waitFor(() =>
       expect(control).toHaveTextContent('이 기기에서 브라우저 알림을 받고 있어요.'),
     )
     expect(within(control).queryByRole('button')).toBeNull()
+    expect(bodies).toEqual([{ endpoint: ENDPOINT, keys: KEYS }])
+    expect(db.push.subscriptions).toEqual([{ endpoint: ENDPOINT, keys: KEYS, user_id: 'us_01' }])
+  })
+
+  it('서버 등록이 실패한 뒤 다시 열면 다시 등록하고 나서 켜졌다고 보인다 (#330 검증 2)', async () => {
+    db.push.publicKey = 'AQID'
+    server.use(
+      http.post('/api/v1/push/subscriptions', () => fail('INTERNAL_ERROR', 'boom', 500), {
+        once: true,
+      }),
+    )
+    const user = userEvent.setup()
+    installPushBrowser()
+    const bodies = recordRequestBodies('POST', '/push/subscriptions')
+    const first = await openSettings()
+    const enable = await within(first.control).findByRole('button', { name: '브라우저 알림 켜기' })
+    await waitFor(() => expect(enable).toBeEnabled())
+    await user.click(enable)
+    expect(await within(first.control).findByRole('alert')).toHaveTextContent(
+      '브라우저 알림을 켜지 못했어요.',
+    )
+    expect(db.push.subscriptions).toEqual([])
+    first.app.unmount()
+
+    const { control } = await openSettings()
+
+    await waitFor(() =>
+      expect(control).toHaveTextContent('이 기기에서 브라우저 알림을 받고 있어요.'),
+    )
+    expect(bodies).toEqual([
+      { endpoint: ENDPOINT, keys: KEYS },
+      { endpoint: ENDPOINT, keys: KEYS },
+    ])
+    expect(db.push.subscriptions).toEqual([{ endpoint: ENDPOINT, keys: KEYS, user_id: 'us_01' }])
+  })
+
+  it('다시 열 때 재등록이 실패하면 켜졌다고 하지 않고 다시 시도할 수 있다 (#330 검증 2)', async () => {
+    db.push.publicKey = 'AQID'
+    server.use(
+      http.post('/api/v1/push/subscriptions', () => fail('INTERNAL_ERROR', 'boom', 500), {
+        once: true,
+      }),
+    )
+    const user = userEvent.setup()
+    installPushBrowser({ permission: 'granted', subscribed: true })
+    const { control } = await openSettings()
+
+    expect(await within(control).findByRole('alert')).toHaveTextContent(
+      '브라우저 알림을 켜지 못했어요.',
+    )
+    expect(control).not.toHaveTextContent('이 기기에서 브라우저 알림을 받고 있어요.')
+    expect(db.push.subscriptions).toEqual([])
+
+    await user.click(within(control).getByRole('button', { name: '다시 시도' }))
+    await waitFor(() =>
+      expect(control).toHaveTextContent('이 기기에서 브라우저 알림을 받고 있어요.'),
+    )
+    expect(db.push.subscriptions).toEqual([{ endpoint: ENDPOINT, keys: KEYS, user_id: 'us_01' }])
   })
 })
 
 describe('로그아웃의 푸시 구독 해제 (#330)', () => {
+  async function clickLogout(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(screen.getByRole('button', { name: /^내 계정/ }))
+    await user.click(await screen.findByRole('menuitem', { name: '로그아웃' }))
+  }
+
   async function logout() {
     const user = userEvent.setup()
     const app = renderApp(paths.members('ws_01'))
     await screen.findByText('김서연')
-    await user.click(screen.getByRole('button', { name: /^내 계정/ }))
-    await user.click(await screen.findByRole('menuitem', { name: '로그아웃' }))
+    await clickLogout(user)
     expect(await screen.findByRole('heading', { name: '로그인' })).toBeInTheDocument()
     await app.expectPath('/login')
   }
+
+  /** 설정에서 브라우저 알림 켜기를 누른다. 서비스 워커 등록은 걸린 채로 둔다 */
+  async function startEnabling(user: ReturnType<typeof userEvent.setup>) {
+    const { app, control } = await openSettings()
+    const enable = await within(control).findByRole('button', { name: '브라우저 알림 켜기' })
+    await waitFor(() => expect(enable).toBeEnabled())
+    await user.click(enable)
+    expect(control).toHaveTextContent('브라우저 알림을 켜고 있어요.')
+    return app
+  }
+
+  /** 로그아웃의 3초 상한을 시계로 넘긴다. 그 밖의 시간은 실제처럼 흐른다 */
+  function fakeTimeouts() {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'], shouldAdvanceTime: true })
+    onTestFinished(() => {
+      vi.useRealTimers()
+    })
+  }
+
+  it('켜는 중에 로그아웃하면 켜기가 끝나기를 기다린 뒤 그 구독을 서버와 브라우저에서 지운다 (#330 검증 1)', async () => {
+    db.push.publicKey = 'AQID'
+    const gate = deferred()
+    const browser = installPushBrowser({ registerGate: gate.promise })
+    const log = recordRequests()
+    const user = userEvent.setup()
+    const app = await startEnabling(user)
+    await waitFor(() => expect(browser.container.register).toHaveBeenCalledTimes(1))
+
+    await clickLogout(user)
+    gate.resolve()
+
+    expect(await screen.findByRole('heading', { name: '로그인' })).toBeInTheDocument()
+    await app.expectPath('/login')
+    const saved = log.timeline.indexOf('answer POST /push/subscriptions')
+    const removed = log.timeline.indexOf('answer DELETE /push/subscriptions')
+    const loggedOut = log.timeline.indexOf('start POST /auth/logout')
+    expect(saved).toBeGreaterThanOrEqual(0)
+    expect(saved).toBeLessThan(removed)
+    expect(removed).toBeLessThan(loggedOut)
+    expect(db.push.subscriptions).toEqual([])
+    expect(browser.subscription.unsubscribe).toHaveBeenCalledTimes(1)
+    expect(await browser.pushManager.getSubscription()).toBeNull()
+  })
+
+  it('켜기가 3초를 넘기면 기다리지 않고 로그아웃하고, 늦게 끝난 켜기는 서버에 보내지 않고 브라우저 구독을 푼다 (#330 검증 1·3)', async () => {
+    fakeTimeouts()
+    db.push.publicKey = 'AQID'
+    const gate = deferred()
+    const browser = installPushBrowser({ registerGate: gate.promise })
+    const bodies = recordRequestBodies('POST', '/push/subscriptions')
+    const user = userEvent.setup({ advanceTimers: (ms) => vi.advanceTimersByTime(ms) })
+    const app = await startEnabling(user)
+
+    await clickLogout(user)
+    await act(() => vi.advanceTimersByTimeAsync(3_000))
+
+    expect(await screen.findByRole('heading', { name: '로그인' })).toBeInTheDocument()
+    await app.expectPath('/login')
+    expect(db.authenticated).toBe(false)
+
+    // 세션이 끝난 뒤에 서비스 워커 등록이 끝난다. 앞 계정의 구독이 서버에도 브라우저에도 남지 않는다
+    gate.resolve()
+    await waitFor(() => expect(browser.subscription.unsubscribe).toHaveBeenCalledTimes(1))
+    expect(bodies).toEqual([])
+    expect(db.push.subscriptions).toEqual([])
+    expect(await browser.pushManager.getSubscription()).toBeNull()
+  })
+
+  it('브라우저 구독 해제가 끝나지 않아도 3초 뒤 로그아웃한다 (#330 검증 3)', async () => {
+    fakeTimeouts()
+    db.push.subscriptions = [{ endpoint: ENDPOINT, keys: KEYS, user_id: 'us_01' }]
+    const browser = installPushBrowser({
+      permission: 'granted',
+      subscribed: true,
+      unsubscribeHangs: true,
+    })
+    const log = recordRequests()
+    const user = userEvent.setup({ advanceTimers: (ms) => vi.advanceTimersByTime(ms) })
+    const app = renderApp(paths.members('ws_01'))
+    await screen.findByText('김서연')
+
+    await clickLogout(user)
+    await waitFor(() => expect(browser.subscription.unsubscribe).toHaveBeenCalledTimes(1))
+    expect(log.started.some(({ path }) => path === '/auth/logout')).toBe(false)
+    await act(() => vi.advanceTimersByTimeAsync(3_000))
+
+    expect(await screen.findByRole('heading', { name: '로그인' })).toBeInTheDocument()
+    await app.expectPath('/login')
+    expect(db.authenticated).toBe(false)
+    expect(db.push.subscriptions).toEqual([])
+  })
 
   it('로그아웃 요청 전에 지금 endpoint 의 구독을 서버와 브라우저에서 지운다', async () => {
     db.push.subscriptions = [{ endpoint: ENDPOINT, keys: KEYS, user_id: 'us_01' }]
