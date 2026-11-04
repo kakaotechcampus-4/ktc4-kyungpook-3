@@ -8,11 +8,13 @@ import threading
 from datetime import datetime, timedelta, timezone
 
 import pytest
+from fastapi.responses import FileResponse
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app.api import meetings as meetings_api
 from app.core.database import Base, get_db
 from app.main import app
 from app.services import upload_storage
@@ -531,6 +533,25 @@ def test_audio_range_request_gets_206_with_exact_bytes(db, seed):
     assert len(r.content) == 100
 
 
+def test_audio_returns_the_db_connection_before_sending_the_file(db, seed, monkeypatch):
+    # FastAPI 0.118 부터 get_db 정리는 응답을 다 보낸 뒤라, 닫지 않으면 파일을 보내는 동안 연결을 잡고 있다
+    meeting = _meeting(db, seed)
+    _put_audio(meeting)
+    in_transaction_when_sending = []
+
+    class RecordingFileResponse(FileResponse):
+        async def __call__(self, scope, receive, send):
+            in_transaction_when_sending.append(db.in_transaction())
+            await super().__call__(scope, receive, send)
+
+    monkeypatch.setattr(meetings_api, "FileResponse", RecordingFileResponse)
+
+    r = _audio(meeting.meeting_id)
+
+    assert r.status_code == 200, r.text
+    assert in_transaction_when_sending == [False]
+
+
 def _stored(db, meeting, *, filename, content_type):
     upload = db.get(MeetingUpload, meeting.meeting_id)
     upload.stored_filename = filename
@@ -617,10 +638,12 @@ def test_upload_to_done_flow_with_speaker_assignment(db, seed):
     ai = TestClient(app, base_url="https://testserver")
     headers = {"X-Service-Token": SERVICE_TOKEN}
     pm = _client()
+    # /audio 가 세션을 닫으면 테스트가 같이 쓰는 세션의 seed 객체가 떨어져 나가므로 ID 를 먼저 꺼내 둔다
+    ws_id, jimin_id, pm_id = seed["ws"].workspace_id, seed["jimin"].member_id, seed["pm"].member_id
 
     up = pm.post(
-        f"/api/v1/workspaces/{seed['ws'].workspace_id}/meetings/upload",
-        data={"title": "주간 회의", "attendee_member_ids": [seed["jimin"].member_id]},
+        f"/api/v1/workspaces/{ws_id}/meetings/upload",
+        data={"title": "주간 회의", "attendee_member_ids": [jimin_id]},
         files={"file": ("회의.wav", WAV, "audio/wav")},
     )
     assert up.status_code == 202, up.text
@@ -639,7 +662,7 @@ def test_upload_to_done_flow_with_speaker_assignment(db, seed):
 
     def register():
         return ai.post("/api/v1/extractions", headers=headers, json={
-            "meeting_id": meeting_id, "workspace_id": seed["ws"].workspace_id, "items": [],
+            "meeting_id": meeting_id, "workspace_id": ws_id, "items": [],
         })
 
     early = register()
@@ -649,7 +672,7 @@ def test_upload_to_done_flow_with_speaker_assignment(db, seed):
     assert folder.exists()
 
     mapping = {
-        "SPEAKER_00": seed["jimin"].member_id, "SPEAKER_01": seed["pm"].member_id, "SPEAKER_02": None,
+        "SPEAKER_00": jimin_id, "SPEAKER_01": pm_id, "SPEAKER_02": None,
     }
     put = pm.put(f"/api/v1/meetings/{meeting_id}/speakers", json={"mapping": mapping})
     assert put.status_code == 200, put.text

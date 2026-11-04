@@ -803,3 +803,16 @@ def test_resume_without_an_object_mapping_is_bad_response():
     with pytest.raises(H.BeError) as e:
         _upload_client(Odd()).resume_upload("m")
     assert e.value.code == "BAD_RESPONSE"
+
+
+def test_member_names_come_from_the_meetings_workspace():
+    """PM 이 온보딩에서 정한 이름과 별칭(BE 봇용 조회). 탈퇴한 팀원은 BE 가 빼고 준다."""
+    fake = FakeBe()
+    fake.members = {"ws-1": [{"member_id": "m1", "name": "김동우", "discord_user_id": "1", "aliases": ["동우형"]}]}
+    client = H.BeClient("http://be", session=fake, service_token="svc-token")
+    assert client.member_names("ws-1") == [{"member_id": "m1", "name": "김동우", "discord_user_id": "1",
+                                            "aliases": ["동우형"]}]
+    assert fake.calls[-1][:2] == ("GET", "/workspaces/ws-1/members/names")
+    with pytest.raises(H.BeError) as e:
+        client.member_names("ws-9")
+    assert e.value.code == "WORKSPACE_NOT_FOUND"

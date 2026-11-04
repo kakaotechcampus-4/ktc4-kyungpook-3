@@ -50,7 +50,7 @@ AI 가 지정 결과를 받는 방식
 - **AI 방식은 A(목록과 재개).** `resumed_at` 은 조건부 UPDATE 로 한 번만 채우고, 이미 가져갔어도 회의가 processing 이면 같은 mapping 으로 200 을 다시 준다(응답을 잃은 AI 가 mapping 을 다시 얻을 수 있게 #269 리뷰에서 정했다). 그래서 같은 회의를 두 번 처리하지 않는 책임은 AI 쪽에 있다. 이 책임을 AI 가 받아들였는지는 #255 에서 확인된 적이 없어 확인이 필요하다. B 는 경로가 하나라 단순하지만 AI 가 어떤 회의를 기다리는지 직접 기억해야 하고, 재시작하면 찾을 방법이 없다. 두 번 처리 방지는 A 도 AI 몫이라 이 점은 둘의 차이가 아니다.
 - **샘플 오디오는 A(원본 재생).** `GET /meetings/{id}/audio` 하나이고 Range 는 starlette `FileResponse` 가 처리한다(테스트에서 `Range: bytes=0-99` 에 206·`Content-Range`·100바이트 확인). 재생 응답의 Content-Type 은 클라이언트가 올린 값(검증 없이 저장됨)이 아니라 저장한 확장자로 정한 audio/* 허용 목록 값이고(목록 밖은 octet-stream), `nosniff` 와 `no-store` 헤더를 붙인다. 파일 앞 12바이트만 검사해 `text/html` 로 올린 파일이 API 출처에서 열릴 수 있기 때문이다. B 는 BE 이미지에 ffmpeg 같은 오디오 도구가 없다. C 는 저장 공간과 API 가 더 필요하다(#255 에 BE 입장으로 적음).
 - **새 코드 4개를 둔다.** 모두 409 이고 `details.status` 를 담는다. `SPEAKERS_NOT_ASSIGNED` 를 따로 둔 이유는 resume 에서 "대기 중이지만 아직 지정 전"에 `MEETING_NOT_AWAITING_SPEAKERS` 를 쓰면 이름의 뜻이 반대가 되기 때문이다. 코드를 줄이는 안은 의미가 흐려져 쓰지 않았다.
-- **sweeper 는 이번에 하지 않는다.** 대기 만료 TTL 이 pyannoteAI 결과 24시간 보관과 AI 가 분리 결과를 자체 저장하는지에 달려 있었다. AI 는 #255 에서 분리 결과를 바로 매니페스트·`diarization.json` 에 저장해 대기가 24시간 보관에 묶이지 않는다고 답했다(2026-11-02). sweeper 는 #301 에서 따로 정한다. 그동안은 실패 보고(`PATCH /meetings/{id}/fail`)로 푼다(#255 에 적음). 대기 상태에서도 그 보고가 된다.
+- **sweeper 는 이번에 하지 않는다.** 대기 만료 TTL 이 pyannoteAI 결과 24시간 보관과 AI 가 분리 결과를 자체 저장하는지에 달려 있었다. AI 는 #255 에서 분리 결과를 바로 매니페스트·`diarization.json` 에 저장해 대기가 24시간 보관에 묶이지 않는다고 답했다(2026-11-02). sweeper 는 뒤이은 결정 [멈춘 업로드 회의를 서버 안 워커가 실패로 정리한다](2026-11-03-upload-sweeper.md)(#301)에서 만들었다. 그동안은 실패 보고(`PATCH /meetings/{id}/fail`)로 푼다(#255 에 적음). 대기 상태에서도 그 보고가 된다.
 - **지정 제출의 규칙은 BE 기본값이다.** 보고된 라벨 전부가 키에 있어야 하고(지정하지 않을 라벨은 `null`, 모르는 라벨은 `details.unknown_labels`, 빠진 라벨은 `details.missing_labels` 로 400), 같은 멤버를 두 라벨에 지정하는 것은 허용한다. 이미 저장된 것과 같은 mapping 의 재제출은 검증보다 먼저 판정해 현재 상태로 200 을 준다. 요청이 겹치거나 응답이 유실돼도 안전하고, 그 사이 멤버가 탈퇴해도 같은 요청이 400 으로 바뀌지 않는다. 다른 mapping 이면 409 다. 같은 멤버 다중 지정 허용과 `null`(외부 참석자)은 #256 에서 FE 가 받아들였다. 모든 라벨 지정은 AI 입장(#255)과 같다. 지정 후보를 참석자로 제한할지는 FE 답이 없어, 지금은 워크스페이스의 탈퇴하지 않은 멤버면 받는다.
 
 ## 장단점과 감수한 제약
@@ -59,7 +59,7 @@ AI 가 지정 결과를 받는 방식
 - 목록과 재개 방식은 경로가 2개 늘고, 응답을 잃은 재시도는 resume 이 같은 mapping 으로 200 을 다시 줘서 풀지만, 두 번 처리 방지는 AI 가 해야 한다.
 - 원본 재생은 FE 가 구간 재생을 구현해야 하고, 브라우저별 m4a·webm 재생과 Range 실사용은 FE 에서 확인해야 한다. 폴더가 지워지면(`done`·`failed`) 재생은 404 이고, 화자 조회의 `audio` 는 null 이라 FE 가 "회의 없음"과 가를 수 있다(#270 리뷰).
 - 화자 조회의 후보는 업로드 때 고른 참석자 중 제출이 받는 멤버(이 워크스페이스의 탈퇴하지 않은 멤버)만 준다. 조회와 제출이 같은 기준이라 고르면 400 이 되는 후보가 보이지 않는다(#270 리뷰).
-- sweeper 가 없어서 PM 이 지정하지 않는 대기 회의는 남는다. 정리는 실패 보고로 하며 자동은 아니다.
+- 이 결정 시점에는 sweeper 가 없어 PM 이 지정하지 않는 대기 회의가 남았다. 지금은 [sweeper](2026-11-03-upload-sweeper.md) 가 라벨 보고 뒤 7일이 지나면 failed(`speaker_assignment_expired`)로 정리한다.
 - 지정이 한 번 저장되면 다른 지정으로 고칠 수 없다(409).
 - sqlite 테스트로 PostgreSQL 동시성은 볼 수 없다. 동시 제출 테스트는 `TEST_DATABASE_URL` 이 있을 때만 돈다.
 
@@ -67,7 +67,7 @@ AI 가 지정 결과를 받는 방식
 
 - 영향: `meeting_upload` 컬럼 5개와 마이그레이션, 에러 코드 4개, AI 경로 3개(`POST /uploads/{id}/speakers`, `GET /uploads/assigned`, `PATCH /uploads/{id}/resume`), PM 경로 3개(`GET`·`PUT /meetings/{id}/speakers`, `GET /meetings/{id}/audio`), [speaker_assignment.py](../../../../app/services/speaker_assignment.py).
 - FE 가 지정 후보를 참석자로 제한하기로 하면 조회 후보와 제출 검증을 함께 바꾼다. 그 밖에 AI·FE 가 경로·필드·제출 규칙을 바꾸면 해당 항목을 다시 본다.
-- sweeper 는 #301 에서 정한다(AI 의 답은 위 sweeper 항목). 대기 회의가 방치돼 쌓이는 일이 실제로 생기면 다시 본다.
+- sweeper 의 기준과 재검토 조건은 [sweeper 결정](2026-11-03-upload-sweeper.md)을 따른다.
 - 처리가 끝난 뒤에도 원본을 들어야 하는 요구가 생기면 폴더 삭제 시점을 다시 본다.
 - FE 가 `awaiting_speakers` 를 표시·추적하기 전에는 이 상태를 만드는 AI 경로를 운영에 켜지 않는다(앞선 결정의 조건과 같다).
 
