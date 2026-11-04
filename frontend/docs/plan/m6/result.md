@@ -202,4 +202,8 @@ Node v24.11.0 환경에서 관련 Vitest 13개 파일·245건이 통과했다. �
 
 Vitest에는 기존 React `act(...)` 경고가 출력됐다. 전체 Vitest·전체 E2E·Storybook·실 API는 이번 후속에서 실행한 범위에 포함하지 않는다. 시작 시 보관한 전체 계획·각 `plan.md`·트러블슈팅 원문의 SHA-256은 종료 점검에서 같았다.
 
+### 병합 전 CI 후속
+
+PR #323의 최초 CI 전체 Vitest는 2149건 통과·1건 실패였다. `shared/test/api.test.ts`의 공통 클라이언트 오류 검사가 담당자·마감 없는 생성 승인을 오류 입력으로 사용하던 이전 가정을 유지했다. 새 계약에서는 정상 승인이므로 오류 입력을 허용되지 않는 승인 상태로 바꿨다. 제품 코드는 바꾸지 않았다. CI 재검증 결과는 PR 검사 기록에서 확인한다.
+
 [BE PR #307](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/pull/307)은 2026-11-04 확인 시 OPEN이다. PR 스키마·구현과 FE 계약은 정적으로 대조했으나, 로컬 백엔드와 공개 배포 API에 변경이 적용됐다는 근거는 없다. 공개 `/openapi.json`은 SPA HTML을 반환했다. 실제 승인·DB·Notion 반영, PM 승인 조회 권한은 호환 BE 배포 환경에서 별도로 검증해야 한다. MSW·Chromium 성공은 실 API 검증으로 보지 않는다.
