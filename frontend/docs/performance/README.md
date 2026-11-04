@@ -33,4 +33,5 @@
 
 | 문서 | 요약 | 상태 |
 |---|---|---|
-| [2026-09-29-font-loading.md](2026-09-29-font-loading.md) | NanumSquare 두 벌(약 316KB)을 미리 불러와 첫 화면 JS 와 대역폭을 나눠 쓴다 | 대기 |
+| [2026-09-29-font-loading.md](2026-09-29-font-loading.md) | NanumSquare 두 벌(약 316KB)을 미리 불러와 첫 화면 JS 와 대역폭을 나눠 쓴다 | 대기(1·2 는 2026-11-05 에 정함) |
+| [2026-11-05-font-loading-remeasure.md](2026-11-05-font-loading-remeasure.md) | Bold preload 를 빼 LCP 0.5~1.0초 단축, unicode-range 분할은 이득 없음 | 반영됨 |
