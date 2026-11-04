@@ -199,10 +199,11 @@ def test_mapping_busy_is_a_value_error_only_for_lock_contention(tmp_path):
 
 
 def test_cli_output_does_not_claim_the_worker_ignores_uploads(tmp_path, capsys):
-    """지정은 BE 웹 경로 + upload.assign 이 받고 전사·인계는 #286 이라, '워커가 아직 집지 않는다' 는 오래된 말을 하지 않는다."""
+    """mapped 업로드는 워커의 처리 바퀴가 전사·인계까지 한다(#286). '워커가 처리하지 않는다'·'#286 에서 한다' 는 오래된 말을 하지 않는다."""
     rec, path, _ = _make(tmp_path)
     mp = tmp_path / "m.json"
     mp.write_text(json.dumps({"SPEAKER_00": "u-1", "SPEAKER_01": None}), encoding="utf-8")
     assert main([str(path), str(mp)]) == 0
     out = capsys.readouterr().out
-    assert "아직 집지" not in out and "#254" not in out and "#286" in out
+    assert "아직 집지" not in out and "#254" not in out and "#286" not in out
+    assert "처리하지 않는다" not in out and "처리 바퀴" in out
