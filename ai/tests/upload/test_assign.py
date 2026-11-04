@@ -264,3 +264,17 @@ def test_transient_resume_failure_never_gives_up(env):
     assert _count(env, "/fail") == 0 and _manifest(env)["status"] == "diarized"
     env.wrapped.resume_error = None
     assert _go(env, env.wrapped).event == "mapped"
+
+
+def test_manifest_gone_after_resuming_record_fails_diarize_once(env):
+    env.be.assign(MID, GOOD)
+    env.be.resume_lost = True
+    assert _go(env).event == "retry"
+    env.be.resume_lost = False
+    manifest_path(env.rec, f"upload_{MID}").unlink()      # resuming 기록이 남은 뒤 매니페스트가 사라졌다
+    env.clock.advance(backoff_s(1))
+    assert _go(env) == A.Progress(MID, "failed")
+    assert _count(env, "/fail") == 1
+    assert _intake(env)["resume"]["state"] == "failed"
+    assert _go(env) is None and _count(env, "/fail") == 1
+
