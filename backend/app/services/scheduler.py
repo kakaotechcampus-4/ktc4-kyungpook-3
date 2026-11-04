@@ -376,7 +376,7 @@ def _preview(body: str, limit: int = 60) -> str:
 
 
 def settle_watches(db: Session, now: datetime) -> None:
-    """열린 시계를 응답·시각에 따라 닫거나 막는다. 막힌 태스크는 답장이 오면 푼다(D-059)."""
+    """열린 시계를 응답·시각에 따라 닫거나 막는다. 답장은 판단이 끝난 뒤 clock_effect 대로 푼다. 막혔다는 답장은 시계만 닫는다."""
     db.flush()
     watch_ids = db.scalars(
         select(ReminderWatch.watch_id)
@@ -475,7 +475,7 @@ def _block(db: Session, task: Task, watch: ReminderWatch, now: datetime) -> None
 
 
 def _release(db: Session, task: Task, watch: ReminderWatch, left_at: datetime | None, now: datetime) -> None:
-    """답장이 온 재촉의 태스크를 푼다. 답장을 본 뒤 사람이 건 막힘은 그대로 둔다."""
+    """답장이 응답으로 판단된 재촉의 태스크를 푼다. 답장을 본 뒤 사람이 건 막힘은 그대로 둔다."""
     if task.status == TaskStatus.BLOCKED:
         since = _blocked_since(db, task) or messages.utc(watch.sent_at)
         if _replied_after(db, watch.thread_id, since, before=left_at):
