@@ -462,7 +462,7 @@ def _propose(
     for line, change, line_match in group:
         match = line_match or match
         key = _PAYLOAD_KEY.get(line.field)
-        # 담당자를 못 찾았으면 원문만 보여 주고 PM 이 고른다. 원문은 팀원 ID 가 아니라 값으로 싣지 않는다.
+        # 담당자를 못 찾았으면 원문만 보여 준다. 원문은 팀원 ID 가 아니라 값으로 싣지 않으므로 승인해도 담당자는 그대로다.
         if key and not (line_match and line_match.member_id is None):
             values[key] = line.new_value
             if line.field == ReplyChangeField.STATUS:
@@ -715,7 +715,7 @@ def _reply_item(
             "evidence_status": line.evidence_status,
             "summary": line.summary if readable else None,
             "evidence_quote": line.evidence_quote if readable else None,
-            "result": "undone" if entries and not live else _result(line, approvals),
+            "result": "undone" if entries and not live else _result(line, approvals, entries),
             "undoable": line.outcome == ReplyChangeOutcome.APPLIED and bool(live),
         })
     return {
@@ -725,9 +725,12 @@ def _reply_item(
     }
 
 
-def _result(line: ReplyChange, approvals: dict[str, str]) -> str:
+def _result(line: ReplyChange, approvals: dict[str, str], entries: list[TaskHistory]) -> str:
     if line.outcome == ReplyChangeOutcome.PROPOSED:
-        return approvals[line.approval_id]
+        status = approvals[line.approval_id]
+        # 담당자를 못 찾은 카드는 승인해도 바뀌는 값이 없다.
+        unchanged = status == ApprovalStatus.APPROVED and line.field == ReplyChangeField.ASSIGNEE and not entries
+        return "noted" if unchanged else status
     if line.outcome in (ReplyChangeOutcome.APPLIED, ReplyChangeOutcome.RECORDED):
         return line.outcome
     return "noted"

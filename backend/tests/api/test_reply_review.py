@@ -6,6 +6,7 @@ import pytest
 
 from app.models import (
     ApprovalRequest,
+    MemberAlias,
     Notification,
     ReminderWatch,
     ReplyChange,
@@ -765,3 +766,31 @@ def test_deleted_task_is_not_offered_and_cannot_be_picked(mdb, mseed, two):
     assert [c["task_id"] for c in entry["candidates"]] == [b.task_id]
     assert _attribute(item, a, seed=mseed).status_code == 400
     assert _claim() is None
+
+
+# 담당자를 못 찾은 카드
+
+def test_approving_an_unresolved_assignee_card_says_nothing_changed(mdb, mseed, two):
+    a, _ = two
+    before = a.assignee_member_id
+    item = _proposed(
+        mdb, mseed, lambda i: _change(a, "assignee", None, claimed=i, assignee_raw="김철수", assignee_type="named"),
+    )
+    assert _resolve(_lines(mdb, item)[(a.task_id, "assignee")].approval_id).status_code == 200
+    mdb.expire_all()
+    assert a.assignee_member_id == before
+    [change] = _timeline(a)["items"][0]["changes"]
+    assert change["result"] == "noted"
+
+
+def test_approving_a_resolved_assignee_card_stays_approved(mdb, mseed, two):
+    a, _ = two
+    mdb.add(MemberAlias(
+        workspace_id=mseed["ws"], member_id=mseed["bob"].member_id, alias_text="밥", alias_type="name", source="manual",
+    ))
+    mdb.commit()
+    item = _proposed(mdb, mseed, lambda i: _change(a, "assignee", "밥", claimed=i, assignee_raw="밥", assignee_type="name"))
+    line = _lines(mdb, item)[(a.task_id, "assignee")]
+    assert line.new_value == mseed["bob"].member_id
+    assert _resolve(line.approval_id).status_code == 200
+    assert _timeline(a)["items"][0]["changes"][0]["result"] == "approved"
