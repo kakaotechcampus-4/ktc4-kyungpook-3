@@ -693,8 +693,10 @@ def _reply_item(
     for line in group:
         entries = linked[line.change_id]
         live = [entry for entry in entries if not entry.is_rolled_back]
+        # PM 이 고쳐 승인했으면 이력의 값이 실제 값이다. 사유 이력도 같은 줄에 이어져 필드로 가른다.
+        value = next((entry.new_value for entry in entries if entry.changed_field == line.field), line.new_value)
         changes.append({
-            "change_id": line.change_id, "field": line.field, "new_value": line.new_value,
+            "change_id": line.change_id, "field": line.field, "new_value": value,
             "evidence_status": line.evidence_status,
             "summary": line.summary if readable else None,
             "evidence_quote": line.evidence_quote if readable else None,

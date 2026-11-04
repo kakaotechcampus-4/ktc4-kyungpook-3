@@ -698,3 +698,19 @@ def test_undone_done_is_not_read_as_the_status_before_a_block(mdb, mseed, two):
     mdb.expire_all()
     assert (a.status, a.blocker) == ("blocked", "PM 사유")
     assert scheduler._status_before_block(mdb, a) == "in_progress"
+
+
+def test_timeline_shows_the_value_the_pm_actually_approved(mdb, mseed, two):
+    a, _ = two
+    item = _proposed(mdb, mseed, lambda claimed: _change(a, "due_date", "2026-12-01", claimed=claimed))
+    line = _lines(mdb, item)[(a.task_id, "due_date")]
+    assert _resolve(line.approval_id, task_overrides={"due_date": "2026-12-05"}).status_code == 200
+    [change] = _timeline(a)["items"][0]["changes"]
+    assert (change["new_value"], change["result"]) == ("2026-12-05", "approved")
+
+
+def test_timeline_keeps_the_status_value_when_a_reason_is_linked_too(mdb, mseed, two):
+    a, _ = two
+    _applied(mdb, mseed, a, value="blocked")
+    [change] = _timeline(a)["items"][0]["changes"]
+    assert change["new_value"] == "blocked"
