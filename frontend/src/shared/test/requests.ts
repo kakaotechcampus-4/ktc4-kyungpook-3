@@ -77,13 +77,20 @@ export function trackerRequests(
   return requests.filter((request) => isTrackerRequest(request, workspaceId))
 }
 
+const NOTIFICATION_LIST_PATH = /^\/workspaces\/[^/?]+\/notifications$/
+
+/** 앱 머리 알림 종의 상시 조회 `GET /workspaces/{workspaceId}/notifications` 인가 (#330). 워크스페이스 화면마다 나간다 */
+export function isNotificationListRequest({ method, path }: RecordedRequest): boolean {
+  return method === 'GET' && NOTIFICATION_LIST_PATH.test(path)
+}
+
 export interface BusinessRequestOptions {
   /** 추적기 요청으로 볼 지금 URL 공간. 기본은 ws_01 */
   trackerWorkspaceId?: string
 }
 
 /**
- * 부팅 조회(세션·워크스페이스 목록)와 처리 추적기의 상시 요청을 뺀 나머지. 이것이 「화면의 업무 API」다.
+ * 부팅 조회(세션·워크스페이스 목록), 처리 추적기와 알림 종의 상시 요청을 뺀 나머지. 이것이 「화면의 업무 API」다.
  *
  * M5 U4 부터 인증된 앱 영역의 추적기가 워크스페이스 화면마다 지금 공간의 회의 목록을 받고, 정리 중 회의의 상세를
  * polling 한다(계획 §2·§3, U4-1). 부팅 조회처럼 화면과 무관하게 앱이 내는 요청이라 함께 뺀다 —
@@ -97,7 +104,8 @@ export function businessRequests(
   return requests.filter(
     (request) =>
       !(request.method === 'GET' && BOOT_PATHS.has(request.path)) &&
-      !isTrackerRequest(request, trackerWorkspaceId),
+      !isTrackerRequest(request, trackerWorkspaceId) &&
+      !isNotificationListRequest(request),
   )
 }
 
