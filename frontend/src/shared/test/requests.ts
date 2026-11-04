@@ -77,15 +77,19 @@ export function trackerRequests(
   return requests.filter((request) => isTrackerRequest(request, workspaceId))
 }
 
-const NOTIFICATION_LIST_PATH = /^\/workspaces\/[^/?]+\/notifications$/
-
-/** 앱 머리 알림 종의 상시 조회 `GET /workspaces/{workspaceId}/notifications` 인가 (#330). 워크스페이스 화면마다 나간다 */
-export function isNotificationListRequest({ method, path }: RecordedRequest): boolean {
-  return method === 'GET' && NOTIFICATION_LIST_PATH.test(path)
+/**
+ * 앱 머리 알림 종의 상시 조회 `GET /workspaces/{workspaceId}/notifications` 인가 (#330). 워크스페이스 화면마다 나간다.
+ * 추적기처럼 지금 URL 공간의 조회만 인정한다 — 비로그인·비소속 공간·다른 공간의 알림 조회는 업무 요청으로 남아 단언에 걸린다
+ */
+export function isNotificationListRequest(
+  { method, path }: RecordedRequest,
+  workspaceId: string = DEFAULT_TRACKER_WORKSPACE,
+): boolean {
+  return method === 'GET' && path === `/workspaces/${encodeURIComponent(workspaceId)}/notifications`
 }
 
 export interface BusinessRequestOptions {
-  /** 추적기 요청으로 볼 지금 URL 공간. 기본은 ws_01 */
+  /** 추적기·알림 종 요청으로 볼 지금 URL 공간. 기본은 ws_01 */
   trackerWorkspaceId?: string
 }
 
@@ -105,7 +109,7 @@ export function businessRequests(
     (request) =>
       !(request.method === 'GET' && BOOT_PATHS.has(request.path)) &&
       !isTrackerRequest(request, trackerWorkspaceId) &&
-      !isNotificationListRequest(request),
+      !isNotificationListRequest(request, trackerWorkspaceId),
   )
 }
 
