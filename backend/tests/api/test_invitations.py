@@ -635,6 +635,28 @@ def test_pm_of_another_workspace_cannot_tell_the_invite_exists(db, seed, action)
     assert len(_workspace_ids("jiyoung-token")) == (1 if action == "revoke" else 0)
 
 
+def test_last_workspace_is_the_one_just_accepted(db, seed):
+    user = db.query(User).filter(User.email == "jiyoung@example.com").one()
+    own_ws = Workspace(name="내 공간")
+    db.add(own_ws)
+    db.flush()
+    db.add(Member(workspace_id=own_ws.workspace_id, user_id=user.user_id, display_name="지영", role="pm",
+                  created_at=datetime.now(timezone.utc) + timedelta(hours=1)))
+    db.commit()
+    invitation_id = _invite_id(seed["ws"], seed["jiyoung"].member_id, "jiyoung@example.com")
+    assert _client("jiyoung-token").get("/api/v1/auth/me").json()["data"]["last_workspace_id"] == own_ws.workspace_id
+
+    accept = _act(invitation_id, "accept", "jiyoung-token")
+    assert accept.status_code == 200
+    db.execute(
+        text("UPDATE invitation SET responded_at = :at WHERE invitation_id = :id"),
+        {"at": datetime.now(timezone.utc) + timedelta(hours=2), "id": invitation_id},
+    )
+    db.commit()
+
+    assert _client("jiyoung-token").get("/api/v1/auth/me").json()["data"]["last_workspace_id"] == seed["ws"]
+
+
 def test_migration_keeps_the_open_invite_indexes_partial_on_sqlite():
     path = Path(__file__).parents[2] / "migrations" / "versions" / "e8b2f4c6a1d9_add_invitation.py"
     spec = importlib.util.spec_from_file_location("add_invitation_migration", path)

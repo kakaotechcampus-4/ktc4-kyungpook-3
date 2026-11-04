@@ -4,12 +4,13 @@ import secrets
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Request, Response
+from sqlalchemy import and_, func
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
 from app.core.database import get_db
 from app.core.errors import AppError, Envelope, ErrorCode, success
-from app.models import Member, Session as SessionModel, User
+from app.models import Invitation, InvitationStatus, Member, Session as SessionModel, User
 from app.schemas.auth import AuthResponse, LoginRequest, SignupRequest, UserResponse
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -45,7 +46,22 @@ def _create_session(db: Session, user: User, response: Response):
 
 def _build_auth_response(db: Session, user: User) -> AuthResponse:
     workspace_count = db.query(Member).filter(Member.user_id == user.user_id, Member.is_deleted.is_(False)).count()
-    last_workspace = db.query(Member).filter(Member.user_id == user.user_id, Member.is_deleted.is_(False)).order_by(Member.created_at.desc()).first()
+    # 초대로 들어온 팀원 행은 PM 이 예전에 만든 것이라 수락 시각을 들어온 시각으로 본다.
+    joined_at = func.coalesce(Invitation.responded_at, Member.created_at)
+    last_workspace = (
+        db.query(Member)
+        .outerjoin(
+            Invitation,
+            and_(
+                Invitation.member_id == Member.member_id,
+                Invitation.accepted_user_id == user.user_id,
+                Invitation.status == str(InvitationStatus.ACCEPTED),
+            ),
+        )
+        .filter(Member.user_id == user.user_id, Member.is_deleted.is_(False))
+        .order_by(joined_at.desc())
+        .first()
+    )
 
     return AuthResponse(
         user=UserResponse(
