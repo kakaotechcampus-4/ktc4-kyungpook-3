@@ -15,8 +15,8 @@ import { taskListQueryOptions } from '@/entities/task'
 import type { Task } from '@/entities/task'
 import { NOTION_SYNC_POLL_MS } from '@/features/task-notion-sync'
 import { createClientError, CLIENT_ERROR_CODES } from '@/shared/api/errors'
+import { queryView } from '@/shared/lib/query-view'
 import { hasPendingSync, latestDoneMeeting, recentAutoItems } from '../lib/dashboard'
-import { queryView } from '../lib/queryView'
 
 /** 데이터는 있으나 마지막 재조회가 실패했다 (E-02). 다시 시도하는 중이면 `retrying` 이다 */
 export interface RefreshFailure {
@@ -94,7 +94,7 @@ export interface DashboardData {
   meetings: Loadable<MeetingSummary[]>
   /** 정리 끝난 회의가 없으면 null. 회의 목록을 아직 모르면 undefined */
   recent: RecentSource | null | undefined
-  /** 최근 반영으로 보일 auto 항목. 추출을 아직 모르면 빈 배열 */
+  /** 최근 회의의 auto 항목 전부. 화면이 그중 앞에서 몇 개를 보일지 잰다. 추출을 아직 모르면 빈 배열 */
   autoItems: ExtractionItem[]
 }
 
@@ -102,7 +102,7 @@ export interface DashboardData {
  * 대시보드가 쓰는 조회 (M7 계획 §1). 새 API 없이 기존 Query 를 그대로 재사용한다 — key 가 공간별이라 공간을 바꿔도 섞이지 않는다.
  * - 태스크·대기 승인(PM)·팀원·연동·회의 목록은 서로 기다리지 않고 함께 시작한다
  * - 최신 완료 회의의 상세와 추출은 앞 조회가 끝나야 ID 를 안다
- * - 최근 반영에 반영 대기(`pending`) 태스크가 있으면 태스크 목록을 3초마다 다시 받는다. 모두 끝나거나 조회가 실패하면 멈추고,
+ * - 최근 반영의 auto 항목(화면에 보이지 않는 것 포함)에 반영 대기(`pending`) 태스크가 있으면 태스크 목록을 3초마다 다시 받는다. 모두 끝나거나 조회가 실패하면 멈추고,
  *   화면을 떠나면 이 관찰자와 함께 사라진다 (M6 `notionSyncRefetchInterval` 과 같은 규칙). 실패 판정은 화면과 같은 `queryView` 다 —
  *   멈춘 동안 화면은 갱신 실패와 다시 시도를 보이고, 다시 시도가 성공하면 polling 이 다시 돈다
  */

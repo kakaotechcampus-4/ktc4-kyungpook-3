@@ -20,7 +20,8 @@ test('가입 → 워크스페이스 만들기 → Discord·Notion 모의 OAuth �
   await page.getByLabel('비밀번호', { exact: true }).fill('pass1234')
   await page.getByLabel('비밀번호', { exact: true }).press('Enter')
 
-  // 공간 0개 → 워크스페이스 만들기
+  await expect(page).toHaveURL('/onboarding/start')
+  await page.getByRole('link', { name: /PM으로 팀 만들기/ }).click()
   await expect(page).toHaveURL('/onboarding/create_workspace')
   await expect(page.getByRole('img', { name: '4단계 중 1단계' })).toBeVisible()
   await page.getByLabel('팀 이름').fill('  캡스톤   5조 ')

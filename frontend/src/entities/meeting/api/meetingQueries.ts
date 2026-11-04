@@ -29,7 +29,7 @@ export async function fetchMeetingList(
 }
 
 /**
- * 회의록 목록. 서버가 `started_at` 내림차순으로 주고 실패 회의를 뺀다 (계약 §4.4, D-093, D-106).
+ * 회의록 목록. 서버가 `started_at` 내림차순으로 준다. 실패 중 수동 업로드의 화자 지정 만료만 남긴다 (#256).
  * 처리 중 회의도 함께 온다 — 처리 추적이 여기서 처리 중 회의를 발견한다. 기본 최신 시간(30초)이다.
  */
 export function meetingListQueryOptions(workspaceId: string) {

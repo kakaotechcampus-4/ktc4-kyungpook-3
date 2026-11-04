@@ -4,6 +4,7 @@ from enum import StrEnum
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     CheckConstraint,
     Date,
@@ -82,6 +83,8 @@ class MeetingStatus(StrEnum):
     CREATED = "created"
     RECORDING = "recording"
     PROCESSING = "processing"
+    # 웹 업로드 회의: AI가 화자를 나눴고 PM이 화자를 지정하기를 기다린다(#266). 동시 처리 제한에서 뺀다
+    AWAITING_SPEAKERS = "awaiting_speakers"
     DONE = "done"
     FAILED = "failed"
 
@@ -367,7 +370,7 @@ class Meeting(Base):
     )
     title: Mapped[str | None] = mapped_column(String(200), nullable=True)
     source: Mapped[str] = mapped_column(String(20), default=MeetingSource.DISCORD)
-    status: Mapped[str] = mapped_column(String(16), default=MeetingStatus.CREATED, index=True)
+    status: Mapped[str] = mapped_column(String(32), default=MeetingStatus.CREATED, index=True)
 
     failed_stage: Mapped[str | None] = mapped_column(String(32), nullable=True)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
@@ -381,6 +384,47 @@ class Meeting(Base):
     sources: Mapped[list["Source"]] = relationship(
         back_populates="meeting", cascade="all, delete-orphan"
     )
+
+
+class MeetingUpload(Base):
+    """웹에서 올린 녹음 하나. `source=manual_upload` 회의마다 한 행이다.
+
+    녹음 파일은 디스크(`UPLOAD_DIR/{meeting_id}/{stored_filename}`)에 두고, 업로드 때 받은 나머지 정보는
+    여기에 둔다. AI 대기 목록은 이 행으로 만들고 디스크를 읽지 않는다.
+
+    업로드 회의는 처음부터 `processing`이다(프론트가 그 상태로 추적한다). AI가 가져갔는지는 회의 상태가 아니라
+    `claimed_at`으로 가린다.
+    """
+
+    __tablename__ = "meeting_upload"
+
+    meeting_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("meeting.meeting_id", ondelete="CASCADE"), primary_key=True
+    )
+    stored_filename: Mapped[str] = mapped_column(String(32))
+    original_filename: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    size_bytes: Mapped[int] = mapped_column(BigInteger)
+    content_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    uploaded_by_member_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("member.member_id", ondelete="SET NULL"), nullable=True
+    )
+    uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    # 업로드 때 PM이 고른 참석자 [{member_id, display_name}]의 JSON. 이름은 그때 값이다
+    attendees: Mapped[str] = mapped_column(Text)
+    # AI가 가져간(claim) 시각. 비어 있으면 아직 아무도 가져가지 않았다
+    claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # AI가 알려준 화자 목록(JSON 문자열)과 보고 시각. 비어 있으면 아직 보고하지 않았다
+    speakers: Mapped[str | None] = mapped_column(Text, nullable=True)
+    speakers_reported_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # PM이 지정한 화자 → 팀원 매핑(JSON 문자열)과 지정 시각
+    speaker_mapping: Mapped[str | None] = mapped_column(Text, nullable=True)
+    speakers_assigned_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # 화자 지정 뒤 AI가 처리를 다시 이어 간 시각
+    resumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class Source(Base):

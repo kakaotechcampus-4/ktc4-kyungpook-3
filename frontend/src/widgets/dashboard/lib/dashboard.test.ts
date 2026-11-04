@@ -11,11 +11,13 @@ import { meetingSummaryFixtures } from '@/shared/mock/fixtures/meeting'
 import { taskFixtures } from '@/shared/mock/fixtures/task'
 import {
   LIST_LIMIT,
-  RECENT_LIMIT,
+  RECENT_MORE_LINE_PX,
+  RECENT_ROWS,
   approvalReason,
   dateWithWeekday,
   dueSoonTasks,
   durationLabel,
+  fitRecentRows,
   hasPendingSync,
   latestDoneMeeting,
   monthDayLabel,
@@ -131,15 +133,66 @@ describe('최근 반영 (AC-03 판정부)', () => {
     expect(latestDoneMeeting(meetings.filter(({ status }) => status !== 'done'))).toBeNull()
   })
 
-  it('gate=auto 항목만 응답 순서대로 최대 3개다', () => {
+  it('gate=auto 항목만 응답 순서대로 전부다 — 몇 개를 보일지는 화면이 잰다 (D-176)', () => {
     const many: ExtractionItem[] = [
       ...extraction.items,
       { ...extraction.items[0], id: 'it_90' },
       { ...extraction.items[1], id: 'it_91' },
     ]
-    expect(recentAutoItems(many).map(({ id }) => id)).toEqual(['it_01', 'it_02', 'it_03'])
-    expect(RECENT_LIMIT).toBe(3)
+    expect(recentAutoItems(many).map(({ id }) => id)).toEqual([
+      'it_01',
+      'it_02',
+      'it_03',
+      'it_90',
+      'it_91',
+    ])
+    expect(RECENT_ROWS).toEqual({ min: 3, max: 8 })
+    expect(RECENT_MORE_LINE_PX).toBe(32)
     expect(recentAutoItems(extraction.items.filter(({ gate }) => gate !== 'auto'))).toEqual([])
+  })
+
+  describe('보일 행 수 (D-176)', () => {
+    const rows = (count: number, height = 50) => Array.from({ length: count }, () => height)
+
+    it.each([
+      ['잰 높이가 없으면 3개', { available: 900, heights: [], total: 12 }, 3],
+      [
+        '잰 높이가 없고 항목이 2개면 2개',
+        { available: 900, heights: [undefined, undefined], total: 2 },
+        2,
+      ],
+      ['항목이 2개면 늘 2개다 — 채우지 않는다', { available: 900, heights: rows(2), total: 2 }, 2],
+      [
+        '5개가 모두 들어가면 5개 — 외 N건 줄이 없어 그 높이를 빼지 않는다',
+        { available: 250, heights: rows(5), total: 5 },
+        5,
+      ],
+      [
+        '5개 중 4개만 들어가면 외 N건 줄을 뺀 높이로 다시 센다',
+        { available: 230, heights: rows(5), total: 5 },
+        3,
+      ],
+      ['외 N건 줄을 빼도 4개가 들어가면 4개', { available: 232, heights: rows(5), total: 5 }, 4],
+      ['넉넉하면 8개까지다', { available: 2000, heights: rows(8), total: 12 }, 8],
+      ['좁으면 3개 아래로 줄이지 않는다', { available: 40, heights: rows(8), total: 12 }, 3],
+      ['남은 높이가 음수여도 3개다', { available: -100, heights: rows(8), total: 12 }, 3],
+      [
+        '못 잰 행은 바로 앞에서 잰 높이로 친다',
+        { available: 332, heights: [50, 50, 50, undefined, 100, undefined], total: 12 },
+        5,
+      ],
+      [
+        '앞 행을 못 쟀으면 처음 잰 높이로 친다',
+        { available: 282, heights: [undefined, 50, undefined], total: 12 },
+        5,
+      ],
+    ] as const)('%s', (_, input, expected) => {
+      expect(fitRecentRows({ ...input, moreLine: RECENT_MORE_LINE_PX })).toBe(expected)
+    })
+
+    it('8개가 넘으면 다 들어가도 외 N건 줄을 둔다', () => {
+      expect(fitRecentRows({ available: 400, heights: rows(8), total: 9, moreLine: 32 })).toBe(7)
+    })
   })
 
   it('상태는 태스크의 notion_sync_status 로 정하고, 되돌림이 가장 먼저다', () => {

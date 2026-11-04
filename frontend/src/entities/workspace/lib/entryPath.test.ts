@@ -65,12 +65,18 @@ describe('workspaceEntryPath', () => {
 })
 
 describe('postLoginPath — 로그인 완료', () => {
-  it('0개면 생성 온보딩이다', () => {
-    expect(postLoginPath([])).toBe('/onboarding/create_workspace')
+  it('0개면 시작 작업을 고른다', () => {
+    expect(postLoginPath([])).toBe('/onboarding/start')
   })
 
   it('1개면 그 공간이다', () => {
     expect(postLoginPath([workspace('ws_01')])).toBe('/workspaces/ws_01/dashboard')
+  })
+
+  it('소속의 역할은 로그인 목적지를 바꾸지 않는다', () => {
+    const member: Workspace = { ...workspace('ws_01'), role: 'member' }
+    expect(postLoginPath([member])).toBe('/workspaces/ws_01/dashboard')
+    expect(authRevisitPath([member], 'ws_01')).toBe('/workspaces/ws_01/dashboard')
   })
 
   it('1개가 미완료면 그 공간의 온보딩이다', () => {
@@ -101,11 +107,12 @@ describe('authRevisitPath — 인증 화면 재접근', () => {
   it('목록에 없는 lastWorkspaceId 는 무시하고 개수로 가른다', () => {
     expect(authRevisitPath(list, 'ws_99')).toBe('/workspaces')
     expect(authRevisitPath([workspace('ws_01')], 'ws_99')).toBe('/workspaces/ws_01/dashboard')
-    expect(authRevisitPath([], 'ws_99')).toBe('/onboarding/create_workspace')
+    expect(authRevisitPath([], 'ws_99')).toBe('/onboarding/start')
   })
 
   it('lastWorkspaceId 가 없으면 개수로 가른다', () => {
     expect(authRevisitPath(list, null)).toBe('/workspaces')
+    expect(authRevisitPath([], null)).toBe('/onboarding/start')
   })
 })
 

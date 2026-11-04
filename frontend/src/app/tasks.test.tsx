@@ -203,7 +203,7 @@ describe('역할별 탭·개수·병합·정렬 (AC-02)', () => {
  * 새로고침은 앱을 내리고 같은 주소로 처음부터 다시 띄우는 것이다.
  */
 describe('목록 안 확인 필요 카드 (시안)', () => {
-  it('실 API 에서는 필수값이 없으면 승인을 끄고 사유를 보인다. 반려는 목록 안에서 바로 처리하고 카드가 빠진다', async () => {
+  it('실 API에서도 보완과 미정 승인을 허용하고 반려하면 카드가 빠진다', async () => {
     const user = userEvent.setup()
     await openList(`${paths.tasks('ws_01')}?tab=needs_review`)
     const cards = within(screen.getByRole('list', { name: '확인 필요 목록' })).getAllByRole(
@@ -211,24 +211,15 @@ describe('목록 안 확인 필요 카드 (시안)', () => {
     )
     expect(cards).toHaveLength(3)
     const target = cards.find((each) => each.textContent?.includes('테스트 계획 정리'))!
-    // 읽기 전용 — 보완 입력이 없고 승인은 꺼져 있다. 사유는 보완 미지원 문장으로 끝난다
-    expect(within(target).getByRole('button', { name: '승인' })).toBeDisabled()
-    expect(target).toHaveTextContent('승인하려면 마감 정보를 올바르게 채워야 해요.')
-    expect(target).toHaveTextContent('지금 서버는 승인 전 보완을 지원하지 않아요.')
+    await waitFor(() => expect(within(target).getByRole('button', { name: '승인' })).toBeEnabled())
+    expect(within(target).getByRole('textbox', { name: '태스크명' })).not.toHaveAttribute(
+      'readonly',
+    )
     expect(within(target).getByRole('button', { name: '반려' })).toBeEnabled()
-
-    // 보류(ap_01)도 접힌 카드 안에서 같은 계약이다. 승인을 숨기거나 반려를 `제외` 로 바꾸지 않는다
     const held = cards.find((each) => each.textContent?.includes('알림 문구 검토'))!
-    expect(within(held).getByRole('button', { name: '승인' })).toBeDisabled()
+    expect(within(held).getByRole('button', { name: '직접 채우기' })).toBeEnabled()
     expect(within(held).getByRole('button', { name: '반려' })).toBeEnabled()
     expect(within(held).queryByRole('button', { name: '제외' })).toBeNull()
-    expect(within(held).queryByRole('button', { name: '직접 채우기' })).toBeNull()
-    expect(held).toHaveTextContent(
-      '승인하려면 담당자·마감 정보를 올바르게 채워야 해요. 지금 서버는 승인 전 보완을 지원하지 않아요.',
-    )
-    expect(within(held).getByRole('button', { name: '승인' })).toHaveAccessibleDescription(
-      /지금 서버는 승인 전 보완을 지원하지 않아요\.$/,
-    )
 
     await user.click(within(target).getByRole('button', { name: '반려' }))
     await waitFor(() =>
@@ -260,7 +251,7 @@ describe('보기 전환 (Tasks 시안 4장)', () => {
     expect(screen.getByRole('region', { name: '완료' })).toBeVisible()
 
     await user.click(within(switcher).getByRole('radio', { name: '캘린더' }))
-    expect(await screen.findByRole('grid', { name: /^\d{4}년 \d{1,2}월$/ })).toBeVisible()
+    expect(await screen.findByRole('table', { name: /^\d{4}년 \d{1,2}월$/ })).toBeVisible()
     expect(screen.getByRole('region', { name: '마감일 없음' })).toBeVisible()
 
     await user.click(within(switcher).getByRole('radio', { name: '간트' }))
@@ -445,10 +436,10 @@ describe('URL 탭·날짜 조건 (AC-03)', () => {
     expect(await screen.findByRole('heading', { name: '조건에 맞는 항목이 없어요' })).toBeVisible()
 
     // 빈 상태의 해제와 조건 줄의 해제가 같은 동작이다. 조건 줄의 것을 누른다
-    const clear = screen.getAllByRole('button', { name: '날짜 조건 해제' })[0]
+    const clear = screen.getAllByRole('button', { name: '마감 조건 해제' })[0]
     await user.click(clear)
     await expectView({ search: '?tab=done', tab: '완료', overdue: false, soon: false, rows: DONE })
-    expect(screen.queryByRole('button', { name: '날짜 조건 해제' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '마감 조건 해제' })).toBeNull()
 
     await user.click(tab('전체'))
     await expectView({ search: '', tab: '전체', overdue: false, soon: false, rows: PM_ALL })
@@ -464,6 +455,113 @@ describe('URL 탭·날짜 조건 (AC-03)', () => {
       soon: false,
       rows: [],
     })
+  })
+
+  it('막힘 조건으로 들어오면 막힌 태스크만 보이고, 메뉴에서 켜고 끄면 주소에 남는다 (D-176)', async () => {
+    const user = userEvent.setup()
+    open(`${paths.tasks('ws_01')}?tab=in_progress&due=blocked`)
+    await waitFor(() => {
+      expect(rows()).toEqual(['DB 스키마 정리'])
+      expect(tab('진행 중')).toHaveAttribute('aria-selected', 'true')
+    })
+    expect(screen.getByRole('button', { name: '마감 조건: 막힘' })).toBeVisible()
+    expect(tabTexts()).toEqual(['전체 4', '확인 필요 3', '진행 중 1', '완료 0'])
+
+    await toggleDue(user, '7일 안에 마감')
+    await waitFor(() => {
+      expect(search()).toBe('?tab=in_progress&due=soon,blocked')
+      expect(rows()).toEqual([
+        'STT 정확도 측정',
+        '로그인 API 연동',
+        'DB 스키마 정리',
+        '배포 스크립트',
+      ])
+    })
+    expect(
+      screen.getByRole('button', { name: '마감 조건: 7일 안에 마감 · 막힘' }),
+    ).toBeInTheDocument()
+
+    await toggleDue(user, '막힘')
+    await waitFor(() => expect(search()).toBe('?tab=in_progress&due=soon'))
+    act(() => window.history.back())
+    await waitFor(() => expect(search()).toBe('?tab=in_progress&due=soon,blocked'))
+  })
+
+  it('막힘으로 비면 마감 조건 해제로 조건을 푼다', async () => {
+    const user = userEvent.setup()
+    open(`${paths.tasks('ws_01')}?tab=done&due=blocked`)
+    expect(await screen.findByRole('heading', { name: '조건에 맞는 항목이 없어요' })).toBeVisible()
+    expect(screen.getByText('마감 조건을 풀면 다른 항목을 볼 수 있어요.')).toBeVisible()
+
+    await user.click(screen.getByRole('button', { name: '마감 조건 해제' }))
+    await expectView({ search: '?tab=done', tab: '완료', overdue: false, soon: false, rows: DONE })
+  })
+})
+
+describe('정렬 (D-175)', () => {
+  const sortButton = () => screen.getByRole('button', { name: /^정렬:/ })
+  async function chooseSort(user: ReturnType<typeof userEvent.setup>, name: string) {
+    await user.click(sortButton())
+    await user.click(await screen.findByRole('menuitemradio', { name }))
+  }
+  const taskRequests = (log: Log) => log.started.filter(({ path }) => path.startsWith('/tasks'))
+
+  it('기본은 마감 빠른 순이다. 최근 생성순을 고르면 URL 에 남고 승인·태스크가 각각 생성 최신순이 된다. 탭 개수는 그대로다', async () => {
+    const user = userEvent.setup()
+    const app = await openList()
+    await waitFor(() => expect(rows()).toEqual(PM_ALL))
+    expect(sortButton()).toHaveAccessibleName('정렬: 마감 빠른 순')
+    const log = recordRequests()
+
+    await chooseSort(user, '최근 생성순')
+    await app.expectSearch('?sort=created')
+    expect(sortButton()).toHaveAccessibleName('정렬: 최근 생성순')
+    await waitFor(() =>
+      expect(rows().slice(0, 4)).toEqual([
+        '배포 문서 보완',
+        '테스트 계획 정리',
+        '알림 문구 검토',
+        '배포 스크립트',
+      ]),
+    )
+    const createdAt = new Map(db.tasks.map(({ title, created_at }) => [title, created_at]))
+    const taskCreated = rows()
+      .slice(3)
+      .map((title) => createdAt.get(title))
+    expect(taskCreated).toEqual([...taskCreated].sort().reverse())
+    expect(tabTexts()).toEqual(['전체 13', '확인 필요 3', '진행 중 7', '완료 3'])
+
+    await user.click(tab('완료'))
+    await app.expectSearch('?sort=created&tab=done')
+    await waitFor(() => expect(rows()).toEqual(['토큰 정리', '폰트 적용', '랜딩 카피']))
+
+    await chooseSort(user, '마감 빠른 순')
+    await app.expectSearch('?tab=done')
+    await waitFor(() => expect(rows()).toEqual(['랜딩 카피', '폰트 적용', '토큰 정리']))
+    // 정렬은 받은 목록 안에서만 한다 — 다시 부르지 않는다
+    expect(taskRequests(log)).toEqual([])
+  })
+
+  it('주소로 최근 변경순을 열면 가장 최근에 바뀐 태스크가 태스크 중 맨 앞이다', async () => {
+    db.tasks.find(({ task_id }) => task_id === 'tk_06')!.updated_at = '2026-09-18T01:00:00Z'
+    await openList(`${paths.tasks('ws_01')}?sort=updated`)
+    expect(sortButton()).toHaveAccessibleName('정렬: 최근 변경순')
+    // 승인은 변경 시각이 없어 생성 최신순이다. 나머지 태스크는 변경 시각이 같아 생성 최신순이다
+    await waitFor(() =>
+      expect(rows().slice(0, 5)).toEqual([
+        '배포 문서 보완',
+        '테스트 계획 정리',
+        '알림 문구 검토',
+        'STT 정확도 측정',
+        '배포 스크립트',
+      ]),
+    )
+  })
+
+  it('모르는 정렬 값은 마감 빠른 순이다', async () => {
+    await openList(`${paths.tasks('ws_01')}?sort=priority`)
+    expect(sortButton()).toHaveAccessibleName('정렬: 마감 빠른 순')
+    await waitFor(() => expect(rows()).toEqual(PM_ALL))
   })
 })
 
@@ -504,13 +602,13 @@ describe('상세·이력과 PM 의 상태 변경 (AC-04)', () => {
   const toastFor = (taskId: string) =>
     document.querySelectorAll(`[data-toast-key="task-status-${taskId}"]`)
 
-  it('담당자·상태·마감·진행률·막힌 사유·연결 회의·이력을 읽는다', async () => {
+  it('담당자·상태·마감·막힌 사유·연결 회의·이력을 읽는다', async () => {
     await openDetail('tk_01', '로그인 API 연동')
     expect(screen.getByRole('heading', { level: 1, name: '태스크' })).toBeInTheDocument()
     await waitFor(() => expect(field('담당자')).toHaveTextContent('김서연'))
     expect(field('상태')).toHaveTextContent('진행 중')
     expect(field('마감')).toHaveTextContent('2026-09-20')
-    expect(field('진행률')).toHaveTextContent('40%')
+    expect(screen.queryByText('진행률')).toBeNull()
     expect(field('막힌 사유')).toHaveTextContent('없음')
     await waitFor(() =>
       expect(
@@ -545,6 +643,20 @@ describe('상세·이력과 PM 의 상태 변경 (AC-04)', () => {
       'href',
       paths.tasks('ws_01'),
     )
+  })
+
+  it('처음부터 조회가 실패하면 일반 팀원도 다시 시도 버튼으로 복구한다 (#236)', async () => {
+    setMockRole('member')
+    server.use(http.get('/api/v1/tasks/:taskId', () => fail('INTERNAL_ERROR', 'boom', 500)))
+    renderApp(paths.tasks('ws_01', 'tk_01'))
+    expect(
+      await screen.findByText('태스크를 불러오지 못했어요', {}, { timeout: 5_000 }),
+    ).toBeVisible()
+    expect(screen.queryByText('최신 상태를 받지 못했어요')).toBeNull()
+    server.resetHandlers()
+    fireEvent.click(screen.getByRole('button', { name: '다시 시도' }))
+    expect(await screen.findByRole('heading', { level: 2, name: '로그인 API 연동' })).toBeVisible()
+    expect(screen.queryByText('태스크를 불러오지 못했어요')).toBeNull()
   })
 
   it('일반 팀원은 상태를 바꿀 수 없다 — 고르는 칸이 없고 PATCH 도 없다', async () => {

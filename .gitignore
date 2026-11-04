@@ -71,6 +71,8 @@ target/
 *.db
 .terraform/
 implementation_plan_1.md
+# 웹 녹음 업로드 로컬 저장 폴더(UPLOAD_DIR 기본값). 회의 녹음이라 올리지 않는다
+backend/uploads/
 
 # 폐기된 프로토타입 런타임 (이전 세대 디자인 기준, 폰트 TTF 11MB 포함)
 frontend/docs/design/site-runtime/
@@ -84,3 +86,6 @@ frontend/docs/design/site-runtime/
 # Claude Code 개인 설정 (팀 공통은 .claude/settings.json)
 .claude/settings.local.json
 CLAUDE.local.md
+
+# 프로젝트 검증 실행 증거. cleanup 뒤에도 로컬에 보관한다.
+/.verify/

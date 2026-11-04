@@ -3,17 +3,19 @@ import { useCallback } from 'react'
 import { retryTaskNotionSync, taskDetailQueryOptions, taskListQueryOptions } from '@/entities/task'
 import type { Task } from '@/entities/task'
 import { captureSession } from '@/entities/user'
+import { queryView } from '@/shared/lib/query-view'
 import { NOTION_SYNC_POLL_MS } from '../lib/notionSyncLabel'
 
 /**
  * 태스크 상세 조회의 polling 간격. 반영 중(`pending`)인 동안만 3초마다 다시 묻는다.
- * 종료 상태(`synced`·`failed`·없음)이거나 조회가 실패했으면(접근 상실 포함) 멈춘다.
+ * 종료 상태(`synced`·`failed`·없음)이거나 조회 상태가 `ready` 가 아니면(처음 실패·접근 상실·재조회 실패) 멈춘다.
+ * 재조회 실패는 화면이 안내하고 사용자가 다시 시도한다 (#236) — 화면과 같은 `queryView` 판정이다.
  * 화면을 떠나면 이 관찰자가 사라져 간격도 함께 사라진다
  */
 export function notionSyncRefetchInterval(query: {
-  state: { status: 'pending' | 'error' | 'success'; data: Task | undefined }
+  state: { data: Task | undefined; error: unknown }
 }): number | false {
-  if (query.state.status === 'error') return false
+  if (queryView(query.state) !== 'ready') return false
   return query.state.data?.notionSyncStatus === 'pending' ? NOTION_SYNC_POLL_MS : false
 }
 
