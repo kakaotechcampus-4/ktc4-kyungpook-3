@@ -84,7 +84,7 @@ def test_picking_a_task_queues_a_rejudgment_for_that_task_only(mdb, mseed, two):
     ]
 
 
-def test_rejudgment_drops_unknown_and_stays_silent_without_a_change(mdb, mseed, two):
+def test_rejudgment_without_a_change_tells_the_pm_it_found_nothing(mdb, mseed, two):
     a, _ = two
     item = _unknown(mdb, mseed)
     _attribute(item, a, seed=mseed)
@@ -93,7 +93,18 @@ def test_rejudgment_drops_unknown_and_stays_silent_without_a_change(mdb, mseed, 
 
     assert _row(mdb, item).state == S.DONE
     assert _outcomes(mdb, item) == [("none", "noted"), ("unknown", "picked")]
-    assert len(_kind(mdb, "reply_judged")) == 1
+    [_, found_nothing] = _kind(mdb, "reply_judged")
+    assert found_nothing.text == "앨리스 답장 '그거 다 했어요' → 바꿀 내용을 찾지 못했어요. 직접 확인해 주세요"
+    assert (found_nothing.link_type, found_nothing.link_id) == ("thread", _row(mdb, item).thread_id)
+
+
+def test_rejudgment_with_only_the_current_value_tells_the_pm_too(mdb, mseed, two):
+    a, _ = two
+    item = _unknown(mdb, mseed)
+    _attribute(item, a, seed=mseed)
+    again = _claim()
+    _judge(again, _change(a, "status", "in_progress", evidence="certain", claimed=again))
+    assert _kind(mdb, "reply_judged")[-1].text.endswith("→ 바꿀 내용을 찾지 못했어요. 직접 확인해 주세요")
 
 
 def test_rejudgment_failure_tells_pm(mdb, mseed, two):

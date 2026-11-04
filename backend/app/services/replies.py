@@ -353,6 +353,7 @@ def _judged(db: Session, row: ReplyJudgment, changes: list[ReplyChangeRequest], 
     message = row.message
     notice = _notice(
         message.thread.member.display_name, scheduler._preview(message.body), lines, locked, row.thread_id,
+        picked=row.picked_task_id is not None,
     )
     if notice is not None:
         notifications.notify_pms(
@@ -513,9 +514,12 @@ def rebase_cards(db: Session, task: Task) -> None:
 
 
 def _notice(
-    name: str, preview: str, rows: list[ReplyChange], locked: dict[str, Task], thread_id: str
+    name: str, preview: str, rows: list[ReplyChange], locked: dict[str, Task], thread_id: str, *, picked: bool = False,
 ) -> Notice | None:
-    """답장 하나에 알림 하나. 한 건이면 그 태스크로, 그 밖은 대화로 보낸다. 바꿀 것이 없으면 알리지 않는다."""
+    """답장 하나에 알림 하나. 한 건이면 그 태스크로, 그 밖은 대화로 보낸다. 바꿀 것이 없으면 알리지 않는다.
+
+    PM 이 태스크를 고른 재판단은 바꿀 것이 없어도 알린다. 고른 PM 이 결과를 기다린다.
+    """
     head = f"{name} 답장 '{preview}'"
     applied = [r for r in rows if r.outcome == ReplyChangeOutcome.APPLIED]
     asks = [r for r in rows if r.outcome == ReplyChangeOutcome.PROPOSED or r.field == ReplyChangeField.FAILED]
@@ -536,6 +540,8 @@ def _notice(
         parts.append("어느 태스크인지 골라 주세요")
     if due_clear:
         parts.append("마감을 없애자는 내용이에요. 직접 확인해 주세요")
+    if picked and not parts:
+        parts.append("바꿀 내용을 찾지 못했어요. 직접 확인해 주세요")
     return Notice(f"{head} → {', '.join(parts)}", "thread", thread_id) if parts else None
 
 
