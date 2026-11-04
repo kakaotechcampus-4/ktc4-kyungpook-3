@@ -294,7 +294,7 @@ AUDIO_TOO_LARGE(413)              DISCORD_USER_ALREADY_MAPPED(409)
 |---|---|---|
 | POST | `/api/v1/members` | 201 |
 | GET | `/api/v1/members?workspace_id=` | `workspace_id` 필수 |
-| GET · PATCH | `/api/v1/members/{member_id}` | |
+| GET · PATCH | `/api/v1/members/{member_id}` | 대기 초대가 있는 팀원을 PM 으로 올리면 409 (§5.9) |
 | POST | `/api/v1/members/{member_id}/aliases` | 별칭 추가 |
 | GET | `/api/v1/members/aliases?workspace_id=` | 별칭 목록 |
 | GET | `/api/v1/members/unresolved-aliases?workspace_id=` | **미매칭 이름** |
@@ -1341,9 +1341,9 @@ D-117(E2E)과 D-136(polling)은 실제 API 가 생길 때까지 계속 보류한
   | `revoked` | 연결 끊김 | PM 이 수락 뒤 연결을 끊었다. 팀원 행과 태스크·이력은 그대로고 `member.user_id` 만 null 로 돌아간다 |
 
 - 만료는 없다. 이메일 고치기 API 는 없고, 같은 팀원에게 다시 초대하면 대기 중인 초대가 `canceled` 가 된다. 거절·취소·연결 끊김 뒤에는 다시 초대할 수 있다.
-- 수락한 팀원의 권한은 기존 팀원 권한 그대로다. 기존 API 는 바뀌지 않았다.
+- 수락한 팀원의 권한은 기존 팀원 권한 그대로다. 기존 API 에서 바뀐 것은 아래 `PATCH /members/{id}` 의 역할 변경 하나다.
 - 탈퇴한 팀원의 초대는 내 초대에 나오지 않고 수락할 수 없다(409 `INVITATION_NOT_PENDING`). PM 목록에는 남는다.
-- 대기 중에 팀원을 PM 으로 올리면 그 초대는 내 초대에 나오지 않고 수락할 수 없다. 다시 초대해도 409 이고 대기 초대는 그대로 남는다. 역할을 팀원으로 되돌리면 그 초대를 다시 수락할 수 있다.
+- 대기 초대가 있는 팀원은 PM 으로 올릴 수 없다. `PATCH /members/{id}` `{role: "pm"}` 이 409 `MEMBER_HAS_PENDING_INVITATION` 이고 역할과 초대는 그대로다. 받는 사람이 수락한 뒤 올리거나, 초대를 취소한 뒤 올린다. 역할 외의 수정은 막지 않는다.
 - 오류
 
   | 코드 | 상태 | 언제 |
@@ -1353,7 +1353,8 @@ D-117(E2E)과 D-136(polling)은 실제 API 가 생길 때까지 계속 보류한
   | `MEMBER_ALREADY_LINKED` | 409 | 이미 로그인 계정이 이어진 팀원이다(만들기·수락) |
   | `ALREADY_WORKSPACE_MEMBER` | 409 | 그 이메일의 계정, 또는 수락하려는 내가 이미 이 워크스페이스의 팀원이다 |
   | `EMAIL_ALREADY_INVITED` | 409 | 같은 이메일로 다른 팀원에게 보낸 초대가 대기 중이다 |
-  | `PM_MEMBER_NOT_INVITABLE` | 409 | 역할이 PM 인 팀원을 초대하거나, 대기 중에 PM 으로 바뀐 팀원의 초대를 수락하려 했다. 팀원으로 초대하고, 수락한 뒤 PM 으로 바꾼다 |
+  | `PM_MEMBER_NOT_INVITABLE` | 409 | 이 워크스페이스에서 역할이 PM 인 팀원을 초대하려 했다. 팀원으로 초대하고, 수락한 뒤 PM 으로 바꾼다. 다른 워크스페이스의 역할과는 상관없다 |
+  | `MEMBER_HAS_PENDING_INVITATION` | 409 | 대기 초대가 있는 팀원을 PM 으로 올리려 했다(`PATCH /members/{id}`) |
   | `INVITATION_NOT_FOUND` | 404 | 초대가 없다. 수락·거절에서는 내 이메일로 온 초대가 아니어도 이 코드다 |
   | `INVITATION_NOT_PENDING` | 409 | 대기 중이 아닌 초대를 수락·거절·취소했다 |
   | `INVITATION_NOT_ACCEPTED` | 409 | 수락하지 않은 초대의 연결을 끊으려 했다 |
