@@ -52,7 +52,7 @@
 
 - `source: "chat"`과 `started_at`은 디스코드 채팅 자동 수집용이다(구현됨, BE 담당 리뷰 대기). `started_at`은 그날 대화의 시작 시각이고, 채팅 회의의 발화 `start`·`end`(초)는 이 시각에서 잰 값이다.
 - 채팅 회의가 `processing`으로 남아도 웹 업로드를 막지 않는다. 업로드 409 검사(`MEETING_PROCESSING_IN_PROGRESS`)는 `source`가 `chat`인 회의를 세지 않는다.
-- 합의 상태: 사용자(PM 역할 기획자)가 이 PR에서 승인했다. BE 담당 리뷰 전이라 BE·AI 합의 여부는 확인 필요.
+- 합의 상태: AI 담당이 설계를 정하고 이 PR 에 포함했다. BE 담당 리뷰 전이라 BE·AI 합의는 확인 필요.
 
 ### `GET /workspaces/{workspace_id}/chat-cursor` → 200
 
@@ -109,7 +109,7 @@ AI `Transcript.to_dict()` 모양에 화자 이름을 더해 보낸다. 한 회�
 
 ## 채팅 회의의 반영 규칙 (구현됨, BE 담당 리뷰 대기)
 
-`source`가 `chat`인 회의의 추출 항목은 PM 승인을 거쳐야 task에 반영된다. 사용자가 이 PR에서 정한 규칙이다.
+`source`가 `chat`인 회의의 추출 항목은 PM 승인을 거쳐야 task에 반영된다. AI 담당이 설계를 정하고 이 PR 에 포함했다. BE 담당 리뷰 전이라 BE·AI 합의는 확인 필요.
 
 - 추출 등록(`POST /extractions`)에서 새 항목의 게이트가 `auto`가 되면 `review`로 낮춘다. `hold`는 그대로다. 수정 항목은 원래 항상 `review`다.
 - 승인으로 task가 생기거나 바뀌면 `TaskHistory.change_source`가 `chat`이다(그 외 회의는 기존대로 `meeting`·`manual`). 이력 응답의 `is_auto`는 `changed_by`로 계산하므로 승인한 PM이 기록된다.
