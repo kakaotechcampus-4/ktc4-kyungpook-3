@@ -18,6 +18,7 @@ from app.models import (
     Member,
     MemberAlias,
     Session as SessionModel,
+    Source,
     Task,
     User,
     Workspace,
@@ -186,6 +187,18 @@ def test_first_person_assignee_resolved_by_speaker_is_auto(client, seed):
     assert gate == "auto"
 
 
+def test_first_person_assignee_resolved_by_speaker_member_id_is_auto(client, seed):
+    """멤버 ID 로 정한 화자도 uid 와 같게 확정(확신도 1.0, 확인 필요 없음)이라 auto 가 될 수 있다."""
+    item = _only_item(client, _extract(client, seed, [_judge(
+        assignee_type="first", assignee_raw=None, evidence_speaker=None,
+        evidence_speaker_member_id=seed["jimin"].member_id,
+    )]))
+
+    assert item["gate"] == "auto"
+    assert item["assignee"]["member_id"] == seed["jimin"].member_id
+    assert (item["assignee"]["confidence"], item["assignee"]["needs_check"]) == (1.0, False)
+
+
 @pytest.mark.parametrize(
     "fields",
     [
@@ -325,6 +338,35 @@ def test_revert_deletes_task_and_turns_item_into_pending_review(client, db, seed
     assert reverted["reverted_at"] is not None
     assert reverted["task_id"] is None
     assert (reverted["approval_id"], reverted["approval_status"]) == (data["approval_id"], "pending")
+
+
+def test_revert_payload_carries_evidence_speaker_member_id(client, db, seed):
+    jimin_id = seed["jimin"].member_id
+    db.add(Source(
+        meeting_id=seed["meeting"].meeting_id, seq=3, speaker_discord_user_id="uid-jimin", member_id=jimin_id,
+        start_ms=3000, end_ms=3900, text="제가 할게요",
+    ))
+    db.commit()
+    extraction_id = _extract(client, seed, [_judge(evidence_seqs=[3])])
+    item = _only_item(client, extraction_id)
+    assert item["gate"] == "auto"
+    assert item["evidence"]["speaker_member_id"] == jimin_id
+
+    assert _revert(client, extraction_id, item["item_id"]).status_code == 200
+
+    [approval] = _approvals(db)
+    assert json.loads(approval.payload)["evidence_speaker_member_id"] == jimin_id
+
+
+def test_revert_payload_speaker_member_id_is_null_without_evidence(client, db, seed):
+    extraction_id, item = _auto_item(client, seed)
+
+    assert _revert(client, extraction_id, item["item_id"]).status_code == 200
+
+    [approval] = _approvals(db)
+    payload = json.loads(approval.payload)
+    assert "evidence_speaker_member_id" in payload
+    assert payload["evidence_speaker_member_id"] is None
 
 
 def test_approving_reverted_item_creates_new_task_for_it(client, db, seed):

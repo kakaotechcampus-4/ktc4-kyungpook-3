@@ -83,6 +83,8 @@ class MeetingStatus(StrEnum):
     CREATED = "created"
     RECORDING = "recording"
     PROCESSING = "processing"
+    # 웹 업로드 회의: AI가 화자를 나눴고 PM이 화자를 지정하기를 기다린다(#266). 동시 처리 제한에서 뺀다
+    AWAITING_SPEAKERS = "awaiting_speakers"
     DONE = "done"
     FAILED = "failed"
 
@@ -368,7 +370,7 @@ class Meeting(Base):
     )
     title: Mapped[str | None] = mapped_column(String(200), nullable=True)
     source: Mapped[str] = mapped_column(String(20), default=MeetingSource.DISCORD)
-    status: Mapped[str] = mapped_column(String(16), default=MeetingStatus.CREATED, index=True)
+    status: Mapped[str] = mapped_column(String(32), default=MeetingStatus.CREATED, index=True)
 
     failed_stage: Mapped[str | None] = mapped_column(String(32), nullable=True)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
@@ -411,6 +413,18 @@ class MeetingUpload(Base):
     attendees: Mapped[str] = mapped_column(Text)
     # AI가 가져간(claim) 시각. 비어 있으면 아직 아무도 가져가지 않았다
     claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # AI가 알려준 화자 목록(JSON 문자열)과 보고 시각. 비어 있으면 아직 보고하지 않았다
+    speakers: Mapped[str | None] = mapped_column(Text, nullable=True)
+    speakers_reported_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # PM이 지정한 화자 → 팀원 매핑(JSON 문자열)과 지정 시각
+    speaker_mapping: Mapped[str | None] = mapped_column(Text, nullable=True)
+    speakers_assigned_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # 화자 지정 뒤 AI가 처리를 다시 이어 간 시각
+    resumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class Source(Base):
@@ -1036,3 +1050,55 @@ class SchedulerSuggestion(Base):
         String(36), ForeignKey("reminder.reminder_id", ondelete="SET NULL"), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class InvitationStatus(StrEnum):
+    PENDING = "pending"
+    ACCEPTED = "accepted"
+    DECLINED = "declined"
+    CANCELED = "canceled"
+    REVOKED = "revoked"
+
+
+class Invitation(Base):
+    """PM 이 로그인 계정 없는 팀원에게 가입 이메일로 보낸 초대. 그 이메일로 로그인한 사람이 수락하면 팀원과 계정이 이어진다.
+
+    email 은 앞뒤 공백을 지우고 소문자로 바꿔 저장한다. 끊은(revoked) 초대도 accepted_user_id 를 남겨 누가 들어왔었는지 보인다.
+    """
+
+    __tablename__ = "invitation"
+    __table_args__ = (
+        # 한 팀원에 열린 초대 하나, 한 워크스페이스에서 같은 이메일의 열린 초대 하나. 둘째가 있어야 한 계정이
+        # 한 워크스페이스에서 두 팀원에 이어지지 않는다(수락할 때의 소속 확인과 함께).
+        Index(
+            "uq_invitation_pending_member", "member_id",
+            unique=True,
+            postgresql_where=text("status = 'pending'"),
+            sqlite_where=text("status = 'pending'"),
+        ),
+        Index(
+            "uq_invitation_pending_email", "workspace_id", "email",
+            unique=True,
+            postgresql_where=text("status = 'pending'"),
+            sqlite_where=text("status = 'pending'"),
+        ),
+    )
+
+    invitation_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    workspace_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("workspace.workspace_id", ondelete="CASCADE"), index=True
+    )
+    member_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("member.member_id", ondelete="CASCADE"), index=True
+    )
+    email: Mapped[str] = mapped_column(String(255), index=True)
+    status: Mapped[str] = mapped_column(String(16), default=InvitationStatus.PENDING)
+    invited_by_user_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("user.user_id", ondelete="SET NULL"), nullable=True
+    )
+    accepted_user_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("user.user_id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    # 마지막으로 상태가 바뀐 시각. 끊으면 수락 시각 대신 끊은 시각이 된다.
+    responded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

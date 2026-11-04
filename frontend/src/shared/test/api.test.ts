@@ -20,7 +20,7 @@ it('204 를 undefined 로 받는다 — 빈 본문을 JSON 으로 읽지 않는�
 it('오류를 공통 클라이언트와 같은 ApiError 로 던진다', async () => {
   const error = await fetchDto(
     '/approvals/ap_01',
-    jsonRequest('PATCH', { status: 'approved' }),
+    jsonRequest('PATCH', { status: 'invalid' }),
   ).catch((caught: unknown) => caught)
   expect(error).toBeInstanceOf(ApiError)
   expect(error).toMatchObject({ kind: 'http', code: 'INVALID_REQUEST', status: 400 })

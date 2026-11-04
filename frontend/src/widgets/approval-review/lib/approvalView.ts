@@ -8,7 +8,6 @@ const FIELD_LABEL: Record<string, string> = {
   title: '제목',
   assignee_member_id: '담당자',
   status: '상태',
-  progress: '진행률',
   blocker: '막힌 사유',
   due_date: '마감',
 }
@@ -36,7 +35,6 @@ export function fieldValueLabel(
     const status = parseEnumParam(value, TASK_STATUSES)
     return status === null ? value : TASK_STATUS_LABEL[status]
   }
-  if (field === 'progress' && typeof value === 'number') return `${value}%`
   return typeof value === 'string' || typeof value === 'number' ? String(value) : '알 수 없는 값'
 }
 
@@ -49,8 +47,6 @@ export function currentFieldValue(task: Task, field: string): unknown {
       return task.assigneeMemberId
     case 'status':
       return task.status
-    case 'progress':
-      return task.progress
     case 'blocker':
       return task.blocker
     case 'due_date':

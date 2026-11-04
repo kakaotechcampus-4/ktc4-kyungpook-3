@@ -1,4 +1,4 @@
-import type { Message, MessageReview } from '@/entities/message'
+import type { MessageReview } from '@/entities/message'
 import {
   avatarText,
   awaitingDays,
@@ -15,15 +15,7 @@ import {
   toSeoulInputValue,
 } from './format'
 
-const message = (id: string, sentAt: string): Message => ({
-  id,
-  sender: 'bot',
-  body: id,
-  sentAt,
-  status: 'sent',
-  delivery: 'auto',
-  approvedBy: null,
-})
+const message = (id: string, at: string) => ({ id, at })
 
 it('목록 날짜와 말풍선 시각은 한국 시간이다', () => {
   // UTC 로는 9월 9일 15:30 — 한국 시간으로는 다음 날 00:30 이다
@@ -45,7 +37,7 @@ it('메시지를 한국 날짜별로 묶는다 — 자정을 넘긴 UTC 시각�
     message('c', '2026-09-08T15:00:00Z'),
     message('d', '2026-09-10T18:00:00+09:00'),
   ])
-  expect(days.map(({ date, messages }) => [date, messages.map(({ id }) => id)])).toEqual([
+  expect(days.map(({ date, items }) => [date, items.map(({ id }) => id)])).toEqual([
     ['2026-09-08', ['a', 'b']],
     ['2026-09-09', ['c']],
     ['2026-09-10', ['d']],
@@ -59,7 +51,7 @@ it('첫 메시지부터 시각을 읽을 수 없으면 날짜 없는 묶음으�
     message('c', '2026-09-08T09:02:00+09:00'),
     message('d', 'not-a-time'),
   ])
-  expect(days.map(({ date, messages }) => [date, messages.map(({ id }) => id)])).toEqual([
+  expect(days.map(({ date, items }) => [date, items.map(({ id }) => id)])).toEqual([
     [null, ['a', 'b']],
     ['2026-09-08', ['c', 'd']],
   ])
@@ -86,13 +78,21 @@ it('만든 때는 오늘 기준 상대 표기다 — 오늘 · 어제 · N일 �
   expect(relativeDay('not-a-time', today)).toBe('')
 })
 
-it('보내기 전 확인 행은 마감이 있으면 마감일, 없으면 만든 때를 쓴다', () => {
+it('보내기 전 확인 행은 예약이면 발송 예정, 마감이 있으면 마감일, 없으면 만든 때를 쓴다', () => {
   const review = {
     deadline: '2026-09-24',
     createdAt: '2026-09-15T10:00:00+09:00',
+    scheduledAt: '2026-09-23T09:00:00+09:00',
+    state: { status: 'pending' },
   } as MessageReview
   expect(reviewDateLabel(review, '2026-09-18')).toBe('09/24 마감')
   expect(reviewDateLabel({ ...review, deadline: null }, '2026-09-18')).toBe('3일 전')
+  expect(
+    reviewDateLabel(
+      { ...review, state: { status: 'scheduled', approvedBy: '최진호' } },
+      '2026-09-18',
+    ),
+  ).toBe('09/23 발송 예정')
 })
 
 it('답장이 없는 날은 보낸 날을 1일째로 센다', () => {

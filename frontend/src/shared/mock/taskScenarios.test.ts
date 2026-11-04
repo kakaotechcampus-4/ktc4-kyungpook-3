@@ -70,7 +70,7 @@ describe('M6 시나리오 목록', () => {
   })
 
   it.each(M6_SCENARIOS)('%s 는 저장 버전 그대로 sessionStorage 에서 복원된다', (scenario) => {
-    expect(MOCK_DB_VERSION).toBe(4)
+    expect(MOCK_DB_VERSION).toBe(5)
     replaceDb(createScenarioDb(scenario))
     saveDb(sessionStorage)
     resetDb()
@@ -192,7 +192,6 @@ describe('M6 시나리오 상태와 전이', () => {
     })
     await expect(fetchDto('/tasks/tk_01')).resolves.toMatchObject({
       status: 'done',
-      progress: 100,
       version: 2,
     })
   })

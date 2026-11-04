@@ -7,7 +7,7 @@ notification(웹 안 알림과 푸시 발송 상태), push_subscription(브라�
 되돌리면 네 테이블과 저장된 알림·구독·시계가 모두 지워진다. 태스크에 이미 걸린 자동 막힘은 태스크에 그대로 남는다.
 
 Revision ID: 8b3090f39aec
-Revises: d5b8c3e7a914
+Revises: e8b2f4c6a1d9
 Create Date: 2026-11-04 18:00:00.000000
 
 """
@@ -19,7 +19,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = '8b3090f39aec'
-down_revision: Union[str, Sequence[str], None] = 'd5b8c3e7a914'
+down_revision: Union[str, Sequence[str], None] = 'e8b2f4c6a1d9'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

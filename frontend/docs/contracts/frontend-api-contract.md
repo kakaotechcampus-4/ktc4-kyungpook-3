@@ -1,5 +1,45 @@
 # 프론트엔드 API 계약
 
+## 진행률 제거와 보완 승인 경계 (#311, 2026-11-04)
+
+작업 근거는 [FE 요청 #305](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/305)와 [구현 이슈 #311](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/311)이다. 서버 규약은 [BE PR #307](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/pull/307)의 스키마·승인 처리·계약 변경을 대조했다. 확인 당시 PR은 OPEN이며, 아래 규약이 로컬 백엔드나 배포 서버에 적용됐다고 가정하지 않는다. 아래의 예전 M6 필수값·MSW 전용 보완 기록보다 이 절의 후속 요구사항이 우선한다.
+
+### 제안 값을 고쳐 승인 `task_overrides`
+
+`PATCH /api/v1/approvals/{approval_id}` 한 번에 PM 수정값과 승인을 보낸다. 승인 뒤 별도 태스크 수정 요청을 보내지 않는다.
+
+| 항목 | 규약과 FE 처리 |
+|---|---|
+| 생성 승인 | `task_title`, `assignee_member_id`, `due_date`만 수정한다. 상태는 선택하지 않으며 항상 `todo`로 생성한다 |
+| 수정 승인 | `status`, `due_date`만 수정한다. 원래 제안의 다른 변경 필드와 근거는 보존한다 |
+| 키 생략 | 해당 필드는 원래 제안을 유지한다. 편집하지 않은 현재 태스크 값을 보완값으로 채워 보내지 않는다 |
+| 명시적 `null` | 담당자·마감을 미정으로 확정한다. `task_title`·`status`는 `null`을 허용하지 않는다 |
+| 최종 생성값 검증 | 제목은 trim 후 1~300 코드 포인트, 지정된 담당자는 현재 공간 팀원, 지정된 마감은 유효한 `YYYY-MM-DD`다. 담당자·마감 미정만으로 승인을 막지 않는다 |
+| 반려 | `{status: "rejected"}`만 전송한다. 보완값과 확인 버전을 섞지 않는다 |
+| 실 API와 MSW | 같은 요청 매핑과 승인 판정을 사용한다. 보완값을 제거한 status-only 요청으로 자동 재시도하지 않는다 |
+| 400·404 | 잘못된 키·날짜·상태는 400 `INVALID_REQUEST`, 다른 공간 담당자는 400 `WORKSPACE_MISMATCH`, 없는 팀원은 404 `MEMBER_NOT_FOUND`다. 서버 승인은 pending으로 남고 FE 입력도 유지한다 |
+| 409 충돌 | 서버는 PM 수정값을 적용한 최종 값으로 검사한다. 응답 `conflicts[].proposed`를 반영 예정값으로 표시한다 |
+| 명시적 재승인 | 충돌을 확인한 PM이 다시 누를 때 같은 수정값과 응답의 `details.task_version`을 `confirm_task_version`으로 보낸다. 재충돌은 새 정보를 표시하고 다시 확인받는다. 자동 재승인은 없다 |
+| 확인 해제 | 충돌 후 승인 입력을 바꾸면 이전 확인 버전을 해제한다. 입력을 원래대로 되돌려도 과거 확인을 복원하지 않는다 |
+| 이미 처리됨 | 기존 `APPROVAL_ALREADY_RESOLVED` 재조회와 중복 전송·세션 보호를 유지한다 |
+| 승인 응답 | 원래 제안·근거는 유지하고 제안과 다른 값만 `payload.task_overrides`에 남는다. 완료 화면은 서버 응답의 원래 값에 보완값을 적용하며, `null`을 원래 값으로 대체하지 않는다 |
+| 이력 | PM 수정 필드는 `change_source: "manual"`, `changed_by`는 승인한 PM이다. 다른 필드의 출처는 서버의 payload `change_source`와 생성·수정별 기본값을 따른다. FE는 서버 이력을 표시한다 |
+
+요청 예시는 다음과 같다. 실행 검증 결과는 아래 연결한 M6 결과에서 별도로 구분한다.
+
+```json
+{"status":"approved","task_overrides":{"task_title":"로그인 API 연동","assignee_member_id":null}}
+{"status":"approved","task_overrides":{"status":"done","due_date":null},"confirm_task_version":7}
+```
+
+### Task 진행률과 과거 이력
+
+Task DTO·모델·생성 및 변경 요청·MSW와 현재 태스크 화면에서 `progress`를 제거한다. `in_progress` 상태, 회의 처리·업로드·온보딩 진행은 별개다. 과거 `changed_field: "progress"` 이력은 읽기 전용으로 표시하고 되돌리기를 제공하지 않는다. MSW 되돌리기도 이 필드를 400으로 거절한다. 노션의 기존 Progress 속성을 삭제하거나 기록하는 작업은 없다.
+
+### 구현과 검증의 구분
+
+FE 변경과 실제 검증은 [M6 후속 결과](../plan/m6/result.md)에 기록한다. 요청 경계는 [승인 DTO](../../src/shared/types/api/approval.ts), [도메인 판정](../../src/entities/approval/model/resolution.ts), [mapper](../../src/entities/approval/model/mapper.ts), [승인 훅](../../src/features/approval-resolve/model/useApprovalResolve.ts), [MSW 승인](../../src/shared/mock/handlers/approval.ts)에서 확인한다. MSW 성공은 실제 서버 승인·DB·Notion 반영의 증거가 아니다. 공개 서버의 `/openapi.json`은 확인 시 SPA HTML을 반환해 새 스키마·배포 상태를 검증하지 못했다. BE 변경을 배포한 환경에서 실 API 검증이 남는다.
+
 ## 현재 코드 대조 (2026-10-07)
 
 이 파일은 프론트엔드–백엔드 API의 대표 계약이다. 제공자는 [백엔드 API](../../../backend/app/api), 소비자는 [프론트엔드 entities](../../src/entities)이며, 개발·테스트에서는 [MSW handlers](../../src/shared/mock/handlers)가 서버 응답을 모의한다. 아래는 현재 작업 트리 소스의 정적 확인 결과다. 실제 서비스 호출·OAuth·STT 성공이나 팀 간 신규 합의를 뜻하지 않는다.
@@ -123,7 +163,7 @@ M6 S1에서 프론트 계약·데이터 계층을 현재 서버 코드에 맞췄
 > - 보완값이 **없어도** 최종 제목(trim 후 1~300자)·담당자·마감(유효한 `YYYY-MM-DD`)을 검사하고, 실패하면 400 `INVALID_REQUEST`(`details.field`)다. 위 「현재 서버 구현」의 생성 승인 반영(필수 검사 없음)과 다르며, 요청안 M6-3을 모의한 동작이다.
 > - 추출 항목의 공간·연결 승인, 담당자·회의 소속을 모두 검증한 뒤에만 태스크 생성·이력·추출 항목 `task_id` 연결·승인 상태 변경을 한꺼번에 적용한다. 실패하면 아무것도 바꾸지 않는다(요청안 M6-2 모의). 추출 항목의 `approval_id`는 서버처럼 남긴다.
 > - 승인 목록·상세 조회는 서버처럼 공간 소속만 검사한다. PM 제한(요청안 M6-4)은 모의하지 않는다.
-> - 화면의 처리 경로(transport)는 개발 서버이고 `VITE_ENABLE_MSW=true`일 때만 `msw`다([transport](../../src/features/approval-resolve/model/transport.ts)). production 빌드와 Storybook 빌드는 `live`라 `task_overrides`를 보내지 않는다.
+> - 화면의 처리 경로(transport)는 개발 서버이고 `VITE_ENABLE_MSW=true`일 때만 `msw`다(당시 `transport.ts`, #311에서 삭제). production 빌드와 Storybook 빌드는 `live`라 `task_overrides`를 보내지 않는다.
 
 #### 백엔드 요청 (합의 여부 확인 필요)
 
@@ -294,7 +334,7 @@ AUDIO_TOO_LARGE(413)              DISCORD_USER_ALREADY_MAPPED(409)
 |---|---|---|
 | POST | `/api/v1/members` | 201 |
 | GET | `/api/v1/members?workspace_id=` | `workspace_id` 필수 |
-| GET · PATCH | `/api/v1/members/{member_id}` | |
+| GET · PATCH | `/api/v1/members/{member_id}` | 대기 초대가 있는 팀원을 PM 으로 올리면 409 (§5.9) |
 | POST | `/api/v1/members/{member_id}/aliases` | 별칭 추가 |
 | GET | `/api/v1/members/aliases?workspace_id=` | 별칭 목록 |
 | GET | `/api/v1/members/unresolved-aliases?workspace_id=` | **미매칭 이름** |
@@ -756,7 +796,7 @@ MSW 는 **API 를 흉내내므로 100자 기준을 그대로 쓴다.** 여기에
 |---|---|
 | §4.1 Google OAuth `start` · `callback` (302) | 미구현. 로컬 이메일·비밀번호 경로만 있다 |
 | §4.3 integrations `start` · `callback` (302) | 미구현. 연결을 만들 방법이 API 에 없다 |
-| §4.7-3 `failed_stage` 값 구분 | 미구현. 자유 문자열 그대로 |
+| §4.7-3 `failed_stage` 값 구분 | 자유 문자열 유지. #256의 `diarize`·`speaker_assignment_expired`는 §4.4.1대로 구분. Notion 원인 전용 값은 미확정 |
 | §4.7-4 요약 저장 | **절반.** `Extraction.summary` 컬럼은 생겼고 `/minutes` 가 읽지만, 채우는 쪽이 없다 |
 | §4.7-5 transcript 구조화 | 미구현 (②-11) |
 | §2.6 actor 유추 | 미구현. `created_by` · `changed_by` · `resolved_by` 를 여전히 프론트엔드가 실어 보낸다 |
@@ -888,11 +928,11 @@ M4 에서 실 API 로 완결되지 않는다. 그때까지 MSW 로 진행한다.
 | GET | `/api/v1/meetings/{meeting_id}/minutes` | 회의록 본문 |
 
 ```jsonc
-// GET .../meetings — started_at 내림차순, 실패 회의 제외 (D-093, D-106)
+// GET .../meetings — started_at 내림차순, 일반 실패 제외·수동 업로드 화자 지정 만료 이력 유지 (D-093 개정, D-106)
 {"items": [{"meeting_id": "mt_09", "title": "3주차 정기회의",
             "started_at": "2026-09-15T14:00:00Z", "source": "discord",
             "status": "done", "duration_ms": 2730000,
-            "attendee_count": 5, "processed_at": "2026-09-15T06:12:00Z"}],
+            "attendee_count": 5, "processed_at": "2026-09-15T06:12:00Z", "failed_stage": null}],
  "total": 12}
 ```
 
@@ -938,6 +978,24 @@ POST .../meetings/upload            multipart/form-data
 - ⚠️ `attendees` 를 `audio_segment` 의 화자에서 역산한다. 말하지 않은 참석자가 빠지고, 로컬 업로드는 세그먼트가 없어 **빈 배열**이 된다.
 - ⚠️ `summary` 는 `Extraction.summary` 컬럼(TEXT)을 `json.loads` 한다. **채우는 쪽이 아직 없어 항상 `null`** 이다 (§4.7-4).
 - 비소속 사용자는 403 `FORBIDDEN` 이다. `MEETING_NOT_FOUND` 가 아니라 존재는 드러난다.
+
+#### 4.4.1 수동 업로드 실패 사유와 만료 이력 (#256, 2026-11-04)
+
+- 제공자는 BE, 소비자는 FE 회의 목록·상세·처리 추적기다. 경로는 기존 목록과 상세를 사용한다.
+- 목록 항목에 `failed_stage: string | null`을 추가한다. 상세의 기존 필드는 유지한다. 구버전 BE 목록이 이 필드를 생략하면 FE는 `null`로 읽는다.
+- `failed_stage`는 자유 문자열이다. 알려진 값만 아래와 같이 구분하고, 알 수 없는 값과 `null`에는 기존 일반 실패·Notion 연결 재조회 처리를 적용한다.
+
+| 알려진 값 | 의미와 FE 안내 |
+|---|---|
+| `diarize` | 음성 화자 분리 단계 실패. 음성 처리를 완료하지 못했다는 안내와 재업로드 안내를 표시한다. 이 값만으로 3시간 초과라고 단정하지 않는다. |
+| `speaker_assignment_expired` | 화자 지정 대기가 7일을 넘어 종료됐다. 사유와 원본 파일 재업로드 안내를 표시한다. |
+
+- 목록은 `source=manual_upload`, `status=failed`, `failed_stage=speaker_assignment_expired`인 회의를 보존한다. 나머지 실패 회의는 기존처럼 제외한다. 상세는 `GET /meetings/{meeting_id}`로 읽으며 만료된 회의의 회의록·추출은 조회하지 않는다. 멤버십 제한은 유지한다.
+- FE 합의 근거는 [이슈 결정 댓글](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/256#issuecomment-6609243822)과 D-091~D-093의 2026-11-04 보완이다. BE 목록 변경은 이 작업의 구현 제안이며 파트 간 리뷰·합의와 실서버 배포 확인은 별도다.
+- 현재 구현 근거: [BE 목록](../../../backend/app/api/workspaces.py), [FE DTO](../../src/shared/types/api/meeting.ts), [매퍼](../../src/entities/meeting/model/mapper.ts), [실패 안내](../../src/entities/meeting/lib/meetingFailure.ts), [목록 구분](../../src/entities/meeting/lib/minutesList.ts), [추적기](../../src/features/meeting-processing/model/useProcessingTracker.ts).
+- 자동 실패 전환은 미병합 [BE PR #301](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/pull/301)의 동작이다. 이 작업은 sweeper나 화자 지정 기능을 구현하지 않는다.
+- 예정 계약: [BE 알림 댓글](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/256#issuecomment-6604969982)에 따라 지정 제출 직후 만료되면 `409 MEETING_NOT_AWAITING_SPEAKERS`, `details.status=failed`가 온다. FE는 상세를 다시 조회해 실제 사유를 안내하고 재제출을 막는 방향이다. 현재 `develop`에는 화자 지정 제출 UI가 없어 이 오류의 실제 화면 연결은 후속 작업이다. 모든 409를 만료로 해석하지 않는다.
+
 
 ### 4.5 Discord 서버 사용자 목록
 
@@ -1105,6 +1163,7 @@ MSW 픽스처의 단위이자 M1-C 의 작업 단위이기도 하다.
 | 워크스페이스 만들기 | `POST /workspaces` `{name}` | **구현됨** §2.1 |
 | 온보딩 진행 상태 | `GET /workspaces/{id}` 의 `onboarding` | ⚠️ **스텁** §4.2 |
 | 단계 건너뛰기·완료 | `PATCH /workspaces/{id}/onboarding` | ⚠️ **스텁** §4.2 — `skip` 이 동작하지 않는다 |
+| 내 초대·수락·거절 | `GET /invitations/me`, `POST /invitations/{id}/accept`·`decline` | BE 구현, 프론트엔드 미연결 §5.9 |
 
 - 생성은 이름 하나만 보낸다. **이미 그렇게 구현돼 있다** (D-014, D-153).
 - 미완료 워크스페이스는 목록에서 표시를 달리하고 대시보드 접근을 막는다 (D-070, D-071).
@@ -1204,7 +1263,7 @@ members 에만 있고 Discord 목록에 없으면      → 비활성 (서버를 
     그 목록에 있는 `approval_id` 만 고른다. 반려된 항목이 `extraction_item` 에 그대로 남기 때문이다 (§3.1, §4.0-②-12).
 - 일반 팀원에게는 `task_id` 가 없고 `approval_id` 가 있는 항목을 화면에서 제거한다. 개수도 노출하지 않는다 (D-104).
   대기든 반려든 보여줄 태스크가 없으므로 조인 없이 판정되며, D-163 대로 승인 목록을 부르지 않아도 된다.
-- 정리 실패 시 회의록 페이지로 이동하고 토스트를 띄운다. 실패한 회의는 목록에 없다 (D-091~D-093).
+- 정리 실패 시 사유를 안내한다. 화자 지정 만료는 해당 회의의 실패 상세로 이동하고 목록에 이력을 남긴다. 나머지 실패 회의는 목록에서 제외한다 (D-091~D-093 개정, §4.4.1).
 
 ### 5.6 태스크 목록 · 보드 · 캘린더 · 간트
 
@@ -1316,6 +1375,16 @@ members 에만 있고 Discord 목록에 없으면      → 비활성 (서버를 
 - 계정이 연결되지 않은 팀원은 목록에만 쌓인다. 푸시가 실패해도 목록에는 남는다.
 - 일시 오류는 최대 3번 다시 보낸다. 기기가 꺼져 있으면 푸시 서비스가 24시간까지 붙잡아 두고, 그 뒤에는 버린다. 푸시 서비스가 구독이 없어졌다고 답하면(404·410) 그 구독을 지운다.
 
+**MSW 동작 (임시, 합의 전).** 아래는 개발 서버 목의 현재 구현이다. 백엔드와 합의한 규약이 아니고, 합의 여부 확인 필요. 재촉 자동 승인은 목에서 꺼져 있으며, 예약 시각이 지나도 스스로 나가지 않는다.
+
+- 경로. `GET /workspaces/{id}/messages`, `GET …/messages/threads/{thread_id}`, `PATCH …/messages/reviews/{review_id}`, `POST …/reviews/{id}/send`, `POST …/reviews/{id}/dismiss`, `POST …/messages/threads/{thread_id}/replies`, `POST …/messages/replies/{message_id}/attribution`.
+- 상태. 재촉 한 건의 저장 단계는 `pending`·`approved`·`sent`·`cancelled` 다. `expired` 는 저장하지 않고, 마감일이 오늘(서울 날짜)보다 앞인 `pending` 을 읽을 때 계산한다. `보내기 전 확인` 은 열린 항목(`pending`·`approved`)만 담는다. 화면에서 승인 대기와 예약은 `예정`, 취소됨·만료됨만 그 상태 말을 붙인다. 발송된 항목은 상태 말 없이 시각 줄이 있는 말풍선이다.
+- 자리. 승인 대기·예약은 나갈 시각 `scheduled_at` 이다. `지금 바로` 는 null 이라 아직 나가지 않은 묶음에 둔다. 발송됨·취소됨은 `closed_at` 이다. 취소는 `min(scheduled_at, 취소한 시각)` 에 놓는다. 만료는 `min(scheduled_at, 마감 다음 날 00:00)` 에 놓는다.
+- 권한. 승인·고쳐 쓰기·보내지 않음·발송 시점·답장 판정은 PM 만 한다. 아니면 403 `PM만 할 수 있는 작업입니다.` 이고 기록은 그대로다. 답장은 그 대화의 팀원만 한다. 아니면 403 `자기 대화에만 답장할 수 있습니다.`
+- 팀원 조회. 목록은 `reviews: []` 와, `member_id` 가 그 공간의 세션 팀원과 같은 대화만이다. 세션 팀원을 정할 수 없으면 대화가 없다. 남의 대화 조회는 404 `MESSAGE_THREAD_NOT_FOUND` 다. 팀원에게는 이미 전달된 메시지만 주고, 승인·답장 대기·태스크 판정은 비운다.
+- 발송과 수정. 승인 대기가 아니면 발송은 404 다. 예약 시각이 지났으면 409 `MESSAGE_SCHEDULE_PASSED` 이고 기록은 그대로다. 시각이 없으면 지금 발송되고, 있으면 같은 항목이 예약으로 목록에 남는다. 승인된 항목을 고치거나 시각을 바꾸면 다시 승인 대기가 된다. `이대로 발송` 만 보낸다.
+- 웹 답장. 그 대화에만 남고 Discord 로 나가지 않으며 재촉 상태를 바꾸지 않는다. 태스크 판정은 비어 있다. PM 화면에는 목록을 다시 받을 때만 보인다 (D-136).
+
 **프론트엔드가 정한 정책** (D-174, 백엔드·AI 합의 여부 확인 필요). 서버가 해 줘야 하는 일만 적는다. 정책 전문은 D-174 에 있다.
 
 - 메시지 기록이 원본이다. 백엔드가 기록을 만들면 웹은 그 기록을 조회해 보여 주고, Discord 봇은 같은 기록을 DM 으로 전달한다. 웹 답장은 웹에만 기록하고 Discord 로 보내지 않는다.
@@ -1345,9 +1414,64 @@ D-117(E2E)과 D-136(polling)은 실제 API 가 생길 때까지 계속 보류한
 | 미매칭 이름 붙이기 | `GET /members/unresolved-aliases`, `POST /members/{id}/aliases` | **구현됨** §2.2 |
 | 별칭 삭제 | `DELETE /members/aliases/{alias_id}` | **구현됨** §2.2 |
 | 건너뛴 온보딩 마저 하기 | 5.3 과 같다 | |
+| 팀원 초대·취소·연결 끊기 | `GET`·`POST /workspaces/{id}/invitations`, `POST /invitations/{id}/cancel`·`revoke` | BE 구현, 프론트엔드 미연결 §5.9 |
 
 - `unresolved-aliases` 가 쓰이는 곳이 여기다. 온보딩의 팀원 연결과 목적이 다르다 (§4.5).
 - 그 밖의 설정 항목은 결정 대기다.
+
+### 5.9 팀원 초대
+
+**백엔드 초대 API** (#319 에서 BE 구현, 프론트엔드 미연결, 화면 쪽 합의 여부 확인 필요). 결정 근거는 [결정 0036](../../../ai/docs/basis_for_decision/ai/2026-11-04-0036-member-invite-by-email.md). FE 요청 이슈는 #320, 제품 흐름은 #302.
+
+온보딩에서 디스코드 명단으로 만든 팀원은 로그인 계정과 이어져 있지 않다(`member.user_id` 가 null). PM 이 그 팀원에게 가입 이메일로 초대를 만들고, 그 이메일로 로그인한 사람이 내 초대에서 수락하면 팀원과 계정이 이어져 워크스페이스 목록에 나타난다. 수락 전에는 그 워크스페이스의 API 가 모두 403 이다. 초대 메일은 보내지 않는다. PM 이 디스코드 등으로 알리고, 팀원은 로그인하면 내 초대에서 본다.
+
+| 요청 | 누가 | 하는 일 |
+|---|---|---|
+| `POST /workspaces/{workspace_id}/invitations` → 201 | PM | 초대 만들기 `{member_id, email}`. 같은 팀원에게 대기 중인 초대가 있으면 그 초대를 취소하고 새로 만든다 |
+| `GET /workspaces/{workspace_id}/invitations` | PM | 이 워크스페이스의 초대 전부, 최근 것부터 |
+| `POST /invitations/{invitation_id}/cancel` | PM | 수락 전 초대 취소 |
+| `POST /invitations/{invitation_id}/revoke` | PM | 수락한 계정과 팀원의 연결 끊기 |
+| `GET /invitations/me` | 로그인 사용자 | 내 가입 이메일로 온 대기 중 초대, 최근 것부터 |
+| `POST /invitations/{invitation_id}/accept` | 받는 사람 | 수락. `{workspace_id, member_id}` 를 돌려준다 |
+| `POST /invitations/{invitation_id}/decline` | 받는 사람 | 거절. `{invitation_id, status: "declined"}` |
+
+- PM 쪽 응답(만들기·목록 한 줄·취소·연결 끊기)은 `{invitation_id, member_id, member_display_name, email, status, invited_by_name, accepted_user, created_at, responded_at}` 이다.
+  - `accepted_user` 는 수락한 계정 `{user_id, name, email}` 이고 수락 전에는 null 이다. 연결을 끊은 뒤에도 남아 누가 들어왔었는지 보인다. PM 은 이 이름·이메일을 보고 엉뚱한 계정이면 연결을 끊는다.
+  - `responded_at` 은 마지막으로 상태가 바뀐 시각이다. 연결을 끊으면 수락 시각 대신 끊은 시각이 된다.
+- 내 초대 한 줄은 `{invitation_id, workspace_id, workspace_name, member_display_name, invited_by_name, created_at}` 이다. 초대보다 먼저 가입했든 나중에 가입했든 같은 기준(가입 이메일)으로 찾는다.
+- 이메일은 대소문자와 앞뒤 공백을 무시하고 비교한다. 초대의 `email` 은 소문자로 바꿔 저장하고 돌려준다. 이메일 형식이 아니면 400 `INVALID_REQUEST`.
+- 상태와 화면 표기(제안)
+
+  | `status` | 화면 | 뜻 |
+  |---|---|---|
+  | `pending` | 대기 | 받는 사람이 아직 답하지 않았다 |
+  | `accepted` | 수락 | 팀원과 계정이 이어졌다 |
+  | `declined` | 거절 | 받는 사람이 닫았다. PM 이 그 사람에게 확인할 신호다 |
+  | `canceled` | 취소 | PM 이 수락 전에 닫았거나, 같은 팀원에게 새 초대를 만들어 닫혔다 |
+  | `revoked` | 연결 끊김 | PM 이 수락 뒤 연결을 끊었다. 팀원 행과 태스크·이력은 그대로고 `member.user_id` 만 null 로 돌아간다 |
+
+- 만료는 없다. 이메일 고치기 API 는 없고, 같은 팀원에게 다시 초대하면 대기 중인 초대가 `canceled` 가 된다. 거절·취소·연결 끊김 뒤에는 다시 초대할 수 있다.
+- 수락한 팀원의 권한은 기존 팀원 권한 그대로다. 기존 API 에서 바뀐 것은 아래 `PATCH /members/{id}` 의 역할 변경 하나다.
+- 탈퇴한 팀원의 초대는 내 초대에 나오지 않고 수락할 수 없다(409 `INVITATION_NOT_PENDING`). PM 목록에는 남는다.
+- 대기 초대가 있는 팀원은 PM 으로 올릴 수 없다. `PATCH /members/{id}` `{role: "pm"}` 이 409 `MEMBER_HAS_PENDING_INVITATION` 이고 역할과 초대는 그대로다. 받는 사람이 수락한 뒤 올리거나, 초대를 취소한 뒤 올린다. 역할 외의 수정은 막지 않는다.
+- 오류
+
+  | 코드 | 상태 | 언제 |
+  |---|---|---|
+  | `FORBIDDEN` | 403 | PM 이 아닌 사람이 PM 쪽 요청을 했다 |
+  | `MEMBER_NOT_FOUND` | 404 | 만들기에서 팀원이 없거나, 이 워크스페이스 팀원이 아니거나, 탈퇴했다 |
+  | `MEMBER_ALREADY_LINKED` | 409 | 이미 로그인 계정이 이어진 팀원이다(만들기·수락) |
+  | `ALREADY_WORKSPACE_MEMBER` | 409 | 그 이메일의 계정, 또는 수락하려는 내가 이미 이 워크스페이스의 팀원이다 |
+  | `EMAIL_ALREADY_INVITED` | 409 | 같은 이메일로 다른 팀원에게 보낸 초대가 대기 중이다 |
+  | `PM_MEMBER_NOT_INVITABLE` | 409 | 이 워크스페이스에서 역할이 PM 인 팀원을 초대하려 했다. 팀원으로 초대하고, 수락한 뒤 PM 으로 바꾼다. 다른 워크스페이스의 역할과는 상관없다 |
+  | `MEMBER_HAS_PENDING_INVITATION` | 409 | 대기 초대가 있는 팀원을 PM 으로 올리려 했다(`PATCH /members/{id}`) |
+  | `INVITATION_NOT_FOUND` | 404 | 초대가 없다. 수락·거절에서는 내 이메일로 온 초대가 아니어도 이 코드다 |
+  | `INVITATION_NOT_PENDING` | 409 | 대기 중이 아닌 초대를 수락·거절·취소했다 |
+  | `INVITATION_NOT_ACCEPTED` | 409 | 수락하지 않은 초대의 연결을 끊으려 했다 |
+  | `LAST_PM_REQUIRED` | 409 | 끊으면 로그인할 수 있는 PM 이 없어진다 |
+
+- 한 계정이 한 워크스페이스에서 두 팀원이 되지 않는다. 한 팀원에 대기 초대 하나, 한 워크스페이스에서 같은 이메일의 대기 초대 하나만 DB 가 허용하고, 수락할 때 이미 소속인지 다시 확인한다. 같은 초대를 동시에 수락하면 한 계정만 이어진다. 같은 이메일의 다른 초대가 수락되는 순간 새 초대를 만들면 드물게 수락할 수 없는 대기 초대가 생긴다. 그 초대를 수락하면 409 `ALREADY_WORKSPACE_MEMBER` 이고, PM 이 취소하면 된다. 연결을 끊으면 같은 이메일의 대기 초대도 함께 `canceled` 가 된다.
+- 팀원이 온보딩(워크스페이스 만들기)을 건너뛰고 초대를 기다리는 데 새 백엔드 API 는 필요 없다. 초대를 기다리는 사용자는 `GET /auth/me` 의 `workspace_count` 가 0 이고 `GET /workspaces` 가 빈 목록 `{"items": [], "total": 0}` 이다.
 
 ### 착수 가능 여부 요약
 
@@ -1362,6 +1486,7 @@ D-117(E2E)과 D-136(polling)은 실제 API 가 생길 때까지 계속 보류한
 | 5.1 로그인 | 가능 | 전부 mock |
 | 5.6 보드·간트 | **가능** | 없음 — D-170·D-175 로 확정 |
 | 5.7 메시지 | 가능 | 메시지 API 는 BE 구현(§5.7), 봇 DM 발송이 없어 production 은 `준비 중`이다 (D-174) |
+| 5.9 팀원 초대 | 가능 | 없음. 초대 API 는 BE 구현(§5.9) |
 
 ---
 

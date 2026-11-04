@@ -203,7 +203,7 @@ describe('역할별 탭·개수·병합·정렬 (AC-02)', () => {
  * 새로고침은 앱을 내리고 같은 주소로 처음부터 다시 띄우는 것이다.
  */
 describe('목록 안 확인 필요 카드 (시안)', () => {
-  it('실 API 에서는 필수값이 없으면 승인을 끄고 사유를 보인다. 반려는 목록 안에서 바로 처리하고 카드가 빠진다', async () => {
+  it('실 API에서도 보완과 미정 승인을 허용하고 반려하면 카드가 빠진다', async () => {
     const user = userEvent.setup()
     await openList(`${paths.tasks('ws_01')}?tab=needs_review`)
     const cards = within(screen.getByRole('list', { name: '확인 필요 목록' })).getAllByRole(
@@ -211,24 +211,15 @@ describe('목록 안 확인 필요 카드 (시안)', () => {
     )
     expect(cards).toHaveLength(3)
     const target = cards.find((each) => each.textContent?.includes('테스트 계획 정리'))!
-    // 읽기 전용 — 보완 입력이 없고 승인은 꺼져 있다. 사유는 보완 미지원 문장으로 끝난다
-    expect(within(target).getByRole('button', { name: '승인' })).toBeDisabled()
-    expect(target).toHaveTextContent('승인하려면 마감 정보를 올바르게 채워야 해요.')
-    expect(target).toHaveTextContent('지금 서버는 승인 전 보완을 지원하지 않아요.')
+    await waitFor(() => expect(within(target).getByRole('button', { name: '승인' })).toBeEnabled())
+    expect(within(target).getByRole('textbox', { name: '태스크명' })).not.toHaveAttribute(
+      'readonly',
+    )
     expect(within(target).getByRole('button', { name: '반려' })).toBeEnabled()
-
-    // 보류(ap_01)도 접힌 카드 안에서 같은 계약이다. 승인을 숨기거나 반려를 `제외` 로 바꾸지 않는다
     const held = cards.find((each) => each.textContent?.includes('알림 문구 검토'))!
-    expect(within(held).getByRole('button', { name: '승인' })).toBeDisabled()
+    expect(within(held).getByRole('button', { name: '직접 채우기' })).toBeEnabled()
     expect(within(held).getByRole('button', { name: '반려' })).toBeEnabled()
     expect(within(held).queryByRole('button', { name: '제외' })).toBeNull()
-    expect(within(held).queryByRole('button', { name: '직접 채우기' })).toBeNull()
-    expect(held).toHaveTextContent(
-      '승인하려면 담당자·마감 정보를 올바르게 채워야 해요. 지금 서버는 승인 전 보완을 지원하지 않아요.',
-    )
-    expect(within(held).getByRole('button', { name: '승인' })).toHaveAccessibleDescription(
-      /지금 서버는 승인 전 보완을 지원하지 않아요\.$/,
-    )
 
     await user.click(within(target).getByRole('button', { name: '반려' }))
     await waitFor(() =>
@@ -611,13 +602,13 @@ describe('상세·이력과 PM 의 상태 변경 (AC-04)', () => {
   const toastFor = (taskId: string) =>
     document.querySelectorAll(`[data-toast-key="task-status-${taskId}"]`)
 
-  it('담당자·상태·마감·진행률·막힌 사유·연결 회의·이력을 읽는다', async () => {
+  it('담당자·상태·마감·막힌 사유·연결 회의·이력을 읽는다', async () => {
     await openDetail('tk_01', '로그인 API 연동')
     expect(screen.getByRole('heading', { level: 1, name: '태스크' })).toBeInTheDocument()
     await waitFor(() => expect(field('담당자')).toHaveTextContent('김서연'))
     expect(field('상태')).toHaveTextContent('진행 중')
     expect(field('마감')).toHaveTextContent('2026-09-20')
-    expect(field('진행률')).toHaveTextContent('40%')
+    expect(screen.queryByText('진행률')).toBeNull()
     expect(field('막힌 사유')).toHaveTextContent('없음')
     await waitFor(() =>
       expect(

@@ -10,6 +10,7 @@ const summary: MeetingSummary = {
   durationMs: 2_730_000,
   attendeeCount: 4,
   processedAt: null,
+  failedStage: null,
 }
 
 describe('회의록 표시 형식', () => {
