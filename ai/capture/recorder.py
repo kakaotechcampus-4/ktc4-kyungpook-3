@@ -79,8 +79,8 @@ from shared.schemas import now_iso
 
 STATUS_RECORDING = "recording"
 STATUS_SAVED = "saved"
-STATUS_DIARIZED = "diarized"      # 업로드 오디오를 화자별 트랙으로 나눴다. 복구가 집지 않는다(#254·#255 합의 전까지)
-STATUS_MAPPED = "mapped"          # 사람이 화자 라벨을 멤버에 지정했다. 복구가 집지 않는다(#254·#255 합의 전까지)
+STATUS_DIARIZED = "diarized"      # 업로드 오디오를 화자별 트랙으로 나눴다. 지정 전이라 복구가 집지 않는다
+STATUS_MAPPED = "mapped"          # 사람이 화자 라벨을 멤버에 지정했다. 업로드는 지정 받기 기록이 mapped 로 닫히고 BE 회의가 processing 이면 복구가 집는다(#286)
 STATUS_TRANSCRIBED = "transcribed"
 STATUS_PARTIAL = "partial"        # 전사는 돌았는데 실패한 줄이 남았다. failed_units 에 구간이 있다
 STATUS_SOURCED = "sourced"        # 전사 발화를 BE 에 저장했다
