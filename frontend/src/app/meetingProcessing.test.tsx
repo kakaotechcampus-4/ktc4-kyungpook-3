@@ -595,6 +595,26 @@ describe('완료 (U4-5)', () => {
 })
 
 describe('실패 (U4-6, U4-7)', () => {
+  it('다른 화면에서 만료되면 이동하지 않고 알리며 목록의 만료 이력은 유지한다', async () => {
+    fakeIntervals()
+    const app = renderApp(paths.tasks('ws_01'))
+    await screen.findByRole('heading', { name: '태스크' })
+    await until(() => expect(tracked()).toEqual([MEETING]))
+    failMeeting('mt_10', { failedStage: 'speaker_assignment_expired' })
+    await act(() => vi.advanceTimersByTimeAsync(3_000))
+    await until(() =>
+      expect(
+        app.queryClient
+          .getQueryData(meetingListQueryOptions('ws_01').queryKey)
+          ?.find(({ id }) => id === 'mt_10'),
+      ).toMatchObject({ status: 'failed', failedStage: 'speaker_assignment_expired' }),
+    )
+    expect(app.visited().map(({ pathname }) => pathname)).toEqual([paths.tasks('ws_01')])
+    expect(tracked()).toEqual([])
+    expect(toastsWith('화자 지정 대기가 7일을 넘어')).toHaveLength(1)
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
   it('처리 화면을 보고 있으면 회의록 목록으로 옮기고 재업로드 토스트를 띄운다 — 실패 회의는 목록에서 빠진다', async () => {
     fakeIntervals()
     const log = recordRequests()

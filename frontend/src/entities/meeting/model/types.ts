@@ -10,6 +10,7 @@ export interface MeetingSummary {
   durationMs: number | null
   attendeeCount: number
   processedAt: string | null
+  failedStage: string | null
 }
 export interface MeetingProgress {
   audioMerged: boolean

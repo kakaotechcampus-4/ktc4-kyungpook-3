@@ -1,20 +1,21 @@
 export type {
+  BotMessage,
+  BotMessageStatus,
   Message,
-  MessageDelivery,
+  MessageAction,
   MessageInbox,
   MessageReview,
-  MessageReviewAction,
   MessageSendTiming,
   MessageSender,
-  MessageStatus,
   MessageThread,
   MessageThreadKind,
   MessageThreadSummary,
-  PendingMessageReview,
+  ReplyAttribution,
 } from './model/types'
+export { MESSAGE_BODY_MAX_LENGTH } from './model/types'
 export {
   messageInboxQueryOptions,
   messageKeys,
   messageThreadQueryOptions,
-  requestMessageReviewAction,
+  requestMessageAction,
 } from './api/messageQueries'

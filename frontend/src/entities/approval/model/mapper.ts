@@ -1,7 +1,7 @@
-import { ApiError, ERROR_CODES } from '@/shared/api/errors'
+import { ApiError, ERROR_CODES, CLIENT_ERROR_CODES, createClientError } from '@/shared/api/errors'
 import type { ApprovalDto, ApprovalResolveRequestDto } from '@/shared/types/api/approval'
 import { enumValue } from '@/shared/lib/enum'
-import { toApprovalTransport } from './resolution'
+import { z } from 'zod'
 import type { ApprovalResolution } from './resolution'
 import type {
   Approval,
@@ -14,6 +14,40 @@ import type {
 function text(value: unknown): string | null {
   return typeof value === 'string' ? value : null
 }
+const createOverridesSchema = z.object({
+  task_title: z.string().optional(),
+  assignee_member_id: z.string().nullable().optional(),
+  due_date: z.string().nullable().optional(),
+})
+const updateOverridesSchema = z.object({
+  status: z.enum(['todo', 'in_progress', 'blocked', 'done']).optional(),
+  due_date: z.string().nullable().optional(),
+})
+
+function storedCreateOverrides(value: unknown) {
+  if (value === undefined) return {}
+  const result = createOverridesSchema.safeParse(value)
+  if (!result.success) throw createClientError(CLIENT_ERROR_CODES.INVALID_RESPONSE)
+  const parsed = result.data
+  return {
+    ...(parsed.task_title !== undefined ? { taskTitle: parsed.task_title } : {}),
+    ...(parsed.assignee_member_id !== undefined
+      ? { assigneeMemberId: parsed.assignee_member_id }
+      : {}),
+    ...(parsed.due_date !== undefined ? { dueDate: parsed.due_date } : {}),
+  }
+}
+function storedUpdateOverrides(value: unknown) {
+  if (value === undefined) return {}
+  const result = updateOverridesSchema.safeParse(value)
+  if (!result.success) throw createClientError(CLIENT_ERROR_CODES.INVALID_RESPONSE)
+  const parsed = result.data
+  return {
+    ...(parsed.status !== undefined ? { status: parsed.status } : {}),
+    ...(parsed.due_date !== undefined ? { dueDate: parsed.due_date } : {}),
+  }
+}
+
 /** 근거: docs/impl-decision/2026-09-18-nullable-extraction-evidence.md */
 export function toApproval(dto: ApprovalDto): Approval {
   const base = {
@@ -44,6 +78,7 @@ export function toApproval(dto: ApprovalDto): Approval {
     return {
       ...base,
       kind: 'task_create',
+      storedOverrides: storedCreateOverrides(payload.task_overrides),
       title: text(payload.task_title) || text(payload.title) || '',
       assigneeMemberId,
       assigneeRaw: text(payload.assignee_raw),
@@ -69,37 +104,44 @@ export function toApproval(dto: ApprovalDto): Approval {
     return {
       ...base,
       kind: 'task_update',
+      storedOverrides: storedUpdateOverrides(payload.task_overrides),
       title: text(payload.task_title) || text(payload.base_title) || null,
       changes: Object.entries(payload)
         .filter(([field]) =>
-          ['title', 'assignee_member_id', 'status', 'progress', 'blocker', 'due_date'].includes(
-            field,
-          ),
+          ['title', 'assignee_member_id', 'status', 'blocker', 'due_date'].includes(field),
         )
         .map(([field, value]) => ({ field, value })),
     }
   return { ...base, kind: 'unsupported', type: dto.type }
 }
 
-/**
- * 처리 내용을 `PATCH /approvals/{approval_id}` 본문으로 바꾼다. 처리자(`resolved_by`)는 넣지 않는다.
- * `task_overrides` 는 `msw` 일 때만 싣는다 — 처리 내용에 들어 있어도 `live`·모르는 값이면 버린다.
- * 반려 본문은 `status` 뿐이다
- */
 export function toApprovalResolveRequestDto(
   resolution: ApprovalResolution,
-  transport: unknown,
 ): ApprovalResolveRequestDto {
   if (resolution.status === 'rejected') return { status: 'rejected' }
   const body: ApprovalResolveRequestDto = { status: 'approved' }
-  if (resolution.confirmTaskVersion !== undefined)
-    body.confirm_task_version = resolution.confirmTaskVersion
-  if (resolution.taskOverrides !== undefined && toApprovalTransport(transport) === 'msw')
-    body.task_overrides = {
-      task_title: resolution.taskOverrides.taskTitle,
-      assignee_member_id: resolution.taskOverrides.assigneeMemberId,
-      due_date: resolution.taskOverrides.dueDate,
-    }
+  if (resolution.kind === 'task_update') {
+    if (resolution.confirmTaskVersion !== undefined)
+      body.confirm_task_version = resolution.confirmTaskVersion
+    const edits = resolution.taskOverrides
+    if (edits)
+      body.task_overrides = {
+        ...(edits.status !== undefined ? { status: edits.status } : {}),
+        ...(edits.dueDate !== undefined ? { due_date: edits.dueDate } : {}),
+      }
+  } else {
+    const edits = resolution.taskOverrides
+    if (edits)
+      body.task_overrides = {
+        ...(edits.taskTitle !== undefined ? { task_title: edits.taskTitle } : {}),
+        ...(edits.assigneeMemberId !== undefined
+          ? { assignee_member_id: edits.assigneeMemberId }
+          : {}),
+        ...(edits.dueDate !== undefined ? { due_date: edits.dueDate } : {}),
+      }
+  }
+  if (body.task_overrides && Object.keys(body.task_overrides).length === 0)
+    delete body.task_overrides
   return body
 }
 
