@@ -50,6 +50,7 @@ const SERVER_MESSAGES: Record<ErrorCode, string> = {
     '워크스페이스에 PM이 한 명은 있어야 해요. 다른 팀원을 먼저 PM으로 지정해 주세요.',
   EMBEDDING_UNAVAILABLE: '비슷한 태스크를 찾지 못했어요. 잠시 후 다시 시도해 주세요.',
   DISCORD_API_FAILED: 'Discord 서버의 사용자 목록을 가져오지 못했어요. 잠시 후 다시 시도해 주세요.',
+  NOTIFICATION_NOT_FOUND: '알림을 찾을 수 없어요.',
 }
 
 const CLIENT_MESSAGES: Record<ClientErrorCode, string> = {
