@@ -100,8 +100,7 @@ function bundleBubble(bundle: Bundle, side: 'own' | 'other', now: number): Bubbl
     look: 'upcoming',
     speaker: bundle.stage === 'approved' ? '봇(승인함)' : '봇(승인 대기)',
     body: bundle.body,
-    timeLine:
-      bundle.stage === 'approved' ? `${when} · 승인함` : passed ? `${when} · 지남` : when,
+    timeLine: bundle.stage === 'approved' ? `${when} · 승인함` : passed ? `${when} · 지남` : when,
     bundleId: bundle.id,
     drafting: bundle.drafting,
     dmFailure: null,

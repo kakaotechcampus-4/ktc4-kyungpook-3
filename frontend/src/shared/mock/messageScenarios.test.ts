@@ -1,11 +1,6 @@
 import { ApiError } from '@/shared/api/errors'
 import { fetchDto, jsonRequest } from '@/shared/test/api'
-import type {
-  BundleDto,
-  InboxDto,
-  MessageDto,
-  ThreadDetailDto,
-} from '@/shared/types/api/message'
+import type { BundleDto, InboxDto, MessageDto, ThreadDetailDto } from '@/shared/types/api/message'
 import { db, initialDb, replaceDb, resetDb } from './db'
 import { MOCK_DB_STORAGE_KEY, restoreDb, saveDb } from './persistence'
 import { setMockRole } from './sessions'
@@ -36,10 +31,7 @@ const thread = (threadId: string, workspaceId = 'ws_01') =>
 const patchBundle = (bundleId: string, body: unknown, workspaceId?: string) =>
   fetchDto<BundleDto>(`${base(workspaceId)}/bundles/${bundleId}`, jsonRequest('PATCH', body))
 const approve = (bundleId: string, body: unknown, workspaceId?: string) =>
-  fetchDto<BundleDto>(
-    `${base(workspaceId)}/bundles/${bundleId}/approve`,
-    jsonRequest('POST', body),
-  )
+  fetchDto<BundleDto>(`${base(workspaceId)}/bundles/${bundleId}/approve`, jsonRequest('POST', body))
 const cancel = (bundleId: string, workspaceId?: string) =>
   fetchDto<BundleDto>(`${base(workspaceId)}/bundles/${bundleId}/cancel`, { method: 'POST' })
 const replyTo = (threadId: string, body: unknown, workspaceId = 'ws_01') =>
@@ -162,9 +154,9 @@ describe('보낼 메시지 handler — 성공할 때만 db 를 바꾼다 (D-137)
       draft_status: 'done',
       draft_version: 2,
     })
-    expect(
-      await patchBundle('bd_02', { scheduled_at: '2026-09-26T10:00:00+09:00' }),
-    ).toMatchObject({ scheduled_at: '2026-09-26T01:00:00.000Z', draft_version: 2 })
+    expect(await patchBundle('bd_02', { scheduled_at: '2026-09-26T10:00:00+09:00' })).toMatchObject(
+      { scheduled_at: '2026-09-26T01:00:00.000Z', draft_version: 2 },
+    )
 
     const before = snapshot()
     for (const [body, status, code] of [

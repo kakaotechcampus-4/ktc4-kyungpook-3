@@ -191,18 +191,15 @@ export const messageHandlers = [
   ),
 
   /** 보내지 않음. 안의 리마인드도 모두 취소한다 */
-  http.post(
-    '/api/v1/workspaces/:workspaceId/messages/bundles/:bundleId/cancel',
-    ({ params }) => {
-      const workspaceId = String(params.workspaceId)
-      const denied = requirePmRole(workspaceId)
-      if (denied) return denied
-      const bundle = findBundle(workspaceId, params.bundleId)
-      if (!bundle) return bundleNotFound(params.bundleId)
-      if (db.messageFailures.actions) return actionError()
-      const refusal = cancelBundle(bundle)
-      if (refusal !== null) return REFUSAL[refusal]()
-      return ok(bundleDto(bundle))
-    },
-  ),
+  http.post('/api/v1/workspaces/:workspaceId/messages/bundles/:bundleId/cancel', ({ params }) => {
+    const workspaceId = String(params.workspaceId)
+    const denied = requirePmRole(workspaceId)
+    if (denied) return denied
+    const bundle = findBundle(workspaceId, params.bundleId)
+    if (!bundle) return bundleNotFound(params.bundleId)
+    if (db.messageFailures.actions) return actionError()
+    const refusal = cancelBundle(bundle)
+    if (refusal !== null) return REFUSAL[refusal]()
+    return ok(bundleDto(bundle))
+  }),
 ]

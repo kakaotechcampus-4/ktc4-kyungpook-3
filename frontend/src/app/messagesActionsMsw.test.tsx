@@ -292,9 +292,7 @@ describe('언제 보낼까요? — 고른 카드는 서버가 저장한 시각�
     expectUnlocked(radio(/마감 하루 전/))
     expect(detail().getByText('09/29 09:00 예정')).toBeInTheDocument()
     expect(radio('직접 정하기날짜 · 시각')).not.toBeChecked()
-    expect(Date.parse(bundleOf('bd_02').scheduled_at)).toBe(
-      Date.parse('2026-09-29T09:00:00+09:00'),
-    )
+    expect(Date.parse(bundleOf('bd_02').scheduled_at)).toBe(Date.parse('2026-09-29T09:00:00+09:00'))
   })
 
   it('저장이 늦을 때만 그 카드에 저장 중이 보인다 — 저장되면 사라진다', async () => {

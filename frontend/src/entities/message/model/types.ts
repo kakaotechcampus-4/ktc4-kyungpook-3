@@ -8,8 +8,7 @@ export type DmFailureReason = 'dm_blocked' | 'discord_not_linked' | 'unknown'
 
 /** 봇 메시지가 Discord DM 으로 나갔는가. 실패해도 웹 대화에는 남는다 */
 export type DmDelivery =
-  | { status: 'pending' | 'claimed' | 'delivered' }
-  | { status: 'failed'; reason: DmFailureReason }
+  { status: 'pending' | 'claimed' | 'delivered' } | { status: 'failed'; reason: DmFailureReason }
 
 export interface BotMessage {
   sender: 'bot'

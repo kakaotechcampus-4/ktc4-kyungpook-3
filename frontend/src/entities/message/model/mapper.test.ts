@@ -106,7 +106,13 @@ it('묶음의 단계는 status·approved 에서, 초안 대기는 draft_status �
     drafting: false,
     draftVersion: 2,
     tasks: [
-      { reminderId: 'rm_01', taskId: 'tk_01', title: 'API 명세서', dueDate: '2026-09-24', note: null },
+      {
+        reminderId: 'rm_01',
+        taskId: 'tk_01',
+        title: 'API 명세서',
+        dueDate: '2026-09-24',
+        note: null,
+      },
     ],
   })
   expect(

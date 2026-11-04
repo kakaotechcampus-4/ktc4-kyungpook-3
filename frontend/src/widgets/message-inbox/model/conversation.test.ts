@@ -80,14 +80,12 @@ it('DM 을 보내지 못한 봇 메시지는 이유와 함께 알린다', () => 
     ]),
     { policy: VIEWER_POLICY.pm, botName: '카테캠 3팀', today, now },
   )
-  expect(bubbles(view.days.flatMap((day) => day.items)).map(({ dmFailure }) => dmFailure)).toEqual(
-    [
-      'DM 못 보냄 · 서버 DM이 막혀 있어요',
-      'DM 못 보냄 · Discord 계정이 연결되지 않았어요',
-      'DM 못 보냄 · 이유를 알 수 없어요',
-      null,
-    ],
-  )
+  expect(bubbles(view.days.flatMap((day) => day.items)).map(({ dmFailure }) => dmFailure)).toEqual([
+    'DM 못 보냄 · 서버 DM이 막혀 있어요',
+    'DM 못 보냄 · Discord 계정이 연결되지 않았어요',
+    'DM 못 보냄 · 이유를 알 수 없어요',
+    null,
+  ])
 })
 
 it('PM 은 메시지 뒤에 답장 대기를, 예정 묶음은 나갈 시각 자리에 섞어 둔다', () => {
@@ -102,7 +100,7 @@ it('PM 은 메시지 뒤에 답장 대기를, 예정 묶음은 나갈 시각 자
           stage: 'approved',
           approvedAt: '2026-09-18T00:00:00Z',
           scheduledAt: '2026-09-24T09:00:00+09:00',
-        } as Partial<Bundle>),
+        }),
       ],
     ),
     { policy: VIEWER_POLICY.pm, botName: '카테캠 3팀', today, now },
@@ -120,15 +118,9 @@ it('PM 은 메시지 뒤에 답장 대기를, 예정 묶음은 나갈 시각 자
       ),
     ]),
   ).toEqual([
-    [
-      '9월 16일 수요일',
-      [['mg_01', 'own', '18:00', null, false], '기다림 3'],
-    ],
+    ['9월 16일 수요일', [['mg_01', 'own', '18:00', null, false], '기다림 3']],
     ['9월 17일 목요일', [['bd_06', 'upcoming', '09/17 09:00 발송 예정 · 지남', 'bd_06', true]]],
     ['9월 23일 수요일', [['bd_01', 'upcoming', '09/23 09:00 발송 예정', 'bd_01', false]]],
-    [
-      '9월 24일 목요일',
-      [['bd_02', 'upcoming', '09/24 09:00 발송 예정 · 승인함', 'bd_02', false]],
-    ],
+    ['9월 24일 목요일', [['bd_02', 'upcoming', '09/24 09:00 발송 예정 · 승인함', 'bd_02', false]]],
   ])
 })

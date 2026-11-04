@@ -116,7 +116,9 @@ export const 대화: Story = {
   play: async ({ canvasElement }) => {
     const detail = detailOf(canvasElement)
     await expect(await detail.findByRole('heading', { level: 2, name: '이재환' })).toBeVisible()
-    await expect(detail.getByText('Discord 개인 메시지 · 카테캠 3팀 봇으로 보냄')).toBeInTheDocument()
+    await expect(
+      detail.getByText('Discord 개인 메시지 · 카테캠 3팀 봇으로 보냄'),
+    ).toBeInTheDocument()
     await expect(detail.getByText(/^답장 \d+일째 없음$/)).toBeInTheDocument()
     await expect(detail.getByText(/여기서부터 답장이 없습니다/)).toBeInTheDocument()
     await expect(detail.getByText('09/23 09:00 발송 예정')).toBeInTheDocument()
@@ -133,9 +135,7 @@ export const DM_못_보냄: Story = {
   parameters: { route: paths.messageThread('ws_01', 'th_04') },
   play: async ({ canvasElement }) => {
     const detail = detailOf(canvasElement)
-    await expect(
-      await detail.findByText('DM 못 보냄 · 서버 DM이 막혀 있어요'),
-    ).toBeInTheDocument()
+    await expect(await detail.findByText('DM 못 보냄 · 서버 DM이 막혀 있어요')).toBeInTheDocument()
   },
 }
 
@@ -151,9 +151,7 @@ export const 팀원_내_대화: Story = {
     ).toBeVisible()
     await expect(canvas.queryByText(/보내기 전 확인/)).toBeNull()
     await expect(detail.getByText('14:20 · 웹에서 답장')).toBeVisible()
-    await expect(
-      detail.getByText('DM 못 보냄 · Discord 계정이 연결되지 않았어요'),
-    ).toBeVisible()
+    await expect(detail.getByText('DM 못 보냄 · Discord 계정이 연결되지 않았어요')).toBeVisible()
     await expect(detail.getByText(/봇 DM 창에 쓴 글은 모두 PM 대화에 보여요/)).toBeVisible()
     await expect(detail.queryByRole('link', { name: '확인하기' })).toBeNull()
     await expect(detail.getByRole('button', { name: '답장 보내기' })).toBeEnabled()
@@ -458,9 +456,9 @@ export const 발송_시점_저장_중: Story = {
     ).toBeVisible()
 
     scheduleGate.resolve()
-    await expect(
-      await detail.findByRole('radio', { name: /마감 하루 전/, checked: true }),
-    ).toBe(deadline)
+    await expect(await detail.findByRole('radio', { name: /마감 하루 전/, checked: true })).toBe(
+      deadline,
+    )
     await expect(send).not.toHaveAttribute('aria-disabled')
     await expect(detail.queryByText('저장 중')).toBeNull()
     await expect(sendRequests).toBe(0)

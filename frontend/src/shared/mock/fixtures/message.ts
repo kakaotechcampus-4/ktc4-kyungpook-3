@@ -30,7 +30,8 @@ export interface MockBundle extends Omit<BundleDto, 'reminders'> {
   reminders: ReminderDto[]
 }
 
-type DmResult = { status: 'pending' | 'claimed' | 'delivered' } | { status: 'failed'; reason: DmFailureReasonDto }
+type DmResult =
+  { status: 'pending' | 'claimed' | 'delivered' } | { status: 'failed'; reason: DmFailureReasonDto }
 
 const DELIVERED: DmResult = { status: 'delivered' }
 
@@ -151,7 +152,11 @@ export const schedulePassedBundle: MockBundle = {
   draft_status: 'done',
   draft_version: 1,
   reminders: [
-    reminder('rm_06', 'bd_06', { task_id: 'tk_07', title: '배포 체크리스트', due_date: '2026-09-18' }),
+    reminder('rm_06', 'bd_06', {
+      task_id: 'tk_07',
+      title: '배포 체크리스트',
+      due_date: '2026-09-18',
+    }),
   ],
 }
 
@@ -213,12 +218,10 @@ export const messageThreadFixtures: MockMessageThread[] = [
     member_id: 'mb_05',
     name: '박지훈',
     messages: [
-      botMessage(
-        'mg_08',
-        '지훈님, 회의록 템플릿 검토는 끝나셨나요?',
-        '2026-09-02T15:00:00+09:00',
-        { status: 'failed', reason: 'dm_blocked' },
-      ),
+      botMessage('mg_08', '지훈님, 회의록 템플릿 검토는 끝나셨나요?', '2026-09-02T15:00:00+09:00', {
+        status: 'failed',
+        reason: 'dm_blocked',
+      }),
     ],
   },
   {

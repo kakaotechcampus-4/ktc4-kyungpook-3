@@ -25,9 +25,17 @@ const utcOrNull = (timestamp: string | null) => (timestamp === null ? null : utc
 
 /** 응답에는 묶음과 같은 상태인 리마인드만 싣는다 */
 export function bundleDto(bundle: MockBundle): BundleDto {
-  const { workspace_id: _workspace, ...rest } = bundle
   return {
-    ...rest,
+    bundle_id: bundle.bundle_id,
+    thread_id: bundle.thread_id,
+    member_id: bundle.member_id,
+    recipient_name: bundle.recipient_name,
+    status: bundle.status,
+    approved: bundle.approved,
+    body: bundle.body,
+    body_source: bundle.body_source,
+    draft_status: bundle.draft_status,
+    draft_version: bundle.draft_version,
     scheduled_at: utc(bundle.scheduled_at),
     approved_at: utcOrNull(bundle.approved_at),
     reminders: bundle.reminders

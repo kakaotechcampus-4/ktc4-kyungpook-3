@@ -46,7 +46,8 @@ export function toMessage(dto: MessageDto): Message {
 function stageOf(dto: BundleDto): BundleStage | null {
   if (dto.status !== 'scheduled') return null
   if (!dto.approved) return { stage: 'awaitingApproval' }
-  if (dto.approved_at === null) throw new Error(`승인한 묶음에 승인 시각이 없습니다: ${dto.bundle_id}`)
+  if (dto.approved_at === null)
+    throw new Error(`승인한 묶음에 승인 시각이 없습니다: ${dto.bundle_id}`)
   return { stage: 'approved', approvedAt: dto.approved_at }
 }
 

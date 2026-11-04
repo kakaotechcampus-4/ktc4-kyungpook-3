@@ -111,9 +111,7 @@ describe('왼쪽 목록 두 영역과 오른쪽 상세의 2단이고, 선택은 
     expect(within(preview).getByText('Discord 개인 메시지 · 카테캠 3팀 봇')).toBeInTheDocument()
     expect(within(preview).getByText('09/23 09:00 예정')).toBeInTheDocument()
     expect(within(preview).queryByText('문구 다듬는 중')).toBeNull()
-    expect(
-      within(preview).getByText('AI 초안 · 문구는 그대로 고칠 수 있어요'),
-    ).toBeInTheDocument()
+    expect(within(preview).getByText('AI 초안 · 문구는 그대로 고칠 수 있어요')).toBeInTheDocument()
     expect(within(preview).getByRole('button', { name: '고쳐 쓰기' })).toBeEnabled()
     expect(detail().queryByText('왜 보내려 하나요')).toBeNull()
 
@@ -244,7 +242,9 @@ describe('빈 상태·로딩·목록 오류·대화 오류가 서로 구분되�
       await screen.findByRole('heading', { level: 1, name: '보낼 메시지가 없어요' }),
     ).toBeVisible()
     expect(
-      screen.getByText('마감이 다가오면 담당자에게 보낼 DM을 여기에 준비해 둘게요. 승인해야 나가요.'),
+      screen.getByText(
+        '마감이 다가오면 담당자에게 보낼 DM을 여기에 준비해 둘게요. 승인해야 나가요.',
+      ),
     ).toBeInTheDocument()
     expect(screen.queryByRole('complementary', { name: '메시지 목록' })).toBeNull()
     expect(screen.getByRole('link', { name: '알림 규칙 보기' })).toHaveAttribute(

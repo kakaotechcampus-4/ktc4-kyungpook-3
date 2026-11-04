@@ -138,7 +138,8 @@ export function useMessageAction(workspaceId: string): MessageActionControl {
         rememberTimePassed(queryClient, workspaceId, action.bundleId)
       if (known?.then === 'refetch') void syncMessages()
       // 다시 받으면 사라질 항목이다. 그 자리에 알리면 항목과 함께 알림도 사라진다
-      if (known?.place === 'toast') toast.show({ key: 'message-review-action', title: known.message })
+      if (known?.place === 'toast')
+        toast.show({ key: 'message-review-action', title: known.message })
       setFailure({
         action,
         title: ACTION_FAILURE_TITLE[action.kind],

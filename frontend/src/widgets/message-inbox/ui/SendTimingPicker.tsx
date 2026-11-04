@@ -82,7 +82,8 @@ export function SendTimingPicker({
   const [requestedTiming, setRequestedTiming] = useState<SendTiming | null>(null)
   const showSaving = useShownAfter(saving, SAVING_MARK_DELAY_MS)
   const savingTiming = showSaving ? requestedTiming : null
-  const deadline = deadlineSend(bundle.tasks, Date.now())
+  const [now] = useState(Date.now)
+  const deadline = deadlineSend(bundle.tasks, now)
   const savedTiming: SendTiming =
     deadline.status !== 'none' && sameInstant(deadline.at, bundle.scheduledAt)
       ? 'day_before_deadline'
