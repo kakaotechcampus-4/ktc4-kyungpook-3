@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import discord
+import pytest
 import requests
 
 from capture import dm as D
@@ -397,22 +398,20 @@ async def test_backfill_hands_over_replies_written_while_the_bot_was_down(tmp_pa
     cog, be = _cog(tmp_path, FakeBot([recent, stale]))
     await cog.startup()
     assert [b["discord_message_id"] for _, b in be.sent("/bot/replies")] == ["6002"]
-    assert recent.dm_channel.reads == [{"after": 6000, "limit": 200, "oldest_first": True}]
+    assert recent.dm_channel.reads == [{"after": 6000, "limit": None, "oldest_first": True}]
     assert stale.dm_channel.reads == []
     assert _recipients(tmp_path)[str(USER_ID)]["after_id"] == "6002"
 
 
-async def test_backfill_reads_history_before_a_new_dm_moves_the_mark_past_it(tmp_path):
+async def test_a_new_dm_does_not_move_the_mark_past_unread_history(tmp_path):
     now = datetime.now(timezone.utc)
     user = FakeUser(USER_ID, history=[FakeMsg(6002, FakeAuthor(USER_ID), "꺼진 동안 쓴 답")])
     user.next_id = 8000
     _recipients_file(tmp_path, {str(USER_ID): {"last_dm_at": now.isoformat(), "after_id": "6000"}})
     cog, be = _cog(tmp_path, FakeBot([user]))
     be.claims.append([_item()])
-    await cog.startup()
     await cog.run_round()
-    assert "6002" in [b["discord_message_id"] for _, b in be.sent("/bot/replies")]
-    assert _recipients(tmp_path)[str(USER_ID)]["after_id"] == "8001"
+    assert _recipients(tmp_path)[str(USER_ID)]["after_id"] == "6000"
 
 
 async def test_the_running_bot_backfills_before_its_first_send(tmp_path, monkeypatch):
@@ -431,7 +430,7 @@ async def test_the_running_bot_backfills_before_its_first_send(tmp_path, monkeyp
         await asyncio.sleep(0.01)
     cog.cog_unload()
     assert [b["discord_message_id"] for _, b in be.sent("/bot/replies")] == ["6002"]
-    assert _recipients(tmp_path)[str(USER_ID)]["after_id"] == "8001"
+    assert _recipients(tmp_path)[str(USER_ID)]["after_id"] == "6002"
 
 
 async def test_backfill_keeps_going_when_one_person_fails(tmp_path):
@@ -516,3 +515,103 @@ async def test_a_reply_survives_a_404_from_a_route_the_be_does_not_have_yet(tmp_
     await cog.run_round()
     assert len(be.sent("/bot/replies")) == 2
     assert not list(_replies_dir(tmp_path).glob("*.json"))
+
+
+# ─────────────────────────────────────────────────────────── 메우기 표시는 읽은 데까지만
+def _posted(be):
+    return [b["discord_message_id"] for _, b in be.sent("/bot/replies")]
+
+
+async def test_a_second_ready_reads_what_was_written_while_the_session_was_lost(tmp_path, monkeypatch):
+    monkeypatch.setattr(D, "DM_POLL_S", 3600.0)
+    monkeypatch.setattr(D, "DRAFT_POLL_S", 3600.0)
+    user = FakeUser(USER_ID)
+    cog, be = _cog(tmp_path, FakeBot([user]))
+    be.claims.append([_item()])
+    await cog.on_ready()
+    for _ in range(200):
+        if be.sent("/bot/messages/msg-1/result"):
+            break
+        await asyncio.sleep(0.01)
+    user.dm_channel.messages.append(FakeMsg(6002, FakeAuthor(USER_ID), "끊긴 동안 쓴 답"))
+    await cog.on_ready()                                   # 재식별. 게이트웨이는 이 글을 다시 주지 않는다
+    cog.cog_unload()
+    assert _posted(be) == ["6002"]
+
+
+async def test_a_live_dm_before_the_backfill_does_not_hide_the_older_reply(tmp_path):
+    user = FakeUser(USER_ID, history=[FakeMsg(6002, FakeAuthor(USER_ID), "꺼진 동안 쓴 답"),
+                                      FakeMsg(6003, FakeAuthor(USER_ID), "READY 직후 쓴 답")])
+    _recipients_file(tmp_path, {str(USER_ID): {"last_dm_at": datetime.now(timezone.utc).isoformat(),
+                                               "after_id": "6000"}})
+    cog, be = _cog(tmp_path, FakeBot([user]))
+    await cog.on_message(FakeMsg(6003, FakeAuthor(USER_ID), "READY 직후 쓴 답"))
+    await cog.startup()
+    assert "6002" in _posted(be)
+
+
+async def test_a_failed_backfill_keeps_the_mark_for_the_next_one(tmp_path):
+    class Down(FakeDmChannel):
+        def history(self, **kw):
+            async def boom():
+                raise discord.HTTPException(SimpleNamespace(status=503, reason="down"), "upstream")
+                yield
+            return boom()
+
+    user = FakeUser(USER_ID)
+    user.dm_channel = Down([FakeMsg(6002, FakeAuthor(USER_ID), "꺼진 동안 쓴 답")])
+    user.next_id = 8000
+    _recipients_file(tmp_path, {str(USER_ID): {"last_dm_at": datetime.now(timezone.utc).isoformat(),
+                                               "after_id": "6000"}})
+    cog, be = _cog(tmp_path, FakeBot([user]))
+    await cog.startup()
+    be.claims.append([_item()])
+    await cog.run_round()
+    assert _recipients(tmp_path)[str(USER_ID)]["after_id"] == "6000"
+
+    user.dm_channel = FakeDmChannel(user.dm_channel.messages)
+    cog2, _ = _cog(tmp_path, FakeBot([user]), be)
+    await cog2.startup()
+    assert "6002" in _posted(be)
+
+
+async def test_a_reply_that_could_not_be_queued_comes_back_with_the_backfill(tmp_path, monkeypatch):
+    _recipients_file(tmp_path, {str(USER_ID): {"last_dm_at": datetime.now(timezone.utc).isoformat(),
+                                               "after_id": "6000"}})
+    real = D._write_json
+    full = {"on": True}
+
+    def write(path, obj):
+        if full["on"] and path.parent.name == "replies":
+            raise OSError("No space left on device")
+        real(path, obj)
+
+    monkeypatch.setattr(D, "_write_json", write)
+    user = FakeUser(USER_ID)
+    cog, be = _cog(tmp_path, FakeBot([user]))
+    first = FakeMsg(6002, FakeAuthor(USER_ID), "디스크가 찼을 때 쓴 답")
+    user.dm_channel.messages.append(first)
+    with pytest.raises(OSError):
+        await cog.on_message(first)
+    full["on"] = False
+    second = FakeMsg(6003, FakeAuthor(USER_ID), "비운 뒤 쓴 답")
+    user.dm_channel.messages.append(second)
+    await cog.on_message(second)
+    cog2, _ = _cog(tmp_path, FakeBot([user]), be)
+    await cog2.startup()
+    assert "6002" in _posted(be)
+
+
+async def test_a_restart_reports_results_before_it_hands_over_backfilled_replies(tmp_path):
+    """팀원이 어느 DM 에 답했는지는 BE 가 결과 보고로 안다. 답장이 먼저 가면 다른 워크스페이스 대화에 들어간다."""
+    d = _sent_dir(tmp_path)
+    d.mkdir(parents=True)
+    (d / "msg-a.json").write_text(json.dumps({
+        "message_id": "msg-a", "discord_user_id": str(USER_ID), "parts_total": 1, "parts_sent": ["5001"],
+        "outcome": {"status": "delivered"}}), encoding="utf-8")
+    _recipients_file(tmp_path, {str(USER_ID): {"last_dm_at": datetime.now(timezone.utc).isoformat(),
+                                               "after_id": "5001"}})
+    user = FakeUser(USER_ID, history=[FakeMsg(6002, FakeAuthor(USER_ID), "A 건 답이에요", reply_to=5001)])
+    cog, be = _cog(tmp_path, FakeBot([user]))
+    await cog.startup()
+    assert [p for p, _ in be.calls] == ["/bot/messages/msg-a/result", "/bot/replies"]

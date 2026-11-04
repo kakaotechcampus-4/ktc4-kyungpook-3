@@ -13,9 +13,11 @@ outcome 없이 쓰고, 조각이 나갈 때마다 나간 id 를 더해 다시 �
 보고한다. 보고하지 못한 결과는 기록에 남아 다음 바퀴에 다시 보고한다(늦은 보고는 BE 가 받는다).
 
 답장. DM 은 받는 즉시 큐(replies/<discord_message_id>.json)에 쓰고 넘긴다. 넘기지 못한 것은 다음 바퀴에 디스코드
-id 순서(snowflake 라 시간순)로 다시 넘긴다. 디스코드는 봇이 꺼진 동안의 DM 을 다시 주지 않으므로, 프로세스가 뜰 때
-한 번 최근 BACKFILL_DAYS 안에 봇이 DM 을 보낸 사람(recipients.json)마다 마지막으로 넘긴 글 뒤의 DM 기록을 읽어
-넘긴다. 메우기는 첫 발송보다 먼저 한다. 새 DM 이 그 사람의 표시(after_id)를 꺼진 동안의 답장 뒤로 옮기기 때문이다.
+id 순서(snowflake 라 시간순)로 다시 넘긴다. 디스코드는 봇이 끊긴 동안의 DM 을 다시 주지 않으므로, on_ready 마다
+최근 BACKFILL_DAYS 안에 봇이 DM 을 보낸 사람(recipients.json)의 DM 기록을 표시(after_id) 뒤부터 끝까지 읽어 넘긴다.
+표시는 기록을 끝까지 읽었을 때만 옮긴다. 발송이나 실시간 DM 이 옮기면 읽지 않은 구간을 건너뛰어 그 답장이 영영 빠진다.
+겹쳐 읽은 글은 BE 가 한 번만 저장한다. BE 가 답장이 어느 DM 에 달렸는지 결과 보고로 알기 때문에 메우기 전에 남은
+결과부터 보고한다.
 
 DM 글은 message_content 특권 인텐트 없이도 오고, dm_messages 는 Intents.default() 에 이미 있다.
 BE 호출은 동기 requests 라 asyncio.to_thread 로 불러 게이트웨이를 막지 않는다. 파일은 FileOutbox 처럼 tmp 에 쓰고
@@ -40,7 +42,6 @@ from shared.schemas import now_iso
 DM_POLL_S = 5.0
 DRAFT_POLL_S = 30.0
 BACKFILL_DAYS = 7
-BACKFILL_LIMIT = 200
 
 # 다시 보내도 같은 답이라 기록을 지운다. 그 밖(NETWORK, 5xx, 401)은 남겨 다음 바퀴에 다시
 RESULT_SETTLED = {"MESSAGE_RESULT_CONFLICT", "MESSAGE_NOT_FOUND", "INVALID_REQUEST"}
@@ -107,7 +108,10 @@ class DmCog(discord.Cog):
     # ------------------------------------------------------------------ 루프
     @discord.Cog.listener()
     async def on_ready(self) -> None:
+        first = not self._started                       # 첫 번은 발송 루프가 startup 으로 메운다
         self.start_loops()
+        if not first:
+            await self._catch_up()
 
     def start_loops(self) -> None:
         """발송 루프와 초안 루프. on_ready 가 재연결로 다시 와도 하나씩만 돈다."""
@@ -145,7 +149,7 @@ class DmCog(discord.Cog):
             await asyncio.sleep(DRAFT_POLL_S)
 
     async def startup(self) -> None:
-        """프로세스에 한 번. 보내다 죽은 기록의 결과를 정하고, 꺼진 동안 온 답장을 메운다."""
+        """프로세스에 한 번. 보내다 죽은 기록의 결과를 정하고 끊긴 동안 온 답장을 메운다."""
         for path in sorted((self.dir / "sent").glob("*.json")):
             rec = _read_json(path, None)
             if rec is None or rec.get("outcome") is not None:
@@ -153,6 +157,11 @@ class DmCog(discord.Cog):
             done = rec["parts_sent"] and len(rec["parts_sent"]) == rec.get("parts_total")
             rec["outcome"] = {"status": "delivered"} if done else {"status": "failed", "failure_reason": "unknown"}
             _write_json(path, rec)
+        await self._catch_up()
+
+    async def _catch_up(self) -> None:
+        for path in sorted((self.dir / "sent").glob("*.json")):
+            await self._report(path)
         await self._backfill()
 
     async def run_round(self) -> None:
@@ -185,7 +194,7 @@ class DmCog(discord.Cog):
                 sent = await user.send(chunk)
                 rec["parts_sent"].append(str(sent.id))
                 _write_json(path, rec)
-                self._mark(uid, sent.id, dm=True)
+                self._note_dm(uid, sent.id)
             rec["outcome"] = {"status": "delivered"}
         except discord.Forbidden:
             rec["outcome"] = {"status": "failed", "failure_reason": "dm_blocked"}
@@ -219,13 +228,11 @@ class DmCog(discord.Cog):
 
     def _queue_reply(self, message) -> None:
         ref = getattr(message, "reference", None)
-        uid = str(message.author.id)
         _write_json(self.dir / "replies" / f"{message.id}.json", {
-            "discord_user_id": uid, "discord_message_id": str(message.id), "body": message.content or "",
+            "discord_user_id": str(message.author.id), "discord_message_id": str(message.id), "body": message.content or "",
             "sent_at": message.created_at.isoformat(),
             "reply_to_discord_message_id": str(ref.message_id) if ref and ref.message_id else None,
         })
-        self._mark(uid, message.id)
 
     async def _flush_replies(self) -> None:
         for path in sorted((self.dir / "replies").glob("*.json"), key=lambda p: int(p.stem)):
@@ -242,18 +249,18 @@ class DmCog(discord.Cog):
                 print(f"[dm] 답장 {path.stem} 을 BE 가 받지 않아 버린다: {e}", flush=True)
             path.unlink(missing_ok=True)
 
-    def _mark(self, uid: str, message_id, *, dm: bool = False) -> None:
-        """메우기 표시. 봇이 DM 을 보냈으면 그 사람을 기록에 올리고, 답장은 이미 있는 사람의 표시만 앞으로 옮긴다."""
+    def _note_dm(self, uid: str, message_id) -> None:
+        """메우기 대상에 올린다. 표시의 시작값은 그 사람에게 처음 보낸 DM 이다."""
         path = self.dir / "recipients.json"
         recipients = _read_json(path, {})
-        entry = recipients.get(uid)
-        if entry is None and not dm:
-            return
-        entry = entry or {"after_id": "0"}
-        entry["after_id"] = str(max(int(entry["after_id"]), int(message_id)))
-        if dm:
-            entry["last_dm_at"] = now_iso()
-        recipients[uid] = entry
+        entry = recipients.setdefault(uid, {"after_id": str(message_id)})
+        entry["last_dm_at"] = now_iso()
+        _write_json(path, recipients)
+
+    def _read_up_to(self, uid: str, message_id) -> None:
+        path = self.dir / "recipients.json"
+        recipients = _read_json(path, {})
+        recipients[uid]["after_id"] = str(max(int(recipients[uid]["after_id"]), int(message_id)))
         _write_json(path, recipients)
 
     async def _backfill(self) -> None:
@@ -264,10 +271,14 @@ class DmCog(discord.Cog):
             try:
                 user = self.bot.get_user(int(uid)) or await self.bot.fetch_user(int(uid))
                 channel = user.dm_channel or await user.create_dm()
+                last = None
                 async for m in channel.history(after=discord.Object(int(entry["after_id"])), oldest_first=True,
-                                               limit=BACKFILL_LIMIT):
+                                               limit=None):
                     if not m.author.bot:
                         self._queue_reply(m)
+                    last = m.id
+                if last is not None:
+                    self._read_up_to(uid, last)
             except Exception as e:  # noqa: BLE001 - 한 사람의 실패가 다른 사람의 메우기를 막지 않는다
                 print(f"[dm] {uid} DM 기록을 읽지 못했다: {type(e).__name__}: {e}", flush=True)
         await self._flush_replies()
