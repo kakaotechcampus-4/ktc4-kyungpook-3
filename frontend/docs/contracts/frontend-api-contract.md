@@ -1393,7 +1393,7 @@ members 에만 있고 Discord 목록에 없으면      → 비활성 (서버를 
 - 대화 목록 한 줄은 `{thread_id, member_id, name, last_message, awaiting_reply_since, dm_failed}` 다. `dm_failed` 는 그 팀원에게 마지막으로 나간 봇 메시지가 `failed` 인지다. 최근 메시지 순이고, 메시지가 없는 대화는 아래에 둔다.
 - 팀원이 봇 DM 창에 쓴 글은 리마인드에 대한 답인지와 상관없이 모두 대화에 들어가 PM 이 본다. 팀원 화면에 이를 안내해야 한다.
 - 팀원 권한은 로그인 계정이 연결된 팀원(`member.user_id`) 기준이다. 계정이 연결되지 않은 팀원은 웹 답장을 할 수 없다. 대화 주인은 팀원 행으로 판단하므로, 탈퇴했다가 새 팀원 행으로 돌아온 계정은 예전 행의 대화를 열 수 없다.
-- 아직 없는 것: 답장의 태스크 판정 입력(`답장 확인 필요`)과 판정 결과, 태스크 안내 DM·#회의록 요약, `지금 바로` 5분 합치기, 알림 설정, AI 초안 워커, 시안의 `지금 바로`(`send_timing: now`)에 대응하는 BE 경로. MSW 의 `reviews/{id}/send|dismiss` 는 `bundles/{id}/approve|cancel` 로 바뀐다. 프론트엔드 요청은 #315.
+- 아직 없는 것: 답장의 태스크 판정 입력(`답장 확인 필요`)과 판정 결과, 태스크 안내 DM·#회의록 요약, `지금 바로` 5분 합치기, AI 초안 워커, 시안의 `지금 바로`(`send_timing: now`)에 대응하는 BE 경로. MSW 의 `reviews/{id}/send|dismiss` 는 `bundles/{id}/approve|cancel` 로 바뀐다. 프론트엔드 요청은 #315.
 
 **스케줄러** (#318 에서 BE 구현). 결정 근거는 [결정 0038](../../../ai/docs/basis_for_decision/ai/2026-11-04-0038-reminder-scheduler-and-notifications.md). 시각 기준은 한국 시간이다.
 
@@ -1426,16 +1426,61 @@ members 에만 있고 Discord 목록에 없으면      → 비활성 (서버를 
 
 | `kind` | 받는 사람 | `link.type` | 누르면 가는 곳 | 설정 키(#316) |
 |---|---|---|---|---|
-| `reminder_sent` | 재촉 받은 팀원 | `thread` | 그 대화 | `dueReminder` |
+| `reminder_sent` | 재촉 받은 팀원 | `thread` | 그 대화 | |
 | `nudge_suggested` | PM 전원 | `bundle` | 보내기 전 확인 | |
 | `nudge_reapprove` | PM 전원 | `bundle` | 보내기 전 확인 | |
 | `reminder_auto_cancelled` | PM 전원 | `bundle` · `thread` | 남은 묶음이 있으면 보내기 전 확인, 없으면 대화 | |
-| `silence_blocked` | PM 전원 | `task` | 태스크 상세 | `silenceAlert` |
+| `silence_blocked` | PM 전원 | `task` | 태스크 상세 | `silenceAlert`(`silence_alert`) |
 
 - `link.type` 은 `thread`·`bundle`·`task` 중 하나다. 모르는 `kind` 가 와도 `text` 와 `link` 로 표시한다. 답장 판정 결과처럼 뒤에 종류가 더해진다.
-- 알림 설정 저장 API 는 아직 없어 모든 알림이 켜진 것처럼 나간다.
+- 설정 저장 API 는 §5.7 의 **메시지·알림 설정** 항목에 있다. `silence_blocked` 는 `silence_alert` 를 끄면 PM 에게 나가지 않는다. `reminder_sent` 는 설정과 무관하게 나간다. 재촉 제안 토글(`due_reminder`)은 스케줄러의 제안만 막고, PM 이 만든 재촉이 나갈 때의 `reminder_sent` 에는 영향이 없다.
 - 계정이 연결되지 않은 팀원은 목록에만 쌓인다. 푸시가 실패해도 목록에는 남는다.
 - 일시 오류는 최대 3번 다시 보낸다. 기기가 꺼져 있으면 푸시 서비스가 24시간까지 붙잡아 두고, 그 뒤에는 버린다. 푸시 서비스가 구독이 없어졌다고 답하면(404·410) 그 구독을 지운다. 요청을 거절하면(400·401·403) 다시 보내지 않고 구독은 남긴다. VAPID 키를 바꾸면 기존 구독이 이렇게 거절되니 브라우저에서 다시 구독한다.
+
+**메시지·알림 설정** (#339 에서 BE 구현, FE 화면 연결 전). 결정 근거는 [결정 기록](../../../backend/docs/plan/m6/basis-for-decision/2026-11-04-message-settings.md).
+
+| 요청 | 누가 | 하는 일 |
+|---|---|---|
+| `GET /api/v1/workspaces/{workspace_id}/message-settings` | 소속 팀원 | 현재 설정. 소속이 아니면 403 |
+| `PATCH /api/v1/workspaces/{workspace_id}/message-settings` | PM | 보낸 키만 바꾸고 바뀐 설정 전체를 돌려준다. 일반 팀원은 403 `FORBIDDEN` |
+
+- 요청(PATCH). 아래 6개 중 보낸 키만 바꾼다.
+  - `due_reminder`, `minutes_summary`, `silence_alert`, `reminder_auto_approve`: bool
+  - `nudge_rule`: `{days_before: 0~3, hour: 0~23}` 객체째 보낸다. 한국 시간이고 마감 `days_before` 일 전 `hour` 시에 나간다
+  - `pm_alert_method`: `web` · `discord_dm` · `both`
+- 400 `INVALID_REQUEST`: 빈 본문, `null`, 범위 밖 값, 모르는 값, 모르는 키(`nudge_rule` 안 포함). 새 오류 코드는 없다.
+- 응답 `data`(GET·PATCH 같다):
+
+```json
+{
+  "due_reminder": true,
+  "minutes_summary": true,
+  "silence_alert": true,
+  "nudge_rule": {"days_before": 1, "hour": 9},
+  "pm_alert_method": "both",
+  "reminder_auto_approve": false,
+  "saved": false,
+  "updated_at": null,
+  "updated_by": null,
+  "pms": [{"member_id": "…", "name": "…", "discord_linked": false}]
+}
+```
+
+- 저장한 적이 없으면 위 기본값이고 `saved: false`, `updated_at`·`updated_by` 는 null 이다. `updated_by` 는 바꾼 PM 의 `member_id` 다.
+- `pms` 는 PM 알림 방식 화면에 쓴다. `discord_linked` 는 워크스페이스에 Discord 연동이 있고 그 PM 의 `discord_user_id` 가 있을 때 true 다.
+
+현재 구현.
+
+- `due_reminder` 를 끄면 스케줄러가 재촉을 제안하지 않고 제안 기록도 남기지 않는다. 다시 켜면 제안 창 안의 태스크부터 제안한다. PM 이 직접 만든 재촉과 그 `reminder_sent` 알림은 영향이 없다.
+- `nudge_rule` 은 스케줄러가 만드는 재촉의 발송 시각을 정한다. 제안 시점(발송 3일 전)은 고정이다.
+- `silence_alert` 를 끄면 72시간 무응답 막힘 알림(`silence_blocked`)만 PM 에게 나가지 않는다. 막힘 전환·되돌리기는 그대로다.
+- 설정을 바꿔도 이미 만든 제안·묶음은 그대로다. 새 설정은 아직 제안되지 않은 것부터 적용한다.
+- `reminder_auto_approve` 를 켜면 승인 전 묶음을 발송 시각에 승인해 보낸다. 켠 뒤 발송 시각이 오는 재촉만 대상이고, 켜기 전에 시각이 지난 묶음은 보내지 않는다. PM 이 직접 만든 재촉이 든 묶음도 포함한다. 켜진 동안 제안 알림 문구는 "발송 시각에 자동으로 나가요" 계열로 바뀐다.
+- AI 초안이 발송 시각 전에 오지 않으면 자동 승인 때 규칙 문구가 나간다.
+- PM 알림 방식은 지금 항상 웹이다. PM DM 경로가 없어서 `pm_alert_method` 는 저장만 하고 알림이 달라지지 않는다.
+- `minutes_summary` 는 저장만 한다. #회의록 요약을 게시하는 봇이 읽는 경로가 없다.
+
+합의 상태. D-174 가 설정 항목과 권한(PM 만 변경)을 정했고 이 절의 경로·모양은 #339 설계 확정 댓글에서 정했다. FE 화면 연결은 아직이고, PM DM 과 요약 게시가 생길 때 위 두 저장 항목이 동작에 쓰이는지는 합의 필요.
 
 **MSW 동작 (임시, 합의 전).** 아래는 개발 서버 목의 현재 구현이다. 백엔드와 합의한 규약이 아니고, 합의 여부 확인 필요. 재촉 자동 승인은 목에서 꺼져 있으며, 예약 시각이 지나도 스스로 나가지 않는다.
 
@@ -1642,8 +1687,8 @@ D-117(E2E)과 D-136(polling)은 실제 API 가 생길 때까지 계속 보류한
   - 메시지 기록 API: 대화 목록과 사람별 대화 조회, 재촉 제안의 승인·수정·취소·시각 변경, 팀원의 웹 답장, 답장의 태스크 판정 입력. 권한은 D-174 정책 4 를 따른다.
     2026-11-04 #310 에서 답장의 태스크 판정 입력을 뺀 나머지를 BE 가 구현했다(§5.7).
   - 스케줄러: 예약 발송, 5분 합치기, 3일 전 제안, 발송 직전 재확인, 72시간 판정과 시계 멈춤, 놓친 예약 처리.
-  - 알림 설정 저장 API: 알림 세 토글, 재촉 규칙, PM 알림 방식(웹 / DM / 둘 다), 재촉 자동 승인.
-    지금 설정 화면은 이 값들을 화면 안에서만 바꾼다([M8-B 근거](../plan/m8/basis-for-decision/2026-10-31-settings-team-follow-design-canvas.md)).
+  - ~~알림 설정 저장 API: 알림 세 토글, 재촉 규칙, PM 알림 방식(웹 / DM / 둘 다), 재촉 자동 승인.~~
+    **2026-11-04 BE 구현** (#339, §5.7 의 **메시지·알림 설정** 항목). 화면 연결은 아직이다. 지금 설정 화면은 이 값들을 화면 안에서만 바꾼다([M8-B 근거](../plan/m8/basis-for-decision/2026-10-31-settings-team-follow-design-canvas.md)).
   - PM 의 Discord 가 연결되지 않았을 때 PM 알림을 웹으로만 보내는 판정 (D-177).
 - **AI·봇**
   - 봇의 DM 발송과 DM 답장 수신, 그리고 받은 답장을 백엔드로 넘기는 일. 현재 봇(`ai/capture/notify.py`)은 녹음 채널에 진행 알림만 보낸다.
