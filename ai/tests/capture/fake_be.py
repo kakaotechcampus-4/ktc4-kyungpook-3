@@ -74,6 +74,8 @@ class FakeBe:
         self.claim_lost = False       # True 면 claim 은 서버에 반영되지만 응답이 오지 않는다(시간 초과)
         self.streams: list[bool] = []             # 호출마다 받은 stream 인자(원본을 메모리에 다 올리지 않고 받는지 확인용)
         self.file_break_after: int | None = None   # 파일을 이 바이트까지 보내고 연결이 끊긴다
+        self.resume_lost = False      # True 면 resume 은 서버에 반영되지만 응답이 오지 않는다
+        self._assign_n = 0            # 지정 순번. 지정 시각 순 정렬에 쓴다
         self._n = 0
 
     def add_upload(self, meeting_id: str, *, workspace_id: str = "ws-1", audio: bytes | None = b"RIFFfake-audio",
@@ -88,8 +90,17 @@ class FakeBe:
         item.update(over)
         self.meetings[meeting_id] = {"meeting_id": meeting_id, "workspace_id": workspace_id, "status": status,
                                      "title": item["title"]}
-        self.uploads[meeting_id] = {"item": item, "claimed": False, "audio": audio}
+        self.uploads[meeting_id] = {"item": item, "claimed": False, "audio": audio,
+                                     "speakers_assigned": None, "mapping": None, "resumed": False}
         return item
+
+    def assign(self, meeting_id: str, mapping: dict) -> None:
+        """PM 이 화자 지정을 끝낸 것을 흉내 낸다(assign_speakers): 지정을 기록하고 status 를 processing 으로."""
+        self._assign_n += 1
+        u = self.uploads[meeting_id]
+        u["speakers_assigned"] = self._assign_n
+        u["mapping"] = dict(mapping)
+        self.meetings[meeting_id]["status"] = "processing"
 
     def request(self, method: str, url: str, json=None, timeout=None, headers=None, stream=False):
         if self.down:
@@ -213,6 +224,14 @@ class FakeBe:
             items = [u["item"] for mid, u in self.uploads.items()
                      if not u["claimed"] and self.meetings[mid]["status"] == "processing"]
             return _ok(200, {"items": items})
+        if method == "GET" and path == "/uploads/assigned":   # parts[2] 분기보다 먼저(assigned 는 회의 ID 가 아니다)
+            rows = sorted((u for mid, u in self.uploads.items()
+                           if self.meetings[mid]["status"] == "processing" and u["speakers_assigned"] is not None
+                           and not u["resumed"]), key=lambda u: u["speakers_assigned"])
+            return _ok(200, {"items": [{"meeting_id": u["item"]["meeting_id"], "workspace_id": u["item"]["workspace_id"],
+                                        "title": u["item"]["title"], "started_at": u["item"]["started_at"],
+                                        "mapping": dict(u["mapping"]), "assigned_at": f"assign-{u['speakers_assigned']}"}
+                                       for u in rows]})
         parts = path.split("/")      # ["", "uploads", mid, action]
         mid, action = parts[2], parts[3] if len(parts) > 3 else ""
         u = self.uploads.get(mid)
@@ -229,8 +248,28 @@ class FakeBe:
                 import requests
                 raise requests.ConnectionError("claim 응답을 받지 못했다")
             return _ok(200, {"meeting_id": mid, "status": "processing"})
+        if method == "PATCH" and action == "resume":
+            return self._resume(mid, u)
         if method == "GET" and action == "file":
             if u is None or u["audio"] is None:
                 return _err(404, "MEETING_NOT_FOUND", {"meeting_id": mid})
             return _Resp(200, None, raw=u["audio"], break_after=self.file_break_after)
         return _Resp(404, None, "not found")
+
+    def _resume(self, mid: str, u: dict | None):
+        """404 → ENDED(done·failed) → 이미 resume 했고 processing 이면 200 같은 mapping → 그 밖은 409 SPEAKERS_NOT_ASSIGNED.
+        speaker_assignment.resume_upload 의 판정 순서다. 클래스 상수 ENDED 는 processing 을 포함해 여기 쓰지 않는다."""
+        if u is None:
+            return _err(404, "MEETING_NOT_FOUND", {"meeting_id": mid})
+        status = self.meetings[mid]["status"]
+        if status in ("done", "failed"):
+            return _err(409, "MEETING_ALREADY_ENDED", {"meeting_id": mid, "status": status})
+        first = u["speakers_assigned"] is not None and not u["resumed"] and status == "processing"
+        retry = u["resumed"] and status == "processing"
+        if not (first or retry):
+            return _err(409, "SPEAKERS_NOT_ASSIGNED", {"meeting_id": mid, "status": status})
+        u["resumed"] = True
+        if self.resume_lost:
+            import requests
+            raise requests.ConnectionError("resume 응답을 받지 못했다")
+        return _ok(200, {"meeting_id": mid, "status": status, "mapping": dict(u["mapping"])})
