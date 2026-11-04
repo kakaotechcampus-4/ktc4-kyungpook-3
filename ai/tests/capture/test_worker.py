@@ -816,6 +816,7 @@ async def test_diarized_upload_becomes_mapped_through_the_worker_and_the_pass_le
     import soundfile as sf
     from tests.conftest import SEGS, FakeDiarizer
     from upload import assign as A
+    from upload import report as RP
 
     t = np.arange(12 * 16000) / 16000
     buf = io.BytesIO()
@@ -825,11 +826,12 @@ async def test_diarized_upload_becomes_mapped_through_the_worker_and_the_pass_le
     client = H.BeClient("http://be", session=fake, service_token="svc-token")
     w = _worker(tmp_path, intake=(client, FakeDiarizer(SEGS)))
     monkeypatch.setattr(W, "assign_one", A.assign_one)
+    monkeypatch.setattr(W, "report_one", RP.report_one)   # 보고도 진짜로: 워커 바퀴가 intake → report 로 이어진다
     for _ in range(8):
         await w._intake_once()
     path = R.manifest_path(w.recordings_dir, "upload_m1")
     assert _status(path) == "diarized"
-    fake.mark_reported("m1", ["SPEAKER_00", "SPEAKER_01"])   # 가져가고 보고한 뒤에야 지정을 받는다
+    assert sum(1 for m, p, _ in fake.calls if m == "POST" and p.endswith("/speakers")) == 1   # 워커가 한 번 보고했다
     fake.assign("m1", {"SPEAKER_00": "u1", "SPEAKER_01": None})
     await w._intake_once()
     assert _status(path) == "mapped"
