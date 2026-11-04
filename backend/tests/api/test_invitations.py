@@ -268,7 +268,9 @@ def test_decline_closes_the_invite(seed):
 def test_pm_cancels_a_pending_invite(seed):
     invitation_id = _invite_id(seed["ws"], seed["jiyoung"].member_id, "jiyoung@example.com")
     assert _act(invitation_id, "cancel", "jimin-token").status_code == 403
-    assert _act(invitation_id, "cancel", "outsider-token").status_code == 403
+    outsider = _act(invitation_id, "cancel", "outsider-token")
+    assert outsider.status_code == 404
+    assert _code(outsider) == "INVITATION_NOT_FOUND"
 
     res = _act(invitation_id, "cancel", "pm-token")
 
@@ -613,6 +615,24 @@ def test_promotion_check_locks_the_member_row_shared_with_invite_creation(db, se
         assert _row_is_locked(db, seed["minsu"].member_id)
     finally:
         db.rollback()
+
+
+@pytest.mark.parametrize("action", ["cancel", "revoke"])
+def test_pm_of_another_workspace_cannot_tell_the_invite_exists(db, seed, action):
+    other_pm_user = _user(db, "otherpm")
+    other_ws = seed["other"].workspace_id
+    db.add(Member(workspace_id=other_ws, user_id=other_pm_user.user_id, display_name="다른PM", role="pm"))
+    db.commit()
+    invitation_id = _invite_id(seed["ws"], seed["jiyoung"].member_id, "jiyoung@example.com")
+    if action == "revoke":
+        assert _act(invitation_id, "accept", "jiyoung-token").status_code == 200
+
+    res = _act(invitation_id, action, "otherpm-token")
+
+    assert res.status_code == 404
+    assert _code(res) == "INVITATION_NOT_FOUND"
+    assert "workspace_id" not in res.text
+    assert len(_workspace_ids("jiyoung-token")) == (1 if action == "revoke" else 0)
 
 
 def test_migration_keeps_the_open_invite_indexes_partial_on_sqlite():

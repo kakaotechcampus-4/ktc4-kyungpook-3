@@ -129,8 +129,9 @@ def _user_in_workspace(db: Session, workspace_id: str, user_id: str) -> bool:
 
 
 def _pm_invitation(db: Session, invitation_id: str, user: User) -> Invitation:
+    """이 워크스페이스 밖의 사람에게는 초대가 있는지도 워크스페이스 id 도 알려 주지 않는다(404)."""
     invitation = db.get(Invitation, invitation_id)
-    if invitation is None:
+    if invitation is None or not _user_in_workspace(db, invitation.workspace_id, user.user_id):
         raise AppError(ErrorCode.INVITATION_NOT_FOUND, details={"invitation_id": invitation_id})
     require_pm(db, user, invitation.workspace_id)
     return invitation

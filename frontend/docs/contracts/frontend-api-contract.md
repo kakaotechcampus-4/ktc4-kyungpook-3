@@ -1484,7 +1484,7 @@ D-117(E2E)과 D-136(polling)은 실제 API 가 생길 때까지 계속 보류한
   | `EMAIL_ALREADY_INVITED` | 409 | 같은 이메일로 다른 팀원에게 보낸 초대가 대기 중이다 |
   | `PM_MEMBER_NOT_INVITABLE` | 409 | 이 워크스페이스에서 역할이 PM 인 팀원을 초대하려 했다. 팀원으로 초대하고, 수락한 뒤 PM 으로 바꾼다. 다른 워크스페이스의 역할과는 상관없다 |
   | `MEMBER_HAS_PENDING_INVITATION` | 409 | 대기 초대가 있는 팀원을 PM 으로 올리려 했다(`PATCH /members/{id}`) |
-  | `INVITATION_NOT_FOUND` | 404 | 초대가 없다. 수락·거절에서는 내 이메일로 온 초대가 아니어도 이 코드다 |
+  | `INVITATION_NOT_FOUND` | 404 | 초대가 없다. 수락·거절에서는 내 이메일로 온 초대가 아니어도, 취소·연결 끊기에서는 그 워크스페이스 소속이 아니어도 이 코드다(소속이지만 PM 이 아니면 403 `FORBIDDEN`) |
   | `INVITATION_NOT_PENDING` | 409 | 대기 중이 아닌 초대를 수락·거절·취소했다 |
   | `INVITATION_NOT_ACCEPTED` | 409 | 수락하지 않은 초대의 연결을 끊으려 했다 |
   | `LAST_PM_REQUIRED` | 409 | 끊으면 로그인할 수 있는 PM 이 없어진다 |
