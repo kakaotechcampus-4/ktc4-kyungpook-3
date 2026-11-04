@@ -121,12 +121,40 @@ def test_message_at_cursor_is_skipped():
     assert [s["text"] for s in fake.sources["m1"].values()] == ["새 글"]
 
 
-def test_catch_up_window_capped():
+def test_catch_up_sends_only_first_14_days_of_messages():
     cursor = _at(days=20)
     fake, client = _env(cursor)
-    reader = FakeReader()
+    first = cursor + timedelta(days=1)
+    reader = FakeReader([("1", "하은", False, first, "첫 글"),
+                         ("1", "하은", False, first + timedelta(days=14), "경계"),
+                         ("1", "하은", False, first + timedelta(days=14, seconds=1), "다음 실행")])
     poll(reader, client, FakeExtract(), now=NOW, cfg=CFG)
-    assert reader.read_args == (cursor, cursor + timedelta(days=14))
+    assert reader.read_args == (cursor, NOW)
+    saved = list(fake.sources["m1"].values())
+    assert [s["text"] for s in saved] == ["첫 글", "경계"]
+    assert all(s["end"] <= 1_209_600 for s in saved)
+
+
+def test_empty_window_after_cursor_does_not_stall():
+    cursor = _at(days=20)
+    fake, client = _env(cursor)
+    reader = FakeReader([("1", "하은", False, cursor + timedelta(days=16), "한참 뒤 글")])
+    assert poll(reader, client, FakeExtract(), now=NOW, cfg=CFG) == 0
+    assert [s["text"] for s in fake.sources["m1"].values()] == ["한참 뒤 글"]
+
+
+def test_chat_poll_settings_survive_empty_env(monkeypatch):
+    from shared.config import Settings  # noqa: F401 - 기본값은 import 시점에 정해진다
+    import importlib
+    import shared.config as config
+    for k in ("CONTEXT_MESSAGES", "INITIAL_HOURS", "MAX_DAYS"):
+        monkeypatch.setenv(f"CHAT_POLL_{k}", "")
+    try:
+        c = importlib.reload(config).Settings()
+        assert (c.chat_poll_context_messages, c.chat_poll_initial_hours, c.chat_poll_max_days) == (30, 24, 14)
+    finally:
+        monkeypatch.undo()
+        importlib.reload(config)
 
 
 def test_calls_in_order_and_cursor_lands_on_last_message():

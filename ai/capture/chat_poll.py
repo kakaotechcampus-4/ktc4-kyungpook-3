@@ -155,9 +155,14 @@ def poll(reader: ChannelReader, client, extract, *, now: datetime, cfg, dry_run:
     ws = client.guild_workspace(reader.guild_id())
     cursor = client.chat_cursor(ws)
     after = cursor or now - timedelta(hours=cfg.chat_poll_initial_hours)
-    before = min(now, after + timedelta(days=cfg.chat_poll_max_days))
-    # 커서와 같은 시각은 이미 BE 에 있다. 리액션 줄도 원래 메시지 시각이라 같이 빠진다
-    messages = [m for m in reader.read(after, before) if m[3] > after]
+    # 커서 뒤 ~ now 를 다 읽고 첫 사람 메시지부터 max_days 까지만 보낸다. 나머지는 커서가 나아간 다음 실행이 읽는다.
+    # 읽는 구간을 먼저 자르면 그 안에 메시지가 없을 때 커서가 못 나아가 같은 빈 구간에서 영원히 멈춘다.
+    # 이미 BE 에 있는 시각(커서 이하)과 now 이후는 뺀다. 리액션 줄도 원래 메시지 시각이라 같이 빠진다
+    messages = [m for m in reader.read(after, now) if after < m[3] < now]
+    kept0 = _kept(messages)
+    if kept0:
+        limit = kept0[0][3] + timedelta(days=cfg.chat_poll_max_days)   # 발화 offset 은 BE 가 14일까지만 받는다
+        messages = [m for m in messages if m[3] <= limit]
     humans = [m for m in messages if not m[2]]
     if humans and not any(m[4].strip() for m in humans):
         print("사람 메시지 본문이 전부 비어 있습니다. 개발자 포털에서 Message Content Intent 를 켜세요.", file=sys.stderr)
@@ -191,7 +196,7 @@ def poll(reader: ChannelReader, client, extract, *, now: datetime, cfg, dry_run:
             return 1
         print(f"[items {len(out.items)}건]")
         for i in out.items:
-            print(f"  {i.get('action'):<6} title={i.get('task_title')!r} due={i.get('due_date')}")
+            print(f"  {str(i.get('action')):<6} title={i.get('task_title')!r} due={i.get('due_date')}")
         RUNS_DIR.mkdir(parents=True, exist_ok=True)
         path = RUNS_DIR / f"chat_poll_{datetime.now():%Y%m%d_%H%M%S}.json"
         path.write_text(json.dumps({"transcript": transcript.to_dict(), "speaker_names": all_names,
