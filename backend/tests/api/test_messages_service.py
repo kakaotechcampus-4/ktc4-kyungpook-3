@@ -2,6 +2,7 @@
 from datetime import date, datetime, timedelta, timezone
 
 import pytest
+from sqlalchemy import select
 
 from app.core.errors import AppError, ErrorCode
 from app.models import (
@@ -649,3 +650,17 @@ def test_dm_that_failed_without_sending_anything_is_not_the_preceding_dm(mdb, ms
 
     reply, _ = _ingest(mdb, _snowflake(t + timedelta(minutes=1)), sent_at=t + timedelta(minutes=1))
     assert reply.thread.member_id == mseed["alice"].member_id
+
+
+def test_dispatch_cancels_bundle_of_member_who_left_instead_of_sending(mdb, mseed):
+    r = _sendable(mdb, mseed, who="carol")
+    mseed["carol"].is_deleted = True
+    mdb.commit()
+
+    assert svc.dispatch_due(mdb, LATER) == []
+
+    mdb.refresh(r)
+    assert r.status == ReminderStatus.CANCELLED
+    assert r.bundle.status == ReminderStatus.CANCELLED
+    assert r.bundle.message_id is None
+    assert mdb.scalars(select(ThreadMessage)).all() == []

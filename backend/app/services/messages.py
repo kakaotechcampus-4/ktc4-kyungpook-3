@@ -370,7 +370,7 @@ def cancel_bundle(db: Session, bundle: ReminderBundle, *, now: datetime) -> Remi
 
 
 def dispatch_due(db: Session, now: datetime) -> list[ThreadMessage]:
-    """승인됐고 발송 시각이 된 묶음마다 봇 메시지 한 통을 만든다. 문구는 묶음 문구 그대로다."""
+    """승인됐고 발송 시각이 된 묶음마다 봇 메시지 한 통을 만든다. 문구는 묶음 문구 그대로다. 탈퇴한 팀원의 묶음은 취소한다."""
     now = utc(now)
     due = db.scalars(
         select(ReminderBundle)
@@ -386,7 +386,10 @@ def dispatch_due(db: Session, now: datetime) -> list[ThreadMessage]:
     messages = []
     for bundle in due:
         member = bundle.thread.member
-        linked = bool(member.discord_user_id) and not member.is_deleted
+        if member.is_deleted:
+            cancel_bundle(db, bundle, now=now)
+            continue
+        linked = bool(member.discord_user_id)
         message = ThreadMessage(
             thread_id=bundle.thread_id,
             sender=MessageSender.BOT,
