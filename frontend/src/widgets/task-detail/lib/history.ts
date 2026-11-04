@@ -20,6 +20,7 @@ const SOURCE_LABEL: Record<TaskHistoryEntry['source'], string> = {
   notion: 'Notion',
   reminder_reply: '리마인더 답장',
   manual: '직접 변경',
+  scheduler: '스케줄러',
 }
 
 /** 담당자 이름. 없으면 `담당자 없음`, 이름을 모르면 `알 수 없는 담당자` */

@@ -8,8 +8,9 @@ import {
   schedulePassedReview,
 } from './fixtures/message'
 import { completeMeeting, failMeeting, setMeetingFlowMode } from './meetingFlow'
+import { notificationFixtures } from './fixtures/notification'
 import { setMockRole } from './sessions'
-import { createTask } from './task-state'
+import { blockBySilence, createTask } from './task-state'
 
 /*
  * 브라우저·E2E 용 시작 상태. 모두 픽스처 계정 pm@example.com / mock-password 로 로그인한다.
@@ -71,6 +72,8 @@ export const MOCK_SCENARIOS = [
   'settings-discord-skipped',
   'settings-unmapped',
   'settings-member',
+  // #330 알림·자동 막힘. ws_01 PM 이다
+  'notifications-default',
   // #320 팀원 초대. team-invitations 는 ws_01 PM 이 보는 초대 상태, invitation-pending 은 초대받은 사람의 가입 전이다
   'team-invitations',
   'invitation-pending',
@@ -622,6 +625,12 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
         display_name: null,
         connected_at: null,
       }
+      break
+    case 'notifications-default':
+      // 안 읽은 알림 4건(모르는 종류 1건 포함)과 읽은 알림 1건. tk_06 은 무응답으로 자동 막혔다
+      signInWith(state, ['ws_01'], 'ws_01')
+      state.notifications = structuredClone(notificationFixtures)
+      blockBySilence(taskOf(state, 'tk_06'), '2026-09-18T08:30:00+09:00', state)
       break
     case 'team-invitations':
       signInWith(state, ['ws_01'], 'ws_01')

@@ -28,7 +28,7 @@ export interface TaskHistoryEntry {
   field: 'assignee' | 'start_date' | 'due_date' | 'status' | 'title' | 'progress' | 'blocker'
   oldValue: string | null
   newValue: string | null
-  source: 'meeting' | 'chat' | 'checkin' | 'notion' | 'reminder_reply' | 'manual'
+  source: 'meeting' | 'chat' | 'checkin' | 'notion' | 'reminder_reply' | 'manual' | 'scheduler'
   changedBy: string | null
   isAuto: boolean
   isRolledBack: boolean

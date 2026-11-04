@@ -256,3 +256,58 @@ export function taskUpdates(body: Record<string, unknown>): TaskUpdates {
   }
   return updates
 }
+
+/** 스케줄러가 72시간 무응답으로 건 막힘의 사유 (계약 §5.7 「스케줄러」) */
+export const SILENCE_BLOCKER = '리마인드에 72시간 동안 응답이 없어요'
+
+/** 스케줄러의 무응답 막힘. 상태와 사유를 같은 시각에 바꾸고 이력 출처는 scheduler 다 */
+export function blockBySilence(task: TaskDto, at: string, state: MockDb = db): void {
+  const changes = [
+    ['status', 'blocked'],
+    ['blocker', SILENCE_BLOCKER],
+  ] as const
+  for (const [field, value] of changes) {
+    const entry = addHistory(task.task_id, field, task[field], value, null, 'scheduler', state)
+    entry.is_auto = true
+    entry.created_at = at
+    task[field] = value
+  }
+  task.updated_at = at
+  task.version += 1
+}
+
+/** 그 필드의 마지막 이력. 같은 시각이면 나중에 들어간 것이다 */
+function latestHistory(taskId: string, field: string): TaskHistoryDto | undefined {
+  let latest: TaskHistoryDto | undefined
+  for (const entry of db.taskHistory) {
+    if (entry.task_id !== taskId || entry.changed_field !== field) continue
+    if (latest === undefined || Date.parse(entry.created_at) >= Date.parse(latest.created_at))
+      latest = entry
+  }
+  return latest
+}
+
+/**
+ * 백엔드 자동 막힘 풀기의 단순화. 마지막 상태 변경이 스케줄러의 막힘이고 그 뒤 상태·사유가 그대로일 때만
+ * 막히기 전 값으로 되돌리고 true 다. 출처는 manual 이다. 아니면 아무것도 바꾸지 않고 false 다 — 409 `AUTO_BLOCK_NOT_FOUND`
+ */
+export function undoAutoBlock(task: TaskDto, actor: string): boolean {
+  const status = latestHistory(task.task_id, 'status')
+  if (status?.change_source !== 'scheduler' || task.status !== 'blocked') return false
+  const blocker = latestHistory(task.task_id, 'blocker')
+  const blockedTogether =
+    blocker?.change_source === 'scheduler' && blocker.created_at === status.created_at
+  const blockerChanged = blockedTogether
+    ? task.blocker !== blocker.new_value
+    : blocker !== undefined && Date.parse(blocker.created_at) >= Date.parse(status.created_at)
+  if (blockerChanged) return false
+  updateTask(
+    task,
+    {
+      status: status.old_value ?? 'todo',
+      ...(blockedTogether ? { blocker: blocker.old_value } : {}),
+    },
+    actor,
+  )
+  return true
+}
