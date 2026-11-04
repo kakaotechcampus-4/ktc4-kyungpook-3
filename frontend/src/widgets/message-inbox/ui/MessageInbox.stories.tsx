@@ -3,20 +3,27 @@ import { delay, http } from 'msw'
 import { expect, userEvent, waitFor, within } from 'storybook/test'
 import { paths } from '@/shared/config/routes'
 import { db } from '@/shared/mock/db'
+import { botMessage, reply } from '@/shared/mock/fixtures/message'
 import { deferred } from '@/shared/test/deferred'
 import { MessageInbox } from './MessageInbox'
 
 /*
  * 메시지 (M8, Messages·MessagesThread·EmptyMessages 시안 그대로). ws_01 하나에 PM 으로 로그인한 상태다.
  * 데이터는 임시 MSW handler 다 — 경로·모양은 계약이 아니다. 시작 db 는 shared/mock/scenarios.ts 의 `messages-*` 시나리오다.
- * 행동(발송·보내지 않음·고쳐 쓰기·발송 시점·승인·반려)은 MSW 목이 성공한 뒤에만 화면을 바꾼다 (D-137).
+ * 행동(발송·보내지 않음·고쳐 쓰기·발송 시점)은 MSW 목이 성공한 뒤에만 화면을 바꾼다 (D-137).
  * Storybook 은 시계를 MOCK_NOW 로 고정하지 않는다 — 오늘 기준 상대 표기(`3일 전`, `답장 N일째 없음`)의 숫자는 단언하지 않는다
  */
 
 const meta = {
   title: 'M8 메시지/화면',
   component: MessageInbox,
-  args: { workspaceId: 'ws_01', botName: '카테캠 3팀', threadId: null, reviewId: undefined },
+  args: {
+    workspaceId: 'ws_01',
+    botName: '카테캠 3팀',
+    viewer: 'pm',
+    threadId: null,
+    reviewId: undefined,
+  },
   parameters: { scenario: 'messages-default', route: paths.messages('ws_01') },
 } satisfies Meta<typeof MessageInbox>
 
@@ -88,7 +95,7 @@ export const 발송_실패: Story = {
   },
 }
 
-/** 답장이 없는 사람별 대화 — 머리 부제·답장 없음 배지·Discord에서 열기, 시각 줄, 답장 없음 칩, 승인 대기 점선 말풍선, 안내 바 */
+/** 답장이 없는 사람별 대화 — 머리 부제·답장 없음 배지·Discord에서 열기, 시각 줄, 답장 없음 칩, 점선 미리보기와 확인하기 */
 export const 대화: Story = {
   args: { threadId: 'th_01' },
   parameters: { route: paths.messageThread('ws_01', 'th_01') },
@@ -100,20 +107,92 @@ export const 대화: Story = {
     await expect(detail.getByRole('link', { name: /Discord에서 열기/ })).toBeInTheDocument()
     await expect(detail.getByText('09:02 · 자동 발송')).toBeInTheDocument()
     await expect(detail.getByText(/여기서부터 답장이 없습니다/)).toBeInTheDocument()
-    await expect(detail.getByRole('button', { name: '승인' })).toBeEnabled()
-    await expect(detail.getByRole('link', { name: '확인하기' })).toBeInTheDocument()
+    await expect(detail.queryByRole('button', { name: '승인' })).toBeNull()
+    await expect(detail.getByRole('link', { name: '확인하기' })).toHaveAttribute(
+      'href',
+      paths.messageReview('ws_01', 'rv_01'),
+    )
   },
 }
 
-/** 승인 대기를 승인했다 — 서버가 성공한 뒤 점선 말풍선이 예약 메시지가 된다 */
-export const 대화_승인: Story = {
-  args: { threadId: 'th_01' },
-  parameters: { route: paths.messageThread('ws_01', 'th_01') },
+/** 취소된 재촉은 그날 묶음에 남고, 보내기 전 확인의 점선에는 확인하기만 있다. 만료(th_04)는 화면 테스트가 본다 */
+export const 대화_취소_만료: Story = {
+  args: { threadId: 'th_03' },
+  parameters: { route: paths.messageThread('ws_01', 'th_03') },
   play: async ({ canvasElement }) => {
     const detail = detailOf(canvasElement)
-    await userEvent.click(await detail.findByRole('button', { name: '승인' }))
-    await expect(await detail.findByText(/발송 예정 · 최진호 승인/)).toBeInTheDocument()
+    await expect(await detail.findByText(/9월 8일/)).toBeInTheDocument()
+    await expect(
+      detail.getByText('09:00 · 자동 취소됨 · 보내기 전에 응답이 있었어요'),
+    ).toBeVisible()
     await expect(detail.queryByRole('button', { name: '승인' })).toBeNull()
+    await expect(detail.queryByRole('button', { name: '반려' })).toBeNull()
+    await expect(detail.getByRole('link', { name: '확인하기' })).toHaveAttribute(
+      'href',
+      paths.messageReview('ws_01', 'rv_02'),
+    )
+  },
+}
+
+/** 팀원은 자기 대화만 보고, 점선 재촉 없이 웹에서 답한다 */
+export const 팀원_내_대화: Story = {
+  args: { viewer: 'member' },
+  parameters: { scenario: 'messages-member', route: paths.messages('ws_01') },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const detail = detailOf(canvasElement)
+    await expect(
+      await detail.findByRole('heading', { level: 2, name: '카테캠 3팀 봇' }),
+    ).toBeVisible()
+    await expect(canvas.queryByText(/보내기 전 확인/)).toBeNull()
+    await expect(detail.getByText('14:20 · 웹에서 답장')).toBeVisible()
+    await expect(detail.queryByText(/자동 발송/)).toBeNull()
+    await expect(detail.queryByRole('link', { name: '확인하기' })).toBeNull()
+    await expect(detail.getByRole('button', { name: '답장 보내기' })).toBeEnabled()
+    await expect(canvas.queryByText('팀원에게 숨긴 재촉')).toBeNull()
+  },
+}
+
+/** AI 가 정하지 못한 답장 — 태스크를 고르면 칩과 고르기가 사라진다 */
+export const 답장_확인_필요: Story = {
+  args: { threadId: 'th_02' },
+  parameters: { route: paths.messageThread('ws_01', 'th_02') },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const threads = await canvas.findByRole('region', { name: '대화' })
+    await expect(within(threads).getByText('답장 확인 필요')).toBeVisible()
+    const detail = detailOf(canvasElement)
+    await expect(await detail.findByText('어느 태스크에 대한 답장인가요?')).toBeVisible()
+    await expect(
+      detail.getByText('AI가 어느 태스크에 대한 답장인지 정하지 못했어요.'),
+    ).toBeVisible()
+    await expect(detail.getByRole('radio', { name: '해당 없음' })).toBeInTheDocument()
+    await userEvent.click(detail.getByRole('radio', { name: '회원가입 화면' }))
+    await userEvent.click(detail.getByRole('button', { name: '정하기' }))
+    await expect(await detail.findByText('태스크: 회원가입 화면')).toBeVisible()
+    await expect(detail.queryByText('어느 태스크에 대한 답장인가요?')).toBeNull()
+    await expect(within(threads).queryByText('답장 확인 필요')).toBeNull()
+  },
+}
+
+/** 예정 시각이 지난 재촉 — 이대로 발송은 거절되고 다시 시도는 없다 */
+export const 예정_시각_지남: Story = {
+  args: { reviewId: 'rv_06' },
+  parameters: {
+    scenario: 'messages-schedule-passed',
+    route: paths.messageReview('ws_01', 'rv_06'),
+  },
+  play: async ({ canvasElement }) => {
+    const detail = detailOf(canvasElement)
+    await userEvent.click(await detail.findByRole('button', { name: '이대로 발송' }))
+    const alert = await detail.findByRole('alert', {}, { timeout: 4_000 })
+    await expect(alert).toHaveTextContent('예정 시각이 지났어요')
+    await expect(within(alert).queryByRole('button', { name: '다시 시도' })).toBeNull()
+    await expect(detail.getByRole('button', { name: '이대로 발송' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    )
+    await expect(detail.getByText('09/17 09:00 · 지남')).toBeInTheDocument()
   },
 }
 
@@ -199,15 +278,7 @@ const fillLongMessages = () => {
   review.body = LONG_BODY
   review.reason = `${review.reason} ${UNBROKEN_URL}`
   thread.name = LONG_NAME
-  thread.messages.push({
-    message_id: 'mg_80',
-    sender: 'counterpart',
-    body: `링크 남겨요\n${UNBROKEN_URL}`,
-    sent_at: '2026-09-16T19:00:00+09:00',
-    status: 'sent',
-    delivery: null,
-    approved_by: null,
-  })
+  thread.messages.push(reply('mg_80', `링크 남겨요\n${UNBROKEN_URL}`, '2026-09-16T19:00:00+09:00'))
 }
 
 /** 내용이 칸을 넘지 않는다 — 레이아웃은 jsdom 이 재지 못해 브라우저에서 실측한다 */
@@ -266,18 +337,16 @@ export const 긴_대화: Story = {
       if (!thread) throw new Error('mock thread th_02 is missing')
       for (let index = 0; index < 30; index += 1) {
         const day = String(10 + Math.floor(index / 4)).padStart(2, '0')
-        thread.messages.push({
-          message_id: `mg_${String(50 + index)}`,
-          sender: index % 3 === 0 ? 'counterpart' : 'bot',
-          body:
-            index % 3 === 0
-              ? `${index + 1}번째 답장이에요. 확인했습니다.`
-              : `${index + 1}번째 메시지예요. 진행 상황을 한 번 더 알려 주세요 🙂\n막히는 부분이 있으면 편하게 말해 주세요.`,
-          sent_at: `2026-09-${day}T${String(9 + (index % 4)).padStart(2, '0')}:00:00+09:00`,
-          status: 'sent',
-          delivery: index % 3 === 0 ? null : 'auto',
-          approved_by: null,
-        })
+        const at = `2026-09-${day}T${String(9 + (index % 4)).padStart(2, '0')}:00:00+09:00`
+        const body =
+          index % 3 === 0
+            ? `${index + 1}번째 답장이에요. 확인했습니다.`
+            : `${index + 1}번째 메시지예요. 진행 상황을 한 번 더 알려 주세요 🙂\n막히는 부분이 있으면 편하게 말해 주세요.`
+        thread.messages.push(
+          index % 3 === 0
+            ? reply(`mg_${String(50 + index)}`, body, at)
+            : botMessage(`mg_${String(50 + index)}`, body, at),
+        )
       }
     },
   },

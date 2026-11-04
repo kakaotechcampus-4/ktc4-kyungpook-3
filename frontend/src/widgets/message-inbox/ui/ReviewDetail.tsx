@@ -1,14 +1,18 @@
 import { useId, useState } from 'react'
 import { useNavigate } from 'react-router'
-import type { MessageReview, MessageReviewAction } from '@/entities/message'
+import type { MessageAction, MessageReview } from '@/entities/message'
 import {
-  ReviewActionFailure,
+  ActionFailure,
+  TIME_PASSED_LOCK,
+  TIME_PASSED_MESSAGE,
+  TIME_PASSED_TITLE,
   dismissNotice,
   sendNotice,
-  useMessageReviewAction,
-} from '@/features/message-review'
+  useMessageAction,
+} from '@/features/message-action'
 import { paths } from '@/shared/config/routes'
 import { Icon } from '@/shared/ui/icon'
+import { shortDateTime } from '../lib/format'
 import { LockedButton } from './LockedButton'
 import { ReviewMessageCard } from './ReviewMessageCard'
 import { SendTimingPicker } from './SendTimingPicker'
@@ -34,9 +38,10 @@ export interface ReviewDetailProps {
 }
 
 /** 행동이 잠긴 이유. 잠긴 버튼의 설명(`aria-describedby`)으로도 읽힌다 */
-function lockReason(editing: boolean, choosingTime: boolean): string | null {
+function lockReason(editing: boolean, choosingTime: boolean, timePassed: boolean): string | null {
   if (editing) return '고친 문구를 저장하거나 취소한 뒤에 보낼 수 있어요.'
   if (choosingTime) return '정한 시각을 저장하거나 취소한 뒤에 보낼 수 있어요.'
+  if (timePassed) return TIME_PASSED_LOCK
   return null
 }
 
@@ -53,18 +58,22 @@ export function ReviewDetail({ workspaceId, botName, review, onSettled }: Review
   const reasonId = useId()
   const lockHintId = useId()
   const navigate = useNavigate()
-  const actions = useMessageReviewAction(workspaceId)
+  const actions = useMessageAction(workspaceId)
   const [editing, setEditing] = useState(false)
   const [choosingTime, setChoosingTime] = useState(false)
   const busy = actions.pending !== null
-  const lockHint = lockReason(editing, choosingTime)
+  const timePassed = actions.isTimePassed(review.id)
+  const lockHint = lockReason(editing, choosingTime, false)
+  const sendLockHint = lockReason(editing, choosingTime, timePassed)
   const decisionLocked = busy || lockHint !== null
+  const sendLocked = busy || sendLockHint !== null
   // 발송 시점 저장만으로 잠긴 동안은 버튼 모양을 바꾸지 않는다 — 짧은 저장마다 버튼이 깜빡였다.
   // 잠금(aria-disabled, 누름을 버림)은 그대로이고, 누름이 왜 안 되는지는 저장 중인 시점 카드가 보여 준다
   const quietLock = actions.pending?.kind === 'schedule' && lockHint === null
-  const pendingKind = actions.pending?.reviewId === review.id ? actions.pending.kind : null
-  const failureOf = (...kinds: MessageReviewAction['kind'][]) => (
-    <ReviewActionFailure reviewId={review.id} actions={actions} kinds={kinds} />
+  const pendingKind = actions.pending?.target === review.id ? actions.pending.kind : null
+  const state = review.state
+  const failureOf = (...kinds: MessageAction['kind'][]) => (
+    <ActionFailure target={review.id} actions={actions} kinds={kinds} />
   )
   // 처리한 항목의 주소에 머물지 않는다 — 목록의 다음 항목이 기본으로 골라진다
   const leave = () => {
@@ -77,12 +86,27 @@ export function ReviewDetail({ workspaceId, botName, review, onSettled }: Review
       <article aria-labelledby={headingId} className={COLUMN}>
         <div className="flex flex-col gap-8">
           <h2 id={headingId} className={TITLE}>
-            이 메시지, 보낼까요?
+            {state.status === 'scheduled' ? '보낼 예정인 메시지예요' : '이 메시지, 보낼까요?'}
           </h2>
           <p className="text-[14px] wrap-anywhere text-sub">
-            <strong className="font-semibold text-ink">{review.recipientName}</strong>에게 Discord
-            개인 메시지로 나갑니다. 보낸 뒤에는 되돌릴 수 없어요.
+            {state.status === 'scheduled' ? (
+              <>
+                <strong className="font-semibold text-ink">{review.recipientName}</strong>
+                에게 {review.scheduledAt === null ? '' : shortDateTime(review.scheduledAt)}에
+                Discord 개인 메시지로 나갑니다. {state.approvedBy}님이 승인했어요.
+              </>
+            ) : (
+              <>
+                <strong className="font-semibold text-ink">{review.recipientName}</strong>에게
+                Discord 개인 메시지로 나갑니다. 보낸 뒤에는 되돌릴 수 없어요.
+              </>
+            )}
           </p>
+          {state.status === 'scheduled' ? (
+            <p className="text-caption text-dim">
+              문구나 시각을 바꾸면 다시 승인해야 보낼 수 있어요.
+            </p>
+          ) : null}
         </div>
 
         <ReviewMessageCard
@@ -94,7 +118,7 @@ export function ReviewDetail({ workspaceId, botName, review, onSettled }: Review
           keepLockedLook={quietLock}
           saving={pendingKind === 'edit'}
           onSave={(body, onSaved) =>
-            actions.run(review.id, { kind: 'edit', body }, { onSuccess: onSaved })
+            actions.run({ kind: 'edit', reviewId: review.id, body }, { onSuccess: onSaved })
           }
           failure={failureOf('edit')}
         />
@@ -119,7 +143,7 @@ export function ReviewDetail({ workspaceId, botName, review, onSettled }: Review
           saving={pendingKind === 'schedule'}
           customOpen={choosingTime}
           onCustomOpenChange={setChoosingTime}
-          onChange={(action, onSaved) => actions.run(review.id, action, { onSuccess: onSaved })}
+          onChange={(action, onSaved) => actions.run(action, { onSuccess: onSaved })}
           failure={failureOf('schedule')}
         />
 
@@ -136,39 +160,46 @@ export function ReviewDetail({ workspaceId, botName, review, onSettled }: Review
               keepLook={quietLock}
               onClick={() =>
                 actions.run(
-                  review.id,
-                  { kind: 'dismiss' },
+                  { kind: 'dismiss', reviewId: review.id },
                   { notice: dismissNotice(review.recipientName), onSuccess: leave },
                 )
               }
             >
               보내지 않음
             </LockedButton>
-            <LockedButton
-              variant="primary"
-              size="message-send"
-              endIcon={<Icon name="send" size={16} />}
-              aria-busy={pendingKind === 'send' || undefined}
-              aria-describedby={lockHint === null ? undefined : lockHintId}
-              locked={decisionLocked}
-              keepLook={quietLock}
-              onClick={() =>
-                actions.run(
-                  review.id,
-                  { kind: 'send' },
-                  {
-                    notice: sendNotice(review.recipientName, review.scheduledAt),
-                    onSuccess: leave,
-                  },
-                )
-              }
-            >
-              이대로 발송
-            </LockedButton>
+            {state.status === 'scheduled' ? null : (
+              <LockedButton
+                variant="primary"
+                size="message-send"
+                endIcon={<Icon name="send" size={16} />}
+                aria-busy={pendingKind === 'send' || undefined}
+                aria-describedby={sendLockHint === null ? undefined : lockHintId}
+                locked={sendLocked}
+                keepLook={quietLock}
+                onClick={() =>
+                  actions.run(
+                    { kind: 'send', reviewId: review.id },
+                    {
+                      notice: sendNotice(review.recipientName, review.scheduledAt),
+                      onSuccess: leave,
+                    },
+                  )
+                }
+              >
+                이대로 발송
+              </LockedButton>
+            )}
           </div>
-          {lockHint === null ? null : (
+          {/* 지난 시각 알림을 잠금 이유보다 먼저 읽는다 */}
+          {timePassed ? (
+            <div role="alert" className="flex flex-col items-start gap-10">
+              <p className="text-body font-semibold text-ink">{TIME_PASSED_TITLE}</p>
+              <p className="text-caption text-dim">{TIME_PASSED_MESSAGE}</p>
+            </div>
+          ) : null}
+          {sendLockHint === null ? null : (
             <p id={lockHintId} className="text-caption text-dim">
-              {lockHint}
+              {sendLockHint}
             </p>
           )}
           {failureOf('send', 'dismiss')}
