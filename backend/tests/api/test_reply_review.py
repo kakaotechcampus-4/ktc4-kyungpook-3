@@ -794,3 +794,65 @@ def test_approving_a_resolved_assignee_card_stays_approved(mdb, mseed, two):
     assert line.new_value == mseed["bob"].member_id
     assert _resolve(line.approval_id).status_code == 200
     assert _timeline(a)["items"][0]["changes"][0]["result"] == "approved"
+
+
+# 태스크가 실린 failed·due_clear 줄
+
+@pytest.mark.parametrize("field", ["failed", "due_clear"])
+def test_line_with_a_task_answers_only_that_tasks_clock(mdb, mseed, two, field):
+    a, b = two
+    _reply(mdb, mseed, AT)
+    item = _claim()
+    _judge(item, _change(a, "status", "done", evidence="certain", claimed=item), _change(b, field))
+    assert _lines(mdb, item)[(b.task_id, field)].outcome == "noted"
+    tick(mdb, AT + H)
+    assert _watch(mdb, b).state == WatchState.ANSWERED
+
+
+@pytest.mark.parametrize("field", ["failed", "due_clear"])
+def test_line_with_a_task_keeps_a_clock_the_reply_did_not_mention_running(mdb, mseed, two, field):
+    a, b = two
+    _reply(mdb, mseed, AT)
+    _judge(_claim(), _change(b, field))
+    tick(mdb, AT + H)
+    assert _watch(mdb, b).state == WatchState.ANSWERED
+    assert _watch(mdb, a).state == WatchState.WATCHING
+
+
+@pytest.mark.parametrize("field", ["failed", "due_clear"])
+def test_line_with_a_task_outside_the_candidates_is_refused(mdb, mseed, two, field):
+    _reply(mdb, mseed, AT)
+    item = _claim()
+    r = _post(item["message_id"], {"attempt": item["attempt"], "changes": [_change(mseed["tasks"][2], field)]})
+    assert r.status_code == 400
+    assert _outcomes(mdb, item) == []
+
+
+def test_failed_line_with_a_task_counts_as_a_check_on_the_thread(mdb, mseed, two):
+    a, b = two
+    _reply(mdb, mseed, AT)
+    item = _claim()
+    _judge(item, _change(a, "status", "done", evidence="certain", claimed=item), _change(b, "failed"))
+    [note] = _kind(mdb, "reply_judged")
+    assert note.text.endswith("→ 1건 바꿨어요, 1건 확인이 필요해요")
+    assert note.link_type == "thread"
+
+
+def test_only_a_failed_line_with_a_task_still_notifies_on_the_thread(mdb, mseed, two):
+    _, b = two
+    _reply(mdb, mseed, AT)
+    _judge(_claim(), _change(b, "failed"))
+    [note] = _kind(mdb, "reply_judged")
+    assert note.text.endswith("→ 1건 확인이 필요해요")
+    assert note.link_type == "thread"
+
+
+def test_rejudgment_repeating_a_failed_line_is_not_written_twice(mdb, mseed, two):
+    a, _ = two
+    _reply(mdb, mseed, AT)
+    item = _claim()
+    _judge(item, _change(a, "failed"), _change(None, "unknown"))
+    _attribute(item, a, seed=mseed)
+    _judge(_claim(), _change(a, "failed"))
+    assert ("failed", "noted") in _outcomes(mdb, item)
+    assert _row(mdb, item).state == S.DONE

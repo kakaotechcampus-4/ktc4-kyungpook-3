@@ -903,7 +903,7 @@ class ReplyJudgment(Base):
 
 
 class ReplyChange(Base):
-    """답장이 태스크에 뜻하는 변경 한 줄. 필드 하나가 한 줄이다. 태스크를 모르는 줄(unknown·due_clear·failed)은 task_id 가 없다.
+    """답장이 태스크에 뜻하는 변경 한 줄. 필드 하나가 한 줄이다. unknown 은 task_id 가 없고 due_clear·failed 는 어느 태스크인지 알 때만 있다.
 
     승인 결과는 approval_id 로, 되돌림은 reply_change_id 로 이어진 이력으로 읽는다. 여기에 옮겨 적지 않는다.
     """

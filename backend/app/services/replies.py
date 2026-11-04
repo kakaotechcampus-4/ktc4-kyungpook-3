@@ -63,7 +63,7 @@ class ClockEffect(StrEnum):
 _EFFECT_ORDER = (ClockEffect.WAIT, ClockEffect.KEEP_BLOCKED, ClockEffect.ANSWERED, ClockEffect.PAUSE)
 _BLOCK_OUTCOMES = (ReplyChangeOutcome.APPLIED, ReplyChangeOutcome.PROPOSED, ReplyChangeOutcome.NOTED)
 _ATTRIBUTION_OUTCOMES = (ReplyChangeOutcome.UNKNOWN, ReplyChangeOutcome.PICKED, ReplyChangeOutcome.DISMISSED)
-# 태스크를 모르는 줄과 그 결과. 값이 없어 게이트를 타지 않는다.
+# 값이 없어 게이트를 타지 않는 줄과 그 결과. due_clear·failed 는 어느 태스크인지 알면 task_id 가 실린다.
 _NO_TASK_OUTCOME = {
     ReplyChangeField.UNKNOWN: ReplyChangeOutcome.UNKNOWN,
     ReplyChangeField.DUE_CLEAR: ReplyChangeOutcome.NOTED,
@@ -268,9 +268,10 @@ def _check(row: ReplyJudgment, changes: list[ReplyChangeRequest]) -> None:
     """신뢰 경계. 무엇이든 쓰기 전에 본다."""
     candidates = json.loads(row.candidates)
     for change in changes:
-        if change.field in _NO_TASK_OUTCOME:
+        task_id = _line_task(change)
+        if task_id is None and change.field in _NO_TASK_OUTCOME:
             continue
-        if change.task_id not in candidates:
+        if task_id not in candidates:
             raise AppError(
                 ErrorCode.INVALID_REQUEST, message="후보에 없는 태스크입니다.",
                 details={"task_id": change.task_id, "field": change.field},
@@ -279,6 +280,10 @@ def _check(row: ReplyJudgment, changes: list[ReplyChangeRequest]) -> None:
             tasks.validate_task_fields({"status": change.new_value})
         elif change.field == ReplyChangeField.DUE_DATE and tasks.parse_date(change.new_value, field="due_date") is None:
             raise AppError(ErrorCode.INVALID_REQUEST, message="마감 변경에는 날짜가 필요합니다.", details={"field": "due_date"})
+
+
+def _line_task(change: ReplyChangeRequest) -> str | None:
+    return None if change.field == ReplyChangeField.UNKNOWN else change.task_id
 
 
 def _fresh(db: Session, row: ReplyJudgment, changes: list[ReplyChangeRequest]) -> list[ReplyChangeRequest]:
@@ -293,10 +298,11 @@ def _fresh(db: Session, row: ReplyJudgment, changes: list[ReplyChangeRequest]) -
     for change in changes:
         if change.field == ReplyChangeField.UNKNOWN and row.picked_task_id:
             continue
-        if change.field not in _NO_TASK_OUTCOME:
-            if (change.task_id, change.field) in recorded:
+        task_id = _line_task(change)
+        if task_id is not None:
+            if (task_id, change.field) in recorded:
                 continue
-            recorded.add((change.task_id, change.field))
+            recorded.add((task_id, change.field))
         fresh.append(change)
     return fresh
 
@@ -307,7 +313,7 @@ def _line(
 ) -> ReplyChange:
     line = ReplyChange(
         message_id=row.message_id,
-        task_id=None if change.field in _NO_TASK_OUTCOME else change.task_id,
+        task_id=_line_task(change),
         field=change.field, outcome=outcome, new_value=new_value or change.new_value, summary=change.summary,
         evidence_quote=change.evidence_quote, evidence_status=change.evidence_status, created_at=now,
     )
@@ -527,7 +533,7 @@ def _notice(
     due_clear = any(r.field == ReplyChangeField.DUE_CLEAR for r in rows)
     if len(applied) + len(asks) == 1 and not unknown and not due_clear:
         row = (applied or asks)[0]
-        if row.task_id:
+        if row.task_id and row.field != ReplyChangeField.FAILED:
             task = locked[row.task_id]
             tail = f"{task.title} {_STATUS_TO[row.new_value]} 바꿨어요(되돌리기)" if applied else _ask(row, task)
             return Notice(f"{head} → {tail}", "task", row.task_id)
