@@ -719,6 +719,22 @@ def test_requeued_older_reply_does_not_override_a_newer_reply(mdb, mseed, two):
     assert ("status", "proposed") in _outcomes(mdb, again)
 
 
+def test_newer_reply_that_changed_nothing_still_guards_the_requeued_reply(mdb, mseed, two):
+    a, _ = two
+    item = _unknown(mdb, mseed)
+    _reply(mdb, mseed, AT + H, body="아 API 명세서는 아직 진행 중이에요")
+    newer = _claim()
+    _judge(newer, _change(a, "status", "in_progress", evidence="certain", claimed=newer))
+    assert _outcomes(mdb, newer) == [("status", "skipped")]
+
+    _attribute(item, a, seed=mseed)
+    again = _claim()
+    _judge(again, _change(a, "status", "done", evidence="certain", claimed=again))
+    mdb.expire_all()
+    assert a.status == "in_progress"
+    assert ("status", "proposed") in _outcomes(mdb, again)
+
+
 def test_rejudgment_still_applies_when_no_newer_reply_touched_the_task(mdb, mseed, two):
     a, b = two
     item = _unknown(mdb, mseed)
