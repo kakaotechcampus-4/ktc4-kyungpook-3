@@ -1194,6 +1194,20 @@ def test_upload_400_member_ids_resends_those_ids_as_null_on_the_first_send_and_r
     assert fake.sources["m-up1"][2].get("member_id") is None
 
 
+def test_register_leaves_out_the_member_id_that_the_sources_400_dropped(tmp_path):
+    """BE 가 팀원이 아니라고 해 발화에서 비운 멤버 ID 는 추출 등록의 evidence_speaker_member_id 에도 보내지 않는다."""
+    fake = _upload_fake()
+    fake.members["ws-1"][1]["deleted"] = True                # u2(근거 화자)는 그 사이 탈퇴
+    h = _handoff(fake)
+    m, tdir = _upload(tmp_path)
+    h.save_sources(m, transcripts_dir=tdir)
+    assert m["be"]["sources"]["dropped_member_ids"] == ["u2"]
+    h.register(m, transcripts_dir=tdir, model_name="x")
+    sent = next(c[2] for c in fake.calls if c[1] == "/extractions")
+    assert sent["items"][0]["evidence_speaker"] is None
+    assert "evidence_speaker_member_id" not in sent["items"][0]
+
+
 def test_upload_400_member_ids_on_a_resend_is_handled_the_same_way(tmp_path):
     fake = _upload_fake()
     h = _handoff(fake)

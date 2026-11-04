@@ -540,7 +540,9 @@ class Handoff:
             items = to_extraction_items(tasks, transcript)
         upload = is_upload(manifest)
         if upload:
-            items = _with_member_speakers(items, speaker_members(manifest))
+            dropped = ((manifest.get("be") or {}).get("sources") or {}).get("dropped_member_ids") or []
+            members = {label: (None if member in dropped else member) for label, member in speaker_members(manifest).items()}
+            items = _with_member_speakers(items, members)   # 발화 저장에서 BE 가 거절해 비운 ID 는 여기서도 뺀다
         changed = bool(manifest.get("reextracted"))                       # 전사가 바뀌어 다시 뽑은 결과다
         previous = (manifest.get("be") or {}).get("extraction_id")
 
