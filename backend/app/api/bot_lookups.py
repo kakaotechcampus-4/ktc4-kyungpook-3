@@ -3,6 +3,8 @@
 디스코드 봇이 사용자 세션 없이 부르는 경로라 세션 대신 서비스 토큰(X-Service-Token)으로 막는다.
 웹 화면용 조회(GET /members, GET /tasks)는 로그인 세션이 있어야 해서 봇이 부르지 못한다.
 """
+from datetime import timedelta, timezone
+
 from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -10,7 +12,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import require_service_token
 from app.core.database import get_db
 from app.core.errors import AppError, Envelope, ErrorCode, success
-from app.models import Member, MemberAlias, Workspace
+from app.models import Meeting, MeetingSource, MeetingStatus, Member, MemberAlias, Workspace
 from app.schemas.member import MemberNameListResponse, MemberNameResponse
 
 router = APIRouter(prefix="/workspaces", dependencies=[Depends(require_service_token)])
@@ -60,3 +62,25 @@ def list_member_names(workspace_id: str, db: Session = Depends(get_db)) -> dict:
     ]
     return success(MemberNameListResponse(items=items).model_dump(mode="json"))
 
+
+@router.get("/{workspace_id}/chat-cursor", tags=["meetings"])
+def get_chat_cursor(workspace_id: str, db: Session = Depends(get_db)) -> dict:
+    """봇이 마지막으로 처리한 채팅 위치. 끝난(done) 채팅 회의 중 가장 늦게 시작한 것의 끝 시각이다."""
+    _require_workspace(db, workspace_id)
+    meeting = db.execute(
+        select(Meeting)
+        .where(
+            Meeting.workspace_id == workspace_id,
+            Meeting.source == MeetingSource.CHAT,
+            Meeting.status == MeetingStatus.DONE,
+        )
+        .order_by(Meeting.started_at.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+    if meeting is None:
+        return success(None)
+    started = meeting.started_at
+    if started.tzinfo is None:  # SQLite는 시각대를 잃는다. 저장값은 UTC다.
+        started = started.replace(tzinfo=timezone.utc)
+    last = started + timedelta(milliseconds=meeting.duration_ms or 0)
+    return success({"meeting_id": meeting.meeting_id, "last_message_at": last.astimezone(timezone.utc).isoformat()})
