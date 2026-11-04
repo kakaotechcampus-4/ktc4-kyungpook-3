@@ -174,7 +174,8 @@ describe('발견과 등록 (U4-1, U4-2)', () => {
 
     for (const [tab, heading] of [
       ['태스크', '태스크'],
-      ['팀', '팀원'],
+      // M8-B 가 팀 자리표시자를 Team 캔버스 화면으로 바꿨다 — 제목은 `팀` 이다
+      ['팀', '팀'],
       ['회의록', '회의록'],
       ['대시보드', '대시보드'],
     ] as const) {
@@ -189,7 +190,8 @@ describe('발견과 등록 (U4-1, U4-2)', () => {
     expect(new Set(trackerRequests(log.started).map(({ path }) => path))).toEqual(
       new Set(['/workspaces/ws_01/meetings', '/meetings/mt_10', '/meetings/mt_09']),
     )
-  })
+    // StrictMode 로 탭 넷을 차례로 그린다. M8-B 로 팀 탭이 자리표시자에서 실제 화면이 되어 전체 실행 부하에서 5초를 넘겼다
+  }, 10_000)
 
   it('정리 중 회의가 없으면 상세 요청은 0회이고 링크도 없다', async () => {
     completeMeeting('mt_10')
@@ -593,6 +595,26 @@ describe('완료 (U4-5)', () => {
 })
 
 describe('실패 (U4-6, U4-7)', () => {
+  it('다른 화면에서 만료되면 이동하지 않고 알리며 목록의 만료 이력은 유지한다', async () => {
+    fakeIntervals()
+    const app = renderApp(paths.tasks('ws_01'))
+    await screen.findByRole('heading', { name: '태스크' })
+    await until(() => expect(tracked()).toEqual([MEETING]))
+    failMeeting('mt_10', { failedStage: 'speaker_assignment_expired' })
+    await act(() => vi.advanceTimersByTimeAsync(3_000))
+    await until(() =>
+      expect(
+        app.queryClient
+          .getQueryData(meetingListQueryOptions('ws_01').queryKey)
+          ?.find(({ id }) => id === 'mt_10'),
+      ).toMatchObject({ status: 'failed', failedStage: 'speaker_assignment_expired' }),
+    )
+    expect(app.visited().map(({ pathname }) => pathname)).toEqual([paths.tasks('ws_01')])
+    expect(tracked()).toEqual([])
+    expect(toastsWith('화자 지정 대기가 7일을 넘어')).toHaveLength(1)
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
   it('처리 화면을 보고 있으면 회의록 목록으로 옮기고 재업로드 토스트를 띄운다 — 실패 회의는 목록에서 빠진다', async () => {
     fakeIntervals()
     const log = recordRequests()

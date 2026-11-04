@@ -21,6 +21,12 @@ const meta = {
     today: MOCK_TODAY,
     needsReviewHref: `${paths.tasks('ws_01')}?tab=needs_review`,
     dueSoonHref: `${paths.tasks('ws_01')}?tab=in_progress&due=overdue,soon`,
+    summaryHrefs: {
+      needsReview: `${paths.tasks('ws_01')}?tab=needs_review`,
+      overdue: `${paths.tasks('ws_01')}?tab=in_progress&due=overdue`,
+      dueSoon: `${paths.tasks('ws_01')}?tab=in_progress&due=soon`,
+      blocked: `${paths.tasks('ws_01')}?tab=in_progress&due=blocked`,
+    },
   },
   parameters: { scenario: 'dashboard-default', route: '/workspaces/ws_01/dashboard' },
 } satisfies Meta<typeof Dashboard>
@@ -170,6 +176,22 @@ export const 되돌리기_거절: Story = {
     const alert = await canvas.findByRole('alert')
     await expect(alert).toHaveTextContent('만든 뒤에 태스크가 바뀌어 되돌릴 수 없어요.')
     await expect(within(alert).getByRole('link', { name: '태스크 보기' })).toBeInTheDocument()
+  },
+}
+
+/** 최근 반영 auto 항목 12개 — 첫 화면에 들어가는 만큼(3~8개) 보이고 나머지는 `외 N건` 으로 회의록에 넘긴다 (D-176) */
+export const PM_최근_반영_넘침: Story = {
+  parameters: { scenario: 'dashboard-recent-overflow' },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await waitFor(async () => {
+      const shown = (await recentRows(canvasElement)).length
+      await expect(shown).toBeGreaterThanOrEqual(3)
+      await expect(shown).toBeLessThanOrEqual(8)
+      await expect(
+        canvas.getByRole('link', { name: `외 ${12 - shown}건 · 회의록에서 보기` }),
+      ).toHaveAttribute('href', paths.meetings('ws_01', 'mt_09'))
+    })
   },
 }
 

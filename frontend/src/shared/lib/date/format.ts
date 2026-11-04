@@ -39,6 +39,17 @@ export function formatSeoulDateTime(timestamp: string): string {
   return parts === null ? '' : `${parts.date} ${parts.time}`
 }
 
+/** `YYYY-MM-DD` 의 `MM/DD`. 캔버스의 짧은 날짜 표기다 */
+export function monthDayOf(date: string): string {
+  return `${date.slice(5, 7)}/${date.slice(8, 10)}`
+}
+
+/** timestamp 를 한국 시간 `MM/DD HH:mm` 로 보여 준다. 읽을 수 없으면 빈 문자열이다 */
+export function formatSeoulMonthDayTime(timestamp: string): string {
+  const parts = seoulParts(timestamp)
+  return parts === null ? '' : `${monthDayOf(parts.date)} ${parts.time}`
+}
+
 /** timestamp 가 한국 시간으로 며칠인지. 마감일 같은 날짜 전용 값과 비교할 때 쓴다 */
 export function seoulDateOf(timestamp: string): string | null {
   return seoulParts(timestamp)?.date ?? null

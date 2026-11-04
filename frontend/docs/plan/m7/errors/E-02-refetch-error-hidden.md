@@ -98,7 +98,7 @@ Codex가 MSW에서 최초 조회 뒤 `/tasks`를 500으로 바꿔 재현했다. 
 
 사용자 결정: A안(데이터 있음 + 갱신 실패 상태를 화면에 보인다)과 판정 일치.
 
-- **판정 일치** — [queryView](../../../../src/widgets/dashboard/lib/queryView.ts)가 Query의 `{data, error}`만 받아 `loading`·`error`·`ready`·`stale`(데이터는 있고 마지막 재조회 실패) 중 하나를 돌려준다. [useDashboardData](../../../../src/widgets/dashboard/model/useDashboardData.ts)의 `loadable()`(화면 상태)과 태스크 `refetchInterval`(실패면 polling 중단)이 모두 이 함수를 쓴다. 이전에는 polling이 `query.state.status`, 화면이 data 우선으로 서로 다른 값을 봤다.
+- **판정 일치** — [queryView](../../../../src/shared/lib/query-view/queryView.ts)가 Query의 `{data, error}`만 받아 `loading`·`error`·`ready`·`stale`(데이터는 있고 마지막 재조회 실패) 중 하나를 돌려준다. [useDashboardData](../../../../src/widgets/dashboard/model/useDashboardData.ts)의 `loadable()`(화면 상태)과 태스크 `refetchInterval`(실패면 polling 중단)이 모두 이 함수를 쓴다. 이전에는 polling이 `query.state.status`, 화면이 data 우선으로 서로 다른 값을 봤다.
 - **A안** — `Loadable`의 `ready`에 `stale?: {error, retry, retrying}`을 더했다. 갱신에 실패하면 기존 데이터를 그대로 그리고, 같은 태스크 목록을 쓰는 요약([Dashboard](../../../../src/widgets/dashboard/ui/Dashboard.tsx))과 최근 반영([RecentSection](../../../../src/widgets/dashboard/ui/RecentSection.tsx)) 아래에 `최신 상태를 받지 못했어요 · 다시 시도`([RefreshFailedNotice](../../../../src/widgets/dashboard/ui/parts.tsx), `role="alert"`)를 띄운다. 다시 시도는 `refetch({cancelRefetch: false})`라 진행 중 조회가 있으면 새로 보내지 않고, 그동안 버튼은 진행 중(`loading`, 비활성)이다. 성공하면 `stale`이 없어져 안내가 사라지고, 반영 대기가 남아 있으면 3초 polling이 다시 돈다. 처음부터 실패한 영역의 기존 오류 표시(`QueryErrorState`)는 그대로다.
 - 마감 임박 영역은 같은 태스크 목록을 쓰지만 안내를 두지 않았다. 한 실패에 안내가 세 번 겹치지 않게, 지시의 최소 범위(요약·최근 반영)만 적용했다.
 - M6 태스크 상세의 같은 문제는 [E-06](E-06-m6-detail-refetch-error-hidden.md)으로 기록만 했고 고치지 않았다.
@@ -113,7 +113,7 @@ Codex가 MSW에서 최초 조회 뒤 `/tasks`를 500으로 바꿔 재현했다. 
 | `npx vitest run src/app/dashboard.test.tsx src/widgets/dashboard src/shared/mock/dashboardScenarios.test.ts src/entities/extraction src/features` | 19 files / 265 tests 통과 |
 | `npx vitest run src/app/dashboard.test.tsx` 3회 반복 | 3회 모두 36 passed |
 
-새 테스트: [dashboard.test.tsx](../../../../src/app/dashboard.test.tsx) 「반영 대기 polling」의 E-02 — 첫 조회 성공 → `/tasks`를 500으로 바꿔 polling 재조회 실패 → `반영 대기`·요약 숫자 유지, 안내 2개(요약·최근 반영), 초기 오류 문구 없음, polling 중단 → 서버 회복 후 다시 시도를 두 번 눌러도 요청 1회 → 안내 사라짐 → 3초 polling 재개. 판정 단위 테스트 [queryView.test.ts](../../../../src/widgets/dashboard/lib/queryView.test.ts)(4가지 상태).
+새 테스트: [dashboard.test.tsx](../../../../src/app/dashboard.test.tsx) 「반영 대기 polling」의 E-02 — 첫 조회 성공 → `/tasks`를 500으로 바꿔 polling 재조회 실패 → `반영 대기`·요약 숫자 유지, 안내 2개(요약·최근 반영), 초기 오류 문구 없음, polling 중단 → 서버 회복 후 다시 시도를 두 번 눌러도 요청 1회 → 안내 사라짐 → 3초 polling 재개. 판정 단위 테스트 [queryView.test.ts](../../../../src/shared/lib/query-view/queryView.test.ts)(4가지 상태).
 
 전체 게이트(전체 Vitest·E2E·Storybook·빌드)는 PR 직전에 하기로 해 이번에는 실행하지 않았다.
 
@@ -181,7 +181,7 @@ Codex가 MSW에서 최초 조회 뒤 `/tasks`를 500으로 바꿔 재현했다. 
 | 수정 후 `npx vitest run src/app/dashboard.test.tsx` | 39 passed. 2회 더 반복해 모두 39 passed |
 | `npm run typecheck`·`npm run lint`·`npm run format:check` | 모두 exit 0 |
 | `npx vitest run src/app/dashboard.test.tsx src/widgets/dashboard src/shared/mock/dashboardScenarios.test.ts src/entities/extraction src/features` | 20 files / 271 tests 통과 |
-| `grep -rn -i "stale" src/widgets/dashboard src/app/dashboard.test.tsx` | 1건. [queryView](../../../../src/widgets/dashboard/lib/queryView.ts)의 「React Query 의 stale … 과 다른 뜻」 설명 주석뿐이다. 갱신 실패 의미의 이름은 남지 않았다 |
+| `grep -rn -i "stale" src/widgets/dashboard src/app/dashboard.test.tsx` | 1건. [queryView](../../../../src/shared/lib/query-view/queryView.ts)의 「React Query 의 stale … 과 다른 뜻」 설명 주석뿐이다. 갱신 실패 의미의 이름은 남지 않았다 |
 
 [dashboard.test.tsx](../../../../src/app/dashboard.test.tsx)의 E-02 테스트를 새 동작으로 고쳤다.
 
@@ -197,6 +197,6 @@ Codex가 MSW에서 최초 조회 뒤 `/tasks`를 500으로 바꿔 재현했다. 
 
 토스트는 본문 밖 전역 토스터에 같은 문구로 뜬다. 그래서 테스트는 남는 표시를 본문(`main`)에서 찾고, 토스트는 `toast.show` 호출 수(key 기준)로 센다. 스파이는 테스트마다 복원한다.
 
-판정·묶음 단위 테스트([queryView.test.ts](../../../../src/widgets/dashboard/lib/queryView.test.ts), [refreshFailure.test.ts](../../../../src/widgets/dashboard/model/refreshFailure.test.ts))는 이름 변경에 맞췄다.
+판정·묶음 단위 테스트([queryView.test.ts](../../../../src/shared/lib/query-view/queryView.test.ts), [refreshFailure.test.ts](../../../../src/widgets/dashboard/model/refreshFailure.test.ts))는 이름 변경에 맞췄다.
 
 전체 게이트는 PR 직전에 하기로 해 이번에도 실행하지 않았다.

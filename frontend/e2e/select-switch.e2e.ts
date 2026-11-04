@@ -15,9 +15,9 @@ test('로그인 → 선택 화면 → 공간 진입 → 저장하지 않은 변�
   await page.getByRole('button', { name: /카테캠 3팀/ }).click()
   await expect(page).toHaveURL('/workspaces/ws_01/dashboard')
 
-  // 설정에서 입력을 바꿔 둔다 — 설정은 탭이 아니라 워크스페이스 메뉴에 있다
-  await page.getByRole('button', { name: /^워크스페이스 바꾸기/ }).click()
-  await page.getByRole('menuitem', { name: '워크스페이스 설정' }).click()
+  // 설정에서 입력을 바꿔 둔다 — 설정은 탭이 아니라 오른쪽 프로필 메뉴에 있다 (#244)
+  await page.getByRole('button', { name: /^내 계정/ }).click()
+  await page.getByRole('menuitem', { name: '설정', exact: true }).click()
   await expect(page).toHaveURL('/workspaces/ws_01/settings')
   await page.getByLabel('워크스페이스 이름').fill('바꾸는 중')
 

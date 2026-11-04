@@ -4,6 +4,7 @@ import type { Approval } from '@/entities/approval'
 import type { Member } from '@/entities/member'
 import type { Task } from '@/entities/task'
 import { isOverdue } from '@/entities/task'
+import { FILL_IN_ARRIVAL } from '@/features/approval-resolve'
 import { TASK_STATUS_LABEL } from '@/features/task-status'
 import { paths } from '@/shared/config/routes'
 import { seoulDateOf } from '@/shared/lib/date'
@@ -47,14 +48,29 @@ const TITLE = 'text-[32px] leading-[1.4] font-bold tracking-h1 text-ink'
 const LEAD = 'text-body text-sub'
 const TODAY = 'text-caption text-dim tabular-nums'
 const SUMMARY = 'flex flex-wrap items-baseline gap-36 pb-8'
-const SUMMARY_ITEM = 'flex items-center gap-5 text-control text-sub'
+const SUMMARY_ITEM = 'relative flex items-center gap-5 text-control text-sub'
 const SUMMARY_VALUE = 'text-[20px] leading-none font-semibold text-ink tabular-nums'
+/* 링크는 숫자에만 걸고 누르는 자리는 항목 전체로 넓힌다 — dt·dd 를 링크로 감쌀 수 없다.
+   밑줄은 긋지 않는다. 올리면 숫자만 옅어지고, 키보드 포커스는 전역 outline 이다 */
+const SUMMARY_LINK = 'hover:text-sub after:absolute after:inset-0'
 const COLUMNS = 'grid grid-cols-[minmax(0px,1fr)_360px] items-start gap-[68px]'
 const SIDE = 'flex flex-col gap-40'
 const REVIEW_ROW = 'flex items-start gap-16 border-b border-line py-18 last:border-b-0'
 const REVIEW_TITLE = 'text-[15px] leading-[1.55] font-semibold text-ink'
 const DUE_ROW =
   'flex items-center gap-12 px-18 py-12 text-ink hover:bg-surface-sunken focus-visible:-outline-offset-2'
+
+/** 요약 숫자마다 그 수만큼 보이는 태스크 목록 주소 (D-178). 페이지가 목록의 URL 규칙으로 만든다 */
+export interface SummaryHrefs {
+  /** `확인 필요` 탭 (PM 만 보인다) */
+  needsReview: string
+  /** `진행 중` + `기한 지남` */
+  overdue: string
+  /** `진행 중` + `7일 안에 마감` */
+  dueSoon: string
+  /** `진행 중` + `막힘` */
+  blocked: string
+}
 
 export interface DashboardProps {
   workspaceId: string
@@ -66,6 +82,8 @@ export interface DashboardProps {
   needsReviewHref: string
   /** 태스크 목록 `진행 중` + `기한 지남·7일 이내` 주소 (D-046) */
   dueSoonHref: string
+  /** 상단 요약 숫자의 이동 주소 (D-178) */
+  summaryHrefs: SummaryHrefs
 }
 
 /**
@@ -79,6 +97,7 @@ export function Dashboard({
   today,
   needsReviewHref,
   dueSoonHref,
+  summaryHrefs,
 }: DashboardProps) {
   const data = useDashboardData(workspaceId, isPm)
   // 재조회가 실패해도 영역은 마지막 값을 그대로 그린다. 갱신 실패는 제목 근처 표시 하나와 토스트 한 번으로만 알린다 (E-02)
@@ -113,7 +132,7 @@ export function Dashboard({
         </time>
       </header>
 
-      <Summary isPm={isPm} data={data} waiting={waiting} today={today} />
+      <Summary isPm={isPm} data={data} waiting={waiting} today={today} hrefs={summaryHrefs} />
 
       <div className={COLUMNS}>
         {isPm ? (
@@ -171,10 +190,13 @@ interface SummaryProps {
   data: DashboardData
   waiting: readonly Approval[] | null
   today: string
+  hrefs: SummaryHrefs
 }
 
-/** 상단 요약 넷 (D-052~D-056, D-061). 전체 데이터로 센다. 모두 정보라 누를 수 없다 */
-function Summary({ isPm, data, waiting, today }: SummaryProps) {
+/**
+ * 상단 요약 넷 (D-052~D-056). 전체 데이터로 센다. 숫자마다 그 수만큼 보이는 태스크 목록 조건으로 간다 (D-178)
+ */
+function Summary({ isPm, data, waiting, today, hrefs }: SummaryProps) {
   const counts = useMemo(
     () => (data.tasks.status === 'ready' ? taskCounts(data.tasks.data, today) : null),
     [data.tasks, today],
@@ -185,24 +207,47 @@ function Summary({ isPm, data, waiting, today }: SummaryProps) {
     <div className="flex flex-col gap-8">
       <dl aria-label="현황 요약" className={SUMMARY}>
         {isPm ? (
-          <SummaryItem label="확인 대기" state={approvalState} value={waiting?.length} />
+          <SummaryItem
+            label="확인 대기"
+            state={approvalState}
+            value={waiting?.length}
+            href={hrefs.needsReview}
+          />
         ) : null}
-        <SummaryItem label="기한 지남" state={taskState} value={counts?.overdue} />
-        <SummaryItem label="7일 이내 마감" state={taskState} value={counts?.dueSoon} />
-        <SummaryItem label="막힌 일" state={taskState} value={counts?.blocked} />
+        <SummaryItem
+          label="기한 지남"
+          state={taskState}
+          value={counts?.overdue}
+          href={hrefs.overdue}
+        />
+        <SummaryItem
+          label="7일 이내 마감"
+          state={taskState}
+          value={counts?.dueSoon}
+          href={hrefs.dueSoon}
+        />
+        <SummaryItem
+          label="막힌 일"
+          state={taskState}
+          value={counts?.blocked}
+          href={hrefs.blocked}
+        />
       </dl>
     </div>
   )
 }
 
+/** 숫자를 안 뒤에만 링크다(0 포함). 불러오는 중·실패(`–`)는 링크가 아니다 */
 function SummaryItem({
   label,
   state,
   value,
+  href,
 }: {
   label: string
   state: Loadable<unknown>['status']
   value: number | undefined
+  href: string
 }) {
   let shown: ReactNode
   if (state === 'error' || (state === 'ready' && value === undefined))
@@ -219,7 +264,12 @@ function SummaryItem({
         <span className="sr-only">불러오는 중</span>
       </>
     )
-  else shown = value
+  else
+    shown = (
+      <GuardedLink to={href} aria-label={`${label} ${value}`} className={SUMMARY_LINK}>
+        {value}
+      </GuardedLink>
+    )
   return (
     <div className={SUMMARY_ITEM}>
       <dt>{label}</dt>
@@ -288,10 +338,11 @@ function ReviewRow({ workspaceId, approval }: { workspaceId: string; approval: A
         </div>
         <p className="text-control font-normal text-sub">{approvalReason(approval)}</p>
       </div>
-      {/* D-034·D-162: 처리는 확인 필요 상세에서 한다. 보류는 `채워 넣기` 다 */}
+      {/* D-034·D-162: 처리는 확인 필요 상세에서 한다. 보류는 `채워 넣기` 다 — 보완 폼을 열고 간다 (D-176) */}
       {/* 행마다 같은 글자라 읽는 이름에 제목을 붙인다. 보이는 글자로 시작한다 */}
       <GuardedLink
         to={paths.approval(workspaceId, approval.id)}
+        state={hold ? FILL_IN_ARRIVAL : undefined}
         className={ACTION_LINK}
         aria-label={`${hold ? '채워 넣기' : '확인하기'} — ${title}`}
       >

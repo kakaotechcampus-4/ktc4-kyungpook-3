@@ -229,7 +229,7 @@ it('refuses a title that is only whitespace', async () => {
   expect(toTask(await fetchDto<TaskDto>('/tasks/tk_01')).title).toBe('로그인 API 연동')
 })
 
-it('rejects missing tasks, empty changes, invalid progress and nonexistent workspaces', async () => {
+it('rejects missing tasks, empty changes, removed progress fields and nonexistent workspaces', async () => {
   await expect(fetchDto('/tasks/missing')).rejects.toMatchObject({
     code: 'TASK_NOT_FOUND',
     status: 404,

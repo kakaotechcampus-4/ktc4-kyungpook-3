@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.models import (
     ApprovalStatus,
@@ -111,6 +111,11 @@ class EvidenceInfo(BaseModel):
     quote: str | None
     speaker: str | None
     at_ms: int | None
+    speaker_member_id: str | None = Field(
+        None,
+        description="근거 발화를 한 팀원 ID. 근거 발화를 찾았으면 그 발화에 저장된 값 그대로이고(탈퇴했어도), 못 찾았으면 "
+        "요청의 evidence_speaker_member_id(이 워크스페이스의 탈퇴하지 않은 팀원으로 확인된 값만). 없으면 null",
+    )
 
 
 class ExtractionItemResponse(BaseModel):
@@ -215,9 +220,12 @@ class ExtractionItemCreate(BaseModel):
     assignee_type: str | None = Field(
         None,
         description="'first'(1인칭), 'second', 'thirdname', 'group', 'none' 등. "
-        "first이면 assignee_raw 대신 화자의 Discord uid로 Member.discord_user_id를 찾는다. "
-        "화자는 evidence_speaker이고, 없으면 evidence_seqs 중 가장 큰 seq의 발화 화자다. "
-        "그 발화를 찾지 못하면 화자가 없다.",
+        "first이면 assignee_raw 대신 화자로 팀원을 찾는다. 화자는 다음 순서로 정한다. "
+        "(1) evidence_speaker_member_id가 있으면 그 팀원이다. 이 워크스페이스의 탈퇴하지 않은 팀원이 아니면 "
+        "화자를 못 찾은 것이고 (2)(3)으로 넘어가지 않는다. "
+        "(2) evidence_speaker(Discord uid)로 Member.discord_user_id를 찾는다. "
+        "(3) 둘 다 없으면 evidence_seqs 중 가장 큰 seq의 발화(결론 발화)를 찾았을 때 그 발화의 member_id, "
+        "없거나 탈퇴한 팀원이면 그 발화의 화자 uid. 그 발화를 찾지 못하면 화자가 없다.",
     )
     due_date: date | None = None
     due_raw: str | None = None
@@ -227,6 +235,12 @@ class ExtractionItemCreate(BaseModel):
     evidence_quote: str | None = None
     evidence_speaker: str | None = Field(
         None, description="근거 문장을 말한 화자의 Discord uid (별칭 텍스트가 아님)"
+    )
+    evidence_speaker_member_id: str | None = Field(
+        None,
+        max_length=36,
+        description="근거 문장을 말한 화자의 팀원 ID. 있으면 evidence_speaker보다 먼저 쓴다. "
+        "이 워크스페이스의 탈퇴하지 않은 팀원이 아니면 화자를 못 찾은 것으로 본다. 빈 문자열은 null",
     )
     evidence_at_ms: int | None = None
     # 범위는 발화 저장 API의 seq와 같다. 벗어난 값은 DB 조회에서 터지므로 요청에서 막는다
@@ -270,6 +284,13 @@ class ExtractionItemCreate(BaseModel):
         description="action이 update일 때 AI가 유사 검색에서 본 대상 task 값. 승인 충돌의 기준값이 된다. "
         "없으면 등록 시점의 DB 값을 기준으로 쓴다.",
     )
+
+    @field_validator("evidence_speaker_member_id", mode="before")
+    @classmethod
+    def _blank_member_id_is_unknown(cls, value: object) -> object:
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
 
     def extraction_path(self) -> ExtractionPath | None:
         """이 항목을 만든 AI 추출 경로. 값이 아니라 어떤 키를 보냈는지로 가린다.

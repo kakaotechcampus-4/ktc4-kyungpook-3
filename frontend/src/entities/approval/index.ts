@@ -14,15 +14,18 @@ export type {
   ApprovalResolution,
   ApprovalResolutionPlan,
   ApprovalResolveContext,
-  ApprovalTransport,
   TaskCreateFields,
+  TaskCreateEdits,
+  TaskUpdateEdits,
+  ApprovalEdits,
   TaskCreateIssue,
 } from './model/resolution'
 export {
   APPROVAL_RESOLUTION_REASONS,
   TASK_TITLE_MAX_LENGTH,
   planApprovalResolution,
-  toApprovalTransport,
+  taskCreateValues,
+  taskUpdateChanges,
   validateTaskCreateFields,
 } from './model/resolution'
 export { ApprovalNotResolvableError, resolveApproval } from './api/resolveApproval'

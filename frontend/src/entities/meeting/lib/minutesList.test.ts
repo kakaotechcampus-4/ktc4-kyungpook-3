@@ -11,6 +11,7 @@ function meeting(id: string, startedAt: string, status: MeetingSummary['status']
     durationMs: null,
     attendeeCount: 0,
     processedAt: null,
+    failedStage: null,
   }
 }
 
@@ -54,4 +55,24 @@ describe('latestMinutesId (D-106)', () => {
     expect(latestMinutesId([])).toBeNull()
     expect(latestMinutesId([meeting('mt_10', '2026-09-18T00:00:00Z', 'processing')])).toBeNull()
   })
+})
+
+it('화자 지정 기한이 지난 수동 업로드만 만료 이력으로 남기고 완료 회의와 구분한다', () => {
+  const expired = {
+    ...meeting('mt_expired', '2026-09-30T00:00:00Z', 'failed'),
+    source: 'manual_upload' as const,
+    failedStage: 'speaker_assignment_expired',
+  }
+  const list = toMinutesList([
+    expired,
+    { ...expired, id: 'mt_discord', source: 'discord' },
+    { ...expired, id: 'mt_diarize', failedStage: 'diarize' },
+    { ...expired, id: 'mt_future', failedStage: 'future_stage' },
+    { ...expired, id: 'mt_null', failedStage: null },
+    { ...expired, id: 'mt_old', startedAt: '2026-09-01T00:00:00Z' },
+  ])
+  expect(list.expired.map(({ id }) => id)).toEqual(['mt_expired', 'mt_old'])
+  expect(list.minutes).toEqual([])
+  expect(list.inProgress).toEqual([])
+  expect(latestMinutesId([expired])).toBeNull()
 })

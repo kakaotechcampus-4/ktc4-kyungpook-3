@@ -1,6 +1,6 @@
 import { QueryClient } from '@tanstack/react-query'
 import { paths } from '@/shared/config/routes'
-import { fetchIntegrations, integrationsQueryOptions } from './integrations'
+import { disconnectIntegration, fetchIntegrations, integrationsQueryOptions } from './integrations'
 import { integrationStartUrl } from './oauth'
 
 describe('연동 상태', () => {
@@ -23,6 +23,15 @@ describe('연동 상태', () => {
 
   it('비소속 공간은 403 으로 던진다', async () => {
     await expect(fetchIntegrations('ws_99')).rejects.toMatchObject({ status: 403 })
+  })
+})
+
+describe('연동 해제', () => {
+  it('204 무본문이라 undefined 로 끝나고 다음 조회는 미연결이다', async () => {
+    await expect(disconnectIntegration('ws_01', 'notion')).resolves.toBeUndefined()
+    await expect(fetchIntegrations('ws_01')).resolves.toMatchObject({
+      notion: { status: 'not_connected' },
+    })
   })
 })
 

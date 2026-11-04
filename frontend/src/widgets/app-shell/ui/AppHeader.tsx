@@ -65,7 +65,7 @@ export function AppHeader({ workspaceId, processingHref = null }: AppHeaderProps
       </div>
       <div className="flex items-center gap-24">
         <WorkspaceMenu workspaceId={workspaceId} />
-        <UserMenu />
+        <UserMenu workspaceId={workspaceId} />
       </div>
     </header>
   )

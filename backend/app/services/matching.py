@@ -1,3 +1,4 @@
+from collections.abc import Iterable
 from dataclasses import dataclass
 
 from sqlalchemy import case, func, select
@@ -113,6 +114,11 @@ def resolve_speaker(
             needs_check=True,
             candidate_count=0,
         )
+    return speaker_match(member)
+
+
+def speaker_match(member: Member) -> MatchResult:
+    """화자 멤버를 찾았을 때의 확정 매칭 결과."""
     return MatchResult(
         member_id=member.member_id,
         display_name=member.display_name,
@@ -121,6 +127,25 @@ def resolve_speaker(
         needs_check=False,
         candidate_count=1,
     )
+
+
+def active_members_by_id(
+    db: Session,
+    workspace_id: str,
+    member_ids: Iterable[str],
+) -> dict[str, Member]:
+    """멤버 ID 로 같은 워크스페이스의 탈퇴하지 않은 팀원을 한 번에 찾는다. 없는 ID 는 결과에 없다."""
+    ids = set(member_ids)
+    if not ids:
+        return {}
+    members = db.execute(
+        select(Member).where(
+            Member.workspace_id == workspace_id,
+            Member.member_id.in_(ids),
+            Member.is_deleted.is_(False),
+        )
+    ).scalars()
+    return {m.member_id: m for m in members}
 
 
 def resolved_alias_texts(db: Session, workspace_id: str) -> set[str]:
