@@ -32,6 +32,7 @@ from app.models import (
     ReplyChannel,
     Task,
     ThreadMessage,
+    WorkspaceMessageSettings,
 )
 from app.services import scheduler
 
@@ -374,10 +375,37 @@ def cancel_bundle(db: Session, bundle: ReminderBundle, *, now: datetime) -> Remi
     return bundle
 
 
+def _auto_approve_due(db: Session, now: datetime, exclude: list[str]) -> None:
+    """자동 승인이 켜진 워크스페이스의 승인 전 묶음 중 켠 뒤에 시각이 된 것을 승인한다. 초안 버전·미래 시각은 보지 않는다."""
+    bundles = db.scalars(
+        select(ReminderBundle)
+        .join(MessageThread, MessageThread.thread_id == ReminderBundle.thread_id)
+        .join(
+            WorkspaceMessageSettings,
+            WorkspaceMessageSettings.workspace_id == MessageThread.workspace_id,
+        )
+        .where(
+            ReminderBundle.status == ReminderStatus.SCHEDULED,
+            ReminderBundle.approved_at.is_(None),
+            ReminderBundle.scheduled_at <= now,
+            ReminderBundle.bundle_id.notin_(exclude),
+            WorkspaceMessageSettings.reminder_auto_approve.is_(True),
+            ReminderBundle.scheduled_at >= WorkspaceMessageSettings.auto_approve_since,
+        )
+        .with_for_update(skip_locked=True, of=ReminderBundle)
+    ).all()
+    for bundle in bundles:
+        bundle.approved_at = now
+        bundle.approved_by = None
+        bundle.updated_at = now
+    db.flush()
+
+
 def dispatch_due(db: Session, now: datetime) -> list[ThreadMessage]:
     """승인됐고 발송 시각이 된 묶음마다 봇 메시지 한 통을 만든다. 문구는 묶음 문구 그대로다. 탈퇴한 팀원의 묶음은 취소한다."""
     now = utc(now)
     unchecked = scheduler.before_dispatch(db, now)
+    _auto_approve_due(db, now, unchecked)
     due = db.scalars(
         select(ReminderBundle)
         .where(

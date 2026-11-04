@@ -242,14 +242,23 @@ def _suggest(db: Session, task: Task, slot: datetime, now: datetime, settings: M
     if approved_before:
         notifications.notify_pms(
             db, workspace_id=task.workspace_id, kind="nudge_reapprove",
-            text=f"{name}님에게 보낼 메시지에 재촉이 더해져 다시 승인이 필요해요",
+            text=(
+                f"{name}님에게 보낼 메시지에 재촉이 더해졌어요. 발송 시각에 자동으로 나가요"
+                if settings.reminder_auto_approve
+                else f"{name}님에게 보낼 메시지에 재촉이 더해져 다시 승인이 필요해요"
+            ),
             link_type="bundle", link_id=bundle.bundle_id, now=now,
             dedupe_key=f"reapprove:{bundle.bundle_id}:{bundle.draft_version}",
         )
     elif not _pm_told(db, bundle.bundle_id):
         notifications.notify_pms(
             db, workspace_id=task.workspace_id, kind="nudge_suggested",
-            text=f"{name}님에게 보낼 재촉을 제안했어요. 보내기 전 확인에서 승인해 주세요",
+            text=(
+                f"{name}님에게 보낼 재촉을 제안했어요. 발송 시각에 자동으로 나가요. "
+                "보내지 않으려면 보내기 전 확인에서 막아 주세요"
+                if settings.reminder_auto_approve
+                else f"{name}님에게 보낼 재촉을 제안했어요. 보내기 전 확인에서 승인해 주세요"
+            ),
             link_type="bundle", link_id=bundle.bundle_id, now=now, dedupe_key=f"suggest:{bundle.bundle_id}",
         )
 
@@ -354,7 +363,10 @@ def _notify_dropped(db: Session, reminder: Reminder, reason: str, was_approved: 
         "changed": f"'{title}'의 상태나 마감이 바뀌어 보낼 예정이던 재촉을 취소했어요",
     }[reason]
     if rest and was_approved:
-        message += ". 같이 보낼 메시지는 다시 승인해 주세요"
+        if message_settings.get_settings(db, reminder.workspace_id).reminder_auto_approve:
+            message += ". 남은 메시지는 발송 시각에 자동으로 나가요"
+        else:
+            message += ". 같이 보낼 메시지는 다시 승인해 주세요"
     notifications.notify_pms(
         db, workspace_id=reminder.workspace_id, kind="reminder_auto_cancelled", text=message,
         link_type="bundle" if rest else "thread", link_id=bundle.bundle_id if rest else bundle.thread_id,
@@ -490,10 +502,10 @@ def _block(db: Session, task: Task, watch: ReminderWatch, now: datetime) -> None
     watch.state = WatchState.BLOCKED
     watch.blocked_at = now
     name = watch.message.thread.member.display_name
-    text_ = f"{name}님이 '{task.title}' 재촉에 72시간 동안 답이 없어요"
-    text_ += " (이미 막힘 상태예요)" if already_blocked else ". 막힘으로 바꿨어요"
     if not message_settings.get_settings(db, task.workspace_id).silence_alert:
         return
+    text_ = f"{name}님이 '{task.title}' 재촉에 72시간 동안 답이 없어요"
+    text_ += " (이미 막힘 상태예요)" if already_blocked else ". 막힘으로 바꿨어요"
     notifications.notify_pms(
         db, workspace_id=task.workspace_id, kind="silence_blocked", text=text_,
         link_type="task", link_id=task.task_id, now=now, dedupe_key=f"silence:{watch.watch_id}",
