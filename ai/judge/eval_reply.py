@@ -99,6 +99,8 @@ def estimate_calls(cases: list[dict[str, Any]], repeat: int) -> Counter:
     """정답에서 호출 수를 어림한다. finding 은 태스크마다 하나, unknown·due_clear 줄마다 하나, 없으면 하나로 본다.
 
     바뀌는 것이 없는 finding 은 초안을 부르지 않는데 위로 어림한다. 후보 밖 말은 새 항목이라 run 안에서 Jev 를 한 번 쓴다.
+    후보가 둘 이상이면 정답에 없는 후보마다 보충 판단(Terra·Luna 초안·Jev 각 1)을 더한다. run 이 태스크를 놓쳐도 그 태스크의
+    finding 몫이 보충으로 옮겨 갈 뿐이라 합은 같다. 초안과 Jev 는 Terra 가 바꿀 것을 찾았을 때만 불러 이것도 위로 어림이다.
     """
     calls = Counter()
     for case in cases:
@@ -108,13 +110,17 @@ def estimate_calls(cases: list[dict[str, Any]], repeat: int) -> Counter:
         for e in expected:
             if e["field"] in ("status", "unknown") or many:
                 calls["jev"] += 1
+        if many:
+            spare = len(case["claim"]["candidates"]) - len({e["task"] for e in expected if e["task"]})
+            calls.update({"terra": spare, "luna_draft": spare, "jev": spare})
     return Counter({k: v * repeat for k, v in calls.items()})
 
 
 def _print_estimate(cases: list[dict[str, Any]], repeat: int) -> None:
     calls = estimate_calls(cases, repeat)
     won = sum(WON_PER_CALL[k] * calls[k] for k in WON_PER_CALL)
-    print(f"사례 {len(cases)}건 × {repeat}회. 답장 1건은 Luna 1단계 1 + finding 당 (Terra 1 + Luna 초안 1) + Jev")
+    print(f"사례 {len(cases)}건 × {repeat}회. 답장 1건은 Luna 1단계 1 + finding 당 (Terra 1 + Luna 초안 1) + Jev "
+          "+ 후보가 둘 이상이면 고르지 않은 후보 당 (Terra 1 + Luna 초안 1 + Jev 1)")
     print(f"호출 추정: Luna 1단계 {calls['luna_stage1']}, Terra {calls['terra']}, Luna 초안 {calls['luna_draft']}, "
           f"Jev {calls['jev']}")
     print(f"원 추정: 약 {won}원 + Jev {calls['jev']}회 (Jev 단가는 장부에 없다. 재시도는 뺐다)")

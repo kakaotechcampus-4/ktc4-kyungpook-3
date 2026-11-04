@@ -100,6 +100,14 @@ def test_the_estimate_follows_the_cost_formula():
     assert E.estimate_calls([silent], 1) == {"luna_stage1": 1, "terra": 1, "luna_draft": 1}
 
 
+def test_the_estimate_adds_one_supplement_per_candidate_outside_the_answer():
+    bare = {"claim": {"candidates": [{}, {}]}, "expected": [_want(None, "unknown", None, False)]}
+    assert E.estimate_calls([bare], 2) == {"luna_stage1": 2, "terra": 6, "luna_draft": 6, "jev": 6}
+
+    one_of_two = {"claim": {"candidates": [{}, {}]}, "expected": [_want("a")]}
+    assert E.estimate_calls([one_of_two], 1) == {"luna_stage1": 1, "terra": 2, "luna_draft": 2, "jev": 2}
+
+
 def _forbid_clients(monkeypatch):
     def forbidden(*a, **k):
         pytest.fail("클라이언트를 만들면 안 된다")

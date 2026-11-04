@@ -1,12 +1,15 @@
-"""답장 판단(judge/reply.py). run 과 Jev 는 가짜로 끼우고, 마감 지움만 실제 run 으로 고정한다."""
+"""답장 판단(judge/reply.py). run·보충 판단·Jev 는 가짜로 끼우고, 마감 지움만 실제 run 으로 고정한다."""
 
 from datetime import date
 
 import pytest
 
+from draft.doc_draft import DraftUnavailableError
 from jev import FakeJev
+from judge.final_judge import JudgeUnavailableError
 from judge.pipeline import DUE_CLEARED_REASON, PipelineFailure, PipelineResult
 from judge.reply import MODEL_NAME, ReplyJudgeFailed, judge_reply
+from shared.schemas import DraftResult, DraftStructured, JudgeResult
 from tests.test_pipeline import _install, _terra
 
 API = {"task_id": "t_api", "title": "API 명세서 작성", "status": "in_progress", "due_date": "2026-11-07",
@@ -47,6 +50,30 @@ class FakeRun:
         return self.result
 
 
+def _changed(task, status="done", category="status"):
+    return JudgeResult(is_meaningful=True, category=category, is_new=False, matched_task_id=task["task_id"], status=status)
+
+
+class FakeJudge:
+    """task_id → 판정이나 예외. 없는 후보는 바꿀 것 없음이다. 후보를 둘 이상 주면 풀다가 터진다."""
+
+    def __init__(self, verdicts=None):
+        self.verdicts = verdicts or {}
+        self.inputs = []
+
+    def __call__(self, judge_input):
+        self.inputs.append(judge_input)
+        (candidate,) = judge_input.candidates
+        verdict = self.verdicts.get(candidate.task_id, JudgeResult(is_meaningful=False, category="none", is_new=False))
+        if isinstance(verdict, Exception):
+            raise verdict
+        return verdict
+
+
+def _draft(finding, result, *, candidate, today):
+    return DraftResult(structured=DraftStructured(task=None, due_date=None), doc_text=f"{candidate.title} 보충 해석")
+
+
 def _yes(status=None, target=None):
     out = {}
     for key, p in (("status", status), ("target", target)):
@@ -55,8 +82,8 @@ def _yes(status=None, target=None):
     return out
 
 
-def _judge(run, claim=None, jev=None):
-    return judge_reply(claim or _claim(), run=run, jev=jev or FakeJev())
+def _judge(run, claim=None, jev=None, judge=None, draft=_draft):
+    return judge_reply(claim or _claim(), run=run, jev=jev or FakeJev(), judge=judge or FakeJudge(), draft=draft)
 
 
 def _shape(body):
@@ -217,7 +244,119 @@ def test_nothing_found_is_no_changes():
     assert body == {"attempt": 2, "failure_reason": None, "model_name": MODEL_NAME, "changes": []}
 
 
+# ── 보충 판단
+
+
+def test_a_later_task_left_out_of_the_run_gets_its_own_line():
+    jev = FakeJev([_yes(status=0.9, target=0.9), _yes(status=0.9, target=0.9)])
+    judge = FakeJudge({"t_login": _changed(LOGIN, status="blocked")})
+    body = _judge(FakeRun(_update(status="done")), _claim(API, LOGIN), jev=jev, judge=judge)
+
+    assert _shape(body) == [("t_api", "status", "done", "certain"), ("t_login", "status", "blocked", "certain")]
+    line = body["changes"][1]
+    assert (line["summary"], line["evidence_quote"]) == ("로그인 화면 보충 해석", REPLY)
+    assert line["base"] == {"updated_at": LOGIN["updated_at"], "due_date": "2026-11-10", "status": "todo",
+                            "assignee_member_id": "m_jh", "title": "로그인 화면"}
+
+
+def test_a_candidate_the_run_chose_is_not_judged_again():
+    judge = FakeJudge()
+    _judge(FakeRun(_update(status="done")), _claim(API, LOGIN), jev=FakeJev([_yes(status=0.9, target=0.9)]), judge=judge)
+
+    (judged,) = judge.inputs
+    assert (judged.source, judged.text) == ("chat", REPLY)
+    assert [c.task_id for c in judged.candidates] == ["t_login"]
+
+
+def test_a_new_item_chooses_no_candidate():
+    judge = FakeJudge()
+    _judge(FakeRun(_create()), _claim(API, LOGIN), judge=judge)
+    assert [c.task_id for j in judge.inputs for c in j.candidates] == ["t_api", "t_login"]
+
+
+@pytest.mark.parametrize("text", ["다 했어요", "그거 끝났어요"])
+def test_a_bare_finish_over_two_candidates_after_an_empty_run_is_unknown(text):
+    lines = [{"sender": "pm", "text": "API 명세서는요?"}, {"sender": "pm", "text": "로그인 화면은요?"},
+             {"sender": "member", "text": text}]
+    jev = FakeJev([_yes(status=0.9, target=0.2), _yes(status=0.9, target=0.2)])
+    judge = FakeJudge({"t_api": _changed(API), "t_login": _changed(LOGIN)})
+    body = _judge(FakeRun(), _claim(API, LOGIN, lines=lines), jev=jev, judge=judge)
+
+    assert {c["field"] for c in body["changes"]} == {"unknown"}
+    assert {(c["task_id"], c["evidence_quote"]) for c in body["changes"]} == {(None, text)}
+
+
+def test_a_plain_ack_stays_no_changes_after_the_supplement():
+    jev = FakeJev()
+    judge = FakeJudge()
+    body = _judge(FakeRun(), _claim(API, LOGIN), jev=jev, judge=judge)
+
+    assert body["changes"] == [] and jev.calls == []
+    assert len(judge.inputs) == 2
+
+
+def test_a_candidate_judged_as_a_new_item_is_no_line():
+    verdict = JudgeResult(is_meaningful=True, category="decision", is_new=True)
+    body = _judge(FakeRun(), _claim(API, LOGIN), judge=FakeJudge({"t_api": verdict, "t_login": verdict}))
+    assert body["changes"] == []
+
+
+def test_a_supplement_with_nothing_to_change_is_no_line():
+    body = _judge(FakeRun(), _claim(API, LOGIN), judge=FakeJudge({"t_api": _changed(API, status="in_progress")}))
+    assert body["changes"] == []
+
+
+def test_one_candidate_is_never_supplemented():
+    judge = FakeJudge()
+    _judge(FakeRun(), _claim(API), judge=judge)
+    assert judge.inputs == []
+
+
+@pytest.mark.parametrize("failure", [JudgeUnavailableError("x"), DraftUnavailableError("x")])
+def test_a_failed_supplement_skips_that_candidate_and_keeps_the_rest(failure, caplog):
+    def draft(finding, result, *, candidate, today):
+        if candidate.task_id == "t_api" and isinstance(failure, DraftUnavailableError):
+            raise failure
+        return _draft(finding, result, candidate=candidate, today=today)
+
+    verdicts = {"t_api": failure if isinstance(failure, JudgeUnavailableError) else _changed(API), "t_login": _changed(LOGIN)}
+    body = _judge(FakeRun(), _claim(API, LOGIN), jev=FakeJev([_yes(status=0.9, target=0.9)]),
+                  judge=FakeJudge(verdicts), draft=draft)
+
+    assert _shape(body) == [("t_login", "status", "done", "certain")]
+    assert "t_api" in caplog.text and REPLY not in caplog.text
+
+
+def test_failure_lines_stay_as_they_are_next_to_a_supplement():
+    run = FakeRun(failures=[PipelineFailure("draft", "마감을 없앰", DUE_CLEARED_REASON),
+                            PipelineFailure("target", "요약", "수정 대상 후보를 찾지 못했습니다.")])
+    body = _judge(run, _claim(API, LOGIN), jev=FakeJev([_yes(status=0.9, target=0.9)]),
+                  judge=FakeJudge({"t_login": _changed(LOGIN)}))
+
+    assert [c["field"] for c in body["changes"]] == ["status", "due_clear", "unknown"]
+
+
 # ── 실제 run
+
+
+def test_the_real_run_splits_a_reply_stage_one_merged(monkeypatch):
+    # 1단계가 답장 전체를 finding 하나로 묶어 Terra 가 로그인 화면만 골라도, 나머지 후보가 제 줄을 받는다
+    reply = "로그인 화면은 다 했는데 API 명세서는 서버 스펙이 안 와서 막혔어요"
+    stage1 = {"findings": [{"indices": [2], "summary": reply, "assignee_type": "none", "reason": "진척"}]}
+    fakes = _install(monkeypatch, stage1=stage1,
+                     terra=[_terra(category="status", status="done", matched_candidate_index=1),
+                            _terra(category="status", status="blocked", matched_candidate_index=0)],
+                     luna_draft=[{"task": None, "due_date": None, "doc_text": "로그인 화면 완료"},
+                                 {"task": None, "due_date": None, "doc_text": "API 명세서 막힘"}])
+    jev = FakeJev([_yes(status=0.9, target=0.9), _yes(status=0.9, target=0.9)])
+
+    body = judge_reply(_claim(API, LOGIN, lines=[
+        {"sender": "pm", "text": "API 명세서는요?"}, {"sender": "pm", "text": "로그인 화면은요?"},
+        {"sender": "member", "text": reply}]), jev=jev)
+
+    assert _shape(body) == [("t_login", "status", "done", "certain"), ("t_api", "status", "blocked", "certain")]
+    assert body["changes"][1]["evidence_quote"] == reply
+    assert len(fakes["terra"].prompts) == 2 and "로그인 화면'," not in fakes["terra"].prompts[1]
 
 
 def test_the_real_run_reports_a_cleared_due_as_due_clear(monkeypatch):
