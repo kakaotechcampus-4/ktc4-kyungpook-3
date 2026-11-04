@@ -207,7 +207,7 @@ callback은 워크스페이스별 경로가 아닌 고정 경로다. Notion에 �
 
 - "회의 Task" 같은 페이지 **바로 아래**에 데이터베이스를 둔다(열·토글 안에 넣으면 찾지 못한다).
 - 속성 이름과 종류를 `app/services/notion.py`의 `DATABASE_SCHEMA`와 맞춘다: Name/title, Status/select,
-  Assignee/rich_text, Due Date/date, Progress/number, Blocker/rich_text, **Task ID/rich_text**.
+  Assignee/rich_text, Due Date/date, Blocker/rich_text, **Task ID/rich_text**. 예전 템플릿의 Progress 속성은 있어도 되고, 워커가 쓰지 않는다.
 - Status 선택지에 `todo`·`in_progress`·`blocked`·`done`이 있어야 한다(색은 자유).
 - 속성·선택지를 더 넣거나 뷰·아이콘을 꾸미는 것은 자유다. 샘플 행은 지운다(복제된다).
 - 템플릿이 클수록 복제가 오래 걸려 60초를 넘길 수 있다.

@@ -115,7 +115,6 @@ class ChangedField(StrEnum):
     DUE_DATE = "due_date"
     STATUS = "status"
     TITLE = "title"
-    PROGRESS = "progress"
     BLOCKER = "blocker"
 
 
@@ -611,7 +610,6 @@ class Task(Base):
         String(36), ForeignKey("member.member_id", ondelete="SET NULL"), nullable=True, index=True
     )
     status: Mapped[str] = mapped_column(String(16), default=TaskStatus.TODO, index=True)
-    progress: Mapped[int | None] = mapped_column(Integer, nullable=True)
     blocker: Mapped[str | None] = mapped_column(Text, nullable=True)
     start_date: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
     due_date: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)

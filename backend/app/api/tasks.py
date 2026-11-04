@@ -64,7 +64,6 @@ def create_task_endpoint(
         start_date=payload.start_date,
         due_date=payload.due_date,
         status=str(payload.status),
-        progress=payload.progress,
         blocker=payload.blocker,
         change_source=str(ChangeSource.MANUAL),
         changed_by=member.member_id,

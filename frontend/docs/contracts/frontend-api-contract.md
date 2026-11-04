@@ -99,11 +99,11 @@ M6 S1에서 프론트 계약·데이터 계층을 현재 서버 코드에 맞췄
 | `PATCH /tasks/{task_id}` | PM 전용(`require_pm`). 변경자는 세션 팀원으로 기록하고 본문 `changed_by`는 무시한다(하위 호환 필드) |
 | `POST /tasks/{task_id}/notion-sync/retry` | PM 전용, 본문 없음. 응답은 `TaskResponse`. Notion 미설정이면 409 `INTEGRATION_NOT_CONNECTED`, 재시도할 실패 건이 없으면 400 `INVALID_REQUEST` |
 | `GET /tasks/{task_id}`, `GET /tasks/{task_id}/history` | 태스크 공간의 소속 팀원만 조회(`require_task_member`). 경로에 공간이 없고, 이력 응답에는 `workspace_id`가 없다 |
-| `PATCH /approvals/{approval_id}` 본문 | `ApprovalResolveRequest` = `status`(`approved`·`rejected`), `confirm_task_version?`(정수 ≥ 1), `resolved_by?`(하위 호환, 무시). 처리자는 세션 PM으로 정한다 |
+| `PATCH /approvals/{approval_id}` 본문 | `ApprovalResolveRequest` = `status`(`approved`·`rejected`), `task_overrides?`(아래 「제안 값을 고쳐 승인」), `confirm_task_version?`(정수 ≥ 1), `resolved_by?`(하위 호환, 무시). 처리자는 세션 PM으로 정한다 |
 | 409 `APPROVAL_CONFLICT` | `task_update` 승인에서 제안 뒤 같은 필드가 바뀌면 반영하지 않고 pending으로 되돌린다. `details = {approval_id, task_id, task_version, conflicts: [{field, base, current, proposed}]}` (`_find_conflicts`). PM이 그 `task_version`을 `confirm_task_version`으로 보내면 태스크가 그 버전 그대로일 때만 덮어쓴다. 그 사이 또 바뀌면 다시 409다 |
 | 409 `APPROVAL_ALREADY_RESOLVED` | `details = {approval_id, current_status}` |
 | 승인 목록·상세 조회 | 목록은 `get_current_member`, 상세는 `require_member`. 공간 소속만 검사하고 PM 제한은 없다 |
-| 생성 승인 반영 | payload의 `task_title`·`assignee_member_id`·`due_date`를 그대로 쓴다. 승인 요청 입력으로 이 값을 바꾸는 필드는 없다. 담당자·마감 필수 검사도 없다 |
+| 생성 승인 반영 | payload의 `task_title`·`assignee_member_id`·`due_date`에 `task_overrides`를 덮어 쓴다. 상태는 payload와 상관없이 항상 `todo`다. 담당자·마감 필수 검사는 없다(미정 허용, M6-3 은 받지 않음) |
 
 `APPROVAL_CONFLICT`는 [서버 오류 코드](../../../backend/app/core/errors.py)에 있으나 프론트의 [오류 코드 목록](../../src/shared/api/errors.ts)과 §1의 31개 목록에는 아직 없다. 프론트는 승인 엔티티가 코드 문자열로 판별한다.
 
@@ -119,7 +119,25 @@ M6 S1에서 프론트 계약·데이터 계층을 현재 서버 코드에 맞췄
 | 409 해석 | `toApprovalResolveFailure`가 `conflict`(`taskVersion`, `conflicts[]`)와 `already_resolved`(`currentStatus`)를 구분한다. details 모양이 틀리면 null(일반 오류) | [승인 mapper](../../src/entities/approval/model/mapper.ts) |
 | 생성 승인 판정 | 제목 trim 후 1~300자(코드 포인트), 담당자는 호출자가 넘긴 현재 공간 팀원 ID 목록에 포함, 마감은 유효한 `YYYY-MM-DD`. 하나라도 아니면 승인 본문을 만들지 않고 이유 문자열을 돌려준다. 반려 본문은 `{status: "rejected"}`로 항상 만들 수 있다. 지원하지 않는 종류와 pending이 아닌 승인은 승인·반려 모두 만들지 않는다 | [판정](../../src/entities/approval/model/resolution.ts) |
 
-#### 미합의 요청안 — 생성 승인 보완 `task_overrides`
+#### 제안 값을 고쳐 승인 `task_overrides` (#303 에서 서버 구현)
+
+아래 요청안의 이름과 생성 승인 키를 그대로 받아 서버가 구현했다. 요청안과 다른 점은 수정 제안(`task_update`)도 받는 것과, 담당자·마감을 필수로 하지 않는 것(M6-3 미채택)이다. 근거는 [결정 기록 0032](../../../ai/docs/basis_for_decision/ai/2026-11-04-0032-approval-overrides-and-progress-drop.md).
+
+| 항목 | 서버 동작 |
+|---|---|
+| 받는 때 | `status: "approved"` 일 때만. 반려와 같이 보내거나 `reminder_dm` 에 보내면 400 `INVALID_REQUEST` 이고 승인 상태도 바뀌지 않는다 |
+| `task_create` 키 | `task_title`, `assignee_member_id`, `due_date`. 상태는 고를 수 없고 항상 `todo` |
+| `task_update` 키 | `status`, `due_date` |
+| 키가 없을 때 | 그 필드는 제안 그대로 |
+| `null` | `assignee_member_id`·`due_date` 는 "미정"(담당자 없음, 마감 없음). `task_title`·`status` 의 `null` 은 400 |
+| 그 밖의 키, 잘못된 날짜·상태 | 400 `INVALID_REQUEST`. 새 태스크 승인에 `title` 키를 보내도 400(`task_title` 을 쓴다). 승인은 pending 으로 남는다 |
+| 다른 공간 담당자, 없는 팀원 | 400 `WORKSPACE_MISMATCH`, 없거나 탈퇴한 팀원 id 는 404 `MEMBER_NOT_FOUND`. 승인은 pending 으로 남는다. 제안의 담당자가 그사이 탈퇴했어도 같고, `task_overrides` 로 다른 담당자나 미정을 고르면 승인된다. `PATCH /tasks` 와 이력 되돌리기도 탈퇴한 팀원을 담당자로 새로 넣지 못한다(지금 담당자를 그대로 보내는 것은 된다) |
+| 충돌 검사 | 고친 값을 반영한 최종 값으로 기존 `APPROVAL_CONFLICT` 검사를 한다. 제안에 없던 필드를 PM 이 고치면 `base_values` 가 없어 이 검사를 하지 않는다. PM 이 지금 값을 보고 고른 값으로 보고 그대로 덮어쓴다 |
+| 이력 | 고친 필드는 `change_source: "manual"`, `changed_by` 는 승인한 PM. 수정 제안은 지금 값에서 PM 값으로, 새 태스크는 생성 줄 다음에 제안 값에서 PM 값으로. 고치지 않은 필드는 승인 요청의 출처(payload `change_source`). 없으면 수정 제안은 `meeting`, 새 태스크는 `meeting_id` 가 있으면 `meeting` 없으면 `manual` |
+| 승인 기록 | payload 의 원래 제안과 근거는 그대로 두고, 제안과 다른 값만 `payload.task_overrides` 에 남는다. 조회 응답에서 볼 수 있다 |
+| `POST /approvals` | payload 에 `task_overrides` 키가 있거나 `change_source` 가 정해진 값(`meeting`·`chat`·`checkin`·`notion`·`reminder_reply`·`manual`)이 아니면 400. `change_source` 는 PM 만 보낼 수 있고 일반 팀원이 보내면 400 |
+
+#### (기록) 미합의 요청안: 생성 승인 보완 `task_overrides`
 
 현재 서버가 받는 입력이 아니다. 기존 `PATCH /approvals/{approval_id}`에 다음 필드를 추가하는 형태로 프론트가 고정했다. `status: "approved"`이고 승인 종류가 `task_create`일 때만 쓴다.
 
@@ -151,9 +169,9 @@ M6 S1에서 프론트 계약·데이터 계층을 현재 서버 코드에 맞췄
 
 | # | 요청 | 이유 |
 |---|---|---|
-| M6-1 | `ApprovalResolveRequest`에 위 `task_overrides`를 추가하고 approved `task_create`에서만 받는다 | 담당자·마감이 없는 생성 승인을 PM이 보완 후 승인할 경로가 없다 |
+| M6-1 | 요청: `ApprovalResolveRequest`에 위 `task_overrides`를 추가하고 approved `task_create`에서만 받는다. 결과: #303 에서 반영했고 `task_update` 까지 받는다 | 담당자·마감이 없는 생성 승인을 PM이 보완 후 승인할 경로가 없다 |
 | M6-2 | 보완값 적용·승인 상태 변경·태스크 생성·추출 항목 `task_id` 연결을 한 트랜잭션으로 처리한다 | 일부만 반영되면 승인·태스크·회의록이 어긋난다 |
-| M6-3 | 생성 승인의 최종 제목(trim 후 1~300자)·담당자(같은 공간 팀원)·마감(유효 날짜)을 필수로 검증한다 | M6 제품 규칙. 현재 서버는 담당자·마감 없이 태스크를 만든다 |
+| M6-3 | 요청: 생성 승인의 최종 제목(trim 후 1~300자)·담당자(같은 공간 팀원)·마감(유효 날짜)을 필수로 검증한다. 결과: #303 에서 받지 않았다. 제목은 검증하지만 담당자·마감은 미정을 허용한다 | M6 제품 규칙. 현재 서버는 담당자·마감 없이 태스크를 만든다 |
 | M6-4 | 승인 목록·상세 조회를 PM으로 제한한다 | 프론트 가드와 요청 차단만으로는 일반 팀원의 직접 호출을 막지 못한다 |
 
 이 요청은 프론트 계약에 기록한 것이며 백엔드에 전달·합의된 근거는 이 문서에 없다. 실 API 보완 승인, 승인 조회 PM 제한, 실제 Notion 반영은 미검증 연동 과제로 남는다.
@@ -514,12 +532,11 @@ Content-Disposition: 없음(내려받기 아님). Accept-Ranges: bytes
 
 승인 시 백엔드가 읽는 키는 `api/approvals.py` 의 `_apply_approval` 에 있다.
 
-- `task_create` → `task_title`(없으면 `title`), `meeting_id`, `assignee_member_id`, `due_date`, **`status`, `progress`**
-  뒤의 둘은 PR #55 가 추가했다. `validate_task_fields` 를 거치므로 **잘못된 값이면 승인이 400 으로 실패한다.**
+- `task_create` → `task_title`(없으면 `title`), `meeting_id`, `assignee_member_id`, `due_date`. #303 부터 `status` 는 읽지 않고 항상 `todo` 이며 `progress` 는 없다. `task_overrides` 가 있으면 그 값이 먼저다. 생성 이력 출처는 payload `change_source`, 없으면 `meeting_id` 유무로 `meeting`·`manual`. `validate_task_fields` 를 거치므로 **잘못된 값이면 승인이 400 으로 실패한다.**
   반영 뒤 `extraction_item.task_id` 도 채워진다 (§3.1).
   `extraction_item_id` 는 Task 를 만들기 **전에** 검증한다. 항목의 워크스페이스가 승인과 다르면 400 `WORKSPACE_MISMATCH`, 항목의 `approval_id` 가 이 승인이 아니면 400 `INVALID_REQUEST` 이고 아무것도 바뀌지 않는다.
-  항목이 없으면 연결 없이 Task 만 만든다. 이 검사가 제목·`status`·`progress` 검증보다 먼저다.
-- `task_update` → `title`, `assignee_member_id`, `status`, `progress`, `blocker`, `due_date` 중 존재하는 것만
+  항목이 없으면 연결 없이 Task 만 만든다. 이 검사가 제목 검증보다 먼저다.
+- `task_update` → `title`, `assignee_member_id`, `status`, `blocker`, `due_date` 중 존재하는 것만. 이력 출처는 payload `change_source`(없으면 `meeting`)
 - `reminder_dm` → 태스크에 반영하지 않는다. 발송은 Discord 봇의 책임이다
 
 **프론트엔드가 지킬 규칙**
@@ -546,7 +563,6 @@ Content-Disposition: 없음(내려받기 아님). Accept-Ranges: bytes
  "title": "로그인 API 연동",
  "assignee_member_id": "mb_01",
  "status": "todo",                      // todo | in_progress | blocked | done
- "progress": 40,                        // 0~100 또는 null
  "blocker": null,
  "start_date": "2026-09-15",            // §4.7-6 반영됨. nullable
  "due_date": "2026-09-20",
@@ -556,13 +572,13 @@ Content-Disposition: 없음(내려받기 아님). Accept-Ranges: bytes
 // "notion_sync_status"(pending|synced|failed|null)도 있다 → 상단 「M6 태스크·승인 처리 경계」
 
 // POST 요청 {workspace_id, title, meeting_id?, assignee_member_id?, start_date?, due_date?,
-//            status?, progress?, blocker?, created_by?}
-// PATCH 요청 {title?, assignee_member_id?, status?, progress?, blocker?,
+//            status?, blocker?, created_by?}   (#303 부터 progress 는 보내도 무시)
+// PATCH 요청 {title?, assignee_member_id?, status?, blocker?,
 //            start_date?, due_date?, changed_by?}
 
 // TaskHistoryResponse — created_at 내림차순
 {"history_id": "hs_01", "task_id": "tk_01",
- "changed_field": "due_date",           // assignee|start_date|due_date|status|title|progress|blocker
+ "changed_field": "due_date",           // assignee|start_date|due_date|status|title|blocker (#303 전 이력에는 progress 가 남아 있고 되돌리기는 400)
  "old_value": "2026-09-13", "new_value": "2026-09-20",
  "change_source": "meeting",            // meeting|chat|checkin|notion|reminder_reply|manual
  "changed_by": null,
@@ -757,7 +773,7 @@ PR #59 가 §4.1~§4.5 를 구현했다. **요청의 성격이 바뀌었다** �
 | 10 | `GET .../discord/members` | **하드코딩 2명** (`disc_01`, `disc_02`) | 연결된 서버의 실제 사용자 목록 |
 | 11 | `GET /meetings/{id}/minutes` | `transcript` 가 **하드코딩 1줄.** `attendees` 는 `audio_segment` 에서 역산 | §4.7-5 의 구조화 응답. 참석자는 회의 참석자 명단에서 |
 | 12 | 승인·반려 처리 | `extraction_item.approval_id` 를 **어느 쪽으로 닫혀도 비우지 않는다.** 반려는 `extraction_item` 을 아예 건드리지 않는다 | **승인이든 반려든 닫히면 `approval_id` 를 `null` 로.** 안 되면 프론트가 `GET /approvals?status=pending` 과 조인해 우회한다 (§3.1) |
-| 13 | 승인 `task_create` | payload 의 `status` · `progress` 도 읽어 반영한다 | 요청이 아니라 **기록**이다. §2.5 의 payload 설명에 빠져 있었다 |
+| 13 | 승인 `task_create` | ~~payload 의 `status` · `progress` 도 읽어 반영한다~~ #303 부터 둘 다 읽지 않는다. 상태는 항상 `todo` | 요청이 아니라 **기록**이다. §2.5 의 payload 설명에 빠져 있었다 |
 | 14 | `GET /workspaces/{id}/meetings` | `title` 이 nullable 인데 `items: list[dict]` 라 스키마에 안 드러난다 | 목록 `title` 의 nullable 여부를 스키마로 고정해 달라. **프론트 DTO 는 nullable 로 맞췄고 매퍼가 빈 문자열로 폴백한다** |
 | 15 | `GET /members/unresolved-aliases` | 해결 판정이 **별칭 후보 정확히 1개 + 그 1개가 `verified`** 다(`matching.py` `resolved_alias_texts`). 미검증뿐이거나 후보가 여럿(검증 1 + 미검증 1 포함)이면 목록에 남는다 | 요청이 아니라 기록이다. **MSW 도 같은 규칙으로 계산하게 맞췄다** |
 | 16 | `GET /workspaces/{id}/meetings` 의 `attendee_count` | `audio_segment` 의 화자에서 역산한다(`# attendee_count 로직 개선 필요`). **말하지 않은 참석자는 빠지고, 로컬 업로드는 세그먼트가 없어 늘 0** 이다 | 업로드가 받은 `attendee_member_ids` 를 저장하고 그것으로 세 달라 (②-9 와 한 쌍이다) |
@@ -770,6 +786,8 @@ PR #59 가 §4.1~§4.5 를 구현했다. **요청의 성격이 바뀌었다** �
 |---|---|---|
 | `progress` | 아래 표 참조 — **두 경로 모두** MSW 가 더 엄격하다 | 정수형 `number` 만 받는다 |
 | `title` 300자 | Python `len()` — 유니코드 **코드 포인트** | JS `.length` — UTF-16 **코드 단위**. 이모지 등 비-BMP 가 많으면 MSW 가 먼저 막는다 |
+
+> 2026-11-04 #303: 서버에서 Task `progress` 를 뺐다. 아래 두 표의 `progress` 는 그 전 기록이다.
 
 **`progress` 를 값별로 보면 이렇다.** pydantic 이 **lax 모드**라 직접 API 도 문자열·불리언을 받아 준다.
 
