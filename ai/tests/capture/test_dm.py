@@ -630,3 +630,44 @@ async def test_each_part_carries_its_own_nonce_so_an_http_retry_does_not_send_it
     assert len(nonces) == 2 and len(set(nonces)) == 2
     assert all(len(n) <= 25 for n in nonces)             # 디스코드 nonce 는 25자까지
     assert nonces[0] == D._nonce("msg-1", 0)
+
+
+# ─────────────────────────────────────────────────────────── 디스크가 찼을 때
+class Disk:
+    def __init__(self, monkeypatch):
+        self.real = D._write_json
+        self.full = lambda path: False
+        monkeypatch.setattr(D, "_write_json", self)
+
+    def __call__(self, path, obj):
+        if self.full(path):
+            raise OSError("No space left on device")
+        self.real(path, obj)
+
+
+async def test_a_sent_dm_stays_delivered_when_the_recipient_file_cannot_be_written(tmp_path, monkeypatch):
+    disk = Disk(monkeypatch)
+    disk.full = lambda p: p.name == "recipients.json"
+    user = FakeUser()
+    cog, be = _cog(tmp_path, FakeBot([user]))
+    be.claims.append([_item()])
+    await cog.run_round()
+    assert be.sent("/bot/messages/msg-1/result")[0][1] == {"status": "delivered", "discord_message_ids": ["5001"]}
+
+
+async def test_a_full_disk_mid_batch_reports_what_went_out_and_keeps_the_batch_going(tmp_path, monkeypatch):
+    disk = Disk(monkeypatch)
+    user = FakeUser()
+
+    def fill_disk(_text):
+        disk.full = lambda p: True
+
+    user.on_send = fill_disk
+    cog, be = _cog(tmp_path, FakeBot([user]))
+    be.claims.append([_item("msg-1", "첫 메시지"), _item("msg-2", "둘째 메시지")])
+    await cog.run_round()
+    assert be.sent("/bot/messages/msg-1/result")[0][1] == {"status": "delivered", "discord_message_ids": ["5001"]}
+    # 기록을 못 쓰면 보내지 않는다. 기록 없이 나간 DM 은 재시작하면 알 길이 없다
+    assert user.sent == ["첫 메시지"]
+    assert be.sent("/bot/messages/msg-2/result")[0][1] == {
+        "status": "failed", "failure_reason": "unknown", "discord_message_ids": []}

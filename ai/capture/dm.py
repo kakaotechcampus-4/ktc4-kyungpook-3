@@ -181,37 +181,48 @@ class DmCog(discord.Cog):
             print(f"[dm] 보낼 메시지를 가져오지 못했다: {e}", flush=True)
             return
         for item in data.get("items") or []:
-            await self._report(await self._deliver(item))
+            await self._report(*await self._deliver(item))
 
     # ------------------------------------------------------------------ 발송
     async def _call(self, method: str, path: str, body: dict | None = None):
         return await asyncio.to_thread(self.be._call, method, path, body)
 
-    async def _deliver(self, item: dict) -> Path:
+    def _save(self, path: Path, rec: dict) -> None:
+        """DM 이 이미 나간 뒤의 기록. 쓰기가 실패해도 결과를 바꾸지 않는다(디스크가 찬 경우)."""
+        try:
+            _write_json(path, rec)
+        except OSError as e:
+            print(f"[dm] {rec['message_id']} 발송 기록을 쓰지 못했다: {e}", flush=True)
+
+    async def _deliver(self, item: dict) -> tuple[Path, dict]:
         uid = str(item["discord_user_id"])
         parts = split_body(item["body"])
         path = self.dir / "sent" / f"{item['message_id']}.json"
         rec = {"message_id": item["message_id"], "discord_user_id": uid, "parts_total": len(parts),
                "parts_sent": [], "outcome": None}
-        _write_json(path, rec)
         try:
+            _write_json(path, rec)
             user = self.bot.get_user(int(uid)) or await self.bot.fetch_user(int(uid))
             for i, chunk in enumerate(parts):
                 sent = await user.send(chunk, nonce=_nonce(item["message_id"], i), enforce_nonce=True)
                 rec["parts_sent"].append(str(sent.id))
-                _write_json(path, rec)
-                self._note_dm(uid, sent.id)
+                self._save(path, rec)
+                try:
+                    self._note_dm(uid, sent.id)
+                except OSError as e:
+                    print(f"[dm] {uid} 메우기 대상을 쓰지 못했다: {e}", flush=True)
             rec["outcome"] = {"status": "delivered"}
         except discord.Forbidden:
             rec["outcome"] = {"status": "failed", "failure_reason": "dm_blocked"}
         except Exception as e:  # noqa: BLE001 - NotFound, HTTPException, 연결 오류 모두 unknown 이다
             print(f"[dm] {item['message_id']} 발송 실패: {type(e).__name__}: {e}", flush=True)
             rec["outcome"] = {"status": "failed", "failure_reason": "unknown"}
-        _write_json(path, rec)
-        return path
+        self._save(path, rec)
+        return path, rec
 
-    async def _report(self, path: Path) -> None:
-        rec = _read_json(path, None)
+    async def _report(self, path: Path, rec: dict | None = None) -> None:
+        """rec 을 주지 않으면 파일에서 읽는다. 방금 보낸 것은 파일을 못 썼어도 메모리의 결과로 보고한다."""
+        rec = rec or _read_json(path, None)
         if rec is None or rec.get("outcome") is None:
             return
         try:
