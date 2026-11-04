@@ -1377,6 +1377,47 @@ members 에만 있고 Discord 목록에 없으면      → 비활성 (서버를 
 - 계정이 연결되지 않은 팀원은 목록에만 쌓인다. 푸시가 실패해도 목록에는 남는다.
 - 일시 오류는 최대 3번 다시 보낸다. 기기가 꺼져 있으면 푸시 서비스가 24시간까지 붙잡아 두고, 그 뒤에는 버린다. 푸시 서비스가 구독이 없어졌다고 답하면(404·410) 그 구독을 지운다.
 
+**리마인드 답장 판단** (#331 에서 BE 구현, 프론트엔드 미연결, 합의 여부 확인 필요). 봇 쪽 경로는 [backend-ai 계약](../../../backend/docs/contracts/backend-ai-contract.md)의 「리마인드 답장 판단」에 있다. 시계는 판단이 끝난 뒤 판단 결과대로 움직이고, 10분 안에 끝나지 않으면 답장을 응답으로 친다.
+
+- 상태 변경이면서 근거가 확실한 변경만 자동 반영하고, 나머지는 기존 `task_update` 승인 요청으로 간다. 승인 payload 는 추출 경로와 키가 같고 `change_source: "reminder_reply"`, `reply_message_id` 가 더해지며 `meeting_id`, `extraction_item_id` 가 없다.
+- 답장 하나에 알림 하나다. 바꿀 것이 없는 답장은 알리지 않는다.
+- 답장이 말한 태스크의 시계만 닫는다. 바꿀 것이 없는 답장은 후보 시계를 모두 닫는다. 어느 태스크인지 모르면 후보 시계를 멈추고, PM 이 고르지 않은 태스크는 남은 시간부터 다시 센다.
+
+| 요청 | 누가 | 하는 일 |
+|---|---|---|
+| `GET /api/v1/workspaces/{workspace_id}/messages/threads/{thread_id}/attributions` | PM | 그 대화에서 태스크를 골라야 하거나 고른 답장 `{items, total}` |
+| `POST /api/v1/workspaces/{workspace_id}/messages/replies/{message_id}/attribution` | PM | `{task_id}` 로 고른다. null 은 해당 없음이다. 응답 `{message_id}` |
+| `GET /api/v1/tasks/{task_id}/timeline` | 소속 팀원 | 답장과 변경을 묶은 태스크 기록. 최신순 `{items, total}` |
+| `POST /api/v1/tasks/{task_id}/reply-changes/{change_id}/undo` | PM | 자동 반영을 되돌린다. 응답 `TaskResponse` |
+
+```jsonc
+// attributions items[]
+{ "message_id": "…", "status": "needs_pm", "candidates": [{ "task_id": "…", "title": "…" }], "task": null }
+{ "message_id": "…", "status": "resolved", "candidates": null, "task": { "task_id": "…", "title": "…" } | null }   // task 가 null 이면 해당 없음
+
+// timeline items[]
+{ "kind": "reply", "at": "…", "message_id": "…", "member_name": "재환", "channel": "discord" | "web", "body": "…",
+  "changes": [{ "change_id": "…", "field": "status" | "due_date" | "assignee" | "scope" | "none", "new_value": "done",
+                "evidence_status": "certain" | "inferred" | null, "summary": "…", "evidence_quote": "…",
+                "result": "applied" | "undone" | "pending" | "approved" | "rejected" | "noted" | "recorded",
+                "undoable": true }] }
+{ "kind": "history", "at": "…", "history_id": "…", "changed_field": "due_date", "old_value": "…", "new_value": "…",
+  "change_source": "manual" }
+```
+
+- 고르면 그 태스크만 후보로 다시 판단한다. 해당 없음이면 닫는다. 후보 밖 태스크는 400 `INVALID_REQUEST`, 판단 기록이 없거나 다른 워크스페이스면 404 `REPLY_JUDGMENT_NOT_FOUND`, 고를 차례가 아니거나 이미 골랐으면 409 `REPLY_ATTRIBUTION_NOT_NEEDED` 다.
+- 타임라인에서 답장에 이어진 이력은 답장 아래에만 나오고 `history` 줄이 되지 않는다. 승인은 줄이 아니라 `result` 로 읽는다. 승인하면서 PM 이 고친 값도 같은 줄에 묶인다. `GET /tasks/{id}/history` 는 그대로다.
+- 답장 글(`body`, `summary`, `evidence_quote`)은 대화 주인과 PM 에게만 내려간다. 그 밖의 팀원에게는 null 이다.
+- 되돌리기는 `undoable: true` 인 변경만 받는다. 이어진 이력 중 하나라도 그 뒤 바뀌었으면 하나도 되돌리지 않고 409 `REPLY_CHANGE_NOT_UNDOABLE` 이다. 되돌린 이력은 새 `history` 줄로 남고 닫힌 시계는 다시 열리지 않는다.
+- 알림 `kind` 는 둘이 더해진다.
+
+| `kind` | 받는 사람 | `link.type` | 누르면 가는 곳 |
+|---|---|---|---|
+| `reply_judged` | PM 전원 | `task` · `thread` | 변경 한 건이면 태스크 상세, 그 밖은 대화 |
+| `reply_unjudged` | PM 전원 | `thread` | 그 대화. 판단 실패는 바로, 끝나지 않으면 10분 뒤 한 번 |
+
+- MSW 와 다른 점(합의 필요). 메시지 DTO 의 `attribution`, 대화 요약의 `needs_attribution` 은 BE 응답에 없고 새 `…/attributions` 경로로 준다. 고를 차례가 아닌 답장은 MSW 의 404 `MESSAGE_REPLY_NOT_FOUND` 대신 위 오류 코드다. 답장 승인 카드에는 `meeting_id` 가 없다.
+
 **MSW 동작 (임시, 합의 전).** 아래는 개발 서버 목의 현재 구현이다. 백엔드와 합의한 규약이 아니고, 합의 여부 확인 필요. 재촉 자동 승인은 목에서 꺼져 있으며, 예약 시각이 지나도 스스로 나가지 않는다.
 
 - 경로. `GET /workspaces/{id}/messages`, `GET …/messages/threads/{thread_id}`, `PATCH …/messages/reviews/{review_id}`, `POST …/reviews/{id}/send`, `POST …/reviews/{id}/dismiss`, `POST …/messages/threads/{thread_id}/replies`, `POST …/messages/replies/{message_id}/attribution`.
