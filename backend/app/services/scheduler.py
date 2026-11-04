@@ -15,7 +15,7 @@ import threading
 from collections.abc import Callable, Iterable
 from datetime import date, datetime, timedelta, timezone
 
-from sqlalchemy import func, select, text
+from sqlalchemy import func, or_, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -153,7 +153,7 @@ def _suggest_task(db: Session, task: Task, now: datetime) -> None:
     slot = send_slot(task.due_date)
     if not slot - PROPOSE_AHEAD <= now < slot:
         return
-    if _already_suggested(db, task) or _has_scheduled_reminder(db, task.task_id) or _answered_last(db, task):
+    if _already_suggested(db, task) or _has_scheduled_reminder(db, task.task_id, now) or _answered_last(db, task):
         return
     _suggest(db, task, slot, now)
 
@@ -168,10 +168,18 @@ def _already_suggested(db: Session, task: Task) -> bool:
     ) is not None
 
 
-def _has_scheduled_reminder(db: Session, task_id: str) -> bool:
+def _has_scheduled_reminder(db: Session, task_id: str, now: datetime) -> bool:
+    """앞으로 나갈 리마인드가 있는지. 승인되지 않은 채 시각이 지난 것은 나가지 않으므로 제안을 막지 않는다."""
     db.flush()
     return db.scalar(
-        select(Reminder.reminder_id).where(Reminder.task_id == task_id, Reminder.status == ReminderStatus.SCHEDULED)
+        select(Reminder.reminder_id)
+        .join(ReminderBundle, ReminderBundle.bundle_id == Reminder.bundle_id)
+        .where(
+            Reminder.task_id == task_id,
+            Reminder.status == ReminderStatus.SCHEDULED,
+            or_(ReminderBundle.scheduled_at > now, ReminderBundle.approved_at.is_not(None)),
+        )
+        .limit(1)
     ) is not None
 
 
@@ -248,35 +256,62 @@ def _pm_told(db: Session, bundle_id: str) -> bool:
 
 # 발송 직전
 
-def before_dispatch(db: Session, now: datetime) -> None:
+def before_dispatch(db: Session, now: datetime) -> list[str]:
     """dispatch_due 가 묶음을 보내기 전에 부른다(봇이 가져갈 때도). 나가면 안 되는 리마인드를 빼고, 묶음을 다 본 뒤
-    PM 에게 알린다. 묶음의 나머지는 #314 규칙대로 승인이 풀리고 PM 이 다시 본다."""
+    PM 에게 알린다. 묶음의 나머지는 #314 규칙대로 승인이 풀리고 PM 이 다시 본다.
+
+    잠그지 않고 사유부터 보고, 뺄 것만 잠가 다시 확인한다. 봇이 가져갈 때마다 도는 길이라 PM 조작을 세우지 않으려는
+    것이다. 항목마다 savepoint 를 두어 한 행의 실패가 다른 워크스페이스를 막지 않고, 확인하지 못한 묶음을 돌려준다.
+    """
     now = messages.utc(now)
     db.flush()
     pending = db.execute(
-        select(Reminder.reminder_id, Reminder.workspace_id)
+        select(Reminder.reminder_id, Reminder.workspace_id, Reminder.bundle_id)
         .join(ReminderBundle, ReminderBundle.bundle_id == Reminder.bundle_id)
         .where(Reminder.status == ReminderStatus.SCHEDULED, ReminderBundle.status == ReminderStatus.SCHEDULED)
         .order_by(Reminder.created_at, Reminder.reminder_id)
     ).all()
     dropped: list[tuple[Reminder, str]] = []
     was_approved: dict[str, bool] = {}
-    for reminder_id, workspace_id in pending:
-        reminder = messages.get_reminder(db, workspace_id, reminder_id)
-        if reminder.status != ReminderStatus.SCHEDULED or reminder.task is None:
+    unchecked: list[str] = []
+    for reminder_id, workspace_id, bundle_id in pending:
+        try:
+            with db.begin_nested():
+                drop = _drop_if_needed(db, reminder_id, workspace_id, was_approved, now)
+        except Exception:
+            logger.exception("발송 직전 확인 실패: %s", reminder_id)
+            unchecked.append(bundle_id)
             continue
-        reason = _drop_reason(db, reminder, now)
-        if reason is None:
-            continue
-        bundle = reminder.bundle
-        was_approved.setdefault(bundle.bundle_id, bundle.approved_at is not None)
-        if reason == "expired":
-            messages.expire_reminder(db, reminder_id, now)
-        else:
-            messages.cancel_reminder(db, reminder, now=now)
-        dropped.append((reminder, reason))
+        if drop is not None:
+            dropped.append(drop)
     for reminder, reason in dropped:
-        _notify_dropped(db, reminder, reason, was_approved[reminder.bundle.bundle_id], now)
+        try:
+            with db.begin_nested():
+                _notify_dropped(db, reminder, reason, was_approved[reminder.bundle.bundle_id], now)
+        except Exception:
+            logger.exception("발송 직전 취소 알림 실패: %s", reminder.reminder_id)
+    return unchecked
+
+
+def _drop_if_needed(
+    db: Session, reminder_id: str, workspace_id: str, was_approved: dict[str, bool], now: datetime
+) -> tuple[Reminder, str] | None:
+    seen = db.get(Reminder, reminder_id)
+    if seen.task is None or _drop_reason(db, seen, now) is None:
+        return None
+    reminder = messages.get_reminder(db, workspace_id, reminder_id)
+    if reminder.status != ReminderStatus.SCHEDULED or reminder.task is None:
+        return None
+    reason = _drop_reason(db, reminder, now)
+    if reason is None:
+        return None
+    bundle = reminder.bundle
+    was_approved.setdefault(bundle.bundle_id, bundle.approved_at is not None)
+    if reason == "expired":
+        messages.expire_reminder(db, reminder_id, now)
+    else:
+        messages.cancel_reminder(db, reminder, now=now)
+    return reminder, reason
 
 
 def _drop_reason(db: Session, reminder: Reminder, now: datetime) -> str | None:
@@ -410,16 +445,12 @@ def _settle(db: Session, watch_id: str, now: datetime) -> None:
         return
     if watch.state == WatchState.BLOCKED:
         return
-    if watch.applied:
-        # 자동 막힘을 되돌릴 값을 들고 있는 시계는 답장이나 되돌리기로만 닫는다.
+    stopped = task.status == TaskStatus.DONE or _assignee_changed_after(db, task.task_id, sent_at)
+    if not stopped and not _changed_after(db, task.task_id, sent_at):
         _run_clock(db, task, watch, now)
-        return
-    if task.status == TaskStatus.DONE or _assignee_changed_after(db, task.task_id, sent_at):
-        _close(watch, WatchState.STOPPED, now)
-    elif _changed_after(db, task.task_id, sent_at):
-        _close(watch, WatchState.ANSWERED, now)
-    else:
-        _run_clock(db, task, watch, now)
+    elif not (watch.applied and task.blocker == BLOCKER_TEXT):
+        # 자동 막힘 사유가 남아 있으면 시계는 더 재지 않고, 되돌릴 값을 들고 답장이나 되돌리기를 기다린다.
+        _close(watch, WatchState.STOPPED if stopped else WatchState.ANSWERED, now)
 
 
 def _sync_pause(watch: ReminderWatch, paused: bool, now: datetime) -> None:

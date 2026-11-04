@@ -37,13 +37,16 @@ def notify(
     link_id: str,
     now: datetime,
     dedupe_key: str | None = None,
-) -> Notification:
-    """다른 작업이 부르는 입구. dedupe_key 가 같은 알림이 이미 있으면 새로 만들지 않고 그것을 돌려준다."""
+) -> Notification | None:
+    """다른 작업이 부르는 입구. dedupe_key 가 같은 알림이 이미 있으면 새로 만들지 않고 그것을 돌려준다.
+    탈퇴한 팀원에게는 알리지 않고 None 을 돌려준다."""
     if dedupe_key is not None:
         existing = _by_dedupe_key(db, dedupe_key)
         if existing is not None:
             return existing
     member = db.get(Member, member_id)
+    if member.is_deleted:
+        return None
     notification = Notification(
         workspace_id=member.workspace_id, member_id=member_id, kind=kind, text=text,
         link_type=link_type, link_id=link_id, dedupe_key=dedupe_key,
@@ -173,7 +176,7 @@ def send_pending_pushes(
             db.get(Notification, notification_id).pushed_at = None
             db.commit()
             continue
-        delivered = failed = False
+        delivered = failed = rejected = False
         gone = []
         for sub in subs:
             try:
@@ -181,10 +184,15 @@ def send_pending_pushes(
                 delivered = True
             except push.PushGone:
                 gone.append(sub.subscription_id)
+            except push.PushRejected:
+                logger.warning("push rejected", exc_info=True)
+                rejected = True
             except Exception:
                 logger.warning("push failed", exc_info=True)
                 failed = True
-        _record_push(db, notification_id, delivered=delivered, failed=failed, gone=gone, now=now)
+        _record_push(
+            db, notification_id, delivered=delivered, failed=failed, rejected=rejected, gone=gone, now=now,
+        )
         db.commit()
     return len(work)
 
@@ -203,7 +211,7 @@ def _claim_pushes(db: Session, now: datetime, can_send: bool) -> list[tuple[str,
     work = []
     for notification in pending:
         notification.pushed_at = now
-        user_id = notification.member.user_id
+        user_id = None if notification.member.is_deleted else notification.member.user_id
         subs = [] if user_id is None or not can_send else db.scalars(
             select(PushSubscription).where(PushSubscription.user_id == user_id).order_by(PushSubscription.created_at)
         ).all()
@@ -218,7 +226,7 @@ def _claim_pushes(db: Session, now: datetime, can_send: bool) -> list[tuple[str,
 
 
 def _record_push(
-    db: Session, notification_id: str, *, delivered: bool, failed: bool, gone: list[str], now: datetime
+    db: Session, notification_id: str, *, delivered: bool, failed: bool, rejected: bool, gone: list[str], now: datetime
 ) -> None:
     notification = db.get(Notification, notification_id, populate_existing=True)
     for subscription_id in gone:
@@ -230,7 +238,7 @@ def _record_push(
     if delivered:
         notification.push_status = PushStatus.SENT
     elif not failed:
-        notification.push_status = PushStatus.SKIPPED
+        notification.push_status = PushStatus.FAILED if rejected else PushStatus.SKIPPED
     elif notification.push_attempts >= PUSH_MAX_ATTEMPTS:
         notification.push_status = PushStatus.FAILED
     else:

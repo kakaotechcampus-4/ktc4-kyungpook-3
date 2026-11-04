@@ -1,14 +1,17 @@
 """웹 안 알림(목록·배지·읽음)과 푸시 구독·발송. 푸시는 가짜 발송기로 받는 쪽을 본다."""
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
+from pywebpush import WebPushException
 from sqlalchemy import text
 
 from app.main import app
 from app.models import Notification, PushSubscription
 from app.services import notifications as svc
-from app.services.push import PushGone
+from app.services import push
+from app.services.push import PushGone, PushRejected
 
 P = "/api/v1"
 NOW = datetime(2026, 11, 4, 0, 0, tzinfo=timezone.utc)
@@ -281,3 +284,55 @@ def test_claimed_push_is_left_alone_until_the_lease_ends(mdb, mseed):
     assert sender.sent == []
     svc.send_pending_pushes(mdb, now=NOW + svc.PUSH_LEASE + timedelta(minutes=1), send=sender)
     assert len(sender.sent) == 1
+
+
+def test_left_member_gets_no_notification(mdb, mseed):
+    mseed["alice"].is_deleted = True
+    mdb.commit()
+
+    assert _notify(mdb, mseed, "alice") is None
+    assert mdb.query(Notification).count() == 0
+
+
+def test_pending_push_is_not_sent_after_member_left(mdb, mseed):
+    _subscribe("alice", mseed["ws"], "https://fcm.googleapis.com/fcm/send/alice-phone")
+    n = _notify(mdb, mseed, "alice")
+    mseed["alice"].is_deleted = True
+    mdb.commit()
+
+    sender = FakeSender()
+    svc.send_pending_pushes(mdb, now=NOW, send=sender)
+    mdb.commit()
+
+    assert sender.sent == []
+    assert mdb.get(Notification, n.notification_id).push_status == "skipped"
+
+
+def test_rejected_push_keeps_subscription_and_does_not_retry(mdb, mseed):
+    url = "https://fcm.googleapis.com/fcm/send/old-key"
+    _subscribe("alice", mseed["ws"], url)
+    n = _notify(mdb, mseed, "alice")
+    sender = FakeSender(fail={url: PushRejected()})
+
+    svc.send_pending_pushes(mdb, now=NOW, send=sender)
+    mdb.commit()
+
+    stored = mdb.get(Notification, n.notification_id)
+    assert stored.push_status == "failed"
+    assert stored.push_attempts == 1
+    assert mdb.query(PushSubscription).filter_by(endpoint=url).count() == 1
+
+
+@pytest.mark.parametrize("code", [400, 401, 403])
+def test_send_turns_rejection_into_push_rejected(monkeypatch, code):
+    def refuse(**_kwargs):
+        raise WebPushException("rejected", response=SimpleNamespace(status_code=code))
+
+    monkeypatch.setattr(push, "webpush", refuse)
+    monkeypatch.setenv("VAPID_PRIVATE_KEY", "unused")
+    monkeypatch.setenv("VAPID_SUBJECT", "mailto:unused@example.com")
+    sub = PushSubscription(endpoint="https://fcm.googleapis.com/fcm/send/x", p256dh="p", auth="a")
+
+    with pytest.raises(PushRejected):
+        push.send(sub, {})
+

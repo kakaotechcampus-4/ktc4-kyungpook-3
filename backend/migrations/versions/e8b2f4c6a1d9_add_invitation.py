@@ -48,18 +48,24 @@ def upgrade() -> None:
     op.create_index(op.f('ix_invitation_email'), 'invitation', ['email'], unique=False)
     op.create_index(
         'uq_invitation_pending_member', 'invitation', ['member_id'],
-        unique=True, postgresql_where=sa.text("status = 'pending'"),
+        unique=True, postgresql_where=sa.text("status = 'pending'"), sqlite_where=sa.text("status = 'pending'"),
     )
     op.create_index(
         'uq_invitation_pending_email', 'invitation', ['workspace_id', 'email'],
-        unique=True, postgresql_where=sa.text("status = 'pending'"),
+        unique=True, postgresql_where=sa.text("status = 'pending'"), sqlite_where=sa.text("status = 'pending'"),
     )
 
 
 def downgrade() -> None:
     """Downgrade schema."""
-    op.drop_index('uq_invitation_pending_email', table_name='invitation', postgresql_where=sa.text("status = 'pending'"))
-    op.drop_index('uq_invitation_pending_member', table_name='invitation', postgresql_where=sa.text("status = 'pending'"))
+    op.drop_index(
+        'uq_invitation_pending_email', table_name='invitation',
+        postgresql_where=sa.text("status = 'pending'"), sqlite_where=sa.text("status = 'pending'"),
+    )
+    op.drop_index(
+        'uq_invitation_pending_member', table_name='invitation',
+        postgresql_where=sa.text("status = 'pending'"), sqlite_where=sa.text("status = 'pending'"),
+    )
     op.drop_index(op.f('ix_invitation_email'), table_name='invitation')
     op.drop_index(op.f('ix_invitation_member_id'), table_name='invitation')
     op.drop_index(op.f('ix_invitation_workspace_id'), table_name='invitation')
