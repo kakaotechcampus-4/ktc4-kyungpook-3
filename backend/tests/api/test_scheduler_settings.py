@@ -43,8 +43,10 @@ def _notes(db, seed, who="pm", kind=None):
     return q.all()
 
 
-def _set(db, workspace_id, **changes):
-    message_settings.update_settings(db, workspace_id, changes, updated_by="tester", now=PROPOSE - timedelta(days=30))
+def _set(db, seed, **changes):
+    message_settings.update_settings(
+        db, seed["ws"], changes, updated_by=seed["pm"].member_id, now=PROPOSE - timedelta(days=30)
+    )
     db.commit()
 
 
@@ -79,12 +81,12 @@ def test_default_rule_matches_previous_slot():
 
 def test_no_suggestion_when_due_reminder_off(mdb, mseed):
     _assign(mdb, mseed)
-    _set(mdb, mseed["ws"], due_reminder=False)
+    _set(mdb, mseed, due_reminder=False)
     tick(mdb, SLOT - 3 * 24 * H + H)
     assert mdb.query(Reminder).count() == 0
     assert _suggestions(mdb) == 0
 
-    _set(mdb, mseed["ws"], due_reminder=True)
+    _set(mdb, mseed, due_reminder=True)
     tick(mdb, SLOT - 3 * 24 * H + 2 * H)
     assert mdb.query(Reminder).count() == 1
 
@@ -103,7 +105,7 @@ def test_due_reminder_off_is_per_workspace(mdb, mseed):
     )
     mdb.add(task_b)
     mdb.commit()
-    _set(mdb, mseed["ws"], due_reminder=False)
+    _set(mdb, mseed, due_reminder=False)
 
     tick(mdb, PROPOSE + H)
 
@@ -112,7 +114,7 @@ def test_due_reminder_off_is_per_workspace(mdb, mseed):
 
 def test_pm_made_reminder_still_sent_when_due_reminder_off(mdb, mseed):
     task = _assign(mdb, mseed)
-    _set(mdb, mseed["ws"], due_reminder=False)
+    _set(mdb, mseed, due_reminder=False)
     messages.create_reminder(
         mdb, workspace_id=mseed["ws"], task_id=task.task_id, member_id=mseed["alice"].member_id,
         scheduled_at=SLOT, note=None, created_by=mseed["pm"].member_id, now=PROPOSE,
@@ -128,7 +130,7 @@ def test_pm_made_reminder_still_sent_when_due_reminder_off(mdb, mseed):
 
 def test_nudge_rule_moves_slot(mdb, mseed):
     _assign(mdb, mseed)
-    _set(mdb, mseed["ws"], nudge_days_before=2, nudge_hour=18)
+    _set(mdb, mseed, nudge_days_before=2, nudge_hour=18)
     slot = datetime(2026, 11, 18, 9, 0, tzinfo=timezone.utc)
 
     tick(mdb, slot - timedelta(days=3) - timedelta(seconds=1))
@@ -141,7 +143,7 @@ def test_nudge_rule_moves_slot(mdb, mseed):
 
 def test_days_before_zero_is_due_day(mdb, mseed):
     _assign(mdb, mseed)
-    _set(mdb, mseed["ws"], nudge_days_before=0, nudge_hour=9)
+    _set(mdb, mseed, nudge_days_before=0, nudge_hour=9)
 
     tick(mdb, datetime(2026, 11, 20, 0, 0, tzinfo=timezone.utc) - timedelta(days=3))
 
@@ -152,7 +154,7 @@ def test_days_before_zero_is_due_day(mdb, mseed):
 def test_rule_change_keeps_existing_suggestion(mdb, mseed):
     _assign(mdb, mseed)
     tick(mdb, PROPOSE)
-    _set(mdb, mseed["ws"], nudge_days_before=2, nudge_hour=18)
+    _set(mdb, mseed, nudge_days_before=2, nudge_hour=18)
 
     tick(mdb, PROPOSE + H)
 
@@ -163,7 +165,7 @@ def test_rule_change_keeps_existing_suggestion(mdb, mseed):
 
 def test_silence_alert_off_blocks_without_pm_notice(mdb, mseed):
     task = _assign(mdb, mseed)
-    _set(mdb, mseed["ws"], silence_alert=False)
+    _set(mdb, mseed, silence_alert=False)
     tick(mdb, PROPOSE)
     _approve_all(mdb, PROPOSE)
     _send(mdb, SLOT)
@@ -179,8 +181,10 @@ def test_silence_alert_off_blocks_without_pm_notice(mdb, mseed):
 # 자동 승인
 
 
-def _turn_on(db, workspace_id, now=PROPOSE - timedelta(days=30)):
-    message_settings.update_settings(db, workspace_id, {"reminder_auto_approve": True}, updated_by="tester", now=now)
+def _turn_on(db, seed, now=PROPOSE - timedelta(days=30)):
+    message_settings.update_settings(
+        db, seed["ws"], {"reminder_auto_approve": True}, updated_by=seed["pm"].member_id, now=now
+    )
     db.commit()
 
 
@@ -190,7 +194,7 @@ def _messages(db):
 
 def test_auto_approve_sends_without_pm(mdb, mseed):
     _assign(mdb, mseed)
-    _turn_on(mdb, mseed["ws"])
+    _turn_on(mdb, mseed)
     tick(mdb, PROPOSE)
 
     tick(mdb, SLOT)
@@ -204,7 +208,7 @@ def test_auto_approve_sends_without_pm(mdb, mseed):
 
 def test_auto_approve_via_bot_claim(mdb, mseed):
     _assign(mdb, mseed)
-    _turn_on(mdb, mseed["ws"])
+    _turn_on(mdb, mseed)
     tick(mdb, PROPOSE)
 
     claimed = messages.claim_for_bot(mdb, SLOT)
@@ -215,7 +219,7 @@ def test_auto_approve_via_bot_claim(mdb, mseed):
 
 def test_auto_approve_applies_to_pm_made_reminder(mdb, mseed):
     task = _assign(mdb, mseed)
-    _turn_on(mdb, mseed["ws"])
+    _turn_on(mdb, mseed)
     messages.create_reminder(
         mdb, workspace_id=mseed["ws"], task_id=task.task_id, member_id=mseed["alice"].member_id,
         scheduled_at=SLOT, note=None, created_by=mseed["pm"].member_id, now=PROPOSE,
@@ -229,7 +233,7 @@ def test_auto_approve_applies_to_pm_made_reminder(mdb, mseed):
 
 def test_auto_approve_skips_cancelled_bundle(mdb, mseed):
     _assign(mdb, mseed)
-    _turn_on(mdb, mseed["ws"])
+    _turn_on(mdb, mseed)
     tick(mdb, PROPOSE)
     [bundle] = _bundles(mdb)
     messages.cancel_bundle(mdb, bundle, now=PROPOSE + H)
@@ -242,7 +246,7 @@ def test_auto_approve_skips_cancelled_bundle(mdb, mseed):
 
 def test_auto_approve_skips_replied_reminder(mdb, mseed):
     _assign(mdb, mseed)
-    _turn_on(mdb, mseed["ws"])
+    _turn_on(mdb, mseed)
     tick(mdb, PROPOSE)
     thread = messages.get_or_create_thread(mdb, mseed["ws"], mseed["alice"].member_id)
     messages.add_web_reply(mdb, thread, body="했어요", now=SLOT - H)
@@ -258,7 +262,7 @@ def test_auto_approve_ignores_bundles_due_before_turning_on(mdb, mseed):
     _assign(mdb, mseed)
     tick(mdb, PROPOSE)
     tick(mdb, SLOT - H)
-    _turn_on(mdb, mseed["ws"], now=SLOT + H)
+    _turn_on(mdb, mseed, now=SLOT + H)
 
     tick(mdb, SLOT + 2 * H)
 
@@ -280,7 +284,7 @@ def test_auto_approve_is_per_workspace(mdb, mseed):
         assignee_member_id=member_b.member_id, due_date=DUE,
     ))
     mdb.commit()
-    _turn_on(mdb, mseed["ws"])
+    _turn_on(mdb, mseed)
     tick(mdb, PROPOSE)
 
     tick(mdb, SLOT)
@@ -304,7 +308,7 @@ def test_auto_approve_off_keeps_manual_flow(mdb, mseed):
 
 def test_suggestion_notice_says_auto_send_when_on(mdb, mseed):
     _assign(mdb, mseed)
-    _turn_on(mdb, mseed["ws"])
+    _turn_on(mdb, mseed)
     tick(mdb, PROPOSE)
 
     [note] = _notes(mdb, mseed, kind="nudge_suggested")
