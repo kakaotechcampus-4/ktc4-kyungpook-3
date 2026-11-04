@@ -550,7 +550,7 @@ def _undoable_watches(task_ids: Sequence[str]):
 
 def auto_blocked_ids(db: Session, tasks: Sequence[Task]) -> set[str]:
     """지금 undo_auto_block 이 성공할 태스크 id. 막힌 후보가 없으면 DB 를 읽지 않고, 있으면 한 번만 읽는다."""
-    candidates = [t.task_id for t in tasks if _auto_block_state(t)]
+    candidates = [t.task_id for t in tasks if not t.is_deleted and _auto_block_state(t)]
     if not candidates:
         return set()
     watch_task_ids = _undoable_watches(candidates).with_only_columns(ReminderWatch.task_id).distinct()
