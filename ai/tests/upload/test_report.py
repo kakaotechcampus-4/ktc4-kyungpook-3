@@ -360,3 +360,21 @@ def test_segments_outside_or_invalid_are_clamped_or_ignored():
     s = build_speakers(_dz(segs, 100.0), ["A"])[0]
     assert s["total_sec"] == 3.0 + 10.0
     assert all(0 <= p["start"] < p["end"] <= 100.0 for p in s["samples"])
+
+
+def test_tiny_clean_sliver_falls_through_to_the_original_segment():
+    # A 의 깨끗한 구간은 5.0 뒤 1e-13 초뿐이라 샘플이 안 된다. 그래도 원래 구간으로 보고한다
+    res = _by(build_speakers(_dz([(0, 5.0000000000001, "A"), (0, 5.0, "B")], 5.0000000000001), ["A", "B"]))
+    assert res["A"]["samples"] == [{"start": 0.0, "end": 5.0}]
+
+
+def test_clean_pieces_under_half_a_second_lose_to_a_longer_overlapped_segment():
+    segs = [(0, 10, "A"), (0.2, 9.8, "B"), (20, 20.3, "A")]   # A 의 깨끗한 조각: 0.2·0.2·0.3초, 겹친 긴 구간: 10초
+    res = _by(build_speakers(_dz(segs, 30.0), ["A", "B"]))
+    assert res["A"]["samples"] == [{"start": 0.0, "end": 10.0}]
+
+
+def test_label_with_no_possible_sample_is_an_error():
+    # 길이 0.4ms 구간은 소수 셋째 자리로 맞추면 끝이 녹음 길이 밖이라 샘플이 될 수 없다
+    with pytest.raises(ValueError):
+        build_speakers(_dz([(99.9992, 99.9996, "A")], 99.9996), ["A"])

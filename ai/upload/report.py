@@ -33,6 +33,7 @@ _OPEN = ("reporting", "failing")
 SAMPLE_MAX = 3         # 라벨마다 샘플 구간 최대 개수
 SAMPLE_MIN_S = 2.0     # 이보다 짧은 깨끗한 구간은 먼저 고르지 않는다
 SAMPLE_CAP_S = 10.0    # 샘플 하나의 최대 길이(구간 앞에서부터 자른다)
+SAMPLE_PIECE_MIN_S = 0.5   # 깨끗한 구간으로 대체할 때 이보다 짧은 조각은 후보에서 뺀다(겹친 긴 구간이 낫다)
 _EPS = 1e-9
 
 
@@ -101,8 +102,9 @@ def build_speakers(diarization: dict, labels: Iterable[str]) -> list[dict]:
 
     total_sec: 그 라벨 구간 길이의 합(다른 라벨과 겹친 부분 포함, 소수 셋째 자리 반올림).
     samples: 다른 라벨과 겹친 부분을 뺀 구간 중 2초 이상을 긴 순으로 최대 3개, 각각 앞 10초만, 시작 시각 순.
-    그런 구간이 없으면 가장 긴 깨끗한 구간 하나, 깨끗한 구간이 없으면 가장 긴 원래 구간 하나. 같은 입력이면 같은 결과다.
-    구간이 하나도 없는 라벨이 있으면 ValueError."""
+    그런 구간이 없으면(또는 자르고 나서 쓸 수 없으면) 0.5초 이상인 가장 긴 깨끗한 구간 하나, 그것도 없으면 가장 긴 원래 구간 하나.
+    각 단계는 유효한 샘플이 하나라도 나와야 통과한다. 같은 입력이면 같은 결과다.
+    구간이 하나도 없는 라벨이거나 어느 단계에서도 샘플을 만들 수 없으면 ValueError."""
     duration, by = _intervals(diarization)
     out, seen = [], set()
     for label in labels:
@@ -115,9 +117,16 @@ def build_speakers(diarization: dict, labels: Iterable[str]) -> list[dict]:
         others = _merge([s for l, spans in by.items() if l != label for s in spans])
         clean = [p for seg in own for p in _minus(seg, others)]
         key = lambda s: (-(s[1] - s[0]), s[0])   # noqa: E731 - 긴 순, 같으면 이른 순(결정적)
-        long_enough = sorted((p for p in clean if p[1] - p[0] >= SAMPLE_MIN_S - _EPS), key=key)[:SAMPLE_MAX]
-        picked = long_enough or sorted(clean, key=key)[:1] or sorted(own, key=key)[:1]
-        samples = [s for s in (_sample(p, duration) for p in sorted(picked)) if s]
+        stages = (
+            sorted((p for p in clean if p[1] - p[0] >= SAMPLE_MIN_S - _EPS), key=key)[:SAMPLE_MAX],
+            sorted((p for p in clean if p[1] - p[0] >= SAMPLE_PIECE_MIN_S - _EPS), key=key)[:1],
+            sorted(own, key=key)[:1],
+        )
+        samples: list[dict] = []
+        for picked in stages:   # 유효한 샘플이 하나라도 나오는 첫 단계를 쓴다
+            samples = [s for s in (_sample(p, duration) for p in sorted(picked)) if s]
+            if samples:
+                break
         if not samples:
             raise ValueError(f"라벨 {label!r} 의 샘플 구간을 만들 수 없다")
         out.append({"label": label, "total_sec": round(sum(b - a for a, b in own), 3), "samples": samples})
