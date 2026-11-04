@@ -32,6 +32,9 @@ from upload.prepare import _epoch, prepare_from_segments
 from upload.tracks import load_mono_16k, to_wav_16k
 
 SUBMIT_TIMEOUT_S = 1800.0      # 제출한 뒤 결과가 이만큼 안 나오면 일시 실패로 보고 다시 제출한다
+# claim 한 뒤 이만큼 지나면 다시 맡기지 않고 실패로 보고한다. BE sweeper(#301)는 마지막 진행에서 3시간이 지난 업로드를
+# failed 로 바꾸므로 그보다 먼저 끝낸다(#288 합의). 결과 대기 30분 × 5회와 재시도 간격만 더해도 3시간 근처라 따로 둔다
+INTAKE_DEADLINE_S = 2.5 * 3600
 FAILED_STAGE = "diarize"
 _FINISHED = ("done", "failed")
 _CLEAN = ("claiming", "claimed", "converted", "submitted")
@@ -142,6 +145,15 @@ def _advance(recordings_dir, d: Path, rec: dict, *, client, diarizer, now, timez
         rec.update(state="done", next_at=None, error=None)
         _save(d, rec)
         return Progress(mid, "done")
+    if rec.get("state") != "claiming":
+        t = now()
+        if not rec.get("claimed_at"):   # 기한을 두기 전의 기록: 지금부터 센다
+            rec["claimed_at"] = _iso(t)
+            _save(d, rec)
+        elif t - datetime.fromisoformat(rec["claimed_at"]) > timedelta(seconds=INTAKE_DEADLINE_S):
+            # 기한이 지났다: 다시 맡기지도, 트랙을 쓰지도 않는다. BE 가 먼저 실패 처리했으면 fail 은 409(끝남)로 끝난다
+            shutil.rmtree(recordings_dir / f"upload_{mid}", ignore_errors=True)
+            return _fail(d, rec, client, f"claim 뒤 기한 {INTAKE_DEADLINE_S:.0f}초를 넘겼다", t)
     try:
         return _step(recordings_dir, d, rec, client=client, diarizer=diarizer, now=now, timezone=timezone, fresh=fresh)
     except _Skip:
@@ -181,6 +193,7 @@ def _step(recordings_dir, d, rec, *, client, diarizer, now, timezone, fresh) -> 
                 raise _Skip() from e
             else:
                 raise
+        rec["claimed_at"] = rec.get("claimed_at") or _iso(now())   # 기한(INTAKE_DEADLINE_S)의 기준
         _set(d, rec, "claimed")
         return Progress(mid, "claimed")
     if state == "claimed":

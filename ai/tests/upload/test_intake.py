@@ -14,7 +14,7 @@ from capture.recorder import RECOVERY_MAX_ATTEMPTS, backoff_s
 from tests.capture.fake_be import FakeBe
 from tests.conftest import SEGS, FakeDiarizer
 from upload.diarize import JobNotFound
-from upload.intake import SUBMIT_TIMEOUT_S, intake_one
+from upload.intake import INTAKE_DEADLINE_S, SUBMIT_TIMEOUT_S, intake_one
 
 MID = "mtg-1"
 TZ = "Asia/Seoul"
@@ -428,3 +428,79 @@ def test_a_garbled_next_at_means_due_now_and_never_escapes(env):
     s["next_at"] = "not-a-time"
     (env.rec / ".uploads" / MID / "intake.json").write_text(json.dumps(s), encoding="utf-8")
     assert _drive(env, diar)[-1] == "done"
+
+
+# --- BE sweeper(#301, #288 합의): claim 시각부터 기한 안에 끝내고, BE 가 먼저 실패 처리했으면 정리만 하고 끝낸다 ---
+
+def _claim_then_submit(e, diar):
+    """claim → 변환 → 제출까지. 마지막 상태는 submitted."""
+    events = [_step(e, diar).event for _ in range(3)]
+    assert events == ["claimed", "converted", "submitted"]
+
+
+def test_claim_time_is_recorded(env):
+    _step(env)
+    assert _state(env)["claimed_at"] == "2026-11-03T03:00:00+00:00"
+
+
+def test_past_the_deadline_while_waiting_fails_without_resubmitting(env):
+    diar = FakeDiarizer(SEGS, pending_fetches=99)
+    _claim_then_submit(env, diar)
+    env.clock.advance(INTAKE_DEADLINE_S + 1)
+    assert _step(env, diar).event == "failed"
+    assert len(diar.submits) == 1   # 다시 맡기지 않는다
+    assert env.be.meetings[MID]["status"] == "failed" and env.be.meetings[MID]["failed_stage"] == "diarize"
+    assert sorted(p.name for p in (env.rec / ".uploads" / MID).iterdir()) == ["intake.json"]
+    assert "기한" in _state(env)["error"]
+
+
+def test_deadline_is_checked_before_writing_tracks(env):
+    diar = FakeDiarizer(SEGS)   # 결과는 준비돼 있지만 기한이 지났다
+    _claim_then_submit(env, diar)
+    env.clock.advance(INTAKE_DEADLINE_S + 1)
+    assert _step(env, diar).event == "failed"
+    assert not (env.rec / f"session_upload_{MID}.json").exists() and not (env.rec / f"upload_{MID}").exists()
+
+
+def test_deadline_is_counted_from_claim_not_from_the_last_submit(env):
+    diar = FakeDiarizer(SEGS, pending_fetches=99)
+    _claim_then_submit(env, diar)
+    env.clock.advance(SUBMIT_TIMEOUT_S + 1)
+    assert _step(env, diar).event == "retry"             # 30분 초과: 다시 맡길 차례
+    env.clock.advance(INTAKE_DEADLINE_S - SUBMIT_TIMEOUT_S)   # 다시 맡기기 전에 claim 부터 기한이 지났다
+    assert _step(env, diar).event == "failed" and len(diar.submits) == 1
+
+
+def test_just_inside_the_deadline_keeps_waiting(env):
+    diar = FakeDiarizer(SEGS, pending_fetches=99)
+    _claim_then_submit(env, diar)
+    env.clock.advance(SUBMIT_TIMEOUT_S - 1)
+    assert _step(env, diar).event == "waiting"
+
+
+def test_deadline_fits_inside_the_be_sweeper_window():
+    assert INTAKE_DEADLINE_S <= 2.5 * 3600 < 3 * 3600
+
+
+def test_sweeper_already_failed_the_meeting_before_download(env):
+    """BE 가 실패 처리하며 원본을 지웠다: 원본 404 → fail 은 409 ENDED(성공으로 본다) → 로컬은 기록만 남는다."""
+    _step(env)   # claim
+    env.be.meetings[MID]["status"] = "failed"
+    env.be.meetings[MID]["failed_stage"] = "diarize"
+    env.be.uploads[MID]["audio"] = None
+    assert _drive(env)[-1] == "failed"
+    assert env.be.meetings[MID]["failed_stage"] == "diarize"   # BE 가 정한 값을 덮지 않는다
+    assert sorted(p.name for p in (env.rec / ".uploads" / MID).iterdir()) == ["intake.json"]
+    assert _state(env)["state"] == "failed" and not _state(env).get("fail_pending")
+    assert _step(env) is None
+
+
+def test_sweeper_failed_the_meeting_while_we_wait_then_deadline_ends_it_quietly(env):
+    diar = FakeDiarizer(SEGS, pending_fetches=99)
+    _claim_then_submit(env, diar)
+    env.be.meetings[MID]["status"] = "failed"
+    env.be.meetings[MID]["failed_stage"] = "diarize"
+    env.clock.advance(INTAKE_DEADLINE_S + 1)
+    assert _step(env, diar).event == "failed"
+    assert _state(env)["state"] == "failed" and not _state(env).get("fail_pending")
+    assert not (env.rec / f"upload_{MID}").exists()
