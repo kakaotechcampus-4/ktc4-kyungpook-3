@@ -98,11 +98,6 @@ def _on_stop_signals(loop, stop) -> None:
             signal.signal(sig, lambda signum, frame: loop.call_soon_threadsafe(stop))
 
 
-def _speech_gate():
-    from stt.speech_gate import SpeechGate
-    return SpeechGate()
-
-
 class Worker:
     def __init__(self, recordings_dir: Path = RECORDINGS_DIR, *, transcripts_dir: Path = TRANSCRIPTS_DIR,
                  stt_factory=None, gate_factory=None, extractor_factory=None, handoff_factory=None,
@@ -115,7 +110,7 @@ class Worker:
         self.recordings_dir = recordings_dir
         self.transcripts_dir = transcripts_dir
         self._stt_factory = stt_factory or backend_from_env
-        self._gate_factory = gate_factory if gate_factory is not None else _speech_gate
+        self._gate_factory = gate_factory if gate_factory is not None else (lambda: None)   # 배치는 말 필터 없이(0030)
         self._extractor_factory = extractor_factory if extractor_factory is not None else build_extractor
         self._handoff_factory = handoff_factory if handoff_factory is not None else handoff_from_env
         self.interval_s = WORKER_INTERVAL_S if interval_s is None else interval_s
