@@ -1,7 +1,7 @@
-# 0032. PM 지정 결과는 `assigned` 로 찾고 `resume` 직전에 로컬 기록을 남겨 받는다
+# 0041. PM 지정 결과는 `assigned` 로 찾고 `resume` 직전에 로컬 기록을 남겨 받는다
 
 - 기록일: 2026-11-04 (사용자와 설계를 확정한 날과 같다)
-- 관련 마일스톤: 별도 마일스톤 없음. 수동 업로드 3/4([#285](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/285), 묶음 #258). 앞 결정은 [0029](2026-11-02-0029-upload-speaker-mapping-and-upload-guard.md), [0030](2026-11-03-0030-upload-intake-in-worker-submit-then-fetch.md)
+- 관련 마일스톤: 별도 마일스톤 없음. 수동 업로드 3/4([#285](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/285), 묶음 #258). 앞 결정은 [0029](2026-11-02-0029-upload-speaker-mapping-and-upload-guard.md), [0040](2026-11-03-0040-upload-intake-in-worker-submit-then-fetch.md)
 
 ## 문제와 제약
 

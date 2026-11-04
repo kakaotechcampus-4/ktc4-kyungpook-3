@@ -41,7 +41,7 @@
 - 디스코드 매니페스트에는 최상위 `source` 가 없어 가드의 영향을 받지 않는다.
 - 다음 PR(인계)에서 `_is_pending` 의 업로드 가드를 풀고 `mapped` 회의를 처리 대상으로 바꾼다. #254·#255 합의가 선행 조건이다.
 - 가드는 한 번이 아니라 두 단계로 풀릴 수 있다. BE 의 PM 지정 경로(#269·#270)는 AI 가 `diarized` 회의에서 라벨마다 `total_sec`, `samples:[{start,end}]` 를 BE 로 보내야 PM 이 들어 볼 수 있는 흐름이다. 그 값은 지금 매니페스트가 아니라 회의 폴더의 `diarization.json` 에만 있고 `diarized` 도 가드가 막는다. 그래서 "`diarized` 는 라벨 보고 대상, `mapped` 는 전사·인계 대상"으로 나눠 풀지 #255 에서 BE 와 정해야 한다.
-- `apply_mapping` 입구가 CLI 인지 BE resume 응답인지(위 BE 경로와의 관계)도 #255 에서 정한다. 함수의 입력 모양(`{라벨: 멤버 ID | null}`)은 BE 의 resume 응답 `mapping` 과 같다. → 2026-11-04 정함: BE 의 `assigned`·`resume` 응답을 `upload/assign.py` 가 `apply_mapping` 으로 쓴다. CLI 는 개발·운영용으로 남는다([0032](2026-11-04-0032-upload-assigned-resume-with-local-record.md)).
+- `apply_mapping` 입구가 CLI 인지 BE resume 응답인지(위 BE 경로와의 관계)도 #255 에서 정한다. 함수의 입력 모양(`{라벨: 멤버 ID | null}`)은 BE 의 resume 응답 `mapping` 과 같다. → 2026-11-04 정함: BE 의 `assigned`·`resume` 응답을 `upload/assign.py` 가 `apply_mapping` 으로 쓴다. CLI 는 개발·운영용으로 남는다([0041](2026-11-04-0041-upload-assigned-resume-with-local-record.md)).
 
 ## 근거와 관련 문서
 
