@@ -2,7 +2,7 @@ import json
 import logging
 import uuid
 from fastapi import APIRouter, Depends, UploadFile, File, Form
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session, selectinload
 from datetime import datetime, timezone
 from typing import Optional
@@ -208,7 +208,13 @@ def list_workspace_meetings(
         
     meetings = db.query(Meeting).filter(
         Meeting.workspace_id == workspace_id,
-        Meeting.status != MeetingStatus.FAILED
+        or_(
+            Meeting.status != MeetingStatus.FAILED,
+            and_(
+                Meeting.source == MeetingSource.MANUAL_UPLOAD,
+                Meeting.failed_stage == "speaker_assignment_expired",
+            ),
+        ),
     ).order_by(Meeting.started_at.desc()).all()
     
     # 회의마다 발화를 읽지 않고, 회의별 참석자 수를 한 번에 센다
@@ -231,7 +237,8 @@ def list_workspace_meetings(
             "status": m.status,
             "duration_ms": m.duration_ms or 0,
             "attendee_count": attendee_count,
-            "processed_at": m.ended_at
+            "processed_at": m.ended_at,
+            "failed_stage": m.failed_stage,
         })
         
     return success(MeetingListResponse(items=items, total=len(items)).model_dump(mode="json"))

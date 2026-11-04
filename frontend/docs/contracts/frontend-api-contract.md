@@ -737,7 +737,7 @@ MSW 는 **API 를 흉내내므로 100자 기준을 그대로 쓴다.** 여기에
 |---|---|
 | §4.1 Google OAuth `start` · `callback` (302) | 미구현. 로컬 이메일·비밀번호 경로만 있다 |
 | §4.3 integrations `start` · `callback` (302) | 미구현. 연결을 만들 방법이 API 에 없다 |
-| §4.7-3 `failed_stage` 값 구분 | 미구현. 자유 문자열 그대로 |
+| §4.7-3 `failed_stage` 값 구분 | 자유 문자열 유지. #256의 `diarize`·`speaker_assignment_expired`는 §4.4.1대로 구분. Notion 원인 전용 값은 미확정 |
 | §4.7-4 요약 저장 | **절반.** `Extraction.summary` 컬럼은 생겼고 `/minutes` 가 읽지만, 채우는 쪽이 없다 |
 | §4.7-5 transcript 구조화 | 미구현 (②-11) |
 | §2.6 actor 유추 | 미구현. `created_by` · `changed_by` · `resolved_by` 를 여전히 프론트엔드가 실어 보낸다 |
@@ -869,11 +869,11 @@ M4 에서 실 API 로 완결되지 않는다. 그때까지 MSW 로 진행한다.
 | GET | `/api/v1/meetings/{meeting_id}/minutes` | 회의록 본문 |
 
 ```jsonc
-// GET .../meetings — started_at 내림차순, 실패 회의 제외 (D-093, D-106)
+// GET .../meetings — started_at 내림차순, 일반 실패 제외·수동 업로드 화자 지정 만료 이력 유지 (D-093 개정, D-106)
 {"items": [{"meeting_id": "mt_09", "title": "3주차 정기회의",
             "started_at": "2026-09-15T14:00:00Z", "source": "discord",
             "status": "done", "duration_ms": 2730000,
-            "attendee_count": 5, "processed_at": "2026-09-15T06:12:00Z"}],
+            "attendee_count": 5, "processed_at": "2026-09-15T06:12:00Z", "failed_stage": null}],
  "total": 12}
 ```
 
@@ -919,6 +919,24 @@ POST .../meetings/upload            multipart/form-data
 - ⚠️ `attendees` 를 `audio_segment` 의 화자에서 역산한다. 말하지 않은 참석자가 빠지고, 로컬 업로드는 세그먼트가 없어 **빈 배열**이 된다.
 - ⚠️ `summary` 는 `Extraction.summary` 컬럼(TEXT)을 `json.loads` 한다. **채우는 쪽이 아직 없어 항상 `null`** 이다 (§4.7-4).
 - 비소속 사용자는 403 `FORBIDDEN` 이다. `MEETING_NOT_FOUND` 가 아니라 존재는 드러난다.
+
+#### 4.4.1 수동 업로드 실패 사유와 만료 이력 (#256, 2026-11-04)
+
+- 제공자는 BE, 소비자는 FE 회의 목록·상세·처리 추적기다. 경로는 기존 목록과 상세를 사용한다.
+- 목록 항목에 `failed_stage: string | null`을 추가한다. 상세의 기존 필드는 유지한다. 구버전 BE 목록이 이 필드를 생략하면 FE는 `null`로 읽는다.
+- `failed_stage`는 자유 문자열이다. 알려진 값만 아래와 같이 구분하고, 알 수 없는 값과 `null`에는 기존 일반 실패·Notion 연결 재조회 처리를 적용한다.
+
+| 알려진 값 | 의미와 FE 안내 |
+|---|---|
+| `diarize` | 음성 화자 분리 단계 실패. 음성 처리를 완료하지 못했다는 안내와 재업로드 안내를 표시한다. 이 값만으로 3시간 초과라고 단정하지 않는다. |
+| `speaker_assignment_expired` | 화자 지정 대기가 7일을 넘어 종료됐다. 사유와 원본 파일 재업로드 안내를 표시한다. |
+
+- 목록은 `source=manual_upload`, `status=failed`, `failed_stage=speaker_assignment_expired`인 회의를 보존한다. 나머지 실패 회의는 기존처럼 제외한다. 상세는 `GET /meetings/{meeting_id}`로 읽으며 만료된 회의의 회의록·추출은 조회하지 않는다. 멤버십 제한은 유지한다.
+- FE 합의 근거는 [이슈 결정 댓글](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/256#issuecomment-6609243822)과 D-091~D-093의 2026-11-04 보완이다. BE 목록 변경은 이 작업의 구현 제안이며 파트 간 리뷰·합의와 실서버 배포 확인은 별도다.
+- 현재 구현 근거: [BE 목록](../../../backend/app/api/workspaces.py), [FE DTO](../../src/shared/types/api/meeting.ts), [매퍼](../../src/entities/meeting/model/mapper.ts), [실패 안내](../../src/entities/meeting/lib/meetingFailure.ts), [목록 구분](../../src/entities/meeting/lib/minutesList.ts), [추적기](../../src/features/meeting-processing/model/useProcessingTracker.ts).
+- 자동 실패 전환은 미병합 [BE PR #301](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/pull/301)의 동작이다. 이 작업은 sweeper나 화자 지정 기능을 구현하지 않는다.
+- 예정 계약: [BE 알림 댓글](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/256#issuecomment-6604969982)에 따라 지정 제출 직후 만료되면 `409 MEETING_NOT_AWAITING_SPEAKERS`, `details.status=failed`가 온다. FE는 상세를 다시 조회해 실제 사유를 안내하고 재제출을 막는 방향이다. 현재 `develop`에는 화자 지정 제출 UI가 없어 이 오류의 실제 화면 연결은 후속 작업이다. 모든 409를 만료로 해석하지 않는다.
+
 
 ### 4.5 Discord 서버 사용자 목록
 
@@ -1185,7 +1203,7 @@ members 에만 있고 Discord 목록에 없으면      → 비활성 (서버를 
     그 목록에 있는 `approval_id` 만 고른다. 반려된 항목이 `extraction_item` 에 그대로 남기 때문이다 (§3.1, §4.0-②-12).
 - 일반 팀원에게는 `task_id` 가 없고 `approval_id` 가 있는 항목을 화면에서 제거한다. 개수도 노출하지 않는다 (D-104).
   대기든 반려든 보여줄 태스크가 없으므로 조인 없이 판정되며, D-163 대로 승인 목록을 부르지 않아도 된다.
-- 정리 실패 시 회의록 페이지로 이동하고 토스트를 띄운다. 실패한 회의는 목록에 없다 (D-091~D-093).
+- 정리 실패 시 사유를 안내한다. 화자 지정 만료는 해당 회의의 실패 상세로 이동하고 목록에 이력을 남긴다. 나머지 실패 회의는 목록에서 제외한다 (D-091~D-093 개정, §4.4.1).
 
 ### 5.6 태스크 목록 · 보드 · 캘린더 · 간트
 

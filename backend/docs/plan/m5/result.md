@@ -88,3 +88,24 @@ plan.md 가 비어 있어 완료조건이 없다. 아래는 전체 계획 M5 의
 ## 관련 기록
 
 - [업로드 회의는 처음부터 processing 으로 두고, AI 가 가져간 것은 meeting_upload 에 기록한다](basis-for-decision/2026-10-14-upload-claim.md)
+
+## 2026-11-04 추가: 화자 지정 만료 이력 조회
+
+### 작업 근거와 구현
+
+사용자가 이슈 #256의 FE 결정을 댓글로 남기고 구현·PR을 작성하도록 요청했다. 실패 사유를 구분하고, 화자 지정 기한이 지난 회의를 나중에도 확인할 수 있게 하는 작업이다. 이 M5의 plan.md는 비어 있어 이번 지시를 작업 근거로 삼으며 마일스톤 완료를 선언하지 않는다.
+
+- `GET /workspaces/{workspace_id}/meetings`는 `source=manual_upload`, `status=failed`, `failed_stage=speaker_assignment_expired`인 회의를 예외로 목록에 남긴다. 다른 실패 회의 제외와 기존 정렬·멤버십 제한은 유지한다.
+- 목록 항목에 `failed_stage: string | null`을 추가한다. 기존 상세 응답·DB 모델·마이그레이션·자동 실패 전환은 바꾸지 않는다.
+- 대표 규약은 [FE API 계약 §4.4.1](../../../../frontend/docs/contracts/frontend-api-contract.md#441-수동-업로드-실패-사유와-만료-이력-256-2026-11-04)에 기록한다. 목록 변경은 BE 리뷰·합의가 필요한 구현 제안이다.
+
+### 검증
+
+- Python 3.12에서 `uv run --python 3.12 --with-requirements requirements-dev.txt python -m pytest tests/api/test_meeting_derived_fields.py tests/api/test_meeting_upload.py -q -p no:cacheprovider`: **52 passed, 33 skipped**. PostgreSQL 전용 변형은 `TEST_DATABASE_URL`이 없어 미실행이다.
+- `test_list_keeps_only_expired_manual_upload_failures`: 만료된 수동 업로드만 남고 `diarize`·기타·null·Discord 실패는 제외되는지, 목록 재조회와 상세의 사유가 일치하는지 확인했다.
+- `test_expired_upload_history_stays_within_its_workspace`: 다른 공간의 목록·상세 접근 403과 현재 공간으로의 이력 누출 방지를 확인했다.
+- `uv tool run --from ruff==0.14.0 ruff check .`: 통과. 처음 `python -m ruff` 실행은 uv 임시 환경의 실행 파일 탐색 오류로 중단되어 도구 진입점으로 재실행했다.
+
+### 차이와 남은 작업
+
+기존 실패 회의 숨김 정책에 화자 지정 기한 만료 예외를 추가했다. 회의 메타데이터 보존을 이용하므로 원본 음성 보관이나 재처리 정책은 달라지지 않는다. 자동 실패를 만드는 BE PR #301은 현재 미병합이며 이 변경에 포함하지 않는다. 실서버 배포·AI 처리·실제 7일 경과와 PostgreSQL 변형은 미검증이다. FE 제출 UI가 없어서 만료 직후 409 처리의 실제 화면 연결도 후속 작업이다.
