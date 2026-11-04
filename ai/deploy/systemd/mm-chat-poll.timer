@@ -1,0 +1,14 @@
+# 예시다. 매일 09:00 KST 에 mm-chat-poll.service 를 한 번 돌린다(시각은 고정, 결정 기록 0042).
+# 설치: 두 파일을 /etc/systemd/system/ 에 두고 `systemctl daemon-reload && systemctl enable --now mm-chat-poll.timer`.
+# 서비스가 아니라 타이머를 enable 한다. 확인은 `systemctl list-timers mm-chat-poll.timer`.
+
+[Unit]
+Description=MM 채팅 폴링 매일 09:00 KST (예시)
+
+[Timer]
+OnCalendar=*-*-* 09:00:00 Asia/Seoul
+# 09:00 에 서버가 꺼져 있었으면 켜진 직후 한 번 돌린다. 어차피 커서부터 이어 읽어 놓치는 메시지는 없다
+Persistent=true
+
+[Install]
+WantedBy=timers.target

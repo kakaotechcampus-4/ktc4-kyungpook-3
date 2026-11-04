@@ -1,0 +1,16 @@
+# 예시다. 배포는 팀이 정한다. mm-chat-poll.timer 가 매일 09:00 KST 에 한 번 띄운다. 직접 enable 하지 않는다.
+# 디스코드 채널의 새 메시지를 읽어 BE 에 채팅 회의 하나로 넘긴다(결정 기록 0042). 끝나면 프로세스가 종료된다.
+# 새 메시지가 없으면 회의를 만들지 않고 0 으로 끝난다. 실패하면 exit 1 이고, 다음 실행이 같은 구간을 다시 읽는다.
+# 봇 토큰(CHAT_POLL_BOT_TOKEN)과 채널(DISCORD_CHANNEL_ID)은 ai/.env 에 둔다. 이 파일에 값을 쓰지 않는다.
+
+[Unit]
+Description=MM 채팅 폴링 (예시)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=mm
+WorkingDirectory=/opt/mm/ai
+ExecStart=/opt/mm/ai/.venv/bin/python -m capture.chat_poll
+Nice=10
