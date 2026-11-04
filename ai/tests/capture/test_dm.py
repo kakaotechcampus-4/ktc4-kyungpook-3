@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import threading
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
@@ -35,6 +36,7 @@ class BotBe:
         self.calls: list[tuple[str, dict | None]] = []
         self.claims: list[list[dict]] = []
         self.draft_claims: list[list[dict]] = []
+        self.reply_claims: list[dict] = []
         self.fail: dict[str, list] = {}
         self.down = False
 
@@ -53,6 +55,10 @@ class BotBe:
             items = self.draft_claims.pop(0) if self.draft_claims else []
             return _ok(200, {"items": items, "total": len(items)})
         if path.startswith("/bot/messages/") and path.endswith("/result"):
+            return _ok(200, None)
+        if path == "/bot/replies/claim":
+            return _ok(200, {"item": self.reply_claims.pop(0) if self.reply_claims else None})
+        if path.startswith("/bot/replies/") and path.endswith("/judgment"):
             return _ok(200, None)
         if path == "/bot/replies":
             return _ok(201, {"message_id": "m", "thread_id": "t", "workspace_id": "w", "member_id": "u"})
@@ -139,9 +145,9 @@ class FakeBot:
         return self.users[uid]
 
 
-def _cog(tmp_path, bot, be=None, *, drafter=lambda item: None):
+def _cog(tmp_path, bot, be=None, *, drafter=lambda item: None, judger=None):
     be = be or BotBe()
-    cog = D.DmCog(bot, be=BeClient("http://be", session=be), recordings_dir=tmp_path, drafter=drafter)
+    cog = D.DmCog(bot, be=BeClient("http://be", session=be), recordings_dir=tmp_path, drafter=drafter, judger=judger)
     return cog, be
 
 
@@ -671,3 +677,149 @@ async def test_a_full_disk_mid_batch_reports_what_went_out_and_keeps_the_batch_g
     assert user.sent == ["첫 메시지"]
     assert be.sent("/bot/messages/msg-2/result")[0][1] == {
         "status": "failed", "failure_reason": "unknown", "discord_message_ids": []}
+
+
+# ─────────────────────────────────────────────────────────── 답장 판단
+
+
+def _claimed(mid="reply-1", attempt=1, text="API 명세서 다 했어요"):
+    return {"message_id": mid, "attempt": attempt, "workspace_id": "ws", "member_name": "재환", "reply_date": "2026-11-04",
+            "lines": [{"sender": "member", "text": text}], "candidates": []}
+
+
+def _judged(item):
+    return {"attempt": item["attempt"], "failure_reason": None, "model_name": "m", "changes": []}
+
+
+def _judgments(be):
+    return [(p.split("/")[3], b) for p, b in be.sent("/bot/replies/") if p.endswith("/judgment")]
+
+
+async def test_a_claimed_reply_is_judged_and_its_body_is_posted(tmp_path):
+    seen = []
+    cog, be = _cog(tmp_path, FakeBot(), judger=lambda item: seen.append(item) or _judged(item))
+    item = _claimed(attempt=3)
+    be.reply_claims = [item]
+    await cog.reply_round()
+    assert seen == [item]
+    assert _judgments(be) == [("reply-1", _judged(item))]
+
+
+async def test_nothing_to_claim_judges_nothing(tmp_path):
+    cog, be = _cog(tmp_path, FakeBot(), judger=lambda item: pytest.fail("맡은 답장이 없다"))
+    await cog.reply_round()
+    assert len(be.sent("/bot/replies/claim")) == 1
+    assert _judgments(be) == []
+
+
+async def test_a_round_keeps_claiming_until_nothing_is_left(tmp_path):
+    cog, be = _cog(tmp_path, FakeBot(), judger=_judged)
+    be.reply_claims = [_claimed("a"), _claimed("b")]
+    await cog.reply_round()
+    assert [mid for mid, _ in _judgments(be)] == ["a", "b"]
+
+
+async def test_a_judger_failure_is_reported_by_kind_only(tmp_path):
+    def boom(item):
+        raise RuntimeError(f"못 읽음: {item['lines'][0]['text']}")
+
+    cog, be = _cog(tmp_path, FakeBot(), judger=boom)
+    be.reply_claims = [_claimed(attempt=2)]
+    await cog.reply_round()
+    assert _judgments(be) == [("reply-1", {"attempt": 2, "failure_reason": "RuntimeError", "model_name": None,
+                                           "changes": []})]
+
+
+@pytest.mark.parametrize("code, status", [("REPLY_JUDGMENT_STALE", 409), ("REPLY_JUDGMENT_NOT_FOUND", 404)])
+async def test_a_judgment_be_no_longer_wants_is_dropped(tmp_path, capsys, code, status):
+    cog, be = _cog(tmp_path, FakeBot(), judger=_judged)
+    be.reply_claims = [_claimed("a"), _claimed("b")]
+    be.fail = {"/bot/replies/a/judgment": [_err(status, code)]}
+    await cog.reply_round()
+    assert [mid for mid, _ in _judgments(be)] == ["a", "b"]
+    assert code not in capsys.readouterr().out
+
+
+async def test_a_judgment_that_cannot_be_posted_is_left_to_the_lease(tmp_path, capsys):
+    # 봇은 다시 보내지 않는다. 리스가 끝나면 BE 가 다음 attempt 로 다시 맡긴다
+    cog, be = _cog(tmp_path, FakeBot(), judger=_judged)
+    be.reply_claims = [_claimed()]
+    be.fail = {"/bot/replies/reply-1/judgment": [_err(500, "HTTP_500")]}
+    await cog.reply_round()
+    assert len(_judgments(be)) == 1
+    assert "reply-1" in capsys.readouterr().out
+
+
+async def test_a_claim_failure_ends_the_round(tmp_path, capsys):
+    cog, be = _cog(tmp_path, FakeBot(), judger=lambda item: pytest.fail("맡은 답장이 없다"))
+    be.fail = {"/bot/replies/claim": [_err(500, "HTTP_500")]}
+    await cog.reply_round()
+    assert len(be.sent("/bot/replies/claim")) == 1
+    assert "답장" in capsys.readouterr().out
+
+
+async def test_a_bot_that_dies_mid_judgment_leaves_nothing_and_the_new_attempt_goes_out(tmp_path):
+    release = threading.Event()
+
+    def stuck(item):
+        release.wait(5)
+        return _judged(item)
+
+    first, be = _cog(tmp_path, FakeBot(), judger=stuck)
+    be.reply_claims = [_claimed(attempt=1)]
+    dying = asyncio.create_task(first.reply_round())
+    while not be.sent("/bot/replies/claim"):
+        await asyncio.sleep(0.01)
+    dying.cancel()
+    await asyncio.gather(dying, return_exceptions=True)
+    release.set()
+    assert _judgments(be) == []
+
+    be.reply_claims = [_claimed(attempt=2)]
+    second, _ = _cog(tmp_path, FakeBot(), be, judger=_judged)
+    await second.reply_round()
+    assert [b["attempt"] for _, b in _judgments(be)] == [2]
+
+
+async def test_the_reply_loop_starts_once_only_with_a_judger_and_stops_on_unload(tmp_path, monkeypatch):
+    for name in ("DM_POLL_S", "DRAFT_POLL_S", "REPLY_POLL_S"):
+        monkeypatch.setattr(D, name, 3600.0)
+    cog, be = _cog(tmp_path, FakeBot(), judger=_judged)
+    await cog.on_ready()
+    task = cog._reply_task
+    await cog.on_ready()
+    assert cog._reply_task is task
+    for _ in range(200):
+        if be.sent("/bot/replies/claim"):
+            break
+        await asyncio.sleep(0.01)
+    assert be.sent("/bot/replies/claim")
+    cog.cog_unload()
+    await asyncio.gather(task, return_exceptions=True)
+    assert task.cancelled()
+
+
+async def test_without_a_judger_the_reply_loop_does_not_start(tmp_path, monkeypatch):
+    for name in ("DM_POLL_S", "DRAFT_POLL_S"):
+        monkeypatch.setattr(D, name, 3600.0)
+    cog, be = _cog(tmp_path, FakeBot())
+    await cog.on_ready()
+    assert cog._reply_task is None
+    cog.cog_unload()
+
+
+async def test_a_round_that_raises_does_not_stop_the_reply_loop(tmp_path, monkeypatch):
+    monkeypatch.setattr(D, "REPLY_POLL_S", 0.0)
+    cog, _ = _cog(tmp_path, FakeBot(), judger=_judged)
+    rounds = []
+
+    async def round_():
+        rounds.append(1)
+        if len(rounds) == 1:
+            raise KeyError("item")
+        raise asyncio.CancelledError
+
+    cog.reply_round = round_
+    with pytest.raises(asyncio.CancelledError):
+        await cog._reply_loop()
+    assert len(rounds) == 2

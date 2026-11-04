@@ -194,3 +194,14 @@ def test_the_default_candidate_source_is_the_be_client_with_the_service_token():
     extract(TRANSCRIPT, NAMES, date(2026, 9, 19), workspace_id="ws-1")
     client = run.seen.candidates
     assert isinstance(client, BeClient) and client.api == "http://be.local/api/v1" and client.service_token == "svc"
+
+
+def test_no_reply_judger_without_settings():
+    assert J.reply_judger(_cfg(terra_api_key="")) is None
+    assert J.reply_judger(_cfg(llm_mode="off")) is None
+    assert J.reply_judger(_cfg(be_service_token="")) is None
+
+
+def test_the_reply_judger_is_judge_reply():
+    from judge.reply import judge_reply
+    assert J.reply_judger(_cfg()) is judge_reply

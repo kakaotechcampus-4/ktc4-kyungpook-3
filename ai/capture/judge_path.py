@@ -168,3 +168,14 @@ def build_extractor(*, run=None, candidates=None, cfg=None):
                            dropped=result.dropped)
 
     return extract
+
+
+def reply_judger(cfg=None):
+    """봇의 답장 판단기 judger(item) -> 판단 본문(judge.reply.judge_reply). 설정이 없으면 None 이라 답장 루프를 띄우지 않는다.
+
+    Jev 는 보지 않는다. 없으면 근거가 모두 inferred 라 자동 반영 없이 PM 확인으로 간다.
+    """
+    if missing_settings(cfg):
+        return None
+    from judge.reply import judge_reply
+    return judge_reply

@@ -29,6 +29,16 @@ async def test_the_operating_runner_adds_the_dm_cog_when_the_be_is_configured(mo
     assert sorted(runner.build_bot().cogs) == ["DmCog", "RecordingCog"]
 
 
+async def test_the_dm_cog_gets_the_reply_judger_of_the_settings(monkeypatch):
+    import capture.run_recorder as runner
+
+    judger = object()
+    monkeypatch.setattr(runner, "S", types.SimpleNamespace(discord_bot_token="x", discord_guild_id=""))
+    monkeypatch.setattr(runner, "handoff_from_env", lambda: types.SimpleNamespace(client=object()))
+    monkeypatch.setattr(runner, "reply_judger", lambda: judger)
+    assert runner.build_bot().cogs["DmCog"]._judger is judger
+
+
 def test_the_operating_bot_loads_nothing_from_the_realtime_folders():
     """운영 Cog 와 실행기를 새 프로세스에서 import 하고 실린 모듈을 본다.
 
