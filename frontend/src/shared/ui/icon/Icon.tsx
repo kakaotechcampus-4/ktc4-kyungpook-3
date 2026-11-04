@@ -169,6 +169,27 @@ const ICONS = {
     ),
   },
   'link-out': { strokeWidth: 2, paths: <path d="M15 3h6v6M10 14 21 3" /> },
+  /** Team 의 `팀원 관리` */
+  users: {
+    strokeWidth: 1.8,
+    paths: (
+      <>
+        <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+        <circle cx="9" cy="7" r="4" />
+        <path d="M22 21v-2a4 4 0 0 0-3-3.9" />
+      </>
+    ),
+  },
+  /** Team 의 `먼저 챙길 것` */
+  alert: {
+    strokeWidth: 1.8,
+    paths: (
+      <>
+        <circle cx="12" cy="12" r="9" />
+        <path d="M12 8v5M12 16h.01" />
+      </>
+    ),
+  },
   calendar: {
     strokeWidth: 1.7,
     paths: (

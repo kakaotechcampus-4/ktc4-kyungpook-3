@@ -3,7 +3,7 @@ import { useState } from 'react'
 import type { ReactNode } from 'react'
 import { pendingApprovalListQueryOptions } from '@/entities/approval'
 import { extractionQueryOptions } from '@/entities/extraction'
-import { meetingDetailQueryOptions } from '@/entities/meeting'
+import { meetingDetailQueryOptions, meetingFailure } from '@/entities/meeting'
 import type { Meeting, MeetingSummary } from '@/entities/meeting'
 import { minutesQueryOptions } from '@/entities/minutes'
 import type { Minutes } from '@/entities/minutes'
@@ -202,12 +202,23 @@ export function MinutesDetail({
           </GuardedLink>
         </Notice>
       )
-    case 'failed':
+    case 'failed': {
+      const failure = meetingFailure(meeting.failedStage)
       return (
-        <Notice title="이 회의는 정리하지 못했어요">
-          <p className={NOTICE_TEXT}>정리한 결과는 남기지 않아요.</p>
+        <Notice title={failure.title}>
+          <p className={NOTICE_TEXT}>{meeting.title || '제목 없는 회의'}</p>
+          <p className={META}>{detailMeta(meeting.startedAt, 0)}</p>
+          <p className={NOTICE_TEXT}>{failure.description}</p>
+          {isPm ? (
+            <GuardedLink to={paths.meetingUpload(workspaceId)} className={LINK}>
+              다시 업로드
+            </GuardedLink>
+          ) : (
+            <p className={NOTICE_TEXT}>PM에게 파일 재업로드를 요청해 주세요.</p>
+          )}
         </Notice>
       )
+    }
     default:
       return (
         <Notice title={meeting.title === '' ? '아직 회의 중이에요' : meeting.title}>

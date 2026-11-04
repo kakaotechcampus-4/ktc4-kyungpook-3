@@ -5,7 +5,6 @@ export interface TaskDto {
   title: string
   assignee_member_id: string | null
   status: string
-  progress: number | null
   blocker: string | null
   due_date: string | null
   // 계약 §4.7-6 이 PR #59 로 반영돼 항상 응답에 들어온다. 값은 대부분 null 이다

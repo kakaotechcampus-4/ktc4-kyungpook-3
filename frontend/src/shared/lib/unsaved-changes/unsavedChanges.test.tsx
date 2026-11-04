@@ -53,7 +53,7 @@ describe('이동 관문 (guardLeave)', () => {
 
   it('변경이 없으면 이동을 바로 실행하고 저장하지 않는다', () => {
     const leave = vi.fn()
-    guardLeave(leave)
+    expect(guardLeave(leave)).toBe(true)
     expect(leave).toHaveBeenCalledTimes(1)
     expect(pending()).toBeNull()
   })
@@ -61,7 +61,7 @@ describe('이동 관문 (guardLeave)', () => {
   it('변경이 있으면 실행하지 않고 저장해 둔다 — 모달이 열리는 조건이다', () => {
     useUnsavedChangesStore.getState().mark('draft')
     const leave = vi.fn()
-    guardLeave(leave)
+    expect(guardLeave(leave)).toBe(false)
     expect(leave).not.toHaveBeenCalled()
     expect(pending()).toBe(leave)
   })

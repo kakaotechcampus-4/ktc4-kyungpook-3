@@ -251,6 +251,7 @@ class DraftStructured(_Base):
     due_date: str | None = None  # ISO 날짜(YYYY-MM-DD). 발화에 마감이 있을 때만
     # 마감을 없애자는 결정("미정으로 되돌리자"). due_date=None 은 "바꾸지 않음"이라 따로 둔다. 수정에서만 True
     due_cleared: bool = False
+    due_raw: str | None = None  # 근거 원문에서 마감을 가리킨 표현 그대로. 근거 상태 계산용(judge/evidence.py)
 
 
 @dataclass

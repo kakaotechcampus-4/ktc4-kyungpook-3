@@ -20,6 +20,22 @@ if (typeof globalThis.ResizeObserver === 'undefined') {
 }
 
 beforeAll(() => server.listen({ onUnhandledRequest: 'error' }))
+
+beforeEach(() => {
+  const matchMedia: typeof window.matchMedia = (query) => ({
+    matches: query === '(prefers-reduced-motion: reduce)',
+    media: query,
+    onchange: null,
+    addListener: () => {},
+    removeListener: () => {},
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    dispatchEvent: () => true,
+  })
+
+  vi.stubGlobal('matchMedia', matchMedia)
+})
+
 afterEach(() => {
   server.resetHandlers()
   resetDb()

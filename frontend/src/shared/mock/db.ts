@@ -25,7 +25,8 @@ import { messageReviewFixtures, messageThreadFixtures } from './fixtures/message
  * - `fail`: 첫 조회에 `failed`
  * - `fail-notion-revoked`: 첫 조회에 `failed`, 그 공간의 Notion 연동이 `revoked` 가 된다 (D-099, D-100)
  */
-export type MeetingFlowMode = 'manual' | 'staged' | 'instant' | 'fail' | 'fail-notion-revoked'
+export type MeetingFlowMode =
+  'manual' | 'staged' | 'instant' | 'fail' | 'fail-notion-revoked' | 'fail-diarize' | 'fail-expired'
 
 export const MEETING_FLOW_MODES = [
   'manual',
@@ -33,6 +34,8 @@ export const MEETING_FLOW_MODES = [
   'instant',
   'fail',
   'fail-notion-revoked',
+  'fail-diarize',
+  'fail-expired',
 ] as const satisfies readonly MeetingFlowMode[]
 
 export interface MeetingFlowState {

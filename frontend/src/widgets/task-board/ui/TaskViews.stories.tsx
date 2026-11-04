@@ -95,6 +95,13 @@ export const 보드_PM: Story = {
     await expect(activeCards.length).toBeGreaterThan(0)
     for (const card of activeCards)
       await expect(getComputedStyle(card).borderTopColor).toBe('rgb(201, 201, 201)')
+    // 막힌 카드는 위험 대신 막힘 배지이고, 누르면 막힌 사유를 보인다 (D-175)
+    const blocked = canvas.getByRole('link', { name: 'DB 스키마 정리' }).closest('article')!
+    await expect(within(blocked).queryByText('위험')).toBeNull()
+    await userEvent.click(within(blocked).getByRole('button', { name: /^막힘/ }))
+    const reason = await within(document.body).findByRole('dialog', { name: '막힌 사유' })
+    await expect(reason).toHaveTextContent('Notion 권한 대기')
+    await userEvent.keyboard('{Escape}')
   },
 }
 

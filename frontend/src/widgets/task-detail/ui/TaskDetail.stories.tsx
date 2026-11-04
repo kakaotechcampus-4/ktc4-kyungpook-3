@@ -1,12 +1,12 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { delay, http } from 'msw'
-import { expect, within } from 'storybook/test'
+import { expect, userEvent, waitFor, within } from 'storybook/test'
 import { db } from '@/shared/mock/db'
 import { fail } from '@/shared/mock/envelope'
 import { TaskDetail } from './TaskDetail'
 
 /*
- * 태스크 상세 (M6 §3-5, §5-1). ws_01 하나에 로그인한 상태. tk_01 은 담당자·마감·진행률·연결 회의·이력이 있고 Notion 반영됨이다.
+ * 태스크 상세 (M6 §3-5, §5-1). ws_01 하나에 로그인한 상태. tk_01 은 담당자·마감·연결 회의·이력이 있고 Notion 반영됨이다.
  * PM 만 상태를 바꾼다 — 팀원 스토리는 widget 의 `isPm` 과 시나리오(tasks-member) 둘 다 팀원이다.
  */
 
@@ -26,7 +26,7 @@ export const PM_기본: Story = {
     const canvas = within(canvasElement)
     await expect(await canvas.findByRole('heading', { name: '로그인 API 연동' })).toBeVisible()
     await expect(canvas.getByLabelText('상태 바꾸기')).toHaveValue('in_progress')
-    await expect(canvas.getByText('40%')).toBeInTheDocument()
+    await expect(canvas.queryByText('진행률')).toBeNull()
     await expect(await canvas.findByTestId('notion-sync-status')).toHaveTextContent('반영됨')
     await expect(await canvas.findByRole('list', { name: '변경 이력' })).toBeInTheDocument()
   },
@@ -44,7 +44,7 @@ export const 팀원_읽기: Story = {
   },
 }
 
-/** 담당자·마감·진행률·연결 회의·이력이 없는 기존 태스크도 읽는다 */
+/** 담당자·마감·연결 회의·이력이 없는 기존 태스크도 읽는다 */
 export const 빈_칸: Story = {
   args: { taskId: 'tk_07' },
   parameters: {
@@ -57,7 +57,7 @@ export const 빈_칸: Story = {
     const canvas = within(canvasElement)
     await expect(await canvas.findByRole('heading', { name: '온보딩 문구 수정' })).toBeVisible()
     await expect(canvas.getByText('담당자 없음')).toBeInTheDocument()
-    await expect(canvas.getByText('기록 없음')).toBeInTheDocument()
+    await expect(canvas.queryByText('진행률')).toBeNull()
     await expect(await canvas.findByTestId('notion-sync-status')).toHaveTextContent(
       '반영 상태 없음',
     )
@@ -90,6 +90,51 @@ export const 오류: Story = {
     const canvas = within(canvasElement)
     await expect(await canvas.findByText('태스크를 불러오지 못했어요')).toBeInTheDocument()
     await expect(canvas.getByRole('button', { name: '다시 시도' })).toBeInTheDocument()
+  },
+}
+
+/** 갱신 실패 스토리의 서버 — 첫 조회만 기본 handler 가 받고, 회복하기 전의 재조회는 500 이다. 스토리를 열 때마다 처음으로 */
+const refetchServer = { requests: 0, recovered: false }
+
+/**
+ * 갱신 실패 (#236) — 반영 중(tk_04)이라 3초마다 다시 묻다가 재조회가 실패했다(기본 재시도 1회 포함).
+ * 이전 본문·반영 상태는 그대로 두고 안내 하나와 다시 시도를 둔다. 서버가 회복한 뒤 다시 시도하면 안내가 사라진다
+ */
+export const 갱신_실패: Story = {
+  args: { taskId: 'tk_04' },
+  parameters: {
+    scenario: 'notion-sync-pending',
+    route: '/workspaces/ws_01/tasks/tk_04',
+    setup: () => {
+      refetchServer.requests = 0
+      refetchServer.recovered = false
+    },
+    msw: [
+      http.get('/api/v1/tasks/:taskId', () => {
+        refetchServer.requests += 1
+        // 아무것도 돌려주지 않으면 기본 handler 가 받는다
+        if (refetchServer.requests > 1 && !refetchServer.recovered)
+          return fail('INTERNAL_ERROR', 'boom', 500)
+      }),
+    ],
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(await canvas.findByRole('heading', { name: '배포 스크립트' })).toBeVisible()
+    await expect(await canvas.findByTestId('notion-sync-status')).toHaveTextContent('반영 중')
+
+    // polling 3초 + 재시도 1초 뒤에 안내가 나온다
+    const notice = await canvas.findByRole('alert', {}, { timeout: 10_000 })
+    await expect(notice).toHaveTextContent('최신 상태를 받지 못했어요')
+    await expect(canvas.getAllByRole('alert')).toHaveLength(1)
+    await expect(canvas.getByRole('heading', { name: '배포 스크립트' })).toBeVisible()
+    await expect(canvas.getByTestId('notion-sync-status')).toHaveTextContent('반영 중')
+    await expect(canvas.queryByText('태스크를 불러오지 못했어요')).toBeNull()
+
+    refetchServer.recovered = true
+    await userEvent.click(within(notice).getByRole('button', { name: '다시 시도' }))
+    await waitFor(() => expect(canvas.queryByRole('alert')).toBeNull())
+    await expect(canvas.getByRole('heading', { name: '배포 스크립트' })).toBeVisible()
   },
 }
 
