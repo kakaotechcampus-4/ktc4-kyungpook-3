@@ -60,8 +60,8 @@ recordings/         녹음 산출물 (git 제외)
   최상위 `mapped_at`, `status` 가 `mapped` 입니다. `user_id`(라벨 id)·`file`·wav 이름은 그대로이고 `mapped` 에서 다시 지정하면
   덮어씁니다. `diarized`·`mapped` 이거나 `source` 가 `upload` 인 매니페스트는 상태가 무엇이든(사람이 `saved` 로 고쳐도) 워커의
   자동 바퀴·`--retry` 바퀴·복구 어디서도 처리하지 않습니다. 이 경로(`prepare`)로 만든 매니페스트에는 `workspace_id` 와 BE
-  회의 정보가 없고 디스코드 길드·채널이 없어 `guild`·`channel` 이 null 입니다. 업로드 회의의 인계(전사 이후)는 #254·#255
-  합의 뒤 다음 PR 에서 정합니다.
+  회의 정보가 없고 디스코드 길드·채널이 없어 `guild`·`channel` 이 null 입니다. PM 의 지정은 BE 웹 경로와 `upload.assign` 이 받고, 전사·인계는
+  #286 에서 합니다.
 - 웹 업로드 가져오기(`upload/intake.py`): PM 이 웹에 올린 오디오 회의를 워커가 가져와 같은 `diarized` 매니페스트로 만듭니다.
   명시적 opt-in 입니다. 환경 변수 `MM_UPLOAD_INTAKE=1` 이고 `BE_BASE_URL`·`BE_SERVICE_TOKEN`·`PYANNOTEAI_API_KEY` 가 모두 있을 때만 켜지고,
   아니면 BE 도 pyannoteAI 도 부르지 않습니다. **운영 서버 한 대에서만 켭니다(BE 의 claim 계약은 단일 워커를 전제로 합니다).** 워커가 바퀴 끝(정지 신호가 없을 때만)에 한 번 `intake_one` 을 부르며, 한 번에 한 건을 한 단계만 진전시킵니다.
