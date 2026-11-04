@@ -33,8 +33,8 @@ D-174 메시지 정책이 재촉 제안, 발송 직전 재확인, 72시간 무�
 
 | 항목 | 값 |
 |---|---|
-| sqlite 전체 pytest | 1120 passed, 652 skipped |
-| PostgreSQL 포함 전체 pytest | 1734 passed, 38 skipped |
+| sqlite 전체 pytest | 1120 passed, 656 skipped |
+| PostgreSQL 포함 전체 pytest | 1736 passed, 40 skipped |
 | `alembic check`, 내리고 다시 올리기(PostgreSQL) | 차이 없음, 통과 |
 | 유료 호출 | 없음 |
 
