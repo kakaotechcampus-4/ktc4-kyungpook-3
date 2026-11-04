@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from app.core.errors import AppError, ErrorCode
 from app.models import (
     ApprovalRequest,
+    ApprovalStatus,
     ApprovalType,
     ChangeSource,
     Gate,
@@ -176,6 +177,7 @@ def _claimed(db: Session, row: ReplyJudgment) -> ClaimedReply:
     candidates = db.scalars(
         select(Task).where(Task.task_id.in_(task_ids), Task.is_deleted.is_(False)).order_by(Task.task_id)
     ).all()
+    row.claimed_statuses = json.dumps({t.task_id: t.status for t in candidates})
     return ClaimedReply(
         message_id=row.message_id, attempt=row.attempt, workspace_id=row.workspace_id,
         member_name=message.thread.member.display_name,
@@ -327,6 +329,7 @@ def _judged(db: Session, row: ReplyJudgment, changes: list[ReplyChangeRequest], 
         outcome = ReplyChangeOutcome.SKIPPED if task.is_deleted else _gate(
             change, value, _current(db, change, task),
             owned=task.assignee_member_id == owner_id, blocked=task.status == TaskStatus.BLOCKED,
+            unchanged=_unchanged(row, task),
         )
         line = _line(db, row, change, outcome, now, new_value=value)
         lines.append(line)
@@ -381,6 +384,15 @@ def _assignee(
     return matching.resolve_assignee(db, row.workspace_id, change.assignee_raw)
 
 
+def _claimed_status(row: ReplyJudgment, task: Task) -> str | None:
+    return json.loads(row.claimed_statuses).get(task.task_id)
+
+
+def _unchanged(row: ReplyJudgment, task: Task) -> bool:
+    """맡긴 뒤 실제 상태가 그대로인가. _judge_status 는 사람이 건 막힘도 막기 전 상태로 보여 이것을 대신하지 못한다."""
+    return _claimed_status(row, task) == task.status
+
+
 def _current(db: Session, change: ReplyChangeRequest, task: Task) -> str | None:
     """게이트가 비교할 지금 값. 상태는 판단에 보인 값과 같은 _judge_status 다."""
     if change.field == ReplyChangeField.STATUS:
@@ -393,13 +405,13 @@ def _current(db: Session, change: ReplyChangeRequest, task: Task) -> str | None:
 
 
 def _gate(
-    change: ReplyChangeRequest, value: str | None, current: str | None, *, owned: bool, blocked: bool
+    change: ReplyChangeRequest, value: str | None, current: str | None, *, owned: bool, blocked: bool, unchanged: bool,
 ) -> ReplyChangeOutcome:
     """변경 한 줄의 갈림. 자동 반영은 상태 변경이면서 certain 이고 판단이 본 값이 지금도 그대로일 때만이다."""
     if change.field != ReplyChangeField.SCOPE and value == current:
         return ReplyChangeOutcome.SKIPPED
     if change.field == ReplyChangeField.STATUS:
-        if change.evidence_status == "certain" and owned and change.base and change.base.status == current:
+        if change.evidence_status == "certain" and owned and unchanged and change.base and change.base.status == current:
             return ReplyChangeOutcome.APPLIED
         if value == TaskStatus.BLOCKED and blocked:
             return ReplyChangeOutcome.NOTED
@@ -433,7 +445,10 @@ def _propose(
         # 담당자를 못 찾았으면 원문만 보여 주고 PM 이 고른다. 원문은 팀원 ID 가 아니라 값으로 싣지 않는다.
         if key and not (line_match and line_match.member_id is None):
             values[key] = line.new_value
-            base_values[key] = getattr(change.base, key) if change.base else _current(db, change, task)
+            if line.field == ReplyChangeField.STATUS:
+                base_values[key] = _claimed_status(row, task)
+            else:
+                base_values[key] = getattr(change.base, key) if change.base else _current(db, change, task)
     first_line, first = group[0][:2]
     payload = {
         **values,
@@ -462,6 +477,20 @@ def _propose(
     db.flush()
     for line, *_ in group:
         line.approval_id = approval.approval_id
+
+
+def rebase_cards(db: Session, task: Task) -> None:
+    """답장으로 막힘이 풀리면 대기 중인 답장 카드의 상태 기준을 따라 옮긴다. 시스템이 푼 것은 승인 충돌이 아니다."""
+    for card in db.scalars(
+        select(ApprovalRequest).where(
+            ApprovalRequest.related_task_id == task.task_id, ApprovalRequest.status == ApprovalStatus.PENDING,
+        )
+    ).all():
+        payload = json.loads(card.payload)
+        base_values = payload.get("base_values", {})
+        if payload.get("change_source") == ChangeSource.REMINDER_REPLY and base_values.get("status") == TaskStatus.BLOCKED:
+            base_values["status"] = task.status
+            card.payload = json.dumps(payload, ensure_ascii=False)
 
 
 def _notice(

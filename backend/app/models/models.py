@@ -871,6 +871,7 @@ class ReplyJudgment(Base):
 
     queued_at 은 판단을 기다리기 시작한 시각이다. 저장 시각이고 PM 이 태스크를 고르면 그 시각이다.
     attempt 는 맡길 때마다 오른다. candidates 는 task_id 목록(JSON)이고 PM 이 고르면 그 하나, 해당 없음이면 빈 목록이다.
+    claimed_statuses 는 맡길 때 후보의 실제 상태(JSON)다. 판단에 보인 값은 막기 전 상태일 수 있어 따로 둔다.
     failure_reason 에는 예외 종류만 둔다. 답장 글을 싣지 않는다.
     """
 
@@ -891,6 +892,7 @@ class ReplyJudgment(Base):
     claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     candidates: Mapped[str] = mapped_column(Text)
+    claimed_statuses: Mapped[str | None] = mapped_column(Text, nullable=True)
     picked_task_id: Mapped[str | None] = mapped_column(
         String(36), ForeignKey("task.task_id", ondelete="SET NULL"), nullable=True
     )

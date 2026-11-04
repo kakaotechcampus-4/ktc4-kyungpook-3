@@ -582,3 +582,41 @@ def test_timeline_needs_membership_and_a_live_task(mdb, mseed, two):
     assert client("pm").get(f"{P}/tasks/없는/timeline").status_code == 404
 
 
+# 판단이 본 값과 실제 값
+
+def test_pm_block_during_judgment_is_proposed_not_applied(mdb, mseed, two):
+    a, _ = two
+    _reply(mdb, mseed, AT)
+    item = _claim()
+    r = client("pm").patch(f"{P}/tasks/{a.task_id}", json={"status": "blocked", "blocker": "PM: 외부 승인 대기"})
+    assert r.status_code == 200, r.text
+    _judge(item, _change(a, "status", "done", evidence="certain", claimed=item))
+    mdb.expire_all()
+    assert (a.status, a.blocker) == ("blocked", "PM: 외부 승인 대기")
+    assert _outcomes(mdb, item) == [("status", "proposed")]
+    line = _lines(mdb, item)[(a.task_id, "status")]
+    assert _resolve(line.approval_id).json()["error"]["code"] == "APPROVAL_CONFLICT"
+
+
+def _card_on_auto_blocked_task(mdb, mseed):
+    a = _auto_blocked(mdb, mseed)
+    _reply(mdb, mseed, DEADLINE + H, body="QA 넘겼어요")
+    item = _claim()
+    assert item["candidates"][0]["status"] == "in_progress"
+    _judge(item, _change(a, "status", "done", evidence="inferred", claimed=item))
+    return a, _lines(mdb, item)[(a.task_id, "status")].approval_id
+
+
+def test_card_on_auto_blocked_task_is_approvable_before_the_tick(mdb, mseed):
+    a, approval_id = _card_on_auto_blocked_task(mdb, mseed)
+    assert _resolve(approval_id).status_code == 200
+    mdb.expire_all()
+    assert a.status == "done"
+
+
+def test_card_stays_approvable_while_a_followup_reply_holds_the_clock(mdb, mseed):
+    a, approval_id = _card_on_auto_blocked_task(mdb, mseed)
+    follow_up_at = DEADLINE + H + timedelta(minutes=1)
+    _reply(mdb, mseed, follow_up_at, body="그리고 금요일에 다시 볼게요")
+    tick(mdb, follow_up_at + timedelta(minutes=1))
+    assert _resolve(approval_id).status_code == 200

@@ -37,6 +37,7 @@ def upgrade() -> None:
     sa.Column('claimed_at', sa.DateTime(timezone=True), nullable=True),
     sa.Column('finished_at', sa.DateTime(timezone=True), nullable=True),
     sa.Column('candidates', sa.Text(), nullable=False),
+    sa.Column('claimed_statuses', sa.Text(), nullable=True),
     sa.Column('picked_task_id', sa.String(length=36), nullable=True),
     sa.Column('failure_reason', sa.String(length=120), nullable=True),
     sa.Column('model_name', sa.String(length=64), nullable=True),

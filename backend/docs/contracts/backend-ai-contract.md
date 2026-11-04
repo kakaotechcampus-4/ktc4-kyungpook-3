@@ -498,14 +498,14 @@ AI 가 문구를 써야 하는 묶음을 준다. 요청 본문은 없다. 승인
 ```
 
 - `failure_reason` 이 있으면 판단 전체 실패다. 예외 종류만 싣고 답장 글을 싣지 않는다. 120자에서 자른다.
-- `base` 는 판단이 본 값(`candidates` 그대로)이다. 게이트와 승인 충돌 확인의 기준이다.
+- `base` 는 판단이 본 값(`candidates` 그대로)이다. 게이트와 마감·담당자 승인 충돌 확인의 기준이다. 상태의 승인 충돌 기준은 BE 가 맡길 때 저장한 실제 상태다. `candidates[].status` 는 막기 전 상태일 수 있어서다. 답장으로 막힘이 풀리면 대기 중인 답장 카드의 기준도 풀린 상태로 옮긴다.
 - `unknown`·`due_clear`·`failed` 줄의 `task_id` 는 쓰지 않는다. 그 밖의 줄은 `candidates` 안의 태스크여야 한다.
 - `changes` 가 비면 바꿀 것 없는 답장이다. 푸시 없이 답장 기록에만 남는다.
 
 | 줄 | BE 처리 |
 |---|---|
 | 지금 값과 같음, 지운 태스크 | 기록만 |
-| `status`, `certain`, `base.status` 가 지금과 같음, 담당이 대화 주인 | 자동 반영(`change_source: reminder_reply`) |
+| `status`, `certain`, `base.status` 가 지금과 같음, 맡긴 뒤 실제 상태가 그대로, 담당이 대화 주인 | 자동 반영(`change_source: reminder_reply`) |
 | 이미 막힌 태스크에 `blocked` 인데 자동 반영이 아님 | 기록만. 상태는 그대로이고 사유는 아래 규칙을 따른다 |
 | 그 밖의 `status`, `due_date`, `assignee`, `scope` | PM 승인 요청. 태스크당 한 장 |
 | `unknown` | 답장이 PM 차례가 되고 후보 시계가 멈춘다 |

@@ -534,6 +534,7 @@ def _unblock(db: Session, task: Task, watch: ReminderWatch, now: datetime) -> No
         change_source=ChangeSource.REMINDER_REPLY,
     ), now)
     db.flush()
+    replies.rebase_cards(db, task)
 
 
 def status_after_release(db: Session, task: Task, watch: ReminderWatch) -> str:
