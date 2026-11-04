@@ -4,7 +4,7 @@ import { messageThreadQueryOptions } from '@/entities/message'
 import type { MessageThread } from '@/entities/message'
 import { ApiError } from '@/shared/api/errors'
 import { paths } from '@/shared/config/routes'
-import { todayInSeoul } from '@/shared/lib/date'
+import { now as clockNow, todayInSeoul } from '@/shared/lib/date'
 import { GuardedLink } from '@/shared/lib/unsaved-changes'
 import { EmptyState } from '@/shared/ui/empty-state'
 import { Icon } from '@/shared/ui/icon'
@@ -121,7 +121,7 @@ function ThreadView({
   // 자기 답장을 보내기 직전의 메시지 수. 그 답장이 그려진 뒤에만 그 줄로 내리고, 다른 갱신에는 자리를 움직이지 않는다
   const replyAnchor = useRef<number | null>(null)
   const [replyTick, setReplyTick] = useState(0)
-  const [now] = useState(Date.now)
+  const [now] = useState(clockNow)
   // 대화를 열면 가장 최근 메시지부터 보인다. 대화가 바뀌면 화면이 새로 마운트된다 (MessageInbox 의 key)
   useLayoutEffect(() => {
     const body = bodyRef.current

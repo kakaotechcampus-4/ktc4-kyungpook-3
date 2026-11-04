@@ -1,7 +1,7 @@
 import { useId, useRef, useState } from 'react'
 import type { KeyboardEvent, ReactNode, Ref } from 'react'
 import type { Bundle, MessageAction } from '@/entities/message'
-import { todayInSeoul } from '@/shared/lib/date'
+import { now as clockNow, todayInSeoul } from '@/shared/lib/date'
 import { Button } from '@/shared/ui/button'
 import {
   deadlineSend,
@@ -82,7 +82,7 @@ export function SendTimingPicker({
   const [requestedTiming, setRequestedTiming] = useState<SendTiming | null>(null)
   const showSaving = useShownAfter(saving, SAVING_MARK_DELAY_MS)
   const savingTiming = showSaving ? requestedTiming : null
-  const [now] = useState(Date.now)
+  const [now] = useState(clockNow)
   const deadline = deadlineSend(bundle.tasks, now)
   const savedTiming: SendTiming =
     deadline.status !== 'none' && sameInstant(deadline.at, bundle.scheduledAt)
@@ -240,7 +240,7 @@ function CustomTimeForm({
 
   const submit = () => {
     const scheduledAt = fromSeoulInputValue(value)
-    if (scheduledAt === null || Date.parse(scheduledAt) <= Date.now()) {
+    if (scheduledAt === null || Date.parse(scheduledAt) <= clockNow()) {
       setInvalid(true)
       return
     }

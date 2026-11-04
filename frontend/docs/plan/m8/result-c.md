@@ -73,6 +73,9 @@ Node v24.11.0. 계획 [plan.md](plan.md)는 읽기만 했다. 다른 워크트�
 | `npx vitest run --maxWorkers=2` (전체) | 1 | 185파일 중 181, 2221개 중 2207개 통과. 실패 14개 중 9개는 `taskScenarios` 의 저장 버전 기대값 6(이번에 7로 올림)이라 고쳤다. 나머지 5개(`appShell` 2·`meetingUpload` 2·`meetingMinutesSelection` 1)는 시간 초과·찾기 실패였다 |
 | `npx vitest run --maxWorkers=1` 위 실패 파일 4개 + `messageScenarios` | 0 | 5파일 126개 통과. 남은 5개 실패는 부하 탓이었다 |
 | `npm run build` | 0 | CSS 경고 1건은 기존 `[color:var(...)]`([M2 기록](../m2/basis-for-decision/2026-09-16-docs-prose-makes-the-build-warn.md)). `dist/assets/*.js` 에 `메시지는 준비 중이에요` 0건 |
+| `npm run test:storybook` (CI, PR #363 첫 실행) | 1 | 158개 중 4개 실패(`기본`·`대화`·`발송_시점_hover`·`발송_시점_저장_중`). 화면은 실제 시계로, 목은 `MOCK_NOW`(2026-09)로 지난 시각을 판단해 `마감 하루 전` 이 모두 지난 것으로 나왔다. `기본` 은 `09/24 마감` 이 목록과 묶은 태스크에 두 번 보여 찾기가 실패했다 |
+| `storybook build` 후 `playwright test -c playwright.storybook.config.ts` | 0 | 브라우저 MSW 에서 화면 시계를 `MOCK_NOW` 에 고정하고(`fixClock`) `기본` 의 단언을 목록 링크로 좁힌 뒤 158개 통과 |
+| `npx vitest run --maxWorkers=2` 메시지 화면·위젯·엔티티·mock·date | 0 | 11파일 154개 통과 |
 
 브라우저 확인(Vite MSW 모드, Playwright, 2026-11-05):
 
@@ -83,7 +86,7 @@ Node v24.11.0. 계획 [plan.md](plan.md)는 읽기만 했다. 다른 워크트�
 ### 남은 문제
 
 - **실제 서버 확인 없음** — 모든 확인은 MSW 기준이다. 배포 BE 에 붙여 PM·팀원 계정으로 목록·승인·답장을 해 보지 않았다. 대신 [message.ts](../../../src/shared/types/api/message.ts)의 칸 이름이 모두 백엔드 `schemas/message.py` 응답·요청 모델에 있는지 대조했다.
-- **MSW 의 지난 시각 판단** — 목은 고정 시각 `MOCK_NOW`(2026-09)로 지난 시각을 판단하고 화면의 `마감 하루 전` 카드는 실제 시계로 판단한다. 개발 서버에서는 카드가 `지남` 인데 승인이 200 인 경우가 있다. 실제 서버에서는 둘 다 실제 시계라 어긋나지 않는다.
+- **오늘 기준 상대 표기** — 브라우저 MSW(개발 서버·Storybook)에서 보낼 시각이 지났는지는 목과 같은 고정 시각 `MOCK_NOW` 로 판단한다([clock.ts](../../../src/shared/lib/date/clock.ts)). `답장 N일째 없음` 같은 오늘 기준 표기는 여전히 실제 날짜라, 개발 서버에서는 숫자가 크게 나온다.
 - **PM 자신의 대화** — 화면은 로그인 계정의 `member_id` 를 받지 않아, PM 이 리마인드를 받는 팀원이기도 하면 자기 대화에서도 답장 칸이 없다. 대화 주인 판정에 쓸 값(예: 워크스페이스 응답의 내 `member_id`)이 필요하다.
 - **묶음 합치기** — 시각을 다른 예정 묶음과 같은 시각으로 옮기면 BE 가 합친 묶음을 돌려주지만, 화면은 주소의 묶음 ID 를 그대로 들고 있다가 다시 받은 목록에 없어 「골라 주세요」로 바뀐다. MSW 는 합치기를 흉내 내지 않아 테스트가 없다.
 - **`문구 다듬는 중` 갱신** — polling(D-136)이 없어 AI 초안이 와도 다시 받기 전에는 보이지 않는다. 승인하면 `BUNDLE_CHANGED` 로 새 문구를 받는다.

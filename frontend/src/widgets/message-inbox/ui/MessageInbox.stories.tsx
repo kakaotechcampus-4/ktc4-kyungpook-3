@@ -11,7 +11,8 @@ import { MessageInbox } from './MessageInbox'
  * 메시지 (M8, Messages·MessagesThread·EmptyMessages 시안, 계약 §5.7). ws_01 하나에 PM 으로 로그인한 상태다.
  * 데이터는 백엔드 메시지 API 와 같은 모양의 MSW handler 다. 시작 db 는 shared/mock/scenarios.ts 의 `messages-*` 시나리오다.
  * 행동(승인·보내지 않음·문구·보낼 시각)은 MSW 목이 성공한 뒤에만 화면을 바꾼다 (D-137).
- * Storybook 은 시계를 MOCK_NOW 로 고정하지 않는다 — 오늘 기준 상대 표기(`3일 전`, `답장 N일째 없음`)의 숫자는 단언하지 않는다
+ * 보낼 시각이 지났는지는 목과 같은 고정 시각(MOCK_NOW, shared/lib/date/clock)으로 판단한다.
+ * 오늘 기준 상대 표기(`3일 전`, `답장 N일째 없음`)는 실제 날짜라 숫자를 단언하지 않는다
  */
 
 const meta = {
@@ -39,7 +40,7 @@ export const 기본: Story = {
     const canvas = within(canvasElement)
     await expect(await canvas.findByText('보내기 전 확인 2')).toBeInTheDocument()
     await expect(canvas.getByText('답장 기다리는 중 2')).toBeInTheDocument()
-    await expect(canvas.getByText('09/24 마감')).toBeInTheDocument()
+    await expect(canvas.getByRole('link', { name: /^이재환 09\/24 마감/ })).toBeInTheDocument()
     const threads = canvas.getByRole('region', { name: '대화' })
     await expect(within(threads).getAllByRole('link')).toHaveLength(4)
     await expect(within(threads).getByText('DM 못 보냄')).toBeInTheDocument()
