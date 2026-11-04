@@ -83,6 +83,8 @@ class MeetingStatus(StrEnum):
     CREATED = "created"
     RECORDING = "recording"
     PROCESSING = "processing"
+    # 웹 업로드 회의: AI가 화자를 나눴고 PM이 화자를 지정하기를 기다린다(#266). 동시 처리 제한에서 뺀다
+    AWAITING_SPEAKERS = "awaiting_speakers"
     DONE = "done"
     FAILED = "failed"
 
@@ -368,7 +370,7 @@ class Meeting(Base):
     )
     title: Mapped[str | None] = mapped_column(String(200), nullable=True)
     source: Mapped[str] = mapped_column(String(20), default=MeetingSource.DISCORD)
-    status: Mapped[str] = mapped_column(String(16), default=MeetingStatus.CREATED, index=True)
+    status: Mapped[str] = mapped_column(String(32), default=MeetingStatus.CREATED, index=True)
 
     failed_stage: Mapped[str | None] = mapped_column(String(32), nullable=True)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)

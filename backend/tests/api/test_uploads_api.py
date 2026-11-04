@@ -325,3 +325,78 @@ def test_folder_removal_failure_does_not_fail_the_report(db, ws, monkeypatch):
     assert r.status_code == 200, r.text
     db.expire_all()
     assert meeting.status == "failed"
+
+
+# ── 화자 지정 대기 상태(awaiting_speakers, #266 PR-1) ──
+# 이 상태로 바꾸는 API는 아직 없다. 그래서 회의 행에 상태를 직접 넣고, 기존 경로가 이 상태를 맞게 다루는지 본다.
+
+
+def test_awaiting_speakers_status_is_saved_and_read_back(db, ws):
+    """상태 이름(17자)이 meeting.status 컬럼 길이를 넘으면 PostgreSQL에서만 저장이 실패한다."""
+    meeting = _upload(db, ws, status="awaiting_speakers", claimed_at=UPLOADED_AT)
+
+    db.expire_all()
+
+    assert db.get(Meeting, meeting.meeting_id).status == "awaiting_speakers"
+
+
+@pytest.mark.parametrize("claimed_at", [None, UPLOADED_AT], ids=["unclaimed", "claimed"])
+def test_awaiting_upload_is_not_pending_and_cannot_be_claimed(db, ws, claimed_at):
+    """claimed_at 이 비어 있어도 상태만으로 빠져야 한다. claimed_at 조건만 보면 상태를 잘못 다뤄도 통과한다."""
+    meeting = _upload(db, ws, status="awaiting_speakers", claimed_at=claimed_at)
+
+    assert _pending() == []
+    r = _claim(meeting.meeting_id)
+
+    assert r.status_code == 409, r.text
+    error = r.json()["error"]
+    assert error["code"] == "MEETING_ALREADY_ENDED"
+    assert error["details"]["status"] == "awaiting_speakers"
+
+
+def test_awaiting_upload_file_is_still_served(db, ws):
+    """PM이 화자를 지정하는 동안 원본이 남아 있어야 한다. 원본 받기는 상태를 보지 않는다."""
+    meeting = _upload(db, ws, status="awaiting_speakers", claimed_at=UPLOADED_AT)
+
+    r = _client().get(f"/api/v1/uploads/{meeting.meeting_id}/file", headers=HEADERS)
+
+    assert r.status_code == 200, r.text
+    assert r.content == AUDIO
+
+
+def test_awaiting_upload_rejects_extraction_and_keeps_the_folder(db, ws):
+    """화자 지정 전에는 추출을 받지 않는다(processing일 때만 받는다). 폴더도 그대로다."""
+    meeting = _upload(db, ws, status="awaiting_speakers", claimed_at=UPLOADED_AT)
+
+    r = _register_extraction(meeting)
+
+    assert r.status_code == 409, r.text
+    assert r.json()["error"]["code"] == "MEETING_NOT_PROCESSING"
+    db.expire_all()
+    assert meeting.status == "awaiting_speakers"
+    assert upload_storage.meeting_dir(meeting.meeting_id).exists()
+
+
+def test_awaiting_upload_can_be_failed_and_removes_its_folder(db, ws):
+    """AI가 없거나 지정이 멈춘 공간을 푸는 방법은 실패 보고다. 대기 상태에서도 된다."""
+    meeting = _upload(db, ws, status="awaiting_speakers", claimed_at=UPLOADED_AT)
+
+    r = _fail(meeting)
+
+    assert r.status_code == 200, r.text
+    db.expire_all()
+    assert meeting.status == "failed"
+    assert not upload_storage.meeting_dir(meeting.meeting_id).exists()
+
+
+def test_end_report_does_not_pull_an_awaiting_meeting_back_to_processing(db, ws):
+    """회의 종료(/end)는 대기 회의를 건드리지 않는다. 건드리면 PM의 화자 지정을 건너뛰게 된다."""
+    meeting = _upload(db, ws, status="awaiting_speakers", claimed_at=UPLOADED_AT)
+
+    r = _client().patch(f"/api/v1/meetings/{meeting.meeting_id}/end", headers=HEADERS)
+
+    assert r.status_code == 409, r.text
+    assert r.json()["error"]["code"] == "MEETING_ALREADY_ENDED"
+    assert r.json()["error"]["details"]["status"] == "awaiting_speakers"
+    db.expire_all()
+    assert meeting.status == "awaiting_speakers"
