@@ -327,6 +327,14 @@ def test_a_failed_supplement_skips_that_candidate_and_keeps_the_rest(failure, ca
     assert "t_api" in caplog.text and REPLY not in caplog.text
 
 
+def test_nothing_found_and_a_failed_supplement_is_a_failed_judgment():
+    def down(judge_input):
+        raise JudgeUnavailableError("terra")
+
+    with pytest.raises(ReplyJudgeFailed):
+        judge_reply(_claim(API, LOGIN), run=FakeRun(), jev=FakeJev({}), judge=down, draft=None)
+
+
 def test_failure_lines_stay_as_they_are_next_to_a_supplement():
     run = FakeRun(failures=[PipelineFailure("draft", "마감을 없앰", DUE_CLEARED_REASON),
                             PipelineFailure("target", "요약", "수정 대상 후보를 찾지 못했습니다.")])
