@@ -5,6 +5,7 @@ import { integrationsQueryOptions } from '@/entities/integration'
 import type { IntegrationStatus } from '@/entities/integration'
 import { memberListQueryOptions, pmsOf } from '@/entities/member'
 import type { Member } from '@/entities/member'
+import { BrowserPushControl } from '@/features/browser-push'
 import { OPTION_CARD, OPTION_DESCRIPTION, OPTION_TITLE } from './settingsStyles'
 import { RadioCardGroup } from './RadioCardGroup'
 import type { RadioCardOption } from './RadioCardGroup'
@@ -111,6 +112,7 @@ export function NotificationSection({ workspaceId, canManage }: NotificationSect
   const noticeId = useId()
   return (
     <SettingsSection id="settings-notifications" title="알림">
+      <BrowserPushControl className={`${OPTION_CARD} ${ROW}`} />
       {SWITCHES.map(({ key, title, description, offEffect }) => {
         const on = enabled[key]
         const titleId = `settings-notification-${key}`
