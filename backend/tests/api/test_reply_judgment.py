@@ -13,7 +13,7 @@ from app.models import (
     ReplyJudgmentState as S,
     TaskHistory,
 )
-from app.services import messages, replies, scheduler
+from app.services import messages, replies
 from tests.api.test_messages_api import P, client
 from tests.api.test_replies import _remind, _reply
 from tests.api.test_reply_clock import DEADLINE, _auto_blocked
@@ -456,26 +456,44 @@ def test_blocked_reply_replaces_the_no_reply_reason(mdb, mseed):
     assert task.status == "blocked"
 
 
-def test_blocked_reply_keeps_a_reason_the_pm_wrote(mdb, mseed, two):
+@pytest.mark.parametrize("evidence", ["certain", "inferred"])
+def test_blocked_reply_keeps_a_reason_the_pm_wrote(mdb, mseed, two, evidence):
     a, _ = two
     a.status, a.blocker = "blocked", "디자인 대기"
     mdb.commit()
     _reply(mdb, mseed, AT)
     item = _claim()
-    _judge(item, _change(a, "status", "blocked", evidence="certain", claimed=item))
+    _judge(item, _change(a, "status", "blocked", evidence=evidence, claimed=item))
     assert a.blocker == "디자인 대기"
     assert _outcomes(mdb, item) == [("status", "noted")]
     assert _notes(mdb) == []
 
 
-def test_inferred_block_on_a_blocked_task_notes_without_a_card(mdb, mseed):
+def test_inferred_block_replaces_the_no_reply_reason_without_a_card(mdb, mseed):
     task = _auto_blocked(mdb, mseed)
     _reply(mdb, mseed, DEADLINE + H, body="키가 늦네요")
     item = _claim()
-    _judge(item, _change(task, "status", "blocked", evidence="inferred", claimed=item))
+    _judge(item, _change(task, "status", "blocked", evidence="inferred", claimed=item, quote="키가 늦네요"))
     assert _outcomes(mdb, item) == [("status", "noted")]
     assert _cards(mdb) == [] and _notes(mdb) == []
-    assert task.blocker == scheduler.BLOCKER_TEXT
+    assert task.blocker == "키가 늦네요"
+    [entry] = mdb.query(TaskHistory).filter(TaskHistory.task_id == task.task_id, TaskHistory.changed_field == "blocker",
+                                            TaskHistory.change_source == "reminder_reply").all()
+    assert entry.reply_change_id == _lines(mdb, item)[(task.task_id, "status")].change_id
+
+    tick(mdb, DEADLINE + 2 * H)
+    assert (task.status, task.blocker) == ("blocked", "키가 늦네요")
+
+
+def test_inferred_block_fills_an_empty_reason(mdb, mseed, two):
+    a, _ = two
+    a.status = "blocked"
+    mdb.commit()
+    _reply(mdb, mseed, AT, body="키가 늦네요")
+    item = _claim()
+    _judge(item, _change(a, "status", "blocked", evidence="inferred", claimed=item, quote="키가 늦네요"))
+    assert (a.status, a.blocker) == ("blocked", "키가 늦네요")
+    assert _outcomes(mdb, item) == [("status", "noted")]
 
 
 def test_new_block_writes_status_and_reason_under_one_change(mdb, mseed, two):

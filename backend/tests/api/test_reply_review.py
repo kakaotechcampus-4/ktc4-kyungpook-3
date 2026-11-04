@@ -16,7 +16,7 @@ from app.models import (
 from app.services import messages, replies
 from tests.api.test_messages_api import P, client
 from tests.api.test_replies import _remind, _reply
-from tests.api.test_reply_clock import DEADLINE
+from tests.api.test_reply_clock import DEADLINE, _auto_blocked
 from tests.api.test_reply_judgment import AT, _change, _claim, _judge, _lines, _outcomes, _post, _row
 from tests.api.test_scheduler import SLOT, H, tick
 
@@ -440,6 +440,18 @@ def test_nothing_to_change_shows_on_each_candidate(mdb, mseed, two):
         [reply] = _timeline(task)["items"]
         [change] = reply["changes"]
         assert (change["field"], change["result"], change["undoable"]) == ("none", "noted", False)
+
+
+def test_reason_replaced_by_an_inferred_block_shows_only_under_the_reply(mdb, mseed):
+    task = _auto_blocked(mdb, mseed)
+    _reply(mdb, mseed, DEADLINE + H, body="키가 늦네요")
+    item = _claim()
+    _judge(item, _change(task, "status", "blocked", evidence="inferred", claimed=item, quote="키가 늦네요"))
+    items = _timeline(task)["items"]
+    [reply] = [i for i in items if i["kind"] == "reply"]
+    [change] = reply["changes"]
+    assert (change["field"], change["result"], change["undoable"]) == ("status", "noted", False)
+    assert [i for i in items if i["kind"] == "history" and i["change_source"] == "reminder_reply"] == []
 
 
 def test_reply_shows_only_on_the_task_it_touched(mdb, mseed, two):
