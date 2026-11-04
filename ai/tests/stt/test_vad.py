@@ -102,6 +102,14 @@ def test_cough_is_dropped():
     assert got == []
 
 
+def test_a_shorter_minimum_keeps_a_short_reply():
+    """배치는 min_speech_ms 를 100ms 로 준다. 0.14초짜리 "네." 가 320ms 에 버려졌다(결정 기록 0031)."""
+    v = StreamingVAD(speaker_id="1", sample_rate=SR, min_speech_ms=100)
+    got = feed_packets(v, tone(200), 1_000) + feed_packets(v, silence(1_500), 1_200)
+    got += v.flush()
+    assert len(got) == 1
+
+
 def test_long_monologue_is_split_at_cap():
     v = vad()
     got = feed_packets(v, tone(30_000), 0)

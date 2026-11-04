@@ -137,8 +137,11 @@ class Prompted:
         self.prompt = prompt
         self.min_s = min_s     # 이보다 짧은 묶음은 프롬프트 없이 보낸다. 운영은 PROMPT_MIN_S
 
-    def transcribe(self, samples: np.ndarray, sample_rate: int) -> SttResult:
-        prompt = self.prompt if len(samples) >= sample_rate * self.min_s else None
+    takes_context = True   # batch.run 이 짧은 묶음을 나중에 앞 줄(context)과 함께 보낸다(0031)
+
+    def transcribe(self, samples: np.ndarray, sample_rate: int, context: str | None = None) -> SttResult:
+        """min_s 보다 짧은 묶음은 이름 대신 앞 줄을 프롬프트로 싣고, 앞 줄이 없으면 프롬프트 없이 보낸다."""
+        prompt = self.prompt if len(samples) >= sample_rate * self.min_s else context
         return self.inner.transcribe(samples, sample_rate, prompt=prompt)
 
     def __getattr__(self, name: str):
