@@ -37,13 +37,16 @@ def notify(
     link_id: str,
     now: datetime,
     dedupe_key: str | None = None,
-) -> Notification:
-    """다른 작업이 부르는 입구. dedupe_key 가 같은 알림이 이미 있으면 새로 만들지 않고 그것을 돌려준다."""
+) -> Notification | None:
+    """다른 작업이 부르는 입구. dedupe_key 가 같은 알림이 이미 있으면 새로 만들지 않고 그것을 돌려준다.
+    탈퇴한 팀원에게는 알리지 않고 None 을 돌려준다."""
     if dedupe_key is not None:
         existing = _by_dedupe_key(db, dedupe_key)
         if existing is not None:
             return existing
     member = db.get(Member, member_id)
+    if member.is_deleted:
+        return None
     notification = Notification(
         workspace_id=member.workspace_id, member_id=member_id, kind=kind, text=text,
         link_type=link_type, link_id=link_id, dedupe_key=dedupe_key,
@@ -203,7 +206,7 @@ def _claim_pushes(db: Session, now: datetime, can_send: bool) -> list[tuple[str,
     work = []
     for notification in pending:
         notification.pushed_at = now
-        user_id = notification.member.user_id
+        user_id = None if notification.member.is_deleted else notification.member.user_id
         subs = [] if user_id is None or not can_send else db.scalars(
             select(PushSubscription).where(PushSubscription.user_id == user_id).order_by(PushSubscription.created_at)
         ).all()

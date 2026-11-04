@@ -281,3 +281,26 @@ def test_claimed_push_is_left_alone_until_the_lease_ends(mdb, mseed):
     assert sender.sent == []
     svc.send_pending_pushes(mdb, now=NOW + svc.PUSH_LEASE + timedelta(minutes=1), send=sender)
     assert len(sender.sent) == 1
+
+
+def test_left_member_gets_no_notification(mdb, mseed):
+    mseed["alice"].is_deleted = True
+    mdb.commit()
+
+    assert _notify(mdb, mseed, "alice") is None
+    assert mdb.query(Notification).count() == 0
+
+
+def test_pending_push_is_not_sent_after_member_left(mdb, mseed):
+    _subscribe("alice", mseed["ws"], "https://fcm.googleapis.com/fcm/send/alice-phone")
+    n = _notify(mdb, mseed, "alice")
+    mseed["alice"].is_deleted = True
+    mdb.commit()
+
+    sender = FakeSender()
+    svc.send_pending_pushes(mdb, now=NOW, send=sender)
+    mdb.commit()
+
+    assert sender.sent == []
+    assert mdb.get(Notification, n.notification_id).push_status == "skipped"
+
