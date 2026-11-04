@@ -343,6 +343,28 @@ def test_prompted_backend_passes_the_prompt_and_keeps_the_inner_attributes():
     assert b.name == "elice/whisper-large-v3" and b.reclip_unmapped is False
 
 
+def test_prompted_backend_sends_no_prompt_for_short_chunks():
+    """1.5초보다 짧은 묶음은 프롬프트 없이 보낸다. 말이 거의 없는 짧은 묶음에서 위스퍼가 프롬프트의 이름을
+    되풀이했다(결정 기록 0030)."""
+    import numpy as np
+
+    from stt.backend import PROMPT_MIN_S, Prompted
+
+    class Inner:
+        def __init__(self):
+            self.prompts = []
+
+        def transcribe(self, samples, sample_rate, prompt=None):
+            self.prompts.append(prompt)
+            return SttResult(text="그", words=[])
+
+    inner = Inner()
+    b = Prompted(inner, "동우님.", min_s=PROMPT_MIN_S)
+    b.transcribe(np.zeros(int(16_000 * PROMPT_MIN_S) - 1, dtype=np.float32), 16_000)
+    b.transcribe(np.zeros(int(16_000 * PROMPT_MIN_S), dtype=np.float32), 16_000)
+    assert PROMPT_MIN_S == 1.5 and inner.prompts == [None, "동우님."]
+
+
 def test_name_prompt_dedupes_skips_blanks_and_caps_the_list():
     from stt.backend import NAME_PROMPT_MAX, name_prompt
 
@@ -374,3 +396,17 @@ def test_hint_prompt_groups_forms_per_person_dedupes_and_caps_people():
     assert hint_prompt([]) is None
     people = [f"김{chr(0xAC00 + i)}{chr(0xAC00 + i)}" for i in range(HINT_PEOPLE_MAX + 3)]
     assert hint_prompt(people).count("님") == HINT_PEOPLE_MAX
+
+
+def test_member_names_set_by_the_pm_are_hinted_in_three_forms():
+    """BE 에는 PM 이 온보딩에서 정한 실명이 있다. 디스코드 표시 이름과 달리 두 글자 이름도 첫 글자를 성으로 본다.
+    별칭은 한글인 것만 뒤에 붙인다(아이디 꼴은 들리는 소리와 글자가 달라 힌트가 안 된다)."""
+    from stt.backend import member_forms, member_prompt
+
+    assert member_forms("김동우") == ["동우님", "동우", "김동우"]
+    assert member_forms("김환") == ["환님", "환", "김환"]
+    assert member_forms("김환", ["환이", "Hwan", "환", " "]) == ["환님", "환", "김환", "환이"]
+    assert member_forms("sora") == []
+    assert member_prompt([{"name": "김동우", "aliases": []}, {"name": "김환", "aliases": ["환이"]}]) == \
+        "동우님, 동우, 김동우, 환님, 환, 김환, 환이."
+    assert member_prompt([]) is None and member_prompt([{"name": "sora", "aliases": []}]) is None

@@ -3,10 +3,14 @@
 
 TEST_DATABASE_URL 이 있으면 PostgreSQL 에서도 돈다.
 """
+import importlib.util
 import os
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import pytest
+from alembic.migration import MigrationContext
+from alembic.operations import Operations
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import IntegrityError
@@ -264,7 +268,9 @@ def test_decline_closes_the_invite(seed):
 def test_pm_cancels_a_pending_invite(seed):
     invitation_id = _invite_id(seed["ws"], seed["jiyoung"].member_id, "jiyoung@example.com")
     assert _act(invitation_id, "cancel", "jimin-token").status_code == 403
-    assert _act(invitation_id, "cancel", "outsider-token").status_code == 403
+    outsider = _act(invitation_id, "cancel", "outsider-token")
+    assert outsider.status_code == 404
+    assert _code(outsider) == "INVITATION_NOT_FOUND"
 
     res = _act(invitation_id, "cancel", "pm-token")
 
@@ -609,3 +615,61 @@ def test_promotion_check_locks_the_member_row_shared_with_invite_creation(db, se
         assert _row_is_locked(db, seed["minsu"].member_id)
     finally:
         db.rollback()
+
+
+@pytest.mark.parametrize("action", ["cancel", "revoke"])
+def test_pm_of_another_workspace_cannot_tell_the_invite_exists(db, seed, action):
+    other_pm_user = _user(db, "otherpm")
+    other_ws = seed["other"].workspace_id
+    db.add(Member(workspace_id=other_ws, user_id=other_pm_user.user_id, display_name="다른PM", role="pm"))
+    db.commit()
+    invitation_id = _invite_id(seed["ws"], seed["jiyoung"].member_id, "jiyoung@example.com")
+    if action == "revoke":
+        assert _act(invitation_id, "accept", "jiyoung-token").status_code == 200
+
+    res = _act(invitation_id, action, "otherpm-token")
+
+    assert res.status_code == 404
+    assert _code(res) == "INVITATION_NOT_FOUND"
+    assert "workspace_id" not in res.text
+    assert len(_workspace_ids("jiyoung-token")) == (1 if action == "revoke" else 0)
+
+
+def test_last_workspace_is_the_one_just_accepted(db, seed):
+    user = db.query(User).filter(User.email == "jiyoung@example.com").one()
+    own_ws = Workspace(name="내 공간")
+    db.add(own_ws)
+    db.flush()
+    db.add(Member(workspace_id=own_ws.workspace_id, user_id=user.user_id, display_name="지영", role="pm",
+                  created_at=datetime.now(timezone.utc) + timedelta(hours=1)))
+    db.commit()
+    invitation_id = _invite_id(seed["ws"], seed["jiyoung"].member_id, "jiyoung@example.com")
+    assert _client("jiyoung-token").get("/api/v1/auth/me").json()["data"]["last_workspace_id"] == own_ws.workspace_id
+
+    accept = _act(invitation_id, "accept", "jiyoung-token")
+    assert accept.status_code == 200
+    db.execute(
+        text("UPDATE invitation SET responded_at = :at WHERE invitation_id = :id"),
+        {"at": datetime.now(timezone.utc) + timedelta(hours=2), "id": invitation_id},
+    )
+    db.commit()
+
+    assert _client("jiyoung-token").get("/api/v1/auth/me").json()["data"]["last_workspace_id"] == seed["ws"]
+
+
+def test_migration_keeps_the_open_invite_indexes_partial_on_sqlite():
+    path = Path(__file__).parents[2] / "migrations" / "versions" / "e8b2f4c6a1d9_add_invitation.py"
+    spec = importlib.util.spec_from_file_location("add_invitation_migration", path)
+    migration = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(migration)
+    engine = create_engine("sqlite:///:memory:")
+
+    with engine.begin() as conn:
+        with Operations.context(MigrationContext.configure(conn)):
+            migration.upgrade()
+        indexes = conn.execute(
+            text("SELECT name, sql FROM sqlite_master WHERE type = 'index' AND name LIKE 'uq_invitation_pending_%'")
+        ).all()
+
+    assert {name for name, _ in indexes} == {"uq_invitation_pending_member", "uq_invitation_pending_email"}
+    assert all("WHERE status = 'pending'" in sql for _, sql in indexes)

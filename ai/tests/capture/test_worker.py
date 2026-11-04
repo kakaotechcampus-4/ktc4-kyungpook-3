@@ -40,6 +40,14 @@ def _edit(path, **fields):
     R.save_manifest(path, m)
 
 
+def test_the_worker_sends_batch_audio_without_the_speech_gate(tmp_path):
+    """배치 전사는 말 필터를 걸지 않는다. 필터가 짧은 대답을 버리는 손해가 거르는 이득보다 컸다(결정 기록 0030)."""
+    worker = W.Worker(tmp_path / "recordings", transcripts_dir=tmp_path / "transcripts",
+                      stt_factory=lambda: (EchoStt(), "echo", 1), extractor_factory=lambda: None,
+                      handoff_factory=lambda: None, debug=False)
+    assert worker._gate_factory() is None
+
+
 def test_the_worker_does_not_import_discord():
     code = ("import sys\nimport capture.worker\n"
             "print(sorted(m for m in sys.modules if m == 'discord' or m.startswith('discord.') "
@@ -480,3 +488,17 @@ def test_retry_asks_the_running_worker_and_says_whether_it_is_alive(tmp_path):
     assert (rec / ".worker" / "wake-77").exists() and "워커가 곧" in said
     (rec / ".worker" / "heartbeat.json").unlink()
     assert "워커 신호가 없습니다" in W.retry(rec, "77")
+
+
+def test_a_pass_never_lists_an_upload_manifest(tmp_path):
+    """업로드 매니페스트(diarized·mapped·사람이 saved 로 고친 것)는 자동 바퀴도 수동 바퀴도 결과에 넣지 않는다."""
+    from tests.conftest import SEGS, STARTED, FakeDiarizer, _audio
+    from upload.prepare import prepare_upload
+
+    w = _worker(tmp_path)
+    path, m = prepare_upload(_audio(tmp_path), w.recordings_dir, diarizer=FakeDiarizer(SEGS), started_at=STARTED)
+    for status in (R.STATUS_DIARIZED, R.STATUS_MAPPED, R.STATUS_SAVED):
+        _edit(path, status=status)
+        assert asyncio.run(w.run_pass()) == ([], [])
+        assert asyncio.run(w.run_pass(guild_id="123", manual=True)) == ([], [])
+        assert _status(path) == status

@@ -80,7 +80,7 @@ FE 변경과 실제 검증은 [M6 후속 결과](../plan/m6/result.md)에 기록
 | §4.3 OAuth start·callback 없음 | [integrations.py](../../../backend/app/api/integrations.py)에 Notion start와 `/integrations/notion/callback` 구현. [main.py](../../../backend/app/main.py)에 callback router 등록 | Google·Discord OAuth 경로는 해당 라우터에 없음. Notion의 실제 설정·외부 인증 성공은 미검증 |
 | §4.0-②-17 업로드 PM 권한 강제 요청 | [workspaces.py](../../../backend/app/api/workspaces.py)의 업로드 의존성이 `get_current_pm` | 기존 요청은 과거 기록으로 보존. 서버 권한 동작은 실행 검증하지 않음 |
 | §4.4 반복 참석자 multipart 필드 | 프론트는 참석자마다 필드를 반복. 서버 업로드 시그니처는 `attendee_member_ids: str = Form(...)`이며 값을 저장하지 않음 | 다중 참석자 해석·저장 차이 남음. 새 형식 합의 없음 |
-| §4.4 파일 저장·큐 전송 스텁 | 업로드는 processing 회의 행을 만들고 파일 저장·큐 전송 TODO 유지 | 실제 업로드부터 처리 완료까지 성공을 선언하지 않음 |
+| §4.4 파일 저장 | 업로드는 processing 회의 행을 만들고 녹음 파일과 참석자(`meeting_upload`)를 저장한다. 화자 지정은 §2.3.1 | 실제 업로드부터 처리 완료까지 성공을 선언하지 않음 |
 | §4.0-②-11 회의록 본문 하드코딩·summary 미생성 | [meetings.py](../../../backend/app/api/meetings.py)는 Source에서 전사·참석자를 구성하고 Extraction.summary JSON을 읽음 | summary 저장 여부·실제 파이프라인 성공은 이 정적 확인만으로 검증하지 않음 |
 | §4.5 Discord 사용자 목록 스텁 | 연동 존재를 검사한 뒤 고정 사용자 2명을 반환 | 실제 Discord API 조회 없음 |
 
@@ -131,11 +131,11 @@ M6 S1에서 프론트 계약·데이터 계층을 현재 서버 코드에 맞췄
 | 키가 없을 때 | 그 필드는 제안 그대로 |
 | `null` | `assignee_member_id`·`due_date` 는 "미정"(담당자 없음, 마감 없음). `task_title`·`status` 의 `null` 은 400 |
 | 그 밖의 키, 잘못된 날짜·상태 | 400 `INVALID_REQUEST`. 새 태스크 승인에 `title` 키를 보내도 400(`task_title` 을 쓴다). 승인은 pending 으로 남는다 |
-| 다른 공간 담당자, 없는 팀원 | 400 `WORKSPACE_MISMATCH`, 없는 팀원 id 는 404 `MEMBER_NOT_FOUND`. 승인은 pending 으로 남는다 |
-| 충돌 검사 | 고친 값을 반영한 최종 값으로 기존 `APPROVAL_CONFLICT` 검사를 한다 |
+| 다른 공간 담당자, 없는 팀원 | 400 `WORKSPACE_MISMATCH`, 없거나 탈퇴한 팀원 id 는 404 `MEMBER_NOT_FOUND`. 승인은 pending 으로 남는다. 제안의 담당자가 그사이 탈퇴했어도 같고, `task_overrides` 로 다른 담당자나 미정을 고르면 승인된다. `PATCH /tasks` 와 이력 되돌리기도 탈퇴한 팀원을 담당자로 새로 넣지 못한다(지금 담당자를 그대로 보내는 것은 된다) |
+| 충돌 검사 | 고친 값을 반영한 최종 값으로 기존 `APPROVAL_CONFLICT` 검사를 한다. 제안에 없던 필드를 PM 이 고치면 `base_values` 가 없어 이 검사를 하지 않는다. PM 이 지금 값을 보고 고른 값으로 보고 그대로 덮어쓴다 |
 | 이력 | 고친 필드는 `change_source: "manual"`, `changed_by` 는 승인한 PM. 수정 제안은 지금 값에서 PM 값으로, 새 태스크는 생성 줄 다음에 제안 값에서 PM 값으로. 고치지 않은 필드는 승인 요청의 출처(payload `change_source`). 없으면 수정 제안은 `meeting`, 새 태스크는 `meeting_id` 가 있으면 `meeting` 없으면 `manual` |
 | 승인 기록 | payload 의 원래 제안과 근거는 그대로 두고, 제안과 다른 값만 `payload.task_overrides` 에 남는다. 조회 응답에서 볼 수 있다 |
-| `POST /approvals` | payload 에 `task_overrides` 키가 있거나 `change_source` 가 정해진 값(`meeting`·`chat`·`checkin`·`notion`·`reminder_reply`·`manual`)이 아니면 400 |
+| `POST /approvals` | payload 에 `task_overrides` 키가 있거나 `change_source` 가 정해진 값(`meeting`·`chat`·`checkin`·`notion`·`reminder_reply`·`manual`)이 아니면 400. `change_source` 는 PM 만 보낼 수 있고 일반 팀원이 보내면 400 |
 
 #### (기록) 미합의 요청안: 생성 승인 보완 `task_overrides`
 
@@ -169,9 +169,9 @@ M6 S1에서 프론트 계약·데이터 계층을 현재 서버 코드에 맞췄
 
 | # | 요청 | 이유 |
 |---|---|---|
-| M6-1 | 반영(#303, `task_update` 까지). `ApprovalResolveRequest`에 위 `task_overrides`를 추가하고 approved `task_create`에서만 받는다 | 담당자·마감이 없는 생성 승인을 PM이 보완 후 승인할 경로가 없다 |
+| M6-1 | 요청: `ApprovalResolveRequest`에 위 `task_overrides`를 추가하고 approved `task_create`에서만 받는다. 결과: #303 에서 반영했고 `task_update` 까지 받는다 | 담당자·마감이 없는 생성 승인을 PM이 보완 후 승인할 경로가 없다 |
 | M6-2 | 보완값 적용·승인 상태 변경·태스크 생성·추출 항목 `task_id` 연결을 한 트랜잭션으로 처리한다 | 일부만 반영되면 승인·태스크·회의록이 어긋난다 |
-| M6-3 | 받지 않음(#303). 제목은 검증하지만 담당자·마감은 미정을 허용한다. 생성 승인의 최종 제목(trim 후 1~300자)·담당자(같은 공간 팀원)·마감(유효 날짜)을 필수로 검증한다 | M6 제품 규칙. 현재 서버는 담당자·마감 없이 태스크를 만든다 |
+| M6-3 | 요청: 생성 승인의 최종 제목(trim 후 1~300자)·담당자(같은 공간 팀원)·마감(유효 날짜)을 필수로 검증한다. 결과: #303 에서 받지 않았다. 제목은 검증하지만 담당자·마감은 미정을 허용한다 | M6 제품 규칙. 현재 서버는 담당자·마감 없이 태스크를 만든다 |
 | M6-4 | 승인 목록·상세 조회를 PM으로 제한한다 | 프론트 가드와 요청 차단만으로는 일반 팀원의 직접 호출을 막지 못한다 |
 
 이 요청은 프론트 계약에 기록한 것이며 백엔드에 전달·합의된 근거는 이 문서에 없다. 실 API 보완 승인, 승인 조회 PM 제한, 실제 Notion 반영은 미검증 연동 과제로 남는다.
@@ -387,9 +387,67 @@ AUDIO_TOO_LARGE(413)              DISCORD_USER_ALREADY_MAPPED(409)
 ```
 
 - `status` 는 `created` → `recording` → `processing` → `done` \| `failed`.
+- 웹 업로드 회의에는 상태가 하나 더 있다. `awaiting_speakers`(화자 지정 대기)다. 업로드 회의는 `processing` 에서 시작해, AI 가 화자 라벨을 보내면 `awaiting_speakers` 가 되고, PM 이 지정을 제출하면 `processing` 으로 돌아와 `done` \| `failed` 로 끝난다. 이 상태에서는 추출이 등록되지 않고, 같은 공간의 새 업로드를 막지도 않는다. 자세한 흐름과 PM 용 API 는 아래 §2.3.1 이다.
 - `extraction_id` 는 `status: done` 일 때만 채워진다.
 - ~~`progress` 가 응답에서 빠졌다.~~ **PR #59 가 §4.7-1 을 반영했다.** `progress`(audio_merged·transcribed·extracted)가 **필수 필드**로 온다. 진행률 UI 가 이 값을 쓴다.
 - 이미 종료된 회의에 `/end` 를 호출하면 409 `MEETING_ALREADY_ENDED`.
+
+### 2.3.1 업로드 회의 화자 지정 — PM 경로 (#266)
+
+> **상태: BE 구현됨, FE 방향 합의(#256).** 아래는 `backend/app/api/meetings.py` 와 `backend/app/services/speaker_assignment.py` 의 구현 사실이다. #256 에서 FE 가 원본 + 구간 재생, 같은 멤버 다중 지정 허용, 외부 참석자 선택지(`null`)를 받아들였다(2026-11-03). 지정 후보를 업로드 때 고른 참석자로 제한할지는 아직 정하지 않았다. AI 쪽 경로는 [backend-ai-contract.md](../../../backend/docs/contracts/backend-ai-contract.md) 에 있고 프론트는 호출하지 않는다. 실제 서버를 띄운 호출은 검증하지 않았고 테스트([test_speaker_assignment_api.py](../../../backend/tests/api/test_speaker_assignment_api.py))로 확인했다.
+
+세 경로 모두 로그인 세션이 필요하고 그 회의 워크스페이스의 PM 만 쓴다. 미로그인은 401, PM 이 아니면(일반 팀원, 다른 공간의 PM) 403 `FORBIDDEN`. 회의가 없거나 웹 업로드 회의가 아니거나 `meeting_upload` 행이 없으면 404 `MEETING_NOT_FOUND`.
+
+| Method | Path | 용도 |
+|---|---|---|
+| GET | `/api/v1/meetings/{meeting_id}/speakers` | 화자 라벨·후보 참석자·저장된 지정 조회 |
+| PUT | `/api/v1/meetings/{meeting_id}/speakers` | 라벨별 팀원 지정 제출 |
+| GET | `/api/v1/meetings/{meeting_id}/audio` | 원본 녹음 재생 |
+
+```
+// GET /meetings/{meeting_id}/speakers  → 200 (봉투 data)
+{"meeting_id": "...", "status": "awaiting_speakers",
+ "speakers": [{"label": "SPEAKER_01", "total_sec": 120.5, "samples": [{"start": 10.0, "end": 14.0}]}],
+ "candidates": [{"member_id": "...", "display_name": "지민"}],
+ "mapping": null,
+ "audio": {"content_type": "audio/wav", "size_bytes": 1234}}   // 재생할 녹음이 없으면 null
+```
+
+- `speakers` 는 `total_sec` 내림차순, 같으면 `label` 오름차순이다. AI 가 아직 라벨을 보내지 않았으면 `[]` 다. `samples` 의 `start`·`end` 는 초 단위이고 원본 녹음 안의 위치다.
+- `candidates` 는 업로드할 때 고른 참석자 중 이 워크스페이스에서 탈퇴하지 않은 멤버다. 업로드 뒤 탈퇴한 참석자는 빠진다. 제출이 탈퇴 멤버를 400 으로 막으므로 같은 기준으로 뺀 것이다.
+- `audio` 는 녹음 파일이 있을 때만 주고, 처리가 `done`·`failed` 로 끝나 녹음 폴더가 지워졌으면 `null` 이다. `null` 이면 플레이어를 그리지 않는다. 이때 `/audio` 는 404 다.
+- `mapping` 은 지정을 제출하기 전에는 `null`, 제출한 뒤에는 `{label: member_id | null}` 이다.
+
+```
+// PUT /meetings/{meeting_id}/speakers
+{"mapping": {"SPEAKER_00": "<member_id>", "SPEAKER_01": null}}
+  → 200 {"meeting_id": "...", "status": "processing"}
+```
+
+- `mapping` 의 키는 `speakers` 의 라벨과 정확히 같아야 한다. 일부 라벨만 보내면 안 된다. 지정하지 않을 라벨은 값을 `null` 로 보낸다. 같은 멤버를 두 라벨에 지정하는 것은 허용한다.
+- 값이 `null` 이면 외부 참석자(멤버 아님)로 지정한 것이다. `null` 이 아니면 그 회의 워크스페이스의 탈퇴하지 않은 멤버여야 한다. 지금은 `candidates` 밖의 멤버도 받는다(참석자로 제한할지 미정).
+- 400 `INVALID_REQUEST`, `details` 에 이유: `unknown_labels`(모르는 라벨), `missing_labels`(빠진 라벨), `member_ids`(틀린 멤버 ID). 이때 아무것도 바뀌지 않는다.
+- 409 `MEETING_NOT_AWAITING_SPEAKERS`, `details.status` — 회의가 대기 상태가 아니다(이미 처리 중·종료, 또는 이미 저장된 것과 다른 지정을 다시 냄).
+- 이미 저장된 지정과 같은 `mapping` 을 다시 보내면 409 가 아니라 200 이고 `status` 는 회의의 현재 상태다. 요청이 겹치거나 응답이 유실돼 다시 보내도 안전하다.
+
+```
+// GET /meetings/{meeting_id}/audio  → 200 (또는 Range 요청에 206)
+본문: 녹음 원본 바이트. 봉투로 감싸지 않는다. 오류만 봉투다.
+Content-Type: 서버가 저장한 확장자로 정한 audio/* 값(wav→audio/wav, mp3→audio/mpeg, m4a→audio/mp4, ogg→audio/ogg, webm→audio/webm). 목록 밖은 application/octet-stream. 업로드 때 클라이언트가 보낸 값은 쓰지 않는다
+X-Content-Type-Options: nosniff, Cache-Control: private, no-store
+Content-Disposition: 없음(내려받기 아님). Accept-Ranges: bytes
+```
+
+- `<audio>` 로 재생하고 `samples` 구간으로 이동해 들려준다. 서버는 구간을 자르지 않는다. 요청한 `Range` 에는 206 과 `Content-Range` 로 답한다.
+- 상태는 보지 않는다. 녹음 폴더가 있는 동안은 받을 수 있다. 처리가 `done`·`failed` 로 끝나 폴더가 지워지면 404 `MEETING_NOT_FOUND` 다.
+- 쿠키 세션으로 인증하므로 같은 출처에서 `<audio src>` 로 바로 쓸 수 있다. 헤더를 붙여야 하는 방식은 쓸 수 없다.
+
+프론트가 맞춰야 할 것:
+
+- `awaiting_speakers` 를 회의 상태로 표시한다. 알 수 없는 상태를 `created` 처럼 읽으면 안 된다.
+- 처리 추적이 이 상태에서 멈추면 안 된다. 현재 [trackerOutcome.ts](../../src/features/meeting-processing/model/trackerOutcome.ts) 는 `processing`·`done`·`failed` 외의 상태를 `lost` 로 보고 polling 을 멈춘다. `awaiting_speakers` 는 PM 의 지정을 기다리는 정상 진행이므로 계속 지켜보거나 지정 화면으로 안내해야 한다.
+- 이 경로를 쓰는 화면은 PM 에게만 보인다.
+- 새 오류 코드 중 PM 경로에서 오는 것은 `MEETING_NOT_AWAITING_SPEAKERS` 하나다. `UPLOAD_NOT_CLAIMED`·`SPEAKERS_ALREADY_REPORTED`·`SPEAKERS_NOT_ASSIGNED` 는 AI 경로 코드다. 위 「오류 코드」 목록의 개수(31개)에는 이 새 코드들이 들어 있지 않다.
 
 ### 2.4 extractions
 
@@ -834,7 +892,7 @@ MSW 는 **API 를 흉내내므로 100자 기준을 그대로 쓴다.** 여기에
 ```
 
 - `workspace_count` 로 로그인 후 이동을 분기한다. `0` 이면 온보딩, `1` 이면 대시보드, `2` 이상이면 선택 화면 (D-010).
-  구현은 `Member` 행 수를 센다. `last_workspace_id` 는 가장 최근에 만들어진 멤버십이다.
+  구현은 `Member` 행 수를 센다. `last_workspace_id` 는 가장 최근에 들어간 멤버십이다. 초대로 들어간 곳은 수락 시각, 그 밖에는 멤버십을 만든 시각으로 비교한다.
 - **세션 요구사항 3가지** (D-165) — **셋 다 충족됐다.** 토큰 형식은 백엔드가 정하며 **JWT 를 요구하지 않았다.**
   1. Secure·HttpOnly 쿠키, `SameSite=Lax`. 응답 본문에 토큰을 담지 않는다. → ✅ `set_cookie(httponly, samesite="lax", secure=True)`
   2. 로그아웃 시 즉시 무효화한다. → ✅ `session` 행을 삭제하고 쿠키를 지운다
@@ -1250,8 +1308,9 @@ members 에만 있고 Discord 목록에 없으면      → 비활성 (서버를 
 |---|---|---|
 | 회의 올리기 진입 가드 | `GET /workspaces/{id}/integrations` 로 Notion 연결 확인 | **구현됨** §4.3 |
 | 참석자 선택 | `GET /members?workspace_id=` | **구현됨** §2.2 |
-| 업로드 | `POST /workspaces/{id}/meetings/upload` (multipart) | ⚠️ **스텁** §4.4 — 파일·참석자를 저장하지 않는다 |
+| 업로드 | `POST /workspaces/{id}/meetings/upload` (multipart) | **구현됨** — 파일·참석자 저장, 화자 지정은 §2.3.1 |
 | 정리 중 — 폴링 | `GET /meetings/{meeting_id}` | **구현됨** §2.3 — `progress` 포함 |
+| 화자 지정(`awaiting_speakers`) | `GET`·`PUT /meetings/{id}/speakers`, `GET /meetings/{id}/audio` | BE 구현됨, FE 방향 합의(#256) §2.3.1 |
 | 회의록 목록 | `GET /workspaces/{id}/meetings` | **구현됨** §4.4 |
 | 회의록 본문 | `GET /meetings/{meeting_id}/minutes` | ⚠️ **스텁** §4.4 — `transcript` 가 안내 문구 1줄, `summary` 는 항상 `null` |
 | 회의록의 태스크 영역 | `GET /extractions/{extraction_id}` | **구현됨** §2.4 |
@@ -1320,19 +1379,21 @@ members 에만 있고 Discord 목록에 없으면      → 비활성 (서버를 
   - `rule`: AI 초안이 아직 없거나 못 쓴 경우의 기본 문구다. 예: `재환님, API 명세서 마감이 11/14(토)이라 한번 여쭤봐요. 지금 어디까지 됐는지 편하게 알려 주세요!`
   - `draft_status` 가 `needed`·`claimed` 이면 AI 초안이 아직 오는 중이고 문구가 바뀔 수 있다. `done` 이면 더 바뀌지 않는다. 초안을 기다리는 중에도 승인할 수 있고, 승인하면 그때 보이는 문구가 나가며 `draft_status` 는 `done` 이 된다.
   - `draft_version` 은 보이는 문구와 구성의 판이다. AI 초안이 들어오거나, PM 이 문구를 고치거나, 묶음 구성이 바뀌면 오른다. 묶음 시각만 옮기면 그대로다. 승인할 때 보낸 판이 지금 판과 다르면 409 `BUNDLE_CHANGED` 이고 `details.draft_version` 에 지금 판을 준다. 화면은 `보낼 메시지가 바뀌었어요. 다시 확인해 주세요.` 를 보이고 묶음을 다시 불러와 PM 이 새 문구를 보고 승인하게 한다.
+- 같은 받는 사람·태스크·발송 시각의 예정 리마인드가 이미 있으면 `POST /messages/reminders` 는 새로 만들지 않고 있던 것을 201 로 돌려준다. 이때 보낸 `note` 는 쓰지 않고 승인도 풀리지 않는다.
 - 묶음 구성이 바뀌면(리마인드를 더하거나 빼거나, 태스크 메모를 고치거나, 다른 시각으로 옮기면) 문구를 다시 만들고 **승인이 풀린다.** PM 이 묶음 문구를 직접 고치면 승인은 그대로다.
 - 묶음 시각을 옮긴 곳에 이미 예정 묶음이 있으면 둘이 합쳐지고 합쳐진 묶음을 돌려준다. 이때 문구를 같이 고치면 400 이다. 시각부터 옮기고 문구를 고친다.
 - 리마인드가 모두 빠진 묶음은 `cancelled` 가 된다. 취소된 묶음의 `reminders[]` 에는 묶음과 함께 취소된 리마인드만 있고, 그 전에 뺀 리마인드는 없다.
 - 고치기·승인·취소는 `scheduled` 에서만 된다. 다른 상태면 409 `REMINDER_NOT_EDITABLE`. 없는 묶음은 404 `REMINDER_BUNDLE_NOT_FOUND`, 없는 리마인드는 404 `REMINDER_NOT_FOUND`.
 - `scheduled_at` 은 시간대가 있는 ISO 시각이어야 하고(없으면 400) UTC 로 돌려준다. 지금보다 이른 시각으로 만들거나 고치거나, 시각이 지난 묶음을 승인하면 409 `REMINDER_SCHEDULED_AT_PASSED` 다. 지금과 같은 시각을 문구·메모와 같이 보내는 것은 시각을 고친 것으로 보지 않는다. 화면은 `예정 시각이 지났어요` 를 보이고 시각을 다시 고르게 한다(D-174 정책 3).
-- 발송 시각이 된 승인된 묶음은 대화 메시지 한 통이 되고, 묶음과 리마인드는 `sent` 가 된다. 스케줄러가 시각에 맞춰 만들므로 봇이 꺼져 있어도 웹 대화에는 나타난다. 나갈 때 응답이 있었던 재촉이 있으면 자동 취소하고 나머지는 승인을 풀어 PM 이 다시 확인한다.
+- 발송 시각이 된 승인된 묶음은 대화 메시지 한 통이 되고, 묶음과 리마인드는 `sent` 가 된다. 스케줄러가 시각에 맞춰 만들므로 봇이 꺼져 있어도 웹 대화에는 나타난다. 나갈 때 응답이 있었던 재촉이 있으면 자동 취소하고 나머지는 승인을 풀어 PM 이 다시 확인한다. 탈퇴한 팀원의 승인된 묶음은 메시지를 만들지 않고 `cancelled` 가 된다.
+- 승인되지 않은 채 시각이 지난 묶음은 `scheduled` 로 남고 AI 초안도 오지 않는다. PM 이 시각을 옮기거나 보내지 않음을 고른다. 승인된 묶음의 태스크 메모를 고쳐 승인이 풀린 경우도 같다. 마감이 지나면 스케줄러가 `expired` 로 닫는다.
 - 대화 메시지(`messages[]`)는 `{message_id, thread_id, sender: "bot"|"member", body, created_at, reply_channel: "discord"|"web"|null, dm_status, dm_failure_reason, scheduled_at}` 이다.
   - 팀원 메시지의 `reply_channel` 이 `web` 이면 `웹에서 답장` 표시를 붙인다.
   - 봇 메시지의 `dm_status` 는 `pending`·`claimed`(봇이 보내는 중)·`delivered`·`failed` 다. `failed` 면 `dm_failure_reason` 이 `dm_blocked`(팀원이 서버 DM 을 막음)·`discord_not_linked`(디스코드 미연결)·`unknown` 중 하나이고, 화면은 `DM 못 보냄` 을 보인다. 웹 대화에는 들어갔으므로 상태는 `sent` 다.
 - 대화 목록 한 줄은 `{thread_id, member_id, name, last_message, awaiting_reply_since, dm_failed}` 다. `dm_failed` 는 그 팀원에게 마지막으로 나간 봇 메시지가 `failed` 인지다. 최근 메시지 순이고, 메시지가 없는 대화는 아래에 둔다.
 - 팀원이 봇 DM 창에 쓴 글은 리마인드에 대한 답인지와 상관없이 모두 대화에 들어가 PM 이 본다. 팀원 화면에 이를 안내해야 한다.
-- 팀원 권한은 로그인 계정이 연결된 팀원(`member.user_id`) 기준이다. 계정이 연결되지 않은 팀원은 웹 답장을 할 수 없다.
-- 아직 없는 것: 답장의 태스크 판정 입력(`답장 확인 필요`)과 판정 결과, 태스크 안내 DM·#회의록 요약, `지금 바로` 5분 합치기, 알림 설정, AI 초안 워커. MSW 의 `reviews/{id}/send|dismiss` 는 `bundles/{id}/approve|cancel` 로 바뀐다. 프론트엔드 요청은 #315.
+- 팀원 권한은 로그인 계정이 연결된 팀원(`member.user_id`) 기준이다. 계정이 연결되지 않은 팀원은 웹 답장을 할 수 없다. 대화 주인은 팀원 행으로 판단하므로, 탈퇴했다가 새 팀원 행으로 돌아온 계정은 예전 행의 대화를 열 수 없다.
+- 아직 없는 것: 답장의 태스크 판정 입력(`답장 확인 필요`)과 판정 결과, 태스크 안내 DM·#회의록 요약, `지금 바로` 5분 합치기, 알림 설정, AI 초안 워커, 시안의 `지금 바로`(`send_timing: now`)에 대응하는 BE 경로. MSW 의 `reviews/{id}/send|dismiss` 는 `bundles/{id}/approve|cancel` 로 바뀐다. 프론트엔드 요청은 #315.
 
 **스케줄러** (#318 에서 BE 구현). 결정 근거는 [결정 0038](../../../ai/docs/basis_for_decision/ai/2026-11-04-0038-reminder-scheduler-and-notifications.md). 시각 기준은 한국 시간이다.
 
@@ -1466,7 +1527,7 @@ D-117(E2E)과 D-136(polling)은 실제 API 가 생길 때까지 계속 보류한
   | `EMAIL_ALREADY_INVITED` | 409 | 같은 이메일로 다른 팀원에게 보낸 초대가 대기 중이다 |
   | `PM_MEMBER_NOT_INVITABLE` | 409 | 이 워크스페이스에서 역할이 PM 인 팀원을 초대하려 했다. 팀원으로 초대하고, 수락한 뒤 PM 으로 바꾼다. 다른 워크스페이스의 역할과는 상관없다 |
   | `MEMBER_HAS_PENDING_INVITATION` | 409 | 대기 초대가 있는 팀원을 PM 으로 올리려 했다(`PATCH /members/{id}`) |
-  | `INVITATION_NOT_FOUND` | 404 | 초대가 없다. 수락·거절에서는 내 이메일로 온 초대가 아니어도 이 코드다 |
+  | `INVITATION_NOT_FOUND` | 404 | 초대가 없다. 수락·거절에서는 내 이메일로 온 초대가 아니어도, 취소·연결 끊기에서는 그 워크스페이스 소속이 아니어도 이 코드다(소속이지만 PM 이 아니면 403 `FORBIDDEN`) |
   | `INVITATION_NOT_PENDING` | 409 | 대기 중이 아닌 초대를 수락·거절·취소했다 |
   | `INVITATION_NOT_ACCEPTED` | 409 | 수락하지 않은 초대의 연결을 끊으려 했다 |
   | `LAST_PM_REQUIRED` | 409 | 끊으면 로그인할 수 있는 PM 이 없어진다 |

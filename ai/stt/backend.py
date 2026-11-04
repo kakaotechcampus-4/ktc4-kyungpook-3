@@ -75,22 +75,55 @@ def name_forms(display_name: str) -> list[str]:
     return [f"{given}님", given] + ([n] if given != n else [])
 
 
+def member_forms(name: str, aliases=()) -> list[str]:
+    """PM 이 온보딩에서 정한 이름(BE) 하나를 프롬프트에 넣을 꼴들로 바꾼다. 부르는 이름에 님, 부르는 이름, 실명,
+    한글 별칭 순이다.
+
+    실명이라 두 글자 이름도 첫 글자를 성으로 본다(디스코드 표시 이름은 성인지 알 수 없어 name_forms 가 떼지 않는다).
+    네 글자는 앞 두 글자를 성으로 본다. 한글이 아니면 넣지 않는다. 부르는 이름을 실명보다 먼저 두는 꼴이 실명을
+    먼저 두는 꼴보다 6인 m01 CER 이 1.06pt 낮았다(결정 기록 0024).
+    """
+    n = (name or "").strip()
+    if not re.fullmatch(r"[가-힣]{2,}", n):
+        return []
+    given = n[2:] if len(n) == 4 else n[1:]
+    forms = [f"{given}님", given, n]
+    for a in aliases or ():
+        a = (a or "").strip()
+        if re.fullmatch(r"[가-힣]+", a) and a not in forms:
+            forms.append(a)
+    return forms
+
+
+def _people_prompt(people: list[list[str]]) -> str | None:
+    """사람마다의 꼴 목록을 프롬프트 글 하나로. 겹치는 꼴은 한 번만 넣고, 넣을 꼴이 있는 사람만 HINT_PEOPLE_MAX 명까지 센다."""
+    forms: list[str] = []
+    count = 0
+    for person in people:
+        new = [f for f in person if f not in forms]
+        if not new:
+            continue
+        if count == HINT_PEOPLE_MAX:
+            break
+        forms += new
+        count += 1
+    return ", ".join(forms) + "." if forms else None
+
+
 def hint_prompt(display_names: list[str]) -> str | None:
     """표시 이름 목록으로 이름 프롬프트 글을 만든다. "재환님, 재환, 유재환, 김환님, 김환." 처럼 사람마다 묶는다.
 
     겹치는 꼴은 한 번만 넣고, 넣을 꼴이 있는 사람만 HINT_PEOPLE_MAX 명까지 센다. 넣을 것이 없으면 None 이다.
     """
-    forms: list[str] = []
-    people = 0
-    for name in display_names:
-        new = [f for f in name_forms(name) if f not in forms]
-        if not new:
-            continue
-        if people == HINT_PEOPLE_MAX:
-            break
-        forms += new
-        people += 1
-    return ", ".join(forms) + "." if forms else None
+    return _people_prompt([name_forms(name) for name in display_names])
+
+
+def member_prompt(members: list[dict]) -> str | None:
+    """BE 팀원 목록([{"name", "aliases"}])으로 이름 프롬프트 글을 만든다. "동우님, 동우, 김동우, 환님, 환, 김환." 처럼."""
+    return _people_prompt([member_forms(m.get("name") or "", m.get("aliases") or ()) for m in members])
+
+
+PROMPT_MIN_S = 1.5   # 운영에서 이보다 짧은 묶음은 프롬프트 없이 보낸다. 그 밑에서 프롬프트의 이름을 되풀이하는 환각이 났다(0030)
 
 
 class Prompted:
@@ -99,12 +132,14 @@ class Prompted:
     transcribe 말고 다른 속성(name, reclip_unmapped 등)은 안의 백엔드 것을 그대로 보인다.
     """
 
-    def __init__(self, inner, prompt: str) -> None:
+    def __init__(self, inner, prompt: str, *, min_s: float = 0.0) -> None:
         self.inner = inner
         self.prompt = prompt
+        self.min_s = min_s     # 이보다 짧은 묶음은 프롬프트 없이 보낸다. 운영은 PROMPT_MIN_S
 
     def transcribe(self, samples: np.ndarray, sample_rate: int) -> SttResult:
-        return self.inner.transcribe(samples, sample_rate, prompt=self.prompt)
+        prompt = self.prompt if len(samples) >= sample_rate * self.min_s else None
+        return self.inner.transcribe(samples, sample_rate, prompt=prompt)
 
     def __getattr__(self, name: str):
         return getattr(self.inner, name)
