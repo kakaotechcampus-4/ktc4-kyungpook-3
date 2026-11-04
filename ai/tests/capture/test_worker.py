@@ -41,6 +41,12 @@ def _no_assign(monkeypatch):
     monkeypatch.setattr(W, "assign_one", lambda *a, **k: None)
 
 
+@pytest.fixture(autouse=True)
+def _no_report(monkeypatch):
+    """기본은 라벨 보고 없음(가짜 client 문자열로 BE 를 부르지 않는다). 쓰는 테스트가 W.report_one 을 다시 끼운다."""
+    monkeypatch.setattr(W, "report_one", lambda *a, **k: None, raising=False)
+
+
 def _status(path):
     return json.loads(path.read_text(encoding="utf-8"))["status"]
 
@@ -740,6 +746,67 @@ async def test_an_assign_crash_is_logged_and_intake_still_runs(tmp_path, monkeyp
     monkeypatch.setattr(W, "intake_one", rec)
     await w._intake_once()
     assert "[worker] 업로드 가져오기 오류: RuntimeError: 지정 터짐" in capsys.readouterr().out
+    assert rec.calls == 1 and w._current is None
+
+
+class _Report:
+    def __init__(self, worker, events=(), order=None, effect=None):
+        self.worker, self.events, self.calls, self.locked, self.clients, self.order, self.effect = worker, list(events), 0, [], [], order, effect
+
+    def __call__(self, recordings_dir, *, client, **kw):
+        self.calls += 1
+        self.locked.append(self.worker._sem.locked())
+        self.clients.append(client)
+        if self.order is not None:
+            self.order.append("report")
+        if self.effect:
+            self.effect()
+        return self.events.pop(0) if self.events else None
+
+
+async def test_report_runs_between_assign_and_intake_inside_the_sem(tmp_path, monkeypatch, capsys):
+    w = _worker(tmp_path, intake=("the-client", "diarizer"))
+    order = []
+    monkeypatch.setattr(W, "assign_one", _Assign(w, order=order))
+    rep = _Report(w, events=[SimpleNamespace(meeting_id="m7", event="reported")], order=order)
+    monkeypatch.setattr(W, "report_one", rep)
+    monkeypatch.setattr(W, "intake_one", _Intake(w, after=lambda n: order.append("intake")))
+    await w._intake_once()
+    assert order == ["assign", "report", "intake"]
+    assert rep.locked == [True] and rep.clients == ["the-client"] and w._current is None
+    assert "[worker] 업로드 m7 reported" in capsys.readouterr().out
+
+
+async def test_stop_during_report_skips_intake(tmp_path, monkeypatch):
+    w = _worker(tmp_path, intake=("c", "d"))
+    rec = _Intake(w)
+    monkeypatch.setattr(W, "report_one", _Report(w, effect=w.stop))
+    monkeypatch.setattr(W, "intake_one", rec)
+    await w._intake_once()
+    assert rec.calls == 0 and w._current is None
+
+
+async def test_stop_during_assign_skips_report_and_intake(tmp_path, monkeypatch):
+    w = _worker(tmp_path, intake=("c", "d"))
+    rep, rec = _Report(w), _Intake(w)
+    monkeypatch.setattr(W, "assign_one", lambda *a, **k: w.stop())
+    monkeypatch.setattr(W, "report_one", rep)
+    monkeypatch.setattr(W, "intake_one", rec)
+    await w._intake_once()
+    assert rep.calls == 0 and rec.calls == 0
+
+
+async def test_a_report_crash_is_logged_and_intake_still_runs(tmp_path, monkeypatch, capsys):
+    w = _worker(tmp_path, intake=("c", "d"))
+    rec = _Intake(w)
+
+    def boom(*a, **k):
+        raise RuntimeError("보고 터짐")
+
+    monkeypatch.setattr(W, "report_one", boom)
+    monkeypatch.setattr(W, "intake_one", rec)
+    await w._intake_once()
+    assert "[worker] 업로드 가져오기 오류: RuntimeError: 보고 터짐" in capsys.readouterr().out
     assert rec.calls == 1 and w._current is None
 
 
