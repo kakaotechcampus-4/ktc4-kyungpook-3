@@ -10,7 +10,7 @@ const SCREEN = 'flex min-h-dvh items-center justify-center px-24 py-48'
 
 /**
  * 메시지 API 가 없어 새 화면은 개발 서버 + MSW 일 때만 그린다 (M8 계획 C-3 의 임시 기본값 — 최종 결정 아님).
- * 실 API 모드와 production 은 준비 중 안내 그대로이고 API 도 부르지 않는다 (D-171).
+ * 실 API 모드와 production 은 준비 중 안내 그대로이고 API 도 부르지 않는다 (D-174).
  * DEV 를 먼저 본다 — 번들러가 이 분기를 지워야 프로덕션 번들에 새 화면 코드가 남지 않는다
  */
 export function MessagesPage() {
@@ -22,7 +22,7 @@ function MessagesComingSoon() {
     <main className={SCREEN}>
       <EmptyState
         title="메시지는 준비 중이에요"
-        description="메시지 화면은 정책이 정해지면 만들어요."
+        description="메시지 발송 기능이 준비되면 열려요."
       />
     </main>
   )
@@ -58,6 +58,7 @@ function Messages({ unknownPath = false }: { unknownPath?: boolean }) {
     <MessageInbox
       workspaceId={workspaceId}
       botName={workspace.name}
+      viewer={workspace.role}
       threadId={threadId}
       reviewId={rawReviewId === null ? undefined : parseRouteId(rawReviewId)}
       invalidPath={unknownPath || (rawThreadId !== undefined && threadId === null)}

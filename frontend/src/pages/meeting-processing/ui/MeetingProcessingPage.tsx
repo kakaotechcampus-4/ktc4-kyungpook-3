@@ -3,6 +3,7 @@ import { useEffect } from 'react'
 import type { ReactNode } from 'react'
 import {
   meetingDetailQueryOptions,
+  meetingFailure,
   meetingListQueryOptions,
   PROCESSING_STEP_COUNT,
   processingSteps,
@@ -129,20 +130,18 @@ function MeetingProcessing({ workspaceId, meetingId }: { workspaceId: string; me
           </GuardedLink>
         </Layout>
       )
-    case 'failed':
+    case 'failed': {
+      const failure = meetingFailure(meeting.failedStage)
       return (
-        <Layout status="회의를 정리하지 못했어요">
-          <Heading
-            meeting={meeting}
-            attendeeCount={attendeeCount}
-            title="회의를 정리하지 못했어요"
-          />
-          <p className={META}>정리한 결과는 남기지 않아요. 파일을 다시 올려 주세요.</p>
-          <GuardedLink to={paths.meetings(workspaceId)} className={LINK}>
-            회의록으로 가기
+        <Layout status={failure.title}>
+          <Heading meeting={meeting} attendeeCount={attendeeCount} title={failure.title} />
+          <p className={META}>{failure.description}</p>
+          <GuardedLink to={paths.meetings(workspaceId, meetingId)} className={LINK}>
+            실패 사유 보기
           </GuardedLink>
         </Layout>
       )
+    }
     default:
       return <Processing meeting={meeting} attendeeCount={attendeeCount} stale={stale} />
   }

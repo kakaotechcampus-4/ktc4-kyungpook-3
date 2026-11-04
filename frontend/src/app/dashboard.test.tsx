@@ -604,7 +604,7 @@ describe('반영 대기 polling (AC-03)', () => {
     await screen.findByRole('list', { name: '최근 반영 목록' })
     await waitFor(() => expect(rowOf('회원가입 화면')).toHaveTextContent('반영 대기'))
     await user.click(screen.getByRole('link', { name: '회의록' }))
-    await app.expectPath(paths.meetings('ws_01'))
+    await app.expectPath(paths.meetings('ws_01', 'mt_09'))
     await pause(150)
     const left = listGets(log)
     await advance(9_000)
