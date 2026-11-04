@@ -731,3 +731,63 @@ def test_rolling_back_title_override_of_non_string_proposal_is_400(client, db, s
 
     assert r.status_code == 400, r.text
     assert _task_of(db, approval_id).title == "결제 API"
+
+
+# ---------- 탈퇴 팀원 담당자 ----------
+
+
+def _leave(db, member):
+    member.is_deleted = True
+    member.deleted_at = datetime.now(timezone.utc)
+    db.commit()
+
+
+def test_task_create_override_with_left_member_is_404(client, db, seed):
+    left_id = seed["minsu"].member_id
+    approval_id = _new_create(client, seed)
+    _leave(db, seed["minsu"])
+
+    r = _resolve(client, approval_id, task_overrides={"assignee_member_id": left_id})
+
+    assert r.status_code == 404
+    assert r.json()["error"]["code"] == "MEMBER_NOT_FOUND"
+    assert _pending(db, approval_id)
+
+
+def test_task_create_override_can_replace_left_member_in_proposal(client, db, seed):
+    approval_id = _new_create(client, seed, assignee_member_id=seed["minsu"].member_id)
+    _leave(db, seed["minsu"])
+    assert _resolve(client, approval_id).status_code == 404
+
+    r = _resolve(client, approval_id, task_overrides={"assignee_member_id": seed["jimin"].member_id})
+
+    assert r.status_code == 200, r.text
+    assert _task_of(db, approval_id).assignee_member_id == seed["jimin"].member_id
+
+
+def test_rolling_back_to_left_assignee_is_404(client, db, seed):
+    approval_id = _new_create(client, seed, assignee_member_id=seed["minsu"].member_id)
+    overrides = {"assignee_member_id": seed["jimin"].member_id}
+    assert _resolve(client, approval_id, task_overrides=overrides).status_code == 200
+    task = _task_of(db, approval_id)
+    line = {h.changed_field: h for h in _history(db, task.task_id)}["assignee"]
+    _leave(db, seed["minsu"])
+
+    r = _rollback(client, task.task_id, line.history_id)
+
+    assert r.status_code == 404, r.text
+    db.expire_all()
+    assert db.get(Task, task.task_id).assignee_member_id == seed["jimin"].member_id
+
+
+def test_patch_keeping_left_assignee_still_saves_other_fields(client, db, seed):
+    login = seed["login"]
+    login.assignee_member_id = seed["minsu"].member_id
+    db.commit()
+    _leave(db, seed["minsu"])
+
+    r = client.patch(f"/api/v1/tasks/{login.task_id}", json={
+        "title": "로그인 화면 시안 2차", "assignee_member_id": seed["minsu"].member_id,
+    })
+
+    assert r.status_code == 200, r.text
