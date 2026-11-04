@@ -744,6 +744,39 @@ def test_newer_reply_that_changed_nothing_still_guards_the_requeued_reply(mdb, m
     assert ("status", "proposed") in _outcomes(mdb, again)
 
 
+def test_newer_reply_noted_on_a_blocked_task_still_guards_the_requeued_reply(mdb, mseed, two):
+    a, _ = two
+    client("pm").patch(f"{P}/tasks/{a.task_id}", json={"status": "blocked", "blocker": "PM 사유"})
+    _status_moved_at(mdb, a, "blocked", AT - H)
+    item = _unknown(mdb, mseed)
+    _reply(mdb, mseed, AT + H, body="API 명세서 막혔어요")
+    newer = _claim()
+    _judge(newer, _change(a, "status", "blocked", evidence="inferred", claimed=newer))
+    assert _outcomes(mdb, newer) == [("status", "noted")]
+
+    _attribute(item, a, seed=mseed)
+    again = _claim()
+    _judge(again, _change(a, "status", "done", evidence="certain", claimed=again))
+    mdb.expire_all()
+    assert (a.status, a.blocker) == ("blocked", "PM 사유")
+    assert ("status", "proposed") in _outcomes(mdb, again)
+
+
+def test_newer_reply_that_said_nothing_about_the_task_does_not_guard_it(mdb, mseed, two):
+    a, _ = two
+    item = _unknown(mdb, mseed)
+    _reply(mdb, mseed, AT + H, body="네")
+    newer = _claim()
+    _judge(newer)
+    assert ("none", "noted") in _outcomes(mdb, newer)
+
+    _attribute(item, a, seed=mseed)
+    again = _claim()
+    _judge(again, _change(a, "status", "done", evidence="certain", claimed=again))
+    mdb.expire_all()
+    assert a.status == "done"
+
+
 def test_rejudgment_still_applies_when_no_newer_reply_touched_the_task(mdb, mseed, two):
     a, b = two
     item = _unknown(mdb, mseed)

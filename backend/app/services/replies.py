@@ -423,9 +423,11 @@ def _unchanged(db: Session, row: ReplyJudgment, task: Task) -> bool:
         .join(ThreadMessage, ThreadMessage.message_id == ReplyChange.message_id)
         .where(
             ReplyChange.task_id == task.task_id,
-            ReplyChange.outcome.in_(
-                (ReplyChangeOutcome.APPLIED, ReplyChangeOutcome.PROPOSED, ReplyChangeOutcome.SKIPPED)
-            ),
+            ReplyChange.field != ReplyChangeField.NONE,
+            ReplyChange.outcome.in_((
+                ReplyChangeOutcome.APPLIED, ReplyChangeOutcome.PROPOSED, ReplyChangeOutcome.SKIPPED,
+                ReplyChangeOutcome.NOTED,
+            )),
             ThreadMessage.created_at > replied_at,
         )
         .limit(1)
