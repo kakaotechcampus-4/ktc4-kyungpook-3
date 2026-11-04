@@ -115,3 +115,41 @@ def test_main_writes_numbers_and_short_answers_but_no_script_or_transcript_sente
 def test_main_rejects_lines_without_a_name(tmp_path):
     with pytest.raises(SystemExit):
         R.main(["--lines", str(tmp_path / "x.json"), "--script", str(tmp_path / "s.txt"), "--out", str(tmp_path)])
+
+
+# ─────────────────────────────────────────────────────────────── 대본 줄마다 전사 나란히 놓기
+def test_each_script_line_gets_its_stretch_of_the_transcript_with_spacing_kept():
+    texts, errors = R.line_texts(["가나 다라.", "마바사"], [_seg(0.0, "가나, 다라 마"), _seg(1.0, "바서")])
+    assert texts == ["가나, 다라", "마 바서"] and errors == [0, 1]
+
+
+def test_a_script_line_the_transcript_skipped_gets_an_empty_stretch():
+    texts, errors = R.line_texts(["가나", "다라", "마바"], [_seg(0.0, "가나 마바")])
+    assert texts == ["가나", "", "마바"] and errors == [0, 2, 0]
+
+
+def test_line_errors_are_the_same_numbers_the_cer_uses():
+    ref = ["가나, 다.", "라마바 사아", "BE 에 넣었다"]
+    segs = [_seg(0.0, "가너 다라"), _seg(1.0, "마바사 아자"), _seg(2.0, "be에 넣었다")]
+    assert R.line_texts(ref, segs)[1] == R.align(ref, [s["text"] for s in segs])["line_errors"]
+
+
+def test_the_comparison_lists_only_lines_whose_words_differ():
+    ref = ["가나 다라.", "마바사"]
+    runs = {"A": [_seg(0.0, "가나 다라"), _seg(1.0, "마바서")], "B": [_seg(0.0, "가나, 다라."), _seg(1.0, "마바사")]}
+    out = R.render_compare(ref, runs)
+    assert "| 2 | 마바사 | 마바서 | 마바사 | A 1 · B 0 |" in out
+    assert "가나 다라" not in out                       # 띄어쓰기·문장부호만 다른 줄은 뺀다
+
+
+def test_compare_is_written_only_when_asked_and_only_to_the_given_path(tmp_path):
+    script = tmp_path / "script.txt"
+    script.write_text(f"{SECRET}\n", encoding="utf-8")
+    a = _lines_file(tmp_path / "a.json", [_seg(0.0, SECRET)])
+    b = _lines_file(tmp_path / "b.json", [_seg(0.0, "엉뚱한 전사")])
+    R.main(["--lines", f"A={a}", "--lines", f"B={b}", "--script", str(script), "--out", str(tmp_path / "out")])
+    assert sorted(p.name for p in (tmp_path / "out").iterdir()) == ["real929.json", "real929.md"]
+    R.main(["--lines", f"A={a}", "--lines", f"B={b}", "--script", str(script), "--out", str(tmp_path / "out"),
+            "--compare", str(tmp_path / "side.md")])
+    assert "엉뚱한 전사" in (tmp_path / "side.md").read_text(encoding="utf-8")
+    assert sorted(p.name for p in (tmp_path / "out").iterdir()) == ["real929.json", "real929.md"]

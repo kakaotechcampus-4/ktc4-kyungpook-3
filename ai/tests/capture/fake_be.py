@@ -74,6 +74,8 @@ class FakeBe:
         self.claim_lost = False       # True 면 claim 은 서버에 반영되지만 응답이 오지 않는다(시간 초과)
         self.streams: list[bool] = []             # 호출마다 받은 stream 인자(원본을 메모리에 다 올리지 않고 받는지 확인용)
         self.file_break_after: int | None = None   # 파일을 이 바이트까지 보내고 연결이 끊긴다
+        # 봇용 팀원 이름 조회 (backend/app/api/bot_lookups.py). 워크스페이스 → [{member_id, name, discord_user_id, aliases}]
+        self.members: dict[str, list[dict]] = {}
         self._n = 0
 
     def add_upload(self, meeting_id: str, *, workspace_id: str = "ws-1", audio: bytes | None = b"RIFFfake-audio",
@@ -105,6 +107,8 @@ class FakeBe:
             return self._uploads(method, path, headers or {})
         if method == "GET" and path.startswith("/integrations/discord/guilds/") and path.endswith("/workspace"):
             return self._guild_workspace(path.split("/")[4], headers or {})
+        if method == "GET" and path.startswith("/workspaces/") and path.endswith("/members/names"):
+            return self._member_names(path.split("/")[2], headers or {})
         if method == "POST" and path.startswith("/workspaces/") and path.endswith("/tasks/similar"):
             return self._similar(path.split("/")[2], body, headers or {})
         if (method == "POST" and path in ("/meetings", "/extractions")) or method == "PATCH":
@@ -194,6 +198,13 @@ class FakeBe:
         if guild_id not in self.guilds:
             return _err(409, "INTEGRATION_NOT_CONNECTED", {"provider": "discord", "guild_id": guild_id})
         return _ok(200, {"guild_id": guild_id, "workspace_id": self.guilds[guild_id]})
+
+    def _member_names(self, workspace_id: str, headers: dict):
+        if headers.get("X-Service-Token") != self.service_token:
+            return _err(401, "UNAUTHENTICATED")
+        if workspace_id not in self.workspaces:
+            return _err(404, "WORKSPACE_NOT_FOUND", {"workspace_id": workspace_id})
+        return _ok(200, {"items": list(self.members.get(workspace_id, []))})
 
     def _similar(self, workspace_id: str, body: dict, headers: dict):
         if headers.get("X-Service-Token") != self.service_token:

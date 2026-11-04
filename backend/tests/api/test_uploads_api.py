@@ -7,11 +7,13 @@ import os
 from datetime import datetime, timedelta, timezone
 
 import pytest
+from fastapi.responses import FileResponse
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app.api import uploads as uploads_api
 from app.core.database import Base, get_db
 from app.main import app
 from app.models import Meeting, MeetingUpload, Member, Workspace
@@ -250,6 +252,24 @@ def test_file_of_missing_audio_gets_404(db, ws):
         r = _client().get(f"/api/v1/uploads/{meeting_id}/file", headers=HEADERS)
         assert r.status_code == 404, r.text
         assert r.json()["error"]["code"] == "MEETING_NOT_FOUND"
+
+
+def test_file_returns_the_db_connection_before_sending_the_file(db, ws, monkeypatch):
+    # FastAPI 0.118 부터 get_db 정리는 응답을 다 보낸 뒤라, 닫지 않으면 파일을 보내는 동안 연결을 잡고 있다
+    meeting = _upload(db, ws)
+    in_transaction_when_sending = []
+
+    class RecordingFileResponse(FileResponse):
+        async def __call__(self, scope, receive, send):
+            in_transaction_when_sending.append(db.in_transaction())
+            await super().__call__(scope, receive, send)
+
+    monkeypatch.setattr(uploads_api, "FileResponse", RecordingFileResponse)
+
+    r = _client().get(f"/api/v1/uploads/{meeting.meeting_id}/file", headers=HEADERS)
+
+    assert r.status_code == 200, r.text
+    assert in_transaction_when_sending == [False]
 
 
 def _register_extraction(meeting: Meeting):
