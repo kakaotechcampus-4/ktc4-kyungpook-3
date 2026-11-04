@@ -317,8 +317,10 @@ PM이 지정을 끝냈고(`speakers_assigned_at` 있음) 아직 다시 가져가
 
 PM 이 라벨을 멤버에 지정한 업로드 회의(`mapping`)를 AI 가 전사한 뒤 BE 로 넘길 때의 규칙이다.
 
-- 합의 상태: **합의됨.** 화자를 멤버 ID 로 받는 키는 #254 에서 합의했고(위 "화자를 멤버 ID로 받는 키" 단락), 업로드 처리 경로는 #255, 정리된 회의를 다루는 방식은 #288 에서 합의했다.
-- 현재 구현: AI 가 이 규칙대로 보낸다(`capture/handoff.py`, #289 묶음). 아래는 AI 가 보내는 것이고, BE 가 받는 동작은 위 [발화 저장](#발화-저장-post-meetingsmeeting_idsources--201)·[추출 등록](#추출-등록-post-extractions--201) 절을 따른다.
+- 합의된 것: 화자를 멤버 ID 로 받는 키의 모양은 #254(위 "화자를 멤버 ID로 받는 키" 단락), 업로드 처리 경로와 상태는 #255, 정리된 회의를 다시 보내지 않고 로컬만 정리하는 것은 #288 에서 합의했다. BE 가 받는 동작은 위 [발화 저장](#발화-저장-post-meetingsmeeting_idsources--201)·[추출 등록](#추출-등록-post-extractions--201) 절을 따른다.
+- AI 구현, BE 동작 변경 없음: 아래 표와 그 뒤 항목은 AI 가 합의된 동작 위에서 정한 보내는 쪽 처리다(`capture/handoff.py`, #289 묶음). BE 의 응답과 검증은 바뀌지 않는다.
+
+AI 가 보내는 것(AI 구현):
 
 | 항목 | AI 가 보내는 것 |
 |---|---|
@@ -329,9 +331,15 @@ PM 이 라벨을 멤버에 지정한 업로드 회의(`mapping`)를 AI 가 전�
 | 추출 등록 `evidence_speaker_member_id` | 근거 화자가 멤버에 지정된 라벨이면 그 멤버 ID. 외부 참석자면 보내지 않는다 |
 | 회의 생성·종료 | `POST /meetings`와 `PATCH /meetings/{meeting_id}/end`를 부르지 않는다. 회의는 업로드 때 BE 가 이미 `processing`으로 만들었다 |
 
+AI 구현이 정한 처리(BE 동작은 그대로):
+
 - 외부 참석자의 발화도 전사·발화 저장·추출에는 넣는다. 화자와 멤버 ID 는 모두 비운다(위 지정 결과 조회에서 `mapping` 값 null 의 뜻 그대로다).
-- 발화 저장이 400 `INVALID_REQUEST`에 `details.member_ids`를 담아 거절하면, AI 는 그 ID 의 `speaker_member_id`를 null 로 바꿔 다시 보낸다. 첫 전송이든 재전송이든 같다. 서로 다른 ID 수만큼만 되풀이한다.
-- 409 `MEETING_FAILED`(발화 저장)·409 `MEETING_NOT_PROCESSING`(추출 등록, `details.status`가 `processing`이 아님)·404 는 BE 가 이미 끝낸 회의다. AI 는 새 회의를 만들지 않고, `PATCH /meetings/{meeting_id}/fail`도 보내지 않고, 실패 횟수도 세지 않고 로컬 파일을 지우고 끝낸다(#288).
+- 발화 저장이 400 `INVALID_REQUEST`에 `details.member_ids`를 담아 거절하면, AI 는 그 ID 를 비우고(`speaker_member_id`를 보내지 않는다) 다시 보낸다. 첫 전송이든 재전송이든 같다. 서로 다른 ID 수만큼만 되풀이한다. 비운 ID 는 추출 등록의 `evidence_speaker_member_id`에서도 뺀다. BE 가 알려 준 것은 거절 사유이고 비우고 다시 보내는 것은 AI 의 처리다.
+- 외부 참석자의 표기는 위 표대로 키를 보내지 않는 것이다. null 을 보내지 않는다.
+
+합의된 정리 방식(#288):
+
+- 409 `MEETING_FAILED`(발화 저장)·409 `MEETING_NOT_PROCESSING`(추출 등록, `details.status`가 `processing`이 아님)·404 는 BE 가 이미 끝낸 회의다. AI 는 새 회의를 만들지 않고, 실패 횟수도 세지 않고 로컬 파일을 지우고 끝낸다. AI 구현은 이때 `PATCH /meetings/{meeting_id}/fail`도 보내지 않는다.
 
 ## 전사 힌트 조회
 
@@ -370,7 +378,7 @@ PM 이 라벨을 멤버에 지정한 업로드 회의(`mapping`)를 AI 가 전�
 | `WORKSPACE_MISMATCH` | 400 | extractions | 실패 |
 | `MEETING_ALREADY_ENDED` | 409 | end, fail, uploads claim·speakers·resume | 지금 상태로 보고 계속 (claim이면 다음 회의로) |
 | `MEETING_PROCESSING_IN_PROGRESS` | 409 | uploads claim | 이미 가져갔으니 다음 회의로. 내 재시도라면 이어서 처리 |
-| `UPLOAD_NOT_CLAIMED` | 409 | uploads speakers | 먼저 claim 한다 |
+| `UPLOAD_NOT_CLAIMED` | 409 | uploads speakers | AI 는 실패(diarize)로 보고하고 로컬을 지운다 |
 | `SPEAKERS_ALREADY_REPORTED` | 409 | uploads speakers | 다른 내용의 라벨이 이미 저장됨. 재전송하지 않고 지정 결과 조회로 넘어감. `details.labels`가 내 라벨과 다르면 어긋난 것 |
 | `SPEAKERS_NOT_ASSIGNED` | 409 | uploads resume | 아직 지정 전. 다음 조회 때 다시 |
 | `MEETING_FAILED` | 409 | sources | 실패 |
