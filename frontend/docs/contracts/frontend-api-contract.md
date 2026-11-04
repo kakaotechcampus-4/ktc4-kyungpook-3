@@ -1384,7 +1384,7 @@ members 에만 있고 Discord 목록에 없으면      → 비활성 (서버를 
 - 고치기·승인·취소는 `scheduled` 에서만 된다. 다른 상태면 409 `REMINDER_NOT_EDITABLE`. 없는 묶음은 404 `REMINDER_BUNDLE_NOT_FOUND`, 없는 리마인드는 404 `REMINDER_NOT_FOUND`.
 - `scheduled_at` 은 시간대가 있는 ISO 시각이어야 하고(없으면 400) UTC 로 돌려준다. 지금보다 이른 시각으로 만들거나 고치거나, 시각이 지난 묶음을 승인하면 409 `REMINDER_SCHEDULED_AT_PASSED` 다. 지금과 같은 시각을 문구·메모와 같이 보내는 것은 시각을 고친 것으로 보지 않는다. 화면은 `예정 시각이 지났어요` 를 보이고 시각을 다시 고르게 한다(D-174 정책 3).
 - 발송 시각이 된 승인된 묶음은 대화 메시지 한 통이 되고, 묶음과 리마인드는 `sent` 가 된다. 지금은 봇이 가져갈 때 메시지가 만들어지므로, 봇이 꺼져 있으면 웹 대화에도 늦게 나타난다. 스케줄러가 생기면 시각에 맞춰 만든다. 탈퇴한 팀원의 승인된 묶음은 메시지를 만들지 않고 `cancelled` 가 된다.
-- 승인되지 않은 채 시각이 지난 묶음은 `scheduled` 로 남고 AI 초안도 오지 않는다. PM 이 시각을 옮기거나 보내지 않음을 고른다. 승인된 묶음의 태스크 메모를 고쳐 승인이 풀린 경우도 같다. 자동 만료는 이 PR 에 없고 스케줄러가 맡는다.
+- 승인되지 않은 채 시각이 지난 묶음은 `scheduled` 로 남고 AI 초안도 오지 않는다. PM 이 시각을 옮기거나 보내지 않음을 고른다. 승인된 묶음의 태스크 메모를 고쳐 승인이 풀린 경우도 같다. 자동 만료는 스케줄러가 맡는다.
 - 대화 메시지(`messages[]`)는 `{message_id, thread_id, sender: "bot"|"member", body, created_at, reply_channel: "discord"|"web"|null, dm_status, dm_failure_reason, scheduled_at}` 이다.
   - 팀원 메시지의 `reply_channel` 이 `web` 이면 `웹에서 답장` 표시를 붙인다.
   - 봇 메시지의 `dm_status` 는 `pending`·`claimed`(봇이 보내는 중)·`delivered`·`failed` 다. `failed` 면 `dm_failure_reason` 이 `dm_blocked`(팀원이 서버 DM 을 막음)·`discord_not_linked`(디스코드 미연결)·`unknown` 중 하나이고, 화면은 `DM 못 보냄` 을 보인다. 웹 대화에는 들어갔으므로 상태는 `sent` 다.
