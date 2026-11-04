@@ -32,10 +32,11 @@ PM 이 디스코드 명단으로 만든 팀원은 웹 계정과 이어지지 않
 
 | 항목 | 값 |
 |---|---|
-| `cd backend && .venv/bin/python -m pytest -q` (sqlite) | 904 passed, 430 skipped (시작 전 867 passed, 393 skipped. 늘어난 37 건은 초대 테스트이고, 같은 수만큼 늘어난 skip 은 그 PostgreSQL 판) |
-| 같은 명령, `TEST_DATABASE_URL` 에 pgvector/pgvector:pg16 컨테이너 | 1329 passed, 5 skipped |
+| `cd backend && .venv/bin/python -m pytest -q` (sqlite) | 1029 passed, 499 skipped (선행 브랜치와 합친 뒤 수치. 초대 테스트 39 건 포함) |
+| 같은 명령, `TEST_DATABASE_URL` 에 pgvector/pgvector:pg16 컨테이너 | 1521 passed, 7 skipped |
 | PostgreSQL 에서 `alembic upgrade head`, `downgrade -1`, 다시 `upgrade head`, `alembic check` | 모두 통과, `check` 는 "No new upgrade operations detected" |
 | 실제 서버(uvicorn + PostgreSQL)에서 PM 가입, 워크스페이스·팀원 만들기, ` Jimin@Example.com ` 으로 초대, `Jimin@example.com` 으로 가입 | 가입 뒤 `workspace_count` 0, 수락 전 `GET /workspaces/{id}` 403, 내 초대에 1건, 수락 200, 내 워크스페이스 1개, 다시 수락 409 `INVITATION_NOT_PENDING`, 연결 끊기 200, 끊은 뒤 403 |
+| 연결 끊기, 승격, PM 내리기 동시 요청(실제 서버와 PostgreSQL, 세 스레드, 3000번) | 교착 0, 500 없음. 고침만 뺀 대조군은 교착 12, 500 12 |
 | 실제 서버에서 대기 중 PM 승격, 수락, 승격, 되돌림, 연결 끊기 | 대기 중 승격 409 `MEMBER_HAS_PENDING_INVITATION`, 내 초대 1건 유지, 수락 200, 수락 뒤 승격 200, 연결 끊기 200, 끊은 뒤 403 |
 | 초대 만들기와 PM 승격, 수락과 PM 승격 동시 요청(PostgreSQL, 두 스레드, 각 30번) | PM 역할에 대기 초대가 남은 경우 0, 500 없음. 같은 스크립트에서 팀원 행 잠금을 빼면 초대 만들기 쪽 30번 중 29번 그 상태가 생겼다 |
 | 동시 요청(PostgreSQL, 두 스레드, 다섯 장면 각 15번) | 교착과 처리 안 된 예외 없음. 한 팀원에 연결 하나, 대기 중 초대 하나, 로그인할 수 있는 PM 하나 이상이 늘 지켜졌다. 같은 초대 동시 수락은 한 계정만 이어졌고(나머지는 409), 같은 이메일 동시 초대는 15번 모두 하나만 201 이고 나머지는 `EMAIL_ALREADY_INVITED` 다. 스크립트는 레포에 넣지 않았다 |
@@ -49,6 +50,7 @@ PM 이 디스코드 명단으로 만든 팀원은 웹 계정과 이어지지 않
 | 끊긴 계정이 경합으로 남은 같은 이메일의 대기 초대를 수락해 다른 팀원 자리로 돌아온다 | 연결을 끊을 때 같은 이메일의 대기 초대를 함께 취소 |
 | 이미 팀원인 이메일 확인만 SQL `lower` 로 비교해 비 ASCII 이메일에서 초대·수락과 결과가 달랐다 | 같은 `normalize_email` 로 비교 |
 | 같은 이메일 동시 초대에서 진 요청이 드물게 500 | 409 `EMAIL_ALREADY_INVITED` 로 돌림 |
+| 연결 끊기가 PM 행을 잠근 뒤 대상 팀원 행을 순서 밖에서 잠가, 역할을 바꾸는 요청과 교착해 드물게 500 | `_ensure_other_pm` 이 대상 행까지 한 쿼리로 member_id 순으로 잠근다 |
 
 사전 확인 두 개 사이에 다른 초대가 수락되면 수락할 수 없는 대기 초대가 드물게 남는다. 고치지 않고 계약 §5.9 에 적었다. 수락은 409 이고 PM 이 취소하면 된다.
 
