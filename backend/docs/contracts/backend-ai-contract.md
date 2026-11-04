@@ -237,6 +237,8 @@ AI `Transcript.to_dict()` 모양에 화자 이름을 더해 보낸다. 한 회�
 } ] }
 ```
 
+- `started_at`은 항상 UTC 시각이고 `"2026-10-13T01:00:00Z"`처럼 끝에 `Z`가 붙는다. 업로드 API가 시간대 없는 `started_at`을 400으로 거절하고, 받은 값은 UTC로 바꿔 저장한다(#290). PM이 시각을 비우면 업로드 시각이 들어간다.
+
 ### `PATCH /uploads/{meeting_id}/claim` → 200
 
 - `data`: `{meeting_id, status: "processing"}`
