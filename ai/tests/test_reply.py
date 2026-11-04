@@ -344,6 +344,28 @@ def test_nothing_found_and_a_failed_supplement_is_a_failed_judgment():
         judge_reply(_claim(API, LOGIN), run=FakeRun(), jev=FakeJev({}), judge=down, draft=None)
 
 
+def test_a_cleared_due_in_a_supplement_is_a_due_clear_line():
+    def draft(finding, result, *, candidate, today):
+        return DraftResult(structured=DraftStructured(task=None, due_date=None, due_cleared=True), doc_text="로그인 마감을 없앰")
+
+    judge = FakeJudge({"t_login": _changed(LOGIN, status=None, category="schedule")})
+    body = _judge(FakeRun(_update(status="done")), _claim(API, LOGIN), jev=FakeJev([_yes(status=0.9, target=0.9)]),
+                  judge=judge, draft=draft)
+
+    assert [(c["task_id"], c["field"]) for c in body["changes"]] == [("t_api", "status"), ("t_login", "due_clear")]
+    assert (body["changes"][1]["summary"], body["changes"][1]["evidence_quote"]) == ("로그인 마감을 없앰", REPLY)
+
+
+def test_a_cleared_due_keeps_the_status_said_with_it():
+    def draft(finding, result, *, candidate, today):
+        return DraftResult(structured=DraftStructured(task=None, due_date=None, due_cleared=True), doc_text="로그인 마감을 없앰")
+
+    judge = FakeJudge({"t_login": _changed(LOGIN, status="blocked", category="schedule")})
+    body = _judge(FakeRun(), _claim(API, LOGIN), jev=FakeJev([_yes(status=0.9, target=0.9)]), judge=judge, draft=draft)
+
+    assert [(c["task_id"], c["field"]) for c in body["changes"]] == [("t_login", "status"), ("t_login", "due_clear")]
+
+
 def test_failure_lines_stay_as_they_are_next_to_a_supplement():
     run = FakeRun(failures=[PipelineFailure("draft", "마감을 없앰", DUE_CLEARED_REASON),
                             PipelineFailure("target", "요약", "수정 대상 후보를 찾지 못했습니다.")])

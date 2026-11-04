@@ -121,6 +121,8 @@ def _supplement(result: pipeline.PipelineResult, found: list[NotionCandidate], t
             logger.warning("보충 판단을 건너뛴다: task=%s %s", target.task_id, type(e).__name__)
             lines.append(_line("failed", reply.text, reply.text, task_id=target.task_id))
             continue
+        if drafted.structured.due_cleared:  # run 의 DUE_CLEARED_REASON 분기와 같은 뜻. to_item 에는 지울 칸이 없다
+            lines.append(_line("due_clear", drafted.doc_text, reply.text, task_id=target.task_id))
         item = pipeline.to_item(finding, verdict, drafted, target, transcript)
         if item is not None:
             items.append(item)
