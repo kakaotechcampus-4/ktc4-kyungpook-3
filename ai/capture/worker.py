@@ -177,6 +177,8 @@ class Worker:
             notes = " 포기" if r.get("gave_up") else ""
             if r.get("error"):
                 notes += f" 오류: {r['error']}"
+            if r.get("ended"):
+                notes += f" 끝난 회의라 로컬을 지웠다({r['ended']})"
             if r.get("extract_failures"):
                 notes += f" 판단하지 못한 발화 {len(r['extract_failures'])}건"
             if (r.get("be") or {}).get("dropped_items"):

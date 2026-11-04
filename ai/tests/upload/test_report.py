@@ -278,6 +278,42 @@ def test_not_reported_means_be_refuses_assign(env):
         env.be.assign(MID, {"SPEAKER_00": "u1", "SPEAKER_01": None})
 
 
+# ---- 지정 받기가 먼저 끝난 reporting (#286) ----
+
+def _reporting_then_mapped(e):
+    """보고 응답을 잃어 reporting 으로 남았는데 BE 는 이미 받았고, PM 이 지정을 끝내 지정 받기가 mapped 로 바꿨다(resume 키가 생겼다)."""
+    e.be.speakers_lost = True
+    assert _go(e) == (MID, "retry")
+    e.be.speakers_lost = False
+    e.be.assign(MID, {"SPEAKER_00": "u1", "SPEAKER_01": None})
+    assert assign_one(e.rec, client=e.client, now=e.clock) == (MID, "mapped")
+    assert _intake(e)["report"]["state"] == "reporting" and "resume" in _intake(e)
+    e.clock.advance(3600)
+
+
+def test_a_reporting_record_with_a_resume_key_closes_as_reported_without_calling_be(env):
+    _reporting_then_mapped(env)
+    calls = len(env.be.calls)
+    assert _go(env) == (MID, "reported")
+    assert len(env.be.calls) == calls                              # BE 를 부르지 않는다
+    assert _intake(env)["report"]["state"] == "reported" and _go(env) is None
+    assert _manifest(env)["status"] == "mapped" and not _local_gone(env)
+
+
+@pytest.mark.parametrize("err", [
+    BeError("MEETING_ALREADY_ENDED", "끝남", status=409, details={}),
+    BeError("MEETING_NOT_FOUND", "없음", status=404, details={}),
+    BeError("INVALID_REQUEST", "잘못", status=400, details={"fields": []}),
+    BeError("SPEAKERS_ALREADY_REPORTED", "이미", status=409, details={"labels": ["A", "B"]}),
+], ids=["ended", "missing", "bad_request", "other_labels"])
+def test_no_report_error_path_deletes_a_mapped_manifest(env, err):
+    """지정 받기가 이미 mapped 로 바꾼 회의는 보고가 어떻게 끝나도 매니페스트·트랙·잠금을 지우지 않는다."""
+    _reporting_then_mapped(env)
+    env.wrapped.report_error = err
+    assert _go(env, env.wrapped) == (MID, "reported")
+    assert _manifest(env)["status"] == "mapped" and not _local_gone(env) and _fails(env) == []
+
+
 # ---- build_speakers ----
 
 def _dz(segs, duration=100.0):
