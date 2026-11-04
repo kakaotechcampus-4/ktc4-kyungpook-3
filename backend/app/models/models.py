@@ -413,6 +413,18 @@ class MeetingUpload(Base):
     attendees: Mapped[str] = mapped_column(Text)
     # AI가 가져간(claim) 시각. 비어 있으면 아직 아무도 가져가지 않았다
     claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # AI가 알려준 화자 목록(JSON 문자열)과 보고 시각. 비어 있으면 아직 보고하지 않았다
+    speakers: Mapped[str | None] = mapped_column(Text, nullable=True)
+    speakers_reported_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # PM이 지정한 화자 → 팀원 매핑(JSON 문자열)과 지정 시각
+    speaker_mapping: Mapped[str | None] = mapped_column(Text, nullable=True)
+    speakers_assigned_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # 화자 지정 뒤 AI가 처리를 다시 이어 간 시각
+    resumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class Source(Base):
