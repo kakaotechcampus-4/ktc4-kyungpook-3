@@ -292,6 +292,8 @@ def get_meeting_audio(
     meeting = _get_meeting(db, meeting_id)
     require_pm(db, user, meeting.workspace_id)
     path, content_type = speaker_assignment.get_audio_for_playback(db, meeting)
+    # get_db 정리는 응답을 다 보낸 뒤라, 닫지 않으면 파일을 보내는 동안(브라우저가 요청을 열어 둔 동안) DB 연결을 잡고 있다
+    db.close()
     return FileResponse(
         path,
         media_type=content_type,
