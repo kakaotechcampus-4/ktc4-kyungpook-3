@@ -366,6 +366,38 @@ def test_a_cleared_due_keeps_the_status_said_with_it():
     assert [(c["task_id"], c["field"]) for c in body["changes"]] == [("t_login", "status"), ("t_login", "due_clear")]
 
 
+def test_an_assignee_verdict_in_a_supplement_reaches_the_pm_as_a_scope_line():
+    judge = FakeJudge({"t_login": _changed(LOGIN, status=None, category="assignee")})
+    jev = FakeJev([_yes(status=0.9, target=0.9), _yes(target=0.9)])
+    body = _judge(FakeRun(_update(status="done")), _claim(API, LOGIN), jev=jev, judge=judge)
+
+    assert _shape(body) == [("t_api", "status", "done", "certain"), ("t_login", "scope", None, None)]
+    line = body["changes"][1]
+    assert (line["summary"], line["evidence_quote"]) == ("로그인 화면 보충 해석", REPLY)
+    assert (line["assignee_type"], line["assignee_raw"]) == (None, None)
+    assert line["base"]["title"] == "로그인 화면"
+
+
+def test_an_assignee_verdict_on_a_supplement_is_drafted_as_an_assignee_change():
+    seen = []
+
+    def draft(finding, result, *, candidate, today):
+        seen.append(result.category)
+        return _draft(finding, result, candidate=candidate, today=today)
+
+    judge = FakeJudge({"t_login": _changed(LOGIN, status=None, category="assignee")})
+    _judge(FakeRun(), _claim(API, LOGIN), jev=FakeJev([_yes(target=0.9)]), judge=judge, draft=draft)
+
+    assert seen == ["assignee"]
+
+
+def test_an_assignee_verdict_on_an_unclear_target_is_unknown():
+    judge = FakeJudge({"t_login": _changed(LOGIN, status=None, category="assignee")})
+    body = _judge(FakeRun(), _claim(API, LOGIN), jev=FakeJev([_yes(target=0.2)]), judge=judge)
+
+    assert _shape(body) == [(None, "unknown", None, None)]
+
+
 def test_failure_lines_stay_as_they_are_next_to_a_supplement():
     run = FakeRun(failures=[PipelineFailure("draft", "마감을 없앰", DUE_CLEARED_REASON),
                             PipelineFailure("target", "요약", "수정 대상 후보를 찾지 못했습니다.")])

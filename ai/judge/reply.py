@@ -14,6 +14,7 @@ PM 확인의 갈림은 BE 게이트가 맡는다.
 from __future__ import annotations
 
 import logging
+from dataclasses import replace
 from datetime import date
 from typing import Any
 
@@ -123,6 +124,9 @@ def _supplement(result: pipeline.PipelineResult, found: list[NotionCandidate], t
             continue
         if drafted.structured.due_cleared:  # run 의 DUE_CLEARED_REASON 분기와 같은 뜻. to_item 에는 지울 칸이 없다
             lines.append(_line("due_clear", drafted.doc_text, reply.text, task_id=target.task_id))
+        if verdict.category == "assignee":
+            # 이 finding 에는 담당자가 없어 to_item 이 버린다. 이름을 짓지 않고 요약을 scope 줄로 PM 에게 보인다
+            verdict = replace(verdict, category="scope")
         item = pipeline.to_item(finding, verdict, drafted, target, transcript)
         if item is not None:
             items.append(item)
