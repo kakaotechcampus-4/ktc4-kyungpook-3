@@ -97,12 +97,14 @@ class FakeUser:
     def __init__(self, uid=USER_ID, *, fail=None, history=(), on_send=None):
         self.id = uid
         self.sent: list[str] = []
+        self.send_kwargs: list[dict] = []
         self.fail = fail or {}
         self.dm_channel = FakeDmChannel(history)
         self.on_send = on_send
         self.next_id = 5000
 
-    async def send(self, text):
+    async def send(self, text, **kwargs):
+        self.send_kwargs.append(kwargs)
         if self.on_send:
             self.on_send(text)
         n = len(self.sent)
@@ -615,3 +617,16 @@ async def test_a_restart_reports_results_before_it_hands_over_backfilled_replies
     cog, be = _cog(tmp_path, FakeBot([user]))
     await cog.startup()
     assert [p for p, _ in be.calls] == ["/bot/messages/msg-a/result", "/bot/replies"]
+
+
+# ─────────────────────────────────────────────────────────── 디스코드 쪽 중복 막기
+async def test_each_part_carries_its_own_nonce_so_an_http_retry_does_not_send_it_twice(tmp_path):
+    user = FakeUser()
+    cog, be = _cog(tmp_path, FakeBot([user]))
+    be.claims.append([_item(body="가" * 2500)])
+    await cog.run_round()
+    assert all(k["enforce_nonce"] is True for k in user.send_kwargs)
+    nonces = [k["nonce"] for k in user.send_kwargs]
+    assert len(nonces) == 2 and len(set(nonces)) == 2
+    assert all(len(n) <= 25 for n in nonces)             # 디스코드 nonce 는 25자까지
+    assert nonces[0] == D._nonce("msg-1", 0)

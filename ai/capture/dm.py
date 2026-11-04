@@ -27,6 +27,7 @@ BE 호출은 동기 requests 라 asyncio.to_thread 로 불러 게이트웨이를
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -78,6 +79,11 @@ def _read_json(path: Path, default):
         return json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return default
+
+
+def _nonce(message_id: str, part: int) -> str:
+    """디스코드 nonce 는 25자까지다. py-cord 가 5xx 뒤 같은 요청을 다시 보내도 enforce_nonce 면 글이 하나만 생긴다."""
+    return hashlib.sha256(f"{message_id}:{part}".encode()).hexdigest()[:25]
 
 
 def _result_body(rec: dict) -> dict:
@@ -190,8 +196,8 @@ class DmCog(discord.Cog):
         _write_json(path, rec)
         try:
             user = self.bot.get_user(int(uid)) or await self.bot.fetch_user(int(uid))
-            for chunk in parts:
-                sent = await user.send(chunk)
+            for i, chunk in enumerate(parts):
+                sent = await user.send(chunk, nonce=_nonce(item["message_id"], i), enforce_nonce=True)
                 rec["parts_sent"].append(str(sent.id))
                 _write_json(path, rec)
                 self._note_dm(uid, sent.id)
