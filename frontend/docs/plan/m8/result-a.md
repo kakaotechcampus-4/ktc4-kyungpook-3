@@ -311,4 +311,22 @@ A(#243): [결과](m8/result-a.md) — AC-A-01 `?view=` 유지 결정, 완료 판
 - [`queryView` 판정을 task-board 안에 사본으로 두는 선택](basis-for-decision/2026-10-31-task-views-queryview-copy.md)
 - [태스크 보기 URL을 한 경로의 `?view=`로 유지하는 선택](basis-for-decision/2026-11-02-task-view-url.md)
 - [태스크 보기의 디자인 차이 보완 — 보드 직접 추가와 기간 필터 기본값](basis-for-decision/2026-11-01-task-views-design-gaps.md)
+- [캘린더 상태는 색에 아이콘과 낭독 이름을 더해 구분한다](basis-for-decision/2026-11-05-calendar-status-marks.md)
 - [M7 결과](../m7/result.md): 대시보드의 영역별 실패 표시(AC-05)와 #236 분리([E-06](../m7/errors/E-06-m6-detail-refetch-error-hidden.md))
+
+## 2026-11-05 추가 결과: 캘린더 상태를 색 외 표식으로도 구분 (#338)
+
+- 근거: 이슈 #338(2026.10.30 접근성 상세 이슈 보고서, KWCAG 2.2 '색에 무관한 콘텐츠 인식'). 계획 A 절 밖의 후속 수정이며 AC를 새로 만들거나 완료를 선언하지 않는다.
+- 변경: 캘린더 칩과 범례가 `CalendarView.tsx`의 `MARK` 표 하나를 읽는다. `마감 임박`(위험·주의)은 `alert`, `확인 필요`는 `eye` 아이콘을 제목 앞과 범례 견본에 넣고, 진행 중은 표식이 없다. 완료는 기존 취소선을 유지한다. 아이콘은 장식(`aria-hidden`)이다.
+- 낭독 이름: 칩 링크 이름을 `상태, 제목, 담당자`로 직접 짓는다(`aria-label`, 예: '마감 임박, 회원가입 화면, 박민수'). 숨김 텍스트(`sr-only`)로 처음 만들었을 때 Chromium이 '회원가입 화면 , 박민수'로 이어 jsdom 결과와 달랐다. 그래서 바꿨다. `마감일 없음` 칸의 확인 필요·태스크도 같은 형식이다.
+- 같은 기준의 다른 화면: 보드·간트는 글자 배지·모양 구분이 이미 있어 바꾸지 않았다. 팀 화면 맡은 일의 기한 지난 마감은 글자색으로만 갈렸으므로 같은 `alert` 아이콘을 붙였다(`MemberList.tsx`, 낭독용 `기한 지남`은 원래 있었다).
+- 표식 모양은 디자인 합의 전 기본값이다. [결정 기록](basis-for-decision/2026-11-05-calendar-status-marks.md)에 선택지와 바꾸는 곳을 적었다. 색 값(#336)은 바꾸지 않았다.
+
+| 검증 (2026-11-05, Node v24.11.0) | 결과 |
+|---|---|
+| 관련 Vitest(`taskViews`·`taskViewsRender`·`taskViewsCodeSplit`·`team`·`tasks`·`Icon`, `--maxWorkers=1`) | 통과. 칩 이름이 상태부터 읽히는지, 칩과 범례의 아이콘이 같은지, 진행 중·완료에 아이콘이 없는지, 팀 화면 기한 지남 표식을 단언한다 |
+| typecheck·lint(바뀐 범위)·format·build | 통과 |
+| 실제 화면(verify-frontend, MSW, Chromium 1440×900) | 캘린더와 팀 화면을 색과 흑백(`grayscale(1)`)으로 캡처했다. 흑백에서 마감 임박(회색+경고)·확인 필요(먹+눈)·완료(취소선)·진행 중(표식 없음)이 갈린다. ARIA 스냅샷의 칩 이름은 '마감 임박, 온보딩 문구 수정, 담당자 없음' 형식이다. 증거는 로컬 `.verify/`에만 있다 |
+| 전체 Vitest·Storybook play | 이 작업 폴더에서는 돌리지 않았다. PR CI로 확인한다 |
+
+실제 서버와 실제 화면 낭독기(NVDA·VoiceOver) 낭독은 확인하지 않았다.
