@@ -33,7 +33,9 @@ from app.schemas.message import (
     ThreadDetailResponse,
     ThreadSummary,
 )
+from app.schemas.reply import AttributionRequest, AttributionResponse, ReplyAttributionListResponse
 from app.services import messages as svc
+from app.services import replies
 
 router = APIRouter(prefix="/workspaces/{workspace_id}/messages", tags=["messages"])
 
@@ -290,3 +292,30 @@ def post_reply(
     message = svc.add_web_reply(db, thread, body=payload.body, now=_now())
     db.commit()
     return success(MessageResponse.model_validate(message).model_dump(mode="json"))
+
+
+@router.get("/threads/{thread_id}/attributions", response_model=Envelope[ReplyAttributionListResponse])
+def list_attributions(
+    workspace_id: str,
+    thread_id: str,
+    _pm: Member = Depends(get_current_pm),
+    db: Session = Depends(get_db),
+) -> dict:
+    """그 대화에서 어느 태스크인지 PM 이 고를 답장과 고른 답장."""
+    _get_thread(db, workspace_id, thread_id)
+    items = replies.attributions(db, workspace_id, thread_id)
+    return success(ReplyAttributionListResponse(items=items, total=len(items)).model_dump(mode="json"))
+
+
+@router.post("/replies/{message_id}/attribution", response_model=Envelope[AttributionResponse])
+def attribute_reply(
+    workspace_id: str,
+    message_id: str,
+    payload: AttributionRequest,
+    _pm: Member = Depends(get_current_pm),
+    db: Session = Depends(get_db),
+) -> dict:
+    """태스크를 고르면 그 태스크만 후보로 다시 판단한다. task_id 가 null 이면 해당 없음으로 닫는다."""
+    replies.attribute(db, workspace_id, message_id, payload.task_id, _now())
+    db.commit()
+    return success({"message_id": message_id})

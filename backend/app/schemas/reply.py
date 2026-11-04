@@ -1,5 +1,5 @@
 from datetime import date, datetime
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field
 
@@ -59,3 +59,64 @@ class ReplyJudgmentRequest(BaseModel):
     failure_reason: str | None = Field(None, description="값이 있으면 판단 전체 실패다. 예외 종류만 싣고 답장 글은 싣지 않는다")
     model_name: str | None = None
     changes: list[ReplyChangeRequest] = []
+
+
+class AttributionRequest(BaseModel):
+    task_id: str | None = Field(description="null 이면 해당 없음")
+
+
+class AttributionResponse(BaseModel):
+    message_id: str
+
+
+class TaskRef(BaseModel):
+    task_id: str
+    title: str
+
+
+class ReplyAttribution(BaseModel):
+    message_id: str
+    status: Literal["needs_pm", "resolved"]
+    candidates: list[TaskRef] | None = None
+    task: TaskRef | None = None
+
+
+class ReplyAttributionListResponse(BaseModel):
+    items: list[ReplyAttribution]
+    total: int
+
+
+class TimelineChange(BaseModel):
+    change_id: str
+    field: str
+    new_value: str | None
+    evidence_status: str | None
+    summary: str | None = Field(description="AI 해석. 대화 주인과 PM 에게만 보인다")
+    evidence_quote: str | None = Field(description="대화 주인과 PM 에게만 보인다")
+    result: Literal["applied", "undone", "pending", "approved", "rejected", "noted", "recorded"]
+    undoable: bool
+
+
+class TimelineReply(BaseModel):
+    kind: Literal["reply"]
+    at: datetime
+    message_id: str
+    member_name: str
+    channel: str | None
+    body: str | None = Field(description="대화 주인과 PM 에게만 보인다")
+    changes: list[TimelineChange]
+
+
+class TimelineHistory(BaseModel):
+    kind: Literal["history"]
+    at: datetime
+    history_id: str
+    changed_field: str
+    old_value: str | None
+    new_value: str | None
+    change_source: str
+
+
+class TaskTimelineResponse(BaseModel):
+    items: list[Annotated[TimelineReply | TimelineHistory, Field(discriminator="kind")]]
+    total: int

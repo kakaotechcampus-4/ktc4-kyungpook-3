@@ -19,6 +19,7 @@ from app.models import (
     ChangeSource,
     Gate,
     Member,
+    MemberRole,
     MessageSender,
     MessageThread,
     Reminder,
@@ -31,6 +32,7 @@ from app.models import (
     ReplyJudgment,
     ReplyJudgmentState,
     Task,
+    TaskHistory,
     TaskStatus,
     ThreadMessage,
 )
@@ -57,6 +59,7 @@ class ClockEffect(StrEnum):
 # 답장이 여럿이면 앞쪽이 이긴다. "막혔어요" 뒤 이어 쓴 말이 막힘을 풀지 않게 KEEP_BLOCKED 가 ANSWERED 를 이긴다.
 _EFFECT_ORDER = (ClockEffect.WAIT, ClockEffect.KEEP_BLOCKED, ClockEffect.ANSWERED, ClockEffect.PAUSE)
 _BLOCK_OUTCOMES = (ReplyChangeOutcome.APPLIED, ReplyChangeOutcome.PROPOSED, ReplyChangeOutcome.NOTED)
+_ATTRIBUTION_OUTCOMES = (ReplyChangeOutcome.UNKNOWN, ReplyChangeOutcome.PICKED, ReplyChangeOutcome.DISMISSED)
 # 태스크를 모르는 줄과 그 결과. 값이 없어 게이트를 타지 않는다.
 _NO_TASK_OUTCOME = {
     ReplyChangeField.UNKNOWN: ReplyChangeOutcome.UNKNOWN,
@@ -497,6 +500,162 @@ def _ask(row: ReplyChange, task: Task) -> str:
     if row.field == ReplyChangeField.ASSIGNEE:
         return f"{task.title} 담당자를 바꿀까요?"
     return f"{task.title} 범위 변경을 확인해 주세요"
+
+
+def attribute(db: Session, workspace_id: str, message_id: str, task_id: str | None, now: datetime) -> None:
+    """PM 이 태스크를 모르는 답장의 태스크를 고른다. 고르면 그 태스크만 후보로 다시 판단하고 task_id 가 None 이면 닫는다."""
+    row = db.get(ReplyJudgment, message_id, with_for_update=True, populate_existing=True)
+    if row is None or row.workspace_id != workspace_id:
+        raise AppError(ErrorCode.REPLY_JUDGMENT_NOT_FOUND, details={"message_id": message_id})
+    if row.state != ReplyJudgmentState.NEEDS_PM:
+        raise AppError(ErrorCode.REPLY_ATTRIBUTION_NOT_NEEDED, details={"message_id": message_id, "state": row.state})
+    if task_id is not None and task_id not in json.loads(row.candidates):
+        raise AppError(ErrorCode.INVALID_REQUEST, message="후보에 없는 태스크입니다.", details={"task_id": task_id})
+    for line in db.scalars(
+        select(ReplyChange).where(
+            ReplyChange.message_id == message_id, ReplyChange.outcome == ReplyChangeOutcome.UNKNOWN
+        )
+    ).all():
+        line.outcome = ReplyChangeOutcome.DISMISSED if task_id is None else ReplyChangeOutcome.PICKED
+    row.candidates = json.dumps([] if task_id is None else [task_id])
+    if task_id is None:
+        row.state = ReplyJudgmentState.DONE
+    else:
+        row.state, row.picked_task_id = ReplyJudgmentState.PENDING, task_id
+        row.queued_at, row.claimed_at, row.finished_at = messages.utc(now), None, None
+    db.flush()
+
+
+def attributions(db: Session, workspace_id: str, thread_id: str) -> list[dict]:
+    """그 대화에서 PM 이 태스크를 골라야 하거나 고른 답장들."""
+    db.flush()
+    rows = db.execute(
+        select(ReplyJudgment, ReplyChange.outcome)
+        .join(ReplyChange, ReplyChange.message_id == ReplyJudgment.message_id)
+        .where(
+            ReplyJudgment.workspace_id == workspace_id,
+            ReplyJudgment.thread_id == thread_id,
+            ReplyChange.outcome.in_(_ATTRIBUTION_OUTCOMES),
+        )
+        .order_by(ReplyJudgment.queued_at, ReplyJudgment.message_id)
+    ).all()
+    judgments = {row.message_id: (row, outcome) for row, outcome in rows}
+    task_ids = {
+        task_id for row, _ in judgments.values() for task_id in [*json.loads(row.candidates), row.picked_task_id]
+    }
+    titles = dict(db.execute(select(Task.task_id, Task.title).where(Task.task_id.in_(task_ids - {None}))).all())
+
+    def ref(task_id: str) -> dict:
+        return {"task_id": task_id, "title": titles[task_id]}
+
+    return [
+        {"message_id": row.message_id, "status": "needs_pm", "candidates": [ref(t) for t in json.loads(row.candidates)]}
+        if outcome == ReplyChangeOutcome.UNKNOWN
+        else {"message_id": row.message_id, "status": "resolved", "task": row.picked_task_id and ref(row.picked_task_id)}
+        for row, outcome in judgments.values()
+    ]
+
+
+def undo_change(db: Session, task: Task, change_id: str, *, changed_by: str) -> Task:
+    """자동 반영을 PM 이 되돌린다. 이어진 이력 중 하나라도 그 뒤 바뀌었으면 하나도 되돌리지 않는다. 닫힌 시계는 다시 열지 않는다."""
+    change = db.get(ReplyChange, change_id)
+    if change is None or change.task_id != task.task_id or change.outcome != ReplyChangeOutcome.APPLIED:
+        raise AppError(ErrorCode.REPLY_CHANGE_NOT_UNDOABLE, details={"change_id": change_id})
+    db.flush()
+    entries = db.scalars(
+        select(TaskHistory)
+        .where(TaskHistory.reply_change_id == change_id, TaskHistory.is_rolled_back.is_(False))
+        .order_by(TaskHistory.created_at.desc(), TaskHistory.history_id)
+    ).all()
+    if not entries:
+        raise AppError(ErrorCode.REPLY_CHANGE_NOT_UNDOABLE, details={"change_id": change_id})
+    try:
+        with db.begin_nested():
+            for entry in entries:
+                tasks.rollback_task_history(db, task, entry, changed_by=changed_by)
+    except AppError as e:
+        raise AppError(ErrorCode.REPLY_CHANGE_NOT_UNDOABLE, details={"change_id": change_id, **(e.details or {})}) from e
+    return task
+
+
+def link_history(db: Session, approval_id: str, entries: list[TaskHistory]) -> None:
+    """승인이 남긴 이력을 제안한 줄에 잇는다. PM 이 고쳐 승인한 줄도 같은 필드라 같이 이어진다."""
+    db.flush()
+    change_ids = dict(db.execute(
+        select(ReplyChange.field, ReplyChange.change_id).where(ReplyChange.approval_id == approval_id)
+    ).all())
+    for entry in entries:
+        entry.reply_change_id = change_ids.get(entry.changed_field)
+
+
+def timeline(db: Session, task: Task, viewer: Member) -> list[dict]:
+    """태스크의 답장과 변경, 최신순. 답장에 이어진 이력은 답장 아래에만 나온다. 승인은 줄이 아니라 답장 줄의 결과다.
+
+    답장 글은 대화 주인과 PM 만 본다(대화 조회와 같은 경계). 그 밖의 팀원에게는 무엇이 바뀌었는지만 보인다.
+    """
+    db.flush()
+    history = db.scalars(select(TaskHistory).where(TaskHistory.task_id == task.task_id)).all()
+    linked = defaultdict(list)
+    for entry in history:
+        if entry.reply_change_id:
+            linked[entry.reply_change_id].append(entry)
+    lines = db.scalars(
+        select(ReplyChange)
+        .where(ReplyChange.task_id == task.task_id)
+        .order_by(ReplyChange.created_at, ReplyChange.change_id)
+    ).all()
+    approvals = dict(db.execute(
+        select(ApprovalRequest.approval_id, ApprovalRequest.status)
+        .where(ApprovalRequest.approval_id.in_({line.approval_id for line in lines} - {None}))
+    ).all())
+    by_message = defaultdict(list)
+    for line in lines:
+        by_message[line.message_id].append(line)
+    items = [
+        _reply_item(db, message_id, group, linked, approvals, viewer) for message_id, group in by_message.items()
+    ] + [
+        {
+            "kind": "history", "history_id": entry.history_id, "changed_field": entry.changed_field,
+            "old_value": entry.old_value, "new_value": entry.new_value, "change_source": entry.change_source,
+            "at": messages.utc(entry.created_at),
+        }
+        for entry in history if entry.reply_change_id is None
+    ]
+    return sorted(items, key=lambda item: item["at"], reverse=True)
+
+
+def _reply_item(
+    db: Session, message_id: str, group: list[ReplyChange], linked: dict[str, list[TaskHistory]],
+    approvals: dict[str, str], viewer: Member,
+) -> dict:
+    message = db.get(ThreadMessage, message_id)
+    owner = message.thread.member
+    readable = viewer.role == MemberRole.PM or viewer.member_id == owner.member_id
+    changes = []
+    for line in group:
+        entries = linked[line.change_id]
+        live = [entry for entry in entries if not entry.is_rolled_back]
+        changes.append({
+            "change_id": line.change_id, "field": line.field, "new_value": line.new_value,
+            "evidence_status": line.evidence_status,
+            "summary": line.summary if readable else None,
+            "evidence_quote": line.evidence_quote if readable else None,
+            "result": "undone" if entries and not live else _result(line, approvals),
+            "undoable": line.outcome == ReplyChangeOutcome.APPLIED and bool(live),
+        })
+    return {
+        "kind": "reply", "at": messages.utc(message.created_at), "message_id": message_id,
+        "member_name": owner.display_name, "channel": message.reply_channel,
+        "body": message.body if readable else None, "changes": changes,
+    }
+
+
+def _result(line: ReplyChange, approvals: dict[str, str]) -> str:
+    if line.outcome == ReplyChangeOutcome.PROPOSED:
+        return approvals[line.approval_id]
+    if line.outcome in (ReplyChangeOutcome.APPLIED, ReplyChangeOutcome.RECORDED):
+        return line.outcome
+    return "noted"
 
 
 def clock_effect(db: Session, watch: ReminderWatch, *, before: datetime | None) -> ClockEffect:
