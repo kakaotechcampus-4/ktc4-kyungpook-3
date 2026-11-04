@@ -9,7 +9,7 @@ export const COMMON_MESSAGES = {
   fallback: '문제가 생겼어요. 잠시 후 다시 시도해 주세요.',
 } as const
 
-/* 서버 코드 38개 전부 (backend core/errors.py). `Record<ErrorCode, string>` 이라 코드가 늘면 여기서 타입 오류가 난다 */
+/* 서버 코드 46개 전부 (backend core/errors.py). `Record<ErrorCode, string>` 이라 코드가 늘면 여기서 타입 오류가 난다 */
 const SERVER_MESSAGES: Record<ErrorCode, string> = {
   INVALID_REQUEST: '요청 내용을 다시 확인해 주세요.',
   MEETING_NOT_FOUND: '회의를 찾을 수 없어요.',
@@ -53,6 +53,16 @@ const SERVER_MESSAGES: Record<ErrorCode, string> = {
   NOTIFICATION_NOT_FOUND: '알림을 찾을 수 없어요.',
   AUTO_BLOCK_NOT_FOUND:
     '막힌 뒤 상태나 사유가 바뀌어 되돌릴 수 없어요. 최신 태스크를 다시 불러왔어요.',
+  INVITATION_NOT_FOUND: '초대를 찾을 수 없어요.',
+  INVITATION_NOT_PENDING: '이미 처리된 초대예요.',
+  INVITATION_NOT_ACCEPTED: '수락하지 않은 초대라 연결을 끊을 수 없어요.',
+  MEMBER_ALREADY_LINKED: '이미 로그인 계정이 연결된 팀원이에요.',
+  ALREADY_WORKSPACE_MEMBER: '이미 이 워크스페이스에 속한 계정이에요.',
+  EMAIL_ALREADY_INVITED:
+    '이 이메일로 다른 팀원에게 보낸 초대가 기다리고 있어요. 그 초대를 먼저 취소해 주세요.',
+  PM_MEMBER_NOT_INVITABLE:
+    'PM인 팀원은 초대할 수 없어요. 팀원 역할로 초대하고, 수락한 뒤 PM으로 바꿔 주세요.',
+  MEMBER_HAS_PENDING_INVITATION: '초대를 수락한 뒤 바꾸거나 초대를 취소해 주세요.',
 }
 
 const CLIENT_MESSAGES: Record<ClientErrorCode, string> = {

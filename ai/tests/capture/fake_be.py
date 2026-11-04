@@ -49,6 +49,8 @@ class FakeBe:
         self.sources_fail: tuple | None = None     # (상태, 코드) 를 넣으면 발화 저장이 그 오류로 실패한다
         # 서버로 워크스페이스 찾기 (backend/app/api/integrations.py). 서버 ID 문자열 → 워크스페이스. 없으면 연결 없음
         self.guilds: dict[str, str] = {}
+        # 봇용 팀원 이름 조회 (backend/app/api/bot_lookups.py). 워크스페이스 → [{member_id, name, discord_user_id, aliases}]
+        self.members: dict[str, list[dict]] = {}
         self._n = 0
 
     def request(self, method: str, url: str, json=None, timeout=None, headers=None):
@@ -62,6 +64,8 @@ class FakeBe:
         body = json or {}
         if method == "GET" and path.startswith("/integrations/discord/guilds/") and path.endswith("/workspace"):
             return self._guild_workspace(path.split("/")[4], headers or {})
+        if method == "GET" and path.startswith("/workspaces/") and path.endswith("/members/names"):
+            return self._member_names(path.split("/")[2], headers or {})
         if method == "POST" and path.startswith("/workspaces/") and path.endswith("/tasks/similar"):
             return self._similar(path.split("/")[2], body, headers or {})
         if (method == "POST" and path in ("/meetings", "/extractions")) or method == "PATCH":
@@ -151,6 +155,13 @@ class FakeBe:
         if guild_id not in self.guilds:
             return _err(409, "INTEGRATION_NOT_CONNECTED", {"provider": "discord", "guild_id": guild_id})
         return _ok(200, {"guild_id": guild_id, "workspace_id": self.guilds[guild_id]})
+
+    def _member_names(self, workspace_id: str, headers: dict):
+        if headers.get("X-Service-Token") != self.service_token:
+            return _err(401, "UNAUTHENTICATED")
+        if workspace_id not in self.workspaces:
+            return _err(404, "WORKSPACE_NOT_FOUND", {"workspace_id": workspace_id})
+        return _ok(200, {"items": list(self.members.get(workspace_id, []))})
 
     def _similar(self, workspace_id: str, body: dict, headers: dict):
         if headers.get("X-Service-Token") != self.service_token:

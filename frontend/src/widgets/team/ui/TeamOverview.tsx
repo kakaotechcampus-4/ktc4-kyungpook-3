@@ -3,6 +3,7 @@ import { useMemo } from 'react'
 import { integrationsQueryOptions } from '@/entities/integration'
 import { discordUsersQueryOptions, memberListQueryOptions } from '@/entities/member'
 import { taskListQueryOptions } from '@/entities/task'
+import { MemberInviteControl } from '@/features/member-invite'
 import { ApiError, ERROR_CODES } from '@/shared/api/errors'
 import { Button } from '@/shared/ui/button'
 import { Icon } from '@/shared/ui/icon'
@@ -29,7 +30,7 @@ function isNotConnected(error: unknown): boolean {
 
 export interface TeamOverviewProps {
   workspaceId: string
-  /** 소속 목록의 역할이 PM 이다. 팀원 연결(`팀원 관리`·`연결`)은 PM 만 한다 — 서버의 팀원 생성·수정이 PM 전용이다 */
+  /** 소속 목록의 역할이 PM 이다. 팀원 연결(`팀원 관리`·`연결`)과 초대는 PM 만 한다 — 서버의 팀원 생성·수정·초대가 PM 전용이다 */
   isPm: boolean
   /** 서울 오늘 */
   today: string
@@ -144,6 +145,9 @@ export function TeamOverview({
                 tasks={grouped.get(member.id) ?? EMPTY_TASKS}
                 today={today}
                 inactive={inactive.has(member.id)}
+                invite={
+                  isPm ? <MemberInviteControl workspaceId={workspaceId} member={member} /> : null
+                }
               />
             ))
           ) : listError ? (

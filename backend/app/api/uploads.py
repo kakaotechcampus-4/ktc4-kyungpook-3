@@ -164,8 +164,8 @@ def download_upload(meeting_id: str, db: Session = Depends(get_db)) -> FileRespo
     path = upload_storage.audio_path(meeting_id, upload.stored_filename)
     if not path.is_file():
         raise _not_found(meeting_id)
-    return FileResponse(
-        path,
-        media_type=upload.content_type or "application/octet-stream",
-        filename=upload.stored_filename,
-    )
+    media_type = upload.content_type or "application/octet-stream"
+    filename = upload.stored_filename
+    # get_db 정리는 응답을 다 보낸 뒤라, 닫지 않으면 파일을 보내는 동안 DB 연결을 잡고 있다
+    db.close()
+    return FileResponse(path, media_type=media_type, filename=filename)

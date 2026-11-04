@@ -55,6 +55,23 @@ export interface MessageFailures {
   actions: boolean
 }
 
+/**
+ * 팀원 초대. 백엔드 invitations 표 모양으로 두고 이름은 응답할 때 붙인다 — 수락한 계정 이름이 끊긴 뒤에도 남는다.
+ * 수락한 초대가 곧 계정과 팀원의 연결이다(백엔드 member.user_id). 소속·역할은 sessions.ts 가 여기서 읽는다
+ */
+export interface MockInvitation {
+  invitation_id: string
+  workspace_id: string
+  member_id: string
+  /** 앞뒤 공백을 빼고 소문자로 바꾼 값 */
+  email: string
+  status: 'pending' | 'accepted' | 'declined' | 'canceled' | 'revoked'
+  invited_by_user_id: string | null
+  accepted_user_id: string | null
+  created_at: string
+  responded_at: string | null
+}
+
 interface MockAccount {
   session: SessionDto
   password: string
@@ -87,6 +104,7 @@ export interface MockDb {
   notifications: MockNotification[]
   /** #330 브라우저 푸시. 공개키가 null 이면 서버에 키가 없는 것이다 */
   push: { publicKey: string | null; subscriptions: MockPushSubscription[] }
+  invitations: MockInvitation[]
 }
 /** Vitest 가 테스트마다 돌아가는 상태다. 로그인돼 있고 ws_01·ws_02 에 속한다. 브라우저 시작 상태는 scenarios.ts 가 정한다 */
 export function initialDb(): MockDb {
@@ -119,6 +137,7 @@ export function initialDb(): MockDb {
     messageFailures: { inbox: false, threadIds: [], actions: false },
     notifications: [],
     push: { publicKey: null, subscriptions: [] },
+    invitations: [],
   }
 }
 export const db: MockDb = initialDb()
