@@ -53,7 +53,7 @@ recordings/         녹음 산출물 (git 제외)
 - 수동 업로드(`upload/`): 회의를 녹음하지 못했을 때 오디오 파일 하나를 `python -m upload.prepare <오디오> --started-at <ISO>`
   (pyannoteAI 를 실제로 부르므로 `PYANNOTEAI_API_KEY` 가 필요하고 과금됩니다)로 화자 분리해 화자 라벨마다 원본 길이의 가상 트랙
   `recordings/upload_{ts}/{id}_{ts}.wav` 와 `diarization.json`, 매니페스트를 만듭니다. 매니페스트는 `status` 가 `diarized`,
-  `source` 가 `upload` 입니다. 화자 라벨을 멤버에 지정하는 함수는 `upload.mapping.apply_mapping` 이고, 개발·운영용으로 `python -m upload.mapping <매니페스트> <mapping.json>` 입구가 있습니다(PM 이 쓰는 경로가 아닙니다). PM 의 지정을 웹으로 받는 BE 경로와의 연결은 #255 에서 정합니다.
+  `source` 가 `upload` 입니다. 화자 라벨을 멤버에 지정하는 함수는 `upload.mapping.apply_mapping` 이고, 개발·운영용으로 `python -m upload.mapping <매니페스트> <mapping.json>` 입구가 있습니다(PM 이 쓰는 경로가 아닙니다). PM 의 지정을 웹으로 받는 BE 경로와는 `upload/assign.py` 가 assigned·resume 으로 연결합니다(아래 지정 받기).
   `mapping.json` 은 `{"mapping": {"SPEAKER_00": "멤버ID", "SPEAKER_01": null}}` 이거나 안쪽 객체 그대로이고, 키는 `SPEAKER_00` 도
   `SPEAKER00` 도 됩니다. 모든 라벨을 한 번에 지정해야 하고(빠진·모르는 라벨, 빈 문자열이거나 앞뒤 공백이 있는 멤버 ID 는 거절하며
   파일은 그대로입니다), `null` 은 외부 참석자이고, 같은 멤버를 여러 라벨에 지정해도 됩니다. 결과는 `speakers[].member_id`,
@@ -72,7 +72,7 @@ recordings/         녹음 산출물 (git 제외)
   BE 에 `PATCH /meetings/{id}/fail`(`failed_stage=diarize`)을 보냅니다. 보내지 못하면 다음 바퀴에 다시 보냅니다. 세션 이름은
   `upload_<meeting_id>` 이고 매니페스트(`recordings/session_upload_<meeting_id>.json`)는 `be`(`{meeting_id, status}`), `workspace_id`,
   `title`, `attendees`, `upload`(원본 파일 정보)를 더해 `status` 가 `diarized` 입니다. 이 매니페스트도 위와 같이 워커의 처리 바퀴가
-  집지 않습니다(화자 지정과 이후 인계는 #254·#255). 워커 로그에는 `[worker] 업로드 <meeting_id> <진행>` 한 줄이 남고,
+  집지 않습니다(남은 것은 라벨 보고 #284, 전사·인계 #286). 워커 로그에는 `[worker] 업로드 <meeting_id> <진행>` 한 줄이 남고,
   하트비트 `current` 는 가져오는 동안 `upload` 입니다.
 - 지정 받기(`upload/assign.py`): PM 이 웹에서 화자 지정을 끝낸 업로드 회의를 워커가 `mapped` 로 바꿉니다. 같은 opt-in 이고, 워커가 같은
   자리(한 번에 한 회의)에서 `intake_one` 보다 먼저 `assign_one` 을 한 번 부릅니다. 한 번에 한 건을 한 단계만 진전시킵니다.
