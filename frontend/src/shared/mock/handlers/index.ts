@@ -9,6 +9,7 @@ import { extractionHandlers } from './extraction'
 import { taskHandlers } from './task'
 import { approvalHandlers } from './approval'
 import { messageHandlers } from './message'
+import { notificationHandlers } from './notification'
 
 /** Entity handler modules are accumulated here for the common browser and test server. */
 export const handlers: RequestHandler[] = [
@@ -22,4 +23,5 @@ export const handlers: RequestHandler[] = [
   ...taskHandlers,
   ...approvalHandlers,
   ...messageHandlers,
+  ...notificationHandlers,
 ]

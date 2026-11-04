@@ -8,6 +8,7 @@ import {
   schedulePassedReview,
 } from './fixtures/message'
 import { completeMeeting, failMeeting, setMeetingFlowMode } from './meetingFlow'
+import { notificationFixtures } from './fixtures/notification'
 import { setMockRole } from './sessions'
 import { createTask } from './task-state'
 
@@ -71,6 +72,8 @@ export const MOCK_SCENARIOS = [
   'settings-discord-skipped',
   'settings-unmapped',
   'settings-member',
+  // #330 알림·자동 막힘. ws_01 PM 이다
+  'notifications-default',
 ] as const
 export type MockScenario = (typeof MOCK_SCENARIOS)[number]
 
@@ -570,6 +573,11 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
         display_name: null,
         connected_at: null,
       }
+      break
+    case 'notifications-default':
+      // 안 읽은 알림 4건(모르는 종류 1건 포함)과 읽은 알림 1건
+      signInWith(state, ['ws_01'], 'ws_01')
+      state.notifications = structuredClone(notificationFixtures)
       break
   }
   return state

@@ -16,6 +16,7 @@ import { extractionFixtures } from './fixtures/extraction'
 import { taskFixtures, taskHistoryFixtures } from './fixtures/task'
 import { approvalFixtures } from './fixtures/approval'
 import { messageReviewFixtures, messageThreadFixtures } from './fixtures/message'
+import type { MockNotification, MockPushSubscription } from './fixtures/notification'
 
 /**
  * 처리 중 회의를 상세 조회(`GET /meetings/{id}`)가 어떻게 진행시키는가. 진행 규칙은 meetingFlow.ts 에 있다.
@@ -82,6 +83,10 @@ export interface MockDb {
   messageReviews: typeof messageReviewFixtures
   messageThreads: typeof messageThreadFixtures
   messageFailures: MessageFailures
+  /** #330 알림. 받는 팀원별 행이다 */
+  notifications: MockNotification[]
+  /** #330 브라우저 푸시. 공개키가 null 이면 서버에 키가 없는 것이다 */
+  push: { publicKey: string | null; subscriptions: MockPushSubscription[] }
 }
 /** Vitest 가 테스트마다 돌아가는 상태다. 로그인돼 있고 ws_01·ws_02 에 속한다. 브라우저 시작 상태는 scenarios.ts 가 정한다 */
 export function initialDb(): MockDb {
@@ -112,6 +117,8 @@ export function initialDb(): MockDb {
     messageReviews: structuredClone(messageReviewFixtures),
     messageThreads: structuredClone(messageThreadFixtures),
     messageFailures: { inbox: false, threadIds: [], actions: false },
+    notifications: [],
+    push: { publicKey: null, subscriptions: [] },
   }
 }
 export const db: MockDb = initialDb()
