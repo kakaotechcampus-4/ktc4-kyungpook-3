@@ -18,6 +18,11 @@ def client(token: str) -> TestClient:
     return c
 
 
+def _utc(dt):
+    # SQLite 는 commit 뒤 다시 읽을 때 tz 를 잃는다.
+    return dt if dt is None or dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+
 def url(seed) -> str:
     return f"{P}/workspaces/{seed['ws']}/message-settings"
 
@@ -87,10 +92,10 @@ def test_auto_approve_since_set_only_when_turned_on(mdb, mseed):
     now1, now2, now3 = NOW, NOW + timedelta(hours=1), NOW + timedelta(hours=2)
     s = svc.update_settings(mdb, wid, {"reminder_auto_approve": True}, updated_by=pm, now=now1)
     mdb.commit()
-    assert s.reminder_auto_approve is True and s.auto_approve_since == now1
+    assert s.reminder_auto_approve is True and _utc(s.auto_approve_since) == now1
     s = svc.update_settings(mdb, wid, {"reminder_auto_approve": True}, updated_by=pm, now=now2)
     mdb.commit()
-    assert s.auto_approve_since == now1
+    assert _utc(s.auto_approve_since) == now1
     s = svc.update_settings(mdb, wid, {"reminder_auto_approve": False}, updated_by=pm, now=now3)
     mdb.commit()
     assert s.reminder_auto_approve is False and s.auto_approve_since is None
