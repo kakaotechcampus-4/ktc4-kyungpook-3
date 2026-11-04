@@ -458,6 +458,7 @@ AUDIO_TOO_LARGE(413)              DISCORD_USER_ALREADY_MAPPED(409)
 | GET · PATCH | `/api/v1/tasks/{task_id}` | |
 | GET | `/api/v1/tasks/{task_id}/history` | |
 | POST | `/api/v1/tasks/{task_id}/history/{history_id}/rollback?changed_by=` | **되돌리기** |
+| POST | `/api/v1/tasks/{task_id}/auto-block/undo` | PM 전용. 무응답 자동 막힘 풀기 → §5.7 |
 
 ```jsonc
 // TaskResponse — 평평하다. 중첩 객체가 없다
@@ -482,7 +483,7 @@ AUDIO_TOO_LARGE(413)              DISCORD_USER_ALREADY_MAPPED(409)
 {"history_id": "hs_01", "task_id": "tk_01",
  "changed_field": "due_date",           // assignee|start_date|due_date|status|title|blocker (#303 전 이력에는 progress 가 남아 있고 되돌리기는 400)
  "old_value": "2026-09-13", "new_value": "2026-09-20",
- "change_source": "meeting",            // meeting|chat|checkin|notion|reminder_reply|manual
+ "change_source": "meeting",            // meeting|chat|checkin|notion|reminder_reply|manual|scheduler
  "changed_by": null,
  "is_auto": true,
  "is_rolled_back": false,
@@ -1265,14 +1266,55 @@ members 에만 있고 Discord 목록에 없으면      → 비활성 (서버를 
 - 리마인드가 모두 빠진 묶음은 `cancelled` 가 된다. 취소된 묶음의 `reminders[]` 에는 묶음과 함께 취소된 리마인드만 있고, 그 전에 뺀 리마인드는 없다.
 - 고치기·승인·취소는 `scheduled` 에서만 된다. 다른 상태면 409 `REMINDER_NOT_EDITABLE`. 없는 묶음은 404 `REMINDER_BUNDLE_NOT_FOUND`, 없는 리마인드는 404 `REMINDER_NOT_FOUND`.
 - `scheduled_at` 은 시간대가 있는 ISO 시각이어야 하고(없으면 400) UTC 로 돌려준다. 지금보다 이른 시각으로 만들거나 고치거나, 시각이 지난 묶음을 승인하면 409 `REMINDER_SCHEDULED_AT_PASSED` 다. 지금과 같은 시각을 문구·메모와 같이 보내는 것은 시각을 고친 것으로 보지 않는다. 화면은 `예정 시각이 지났어요` 를 보이고 시각을 다시 고르게 한다(D-174 정책 3).
-- 발송 시각이 된 승인된 묶음은 대화 메시지 한 통이 되고, 묶음과 리마인드는 `sent` 가 된다. 지금은 봇이 가져갈 때 메시지가 만들어지므로, 봇이 꺼져 있으면 웹 대화에도 늦게 나타난다. 스케줄러가 생기면 시각에 맞춰 만든다.
+- 발송 시각이 된 승인된 묶음은 대화 메시지 한 통이 되고, 묶음과 리마인드는 `sent` 가 된다. 스케줄러가 시각에 맞춰 만들므로 봇이 꺼져 있어도 웹 대화에는 나타난다. 나갈 때 응답이 있었던 재촉이 있으면 자동 취소하고 나머지는 승인을 풀어 PM 이 다시 확인한다.
 - 대화 메시지(`messages[]`)는 `{message_id, thread_id, sender: "bot"|"member", body, created_at, reply_channel: "discord"|"web"|null, dm_status, dm_failure_reason, scheduled_at}` 이다.
   - 팀원 메시지의 `reply_channel` 이 `web` 이면 `웹에서 답장` 표시를 붙인다.
   - 봇 메시지의 `dm_status` 는 `pending`·`claimed`(봇이 보내는 중)·`delivered`·`failed` 다. `failed` 면 `dm_failure_reason` 이 `dm_blocked`(팀원이 서버 DM 을 막음)·`discord_not_linked`(디스코드 미연결)·`unknown` 중 하나이고, 화면은 `DM 못 보냄` 을 보인다. 웹 대화에는 들어갔으므로 상태는 `sent` 다.
 - 대화 목록 한 줄은 `{thread_id, member_id, name, last_message, awaiting_reply_since, dm_failed}` 다. `dm_failed` 는 그 팀원에게 마지막으로 나간 봇 메시지가 `failed` 인지다. 최근 메시지 순이고, 메시지가 없는 대화는 아래에 둔다.
 - 팀원이 봇 DM 창에 쓴 글은 리마인드에 대한 답인지와 상관없이 모두 대화에 들어가 PM 이 본다. 팀원 화면에 이를 안내해야 한다.
 - 팀원 권한은 로그인 계정이 연결된 팀원(`member.user_id`) 기준이다. 계정이 연결되지 않은 팀원은 웹 답장을 할 수 없다.
-- 아직 없는 것: 답장의 태스크 판정 입력(`답장 확인 필요`)과 판정 결과, 태스크 안내 DM·#회의록 요약, 스케줄러(3일 전 제안, 발송 직전 재확인, 5분 합치기, 만료 처리), 알림 설정, AI 초안 워커. MSW 의 `reviews/{id}/send|dismiss` 는 `bundles/{id}/approve|cancel` 로 바뀐다. 프론트엔드 요청은 #315.
+- 아직 없는 것: 답장의 태스크 판정 입력(`답장 확인 필요`)과 판정 결과, 태스크 안내 DM·#회의록 요약, `지금 바로` 5분 합치기, 알림 설정, AI 초안 워커. MSW 의 `reviews/{id}/send|dismiss` 는 `bundles/{id}/approve|cancel` 로 바뀐다. 프론트엔드 요청은 #315.
+
+**스케줄러** (#318 에서 BE 구현). 결정 근거는 [결정 0037](../../../ai/docs/basis_for_decision/ai/2026-11-04-0037-reminder-scheduler-and-notifications.md). 시각 기준은 한국 시간이다.
+
+- 마감 전날 09:00 에 나갈 재촉을 그 3일 전에 만들고 PM 에게 알린다. 3일이 안 남았으면 바로 만들고, 발송 시각이 지났으면 만들지 않는다. 만든 재촉은 PM 승인 전까지 나가지 않는다. PM 이 취소한 제안은 같은 마감에 다시 만들지 않고, 마감이 바뀌면 새로 제안한다.
+- 응답은 대화의 팀원 답장(디스코드·웹)과 사람이 바꾼 태스크 상태·마감이다. 스케줄러 자신의 변경(`change_source: scheduler`)은 응답이 아니다.
+- 재촉을 만든 뒤 응답이 있으면 그 재촉은 발송 전에 `cancelled` 가 되고 PM 에게 알린다. 묶음의 나머지는 승인이 풀려 문구를 다시 만들고 PM 이 다시 승인한다. 시각이 지났으면 `예정 시각이 지났어요` 로 시각을 다시 고른 뒤 승인한다.
+- 마감이 지난 예정 재촉은 `expired` 가 된다. 서버가 멈췄던 경우도 같고, 마감 전이면 응답을 다시 확인한 뒤 보낸다.
+- DM 이 전달된 뒤 72시간 안에 응답이 없으면 태스크를 `blocked` 로 바꾸고 사유를 `리마인드에 72시간 동안 응답이 없어요` 로 적고 PM 에게 알린다. 시계는 발송 시각부터 재며, 새 재촉이 나가면 처음부터 다시 잰다. DM 이 실패했거나 전달 보고 전이면 막지 않는다. 이미 막힘이면 상태와 사유는 그대로 두고 PM 에게만 알린다.
+- 대화에 답장이 오면 재촉이 나갔던 태스크의 막힘을 풀고 사유를 비운다. 이력 출처는 `reminder_reply` 다.
+
+**자동 막힘 풀기.** 카톡이나 회의로 이미 들은 경우를 위해 PM 이 한 번에 되돌리는 경로다.
+
+- `POST /api/v1/tasks/{task_id}/auto-block/undo`: 상태와 사유를 막히기 전 값으로 되돌린다. 응답은 `TaskResponse`, 이력 출처는 `manual` 이다. PM 이 아니면 403.
+- 막힌 뒤 상태나 사유가 바뀌었거나 자동 막힘이 없으면 409 `AUTO_BLOCK_NOT_FOUND`.
+- 자동 막힘 여부는 `blocker` 문구로 가르지 말고 태스크 이력의 `status` 변경 중 `change_source: scheduler` 로 가린다.
+
+**알림·푸시** (#318 에서 BE 구현). 받는 사람은 팀원(`member`) 단위이고, 푸시 구독은 로그인 계정 단위다.
+
+| 요청 | 누가 | 하는 일 |
+|---|---|---|
+| `GET /api/v1/workspaces/{workspace_id}/notifications?limit=` | 소속 팀원 | 내 알림 최근 순(`limit` 기본 50, 최대 200). `{items, unread_count}`. `unread_count` 가 배지 숫자다 |
+| `POST /api/v1/workspaces/{workspace_id}/notifications/{notification_id}/read` | 받은 사람 | 읽음 표시. 다시 불러도 200. 남의 알림은 404 `NOTIFICATION_NOT_FOUND` |
+| `GET /api/v1/push/vapid-public-key` | 로그인 사용자 | `{public_key}`. 서버에 키가 없으면 `null` 이고 그때는 구독하지 않는다 |
+| `POST /api/v1/push/subscriptions` → 201 | 로그인 사용자 | 브라우저 구독 등록 `{endpoint, keys: {p256dh, auth}}`. `endpoint` 는 `https://` 만 받는다. 같은 `endpoint` 를 다시 보내면 지금 계정으로 옮긴다 |
+| `DELETE /api/v1/push/subscriptions` → 204 | 로그인 사용자 | 구독 해제 `{endpoint}`. 내 구독만 지운다. 로그아웃할 때 부른다 |
+
+- 알림 한 건은 `{notification_id, kind, text, link: {type, id}, read_at, created_at}` 이다.
+- 푸시로 오는 내용(서비스 워커 `push` 이벤트의 JSON)은 `{notification_id, workspace_id, kind, text, link: {type, id}}` 다. 제목은 화면에서 정한다.
+
+| `kind` | 받는 사람 | `link.type` | 누르면 가는 곳 | 설정 키(#316) |
+|---|---|---|---|---|
+| `reminder_sent` | 재촉 받은 팀원 | `thread` | 그 대화 | `dueReminder` |
+| `nudge_suggested` | PM 전원 | `bundle` | 보내기 전 확인 | |
+| `nudge_reapprove` | PM 전원 | `bundle` | 보내기 전 확인 | |
+| `reminder_auto_cancelled` | PM 전원 | `bundle` · `thread` | 남은 묶음이 있으면 보내기 전 확인, 없으면 대화 | |
+| `silence_blocked` | PM 전원 | `task` | 태스크 상세 | `silenceAlert` |
+
+- `link.type` 은 `thread`·`bundle`·`task` 중 하나다. 모르는 `kind` 가 와도 `text` 와 `link` 로 표시한다. 답장 판정 결과처럼 뒤에 종류가 더해진다.
+- 알림 설정 저장 API 는 아직 없어 모든 알림이 켜진 것처럼 나간다.
+- 계정이 연결되지 않은 팀원은 목록에만 쌓인다. 푸시가 실패해도 목록에는 남는다.
+- 일시 오류는 최대 3번 다시 보낸다. 기기가 꺼져 있으면 푸시 서비스가 24시간까지 붙잡아 두고, 그 뒤에는 버린다. 푸시 서비스가 구독이 없어졌다고 답하면(404·410) 그 구독을 지운다.
 
 **프론트엔드가 정한 정책** (D-174, 백엔드·AI 합의 여부 확인 필요). 서버가 해 줘야 하는 일만 적는다. 정책 전문은 D-174 에 있다.
 
