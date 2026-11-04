@@ -3,10 +3,14 @@
 
 TEST_DATABASE_URL 이 있으면 PostgreSQL 에서도 돈다.
 """
+import importlib.util
 import os
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import pytest
+from alembic.migration import MigrationContext
+from alembic.operations import Operations
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import IntegrityError
@@ -609,3 +613,21 @@ def test_promotion_check_locks_the_member_row_shared_with_invite_creation(db, se
         assert _row_is_locked(db, seed["minsu"].member_id)
     finally:
         db.rollback()
+
+
+def test_migration_keeps_the_open_invite_indexes_partial_on_sqlite():
+    path = Path(__file__).parents[2] / "migrations" / "versions" / "e8b2f4c6a1d9_add_invitation.py"
+    spec = importlib.util.spec_from_file_location("add_invitation_migration", path)
+    migration = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(migration)
+    engine = create_engine("sqlite:///:memory:")
+
+    with engine.begin() as conn:
+        with Operations.context(MigrationContext.configure(conn)):
+            migration.upgrade()
+        indexes = conn.execute(
+            text("SELECT name, sql FROM sqlite_master WHERE type = 'index' AND name LIKE 'uq_invitation_pending_%'")
+        ).all()
+
+    assert {name for name, _ in indexes} == {"uq_invitation_pending_member", "uq_invitation_pending_email"}
+    assert all("WHERE status = 'pending'" in sql for _, sql in indexes)
