@@ -113,7 +113,7 @@ describe('기본 선택은 늦게 온 목록으로 사용자를 옮기지 않는
     await settle()
     paint.release()
     expect(
-      await screen.findByRole('heading', { name: '메시지는 준비 중이에요' }),
+      await screen.findByRole('heading', { level: 1, name: '메시지' }),
     ).toBeInTheDocument()
     await settle()
 

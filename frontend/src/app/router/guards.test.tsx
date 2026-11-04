@@ -249,13 +249,15 @@ describe('RequirePM', () => {
 })
 
 describe('경로', () => {
-  it('메시지는 준비 중 화면이고 API 를 부르지 않는다', async () => {
+  it('메시지 대화 경로는 메시지 화면이고 그 공간의 메시지 목록과 그 대화만 부른다', async () => {
     const log = recordRequests()
     renderApp('/workspaces/ws_01/messages/threads/1')
-    expect(
-      await screen.findByRole('heading', { name: '메시지는 준비 중이에요' }),
-    ).toBeInTheDocument()
-    expect(businessRequests(log.started)).toEqual([])
+    expect(await screen.findByRole('heading', { level: 1, name: '메시지' })).toBeInTheDocument()
+    await waitFor(() =>
+      expect(new Set(businessRequests(log.started).map(({ path }) => path))).toEqual(
+        new Set(['/workspaces/ws_01/messages', '/workspaces/ws_01/messages/threads/1']),
+      ),
+    )
   })
 
   it.each([

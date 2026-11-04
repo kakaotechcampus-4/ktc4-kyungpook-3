@@ -242,7 +242,7 @@ describe('진행 중인 사용자 이동을 정리 결과가 덮어쓰지 않는
 
     paint.release()
     expect(
-      await screen.findByRole('heading', { name: '메시지는 준비 중이에요' }),
+      await screen.findByRole('heading', { level: 1, name: '메시지' }),
     ).toBeInTheDocument()
     await act(() => settle())
     expect(pathsOf(app).at(-1)).toBe(paths.messages('ws_01'))
