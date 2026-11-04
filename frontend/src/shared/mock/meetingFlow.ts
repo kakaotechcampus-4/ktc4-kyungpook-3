@@ -6,6 +6,7 @@ import { db } from './db'
 import type { MeetingFlowMode, MockDb } from './db'
 import { MOCK_NOW } from './fixtures/constants'
 import { createTask } from './task-state'
+import { awaitSpeakers, needsSpeakers } from './speakerFlow'
 import { nextId } from './utils'
 
 /*
@@ -338,6 +339,10 @@ export function tickMeeting(meetingId: string, state: MockDb = db): void {
       return
     case 'fail-expired':
       failMeeting(meetingId, { failedStage: 'speaker_assignment_expired' }, state)
+      return
+    case 'speakers':
+      if (needsSpeakers(meetingId, state)) awaitSpeakers(meetingId, undefined, state)
+      else advanceMeeting(meetingId, state)
       return
   }
 }

@@ -15,9 +15,10 @@ export const MOCK_DB_STORAGE_KEY = 'msw-db'
  * 5: 재촉을 검토 행 하나로 두고 대화 메시지에서 발송 단계를 빼다.
  * 6: 팀원 초대(`invitations`) 칸 추가. 수락한 초대가 계정과 팀원을 잇는다.
  * 7: 메시지를 백엔드 계약 모양으로 옮겨 검토 행(`messageReviews`)을 보낼 메시지(`messageBundles`)로 바꾸다 (#315).
+ * 8: 업로드 회의의 화자 지정(`meetingFlow.speakers`) 칸 추가 (#256).
  * 올리면 e2e/restore.e2e.ts 의 버전 단언도 같이 고친다 (E2E 는 src 를 가져오지 않는다)
  */
-export const MOCK_DB_VERSION = 7
+export const MOCK_DB_VERSION = 8
 
 interface StoredDb {
   version: number
@@ -47,6 +48,10 @@ function isMeetingFlow(value: unknown): boolean {
     isRecord(value.attendees) &&
     Object.values(value.attendees).every(
       (ids) => Array.isArray(ids) && ids.every((id) => typeof id === 'string'),
+    ) &&
+    isRecord(value.speakers) &&
+    Object.values(value.speakers).every(
+      (upload) => isRecord(upload) && Array.isArray(upload.speakers),
     )
   )
 }

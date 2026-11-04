@@ -1,4 +1,5 @@
 import type { SessionDto } from '@/shared/types/api/auth'
+import type { SpeakerViewDto } from '@/shared/types/api/meeting'
 import type { MemberAliasDto, MemberDto } from '@/shared/types/api/member'
 import type { WorkspaceDto } from '@/shared/types/api/workspace'
 import { sessionFixture } from './fixtures/auth'
@@ -25,9 +26,17 @@ import type { MockNotification, MockPushSubscription } from './fixtures/notifica
  * - `instant`: 첫 조회에 바로 `done`. 인위적 지연이 없다 — E2E 용
  * - `fail`: 첫 조회에 `failed`
  * - `fail-notion-revoked`: 첫 조회에 `failed`, 그 공간의 Notion 연동이 `revoked` 가 된다 (D-099, D-100)
+ * - `speakers`: 업로드 회의가 첫 조회에 화자 지정 대기가 된다. PM 이 지정을 내면 조회마다 한 단계씩(`staged`) 끝난다 (#256)
  */
 export type MeetingFlowMode =
-  'manual' | 'staged' | 'instant' | 'fail' | 'fail-notion-revoked' | 'fail-diarize' | 'fail-expired'
+  | 'manual'
+  | 'staged'
+  | 'instant'
+  | 'fail'
+  | 'fail-notion-revoked'
+  | 'fail-diarize'
+  | 'fail-expired'
+  | 'speakers'
 
 export const MEETING_FLOW_MODES = [
   'manual',
@@ -37,12 +46,27 @@ export const MEETING_FLOW_MODES = [
   'fail-notion-revoked',
   'fail-diarize',
   'fail-expired',
+  'speakers',
 ] as const satisfies readonly MeetingFlowMode[]
+
+/** 업로드 회의의 화자 지정 상태. 백엔드 meeting_upload 행의 화자 칸에 대응한다 (계약 §2.3.1) */
+export interface MockSpeakerUpload {
+  /** AI 가 보낸 라벨. 보내기 전에는 빈 목록이다 */
+  speakers: SpeakerViewDto['speakers']
+  /** 제출한 지정. 라벨 → 팀원 ID, 외부 참석자는 null */
+  mapping: Record<string, string | null> | null
+  /** 녹음 폴더가 있다. 있어도 처리가 done·failed 로 끝나면 지워진 것으로 본다 */
+  audio: boolean
+  /** 제출하는 순간 기한이 지나 실패한다 — 409 `details.status=failed` 를 흉내 낸다 */
+  expireOnSubmit: boolean
+}
 
 export interface MeetingFlowState {
   mode: MeetingFlowMode
   /** 업로드가 받은 참석자 ID. 실 API 는 받고 버린다(계약 §4.0-②-9). 정리 결과의 참석자·발화자가 된다 */
   attendees: Record<string, string[]>
+  /** 업로드 회의마다 하나. 봇 회의에는 없다 — 화자 경로가 404 다 */
+  speakers: Record<string, MockSpeakerUpload>
 }
 
 /**
@@ -131,7 +155,7 @@ export function initialDb(): MockDb {
     tasks: structuredClone(taskFixtures),
     taskHistory: structuredClone(taskHistoryFixtures),
     approvals: structuredClone(approvalFixtures),
-    meetingFlow: { mode: 'manual', attendees: {} },
+    meetingFlow: { mode: 'manual', attendees: {}, speakers: {} },
     messageBundles: structuredClone(messageBundleFixtures),
     messageThreads: structuredClone(messageThreadFixtures),
     messageFailures: { inbox: false, threadIds: [], actions: false },
