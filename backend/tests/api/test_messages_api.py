@@ -1,7 +1,7 @@
 """리마인드·대화 메시지 웹 API(PM, 팀원)와 봇 서비스 API. 시각이 된 상태는 DB의 발송 시각을 과거로 돌려 만든다."""
 from datetime import date, datetime, timedelta, timezone
 
-from app.models import DmStatus, Reminder, ReminderBundle, ReminderStatus, ThreadMessage
+from app.models import DmStatus, Member, Reminder, ReminderBundle, ReminderStatus, ThreadMessage
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -628,3 +628,17 @@ def test_inbox_orders_threads_by_last_message_time_within_the_same_second(mdb, m
     mdb.commit()
     threads = client("pm").get(f"{P}/workspaces/{mseed['ws']}/messages").json()["data"]["threads"]
     assert [t["name"] for t in threads] == ["앨리스", "캐럴"]
+
+
+def test_new_member_row_of_same_account_cannot_open_thread_of_row_that_left(mdb, mseed):
+    pm = client("pm")
+    ws = mseed["ws"]
+    _create(pm, mseed, "alice")
+    tid = pm.get(f"{P}/workspaces/{ws}/messages").json()["data"]["threads"][0]["thread_id"]
+    mseed["alice"].is_deleted = True
+    mdb.add(Member(workspace_id=ws, user_id=mseed["alice"].user_id, display_name="다시 온 앨리스", role="member"))
+    mdb.commit()
+
+    alice = client("alice")
+    assert alice.get(f"{P}/workspaces/{ws}/messages/threads/{tid}").status_code == 403
+    assert alice.post(f"{P}/workspaces/{ws}/messages/threads/{tid}/replies", json={"body": "예전 대화"}).status_code == 403

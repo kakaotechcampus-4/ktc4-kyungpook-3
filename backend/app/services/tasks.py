@@ -89,7 +89,7 @@ def validate_workspace_ownership(
     """
     if assignee_member_id is not None:
         member = db.get(Member, assignee_member_id)
-        if member is None:
+        if member is None or member.is_deleted:
             raise AppError(
                 ErrorCode.MEMBER_NOT_FOUND,
                 details={"member_id": assignee_member_id},
@@ -232,10 +232,12 @@ def apply_task_updates(
 ) -> list[TaskHistory]:
     """필드별로 변경을 적용하고, 실제로 바뀐 필드마다 반영 로그를 남긴다."""
     validate_task_fields(updates)
-    if "assignee_member_id" in updates and updates["assignee_member_id"] is not None:
+    # 지금 담당자를 그대로 보내면 검증하지 않는다. 담당자가 탈퇴한 태스크의 다른 칸은 계속 고칠 수 있어야 한다
+    new_assignee = updates.get("assignee_member_id")
+    if new_assignee is not None and new_assignee != task.assignee_member_id:
         validate_workspace_ownership(
             db, task.workspace_id,
-            assignee_member_id=str(updates["assignee_member_id"]),
+            assignee_member_id=str(new_assignee),
         )
     entries: list[TaskHistory] = []
     for field, new_value in updates.items():

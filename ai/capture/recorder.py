@@ -67,13 +67,15 @@ import soundfile as sf
 
 from capture import judge_path, ops_record
 from capture.judge_path import JudgeOutput
+from capture.handoff import speaker_names
 from shared.config import TRANSCRIPTS_DIR, settings
 from shared.config import today as config_today
 from shared.schemas import now_iso
 
 STATUS_RECORDING = "recording"
 STATUS_SAVED = "saved"
-STATUS_DIARIZED = "diarized"      # 업로드 오디오를 화자별 트랙으로 나눴다. 사람이 확인하고 saved 로 바꾸기 전엔 돌지 않는다
+STATUS_DIARIZED = "diarized"      # 업로드 오디오를 화자별 트랙으로 나눴다. 복구가 집지 않는다(#254·#255 합의 전까지)
+STATUS_MAPPED = "mapped"          # 사람이 화자 라벨을 멤버에 지정했다. 복구가 집지 않는다(#254·#255 합의 전까지)
 STATUS_TRANSCRIBED = "transcribed"
 STATUS_PARTIAL = "partial"        # 전사는 돌았는데 실패한 줄이 남았다. failed_units 에 구간이 있다
 STATUS_SOURCED = "sourced"        # 전사 발화를 BE 에 저장했다
@@ -326,20 +328,40 @@ def failed_units(lines) -> list[dict]:
 
 def _wavs_and_names(recordings_dir: Path, manifest: dict) -> tuple[list[Path], dict[str, str]]:
     wavs = [recordings_dir / e["file"] for e in manifest["speakers"]]
-    names = {str(e["user_id"]): e["display_name"] for e in manifest["speakers"]}
-    return wavs, names
+    return wavs, speaker_names(manifest)
 
 
 def hinted(backend, manifest: dict):
-    """매니페스트의 hint_names(디스코드 표시 이름)로 이름 프롬프트를 건다(#195). 꼴은 stt.backend.hint_prompt.
+    """매니페스트의 이름으로 이름 프롬프트를 건다(#195). BE 에서 받은 팀원 이름(hint_members)이 있으면 그것을,
+    없으면 디스코드 표시 이름(hint_names)을 쓴다. 꼴은 stt.backend.member_prompt, hint_prompt.
 
     프롬프트를 받는 백엔드(accepts_prompt, 지금은 Elice)에만 건다. 로컬 백엔드와 이름이 없는 회의는 그대로다.
-    근거는 결정 기록 0020.
+    근거는 결정 기록 0020, 0024.
     """
-    from stt.backend import Prompted, hint_prompt
+    from stt.backend import Prompted, hint_prompt, member_prompt
 
-    prompt = hint_prompt(manifest.get("hint_names") or [])
+    members = manifest.get("hint_members")
+    prompt = (member_prompt(members) if members else None) or hint_prompt(manifest.get("hint_names") or [])
     return Prompted(backend, prompt) if prompt and getattr(backend, "accepts_prompt", False) else backend
+
+
+def remember_member_names(manifest: dict, handoff) -> bool:
+    """BE 에서 PM 이 정한 팀원 이름을 받아 매니페스트 hint_members 에 남긴다. 남겼으면 True.
+
+    디스코드 표시 이름은 아이디 꼴이거나 성이 빠져 있어 이름 힌트가 덜 맞는다(결정 기록 0024). 회의록 화자 이름도
+    이것으로 쓴다(handoff.speaker_names). 실패 구간 재전사도 같은 이름을 쓰게 매니페스트에 둔다. 이미 있거나
+    BE·워크스페이스가 없으면 묻지 않는다. 조회가 실패해도 전사와 회의록은 디스코드 표시 이름으로 간다.
+    """
+    if manifest.get("hint_members") is not None or handoff is None or not manifest.get("workspace_id"):
+        return False
+    try:
+        members = handoff.client.member_names(manifest["workspace_id"])
+    except Exception as e:  # noqa: BLE001 - 힌트 때문에 전사를 멈추지 않는다
+        print(f"[hint] 팀원 이름 조회 실패. 디스코드 표시 이름으로 전사한다: {type(e).__name__}: {e}", flush=True)
+        return False
+    manifest["hint_members"] = [{"name": m.get("name") or "", "aliases": list(m.get("aliases") or []),
+                                 "discord_user_id": m.get("discord_user_id")} for m in members]
+    return True
 
 
 def transcribe_session(recordings_dir: Path, manifest: dict, *, backend, model_name: str, workers: int,
@@ -434,7 +456,8 @@ def _pending(recordings_dir: Path, *, guild_id=None, exclude=None):
 
 def _is_pending(recordings_dir: Path, m: dict) -> bool:
     """끝까지 가지 않았고 돌릴 트랙이 있는 회의인가. 목록(pending_sessions)과 잡은 뒤의 재확인(recover_one)이 같이 쓴다."""
-    if m.get("status") == STATUS_DIARIZED:
+    # 업로드 회의는 화자 지정(#254)·인계(#255) 합의 전까지 어떤 복구도 돌리지 않는다. 사람이 saved 로 고쳐도 그렇다
+    if m.get("source") == "upload" or m.get("status") in (STATUS_DIARIZED, STATUS_MAPPED):
         return False
     if m.get("status") == STATUS_HANDED_OFF:
         if not (m.get("partial") and m.get("retry_runs", 0) < PARTIAL_RETRY_MAX):
@@ -691,6 +714,8 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
 
         if STATUS_TRANSCRIBED not in stages:
             stage = STATUS_TRANSCRIBED
+            if remember_member_names(manifest, handoff):
+                save()
             ops.load_model(backend)
             begin(FAILED_STAGE[stage])
             counted_by = None if progress is None else (
@@ -1118,7 +1143,7 @@ def extract_after_transcription(transcripts_dir: Path, manifest: dict, *, extrac
     if extractor is None:
         return None
     transcript = Transcript.from_dict(json.loads(src.read_text(encoding="utf-8")))
-    names = {str(e["user_id"]): e["display_name"] for e in manifest["speakers"]}
+    names = speaker_names(manifest)
     try:
         tasks = extractor(transcript, names, today or meeting_date(manifest), workspace_id=manifest.get("workspace_id"))
     except Exception as e:  # noqa: BLE001 - 파이프라인이 통째로 실패했다(전부 실패, LLM 키, 1단계)
