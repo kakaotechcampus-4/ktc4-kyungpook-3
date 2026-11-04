@@ -245,3 +245,31 @@ def test_the_real_run_keeps_a_block_on_a_task_shown_with_its_earlier_status(monk
 
     assert _shape(body) == [("t_api", "status", "blocked", "certain")]
     assert body["changes"][0]["base"]["status"] == "in_progress"
+
+
+def test_the_real_run_splits_one_reply_into_a_line_per_task(monkeypatch):
+    stage1 = {"findings": [
+        {"indices": [2], "summary": "API 명세서를 끝냄", "assignee_type": "none", "reason": "진척"},
+        {"indices": [2], "summary": "로그인 화면 마감을 11/13으로 미룸", "assignee_type": "none", "reason": "일정"}]}
+    _install(monkeypatch, stage1=stage1,
+             terra=[_terra(category="status", status="done"), _terra(category="schedule", matched_candidate_index=1)],
+             luna_draft=[{"task": None, "due_date": None, "doc_text": "API 명세서 완료"},
+                         {"task": None, "due_date": "2026-11-13", "doc_text": "로그인 마감을 11/13으로"}])
+    jev = FakeJev([_yes(status=0.9, target=0.9), _yes(target=0.9)])
+
+    body = judge_reply(_claim(API, LOGIN, lines=[
+        {"sender": "pm", "text": "API 명세서는요?"}, {"sender": "pm", "text": "로그인 화면은요?"},
+        {"sender": "member", "text": "API 는 다 했고 로그인은 다음 주 금요일까지요"}]), jev=jev)
+
+    assert _shape(body) == [("t_api", "status", "done", "certain"), ("t_login", "due_date", "2026-11-13", None)]
+
+
+def test_the_real_run_makes_no_line_from_an_earlier_reply(monkeypatch):
+    stage1 = {"findings": [{"indices": [1], "summary": "API 명세서 마감을 금요일로 정함", "assignee_type": "none", "reason": "일정"}]}
+    fakes = _install(monkeypatch, stage1=stage1, terra=[], luna_draft=[])
+
+    body = judge_reply(_claim(lines=[{"sender": "pm", "text": "API 명세서는요?"},
+                                     {"sender": "member", "text": "금요일까지 할게요"},
+                                     {"sender": "member", "text": "네 그렇게요"}]), jev=FakeJev())
+
+    assert body["changes"] == [] and fakes["terra"].prompts == []
