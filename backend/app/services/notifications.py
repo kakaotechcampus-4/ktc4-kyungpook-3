@@ -176,7 +176,7 @@ def send_pending_pushes(
             db.get(Notification, notification_id).pushed_at = None
             db.commit()
             continue
-        delivered = failed = False
+        delivered = failed = rejected = False
         gone = []
         for sub in subs:
             try:
@@ -184,10 +184,15 @@ def send_pending_pushes(
                 delivered = True
             except push.PushGone:
                 gone.append(sub.subscription_id)
+            except push.PushRejected:
+                logger.warning("push rejected", exc_info=True)
+                rejected = True
             except Exception:
                 logger.warning("push failed", exc_info=True)
                 failed = True
-        _record_push(db, notification_id, delivered=delivered, failed=failed, gone=gone, now=now)
+        _record_push(
+            db, notification_id, delivered=delivered, failed=failed, rejected=rejected, gone=gone, now=now,
+        )
         db.commit()
     return len(work)
 
@@ -221,7 +226,7 @@ def _claim_pushes(db: Session, now: datetime, can_send: bool) -> list[tuple[str,
 
 
 def _record_push(
-    db: Session, notification_id: str, *, delivered: bool, failed: bool, gone: list[str], now: datetime
+    db: Session, notification_id: str, *, delivered: bool, failed: bool, rejected: bool, gone: list[str], now: datetime
 ) -> None:
     notification = db.get(Notification, notification_id, populate_existing=True)
     for subscription_id in gone:
@@ -233,7 +238,7 @@ def _record_push(
     if delivered:
         notification.push_status = PushStatus.SENT
     elif not failed:
-        notification.push_status = PushStatus.SKIPPED
+        notification.push_status = PushStatus.FAILED if rejected else PushStatus.SKIPPED
     elif notification.push_attempts >= PUSH_MAX_ATTEMPTS:
         notification.push_status = PushStatus.FAILED
     else:

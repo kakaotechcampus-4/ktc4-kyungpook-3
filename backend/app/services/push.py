@@ -17,6 +17,13 @@ class PushGone(Exception):
     """푸시 서비스가 구독이 없어졌다고 답했다(404, 410). 그 구독은 지운다."""
 
 
+class PushRejected(Exception):
+    """푸시 서비스가 요청을 거절했다(400, 401, 403). VAPID 키를 바꾸면 기존 구독이 이렇게 답한다.
+
+    다시 보내도 같으므로 재시도하지 않는다. 서버 키 설정이 잘못돼도 같은 답이 오므로 구독은 지우지 않는다.
+    """
+
+
 def public_key() -> str | None:
     return os.getenv("VAPID_PUBLIC_KEY") or None
 
@@ -39,6 +46,9 @@ def send(subscription: PushSubscription, payload: dict) -> None:
             timeout=10,
         )
     except WebPushException as exc:
-        if exc.response is not None and exc.response.status_code in (404, 410):
+        code = None if exc.response is None else exc.response.status_code
+        if code in (404, 410):
             raise PushGone() from exc
+        if code in (400, 401, 403):
+            raise PushRejected() from exc
         raise
