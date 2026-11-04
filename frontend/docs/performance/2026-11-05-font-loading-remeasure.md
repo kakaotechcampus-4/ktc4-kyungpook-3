@@ -108,7 +108,7 @@ B 의 Bold 는 7회 모두 받았다. 첫 그림 직후(HTTP/2 로그인 3.83초
 3. API 응답을 녹화하고 개발 서버를 끈다: `node $B/record.mjs`
 4. 구성 6개를 빌드한다: `node $B/build-variants.mjs`. 이 스크립트는 `index.html`·`fonts.css`·폰트 파일을 잠시 바꿔 빌드하고 원래대로 돌려놓는다.
 5. HTTP/1.1 서버를 구성마다 띄운다: `npx vite preview --outDir node_modules/.cache/font-bench/dist-<구성> --port <포트> --strictPort`. 포트는 A 43521, B 43522, C 43523, C2 43524, D 43525, E 43526 이다.
-6. HTTP/2 서버를 띄운다. 먼저 `openssl req -x509 -newkey rsa:2048 -nodes -keyout node_modules/.cache/font-bench/cert/key.pem -out node_modules/.cache/font-bench/cert/cert.pem -days 7 -subj "/CN=localhost"`로 인증서를 만들고 `node $B/serve-h2.mjs`를 실행한다. 포트는 43531~43536 이다.
+6. HTTP/2 서버를 띄운다. 먼저 `mkdir -p node_modules/.cache/font-bench/cert`로 인증서 폴더를 만들고(openssl 은 폴더를 만들지 않는다), `openssl req -x509 -newkey rsa:2048 -nodes -keyout node_modules/.cache/font-bench/cert/key.pem -out node_modules/.cache/font-bench/cert/cert.pem -days 7 -subj "/CN=localhost"`로 인증서를 만들고 `node $B/serve-h2.mjs`를 실행한다. 포트는 43531~43536 이다.
 7. 측정한다: `node $B/measure.mjs --runs=7`, `node $B/measure.mjs --runs=7 --proto=h2`
 8. 표를 만든다: `node $B/summarize.mjs results-h1.json`, `node $B/summarize.mjs results-h2.json`
 9. 글자 표시를 비교한다: `node $B/glyphs.mjs`. HTTP/1.1 의 A·B 서버가 필요하다.
