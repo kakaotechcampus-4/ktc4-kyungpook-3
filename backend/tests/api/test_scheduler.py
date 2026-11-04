@@ -5,6 +5,7 @@
 from datetime import date, datetime, timedelta, timezone
 
 from fastapi.testclient import TestClient
+from sqlalchemy import event
 
 from app.main import app
 from app.models import (
@@ -401,3 +402,99 @@ def test_undo_refuses_when_not_auto_blocked(mdb, mseed):
     task.status = "blocked"
     mdb.commit()
     assert _undo("pm", task.task_id).status_code == 409
+
+
+# auto_blocked 판정
+
+def _agrees(db, task):
+    """auto_blocked 판정과 undo 결과가 같은지. undo 는 상태를 바꾸므로 마지막에 부른다."""
+    flag = task.task_id in scheduler.auto_blocked_ids(db, [task])
+    code = _undo("pm", task.task_id).status_code
+    assert code == (200 if flag else 409)
+    return flag
+
+
+def _silence_blocked(db, seed, i=0):
+    task = _suggested_and_sent(db, seed, i)
+    tick(db, SLOT + 72 * H)
+    assert task.status == "blocked"
+    return task
+
+
+def test_auto_blocked_true_after_silence_block(mdb, mseed):
+    task = _silence_blocked(mdb, mseed)
+    assert _agrees(mdb, task) is True
+
+
+def test_auto_blocked_false_while_watching(mdb, mseed):
+    task = _suggested_and_sent(mdb, mseed)
+    tick(mdb, SLOT + 71 * H)
+    assert _agrees(mdb, task) is False
+
+
+def test_auto_blocked_false_after_reply_released(mdb, mseed):
+    task = _silence_blocked(mdb, mseed)
+    _web_reply(mdb, mseed, "alice", SLOT + 73 * H)
+    tick(mdb, SLOT + 73 * H)
+    mdb.refresh(task)
+    assert _agrees(mdb, task) is False
+
+
+def test_auto_blocked_false_for_manual_block(mdb, mseed):
+    task = _assign(mdb, mseed)
+    task.status = "blocked"
+    mdb.commit()
+    assert _agrees(mdb, task) is False
+
+
+def test_auto_blocked_false_when_already_blocked_only_notified(mdb, mseed):
+    task = _suggested_and_sent(mdb, mseed)
+    task.status, task.blocker = "blocked", "디자인 대기"
+    mdb.commit()
+    tick(mdb, SLOT + 72 * H)
+    mdb.refresh(task)
+    assert _agrees(mdb, task) is False
+
+
+def test_auto_blocked_false_when_pm_edits_blocker(mdb, mseed):
+    task = _silence_blocked(mdb, mseed)
+    _change(mdb, task, SLOT + 73 * H, blocker="다른 사유")
+    assert _agrees(mdb, task) is False
+
+
+def test_auto_blocked_true_after_status_flip_back_to_blocked(mdb, mseed):
+    task = _silence_blocked(mdb, mseed)
+    _change(mdb, task, SLOT + 73 * H, status="in_progress")
+    _change(mdb, task, SLOT + 74 * H, status="blocked")
+    assert task.blocker == scheduler.BLOCKER_TEXT
+    assert _agrees(mdb, task) is True
+
+
+def test_auto_blocked_ids_reads_db_once_for_many_and_never_without_candidates(mdb, mseed):
+    first = _assign(mdb, mseed, 0)
+    second = _assign(mdb, mseed, 1)
+    tick(mdb, PROPOSE)
+    _approve_all(mdb, PROPOSE)
+    _send(mdb, SLOT)
+    tick(mdb, SLOT + 72 * H)
+    assert (first.status, second.status) == ("blocked", "blocked")
+
+    queries = []
+    engine = mdb.get_bind()
+
+    def count(conn, cursor, statement, *args):
+        if "reminder_watch" in statement:
+            queries.append(statement)
+
+    event.listen(engine, "before_cursor_execute", count)
+    try:
+        assert scheduler.auto_blocked_ids(mdb, [first, second]) == {first.task_id, second.task_id}
+        assert len(queries) == 1
+
+        queries.clear()
+        first.status = second.status = "todo"
+        assert scheduler.auto_blocked_ids(mdb, [first, second]) == set()
+        assert queries == []
+    finally:
+        event.remove(engine, "before_cursor_execute", count)
+        mdb.rollback()
