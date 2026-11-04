@@ -1,9 +1,11 @@
 import { act, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import type { ComponentProps } from 'react'
 import { taskListQueryOptions } from '@/entities/task'
 import { taskStatusMutationKey } from '@/features/task-status'
 import { paths } from '@/shared/config/routes'
 import { MOCK_NOW } from '@/shared/mock/fixtures/constants'
+import { recordRequests } from '@/shared/test/requests'
 import { renderApp } from './test/renderApp'
 
 /*
@@ -93,5 +95,29 @@ describe.each(Object.keys(VIEWS) as (keyof typeof VIEWS)[])('%s 보기 (AC-A-04)
     )
     await settle()
     expect([...renders.entries()]).toEqual([])
+  })
+})
+
+describe('보드 정렬 (D-175 · AC-A-04)', () => {
+  it('정렬을 바꾸면 카드는 자리만 옮기고 다시 그리지 않는다. 태스크를 다시 부르지도 않는다', async () => {
+    const user = userEvent.setup()
+    renderApp(`${paths.tasks('ws_01')}?view=board`)
+    await waitFor(() => expect(VIEWS.board()).toBeVisible(), FIRST_PAINT)
+    await settle()
+    const log = recordRequests()
+    renders.clear()
+
+    await user.click(screen.getByRole('button', { name: '정렬: 마감 빠른 순' }))
+    await user.click(await screen.findByRole('menuitemradio', { name: '최근 생성순' }))
+    await waitFor(() =>
+      expect(
+        within(screen.getByRole('region', { name: '완료' }))
+          .getAllByRole('link')
+          .map((link) => link.textContent),
+      ).toEqual(['토큰 정리', '폰트 적용', '랜딩 카피']),
+    )
+    await settle()
+    expect(taskLinkRenders()).toEqual([])
+    expect(log.started.filter(({ path }) => path.startsWith('/tasks'))).toEqual([])
   })
 })

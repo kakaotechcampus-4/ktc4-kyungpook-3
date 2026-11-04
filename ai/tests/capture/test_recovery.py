@@ -504,3 +504,46 @@ def test_a_meeting_waiting_for_the_workspace_asks_again_at_most_once_a_minute(tm
     fake.guilds = {"77": "ws-1"}                                   # 웹에서 연결했다
     clock["t"] += timedelta(seconds=60)
     assert run()["status"] == "handed_off" and lookups() == 2
+
+
+def test_a_diarized_manifest_is_not_pending_until_it_is_saved(tmp_path):
+    (tmp_path / "111_1.wav").write_bytes(b"x")
+    path = tmp_path / "session_g_1.json"
+    manifest = {"session": "g_1", "guild_id": "g", "status": R.STATUS_DIARIZED,
+                "speakers": [{"user_id": "111", "file": "111_1.wav"}]}
+    path.write_text(json.dumps(manifest), encoding="utf-8")
+    assert R.pending_sessions(tmp_path) == []
+    manifest["status"] = R.STATUS_SAVED
+    path.write_text(json.dumps(manifest), encoding="utf-8")
+    assert R.pending_sessions(tmp_path) == [path]
+
+
+def _upload(tmp_path, status):
+    """업로드 매니페스트를 만들고 status 로 바꿔 둔다. source 는 upload 그대로다."""
+    from tests.conftest import SEGS, STARTED, FakeDiarizer, _audio
+    from upload.prepare import prepare_upload
+
+    rec = tmp_path / "rec"
+    path, m = prepare_upload(_audio(tmp_path), rec, diarizer=FakeDiarizer(SEGS), started_at=STARTED, timezone="Asia/Seoul")
+    m["status"] = status
+    R.save_manifest(path, m)
+    return rec, path
+
+
+@pytest.mark.parametrize("status", [R.STATUS_DIARIZED, R.STATUS_MAPPED, R.STATUS_SAVED, R.STATUS_FAILED,
+                                    R.STATUS_HANDED_OFF, R.STATUS_RECORDING])
+def test_an_upload_manifest_is_never_picked_up_by_recovery(tmp_path, clock, status):
+    """업로드는 화자 지정(#254)·인계(#255) 합의 전까지 어떤 복구 경로도 돌리지 않는다. 사람이 saved 로 고쳐도 그렇다."""
+    rec, path = _upload(tmp_path, status)
+    claims = R.Claims(owner="host:1:a")
+    assert R.pending_sessions(rec) == []
+    assert R.recovery_targets(rec, claims=claims)[0] == []
+    assert R.recovery_targets(rec, claims=claims, manual=True)[0] == []
+    assert R.recovery_targets(rec, claims=claims, guild_id="123", manual=True)[0] == []
+
+    class Boom:
+        def __getattr__(self, name):
+            raise AssertionError("업로드 회의에 STT 를 부르면 안 된다")
+
+    assert R.recover(rec, backend=Boom(), model_name="x", workers=1, claims=claims) == []
+    assert R.recover(rec, backend=Boom(), model_name="x", workers=1, claims=claims, guild_id="123") == []

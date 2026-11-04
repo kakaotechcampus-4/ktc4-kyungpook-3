@@ -3,6 +3,7 @@ import {
   APPROVAL_RESOLUTION_REASONS,
   planApprovalResolution,
   validateTaskCreateFields,
+  taskCreateValues,
 } from '@/entities/approval'
 import type {
   Approval,
@@ -12,7 +13,7 @@ import type {
 } from '@/entities/approval'
 import { speakerName } from '@/entities/member'
 import type { Member } from '@/entities/member'
-import { currentApprovalTransport, useApprovalResolve } from '@/features/approval-resolve'
+import { useApprovalResolve } from '@/features/approval-resolve'
 import type { ApprovalResolve } from '@/features/approval-resolve'
 import { paths } from '@/shared/config/routes'
 import { GuardedLink, useUnsavedChanges } from '@/shared/lib/unsaved-changes'
@@ -67,9 +68,9 @@ function sameFields(a: TaskCreateFields, b: TaskCreateFields): boolean {
 function reasonLine(approval: TaskCreateApproval): string {
   if (approval.gate === 'hold') return '정보가 부족해 태스크 초안을 만들지 않았어요'
   const { missing } = approval
-  if (missing.includes('assignee') && missing.includes('due')) return '담당자와 마감을 정해야 해요'
-  if (missing.includes('assignee')) return '담당자를 정해야 해요'
-  if (missing.includes('due')) return '마감을 정해야 해요'
+  if (missing.includes('assignee') && missing.includes('due')) return '담당자와 마감이 미정이에요'
+  if (missing.includes('assignee')) return '담당자가 미정이에요'
+  if (missing.includes('due')) return '마감이 미정이에요'
   return '내용을 확인해야 해요'
 }
 
@@ -82,11 +83,6 @@ export interface ApprovalCardProps {
   meetingTitles: ReadonlyMap<string, string>
 }
 
-/**
- * 확인 필요 카드 (Tasks 시안). 목록 안에서 바로 보완하고 승인·반려한다.
- * - 생성 승인: 제목은 상세로 가는 링크. 보완 입력은 개발 MSW 에서만 열린다. 실 API 에서 필수값이 없으면 `승인` 을 끄고 미지원 사유를 보이며 `반려` 는 남긴다
- * - 변경·지원하지 않는 종류: 요약과 상세 링크만. 현재값 비교·충돌 재확인은 상세에서 한다
- */
 export function ApprovalCard(props: ApprovalCardProps) {
   const { approval } = props
   if (approval.kind === 'task_create') return <TaskCreateCard {...props} approval={approval} />
@@ -135,29 +131,22 @@ function TaskCreateCard({
   members,
   meetingTitles,
 }: ApprovalCardProps & { approval: TaskCreateApproval }) {
-  const transport = currentApprovalTransport()
-  const editable = transport === 'msw'
   const hold = approval.gate === 'hold'
   const memberList = useMemo(() => members ?? [], [members])
   const memberIds = useMemo(() => memberList.map(({ id }) => id), [memberList])
   const resolver = useApprovalResolve(workspaceId, approval.id, memberIds)
 
-  const original: TaskCreateFields = {
-    taskTitle: approval.title,
-    assigneeMemberId: approval.assigneeMemberId,
-    dueDate: approval.dueDate,
-  }
-  const [values, setValues] = useState<TaskCreateFields>(original)
-  // 보류 카드는 `직접 채우기` 를 눌러야 입력이 열린다
+  const original = taskCreateValues(approval)
+  const edits = resolver.draft?.kind === 'task_create' ? resolver.draft.values : {}
+  const values = taskCreateValues(approval, edits)
   const [filling, setFilling] = useState(!hold)
-  const dirty = editable && !sameFields(values, original)
+  const dirty = !sameFields(values, original)
   useUnsavedChanges(dirty)
 
   const issues = validateTaskCreateFields(values, memberIds)
   const plan = planApprovalResolution(approval, 'approved', {
-    transport,
     memberIds,
-    overrides: dirty ? values : null,
+    edits: resolver.draft,
   })
   const blockedReason =
     members === undefined ? '팀원 목록을 불러온 뒤 승인할 수 있어요.' : plan.ok ? null : plan.reason
@@ -165,15 +154,7 @@ function TaskCreateCard({
   const meetingTitle =
     approval.meetingId === null ? null : (meetingTitles.get(approval.meetingId) ?? '연결된 회의')
   const atClock = approval.evidence.atMs === null ? null : clock(approval.evidence.atMs)
-  const dueHint =
-    approval.dueRaw !== null && issues.includes('due') && values.dueDate === null
-      ? `"${approval.dueRaw}"은 날짜로 바꿔야 Notion에 올라갑니다`
-      : null
-  // 개발 MSW 의 접힌 보류 카드만 채우기 안내를 쓴다. 실 API 는 판정 사유(보완 미지원 문장 포함)를 그대로 보인다
-  const hint =
-    hold && !filling && editable
-      ? '담당자와 마감을 채우면 승인할 수 있어요'
-      : (blockedReason ?? dueHint)
+  const hint = hold && !filling ? '내용을 확인하고 미정인 채로도 승인할 수 있어요' : blockedReason
   const problem = resolver.problem
 
   return (
@@ -222,8 +203,16 @@ function TaskCreateCard({
           values={values}
           issues={issues}
           members={memberList}
-          editable={editable && !resolver.pending}
-          onChange={setValues}
+          editable={!resolver.pending}
+          onChange={(next) => {
+            resolver.editCreate({
+              ...(next.taskTitle !== values.taskTitle ? { taskTitle: next.taskTitle } : {}),
+              ...(next.assigneeMemberId !== values.assigneeMemberId
+                ? { assigneeMemberId: next.assigneeMemberId }
+                : {}),
+              ...(next.dueDate !== values.dueDate ? { dueDate: next.dueDate } : {}),
+            })
+          }}
         />
       ) : null}
 
@@ -258,15 +247,9 @@ function TaskCreateCard({
         resolver={resolver}
         hint={hint}
         hold={hold && !filling}
-        canFill={editable}
         approveBlocked={blockedReason !== null}
         onFill={() => setFilling(true)}
-        onApprove={() =>
-          resolver.resolve(approval, {
-            decision: 'approved',
-            overrides: editable && dirty ? values : null,
-          })
-        }
+        onApprove={() => resolver.approve(approval)}
       />
       {problem?.kind === 'error' ? (
         <FormErrorPanel message={problem.message} />
@@ -323,7 +306,7 @@ function ApprovalFields({ values, issues, members, editable, onChange }: Approva
               onChange({ ...values, assigneeMemberId: event.target.value || null })
             }
           >
-            <option value="">미지정</option>
+            <option value="">미정</option>
             {members.map(({ id, displayName }) => (
               <option key={id} value={id}>
                 {displayName}
@@ -339,17 +322,23 @@ function ApprovalFields({ values, issues, members, editable, onChange }: Approva
       </div>
       <TextField
         label={dueMissing && !dueInvalid ? '마감 — 날짜를 정해 주세요' : '마감'}
-        type="date"
-        min="0001-01-01"
-        max="9999-12-31"
+        type="text"
+        placeholder="YYYY-MM-DD 또는 미정"
         value={values.dueDate ?? ''}
-        // 비우면 승인이 막히는 칸의 안내 글자는 연한 강조색이다 (시안 `YYYY-MM-DD`)
         style={dueMissing && !dueInvalid ? { color: 'var(--color-accent-soft)' } : undefined}
         readOnly={!editable}
         labelTone={dueMissing && !dueInvalid ? 'required-blocking' : 'normal'}
         error={dueInvalid ? '마감은 있는 날짜여야 해요.' : undefined}
         onChange={(event) => onChange({ ...values, dueDate: event.target.value || null })}
       />
+      <Button
+        type="button"
+        variant="ghost"
+        disabled={!editable}
+        onClick={() => onChange({ ...values, dueDate: null })}
+      >
+        마감 미정
+      </Button>
     </div>
   )
 }
@@ -358,10 +347,9 @@ interface CardFooterProps {
   approval: TaskCreateApproval
   resolver: ApprovalResolve
   hint: string | null
-  /** 보류 카드가 아직 접힌 상태다. 개발 MSW 는 `직접 채우기`, 실 API 는 비활성 `승인` 이다. 반려 이름은 그대로다 */
+
   hold: boolean
-  /** 직접 채울 수 있다 (개발 MSW) */
-  canFill: boolean
+
   approveBlocked: boolean
   onFill: () => void
   onApprove: () => void
@@ -372,7 +360,6 @@ function CardFooter({
   resolver,
   hint,
   hold,
-  canFill,
   approveBlocked,
   onFill,
   onApprove,
@@ -393,11 +380,11 @@ function CardFooter({
           variant="ghost"
           loading={resolver.pendingDecision === 'rejected'}
           disabled={resolver.pending}
-          onClick={() => resolver.resolve(approval, { decision: 'rejected' })}
+          onClick={() => resolver.reject(approval)}
         >
           반려
         </Button>
-        {hold && canFill ? (
+        {hold ? (
           <Button variant="default" onClick={onFill}>
             직접 채우기
           </Button>

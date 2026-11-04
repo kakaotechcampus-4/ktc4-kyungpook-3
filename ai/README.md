@@ -45,6 +45,18 @@ recordings/         녹음 산출물 (git 제외)
   마지막으로 끝난 단계 다음부터 마저 처리합니다. 실패 5회로 자동 재시도를 멈춘 회의는 서버에서
   `python -m capture.worker --retry <서버ID>` 로 다시 돌립니다. 상대 날짜("내일")의 기준일은 처리하는 날이 아니라
   `started_at` 을 `timezone` 으로 바꾼 회의 날짜입니다.
+- 수동 업로드(`upload/`): 회의를 녹음하지 못했을 때 오디오 파일 하나를 `python -m upload.prepare <오디오> --started-at <ISO>`
+  (pyannoteAI 를 실제로 부르므로 `PYANNOTEAI_API_KEY` 가 필요하고 과금됩니다)로 화자 분리해 화자 라벨마다 원본 길이의 가상 트랙
+  `recordings/upload_{ts}/{id}_{ts}.wav` 와 `diarization.json`, 매니페스트를 만듭니다. 매니페스트는 `status` 가 `diarized`,
+  `source` 가 `upload` 입니다. 화자 라벨을 멤버에 지정하는 함수는 `upload.mapping.apply_mapping` 이고, 개발·운영용으로 `python -m upload.mapping <매니페스트> <mapping.json>` 입구가 있습니다(PM 이 쓰는 경로가 아닙니다). PM 의 지정을 웹으로 받는 BE 경로와의 연결은 #255 에서 정합니다.
+  `mapping.json` 은 `{"mapping": {"SPEAKER_00": "멤버ID", "SPEAKER_01": null}}` 이거나 안쪽 객체 그대로이고, 키는 `SPEAKER_00` 도
+  `SPEAKER00` 도 됩니다. 모든 라벨을 한 번에 지정해야 하고(빠진·모르는 라벨, 빈 문자열이거나 앞뒤 공백이 있는 멤버 ID 는 거절하며
+  파일은 그대로입니다), `null` 은 외부 참석자이고, 같은 멤버를 여러 라벨에 지정해도 됩니다. 결과는 `speakers[].member_id`,
+  최상위 `mapped_at`, `status` 가 `mapped` 입니다. `user_id`(라벨 id)·`file`·wav 이름은 그대로이고 `mapped` 에서 다시 지정하면
+  덮어씁니다. `diarized`·`mapped` 이거나 `source` 가 `upload` 인 매니페스트는 상태가 무엇이든(사람이 `saved` 로 고쳐도) 워커의
+  자동 바퀴·`--retry` 바퀴·복구 어디서도 처리하지 않습니다. 업로드 회의의 BE 인계는 #254·#255 합의 뒤 다음 PR 에서 정합니다.
+  이 경로는 디스코드 길드·채널이 없어 `guild`·`channel` 이 null 이고, 매니페스트에 `workspace_id` 와 BE 회의 정보가 없으므로
+  `partial`·`sourced` 단계와 BE 인계는 사람이 그 칸을 채워 줘야 돌 수 있습니다.
 
 ## 설치 (이 디렉토리, `ai/` 안에서)
 
