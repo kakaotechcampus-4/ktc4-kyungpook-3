@@ -6,7 +6,7 @@ const VARIANT_CASES: Array<[ButtonVariant, string]> = [
   ['primary', 'bg-ink text-surface'],
   ['default', 'border border-transparent bg-control text-ink'],
   ['ghost', 'bg-transparent text-sub'],
-  ['text', 'bg-transparent text-faint'],
+  ['text', 'bg-transparent text-dim'],
   ['outline', 'border border-line bg-surface text-ink'],
 ]
 

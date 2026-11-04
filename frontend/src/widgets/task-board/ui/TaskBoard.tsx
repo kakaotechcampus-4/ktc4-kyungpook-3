@@ -13,6 +13,7 @@ import { TASK_STATUS_LABEL, useTaskStatusOverlay } from '@/features/task-status'
 import { COMMON_MESSAGES } from '@/shared/api/errorMessages'
 import { paths } from '@/shared/config/routes'
 import { seoulDateOf, soonUntil } from '@/shared/lib/date'
+import { panelTabStop } from '@/shared/lib/tab-panel'
 import { GuardedLink } from '@/shared/lib/unsaved-changes'
 import { Button } from '@/shared/ui/button'
 import { EmptyState } from '@/shared/ui/empty-state'
@@ -515,10 +516,10 @@ function BoardTabs({ tabs, selected, onSelect, trailing, panel }: BoardTabsProps
         {trailing}
       </div>
       <div
+        ref={panelTabStop}
         role="tabpanel"
         id={`${prefix}-panel`}
         aria-labelledby={`${prefix}-tab-${current.tab}`}
-        tabIndex={0}
         className="flex flex-col gap-28"
       >
         {panel}

@@ -1,5 +1,6 @@
 import { useId, useRef } from 'react'
 import type { KeyboardEvent, ReactNode } from 'react'
+import { panelTabStop } from '@/shared/lib/tab-panel'
 
 export interface MinutesTab<Id extends string> {
   id: Id
@@ -89,10 +90,10 @@ export function MinutesTabs<Id extends string>({
         })}
       </div>
       <div
+        ref={panelTabStop}
         role="tabpanel"
         id={`${prefix}-panel-${current.id}`}
         aria-labelledby={`${prefix}-tab-${current.id}`}
-        tabIndex={0}
         className="flex flex-col gap-30 px-36 pt-28 pb-56"
       >
         {current.panel}
