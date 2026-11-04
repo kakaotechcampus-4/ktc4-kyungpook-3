@@ -377,13 +377,14 @@ def cancel_bundle(db: Session, bundle: ReminderBundle, *, now: datetime) -> Remi
 def dispatch_due(db: Session, now: datetime) -> list[ThreadMessage]:
     """승인됐고 발송 시각이 된 묶음마다 봇 메시지 한 통을 만든다. 문구는 묶음 문구 그대로다. 탈퇴한 팀원의 묶음은 취소한다."""
     now = utc(now)
-    scheduler.before_dispatch(db, now)
+    unchecked = scheduler.before_dispatch(db, now)
     due = db.scalars(
         select(ReminderBundle)
         .where(
             ReminderBundle.status == ReminderStatus.SCHEDULED,
             ReminderBundle.approved_at.is_not(None),
             ReminderBundle.scheduled_at <= now,
+            ReminderBundle.bundle_id.notin_(unchecked),
         )
         .order_by(ReminderBundle.scheduled_at, ReminderBundle.created_at)
         .with_for_update(skip_locked=True)

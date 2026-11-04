@@ -487,3 +487,43 @@ def test_inherited_clock_stops_counting_but_keeps_undo_after_due_change(mdb, mse
 
     assert _silence_notes(mdb, mseed, watch) == []
     assert _undo("pm", task.task_id).status_code == 200
+
+
+def _two_due_bundles(db, seed):
+    first = _assign(db, seed, 0)
+    second = _assign(db, seed, 1, who="bob")
+    tick(db, PROPOSE)
+    _approve_all(db, PROPOSE)
+    return first, second
+
+
+def test_before_dispatch_locks_only_reminders_it_drops(mdb, mseed, monkeypatch):
+    first, second = _two_due_bundles(mdb, mseed)
+    _web_reply(mdb, mseed, "alice", PROPOSE + H)
+    locked = []
+    get_reminder = messages.get_reminder
+    monkeypatch.setattr(messages, "get_reminder", lambda db, ws, rid: locked.append(rid) or get_reminder(db, ws, rid))
+
+    scheduler.before_dispatch(mdb, PROPOSE + 2 * H)
+
+    assert locked == [_reminders(mdb, first)[0].reminder_id]
+
+
+def test_one_failing_reminder_does_not_stop_the_claim_and_stays_unsent(mdb, mseed, monkeypatch):
+    first, second = _two_due_bundles(mdb, mseed)
+    broken = _reminders(mdb, first)[0].reminder_id
+    drop_reason = scheduler._drop_reason
+
+    def fail_one(db, reminder, now):
+        if reminder.reminder_id == broken:
+            raise RuntimeError("행 하나의 실패")
+        return drop_reason(db, reminder, now)
+
+    monkeypatch.setattr(scheduler, "_drop_reason", fail_one)
+
+    claimed = messages.claim_for_bot(mdb, SLOT)
+
+    assert [c.message.thread.member_id for c in claimed] == [mseed["bob"].member_id]
+    assert _reminders(mdb, first)[0].status == ReminderStatus.SCHEDULED
+    assert _reminders(mdb, second)[0].status == ReminderStatus.SENT
+

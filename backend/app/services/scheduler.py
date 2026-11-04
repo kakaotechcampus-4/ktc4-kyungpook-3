@@ -247,35 +247,62 @@ def _pm_told(db: Session, bundle_id: str) -> bool:
 
 # 발송 직전
 
-def before_dispatch(db: Session, now: datetime) -> None:
+def before_dispatch(db: Session, now: datetime) -> list[str]:
     """dispatch_due 가 묶음을 보내기 전에 부른다(봇이 가져갈 때도). 나가면 안 되는 리마인드를 빼고, 묶음을 다 본 뒤
-    PM 에게 알린다. 묶음의 나머지는 #314 규칙대로 승인이 풀리고 PM 이 다시 본다."""
+    PM 에게 알린다. 묶음의 나머지는 #314 규칙대로 승인이 풀리고 PM 이 다시 본다.
+
+    잠그지 않고 사유부터 보고, 뺄 것만 잠가 다시 확인한다. 봇이 가져갈 때마다 도는 길이라 PM 조작을 세우지 않으려는
+    것이다. 항목마다 savepoint 를 두어 한 행의 실패가 다른 워크스페이스를 막지 않고, 확인하지 못한 묶음을 돌려준다.
+    """
     now = messages.utc(now)
     db.flush()
     pending = db.execute(
-        select(Reminder.reminder_id, Reminder.workspace_id)
+        select(Reminder.reminder_id, Reminder.workspace_id, Reminder.bundle_id)
         .join(ReminderBundle, ReminderBundle.bundle_id == Reminder.bundle_id)
         .where(Reminder.status == ReminderStatus.SCHEDULED, ReminderBundle.status == ReminderStatus.SCHEDULED)
         .order_by(Reminder.created_at, Reminder.reminder_id)
     ).all()
     dropped: list[tuple[Reminder, str]] = []
     was_approved: dict[str, bool] = {}
-    for reminder_id, workspace_id in pending:
-        reminder = messages.get_reminder(db, workspace_id, reminder_id)
-        if reminder.status != ReminderStatus.SCHEDULED or reminder.task is None:
+    unchecked: list[str] = []
+    for reminder_id, workspace_id, bundle_id in pending:
+        try:
+            with db.begin_nested():
+                drop = _drop_if_needed(db, reminder_id, workspace_id, was_approved, now)
+        except Exception:
+            logger.exception("발송 직전 확인 실패: %s", reminder_id)
+            unchecked.append(bundle_id)
             continue
-        reason = _drop_reason(db, reminder, now)
-        if reason is None:
-            continue
-        bundle = reminder.bundle
-        was_approved.setdefault(bundle.bundle_id, bundle.approved_at is not None)
-        if reason == "expired":
-            messages.expire_reminder(db, reminder_id, now)
-        else:
-            messages.cancel_reminder(db, reminder, now=now)
-        dropped.append((reminder, reason))
+        if drop is not None:
+            dropped.append(drop)
     for reminder, reason in dropped:
-        _notify_dropped(db, reminder, reason, was_approved[reminder.bundle.bundle_id], now)
+        try:
+            with db.begin_nested():
+                _notify_dropped(db, reminder, reason, was_approved[reminder.bundle.bundle_id], now)
+        except Exception:
+            logger.exception("발송 직전 취소 알림 실패: %s", reminder.reminder_id)
+    return unchecked
+
+
+def _drop_if_needed(
+    db: Session, reminder_id: str, workspace_id: str, was_approved: dict[str, bool], now: datetime
+) -> tuple[Reminder, str] | None:
+    seen = db.get(Reminder, reminder_id)
+    if seen.task is None or _drop_reason(db, seen, now) is None:
+        return None
+    reminder = messages.get_reminder(db, workspace_id, reminder_id)
+    if reminder.status != ReminderStatus.SCHEDULED or reminder.task is None:
+        return None
+    reason = _drop_reason(db, reminder, now)
+    if reason is None:
+        return None
+    bundle = reminder.bundle
+    was_approved.setdefault(bundle.bundle_id, bundle.approved_at is not None)
+    if reason == "expired":
+        messages.expire_reminder(db, reminder_id, now)
+    else:
+        messages.cancel_reminder(db, reminder, now=now)
+    return reminder, reason
 
 
 def _drop_reason(db: Session, reminder: Reminder, now: datetime) -> str | None:
