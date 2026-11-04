@@ -432,3 +432,58 @@ def test_due_dates_near_the_minimum_are_skipped_without_errors(mdb, mseed, caplo
     tick(mdb, PROPOSE)
     assert _reminders(mdb, good)
     assert [r for r in caplog.records if r.levelname == "ERROR"] == []
+
+
+def _inherited_and_delivered(db, seed):
+    task = _block_inherited_by_resend(db, seed)
+    [watch] = _live(db, task)
+    assert watch.applied
+    return task, watch, messages.utc(watch.sent_at)
+
+
+def _silence_notes(db, seed, watch):
+    return [n for n in _notes(db, seed, kind="silence_blocked") if n.dedupe_key.startswith(f"silence:{watch.watch_id}")]
+
+
+def test_inherited_clock_does_not_block_a_task_marked_done(mdb, mseed):
+    task, watch, sent = _inherited_and_delivered(mdb, mseed)
+    _change(mdb, task, sent + H, status="done")
+
+    tick(mdb, sent + 2 * H72)
+
+    mdb.refresh(task)
+    assert task.status == "done"
+    assert _silence_notes(mdb, mseed, watch) == []
+
+
+def test_inherited_clock_closes_when_person_cleared_status_and_reason(mdb, mseed):
+    task, watch, sent = _inherited_and_delivered(mdb, mseed)
+    _change(mdb, task, sent + H, status="in_progress", blocker=None)
+
+    tick(mdb, sent + 2 * H72)
+
+    mdb.refresh(task)
+    mdb.refresh(watch)
+    assert (task.status, task.blocker) == ("in_progress", None)
+    assert watch.state == WatchState.ANSWERED
+    assert _silence_notes(mdb, mseed, watch) == []
+
+
+def test_inherited_clock_does_not_block_after_reassignment(mdb, mseed):
+    task, watch, sent = _inherited_and_delivered(mdb, mseed)
+    _change(mdb, task, sent + H, assignee_member_id=mseed["carol"].member_id)
+
+    tick(mdb, sent + 2 * H72)
+
+    assert _silence_notes(mdb, mseed, watch) == []
+    assert _undo("pm", task.task_id).status_code == 200
+
+
+def test_inherited_clock_stops_counting_but_keeps_undo_after_due_change(mdb, mseed):
+    task, watch, sent = _inherited_and_delivered(mdb, mseed)
+    _change(mdb, task, sent + H, due_date=date(2026, 12, 20))
+
+    tick(mdb, sent + 2 * H72)
+
+    assert _silence_notes(mdb, mseed, watch) == []
+    assert _undo("pm", task.task_id).status_code == 200

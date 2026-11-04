@@ -402,16 +402,12 @@ def _settle(db: Session, watch_id: str, now: datetime) -> None:
         return
     if watch.state == WatchState.BLOCKED:
         return
-    if watch.applied:
-        # 자동 막힘을 되돌릴 값을 들고 있는 시계는 답장이나 되돌리기로만 닫는다.
+    stopped = task.status == TaskStatus.DONE or _assignee_changed_after(db, task.task_id, sent_at)
+    if not stopped and not _changed_after(db, task.task_id, sent_at):
         _run_clock(db, task, watch, now)
-        return
-    if task.status == TaskStatus.DONE or _assignee_changed_after(db, task.task_id, sent_at):
-        _close(watch, WatchState.STOPPED, now)
-    elif _changed_after(db, task.task_id, sent_at):
-        _close(watch, WatchState.ANSWERED, now)
-    else:
-        _run_clock(db, task, watch, now)
+    elif not (watch.applied and task.blocker == BLOCKER_TEXT):
+        # 자동 막힘 사유가 남아 있으면 시계는 더 재지 않고, 되돌릴 값을 들고 답장이나 되돌리기를 기다린다.
+        _close(watch, WatchState.STOPPED if stopped else WatchState.ANSWERED, now)
 
 
 def _run_clock(db: Session, task: Task, watch: ReminderWatch, now: datetime) -> None:
