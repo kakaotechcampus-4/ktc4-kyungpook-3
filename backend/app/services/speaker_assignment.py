@@ -184,17 +184,9 @@ def get_speaker_view(db: Session, meeting: Meeting) -> dict:
 
 
 # 재생 응답의 Content-Type 은 클라이언트가 올린 값이 아니라 저장한 확장자로 서버가 정한다(text/html 로 올려 스크립트가 실행되는 것을 막는다)
-_AUDIO_TYPES = {
-    "wav": "audio/wav",
-    "mp3": "audio/mpeg",
-    "m4a": "audio/mp4",
-    "ogg": "audio/ogg",
-    "webm": "audio/webm",
-}
-
-
 def playback_content_type(stored_filename: str) -> str:
-    return _AUDIO_TYPES.get(Path(stored_filename).suffix.lstrip(".").lower(), "application/octet-stream")
+    extension = Path(stored_filename).suffix.lstrip(".").lower()
+    return upload_storage.PLAYBACK_CONTENT_TYPES.get(extension, "application/octet-stream")
 
 
 def get_audio_for_playback(db: Session, meeting: Meeting) -> tuple[Path, str]:
