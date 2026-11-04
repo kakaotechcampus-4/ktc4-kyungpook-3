@@ -32,6 +32,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -120,8 +121,19 @@ class BeClient:
             raise BeError("BAD_RESPONSE", "팀원 이름 응답에 items 목록이 없다")
         return items
 
-    def create_meeting(self, workspace_id: str, *, title: str | None = None, source: str = "discord") -> dict:
-        return self._call("POST", "/meetings", {"workspace_id": workspace_id, "title": title, "source": source})
+    def create_meeting(self, workspace_id: str, *, title: str | None = None, source: str = "discord",
+                       started_at: datetime | None = None) -> dict:
+        body = {"workspace_id": workspace_id, "title": title, "source": source}
+        if started_at is not None:
+            body["started_at"] = started_at.isoformat()
+        return self._call("POST", "/meetings", body)
+
+    def chat_cursor(self, workspace_id: str) -> datetime | None:
+        """BE 가 이미 가진 마지막 채팅 메시지 시각(chat-cursor). 채팅 회의가 없으면 None."""
+        data = self._call("GET", f"/workspaces/{workspace_id}/chat-cursor")
+        if not data:
+            return None
+        return datetime.fromisoformat(data["last_message_at"])
 
     def end_meeting(self, meeting_id: str) -> str:
         """created → processing. 이미 넘어간 회의면 BE 가 409 로 지금 상태를 알려 주므로 그 상태를 돌려준다."""
