@@ -791,3 +791,16 @@ def test_patch_keeping_left_assignee_still_saves_other_fields(client, db, seed):
     })
 
     assert r.status_code == 200, r.text
+
+
+# ---------- 처리 순서 ----------
+
+
+def test_resolved_approval_with_bad_override_is_409_not_400(client, db, seed):
+    approval_id = _new_create(client, seed)
+    assert _resolve(client, approval_id, "rejected").status_code == 200
+
+    r = _resolve(client, approval_id, task_overrides={"due_date": "다음 주"})
+
+    assert r.status_code == 409
+    assert r.json()["error"]["code"] == "APPROVAL_ALREADY_RESOLVED"

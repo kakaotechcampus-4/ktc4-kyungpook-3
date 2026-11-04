@@ -469,6 +469,12 @@ def resolve_approval(
             details={"approval_id": approval_id},
         )
     member = require_pm(db, user, target.workspace_id)
+    # 이미 처리한 카드에는 고친 값이 틀렸다는 안내보다 처리됐다는 안내가 맞다. 경합은 아래 조건부 UPDATE 가 막는다
+    if target.status != str(ApprovalStatus.PENDING):
+        raise AppError(
+            ErrorCode.APPROVAL_ALREADY_RESOLVED,
+            details={"approval_id": approval_id, "current_status": target.status},
+        )
     overrides = _normalize_overrides(target.type, payload.status, payload.task_overrides)
 
     stmt = (
