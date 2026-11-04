@@ -79,6 +79,12 @@ def test_patch_changes_only_sent_keys(mdb, mseed):
     {"nudge_rule": {"days_before": 1, "hour": 24}},
     {"nudge_rule": {"days_before": 1}},
     {"pm_alert_method": "sms"},
+    {"due_reminder": "true"},
+    {"due_reminder": 1},
+    {"nudge_rule": {"days_before": "1", "hour": 9}},
+    {"nudge_rule": {"days_before": 1, "hour": 9.0}},
+    {"reminder_auto_approve": None},
+    {"nudge_rule": None},
 ])
 def test_invalid_bodies_get_400(mdb, mseed, body):
     r = client("pm").patch(url(mseed), json=body)

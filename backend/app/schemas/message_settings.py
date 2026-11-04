@@ -1,16 +1,17 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt, model_validator
 
 from app.services.message_settings import MAX_NUDGE_DAYS_BEFORE
 
 
 class NudgeRule(BaseModel):
+    # 계약상 모르는 값은 400 이다. "1"·9.0 같은 값을 정수로 바꿔 받지 않는다.
     model_config = ConfigDict(extra="forbid")
 
-    days_before: int = Field(ge=0, le=MAX_NUDGE_DAYS_BEFORE)
-    hour: int = Field(ge=0, le=23)
+    days_before: StrictInt = Field(ge=0, le=MAX_NUDGE_DAYS_BEFORE)
+    hour: StrictInt = Field(ge=0, le=23)
 
 
 class MessageSettingsPatch(BaseModel):
@@ -18,10 +19,11 @@ class MessageSettingsPatch(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    due_reminder: bool | None = None
-    minutes_summary: bool | None = None
-    silence_alert: bool | None = None
-    reminder_auto_approve: bool | None = None
+    # "true"·1 같은 값을 bool 로 바꿔 받지 않는다.
+    due_reminder: StrictBool | None = None
+    minutes_summary: StrictBool | None = None
+    silence_alert: StrictBool | None = None
+    reminder_auto_approve: StrictBool | None = None
     nudge_rule: NudgeRule | None = None
     pm_alert_method: Literal["web", "discord_dm", "both"] | None = None
 
