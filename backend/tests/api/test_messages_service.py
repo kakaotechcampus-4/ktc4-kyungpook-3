@@ -544,6 +544,17 @@ def test_a_memo_bundle_with_text_the_pm_changed_inside_the_frame_stays_as_writte
     assert b.body == edited
 
 
+def test_a_memo_bundle_whose_first_line_the_pm_rewrote_stays_as_written(mdb, mseed):
+    note = _make(mdb, mseed, task=0, at=LATER + timedelta(days=3), note="PM 메모")
+    b = _bundle(mdb, mseed, note)
+    rewritten = "앨리스 안녕! 부담 갖지 말고 봐 줘.\n" + b.body.partition("\n")[2]
+    svc.edit_bundle(mdb, b, body=rewritten, scheduled_at=None, now=NOW)
+    mdb.commit()
+    _deliver(mdb, _claimed(mdb, mseed), ["dm1"])
+    mdb.refresh(b)
+    assert b.body == rewritten
+
+
 def test_report_rejects_ids_already_recorded_for_another_message(mdb, mseed):
     _deliver(mdb, _claimed(mdb, mseed, "alice"), ["dm1"])
     other = _claimed(mdb, mseed, "carol")

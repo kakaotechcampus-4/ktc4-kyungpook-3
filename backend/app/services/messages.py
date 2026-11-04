@@ -11,6 +11,7 @@ commit 은 부르는 쪽 몫이다. 시각은 UTC 로 바꿔 저장한다. sqlit
 씌워 저장한다. 그 대화에 나간(delivered) 봇 DM 이 없으면 PM 소개와 맺음을, 있으면 PM 이름만 붙인다. PM 이 고친
 문구는 보이는 전체를 고친 것이라 틀을 다시 씌우지 않는다.
 """
+import re
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 
@@ -145,6 +146,9 @@ def framed_body(
         return f"{recipient}님, {pm}{_copula(pm)}.\n{middle}"
     workspace = db.get(Workspace, bundle.workspace_id).name
     return f"안녕하세요 {recipient}님, {workspace} {pm}{_copula(pm)}.\n{_first_dm_rest(middle)}"
+
+
+FIRST_DM_GREETING = re.compile(r"안녕하세요 .+님, .+(?:이에요|예요|\(이\)에요)\.")
 
 
 def _first_dm_rest(middle: str) -> str:
@@ -689,11 +693,12 @@ def _reframe_unapproved(db: Session, thread_id: str, now: datetime) -> None:
 
 
 def _is_framed_note(db: Session, bundle: ReminderBundle) -> bool:
-    """첫 줄의 이름은 틀을 씌운 뒤 바뀔 수 있어 그 아래만 본다."""
+    """첫 줄의 이름은 틀을 씌운 뒤 바뀔 수 있어 첫 줄은 틀 모양만 보고, 그 아래는 글자 그대로 본다."""
     reminders = bundle_reminders(db, bundle.bundle_id)
     if len(reminders) != 1 or not reminders[0].note:
         return False
-    return bundle.body.partition("\n")[2] == _first_dm_rest(reminders[0].note)
+    first_line, _, rest = bundle.body.partition("\n")
+    return bool(FIRST_DM_GREETING.fullmatch(first_line)) and rest == _first_dm_rest(reminders[0].note)
 
 
 def ingest_discord_reply(
