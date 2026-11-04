@@ -6,7 +6,7 @@ task.progress 칼럼을 지운다. task_history 의 changed_field='progress' 옛
 되돌리면 칼럼만 다시 만든다. 지운 값은 돌아오지 않는다.
 
 Revision ID: c7a2e91b4d36
-Revises: bd244dd27629
+Revises: 5c1f0a7e93b2
 Create Date: 2026-11-04 10:00:00.000000
 
 """
@@ -18,7 +18,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = 'c7a2e91b4d36'
-down_revision: Union[str, Sequence[str], None] = 'bd244dd27629'
+down_revision: Union[str, Sequence[str], None] = '5c1f0a7e93b2'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
