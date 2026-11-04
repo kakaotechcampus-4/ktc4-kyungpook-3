@@ -1,5 +1,5 @@
-import { useId, useMemo } from 'react'
-import type { TaskCreateFields } from '@/entities/approval'
+import { useEffect, useId, useMemo, useRef } from 'react'
+import type { TaskCreateFields, TaskCreateEdits } from '@/entities/approval'
 import type { Member } from '@/entities/member'
 import { useAppForm } from '@/shared/lib/form'
 import { useUnsavedChanges } from '@/shared/lib/unsaved-changes'
@@ -21,40 +21,70 @@ export interface TaskCreateOverridesFormProps {
   /** 지금 공간의 팀원. 담당자는 이 안에서만 고른다 */
   members: readonly Member[]
   /** 검사를 통과한 값. 제목은 앞뒤 공백을 지웠다 */
-  onConfirm: (fields: TaskCreateFields) => void
+  onConfirm: (fields: TaskCreateEdits) => void
+  onInputChange?: () => void
   onCancel: () => void
   /** 승인·반려 요청 중이면 잠근다 */
   disabled?: boolean
+  /** 열릴 때 화면 순서로 첫 빈 칸에 포커스를 둔다. 빈 칸이 없으면 첫 칸이다 (D-176 `채워 넣기`) */
+  autoFocusFirstEmpty?: boolean
 }
 
-/**
- * 생성 승인의 제목·담당자·마감 보완 (계획 §4-1, §4-2). 개발 MSW 에서 PM 이 `보완하기` 를 눌렀을 때만 열린다.
- * 값은 서버로 바로 가지 않는다 — `보완 완료` 로 확정하면 승인 한 번에 함께 실린다.
- * 바꾼 값이 있는 동안 떠나려 하면 기존 이탈 확인을 묻는다
- */
+function firstEmptyControl(form: HTMLFormElement): HTMLElement | null {
+  const controls = Array.from(form.elements).filter(
+    (element): element is HTMLInputElement | HTMLSelectElement =>
+      (element instanceof HTMLInputElement || element instanceof HTMLSelectElement) &&
+      !element.matches(':disabled'),
+  )
+  return controls.find((control) => control.value.trim() === '') ?? controls[0] ?? null
+}
+
 export function TaskCreateOverridesForm({
   initial,
   members,
   onConfirm,
+  onInputChange,
   onCancel,
   disabled = false,
+  autoFocusFirstEmpty = false,
 }: TaskCreateOverridesFormProps) {
   const memberIds = useMemo(() => members.map(({ id }) => id), [members])
   const schema = useMemo(() => overridesSchema(memberIds), [memberIds])
   const { form, submit } = useAppForm(schema, toOverrideFormValues(initial))
-  const { errors, isDirty } = form.formState
+  const { errors, isDirty, dirtyFields } = form.formState
   useUnsavedChanges(isDirty)
   const assigneeId = useId()
   const assigneeErrorId = `${assigneeId}-error`
+  const formRef = useRef<HTMLFormElement>(null)
+  const focused = useRef(false)
+
+  // register 의 ref 가 값을 먼저 채운다 — 효과가 돌 때 칸의 값은 지금 값이다
+  useEffect(() => {
+    if (!autoFocusFirstEmpty || focused.current || formRef.current === null) return
+    focused.current = true
+    firstEmptyControl(formRef.current)?.focus()
+  }, [autoFocusFirstEmpty])
 
   // 서버로 보내지 않는다 — 확정한 값을 화면 상태로 넘길 뿐이다
   const confirm = submit((values) => {
-    onConfirm(toTaskCreateFields(values))
+    const fields = toTaskCreateFields(values)
+    const touched = dirtyFields
+    onConfirm({
+      ...(touched.taskTitle ? { taskTitle: fields.taskTitle } : {}),
+      ...(touched.assigneeMemberId ? { assigneeMemberId: fields.assigneeMemberId } : {}),
+      ...(touched.dueDate ? { dueDate: fields.dueDate } : {}),
+    })
     return Promise.resolve()
   })
 
   return (
-    <form className={ROOT} noValidate onSubmit={(event) => void confirm(event)}>
+    <form
+      ref={formRef}
+      className={ROOT}
+      onChangeCapture={onInputChange}
+      noValidate
+      onSubmit={(event) => void confirm(event)}
+    >
       <fieldset className="flex flex-col gap-18" disabled={disabled}>
         <legend className="mb-4 text-[17px] leading-[1.55] font-bold tracking-h2 text-ink">
           확정할 값 보완
@@ -72,7 +102,7 @@ export function TaskCreateOverridesForm({
               aria-describedby={errors.assigneeMemberId ? assigneeErrorId : undefined}
               {...form.register('assigneeMemberId')}
             >
-              <option value="">담당자 고르기</option>
+              <option value="">미정</option>
               {members.map(({ id, displayName }) => (
                 <option key={id} value={id}>
                   {displayName}
@@ -87,13 +117,22 @@ export function TaskCreateOverridesForm({
           </div>
           <TextField
             label="마감"
-            type="date"
-            min="0001-01-01"
-            max="9999-12-31"
+            type="text"
+            placeholder="YYYY-MM-DD 또는 미정이면 비워 두세요"
             error={errors.dueDate?.message}
             {...form.register('dueDate')}
           />
         </div>
+        <Button
+          type="button"
+          variant="ghost"
+          onClick={() => {
+            onInputChange?.()
+            form.setValue('dueDate', '', { shouldDirty: true, shouldValidate: true })
+          }}
+        >
+          마감 미정
+        </Button>
       </fieldset>
       <div className={FOOTER}>
         <Button type="button" variant="ghost" onClick={onCancel} disabled={disabled}>

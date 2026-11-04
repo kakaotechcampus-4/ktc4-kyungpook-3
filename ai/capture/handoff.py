@@ -62,6 +62,15 @@ class BeError(Exception):
         self.details = details or {}
 
 
+def speaker_names(manifest: dict) -> dict[str, str]:
+    """화자 uid -> 회의록에 쓸 이름. BE 에서 받은 팀원 이름(hint_members)에 그 uid 가 있으면 PM 이 정한 이름,
+    없으면 디스코드 표시 이름이다. 매니페스트의 speakers 는 디스코드 표시 이름 그대로 둔다."""
+    pm = {str(m["discord_user_id"]): m["name"] for m in manifest.get("hint_members") or []
+          if m.get("discord_user_id") and m.get("name")}
+    return {str(e["user_id"]): pm.get(str(e["user_id"])) or e.get("display_name") or str(e["user_id"])
+            for e in manifest.get("speakers") or []}
+
+
 class BeClient:
     """회의 API 네 개와 발화 저장, 유사 task 검색을 얇게 싼다. session 은 requests.Session 과 같은 request() 를 가진 것이면 된다.
 
@@ -99,6 +108,17 @@ class BeClient:
     def guild_workspace(self, guild_id: str) -> str:
         """디스코드 서버에 연결된 워크스페이스(#199, BE #197). 연결이 없으면 BeError(INTEGRATION_NOT_CONNECTED)."""
         return self._call("GET", f"/integrations/discord/guilds/{guild_id}/workspace")["workspace_id"]
+
+    def member_names(self, workspace_id: str) -> list[dict]:
+        """워크스페이스 팀원의 이름(PM 이 온보딩에서 정한 것)과 별칭. 전사 이름 힌트에 쓴다(BE 봇용 조회).
+
+        [{"member_id", "name", "discord_user_id", "aliases"}]. 탈퇴한 팀원은 BE 가 빼고 준다.
+        """
+        data = self._call("GET", f"/workspaces/{workspace_id}/members/names")
+        items = data.get("items") if isinstance(data, dict) else None
+        if not isinstance(items, list):
+            raise BeError("BAD_RESPONSE", "팀원 이름 응답에 items 목록이 없다")
+        return items
 
     def create_meeting(self, workspace_id: str, *, title: str | None = None, source: str = "discord") -> dict:
         return self._call("POST", "/meetings", {"workspace_id": workspace_id, "title": title, "source": source})
@@ -285,7 +305,7 @@ class Handoff:
             be = manifest.setdefault("be", {})
             be["sources"] = {"inserted": 0, "skipped": 0, "duration_ms": None, "meeting_id": be.get("meeting_id")}
             return be
-        names = {str(e["user_id"]): e.get("display_name") or str(e["user_id"]) for e in manifest.get("speakers") or []}
+        names = speaker_names(manifest)
         be = self.end(manifest, title=title)
         try:
             data = self.client.create_sources(be["meeting_id"], transcript, names)

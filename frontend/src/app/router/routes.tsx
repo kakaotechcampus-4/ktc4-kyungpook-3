@@ -28,6 +28,12 @@ const workspaceSelectPage = lazyPage(() =>
 const onboardingCreatePage = lazyPage(() =>
   import('@/pages/onboarding-create').then((m) => m.OnboardingCreatePage),
 )
+const onboardingStartPage = lazyPage(() =>
+  import('@/pages/onboarding-start').then((m) => m.OnboardingStartPage),
+)
+const onboardingMemberPage = lazyPage(() =>
+  import('@/pages/onboarding-member').then((m) => m.OnboardingMemberPage),
+)
 const onboardingStepPage = lazyPage(() =>
   import('@/pages/onboarding-step').then((m) => m.OnboardingStepPage),
 )
@@ -82,6 +88,8 @@ export const appRoutes = (
       {/* 추적기 같은 로그인 뒤 전역 동작의 칸. path 가 없어 경로에는 끼지 않는다 */}
       <Route element={<AuthenticatedLayout />}>
         <Route path="workspaces" element={screen(workspaceSelectPage)} />
+        <Route path="onboarding/start" element={screen(onboardingStartPage)} />
+        <Route path="onboarding/member" element={screen(onboardingMemberPage)} />
         <Route path="onboarding/create_workspace" element={screen(onboardingCreatePage)} />
         <Route path="onboarding/:workspaceId" element={<RequireTeamMember />}>
           <Route index element={screen(<NotFoundPage />)} />

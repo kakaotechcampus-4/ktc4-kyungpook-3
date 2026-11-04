@@ -20,7 +20,7 @@
 - **계약·데이터 계층** — 태스크 목록·상세·이력 Query와 상태 변경·Notion 재시도 API, `version`·`notion_sync_status` 매핑(반영 완료는 `synced`뿐), 승인 처리 본문 판정(`planApprovalResolution`)과 409 `APPROVAL_CONFLICT`·`APPROVAL_ALREADY_RESOLVED` 해석. [taskApi](../../../src/entities/task/api/taskApi.ts), [Task mapper](../../../src/entities/task/model/mapper.ts), [승인 판정](../../../src/entities/approval/model/resolution.ts), [resolveApproval](../../../src/entities/approval/api/resolveApproval.ts).
 - **MSW** — 세션 기반 처리자·변경자, PM 쓰기 권한, 버전·충돌, 생성 승인 보완(`task_overrides`)의 검증 후 일괄 적용, 추출 항목 `task_id` 연결, Notion 대기·실패·재시도. M6 시나리오 9개(`tasks-default` 등). [승인 handler](../../../src/shared/mock/handlers/approval.ts), [태스크 handler](../../../src/shared/mock/handlers/task.ts), [태스크 상태](../../../src/shared/mock/task-state.ts), [시나리오](../../../src/shared/mock/scenarios.ts).
 - **태스크 목록·상세** — 역할별 탭·개수·대기 승인 병합·정렬, URL `tab`·`due` 조건, 상세의 담당자·상태·마감·진행률·막힌 사유·연결 회의·이력, PM의 낙관적 상태 변경(해당 태스크만 복구). [TaskBoard](../../../src/widgets/task-board/ui/TaskBoard.tsx), [TaskDetail](../../../src/widgets/task-detail/ui/TaskDetail.tsx), [상태 변경](../../../src/features/task-status/model/useTaskStatusChange.ts).
-- **확인 필요 상세** — 근거·원문·확정값 구분, 개발 MSW에서만 `보완하기`, 실 API에서는 필수값이 빠진 생성 승인의 `승인` 비활성화와 사유, 변경 승인의 현재값·제안값 비교, 충돌 재확인, 처리 결과와 생성·변경된 태스크 링크. [ApprovalReview](../../../src/widgets/approval-review/ui/ApprovalReview.tsx), [승인 처리](../../../src/features/approval-resolve/model/useApprovalResolve.ts), [보완 폼](../../../src/features/approval-resolve/ui/TaskCreateOverridesForm.tsx), [transport](../../../src/features/approval-resolve/model/transport.ts).
+- **확인 필요 상세** — 근거·원문·확정값 구분, 개발 MSW에서만 `보완하기`, 실 API에서는 필수값이 빠진 생성 승인의 `승인` 비활성화와 사유, 변경 승인의 현재값·제안값 비교, 충돌 재확인, 처리 결과와 생성·변경된 태스크 링크. [ApprovalReview](../../../src/widgets/approval-review/ui/ApprovalReview.tsx), [승인 처리](../../../src/features/approval-resolve/model/useApprovalResolve.ts), [보완 폼](../../../src/features/approval-resolve/ui/TaskCreateOverridesForm.tsx), 당시 `transport.ts`(#311에서 삭제).
 - **Notion 상태** — 서버 상태만 따르는 문구, `pending`인 동안 3초 polling, PM의 반영 실패 재시도. [TaskNotionSyncStatus](../../../src/features/task-notion-sync/ui/TaskNotionSyncStatus.tsx), [useTaskNotionSync](../../../src/features/task-notion-sync/model/useTaskNotionSync.ts).
 - **S5 검증 추가** — Storybook 다섯 묶음([목록](../../../src/widgets/task-board/ui/TaskBoard.stories.tsx), [상세](../../../src/widgets/task-detail/ui/TaskDetail.stories.tsx), [확인 필요 상세](../../../src/widgets/approval-review/ui/ApprovalReview.stories.tsx), [보완 폼](../../../src/features/approval-resolve/ui/TaskCreateOverridesForm.stories.tsx), [Notion 상태](../../../src/features/task-notion-sync/ui/TaskNotionSyncStatus.stories.tsx))과 그 play 회귀([stories.sb.ts](../../../e2e/storybook/stories.sb.ts)), 앱 E2E [tasks-approval.e2e.ts](../../../e2e/tasks-approval.e2e.ts). 제품 코드는 바꾸지 않았다.
 
@@ -167,3 +167,45 @@ S1~S4의 통합 테스트와 브라우저 확인은 각 단계 감독 기록에 
 - [태스크 상세 재조회 실패 안내 계획 (#236)](../refactor/plan-task-detail-refetch-error.md) · [결과](../refactor/result-task-detail-refetch-error.md)
 - [대표 계약](../../contracts/frontend-api-contract.md) 「M6 태스크·승인 처리 경계」
 - [M5 인수인계](../m5/m5-handoff.md)
+
+## M6 후속: 승인 보완과 Task 진행률 제거 (#311, 2026-11-04)
+
+이 절은 [#305](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/305)의 FE 요청을 구체화한 [#311](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/311) 구현 결과다. 위의 2026-10-11 M6 완료조건 판정과 당시 서버 제한 설명은 그 시점의 기록으로 보존한다. 이번 변경은 그중 승인 보완 부분을 갱신하며, M6 전체나 실 API 연동의 완료를 선언하지 않는다.
+
+### 실제 변경
+
+- 현재 Task DTO·모델·요청·MSW·목록·상세·캘린더·팀 화면에서 `progress`를 제거했다. 과거 `changed_field: "progress"` 이력은 읽기 전용으로 표시하고 MSW의 해당 필드 되돌리기는 400으로 거절한다. 회의 처리·업로드 진행과 `in_progress` 상태는 별개다.
+- 생성 승인은 제목·담당자·마감, 수정 승인은 상태·마감의 부분 보완값을 `task_overrides`로 실 API와 MSW에 함께 보낸다. 담당자·마감의 명시적 `null`은 미정, 키 생략은 원래 제안 유지다. 생성 결과 상태는 `todo`이며 반려 요청은 상태만 보낸다.
+- 상세와 목록 카드에서 입력 중·제출 중·충돌 재확인의 경계를 공유한다. 충돌 응답의 `proposed`는 서버가 보완값을 적용한 최종값으로 표시한다. 재승인은 제출했던 동일 보완값과 확인한 `task_version`을 전송한다. 입력을 바꾼 순간 이전 확인을 해제하며, 다시 충돌하면 새 응답을 표시한다. 400·404·네트워크 오류 뒤에는 초안과 대기 상태를 유지한다.
+- 완료 화면은 원래 제안·회의 근거와 서버가 저장한 `payload.task_overrides`를 분리해 읽고, 부분값과 명시적 `null`을 반영해 확정값을 표시한다. 기존 승인·태스크·이력·추출 캐시 갱신과 이미 처리된 승인 재조회·중복 전송 방지를 유지한다. 수정 필드의 `manual` 이력과 변경자는 서버 이력을 표시한다.
+
+구현 경계는 [대표 계약](../../contracts/frontend-api-contract.md)의 「진행률 제거와 보완 승인 경계」, 선택 이유는 [결정 기록](basis-for-decision/2026-11-04-approval-edits-and-conflict-confirmation.md)에 있다. M6 계획의 AC-05(보완 승인), AC-06(충돌·재승인), AC-07(처리 뒤 갱신), AC-09(목록·상세 사용자 흐름)에 대한 후속 구현이다. 기존 AC ID와 원래 의미는 바꾸지 않았다. 예전 MSW 전용 보완·필수 담당자·필수 마감 분기는 #311의 새 계약으로 대체했다.
+
+### 검증과 연동 경계
+
+Node v24.11.0 환경에서 관련 Vitest 13개 파일·245건이 통과했다. 이는 마지막 두 UI 회귀를 추가하기 전 실행이며, 추가한 회귀 11건을 별도로 재실행해 통과했다. 여기에는 무수정 승인, `null`과 생략, 409 재충돌과 확인 해제, 400·404 입력 유지, 완료값·과거 진행률 이력, MSW 이력·반려·원자성 검사가 포함된다. `npm run typecheck`, `npm run lint`, `npm run build`와 변경 소스의 Prettier 검사를 통과했다. Chromium 사용자 흐름의 스크린샷·trace·실행 출력은 로컬 Git 제외 경로 `.verify/managers-manager/2026-11-03T17-13-11-851Z-tasks-b2550194/`에 남겼다.
+
+최초 Chromium 15건 실행에서는 14건이 통과하고 1건은 실행 중 소스 HMR과 품질 검사가 겹친 상태에서 테스트 context 종료가 60초를 넘었다. 이 실패를 통과로 계산하지 않는다. 실패한 「회의록의 확인 필요 항목을 보완·승인」 흐름을 단독 재실행해 1건 통과했다(로컬 기록 `.verify/managers-manager/2026-11-03T17-21-41-013Z-tasks-938e591d/`). 두 실행을 합쳐 각 흐름은 통과했으나 최초 전체 실행의 실패 기록은 유지한다.
+
+독립 리뷰에서 수정 승인 폼이 조회 전 `todo`·마감 미정으로 보일 수 있는 문제를 발견했다. 제안에 없는 값은 `원래 제안 유지`로 표시하고, 상태 선택을 취소하면 요청에서 생략하도록 수정했다. 같은 회귀에서 현재 태스크 재조회와 선택 취소를 함께 확인했다. 죽은 Notion 마감 필수 안내와 오래된 주석도 제거했다.
+
+| 명령 (`frontend/`, wrapper는 저장소 루트) | 결과 |
+|---|---|
+| `npx vitest run src/app/approvalOverrides.test.tsx src/app/approvals.test.tsx src/app/approvalsMsw.test.tsx src/app/tasks.test.tsx src/entities/approval src/shared/mock/taskApprovalFlow.test.ts src/shared/mock/taskScenarios.test.ts --maxWorkers 2` | 13파일·245건 통과 |
+| `npx vitest run src/app/approvalOverrides.test.tsx src/entities/task --maxWorkers 1` | 5파일·59건 통과 |
+| `npx vitest run src/app/approvalOverrides.test.tsx --maxWorkers 1` | 리뷰 수정 뒤 11건 통과 |
+| `npm run typecheck`, `npm run lint`, `npm run build` | 통과 |
+| `npx prettier --check src e2e` | 통과. `npm run format:check`는 로컬 검증 산출물도 검사해 실패했으므로 소스 범위로 재확인 |
+| `node .cursor/skills/verify-managers-manager/scripts/verify.cjs run tasks --grep '.*'` | 최초 14통과·1 context 종료 시간 초과 |
+| 같은 wrapper의 `--grep '회의록의 확인 필요 항목을 보완'` | 단독 1건 통과 |
+| 같은 wrapper의 `--grep '변경 보완 뒤 충돌'` | 리뷰 수정 뒤 1건 통과. 로컬 기록 `2026-11-04T01-31-05-480Z-tasks-fcdf39ab` |
+
+Vitest에는 기존 React `act(...)` 경고가 출력됐다. 전체 Vitest·전체 E2E·Storybook·실 API는 이번 후속에서 실행한 범위에 포함하지 않는다. 시작 시 보관한 전체 계획·각 `plan.md`·트러블슈팅 원문의 SHA-256은 종료 점검에서 같았다.
+
+### 병합 전 CI 후속
+
+PR #323의 최초 CI 전체 Vitest는 2149건 통과·1건 실패였다. `shared/test/api.test.ts`의 공통 클라이언트 오류 검사가 담당자·마감 없는 생성 승인을 오류 입력으로 사용하던 이전 가정을 유지했다. 새 계약에서는 정상 승인이므로 오류 입력을 허용되지 않는 승인 상태로 바꿨다. 제품 코드는 바꾸지 않았다. CI 재검증 결과는 PR 검사 기록에서 확인한다.
+
+그 수정 뒤 CI 전체 단위 테스트·빌드·E2E는 통과했다. Storybook은 153건 통과·2건 실패였으며, 태스크 상세의 `40%`와 진행률 `기록 없음`을 기대하던 기존 play 검사를 현재 화면에 맞게 고쳤다. 두 스토리는 진행률 항목이 없음을 검사한다.
+
+[BE PR #307](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/pull/307)은 2026-11-04 확인 시 OPEN이다. PR 스키마·구현과 FE 계약은 정적으로 대조했으나, 로컬 백엔드와 공개 배포 API에 변경이 적용됐다는 근거는 없다. 공개 `/openapi.json`은 SPA HTML을 반환했다. 실제 승인·DB·Notion 반영, PM 승인 조회 권한은 호환 BE 배포 환경에서 별도로 검증해야 한다. MSW·Chromium 성공은 실 API 검증으로 보지 않는다.

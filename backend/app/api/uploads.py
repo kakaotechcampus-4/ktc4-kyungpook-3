@@ -18,8 +18,17 @@ from app.api.deps import require_service_token
 from app.core.database import get_db
 from app.core.errors import AppError, Envelope, ErrorCode, success
 from app.models import Meeting, MeetingSource, MeetingStatus, MeetingUpload
-from app.schemas.upload import PendingUpload, PendingUploadListResponse, UploadClaimResponse
-from app.services import upload_storage
+from app.schemas.upload import (
+    AssignedUpload,
+    AssignedUploadListResponse,
+    PendingUpload,
+    PendingUploadListResponse,
+    ResumeResponse,
+    SpeakersReportRequest,
+    SpeakersReportResponse,
+    UploadClaimResponse,
+)
+from app.services import speaker_assignment, upload_storage
 
 router = APIRouter(
     prefix="/uploads", tags=["uploads"], dependencies=[Depends(require_service_token)]
@@ -101,6 +110,47 @@ def claim_upload(meeting_id: str, db: Session = Depends(get_db)) -> dict:
     raise AppError(ErrorCode.MEETING_PROCESSING_IN_PROGRESS, details={"meeting_id": meeting_id})
 
 
+@router.post("/{meeting_id}/speakers", response_model=Envelope[SpeakersReportResponse])
+def report_speakers(
+    meeting_id: str, body: SpeakersReportRequest, db: Session = Depends(get_db)
+) -> dict:
+    """AI 가 화자 라벨을 보내면 회의가 지정 대기(awaiting_speakers)가 된다. 같은 내용 재전송은 200."""
+    meeting = speaker_assignment.report_speakers(db, meeting_id, body.speakers)
+    return success(
+        SpeakersReportResponse(meeting_id=meeting_id, status=meeting.status).model_dump()
+    )
+
+
+@router.get("/assigned", response_model=Envelope[AssignedUploadListResponse])
+def list_assigned_uploads(db: Session = Depends(get_db)) -> dict:
+    """PM 이 지정을 끝냈고 AI 가 아직 다시 가져가지 않은 업로드 회의. 지정 시각 순이다."""
+    items = [
+        AssignedUpload(
+            meeting_id=meeting.meeting_id,
+            workspace_id=meeting.workspace_id,
+            title=meeting.title,
+            started_at=meeting.started_at,
+            mapping=json.loads(upload.speaker_mapping or "{}"),
+            assigned_at=upload.speakers_assigned_at,
+        )
+        for meeting, upload in speaker_assignment.list_assigned(db)
+    ]
+    return success(AssignedUploadListResponse(items=items).model_dump(mode="json"))
+
+
+@router.patch("/{meeting_id}/resume", response_model=Envelope[ResumeResponse])
+def resume_upload(meeting_id: str, db: Session = Depends(get_db)) -> dict:
+    """지정 결과를 가져간다(`resumed_at`은 처음 한 번만 기록). 다시 불러도 같은 mapping 으로 200 이다."""
+    meeting, upload = speaker_assignment.resume_upload(db, meeting_id)
+    return success(
+        ResumeResponse(
+            meeting_id=meeting_id,
+            status=meeting.status,
+            mapping=json.loads(upload.speaker_mapping or "{}"),
+        ).model_dump()
+    )
+
+
 @router.get(
     "/{meeting_id}/file",
     response_class=FileResponse,
@@ -114,8 +164,8 @@ def download_upload(meeting_id: str, db: Session = Depends(get_db)) -> FileRespo
     path = upload_storage.audio_path(meeting_id, upload.stored_filename)
     if not path.is_file():
         raise _not_found(meeting_id)
-    return FileResponse(
-        path,
-        media_type=upload.content_type or "application/octet-stream",
-        filename=upload.stored_filename,
-    )
+    media_type = upload.content_type or "application/octet-stream"
+    filename = upload.stored_filename
+    # get_db 정리는 응답을 다 보낸 뒤라, 닫지 않으면 파일을 보내는 동안 DB 연결을 잡고 있다
+    db.close()
+    return FileResponse(path, media_type=media_type, filename=filename)

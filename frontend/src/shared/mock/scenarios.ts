@@ -2,7 +2,12 @@ import type { WorkspaceDto } from '@/shared/types/api/workspace'
 import { initialDb, replaceDb } from './db'
 import type { MeetingFlowMode, MockDb } from './db'
 import { MOCK_NOW } from './fixtures/constants'
-import { completeMeeting, setMeetingFlowMode } from './meetingFlow'
+import {
+  messagesMemberReview,
+  messagesMemberThread,
+  schedulePassedReview,
+} from './fixtures/message'
+import { completeMeeting, failMeeting, setMeetingFlowMode } from './meetingFlow'
 import { setMockRole } from './sessions'
 import { createTask } from './task-state'
 
@@ -22,6 +27,9 @@ export const MOCK_SCENARIOS = [
   'meeting-demo',
   'meeting-instant',
   'meeting-fail',
+  'meeting-fail-diarize',
+  'meeting-fail-expired',
+  'meeting-expired-member',
   'meeting-fail-notion-revoked',
   'meeting-notion-not-connected',
   'meeting-notion-revoked',
@@ -49,6 +57,7 @@ export const MOCK_SCENARIOS = [
   'dashboard-revert-rejected',
   'dashboard-member',
   'dashboard-partial-error',
+  'dashboard-recent-overflow',
   // M8 메시지(임시, 디자인 캔버스 기준 MSW 목). 모두 ws_01 하나에 PM 으로 로그인한다.
   // 로딩은 시나리오가 아니라 응답을 붙잡아 재현한다. 발송 성공은 messages-default 로 본다 (계획 C-7)
   'messages-default',
@@ -56,6 +65,8 @@ export const MOCK_SCENARIOS = [
   'messages-list-error',
   'messages-thread-error',
   'messages-send-fail',
+  'messages-member',
+  'messages-schedule-passed',
   // M8-B 설정·팀 연결 관리. settings-discord-skipped 만 새로 만든 공간(ws_03)이고 나머지는 ws_01 이다
   'settings-discord-skipped',
   'settings-unmapped',
@@ -160,7 +171,7 @@ function addLongContent(state: MockDb): void {
   if (member) member.display_name = '이재환프론트엔드디자인시스템접근성담당'
   const titles = [
     'https://notion.so/workspace/very-long-unbreakable-path-segment-for-task-board-layout-check-0123456789',
-    '회의에서 나온 긴 제목의 태스크로 담당자와 마감일과 진행률을 모두 함께 보여 주어야 하는 경우의 줄바꿈 확인',
+    '회의에서 나온 긴 제목의 태스크로 담당자와 마감일과 진행 상태을 모두 함께 보여 주어야 하는 경우의 줄바꿈 확인',
     'ABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZ',
   ]
   for (const [index, title] of titles.entries())
@@ -249,10 +260,6 @@ function resolvedCreateApproval(state: MockDb): void {
   if (item) item.task_id = task.task_id
 }
 
-/**
- * tk_01 의 상태를 todo → done 으로 바꾸자는 변경 승인. 제안할 때 본 값(base_values)은 todo 인데 지금은
- * in_progress 라 승인하면 409 APPROVAL_CONFLICT 다. progress 는 base 와 지금 값이 같아 충돌이 아니다
- */
 function conflictingUpdateApproval(state: MockDb): void {
   state.approvals.push({
     approval_id: 'ap_04',
@@ -260,8 +267,7 @@ function conflictingUpdateApproval(state: MockDb): void {
     type: 'task_update',
     payload: {
       status: 'done',
-      progress: 100,
-      base_values: { status: 'todo', progress: 40 },
+      base_values: { status: 'todo' },
       // 서버 수정안처럼 대상 태스크 이름을 표시용으로 싣는다
       base_title: '로그인 API 연동',
       task_title: '로그인 API 연동',
@@ -281,6 +287,24 @@ function conflictingUpdateApproval(state: MockDb): void {
 /** 최근 반영의 세 태스크(tk_01~tk_03)를 모두 반영 완료로 둔다. 픽스처는 tk_01 만 synced 다 */
 function syncRecentTasks(state: MockDb): void {
   for (const id of ['tk_01', 'tk_02', 'tk_03']) taskOf(state, id).notion_sync_status = 'synced'
+}
+
+/**
+ * 최신 완료 회의의 추출(ex_01)에 첫 auto 항목(it_01, tk_01 반영 완료)의 사본을 붙여 auto 항목을 12개로 만든다.
+ * 최근 반영이 첫 화면에 다 들어가지 않는 경우다 (D-176). 사본은 it_21 부터, 제목에 번호를 붙여 행을 구분한다
+ */
+function addRecentOverflow(state: MockDb): void {
+  const extraction = state.extractions.find(({ extraction_id }) => extraction_id === 'ex_01')
+  if (!extraction) throw new Error('mock extraction ex_01 is missing')
+  const first = extraction.items.find(({ gate }) => gate === 'auto')
+  if (!first) throw new Error('mock extraction ex_01 has no auto item')
+  const autoCount = extraction.items.filter(({ gate }) => gate === 'auto').length
+  for (let index = autoCount + 1; index <= 12; index += 1) {
+    const copy = structuredClone(first)
+    copy.item_id = `it_${20 + index - autoCount}`
+    copy.task.title = `자동 반영 ${index}`
+    extraction.items.push(copy)
+  }
 }
 
 /** 그 회의를 회의 목록·상세·회의록·추출에서 뺀다. 정리 끝난 회의를 줄여 최신 완료 회의를 바꿀 때 쓴다 */
@@ -329,6 +353,17 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
       break
     case 'meeting-fail':
       readyToUpload(state, 'fail')
+      break
+    case 'meeting-fail-diarize':
+      readyToUpload(state, 'fail-diarize')
+      break
+    case 'meeting-fail-expired':
+      readyToUpload(state, 'fail-expired')
+      break
+    case 'meeting-expired-member':
+      signInWith(state, ['ws_01'], 'ws_01')
+      setMockRole('member', 'ws_01', state)
+      failMeeting('mt_10', { failedStage: 'speaker_assignment_expired' }, state)
       break
     case 'meeting-fail-notion-revoked':
       readyToUpload(state, 'fail-notion-revoked')
@@ -460,6 +495,12 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
       syncRecentTasks(state)
       setMockRole('member', 'ws_01', state)
       break
+    case 'dashboard-recent-overflow':
+      // dashboard-default 에 최근 반영 auto 항목이 12개다 — 첫 화면에 들어가는 만큼 보이고 `외 N건` 이 회의록으로 간다 (D-176)
+      signInWith(state, ['ws_01'], 'ws_01')
+      syncRecentTasks(state)
+      addRecentOverflow(state)
+      break
     case 'dashboard-partial-error':
       // 최신 완료 회의(mt_09)의 추출이 없다 — 최근 반영만 조회 오류(404)이고 나머지 영역은 그대로다
       signInWith(state, ['ws_01'], 'ws_01')
@@ -490,9 +531,21 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
       state.messageFailures.threadIds = ['th_01']
       break
     case 'messages-send-fail':
-      // 조회는 정상이고 발송·보내지 않음·고쳐 쓰기·발송 시점 변경만 5xx 다. db 는 바뀌지 않는다
+      // 조회는 정상이고 발송·보내지 않음·고쳐 쓰기·발송 시점·답장·답장 판정만 5xx 다. db 는 바뀌지 않는다
       signInWith(state, ['ws_01'], 'ws_01')
       state.messageFailures.actions = true
+      break
+    case 'messages-member':
+      // 일반 팀원(mb_01). 자기 대화 th_06 만 보이고, 그 대화의 승인 대기 rv_05 는 보이지 않는다
+      signInWith(state, ['ws_01'], 'ws_01')
+      setMockRole('member', 'ws_01', state)
+      state.messageThreads.push(structuredClone(messagesMemberThread))
+      state.messageReviews.push(structuredClone(messagesMemberReview))
+      break
+    case 'messages-schedule-passed':
+      // rv_06 은 마감 하루 전 시각이 이미 지났다. 마감은 오늘이라 만료가 아니고, 발송은 409 다
+      signInWith(state, ['ws_01'], 'ws_01')
+      state.messageReviews.push(structuredClone(schedulePassedReview))
       break
     case 'settings-discord-skipped':
       // 설정에서 Discord 를 연결한다. 연결해도 건너뜀으로 저장된 단계는 그대로다 (D-173)

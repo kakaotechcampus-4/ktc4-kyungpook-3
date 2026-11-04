@@ -37,6 +37,14 @@ _SIGNATURES = {
     "webm": lambda head: head[:4] == b"\x1a\x45\xdf\xa3",
 }
 SUPPORTED_EXTENSIONS = list(_SIGNATURES)
+# 재생 응답의 Content-Type. 확장자를 늘릴 때 _SIGNATURES 와 같이 늘린다(tests 가 키가 같은지 본다).
+PLAYBACK_CONTENT_TYPES = {
+    "wav": "audio/wav",
+    "mp3": "audio/mpeg",
+    "m4a": "audio/mp4",
+    "ogg": "audio/ogg",
+    "webm": "audio/webm",
+}
 _HEAD_BYTES = 12
 
 

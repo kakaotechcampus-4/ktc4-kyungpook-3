@@ -43,68 +43,63 @@ beforeEach(() => {
   Object.assign(db.approvals[0].payload, { assignee_member_id: 'mb_01', due_date: '2026-10-15' })
 })
 
-describe('live 승인 요청', () => {
-  it('필수값이 채워진 생성 승인은 status 만 보낸다. 보완값·처리자를 넣지 않는다', async () => {
+describe('실 API 승인 요청', () => {
+  it('생성 승인에서 보완한 키와 null을 실제 PATCH 본문에 보낸다', async () => {
     const bodies = captureResolve()
-    const approval = await resolveApproval('ws_01', pendingCreate(), 'approved', {
-      transport: 'live',
+    await resolveApproval('ws_01', pendingCreate(), 'approved', {
       memberIds: MEMBERS,
-      overrides: OVERRIDES,
-    })
-    expect(bodies).toEqual([{ status: 'approved' }])
-    expect(bodies[0]).not.toHaveProperty('task_overrides')
-    expect(bodies[0]).not.toHaveProperty('resolved_by')
-    expect(approval).toMatchObject({ id: 'ap_01', status: 'approved', resolvedBy: 'mb_01' })
-  })
-
-  it('필수값이 빠진 생성 승인은 요청하지 않고 이유와 함께 던진다. 반려는 보낸다', async () => {
-    const bodies = captureResolve()
-    const requests = recordRequests()
-    const approval = pendingCreate({ dueDate: null })
-    await expect(
-      resolveApproval('ws_01', approval, 'approved', { transport: 'live', memberIds: MEMBERS }),
-    ).rejects.toMatchObject({
-      name: 'ApprovalNotResolvableError',
-      issues: ['due'],
-      reason: expect.stringContaining('지금 서버는 승인 전 보완을 지원하지 않아요') as string,
-    })
-    expect(requests.started).toEqual([])
-    await resolveApproval('ws_01', approval, 'rejected', { transport: 'live', memberIds: MEMBERS })
-    expect(bodies).toEqual([{ status: 'rejected' }])
-  })
-
-  it('다른 공간의 승인은 요청하지 않는다', async () => {
-    const requests = recordRequests()
-    await expect(
-      resolveApproval('ws_02', pendingCreate(), 'rejected', { transport: 'live' }),
-    ).rejects.toBeInstanceOf(ApprovalNotResolvableError)
-    expect(requests.started).toEqual([])
-  })
-})
-
-describe('msw 승인 요청', () => {
-  it('approved task_create 에만 task_overrides 를 보낸다', async () => {
-    const bodies = captureResolve()
-    await resolveApproval('ws_01', pendingCreate({ dueDate: null }), 'approved', {
-      transport: 'msw',
-      memberIds: MEMBERS,
-      overrides: OVERRIDES,
-    })
-    await resolveApproval('ws_01', pendingCreate(), 'rejected', {
-      transport: 'msw',
-      memberIds: MEMBERS,
-      overrides: OVERRIDES,
+      edits: {
+        kind: 'task_create',
+        values: { taskTitle: '  새 제목  ', dueDate: null, assigneeMemberId: null },
+      },
     })
     expect(bodies).toEqual([
       {
         status: 'approved',
-        task_overrides: {
-          task_title: '보완한 제목',
-          assignee_member_id: 'mb_02',
-          due_date: '2026-10-31',
-        },
+        task_overrides: { task_title: '새 제목', due_date: null, assignee_member_id: null },
       },
-      { status: 'rejected' },
+    ])
+  })
+  it('선택값이 없는 생성 승인은 보완 없이도 승인한다', async () => {
+    const bodies = captureResolve()
+    await resolveApproval(
+      'ws_01',
+      pendingCreate({ assigneeMemberId: null, dueDate: null }),
+      'approved',
+      { memberIds: MEMBERS },
+    )
+    expect(bodies).toEqual([{ status: 'approved' }])
+  })
+  it('반려는 보완과 확인 버전을 싣지 않는다', async () => {
+    const bodies = captureResolve()
+    await resolveApproval('ws_01', pendingCreate(), 'rejected', {
+      edits: { kind: 'task_create', values: OVERRIDES },
+      confirmTaskVersion: 7,
+    })
+    expect(bodies).toEqual([{ status: 'rejected' }])
+  })
+  it('잘못된 값과 다른 공간은 요청하지 않는다', async () => {
+    const requests = recordRequests()
+    await expect(
+      resolveApproval('ws_01', pendingCreate(), 'approved', {
+        memberIds: MEMBERS,
+        edits: { kind: 'task_create', values: { dueDate: '2026-02-30' } },
+      }),
+    ).rejects.toBeInstanceOf(ApprovalNotResolvableError)
+    await expect(resolveApproval('ws_02', pendingCreate(), 'rejected')).rejects.toBeInstanceOf(
+      ApprovalNotResolvableError,
+    )
+    expect(requests.started).toEqual([])
+  })
+  it('수정 제안에 없는 날짜도 null로 명시하며 나머지 키는 생략한다', async () => {
+    const bodies = captureResolve()
+    db.approvals.push({ ...db.approvals[0], approval_id: 'ap_up', type: 'task_update' })
+    await resolveApproval('ws_01', pendingUpdate(), 'approved', {
+      edits: { kind: 'task_update', values: { dueDate: null } },
+      confirmTaskVersion: 3,
+    })
+    expect(bodies).toEqual([
+      { status: 'approved', task_overrides: { due_date: null }, confirm_task_version: 3 },
     ])
   })
 })

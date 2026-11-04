@@ -93,14 +93,14 @@ describe('회원가입 화면 (U2-3·U2-4)', () => {
 })
 
 describe('회원가입 제출 (U2-6·U2-8)', () => {
-  it('가입 성공: 공간 0개라 워크스페이스 만들기로 간다', async () => {
+  it('가입 성공: 공간 0개라 시작 작업 선택으로 간다', async () => {
     const log = recordRequests()
     const app = await openSignup()
     await fillSignup({ name: '새 사용자', email: 'new@example.com', password: 'pass1234' })
     await userEvent.click(screen.getByRole('button', { name: '계정 만들기' }))
 
-    expect(await screen.findByRole('heading', { name: '워크스페이스 만들기' })).toBeInTheDocument()
-    await app.expectPath('/onboarding/create_workspace')
+    expect(await screen.findByRole('heading', { name: '어떻게 시작할까요?' })).toBeInTheDocument()
+    await app.expectPath('/onboarding/start')
     expect(app.queryClient.getQueryData(SESSION_QUERY_KEY)).toMatchObject({
       user: { email: 'new@example.com', name: '새 사용자' },
       workspaceCount: 0,
@@ -150,7 +150,7 @@ describe('회원가입 제출 (U2-6·U2-8)', () => {
     expect(submitButton).toHaveAttribute('aria-busy', 'true')
 
     gate.resolve()
-    expect(await screen.findByRole('heading', { name: '워크스페이스 만들기' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: '어떻게 시작할까요?' })).toBeInTheDocument()
     expect(posts(log, '/auth/signup')).toHaveLength(1)
   })
 })
@@ -236,7 +236,7 @@ describe('로그인 제출 (U2-4·U2-6·U2-8)', () => {
   })
 
   it.each([
-    ['공간 0개', 'no-workspace', '/onboarding/create_workspace', '워크스페이스 만들기'],
+    ['공간 0개', 'no-workspace', '/onboarding/start', '어떻게 시작할까요?'],
     ['공간 1개', 'single-workspace', '/workspaces/ws_01/dashboard', '대시보드'],
     ['공간 여러 개', 'multiple-workspaces', '/workspaces', '워크스페이스 선택'],
     [
@@ -352,8 +352,8 @@ describe('로그인 제출 (U2-4·U2-6·U2-8)', () => {
 
     failing = false
     await userEvent.click(retry)
-    expect(await screen.findByRole('heading', { name: '워크스페이스 만들기' })).toBeInTheDocument()
-    await app.expectPath('/onboarding/create_workspace')
+    expect(await screen.findByRole('heading', { name: '어떻게 시작할까요?' })).toBeInTheDocument()
+    await app.expectPath('/onboarding/start')
     expect(posts(log, '/auth/signup')).toHaveLength(1)
   }, 10_000)
 })
@@ -397,7 +397,7 @@ describe('인증 화면 재방문 (U2-6·U2-8)', () => {
   it('마지막 공간이 없으면 로그인 직후와 같은 분기다', async () => {
     applyScenario('no-workspace')
     const app = renderApp('/login')
-    expect(await screen.findByRole('heading', { name: '워크스페이스 만들기' })).toBeInTheDocument()
-    await app.expectPath('/onboarding/create_workspace')
+    expect(await screen.findByRole('heading', { name: '어떻게 시작할까요?' })).toBeInTheDocument()
+    await app.expectPath('/onboarding/start')
   })
 })
