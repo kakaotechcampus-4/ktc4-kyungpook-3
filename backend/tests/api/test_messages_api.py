@@ -26,6 +26,11 @@ def _iso(dt):
     return dt.isoformat()
 
 
+def _first(middle, who="앨리스"):
+    """그 대화의 첫 봇 DM 틀. 시드의 PM 표시 이름은 한글이 아니라 조사가 (이)에요 다."""
+    return f"안녕하세요 {who}님, A PM(이)에요.\n앞으로 확인용 메시지는 이 봇으로 보낼게요.\n\n{middle}\n여기로 답장하시면 저한테 바로 전달돼요."
+
+
 def _create(c, seed, who="alice", task=0, at=None, note=None):
     body = {"member_id": seed[who].member_id, "task_id": seed["tasks"][task].task_id,
             "scheduled_at": _iso(at or _future())}
@@ -145,7 +150,7 @@ def test_create_returns_reminder_in_its_bundle(mdb, mseed):
     assert reminder["task_title"] == "할일0" and reminder["due_date"] == "2026-11-13"
     assert bundle["recipient_name"] == "앨리스" and bundle["member_id"] == mseed["alice"].member_id
     assert datetime.fromisoformat(bundle["scheduled_at"]) == at
-    assert bundle["body"] == "앨리스님, 할일0 마감이 11/13(금)이라 한번 여쭤봐요. 지금 어디까지 됐는지 편하게 알려 주세요!"
+    assert bundle["body"] == _first("'할일0' 마감이 11/13(금)이라 한번 여쭤봐요.\n지금 어디까지 됐는지 편하게 알려 주세요!")
     assert (bundle["status"], bundle["approved"], bundle["body_source"], bundle["draft_status"]) == (
         "scheduled", False, "rule", "needed")
     assert [r["reminder_id"] for r in bundle["reminders"]] == [reminder["reminder_id"]]
@@ -175,7 +180,7 @@ def test_same_recipient_and_time_merge_and_unapprove(mdb, mseed):
     second = _create(pm, mseed, task=1, at=at, note="둘째")
     bundle = second["bundle"]
     assert bundle["bundle_id"] == bid and bundle["approved"] is False
-    assert bundle["body"] == "첫째\n\n둘째" and bundle["draft_status"] == "needed"
+    assert bundle["body"] == _first("첫째\n\n둘째") and bundle["draft_status"] == "needed"
     assert len(pm.get(f"{P}/workspaces/{mseed['ws']}/messages").json()["data"]["bundles"]) == 1
 
 
@@ -189,9 +194,9 @@ def test_reminder_edit_moves_to_other_bundle_and_rejects_past_time(mdb, mseed):
     r = pm.patch(url, json={"scheduled_at": _iso(_future(3))})
     assert r.status_code == 200
     moved = r.json()["data"]["bundle"]
-    assert moved["bundle_id"] != stay["bundle"]["bundle_id"] and moved["body"] == "옮김"
+    assert moved["bundle_id"] != stay["bundle"]["bundle_id"] and moved["body"] == _first("옮김")
     inbox = {b["bundle_id"]: b for b in pm.get(f"{P}/workspaces/{mseed['ws']}/messages").json()["data"]["bundles"]}
-    assert inbox[stay["bundle"]["bundle_id"]]["body"] == "남음"
+    assert inbox[stay["bundle"]["bundle_id"]]["body"] == _first("남음")
 
     cleared = pm.patch(url, json={"note": None}).json()["data"]
     assert cleared["reminder"]["note"] is None and cleared["bundle"]["body_source"] == "rule"
@@ -225,7 +230,7 @@ def test_bundle_body_edit_keeps_approval_and_time_move_merges(mdb, mseed):
 
     merged = pm.patch(_bundles_url(mseed, a), json={"scheduled_at": _iso(later)}).json()["data"]
     assert merged["bundle_id"] == b and merged["approved"] is False
-    assert merged["body"] == "가\n\n나" and len(merged["reminders"]) == 2
+    assert merged["body"] == _first("가\n\n나") and len(merged["reminders"]) == 2
     assert [x["bundle_id"] for x in pm.get(f"{P}/workspaces/{mseed['ws']}/messages").json()["data"]["bundles"]] == [b]
 
 
@@ -298,14 +303,14 @@ def test_scheduled_to_sent_through_claim(mdb, mseed):
     pm = client("pm")
     bid = _sent_message(mdb, mseed)
     (item,) = _claim()
-    assert item["body"] == "마감 확인 부탁해요" and item["discord_user_id"] == "d_alice"
+    assert item["body"] == _first("마감 확인 부탁해요") and item["discord_user_id"] == "d_alice"
     assert item["member_id"] == mseed["alice"].member_id and item["workspace_id"] == mseed["ws"]
     mdb.expire_all()
     assert mdb.get(ReminderBundle, bid).status == ReminderStatus.SENT
     assert {r.status for r in mdb.query(Reminder).filter_by(bundle_id=bid)} == {ReminderStatus.SENT}
     inbox = pm.get(f"{P}/workspaces/{mseed['ws']}/messages").json()["data"]
     assert inbox["bundles"] == []
-    assert inbox["threads"][0]["last_message"]["body"] == "마감 확인 부탁해요"
+    assert inbox["threads"][0]["last_message"]["body"] == _first("마감 확인 부탁해요")
 
 
 def test_dispatch_sends_the_bundle_text_the_pm_approved(mdb, mseed):
@@ -384,8 +389,9 @@ def test_draft_claim_item_shape(mdb, mseed):
         {"task_id": mseed["tasks"][0].task_id, "title": "할일0", "due_date": "2026-11-14", "status": "todo", "note": None},
         {"task_id": mseed["tasks"][1].task_id, "title": "할일1", "due_date": None, "status": "todo", "note": "메모"},
     ]
-    assert item["style_examples"] == ["PM 이 쓴 말투예요"]
-    assert item["fallback_body"].startswith("앨리스님, 할일0 마감이 11/14(토)이라") and item["fallback_body"].endswith("\n\n메모")
+    assert item["style_examples"] == [_first("PM 이 쓴 말투예요", who="캐럴")]
+    assert item["fallback_body"] == _first(
+        "'할일0' 마감이 11/14(토)이라 한번 여쭤봐요.\n지금 어디까지 됐는지 편하게 알려 주세요!\n\n메모")
     assert _draft_claim()["items"] == []
 
 
@@ -406,6 +412,8 @@ def test_draft_write_back_routes(mdb, mseed):
     url = f"{P}/bot/drafts/{item['bundle_id']}"
     assert bot.post(url, json={"draft_version": item["draft_version"], "body": "  "}).status_code == 400
     assert bot.post(url, json={"draft_version": item["draft_version"], "body": "가" * 2001}).status_code == 400
+    framed_over = bot.post(url, json={"draft_version": item["draft_version"], "body": "가" * 1990})
+    assert framed_over.status_code == 400 and framed_over.json()["error"]["code"] == "INVALID_REQUEST"
     assert bot.post(url, json={"draft_version": item["draft_version"]}).status_code == 400
     stale = bot.post(url, json={"draft_version": item["draft_version"] + 1, "body": "x"})
     assert stale.status_code == 409 and stale.json()["error"]["code"] == "DRAFT_STALE"
@@ -414,7 +422,7 @@ def test_draft_write_back_routes(mdb, mseed):
 
     assert bot.post(url, json={"draft_version": item["draft_version"], "body": " 앨리스님, 할일0 어때요? "}).status_code == 200
     (bundle,) = pm.get(f"{P}/workspaces/{mseed['ws']}/messages").json()["data"]["bundles"]
-    assert (bundle["body"], bundle["body_source"], bundle["draft_status"]) == ("앨리스님, 할일0 어때요?", "ai", "done")
+    assert (bundle["body"], bundle["body_source"], bundle["draft_status"]) == (_first("앨리스님, 할일0 어때요?"), "ai", "done")
 
 
 def test_pm_edit_or_approval_blocks_ai_write_back(mdb, mseed):
@@ -567,7 +575,7 @@ def test_body_edit_with_merging_time_move_is_rejected_and_keeps_both_bundles(mdb
     assert r.status_code == 400 and r.json()["error"]["code"] == "INVALID_REQUEST"
     bundles = pm.get(f"{P}/workspaces/{mseed['ws']}/messages").json()["data"]["bundles"]
     assert sorted(x["bundle_id"] for x in bundles) == sorted([a, b])
-    assert {x["bundle_id"]: x["body"] for x in bundles}[a] == "가"
+    assert {x["bundle_id"]: x["body"] for x in bundles}[a] == _first("가")
 
 
 def test_approving_while_draft_is_pending_freezes_the_text(mdb, mseed):
@@ -597,7 +605,7 @@ def test_approve_needs_the_draft_version_on_screen_and_refuses_a_changed_text(md
     assert on_screen["draft_version"] == current and on_screen["approved"] is False
 
     approved = pm.post(url, json={"draft_version": current}).json()["data"]
-    assert approved["approved"] is True and approved["body"] == "AI 가 새로 쓴 문구"
+    assert approved["approved"] is True and approved["body"] == _first("AI 가 새로 쓴 문구")
     assert pm.post(url, json={"draft_version": shown["draft_version"]}).status_code == 200
 
 

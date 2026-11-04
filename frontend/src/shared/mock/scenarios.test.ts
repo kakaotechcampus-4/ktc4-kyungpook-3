@@ -1,6 +1,7 @@
 import { fetchDto, fetchSessionDto, jsonRequest } from '@/shared/test/api'
 import type { SessionDto } from '@/shared/types/api/auth'
 import type { ListDto } from '@/shared/types/api/envelope'
+import type { InvitationDto, MyInvitationDto } from '@/shared/types/api/invitation'
 import type { DiscordUserDto, MemberDto } from '@/shared/types/api/member'
 import type { WorkspaceDto } from '@/shared/types/api/workspace'
 import { db, initialDb } from './db'
@@ -148,6 +149,41 @@ describe('E2E 시나리오', () => {
     await expect(
       fetchDto('/workspaces/ws_01/integrations/notion', { method: 'DELETE' }),
     ).rejects.toMatchObject({ code: 'FORBIDDEN', status: 403 })
+  })
+
+  it('팀원 초대: ws_01 PM 이 팀원마다 다른 최근 초대를 본다. 박민수 계정은 수락해 일반 팀원이다', async () => {
+    applyScenario('team-invitations')
+    const { items } = await fetchDto<ListDto<InvitationDto>>('/workspaces/ws_01/invitations')
+    expect(
+      items.map(({ invitation_id, member_id, status }) => [invitation_id, member_id, status]),
+    ).toEqual([
+      ['iv_03', 'mb_04', 'declined'],
+      ['iv_02', 'mb_03', 'pending'],
+      ['iv_01', 'mb_02', 'accepted'],
+      ['iv_00', 'mb_03', 'canceled'],
+    ])
+    await fetchDto(
+      '/auth/login',
+      jsonRequest('POST', { email: 'minsu@example.com', password: 'mock-password' }),
+    )
+    await expect(listedWorkspaces()).resolves.toEqual([
+      { id: 'ws_01', role: 'member', completed: true },
+    ])
+  })
+
+  it('받을 초대: 비로그인이고 jaehwan@example.com 으로 가입하면 공간 없이 초대 하나를 받는다', async () => {
+    applyScenario('invitation-pending')
+    await expect(fetchSessionDto()).resolves.toBeNull()
+    await fetchDto(
+      '/auth/signup',
+      jsonRequest('POST', { email: 'jaehwan@example.com', password: 'pass1234', name: '이재환' }),
+    )
+    await expect(listedWorkspaces()).resolves.toEqual([])
+    await expect(fetchDto<ListDto<MyInvitationDto>>('/invitations/me')).resolves.toMatchObject({
+      items: [
+        { invitation_id: 'iv_02', workspace_name: '카테캠 3팀', member_display_name: '이재환' },
+      ],
+    })
   })
 
   // 시나리오 수의 제곱만큼 적용·비교한다. 시나리오가 늘어 기본 한도(5초)를 넘으므로 한도를 따로 둔다

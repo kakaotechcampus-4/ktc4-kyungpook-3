@@ -4,6 +4,7 @@ import { fail, list, ok } from '../envelope'
 import { MOCK_NOW } from '../fixtures/constants'
 import { nextId } from '../utils'
 import { requireAuth, requireMember } from '../auth-guard'
+import { isMemberOf, roleIn } from '../sessions'
 const base = '/api/v1/workspaces'
 export const workspaceHandlers = [
   http.get(base, () => {
@@ -11,14 +12,12 @@ export const workspaceHandlers = [
     if (denied) return denied
     return list(
       db.workspaces
-        .filter(({ workspace_id }) =>
-          db.accounts
-            .find(({ session }) => session.user.user_id === db.session.user.user_id)
-            ?.workspaceIds.includes(workspace_id),
-        )
+        .filter(({ workspace_id }) => isMemberOf(workspace_id))
         // 백엔드는 목록에서도 _build_workspace_response 를 불러 role 과 onboarding 을 넣는다.
         // 여기서 깎으면 워크스페이스 선택 화면이 설정 미완료 상태를 못 받는다 (계약 §2.1, D-070)
-        .sort((a, b) => b.created_at.localeCompare(a.created_at)),
+        .sort((a, b) => b.created_at.localeCompare(a.created_at))
+        // role 은 보는 계정 기준이다. 저장한 행은 바꾸지 않는다
+        .map((workspace) => ({ ...workspace, role: roleIn(workspace.workspace_id) })),
     )
   }),
   http.post(base, async ({ request }) => {
@@ -97,7 +96,7 @@ export const workspaceHandlers = [
     if (!workspace) return fail('WORKSPACE_NOT_FOUND', '워크스페이스가 없습니다.', 404)
     const denied = requireMember(workspace.workspace_id)
     if (denied) return denied
-    return ok(workspace)
+    return ok({ ...workspace, role: roleIn(workspace.workspace_id) })
   }),
   http.patch(`${base}/:workspaceId/onboarding`, async ({ params, request }) => {
     const denied = requireMember(String(params.workspaceId))
@@ -105,7 +104,8 @@ export const workspaceHandlers = [
     const workspace = db.workspaces.find(({ workspace_id }) => workspace_id === params.workspaceId)
     if (!workspace) return fail('WORKSPACE_NOT_FOUND', '워크스페이스가 없습니다.', 404)
     // 백엔드는 PM 만 온보딩을 바꿀 수 있다 (workspaces.py 의 update_onboarding)
-    if (workspace.role !== 'pm') return fail('FORBIDDEN', '이 작업을 수행할 권한이 없습니다.', 403)
+    if (roleIn(workspace.workspace_id) !== 'pm')
+      return fail('FORBIDDEN', '이 작업을 수행할 권한이 없습니다.', 403)
     const body = (await request.json()) as { step?: unknown; action?: unknown }
     const item = workspace.onboarding.steps.find(({ step }) => step === body.step)
     if (!item || (body.action !== 'skip' && body.action !== 'complete'))

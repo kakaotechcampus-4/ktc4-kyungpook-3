@@ -245,7 +245,15 @@ def test_real_speech_survives_the_filter():
     if data.ndim > 1:
         data = data.mean(axis=1)
     gate = SpeechGate()
-    finals, stt = run_one(gate, data)
+    import stt.batch as B
+    from stt import vad as V
+
+    keep = B.BATCH_MIN_SPEECH_MS
+    B.BATCH_MIN_SPEECH_MS = V.MIN_SPEECH_MS   # 말 필터를 쓰는 것은 실시간 경로뿐이라 그 최소 발화(320ms)로 자른다(0030, 0031)
+    try:
+        finals, stt = run_one(gate, data)
+    finally:
+        B.BATCH_MIN_SPEECH_MS = keep
     assert stt.calls > 0
     assert gate.rejected == 0
     assert len(finals) == stt.calls

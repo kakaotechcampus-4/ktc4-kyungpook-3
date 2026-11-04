@@ -214,11 +214,11 @@ class DraftClaimResponse(BaseModel):
     total: int
 
 
-DRAFT_MAX_LENGTH = 2000
-
-
 class DraftWriteRequest(BaseModel):
-    """body 가 null 이면 AI 가 초안을 못 쓴 것이다. 규칙 문구를 그대로 둔다."""
+    """body 가 null 이면 AI 가 초안을 못 쓴 것이다. 규칙 문구를 그대로 둔다.
+
+    길이 한도는 틀을 씌운 전체에 걸리므로 서비스(write_draft)가 본다.
+    """
 
     draft_version: int
     body: str | None
@@ -226,9 +226,4 @@ class DraftWriteRequest(BaseModel):
     @field_validator("body")
     @classmethod
     def _check_body(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
-        value = _non_blank(value)
-        if len(value) > DRAFT_MAX_LENGTH:
-            raise ValueError(f"초안은 {DRAFT_MAX_LENGTH}자 이하여야 합니다.")
-        return value
+        return None if value is None else _non_blank(value)
