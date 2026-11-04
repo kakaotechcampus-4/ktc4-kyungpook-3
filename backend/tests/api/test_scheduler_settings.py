@@ -336,3 +336,33 @@ def test_suggestion_notice_asks_approval_when_off(mdb, mseed):
 
     [note] = _notes(mdb, mseed, kind="nudge_suggested")
     assert "승인해 주세요" in note.text
+
+
+def _two_approved_then_delete_first(db, seed, delete_at):
+    _assign(db, seed, 0)
+    _assign(db, seed, 1)
+    tick(db, PROPOSE)
+    assert len(_bundles(db)) == 1 and db.query(Reminder).count() == 2
+    _approve_all(db, PROPOSE)
+    seed["tasks"][0].is_deleted = True
+    db.commit()
+    tick(db, delete_at)
+    [note] = _notes(db, seed, kind="reminder_auto_cancelled")
+    return note
+
+
+def test_drop_notice_says_auto_send_for_bundle_due_after_turning_on(mdb, mseed):
+    _turn_on(mdb, mseed)
+
+    note = _two_approved_then_delete_first(mdb, mseed, SLOT - H)
+
+    assert "발송 시각에 자동으로 나가요" in note.text
+
+
+def test_drop_notice_asks_approval_for_bundle_due_before_turning_on(mdb, mseed):
+    # 켜기 전에 발송 시각이 지난 묶음은 자동 승인 대상이 아니므로 다시 승인하라고 알린다.
+    _turn_on(mdb, mseed, now=SLOT + H)
+
+    note = _two_approved_then_delete_first(mdb, mseed, SLOT + 2 * H)
+
+    assert "다시 승인해 주세요" in note.text
