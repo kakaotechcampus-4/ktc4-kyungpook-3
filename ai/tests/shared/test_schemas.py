@@ -134,7 +134,18 @@ def test_draft_result_roundtrip():
         doc_text="결제 환불 기능을 지민님이 10/5까지 구현하기로 함",
     )
     assert d.method == "llm"
-    assert d.to_dict()["structured"] == {"task": "결제 환불 기능 구현", "due_date": "2026-10-05", "due_cleared": False}
+    assert d.to_dict()["structured"] == {
+        "task": "결제 환불 기능 구현", "due_date": "2026-10-05", "due_cleared": False, "due_raw": None,
+    }
+    assert DraftResult.from_dict(d.to_dict()) == d
+
+
+def test_draft_result_roundtrip_keeps_due_raw():
+    d = DraftResult(
+        structured=DraftStructured(task="결제 환불 기능 구현", due_date="2026-10-05", due_raw="이번 주 금요일까지"),
+        doc_text="결제 환불 기능을 10/5까지 구현하기로 함",
+    )
+    assert d.to_dict()["structured"]["due_raw"] == "이번 주 금요일까지"
     assert DraftResult.from_dict(d.to_dict()) == d
 
 

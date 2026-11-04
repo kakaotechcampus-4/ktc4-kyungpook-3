@@ -15,7 +15,14 @@ export const meetingHandlers = [
     if (!db.workspaces.some(({ workspace_id }) => workspace_id === params.workspaceId))
       return fail('WORKSPACE_NOT_FOUND', '워크스페이스가 없습니다.', 404)
     const meetings = db.meetings.filter(
-      (meeting) => meeting.workspace_id === params.workspaceId && meeting.status !== 'failed',
+      (meeting) =>
+        meeting.workspace_id === params.workspaceId &&
+        (meeting.status !== 'failed' ||
+          (meeting.failed_stage === 'speaker_assignment_expired' &&
+            db.meetingSummaries.some(
+              (summary) =>
+                summary.meeting_id === meeting.meeting_id && summary.source === 'manual_upload',
+            ))),
     )
     return list(
       db.meetingSummaries
@@ -25,6 +32,7 @@ export const meetingHandlers = [
           return {
             ...summary,
             status: meeting.status,
+            failed_stage: meeting.failed_stage,
             // 백엔드는 audio 가 없으면 0 을 주고, processed_at 에는 상태와 무관하게
             // ended_at 을 넣는다 (workspaces.py 의 list_workspace_meetings)
             duration_ms: summary.duration_ms ?? 0,

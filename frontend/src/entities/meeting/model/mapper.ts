@@ -37,6 +37,7 @@ export function toMeetingSummary(dto: MeetingSummaryDto): MeetingSummary {
     durationMs: dto.duration_ms,
     attendeeCount: dto.attendee_count,
     processedAt: dto.processed_at,
+    failedStage: dto.failed_stage ?? null,
   }
 }
 export function toMeetingUploadResult(dto: MeetingUploadDto): MeetingUploadResult {

@@ -9,7 +9,6 @@ export const taskFields = [
   'title',
   'assignee_member_id',
   'status',
-  'progress',
   'blocker',
   'start_date',
   'due_date',
@@ -25,13 +24,12 @@ export const approvalTaskUpdateFields: readonly TaskField[] = [
   'title',
   'assignee_member_id',
   'status',
-  'progress',
   'blocker',
   'due_date',
 ]
 /** `state` 를 주면 그 상태에 쓴다 — 시나리오가 `db` 에 넣기 전의 상태를 만들 때다. 기본은 `db` */
 export function createTask(
-  input: Pick<TaskDto, 'workspace_id' | 'title'> & Partial<TaskDto>,
+  input: Pick<TaskDto, 'workspace_id' | 'title'> & Partial<TaskDto> & { history_title?: string },
   actor: string | null,
   source = 'manual',
   state: MockDb = db,
@@ -47,7 +45,6 @@ export function createTask(
     title: input.title,
     assignee_member_id: input.assignee_member_id ?? null,
     status: input.status ?? 'todo',
-    progress: input.progress ?? null,
     blocker: input.blocker ?? null,
     due_date: input.due_date ?? null,
     start_date: input.start_date ?? null,
@@ -58,7 +55,7 @@ export function createTask(
     updated_at: MOCK_NOW,
   }
   state.tasks.push(task)
-  addHistory(task.task_id, 'title', null, task.title, actor, source, state)
+  addHistory(task.task_id, 'title', null, input.history_title ?? task.title, actor, source, state)
   enqueueTaskSync(task, state)
   return task
 }
@@ -143,29 +140,25 @@ export function updateTask(
   return changed
 }
 
-/**
- * 생성 승인의 제목·담당자·마감 판정. 제목은 앞뒤 공백을 뺀 코드 포인트 1~300자(백엔드 Python len 과 같은 셈),
- * 담당자는 비어 있지 않은 ID(소속은 ownershipError 가 본다), 마감은 달력에 있는 YYYY-MM-DD 다.
- * 통과하면 저장할 값(제목은 trim 한 값)을, 아니면 처음 걸린 필드를 돌려준다
- */
 export function taskCreateFields(input: {
   title: unknown
   assignee_member_id: unknown
   due_date: unknown
 }):
-  | { ok: true; title: string; assignee_member_id: string; due_date: string }
+  | { ok: true; title: string; assignee_member_id: string | null; due_date: string | null }
   | { ok: false; field: 'task_title' | 'assignee_member_id' | 'due_date' } {
   const title = typeof input.title === 'string' ? input.title.trim() : ''
   const length = [...title].length
   if (length < 1 || length > 300) return { ok: false, field: 'task_title' }
-  if (typeof input.assignee_member_id !== 'string' || input.assignee_member_id === '')
+  if (input.assignee_member_id != null && typeof input.assignee_member_id !== 'string')
     return { ok: false, field: 'assignee_member_id' }
-  if (!validDate(input.due_date)) return { ok: false, field: 'due_date' }
+  if (input.due_date != null && !validDate(input.due_date)) return { ok: false, field: 'due_date' }
   return {
     ok: true,
     title,
-    assignee_member_id: input.assignee_member_id,
-    due_date: input.due_date,
+    assignee_member_id:
+      typeof input.assignee_member_id === 'string' ? input.assignee_member_id : null,
+    due_date: typeof input.due_date === 'string' ? input.due_date : null,
   }
 }
 
@@ -217,17 +210,11 @@ export function validTaskFields(body: Record<string, unknown>): boolean {
   return (
     (body.title === undefined ||
       (typeof body.title === 'string' &&
-        body.title.trim().length > 0 &&
-        body.title.length <= 300)) &&
+        [...body.title.trim()].length > 0 &&
+        [...body.title.trim()].length <= 300)) &&
     (body.status === undefined ||
       (typeof body.status === 'string' &&
         ['todo', 'in_progress', 'blocked', 'done'].includes(body.status))) &&
-    (body.progress === undefined ||
-      body.progress === null ||
-      (typeof body.progress === 'number' &&
-        Number.isInteger(body.progress) &&
-        body.progress >= 0 &&
-        body.progress <= 100)) &&
     ['assignee_member_id', 'blocker'].every(
       (field) =>
         body[field] === undefined || body[field] === null || typeof body[field] === 'string',
