@@ -437,6 +437,7 @@ def test_auto_blocked_false_after_reply_released(mdb, mseed):
     _web_reply(mdb, mseed, "alice", SLOT + 73 * H)
     tick(mdb, SLOT + 73 * H)
     mdb.refresh(task)
+    assert mdb.query(ReminderWatch).one().state == WatchState.RELEASED
     assert _agrees(mdb, task) is False
 
 
@@ -468,6 +469,45 @@ def test_auto_blocked_true_after_status_flip_back_to_blocked(mdb, mseed):
     _change(mdb, task, SLOT + 74 * H, status="blocked")
     assert task.blocker == scheduler.BLOCKER_TEXT
     assert _agrees(mdb, task) is True
+
+
+def test_auto_blocked_false_when_looks_blocked_but_no_open_applied_watch(mdb, mseed):
+    task = _suggested_and_sent(mdb, mseed)
+    watch = mdb.query(ReminderWatch).one()
+    assert (watch.state, watch.applied) == (WatchState.WATCHING, False)
+    task.status, task.blocker = "blocked", scheduler.BLOCKER_TEXT
+    mdb.commit()
+    assert scheduler._auto_block_state(task) is True
+    assert _agrees(mdb, task) is False
+
+
+def test_auto_blocked_true_when_new_reminder_inherits_the_clock(mdb, mseed):
+    task = _silence_blocked(mdb, mseed)
+    task.due_date = DUE + timedelta(days=5)  # 새 리마인드가 마감 지남으로 만료되지 않게
+    mdb.commit()
+    again = SLOT + 73 * H
+    messages.create_reminder(
+        mdb, workspace_id=mseed["ws"], task_id=task.task_id, member_id=mseed["alice"].member_id,
+        scheduled_at=again + H, note=None, created_by=mseed["pm"].member_id, now=again,
+    )
+    mdb.commit()
+    _approve_all(mdb, again)
+    _send(mdb, again + H)
+    mdb.refresh(task)
+
+    assert scheduler._auto_block_state(task) is True
+    [fresh] = mdb.query(ReminderWatch).filter(ReminderWatch.state == WatchState.WATCHING).all()
+    assert fresh.applied is True
+    assert _agrees(mdb, task) is True
+
+
+def test_auto_blocked_false_for_deleted_task(mdb, mseed):
+    task = _silence_blocked(mdb, mseed)
+    task.is_deleted = True
+    mdb.commit()
+    assert scheduler._auto_block_state(task) is True
+    assert scheduler.auto_blocked_ids(mdb, [task]) == set()
+    assert _undo("pm", task.task_id).status_code == 404
 
 
 def test_auto_blocked_ids_reads_db_once_for_many_and_never_without_candidates(mdb, mseed):
