@@ -37,8 +37,8 @@ PM 이 승인한 리마인드가 팀원에게 실제로 닿고 답장이 PM 에�
 | 테스트 | 결과 |
 |---|---|
 | `cd ai && .venv/bin/python -m pytest -q -o addopts=""` | 1150 passed |
-| `cd backend && .venv/bin/python -m pytest -q` | 873 passed, 399 skipped |
-| 같은 명령, Postgres 연결 | 1267 passed, 5 skipped |
+| `cd backend && .venv/bin/python -m pytest -q` | 874 passed, 400 skipped |
+| 같은 명령, Postgres 연결 | 1269 passed, 5 skipped |
 
 비용은 Luna 5회 15원이다.
 
