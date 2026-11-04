@@ -325,12 +325,7 @@ const TaskChip = memo(function TaskChip({
 }) {
   const tone = taskTone(task, today)
   const style = CHIP[tone]
-  const meta = [
-    assigneeLabel(task.assigneeMemberId, names),
-    task.progress === null ? null : `${task.progress}%`,
-  ]
-    .filter(Boolean)
-    .join(' · ')
+  const meta = [assigneeLabel(task.assigneeMemberId, names)].filter(Boolean).join(' · ')
   return (
     <GuardedLink to={paths.tasks(workspaceId, task.id)} className={`${CHIP_BASE} ${style.box}`}>
       <span className={`text-[11.5px] leading-[1.4] ${style.title}`}>{task.title}</span>
