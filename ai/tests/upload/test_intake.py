@@ -471,15 +471,48 @@ def test_deadline_is_counted_from_claim_not_from_the_last_submit(env):
     assert _step(env, diar).event == "failed" and len(diar.submits) == 1
 
 
-def test_just_inside_the_deadline_keeps_waiting(env):
+def test_exactly_at_the_deadline_is_not_yet_late(env, monkeypatch):
+    """경계: claim 뒤 정확히 기한이면 아직 기한 안, 1초 넘으면 실패. 결과 대기 시간이 기한보다 길게 둬 대기 규칙과 섞이지 않게 한다."""
+    monkeypatch.setattr("upload.intake.SUBMIT_TIMEOUT_S", INTAKE_DEADLINE_S * 10)
     diar = FakeDiarizer(SEGS, pending_fetches=99)
     _claim_then_submit(env, diar)
-    env.clock.advance(SUBMIT_TIMEOUT_S - 1)
+    env.clock.advance(INTAKE_DEADLINE_S)
     assert _step(env, diar).event == "waiting"
+    env.clock.advance(1)
+    assert _step(env, diar).event == "failed"
 
 
-def test_deadline_fits_inside_the_be_sweeper_window():
-    assert INTAKE_DEADLINE_S <= 2.5 * 3600 < 3 * 3600
+def test_deadline_is_two_and_a_half_hours():
+    """#288 합의값. BE sweeper 의 3시간보다 30분 먼저 끝낸다."""
+    assert INTAKE_DEADLINE_S == 9000
+
+
+@pytest.mark.parametrize("claimed_at", [None, "x", "2026-11-03T03:00:00"])   # 없음, 깨짐, 시간대 없음
+def test_a_record_without_a_usable_claim_time_starts_counting_now(env, claimed_at):
+    diar = FakeDiarizer(SEGS, pending_fetches=99)
+    _claim_then_submit(env, diar)
+    s = _state(env)
+    s["claimed_at"] = claimed_at
+    (env.rec / ".uploads" / MID / "intake.json").write_text(json.dumps(s), encoding="utf-8")
+    env.clock.advance(INTAKE_DEADLINE_S + 60)
+    assert _step(env, diar).event == "retry"   # 처음 보는 바퀴에는 기한 실패가 아니라 기한을 지금부터 센다(여기선 30분 초과로 재시도)
+    assert _state(env)["claimed_at"] == env.clock().isoformat()
+    env.clock.advance(INTAKE_DEADLINE_S + 1)
+    assert _step(env, diar).event == "failed"
+
+
+def test_a_retry_is_never_scheduled_after_the_deadline(env, monkeypatch):
+    """대기 간격이 길어도(설정으로 늘린 경우) 다음 시도는 기한을 넘기지 않는다. 기한에 깨어나 바로 실패로 보고한다."""
+    monkeypatch.setattr("upload.intake.backoff_s", lambda n: 3600.0)
+    diar = FakeDiarizer(SEGS, pending_fetches=99)
+    _claim_then_submit(env, diar)
+    env.clock.advance(INTAKE_DEADLINE_S - 60)
+    assert _step(env, diar).event == "retry"   # 30분 초과로 다시 맡길 차례, 대기는 1시간이지만
+    deadline = datetime(2026, 11, 3, 3, 0, tzinfo=timezone.utc) + timedelta(seconds=INTAKE_DEADLINE_S)
+    wake = datetime.fromisoformat(_state(env)["next_at"])
+    assert wake <= deadline + timedelta(seconds=1)
+    env.clock.t = wake
+    assert _step(env, diar).event == "failed" and len(diar.submits) == 1   # 깨어나서 다시 맡기지 않는다
 
 
 def test_sweeper_already_failed_the_meeting_before_download(env):

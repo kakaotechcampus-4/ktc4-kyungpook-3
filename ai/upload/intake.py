@@ -84,6 +84,15 @@ def _wav(d: Path) -> Path:
     return d / "audio_16k.wav"
 
 
+def _claimed_at(rec: dict) -> datetime | None:
+    """기한의 기준 시각. 없거나 깨졌거나 시간대가 없으면 None(쓸 수 없음)."""
+    try:
+        t = datetime.fromisoformat(rec.get("claimed_at") or "")
+    except (ValueError, TypeError):
+        return None
+    return t if t.tzinfo is not None else None
+
+
 def _due(rec: dict, now: datetime) -> bool:
     nxt = rec.get("next_at")
     if not nxt:
@@ -147,10 +156,11 @@ def _advance(recordings_dir, d: Path, rec: dict, *, client, diarizer, now, timez
         return Progress(mid, "done")
     if rec.get("state") != "claiming":
         t = now()
-        if not rec.get("claimed_at"):   # 기한을 두기 전의 기록: 지금부터 센다
+        claimed_at = _claimed_at(rec)
+        if claimed_at is None:   # 기한을 두기 전의 기록이거나 깨진 값: 지금부터 센다
             rec["claimed_at"] = _iso(t)
             _save(d, rec)
-        elif t - datetime.fromisoformat(rec["claimed_at"]) > timedelta(seconds=INTAKE_DEADLINE_S):
+        elif t - claimed_at > timedelta(seconds=INTAKE_DEADLINE_S):
             # 기한이 지났다: 다시 맡기지도, 트랙을 쓰지도 않는다. BE 가 먼저 실패 처리했으면 fail 은 409(끝남)로 끝난다
             shutil.rmtree(recordings_dir / f"upload_{mid}", ignore_errors=True)
             return _fail(d, rec, client, f"claim 뒤 기한 {INTAKE_DEADLINE_S:.0f}초를 넘겼다", t)
@@ -264,7 +274,11 @@ def _transient(d: Path, rec: dict, client, t: datetime, error: str) -> Progress:
     rec["error"] = error
     if rec["attempts"] >= RECOVERY_MAX_ATTEMPTS:
         return _fail(d, rec, client, f"{error} (시도 {rec['attempts']}번)", t)
-    rec["next_at"] = _iso(t + timedelta(seconds=backoff_s(rec["attempts"])))
+    nxt = t + timedelta(seconds=backoff_s(rec["attempts"]))
+    claimed_at = _claimed_at(rec)
+    if claimed_at is not None:   # 기한을 넘겨 깨어나지 않는다. 기한에 깨어나면 바로 실패로 보고한다
+        nxt = min(nxt, claimed_at + timedelta(seconds=INTAKE_DEADLINE_S + 1))   # 기한 직후: 다시 맡기지 않고 실패
+    rec["next_at"] = _iso(nxt)
     _save(d, rec)
     return Progress(rec["meeting_id"], "retry")
 
