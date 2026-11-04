@@ -182,6 +182,22 @@ def test_pm_reads_speakers_sorted_with_candidates_and_audio(db, seed):
     assert data["audio"] == {"content_type": "audio/ogg", "size_bytes": 1234}
 
 
+def test_candidates_leave_out_members_who_left_after_upload(db, seed):
+    # 제출은 탈퇴하지 않은 멤버만 받으므로, 조회 후보도 같은 기준으로 뺀다(고르면 400 이 되는 후보를 보여 주지 않는다)
+    meeting = _meeting(db, seed)
+    upload = db.get(MeetingUpload, meeting.meeting_id)
+    upload.attendees = json.dumps([
+        {"member_id": seed["left"].member_id, "display_name": "탈퇴"},
+        {"member_id": seed["jimin"].member_id, "display_name": "지민"},
+        {"member_id": seed["outsider"].member_id, "display_name": "외부"},
+    ], ensure_ascii=False)
+    db.commit()
+
+    data = _get(meeting.meeting_id).json()["data"]
+
+    assert data["candidates"] == [{"member_id": seed["jimin"].member_id, "display_name": "지민"}]
+
+
 def test_speakers_is_empty_before_labels_are_reported(db, seed):
     meeting = _meeting(db, seed, status="processing", speakers=None)
 

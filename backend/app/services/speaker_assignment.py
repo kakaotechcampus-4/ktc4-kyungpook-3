@@ -169,15 +169,20 @@ def resume_upload(
 
 
 def get_speaker_view(db: Session, meeting: Meeting) -> dict:
-    """PM 이 화자를 지정하는 화면에 필요한 것: 라벨(말한 시간 많은 순), 후보 참석자, 저장된 지정, 녹음 정보."""
+    """PM 이 화자를 지정하는 화면에 필요한 것: 라벨(말한 시간 많은 순), 후보 참석자, 저장된 지정, 녹음 정보.
+
+    후보는 업로드 때 저장한 참석자 중 제출이 받는 멤버(이 워크스페이스의 탈퇴하지 않은 멤버)만 준다.
+    """
     _, upload = _read_upload_meeting(db, meeting.meeting_id)
     speakers = json.loads(upload.speakers) if upload.speakers else []
     speakers.sort(key=lambda s: (-s["total_sec"], s["label"]))
+    attendees = json.loads(upload.attendees)
+    inactive = set(_inactive_member_ids(db, meeting.workspace_id, {a["member_id"] for a in attendees}))
     return {
         "meeting_id": meeting.meeting_id,
         "status": meeting.status,
         "speakers": speakers,
-        "candidates": json.loads(upload.attendees),
+        "candidates": [a for a in attendees if a["member_id"] not in inactive],
         "mapping": json.loads(upload.speaker_mapping) if upload.speaker_mapping else None,
         "audio": {"content_type": playback_content_type(upload.stored_filename), "size_bytes": upload.size_bytes},
     }
