@@ -41,7 +41,6 @@ export function toTask(dto: TaskDto): Task {
       'todo',
       'task status',
     ),
-    progress: dto.progress,
     blocker: dto.blocker,
     dueDate: dto.due_date,
     startDate: dto.start_date ?? dto.created_at.slice(0, 10),

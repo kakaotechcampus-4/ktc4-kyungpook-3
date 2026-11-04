@@ -165,8 +165,6 @@ function TaskBody({ workspaceId, task, isPm }: { workspaceId: string; task: Task
         </dd>
         <dt className={TERM}>마감</dt>
         <dd className={VALUE}>{task.dueDate ?? '마감 없음'}</dd>
-        <dt className={TERM}>진행률</dt>
-        <dd className={VALUE}>{task.progress === null ? '기록 없음' : `${task.progress}%`}</dd>
         <dt className={TERM}>막힌 사유</dt>
         <dd className={VALUE}>{task.blocker ?? '없음'}</dd>
         <dt className={TERM}>연결 회의</dt>

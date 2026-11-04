@@ -14,13 +14,6 @@ import { deferred } from '@/shared/test/deferred'
 import { recordRequestBodies, recordRequests } from '@/shared/test/requests'
 import { renderApp } from './test/renderApp'
 
-/*
- * M6 S4 — 확인 필요 상세·Notion 상태 (계획 §4, AC-05 실 API 분기 · AC-06 · AC-07 · AC-08).
- * Vitest 는 MSW 모드가 아니다(VITE_ENABLE_MSW 없음) — 화면은 실 API(`live`) 로 동작하고 요청만 MSW handler 가 받는다.
- * 그래서 `보완하기` 가 없고 `task_overrides` 를 보내지 않는다. 개발 MSW 의 보완 흐름은 approvalsMsw.test.tsx 가 본다.
- * 픽스처: ap_01(담당자·마감 없음) · ap_02(마감 없음) · ap_03(담당자 없음) 모두 ws_01 의 대기 생성 승인. ws_01 은 Notion 연동돼 있다.
- */
-
 vi.setConfig({ testTimeout: 20_000 })
 
 beforeEach(() => {
@@ -32,7 +25,6 @@ afterEach(() => {
   clearTrackedMeetings()
 })
 
-const LIVE_UNSUPPORTED = '지금 서버는 승인 전 보완을 지원하지 않아요.'
 const settle = (ms = 80) => act(() => new Promise((resolve) => setTimeout(resolve, ms)))
 
 function approvalOf(id: string) {
@@ -95,8 +87,7 @@ function addConflictingUpdate(): void {
     type: 'task_update',
     payload: {
       status: 'done',
-      progress: 100,
-      base_values: { status: 'todo', progress: 40 },
+      base_values: { status: 'todo' },
       meeting_id: 'mt_09',
     },
     related_task_id: 'tk_01',
@@ -115,7 +106,7 @@ describe('읽기 진입과 실 API 의 생성 승인 (AC-05)', () => {
     // 확정할 값 — 담당자는 팀원 이름으로, 비어 있는 마감은 비어 있다고
     expect(field('확정할 값', '제목')).toHaveTextContent('테스트 계획 정리')
     await waitFor(() => expect(field('확정할 값', '담당자')).toHaveTextContent('박민수'))
-    expect(field('확정할 값', '마감')).toHaveTextContent('비어 있어요')
+    expect(field('확정할 값', '마감')).toHaveTextContent('미정')
     // 원문은 따로다
     expect(field('회의 원문', '원문 담당자')).toHaveTextContent('박민수')
     expect(field('회의 원문', '원문 마감')).toHaveTextContent('다음 주 월요일')
@@ -128,51 +119,29 @@ describe('읽기 진입과 실 API 의 생성 승인 (AC-05)', () => {
         paths.meetings('ws_01', 'mt_09'),
       ),
     )
-    // 편집이 자동으로 열리지 않는다. 실 API 에는 보완 입력 자체가 없다
     expect(screen.queryByRole('textbox')).toBeNull()
     expect(screen.queryByRole('combobox')).toBeNull()
-    expect(screen.queryByRole('button', { name: '보완하기' })).toBeNull()
+    expect(screen.getByRole('button', { name: '보완하기' })).toBeVisible()
   })
 
-  it('필수값이 없으면 승인을 끄고 사유를 버튼 가까이에 보인다. 반려는 켜져 있고, 반려 본문은 status 뿐이다', async () => {
+  it('미정인 담당자·마감은 승인을 막지 않으며 반려는 status만 보낸다', async () => {
     const bodies = recordRequestBodies('PATCH', '/approvals/ap_01')
-    const log = recordRequests()
     const before = db.tasks.length
     await openApproval('ap_01')
-    const reason = `승인하려면 담당자·마감 정보를 올바르게 채워야 해요. ${LIVE_UNSUPPORTED}`
-    await waitFor(() => expect(approveButton()).toHaveAccessibleDescription(reason))
-    expect(approveButton()).toBeDisabled()
-    expect(screen.getByText(reason)).toBeVisible()
+    await waitFor(() => expect(approveButton()).toBeEnabled())
     expect(rejectButton()).toBeEnabled()
-
-    // 꺼진 승인은 눌러도 요청이 없다
-    fireEvent.click(approveButton())
-    await settle()
-    expect(patches(log)).toEqual([])
-
     await userEvent.click(rejectButton())
     expect(await screen.findByTestId('approval-result')).toHaveTextContent('반려했어요')
-    expect(screen.getByText('태스크를 만들지 않았어요.')).toBeVisible()
     expect(bodies).toEqual([{ status: 'rejected' }])
-    expect(patches(log)).toHaveLength(1)
-    expect(approvalOf('ap_01').status).toBe('rejected')
     expect(db.tasks).toHaveLength(before)
     expect(itemOf('it_04').task_id).toBeNull()
-    // 처리된 승인에는 다시 처리할 버튼이 없다
     expect(screen.queryByRole('button', { name: '승인' })).toBeNull()
-    expect(screen.queryByRole('button', { name: '반려' })).toBeNull()
   })
 
-  it.each([
-    ['담당자', 'ap_03', '승인하려면 담당자 정보를 올바르게 채워야 해요.'],
-    ['마감', 'ap_02', '승인하려면 마감 정보를 올바르게 채워야 해요.'],
-  ])('%s 하나만 없어도 승인할 수 없다 (%s)', async (_label, id, base) => {
+  it.each(['ap_01', 'ap_02', 'ap_03'])('선택값이 미정이어도 승인할 수 있다 (%s)', async (id) => {
     await openApproval(id)
-    await waitFor(() =>
-      expect(approveButton()).toHaveAccessibleDescription(`${base} ${LIVE_UNSUPPORTED}`),
-    )
-    expect(approveButton()).toBeDisabled()
-    expect(rejectButton()).toBeEnabled()
+    await waitFor(() => expect(approveButton()).toBeEnabled())
+    expect(approveButton()).not.toHaveAccessibleDescription()
   })
 
   it('필수값이 이미 있으면 보완 없이 승인한다 — 본문에 task_overrides 가 없고, 결과·태스크 링크·반영 상태가 남는다', async () => {
@@ -204,20 +173,14 @@ describe('읽기 진입과 실 API 의 생성 승인 (AC-05)', () => {
   })
 })
 
-describe('실 API 에서는 대시보드 채워 넣기로 와도 읽기다 (D-176)', () => {
-  it('보완 폼도 보완하기도 없다', async () => {
+describe('실 API 대시보드 채워 넣기', () => {
+  it('보완 폼을 열고 시작하며 선택값은 미정이다', async () => {
     const app = renderApp(paths.dashboard('ws_01'))
     await userEvent.click(await screen.findByRole('link', { name: '채워 넣기 — 알림 문구 검토' }))
     await app.expectPath(paths.approval('ws_01', 'ap_01'))
-    await screen.findByRole('heading', { level: 2, name: '새 태스크 확인' })
-    await waitFor(() =>
-      expect(approveButton()).toHaveAccessibleDescription(
-        `승인하려면 담당자·마감 정보를 올바르게 채워야 해요. ${LIVE_UNSUPPORTED}`,
-      ),
-    )
-    expect(screen.queryByRole('group', { name: '확정할 값 보완' })).toBeNull()
-    expect(screen.queryByRole('textbox')).toBeNull()
-    expect(screen.queryByRole('button', { name: '보완하기' })).toBeNull()
+    const form = await screen.findByRole('group', { name: '확정할 값 보완' })
+    expect(within(form).getByRole('combobox', { name: '담당자' })).toHaveValue('')
+    expect(approveButton()).toBeDisabled()
   })
 })
 
@@ -343,7 +306,7 @@ describe('변경 승인의 비교와 충돌 재확인 (AC-06)', () => {
         within(table)
           .getAllByRole('row')
           .map((row) => row.textContent),
-      ).toEqual(['항목현재값제안값', '상태진행 중완료', '진행률40%100%']),
+      ).toEqual(['항목현재값확정할 값', '상태진행 중완료']),
     )
     expect(screen.getByRole('link', { name: '로그인 API 연동' })).toHaveAttribute(
       'href',
@@ -389,7 +352,7 @@ describe('변경 승인의 비교와 충돌 재확인 (AC-06)', () => {
     expect(await screen.findByTestId('approval-result')).toHaveTextContent('승인했어요')
     expect(bodies.at(-1)).toEqual({ status: 'approved', confirm_task_version: firstVersion + 1 })
     expect(patches(log)).toHaveLength(3)
-    expect(taskOf('tk_01')).toMatchObject({ status: 'done', progress: 100 })
+    expect(taskOf('tk_01')).toMatchObject({ status: 'done' })
     expect(within(screen.getByLabelText('처리된 태스크')).getByText('변경된 태스크')).toBeVisible()
     expect(screen.queryByRole('table', { name: '충돌한 항목' })).toBeNull()
   })

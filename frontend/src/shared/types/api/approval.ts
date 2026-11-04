@@ -11,29 +11,16 @@ export interface ApprovalDto {
   resolved_at: string | null
 }
 
-/**
- * 미합의 요청안. 현재 서버 ApprovalResolveRequest 에 없는 입력이다 — 개발 MSW 에서만 보낸다.
- * `approved` 이고 `task_create` 인 승인에만 쓴다
- */
-export interface TaskOverridesDto {
-  task_title: string
-  assignee_member_id: string
-  due_date: string
-}
+export type TaskOverridesDto =
+  | Partial<{ task_title: string; assignee_member_id: string | null; due_date: string | null }>
+  | Partial<{ status: 'todo' | 'in_progress' | 'blocked' | 'done'; due_date: string | null }>
 
-/**
- * `PATCH /approvals/{approval_id}` 본문. 서버 ApprovalResolveRequest 의 `status`·`confirm_task_version` 과
- * 미합의 `task_overrides` 다. 처리자(`resolved_by`)는 보내지 않는다 — 서버가 세션의 팀원으로 정한다
- */
 export interface ApprovalResolveRequestDto {
   status: 'approved' | 'rejected'
-  /** task_update 재승인에서만. 409 APPROVAL_CONFLICT 의 `details.task_version` 이다 */
   confirm_task_version?: number
-  /** 미합의. MSW 의 approved task_create 에서만 */
   task_overrides?: TaskOverridesDto
 }
 
-/** 서버 `_find_conflicts` 의 항목. 값은 payload 에 저장된 모양(날짜는 ISO 문자열)이다 */
 export interface ApprovalConflictItemDto {
   field: string
   base: unknown

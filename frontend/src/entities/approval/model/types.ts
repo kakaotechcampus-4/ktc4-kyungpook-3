@@ -1,3 +1,4 @@
+import type { TaskCreateEdits, TaskUpdateEdits } from './resolution'
 import type { ExtractionEvidence } from '@/shared/types/common'
 export type ApprovalStatus = 'pending' | 'approved' | 'rejected'
 export type ApprovalMissing = 'assignee' | 'due'
@@ -13,6 +14,7 @@ interface ApprovalBase {
 }
 export interface TaskCreateApproval extends ApprovalBase {
   kind: 'task_create'
+  storedOverrides?: TaskCreateEdits
   title: string
   assigneeMemberId: string | null
   assigneeRaw: string | null
@@ -26,6 +28,7 @@ export interface TaskCreateApproval extends ApprovalBase {
 }
 export interface TaskUpdateApproval extends ApprovalBase {
   kind: 'task_update'
+  storedOverrides?: TaskUpdateEdits
   title: string | null
   changes: { field: string; value: unknown }[]
 }

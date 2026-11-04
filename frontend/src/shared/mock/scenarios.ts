@@ -161,7 +161,7 @@ function addLongContent(state: MockDb): void {
   if (member) member.display_name = '이재환프론트엔드디자인시스템접근성담당'
   const titles = [
     'https://notion.so/workspace/very-long-unbreakable-path-segment-for-task-board-layout-check-0123456789',
-    '회의에서 나온 긴 제목의 태스크로 담당자와 마감일과 진행률을 모두 함께 보여 주어야 하는 경우의 줄바꿈 확인',
+    '회의에서 나온 긴 제목의 태스크로 담당자와 마감일과 진행 상태을 모두 함께 보여 주어야 하는 경우의 줄바꿈 확인',
     'ABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZ',
   ]
   for (const [index, title] of titles.entries())
@@ -250,10 +250,6 @@ function resolvedCreateApproval(state: MockDb): void {
   if (item) item.task_id = task.task_id
 }
 
-/**
- * tk_01 의 상태를 todo → done 으로 바꾸자는 변경 승인. 제안할 때 본 값(base_values)은 todo 인데 지금은
- * in_progress 라 승인하면 409 APPROVAL_CONFLICT 다. progress 는 base 와 지금 값이 같아 충돌이 아니다
- */
 function conflictingUpdateApproval(state: MockDb): void {
   state.approvals.push({
     approval_id: 'ap_04',
@@ -261,8 +257,7 @@ function conflictingUpdateApproval(state: MockDb): void {
     type: 'task_update',
     payload: {
       status: 'done',
-      progress: 100,
-      base_values: { status: 'todo', progress: 40 },
+      base_values: { status: 'todo' },
       // 서버 수정안처럼 대상 태스크 이름을 표시용으로 싣는다
       base_title: '로그인 API 연동',
       task_title: '로그인 API 연동',

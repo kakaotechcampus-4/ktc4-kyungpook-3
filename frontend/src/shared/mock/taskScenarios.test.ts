@@ -192,7 +192,6 @@ describe('M6 시나리오 상태와 전이', () => {
     })
     await expect(fetchDto('/tasks/tk_01')).resolves.toMatchObject({
       status: 'done',
-      progress: 100,
       version: 2,
     })
   })
