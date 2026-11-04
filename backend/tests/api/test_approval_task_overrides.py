@@ -804,3 +804,37 @@ def test_resolved_approval_with_bad_override_is_409_not_400(client, db, seed):
 
     assert r.status_code == 409
     assert r.json()["error"]["code"] == "APPROVAL_ALREADY_RESOLVED"
+
+
+# ---------- 출처는 PM 만 ----------
+
+
+@pytest.fixture
+def member_client(db, seed):
+    user = User(email="jimin@example.com", name="지민")
+    db.add(user)
+    db.flush()
+    db.add(SessionModel(
+        user_id=user.user_id, session_token="jimin-token",
+        expires_at=datetime.now(timezone.utc) + timedelta(days=1),
+    ))
+    seed["jimin"].user_id = user.user_id
+    db.commit()
+    c = TestClient(app, base_url="https://testserver")
+    c.cookies.set("session_token", "jimin-token")
+    return c
+
+
+def test_member_cannot_choose_change_source(member_client, seed):
+    r = _request(member_client, seed, "task_update", {"status": "done", "change_source": "meeting"},
+                 related_task_id=seed["login"].task_id)
+
+    assert r.status_code == 400
+    assert r.json()["error"]["details"]["field"] == "change_source"
+
+
+def test_member_request_without_change_source_still_works(member_client, seed):
+    r = _request(member_client, seed, "task_update", {"status": "done"},
+                 related_task_id=seed["login"].task_id)
+
+    assert r.status_code == 201, r.text
