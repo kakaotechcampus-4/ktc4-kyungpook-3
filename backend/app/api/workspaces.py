@@ -120,7 +120,7 @@ def list_workspaces(
         .all()
     )
     
-    # require_member 의 .first() 처럼 공간마다 첫 행을 고른다(활성 행이 둘이어도 같은 행)
+    # require_member 의 .first() 처럼 공간마다 첫 행을 고른다(정상 데이터에서는 활성 행이 하나다)
     member_by_ws: dict[str, Member] = {}
     for m in members:
         member_by_ws.setdefault(m.workspace_id, m)
