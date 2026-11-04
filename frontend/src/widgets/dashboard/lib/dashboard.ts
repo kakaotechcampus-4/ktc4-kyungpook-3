@@ -15,8 +15,10 @@ import { soonUntil } from '@/shared/lib/date'
 
 /** 확인 필요·마감 임박 목록의 최대 행 수 (D-045, D-051) */
 export const LIST_LIMIT = 5
-/** 최근 반영의 최대 행 수. D-039 는 보류 — 시안의 3개를 임시 기준으로 쓴다 */
-export const RECENT_LIMIT = 3
+/** 최근 반영의 보이는 행 수 범위 (D-176). 몇 개인지는 화면이 첫 화면 높이로 잰다 */
+export const RECENT_ROWS = { min: 3, max: 8 } as const
+/** `외 N건 · 회의록에서 보기` 줄의 높이 (D-176) */
+export const RECENT_MORE_LINE_PX = 32
 
 export interface DashboardCounts {
   overdue: number
@@ -65,9 +67,47 @@ export function latestDoneMeeting(meetings: readonly MeetingSummary[]): MeetingS
   return toMinutesList(meetings).minutes[0] ?? null
 }
 
-/** 최신 완료 회의의 `gate=auto` 항목을 응답 순서대로 앞에서 3개 (D-038, D-039). 되돌린 항목도 auto 로 남아 자리를 지킨다 */
+/**
+ * 최신 완료 회의의 `gate=auto` 항목 전부, 응답 순서대로 (D-038). 되돌린 항목도 auto 로 남아 자리를 지킨다.
+ * 몇 개를 보일지는 화면이 잰다(`fitRecentRows`, D-176) — 반영 대기 polling 은 보이지 않는 항목까지 본다
+ */
 export function recentAutoItems(items: readonly ExtractionItem[]): ExtractionItem[] {
-  return items.filter(({ gate }) => gate === 'auto').slice(0, RECENT_LIMIT)
+  return items.filter(({ gate }) => gate === 'auto')
+}
+
+export interface RecentFitInput {
+  /** 목록 위쪽(문서 기준)부터 첫 화면 아래까지 남은 높이 */
+  available: number
+  /** 앞에서부터 행의 높이. 아직 못 잰 행은 undefined — 바로 앞에서 잰 높이로 친다 */
+  heights: readonly (number | undefined)[]
+  /** auto 항목 전체 수 */
+  total: number
+  /** `외 N건` 줄 높이. 그 줄이 있을 때만 뺀다 */
+  moreLine: number
+}
+
+/**
+ * 최근 반영에 보일 행 수 (D-176).
+ * - 잰 높이가 하나도 없으면(레이아웃 전) 3개(항목이 그보다 적으면 전부)
+ * - 8개 이하이고 모두 들어가면 전부 — `외 N건` 줄이 없으니 그 높이도 빼지 않는다
+ * - 아니면 `외 N건` 줄을 뺀 높이에 들어가는 만큼, 3~8 사이로 자른다. 항목보다 많이 세지 않는다
+ */
+export function fitRecentRows({ available, heights, total, moreLine }: RecentFitInput): number {
+  const min = Math.min(total, RECENT_ROWS.min)
+  const max = Math.min(total, RECENT_ROWS.max)
+  const known = heights.find((height) => height !== undefined)
+  if (known === undefined) return min
+  let last = known
+  const filled = Array.from({ length: max }, (_, index) => {
+    last = heights[index] ?? last
+    return last
+  })
+  const fits = (count: number, room: number) =>
+    filled.slice(0, count).reduce((sum, height) => sum + height, 0) <= room
+  if (total <= RECENT_ROWS.max && fits(total, available)) return total
+  let count = min
+  while (count < max && fits(count + 1, available - moreLine)) count += 1
+  return count
 }
 
 /**

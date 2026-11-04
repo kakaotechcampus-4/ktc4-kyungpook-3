@@ -11,7 +11,6 @@ it('maps snake case, version and Notion sync status while retaining date strings
     title: '로그인 API 연동',
     assigneeMemberId: 'mb_01',
     status: 'in_progress',
-    progress: 40,
     blocker: null,
     dueDate: '2026-09-20',
     startDate: '2026-09-15',
@@ -34,7 +33,6 @@ it('falls back null and omitted start dates to creation date and preserves other
   expect(toTask(dto)).toMatchObject({
     startDate: '2026-09-08',
     assigneeMemberId: null,
-    progress: null,
     blocker: null,
     meetingId: null,
   })

@@ -96,3 +96,16 @@ class UnresolvedAliasResponse(BaseModel):
 class UnresolvedAliasListResponse(BaseModel):
     items: list[UnresolvedAliasResponse]
     total: int
+
+
+class MemberNameResponse(BaseModel):
+    """녹음 봇이 전사 이름 힌트로 쓰는 팀원 이름."""
+
+    member_id: str
+    name: str = Field(..., description="PM이 온보딩에서 정한 이름(display_name)")
+    discord_user_id: str | None
+    aliases: list[str] = Field(..., description="별칭 문자열. 확인한(verified) 별칭부터, 만든 순서")
+
+
+class MemberNameListResponse(BaseModel):
+    items: list[MemberNameResponse]

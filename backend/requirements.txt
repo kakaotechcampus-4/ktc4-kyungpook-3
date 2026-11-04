@@ -1,6 +1,7 @@
 # models/models.py 가 StrEnum(3.11+)을 씀 → Python 3.12 고정 (.python-version 참고)
 # 운영 이미지(Dockerfile)에 들어가는 의존성만 둔다. 개발/테스트용은 requirements-dev.txt.
 fastapi>=0.115
+starlette>=0.39  # 원본 재생(FileResponse)의 Range 처리가 0.39 부터다
 uvicorn[standard]>=0.30
 sqlalchemy>=2.0
 psycopg[binary]>=3.2

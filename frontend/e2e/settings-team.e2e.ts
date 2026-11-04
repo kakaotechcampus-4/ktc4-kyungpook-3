@@ -35,6 +35,7 @@ test('PM 이 설정에서 Discord 를 연결하면 팀원 연결 창으로 가�
   await start(page, 'settings-discord-skipped', SETTINGS)
   const area = discordArea(page)
   await expect(area.getByText('연결 안 됨')).toBeVisible()
+  await expect(page.getByText('Discord가 연결되지 않아 웹으로만 알려요')).toBeVisible()
   await area.getByRole('button', { name: 'Discord 연결하기' }).click()
 
   await finishOAuth(page, '디스코드')
@@ -42,6 +43,9 @@ test('PM 이 설정에서 Discord 를 연결하면 팀원 연결 창으로 가�
   await expect(page).toHaveURL(`${TEAM}?connect=members`)
   const dialog = page.getByRole('dialog', { name: '팀원 연결' })
   await expect(dialog.getByLabel('@jihun_dev의 팀원 이름')).toBeVisible(FIRST_PAINT)
+  await expect(
+    dialog.getByText('PM 줄을 체크하지 않으면 Discord 알림을 받을 수 없어요.'),
+  ).toBeVisible()
 
   // 창은 주소가 쥔다 — 새로고침해도 열려 있고, 아무도 잇지 않고 닫을 수 있다 (D-075)
   await page.reload()
@@ -54,6 +58,7 @@ test('PM 이 설정에서 Discord 를 연결하면 팀원 연결 창으로 가�
 
   await page.goto(SETTINGS)
   await expect(discordArea(page).getByText('연결됨', { exact: true })).toBeVisible(FIRST_PAINT)
+  await expect(page.getByText('Discord가 연결되지 않아 웹으로만 알려요')).toBeVisible()
   expect(onboardingSaves()).toBe(0)
 })
 

@@ -2,7 +2,8 @@ import json
 import logging
 import uuid
 from fastapi import APIRouter, Depends, UploadFile, File, Form
-from sqlalchemy import func, select
+from pydantic import AwareDatetime
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session, selectinload
 from datetime import datetime, timezone
 from typing import Optional
@@ -208,7 +209,13 @@ def list_workspace_meetings(
         
     meetings = db.query(Meeting).filter(
         Meeting.workspace_id == workspace_id,
-        Meeting.status != MeetingStatus.FAILED
+        or_(
+            Meeting.status != MeetingStatus.FAILED,
+            and_(
+                Meeting.source == MeetingSource.MANUAL_UPLOAD,
+                Meeting.failed_stage == "speaker_assignment_expired",
+            ),
+        ),
     ).order_by(Meeting.started_at.desc()).all()
     
     # 회의마다 발화를 읽지 않고, 회의별 참석자 수를 한 번에 센다
@@ -231,7 +238,8 @@ def list_workspace_meetings(
             "status": m.status,
             "duration_ms": m.duration_ms or 0,
             "attendee_count": attendee_count,
-            "processed_at": m.ended_at
+            "processed_at": m.ended_at,
+            "failed_stage": m.failed_stage,
         })
         
     return success(MeetingListResponse(items=items, total=len(items)).model_dump(mode="json"))
@@ -242,7 +250,8 @@ def upload_meeting(
     workspace_id: str,
     # meeting.title 칼럼 길이. 넘으면 파일을 저장하기 전에 400으로 거절한다
     title: str = Form(..., max_length=200),
-    started_at: Optional[datetime] = Form(None),
+    # 시간대가 없으면 PostgreSQL이 UTC로 읽어 어긋난 시각이 AI까지 가므로 400으로 거절한다(#288)
+    started_at: Optional[AwareDatetime] = Form(None),
     # 프론트는 참석자마다 같은 이름의 필드를 반복해 보낸다
     attendee_member_ids: list[str] = Form(...),
     file: UploadFile = File(...),
@@ -305,7 +314,8 @@ def upload_meeting(
         title=title,
         source=str(MeetingSource.MANUAL_UPLOAD),
         status=str(MeetingStatus.PROCESSING),
-        started_at=started_at or now,
+        # UTC로 맞춰 저장한다. 시간대를 못 담는 DB(SQLite)에서도 같은 순간이 같은 값으로 남는다
+        started_at=started_at.astimezone(timezone.utc) if started_at else now,
         # Discord 회의의 `/end`처럼 녹음이 끝나고 정리를 시작한 시각이다
         ended_at=now,
     )

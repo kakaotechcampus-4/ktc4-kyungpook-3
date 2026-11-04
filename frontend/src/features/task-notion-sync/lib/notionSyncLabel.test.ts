@@ -13,25 +13,23 @@ describe('Notion 반영 문구는 상태만 따른다 (계획 §4-7)', () => {
   })
 })
 
-describe('반영 중 polling 간격 (계획 §4-8)', () => {
+describe('반영 중 polling 간격 (계획 §4-8, #236)', () => {
   const task = (notionSyncStatus: Task['notionSyncStatus']) => ({ notionSyncStatus }) as Task
+  const failure = new Error('boom')
 
-  it('pending 인 동안만 3초다', () => {
+  it('조회가 ready 이면서 pending 인 동안만 3초다', () => {
     expect(NOTION_SYNC_POLL_MS).toBe(3_000)
-    expect(notionSyncRefetchInterval({ state: { status: 'success', data: task('pending') } })).toBe(
-      3_000,
-    )
+    expect(notionSyncRefetchInterval({ state: { data: task('pending'), error: null } })).toBe(3_000)
   })
 
   it.each([['synced'], ['failed'], [null]] as const)('%s 이면 멈춘다', (status) => {
-    expect(notionSyncRefetchInterval({ state: { status: 'success', data: task(status) } })).toBe(
-      false,
-    )
+    expect(notionSyncRefetchInterval({ state: { data: task(status), error: null } })).toBe(false)
   })
 
-  it('데이터가 없거나 조회가 실패했으면 멈춘다 — 이전 데이터가 pending 이어도', () => {
-    expect(notionSyncRefetchInterval({ state: { status: 'pending', data: undefined } })).toBe(false)
-    expect(notionSyncRefetchInterval({ state: { status: 'error', data: task('pending') } })).toBe(
+  it('loading·error·refreshFailed 면 멈춘다 — 이전 데이터가 pending 이어도', () => {
+    expect(notionSyncRefetchInterval({ state: { data: undefined, error: null } })).toBe(false)
+    expect(notionSyncRefetchInterval({ state: { data: undefined, error: failure } })).toBe(false)
+    expect(notionSyncRefetchInterval({ state: { data: task('pending'), error: failure } })).toBe(
       false,
     )
   })

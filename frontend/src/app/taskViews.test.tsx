@@ -317,6 +317,95 @@ describe('역할·공간·상세 링크 (AC-A-06)', () => {
   )
 })
 
+describe('보드 카드의 막힘 배지 (D-175)', () => {
+  const card = (title: string) =>
+    screen.getByRole('link', { name: title }).closest('article') as HTMLElement
+
+  it('막힌 카드는 위험 대신 막힘이고, 누르면 막힌 사유를 보인다. Esc 로 닫으면 배지로 돌아온다', async () => {
+    const user = userEvent.setup()
+    await openView('board')
+    const blocked = card('DB 스키마 정리')
+    expect(within(blocked).queryByText('위험')).toBeNull()
+    // 기한이 지난 카드는 그대로 위험이다
+    expect(within(card('회원가입 화면')).getByText('위험')).toBeVisible()
+    expect(within(card('회원가입 화면')).queryByRole('button', { name: /^막힘/ })).toBeNull()
+    expect(screen.getByRole('region', { name: '진행 중' })).toHaveTextContent(
+      '막힘 1 · 위험 0 · 주의 3',
+    )
+
+    const badge = within(blocked).getByRole('button', { name: '막힘, 막힌 사유 보기' })
+    badge.focus()
+    await user.keyboard('{Enter}')
+    const dialog = await screen.findByRole('dialog', { name: '막힌 사유' })
+    expect(dialog).toHaveTextContent('Notion 권한 대기')
+
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(badge).toHaveFocus()
+  })
+
+  it.each([null, '  '])('막힌 사유가 비었으면(%j) 적힌 사유가 없다고 알린다', async (blocker) => {
+    const user = userEvent.setup()
+    db.tasks.find(({ task_id }) => task_id === 'tk_03')!.blocker = blocker
+    await openView('board')
+    await user.click(
+      within(card('DB 스키마 정리')).getByRole('button', { name: '막힘, 막힌 사유 보기' }),
+    )
+    expect(await screen.findByRole('dialog', { name: '막힌 사유' })).toHaveTextContent(
+      '적힌 사유가 없어요',
+    )
+  })
+
+  it('막혔고 기한도 지났으면 막힘과 위험을 함께 단다', async () => {
+    db.tasks.find(({ task_id }) => task_id === 'tk_03')!.due_date = '2026-09-17'
+    await openView('board')
+    const blocked = card('DB 스키마 정리')
+    expect(within(blocked).getByRole('button', { name: /^막힘/ })).toBeVisible()
+    expect(within(blocked).getByText('위험')).toBeVisible()
+    expect(screen.getByRole('region', { name: '진행 중' })).toHaveTextContent(
+      '막힘 1 · 위험 1 · 주의 3',
+    )
+  })
+})
+
+describe('보드 정렬 (D-175)', () => {
+  const column = (name: string) => screen.getByRole('region', { name })
+  const titles = (name: string) =>
+    within(column(name))
+      .getAllByRole('link')
+      .map((link) => link.textContent)
+
+  it('리스트와 같은 정렬을 쓰고, 완료 칸과 칸 머리 문구도 고른 정렬을 따른다. 보기를 옮겨도 정렬은 남는다', async () => {
+    const user = userEvent.setup()
+    const app = await openView('board')
+    expect(column('완료')).toHaveTextContent('최근 완료순')
+    expect(column('시작 전')).toHaveTextContent('가장 이른 마감 09/10')
+
+    await user.click(screen.getByRole('button', { name: '정렬: 마감 빠른 순' }))
+    await user.click(await screen.findByRole('menuitemradio', { name: '최근 생성순' }))
+    await app.expectSearch('?view=board&sort=created')
+    await waitFor(() => expect(titles('완료')).toEqual(['토큰 정리', '폰트 적용', '랜딩 카피']))
+    expect(titles('시작 전')).toEqual(['회의록 요약 검수', '회원가입 화면', '온보딩 문구 수정'])
+    expect(column('완료')).toHaveTextContent('최근 생성순')
+    // 첫 카드의 마감이 아니라 칸에서 가장 이른 마감이다
+    expect(column('시작 전')).toHaveTextContent('가장 이른 마감 09/10')
+
+    await user.click(
+      within(screen.getByLabelText('보기 방식')).getByRole('radio', { name: '캘린더' }),
+    )
+    await app.expectSearch('?view=calendar&sort=created')
+    await waitFor(() => expect(shown.calendar()).toBeVisible(), FIRST_PAINT)
+    expect(screen.queryByRole('button', { name: /^정렬:/ })).toBeNull()
+
+    await user.click(
+      within(screen.getByLabelText('보기 방식')).getByRole('radio', { name: '보드' }),
+    )
+    await waitFor(() => expect(shown.board()).toBeVisible(), FIRST_PAINT)
+    await app.expectSearch('?view=board&sort=created')
+    expect(screen.getByRole('button', { name: '정렬: 최근 생성순' })).toBeVisible()
+  })
+})
+
 describe('표 구조 — 줄·머리·칸 (VR-08)', () => {
   it('캘린더는 요일 머리 한 줄과 주마다 날짜 일곱 칸인 표다', async () => {
     await openView('calendar')

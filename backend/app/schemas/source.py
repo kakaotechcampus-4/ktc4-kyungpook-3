@@ -15,6 +15,9 @@ class TranscriptSegmentIn(BaseModel):
     speaker: str | None = Field(
         None, max_length=64, description="발화한 사람의 Discord uid. 모르면 null"
     )
+    speaker_member_id: str | None = Field(
+        None, max_length=36, description="이 워크스페이스 멤버 ID. 있으면 speaker 보다 먼저 쓴다"
+    )
     start: float = Field(..., ge=0, le=MAX_SECONDS, allow_inf_nan=False, description="발화 시작(초)")
     end: float = Field(..., ge=0, le=MAX_SECONDS, allow_inf_nan=False, description="발화 끝(초)")
     text: str
@@ -22,7 +25,7 @@ class TranscriptSegmentIn(BaseModel):
         ..., ge=0, le=INT4_MAX, description="회의 전체에서의 발화 순번. 사이가 비어도 된다"
     )
 
-    @field_validator("speaker", mode="before")
+    @field_validator("speaker", "speaker_member_id", mode="before")
     @classmethod
     def _blank_speaker_is_unknown(cls, value: object) -> object:
         # 화자를 모르는 발화를 null 하나로만 저장한다

@@ -36,6 +36,8 @@ export const paths = {
   login: () => '/login',
   signup: () => '/signup',
   workspaceSelect: () => '/workspaces',
+  onboardingStart: () => '/onboarding/start',
+  onboardingMember: () => '/onboarding/member',
   onboardingCreate: () => '/onboarding/create_workspace',
   onboardingStep: (workspaceId: string, step: string) =>
     `/onboarding/${segment(workspaceId)}/${segment(step)}`,

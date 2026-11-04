@@ -165,10 +165,7 @@ export const taskHandlers = [
         400,
       )
     Object.assign(task, {
-      [field]:
-        field === 'progress' && entry.old_value !== null
-          ? Number(entry.old_value)
-          : entry.old_value,
+      [field]: entry.old_value,
     })
     entry.is_rolled_back = true
     entry.rolled_back_at = MOCK_NOW

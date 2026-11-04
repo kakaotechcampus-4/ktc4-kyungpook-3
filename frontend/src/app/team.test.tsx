@@ -102,6 +102,7 @@ describe('팀 화면 — PM', () => {
     // 이미 이은 계정은 이름이 채워져 있고, 잇지 않은 계정은 비어 있다
     expect(await dialog.findByLabelText('@minsu의 팀원 이름')).toHaveValue('박민수')
     expect(dialog.getByLabelText('@jihun_dev의 팀원 이름')).toHaveValue('')
+    expect(dialog.queryByText('PM 줄을 체크하지 않으면 Discord 알림을 받을 수 없어요.')).toBeNull()
 
     const log = recordRequests()
     await user.click(dialog.getByRole('button', { name: '나중에 하기' }))
@@ -111,6 +112,33 @@ describe('팀 화면 — PM', () => {
     // 연 기록에서 한 칸 돌아와 닫는다 — 같은 주소의 기록이 하나 더 쌓이지 않아 다음 뒤로 가기가 이전 화면으로 간다
     expect(app.visitedActions().at(-1)).toBe('POP')
     expect(app.visited().at(-1)?.key).toBe(app.visited()[0]?.key)
+  })
+
+  it('PM 계정이 없고 체크하지 않으면 Discord 알림을 못 받는다고 안내하고, 체크 없이도 저장된다', async () => {
+    const creator = db.members.find((member) => member.member_id === 'mb_01')
+    if (creator === undefined) throw new Error('mb_01 missing')
+    creator.discord_user_id = null
+    const user = userEvent.setup()
+    renderApp(TEAM)
+    await user.click(await screen.findByRole('button', { name: '팀원 관리' }))
+    const dialog = within(await screen.findByRole('dialog', { name: '팀원 연결' }))
+    const hint = 'PM 줄을 체크하지 않으면 Discord 알림을 받을 수 없어요.'
+    expect(await dialog.findByText(hint)).toBeInTheDocument()
+    expect(dialog.getByRole('button', { name: '저장' })).toHaveAccessibleDescription(hint)
+
+    const pmCheck = dialog.getAllByRole('checkbox', { name: /PM 김서연/ })[0]
+    if (pmCheck === undefined) throw new Error('PM checkbox missing')
+    await user.click(pmCheck)
+    expect(dialog.queryByText(hint)).toBeNull()
+    await user.click(pmCheck)
+    expect(dialog.getByText(hint)).toBeInTheDocument()
+
+    await user.type(dialog.getByLabelText('@jihun_dev의 팀원 이름'), '최지훈')
+    await user.click(dialog.getByRole('button', { name: '저장' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(db.members).toContainEqual(
+      expect.objectContaining({ display_name: '최지훈', discord_user_id: '1125' }),
+    )
   })
 
   it('주소의 `connect=members` 로 오면 창이 열려 있다 — 설정의 Discord 연결 성공이 오는 곳이다 (D-074)', async () => {
