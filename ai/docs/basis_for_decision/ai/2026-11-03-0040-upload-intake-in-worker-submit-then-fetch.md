@@ -1,4 +1,4 @@
-# 0030. 웹 업로드 가져오기는 워커 바퀴 끝에서 한 단계씩, 화자 분리는 맡겨 놓고 다음 바퀴에 확인한다
+# 0040. 웹 업로드 가져오기는 워커 바퀴 끝에서 한 단계씩, 화자 분리는 맡겨 놓고 다음 바퀴에 확인한다
 
 - 기록일: 2026-11-03 (사용자와 설계를 확정한 날과 같다)
 - 관련 마일스톤: 별도 마일스톤 없음. 수동 업로드 1/4([#283](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/283), 묶음 #258). 앞 결정은 [0028](2026-11-01-0028-manual-upload-hosted-diarization-and-diarized-state.md), [0029](2026-11-02-0029-upload-speaker-mapping-and-upload-guard.md)
