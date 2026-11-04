@@ -845,3 +845,27 @@ def test_run_merge_takes_max_similar_count_and_top_similarity(monkeypatch):
 
     card = out.items[0]
     assert (card["similar_count"], card["top_similarity"]) == (2, 0.8)
+
+
+def test_run_uses_per_seq_dates(monkeypatch):
+    _install(monkeypatch, stage1={"findings": FINDINGS}, terra=TERRA_OK, luna_draft=LUNA_DRAFT_OK)
+    seen = []
+    real = pipeline.draft
+    monkeypatch.setattr(pipeline, "draft", lambda finding, result, **kw: (seen.append((finding.seq, kw["today"])), real(finding, result, **kw))[1])
+
+    # 결제 환불 finding 은 seq=1, 로그인(1,2,3 → 앵커 seq=3)
+    run(MEETING, workspace_id="ws_1", today=date(2026, 11, 5), candidates=FakeCandidates(),
+        dates={3: date(2026, 11, 4)})
+
+    assert (3, date(2026, 11, 4)) in seen
+    assert (1, date(2026, 11, 5)) in seen  # dates 에 없는 seq 는 today
+
+
+def test_run_passes_context_to_stage1(monkeypatch):
+    _install(monkeypatch, stage1={"findings": []}, terra=[], luna_draft=[])
+    seen = {}
+    monkeypatch.setattr(pipeline, "extract_findings_counted",
+                        lambda t, context=None: (seen.update(context=context) or ([], pipeline.empty_drops())))
+    ctx = Transcript(segments=[], source="chat")
+    run(MEETING, workspace_id="ws_1", today=date(2026, 11, 5), candidates=FakeCandidates(), context=ctx)
+    assert seen["context"] is ctx
