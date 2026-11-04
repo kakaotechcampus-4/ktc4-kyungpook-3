@@ -519,7 +519,7 @@ def _propose(
 
 
 def rebase_cards(db: Session, task: Task) -> None:
-    """답장으로 막힘이 풀리면 대기 중인 답장 카드의 상태 기준을 따라 옮긴다. 시스템이 푼 것은 승인 충돌이 아니다."""
+    """막힘이 풀리면 대기 중인 답장 카드의 상태 기준을 따라 옮긴다. 답장이나 자동 막힘 되돌리기로 푼 것은 승인 충돌이 아니다."""
     for card in db.scalars(
         select(ApprovalRequest).where(
             ApprovalRequest.related_task_id == task.task_id, ApprovalRequest.status == ApprovalStatus.PENDING,

@@ -605,6 +605,7 @@ def undo_auto_block(db: Session, task: Task, *, changed_by: str, now: datetime) 
     )
     _close(watch, WatchState.RELEASED, now)
     db.flush()
+    replies.rebase_cards(db, task)
     return task
 
 

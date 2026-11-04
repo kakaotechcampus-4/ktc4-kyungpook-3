@@ -694,6 +694,15 @@ def test_card_on_auto_blocked_task_is_approvable_before_the_tick(mdb, mseed):
     assert a.status == "done"
 
 
+def test_card_stays_approvable_after_the_pm_undoes_the_auto_block(mdb, mseed):
+    a, approval_id = _card_on_auto_blocked_task(mdb, mseed)
+    assert client("pm").post(f"{P}/tasks/{a.task_id}/auto-block/undo").status_code == 200
+    r = _resolve(approval_id)
+    assert r.status_code == 200, r.text
+    mdb.expire_all()
+    assert a.status == "done"
+
+
 def test_card_stays_approvable_while_a_followup_reply_holds_the_clock(mdb, mseed):
     a, approval_id = _card_on_auto_blocked_task(mdb, mseed)
     follow_up_at = DEADLINE + H + timedelta(minutes=1)
