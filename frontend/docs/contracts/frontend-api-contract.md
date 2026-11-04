@@ -1,5 +1,45 @@
 # 프론트엔드 API 계약
 
+## 진행률 제거와 보완 승인 경계 (#311, 2026-11-04)
+
+작업 근거는 [FE 요청 #305](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/305)와 [구현 이슈 #311](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/311)이다. 서버 규약은 [BE PR #307](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/pull/307)의 스키마·승인 처리·계약 변경을 대조했다. 확인 당시 PR은 OPEN이며, 아래 규약이 로컬 백엔드나 배포 서버에 적용됐다고 가정하지 않는다. 아래의 예전 M6 필수값·MSW 전용 보완 기록보다 이 절의 후속 요구사항이 우선한다.
+
+### 제안 값을 고쳐 승인 `task_overrides`
+
+`PATCH /api/v1/approvals/{approval_id}` 한 번에 PM 수정값과 승인을 보낸다. 승인 뒤 별도 태스크 수정 요청을 보내지 않는다.
+
+| 항목 | 규약과 FE 처리 |
+|---|---|
+| 생성 승인 | `task_title`, `assignee_member_id`, `due_date`만 수정한다. 상태는 선택하지 않으며 항상 `todo`로 생성한다 |
+| 수정 승인 | `status`, `due_date`만 수정한다. 원래 제안의 다른 변경 필드와 근거는 보존한다 |
+| 키 생략 | 해당 필드는 원래 제안을 유지한다. 편집하지 않은 현재 태스크 값을 보완값으로 채워 보내지 않는다 |
+| 명시적 `null` | 담당자·마감을 미정으로 확정한다. `task_title`·`status`는 `null`을 허용하지 않는다 |
+| 최종 생성값 검증 | 제목은 trim 후 1~300 코드 포인트, 지정된 담당자는 현재 공간 팀원, 지정된 마감은 유효한 `YYYY-MM-DD`다. 담당자·마감 미정만으로 승인을 막지 않는다 |
+| 반려 | `{status: "rejected"}`만 전송한다. 보완값과 확인 버전을 섞지 않는다 |
+| 실 API와 MSW | 같은 요청 매핑과 승인 판정을 사용한다. 보완값을 제거한 status-only 요청으로 자동 재시도하지 않는다 |
+| 400·404 | 잘못된 키·날짜·상태는 400 `INVALID_REQUEST`, 다른 공간 담당자는 400 `WORKSPACE_MISMATCH`, 없는 팀원은 404 `MEMBER_NOT_FOUND`다. 서버 승인은 pending으로 남고 FE 입력도 유지한다 |
+| 409 충돌 | 서버는 PM 수정값을 적용한 최종 값으로 검사한다. 응답 `conflicts[].proposed`를 반영 예정값으로 표시한다 |
+| 명시적 재승인 | 충돌을 확인한 PM이 다시 누를 때 같은 수정값과 응답의 `details.task_version`을 `confirm_task_version`으로 보낸다. 재충돌은 새 정보를 표시하고 다시 확인받는다. 자동 재승인은 없다 |
+| 확인 해제 | 충돌 후 승인 입력을 바꾸면 이전 확인 버전을 해제한다. 입력을 원래대로 되돌려도 과거 확인을 복원하지 않는다 |
+| 이미 처리됨 | 기존 `APPROVAL_ALREADY_RESOLVED` 재조회와 중복 전송·세션 보호를 유지한다 |
+| 승인 응답 | 원래 제안·근거는 유지하고 제안과 다른 값만 `payload.task_overrides`에 남는다. 완료 화면은 서버 응답의 원래 값에 보완값을 적용하며, `null`을 원래 값으로 대체하지 않는다 |
+| 이력 | PM 수정 필드는 `change_source: "manual"`, `changed_by`는 승인한 PM이다. 다른 필드의 출처는 서버의 payload `change_source`와 생성·수정별 기본값을 따른다. FE는 서버 이력을 표시한다 |
+
+요청 예시는 다음과 같다. 실행 검증 결과는 아래 연결한 M6 결과에서 별도로 구분한다.
+
+```json
+{"status":"approved","task_overrides":{"task_title":"로그인 API 연동","assignee_member_id":null}}
+{"status":"approved","task_overrides":{"status":"done","due_date":null},"confirm_task_version":7}
+```
+
+### Task 진행률과 과거 이력
+
+Task DTO·모델·생성 및 변경 요청·MSW와 현재 태스크 화면에서 `progress`를 제거한다. `in_progress` 상태, 회의 처리·업로드·온보딩 진행은 별개다. 과거 `changed_field: "progress"` 이력은 읽기 전용으로 표시하고 되돌리기를 제공하지 않는다. MSW 되돌리기도 이 필드를 400으로 거절한다. 노션의 기존 Progress 속성을 삭제하거나 기록하는 작업은 없다.
+
+### 구현과 검증의 구분
+
+FE 변경과 실제 검증은 [M6 후속 결과](../plan/m6/result.md)에 기록한다. 요청 경계는 [승인 DTO](../../src/shared/types/api/approval.ts), [도메인 판정](../../src/entities/approval/model/resolution.ts), [mapper](../../src/entities/approval/model/mapper.ts), [승인 훅](../../src/features/approval-resolve/model/useApprovalResolve.ts), [MSW 승인](../../src/shared/mock/handlers/approval.ts)에서 확인한다. MSW 성공은 실제 서버 승인·DB·Notion 반영의 증거가 아니다. 공개 서버의 `/openapi.json`은 확인 시 SPA HTML을 반환해 새 스키마·배포 상태를 검증하지 못했다. BE 변경을 배포한 환경에서 실 API 검증이 남는다.
+
 ## 현재 코드 대조 (2026-10-07)
 
 이 파일은 프론트엔드–백엔드 API의 대표 계약이다. 제공자는 [백엔드 API](../../../backend/app/api), 소비자는 [프론트엔드 entities](../../src/entities)이며, 개발·테스트에서는 [MSW handlers](../../src/shared/mock/handlers)가 서버 응답을 모의한다. 아래는 현재 작업 트리 소스의 정적 확인 결과다. 실제 서비스 호출·OAuth·STT 성공이나 팀 간 신규 합의를 뜻하지 않는다.
@@ -105,7 +145,7 @@ M6 S1에서 프론트 계약·데이터 계층을 현재 서버 코드에 맞췄
 > - 보완값이 **없어도** 최종 제목(trim 후 1~300자)·담당자·마감(유효한 `YYYY-MM-DD`)을 검사하고, 실패하면 400 `INVALID_REQUEST`(`details.field`)다. 위 「현재 서버 구현」의 생성 승인 반영(필수 검사 없음)과 다르며, 요청안 M6-3을 모의한 동작이다.
 > - 추출 항목의 공간·연결 승인, 담당자·회의 소속을 모두 검증한 뒤에만 태스크 생성·이력·추출 항목 `task_id` 연결·승인 상태 변경을 한꺼번에 적용한다. 실패하면 아무것도 바꾸지 않는다(요청안 M6-2 모의). 추출 항목의 `approval_id`는 서버처럼 남긴다.
 > - 승인 목록·상세 조회는 서버처럼 공간 소속만 검사한다. PM 제한(요청안 M6-4)은 모의하지 않는다.
-> - 화면의 처리 경로(transport)는 개발 서버이고 `VITE_ENABLE_MSW=true`일 때만 `msw`다([transport](../../src/features/approval-resolve/model/transport.ts)). production 빌드와 Storybook 빌드는 `live`라 `task_overrides`를 보내지 않는다.
+> - 화면의 처리 경로(transport)는 개발 서버이고 `VITE_ENABLE_MSW=true`일 때만 `msw`다(당시 `transport.ts`, #311에서 삭제). production 빌드와 Storybook 빌드는 `live`라 `task_overrides`를 보내지 않는다.
 
 #### 백엔드 요청 (합의 여부 확인 필요)
 

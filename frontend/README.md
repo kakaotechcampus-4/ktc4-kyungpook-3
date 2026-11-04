@@ -93,6 +93,7 @@ API_PROXY_TARGET=https://managers-manager.duckdns.org npm run dev
 - [문서 안내](docs/README.md): 대표 경로, 기존 문서 대응과 유지한 자료.
 - [API 계약](docs/contracts/frontend-api-contract.md): 기존 백엔드 요청과 현재 코드 차이를 한 문서에서 관리.
 - [전체 계획](docs/plan/frontend-plan.md) · [마일스톤 상태·기록](docs/plan/README.md): M0~M8. M0~M5는 기존 계획 원문을 각 `plan.md`로 이동했다. M6·M7은 계획과 결과([M6](docs/plan/m6/result.md), [M7](docs/plan/m7/result.md))가 있고 M8은 0바이트 초기화 파일이다.
+- M6 후속 #311: 태스크 진행률을 현재 모델·화면에서 제거하고, 생성·수정 승인 보완값을 실 API 요청과 MSW에 연결했다. 충돌 재확인·완료값 표시는 [M6 후속 결과](docs/plan/m6/result.md)와 [API 계약](docs/contracts/frontend-api-contract.md)에 기록한다. 실 백엔드 연동은 BE PR #307 배포 환경에서 확인해야 한다.
 - 마일스톤 밖 수정: 태스크 상세 재조회 실패가 화면에 안 보이고 polling이 조용히 멈추던 문제(#236) — 판정 함수 `queryView`를 `shared/lib/query-view`로 옮겨 상세 화면과 Notion polling이 함께 쓰고, 갱신 실패 시 본문 유지·안내·`다시 시도`를 두고 Storybook 스토리를 추가했다. [계획](docs/plan/refactor/plan-task-detail-refetch-error.md) · [결과](docs/plan/refactor/result-task-detail-refetch-error.md) · [M6 결과](docs/plan/m6/result.md). Node v24.11.0에서 typecheck·lint·format·vitest·build·관련 E2E·Storybook 통과(스토리 추가 후 105건), 독립 검증 완료, MSW 기준이며 실서버 미검증.
 - 마일스톤 밖 수정: 온보딩에서 기존 PM을 체크해 Discord 중복 멤버 생성 방지(#228) — [계획](docs/plan/refactor/plan-onboarding-pm-discord-link.md) · [결과](docs/plan/refactor/result-onboarding-pm-discord-link.md). MSW 기준 검증, 실서버 미검증.
 - [공통 작업 규칙](../docs/agent-rules.md) · [문서 양식](../docs/README.md).
