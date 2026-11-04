@@ -236,6 +236,8 @@ class Worker:
             try:
                 for call in (lambda: assign_one(self.recordings_dir, client=client),
                              lambda: intake_one(self.recordings_dir, client=client, diarizer=diarizer)):
+                    if self._stopping:     # assign 도중 stop() 이 오면 intake_one 은 부르지 않는다
+                        break
                     try:
                         progresses.append(await asyncio.to_thread(call))
                     except Exception as e:  # noqa: BLE001 - 둘 다 예외를 내지 않는 게 약속이지만 워커는 어떤 경우에도 계속 돈다

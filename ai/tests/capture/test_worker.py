@@ -707,6 +707,20 @@ async def test_assign_does_not_run_without_intake_or_after_stop(tmp_path, monkey
     assert asg.calls == 0 and asg2.calls == 0
 
 
+async def test_stop_during_assign_skips_intake(tmp_path, monkeypatch):
+    w = _worker(tmp_path, intake=("c", "d"))
+    rec = _Intake(w)
+
+    def stop_midway(*a, **k):
+        w.stop()
+        return None
+
+    monkeypatch.setattr(W, "assign_one", stop_midway)
+    monkeypatch.setattr(W, "intake_one", rec)
+    await w._intake_once()
+    assert rec.calls == 0 and w._current is None
+
+
 async def test_an_assign_crash_is_logged_and_intake_still_runs(tmp_path, monkeypatch, capsys):
     w = _worker(tmp_path, intake=("c", "d"))
     rec = _Intake(w)
