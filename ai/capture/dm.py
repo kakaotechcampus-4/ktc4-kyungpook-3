@@ -83,6 +83,11 @@ def _result_body(rec: dict) -> dict:
     return {**rec["outcome"], "discord_message_ids": rec["parts_sent"]}
 
 
+def _is_final(e: BeError, codes: set[str]) -> bool:
+    """BE 의 영구 거절인지. 없는 경로의 404 도 INVALID_REQUEST 라서, 그 코드는 400 일 때만 거절로 읽는다."""
+    return e.code in codes and (e.code != "INVALID_REQUEST" or e.status == 400)
+
+
 class DmCog(discord.Cog):
     def __init__(self, bot: discord.Bot, *, be: BeClient, recordings_dir: Path = RECORDINGS_DIR, drafter=None):
         """be 는 서비스 토큰을 가진 BeClient. drafter(item) 는 초안 본문이나 None 이고 기본은 draft_reminder 다."""
@@ -197,7 +202,7 @@ class DmCog(discord.Cog):
         try:
             await self._call("POST", f"/bot/messages/{rec['message_id']}/result", _result_body(rec))
         except BeError as e:
-            if e.code not in RESULT_SETTLED:
+            if not _is_final(e, RESULT_SETTLED):
                 print(f"[dm] {rec['message_id']} 결과 보고 실패, 다음 바퀴에 다시: {e}", flush=True)
                 return
             if e.code != "MESSAGE_RESULT_CONFLICT":
@@ -231,7 +236,7 @@ class DmCog(discord.Cog):
             try:
                 await self._call("POST", "/bot/replies", body)
             except BeError as e:
-                if e.code not in REPLY_DROPPED:
+                if not _is_final(e, REPLY_DROPPED):
                     print(f"[dm] 답장 {path.stem} 넘기기 실패, 다음 바퀴에 다시: {e}", flush=True)
                     return
                 print(f"[dm] 답장 {path.stem} 을 BE 가 받지 않아 버린다: {e}", flush=True)

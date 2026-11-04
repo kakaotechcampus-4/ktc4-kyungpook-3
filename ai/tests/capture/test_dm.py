@@ -488,3 +488,31 @@ async def test_a_drafter_that_raises_posts_null(tmp_path):
     be.draft_claims.append([_bundle("b1")])
     await cog.draft_round()
     assert be.sent("/bot/drafts/b1") == [("/bot/drafts/b1", {"draft_version": 1, "body": None})]
+
+
+# ─────────────────────────────────────────────────────────── 없는 경로의 404
+def _route_missing():
+    """BE 는 없는 경로에도 INVALID_REQUEST 를 준다. 봇이 BE 보다 먼저 올라가거나 BE 가 되돌아가면 받는 응답이다."""
+    return _err(404, "INVALID_REQUEST")
+
+
+async def test_a_result_survives_a_404_from_a_route_the_be_does_not_have_yet(tmp_path):
+    user = FakeUser()
+    cog, be = _cog(tmp_path, FakeBot([user]))
+    be.fail["/bot/messages/msg-1/result"] = [_route_missing()]
+    be.claims.append([_item()])
+    await cog.run_round()
+    assert list(_sent_dir(tmp_path).glob("*.json"))
+    await cog.run_round()
+    assert len(be.sent("/bot/messages/msg-1/result")) == 2
+    assert not list(_sent_dir(tmp_path).glob("*.json"))
+
+
+async def test_a_reply_survives_a_404_from_a_route_the_be_does_not_have_yet(tmp_path):
+    cog, be = _cog(tmp_path, FakeBot())
+    be.fail["/bot/replies"] = [_route_missing()]
+    await cog.on_message(FakeMsg(6002, FakeAuthor(USER_ID), "답"))
+    assert list(_replies_dir(tmp_path).glob("*.json"))
+    await cog.run_round()
+    assert len(be.sent("/bot/replies")) == 2
+    assert not list(_replies_dir(tmp_path).glob("*.json"))
