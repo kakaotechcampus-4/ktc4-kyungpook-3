@@ -22,7 +22,11 @@ async function row(name: string) {
   return within(await screen.findByRole('region', { name }))
 }
 
-const toastOf = (title: string) => document.querySelector(`[data-toast-key="${title}"]`)
+/** 화면에 뜬 알림 중 그 문구가 보이는 것 */
+const toastWith = (text: string) =>
+  Array.from(document.querySelectorAll<HTMLElement>('[data-toast-key]')).find((node) =>
+    node.textContent?.includes(text),
+  ) ?? null
 
 const invitationOf = (invitationId: string) =>
   db.invitations.find(({ invitation_id }) => invitation_id === invitationId)
@@ -83,7 +87,7 @@ describe('팀 화면 — 팀원 초대', () => {
     const jaehwan = await row('이재환')
     expect(await jaehwan.findByText('jh.lee@example.com')).toBeInTheDocument()
     expect(jaehwan.getByText('대기')).toBeInTheDocument()
-    expect(toastOf('초대를 만들었어요')).toHaveTextContent(
+    expect(toastWith('초대를 만들었어요')).toHaveTextContent(
       '메일은 가지 않아요. 이재환에게 JH.Lee@Example.com로 가입하거나 로그인하라고 알려 주세요.',
     )
     expect(invitationOf('iv_02')?.status).toBe('canceled')
@@ -142,7 +146,7 @@ describe('팀 화면 — 팀원 초대', () => {
     expect(await jaehwan.findByText('취소')).toBeInTheDocument()
     expect(jaehwan.queryByRole('button', { name: '초대 취소' })).toBeNull()
     expect(jaehwan.getByRole('button', { name: '다시 초대' })).toBeInTheDocument()
-    expect(toastOf('초대를 취소했어요')).not.toBeNull()
+    expect(toastWith('초대를 취소했어요')).not.toBeNull()
     expect(invitationOf('iv_02')?.status).toBe('canceled')
   })
 
@@ -168,7 +172,7 @@ describe('팀 화면 — 팀원 초대', () => {
     expect(await minsu.findByText('연결 끊김')).toBeInTheDocument()
     expect(minsu.getByRole('button', { name: '다시 초대' })).toBeInTheDocument()
     expect(screen.queryByRole('dialog')).toBeNull()
-    expect(toastOf('계정 연결을 끊었어요')).not.toBeNull()
+    expect(toastWith('계정 연결을 끊었어요')).not.toBeNull()
     expect(invitationOf('iv_01')?.status).toBe('revoked')
   })
 
@@ -233,6 +237,6 @@ describe('팀 화면 — 팀원 초대', () => {
     await user.click(cancel)
 
     expect(await jaehwan.findByText('거절')).toBeInTheDocument()
-    expect(toastOf('이미 처리된 초대예요.')).not.toBeNull()
+    expect(toastWith('이미 처리된 초대예요.')).not.toBeNull()
   })
 })

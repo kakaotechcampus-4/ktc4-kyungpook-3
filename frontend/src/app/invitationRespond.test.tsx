@@ -16,7 +16,11 @@ import { renderApp } from './test/renderApp'
 
 vi.setConfig({ testTimeout: 15_000 })
 
-const toastOf = (title: string) => document.querySelector(`[data-toast-key="${title}"]`)
+/** 화면에 뜬 알림 중 그 문구가 보이는 것 */
+const toastWith = (text: string) =>
+  Array.from(document.querySelectorAll<HTMLElement>('[data-toast-key]')).find((node) =>
+    node.textContent?.includes(text),
+  ) ?? null
 
 async function signUpAsInvitee() {
   db.authenticated = false
@@ -123,7 +127,7 @@ describe('받은 초대', () => {
     await userEvent.click(accept)
 
     expect(await screen.findByText('PM에게 가입한 이메일로 초대를 요청하세요.')).toBeInTheDocument()
-    expect(toastOf('이 초대는 더 이상 수락할 수 없어요. PM에게 문의하세요.')).not.toBeNull()
+    expect(toastWith('이 초대는 더 이상 수락할 수 없어요. PM에게 문의하세요.')).not.toBeNull()
     await app.expectPath('/onboarding/start')
   })
 

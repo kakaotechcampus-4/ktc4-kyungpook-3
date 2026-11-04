@@ -89,12 +89,13 @@ describe('인증 화면 재접근 (RedirectIfAuthed)', () => {
     const log = recordRequests()
     const app = renderApp(from)
     await landsOn(app, to)
-    // 대시보드로 착지하면 그 화면의 조회(M7)만 있다. 시작·선택 화면은 받은 초대를 읽는다(#320). 가드가 더하는 업무 요청은 없다
+    // 대시보드로 착지하면 그 화면의 조회(M7)만 있다. 시작·선택 화면만 받은 초대를 읽는다(#320). 가드가 더하는 업무 요청은 없다
+    const showsInvitations = to === '/onboarding/start' || to === '/workspaces'
     expect(
       businessRequests(log.started).filter(
         (request) =>
           !isDashboardRequest(request, { extractionId: latestDoneExtractionId() }) &&
-          !(request.method === 'GET' && request.path === '/invitations/me'),
+          !(showsInvitations && request.method === 'GET' && request.path === '/invitations/me'),
       ),
     ).toEqual([])
   })
