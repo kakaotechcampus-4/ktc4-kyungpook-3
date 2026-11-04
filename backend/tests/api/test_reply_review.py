@@ -714,3 +714,28 @@ def test_timeline_keeps_the_status_value_when_a_reason_is_linked_too(mdb, mseed,
     _applied(mdb, mseed, a, value="blocked")
     [change] = _timeline(a)["items"][0]["changes"]
     assert change["new_value"] == "blocked"
+
+
+# 막힘 사유
+
+def _blocked_reply(mdb, mseed, task, **extra):
+    _reply(mdb, mseed, AT, body="개인 사정으로 병원 다녀오느라 막혔어요")
+    item = _claim()
+    _judge(item, {
+        **_change(task, "status", "blocked", evidence="certain", claimed=item, quote="개인 사정으로 병원 다녀오느라 막혔어요"),
+        **extra,
+    })
+    mdb.expire_all()
+
+
+def test_reason_is_the_ai_reading_not_the_reply_text(mdb, mseed, two):
+    a, _ = two
+    _blocked_reply(mdb, mseed, a, summary="일정 문제로 막힘")
+    task = client("bob").get(f"{P}/tasks/{a.task_id}").json()["data"]
+    assert task["blocker"] == "일정 문제로 막힘"
+
+
+def test_reason_falls_back_to_a_plain_phrase_without_a_summary(mdb, mseed, two):
+    a, _ = two
+    _blocked_reply(mdb, mseed, a, summary=None)
+    assert a.blocker == "팀원이 막혔다고 답했어요"

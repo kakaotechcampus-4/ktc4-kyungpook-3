@@ -447,7 +447,7 @@ def test_blocked_reply_replaces_the_no_reply_reason(mdb, mseed):
     _reply(mdb, mseed, DEADLINE + H, body="서버 키가 안 와서 막혔어요")
     item = _claim()
     _judge(item, _change(task, "status", "blocked", evidence="certain", claimed=item, quote="서버 키가 안 와서 막혔어요"))
-    assert (task.status, task.blocker) == ("blocked", "서버 키가 안 와서 막혔어요")
+    assert (task.status, task.blocker) == ("blocked", "AI 해석")
     [entry] = mdb.query(TaskHistory).filter(TaskHistory.task_id == task.task_id, TaskHistory.changed_field == "blocker",
                                             TaskHistory.change_source == "reminder_reply").all()
     assert entry.reply_change_id == _lines(mdb, item)[(task.task_id, "status")].change_id
@@ -476,13 +476,13 @@ def test_inferred_block_replaces_the_no_reply_reason_without_a_card(mdb, mseed):
     _judge(item, _change(task, "status", "blocked", evidence="inferred", claimed=item, quote="키가 늦네요"))
     assert _outcomes(mdb, item) == [("status", "noted")]
     assert _cards(mdb) == [] and _notes(mdb) == []
-    assert task.blocker == "키가 늦네요"
+    assert task.blocker == "AI 해석"
     [entry] = mdb.query(TaskHistory).filter(TaskHistory.task_id == task.task_id, TaskHistory.changed_field == "blocker",
                                             TaskHistory.change_source == "reminder_reply").all()
     assert entry.reply_change_id == _lines(mdb, item)[(task.task_id, "status")].change_id
 
     tick(mdb, DEADLINE + 2 * H)
-    assert (task.status, task.blocker) == ("blocked", "키가 늦네요")
+    assert (task.status, task.blocker) == ("blocked", "AI 해석")
 
 
 def test_inferred_block_fills_an_empty_reason(mdb, mseed, two):
@@ -492,7 +492,7 @@ def test_inferred_block_fills_an_empty_reason(mdb, mseed, two):
     _reply(mdb, mseed, AT, body="키가 늦네요")
     item = _claim()
     _judge(item, _change(a, "status", "blocked", evidence="inferred", claimed=item, quote="키가 늦네요"))
-    assert (a.status, a.blocker) == ("blocked", "키가 늦네요")
+    assert (a.status, a.blocker) == ("blocked", "AI 해석")
     assert _outcomes(mdb, item) == [("status", "noted")]
 
 
@@ -504,7 +504,7 @@ def test_new_block_writes_status_and_reason_under_one_change(mdb, mseed, two):
     change_id = _lines(mdb, item)[(a.task_id, "status")].change_id
     entries = mdb.query(TaskHistory).filter(TaskHistory.reply_change_id == change_id).all()
     assert {e.changed_field for e in entries} == {"status", "blocker"}
-    assert a.blocker == "막혔어요"
+    assert a.blocker == "AI 해석"
 
 
 def test_status_shown_before_block_resolves_as_nothing_to_change_and_unblocks(mdb, mseed):

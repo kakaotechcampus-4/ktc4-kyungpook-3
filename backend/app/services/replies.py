@@ -46,6 +46,7 @@ JUDGE_LEASE = timedelta(minutes=3)
 JUDGE_WINDOW = timedelta(minutes=10)
 LINE_LIMIT = 12
 FAILURE_REASON_LIMIT = 120
+REPLY_BLOCKER_TEXT = "팀원이 막혔다고 답했어요"
 # 맡기기를 한 줄로 세운다. 틱 잠금과 키가 달라 틱을 기다리지 않는다.
 CLAIM_LOCK_KEY = 331_001
 
@@ -438,9 +439,9 @@ def _gate(
 
 def _apply(db: Session, task: Task, line: ReplyChange, now: datetime) -> None:
     updates: dict[str, object] = {"status": line.new_value}
-    # 무응답 사유는 답이 온 순간 사실이 아니다. PM 이 쓴 사유는 둔다.
+    # 무응답 사유는 답이 온 순간 사실이 아니다. PM 이 쓴 사유는 둔다. 답장 글은 대화 주인과 PM 만 보므로 원문을 쓰지 않는다.
     if line.new_value == TaskStatus.BLOCKED and (not task.blocker or task.blocker == scheduler.BLOCKER_TEXT):
-        updates["blocker"] = line.evidence_quote
+        updates["blocker"] = line.summary or REPLY_BLOCKER_TEXT
     entries = tasks.apply_task_updates(db, task, updates, change_source=ChangeSource.REMINDER_REPLY)
     if not entries:
         line.outcome = ReplyChangeOutcome.NOTED
