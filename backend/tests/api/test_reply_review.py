@@ -163,6 +163,57 @@ def test_unpicked_task_resumes_its_clock_and_picked_task_is_answered(mdb, mseed,
     assert messages.utc(watch.deadline_at) == DEADLINE + (resume_at - paused_at)
 
 
+def test_unpicked_clock_keeps_counting_when_rejudgment_fails(mdb, mseed, two):
+    a, b = two
+    item = _unknown(mdb, mseed)
+    tick(mdb, AT + timedelta(minutes=1))
+    assert _watch(mdb, b).paused_at is not None
+    _attribute(item, a, seed=mseed)
+    _judge(_claim(), failure="TimeoutError")
+    tick(mdb, AT + 2 * H)
+    assert _watch(mdb, a).state == WatchState.ANSWERED
+    assert _watch(mdb, b).state == WatchState.WATCHING
+
+
+def test_unpicked_clock_keeps_counting_when_rejudgment_times_out(mdb, mseed, two):
+    a, b = two
+    item = _unknown(mdb, mseed)
+    tick(mdb, AT + timedelta(minutes=1))
+    replies.attribute(mdb, mseed["ws"], item["message_id"], a.task_id, AT + timedelta(minutes=2))
+    mdb.commit()
+    tick(mdb, AT + timedelta(minutes=13))
+    assert _row(mdb, item).state == S.TIMED_OUT
+    assert _watch(mdb, a).state == WatchState.ANSWERED
+    assert _watch(mdb, b).state == WatchState.WATCHING
+
+
+def test_unpicked_auto_blocked_task_stays_blocked_when_rejudgment_fails(mdb, mseed):
+    a, b = mseed["tasks"][:2]
+    a.status, b.status = "in_progress", "in_progress"
+    _remind(mdb, mseed, [a, b], SLOT)
+    tick(mdb, DEADLINE)
+    item = _unknown(mdb, mseed, at=DEADLINE + H)
+    tick(mdb, DEADLINE + H + timedelta(minutes=1))
+    _attribute(item, a, seed=mseed)
+    _judge(_claim(), failure="TimeoutError")
+    tick(mdb, DEADLINE + 2 * H)
+    mdb.expire_all()
+    assert (a.status, b.status) == ("in_progress", "blocked")
+
+
+def test_line_on_the_unpicked_task_still_counts_after_a_failed_rejudgment(mdb, mseed, two):
+    a, b = two
+    _reply(mdb, mseed, AT)
+    item = _claim()
+    _judge(
+        item, _change(b, "status", "blocked", evidence="inferred", claimed=item), _change(None, "unknown", quote="그거"),
+    )
+    _attribute(item, a, seed=mseed)
+    _judge(_claim(), failure="TimeoutError")
+    tick(mdb, AT + H)
+    assert _watch(mdb, b).state == WatchState.ANSWERED
+
+
 def test_dismissing_resumes_every_clock(mdb, mseed, two):
     a, b = two
     item = _unknown(mdb, mseed)

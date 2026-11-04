@@ -688,11 +688,17 @@ def clock_effect(db: Session, watch: ReminderWatch, *, before: datetime | None) 
 
 
 def _reply_effect(row, lines: list, task_id: str) -> ClockEffect:
-    """답장 하나의 효과. lines 는 이 태스크의 줄이다. 후보 안의 태스크라도 답장이 말하지 않았으면 그 시계는 계속 센다."""
-    if row.state in (None, ReplyJudgmentState.FAILED, ReplyJudgmentState.TIMED_OUT):
+    """답장 하나의 효과. lines 는 이 태스크의 줄이다. 후보 안의 태스크라도 답장이 말하지 않았으면 그 시계는 계속 센다.
+
+    PM 이 다른 태스크를 고른 뒤에는 재판단의 상태가 이 시계를 가르지 않는다. 첫 판단이 이 태스크에 남긴 줄만 본다.
+    """
+    if row.state is None:
         return ClockEffect.ANSWERED
-    if row.state == ReplyJudgmentState.PENDING:
-        return ClockEffect.WAIT
+    if row.picked_task_id in (None, task_id):
+        if row.state in (ReplyJudgmentState.FAILED, ReplyJudgmentState.TIMED_OUT):
+            return ClockEffect.ANSWERED
+        if row.state == ReplyJudgmentState.PENDING:
+            return ClockEffect.WAIT
     if any(
         line.field == ReplyChangeField.STATUS and line.new_value == TaskStatus.BLOCKED
         and line.outcome in _BLOCK_OUTCOMES
