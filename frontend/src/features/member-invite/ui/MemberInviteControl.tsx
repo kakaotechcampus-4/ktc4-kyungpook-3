@@ -86,7 +86,7 @@ export function MemberInviteControl({ workspaceId, member }: MemberInviteControl
         pending={actions.inviting}
         serverError={actions.inviteError}
         onSubmit={(email) => actions.invite(email, () => setInviteOpen(false))}
-        onEdit={actions.resetInvite}
+        onEdit={actions.clearInviteError}
       />
       {close?.kind === 'revoke' ? (
         <RevokeConfirm

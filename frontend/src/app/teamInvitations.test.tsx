@@ -94,6 +94,45 @@ describe('팀 화면 — 팀원 초대', () => {
     ).toMatchObject([{ email: 'jh.lee@example.com', invited_by_user_id: 'us_01' }])
   })
 
+  it('초대를 보내는 동안에는 이메일을 고칠 수 없고 한 번만 보낸다', async () => {
+    let release = () => {}
+    const released = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    server.use(
+      http.post('/api/v1/workspaces/:workspaceId/invitations', async () => {
+        await released
+      }),
+    )
+    const user = userEvent.setup()
+    renderApp(TEAM)
+    const log = recordRequests()
+    await user.click(await (await row('정하늘')).findByRole('button', { name: '다시 초대' }))
+
+    const dialog = within(await screen.findByRole('dialog', { name: '정하늘 초대' }))
+    const field = dialog.getByLabelText('가입 이메일')
+    await user.type(field, 'haneul2@example.com')
+    await user.click(dialog.getByRole('button', { name: '초대하기' }))
+    await waitFor(() => expect(field).toBeDisabled())
+    await user.type(field, 'x')
+    await user.click(dialog.getByRole('button', { name: '초대하기' }))
+
+    expect(field).toHaveValue('haneul2@example.com')
+    expect(dialog.getByRole('button', { name: '초대하기' })).toBeDisabled()
+    expect(
+      log.started.filter(
+        ({ method, path }) => method === 'POST' && path === '/workspaces/ws_01/invitations',
+      ),
+    ).toHaveLength(1)
+    release()
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(
+      log.started.filter(
+        ({ method, path }) => method === 'POST' && path === '/workspaces/ws_01/invitations',
+      ),
+    ).toHaveLength(1)
+  })
+
   it('`초대 취소` 는 묻지 않고 취소하고, 그 팀원은 다시 초대할 수 있다', async () => {
     const user = userEvent.setup()
     renderApp(TEAM)

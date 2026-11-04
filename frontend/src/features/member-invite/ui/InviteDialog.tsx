@@ -13,6 +13,7 @@ export interface InviteDialogProps {
   displayName: string
   /** 기다리는 초대의 이메일. 다시 초대하면 그 초대가 취소된다 */
   pendingEmail: string | null
+  /** 보내는 중. 입력란과 초대하기를 막는다 */
   pending: boolean
   /** 서버가 거절한 이유 */
   serverError: string | null
@@ -40,6 +41,7 @@ export function InviteDialog({
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+    if (pending) return
     const value = email.trim()
     if (!emailSchema.safeParse(value).success) {
       setFormatError(true)
@@ -75,6 +77,7 @@ export function InviteDialog({
           autoComplete="off"
           placeholder="name@example.com"
           value={email}
+          disabled={pending}
           onChange={(event) => {
             setEmail(event.target.value)
             setFormatError(false)

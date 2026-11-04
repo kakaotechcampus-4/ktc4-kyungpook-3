@@ -1,4 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useState } from 'react'
 import {
   cancelInvitation,
   createInvitation,
@@ -18,8 +19,10 @@ export interface MemberInviteActions {
   invite: (email: string, onSuccess: () => void) => void
   inviteError: string | null
   inviting: boolean
-  /** 새로 입력할 때 지난 실패 문구를 지운다 */
+  /** 창을 새로 열 때 지난 초대 요청의 상태를 비운다 */
   resetInvite: () => void
+  /** 새로 입력할 때 지난 실패 문구만 지운다. 보내는 중인 요청은 그대로다 */
+  clearInviteError: () => void
   cancel: (invitationId: string) => void
   revoke: (invitationId: string, onSettled: () => void) => void
   /** 취소·연결 끊기 중이다 */
@@ -55,6 +58,9 @@ export function useMemberInviteActions(
     onSettled: refresh,
   })
 
+  // reset() 은 보내는 중인 요청도 끝난 것처럼 보이게 해 중복 전송을 연다 — 입력 중에는 문구만 숨긴다
+  const [hiddenError, setHiddenError] = useState<Error | null>(null)
+
   const close = useMutation<
     void,
     Error,
@@ -79,9 +85,10 @@ export function useMemberInviteActions(
       if (create.isPending) return
       create.mutate({ email, onSuccess, isCurrentSession: captureSession() })
     },
-    inviteError: create.error ? errorMessage(create.error) : null,
+    inviteError: create.error && create.error !== hiddenError ? errorMessage(create.error) : null,
     inviting: create.isPending,
     resetInvite: create.reset,
+    clearInviteError: () => setHiddenError(create.error),
     cancel: (invitationId) => {
       if (close.isPending) return
       close.mutate({ kind: 'cancel', invitationId, isCurrentSession: captureSession() })
