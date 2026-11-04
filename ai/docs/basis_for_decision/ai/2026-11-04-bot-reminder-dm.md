@@ -2,7 +2,7 @@
 
 - 날짜: 2026-11-04
 - 이슈: #317
-- PR: #PRNUM
+- PR: #324
 - 브랜치: `feature/317-bot-reminder-dm`
 
 ## 한 일
