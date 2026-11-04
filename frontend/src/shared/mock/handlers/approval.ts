@@ -13,6 +13,8 @@ import {
   ownershipError,
   taskCreateFields,
   findConflicts,
+  validDate,
+  addHistory,
 } from '../task-state'
 import type { ApprovalDto } from '@/shared/types/api/approval'
 
@@ -26,6 +28,75 @@ function ownershipFailure(owned: NonNullable<ReturnType<typeof ownershipError>>)
   return fail(owned.code, owned.message, owned.code === 'WORKSPACE_MISMATCH' ? 400 : 404)
 }
 
+function historyText(value: unknown): string | null {
+  if (value === null || value === undefined) return null
+  return typeof value === 'string' ? value : (JSON.stringify(value) ?? null)
+}
+
+function normalizeOverrides(
+  type: string,
+  status: unknown,
+  value: unknown,
+): Record<string, unknown> | Failure {
+  if (value === undefined || value === null) return {}
+  if (!isRecord(value)) return fail('INVALID_REQUEST', '보완 값이 올바르지 않습니다.', 400)
+  if (Object.keys(value).length === 0) return {}
+  const allowed =
+    type === 'task_create'
+      ? ['task_title', 'assignee_member_id', 'due_date']
+      : type === 'task_update'
+        ? ['status', 'due_date']
+        : []
+  if (status !== 'approved' || Object.keys(value).some((field) => !allowed.includes(field)))
+    return fail('INVALID_REQUEST', '이 요청에서 고칠 수 없는 필드입니다.', 400)
+  const normalized: Record<string, unknown> = {}
+  for (const [field, edit] of Object.entries(value)) {
+    if (edit === null) {
+      if (field !== 'due_date' && field !== 'assignee_member_id')
+        return fail('INVALID_REQUEST', '미정으로 둘 수 없는 필드입니다.', 400)
+      normalized[field] = null
+    } else if (field === 'task_title') {
+      if (typeof edit !== 'string' || [...edit.trim()].length < 1 || [...edit.trim()].length > 300)
+        return fail('INVALID_REQUEST', '제목이 올바르지 않습니다.', 400)
+      normalized[field] = edit.trim()
+    } else if (field === 'due_date') {
+      const date = normalizeDate(edit)
+      if (date === null) return fail('INVALID_REQUEST', '마감이 올바르지 않습니다.', 400)
+      normalized[field] = date
+    } else if (field === 'status') {
+      if (typeof edit !== 'string' || !['todo', 'in_progress', 'blocked', 'done'].includes(edit))
+        return fail('INVALID_REQUEST', '상태가 올바르지 않습니다.', 400)
+      normalized[field] = edit
+    } else {
+      if (typeof edit !== 'string')
+        return fail('INVALID_REQUEST', '담당자가 올바르지 않습니다.', 400)
+      normalized[field] = edit
+    }
+  }
+  return normalized
+}
+
+function normalizeDate(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const date = /^\d{8}$/.test(value)
+    ? `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6)}`
+    : value
+  return validDate(date) ? date : null
+}
+
+function changedOverrides(
+  overrides: Record<string, unknown>,
+  proposal: Record<string, unknown>,
+): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(overrides).filter(([field, value]) => {
+      const original =
+        field === 'due_date' ? (normalizeDate(proposal[field]) ?? proposal[field]) : proposal[field]
+      return !Object.hasOwn(proposal, field) || value !== original
+    }),
+  )
+}
+
 /*
  * 승인 반영은 두 단계다. prepare* 는 db 를 읽기만 하고 검증이 모두 통과했을 때만 적용 함수를 돌려준다.
  * MSW 에는 트랜잭션 롤백이 없으므로, 실패하면 승인·태스크·이력·추출 어느 것도 바뀌지 않아야 한다
@@ -33,12 +104,10 @@ function ownershipFailure(owned: NonNullable<ReturnType<typeof ownershipError>>)
  */
 type Prepared = Failure | ((actor: string) => void)
 
-/**
- * 생성 승인. 백엔드 _apply_approval 의 task_create 에 미합의 요청안(M6 생성 승인 보완)을 더한다.
- * `task_overrides` 가 있으면 그 제목·담당자·마감이 payload 의 같은 값을 대신한다. 없어도 최종 세 값은 같은 규칙을
- * 통과해야 한다 — 제목 trim 후 1~300자, 그 공간 팀원인 담당자, 유효한 YYYY-MM-DD 마감
- */
-function prepareTaskCreate(approval: ApprovalDto, overridesInput: unknown): Prepared {
+function prepareTaskCreate(
+  approval: ApprovalDto,
+  overridesInput: Record<string, unknown>,
+): Prepared {
   const payload = approval.payload
   // 백엔드 _get_linkable_extraction_item 처럼 Task 를 만들기 전에 연결 대상부터 검증한다.
   // 항목이 없으면 연결 없이 진행한다
@@ -71,46 +140,20 @@ function prepareTaskCreate(approval: ApprovalDto, overridesInput: unknown): Prep
       })
   }
 
-  // 보완값은 세 필드가 모두 문자열인 객체여야 한다 (클라이언트 TaskOverridesDto)
-  if (
-    overridesInput !== undefined &&
-    !(
-      isRecord(overridesInput) &&
-      ['task_title', 'assignee_member_id', 'due_date'].every(
-        (key) => typeof overridesInput[key] === 'string',
-      )
-    )
-  )
-    return fail('INVALID_REQUEST', '보완 값이 올바르지 않습니다.', 400, {
-      field: 'task_overrides',
-    })
-  const overrides = overridesInput as Record<string, string> | undefined
-  const fields = taskCreateFields(
-    overrides
-      ? {
-          title: overrides.task_title,
-          assignee_member_id: overrides.assignee_member_id,
-          due_date: overrides.due_date,
-        }
-      : {
-          title:
-            typeof payload.task_title === 'string' && payload.task_title
-              ? payload.task_title
-              : payload.title,
-          assignee_member_id: payload.assignee_member_id,
-          due_date: payload.due_date,
-        },
-  )
+  const proposal = {
+    task_title: payload.task_title || payload.title || '',
+    assignee_member_id: payload.assignee_member_id ?? null,
+    due_date: payload.due_date ?? null,
+  }
+  const changed = changedOverrides(overridesInput, proposal)
+  const final = { ...proposal, ...changed }
+  const fields = taskCreateFields({
+    title: final.task_title,
+    assignee_member_id: final.assignee_member_id,
+    due_date: final.due_date === null ? null : (normalizeDate(final.due_date) ?? final.due_date),
+  })
   if (!fields.ok)
-    return fail('INVALID_REQUEST', '승인하려면 제목·담당자·마감이 올바르게 채워져야 합니다.', 400, {
-      field: fields.field,
-    })
-
-  // 백엔드 _apply_approval 은 status·progress 도 읽고 validate_task_fields 를 거친다
-  const extra: Record<string, unknown> = {}
-  if (payload.status !== undefined && payload.status !== null) extra.status = payload.status
-  if (payload.progress !== undefined && payload.progress !== null) extra.progress = payload.progress
-  if (!validTaskFields(extra)) return fail('INVALID_REQUEST', '승인 내용이 올바르지 않습니다.', 400)
+    return fail('INVALID_REQUEST', '승인 내용이 올바르지 않습니다.', 400, { field: fields.field })
 
   // 회의·담당자 소속은 백엔드 validate_workspace_ownership 과 같다 (없음 404, 다른 공간 400)
   const meetingId = typeof payload.meeting_id === 'string' ? payload.meeting_id : null
@@ -125,15 +168,31 @@ function prepareTaskCreate(approval: ApprovalDto, overridesInput: unknown): Prep
       {
         workspace_id: approval.workspace_id,
         title: fields.title,
-        status: typeof extra.status === 'string' ? extra.status : undefined,
-        progress: typeof extra.progress === 'number' ? extra.progress : null,
+        status: 'todo',
+        history_title: historyText(proposal.task_title) ?? '',
         meeting_id: meetingId,
         assignee_member_id: fields.assignee_member_id,
         due_date: fields.due_date,
       },
       actor,
-      meetingId ? 'meeting' : 'manual',
+      typeof payload.change_source === 'string'
+        ? payload.change_source
+        : meetingId
+          ? 'meeting'
+          : 'manual',
     )
+    for (const [field, value] of Object.entries(changed)) {
+      const original = proposal[field as keyof typeof proposal]
+      addHistory(
+        task.task_id,
+        field === 'task_title' ? 'title' : field === 'assignee_member_id' ? 'assignee' : field,
+        field === 'task_title' && typeof original !== 'string' ? null : historyText(original),
+        historyText(value),
+        actor,
+        'manual',
+      )
+    }
+    if (Object.keys(changed).length) approval.payload = { ...payload, task_overrides: changed }
     approval.related_task_id = task.task_id
     // 실 백엔드와 같게 — 위에서 검증한 그 항목의 task_id 만 채우되 approval_id 는 비우지 않는다
     // (계약 §3.1, §4.0-②-12). 화면은 task_id 를 우선으로 읽어 이 상태를 반영됨으로 다룬다.
@@ -145,7 +204,11 @@ function prepareTaskCreate(approval: ApprovalDto, overridesInput: unknown): Prep
  * 변경 승인. 백엔드 _apply_approval 의 task_update 와 같다. 제안 뒤에 같은 필드가 바뀌었으면(_find_conflicts)
  * confirm_task_version 이 지금 task.version 과 같을 때만 덮어쓴다. 아니면 409 APPROVAL_CONFLICT 다
  */
-function prepareTaskUpdate(approval: ApprovalDto, confirmTaskVersion: number | null): Prepared {
+function prepareTaskUpdate(
+  approval: ApprovalDto,
+  confirmTaskVersion: number | null,
+  overrides: Record<string, unknown>,
+): Prepared {
   const payload = approval.payload
   if (approval.related_task_id === null)
     return fail('INVALID_REQUEST', '변경할 태스크가 필요합니다.', 400, {
@@ -166,7 +229,22 @@ function prepareTaskUpdate(approval: ApprovalDto, confirmTaskVersion: number | n
   for (const field of approvalTaskUpdateFields)
     if (field in payload) changes[field] = payload[field]
   // 백엔드는 충돌을 값 검증보다 먼저 본다
-  const conflicts = findConflicts(task, changes, payload.base_values)
+  const changed = changedOverrides(overrides, changes)
+  const final = { ...changes, ...changed }
+  if (final.due_date !== undefined && final.due_date !== null)
+    final.due_date = normalizeDate(final.due_date) ?? final.due_date
+  const conflicts = findConflicts(task, final, payload.base_values)
+  if (
+    typeof payload.base_title === 'string' &&
+    task.title !== payload.base_title &&
+    !conflicts.some(({ field }) => field === 'title')
+  )
+    conflicts.push({
+      field: 'title',
+      base: payload.base_title,
+      current: task.title,
+      proposed: task.title,
+    })
   if (conflicts.length > 0 && confirmTaskVersion !== task.version)
     return fail(
       'APPROVAL_CONFLICT',
@@ -179,15 +257,25 @@ function prepareTaskUpdate(approval: ApprovalDto, confirmTaskVersion: number | n
         conflicts,
       },
     )
-  if (!validTaskFields(changes))
+  if (!validTaskFields(final))
     return fail('INVALID_REQUEST', '태스크 변경 값이 올바르지 않습니다.', 400)
   // 백엔드 apply_task_updates 는 값 검증 뒤 담당자 소속을 본다. 기준은 task.workspace_id 다
   const assigned = ownershipError(task.workspace_id, {
-    assignee_member_id: changes.assignee_member_id,
+    assignee_member_id: final.assignee_member_id,
   })
   if (assigned) return ownershipFailure(assigned)
   return (actor) => {
-    updateTask(task, taskUpdates(changes), actor, 'meeting')
+    const proposed = Object.fromEntries(
+      Object.entries(final).filter(([field]) => !Object.hasOwn(changed, field)),
+    )
+    updateTask(
+      task,
+      taskUpdates(proposed),
+      actor,
+      typeof payload.change_source === 'string' ? payload.change_source : 'meeting',
+    )
+    updateTask(task, taskUpdates(changed), actor, 'manual')
+    if (Object.keys(changed).length) approval.payload = { ...payload, task_overrides: changed }
   }
 }
 
@@ -222,7 +310,6 @@ export const approvalHandlers = [
   }),
   /*
    * 백엔드 resolve_approval 과 같은 순서다. 인증 → 본문 → 승인 존재 → PM(403) → 대기 중인지(409) → 반영.
-   * 처리자는 본문의 resolved_by 가 아니라 세션 팀원이다. task_overrides 는 approved task_create 에서만 읽는다
    */
   http.patch('/api/v1/approvals/:approvalId', async ({ params, request }) => {
     const unauthenticated = requireAuth()
@@ -243,6 +330,8 @@ export const approvalHandlers = [
     if (!approval) return fail('APPROVAL_NOT_FOUND', '승인 요청이 없습니다.', 404)
     const pm = requirePm(approval.workspace_id)
     if (pm instanceof Response) return pm
+    const overrides = normalizeOverrides(approval.type, body.status, body.task_overrides)
+    if (overrides instanceof Response) return overrides
     if (approval.status !== 'pending')
       return fail('APPROVAL_ALREADY_RESOLVED', '이미 처리된 승인 요청입니다.', 409, {
         approval_id: approval.approval_id,
@@ -251,9 +340,9 @@ export const approvalHandlers = [
     if (body.status === 'approved') {
       const prepared =
         approval.type === 'task_create'
-          ? prepareTaskCreate(approval, body.task_overrides)
+          ? prepareTaskCreate(approval, overrides)
           : approval.type === 'task_update'
-            ? prepareTaskUpdate(approval, typeof confirm === 'number' ? confirm : null)
+            ? prepareTaskUpdate(approval, typeof confirm === 'number' ? confirm : null, overrides)
             : // 그 밖의 종류(reminder_dm 등)는 태스크에 반영할 내용이 없다 — 백엔드와 같다
               () => {}
       if (prepared instanceof Response) return prepared

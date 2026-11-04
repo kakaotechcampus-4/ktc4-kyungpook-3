@@ -47,6 +47,10 @@ class ErrorCode(StrEnum):
     LAST_PM_REQUIRED = "LAST_PM_REQUIRED"
     EMBEDDING_UNAVAILABLE = "EMBEDDING_UNAVAILABLE"
     DISCORD_API_FAILED = "DISCORD_API_FAILED"
+    UPLOAD_NOT_CLAIMED = "UPLOAD_NOT_CLAIMED"
+    SPEAKERS_ALREADY_REPORTED = "SPEAKERS_ALREADY_REPORTED"
+    MEETING_NOT_AWAITING_SPEAKERS = "MEETING_NOT_AWAITING_SPEAKERS"
+    SPEAKERS_NOT_ASSIGNED = "SPEAKERS_NOT_ASSIGNED"
 
     # 리마인드·대화 메시지
     REMINDER_NOT_FOUND = "REMINDER_NOT_FOUND"
@@ -99,6 +103,10 @@ ERROR_STATUS: dict[ErrorCode, int] = {
     ErrorCode.LAST_PM_REQUIRED: 409,
     ErrorCode.EMBEDDING_UNAVAILABLE: 502,
     ErrorCode.DISCORD_API_FAILED: 502,
+    ErrorCode.UPLOAD_NOT_CLAIMED: 409,
+    ErrorCode.SPEAKERS_ALREADY_REPORTED: 409,
+    ErrorCode.MEETING_NOT_AWAITING_SPEAKERS: 409,
+    ErrorCode.SPEAKERS_NOT_ASSIGNED: 409,
     ErrorCode.REMINDER_NOT_FOUND: 404,
     ErrorCode.REMINDER_NOT_EDITABLE: 409,
     ErrorCode.REMINDER_SCHEDULED_AT_PASSED: 409,
@@ -149,6 +157,10 @@ ERROR_MESSAGE: dict[ErrorCode, str] = {
     ErrorCode.LAST_PM_REQUIRED: "워크스페이스에 PM이 한 명은 있어야 합니다. 다른 팀원을 먼저 PM으로 지정해 주세요.",
     ErrorCode.EMBEDDING_UNAVAILABLE: "임베딩 서버 호출에 실패했습니다. 잠시 후 다시 시도해 주세요.",
     ErrorCode.DISCORD_API_FAILED: "Discord 서버의 사용자 목록을 가져오지 못했습니다. 잠시 후 다시 시도해 주세요.",
+    ErrorCode.UPLOAD_NOT_CLAIMED: "AI가 아직 가져가지 않은 업로드입니다.",
+    ErrorCode.SPEAKERS_ALREADY_REPORTED: "이미 화자 목록을 받은 업로드입니다.",
+    ErrorCode.MEETING_NOT_AWAITING_SPEAKERS: "회의가 화자 지정 대기 상태가 아닙니다.",
+    ErrorCode.SPEAKERS_NOT_ASSIGNED: "화자 지정이 끝나지 않았습니다.",
     ErrorCode.REMINDER_NOT_FOUND: "해당 리마인드를 찾을 수 없습니다.",
     ErrorCode.REMINDER_NOT_EDITABLE: "예정 상태의 리마인드만 고치거나 승인하거나 취소할 수 있습니다.",
     ErrorCode.REMINDER_SCHEDULED_AT_PASSED: "예정 시각이 지났어요. 시각을 다시 골라 주세요.",

@@ -3,12 +3,12 @@ import { fetchDto, jsonRequest } from '@/shared/test/api'
 import type {
   MessageInboxDto,
   MessageReviewDto,
-  MessageSendResultDto,
   MessageThreadDto,
 } from '@/shared/types/api/message'
-import { db, replaceDb, resetDb } from './db'
+import { db, initialDb, replaceDb, resetDb } from './db'
 import { MOCK_NOW } from './fixtures/constants'
-import { restoreDb, saveDb } from './persistence'
+import { MOCK_DB_STORAGE_KEY, restoreDb, saveDb } from './persistence'
+import { setMockRole } from './sessions'
 import { applyScenario, createScenarioDb } from './scenarios'
 import type { MockScenario } from './scenarios'
 
@@ -22,6 +22,8 @@ const MESSAGE_SCENARIOS = [
   'messages-list-error',
   'messages-thread-error',
   'messages-send-fail',
+  'messages-member',
+  'messages-schedule-passed',
 ] as const satisfies readonly MockScenario[]
 
 afterEach(() => sessionStorage.clear())
@@ -35,9 +37,21 @@ const reviewPath = (reviewId: string, workspaceId = 'ws_01') =>
 const patchReview = (reviewId: string, body: unknown, workspaceId?: string) =>
   fetchDto<MessageReviewDto>(reviewPath(reviewId, workspaceId), jsonRequest('PATCH', body))
 const sendReview = (reviewId: string, workspaceId?: string) =>
-  fetchDto<MessageSendResultDto>(`${reviewPath(reviewId, workspaceId)}/send`, { method: 'POST' })
-const dismissReview = (reviewId: string) =>
-  fetchDto<{ review_id: string }>(`${reviewPath(reviewId)}/dismiss`, { method: 'POST' })
+  fetchDto<{ review_id: string }>(`${reviewPath(reviewId, workspaceId)}/send`, { method: 'POST' })
+const dismissReview = (reviewId: string, workspaceId?: string) =>
+  fetchDto<{ review_id: string }>(`${reviewPath(reviewId, workspaceId)}/dismiss`, {
+    method: 'POST',
+  })
+const replyTo = (threadId: string, body: unknown, workspaceId = 'ws_01') =>
+  fetchDto<{ message_id: string }>(
+    `/workspaces/${workspaceId}/messages/threads/${threadId}/replies`,
+    jsonRequest('POST', { body }),
+  )
+const attribute = (messageId: string, taskId: unknown, workspaceId = 'ws_01') =>
+  fetchDto<{ message_id: string }>(
+    `/workspaces/${workspaceId}/messages/replies/${messageId}/attribution`,
+    jsonRequest('POST', { task_id: taskId }),
+  )
 const snapshot = () => structuredClone({ reviews: db.messageReviews, threads: db.messageThreads })
 
 async function failure(promise: Promise<unknown>): Promise<ApiError> {
@@ -62,6 +76,14 @@ describe('메시지 조회 handler', () => {
       ['th_05', 'channel'],
     ])
     expect(threads[0].last_message?.message_id).toBe('mg_03')
+    expect(threads.map(({ needs_attribution }) => needs_attribution)).toEqual([
+      false,
+      true,
+      false,
+      false,
+      false,
+    ])
+    expect(threads[1]?.last_message?.body).toBe('거의 다 됐어요. 내일 오전에 올릴게요')
     expect(JSON.stringify({ reviews, threads })).not.toContain('workspace_id')
   })
 
@@ -79,12 +101,17 @@ describe('메시지 조회 handler', () => {
   })
 
   it('공간마다 따로다 — ws_02 에는 ws_01 의 항목이 없다', async () => {
+    // 픽스처 역할은 팀원이고 세션 팀원 대응이 없다. 한결의 대화는 그 공간의 PM 만 본다
+    const hidden = await inbox('ws_02')
+    expect(hidden.reviews).toEqual([])
+    expect(hidden.threads).toEqual([])
+    setMockRole('pm', 'ws_02')
     const { reviews, threads } = await inbox('ws_02')
     expect(reviews).toEqual([])
     expect(threads.map(({ thread_id }) => thread_id)).toEqual(['th_11'])
   })
 
-  it('대화는 메시지·역할·Discord 주소와 그 대화의 승인 대기 항목을 싣는다. 다른 공간의 대화나 없는 대화는 404 다', async () => {
+  it('대화는 메시지·역할·Discord 주소와 그 대화의 재촉을 시각 순으로 싣는다. 다른 공간의 대화나 없는 대화는 404 다', async () => {
     const detail = await thread('th_01')
     expect(detail).toMatchObject({
       thread_id: 'th_01',
@@ -92,16 +119,56 @@ describe('메시지 조회 handler', () => {
       name: '이재환',
       team_role: '백엔드',
       awaiting_reply_since: '2026-09-16T18:00:00+09:00',
-      pending_reviews: [{ review_id: 'rv_01', scheduled_at: '2026-09-23T09:00:00+09:00' }],
     })
-    expect(detail.messages.map(({ sender, delivery }) => [sender, delivery])).toEqual([
-      ['bot', 'auto'],
-      ['counterpart', null],
-      ['bot', 'approved'],
+    expect(
+      detail.messages.map(({ message_id, sender, status, at }) => [message_id, sender, status, at]),
+    ).toEqual([
+      ['mg_01', 'bot', 'sent', '2026-09-15T09:02:00+09:00'],
+      ['mg_02', 'member', 'sent', '2026-09-15T09:31:00+09:00'],
+      ['mg_03', 'bot', 'sent', '2026-09-16T18:00:00+09:00'],
+      ['rv_01', 'bot', 'pending', '2026-09-23T09:00:00+09:00'],
     ])
-    expect((await thread('th_02')).pending_reviews).toEqual([])
+    expect(detail.messages[2]).toMatchObject({ approved_by: '최진호' })
+    expect(detail.messages[3]).toMatchObject({ review_id: 'rv_01' })
+    expect(
+      (await thread('th_02')).messages.find(({ message_id }) => message_id === 'mg_05'),
+    ).toMatchObject({
+      body: '거의 다 됐어요. 내일 오전에 올릴게요',
+      source: 'discord',
+      attribution: {
+        status: 'needs_pm',
+        candidates: [
+          { task_id: 'tk_02', title: '회원가입 화면' },
+          { task_id: 'tk_05', title: '회의록 요약 검수' },
+        ],
+      },
+    })
     expect((await failure(thread('th_11'))).status).toBe(404)
     expect((await failure(thread('th_99'))).status).toBe(404)
+  })
+
+  it('취소됨·만료됨은 확인 목록에 없고, 대화의 기록으로만 남으며 미리보기는 바뀌지 않는다', async () => {
+    expect((await inbox()).reviews.map(({ review_id }) => review_id)).toEqual(['rv_01', 'rv_02'])
+    expect(
+      (await thread('th_03')).messages.find(({ message_id }) => message_id === 'rv_03'),
+    ).toMatchObject({
+      status: 'cancelled',
+      cancel_reason: 'responded',
+      at: '2026-09-08T09:00:00+09:00',
+    })
+    expect(
+      (await thread('th_04')).messages.find(({ message_id }) => message_id === 'rv_04'),
+    ).toMatchObject({
+      status: 'expired',
+      at: '2026-09-09T18:00:00+09:00',
+    })
+    const { threads } = await inbox()
+    expect(threads.find(({ thread_id }) => thread_id === 'th_03')?.last_message?.message_id).toBe(
+      'mg_07',
+    )
+    expect(threads.find(({ thread_id }) => thread_id === 'th_04')?.last_message?.message_id).toBe(
+      'mg_09',
+    )
   })
 
   it('소속이 아닌 공간은 403 이다', async () => {
@@ -118,42 +185,58 @@ describe('메시지 조회 handler', () => {
 })
 
 describe('보내기 전 확인 항목의 행동 handler — 성공할 때만 db 를 바꾼다 (D-137)', () => {
-  it('발송: 정해 둔 시각이 MOCK_NOW 뒤면 예약 메시지로 대화에 더하고 항목을 지운다', async () => {
-    const result = await sendReview('rv_01')
-    expect(result).toEqual({
-      thread_id: 'th_01',
-      message: {
-        message_id: 'mg_22',
-        sender: 'bot',
-        body: expect.stringContaining('API 명세서 마감이 다음 주 목요일(9/24)') as string,
-        sent_at: '2026-09-23T09:00:00+09:00',
-        status: 'scheduled',
-        delivery: 'approved',
-        approved_by: '최진호',
-      },
+  it('발송: 정해 둔 시각이 MOCK_NOW 뒤면 예약으로 남고 새 메시지는 만들지 않는다', async () => {
+    expect(await sendReview('rv_01')).toEqual({ review_id: 'rv_01' })
+    expect(db.messageReviews.find(({ review_id }) => review_id === 'rv_01')).toMatchObject({
+      state: 'approved',
+      approved_by: '최진호',
+      scheduled_at: '2026-09-23T09:00:00+09:00',
     })
-    expect((await inbox()).reviews.map(({ review_id }) => review_id)).toEqual(['rv_02'])
-    const detail = await thread('th_01')
-    expect(detail.pending_reviews).toEqual([])
-    expect(detail.messages.at(-1)?.status).toBe('scheduled')
+    expect(
+      db.messageThreads
+        .find(({ thread_id }) => thread_id === 'th_01')
+        ?.messages.map(({ message_id }) => message_id),
+    ).toEqual(['mg_01', 'mg_02', 'mg_03'])
+    expect((await inbox()).reviews.map(({ review_id }) => review_id)).toEqual(['rv_01', 'rv_02'])
+    expect((await inbox()).reviews[0]).toMatchObject({ status: 'scheduled', approved_by: '최진호' })
+    expect((await thread('th_01')).messages.at(-1)).toMatchObject({
+      message_id: 'rv_01',
+      status: 'scheduled',
+      at: '2026-09-23T09:00:00+09:00',
+    })
     // 예약은 아직 나가지 않았다 — 목록의 마지막 메시지와 답장 대기는 그대로다
     const summary = (await inbox()).threads.find(({ thread_id }) => thread_id === 'th_01')
     expect(summary?.last_message?.message_id).toBe('mg_03')
     expect(summary?.awaiting_reply_since).toBe('2026-09-16T18:00:00+09:00')
   })
 
-  it('발송: 지금 바로면 MOCK_NOW 에 나간 메시지이고 그 대화는 답장을 기다린다', async () => {
-    const result = await sendReview('rv_02')
-    expect(result.message).toMatchObject({ sent_at: MOCK_NOW, status: 'sent' })
+  it('발송: 지금 바로면 MOCK_NOW 에 나간 재촉이고 그 대화는 답장을 기다린다', async () => {
+    expect(await sendReview('rv_02')).toEqual({ review_id: 'rv_02' })
+    expect((await thread('th_03')).messages.at(-1)).toMatchObject({
+      message_id: 'rv_02',
+      status: 'sent',
+      at: MOCK_NOW,
+    })
     expect((await thread('th_03')).awaiting_reply_since).toBe(MOCK_NOW)
     expect((await inbox()).threads[0].thread_id).toBe('th_03')
+    expect((await inbox()).reviews.map(({ review_id }) => review_id)).toEqual(['rv_01'])
   })
 
-  it('보내지 않음: 항목만 지우고 대화는 그대로다', async () => {
-    const before = (await thread('th_01')).messages
+  it('보내지 않음: 취소된 기록으로 남고 확인 목록에서는 빠진다', async () => {
     expect(await dismissReview('rv_01')).toEqual({ review_id: 'rv_01' })
+    expect(db.messageReviews.find(({ review_id }) => review_id === 'rv_01')).toMatchObject({
+      state: 'cancelled',
+      cancel_reason: 'dismissed',
+      closed_at: MOCK_NOW,
+    })
     expect((await inbox()).reviews.map(({ review_id }) => review_id)).toEqual(['rv_02'])
-    expect((await thread('th_01')).messages).toEqual(before)
+    expect(
+      (await thread('th_01')).messages.find(({ message_id }) => message_id === 'rv_01'),
+    ).toMatchObject({
+      status: 'cancelled',
+      at: MOCK_NOW,
+      cancel_reason: 'dismissed',
+    })
   })
 
   it('고쳐 쓰기: 앞뒤 공백을 지운 문구를 저장한다. 빈 문구·너무 긴 문구는 400 이고 db 는 그대로다', async () => {
@@ -195,11 +278,33 @@ describe('보내기 전 확인 항목의 행동 handler — 성공할 때만 db 
     expect(snapshot()).toEqual(before)
   })
 
-  it('없는 항목·다른 공간의 항목은 404 다 — 이미 처리한 항목을 다시 보내도 같다', async () => {
+  it('없는 항목은 404 다 — 이미 처리한 항목을 다시 보내도 같다. PM 이 아닌 공간은 403 이다', async () => {
     await sendReview('rv_01')
     expect((await failure(sendReview('rv_01'))).status).toBe(404)
     expect((await failure(dismissReview('rv_99'))).status).toBe(404)
-    expect((await failure(patchReview('rv_02', { body: '가' }, 'ws_02'))).status).toBe(404)
+    const before = snapshot()
+    const denied = await failure(patchReview('rv_02', { body: '가' }, 'ws_02'))
+    expect(denied.status).toBe(403)
+    expect(denied.message).toBe('PM만 할 수 있는 작업입니다.')
+    expect(snapshot()).toEqual(before)
+  })
+
+  it('다른 공간의 PM 이 이 공간의 검토와 답장 판정을 하면 404 이고 db 는 그대로다', async () => {
+    setMockRole('pm', 'ws_02')
+    const before = snapshot()
+    const patched = await failure(patchReview('rv_01', { body: '고친 문구' }, 'ws_02'))
+    expect(patched.status).toBe(404)
+    expect(patched.code).toBe('MESSAGE_REVIEW_NOT_FOUND')
+    const sent = await failure(sendReview('rv_01', 'ws_02'))
+    expect(sent.status).toBe(404)
+    expect(sent.code).toBe('MESSAGE_REVIEW_NOT_FOUND')
+    const dismissed = await failure(dismissReview('rv_01', 'ws_02'))
+    expect(dismissed.status).toBe(404)
+    expect(dismissed.code).toBe('MESSAGE_REVIEW_NOT_FOUND')
+    const judged = await failure(attribute('mg_05', 'tk_02', 'ws_02'))
+    expect(judged.status).toBe(404)
+    expect(judged.code).toBe('MESSAGE_REPLY_NOT_FOUND')
+    expect(snapshot()).toEqual(before)
   })
 })
 
@@ -222,6 +327,139 @@ describe('메시지 시나리오', () => {
     expect((await thread('th_02')).thread_id).toBe('th_02')
   })
 
+  it('messages-member: 자기 대화만 보고 발송·보내지 않음·고쳐 쓰기는 403 이며 db 는 그대로다', async () => {
+    applyScenario('messages-member')
+    const listed = await inbox()
+    expect(listed.reviews).toEqual([])
+    expect(listed.threads.map(({ thread_id }) => thread_id)).toEqual(['th_06'])
+    expect(listed.threads[0]?.awaiting_reply_since).toBeNull()
+    expect(listed.threads[0]?.needs_attribution).toBe(false)
+    const hidden = await thread('th_06')
+    expect(hidden.awaiting_reply_since).toBeNull()
+    expect(hidden.messages.map(({ status }) => status)).not.toContain('pending')
+    expect(hidden.messages.every(({ approved_by }) => approved_by === null)).toBe(true)
+    expect(hidden.messages.every(({ attribution }) => attribution === null)).toBe(true)
+    expect(JSON.stringify(hidden)).not.toContain('팀원에게 숨긴 재촉')
+    const missing = await failure(thread('th_01'))
+    expect(missing.status).toBe(404)
+    expect(missing.code).toBe('MESSAGE_THREAD_NOT_FOUND')
+    const before = snapshot()
+    for (const request of [
+      sendReview('rv_01'),
+      dismissReview('rv_01'),
+      patchReview('rv_01', { body: '고친 문구' }),
+      patchReview('rv_01', { send_timing: 'now' }),
+      attribute('mg_05', 'tk_02'),
+    ]) {
+      const error = await failure(request)
+      expect(error.status).toBe(403)
+      expect(error.message).toBe('PM만 할 수 있는 작업입니다.')
+    }
+    expect(snapshot()).toEqual(before)
+  })
+
+  it('PM 의 답장과 남의 대화 답장은 403 이고 db 는 그대로다', async () => {
+    const before = snapshot()
+    const denied = await failure(replyTo('th_01', '답장'))
+    expect(denied.status).toBe(403)
+    expect(denied.message).toBe('자기 대화에만 답장할 수 있습니다.')
+    expect(snapshot()).toEqual(before)
+
+    applyScenario('messages-member')
+    const memberBefore = snapshot()
+    const other = await failure(replyTo('th_01', '답장'))
+    expect(other.status).toBe(403)
+    expect(other.message).toBe('자기 대화에만 답장할 수 있습니다.')
+    expect(snapshot()).toEqual(memberBefore)
+  })
+
+  it('답장은 1자 이상 2000자 이하고, 자기 답장은 답장 대기를 끝낸다', async () => {
+    applyScenario('messages-member')
+    expect((await failure(replyTo('th_06', '  '))).status).toBe(400)
+    expect((await failure(replyTo('th_06', '가'.repeat(2001)))).message).toBe(
+      '답장은 1자 이상 2000자 이하입니다.',
+    )
+    setMockRole('pm')
+    expect((await thread('th_06')).awaiting_reply_since).toBe('2026-09-17T18:00:00+09:00')
+    const reviews = structuredClone(db.messageReviews)
+    setMockRole('member')
+    const sent = await replyTo('th_06', '웹에서 한 줄 더')
+    expect(
+      db.messageThreads.find(({ thread_id }) => thread_id === 'th_06')?.messages.at(-1),
+    ).toMatchObject({
+      message_id: sent.message_id,
+      sender: 'member',
+      body: '웹에서 한 줄 더',
+      source: 'web',
+      attribution: null,
+      sent_at: MOCK_NOW,
+    })
+    expect(db.messageReviews).toEqual(reviews)
+    setMockRole('pm')
+    expect((await thread('th_06')).awaiting_reply_since).toBeNull()
+  })
+
+  it('messages-schedule-passed: 지난 예약 발송은 409 이고 마감 하루 전으로 되돌리기는 400 이다', async () => {
+    applyScenario('messages-schedule-passed')
+    const before = snapshot()
+    const denied = await failure(sendReview('rv_06'))
+    expect(denied.status).toBe(409)
+    expect(denied.code).toBe('MESSAGE_SCHEDULE_PASSED')
+    expect(denied.message).toBe('예정 시각이 지났습니다. 발송 시각을 다시 골라 주세요.')
+    expect((await inbox()).reviews.map(({ review_id }) => review_id)).toEqual([
+      'rv_01',
+      'rv_02',
+      'rv_06',
+    ])
+    expect(
+      (await failure(patchReview('rv_06', { send_timing: 'day_before_deadline' }))).status,
+    ).toBe(400)
+    expect(snapshot()).toEqual(before)
+  })
+
+  it('답장 판정은 후보나 해당 없음만 받고, 두 번째는 404 이며 재촉은 그대로다', async () => {
+    const reviews = structuredClone(db.messageReviews)
+    const before = snapshot()
+    const missing = await failure(attribute('mg_99', null))
+    expect(missing.status).toBe(404)
+    expect(missing.code).toBe('MESSAGE_REPLY_NOT_FOUND')
+    expect(missing.message).toBe('확인할 답장을 찾을 수 없습니다.')
+    expect((await failure(attribute('mg_04', null))).code).toBe('MESSAGE_REPLY_NOT_FOUND')
+    expect((await failure(attribute('mg_05', 'tk_01'))).message).toBe('후보에 없는 태스크입니다.')
+    expect((await failure(attribute('mg_05', 1))).message).toBe('후보에 없는 태스크입니다.')
+    expect(snapshot()).toEqual(before)
+
+    const resolved = await attribute('mg_05', 'tk_02')
+    expect(resolved.message_id).toBe('mg_05')
+    expect(
+      db.messageThreads
+        .find(({ thread_id }) => thread_id === 'th_02')
+        ?.messages.find(({ message_id }) => message_id === 'mg_05')?.attribution,
+    ).toEqual({ status: 'resolved', task_id: 'tk_02' })
+    expect(db.messageReviews).toEqual(reviews)
+    expect(
+      (await thread('th_02')).messages.find(({ message_id }) => message_id === 'mg_05')
+        ?.attribution,
+    ).toEqual({ status: 'resolved', task: { task_id: 'tk_02', title: '회원가입 화면' } })
+    expect(
+      (await inbox()).threads.find(({ thread_id }) => thread_id === 'th_02')?.needs_attribution,
+    ).toBe(false)
+    const again = await failure(attribute('mg_05', null))
+    expect(again.status).toBe(404)
+    expect(again.code).toBe('MESSAGE_REPLY_NOT_FOUND')
+    expect(again.message).toBe('확인할 답장을 찾을 수 없습니다.')
+  })
+
+  it('해당 없음도 답장 판정이다', async () => {
+    const resolved = await attribute('mg_05', null)
+    expect(resolved.message_id).toBe('mg_05')
+    expect(
+      (await thread('th_02')).messages.find(({ message_id }) => message_id === 'mg_05')
+        ?.attribution,
+    ).toEqual({ status: 'resolved', task: null })
+    expect((await failure(attribute('mg_05', 'tk_02'))).status).toBe(404)
+  })
+
   it('messages-send-fail: 조회는 되고 행동은 모두 5xx 이며 db 는 그대로다', async () => {
     applyScenario('messages-send-fail')
     expect((await inbox()).reviews).toHaveLength(2)
@@ -230,7 +468,14 @@ describe('메시지 시나리오', () => {
     expect((await failure(dismissReview('rv_01'))).status).toBe(500)
     expect((await failure(patchReview('rv_01', { body: '고친 문구' }))).status).toBe(500)
     expect((await failure(patchReview('rv_01', { send_timing: 'now' }))).status).toBe(500)
+    expect((await failure(attribute('mg_05', 'tk_02'))).status).toBe(500)
     expect(snapshot()).toEqual(before)
+  })
+
+  it('저장 버전 4 는 버린다', () => {
+    sessionStorage.setItem(MOCK_DB_STORAGE_KEY, JSON.stringify({ version: 4, db: initialDb() }))
+    expect(restoreDb(sessionStorage)).toBe(false)
+    expect(db).toEqual(initialDb())
   })
 
   it.each(MESSAGE_SCENARIOS)('%s 는 sessionStorage 에서 그대로 복원된다', (scenario) => {

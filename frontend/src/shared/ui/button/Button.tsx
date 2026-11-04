@@ -15,8 +15,6 @@ export type ButtonSize =
   | 'message-edit'
   | 'message-dismiss'
   | 'message-send'
-  | 'message-thread-dismiss'
-  | 'message-thread-approve'
 
 /** `ref` 는 React 19 의 일반 prop 이라 `...rest` 로 `<button>` 에 그대로 간다 — 포커스를 옮길 자리에서 쓴다 */
 export interface ButtonProps extends ComponentProps<'button'> {
@@ -77,8 +75,6 @@ const SIZE: Record<ButtonSize, string> = {
   'message-edit': 'h-36 gap-6 rounded-9 px-11 text-[12px]',
   'message-dismiss': 'h-44 gap-6 rounded-9 px-18 text-[14px]',
   'message-send': 'h-44 gap-8 rounded-9 px-24 text-[14.5px]',
-  'message-thread-dismiss': 'h-36 gap-6 rounded-9 px-16 text-(length:--text-control)',
-  'message-thread-approve': 'h-36 gap-6 rounded-9 px-20 text-(length:--text-control)',
 }
 
 /**

@@ -4,8 +4,6 @@ import { expectNoHorizontalOverflow, start } from './support'
 
 /*
  * M6 §5 — 태스크 목록·상세·확인 필요 상세. 상태는 MSW 시나리오(shared/mock/scenarios.ts)로만 만든다.
- * 개발 서버 + VITE_ENABLE_MSW 라 승인 처리 경로는 `msw` 다 — `보완하기` 가 있고 보완값이 승인 요청에 함께 실린다.
- * 실 API 의 보완 지원·승인 조회 PM 제한·실제 Notion 반영은 여기서 검증하지 않는다(별도 연동 과제).
  *
  * - tasks-default: ws_01 의 PM. 태스크 10건, 보완이 필요한 대기 생성 승인 3건(ap_01 알림 문구 검토 · ap_02 테스트 계획 정리 ·
  *   ap_03 배포 문서 보완). 셋 다 mt_09 회의의 추출 항목(it_04~it_06)이다. Notion 은 연동돼 있어 새 태스크는 반영 대기(pending)다
@@ -90,7 +88,7 @@ test('회의록의 확인 필요 항목을 보완·승인하고 돌아오면 회
   await expect(page).toHaveURL(`${WORKSPACE}/approvals/ap_01`)
   await expect(page.getByRole('heading', { name: '새 태스크 확인' })).toBeVisible(FIRST_PAINT)
   const approve = page.getByRole('button', { name: '승인', exact: true })
-  await expect(approve).toBeDisabled()
+  await expect(approve).toBeEnabled()
 
   await completeOverrides(page, { assignee: '박민수', due: '2026-10-20' })
   await expect(approve).toBeEnabled()
@@ -249,7 +247,7 @@ test('키보드 — 목록 탭은 화살표로 옮겨 URL 에 남고, 보완 폼
 
   // 꺼진 `승인` 은 이유 문구를 설명으로 읽는다
   const approve = page.getByRole('button', { name: '승인', exact: true })
-  await expect(approve).toHaveAccessibleDescription(/^승인하려면 담당자·마감 정보를/)
+  await expect(approve).toBeEnabled()
 
   const edit = page.getByRole('button', { name: '보완하기' })
   await tabTo(page, edit)
@@ -268,11 +266,9 @@ test('키보드 — 목록 탭은 화살표로 옮겨 URL 에 남고, 보완 폼
   await expect(title).toHaveAttribute('aria-invalid', 'true')
   await expect(title).toHaveAccessibleDescription('제목을 입력해 주세요.')
   const assignee = form.getByLabel('담당자')
-  await expect(assignee).toHaveAccessibleDescription(
-    '이 워크스페이스의 팀원 중에서 담당자를 골라 주세요.',
-  )
+  await expect(assignee).not.toHaveAttribute('aria-invalid', 'true')
   const due = form.getByLabel('마감')
-  await expect(due).toHaveAccessibleDescription('마감 날짜를 입력해 주세요.')
+  await expect(due).not.toHaveAttribute('aria-invalid', 'true')
 
   // 키보드로 고친다 — 제목 입력, 담당자는 화살표, 마감은 포커스한 칸에 값 입력
   await page.keyboard.type('알림 문구 최종 검토')
@@ -373,3 +369,80 @@ for (const width of VIEWPORTS) {
     }
   })
 }
+
+test('담당자와 마감을 미정으로 승인하고 원래 제안과 서버 반영값을 함께 읽는다', async ({
+  page,
+}, testInfo) => {
+  const bodies: unknown[] = []
+  page.on('request', (request) => {
+    if (
+      request.method() === 'PATCH' &&
+      new URL(request.url()).pathname === '/api/v1/approvals/ap_03'
+    )
+      bodies.push(request.postDataJSON())
+  })
+  await start(page, 'tasks-default', `${WORKSPACE}/approvals/ap_03`)
+  await page.getByRole('button', { name: '보완하기' }).click()
+  const form = page.getByRole('group', { name: '확정할 값 보완' })
+  await form.getByLabel('제목').fill('미정으로 승인한 태스크')
+  await form.getByLabel('담당자').selectOption('')
+  await form.getByRole('button', { name: '마감 미정' }).click()
+  await page.getByRole('button', { name: '보완 완료' }).click()
+  await page.getByRole('button', { name: '승인', exact: true }).click()
+  await expect(page.getByTestId('approval-result')).toHaveText(/^승인했어요/)
+  expect(bodies).toEqual([
+    {
+      status: 'approved',
+      task_overrides: { task_title: '미정으로 승인한 태스크', due_date: null },
+    },
+  ])
+  await expect(page.getByLabel('반영한 값')).toContainText('미정으로 승인한 태스크')
+  await expect(page.getByLabel('반영한 값')).toContainText('미정')
+  await expect(page.getByLabel('요청한 값')).toContainText('2026-09-25')
+  await testInfo.attach('undecided-approved-result', {
+    body: await page.screenshot({ fullPage: true }),
+    contentType: 'image/png',
+  })
+})
+
+test('변경 보완 뒤 충돌하고 입력을 바꿨다 되돌려 취소해도 새 충돌을 확인한 뒤에만 재승인한다', async ({
+  page,
+}, testInfo) => {
+  const bodies: unknown[] = []
+  page.on('request', (request) => {
+    if (
+      request.method() === 'PATCH' &&
+      new URL(request.url()).pathname === '/api/v1/approvals/ap_04'
+    )
+      bodies.push(request.postDataJSON())
+  })
+  await start(page, 'approval-conflict', `${WORKSPACE}/approvals/ap_04`)
+  await page.getByRole('button', { name: '보완하기' }).click()
+  await page.getByLabel('마감', { exact: true }).fill('2026-10-22')
+  await page.getByRole('button', { name: '보완 완료' }).click()
+  await page.getByRole('button', { name: '승인', exact: true }).click()
+  await expect(page.getByRole('alert', { name: '변경 충돌' })).toBeVisible()
+  await page.getByRole('button', { name: '보완하기' }).click()
+  await page.getByLabel('마감', { exact: true }).fill('2026-10-23')
+  await page.getByLabel('마감', { exact: true }).fill('2026-10-22')
+  await page.getByRole('button', { name: '취소', exact: true }).click()
+  await expect(page.getByRole('alert', { name: '변경 충돌' })).toHaveCount(0)
+  await page.getByRole('button', { name: '승인', exact: true }).click()
+  await expect(page.getByRole('alert', { name: '변경 충돌' })).toBeVisible()
+  expect(bodies).toEqual([
+    { status: 'approved', task_overrides: { due_date: '2026-10-22' } },
+    { status: 'approved', task_overrides: { due_date: '2026-10-22' } },
+  ])
+  await testInfo.attach('updated-conflict', {
+    body: await page.screenshot({ fullPage: true }),
+    contentType: 'image/png',
+  })
+  await page.getByRole('button', { name: '지금 값을 확인했어요, 다시 승인' }).click()
+  await expect(page.getByTestId('approval-result')).toHaveText(/^승인했어요/)
+  expect(bodies.at(-1)).toEqual({
+    status: 'approved',
+    task_overrides: { due_date: '2026-10-22' },
+    confirm_task_version: 1,
+  })
+  await expect(page.getByRole('table', { name: '현재값과 제안값' })).toContainText('2026-10-22')
+})

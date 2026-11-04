@@ -81,3 +81,33 @@ PowerShell 출력 리다이렉션을 거치지 않는 Node 직접 실행도 시�
 
 - [시작 작업 선택 결정](basis-for-decision/2026-11-03-onboarding-start-intent.md)
 - [실행 스킬과 기능 지도](../../../../.cursor/skills/verify-managers-manager/SKILL.md)
+
+## 2026-11-04 추가 결과: 온보딩·가드 테스트의 모션 환경
+
+사용자가 PR #312에서 보고된 테스트 실패 4건의 해결을 요청했다. 이 기록은 기존 M4 결과와 과거 실행 한계를 보존하며, 네 사례와 검증 환경의 추가 수정만 다룬다.
+
+### 실제 변경과 조건 대응
+
+- `shared/test/setup.ts`의 `beforeEach`에서 고정 모션 선호를 설치한다. 일반 UI 테스트는 실제 마스코트의 모션 감소 분기를 사용한다. 모션 검증은 기존 테스트의 명시적인 선호 override를 유지한다.
+- 기본 환경에서 프레임을 예약하지 않는 회귀 검사를 추가했다. API 누락 검사는 `matchMedia=undefined`를 명시한다. 제품 코드·5초 제한·기존 사용자 흐름 단언은 바꾸지 않았다.
+
+| 기존 조건 또는 요청 사례 | 확인 결과 | 근거 |
+|---|---|---|
+| U3-1 첫 생성 화면의 단계·말풍선·카드·비활성 화살표 | 통과 | `onboardingCreate.test.tsx` |
+| 비로그인 보호 경로의 로그인 이동·업무 API 0건 | 통과 | `router/guards.test.tsx` |
+| U2-6 소속 0개 계정의 시작 방식 선택 진입 | 통과 | `router/guards.test.tsx` |
+| U3-2 PM 선택 후 공간 생성·온보딩 시작 | 통과 | `onboardingStart.test.tsx` |
+
+### 실제 검증
+
+- 수정 전 네 사례 분리 실행은 3개 통과·PM 입력 1개가 기본 5000ms 초과로 실패했다. 추적 시 생성 POST·온보딩 PATCH는 시작되지 않았고 rAF 예약 36회가 기록됐다. 프레임 실행만 멈춘 대조는 같은 제한에서 통과했다. 다른 세 사례의 과거 실패 원인이나 제품 결함을 확정한 결과는 아니다.
+- 새 기본 모션 회귀 검사는 수정 전 실제 프레임 예약 1회로 실패했다. 수정 후 원래 네 사례를 포함한 온보딩·가드·마스코트 4개 파일, 104개 테스트가 모두 통과했다. 모션 허용·감소·설정 변경·언마운트·API 부재 검사를 포함한다.
+- 실행 명령은 `vitest run src/app/onboardingCreate.test.tsx src/app/router/guards.test.tsx src/app/onboardingStart.test.tsx src/shared/ui/mascot/Mascot.test.tsx --maxWorkers=2`다. Node v24.11.0에서 기본 제한을 사용했다. 근거는 저장소 루트 `.verify/fix-four/related.json`, `motion-before.log`, `repro.json`, `trace.log`, `trace-motion-off.log`다.
+- `vitest run --maxWorkers=2` 전체 단위 검사도 176개 파일·2,141개 테스트가 실패·skip 없이 통과했다. 원본 결과는 `.verify/fix-four/full.json`이다. `tsc --noEmit` 타입 검사도 통과했다.
+- 독립 리뷰의 API 부재 조건 확인 지적을 반영한 뒤 마스코트 38개를 다시 통과했다. 최종 타입·린트·포맷 검사도 통과했다. 명령별 종료 코드는 `.verify/fix-four/last-checks.json`에 보관한다. 변경 문서 링크와 보호 계획 20개의 보존을 점검했다.
+
+### 계획 대비 차이와 한계
+
+기존 DOM·모의 API 검증에 테스트 브라우저의 모션 선호를 추가했다. 서버 계약과 실제 브라우저의 사용자 선호는 달라지지 않는다. 이번 결과로 전체 M4의 실서비스 연동 완료를 선언하지 않는다.
+
+- [테스트 모션 선호 결정](basis-for-decision/2026-11-04-test-motion-preference.md)

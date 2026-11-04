@@ -149,3 +149,50 @@ describe('toApprovalResolveFailure', () => {
     expect(toApprovalResolveFailure(undefined)).toBeNull()
   })
 })
+
+describe('stored approval edits', () => {
+  it('keeps the original proposal and evidence separate from partial nullable overrides', () => {
+    const original = approvalFixtures[0]
+    expect(
+      toApproval({
+        ...original,
+        status: 'approved',
+        payload: {
+          ...original.payload,
+          task_overrides: { task_title: '최종 제목', due_date: null, future: true },
+        },
+      }),
+    ).toMatchObject({
+      title: original.payload.task_title,
+      evidence: { quote: original.payload.evidence_quote },
+      storedOverrides: { taskTitle: '최종 제목', dueDate: null },
+    })
+    expect(
+      toApproval({
+        ...original,
+        type: 'task_update',
+        status: 'approved',
+        payload: { status: 'done', due_date: '2026-10-22', task_overrides: { due_date: null } },
+      }),
+    ).toMatchObject({
+      changes: [
+        { field: 'status', value: 'done' },
+        { field: 'due_date', value: '2026-10-22' },
+      ],
+      storedOverrides: { dueDate: null },
+    })
+  })
+  it.each([
+    ['task_create', { task_title: null }],
+    ['task_create', { assignee_member_id: 1 }],
+    ['task_create', { due_date: false }],
+    ['task_update', { status: null }],
+    ['task_update', { status: 'invalid' }],
+    ['task_update', { due_date: 2 }],
+    ['task_create', null],
+  ])('rejects malformed known stored fields for %s', (type, task_overrides) => {
+    expect(() => toApproval({ ...approvalFixtures[0], type, payload: { task_overrides } })).toThrow(
+      expect.objectContaining({ kind: 'invalid_response', code: 'INVALID_RESPONSE' }),
+    )
+  })
+})

@@ -1,5 +1,45 @@
 # 프론트엔드 API 계약
 
+## 진행률 제거와 보완 승인 경계 (#311, 2026-11-04)
+
+작업 근거는 [FE 요청 #305](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/305)와 [구현 이슈 #311](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/311)이다. 서버 규약은 [BE PR #307](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/pull/307)의 스키마·승인 처리·계약 변경을 대조했다. 확인 당시 PR은 OPEN이며, 아래 규약이 로컬 백엔드나 배포 서버에 적용됐다고 가정하지 않는다. 아래의 예전 M6 필수값·MSW 전용 보완 기록보다 이 절의 후속 요구사항이 우선한다.
+
+### 제안 값을 고쳐 승인 `task_overrides`
+
+`PATCH /api/v1/approvals/{approval_id}` 한 번에 PM 수정값과 승인을 보낸다. 승인 뒤 별도 태스크 수정 요청을 보내지 않는다.
+
+| 항목 | 규약과 FE 처리 |
+|---|---|
+| 생성 승인 | `task_title`, `assignee_member_id`, `due_date`만 수정한다. 상태는 선택하지 않으며 항상 `todo`로 생성한다 |
+| 수정 승인 | `status`, `due_date`만 수정한다. 원래 제안의 다른 변경 필드와 근거는 보존한다 |
+| 키 생략 | 해당 필드는 원래 제안을 유지한다. 편집하지 않은 현재 태스크 값을 보완값으로 채워 보내지 않는다 |
+| 명시적 `null` | 담당자·마감을 미정으로 확정한다. `task_title`·`status`는 `null`을 허용하지 않는다 |
+| 최종 생성값 검증 | 제목은 trim 후 1~300 코드 포인트, 지정된 담당자는 현재 공간 팀원, 지정된 마감은 유효한 `YYYY-MM-DD`다. 담당자·마감 미정만으로 승인을 막지 않는다 |
+| 반려 | `{status: "rejected"}`만 전송한다. 보완값과 확인 버전을 섞지 않는다 |
+| 실 API와 MSW | 같은 요청 매핑과 승인 판정을 사용한다. 보완값을 제거한 status-only 요청으로 자동 재시도하지 않는다 |
+| 400·404 | 잘못된 키·날짜·상태는 400 `INVALID_REQUEST`, 다른 공간 담당자는 400 `WORKSPACE_MISMATCH`, 없는 팀원은 404 `MEMBER_NOT_FOUND`다. 서버 승인은 pending으로 남고 FE 입력도 유지한다 |
+| 409 충돌 | 서버는 PM 수정값을 적용한 최종 값으로 검사한다. 응답 `conflicts[].proposed`를 반영 예정값으로 표시한다 |
+| 명시적 재승인 | 충돌을 확인한 PM이 다시 누를 때 같은 수정값과 응답의 `details.task_version`을 `confirm_task_version`으로 보낸다. 재충돌은 새 정보를 표시하고 다시 확인받는다. 자동 재승인은 없다 |
+| 확인 해제 | 충돌 후 승인 입력을 바꾸면 이전 확인 버전을 해제한다. 입력을 원래대로 되돌려도 과거 확인을 복원하지 않는다 |
+| 이미 처리됨 | 기존 `APPROVAL_ALREADY_RESOLVED` 재조회와 중복 전송·세션 보호를 유지한다 |
+| 승인 응답 | 원래 제안·근거는 유지하고 제안과 다른 값만 `payload.task_overrides`에 남는다. 완료 화면은 서버 응답의 원래 값에 보완값을 적용하며, `null`을 원래 값으로 대체하지 않는다 |
+| 이력 | PM 수정 필드는 `change_source: "manual"`, `changed_by`는 승인한 PM이다. 다른 필드의 출처는 서버의 payload `change_source`와 생성·수정별 기본값을 따른다. FE는 서버 이력을 표시한다 |
+
+요청 예시는 다음과 같다. 실행 검증 결과는 아래 연결한 M6 결과에서 별도로 구분한다.
+
+```json
+{"status":"approved","task_overrides":{"task_title":"로그인 API 연동","assignee_member_id":null}}
+{"status":"approved","task_overrides":{"status":"done","due_date":null},"confirm_task_version":7}
+```
+
+### Task 진행률과 과거 이력
+
+Task DTO·모델·생성 및 변경 요청·MSW와 현재 태스크 화면에서 `progress`를 제거한다. `in_progress` 상태, 회의 처리·업로드·온보딩 진행은 별개다. 과거 `changed_field: "progress"` 이력은 읽기 전용으로 표시하고 되돌리기를 제공하지 않는다. MSW 되돌리기도 이 필드를 400으로 거절한다. 노션의 기존 Progress 속성을 삭제하거나 기록하는 작업은 없다.
+
+### 구현과 검증의 구분
+
+FE 변경과 실제 검증은 [M6 후속 결과](../plan/m6/result.md)에 기록한다. 요청 경계는 [승인 DTO](../../src/shared/types/api/approval.ts), [도메인 판정](../../src/entities/approval/model/resolution.ts), [mapper](../../src/entities/approval/model/mapper.ts), [승인 훅](../../src/features/approval-resolve/model/useApprovalResolve.ts), [MSW 승인](../../src/shared/mock/handlers/approval.ts)에서 확인한다. MSW 성공은 실제 서버 승인·DB·Notion 반영의 증거가 아니다. 공개 서버의 `/openapi.json`은 확인 시 SPA HTML을 반환해 새 스키마·배포 상태를 검증하지 못했다. BE 변경을 배포한 환경에서 실 API 검증이 남는다.
+
 ## 현재 코드 대조 (2026-10-07)
 
 이 파일은 프론트엔드–백엔드 API의 대표 계약이다. 제공자는 [백엔드 API](../../../backend/app/api), 소비자는 [프론트엔드 entities](../../src/entities)이며, 개발·테스트에서는 [MSW handlers](../../src/shared/mock/handlers)가 서버 응답을 모의한다. 아래는 현재 작업 트리 소스의 정적 확인 결과다. 실제 서비스 호출·OAuth·STT 성공이나 팀 간 신규 합의를 뜻하지 않는다.
@@ -123,7 +163,7 @@ M6 S1에서 프론트 계약·데이터 계층을 현재 서버 코드에 맞췄
 > - 보완값이 **없어도** 최종 제목(trim 후 1~300자)·담당자·마감(유효한 `YYYY-MM-DD`)을 검사하고, 실패하면 400 `INVALID_REQUEST`(`details.field`)다. 위 「현재 서버 구현」의 생성 승인 반영(필수 검사 없음)과 다르며, 요청안 M6-3을 모의한 동작이다.
 > - 추출 항목의 공간·연결 승인, 담당자·회의 소속을 모두 검증한 뒤에만 태스크 생성·이력·추출 항목 `task_id` 연결·승인 상태 변경을 한꺼번에 적용한다. 실패하면 아무것도 바꾸지 않는다(요청안 M6-2 모의). 추출 항목의 `approval_id`는 서버처럼 남긴다.
 > - 승인 목록·상세 조회는 서버처럼 공간 소속만 검사한다. PM 제한(요청안 M6-4)은 모의하지 않는다.
-> - 화면의 처리 경로(transport)는 개발 서버이고 `VITE_ENABLE_MSW=true`일 때만 `msw`다([transport](../../src/features/approval-resolve/model/transport.ts)). production 빌드와 Storybook 빌드는 `live`라 `task_overrides`를 보내지 않는다.
+> - 화면의 처리 경로(transport)는 개발 서버이고 `VITE_ENABLE_MSW=true`일 때만 `msw`다(당시 `transport.ts`, #311에서 삭제). production 빌드와 Storybook 빌드는 `live`라 `task_overrides`를 보내지 않는다.
 
 #### 백엔드 요청 (합의 여부 확인 필요)
 
@@ -755,7 +795,7 @@ MSW 는 **API 를 흉내내므로 100자 기준을 그대로 쓴다.** 여기에
 |---|---|
 | §4.1 Google OAuth `start` · `callback` (302) | 미구현. 로컬 이메일·비밀번호 경로만 있다 |
 | §4.3 integrations `start` · `callback` (302) | 미구현. 연결을 만들 방법이 API 에 없다 |
-| §4.7-3 `failed_stage` 값 구분 | 미구현. 자유 문자열 그대로 |
+| §4.7-3 `failed_stage` 값 구분 | 자유 문자열 유지. #256의 `diarize`·`speaker_assignment_expired`는 §4.4.1대로 구분. Notion 원인 전용 값은 미확정 |
 | §4.7-4 요약 저장 | **절반.** `Extraction.summary` 컬럼은 생겼고 `/minutes` 가 읽지만, 채우는 쪽이 없다 |
 | §4.7-5 transcript 구조화 | 미구현 (②-11) |
 | §2.6 actor 유추 | 미구현. `created_by` · `changed_by` · `resolved_by` 를 여전히 프론트엔드가 실어 보낸다 |
@@ -887,11 +927,11 @@ M4 에서 실 API 로 완결되지 않는다. 그때까지 MSW 로 진행한다.
 | GET | `/api/v1/meetings/{meeting_id}/minutes` | 회의록 본문 |
 
 ```jsonc
-// GET .../meetings — started_at 내림차순, 실패 회의 제외 (D-093, D-106)
+// GET .../meetings — started_at 내림차순, 일반 실패 제외·수동 업로드 화자 지정 만료 이력 유지 (D-093 개정, D-106)
 {"items": [{"meeting_id": "mt_09", "title": "3주차 정기회의",
             "started_at": "2026-09-15T14:00:00Z", "source": "discord",
             "status": "done", "duration_ms": 2730000,
-            "attendee_count": 5, "processed_at": "2026-09-15T06:12:00Z"}],
+            "attendee_count": 5, "processed_at": "2026-09-15T06:12:00Z", "failed_stage": null}],
  "total": 12}
 ```
 
@@ -937,6 +977,24 @@ POST .../meetings/upload            multipart/form-data
 - ⚠️ `attendees` 를 `audio_segment` 의 화자에서 역산한다. 말하지 않은 참석자가 빠지고, 로컬 업로드는 세그먼트가 없어 **빈 배열**이 된다.
 - ⚠️ `summary` 는 `Extraction.summary` 컬럼(TEXT)을 `json.loads` 한다. **채우는 쪽이 아직 없어 항상 `null`** 이다 (§4.7-4).
 - 비소속 사용자는 403 `FORBIDDEN` 이다. `MEETING_NOT_FOUND` 가 아니라 존재는 드러난다.
+
+#### 4.4.1 수동 업로드 실패 사유와 만료 이력 (#256, 2026-11-04)
+
+- 제공자는 BE, 소비자는 FE 회의 목록·상세·처리 추적기다. 경로는 기존 목록과 상세를 사용한다.
+- 목록 항목에 `failed_stage: string | null`을 추가한다. 상세의 기존 필드는 유지한다. 구버전 BE 목록이 이 필드를 생략하면 FE는 `null`로 읽는다.
+- `failed_stage`는 자유 문자열이다. 알려진 값만 아래와 같이 구분하고, 알 수 없는 값과 `null`에는 기존 일반 실패·Notion 연결 재조회 처리를 적용한다.
+
+| 알려진 값 | 의미와 FE 안내 |
+|---|---|
+| `diarize` | 음성 화자 분리 단계 실패. 음성 처리를 완료하지 못했다는 안내와 재업로드 안내를 표시한다. 이 값만으로 3시간 초과라고 단정하지 않는다. |
+| `speaker_assignment_expired` | 화자 지정 대기가 7일을 넘어 종료됐다. 사유와 원본 파일 재업로드 안내를 표시한다. |
+
+- 목록은 `source=manual_upload`, `status=failed`, `failed_stage=speaker_assignment_expired`인 회의를 보존한다. 나머지 실패 회의는 기존처럼 제외한다. 상세는 `GET /meetings/{meeting_id}`로 읽으며 만료된 회의의 회의록·추출은 조회하지 않는다. 멤버십 제한은 유지한다.
+- FE 합의 근거는 [이슈 결정 댓글](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/256#issuecomment-6609243822)과 D-091~D-093의 2026-11-04 보완이다. BE 목록 변경은 이 작업의 구현 제안이며 파트 간 리뷰·합의와 실서버 배포 확인은 별도다.
+- 현재 구현 근거: [BE 목록](../../../backend/app/api/workspaces.py), [FE DTO](../../src/shared/types/api/meeting.ts), [매퍼](../../src/entities/meeting/model/mapper.ts), [실패 안내](../../src/entities/meeting/lib/meetingFailure.ts), [목록 구분](../../src/entities/meeting/lib/minutesList.ts), [추적기](../../src/features/meeting-processing/model/useProcessingTracker.ts).
+- 자동 실패 전환은 미병합 [BE PR #301](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/pull/301)의 동작이다. 이 작업은 sweeper나 화자 지정 기능을 구현하지 않는다.
+- 예정 계약: [BE 알림 댓글](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/256#issuecomment-6604969982)에 따라 지정 제출 직후 만료되면 `409 MEETING_NOT_AWAITING_SPEAKERS`, `details.status=failed`가 온다. FE는 상세를 다시 조회해 실제 사유를 안내하고 재제출을 막는 방향이다. 현재 `develop`에는 화자 지정 제출 UI가 없어 이 오류의 실제 화면 연결은 후속 작업이다. 모든 409를 만료로 해석하지 않는다.
+
 
 ### 4.5 Discord 서버 사용자 목록
 
@@ -1203,7 +1261,7 @@ members 에만 있고 Discord 목록에 없으면      → 비활성 (서버를 
     그 목록에 있는 `approval_id` 만 고른다. 반려된 항목이 `extraction_item` 에 그대로 남기 때문이다 (§3.1, §4.0-②-12).
 - 일반 팀원에게는 `task_id` 가 없고 `approval_id` 가 있는 항목을 화면에서 제거한다. 개수도 노출하지 않는다 (D-104).
   대기든 반려든 보여줄 태스크가 없으므로 조인 없이 판정되며, D-163 대로 승인 목록을 부르지 않아도 된다.
-- 정리 실패 시 회의록 페이지로 이동하고 토스트를 띄운다. 실패한 회의는 목록에 없다 (D-091~D-093).
+- 정리 실패 시 사유를 안내한다. 화자 지정 만료는 해당 회의의 실패 상세로 이동하고 목록에 이력을 남긴다. 나머지 실패 회의는 목록에서 제외한다 (D-091~D-093 개정, §4.4.1).
 
 ### 5.6 태스크 목록 · 보드 · 캘린더 · 간트
 
@@ -1274,6 +1332,16 @@ members 에만 있고 Discord 목록에 없으면      → 비활성 (서버를 
 - 팀원이 봇 DM 창에 쓴 글은 리마인드에 대한 답인지와 상관없이 모두 대화에 들어가 PM 이 본다. 팀원 화면에 이를 안내해야 한다.
 - 팀원 권한은 로그인 계정이 연결된 팀원(`member.user_id`) 기준이다. 계정이 연결되지 않은 팀원은 웹 답장을 할 수 없다.
 - 아직 없는 것: 답장의 태스크 판정 입력(`답장 확인 필요`)과 판정 결과, 태스크 안내 DM·#회의록 요약, 스케줄러(3일 전 제안, 발송 직전 재확인, 5분 합치기, 만료 처리), 알림 설정, AI 초안 워커. MSW 의 `reviews/{id}/send|dismiss` 는 `bundles/{id}/approve|cancel` 로 바뀐다. 프론트엔드 요청은 #315.
+
+**MSW 동작 (임시, 합의 전).** 아래는 개발 서버 목의 현재 구현이다. 백엔드와 합의한 규약이 아니고, 합의 여부 확인 필요. 재촉 자동 승인은 목에서 꺼져 있으며, 예약 시각이 지나도 스스로 나가지 않는다.
+
+- 경로. `GET /workspaces/{id}/messages`, `GET …/messages/threads/{thread_id}`, `PATCH …/messages/reviews/{review_id}`, `POST …/reviews/{id}/send`, `POST …/reviews/{id}/dismiss`, `POST …/messages/threads/{thread_id}/replies`, `POST …/messages/replies/{message_id}/attribution`.
+- 상태. 재촉 한 건의 저장 단계는 `pending`·`approved`·`sent`·`cancelled` 다. `expired` 는 저장하지 않고, 마감일이 오늘(서울 날짜)보다 앞인 `pending` 을 읽을 때 계산한다. `보내기 전 확인` 은 열린 항목(`pending`·`approved`)만 담는다. 화면에서 승인 대기와 예약은 `예정`, 취소됨·만료됨만 그 상태 말을 붙인다. 발송된 항목은 상태 말 없이 시각 줄이 있는 말풍선이다.
+- 자리. 승인 대기·예약은 나갈 시각 `scheduled_at` 이다. `지금 바로` 는 null 이라 아직 나가지 않은 묶음에 둔다. 발송됨·취소됨은 `closed_at` 이다. 취소는 `min(scheduled_at, 취소한 시각)` 에 놓는다. 만료는 `min(scheduled_at, 마감 다음 날 00:00)` 에 놓는다.
+- 권한. 승인·고쳐 쓰기·보내지 않음·발송 시점·답장 판정은 PM 만 한다. 아니면 403 `PM만 할 수 있는 작업입니다.` 이고 기록은 그대로다. 답장은 그 대화의 팀원만 한다. 아니면 403 `자기 대화에만 답장할 수 있습니다.`
+- 팀원 조회. 목록은 `reviews: []` 와, `member_id` 가 그 공간의 세션 팀원과 같은 대화만이다. 세션 팀원을 정할 수 없으면 대화가 없다. 남의 대화 조회는 404 `MESSAGE_THREAD_NOT_FOUND` 다. 팀원에게는 이미 전달된 메시지만 주고, 승인·답장 대기·태스크 판정은 비운다.
+- 발송과 수정. 승인 대기가 아니면 발송은 404 다. 예약 시각이 지났으면 409 `MESSAGE_SCHEDULE_PASSED` 이고 기록은 그대로다. 시각이 없으면 지금 발송되고, 있으면 같은 항목이 예약으로 목록에 남는다. 승인된 항목을 고치거나 시각을 바꾸면 다시 승인 대기가 된다. `이대로 발송` 만 보낸다.
+- 웹 답장. 그 대화에만 남고 Discord 로 나가지 않으며 재촉 상태를 바꾸지 않는다. 태스크 판정은 비어 있다. PM 화면에는 목록을 다시 받을 때만 보인다 (D-136).
 
 **프론트엔드가 정한 정책** (D-174, 백엔드·AI 합의 여부 확인 필요). 서버가 해 줘야 하는 일만 적는다. 정책 전문은 D-174 에 있다.
 
