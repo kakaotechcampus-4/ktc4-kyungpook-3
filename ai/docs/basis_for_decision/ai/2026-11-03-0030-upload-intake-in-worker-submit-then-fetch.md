@@ -31,6 +31,7 @@ BE 가 웹 업로드를 받아 두면 AI 가 가져가 화자 분리까지 해�
 - **모든 형식을 PyAV 로 조금씩 읽어 16kHz 로 리샘플**: m4a·webm 을 서버 설치 없이 읽고 메모리 위험도 줄인다. 채널은 원래 배치로 리샘플한 뒤 직접 평균한다(PyAV 의 mono 다운믹스는 0.707 계수라 기존 기대값과 다르다).
 - **원본은 매니페스트 저장 뒤 삭제, `recordings/` 공유(세션 `upload_<meeting_id>`), pyannoteAI 에는 16k mono wav**.
 - **실패**: 시간대 없는 `started_at`, 파일 없음, 디코딩 실패, 화자 구간 없음은 바로 `failed_stage=diarize`. 연결·5xx·pyannoteAI 오류·30분 초과는 디스코드 회의와 같은 재시도 규칙(5회, 60초부터 두 배). 재시도 횟수는 업로드 한 건 전체에 누적한다.
+- **claim 뒤 전체 기한 2시간 30분** (2026-11-04 추가): BE sweeper([#301](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/pull/301))는 마지막 진행에서 3시간이 지난 업로드를 `failed` 로 바꾼다([#288](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/288) 합의). 결과 대기 30분 × 5회와 재시도 간격을 더하면 3시간 근처라, claim 시각부터 2시간 30분이 지나면 다시 맡기지도 트랙을 쓰지도 않고 `failed_stage=diarize` 로 보고한다. BE 가 먼저 실패 처리했으면 원본은 404, `/fail` 은 409 `MEETING_ALREADY_ENDED` 이고 둘 다 끝난 것으로 보고 로컬 원본·변환 파일만 지운다.
 
 ## 장단점과 감수한 제약
 

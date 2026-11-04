@@ -66,7 +66,7 @@ recordings/         녹음 산출물 (git 제외)
   명시적 opt-in 입니다. 환경 변수 `MM_UPLOAD_INTAKE=1` 이고 `BE_BASE_URL`·`BE_SERVICE_TOKEN`·`PYANNOTEAI_API_KEY` 가 모두 있을 때만 켜지고,
   아니면 BE 도 pyannoteAI 도 부르지 않습니다. **운영 서버 한 대에서만 켭니다(BE 의 claim 계약은 단일 워커를 전제로 합니다).** 워커가 바퀴 끝(정지 신호가 없을 때만)에 한 번 `intake_one` 을 부르며, 한 번에 한 건을 한 단계만 진전시킵니다.
   흐름은 BE `GET /uploads/pending` → `PATCH /uploads/{id}/claim`(조건부 한 번) → 원본 내려받기(`size_bytes` 확인) → 16kHz mono
-  wav 변환 → pyannoteAI 제출(`job_id` 기록. `job_id` 를 적은 뒤에는 재시작해도 다시 제출하지 않습니다. 다만 제출 응답을 받기 전에 끊기거나 30분이 지나도 결과가 없거나 job 이 실패하면 다시 제출(과금)될 수 있습니다) → 결과 조회 → 트랙·매니페스트
+  wav 변환 → pyannoteAI 제출(`job_id` 기록. `job_id` 를 적은 뒤에는 재시작해도 다시 제출하지 않습니다. 다만 제출 응답을 받기 전에 끊기거나 30분이 지나도 결과가 없거나 job 이 실패하면 다시 제출(과금)될 수 있습니다). claim 한 뒤 2시간 30분이 지나면 다시 맡기지 않고 `failed_stage=diarize` 로 실패를 보고합니다(BE 가 3시간 뒤 정리하기 전에 끝내기 위해서입니다) → 결과 조회 → 트랙·매니페스트
   작성 → 원본·wav 삭제입니다. 진행 기록은 `recordings/.uploads/<meeting_id>/intake.json`(상태 `claiming`·`claimed`·`converted`·
   `submitted`·`done`·`failed`)이라 재시작해도 이어 갑니다. 일시 실패는 복구와 같은 시도 한도·대기로 다시 하고, 영구 실패나 한도 초과는
   BE 에 `PATCH /meetings/{id}/fail`(`failed_stage=diarize`)을 보냅니다. 보내지 못하면 다음 바퀴에 다시 보냅니다. 세션 이름은
