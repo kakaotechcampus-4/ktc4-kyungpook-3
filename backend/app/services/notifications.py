@@ -4,10 +4,11 @@ notify 는 알림 행만 만들고(부르는 쪽 트랜잭션 안), 푸시는 �
 실패하거나 서버가 그 사이 꺼져도 목록에는 남고, 다음 틱에 남은 푸시를 보낸다.
 """
 import logging
+import time
 from collections.abc import Callable
-from datetime import datetime
+from datetime import datetime, timedelta
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -19,6 +20,11 @@ logger = logging.getLogger(__name__)
 
 PUSH_BATCH = 100
 PUSH_MAX_ATTEMPTS = 3
+# 보내는 중 표시(pushed_at)가 이만큼 지나면 그 프로세스가 죽은 것으로 보고 다시 보낸다.
+PUSH_LEASE = timedelta(minutes=5)
+# 틱 하나가 푸시에 쓰는 시간. 넘기면 나머지는 다음 틱으로 미뤄 시계 판정을 늦추지 않는다.
+PUSH_TICK_SECONDS = 30
+MAX_SUBSCRIPTIONS_PER_USER = 10
 
 
 def notify(
@@ -107,11 +113,28 @@ def subscribe(db: Session, *, user_id: str, endpoint: str, p256dh: str, auth: st
     sub = db.scalar(select(PushSubscription).where(PushSubscription.endpoint == endpoint))
     if sub is None:
         sub = PushSubscription(user_id=user_id, endpoint=endpoint, p256dh=p256dh, auth=auth, created_at=messages.utc(now))
-        db.add(sub)
-    else:
-        sub.user_id, sub.p256dh, sub.auth = user_id, p256dh, auth
+        try:
+            with db.begin_nested():
+                db.add(sub)
+        except IntegrityError:
+            # 같은 브라우저의 등록이 동시에 들어왔다.
+            sub = db.scalar(select(PushSubscription).where(PushSubscription.endpoint == endpoint))
+    sub.user_id, sub.p256dh, sub.auth = user_id, p256dh, auth
     db.flush()
+    _drop_oldest_subscriptions(db, user_id)
     return sub
+
+
+def _drop_oldest_subscriptions(db: Session, user_id: str) -> None:
+    extra = db.scalars(
+        select(PushSubscription)
+        .where(PushSubscription.user_id == user_id)
+        .order_by(PushSubscription.created_at.desc(), PushSubscription.subscription_id)
+        .offset(MAX_SUBSCRIPTIONS_PER_USER)
+    ).all()
+    for sub in extra:
+        db.delete(sub)
+    db.flush()
 
 
 def unsubscribe(db: Session, *, user_id: str, endpoint: str) -> None:
@@ -137,39 +160,79 @@ def send_pending_pushes(
 ) -> int:
     """아직 푸시를 안 보낸 알림을 받는 사람 기기 모두로 보낸다. 다룬 알림 수를 돌려준다.
 
+    대상을 표시해 커밋한 뒤 잠금 밖에서 보내고 결과만 짧게 쓴다. 느린 기기가 읽음 표시를 막지 않게 하려는 것이다.
     한 기기에도 못 보냈고 일시 오류가 있었으면 다음 틱에 다시 보낸다(최대 PUSH_MAX_ATTEMPTS 번). 한 기기라도
     받았으면 다시 보내지 않는다. send 가 None 이면 서버에 푸시 키가 없는 것이라 보내지 않고 건너뛴다.
     """
     now = messages.utc(now)
+    work = _claim_pushes(db, now, send is not None)
+    db.commit()
+    give_up_at = time.monotonic() + PUSH_TICK_SECONDS
+    for notification_id, body, subs in work:
+        if time.monotonic() > give_up_at:
+            db.get(Notification, notification_id).pushed_at = None
+            db.commit()
+            continue
+        delivered = failed = False
+        gone = []
+        for sub in subs:
+            try:
+                send(sub, body)
+                delivered = True
+            except push.PushGone:
+                gone.append(sub.subscription_id)
+            except Exception:
+                logger.warning("push failed", exc_info=True)
+                failed = True
+        _record_push(db, notification_id, delivered=delivered, failed=failed, gone=gone, now=now)
+        db.commit()
+    return len(work)
+
+
+def _claim_pushes(db: Session, now: datetime, can_send: bool) -> list[tuple[str, dict, list[PushSubscription]]]:
     pending = db.scalars(
         select(Notification)
-        .where(Notification.push_status == PushStatus.PENDING)
+        .where(
+            Notification.push_status == PushStatus.PENDING,
+            or_(Notification.pushed_at.is_(None), Notification.pushed_at < now - PUSH_LEASE),
+        )
         .order_by(Notification.created_at, Notification.notification_id)
         .limit(PUSH_BATCH)
         .with_for_update(skip_locked=True)
     ).all()
+    work = []
     for notification in pending:
-        user_id = notification.member.user_id
-        subs = [] if user_id is None or send is None else list(db.scalars(
-            select(PushSubscription).where(PushSubscription.user_id == user_id).order_by(PushSubscription.created_at)
-        ).all())
-        delivered = failed = False
-        for sub in subs:
-            try:
-                send(sub, payload(notification))
-                delivered = True
-            except push.PushGone:
-                db.delete(sub)
-            except Exception:
-                logger.warning("push failed", exc_info=True)
-                failed = True
-        notification.push_attempts += 1
-        if delivered:
-            notification.push_status = PushStatus.SENT
-        elif not failed:
-            notification.push_status = PushStatus.SKIPPED
-        elif notification.push_attempts >= PUSH_MAX_ATTEMPTS:
-            notification.push_status = PushStatus.FAILED
         notification.pushed_at = now
+        user_id = notification.member.user_id
+        subs = [] if user_id is None or not can_send else db.scalars(
+            select(PushSubscription).where(PushSubscription.user_id == user_id).order_by(PushSubscription.created_at)
+        ).all()
+        # 커밋 뒤에도 쓰도록 세션 밖 사본으로 넘긴다.
+        copies = [
+            PushSubscription(subscription_id=s.subscription_id, endpoint=s.endpoint, p256dh=s.p256dh, auth=s.auth)
+            for s in subs
+        ]
+        work.append((notification.notification_id, payload(notification), copies))
     db.flush()
-    return len(pending)
+    return work
+
+
+def _record_push(
+    db: Session, notification_id: str, *, delivered: bool, failed: bool, gone: list[str], now: datetime
+) -> None:
+    notification = db.get(Notification, notification_id, populate_existing=True)
+    for subscription_id in gone:
+        sub = db.get(PushSubscription, subscription_id)
+        if sub is not None:
+            db.delete(sub)
+    notification.push_attempts += 1
+    notification.pushed_at = now
+    if delivered:
+        notification.push_status = PushStatus.SENT
+    elif not failed:
+        notification.push_status = PushStatus.SKIPPED
+    elif notification.push_attempts >= PUSH_MAX_ATTEMPTS:
+        notification.push_status = PushStatus.FAILED
+    else:
+        notification.pushed_at = None  # 다음 틱에 다시 보낸다
+    db.flush()
