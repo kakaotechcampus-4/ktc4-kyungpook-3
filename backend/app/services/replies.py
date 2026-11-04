@@ -330,7 +330,8 @@ def _judged(db: Session, row: ReplyJudgment, changes: list[ReplyChangeRequest], 
         )
         line = _line(db, row, change, outcome, now, new_value=value)
         lines.append(line)
-        if outcome == ReplyChangeOutcome.APPLIED:
+        # NOTED 는 이미 막힌 태스크라 상태는 그대로고 사유 규칙만 돈다.
+        if outcome in (ReplyChangeOutcome.APPLIED, ReplyChangeOutcome.NOTED):
             _apply(db, task, line, now)
         elif outcome == ReplyChangeOutcome.PROPOSED:
             proposed[task.task_id].append((line, change, match))
