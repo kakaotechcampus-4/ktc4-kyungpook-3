@@ -92,6 +92,7 @@ class MeetingStatus(StrEnum):
 class MeetingSource(StrEnum):
     DISCORD = "discord"
     MANUAL_UPLOAD = "manual_upload"
+    CHAT = "chat"
 
 
 class EvidenceType(StrEnum):

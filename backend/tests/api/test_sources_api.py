@@ -391,14 +391,57 @@ def test_locks_meeting_row_on_postgresql(client, db, meeting):
     assert any("FROM meeting" in s and "FOR UPDATE" in s for s in statements)
 
 
-def test_chat_transcript_is_400(client, db, meeting):
-    r = client.post(
-        f"/api/v1/meetings/{meeting.meeting_id}/sources",
-        json={"source": "chat", "segments": [_seg(0)]},
+def _post_chat(client, meeting_id: str, segments: list[dict]):
+    return client.post(
+        f"/api/v1/meetings/{meeting_id}/sources",
+        json={"source": "chat", "segments": segments},
         headers=HEADERS,
     )
 
+
+def test_create_meeting_with_started_at_and_chat_source(client, db):
+    ws = Workspace(name="A")
+    db.add(ws)
+    db.commit()
+
+    r = client.post(
+        "/api/v1/meetings",
+        json={
+            "workspace_id": ws.workspace_id,
+            "title": "채팅",
+            "source": "chat",
+            "started_at": "2026-11-03T01:00:00Z",
+        },
+        headers=HEADERS,
+    )
+
+    assert r.status_code == 201
+    data = r.json()["data"]
+    # SQLite 는 시간대를 돌려주지 않아 벽시계 시각만 비교한다
+    assert datetime.fromisoformat(data["started_at"]).replace(tzinfo=None) == datetime(2026, 11, 3, 1, 0)
+    db.expire_all()
+    assert db.get(Meeting, data["meeting_id"]).source == "chat"
+
+
+def test_chat_source_accepts_offsets_over_24h(client, db, meeting):
+    r = _post_chat(client, meeting.meeting_id, [_seg(0, start=90000.0, end=90000.0)])
+
+    assert r.status_code == 201
+    assert r.json()["data"]["duration_ms"] == 90_000_000
+
+
+def test_meeting_source_still_rejects_over_24h(client, db, meeting):
+    r = _post(client, meeting.meeting_id, [_seg(0, start=90000.0, end=90000.0)])
+
     assert r.status_code == 400
+    assert r.json()["error"]["code"] == "INVALID_REQUEST"
+
+
+def test_chat_source_over_14_days_rejected(client, db, meeting):
+    r = _post_chat(client, meeting.meeting_id, [_seg(0, start=1_209_601.0, end=1_209_601.0)])
+
+    assert r.status_code == 400
+    assert r.json()["error"]["code"] == "INVALID_REQUEST"
 
 
 def test_unknown_meeting_is_404(client, db, meeting):

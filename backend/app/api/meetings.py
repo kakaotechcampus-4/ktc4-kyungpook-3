@@ -74,6 +74,8 @@ def create_meeting(
         source=str(payload.source),
         status=str(MeetingStatus.CREATED),
     )
+    if payload.started_at is not None:
+        meeting.started_at = payload.started_at
     db.add(meeting)
     db.commit()
     db.refresh(meeting)

@@ -21,7 +21,10 @@ class MeetingCreateRequest(BaseModel):
     workspace_id: str = Field(..., description="소속 워크스페이스 ID")
     title: str | None = Field(None, description="회의 제목 (optional)")
     source: MeetingSource = Field(
-        MeetingSource.DISCORD, description="discord | manual_upload"
+        MeetingSource.DISCORD, description="discord | manual_upload | chat"
+    )
+    started_at: datetime | None = Field(
+        None, description="회의 시작 시각. 없으면 지금. 채팅 출처는 그날 대화의 시작 시각을 보낸다"
     )
 
 
