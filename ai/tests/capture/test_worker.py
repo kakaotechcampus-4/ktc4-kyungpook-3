@@ -43,6 +43,14 @@ def _edit(path, **fields):
     R.save_manifest(path, m)
 
 
+def test_the_worker_sends_batch_audio_without_the_speech_gate(tmp_path):
+    """배치 전사는 말 필터를 걸지 않는다. 필터가 짧은 대답을 버리는 손해가 거르는 이득보다 컸다(결정 기록 0030)."""
+    worker = W.Worker(tmp_path / "recordings", transcripts_dir=tmp_path / "transcripts",
+                      stt_factory=lambda: (EchoStt(), "echo", 1), extractor_factory=lambda: None,
+                      handoff_factory=lambda: None, debug=False)
+    assert worker._gate_factory() is None
+
+
 def test_the_worker_does_not_import_discord():
     code = ("import sys\nimport capture.worker\n"
             "print(sorted(m for m in sys.modules if m == 'discord' or m.startswith('discord.') "

@@ -992,3 +992,10 @@ def test_a_failing_progress_report_does_not_change_the_result(tmp_path):
 
     result = _run(rec, manifest, tmp_path, progress=boom)
     assert result["status"] == R.STATUS_TRANSCRIBED and result["error"] is None
+
+
+def test_the_production_hint_skips_short_chunks():
+    """운영 전사는 PROMPT_MIN_S 보다 짧은 묶음에 프롬프트를 싣지 않는다(결정 기록 0030)."""
+    from stt.backend import PROMPT_MIN_S
+
+    assert R.hinted(PromptEcho(), {"hint_names": ["동우"]}).min_s == PROMPT_MIN_S

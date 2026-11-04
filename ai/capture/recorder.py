@@ -339,13 +339,14 @@ def hinted(backend, manifest: dict):
     없으면 디스코드 표시 이름(hint_names)을 쓴다. 꼴은 stt.backend.member_prompt, hint_prompt.
 
     프롬프트를 받는 백엔드(accepts_prompt, 지금은 Elice)에만 건다. 로컬 백엔드와 이름이 없는 회의는 그대로다.
-    근거는 결정 기록 0020, 0024.
+    PROMPT_MIN_S 보다 짧은 묶음은 프롬프트 없이 보낸다. 근거는 결정 기록 0020, 0024, 0030.
     """
-    from stt.backend import Prompted, hint_prompt, member_prompt
+    from stt.backend import PROMPT_MIN_S, Prompted, hint_prompt, member_prompt
 
     members = manifest.get("hint_members")
     prompt = (member_prompt(members) if members else None) or hint_prompt(manifest.get("hint_names") or [])
-    return Prompted(backend, prompt) if prompt and getattr(backend, "accepts_prompt", False) else backend
+    return (Prompted(backend, prompt, min_s=PROMPT_MIN_S) if prompt and getattr(backend, "accepts_prompt", False)
+            else backend)
 
 
 def remember_member_names(manifest: dict, handoff) -> bool:
