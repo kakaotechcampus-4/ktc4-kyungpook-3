@@ -1,11 +1,13 @@
 import { useId, useState } from 'react'
 import type { FormEvent } from 'react'
 import type { DiscordUser, Member } from '@/entities/member'
+import { pmsOf } from '@/entities/member'
 import {
   MemberMappingFields,
   buildMappingRows,
   useMemberMappingForm,
 } from '@/features/member-mapping'
+import type { MemberMappingForm } from '@/features/member-mapping'
 import { paths } from '@/shared/config/routes'
 import { GuardedLink } from '@/shared/lib/unsaved-changes'
 import { Button } from '@/shared/ui/button'
@@ -16,6 +18,7 @@ import { LINK_BUTTON } from './teamStyles'
 
 /* 온보딩 팀원 연결 카드와 같은 문구다 (SetupMembers 캔버스) */
 const DESCRIPTION = '디스코드 계정과 이름을 이어 두면 마감 하루 전에 DM이 나갑니다.'
+const PM_UNCHECKED = 'PM 줄을 체크하지 않으면 Discord 알림을 받을 수 없어요.'
 const WIDTH = 560
 /* 줄이 많으면 창 안에서 넘긴다 — 화면 위아래 여백(24px)만큼 남긴다 */
 const SCROLL = 'max-h-[calc(100vh-48px)] overflow-y-auto'
@@ -27,6 +30,16 @@ export type MappingSource =
   | { status: 'not_connected' }
   | { status: 'ready'; discordUsers: DiscordUser[]; members: Member[] }
 
+/** 만든 PM 의 Discord 계정이 없고, 줄이 하나 이상이며, 지금 어느 줄도 PM 체크가 없을 때 안내한다. 저장은 그대로 된다 (D-177).
+ *  온보딩은 PM 체크를 요구하므로 MemberMappingFields 가 아니라 이 창에만 둔다 */
+function pmLeftUnchecked({ pms, initialRows, rows }: MemberMappingForm): boolean {
+  return (
+    pms[0]?.discordUserId === null &&
+    initialRows.length > 0 &&
+    rows.every(({ pmMemberId }) => pmMemberId === null)
+  )
+}
+
 interface MappingFormProps {
   workspaceId: string
   discordUsers: DiscordUser[]
@@ -35,13 +48,6 @@ interface MappingFormProps {
   onSaved: () => void
   /** 저장을 시작하고 끝낼 때 알린다. 창은 저장하는 동안 Esc·바깥 클릭으로 닫히지 않는다 — 닫히면 실패를 보일 곳이 없다 */
   onSavingChange: (saving: boolean) => void
-}
-
-/** PM 팀원. 먼저 만들어진 순서다 — 첫째가 워크스페이스를 만든 PM 이고 체크박스가 그 PM 을 가리킨다 (#228) */
-function pmsOf(members: Member[]): Member[] {
-  return members
-    .filter(({ role }) => role === 'pm')
-    .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
 }
 
 /**
@@ -60,7 +66,9 @@ function MappingForm({
   const [initialRows] = useState(() => buildMappingRows(discordUsers, members))
   const [pms] = useState(() => pmsOf(members))
   const mapping = useMemberMappingForm(workspaceId, initialRows, pms)
+  const hintShown = pmLeftUnchecked(mapping)
   const formId = useId()
+  const hintId = useId()
   const {
     submit,
     save,
@@ -81,6 +89,11 @@ function MappingForm({
       <form id={formId} noValidate onSubmit={(event) => void onSubmit(event)}>
         <MemberMappingFields mapping={mapping} tone="product" />
       </form>
+      {hintShown ? (
+        <p id={hintId} className="pt-6 text-caption text-dim">
+          {PM_UNCHECKED}
+        </p>
+      ) : null}
       <div className="flex justify-end gap-8 pt-6">
         <Button variant="ghost" disabled={isSubmitting} onClick={onCancel}>
           나중에 하기
@@ -91,6 +104,7 @@ function MappingForm({
           variant="primary"
           loading={isSubmitting}
           disabled={filled === 0}
+          aria-describedby={hintShown ? hintId : undefined}
         >
           저장
         </Button>
