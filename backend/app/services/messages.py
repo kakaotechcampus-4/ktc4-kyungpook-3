@@ -144,10 +144,12 @@ def framed_body(
     if not first:
         return f"{recipient}님, {pm}{_copula(pm)}.\n{middle}"
     workspace = db.get(Workspace, bundle.workspace_id).name
-    return (
-        f"안녕하세요 {recipient}님, {workspace} {pm}{_copula(pm)}.\n앞으로 확인용 메시지는 이 봇으로 보낼게요.\n\n"
-        f"{middle}\n여기로 답장하시면 저한테 바로 전달돼요."
-    )
+    return f"안녕하세요 {recipient}님, {workspace} {pm}{_copula(pm)}.\n{_first_dm_rest(middle)}"
+
+
+def _first_dm_rest(middle: str) -> str:
+    """첫 DM 틀에서 이름이 든 첫 줄을 뺀 나머지."""
+    return f"앞으로 확인용 메시지는 이 봇으로 보낼게요.\n\n{middle}\n여기로 답장하시면 저한테 바로 전달돼요."
 
 
 def get_or_create_thread(db: Session, workspace_id: str, member_id: str) -> MessageThread:
@@ -687,10 +689,11 @@ def _reframe_unapproved(db: Session, thread_id: str, now: datetime) -> None:
 
 
 def _is_framed_note(db: Session, bundle: ReminderBundle) -> bool:
+    """첫 줄의 이름은 틀을 씌운 뒤 바뀔 수 있어 그 아래만 본다."""
     reminders = bundle_reminders(db, bundle.bundle_id)
     if len(reminders) != 1 or not reminders[0].note:
         return False
-    return bundle.body == framed_body(db, bundle, reminders, reminders[0].note, first=True)
+    return bundle.body.partition("\n")[2] == _first_dm_rest(reminders[0].note)
 
 
 def ingest_discord_reply(
