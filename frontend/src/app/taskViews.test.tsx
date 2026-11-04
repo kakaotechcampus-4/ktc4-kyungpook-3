@@ -473,3 +473,36 @@ describe('간트 「일정이 없는 일」의 날짜 넣기 (VR-04 · VR-12)', 
     await app.expectPath(paths.approval('ws_01', 'ap_01'))
   })
 })
+
+describe('캘린더 — 상태를 색 말고도 알린다 (KWCAG 색에 무관한 인식)', () => {
+  it('칩 링크 이름은 상태부터 읽고, 표식이 붙는 칩은 범례와 같은 아이콘이다. 진행 중은 표식이 없다', async () => {
+    db.tasks.find(({ task_id }) => task_id === 'tk_04')!.due_date = '2026-09-29'
+    await openView('calendar')
+    const table = screen.getByRole('table', { name: '2026년 9월' })
+    const chip = (name: string) => within(table).getByRole('link', { name })
+
+    const overdue = chip('마감 임박, 회원가입 화면, 박민수')
+    const dueSoon = chip('마감 임박, STT 정확도 측정, 정하늘')
+    const review = chip('확인 필요, 배포 문서 보완, 담당자 미정')
+    expect(chip('완료, 토큰 정리, 박민수').querySelector('svg')).toBeNull()
+    expect(chip('배포 스크립트, 김서연').querySelector('svg')).toBeNull()
+
+    const legend = within(screen.getByRole('list', { name: '범례' }))
+    const mark = (element: Element | null) => element?.querySelector('svg')?.innerHTML
+    expect(mark(overdue)).toBe(mark(legend.getByText('마감 임박')))
+    expect(mark(dueSoon)).toBe(mark(legend.getByText('마감 임박')))
+    expect(mark(review)).toBe(mark(legend.getByText('확인 필요')))
+    expect(mark(review)).not.toBe(mark(overdue))
+    expect(mark(legend.getByText('진행 중'))).toBeUndefined()
+  })
+
+  it('마감일 없는 확인 필요도 이름에 상태를 읽고 같은 표식이다', async () => {
+    await openView('calendar')
+    const undated = within(screen.getByRole('region', { name: '마감일 없음' }))
+    const [review] = undated.getAllByRole('link', { name: /^확인 필요, / })
+    expect(review.querySelector('svg')).not.toBeNull()
+    expect(
+      undated.getByRole('link', { name: '회의록 요약 검수, 박민수 · 마감 없음' }),
+    ).toBeVisible()
+  })
+})
