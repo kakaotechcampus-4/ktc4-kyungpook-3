@@ -178,3 +178,67 @@ test('④ 정리에 실패하면 재업로드 토스트가 뜨고 그 회의는 
   await expect(page.getByRole('dialog')).toHaveCount(0)
   await expect(page.getByRole('banner').getByRole('link', { name: '정리 중' })).toHaveCount(0)
 })
+
+test('⑤ 화자 지정 기한 만료는 목록과 상세에 남고 새로고침 뒤에도 다시 업로드할 수 있다', async ({
+  page,
+}, testInfo) => {
+  await start(page, 'meeting-fail-expired', UPLOAD)
+  const requests = recordRequests(page)
+  await uploadShortAudio(page)
+
+  await expect(page.getByRole('heading', { name: '화자 지정 기한이 지났어요' })).toBeVisible(
+    FIRST_PAINT,
+  )
+  const meetingId = new URL(page.url()).pathname.split('/').pop()
+  const list = page.getByRole('list', { name: '화자 지정 기한 만료' })
+  await expect(list.getByRole('link', { name: new RegExp(SHORT_AUDIO.name) })).toBeVisible()
+  await expect(
+    page.getByRole('region', { name: '회의록 본문' }).getByText(/화자 지정 대기가 7일을 넘어/),
+  ).toBeVisible()
+  await page.reload()
+  await expect(page.getByRole('heading', { name: '화자 지정 기한이 지났어요' })).toBeVisible(
+    FIRST_PAINT,
+  )
+  await expect(list.getByRole('link', { name: new RegExp(SHORT_AUDIO.name) })).toHaveAttribute(
+    'aria-current',
+    'page',
+  )
+
+  await page.getByRole('banner').getByRole('link', { name: '태스크', exact: true }).click()
+  await page.getByRole('banner').getByRole('link', { name: '회의록', exact: true }).click()
+  await list.getByRole('link', { name: new RegExp(SHORT_AUDIO.name) }).click()
+  await expect(page.getByRole('heading', { name: '화자 지정 기한이 지났어요' })).toBeVisible()
+  expect(
+    requests.filter(({ pathname }) =>
+      new RegExp('/meetings/' + meetingId + '/minutes$').test(pathname),
+    ),
+  ).toEqual([])
+  await page.screenshot({ path: testInfo.outputPath('expired-history.png') })
+  await page.getByRole('link', { name: '다시 업로드', exact: true }).click()
+  await expect(page).toHaveURL(UPLOAD)
+  await expect(page.getByRole('heading', { name: '회의를 올려 주세요' })).toBeVisible(FIRST_PAINT)
+})
+
+test('⑥ 음성 처리 실패는 Notion 연결도 끊겨 있어도 해당 사유를 먼저 안내한다', async ({ page }) => {
+  await start(page, 'meeting-fail-diarize', UPLOAD)
+  await uploadShortAudio(page)
+  await expect(
+    toastOf(page, '음성 처리 중 회의 정리를 완료하지 못했어요. 파일을 다시 올려 주세요.'),
+  ).toBeVisible(FIRST_PAINT)
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  await expect(
+    page.getByRole('complementary', { name: '회의 목록' }).getByText(SHORT_AUDIO.name),
+  ).toHaveCount(0)
+})
+
+test('⑦ 일반 팀원도 만료 이력을 볼 수 있고 재업로드는 PM에게 요청한다', async ({ page }) => {
+  await start(page, 'meeting-expired-member', WORKSPACE + '/meetings/mt_10')
+  await expect(page.getByRole('heading', { name: '화자 지정 기한이 지났어요' })).toBeVisible(
+    FIRST_PAINT,
+  )
+  await expect(page.getByText('PM에게 파일 재업로드를 요청해 주세요.')).toBeVisible()
+  await expect(page.getByRole('link', { name: '다시 업로드', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('list', { name: '화자 지정 기한 만료' })).toContainText(
+    '기획 논의 녹음',
+  )
+})

@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { integrationsQueryOptions } from '@/entities/integration'
-import { discordUsersQueryOptions, memberListQueryOptions } from '@/entities/member'
+import { discordUsersQueryOptions, memberListQueryOptions, pmsOf } from '@/entities/member'
 import type { Member } from '@/entities/member'
 import {
   MemberMappingFields,
@@ -286,9 +286,7 @@ export function MembersStep({ workspaceId }: MembersStepProps) {
     <MembersForm
       workspaceId={workspaceId}
       initialRows={buildMappingRows(discordUsers.data, members.data)}
-      pms={members.data
-        .filter(({ role }) => role === 'pm')
-        .sort((a, b) => a.createdAt.localeCompare(b.createdAt))}
+      pms={pmsOf(members.data)}
       notice={notice}
       previous={previous}
     />

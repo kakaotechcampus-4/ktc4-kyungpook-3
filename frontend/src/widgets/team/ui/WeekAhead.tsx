@@ -54,7 +54,6 @@ export function WeekAhead({ tasks, names, today }: WeekAheadProps) {
                     <span className="text-meta leading-[1.45] text-ink">{task.title}</span>
                     <span className="text-[10.5px] text-dim tabular-nums">
                       {assignee ?? '담당자 없음'}
-                      {task.progress === null ? null : ` · ${task.progress}%`}
                     </span>
                   </div>
                 )

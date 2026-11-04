@@ -20,7 +20,6 @@ export const taskFixtures: TaskDto[] = seeds.map(
     title,
     assignee_member_id,
     status,
-    progress: task_id === 'tk_01' ? 40 : null,
     blocker: task_id === 'tk_03' ? 'Notion 권한 대기' : null,
     due_date,
     start_date,
