@@ -351,3 +351,84 @@ def test_pm_due_change_note_does_not_credit_the_member(mdb, mseed):
     texts = [n.text for n in _notes(mdb, mseed, kind="reminder_auto_cancelled")]
     assert len(texts) == 1
     assert "상태나 마감이 바뀌어" in texts[0] and "응답해서" not in texts[0]
+
+
+def _block_inherited_by_resend(db, seed):
+    task = _auto_blocked(db, seed)
+    _change(db, task, SLOT + 73 * H, due_date=LATER_DUE)
+    _resend(db, seed, task, SLOT + 74 * H, SLOT + 75 * H)
+    return task
+
+
+def test_inherited_clock_clears_auto_reason_after_pm_moved_status(mdb, mseed):
+    task = _block_inherited_by_resend(mdb, mseed)
+    _change(mdb, task, SLOT + 76 * H, status="in_progress")
+    tick(mdb, SLOT + 77 * H)
+    _web_reply(mdb, mseed, "alice", SLOT + 78 * H)
+    tick(mdb, SLOT + 79 * H)
+    mdb.refresh(task)
+    assert (task.status, task.blocker) == ("in_progress", None)
+
+
+def test_inherited_clock_keeps_undo_after_reassignment(mdb, mseed):
+    task = _block_inherited_by_resend(mdb, mseed)
+    _change(mdb, task, SLOT + 76 * H, assignee_member_id=mseed["carol"].member_id)
+    tick(mdb, SLOT + 77 * H)
+    assert _undo("pm", task.task_id).status_code == 200
+
+
+def test_inherited_clock_keeps_undo_when_new_dm_failed(mdb, mseed):
+    task = _auto_blocked(mdb, mseed)
+    _change(mdb, task, SLOT + 73 * H, due_date=LATER_DUE)
+    messages.create_reminder(
+        mdb, workspace_id=mseed["ws"], task_id=task.task_id, member_id=mseed["alice"].member_id,
+        scheduled_at=SLOT + 75 * H, note=None, created_by=mseed["pm"].member_id, now=SLOT + 74 * H,
+    )
+    mdb.commit()
+    _approve_all(mdb, SLOT + 74 * H)
+    tick(mdb, SLOT + 75 * H)
+    for claim in messages.claim_for_bot(mdb, SLOT + 75 * H):
+        messages.report_result(
+            mdb, claim.message.message_id, delivered=False, failure_reason="dm_blocked",
+            discord_message_ids=[], now=SLOT + 75 * H,
+        )
+    mdb.commit()
+    tick(mdb, SLOT + 75 * H + H72)
+    assert _undo("pm", task.task_id).status_code == 200
+
+
+def test_former_assignee_reply_after_reassignment_leaves_auto_block(mdb, mseed):
+    task = _auto_blocked(mdb, mseed)
+    _change(mdb, task, SLOT + 73 * H, assignee_member_id=mseed["carol"].member_id)
+    _web_reply(mdb, mseed, "alice", SLOT + 74 * H, body="저는 이제 담당이 아니에요")
+    tick(mdb, SLOT + 75 * H)
+    mdb.refresh(task)
+    assert task.status == "blocked"
+    assert _undo("pm", task.task_id).status_code == 200
+
+
+def test_reply_before_reassignment_still_releases_on_a_late_tick(mdb, mseed):
+    task = _auto_blocked(mdb, mseed)
+    _web_reply(mdb, mseed, "alice", SLOT + 73 * H)
+    _change(mdb, task, SLOT + 74 * H, assignee_member_id=mseed["carol"].member_id)
+    tick(mdb, SLOT + 75 * H)
+    mdb.refresh(task)
+    assert (task.status, task.blocker) == ("todo", None)
+
+
+def test_reassigned_back_counts_the_original_assignee_again(mdb, mseed):
+    task = _auto_blocked(mdb, mseed)
+    _change(mdb, task, SLOT + 73 * H, assignee_member_id=mseed["carol"].member_id)
+    _change(mdb, task, SLOT + 74 * H, assignee_member_id=mseed["alice"].member_id)
+    _web_reply(mdb, mseed, "alice", SLOT + 75 * H)
+    tick(mdb, SLOT + 76 * H)
+    mdb.refresh(task)
+    assert (task.status, task.blocker) == ("todo", None)
+
+
+def test_due_dates_near_the_minimum_are_skipped_without_errors(mdb, mseed, caplog):
+    _assign(mdb, mseed, 0, due=date(1, 1, 3))
+    good = _assign(mdb, mseed, 1)
+    tick(mdb, PROPOSE)
+    assert _reminders(mdb, good)
+    assert [r for r in caplog.records if r.levelname == "ERROR"] == []

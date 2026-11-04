@@ -196,6 +196,8 @@ def test_vapid_public_key(mdb, mseed, monkeypatch):
     "https://fcm.googleapis.com:8443/fcm/send/a",
     "https://fcm.googleapis.com@evil.example/a",
     "https://fcm.googleapis.com.evil.example/a",
+    "https://127.0.0.1\\.notify.windows.com/hook",
+    "https://evil.example\\.push.services.mozilla.com/a",
     "https://fcm.googleapis.com/\x00",
     "https://" + "가" * 2040,
 ])

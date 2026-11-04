@@ -53,6 +53,9 @@ BLOCKER_TEXT = "리마인드에 72시간 동안 응답이 없어요"
 # 여러 BE 프로세스 가운데 한 곳만 틱을 돈다(PostgreSQL 트랜잭션 advisory lock).
 TICK_LOCK_KEY = 318_001
 
+# 이보다 이른 마감은 제안 시각을 셀 수 없다.
+EARLIEST_DUE = date.min + timedelta(days=4)
+
 _RESPONSE_FIELDS = (ChangedField.STATUS, ChangedField.DUE_DATE)
 # 스케줄러가 스스로 바꾼 것은 응답이 아니다. 답장으로 푼 것은 그 답장이 이미 응답이다.
 _NOT_RESPONSE_SOURCES = (ChangeSource.SCHEDULER, ChangeSource.REMINDER_REPLY)
@@ -71,15 +74,16 @@ def _today(now: datetime) -> date:
 
 # 응답
 
-def _replied_after(db: Session, thread_id: str, after: datetime) -> bool:
+def _replied_after(db: Session, thread_id: str, after: datetime, *, before: datetime | None = None) -> bool:
     db.flush()
-    return db.scalar(
-        select(ThreadMessage.message_id).where(
-            ThreadMessage.thread_id == thread_id,
-            ThreadMessage.sender == MessageSender.MEMBER,
-            ThreadMessage.created_at > after,
-        ).limit(1)
-    ) is not None
+    query = select(ThreadMessage.message_id).where(
+        ThreadMessage.thread_id == thread_id,
+        ThreadMessage.sender == MessageSender.MEMBER,
+        ThreadMessage.created_at > after,
+    )
+    if before is not None:
+        query = query.where(ThreadMessage.created_at < before)
+    return db.scalar(query.limit(1)) is not None
 
 
 def _changed_after(db: Session, task_id: str, after: datetime) -> bool:
@@ -105,6 +109,21 @@ def _assignee_changed_after(db: Session, task_id: str, after: datetime) -> bool:
     ) is not None
 
 
+def _left_thread_at(db: Session, task: Task, watch: ReminderWatch) -> datetime | None:
+    """시계의 대화 주인이 담당을 내려놓은 시각. 그 뒤 옛 대화에 온 답장은 이 태스크의 응답이 아니다."""
+    if watch.message.thread.member_id == task.assignee_member_id:
+        return None
+    db.flush()
+    changed = db.scalar(
+        select(func.min(TaskHistory.created_at)).where(
+            TaskHistory.task_id == task.task_id,
+            TaskHistory.changed_field == ChangedField.ASSIGNEE,
+            TaskHistory.created_at > messages.utc(watch.sent_at),
+        )
+    )
+    return messages.utc(changed) if changed is not None else None
+
+
 def _responded(db: Session, thread_id: str, task_id: str, after: datetime) -> bool:
     after = messages.utc(after)
     return _replied_after(db, thread_id, after) or _changed_after(db, task_id, after)
@@ -121,7 +140,7 @@ def suggest(db: Session, now: datetime) -> None:
             Task.is_deleted.is_(False),
             Task.status != TaskStatus.DONE,
             Task.due_date.is_not(None),
-            Task.due_date > date.min,  # 하루 전 발송 시각을 셀 수 없다
+            Task.due_date > EARLIEST_DUE,
             Member.is_deleted.is_(False),
         )
         .order_by(Task.due_date, Task.task_id)
@@ -376,11 +395,16 @@ def _settle(db: Session, watch_id: str, now: datetime) -> None:
         _close(watch, WatchState.STOPPED, now)
         return
     sent_at = messages.utc(watch.sent_at)
-    if _replied_after(db, watch.thread_id, sent_at):
-        _release(db, task, watch, now)
+    left_at = _left_thread_at(db, task, watch)
+    if _replied_after(db, watch.thread_id, sent_at, before=left_at):
+        _release(db, task, watch, left_at, now)
         _close(watch, WatchState.RELEASED if watch.state == WatchState.BLOCKED else WatchState.ANSWERED, now)
         return
     if watch.state == WatchState.BLOCKED:
+        return
+    if watch.applied:
+        # 자동 막힘을 되돌릴 값을 들고 있는 시계는 답장이나 되돌리기로만 닫는다.
+        _run_clock(db, task, watch, now)
         return
     if task.status == TaskStatus.DONE or _assignee_changed_after(db, task.task_id, sent_at):
         _close(watch, WatchState.STOPPED, now)
@@ -393,7 +417,7 @@ def _settle(db: Session, watch_id: str, now: datetime) -> None:
 def _run_clock(db: Session, task: Task, watch: ReminderWatch, now: datetime) -> None:
     """72시간은 팀원이 DM 을 받은 때(전달 보고)부터 잰다. 전달되지 않은 재촉으로는 막지 않는다."""
     message = watch.message
-    if message.dm_status == DmStatus.FAILED and now >= messages.utc(watch.sent_at) + SILENCE:
+    if message.dm_status == DmStatus.FAILED and not watch.applied and now >= messages.utc(watch.sent_at) + SILENCE:
         _close(watch, WatchState.STOPPED, now)
     if message.dm_status != DmStatus.DELIVERED:
         return
@@ -432,10 +456,11 @@ def _block(db: Session, task: Task, watch: ReminderWatch, now: datetime) -> None
     )
 
 
-def _release(db: Session, task: Task, watch: ReminderWatch, now: datetime) -> None:
+def _release(db: Session, task: Task, watch: ReminderWatch, left_at: datetime | None, now: datetime) -> None:
     """답장이 온 재촉의 태스크를 푼다. 답장을 본 뒤 사람이 건 막힘은 그대로 둔다."""
     if task.status == TaskStatus.BLOCKED:
-        if _replied_after(db, watch.thread_id, _blocked_since(db, task) or messages.utc(watch.sent_at)):
+        since = _blocked_since(db, task) or messages.utc(watch.sent_at)
+        if _replied_after(db, watch.thread_id, since, before=left_at):
             _unblock(db, task, watch, now)
     elif task.blocker == BLOCKER_TEXT:
         _stamp(tasks.apply_task_updates(db, task, {"blocker": None}, change_source=ChangeSource.REMINDER_REPLY), now)

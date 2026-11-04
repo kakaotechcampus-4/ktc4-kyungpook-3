@@ -1,7 +1,8 @@
 from datetime import datetime
-from urllib.parse import urlsplit
 
 from pydantic import BaseModel, Field, field_validator
+from urllib3.exceptions import LocationParseError
+from urllib3.util import parse_url
 
 # 브라우저가 쓰는 푸시 서비스. 서버가 이 주소로 요청을 보내므로 다른 곳은 받지 않는다.
 PUSH_HOSTS = ("fcm.googleapis.com", "web.push.apple.com")
@@ -40,10 +41,14 @@ class PushSubscribeRequest(BaseModel):
     @field_validator("endpoint")
     @classmethod
     def endpoint_is_push_service(cls, value: str) -> str:
-        url = urlsplit(value)
-        host = url.hostname or ""
+        # 실제 발송(requests)과 같은 파서로 읽는다. 파서가 다르면 역슬래시 같은 주소가 검사를 비켜 간다.
+        try:
+            url = parse_url(value)
+        except LocationParseError:
+            url = None
+        host = (url.host or "") if url else ""
         known = host in PUSH_HOSTS or host.endswith(PUSH_HOST_SUFFIXES)
-        if url.scheme != "https" or url.username is not None or url.port not in (None, 443) or not known:
+        if not known or url.scheme != "https" or url.auth is not None or url.port not in (None, 443):
             raise ValueError("지원하는 푸시 서비스 주소가 아닙니다.")
         return value
 
