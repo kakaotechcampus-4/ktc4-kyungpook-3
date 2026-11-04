@@ -14,7 +14,7 @@ import threading
 from collections.abc import Callable, Iterable
 from datetime import date, datetime, timedelta, timezone
 
-from sqlalchemy import func, select, text
+from sqlalchemy import func, or_, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -152,7 +152,7 @@ def _suggest_task(db: Session, task: Task, now: datetime) -> None:
     slot = send_slot(task.due_date)
     if not slot - PROPOSE_AHEAD <= now < slot:
         return
-    if _already_suggested(db, task) or _has_scheduled_reminder(db, task.task_id) or _answered_last(db, task):
+    if _already_suggested(db, task) or _has_scheduled_reminder(db, task.task_id, now) or _answered_last(db, task):
         return
     _suggest(db, task, slot, now)
 
@@ -167,10 +167,18 @@ def _already_suggested(db: Session, task: Task) -> bool:
     ) is not None
 
 
-def _has_scheduled_reminder(db: Session, task_id: str) -> bool:
+def _has_scheduled_reminder(db: Session, task_id: str, now: datetime) -> bool:
+    """앞으로 나갈 리마인드가 있는지. 승인되지 않은 채 시각이 지난 것은 나가지 않으므로 제안을 막지 않는다."""
     db.flush()
     return db.scalar(
-        select(Reminder.reminder_id).where(Reminder.task_id == task_id, Reminder.status == ReminderStatus.SCHEDULED)
+        select(Reminder.reminder_id)
+        .join(ReminderBundle, ReminderBundle.bundle_id == Reminder.bundle_id)
+        .where(
+            Reminder.task_id == task_id,
+            Reminder.status == ReminderStatus.SCHEDULED,
+            or_(ReminderBundle.scheduled_at > now, ReminderBundle.approved_at.is_not(None)),
+        )
+        .limit(1)
     ) is not None
 
 

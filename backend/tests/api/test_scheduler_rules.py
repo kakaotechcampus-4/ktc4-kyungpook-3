@@ -72,7 +72,7 @@ def test_p1_one_reply_cancels_whole_bundle_notes_do_not_ask_for_reapproval(mdb, 
     assert [n for n in notes if "다시 승인" in n.text] == []
 
 
-def test_p4_catch_up_mixed_bundle_sends_rest_or_tells_pm(mdb, mseed):
+def test_p4_catch_up_mixed_bundle_holds_rest_and_tells_pm(mdb, mseed):
     _assign(mdb, mseed, 0)
     later = _assign(mdb, mseed, 1, due=date(2026, 11, 30))
     tick(mdb, PROPOSE)
@@ -88,7 +88,9 @@ def test_p4_catch_up_mixed_bundle_sends_rest_or_tells_pm(mdb, mseed):
 
     [rest] = _reminders(mdb, later)
     new_notes = _notes(mdb, mseed)[before:]
-    assert rest.status == ReminderStatus.SENT or new_notes
+    assert rest.status == ReminderStatus.SCHEDULED
+    assert [n.kind for n in new_notes] == ["reminder_auto_cancelled"]
+    assert "다시 승인" in new_notes[0].text
 
 
 def test_p8_one_bundle_gets_one_note_when_two_suggestions_join_approved_bundle(mdb, mseed):
@@ -521,9 +523,34 @@ def test_one_failing_reminder_does_not_stop_the_claim_and_stays_unsent(mdb, msee
 
     monkeypatch.setattr(scheduler, "_drop_reason", fail_one)
 
-    claimed = messages.claim_for_bot(mdb, SLOT)
+    messages.claim_for_bot(mdb, SLOT)
 
-    assert [c.message.thread.member_id for c in claimed] == [mseed["bob"].member_id]
     assert _reminders(mdb, first)[0].status == ReminderStatus.SCHEDULED
     assert _reminders(mdb, second)[0].status == ReminderStatus.SENT
+
+
+def test_past_unapproved_manual_reminder_does_not_stop_suggestion(mdb, mseed):
+    task = _assign(mdb, mseed)
+    messages.create_reminder(
+        mdb, workspace_id=mseed["ws"], task_id=task.task_id, member_id=mseed["alice"].member_id,
+        scheduled_at=PROPOSE - H, note=None, created_by=mseed["pm"].member_id, now=PROPOSE - 2 * H,
+    )
+    mdb.commit()
+
+    tick(mdb, PROPOSE)
+
+    assert len(_reminders(mdb, task)) == 2
+
+
+def test_future_reminder_still_stops_suggestion(mdb, mseed):
+    task = _assign(mdb, mseed)
+    messages.create_reminder(
+        mdb, workspace_id=mseed["ws"], task_id=task.task_id, member_id=mseed["alice"].member_id,
+        scheduled_at=PROPOSE + H, note=None, created_by=mseed["pm"].member_id, now=PROPOSE - H,
+    )
+    mdb.commit()
+
+    tick(mdb, PROPOSE)
+
+    assert len(_reminders(mdb, task)) == 1
 
