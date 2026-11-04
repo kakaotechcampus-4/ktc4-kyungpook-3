@@ -4,6 +4,7 @@
 여러 개와 대본이다. 대본·전사 문장은 레포 밖에 두고 경로로만 받는다. 결과 폴더에는 숫자와 짧은 대답 문구만 쓴다.
   real929.json  영문 키, 숫자. 짧은 대답마다 문구와 참·거짓
   real929.md    9/29 문서 수치와 나란히 놓은 표
+--compare 를 주면 대본 줄과 실행마다의 전사 구간을 나란히 놓은 표를 그 파일에 따로 쓴다(전사 문장이 들어 있다).
 
 채점
   전체 CER     '#' 줄과 빈 줄을 빼고 괄호 지시문("(쉬지 않고)")을 지운 대본 전체와, 시작 시각 순으로 이은 전사 전체를
@@ -21,7 +22,7 @@
 
 사용 (ai/ 안에서):
   python -m stt.eval.capacity.real929 --lines notebook=<9/29 노트북 transcript.json> --lines server=<서버 줄 파일> \
-      --script <대본> --out <결과 폴더>
+      --script <대본> --out <결과 폴더> [--compare <레포 밖 파일>]
 """
 
 from __future__ import annotations
@@ -69,11 +70,10 @@ def load_lines(path: Path) -> list[dict]:
 
 
 # ─────────────────────────────────────────────────────────────── 채점
-def align(ref_lines: list[str], hyp_texts: list[str]) -> dict:
-    """글자 편집 거리 정렬. 9/29 align.py 와 같은 DP 와 동점 처리(대각, 삭제, 삽입 순)."""
-    R = [(c, i) for i, ln in enumerate(ref_lines) for c in nospace(ln)]
-    H = [c for h in hyp_texts for c in nospace(h)]
-    n, m = len(R), len(H)
+def _edit_ops(ref: list[str], hyp: list[str]) -> list[tuple[str, int | None, int | None]]:
+    """글자 편집 거리 정렬의 연산 (M·S·D·I, 대본 글자 위치, 전사 글자 위치)을 앞에서부터.
+    9/29 align.py 와 같은 DP 와 동점 처리(대각, 삭제, 삽입 순)."""
+    n, m = len(ref), len(hyp)
     prev = list(range(m + 1))
     back = [bytearray(m + 1) for _ in range(n + 1)]
     for j in range(1, m + 1):
@@ -81,9 +81,9 @@ def align(ref_lines: list[str], hyp_texts: list[str]) -> dict:
     for i in range(1, n + 1):
         cur = [i] + [0] * m
         back[i][0] = 1
-        rc = R[i - 1][0]
+        rc = ref[i - 1]
         for j in range(1, m + 1):
-            d, u, left = prev[j - 1] + (rc != H[j - 1]), prev[j] + 1, cur[j - 1] + 1
+            d, u, left = prev[j - 1] + (rc != hyp[j - 1]), prev[j] + 1, cur[j - 1] + 1
             if d <= u and d <= left:
                 cur[j], back[i][j] = d, 0
             elif u <= left:
@@ -91,23 +91,32 @@ def align(ref_lines: list[str], hyp_texts: list[str]) -> dict:
             else:
                 cur[j], back[i][j] = left, 2
         prev = cur
-    ops: list[tuple[str, int | None]] = []     # (연산, 대본 글자 위치). 뒤에서부터 쌓는다
+    ops: list[tuple[str, int | None, int | None]] = []     # 뒤에서부터 쌓는다
     i, j = n, m
     while i or j:
         b = back[i][j]
         if i and j and b == 0:
-            ops.append(("M" if R[i - 1][0] == H[j - 1] else "S", i - 1))
+            ops.append(("M" if ref[i - 1] == hyp[j - 1] else "S", i - 1, j - 1))
             i, j = i - 1, j - 1
         elif i and (j == 0 or b == 1):
-            ops.append(("D", i - 1))
+            ops.append(("D", i - 1, None))
             i -= 1
         else:
-            ops.append(("I", None))
+            ops.append(("I", None, j - 1))
             j -= 1
+    return ops[::-1]
+
+
+def align(ref_lines: list[str], hyp_texts: list[str]) -> dict:
+    """글자 편집 거리 정렬. 오류는 그 글자의 대본 줄에, 삽입은 바로 앞 대본 글자의 줄에 붙인다."""
+    R = [(c, i) for i, ln in enumerate(ref_lines) for c in nospace(ln)]
+    H = [c for h in hyp_texts for c in nospace(h)]
+    n, m = len(R), len(H)
+    ops = [(op, a) for op, a, _ in _edit_ops([c for c, _ in R], H)]
     line_errors = [0] * len(ref_lines)
     counts = {"S": 0, "D": 0, "I": 0}
     last = 0
-    for op, a in reversed(ops):
+    for op, a in ops:
         if a is not None:
             last = R[a][1]
         if op != "M":
@@ -117,6 +126,42 @@ def align(ref_lines: list[str], hyp_texts: list[str]) -> dict:
     return {"ref_chars": n, "hyp_chars": m, "sub": counts["S"], "del": counts["D"], "ins": counts["I"],
             "cer": errors / n if n else 0.0, "line_errors": line_errors,
             "line_chars": [len(nospace(ln)) for ln in ref_lines]}
+
+
+def line_texts(ref_lines: list[str], segments: list[dict]) -> tuple[list[str], list[int]]:
+    """대본 줄마다 그 줄에 맞춰진 전사 구간(띄어쓰기·문장부호를 살린 원문)과 그 줄의 오류 글자 수.
+
+    전사를 시작 시각 순으로 이어 align 과 같은 정렬을 하고, 대본 줄에 붙은 전사 글자의 처음부터 끝까지를 잘라 낸다.
+    정렬에 안 들어가는 문장부호·공백은 그 사이에 있을 때만 남는다. 줄 경계의 한두 글자는 옆 줄로 갈 수 있다.
+    """
+    text = " ".join(s["text"] for s in segments)
+    hyp = [(c, k) for k, c in enumerate(text) if nospace(c) == c]
+    ref = [(c, i) for i, ln in enumerate(ref_lines) for c in nospace(ln)]
+    spans: list[list[int]] = [[] for _ in ref_lines]
+    errors = [0] * len(ref_lines)
+    last = 0
+    for op, a, h in _edit_ops([c for c, _ in ref], [c for c, _ in hyp]):
+        if a is not None:
+            last = ref[a][1]
+        if op != "M":
+            errors[last] += 1
+        if h is not None:
+            spans[last].append(hyp[h][1])
+    return [text[min(sp):max(sp) + 1] if sp else "" for sp in spans], errors
+
+
+def render_compare(ref_lines: list[str], runs: dict[str, list[dict]]) -> str:
+    """대본 줄과 실행마다의 전사 구간을 나란히 놓은 표. 띄어쓰기·문장부호만 다른 줄은 뺀다. 전사 문장이 들어 있다."""
+    cut = {name: line_texts(ref_lines, segs) for name, segs in runs.items()}
+    names = list(runs)
+    out = ["| 줄 | 대본 | " + " | ".join(names) + " | 오류 글자 |", "|---|---|" + "---|" * len(names) + "---|"]
+    for i, line in enumerate(ref_lines):
+        texts = [cut[n][0][i] for n in names]
+        if len({nospace(t) for t in texts}) == 1:
+            continue
+        errs = " · ".join(f"{n} {cut[n][1][i]}" for n in names)
+        out.append(f"| {i + 1} | {line} | " + " | ".join(t or "(없음)" for t in texts) + f" | {errs} |")
+    return "\n".join(out) + "\n"
 
 
 def korean_lines(ref_lines: list[str]) -> list[int]:
@@ -217,6 +262,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--lines", type=_named, action="append", required=True, help="이름=줄 파일. 여러 번 줄 수 있다")
     ap.add_argument("--script", type=Path, required=True, help="9/29 대본. 레포 밖")
     ap.add_argument("--out", type=Path, required=True, help="결과 폴더")
+    ap.add_argument("--compare", type=Path, help="대본 줄과 전사를 나란히 놓은 표를 쓸 파일. 전사 문장이 들어 있어 레포 밖에 둔다")
     a = ap.parse_args(argv)
     ref = read_script(a.script)
     runs = {name: evaluate(ref, load_lines(path)) for name, path in a.lines}
@@ -225,6 +271,9 @@ def main(argv: list[str] | None = None) -> int:
     (a.out / "real929.json").write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
     (a.out / "real929.md").write_text(render(runs), encoding="utf-8")
     print(f"[real929] {a.out / 'real929.json'}, {a.out / 'real929.md'}", flush=True)
+    if a.compare:
+        a.compare.write_text(render_compare(ref, {name: load_lines(path) for name, path in a.lines}), encoding="utf-8")
+        print(f"[real929] {a.compare}", flush=True)
     return 0
 
 
