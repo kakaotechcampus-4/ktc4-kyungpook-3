@@ -304,7 +304,7 @@ def assign_meeting_speakers(
 @router.get(
     "/{meeting_id}/audio",
     response_class=FileResponse,
-    responses={200: {"content": {"application/octet-stream": {}}, "description": "업로드한 녹음 원본(Range 지원)"}},
+    responses={200: {"content": {"audio/*": {}}, "description": "업로드한 녹음 원본(Range 지원)"}},
 )
 def get_meeting_audio(
     meeting_id: str,
