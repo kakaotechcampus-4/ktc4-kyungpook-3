@@ -664,3 +664,16 @@ def test_dispatch_cancels_bundle_of_member_who_left_instead_of_sending(mdb, msee
     assert r.bundle.status == ReminderStatus.CANCELLED
     assert r.bundle.message_id is None
     assert mdb.scalars(select(ThreadMessage)).all() == []
+
+
+def test_create_same_task_same_time_returns_existing_reminder(mdb, mseed):
+    first = _make(mdb, mseed)
+    bundle = _approve(mdb, mseed, first)
+    body = bundle.body
+
+    second = _make(mdb, mseed, note="다른 메모")
+
+    assert second.reminder_id == first.reminder_id
+    assert svc.bundle_reminders(mdb, bundle.bundle_id) == [first]
+    assert bundle.body == body and bundle.approved_at is not None
+    assert first.note is None

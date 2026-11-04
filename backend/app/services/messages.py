@@ -231,6 +231,10 @@ def create_reminder(
     thread = get_or_create_thread(db, workspace_id, member_id)
     _lock_thread(db, thread.thread_id)
     bundle = _slot_bundle(db, thread, scheduled_at, now)
+    # 만들기를 두 번 눌러도 한 묶음에 같은 태스크가 두 번 들어가 문구가 겹치지 않게 한다.
+    for reminder in bundle_reminders(db, bundle.bundle_id):
+        if reminder.task_id == task_id:
+            return reminder
     reminder = Reminder(
         workspace_id=workspace_id, bundle=bundle, task_id=task_id, kind=ReminderKind.NUDGE,
         origin=origin, created_by=created_by, note=note, created_at=now, updated_at=now,
