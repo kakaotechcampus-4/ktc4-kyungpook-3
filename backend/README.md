@@ -4,6 +4,8 @@
 
 ## 문서
 
+- 화자 지정 만료 이력 조회(#256, 2026-11-04): 회의 목록에서 수동 업로드의 `speaker_assignment_expired`만 실패 제외 정책의 예외로 유지하고 `failed_stage`를 함께 반환한다. [M5 추가 결과](docs/plan/m5/result.md#2026-11-04-추가-화자-지정-만료-이력-조회)에 검증과 한계를 기록한다. 자동 만료 생성은 이 변경에 포함하지 않는다.
+
 - [문서 안내](docs/README.md): 문서 구조와 기존 문서 배치.
 - 계약: [AI(녹음 봇) 계약](docs/contracts/backend-ai-contract.md), 웹 화면용은 [프론트엔드 대표 계약](../frontend/docs/contracts/frontend-api-contract.md).
 - 계획: [전체 계획](docs/plan/backend-plan.md), [M0~M7 안내](docs/plan/README.md). 마일스톤별 plan.md는 아직 비어 있다. 진행 상태는 전체 계획의 마일스톤 개요(2026-10-02 기준)를 따른다.

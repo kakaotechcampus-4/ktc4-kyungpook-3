@@ -1,7 +1,7 @@
 import { http } from 'msw'
 import { db } from '../db'
 import { ok, fail } from '../envelope'
-import { requireMember } from '../auth-guard'
+import { requireMember, requirePmRole } from '../auth-guard'
 
 export const integrationHandlers = [
   http.get('/api/v1/workspaces/:workspaceId/integrations', ({ params }) => {
@@ -13,7 +13,8 @@ export const integrationHandlers = [
       : fail('WORKSPACE_NOT_FOUND', '워크스페이스가 없습니다.', 404)
   }),
   http.delete('/api/v1/workspaces/:workspaceId/integrations/:provider', ({ params }) => {
-    const denied = requireMember(String(params.workspaceId))
+    // 백엔드는 get_current_pm 을 건다 (integrations.py 의 delete_integration)
+    const denied = requirePmRole(String(params.workspaceId))
     if (denied) return denied
     const integrations = db.integrations[String(params.workspaceId)]
     if (!integrations) return fail('WORKSPACE_NOT_FOUND', '워크스페이스가 없습니다.', 404)

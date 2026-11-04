@@ -88,6 +88,15 @@ function summary(): Record<string, string> {
     ]),
   )
 }
+/** 요약 안의 링크 — 이름과 주소 */
+function summaryLinks(): [string | null, string | null][] {
+  const list = document.querySelector<HTMLElement>('dl[aria-label="현황 요약"]')
+  if (list === null) throw new Error('summary is missing')
+  return within(list)
+    .queryAllByRole('link')
+    .map((link) => [link.getAttribute('aria-label'), link.getAttribute('href')])
+}
+const TASKS = paths.tasks('ws_01')
 function headline(): string {
   return (
     screen.getByText(/확인이 필요한 일이|워크스페이스 현황/, { selector: 'p' }).textContent ?? ''
@@ -132,7 +141,7 @@ async function openDashboard(path = DASHBOARD) {
 }
 
 describe('요약·제목·회의 안내 (AC-01 · AC-05)', () => {
-  it('PM 은 요약 넷을 전체 데이터로 보고, 제목에는 개수가 없다. 요약은 누를 수 없다', async () => {
+  it('PM 은 요약 넷을 전체 데이터로 보고, 제목에는 개수가 없다. 네 숫자 모두 그 조건의 목록으로 간다', async () => {
     await openDashboard()
     await waitFor(() =>
       expect(summary()).toEqual({
@@ -147,9 +156,14 @@ describe('요약·제목·회의 안내 (AC-01 · AC-05)', () => {
       '9월 15일 3주차 정기회의를 정리했어요 · 46분 분량',
     )
     expect(screen.getByText('2026-09-18 금요일')).toBeInTheDocument()
-    // 요약 안에 링크·버튼이 없다 (D-061)
+    // 숫자마다 그 수만큼 보이는 태스크 목록 조건으로 간다 (D-178)
+    expect(summaryLinks()).toEqual([
+      ['확인 대기 3', `${TASKS}?tab=needs_review`],
+      ['기한 지남 2', `${TASKS}?tab=in_progress&due=overdue`],
+      ['7일 이내 마감 4', `${TASKS}?tab=in_progress&due=soon`],
+      ['막힌 일 1', `${TASKS}?tab=in_progress&due=blocked`],
+    ])
     const list = screen.getByText('확인 대기').closest('dl')!
-    expect(within(list).queryAllByRole('link')).toEqual([])
     expect(within(list).queryAllByRole('button')).toEqual([])
     // 마감 임박은 5개만 보여도 집계는 6이다 (D-052)
     expect(dueTitles()).toHaveLength(5)
@@ -162,6 +176,56 @@ describe('요약·제목·회의 안내 (AC-01 · AC-05)', () => {
     expect(summary()['확인 대기']).toBe('0')
     expect(screen.getByText('지금 확인할 일이 없어요.')).toBeInTheDocument()
   })
+
+  /*
+   * 요약 숫자를 누르면 그 수만큼 보이는 목록이다 (D-178). 수는 누르기 전 요약에서 읽는다.
+   * 확인 대기는 확인 필요 카드, 나머지는 진행 중 탭의 태스크 행이다
+   */
+  it.each([
+    {
+      label: '확인 대기',
+      search: '?tab=needs_review',
+      tab: /^확인 필요/,
+      due: '마감 조건: 마감 전체',
+      rows: () =>
+        within(screen.getByRole('list', { name: '확인 필요 목록' })).getAllByRole('article'),
+    },
+    {
+      label: '기한 지남',
+      search: '?tab=in_progress&due=overdue',
+      tab: /^진행 중/,
+      due: '마감 조건: 기한 지남',
+      rows: () => within(screen.getByRole('list', { name: '태스크 목록' })).getAllByRole('link'),
+    },
+    {
+      label: '7일 이내 마감',
+      search: '?tab=in_progress&due=soon',
+      tab: /^진행 중/,
+      due: '마감 조건: 7일 안에 마감',
+      rows: () => within(screen.getByRole('list', { name: '태스크 목록' })).getAllByRole('link'),
+    },
+    {
+      label: '막힌 일',
+      search: '?tab=in_progress&due=blocked',
+      tab: /^진행 중/,
+      due: '마감 조건: 막힘',
+      rows: () => within(screen.getByRole('list', { name: '태스크 목록' })).getAllByRole('link'),
+    },
+  ])(
+    '$label 숫자를 누르면 태스크 목록의 그 조건이고 같은 수가 보인다 (D-178)',
+    async ({ label, search, tab, due, rows }) => {
+      const user = userEvent.setup()
+      const app = await openDashboard()
+      await waitFor(() => expect(summary()['확인 대기']).toBe('3'))
+      const count = Number(summary()[label])
+      await user.click(screen.getByRole('link', { name: `${label} ${count}` }))
+      await app.expectPath(TASKS)
+      await app.expectSearch(search)
+      await waitFor(() => expect(rows()).toHaveLength(count))
+      expect(screen.getByRole('tab', { name: tab })).toHaveAttribute('aria-selected', 'true')
+      expect(screen.getByRole('button', { name: due })).toBeInTheDocument()
+    },
+  )
 
   it('정리한 회의가 없으면 안내 문구만 있다 (D-065)', async () => {
     useScenario('dashboard-no-meeting')
@@ -183,6 +247,11 @@ describe('역할 (AC-05)', () => {
 
     expect(headline()).toBe('워크스페이스 현황')
     expect(Object.keys(summary())).toEqual(['기한 지남', '7일 이내 마감', '막힌 일'])
+    expect(summaryLinks()).toEqual([
+      ['기한 지남 2', `${TASKS}?tab=in_progress&due=overdue`],
+      ['7일 이내 마감 4', `${TASKS}?tab=in_progress&due=soon`],
+      ['막힌 일 1', `${TASKS}?tab=in_progress&due=blocked`],
+    ])
     expect(screen.queryByRole('heading', { name: '확인이 필요한 일' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /되돌리기$/ })).not.toBeInTheDocument()
     expect(screen.getByRole('heading', { name: '마감 임박' })).toBeInTheDocument()
@@ -309,6 +378,53 @@ describe('마감 임박 (AC-02)', () => {
     expect(screen.queryByRole('list', { name: '확인 필요 목록' })).not.toBeInTheDocument()
   })
 
+  it('태스크를 받는 중에는 태스크 요약 숫자가 링크가 아니다', async () => {
+    const gate = deferred()
+    onTestFinished(() => gate.resolve())
+    server.use(
+      http.get('/api/v1/tasks', async () => {
+        await gate.promise
+        return undefined
+      }),
+    )
+    renderApp(DASHBOARD)
+    await waitFor(() => expect(summary()['막힌 일']).toBe('불러오는 중'))
+    await waitFor(() => expect(summary()['확인 대기']).toBe('3'))
+    expect(summaryLinks()).toEqual([['확인 대기 3', `${TASKS}?tab=needs_review`]])
+    gate.resolve()
+    expect(await screen.findByRole('link', { name: '막힌 일 1' })).toBeInTheDocument()
+    expect(summaryLinks().map(([name]) => name)).toEqual([
+      '확인 대기 3',
+      '기한 지남 2',
+      '7일 이내 마감 4',
+      '막힌 일 1',
+    ])
+  })
+
+  it('승인을 받는 중이거나 받지 못하면 확인 대기는 링크가 아니다', async () => {
+    const gate = deferred()
+    onTestFinished(() => gate.resolve())
+    server.use(
+      http.get('/api/v1/approvals', async () => {
+        await gate.promise
+        return fail('INTERNAL_ERROR', 'boom', 500)
+      }),
+    )
+    renderApp(DASHBOARD)
+    await waitFor(() => expect(summary()['기한 지남']).toBe('2'))
+    expect(summary()['확인 대기']).toBe('불러오는 중')
+    expect(screen.queryByRole('link', { name: /^확인 대기/ })).toBeNull()
+    gate.resolve()
+    await waitFor(() => expect(summary()['확인 대기']).toBe('–불러오지 못했어요'), {
+      timeout: 8_000,
+    })
+    expect(summaryLinks().map(([name]) => name)).toEqual([
+      '기한 지남 2',
+      '7일 이내 마감 4',
+      '막힌 일 1',
+    ])
+  })
+
   it('행을 누르면 태스크 상세로 간다', async () => {
     const user = userEvent.setup()
     const app = await openDashboard()
@@ -338,7 +454,7 @@ describe('최근 반영 (AC-03)', () => {
     expect(screen.getByRole('button', { name: '전체 로그' })).toBeDisabled()
   })
 
-  it('auto 항목이 3개를 넘어도 앞의 3개만이다', async () => {
+  it('화면 높이를 모르면 앞의 3개만 보이고, 나머지 수는 그 회의록으로 이어진다 (D-176)', async () => {
     const extraction = db.extractions.find(({ extraction_id }) => extraction_id === 'ex_01')!
     extraction.items.push({
       ...structuredClone(extraction.items[0]),
@@ -349,6 +465,74 @@ describe('최근 반영 (AC-03)', () => {
     await openDashboard()
     expect(recentText()).toHaveLength(3)
     expect(screen.queryByText('네 번째 자동 항목')).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '외 1건 · 회의록에서 보기' })).toHaveAttribute(
+      'href',
+      paths.meetings('ws_01', 'mt_09'),
+    )
+  })
+
+  it('모두 보이면 외 N건 줄이 없다', async () => {
+    await openDashboard()
+    expect(recentText()).toHaveLength(3)
+    expect(screen.queryByRole('link', { name: /^외 \d+건/ })).toBeNull()
+  })
+
+  describe('첫 화면에 들어가는 만큼 보인다 (D-176)', () => {
+    /** 최근 반영 목록 위쪽과 행 높이만 정한다. 나머지 요소는 jsdom 처럼 크기가 없다 */
+    function stubLayout(layout: { innerHeight: number; listTop: number; rowHeight: number }) {
+      const rect = (top: number, height: number) =>
+        ({
+          x: 0,
+          y: top,
+          top,
+          left: 0,
+          right: 0,
+          bottom: top + height,
+          width: 0,
+          height,
+          toJSON: () => ({}),
+        }) as DOMRect
+      vi.stubGlobal('innerHeight', layout.innerHeight)
+      const spy = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (
+        this: Element,
+      ) {
+        if (this.matches('ul[aria-label="최근 반영 목록"]')) return rect(layout.listTop, 0)
+        if (this.matches('[data-testid="recent-row"]')) return rect(0, layout.rowHeight)
+        return rect(0, 0)
+      })
+      onTestFinished(() => {
+        spy.mockRestore()
+        vi.unstubAllGlobals()
+      })
+    }
+
+    it('남은 300px 에 50px 행 5개와 외 N건 줄이 들어간다. 창이 커지면 다시 잰다', async () => {
+      useScenario('dashboard-recent-overflow')
+      stubLayout({ innerHeight: 900, listTop: 600, rowHeight: 50 })
+      await openDashboard()
+      await waitFor(() => expect(recentText()).toHaveLength(5))
+      expect(recentText()[3]).toContain('자동 반영 4')
+      const more = screen.getByRole('link', { name: '외 7건 · 회의록에서 보기' })
+      expect(more).toHaveAttribute('href', paths.meetings('ws_01', 'mt_09'))
+
+      vi.stubGlobal('innerHeight', 1000)
+      fireEvent(window, new Event('resize'))
+      await waitFor(() => expect(recentText()).toHaveLength(7))
+      expect(screen.getByRole('link', { name: '외 5건 · 회의록에서 보기' })).toBeInTheDocument()
+    })
+
+    it('아주 좁아도 3개, 아주 넓어도 8개다', async () => {
+      useScenario('dashboard-recent-overflow')
+      stubLayout({ innerHeight: 900, listTop: 880, rowHeight: 50 })
+      await openDashboard()
+      await waitFor(() => expect(recentText()).toHaveLength(3))
+      expect(screen.getByRole('link', { name: '외 9건 · 회의록에서 보기' })).toBeInTheDocument()
+
+      vi.stubGlobal('innerHeight', 3000)
+      fireEvent(window, new Event('resize'))
+      await waitFor(() => expect(recentText()).toHaveLength(8))
+      expect(screen.getByRole('link', { name: '외 4건 · 회의록에서 보기' })).toBeInTheDocument()
+    })
   })
 
   it.each([
@@ -420,7 +604,7 @@ describe('반영 대기 polling (AC-03)', () => {
     await screen.findByRole('list', { name: '최근 반영 목록' })
     await waitFor(() => expect(rowOf('회원가입 화면')).toHaveTextContent('반영 대기'))
     await user.click(screen.getByRole('link', { name: '회의록' }))
-    await app.expectPath(paths.meetings('ws_01'))
+    await app.expectPath(paths.meetings('ws_01', 'mt_09'))
     await pause(150)
     const left = listGets(log)
     await advance(9_000)
@@ -684,6 +868,8 @@ describe('부분 오류·공간 전환 (AC-05)', () => {
     expect(summary()['확인 대기']).toBe('3')
     for (const label of ['기한 지남', '7일 이내 마감', '막힌 일'])
       expect(summary()[label]).toBe('–불러오지 못했어요')
+    // 숫자를 모르면 링크가 아니다. 받은 확인 대기만 링크다 (D-178)
+    expect(summaryLinks()).toEqual([['확인 대기 3', `${TASKS}?tab=needs_review`]])
     expect(await screen.findByText(/반영 상태를 알 수 없어요/)).toBeInTheDocument()
   })
 

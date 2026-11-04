@@ -38,14 +38,13 @@ describe('생성 승인 보완 스키마 (계획 §4-2)', () => {
     },
   )
 
-  it.each([[''], ['mb_99']])('담당자 %j 는 현재 공간 팀원이 아니라 담당자 칸의 오류다', (id) => {
+  it.each([['mb_99']])('담당자 %j 는 현재 공간 팀원이 아니라 담당자 칸의 오류다', (id) => {
     expect(errors({ assigneeMemberId: id })).toEqual({
       assigneeMemberId: OVERRIDE_FORM_MESSAGES.assignee,
     })
   })
 
   it.each([
-    ['', OVERRIDE_FORM_MESSAGES.dueRequired],
     ['0000-01-01', OVERRIDE_FORM_MESSAGES.dueInvalid],
     ['2026-02-30', OVERRIDE_FORM_MESSAGES.dueInvalid],
     ['2026-9-1', OVERRIDE_FORM_MESSAGES.dueInvalid],
@@ -59,11 +58,9 @@ describe('생성 승인 보완 스키마 (계획 §4-2)', () => {
     expect(errors({ dueDate })).toEqual({})
   })
 
-  it('세 칸이 모두 틀리면 세 칸 모두 오류다', () => {
+  it('선택값이 미정이면 제목만 검사한다', () => {
     expect(Object.keys(errors({ taskTitle: '', assigneeMemberId: '', dueDate: '' }))).toEqual([
       'taskTitle',
-      'assigneeMemberId',
-      'dueDate',
     ])
   })
 

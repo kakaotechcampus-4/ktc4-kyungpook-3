@@ -27,6 +27,7 @@ const DASHBOARD_SCENARIOS = [
   'dashboard-revert-rejected',
   'dashboard-member',
   'dashboard-partial-error',
+  'dashboard-recent-overflow',
 ] as const satisfies readonly MockScenario[]
 
 afterEach(() => sessionStorage.clear())
@@ -239,6 +240,23 @@ describe('M7 대시보드 시나리오', () => {
     expect(await doneMeetings()).toEqual(['mt_07'])
     const meeting = await fetchDto<MeetingDto>('/meetings/mt_07')
     expect((await extraction(meeting.extraction_id!)).items).toEqual([])
+  })
+
+  it('최근 반영 넘침: mt_09 의 추출에 auto 항목이 12개다. 붙인 항목은 tk_01(반영 완료)을 가리킨다', async () => {
+    applyScenario('dashboard-recent-overflow')
+    expect(await doneMeetings()).toEqual(['mt_09', 'mt_07'])
+    const auto = (await extraction()).items.filter(({ gate }) => gate === 'auto')
+    expect(auto.map(({ item_id }) => item_id)).toEqual([
+      'it_01',
+      'it_02',
+      'it_03',
+      ...Array.from({ length: 9 }, (_, index) => `it_${21 + index}`),
+    ])
+    expect(auto.slice(3).map(({ task }) => task.title)).toEqual(
+      Array.from({ length: 9 }, (_, index) => `자동 반영 ${index + 4}`),
+    )
+    expect(new Set(auto.slice(3).map(({ task_id }) => task_id))).toEqual(new Set(['tk_01']))
+    expect((await syncOf()).tk_01).toBe('synced')
   })
 
   it('반영 대기·실패', async () => {

@@ -47,7 +47,7 @@ describe('RequireAuth', () => {
 
 describe('인증 화면 재접근 (RedirectIfAuthed)', () => {
   it.each([
-    { label: '공간 0개', ids: [], last: null, from: '/login', to: '/onboarding/create_workspace' },
+    { label: '공간 0개', ids: [], last: null, from: '/login', to: '/onboarding/start' },
     {
       label: '공간 1개',
       ids: ['ws_01'],

@@ -6,11 +6,6 @@ import { db } from './db'
 import { MOCK_NOW } from './fixtures/constants'
 import { setMockRole } from './sessions'
 
-/*
- * M6 S2 — MSW 태스크·승인 쓰기가 현재 백엔드 의미(api/tasks.py, api/approvals.py, services/tasks.py,
- * services/notion_sync.py)와 M6 생성 승인 보완 요청안을 따르는지 본다. 전이는 테스트가 직접 제어한다.
- */
-
 const task = (id: string) => db.tasks.find(({ task_id }) => task_id === id)!
 const approval = (id: string) => db.approvals.find(({ approval_id }) => approval_id === id)!
 const historyOf = (id: string) => db.taskHistory.filter(({ task_id }) => task_id === id)
@@ -47,7 +42,6 @@ function setNotion(status: 'connected' | 'not_connected' | 'revoked' | 'missing'
   db.integrations.ws_01.notion.status = status
 }
 
-/** ap_01 을 tk_01 의 변경 승인으로 바꾼다. 제안 때 본 값은 status todo·progress 40 이다 */
 function makeUpdateApproval(payload: Record<string, unknown>) {
   const target = approval('ap_01')
   target.type = 'task_update'
@@ -60,7 +54,7 @@ describe('버전과 Notion 반영 상태 (services/tasks.py, notion_sync.enqueue
     expect(task('tk_02')).toMatchObject({ version: 1, notion_sync_status: null })
     const changed = await patchTask('tk_02', { status: 'in_progress' })
     expect(changed).toMatchObject({ version: 2, notion_sync_status: 'pending' })
-    expect(await patchTask('tk_02', { status: 'done', progress: 100 })).toMatchObject({
+    expect(await patchTask('tk_02', { status: 'done' })).toMatchObject({
       version: 3,
       notion_sync_status: 'pending',
     })
@@ -78,7 +72,7 @@ describe('버전과 Notion 반영 상태 (services/tasks.py, notion_sync.enqueue
     'Notion 이 %s 이면 변경해도 pending 으로 바꾸지 않는다',
     async (status) => {
       setNotion(status)
-      expect(await patchTask('tk_01', { progress: 60 })).toMatchObject({
+      expect(await patchTask('tk_01', { blocker: 'review' })).toMatchObject({
         version: 2,
         notion_sync_status: 'synced',
       })
@@ -96,10 +90,12 @@ describe('버전과 Notion 반영 상태 (services/tasks.py, notion_sync.enqueue
         jsonRequest('POST', { workspace_id: 'ws_01', title: '새 일' }),
       ),
     ).toMatchObject({ version: 1, notion_sync_status: 'pending' })
+    // 생성은 PM 의 세션 팀원이 있는 공간에서만 된다 — 연동 안 된 공간은 ws_01 의 연동을 끊어 만든다
+    setNotion('not_connected')
     expect(
       await fetchDto<TaskDto>(
         '/tasks',
-        jsonRequest('POST', { workspace_id: 'ws_02', title: '새 일' }),
+        jsonRequest('POST', { workspace_id: 'ws_01', title: '새 일' }),
       ),
     ).toMatchObject({ version: 1, notion_sync_status: null })
   })
@@ -155,12 +151,13 @@ describe('세션 팀원 기록 (본문·쿼리의 changed_by·resolved_by 무시
     await resolve('ap_03', { status: 'rejected', resolved_by: 'mb_02' })
 
     // 변경·되돌리기·변경 승인·생성 승인이 한 줄씩 남는다. 반려는 이력을 남기지 않는다
-    const written = db.taskHistory.slice(-4)
+    const written = db.taskHistory.slice(-5)
     expect(written.map(({ task_id, changed_field }) => [task_id, changed_field])).toEqual([
       ['tk_02', 'status'],
       ['tk_01', 'due_date'],
       ['tk_01', 'blocker'],
       ['tk_90', 'title'],
+      ['tk_90', 'due_date'],
     ])
     for (const entry of written) expect(entry.changed_by).toBe('mb_01')
     expect(db.taskHistory.map(({ changed_by }) => changed_by)).not.toContain('mb_04')
@@ -169,10 +166,15 @@ describe('세션 팀원 기록 (본문·쿼리의 changed_by·resolved_by 무시
   })
 
   it('세션 팀원 대응이 없는 공간의 쓰기는 PM 이어도 403 이고 아무것도 바꾸지 않는다', async () => {
-    const created = await fetchDto<TaskDto>(
-      '/tasks',
-      jsonRequest('POST', { workspace_id: 'ws_02', title: '사이드 일' }),
-    )
+    // 그 공간의 태스크는 생성 API 로 만들 수 없어(아래 POST 가 403) db 에 직접 둔다
+    const created: TaskDto = {
+      ...structuredClone(task('tk_02')),
+      task_id: 'tk_80',
+      workspace_id: 'ws_02',
+      assignee_member_id: null,
+      meeting_id: null,
+    }
+    db.tasks.push(created)
     db.approvals.push({
       ...structuredClone(approval('ap_03')),
       approval_id: 'ap_80',
@@ -189,16 +191,41 @@ describe('세션 팀원 기록 (본문·쿼리의 changed_by·resolved_by 무시
       code: 'FORBIDDEN',
       status: 403,
     })
+    await expect(
+      fetchDto('/tasks', jsonRequest('POST', { workspace_id: 'ws_02', title: '사이드 일' })),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN', status: 403 })
     expect(snapshot()).toEqual(before)
+  })
+
+  it('태스크 생성은 본문 created_by 가 아니라 세션 팀원 mb_01 을 생성자로 남긴다', async () => {
+    const created = await fetchDto<TaskDto>(
+      '/tasks',
+      jsonRequest('POST', { workspace_id: 'ws_01', title: '회고 정리', created_by: 'mb_04' }),
+    )
+    expect(historyOf(created.task_id)).toEqual([
+      expect.objectContaining({
+        changed_field: 'title',
+        new_value: '회고 정리',
+        changed_by: 'mb_01',
+      }),
+    ])
   })
 })
 
 describe('PM 쓰기와 소속 조회', () => {
-  it('일반 팀원의 네 쓰기는 403 이고 태스크·승인·이력·추출이 그대로다', async () => {
+  it('일반 팀원의 쓰기(생성 포함)는 403 이고 태스크·승인·이력·추출이 그대로다', async () => {
     task('tk_04').notion_sync_status = 'failed'
     setMockRole('member')
     const before = snapshot()
     const writes: [string, () => Promise<unknown>][] = [
+      [
+        'POST task',
+        () =>
+          fetchDto(
+            '/tasks',
+            jsonRequest('POST', { workspace_id: 'ws_01', title: '새 일', created_by: 'mb_01' }),
+          ),
+      ],
       ['PATCH task', () => patchTask('tk_01', { status: 'done', changed_by: 'mb_01' })],
       [
         'rollback',
@@ -236,12 +263,15 @@ describe('PM 쓰기와 소속 조회', () => {
     const before = snapshot()
     await expect(fetchDto('/tasks?workspace_id=ws_01')).rejects.toMatchObject({ status: 401 })
     await expect(patchTask('tk_01', { status: 'done' })).rejects.toMatchObject({ status: 401 })
+    await expect(
+      fetchDto('/tasks', jsonRequest('POST', { workspace_id: 'ws_01', title: '새 일' })),
+    ).rejects.toMatchObject({ status: 401 })
     await expect(resolve('ap_01', { status: 'rejected' })).rejects.toMatchObject({ status: 401 })
     expect(snapshot()).toEqual(before)
   })
 })
 
-describe('생성 승인 보완 (미합의 task_overrides — MSW 전용)', () => {
+describe('생성 승인 보완', () => {
   it('유효한 보완값이면 그 제목(trim)·담당자·마감으로 태스크 하나를 만들고 추출 항목에 잇는다', async () => {
     const taskCount = db.tasks.length
     const approved = await resolve('ap_01', {
@@ -266,8 +296,30 @@ describe('생성 승인 보완 (미합의 task_overrides — MSW 전용)', () =>
     expect(historyOf('tk_90')).toEqual([
       expect.objectContaining({
         changed_field: 'title',
+        new_value: '알림 문구 검토',
+        changed_by: 'mb_01',
+        change_source: 'meeting',
+      }),
+      expect.objectContaining({
+        changed_field: 'title',
+        old_value: '알림 문구 검토',
         new_value: '보완한 제목',
         changed_by: 'mb_01',
+        change_source: 'manual',
+      }),
+      expect.objectContaining({
+        changed_field: 'assignee',
+        old_value: null,
+        new_value: 'mb_02',
+        changed_by: 'mb_01',
+        change_source: 'manual',
+      }),
+      expect.objectContaining({
+        changed_field: 'due_date',
+        old_value: null,
+        new_value: '2026-09-30',
+        changed_by: 'mb_01',
+        change_source: 'manual',
       }),
     ])
     expect(item('it_04')).toMatchObject({ task_id: 'tk_90', approval_id: 'ap_01' })
@@ -294,21 +346,14 @@ describe('생성 승인 보완 (미합의 task_overrides — MSW 전용)', () =>
   })
 
   it.each<[string, unknown, string, number]>([
-    ['보완 없이 담당자·마감이 빈 payload', undefined, 'INVALID_REQUEST', 400],
     ['공백뿐인 제목', { ...overrides, task_title: '   ' }, 'INVALID_REQUEST', 400],
     ['301자 제목', { ...overrides, task_title: '가'.repeat(301) }, 'INVALID_REQUEST', 400],
-    ['빈 담당자', { ...overrides, assignee_member_id: '' }, 'INVALID_REQUEST', 400],
+    ['빈 담당자', { ...overrides, assignee_member_id: '' }, 'MEMBER_NOT_FOUND', 404],
     ['없는 담당자', { ...overrides, assignee_member_id: 'mb_99' }, 'MEMBER_NOT_FOUND', 404],
     ['다른 공간 담당자', { ...overrides, assignee_member_id: 'mb_80' }, 'WORKSPACE_MISMATCH', 400],
     ['달력에 없는 날짜', { ...overrides, due_date: '2026-02-30' }, 'INVALID_REQUEST', 400],
     ['형식이 다른 날짜', { ...overrides, due_date: '2026/09/30' }, 'INVALID_REQUEST', 400],
     ['서버 범위 밖 0000년 날짜', { ...overrides, due_date: '0000-01-01' }, 'INVALID_REQUEST', 400],
-    [
-      '세 값 중 하나가 빠진 보완',
-      { task_title: 'x', due_date: '2026-09-30' },
-      'INVALID_REQUEST',
-      400,
-    ],
     ['객체가 아닌 보완', 'title', 'INVALID_REQUEST', 400],
   ])('%s 는 실패하고 부분 변경이 없다', async (_, taskOverrides, code, status) => {
     db.members.push({
@@ -333,18 +378,12 @@ describe('생성 승인 보완 (미합의 task_overrides — MSW 전용)', () =>
     expect(snapshot()).toEqual(before)
   })
 
-  it('반려는 보완값을 무시하고 태스크·추출 항목을 바꾸지 않는다', async () => {
+  it('반려에 보완값을 보내면 400이고 부분 변경이 없다', async () => {
     const before = snapshot()
-    const rejected = await resolve('ap_01', { status: 'rejected', task_overrides: overrides })
-    expect(rejected).toMatchObject({
-      status: 'rejected',
-      related_task_id: null,
-      resolved_by: 'mb_01',
-    })
-    const after = snapshot()
-    expect(after.tasks).toEqual(before.tasks)
-    expect(after.taskHistory).toEqual(before.taskHistory)
-    expect(after.extractions).toEqual(before.extractions)
+    await expect(
+      resolve('ap_01', { status: 'rejected', task_overrides: overrides }),
+    ).rejects.toMatchObject({ code: 'INVALID_REQUEST', status: 400 })
+    expect(snapshot()).toEqual(before)
   })
 
   it('두 번째 처리는 409 APPROVAL_ALREADY_RESOLVED 와 current_status 이고 아무것도 다시 만들지 않는다', async () => {
@@ -367,14 +406,13 @@ describe('생성 승인 보완 (미합의 task_overrides — MSW 전용)', () =>
     expect(snapshot()).toEqual(before)
   })
 
-  it('변경 승인 본문의 보완값은 무시한다', async () => {
+  it('변경 승인에서 생성 보완 키를 보내면 400이고 부분 변경이 없다', async () => {
     makeUpdateApproval({ title: '제안 제목' })
-    await resolve('ap_01', {
-      status: 'approved',
-      task_overrides: { ...overrides, task_title: '보완 제목' },
-    })
-    expect(task('tk_01').title).toBe('제안 제목')
-    expect(db.tasks).toHaveLength(10)
+    const before = snapshot()
+    await expect(
+      resolve('ap_01', { status: 'approved', task_overrides: overrides }),
+    ).rejects.toMatchObject({ code: 'INVALID_REQUEST', status: 400 })
+    expect(snapshot()).toEqual(before)
   })
 })
 
@@ -427,8 +465,7 @@ describe('날짜 연도 범위 (services/tasks.parse_date — date.fromisoformat
 describe('변경 승인 충돌 (approvals._find_conflicts, confirm_task_version)', () => {
   const conflictPayload = {
     status: 'done',
-    progress: 100,
-    base_values: { status: 'todo', progress: 40 },
+    base_values: { status: 'todo' },
   }
 
   it('제안 뒤 바뀐 필드는 409 APPROVAL_CONFLICT 이고 승인·태스크·이력이 그대로다', async () => {
@@ -441,7 +478,6 @@ describe('변경 승인 충돌 (approvals._find_conflicts, confirm_task_version)
         approval_id: 'ap_01',
         task_id: 'tk_01',
         task_version: 1,
-        // progress 는 지금 값이 base 와 같아 충돌이 아니다
         conflicts: [{ field: 'status', base: 'todo', current: 'in_progress', proposed: 'done' }],
       },
     })
@@ -472,23 +508,15 @@ describe('변경 승인 충돌 (approvals._find_conflicts, confirm_task_version)
     expect(approved).toMatchObject({ status: 'approved', resolved_by: 'mb_01' })
     expect(task('tk_01')).toMatchObject({
       status: 'done',
-      progress: 100,
       blocker: '리뷰 대기',
       version: 3,
       notion_sync_status: 'pending',
     })
-    expect(historyOf('tk_01').slice(-2)).toEqual([
-      expect.objectContaining({
-        changed_field: 'status',
-        change_source: 'meeting',
-        changed_by: 'mb_01',
-      }),
-      expect.objectContaining({
-        changed_field: 'progress',
-        change_source: 'meeting',
-        changed_by: 'mb_01',
-      }),
-    ])
+    expect(historyOf('tk_01').at(-1)).toMatchObject({
+      changed_field: 'status',
+      change_source: 'meeting',
+      changed_by: 'mb_01',
+    })
   })
 
   it.each<[string, Record<string, unknown>]>([
@@ -544,5 +572,121 @@ describe('Notion 반영 재시도 (POST /tasks/{id}/notion-sync/retry)', () => {
 
   it('없는 태스크는 404 다', async () => {
     await expect(retry('missing')).rejects.toMatchObject({ code: 'TASK_NOT_FOUND', status: 404 })
+  })
+})
+
+describe('PR307 partial edits and history', () => {
+  it('keeps original proposal, stores only changed normalized fields and attributes edits to the PM', async () => {
+    approval('ap_02').payload.change_source = 'chat'
+    approval('ap_02').payload.due_date = '2026-09-30'
+    await resolve('ap_02', {
+      status: 'approved',
+      task_overrides: {
+        task_title: '  최종 제목  ',
+        assignee_member_id: null,
+        due_date: '20260930',
+      },
+    })
+    expect(approval('ap_02').payload).toMatchObject({
+      task_title: '테스트 계획 정리',
+      assignee_member_id: 'mb_02',
+      due_date: '2026-09-30',
+      task_overrides: { task_title: '최종 제목', assignee_member_id: null },
+    })
+    expect(approval('ap_02').payload.task_overrides).not.toHaveProperty('due_date')
+    expect(historyOf('tk_90')).toEqual([
+      expect.objectContaining({
+        changed_field: 'title',
+        old_value: null,
+        new_value: '테스트 계획 정리',
+        change_source: 'chat',
+        changed_by: 'mb_01',
+      }),
+      expect.objectContaining({
+        changed_field: 'title',
+        old_value: '테스트 계획 정리',
+        new_value: '최종 제목',
+        change_source: 'manual',
+        changed_by: 'mb_01',
+      }),
+      expect.objectContaining({
+        changed_field: 'assignee',
+        old_value: 'mb_02',
+        new_value: null,
+        change_source: 'manual',
+        changed_by: 'mb_01',
+      }),
+    ])
+  })
+  it('compares conflicts against the final edited value and preserves untouched uneditable changes', async () => {
+    makeUpdateApproval({
+      status: 'done',
+      blocker: '제안 사유',
+      change_source: 'checkin',
+      base_values: { status: 'todo' },
+    })
+    await resolve('ap_01', {
+      status: 'approved',
+      task_overrides: { status: 'in_progress', due_date: null },
+    })
+    expect(task('tk_01')).toMatchObject({
+      status: 'in_progress',
+      due_date: null,
+      blocker: '제안 사유',
+    })
+    expect(approval('ap_01').payload).toMatchObject({
+      status: 'done',
+      blocker: '제안 사유',
+      task_overrides: { status: 'in_progress', due_date: null },
+    })
+    expect(historyOf('tk_01').slice(-2)).toEqual([
+      expect.objectContaining({
+        changed_field: 'blocker',
+        change_source: 'checkin',
+        changed_by: 'mb_01',
+      }),
+      expect.objectContaining({
+        changed_field: 'due_date',
+        change_source: 'manual',
+        changed_by: 'mb_01',
+      }),
+    ])
+  })
+  it.each([
+    ['task_create', { status: 'done' }],
+    ['task_create', { title: '잘못된 키' }],
+    ['task_update', { assignee_member_id: null }],
+    ['task_update', { progress: 90 }],
+    ['reminder_dm', { due_date: null }],
+    ['task_update', { status: null }],
+  ])('rejects illegal %s edits atomically', async (type, edits) => {
+    Object.assign(approval('ap_01'), {
+      type,
+      related_task_id: type === 'task_update' ? 'tk_01' : null,
+    })
+    const before = snapshot()
+    await expect(
+      resolve('ap_01', { status: 'approved', task_overrides: edits }),
+    ).rejects.toMatchObject({ code: 'INVALID_REQUEST', status: 400 })
+    expect(snapshot()).toEqual(before)
+  })
+  it('keeps legacy progress history readable but rejects rollback without mutating state', async () => {
+    db.taskHistory.push({
+      ...db.taskHistory[0],
+      history_id: 'hs_legacy',
+      changed_field: 'progress',
+      old_value: '20',
+      new_value: '40',
+    })
+    const before = snapshot()
+    const history = await fetchDto<ListDto<TaskHistoryDto>>('/tasks/tk_01/history')
+    expect(history.items).toContainEqual(
+      expect.objectContaining({ changed_field: 'progress', old_value: '20', new_value: '40' }),
+    )
+    await expect(
+      fetchDto('/tasks/tk_01/history/hs_legacy/rollback', { method: 'POST' }),
+    ).rejects.toMatchObject({ code: 'INVALID_REQUEST', status: 400 })
+    expect(snapshot()).toEqual(before)
+    expect(task('tk_01')).not.toHaveProperty('progress')
   })
 })

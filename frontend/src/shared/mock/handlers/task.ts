@@ -62,7 +62,10 @@ export const taskHandlers = [
     )
     return list(tasks)
   }),
+  // 생성은 공간 존재(404) 뒤 PM(403) 이다 (api/tasks.py create_task_endpoint). 생성자는 본문 created_by 가 아니라 세션 팀원이다
   http.post('/api/v1/tasks', async ({ request }) => {
+    const unauthenticated = requireAuth()
+    if (unauthenticated) return unauthenticated
     const body = await readJson(request)
     if (
       !body ||
@@ -73,6 +76,8 @@ export const taskHandlers = [
       return fail('INVALID_REQUEST', '태스크 요청이 올바르지 않습니다.', 400)
     if (!db.workspaces.some(({ workspace_id }) => workspace_id === body.workspace_id))
       return fail('WORKSPACE_NOT_FOUND', '워크스페이스가 없습니다.', 404)
+    const pm = requirePm(body.workspace_id)
+    if (pm instanceof Response) return pm
     const owned = ownershipError(body.workspace_id, body)
     if (owned)
       return fail(owned.code, owned.message, owned.code === 'WORKSPACE_MISMATCH' ? 400 : 404)
@@ -84,7 +89,7 @@ export const taskHandlers = [
           title: body.title,
           meeting_id: typeof body.meeting_id === 'string' ? body.meeting_id : null,
         },
-        typeof body.created_by === 'string' ? body.created_by : null,
+        pm.memberId,
       ),
       { status: 201 },
     )
@@ -160,10 +165,7 @@ export const taskHandlers = [
         400,
       )
     Object.assign(task, {
-      [field]:
-        field === 'progress' && entry.old_value !== null
-          ? Number(entry.old_value)
-          : entry.old_value,
+      [field]: entry.old_value,
     })
     entry.is_rolled_back = true
     entry.rolled_back_at = MOCK_NOW

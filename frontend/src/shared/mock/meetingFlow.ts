@@ -43,6 +43,7 @@ export interface CompletedMeeting {
 export interface FailMeetingOptions {
   /** 정리 중 Notion 연결이 끊겨 실패했다. 그 공간의 Notion 연동을 `revoked` 로 바꾼다 (D-099, D-100) */
   notionRevoked?: boolean
+  failedStage?: string
 }
 
 function processingMeeting(state: MockDb, meetingId: string): MeetingDto {
@@ -290,7 +291,7 @@ export function completeMeeting(meetingId: string, state: MockDb = db): Complete
 
 /**
  * 처리 중 회의를 실패로 끝낸다. 회의록·추출·태스크·승인을 만들지 않는다 — 실패 결과를 남기지 않는다 (D-091, D-099).
- * 실패 회의는 목록 handler 가 뺀다 (D-093).
+ * 일반 실패는 목록에서 빼고, 수동 업로드의 화자 지정 기한 만료만 이력으로 남긴다 (#256).
  */
 export function failMeeting(
   meetingId: string,
@@ -299,9 +300,8 @@ export function failMeeting(
 ): MeetingDto {
   const meeting = processingMeeting(state, meetingId)
   meeting.status = 'failed'
-  // 실 API 의 failed_stage 는 자유 문자열이다(계약 §4.7-3). 봇이 보내는 `STT` 같은 꼴로 둔다.
-  // 화면은 이 값으로 갈리지 않는다 — 끊김은 연동 상태를 다시 조회해 판단한다 (D-100)
-  meeting.failed_stage = options.notionRevoked ? 'NOTION' : 'STT'
+  // 알려진 실패 사유가 없으면 기존 봇의 STT·NOTION 값을 쓴다.
+  meeting.failed_stage = options.failedStage ?? (options.notionRevoked ? 'NOTION' : 'STT')
   meeting.ended_at = MOCK_NOW
   meeting.extraction_id = null
   const summary = state.meetingSummaries.find(({ meeting_id }) => meeting_id === meetingId)
@@ -332,6 +332,12 @@ export function tickMeeting(meetingId: string, state: MockDb = db): void {
       return
     case 'fail-notion-revoked':
       failMeeting(meetingId, { notionRevoked: true }, state)
+      return
+    case 'fail-diarize':
+      failMeeting(meetingId, { failedStage: 'diarize', notionRevoked: true }, state)
+      return
+    case 'fail-expired':
+      failMeeting(meetingId, { failedStage: 'speaker_assignment_expired' }, state)
       return
   }
 }

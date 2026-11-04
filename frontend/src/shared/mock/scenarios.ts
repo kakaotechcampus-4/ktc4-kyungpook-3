@@ -2,7 +2,12 @@ import type { WorkspaceDto } from '@/shared/types/api/workspace'
 import { initialDb, replaceDb } from './db'
 import type { MeetingFlowMode, MockDb } from './db'
 import { MOCK_NOW } from './fixtures/constants'
-import { completeMeeting, setMeetingFlowMode } from './meetingFlow'
+import {
+  messagesMemberReview,
+  messagesMemberThread,
+  schedulePassedReview,
+} from './fixtures/message'
+import { completeMeeting, failMeeting, setMeetingFlowMode } from './meetingFlow'
 import { setMockRole } from './sessions'
 import { createTask } from './task-state'
 
@@ -22,6 +27,9 @@ export const MOCK_SCENARIOS = [
   'meeting-demo',
   'meeting-instant',
   'meeting-fail',
+  'meeting-fail-diarize',
+  'meeting-fail-expired',
+  'meeting-expired-member',
   'meeting-fail-notion-revoked',
   'meeting-notion-not-connected',
   'meeting-notion-revoked',
@@ -36,6 +44,8 @@ export const MOCK_SCENARIOS = [
   'notion-sync-pending',
   'notion-sync-failed',
   'tasks-member',
+  // M8 태스크 보기(보드·캘린더·간트). ws_01 PM 이다
+  'tasks-long-content',
   // M7 대시보드. 모두 ws_01 하나에 로그인한다(dashboard-member 만 일반 팀원). 처리 중 회의 mt_10 은 그대로라
   // 최신 완료 회의는 mt_09 이고 그 auto 항목이 it_01~it_03(tk_01~tk_03)이다
   'dashboard-default',
@@ -47,6 +57,20 @@ export const MOCK_SCENARIOS = [
   'dashboard-revert-rejected',
   'dashboard-member',
   'dashboard-partial-error',
+  'dashboard-recent-overflow',
+  // M8 메시지(임시, 디자인 캔버스 기준 MSW 목). 모두 ws_01 하나에 PM 으로 로그인한다.
+  // 로딩은 시나리오가 아니라 응답을 붙잡아 재현한다. 발송 성공은 messages-default 로 본다 (계획 C-7)
+  'messages-default',
+  'messages-empty',
+  'messages-list-error',
+  'messages-thread-error',
+  'messages-send-fail',
+  'messages-member',
+  'messages-schedule-passed',
+  // M8-B 설정·팀 연결 관리. settings-discord-skipped 만 새로 만든 공간(ws_03)이고 나머지는 ws_01 이다
+  'settings-discord-skipped',
+  'settings-unmapped',
+  'settings-member',
 ] as const
 export type MockScenario = (typeof MOCK_SCENARIOS)[number]
 
@@ -75,6 +99,45 @@ const incompleteWorkspace: WorkspaceDto = {
   },
 }
 
+/**
+ * 온보딩에서 Discord 연결과 팀원 연결을 건너뛰고 마친 PM 공간. Notion 만 연결했다.
+ * 팀원은 생성자 PM 하나라 Discord 를 연결하면 사용자가 모두 미매핑이다
+ */
+const discordSkippedWorkspace: WorkspaceDto = {
+  workspace_id: 'ws_03',
+  name: '연결을 미룬 팀',
+  role: 'pm',
+  created_at: '2026-09-03T00:00:00Z',
+  onboarding: {
+    completed: true,
+    current_step: null,
+    steps: [
+      { step: 'create_workspace', status: 'completed' },
+      { step: 'connect_discord', status: 'skipped' },
+      { step: 'connect_notion', status: 'completed' },
+      { step: 'connect_members', status: 'skipped' },
+    ],
+  },
+}
+
+/** 새로 만든 공간을 넣는다. 백엔드처럼 생성자가 PM 팀원으로 있고 연동은 아직 없다 */
+function addCreatedWorkspace(state: MockDb, workspace: WorkspaceDto): void {
+  state.workspaces.push(structuredClone(workspace))
+  state.members.push({
+    member_id: 'mb_90',
+    workspace_id: workspace.workspace_id,
+    display_name: state.accounts[0].session.user.name,
+    discord_user_id: null,
+    notion_name: null,
+    role: 'pm',
+    created_at: MOCK_NOW,
+  })
+  state.integrations[workspace.workspace_id] = {
+    discord: { status: 'not_connected', display_name: null, connected_at: null },
+    notion: { status: 'not_connected', display_name: null, connected_at: null },
+  }
+}
+
 /** 픽스처 계정을 로그인시키고 소속을 workspaceIds 로 맞춘다. 마지막 공간은 마지막 소속이다 */
 function signInWith(state: MockDb, workspaceIds: string[], lastWorkspaceId: string | null): void {
   const account = state.accounts[0]
@@ -101,6 +164,30 @@ function setNotionStatus(state: MockDb, status: 'not_connected' | 'revoked'): vo
     status === 'not_connected'
       ? { status, display_name: null, connected_at: null }
       : { ...integrations.notion, status }
+}
+
+function addLongContent(state: MockDb): void {
+  const member = state.members.find(({ member_id }) => member_id === 'mb_03')
+  if (member) member.display_name = '이재환프론트엔드디자인시스템접근성담당'
+  const titles = [
+    'https://notion.so/workspace/very-long-unbreakable-path-segment-for-task-board-layout-check-0123456789',
+    '회의에서 나온 긴 제목의 태스크로 담당자와 마감일과 진행 상태을 모두 함께 보여 주어야 하는 경우의 줄바꿈 확인',
+    'ABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZ',
+  ]
+  for (const [index, title] of titles.entries())
+    createTask(
+      {
+        workspace_id: 'ws_01',
+        title,
+        assignee_member_id: index === 1 ? 'mb_01' : 'mb_03',
+        status: (['todo', 'in_progress', 'blocked'] as const)[index],
+        start_date: '2026-09-18',
+        due_date: '2026-09-19',
+      },
+      null,
+      'manual',
+      state,
+    )
 }
 
 /** ws_01 의 태스크·이력·승인을 모두 비운다. 그 공간 추출 항목의 연결도 끊어 없는 태스크·승인을 가리키지 않게 한다 */
@@ -173,10 +260,6 @@ function resolvedCreateApproval(state: MockDb): void {
   if (item) item.task_id = task.task_id
 }
 
-/**
- * tk_01 의 상태를 todo → done 으로 바꾸자는 변경 승인. 제안할 때 본 값(base_values)은 todo 인데 지금은
- * in_progress 라 승인하면 409 APPROVAL_CONFLICT 다. progress 는 base 와 지금 값이 같아 충돌이 아니다
- */
 function conflictingUpdateApproval(state: MockDb): void {
   state.approvals.push({
     approval_id: 'ap_04',
@@ -184,8 +267,7 @@ function conflictingUpdateApproval(state: MockDb): void {
     type: 'task_update',
     payload: {
       status: 'done',
-      progress: 100,
-      base_values: { status: 'todo', progress: 40 },
+      base_values: { status: 'todo' },
       // 서버 수정안처럼 대상 태스크 이름을 표시용으로 싣는다
       base_title: '로그인 API 연동',
       task_title: '로그인 API 연동',
@@ -205,6 +287,24 @@ function conflictingUpdateApproval(state: MockDb): void {
 /** 최근 반영의 세 태스크(tk_01~tk_03)를 모두 반영 완료로 둔다. 픽스처는 tk_01 만 synced 다 */
 function syncRecentTasks(state: MockDb): void {
   for (const id of ['tk_01', 'tk_02', 'tk_03']) taskOf(state, id).notion_sync_status = 'synced'
+}
+
+/**
+ * 최신 완료 회의의 추출(ex_01)에 첫 auto 항목(it_01, tk_01 반영 완료)의 사본을 붙여 auto 항목을 12개로 만든다.
+ * 최근 반영이 첫 화면에 다 들어가지 않는 경우다 (D-176). 사본은 it_21 부터, 제목에 번호를 붙여 행을 구분한다
+ */
+function addRecentOverflow(state: MockDb): void {
+  const extraction = state.extractions.find(({ extraction_id }) => extraction_id === 'ex_01')
+  if (!extraction) throw new Error('mock extraction ex_01 is missing')
+  const first = extraction.items.find(({ gate }) => gate === 'auto')
+  if (!first) throw new Error('mock extraction ex_01 has no auto item')
+  const autoCount = extraction.items.filter(({ gate }) => gate === 'auto').length
+  for (let index = autoCount + 1; index <= 12; index += 1) {
+    const copy = structuredClone(first)
+    copy.item_id = `it_${20 + index - autoCount}`
+    copy.task.title = `자동 반영 ${index}`
+    extraction.items.push(copy)
+  }
 }
 
 /** 그 회의를 회의 목록·상세·회의록·추출에서 뺀다. 정리 끝난 회의를 줄여 최신 완료 회의를 바꿀 때 쓴다 */
@@ -240,21 +340,7 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
       // initialDb() 가 이미 ws_01·ws_02 소속으로 로그인한 상태다
       break
     case 'incomplete-workspace':
-      state.workspaces.push(structuredClone(incompleteWorkspace))
-      // 백엔드처럼 생성자가 PM 팀원으로 있다
-      state.members.push({
-        member_id: 'mb_90',
-        workspace_id: 'ws_03',
-        display_name: state.accounts[0].session.user.name,
-        discord_user_id: null,
-        notion_name: null,
-        role: 'pm',
-        created_at: MOCK_NOW,
-      })
-      state.integrations.ws_03 = {
-        discord: { status: 'not_connected', display_name: null, connected_at: null },
-        notion: { status: 'not_connected', display_name: null, connected_at: null },
-      }
+      addCreatedWorkspace(state, incompleteWorkspace)
       signInWith(state, ['ws_03'], 'ws_03')
       break
     case 'meeting-demo':
@@ -267,6 +353,17 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
       break
     case 'meeting-fail':
       readyToUpload(state, 'fail')
+      break
+    case 'meeting-fail-diarize':
+      readyToUpload(state, 'fail-diarize')
+      break
+    case 'meeting-fail-expired':
+      readyToUpload(state, 'fail-expired')
+      break
+    case 'meeting-expired-member':
+      signInWith(state, ['ws_01'], 'ws_01')
+      setMockRole('member', 'ws_01', state)
+      failMeeting('mt_10', { failedStage: 'speaker_assignment_expired' }, state)
       break
     case 'meeting-fail-notion-revoked':
       readyToUpload(state, 'fail-notion-revoked')
@@ -329,6 +426,11 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
       // setMockRole('member') 와 같은 결과. 조회는 되고 쓰기는 403 이다
       signInWith(state, ['ws_01'], 'ws_01')
       setMockRole('member', 'ws_01', state)
+      break
+    case 'tasks-long-content':
+      // 긴 제목·긴 담당자 이름·줄바꿈할 곳이 없는 문자열. 세 보기의 오늘(9/18) 근처 같은 날에 몰아 보기 폭을 시험한다
+      signInWith(state, ['ws_01'], 'ws_01')
+      addLongContent(state)
       break
     case 'dashboard-default':
       // 요약·확인 필요 3건·마감 임박 6건(전체 보기)·최근 반영 3건(모두 반영 완료, 되돌리기 가능)
@@ -393,10 +495,81 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
       syncRecentTasks(state)
       setMockRole('member', 'ws_01', state)
       break
+    case 'dashboard-recent-overflow':
+      // dashboard-default 에 최근 반영 auto 항목이 12개다 — 첫 화면에 들어가는 만큼 보이고 `외 N건` 이 회의록으로 간다 (D-176)
+      signInWith(state, ['ws_01'], 'ws_01')
+      syncRecentTasks(state)
+      addRecentOverflow(state)
+      break
     case 'dashboard-partial-error':
       // 최신 완료 회의(mt_09)의 추출이 없다 — 최근 반영만 조회 오류(404)이고 나머지 영역은 그대로다
       signInWith(state, ['ws_01'], 'ws_01')
       state.extractions = state.extractions.filter(({ extraction_id }) => extraction_id !== 'ex_01')
+      break
+    case 'messages-default':
+      // 보내기 전 확인 2건(이재환 rv_01 은 마감 하루 전 예약, 정하늘 rv_02 는 지금 바로), 대화 4건 + 채널 1건.
+      // 이재환 th_01 은 오늘로 3일째 답장이 없고 rv_01 이 그 대화에서 승인을 기다린다
+      signInWith(state, ['ws_01'], 'ws_01')
+      break
+    case 'messages-empty':
+      signInWith(state, ['ws_01'], 'ws_01')
+      state.messageReviews = state.messageReviews.filter(
+        ({ workspace_id }) => workspace_id !== 'ws_01',
+      )
+      state.messageThreads = state.messageThreads.filter(
+        ({ workspace_id }) => workspace_id !== 'ws_01',
+      )
+      break
+    case 'messages-list-error':
+      // 목록만 5xx 다. 대화 조회는 된다 — 대화 주소로 바로 들어오면 대화는 보인다
+      signInWith(state, ['ws_01'], 'ws_01')
+      state.messageFailures.inbox = true
+      break
+    case 'messages-thread-error':
+      // 목록은 정상이고 이재환과의 대화(th_01)만 5xx 다
+      signInWith(state, ['ws_01'], 'ws_01')
+      state.messageFailures.threadIds = ['th_01']
+      break
+    case 'messages-send-fail':
+      // 조회는 정상이고 발송·보내지 않음·고쳐 쓰기·발송 시점·답장·답장 판정만 5xx 다. db 는 바뀌지 않는다
+      signInWith(state, ['ws_01'], 'ws_01')
+      state.messageFailures.actions = true
+      break
+    case 'messages-member':
+      // 일반 팀원(mb_01). 자기 대화 th_06 만 보이고, 그 대화의 승인 대기 rv_05 는 보이지 않는다
+      signInWith(state, ['ws_01'], 'ws_01')
+      setMockRole('member', 'ws_01', state)
+      state.messageThreads.push(structuredClone(messagesMemberThread))
+      state.messageReviews.push(structuredClone(messagesMemberReview))
+      break
+    case 'messages-schedule-passed':
+      // rv_06 은 마감 하루 전 시각이 이미 지났다. 마감은 오늘이라 만료가 아니고, 발송은 409 다
+      signInWith(state, ['ws_01'], 'ws_01')
+      state.messageReviews.push(structuredClone(schedulePassedReview))
+      break
+    case 'settings-discord-skipped':
+      // 설정에서 Discord 를 연결한다. 연결해도 건너뜀으로 저장된 단계는 그대로다 (D-173)
+      addCreatedWorkspace(state, discordSkippedWorkspace)
+      state.integrations.ws_03.notion = {
+        status: 'connected',
+        display_name: 'Notion 연결됨',
+        connected_at: MOCK_NOW,
+      }
+      signInWith(state, ['ws_03'], 'ws_03')
+      break
+    case 'settings-unmapped':
+      // 픽스처 그대로의 ws_01 이다. Discord 연결됨, 1125(지훈)는 미매핑, mb_04 의 1126 은 서버를 떠났다(inactive), 1199 는 봇이다
+      signInWith(state, ['ws_01'], 'ws_01')
+      break
+    case 'settings-member':
+      // 일반 팀원. Discord 는 미연결(요청 안내), Notion 은 연결됨(PM 이 관리한다는 안내)이다. 연결·매핑 쓰기는 PM 만 한다
+      signInWith(state, ['ws_01'], 'ws_01')
+      setMockRole('member', 'ws_01', state)
+      state.integrations.ws_01.discord = {
+        status: 'not_connected',
+        display_name: null,
+        connected_at: null,
+      }
       break
   }
   return state

@@ -86,3 +86,6 @@ frontend/docs/design/site-runtime/
 # Claude Code 개인 설정 (팀 공통은 .claude/settings.json)
 .claude/settings.local.json
 CLAUDE.local.md
+
+# 프로젝트 검증 실행 증거. cleanup 뒤에도 로컬에 보관한다.
+/.verify/

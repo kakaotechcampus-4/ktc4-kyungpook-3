@@ -6,6 +6,7 @@ import { integrationsQueryOptions } from '@/entities/integration'
 import {
   finishMeeting,
   meetingDetailQueryOptions,
+  meetingFailure,
   meetingKeys,
   meetingListQueryOptions,
   useMeetingTrackerStore,
@@ -18,12 +19,7 @@ import { paths } from '@/shared/config/routes'
 import { useLivePathname } from '@/shared/lib/live-pathname'
 import { hasPendingLeave, useGuardedNavigate } from '@/shared/lib/unsaved-changes'
 import { toast } from '@/shared/ui/toast'
-import {
-  PROCESSING_DONE_ACTION,
-  PROCESSING_DONE_TITLE,
-  PROCESSING_FAILED_TITLE,
-  processingToastKey,
-} from './notices'
+import { PROCESSING_DONE_ACTION, PROCESSING_DONE_TITLE, processingToastKey } from './notices'
 import { pollInterval, trackerOutcome } from './trackerOutcome'
 
 export interface ProcessingTracker {
@@ -75,7 +71,8 @@ function invalidateFinished(queryClient: QueryClient, meeting: TrackedMeeting): 
  *   일시적 조회 실패(네트워크)는 정리 실패가 아니다. 그대로 지켜보고, 창 포커스·온라인 복귀 때 바로 다시 묻는다 (U4-8).
  * - 끝난 회의는 `finishMeeting` 이 처음 끝냈을 때만 알린다 — 재렌더·StrictMode·재발견·화면 이동에도 회의마다 한 번이다.
  * - 완료: 관련 캐시를 무효화하고 `회의 정리가 끝났어요` + `회의록 보기` 토스트(D-095).
- * - 실패: 목록 캐시에서 빼고(D-093) 연동 상태를 다시 물어 `revoked` 면 재연결 모달(D-100), 아니면 재업로드 토스트(D-092).
+ * - 실패: 화자 지정 만료는 목록에 남기고 상세로 잇는다. 그 외 실패는 목록에서 뺀다.
+ *   알려진 failed_stage는 해당 사유를 알리고, 알 수 없는 값만 연동 상태를 확인해 D-100·D-092로 나눈다.
  *   실패 회의의 결과·원본을 다시 쓰는 길은 없다 — 다시 올리기만 안내한다 (D-091, D-099).
  * - 화면 이동은 **그 회의의 처리 화면을 보고 있을 때만** 한다(완료 → 회의록, 실패 → 회의록 목록). 다른 화면·공간의 사용자는
  *   그대로 둔다. 이탈 확인을 고르는 중이면 끼어들지 않고, 옮길 때는 앱 안 이동의 관문(useGuardedNavigate)을 탄다.
@@ -153,20 +150,27 @@ export function useProcessingTracker(): ProcessingTracker {
   )
 
   const onFailed = useCallback(
-    async (meeting: TrackedMeeting) => {
+    async (meeting: TrackedMeeting, failedStage: string | null) => {
       const { workspaceId, meetingId } = meeting
       const isCurrentSession = captureSession()
-      // 실패 회의는 목록에 없다 (D-093). 서버 목록을 기다리지 않고 캐시에서 먼저 뺀다
+      const failure = meetingFailure(failedStage)
+      // 만료 이력은 유지하고, 나머지 실패는 기존 정책대로 목록에서 뺀다.
       queryClient.setQueryData(meetingListQueryOptions(workspaceId).queryKey, (list) =>
-        list?.filter(({ id }) => id !== meetingId),
+        failure.kind === 'expired'
+          ? list?.map((item) =>
+              item.id === meetingId ? { ...item, status: 'failed' as const, failedStage } : item,
+            )
+          : list?.filter(({ id }) => id !== meetingId),
       )
       invalidateMeetings(queryClient, meeting)
-      // 끊김으로 실패했는지는 연동 상태를 새로 물어 안다 — failed_stage 는 자유 문자열이다 (계약 §4.7-3)
+      // 알려진 실패 사유가 없을 때만 기존 Notion 연결 재조회를 사용한다.
       let revoked = false
-      try {
-        revoked = await isNotionRevoked(queryClient, workspaceId)
-      } catch {
-        // 확인하지 못했다 — 같은 세션이면 일반 실패 안내로 간다(아래)
+      if (failure.kind === 'unknown') {
+        try {
+          revoked = await isNotionRevoked(queryClient, workspaceId)
+        } catch {
+          // 확인하지 못하면 일반 실패 안내를 쓴다.
+        }
       }
       // 기다리는 동안 세션이 끝났다(로그아웃했거나 조회가 401). 그 세션의 알림·모달·이동은 없다.
       // 컴포넌트의 mounted 로는 못 막는다 — 로그인 이동은 transition 이라 이 추적기가 아직 마운트돼 있다
@@ -175,9 +179,12 @@ export function useProcessingTracker(): ProcessingTracker {
       else
         toast.show({
           key: processingToastKey('failed', workspaceId, meetingId),
-          title: PROCESSING_FAILED_TITLE,
+          title: failure.description,
         })
-      leaveProcessingScreen(meeting, paths.meetings(workspaceId))
+      leaveProcessingScreen(
+        meeting,
+        paths.meetings(workspaceId, failure.kind === 'expired' ? meetingId : undefined),
+      )
     },
     [leaveProcessingScreen, queryClient],
   )
@@ -191,7 +198,8 @@ export function useProcessingTracker(): ProcessingTracker {
       // 이 호출이 처음 끝냈을 때만 알린다. 볼 수 없게 된 회의(lost)는 알리지 않고 그만 본다
       if (!finishMeeting(meeting)) return
       if (outcome === 'done') onDone(meeting)
-      else if (outcome === 'failed') void onFailed(meeting)
+      else if (outcome === 'failed' && result.data !== undefined)
+        void onFailed(meeting, result.data.failedStage)
     })
   }, [tracked, results, onDone, onFailed])
 

@@ -15,6 +15,7 @@ import { minutesFixtures } from './fixtures/minutes'
 import { extractionFixtures } from './fixtures/extraction'
 import { taskFixtures, taskHistoryFixtures } from './fixtures/task'
 import { approvalFixtures } from './fixtures/approval'
+import { messageReviewFixtures, messageThreadFixtures } from './fixtures/message'
 
 /**
  * 처리 중 회의를 상세 조회(`GET /meetings/{id}`)가 어떻게 진행시키는가. 진행 규칙은 meetingFlow.ts 에 있다.
@@ -24,7 +25,8 @@ import { approvalFixtures } from './fixtures/approval'
  * - `fail`: 첫 조회에 `failed`
  * - `fail-notion-revoked`: 첫 조회에 `failed`, 그 공간의 Notion 연동이 `revoked` 가 된다 (D-099, D-100)
  */
-export type MeetingFlowMode = 'manual' | 'staged' | 'instant' | 'fail' | 'fail-notion-revoked'
+export type MeetingFlowMode =
+  'manual' | 'staged' | 'instant' | 'fail' | 'fail-notion-revoked' | 'fail-diarize' | 'fail-expired'
 
 export const MEETING_FLOW_MODES = [
   'manual',
@@ -32,12 +34,24 @@ export const MEETING_FLOW_MODES = [
   'instant',
   'fail',
   'fail-notion-revoked',
+  'fail-diarize',
+  'fail-expired',
 ] as const satisfies readonly MeetingFlowMode[]
 
 export interface MeetingFlowState {
   mode: MeetingFlowMode
   /** 업로드가 받은 참석자 ID. 실 API 는 받고 버린다(계약 §4.0-②-9). 정리 결과의 참석자·발화자가 된다 */
   attendees: Record<string, string[]>
+}
+
+/**
+ * 메시지 요청을 일부러 실패(5xx)시킨다 — 계획 C-7 의 오류 시나리오. `inbox` 는 목록, `threadIds` 는 그 대화만,
+ * `actions` 는 보내기 전 확인 항목의 발송·보내지 않음·고쳐 쓰기·발송 시점 변경이다(db 는 바뀌지 않는다)
+ */
+export interface MessageFailures {
+  inbox: boolean
+  threadIds: string[]
+  actions: boolean
 }
 
 interface MockAccount {
@@ -64,6 +78,10 @@ export interface MockDb {
   approvals: typeof approvalFixtures
   /** 회의 정리 흐름. 원본 파일은 담지 않는다 — 생성 결과는 위의 meetings·minutes·extractions·tasks·approvals 에 들어간다 */
   meetingFlow: MeetingFlowState
+  /** M8 메시지(임시, 계약 아님). 검토 항목과 대화는 공간별이다 */
+  messageReviews: typeof messageReviewFixtures
+  messageThreads: typeof messageThreadFixtures
+  messageFailures: MessageFailures
 }
 /** Vitest 가 테스트마다 돌아가는 상태다. 로그인돼 있고 ws_01·ws_02 에 속한다. 브라우저 시작 상태는 scenarios.ts 가 정한다 */
 export function initialDb(): MockDb {
@@ -91,6 +109,9 @@ export function initialDb(): MockDb {
     taskHistory: structuredClone(taskHistoryFixtures),
     approvals: structuredClone(approvalFixtures),
     meetingFlow: { mode: 'manual', attendees: {} },
+    messageReviews: structuredClone(messageReviewFixtures),
+    messageThreads: structuredClone(messageThreadFixtures),
+    messageFailures: { inbox: false, threadIds: [], actions: false },
   }
 }
 export const db: MockDb = initialDb()

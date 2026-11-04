@@ -9,6 +9,7 @@ export interface MeetingSummaryDto {
   duration_ms: number | null
   attendee_count: number
   processed_at: string | null
+  failed_stage?: string | null
 }
 export interface MeetingDto {
   meeting_id: string

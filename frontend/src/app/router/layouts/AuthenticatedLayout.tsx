@@ -1,6 +1,6 @@
 import { Outlet } from 'react-router'
 import { useProcessingTracker } from '@/features/meeting-processing'
-import { NotionRequiredModal } from '@/features/notion-connection'
+import { NotionRequiredModal } from '@/features/integration-connection'
 
 /**
  * 로그인한 사용자의 화면 전체를 감싼다. 회의 정리 추적기를 여기 하나 둔다 —

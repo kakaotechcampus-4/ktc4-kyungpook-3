@@ -4,16 +4,6 @@ import { expect, userEvent, waitFor, within } from 'storybook/test'
 import { fail } from '@/shared/mock/envelope'
 import { ApprovalReview } from './ApprovalReview'
 
-/*
- * 확인 필요 상세 (M6 §4, §5-1). ws_01 하나에 PM 으로 로그인한 상태. 화면은 PM 가드 뒤라 권한 차단은 E2E 가 본다.
- * Storybook 빌드는 개발 MSW 가 아니라서 승인 처리 경로가 `live` 다 (features/approval-resolve/model/transport.ts) —
- * `보완하기` 가 없고, 보완이 필요한 생성 승인은 `승인` 이 꺼진 채 이유를 보인다. 보완 폼은 `M6 태스크/보완 폼` 스토리에 있다.
- * - approval-needs-input: ap_01 의 제목·담당자·마감이 모두 비었다
- * - approval-conflict: ap_04 는 tk_01 을 todo → done 으로 바꾸자는 변경 승인인데 tk_01 이 이미 in_progress 다
- * - approval-resolved: ap_02 를 승인해 태스크가 생겼고 Notion 은 반영 대기다
- * - approval-rejected: ap_01 을 반려했다
- */
-
 const meta = {
   title: 'M6 태스크/확인 필요 상세',
   component: ApprovalReview,
@@ -24,7 +14,6 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-/** 생성 승인 — 원문 담당자·마감과 근거를 확정할 값과 나눠 보인다. 담당자가 없어 승인이 꺼져 있다 */
 export const 생성_승인: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
@@ -33,11 +22,8 @@ export const 생성_승인: Story = {
     await expect(canvas.getByRole('figure', { name: '근거' })).toBeInTheDocument()
     await expect(canvas.getByRole('button', { name: '반려' })).toBeEnabled()
     const approve = await canvas.findByRole('button', { name: '승인' })
-    await expect(approve).toBeDisabled()
-    await waitFor(() =>
-      expect(approve).toHaveAccessibleDescription(/^승인하려면 담당자·마감 정보를/),
-    )
-    await expect(canvas.queryByRole('button', { name: '보완하기' })).toBeNull()
+    await waitFor(() => expect(approve).toBeEnabled())
+    await expect(canvas.getByRole('button', { name: '보완하기' })).toBeEnabled()
   },
 }
 
@@ -47,14 +33,12 @@ export const 보완_누락: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     await expect(await canvas.findByRole('heading', { name: '새 태스크 확인' })).toBeVisible()
-    await expect(canvas.getAllByText('비어 있어요')).toHaveLength(3)
+    await expect(canvas.getAllByText('미정')).toHaveLength(3)
     const approve = await canvas.findByRole('button', { name: '승인' })
     await expect(approve).toBeDisabled()
     // 팀원 목록이 오기 전에는 `팀원 목록을 불러온 뒤` 가 이유다 — 온 뒤의 이유를 기다린다
     await waitFor(() =>
-      expect(approve).toHaveAccessibleDescription(
-        '승인하려면 제목·담당자·마감 정보를 올바르게 채워야 해요. 지금 서버는 승인 전 보완을 지원하지 않아요.',
-      ),
+      expect(approve).toHaveAccessibleDescription('승인하려면 제목 정보를 올바르게 채워야 해요.'),
     )
     await expect(canvas.getByRole('button', { name: '반려' })).toBeEnabled()
   },
