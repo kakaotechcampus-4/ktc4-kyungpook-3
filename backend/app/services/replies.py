@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from enum import StrEnum
 
-from sqlalchemy import func, select, text
+from sqlalchemy import func, or_, select, text
 from sqlalchemy.orm import Session
 
 from app.core.errors import AppError, ErrorCode
@@ -398,12 +398,23 @@ def _claimed_status(row: ReplyJudgment, task: Task) -> str | None:
 
 
 def _unchanged(db: Session, row: ReplyJudgment, task: Task) -> bool:
-    """맡긴 뒤 실제 상태가 그대로이고 옛 답장이 새 답장을 덮을 일이 없는가.
+    """답장 뒤 사람이 상태를 바꾸지 않았고 옛 답장이 새 답장을 덮을 일이 없는가.
 
-    _judge_status 는 사람이 건 막힘도 막기 전 상태로 보여 이것을 대신하지 못한다. PM 이 고른 답장은 큐 끝으로 가므로
-    맡길 때 값이 이미 더 새 답장의 반영값일 수 있다.
+    _judge_status 는 사람이 건 막힘도 막기 전 상태로 보여 이것을 대신하지 못한다. 답장 판단과 스케줄러가 남긴 이력은
+    사람 변경이 아니지만, 카드 승인과 되돌리기는 출처가 reminder_reply 여도 changed_by 가 있어 사람 변경이다.
+    PM 이 고른 답장은 큐 끝으로 가므로 맡길 때 값이 이미 더 새 답장의 반영값일 수 있다.
     """
-    if _claimed_status(row, task) != task.status:
+    replied_at = messages.utc(row.message.created_at)
+    if db.scalar(
+        select(TaskHistory.history_id)
+        .where(
+            TaskHistory.task_id == task.task_id,
+            TaskHistory.changed_field == ChangedField.STATUS,
+            TaskHistory.created_at > replied_at,
+            or_(TaskHistory.changed_by.is_not(None), TaskHistory.change_source.notin_(scheduler._NOT_RESPONSE_SOURCES)),
+        )
+        .limit(1)
+    ) is not None:
         return False
     if row.picked_task_id is None:
         return True
@@ -413,7 +424,7 @@ def _unchanged(db: Session, row: ReplyJudgment, task: Task) -> bool:
         .where(
             ReplyChange.task_id == task.task_id,
             ReplyChange.outcome.in_((ReplyChangeOutcome.APPLIED, ReplyChangeOutcome.PROPOSED)),
-            ThreadMessage.created_at > messages.utc(row.message.created_at),
+            ThreadMessage.created_at > replied_at,
         )
         .limit(1)
     ) is None

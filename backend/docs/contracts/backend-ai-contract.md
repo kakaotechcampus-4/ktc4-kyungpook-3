@@ -505,7 +505,7 @@ AI 가 문구를 써야 하는 묶음을 준다. 요청 본문은 없다. 승인
 | 줄 | BE 처리 |
 |---|---|
 | 지금 값과 같음, 지운 태스크 | 기록만 |
-| `status`, `certain`, `base.status` 가 지금과 같음, 맡긴 뒤 실제 상태가 그대로, 담당이 대화 주인 | 자동 반영(`change_source: reminder_reply`) |
+| `status`, `certain`, `base.status` 가 지금과 같음, 답장 뒤 사람이 바꾼 상태 이력이 없음, 담당이 대화 주인 | 자동 반영(`change_source: reminder_reply`) |
 | 이미 막힌 태스크에 `blocked` 인데 자동 반영이 아님 | 기록만. 상태는 그대로이고 사유는 아래 규칙을 따른다 |
 | 그 밖의 `status`, `due_date`, `assignee`, `scope` | PM 승인 요청. 태스크당 한 장 |
 | `unknown` | 답장이 PM 차례가 되고 후보 시계가 멈춘다 |

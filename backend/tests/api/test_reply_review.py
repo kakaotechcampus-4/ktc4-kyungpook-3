@@ -597,18 +597,85 @@ def test_timeline_needs_membership_and_a_live_task(mdb, mseed, two):
 
 # 판단이 본 값과 실제 값
 
+def _status_moved_at(db, task, new_value, at):
+    """경로는 실제 시각으로 이력을 찍는다. 운영 순서대로 답장 뒤로 옮긴다."""
+    for entry in db.query(TaskHistory).filter(
+        TaskHistory.task_id == task.task_id, TaskHistory.changed_field == "status", TaskHistory.new_value == new_value,
+    ):
+        entry.created_at = at
+    db.commit()
+
+
+def _pm_block(mdb, task, at):
+    r = client("pm").patch(f"{P}/tasks/{task.task_id}", json={"status": "blocked", "blocker": "PM: 외부 승인 대기"})
+    assert r.status_code == 200, r.text
+    _status_moved_at(mdb, task, "blocked", at)
+
+
 def test_pm_block_during_judgment_is_proposed_not_applied(mdb, mseed, two):
     a, _ = two
     _reply(mdb, mseed, AT)
     item = _claim()
-    r = client("pm").patch(f"{P}/tasks/{a.task_id}", json={"status": "blocked", "blocker": "PM: 외부 승인 대기"})
-    assert r.status_code == 200, r.text
+    _pm_block(mdb, a, AT + timedelta(minutes=1))
     _judge(item, _change(a, "status", "done", evidence="certain", claimed=item))
     mdb.expire_all()
     assert (a.status, a.blocker) == ("blocked", "PM: 외부 승인 대기")
     assert _outcomes(mdb, item) == [("status", "proposed")]
     line = _lines(mdb, item)[(a.task_id, "status")]
     assert _resolve(line.approval_id).json()["error"]["code"] == "APPROVAL_CONFLICT"
+
+
+def test_pm_block_between_the_reply_and_the_claim_is_proposed_not_applied(mdb, mseed, two):
+    a, _ = two
+    _reply(mdb, mseed, AT)
+    _pm_block(mdb, a, AT + timedelta(minutes=1))
+    item = _claim()
+    assert {c["task_id"]: c["status"] for c in item["candidates"]}[a.task_id] == "in_progress"
+    _judge(item, _change(a, "status", "done", evidence="certain", claimed=item))
+    mdb.expire_all()
+    assert (a.status, a.blocker) == ("blocked", "PM: 외부 승인 대기")
+    assert _outcomes(mdb, item) == [("status", "proposed")]
+
+
+def _two_replies_first_applied_late(mdb, mseed, task):
+    """앞 답장이 뒤 답장을 받은 뒤에야 자동 반영된다."""
+    _reply(mdb, mseed, AT, body="다 했어요")
+    _reply(mdb, mseed, AT + timedelta(minutes=1), body="아니 다시 볼게요")
+    first = _claim()
+    _judge(first, _change(task, "status", "done", evidence="certain", claimed=first))
+    _status_moved_at(mdb, task, "done", AT + timedelta(minutes=2))
+    return _lines(mdb, first)[(task.task_id, "status")].change_id
+
+
+def test_earlier_reply_applied_after_the_next_reply_does_not_hold_it_back(mdb, mseed, two):
+    a, _ = two
+    _two_replies_first_applied_late(mdb, mseed, a)
+    item = _claim()
+    _judge(item, _change(a, "status", "in_progress", evidence="certain", claimed=item))
+    mdb.expire_all()
+    assert a.status == "in_progress"
+
+
+def test_auto_block_after_the_reply_does_not_hold_it_back(mdb, mseed):
+    a = _auto_blocked(mdb, mseed)
+    _reply(mdb, mseed, DEADLINE - H, body="다 했어요")
+    _status_moved_at(mdb, a, "blocked", DEADLINE)
+    item = _claim()
+    _judge(item, _change(a, "status", "done", evidence="certain", claimed=item))
+    mdb.expire_all()
+    assert a.status == "done"
+
+
+def test_pm_undo_after_the_reply_is_a_person_changing_the_status(mdb, mseed, two):
+    a, _ = two
+    change_id = _two_replies_first_applied_late(mdb, mseed, a)
+    assert _undo(a, change_id).status_code == 200
+    _status_moved_at(mdb, a, "in_progress", AT + timedelta(minutes=3))
+    item = _claim()
+    _judge(item, _change(a, "status", "done", evidence="certain", claimed=item))
+    mdb.expire_all()
+    assert a.status == "in_progress"
+    assert _outcomes(mdb, item) == [("status", "proposed")]
 
 
 def _card_on_auto_blocked_task(mdb, mseed):
@@ -702,6 +769,7 @@ def test_undo_before_the_tick_leaves_no_silence_reason(mdb, mseed):
 def test_undone_done_is_not_read_as_the_status_before_a_block(mdb, mseed, two):
     a, _ = two
     client("pm").patch(f"{P}/tasks/{a.task_id}", json={"status": "blocked", "blocker": "PM 사유"})
+    _status_moved_at(mdb, a, "blocked", AT)
     _reply(mdb, mseed, AT + H, body="다 했어요")
     item = _claim()
     _judge(item, _change(a, "status", "done", evidence="certain", claimed=item))
