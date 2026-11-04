@@ -3,7 +3,7 @@
 - 기록일: 2026-10-31 (2026-11-01 디자인 캔버스 기준 재작업과 검증 VR-C 발견 수정, 2026-11-02 Discord DM 카드 잘림 수정, 발송 시점 카드 hover·저장 중 버튼 깜빡임 수정, 대화 미리 받기 반영, 2026-11-04 실제 메시지 API 연결)
 - 이슈: #245, 후속 #315(실제 API 연결)
 - 대상: [M8 계획](plan.md) C 절의 구현 순서 1~6(결정 전)과 최종 게이트, 2026-11-01 사용자 결정(결정 4의 UI 범위 = 디자인 캔버스 기준, MSW 목)에 따른 재작업
-- 상태 (2026-11-04, #315): **화면을 계약 §5.7 의 실제 메시지 API 로 옮기고 production 을 포함한 모든 모드에서 연다.** 준비 중 안내와 MSW 모드 분기는 지웠다. 서버에 경로·값이 없는 시안 항목(답장 판정, `지금 바로`, 채널, 재촉 이유 등)은 뺐다. 확인은 MSW 기준이고 실제 서버 연동은 미검증이다(아래 2026-11-04 절). 아래 2026-11-02 까지의 상태 문장은 그때 기록이다.
+- 상태 (2026-11-04, #315): **화면을 계약 §5.7 의 실제 메시지 API 로 옮기고 production 을 포함한 모든 모드에서 연다.** 준비 중 안내와 MSW 모드 분기는 지웠다. 서버에 경로·값이 없는 시안 항목(답장 판정, `지금 바로`, 채널, 재촉 이유 등)은 뺐다. typecheck·lint·format·build·전체 테스트와 브라우저 확인은 MSW 기준으로 통과했고, 실제 서버 연동은 미검증이다(아래 2026-11-04 절). 아래 2026-11-02 까지의 상태 문장은 그때 기록이다.
 - 상태 (2026-11-02 까지): **AC-01~AC-07 충족(프론트·MSW 기준, UI/UX만), 목록·보내기 전 확인·대화·빈 상태가 디자인 캔버스의 항목·문구·상태와 일치(차이표, 남은 차이 4개는 아래).** 메시지 API가 없어 화면은 MSW 모드에서만 보이고, 실 API 모드와 production은 기존 「메시지는 준비 중이에요」 안내를 그대로 둔다. 보내기 전 확인의 행동(발송·보내지 않음·고쳐 쓰기·발송 시점, 대화의 승인·반려)은 MSW 목으로 서버 성공 뒤 반영한다. 권한 분기·상태 동기화(polling)·메시지 E2E는 하지 않았다. 전체 `test:e2e`는 실행하지 않았다. 실제 메시지 API 연동과 Discord 발송은 범위 밖이며 검증하지 않았다.
 
 ## 2026-11-04 실제 메시지 API 연결 (#315)
@@ -63,20 +63,27 @@
 
 ### 검증 (2026-11-04)
 
-Node v24.11.0. 계획 [plan.md](plan.md)는 읽기만 했다. **끝내기 전 검증은 다 돌리지 못했다** — 이 기계의 메모리가 부족해 Claude Code 가 테스트 실행을 강제로 멈췄다.
+Node v24.11.0. 계획 [plan.md](plan.md)는 읽기만 했다. 다른 워크트리의 테스트가 함께 도는 기계라 vitest 는 `--maxWorkers=2` 로 돌렸다.
 
 | 명령 | 종료 코드 | 결과 |
 |---|---:|---|
-| `npm.cmd ci` | 0 | |
-| `npm.cmd run typecheck` | 0 | |
-| `npx vitest run src/entities/message src/widgets/message-inbox src/shared/mock/message-state.test.ts src/shared/mock/messageScenarios.test.ts` | 0 | 6파일 59개 통과 |
-| `npx vitest run src/app/messagesMsw.test.tsx src/app/messagesActionsMsw.test.tsx` | 1 | 63개 중 61개 통과, `messagesActionsMsw` 2개 실패(행동 뒤 선택 이동을 기다리지 않은 단언, 렌더 전 `detail()` 조회). 두 테스트를 고쳤지만 고친 뒤 재실행은 아래 실행이 멈춰 확인하지 못했다 |
-| `npx vitest run --maxWorkers=2` 로 바꾼 앱 테스트(`appShell`·`router`·`lateAsyncRaces`·`meetingMinutesRaces`·`meetingProcessing`)와 `shared/config`·`shared/mock` | 결과 없음 | 다른 워크트리의 vitest 가 함께 도는 동안 실행했고, 메모리 부족으로 강제 종료됐다. 멈추기 전 `appShell` 8·`meetingProcessing` 9·`lateAsyncRaces` 2개가 3~5초 시간 초과로 실패했다. 대부분 메시지 화면을 거치지 않는 사례(아바타 메뉴, 공간 전환, 태스크 화면)라 부하로 보이지만 단독 재실행으로 확인하지 못했다 |
-| `npm.cmd run lint`, `format:check`, 전체 `npm.cmd test`, `npm.cmd run build` 와 `dist/assets` 의 `메시지는 준비 중이에요` 검사 | 미실행 | 메모리 부족으로 시작하지 않았다 |
+| `npm run typecheck` | 0 | |
+| `npm run lint` | 0 | 처음 실행에서 4건(렌더 중 `Date.now()` 2건, 쓰지 않는 변수, 불필요한 타입 단언)이 나와 고쳤다. 고친 뒤 바꾼 파일 전체 0건 |
+| `npm run format:check` | 0 | 바꾼 파일 15개를 prettier 로 맞췄다. 남은 경고는 저장소에 올리지 않는 로컬 보고서(`.verify/`) 하나다 |
+| `npx vitest run --maxWorkers=2` (전체) | 1 | 185파일 중 181, 2221개 중 2207개 통과. 실패 14개 중 9개는 `taskScenarios` 의 저장 버전 기대값 6(이번에 7로 올림)이라 고쳤다. 나머지 5개(`appShell` 2·`meetingUpload` 2·`meetingMinutesSelection` 1)는 시간 초과·찾기 실패였다 |
+| `npx vitest run --maxWorkers=1` 위 실패 파일 4개 + `messageScenarios` | 0 | 5파일 126개 통과. 남은 5개 실패는 부하 탓이었다 |
+| `npm run build` | 0 | CSS 경고 1건은 기존 `[color:var(...)]`([M2 기록](../m2/basis-for-decision/2026-09-16-docs-prose-makes-the-build-warn.md)). `dist/assets/*.js` 에 `메시지는 준비 중이에요` 0건 |
+
+브라우저 확인(Vite MSW 모드, Playwright, 2026-11-05):
+
+- PM(`messages-default`): 메시지 탭이 열리고 `보내기 전 확인 2`(묶은 태스크·`AI 초안` 표시·보낼 시각 두 카드), 대화 목록의 `DM 못 보냄` 이 보인다. `이대로 발송` 은 `POST …/bundles/bd_01/approve` 200 뒤 목록을 다시 받아 `09/23 발송 예정` 으로 바뀐다. 남의 대화(`th_04`)에는 답장 칸이 없고 말풍선에 `DM 못 보냄 · 서버 DM이 막혀 있어요` 가 붙는다.
+- 팀원(`messages-member`): 자기 대화 하나만 보이고 `웹에서 답장`, `DM 못 보냄 · Discord 계정이 연결되지 않았어요`, 답장 칸 아래 안내가 보인다. 답장은 `POST …/threads/th_06/replies` 201 뒤 목록·대화를 다시 받는다.
+- 콘솔 오류는 `favicon.ico` 404 하나다.
 
 ### 남은 문제
 
-- **실제 서버 확인 없음** — 모든 확인은 MSW 기준이다. 배포 BE 에 붙여 PM·팀원 계정으로 목록·승인·답장을 해 보지 않았다.
+- **실제 서버 확인 없음** — 모든 확인은 MSW 기준이다. 배포 BE 에 붙여 PM·팀원 계정으로 목록·승인·답장을 해 보지 않았다. 대신 [message.ts](../../../src/shared/types/api/message.ts)의 칸 이름이 모두 백엔드 `schemas/message.py` 응답·요청 모델에 있는지 대조했다.
+- **MSW 의 지난 시각 판단** — 목은 고정 시각 `MOCK_NOW`(2026-09)로 지난 시각을 판단하고 화면의 `마감 하루 전` 카드는 실제 시계로 판단한다. 개발 서버에서는 카드가 `지남` 인데 승인이 200 인 경우가 있다. 실제 서버에서는 둘 다 실제 시계라 어긋나지 않는다.
 - **PM 자신의 대화** — 화면은 로그인 계정의 `member_id` 를 받지 않아, PM 이 리마인드를 받는 팀원이기도 하면 자기 대화에서도 답장 칸이 없다. 대화 주인 판정에 쓸 값(예: 워크스페이스 응답의 내 `member_id`)이 필요하다.
 - **묶음 합치기** — 시각을 다른 예정 묶음과 같은 시각으로 옮기면 BE 가 합친 묶음을 돌려주지만, 화면은 주소의 묶음 ID 를 그대로 들고 있다가 다시 받은 목록에 없어 「골라 주세요」로 바뀐다. MSW 는 합치기를 흉내 내지 않아 테스트가 없다.
 - **`문구 다듬는 중` 갱신** — polling(D-136)이 없어 AI 초안이 와도 다시 받기 전에는 보이지 않는다. 승인하면 `BUNDLE_CHANGED` 로 새 문구를 받는다.

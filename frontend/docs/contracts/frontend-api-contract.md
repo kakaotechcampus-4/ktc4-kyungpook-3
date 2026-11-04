@@ -1372,7 +1372,7 @@ members 에만 있고 Discord 목록에 없으면      → 비활성 (서버를 
 - 대화 화면은 메시지와(PM 에게만) 예정 묶음을 나갈 시각 순으로 섞는다. 취소·만료된 재촉 줄은 응답에 없어 그리지 않는다.
 - 팀원 화면: 자기 대화를 보고 웹 답장을 쓴다. 답장 칸 아래에 `봇 DM 창에 쓴 글은 모두 PM 대화에 보여요.` 를 보인다. PM 은 남의 대화만 보므로 답장 칸 대신 안내 바를 보인다. 화면은 로그인 계정의 `member_id` 를 받지 않아 **PM 자신의 대화**(PM 이 리마인드를 받는 경우)에도 답장 칸이 없다.
 - 화면에서 뺀 것은 [결정 기록](../plan/m8/basis-for-decision/2026-11-04-messages-real-api-drop-unbacked-ui.md)에 있다: 답장의 태스크 판정, `지금 바로`, 채널 대화, 팀 역할, Discord 대화 주소, 재촉 이유 문장·근거 링크·요약, 취소·만료 재촉 줄, 승인자 이름.
-- 검증: MSW 기준 단위·화면 테스트만 했다. 실제 서버(배포 BE)에 붙인 확인은 하지 않았다.
+- 검증: MSW 기준 단위·화면 테스트와 브라우저 확인만 했다. 실제 서버(배포 BE)에 붙인 확인은 하지 않았다.
 
 **백엔드 메시지 API** (#310 에서 BE 구현, #315 에서 프론트엔드 연결). 결정 근거는 [결정 0034](../../../ai/docs/basis_for_decision/ai/2026-11-04-0034-reminder-and-thread-message.md). 봇·AI 쪽 경로는 [backend-ai 계약](../../../backend/docs/contracts/backend-ai-contract.md)의 「리마인드 DM」에 있다. 경로 prefix 는 `/api/v1/workspaces/{workspace_id}/messages` 다.
 
