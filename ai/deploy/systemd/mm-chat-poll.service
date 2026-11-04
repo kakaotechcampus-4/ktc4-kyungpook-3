@@ -14,3 +14,5 @@ User=mm
 WorkingDirectory=/opt/mm/ai
 ExecStart=/opt/mm/ai/.venv/bin/python -m capture.chat_poll
 Nice=10
+# oneshot 은 시작 제한이 없어, 호출이 멈추면 다음 날 실행을 막는다.
+TimeoutStartSec=1h

@@ -608,5 +608,4 @@ def test_context_none_prompt_unchanged(monkeypatch):
     monkeypatch.setattr("judge.semantic_judge.get_llm", lambda which: b)
     extract_findings_counted(t, context=None)
     assert a.prompts == b.prompts
-    assert "이전" not in a.prompts[0].split("[0]")[0].rsplit("\n\n", 1)[-1] or True
     assert "(이전)" not in a.prompts[0]

@@ -64,7 +64,7 @@
 ```
 
 - `done`인 채팅 회의 중 `started_at`이 가장 늦은 것의 `started_at + duration_ms`다(UTC). 봇은 이 뒤의 메시지부터 모은다.
-- 구현됨(`app/api/bot_lookups.py`), BE 담당 리뷰 대기. AI는 아직 부르지 않는다.
+- 구현됨(`app/api/bot_lookups.py`), BE 담당 리뷰 대기. AI는 `ai/capture/chat_poll.py` 가 `BeClient.chat_cursor`(`ai/capture/handoff.py`)로 부른다.
 
 ### `PATCH /meetings/{meeting_id}/end` → 202
 

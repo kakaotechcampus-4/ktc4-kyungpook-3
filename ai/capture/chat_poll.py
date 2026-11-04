@@ -16,6 +16,7 @@
 실행 (ai/ 디렉토리 안에서):
     python -m capture.chat_poll [--channel ID] [--dry-run]
 봇 토큰은 CHAT_POLL_BOT_TOKEN, 채널은 --channel 또는 DISCORD_CHANNEL_ID. --dry-run 은 BE 에 쓰지 않고 판단만 해 runs/ 에 저장한다.
+주의: 커서는 워크스페이스 단위(BE 의 가장 최근 done 채팅 회의)라 --channel 은 설정된 채널이어야 한다. 동시에 두 번 돌리면 제안이 중복되니 타이머가 도는 동안 손으로 돌리지 않는다.
 """
 
 from __future__ import annotations
