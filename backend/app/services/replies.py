@@ -5,13 +5,20 @@
 """
 import json
 from collections import defaultdict
-from datetime import datetime, timedelta
+from dataclasses import dataclass
+from datetime import date, datetime, timedelta
 from enum import StrEnum
 
-from sqlalchemy import select
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
+from app.core.errors import AppError, ErrorCode
 from app.models import (
+    ApprovalRequest,
+    ApprovalType,
+    ChangeSource,
+    Gate,
+    Member,
     MessageSender,
     MessageThread,
     Reminder,
@@ -27,9 +34,16 @@ from app.models import (
     TaskStatus,
     ThreadMessage,
 )
-from app.services import messages, notifications, scheduler
+from app.schemas.reply import ClaimedCandidate, ClaimedLine, ClaimedReply, ReplyChangeRequest, ReplyJudgmentRequest
+from app.services import matching, messages, notifications, scheduler, tasks
 
+# 봇이 맡은 뒤 이만큼 결과가 없으면 다시 맡긴다. 10분보다 짧아 배포로 봇이 재시작해도 판단 실패 알림 전에 한 번 더 돈다.
+JUDGE_LEASE = timedelta(minutes=3)
 JUDGE_WINDOW = timedelta(minutes=10)
+LINE_LIMIT = 12
+FAILURE_REASON_LIMIT = 120
+# 맡기기를 한 줄로 세운다. 틱 잠금과 키가 달라 틱을 기다리지 않는다.
+CLAIM_LOCK_KEY = 331_001
 
 
 class ClockEffect(StrEnum):
@@ -43,6 +57,36 @@ class ClockEffect(StrEnum):
 # 답장이 여럿이면 앞쪽이 이긴다. "막혔어요" 뒤 이어 쓴 말이 막힘을 풀지 않게 KEEP_BLOCKED 가 ANSWERED 를 이긴다.
 _EFFECT_ORDER = (ClockEffect.WAIT, ClockEffect.KEEP_BLOCKED, ClockEffect.ANSWERED, ClockEffect.PAUSE)
 _BLOCK_OUTCOMES = (ReplyChangeOutcome.APPLIED, ReplyChangeOutcome.PROPOSED, ReplyChangeOutcome.NOTED)
+# 태스크를 모르는 줄과 그 결과. 값이 없어 게이트를 타지 않는다.
+_NO_TASK_OUTCOME = {
+    ReplyChangeField.UNKNOWN: ReplyChangeOutcome.UNKNOWN,
+    ReplyChangeField.DUE_CLEAR: ReplyChangeOutcome.NOTED,
+    ReplyChangeField.FAILED: ReplyChangeOutcome.NOTED,
+}
+_PAYLOAD_KEY = {
+    ReplyChangeField.STATUS: "status",
+    ReplyChangeField.DUE_DATE: "due_date",
+    ReplyChangeField.ASSIGNEE: "assignee_member_id",
+}
+_CATEGORY = {
+    ReplyChangeField.STATUS: "decision",
+    ReplyChangeField.DUE_DATE: "schedule",
+    ReplyChangeField.ASSIGNEE: "assignee",
+    ReplyChangeField.SCOPE: "scope",
+}
+_STATUS_TO = {
+    TaskStatus.TODO: "할 일로",
+    TaskStatus.IN_PROGRESS: "진행 중으로",
+    TaskStatus.BLOCKED: "막힘으로",
+    TaskStatus.DONE: "완료로",
+}
+
+
+@dataclass(frozen=True)
+class Notice:
+    text: str
+    link_type: str
+    link_id: str
 
 
 def open_judgment(db: Session, message: ThreadMessage, now: datetime) -> None:
@@ -88,6 +132,371 @@ def _candidates(db: Session, thread: MessageThread, replied_at: datetime) -> lis
             Task.assignee_member_id == thread.member_id,
         )
     ).all())
+
+
+def claim(db: Session, now: datetime) -> ClaimedReply | None:
+    """판단할 답장 한 통을 맡긴다. 대화마다 가장 오래된 행만 본다. 앞 답장이 끝나야 뒤 답장이 그 반영값을 본다."""
+    now = messages.utc(now)
+    db.flush()
+    if not _take_claim_lock(db):
+        return None
+    pending = db.execute(
+        select(ReplyJudgment.message_id, ReplyJudgment.thread_id, ReplyJudgment.claimed_at)
+        .where(ReplyJudgment.state == ReplyJudgmentState.PENDING)
+        .order_by(ReplyJudgment.queued_at, ReplyJudgment.message_id)
+    ).all()
+    seen: set[str] = set()
+    for message_id, thread_id, claimed_at in pending:
+        if thread_id in seen:
+            continue
+        seen.add(thread_id)
+        if claimed_at is not None and messages.utc(claimed_at) > now - JUDGE_LEASE:
+            continue
+        row = db.get(ReplyJudgment, message_id, with_for_update=True, populate_existing=True)
+        if row.state == ReplyJudgmentState.PENDING:
+            row.attempt += 1
+            row.claimed_at = now
+            db.flush()
+            return _claimed(db, row)
+    return None
+
+
+def _take_claim_lock(db: Session) -> bool:
+    if db.get_bind().dialect.name != "postgresql":
+        return True
+    return bool(db.scalar(text("SELECT pg_try_advisory_xact_lock(:key)"), {"key": CLAIM_LOCK_KEY}))
+
+
+def _claimed(db: Session, row: ReplyJudgment) -> ClaimedReply:
+    message = row.message
+    task_ids = json.loads(row.candidates)
+    candidates = db.scalars(
+        select(Task).where(Task.task_id.in_(task_ids), Task.is_deleted.is_(False)).order_by(Task.task_id)
+    ).all()
+    return ClaimedReply(
+        message_id=row.message_id, attempt=row.attempt, workspace_id=row.workspace_id,
+        member_name=message.thread.member.display_name,
+        reply_date=_reply_date(message),
+        lines=_lines(db, message, task_ids),
+        candidates=[
+            ClaimedCandidate(
+                task_id=t.task_id, title=t.title, status=_judge_status(db, t), due_date=t.due_date,
+                assignee_member_id=t.assignee_member_id, updated_at=messages.utc(t.updated_at),
+            )
+            for t in candidates
+        ],
+    )
+
+
+def _reply_date(message: ThreadMessage) -> date:
+    return messages.utc(message.created_at).astimezone(scheduler.WORKSPACE_TZ).date()
+
+
+def _lines(db: Session, message: ThreadMessage, task_ids: list[str]) -> list[ClaimedLine]:
+    """후보 태스크들의 마지막 리마인드 중 가장 앞선 것부터 이번 답장까지. 뒤 답장은 싣지 않는다."""
+    replied_at = messages.utc(message.created_at)
+    sent = db.scalars(
+        select(func.max(ThreadMessage.created_at))
+        .join(ReminderBundle, ReminderBundle.message_id == ThreadMessage.message_id)
+        .join(Reminder, Reminder.bundle_id == ReminderBundle.bundle_id)
+        .where(
+            Reminder.task_id.in_(task_ids),
+            ThreadMessage.thread_id == message.thread_id,
+            ThreadMessage.created_at < replied_at,
+        )
+        .group_by(Reminder.task_id)
+    ).all()
+    start = min((messages.utc(at) for at in sent), default=replied_at)
+    earlier = db.scalars(
+        select(ThreadMessage)
+        .where(
+            ThreadMessage.thread_id == message.thread_id,
+            ThreadMessage.created_at >= start,
+            ThreadMessage.created_at <= replied_at,
+            ThreadMessage.message_id != message.message_id,
+        )
+        .order_by(ThreadMessage.created_at.desc(), ThreadMessage.message_id.desc())
+        .limit(LINE_LIMIT - 1)
+    ).all()
+    return [
+        ClaimedLine(sender="pm" if m.sender == MessageSender.BOT else "member", text=m.body)
+        for m in [*reversed(earlier), message]
+    ]
+
+
+def submit(db: Session, message_id: str, body: ReplyJudgmentRequest, now: datetime) -> None:
+    """판단 결과를 받는다. 값 변경·승인 요청·변경 줄·상태·알림이 부르는 쪽의 한 트랜잭션에 들어간다.
+
+    잠금 순서는 판단 행 → 태스크(id 순)다. _settle 은 태스크만 잠그고 판단 행은 읽기만 해 고리가 없다.
+    """
+    now = messages.utc(now)
+    row = db.get(ReplyJudgment, message_id, with_for_update=True, populate_existing=True)
+    if row is None:
+        raise AppError(ErrorCode.REPLY_JUDGMENT_NOT_FOUND, details={"message_id": message_id})
+    # PM 이 고르면 attempt 는 그대로이고 맡긴 표시만 지워진다. 고르기 전 판단의 재전송을 그것으로 거른다.
+    if body.attempt != row.attempt or row.claimed_at is None:
+        raise AppError(
+            ErrorCode.REPLY_JUDGMENT_STALE,
+            details={"message_id": message_id, "attempt": row.attempt, "state": row.state},
+        )
+    if row.finished_at is not None:
+        return
+    _check(row, body.changes)
+    late = row.state == ReplyJudgmentState.TIMED_OUT
+    row.finished_at, row.model_name = now, body.model_name
+    if body.failure_reason:
+        row.failure_reason = body.failure_reason[:FAILURE_REASON_LIMIT]
+        if not late:
+            row.state = ReplyJudgmentState.FAILED
+            _notify_unjudged(db, row, now)
+    elif late:
+        for change in _fresh(db, row, body.changes):
+            _line(db, row, change, ReplyChangeOutcome.RECORDED, now)
+    else:
+        _judged(db, row, _fresh(db, row, body.changes), now)
+    db.flush()
+
+
+def _check(row: ReplyJudgment, changes: list[ReplyChangeRequest]) -> None:
+    """신뢰 경계. 무엇이든 쓰기 전에 본다."""
+    candidates = json.loads(row.candidates)
+    for change in changes:
+        if change.field in _NO_TASK_OUTCOME:
+            continue
+        if change.task_id not in candidates:
+            raise AppError(
+                ErrorCode.INVALID_REQUEST, message="후보에 없는 태스크입니다.",
+                details={"task_id": change.task_id, "field": change.field},
+            )
+        if change.field == ReplyChangeField.STATUS:
+            tasks.validate_task_fields({"status": change.new_value})
+        elif change.field == ReplyChangeField.DUE_DATE and tasks.parse_date(change.new_value, field="due_date") is None:
+            raise AppError(ErrorCode.INVALID_REQUEST, message="마감 변경에는 날짜가 필요합니다.", details={"field": "due_date"})
+
+
+def _fresh(db: Session, row: ReplyJudgment, changes: list[ReplyChangeRequest]) -> list[ReplyChangeRequest]:
+    """새로 적을 변경만 남긴다. 재판단이 앞서 적은 필드를 또 내면 두 번 반영하지 않고, 재판단의 unknown 은 버린다."""
+    recorded = {
+        (task_id, field)
+        for task_id, field in db.execute(
+            select(ReplyChange.task_id, ReplyChange.field).where(ReplyChange.message_id == row.message_id)
+        ).all()
+    }
+    fresh = []
+    for change in changes:
+        if change.field == ReplyChangeField.UNKNOWN and row.picked_task_id:
+            continue
+        if change.field not in _NO_TASK_OUTCOME:
+            if (change.task_id, change.field) in recorded:
+                continue
+            recorded.add((change.task_id, change.field))
+        fresh.append(change)
+    return fresh
+
+
+def _line(
+    db: Session, row: ReplyJudgment, change: ReplyChangeRequest, outcome: ReplyChangeOutcome, now: datetime,
+    *, new_value: str | None = None,
+) -> ReplyChange:
+    line = ReplyChange(
+        message_id=row.message_id,
+        task_id=None if change.field in _NO_TASK_OUTCOME else change.task_id,
+        field=change.field, outcome=outcome, new_value=new_value or change.new_value, summary=change.summary,
+        evidence_quote=change.evidence_quote, evidence_status=change.evidence_status, created_at=now,
+    )
+    db.add(line)
+    db.flush()
+    return line
+
+
+def _judged(db: Session, row: ReplyJudgment, changes: list[ReplyChangeRequest], now: datetime) -> None:
+    locked = _lock_tasks(db, {c.task_id for c in changes if c.field not in _NO_TASK_OUTCOME})
+    owner_id = row.message.thread.member_id
+    lines: list[ReplyChange] = []
+    proposed: dict[str, list[tuple[ReplyChange, ReplyChangeRequest, matching.MatchResult | None]]] = defaultdict(list)
+    for change in changes:
+        if change.field in _NO_TASK_OUTCOME:
+            lines.append(_line(db, row, change, _NO_TASK_OUTCOME[change.field], now))
+            continue
+        task = locked[change.task_id]
+        match = _assignee(db, row, change, owner_id) if change.field == ReplyChangeField.ASSIGNEE else None
+        value = (match.member_id or change.assignee_raw) if match else change.new_value
+        outcome = ReplyChangeOutcome.SKIPPED if task.is_deleted else _gate(
+            change, value, _current(db, change, task),
+            owned=task.assignee_member_id == owner_id, blocked=task.status == TaskStatus.BLOCKED,
+        )
+        line = _line(db, row, change, outcome, now, new_value=value)
+        lines.append(line)
+        if outcome == ReplyChangeOutcome.APPLIED:
+            _apply(db, task, line, now)
+        elif outcome == ReplyChangeOutcome.PROPOSED:
+            proposed[task.task_id].append((line, change, match))
+    for task_id, group in proposed.items():
+        _propose(db, row, locked[task_id], group, owner_id)
+    unknown = any(line.outcome == ReplyChangeOutcome.UNKNOWN for line in lines)
+    if not unknown and not any(line.task_id for line in lines):
+        for task_id in _unrecorded(db, row):
+            db.add(ReplyChange(
+                message_id=row.message_id, task_id=task_id, field=ReplyChangeField.NONE,
+                outcome=ReplyChangeOutcome.NOTED, created_at=now,
+            ))
+    row.state = ReplyJudgmentState.NEEDS_PM if unknown else ReplyJudgmentState.DONE
+    message = row.message
+    notice = _notice(
+        message.thread.member.display_name, scheduler._preview(message.body), lines, locked, row.thread_id,
+    )
+    if notice is not None:
+        notifications.notify_pms(
+            db, workspace_id=row.workspace_id, kind="reply_judged", text=notice.text,
+            link_type=notice.link_type, link_id=notice.link_id, now=now, dedupe_key=_notice_key(row),
+        )
+
+
+def _lock_tasks(db: Session, task_ids: set[str]) -> dict[str, Task]:
+    rows = db.scalars(
+        select(Task)
+        .where(Task.task_id.in_(task_ids))
+        .order_by(Task.task_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    ).all()
+    return {task.task_id: task for task in rows}
+
+
+def _unrecorded(db: Session, row: ReplyJudgment) -> list[str]:
+    """이 답장의 줄이 아직 없는 후보. 재판단에서 앞서 적은 태스크에 NONE 줄을 또 달지 않는다."""
+    recorded = set(db.scalars(select(ReplyChange.task_id).where(ReplyChange.message_id == row.message_id)).all())
+    return [task_id for task_id in json.loads(row.candidates) if task_id not in recorded]
+
+
+def _assignee(
+    db: Session, row: ReplyJudgment, change: ReplyChangeRequest, owner_id: str
+) -> matching.MatchResult:
+    if change.assignee_type == "first":
+        return matching.speaker_match(db.get(Member, owner_id))
+    return matching.resolve_assignee(db, row.workspace_id, change.assignee_raw)
+
+
+def _current(db: Session, change: ReplyChangeRequest, task: Task) -> str | None:
+    """게이트가 비교할 지금 값. 상태는 판단에 보인 값과 같은 _judge_status 다."""
+    if change.field == ReplyChangeField.STATUS:
+        return _judge_status(db, task)
+    if change.field == ReplyChangeField.DUE_DATE:
+        return task.due_date.isoformat() if task.due_date else None
+    if change.field == ReplyChangeField.ASSIGNEE:
+        return task.assignee_member_id
+    return None
+
+
+def _gate(
+    change: ReplyChangeRequest, value: str | None, current: str | None, *, owned: bool, blocked: bool
+) -> ReplyChangeOutcome:
+    """변경 한 줄의 갈림. 자동 반영은 상태 변경이면서 certain 이고 판단이 본 값이 지금도 그대로일 때만이다."""
+    if change.field != ReplyChangeField.SCOPE and value == current:
+        return ReplyChangeOutcome.SKIPPED
+    if change.field == ReplyChangeField.STATUS:
+        if change.evidence_status == "certain" and owned and change.base and change.base.status == current:
+            return ReplyChangeOutcome.APPLIED
+        if value == TaskStatus.BLOCKED and blocked:
+            return ReplyChangeOutcome.NOTED
+    return ReplyChangeOutcome.PROPOSED
+
+
+def _apply(db: Session, task: Task, line: ReplyChange, now: datetime) -> None:
+    updates: dict[str, object] = {"status": line.new_value}
+    # 무응답 사유는 답이 온 순간 사실이 아니다. PM 이 쓴 사유는 둔다.
+    if line.new_value == TaskStatus.BLOCKED and (not task.blocker or task.blocker == scheduler.BLOCKER_TEXT):
+        updates["blocker"] = line.evidence_quote
+    entries = tasks.apply_task_updates(db, task, updates, change_source=ChangeSource.REMINDER_REPLY)
+    if not entries:
+        line.outcome = ReplyChangeOutcome.NOTED
+    for entry in entries:
+        entry.reply_change_id = line.change_id
+        entry.created_at = now
+
+
+def _propose(
+    db: Session, row: ReplyJudgment, task: Task,
+    group: list[tuple[ReplyChange, ReplyChangeRequest, matching.MatchResult | None]], owner_id: str,
+) -> None:
+    """태스크당 승인 카드 한 장. 추출 경로의 task_update 승인과 키가 같고 회의 대신 답장을 가리킨다."""
+    values: dict[str, object] = {}
+    base_values: dict[str, object] = {}
+    match = None
+    for line, change, line_match in group:
+        match = line_match or match
+        key = _PAYLOAD_KEY.get(line.field)
+        # 담당자를 못 찾았으면 원문만 보여 주고 PM 이 고른다. 원문은 팀원 ID 가 아니라 값으로 싣지 않는다.
+        if key and not (line_match and line_match.member_id is None):
+            values[key] = line.new_value
+            base_values[key] = getattr(change.base, key) if change.base else _current(db, change, task)
+    first_line, first = group[0][:2]
+    payload = {
+        **values,
+        "base_values": base_values,
+        "base_task_version": task.version,
+        "base_title": (first.base.title if first.base else None) or task.title,
+        "task_title": task.title,
+        "doc_text": " ".join(dict.fromkeys(line.summary for line, *_ in group if line.summary)) or None,
+        "category": _CATEGORY[first_line.field],
+        "assignee_raw": next((c.assignee_raw for _, c, _m in group if c.assignee_raw), None),
+        "assignee_needs_check": match.needs_check if match else False,
+        "due_raw": None,
+        "evidence_quote": first_line.evidence_quote,
+        "evidence_speaker": None,
+        "evidence_speaker_member_id": owner_id,
+        "evidence_at_ms": None,
+        "gate": str(Gate.REVIEW),
+        "change_source": str(ChangeSource.REMINDER_REPLY),
+        "reply_message_id": row.message_id,
+    }
+    approval = ApprovalRequest(
+        workspace_id=row.workspace_id, type=str(ApprovalType.TASK_UPDATE),
+        payload=json.dumps(payload, ensure_ascii=False), related_task_id=task.task_id, requested_by=None,
+    )
+    db.add(approval)
+    db.flush()
+    for line, *_ in group:
+        line.approval_id = approval.approval_id
+
+
+def _notice(
+    name: str, preview: str, rows: list[ReplyChange], locked: dict[str, Task], thread_id: str
+) -> Notice | None:
+    """답장 하나에 알림 하나. 한 건이면 그 태스크로, 그 밖은 대화로 보낸다. 바꿀 것이 없으면 알리지 않는다."""
+    head = f"{name} 답장 '{preview}'"
+    applied = [r for r in rows if r.outcome == ReplyChangeOutcome.APPLIED]
+    asks = [r for r in rows if r.outcome == ReplyChangeOutcome.PROPOSED or r.field == ReplyChangeField.FAILED]
+    unknown = any(r.outcome == ReplyChangeOutcome.UNKNOWN for r in rows)
+    due_clear = any(r.field == ReplyChangeField.DUE_CLEAR for r in rows)
+    if len(applied) + len(asks) == 1 and not unknown and not due_clear:
+        row = (applied or asks)[0]
+        if row.task_id:
+            task = locked[row.task_id]
+            tail = f"{task.title} {_STATUS_TO[row.new_value]} 바꿨어요(되돌리기)" if applied else _ask(row, task)
+            return Notice(f"{head} → {tail}", "task", row.task_id)
+    parts = []
+    if applied:
+        parts.append(f"{len(applied)}건 바꿨어요")
+    if asks:
+        parts.append(f"{len(asks)}건 확인이 필요해요")
+    if unknown:
+        parts.append("어느 태스크인지 골라 주세요")
+    if due_clear:
+        parts.append("마감을 없애자는 내용이에요. 직접 확인해 주세요")
+    return Notice(f"{head} → {', '.join(parts)}", "thread", thread_id) if parts else None
+
+
+def _ask(row: ReplyChange, task: Task) -> str:
+    if row.field == ReplyChangeField.STATUS:
+        return f"{task.title} {_STATUS_TO[row.new_value]} 바꿀까요?"
+    if row.field == ReplyChangeField.DUE_DATE:
+        due = date.fromisoformat(row.new_value)
+        verb = "당길까요" if task.due_date and due < task.due_date else "미룰까요"
+        return f"{task.title} 마감을 {due.month}/{due.day}로 {verb}?"
+    if row.field == ReplyChangeField.ASSIGNEE:
+        return f"{task.title} 담당자를 바꿀까요?"
+    return f"{task.title} 범위 변경을 확인해 주세요"
 
 
 def clock_effect(db: Session, watch: ReminderWatch, *, before: datetime | None) -> ClockEffect:
