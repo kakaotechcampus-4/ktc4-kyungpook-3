@@ -100,11 +100,6 @@ def _on_stop_signals(loop, stop) -> None:
             signal.signal(sig, lambda signum, frame: loop.call_soon_threadsafe(stop))
 
 
-def _speech_gate():
-    from stt.speech_gate import SpeechGate
-    return SpeechGate()
-
-
 def intake_from_env():
     """웹 업로드 가져오기에 쓸 (BE 클라이언트, 화자 분리기). 명시적 opt-in 이다: MM_UPLOAD_INTAKE=1 이고
     BE_BASE_URL·BE_SERVICE_TOKEN·PYANNOTEAI_API_KEY 가 다 있을 때만, 하나라도 없으면 None(BE 도 pyannoteAI 도 부르지 않는다).
@@ -135,7 +130,7 @@ class Worker:
         self.recordings_dir = recordings_dir
         self.transcripts_dir = transcripts_dir
         self._stt_factory = stt_factory or backend_from_env
-        self._gate_factory = gate_factory if gate_factory is not None else _speech_gate
+        self._gate_factory = gate_factory if gate_factory is not None else (lambda: None)   # 배치는 말 필터 없이(0030)
         self._extractor_factory = extractor_factory if extractor_factory is not None else build_extractor
         self._handoff_factory = handoff_factory if handoff_factory is not None else handoff_from_env
         self._intake_factory = intake_factory if intake_factory is not None else intake_from_env

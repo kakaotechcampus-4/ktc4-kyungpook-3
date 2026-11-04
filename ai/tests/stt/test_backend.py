@@ -343,6 +343,28 @@ def test_prompted_backend_passes_the_prompt_and_keeps_the_inner_attributes():
     assert b.name == "elice/whisper-large-v3" and b.reclip_unmapped is False
 
 
+def test_prompted_backend_sends_no_prompt_for_short_chunks():
+    """1.5초보다 짧은 묶음은 프롬프트 없이 보낸다. 말이 거의 없는 짧은 묶음에서 위스퍼가 프롬프트의 이름을
+    되풀이했다(결정 기록 0030)."""
+    import numpy as np
+
+    from stt.backend import PROMPT_MIN_S, Prompted
+
+    class Inner:
+        def __init__(self):
+            self.prompts = []
+
+        def transcribe(self, samples, sample_rate, prompt=None):
+            self.prompts.append(prompt)
+            return SttResult(text="그", words=[])
+
+    inner = Inner()
+    b = Prompted(inner, "동우님.", min_s=PROMPT_MIN_S)
+    b.transcribe(np.zeros(int(16_000 * PROMPT_MIN_S) - 1, dtype=np.float32), 16_000)
+    b.transcribe(np.zeros(int(16_000 * PROMPT_MIN_S), dtype=np.float32), 16_000)
+    assert PROMPT_MIN_S == 1.5 and inner.prompts == [None, "동우님."]
+
+
 def test_name_prompt_dedupes_skips_blanks_and_caps_the_list():
     from stt.backend import NAME_PROMPT_MAX, name_prompt
 
