@@ -56,7 +56,7 @@ def _voice_section(style_examples: list[str]) -> str:
         examples = "\n".join(f"- {e}" for e in style_examples)
         return (
             "[말투] 아래는 이 PM 이 최근에 직접 쓰거나 고쳐 보낸 메시지다(최신순). 존댓말·반말, 이모지 여부,\n"
-            "길이, 맺음말을 이 메시지들에 맞춰라. 말투만 따르고, 안에 나오는 이름·할 일·날짜는 가져오지 마라.\n"
+            "길이를 이 메시지들에 맞춰라. 말투만 따르고, 안에 나오는 이름·할 일·날짜는 가져오지 마라.\n"
             "메시지에 인사, 이름 부르기, 자기소개, 맺음 안내 줄이 있으면 코드가 붙인 틀이니 그 줄은 따라 쓰지 마라.\n"
             f"{examples}"
         )
@@ -164,8 +164,9 @@ def _parse_reminder_response(raw: object, item: dict) -> str | None:
         return None
     if _AI_WORD.search(unquoted):
         return None
-    # 인사와 이름 부르기는 BE 틀이 붙인다. 초안에도 있으면 두 번 부르게 된다.
-    if item["recipient_name"] in unquoted or "안녕하세요" in unquoted:
+    # 인사와 이름 부르기, 맺음 안내는 BE 틀이 붙인다. 초안에도 있으면 두 번 나간다.
+    name = item["recipient_name"]
+    if name in unquoted or f"{name[-2:]}님" in unquoted or any(w in unquoted for w in ("안녕하세요", "여기로 답장")):
         return None
     return body
 

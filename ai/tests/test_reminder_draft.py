@@ -190,3 +190,12 @@ def test_date_written_before_its_title_still_passes():
     before = ("11/14(토) 마감인 API 명세서 작성이랑 11/20(금)까지인 로그인 화면 QA 한번 여쭤봐요. "
               "디자인 시안 바뀐 부분도 같이 봐 주세요!")
     assert _run({"body": before})[0] == before
+
+
+def test_a_draft_that_copies_the_frame_closing_or_calls_the_given_name_is_rejected():
+    item = {"recipient_name": "김재환", "tasks": [
+        {"task_id": "t1", "title": "API 명세서", "due_date": "2026-11-14", "status": "todo", "note": None}]}
+    middle = "'API 명세서' 마감이 11/14(토)이라 한번 여쭤봐요."
+    assert rd._parse_reminder_response({"body": middle}, item) == middle
+    assert rd._parse_reminder_response({"body": f"재환님, {middle}"}, item) is None
+    assert rd._parse_reminder_response({"body": f"{middle}\n여기로 답장하시면 저한테 바로 전달돼요."}, item) is None
