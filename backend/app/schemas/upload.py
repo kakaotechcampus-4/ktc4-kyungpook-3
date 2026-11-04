@@ -106,7 +106,7 @@ class SpeakerAssignResponse(BaseModel):
 
 
 class SpeakerAudioInfo(BaseModel):
-    content_type: str | None
+    content_type: str
     size_bytes: int
 
 
