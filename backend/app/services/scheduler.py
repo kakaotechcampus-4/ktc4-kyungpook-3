@@ -544,9 +544,29 @@ def status_after_release(db: Session, task: Task, watch: ReminderWatch) -> str:
 
 
 def _status_before_block(db: Session, task: Task) -> str:
-    """사람이 건 막힘의 이전 상태. 이력이 없으면 할 일로 돌린다."""
+    """사람이 건 막힘의 이전 상태. 이력이 없으면 할 일로 돌린다.
+
+    완료에서 막힘으로 온 줄은 건너뛴다. 되돌린 자동 완료가 그 모양으로 남아 답장이 풀 때 완료가 되살아나면 안 된다.
+    """
     old = db.scalar(
         select(TaskHistory.old_value)
+        .where(
+            TaskHistory.task_id == task.task_id,
+            TaskHistory.changed_field == ChangedField.STATUS,
+            TaskHistory.new_value == TaskStatus.BLOCKED,
+            TaskHistory.old_value != TaskStatus.DONE,
+        )
+        .order_by(TaskHistory.created_at.desc())
+        .limit(1)
+    )
+    return old if old and old != TaskStatus.BLOCKED else TaskStatus.TODO
+
+
+def auto_block_watch(db: Session, task: Task) -> ReminderWatch | None:
+    """태스크의 마지막 막힘을 스케줄러가 걸었으면 되돌릴 값을 든 시계. 닫힌 시계도 본다."""
+    db.flush()
+    source = db.scalar(
+        select(TaskHistory.change_source)
         .where(
             TaskHistory.task_id == task.task_id,
             TaskHistory.changed_field == ChangedField.STATUS,
@@ -555,7 +575,14 @@ def _status_before_block(db: Session, task: Task) -> str:
         .order_by(TaskHistory.created_at.desc())
         .limit(1)
     )
-    return old if old and old != TaskStatus.BLOCKED else TaskStatus.TODO
+    if source != ChangeSource.SCHEDULER:
+        return None
+    return db.scalar(
+        select(ReminderWatch)
+        .where(ReminderWatch.task_id == task.task_id, ReminderWatch.applied.is_(True))
+        .order_by(ReminderWatch.sent_at.desc())
+        .limit(1)
+    )
 
 
 def undo_auto_block(db: Session, task: Task, *, changed_by: str, now: datetime) -> Task:

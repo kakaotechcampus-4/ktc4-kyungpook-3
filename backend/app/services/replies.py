@@ -17,6 +17,7 @@ from app.models import (
     ApprovalRequest,
     ApprovalStatus,
     ApprovalType,
+    ChangedField,
     ChangeSource,
     Gate,
     Member,
@@ -604,7 +605,10 @@ def attributions(db: Session, workspace_id: str, thread_id: str) -> list[dict]:
 
 
 def undo_change(db: Session, task: Task, change_id: str, *, changed_by: str) -> Task:
-    """자동 반영을 PM 이 되돌린다. 이어진 이력 중 하나라도 그 뒤 바뀌었으면 하나도 되돌리지 않는다. 닫힌 시계는 다시 열지 않는다."""
+    """자동 반영을 PM 이 되돌린다. 이어진 이력 중 하나라도 그 뒤 바뀌었으면 하나도 되돌리지 않는다. 닫힌 시계는 다시 열지 않는다.
+
+    자동 막힘을 넘어온 변경은 막기 전 상태까지 간다. 시계가 닫혀 막힘으로 두면 풀 길이 없다.
+    """
     change = db.get(ReplyChange, change_id)
     if change is None or change.task_id != task.task_id or change.outcome != ReplyChangeOutcome.APPLIED:
         raise AppError(ErrorCode.REPLY_CHANGE_NOT_UNDOABLE, details={"change_id": change_id})
@@ -616,10 +620,17 @@ def undo_change(db: Session, task: Task, change_id: str, *, changed_by: str) -> 
     ).all()
     if not entries:
         raise AppError(ErrorCode.REPLY_CHANGE_NOT_UNDOABLE, details={"change_id": change_id})
+    left_block = any(e.changed_field == ChangedField.STATUS and e.old_value == TaskStatus.BLOCKED for e in entries)
+    watch = scheduler.auto_block_watch(db, task) if left_block else None
     try:
         with db.begin_nested():
             for entry in entries:
                 tasks.rollback_task_history(db, task, entry, changed_by=changed_by)
+            if watch is not None:
+                tasks.apply_task_updates(
+                    db, task, {"status": watch.prev_status, "blocker": watch.prev_blocker},
+                    change_source=ChangeSource.MANUAL, changed_by=changed_by,
+                )
     except AppError as e:
         raise AppError(ErrorCode.REPLY_CHANGE_NOT_UNDOABLE, details={"change_id": change_id, **(e.details or {})}) from e
     return task

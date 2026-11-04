@@ -13,7 +13,7 @@ from app.models import (
     TaskHistory,
     WatchState,
 )
-from app.services import messages, replies
+from app.services import messages, replies, scheduler
 from tests.api.test_messages_api import P, client
 from tests.api.test_replies import _remind, _reply
 from tests.api.test_reply_clock import DEADLINE, _auto_blocked
@@ -650,3 +650,51 @@ def test_rejudgment_still_applies_when_no_newer_reply_touched_the_task(mdb, msee
     _judge(again, _change(a, "status", "done", evidence="certain", claimed=again))
     mdb.expire_all()
     assert a.status == "done"
+
+
+# 자동 막힘을 넘어온 자동 반영 되돌리기
+
+def _auto_blocked_then_done(mdb, mseed):
+    a = _auto_blocked(mdb, mseed)
+    _reply(mdb, mseed, DEADLINE + H, body="다 했어요")
+    item = _claim()
+    _judge(item, _change(a, "status", "done", evidence="certain", claimed=item))
+    mdb.expire_all()
+    assert a.status == "done"
+    return a, _lines(mdb, item)[(a.task_id, "status")].change_id
+
+
+def test_undo_after_release_goes_back_to_the_status_before_the_auto_block(mdb, mseed):
+    a, change_id = _auto_blocked_then_done(mdb, mseed)
+    tick(mdb, DEADLINE + 2 * H)
+    assert _undo(a, change_id).status_code == 200
+    mdb.expire_all()
+    assert (a.status, a.blocker) == ("in_progress", None)
+
+
+def test_undo_before_the_tick_leaves_no_silence_reason(mdb, mseed):
+    a, change_id = _auto_blocked_then_done(mdb, mseed)
+    assert _undo(a, change_id).status_code == 200
+    # 되돌리기 이력은 실제 시각을 찍는다. 운영 순서대로 답장 뒤로 옮긴다.
+    mdb.query(TaskHistory).filter(
+        TaskHistory.task_id == a.task_id, TaskHistory.old_value == "done", TaskHistory.new_value == "blocked",
+    ).one().created_at = DEADLINE + H + timedelta(minutes=1)
+    mdb.commit()
+    tick(mdb, DEADLINE + 2 * H)
+    mdb.expire_all()
+    assert (a.status, a.blocker) == ("in_progress", None)
+    assert _watch(mdb, a).state not in scheduler._OPEN_STATES
+
+
+def test_undone_done_is_not_read_as_the_status_before_a_block(mdb, mseed, two):
+    a, _ = two
+    client("pm").patch(f"{P}/tasks/{a.task_id}", json={"status": "blocked", "blocker": "PM 사유"})
+    _reply(mdb, mseed, AT + H, body="다 했어요")
+    item = _claim()
+    _judge(item, _change(a, "status", "done", evidence="certain", claimed=item))
+    mdb.expire_all()
+    assert a.status == "done"
+    assert _undo(a, _lines(mdb, item)[(a.task_id, "status")].change_id).status_code == 200
+    mdb.expire_all()
+    assert (a.status, a.blocker) == ("blocked", "PM 사유")
+    assert scheduler._status_before_block(mdb, a) == "in_progress"
