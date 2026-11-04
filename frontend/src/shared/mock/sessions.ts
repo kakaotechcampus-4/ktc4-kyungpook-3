@@ -65,6 +65,16 @@ export function isMemberOf(
   return isListedIn(workspaceId, userId, state) || linkOf(workspaceId, userId, state) !== undefined
 }
 
+/** 소속 공간 수. 백엔드 _build_auth_response 처럼 수락한 초대로 이어진 공간도 센다 */
+export function workspaceCountOf(userId = currentUserId(db), state: MockDb = db): number {
+  const listed =
+    state.accounts.find(({ session }) => session.user.user_id === userId)?.workspaceIds ?? []
+  const linked = state.invitations
+    .filter(({ status, accepted_user_id }) => status === 'accepted' && accepted_user_id === userId)
+    .map(({ workspace_id }) => workspace_id)
+  return new Set([...listed, ...linked].filter((id) => isMemberOf(id, userId, state))).size
+}
+
 /** 그 공간에서의 역할. 초대로 이어졌으면 그 팀원 행의 역할, 아니면 워크스페이스 행의 역할. 소속이 아니면 null */
 export function roleIn(
   workspaceId: string,

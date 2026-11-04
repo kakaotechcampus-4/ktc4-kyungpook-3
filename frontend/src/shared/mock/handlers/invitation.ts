@@ -1,4 +1,5 @@
 import { http } from 'msw'
+import { z } from 'zod'
 import type { InvitationDto, MyInvitationDto } from '@/shared/types/api/invitation'
 import { db } from '../db'
 import type { MockInvitation } from '../db'
@@ -13,6 +14,9 @@ import { nextId, readJson } from '../utils'
  * 흉내내지 않는 것: POST /workspaces 의 생성자 팀원은 workspaceIds 로만 이어져 있어 linkedUserIdOf 가 모른다 —
  * 실 API 는 MEMBER_ALREADY_LINKED 인데 여기서는 PM_MEMBER_NOT_INVITABLE 이다.
  */
+
+/** 백엔드 EmailStr 처럼 연속 점·도메인 없는 주소를 거절한다. 화면(InviteDialog)과 같은 검사다 */
+const INVITE_EMAIL = z.email()
 
 const notFound = (invitationId: string) =>
   fail('INVITATION_NOT_FOUND', '초대를 찾을 수 없습니다.', 404, { invitation_id: invitationId })
@@ -103,7 +107,7 @@ export const invitationHandlers = [
     if (
       typeof body?.member_id !== 'string' ||
       typeof body.email !== 'string' ||
-      !/^[^@\s]+@[^@\s]+$/.test(body.email.trim())
+      !INVITE_EMAIL.safeParse(body.email.trim()).success
     )
       return fail('INVALID_REQUEST', '초대 요청이 올바르지 않습니다.', 400)
     const email = normalizeEmail(body.email)

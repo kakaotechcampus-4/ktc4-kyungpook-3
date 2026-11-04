@@ -40,10 +40,11 @@ describe('초대 만들기', () => {
     applyScenario('team-invitations')
     const before = structuredClone(db.invitations)
 
-    await expect(invite('mb_03', 'not-an-email')).rejects.toMatchObject({
-      code: 'INVALID_REQUEST',
-      status: 400,
-    })
+    for (const email of ['not-an-email', 'a..b@example.com', 'jaehwan@'])
+      await expect(invite('mb_03', email)).rejects.toMatchObject({
+        code: 'INVALID_REQUEST',
+        status: 400,
+      })
     await expect(invite('mb_99', 'x@example.com')).rejects.toMatchObject({
       code: 'MEMBER_NOT_FOUND',
       status: 404,
@@ -222,6 +223,22 @@ describe('받은 초대', () => {
       status: 'accepted',
       accepted_user: { name: '이재환', email: 'jaehwan@example.com' },
     })
+  })
+
+  it('수락하면 인증 응답의 소속 수가 수락한 공간을 센다. 다시 로그인해도 같다', async () => {
+    applyScenario('invitation-pending')
+    await expect(signup('jaehwan@example.com')).resolves.toMatchObject({ workspace_count: 0 })
+
+    await act('iv_02', 'accept')
+
+    await expect(fetchSessionDto()).resolves.toMatchObject({ workspace_count: 1 })
+    await fetchDto('/auth/logout', { method: 'POST' })
+    await expect(
+      fetchDto(
+        '/auth/login',
+        jsonRequest('POST', { email: 'jaehwan@example.com', password: 'pass1234' }),
+      ),
+    ).resolves.toMatchObject({ workspace_count: 1 })
   })
 
   it('이미 그 공간 팀원이면 수락이 409 이고 초대는 대기로 남는다', async () => {
