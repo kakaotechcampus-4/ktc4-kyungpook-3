@@ -845,3 +845,65 @@ def test_run_merge_takes_max_similar_count_and_top_similarity(monkeypatch):
 
     card = out.items[0]
     assert (card["similar_count"], card["top_similarity"]) == (2, 0.8)
+
+
+# ── 답장 판단: 이번 답장의 finding 만 (judge_seq) ─────────────────────────
+
+
+CHAT = Transcript(source="chat", segments=[
+    TranscriptSegment(speaker="PM", start=0.0, end=0.0, text="로그인 화면 마감 어떻게 될까요?", seq=1),
+    TranscriptSegment(speaker="재환", start=1.0, end=1.0, text="로그인 화면은 10월 6일까지 할게요", seq=2),
+    TranscriptSegment(speaker="재환", start=2.0, end=2.0, text="아니요 로그인 화면은 10월 8일까지요", seq=3),
+])
+CHAT_FINDINGS = [
+    {"indices": [0, 1], "summary": "로그인 화면 마감을 10월 6일로 미룸", "assignee_type": "none", "reason": "일정"},
+    {"indices": [2], "summary": "로그인 화면 마감을 10월 8일로 다시 미룸", "assignee_type": "none", "reason": "일정"},
+]
+
+
+def _run_chat(monkeypatch, *, terra, drafts, **kwargs):
+    fakes = _install(monkeypatch, stage1={"findings": CHAT_FINDINGS}, terra=terra, luna_draft=drafts)
+    source = FakeCandidates()
+    out = run(CHAT, workspace_id="ws_1", today=date(2026, 10, 1), candidates=source, **kwargs)
+    return out, fakes, source
+
+
+def test_judge_seq_does_not_merge_into_a_change_from_an_earlier_reply(monkeypatch):
+    out, fakes, source = _run_chat(
+        monkeypatch, terra=[_terra(category="schedule")],
+        drafts=[{"task": None, "due_date": "2026-10-08", "doc_text": "로그인 마감을 10/8로 미룸"}], judge_seq=3)
+
+    (item,) = out.items
+    assert item["due_date"] == "2026-10-08"
+    assert item["evidence_quote"] == "아니요 로그인 화면은 10월 8일까지요"
+    assert item["doc_text"] == "로그인 마감을 10/8로 미룸"
+    assert [text for _, text in source.calls] == [CHAT_FINDINGS[1]["summary"]]
+    assert len(fakes["terra"].prompts) == 1 and len(fakes["draft"].prompts) == 1
+
+
+def test_without_judge_seq_the_later_finding_merges_as_in_a_meeting(monkeypatch):
+    out, fakes, _ = _run_chat(
+        monkeypatch, terra=[_terra(category="schedule"), _terra(category="schedule")],
+        drafts=[{"task": None, "due_date": "2026-10-06", "doc_text": "10/6으로"},
+                {"task": None, "due_date": "2026-10-08", "doc_text": "10/8로"}])
+
+    (item,) = out.items
+    assert item["due_date"] == "2026-10-08"
+    assert item["evidence_quote"] == "로그인 화면은 10월 6일까지 할게요"
+    assert len(fakes["terra"].prompts) == 2
+
+
+def test_judge_seq_with_nothing_from_this_reply_judges_nothing(monkeypatch):
+    out, fakes, source = _run_chat(monkeypatch, terra=[], drafts=[], judge_seq=9)
+
+    assert out.items == [] and out.failures == []
+    assert source.calls == [] and fakes["terra"].prompts == []
+
+
+def test_clearing_an_existing_due_carries_the_reason_callers_can_match(monkeypatch):
+    _install(
+        monkeypatch, stage1={"findings": [LOGIN_KEEP]}, terra=[_terra(category="schedule")],
+        luna_draft=[{"task": None, "due_date": "none", "doc_text": "로그인 화면 마감을 없앰"}],
+    )
+
+    assert [f.reason for f in _run_dedup().failures] == [pipeline.DUE_CLEARED_REASON]

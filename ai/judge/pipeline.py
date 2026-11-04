@@ -37,6 +37,9 @@ from shared.schemas import (
 # 문맥으로 풀린 이름(assignee_resolved)이 없으면 보내지 않는다 (capture/handoff.py 와 같은 규칙).
 _NOT_ALIAS_TYPES = {"second", "thirdpronoun", "thirdrole"}
 
+# 답장 판단(judge/reply.py)이 이 값으로 마감 지움을 알아본다
+DUE_CLEARED_REASON = "마감을 없애는 변경은 아직 보낼 수 없습니다(BE 는 null 을 '바꾸지 않음'으로 받음)."
+
 
 def _assignee(finding: JudgeFinding) -> tuple[str | None, str | None]:
     """(assignee_type, assignee_raw) — BE 가 member_id 로 해소할 값."""
@@ -249,6 +252,7 @@ def run(
     workspace_id: str,
     today: date,
     candidates: CandidateSource,
+    judge_seq: int | None = None,
 ) -> PipelineResult:
     """회의 전사록 하나를 /extractions item 목록으로.
 
@@ -257,11 +261,15 @@ def run(
 
     같은 회의에서 앞서 만든 카드는 다음 finding 의 후보로 보여 주고, Terra 가 고르면 새 카드 대신 합친다(#140).
     그래서 finding 은 회의 순서(seq)대로 판단한다 — 뒤에 말한 것이 앞을 덮어써야 한다.
+
+    judge_seq 를 주면 근거 마지막 줄이 그 seq 인 finding 만 판단한다. 앞 줄은 1단계의 문맥으로만 쓴다.
     """
     _check_llm_keys()
     # 실패하면 그대로 올린다 — finding 자체가 없다
     findings, dropped = extract_findings_counted(transcript)
     findings = sorted(findings, key=lambda f: float("inf") if f.seq is None else f.seq)
+    if judge_seq is not None:
+        findings = [f for f in findings if f.seq == judge_seq]
 
     out = PipelineResult(dropped=dropped)
     new_cards: list[dict[str, Any]] = []                         # 이번 회의 새 항목 카드
@@ -315,8 +323,7 @@ def run(
         if drafted.structured.due_cleared and (
                 task_id in edits and edits[task_id][0].due_date is not None
                 or task_id not in edits and not (task_id or "").startswith(_PENDING)):
-            out.failures.append(PipelineFailure(
-                "draft", finding.text, "마감을 없애는 변경은 아직 보낼 수 없습니다(BE 는 null 을 '바꾸지 않음'으로 받음)."))
+            out.failures.append(PipelineFailure("draft", finding.text, DUE_CLEARED_REASON))
             continue
         if task_id is not None and task_id.startswith(_PENDING):  # 이번 회의 새 항목 카드에 합친다
             _merge_into(new_cards[int(task_id[len(_PENDING):])], finding, result, drafted, base=None, today=today, found=found)
