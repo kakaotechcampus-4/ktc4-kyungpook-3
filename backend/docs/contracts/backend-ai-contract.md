@@ -58,6 +58,7 @@
 ### `PATCH /meetings/{meeting_id}/fail` → 200
 
 - 요청: `{ "failed_stage": "stt" | "extract" | "handoff" … }` (서버는 문자열만 확인)
+- BE 도 같은 상태 전이로 멈춘 업로드 회의를 스스로 failed 로 바꾼다(sweeper, 아래 "웹 업로드 가져가기"). 이때 `failed_stage`는 `diarize`(처리 중에 멈춤) 또는 `speaker_assignment_expired`(화자 지정 기한 지남)다.
 - `data`: 회의 상세 모양 `{meeting_id, workspace_id, title, status: "failed", started_at, ended_at, extraction_id: null, failed_stage, progress}`
 - `done`·`failed`가 아닌 회의만 조건부 UPDATE로 `failed`가 된다. 이미 끝났으면 409 `MEETING_ALREADY_ENDED`이고, 봇은 이를 "이미 처리됨"으로 넘어간다. 추출 등록이 먼저 `done`으로 바꾼 회의를 늦은 실패 요청이 덮지 않는다.
 
@@ -215,12 +216,12 @@ AI `Transcript.to_dict()` 모양에 화자 이름을 더해 보낸다. 한 회�
 | 순서 | 요청 | 회의 상태 |
 |---|---|---|
 | 화자 1 | `POST /uploads/{meeting_id}/speakers` (AI가 화자 라벨 전달) | `processing` → `awaiting_speakers` |
-| 화자 2 | PM이 웹에서 라벨을 멤버에 지정 (AI는 기다린다). PM 지정 API는 #266 PR-3에서 추가 예정이며 아직 없다 | 예정: `awaiting_speakers` → `processing` (지정 시각 기록) |
+| 화자 2 | PM이 웹에서 라벨을 멤버에 지정 (AI는 기다린다). PM 지정 API는 `PUT /meetings/{meeting_id}/speakers`(#266 PR-3) | `awaiting_speakers` → `processing` (지정 시각 기록) |
 | 화자 3 | `GET /uploads/assigned` (지정이 끝난 회의 조회) | 변화 없음 |
 | 화자 4 | `PATCH /uploads/{meeting_id}/resume` (다시 가져가기) | `processing` (가져간 시각만 기록) |
 
 - 대기 중(`awaiting_speakers`)에는 추출 등록을 받지 않는다(409 `MEETING_NOT_PROCESSING`). 지정 제출 뒤 `processing`으로 돌아오면 받는다.
-- 지정이 멈추거나 AI가 없으면 `PATCH /meetings/{meeting_id}/fail`로 푼다. 대기 회의 정리 장치(sweeper)는 아직 없다.
+- 지정이 멈추면 BE sweeper가 라벨 보고 뒤 7일이 지난 `awaiting_speakers` 회의를 `failed`(`failed_stage=speaker_assignment_expired`)로 바꾸고 녹음 폴더를 지운다. 그 전에 풀려면 `PATCH /meetings/{meeting_id}/fail`을 쓴다.
 
 ### `GET /uploads/pending` → 200
 
@@ -304,7 +305,13 @@ PM이 지정을 끝냈고(`speakers_assigned_at` 있음) 아직 다시 가져가
 
 - **녹음은 결과 보고 전에 받는다.** 추출 등록으로 `done`이 되거나 실패 보고로 `failed`가 되면 BE가 그 회의의 녹음 폴더를 바로 지운다.
 - 업로드 녹음에는 Discord uid가 없다. 화자 분리 없이 전사하면 발화의 `speaker`는 null이고, 회의록 참석자는 발화에서 만들므로 비어 보인다. 업로드 참석자는 지금 `meeting_upload.attendees` 에만 있고 회의록은 이를 읽지 않는다.
-- AI 가 없거나 처리 도중 멈추면 업로드 회의가 `processing`에 남아 그 워크스페이스의 업로드가 409 로 막힌다. 멈춘 회의를 자동으로 정리하는 장치(sweeper)는 아직 없다. 그동안은 `PATCH /meetings/{meeting_id}/fail`(서비스 토큰)로 실패 처리하면 녹음 폴더가 지워지고 막힘이 풀린다.
+- AI 가 없거나 처리 도중 멈추면 업로드 회의가 `processing`에 남아 그 워크스페이스의 업로드가 409 로 막힌다. AI가 가져간 회의는 BE sweeper가 정리한다(5분마다, `UPLOAD_SWEEP_INTERVAL_SECONDS`).
+  - `processing`이고 가져간 업로드: 가져간 시각·지정 시각·다시 가져간 시각·마지막 발화 저장 시각 중 가장 늦은 것에서 3시간이 지나면 `failed`(`failed_stage=diarize`). 지정 뒤에 멈춰도 같은 값이다. AI가 발화를 나눠 보내면 그때마다 3시간이 다시 시작된다.
+  - `awaiting_speakers`: 라벨 보고 뒤 7일이 지나면 `failed`(`failed_stage=speaker_assignment_expired`). 3시간 규칙은 쓰지 않는다.
+  - 정리하면 녹음 폴더를 지우고 그 워크스페이스의 업로드 막힘이 풀린다. pending으로 되돌리지 않는다(#288).
+  - 정리된 뒤 AI는 `/fail`·라벨 보고·claim·resume에서 409 `MEETING_ALREADY_ENDED`(`details.status=failed`), 발화 저장에서 409 `MEETING_FAILED`, 원본 받기에서 404를 받는다. 다시 보내지 않고 로컬 파일을 지우고 끝낸다(#288).
+  - 아직 아무도 가져가지 않은 업로드는 정리하지 않는다. AI가 꺼져 있으면 그 공간의 업로드는 계속 409이고, `PATCH /meetings/{meeting_id}/fail`(서비스 토큰)로 풀 수 있다.
+  - 회의마다 조건부 UPDATE 한 번이라 AI 보고·PM 지정과 겹쳐도 한쪽만 이긴다. 다만 3시간 경계에서는 resume 200이나 발화 저장 201 직후 회의가 failed일 수 있다. resume은 회의 행을 잠그지 않고, 발화 저장 뒤 sweeper가 그 발화를 보지 못한 채 판정할 수 있어서다(resume 항목의 경합과 같다). 이어지는 발화 저장·추출 등록이 409로 막아 데이터는 깨지지 않는다.
 
 ## 전사 힌트 조회
 

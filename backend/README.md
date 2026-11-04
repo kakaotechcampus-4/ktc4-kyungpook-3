@@ -62,13 +62,14 @@ docker compose -f docker-compose.prod.yml logs -f api
 | 항목 | 동작 |
 |---|---|
 | 기동 순서 | db가 healthy가 된 뒤 api가 뜬다. api는 `alembic upgrade head` 후 uvicorn을 띄운다 |
-| 프로세스 | uvicorn `--workers 1`, `--reload` 없음. Notion/임베딩 워커가 프로세스마다 뜨므로 워커를 늘리지 않는다 |
+| 프로세스 | uvicorn `--workers 1`, `--reload` 없음. Notion/임베딩/업로드 sweeper 워커가 프로세스마다 뜨므로 워커를 늘리지 않는다 |
 | 포트 | api는 `127.0.0.1:8000`에만 열린다. 외부 공개는 같은 서버의 리버스 프록시(HTTPS)가 맡는다. db는 호스트에 열지 않는다 |
 | DB 접속 | api의 `DATABASE_URL`은 `.env`의 `POSTGRES_USER`/`POSTGRES_PASSWORD`/`POSTGRES_DB`로 다시 만든다(`db:5432`) |
 | 나머지 환경변수 | `NOTION_*`·`DISCORD_*`·`EMBEDDING_*`·`SERVICE_TOKEN` 등은 `.env`를 그대로 넘긴다 |
 | 필수 값 | `OAUTH_STATE_SECRET`이 비어 있으면 `docker compose`가 기동 전에 멈춘다(Notion 연결용 서명 키) |
 | 데이터 | DB는 `mm-prod_pgdata` 볼륨에 남는다. 로컬 개발용 볼륨(`mm-pgdata`)과 따로다 |
 | 업로드 녹음 | `mm-prod_uploads` 볼륨(컨테이너의 `/data/uploads`)에 둔다. 회의가 done·failed가 되면 그 회의 폴더를 지운다 |
+| 업로드 sweeper | 서버 안의 워커가 `UPLOAD_SWEEP_INTERVAL_SECONDS`(기본 300, 0 이하면 끔)마다 멈춘 업로드 회의를 failed 로 바꾸고 녹음 폴더를 지운다. AI 가 가져간 뒤 진행이 3시간 없으면 `failed_stage=diarize`, 화자 지정을 7일 기다리면 `speaker_assignment_expired`. 기준은 [봇 계약](docs/contracts/backend-ai-contract.md)의 "웹 업로드 가져가기" |
 | 로그 | 컨테이너당 10MB × 3개까지만 남긴다(디스크 50GB 고정) |
 
 ## 응답 형식
