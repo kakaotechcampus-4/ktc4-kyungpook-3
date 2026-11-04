@@ -383,7 +383,7 @@ scope는 `bot applications.commands identify`다. 봇 초대 scope만 요청하�
 
 - 키: `due_reminder`, `minutes_summary`, `silence_alert`, `reminder_auto_approve`(bool), `nudge_rule`(`days_before` 0~3, `hour` 0~23, 한국 시간, 객체째 보낸다), `pm_alert_method`(`web`·`discord_dm`·`both`).
 - `due_reminder` 가 꺼지면 스케줄러가 재촉을 제안하지 않는다. PM 이 직접 만든 재촉은 그대로 나간다. `silence_alert` 가 꺼지면 72시간 무응답 막힘 알림만 건너뛴다.
-- `reminder_auto_approve` 가 켜지면 켠 뒤 발송 시각이 오는 재촉 묶음을 발송 시각에 승인한다. 켜기 전에 시각이 지난 묶음은 보내지 않는다.
+- `reminder_auto_approve` 가 켜지면 켠 뒤 발송 시각이 오는 재촉 묶음을 발송 시각에 승인한다. 켜기 전에 시각이 지난 묶음은 보내지 않는다. 자동 승인된 묶음은 `approved_by` 가 null 이다.
 - 설정을 바꿔도 이미 만든 제안·묶음은 그대로다.
 - `pm_alert_method` 와 `minutes_summary` 는 저장만 한다.
 - 계약은 [FE 계약](../frontend/docs/contracts/frontend-api-contract.md), 결정 근거는 [결정 기록](docs/plan/m6/basis-for-decision/2026-11-04-message-settings.md).
