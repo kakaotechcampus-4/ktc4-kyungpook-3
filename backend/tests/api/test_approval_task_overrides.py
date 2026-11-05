@@ -223,8 +223,34 @@ def test_reject_with_overrides_is_400_and_leaves_approval_pending(client, db, se
     assert _pending(db, approval_id)
 
 
-def test_reminder_dm_with_overrides_is_400(client, db, seed):
-    approval_id = _create_approval(client, seed, "reminder_dm", {"text": "마감 알림"})
+def _legacy_reminder_dm(db, seed) -> str:
+    """리마인드가 묶음 승인으로 옮기기 전에 쌓인 reminder_dm 행. 이제 POST 로는 만들 수 없어 직접 넣는다(#335)."""
+    row = ApprovalRequest(
+        workspace_id=seed["ws"].workspace_id, type="reminder_dm",
+        payload=json.dumps({"text": "마감 알림"}), requested_by=seed["pm"].member_id,
+    )
+    db.add(row)
+    db.commit()
+    return row.approval_id
+
+
+def _approval_count(db) -> int:
+    db.expire_all()
+    return len(db.execute(select(ApprovalRequest)).scalars().all())
+
+
+def test_create_reminder_dm_is_400_and_creates_nothing(client, db, seed):
+    r = _request(client, seed, "reminder_dm", {"text": "마감 알림"})
+
+    assert r.status_code == 400
+    error = r.json()["error"]
+    assert error["code"] == "INVALID_REQUEST"
+    assert error["details"] == {"field": "type", "allowed": ["task_create", "task_update"]}
+    assert _approval_count(db) == 0
+
+
+def test_legacy_reminder_dm_with_overrides_is_400(client, db, seed):
+    approval_id = _legacy_reminder_dm(db, seed)
 
     r = _resolve(client, approval_id, task_overrides={"due_date": "2026-10-20"})
 
@@ -232,10 +258,36 @@ def test_reminder_dm_with_overrides_is_400(client, db, seed):
     assert _pending(db, approval_id)
 
 
-def test_reminder_dm_with_empty_overrides_is_fine(client, seed):
-    approval_id = _create_approval(client, seed, "reminder_dm", {"text": "마감 알림"})
+def test_legacy_reminder_dm_approves_without_touching_tasks(client, db, seed):
+    approval_id = _legacy_reminder_dm(db, seed)
+    before = _task_count(db)
 
-    assert _resolve(client, approval_id, task_overrides={}).status_code == 200
+    r = _resolve(client, approval_id, task_overrides={})
+
+    assert r.status_code == 200
+    assert r.json()["data"]["status"] == "approved"
+    assert _task_count(db) == before
+
+
+def test_legacy_reminder_dm_can_be_rejected(client, db, seed):
+    approval_id = _legacy_reminder_dm(db, seed)
+
+    r = _resolve(client, approval_id, "rejected")
+
+    assert r.status_code == 200
+    assert r.json()["data"]["status"] == "rejected"
+
+
+def test_legacy_reminder_dm_is_listed_and_readable(client, db, seed):
+    approval_id = _legacy_reminder_dm(db, seed)
+
+    listed = client.get("/api/v1/approvals", params={"workspace_id": seed["ws"].workspace_id})
+    one = client.get(f"/api/v1/approvals/{approval_id}")
+
+    assert listed.status_code == 200
+    assert [a["type"] for a in listed.json()["data"]["items"] if a["approval_id"] == approval_id] == ["reminder_dm"]
+    assert one.status_code == 200
+    assert one.json()["data"]["type"] == "reminder_dm"
 
 
 @pytest.mark.parametrize("overrides", [
