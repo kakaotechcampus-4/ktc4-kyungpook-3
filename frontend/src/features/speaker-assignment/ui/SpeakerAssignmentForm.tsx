@@ -15,8 +15,10 @@ const NOTE = 'text-caption text-dim'
 const ALERT = 'rounded-10 bg-surface-sunken px-14 py-12 text-body text-ink'
 const REMAINING = 'text-caption font-semibold text-ink tabular-nums'
 
-/** 제출이 받아들여지지 않았을 때 이 자리에 보이는 안내. 만료·이미 진행은 화면이 통째로 바뀌어 여기 없다 */
-const REJECTION_TEXT: Partial<Record<SubmitRejection['kind'], string>> = {
+const REJECTION_TEXT: Record<
+  Exclude<SubmitRejection['kind'], 'expired' | 'alreadyMoved'>,
+  string
+> = {
   labelsChanged: '화자 목록이 바뀌어 다시 불러왔어요. 화자마다 다시 확인한 뒤 제출해 주세요.',
   inactiveMembers: '워크스페이스를 나간 팀원이 있어 그 선택을 지웠어요. 다시 골라 주세요.',
   forbidden: 'PM만 화자를 지정할 수 있어요.',
@@ -33,10 +35,6 @@ export interface SpeakerAssignmentFormProps {
   submission: SpeakerSubmit
 }
 
-/**
- * 라벨마다 팀원을 고르는 본문 (#256). 녹음 하나를 모든 샘플 버튼이 함께 쓴다.
- * 제출할 수 있는지는 `assignmentDraft` 하나로 정한다 — 모든 라벨을 직접 골라야 한다.
- */
 export function SpeakerAssignmentForm({
   meetingId,
   view,
@@ -53,7 +51,11 @@ export function SpeakerAssignmentForm({
     .filter(({ id }) => !candidateIds.has(id))
     .map(({ id, displayName }) => ({ memberId: id, displayName }))
   const rejectionText =
-    submission.rejection === null ? undefined : REJECTION_TEXT[submission.rejection.kind]
+    submission.rejection === null ||
+    submission.rejection.kind === 'expired' ||
+    submission.rejection.kind === 'alreadyMoved'
+      ? undefined
+      : REJECTION_TEXT[submission.rejection.kind]
 
   const choose = (label: string, choice: SpeakerChoice) =>
     setChoices((current) => ({ ...current, [label]: choice }))

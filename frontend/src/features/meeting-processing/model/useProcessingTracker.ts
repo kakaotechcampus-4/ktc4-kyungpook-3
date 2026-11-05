@@ -126,7 +126,7 @@ export function useProcessingTracker(): ProcessingTracker {
    * 그 회의의 처리 화면을 보고 있으면 옮긴다. 「보고 있다」는 처리 화면이 그려져 있고(커밋된 경로) 사용자가 다른 곳으로
    * 가는 중도 아니다(기록의 지금 경로)는 뜻이다. 커밋된 경로만으로는 진행 중인 사용자 이동을 모르고, 기록만으로는
    * 처리 화면으로 **가는 중**인 사람도 보고 있는 것으로 친다 — 그 사람은 도착해서 끝난 처리 화면(회의록 보기)을 본다.
-   * 이탈 확인을 고르는 중이어도 그대로 둔다. 옮겼으면 true 다
+   * 이탈 확인을 고르는 중이어도 그대로 둔다
    */
   const leaveProcessingScreen = useCallback(
     (meeting: TrackedMeeting, to: string): boolean => {

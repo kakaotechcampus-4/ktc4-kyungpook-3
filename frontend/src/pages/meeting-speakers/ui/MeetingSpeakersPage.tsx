@@ -19,7 +19,6 @@ import { Button } from '@/shared/ui/button'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
 import { Skeleton } from '@/shared/ui/skeleton'
 
-/* 업로드·처리 화면과 같은 틀 — 위 48 · 아래 72, 본문 700px 한 단, 제목 30px */
 const PAGE = 'mx-auto flex w-full max-w-shell flex-1 justify-center px-48 pt-48 pb-72'
 const COLUMN = 'flex w-full max-w-[700px] flex-col gap-26'
 const TITLE = 'text-[30px] leading-[1.25] font-bold tracking-h1 text-ink'
@@ -28,7 +27,6 @@ const META = 'text-caption text-dim tabular-nums'
 const LINK =
   'inline-flex h-36 items-center justify-center self-start rounded-9 bg-ink px-16 text-control font-semibold text-surface hover:bg-dim active:bg-sub'
 
-/** 화면은 이 중 하나만 그린다 */
 type SpeakerScreen =
   | { kind: 'loading' }
   | { kind: 'unavailable' }
@@ -38,11 +36,6 @@ type SpeakerScreen =
   | { kind: 'noLabels'; retry: () => void }
   | { kind: 'assigning'; meeting: Meeting; view: SpeakerView }
 
-/**
- * 업로드 회의의 화자 지정 (#256). 라우터 PM 가드를 걸지 않는다 — 팀원은 이 화면에서 안내만 보고 화자 API 를 부르지 않는다.
- * 상세로 공간·상태를 먼저 본다. 화자 지정 대기일 때만 PM 이 화자 조회를 부른다.
- * 제출이 만료(409 failed)나 이미 진행(409 그 밖)을 만나면 상세를 다시 받고 대기 아님 안내로 바뀐다 — 다시 낼 길이 없다.
- */
 export function MeetingSpeakersPage() {
   const workspaceId = useRouteId('workspaceId')
   const meetingId = useRouteId('meetingId')
@@ -76,8 +69,8 @@ function useSpeakerScreen(
     return { kind: 'loading' }
   }
   if (moved !== null && awaiting) {
-    // 409 뒤 다시 받는 중이다. 받기 전 상세의 사유는 낡았다
-    if (detail.isFetching) return { kind: 'loading' }
+    const refetchingAfterConflict = detail.isFetching
+    if (refetchingAfterConflict) return { kind: 'loading' }
     const status = moved.kind === 'expired' ? 'failed' : moved.status
     return { kind: 'notAwaiting', meeting, status, movedElsewhere: moved.kind === 'alreadyMoved' }
   }

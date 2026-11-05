@@ -114,7 +114,6 @@ export const appRoutes = (
                 path="meetings/:meetingId/processing"
                 element={screen(meetingProcessingPage)}
               />
-              {/* PM 가드를 걸지 않는다 — 팀원이 들어오면 화면이 「PM이 지정하고 있어요」를 보인다 (#256) */}
               <Route path="meetings/:meetingId/speakers" element={screen(meetingSpeakersPage)} />
               <Route path="meetings/:meetingId?" element={screen(meetingsPage)} />
               {/* 목록과 상세는 다른 화면이다. URL 은 M3 그대로 `/tasks` · `/tasks/:taskId` 다 (M6 §3-1) */}

@@ -1,6 +1,5 @@
 import type { SpeakerLabel } from '@/entities/meeting'
 
-/** 라벨 하나에 고른 것. 외부 참석자도 직접 고른 선택이다 */
 export type SpeakerChoice = { kind: 'member'; memberId: string } | { kind: 'external' }
 /** 라벨 → 고른 것. 키가 없으면 아직 고르지 않았다 */
 export type SpeakerChoices = Readonly<Record<string, SpeakerChoice>>
@@ -44,7 +43,6 @@ export function chosenElsewhere(
   })
 }
 
-/** 탈퇴한 팀원을 고른 선택만 지운다. 나머지 선택은 그대로다 */
 export function withoutMembers(
   choices: SpeakerChoices,
   memberIds: readonly string[],

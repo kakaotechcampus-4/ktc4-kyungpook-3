@@ -4,10 +4,6 @@ import { ApiError } from '@/shared/api/errors'
 /** 상세 polling 간격. 정리 중일 때만 돈다 (계획 §3 처리 추적) */
 export const PROCESSING_POLL_INTERVAL_MS = 3_000
 
-/**
- * 화자 지정 대기 중 polling 간격. 사람의 지정을 기다리는 동안은 요청을 줄인다 — 지정을 내면 화자 지정 화면이 상세를
- * 무효화해 바로 다시 묻는다 (#256). 다른 창·PM 의 제출만 이만큼 늦게 본다
- */
 export const AWAITING_SPEAKERS_POLL_INTERVAL_MS = 30_000
 
 /**

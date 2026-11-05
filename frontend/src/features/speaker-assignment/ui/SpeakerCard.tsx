@@ -5,7 +5,6 @@ import { Button } from '@/shared/ui/button'
 import type { SpeakerChoice } from '../model/assignmentDraft'
 import type { SamplePlayer } from '../model/useSamplePlayer'
 
-/* 카드는 흰 면 + 1px 선(디자인 §0-4). 선택 카드와 같은 라운드·여백이다 (SelectCard) */
 const CARD = 'flex flex-col gap-14 rounded-16 border border-line bg-surface px-18 py-16'
 const TITLE = 'text-body font-semibold text-ink'
 const META = 'text-caption text-dim tabular-nums'
@@ -15,7 +14,6 @@ const HINT = 'text-caption text-dim'
 const GROUP_LABEL = 'text-caption font-semibold text-sub'
 const EXTERNAL = 'external'
 
-/** 샘플 시작 위치. 회의 녹음 안의 분:초다 */
 function clock(seconds: number): string {
   const whole = Math.floor(seconds)
   return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, '0')}`
@@ -25,17 +23,13 @@ export interface SpeakerCardProps {
   index: number
   speaker: SpeakerLabel
   candidates: readonly SpeakerCandidate[]
-  /** 참석자 밖의 워크스페이스 팀원. 펼쳐야 보인다 */
   others: readonly SpeakerCandidate[]
   choice: SpeakerChoice | undefined
   onChoose: (choice: SpeakerChoice) => void
-  /** 이 팀원을 고른 다른 화자의 이름. 없으면 빈 목록 */
   chosenElsewhere: (memberId: string) => string[]
-  /** 녹음이 없으면 null — 재생 버튼을 그리지 않는다 */
   player: SamplePlayer | null
 }
 
-/** 화자 라벨 하나. 샘플을 들어 보고 팀원·외부 참석자 중 하나를 고른다 */
 export function SpeakerCard({
   index,
   speaker,
@@ -52,7 +46,6 @@ export function SpeakerCard({
   const [othersOpen, setOthersOpen] = useState(false)
   const name = `speaker-${speaker.label}`
   const chosenMember = choice?.kind === 'member' ? choice.memberId : null
-  // 고른 다른 팀원이 접혀 숨지 않게 연다
   const showOthers = othersOpen || others.some(({ memberId }) => memberId === chosenMember)
 
   const memberOption = (member: SpeakerCandidate) => {

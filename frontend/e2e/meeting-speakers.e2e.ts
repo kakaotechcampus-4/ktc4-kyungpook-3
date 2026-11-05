@@ -2,13 +2,6 @@ import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
 import { expectMinutesOpened, start } from './support'
 
-/*
- * #256 화자 지정 — 회의록 목록의 `화자 지정 필요` → 지정 화면 → 제출 → 처리 재개 → 회의록. 상태는 MSW 시나리오로만 만든다.
- *
- * - meeting-speakers: 업로드 회의 mt_11(주간 회고 녹음)이 처음부터 화자 셋을 기다린다. 제출하면 상세 조회마다 한 단계씩 가서 완료된다
- * - meeting-speakers-expired: 같은 회의에 지정을 내면 그 순간 기한이 지나 409 `details.status=failed` 다
- */
-
 /* lazy 화면 셋(회의록·지정·처리)을 지나고 처리 화면이 3초 polling 으로 세 단계 + 완료를 밟는다 (meeting-flow.e2e.ts 와 같은 까닭) */
 test.describe.configure({ timeout: 60_000 })
 
@@ -16,7 +9,6 @@ const FIRST_PAINT = { timeout: 15_000 }
 const WORKSPACE = '/workspaces/ws_01'
 const SPEAKERS = `${WORKSPACE}/meetings/mt_11/speakers`
 
-/** 화자 1·2 는 김서연, 화자 3 은 외부 참석자 — 같은 팀원을 두 화자에 고르는 것도 받는다 */
 async function chooseAll(page: Page) {
   const submit = page.getByRole('button', { name: /지정하고 정리 이어 가기/ })
   await expect(page.getByText('아직 고르지 않은 화자 3명')).toBeVisible()

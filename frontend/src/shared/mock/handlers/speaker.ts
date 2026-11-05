@@ -16,7 +16,6 @@ function notFound(meetingId: string) {
   return fail('MEETING_NOT_FOUND', '회의가 없습니다.', 404, { meeting_id: meetingId })
 }
 
-/** 회의와 업로드 칸을 찾고 PM 인지 본다. 막히면 응답이다 */
 function uploadFor(meetingId: string) {
   const meeting = db.meetings.find(({ meeting_id }) => meeting_id === meetingId)
   if (!meeting) return notFound(meetingId)

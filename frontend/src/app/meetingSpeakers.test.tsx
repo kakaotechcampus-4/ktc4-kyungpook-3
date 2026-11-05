@@ -12,11 +12,7 @@ import type { SpeakerScenario } from '@/shared/mock/speakerScenarios'
 import { recordRequests } from '@/shared/test/requests'
 import { renderApp } from './test/renderApp'
 
-/*
- * #256 화자 지정 화면. 실제 경로 표·MSW handler·request() 를 탄다.
- * mt_11 은 업로드 회의이고 화자 셋(말한 시간 순 SPEAKER_00·01·02)을 기다린다. 참석자는 김서연·박민수·이재환, 다른 팀원은 정하늘이다.
- * jsdom 은 미디어를 재생하지 않는다 — play·pause 만 바꾸고 위치(currentTime)는 테스트가 옮긴다.
- */
+/* jsdom 은 미디어를 재생하지 않는다 — play·pause 만 바꾸고 위치(currentTime)는 테스트가 옮긴다 */
 
 const SPEAKERS_PATH = paths.meetingSpeakers('ws_01', AWAITING_MEETING_ID)
 const PROCESSING_PATH = paths.meetingProcessing('ws_01', AWAITING_MEETING_ID)

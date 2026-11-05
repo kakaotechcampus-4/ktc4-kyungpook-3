@@ -4,21 +4,11 @@ import { completeMeeting, setMeetingFlowMode } from './meetingFlow'
 import { setMockRole } from './sessions'
 import { awaitSpeakers, registerSpeakerUpload } from './speakerFlow'
 
-/*
- * 화자 지정(#256) 시나리오. 모두 ws_01 하나에 로그인하고, 픽스처의 처리 중 회의(mt_10)는 먼저 완료해 둔다.
- * 흐름 방식은 `speakers` 다 — 지정을 내면 상세 조회마다 한 단계씩 진행해 완료된다.
- * scenarios.ts 의 목록과 createScenarioDb 가 여기로 넘긴다.
- */
 export const SPEAKER_SCENARIOS = [
-  // 업로드 회의 mt_11 이 처음부터 화자 지정 대기다. 회의록 목록의 진행 중 묶음에 보인다
   'meeting-speakers',
-  // 업로드 → 정리 중 → 화자 지정 대기 → 지정 → 정리 중 → 완료. 업로드 뒤 첫 상세 조회에 대기가 된다
   'meeting-speakers-flow',
-  // mt_11 에 지정을 내면 그 순간 기한이 지나 409 `details.status=failed`, 상세는 speaker_assignment_expired
   'meeting-speakers-expired',
-  // 일반 팀원이 대기 중인 mt_11 을 본다. 화자 API 는 PM 만 쓴다
   'meeting-speakers-member',
-  // mt_11 의 녹음이 없다(`audio: null`). 샘플 없이 고른다
   'meeting-speakers-no-audio',
 ] as const
 export type SpeakerScenario = (typeof SPEAKER_SCENARIOS)[number]
@@ -38,7 +28,6 @@ function signInToWs01(state: MockDb): void {
   state.authenticated = true
 }
 
-/** 업로드 때 김서연·박민수·이재환을 참석자로 고른 회의. 정하늘(mb_04)은 「다른 팀원」이다 */
 function addAwaitingUpload(state: MockDb, upload: Partial<MockSpeakerUpload> = {}): void {
   const meetingId = AWAITING_MEETING_ID
   const startedAt = '2026-09-19T01:00:00Z'

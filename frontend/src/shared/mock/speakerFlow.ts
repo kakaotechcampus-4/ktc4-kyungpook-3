@@ -21,7 +21,6 @@ function setSummaryStatus(state: MockDb, meetingId: string, status: string): voi
   if (summary) summary.status = status
 }
 
-/** 업로드가 회의마다 화자 칸을 만든다. 라벨은 아직 없다 */
 export function registerSpeakerUpload(
   meetingId: string,
   options: Partial<MockSpeakerUpload> = {},
@@ -38,7 +37,6 @@ export function registerSpeakerUpload(
   return upload
 }
 
-/** AI 가 화자 라벨을 보냈다. 처리 중 업로드 회의가 화자 지정 대기가 된다. 음성 준비 단계는 끝났다 */
 export function awaitSpeakers(
   meetingId: string,
   speakers: SpeakerViewDto['speakers'] = speakerLabelFixtures,
@@ -56,12 +54,10 @@ export function awaitSpeakers(
   return meeting
 }
 
-/** 아직 지정을 받지 않은 업로드 회의인가 — `speakers` 흐름이 첫 조회에 대기로 옮길 대상이다 */
 export function needsSpeakers(meetingId: string, state: MockDb = db): boolean {
   return state.meetingFlow.speakers[meetingId]?.mapping === null
 }
 
-/** 후보는 업로드 때 고른 참석자 중 지금 그 공간에 있는 팀원이다. 없어진 팀원은 빠진다 */
 function candidatesOf(state: MockDb, meeting: MeetingDto): SpeakerViewDto['candidates'] {
   return (state.meetingFlow.attendees[meeting.meeting_id] ?? []).flatMap((id) =>
     state.members

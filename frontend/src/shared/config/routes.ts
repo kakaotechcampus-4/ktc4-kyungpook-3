@@ -52,7 +52,6 @@ export const paths = {
   /** 회의 정리 중. 워크스페이스 팀원 모두 볼 수 있다 */
   meetingProcessing: (workspaceId: string, meetingId: string) =>
     `${workspaceBase(workspaceId)}/meetings/${segment(meetingId)}/processing`,
-  /** 업로드 회의의 화자 지정. PM 이 쓰고, 팀원에게는 화면 안에서 안내만 보인다 (#256) */
   meetingSpeakers: (workspaceId: string, meetingId: string) =>
     `${workspaceBase(workspaceId)}/meetings/${segment(meetingId)}/speakers`,
   tasks: (workspaceId: string, taskId?: string) =>

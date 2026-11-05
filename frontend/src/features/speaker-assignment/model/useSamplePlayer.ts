@@ -6,7 +6,6 @@ import type { PlayingSample } from './samplePlayback'
 
 export interface SamplePlayer {
   playing: PlayingSample | null
-  /** 녹음을 불러오지 못했다. 버튼을 막고 안내한다 */
   failed: boolean
   toggle: (key: PlayingSample, sample: SpeakerSample) => void
   isPlaying: (key: PlayingSample) => boolean
@@ -19,8 +18,8 @@ export interface SamplePlayer {
 export function useSamplePlayer(audioRef: RefObject<HTMLAudioElement | null>): SamplePlayer {
   const [playing, setPlaying] = useState<PlayingSample | null>(null)
   const [failed, setFailed] = useState(false)
-  // 늦게 끝난 play() 가 그 사이 바뀐 재생을 건드리지 않게 재생마다 번호를 붙인다
-  const generation = useRef(0)
+  const latestPlay = useRef(0)
+  const isStale = (play: number) => latestPlay.current !== play
   const watchers = useRef<{ frame: number | null; timer: number | null }>({
     frame: null,
     timer: null,
@@ -34,7 +33,7 @@ export function useSamplePlayer(audioRef: RefObject<HTMLAudioElement | null>): S
   }, [])
 
   const stop = useCallback(() => {
-    generation.current += 1
+    latestPlay.current += 1
     unwatch()
     audioRef.current?.pause()
     setPlaying(null)
@@ -43,7 +42,7 @@ export function useSamplePlayer(audioRef: RefObject<HTMLAudioElement | null>): S
   const watch = useCallback(
     (audio: HTMLAudioElement, sample: SpeakerSample, current: number) => {
       const check = () => {
-        if (generation.current !== current) return
+        if (isStale(current)) return
         if (sampleEnded(sample, audio.currentTime)) stop()
         else schedule()
       }
@@ -70,19 +69,19 @@ export function useSamplePlayer(audioRef: RefObject<HTMLAudioElement | null>): S
         stop()
         return
       }
-      generation.current += 1
-      const current = generation.current
+      latestPlay.current += 1
+      const current = latestPlay.current
       unwatch()
       audio.pause()
       audio.currentTime = sample.start
       setPlaying(key)
       audio.play().then(
         () => {
-          if (generation.current === current) watch(audio, sample, current)
+          if (!isStale(current)) watch(audio, sample, current)
         },
         () => {
           // 자동 재생 막힘·다른 재생으로 끊김. 이 재생이 아직 지금 것일 때만 버튼을 되돌린다
-          if (generation.current === current) stop()
+          if (!isStale(current)) stop()
         },
       )
     },

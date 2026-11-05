@@ -14,7 +14,6 @@ interface MeetingTrackerState {
    * 끝난 뒤 낡은 목록 캐시가 같은 회의를 다시 「정리 중」으로 보여 줘도 다시 등록하지 않는다 (U4-5)
    */
   finished: readonly string[]
-  /** 화자 지정 대기를 안내한 회의(`공간/회의` key). 세션마다 한 번만 안내하려고 남긴다 (#256) */
   prompted: readonly string[]
 }
 

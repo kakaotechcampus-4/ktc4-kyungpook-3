@@ -57,7 +57,6 @@ export interface MockSpeakerUpload {
   mapping: Record<string, string | null> | null
   /** 녹음 폴더가 있다. 있어도 처리가 done·failed 로 끝나면 지워진 것으로 본다 */
   audio: boolean
-  /** 제출하는 순간 기한이 지나 실패한다 — 409 `details.status=failed` 를 흉내 낸다 */
   expireOnSubmit: boolean
 }
 

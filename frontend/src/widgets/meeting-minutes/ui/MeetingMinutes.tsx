@@ -249,7 +249,6 @@ function MeetingList({
   )
 }
 
-/** 진행 중 항목의 상태 이름과 갈 곳. 갈 곳이 null 이면 상태만 보인다 */
 function inProgressStatus(
   workspaceId: string,
   meeting: MeetingSummary,
@@ -257,7 +256,6 @@ function inProgressStatus(
   switch (meeting.status) {
     case 'processing':
       return { label: '정리 중', to: paths.meetingProcessing(workspaceId, meeting.id) }
-    // 팀원도 같은 곳으로 간다 — 지정 화면이 PM 이 지정하고 있다고 안내한다 (#256)
     case 'awaiting_speakers':
       return { label: '화자 지정 필요', to: paths.meetingSpeakers(workspaceId, meeting.id) }
     default:

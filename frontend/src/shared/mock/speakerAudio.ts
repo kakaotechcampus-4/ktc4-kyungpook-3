@@ -10,7 +10,6 @@ export function silentWavSize(seconds: number): number {
   return HEADER_BYTES + dataBytesOf(seconds)
 }
 
-/** 8kHz 16bit mono 무음 WAV. 바이너리 픽스처를 커밋하지 않으려고 코드로 만든다 */
 export function silentWav(seconds: number): Uint8Array {
   const dataBytes = dataBytesOf(seconds)
   const bytes = new Uint8Array(HEADER_BYTES + dataBytes)

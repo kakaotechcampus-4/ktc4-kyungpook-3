@@ -19,5 +19,4 @@ export const speakerLabelFixtures: SpeakerViewDto['speakers'] = [
   { label: 'SPEAKER_01', total_sec: 301.7, samples: [{ start: 14, end: 18 }] },
 ]
 
-/** 무음 녹음 길이. 가장 늦은 샘플 끝(98.4초)보다 길다 */
 export const SPEAKER_AUDIO_SECONDS = 110

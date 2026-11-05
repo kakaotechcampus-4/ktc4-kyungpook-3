@@ -53,7 +53,6 @@ describe('경로 표', () => {
     // M5 U3 가 회의 올리기 자리표시자를 지연 로드 화면으로 바꿔 13 → 14
     // M5 U4 가 처리 화면 자리표시자를 지연 로드 화면(pages/meeting-processing)으로 바꿔 14 → 15
     // M6 S3 가 태스크 목록·상세를 한 자리표시자(`tasks/:taskId?`)에서 두 지연 로드 화면(pages/tasks, pages/task-detail)으로 나눠 15 → 16
-    // #256 이 업로드 회의의 화자 지정 화면(pages/meeting-speakers)을 더해 18 → 19
     expect(lazyScreens).toHaveLength(19)
     for (const { props } of lazyScreens) {
       expect(isValidElement(props.fallback) && props.fallback.type === RouteSkeleton).toBe(true)

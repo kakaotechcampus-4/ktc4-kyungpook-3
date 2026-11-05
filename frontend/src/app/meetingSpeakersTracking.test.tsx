@@ -16,12 +16,6 @@ import { recordRequests } from '@/shared/test/requests'
 import { toast } from '@/shared/ui/toast'
 import { renderApp } from './test/renderApp'
 
-/*
- * #256 처리 추적이 화자 지정 대기를 놓치지 않는다. 대기는 접근 상실(lost)이 아니라 진행이다 —
- * 그 회의의 처리 화면을 보던 PM 은 지정 화면으로 옮기고, 다른 화면의 PM 은 토스트로 안내받는다. 팀원에게는 안내하지 않는다.
- * 흐름 방식을 manual 로 두고 서버 상태는 speakerFlow 로 바꾼다. 간격은 setInterval 만 가짜로 돌린다.
- */
-
 const MEETING = { workspaceId: 'ws_01', meetingId: AWAITING_MEETING_ID }
 const PROCESSING_PATH = paths.meetingProcessing('ws_01', AWAITING_MEETING_ID)
 const SPEAKERS_PATH = paths.meetingSpeakers('ws_01', AWAITING_MEETING_ID)
@@ -37,7 +31,6 @@ const speakerToasts = () =>
     node.textContent?.includes(SPEAKERS_NEEDED_TITLE),
   )
 
-/** mt_11 이 아직 정리 중이다. 다음 상세 조회 전에 awaitSpeakers 로 대기로 바꾼다 */
 function processingUpload() {
   replaceDb(createSpeakerScenarioDb('meeting-speakers'))
   setMeetingFlowMode('manual')
@@ -66,7 +59,6 @@ describe('처리 추적 — 화자 지정 대기', () => {
     await app.expectPath(SPEAKERS_PATH)
     expect(app.visitedActions().at(-1)).toBe('REPLACE')
     expect(speakerToasts()).toEqual([])
-    // 추적은 이어진다 — 지정 뒤 완료·실패를 기존 처리가 받는다
     expect(useMeetingTrackerStore.getState().meetings).toContainEqual(MEETING)
   })
 
@@ -78,7 +70,6 @@ describe('처리 추적 — 화자 지정 대기', () => {
     expect(await screen.findByRole('heading', { level: 1 })).toHaveTextContent(/^팀$/)
     act(() => trackMeeting(MEETING))
     await waitFor(() => expect(speakerToasts()).toHaveLength(1))
-    // 대기 중에도 polling 을 멈추지 않는다. 3초가 아니라 30초 간격이고, 다시 안내하지 않는다
     const before = detailRequests(log).length
     await act(() => vi.advanceTimersByTimeAsync(3_000))
     expect(detailRequests(log)).toHaveLength(before)
