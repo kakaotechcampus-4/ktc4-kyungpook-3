@@ -27,10 +27,11 @@
   - `viewableMeeting`이 `isMeetingUnavailable`로 거른다. 처리·화자 지정·회의록 본문과 선택·대시보드가 함께 따른다.
 - [trackerOutcome.ts](../../../src/features/meeting-processing/model/trackerOutcome.ts)는 엔티티의 `isAccessLost`를 쓴다. 판정은 그대로다.
 - [MinutesDetail.tsx](../../../src/widgets/meeting-minutes/ui/MinutesDetail.tsx)의 회의록 본문(`minutesQueryOptions`)과 [MeetingSpeakersPage.tsx](../../../src/pages/meeting-speakers/ui/MeetingSpeakersPage.tsx)의 화자 목록(`speakerViewQueryOptions`)은 403·404를 받으면 받아 둔 값을 쓰지 않는다.
-- [MeetingProcessingPage.tsx](../../../src/pages/meeting-processing/ui/MeetingProcessingPage.tsx)의 U4-8(네트워크 오류면 마지막 상태 유지)은 그대로다. 403·404는 일시적 실패가 아니라는 경계를 주석에 적었다.
+- [MeetingProcessingPage.tsx](../../../src/pages/meeting-processing/ui/MeetingProcessingPage.tsx)의 U4-8은 그대로다. 403·404·다른 공간은 볼 수 없는 회의로 바꾸고, 그 밖의 재조회 실패(네트워크 오류·408·5xx 등)는 마지막 상태를 두며, 연결 불안정 안내는 네트워크 오류일 때만 보인다는 경계를 주석에 적었다.
 - [useDashboardData.ts](../../../src/widgets/dashboard/model/useDashboardData.ts)와 [dashboard.ts](../../../src/widgets/dashboard/lib/dashboard.ts)
   - 최신 완료 회의의 상세가 404면 그 ID를 기억해 `latestDoneMeeting(meetings, excluded)`에서 빼고, 회의 목록을 무효화해 다시 받는다.
   - 다시 받은 목록에 그 회의가 남아 있어도 같은 상세를 다시 묻지 않는다. 처음부터 404인 경우도 같다.
+  - 빼는 것은 화면이 뜬 뒤 받은 404뿐이다(`isFetchedAfterMount`). 캐시에 남은 지난 404는 다시 물어 확인하고, 그동안 최근 반영은 불러오는 중이다. 독립 리뷰가 찾은 결함(404가 캐시에 남은 회의 26개 이상으로 다시 들어오면 `Too many re-renders`)을 이렇게 고쳤다.
   - 제목 아래 안내(`MeetingLead`)는 같은 `recent.meeting`을 쓴다. 완료 회의가 모두 404면 「아직 정리한 회의가 없어요」다.
   - 403은 다른 공간 응답과 같이 「최근 반영을 불러오지 못했어요」 오류 카드다.
 - [API 계약](../../contracts/frontend-api-contract.md)의 캐시 행에 403·404 처리를 더했다. 서버 규약은 바뀌지 않았다.
@@ -58,6 +59,10 @@
 | 커밋 전 | `npm run format:check` | git에서 제외한 `.verify/` 파일만 걸렸다. 그 밖은 통과 |
 | 커밋 전 | `npm run test -- --maxWorkers=1` | 222개 파일, 2,647개 테스트 통과 |
 | 커밋 전 | MSW 모드 Vite와 Playwright Chromium(로컬 스크립트) | 8개 경로 통과. 처리 화면 polling 403·404, 회의록 상세 403·404, 화자 지정 상세 403·404, 대시보드 404(회의를 지운 뒤 다음 회의 「채팅 2026-09-11」과 그 항목 「배포 스크립트」로 넘어감, 상세 요청 `mt_09` 404 → `mt_08` → 추출 `ex_02`), 대시보드 403(오류 카드). 콘솔 오류는 일부러 넣은 403·404 응답 한 건씩뿐이다 |
+| 리뷰 반영 전 | `npx vitest run src/app/dashboard.test.tsx -t "리뷰" --maxWorkers=1` | 2개 실패. 404가 캐시에 남은 회의 29개(26개 추가)·목록 503·같은 QueryClient로 다시 들어오기에서 `Too many re-renders`, 지난 방문에 404였다 회복된 `mt_09`가 다시 보이지 않음 |
+| 리뷰 반영 뒤 | 같은 명령(첫 테스트는 StrictMode) | 2개 통과 |
+| 리뷰 반영 뒤 | 바꾼 영역 테스트 24개 파일 `--maxWorkers=1`, `tsc --noEmit`, `.verify`를 뺀 `eslint .`, `format:check`(`.verify` 밖) | 347개 통과, 나머지 통과 |
+| 리뷰 반영 뒤 | 같은 브라우저 스크립트 | 8개 경로 통과 |
 
 ## 계획 대비 변경
 
@@ -70,5 +75,5 @@
 ## 남은 작업과 제한 사항
 
 - 실서버의 403·404 응답으로는 확인하지 않았다.
-- 대시보드는 404 받은 회의 ID를 화면이 떠 있는 동안 기억한다. 화면을 다시 열면 비워진다.
+- 대시보드는 404 받은 회의 ID를 화면이 떠 있는 동안 기억한다. 화면을 다시 열면 비워지고 캐시에 남은 404는 다시 묻는다. 다시 들어올 때 지워진 회의 수만큼 상세 요청이 차례로 나간다.
 - 회의록 본문을 이전 회의로 들고 있는 동안(회의를 바꾸는 중) 그 본문이 403·404를 받으면 본문 대신 뼈대를 보인다. 고른 회의로 넘어가면 그 회의의 상태를 그린다.
