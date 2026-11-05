@@ -639,7 +639,7 @@ describe('실패 (U4-6, U4-7)', () => {
         app.queryClient
           .getQueryData(meetingListQueryOptions('ws_01').queryKey)
           ?.map(({ id }) => id),
-      ).toEqual(['mt_09', 'mt_07']),
+      ).toEqual(['mt_09', 'mt_08', 'mt_07']),
     )
     expect(tracked()).toEqual([])
   })

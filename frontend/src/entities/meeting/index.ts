@@ -13,6 +13,8 @@ export type {
 } from './model/types'
 export { toMeeting, toMeetingSummary, toMeetingUploadResult, toSpeakerView } from './model/mapper'
 export { MEETING_UPLOAD_POLICY } from './model/uploadPolicy'
+export type { MeetingSourceTraits, MeetingTimeAxis } from './model/sourceTraits'
+export { MEETING_SOURCE_TRAITS } from './model/sourceTraits'
 export {
   fetchMeetingList,
   meetingDetailQueryOptions,

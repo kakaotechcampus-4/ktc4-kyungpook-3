@@ -47,7 +47,7 @@ export function toMeetingSummary(dto: MeetingSummaryDto): MeetingSummary {
     status: enumValue(dto.status, statuses, 'created', 'meeting status'),
     source: enumValue(
       dto.source,
-      ['discord', 'manual_upload'] as const,
+      ['discord', 'manual_upload', 'chat'] as const,
       'discord',
       'meeting source',
     ),

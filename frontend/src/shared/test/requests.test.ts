@@ -6,10 +6,10 @@ import { businessRequests, isDashboardRequest, latestDoneExtractionId } from './
 const get = (path: string) => ({ method: 'GET', path })
 
 it('최신 완료 회의의 추출 ID 를 모의 db 에서 읽는다 — 정리 중 회의는 아니다', () => {
-  // 픽스처의 ws_01: mt_10 정리 중, mt_09(ex_01)·mt_07(ex_00) 완료
+  // 픽스처의 ws_01: mt_10 정리 중, mt_09(ex_01)·채팅 mt_08(ex_02)·mt_07(ex_00) 완료
   expect(latestDoneExtractionId()).toBe('ex_01')
   db.meetings = db.meetings.filter(({ meeting_id }) => meeting_id !== 'mt_09')
-  expect(latestDoneExtractionId()).toBe('ex_00')
+  expect(latestDoneExtractionId()).toBe('ex_02')
   expect(latestDoneExtractionId('ws_02')).toBeNull()
 })
 

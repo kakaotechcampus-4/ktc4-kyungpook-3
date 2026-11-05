@@ -1,6 +1,6 @@
 export type TaskStatus = 'todo' | 'in_progress' | 'blocked' | 'done'
 export type Role = 'pm' | 'member'
-export type MeetingSource = 'discord' | 'manual_upload'
+export type MeetingSource = 'discord' | 'manual_upload' | 'chat'
 
 export interface ExtractionEvidence {
   quote: string | null

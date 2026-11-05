@@ -169,6 +169,14 @@ describe('요약·제목·회의 안내 (AC-01 · AC-05)', () => {
     expect(dueTitles()).toHaveLength(5)
   })
 
+  it('최근 회의가 채팅 회의면 기간을 분량으로 쓰지 않는다 (#379)', async () => {
+    db.meetingSummaries.find(({ meeting_id }) => meeting_id === 'mt_09')!.source = 'chat'
+    await openDashboard()
+    expect(screen.getByText(/정리했어요/).textContent?.replace(/\s+/g, ' ')).toBe(
+      '9월 15일 3주차 정기회의를 정리했어요',
+    )
+  })
+
   it('대기 승인이 없으면 `확인이 필요한 일이 없어요` 이고 확인 대기는 0 이다', async () => {
     for (const approval of db.approvals) approval.status = 'rejected'
     await openDashboard()

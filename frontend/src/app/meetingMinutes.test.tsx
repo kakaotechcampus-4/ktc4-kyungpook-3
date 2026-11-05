@@ -16,7 +16,8 @@ import { renderApp } from './test/renderApp'
 
 /*
  * M5 U5 — 회의록 목록·상세. 실제 경로 표·MSW handler·request() 를 그대로 탄다.
- * 픽스처의 ws_01: 정리 끝난 mt_09(3주차, 09-15, 추출 6건 — 반영 3 · 대기 승인 3)·mt_07(2주차, 09-08, 추출 0건),
+ * 픽스처의 ws_01: 정리 끝난 mt_09(3주차, 09-15, 추출 6건 — 반영 3 · 대기 승인 3)·채팅 mt_08(09-11~09-12, 추출 1건)·
+ * mt_07(2주차, 09-08, 추출 0건),
  * 정리 중 mt_10(09-18). 늦은 응답이 화면을 옮기는 경합은 meetingMinutesRaces.test.tsx 가 본다.
  */
 
@@ -27,6 +28,7 @@ afterEach(() => {
 })
 
 const MT_09 = paths.meetings('ws_01', 'mt_09')
+const MT_08 = paths.meetings('ws_01', 'mt_08')
 const MT_07 = paths.meetings('ws_01', 'mt_07')
 
 type Log = ReturnType<typeof recordRequests>
@@ -69,7 +71,7 @@ describe('목록과 기본 선택 (U5-1)', () => {
     ).toBeInTheDocument()
 
     const links = within(minutesList()).getAllByRole('link')
-    expect(links.map((link) => link.getAttribute('href'))).toEqual([MT_09, MT_07])
+    expect(links.map((link) => link.getAttribute('href'))).toEqual([MT_09, MT_08, MT_07])
     expect(links[0]).toHaveAttribute('aria-current', 'page')
     expect(links[0]).toHaveTextContent('09/15 14:00 · 46분 · 4명')
   })
@@ -86,7 +88,7 @@ describe('목록과 기본 선택 (U5-1)', () => {
       within(minutesList())
         .getAllByRole('link')
         .map((link) => link.getAttribute('href')),
-    ).toEqual([MT_09, MT_07])
+    ).toEqual([MT_09, MT_08, MT_07])
   })
 
   it('직접 링크로 고른 회의는 목록을 다시 받아도, 더 최근 회의가 정리돼도 그대로다', async () => {
@@ -105,6 +107,7 @@ describe('목록과 기본 선택 (U5-1)', () => {
       ).toEqual([
         expect.stringContaining('기획 논의 녹음'),
         expect.stringContaining('3주차 정기회의'),
+        expect.stringContaining('채팅 2026-09-11'),
         expect.stringContaining('2주차 정기회의'),
       ]),
     )
@@ -598,6 +601,73 @@ describe('범위 밖 액션과 안내 (U5-7, U5-8, U5-9)', () => {
     )
     fireEvent.click(within(detail()).getByRole('link', { name: '정리 상태 보기' }))
     expect(await screen.findByRole('heading', { name: '정리하고 있어요' })).toBeInTheDocument()
+  })
+})
+
+describe('채팅 회의 (#379)', () => {
+  it('같은 목록에 시간순으로 섞이고 채팅 배지와 시작 시각·인원만 보인다', async () => {
+    await openMinutes(MT_09, '3주차 정기회의')
+
+    const links = within(minutesList()).getAllByRole('link')
+    expect(links.map((link) => link.getAttribute('href'))).toEqual([MT_09, MT_08, MT_07])
+    expect(within(links[1]).getByText('채팅')).toBeInTheDocument()
+    expect(links[1]).toHaveTextContent('09/11 09:12 · 3명')
+    expect(within(links[0]).queryByText('채팅')).toBeNull()
+    expect(links[0]).toHaveTextContent('09/15 14:00 · 46분 · 4명')
+  })
+
+  it('회의록 머리는 첫 메시지부터 마지막 메시지까지의 서울 시각 범위이고, 전사문·근거는 쓴 시각이다', async () => {
+    const user = userEvent.setup()
+    await openMinutes(MT_08, '채팅 2026-09-11')
+    const region = detail()
+
+    expect(within(region).getByText('2026-09-11 09:12 ~ 09/12 08:40')).toBeInTheDocument()
+    expect(within(region).getByText('Discord 채팅')).toBeInTheDocument()
+
+    const transcript = await openTab(user, /전사문/)
+    expect(
+      within(within(transcript).getByRole('list', { name: '전사문' }))
+        .getAllByRole('listitem')
+        .map((line) => line.firstElementChild?.textContent),
+    ).toEqual(['09/11 09:12', '09/11 11:15', '09/11 18:40', '09/12 08:40'])
+
+    const tasks = await openTab(user, /추출된 일/)
+    const applied = (await within(tasks).findByRole('link', { name: '배포 스크립트' })).closest(
+      'li',
+    )!
+    expect(applied).toHaveTextContent('09/11 18:40')
+  })
+
+  it('정리 중인 채팅 회의는 처리 화면으로 잇지 않고 상태만 보인다', async () => {
+    db.meetings.push({
+      ...db.meetings[3],
+      meeting_id: 'mt_21',
+      title: '채팅 2026-09-19',
+      status: 'processing',
+      started_at: '2026-09-19T00:05:00Z',
+      ended_at: '2026-09-19T08:00:00Z',
+      extraction_id: null,
+    })
+    db.meetingSummaries.push({
+      ...db.meetingSummaries[3],
+      meeting_id: 'mt_21',
+      title: '채팅 2026-09-19',
+      status: 'processing',
+      started_at: '2026-09-19T00:05:00Z',
+      processed_at: null,
+    })
+    await openMinutes(paths.meetings('ws_01'), '3주차 정기회의')
+
+    const inProgress = within(meetingList()).getByRole('list', { name: '진행 중' })
+    const row = within(inProgress).getByText('채팅 2026-09-19').closest('li')!
+    expect(row).toHaveTextContent('채팅')
+    expect(row).toHaveTextContent('정리 중')
+    expect(within(row).queryByRole('link')).toBeNull()
+    // 녹음 회의의 정리 중 항목은 그대로 처리 화면으로 잇는다
+    expect(within(inProgress).getByRole('link', { name: /기획 논의 녹음/ })).toHaveAttribute(
+      'href',
+      paths.meetingProcessing('ws_01', 'mt_10'),
+    )
   })
 })
 

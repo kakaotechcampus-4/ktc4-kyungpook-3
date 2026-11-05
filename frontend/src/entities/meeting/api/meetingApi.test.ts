@@ -68,6 +68,7 @@ describe('meetingListQueryOptions', () => {
     expect(meetings.map(({ id, status }) => [id, status])).toEqual([
       ['mt_10', 'processing'],
       ['mt_09', 'done'],
+      ['mt_08', 'done'],
       ['mt_07', 'done'],
     ])
   })

@@ -1,5 +1,13 @@
 import type { MeetingSummary } from '@/entities/meeting'
-import { detailMeta, formatClock, formatDue, formatMinutesLength, listMeta } from './format'
+import {
+  detailMeta,
+  formatClock,
+  formatDue,
+  formatMinutesLength,
+  formatMoment,
+  listMeta,
+  SOURCE_LABEL,
+} from './format'
 
 const summary: MeetingSummary = {
   id: 'mt_09',
@@ -34,8 +42,44 @@ describe('회의록 표시 형식', () => {
   })
 
   it('회의록 머리 메타는 서울 날짜·시각과 길이다', () => {
-    expect(detailMeta('2026-09-15T05:00:00Z', 2_730_000)).toBe('2026-09-15 14:00 · 45:30')
-    expect(detailMeta('2026-09-15T05:00:00Z', 0)).toBe('2026-09-15 14:00')
+    expect(detailMeta('discord', '2026-09-15T05:00:00Z', 2_730_000)).toBe(
+      '2026-09-15 14:00 · 45:30',
+    )
+    expect(detailMeta('manual_upload', '2026-09-15T05:00:00Z', 0)).toBe('2026-09-15 14:00')
+  })
+
+  describe('채팅 회의 (#379)', () => {
+    const chat: MeetingSummary = {
+      ...summary,
+      source: 'chat',
+      startedAt: '2026-09-15T00:12:00Z',
+      durationMs: 84_480_000,
+    }
+
+    it('목록 메타는 기간을 빼고 시작 시각과 인원만이다', () => {
+      expect(listMeta(chat)).toBe('09/15 09:12 · 4명')
+    })
+
+    it('머리 메타는 첫 메시지부터 마지막 메시지까지의 서울 시각 범위다', () => {
+      // 23:40Z 는 UTC 로는 같은 날이지만 서울로는 다음 날 08:40 이다
+      expect(detailMeta('chat', chat.startedAt, 84_480_000)).toBe('2026-09-15 09:12 ~ 09/16 08:40')
+      expect(detailMeta('chat', chat.startedAt, 34_080_000)).toBe('2026-09-15 09:12 ~ 18:40')
+    })
+
+    it('길이를 모르면 머리 메타는 시작 시각만이다', () => {
+      expect(detailMeta('chat', chat.startedAt, 0)).toBe('2026-09-15 09:12')
+    })
+
+    it('전사문·근거 시각은 메시지를 쓴 서울 시각이고, 녹음 회의는 녹음 안 위치 그대로다', () => {
+      expect(formatMoment('chat', chat.startedAt, 0)).toBe('09/15 09:12')
+      expect(formatMoment('chat', chat.startedAt, 84_480_000)).toBe('09/16 08:40')
+      expect(formatMoment('discord', chat.startedAt, 125_000)).toBe('02:05')
+      expect(formatMoment('manual_upload', chat.startedAt, 3_725_000)).toBe('1:02:05')
+    })
+
+    it('출처 칩은 Discord 채팅이다', () => {
+      expect(SOURCE_LABEL.chat).toBe('Discord 채팅')
+    })
   })
 
   it('마감일은 시간대 변환 없이 월/일이다', () => {
