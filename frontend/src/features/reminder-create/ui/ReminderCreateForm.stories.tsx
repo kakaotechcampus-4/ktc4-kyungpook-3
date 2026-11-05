@@ -61,7 +61,7 @@ export const 태스크_담당자에게: Story = {
     const canvas = within(canvasElement)
     await expect(await canvas.findByText('김서연')).toBeVisible()
     await expect(
-      await canvas.findByRole('radio', { name: '마감 하루 전09/19 09:00', checked: true }),
+      await canvas.findByRole('radio', { name: /^마감 하루 전\s*09\/19 09:00$/, checked: true }),
     ).toBeInTheDocument()
     await expect(canvas.queryByText(/Discord가 연결되지 않아/)).toBeNull()
     await expect(canvas.getByRole('button', { name: '재촉 만들기' })).not.toHaveAttribute(
@@ -93,10 +93,10 @@ export const 팀원과_태스크_고르기: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     await expect(canvas.getByText('받을 팀원을 골라 주세요.')).toBeVisible()
-    await userEvent.selectOptions(
-      await canvas.findByRole('combobox', { name: '받는 사람' }),
-      '이재환',
-    )
+    const memberField = canvas.getByRole('combobox', { name: '받는 사람' })
+    // 팀원 목록은 요청이 끝난 뒤에 채워진다 — 브라우저에서는 고르기 전에 그 선택지를 기다린다
+    await within(memberField).findByRole('option', { name: '이재환' })
+    await userEvent.selectOptions(memberField, '이재환')
     const taskField = canvas.getByRole('combobox', { name: '태스크' })
     await expect(
       await within(taskField).findByRole('option', { name: 'DB 스키마 정리 · 09/22 마감' }),
@@ -104,7 +104,7 @@ export const 팀원과_태스크_고르기: Story = {
     await expect(within(taskField).queryByRole('option', { name: /랜딩 카피/ })).toBeNull()
     await userEvent.selectOptions(taskField, 'DB 스키마 정리 · 09/22 마감')
     await expect(
-      await canvas.findByRole('radio', { name: '마감 하루 전09/21 09:00', checked: true }),
+      await canvas.findByRole('radio', { name: /^마감 하루 전\s*09\/21 09:00$/, checked: true }),
     ).toBeInTheDocument()
   },
 }
