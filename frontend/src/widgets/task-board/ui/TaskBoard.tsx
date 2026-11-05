@@ -13,6 +13,7 @@ import { TASK_STATUS_LABEL, useTaskStatusOverlay } from '@/features/task-status'
 import { COMMON_MESSAGES } from '@/shared/api/errorMessages'
 import { paths } from '@/shared/config/routes'
 import { seoulDateOf, soonUntil } from '@/shared/lib/date'
+import { queryView } from '@/shared/lib/query-view'
 import { panelTabStop } from '@/shared/lib/tab-panel'
 import { GuardedLink } from '@/shared/lib/unsaved-changes'
 import { Button } from '@/shared/ui/button'
@@ -28,7 +29,6 @@ import {
   memberNames,
   mondayOf,
   monthOf,
-  queryView,
   shortDate,
   VIEW_LABEL,
 } from '../lib/taskViews'

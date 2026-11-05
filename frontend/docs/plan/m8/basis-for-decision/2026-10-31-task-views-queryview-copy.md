@@ -2,10 +2,11 @@
 
 - 기록일: 2026-10-31
 - 관련 마일스톤: M8-A(#243)
+- 후속: #236 뒤 shared 로 합침(2026-11-05, #396). task-board 사본을 지우고 [shared의 queryView](../../../../src/shared/lib/query-view/queryView.ts)를 쓴다.
 
 ## 문제와 제약
 
-- 보기별 조회 상태(대기·최초 실패·성공·재조회 실패)를 가르려면, M7 대시보드의 [queryView](../../../../src/widgets/dashboard/lib/queryView.ts)와 같은 판정이 필요했다. `{data, error}`로 `loading`·`error`·`ready`·`refreshFailed`를 정하는 4줄짜리 함수다.
+- 보기별 조회 상태(대기·최초 실패·성공·재조회 실패)를 가르려면, M7 대시보드의 `queryView`(#236 뒤 [shared/lib/query-view/queryView.ts](../../../../src/shared/lib/query-view/queryView.ts))와 같은 판정이 필요했다. `{data, error}`로 `loading`·`error`·`ready`·`refreshFailed`를 정하는 4줄짜리 함수다.
 - 이 함수는 `widgets/dashboard` 안에 있다. 저장소의 FSD 경계 검사(`eslint-plugin-boundaries`의 `boundaries/dependencies`)는 위젯끼리 import하는 것을 막는다.
 - 판정을 `shared`로 옮기는 일은 #236(M6 태스크 상세의 재조회 실패 표시, [E-06](../../m7/errors/E-06-m6-detail-refetch-error-hidden.md))의 해결 방향에 들어 있다. #236은 별도 워크트리(`fix-236-task-detail-refetch-error`)에서 진행 중이다.
 
