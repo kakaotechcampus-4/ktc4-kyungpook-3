@@ -29,14 +29,24 @@ export const loginSchema = z.object({
 })
 export type LoginValues = z.infer<typeof loginSchema>
 
+/** 새로 정하는 비밀번호. 가입과 재설정이 같은 규칙이고 BE 도 같은 규칙으로 검사한다 (#356) */
+const newPassword = z
+  .string()
+  .min(1, AUTH_MESSAGES.passwordRequired)
+  .min(PASSWORD_MIN_LENGTH, AUTH_MESSAGES.passwordRule)
+  .regex(/\d/, AUTH_MESSAGES.passwordRule)
+
 /** 이름 필수 · 이메일 형식 · 비밀번호 8자 이상 + 숫자. 강도 표시와 약관 동의는 이번 범위가 아니다 */
 export const signupSchema = z.object({
   name: z.string().trim().min(1, AUTH_MESSAGES.nameRequired),
   email,
-  password: z
-    .string()
-    .min(1, AUTH_MESSAGES.passwordRequired)
-    .min(PASSWORD_MIN_LENGTH, AUTH_MESSAGES.passwordRule)
-    .regex(/\d/, AUTH_MESSAGES.passwordRule),
+  password: newPassword,
 })
 export type SignupValues = z.infer<typeof signupSchema>
+
+/** 재설정 메일 요청. 로그인과 같은 이메일 검사다 */
+export const forgotPasswordSchema = z.object({ email })
+export type ForgotPasswordValues = z.infer<typeof forgotPasswordSchema>
+
+export const resetPasswordSchema = z.object({ newPassword })
+export type ResetPasswordValues = z.infer<typeof resetPasswordSchema>
