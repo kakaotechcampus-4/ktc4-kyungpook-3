@@ -43,15 +43,16 @@
 ```jsonc
 // 요청
 { "workspace_id": "…", "title": "…" | null, "source": "discord", "started_at": "…" | null }
-// source: discord | manual_upload | chat, 기본 discord. started_at: 시간대가 있는 시각, 없으면 지금
+// source: discord | manual_upload | chat, 기본 discord. started_at: 시간대가 있는 시각(없으면 400, UTC 로 저장), 지금보다 늦으면 400, 없으면 지금
 // data
 { "meeting_id": "…", "workspace_id": "…", "status": "created", "started_at": "…" }
 ```
 
 봇은 `meeting_id`를 매니페스트 `be.meeting_id`에 남기고 이후 모든 단계의 재시도 키로 쓴다.
 
-- `source: "chat"`과 `started_at`은 디스코드 채팅 자동 수집용이다(구현됨, BE 담당 리뷰 대기). `started_at`은 그날 대화의 시작 시각이고, 채팅 회의의 발화 `start`·`end`(초)는 이 시각에서 잰 값이다.
-- 채팅 회의가 `processing`으로 남아도 웹 업로드를 막지 않는다. 업로드 409 검사(`MEETING_PROCESSING_IN_PROGRESS`)는 `source`가 `chat`인 회의를 세지 않는다.
+- `source: "chat"`과 `started_at`은 디스코드 채팅 자동 수집용이다(구현됨, BE 담당 리뷰 대기). `started_at`은 이 회의에 담긴 첫 메시지 시각이고, 채팅 회의의 발화 `start`·`end`(초)는 이 시각에서 잰 값이다.
+- 요청 본문 `source: "chat"`(sources)은 `source`가 `chat`인 회의에만 보낼 수 있다. 다른 회의에 보내면 400 `INVALID_REQUEST`다(24시간 상한 우회 방지).
+- 채팅 회의가 `processing`으로 남아도 웹 업로드를 막지 않는다. 폴러가 죽어 `/end` 뒤 3시간이 지나도록 `processing`이면 BE sweeper가 `failed`(`failed_stage=chat_stalled`)로 바꾼다. 업로드 409 검사(`MEETING_PROCESSING_IN_PROGRESS`)는 `source`가 `chat`인 회의를 세지 않는다.
 - 합의 상태: AI 담당이 설계를 정하고 이 PR 에 포함했다. BE 담당 리뷰 전이라 BE·AI 합의는 확인 필요.
 
 ### `GET /workspaces/{workspace_id}/chat-cursor` → 200
@@ -63,7 +64,7 @@
 { "meeting_id": "…", "last_message_at": "2026-11-04T01:00:00+00:00" }
 ```
 
-- `done`인 채팅 회의 중 `started_at`이 가장 늦은 것의 `started_at + duration_ms`다(UTC). 봇은 이 뒤의 메시지부터 모은다.
+- `done`인 채팅 회의 중 `started_at`이 가장 늦은 것의 `started_at + duration_ms`다(UTC). `started_at`이 같으면 `duration_ms`가 큰 쪽, 그래도 같으면 `meeting_id`가 큰 쪽이다. 봇은 이 뒤의 메시지부터 모은다.
 - 구현됨(`app/api/bot_lookups.py`), BE 담당 리뷰 대기. AI는 `ai/capture/chat_poll.py` 가 `BeClient.chat_cursor`(`ai/capture/handoff.py`)로 부른다.
 
 ### `PATCH /meetings/{meeting_id}/end` → 202

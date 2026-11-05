@@ -2,7 +2,7 @@
 
 - 날짜: 2026-11-04
 - 이슈: 없음
-- PR: (생성 예정)
+- PR: #378
 - 브랜치: feature/chat-auto-poll
 - 작성자: 윤지민 (Claude Code)
 
