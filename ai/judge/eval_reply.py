@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import time
 from collections import Counter
 from pathlib import Path
 from typing import Any, Callable
@@ -143,11 +144,13 @@ def run_cases(cases: list[dict[str, Any]], repeat: int, judge: Callable[[dict[st
     for n in range(repeat):
         for case in cases:
             row = {"id": case["id"], "shape": case["shape"], "run": n, "expected": case["expected"]}
+            started = time.monotonic()
             try:
                 row["changes"] = judge(case)["changes"]
             except Exception as e:  # noqa: BLE001 - 판단 실패도 결과다. 운영에서는 PM 알림으로 간다
                 row["changes"] = []
                 row["error"] = type(e).__name__
+            row["seconds"] = round(time.monotonic() - started, 2)
             row["score"] = score_case(case["expected"], row["changes"])
             rows.append(row)
     return rows
@@ -177,6 +180,8 @@ def main() -> None:
     rows = run_cases(cases, args.repeat, judge)
     print(f"{'합성 ' if meta['synthetic'] else ''}사례 {len(cases)}건 × {args.repeat}회{' (dry)' if args.dry else ''}\n")
     print("\n".join(summarize(rows)))
+    seconds = sorted(row["seconds"] for row in rows)
+    print(f"\n답장 1건 시간: 평균 {sum(seconds) / len(seconds):.1f}초, 중앙값 {seconds[len(seconds) // 2]:.1f}초, 최대 {seconds[-1]:.1f}초")
     if not args.dry:
         print(f"\n호출: Terra {get_llm('terra').calls}, Luna {get_llm('luna').calls}, Jev {get_jev().calls}")
     args.out.parent.mkdir(parents=True, exist_ok=True)
