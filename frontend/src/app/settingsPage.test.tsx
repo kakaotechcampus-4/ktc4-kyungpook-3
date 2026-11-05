@@ -1,6 +1,8 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http } from 'msw'
+import { onTestFinished } from 'vitest'
+import { MESSAGE_SETTINGS_FAILED_TITLE } from '@/features/message-settings'
 import { paths } from '@/shared/config/routes'
 import { db } from '@/shared/mock/db'
 import { fail } from '@/shared/mock/envelope'
@@ -10,7 +12,7 @@ import { businessRequests, recordRequests } from '@/shared/test/requests'
 import { renderApp } from './test/renderApp'
 
 /*
- * M8-B — 설정 화면 (Settings 캔버스). 목차, 연결 끊기, 저장 API 가 없는 절(자동 반영 기준·알림·팀 삭제)의 화면 안 동작과 역할 분기.
+ * M8-B — 설정 화면 (Settings 캔버스). 목차, 연결 끊기, 알림 설정 저장(#340), 저장 API 가 없는 절(자동 반영 기준·팀 삭제)의 화면 안 동작과 역할 분기.
  * Discord·Notion 연결·OAuth 복귀는 settingsConnections.test.tsx·notionConnection.test.tsx 가 본다
  */
 
@@ -19,6 +21,26 @@ vi.setConfig({ testTimeout: 15_000 })
 
 const SETTINGS = paths.settings('ws_01')
 const NOTICE = 'Discord가 연결되지 않아 웹으로만 알려요'
+const SILENCE = '사흘 넘게 응답이 없으면 나에게만 알려주기'
+const EXISTING_NOTE =
+  '설정을 바꿔도 이미 만든 재촉 제안은 그대로예요. 새 설정은 다음 제안부터 적용돼요.'
+const AUTO_OFF_NOTE =
+  '재촉 제안을 꺼서 이미 만든 제안도 자동으로 나가지 않아요. PM이 넣은 재촉과 묶인 제안은 빠져요.'
+
+/** 이 테스트 동안 설정 PATCH 의 본문을 보낸 순서대로 모은다 */
+function recordPatches(): unknown[] {
+  const bodies: unknown[] = []
+  const onStart = ({ request }: { request: Request }) => {
+    if (request.method === 'PATCH' && new URL(request.url).pathname.endsWith('/message-settings'))
+      void request
+        .clone()
+        .json()
+        .then((body: unknown) => bodies.push(body))
+  }
+  server.events.on('request:start', onStart)
+  onTestFinished(() => server.events.removeListener('request:start', onStart))
+  return bodies
+}
 
 async function notionArea() {
   return within(await screen.findByTestId('notion-connection'))
@@ -123,25 +145,6 @@ describe('설정 화면 — PM', () => {
     expect(group.getByRole('radio', { name: /전부 내가 확인한다/ })).toBeChecked()
   })
 
-  it('알림은 D-174 기본값이다 — 세 토글 켜짐, 재촉 자동 승인 꺼짐, PM 알림 방식 둘 다', async () => {
-    const user = userEvent.setup()
-    renderApp(SETTINGS)
-    const silence = await screen.findByRole('switch', {
-      name: '사흘 넘게 응답이 없으면 나에게만 알려주기',
-    })
-    expect(screen.getByRole('switch', { name: '마감 하루 전에 담당자에게 DM' })).toBeChecked()
-    expect(screen.getByRole('switch', { name: /회의 정리가 끝나면/ })).toBeChecked()
-    expect(silence).toBeChecked()
-    expect(screen.getByRole('switch', { name: '재촉 자동 승인' })).not.toBeChecked()
-    expect(
-      within(screen.getByRole('radiogroup', { name: 'PM 알림 방식' })).getByRole('radio', {
-        name: /^둘 다/,
-      }),
-    ).toBeChecked()
-    await user.click(silence)
-    expect(silence).not.toBeChecked()
-  })
-
   it('캔버스 실측 — 카드 버튼은 최소 36px 이고, 목차와 `팀 삭제` 의 글자는 13px 이다', async () => {
     renderApp(SETTINGS)
     const area = await notionArea()
@@ -161,46 +164,162 @@ describe('설정 화면 — PM', () => {
     expect(await screen.findByText('팀 삭제는 아직 준비 중이에요.')).toBeInTheDocument()
     await user.click(await screen.findByRole('button', { name: '채널 바꾸기' }))
     expect(await screen.findByText('채널 바꾸기는 아직 준비 중이에요.')).toBeInTheDocument()
-    await user.click(screen.getByRole('switch', { name: '재촉 자동 승인' }))
-    await user.click(screen.getByRole('switch', { name: '마감 하루 전에 담당자에게 DM' }))
-    await user.click(
-      within(screen.getByRole('radiogroup', { name: 'PM 알림 방식' })).getByRole('radio', {
-        name: /^웹/,
-      }),
-    )
     expect(businessRequests(log.started).filter(({ method }) => method !== 'GET')).toEqual([])
   })
 
-  it('알림 토글은 꺼짐 안내를 읽고, 재촉 자동 승인과 마감 알림은 서로 끄지 않는다', async () => {
-    const user = userEvent.setup()
+  it('알림은 서버 값을 읽는다 — 저장한 적 없으면 기본값(세 토글 켜짐, 재촉 자동 승인 꺼짐, 하루 전 09:00, 둘 다)이다', async () => {
     renderApp(SETTINGS)
-    const due = await screen.findByRole('switch', { name: '마감 하루 전에 담당자에게 DM' })
-    const auto = screen.getByRole('switch', { name: '재촉 자동 승인' })
-    const minutes = screen.getByRole('switch', { name: /회의 정리가 끝나면/ })
-    const silence = screen.getByRole('switch', {
-      name: '사흘 넘게 응답이 없으면 나에게만 알려주기',
-    })
-    expect(due).toHaveAccessibleDescription(/끄면 재촉 제안을 만들지 않습니다/)
-    expect(auto).toHaveAccessibleDescription(/끄면 승인하지 않은 재촉 제안은 그대로 남습니다/)
-    expect(minutes).toHaveAccessibleDescription(/끄면 채널에 올리지 않습니다/)
-    expect(silence).toHaveAccessibleDescription(/끄면 PM 알림만 보내지 않습니다/)
+    const due = await screen.findByRole('switch', { name: '마감 하루 전 09:00에 담당자에게 DM' })
+    expect(due).toBeChecked()
+    expect(screen.getByRole('switch', { name: /회의 정리가 끝나면/ })).toBeChecked()
+    expect(screen.getByRole('switch', { name: SILENCE })).toBeChecked()
+    expect(screen.getByRole('switch', { name: '재촉 자동 승인' })).not.toBeChecked()
+    expect(screen.getByRole('combobox', { name: '재촉 며칠 전' })).toHaveDisplayValue(
+      '마감 하루 전',
+    )
+    expect(screen.getByRole('combobox', { name: '재촉 보낼 시각' })).toHaveDisplayValue('09:00')
+    expect(
+      within(screen.getByRole('radiogroup', { name: 'PM 알림 방식' })).getByRole('radio', {
+        name: /^둘 다/,
+      }),
+    ).toBeChecked()
+    expect(screen.getByText(EXISTING_NOTE)).toBeInTheDocument()
+  })
 
-    await user.click(due)
-    expect(due).not.toBeChecked()
-    expect(auto).toBeEnabled()
-    expect(auto).not.toBeChecked()
-    await user.click(auto)
-    expect(auto).toBeChecked()
-    expect(due).toBeEnabled()
-    expect(due).not.toBeChecked()
+  it('PM 이 토글을 바꾸면 그 칸만 PATCH 하고, 다시 열어도 저장된 값이다', async () => {
+    const user = userEvent.setup()
+    const patches = recordPatches()
+    const view = renderApp(SETTINGS)
+    const silence = await screen.findByRole('switch', { name: SILENCE })
+    await user.click(silence)
+    expect(silence).not.toBeChecked()
+    await waitFor(() => expect(patches).toEqual([{ silence_alert: false }]))
+    await waitFor(() => expect(db.messageSettings.ws_01?.silence_alert).toBe(false))
 
     const method = within(screen.getByRole('radiogroup', { name: 'PM 알림 방식' }))
     await user.click(method.getByRole('radio', { name: /^웹/ }))
-    expect(method.getByRole('radio', { name: /^웹/ })).toBeChecked()
-    expect(method.getByRole('radio', { name: /^둘 다/ })).not.toBeChecked()
+    await waitFor(() =>
+      expect(patches).toEqual([{ silence_alert: false }, { pm_alert_method: 'web' }]),
+    )
+    await waitFor(() => expect(db.messageSettings.ws_01?.pm_alert_method).toBe('web'))
+
+    view.unmount()
+    renderApp(SETTINGS)
+    expect(await screen.findByRole('switch', { name: SILENCE })).not.toBeChecked()
+    expect(
+      within(screen.getByRole('radiogroup', { name: 'PM 알림 방식' })).getByRole('radio', {
+        name: /^웹/,
+      }),
+    ).toBeChecked()
+    expect(screen.getByRole('switch', { name: /회의 정리가 끝나면/ })).toBeChecked()
   })
 
-  it('워크스페이스 Discord 가 연결돼 있어도 만든 PM 의 계정이 없으면 웹으로만 알린다고 안내한다', async () => {
+  it('재촉 규칙을 바꾸면 규칙 전체를 보내고 토글 제목이 따라 바뀐다. 당일은 `마감 당일` 이다', async () => {
+    const user = userEvent.setup()
+    const patches = recordPatches()
+    renderApp(SETTINGS)
+    await user.selectOptions(
+      await screen.findByRole('combobox', { name: '재촉 며칠 전' }),
+      '마감 2일 전',
+    )
+    await user.selectOptions(screen.getByRole('combobox', { name: '재촉 보낼 시각' }), '18:00')
+    expect(
+      screen.getByRole('switch', { name: '마감 2일 전 18:00에 담당자에게 DM' }),
+    ).toBeInTheDocument()
+    await waitFor(() =>
+      expect(patches).toEqual([
+        { nudge_rule: { days_before: 2, hour: 9 } },
+        { nudge_rule: { days_before: 2, hour: 18 } },
+      ]),
+    )
+    await waitFor(() =>
+      expect(db.messageSettings.ws_01?.nudge_rule).toEqual({ days_before: 2, hour: 18 }),
+    )
+
+    await user.selectOptions(screen.getByRole('combobox', { name: '재촉 며칠 전' }), '마감 당일')
+    expect(
+      await screen.findByRole('switch', { name: '마감 당일 18:00에 담당자에게 DM' }),
+    ).toBeInTheDocument()
+    // 시각은 밤에도 고를 수 있다 — 0~23시 전부다
+    expect(
+      within(screen.getByRole('combobox', { name: '재촉 보낼 시각' })).getAllByRole('option'),
+    ).toHaveLength(24)
+  })
+
+  it.each([
+    ['403', () => fail('FORBIDDEN', 'pm only', 403), '접근 권한이 없어요.'],
+    ['500', () => fail('INTERNAL_ERROR', 'boom', 500), '서버에 문제가 생겼어요'],
+  ])('저장이 %s 로 실패하면 값이 돌아오고 알림이 뜬다', async (_status, reply, message) => {
+    const user = userEvent.setup()
+    server.use(http.patch('/api/v1/workspaces/ws_01/message-settings', reply))
+    renderApp(SETTINGS)
+    const due = await screen.findByRole('switch', { name: '마감 하루 전 09:00에 담당자에게 DM' })
+    await user.click(due)
+    expect(await screen.findByText(MESSAGE_SETTINGS_FAILED_TITLE)).toBeInTheDocument()
+    expect(screen.getByText(message, { exact: false })).toBeInTheDocument()
+    await waitFor(() => expect(due).toBeChecked())
+
+    await user.selectOptions(screen.getByRole('combobox', { name: '재촉 보낼 시각' }), '18:00')
+    await waitFor(() =>
+      expect(screen.getByRole('combobox', { name: '재촉 보낼 시각' })).toHaveDisplayValue('09:00'),
+    )
+    expect(
+      screen.getByRole('switch', { name: '마감 하루 전 09:00에 담당자에게 DM' }),
+    ).toBeInTheDocument()
+    expect(db.messageSettings.ws_01).toBeUndefined()
+  })
+
+  it('알림 토글은 꺼짐 안내를 읽는다. 자동 승인인 채 재촉 제안을 끄면 이미 만든 제안 안내가 예외 문구로 바뀐다', async () => {
+    const user = userEvent.setup()
+    renderApp(SETTINGS)
+    const due = await screen.findByRole('switch', { name: '마감 하루 전 09:00에 담당자에게 DM' })
+    const auto = screen.getByRole('switch', { name: '재촉 자동 승인' })
+    const minutes = screen.getByRole('switch', { name: /회의 정리가 끝나면/ })
+    expect(due).toHaveAccessibleDescription(/끄면 재촉 제안을 만들지 않습니다/)
+    expect(auto).toHaveAccessibleDescription(/끄면 승인하지 않은 재촉 제안은 그대로 남습니다/)
+    expect(minutes).toHaveAccessibleDescription(/끄면 채널에 올리지 않습니다.*설정만 저장돼요/)
+    expect(screen.getByRole('switch', { name: SILENCE })).toHaveAccessibleDescription(
+      /끄면 PM 알림만 보내지 않습니다/,
+    )
+    expect(screen.getByRole('radiogroup', { name: 'PM 알림 방식' })).toHaveAccessibleDescription(
+      /Discord DM은 준비 중이라 고른 방식은 저장만 돼요/,
+    )
+
+    await user.click(auto)
+    expect(auto).toBeChecked()
+    expect(due).toHaveAccessibleDescription(/이미 만든 제안도 자동으로 보내지 않습니다/)
+    expect(screen.getByText(EXISTING_NOTE)).toBeInTheDocument()
+    await user.click(due)
+    expect(due).not.toBeChecked()
+    expect(auto).toBeChecked()
+    expect(await screen.findByText(AUTO_OFF_NOTE)).toBeInTheDocument()
+    await waitFor(() =>
+      expect(db.messageSettings.ws_01).toMatchObject({
+        reminder_auto_approve: true,
+        due_reminder: false,
+      }),
+    )
+  })
+
+  it('PM 이 여럿이면 Discord 가 연결되지 않은 PM 의 이름을 붙여 웹으로만 안내한다', async () => {
+    db.members.push({
+      member_id: 'mb_91',
+      workspace_id: 'ws_01',
+      display_name: '이후 PM',
+      discord_user_id: null,
+      notion_name: null,
+      role: 'pm',
+      created_at: '2026-09-02T00:00:00Z',
+    })
+    renderApp(SETTINGS)
+    const notice = `이후 PM님은 ${NOTICE}`
+    expect(await screen.findByText(notice)).toBeInTheDocument()
+    expect(screen.getByRole('radiogroup', { name: 'PM 알림 방식' })).toHaveAccessibleDescription(
+      new RegExp(`^${notice}`),
+    )
+  })
+
+  it('모든 PM 의 Discord 가 연결되지 않았으면 이름 없이 웹으로만 안내한다', async () => {
     const creator = db.members.find((member) => member.member_id === 'mb_01')
     if (creator === undefined) throw new Error('mb_01 missing')
     creator.discord_user_id = null
@@ -208,9 +327,6 @@ describe('설정 화면 — PM', () => {
     const discord = within(await screen.findByTestId('discord-connection'))
     expect(await discord.findByText('연결됨')).toBeInTheDocument()
     expect(await screen.findByText(NOTICE)).toBeInTheDocument()
-    expect(screen.getByRole('radiogroup', { name: 'PM 알림 방식' })).toHaveAccessibleDescription(
-      NOTICE,
-    )
   })
 
   it('Discord 를 건너뛴 공간은 웹으로만 안내하고 Discord DM 과 둘 다는 고를 수 있다', async () => {
@@ -223,58 +339,26 @@ describe('설정 화면 — PM', () => {
     expect(method.getByRole('radio', { name: /^둘 다/ })).toBeChecked()
   })
 
-  it('만든 PM 의 Discord 계정이 있으면 웹으로만 안내를 보이지 않는다', async () => {
-    const log = recordRequests()
+  it('모든 PM 의 Discord 가 연결돼 있으면 웹으로만 안내를 보이지 않는다', async () => {
     renderApp(SETTINGS)
-    await waitFor(() =>
-      expect(
-        log.answered.some(
-          (request) => request.method === 'GET' && request.path.startsWith('/members'),
-        ),
-      ).toBe(true),
-    )
-    expect(screen.queryByText(NOTICE)).toBeNull()
+    await screen.findByRole('switch', { name: SILENCE })
+    expect(screen.queryByText(NOTICE, { exact: false })).toBeNull()
   })
 
-  it('나중에 만든 PM 만 Discord 계정이 없어도 안내하지 않는다', async () => {
-    db.members.push({
-      member_id: 'mb_91',
-      workspace_id: 'ws_01',
-      display_name: '이후 PM',
-      discord_user_id: null,
-      notion_name: null,
-      role: 'pm',
-      created_at: '2026-09-02T00:00:00Z',
-    })
-    const log = recordRequests()
-    renderApp(SETTINGS)
-    await waitFor(() =>
-      expect(
-        log.answered.some(
-          (request) => request.method === 'GET' && request.path.startsWith('/members'),
-        ),
-      ).toBe(true),
+  it('설정 조회가 실패하면 알림 절에 다시 시도를 보이고, 다시 받으면 토글이 보인다', async () => {
+    const user = userEvent.setup()
+    server.use(
+      http.get('/api/v1/workspaces/ws_01/message-settings', () =>
+        fail('INTERNAL_ERROR', 'boom', 500),
+      ),
     )
-    expect(screen.queryByText(NOTICE)).toBeNull()
-  })
-
-  it('팀원 조회가 실패하면 웹으로만 안내와 다시 시도를 보이지 않는다', async () => {
-    server.use(http.get('/api/v1/members', () => fail('INTERNAL_ERROR', 'boom', 500)))
-    const log = recordRequests()
     renderApp(SETTINGS)
-    await waitFor(() =>
-      expect(
-        log.answered.some(
-          (request) => request.method === 'GET' && request.path.startsWith('/members'),
-        ),
-      ).toBe(true),
-    )
-    expect(screen.queryByText(NOTICE)).toBeNull()
-    expect(
-      within(screen.getByRole('region', { name: '알림' })).queryByRole('button', {
-        name: '다시 시도',
-      }),
-    ).toBeNull()
+    const section = within(await screen.findByRole('region', { name: '알림' }))
+    const retry = await section.findByRole('button', { name: '다시 시도' }, { timeout: 5_000 })
+    expect(section.queryByRole('switch', { name: SILENCE })).toBeNull()
+    server.resetHandlers()
+    await user.click(retry)
+    expect(await section.findByRole('switch', { name: SILENCE })).toBeChecked()
   })
 })
 
@@ -294,6 +378,34 @@ describe('설정 화면 — 일반 팀원', () => {
     expect(screen.queryByRole('button', { name: '연결 끊기' })).toBeNull()
     for (const radio of screen.getAllByRole('radio')) expect(radio).toBeDisabled()
     for (const toggle of screen.getAllByRole('switch')) expect(toggle).toBeDisabled()
+    expect(screen.getAllByRole('combobox')).toHaveLength(2)
+    for (const select of screen.getAllByRole('combobox')) expect(select).toBeDisabled()
     expect(screen.queryByRole('heading', { name: '이 팀 삭제하기' })).toBeNull()
+  })
+
+  it('알림은 PM 이 저장한 값을 그대로 보인다', async () => {
+    db.messageSettings.ws_01 = {
+      due_reminder: false,
+      minutes_summary: true,
+      silence_alert: false,
+      nudge_rule: { days_before: 3, hour: 20 },
+      pm_alert_method: 'web',
+      reminder_auto_approve: true,
+      updated_at: '2026-09-17T00:00:00Z',
+      updated_by: 'mb_01',
+    }
+    renderApp(SETTINGS)
+    const due = await screen.findByRole('switch', { name: '마감 3일 전 20:00에 담당자에게 DM' })
+    expect(due).not.toBeChecked()
+    expect(due).toBeDisabled()
+    expect(screen.getByRole('switch', { name: '재촉 자동 승인' })).toBeChecked()
+    expect(screen.getByRole('switch', { name: SILENCE })).not.toBeChecked()
+    expect(screen.getByRole('combobox', { name: '재촉 보낼 시각' })).toHaveDisplayValue('20:00')
+    expect(
+      within(screen.getByRole('radiogroup', { name: 'PM 알림 방식' })).getByRole('radio', {
+        name: /^웹/,
+      }),
+    ).toBeChecked()
+    expect(screen.getByText(AUTO_OFF_NOTE)).toBeInTheDocument()
   })
 })
