@@ -78,6 +78,17 @@ const mockOAuthRoute =
     />
   ) : null
 
+/* 모의 메일함. 모의 OAuth 화면과 같은 이유로 같은 조건 안에서만 등록한다. 경로는 devPaths.mockMail 이다 (#356) */
+const mockMailRoute =
+  import.meta.env.DEV && config.mswEnabled ? (
+    <Route
+      path="__mock/mail"
+      element={screen(
+        lazyPage(() => import('@/shared/mock/mail/MockMailPage').then((m) => m.MockMailPage)),
+      )}
+    />
+  ) : null
+
 /*
  * 경로 표. <Routes>{appRoutes}</Routes> 로 쓴다 — 브라우저는 BrowserRouter, 테스트는 MemoryRouter 안이다.
  * loader 를 쓰지 않는다 — 업무 데이터는 가드를 모두 통과한 화면 컴포넌트가 useQuery 로 시작한다.
@@ -140,6 +151,7 @@ export const appRoutes = (
       </Route>
     </Route>
     {mockOAuthRoute}
+    {mockMailRoute}
     <Route path="*" element={screen(<NotFoundPage />)} />
   </Route>
 )
