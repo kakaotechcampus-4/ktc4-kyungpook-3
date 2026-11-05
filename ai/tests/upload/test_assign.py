@@ -83,6 +83,7 @@ def env(tmp_path):
     assert manifest_path(rec, f"upload_{MID}").exists()
     be.mark_reported(MID, ["SPEAKER_00", "SPEAKER_01"])   # 가져가고 보고한 뒤라야 지정을 받는다(awaiting_speakers)
     A._skip_logged.clear()
+    A._list_failing = False
     return type("Env", (), {"be": be, "client": client, "wrapped": Wrapped(client), "rec": rec, "clock": clock})
 
 
@@ -292,3 +293,59 @@ def test_assigned_is_skipped_until_intake_record_is_done(env):
     env.be.assign(MID, GOOD)
     assert _go(env) is None
     assert _count(env, "/resume") == 0 and "resume" not in _intake(env)
+
+
+# --- 리뷰(Y-Jimin) 반영: 오류 봉투 없는 404 는 "회의가 사라짐" 이 아니다 / 목록 조회 실패는 흔적을 남긴다 ---
+
+def _bare_404():
+    return BeError("HTTP_404", "not found", status=404)   # 잘못된 경로·프록시·BE 배포 중: 오류 봉투가 없는 404
+
+
+def test_a_bare_404_on_resume_is_retried_and_never_deletes_local_files(env):
+    env.be.assign(MID, GOOD)
+    env.wrapped.resume_error = _bare_404()
+    assert _go(env, env.wrapped) == A.Progress(MID, "retry")
+    assert not _local_gone(env)
+    assert _manifest(env)["status"] == "diarized"
+    assert _intake(env)["resume"]["state"] == "resuming" and _count(env, "/fail") == 0
+    env.wrapped.resume_error = None
+    env.clock.advance(backoff_s(1))
+    assert _go(env, env.wrapped) == A.Progress(MID, "mapped")   # 고쳐지면 이어서 받는다
+
+
+def test_a_meeting_not_found_envelope_on_resume_still_cleans_local(env):
+    env.be.assign(MID, GOOD)
+    env.wrapped.resume_error = BeError("MEETING_NOT_FOUND", "없다", status=404)
+    assert _go(env, env.wrapped) == A.Progress(MID, "ended")
+    assert _local_gone(env) and _count(env, "/fail") == 0
+
+
+def test_a_bare_404_on_the_fail_report_is_retried_not_treated_as_done(env, monkeypatch):
+    """지정을 쓸 수 없어 fail 을 보내는 중에 오류 봉투 없는 404 를 받으면 보고가 끝난 것으로 보지 않고 다시 보낸다."""
+    env.be.assign(MID, GOOD)
+
+    def unusable(*a, **k):   # 라벨 불일치 등 영구 실패를 흉내 낸다(가짜 BE 의 지정 검사와 무관하게 돈다)
+        raise ValueError("라벨이 맞지 않는다")
+
+    monkeypatch.setattr(A, "apply_mapping", unusable)
+    env.wrapped.fail_error = _bare_404()
+    ev = _go(env, env.wrapped)
+    assert ev.event == "fail_pending"
+    assert _intake(env)["resume"]["state"] == "failing"
+    env.wrapped.fail_error = None
+    env.clock.advance(backoff_s(1))
+    assert _go(env, env.wrapped).event == "failed"
+
+
+def test_assigned_list_failure_leaves_one_warning_per_outage(env, caplog):
+    class Down(Wrapped):
+        def assigned_uploads(self):
+            raise requests.ConnectionError("BE 가 꺼져 있다")
+
+    with caplog.at_level(logging.WARNING, logger="upload.assign"):
+        assert _go(env, Down(env.client)) is None
+        assert _go(env, Down(env.client)) is None
+        assert sum("assigned" in r.getMessage() for r in caplog.records) == 1   # 같은 장애는 한 번만
+        assert _go(env) is None   # BE 가 돌아와 조회에 성공하면 알림 상태를 푼다
+        assert _go(env, Down(env.client)) is None
+        assert sum("assigned" in r.getMessage() for r in caplog.records) == 2   # 새 장애는 다시 남긴다
