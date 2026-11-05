@@ -258,11 +258,22 @@ def test_on_before_setup_stops_without_launching(aws):
 
 
 @pytest.mark.parametrize("args", [("on", "--hours", "0"), ("on", "--hours", "x"), ("on", "3"), ("setup",),
-                                  ("setup", "not-an-ip"), ("reboot",), ()])
+                                  ("setup", "not-an-ip"), ("setup", "203.0.113.310"), ("off", "--help"),
+                                  ("status", "--help"), ("reboot",), ()])
 def test_bad_arguments_change_nothing(aws, args):
     r = aws.run(*args)
     assert r.returncode != 0
     assert [c for c in aws.calls() if " describe-" not in f" {c}"] == []
+
+
+def test_on_stops_before_launching_when_the_fixed_ip_is_gone(aws):
+    aws.ok("setup", PROD_IP)
+    (aws.dir / "address").unlink()
+    aws.forget_calls()
+    r = aws.run("on")
+    assert r.returncode != 0
+    assert "setup" in r.stderr
+    assert aws.calls("run-instances") == []
 
 
 def test_no_secret_reaches_the_terminal(aws):

@@ -99,9 +99,17 @@ ensure_cert_and_key() {
   fi
 }
 
+valid_ip() {
+  local octet
+  [[ $1 =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] || return 1
+  for octet in ${1//./ }; do
+    [ "$((10#$octet))" -le 255 ] || return 1
+  done
+}
+
 cmd_setup() {
   local prod_ip=${1:-}
-  [[ $prod_ip =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] || usage
+  valid_ip "$prod_ip" || usage
   mkdir -p "$STATE"
   ensure_security_group "$prod_ip"
   ensure_eip
@@ -166,6 +174,8 @@ cmd_on() {
   [[ $hours =~ ^[1-9][0-9]*$ ]] || usage
   [ -f "$STATE/env" ] || die "먼저 setup 을 돌립니다."
   . "$STATE/env"
+  [ -n "$(aws ec2 describe-addresses --filters "Name=allocation-id,Values=$EIP_ALLOC" \
+    --query 'Addresses[].AllocationId' --output text)" ] || die "고정 IP 가 없습니다. setup 을 다시 돌립니다."
 
   USER_DATA=$(mktemp)
   RUN_ERROR=$(mktemp)
@@ -193,6 +203,7 @@ cmd_on() {
 
 cmd_off() {
   local ids remaining
+  [ $# -eq 0 ] || usage
   ids=$(fallback_ids "$NOT_GONE")
   if [ -n "$ids" ]; then
     # id 가 여럿이면 공백으로 나뉜다. 일부러 따옴표 없이 넘긴다
@@ -208,6 +219,7 @@ cmd_off() {
 
 cmd_status() {
   local rows id state launched at types
+  [ $# -eq 0 ] || usage
   rows=$(aws ec2 describe-instances --filters "$ROLE_FILTER" "Name=instance-state-name,Values=$NOT_GONE" \
     --output text --query \
     "Reservations[].Instances[].[InstanceId, State.Name, LaunchTime, Tags[?Key=='TerminateAt'] | [0].Value]")
