@@ -443,8 +443,33 @@ def cancel_bundle(db: Session, bundle: ReminderBundle, *, now: datetime) -> Remi
     return bundle
 
 
+def _has_pm_reminder(bundle_id):
+    """묶음에 PM 이 직접 넣은 재촉이 남아 있는지. 재촉 제안을 꺼도 이런 묶음은 PM 이 보내려던 것이다."""
+    return (
+        select(Reminder.reminder_id)
+        .where(
+            Reminder.bundle_id == bundle_id,
+            Reminder.origin == ReminderOrigin.PM,
+            Reminder.status == ReminderStatus.SCHEDULED,
+        )
+        .exists()
+    )
+
+
+def auto_approves(db: Session, settings, bundle: ReminderBundle) -> bool:
+    """이 묶음이 발송 시각에 자동 승인되는지. _auto_approve_due 와 같은 조건이다. settings 는 MessageSettings."""
+    if not settings.reminder_auto_approve or settings.auto_approve_since is None:
+        return False
+    if utc(bundle.scheduled_at) < utc(settings.auto_approve_since):
+        return False
+    return settings.due_reminder or bool(db.scalar(select(_has_pm_reminder(bundle.bundle_id))))
+
+
 def _auto_approve_due(db: Session, now: datetime, exclude: list[str]) -> None:
-    """자동 승인이 켜진 워크스페이스의 승인 전 묶음 중 켠 뒤에 시각이 된 것을 승인한다. 초안 버전·미래 시각은 보지 않는다."""
+    """자동 승인이 켜진 워크스페이스의 승인 전 묶음 중 켠 뒤에 시각이 된 것을 승인한다. 초안 버전·미래 시각은 보지 않는다.
+
+    재촉 제안(due_reminder)이 꺼져 있으면 끄기 전에 만든 스케줄러 제안만 있는 묶음은 승인하지 않는다.
+    """
     bundles = db.scalars(
         select(ReminderBundle)
         .join(
@@ -458,6 +483,10 @@ def _auto_approve_due(db: Session, now: datetime, exclude: list[str]) -> None:
             ReminderBundle.bundle_id.notin_(exclude),
             WorkspaceMessageSettings.reminder_auto_approve.is_(True),
             ReminderBundle.scheduled_at >= WorkspaceMessageSettings.auto_approve_since,
+            or_(
+                WorkspaceMessageSettings.due_reminder.is_(True),
+                _has_pm_reminder(ReminderBundle.bundle_id),
+            ),
         )
         .with_for_update(skip_locked=True, of=ReminderBundle)
     ).all()

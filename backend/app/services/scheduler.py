@@ -364,13 +364,8 @@ def _notify_dropped(db: Session, reminder: Reminder, reason: str, was_approved: 
     }[reason]
     if rest and was_approved:
         settings = message_settings.get_settings(db, reminder.workspace_id)
-        # 켜기 전에 발송 시각이 지난 묶음은 자동 승인 대상이 아니다(_auto_approve_due 와 같은 조건).
-        auto = (
-            settings.reminder_auto_approve
-            and settings.auto_approve_since is not None
-            and messages.utc(bundle.scheduled_at) >= messages.utc(settings.auto_approve_since)
-        )
-        if auto:
+        db.flush()
+        if messages.auto_approves(db, settings, bundle):
             message += ". 남은 메시지는 발송 시각에 자동으로 나가요"
         else:
             message += ". 같이 보낼 메시지는 다시 승인해 주세요"
