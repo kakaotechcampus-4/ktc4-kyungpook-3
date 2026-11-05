@@ -1459,7 +1459,8 @@ members 에만 있고 Discord 목록에 없으면      → 비활성 (서버를 
 **MSW 동작.** 개발 서버·테스트·Storybook 의 목([handlers/message.ts](../../src/shared/mock/handlers/message.ts))은 위 백엔드 경로·응답 모양·오류 코드를 그대로 쓴다(#315).
 
 - 흉내 내는 것: 승인 때 `draft_version` 비교(다르면 409 `BUNDLE_CHANGED`, 이미 승인했으면 그대로 200), 지난 시각 승인·시각 고치기 409 `REMINDER_SCHEDULED_AT_PASSED`, 예정이 아닌 묶음 409 `REMINDER_NOT_EDITABLE`, 없는 묶음 404 `REMINDER_BUNDLE_NOT_FOUND`, 문구를 고치면 `body_source: pm`·판 올림·승인 유지, 시각만 옮기면 판 그대로, 팀원에게 `bundles: null`, 남의 대화 조회·답장 403 `FORBIDDEN`(PM 의 답장 포함), 시간대 없는 `scheduled_at` 400, 시각은 UTC 로 응답.
-- 흉내 내지 않는 것: 같은 시각으로 옮겼을 때 묶음 합치기, 스케줄러의 발송·만료·자동 취소, AI 초안 도착, `POST /messages/reminders` 와 리마인드 하나 고치기·빼기 경로, 봇 경로.
+- 흉내 내는 것(묶음 합치기, #368): 옮긴 시각에 같은 대화의 예정 묶음이 있으면 리마인드를 그 묶음으로 옮기고 합쳐진 묶음을 돌려준다. 두 묶음 모두 문구를 규칙대로 다시 만들고 판을 올리고 승인을 푼다. 리마인드가 남지 않은 옮긴 묶음은 `cancelled` 다. 합쳐지는 시각으로 옮기면서 문구를 같이 보내면 400 `INVALID_REQUEST` 다. 시나리오 `messages-merge` 가 합치기를 재현한다.
+- 흉내 내지 않는 것: 스케줄러의 발송·만료·자동 취소, AI 초안 도착, `POST /messages/reminders` 와 리마인드 하나 고치기·빼기 경로, 봇 경로.
 
 **프론트엔드가 정한 정책** (D-174, 백엔드·AI 합의 여부 확인 필요). 서버가 해 줘야 하는 일만 적는다. 정책 전문은 D-174 에 있다.
 

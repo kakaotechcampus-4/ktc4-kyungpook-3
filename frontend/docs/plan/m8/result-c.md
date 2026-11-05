@@ -1,10 +1,68 @@
 # M8-C 구현 결과 — 메시지
 
-- 기록일: 2026-10-31 (2026-11-01 디자인 캔버스 기준 재작업과 검증 VR-C 발견 수정, 2026-11-02 Discord DM 카드 잘림 수정, 발송 시점 카드 hover·저장 중 버튼 깜빡임 수정, 대화 미리 받기 반영, 2026-11-04 실제 메시지 API 연결)
-- 이슈: #245, 후속 #315(실제 API 연결)
+- 기록일: 2026-10-31 (2026-11-01 디자인 캔버스 기준 재작업과 검증 VR-C 발견 수정, 2026-11-02 Discord DM 카드 잘림 수정, 발송 시점 카드 hover·저장 중 버튼 깜빡임 수정, 대화 미리 받기 반영, 2026-11-04 실제 메시지 API 연결, 2026-11-05 합친 묶음으로 선택 옮기기)
+- 이슈: #245, 후속 #315(실제 API 연결), #368(묶음 합치기)
 - 대상: [M8 계획](plan.md) C 절의 구현 순서 1~6(결정 전)과 최종 게이트, 2026-11-01 사용자 결정(결정 4의 UI 범위 = 디자인 캔버스 기준, MSW 목)에 따른 재작업
 - 상태 (2026-11-04, #315): **화면을 계약 §5.7 의 실제 메시지 API 로 옮기고 production 을 포함한 모든 모드에서 연다.** 준비 중 안내와 MSW 모드 분기는 지웠다. 서버에 경로·값이 없는 시안 항목(답장 판정, `지금 바로`, 채널, 재촉 이유 등)은 뺐다. typecheck·lint·format·build·전체 테스트와 브라우저 확인은 MSW 기준으로 통과했고, 실제 서버 연동은 미검증이다(아래 2026-11-04 절). 아래 2026-11-02 까지의 상태 문장은 그때 기록이다.
 - 상태 (2026-11-02 까지): **AC-01~AC-07 충족(프론트·MSW 기준, UI/UX만), 목록·보내기 전 확인·대화·빈 상태가 디자인 캔버스의 항목·문구·상태와 일치(차이표, 남은 차이 4개는 아래).** 메시지 API가 없어 화면은 MSW 모드에서만 보이고, 실 API 모드와 production은 기존 「메시지는 준비 중이에요」 안내를 그대로 둔다. 보내기 전 확인의 행동(발송·보내지 않음·고쳐 쓰기·발송 시점, 대화의 승인·반려)은 MSW 목으로 서버 성공 뒤 반영한다. 권한 분기·상태 동기화(polling)·메시지 E2E는 하지 않았다. 전체 `test:e2e`는 실행하지 않았다. 실제 메시지 API 연동과 Discord 발송은 범위 밖이며 검증하지 않았다.
+
+## 2026-11-05 합친 묶음으로 선택 옮기기 (#368)
+
+### 근거와 요약
+
+2026-11-04 절 「남은 문제」의 **묶음 합치기** 후속이다. 이슈 #368 과 코디네이터 작업 지시(2026-11-05)에 따랐다. 계획 [plan.md](plan.md)는 읽기만 했고, 계획에 이 작업의 완료조건이 없어 새 AC 를 만들지 않았다.
+
+PM 이 묶음 A 를 연 채(`?review=A`) 보낼 시각을 같은 팀원의 예정 묶음 B 의 시각으로 옮기면, BE 는 A 를 B 에 합치고 B 를 돌려준다. 합치면 두 묶음 모두 문구를 다시 만들고 승인을 푼다(`backend/app/services/messages.py` 의 `edit_bundle`·`_rebuild`). 화면은 응답을 버리고 다시 받은 목록에서 A 를 찾지 못해 「골라 주세요」로 바뀌었다. 이제 화면이 B 로 옮겨 가고 다시 승인하라고 알린다.
+
+| 커밋 | 요지 |
+|---|---|
+| `77073998` | 시각 변경 결과 모양, 합친 묶음으로 주소 바꿔 끼우기와 알림, MSW 합치기와 시나리오 `messages-merge`, 테스트 |
+| 문서 커밋(이 기록) | 계약 §5.7 MSW 동작, [MSW 안내](../../msw-guide.md) 메시지 절, 이 결과 |
+
+### 바꾼 데이터 모양
+
+- **쓰기 결과** — [messageQueries.ts](../../../src/entities/message/api/messageQueries.ts)의 `requestMessageAction` 이 `MessageActionOutcome = { kind: 'done' } | { kind: 'merged'; into: Bundle }` 를 돌려준다. 응답 본문은 `schedule` 만 읽고 기존 매퍼 `toBundle` 로 바꾼다. 응답 ID 가 요청한 ID 와 다르면 `merged` 다. 다른 행동은 지금처럼 본문을 읽지 않고 `done` 이다.
+- **알림** — [actionMessages.ts](../../../src/features/message-action/lib/actionMessages.ts)의 `mergeNotice` 가 합친 묶음의 단계로 문구를 고른다. 승인 전이면 `같은 시각의 메시지와 합쳤어요. 내용이 바뀌어 승인이 풀렸으니 다시 확인하고 승인해 주세요.` 이고, 승인됨이면 `같은 시각의 메시지와 합쳤어요.` 다. BE 는 합치면 늘 승인을 풀므로 지금은 앞 문구만 나온다. 다른 행동 알림과 같은 토스트 key(`message-review-action`)다.
+
+### 화면
+
+[ReviewDetail](../../../src/widgets/message-inbox/ui/ReviewDetail.tsx)에서 시각 저장 결과가 `merged` 면 상세 영역에 포커스를 두고 주소를 `?review=<B>` 로 바꿔 끼운다(replace). A 는 없어졌으므로 뒤로 가기로 돌아가지 않게 한다. 합쳐지지 않으면 지금과 같다(주소 그대로, 직접 정하기 칸을 닫고 그 카드로 포커스). [SendTimingPicker](../../../src/widgets/message-inbox/ui/SendTimingPicker.tsx)는 바꾸지 않았다. 문구를 고치는 동안 시각 카드가 잠기므로 시각과 문구가 한 요청에 섞이지 않는다.
+
+### MSW
+
+[상태](../../../src/shared/mock/message-state.ts)의 `editBundle` 이 BE `edit_bundle` 순서대로 판단한다. 지금과 같은 시각은 보내지 않은 것으로 보고, 지난 시각이면 409 다. 같은 대화의 예정 묶음과 같은 시각이면서 문구도 보내면 400 `INVALID_REQUEST` 다. 그 밖에 같은 시각의 묶음이 있으면 리마인드를 옮기고 두 묶음을 `rebuildBundle`(BE `_rebuild`)로 다시 만든다. 판이 오르고 승인이 풀리며, 리마인드가 남지 않은 A 는 `cancelled` 다. 문구는 BE 의 규칙 문구와 틀(`rule_line`·`framed_body`)을 따른다. 틀의 PM 은 그 공간에 가장 먼저 등록된 PM 이다. 픽스처 리마인드에 만든 사람이 없기 때문이다. 시나리오 [`messages-merge`](../../../src/shared/mock/scenarios.ts)는 승인한 `bd_01`(09/23 09:00)과 승인 전 `bd_07`(09/21 18:00, 마감 9/24)을 둔다. 모의 DB 모양은 바꾸지 않아 저장 버전을 올리지 않았다.
+
+### 검증 (2026-11-05)
+
+| 명령 | 종료 코드 | 결과 |
+|---|---:|---|
+| `npm.cmd run typecheck` | 0 | |
+| `npm.cmd run lint` | 0 | |
+| `npm.cmd run format:check` | 0 | |
+| `npm.cmd run build` | 0 | |
+| `npx vitest run --maxWorkers=1` message-state·messagesActionsMsw·messageScenarios·scenarios 테스트와 `entities/message`·`features/message-action`·`widgets/message-inbox` | 0 | 8파일 104개 통과 |
+| 변이 확인: `ReviewDetail.tsx` 만 이전으로 되돌리고 `messagesActionsMsw` 의 합치기 테스트 | 1 | `expected '?review=bd_07' to be '?review=bd_01'` 로 실패. 되돌린 파일은 복구했다 |
+
+새 테스트:
+
+- [messagesActionsMsw](../../../src/app/messagesActionsMsw.test.tsx):
+  - 합쳐지면 주소가 `?review=bd_01`(REPLACE)이고, 승인 전 제목과 `묶은 태스크 2`, 알림이 보이고, 목록이 한 줄 줄고, 포커스가 상세 영역에 있다.
+  - 합쳐지지 않는 시각이면 주소와 승인이 그대로이고 알림이 없다.
+  - 고치는 동안 시각 카드가 잠기고, 두 요청의 본문은 각각 `body` 와 `scheduled_at` 하나다.
+- [message-state](../../../src/shared/mock/message-state.test.ts)·[messageScenarios](../../../src/shared/mock/messageScenarios.test.ts): 합치기 규칙, 문구 동시 수정 400, 지난 시각 우선, 다른 대화는 합치지 않음, 시나리오 복원.
+
+브라우저 확인(Vite MSW 모드, Playwright, 로컬 검증 여정 `messages-merge`):
+
+- `bd_07` 에서 `마감 하루 전` 카드를 누르면 주소가 `?review=bd_01` 로 바뀐다.
+- 위 알림 토스트가 보이고, 합친 문구(두 태스크의 규칙 문구)와 `묶은 태스크 2` 가 보인다.
+- `PATCH …/bundles/bd_07` 은 200 이고 본문은 `scheduled_at` 하나다. 콘솔 오류는 없었다.
+
+전체 테스트와 E2E 는 이 작업에서 돌리지 않았다.
+
+### 남은 문제
+
+- 실제 서버에서 합치기를 해 보지 않았다. MSW 기준 확인이다.
+- 합치기 전 두 묶음이 모두 승인 전이었어도 알림은 「승인이 풀렸으니」라고 쓴다. 응답만으로는 합치기 전 승인 여부를 알 수 없다.
 
 ## 2026-11-04 실제 메시지 API 연결 (#315)
 
