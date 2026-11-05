@@ -919,6 +919,50 @@ MSW 는 **API 를 흉내내므로 100자 기준을 그대로 쓴다.** 여기에
 - **만료는 서버 세션에만 있다.** `session.expires_at` 이 발급 후 7일이고 `get_current_user` 가 지나면 401 을 낸다. `set_cookie` 에는 `max_age` · `expires` 가 없어
   쿠키는 브라우저 세션 쿠키다 — 브라우저를 닫으면 7일 전이어도 사라진다 (2026-09-29 `auth.py` `_create_session`).
 
+#### 4.1.1 비밀번호 재설정 (#356) — 합의됨, BE 미구현
+
+제공자는 BE, 소비자는 FE 요청 화면 `/forgot-password`와 변경 화면 `/reset-password`다. 합의 근거는 [BE 제안 댓글](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/356#issuecomment-6636865795)과 [FE 답변 댓글](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/356#issuecomment-6639046611)이다. FE 답변이 제안을 그대로 받았다. 2026-11-05 `origin/develop`의 `backend/`에는 재설정 경로와 아래 두 오류 코드가 없다. BE PR이 올라오면 그 경로·오류 코드와 대조해 이 절을 고친다.
+
+**합의된 규약.** 세 경로 모두 로그인이 필요 없다.
+
+| Method | Path | 요청 | 성공 | 실패 |
+|---|---|---|---|---|
+| POST | `/api/v1/auth/password-reset/request` | `{"email"}` | 200 `{"data": {}}` | 400 `INVALID_REQUEST`(이메일 형식), 503 `MAIL_UNAVAILABLE`(서버 메일 미설정) |
+| POST | `/api/v1/auth/password-reset/verify` | `{"token"}` | 200 `{"data": {"expires_at"}}` | 400 `PASSWORD_RESET_TOKEN_INVALID` |
+| POST | `/api/v1/auth/password-reset/confirm` | `{"token", "new_password"}` | 200 `{"data": {}}` | 400 `INVALID_REQUEST`(규칙 위반, `details.fields`), 400 `PASSWORD_RESET_TOKEN_INVALID` |
+
+- `PASSWORD_RESET_TOKEN_INVALID`의 `details.reason`은 `invalid`(없는 토큰이거나 재요청으로 무효), `expired`(만료), `used`(이미 사용) 중 하나다.
+- 토큰은 발급 뒤 30분 동안 한 번만 쓸 수 있다. 다시 요청하면 이전 링크는 `invalid`가 된다. DB에는 해시만 저장한다.
+- 계정 노출 방지. 가입하지 않은 이메일도 같은 200을 받고 메일은 나가지 않는다.
+- 재요청 제한. 60초 안의 재요청과 1시간 5회 초과는 메일을 보내지 않고 같은 200을 준다. 화면은 이를 응답으로 알 수 없다.
+- 메일은 응답 뒤 백그라운드로 보내고 실패하면 서버가 3번까지 다시 보낸다. 그래도 실패하면 로그만 남는다. 사용자는 「다시 보내기」로 재시도한다.
+- 메일 링크는 `{서비스 주소}/reset-password#token=...`이다. 토큰이 서버 접근 로그와 Referer에 남지 않도록 쿼리가 아니라 fragment로 보낸다.
+- 새 비밀번호 규칙은 FE `signupSchema`와 같다(8자 이상, 숫자 포함). BE도 같은 규칙으로 검사한다.
+- 변경에 성공하면 서버가 그 계정의 로그인 세션을 모두 끊는다. 자동 로그인은 없다.
+
+**FE가 맞추기로 한 동작.** 화면 동작이며 API 형태가 아니다.
+
+- 변경 화면은 `location.hash`에서 토큰을 읽고, verify를 부르기 전에 주소에서 지운다(`history.replaceState`). 이후 토큰은 verify·confirm 본문으로만 보낸다.
+- `/reset-password`는 `RedirectIfAuthed` 밖이다. 로그인된 브라우저에서 열어도 변경 화면이 보인다. `/forgot-password`는 다른 공개 화면처럼 안에 둔다.
+- 변경 성공 뒤 그 브라우저의 FE 세션 상태를 비우고 `/login`으로 보내 안내 문구를 띄운다.
+- `reason`별로 문구를 나눈다. 세 경우 모두 「다시 요청하기」로 `/forgot-password`에 보낸다.
+- 요청을 보낸 뒤 60초 동안 「다시 보내기」를 막고 남은 초를 보인다. 1시간 5회 제한은 화면에서 막지 않는다.
+- 로그인 화면의 「비밀번호를 잊으셨나요?」는 BE 배포 뒤에 켠다. 그 전에는 두 화면을 주소로 직접 열 때만 보인다.
+
+**합의 여부 확인 필요.**
+
+- verify 응답의 가린 이메일(예: `ab***@gmail.com`). FE가 요청했고 BE 답은 아직 없다. FE는 `expires_at`만 쓰며 이 필드를 읽지 않는다.
+- confirm `INVALID_REQUEST`의 `details.fields` 모양. 댓글에는 키 이름만 있다. FE는 이 오류를 새 비밀번호 칸의 오류로만 보이며 `details.fields` 내용을 읽지 않는다.
+
+**현재 구현 (2026-11-05).** BE는 없다. FE는 위 합의대로 만들었고 MSW로만 확인했다.
+
+- 요청: [DTO](../../src/shared/types/api/auth.ts), [요청 함수](../../src/entities/user/api/passwordReset.ts), [reason 해석](../../src/entities/user/model/passwordReset.ts). `details.reason`이 없거나 모르는 값이면 `invalid`로 읽는다. verify의 `expires_at`은 읽어 두지만 화면에 쓰지 않는다.
+- 오류 코드: `PASSWORD_RESET_TOKEN_INVALID`, `MAIL_UNAVAILABLE`을 [오류 코드 목록](../../src/shared/api/errors.ts)과 [문구](../../src/shared/api/errorMessages.ts)에 더했다. §1 「오류 코드」의 서버 목록에는 BE 구현 전이라 넣지 않았다.
+- 화면: [링크 상태](../../src/features/auth/model/useResetLink.ts), [변경 폼](../../src/features/auth/ui/ResetPasswordForm.tsx), [요청 폼](../../src/features/auth/ui/ForgotPasswordForm.tsx), [변경 뒤 정리](../../src/features/auth/model/useFinishPasswordReset.ts), [라우트](../../src/app/router/routes.tsx). 토큰은 첫 렌더의 주소에서 읽고, 주소를 replace로 비운 뒤에야 verify가 시작된다.
+- 로그인 화면 링크는 비활성 그대로다. BE 배포 뒤 [LoginForm](../../src/features/auth/ui/LoginForm.tsx)의 비활성 버튼을 `paths.forgotPassword()`로 가는 링크로 바꾼다.
+- MSW: [handler](../../src/shared/mock/handlers/passwordReset.ts), [시나리오](../../src/shared/mock/passwordResetScenarios.ts). 정상·만료·재사용·재요청 무효·재요청 제한·서버 오류(500)·메일 미설정(503)을 고정 토큰으로 재현한다. 개발·MSW 모드에서만 모의 메일함 `/__mock/mail`이 보낸 링크를 보여 준다.
+- 검증: Vitest 단위·통합, 실제 Chromium E2E [password-reset.e2e.ts](../../e2e/password-reset.e2e.ts)(요청 → 모의 메일함 링크 → 변경 → 새 비밀번호 로그인, 만료 링크). 실제 메일 발송, 실서버 경로·오류 모양, 서버 세션 끊김은 BE 구현 뒤 확인한다.
+
 ### 4.2 워크스페이스의 사용자 스코프 · 역할 · 온보딩
 
 ~~`GET /workspaces` 가 **전체 워크스페이스**를 반환한다.~~ **세 가지 모두 PR #59 가 넣었다.** 온보딩만 스텁이다.
@@ -1222,6 +1266,7 @@ MSW 픽스처의 단위이자 M1-C 의 작업 단위이기도 하다.
 | 랜딩 | 없음 | — |
 | 로그인 | `POST /auth/login` | **구현됨** §4.1 |
 | 회원가입 | `POST /auth/signup` | **구현됨** §4.1 — 201 |
+| 비밀번호 재설정 요청·변경 | `POST /auth/password-reset/request` · `verify` · `confirm` | ❌ **없다** §4.1.1 — 합의됨, BE 미구현. MSW 로 개발 |
 | Google 로그인 | `GET /auth/google/start?state=` 로 **페이지 이동** | ❌ **없다** §4.1 — M4 에서 버튼 비활성 |
 | 앱 부팅 | `GET /auth/me` | **구현됨** §4.1 |
 
