@@ -82,7 +82,7 @@ systemctl cat mm-worker | grep MM_STT_BACKEND
 
 Elice 가 돌아오면 워커부터 되돌리고 서버를 끈다. 재시작이 하던 회의를 마친 뒤에 꺼야 그 회의가 끊기지 않는다.
 
-그 전에 [포기한 회의가 남지 않았는지](#실패-회의-재처리) 확인한다. 재처리 중에 재시작하면 남은 회의는 다시 돌지 않는다.
+그 전에 [전사에서 포기한 회의가 남지 않았는지](#실패-회의-재처리) 확인한다. 재처리 중에 재시작하면 남은 회의는 다시 돌지 않는다.
 
 ```bash
 sudo rm /etc/systemd/system/mm-worker.service.d/gpu-stt.conf
@@ -101,15 +101,16 @@ ai/deploy/gpu-stt/gpu-stt.sh status
 
 GPU 서버가 200 을 주고 워커를 다시 시작한 뒤에만 돌린다. 워커 유닛의 사용자로 돌린다. 사용자는 `systemctl cat mm-worker` 로 확인한다.
 
-포기한 회의와 그 서버 ID 를 찾는다. 한 줄에 서버 ID, 매니페스트, 상태가 나온다.
+포기한 회의와 그 서버 ID 를 찾는다. 한 줄에 서버 ID, 매니페스트, 상태, 포기한 단계가 나온다.
 
 ```bash
 cd /opt/mm/ai/recordings && sudo -u <워커 사용자> python3 -c '
 import glob, json
 for p in sorted(glob.glob("session_*.json")):
     m = json.load(open(p))
-    if (m.get("recovery") or {}).get("gave_up_at"):
-        print(m.get("guild_id"), p, m.get("status"))'
+    r = m.get("recovery") or {}
+    if r.get("gave_up_at"):
+        print(m.get("guild_id"), p, m.get("status"), r.get("failed_stage"))'
 ```
 
 서버마다 돌린다. `--retry` 는 한 서버만 깨운다.
@@ -118,7 +119,7 @@ for p in sorted(glob.glob("session_*.json")):
 cd /opt/mm/ai && sudo -u <워커 사용자> .venv/bin/python -m capture.worker --retry <서버ID>
 ```
 
-끝나면 위 목록을 다시 본다. 아무 줄도 나오지 않을 때까지 복귀하지 않는다.
+끝나면 위 목록을 다시 본다. 포기한 단계가 `stt` 인 줄이 없어질 때까지 복귀하지 않는다. 다른 단계이거나 `--retry` 뒤에도 그대로인 줄은 복귀를 막지 않고 담당자가 따로 본다. 장애 전에 포기한 회의나 BE 가 발화 저장을 거절한 회의는 전사와 상관없이 남는다.
 
 순서가 중요한 이유는 한 번 포기한 회의가 실패 한 번에 다시 포기되기 때문이다([`_count_failure`](../../capture/recorder.py)). GPU 가 준비되기 전에 돌리면 그 기회를 버린다.
 
