@@ -144,6 +144,22 @@ export const 메모_고치기: Story = {
   },
 }
 
+/** 새 재촉 — 목록 제목 줄의 `새 재촉` 으로 오른쪽 칸에 재촉 만들기를 연다 (#370) */
+export const 새_재촉: Story = {
+  args: { composing: true },
+  parameters: { route: paths.messageCompose('ws_01') },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const detail = detailOf(canvasElement)
+    await expect(await detail.findByRole('heading', { level: 2, name: '새 재촉' })).toBeVisible()
+    await expect(canvas.getByRole('link', { name: '새 재촉' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    )
+    await expect(detail.getByRole('combobox', { name: '받는 사람' })).toBeInTheDocument()
+  },
+}
+
 /** 승인이 실패했다 — 화면은 그대로이고 그 자리에 다시 시도를 알린다 */
 export const 발송_실패: Story = {
   args: { bundleId: 'bd_01' },
@@ -236,6 +252,7 @@ export const 빈_상태: Story = {
     await expect(await canvas.findByText('보낼 메시지가 없어요')).toBeInTheDocument()
     await expect(canvas.queryByRole('complementary')).toBeNull()
     await expect(canvas.getByRole('link', { name: '알림 규칙 보기' })).toBeInTheDocument()
+    await expect(canvas.getByRole('link', { name: '새 재촉 만들기' })).toBeInTheDocument()
   },
 }
 

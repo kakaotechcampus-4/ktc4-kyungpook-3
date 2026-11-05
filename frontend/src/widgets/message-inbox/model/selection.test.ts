@@ -20,6 +20,7 @@ const select = (input: Partial<Parameters<typeof selectDetail>[0]>) =>
     threadId: null,
     bundleId: undefined,
     invalidPath: false,
+    composing: false,
     ...input,
   })
 
@@ -70,4 +71,13 @@ it('PM 이 고른 묶음을 열고, 목록에 없거나 모양이 틀린 파라�
   expect(select({ inbox: loaded, bundleId: null }).kind).toBe('choose')
   expect(select({ inbox: loaded, bundleId: 'bd_99' }).kind).toBe('choose')
   expect(select({ inbox: pmInbox([], ['th_01']) }).kind).toBe('choose')
+})
+
+it('재촉 만들기는 목록을 기다리지 않고 고른 묶음보다 앞선다. 대화 주소와 틀린 주소가 먼저다', () => {
+  expect(select({ composing: true })).toEqual({ kind: 'compose' })
+  expect(
+    select({ inbox: pmInbox([bundle('bd_01')], []), bundleId: 'bd_01', composing: true }),
+  ).toEqual({ kind: 'compose' })
+  expect(select({ threadId: 'th_01', composing: true }).kind).toBe('thread')
+  expect(select({ invalidPath: true, composing: true }).kind).toBe('invalid')
 })

@@ -18,8 +18,11 @@ export const ONBOARDING_REVIEW_PARAM = 'review'
  */
 export const SETTINGS_PARAMS = { section: 'section', next: 'next' } as const
 
-/** 메시지 화면의 검색 파라미터. `review` 는 보내기 전 확인에서 고른 보낼 메시지(묶음 ID)다 (paths.messageReview) */
-export const MESSAGE_PARAMS = { review: 'review' } as const
+/**
+ * 메시지 화면의 검색 파라미터. `review` 는 보내기 전 확인에서 고른 보낼 메시지(묶음 ID)다 (paths.messageReview).
+ * `new=reminder` 면 오른쪽 칸에 재촉 만들기를 연다 (paths.messageCompose)
+ */
+export const MESSAGE_PARAMS = { review: 'review', compose: 'new' } as const
 
 /**
  * 팀 화면의 검색 파라미터. `connect=members` 면 팀원 연결 창을 연다 — 설정에서 Discord 를 연결한 뒤 오는 곳이다 (D-074).
@@ -66,6 +69,9 @@ export const paths = {
   /** 보내기 전 확인에서 묶음 하나를 고른 목록. 묶음은 목록 응답에 다 있어 따로 경로를 두지 않고 검색 파라미터로 고른다 */
   messageReview: (workspaceId: string, bundleId: string) =>
     `${workspaceBase(workspaceId)}/messages?${new URLSearchParams({ [MESSAGE_PARAMS.review]: bundleId }).toString()}`,
+  /** 재촉 만들기. PM 만 연다 */
+  messageCompose: (workspaceId: string) =>
+    `${workspaceBase(workspaceId)}/messages?${MESSAGE_PARAMS.compose}=reminder`,
   /** 팀원 한 명과의 대화 */
   messageThread: (workspaceId: string, threadId: string) =>
     `${workspaceBase(workspaceId)}/messages/threads/${segment(threadId)}`,
