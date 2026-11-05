@@ -34,10 +34,13 @@ log = logging.getLogger(__name__)
 
 _OPEN = ("resuming", "failing")
 _skip_logged: set[str] = set()   # 실행 동안 로그를 한 번만 남길 회의
+_list_failing = False            # assigned 목록 조회가 실패하는 중이면 True. 장애마다 한 번만 로그를 남긴다
 
 
 def _is_gone(e: Exception) -> bool:
-    return isinstance(e, BeError) and (e.status == 404 or e.code == "MEETING_NOT_FOUND")
+    """BE 가 "그 회의가 없다"고 답했다. 오류 봉투의 MEETING_NOT_FOUND 만 그렇게 본다.
+    봉투 없는 404(잘못된 경로, 프록시, BE 배포 중)는 회의가 사라진 것이 아니라 일시 실패이고, 로컬 파일은 되돌릴 수 없다."""
+    return isinstance(e, BeError) and e.code == "MEETING_NOT_FOUND"
 
 
 def _pending(recordings_dir: Path, t: datetime):
@@ -58,10 +61,15 @@ def assign_one(recordings_dir: Path, *, client, now: Callable[[], datetime] = ut
     found = _pending(recordings_dir, now())
     if found:
         return _advance(recordings_dir, *found, client=client, now=now)
+    global _list_failing
     try:
         items = client.assigned_uploads()
-    except Exception:  # noqa: BLE001 - BE 가 안 되면 다음 바퀴에 다시 본다
+    except Exception as e:  # noqa: BLE001 - BE 가 안 되면 다음 바퀴에 다시 본다
+        if not _list_failing:   # 경로 설정이 틀려도 흔적이 남게, 같은 장애는 한 번만
+            log.warning("지정이 끝난 업로드 목록(assigned)을 못 가져왔다: %s: %s", type(e).__name__, e)
+            _list_failing = True
         return None
+    _list_failing = False
     for item in items:
         mid = str(item.get("meeting_id") or "") if isinstance(item, dict) else ""
         if not mid:
