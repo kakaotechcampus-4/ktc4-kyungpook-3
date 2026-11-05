@@ -199,7 +199,7 @@ def _step(recordings_dir, d, rec, *, client, diarizer, now, timezone, fresh) -> 
             if e.code == "MEETING_PROCESSING_IN_PROGRESS":
                 if fresh:
                     raise _Skip() from e
-            elif e.code == "MEETING_ALREADY_ENDED" or e.status == 404 or e.code == "MEETING_NOT_FOUND":
+            elif e.code in ("MEETING_ALREADY_ENDED", "MEETING_NOT_FOUND"):   # 봉투 없는 404 는 일시 실패(_gone 참고)
                 raise _Skip() from e
             else:
                 raise
@@ -216,7 +216,7 @@ def _step(recordings_dir, d, rec, *, client, diarizer, now, timezone, fresh) -> 
         try:
             size = client.download_upload(mid, src)
         except BeError as e:
-            if e.status == 404 or e.code == "MEETING_NOT_FOUND":
+            if _gone(e):
                 raise _Permanent(f"원본 파일이 없다: {e}") from e
             raise
         expected = item.get("size_bytes")
@@ -290,14 +290,21 @@ def _fail(d: Path, rec: dict, client, error: str, t: datetime) -> Progress:
     return _report_fail(d, rec, client, t)
 
 
+def _gone(e: Exception) -> bool:
+    """BE 가 "그 회의(또는 원본 파일)가 없다"고 답했다. 오류 봉투의 MEETING_NOT_FOUND 만 그렇게 본다.
+    BE 는 없는 회의·파일에 늘 이 봉투를 준다. 봉투 없는 404(잘못된 경로·프록시·BE 배포 중)는 일시 실패로 다시 해 본다.
+    건너뛰거나 실패로 보고하면 되돌릴 수 없다(#326 리뷰)."""
+    return isinstance(e, BeError) and e.code == "MEETING_NOT_FOUND"
+
+
 def _report_fail(d: Path, rec: dict, client, t: datetime) -> Progress:
     """fail 을 보낸다. 보내지 못하면 fail_pending 을 두고 backoff 뒤(next_at)에 다시 보낸다. 그동안 다른 건을 처리한다.
-    BE 에 그 회의가 없으면(404) 보낼 곳이 없으니 끝난 것으로 본다(이미 끝난 409 를 BeClient 가 성공으로 보는 것과 같다)."""
+    BE 에 그 회의가 없으면(MEETING_NOT_FOUND) 보낼 곳이 없으니 끝난 것으로 본다(이미 끝난 409 를 BeClient 가 성공으로 보는 것과 같다)."""
     mid = rec["meeting_id"]
     try:
         client.fail_meeting(mid, rec["fail_pending"]["failed_stage"])
     except Exception as e:  # noqa: BLE001 - 다음 호출이 다시 보낸다
-        if not (isinstance(e, BeError) and (e.status == 404 or e.code == "MEETING_NOT_FOUND")):
+        if not _gone(e):
             n = rec["fail_pending"]["attempts"] = rec["fail_pending"].get("attempts", 0) + 1
             rec["error"] = f"fail 보고 실패: {type(e).__name__}: {e}"
             rec["next_at"] = _iso(t + timedelta(seconds=backoff_s(n)))
