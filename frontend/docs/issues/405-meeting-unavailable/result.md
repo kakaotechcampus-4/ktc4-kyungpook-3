@@ -56,7 +56,7 @@
 | 커밋 전 | `npm run typecheck`, `npm run build` | 통과 |
 | 커밋 전 | `npm run lint` | git에서 제외한 로컬 검증 스크립트 `.verify/405-browser.cjs`만 걸렸다(`process` 미정의). `.verify`를 뺀 `eslint .`는 통과 |
 | 커밋 전 | `npm run format:check` | git에서 제외한 `.verify/` 파일만 걸렸다. 그 밖은 통과 |
-| 커밋 전 | `npm run test -- --maxWorkers=1` | 아래 「전체 테스트」 |
+| 커밋 전 | `npm run test -- --maxWorkers=1` | 222개 파일, 2,647개 테스트 통과 |
 | 커밋 전 | MSW 모드 Vite와 Playwright Chromium(로컬 스크립트) | 8개 경로 통과. 처리 화면 polling 403·404, 회의록 상세 403·404, 화자 지정 상세 403·404, 대시보드 404(회의를 지운 뒤 다음 회의 「채팅 2026-09-11」과 그 항목 「배포 스크립트」로 넘어감, 상세 요청 `mt_09` 404 → `mt_08` → 추출 `ex_02`), 대시보드 403(오류 카드). 콘솔 오류는 일부러 넣은 403·404 응답 한 건씩뿐이다 |
 
 ## 계획 대비 변경
