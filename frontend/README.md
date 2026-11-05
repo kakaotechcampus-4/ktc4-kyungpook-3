@@ -111,6 +111,7 @@ API_PROXY_TARGET=https://managers-manager.duckdns.org npm run dev
 - 마일스톤 밖 수정: 간트 보기의 담당자별 묶음(`widgets/task-board/lib/ganttGroups.ts`)을 항목을 한 번 훑어 만든다(#353, 2026-11-05). 묶음 순서·문구는 이전과 같다. [계획](docs/plan/refactor/plan-gantt-group-rows.md) · [결과](docs/plan/refactor/result-gantt-group-rows.md)
 - 마일스톤 밖 수정: 폰트 preload 재측정(#352, 2026-11-05). production 빌드·Slow 4G 에서 Bold preload 를 빼 LCP 를 0.5~1.0초 줄였다. 굵은 글씨는 첫 화면 뒤 약 1.5초 동안 기본 폰트로 보인다. unicode-range 분할은 LCP 가 늘어 적용하지 않았다. 운영 Caddy 설정과 실제 API 왕복은 반영하지 않은 측정이다. [측정·재현](docs/performance/2026-11-05-font-loading-remeasure.md)
 - 마일스톤 밖 기록: TaskBoard 파생 연산 측정(#351, 2026-11-05). 보기에 필요 없는 파생값과 탭 개수 반복은 태스크 2,000건에서 한 번에 5.3~8.7ms(Chromium 153, 프로덕션 모양 번들)이고, 개발 빌드 화면에서 동작 CPU 시간의 최대 약 5%라 코드 변경을 보류했다. 프로덕션 화면 효과는 미검증이다. URL 변경마다 `board`가 다시 도는 memo 무효화는 #391로 남겼다. [측정](docs/performance/2026-11-05-taskboard-derived.md) · [계획](docs/plan/refactor/plan-taskboard-derived.md) · [결과](docs/plan/refactor/result-taskboard-derived.md)
+- 마일스톤 밖 수정: 채팅 출처 회의 표시(#379, 2026-11-05). 회의록 목록은 채팅 회의에 `채팅` 배지를 달고 길이를 뺀다. 회의록 머리는 서울 시각 범위, 전사문과 근거는 실제 작성 시각(`MM/DD HH:mm`)으로 보인다. 녹음 회의 표시는 그대로다. 승인 카드의 근거 시각은 #397로 남겼다. MSW 기준 검증이며 실서버는 미검증이다. [결과](docs/issues/379-chat-meeting/result.md)
 - [공통 작업 규칙](../docs/agent-rules.md) · [문서 양식](../docs/README.md).
 - `docs/requests/`: 실제 독립 요청 발생 시 기록. 기존 백엔드 요청은 API 계약 §4에 유지.
 - [제품·기술 결정](docs/decision/frontend-decisions.md) · [구현 결정 안내](docs/plan/basis-for-decision-guide.md): 구현 결정 원문은 해당 마일스톤의 `basis-for-decision/`에 있다.
