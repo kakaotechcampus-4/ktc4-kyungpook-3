@@ -24,8 +24,9 @@ export type TaskTab = 'all' | 'needs_review' | 'in_progress' | 'done'
 export interface TaskHistoryEntry {
   id: string
   taskId: string
-  // start_date 는 PR #59 가 ChangedField 에 추가했다 (계약 §2.6)
-  field: 'assignee' | 'start_date' | 'due_date' | 'status' | 'title' | 'progress' | 'blocker'
+  // start_date 는 PR #59 가 ChangedField 에 추가했다 (계약 §2.6). scope 는 범위 변경 승인이 남긴다 (#205)
+  field:
+    'assignee' | 'start_date' | 'due_date' | 'status' | 'title' | 'progress' | 'blocker' | 'scope'
   oldValue: string | null
   newValue: string | null
   source: 'meeting' | 'chat' | 'checkin' | 'notion' | 'reminder_reply' | 'manual' | 'scheduler'
