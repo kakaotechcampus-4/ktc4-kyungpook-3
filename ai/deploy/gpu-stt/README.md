@@ -2,7 +2,7 @@
 
 Elice 전사가 멈추면 운영 워커를 평소 꺼 둔 GPU 서버로 사람이 옮기고, 끝나면 되돌린 뒤 서버를 끈다.
 
-`setup`, `on`, `off` 와 운영 서버에서 GPU 서버를 부르는 데까지는 2026-11-05 에 한 번 돌렸다([측정](../../stt/eval/results/2026-11-05-gpu-fallback-prod/README.md)). 전환 4단계의 drop-in 과 워커 재시작, 재처리, 복귀는 아직 리허설하지 않았다. 처음 쓰는 날에는 그 단계가 그대로 통하지 않을 수 있다고 보고 시간을 잡는다.
+`setup`, `on`, `off` 와 운영 서버에서 GPU 서버를 부르는 데까지는 2026-11-05 에 한 번 돌렸다([측정](../../stt/eval/results/2026-11-05-gpu-fallback-prod/README.md)). 전환 4단계의 drop-in 과 워커 재시작, 재처리, 복귀, 자동 종료는 아직 돌려 보지 않았다. 처음 쓰는 날에는 그 단계가 그대로 통하지 않을 수 있다고 보고 시간을 잡는다.
 
 서버는 g4dn.xlarge 의 vLLM, whisper-large-v3 이고 측정값은 [결과 문서](../../stt/eval/results/2026-11-04-gpu-serving/README.md), 판단은 [결정 0039](../../docs/basis_for_decision/ai/2026-11-04-0039-gpu-stt-server.md) 에 있다. 서비스 전체의 복구 절차는 [#359](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/359) 에서 다룬다.
 
@@ -46,7 +46,7 @@ systemctl cat mm-worker | grep MM_STT_BACKEND
 
 순서를 바꾸지 않는다. 운영 서버 재시작은 그때마다 담당자의 확인을 받는다.
 
-1. Mac 에서 켠다. 기본 3시간 뒤 스스로 종료한다.
+1. Mac 에서 켠다. 기본 3시간 뒤 스스로 종료하도록 예약된다.
 
    ```bash
    ai/deploy/gpu-stt/gpu-stt.sh on
@@ -82,6 +82,8 @@ systemctl cat mm-worker | grep MM_STT_BACKEND
 
 Elice 가 돌아오면 워커부터 되돌리고 서버를 끈다. 재시작이 하던 회의를 마친 뒤에 꺼야 그 회의가 끊기지 않는다.
 
+그 전에 [포기한 회의가 남지 않았는지](#실패-회의-재처리) 확인한다. 재처리 중에 재시작하면 남은 회의는 다시 돌지 않는다.
+
 ```bash
 sudo rm /etc/systemd/system/mm-worker.service.d/gpu-stt.conf
 sudo systemctl daemon-reload
@@ -99,21 +101,40 @@ ai/deploy/gpu-stt/gpu-stt.sh status
 
 GPU 서버가 200 을 주고 워커를 다시 시작한 뒤에만 돌린다. 워커 유닛의 사용자로 돌린다. 사용자는 `systemctl cat mm-worker` 로 확인한다.
 
+포기한 회의와 그 서버 ID 를 찾는다. 한 줄에 서버 ID, 매니페스트, 상태가 나온다.
+
+```bash
+cd /opt/mm/ai/recordings && sudo -u <워커 사용자> python3 -c '
+import glob, json
+for p in sorted(glob.glob("session_*.json")):
+    m = json.load(open(p))
+    if (m.get("recovery") or {}).get("gave_up_at"):
+        print(m.get("guild_id"), p, m.get("status"))'
+```
+
+서버마다 돌린다. `--retry` 는 한 서버만 깨운다.
+
 ```bash
 cd /opt/mm/ai && sudo -u <워커 사용자> .venv/bin/python -m capture.worker --retry <서버ID>
 ```
 
+끝나면 위 목록을 다시 본다. 아무 줄도 나오지 않을 때까지 복귀하지 않는다.
+
 순서가 중요한 이유는 한 번 포기한 회의가 실패 한 번에 다시 포기되기 때문이다([`_count_failure`](../../capture/recorder.py)). GPU 가 준비되기 전에 돌리면 그 기회를 버린다.
 
-복구 재시도는 약 15분에 끝난다. `MM_RECOVERY_MAX_ATTEMPTS` 가 5 라 60, 120, 240, 480초를 기다리고 다섯 번째 실패에서 포기한다. 그래서 전환 전에 들어온 회의가 실패로 끝날 수 있다. 예상한 동작이고 위 명령으로 다시 돌린다. 결과는 그 회의의 채널에 올라온다.
+복구 재시도의 대기 시간 합은 약 15분이다. `MM_RECOVERY_MAX_ATTEMPTS` 가 5 라 60, 120, 240, 480초를 기다리고 다섯 번째 실패에서 포기한다. 실제로는 호출 실패에 드는 시간이 더해져 실패 양상과 회의 길이에 따라 더 걸린다. 그래서 전환 전에 들어온 회의가 포기될 수 있다. 호출이 전부 실패한 회의는 예상한 동작이고 위 명령으로 다시 돌린다. 결과는 그 회의의 채널에 올라온다.
+
+호출이 일부만 실패한 회의는 다르다. 재처리가 세 번(`MM_PARTIAL_RETRY_MAX`) 지나면 빠진 구간을 둔 채 인계되고 `--retry` 로 되돌릴 수 없다. 서버가 회의 도중 죽거나 일부만 응답하면 이렇게 된다.
+
+재처리는 처음 전사와 경로가 다르다. 회의를 하나씩 돌고 클립을 하나씩 보낸다. 시간은 재지 않았다.
 
 ## 잊지 말 것
 
-서버는 켠 뒤 3시간에 스스로 종료한다. 더 필요하면 켤 때 `on --hours N` 을 준다. 회의가 남았는데 종료됐으면 `on` 을 다시 돌린다. 고정 IP 와 인증서가 같아서 운영 서버는 그대로 두면 되고, 콜드 스타트만 다시 기다린다.
+서버는 켠 뒤 3시간에 스스로 종료하도록 예약된다. 실제로 꺼지는지는 아직 확인하지 않았으니 끝나면 `off` 와 `status` 를 꼭 돌린다. 더 필요하면 켤 때 `on --hours N` 을 준다. 회의가 남았는데 종료됐으면 `on` 을 다시 돌린다. 고정 IP 와 인증서가 같아서 운영 서버는 그대로 두면 되고, 콜드 스타트만 다시 기다린다.
 
 `on` 은 켜져 있는 서버의 종료 시각을 늘리지 않는다. 종료 시각은 부팅 때 정해지고 `status` 로 볼 수 있다.
 
-종료 시각에 처리 중이던 회의는 실패로 세고 다시 시도한다.
+종료 시각에 처리 중이던 회의는 일부만 전사된 채 끊겨 위의 구멍 난 인계가 될 수 있다. 종료 시각 전에 복귀를 끝낸다.
 
 자동 종료는 워커를 되돌리지 않는다. drop-in 이 남아 있으면 워커는 꺼진 서버를 계속 부르고 전사가 실패한다. 다시 켜거나 복귀 절차를 끝까지 한다.
 
