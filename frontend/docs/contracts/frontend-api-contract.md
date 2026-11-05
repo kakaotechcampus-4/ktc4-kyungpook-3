@@ -1034,7 +1034,7 @@ MSW 는 **API 를 흉내내므로 100자 기준을 그대로 쓴다.** 여기에
 - 값은 로그인 계정이 연결된, 탈퇴하지 않은 이 공간의 팀원 행이다. 같은 응답의 `role` 과 같은 행이고, 메시지 답장 API 가 대화 주인을 판정하는 행과 같다(§5.7). `null` 은 `role` 이 `null` 인 경우와 같은 뜻(이 공간 팀원이 아님)이고 정상 경로에서는 오지 않는다.
 - **현재 서버 구현.** [schemas/workspace.py](../../../backend/app/schemas/workspace.py)의 `WorkspaceResponse.member_id` 는 `Optional[str]`, 기본값 `None` 이다. [api/workspaces.py](../../../backend/app/api/workspaces.py)의 `_build_workspace_response` 가 팀원 행이 있을 때만 채운다.
 - **현재 프론트 구현.** DTO [workspace.ts](../../src/shared/types/api/workspace.ts)는 이 필드를 선택(`member_id?: string | null`)으로 받는다. 이 필드가 없는 BE 배포 전 응답도 깨지지 않게 하려는 것이다. 매퍼는 필드가 없거나 `null` 이면 `memberId: null` 로 둔다. 화면은 이 값을 메시지 답장 칸 판정에만 쓴다(§5.7). 소속 판정은 지금처럼 목록에 있는지로 한다(§4.0-①).
-- **모의 서버(MSW).** 목록·상세·생성 응답에 세션의 팀원 ID(`sessionMemberId`)를 싣는다. 픽스처 계정은 `ws_01` 에서 PM 이면서 팀원 행 `mb_01` 이다. MSW 에서 새로 만든 공간은 세션 팀원 대응이 없어 `null` 이다. 실 BE 는 생성자 PM 행의 ID 를 준다. 이 차이는 메시지 답장 칸에만 영향이 있다.
+- **모의 서버(MSW).** 목록·상세·생성 응답에 세션의 팀원 ID(`sessionMemberId`)를 싣는다. 계정과 팀원 행의 대응은 수락한 초대, 아니면 모의 DB 계정의 `memberIds` 다. 픽스처 계정은 `ws_01` 에서 PM 이면서 팀원 행 `mb_01` 이다. 공간을 만들면 BE 처럼 생성자 계정이 새 PM 행과 이어진다. 그래서 생성·목록·상세의 `member_id` 가 그 행 ID 이고, 그 행 대화의 답장은 201 이다. 같은 대응 때문에 생성자 PM 행을 초대하면 BE 처럼 409 `MEMBER_ALREADY_LINKED` 다.
 
 ### 4.3 integrations
 

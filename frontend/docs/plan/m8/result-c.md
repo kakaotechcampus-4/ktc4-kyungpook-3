@@ -22,6 +22,7 @@ PM 이 리마인드를 받는 팀원이기도 하면 자기 대화가 생긴다.
 | `0fe0830d` | `MessageViewer` 를 `{ role, memberId }` 로, 답장 칸은 `canReply` 하나가 정한다. 시나리오 `messages-pm-self`, 화면·MSW 테스트, 스토리 |
 | `16d1184e` | E2E `messages-reply.e2e.ts` 와 검증 스킬 `messages` 여정 |
 | `3fc61b84` | 계약 §4.2.1·§5.7 |
+| `1ebe96c5` | 리뷰 R1. MSW 에서 공간을 만든 계정을 새 PM 행과 잇는다. 계정의 `memberIds`, 모의 DB 버전 12 |
 
 ### 바꾼 데이터 모양
 
@@ -35,7 +36,8 @@ PM 이 리마인드를 받는 팀원이기도 하면 자기 대화가 생긴다.
 
 ### MSW
 
-- 워크스페이스 목록·상세·생성 응답에 `member_id: sessionMemberId(id)` 를 싣는다. 저장한 행은 바꾸지 않아 모의 DB 버전은 11 그대로다.
+- 워크스페이스 목록·상세·생성 응답에 `member_id: sessionMemberId(id)` 를 싣는다.
+- 계정과 팀원 행의 대응을 `sessions.ts` 의 고정 상수에서 모의 DB 계정의 `memberIds` 로 옮겼다. 공간을 만들면 BE `create_workspace` 처럼 생성자 계정이 새 PM 행과 이어진다. 그래서 새 공간에서도 생성·목록·상세의 `member_id` 가 그 행 ID 이고 그 행 대화의 답장이 201 이다. 독립 리뷰 지적 R1 을 고친 것이다. 같은 대응으로 생성자 PM 행 초대가 BE 처럼 409 `MEMBER_ALREADY_LINKED` 가 되었다. 전에는 `PM_MEMBER_NOT_INVITABLE` 이었다. 모의 DB 버전이 12 가 되었다.
 - 답장 핸들러는 이미 BE `post_reply` 처럼 대화 주인만 201, 아니면 403 이었다. 고치지 않았다.
 - 시나리오 `messages-pm-self` 는 `messages-default`(PM `mb_01`)에 `mb_01` 의 대화 `th_06` 과 보낼 메시지 `bd_05` 를 더한다.
 
@@ -57,12 +59,13 @@ PM 이 리마인드를 받는 팀원이기도 하면 자기 대화가 생긴다.
 - [mapper](../../../src/entities/workspace/model/mapper.test.ts): `member_id` 있음·`null`·없음.
 - [messages-reply.e2e.ts](../../../e2e/messages-reply.e2e.ts): Chromium 에서 PM 자기 대화 답장을 보내고 새로고침 뒤에도 남는지, 남의 대화에는 폼이 없고 안내 바가 있는지.
 - 스토리 `PM_내_대화`. Storybook play 는 실행하지 않았다(CI 가 돈다).
+- 리뷰 R1 수정 뒤(`1ebe96c5`) 바꾼 곳의 테스트 36파일 604개가 통과했다. 세션·초대·저장·가입·워크스페이스를 쓰는 테스트, `messageScenarios`, `messagesMsw` 다. `typecheck` 와 바꾼 파일의 `eslint`·`prettier` 도 통과했다. Chromium 에서 `restore.e2e.ts` 4개와 `messages-reply.e2e.ts` 2개가 통과했다.
+- [messageScenarios](../../../src/shared/mock/messageScenarios.test.ts)에 새 공간 테스트를 더했다. 공간을 만들면 생성·목록·상세의 `member_id` 가 생성자 PM 행이다. 그 행의 대화 답장은 201 이고, 같은 공간의 다른 계정이 답장하면 403 이며 db 는 그대로다. 생성 핸들러에서 대응을 기록하는 줄을 빼면 이 테스트가 실패한다.
 - 구현 위임이 `canReply` 를 모든 PM 에게 참으로 바꿔 보았을 때 새 화면 테스트 4개 중 3개가 실패했다. 원래대로 돌려 두었다.
 
 ### 남은 문제
 
 - 실제 서버에 붙여 PM 자기 대화 답장을 보내 보지 않았다. MSW 기준 확인이다.
-- MSW 에서 새로 만든 공간은 세션 팀원 대응이 없어 생성·조회 응답의 `member_id` 가 `null` 이다. BE 는 생성자 PM 행의 ID 를 준다. MSW 에서 새로 만든 공간의 PM 은 자기 대화가 생겨도 답장 칸이 없다.
 - PM 자기 대화의 말풍선 자리, 답장 기다림 표시, 예정 묶음 표시는 PM 화면 그대로다. 바꾸려면 화면 정책을 따로 정해야 한다.
 
 ## 2026-11-05 재촉 직접 만들기와 묶음에서 태스크 빼기·메모 고치기 (#370)
