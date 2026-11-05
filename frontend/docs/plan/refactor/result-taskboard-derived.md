@@ -12,7 +12,7 @@
 |---|---|
 | 기준 | HEAD `bb29989a` (브랜치 `feature/351-taskboard-derived`) |
 | 코드 변경 | 없음 |
-| 기록 | 이 문서, [계획](plan-taskboard-derived.md), [측정 문서](../../performance/2026-11-05-taskboard-derived.md)와 측정 도구·결과(`docs/performance/2026-11-05-taskboard-derived/`), [성능 자료 목록](../../performance/README.md) 한 줄 |
+| 기록 | 이 문서, [계획](plan-taskboard-derived.md), [측정 문서](../../performance/2026-11-05-taskboard-derived.md)와 측정 도구·결과(`docs/performance/2026-11-05-taskboard-derived/`) |
 
 ## 측정 결과
 
