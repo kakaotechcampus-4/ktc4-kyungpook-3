@@ -370,3 +370,40 @@ def test_drop_notice_asks_approval_for_bundle_due_before_turning_on(mdb, mseed):
     note = _two_approved_then_delete_first(mdb, mseed, SLOT + 2 * H)
 
     assert "다시 승인해 주세요" in note.text
+
+
+def test_auto_approve_sends_bundle_proposed_before_turning_on(mdb, mseed):
+    _assign(mdb, mseed)
+    tick(mdb, PROPOSE)
+    _turn_on(mdb, mseed, now=SLOT - H)
+
+    tick(mdb, SLOT)
+
+    assert len(_messages(mdb)) == 1
+
+
+def test_auto_approve_boundary_scheduled_at_equals_since(mdb, mseed):
+    _assign(mdb, mseed)
+    tick(mdb, PROPOSE)
+    _turn_on(mdb, mseed, now=SLOT)
+
+    tick(mdb, SLOT)
+
+    assert len(_messages(mdb)) == 1
+
+
+def test_auto_approve_off_then_on_after_slot_does_not_send_missed_bundle(mdb, mseed):
+    _assign(mdb, mseed)
+    _turn_on(mdb, mseed)
+    tick(mdb, PROPOSE)
+    _set(mdb, mseed, reminder_auto_approve=False)
+    message_settings.update_settings(
+        mdb, mseed["ws"], {"reminder_auto_approve": True}, updated_by=mseed["pm"].member_id, now=SLOT + H
+    )
+    mdb.commit()
+
+    tick(mdb, SLOT + 2 * H)
+
+    assert _messages(mdb) == []
+    [bundle] = _bundles(mdb)
+    assert bundle.approved_at is None
