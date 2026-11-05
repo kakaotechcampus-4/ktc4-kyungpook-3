@@ -101,14 +101,14 @@ def _reply_ans(status_yes=None, target_yes=None):
 
 
 def _verify_reply(jev, status="done", others=()):
-    return verify_reply(LINES_REPLY, "API 명세서 작성", status=status, others=list(others), today=TODAY, client=jev)
+    return verify_reply(LINES_REPLY, "API 명세서 작성", status=status, change=None, others=list(others), today=TODAY, client=jev)
 
 
 @pytest.mark.parametrize("status_yes, expected", [
     (0.95, "certain"), (YES_THRESHOLD, "certain"), (0.79, "inferred"),
 ])
 def test_reply_status_needs_the_same_threshold(status_yes, expected):
-    assert _verify_reply(FakeJev([_reply_ans(status_yes)])) == (expected, True)
+    assert _verify_reply(FakeJev([_reply_ans(status_yes)])) == (expected, "clear")
 
 
 def test_one_candidate_asks_only_the_status_question():
@@ -120,26 +120,34 @@ def test_one_candidate_asks_only_the_status_question():
 
 def test_other_candidates_add_the_target_question_to_the_same_call():
     jev = FakeJev([_reply_ans(0.9, 0.9)])
-    assert _verify_reply(jev, others=["로그인 시안"]) == ("certain", True)
+    assert _verify_reply(jev, others=["로그인 시안"]) == ("certain", "clear")
     (state, questions), = jev.calls
     assert set(questions) == {"status", "target"}
     assert "로그인 시안" in state
 
 
-@pytest.mark.parametrize("target_yes", [0.79, 0.1])
-def test_an_unclear_target_is_reported(target_yes):
-    assert _verify_reply(FakeJev([_reply_ans(0.9, target_yes)]), others=["로그인 시안"])[1] is False
+@pytest.mark.parametrize("target_yes, expected", [(0.79, "unclear"), (0.1, "other")])
+def test_a_target_that_is_not_clear_is_told_apart_by_the_no_probability(target_yes, expected):
+    assert _verify_reply(FakeJev([_reply_ans(0.9, target_yes)]), others=["로그인 시안"])[1] == expected
+
+
+def test_jev_sees_the_change_to_attach_to_this_task():
+    jev = FakeJev([_reply_ans(0.9, 0.9)])
+    verify_reply(LINES_REPLY, "API 명세서 작성", status="done", change="API 명세서 작성을 완료로 변경",
+                 others=["로그인 시안"], today=TODAY, client=jev)
+    (state, _), = jev.calls
+    assert "API 명세서 작성을 완료로 변경" in state
 
 
 def test_no_status_and_one_candidate_does_not_call_jev():
     jev = FakeJev()
-    assert _verify_reply(jev, status=None) == ("inferred", True)
+    assert _verify_reply(jev, status=None) == ("inferred", "clear")
     assert jev.calls == []
 
 
 def test_no_status_with_other_candidates_asks_only_the_target():
     jev = FakeJev([_reply_ans(target_yes=0.2)])
-    assert _verify_reply(jev, status=None, others=["로그인 시안"]) == ("inferred", False)
+    assert _verify_reply(jev, status=None, others=["로그인 시안"]) == ("inferred", "other")
     (_, questions), = jev.calls
     assert set(questions) == {"target"}
 
@@ -173,11 +181,15 @@ def test_every_task_status_has_criteria():
     {"status": {"choice": "yes"}, "target": {"probabilities": {}}},
     {"status": {"probabilities": {"yes": "높음"}}, "target": {"probabilities": {"yes": "높음"}}},
 ])
-def test_a_failed_reply_call_is_inferred_and_keeps_the_target(answers):
-    assert _verify_reply(FakeJev([answers]), others=["로그인 시안"]) == ("inferred", True)
+def test_a_failed_reply_call_with_other_candidates_leaves_the_target_unclear(answers):
+    assert _verify_reply(FakeJev([answers]), others=["로그인 시안"]) == ("inferred", "unclear")
+
+
+def test_a_failed_reply_call_with_one_candidate_keeps_the_task():
+    assert _verify_reply(FakeJev([None])) == ("inferred", "clear")
 
 
 def test_a_status_yes_without_a_readable_target_is_not_certain():
     # 후보가 둘인데 대상을 확인하지 못했다. status 만 yes 라고 자동 반영으로 가면 안 된다
     answers = {**_reply_ans(0.95), "target": {"probabilities": {}}}
-    assert _verify_reply(FakeJev([answers]), others=["로그인 시안"]) == ("inferred", True)
+    assert _verify_reply(FakeJev([answers]), others=["로그인 시안"]) == ("inferred", "unclear")

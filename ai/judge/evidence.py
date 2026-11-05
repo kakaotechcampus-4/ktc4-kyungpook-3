@@ -115,12 +115,13 @@ REPLY_STATUS_CRITERIA: dict[str, dict[str, str]] = {
         "unclear": "시작했는지 알 수 없다",
     },
 }
+TARGET_CLEAR, TARGET_OTHER, TARGET_UNCLEAR = "clear", "other", "unclear"
 REPLY_TARGET_QUESTION: dict[str, Any] = {
     "type": "choice",
-    "instructions": "이번 답장의 말이 위 태스크를 가리키는 것이 다른 후보 태스크와 구분되게 분명한가?",
+    "instructions": "이번 답장에서 위 변경이 위 태스크에 대한 말인 것이 다른 후보 태스크와 구분되게 분명한가?",
     "criteria": {
-        "yes": "답장에 이 태스크의 이름이나 내용이 있거나, 앞선 PM 말이 이 태스크 하나만 물었다",
-        "no": "다른 후보 태스크를 가리킨다",
+        "yes": "답장의 말 가운데 이 태스크를 가리키는 부분이 위 변경을 말하거나, 앞선 PM 말이 이 태스크 하나만 물었다",
+        "no": "위 변경은 다른 후보 태스크에 대한 말이다",
         "unclear": "'다 했어요'처럼 어느 후보를 말하는지 알 수 없다",
     },
 }
@@ -133,11 +134,13 @@ def _status_question(status: str) -> dict[str, Any]:
             "criteria": REPLY_STATUS_CRITERIA[status]}
 
 
-def _reply_state(lines: list[dict[str, str]], task: str | None, status: str | None, others: list[str],
-                 today: date) -> str:
+def _reply_state(lines: list[dict[str, str]], task: str | None, status: str | None, change: str | None,
+                 others: list[str], today: date) -> str:
     parts = [f"답장 날짜: {today.isoformat()} ({_weekday(today)}요일)", f"태스크: {task or '(제목 없음)'}"]
     if status is not None:
         parts.append(f"제안 상태: {status}")
+    if change:
+        parts.append(f"이 태스크에 붙이려는 변경: {change}")
     if others:
         parts += ["다른 후보 태스크:", *(f"- {title}" for title in others)]
     # 앞 답장은 넣지 않는다. 앞 답장에 있는 말을 이번 답장의 근거로 치면 안 된다
@@ -148,19 +151,25 @@ def _reply_state(lines: list[dict[str, str]], task: str | None, status: str | No
     return "\n".join(parts)
 
 
-def _target_yes(answers: dict[str, Any] | None) -> float | None:
+def _target(answers: dict[str, Any] | None) -> str:
     try:
-        return float(answers["target"]["probabilities"]["yes"])
+        probabilities = answers["target"]["probabilities"]
+        yes = float(probabilities["yes"])
+        no = float(probabilities.get("no", 0))
     except (KeyError, TypeError, ValueError):
-        return None
+        return TARGET_UNCLEAR
+    if yes >= YES_THRESHOLD:
+        return TARGET_CLEAR
+    return TARGET_OTHER if no >= YES_THRESHOLD else TARGET_UNCLEAR
 
 
-def verify_reply(lines: list[dict[str, str]], task: str | None, *, status: str | None, others: list[str],
-                 today: date, client: JevClient) -> tuple[str, bool]:
-    """(status 근거, target_clear). lines 는 시간순이고 마지막이 이번 답장, others 는 나머지 후보의 제목이다.
+def verify_reply(lines: list[dict[str, str]], task: str | None, *, status: str | None, change: str | None,
+                 others: list[str], today: date, client: JevClient) -> tuple[str, str]:
+    """(status 근거, 대상 판정). lines 는 시간순이고 마지막이 이번 답장, change 는 이 태스크에 붙이려는 변경의 요약,
+    others 는 나머지 후보의 제목이다.
 
-    status 가 없고 다른 후보도 없으면 물을 것이 없어 부르지 않는다. 호출이 실패하면 inferred, target_clear=True 다.
-    대상을 확인하지 못한 것이지 모호한 것이 아니고, inferred 라 PM 이 본다.
+    status 가 없고 다른 후보도 없으면 물을 것이 없어 부르지 않는다. 호출이 실패하면 inferred 다. 다른 후보가 있으면
+    대상도 unclear 다. 대상을 확인하지 못한 채 변경을 태스크에 붙이면 그 태스크의 시계가 닫히기 때문이다.
     """
     questions: dict[str, dict[str, Any]] = {}
     if status is not None:
@@ -168,8 +177,8 @@ def verify_reply(lines: list[dict[str, str]], task: str | None, *, status: str |
     if others:
         questions["target"] = REPLY_TARGET_QUESTION
     if not questions:
-        return INFERRED, True
-    answers = client.decide(_reply_state(lines, task, status, others, today), questions)
-    target_yes = _target_yes(answers)
-    certain = _yes(answers, "status") and (not others or target_yes is not None)
-    return (CERTAIN if certain else INFERRED), target_yes is None or target_yes >= YES_THRESHOLD
+        return INFERRED, TARGET_CLEAR
+    answers = client.decide(_reply_state(lines, task, status, change, others, today), questions)
+    target = _target(answers) if others else TARGET_CLEAR
+    certain = _yes(answers, "status") and target == TARGET_CLEAR
+    return (CERTAIN if certain else INFERRED), target

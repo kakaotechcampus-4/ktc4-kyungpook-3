@@ -20,7 +20,7 @@ from typing import Any
 
 from jev import JevClient
 from judge import pipeline
-from judge.evidence import INFERRED, verify_reply
+from judge.evidence import INFERRED, TARGET_CLEAR, TARGET_OTHER, verify_reply
 from shared.schemas import JudgeFinding, JudgeInput, NotionCandidate, Transcript, TranscriptSegment
 
 logger = logging.getLogger(__name__)
@@ -73,11 +73,13 @@ def _field_lines(item: dict[str, Any], evidence_status: str) -> list[dict[str, A
     return lines
 
 
-def _changes(result: pipeline.PipelineResult, claim: dict[str, Any], jev: JevClient) -> list[dict[str, Any]]:
+def _changes(result: pipeline.PipelineResult, claim: dict[str, Any], jev: JevClient,
+             supplemented: set[str]) -> list[dict[str, Any]]:
     """run 결과 → 변경 줄.
 
     create            unknown 한 줄. 답장으로 새 태스크를 만들지 않는다
-    update            필드마다 한 줄. target_clear=False 면 그 대신 unknown 한 줄
+    update            필드마다 한 줄. 대상이 분명하지 않으면 그 대신 unknown 한 줄
+    보충 update       첫 판단이 고른 태스크가 있는데 Jev 가 다른 후보에 대한 말이라고 하면 버린다
     마감 지움 실패    due_clear 한 줄
     대상 실패         unknown 한 줄
     그 밖의 실패      failed 한 줄
@@ -86,16 +88,19 @@ def _changes(result: pipeline.PipelineResult, claim: dict[str, Any], jev: JevCli
     reply = lines[-1]["text"]
     today = date.fromisoformat(claim["reply_date"])
     titles = {c["task_id"]: c["title"] for c in claim["candidates"]}
+    run_chose = any(item["target_task_id"] not in supplemented for item in result.items)
     changes: list[dict[str, Any]] = []
     for item in result.items:
         if item["action"] == "create":
             changes.append(_line("unknown", item["doc_text"], item["evidence_quote"]))
             continue
         others = [title for task_id, title in titles.items() if task_id != item["target_task_id"]]
-        evidence_status, target_clear = verify_reply(lines, item["task_title"], status=item["status"], others=others,
-                                                     today=today, client=jev)
-        changes += (_field_lines(item, evidence_status) if target_clear
-                    else [_line("unknown", item["doc_text"], item["evidence_quote"])])
+        evidence_status, target = verify_reply(lines, item["task_title"], status=item["status"],
+                                               change=item["doc_text"], others=others, today=today, client=jev)
+        if target == TARGET_CLEAR:
+            changes += _field_lines(item, evidence_status)
+        elif not (target == TARGET_OTHER and run_chose and item["target_task_id"] in supplemented):
+            changes.append(_line("unknown", item["doc_text"], item["evidence_quote"]))
     for failure in result.failures:
         field = ("due_clear" if failure.reason == pipeline.DUE_CLEARED_REASON
                  else "unknown" if failure.stage == "target" else "failed")
@@ -151,12 +156,14 @@ def judge_reply(item: dict[str, Any], *, run=None, jev: JevClient | None = None,
     result = (run or pipeline.run)(transcript, workspace_id=item["workspace_id"], today=today, candidates=candidates,
                                    judge_seq=len(item["lines"]))
     lines = []
+    supplemented: set[str] = set()
     if len(item["candidates"]) > 1:
         found = candidates.similar_tasks(item["workspace_id"], transcript.segments[-1].text)
         added, lines = _supplement(result, found, transcript, today=today, judge=judge or pipeline.judge,
                                     draft=draft or pipeline.draft)
         result.items += added
-    changes = _changes(result, item, jev or pipeline.get_jev()) + lines
+        supplemented = {added_item["target_task_id"] for added_item in added}
+    changes = _changes(result, item, jev or pipeline.get_jev(), supplemented) + lines
     if changes and all(c["field"] == "failed" for c in changes):
         raise ReplyJudgeFailed(f"판단하지 못한 finding {len(changes)}개만 남았다")
     return {"attempt": item["attempt"], "failure_reason": None, "model_name": MODEL_NAME, "changes": changes}

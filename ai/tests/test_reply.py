@@ -139,8 +139,8 @@ def test_a_low_yes_stays_inferred():
     assert _shape(body) == [("t_api", "status", "done", "inferred")]
 
 
-def test_a_failed_jev_call_stays_inferred_and_keeps_the_task():
-    body = _judge(FakeRun(_update(status="done")), _claim(API, LOGIN), jev=FakeJev([None]))
+def test_a_failed_jev_call_with_one_candidate_stays_inferred_and_keeps_the_task():
+    body = _judge(FakeRun(_update(status="done")), jev=FakeJev([None]))
     assert _shape(body) == [("t_api", "status", "done", "inferred")]
 
 
@@ -278,12 +278,42 @@ def test_a_new_item_chooses_no_candidate():
 def test_a_bare_finish_over_two_candidates_after_an_empty_run_is_unknown(text):
     lines = [{"sender": "pm", "text": "API 명세서는요?"}, {"sender": "pm", "text": "로그인 화면은요?"},
              {"sender": "member", "text": text}]
-    jev = FakeJev([_yes(status=0.9, target=0.2), _yes(status=0.9, target=0.2)])
+    unclear = _yes(status=0.9, target=0.4)
+    jev = FakeJev([unclear, unclear])
     judge = FakeJudge({"t_api": _changed(API), "t_login": _changed(LOGIN)})
     body = _judge(FakeRun(), _claim(API, LOGIN, lines=lines), jev=jev, judge=judge)
 
     assert {c["field"] for c in body["changes"]} == {"unknown"}
     assert {(c["task_id"], c["evidence_quote"]) for c in body["changes"]} == {(None, text)}
+
+
+def test_a_supplement_jev_says_is_about_another_task_is_dropped():
+    # run 이 API 에 맞게 붙인 말을 보충이 로그인에도 붙였다. 고르기로 보내면 답장 전체가 PM 차례가 된다
+    jev = FakeJev([_yes(status=0.9, target=0.9), _yes(status=0.9, target=0.1)])
+    body = _judge(FakeRun(_update(status="done")), _claim(API, LOGIN), jev=jev, judge=FakeJudge({"t_login": _changed(LOGIN)}))
+
+    assert _shape(body) == [("t_api", "status", "done", "certain")]
+
+
+def test_a_supplement_says_another_task_but_run_chose_nothing_stays_unknown():
+    # 전부 버리면 PM 이 답장을 모르게 된다
+    jev = FakeJev([_yes(status=0.9, target=0.1)])
+    body = _judge(FakeRun(), _claim(API, LOGIN), jev=jev, judge=FakeJudge({"t_login": _changed(LOGIN)}))
+
+    assert _shape(body) == [(None, "unknown", None, None)]
+
+
+def test_a_run_item_jev_says_is_about_another_task_stays_unknown():
+    jev = FakeJev([_yes(status=0.9, target=0.1), _yes(status=0.9, target=0.9)])
+    body = _judge(FakeRun(_update(status="done")), _claim(API, LOGIN), jev=jev, judge=FakeJudge({"t_login": _changed(LOGIN)}))
+
+    assert (None, "unknown", None, None) in _shape(body)
+
+
+def test_a_jev_outage_over_two_candidates_sends_the_reply_to_the_pm():
+    body = _judge(FakeRun(_update(status="done")), _claim(API, LOGIN), jev=FakeJev([None]), judge=FakeJudge({}))
+
+    assert _shape(body) == [(None, "unknown", None, None)]
 
 
 def test_a_plain_ack_stays_no_changes_after_the_supplement():
@@ -393,7 +423,7 @@ def test_an_assignee_verdict_on_a_supplement_is_drafted_as_an_assignee_change():
 
 def test_an_assignee_verdict_on_an_unclear_target_is_unknown():
     judge = FakeJudge({"t_login": _changed(LOGIN, status=None, category="assignee")})
-    body = _judge(FakeRun(), _claim(API, LOGIN), jev=FakeJev([_yes(target=0.2)]), judge=judge)
+    body = _judge(FakeRun(), _claim(API, LOGIN), jev=FakeJev([_yes(target=0.4)]), judge=judge)
 
     assert _shape(body) == [(None, "unknown", None, None)]
 

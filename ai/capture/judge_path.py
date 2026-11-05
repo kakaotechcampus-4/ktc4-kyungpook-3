@@ -173,7 +173,7 @@ def build_extractor(*, run=None, candidates=None, cfg=None):
 def reply_judger(cfg=None):
     """봇의 답장 판단기 judger(item) -> 판단 본문(judge.reply.judge_reply). 설정이 없으면 None 이라 답장 루프를 띄우지 않는다.
 
-    Jev 는 보지 않는다. 없으면 근거가 모두 inferred 라 자동 반영 없이 PM 확인으로 간다.
+    Jev 는 보지 않는다. 없으면 근거가 모두 inferred 라 자동 반영이 없고, 후보가 둘 이상이면 대상을 확인하지 못해 PM 이 고른다.
     """
     if missing_settings(cfg):
         return None
