@@ -552,6 +552,9 @@ Content-Disposition: 없음(내려받기 아님). Accept-Ranges: bytes
   `extraction_item_id` 는 Task 를 만들기 **전에** 검증한다. 항목의 워크스페이스가 승인과 다르면 400 `WORKSPACE_MISMATCH`, 항목의 `approval_id` 가 이 승인이 아니면 400 `INVALID_REQUEST` 이고 아무것도 바뀌지 않는다.
   항목이 없으면 연결 없이 Task 만 만든다. 이 검사가 제목 검증보다 먼저다.
 - `task_update` → `title`, `assignee_member_id`, `status`, `blocker`, `due_date` 중 존재하는 것만. 이력 출처는 payload `change_source`(없으면 `meeting`)
+  - 현재 BE 구현: 회의에서 만드는 `task_update` payload 에는 반영 키 말고도 표시용 `task_title`·`base_title`·`doc_text`·`category`(`schedule`·`assignee`·`status`·`scope`·`decision`·`none`)·`evidence_quote`·`evidence_speaker`·`evidence_speaker_member_id`·`evidence_at_ms`·`meeting_id` 가 온다. `category` 가 `scope`(범위 결정)면 바뀌는 필드가 없어도 승인 요청을 만든다([extractions.py](../../../backend/app/api/extractions.py)). 승인해도 반영 키가 없으면 태스크·이력에 아무것도 남지 않는다.
+  - 합의됨, BE 미구현(#205): `category` 가 `scope` 인 승인을 승인하면 필드 반영과 별개로 `changed_field: "scope"` 이력 한 줄을 남긴다. 바뀌는 필드가 함께 있으면 필드 이력과 범위 이력을 둘 다 남긴다. 범위 이력만 남는 승인은 Task `version` 과 Notion 동기화를 건드리지 않는다. 반려하면 이력을 남기지 않는다. FE 가 먼저 배포된 뒤 BE 를 배포한다.
+  - FE 구현(#205): 승인 매퍼가 `doc_text`·`category`·근거 발화·`meeting_id` 를 읽는다. 모르는 `category` 는 `null` 이다. 승인 상세는 `scope` 면 「범위 변경」 절에 `doc_text` 와 근거를 보이고, 바뀌는 필드가 있을 때만 변경 표를 보인다. 대시보드 확인 필요 목록과 보드 승인 카드는 `범위 변경을 확인해야 해요` 로 보인다. MSW 는 합의대로 승인 때 범위 이력을 남긴다(시나리오 `approval-scope`).
 - `reminder_dm` → 태스크에 반영하지 않는다. 발송은 Discord 봇의 책임이다
 
 **프론트엔드가 지킬 규칙**
@@ -594,7 +597,7 @@ Content-Disposition: 없음(내려받기 아님). Accept-Ranges: bytes
 
 // TaskHistoryResponse — created_at 내림차순
 {"history_id": "hs_01", "task_id": "tk_01",
- "changed_field": "due_date",           // assignee|start_date|due_date|status|title|blocker (#303 전 이력에는 progress 가 남아 있고 되돌리기는 400)
+ "changed_field": "due_date",           // assignee|start_date|due_date|status|title|blocker (#303 전 이력에는 progress 가 남아 있고 되돌리기는 400). scope 는 합의됨·BE 미구현(#205), 아래 참고
  "old_value": "2026-09-13", "new_value": "2026-09-20",
  "change_source": "meeting",            // meeting|chat|checkin|notion|reminder_reply|manual|scheduler
  "changed_by": null,
@@ -616,6 +619,8 @@ Content-Disposition: 없음(내려받기 아님). Accept-Ranges: bytes
 - `created_by` · `changed_by` · `resolved_by` 를 **프론트엔드가 직접 실어 보낸다.**
   ~~세션이 없으므로~~ **세션은 PR #59 로 생겼지만 `tasks` · `approvals` 가 아직 쓰지 않는다.** 서버가 actor 를 유추하도록 바꿔 달라 → §4.0.
 - 되돌리기는 이미 되돌린 기록이면 409 `TASK_HISTORY_ALREADY_ROLLED_BACK`.
+- **`changed_field: "scope"` (합의됨, BE 미구현, #205).** `scope` 승인(§2.5)을 승인하면 생기는 범위 변경 이력이다. `old_value` 는 `null`, `new_value` 는 범위 변경 문장이다. 이슈는 문장의 출처를 정하지 않았고 MSW 는 payload `doc_text` 를 쓴다(합의 여부 확인 필요). 되돌릴 Task 필드가 없어 되돌리기는 400 `INVALID_REQUEST`(`되돌릴 수 없는 변경 항목입니다`)다.
+  FE 구현: 이력 매퍼가 `scope` 를 받고(모르는 값은 지금처럼 `title`), 이력 줄을 `범위 변경: <new_value>` 로 보인다. `이전 → 이후` 형식을 쓰지 않는다. FE 화면에는 이력 되돌리기 버튼이 없다.
 
 **PR #55 가 바꾼 것 — 조용하지만 중요하다**
 
