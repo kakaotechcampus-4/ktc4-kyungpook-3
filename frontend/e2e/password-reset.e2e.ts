@@ -32,6 +32,18 @@ test('재설정 메일 요청 → 모의 메일함의 링크 → 새 비밀번�
   await expect(page.getByRole('status')).toHaveText(
     '비밀번호를 바꿨어요. 새 비밀번호로 로그인해 주세요.',
   )
+
+  // 안내는 한 번뿐이다. 새로고침과 뒤로가기로 같은 기록 항목에 와도 다시 뜨지 않는다
+  await page.reload()
+  await expect(page.getByLabel('이메일')).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByText('비밀번호를 바꿨어요')).toHaveCount(0)
+  await page.getByRole('link', { name: '회원가입' }).click()
+  await expect(page).toHaveURL('/signup')
+  await page.goBack()
+  await expect(page).toHaveURL('/login')
+  await expect(page.getByLabel('이메일')).toBeVisible()
+  await expect(page.getByText('비밀번호를 바꿨어요')).toHaveCount(0)
+
   await page.getByLabel('이메일').fill('pm@example.com')
   await page.getByLabel('비밀번호', { exact: true }).fill('newpass123')
   await page.getByRole('button', { name: '로그인', exact: true }).click()
