@@ -186,7 +186,7 @@ export const 캘린더_PM: Story = {
       'rgb(90, 90, 90)',
     ])
     const urgent = within(table).getByRole('link', { name: /온보딩 문구 수정/ })
-    await expect(getComputedStyle(urgent).backgroundColor).toBe('rgb(255, 105, 105)')
+    await expect(getComputedStyle(urgent).backgroundColor).toBe('rgb(196, 54, 54)')
     await expect(getComputedStyle(urgent.firstElementChild!).fontWeight).toBe('600')
   },
 }

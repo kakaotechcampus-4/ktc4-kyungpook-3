@@ -13,6 +13,7 @@ import {
   ownershipError,
   enqueueTaskSync,
   notionConnected,
+  undoAutoBlock,
 } from '../task-state'
 import { MOCK_NOW } from '../fixtures/constants'
 import { requireAuth, requireMember, requirePm } from '../auth-guard'
@@ -203,6 +204,20 @@ export const taskHandlers = [
         task_id: task.task_id,
       })
     task.notion_sync_status = 'pending'
+    return ok(task)
+  }),
+  // 무응답 자동 막힘 풀기 (계약 §5.7). PM 전용이다. 되돌릴 자동 막힘이 없으면 409 이고 아무것도 바꾸지 않는다
+  http.post('/api/v1/tasks/:taskId/auto-block/undo', ({ params }) => {
+    const unauthenticated = requireAuth()
+    if (unauthenticated) return unauthenticated
+    const task = findTask(params.taskId)
+    if (!task) return fail('TASK_NOT_FOUND', '태스크가 없습니다.', 404)
+    const pm = requirePm(task.workspace_id)
+    if (pm instanceof Response) return pm
+    if (!undoAutoBlock(task, pm.memberId))
+      return fail('AUTO_BLOCK_NOT_FOUND', '되돌릴 자동 막힘이 없습니다.', 409, {
+        task_id: task.task_id,
+      })
     return ok(task)
   }),
 ]

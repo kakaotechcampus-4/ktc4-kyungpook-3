@@ -16,7 +16,7 @@ const FORM = 'flex flex-col gap-16'
 
 /* 비밀번호 재설정은 1차 범위 밖이라 비활성이다. 누를 수도, 포커스를 받을 수도 없다.
    준비 중 문구·배지를 달지 않는다 (D-005, D-006) */
-const FORGOT = 'text-[13px] text-faint'
+const FORGOT = 'text-[13px] text-dim'
 
 const FOOTNOTE = 'text-center text-[14px] text-dim'
 

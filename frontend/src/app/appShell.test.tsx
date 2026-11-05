@@ -157,7 +157,8 @@ describe('앱 셸 (U4-2)', () => {
       // 탭(`/meetings`)은 그 하위 경로에서도 현재 위치로 표시된다
       ['회의록', '회의록', '/workspaces/ws_01/meetings/mt_09'],
       ['태스크', '태스크', '/workspaces/ws_01/tasks'],
-      ['메시지', '메시지는 준비 중이에요', '/workspaces/ws_01/messages'],
+      // #315 가 준비 중 안내를 지우고 메시지 화면을 모든 모드에서 연다
+      ['메시지', '메시지', '/workspaces/ws_01/messages'],
       // M8-B 가 팀 자리표시자를 Team 캔버스 화면으로 바꿨다 — 제목은 `팀` 이다
       ['팀', '팀', '/workspaces/ws_01/members'],
     ] as const) {

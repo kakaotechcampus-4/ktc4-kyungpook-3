@@ -1,8 +1,11 @@
 import { memo, useMemo } from 'react'
 import type { TaskCreateApproval } from '@/entities/approval'
 import type { Task } from '@/entities/task'
+import { TASK_STATUS_LABEL } from '@/features/task-status'
 import { paths } from '@/shared/config/routes'
 import { GuardedLink } from '@/shared/lib/unsaved-changes'
+import { Icon } from '@/shared/ui/icon'
+import type { IconName } from '@/shared/ui/icon'
 import {
   addMonths,
   assigneeLabel,
@@ -21,17 +24,43 @@ const DAYS_PER_WEEK = WEEKDAYS.length
    요일 머리·주마다 `row` 로 묶되, 보이는 배치는 바깥 7열 격자를 subgrid 로 그대로 잇는다 */
 const WEEK_ROW = 'col-span-full grid grid-cols-subgrid'
 
+interface StatusMark {
+  label: string
+  icon?: IconName
+}
+
+/* 흑백에서도 상태가 갈리게 색에 아이콘을 더하고, 낭독기는 모든 칩에서 상태 이름부터 읽는다 (KWCAG 색에 무관한 인식).
+   진행 중·할 일은 아이콘 없는 기본이고, 완료는 취소선이 이미 표식이다. 아이콘이 없어도 이름에는 상태가 들어간다 */
+const MARK = {
+  review: { label: '확인 필요', icon: 'eye' },
+  urgent: { label: '마감 임박', icon: 'alert' },
+  done: { label: TASK_STATUS_LABEL.done },
+  active: { label: TASK_STATUS_LABEL.in_progress },
+  todo: { label: TASK_STATUS_LABEL.todo },
+} as const satisfies Record<string, StatusMark>
+
 /** 칩 색 — 진행 중은 회색, 마감 임박(주의·위험)은 강조색에 굵은 제목(시안 600), 완료는 취소선 */
-const CHIP: Record<TaskTone, { box: string; title: string; sub: string }> = {
+const CHIP: Record<TaskTone, { box: string; title: string; sub: string; mark: StatusMark }> = {
   done: {
     box: 'bg-surface-sunken',
     title: 'text-dim line-through',
     sub: 'text-dim',
+    mark: MARK.done,
   },
-  danger: { box: 'bg-accent', title: 'font-semibold text-surface', sub: 'text-surface' },
-  warn: { box: 'bg-accent', title: 'font-semibold text-surface', sub: 'text-surface' },
-  active: { box: 'bg-surface-selected', title: 'text-ink', sub: 'text-sub' },
-  todo: { box: 'bg-surface-selected', title: 'text-ink', sub: 'text-sub' },
+  danger: {
+    box: 'bg-accent',
+    title: 'font-semibold text-surface',
+    sub: 'text-surface',
+    mark: MARK.urgent,
+  },
+  warn: {
+    box: 'bg-accent',
+    title: 'font-semibold text-surface',
+    sub: 'text-surface',
+    mark: MARK.urgent,
+  },
+  active: { box: 'bg-surface-selected', title: 'text-ink', sub: 'text-sub', mark: MARK.active },
+  todo: { box: 'bg-surface-selected', title: 'text-ink', sub: 'text-sub', mark: MARK.todo },
 }
 
 /* 칸 폭은 7등분이다. 줄바꿈할 곳이 없는 긴 제목·이름도 칸 안에서 접어 잘리지 않게 한다 */
@@ -117,8 +146,12 @@ export function CalendarView({
         onNext={() => onMonthChange(addMonths(month, 1))}
         legend={
           <>
-            <LegendItem swatch="bg-ink">확인 필요</LegendItem>
-            <LegendItem swatch="bg-accent">마감 임박</LegendItem>
+            <LegendItem swatch="bg-ink text-surface" icon={MARK.review.icon}>
+              {MARK.review.label}
+            </LegendItem>
+            <LegendItem swatch="bg-accent text-surface" icon={MARK.urgent.icon}>
+              {MARK.urgent.label}
+            </LegendItem>
             <LegendItem swatch="bg-surface-selected">진행 중</LegendItem>
             <LegendItem swatch="border-2 border-dashed bg-surface">회의</LegendItem>
           </>
@@ -177,8 +210,14 @@ export function CalendarView({
                           key={approval.id}
                           to={`${paths.tasks(workspaceId)}?tab=needs_review`}
                           className={`${CHIP_BASE} bg-ink`}
+                          aria-label={chipName(
+                            MARK.review,
+                            approval.title,
+                            assigneeLabel(approval.assigneeMemberId, names, '담당자 미정'),
+                          )}
                         >
                           <span className="text-[11.5px] leading-[1.4] font-bold text-surface">
+                            <MarkIcon mark={MARK.review} />
                             {approval.title}
                           </span>
                           <span className="text-[10.5px] text-surface tabular-nums">
@@ -227,19 +266,7 @@ export function CalendarView({
           {undated.map((item) =>
             'kind' in item ? (
               <li key={item.id}>
-                <GuardedLink
-                  to={`${paths.tasks(workspaceId)}?tab=needs_review`}
-                  className="flex flex-col gap-1 rounded-7 bg-ink px-11 py-7 wrap-anywhere"
-                >
-                  <span className="text-[12px] leading-[1.4] font-bold text-surface">
-                    {item.title}
-                  </span>
-                  <span className="text-[10.5px] text-surface">
-                    {item.assigneeMemberId === null
-                      ? '담당자 · 마감 모두 미정'
-                      : `${assigneeLabel(item.assigneeMemberId, names)} · 날짜를 정해 주세요`}
-                  </span>
-                </GuardedLink>
+                <UndatedApproval workspaceId={workspaceId} approval={item} names={names} />
               </li>
             ) : (
               <UndatedTask key={item.id} workspaceId={workspaceId} task={item} names={names} />
@@ -296,20 +323,48 @@ const UndatedTask = memo(function UndatedTask({
   task: Task
   names: ReadonlyMap<string, string>
 }) {
+  const meta = `${assigneeLabel(task.assigneeMemberId, names)} · 마감 없음`
   return (
     <li>
       <GuardedLink
         to={paths.tasks(workspaceId, task.id)}
         className="flex flex-col gap-1 rounded-7 border-2 border-dashed px-11 py-7 wrap-anywhere"
+        aria-label={chipName({ label: TASK_STATUS_LABEL[task.status] }, task.title, meta)}
       >
         <span className="text-[12px] leading-[1.4] text-sub">{task.title}</span>
-        <span className="text-[10.5px] text-dim">
-          {assigneeLabel(task.assigneeMemberId, names)} · 마감 없음
-        </span>
+        <span className="text-[10.5px] text-dim">{meta}</span>
       </GuardedLink>
     </li>
   )
 })
+
+function UndatedApproval({
+  workspaceId,
+  approval,
+  names,
+}: {
+  workspaceId: string
+  approval: TaskCreateApproval
+  names: ReadonlyMap<string, string>
+}) {
+  const meta =
+    approval.assigneeMemberId === null
+      ? '담당자 · 마감 모두 미정'
+      : `${assigneeLabel(approval.assigneeMemberId, names)} · 날짜를 정해 주세요`
+  return (
+    <GuardedLink
+      to={`${paths.tasks(workspaceId)}?tab=needs_review`}
+      className="flex flex-col gap-1 rounded-7 bg-ink px-11 py-7 wrap-anywhere"
+      aria-label={chipName(MARK.review, approval.title, meta)}
+    >
+      <span className="text-[12px] leading-[1.4] font-bold text-surface">
+        <MarkIcon mark={MARK.review} />
+        {approval.title}
+      </span>
+      <span className="text-[10.5px] text-surface">{meta}</span>
+    </GuardedLink>
+  )
+}
 
 /** 칩 하나. 상태가 바뀐 태스크만 다시 그린다 (AC-A-04) */
 const TaskChip = memo(function TaskChip({
@@ -327,9 +382,28 @@ const TaskChip = memo(function TaskChip({
   const style = CHIP[tone]
   const meta = [assigneeLabel(task.assigneeMemberId, names)].filter(Boolean).join(' · ')
   return (
-    <GuardedLink to={paths.tasks(workspaceId, task.id)} className={`${CHIP_BASE} ${style.box}`}>
-      <span className={`text-[11.5px] leading-[1.4] ${style.title}`}>{task.title}</span>
+    <GuardedLink
+      to={paths.tasks(workspaceId, task.id)}
+      className={`${CHIP_BASE} ${style.box}`}
+      aria-label={chipName(style.mark, task.title, meta)}
+    >
+      <span className={`text-[11.5px] leading-[1.4] ${style.title}`}>
+        <MarkIcon mark={style.mark} />
+        {task.title}
+      </span>
       <span className={`text-[10.5px] tabular-nums ${style.sub}`}>{meta}</span>
     </GuardedLink>
   )
 })
+
+/* 제목과 담당자는 칩 안에서 따로 줄을 차지해, 내용으로 이름을 지으면 Chromium 은 `제목 , 담당자` 처럼 띄어 읽는다.
+   보이는 글자를 그대로 이어 이름을 직접 짓는다 */
+function chipName(mark: StatusMark, ...parts: string[]): string {
+  return [mark.label, ...parts].filter(Boolean).join(', ')
+}
+
+function MarkIcon({ mark }: { mark: StatusMark }) {
+  return mark.icon === undefined ? null : (
+    <Icon name={mark.icon} size={12} className="mr-3 inline-block align-[-2px]" />
+  )
+}

@@ -89,17 +89,22 @@ API_PROXY_TARGET=https://managers-manager.duckdns.org npm run dev
 
 ## 문서
 
+- 메시지 화면 실제 API 연결(#315, 2026-11-04): 계약 §5.7 의 메시지 API 로 응답 타입·매퍼·요청·MSW 를 옮기고 준비 중 안내를 지워 production 에서도 연다. 서버에 없는 답장 판정·`지금 바로`·채널 대화 등은 뺐다. MSW 기준 검증이며 실서버 연동은 미검증이다. [M8-C 결과](docs/plan/m8/result-c.md#2026-11-04-실제-메시지-api-연결-315) · [API 계약 §5.7](docs/contracts/frontend-api-contract.md).
+
 - 온보딩·가드 테스트 4건 재검증(2026-11-04): 기본 테스트 브라우저의 모션 선호를 고정하고 실제 마스코트의 모션 감소 분기를 사용한다. 기존 모션 허용·변경·API 누락 검증을 보존했으며 관련 104개와 전체 단위 176개 파일·2,141개 테스트가 통과했다. [M4 추가 결과](docs/plan/m4/result.md#2026-11-04-추가-결과-온보딩가드-테스트의-모션-환경)에 재현과 검증을 기록한다.
 
 - 수동 업로드 실패 안내·만료 이력(#256, 2026-11-04): 알려진 실패 사유를 구분하고 화자 지정 만료 이력을 목록·상세에 남긴다. BE 목록 필터와 실패 사유 필드를 함께 보완했다. [M5 추가 결과](docs/plan/m5/result.md)에 검증과 제출 UI 후속 작업을 기록한다. 자동 만료 PR #301과 실서버 연동은 별도다.
+- 탭 패널 초점·회의 날짜 Tab 순서(#337, 2026-11-04): 회의록·태스크 목록 탭 패널은 안에 누를 것이 없을 때만 Tab으로 닿는다. 회의 날짜의 갇힘은 Chromium 153·Chrome 156에서 재현되지 않아 기본 날짜 입력을 유지한다. [M5 추가 결과](docs/plan/m5/result.md#2026-11-04-추가-결과-탭-패널-초점과-회의-날짜-tab-순서-337)에 재현 기록과 검증을 남긴다.
 
 - 로그인 후 시작 방식 선택 추가·디자인 통일(2026-11-03): 소속이 없는 계정은 팀원 작업과 PM 생성을 먼저 고른다. 기존 온보딩 프레임·매스 말풍선·카드를 재사용한다. 타입·린트·빌드·포맷과 Chromium E2E 12개가 통과했다. 전체 단위 묶음은 시간 초과가 남았으며, [M4 추가 결과](docs/plan/m4/result.md)에 원본 검사와 단독 재검사 근거를 기록한다. 초대·가입 API와 실제 외부 연동은 미검증이다.
 - [문서 안내](docs/README.md): 대표 경로, 기존 문서 대응과 유지한 자료.
 - [API 계약](docs/contracts/frontend-api-contract.md): 기존 백엔드 요청과 현재 코드 차이를 한 문서에서 관리.
 - [전체 계획](docs/plan/frontend-plan.md) · [마일스톤 상태·기록](docs/plan/README.md): M0~M8. M0~M5는 기존 계획 원문을 각 `plan.md`로 이동했다. M6·M7은 계획과 결과([M6](docs/plan/m6/result.md), [M7](docs/plan/m7/result.md))가 있고 M8은 0바이트 초기화 파일이다.
+- 캘린더 상태 색 외 구분(#338, 2026-11-05): 캘린더 칩·범례에 `마감 임박`·`확인 필요` 아이콘을 더하고, 아이콘이 없는 진행 중·할 일·완료를 포함해 모든 칩 링크 이름을 상태부터 읽게 했다. 팀 화면의 기한 지난 마감에도 같은 아이콘을 붙였다. 표식 모양은 디자인 합의 전 기본값이다. [M8-A 추가 결과](docs/plan/m8/result-a.md#2026-11-05-추가-결과-캘린더-상태를-색-외-표식으로도-구분-338) · [결정](docs/plan/m8/basis-for-decision/2026-11-05-calendar-status-marks.md)
 - M6 후속 #311: 태스크 진행률을 현재 모델·화면에서 제거하고, 생성·수정 승인 보완값을 실 API 요청과 MSW에 연결했다. 충돌 재확인·완료값 표시는 [M6 후속 결과](docs/plan/m6/result.md)와 [API 계약](docs/contracts/frontend-api-contract.md)에 기록한다. 실 백엔드 연동은 BE PR #307 배포 환경에서 확인해야 한다.
 - 마일스톤 밖 수정: 태스크 상세 재조회 실패가 화면에 안 보이고 polling이 조용히 멈추던 문제(#236) — 판정 함수 `queryView`를 `shared/lib/query-view`로 옮겨 상세 화면과 Notion polling이 함께 쓰고, 갱신 실패 시 본문 유지·안내·`다시 시도`를 두고 Storybook 스토리를 추가했다. [계획](docs/plan/refactor/plan-task-detail-refetch-error.md) · [결과](docs/plan/refactor/result-task-detail-refetch-error.md) · [M6 결과](docs/plan/m6/result.md). Node v24.11.0에서 typecheck·lint·format·vitest·build·관련 E2E·Storybook 통과(스토리 추가 후 105건), 독립 검증 완료, MSW 기준이며 실서버 미검증.
 - 마일스톤 밖 수정: 온보딩에서 기존 PM을 체크해 Discord 중복 멤버 생성 방지(#228) — [계획](docs/plan/refactor/plan-onboarding-pm-discord-link.md) · [결과](docs/plan/refactor/result-onboarding-pm-discord-link.md). MSW 기준 검증, 실서버 미검증.
+- 마일스톤 밖 수정: 강조색·흐린 글자의 명도 대비(#336, 2026-11-04) — `accent`를 `#c43636`, `accent-soft`를 `#cf4545`로 바꾸고 읽어야 하는 `faint` 글자는 `dim`으로 옮겼다. 색 값은 디자인 합의 전 기본값이다. [결정](docs/plan/m2/basis-for-decision/2026-11-04-accent-faint-contrast.md). 마일스톤이 문서로 정해지지 않아 result.md는 만들지 않았다.
 - [공통 작업 규칙](../docs/agent-rules.md) · [문서 양식](../docs/README.md).
 - `docs/requests/`: 실제 독립 요청 발생 시 기록. 기존 백엔드 요청은 API 계약 §4에 유지.
 - [제품·기술 결정](docs/decision/frontend-decisions.md) · [구현 결정 안내](docs/plan/basis-for-decision-guide.md): 구현 결정 원문은 해당 마일스톤의 `basis-for-decision/`에 있다.

@@ -15,7 +15,8 @@ import { minutesFixtures } from './fixtures/minutes'
 import { extractionFixtures } from './fixtures/extraction'
 import { taskFixtures, taskHistoryFixtures } from './fixtures/task'
 import { approvalFixtures } from './fixtures/approval'
-import { messageReviewFixtures, messageThreadFixtures } from './fixtures/message'
+import { messageBundleFixtures, messageThreadFixtures } from './fixtures/message'
+import type { MockNotification, MockPushSubscription } from './fixtures/notification'
 
 /**
  * 처리 중 회의를 상세 조회(`GET /meetings/{id}`)가 어떻게 진행시키는가. 진행 규칙은 meetingFlow.ts 에 있다.
@@ -46,7 +47,7 @@ export interface MeetingFlowState {
 
 /**
  * 메시지 요청을 일부러 실패(5xx)시킨다 — 계획 C-7 의 오류 시나리오. `inbox` 는 목록, `threadIds` 는 그 대화만,
- * `actions` 는 보내기 전 확인 항목의 발송·보내지 않음·고쳐 쓰기·발송 시점 변경이다(db 는 바뀌지 않는다)
+ * `actions` 는 승인·보내지 않음·문구·시각 고치기·답장이다(db 는 바뀌지 않는다)
  */
 export interface MessageFailures {
   inbox: boolean
@@ -95,10 +96,14 @@ export interface MockDb {
   approvals: typeof approvalFixtures
   /** 회의 정리 흐름. 원본 파일은 담지 않는다 — 생성 결과는 위의 meetings·minutes·extractions·tasks·approvals 에 들어간다 */
   meetingFlow: MeetingFlowState
-  /** M8 메시지(임시, 계약 아님). 검토 항목과 대화는 공간별이다 */
-  messageReviews: typeof messageReviewFixtures
+  /** M8 메시지 (계약 §5.7). 보낼 메시지(묶음)와 대화는 공간별이다 */
+  messageBundles: typeof messageBundleFixtures
   messageThreads: typeof messageThreadFixtures
   messageFailures: MessageFailures
+  /** #330 알림. 받는 팀원별 행이다 */
+  notifications: MockNotification[]
+  /** #330 브라우저 푸시. 공개키가 null 이면 서버에 키가 없는 것이다 */
+  push: { publicKey: string | null; subscriptions: MockPushSubscription[] }
   invitations: MockInvitation[]
 }
 /** Vitest 가 테스트마다 돌아가는 상태다. 로그인돼 있고 ws_01·ws_02 에 속한다. 브라우저 시작 상태는 scenarios.ts 가 정한다 */
@@ -127,9 +132,11 @@ export function initialDb(): MockDb {
     taskHistory: structuredClone(taskHistoryFixtures),
     approvals: structuredClone(approvalFixtures),
     meetingFlow: { mode: 'manual', attendees: {} },
-    messageReviews: structuredClone(messageReviewFixtures),
+    messageBundles: structuredClone(messageBundleFixtures),
     messageThreads: structuredClone(messageThreadFixtures),
     messageFailures: { inbox: false, threadIds: [], actions: false },
+    notifications: [],
+    push: { publicKey: null, subscriptions: [] },
     invitations: [],
   }
 }

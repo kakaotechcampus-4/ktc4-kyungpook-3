@@ -65,7 +65,7 @@ export function toTaskHistory(dto: TaskHistoryDto): TaskHistoryEntry {
     newValue: dto.new_value,
     source: enumValue(
       dto.change_source,
-      ['meeting', 'chat', 'checkin', 'notion', 'reminder_reply', 'manual'] as const,
+      ['meeting', 'chat', 'checkin', 'notion', 'reminder_reply', 'manual', 'scheduler'] as const,
       'manual',
       'history source',
     ),

@@ -34,7 +34,7 @@ const MARK =
   'mt-3 inline-flex h-[17px] w-[17px] shrink-0 items-center justify-center rounded-999 border'
 
 const MARK_TONE = {
-  default: 'border-faint',
+  default: 'border-input-border',
   disabled: 'border-line-strong',
 }
 

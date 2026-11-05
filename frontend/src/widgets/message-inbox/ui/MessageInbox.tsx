@@ -1,13 +1,12 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useRef } from 'react'
 import { messageInboxQueryOptions, messageThreadQueryOptions } from '@/entities/message'
-import type { MessageInbox as Inbox, MessageReview, MessageThreadSummary } from '@/entities/message'
+import type { Bundle, MessageInbox as Inbox, MessageThreadSummary } from '@/entities/message'
 import { paths } from '@/shared/config/routes'
-import { todayInSeoul } from '@/shared/lib/date'
 import { GuardedLink } from '@/shared/lib/unsaved-changes'
 import { EmptyState } from '@/shared/ui/empty-state'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
-import { avatarText, reviewDateLabel, shortDate } from '../lib/format'
+import { avatarText, bundleDateLabel, bundleSummary, shortDate } from '../lib/format'
 import { selectDetail } from '../model/selection'
 import { VIEWER_POLICY } from '../model/viewer'
 import type { MessageViewer, ViewerPolicy } from '../model/viewer'
@@ -35,14 +34,11 @@ const REVIEW_SUMMARY =
   'text-caption leading-[1.55] wrap-anywhere text-dim group-aria-[current=page]:text-sub'
 const THREAD_ROW =
   'group flex w-full items-center gap-10 rounded-10 px-12 py-9 text-left hover:bg-surface-sunken aria-[current=page]:bg-surface-selected'
-/* 답장 확인 필요 — 대화 머리의 답장 대기 배지와 같은 강조색 면 */
-const ATTRIBUTION_CHIP =
+/* DM 못 보냄 — 대화 머리의 답장 대기 배지와 같은 강조색 면 */
+const DM_FAILED_CHIP =
   'inline-flex h-22 shrink-0 items-center rounded-6 bg-accent px-9 text-meta leading-none font-semibold text-surface'
 const AVATAR =
   'inline-flex shrink-0 items-center justify-center rounded-999 bg-divider font-semibold text-ink'
-/* 채널은 사람이 아니라 흰 바탕 선 원이다 (시안 `#회의록 요약`) */
-const CHANNEL_AVATAR =
-  'inline-flex shrink-0 items-center justify-center rounded-999 border border-line bg-surface text-dim'
 const DATE = 'mono text-[11px] text-dim'
 const EMPTY_DETAIL = 'flex flex-1 items-center justify-center px-36 pt-48 pb-96 text-body text-dim'
 /* EmptyMessages 캔버스 — 가운데 정렬(위 48 · 좌우 48 · 아래 96), 주 액션 먹 면 40 */
@@ -59,55 +55,48 @@ export interface MessageInboxProps {
   /** URL 이 가리키는 대화. 없으면 null */
   threadId: string | null
   /**
-   * 검색 파라미터가 가리키는 보내기 전 확인 항목. 목록에 없는 ID 는 선택 없음이다.
-   * `undefined` 는 파라미터가 없다는 뜻이라 아직 결정하지 않은 첫 항목이 골라지고, `null` 은 파라미터가 있지만 ID 모양이 아니라 선택 없음이다
+   * 검색 파라미터가 가리키는 보낼 메시지(묶음). 목록에 없는 ID 는 선택 없음이다.
+   * `undefined` 는 파라미터가 없다는 뜻이라 아직 승인하지 않은 첫 묶음이 골라지고, `null` 은 파라미터가 있지만 ID 모양이 아니라 선택 없음이다
    */
-  reviewId: string | null | undefined
+  bundleId: string | null | undefined
   /** 없는 하위 경로이거나 대화 ID 모양이 틀리다 */
   invalidPath?: boolean
 }
 
 /**
- * 메시지 화면 (M8, Messages·MessagesThread·EmptyMessages 시안) — 왼쪽 목록(보내기 전 확인 · 대화), 오른쪽 상세의 2단이다.
+ * 메시지 화면 (M8, Messages·MessagesThread·EmptyMessages 시안, 계약 §5.7) — 왼쪽 목록(보내기 전 확인 · 대화), 오른쪽 상세의 2단이다.
  * 고른 항목은 URL 이 정한다. 그래서 새로고침·뒤로가기에서 그대로다. 아무것도 고르지 않고 들어오면
- * 아직 결정하지 않은 첫 보내기 전 확인 항목이 골라진다. 결정 4 의 UI 범위는 디자인 캔버스 기준이고 행동은 MSW 목이다
+ * 아직 승인하지 않은 첫 보낼 메시지가 골라진다. 팀원에게는 보내기 전 확인이 없다
  */
 export function MessageInbox({
   workspaceId,
   botName,
   viewer,
   threadId,
-  reviewId,
+  bundleId,
   invalidPath = false,
 }: MessageInboxProps) {
   const inbox = useQuery(messageInboxQueryOptions(workspaceId))
   const detailRef = useRef<HTMLElement>(null)
   const policy = VIEWER_POLICY[viewer]
-  const selection = selectDetail({
-    inbox: inbox.data,
-    threadId,
-    reviewId,
-    invalidPath,
-    policy,
-  })
+  const selection = selectDetail({ inbox: inbox.data, threadId, bundleId, invalidPath })
   const selectedThreadId = selection.kind === 'thread' ? selection.threadId : null
 
-  // 볼 것이 없다 — EmptyMessages 캔버스 한 장. 팀원은 받은 대화가 없을 때, PM 은 검토와 대화가 모두 없을 때.
+  // 볼 것이 없다 — EmptyMessages 캔버스 한 장. 팀원은 받은 대화가 없을 때, PM 은 보낼 메시지와 대화가 모두 없을 때.
   // `알림 규칙 보기` 화면은 아직 없어 가장 가까운 팀 설정으로 보낸다 (결과 문서 C 의 차이표)
   if (
     threadId === null &&
     !invalidPath &&
     inbox.data !== undefined &&
-    (policy.reviews
-      ? inbox.data.reviews.length === 0 && inbox.data.threads.length === 0
-      : inbox.data.threads.length === 0)
+    inbox.data.threads.length === 0 &&
+    (inbox.data.viewer === 'member' || inbox.data.bundles.length === 0)
   )
     return (
       <main className={EMPTY_PAGE}>
-        {policy.reviews ? (
+        {inbox.data.viewer === 'pm' ? (
           <EmptyState
             title="보낼 메시지가 없어요"
-            description="마감이 다가오거나 진행이 멈추면, 담당자에게 보낼 DM을 여기에 준비해 둘게요. 재촉 자동 승인을 켜지 않으면 보내기 전에 물어봅니다."
+            description="마감이 다가오면 담당자에게 보낼 DM을 여기에 준비해 둘게요. 승인해야 나가요."
             action={
               <GuardedLink to={paths.settings(workspaceId)} className={EMPTY_ACTION}>
                 알림 규칙 보기
@@ -136,14 +125,14 @@ export function MessageInbox({
         viewer={viewer}
       />
     )
-  else if (selection.kind === 'review')
-    // 항목이 바뀌면 고쳐 쓰던 문구·직접 정하던 시각을 들고 가지 않는다
+  else if (selection.kind === 'bundle')
+    // 묶음이 바뀌면 고쳐 쓰던 문구·직접 정하던 시각을 들고 가지 않는다
     detail = (
       <ReviewDetail
-        key={selection.review.id}
+        key={selection.bundle.id}
         workspaceId={workspaceId}
         botName={botName}
-        review={selection.review}
+        bundle={selection.bundle}
         onSettled={() => detailRef.current?.focus()}
       />
     )
@@ -161,7 +150,7 @@ export function MessageInbox({
             inbox={inbox.data}
             policy={policy}
             threadId={selectedThreadId}
-            reviewId={selection.kind === 'review' ? selection.review.id : null}
+            bundleId={selection.kind === 'bundle' ? selection.bundle.id : null}
           />
         ) : inbox.error !== null ? (
           // 목록 오류는 목록 칸에만 알린다. 고른 대화는 따로 받아 그대로 보인다
@@ -190,37 +179,35 @@ function InboxList({
   inbox,
   policy,
   threadId,
-  reviewId,
+  bundleId,
 }: {
   workspaceId: string
   botName: string
   inbox: Inbox
   policy: ViewerPolicy
   threadId: string | null
-  reviewId: string | null
+  bundleId: string | null
 }) {
-  const awaiting = inbox.threads.filter(
-    ({ awaitingReplySince }) => awaitingReplySince !== null,
-  ).length
-  const today = todayInSeoul()
+  const awaiting = policy.awaiting
+    ? inbox.threads.filter(({ awaitingReplySince }) => awaitingReplySince !== null).length
+    : 0
   return (
     <>
-      {policy.reviews ? (
+      {inbox.viewer === 'pm' ? (
         <section aria-labelledby="messages-reviews" className="flex flex-col gap-6">
           <h2 id="messages-reviews" className={`${GROUP_LABEL} px-8`}>
-            보내기 전 확인 {inbox.reviews.length}
+            보내기 전 확인 {inbox.bundles.length}
           </h2>
-          {inbox.reviews.length === 0 ? (
+          {inbox.bundles.length === 0 ? (
             <p className={GROUP_NOTE}>지금 확인할 메시지가 없어요.</p>
           ) : (
             <ul className="flex flex-col gap-6">
-              {inbox.reviews.map((review) => (
-                <li key={review.id}>
-                  <ReviewRow
+              {inbox.bundles.map((bundle) => (
+                <li key={bundle.id}>
+                  <BundleRow
                     workspaceId={workspaceId}
-                    review={review}
-                    dateLabel={reviewDateLabel(review, today)}
-                    selected={review.id === reviewId}
+                    bundle={bundle}
+                    selected={bundle.id === bundleId}
                   />
                 </li>
               ))}
@@ -247,7 +234,7 @@ function InboxList({
                   workspaceId={workspaceId}
                   botName={botName}
                   thread={thread}
-                  ownSender={policy.ownSender}
+                  policy={policy}
                   selected={thread.id === threadId}
                 />
               </li>
@@ -260,36 +247,33 @@ function InboxList({
 }
 
 /*
- * 행은 GuardedLink(NavLink)다. NavLink 는 주소가 맞으면 스스로 aria-current 를 단다 — 검토 항목은 모두 `/messages` 라
+ * 행은 GuardedLink(NavLink)다. NavLink 는 주소가 맞으면 스스로 aria-current 를 단다 — 묶음 행은 모두 `/messages` 라
  * 검색 파라미터를 보지 않는 NavLink 에는 전부 맞는다. 그래서 `end` 로 대화 경로에서는 꺼 두고, 고른 행만 `page` 로 준다
  */
-function ReviewRow({
+function BundleRow({
   workspaceId,
-  review,
-  dateLabel,
+  bundle,
   selected,
 }: {
   workspaceId: string
-  review: MessageReview
-  /** `09/24 마감` 또는 `3일 전` */
-  dateLabel: string
+  bundle: Bundle
   selected: boolean
 }) {
   return (
     <GuardedLink
-      to={paths.messageReview(workspaceId, review.id)}
+      to={paths.messageReview(workspaceId, bundle.id)}
       end
       aria-current={selected ? 'page' : 'false'}
       className={REVIEW_ROW}
     >
       <span className="flex w-full items-center gap-9">
         <span aria-hidden="true" className={`${AVATAR} size-24 text-[10px]`}>
-          {avatarText(review.recipientName, 'direct')}
+          {avatarText(bundle.recipientName)}
         </span>
-        <span className={REVIEW_NAME}>{review.recipientName}</span>
-        <span className={DATE}>{dateLabel}</span>
+        <span className={REVIEW_NAME}>{bundle.recipientName}</span>
+        <span className={DATE}>{bundleDateLabel(bundle)}</span>
       </span>
-      <span className={REVIEW_SUMMARY}>{review.summary}</span>
+      <span className={REVIEW_SUMMARY}>{bundleSummary(bundle)}</span>
     </GuardedLink>
   )
 }
@@ -298,22 +282,22 @@ function ThreadRow({
   workspaceId,
   botName,
   thread,
-  ownSender,
+  policy,
   selected,
 }: {
   workspaceId: string
   botName: string
   thread: MessageThreadSummary
-  ownSender: ViewerPolicy['ownSender']
+  policy: ViewerPolicy
   selected: boolean
 }) {
-  const title = ownSender === 'member' && thread.kind === 'direct' ? `${botName} 봇` : thread.name
+  const title = policy.ownSender === 'member' ? `${botName} 봇` : thread.name
   const queryClient = useQueryClient()
   const last = thread.lastMessage
   /* 고르기 직전(가리키기·포커스)에 그 대화를 미리 받는다 — 고른 뒤 스켈레톤 없이 바로 그린다 (회의록 목록의 prefetchMinutes 와 같은 방식).
      ThreadDetail 과 같은 Query 라 staleTime(앱 기본) 안에는 다시 받지 않는다. 실패는 prefetchQuery 가 삼킨다 — 고르면 ThreadDetail 이
      같은 Query 로 다시 묻고 그 오류를 그린다. 열린 대화는 ThreadDetail 이 이미 받고 있어 건너뛴다.
-     보내기 전 확인 항목은 목록 응답에 상세가 다 있어 미리 받을 것이 없다 */
+     보낼 메시지는 목록 응답에 상세가 다 있어 미리 받을 것이 없다 */
   const prefetch = selected
     ? undefined
     : () => void queryClient.prefetchQuery(messageThreadQueryOptions(workspaceId, thread.id))
@@ -327,32 +311,26 @@ function ThreadRow({
     >
       <span
         aria-hidden="true"
-        className={
-          thread.kind === 'channel'
-            ? `${CHANNEL_AVATAR} size-30 text-[11px]`
-            : `${AVATAR} size-30 text-[11px] group-aria-[current=page]:bg-ink group-aria-[current=page]:text-surface`
-        }
+        className={`${AVATAR} size-30 text-[11px] group-aria-[current=page]:bg-ink group-aria-[current=page]:text-surface`}
       >
-        {avatarText(title, thread.kind)}
+        {avatarText(title)}
       </span>
       <span className="flex min-w-[0px] flex-1 flex-col gap-1">
         <span className="flex flex-wrap items-center gap-6">
           <span className="text-control leading-[1.75] font-semibold wrap-anywhere text-ink">
             {title}
           </span>
-          {thread.needsAttribution ? (
-            <span className={ATTRIBUTION_CHIP}>답장 확인 필요</span>
-          ) : null}
+          {thread.dmFailed ? <span className={DM_FAILED_CHIP}>DM 못 보냄</span> : null}
         </span>
         {last === null ? null : (
           <span className="truncate text-meta leading-[1.5] text-dim">
-            {last.sender === ownSender ? `나: ${last.body}` : last.body}
+            {last.sender === policy.ownSender ? `나: ${last.body}` : last.body}
           </span>
         )}
       </span>
       <span className="flex shrink-0 flex-col items-end gap-4">
-        {last === null ? null : <span className={DATE}>{shortDate(last.sentAt)}</span>}
-        {thread.awaitingReplySince !== null ? (
+        {last === null ? null : <span className={DATE}>{shortDate(last.createdAt)}</span>}
+        {policy.awaiting && thread.awaitingReplySince !== null ? (
           <>
             <span
               aria-hidden="true"

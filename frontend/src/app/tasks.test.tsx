@@ -270,6 +270,35 @@ describe('보기 전환 (Tasks 시안 4장)', () => {
   })
 })
 
+describe('키보드 Tab 순서 (#337)', () => {
+  async function tabIntoPanel(user: ReturnType<typeof userEvent.setup>) {
+    const panel = screen.getByRole('tabpanel')
+    act(() => screen.getByRole('tab', { selected: true }).focus())
+    for (let press = 0; press < 10 && !panel.contains(document.activeElement); press++) {
+      await user.tab()
+    }
+    return document.activeElement
+  }
+
+  it('항목이 있는 목록 패널은 Tab 이 패널을 건너 첫 항목 링크로 간다', async () => {
+    const user = userEvent.setup()
+    renderApp(paths.tasks('ws_01'))
+    const first = await screen.findByRole('link', { name: '알림 문구 검토' }, { timeout: 5_000 })
+    expect(await tabIntoPanel(user)).toBe(first)
+  })
+
+  it('누를 것이 없는 빈 패널은 패널 자신이 Tab 으로 닿아 안내를 읽는다', async () => {
+    const user = userEvent.setup()
+    db.tasks = db.tasks.filter(({ workspace_id }) => workspace_id !== 'ws_01')
+    db.approvals = db.approvals.filter(({ workspace_id }) => workspace_id !== 'ws_01')
+    renderApp(`${paths.tasks('ws_01')}?tab=in_progress`)
+    expect(
+      await screen.findByRole('heading', { name: '이 구분에는 항목이 없어요' }, { timeout: 5_000 }),
+    ).toBeVisible()
+    expect(await tabIntoPanel(user)).toBe(screen.getByRole('tabpanel'))
+  })
+})
+
 describe('URL 탭·날짜 조건 (AC-03)', () => {
   function renderInBrowser(url: string) {
     window.history.replaceState(null, '', url)

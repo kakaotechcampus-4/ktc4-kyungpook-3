@@ -3,13 +3,14 @@ import { initialDb, replaceDb } from './db'
 import type { MeetingFlowMode, MockDb, MockInvitation } from './db'
 import { MOCK_NOW } from './fixtures/constants'
 import {
-  messagesMemberReview,
+  messagesMemberBundle,
   messagesMemberThread,
-  schedulePassedReview,
+  schedulePassedBundle,
 } from './fixtures/message'
 import { completeMeeting, failMeeting, setMeetingFlowMode } from './meetingFlow'
+import { notificationFixtures } from './fixtures/notification'
 import { setMockRole } from './sessions'
-import { createTask } from './task-state'
+import { blockBySilence, createTask } from './task-state'
 
 /*
  * 브라우저·E2E 용 시작 상태. 모두 픽스처 계정 pm@example.com / mock-password 로 로그인한다.
@@ -71,6 +72,8 @@ export const MOCK_SCENARIOS = [
   'settings-discord-skipped',
   'settings-unmapped',
   'settings-member',
+  // #330 알림·자동 막힘. ws_01 PM 이다
+  'notifications-default',
   // #320 팀원 초대. team-invitations 는 ws_01 PM 이 보는 초대 상태, invitation-pending 은 초대받은 사람의 가입 전이다
   'team-invitations',
   'invitation-pending',
@@ -559,13 +562,13 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
       state.extractions = state.extractions.filter(({ extraction_id }) => extraction_id !== 'ex_01')
       break
     case 'messages-default':
-      // 보내기 전 확인 2건(이재환 rv_01 은 마감 하루 전 예약, 정하늘 rv_02 는 지금 바로), 대화 4건 + 채널 1건.
-      // 이재환 th_01 은 오늘로 3일째 답장이 없고 rv_01 이 그 대화에서 승인을 기다린다
+      // 보낼 메시지 2통(이재환 bd_01 은 마감 하루 전, 정하늘 bd_02 는 직접 정한 시각이고 AI 초안을 기다린다), 대화 4건.
+      // 이재환 th_01 은 오늘로 3일째 답장이 없고 bd_01 이 그 대화에서 승인을 기다린다. 박지훈에게 마지막으로 보낸 DM 은 가지 못했다
       signInWith(state, ['ws_01'], 'ws_01')
       break
     case 'messages-empty':
       signInWith(state, ['ws_01'], 'ws_01')
-      state.messageReviews = state.messageReviews.filter(
+      state.messageBundles = state.messageBundles.filter(
         ({ workspace_id }) => workspace_id !== 'ws_01',
       )
       state.messageThreads = state.messageThreads.filter(
@@ -583,21 +586,21 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
       state.messageFailures.threadIds = ['th_01']
       break
     case 'messages-send-fail':
-      // 조회는 정상이고 발송·보내지 않음·고쳐 쓰기·발송 시점·답장·답장 판정만 5xx 다. db 는 바뀌지 않는다
+      // 조회는 정상이고 승인·보내지 않음·문구·시각 고치기·답장만 5xx 다. db 는 바뀌지 않는다
       signInWith(state, ['ws_01'], 'ws_01')
       state.messageFailures.actions = true
       break
     case 'messages-member':
-      // 일반 팀원(mb_01). 자기 대화 th_06 만 보이고, 그 대화의 승인 대기 rv_05 는 보이지 않는다
+      // 일반 팀원(mb_01). 자기 대화 th_06 만 보이고, 그 대화의 보낼 메시지 bd_05 는 보이지 않는다
       signInWith(state, ['ws_01'], 'ws_01')
       setMockRole('member', 'ws_01', state)
       state.messageThreads.push(structuredClone(messagesMemberThread))
-      state.messageReviews.push(structuredClone(messagesMemberReview))
+      state.messageBundles.push(structuredClone(messagesMemberBundle))
       break
     case 'messages-schedule-passed':
-      // rv_06 은 마감 하루 전 시각이 이미 지났다. 마감은 오늘이라 만료가 아니고, 발송은 409 다
+      // bd_06 은 승인하지 않은 채 보낼 시각(마감 하루 전)이 지났다. 마감은 오늘이라 만료가 아니고, 승인은 409 다
       signInWith(state, ['ws_01'], 'ws_01')
-      state.messageReviews.push(structuredClone(schedulePassedReview))
+      state.messageBundles.push(structuredClone(schedulePassedBundle))
       break
     case 'settings-discord-skipped':
       // 설정에서 Discord 를 연결한다. 연결해도 건너뜀으로 저장된 단계는 그대로다 (D-173)
@@ -622,6 +625,12 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
         display_name: null,
         connected_at: null,
       }
+      break
+    case 'notifications-default':
+      // 안 읽은 알림 4건(모르는 종류 1건 포함)과 읽은 알림 1건. tk_06 은 무응답으로 자동 막혔다
+      signInWith(state, ['ws_01'], 'ws_01')
+      state.notifications = structuredClone(notificationFixtures)
+      blockBySilence(taskOf(state, 'tk_06'), '2026-09-18T08:30:00+09:00', state)
       break
     case 'team-invitations':
       signInWith(state, ['ws_01'], 'ws_01')
