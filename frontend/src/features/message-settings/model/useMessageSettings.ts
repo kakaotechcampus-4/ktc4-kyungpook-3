@@ -34,10 +34,13 @@ export interface MessageSettingsState {
  * 변경은 한 공간에서 한 번에 하나씩 순서대로 나간다(mutation scope). 응답이 전체 설정이라 순서가 섞이면 늦게 온
  * 이전 응답이 새 값을 덮는다. 순서대로라 마지막 응답이 가장 새 값이고, 그 응답을 캐시에 그대로 쓴다.
  * 낙관적 반영은 캐시가 아니라 진행 중 변경의 변수로 겹친다 — 실패하면 그 변경의 겹침만 사라져 값이 돌아오고 알림을 띄운다.
+ * 조회는 변경과 순서가 맞지 않는다. 변경 전 값을 읽은 조회가 늦게 끝나 응답을 덮지 않게 응답을 쓰기 전에 진행 중 조회를 거두고,
+ * 기다리는 변경이 모두 끝나면 서버 값을 다시 읽는다.
  */
 export function useMessageSettings(workspaceId: string): MessageSettingsState {
   const queryClient = useQueryClient()
-  const query = useQuery(messageSettingsQueryOptions(workspaceId))
+  const options = messageSettingsQueryOptions(workspaceId)
+  const query = useQuery(options)
   const pending = useMutationState({
     filters: { mutationKey: mutationKey(workspaceId), status: 'pending' },
     select: (mutation) => mutation.state.variables as ChangeVariables | undefined,
@@ -51,9 +54,10 @@ export function useMessageSettings(workspaceId: string): MessageSettingsState {
       if (!session.isCurrent()) throw createClientError(CLIENT_ERROR_CODES.REQUEST_CANCELED)
       return updateMessageSettings(workspaceId, change, session.signal)
     },
-    onSuccess: (settings, { session }) => {
+    onSuccess: async (settings, { session }) => {
       if (!session.isCurrent()) return
-      queryClient.setQueryData(messageSettingsQueryOptions(workspaceId).queryKey, settings)
+      await queryClient.cancelQueries({ queryKey: options.queryKey })
+      queryClient.setQueryData(options.queryKey, settings)
     },
     onError: (error, { session }) => {
       if (!session.isCurrent()) return
@@ -64,6 +68,14 @@ export function useMessageSettings(workspaceId: string): MessageSettingsState {
           title: MESSAGE_SETTINGS_FAILED_TITLE,
           description: notice,
         })
+    },
+    onSettled: (_settings, _error, { session }) => {
+      // 끝나는 이 변경도 아직 pending 으로 센다. 1 이면 뒤에 기다리는 변경이 없다
+      if (
+        session.isCurrent() &&
+        queryClient.isMutating({ mutationKey: mutationKey(workspaceId) }) === 1
+      )
+        void queryClient.invalidateQueries({ queryKey: options.queryKey })
     },
   })
 
