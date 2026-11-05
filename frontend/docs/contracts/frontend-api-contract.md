@@ -383,13 +383,28 @@ AUDIO_TOO_LARGE(413)              DISCORD_USER_ALREADY_MAPPED(409)
  "status": "done",
  "started_at": "2026-09-15T14:00:00Z", "ended_at": "2026-09-15T14:45:00Z",
  "extraction_id": "ex_01",
- "failed_stage": null}
+ "failed_stage": null,
+ "progress": {"audio_merged": true, "transcribed": true, "extracted": true}}
 ```
 
 - `status` 는 `created` → `recording` → `processing` → `done` \| `failed`.
 - 웹 업로드 회의에는 상태가 하나 더 있다. `awaiting_speakers`(화자 지정 대기)다. 업로드 회의는 `processing` 에서 시작해, AI 가 화자 라벨을 보내면 `awaiting_speakers` 가 되고, PM 이 지정을 제출하면 `processing` 으로 돌아와 `done` \| `failed` 로 끝난다. 이 상태에서는 추출이 등록되지 않고, 같은 공간의 새 업로드를 막지도 않는다. 자세한 흐름과 PM 용 API 는 아래 §2.3.1 이다.
 - `extraction_id` 는 `status: done` 일 때만 채워진다.
 - ~~`progress` 가 응답에서 빠졌다.~~ **PR #59 가 §4.7-1 을 반영했다.** `progress`(audio_merged·transcribed·extracted)가 **필수 필드**로 온다. 진행률 UI 가 이 값을 쓴다.
+- `progress` 세 값이 true 가 되는 시점 (#384). 키·타입은 그대로이고 시점만 바뀐다.
+
+  | 값 | 현재 develop BE | BE PR #383 병합 뒤 |
+  |---|---|---|
+  | `audio_merged` | 회의에 발화(source)가 저장되면 true | AI 워커가 전사(`stt`)를 시작하면 true. 발화가 있어도 true |
+  | `transcribed` | `audio_merged` 와 같은 값 | 전사가 끝나 발화 저장(`sources`)에 들어가면 true. 발화가 있어도 true |
+  | `extracted` | 최신 추출에 항목이 1개 이상이면 true. 사실상 `done` 과 함께 | 추출이 끝나 인계(`handoff`)에 들어가면 true. 항목이 있는 최신 추출이 있어도 true |
+
+  - 근거: 현재 판정은 [meetings.py](../../../backend/app/api/meetings.py)의 `_compute_progress`. 병합 뒤 판정은 BE·AI PR #383(#381)의 같은 함수와 `services/meeting_stage.py`의 `stage_rank`다. AI 는 `ai/capture/recorder.py` `process_session` 의 단계 시작(`begin`)에서 `PATCH /meetings/{id}/stage` 로 알린다. 이 경로는 서비스 토큰 전용이라 FE 는 부르지 않는다.
+  - 상태: #383 은 2026-11-05 기준 열려 있다. 병합 뒤 열의 내용은 PR 코드와 #384 명세에서 확인한 것이며 실서버로 확인하지 않았다.
+  - 단계를 알리지 않는 회의는 병합 뒤에도 현재 develop 열처럼 데이터로 판정한다. 옛 회의, 웹 업로드 회의(업로드 처리 소비자 #254·#255 가 보고를 붙이기 전까지), 채팅 회의(PR #378, 병합 전)가 그렇다. 이 회의들은 `audio_merged`·`transcribed` 가 함께 바뀌어 처리 화면의 둘째 단계가 진행 중으로 보이지 않는다.
+  - 병합 뒤 달라지는 두 경우. 항목 0개로 `done` 된 회의와 인계 단계에서 `failed` 된 회의도 `extracted` 가 true 다(단계 값이 `done`·`failed` 뒤에도 남는다). FE 는 `done` 이면 `progress` 와 관계없이 세 단계를 끝난 것으로 보고, `failed` 이면 단계 목록을 그리지 않고 `failed_stage` 로 실패 안내를 고른다. 그래서 화면은 같다. [단계 테스트](../../src/entities/meeting/lib/processingSteps.test.ts)와 [처리 화면 테스트](../../src/app/meetingProcessingProgress.test.tsx)가 두 경우를 확인한다.
+  - 처리 화면의 세 단계 이름은 바꾸지 않는다. 병합 뒤 단계 구간은 1단계 「음성 파일 준비하기」가 워커 대기·모델 준비, 2단계 「음성을 텍스트로 옮기기」가 전사, 3단계 「결정사항과 할 일 뽑아내기」가 발화 저장과 추출이다. 인계 중에는 `status: processing` 인 채 세 단계가 모두 끝난 것(`3 / 3 단계 완료`)으로 보인다.
+  - FE 는 현재 처리 단계 값(`processing_stage`)을 요청하지 않는다. 화면의 세 단계는 `progress` 세 값으로 정해지고, 3단계 안의 발화 저장·추출은 나눠 보이지 않는다. 단계를 알리는 회의의 인계 구간은 `processing` + `extracted: true` 로 이미 알 수 있다.
 - 이미 종료된 회의에 `/end` 를 호출하면 409 `MEETING_ALREADY_ENDED`.
 
 ### 2.3.1 업로드 회의 화자 지정 — PM 경로 (#266)
