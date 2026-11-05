@@ -537,3 +537,59 @@ def test_sweeper_failed_the_meeting_while_we_wait_then_deadline_ends_it_quietly(
     assert _step(env, diar).event == "failed"
     assert _state(env)["state"] == "failed" and not _state(env).get("fail_pending")
     assert not (env.rec / f"upload_{MID}").exists()
+
+
+# --- #326 리뷰(Y-Jimin)와 같은 문제: 오류 봉투 없는 404 는 "회의·파일이 없음" 이 아니다 ---
+# BE 는 없는 회의·파일에 늘 MEETING_NOT_FOUND 봉투를 준다(backend/app/api/uploads.py _not_found). 봉투 없는 404 는
+# 잘못된 경로·프록시·BE 배포 중이라 일시 실패로 다시 해 본다. 그 회의를 건너뛰거나 실패로 보고하면 되돌릴 수 없다.
+
+class Bare404(BeClient):
+    def __init__(self, inner, *, on):
+        self.__dict__.update(inner.__dict__)
+        self.on = set(on)
+
+    def _bare(self, what):
+        if what in self.on:
+            raise BeError("HTTP_404", "not found", status=404)
+
+    def claim_upload(self, meeting_id):
+        self._bare("claim")
+        return super().claim_upload(meeting_id)
+
+    def download_upload(self, meeting_id, dest):
+        self._bare("file")
+        return super().download_upload(meeting_id, dest)
+
+    def fail_meeting(self, meeting_id, failed_stage):
+        self._bare("fail")
+        return super().fail_meeting(meeting_id, failed_stage)
+
+
+def test_a_bare_404_on_claim_is_retried_not_skipped(env):
+    client = Bare404(env.client, on={"claim"})
+    assert _step(env, client=client).event == "retry"
+    assert _state(env)["state"] == "claiming"   # 기록을 지우지 않는다(건너뛰면 다시 claim 하지 못한다)
+    client.on.clear()
+    env.clock.advance(backoff_s(1))
+    assert _drive(env, client=client)[-1] == "done"
+
+
+def test_a_bare_404_on_the_file_is_retried_not_a_permanent_failure(env):
+    client = Bare404(env.client, on={"file"})
+    events = _drive(env, client=client)
+    assert events[-1] == "retry" and "failed" not in events
+    assert env.be.meetings[MID]["status"] == "processing"   # 멀쩡한 회의를 실패로 보고하지 않는다
+    client.on.clear()
+    env.clock.advance(backoff_s(1))
+    assert _drive(env, client=client)[-1] == "done"
+
+
+def test_a_bare_404_on_the_fail_report_keeps_it_pending(env):
+    env.be.uploads[MID]["item"]["started_at"] = "2026-11-03T10:00:00"   # 시간대 없음 → 바로 실패 보고
+    client = Bare404(env.client, on={"fail"})
+    assert _drive(env, client=client)[-1] == "fail_pending"
+    assert _state(env)["fail_pending"]   # 끝난 것으로 보지 않는다
+    client.on.clear()
+    env.clock.advance(backoff_s(1))
+    assert _step(env, client=client).event == "failed"
+    assert env.be.meetings[MID]["status"] == "failed"
