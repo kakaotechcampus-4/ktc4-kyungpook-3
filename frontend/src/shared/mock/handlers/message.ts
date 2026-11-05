@@ -86,6 +86,7 @@ function bundleContext(workspaceId: string): BundleContext {
     .at(0)
   return {
     bundles: workspaceBundles(workspaceId),
+    tasks: db.tasks.filter(({ workspace_id }) => workspace_id === workspaceId),
     threads: db.messageThreads.filter(({ workspace_id }) => workspace_id === workspaceId),
     pmName: pm?.display_name ?? 'PM',
     workspaceName:

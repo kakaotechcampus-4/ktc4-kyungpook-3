@@ -10,6 +10,7 @@ import {
 import type { MockBundle, MockMessageThread } from './fixtures/message'
 import {
   approveBundle,
+  bundleDto,
   cancelBundle,
   editBundle,
   rebuildBundle,
@@ -22,6 +23,7 @@ import type { BundleContext } from './message-state'
 const bundle = (): MockBundle => structuredClone(messageBundleFixtures[0])
 const context = (bundles: MockBundle[] = [], overrides: Partial<BundleContext> = {}) => ({
   bundles,
+  tasks: [],
   threads: messageThreadFixtures,
   pmName: '김서연',
   workspaceName: '카테캠 3팀',
@@ -174,6 +176,39 @@ describe('editBundle — 같은 대화의 예정 묶음이 있는 시각으로 �
       ['rm_01', 'bd_01'],
       ['rm_07', 'bd_01'],
     ])
+  })
+
+  it('규칙 문구와 응답 리마인드는 태스크의 지금 제목·마감을 쓴다 — 리마인드를 만든 뒤 태스크를 고쳤어도', () => {
+    const { into, source } = pair()
+    const tasks = [{ task_id: 'tk_11', title: 'ERD 최종본', due_date: '2026-09-25' }]
+    editBundle(source, { scheduled_at: into.scheduled_at }, MOCK_NOW, {
+      ...context([into, source]),
+      tasks,
+    })
+    expect(into.body).toBe(
+      `이재환님, 김서연이에요.
+'API 명세서' 마감이 9/24(목)이라 한번 여쭤봐요.
+${ASK}
+
+'ERD 최종본' 마감이 9/25(금)이라 한번 여쭤봐요.
+${ASK}`,
+    )
+    expect(bundleDto(into).reminders.at(-1)).toMatchObject({
+      task_id: 'tk_11',
+      task_title: 'ERD 최종본',
+      due_date: '2026-09-25',
+    })
+  })
+
+  it('합친 리마인드는 만든 순서(created_at, reminder_id)로 응답하고 문구도 그 순서다', () => {
+    const { into, source, space } = pair()
+    source.reminders[0].created_at = '2026-09-14T09:00:00+09:00'
+    editBundle(source, { scheduled_at: into.scheduled_at }, MOCK_NOW, space)
+    expect(bundleDto(into).reminders.map(({ reminder_id }) => reminder_id)).toEqual([
+      'rm_07',
+      'rm_01',
+    ])
+    expect(into.body.indexOf("'ERD 정리'")).toBeLessThan(into.body.indexOf("'API 명세서'"))
   })
 
   it('지금과 같은 시각은 옮긴 것이 아니라 아무것도 합치지 않는다', () => {

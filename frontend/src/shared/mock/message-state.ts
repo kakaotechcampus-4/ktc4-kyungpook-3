@@ -157,10 +157,12 @@ export function approveBundle(
 }
 
 /**
- * 묶음 구성이 바뀔 때 백엔드가 db 에서 읽는 것 — 합칠 상대가 될 그 공간의 묶음과, 문구 틀의 PM 이름·공간 이름·나간 DM
+ * 묶음 구성이 바뀔 때 백엔드가 db 에서 읽는 것 — 합칠 상대가 될 그 공간의 묶음, 규칙 문구에 쓸 지금의 태스크,
+ * 문구 틀의 PM 이름·공간 이름·나간 DM
  */
 export interface BundleContext {
   bundles: readonly MockBundle[]
+  tasks: readonly { task_id: string; title: string; due_date: string | null }[]
   threads: readonly MockMessageThread[]
   pmName: string
   workspaceName: string
@@ -205,10 +207,19 @@ const byCreated = (left: ReminderDto, right: ReminderDto) =>
 
 /**
  * 묶음 구성이 바뀐 뒤 부른다 (백엔드 _rebuild). 판을 올리고 승인을 푼다.
- * 예정 리마인드가 없으면 묶음을 닫고, 메모 있는 하나뿐이면 그 메모가, 아니면 규칙 문구가 새 문구다
+ * 예정 리마인드가 없으면 묶음을 닫고, 메모 있는 하나뿐이면 그 메모가, 아니면 규칙 문구가 새 문구다.
+ * 백엔드는 태스크의 지금 제목·마감을 읽는다 — 리마인드에 옮겨 둔 값을 지금 태스크로 고친 뒤 문구를 만든다.
+ * 픽스처에 없는 태스크는 옮겨 둔 값 그대로다
  */
 export function rebuildBundle(bundle: MockBundle, context: BundleContext): void {
-  const reminders = bundle.reminders.filter(({ status }) => status === 'scheduled').sort(byCreated)
+  bundle.reminders.sort(byCreated)
+  const reminders = bundle.reminders.filter(({ status }) => status === 'scheduled')
+  for (const reminder of reminders) {
+    const task = context.tasks.find(({ task_id }) => task_id === reminder.task_id)
+    if (task === undefined) continue
+    reminder.task_title = task.title
+    reminder.due_date = task.due_date
+  }
   bundle.draft_version += 1
   bundle.approved = false
   bundle.approved_at = null

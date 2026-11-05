@@ -30,7 +30,7 @@ PM 이 묶음 A 를 연 채(`?review=A`) 보낼 시각을 같은 팀원의 예�
 
 ### MSW
 
-[상태](../../../src/shared/mock/message-state.ts)의 `editBundle` 이 BE `edit_bundle` 순서대로 판단한다. 지금과 같은 시각은 보내지 않은 것으로 보고, 지난 시각이면 409 다. 같은 대화의 예정 묶음과 같은 시각이면서 문구도 보내면 400 `INVALID_REQUEST` 다. 그 밖에 같은 시각의 묶음이 있으면 리마인드를 옮기고 두 묶음을 `rebuildBundle`(BE `_rebuild`)로 다시 만든다. 판이 오르고 승인이 풀리며, 리마인드가 남지 않은 A 는 `cancelled` 다. 문구는 BE 의 규칙 문구와 틀(`rule_line`·`framed_body`)을 따른다. 틀의 PM 은 그 공간에 가장 먼저 등록된 PM 이다. 픽스처 리마인드에 만든 사람이 없기 때문이다. 시나리오 [`messages-merge`](../../../src/shared/mock/scenarios.ts)는 승인한 `bd_01`(09/23 09:00)과 승인 전 `bd_07`(09/21 18:00, 마감 9/24)을 둔다. 모의 DB 모양은 바꾸지 않아 저장 버전을 올리지 않았다.
+[상태](../../../src/shared/mock/message-state.ts)의 `editBundle` 이 BE `edit_bundle` 순서대로 판단한다. 지금과 같은 시각은 보내지 않은 것으로 보고, 지난 시각이면 409 다. 같은 대화의 예정 묶음과 같은 시각이면서 문구도 보내면 400 `INVALID_REQUEST` 다. 그 밖에 같은 시각의 묶음이 있으면 리마인드를 옮기고 두 묶음을 `rebuildBundle`(BE `_rebuild`)로 다시 만든다. 판이 오르고 승인이 풀리며, 리마인드가 남지 않은 A 는 `cancelled` 다. 문구는 BE 의 규칙 문구와 틀(`rule_line`·`framed_body`)을 따른다. BE 처럼 태스크의 지금 제목·마감(`db.tasks`)으로 만들고, 다시 만든 묶음의 리마인드도 그 값과 만든 순서(`created_at`, `reminder_id`)로 응답한다. 틀의 PM 은 그 공간에 가장 먼저 등록된 PM 이다. 픽스처 리마인드에 만든 사람이 없기 때문이다. 시나리오 [`messages-merge`](../../../src/shared/mock/scenarios.ts)는 승인한 `bd_01`(09/23 09:00)과 승인 전 `bd_07`(09/21 18:00, 마감 9/24)을 둔다. 모의 DB 모양은 바꾸지 않아 저장 버전을 올리지 않았다.
 
 ### 검증 (2026-11-05)
 
@@ -40,7 +40,7 @@ PM 이 묶음 A 를 연 채(`?review=A`) 보낼 시각을 같은 팀원의 예�
 | `npm.cmd run lint` | 0 | |
 | `npm.cmd run format:check` | 0 | |
 | `npm.cmd run build` | 0 | |
-| `npx vitest run --maxWorkers=1` message-state·messagesActionsMsw·messageScenarios·scenarios 테스트와 `entities/message`·`features/message-action`·`widgets/message-inbox` | 0 | 8파일 104개 통과 |
+| `npx vitest run --maxWorkers=1` message-state·messagesActionsMsw·messageScenarios·scenarios 테스트와 `entities/message`·`features/message-action`·`widgets/message-inbox` | 0 | 8파일 106개 통과(Codex 리뷰 반영 뒤 다시 실행) |
 | 변이 확인: `ReviewDetail.tsx` 만 이전으로 되돌리고 `messagesActionsMsw` 의 합치기 테스트 | 1 | `expected '?review=bd_07' to be '?review=bd_01'` 로 실패. 되돌린 파일은 복구했다 |
 
 새 테스트:
@@ -63,6 +63,8 @@ PM 이 묶음 A 를 연 채(`?review=A`) 보낼 시각을 같은 팀원의 예�
 
 - 실제 서버에서 합치기를 해 보지 않았다. MSW 기준 확인이다.
 - 합치기 전 두 묶음이 모두 승인 전이었어도 알림은 「승인이 풀렸으니」라고 쓴다. 응답만으로는 합치기 전 승인 여부를 알 수 없다.
+- 메시지 픽스처의 태스크 ID 가 태스크 픽스처와 겹친다. 메시지의 `tk_01` 은 'API 명세서'(9/24)인데 태스크 픽스처의 `tk_01` 은 '로그인 API 연동'(9/20)이다. 그래서 브라우저에서 `messages-merge` 로 합치면 `bd_01` 의 문구와 묶은 태스크가 '로그인 API 연동'(9/20)으로 바뀌고, 마감 하루 전이 09/19 09:00 이 되어 `직접 정하기` 카드가 골라진다. 목 데이터 문제이고 화면 동작과는 상관없다.
+- MSW 는 같은 시각인지를 밀리초까지만 비교한다. BE 는 마이크로초까지 구분한다. 화면은 분 단위 시각만 보내므로 영향이 없어 그대로 두었다.
 
 ## 2026-11-04 실제 메시지 API 연결 (#315)
 
