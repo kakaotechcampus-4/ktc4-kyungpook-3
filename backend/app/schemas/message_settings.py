@@ -14,6 +14,13 @@ class NudgeRule(BaseModel):
     hour: StrictInt = Field(ge=0, le=23)
 
 
+class NudgeRuleOut(BaseModel):
+    """응답용. 저장된 값은 입력 범위가 나중에 좁아져도 그대로 돌려준다."""
+
+    days_before: int
+    hour: int
+
+
 class MessageSettingsPatch(BaseModel):
     """보낸 키만 바꾼다. 빈 본문과 명시적 null 은 거절한다."""
 
@@ -57,7 +64,7 @@ class MessageSettingsResponse(BaseModel):
     due_reminder: bool
     minutes_summary: bool
     silence_alert: bool
-    nudge_rule: NudgeRule
+    nudge_rule: NudgeRuleOut
     pm_alert_method: str
     reminder_auto_approve: bool
     saved: bool
