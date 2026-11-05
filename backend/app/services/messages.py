@@ -469,9 +469,10 @@ def _auto_approve_due(db: Session, now: datetime, exclude: list[str]) -> None:
     """자동 승인이 켜진 워크스페이스의 승인 전 묶음 중 켠 뒤에 시각이 된 것을 승인한다. 초안 버전·미래 시각은 보지 않는다.
 
     재촉 제안(due_reminder)이 꺼져 있으면 끄기 전에 만든 스케줄러 제안만 있는 묶음은 승인하지 않는다.
+    PM 재촉이 섞인 묶음은 스케줄러 제안을 취소해 빼고, PM 재촉만으로 문구를 다시 만든 뒤 승인한다.
     """
-    bundles = db.scalars(
-        select(ReminderBundle)
+    rows = db.execute(
+        select(ReminderBundle, WorkspaceMessageSettings.due_reminder)
         .join(
             WorkspaceMessageSettings,
             WorkspaceMessageSettings.workspace_id == ReminderBundle.workspace_id,
@@ -490,7 +491,13 @@ def _auto_approve_due(db: Session, now: datetime, exclude: list[str]) -> None:
         )
         .with_for_update(skip_locked=True, of=ReminderBundle)
     ).all()
-    for bundle in bundles:
+    for bundle, due_reminder in rows:
+        if not due_reminder:
+            for reminder in bundle_reminders(db, bundle.bundle_id):
+                if reminder.origin == ReminderOrigin.SCHEDULER:
+                    cancel_reminder(db, reminder, now=now)
+            if bundle.status != ReminderStatus.SCHEDULED:
+                continue
         bundle.approved_at = now
         bundle.approved_by = None
         # approve_bundle 과 같이 오던 AI 초안을 닫는다. 보낸 묶음이 초안 대기로 남지 않게 한다.
