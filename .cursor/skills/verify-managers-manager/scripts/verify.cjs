@@ -10,7 +10,7 @@ const root = path.resolve(__dirname, '../../../..')
 const frontend = path.join(root, 'frontend')
 const frontendRequire = createRequire(path.join(frontend, 'package.json'))
 const features = {
-  auth: { files: ['signup-onboarding.e2e.ts', 'select-switch.e2e.ts', 'onboarding-start.e2e.ts', 'onboarding-design.e2e.ts', 'restore.e2e.ts', 'password-reset.e2e.ts'] },
+  auth: { files: ['signup-onboarding.e2e.ts', 'select-switch.e2e.ts', 'onboarding-start.e2e.ts', 'onboarding-design.e2e.ts', 'restore.e2e.ts', 'password-reset.e2e.ts', 'login-return.e2e.ts'] },
   meetings: { files: ['meeting-flow.e2e.ts'] },
   tasks: { files: ['tasks-approval.e2e.ts'], grep: '회의록의 확인 필요 항목|일반 팀원이 승인 URL|키보드 — 목록 탭' },
   dashboard: { files: ['dashboard.e2e.ts'] },

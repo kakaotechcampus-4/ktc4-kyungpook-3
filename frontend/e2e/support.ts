@@ -1,7 +1,7 @@
 import { expect } from '@playwright/test'
-import type { Page } from '@playwright/test'
+import type { Page, TestInfo } from '@playwright/test'
 
-/** E2E 시나리오 이름 (shared/mock/scenarios.ts 의 MOCK_SCENARIOS). M4 U1 다섯 개 + M5 회의 흐름 + M6 태스크·승인 + M7 대시보드 + M8 태스크 보기·설정 + #320 팀원 초대 + #256 화자 지정 + #370 재촉 만들기 */
+/** E2E 시나리오 이름 (shared/mock/scenarios.ts 의 MOCK_SCENARIOS). M4 U1 다섯 개 + M5 회의 흐름 + M6 태스크·승인 + M7 대시보드 + M8 태스크 보기·설정 + #320 팀원 초대 + #256 화자 지정 + #370 재촉 만들기 + #411 알림 띠 */
 export type Scenario =
   | 'signed-out'
   | 'no-workspace'
@@ -47,6 +47,7 @@ export type Scenario =
   | 'team-invitations'
   | 'invitation-pending'
   | 'messages-default'
+  | 'messages-member-push'
 
 /**
  * 모의 db 를 그 시나리오로 초기화하고 path 로 들어간다. 시나리오 파라미터는 저장값보다 앞서고
@@ -120,4 +121,11 @@ export async function expectMinutesOpened(page: Page, timeout = 15_000): Promise
     if (!minutes.test(new URL(page.url()).pathname) && (await open.isVisible())) await open.click()
     expect(minutes.test(new URL(page.url()).pathname)).toBe(true)
   }).toPass({ timeout })
+}
+
+/** 화면을 테스트 출력 폴더에 이름대로 남기고 보고서에 붙인다 — 검증 실행의 증거 폴더(test-results)에 그대로 남는다 */
+export async function capture(page: Page, testInfo: TestInfo, name: string): Promise<void> {
+  const path = testInfo.outputPath(name)
+  await page.screenshot({ path })
+  await testInfo.attach(name, { path, contentType: 'image/png' })
 }

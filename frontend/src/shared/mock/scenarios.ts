@@ -78,6 +78,8 @@ export const MOCK_SCENARIOS = [
   'messages-thread-error',
   'messages-send-fail',
   'messages-member',
+  // #411 messages-member 에 서버 푸시 공개키를 더했다. 리마인드 대화 위 알림 띠가 보인다
+  'messages-member-push',
   'messages-schedule-passed',
   'messages-merge',
   // M8-B 설정·팀 연결 관리. settings-discord-skipped 만 새로 만든 공간(ws_03)이고 나머지는 ws_01 이다
@@ -717,11 +719,13 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
       state.messageFailures.actions = true
       break
     case 'messages-member':
+    case 'messages-member-push':
       // 일반 팀원(mb_01). 자기 대화 th_06 만 보이고, 그 대화의 보낼 메시지 bd_05 는 보이지 않는다
       signInWith(state, ['ws_01'], 'ws_01')
       setMockRole('member', 'ws_01', state)
       state.messageThreads.push(structuredClone(messagesMemberThread))
       state.messageBundles.push(structuredClone(messagesMemberBundle))
+      if (scenario === 'messages-member-push') state.push.publicKey = 'AQID'
       break
     case 'messages-schedule-passed':
       // bd_06 은 승인하지 않은 채 보낼 시각(마감 하루 전)이 지났다. 마감은 오늘이라 만료가 아니고, 승인은 409 다
