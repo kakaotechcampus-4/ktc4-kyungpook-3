@@ -756,3 +756,49 @@ describe('화자 지정 대기 (#256)', () => {
     expect(minutesRequests(log)).toEqual([])
   })
 })
+
+describe('받아 둔 회의록 뒤 403·404 (#405)', () => {
+  const refusal = (status: 403 | 404) =>
+    status === 404
+      ? fail('MEETING_NOT_FOUND', '회의가 없습니다.', 404)
+      : fail('FORBIDDEN', '이 작업을 수행할 권한이 없습니다.', 403)
+
+  it.each([403, 404] as const)(
+    '다시 받은 상세가 %i 면 받아 둔 회의록 대신 볼 수 없는 회의를 보이고 본문·추출을 다시 묻지 않는다',
+    async (status) => {
+      const app = renderApp(MT_09)
+      await screen.findByRole('heading', { level: 2, name: '3주차 정기회의' })
+      server.use(http.get('/api/v1/meetings/mt_09', () => refusal(status)))
+      await act(() =>
+        app.queryClient.invalidateQueries({
+          queryKey: workspaceKey('ws_01', 'meetings', 'detail', 'mt_09'),
+        }),
+      )
+      expect(
+        await screen.findByRole('heading', { level: 2, name: '이 회의를 볼 수 없어요' }),
+      ).toBeInTheDocument()
+      expect(screen.queryByRole('heading', { level: 2, name: '3주차 정기회의' })).toBeNull()
+      const log = recordRequests()
+      await act(() => app.queryClient.invalidateQueries({ queryKey: workspaceKey('ws_01') }))
+      await settle(150)
+      expect(minutesRequests(log)).toEqual([])
+      expect(extractionRequests(log)).toEqual([])
+    },
+  )
+
+  it.each([403, 404] as const)(
+    '다시 받은 회의록 본문이 %i 면 받아 둔 본문 대신 볼 수 없는 회의를 보인다',
+    async (status) => {
+      const app = renderApp(MT_09)
+      await screen.findByRole('heading', { level: 2, name: '3주차 정기회의' })
+      server.use(http.get('/api/v1/meetings/mt_09/minutes', () => refusal(status)))
+      await act(() =>
+        app.queryClient.invalidateQueries({ queryKey: workspaceKey('ws_01', 'minutes', 'mt_09') }),
+      )
+      expect(
+        await screen.findByRole('heading', { level: 2, name: '이 회의를 볼 수 없어요' }),
+      ).toBeInTheDocument()
+      expect(screen.queryByRole('heading', { level: 2, name: '3주차 정기회의' })).toBeNull()
+    },
+  )
+})

@@ -1263,3 +1263,93 @@ describe('키보드·포커스 (AC-06)', () => {
     expect(elsewhere).toHaveFocus()
   })
 })
+
+describe('최신 완료 회의의 상세가 403·404 (#405)', () => {
+  const notFound = (...ids: string[]) =>
+    http.get('/api/v1/meetings/:meetingId', ({ params }) =>
+      ids.includes(String(params.meetingId))
+        ? fail('MEETING_NOT_FOUND', '회의가 없습니다.', 404)
+        : undefined,
+    )
+  const lead = () => screen.getByText(/정리했어요/).textContent?.replace(/\s+/g, ' ')
+  const detailRequests = (log: Log, id: string) =>
+    log.started.filter(({ method, path }) => method === 'GET' && path === `/meetings/${id}`)
+  const listRequests = (log: Log) =>
+    log.started.filter(
+      ({ method, path }) => method === 'GET' && path === '/workspaces/ws_01/meetings',
+    )
+  function deleteMeeting(id: string) {
+    db.meetings.splice(
+      db.meetings.findIndex(({ meeting_id }) => meeting_id === id),
+      1,
+    )
+    db.meetingSummaries.splice(
+      db.meetingSummaries.findIndex(({ meeting_id }) => meeting_id === id),
+      1,
+    )
+  }
+
+  it('받아 둔 최근 반영의 회의가 지워져 404 가 오면 회의 목록을 다시 받아 다음 완료 회의를 보인다', async () => {
+    const app = await openDashboard()
+    deleteMeeting('mt_09')
+    const log = recordRequests()
+    await act(() =>
+      app.queryClient.invalidateQueries({
+        queryKey: workspaceKey('ws_01', 'meetings', 'detail', 'mt_09'),
+      }),
+    )
+    await waitFor(() => expect(lead()).toContain('채팅 2026-09-11'))
+    await waitFor(() => expect(recentText().join(' ')).toContain('배포 스크립트'))
+    expect(listRequests(log).length).toBeGreaterThan(0)
+    expect(screen.queryByText('최근 반영을 불러오지 못했어요')).toBeNull()
+  })
+
+  it('목록에 남은 회의가 연달아 404 여도 다음 완료 회의로 넘어가고, 404 받은 회의를 다시 묻지 않는다', async () => {
+    server.use(notFound('mt_09', 'mt_08'))
+    const log = recordRequests()
+    const app = renderApp(DASHBOARD)
+    await waitFor(() => expect(lead()).toContain('2주차 정기회의'), { timeout: 8_000 })
+    expect(screen.queryByText('최근 반영을 불러오지 못했어요')).toBeNull()
+    await settle(150)
+    const asked = [detailRequests(log, 'mt_09').length, detailRequests(log, 'mt_08').length]
+    await act(() =>
+      app.queryClient.invalidateQueries({ queryKey: workspaceKey('ws_01', 'meetings', 'list') }),
+    )
+    await settle(150)
+    expect([detailRequests(log, 'mt_09').length, detailRequests(log, 'mt_08').length]).toEqual(
+      asked,
+    )
+    expect(lead()).toContain('2주차 정기회의')
+  })
+
+  it('완료 회의가 모두 404 면 정리한 회의가 없다고 보인다', async () => {
+    server.use(notFound('mt_09', 'mt_08', 'mt_07'))
+    renderApp(DASHBOARD)
+    await waitFor(() => expect(screen.getAllByText('아직 정리한 회의가 없어요')).toHaveLength(2), {
+      timeout: 8_000,
+    })
+    expect(screen.queryByText('최근 반영을 불러오지 못했어요')).toBeNull()
+  })
+
+  it('받아 둔 최근 반영이 있어도 다시 받은 상세가 403 이면 최근 반영을 오류로 바꾸고 추출을 다시 묻지 않는다', async () => {
+    const app = await openDashboard()
+    server.use(
+      http.get('/api/v1/meetings/mt_09', () =>
+        fail('FORBIDDEN', '이 작업을 수행할 권한이 없습니다.', 403),
+      ),
+    )
+    await act(() =>
+      app.queryClient.invalidateQueries({
+        queryKey: workspaceKey('ws_01', 'meetings', 'detail', 'mt_09'),
+      }),
+    )
+    expect(await screen.findByText('최근 반영을 불러오지 못했어요')).toBeInTheDocument()
+    expect(screen.queryByRole('list', { name: '최근 반영 목록' })).toBeNull()
+    const log = recordRequests()
+    await act(() =>
+      app.queryClient.invalidateQueries({ queryKey: workspaceKey('ws_01', 'extractions') }),
+    )
+    await settle(150)
+    expect(log.started.filter(({ path }) => path.startsWith('/extractions'))).toEqual([])
+  })
+})
