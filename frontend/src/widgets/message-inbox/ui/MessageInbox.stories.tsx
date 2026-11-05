@@ -98,6 +98,52 @@ export const 고쳐_쓰기: Story = {
   },
 }
 
+/** 묶은 태스크 빼기 확인 — 남는 태스크가 있다. 확인하기 전에는 빼지 않고 발송이 잠긴다 (#370) */
+export const 태스크_빼기_확인: Story = {
+  args: { bundleId: 'bd_02' },
+  parameters: { route: paths.messageReview('ws_01', 'bd_02') },
+  play: async ({ canvasElement }) => {
+    const detail = detailOf(canvasElement)
+    await userEvent.click(await detail.findByRole('button', { name: "'퍼블리싱' 빼기" }))
+    const confirm = detail.getByRole('group', { name: '빼면 남은 태스크로 문구를 다시 만들어요.' })
+    await expect(confirm).toHaveFocus()
+    await expect(within(confirm).getByRole('button', { name: '빼기' })).toBeEnabled()
+    await expect(detail.getByText('태스크를 뺄지 정한 뒤에 보낼 수 있어요.')).toBeVisible()
+  },
+}
+
+/** 마지막 태스크 빼기 확인 — 빼면 이 메시지를 보내지 않는다 (#370) */
+export const 마지막_태스크_빼기_확인: Story = {
+  args: { bundleId: 'bd_01' },
+  parameters: { route: paths.messageReview('ws_01', 'bd_01') },
+  play: async ({ canvasElement }) => {
+    const detail = detailOf(canvasElement)
+    await userEvent.click(await detail.findByRole('button', { name: "'API 명세서' 빼기" }))
+    const confirm = detail.getByRole('group', {
+      name: '마지막 태스크예요. 빼면 이재환님에게 이 메시지를 보내지 않아요.',
+    })
+    await expect(within(confirm).getByRole('button', { name: '빼고 보내지 않기' })).toBeEnabled()
+  },
+}
+
+/** 메모 고치기 — 지금 메모로 채운 칸. 바꾸기 전에는 저장이 잠기고, 바꾸면 문구를 다시 만든다고 알린다 (#370) */
+export const 메모_고치기: Story = {
+  args: { bundleId: 'bd_02' },
+  parameters: { route: paths.messageReview('ws_01', 'bd_02') },
+  play: async ({ canvasElement }) => {
+    const detail = detailOf(canvasElement)
+    await userEvent.click(await detail.findByRole('button', { name: "'퍼블리싱' 메모 고치기" }))
+    const field = detail.getByRole('textbox', { name: "'퍼블리싱' 메모" })
+    await expect(field).toHaveFocus()
+    await expect(field).toHaveValue('시안 2차 반영분까지')
+    await expect(detail.getByRole('button', { name: '저장' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    )
+    await expect(detail.getByText(/메모를 바꾸면 문구를 다시 만들고 승인이 풀려요/)).toBeVisible()
+  },
+}
+
 /** 승인이 실패했다 — 화면은 그대로이고 그 자리에 다시 시도를 알린다 */
 export const 발송_실패: Story = {
   args: { bundleId: 'bd_01' },

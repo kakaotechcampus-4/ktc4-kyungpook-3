@@ -1,4 +1,4 @@
-import type { Bundle, MessageAction } from '@/entities/message'
+import type { Bundle, MessageAction, MessageActionOutcome } from '@/entities/message'
 import { formatSeoulDateTime } from '@/shared/lib/date'
 
 /* 메시지 쓰기 행동의 문구. 해요체로 원인과 다음 행동을 함께 쓴다 (D-149) */
@@ -64,6 +64,19 @@ export function approveNotice(recipientName: string, scheduledAt: string): strin
 export function cancelNotice(recipientName: string): string {
   return `${recipientName}님에게 보낼 메시지를 보내지 않기로 했어요`
 }
+
+/** 묶은 태스크 하나를 뺀 알림. 마지막 하나를 빼 묶음이 닫히면(closed) 보내지 않기로 한 것과 같다 */
+export function removeTaskNotice(
+  taskTitle: string,
+  recipientName: string,
+  outcome: MessageActionOutcome,
+): string {
+  return outcome.kind === 'closed'
+    ? `마지막 태스크를 빼서 ${recipientName}님에게 보낼 메시지를 보내지 않기로 했어요.`
+    : `'${taskTitle}'을 뺐어요. 문구를 다시 만들었으니 확인하고 승인해 주세요.`
+}
+
+export const NOTE_SAVED_NOTICE = '메모를 고쳤어요. 문구를 다시 만들었으니 확인하고 승인해 주세요.'
 
 /** 합친 묶음의 단계로 고른다. 서버는 합치면 승인을 풀므로 지금은 늘 승인 전이다 */
 const MERGE_NOTICE: Record<Bundle['stage'], string> = {

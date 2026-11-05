@@ -30,8 +30,8 @@ export interface MessageActionFailure {
 }
 
 export interface RunOptions {
-  /** 성공 알림. 없으면 알리지 않는다. 합쳐졌으면 대신 합쳤다고 알린다 */
-  notice?: string
+  /** 성공 알림. 없으면 알리지 않는다. 결과에 따라 다르면 함수로 준다. 합쳐졌으면 대신 합쳤다고 알린다 */
+  notice?: string | ((outcome: MessageActionOutcome) => string)
   /** 서버가 성공하고 메시지 캐시를 다시 받은 뒤에 부른다 */
   onSuccess?: (outcome: MessageActionOutcome) => void
 }
@@ -103,7 +103,7 @@ function knownFailureOf(error: unknown): KnownFailure | null {
 }
 
 /**
- * 메시지 쓰기 — 승인·보내지 않음·문구·보낼 시각·답장 (계약 §5.7).
+ * 메시지 쓰기 — 승인·보내지 않음·문구·보낼 시각·답장·태스크 빼기·메모 (계약 §5.7).
  * - 서버 성공 뒤에만 반영한다. 낙관적 업데이트는 없다 — 메시지 캐시를 무효화해 서버 상태로 다시 그린다 (D-137, 계획 C-5)
  * - 다시 받기까지 끝나야 mutation 이 끝난다. 그래서 성공 뒤 이동이 처리 전 목록을 잠깐 보이지 않는다
  * - 실패하면 화면은 그대로이고 실패를 남긴다. 자동 재시도는 없고 `retry` 로 다시 보낸다. `run` 은 이전 실패를 지운다
@@ -167,7 +167,12 @@ export function useMessageAction(workspaceId: string): MessageActionControl {
             if (!isCurrentSession()) return
             if (action.kind === 'schedule')
               forgetTimePassed(queryClient, workspaceId, action.bundleId)
-            const notice = outcome.kind === 'merged' ? mergeNotice(outcome.into) : options.notice
+            const notice =
+              outcome.kind === 'merged'
+                ? mergeNotice(outcome.into)
+                : typeof options.notice === 'function'
+                  ? options.notice(outcome)
+                  : options.notice
             if (notice !== undefined) toast.show({ key: 'message-review-action', title: notice })
             options.onSuccess?.(outcome)
           },
