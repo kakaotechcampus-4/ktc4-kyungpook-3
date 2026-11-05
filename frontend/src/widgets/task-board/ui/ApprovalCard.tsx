@@ -12,6 +12,8 @@ import type {
   TaskCreateFields,
   TaskCreateIssue,
 } from '@/entities/approval'
+import { evidenceMoment } from '@/entities/meeting'
+import type { MeetingSummary } from '@/entities/meeting'
 import { speakerName } from '@/entities/member'
 import type { Member } from '@/entities/member'
 import { useApprovalResolve } from '@/features/approval-resolve'
@@ -49,14 +51,6 @@ const SUB_NOTE = 'text-caption text-dim'
 const FOOTER = 'flex items-center justify-between gap-16'
 const HINT = 'inline-flex min-w-[0px] items-center gap-6 text-caption text-dim'
 
-/** 근거 시각. 한 시간 미만은 `mm:ss`, 넘으면 `h:mm:ss` */
-function clock(ms: number): string {
-  const total = Math.max(0, Math.floor(ms / 1000))
-  const hours = Math.floor(total / 3600)
-  const mmss = `${String(Math.floor((total % 3600) / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`
-  return hours > 0 ? `${hours}:${mmss}` : mmss
-}
-
 function sameFields(a: TaskCreateFields, b: TaskCreateFields): boolean {
   return (
     a.taskTitle === b.taskTitle &&
@@ -80,8 +74,8 @@ export interface ApprovalCardProps {
   approval: Approval
   /** 현재 공간의 팀원. 아직 모르면 undefined */
   members: readonly Member[] | undefined
-  /** 연결 회의 제목. 회의 목록을 아직 모르면 undefined */
-  meetingTitles: ReadonlyMap<string, string>
+  /** 회의 id 로 찾는 회의 목록. 연결 회의 이름과 근거 시각을 읽는다. 목록을 아직 모르면 비어 있다 */
+  meetings: ReadonlyMap<string, MeetingSummary>
 }
 
 export function ApprovalCard(props: ApprovalCardProps) {
@@ -131,7 +125,7 @@ function TaskCreateCard({
   workspaceId,
   approval,
   members,
-  meetingTitles,
+  meetings,
 }: ApprovalCardProps & { approval: TaskCreateApproval }) {
   const hold = approval.gate === 'hold'
   const memberList = useMemo(() => members ?? [], [members])
@@ -153,9 +147,9 @@ function TaskCreateCard({
   const blockedReason =
     members === undefined ? '팀원 목록을 불러온 뒤 승인할 수 있어요.' : plan.ok ? null : plan.reason
 
-  const meetingTitle =
-    approval.meetingId === null ? null : (meetingTitles.get(approval.meetingId) ?? '연결된 회의')
-  const atClock = approval.evidence.atMs === null ? null : clock(approval.evidence.atMs)
+  const meeting = approval.meetingId === null ? undefined : meetings.get(approval.meetingId)
+  const meetingTitle = approval.meetingId === null ? null : (meeting?.title ?? '연결된 회의')
+  const atClock = evidenceMoment(meeting, approval.evidence.atMs)
   const hint = hold && !filling ? '내용을 확인하고 미정인 채로도 승인할 수 있어요' : blockedReason
   const problem = resolver.problem
 

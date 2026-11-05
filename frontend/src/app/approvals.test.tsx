@@ -114,7 +114,7 @@ describe('읽기 진입과 실 API 의 생성 승인 (AC-05)', () => {
     expect(field('회의 원문', '원문 마감')).toHaveTextContent('다음 주 월요일')
     const evidence = screen.getByRole('figure', { name: '근거' })
     expect(within(evidence).getByText('박민수님이 테스트 계획 정리을 맡기로 했어요.')).toBeVisible()
-    expect(evidence).toHaveTextContent('화자 김서연 · 시각 02:45')
+    await waitFor(() => expect(evidence).toHaveTextContent('화자 김서연 · 시각 02:45'))
     await waitFor(() =>
       expect(within(evidence).getByRole('link', { name: '3주차 정기회의' })).toHaveAttribute(
         'href',
@@ -136,6 +136,30 @@ describe('읽기 진입과 실 API 의 생성 승인 (AC-05)', () => {
     await openApproval(approval.approval_id)
     const evidence = screen.getByRole('figure', { name: '근거' })
     await waitFor(() => expect(evidence).toHaveTextContent('화자 박민수 · 시각 01:00'))
+  })
+
+  it('채팅 회의의 근거 시각은 녹음 위치가 아니라 메시지를 쓴 서울 시각이다 (#397)', async () => {
+    replaceDb(createScenarioDb('approval-chat'))
+    await openApproval('ap_07')
+    const evidence = screen.getByRole('figure', { name: '근거' })
+    await waitFor(() => expect(evidence).toHaveTextContent('화자 김서연 · 시각 09/11 18:40'))
+    expect(evidence).not.toHaveTextContent('9:28:00')
+  })
+
+  it('회의 목록을 받지 못하면 근거 시각을 녹음 위치로 짐작하지 않고 알 수 없다고 한다 (#397)', async () => {
+    replaceDb(createScenarioDb('approval-chat'))
+    server.use(
+      http.get('/api/v1/workspaces/:workspaceId/meetings', () => fail('INTERNAL_ERROR', 'x', 500)),
+    )
+    const log = recordRequests()
+    await openApproval('ap_07')
+    await waitFor(() =>
+      expect(log.answered).toContainEqual({ method: 'GET', path: '/workspaces/ws_01/meetings' }),
+    )
+    await settle()
+    expect(screen.getByRole('figure', { name: '근거' })).toHaveTextContent(
+      '화자 김서연 · 시각 알 수 없음',
+    )
   })
 
   it('미정인 담당자·마감은 승인을 막지 않으며 반려는 status만 보낸다', async () => {

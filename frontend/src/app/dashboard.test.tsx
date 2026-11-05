@@ -330,6 +330,44 @@ describe('확인 필요 (AC-02)', () => {
     expect(summary()['확인 대기']).toBe('7')
   })
 
+  describe('근거 시각 (#397)', () => {
+    const reviewRow = (title: string) => {
+      const row = within(screen.getByRole('list', { name: '확인이 필요한 일 목록' }))
+        .getAllByRole('listitem')
+        .find((item) => item.textContent?.includes(title))
+      if (!row) throw new Error(`review row ${title} is missing`)
+      return row
+    }
+
+    it('채팅 회의에서 나온 일은 실제 작성 시각, 녹음 회의에서 나온 일은 녹음 안 위치다', async () => {
+      useScenario('approval-chat')
+      await openDashboard()
+      await waitFor(() =>
+        expect(reviewRow('배포 체크리스트 정리')).toHaveTextContent('09/11 18:40'),
+      )
+      expect(reviewRow('배포 체크리스트 정리')).not.toHaveTextContent('9:28:00')
+      expect(reviewRow('테스트 계획 정리')).toHaveTextContent('02:45')
+    })
+
+    it('회의 목록을 받지 못하면 시각을 녹음 위치로 짐작하지 않고 숨긴다', async () => {
+      useScenario('approval-chat')
+      server.use(
+        http.get('/api/v1/workspaces/:workspaceId/meetings', () =>
+          fail('INTERNAL_ERROR', 'x', 500),
+        ),
+      )
+      const log = recordRequests()
+      renderApp(DASHBOARD)
+      await waitFor(() => expect(reviewTitles()).toContain('배포 체크리스트 정리'))
+      await waitFor(() =>
+        expect(log.answered).toContainEqual({ method: 'GET', path: '/workspaces/ws_01/meetings' }),
+      )
+      await settle()
+      expect(reviewRow('배포 체크리스트 정리')).not.toHaveTextContent(/\d+:\d{2}/)
+      expect(reviewRow('테스트 계획 정리')).not.toHaveTextContent(/\d+:\d{2}/)
+    })
+  })
+
   it('`확인하기` 를 누르면 그 확인 필요 상세로 간다', async () => {
     const user = userEvent.setup()
     const app = await openDashboard()
