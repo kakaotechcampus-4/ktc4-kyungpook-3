@@ -1,0 +1,356 @@
+"""gpu-stt.sh 를 가짜 aws 로 돌린다. 실제 AWS 도, 네트워크도, 실제 secrets 폴더도 쓰지 않는다."""
+from __future__ import annotations
+
+import os
+import shutil
+import stat
+import subprocess
+import time
+from pathlib import Path
+
+import pytest
+
+SCRIPT = Path(__file__).resolve().parents[2] / "deploy" / "gpu-stt" / "gpu-stt.sh"
+PROD_IP = "203.0.113.10"
+EIP = "198.51.100.7"
+LAUNCHED = "2026-11-05T07:00:00+00:00"
+TERMINATE_AT = "1793872800"            # 2026-11-05 10:00 UTC
+ROLE_FILTER = "Name=tag:Role,Values=stt-fallback"
+
+pytestmark = pytest.mark.skipif(not (shutil.which("bash") and shutil.which("openssl")),
+                                reason="bash 와 openssl 이 있어야 돈다")
+
+# 태그 필터가 정확하지 않으면 다른 탭의 인스턴스(i-0lora)를 돌려준다. 실수가 곧바로 잘못된 종료로 드러나게 한다
+FAKE_AWS = r"""#!/bin/bash
+d=$FAKE_AWS_DIR
+printf '%s\n' "$*" >>"$d/calls"
+env | grep '^AWS_' >"$d/env"
+for a in "$@"; do
+  case $a in file://*) cp "${a#file://}" "$d/user-data" ;; esac
+done
+
+describe_instances() {
+  case " $* " in
+    *"Values=g*"*)
+      case "$*" in
+        *InstanceId,*) printf 'i-0lora\tg4dn.xlarge\tgpu-stt-lora-pilot\n' ;;
+        *) printf 'g4dn.xlarge\tg4dn.xlarge\tg5.xlarge\n' ;;
+      esac
+      return ;;
+    *" Name=tag:Role,Values=stt-fallback "*) ;;
+    *) echo i-0lora; return ;;
+  esac
+  want=$(printf '%s\n' "$@" | sed -n 's/^Name=instance-state-name,Values=//p')
+  [ -f "$d/instances" ] || return 0
+  while read -r id state launched at; do
+    case ",$want," in
+      *",$state,"*)
+        case "$*" in
+          *State.Name*) printf '%s\t%s\t%s\t%s\n' "$id" "$state" "$launched" "$at" ;;
+          *) echo "$id" ;;
+        esac ;;
+    esac
+  done <"$d/instances"
+}
+
+describe_addresses() {
+  [ -f "$d/address" ] || return 0
+  case "$*" in
+    *InstanceId*) printf '%s\ti-0fallback\n' "$(cut -f2 "$d/address")" ;;
+    *) cat "$d/address" ;;
+  esac
+}
+
+describe_groups() {
+  case "$*" in
+    *--filters*) cat "$d/sg" 2>/dev/null || true ;;
+    *to_string*) cat "$d/rules" 2>/dev/null || true ;;
+    *) cat "$d/perms" 2>/dev/null || echo '[]' ;;
+  esac
+}
+
+case $2 in
+  describe-instances) describe_instances "$@" ;;
+  describe-addresses) describe_addresses "$@" ;;
+  describe-security-groups) describe_groups "$@" ;;
+  create-security-group) echo sg-0fallback | tee "$d/sg" ;;
+  allocate-address) printf 'eipalloc-0fallback\t198.51.100.7\n' | tee "$d/address" ;;
+  run-instances)
+    if [ -f "$d/vcpu_limit" ]; then
+      echo 'An error occurred (VcpuLimitExceeded) when calling the RunInstances operation' >&2
+      exit 254
+    fi
+    printf 'i-0fresh running 2026-11-05T07:00:00+00:00 1793872800\n' >"$d/instances"
+    echo i-0fresh ;;
+  terminate-instances) [ -f "$d/stuck" ] || rm -f "$d/instances" ;;
+  authorize-security-group-ingress) printf '%s\n' "$*" >"$d/authorized" ;;
+esac
+exit 0
+"""
+
+
+class Aws:
+    """가짜 aws 의 상태와 호출 기록."""
+
+    def __init__(self, tmp_path: Path) -> None:
+        self.dir = tmp_path / "fake"
+        self.dir.mkdir()
+        fake_bin = tmp_path / "bin"
+        fake_bin.mkdir()
+        (fake_bin / "aws").write_text(FAKE_AWS)
+        (fake_bin / "aws").chmod(0o755)
+        self.secrets = tmp_path / "secrets"
+        self.secrets.mkdir()
+        (self.secrets / "aws-personal-credentials").write_text("[personal]\n")
+        self.state = self.secrets / "gpu-stt"
+        self.env = {**os.environ, "PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}", "FAKE_AWS_DIR": str(self.dir),
+                    "GPU_STT_SECRETS": str(self.secrets), "HOME": str(tmp_path), "TZ": "UTC"}
+        # 실제 aws 가 불리면 GPU 가 켜진다. 대역이 먼저 잡히는지 돌리기 전에 못 박는다
+        assert shutil.which("aws", path=self.env["PATH"]) == str(fake_bin / "aws")
+
+    def run(self, *args: str, **extra_env: str) -> subprocess.CompletedProcess:
+        return subprocess.run(["bash", str(SCRIPT), *args], env={**self.env, **extra_env}, capture_output=True,
+                              text=True, timeout=60)
+
+    def ok(self, *args: str, **extra_env: str) -> str:
+        r = self.run(*args, **extra_env)
+        assert r.returncode == 0, r.stderr
+        return r.stdout
+
+    def set_instances(self, *rows: str) -> None:
+        (self.dir / "instances").write_text("".join(f"{r}\n" for r in rows))
+
+    def calls(self, action: str | None = None) -> list[str]:
+        path = self.dir / "calls"
+        lines = path.read_text().splitlines() if path.exists() else []
+        return [c for c in lines if action is None or c.startswith(f"ec2 {action}")]
+
+    def forget_calls(self) -> None:
+        (self.dir / "calls").unlink()
+
+    def user_data(self) -> str:
+        return (self.dir / "user-data").read_text()
+
+
+@pytest.fixture
+def aws(tmp_path):
+    return Aws(tmp_path)
+
+
+def test_off_terminates_only_what_the_exact_tag_lookup_returned(aws):
+    aws.set_instances(f"i-0fallback running {LAUNCHED} {TERMINATE_AT}")
+    aws.ok("off")
+    assert [c.split("--instance-ids ")[1] for c in aws.calls("terminate-instances")] == ["i-0fallback"]
+    assert all(ROLE_FILTER in c for c in aws.calls("describe-instances"))
+    assert "i-0lora" not in "\n".join(aws.calls("terminate-instances"))
+
+
+def test_off_with_nothing_on_is_a_quiet_success(aws):
+    aws.ok("off")
+    assert aws.calls("terminate-instances") == []
+
+
+def test_off_fails_and_names_what_is_still_alive(aws):
+    aws.set_instances(f"i-0fallback running {LAUNCHED} {TERMINATE_AT}")
+    (aws.dir / "stuck").touch()
+    r = aws.run("off")
+    assert r.returncode != 0 and "i-0fallback" in r.stderr
+
+
+def test_off_keeps_the_elastic_ip(aws):
+    aws.ok("setup", PROD_IP)
+    aws.set_instances(f"i-0fallback running {LAUNCHED} {TERMINATE_AT}")
+    aws.ok("off")
+    assert aws.calls("release-address") == []
+
+
+def test_on_reuses_a_running_instance_and_still_attaches_the_ip(aws):
+    aws.ok("setup", PROD_IP)
+    aws.set_instances(f"i-0fallback running {LAUNCHED} {TERMINATE_AT}")
+    out = aws.ok("on", "--hours", "5")
+    assert aws.calls("run-instances") == []
+    assert "i-0fallback" in aws.calls("associate-address")[0] and "eipalloc-0fallback" in aws.calls("associate-address")[0]
+    assert "i-0fallback" in out and "--hours" in out
+
+
+def test_on_does_not_reuse_an_instance_that_is_shutting_down(aws):
+    aws.ok("setup", PROD_IP)
+    aws.set_instances(f"i-0old shutting-down {LAUNCHED} {TERMINATE_AT}")
+    aws.ok("on")
+    assert len(aws.calls("run-instances")) == 1
+
+
+def test_on_launches_so_the_instance_ends_itself_and_is_tagged(aws):
+    aws.ok("setup", PROD_IP)
+    aws.ok("on")
+    run = aws.calls("run-instances")[0]
+    assert "--instance-initiated-shutdown-behavior terminate" in run
+    assert "VolumeInitializationRate=300" in run and "DeleteOnTermination=true" in run
+    assert "--instance-type g4dn.xlarge" in run and "--security-group-ids sg-0fallback" in run
+    for resource in ("instance", "volume"):
+        spec = next(w for w in run.split() if w.startswith(f"ResourceType={resource},"))
+        assert "{Key=Role,Value=stt-fallback}" in spec and "{Key=Name,Value=gpu-stt-fallback}" in spec
+    assert "i-0fresh" in aws.calls("associate-address")[0]
+
+
+def test_on_says_how_to_check_health_from_production(aws):
+    aws.ok("setup", PROD_IP)
+    assert f"curl --cacert /etc/mm/gpu-stt-ca.pem https://{EIP}:8000/health" in aws.ok("on")
+
+
+@pytest.mark.parametrize("args,minutes", [((), 180), (("--hours", "1"), 60)])
+def test_user_data_starts_the_timer_before_anything_else(aws, args, minutes):
+    aws.ok("setup", PROD_IP)
+    aws.ok("on", *args)
+    assert aws.user_data().splitlines()[:2] == ["#!/bin/bash", f"shutdown -h +{minutes}"]
+
+
+def test_user_data_arranges_files_and_server_when_really_run(aws, tmp_path):
+    """user-data 를 /opt/m 만 임시 폴더로 바꿔 실제로 돌린다. 따옴표가 깨지면 인자가 달라진다."""
+    aws.ok("setup", PROD_IP)
+    aws.ok("on")
+    root = tmp_path / "opt-m"
+    (root / "vllm-env" / "bin").mkdir(parents=True)
+    argv_log = tmp_path / "vllm-argv"
+    vllm = root / "vllm-env" / "bin" / "vllm"
+    vllm.write_text(f'#!/bin/bash\nprintf \'%s\\n\' "HF_HOME=$HF_HOME" "$@" >"{argv_log}.tmp"\nmv "{argv_log}.tmp" "{argv_log}"\n')
+    vllm.chmod(0o755)
+    shutdown_log = tmp_path / "shutdown-log"
+    fake_bin = tmp_path / "bin"
+    (fake_bin / "shutdown").write_text(f'#!/bin/bash\necho "$*" >>"{shutdown_log}"\n')
+    (fake_bin / "shutdown").chmod(0o755)
+    script = tmp_path / "user-data.sh"
+    script.write_text(aws.user_data().replace("/opt/m", str(root)).replace("/var/log/vllm.log", str(tmp_path / "vllm.log")))
+
+    subprocess.run(["bash", str(script)], env=aws.env, check=True, timeout=30)
+    deadline = time.monotonic() + 10
+    while not argv_log.exists() and time.monotonic() < deadline:
+        time.sleep(0.05)
+
+    assert shutdown_log.read_text().split() == ["-h", "+180"]
+    for name in ("cert.pem", "key.pem", "api.key"):
+        written = root / f"fallback-{name}"
+        assert written.read_text() == (aws.state / name).read_text()
+        assert stat.S_IMODE(written.stat().st_mode) == 0o600
+    argv = argv_log.read_text().splitlines()
+    assert argv[:3] == [f"HF_HOME={root}/hf", "serve", "openai/whisper-large-v3"]
+    pairs = dict(zip(argv[3:], argv[4:]))
+    assert pairs["--host"] == "0.0.0.0" and pairs["--port"] == "8000"
+    assert pairs["--served-model-name"] == "openai/whisper-large-v3" and pairs["--dtype"] == "float16"
+    assert pairs["--gpu-memory-utilization"] == "0.6" and pairs["--limit-mm-per-prompt"] == '{"audio":1}'
+    assert pairs["--api-key"] == (aws.state / "api.key").read_text().strip()
+    assert pairs["--ssl-keyfile"] == f"{root}/fallback-key.pem" and pairs["--ssl-certfile"] == f"{root}/fallback-cert.pem"
+
+
+def test_vcpu_limit_explains_in_korean_and_names_what_is_running(aws):
+    aws.ok("setup", PROD_IP)
+    (aws.dir / "vcpu_limit").touch()
+    r = aws.run("on")
+    assert r.returncode != 0
+    assert "vCPU 한도 8" in r.stderr and "gpu-stt-lora-pilot" in r.stderr
+    assert aws.calls("associate-address") == []
+
+
+def test_on_before_setup_stops_without_launching(aws):
+    r = aws.run("on")
+    assert r.returncode != 0 and "setup" in r.stderr
+    assert aws.calls("run-instances") == []
+
+
+@pytest.mark.parametrize("args", [("on", "--hours", "0"), ("on", "--hours", "x"), ("on", "3"), ("setup",),
+                                  ("setup", "not-an-ip"), ("reboot",), ()])
+def test_bad_arguments_change_nothing(aws, args):
+    r = aws.run(*args)
+    assert r.returncode != 0
+    assert [c for c in aws.calls() if " describe-" not in f" {c}"] == []
+
+
+def test_no_secret_reaches_the_terminal(aws):
+    outputs = [aws.run("setup", PROD_IP)]
+    outputs += [aws.run("on"), aws.run("status"), aws.run("off")]
+    api_key = (aws.state / "api.key").read_text().strip()
+    pem_body = "".join((aws.state / "key.pem").read_text().splitlines()[1:-1])
+    assert api_key in aws.user_data() and (aws.state / "key.pem").read_text() in aws.user_data()
+    for r in outputs:
+        printed = (r.stdout + r.stderr).replace("\n", "")
+        assert api_key not in printed and pem_body[:40] not in printed
+
+
+def test_setup_keeps_secrets_private(aws):
+    aws.ok("setup", PROD_IP)
+    for name in ("cert.pem", "key.pem", "api.key", "env"):
+        assert stat.S_IMODE((aws.state / name).stat().st_mode) == 0o600
+
+
+def test_setup_opens_only_the_production_server(aws):
+    aws.ok("setup", PROD_IP)
+    authorized = (aws.dir / "authorized").read_text()
+    assert "--protocol tcp --port 8000" in authorized and f"--cidr {PROD_IP}/32" in authorized
+
+
+def test_setup_twice_changes_nothing(aws):
+    aws.ok("setup", PROD_IP)
+    (aws.dir / "rules").write_text(f"tcp 8000 8000 {PROD_IP}/32\n")
+    before = {n: (aws.state / n).read_text() for n in ("cert.pem", "key.pem", "api.key", "env")}
+    aws.forget_calls()
+    aws.ok("setup", PROD_IP)
+    changed = [c for c in aws.calls() if not c.startswith("ec2 describe-")]
+    assert changed == []
+    assert before == {n: (aws.state / n).read_text() for n in before}
+
+
+def test_setup_with_a_new_production_ip_replaces_the_rule(aws):
+    aws.ok("setup", PROD_IP)
+    (aws.dir / "rules").write_text(f"tcp 8000 8000 {PROD_IP}/32\n")
+    (aws.dir / "perms").write_text('[{"IpProtocol": "tcp"}]\n')
+    new_ip = "203.0.113.20"
+    cert = (aws.state / "cert.pem").read_text()
+    aws.ok("setup", new_ip)
+    assert len(aws.calls("revoke-security-group-ingress")) == 1
+    assert f"--cidr {new_ip}/32" in (aws.dir / "authorized").read_text()
+    assert f"PROD_IP={new_ip}" in (aws.state / "env").read_text().splitlines()
+    assert (aws.state / "cert.pem").read_text() == cert
+
+
+def test_setup_regenerates_the_cert_when_the_ip_changes_but_keeps_the_api_key(aws):
+    aws.ok("setup", PROD_IP)
+    api_key = (aws.state / "api.key").read_text()
+    new_eip = "198.51.100.8"
+    (aws.dir / "address").write_text(f"eipalloc-0other\t{new_eip}\n")
+    out = aws.ok("setup", PROD_IP)
+    text = subprocess.run(["openssl", "x509", "-in", str(aws.state / "cert.pem"), "-noout", "-text"],
+                          capture_output=True, text=True, check=True).stdout
+    assert f"IP Address:{new_eip}" in text and "/etc/mm/gpu-stt-ca.pem" in out
+    assert (aws.state / "api.key").read_text() == api_key
+    assert f"EIP={new_eip}" in (aws.state / "env").read_text().splitlines()
+
+
+def test_status_shows_instance_terminate_time_ip_and_other_gpu_types(aws):
+    aws.ok("setup", PROD_IP)
+    aws.set_instances(f"i-0fallback running {LAUNCHED} {TERMINATE_AT}")
+    out = aws.ok("status")
+    assert "i-0fallback running" in out and LAUNCHED in out
+    assert "2026-11-05 10:00" in out
+    assert f"고정 IP {EIP} 연결: i-0fallback" in out
+    lines = {" ".join(line.split()) for line in out.splitlines()}
+    assert "2 g4dn.xlarge" in lines and "1 g5.xlarge" in lines
+    assert "gpu-stt-lora-pilot" not in out and "i-0lora" not in out
+
+
+def test_status_with_nothing_on_says_zero(aws):
+    assert "인스턴스 0대" in aws.ok("status")
+
+
+def test_script_uses_the_personal_profile_and_drops_keys_from_the_shell(aws):
+    aws.ok("status", AWS_ACCESS_KEY_ID="other-account", AWS_SESSION_TOKEN="other-token")
+    env = dict(line.split("=", 1) for line in (aws.dir / "env").read_text().splitlines())
+    assert env["AWS_SHARED_CREDENTIALS_FILE"] == f"{aws.secrets}/aws-personal-credentials"
+    assert env["AWS_CONFIG_FILE"] == "/dev/null" and env["AWS_PROFILE"] == "personal"
+    assert env["AWS_REGION"] == "ap-northeast-2"
+    assert "AWS_ACCESS_KEY_ID" not in env and "AWS_SESSION_TOKEN" not in env
+
+
+def test_missing_credentials_file_stops_before_any_aws_call(aws):
+    (aws.secrets / "aws-personal-credentials").unlink()
+    r = aws.run("off")
+    assert r.returncode != 0 and aws.calls() == []
