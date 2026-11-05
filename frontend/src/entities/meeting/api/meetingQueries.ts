@@ -1,5 +1,6 @@
 import { queryOptions } from '@tanstack/react-query'
 import { request } from '@/shared/api/client'
+import { createWorkspaceMismatchError } from '@/shared/api/errors'
 import { STALE_TIME } from '@/shared/api/queryClient'
 import { workspaceKey } from '@/shared/api/queryKeys'
 import type { ListDto } from '@/shared/types/api/envelope'
@@ -42,15 +43,20 @@ export function meetingListQueryOptions(workspaceId: string) {
 
 /**
  * 회의 상세. 처리 상태와 `progress` 를 읽는다 — 처리 추적의 polling 대상이다.
- * 경로에 워크스페이스가 없다(봇 경로, 계약 §2.3). 응답의 `workspaceId` 가 URL 과 같은지는 호출자가 확인한다.
- * key 에는 요청한 화면의 워크스페이스를 넣어 공간이 바뀌면 캐시가 섞이지 않게 한다.
+ * 경로에 워크스페이스가 없다(봇 경로, 계약 §2.3). key 에는 요청한 화면의 워크스페이스를 넣고, 응답의 공간이 그와 다르면
+ * 성공 데이터로 돌려주지 않고 `WORKSPACE_MISMATCH`(`isWorkspaceMismatch`)로 던진다 — 캐시의 회의는 언제나 key 의 공간 것이다.
+ * 받아 둔 정상 상세는 그 실패로 덮이지 않는다(TanStack Query 는 실패에 data 를 지우지 않는다)
  */
 export function meetingDetailQueryOptions(workspaceId: string, meetingId: string) {
   return queryOptions({
     queryKey: workspaceKey(workspaceId, 'meetings', 'detail', meetingId),
-    queryFn: async ({ signal }) =>
-      toMeeting(
-        await request<MeetingDto>(`/meetings/${encodeURIComponent(meetingId)}`, { signal }),
-      ),
+    queryFn: async ({ signal }) => {
+      const dto = await request<MeetingDto>(`/meetings/${encodeURIComponent(meetingId)}`, {
+        signal,
+      })
+      if (dto.workspace_id !== workspaceId)
+        throw createWorkspaceMismatchError(workspaceId, dto.workspace_id)
+      return toMeeting(dto)
+    },
   })
 }

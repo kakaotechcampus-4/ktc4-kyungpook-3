@@ -11,7 +11,7 @@ import {
 } from '@/entities/meeting'
 import type { Meeting, ProcessingStep } from '@/entities/meeting'
 import { useMemberWorkspace } from '@/entities/workspace'
-import { isAccessLost } from '@/features/meeting-processing'
+import { isMeetingUnavailable } from '@/features/meeting-processing'
 import { ApiError } from '@/shared/api/errors'
 import { paths } from '@/shared/config/routes'
 import { seoulDateOf } from '@/shared/lib/date'
@@ -82,8 +82,7 @@ function MeetingProcessing({ workspaceId, meetingId }: { workspaceId: string; me
     ...meetingListQueryOptions(workspaceId),
     select: (meetings) => meetings.find(({ id }) => id === meetingId) ?? null,
   })
-  const meeting =
-    detail.data !== undefined && detail.data.workspaceId === workspaceId ? detail.data : null
+  const meeting = detail.data ?? null
   const watched = meeting?.status === 'processing' || meeting?.status === 'awaiting_speakers'
   const isPm = useMemberWorkspace(workspaceId)?.role === 'pm'
 
@@ -91,11 +90,8 @@ function MeetingProcessing({ workspaceId, meetingId }: { workspaceId: string; me
     if (watched) trackMeeting({ workspaceId, meetingId })
   }, [watched, workspaceId, meetingId])
 
-  if (detail.data !== undefined && meeting === null)
-    return <Unavailable workspaceId={workspaceId} />
   if (meeting === null) {
-    if (detail.error !== null && isAccessLost(detail.error))
-      return <Unavailable workspaceId={workspaceId} />
+    if (isMeetingUnavailable(detail.error)) return <Unavailable workspaceId={workspaceId} />
     if (detail.error !== null)
       return (
         <Layout status="정리 상태를 불러오지 못했어요">

@@ -4,7 +4,7 @@ import { http } from 'msw'
 import type { UploadProgress } from '@/shared/api/client'
 import { STALE_TIME } from '@/shared/api/queryClient'
 import { db } from '@/shared/mock/db'
-import { fail } from '@/shared/mock/envelope'
+import { fail, ok } from '@/shared/mock/envelope'
 import { server } from '@/shared/mock/server'
 import type { UploadMeetingInput } from '../model/types'
 import { meetingDetailQueryOptions, meetingKeys, meetingListQueryOptions } from './meetingQueries'
@@ -88,6 +88,38 @@ describe('meetingDetailQueryOptions', () => {
       workspaceId: 'ws_01',
       status: 'processing',
       progress: { audioMerged: true, transcribed: false, extracted: false },
+    })
+  })
+
+  const otherWorkspaceDetail = () =>
+    http.get('/api/v1/meetings/mt_10', () => {
+      const meeting = db.meetings.find(({ meeting_id }) => meeting_id === 'mt_10')!
+      return ok({ ...meeting, workspace_id: 'ws_02' })
+    })
+
+  it('응답의 workspace_id 가 요청 공간과 다르면 WORKSPACE_MISMATCH 로 던지고 성공 캐시에 넣지 않는다 (#349)', async () => {
+    server.use(otherWorkspaceDetail())
+    const client = new QueryClient()
+    const options = meetingDetailQueryOptions('ws_01', 'mt_10')
+    await expect(client.fetchQuery(options)).rejects.toMatchObject({
+      code: 'WORKSPACE_MISMATCH',
+      kind: 'invalid_response',
+      details: { requested_workspace_id: 'ws_01', response_workspace_id: 'ws_02' },
+    })
+    expect(client.getQueryData(options.queryKey)).toBeUndefined()
+  })
+
+  it('받아 둔 정상 상세는 다시 받은 응답이 다른 공간이어도 덮이지 않는다 (#349)', async () => {
+    const client = new QueryClient()
+    const options = meetingDetailQueryOptions('ws_01', 'mt_10')
+    await client.fetchQuery(options)
+    server.use(otherWorkspaceDetail())
+    await expect(client.fetchQuery({ ...options, staleTime: 0 })).rejects.toMatchObject({
+      code: 'WORKSPACE_MISMATCH',
+    })
+    expect(client.getQueryData(options.queryKey)).toMatchObject({
+      id: 'mt_10',
+      workspaceId: 'ws_01',
     })
   })
 })

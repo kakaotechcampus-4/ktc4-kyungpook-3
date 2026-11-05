@@ -9,6 +9,7 @@ import { minutesQueryOptions } from '@/entities/minutes'
 import type { Minutes } from '@/entities/minutes'
 import {
   isAccessLost,
+  isMeetingUnavailable,
   SPEAKERS_NEEDED_ACTION,
   SPEAKERS_NEEDED_TITLE,
 } from '@/features/meeting-processing'
@@ -138,8 +139,7 @@ export function UnavailableMeeting() {
 }
 
 /**
- * 고른 회의 한 건 (U5-3, U5-4). 회의 상세의 `workspaceId` 가 URL 공간과 같을 때만 회의록 본문·추출을 부른다 —
- * 상세는 봇 경로라 경로에 공간이 없어(계약 §2.3) 다른 공간의 회의 ID 로도 답이 온다. 다르면 볼 수 없는 회의로 그린다.
+ * 고른 회의 한 건 (U5-3, U5-4).
  * 정리가 끝나지 않은 회의는 회의록이 없다. 정리 중이면 처리 화면, 화자 지정 대기면 PM 에게 지정 화면으로 잇는다 (U5-2, #256).
  */
 export function MinutesDetail({
@@ -151,8 +151,7 @@ export function MinutesDetail({
   keepSkeleton = false,
 }: MinutesDetailProps) {
   const detail = useQuery(meetingDetailQueryOptions(workspaceId, meetingId))
-  const meeting =
-    detail.data !== undefined && detail.data.workspaceId === workspaceId ? detail.data : null
+  const meeting = detail.data ?? null
   const held = holding ? selected : null
   // 기다리는 동안의 자리. 고른 회의의 요약을 알면 머리 뼈대 대신 그 요약이다 (UX1-M02)
   const loading = (
@@ -168,9 +167,8 @@ export function MinutesDetail({
   if (keepSkeleton) return loading
   // 들고 있을 수 있는 것은 이전 회의의 회의록 본문뿐이다. 이전 회의의 안내·오류를 고른 회의의 머리 아래 남기지 않는다
   if (held !== null && meeting?.status !== 'done') return loading
-  if (detail.data !== undefined && meeting === null) return <UnavailableMeeting />
   if (meeting === null) {
-    if (detail.error !== null && isAccessLost(detail.error)) return <UnavailableMeeting />
+    if (isMeetingUnavailable(detail.error)) return <UnavailableMeeting />
     if (detail.error !== null)
       return (
         <div className={NOTICE}>

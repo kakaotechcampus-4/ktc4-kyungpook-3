@@ -14,7 +14,6 @@ import type { Member } from '@/entities/member'
 import { taskListQueryOptions } from '@/entities/task'
 import type { Task } from '@/entities/task'
 import { NOTION_SYNC_POLL_MS } from '@/features/task-notion-sync'
-import { createClientError, CLIENT_ERROR_CODES } from '@/shared/api/errors'
 import { queryView } from '@/shared/lib/query-view'
 import { hasPendingSync, latestDoneMeeting, recentAutoItems } from '../lib/dashboard'
 
@@ -117,9 +116,7 @@ export function useDashboardData(workspaceId: string, isPm: boolean): DashboardD
     ...meetingDetailQueryOptions(workspaceId, latest?.id ?? ''),
     enabled: latest !== undefined && latest !== null,
   })
-  // 상세 경로에 공간이 없다. 응답의 공간이 지금 공간이 아니면 그 추출을 이 화면에 쓰지 않는다
-  const detailMismatch = detail.data !== undefined && detail.data.workspaceId !== workspaceId
-  const extractionId = detailMismatch ? null : (detail.data?.extractionId ?? null)
+  const extractionId = detail.data?.extractionId ?? null
   const extraction = useQuery({
     ...extractionQueryOptions(workspaceId, extractionId ?? ''),
     enabled: extractionId !== null,
@@ -140,15 +137,7 @@ export function useDashboardData(workspaceId: string, isPm: boolean): DashboardD
   let recent: RecentSource | null | undefined
   if (latest === undefined || latest === null) recent = latest
   else {
-    const detailState: Loadable<Meeting> = detailMismatch
-      ? {
-          status: 'error',
-          error: createClientError(CLIENT_ERROR_CODES.INVALID_RESPONSE),
-          retry: () => {
-            void detail.refetch()
-          },
-        }
-      : loadable(detail)
+    const detailState = loadable(detail)
     recent = {
       meeting: latest,
       detail: detailState,

@@ -8,7 +8,7 @@ import {
 import type { Meeting, MeetingStatus, SpeakerView } from '@/entities/meeting'
 import { memberListQueryOptions } from '@/entities/member'
 import { useMemberWorkspace } from '@/entities/workspace'
-import { isAccessLost } from '@/features/meeting-processing'
+import { isAccessLost, isMeetingUnavailable } from '@/features/meeting-processing'
 import { SpeakerAssignmentForm, useSpeakerSubmit } from '@/features/speaker-assignment'
 import type { SubmitRejection } from '@/features/speaker-assignment'
 import { paths } from '@/shared/config/routes'
@@ -57,8 +57,7 @@ function useSpeakerScreen(
 ): SpeakerScreen {
   const role = useMemberWorkspace(workspaceId)?.role ?? null
   const detail = useQuery(meetingDetailQueryOptions(workspaceId, meetingId))
-  const meeting =
-    detail.data !== undefined && detail.data.workspaceId === workspaceId ? detail.data : null
+  const meeting = detail.data ?? null
   const awaiting = meeting?.status === 'awaiting_speakers'
   const view = useQuery({
     ...speakerViewQueryOptions(workspaceId, meetingId),
@@ -68,9 +67,8 @@ function useSpeakerScreen(
     rejection?.kind === 'expired' || rejection?.kind === 'alreadyMoved' ? rejection : null
 
   if (role === null) return { kind: 'loading' }
-  if (detail.data !== undefined && meeting === null) return { kind: 'unavailable' }
   if (meeting === null) {
-    if (detail.error !== null && isAccessLost(detail.error)) return { kind: 'unavailable' }
+    if (isMeetingUnavailable(detail.error)) return { kind: 'unavailable' }
     if (detail.error !== null)
       return { kind: 'error', error: detail.error, retry: () => void detail.refetch() }
     return { kind: 'loading' }

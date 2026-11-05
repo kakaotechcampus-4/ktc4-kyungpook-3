@@ -14,7 +14,7 @@ import { toMinutes } from '@/entities/minutes'
 import { workspaceKey } from '@/shared/api/queryKeys'
 import { paths } from '@/shared/config/routes'
 import { db } from '@/shared/mock/db'
-import { fail, list } from '@/shared/mock/envelope'
+import { fail, list, ok } from '@/shared/mock/envelope'
 import { MOCK_NOW } from '@/shared/mock/fixtures/constants'
 import { minutesFixtures } from '@/shared/mock/fixtures/minutes'
 import { advanceMeeting, completeMeeting, failMeeting } from '@/shared/mock/meetingFlow'
@@ -764,4 +764,49 @@ describe('일시적 조회 오류 (U4-8)', () => {
     },
     10_000,
   )
+})
+
+describe('상세가 다른 공간의 회의라고 답할 때 (#349)', () => {
+  const otherWorkspace = () =>
+    http.get('/api/v1/meetings/mt_10', () => {
+      const meeting = db.meetings.find(({ meeting_id }) => meeting_id === 'mt_10')!
+      return ok({ ...meeting, workspace_id: 'ws_02' })
+    })
+
+  it('받아 둔 상태가 없으면 알림 없이 추적을 끝내고 더 묻지 않는다', async () => {
+    fakeIntervals()
+    server.use(otherWorkspace())
+    const log = recordRequests()
+    await openQuietScreen()
+    act(() => trackMeeting(MEETING))
+    await until(() => expect(detailRequests(log)).toHaveLength(1))
+    await until(() => expect(tracked()).toEqual([]))
+
+    await act(() => vi.advanceTimersByTimeAsync(9_000))
+    await settle()
+    expect(detailRequests(log)).toHaveLength(1)
+    expect(document.querySelectorAll('[data-toast-key]')).toHaveLength(0)
+  })
+
+  it('받아 둔 정리 중 상태가 있으면 그 상태로 계속 지켜보고, 바른 답이 오면 끝을 알린다', async () => {
+    fakeIntervals()
+    const log = recordRequests()
+    await openQuietScreen()
+    act(() => trackMeeting(MEETING))
+    await until(() => expect(detailRequests(log)).toHaveLength(1))
+
+    server.use(otherWorkspace())
+    await act(() => vi.advanceTimersByTimeAsync(3_000))
+    await until(() => expect(detailRequests(log)).toHaveLength(2))
+    await settle()
+    expect(tracked()).toEqual([MEETING])
+    expect(document.querySelectorAll('[data-toast-key]')).toHaveLength(0)
+
+    server.resetHandlers()
+    completeMeeting('mt_10')
+    await act(() => vi.advanceTimersByTimeAsync(3_000))
+    await until(() => expect(detailRequests(log)).toHaveLength(3))
+    await until(() => expect(toastsWith(PROCESSING_DONE_TITLE)).toHaveLength(1))
+    expect(tracked()).toEqual([])
+  })
 })

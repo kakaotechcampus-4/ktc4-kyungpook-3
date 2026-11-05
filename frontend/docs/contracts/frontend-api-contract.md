@@ -53,7 +53,7 @@ FE 변경과 실제 검증은 [M6 후속 결과](../plan/m6/result.md)에 기록
 | API 루트·인증 | 기본 `/api/v1`, `VITE_API_BASE_URL`로 변경, 쿠키 포함 요청 | [환경 설정](../../src/shared/config/env.ts), [클라이언트](../../src/shared/api/client.ts) |
 | 성공·오류 | `{data, error}` 봉투에서 data 반환. 오류는 `ApiError`, 잘못된 봉투·네트워크·취소를 구분. 204는 `undefined` | [봉투](../../src/shared/api/envelope.ts), [오류 타입](../../src/shared/api/errors.ts), [서버 봉투](../../../backend/app/core/errors.py) |
 | 목록·표기 | DTO는 `snake_case`, 목록 `{items, total}`. 엔티티 mapper에서 화면 도메인 모델로 변환 | [DTO](../../src/shared/types/api), [회의 mapper](../../src/entities/meeting/model/mapper.ts) |
-| 캐시 | 업무 데이터 Query Key에 workspaceId 포함. 회의 상세 요청 경로에 공간이 없으므로 응답 workspaceId도 확인 | [Query Key](../../src/shared/api/queryKeys.ts), [회의 Query](../../src/entities/meeting/api/meetingQueries.ts), [처리 판정](../../src/features/meeting-processing/model/trackerOutcome.ts) |
+| 캐시 | 업무 데이터 Query Key에 workspaceId 포함. 회의 상세 요청 경로에 공간이 없으므로 상세 Query가 응답 `workspace_id`를 key의 공간과 비교하고, 다르면 `WORKSPACE_MISMATCH`(kind `invalid_response`, 재시도 안 함)로 던져 성공 캐시에 넣지 않는다. 화면은 이 오류를 403·404와 같이 볼 수 없는 회의로 그리고, 처리 추적은 받아 둔 상태가 없을 때만 추적을 끝낸다 (#349) | [Query Key](../../src/shared/api/queryKeys.ts), [회의 Query](../../src/entities/meeting/api/meetingQueries.ts), [공간 불일치 오류](../../src/shared/api/errors.ts), [처리 판정](../../src/features/meeting-processing/model/trackerOutcome.ts) |
 | 오류·권한 | 요청의 401을 현재 세션에 한해 알림. 소속·온보딩·PM 가드는 화면 접근을 제한하며 서버 권한 검사와 별개 | [클라이언트](../../src/shared/api/client.ts), [라우트](../../src/app/router/routes.tsx), [서버 권한](../../../backend/app/api/deps.py) |
 
 ### 주요 API와 데이터 형식
