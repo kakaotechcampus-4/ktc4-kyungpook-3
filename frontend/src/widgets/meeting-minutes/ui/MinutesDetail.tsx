@@ -10,11 +10,12 @@ import type { Minutes } from '@/entities/minutes'
 import { isAccessLost } from '@/features/meeting-processing'
 import { ApiError, ERROR_CODES } from '@/shared/api/errors'
 import { paths } from '@/shared/config/routes'
+import { formatSeoulDateTime } from '@/shared/lib/date'
 import { GuardedLink } from '@/shared/lib/unsaved-changes'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
 import { MinutesDetailSkeleton } from '@/shared/ui/page-skeleton'
 import { extractedTasks } from '../lib/extractedTasks'
-import { detailMeta, SOURCE_LABEL } from '../lib/format'
+import { detailMeta, formatMoment, SOURCE_LABEL } from '../lib/format'
 import { MINUTES_DIM_DELAY_MS } from '../model/useShownMeeting'
 import { SummaryPanel, TasksPanel, TranscriptPanel } from './MinutesBody'
 import type { ReviewState, TasksState } from './MinutesBody'
@@ -101,7 +102,7 @@ function SummaryHead({ summary }: { summary: MeetingSummary }) {
   return (
     <Head
       title={summary.title}
-      meta={detailMeta(summary.startedAt, summary.durationMs ?? 0)}
+      meta={detailMeta(summary.source, summary.startedAt, summary.durationMs ?? 0)}
       source={summary.source}
     >
       {summary.attendeeCount === 0 ? (
@@ -207,7 +208,7 @@ export function MinutesDetail({
       return (
         <Notice title={failure.title}>
           <p className={NOTICE_TEXT}>{meeting.title || '제목 없는 회의'}</p>
-          <p className={META}>{detailMeta(meeting.startedAt, 0)}</p>
+          <p className={META}>{formatSeoulDateTime(meeting.startedAt)}</p>
           <p className={NOTICE_TEXT}>{failure.description}</p>
           {isPm ? (
             <GuardedLink to={paths.meetingUpload(workspaceId)} className={LINK}>
@@ -339,6 +340,7 @@ function MinutesContent({
         : null
 
   const title = held !== null ? held.title : minutes.title !== '' ? minutes.title : meeting.title
+  const momentOf = (atMs: number) => formatMoment(minutes.source, minutes.startedAt, atMs)
 
   return (
     <article aria-label={title === '' ? '회의록' : title} className="flex flex-col">
@@ -347,7 +349,7 @@ function MinutesContent({
       ) : (
         <Head
           title={title}
-          meta={detailMeta(minutes.startedAt, minutes.durationMs)}
+          meta={detailMeta(minutes.source, minutes.startedAt, minutes.durationMs)}
           source={minutes.source}
         >
           {minutes.attendees.length === 0 ? (
@@ -374,13 +376,20 @@ function MinutesContent({
             {
               id: 'transcript',
               label: '전사문',
-              panel: <TranscriptPanel transcript={minutes.transcript} />,
+              panel: <TranscriptPanel transcript={minutes.transcript} momentOf={momentOf} />,
             },
             {
               id: 'tasks',
               label: '추출된 일',
               count: taskCount,
-              panel: <TasksPanel workspaceId={workspaceId} state={tasks} review={review} />,
+              panel: (
+                <TasksPanel
+                  workspaceId={workspaceId}
+                  state={tasks}
+                  review={review}
+                  momentOf={momentOf}
+                />
+              ),
             },
           ]}
         />

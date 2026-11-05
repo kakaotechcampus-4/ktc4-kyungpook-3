@@ -39,6 +39,18 @@ export const meetingFixtures: MeetingDto[] = [
     // extraction 이 없으므로 transcribed·extracted 가 false 다. 진행률 UI 가 밟는 중간 단계
     progress: { audio_merged: true, transcribed: false, extracted: false },
   },
+  {
+    // 채팅 회의 (#379). 녹음이 없고, 시작·끝은 첫 메시지·마지막 메시지 시각이다. 서울 시각으로 하루를 넘는다
+    meeting_id: 'mt_08',
+    workspace_id: 'ws_01',
+    title: '채팅 2026-09-11',
+    status: 'done',
+    started_at: '2026-09-11T00:12:00Z',
+    ended_at: '2026-09-11T23:40:00Z',
+    extraction_id: 'ex_02',
+    failed_stage: null,
+    progress: null,
+  },
 ]
 export const meetingSummaryFixtures: MeetingSummaryDto[] = [
   {
@@ -70,5 +82,15 @@ export const meetingSummaryFixtures: MeetingSummaryDto[] = [
     duration_ms: null,
     attendee_count: 4,
     processed_at: null,
+  },
+  {
+    meeting_id: 'mt_08',
+    title: '채팅 2026-09-11',
+    status: 'done',
+    source: 'chat',
+    started_at: '2026-09-11T00:12:00Z',
+    duration_ms: 84_480_000,
+    attendee_count: 3,
+    processed_at: '2026-09-12T00:03:00Z',
   },
 ]

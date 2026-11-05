@@ -496,6 +496,7 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
       // 정리 끝난 회의가 없다(mt_10 은 정리 중). 최근 반영 빈 상태 ① → 회의 업로드
       signInWith(state, ['ws_01'], 'ws_01')
       removeMeeting(state, 'mt_07')
+      removeMeeting(state, 'mt_08')
       removeMeeting(state, 'mt_09')
       break
     case 'dashboard-notion-not-connected':
@@ -506,6 +507,7 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
     case 'dashboard-no-auto':
       // 최신 완료 회의가 항목 0건인 mt_07 이다. 최근 반영 빈 상태 ③ → 최근 회의록
       signInWith(state, ['ws_01'], 'ws_01')
+      removeMeeting(state, 'mt_08')
       removeMeeting(state, 'mt_09')
       break
     case 'dashboard-sync-pending':

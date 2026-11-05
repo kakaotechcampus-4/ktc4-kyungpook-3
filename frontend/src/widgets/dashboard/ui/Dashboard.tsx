@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import type { ReactNode } from 'react'
 import type { Approval } from '@/entities/approval'
+import { MEETING_SOURCE_TRAITS } from '@/entities/meeting'
 import type { Member } from '@/entities/member'
 import type { Task } from '@/entities/task'
 import { isOverdue } from '@/entities/task'
@@ -168,8 +169,10 @@ function MeetingLead({ data }: { data: DashboardData }) {
   if (meeting === null || meeting === undefined)
     return <p className={LEAD}>아직 정리한 회의가 없어요</p>
   const date = seoulDateOf(meeting.meeting.startedAt)
-  const duration = durationLabel(meeting.meeting.durationMs)
-  const { title } = meeting.meeting
+  const { title, source, durationMs } = meeting.meeting
+  // 채팅 회의의 길이는 녹음 분량이 아니라 첫 메시지부터 마지막 메시지까지의 기간이라 쓰지 않는다 (#379)
+  const duration =
+    MEETING_SOURCE_TRAITS[source].timeAxis === 'recording' ? durationLabel(durationMs) : null
   return (
     <p className={LEAD}>
       {date === null ? '' : `${monthDayLabel(date)} `}

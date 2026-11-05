@@ -1,5 +1,11 @@
-import type { MeetingSource, MeetingSummary } from '@/entities/meeting'
-import { formatSeoulDateTime, readDateOnly } from '@/shared/lib/date'
+import { MEETING_SOURCE_TRAITS } from '@/entities/meeting'
+import type { MeetingSource, MeetingSummary, MeetingTimeAxis } from '@/entities/meeting'
+import {
+  formatSeoulDateTime,
+  formatSeoulMonthDayTime,
+  readDateOnly,
+  seoulDateOf,
+} from '@/shared/lib/date'
 
 /** 회의 안 시각·길이. 1시간 미만은 `mm:ss`, 넘으면 `h:mm:ss` — Meetings 캔버스의 `12:40` · `52:14` 모양이다 */
 export function formatClock(ms: number): string {
@@ -17,25 +23,64 @@ export function formatMinutesLength(ms: number | null): string | null {
   return `${Math.max(1, Math.round(ms / 60_000))}분`
 }
 
-/** 목록 한 줄의 메타 — `09/15 14:00 · 46분 · 4명` (Meetings 캔버스). 서울 시각이다 (D-144) */
+/**
+ * 목록 한 줄의 메타 — `09/15 14:00 · 46분 · 4명` (Meetings 캔버스). 서울 시각이다 (D-144).
+ * 채팅 회의는 길이가 녹음 길이가 아니라 기간이라 빼고 `09/15 09:12 · 4명` 이다
+ */
 export function listMeta(meeting: MeetingSummary): string {
-  const dateTime = formatSeoulDateTime(meeting.startedAt)
-  // `YYYY-MM-DD HH:mm` 에서 연도를 뗀다
-  const shortDateTime = dateTime === '' ? null : dateTime.slice(5).replace('-', '/')
+  const shortDateTime = formatSeoulMonthDayTime(meeting.startedAt)
+  const length =
+    MEETING_SOURCE_TRAITS[meeting.source].timeAxis === 'recording'
+      ? formatMinutesLength(meeting.durationMs)
+      : null
   return [
-    shortDateTime,
-    formatMinutesLength(meeting.durationMs),
+    shortDateTime === '' ? null : shortDateTime,
+    length,
     meeting.attendeeCount > 0 ? `${meeting.attendeeCount}명` : null,
   ]
     .filter((part) => part !== null)
     .join(' · ')
 }
 
-/** 회의록 머리의 메타 — `2026-09-15 14:00 · 45:30`. 길이를 모르면 날짜만이다 */
-export function detailMeta(startedAt: string, durationMs: number): string {
-  return [formatSeoulDateTime(startedAt), durationMs > 0 ? formatClock(durationMs) : null]
-    .filter((part) => part !== null && part !== '')
-    .join(' · ')
+function offsetInstant(startedAt: string, offsetMs: number): string | null {
+  const start = Date.parse(startedAt)
+  return Number.isNaN(start) ? null : new Date(start + offsetMs).toISOString()
+}
+
+/** 첫 메시지부터 마지막 메시지까지 — `2026-09-15 09:12 ~ 09/16 08:40`, 같은 날 끝나면 `2026-09-15 09:12 ~ 18:40` */
+function chatRange(startedAt: string, durationMs: number): string {
+  const start = formatSeoulDateTime(startedAt)
+  const end = durationMs > 0 ? offsetInstant(startedAt, durationMs) : null
+  if (start === '' || end === null) return start
+  return seoulDateOf(end) === seoulDateOf(startedAt)
+    ? `${start} ~ ${formatSeoulDateTime(end).slice(11)}`
+    : `${start} ~ ${formatSeoulMonthDayTime(end)}`
+}
+
+const DETAIL_META: Record<MeetingTimeAxis, (startedAt: string, durationMs: number) => string> = {
+  recording: (startedAt, durationMs) =>
+    [formatSeoulDateTime(startedAt), durationMs > 0 ? formatClock(durationMs) : null]
+      .filter((part) => part !== null && part !== '')
+      .join(' · '),
+  wall_clock: chatRange,
+}
+
+/** 회의록 머리의 메타 — 녹음 회의는 `2026-09-15 14:00 · 45:30`, 채팅 회의는 서울 시각 범위다. 길이를 모르면 시작 시각만이다 */
+export function detailMeta(source: MeetingSource, startedAt: string, durationMs: number): string {
+  return DETAIL_META[MEETING_SOURCE_TRAITS[source].timeAxis](startedAt, durationMs)
+}
+
+const MOMENT: Record<MeetingTimeAxis, (startedAt: string, atMs: number) => string> = {
+  recording: (_startedAt, atMs) => formatClock(atMs),
+  wall_clock: (startedAt, atMs) => {
+    const instant = offsetInstant(startedAt, atMs)
+    return instant === null ? '' : formatSeoulMonthDayTime(instant)
+  },
+}
+
+/** 전사문 줄·근거의 시각. 녹음 회의는 녹음 안 위치 `12:40`, 채팅 회의는 메시지를 쓴 서울 시각 `09/15 18:40` 이다 */
+export function formatMoment(source: MeetingSource, startedAt: string, atMs: number): string {
+  return MOMENT[MEETING_SOURCE_TRAITS[source].timeAxis](startedAt, atMs)
 }
 
 /** 마감일 — `9/20`. 날짜 전용 값이라 시간대를 바꾸지 않는다 (D-144). 형식이 틀리면 null */
@@ -50,4 +95,12 @@ export function formatDue(date: string | null): string | null {
 export const SOURCE_LABEL: Record<MeetingSource, string> = {
   discord: 'Discord 자동 수집',
   manual_upload: '직접 올린 녹음',
+  chat: 'Discord 채팅',
+}
+
+/** 목록 행 제목 옆 배지. 채팅 회의는 음성 회의와 같은 목록에 섞이므로 구분해 보인다 (#379) */
+export const SOURCE_BADGE: Record<MeetingSource, string | null> = {
+  discord: null,
+  manual_upload: null,
+  chat: '채팅',
 }
