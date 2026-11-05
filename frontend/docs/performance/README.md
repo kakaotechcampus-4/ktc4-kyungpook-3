@@ -34,3 +34,4 @@
 | 문서 | 요약 | 상태 |
 |---|---|---|
 | [2026-09-29-font-loading.md](2026-09-29-font-loading.md) | NanumSquare 두 벌(약 316KB)을 미리 불러와 첫 화면 JS 와 대역폭을 나눠 쓴다 | 대기 |
+| [2026-11-05-taskboard-derived.md](2026-11-05-taskboard-derived.md) | TaskBoard가 보기와 무관하게 만드는 파생값·탭 개수. 2,000건에서도 한 번에 5.3~8.7ms라 바꾸지 않았다(#351) | 바꾸지 않음 |
