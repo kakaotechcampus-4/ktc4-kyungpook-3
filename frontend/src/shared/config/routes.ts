@@ -35,6 +35,10 @@ export const paths = {
   landing: () => '/',
   login: () => '/login',
   signup: () => '/signup',
+  /** 비밀번호 재설정 메일 요청. 로그인한 사용자는 가드가 돌려보낸다 */
+  forgotPassword: () => '/forgot-password',
+  /** 메일 링크가 여는 변경 화면. 토큰은 `#token=` 으로 온다 — BE 가 이 경로로 링크를 만든다 (#356) */
+  resetPassword: () => '/reset-password',
   workspaceSelect: () => '/workspaces',
   onboardingStart: () => '/onboarding/start',
   onboardingMember: () => '/onboarding/member',
@@ -86,4 +90,6 @@ export const devPaths = {
   /** 모의 OAuth 화면. 실 API 의 `/workspaces/{id}/integrations/{provider}/start` 자리다 */
   mockOAuth: (workspaceId: string, provider: string) =>
     `/__mock/oauth/${segment(workspaceId)}/${segment(provider)}`,
+  /** 모의 메일함. 실 API 가 보낼 비밀번호 재설정 메일을 여기서 열어 본다 (#356) */
+  mockMail: () => '/__mock/mail',
 } as const

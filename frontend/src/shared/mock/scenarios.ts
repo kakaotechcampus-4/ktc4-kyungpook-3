@@ -11,6 +11,11 @@ import {
 import { completeMeeting, failMeeting, setMeetingFlowMode } from './meetingFlow'
 import { notificationFixtures } from './fixtures/notification'
 import { setMockRole } from './sessions'
+import {
+  PASSWORD_RESET_SCENARIOS,
+  createPasswordResetScenarioDb,
+  isPasswordResetScenario,
+} from './passwordResetScenarios'
 import { SPEAKER_SCENARIOS, createSpeakerScenarioDb, isSpeakerScenario } from './speakerScenarios'
 import { blockBySilence, createTask } from './task-state'
 
@@ -82,6 +87,8 @@ export const MOCK_SCENARIOS = [
   // #320 팀원 초대. team-invitations 는 ws_01 PM 이 보는 초대 상태, invitation-pending 은 초대받은 사람의 가입 전이다
   'team-invitations',
   'invitation-pending',
+  // #356 비밀번호 재설정. 모두 비로그인이다
+  ...PASSWORD_RESET_SCENARIOS,
 ] as const
 export type MockScenario = (typeof MOCK_SCENARIOS)[number]
 
@@ -455,6 +462,7 @@ function addTeamInvitations(state: MockDb): void {
 
 export function createScenarioDb(scenario: MockScenario): MockDb {
   if (isSpeakerScenario(scenario)) return createSpeakerScenarioDb(scenario)
+  if (isPasswordResetScenario(scenario)) return createPasswordResetScenarioDb(scenario)
   const state = initialDb()
   switch (scenario) {
     case 'signed-out':

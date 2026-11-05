@@ -95,6 +95,41 @@ export interface MockInvitation {
   responded_at: string | null
 }
 
+/** #356 비밀번호 재설정 토큰. 실 API 는 해시만 저장하지만 모의 메일함이 링크를 보여야 해서 원문을 둔다 */
+export interface MockResetToken {
+  token: string
+  email: string
+  expiresAt: string
+  /** `revoked` 는 같은 이메일의 새 요청으로 무효가 된 것이다 */
+  status: 'active' | 'used' | 'revoked'
+}
+
+/** 보낸 재설정 메일 */
+export interface MockMail {
+  to: string
+  /** 메일 링크의 앱 안 경로 `/reset-password#token=...`. 메일함이 지금 주소를 앞에 붙여 보인다 */
+  resetPath: string
+  sentAt: string
+}
+
+/** `server-error` 는 세 경로 모두 500, `mail-unavailable` 은 요청만 503 이다 */
+export type PasswordResetFailure = 'none' | 'server-error' | 'mail-unavailable'
+
+export const PASSWORD_RESET_FAILURES = [
+  'none',
+  'server-error',
+  'mail-unavailable',
+] as const satisfies readonly PasswordResetFailure[]
+
+export interface MockPasswordReset {
+  tokens: MockResetToken[]
+  /** 이메일별로 다음 메일을 보낼 수 있는 시각(ms). 그 전의 요청은 메일 없이 200 이다 */
+  nextMailAt: Record<string, number>
+  /** 보낸 순서다. 모의 메일함(devPaths.mockMail)이 최근 것부터 보인다 */
+  outbox: MockMail[]
+  failure: PasswordResetFailure
+}
+
 interface MockAccount {
   session: SessionDto
   password: string
@@ -128,6 +163,7 @@ export interface MockDb {
   /** #330 브라우저 푸시. 공개키가 null 이면 서버에 키가 없는 것이다 */
   push: { publicKey: string | null; subscriptions: MockPushSubscription[] }
   invitations: MockInvitation[]
+  passwordReset: MockPasswordReset
 }
 /** Vitest 가 테스트마다 돌아가는 상태다. 로그인돼 있고 ws_01·ws_02 에 속한다. 브라우저 시작 상태는 scenarios.ts 가 정한다 */
 export function initialDb(): MockDb {
@@ -161,6 +197,7 @@ export function initialDb(): MockDb {
     notifications: [],
     push: { publicKey: null, subscriptions: [] },
     invitations: [],
+    passwordReset: { tokens: [], nextMailAt: {}, outbox: [], failure: 'none' },
   }
 }
 export const db: MockDb = initialDb()
