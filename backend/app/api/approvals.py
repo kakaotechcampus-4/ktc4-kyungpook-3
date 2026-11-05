@@ -352,6 +352,13 @@ def create_approval(
     아니라 로그인한 팀원으로 기록한다. 바디 값을 믿으면 다른 팀원 이름으로 요청을 올릴 수 있다.
     """
     member = require_member(db, user, payload.workspace_id)
+    # 리마인드는 묶음 승인(POST /messages/bundles/{id}/approve)으로 옮겼다. 남은 행의 조회·처리만 두고 새로 만들지 않는다(#335)
+    if payload.type == ApprovalType.REMINDER_DM:
+        raise AppError(
+            ErrorCode.INVALID_REQUEST,
+            message="reminder_dm 승인 요청은 더 이상 만들 수 없습니다. 리마인드는 메시지 묶음 승인으로 처리합니다.",
+            details={"field": "type", "allowed": [str(ApprovalType.TASK_CREATE), str(ApprovalType.TASK_UPDATE)]},
+        )
     # task_overrides는 승인하는 PM의 요청에서만 받는다. 요청 단계에서 미리 넣어 두면 PM이 고친 값처럼 읽힐 수 있다
     if "task_overrides" in payload.payload:
         raise AppError(
