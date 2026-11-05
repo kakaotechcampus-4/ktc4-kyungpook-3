@@ -407,3 +407,67 @@ def test_auto_approve_off_then_on_after_slot_does_not_send_missed_bundle(mdb, ms
     assert _messages(mdb) == []
     [bundle] = _bundles(mdb)
     assert bundle.approved_at is None
+
+
+def test_auto_approve_skips_scheduler_bundle_after_due_reminder_off(mdb, mseed):
+    # 재촉 제안을 끄면 끄기 전에 만든 스케줄러 제안도 승인 없이는 나가지 않는다.
+    _assign(mdb, mseed)
+    _turn_on(mdb, mseed)
+    tick(mdb, PROPOSE)
+    _set(mdb, mseed, due_reminder=False)
+
+    tick(mdb, SLOT)
+
+    assert _messages(mdb) == []
+    [bundle] = _bundles(mdb)
+    assert bundle.approved_at is None
+
+
+def test_auto_approve_sends_pm_made_reminder_when_due_reminder_off(mdb, mseed):
+    task = _assign(mdb, mseed)
+    _turn_on(mdb, mseed)
+    _set(mdb, mseed, due_reminder=False)
+    messages.create_reminder(
+        mdb, workspace_id=mseed["ws"], task_id=task.task_id, member_id=mseed["alice"].member_id,
+        scheduled_at=SLOT, note=None, created_by=mseed["pm"].member_id, now=PROPOSE,
+    )
+    mdb.commit()
+
+    tick(mdb, SLOT)
+
+    assert len(_messages(mdb)) == 1
+
+
+def test_auto_approve_sends_bundle_with_pm_reminder_when_due_reminder_off(mdb, mseed):
+    # PM 이 직접 넣은 재촉이 있는 묶음은 PM 이 보내려던 것이므로 함께 나간다.
+    _assign(mdb, mseed, 0)
+    task = _assign(mdb, mseed, 1, due=DUE + timedelta(days=7))
+    _turn_on(mdb, mseed)
+    tick(mdb, PROPOSE)
+    messages.create_reminder(
+        mdb, workspace_id=mseed["ws"], task_id=task.task_id, member_id=mseed["alice"].member_id,
+        scheduled_at=SLOT, note=None, created_by=mseed["pm"].member_id, now=PROPOSE + H,
+    )
+    mdb.commit()
+    assert len(_bundles(mdb)) == 1
+    _set(mdb, mseed, due_reminder=False)
+
+    tick(mdb, SLOT)
+
+    assert len(_messages(mdb)) == 1
+
+
+def test_drop_notice_asks_approval_when_due_reminder_off(mdb, mseed):
+    _turn_on(mdb, mseed)
+    _assign(mdb, mseed, 0)
+    _assign(mdb, mseed, 1)
+    tick(mdb, PROPOSE)
+    _approve_all(mdb, PROPOSE)
+    _set(mdb, mseed, due_reminder=False)
+    mseed["tasks"][0].is_deleted = True
+    mdb.commit()
+
+    tick(mdb, SLOT - H)
+
+    [note] = _notes(mdb, mseed, kind="reminder_auto_cancelled")
+    assert "다시 승인해 주세요" in note.text
