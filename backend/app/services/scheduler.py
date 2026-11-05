@@ -381,7 +381,7 @@ def open_watches(db: Session, now: datetime) -> None:
                 ReminderWatch.sent_at <= sent_at,
             ).order_by(ReminderWatch.sent_at)
         ).all():
-            if older.applied and reminder.task.status == TaskStatus.BLOCKED and reminder.task.blocker == BLOCKER_TEXT:
+            if older.applied and _auto_block_state(reminder.task):
                 inherited = older
             _close(older, WatchState.STOPPED, now)
         try:
