@@ -345,6 +345,21 @@ describe('설정 화면 — PM', () => {
     expect(screen.queryByText(NOTICE, { exact: false })).toBeNull()
   })
 
+  it('같은 화면에서 Discord 연결을 끊으면 웹으로만 안내가 나타난다', async () => {
+    const user = userEvent.setup()
+    renderApp(SETTINGS)
+    await screen.findByRole('switch', { name: SILENCE })
+    expect(screen.queryByText(NOTICE, { exact: false })).toBeNull()
+
+    const area = within(await screen.findByTestId('discord-connection'))
+    await user.click(await area.findByRole('button', { name: '연결 끊기' }))
+    const dialog = within(await screen.findByRole('dialog', { name: 'Discord 연결을 끊을까요?' }))
+    await user.click(dialog.getByRole('button', { name: '연결 끊기' }))
+
+    expect(await area.findByText('연결 안 됨')).toBeInTheDocument()
+    expect(await screen.findByText(NOTICE)).toBeInTheDocument()
+  })
+
   it('설정 조회가 실패하면 알림 절에 다시 시도를 보이고, 다시 받으면 토글이 보인다', async () => {
     const user = userEvent.setup()
     server.use(
