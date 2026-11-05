@@ -108,7 +108,9 @@ export interface DashboardData {
  * - 태스크·대기 승인(PM)·팀원·연동·회의 목록은 서로 기다리지 않고 함께 시작한다
  * - 최신 완료 회의의 상세와 추출은 앞 조회가 끝나야 ID 를 안다
  * - 최신 완료 회의의 상세가 404(지워짐)면 그 회의를 고르기에서 빼고 회의 목록을 다시 받는다 — 그다음 완료 회의가 최근 반영과
- *   제목 아래 안내에 보인다. 다시 받은 목록에 그 회의가 남아 있어도 같은 상세를 다시 묻지 않는다.
+ *   제목 아래 안내에 보인다. 다시 받은 목록에 그 회의가 남아 있어도 이 화면이 떠 있는 동안 같은 상세를 다시 묻지 않는다.
+ *   빼는 것은 이 화면이 뜬 뒤 받은 404 뿐이다(`isFetchedAfterMount`). 캐시에 남은 지난 404 는 다시 물어 확인한다 — 회복된 회의가
+ *   영영 빠지지 않고, 캐시에 남은 404 여럿을 한 렌더에서 잇달아 빼다 렌더 한도를 넘지 않는다. 확인하는 동안 최근 반영은 불러오는 중이다.
  *   403·다른 공간 응답은 받아 둔 상세가 있어도 최근 반영을 오류로 그린다 (#349, #405)
  * - 최근 반영의 auto 항목(화면에 보이지 않는 것 포함)에 반영 대기(`pending`) 태스크가 있으면 태스크 목록을 3초마다 다시 받는다. 모두 끝나거나 조회가 실패하면 멈추고,
  *   화면을 떠나면 이 관찰자와 함께 사라진다 (M6 `notionSyncRefetchInterval` 과 같은 규칙). 실패 판정은 화면과 같은 `queryView` 다 —
@@ -127,14 +129,17 @@ export function useDashboardData(workspaceId: string, isPm: boolean): DashboardD
     ...meetingDetailQueryOptions(workspaceId, latest?.id ?? ''),
     enabled: latest !== undefined && latest !== null,
   })
-  if (latest && isMeetingGone(detail.error)) setGoneIds(new Set(goneIds).add(latest.id))
+  const gone = latest != null && isMeetingGone(detail.error)
+  // 이 화면이 뜬 뒤 받은 404 만 뺀다. 빼면 다음 회의의 key 로 바뀌고 그 key 는 아직 이 화면에서 받은 답이 없어,
+  // 한 렌더에서 캐시에 남은 404 를 잇달아 빼지 않는다 — 한 번 빼는 데 요청 한 번이 든다
+  if (gone && detail.isFetchedAfterMount) setGoneIds(new Set(goneIds).add(latest.id))
 
   useEffect(() => {
     if (goneIds.size === 0) return
-    void queryClient.invalidateQueries({
-      queryKey: meetingListQueryOptions(workspaceId).queryKey,
-      exact: true,
-    })
+    void queryClient.invalidateQueries(
+      { queryKey: meetingListQueryOptions(workspaceId).queryKey, exact: true },
+      { cancelRefetch: false },
+    )
   }, [goneIds, queryClient, workspaceId])
   const extractionId = viewableMeeting(detail)?.extractionId ?? null
   const extraction = useQuery({
@@ -158,14 +163,16 @@ export function useDashboardData(workspaceId: string, isPm: boolean): DashboardD
   if (latest === undefined || latest === null) recent = latest
   else {
     // 볼 수 없는 회의라는 답(403·다른 공간)은 받아 둔 상세가 있어도 갱신 실패가 아니라 오류다 — 그 추출을 그리지 않는다.
-    // 404 는 위에서 다음 회의로 넘겼다
-    const detailState: Loadable<Meeting> = isMeetingUnavailable(detail.error)
-      ? {
-          status: 'error',
-          error: detail.error,
-          retry: () => void detail.refetch({ cancelRefetch: false }),
-        }
-      : loadable(detail)
+    // 404 는 다음 회의로 넘어가는(또는 다시 물어 확인하는) 중이다
+    const detailState: Loadable<Meeting> = gone
+      ? { status: 'loading' }
+      : isMeetingUnavailable(detail.error)
+        ? {
+            status: 'error',
+            error: detail.error,
+            retry: () => void detail.refetch({ cancelRefetch: false }),
+          }
+        : loadable(detail)
     recent = {
       meeting: latest,
       detail: detailState,

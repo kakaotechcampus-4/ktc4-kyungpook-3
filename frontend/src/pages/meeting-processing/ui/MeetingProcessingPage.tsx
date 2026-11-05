@@ -114,7 +114,8 @@ function MeetingProcessing({ workspaceId, meetingId }: { workspaceId: string; me
 
   const attendeeCount = summary.data?.attendeeCount ?? null
   // 받아 둔 상태가 있는데 다시 묻지 못했다 — 정리 실패가 아니다. 다시 물어볼 때까지 마지막 상태를 둔다 (U4-8).
-  // 일시적 실패는 네트워크 오류뿐이다. 403·404 는 다시 물어도 같은 답이라 viewableMeeting 이 먼저 걸러 볼 수 없는 회의로 그린다 (#405)
+  // 403·404·다른 공간은 다시 물어도 같은 답이라 viewableMeeting 이 먼저 걸러 볼 수 없는 회의로 그린다. 그 밖의 재조회 실패
+  // (네트워크 오류·408·5xx 등)는 마지막 상태를 두고, 연결 불안정 안내는 네트워크 오류일 때만 보인다 (#405)
   const stale =
     detail.error instanceof ApiError &&
     detail.error.kind === 'network' &&

@@ -1379,7 +1379,7 @@ describe('최신 완료 회의의 상세가 403·404 (#405)', () => {
       })
     })
     const done = [...added, 'mt_09', 'mt_08', 'mt_07']
-    const app = renderApp(DASHBOARD)
+    const app = renderApp(DASHBOARD, { strict: true })
     await screen.findByRole('heading', { name: '대시보드' })
     await waitFor(() => expect(lead()).toContain('3주차 정기회의'))
     await act(() =>
