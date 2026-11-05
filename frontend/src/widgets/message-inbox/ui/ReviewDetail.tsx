@@ -1,6 +1,7 @@
 import { useId, useState } from 'react'
 import { useNavigate } from 'react-router'
 import type { Bundle, MessageAction } from '@/entities/message'
+import { SendTimingPicker } from '@/entities/message-settings'
 import {
   ActionFailure,
   TIME_PASSED_LOCK,
@@ -12,10 +13,9 @@ import {
 } from '@/features/message-action'
 import { paths } from '@/shared/config/routes'
 import { Icon } from '@/shared/ui/icon'
-import { shortDateTime, taskDueLabel, taskTitle } from '../lib/format'
-import { LockedButton } from './LockedButton'
+import { LockedButton } from '@/shared/ui/locked-button'
+import { earliestDue, shortDateTime, taskDueLabel, taskTitle } from '../lib/format'
 import { ReviewMessageCard } from './ReviewMessageCard'
-import { SendTimingPicker } from './SendTimingPicker'
 
 /* Messages 캔버스 실측 — 가운데 604 열(위 44 · 좌우 36 · 아래 56, 간격 24), 제목 28px,
    근거 블록(눌린 면 · 위아래 18 · 좌우 20 · 라운드 12 · 간격 10), 행동 줄 위 구분선.
@@ -137,24 +137,30 @@ export function ReviewDetail({ workspaceId, botName, bundle, onSettled }: Review
 
         <SendTimingPicker
           workspaceId={workspaceId}
-          bundle={bundle}
+          dueDate={earliestDue(bundle.tasks)}
+          scheduledAt={bundle.scheduledAt}
           locked={busy || editing}
           saving={pendingKind === 'schedule'}
           customOpen={choosingTime}
           onCustomOpenChange={setChoosingTime}
-          onChange={(action, onSaved) =>
-            actions.run(action, {
-              onSuccess: (outcome) => {
-                if (outcome.kind === 'done') {
-                  onSaved()
-                  return
-                }
-                // 이 묶음은 없어지고 상세가 합친 묶음으로 새로 마운트된다 — 이 상세 안이 아니라 상세 영역에 포커스를 둔다.
-                // 뒤로 가기로 없는 묶음에 돌아가지 않게 주소를 바꿔 끼운다
-                onSettled()
-                void navigate(paths.messageReview(workspaceId, outcome.into.id), { replace: true })
+          onPick={(scheduledAt, onSaved) =>
+            actions.run(
+              { kind: 'schedule', bundleId: bundle.id, scheduledAt },
+              {
+                onSuccess: (outcome) => {
+                  if (outcome.kind === 'done') {
+                    onSaved()
+                    return
+                  }
+                  // 이 묶음은 없어지고 상세가 합친 묶음으로 새로 마운트된다 — 이 상세 안이 아니라 상세 영역에 포커스를 둔다.
+                  // 뒤로 가기로 없는 묶음에 돌아가지 않게 주소를 바꿔 끼운다
+                  onSettled()
+                  void navigate(paths.messageReview(workspaceId, outcome.into.id), {
+                    replace: true,
+                  })
+                },
               },
-            })
+            )
           }
           failure={failureOf('schedule')}
         />
