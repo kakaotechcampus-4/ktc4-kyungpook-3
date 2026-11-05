@@ -1,4 +1,5 @@
 import re
+from datetime import datetime
 from typing import Optional
 
 from pydantic import BaseModel, EmailStr, field_validator
@@ -37,3 +38,26 @@ class SignupRequest(BaseModel):
     @classmethod
     def _check_password(cls, value: str) -> str:
         return validate_password(value)
+
+
+class PasswordResetRequest(BaseModel):
+    email: EmailStr
+
+
+class PasswordResetVerifyRequest(BaseModel):
+    token: str
+
+
+class PasswordResetConfirmRequest(BaseModel):
+    token: str
+    new_password: str
+
+    @field_validator("new_password")
+    @classmethod
+    def _check_password(cls, value: str) -> str:
+        return validate_password(value)
+
+
+class PasswordResetVerifyResponse(BaseModel):
+    expires_at: datetime
+    email_masked: str

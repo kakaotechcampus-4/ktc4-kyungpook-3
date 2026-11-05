@@ -1,7 +1,7 @@
 import secrets
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, Request, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, Request, Response
 from sqlalchemy import and_, func
 from sqlalchemy.orm import Session
 
@@ -9,7 +9,17 @@ from app.api.deps import get_current_user
 from app.core.database import get_db
 from app.core.errors import AppError, Envelope, ErrorCode, success
 from app.models import Invitation, InvitationStatus, Member, Session as SessionModel, User
-from app.schemas.auth import AuthResponse, LoginRequest, SignupRequest, UserResponse
+from app.schemas.auth import (
+    AuthResponse,
+    LoginRequest,
+    PasswordResetConfirmRequest,
+    PasswordResetRequest,
+    PasswordResetVerifyRequest,
+    PasswordResetVerifyResponse,
+    SignupRequest,
+    UserResponse,
+)
+from app.services import mailer, password_reset
 from app.services.passwords import hash_password, verify_password
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -98,3 +108,34 @@ def logout(request: Request, response: Response, user: User = Depends(get_curren
 @router.get("/me", response_model=Envelope[AuthResponse])
 def get_me(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     return success(_build_auth_response(db, user).model_dump(mode="json"))
+
+
+@router.post("/password-reset/request", response_model=Envelope[dict])
+def request_password_reset(
+    payload: PasswordResetRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)
+):
+    if not mailer.is_configured():
+        raise AppError(ErrorCode.MAIL_UNAVAILABLE)
+    mail = password_reset.request_reset(
+        db, payload.email, now=datetime.now(timezone.utc), base_url=mailer.app_base_url()
+    )
+    db.commit()
+    # 가입 여부와 쿨다운 여부가 응답으로 드러나지 않게 항상 같은 응답을 준다.
+    if mail is not None:
+        background_tasks.add_task(mailer.send_with_retry, mail.to, mail.subject, mail.text, log_label=mail.user_id)
+    return success({})
+
+
+@router.post("/password-reset/verify", response_model=Envelope[PasswordResetVerifyResponse])
+def verify_password_reset(payload: PasswordResetVerifyRequest, db: Session = Depends(get_db)):
+    expires_at, email_masked = password_reset.verify_token(db, payload.token, now=datetime.now(timezone.utc))
+    return success(
+        PasswordResetVerifyResponse(expires_at=expires_at, email_masked=email_masked).model_dump(mode="json")
+    )
+
+
+@router.post("/password-reset/confirm", response_model=Envelope[dict])
+def confirm_password_reset(payload: PasswordResetConfirmRequest, db: Session = Depends(get_db)):
+    password_reset.confirm_reset(db, payload.token, payload.new_password, now=datetime.now(timezone.utc))
+    db.commit()
+    return success({})
