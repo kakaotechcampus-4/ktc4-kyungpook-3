@@ -41,7 +41,8 @@ from app.models import (
     ThreadMessage,
     WatchState,
 )
-from app.services import messages, notifications, push, replies, tasks
+from app.services import message_settings, messages, notifications, push, replies, tasks
+from app.services.message_settings import MessageSettings
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +56,7 @@ BLOCKER_TEXT = "리마인드에 72시간 동안 응답이 없어요"
 TICK_LOCK_KEY = 318_001
 
 # 이보다 이른 마감은 제안 시각을 셀 수 없다.
-EARLIEST_DUE = date.min + timedelta(days=4)
+EARLIEST_DUE = date.min + timedelta(days=message_settings.MAX_NUDGE_DAYS_BEFORE + 4)
 
 _RESPONSE_FIELDS = (ChangedField.STATUS, ChangedField.DUE_DATE)
 # 스케줄러가 스스로 바꾼 것은 응답이 아니다. 답장으로 푼 것은 그 답장이 이미 응답이다.
@@ -63,10 +64,10 @@ _NOT_RESPONSE_SOURCES = (ChangeSource.SCHEDULER, ChangeSource.REMINDER_REPLY)
 _OPEN_STATES = (WatchState.WATCHING, WatchState.BLOCKED)
 
 
-def send_slot(due: date) -> datetime:
-    """마감 하루 전 09:00(워크스페이스 시간대). 재촉이 나가는 시각이다."""
-    day = due - timedelta(days=1)
-    return datetime(day.year, day.month, day.day, SEND_HOUR, tzinfo=WORKSPACE_TZ).astimezone(timezone.utc)
+def send_slot(due: date, *, days_before: int = 1, hour: int = SEND_HOUR) -> datetime:
+    """마감 days_before 일 전 hour 시(워크스페이스 시간대). 재촉이 나가는 시각이다. 기본값은 하루 전 09:00."""
+    day = due - timedelta(days=days_before)
+    return datetime(day.year, day.month, day.day, hour, tzinfo=WORKSPACE_TZ).astimezone(timezone.utc)
 
 
 def _today(now: datetime) -> date:
@@ -146,16 +147,26 @@ def suggest(db: Session, now: datetime) -> None:
         )
         .order_by(Task.due_date, Task.task_id)
     ).all()
-    _each(db, task_ids, lambda task_id: _suggest_task(db, db.get(Task, task_id), now))
+    cache: dict[str, MessageSettings] = {}
+
+    def work(task_id: str) -> None:
+        task = db.get(Task, task_id)
+        if task.workspace_id not in cache:
+            cache[task.workspace_id] = message_settings.get_settings(db, task.workspace_id)
+        settings = cache[task.workspace_id]
+        if settings.due_reminder:
+            _suggest_task(db, task, now, settings)
+
+    _each(db, task_ids, work)
 
 
-def _suggest_task(db: Session, task: Task, now: datetime) -> None:
-    slot = send_slot(task.due_date)
+def _suggest_task(db: Session, task: Task, now: datetime, settings: MessageSettings) -> None:
+    slot = send_slot(task.due_date, days_before=settings.nudge_days_before, hour=settings.nudge_hour)
     if not slot - PROPOSE_AHEAD <= now < slot:
         return
     if _already_suggested(db, task) or _has_scheduled_reminder(db, task.task_id, now) or _answered_last(db, task):
         return
-    _suggest(db, task, slot, now)
+    _suggest(db, task, slot, now, settings)
 
 
 def _already_suggested(db: Session, task: Task) -> bool:
@@ -203,7 +214,7 @@ def _answered_last(db: Session, task: Task) -> bool:
     return _responded(db, watch.thread_id, task.task_id, last_sent)
 
 
-def _suggest(db: Session, task: Task, slot: datetime, now: datetime) -> None:
+def _suggest(db: Session, task: Task, slot: datetime, now: datetime, settings: MessageSettings) -> None:
     thread = messages.get_or_create_thread(db, task.workspace_id, task.assignee_member_id)
     db.flush()
     approved_before = db.scalar(
@@ -232,14 +243,23 @@ def _suggest(db: Session, task: Task, slot: datetime, now: datetime) -> None:
     if approved_before:
         notifications.notify_pms(
             db, workspace_id=task.workspace_id, kind="nudge_reapprove",
-            text=f"{name}님에게 보낼 메시지에 재촉이 더해져 다시 승인이 필요해요",
+            text=(
+                f"{name}님에게 보낼 메시지에 재촉이 더해졌어요. 발송 시각에 자동으로 나가요"
+                if settings.reminder_auto_approve
+                else f"{name}님에게 보낼 메시지에 재촉이 더해져 다시 승인이 필요해요"
+            ),
             link_type="bundle", link_id=bundle.bundle_id, now=now,
             dedupe_key=f"reapprove:{bundle.bundle_id}:{bundle.draft_version}",
         )
     elif not _pm_told(db, bundle.bundle_id):
         notifications.notify_pms(
             db, workspace_id=task.workspace_id, kind="nudge_suggested",
-            text=f"{name}님에게 보낼 재촉을 제안했어요. 보내기 전 확인에서 승인해 주세요",
+            text=(
+                f"{name}님에게 보낼 재촉을 제안했어요. 발송 시각에 자동으로 나가요. "
+                "보내지 않으려면 보내기 전 확인에서 막아 주세요"
+                if settings.reminder_auto_approve
+                else f"{name}님에게 보낼 재촉을 제안했어요. 보내기 전 확인에서 승인해 주세요"
+            ),
             link_type="bundle", link_id=bundle.bundle_id, now=now, dedupe_key=f"suggest:{bundle.bundle_id}",
         )
 
@@ -344,7 +364,12 @@ def _notify_dropped(db: Session, reminder: Reminder, reason: str, was_approved: 
         "changed": f"'{title}'의 상태나 마감이 바뀌어 보낼 예정이던 재촉을 취소했어요",
     }[reason]
     if rest and was_approved:
-        message += ". 같이 보낼 메시지는 다시 승인해 주세요"
+        settings = message_settings.get_settings(db, reminder.workspace_id)
+        db.flush()
+        if messages.auto_approves(db, settings, bundle):
+            message += ". 남은 메시지는 발송 시각에 자동으로 나가요"
+        else:
+            message += ". 같이 보낼 메시지는 다시 승인해 주세요"
     notifications.notify_pms(
         db, workspace_id=reminder.workspace_id, kind="reminder_auto_cancelled", text=message,
         link_type="bundle" if rest else "thread", link_id=bundle.bundle_id if rest else bundle.thread_id,
@@ -497,6 +522,8 @@ def _block(db: Session, task: Task, watch: ReminderWatch, now: datetime) -> None
     watch.state = WatchState.BLOCKED
     watch.blocked_at = now
     name = watch.message.thread.member.display_name
+    if not message_settings.get_settings(db, task.workspace_id).silence_alert:
+        return
     text_ = f"{name}님이 '{task.title}' 재촉에 72시간 동안 답이 없어요"
     text_ += " (이미 막힘 상태예요)" if already_blocked else ". 막힘으로 바꿨어요"
     notifications.notify_pms(

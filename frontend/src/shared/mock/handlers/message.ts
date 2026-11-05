@@ -1,95 +1,119 @@
 import { http } from 'msw'
-import type { MessageSendTimingDto } from '@/shared/types/api/message'
 import { db } from '../db'
 import { ok, fail } from '../envelope'
 import { requireMember, requirePmRole } from '../auth-guard'
 import { MOCK_NOW } from '../fixtures/constants'
 import { reply } from '../fixtures/message'
-import type { MockMessageReview } from '../fixtures/message'
 import { roleIn, sessionMemberId } from '../sessions'
 import {
-  applyPatch,
-  approve,
-  dismiss,
-  isOpen,
-  reviewDtoOf,
-  sendCheck,
-  threadDtoOf,
-  threadSummaryOf,
+  approveBundle,
+  bundleDto,
+  cancelBundle,
+  editBundle,
+  inboxOf,
+  threadDetailOf,
+  utc,
 } from '../message-state'
+import type { BundleContext, BundleRefusal, Viewer } from '../message-state'
 import { nextId, readJson } from '../utils'
 
 /*
- * M8 메시지. 메시지 API 가 없어 경로·응답 모양·오류 코드 모두 임시다 — 계약이 아니다 (계획 C-2, C-8).
- * 상태를 바꾸는 요청(발송·보내지 않음·고쳐 쓰기·발송 시점·답장·답장 판정)은 성공 응답을 낼 때만 db 를 바꾼다 (D-137, 계획 C-5).
- * 발송 정책은 D-174 를 따른다 — 승인·고쳐 쓰기·보내지 않음·발송 시점·답장 판정은 PM 만, 답장은 그 대화의 팀원만 한다. 재촉 자동 승인은 꺼져 있고 예약 시각이 지나도 스스로 나가지 않는다.
- * 시각은 MOCK_NOW, ID 는 nextId 다 (msw-guide 「지킬 규칙」)
+ * 메시지 (계약 §5.7). 경로·응답·오류 코드는 백엔드 api/messages.py 와 같다.
+ * 상태를 바꾸는 요청은 성공 응답을 낼 때만 db 를 바꾼다 (D-137). 시각은 MOCK_NOW, ID 는 nextId 다 (msw-guide 「지킬 규칙」).
+ * 재촉 만들기·리마인드 하나 고치기·빼기 경로는 화면이 쓰지 않아 두지 않는다
  */
 
 const serverError = () => fail('INTERNAL_ERROR', '메시지를 불러오지 못했습니다.', 500)
 const actionError = () => fail('INTERNAL_ERROR', '메시지 요청을 처리하지 못했습니다.', 500)
 const invalid = (message: string) => fail('INVALID_REQUEST', message, 400)
-const reviewNotFound = () =>
-  fail('MESSAGE_REVIEW_NOT_FOUND', '보내기 전 확인 항목을 찾을 수 없습니다.', 404)
-const replyNotFound = () => fail('MESSAGE_REPLY_NOT_FOUND', '확인할 답장을 찾을 수 없습니다.', 404)
+const threadNotFound = (threadId: unknown) =>
+  fail('MESSAGE_THREAD_NOT_FOUND', '대화를 찾을 수 없습니다.', 404, { thread_id: threadId })
+const forbidden = (threadId: string) =>
+  fail('FORBIDDEN', '권한이 없습니다.', 403, { thread_id: threadId })
+const bundleNotFound = (bundleId: unknown) =>
+  fail('REMINDER_BUNDLE_NOT_FOUND', '해당 보낼 메시지를 찾을 수 없습니다.', 404, {
+    bundle_id: bundleId,
+  })
 
-/** Discord DM 한 건의 글자 수 한도 */
-const BODY_MAX_LENGTH = 2000
-const SEND_TIMINGS: readonly MessageSendTimingDto[] = ['day_before_deadline', 'now', 'custom']
+const REFUSAL: Record<BundleRefusal, () => ReturnType<typeof fail>> = {
+  not_editable: () =>
+    fail(
+      'REMINDER_NOT_EDITABLE',
+      '예정 상태의 리마인드만 고치거나 승인하거나 취소할 수 있습니다.',
+      409,
+    ),
+  changed: () => fail('BUNDLE_CHANGED', '보낼 메시지가 바뀌었어요. 다시 확인해 주세요.', 409),
+  time_passed: () =>
+    fail('REMINDER_SCHEDULED_AT_PASSED', '예정 시각이 지났어요. 시각을 다시 골라 주세요.', 409),
+  merge_with_body: () =>
+    invalid(
+      '다른 보낼 메시지와 합쳐지는 시각으로 옮길 때는 문구를 같이 고칠 수 없습니다. 시각부터 옮겨 주세요.',
+    ),
+}
 
-function viewerOf(workspaceId: string): 'pm' | 'member' {
+/** 시간대가 있는 ISO 시각만 받는다 (백엔드 AwareDatetime) */
+const AWARE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/
+
+function viewerOf(workspaceId: string): Viewer {
   return roleIn(workspaceId) === 'pm' ? 'pm' : 'member'
 }
 
-function byInboxOrder(
-  left: { kind: string; last_message: { at: string | null } | null },
-  right: { kind: string; last_message: { at: string | null } | null },
-): number {
-  if (left.kind !== right.kind) return left.kind === 'direct' ? -1 : 1
-  const at = (thread: { last_message: { at: string | null } | null }) => {
-    const stamp = thread.last_message?.at
-    return stamp === null || stamp === undefined ? 0 : Date.parse(stamp)
-  }
-  return at(right) - at(left)
-}
-
-function findReview(workspaceId: string, reviewId: unknown) {
-  return db.messageReviews.find(
-    ({ review_id, workspace_id }) => review_id === reviewId && workspace_id === workspaceId,
+function findThread(workspaceId: string, threadId: unknown) {
+  return db.messageThreads.find(
+    ({ thread_id, workspace_id }) => thread_id === threadId && workspace_id === workspaceId,
   )
 }
 
-/** 고쳐 쓰기·발송 시점 변경 요청을 읽는다. 틀렸으면 사람이 읽을 이유를 돌려준다 */
-function readPatch(
-  review: MockMessageReview,
+function findBundle(workspaceId: string, bundleId: unknown) {
+  return db.messageBundles.find(
+    ({ bundle_id, workspace_id }) => bundle_id === bundleId && workspace_id === workspaceId,
+  )
+}
+
+function workspaceBundles(workspaceId: string) {
+  return db.messageBundles.filter(({ workspace_id }) => workspace_id === workspaceId)
+}
+
+/** 문구 틀의 PM 은 가장 먼저 등록된 PM 이다 — 픽스처 리마인드에는 만든 사람(created_by)이 없다 */
+function bundleContext(workspaceId: string): BundleContext {
+  const pm = db.members
+    .filter(({ workspace_id, role }) => workspace_id === workspaceId && role === 'pm')
+    .sort(
+      (left, right) =>
+        left.created_at.localeCompare(right.created_at) ||
+        left.member_id.localeCompare(right.member_id),
+    )
+    .at(0)
+  return {
+    bundles: workspaceBundles(workspaceId),
+    tasks: db.tasks.filter(({ workspace_id }) => workspace_id === workspaceId),
+    threads: db.messageThreads.filter(({ workspace_id }) => workspace_id === workspaceId),
+    pmName: pm?.display_name ?? 'PM',
+    workspaceName:
+      db.workspaces.find(({ workspace_id }) => workspace_id === workspaceId)?.name ?? '',
+  }
+}
+
+/** `BundleUpdateRequest`. 틀렸으면 사람이 읽을 이유를 돌려준다 */
+function readBundlePatch(
   input: Record<string, unknown> | null,
-): Partial<Pick<MockMessageReview, 'body' | 'send_timing' | 'scheduled_at'>> | string {
+): { body?: string; scheduled_at?: string } | string {
   if (input === null) return '요청 본문이 없습니다.'
-  const patch: Partial<Pick<MockMessageReview, 'body' | 'send_timing' | 'scheduled_at'>> = {}
-  if (input.body !== undefined) {
-    if (typeof input.body !== 'string') return '문구가 올바르지 않습니다.'
-    const body = input.body.trim()
-    if (body.length === 0 || body.length > BODY_MAX_LENGTH)
-      return `문구는 1자 이상 ${String(BODY_MAX_LENGTH)}자 이하입니다.`
-    patch.body = body
+  const patch: { body?: string; scheduled_at?: string } = {}
+  if (input.body !== undefined && input.body !== null) {
+    if (typeof input.body !== 'string' || input.body.trim() === '') return '내용이 비어 있습니다.'
+    patch.body = input.body.trim()
   }
-  if (input.send_timing !== undefined) {
-    const timing = SEND_TIMINGS.find((value) => value === input.send_timing)
-    if (timing === undefined) return '발송 시점이 올바르지 않습니다.'
-    if (timing === 'day_before_deadline') {
-      if (review.deadline_send_at === null) return '마감이 없는 항목입니다.'
-      if (Date.parse(review.deadline_send_at) <= Date.parse(MOCK_NOW))
-        return '마감 하루 전 시각이 이미 지났습니다.'
-      patch.scheduled_at = review.deadline_send_at
-    } else if (timing === 'now') patch.scheduled_at = null
-    else {
-      const at = typeof input.scheduled_at === 'string' ? Date.parse(input.scheduled_at) : NaN
-      if (!(at > Date.parse(MOCK_NOW))) return '발송 시각은 지금 이후여야 합니다.'
-      patch.scheduled_at = input.scheduled_at as string
-    }
-    patch.send_timing = timing
+  if (input.scheduled_at !== undefined && input.scheduled_at !== null) {
+    if (
+      typeof input.scheduled_at !== 'string' ||
+      !AWARE.test(input.scheduled_at) ||
+      Number.isNaN(Date.parse(input.scheduled_at))
+    )
+      return 'scheduled_at 은 시간대가 있는 ISO 시각이어야 합니다.'
+    patch.scheduled_at = input.scheduled_at
   }
-  return Object.keys(patch).length === 0 ? '바꿀 내용이 없습니다.' : patch
+  return Object.keys(patch).length === 0 ? 'body 나 scheduled_at 중 하나는 있어야 합니다.' : patch
 }
 
 export const messageHandlers = [
@@ -98,148 +122,106 @@ export const messageHandlers = [
     const denied = requireMember(workspaceId)
     if (denied) return denied
     if (db.messageFailures.inbox) return serverError()
-    const viewer = viewerOf(workspaceId)
-    const ownerId = sessionMemberId(workspaceId)
-    const reviews = db.messageReviews.filter((review) => review.workspace_id === workspaceId)
-    const threads = db.messageThreads
-      .filter(({ workspace_id }) => workspace_id === workspaceId)
-      .filter((thread) => viewer === 'pm' || (ownerId !== null && thread.member_id === ownerId))
-      .map((thread) => threadSummaryOf(thread, reviews, MOCK_NOW, viewer, db.tasks))
-      .sort(byInboxOrder)
-    return ok({
-      reviews:
-        viewer === 'member'
-          ? []
-          : reviews
-              .filter((review) => isOpen(review, MOCK_NOW))
-              .map((review) => reviewDtoOf(review, MOCK_NOW)),
-      threads,
-    })
+    const threads = db.messageThreads.filter(({ workspace_id }) => workspace_id === workspaceId)
+    return ok(
+      inboxOf(
+        threads,
+        workspaceBundles(workspaceId),
+        viewerOf(workspaceId),
+        sessionMemberId(workspaceId),
+      ),
+    )
   }),
 
+  /** PM 과 대화 주인만 본다. 남의 대화는 403 */
   http.get('/api/v1/workspaces/:workspaceId/messages/threads/:threadId', ({ params }) => {
     const workspaceId = String(params.workspaceId)
     const denied = requireMember(workspaceId)
     if (denied) return denied
-    const thread = db.messageThreads.find(
-      ({ thread_id, workspace_id }) =>
-        thread_id === params.threadId && workspace_id === workspaceId,
-    )
-    if (!thread) return fail('MESSAGE_THREAD_NOT_FOUND', '대화를 찾을 수 없습니다.', 404)
+    const thread = findThread(workspaceId, params.threadId)
+    if (!thread) return threadNotFound(params.threadId)
     const viewer = viewerOf(workspaceId)
-    const ownerId = sessionMemberId(workspaceId)
-    if (viewer === 'member' && (ownerId === null || thread.member_id !== ownerId))
-      return fail('MESSAGE_THREAD_NOT_FOUND', '대화를 찾을 수 없습니다.', 404)
+    if (viewer !== 'pm' && thread.member_id !== sessionMemberId(workspaceId))
+      return forbidden(thread.thread_id)
     if (db.messageFailures.threadIds.includes(thread.thread_id)) return serverError()
-    const reviews = db.messageReviews.filter((review) => review.workspace_id === workspaceId)
-    return ok(threadDtoOf(thread, reviews, MOCK_NOW, viewer, db.tasks))
+    return ok(threadDetailOf(thread, workspaceBundles(workspaceId), viewer))
   }),
 
-  /** 그 대화의 팀원만 웹에서 답한다. Discord 로는 나가지 않고, 재촉 상태는 바꾸지 않는다 */
+  /** 대화 주인만 웹에서 답한다. PM 도 남의 대화에는 쓸 수 없다. Discord 로는 나가지 않는다 */
   http.post(
     '/api/v1/workspaces/:workspaceId/messages/threads/:threadId/replies',
     async ({ params, request }) => {
       const workspaceId = String(params.workspaceId)
       const denied = requireMember(workspaceId)
       if (denied) return denied
-      const thread = db.messageThreads.find(
-        ({ thread_id, workspace_id }) =>
-          thread_id === params.threadId && workspace_id === workspaceId,
-      )
-      const ownerId = sessionMemberId(workspaceId)
-      if (
-        viewerOf(workspaceId) !== 'member' ||
-        ownerId === null ||
-        !thread ||
-        thread.member_id !== ownerId
-      )
-        return fail('FORBIDDEN', '자기 대화에만 답장할 수 있습니다.', 403)
+      const thread = findThread(workspaceId, params.threadId)
+      if (!thread) return threadNotFound(params.threadId)
+      if (thread.member_id !== sessionMemberId(workspaceId)) return forbidden(thread.thread_id)
       const input = await readJson(request)
-      const body = typeof input?.body === 'string' ? input.body.trim() : null
-      if (body === null || body.length === 0 || body.length > BODY_MAX_LENGTH)
-        return invalid(`답장은 1자 이상 ${String(BODY_MAX_LENGTH)}자 이하입니다.`)
+      const body = typeof input?.body === 'string' ? input.body.trim() : ''
+      if (body === '') return invalid('내용이 비어 있습니다.')
       if (db.messageFailures.actions) return actionError()
       const messageId = nextId(
         'mg',
         db.messageThreads.flatMap((item) => item.messages.map(({ message_id }) => message_id)),
       )
-      thread.messages.push(reply(messageId, body, MOCK_NOW, 'web'))
-      return ok({ message_id: messageId })
-    },
-  ),
-
-  /** PM 만 답장의 태스크를 정한다. 한 번 정하면 다시 고르지 않고, 재촉 상태는 바꾸지 않는다 */
-  http.post(
-    '/api/v1/workspaces/:workspaceId/messages/replies/:messageId/attribution',
-    async ({ params, request }) => {
-      const workspaceId = String(params.workspaceId)
-      const denied = requirePmRole(workspaceId)
-      if (denied) return denied
-      const message = db.messageThreads
-        .filter(({ workspace_id }) => workspace_id === workspaceId)
-        .flatMap((thread) => thread.messages)
-        .find((item) => item.message_id === params.messageId && item.sender === 'member')
-      const attribution = message?.attribution
-      if (!message || attribution?.status !== 'needs_pm') return replyNotFound()
-      const input = await readJson(request)
-      if (input === null || !('task_id' in input)) return invalid('후보에 없는 태스크입니다.')
-      const taskId: unknown = input.task_id
-      if (
-        taskId !== null &&
-        (typeof taskId !== 'string' || !attribution.candidate_task_ids.includes(taskId))
+      const message = reply(messageId, body, MOCK_NOW, 'web')
+      thread.messages.push(message)
+      return ok(
+        { ...message, thread_id: thread.thread_id, created_at: utc(message.created_at) },
+        { status: 201 },
       )
-        return invalid('후보에 없는 태스크입니다.')
-      if (db.messageFailures.actions) return actionError()
-      message.attribution = { status: 'resolved', task_id: taskId }
-      return ok({ message_id: message.message_id })
     },
   ),
 
+  /** 문구나 시각을 고친다. 승인은 유지한다. 같은 시각의 예정 묶음과 합쳐지면 합친 묶음을 돌려준다 */
   http.patch(
-    '/api/v1/workspaces/:workspaceId/messages/reviews/:reviewId',
+    '/api/v1/workspaces/:workspaceId/messages/bundles/:bundleId',
     async ({ params, request }) => {
       const workspaceId = String(params.workspaceId)
       const denied = requirePmRole(workspaceId)
       if (denied) return denied
-      const review = findReview(workspaceId, params.reviewId)
-      if (!review || !isOpen(review, MOCK_NOW)) return reviewNotFound()
-      const patch = readPatch(review, await readJson(request))
+      const bundle = findBundle(workspaceId, params.bundleId)
+      if (!bundle) return bundleNotFound(params.bundleId)
+      const patch = readBundlePatch(await readJson(request))
       if (typeof patch === 'string') return invalid(patch)
       if (db.messageFailures.actions) return actionError()
-      applyPatch(review, patch)
-      return ok(reviewDtoOf(review, MOCK_NOW))
+      const result = editBundle(bundle, patch, MOCK_NOW, bundleContext(workspaceId))
+      if ('refusal' in result) return REFUSAL[result.refusal]()
+      return ok(bundleDto(result.bundle))
     },
   ),
 
-  /** 승인해서 보낸다. 시각이 있으면 그 시각의 예약으로 같은 항목이 남고, 없으면 지금 나간다 */
-  http.post('/api/v1/workspaces/:workspaceId/messages/reviews/:reviewId/send', ({ params }) => {
-    const workspaceId = String(params.workspaceId)
-    const denied = requirePmRole(workspaceId)
-    if (denied) return denied
-    const review = findReview(workspaceId, params.reviewId)
-    if (!review) return reviewNotFound()
-    const check = sendCheck(review, MOCK_NOW)
-    if (check === 'gone') return reviewNotFound()
-    if (check === 'time_passed')
-      return fail(
-        'MESSAGE_SCHEDULE_PASSED',
-        '예정 시각이 지났습니다. 발송 시각을 다시 골라 주세요.',
-        409,
-      )
-    if (db.messageFailures.actions) return actionError()
-    approve(review, db.session.user.name, MOCK_NOW)
-    return ok({ review_id: review.review_id })
-  }),
+  /** PM 이 본 판(draft_version)이 지금 판과 다르면 409 BUNDLE_CHANGED. 이미 승인했으면 판과 상관없이 그대로 200 */
+  http.post(
+    '/api/v1/workspaces/:workspaceId/messages/bundles/:bundleId/approve',
+    async ({ params, request }) => {
+      const workspaceId = String(params.workspaceId)
+      const denied = requirePmRole(workspaceId)
+      if (denied) return denied
+      const bundle = findBundle(workspaceId, params.bundleId)
+      if (!bundle) return bundleNotFound(params.bundleId)
+      const input = await readJson(request)
+      const version = input?.draft_version
+      if (typeof version !== 'number' || !Number.isInteger(version))
+        return invalid('draft_version 이 필요합니다.')
+      if (db.messageFailures.actions) return actionError()
+      const refusal = approveBundle(bundle, version, MOCK_NOW)
+      if (refusal !== null) return REFUSAL[refusal]()
+      return ok(bundleDto(bundle))
+    },
+  ),
 
-  /** 보내지 않는다. 항목을 지우지 않고 취소된 기록으로 남긴다 */
-  http.post('/api/v1/workspaces/:workspaceId/messages/reviews/:reviewId/dismiss', ({ params }) => {
+  /** 보내지 않음. 안의 리마인드도 모두 취소한다 */
+  http.post('/api/v1/workspaces/:workspaceId/messages/bundles/:bundleId/cancel', ({ params }) => {
     const workspaceId = String(params.workspaceId)
     const denied = requirePmRole(workspaceId)
     if (denied) return denied
-    const review = findReview(workspaceId, params.reviewId)
-    if (!review || !isOpen(review, MOCK_NOW)) return reviewNotFound()
+    const bundle = findBundle(workspaceId, params.bundleId)
+    if (!bundle) return bundleNotFound(params.bundleId)
     if (db.messageFailures.actions) return actionError()
-    dismiss(review, MOCK_NOW)
-    return ok({ review_id: review.review_id })
+    const refusal = cancelBundle(bundle)
+    if (refusal !== null) return REFUSAL[refusal]()
+    return ok(bundleDto(bundle))
   }),
 ]

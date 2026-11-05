@@ -58,6 +58,23 @@ export const 변경_승인: Story = {
   },
 }
 
+/** 범위 변경 — 바꿀 필드 없이 결정 문장과 근거만 온다. 빈 비교표 대신 안내한다 (#205) */
+export const 범위_변경: Story = {
+  args: { approvalId: 'ap_05' },
+  parameters: { scenario: 'approval-scope', route: '/workspaces/ws_01/approvals/ap_05' },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const scope = await canvas.findByRole('region', { name: '범위 변경' })
+    await expect(
+      within(scope).getByText('소셜 로그인은 이번 범위에서 빼기로 했어요.'),
+    ).toBeVisible()
+    await expect(within(scope).getByRole('figure', { name: '근거' })).toBeInTheDocument()
+    await expect(canvas.getByText('바꿀 항목 값은 없어요.')).toBeVisible()
+    await expect(canvas.queryByRole('table', { name: '현재값과 제안값' })).toBeNull()
+    await expect(canvas.getByRole('button', { name: '승인' })).toBeEnabled()
+  },
+}
+
 /** 충돌 — 승인하면 409. 기준값·현재값·제안값과 충돌 필드를 보이고, 다시 승인은 PM 이 누를 때만이다 */
 export const 충돌: Story = {
   args: { approvalId: 'ap_04' },

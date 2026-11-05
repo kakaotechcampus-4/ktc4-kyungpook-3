@@ -2,12 +2,18 @@ import { QueryClient } from '@tanstack/react-query'
 import { File as NodeFile } from 'node:buffer'
 import { http } from 'msw'
 import type { UploadProgress } from '@/shared/api/client'
+import { ApiError, createWorkspaceMismatchError } from '@/shared/api/errors'
 import { STALE_TIME } from '@/shared/api/queryClient'
 import { db } from '@/shared/mock/db'
-import { fail } from '@/shared/mock/envelope'
+import { fail, ok } from '@/shared/mock/envelope'
 import { server } from '@/shared/mock/server'
 import type { UploadMeetingInput } from '../model/types'
-import { meetingDetailQueryOptions, meetingKeys, meetingListQueryOptions } from './meetingQueries'
+import {
+  meetingDetailQueryOptions,
+  meetingKeys,
+  meetingListQueryOptions,
+  viewableMeeting,
+} from './meetingQueries'
 import { toUploadForm, uploadMeeting } from './uploadMeeting'
 
 // 화면이 넘기는 File 은 브라우저(jsdom) File 이다. 전역을 바꾸기 전에 잡아 둔다
@@ -68,6 +74,7 @@ describe('meetingListQueryOptions', () => {
     expect(meetings.map(({ id, status }) => [id, status])).toEqual([
       ['mt_10', 'processing'],
       ['mt_09', 'done'],
+      ['mt_08', 'done'],
       ['mt_07', 'done'],
     ])
   })
@@ -89,6 +96,51 @@ describe('meetingDetailQueryOptions', () => {
       status: 'processing',
       progress: { audioMerged: true, transcribed: false, extracted: false },
     })
+  })
+
+  const otherWorkspaceDetail = () =>
+    http.get('/api/v1/meetings/mt_10', () => {
+      const meeting = db.meetings.find(({ meeting_id }) => meeting_id === 'mt_10')!
+      return ok({ ...meeting, workspace_id: 'ws_02' })
+    })
+
+  it('응답의 workspace_id 가 요청 공간과 다르면 WORKSPACE_MISMATCH 로 던지고 성공 캐시에 넣지 않는다 (#349)', async () => {
+    server.use(otherWorkspaceDetail())
+    const client = new QueryClient()
+    const options = meetingDetailQueryOptions('ws_01', 'mt_10')
+    await expect(client.fetchQuery(options)).rejects.toMatchObject({
+      code: 'WORKSPACE_MISMATCH',
+      kind: 'invalid_response',
+      details: { requested_workspace_id: 'ws_01', response_workspace_id: 'ws_02' },
+    })
+    expect(client.getQueryData(options.queryKey)).toBeUndefined()
+  })
+
+  it('받아 둔 정상 상세는 다시 받은 응답이 다른 공간이어도 덮이지 않는다 (#349)', async () => {
+    const client = new QueryClient()
+    const options = meetingDetailQueryOptions('ws_01', 'mt_10')
+    await client.fetchQuery(options)
+    server.use(otherWorkspaceDetail())
+    await expect(client.fetchQuery({ ...options, staleTime: 0 })).rejects.toMatchObject({
+      code: 'WORKSPACE_MISMATCH',
+    })
+    expect(client.getQueryData(options.queryKey)).toMatchObject({
+      id: 'mt_10',
+      workspaceId: 'ws_01',
+    })
+  })
+})
+
+describe('viewableMeeting', () => {
+  it('다른 공간의 회의라는 답이면 받아 둔 상세가 있어도 그리지 않고, 403·404 뒤에는 받아 둔 상세를 둔다 (#349)', async () => {
+    const meeting = await new QueryClient().fetchQuery(meetingDetailQueryOptions('ws_01', 'mt_10'))
+    const forbidden = new ApiError({ code: 'FORBIDDEN', message: 'x', details: null }, 403)
+    expect(viewableMeeting({ data: meeting, error: null })).toBe(meeting)
+    expect(viewableMeeting({ data: undefined, error: null })).toBeNull()
+    expect(
+      viewableMeeting({ data: meeting, error: createWorkspaceMismatchError('ws_01', 'ws_02') }),
+    ).toBeNull()
+    expect(viewableMeeting({ data: meeting, error: forbidden })).toBe(meeting)
   })
 })
 

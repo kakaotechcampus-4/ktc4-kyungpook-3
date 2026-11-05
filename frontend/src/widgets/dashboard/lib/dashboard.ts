@@ -1,9 +1,8 @@
 import type { Approval } from '@/entities/approval'
-import { sortByWaiting } from '@/entities/approval'
+import { isScopeChange, sortByWaiting } from '@/entities/approval'
 import type { ExtractionItem } from '@/entities/extraction'
 import type { IntegrationStatus } from '@/entities/integration'
 import type { MeetingSummary } from '@/entities/meeting'
-import { toMinutesList } from '@/entities/meeting'
 import type { Task } from '@/entities/task'
 import { isDueSoon, isOverdue } from '@/entities/task'
 import { soonUntil } from '@/shared/lib/date'
@@ -64,7 +63,18 @@ export function dueSoonTasks(tasks: readonly Task[], today: string): Task[] {
 
 /** 가장 최근에 열린 정리 끝난 회의 — 시작 시각 기준 (D-063, D-065). 없으면 null */
 export function latestDoneMeeting(meetings: readonly MeetingSummary[]): MeetingSummary | null {
-  return toMinutesList(meetings).minutes[0] ?? null
+  let latest: MeetingSummary | null = null
+  let latestAt = Number.NEGATIVE_INFINITY
+  for (const meeting of meetings) {
+    if (meeting.status !== 'done') continue
+    const parsed = Date.parse(meeting.startedAt)
+    const at = Number.isNaN(parsed) ? Number.NEGATIVE_INFINITY : parsed
+    if (latest === null || at > latestAt) {
+      latest = meeting
+      latestAt = at
+    }
+  }
+  return latest
 }
 
 /**
@@ -214,16 +224,9 @@ export function objectParticle(word: string): string {
   return code % 28 === 0 ? '를' : '을'
 }
 
-/** 근거 시각. 한 시간 미만은 `mm:ss`, 넘으면 `h:mm:ss` */
-export function clock(ms: number): string {
-  const total = Math.max(0, Math.floor(ms / 1000))
-  const hours = Math.floor(total / 3600)
-  const mmss = `${String(Math.floor((total % 3600) / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`
-  return hours > 0 ? `${hours}:${mmss}` : mmss
-}
-
 /** 확인 필요 행 아래 한 줄 — 왜 확인해야 하는지. 회의록·태스크 목록의 문구와 같다 */
 export function approvalReason(approval: Approval): string {
+  if (isScopeChange(approval)) return '범위 변경을 확인해야 해요'
   if (approval.kind === 'task_update') return '변경 제안을 확인해야 해요'
   if (approval.kind === 'unsupported') return '지원하지 않는 종류라 상세에서 확인해 주세요'
   if (approval.gate === 'hold') return '정보가 부족해 태스크 초안을 만들지 않았어요'

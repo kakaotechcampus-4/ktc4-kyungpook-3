@@ -9,17 +9,25 @@ import {
   meetingFailure,
   meetingKeys,
   meetingListQueryOptions,
+  promptSpeakers,
   useMeetingTrackerStore,
 } from '@/entities/meeting'
 import type { Meeting, TrackedMeeting } from '@/entities/meeting'
 import { captureSession } from '@/entities/user'
+import { findMemberWorkspace, workspaceListQueryOptions } from '@/entities/workspace'
 import { fetchFresh } from '@/shared/api/fetchFresh'
 import { workspaceKey } from '@/shared/api/queryKeys'
 import { paths } from '@/shared/config/routes'
 import { useLivePathname } from '@/shared/lib/live-pathname'
 import { hasPendingLeave, useGuardedNavigate } from '@/shared/lib/unsaved-changes'
 import { toast } from '@/shared/ui/toast'
-import { PROCESSING_DONE_ACTION, PROCESSING_DONE_TITLE, processingToastKey } from './notices'
+import {
+  PROCESSING_DONE_ACTION,
+  PROCESSING_DONE_TITLE,
+  processingToastKey,
+  SPEAKERS_NEEDED_ACTION,
+  SPEAKERS_NEEDED_TITLE,
+} from './notices'
 import { pollInterval, trackerOutcome } from './trackerOutcome'
 
 export interface ProcessingTracker {
@@ -67,7 +75,7 @@ function invalidateFinished(queryClient: QueryClient, meeting: TrackedMeeting): 
 /**
  * 앱 수준 처리 추적기 (U4-1~U4-8). 인증된 앱 영역에 하나 둔다 — 화면·공간을 옮겨도 polling 이 이어진다.
  *
- * - 등록된 회의마다 상세를 3초 간격으로 polling 한다. 정리 중일 때만이다 — 끝났거나(완료·실패) 볼 수 없게 되면(403·404) 멈춘다.
+ * - 등록된 회의마다 상세를 3초 간격으로 polling 한다. 정리 중일 때만이다(화자 지정 대기는 30초) — 끝났거나(완료·실패) 볼 수 없게 되면(403·404) 멈춘다.
  *   일시적 조회 실패(네트워크)는 정리 실패가 아니다. 그대로 지켜보고, 창 포커스·온라인 복귀 때 바로 다시 묻는다 (U4-8).
  * - 끝난 회의는 `finishMeeting` 이 처음 끝냈을 때만 알린다 — 재렌더·StrictMode·재발견·화면 이동에도 회의마다 한 번이다.
  * - 완료: 관련 캐시를 무효화하고 `회의 정리가 끝났어요` + `회의록 보기` 토스트(D-095).
@@ -80,6 +88,10 @@ function invalidateFinished(queryClient: QueryClient, meeting: TrackedMeeting): 
  *   기다리는 중이면 처리 화면이 아직 그려져 있어도 떠난 것이다 (U4 r1 M01, useLivePathname).
  * - 알림·모달·이동은 그 일을 시작한 세션이 아직 이어질 때만 한다. 로그아웃 뒤에 연동 재조회가 끝나거나 만료로 401 이 와도
  *   실패로 보지 않고, 세션 세대가 바뀐 것을 보고 버린다 (U4 r1 M02, captureSession).
+ * - 화자 지정 대기(#256): 처음 보였을 때 목록 캐시를 대기로 바꾼다 — 팀원 목록에도 `화자 지정 필요` 가 보여야 한다.
+ *   회의마다 세션당 한 번 PM 에게 안내한다. 그 회의의 처리 화면을 보고 있으면 지정
+ *   화면으로 옮기고, 아니면 `화자 지정이 필요해요` + `화자 지정하기` 토스트다. 팀원에게는 안내하지 않는다 — 처리 화면이
+ *   「PM이 지정하고 있어요」를 보인다. 대기 중에는 30초 간격으로 지켜보고, 지정 뒤 끝나면 위의 완료·실패 처리가 그대로 돈다.
  * - 끊김 판정의 연동 재조회는 공유 Query 를 `fetchFresh` 로 묻는다. 실패 전에 출발한 조회의 답, 다른 화면이 구독을 거둬
  *   취소된 채 돌아온 이전 값(connected)으로 판정하지 않는다 (U4 r2 M03, r3 M05, isNotionRevoked). 캐시에 쓰는 길은 그 Query
  *   하나라 오래된 답이 더 새 끊김을 덮지 못한다 (U4 r4 M06). 끝난 세션의 조회는 세션 정리가 거두고 그 401 은 새 세션을
@@ -104,7 +116,7 @@ export function useProcessingTracker(): ProcessingTracker {
     queries: tracked.map((meeting) => ({
       ...meetingDetailQueryOptions(meeting.workspaceId, meeting.meetingId),
       refetchInterval: ({ state }: { state: { data?: Meeting; error: unknown } }) =>
-        pollInterval(meeting, state.data, state.error),
+        pollInterval(state.data, state.error),
       // 30초 최신 시간과 무관하게 돌아오면 바로 다시 묻는다 — 끊긴 사이에 끝났을 수 있다
       refetchOnWindowFocus: 'always' as const,
       refetchOnReconnect: 'always' as const,
@@ -118,14 +130,43 @@ export function useProcessingTracker(): ProcessingTracker {
    * 이탈 확인을 고르는 중이어도 그대로 둔다
    */
   const leaveProcessingScreen = useCallback(
-    (meeting: TrackedMeeting, to: string) => {
-      if (hasPendingLeave()) return
+    (meeting: TrackedMeeting, to: string): boolean => {
+      if (hasPendingLeave()) return false
       const screen = paths.meetingProcessing(meeting.workspaceId, meeting.meetingId)
       const { pathname: shown, navigate: go } = latest.current
-      if (shown !== screen || livePathname() !== screen) return
+      if (shown !== screen || livePathname() !== screen) return false
       go(to, { replace: true })
+      return true
     },
     [livePathname],
+  )
+
+  const onAwaitingSpeakers = useCallback(
+    (meeting: TrackedMeeting) => {
+      const { workspaceId, meetingId } = meeting
+      queryClient.setQueryData(meetingListQueryOptions(workspaceId).queryKey, (list) =>
+        list?.map((item) =>
+          item.id === meetingId ? { ...item, status: 'awaiting_speakers' as const } : item,
+        ),
+      )
+      invalidateMeetings(queryClient, meeting)
+      const workspaces = queryClient.getQueryData(workspaceListQueryOptions().queryKey) ?? []
+      if (findMemberWorkspace(workspaces, workspaceId)?.role !== 'pm') return
+      const isCurrentSession = captureSession()
+      const to = paths.meetingSpeakers(workspaceId, meetingId)
+      if (leaveProcessingScreen(meeting, to) || latest.current.pathname === to) return
+      toast.show({
+        key: processingToastKey('speakers', workspaceId, meetingId),
+        title: SPEAKERS_NEEDED_TITLE,
+        action: {
+          label: SPEAKERS_NEEDED_ACTION,
+          onClick: () => {
+            if (isCurrentSession()) latest.current.navigate(to)
+          },
+        },
+      })
+    },
+    [leaveProcessingScreen, queryClient],
   )
 
   const onDone = useCallback(
@@ -193,7 +234,11 @@ export function useProcessingTracker(): ProcessingTracker {
     tracked.forEach((meeting, index) => {
       const result = results[index]
       if (result === undefined) return
-      const outcome = trackerOutcome(meeting, result.data, result.error)
+      const outcome = trackerOutcome(result.data, result.error)
+      if (outcome === 'awaiting_speakers') {
+        if (promptSpeakers(meeting)) onAwaitingSpeakers(meeting)
+        return
+      }
       if (outcome === 'processing') return
       // 이 호출이 처음 끝냈을 때만 알린다. 볼 수 없게 된 회의(lost)는 알리지 않고 그만 본다
       if (!finishMeeting(meeting)) return
@@ -201,7 +246,7 @@ export function useProcessingTracker(): ProcessingTracker {
       else if (outcome === 'failed' && result.data !== undefined)
         void onFailed(meeting, result.data.failedStage)
     })
-  }, [tracked, results, onDone, onFailed])
+  }, [tracked, results, onDone, onFailed, onAwaitingSpeakers])
 
   return {
     revokedWorkspaceId,

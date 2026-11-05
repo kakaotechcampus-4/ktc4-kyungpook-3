@@ -113,6 +113,7 @@ export const extractionHandlers = [
         due_raw: item.due_date.raw,
         evidence_quote: item.evidence.quote,
         evidence_speaker: item.evidence.speaker,
+        evidence_speaker_member_id: item.evidence.speaker_member_id,
         evidence_at_ms: item.evidence.at_ms,
         extraction_item_id: item.item_id,
         meeting_id: extraction.meeting_id,

@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { MESSAGE_BODY_MAX_LENGTH } from '@/entities/message'
-import type { MessageReview } from '@/entities/message'
+import type { BodySource, Bundle } from '@/entities/message'
 import { useUnsavedChanges } from '@/shared/lib/unsaved-changes'
 import { Button } from '@/shared/ui/button'
 import { Icon } from '@/shared/ui/icon'
@@ -20,11 +20,21 @@ const BOT_BADGE =
   'inline-flex h-16 items-center rounded-4 bg-divider px-5 text-[9.5px] leading-none font-semibold text-sub'
 const CARD_FOOT =
   'flex items-center justify-between gap-12 border-t border-divider px-18 py-12 text-[12px] text-dim'
+/* 문구 다듬는 중 — AI 초안이 오는 중이라 문구가 바뀔 수 있다 */
+const DRAFTING_CHIP =
+  'inline-flex h-18 items-center rounded-4 bg-surface-sunken px-6 text-[10.5px] leading-none text-sub'
 const TEXTAREA =
   'min-h-[112px] w-full resize-y rounded-9 border border-input-border bg-surface px-12 py-10 text-[14px] leading-[1.8] text-ink focus-visible:-outline-offset-1'
 
+/** 문구의 출처 (계약 §5.7 `body_source`) */
+const BODY_SOURCE_LABEL: Record<BodySource, string> = {
+  pm: '직접 고친 문구',
+  ai: 'AI 초안',
+  rule: '기본 문구',
+}
+
 export interface ReviewMessageCardProps {
-  review: MessageReview
+  bundle: Bundle
   botName: string
   /** 고쳐 쓰는 중인가. 고쳐 쓰는 동안 발송·발송 시점은 잠긴다 */
   editing: boolean
@@ -42,11 +52,12 @@ export interface ReviewMessageCardProps {
 }
 
 /**
- * 나갈 DM 미리보기 — Discord 에서 보일 모습 그대로(봇 이름 · BOT · 나갈 시각 · 본문). 밑단의 `고쳐 쓰기` 로 문구를 고친다.
+ * 나갈 DM 미리보기 — Discord 에서 보일 모습 그대로(봇 이름 · BOT · 나갈 시각 · 본문, 줄바꿈 그대로). 밑단의 `고쳐 쓰기` 로 문구를 고친다.
+ * AI 초안이 오는 중이면 `문구 다듬는 중` 을 붙인다 — 그래도 지금 보이는 문구로 승인할 수 있다.
  * 고친 문구는 서버가 저장한 뒤에만 미리보기에 보인다 (D-137). 문구 칸을 열면 그 칸으로, 닫으면 `고쳐 쓰기` 로 포커스를 옮긴다
  */
 export function ReviewMessageCard({
-  review,
+  bundle,
   botName,
   editing,
   onEditingChange,
@@ -85,14 +96,13 @@ export function ReviewMessageCard({
             <span className="text-body font-semibold wrap-anywhere text-ink">{botName}</span>
             <span className={BOT_BADGE}>BOT</span>
             <span className="mono text-[11px] text-dim">
-              {review.scheduledAt === null
-                ? '바로 발송'
-                : `${shortDateTime(review.scheduledAt)} 예정`}
+              {shortDateTime(bundle.scheduledAt)} 예정
             </span>
+            {bundle.drafting ? <span className={DRAFTING_CHIP}>문구 다듬는 중</span> : null}
           </div>
           {editing ? (
             <BodyEditor
-              initialBody={review.body}
+              initialBody={bundle.body}
               onClose={closeEditor}
               onSave={onSave}
               saving={saving}
@@ -100,14 +110,14 @@ export function ReviewMessageCard({
             />
           ) : (
             <p className="text-[14px] leading-[1.8] wrap-anywhere whitespace-pre-line text-ink">
-              {review.body}
+              {bundle.body}
             </p>
           )}
         </div>
       </div>
       {editing ? null : (
         <div className={CARD_FOOT}>
-          <span>문구는 그대로 고칠 수 있어요</span>
+          <span>{BODY_SOURCE_LABEL[bundle.bodySource]} · 문구는 그대로 고칠 수 있어요</span>
           <LockedButton
             ref={editButtonRef}
             size="message-edit"

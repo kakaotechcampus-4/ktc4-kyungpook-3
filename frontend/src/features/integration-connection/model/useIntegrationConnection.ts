@@ -9,6 +9,7 @@ import {
   waitWhileConnecting,
 } from '@/entities/integration'
 import type { Integration, IntegrationProvider } from '@/entities/integration'
+import { messageSettingsQueryOptions } from '@/entities/message-settings'
 import { captureSession } from '@/entities/user'
 import { fetchFresh } from '@/shared/api/fetchFresh'
 import { useLivePathname } from '@/shared/lib/live-pathname'
@@ -124,6 +125,11 @@ export function useIntegrationConnection(
       }
       setPreparing(false)
       if (!isCurrentSession()) return
+      // 알림 설정의 PM 연결 상태(`pms`)는 Discord 연결을 따른다 (#340)
+      if (connected && provider === 'discord')
+        void queryClient.invalidateQueries({
+          queryKey: messageSettingsQueryOptions(workspaceId).queryKey,
+        })
       // 확인을 시작한 화면에 그대로 있고(가는 중인 이동도 없고), 다른 곳으로 가려고 고르는 중이 아닐 때만 옮긴다
       const stillHere = present.current && livePathname() === pathname
       if (connected && connectedTo !== null && stillHere && !hasPendingLeave()) {

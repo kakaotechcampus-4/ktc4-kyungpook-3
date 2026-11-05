@@ -1,4 +1,6 @@
-import type { MessageReview, MessageThreadKind } from '@/entities/message'
+import type { Bundle, BundleTask, DmFailureReason } from '@/entities/message'
+import { nudgeSendAt } from '@/entities/message-settings'
+import type { NudgeRule } from '@/entities/message-settings'
 import { addDays, formatSeoulDateTime, seoulDateOf } from '@/shared/lib/date'
 
 /* 시각은 모두 한국 시간이다 (D-144). formatSeoulDateTime 은 `YYYY-MM-DD HH:mm` 이다 */
@@ -18,50 +20,82 @@ export function shortDateTime(timestamp: string): string {
   return `${shortDate(timestamp)} ${clockTime(timestamp)}`
 }
 
+/** 마감일 `YYYY-MM-DD` 를 `09/24` 로 */
+function dueLabel(date: string): string {
+  return date.slice(5).replace('-', '/')
+}
+
 /** 서울 날짜 `YYYY-MM-DD` 둘 사이의 날 수. 날짜 문자열만으로 계산해 실행 환경 시간대와 무관하다 */
 export function daysBetween(from: string, to: string): number {
   return Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000)
 }
 
-/** 만든 지 얼마나 됐나 — `오늘` · `어제` · `3일 전` (Messages 시안). 오늘은 서울 날짜다 */
-export function relativeDay(timestamp: string, today: string): string {
-  const date = seoulDateOf(timestamp)
-  if (date === null) return ''
-  const days = daysBetween(date, today)
-  if (days <= 0) return '오늘'
-  return days === 1 ? '어제' : `${String(days)}일 전`
+/** 묶음의 태스크 중 가장 이른 마감일. 없으면 null */
+export function earliestDue(tasks: readonly BundleTask[]): string | null {
+  return tasks.reduce<string | null>(
+    (earliest, { dueDate }) =>
+      dueDate !== null && (earliest === null || dueDate < earliest) ? dueDate : earliest,
+    null,
+  )
 }
 
-/** 보내기 전 확인 행의 오른쪽 글자 — 예약은 `09/23 발송 예정`, 마감이 있으면 `09/24 마감`, 없으면 만든 때 `3일 전` */
-export function reviewDateLabel(review: MessageReview, today: string): string {
-  if (review.state.status === 'scheduled' && review.scheduledAt !== null)
-    return `${shortDate(review.scheduledAt)} 발송 예정`
-  if (review.deadline === null) return relativeDay(review.createdAt, today)
-  return `${review.deadline.slice(5).replace('-', '/')} 마감`
+/** 마감 기준 선택지 — 가장 이른 마감에 공간의 재촉 규칙(며칠 전 몇 시, 한국 시간)을 적용한 시각. 마감이 없거나 그 시각이 지났으면 고를 수 없다 */
+export type DeadlineSend =
+  { status: 'none' } | { status: 'open'; at: string } | { status: 'passed'; at: string }
+
+export function deadlineSend(
+  tasks: readonly BundleTask[],
+  rule: NudgeRule,
+  now: number,
+): DeadlineSend {
+  const due = earliestDue(tasks)
+  if (due === null) return { status: 'none' }
+  const at = nudgeSendAt(due, rule)
+  return Date.parse(at) <= now ? { status: 'passed', at } : { status: 'open', at }
+}
+
+/** 같은 순간인가. 서버는 UTC 로, 화면은 +09:00 으로 쓴다 */
+export function sameInstant(left: string, right: string): boolean {
+  return Date.parse(left) === Date.parse(right)
+}
+
+/** 보내기 전 확인 행의 오른쪽 글자 — 승인했으면 `09/23 발송 예정`, 아니면 가장 이른 마감 `09/24 마감`, 마감이 없으면 `09/19 예정` */
+export function bundleDateLabel(bundle: Bundle): string {
+  if (bundle.stage === 'approved') return `${shortDate(bundle.scheduledAt)} 발송 예정`
+  const due = earliestDue(bundle.tasks)
+  return due === null ? `${shortDate(bundle.scheduledAt)} 예정` : `${dueLabel(due)} 마감`
+}
+
+/** 태스크가 지워져 제목이 없을 때 */
+const DELETED_TASK = '지워진 태스크'
+
+export function taskTitle(task: BundleTask): string {
+  return task.title ?? DELETED_TASK
+}
+
+/** 보내기 전 확인 행의 한 줄 — `API 명세서`, 여럿이면 `퍼블리싱 외 1건` */
+export function bundleSummary(bundle: Bundle): string {
+  const [first, ...rest] = bundle.tasks
+  if (first === undefined) return ''
+  return rest.length === 0 ? taskTitle(first) : `${taskTitle(first)} 외 ${String(rest.length)}건`
+}
+
+/** 태스크 한 줄의 마감 — `09/24 마감`, 없으면 `마감 없음` */
+export function taskDueLabel(task: BundleTask): string {
+  return task.dueDate === null ? '마감 없음' : `${dueLabel(task.dueDate)} 마감`
+}
+
+/** DM 을 보내지 못한 이유 (계약 §5.7) */
+export const DM_FAILURE_TEXT: Record<DmFailureReason, string> = {
+  dm_blocked: '서버 DM이 막혀 있어요',
+  discord_not_linked: 'Discord 계정이 연결되지 않았어요',
+  unknown: '이유를 알 수 없어요',
 }
 
 /** 답장이 없는 지 며칠째인가. 보낸 날이 1일째다 — 9/16 에 보냈으면 9/18 은 3일째 (MessagesThread 시안 `답장 3일째 없음`) */
 export function awaitingDays(since: string, today: string): number {
   const date = seoulDateOf(since)
   return date === null ? 1 : Math.max(1, daysBetween(date, today) + 1)
-}
-
-const weekdayFormatter = new Intl.DateTimeFormat('ko-KR', {
-  timeZone: 'Asia/Seoul',
-  weekday: 'long',
-})
-
-/** 하루를 넷으로 나눈 때 — 새벽(0~5시) · 아침(6~11시) · 낮(12~17시) · 밤(18~23시) */
-function partOfDay(hour: number): string {
-  if (hour < 6) return '새벽'
-  if (hour < 12) return '아침'
-  return hour < 18 ? '낮' : '밤'
-}
-
-/** `지금 바로` 카드의 부제 — 지금이 언제인가, `금요일 밤` (Messages 시안) */
-export function nowLabel(now: Date): string {
-  const hour = Number(formatSeoulDateTime(now.toISOString()).slice(11, 13))
-  return `${weekdayFormatter.format(now)} ${partOfDay(hour)}`
 }
 
 /** 서울 시각을 `datetime-local` 입력값 `YYYY-MM-DDTHH:mm` 으로 */
@@ -112,8 +146,7 @@ export function groupByDay<T extends { at: string }>(entries: readonly T[]): Day
   return days
 }
 
-/** 아바타 글자 — 이름의 첫 글자, 채널은 `#` (디자인 시스템 §6: 이름 1~2자, 회색 원) */
-export function avatarText(name: string, kind: MessageThreadKind): string {
-  if (kind === 'channel') return '#'
+/** 아바타 글자 — 이름의 첫 글자 (디자인 시스템 §6: 이름 1~2자, 회색 원) */
+export function avatarText(name: string): string {
   return Array.from(name.trim())[0] ?? '?'
 }

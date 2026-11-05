@@ -1,4 +1,4 @@
-import { MEETING_FLOW_MODES, db, initialDb, replaceDb } from './db'
+import { MEETING_FLOW_MODES, PASSWORD_RESET_FAILURES, db, initialDb, replaceDb } from './db'
 import type { MockDb } from './db'
 
 /*
@@ -14,9 +14,13 @@ export const MOCK_DB_STORAGE_KEY = 'msw-db'
  * 4: M8 메시지를 디자인 캔버스대로 다시 만들며 검토·메시지 필드와 `messageFailures.actions` 추가.
  * 5: 재촉을 검토 행 하나로 두고 대화 메시지에서 발송 단계를 빼다.
  * 6: 팀원 초대(`invitations`) 칸 추가. 수락한 초대가 계정과 팀원을 잇는다.
- * 올리면 e2e/restore.e2e.ts 의 버전 단언도 같이 고친다 (E2E 는 src 를 가져오지 않는다)
+ * 7: 메시지를 백엔드 계약 모양으로 옮겨 검토 행(`messageReviews`)을 보낼 메시지(`messageBundles`)로 바꾸다 (#315).
+ * 8: 업로드 회의의 화자 지정(`meetingFlow.speakers`) 칸 추가 (#256).
+ * 9: 비밀번호 재설정(`passwordReset`) 칸 추가 (#356). 모의 메일함의 메일이 새로고침·링크 열기 뒤에도 남는다.
+ * 10: 메시지·알림 설정(`messageSettings`) 칸 추가 (#340).
+ * 올리면 e2e/restore.e2e.ts 와 src/shared/mock/taskScenarios.test.ts 의 버전 단언도 같이 고친다 (E2E 는 src 를 가져오지 않는다)
  */
-export const MOCK_DB_VERSION = 6
+export const MOCK_DB_VERSION = 10
 
 interface StoredDb {
   version: number
@@ -46,7 +50,23 @@ function isMeetingFlow(value: unknown): boolean {
     isRecord(value.attendees) &&
     Object.values(value.attendees).every(
       (ids) => Array.isArray(ids) && ids.every((id) => typeof id === 'string'),
+    ) &&
+    isRecord(value.speakers) &&
+    Object.values(value.speakers).every(
+      (upload) => isRecord(upload) && Array.isArray(upload.speakers),
     )
+  )
+}
+
+function isPasswordReset(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    Array.isArray(value.tokens) &&
+    value.tokens.every((token) => hasStrings(token, ['token', 'email', 'expiresAt', 'status'])) &&
+    isRecord(value.nextMailAt) &&
+    Array.isArray(value.outbox) &&
+    value.outbox.every((mail) => hasStrings(mail, ['to', 'resetPath', 'sentAt'])) &&
+    (PASSWORD_RESET_FAILURES as readonly unknown[]).includes(value.failure)
   )
 }
 
@@ -84,7 +104,8 @@ function isMockDb(value: unknown): value is MockDb {
       (integration) =>
         hasStrings(integration.discord, ['status']) && hasStrings(integration.notion, ['status']),
     ) &&
-    isMeetingFlow(state.meetingFlow)
+    isMeetingFlow(state.meetingFlow) &&
+    isPasswordReset(state.passwordReset)
   )
 }
 

@@ -53,7 +53,7 @@ FE 변경과 실제 검증은 [M6 후속 결과](../plan/m6/result.md)에 기록
 | API 루트·인증 | 기본 `/api/v1`, `VITE_API_BASE_URL`로 변경, 쿠키 포함 요청 | [환경 설정](../../src/shared/config/env.ts), [클라이언트](../../src/shared/api/client.ts) |
 | 성공·오류 | `{data, error}` 봉투에서 data 반환. 오류는 `ApiError`, 잘못된 봉투·네트워크·취소를 구분. 204는 `undefined` | [봉투](../../src/shared/api/envelope.ts), [오류 타입](../../src/shared/api/errors.ts), [서버 봉투](../../../backend/app/core/errors.py) |
 | 목록·표기 | DTO는 `snake_case`, 목록 `{items, total}`. 엔티티 mapper에서 화면 도메인 모델로 변환 | [DTO](../../src/shared/types/api), [회의 mapper](../../src/entities/meeting/model/mapper.ts) |
-| 캐시 | 업무 데이터 Query Key에 workspaceId 포함. 회의 상세 요청 경로에 공간이 없으므로 응답 workspaceId도 확인 | [Query Key](../../src/shared/api/queryKeys.ts), [회의 Query](../../src/entities/meeting/api/meetingQueries.ts), [처리 판정](../../src/features/meeting-processing/model/trackerOutcome.ts) |
+| 캐시 | 업무 데이터 Query Key에 workspaceId 포함. 회의 상세 요청 경로에 공간이 없으므로 상세 Query가 응답 `workspace_id`를 key의 공간과 비교하고, 다르면 `WORKSPACE_MISMATCH`(kind `invalid_response`, 재시도 안 함)로 던져 성공 캐시에 넣지 않는다. 화면(회의록·처리·화자 지정·대시보드 최근 반영)은 받아 둔 정상 상세가 있어도 이 오류를 받으면 그 상세를 쓰지 않고(`viewableMeeting`) 볼 수 없는 회의·오류로 그리며 후속 조회를 끈다. 처리 추적은 받아 둔 상태가 없을 때만 추적을 끝낸다 (#349) | [Query Key](../../src/shared/api/queryKeys.ts), [회의 Query](../../src/entities/meeting/api/meetingQueries.ts), [공간 불일치 오류](../../src/shared/api/errors.ts), [처리 판정](../../src/features/meeting-processing/model/trackerOutcome.ts) |
 | 오류·권한 | 요청의 401을 현재 세션에 한해 알림. 소속·온보딩·PM 가드는 화면 접근을 제한하며 서버 권한 검사와 별개 | [클라이언트](../../src/shared/api/client.ts), [라우트](../../src/app/router/routes.tsx), [서버 권한](../../../backend/app/api/deps.py) |
 
 ### 주요 API와 데이터 형식
@@ -383,18 +383,33 @@ AUDIO_TOO_LARGE(413)              DISCORD_USER_ALREADY_MAPPED(409)
  "status": "done",
  "started_at": "2026-09-15T14:00:00Z", "ended_at": "2026-09-15T14:45:00Z",
  "extraction_id": "ex_01",
- "failed_stage": null}
+ "failed_stage": null,
+ "progress": {"audio_merged": true, "transcribed": true, "extracted": true}}
 ```
 
 - `status` 는 `created` → `recording` → `processing` → `done` \| `failed`.
 - 웹 업로드 회의에는 상태가 하나 더 있다. `awaiting_speakers`(화자 지정 대기)다. 업로드 회의는 `processing` 에서 시작해, AI 가 화자 라벨을 보내면 `awaiting_speakers` 가 되고, PM 이 지정을 제출하면 `processing` 으로 돌아와 `done` \| `failed` 로 끝난다. 이 상태에서는 추출이 등록되지 않고, 같은 공간의 새 업로드를 막지도 않는다. 자세한 흐름과 PM 용 API 는 아래 §2.3.1 이다.
 - `extraction_id` 는 `status: done` 일 때만 채워진다.
 - ~~`progress` 가 응답에서 빠졌다.~~ **PR #59 가 §4.7-1 을 반영했다.** `progress`(audio_merged·transcribed·extracted)가 **필수 필드**로 온다. 진행률 UI 가 이 값을 쓴다.
+- `progress` 세 값이 true 가 되는 시점 (#384). 키·타입은 그대로이고 시점만 바뀐다.
+
+  | 값 | 현재 develop BE | BE PR #383 병합 뒤 |
+  |---|---|---|
+  | `audio_merged` | 회의에 발화(source)가 저장되면 true | AI 워커가 전사(`stt`)를 시작하면 true. 발화가 있어도 true |
+  | `transcribed` | `audio_merged` 와 같은 값 | 전사가 끝나 발화 저장(`sources`)에 들어가면 true. 발화가 있어도 true |
+  | `extracted` | 최신 추출에 항목이 1개 이상이면 true. 사실상 `done` 과 함께 | 추출이 끝나 인계(`handoff`)에 들어가면 true. 항목이 있는 최신 추출이 있어도 true |
+
+  - 근거: 현재 판정은 [meetings.py](../../../backend/app/api/meetings.py)의 `_compute_progress`. 병합 뒤 판정은 BE·AI PR #383(#381)의 같은 함수와 `services/meeting_stage.py`의 `stage_rank`다. AI 는 `ai/capture/recorder.py` `process_session` 의 단계 시작(`begin`)에서 `PATCH /meetings/{id}/stage` 로 알린다. 이 경로는 서비스 토큰 전용이라 FE 는 부르지 않는다.
+  - 상태: #383 은 2026-11-05 기준 열려 있다. 병합 뒤 열의 내용은 PR 코드와 #384 명세에서 확인한 것이며 실서버로 확인하지 않았다.
+  - 단계를 알리지 않는 회의는 병합 뒤에도 현재 develop 열처럼 데이터로 판정한다. 옛 회의, 웹 업로드 회의(업로드 처리 소비자 #254·#255 가 보고를 붙이기 전까지), 채팅 회의(PR #378, 병합 전)가 그렇다. 이 회의들은 `audio_merged`·`transcribed` 가 함께 바뀌어 처리 화면의 둘째 단계가 진행 중으로 보이지 않는다.
+  - 병합 뒤 달라지는 두 경우. 항목 0개로 `done` 된 회의와 인계 단계에서 `failed` 된 회의도 `extracted` 가 true 다(단계 값이 `done`·`failed` 뒤에도 남는다). FE 는 `done` 이면 `progress` 와 관계없이 세 단계를 끝난 것으로 보고, `failed` 이면 단계 목록을 그리지 않고 `failed_stage` 로 실패 안내를 고른다. 그래서 화면은 같다. [단계 테스트](../../src/entities/meeting/lib/processingSteps.test.ts)와 [처리 화면 테스트](../../src/app/meetingProcessingProgress.test.tsx)가 두 경우를 확인한다.
+  - 처리 화면의 세 단계 이름은 바꾸지 않는다. 병합 뒤 단계 구간은 1단계 「음성 파일 준비하기」가 워커 대기·모델 준비, 2단계 「음성을 텍스트로 옮기기」가 전사, 3단계 「결정사항과 할 일 뽑아내기」가 발화 저장과 추출이다. 인계 중에는 `status: processing` 인 채 세 단계가 모두 끝난 것(`3 / 3 단계 완료`)으로 보인다.
+  - FE 는 현재 처리 단계 값(`processing_stage`)을 요청하지 않는다. 화면의 세 단계는 `progress` 세 값으로 정해지고, 3단계 안의 발화 저장·추출은 나눠 보이지 않는다. 단계를 알리는 회의의 인계 구간은 `processing` + `extracted: true` 로 이미 알 수 있다.
 - 이미 종료된 회의에 `/end` 를 호출하면 409 `MEETING_ALREADY_ENDED`.
 
 ### 2.3.1 업로드 회의 화자 지정 — PM 경로 (#266)
 
-> **상태: BE 구현됨, FE 방향 합의(#256).** 아래는 `backend/app/api/meetings.py` 와 `backend/app/services/speaker_assignment.py` 의 구현 사실이다. #256 에서 FE 가 원본 + 구간 재생, 같은 멤버 다중 지정 허용, 외부 참석자 선택지(`null`)를 받아들였다(2026-11-03). 지정 후보를 업로드 때 고른 참석자로 제한할지는 아직 정하지 않았다. AI 쪽 경로는 [backend-ai-contract.md](../../../backend/docs/contracts/backend-ai-contract.md) 에 있고 프론트는 호출하지 않는다. 실제 서버를 띄운 호출은 검증하지 않았고 테스트([test_speaker_assignment_api.py](../../../backend/tests/api/test_speaker_assignment_api.py))로 확인했다.
+> **상태: BE 구현됨, FE 방향 합의(#256), FE 구현(2026-11-05, MSW 기준).** 아래는 `backend/app/api/meetings.py` 와 `backend/app/services/speaker_assignment.py` 의 구현 사실이다. #256 에서 FE 가 원본 + 구간 재생, 같은 멤버 다중 지정 허용, 외부 참석자 선택지(`null`)를 받아들였다(2026-11-03). 지정 후보를 업로드 때 고른 참석자로 제한할지는 FE 가 2026-11-05 에 「제한하지 않는다」로 정했고 BE 확인은 남았다(아래 「FE 구현」). AI 쪽 경로는 [backend-ai-contract.md](../../../backend/docs/contracts/backend-ai-contract.md) 에 있고 프론트는 호출하지 않는다. 실제 서버를 띄운 호출은 검증하지 않았고 테스트([test_speaker_assignment_api.py](../../../backend/tests/api/test_speaker_assignment_api.py))로 확인했다.
 
 세 경로 모두 로그인 세션이 필요하고 그 회의 워크스페이스의 PM 만 쓴다. 미로그인은 401, PM 이 아니면(일반 팀원, 다른 공간의 PM) 403 `FORBIDDEN`. 회의가 없거나 웹 업로드 회의가 아니거나 `meeting_upload` 행이 없으면 404 `MEETING_NOT_FOUND`.
 
@@ -442,12 +457,26 @@ Content-Disposition: 없음(내려받기 아님). Accept-Ranges: bytes
 - 상태는 보지 않는다. 녹음 폴더가 있는 동안은 받을 수 있다. 처리가 `done`·`failed` 로 끝나 폴더가 지워지면 404 `MEETING_NOT_FOUND` 다.
 - 쿠키 세션으로 인증하므로 같은 출처에서 `<audio src>` 로 바로 쓸 수 있다. 헤더를 붙여야 하는 방식은 쓸 수 없다.
 
-프론트가 맞춰야 할 것:
+프론트가 맞춰야 할 것(2026-11-05 반영, 아래 「FE 구현」):
 
 - `awaiting_speakers` 를 회의 상태로 표시한다. 알 수 없는 상태를 `created` 처럼 읽으면 안 된다.
-- 처리 추적이 이 상태에서 멈추면 안 된다. 현재 [trackerOutcome.ts](../../src/features/meeting-processing/model/trackerOutcome.ts) 는 `processing`·`done`·`failed` 외의 상태를 `lost` 로 보고 polling 을 멈춘다. `awaiting_speakers` 는 PM 의 지정을 기다리는 정상 진행이므로 계속 지켜보거나 지정 화면으로 안내해야 한다.
+- 처리 추적이 이 상태에서 멈추면 안 된다. 2026-11-05 전의 [trackerOutcome.ts](../../src/features/meeting-processing/model/trackerOutcome.ts) 는 `processing`·`done`·`failed` 외의 상태를 `lost` 로 보고 polling 을 멈췄다. `awaiting_speakers` 는 PM 의 지정을 기다리는 정상 진행이므로 계속 지켜보거나 지정 화면으로 안내해야 한다.
 - 이 경로를 쓰는 화면은 PM 에게만 보인다.
 - 새 오류 코드 중 PM 경로에서 오는 것은 `MEETING_NOT_AWAITING_SPEAKERS` 하나다. `UPLOAD_NOT_CLAIMED`·`SPEAKERS_ALREADY_REPORTED`·`SPEAKERS_NOT_ASSIGNED` 는 AI 경로 코드다. 위 「오류 코드」 목록의 개수(31개)에는 이 새 코드들이 들어 있지 않다.
+
+#### FE 구현 (#256·#342, 2026-11-05)
+
+> **상태: FE 구현, MSW 기준 검증.** 실제 서버를 띄운 호출과 실제 m4a 재생 시각은 확인하지 않았다. 아래 「후보 범위」는 사용자가 2026-11-05에 정한 FE 방향이며, BE가 #256에서 물은 「후보를 참석자로 제한할지」에 대한 답을 이슈에 남기는 일과 BE 확인은 남아 있다(합의 여부 확인 필요).
+
+- 상태: `MeetingStatus` 에 `awaiting_speakers` 를 더했다. 상세·목록·업로드 응답 모두 이 값을 정상 상태로 읽는다. 그 밖의 알 수 없는 상태 처리는 바꾸지 않았다(#348 범위). 구현: [types.ts](../../src/entities/meeting/model/types.ts), [mapper.ts](../../src/entities/meeting/model/mapper.ts).
+- 처리 추적: `awaiting_speakers` 는 `lost` 가 아니라 지켜보는 상태다. polling 간격은 `processing` 3초, `awaiting_speakers` 30초다. 처음 대기가 보이면 회의마다 세션당 한 번 PM 에게만 안내한다. 그 회의의 처리 화면을 보고 있으면 지정 화면으로 옮기고, 다른 화면이면 `화자 지정이 필요해요` 토스트의 `화자 지정하기` 로 옮긴다. 지정 뒤 `processing` → `done`·`failed` 는 기존 완료·실패 처리가 잇는다. 새로고침 뒤의 발견은 지금처럼 `processing` 회의만 등록한다. 구현: [trackerOutcome.ts](../../src/features/meeting-processing/model/trackerOutcome.ts), [useProcessingTracker.ts](../../src/features/meeting-processing/model/useProcessingTracker.ts).
+- 지정 화면 주소: `/workspaces/{workspace_id}/meetings/{meeting_id}/speakers`. 새로고침·직접 진입에 열린다. 라우터 PM 가드를 걸지 않고, 팀원에게는 「PM이 화자를 지정하고 있어요」를 보이며 화자 API 를 부르지 않는다. 진입점은 처리 화면, 토스트, 회의록 목록의 `화자 지정 필요` 행, 회의록 상세다. 대기 회의의 상세는 회의록·추출을 조회하지 않고 PM 에게 `화자 지정하기` 링크를, 팀원에게 PM 이 지정 중이라는 안내를 보인다. 구현: [MeetingMinutes.tsx](../../src/widgets/meeting-minutes/ui/MeetingMinutes.tsx), [MinutesDetail.tsx](../../src/widgets/meeting-minutes/ui/MinutesDetail.tsx). 구현: [MeetingSpeakersPage.tsx](../../src/pages/meeting-speakers/ui/MeetingSpeakersPage.tsx).
+- 라벨 표시: `speakers` 응답 순서대로 `화자 1`, `화자 2` 로 보이고 총 발화 시간을 함께 보인다. 라벨 문자열을 해석하지 않는다.
+- 후보 범위: `candidates`(업로드 때 고른 참석자)를 위에 보이고, 펼치는 「다른 팀원」 묶음에 워크스페이스 팀원 목록 중 `candidates` 밖의 팀원을 보인다. 「외부 참석자」를 고르면 `null` 을 보낸다. 같은 팀원을 여러 라벨에 고를 수 있고 다른 라벨의 선택을 알려만 준다. 지금 BE 제출 검증(워크스페이스의 탈퇴하지 않은 멤버면 받음)과 맞는다. BE 가 제출을 참석자로 제한하면 「다른 팀원」 선택은 400 `member_ids` 가 된다.
+- 제출 규칙: 모든 라벨을 직접 골라야 제출할 수 있다. 「외부 참석자」도 직접 고른다. 남은 라벨이 있으면 제출 버튼 옆에 `아직 고르지 않은 화자 n명` 을 보인다. 따라서 FE 는 「지정하지 않은 라벨을 `null` 로 보내는」 경우를 만들지 않는다. 구현: [assignmentDraft.ts](../../src/features/speaker-assignment/model/assignmentDraft.ts).
+- 샘플 재생: 화면에 `<audio preload="metadata" src=/api/v1/meetings/{id}/audio>` 하나를 두고 샘플마다 재생 버튼을 둔다. 누르면 그 `start` 로 옮겨 재생하고 `end` 에서 멈춘다. `timeupdate` 간격으로는 0.5초 구간을 넘기므로 화면 갱신마다와 남은 시간 타이머로 끝을 확인한다. 샘플이 1개, 2초 미만, 0개여도 그린다. `audio` 가 `null` 이거나 녹음을 불러오지 못하면 플레이어를 쓰지 않고 안내한다. 구현: [samplePlayback.ts](../../src/features/speaker-assignment/model/samplePlayback.ts), [useSamplePlayer.ts](../../src/features/speaker-assignment/model/useSamplePlayer.ts).
+- 제출 오류: 400 `INVALID_REQUEST` 의 `unknown_labels`·`missing_labels` 는 화자 목록을 다시 받고 다시 고르게 한다. `member_ids` 는 그 선택만 지우고 다시 받는다. 409 `MEETING_NOT_AWAITING_SPEAKERS` 는 `details.status` 가 `failed` 일 때만 만료로 보고 상세를 다시 받아 그 `failed_stage` 의 안내와 PM 재업로드 링크를 보이며 다시 낼 수 없다. 그 밖의 `details.status` 는 이미 지정됐다고 안내하고 처리 화면이나 회의록으로 잇는다. 403·404·네트워크 오류는 각각 문구로 안내한다. 제출 성공 뒤에는 처리 화면으로 옮겨 기존 추적이 끝까지 따라간다. 구현: [submitRejection.ts](../../src/features/speaker-assignment/model/submitRejection.ts), [useSpeakerSubmit.ts](../../src/features/speaker-assignment/model/useSpeakerSubmit.ts).
+- MSW: GET·PUT `/meetings/{id}/speakers`, GET `/meetings/{id}/audio`(코드로 만든 무음 WAV)와 `meeting-speakers*` 시나리오 다섯 개. 계약의 403·404·400 `details`·409 `details.status`·같은 지정 재제출 200을 흉내 낸다. 목록: [MSW 안내](../msw-guide.md).
 
 ### 2.4 extractions
 
@@ -481,6 +510,7 @@ Content-Disposition: 없음(내려받기 아님). Accept-Ranges: bytes
   **`approval_id` 를 비우지 않는다.** 같은 항목이 두 ID 를 동시에 갖는다 → §3.1, §4.0-②-12.
   화면은 `task_id` 를 우선으로 읽어 `task_id` 가 있으면 `반영됨` 으로 다룬다 (§6).
 - `assignee.member_id` 가 `null` 이면 `raw` 로 대체 표시한다.
+- **2026-11-05 코드 대조(#256 A1):** `evidence` 에 `speaker_member_id: string | null` 이 더 온다([BE 스키마](../../../backend/app/schemas/meeting.py)의 `EvidenceInfo`). 업로드 회의는 Discord uid(`speaker`)가 `null` 이고 이 값만 온다. FE 는 근거 화자 이름을 이 팀원 ID 로 먼저 찾고, 없거나 팀원 목록에 없으면 `speaker` uid 로 찾는다. 둘 다 못 찾으면 `알 수 없음` 이다. 구현: [speakerName.ts](../../src/entities/member/lib/speakerName.ts). MSW 기준 검증, 실서버 미검증.
 - **2026-10-17 코드 대조:** 항목에 `reverted_at`·`approval_status` 가 더 온다. auto 항목을 되돌리면 `gate` 는 `auto` 그대로, `task_id` 는 `null`, `approval_id` 는 새 생성 승인이다 — 생성 시점 배타성의 예외다. 되돌리기는 `POST /extractions/{extraction_id}/items/{item_id}/revert` 다 (위 「M7 대시보드·항목 되돌리기 경계」).
 
 ### 2.5 approvals — `확인 필요` 의 데이터 출처
@@ -537,13 +567,16 @@ Content-Disposition: 없음(내려받기 아님). Accept-Ranges: bytes
   `extraction_item_id` 는 Task 를 만들기 **전에** 검증한다. 항목의 워크스페이스가 승인과 다르면 400 `WORKSPACE_MISMATCH`, 항목의 `approval_id` 가 이 승인이 아니면 400 `INVALID_REQUEST` 이고 아무것도 바뀌지 않는다.
   항목이 없으면 연결 없이 Task 만 만든다. 이 검사가 제목 검증보다 먼저다.
 - `task_update` → `title`, `assignee_member_id`, `status`, `blocker`, `due_date` 중 존재하는 것만. 이력 출처는 payload `change_source`(없으면 `meeting`)
+  - 현재 BE 구현: 회의에서 만드는 `task_update` payload 에는 반영 키 말고도 표시용 `task_title`·`base_title`·`doc_text`·`category`(`schedule`·`assignee`·`status`·`scope`·`decision`·`none`)·`evidence_quote`·`evidence_speaker`·`evidence_speaker_member_id`·`evidence_at_ms`·`meeting_id` 가 온다. `category` 가 `scope`(범위 결정)면 바뀌는 필드가 없어도 승인 요청을 만든다([extractions.py](../../../backend/app/api/extractions.py)). 승인해도 반영 키가 없으면 태스크·이력에 아무것도 남지 않는다.
+  - 합의됨, BE 미구현(#205): `category` 가 `scope` 인 승인을 승인하면 필드 반영과 별개로 `changed_field: "scope"` 이력 한 줄을 남긴다. 바뀌는 필드가 함께 있으면 필드 이력과 범위 이력을 둘 다 남긴다. 범위 이력만 남는 승인은 Task `version` 과 Notion 동기화를 건드리지 않는다. 반려하면 이력을 남기지 않는다. FE 가 먼저 배포된 뒤 BE 를 배포한다.
+  - FE 구현(#205): 승인 매퍼가 `doc_text`·`category`·근거 발화·`meeting_id` 를 읽는다. 모르는 `category` 는 `null` 이다. 승인 상세는 `scope` 면 「범위 변경」 절에 `doc_text` 와 근거를 보이고, 바뀌는 필드가 있을 때만 변경 표를 보인다. 대시보드 확인 필요 목록과 보드 승인 카드는 `범위 변경을 확인해야 해요` 로 보인다. MSW 는 합의대로 승인 때 범위 이력을 남긴다(시나리오 `approval-scope`).
 - `reminder_dm` → 태스크에 반영하지 않는다. 발송은 Discord 봇의 책임이다
 
 **프론트엔드가 지킬 규칙**
 
 - **보완 사유는 서버가 주지 않는다.** `assignee_member_id` 가 `null` 이면 `담당자 없음`, `due_date` 가 `null` 이면 `마감 없음` 으로 프론트엔드가 파생한다.
 - `assignee_raw` 와 `due_raw` 는 회의에서 나온 원문이다. 확정 값이 아니므로 보조 표시한다.
-- `evidence_quote` · `evidence_speaker` · `evidence_at_ms` 로 근거를 보여준다.
+- `evidence_quote` · `evidence_speaker` · `evidence_at_ms` 로 근거를 보여준다. 생성·수정 승인 payload 에는 `evidence_speaker_member_id` 도 온다(BE [extractions.py](../../../backend/app/api/extractions.py)). 화자 이름은 이 값을 먼저 쓰고 `evidence_speaker` uid 로 돌아간다(2026-11-05, #256 A1, 위 §2.4).
 - `type` 마다 화면이 다르므로 **`type` 으로 분기한 뒤 payload 를 읽는다.** 공통 필드를 가정하지 않는다.
 - 목록 정렬이 `created_at` 내림차순 고정이다. **대기 오래된 순(D-050)은 클라이언트에서 뒤집는다.**
 
@@ -579,7 +612,7 @@ Content-Disposition: 없음(내려받기 아님). Accept-Ranges: bytes
 
 // TaskHistoryResponse — created_at 내림차순
 {"history_id": "hs_01", "task_id": "tk_01",
- "changed_field": "due_date",           // assignee|start_date|due_date|status|title|blocker (#303 전 이력에는 progress 가 남아 있고 되돌리기는 400)
+ "changed_field": "due_date",           // assignee|start_date|due_date|status|title|blocker (#303 전 이력에는 progress 가 남아 있고 되돌리기는 400). scope 는 합의됨·BE 미구현(#205), 아래 참고
  "old_value": "2026-09-13", "new_value": "2026-09-20",
  "change_source": "meeting",            // meeting|chat|checkin|notion|reminder_reply|manual|scheduler
  "changed_by": null,
@@ -601,6 +634,8 @@ Content-Disposition: 없음(내려받기 아님). Accept-Ranges: bytes
 - `created_by` · `changed_by` · `resolved_by` 를 **프론트엔드가 직접 실어 보낸다.**
   ~~세션이 없으므로~~ **세션은 PR #59 로 생겼지만 `tasks` · `approvals` 가 아직 쓰지 않는다.** 서버가 actor 를 유추하도록 바꿔 달라 → §4.0.
 - 되돌리기는 이미 되돌린 기록이면 409 `TASK_HISTORY_ALREADY_ROLLED_BACK`.
+- **`changed_field: "scope"` (합의됨, BE 미구현, #205).** `scope` 승인(§2.5)을 승인하면 생기는 범위 변경 이력이다. `old_value` 는 `null`, `new_value` 는 범위 변경 문장이다. 이슈는 문장의 출처를 정하지 않았고 MSW 는 payload `doc_text` 를 쓴다(합의 여부 확인 필요). 되돌릴 Task 필드가 없어 되돌리기는 400 `INVALID_REQUEST`(`되돌릴 수 없는 변경 항목입니다`)다.
+  FE 구현: 이력 매퍼가 `scope` 를 받고(모르는 값은 지금처럼 `title`), 이력 줄을 `범위 변경: <new_value>` 로 보인다. `이전 → 이후` 형식을 쓰지 않는다. FE 화면에는 이력 되돌리기 버튼이 없다.
 
 **PR #55 가 바꾼 것 — 조용하지만 중요하다**
 
@@ -904,6 +939,53 @@ MSW 는 **API 를 흉내내므로 100자 기준을 그대로 쓴다.** 여기에
 - **만료는 서버 세션에만 있다.** `session.expires_at` 이 발급 후 7일이고 `get_current_user` 가 지나면 401 을 낸다. `set_cookie` 에는 `max_age` · `expires` 가 없어
   쿠키는 브라우저 세션 쿠키다 — 브라우저를 닫으면 7일 전이어도 사라진다 (2026-09-29 `auth.py` `_create_session`).
 
+#### 4.1.1 비밀번호 재설정 (#356) — 합의됨, BE PR #398 열림·미병합
+
+제공자는 BE, 소비자는 FE 요청 화면 `/forgot-password`와 변경 화면 `/reset-password`다. 합의 근거는 [BE 제안](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/356#issuecomment-6636865795), [FE 답변](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/356#issuecomment-6639046611), [BE 설계 확정](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/356#issuecomment-6652505200) 댓글이다. 서버 구현은 [BE PR #398](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/pull/398)이다. 2026-11-05 확인 당시 PR은 열려 있고 병합 전이다. 아래 규약은 그 PR의 `backend/app/api/auth.py`, `schemas/auth.py`, `services/password_reset.py`, `core/errors.py`, `main.py`를 읽고 대조했다. 로컬 백엔드나 배포 서버에 적용됐다고 가정하지 않는다.
+
+**규약 (BE PR #398 코드 기준).** 세 경로 모두 로그인이 필요 없다.
+
+| Method | Path | 요청 | 성공 | 실패 |
+|---|---|---|---|---|
+| POST | `/api/v1/auth/password-reset/request` | `{"email"}` | 200 `{"data": {}}` | 400 `INVALID_REQUEST`(이메일 형식), 503 `MAIL_UNAVAILABLE`(서버 메일 설정 없음) |
+| POST | `/api/v1/auth/password-reset/verify` | `{"token"}` | 200 `{"data": {"expires_at", "email_masked"}}` | 400 `PASSWORD_RESET_TOKEN_INVALID` |
+| POST | `/api/v1/auth/password-reset/confirm` | `{"token", "new_password"}` | 200 `{"data": {}}` | 400 `INVALID_REQUEST`(규칙 위반), 400 `PASSWORD_RESET_TOKEN_INVALID` |
+
+- `PASSWORD_RESET_TOKEN_INVALID`의 `details.reason`은 `invalid`(없는 토큰이거나 새 요청으로 밀림), `used`(이미 사용), `expired`(만료)다. 이 순서로 판정한다. verify와 confirm이 같다.
+- `email_masked`는 아이디 앞 2자 + `***`이다. 아이디가 2자 이하면 앞 1자만 남긴다. 도메인은 그대로다. 예: `ab***@gmail.com`, `pm@example.com` → `p***@example.com`.
+- `INVALID_REQUEST`는 본문 검증(pydantic) 오류다. `details.fields`는 `[{"loc": ["body", "new_password"], "msg": "..."}]` 모양이다. 본문 검증이 토큰 확인보다 먼저라, 규칙 위반이면 토큰이 무엇이든 400 `INVALID_REQUEST`이고 토큰을 쓰지 않는다.
+- 메일 설정 확인이 가입 여부 판단보다 먼저다. 설정이 없으면 모든 요청이 503이다. 설정이 있으면 가입하지 않은 이메일과 제한에 걸린 요청도 같은 200이고 메일은 나가지 않는다.
+- 요청 제한은 계정마다 60초에 1번, 1시간에 5번이다. 발급 기록으로 세므로 재시작해도 유지된다. 새 토큰을 실제로 발급할 때만 이전 미사용 토큰이 `invalid`가 된다. 제한에 걸린 요청은 이전 링크를 그대로 둔다.
+- 토큰은 30분, 1회용이다. DB에는 sha256 해시만 둔다.
+- 이메일은 로그인과 같이 대소문자까지 정확히 일치해야 찾는다.
+- 메일 링크는 `{APP_BASE_URL}/reset-password#token=...`이다. 토큰이 서버 접근 로그와 Referer에 남지 않도록 fragment로 보낸다. 메일은 응답 뒤 백그라운드로 보내고 실패하면 3번까지 다시 보낸다.
+- 새 비밀번호 규칙은 8자 이상(코드 포인트 수), ASCII 숫자 0-9 하나 이상이다. confirm이 변경, 토큰 사용 처리, 그 계정의 세션 전부 삭제를 한 트랜잭션으로 한다. 새 세션은 만들지 않는다.
+- 회원가입 변화. `POST /auth/signup`도 같은 규칙을 어기면 400 `INVALID_REQUEST`다. 약한 비밀번호와 이미 있는 이메일이 함께 오면 409 대신 400이다. FE 회원가입 폼(`signupSchema`)은 같은 규칙을 먼저 검사하므로 화면에서 이 400에 닿지 않는다. 길이를 UTF-16 단위로 세는 차이는 아래 「합의와 구현의 차이」에 적었다.
+
+**FE가 맞추기로 한 동작.** 화면 동작이며 API 형태가 아니다.
+
+- 변경 화면은 `location.hash`에서 토큰을 읽고, verify를 부르기 전에 주소에서 지운다(`history.replaceState`). 이후 토큰은 verify·confirm 본문으로만 보낸다.
+- `/reset-password`는 `RedirectIfAuthed` 밖이다. 로그인된 브라우저에서 열어도 변경 화면이 보인다. `/forgot-password`는 다른 공개 화면처럼 안에 둔다.
+- 변경 화면은 `email_masked`로 「{가린 이메일} 계정의 비밀번호를 바꿔요.」를 보인다.
+- 변경 성공 뒤 그 브라우저의 FE 세션 상태를 비우고 `/login`으로 보내 안내 문구를 띄운다.
+- `reason`별로 문구를 나눈다. 세 경우 모두 「다시 요청하기」로 `/forgot-password`에 보낸다.
+- 요청을 보낸 뒤 60초 동안 「다시 보내기」를 막고 남은 초를 보인다. 1시간 5회 제한은 화면에서 막지 않는다.
+- 로그인 화면의 「비밀번호를 잊으셨나요?」는 BE 배포와 운영 메일 설정이 끝났다고 이슈에 알려 온 뒤에 켠다. 그 전에는 request가 503이다. 그때까지 두 화면은 주소로 직접 열 때만 보인다.
+
+**합의와 구현의 차이.**
+
+- 길이 세는 단위. BE는 코드 포인트, FE `signupSchema`·`resetPasswordSchema`는 UTF-16 단위로 센다. 이모지처럼 BMP 밖 문자가 섞인 비밀번호는 FE를 통과하고 BE에서 400이 될 수 있다. 화면은 그때 회원가입에서 폼 상단 「요청 내용을 다시 확인해 주세요.」, 재설정에서 새 비밀번호 칸 아래 같은 문구를 보인다. 드문 입력이라 이번에는 고치지 않았다.
+- MSW 회원가입은 비밀번호 규칙을 검사하지 않는다. 기존 통합 테스트 여럿이 약한 비밀번호로 MSW에 가입하므로 이 작업 범위 밖으로 남겼다. MSW 재설정 confirm은 BE와 같은 규칙과 순서를 따른다.
+
+**현재 구현 (2026-11-05).** FE는 위 규약대로 만들었고 MSW로만 확인했다.
+
+- 요청: [DTO](../../src/shared/types/api/auth.ts), [요청 함수](../../src/entities/user/api/passwordReset.ts), [reason 해석](../../src/entities/user/model/passwordReset.ts). `details.reason`이 없거나 모르는 값이면 `invalid`로 읽는다. verify의 `expires_at`은 읽어 두지만 화면에 쓰지 않는다. `details.fields`는 읽지 않고 confirm의 `INVALID_REQUEST`를 새 비밀번호 칸의 오류로 보인다.
+- 오류 코드: `PASSWORD_RESET_TOKEN_INVALID`, `MAIL_UNAVAILABLE`을 [오류 코드 목록](../../src/shared/api/errors.ts)과 [문구](../../src/shared/api/errorMessages.ts)에 더했다. §1 「오류 코드」의 서버 목록은 BE PR 병합 뒤에 고친다.
+- 화면: [링크 상태](../../src/features/auth/model/useResetLink.ts), [변경 폼](../../src/features/auth/ui/ResetPasswordForm.tsx), [요청 폼](../../src/features/auth/ui/ForgotPasswordForm.tsx), [변경 뒤 정리](../../src/features/auth/model/useFinishPasswordReset.ts), [라우트](../../src/app/router/routes.tsx). 토큰은 첫 렌더의 주소에서 읽고, 주소를 replace로 비운 뒤에야 verify가 시작된다.
+- 로그인 화면 링크는 비활성 그대로다. 켤 때는 [LoginForm](../../src/features/auth/ui/LoginForm.tsx)의 비활성 버튼을 `paths.forgotPassword()`로 가는 링크로 바꾼다.
+- MSW: [handler](../../src/shared/mock/handlers/passwordReset.ts), [시나리오](../../src/shared/mock/passwordResetScenarios.ts). 정상·만료·재사용·재요청 무효·재요청 제한·서버 오류(500)·메일 미설정(503)을 고정 토큰으로 재현한다. 개발·MSW 모드에서만 모의 메일함 `/__mock/mail`이 보낸 링크를 보여 준다.
+- 검증: Vitest 단위·통합, 실제 Chromium E2E [password-reset.e2e.ts](../../e2e/password-reset.e2e.ts)(요청 → 모의 메일함 링크 → 변경 → 새 비밀번호 로그인, 만료 링크). BE PR 코드는 읽어서 대조만 했다. 실서버 왕복, 실제 메일 발송, 서버 세션 끊김은 BE 병합·배포와 메일 설정 뒤 확인한다.
+
 ### 4.2 워크스페이스의 사용자 스코프 · 역할 · 온보딩
 
 ~~`GET /workspaces` 가 **전체 워크스페이스**를 반환한다.~~ **세 가지 모두 PR #59 가 넣었다.** 온보딩만 스텁이다.
@@ -1052,7 +1134,7 @@ POST .../meetings/upload            multipart/form-data
 - FE 합의 근거는 [이슈 결정 댓글](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/256#issuecomment-6609243822)과 D-091~D-093의 2026-11-04 보완이다. BE 목록 변경은 이 작업의 구현 제안이며 파트 간 리뷰·합의와 실서버 배포 확인은 별도다.
 - 현재 구현 근거: [BE 목록](../../../backend/app/api/workspaces.py), [FE DTO](../../src/shared/types/api/meeting.ts), [매퍼](../../src/entities/meeting/model/mapper.ts), [실패 안내](../../src/entities/meeting/lib/meetingFailure.ts), [목록 구분](../../src/entities/meeting/lib/minutesList.ts), [추적기](../../src/features/meeting-processing/model/useProcessingTracker.ts).
 - 자동 실패 전환은 미병합 [BE PR #301](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/pull/301)의 동작이다. 이 작업은 sweeper나 화자 지정 기능을 구현하지 않는다.
-- 예정 계약: [BE 알림 댓글](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/256#issuecomment-6604969982)에 따라 지정 제출 직후 만료되면 `409 MEETING_NOT_AWAITING_SPEAKERS`, `details.status=failed`가 온다. FE는 상세를 다시 조회해 실제 사유를 안내하고 재제출을 막는 방향이다. 현재 `develop`에는 화자 지정 제출 UI가 없어 이 오류의 실제 화면 연결은 후속 작업이다. 모든 409를 만료로 해석하지 않는다.
+- 예정 계약: [BE 알림 댓글](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/256#issuecomment-6604969982)에 따라 지정 제출 직후 만료되면 `409 MEETING_NOT_AWAITING_SPEAKERS`, `details.status=failed`가 온다. FE는 상세를 다시 조회해 실제 사유를 안내하고 재제출을 막는 방향이다. 2026-11-05 화자 지정 화면에 연결했다(§2.3.1 「FE 구현」의 제출 오류, MSW 기준). 모든 409를 만료로 해석하지 않는다.
 
 
 ### 4.5 Discord 서버 사용자 목록
@@ -1207,6 +1289,7 @@ MSW 픽스처의 단위이자 M1-C 의 작업 단위이기도 하다.
 | 랜딩 | 없음 | — |
 | 로그인 | `POST /auth/login` | **구현됨** §4.1 |
 | 회원가입 | `POST /auth/signup` | **구현됨** §4.1 — 201 |
+| 비밀번호 재설정 요청·변경 | `POST /auth/password-reset/request` · `verify` · `confirm` | ❌ **없다** §4.1.1 — BE PR #398 열림·미병합. MSW 로 개발 |
 | Google 로그인 | `GET /auth/google/start?state=` 로 **페이지 이동** | ❌ **없다** §4.1 — M4 에서 버튼 비활성 |
 | 앱 부팅 | `GET /auth/me` | **구현됨** §4.1 |
 
@@ -1310,7 +1393,7 @@ members 에만 있고 Discord 목록에 없으면      → 비활성 (서버를 
 | 참석자 선택 | `GET /members?workspace_id=` | **구현됨** §2.2 |
 | 업로드 | `POST /workspaces/{id}/meetings/upload` (multipart) | **구현됨** — 파일·참석자 저장, 화자 지정은 §2.3.1 |
 | 정리 중 — 폴링 | `GET /meetings/{meeting_id}` | **구현됨** §2.3 — `progress` 포함 |
-| 화자 지정(`awaiting_speakers`) | `GET`·`PUT /meetings/{id}/speakers`, `GET /meetings/{id}/audio` | BE 구현됨, FE 방향 합의(#256) §2.3.1 |
+| 화자 지정(`awaiting_speakers`) | `GET`·`PUT /meetings/{id}/speakers`, `GET /meetings/{id}/audio` | BE 구현됨, **FE 구현**(MSW 기준, 실서버 미검증) §2.3.1 |
 | 회의록 목록 | `GET /workspaces/{id}/meetings` | **구현됨** §4.4 |
 | 회의록 본문 | `GET /meetings/{meeting_id}/minutes` | ⚠️ **스텁** §4.4 — `transcript` 가 안내 문구 1줄, `summary` 는 항상 `null` |
 | 회의록의 태스크 영역 | `GET /extractions/{extraction_id}` | **구현됨** §2.4 |
@@ -1353,10 +1436,28 @@ members 에만 있고 Discord 목록에 없으면      → 비활성 (서버를 
 
 ~~**1차에서 화면을 만들지 않는다** (D-171).~~ D-171 은 D-174 로 대체됐다(2026-11-03).
 
-**현재 구현.** production 과 실 API 모드에서는 `준비 중` 안내를 표시한다. 개발 서버에서 MSW 를 켠 경우에만 시안 화면이 나온다.
-화면에 쓰는 임시 DTO·경로·오류 코드는 MSW 목일 뿐 계약이 아니다([M8-C 결과](../plan/m8/result-c.md)).
+**현재 구현 (#315, 2026-11-04).** 프론트엔드는 아래 백엔드 메시지 API 를 production 을 포함한 모든 모드에서 부른다. `준비 중` 안내와 MSW 모드 분기는 지웠다([M8-C 결과](../plan/m8/result-c.md#2026-11-04-실제-메시지-api-연결-315)).
 
-**백엔드 메시지 API** (#310 에서 BE 구현, 프론트엔드 미연결). 결정 근거는 [결정 0034](../../../ai/docs/basis_for_decision/ai/2026-11-04-0034-reminder-and-thread-message.md). 봇·AI 쪽 경로는 [backend-ai 계약](../../../backend/docs/contracts/backend-ai-contract.md)의 「리마인드 DM」에 있다. 경로 prefix 는 `/api/v1/workspaces/{workspace_id}/messages` 다.
+- 쓰는 경로: `GET /messages`, `GET /messages/threads/{thread_id}`, `PATCH /messages/bundles/{bundle_id}`(`body` 또는 `scheduled_at` 하나), `POST /messages/bundles/{bundle_id}/approve`(`{draft_version}`), `POST /messages/bundles/{bundle_id}/cancel`, `POST /messages/threads/{thread_id}/replies`. 재촉 만들기와 리마인드 하나 고치기·빼기(`/messages/reminders…`)는 화면에서 부르지 않는다.
+- 응답 타입은 [message.ts](../../src/shared/types/api/message.ts)가 `schemas/message.py` 와 칸을 1:1 로 맞춘다. 매퍼는 목록을 `bundles` 가 `null` 인지로 PM·팀원 두 모양으로 나누고, 묶음의 화면 단계(승인 대기·승인함·초안 대기)를 `status`·`approved`·`draft_status` 에서 한 번 정한다. `scheduled` 가 아닌 묶음은 그리지 않는다.
+- 보낼 시각은 마감 기준 시각과 `직접 정한 시각` 둘이고, 화면이 시각을 계산해 `scheduled_at` 으로 보낸다. 마감 기준 시각은 묶은 태스크 중 가장 이른 `due_date` 에 공간의 재촉 규칙(아래 **메시지·알림 설정** 의 `nudge_rule`)을 적용한 KST 시각이다. 카드 제목도 규칙을 따른다(`마감 당일`·`마감 하루 전`·`마감 2일 전`·`마감 3일 전`). 기본 규칙이면 전날 09:00 이다(#340, 2026-11-05). 재촉 규칙을 불러오는 중이거나 불러오지 못했을 때, 마감이 없거나 그 시각이 지났을 때는 이 카드를 고를 수 없다. 시안의 `지금 바로` 는 대응 경로가 없어 지웠다.
+- 오류 코드 처리는 한 표([actionMessages.ts](../../src/features/message-action/lib/actionMessages.ts)의 `KNOWN_FAILURES`)에 있다.
+
+| 코드 | 화면 | 다음 |
+|---|---|---|
+| 409 `BUNDLE_CHANGED` | 행동 자리에 `보낼 메시지가 바뀌었어요. 다시 확인해 주세요.` | 메시지 캐시를 다시 받는다. 다시 시도는 없다 |
+| 409 `REMINDER_SCHEDULED_AT_PASSED` | 승인이면 `예정 시각이 지났어요` 와 승인 잠금 | 그 묶음의 시각 저장이 성공할 때까지 승인을 잠근다 |
+| 409 `REMINDER_NOT_EDITABLE`, 404 `REMINDER_BUNDLE_NOT_FOUND` | 토스트 `이미 처리된 메시지예요. 목록을 다시 불러올게요.` | 메시지 캐시를 다시 받는다 |
+| 대화 조회 403·404 | `대화를 찾을 수 없어요` | 다시 시도 없음 |
+| 그 밖 | 행동 자리에 오류 문구와 `다시 시도` | 같은 요청을 다시 보낸다 |
+
+- 화면 표시: `draft_status` 가 `needed`·`claimed` 면 `문구 다듬는 중`, `body` 는 줄바꿈 그대로(`whitespace-pre-line`), `body_source` 는 미리보기 밑단의 작은 글자(`직접 고친 문구`·`AI 초안`·`기본 문구`)다. 봇 메시지 `dm_status: failed` 는 말풍선 아래 `DM 못 보냄 · {이유}`(`dm_blocked` 서버 DM 이 막혀 있어요, `discord_not_linked` Discord 계정이 연결되지 않았어요, `unknown` 이유를 알 수 없어요), 목록 행의 `dm_failed` 는 `DM 못 보냄` 표시다. 팀원 메시지 `reply_channel: web` 은 `웹에서 답장` 을 붙인다.
+- 대화 화면은 메시지와(PM 에게만) 예정 묶음을 나갈 시각 순으로 섞는다. 취소·만료된 재촉 줄은 응답에 없어 그리지 않는다.
+- 팀원 화면: 자기 대화를 보고 웹 답장을 쓴다. 답장 칸 아래에 `봇 DM 창에 쓴 글은 모두 PM 대화에 보여요.` 를 보인다. PM 은 남의 대화만 보므로 답장 칸 대신 안내 바를 보인다. 화면은 로그인 계정의 `member_id` 를 받지 않아 **PM 자신의 대화**(PM 이 리마인드를 받는 경우)에도 답장 칸이 없다.
+- 화면에서 뺀 것은 [결정 기록](../plan/m8/basis-for-decision/2026-11-04-messages-real-api-drop-unbacked-ui.md)에 있다: 답장의 태스크 판정, `지금 바로`, 채널 대화, 팀 역할, Discord 대화 주소, 재촉 이유 문장·근거 링크·요약, 취소·만료 재촉 줄, 승인자 이름.
+- 검증: MSW 기준 단위·화면 테스트와 브라우저 확인만 했다. 실제 서버(배포 BE)에 붙인 확인은 하지 않았다.
+
+**백엔드 메시지 API** (#310 에서 BE 구현, #315 에서 프론트엔드 연결). 결정 근거는 [결정 0034](../../../ai/docs/basis_for_decision/ai/2026-11-04-0034-reminder-and-thread-message.md). 봇·AI 쪽 경로는 [backend-ai 계약](../../../backend/docs/contracts/backend-ai-contract.md)의 「리마인드 DM」에 있다. 경로 prefix 는 `/api/v1/workspaces/{workspace_id}/messages` 다.
 
 | 요청 | 누가 | 하는 일 |
 |---|---|---|
@@ -1394,16 +1495,16 @@ members 에만 있고 Discord 목록에 없으면      → 비활성 (서버를 
 - 대화 목록 한 줄은 `{thread_id, member_id, name, last_message, awaiting_reply_since, dm_failed}` 다. `dm_failed` 는 그 팀원에게 마지막으로 나간 봇 메시지가 `failed` 인지다. 최근 메시지 순이고, 메시지가 없는 대화는 아래에 둔다.
 - 팀원이 봇 DM 창에 쓴 글은 리마인드에 대한 답인지와 상관없이 모두 대화에 들어가 PM 이 본다. 팀원 화면에 이를 안내해야 한다.
 - 팀원 권한은 로그인 계정이 연결된 팀원(`member.user_id`) 기준이다. 계정이 연결되지 않은 팀원은 웹 답장을 할 수 없다. 대화 주인은 팀원 행으로 판단하므로, 탈퇴했다가 새 팀원 행으로 돌아온 계정은 예전 행의 대화를 열 수 없다.
-- 아직 없는 것: 웹의 답장 판정 입력(`답장 확인 필요`)과 판정 결과 표시(BE 는 아래 「리마인드 답장 판단」에 구현, 프론트엔드 미연결, 합의 여부 확인 필요), 태스크 안내 DM·#회의록 요약, `지금 바로` 5분 합치기, 알림 설정, AI 초안 워커, 시안의 `지금 바로`(`send_timing: now`)에 대응하는 BE 경로. MSW 의 `reviews/{id}/send|dismiss` 는 `bundles/{id}/approve|cancel` 로 바뀐다. 프론트엔드 요청은 #315.
+- 아직 없는 것: 웹의 답장 판정 입력(`답장 확인 필요`)과 판정 결과 표시(BE 는 아래 「리마인드 답장 판단」에 구현, 프론트엔드 미연결, 합의 여부 확인 필요), 태스크 안내 DM·#회의록 요약, `지금 바로` 5분 합치기, AI 초안 워커, 시안의 `지금 바로`(`send_timing: now`)에 대응하는 BE 경로. 프론트엔드는 #315 에서 MSW 임시 경로 `reviews/{id}/send|dismiss` 를 `bundles/{id}/approve|cancel` 로 옮겼다.
 
 **스케줄러** (#318 에서 BE 구현). 결정 근거는 [결정 0038](../../../ai/docs/basis_for_decision/ai/2026-11-04-0038-reminder-scheduler-and-notifications.md). 시각 기준은 한국 시간이다.
 
-- 마감 전날 09:00 에 나갈 재촉을 그 3일 전에 만들고 PM 에게 알린다. 3일이 안 남았으면 바로 만들고, 발송 시각이 지났으면 만들지 않는다. 만든 재촉은 PM 승인 전까지 나가지 않는다. PM 이 취소한 제안은 같은 마감에 다시 만들지 않고, 마감이 바뀌면 새로 제안한다.
+- 마감 전날 09:00 에 나갈 재촉을 그 3일 전에 만들고 PM 에게 알린다(발송 시각은 기본값. 메시지·알림 설정 항목 참조). 3일이 안 남았으면 바로 만들고, 발송 시각이 지났으면 만들지 않는다. 만든 재촉은 PM 승인 전까지 나가지 않는다(기본값. 자동 승인을 켜면 발송 시각에 승인해 보낸다. 메시지·알림 설정 항목 참조). PM 이 취소한 제안은 같은 마감에 다시 만들지 않고, 마감이 바뀌면 새로 제안한다.
 - 응답은 대화의 팀원 답장(디스코드·웹)과 사람이 바꾼 태스크 상태·마감이다. 스케줄러 자신의 변경(`change_source: scheduler`)은 응답이 아니다. 누가 바꿨는지는 가리지 않아서 PM 의 수정과 회의 자동 반영도 응답이다. PM 이 재촉을 만든 뒤 마감을 고치면 그 재촉은 취소되고 새 마감으로 다시 제안된다.
-- 재촉을 만든 뒤 응답이 있으면 그 재촉은 발송 전에 `cancelled` 가 되고 PM 에게 알린다. 태스크가 지워져도 같다. 묶음의 나머지는 승인이 풀려 문구를 다시 만들고 PM 이 다시 승인한다. 시각이 지났으면 `예정 시각이 지났어요` 로 시각을 다시 고른 뒤 승인한다.
+- 재촉을 만든 뒤 응답이 있으면 그 재촉은 발송 전에 `cancelled` 가 되고 PM 에게 알린다. 태스크가 지워져도 같다. 묶음의 나머지는 승인이 풀려 문구를 다시 만들고 PM 이 다시 승인한다(기본값. 자동 승인이 켜져 있으면 켠 뒤 발송 시각이 오는 묶음은 발송 시각에 다시 승인된다. 메시지·알림 설정 항목 참조). 시각이 지났으면 `예정 시각이 지났어요` 로 시각을 다시 고른 뒤 승인한다.
 - 마감이 지난 예정 재촉은 `expired` 가 된다. 서버가 멈췄던 경우도 같고, 마감 전이면 응답을 다시 확인한 뒤 보낸다. 묶음의 나머지가 남아 승인이 풀리면 PM 에게 알린다.
-- 담당자가 바뀌면 처음부터 다시 시작한다. 예정 재촉은 승인된 것까지 취소하고 PM 에게 알리며, 열린 시계는 막지 않고 닫는다. 같은 마감이어도 새 담당자에게 다시 제안하고 PM 이 다시 승인한다. 이미 걸린 자동 막힘은 그대로 두며, PM 이 풀거나 새 재촉에 대한 답장으로 풀린다(답장이 막혔다는 내용이면 풀지 않는다). 담당자가 바뀐 뒤 옛 담당자 대화에 온 답장은 응답으로 세지 않는다.
-- DM 전달 보고 시각부터 72시간 안에 응답이 없으면 태스크를 `blocked` 로 바꾸고 사유를 `리마인드에 72시간 동안 응답이 없어요` 로 적고 PM 에게 알린다. 새 재촉이 나가면 처음부터 다시 잰다. DM 이 실패했거나 전달 보고 전이면 막지 않는다. 자동 막힘이 걸린 채 새 재촉이 나간 경우도 완료, 담당자 변경, 사람의 상태·마감 변경이 있으면 다시 막지 않는다. 이미 막힘이면 상태와 사유는 그대로 두고 PM 에게만 알린다.
+- 담당자가 바뀌면 처음부터 다시 시작한다. 예정 재촉은 승인된 것까지 취소하고 PM 에게 알리며, 열린 시계는 막지 않고 닫는다. 같은 마감이어도 새 담당자에게 다시 제안하고 PM 이 다시 승인한다(기본값. 메시지·알림 설정 항목 참조). 이미 걸린 자동 막힘은 그대로 두며, PM 이 풀거나 새 재촉에 대한 답장으로 풀린다(답장이 막혔다는 내용이면 풀지 않는다). 담당자가 바뀐 뒤 옛 담당자 대화에 온 답장은 응답으로 세지 않는다.
+- DM 전달 보고 시각부터 72시간 안에 응답이 없으면 태스크를 `blocked` 로 바꾸고 사유를 `리마인드에 72시간 동안 응답이 없어요` 로 적고 PM 에게 알린다(기본값. `silence_alert` 를 끄면 알리지 않는다. 메시지·알림 설정 항목 참조). 새 재촉이 나가면 처음부터 다시 잰다. DM 이 실패했거나 전달 보고 전이면 막지 않는다. 자동 막힘이 걸린 채 새 재촉이 나간 경우도 완료, 담당자 변경, 사람의 상태·마감 변경이 있으면 다시 막지 않는다. 이미 막힘이면 상태와 사유는 그대로 두고 PM 에게만 알린다.
 - 대화에 답장이 오면 판단이 끝나기를 기다렸다가 그 결과를 따른다(#331 에서 BE 구현, 합의 여부 확인 필요, 아래 「리마인드 답장 판단」). 그 태스크를 말했거나 바꿀 것이 없는 답장이면 재촉이 나갔던 태스크의 막힘을 풀고 사유를 비운다. 판단이 실패했거나 10분 안에 끝나지 않은 답장도 같다. 막혔다는 답장이면 막힘을 풀지 않고 시계만 닫으며(D-179), 사유가 비었거나 무응답 문구일 때만 답장 근거로 바꾼다. PM 이 쓴 사유는 둔다. 다른 태스크만 말한 답장이면 시계는 계속 간다. 이력 출처는 `reminder_reply` 다. 답장보다 뒤에 사람이 건 막힘은 풀지 않는다.
 
 **자동 막힘 풀기.** 카톡이나 회의로 이미 들은 경우를 위해 PM 이 한 번에 되돌리는 경로다.
@@ -1427,14 +1528,14 @@ members 에만 있고 Discord 목록에 없으면      → 비활성 (서버를 
 
 | `kind` | 받는 사람 | `link.type` | 누르면 가는 곳 | 설정 키(#316) |
 |---|---|---|---|---|
-| `reminder_sent` | 재촉 받은 팀원 | `thread` | 그 대화 | `dueReminder` |
+| `reminder_sent` | 재촉 받은 팀원 | `thread` | 그 대화 | |
 | `nudge_suggested` | PM 전원 | `bundle` | 보내기 전 확인 | |
 | `nudge_reapprove` | PM 전원 | `bundle` | 보내기 전 확인 | |
 | `reminder_auto_cancelled` | PM 전원 | `bundle` · `thread` | 남은 묶음이 있으면 보내기 전 확인, 없으면 대화 | |
-| `silence_blocked` | PM 전원 | `task` | 태스크 상세 | `silenceAlert` |
+| `silence_blocked` | PM 전원 | `task` | 태스크 상세 | `silenceAlert`(`silence_alert`) |
 
 - `link.type` 은 `thread`·`bundle`·`task` 중 하나다. 모르는 `kind` 가 와도 `text` 와 `link` 로 표시한다. 답장 판정 결과처럼 뒤에 종류가 더해진다.
-- 알림 설정 저장 API 는 아직 없어 모든 알림이 켜진 것처럼 나간다.
+- 설정 저장 API 는 §5.7 의 **메시지·알림 설정** 항목에 있다. `silence_blocked` 는 `silence_alert` 를 끄면 PM 에게 나가지 않는다. `reminder_sent` 는 설정과 무관하게 나간다. 재촉 제안 토글(`due_reminder`)은 스케줄러의 제안만 막고, PM 이 만든 재촉이 나갈 때의 `reminder_sent` 에는 영향이 없다.
 - 계정이 연결되지 않은 팀원은 목록에만 쌓인다. 푸시가 실패해도 목록에는 남는다.
 - 일시 오류는 최대 3번 다시 보낸다. 기기가 꺼져 있으면 푸시 서비스가 24시간까지 붙잡아 두고, 그 뒤에는 버린다. 푸시 서비스가 구독이 없어졌다고 답하면(404·410) 그 구독을 지운다. 요청을 거절하면(400·401·403) 다시 보내지 않고 구독은 남긴다. VAPID 키를 바꾸면 기존 구독이 이렇게 거절되니 브라우저에서 다시 구독한다.
 
@@ -1483,13 +1584,69 @@ members 에만 있고 Discord 목록에 없으면      → 비활성 (서버를 
 
 **MSW 동작 (임시, 합의 전).** 아래는 개발 서버 목의 현재 구현이다. 백엔드와 합의한 규약이 아니고, 합의 여부 확인 필요. 재촉 자동 승인은 목에서 꺼져 있으며, 예약 시각이 지나도 스스로 나가지 않는다.
 
-- 경로. `GET /workspaces/{id}/messages`, `GET …/messages/threads/{thread_id}`, `PATCH …/messages/reviews/{review_id}`, `POST …/reviews/{id}/send`, `POST …/reviews/{id}/dismiss`, `POST …/messages/threads/{thread_id}/replies`, `POST …/messages/replies/{message_id}/attribution`.
-- 상태. 재촉 한 건의 저장 단계는 `pending`·`approved`·`sent`·`cancelled` 다. `expired` 는 저장하지 않고, 마감일이 오늘(서울 날짜)보다 앞인 `pending` 을 읽을 때 계산한다. `보내기 전 확인` 은 열린 항목(`pending`·`approved`)만 담는다. 화면에서 승인 대기와 예약은 `예정`, 취소됨·만료됨만 그 상태 말을 붙인다. 발송된 항목은 상태 말 없이 시각 줄이 있는 말풍선이다.
-- 자리. 승인 대기·예약은 나갈 시각 `scheduled_at` 이다. `지금 바로` 는 null 이라 아직 나가지 않은 묶음에 둔다. 발송됨·취소됨은 `closed_at` 이다. 취소는 `min(scheduled_at, 취소한 시각)` 에 놓는다. 만료는 `min(scheduled_at, 마감 다음 날 00:00)` 에 놓는다.
-- 권한. 승인·고쳐 쓰기·보내지 않음·발송 시점·답장 판정은 PM 만 한다. 아니면 403 `PM만 할 수 있는 작업입니다.` 이고 기록은 그대로다. 답장은 그 대화의 팀원만 한다. 아니면 403 `자기 대화에만 답장할 수 있습니다.`
-- 팀원 조회. 목록은 `reviews: []` 와, `member_id` 가 그 공간의 세션 팀원과 같은 대화만이다. 세션 팀원을 정할 수 없으면 대화가 없다. 남의 대화 조회는 404 `MESSAGE_THREAD_NOT_FOUND` 다. 팀원에게는 이미 전달된 메시지만 주고, 승인·답장 대기·태스크 판정은 비운다.
-- 발송과 수정. 승인 대기가 아니면 발송은 404 다. 예약 시각이 지났으면 409 `MESSAGE_SCHEDULE_PASSED` 이고 기록은 그대로다. 시각이 없으면 지금 발송되고, 있으면 같은 항목이 예약으로 목록에 남는다. 승인된 항목을 고치거나 시각을 바꾸면 다시 승인 대기가 된다. `이대로 발송` 만 보낸다.
-- 웹 답장. 그 대화에만 남고 Discord 로 나가지 않으며 재촉 상태를 바꾸지 않는다. 태스크 판정은 비어 있다. PM 화면에는 목록을 다시 받을 때만 보인다 (D-136).
+**메시지·알림 설정** (#339 에서 BE 구현, #340 에서 FE 설정 화면 연결). 결정 근거는 [결정 기록](../../../backend/docs/plan/m6/basis-for-decision/2026-11-04-message-settings.md).
+
+| 요청 | 누가 | 하는 일 |
+|---|---|---|
+| `GET /api/v1/workspaces/{workspace_id}/message-settings` | 소속 팀원 | 현재 설정. 소속이 아니면 403 |
+| `PATCH /api/v1/workspaces/{workspace_id}/message-settings` | PM | 보낸 키만 바꾸고 바뀐 설정 전체를 돌려준다. 일반 팀원은 403 `FORBIDDEN` |
+
+- 요청(PATCH). 아래 6개 중 보낸 키만 바꾼다.
+  - `due_reminder`, `minutes_summary`, `silence_alert`, `reminder_auto_approve`: bool
+  - `nudge_rule`: `{days_before: 0~3, hour: 0~23}` 객체째 보낸다. 한국 시간이고 마감 `days_before` 일 전 `hour` 시에 나간다
+  - `pm_alert_method`: `web` · `discord_dm` · `both`
+- 400 `INVALID_REQUEST`: 빈 본문, `null`, 범위 밖 값, 모르는 값, 모르는 키(`nudge_rule` 안 포함). 새 오류 코드는 없다.
+- 응답 `data`(GET·PATCH 같다):
+
+```json
+{
+  "due_reminder": true,
+  "minutes_summary": true,
+  "silence_alert": true,
+  "nudge_rule": {"days_before": 1, "hour": 9},
+  "pm_alert_method": "both",
+  "reminder_auto_approve": false,
+  "saved": false,
+  "updated_at": null,
+  "updated_by": null,
+  "pms": [{"member_id": "…", "name": "…", "discord_linked": false}]
+}
+```
+
+- 저장한 적이 없으면 위 기본값이고 `saved: false`, `updated_at`·`updated_by` 는 null 이다. `updated_by` 는 바꾼 PM 의 `member_id` 다.
+- `pms` 는 PM 알림 방식 화면에 쓴다. `discord_linked` 는 워크스페이스에 Discord 연동이 있고 그 PM 의 `discord_user_id` 가 있을 때 true 다.
+
+현재 구현.
+
+- `due_reminder` 를 끄면 스케줄러가 재촉을 제안하지 않고 제안 기록도 남기지 않는다. 다시 켜면 제안 창 안의 태스크부터 제안한다. PM 이 직접 만든 재촉과 그 `reminder_sent` 알림은 영향이 없다.
+- `nudge_rule` 은 스케줄러가 만드는 재촉의 발송 시각을 정한다. 제안 시점(발송 3일 전)은 고정이다.
+- `silence_alert` 를 끄면 72시간 무응답 막힘 알림(`silence_blocked`)만 PM 에게 나가지 않는다. 막힘 전환·되돌리기는 그대로다.
+- 설정을 바꿔도 이미 만든 제안·묶음은 그대로다. 새 설정은 아직 제안되지 않은 것부터 적용한다. 예외는 자동 승인이 켜진 채 `due_reminder` 를 끈 경우다. 끄기 전에 만든 스케줄러 제안만 든 묶음은 발송 시각에 자동으로 나가지 않는다. PM 이 직접 넣은 재촉과 한 묶음이면 스케줄러 제안은 취소되고 PM 재촉만으로 문구를 다시 만들어 나간다(#341 리뷰, #340 의 2026-11-05 BE 댓글, [결정 기록](../../../backend/docs/plan/m6/basis-for-decision/2026-11-04-message-settings.md)).
+- `reminder_auto_approve` 를 켜면 승인 전 묶음을 발송 시각에 승인해 보낸다. 켠 뒤 발송 시각이 오는 재촉만 대상이고, 켜기 전에 시각이 지난 묶음은 보내지 않는다. PM 이 직접 만든 재촉이 든 묶음도 포함한다. 자동 승인된 묶음은 `approved_by` 가 null 이다. 켜진 동안 제안 알림 문구는 "발송 시각에 자동으로 나가요" 계열로 바뀐다.
+- AI 초안이 발송 시각 전에 오지 않으면 자동 승인 때 규칙 문구가 나간다.
+- PM 알림 방식은 지금 항상 웹이다. PM DM 경로가 없어서 `pm_alert_method` 는 저장만 하고 알림이 달라지지 않는다.
+- `minutes_summary` 는 저장만 한다. #회의록 요약을 게시하는 봇이 읽는 경로가 없다.
+
+FE 연결 (#340, 2026-11-05).
+
+- 설정 화면의 알림 절([NotificationSection](../../src/pages/settings/ui/NotificationSection.tsx))이 `GET` 으로 값을 읽고, PM 이 바꾸면 `PATCH` 로 바꾼 키만 보낸다. `nudge_rule` 은 객체째 보낸다. 응답 타입은 [messageSettings.ts](../../src/shared/types/api/messageSettings.ts)가 `schemas/message_settings.py` 와 칸을 1:1 로 맞추고, 매퍼([entities/message-settings](../../src/entities/message-settings/model/mapper.ts))가 화면 이름(camelCase)으로 바꾼다. 쿼리 키는 `['workspace', id, 'message-settings']` 다. 메시지 행동이 무효화하는 `messages` 접두어 밖에 둔다.
+- 변경은 한 공간에서 한 번에 하나씩 순서대로 나간다(TanStack mutation `scope`). 응답 전에는 진행 중인 변경을 서버 값 위에 겹쳐 보인다. 실패(403·400·5xx 등)하면 그 변경의 겹침만 사라져 값이 돌아오고 토스트 `알림 설정을 저장하지 못했어요` 가 뜬다. 성공하면 응답 전체를 캐시에 쓴다.
+- 일반 팀원은 모든 토글·재촉 규칙·PM 알림 방식이 비활성(읽기 전용)이다.
+- 재촉 규칙은 `며칠 전`(마감 당일·하루 전·2일 전·3일 전)과 `몇 시`(00:00~23:00 정시 24개, 야간 제한 없음) 두 선택이다. 토글 제목이 규칙을 따른다(`마감 2일 전 18:00에 담당자에게 DM`). 메시지 화면의 마감 기준 보낼 시각도 같은 규칙을 쓴다(§5.7 위 `현재 구현 (#315…)`).
+- `웹으로만` 안내(D-177)는 `pms[].discord_linked` 로만 정한다. 모든 PM 이 false 면 `Discord가 연결되지 않아 웹으로만 알려요`, 일부만이면 그 PM 이름을 붙인다(`김PM님은 …`).
+- 이미 만든 제안이 그대로라는 안내를 절 설명에 둔다. 자동 승인이 켜진 채 `due_reminder` 가 꺼져 있으면 위 예외 문구로 바꾼다.
+- 저장만 되는 두 항목(`pm_alert_method`·`minutes_summary`)에는 준비 중이라 저장만 된다는 짧은 문구를 붙였다.
+- 자동 승인된 묶음의 `approved_by: null` 을 보일 곳은 없다. 메시지 화면은 승인자를 보이지 않는다(위 `현재 구현 (#315…)`).
+
+합의 상태. D-174 가 설정 항목과 권한(PM 만 변경)을 정했고 이 절의 경로·모양은 #339 설계 확정 댓글에서 정했다. 재촉 규칙 범위(0~3일 전, 0~23시 정시, 야간 제한 없음)와 이미 만든 제안 안내는 FE 결정으로 2026-11-05 사용자가 정했다. PM DM 과 요약 게시가 생길 때 위 두 저장 항목이 동작에 쓰이는지는 합의 필요.
+
+**MSW 동작 (메시지·알림 설정).** [handlers/messageSettings.ts](../../src/shared/mock/handlers/messageSettings.ts)가 위 경로를 흉내 낸다. 저장 전에는 기본값과 `saved: false`, 처음 `PATCH` 때 행을 만든다. `GET` 은 소속 팀원, `PATCH` 는 PM(아니면 403 `FORBIDDEN`)이다. 빈 본문·모르는 키(`nudge_rule` 안 포함)·`null`·범위 밖 값·`"true"`·`1`·`9.0` 같은 다른 타입은 400 `INVALID_REQUEST` 다. `pms[].discord_linked` 는 공간의 Discord 연동이 `not_connected` 가 아니고 그 PM 의 `discord_user_id` 가 있을 때 true 다. 스케줄러 동작(제안·자동 승인)은 흉내 내지 않는다. 모의 DB 버전이 10 이 되었다.
+
+**MSW 동작.** 개발 서버·테스트·Storybook 의 목([handlers/message.ts](../../src/shared/mock/handlers/message.ts))은 위 백엔드 경로·응답 모양·오류 코드를 그대로 쓴다(#315).
+
+- 흉내 내는 것: 승인 때 `draft_version` 비교(다르면 409 `BUNDLE_CHANGED`, 이미 승인했으면 그대로 200), 지난 시각 승인·시각 고치기 409 `REMINDER_SCHEDULED_AT_PASSED`, 예정이 아닌 묶음 409 `REMINDER_NOT_EDITABLE`, 없는 묶음 404 `REMINDER_BUNDLE_NOT_FOUND`, 문구를 고치면 `body_source: pm`·판 올림·승인 유지, 시각만 옮기면 판 그대로, 팀원에게 `bundles: null`, 남의 대화 조회·답장 403 `FORBIDDEN`(PM 의 답장 포함), 시간대 없는 `scheduled_at` 400, 시각은 UTC 로 응답.
+- 흉내 내는 것(묶음 합치기, #368): 옮긴 시각에 같은 대화의 예정 묶음이 있으면 리마인드를 그 묶음으로 옮기고 합쳐진 묶음을 돌려준다. 두 묶음 모두 문구를 규칙대로 다시 만들고 판을 올리고 승인을 푼다. 리마인드가 남지 않은 옮긴 묶음은 `cancelled` 다. 합쳐지는 시각으로 옮기면서 문구를 같이 보내면 400 `INVALID_REQUEST` 다. 시나리오 `messages-merge` 가 합치기를 재현한다.
+- 흉내 내지 않는 것: 스케줄러의 발송·만료·자동 취소, AI 초안 도착, `POST /messages/reminders` 와 리마인드 하나 고치기·빼기 경로, 봇 경로.
 
 **프론트엔드가 정한 정책** (D-174, 백엔드·AI 합의 여부 확인 필요). 서버가 해 줘야 하는 일만 적는다. 정책 전문은 D-174 에 있다.
 
@@ -1509,7 +1666,7 @@ members 에만 있고 Discord 목록에 없으면      → 비활성 (서버를 
   - 일반 팀원은 자기 대화만 조회하고 답장할 수 있다.
 - 화면에 필요한 메시지 상태: `예정` · `발송됨` · `취소됨` · `만료됨`, 그리고 `답장 확인 필요`.
 
-D-117(E2E)과 D-136(polling)은 실제 API 가 생길 때까지 계속 보류한다.
+실제 API 는 #315 에서 연결했다. D-117(메시지 E2E)과 D-136(polling)은 이번에도 하지 않았다.
 
 ### 5.8 워크스페이스 관리 · 설정
 
@@ -1521,6 +1678,7 @@ D-117(E2E)과 D-136(polling)은 실제 API 가 생길 때까지 계속 보류한
 | 별칭 삭제 | `DELETE /members/aliases/{alias_id}` | **구현됨** §2.2 |
 | 건너뛴 온보딩 마저 하기 | 5.3 과 같다 | |
 | 팀원 초대·취소·연결 끊기 | `GET`·`POST /workspaces/{id}/invitations`, `POST /invitations/{id}/cancel`·`revoke` | BE 구현, 프론트엔드 미연결 §5.9 |
+| 알림(메시지·알림 설정) | `GET`·`PATCH /workspaces/{id}/message-settings` | **구현됨** §5.7 (#340) |
 
 - `unresolved-aliases` 가 쓰이는 곳이 여기다. 온보딩의 팀원 연결과 목적이 다르다 (§4.5).
 - 그 밖의 설정 항목은 결정 대기다.
@@ -1591,7 +1749,7 @@ D-117(E2E)과 D-136(polling)은 실제 API 가 생길 때까지 계속 보류한
 | 5.5 회의 | 가능 | 업로드·회의록 본문 mock |
 | 5.1 로그인 | 가능 | 전부 mock |
 | 5.6 보드·간트 | **가능** | 없음 — D-170·D-175 로 확정 |
-| 5.7 메시지 | 가능 | 메시지 API 는 BE 구현(§5.7), 봇 DM 발송이 없어 production 은 `준비 중`이다 (D-174) |
+| 5.7 메시지 | 가능 | 메시지 API 는 BE 구현(§5.7), #315 에서 production 화면을 실제 API 에 연결했다 (D-174) |
 | 5.9 팀원 초대 | 가능 | 없음. 초대 API 는 BE 구현(§5.9) |
 
 ---
@@ -1686,8 +1844,8 @@ D-117(E2E)과 D-136(polling)은 실제 API 가 생길 때까지 계속 보류한
   - 메시지 기록 API: 대화 목록과 사람별 대화 조회, 재촉 제안의 승인·수정·취소·시각 변경, 팀원의 웹 답장, 답장의 태스크 판정 입력. 권한은 D-174 정책 4 를 따른다.
     2026-11-04 #310 에서 답장의 태스크 판정 입력을 뺀 나머지를 BE 가 구현했다(§5.7).
   - 스케줄러: 예약 발송, 5분 합치기, 3일 전 제안, 발송 직전 재확인, 72시간 판정과 시계 멈춤, 놓친 예약 처리.
-  - 알림 설정 저장 API: 알림 세 토글, 재촉 규칙, PM 알림 방식(웹 / DM / 둘 다), 재촉 자동 승인.
-    지금 설정 화면은 이 값들을 화면 안에서만 바꾼다([M8-B 근거](../plan/m8/basis-for-decision/2026-10-31-settings-team-follow-design-canvas.md)).
+  - ~~알림 설정 저장 API: 알림 세 토글, 재촉 규칙, PM 알림 방식(웹 / DM / 둘 다), 재촉 자동 승인.~~
+    **2026-11-04 BE 구현** (#339, §5.7 의 **메시지·알림 설정** 항목). **2026-11-05 FE 설정 화면 연결** (#340). 그 전에는 설정 화면이 이 값들을 화면 안에서만 바꿨다([M8-B 근거](../plan/m8/basis-for-decision/2026-10-31-settings-team-follow-design-canvas.md)).
   - PM 의 Discord 가 연결되지 않았을 때 PM 알림을 웹으로만 보내는 판정 (D-177).
 - **AI·봇**
   - 봇의 DM 발송과 DM 답장 수신, 그리고 받은 답장을 백엔드로 넘기는 일. 현재 봇(`ai/capture/notify.py`)은 녹음 채널에 진행 알림만 보낸다.

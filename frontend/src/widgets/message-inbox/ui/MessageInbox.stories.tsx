@@ -8,10 +8,11 @@ import { deferred } from '@/shared/test/deferred'
 import { MessageInbox } from './MessageInbox'
 
 /*
- * 메시지 (M8, Messages·MessagesThread·EmptyMessages 시안 그대로). ws_01 하나에 PM 으로 로그인한 상태다.
- * 데이터는 임시 MSW handler 다 — 경로·모양은 계약이 아니다. 시작 db 는 shared/mock/scenarios.ts 의 `messages-*` 시나리오다.
- * 행동(발송·보내지 않음·고쳐 쓰기·발송 시점)은 MSW 목이 성공한 뒤에만 화면을 바꾼다 (D-137).
- * Storybook 은 시계를 MOCK_NOW 로 고정하지 않는다 — 오늘 기준 상대 표기(`3일 전`, `답장 N일째 없음`)의 숫자는 단언하지 않는다
+ * 메시지 (M8, Messages·MessagesThread·EmptyMessages 시안, 계약 §5.7). ws_01 하나에 PM 으로 로그인한 상태다.
+ * 데이터는 백엔드 메시지 API 와 같은 모양의 MSW handler 다. 시작 db 는 shared/mock/scenarios.ts 의 `messages-*` 시나리오다.
+ * 행동(승인·보내지 않음·문구·보낼 시각)은 MSW 목이 성공한 뒤에만 화면을 바꾼다 (D-137).
+ * 보낼 시각이 지났는지는 목과 같은 고정 시각(MOCK_NOW, shared/lib/date/clock)으로 판단한다.
+ * 오늘 기준 상대 표기(`3일 전`, `답장 N일째 없음`)는 실제 날짜라 숫자를 단언하지 않는다
  */
 
 const meta = {
@@ -22,7 +23,7 @@ const meta = {
     botName: '카테캠 3팀',
     viewer: 'pm',
     threadId: null,
-    reviewId: undefined,
+    bundleId: undefined,
   },
   parameters: { scenario: 'messages-default', route: paths.messages('ws_01') },
 } satisfies Meta<typeof MessageInbox>
@@ -33,41 +34,57 @@ type Story = StoryObj<typeof meta>
 const detailOf = (canvasElement: HTMLElement) =>
   within(within(canvasElement).getByRole('region', { name: '메시지 내용' }))
 
-/** 들어온 그대로 — Messages 시안처럼 첫 보내기 전 확인 항목이 골라져 있다. 보내기 전 확인 2, 대화 4 + 채널 1, 답장 대기 1 */
+/** 들어온 그대로 — 아직 승인하지 않은 첫 묶음이 골라져 있다. 보내기 전 확인 2, 대화 4, 답장 대기 2 */
 export const 기본: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     await expect(await canvas.findByText('보내기 전 확인 2')).toBeInTheDocument()
-    await expect(canvas.getByText('답장 기다리는 중 1')).toBeInTheDocument()
-    await expect(canvas.getByText('09/24 마감')).toBeInTheDocument()
+    await expect(canvas.getByText('답장 기다리는 중 2')).toBeInTheDocument()
+    await expect(canvas.getByRole('link', { name: /^이재환 09\/24 마감/ })).toBeInTheDocument()
     const threads = canvas.getByRole('region', { name: '대화' })
-    await expect(within(threads).getAllByRole('link')).toHaveLength(5)
+    await expect(within(threads).getAllByRole('link')).toHaveLength(4)
+    await expect(within(threads).getByText('DM 못 보냄')).toBeInTheDocument()
     await expect(
       await detailOf(canvasElement).findByText('이 메시지, 보낼까요?'),
     ).toBeInTheDocument()
   },
 }
 
-/** 보내기 전 확인 — 미리보기(매스·BOT·예정 시각)·고쳐 쓰기·왜 보내려 하나요·언제 보낼까요·보내지 않음·이대로 발송 */
+/** 보내기 전 확인 — 미리보기(매스·BOT·예정 시각)·고쳐 쓰기·묶은 태스크·언제 보낼까요·보내지 않음·이대로 발송 */
 export const 검토_항목: Story = {
-  args: { reviewId: 'rv_01' },
-  parameters: { route: paths.messageReview('ws_01', 'rv_01') },
+  args: { bundleId: 'bd_01' },
+  parameters: { route: paths.messageReview('ws_01', 'bd_01') },
   play: async ({ canvasElement }) => {
     const detail = detailOf(canvasElement)
     await expect(await detail.findByText('이 메시지, 보낼까요?')).toBeInTheDocument()
     await expect(detail.getByText('09/23 09:00 예정')).toBeInTheDocument()
     await expect(detail.getByRole('button', { name: '고쳐 쓰기' })).toBeEnabled()
-    await expect(detail.getByText('왜 보내려 하나요')).toBeInTheDocument()
-    await expect(detail.getByRole('radio', { name: /마감 하루 전/ })).toBeChecked()
+    await expect(detail.getByText('묶은 태스크 1')).toBeInTheDocument()
+    await expect(await detail.findByRole('radio', { name: /마감 하루 전/ })).toBeChecked()
     await expect(detail.getByRole('button', { name: '보내지 않음' })).toBeEnabled()
     await expect(detail.getByRole('button', { name: '이대로 발송' })).toBeEnabled()
   },
 }
 
+/** AI 초안을 기다리는 묶음 — 문구 다듬는 중, 태스크 둘(마감 없음·메모), 직접 정한 시각 */
+export const 초안_대기: Story = {
+  args: { bundleId: 'bd_02' },
+  parameters: { route: paths.messageReview('ws_01', 'bd_02') },
+  play: async ({ canvasElement }) => {
+    const detail = detailOf(canvasElement)
+    await expect(await detail.findByText('문구 다듬는 중')).toBeInTheDocument()
+    await expect(detail.getByText('묶은 태스크 2')).toBeInTheDocument()
+    await expect(detail.getByText('마감 없음')).toBeInTheDocument()
+    await expect(
+      await detail.findByRole('radio', { name: /직접 정하기/, checked: true }),
+    ).toBeInTheDocument()
+  },
+}
+
 /** 고쳐 쓰는 중 — 문구 칸이 열려 포커스를 받고, 발송은 잠긴다(포커스를 남기는 aria-disabled) */
 export const 고쳐_쓰기: Story = {
-  args: { reviewId: 'rv_01' },
-  parameters: { route: paths.messageReview('ws_01', 'rv_01') },
+  args: { bundleId: 'bd_01' },
+  parameters: { route: paths.messageReview('ws_01', 'bd_01') },
   play: async ({ canvasElement }) => {
     const detail = detailOf(canvasElement)
     await userEvent.click(await detail.findByRole('button', { name: '고쳐 쓰기' }))
@@ -81,60 +98,51 @@ export const 고쳐_쓰기: Story = {
   },
 }
 
-/** 발송이 실패했다 — 화면은 그대로이고 그 자리에 다시 시도를 알린다 */
+/** 승인이 실패했다 — 화면은 그대로이고 그 자리에 다시 시도를 알린다 */
 export const 발송_실패: Story = {
-  args: { reviewId: 'rv_01' },
-  parameters: { scenario: 'messages-send-fail', route: paths.messageReview('ws_01', 'rv_01') },
+  args: { bundleId: 'bd_01' },
+  parameters: { scenario: 'messages-send-fail', route: paths.messageReview('ws_01', 'bd_01') },
   play: async ({ canvasElement }) => {
     const detail = detailOf(canvasElement)
     await userEvent.click(await detail.findByRole('button', { name: '이대로 발송' }))
     const alert = await detail.findByRole('alert', {}, { timeout: 4_000 })
-    await expect(alert).toHaveTextContent('메시지를 보내지 못했어요')
+    await expect(alert).toHaveTextContent('발송을 승인하지 못했어요')
     await expect(within(alert).getByRole('button', { name: '다시 시도' })).toBeEnabled()
     await expect(within(canvasElement).getByText('보내기 전 확인 2')).toBeInTheDocument()
   },
 }
 
-/** 답장이 없는 사람별 대화 — 머리 부제·답장 없음 배지·Discord에서 열기, 시각 줄, 답장 없음 칩, 점선 미리보기와 확인하기 */
+/** 답장이 없는 대화 — 머리 부제·답장 없음 배지, 시각 줄, 답장 없음 줄, 나갈 날짜의 점선 묶음과 확인하기 */
 export const 대화: Story = {
   args: { threadId: 'th_01' },
   parameters: { route: paths.messageThread('ws_01', 'th_01') },
   play: async ({ canvasElement }) => {
     const detail = detailOf(canvasElement)
     await expect(await detail.findByRole('heading', { level: 2, name: '이재환' })).toBeVisible()
-    await expect(detail.getByText(/백엔드 · Discord 개인 메시지/)).toBeInTheDocument()
+    await expect(
+      detail.getByText('Discord 개인 메시지 · 카테캠 3팀 봇으로 보냄'),
+    ).toBeInTheDocument()
     await expect(detail.getByText(/^답장 \d+일째 없음$/)).toBeInTheDocument()
-    await expect(detail.getByRole('link', { name: /Discord에서 열기/ })).toBeInTheDocument()
-    await expect(detail.getByText('09:02 · 자동 발송')).toBeInTheDocument()
     await expect(detail.getByText(/여기서부터 답장이 없습니다/)).toBeInTheDocument()
-    await expect(detail.queryByRole('button', { name: '승인' })).toBeNull()
+    await expect(detail.getByText('09/23 09:00 발송 예정')).toBeInTheDocument()
     await expect(detail.getByRole('link', { name: '확인하기' })).toHaveAttribute(
       'href',
-      paths.messageReview('ws_01', 'rv_01'),
+      paths.messageReview('ws_01', 'bd_01'),
     )
   },
 }
 
-/** 취소된 재촉은 그날 묶음에 남고, 보내기 전 확인의 점선에는 확인하기만 있다. 만료(th_04)는 화면 테스트가 본다 */
-export const 대화_취소_만료: Story = {
-  args: { threadId: 'th_03' },
-  parameters: { route: paths.messageThread('ws_01', 'th_03') },
+/** DM 으로 가지 못한 봇 메시지 — 말풍선 아래 이유, 목록 행의 DM 못 보냄 */
+export const DM_못_보냄: Story = {
+  args: { threadId: 'th_04' },
+  parameters: { route: paths.messageThread('ws_01', 'th_04') },
   play: async ({ canvasElement }) => {
     const detail = detailOf(canvasElement)
-    await expect(await detail.findByText(/9월 8일/)).toBeInTheDocument()
-    await expect(
-      detail.getByText('09:00 · 자동 취소됨 · 보내기 전에 응답이 있었어요'),
-    ).toBeVisible()
-    await expect(detail.queryByRole('button', { name: '승인' })).toBeNull()
-    await expect(detail.queryByRole('button', { name: '반려' })).toBeNull()
-    await expect(detail.getByRole('link', { name: '확인하기' })).toHaveAttribute(
-      'href',
-      paths.messageReview('ws_01', 'rv_02'),
-    )
+    await expect(await detail.findByText('DM 못 보냄 · 서버 DM이 막혀 있어요')).toBeInTheDocument()
   },
 }
 
-/** 팀원은 자기 대화만 보고, 점선 재촉 없이 웹에서 답한다 */
+/** 팀원은 자기 대화만 보고, 보낼 메시지 없이 웹에서 답한다 */
 export const 팀원_내_대화: Story = {
   args: { viewer: 'member' },
   parameters: { scenario: 'messages-member', route: paths.messages('ws_01') },
@@ -146,41 +154,19 @@ export const 팀원_내_대화: Story = {
     ).toBeVisible()
     await expect(canvas.queryByText(/보내기 전 확인/)).toBeNull()
     await expect(detail.getByText('14:20 · 웹에서 답장')).toBeVisible()
-    await expect(detail.queryByText(/자동 발송/)).toBeNull()
+    await expect(detail.getByText('DM 못 보냄 · Discord 계정이 연결되지 않았어요')).toBeVisible()
+    await expect(detail.getByText(/봇 DM 창에 쓴 글은 모두 PM 대화에 보여요/)).toBeVisible()
     await expect(detail.queryByRole('link', { name: '확인하기' })).toBeNull()
     await expect(detail.getByRole('button', { name: '답장 보내기' })).toBeEnabled()
-    await expect(canvas.queryByText('팀원에게 숨긴 재촉')).toBeNull()
   },
 }
 
-/** AI 가 정하지 못한 답장 — 태스크를 고르면 칩과 고르기가 사라진다 */
-export const 답장_확인_필요: Story = {
-  args: { threadId: 'th_02' },
-  parameters: { route: paths.messageThread('ws_01', 'th_02') },
-  play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement)
-    const threads = await canvas.findByRole('region', { name: '대화' })
-    await expect(within(threads).getByText('답장 확인 필요')).toBeVisible()
-    const detail = detailOf(canvasElement)
-    await expect(await detail.findByText('어느 태스크에 대한 답장인가요?')).toBeVisible()
-    await expect(
-      detail.getByText('AI가 어느 태스크에 대한 답장인지 정하지 못했어요.'),
-    ).toBeVisible()
-    await expect(detail.getByRole('radio', { name: '해당 없음' })).toBeInTheDocument()
-    await userEvent.click(detail.getByRole('radio', { name: '회원가입 화면' }))
-    await userEvent.click(detail.getByRole('button', { name: '정하기' }))
-    await expect(await detail.findByText('태스크: 회원가입 화면')).toBeVisible()
-    await expect(detail.queryByText('어느 태스크에 대한 답장인가요?')).toBeNull()
-    await expect(within(threads).queryByText('답장 확인 필요')).toBeNull()
-  },
-}
-
-/** 예정 시각이 지난 재촉 — 이대로 발송은 거절되고 다시 시도는 없다 */
+/** 예정 시각이 지난 묶음 — 이대로 발송은 거절되고 다시 시도는 없다 */
 export const 예정_시각_지남: Story = {
-  args: { reviewId: 'rv_06' },
+  args: { bundleId: 'bd_06' },
   parameters: {
     scenario: 'messages-schedule-passed',
-    route: paths.messageReview('ws_01', 'rv_06'),
+    route: paths.messageReview('ws_01', 'bd_06'),
   },
   play: async ({ canvasElement }) => {
     const detail = detailOf(canvasElement)
@@ -196,7 +182,7 @@ export const 예정_시각_지남: Story = {
   },
 }
 
-/** 검토도 대화도 없다 — EmptyMessages, `알림 규칙 보기` 는 팀 설정으로 간다 */
+/** 보낼 메시지도 대화도 없다 — EmptyMessages, `알림 규칙 보기` 는 팀 설정으로 간다 */
 export const 빈_상태: Story = {
   parameters: { scenario: 'messages-empty' },
   play: async ({ canvasElement }) => {
@@ -271,12 +257,12 @@ const LONG_BODY = [
 ].join('\n')
 
 const fillLongMessages = () => {
-  const review = db.messageReviews.find(({ review_id }) => review_id === 'rv_01')
+  const bundle = db.messageBundles.find(({ bundle_id }) => bundle_id === 'bd_01')
   const thread = db.messageThreads.find(({ thread_id }) => thread_id === 'th_01')
-  if (!review || !thread) throw new Error('mock review rv_01 or thread th_01 is missing')
-  review.recipient_name = LONG_NAME
-  review.body = LONG_BODY
-  review.reason = `${review.reason} ${UNBROKEN_URL}`
+  if (!bundle || !thread) throw new Error('mock bundle bd_01 or thread th_01 is missing')
+  bundle.recipient_name = LONG_NAME
+  bundle.body = LONG_BODY
+  bundle.reminders[0].note = `링크 남겨요 ${UNBROKEN_URL}`
   thread.name = LONG_NAME
   thread.messages.push(reply('mg_80', `링크 남겨요\n${UNBROKEN_URL}`, '2026-09-16T19:00:00+09:00'))
 }
@@ -292,8 +278,8 @@ const expectNoHorizontalOverflow = async (element: Element) => {
 
 /** 긴 문구의 Discord DM 미리보기 — 카드가 본문 높이만큼 늘어나고 긴 주소·이름은 칸 안에서 줄을 바꾼다 */
 export const 긴_문구_미리보기: Story = {
-  args: { reviewId: 'rv_01', botName: LONG_BOT_NAME },
-  parameters: { route: paths.messageReview('ws_01', 'rv_01'), setup: fillLongMessages },
+  args: { bundleId: 'bd_01', botName: LONG_BOT_NAME },
+  parameters: { route: paths.messageReview('ws_01', 'bd_01'), setup: fillLongMessages },
   play: async ({ canvasElement }) => {
     const detail = detailOf(canvasElement)
     const card = await detail.findByRole('region', { name: '보낼 메시지 미리보기' })
@@ -403,34 +389,49 @@ const timingCard = (detail: ReturnType<typeof detailOf>, name: RegExp) => {
 
 /** 언제 보낼까요? 카드의 hover — 고를 수 있는 카드만 아웃라인 버튼과 같은 #EDEDED 면, 고른 카드·고를 수 없는 카드는 그대로 (design-system §7-12) */
 export const 발송_시점_hover: Story = {
-  args: { reviewId: 'rv_02' },
-  parameters: { route: paths.messageReview('ws_01', 'rv_02') },
+  args: { bundleId: 'bd_02' },
+  parameters: { route: paths.messageReview('ws_01', 'bd_02') },
   play: async ({ canvasElement }) => {
     const detail = detailOf(canvasElement)
-    await expect(await detail.findByRole('radio', { name: /지금 바로/ })).toBeChecked()
-    await expect(hoverBackground(timingCard(detail, /직접 정하기/))).toBe('rgb(237, 237, 237)')
-    await expect(hoverBackground(timingCard(detail, /지금 바로/))).toBeNull()
+    await expect(
+      await detail.findByRole('radio', { name: /직접 정하기/, checked: true }),
+    ).toBeInTheDocument()
+    await expect(hoverBackground(timingCard(detail, /마감 하루 전/))).toBe('rgb(237, 237, 237)')
+    await expect(hoverBackground(timingCard(detail, /직접 정하기/))).toBeNull()
+  },
+}
+
+/** 마감 기준 시각(기본 규칙은 하루 전 09:00)이 지난 `마감 하루 전` 은 고를 수 없어 hover 면이 없다 */
+export const 발송_시점_고를_수_없음: Story = {
+  args: { bundleId: 'bd_06' },
+  parameters: {
+    scenario: 'messages-schedule-passed',
+    route: paths.messageReview('ws_01', 'bd_06'),
+  },
+  play: async ({ canvasElement }) => {
+    const detail = detailOf(canvasElement)
+    await expect(await detail.findByRole('radio', { name: /마감 하루 전/ })).toBeDisabled()
     await expect(hoverBackground(timingCard(detail, /마감 하루 전/))).toBeNull()
   },
 }
 
-/* 발송 시점 저장(PATCH)을 붙잡는 문과 그동안의 발송 요청 수 — play 가 시작할 때 새로 만든다 */
+/* 보낼 시각 저장(PATCH)을 붙잡는 문과 그동안의 승인 요청 수 — play 가 시작할 때 새로 만든다 */
 let scheduleGate = deferred()
 let sendRequests = 0
 
 /**
- * 발송 시점을 저장하는 동안 — `이대로 발송`·`보내지 않음` 은 잠기지만(aria-disabled, 누름은 버린다) 모양은 그대로다.
+ * 보낼 시각을 저장하는 동안 — `이대로 발송`·`보내지 않음` 은 잠기지만(aria-disabled, 누름은 버린다) 모양은 그대로다.
  * 짧은 저장에서 버튼이 깜빡이지 않는다. 저장 중인 카드에는 잠시 뒤 `저장 중` 이 보이고, 잠긴 카드는 hover 면이 없다
  */
 export const 발송_시점_저장_중: Story = {
-  args: { reviewId: 'rv_01' },
+  args: { bundleId: 'bd_02' },
   parameters: {
-    route: paths.messageReview('ws_01', 'rv_01'),
+    route: paths.messageReview('ws_01', 'bd_02'),
     msw: [
-      http.patch('/api/v1/workspaces/:workspaceId/messages/reviews/:reviewId', async () => {
+      http.patch('/api/v1/workspaces/:workspaceId/messages/bundles/:bundleId', async () => {
         await scheduleGate.promise
       }),
-      http.post('/api/v1/workspaces/:workspaceId/messages/reviews/:reviewId/send', () => {
+      http.post('/api/v1/workspaces/:workspaceId/messages/bundles/:bundleId/approve', () => {
         sendRequests += 1
       }),
     ],
@@ -439,26 +440,30 @@ export const 발송_시점_저장_중: Story = {
     scheduleGate = deferred()
     sendRequests = 0
     const detail = detailOf(canvasElement)
-    const now = await detail.findByRole('radio', { name: /지금 바로/ })
+    const deadline = await detail.findByRole('radio', { name: /마감 하루 전/ })
     const send = detail.getByRole('button', { name: '이대로 발송' })
     const dismiss = detail.getByRole('button', { name: '보내지 않음' })
     const sendFace = getComputedStyle(send).backgroundColor
     const sendText = getComputedStyle(send).color
     const dismissText = getComputedStyle(dismiss).color
 
-    await userEvent.click(now)
+    await userEvent.click(deadline)
     await waitFor(() => expect(send).toHaveAttribute('aria-disabled', 'true'))
     await expect(dismiss).toHaveAttribute('aria-disabled', 'true')
     await expect(getComputedStyle(send).backgroundColor).toBe(sendFace)
     await expect(getComputedStyle(send).color).toBe(sendText)
     await expect(getComputedStyle(dismiss).color).toBe(dismissText)
-    await expect(hoverBackground(timingCard(detail, /직접 정하기/))).toBeNull()
+    await expect(hoverBackground(timingCard(detail, /마감 하루 전/))).toBeNull()
     await userEvent.click(send)
     await expect(sendRequests).toBe(0)
-    await expect(await within(timingCard(detail, /지금 바로/)).findByText('저장 중')).toBeVisible()
+    await expect(
+      await within(timingCard(detail, /마감 하루 전/)).findByText('저장 중'),
+    ).toBeVisible()
 
     scheduleGate.resolve()
-    await expect(await detail.findByRole('radio', { name: /지금 바로/, checked: true })).toBe(now)
+    await expect(await detail.findByRole('radio', { name: /마감 하루 전/, checked: true })).toBe(
+      deadline,
+    )
     await expect(send).not.toHaveAttribute('aria-disabled')
     await expect(detail.queryByText('저장 중')).toBeNull()
     await expect(sendRequests).toBe(0)

@@ -18,7 +18,7 @@ export const ONBOARDING_REVIEW_PARAM = 'review'
  */
 export const SETTINGS_PARAMS = { section: 'section', next: 'next' } as const
 
-/** 메시지 화면의 검색 파라미터. `review` 는 고른 보내기 전 확인 항목이다 — 임시 표현이다 (paths.messageReview) */
+/** 메시지 화면의 검색 파라미터. `review` 는 보내기 전 확인에서 고른 보낼 메시지(묶음 ID)다 (paths.messageReview) */
 export const MESSAGE_PARAMS = { review: 'review' } as const
 
 /**
@@ -35,6 +35,10 @@ export const paths = {
   landing: () => '/',
   login: () => '/login',
   signup: () => '/signup',
+  /** 비밀번호 재설정 메일 요청. 로그인한 사용자는 가드가 돌려보낸다 */
+  forgotPassword: () => '/forgot-password',
+  /** 메일 링크가 여는 변경 화면. 토큰은 `#token=` 으로 온다 — BE 가 이 경로로 링크를 만든다 (#356) */
+  resetPassword: () => '/reset-password',
   workspaceSelect: () => '/workspaces',
   onboardingStart: () => '/onboarding/start',
   onboardingMember: () => '/onboarding/member',
@@ -52,18 +56,17 @@ export const paths = {
   /** 회의 정리 중. 워크스페이스 팀원 모두 볼 수 있다 */
   meetingProcessing: (workspaceId: string, meetingId: string) =>
     `${workspaceBase(workspaceId)}/meetings/${segment(meetingId)}/processing`,
+  meetingSpeakers: (workspaceId: string, meetingId: string) =>
+    `${workspaceBase(workspaceId)}/meetings/${segment(meetingId)}/speakers`,
   tasks: (workspaceId: string, taskId?: string) =>
     withOptionalId(`${workspaceBase(workspaceId)}/tasks`, taskId),
   approval: (workspaceId: string, approvalId: string) =>
     `${workspaceBase(workspaceId)}/approvals/${segment(approvalId)}`,
   messages: (workspaceId: string) => `${workspaceBase(workspaceId)}/messages`,
-  /*
-   * 메시지 API 가 없는 동안의 임시 표현이라 규약이 아니다 — 결정 4 뒤 바뀔 수 있다 (M8 계획 C-6, C-10).
-   * 보내기 전 확인 항목은 경로 구조를 정하지 않으려고 검색 파라미터로 고른다
-   */
-  messageReview: (workspaceId: string, reviewId: string) =>
-    `${workspaceBase(workspaceId)}/messages?${new URLSearchParams({ [MESSAGE_PARAMS.review]: reviewId }).toString()}`,
-  /** 사람별 대화 */
+  /** 보내기 전 확인에서 묶음 하나를 고른 목록. 묶음은 목록 응답에 다 있어 따로 경로를 두지 않고 검색 파라미터로 고른다 */
+  messageReview: (workspaceId: string, bundleId: string) =>
+    `${workspaceBase(workspaceId)}/messages?${new URLSearchParams({ [MESSAGE_PARAMS.review]: bundleId }).toString()}`,
+  /** 팀원 한 명과의 대화 */
   messageThread: (workspaceId: string, threadId: string) =>
     `${workspaceBase(workspaceId)}/messages/threads/${segment(threadId)}`,
   members: (workspaceId: string) => `${workspaceBase(workspaceId)}/members`,
@@ -87,4 +90,6 @@ export const devPaths = {
   /** 모의 OAuth 화면. 실 API 의 `/workspaces/{id}/integrations/{provider}/start` 자리다 */
   mockOAuth: (workspaceId: string, provider: string) =>
     `/__mock/oauth/${segment(workspaceId)}/${segment(provider)}`,
+  /** 모의 메일함. 실 API 가 보낼 비밀번호 재설정 메일을 여기서 열어 본다 (#356) */
+  mockMail: () => '/__mock/mail',
 } as const

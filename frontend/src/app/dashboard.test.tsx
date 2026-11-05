@@ -2,9 +2,10 @@ import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { HttpResponse, http } from 'msw'
 import { clearTrackedMeetings } from '@/entities/meeting'
+import { workspaceKey } from '@/shared/api/queryKeys'
 import { paths } from '@/shared/config/routes'
 import { db, replaceDb } from '@/shared/mock/db'
-import { fail } from '@/shared/mock/envelope'
+import { fail, ok } from '@/shared/mock/envelope'
 import { MOCK_NOW } from '@/shared/mock/fixtures/constants'
 import { taskFixtures } from '@/shared/mock/fixtures/task'
 import { createScenarioDb } from '@/shared/mock/scenarios'
@@ -169,6 +170,14 @@ describe('요약·제목·회의 안내 (AC-01 · AC-05)', () => {
     expect(dueTitles()).toHaveLength(5)
   })
 
+  it('최근 회의가 채팅 회의면 기간을 분량으로 쓰지 않는다 (#379)', async () => {
+    db.meetingSummaries.find(({ meeting_id }) => meeting_id === 'mt_09')!.source = 'chat'
+    await openDashboard()
+    expect(screen.getByText(/정리했어요/).textContent?.replace(/\s+/g, ' ')).toBe(
+      '9월 15일 3주차 정기회의를 정리했어요',
+    )
+  })
+
   it('대기 승인이 없으면 `확인이 필요한 일이 없어요` 이고 확인 대기는 0 이다', async () => {
     for (const approval of db.approvals) approval.status = 'rejected'
     await openDashboard()
@@ -319,6 +328,44 @@ describe('확인 필요 (AC-02)', () => {
       '추가 확인 1',
     ])
     expect(summary()['확인 대기']).toBe('7')
+  })
+
+  describe('근거 시각 (#397)', () => {
+    const reviewRow = (title: string) => {
+      const row = within(screen.getByRole('list', { name: '확인이 필요한 일 목록' }))
+        .getAllByRole('listitem')
+        .find((item) => item.textContent?.includes(title))
+      if (!row) throw new Error(`review row ${title} is missing`)
+      return row
+    }
+
+    it('채팅 회의에서 나온 일은 실제 작성 시각, 녹음 회의에서 나온 일은 녹음 안 위치다', async () => {
+      useScenario('approval-chat')
+      await openDashboard()
+      await waitFor(() =>
+        expect(reviewRow('배포 체크리스트 정리')).toHaveTextContent('09/11 18:40'),
+      )
+      expect(reviewRow('배포 체크리스트 정리')).not.toHaveTextContent('9:28:00')
+      expect(reviewRow('테스트 계획 정리')).toHaveTextContent('02:45')
+    })
+
+    it('회의 목록을 받지 못하면 시각을 녹음 위치로 짐작하지 않고 숨긴다', async () => {
+      useScenario('approval-chat')
+      server.use(
+        http.get('/api/v1/workspaces/:workspaceId/meetings', () =>
+          fail('INTERNAL_ERROR', 'x', 500),
+        ),
+      )
+      const log = recordRequests()
+      renderApp(DASHBOARD)
+      await waitFor(() => expect(reviewTitles()).toContain('배포 체크리스트 정리'))
+      await waitFor(() =>
+        expect(log.answered).toContainEqual({ method: 'GET', path: '/workspaces/ws_01/meetings' }),
+      )
+      await settle()
+      expect(reviewRow('배포 체크리스트 정리')).not.toHaveTextContent(/\d+:\d{2}/)
+      expect(reviewRow('테스트 계획 정리')).not.toHaveTextContent(/\d+:\d{2}/)
+    })
   })
 
   it('`확인하기` 를 누르면 그 확인 필요 상세로 간다', async () => {
@@ -882,6 +929,47 @@ describe('부분 오류·공간 전환 (AC-05)', () => {
     await waitFor(() => expect(summary()['기한 지남']).toBe('2'))
     expect(reviewTitles()).toHaveLength(3)
     expect(dueTitles()).toHaveLength(5)
+  })
+
+  it('최신 완료 회의의 상세가 다른 공간의 회의면 최근 반영을 오류로 그리고 추출을 부르지 않는다 (#349)', async () => {
+    server.use(
+      http.get('/api/v1/meetings/mt_09', () => {
+        const meeting = db.meetings.find(({ meeting_id }) => meeting_id === 'mt_09')!
+        return ok({ ...meeting, workspace_id: 'ws_02' })
+      }),
+    )
+    const log = recordRequests()
+    renderApp(DASHBOARD)
+    expect(
+      await screen.findByText('최근 반영을 불러오지 못했어요', {}, { timeout: 8_000 }),
+    ).toBeInTheDocument()
+    await waitFor(() => expect(summary()['기한 지남']).toBe('2'))
+    await settle(150)
+    expect(log.started.filter(({ path }) => path.startsWith('/extractions'))).toEqual([])
+    expect(screen.queryByRole('list', { name: '최근 반영 목록' })).toBeNull()
+  })
+
+  it('받아 둔 최근 반영이 있어도 다시 받은 상세가 다른 공간이면 최근 반영을 오류로 바꾸고 추출을 다시 묻지 않는다 (#349)', async () => {
+    const app = await openDashboard()
+    server.use(
+      http.get('/api/v1/meetings/mt_09', () => {
+        const meeting = db.meetings.find(({ meeting_id }) => meeting_id === 'mt_09')!
+        return ok({ ...meeting, workspace_id: 'ws_02' })
+      }),
+    )
+    await act(() =>
+      app.queryClient.invalidateQueries({
+        queryKey: workspaceKey('ws_01', 'meetings', 'detail', 'mt_09'),
+      }),
+    )
+    expect(await screen.findByText('최근 반영을 불러오지 못했어요')).toBeInTheDocument()
+    expect(screen.queryByRole('list', { name: '최근 반영 목록' })).toBeNull()
+    const log = recordRequests()
+    await act(() =>
+      app.queryClient.invalidateQueries({ queryKey: workspaceKey('ws_01', 'extractions') }),
+    )
+    await settle(150)
+    expect(log.started.filter(({ path }) => path.startsWith('/extractions'))).toEqual([])
   })
 
   it('공간을 바꾸면 이전 공간의 데이터가 섞이지 않는다', async () => {

@@ -6,8 +6,10 @@ import type { ReactNode } from 'react'
 import { MemoryRouter } from 'react-router'
 import '../src/app/styles/index.css'
 import { createQueryClient } from '../src/shared/api/queryClient'
+import { fixClock } from '../src/shared/lib/date'
 import { clearUnsavedChanges } from '../src/shared/lib/unsaved-changes'
 import { worker } from '../src/shared/mock/browser'
+import { MOCK_NOW } from '../src/shared/mock/fixtures/constants'
 import { applyScenario } from '../src/shared/mock/scenarios'
 import type { MockScenario } from '../src/shared/mock/scenarios'
 import { GlobalToaster, toast } from '../src/shared/ui/toast'
@@ -32,6 +34,7 @@ export interface StoryParameters {
 }
 
 let started: Promise<unknown> | null = null
+fixClock(Date.parse(MOCK_NOW))
 
 const mockLoader: Loader = async (context) => {
   const parameters = context.parameters as StoryParameters

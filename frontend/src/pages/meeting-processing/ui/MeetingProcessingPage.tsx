@@ -8,9 +8,11 @@ import {
   PROCESSING_STEP_COUNT,
   processingSteps,
   trackMeeting,
+  viewableMeeting,
 } from '@/entities/meeting'
 import type { Meeting, ProcessingStep } from '@/entities/meeting'
-import { isAccessLost } from '@/features/meeting-processing'
+import { useMemberWorkspace } from '@/entities/workspace'
+import { isMeetingUnavailable } from '@/features/meeting-processing'
 import { ApiError } from '@/shared/api/errors'
 import { paths } from '@/shared/config/routes'
 import { seoulDateOf } from '@/shared/lib/date'
@@ -47,7 +49,7 @@ const STEP_TEXT: Record<ProcessingStep['state'], string> = {
 /**
  * 회의 정리 중 (U4). 워크스페이스 팀원 모두 볼 수 있다.
  * 상태는 상세 Query 캐시를 읽는다. polling 은 앱 수준 추적기가 한다 — 이 화면이 없어도 추적은 이어지고,
- * 이 화면은 같은 캐시를 그린다. 이 화면에서 정리 중 회의를 보면 추적기에 등록한다(다른 팀원이 올린 회의, 직접 링크).
+ * 이 화면은 같은 캐시를 그린다. 이 화면에서 정리 중·화자 지정 대기 회의를 보면 추적기에 등록한다(다른 팀원이 올린 회의, 직접 링크).
  * 완료·실패 뒤 이동은 추적기가 한다 — 이 화면을 보고 있을 때만이다.
  *
  * 서버의 `progress` 세 값을 단계로만 보인다. 캔버스의 진행 막대·경과·단계별 시간·말 겹침 안내·`중단하기` 는 넣지 않는다 —
@@ -81,19 +83,16 @@ function MeetingProcessing({ workspaceId, meetingId }: { workspaceId: string; me
     ...meetingListQueryOptions(workspaceId),
     select: (meetings) => meetings.find(({ id }) => id === meetingId) ?? null,
   })
-  const meeting =
-    detail.data !== undefined && detail.data.workspaceId === workspaceId ? detail.data : null
-  const processing = meeting?.status === 'processing'
+  const meeting = viewableMeeting(detail)
+  const watched = meeting?.status === 'processing' || meeting?.status === 'awaiting_speakers'
+  const isPm = useMemberWorkspace(workspaceId)?.role === 'pm'
 
   useEffect(() => {
-    if (processing) trackMeeting({ workspaceId, meetingId })
-  }, [processing, workspaceId, meetingId])
+    if (watched) trackMeeting({ workspaceId, meetingId })
+  }, [watched, workspaceId, meetingId])
 
-  if (detail.data !== undefined && meeting === null)
-    return <Unavailable workspaceId={workspaceId} />
   if (meeting === null) {
-    if (detail.error !== null && isAccessLost(detail.error))
-      return <Unavailable workspaceId={workspaceId} />
+    if (isMeetingUnavailable(detail.error)) return <Unavailable workspaceId={workspaceId} />
     if (detail.error !== null)
       return (
         <Layout status="정리 상태를 불러오지 못했어요">
@@ -142,6 +141,26 @@ function MeetingProcessing({ workspaceId, meetingId }: { workspaceId: string; me
         </Layout>
       )
     }
+    case 'awaiting_speakers':
+      return (
+        <Layout status="화자 지정이 필요해요">
+          <Heading meeting={meeting} attendeeCount={attendeeCount} title="화자 지정이 필요해요" />
+          {isPm ? (
+            <>
+              <p className={META}>
+                녹음에서 화자를 나눴어요. 화자마다 누구인지 골라 주시면 정리를 이어 갈게요.
+              </p>
+              <GuardedLink to={paths.meetingSpeakers(workspaceId, meetingId)} className={LINK}>
+                화자 지정하기
+              </GuardedLink>
+            </>
+          ) : (
+            <p className={META}>
+              PM이 화자를 지정하고 있어요. 지정이 끝나면 정리를 이어 가고, 끝나면 알려드릴게요.
+            </p>
+          )}
+        </Layout>
+      )
     default:
       return <Processing meeting={meeting} attendeeCount={attendeeCount} stale={stale} />
   }

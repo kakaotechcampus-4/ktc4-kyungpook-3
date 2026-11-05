@@ -1,5 +1,7 @@
 import type { SessionDto } from '@/shared/types/api/auth'
+import type { SpeakerViewDto } from '@/shared/types/api/meeting'
 import type { MemberAliasDto, MemberDto } from '@/shared/types/api/member'
+import type { MessageSettingsDto } from '@/shared/types/api/messageSettings'
 import type { WorkspaceDto } from '@/shared/types/api/workspace'
 import { sessionFixture } from './fixtures/auth'
 import {
@@ -15,7 +17,8 @@ import { minutesFixtures } from './fixtures/minutes'
 import { extractionFixtures } from './fixtures/extraction'
 import { taskFixtures, taskHistoryFixtures } from './fixtures/task'
 import { approvalFixtures } from './fixtures/approval'
-import { messageReviewFixtures, messageThreadFixtures } from './fixtures/message'
+import { messageBundleFixtures, messageThreadFixtures } from './fixtures/message'
+import type { MockNotification, MockPushSubscription } from './fixtures/notification'
 
 /**
  * 처리 중 회의를 상세 조회(`GET /meetings/{id}`)가 어떻게 진행시키는가. 진행 규칙은 meetingFlow.ts 에 있다.
@@ -24,9 +27,17 @@ import { messageReviewFixtures, messageThreadFixtures } from './fixtures/message
  * - `instant`: 첫 조회에 바로 `done`. 인위적 지연이 없다 — E2E 용
  * - `fail`: 첫 조회에 `failed`
  * - `fail-notion-revoked`: 첫 조회에 `failed`, 그 공간의 Notion 연동이 `revoked` 가 된다 (D-099, D-100)
+ * - `speakers`: 업로드 회의가 첫 조회에 화자 지정 대기가 된다. PM 이 지정을 내면 조회마다 한 단계씩(`staged`) 끝난다 (#256)
  */
 export type MeetingFlowMode =
-  'manual' | 'staged' | 'instant' | 'fail' | 'fail-notion-revoked' | 'fail-diarize' | 'fail-expired'
+  | 'manual'
+  | 'staged'
+  | 'instant'
+  | 'fail'
+  | 'fail-notion-revoked'
+  | 'fail-diarize'
+  | 'fail-expired'
+  | 'speakers'
 
 export const MEETING_FLOW_MODES = [
   'manual',
@@ -36,17 +47,31 @@ export const MEETING_FLOW_MODES = [
   'fail-notion-revoked',
   'fail-diarize',
   'fail-expired',
+  'speakers',
 ] as const satisfies readonly MeetingFlowMode[]
+
+/** 업로드 회의의 화자 지정 상태. 백엔드 meeting_upload 행의 화자 칸에 대응한다 (계약 §2.3.1) */
+export interface MockSpeakerUpload {
+  /** AI 가 보낸 라벨. 보내기 전에는 빈 목록이다 */
+  speakers: SpeakerViewDto['speakers']
+  /** 제출한 지정. 라벨 → 팀원 ID, 외부 참석자는 null */
+  mapping: Record<string, string | null> | null
+  /** 녹음 폴더가 있다. 있어도 처리가 done·failed 로 끝나면 지워진 것으로 본다 */
+  audio: boolean
+  expireOnSubmit: boolean
+}
 
 export interface MeetingFlowState {
   mode: MeetingFlowMode
   /** 업로드가 받은 참석자 ID. 실 API 는 받고 버린다(계약 §4.0-②-9). 정리 결과의 참석자·발화자가 된다 */
   attendees: Record<string, string[]>
+  /** 업로드 회의마다 하나. 봇 회의에는 없다 — 화자 경로가 404 다 */
+  speakers: Record<string, MockSpeakerUpload>
 }
 
 /**
  * 메시지 요청을 일부러 실패(5xx)시킨다 — 계획 C-7 의 오류 시나리오. `inbox` 는 목록, `threadIds` 는 그 대화만,
- * `actions` 는 보내기 전 확인 항목의 발송·보내지 않음·고쳐 쓰기·발송 시점 변경이다(db 는 바뀌지 않는다)
+ * `actions` 는 승인·보내지 않음·문구·시각 고치기·답장이다(db 는 바뀌지 않는다)
  */
 export interface MessageFailures {
   inbox: boolean
@@ -70,6 +95,44 @@ export interface MockInvitation {
   created_at: string
   responded_at: string | null
 }
+
+/** #356 비밀번호 재설정 토큰. 실 API 는 해시만 저장하지만 모의 메일함이 링크를 보여야 해서 원문을 둔다 */
+export interface MockResetToken {
+  token: string
+  email: string
+  expiresAt: string
+  /** `revoked` 는 같은 이메일의 새 요청으로 무효가 된 것이다 */
+  status: 'active' | 'used' | 'revoked'
+}
+
+/** 보낸 재설정 메일 */
+export interface MockMail {
+  to: string
+  /** 메일 링크의 앱 안 경로 `/reset-password#token=...`. 메일함이 지금 주소를 앞에 붙여 보인다 */
+  resetPath: string
+  sentAt: string
+}
+
+/** `server-error` 는 세 경로 모두 500, `mail-unavailable` 은 요청만 503 이다 */
+export type PasswordResetFailure = 'none' | 'server-error' | 'mail-unavailable'
+
+export const PASSWORD_RESET_FAILURES = [
+  'none',
+  'server-error',
+  'mail-unavailable',
+] as const satisfies readonly PasswordResetFailure[]
+
+export interface MockPasswordReset {
+  tokens: MockResetToken[]
+  /** 이메일별로 다음 메일을 보낼 수 있는 시각(ms). 그 전의 요청은 메일 없이 200 이다 */
+  nextMailAt: Record<string, number>
+  /** 보낸 순서다. 모의 메일함(devPaths.mockMail)이 최근 것부터 보인다 */
+  outbox: MockMail[]
+  failure: PasswordResetFailure
+}
+
+/** 저장한 메시지·알림 설정 행. 응답의 `saved`·`pms` 는 handler 가 붙인다 */
+export type MockMessageSettings = Omit<MessageSettingsDto, 'saved' | 'pms'>
 
 interface MockAccount {
   session: SessionDto
@@ -95,11 +158,18 @@ export interface MockDb {
   approvals: typeof approvalFixtures
   /** 회의 정리 흐름. 원본 파일은 담지 않는다 — 생성 결과는 위의 meetings·minutes·extractions·tasks·approvals 에 들어간다 */
   meetingFlow: MeetingFlowState
-  /** M8 메시지(임시, 계약 아님). 검토 항목과 대화는 공간별이다 */
-  messageReviews: typeof messageReviewFixtures
+  /** M8 메시지 (계약 §5.7). 보낼 메시지(묶음)와 대화는 공간별이다 */
+  messageBundles: typeof messageBundleFixtures
   messageThreads: typeof messageThreadFixtures
   messageFailures: MessageFailures
+  /** #340 공간별 메시지·알림 설정. 저장한 적 없는 공간은 행이 없다 */
+  messageSettings: Record<string, MockMessageSettings>
+  /** #330 알림. 받는 팀원별 행이다 */
+  notifications: MockNotification[]
+  /** #330 브라우저 푸시. 공개키가 null 이면 서버에 키가 없는 것이다 */
+  push: { publicKey: string | null; subscriptions: MockPushSubscription[] }
   invitations: MockInvitation[]
+  passwordReset: MockPasswordReset
 }
 /** Vitest 가 테스트마다 돌아가는 상태다. 로그인돼 있고 ws_01·ws_02 에 속한다. 브라우저 시작 상태는 scenarios.ts 가 정한다 */
 export function initialDb(): MockDb {
@@ -126,11 +196,15 @@ export function initialDb(): MockDb {
     tasks: structuredClone(taskFixtures),
     taskHistory: structuredClone(taskHistoryFixtures),
     approvals: structuredClone(approvalFixtures),
-    meetingFlow: { mode: 'manual', attendees: {} },
-    messageReviews: structuredClone(messageReviewFixtures),
+    meetingFlow: { mode: 'manual', attendees: {}, speakers: {} },
+    messageBundles: structuredClone(messageBundleFixtures),
     messageThreads: structuredClone(messageThreadFixtures),
     messageFailures: { inbox: false, threadIds: [], actions: false },
+    messageSettings: {},
+    notifications: [],
+    push: { publicKey: null, subscriptions: [] },
     invitations: [],
+    passwordReset: { tokens: [], nextMailAt: {}, outbox: [], failure: 'none' },
   }
 }
 export const db: MockDb = initialDb()

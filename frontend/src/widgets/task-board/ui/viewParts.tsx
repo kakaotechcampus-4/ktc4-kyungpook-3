@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Icon } from '@/shared/ui/icon'
+import type { IconName } from '@/shared/ui/icon'
 
 /* 이름을 모르면 채우지 않은 점선 원에 `?` 다 — 시안의 `미지정` 원 (TasksGantt: 1px 점선 #BDBDBD, 10px #666) */
 const AVATAR_KNOWN = 'bg-divider text-[9.5px] font-semibold'
@@ -104,11 +105,24 @@ export function HorizontalScroll({ label, children }: { label: string; children:
   )
 }
 
-/** 범례 한 칸 — 20×12 색 칩과 이름 */
-export function LegendItem({ swatch, children }: { swatch: string; children: ReactNode }) {
+/** 범례 한 칸 — 20×12 색 칩과 이름. 칩에 표식이 붙는 상태면 견본에도 같은 아이콘을 넣는다 */
+export function LegendItem({
+  swatch,
+  icon,
+  children,
+}: {
+  swatch: string
+  icon?: IconName
+  children: ReactNode
+}) {
   return (
     <li className="inline-flex items-center gap-7 text-[12px] text-sub">
-      <span aria-hidden="true" className={`h-12 w-20 rounded-4 ${swatch}`} />
+      <span
+        aria-hidden="true"
+        className={`inline-flex h-12 w-20 items-center justify-center rounded-4 ${swatch}`}
+      >
+        {icon === undefined ? null : <Icon name={icon} size={10} strokeWidth={2.4} />}
+      </span>
       {children}
     </li>
   )

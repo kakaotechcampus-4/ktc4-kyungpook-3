@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useCallback } from 'react'
 import { useNavigate } from 'react-router'
 import { SESSION_QUERY_KEY, logout } from '@/entities/user'
+import { removePushSubscription } from '@/entities/notification'
 import { paths } from '@/shared/config/routes'
 import { guardLeave } from '@/shared/lib/unsaved-changes'
 import { clearUserScope } from '../lib/userScope'
@@ -28,6 +29,9 @@ export function useLogout(): LogoutControl {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const mutation = useMutation({
+    // 세션이 있어야 서버 구독을 지울 수 있어 로그아웃 요청보다 먼저 한다. 켜는 중인 구독을 기다리고 3초를 넘거나 실패해도
+    // 로그아웃은 이어 간다
+    onMutate: () => removePushSubscription().catch(() => undefined),
     mutationFn: logout,
     onSuccess: async () => {
       // 세션을 먼저 null 로 바꾸고 바로 옮긴다. 정리를 먼저 하면 아직 떠 있는 보호 화면의 구독이
