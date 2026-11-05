@@ -108,12 +108,12 @@ function bundleBubble(bundle: Bundle, side: 'own' | 'other', now: number): Bubbl
   }
 }
 
-/** 대화를 그릴 모양으로. 보낸 쪽이 policy.ownSender 와 같으면 오른쪽이다 */
+/** 대화를 그릴 모양으로. 보낸 쪽이 policy.ownSender 와 같으면 오른쪽이다. replyable 은 보는 사람이 이 대화에 답장할 수 있는지다 */
 export function buildConversation(
   thread: MessageThread,
-  ctx: { policy: ViewerPolicy; botName: string; today: string; now: number },
+  ctx: { policy: ViewerPolicy; replyable: boolean; botName: string; today: string; now: number },
 ): ConversationView {
-  const { policy, botName, today, now } = ctx
+  const { policy, replyable, botName, today, now } = ctx
   const sideOf = (sender: 'bot' | 'member') => (sender === policy.ownSender ? 'own' : 'other')
   const waitingDays =
     policy.awaiting && thread.awaitingReplySince !== null
@@ -134,10 +134,9 @@ export function buildConversation(
 
   return {
     title: policy.ownSender === 'member' ? `${botName} 봇` : thread.name,
-    subtitle:
-      policy.foot === 'reply'
-        ? 'Discord 개인 메시지 · 웹에서도 답장할 수 있어요'
-        : `Discord 개인 메시지 · ${botName} 봇으로 보냄`,
+    subtitle: replyable
+      ? 'Discord 개인 메시지 · 웹에서도 답장할 수 있어요'
+      : `Discord 개인 메시지 · ${botName} 봇으로 보냄`,
     avatar: avatarText(policy.ownSender === 'member' ? botName : thread.name),
     waitingDays,
     days: groupByDay(placed).map((day) => ({

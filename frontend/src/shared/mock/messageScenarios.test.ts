@@ -7,6 +7,8 @@ import type {
   ReminderWithBundleDto,
   ThreadDetailDto,
 } from '@/shared/types/api/message'
+import type { ListDto } from '@/shared/types/api/envelope'
+import type { WorkspaceDto } from '@/shared/types/api/workspace'
 import { db, initialDb, replaceDb, resetDb } from './db'
 import { MOCK_DB_STORAGE_KEY, restoreDb, saveDb } from './persistence'
 import { setMockRole } from './sessions'
@@ -25,6 +27,7 @@ const MESSAGE_SCENARIOS = [
   'messages-thread-error',
   'messages-send-fail',
   'messages-member',
+  'messages-pm-self',
   'messages-schedule-passed',
   'messages-merge',
 ] as const satisfies readonly MockScenario[]
@@ -343,6 +346,25 @@ describe('메시지 시나리오', () => {
     const before = snapshot()
     const error = await failure(replyTo('th_01', 'PM 답장'))
     expect([error.status, error.code]).toEqual([403, 'FORBIDDEN'])
+    expect(snapshot()).toEqual(before)
+  })
+
+  it('messages-pm-self: 공간 응답의 member_id 는 PM 의 팀원 행이고, 그 행의 대화 th_06 에만 답장된다', async () => {
+    applyScenario('messages-pm-self')
+    const { items } = await fetchDto<ListDto<WorkspaceDto>>('/workspaces')
+    expect(
+      items.map(({ workspace_id, role, member_id }) => [workspace_id, role, member_id]),
+    ).toEqual([['ws_01', 'pm', 'mb_01']])
+    expect((await fetchDto<WorkspaceDto>('/workspaces/ws_01')).member_id).toBe('mb_01')
+    expect((await inbox()).threads.map(({ thread_id }) => thread_id)).toContain('th_06')
+
+    const created = await replyTo('th_06', 'PM 이 자기 대화에 남긴 답장')
+    expect(created).toMatchObject({ thread_id: 'th_06', sender: 'member', reply_channel: 'web' })
+    expect((await thread('th_06')).messages.at(-1)?.body).toBe('PM 이 자기 대화에 남긴 답장')
+
+    const before = snapshot()
+    const other = await failure(replyTo('th_01', '남의 대화'))
+    expect([other.status, other.code]).toEqual([403, 'FORBIDDEN'])
     expect(snapshot()).toEqual(before)
   })
 

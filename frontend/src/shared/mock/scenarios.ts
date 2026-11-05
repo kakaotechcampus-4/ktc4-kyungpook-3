@@ -78,6 +78,7 @@ export const MOCK_SCENARIOS = [
   'messages-thread-error',
   'messages-send-fail',
   'messages-member',
+  'messages-pm-self',
   'messages-schedule-passed',
   'messages-merge',
   // M8-B 설정·팀 연결 관리. settings-discord-skipped 만 새로 만든 공간(ws_03)이고 나머지는 ws_01 이다
@@ -720,6 +721,12 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
       // 일반 팀원(mb_01). 자기 대화 th_06 만 보이고, 그 대화의 보낼 메시지 bd_05 는 보이지 않는다
       signInWith(state, ['ws_01'], 'ws_01')
       setMockRole('member', 'ws_01', state)
+      state.messageThreads.push(structuredClone(messagesMemberThread))
+      state.messageBundles.push(structuredClone(messagesMemberBundle))
+      break
+    case 'messages-pm-self':
+      // PM 인 픽스처 계정도 팀원 행(mb_01)이 있어 자기 대화 th_06 이 남의 대화들 사이에 있다. 답장은 th_06 에만 된다 (#367)
+      signInWith(state, ['ws_01'], 'ws_01')
       state.messageThreads.push(structuredClone(messagesMemberThread))
       state.messageBundles.push(structuredClone(messagesMemberBundle))
       break
