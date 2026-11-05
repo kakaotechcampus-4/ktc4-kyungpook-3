@@ -40,6 +40,7 @@ const items: ExtractionItemDto[] = seeds.map(
       quote: `${raw}님이 ${title}을 맡기로 했어요.`,
       speaker: '1123',
       at_ms: 125000 + index * 10000,
+      speaker_member_id: 'mb_01',
     },
     reverted_at: null,
     task_id,

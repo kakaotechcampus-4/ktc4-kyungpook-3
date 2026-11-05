@@ -45,6 +45,9 @@ const meetingUploadPage = lazyPage(() =>
 const meetingProcessingPage = lazyPage(() =>
   import('@/pages/meeting-processing').then((m) => m.MeetingProcessingPage),
 )
+const meetingSpeakersPage = lazyPage(() =>
+  import('@/pages/meeting-speakers').then((m) => m.MeetingSpeakersPage),
+)
 const tasksPage = lazyPage(() => import('@/pages/tasks').then((m) => m.TasksPage))
 const taskDetailPage = lazyPage(() => import('@/pages/task-detail').then((m) => m.TaskDetailPage))
 const approvalDetailPage = lazyPage(() =>
@@ -111,6 +114,7 @@ export const appRoutes = (
                 path="meetings/:meetingId/processing"
                 element={screen(meetingProcessingPage)}
               />
+              <Route path="meetings/:meetingId/speakers" element={screen(meetingSpeakersPage)} />
               <Route path="meetings/:meetingId?" element={screen(meetingsPage)} />
               {/* 목록과 상세는 다른 화면이다. URL 은 M3 그대로 `/tasks` · `/tasks/:taskId` 다 (M6 §3-1) */}
               <Route path="tasks" element={screen(tasksPage)} />

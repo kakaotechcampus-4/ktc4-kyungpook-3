@@ -10,7 +10,7 @@ it('maps gates and exclusive identifiers with raw assignee fallback', () => {
     assigneeLabel: '김서연',
     appliedTaskId: 'tk_01',
     approvalId: null,
-    evidence: { atMs: 125000 },
+    evidence: { atMs: 125000, speakerMemberId: 'mb_01' },
   })
   expect(extraction.items[3]).toMatchObject({
     gate: 'hold',
@@ -35,10 +35,10 @@ it('preserves absent evidence and falls back when assignee names and raw are abs
     confidence: 0,
     needs_check: true,
   }
-  dto.items[0].evidence = { quote: null, speaker: null, at_ms: null }
+  dto.items[0].evidence = { quote: null, speaker: null, at_ms: null, speaker_member_id: null }
   expect(toExtraction(dto).items[0]).toMatchObject({
     assigneeLabel: '',
-    evidence: { quote: null, speaker: null, atMs: null },
+    evidence: { quote: null, speaker: null, speakerMemberId: null, atMs: null },
   })
 })
 

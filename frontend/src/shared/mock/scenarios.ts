@@ -10,6 +10,7 @@ import {
 import { completeMeeting, failMeeting, setMeetingFlowMode } from './meetingFlow'
 import { notificationFixtures } from './fixtures/notification'
 import { setMockRole } from './sessions'
+import { SPEAKER_SCENARIOS, createSpeakerScenarioDb, isSpeakerScenario } from './speakerScenarios'
 import { blockBySilence, createTask } from './task-state'
 
 /*
@@ -35,6 +36,7 @@ export const MOCK_SCENARIOS = [
   'meeting-notion-not-connected',
   'meeting-notion-revoked',
   'meeting-member',
+  ...SPEAKER_SCENARIOS,
   // M6 태스크·승인. 모두 ws_01 하나에 PM 으로 로그인한다(마지막만 일반 팀원). 전이는 handler 가 만든다
   'tasks-default',
   'tasks-empty',
@@ -380,6 +382,7 @@ function addTeamInvitations(state: MockDb): void {
 }
 
 export function createScenarioDb(scenario: MockScenario): MockDb {
+  if (isSpeakerScenario(scenario)) return createSpeakerScenarioDb(scenario)
   const state = initialDb()
   switch (scenario) {
     case 'signed-out':

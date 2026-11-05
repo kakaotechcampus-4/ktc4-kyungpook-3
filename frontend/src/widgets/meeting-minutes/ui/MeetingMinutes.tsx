@@ -249,29 +249,43 @@ function MeetingList({
   )
 }
 
+function inProgressStatus(
+  workspaceId: string,
+  meeting: MeetingSummary,
+): { label: string; to: string | null } {
+  switch (meeting.status) {
+    case 'processing':
+      return { label: '정리 중', to: paths.meetingProcessing(workspaceId, meeting.id) }
+    case 'awaiting_speakers':
+      return { label: '화자 지정 필요', to: paths.meetingSpeakers(workspaceId, meeting.id) }
+    default:
+      return { label: '회의 중', to: null }
+  }
+}
+
 /**
- * 회의록이 아직 없는 회의의 상태 항목 (U5-2). 정리 중이면 처리 화면으로 잇는다.
+ * 회의록이 아직 없는 회의의 상태 항목 (U5-2). 정리 중이면 처리 화면, 화자 지정 대기면 지정 화면으로 잇는다.
  * Discord 봇이 기록 중인 회의(`created`·`recording`)는 갈 곳이 없어 상태만 보인다 (U5-9).
  */
 function InProgressRow({ workspaceId, meeting }: { workspaceId: string; meeting: MeetingSummary }) {
   const title = meeting.title === '' ? '제목 없는 회의' : meeting.title
-  const content = (status: string) => (
+  const status = inProgressStatus(workspaceId, meeting)
+  const content = (
     <>
       <span className="flex w-full items-center gap-8">
         <span className="flex-1 text-body text-sub group-hover:text-ink">{title}</span>
         <span className={STATUS_BADGE}>
           <span aria-hidden="true" className="size-5 shrink-0 rounded-999 bg-ink" />
-          {status}
+          {status.label}
         </span>
       </span>
       <span className={ROW_META}>{listMeta(meeting)}</span>
     </>
   )
-  if (meeting.status === 'processing')
-    return (
-      <GuardedLink to={paths.meetingProcessing(workspaceId, meeting.id)} className={ROW}>
-        {content('정리 중')}
-      </GuardedLink>
-    )
-  return <div className={ROW}>{content('회의 중')}</div>
+  if (status.to === null) return <div className={ROW}>{content}</div>
+  return (
+    <GuardedLink to={status.to} className={ROW}>
+      {content}
+    </GuardedLink>
+  )
 }

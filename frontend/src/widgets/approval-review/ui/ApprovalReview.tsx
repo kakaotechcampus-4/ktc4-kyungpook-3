@@ -379,7 +379,7 @@ function Evidence({
 }) {
   // 처리 추적이 이미 받는 목록이다 — 같은 key 라 따로 요청하지 않는다
   const meetings = useQuery(meetingListQueryOptions(workspaceId))
-  const { quote, speaker, atMs } = approval.evidence
+  const { quote, atMs } = approval.evidence
   const meetingTitle =
     approval.meetingId === null
       ? null
@@ -392,7 +392,7 @@ function Evidence({
         <blockquote className={QUOTE}>{quote}</blockquote>
       )}
       <figcaption className={META}>
-        화자 {speakerName(members, speaker) ?? '알 수 없음'} · 시각{' '}
+        화자 {speakerName(members, approval.evidence) ?? '알 수 없음'} · 시각{' '}
         {atMs === null ? '알 수 없음' : evidenceClock(atMs)}
         {approval.meetingId === null || meetingTitle === null ? null : (
           <>

@@ -12,6 +12,7 @@ it('maps task-create payload and derives each missing-field combination', () => 
       gate: 'hold',
       relatedTaskId: null,
       assigneeRaw: '민수',
+      evidence: { speaker: '1123', speakerMemberId: 'mb_01' },
     },
     { id: 'ap_02', missing: ['due'], assigneeMemberId: 'mb_02', gate: 'review' },
     { id: 'ap_03', missing: ['assignee'], dueDate: '2026-09-25', gate: 'review' },
@@ -26,7 +27,7 @@ it('tolerates missing payload leaves and follows the backend title fallback orde
     meetingId: null,
     extractionItemId: null,
     gate: null,
-    evidence: { quote: null, speaker: null, atMs: null },
+    evidence: { quote: null, speaker: null, speakerMemberId: null, atMs: null },
     missing: ['assignee', 'due'],
   })
   expect(toApproval({ ...approvalFixtures[0], payload: {} })).toMatchObject({ title: '' })

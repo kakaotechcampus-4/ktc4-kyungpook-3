@@ -52,6 +52,8 @@ export const paths = {
   /** 회의 정리 중. 워크스페이스 팀원 모두 볼 수 있다 */
   meetingProcessing: (workspaceId: string, meetingId: string) =>
     `${workspaceBase(workspaceId)}/meetings/${segment(meetingId)}/processing`,
+  meetingSpeakers: (workspaceId: string, meetingId: string) =>
+    `${workspaceBase(workspaceId)}/meetings/${segment(meetingId)}/speakers`,
   tasks: (workspaceId: string, taskId?: string) =>
     withOptionalId(`${workspaceBase(workspaceId)}/tasks`, taskId),
   approval: (workspaceId: string, approvalId: string) =>

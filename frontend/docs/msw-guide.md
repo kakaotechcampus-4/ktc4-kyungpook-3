@@ -102,6 +102,11 @@ it('빈 목록의 total도 0이다', async () => {
 | `meeting-notion-not-connected` | PM | `instant` | 미연결 | 회의 올리기 진입 차단 모달 → 설정 Notion 영역 → 모의 OAuth → 복귀 |
 | `meeting-notion-revoked` | PM | `instant` | 끊김 | 재연결 차단 모달 |
 | `meeting-member` | 일반 팀원 | `instant` | 연결됨 | 헤더 `정리 중`·회의록. 업로드 주소는 막힌다 |
+| `meeting-speakers` | PM | `speakers` | 연결됨 | 업로드 회의 `mt_11` 이 화자 지정 대기. 목록의 `화자 지정 필요` 행 → 지정 화면 → 제출 → 처리 재개 (#256) |
+| `meeting-speakers-flow` | PM | `speakers` | 연결됨 | 올리면 첫 상세 조회에 화자 지정 대기가 된다. 처리 화면 → 지정 화면 이동, 다른 화면이면 `화자 지정하기` 토스트 |
+| `meeting-speakers-expired` | PM | `speakers` | 연결됨 | 지정을 내면 409 `details.status=failed`. 만료 안내와 재업로드 링크, 다시 낼 수 없다 |
+| `meeting-speakers-member` | 일반 팀원 | `speakers` | 연결됨 | 지정 화면에서 `PM이 화자를 지정하고 있어요` 안내만 본다. 화자 API 를 부르지 않는다 |
+| `meeting-speakers-no-audio` | PM | `speakers` | 연결됨 | 녹음이 없어(`audio: null`) 샘플 버튼 없이 고른다 |
 
 ```text
 http://localhost:5173/workspaces/ws_01/meetings/upload?msw-scenario=meeting-demo

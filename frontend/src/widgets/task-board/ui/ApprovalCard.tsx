@@ -220,7 +220,7 @@ function TaskCreateCard({
         <div className={EVIDENCE_HEAD}>
           <span className={EVIDENCE_META}>
             전사문{atClock === null ? '' : ` ${atClock}`} ·{' '}
-            {speakerName(members, approval.evidence.speaker) ?? '알 수 없음'}
+            {speakerName(members, approval.evidence) ?? '알 수 없음'}
           </span>
           {approval.meetingId === null ? null : (
             <GuardedLink
