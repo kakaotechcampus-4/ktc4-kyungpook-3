@@ -13,6 +13,7 @@ import { TASK_STATUS_LABEL, useTaskStatusOverlay } from '@/features/task-status'
 import { COMMON_MESSAGES } from '@/shared/api/errorMessages'
 import { paths } from '@/shared/config/routes'
 import { seoulDateOf, soonUntil } from '@/shared/lib/date'
+import { queryView } from '@/shared/lib/query-view'
 import { panelTabStop } from '@/shared/lib/tab-panel'
 import { GuardedLink } from '@/shared/lib/unsaved-changes'
 import { Button } from '@/shared/ui/button'
@@ -20,7 +21,7 @@ import { EmptyState } from '@/shared/ui/empty-state'
 import { Icon } from '@/shared/ui/icon'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
 import { Skeleton } from '@/shared/ui/skeleton'
-import { boardTabs, buildTaskBoard, withPendingStatus } from '../lib/taskBoard'
+import { boardTabs, buildTaskBoard, parseDue, withPendingStatus } from '../lib/taskBoard'
 import type { BoardItem, BoardQuery } from '../lib/taskBoard'
 import {
   createApprovals,
@@ -28,7 +29,6 @@ import {
   memberNames,
   mondayOf,
   monthOf,
-  queryView,
   shortDate,
   VIEW_LABEL,
 } from '../lib/taskViews'
@@ -178,16 +178,24 @@ export function TaskBoard({
     () => (overlaid === null ? null : filterTasksByAssignee(overlaid, view.assignee)),
     [overlaid, view.assignee],
   )
+  // `query.due` 는 URL 을 읽을 때마다 새 배열이다. URL 의 값으로 비교해 보기 전환·달·주 이동에는 다시 계산하지 않는다 (#391)
+  const dueParam = query.due.join(',')
   const board = useMemo(
     () =>
       filtered === null
         ? null
         : buildTaskBoard(
-            { tasks: filtered, approvals: approvalList, due: query.due, today, sort: view.sort },
+            {
+              tasks: filtered,
+              approvals: approvalList,
+              due: parseDue(dueParam),
+              today,
+              sort: view.sort,
+            },
             isPm,
             query.tab,
           ),
-    [filtered, approvalList, query.due, query.tab, today, isPm, view.sort],
+    [filtered, approvalList, dueParam, query.tab, today, isPm, view.sort],
   )
 
   const isList = view.view === 'list'

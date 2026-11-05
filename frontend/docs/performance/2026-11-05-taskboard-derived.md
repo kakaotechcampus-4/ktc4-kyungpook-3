@@ -2,6 +2,7 @@
 
 - 날짜: 2026-11-05
 - 상태: 코드 변경 보류(#351). 확인한 범위와 확인하지 못한 범위는 「판정」에, 다시 잴 조건은 「고칠 때 확인할 것」에 둔다
+- 후속: 「고칠 거리」 첫 후보(`board` memo의 무효화)는 #391에서 반영했다(→ [plan/m8/basis-for-decision/2026-11-05-task-board-due-value-memo.md](../plan/m8/basis-for-decision/2026-11-05-task-board-due-value-memo.md)). 나머지 후보는 보류 그대로다
 - 영향 범위: 태스크 화면(`pages/tasks/ui/TasksPage.tsx`, `widgets/task-board/ui/TaskBoard.tsx`, `widgets/task-board/lib/taskBoard.ts`)
 
 ## 측정
@@ -136,7 +137,7 @@ node reqs.cjs http://localhost:5291 500
 
 이번 PR에서는 코드를 바꾸지 않는다. 고친다면 아래 후보가 있다. 비용이 작은 순서다.
 
-- **`board` memo의 무효화.** `query.due`가 렌더마다 새 배열이라 URL이 바뀔 때마다 `buildTaskBoard`가 다시 돈다. `TasksPage`에서 `readBoardQuery` 결과를 `searchParams`에 묶어 memo하거나, `board`의 의존값을 `query.due.join(',')`처럼 값으로 비교되게 하면 보기 전환과 달·주 이동에서는 다시 돌지 않는다. 이것만으로 URL 변경 때 버리는 계산(2,000건 3.9~7.7ms)이 없어진다.
+- **`board` memo의 무효화.** (반영됨, #391) `query.due`가 렌더마다 새 배열이라 URL이 바뀔 때마다 `buildTaskBoard`가 다시 돈다. `TasksPage`에서 `readBoardQuery` 결과를 `searchParams`에 묶어 memo하거나, `board`의 의존값을 `query.due.join(',')`처럼 값으로 비교되게 하면 보기 전환과 달·주 이동에서는 다시 돌지 않는다. 이것만으로 URL 변경 때 버리는 계산(2,000건 3.9~7.7ms)이 없어진다.
 - **보기에 필요 없는 memo 건너뛰기.** 계산 함수 안에서 보기를 보고 `null`이나 빈 배열을 돌려준다. Hook 호출 순서는 그대로다. 사용처는 위 표를 따른다.
 - **탭 개수를 한 번에 세기.** `selectTab`의 공통 부분(대기 승인, 마감 조건에 맞는 태스크)을 한 번 만들고 탭 나누기만 탭마다 한다. 목록과 개수가 같은 판정을 쓴다는 `taskBoard.ts`의 불변식이 그대로 유지된다.
 - **`soonUntil(today)` 한 번만 계산하기.** 마감 조건이 있을 때의 비용이 여기서 온다. 탭 개수와 목록이 함께 줄어든다.
