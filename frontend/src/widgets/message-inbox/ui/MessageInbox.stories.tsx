@@ -223,6 +223,43 @@ export const 팀원_내_대화: Story = {
   },
 }
 
+/**
+ * 리마인드를 받은 팀원 대화 위 알림 띠 (#411). 띠는 브라우저의 알림 허용 상태를 따른다 —
+ * 아직 묻지 않은 기기로 바꿔 끼우고 닫은 기록을 비워, 어느 브라우저에서 열어도 띠가 보인다
+ */
+export const 팀원_알림_띠: Story = {
+  args: { viewer: 'member' },
+  parameters: {
+    scenario: 'messages-member',
+    route: paths.messages('ws_01'),
+    setup: () => {
+      db.push.publicKey = 'AQID'
+    },
+  },
+  beforeEach: () => {
+    window.localStorage.clear()
+    const original = Object.getOwnPropertyDescriptor(window, 'Notification')
+    Object.defineProperty(window, 'Notification', {
+      configurable: true,
+      value: { permission: 'default', requestPermission: () => Promise.resolve('default') },
+    })
+    return () => {
+      if (original) Object.defineProperty(window, 'Notification', original)
+      else Reflect.deleteProperty(window, 'Notification')
+    }
+  },
+  play: async ({ canvasElement }) => {
+    const detail = detailOf(canvasElement)
+    const band = within(await detail.findByRole('region', { name: '기기 알림' }))
+    await expect(
+      band.getByRole('heading', { name: '다음 리마인드를 기기 알림으로 받을까요?' }),
+    ).toBeVisible()
+    await expect(band.getByText('새 리마인드가 오면 이 기기로 바로 알려 드려요.')).toBeVisible()
+    await expect(band.getByRole('button', { name: '알림 켜기' })).toBeEnabled()
+    await expect(band.getByRole('button', { name: '닫기' })).toBeEnabled()
+  },
+}
+
 /** 예정 시각이 지난 묶음 — 이대로 발송은 거절되고 다시 시도는 없다 */
 export const 예정_시각_지남: Story = {
   args: { bundleId: 'bd_06' },

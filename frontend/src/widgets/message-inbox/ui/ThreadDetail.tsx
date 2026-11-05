@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { useId, useLayoutEffect, useRef, useState } from 'react'
+import { BrowserPushPrompt } from '@/features/browser-push'
 import { messageThreadQueryOptions } from '@/entities/message'
 import type { MessageThread } from '@/entities/message'
 import { ApiError } from '@/shared/api/errors'
@@ -159,6 +160,9 @@ function ThreadView({
           )}
         </div>
       </div>
+      {policy.pushPrompt && thread.messages.some(({ sender }) => sender === 'bot') ? (
+        <BrowserPushPrompt />
+      ) : null}
       {/* 스크롤 칸이라 키보드로도 내릴 수 있게 Tab 자리를 준다 (WCAG 2.1.1) */}
       {/* eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex */}
       <section ref={bodyRef} aria-label="대화 내용" tabIndex={0} className={BODY}>
