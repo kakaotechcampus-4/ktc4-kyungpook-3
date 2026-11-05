@@ -3,7 +3,12 @@ import { useState } from 'react'
 import type { ReactNode } from 'react'
 import { pendingApprovalListQueryOptions } from '@/entities/approval'
 import { extractionQueryOptions } from '@/entities/extraction'
-import { meetingDetailQueryOptions, meetingFailure, viewableMeeting } from '@/entities/meeting'
+import {
+  formatMoment,
+  meetingDetailQueryOptions,
+  meetingFailure,
+  viewableMeeting,
+} from '@/entities/meeting'
 import type { Meeting, MeetingSummary } from '@/entities/meeting'
 import { minutesQueryOptions } from '@/entities/minutes'
 import type { Minutes } from '@/entities/minutes'
@@ -20,7 +25,7 @@ import { GuardedLink } from '@/shared/lib/unsaved-changes'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
 import { MinutesDetailSkeleton } from '@/shared/ui/page-skeleton'
 import { extractedTasks } from '../lib/extractedTasks'
-import { detailMeta, formatMoment, SOURCE_LABEL } from '../lib/format'
+import { detailMeta, SOURCE_LABEL } from '../lib/format'
 import { MINUTES_DIM_DELAY_MS } from '../model/useShownMeeting'
 import { SummaryPanel, TasksPanel, TranscriptPanel } from './MinutesBody'
 import type { ReviewState, TasksState } from './MinutesBody'

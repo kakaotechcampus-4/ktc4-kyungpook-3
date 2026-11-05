@@ -1,7 +1,8 @@
 import { useMemo } from 'react'
 import type { ReactNode } from 'react'
 import type { Approval } from '@/entities/approval'
-import { MEETING_SOURCE_TRAITS } from '@/entities/meeting'
+import { evidenceMoment, MEETING_SOURCE_TRAITS } from '@/entities/meeting'
+import type { MeetingSummary } from '@/entities/meeting'
 import type { Member } from '@/entities/member'
 import type { Task } from '@/entities/task'
 import { isOverdue } from '@/entities/task'
@@ -16,7 +17,6 @@ import {
   LIST_LIMIT,
   approvalReason,
   approvalTitle,
-  clock,
   dateWithWeekday,
   dueSoonTasks,
   durationLabel,
@@ -140,6 +140,7 @@ export function Dashboard({
           <ReviewSection
             workspaceId={workspaceId}
             approvals={data.approvals ?? { status: 'loading' }}
+            meetings={data.meetings.status === 'ready' ? data.meetings.data : undefined}
             needsReviewHref={needsReviewHref}
           />
         ) : (
@@ -284,11 +285,13 @@ function SummaryItem({
 interface ReviewSectionProps {
   workspaceId: string
   approvals: Loadable<Approval[]>
+  /** 근거 시각을 읽을 회의. 받기 전이거나 못 받았으면 시각을 숨긴다 */
+  meetings: readonly MeetingSummary[] | undefined
   needsReviewHref: string
 }
 
 /** 확인이 필요한 일 (PM). 대기 시작 오래된 순으로 5개, 나머지는 태스크의 확인 필요 탭에서 (D-049~D-051, D-162) */
-function ReviewSection({ workspaceId, approvals, needsReviewHref }: ReviewSectionProps) {
+function ReviewSection({ workspaceId, approvals, meetings, needsReviewHref }: ReviewSectionProps) {
   return (
     <section aria-labelledby="dashboard-review">
       <div className={SECTION_HEAD}>
@@ -307,7 +310,12 @@ function ReviewSection({ workspaceId, approvals, needsReviewHref }: ReviewSectio
           return (
             <ul aria-label="확인이 필요한 일 목록">
               {shown.map((approval) => (
-                <ReviewRow key={approval.id} workspaceId={workspaceId} approval={approval} />
+                <ReviewRow
+                  key={approval.id}
+                  workspaceId={workspaceId}
+                  approval={approval}
+                  meetings={meetings}
+                />
               ))}
             </ul>
           )
@@ -317,12 +325,21 @@ function ReviewSection({ workspaceId, approvals, needsReviewHref }: ReviewSectio
   )
 }
 
-function ReviewRow({ workspaceId, approval }: { workspaceId: string; approval: Approval }) {
+interface ReviewRowProps {
+  workspaceId: string
+  approval: Approval
+  meetings: readonly MeetingSummary[] | undefined
+}
+
+function ReviewRow({ workspaceId, approval, meetings }: ReviewRowProps) {
   const hold = approval.kind === 'task_create' && approval.gate === 'hold'
   const title = approvalTitle(approval)
   const at =
-    approval.kind === 'task_create' && approval.evidence.atMs !== null
-      ? clock(approval.evidence.atMs)
+    approval.kind === 'task_create'
+      ? evidenceMoment(
+          meetings?.find(({ id }) => id === approval.meetingId),
+          approval.evidence.atMs,
+        )
       : null
   return (
     <li className={REVIEW_ROW}>
