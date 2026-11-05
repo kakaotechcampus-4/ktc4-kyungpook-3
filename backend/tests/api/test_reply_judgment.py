@@ -701,3 +701,24 @@ def test_submit_racing_expire_ends_one_way(mdb, mseed, two):
     [line] = mdb.query(ReplyChange).all()
     assert (state, line.outcome) in {(S.DONE, "applied"), (S.TIMED_OUT, "recorded")}
     assert mdb.query(Notification).filter(Notification.kind == "reply_unjudged").count() == (state == S.TIMED_OUT)
+
+
+def test_a_card_with_status_and_scope_is_a_scope_card(mdb, mseed, two):
+    a, _ = two
+    _reply(mdb, mseed, AT, body="소셜 로그인은 빼기로 했고 나머지는 다 했어요")
+    item = _claim()
+    _judge(item, _change(a, "status", "done", evidence="inferred", claimed=item), _change(a, "scope", claimed=item))
+
+    mdb.expire_all()
+    card = mdb.query(ApprovalRequest).one()
+    assert json.loads(card.payload)["category"] == "scope"
+
+
+def test_a_rejected_body_leaves_the_attempt_open_for_a_failure_report(mdb, mseed, two):
+    _reply(mdb, mseed, AT, body="다 했어요")
+    item = _claim()
+    bad = _post(item["message_id"], {"attempt": item["attempt"], "changes": [{"task_id": "남의 태스크", "field": "status"}]})
+    assert bad.status_code == 400
+
+    _judge(item, failure="INVALID_REQUEST")
+    assert _row(mdb, item).state == S.FAILED

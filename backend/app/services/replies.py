@@ -498,7 +498,8 @@ def _propose(
         "base_title": (first.base.title if first.base else None) or task.title,
         "task_title": task.title,
         "doc_text": " ".join(dict.fromkeys(line.summary for line, *_ in group if line.summary)) or None,
-        "category": _CATEGORY[first_line.field],
+        "category": _CATEGORY[ReplyChangeField.SCOPE if any(line.field == ReplyChangeField.SCOPE for line, *_ in group)
+                              else first_line.field],
         "assignee_raw": next((c.assignee_raw for _, c, _m in group if c.assignee_raw), None),
         "assignee_needs_check": match.needs_check if match else False,
         "due_raw": None,
