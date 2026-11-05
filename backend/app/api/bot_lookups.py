@@ -13,6 +13,7 @@ from app.api.deps import require_service_token
 from app.core.database import get_db
 from app.core.errors import AppError, Envelope, ErrorCode, success
 from app.models import Meeting, MeetingSource, MeetingStatus, Member, MemberAlias, Workspace
+from app.schemas.meeting import ChatCursorResponse
 from app.schemas.member import MemberNameListResponse, MemberNameResponse
 
 router = APIRouter(prefix="/workspaces", dependencies=[Depends(require_service_token)])
@@ -63,7 +64,7 @@ def list_member_names(workspace_id: str, db: Session = Depends(get_db)) -> dict:
     return success(MemberNameListResponse(items=items).model_dump(mode="json"))
 
 
-@router.get("/{workspace_id}/chat-cursor", tags=["meetings"])
+@router.get("/{workspace_id}/chat-cursor", tags=["meetings"], response_model=Envelope[ChatCursorResponse])
 def get_chat_cursor(workspace_id: str, db: Session = Depends(get_db)) -> dict:
     """봇이 마지막으로 처리한 채팅 위치. 끝난(done) 채팅 회의 중 가장 늦게 시작한 것의 끝 시각이다."""
     _require_workspace(db, workspace_id)
@@ -74,7 +75,8 @@ def get_chat_cursor(workspace_id: str, db: Session = Depends(get_db)) -> dict:
             Meeting.source == MeetingSource.CHAT,
             Meeting.status == MeetingStatus.DONE,
         )
-        .order_by(Meeting.started_at.desc())
+        # 같은 started_at 이면 더 멀리 읽은(끝이 늦은) 쪽을, 그래도 같으면 id 로 정해 실행마다 같은 답이 나오게 한다
+        .order_by(Meeting.started_at.desc(), Meeting.duration_ms.desc().nulls_last(), Meeting.meeting_id.desc())
         .limit(1)
     ).scalar_one_or_none()
     if meeting is None:

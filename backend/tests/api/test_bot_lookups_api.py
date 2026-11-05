@@ -241,6 +241,22 @@ def test_chat_cursor_uses_latest_done_chat_meeting(seed, db):
     assert data["last_message_at"].endswith("+00:00")
 
 
+def test_chat_cursor_tie_on_started_at_picks_longer_meeting_then_id(seed, db):
+    _meeting(db, "c1", "chat", "done", 2, duration_ms=1_000)
+    _meeting(db, "c2", "chat", "done", 2, duration_ms=5_000)
+    _meeting(db, "c3", "chat", "done", 2, duration_ms=5_000)
+
+    data = TestClient(app).get(_cursor_url("wsa"), headers=HEADERS).json()["data"]
+
+    assert data["meeting_id"] == "c3"
+    assert datetime.fromisoformat(data["last_message_at"]) == datetime(2026, 11, 2, 0, 0, 5, tzinfo=timezone.utc)
+
+
+def test_chat_cursor_response_shape_is_in_openapi():
+    schema = app.openapi()["paths"]["/api/v1/workspaces/{workspace_id}/chat-cursor"]["get"]
+    assert "ChatCursorResponse" in str(schema["responses"]["200"])
+
+
 def test_chat_cursor_requires_service_token(seed):
     assert TestClient(app).get(_cursor_url("wsa")).status_code == 401
 
