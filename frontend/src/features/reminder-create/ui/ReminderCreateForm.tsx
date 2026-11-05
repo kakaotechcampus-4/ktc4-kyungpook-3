@@ -120,6 +120,8 @@ export function ReminderCreateForm({
     setPicked(null)
     setCustomOpen(false)
   }
+  // 입력을 바꾸면 이전 실패는 지금 입력의 것이 아니다. 남겨 두면 다시 시도가 화면과 다른 내용을 보내는 것처럼 읽힌다
+  const { clearFailure } = creating
 
   const submit = () => {
     if (lockHint !== null || memberId === null || task === undefined || scheduledAt === null) return
@@ -141,6 +143,13 @@ export function ReminderCreateForm({
       tabIndex={-1}
       className="flex flex-col gap-18"
     >
+      {members.data === undefined && members.error !== null ? (
+        <QueryErrorState
+          error={members.error}
+          title="팀원 목록을 불러오지 못했어요"
+          onRetry={() => void members.refetch()}
+        />
+      ) : null}
       {target.kind === 'task' ? (
         <p className="text-body text-sub">
           받는 사람 <strong className="font-semibold text-ink">{recipientName}</strong>
@@ -158,6 +167,7 @@ export function ReminderCreateForm({
                 setChosenMemberId(event.target.value)
                 setChosenTaskId('')
                 resetTime()
+                clearFailure()
               }}
             >
               <option value="">팀원 고르기</option>
@@ -178,6 +188,7 @@ export function ReminderCreateForm({
               onChange={(event) => {
                 setChosenTaskId(event.target.value)
                 resetTime()
+                clearFailure()
               }}
             >
               <option value="">태스크 고르기</option>
@@ -224,6 +235,7 @@ export function ReminderCreateForm({
           onCustomOpenChange={setCustomOpen}
           onPick={(at, onSaved) => {
             setPicked(at)
+            clearFailure()
             onSaved()
           }}
           failure={null}
@@ -239,7 +251,10 @@ export function ReminderCreateForm({
           maxLength={MESSAGE_BODY_MAX_LENGTH}
           disabled={locked}
           aria-describedby={noteHintId}
-          onChange={(event) => setNote(event.target.value)}
+          onChange={(event) => {
+            setNote(event.target.value)
+            clearFailure()
+          }}
         />
         <p id={noteHintId} className="text-caption text-dim">
           메모를 쓰면 이 태스크 줄 대신 메모가 나가요.
@@ -267,11 +282,7 @@ export function ReminderCreateForm({
           </p>
         )}
         {failure === null ? null : failure.known === null ? (
-          <QueryErrorState
-            error={failure.error}
-            title={CREATE_FAILURE_TITLE}
-            onRetry={creating.retry}
-          />
+          <QueryErrorState error={failure.error} title={CREATE_FAILURE_TITLE} onRetry={submit} />
         ) : (
           <div role="alert" className="flex flex-col items-start gap-6">
             <p className="text-body font-semibold text-ink">{CREATE_FAILURE_TITLE}</p>

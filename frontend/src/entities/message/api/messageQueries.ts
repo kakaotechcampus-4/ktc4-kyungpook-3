@@ -147,13 +147,21 @@ function routeOf(action: MessageAction): Route {
   }
 }
 
-/** 메시지 쓰기 하나를 요청한다. 부른 쪽이 캐시를 무효화해 서버 상태로 다시 그린다 */
+/**
+ * 메시지 쓰기 하나를 요청한다. 부른 쪽이 캐시를 무효화해 서버 상태로 다시 그린다.
+ * `signal` 은 그 쓰기를 만든 세션의 취소 신호다 — 세션이 끝나면 요청도 끊긴다
+ */
 export async function requestMessageAction(
   workspaceId: string,
   action: MessageAction,
+  signal?: AbortSignal,
 ): Promise<MessageActionOutcome> {
   const { method, path, body, read } = routeOf(action)
-  const data = await request<unknown>(`${messagesPath(workspaceId)}/${path}`, { method, body })
+  const data = await request<unknown>(`${messagesPath(workspaceId)}/${path}`, {
+    method,
+    body,
+    signal,
+  })
   return read === undefined ? DONE : read(data)
 }
 
@@ -164,6 +172,7 @@ export async function requestMessageAction(
 export async function createReminder(
   workspaceId: string,
   input: ReminderCreateInput,
+  signal?: AbortSignal,
 ): Promise<CreatedReminder> {
   const body: ReminderCreateRequestDto = {
     member_id: input.memberId,
@@ -175,6 +184,7 @@ export async function createReminder(
     await request<ReminderWithBundleDto>(`${messagesPath(workspaceId)}/reminders`, {
       method: 'POST',
       body,
+      signal,
     }),
   )
 }

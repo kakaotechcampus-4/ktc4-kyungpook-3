@@ -159,6 +159,74 @@ describe('메시지 화면의 새 재촉', () => {
     await app.expectSearch('?new=reminder')
   })
 
+  it('만들기에 실패한 뒤 받는 사람·태스크를 바꾸면 이전 실패를 지우고, 지금 고른 것으로 만든다', async () => {
+    server.use(
+      http.post(`/api/v1${REMINDERS_PATH}`, () => fail('INTERNAL_ERROR', '서버 오류', 500), {
+        once: true,
+      }),
+    )
+    await openCompose()
+    const bodies = recordRequestBodies('POST', REMINDERS_PATH)
+    await chooseTask('이재환', 'DB 스키마 정리 · 09/22 마감')
+    await form().findByRole('radio', { name: /마감 하루 전/, checked: true })
+    await userEvent.click(submit())
+    const alert = await form().findByRole('alert')
+    expect(within(alert).getByRole('button', { name: '다시 시도' })).toBeInTheDocument()
+
+    await chooseTask('김서연', '로그인 API 연동 · 09/20 마감')
+    // 남은 다시 시도는 화면과 다른 사람·태스크로 만든다 — 입력을 바꾸면 지운다
+    expect(form().queryByRole('alert')).toBeNull()
+    await form().findByRole('radio', { name: /마감 하루 전/, checked: true })
+    await userEvent.click(submit())
+
+    await screen.findByText('재촉을 만들었어요. 메시지 화면에서 확인하고 승인해야 나가요.')
+    expect(bodies).toEqual([
+      expect.objectContaining({ member_id: 'mb_03', task_id: 'tk_03' }),
+      expect.objectContaining({ member_id: 'mb_01', task_id: 'tk_01' }),
+    ])
+  })
+
+  it('메모를 고쳐도 이전 실패를 지우고, 다시 시도는 지금 입력으로 만든다', async () => {
+    server.use(
+      http.post(`/api/v1${REMINDERS_PATH}`, () => fail('INTERNAL_ERROR', '서버 오류', 500), {
+        once: true,
+      }),
+    )
+    await openCompose()
+    const bodies = recordRequestBodies('POST', REMINDERS_PATH)
+    await chooseTask('이재환', 'DB 스키마 정리 · 09/22 마감')
+    await form().findByRole('radio', { name: /마감 하루 전/, checked: true })
+    await userEvent.click(submit())
+    await form().findByRole('alert')
+
+    await userEvent.type(form().getByRole('textbox', { name: '메모 (선택)' }), '스키마 공유')
+    expect(form().queryByRole('alert')).toBeNull()
+    await userEvent.click(submit())
+
+    await screen.findByText('재촉을 만들었어요. 메시지 화면에서 확인하고 승인해야 나가요.')
+    expect(bodies.at(-1)).toMatchObject({ member_id: 'mb_03', note: '스키마 공유' })
+  })
+
+  it('팀원 목록을 받지 못하면 그 자리에 알리고, 다시 받으면 팀원을 고를 수 있다', async () => {
+    let down = true
+    server.use(
+      http.get('/api/v1/members', () =>
+        down ? fail('INVALID_REQUEST', '팀원 목록 오류', 400) : undefined,
+      ),
+    )
+    await openCompose()
+    const alert = await form().findByRole('alert')
+    expect(alert).toHaveTextContent('팀원 목록을 불러오지 못했어요')
+    expect(form().getByRole('combobox', { name: '받는 사람' })).toBeDisabled()
+
+    down = false
+    await userEvent.click(within(alert).getByRole('button', { name: '다시 시도' }))
+
+    await waitFor(() => expect(form().getByRole('combobox', { name: '받는 사람' })).toBeEnabled())
+    expect(form().queryByRole('alert')).toBeNull()
+    await chooseTask('이재환', 'DB 스키마 정리 · 09/22 마감')
+  })
+
   it('취소하면 목록으로 돌아간다', async () => {
     const app = await openCompose()
     await userEvent.click(form().getByRole('button', { name: '취소' }))
