@@ -60,7 +60,7 @@ export const 검토_항목: Story = {
     await expect(detail.getByText('09/23 09:00 예정')).toBeInTheDocument()
     await expect(detail.getByRole('button', { name: '고쳐 쓰기' })).toBeEnabled()
     await expect(detail.getByText('묶은 태스크 1')).toBeInTheDocument()
-    await expect(detail.getByRole('radio', { name: /마감 하루 전/ })).toBeChecked()
+    await expect(await detail.findByRole('radio', { name: /마감 하루 전/ })).toBeChecked()
     await expect(detail.getByRole('button', { name: '보내지 않음' })).toBeEnabled()
     await expect(detail.getByRole('button', { name: '이대로 발송' })).toBeEnabled()
   },
@@ -75,7 +75,9 @@ export const 초안_대기: Story = {
     await expect(await detail.findByText('문구 다듬는 중')).toBeInTheDocument()
     await expect(detail.getByText('묶은 태스크 2')).toBeInTheDocument()
     await expect(detail.getByText('마감 없음')).toBeInTheDocument()
-    await expect(detail.getByRole('radio', { name: /직접 정하기/ })).toBeChecked()
+    await expect(
+      await detail.findByRole('radio', { name: /직접 정하기/, checked: true }),
+    ).toBeInTheDocument()
   },
 }
 
@@ -391,13 +393,15 @@ export const 발송_시점_hover: Story = {
   parameters: { route: paths.messageReview('ws_01', 'bd_02') },
   play: async ({ canvasElement }) => {
     const detail = detailOf(canvasElement)
-    await expect(await detail.findByRole('radio', { name: /직접 정하기/ })).toBeChecked()
+    await expect(
+      await detail.findByRole('radio', { name: /직접 정하기/, checked: true }),
+    ).toBeInTheDocument()
     await expect(hoverBackground(timingCard(detail, /마감 하루 전/))).toBe('rgb(237, 237, 237)')
     await expect(hoverBackground(timingCard(detail, /직접 정하기/))).toBeNull()
   },
 }
 
-/** 마감이 지난 `마감 하루 전` 은 고를 수 없어 hover 면이 없다 */
+/** 마감 기준 시각(기본 규칙은 하루 전 09:00)이 지난 `마감 하루 전` 은 고를 수 없어 hover 면이 없다 */
 export const 발송_시점_고를_수_없음: Story = {
   args: { bundleId: 'bd_06' },
   parameters: {

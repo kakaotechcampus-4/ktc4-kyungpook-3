@@ -1,4 +1,6 @@
 import type { Bundle, BundleTask, DmFailureReason } from '@/entities/message'
+import { nudgeSendAt } from '@/entities/message-settings'
+import type { NudgeRule } from '@/entities/message-settings'
 import { addDays, formatSeoulDateTime, seoulDateOf } from '@/shared/lib/date'
 
 /* 시각은 모두 한국 시간이다 (D-144). formatSeoulDateTime 은 `YYYY-MM-DD HH:mm` 이다 */
@@ -37,14 +39,18 @@ export function earliestDue(tasks: readonly BundleTask[]): string | null {
   )
 }
 
-/** `마감 하루 전` 선택지 — 가장 이른 마감의 전날 09:00(한국 시간). 마감이 없거나 그 시각이 지났으면 고를 수 없다 */
+/** 마감 기준 선택지 — 가장 이른 마감에 공간의 재촉 규칙(며칠 전 몇 시, 한국 시간)을 적용한 시각. 마감이 없거나 그 시각이 지났으면 고를 수 없다 */
 export type DeadlineSend =
   { status: 'none' } | { status: 'open'; at: string } | { status: 'passed'; at: string }
 
-export function deadlineSend(tasks: readonly BundleTask[], now: number): DeadlineSend {
+export function deadlineSend(
+  tasks: readonly BundleTask[],
+  rule: NudgeRule,
+  now: number,
+): DeadlineSend {
   const due = earliestDue(tasks)
   if (due === null) return { status: 'none' }
-  const at = `${addDays(due, -1)}T09:00:00+09:00`
+  const at = nudgeSendAt(due, rule)
   return Date.parse(at) <= now ? { status: 'passed', at } : { status: 'open', at }
 }
 

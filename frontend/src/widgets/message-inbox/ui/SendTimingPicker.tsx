@@ -1,6 +1,8 @@
+import { useQuery } from '@tanstack/react-query'
 import { useId, useRef, useState } from 'react'
 import type { KeyboardEvent, ReactNode, Ref } from 'react'
 import type { Bundle, MessageAction } from '@/entities/message'
+import { messageSettingsQueryOptions, nudgeDayLabel } from '@/entities/message-settings'
 import { now as clockNow, todayInSeoul } from '@/shared/lib/date'
 import { Button } from '@/shared/ui/button'
 import {
@@ -23,7 +25,7 @@ const CARD_HOVER =
 const CARD = `${CARD_HOVER} relative flex cursor-pointer flex-col items-start gap-2 rounded-16 border border-line bg-surface px-15 py-13 text-left has-[input:checked]:border-ink has-[input:checked]:bg-ink has-[input:disabled]:cursor-not-allowed has-[input[aria-disabled=true]]:cursor-not-allowed has-[input:focus-visible]:outline-2 has-[input:focus-visible]:-outline-offset-1 has-[input:focus-visible]:outline-ink has-[input:checked]:has-[input:focus-visible]:-outline-offset-3 has-[input:checked]:has-[input:focus-visible]:outline-surface`
 const CARD_TITLE = 'text-body font-semibold text-sub group-has-[input:checked]:text-surface'
 const CARD_DETAIL = 'mono text-meta text-dim group-has-[input:checked]:text-surface'
-/* 고를 수 없는 카드(마감이 없거나 지난 `마감 하루 전`)는 눌린 면에 흐린 글자다 — 고를 수 있는 카드와 구분한다 */
+/* 고를 수 없는 카드(마감이 없거나 지났거나 재촉 규칙을 아직 모르는 마감 기준 카드)는 눌린 면에 흐린 글자다 — 고를 수 있는 카드와 구분한다 */
 const UNAVAILABLE = 'bg-surface-sunken [&>span]:text-faint'
 /* 저장 중 표시 — 카드의 테두리·면·글자 색과 크기는 그대로 두고 오른쪽 위에 작게 얹는다(카드 높이가 변하지 않는다) */
 const SAVING_MARK =
@@ -45,6 +47,8 @@ const ARROW_STEP: Readonly<Partial<Record<string, 1 | -1>>> = {
 type SendTiming = 'day_before_deadline' | 'custom'
 
 export interface SendTimingPickerProps {
+  /** 마감 기준 카드의 시각은 이 공간의 재촉 규칙(메시지·알림 설정)을 따른다 */
+  workspaceId: string
   bundle: Bundle
   /** 다른 행동이 진행 중이거나 문구를 고치는 중이라 고를 수 없다. 포커스는 남긴다(`aria-disabled`) */
   locked: boolean
@@ -60,13 +64,16 @@ export interface SendTimingPickerProps {
 }
 
 /**
- * 언제 보낼까요? — 마감 하루 전 · 직접 정하기 (Messages 시안에서 `지금 바로` 를 뺐다 — 서버는 지난 시각을 받지 않는다).
- * `마감 하루 전` 은 묶은 태스크 중 가장 이른 마감의 전날 09:00 이다. 고른 카드는 서버가 저장한 시각에서 정한다 —
+ * 언제 보낼까요? — 마감 기준 · 직접 정하기 (Messages 시안에서 `지금 바로` 를 뺐다 — 서버는 지난 시각을 받지 않는다).
+ * 마감 기준 카드는 묶은 태스크 중 가장 이른 마감에 공간의 재촉 규칙을 적용한 시각이고, 제목도 규칙을 따른다(`마감 하루 전`,
+ * `마감 2일 전`, `마감 당일`). 규칙을 받기 전이나 받지 못했으면 고를 수 없다 — 짐작한 시각으로 저장하지 않는다.
+ * 고른 카드는 서버가 저장한 시각에서 정한다 —
  * 누르면 요청하고 성공한 뒤에 카드가 바뀐다 (D-137). `직접 정하기` 는 시각을 고르는 칸을 열 뿐이고, 시각을 정해야 요청한다.
- * 저장한 시각도 그 카드를 다시 눌러 고친다. 마감이 없거나 그 시각이 지났으면 `마감 하루 전` 을 고를 수 없다.
+ * 저장한 시각도 그 카드를 다시 눌러 고친다. 마감이 없거나 그 시각이 지났으면 마감 기준 카드를 고를 수 없다.
  * 화살표 키는 카드 사이로 포커스만 옮긴다 — 고르기(Space·누름)와 나눠 지나가는 카드가 저장되지 않게 한다
  */
 export function SendTimingPicker({
+  workspaceId,
   bundle,
   locked,
   saving,
@@ -83,12 +90,17 @@ export function SendTimingPicker({
   const showSaving = useShownAfter(saving, SAVING_MARK_DELAY_MS)
   const savingTiming = showSaving ? requestedTiming : null
   const [now] = useState(clockNow)
-  const deadline = deadlineSend(bundle.tasks, now)
-  const savedTiming: SendTiming =
-    deadline.status !== 'none' && sameInstant(deadline.at, bundle.scheduledAt)
-      ? 'day_before_deadline'
-      : 'custom'
-  const selected: SendTiming = customOpen ? 'custom' : savedTiming
+  const settings = useQuery(messageSettingsQueryOptions(workspaceId))
+  const rule = settings.data?.nudgeRule
+  const deadline = rule === undefined ? null : deadlineSend(bundle.tasks, rule, now)
+  // 규칙을 모르면 저장된 시각이 어느 카드인지도 모른다 — 어느 카드도 고르지 않은 채로 둔다
+  const savedTiming: SendTiming | null =
+    deadline === null
+      ? null
+      : deadline.status !== 'none' && sameInstant(deadline.at, bundle.scheduledAt)
+        ? 'day_before_deadline'
+        : 'custom'
+  const selected: SendTiming | null = customOpen ? 'custom' : savedTiming
 
   const save = (timing: SendTiming, scheduledAt: string, onSaved: () => void) => {
     setRequestedTiming(timing)
@@ -100,7 +112,7 @@ export function SendTimingPicker({
     if (timing === 'custom') onCustomOpenChange(true)
     else {
       onCustomOpenChange(false)
-      if (deadline.status === 'open' && savedTiming !== timing)
+      if (deadline?.status === 'open' && savedTiming !== timing)
         save(timing, deadline.at, () => undefined)
     }
   }
@@ -139,15 +151,19 @@ export function SendTimingPicker({
         <TimingCard
           {...card}
           value="day_before_deadline"
-          title="마감 하루 전"
+          title={rule === undefined ? '마감 기준' : nudgeDayLabel(rule.daysBefore)}
           detail={
-            deadline.status === 'none'
-              ? '마감 없음'
-              : deadline.status === 'passed'
-                ? `${shortDateTime(deadline.at)} · 지남`
-                : shortDateTime(deadline.at)
+            deadline === null
+              ? settings.isError
+                ? '규칙을 불러오지 못했어요'
+                : '불러오는 중'
+              : deadline.status === 'none'
+                ? '마감 없음'
+                : deadline.status === 'passed'
+                  ? `${shortDateTime(deadline.at)} · 지남`
+                  : shortDateTime(deadline.at)
           }
-          unavailable={deadline.status !== 'open'}
+          unavailable={deadline?.status !== 'open'}
         />
         <TimingCard
           {...card}
@@ -188,7 +204,7 @@ function TimingCard({
 }: {
   name: string
   value: SendTiming
-  selected: SendTiming
+  selected: SendTiming | null
   /** 저장 중을 표시할 카드. 없으면 null */
   savingTiming: SendTiming | null
   locked: boolean

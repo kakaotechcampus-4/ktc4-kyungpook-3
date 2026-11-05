@@ -77,14 +77,22 @@ const task = (dueDate: string | null, title: string | null = '태스크'): Bundl
   note: null,
 })
 
-it('마감 하루 전은 가장 이른 마감의 전날 09:00(한국 시간)이고, 마감이 없거나 지났으면 고를 수 없다', () => {
+it('마감 기준 시각은 가장 이른 마감에 재촉 규칙을 적용한 한국 시간이고, 마감이 없거나 지났으면 고를 수 없다', () => {
   const now = Date.parse('2026-09-18T09:00:00+09:00')
-  expect(deadlineSend([task(null), task('2026-09-30'), task('2026-09-24')], now)).toEqual({
+  const dayBefore = { daysBefore: 1, hour: 9 } as const
+  expect(
+    deadlineSend([task(null), task('2026-09-30'), task('2026-09-24')], dayBefore, now),
+  ).toEqual({ status: 'open', at: '2026-09-23T09:00:00+09:00' })
+  expect(deadlineSend([task('2026-09-24')], { daysBefore: 2, hour: 18 }, now)).toEqual({
     status: 'open',
-    at: '2026-09-23T09:00:00+09:00',
+    at: '2026-09-22T18:00:00+09:00',
   })
-  expect(deadlineSend([task(null)], now)).toEqual({ status: 'none' })
-  expect(deadlineSend([task('2026-09-19')], now)).toEqual({
+  expect(deadlineSend([task('2026-09-18')], { daysBefore: 0, hour: 18 }, now)).toEqual({
+    status: 'open',
+    at: '2026-09-18T18:00:00+09:00',
+  })
+  expect(deadlineSend([task(null)], dayBefore, now)).toEqual({ status: 'none' })
+  expect(deadlineSend([task('2026-09-19')], dayBefore, now)).toEqual({
     status: 'passed',
     at: '2026-09-18T09:00:00+09:00',
   })
