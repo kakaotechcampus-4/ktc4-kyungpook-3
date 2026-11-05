@@ -116,7 +116,7 @@ export function useProcessingTracker(): ProcessingTracker {
     queries: tracked.map((meeting) => ({
       ...meetingDetailQueryOptions(meeting.workspaceId, meeting.meetingId),
       refetchInterval: ({ state }: { state: { data?: Meeting; error: unknown } }) =>
-        pollInterval(meeting, state.data, state.error),
+        pollInterval(state.data, state.error),
       // 30초 최신 시간과 무관하게 돌아오면 바로 다시 묻는다 — 끊긴 사이에 끝났을 수 있다
       refetchOnWindowFocus: 'always' as const,
       refetchOnReconnect: 'always' as const,
@@ -234,7 +234,7 @@ export function useProcessingTracker(): ProcessingTracker {
     tracked.forEach((meeting, index) => {
       const result = results[index]
       if (result === undefined) return
-      const outcome = trackerOutcome(meeting, result.data, result.error)
+      const outcome = trackerOutcome(result.data, result.error)
       if (outcome === 'awaiting_speakers') {
         if (promptSpeakers(meeting)) onAwaitingSpeakers(meeting)
         return

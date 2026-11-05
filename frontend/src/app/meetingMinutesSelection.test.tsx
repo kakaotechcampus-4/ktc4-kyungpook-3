@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { getResponse, http } from 'msw'
 import { clearTrackedMeetings } from '@/entities/meeting'
 import { minutesQueryOptions } from '@/entities/minutes'
+import { workspaceKey } from '@/shared/api/queryKeys'
 import { paths } from '@/shared/config/routes'
 import { db } from '@/shared/mock/db'
 import { ok } from '@/shared/mock/envelope'
@@ -283,7 +284,7 @@ describe('느린 답은 본문 모양의 스켈레톤을 그리고 이전 회의
     ).toBeInTheDocument()
     expect(within(detail()).queryByRole('heading', { name: '3주차 정기회의' })).toBeNull()
     await settle(150)
-    expect(requestsOf(log, /^\/meetings\/mt_07$/)).toEqual(['/meetings/mt_07'])
+    expect(requestsOf(log, /^\/meetings\/mt_07$/)).toEqual(['/meetings/mt_07', '/meetings/mt_07'])
     expect(requestsOf(log, /\/minutes$/)).toEqual([])
     expect(requestsOf(log, /^\/extractions\//)).toEqual([])
   })
@@ -368,7 +369,7 @@ describe('목록 행을 가리키거나 포커스하면 그 회의록을 미리 
       }),
     )
     const user = userEvent.setup()
-    await openMt09()
+    const app = await openMt09()
     const log = recordRequests()
 
     await user.hover(rowLink(/2주차 정기회의/))
@@ -376,6 +377,9 @@ describe('목록 행을 가리키거나 포커스하면 그 회의록을 미리 
     await settle(150)
     expect(requestsOf(log, /\/meetings\/mt_07\/minutes$/)).toEqual([])
     expect(requestsOf(log, /^\/extractions\//)).toEqual([])
+    expect(
+      app.queryClient.getQueryData(workspaceKey('ws_01', 'meetings', 'detail', 'mt_07')),
+    ).toBeUndefined()
   })
 })
 

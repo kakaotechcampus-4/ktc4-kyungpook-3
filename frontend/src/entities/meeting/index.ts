@@ -20,6 +20,7 @@ export {
   meetingDetailQueryOptions,
   meetingKeys,
   meetingListQueryOptions,
+  viewableMeeting,
 } from './api/meetingQueries'
 export { assignSpeakers, meetingAudioUrl, speakerViewQueryOptions } from './api/speakers'
 export { speakerTitle, speakingTime } from './lib/speakers'

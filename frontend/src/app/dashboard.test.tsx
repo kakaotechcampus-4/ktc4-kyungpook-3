@@ -2,9 +2,10 @@ import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { HttpResponse, http } from 'msw'
 import { clearTrackedMeetings } from '@/entities/meeting'
+import { workspaceKey } from '@/shared/api/queryKeys'
 import { paths } from '@/shared/config/routes'
 import { db, replaceDb } from '@/shared/mock/db'
-import { fail } from '@/shared/mock/envelope'
+import { fail, ok } from '@/shared/mock/envelope'
 import { MOCK_NOW } from '@/shared/mock/fixtures/constants'
 import { taskFixtures } from '@/shared/mock/fixtures/task'
 import { createScenarioDb } from '@/shared/mock/scenarios'
@@ -890,6 +891,47 @@ describe('부분 오류·공간 전환 (AC-05)', () => {
     await waitFor(() => expect(summary()['기한 지남']).toBe('2'))
     expect(reviewTitles()).toHaveLength(3)
     expect(dueTitles()).toHaveLength(5)
+  })
+
+  it('최신 완료 회의의 상세가 다른 공간의 회의면 최근 반영을 오류로 그리고 추출을 부르지 않는다 (#349)', async () => {
+    server.use(
+      http.get('/api/v1/meetings/mt_09', () => {
+        const meeting = db.meetings.find(({ meeting_id }) => meeting_id === 'mt_09')!
+        return ok({ ...meeting, workspace_id: 'ws_02' })
+      }),
+    )
+    const log = recordRequests()
+    renderApp(DASHBOARD)
+    expect(
+      await screen.findByText('최근 반영을 불러오지 못했어요', {}, { timeout: 8_000 }),
+    ).toBeInTheDocument()
+    await waitFor(() => expect(summary()['기한 지남']).toBe('2'))
+    await settle(150)
+    expect(log.started.filter(({ path }) => path.startsWith('/extractions'))).toEqual([])
+    expect(screen.queryByRole('list', { name: '최근 반영 목록' })).toBeNull()
+  })
+
+  it('받아 둔 최근 반영이 있어도 다시 받은 상세가 다른 공간이면 최근 반영을 오류로 바꾸고 추출을 다시 묻지 않는다 (#349)', async () => {
+    const app = await openDashboard()
+    server.use(
+      http.get('/api/v1/meetings/mt_09', () => {
+        const meeting = db.meetings.find(({ meeting_id }) => meeting_id === 'mt_09')!
+        return ok({ ...meeting, workspace_id: 'ws_02' })
+      }),
+    )
+    await act(() =>
+      app.queryClient.invalidateQueries({
+        queryKey: workspaceKey('ws_01', 'meetings', 'detail', 'mt_09'),
+      }),
+    )
+    expect(await screen.findByText('최근 반영을 불러오지 못했어요')).toBeInTheDocument()
+    expect(screen.queryByRole('list', { name: '최근 반영 목록' })).toBeNull()
+    const log = recordRequests()
+    await act(() =>
+      app.queryClient.invalidateQueries({ queryKey: workspaceKey('ws_01', 'extractions') }),
+    )
+    await settle(150)
+    expect(log.started.filter(({ path }) => path.startsWith('/extractions'))).toEqual([])
   })
 
   it('공간을 바꾸면 이전 공간의 데이터가 섞이지 않는다', async () => {

@@ -103,6 +103,37 @@ export function createClientError(code: ClientErrorCode, status = 0): ApiError {
   return new ApiError({ code, message: code, details: null }, status, CLIENT_ERROR_KIND[code])
 }
 
+/**
+ * 응답이 요청한 공간의 것이 아니다. 경로에 공간이 없는 조회가 캐시에 쓰기 전에 던진다 — 다른 공간의 데이터가
+ * 이 공간의 key 로 성공 캐시에 들어가지 않는다. 서버 응답이 아니라 클라이언트 판정이라 kind 는 `invalid_response` 다(재시도 안 함)
+ */
+export function createWorkspaceMismatchError(
+  requestedWorkspaceId: string,
+  responseWorkspaceId: string,
+): ApiError {
+  return new ApiError(
+    {
+      code: ERROR_CODES.WORKSPACE_MISMATCH,
+      message: 'response belongs to another workspace',
+      details: {
+        requested_workspace_id: requestedWorkspaceId,
+        response_workspace_id: responseWorkspaceId,
+      },
+    },
+    0,
+    'invalid_response',
+  )
+}
+
+/** `createWorkspaceMismatchError` 가 만든 오류다. 서버가 거절한 400 `WORKSPACE_MISMATCH` 는 아니다 */
+export function isWorkspaceMismatch(error: unknown): boolean {
+  return (
+    error instanceof ApiError &&
+    error.kind === 'invalid_response' &&
+    error.code === ERROR_CODES.WORKSPACE_MISMATCH
+  )
+}
+
 /** 우리 클라이언트의 취소와 TanStack Query 의 취소를 모두 취소로 본다 */
 export function isCanceledError(error: unknown): boolean {
   return isCancelledError(error) || (error instanceof ApiError && error.kind === 'canceled')
