@@ -160,6 +160,27 @@ export const schedulePassedBundle: MockBundle = {
   ],
 }
 
+/**
+ * 기본 목록에 넣지 않는다. `messages-merge` 만 더한다. 이재환에게 보낼 두 번째 메시지이고 승인 전이다.
+ * 마감 하루 전(9/23 09:00)이 bd_01 의 시각이라 그 카드를 고르면 bd_01 로 합쳐진다
+ */
+export const mergeSourceBundle: MockBundle = {
+  bundle_id: 'bd_07',
+  workspace_id: 'ws_01',
+  thread_id: 'th_01',
+  member_id: 'mb_03',
+  recipient_name: '이재환',
+  scheduled_at: '2026-09-21T18:00:00+09:00',
+  ...waiting,
+  body: '재환님, ERD 정리도 9/24 마감이에요. 어디까지 됐는지 알려 주세요.',
+  body_source: 'ai',
+  draft_status: 'done',
+  draft_version: 1,
+  reminders: [
+    reminder('rm_07', 'bd_07', { task_id: 'tk_11', title: 'ERD 정리', due_date: '2026-09-24' }),
+  ],
+}
+
 export const messageThreadFixtures: MockMessageThread[] = [
   {
     thread_id: 'th_01',

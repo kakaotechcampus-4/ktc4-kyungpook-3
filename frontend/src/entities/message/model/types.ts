@@ -105,3 +105,6 @@ export type MessageAction =
   | { kind: 'edit'; bundleId: string; body: string }
   | { kind: 'schedule'; bundleId: string; scheduledAt: string }
   | { kind: 'reply'; threadId: string; body: string }
+
+/** 쓰기의 결과. 보낼 시각을 옮긴 자리에 같은 사람의 예정 묶음이 있으면 서버가 그 묶음(into)으로 합친다 */
+export type MessageActionOutcome = { kind: 'done' } | { kind: 'merged'; into: Bundle }

@@ -20,6 +20,7 @@ const MESSAGE_SCENARIOS = [
   'messages-send-fail',
   'messages-member',
   'messages-schedule-passed',
+  'messages-merge',
 ] as const satisfies readonly MockScenario[]
 
 afterEach(() => sessionStorage.clear())
@@ -251,6 +252,26 @@ describe('메시지 시나리오', () => {
     expect([error.status, error.code]).toEqual([409, 'REMINDER_SCHEDULED_AT_PASSED'])
     await patchBundle('bd_06', { scheduled_at: '2026-09-19T09:00:00+09:00' })
     expect(await approve('bd_06', { draft_version: 1 })).toMatchObject({ approved: true })
+  })
+
+  it('messages-merge: 같은 대화의 예정 묶음 시각으로 옮기면 합친 묶음이 오고, 문구도 같이 보내면 400 이다', async () => {
+    applyScenario('messages-merge')
+    const before = snapshot()
+    const refused = await failure(
+      patchBundle('bd_07', { body: '고친 문구', scheduled_at: '2026-09-23T09:00:00+09:00' }),
+    )
+    expect([refused.status, refused.code]).toEqual([400, 'INVALID_REQUEST'])
+    expect(snapshot()).toEqual(before)
+
+    expect(await patchBundle('bd_07', { scheduled_at: '2026-09-23T09:00:00+09:00' })).toMatchObject(
+      {
+        bundle_id: 'bd_01',
+        approved: false,
+        approved_at: null,
+        draft_version: 3,
+      },
+    )
+    expect((await inbox()).bundles?.map(({ bundle_id }) => bundle_id)).toEqual(['bd_01', 'bd_02'])
   })
 
   it('messages-send-fail: 조회는 되고 행동은 모두 5xx 이며 db 는 그대로다', async () => {

@@ -4,7 +4,7 @@ import { paths } from '@/shared/config/routes'
 import { db } from '@/shared/mock/db'
 import { MOCK_NOW } from '@/shared/mock/fixtures/constants'
 import { applyScenario } from '@/shared/mock/scenarios'
-import { recordRequests } from '@/shared/test/requests'
+import { recordRequestBodies, recordRequests } from '@/shared/test/requests'
 import {
   conversation,
   current,
@@ -480,5 +480,79 @@ describe('예정 시각이 지난 묶음', () => {
     renderApp(paths.messageThread('ws_01', 'th_01'))
     await screen.findByRole('heading', { level: 2, name: '이재환' })
     expect(within(conversation()).getByText('09/17 09:00 발송 예정 · 지남')).toBeVisible()
+  })
+})
+
+describe('보낼 시각을 같은 사람의 다른 묶음 시각으로 옮기면 합친 묶음으로 옮겨 간다', () => {
+  const MERGED =
+    '같은 시각의 메시지와 합쳤어요. 내용이 바뀌어 승인이 풀렸으니 다시 확인하고 승인해 주세요.'
+
+  async function openMergeSource() {
+    applyScenario('messages-merge')
+    return openBundle('bd_07')
+  }
+
+  it('합친 묶음이 골라지고 승인이 풀렸다고 알린다 — 없어진 묶음의 주소는 바꿔 끼운다', async () => {
+    const app = await openMergeSource()
+    expect(rowTexts(reviewList())).toHaveLength(3)
+    await userEvent.click(radio(/마감 하루 전/))
+
+    await app.expectSearch('?review=bd_01')
+    expect(app.visitedActions().at(-1)).toBe('REPLACE')
+    expect(await detail().findByRole('heading', { level: 3, name: '묶은 태스크 2' })).toBeVisible()
+    expect(detail().getByRole('heading', { level: 2 })).toHaveTextContent('이 메시지, 보낼까요?')
+    expect(detail().getByRole('button', { name: '이대로 발송' })).toBeVisible()
+    expect(detail().getByText('ERD 정리')).toBeVisible()
+    expect(await screen.findByText(MERGED)).toBeInTheDocument()
+    expect(rowTexts(reviewList())).toHaveLength(2)
+    expect(current()[0]).toHaveTextContent('이재환')
+    expect(document.activeElement).toBe(detailPane())
+    expect(bundleOf('bd_07').status).toBe('cancelled')
+    expect(bundleOf('bd_01')).toMatchObject({ approved: false, approved_at: null })
+    expect(bundleOf('bd_01').reminders.map(({ reminder_id }) => reminder_id)).toEqual([
+      'rm_01',
+      'rm_07',
+    ])
+  })
+
+  it('겹치지 않는 시각으로 옮기면 그 묶음에 머물고 합쳤다고 알리지 않는다', async () => {
+    const app = await openMergeSource()
+    await userEvent.click(radio(/직접 정하기/))
+    fireEvent.change(detail().getByLabelText('보낼 날짜와 시각'), {
+      target: { value: '2026-09-22T10:00' },
+    })
+    await userEvent.click(button('이 시각으로 정하기'))
+    await waitFor(() => expect(radio('직접 정하기09/22 10:00')).toBeChecked())
+
+    expect(document.activeElement).toBe(radio('직접 정하기09/22 10:00'))
+    await app.expectSearch('?review=bd_07')
+    expect(rowTexts(reviewList())).toHaveLength(3)
+    expect(screen.queryByText(MERGED)).toBeNull()
+    expect(bundleOf('bd_01')).toMatchObject({ approved: true })
+  })
+
+  it('문구와 시각을 한 요청에 같이 보내지 않는다 — 문구를 고치는 동안에는 시각을 고를 수 없다', async () => {
+    await openMergeSource()
+    const bodies = recordRequestBodies('PATCH', '/workspaces/ws_01/messages/bundles/bd_07')
+    await userEvent.click(button('고쳐 쓰기'))
+    expectLocked(radio(/마감 하루 전/))
+    expectLocked(radio(/직접 정하기/))
+    await userEvent.click(radio(/마감 하루 전/))
+    expect(radio(/직접 정하기/)).toBeChecked()
+
+    const field = detail().getByRole('textbox', { name: '보낼 문구' })
+    await userEvent.clear(field)
+    await userEvent.type(field, '재환님, ERD 정리 어디까지 됐나요?')
+    await userEvent.click(button('저장'))
+    await waitFor(() => expect(detail().queryByRole('textbox')).toBeNull())
+    expectUnlocked(radio(/마감 하루 전/))
+
+    await userEvent.click(radio(/마감 하루 전/))
+    expect(await screen.findByText(MERGED)).toBeInTheDocument()
+    await waitFor(() => expect(bodies).toHaveLength(2))
+    expect(bodies).toEqual([
+      { body: '재환님, ERD 정리 어디까지 됐나요?' },
+      { scheduled_at: '2026-09-23T09:00:00+09:00' },
+    ])
   })
 })

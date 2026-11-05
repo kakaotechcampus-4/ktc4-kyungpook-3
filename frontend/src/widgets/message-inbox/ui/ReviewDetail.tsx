@@ -31,7 +31,7 @@ export interface ReviewDetailProps {
   workspaceId: string
   botName: string
   bundle: Bundle
-  /** 승인하거나 보내지 않아 이 항목이 바뀐다 — 누른 버튼도 사라지므로 포커스를 맡길 자리로 옮긴다 */
+  /** 승인하거나 보내지 않거나 다른 묶음과 합쳐져 이 항목이 바뀐다 — 누른 버튼도 사라지므로 포커스를 맡길 자리로 옮긴다 */
   onSettled: () => void
 }
 
@@ -141,7 +141,20 @@ export function ReviewDetail({ workspaceId, botName, bundle, onSettled }: Review
           saving={pendingKind === 'schedule'}
           customOpen={choosingTime}
           onCustomOpenChange={setChoosingTime}
-          onChange={(action, onSaved) => actions.run(action, { onSuccess: onSaved })}
+          onChange={(action, onSaved) =>
+            actions.run(action, {
+              onSuccess: (outcome) => {
+                if (outcome.kind === 'done') {
+                  onSaved()
+                  return
+                }
+                // 이 묶음은 없어지고 상세가 합친 묶음으로 새로 마운트된다 — 이 상세 안이 아니라 상세 영역에 포커스를 둔다.
+                // 뒤로 가기로 없는 묶음에 돌아가지 않게 주소를 바꿔 끼운다
+                onSettled()
+                void navigate(paths.messageReview(workspaceId, outcome.into.id), { replace: true })
+              },
+            })
+          }
           failure={failureOf('schedule')}
         />
 
