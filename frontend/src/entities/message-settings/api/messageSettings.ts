@@ -19,11 +19,13 @@ export async function fetchMessageSettings(
 export async function updateMessageSettings(
   workspaceId: string,
   change: MessageSettingsChange,
+  signal?: AbortSignal,
 ): Promise<MessageSettings> {
   return toMessageSettings(
     await request<MessageSettingsDto>(path(workspaceId), {
       method: 'PATCH',
       body: toMessageSettingsPatch(change),
+      signal,
     }),
   )
 }

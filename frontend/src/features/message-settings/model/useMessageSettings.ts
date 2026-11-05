@@ -2,8 +2,10 @@ import { useMutation, useMutationState, useQuery, useQueryClient } from '@tansta
 import { useCallback, useMemo } from 'react'
 import { messageSettingsQueryOptions, updateMessageSettings } from '@/entities/message-settings'
 import type { MessageSettings, MessageSettingsChange } from '@/entities/message-settings'
-import { captureSession } from '@/entities/user'
 import { failureNotice } from '@/shared/api/errorMessages'
+import { CLIENT_ERROR_CODES, createClientError } from '@/shared/api/errors'
+import { captureSessionScope } from '@/shared/api/sessionScope'
+import type { SessionScope } from '@/shared/api/sessionScope'
 import { toast } from '@/shared/ui/toast'
 
 export const MESSAGE_SETTINGS_FAILED_TITLE = '알림 설정을 저장하지 못했어요'
@@ -12,8 +14,8 @@ const mutationKey = (workspaceId: string) => ['message-settings', workspaceId] a
 
 interface ChangeVariables {
   change: MessageSettingsChange
-  /** 요청을 시작한 세션이 아직 이어지는지. 끝났으면 화면·캐시·알림에 아무것도 남기지 않는다 */
-  isCurrentSession: () => boolean
+  /** 변경을 만든 세션. 끝났으면 보내지 않고, 보낸 요청은 취소하며, 화면·캐시·알림에 아무것도 남기지 않는다 */
+  session: SessionScope
 }
 
 export interface MessageSettingsState {
@@ -44,13 +46,17 @@ export function useMessageSettings(workspaceId: string): MessageSettingsState {
   const { mutate } = useMutation({
     mutationKey: mutationKey(workspaceId),
     scope: { id: `message-settings:${workspaceId}` },
-    mutationFn: ({ change }: ChangeVariables) => updateMessageSettings(workspaceId, change),
-    onSuccess: (settings, { isCurrentSession }) => {
-      if (!isCurrentSession()) return
+    mutationFn: async ({ change, session }: ChangeVariables) => {
+      // 앞 변경을 기다리는 사이 세션이 끝났을 수 있다. 그대로 보내면 다음에 로그인한 계정의 쿠키로 저장된다
+      if (!session.isCurrent()) throw createClientError(CLIENT_ERROR_CODES.REQUEST_CANCELED)
+      return updateMessageSettings(workspaceId, change, session.signal)
+    },
+    onSuccess: (settings, { session }) => {
+      if (!session.isCurrent()) return
       queryClient.setQueryData(messageSettingsQueryOptions(workspaceId).queryKey, settings)
     },
-    onError: (error, { isCurrentSession }) => {
-      if (!isCurrentSession()) return
+    onError: (error, { session }) => {
+      if (!session.isCurrent()) return
       const notice = failureNotice(error)
       if (notice !== null)
         toast.show({
@@ -66,7 +72,7 @@ export function useMessageSettings(workspaceId: string): MessageSettingsState {
       query.data &&
       pending.reduce<MessageSettings>(
         (current, variables) =>
-          variables !== undefined && variables.isCurrentSession()
+          variables !== undefined && variables.session.isCurrent()
             ? { ...current, ...variables.change }
             : current,
         query.data,
@@ -75,7 +81,7 @@ export function useMessageSettings(workspaceId: string): MessageSettingsState {
   )
 
   const change = useCallback(
-    (next: MessageSettingsChange) => mutate({ change: next, isCurrentSession: captureSession() }),
+    (next: MessageSettingsChange) => mutate({ change: next, session: captureSessionScope() }),
     [mutate],
   )
 
