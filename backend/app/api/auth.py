@@ -1,5 +1,3 @@
-import hashlib
-import hmac
 import secrets
 from datetime import datetime, timedelta, timezone
 
@@ -12,23 +10,9 @@ from app.core.database import get_db
 from app.core.errors import AppError, Envelope, ErrorCode, success
 from app.models import Invitation, InvitationStatus, Member, Session as SessionModel, User
 from app.schemas.auth import AuthResponse, LoginRequest, SignupRequest, UserResponse
+from app.services.passwords import hash_password, verify_password
 
 router = APIRouter(prefix="/auth", tags=["auth"])
-
-_PBKDF2_ITERATIONS = 260_000
-
-def _hash_password(password: str) -> str:
-    salt = secrets.token_hex(16)
-    digest = hashlib.pbkdf2_hmac("sha256", password.encode(), bytes.fromhex(salt), _PBKDF2_ITERATIONS)
-    return f"{salt}${digest.hex()}"
-
-def _verify_password(password: str, stored_hash: str) -> bool:
-    try:
-        salt, digest_hex = stored_hash.split("$", 1)
-    except ValueError:
-        return False
-    digest = hashlib.pbkdf2_hmac("sha256", password.encode(), bytes.fromhex(salt), _PBKDF2_ITERATIONS)
-    return hmac.compare_digest(digest.hex(), digest_hex)
 
 def _create_session(db: Session, user: User, response: Response):
     token = secrets.token_urlsafe(32)
@@ -82,7 +66,7 @@ def signup(payload: SignupRequest, response: Response, db: Session = Depends(get
 
     user = User(
         email=payload.email,
-        password_hash=_hash_password(payload.password),
+        password_hash=hash_password(payload.password),
         name=payload.name,
         provider="local"
     )
@@ -96,7 +80,7 @@ def signup(payload: SignupRequest, response: Response, db: Session = Depends(get
 @router.post("/login", response_model=Envelope[AuthResponse])
 def login(payload: LoginRequest, response: Response, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == payload.email).first()
-    if not user or not user.password_hash or not _verify_password(payload.password, user.password_hash):
+    if not user or not user.password_hash or not verify_password(payload.password, user.password_hash):
         raise AppError(ErrorCode.INVALID_CREDENTIALS)
 
     _create_session(db, user, response)
