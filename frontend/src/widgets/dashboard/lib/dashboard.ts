@@ -1,5 +1,5 @@
 import type { Approval } from '@/entities/approval'
-import { sortByWaiting } from '@/entities/approval'
+import { isScopeChange, sortByWaiting } from '@/entities/approval'
 import type { ExtractionItem } from '@/entities/extraction'
 import type { IntegrationStatus } from '@/entities/integration'
 import type { MeetingSummary } from '@/entities/meeting'
@@ -234,6 +234,7 @@ export function clock(ms: number): string {
 
 /** 확인 필요 행 아래 한 줄 — 왜 확인해야 하는지. 회의록·태스크 목록의 문구와 같다 */
 export function approvalReason(approval: Approval): string {
+  if (isScopeChange(approval)) return '범위 변경을 확인해야 해요'
   if (approval.kind === 'task_update') return '변경 제안을 확인해야 해요'
   if (approval.kind === 'unsupported') return '지원하지 않는 종류라 상세에서 확인해 주세요'
   if (approval.gate === 'hold') return '정보가 부족해 태스크 초안을 만들지 않았어요'

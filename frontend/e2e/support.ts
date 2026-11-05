@@ -26,6 +26,7 @@ export type Scenario =
   | 'approval-rejected'
   | 'approval-resolved'
   | 'approval-conflict'
+  | 'approval-scope'
   | 'notion-sync-pending'
   | 'notion-sync-failed'
   | 'tasks-member'

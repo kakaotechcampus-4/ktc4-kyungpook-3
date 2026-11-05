@@ -265,16 +265,22 @@ function prepareTaskUpdate(
   })
   if (assigned) return ownershipFailure(assigned)
   return (actor) => {
+    const source = typeof payload.change_source === 'string' ? payload.change_source : 'meeting'
     const proposed = Object.fromEntries(
       Object.entries(final).filter(([field]) => !Object.hasOwn(changed, field)),
     )
-    updateTask(
-      task,
-      taskUpdates(proposed),
-      actor,
-      typeof payload.change_source === 'string' ? payload.change_source : 'meeting',
-    )
+    updateTask(task, taskUpdates(proposed), actor, source)
     updateTask(task, taskUpdates(changed), actor, 'manual')
+    // BE 미구현, #205 합의대로. 태스크 값이 아니라 version·Notion 반영을 건드리지 않는다
+    if (payload.category === 'scope')
+      addHistory(
+        task.task_id,
+        'scope',
+        null,
+        typeof payload.doc_text === 'string' ? payload.doc_text : null,
+        actor,
+        source,
+      )
     if (Object.keys(changed).length) approval.payload = { ...payload, task_overrides: changed }
   }
 }
