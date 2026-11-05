@@ -61,12 +61,18 @@ export function dueSoonTasks(tasks: readonly Task[], today: string): Task[] {
     })
 }
 
-/** 가장 최근에 열린 정리 끝난 회의 — 시작 시각 기준 (D-063, D-065). 없으면 null */
-export function latestDoneMeeting(meetings: readonly MeetingSummary[]): MeetingSummary | null {
+/**
+ * 가장 최근에 열린 정리 끝난 회의 — 시작 시각 기준 (D-063, D-065). 없으면 null.
+ * `excluded` 의 회의는 고르지 않는다 — 상세가 404(지워짐)였던 회의다 (#405)
+ */
+export function latestDoneMeeting(
+  meetings: readonly MeetingSummary[],
+  excluded?: ReadonlySet<string>,
+): MeetingSummary | null {
   let latest: MeetingSummary | null = null
   let latestAt = Number.NEGATIVE_INFINITY
   for (const meeting of meetings) {
-    if (meeting.status !== 'done') continue
+    if (meeting.status !== 'done' || excluded?.has(meeting.id)) continue
     const parsed = Date.parse(meeting.startedAt)
     const at = Number.isNaN(parsed) ? Number.NEGATIVE_INFINITY : parsed
     if (latest === null || at > latestAt) {

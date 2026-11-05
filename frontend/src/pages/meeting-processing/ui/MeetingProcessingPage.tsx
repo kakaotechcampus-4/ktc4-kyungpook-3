@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useEffect } from 'react'
 import type { ReactNode } from 'react'
 import {
+  isMeetingUnavailable,
   meetingDetailQueryOptions,
   meetingFailure,
   meetingListQueryOptions,
@@ -12,7 +13,6 @@ import {
 } from '@/entities/meeting'
 import type { Meeting, ProcessingStep } from '@/entities/meeting'
 import { useMemberWorkspace } from '@/entities/workspace'
-import { isMeetingUnavailable } from '@/features/meeting-processing'
 import { ApiError } from '@/shared/api/errors'
 import { paths } from '@/shared/config/routes'
 import { seoulDateOf } from '@/shared/lib/date'
@@ -113,7 +113,8 @@ function MeetingProcessing({ workspaceId, meetingId }: { workspaceId: string; me
   }
 
   const attendeeCount = summary.data?.attendeeCount ?? null
-  // 받아 둔 상태가 있는데 다시 묻지 못했다 — 정리 실패가 아니다. 다시 물어볼 때까지 마지막 상태를 둔다 (U4-8)
+  // 받아 둔 상태가 있는데 다시 묻지 못했다 — 정리 실패가 아니다. 다시 물어볼 때까지 마지막 상태를 둔다 (U4-8).
+  // 일시적 실패는 네트워크 오류뿐이다. 403·404 는 다시 물어도 같은 답이라 viewableMeeting 이 먼저 걸러 볼 수 없는 회의로 그린다 (#405)
   const stale =
     detail.error instanceof ApiError &&
     detail.error.kind === 'network' &&

@@ -1,6 +1,6 @@
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { UseQueryResult } from '@tanstack/react-query'
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { pendingApprovalListQueryOptions } from '@/entities/approval'
 import type { Approval } from '@/entities/approval'
 import { extractionQueryOptions } from '@/entities/extraction'
@@ -8,6 +8,8 @@ import type { Extraction, ExtractionItem } from '@/entities/extraction'
 import { integrationsQueryOptions } from '@/entities/integration'
 import type { Integrations } from '@/entities/integration'
 import {
+  isMeetingGone,
+  isMeetingUnavailable,
   meetingDetailQueryOptions,
   meetingListQueryOptions,
   viewableMeeting,
@@ -18,7 +20,6 @@ import type { Member } from '@/entities/member'
 import { taskListQueryOptions } from '@/entities/task'
 import type { Task } from '@/entities/task'
 import { NOTION_SYNC_POLL_MS } from '@/features/task-notion-sync'
-import { isWorkspaceMismatch } from '@/shared/api/errors'
 import { queryView } from '@/shared/lib/query-view'
 import { hasPendingSync, latestDoneMeeting, recentAutoItems } from '../lib/dashboard'
 
@@ -106,6 +107,9 @@ export interface DashboardData {
  * 대시보드가 쓰는 조회 (M7 계획 §1). 새 API 없이 기존 Query 를 그대로 재사용한다 — key 가 공간별이라 공간을 바꿔도 섞이지 않는다.
  * - 태스크·대기 승인(PM)·팀원·연동·회의 목록은 서로 기다리지 않고 함께 시작한다
  * - 최신 완료 회의의 상세와 추출은 앞 조회가 끝나야 ID 를 안다
+ * - 최신 완료 회의의 상세가 404(지워짐)면 그 회의를 고르기에서 빼고 회의 목록을 다시 받는다 — 그다음 완료 회의가 최근 반영과
+ *   제목 아래 안내에 보인다. 다시 받은 목록에 그 회의가 남아 있어도 같은 상세를 다시 묻지 않는다.
+ *   403·다른 공간 응답은 받아 둔 상세가 있어도 최근 반영을 오류로 그린다 (#349, #405)
  * - 최근 반영의 auto 항목(화면에 보이지 않는 것 포함)에 반영 대기(`pending`) 태스크가 있으면 태스크 목록을 3초마다 다시 받는다. 모두 끝나거나 조회가 실패하면 멈추고,
  *   화면을 떠나면 이 관찰자와 함께 사라진다 (M6 `notionSyncRefetchInterval` 과 같은 규칙). 실패 판정은 화면과 같은 `queryView` 다 —
  *   멈춘 동안 화면은 갱신 실패와 다시 시도를 보이고, 다시 시도가 성공하면 polling 이 다시 돈다
@@ -115,12 +119,23 @@ export function useDashboardData(workspaceId: string, isPm: boolean): DashboardD
   const members = useQuery(memberListQueryOptions(workspaceId))
   const integrations = useQuery(integrationsQueryOptions(workspaceId))
   const meetings = useQuery(meetingListQueryOptions(workspaceId))
+  const queryClient = useQueryClient()
+  const [goneIds, setGoneIds] = useState<ReadonlySet<string>>(() => new Set())
 
-  const latest = meetings.data === undefined ? undefined : latestDoneMeeting(meetings.data)
+  const latest = meetings.data === undefined ? undefined : latestDoneMeeting(meetings.data, goneIds)
   const detail = useQuery({
     ...meetingDetailQueryOptions(workspaceId, latest?.id ?? ''),
     enabled: latest !== undefined && latest !== null,
   })
+  if (latest && isMeetingGone(detail.error)) setGoneIds(new Set(goneIds).add(latest.id))
+
+  useEffect(() => {
+    if (goneIds.size === 0) return
+    void queryClient.invalidateQueries({
+      queryKey: meetingListQueryOptions(workspaceId).queryKey,
+      exact: true,
+    })
+  }, [goneIds, queryClient, workspaceId])
   const extractionId = viewableMeeting(detail)?.extractionId ?? null
   const extraction = useQuery({
     ...extractionQueryOptions(workspaceId, extractionId ?? ''),
@@ -142,8 +157,9 @@ export function useDashboardData(workspaceId: string, isPm: boolean): DashboardD
   let recent: RecentSource | null | undefined
   if (latest === undefined || latest === null) recent = latest
   else {
-    // 다른 공간의 회의라는 답은 받아 둔 상세가 있어도 갱신 실패가 아니라 오류다 — 그 추출을 이 공간에 그리지 않는다
-    const detailState: Loadable<Meeting> = isWorkspaceMismatch(detail.error)
+    // 볼 수 없는 회의라는 답(403·다른 공간)은 받아 둔 상세가 있어도 갱신 실패가 아니라 오류다 — 그 추출을 그리지 않는다.
+    // 404 는 위에서 다음 회의로 넘겼다
+    const detailState: Loadable<Meeting> = isMeetingUnavailable(detail.error)
       ? {
           status: 'error',
           error: detail.error,
