@@ -49,13 +49,18 @@ def send_mail(to: str, subject: str, text: str) -> None:
 
 def send_with_retry(to: str, subject: str, text: str, *, log_label: str) -> bool:
     """첫 시도 + 재시도 3회. 모두 실패하면 로그만 남기고 False. 토큰이 든 본문은 로그에 넣지 않는다."""
+    last_exc: Exception | None = None
     for delay in (*RETRY_DELAYS, None):
         try:
             send_mail(to, subject, text)
             return True
-        except Exception:
+        except Exception as exc:
+            last_exc = exc
             if delay is None:
                 break
             _sleep(delay)
-    logger.error("password reset mail failed: %s", log_label)
+    # exc_info 는 쓰지 않는다: traceback locals 에 토큰이 든 본문이 보일 수 있다.
+    logger.error(
+        "password reset mail failed: %s (%s: %s)", log_label, type(last_exc).__name__, last_exc
+    )
     return False

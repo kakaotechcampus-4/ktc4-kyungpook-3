@@ -136,6 +136,23 @@ def test_send_with_retry_gives_up_after_four_tries(monkeypatch, caplog):
     assert "user=1" in errors[0].getMessage()
 
 
+def test_send_with_retry_logs_last_exception_type_and_message_without_body(monkeypatch, caplog):
+    def always_fail(to, subject, text):
+        raise smtplib.SMTPAuthenticationError(535, b"bad creds")
+
+    monkeypatch.setattr(mailer, "send_mail", always_fail)
+    monkeypatch.setattr(mailer, "_sleep", lambda s: None)
+
+    with caplog.at_level(logging.ERROR):
+        assert mailer.send_with_retry("a@b.c", "s", "SECRET-TOKEN", log_label="user=1") is False
+
+    assert "SMTPAuthenticationError" in caplog.text
+    assert "bad creds" in caplog.text
+    assert "user=1" in caplog.text
+    assert "SECRET-TOKEN" not in caplog.text
+    assert "Traceback" not in caplog.text
+
+
 def test_app_base_url_strips_trailing_slash(monkeypatch):
     monkeypatch.setenv("APP_BASE_URL", "https://app.example.com/")
     assert mailer.app_base_url() == "https://app.example.com"
