@@ -183,3 +183,13 @@ def test_fail_response_progress_uses_stage(client, seed):
 
     assert r.status_code == 200
     assert r.json()["data"]["progress"]["transcribed"] is True
+
+
+def test_late_stt_after_handoff_keeps_progress(client, seed):
+    assert _stage(client, seed["meeting"], "handoff").json()["data"]["applied"] is True
+
+    late = _stage(client, seed["meeting"], "stt")
+
+    assert late.json()["data"]["applied"] is False
+    p = client.get(f"/api/v1/meetings/{seed['meeting']}").json()["data"]["progress"]
+    assert (p["audio_merged"], p["transcribed"], p["extracted"]) == (True, True, True)
