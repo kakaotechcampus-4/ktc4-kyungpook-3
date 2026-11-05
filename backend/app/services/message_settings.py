@@ -67,7 +67,8 @@ def update_settings(
     db: Session, workspace_id: str, changes: dict, *, updated_by: str, now: datetime
 ) -> MessageSettings:
     """보낸 키만 바꾼다. commit 은 호출한 쪽이 한다."""
-    row = db.get(WorkspaceMessageSettings, workspace_id)
+    # 읽은 값으로 바뀐 칸을 가르므로, 동시에 바꾸는 PM 요청이 서로의 값을 덮어쓰지 않게 잠가서 읽는다.
+    row = db.get(WorkspaceMessageSettings, workspace_id, with_for_update=True)
     if row is None:
         row = WorkspaceMessageSettings(workspace_id=workspace_id, **DEFAULTS)
         try:
@@ -78,7 +79,9 @@ def update_settings(
             # 다른 요청이 먼저 첫 행을 만들었다. 그 행을 읽어 이어서 적용한다.
             # SAVEPOINT 롤백이 새 객체를 이미 세션에서 뗐다.
             row = db.execute(
-                select(WorkspaceMessageSettings).where(WorkspaceMessageSettings.workspace_id == workspace_id)
+                select(WorkspaceMessageSettings)
+                .where(WorkspaceMessageSettings.workspace_id == workspace_id)
+                .with_for_update()
             ).scalar_one()
     _apply(row, changes, updated_by, now)
     db.flush()
