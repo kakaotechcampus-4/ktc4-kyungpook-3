@@ -5,6 +5,7 @@ export {
   TIME_PASSED_TITLE,
   approveNotice,
   cancelNotice,
+  mergeNotice,
 } from './lib/actionMessages'
 export type { KnownFailure } from './lib/actionMessages'
 export { actionTarget, useMessageAction } from './model/useMessageAction'

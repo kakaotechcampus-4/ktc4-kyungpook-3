@@ -1,4 +1,4 @@
-import type { MessageAction } from '@/entities/message'
+import type { Bundle, MessageAction } from '@/entities/message'
 import { formatSeoulDateTime } from '@/shared/lib/date'
 
 /* 메시지 쓰기 행동의 문구. 해요체로 원인과 다음 행동을 함께 쓴다 (D-149) */
@@ -60,4 +60,16 @@ export function approveNotice(recipientName: string, scheduledAt: string): strin
 
 export function cancelNotice(recipientName: string): string {
   return `${recipientName}님에게 보낼 메시지를 보내지 않기로 했어요`
+}
+
+/** 합친 묶음의 단계로 고른다. 서버는 합치면 승인을 풀므로 지금은 늘 승인 전이다 */
+const MERGE_NOTICE: Record<Bundle['stage'], string> = {
+  awaitingApproval:
+    '같은 시각의 메시지와 합쳤어요. 내용이 바뀌어 승인이 풀렸으니 다시 확인하고 승인해 주세요.',
+  approved: '같은 시각의 메시지와 합쳤어요.',
+}
+
+/** 보낼 시각을 옮겨 같은 시각의 묶음과 합쳐졌을 때의 알림 */
+export function mergeNotice(into: Bundle): string {
+  return MERGE_NOTICE[into.stage]
 }

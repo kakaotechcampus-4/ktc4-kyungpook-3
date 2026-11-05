@@ -1,11 +1,11 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useCallback, useState, useSyncExternalStore } from 'react'
 import { messageKeys, requestMessageAction } from '@/entities/message'
-import type { MessageAction } from '@/entities/message'
+import type { MessageAction, MessageActionOutcome } from '@/entities/message'
 import { captureSession } from '@/entities/user'
 import { ApiError } from '@/shared/api/errors'
 import { toast } from '@/shared/ui/toast'
-import { ACTION_FAILURE_TITLE, KNOWN_FAILURES } from '../lib/actionMessages'
+import { ACTION_FAILURE_TITLE, KNOWN_FAILURES, mergeNotice } from '../lib/actionMessages'
 import type { KnownFailure } from '../lib/actionMessages'
 
 type ActionKind = MessageAction['kind']
@@ -30,10 +30,10 @@ export interface MessageActionFailure {
 }
 
 export interface RunOptions {
-  /** 성공 알림. 없으면 알리지 않는다 */
+  /** 성공 알림. 없으면 알리지 않는다. 합쳐졌으면 대신 합쳤다고 알린다 */
   notice?: string
   /** 서버가 성공하고 메시지 캐시를 다시 받은 뒤에 부른다 */
-  onSuccess?: () => void
+  onSuccess?: (outcome: MessageActionOutcome) => void
 }
 
 export interface MessageActionControl {
@@ -125,7 +125,11 @@ export function useMessageAction(workspaceId: string): MessageActionControl {
     [queryClient, workspaceId],
   )
 
-  const { mutate, isPending, variables } = useMutation<void, Error, ActionVariables>({
+  const { mutate, isPending, variables } = useMutation<
+    MessageActionOutcome,
+    Error,
+    ActionVariables
+  >({
     mutationKey,
     retry: false,
     mutationFn: ({ action }) => requestMessageAction(workspaceId, action),
@@ -159,13 +163,13 @@ export function useMessageAction(workspaceId: string): MessageActionControl {
       mutate(
         { action, isCurrentSession },
         {
-          onSuccess: () => {
+          onSuccess: (outcome) => {
             if (!isCurrentSession()) return
             if (action.kind === 'schedule')
               forgetTimePassed(queryClient, workspaceId, action.bundleId)
-            if (options.notice !== undefined)
-              toast.show({ key: 'message-review-action', title: options.notice })
-            options.onSuccess?.()
+            const notice = outcome.kind === 'merged' ? mergeNotice(outcome.into) : options.notice
+            if (notice !== undefined) toast.show({ key: 'message-review-action', title: notice })
+            options.onSuccess?.(outcome)
           },
         },
       )

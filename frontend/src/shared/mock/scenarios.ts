@@ -3,6 +3,7 @@ import { initialDb, replaceDb } from './db'
 import type { MeetingFlowMode, MockDb, MockInvitation } from './db'
 import { MOCK_NOW } from './fixtures/constants'
 import {
+  mergeSourceBundle,
   messagesMemberBundle,
   messagesMemberThread,
   schedulePassedBundle,
@@ -68,6 +69,7 @@ export const MOCK_SCENARIOS = [
   'messages-send-fail',
   'messages-member',
   'messages-schedule-passed',
+  'messages-merge',
   // M8-B 설정·팀 연결 관리. settings-discord-skipped 만 새로 만든 공간(ws_03)이고 나머지는 ws_01 이다
   'settings-discord-skipped',
   'settings-unmapped',
@@ -601,6 +603,16 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
       // bd_06 은 승인하지 않은 채 보낼 시각(마감 하루 전)이 지났다. 마감은 오늘이라 만료가 아니고, 승인은 409 다
       signInWith(state, ['ws_01'], 'ws_01')
       state.messageBundles.push(structuredClone(schedulePassedBundle))
+      break
+    case 'messages-merge':
+      // 이재환의 bd_07 을 마감 하루 전으로 옮기면 승인해 둔 bd_01 과 같은 시각이라 합쳐지고 bd_01 의 승인이 풀린다
+      signInWith(state, ['ws_01'], 'ws_01')
+      state.messageBundles = state.messageBundles.map((bundle) =>
+        bundle.bundle_id === 'bd_01'
+          ? { ...bundle, approved: true, approved_at: '2026-09-17T10:00:00+09:00' }
+          : bundle,
+      )
+      state.messageBundles.push(structuredClone(mergeSourceBundle))
       break
     case 'settings-discord-skipped':
       // 설정에서 Discord 를 연결한다. 연결해도 건너뜀으로 저장된 단계는 그대로다 (D-173)
