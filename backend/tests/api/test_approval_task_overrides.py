@@ -249,6 +249,17 @@ def test_create_reminder_dm_is_400_and_creates_nothing(client, db, seed):
     assert _approval_count(db) == 0
 
 
+def test_create_reminder_dm_in_other_workspace_checks_membership_first(client, db, seed):
+    """소속이 아닌 공간이면 type 검사보다 소속 확인이 먼저다. 입력 검증 결과를 비소속자에게 알려 주지 않는다."""
+    r = client.post("/api/v1/approvals", json={
+        "workspace_id": seed["outsider"].workspace_id, "type": "reminder_dm", "payload": {"text": "마감 알림"},
+    })
+
+    assert r.status_code in (403, 404)
+    assert r.json()["error"]["code"] != "INVALID_REQUEST"
+    assert _approval_count(db) == 0
+
+
 def test_legacy_reminder_dm_with_overrides_is_400(client, db, seed):
     approval_id = _legacy_reminder_dm(db, seed)
 
