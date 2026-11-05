@@ -1,5 +1,5 @@
 import type { BundleDto, MessageDto, ThreadSummaryDto } from '@/shared/types/api/message'
-import { toBundle, toMessage, toMessageInbox, toMessageThread } from './mapper'
+import { toBundle, toCreatedReminder, toMessage, toMessageInbox, toMessageThread } from './mapper'
 
 const botDto = (patch: Partial<MessageDto> = {}): MessageDto => ({
   message_id: 'mg_01',
@@ -174,4 +174,14 @@ it('대화는 요약·메시지·예정 묶음이다 — 팀원의 bundles null 
 
   const member = toMessageThread({ thread: summaryDto, messages: [], bundles: null })
   expect(member.upcoming).toEqual([])
+})
+
+it('만든 재촉은 리마인드 ID 와 그것이 든 예정 묶음이고, 묶음이 예정이 아니면 계약 위반으로 던진다', () => {
+  const dto = bundleDto()
+  const created = toCreatedReminder({ reminder: dto.reminders[0], bundle: dto })
+  expect(created.reminderId).toBe('rm_01')
+  expect(created.bundle).toMatchObject({ id: 'bd_01', stage: 'awaitingApproval', draftVersion: 2 })
+  expect(() =>
+    toCreatedReminder({ reminder: dto.reminders[0], bundle: bundleDto({ status: 'cancelled' }) }),
+  ).toThrow('bd_01')
 })

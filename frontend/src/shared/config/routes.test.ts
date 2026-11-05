@@ -21,6 +21,7 @@ it.each([
   [paths.approval('ws_01', 'ap_01'), '/workspaces/ws_01/approvals/ap_01'],
   [paths.messages('ws_01'), '/workspaces/ws_01/messages'],
   [paths.messageReview('ws_01', 'rv_01'), '/workspaces/ws_01/messages?review=rv_01'],
+  [paths.messageCompose('ws_01'), '/workspaces/ws_01/messages?new=reminder'],
   [paths.messageThread('ws_01', 'th_01'), '/workspaces/ws_01/messages/threads/th_01'],
   [paths.members('ws_01'), '/workspaces/ws_01/members'],
   [paths.settings('ws_01'), '/workspaces/ws_01/settings'],

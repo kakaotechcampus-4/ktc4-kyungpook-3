@@ -8,15 +8,20 @@ import {
   schedulePassedBundle,
 } from './fixtures/message'
 import type { MockBundle, MockMessageThread } from './fixtures/message'
+import { memberFixtures } from './fixtures/member'
 import {
   approveBundle,
   bundleDto,
   cancelBundle,
+  cancelReminder,
+  createReminder,
   editBundle,
+  editReminder,
   rebuildBundle,
+  reminderWithBundleDto,
   threadSummaryOf,
 } from './message-state'
-import type { BundleContext } from './message-state'
+import type { BundleContext, ReminderContext, ReminderResult } from './message-state'
 
 /* 메시지 상태 전이 — 백엔드 services/messages.py 와 같은 규칙인지 본다 */
 
@@ -138,10 +143,10 @@ describe('editBundle · cancelBundle', () => {
 
   it('보내지 않으면 묶음과 안의 리마인드가 모두 취소되고, 두 번째는 not_editable 이다', () => {
     const target = bundle()
-    expect(cancelBundle(target)).toBeNull()
+    expect(cancelBundle(target, MOCK_NOW)).toBeNull()
     expect(target.status).toBe('cancelled')
     expect(target.reminders.map(({ status }) => status)).toEqual(['cancelled'])
-    expect(cancelBundle(target)).toBe('not_editable')
+    expect(cancelBundle(target, MOCK_NOW)).toBe('not_editable')
     expect(editBundle(target, { body: 'x' }, MOCK_NOW, context())).toEqual({
       refusal: 'not_editable',
     })
@@ -273,5 +278,287 @@ describe('rebuildBundle', () => {
     expect(target.body).toBe(
       `정하늘님, PM(이)에요.\n'퍼블리싱' 진행 상황 한번 여쭤봐요.\n${ASK}\n\n'발표 자료' 마감이 9/30(수)이라 한번 여쭤봐요.\n${ASK}`,
     )
+  })
+})
+
+/* 리마인드 하나의 만들기·고치기·빼기 — 백엔드 create_reminder·edit_reminder·cancel_reminder */
+
+const TASKS = [
+  { task_id: 'tk_01', title: 'API 명세서', due_date: '2026-09-24' },
+  { task_id: 'tk_02', title: '회원가입 화면', due_date: '2026-09-16' },
+  { task_id: 'tk_03', title: 'DB 스키마 정리', due_date: '2026-09-22' },
+  { task_id: 'tk_04', title: '퍼블리싱', due_date: null },
+  { task_id: 'tk_06', title: '발표 자료', due_date: '2026-09-30' },
+]
+
+/** ws_01 하나. allBundles·allThreads 는 db 칸처럼 새 묶음·대화가 들어간다 */
+function workspace(): ReminderContext {
+  const allBundles = structuredClone(messageBundleFixtures)
+  const allThreads = structuredClone(messageThreadFixtures)
+  return {
+    workspaceId: 'ws_01',
+    bundles: allBundles,
+    threads: allThreads,
+    tasks: TASKS,
+    members: memberFixtures,
+    pmName: '김서연',
+    workspaceName: '카테캠 3팀',
+    allBundles,
+    allThreads,
+  }
+}
+const bundleIn = (space: ReminderContext, bundleId: string) => {
+  const found = space.allBundles.find(({ bundle_id }) => bundle_id === bundleId)
+  if (!found) throw new Error(`bundle ${bundleId} is missing`)
+  return found
+}
+const reminderIn = (bundle: MockBundle, reminderId: string) => {
+  const found = bundle.reminders.find(({ reminder_id }) => reminder_id === reminderId)
+  if (!found) throw new Error(`reminder ${reminderId} is missing`)
+  return found
+}
+function accepted(result: ReminderResult) {
+  if ('refusal' in result) throw new Error(`refused: ${result.refusal}`)
+  return result
+}
+
+describe('createReminder', () => {
+  const input = {
+    task_id: 'tk_02',
+    member_id: 'mb_02',
+    scheduled_at: '2026-09-21T09:00:00+09:00',
+    note: null,
+  }
+
+  it('그 팀원·시각의 예정 묶음이 없으면 새 묶음을 만들고, 규칙 문구로 판 1 의 승인 전 묶음이 된다', () => {
+    const space = workspace()
+    const result = accepted(createReminder(input, MOCK_NOW, space))
+    expect(space.allBundles).toHaveLength(3)
+    expect(result.bundle).toMatchObject({
+      bundle_id: 'bd_03',
+      thread_id: 'th_02',
+      member_id: 'mb_02',
+      recipient_name: '박민수',
+      status: 'scheduled',
+      approved: false,
+      draft_version: 1,
+      body_source: 'rule',
+      draft_status: 'needed',
+    })
+    expect(result.reminder).toMatchObject({
+      reminder_id: 'rm_04',
+      bundle_id: 'bd_03',
+      task_title: '회원가입 화면',
+      origin: 'pm',
+      status: 'scheduled',
+    })
+    expect(
+      reminderWithBundleDto(result).bundle.reminders.map(({ reminder_id }) => reminder_id),
+    ).toEqual(['rm_04'])
+  })
+
+  it('그 팀원과의 대화가 없으면 메시지 없는 대화를 만든다. 담당자가 아니어도 받는다', () => {
+    const space = workspace()
+    const result = accepted(
+      createReminder({ ...input, task_id: 'tk_03', member_id: 'mb_01' }, MOCK_NOW, space),
+    )
+    expect(space.allThreads.at(-1)).toEqual({
+      thread_id: 'th_12',
+      workspace_id: 'ws_01',
+      member_id: 'mb_01',
+      name: '김서연',
+      messages: [],
+    })
+    expect(result.bundle.thread_id).toBe('th_12')
+    expect(result.bundle.body.startsWith('안녕하세요 김서연님, 카테캠 3팀 김서연이에요.')).toBe(
+      true,
+    )
+  })
+
+  it('메모가 있는 하나뿐인 재촉은 메모가 PM 문구다', () => {
+    const { bundle } = accepted(
+      createReminder({ ...input, note: '화면 캡처만 먼저요' }, MOCK_NOW, workspace()),
+    )
+    expect(bundle).toMatchObject({ body_source: 'pm', draft_status: 'done' })
+    expect(bundle.body).toContain('화면 캡처만 먼저요')
+  })
+
+  it('같은 시각의 예정 묶음이 있으면 거기에 넣고 승인을 푼다', () => {
+    const space = workspace()
+    const target = bundleIn(space, 'bd_01')
+    target.approved = true
+    target.approved_at = '2026-09-17T10:00:00+09:00'
+    const { bundle } = accepted(
+      createReminder(
+        { ...input, task_id: 'tk_03', member_id: 'mb_03', scheduled_at: '2026-09-23T00:00:00Z' },
+        MOCK_NOW,
+        space,
+      ),
+    )
+    expect(bundle).toBe(target)
+    expect(space.allBundles).toHaveLength(2)
+    expect(bundle).toMatchObject({
+      approved: false,
+      approved_at: null,
+      draft_version: 3,
+      body_source: 'rule',
+    })
+    expect(bundleDto(bundle).reminders.map(({ task_id }) => task_id)).toEqual(['tk_01', 'tk_03'])
+  })
+
+  it('같은 묶음에 같은 태스크가 이미 있으면 그 리마인드를 돌려주고 아무것도 바꾸지 않는다', () => {
+    const space = workspace()
+    const before = structuredClone(space.allBundles)
+    const result = accepted(
+      createReminder(
+        {
+          task_id: 'tk_01',
+          member_id: 'mb_03',
+          scheduled_at: '2026-09-23T09:00:00+09:00',
+          note: '다른 메모',
+        },
+        MOCK_NOW,
+        space,
+      ),
+    )
+    expect(result.reminder.reminder_id).toBe('rm_01')
+    expect(space.allBundles).toEqual(before)
+  })
+
+  it('없는 태스크·없는 팀원·지난 시각은 거절하고 db 는 그대로다. 태스크를 먼저 본다', () => {
+    const space = workspace()
+    const before = structuredClone({ bundles: space.allBundles, threads: space.allThreads })
+    expect(
+      createReminder({ ...input, task_id: 'tk_99', member_id: 'mb_99' }, MOCK_NOW, space),
+    ).toEqual({ refusal: 'task_not_found' })
+    expect(createReminder({ ...input, member_id: 'mb_99' }, MOCK_NOW, space)).toEqual({
+      refusal: 'member_not_found',
+    })
+    expect(createReminder({ ...input, scheduled_at: MOCK_NOW }, MOCK_NOW, space)).toEqual({
+      refusal: 'time_passed',
+    })
+    expect({ bundles: space.allBundles, threads: space.allThreads }).toEqual(before)
+  })
+})
+
+describe('editReminder', () => {
+  const approvedBundle = (space: ReminderContext) => {
+    const bundle = bundleIn(space, 'bd_02')
+    bundle.approved = true
+    bundle.approved_at = MOCK_NOW
+    return bundle
+  }
+
+  it('같은 메모면 아무것도 바꾸지 않는다 — 판도 승인도 그대로다', () => {
+    const space = workspace()
+    const bundle = approvedBundle(space)
+    const before = structuredClone(bundle)
+    accepted(
+      editReminder(
+        bundle,
+        reminderIn(bundle, 'rm_02'),
+        { note: '시안 2차 반영분까지' },
+        MOCK_NOW,
+        space,
+      ),
+    )
+    expect(bundle).toEqual(before)
+  })
+
+  it('메모를 바꾸면 문구를 다시 만들고 판을 올리고 승인을 푼다. null 이면 메모를 지운다', () => {
+    const space = workspace()
+    const bundle = approvedBundle(space)
+    const rm02 = reminderIn(bundle, 'rm_02')
+    accepted(editReminder(bundle, rm02, { note: '시안 3차까지' }, MOCK_NOW, space))
+    expect(bundle).toMatchObject({
+      approved: false,
+      approved_at: null,
+      draft_version: 2,
+      body_source: 'rule',
+    })
+    expect(bundle.body).toContain('시안 3차까지')
+
+    accepted(editReminder(bundle, rm02, { note: null }, MOCK_NOW, space))
+    expect(rm02.note).toBeNull()
+    expect(bundle.draft_version).toBe(3)
+    expect(bundle.body).toContain("'퍼블리싱' 진행 상황 한번 여쭤봐요.")
+  })
+
+  it('다른 시각으로 옮기면 그 시각의 묶음으로 가고 두 묶음을 다시 만든다. 마지막 하나였으면 남은 묶음은 닫힌다', () => {
+    const space = workspace()
+    const source = bundleIn(space, 'bd_01')
+    const { bundle } = accepted(
+      editReminder(
+        source,
+        reminderIn(source, 'rm_01'),
+        { scheduled_at: '2026-09-22T09:00:00+09:00' },
+        MOCK_NOW,
+        space,
+      ),
+    )
+    expect(bundle.bundle_id).toBe('bd_03')
+    expect(bundle.reminders.map(({ reminder_id, bundle_id }) => [reminder_id, bundle_id])).toEqual([
+      ['rm_01', 'bd_03'],
+    ])
+    expect(source.status).toBe('cancelled')
+  })
+
+  it('예정이 아닌 리마인드는 고치지 못하고, 지난 시각으로는 옮기지 못한다', () => {
+    const space = workspace()
+    const bundle = bundleIn(space, 'bd_02')
+    const rm02 = reminderIn(bundle, 'rm_02')
+    const before = structuredClone(bundle)
+    expect(editReminder(bundle, rm02, { scheduled_at: MOCK_NOW }, MOCK_NOW, space)).toEqual({
+      refusal: 'time_passed',
+    })
+    expect(bundle).toEqual(before)
+    rm02.status = 'cancelled'
+    expect(editReminder(bundle, rm02, { note: 'x' }, MOCK_NOW, space)).toEqual({
+      refusal: 'not_editable',
+    })
+  })
+})
+
+describe('cancelReminder', () => {
+  it('하나를 빼면 남은 태스크로 문구를 다시 만들고 승인을 푼다. 응답에는 남은 리마인드만 있다', () => {
+    const space = workspace()
+    const bundle = bundleIn(space, 'bd_02')
+    bundle.approved = true
+    bundle.approved_at = MOCK_NOW
+    const dto = reminderWithBundleDto(
+      accepted(cancelReminder(bundle, reminderIn(bundle, 'rm_02'), MOCK_NOW, space)),
+    )
+    expect(dto.reminder).toMatchObject({ reminder_id: 'rm_02', status: 'cancelled' })
+    expect(dto.bundle).toMatchObject({ status: 'scheduled', approved: false, draft_version: 2 })
+    expect(dto.bundle.reminders.map(({ reminder_id }) => reminder_id)).toEqual(['rm_03'])
+    expect(dto.bundle.body).not.toContain('퍼블리싱')
+  })
+
+  it('마지막 하나를 빼면 묶음이 취소되고, 응답 리마인드는 묶음이 닫힐 때 함께 취소된 것뿐이다', () => {
+    const space = workspace()
+    const bundle = bundleIn(space, 'bd_02')
+    accepted(
+      cancelReminder(bundle, reminderIn(bundle, 'rm_02'), '2026-09-18T09:00:00+09:00', space),
+    )
+    const dto = reminderWithBundleDto(
+      accepted(
+        cancelReminder(bundle, reminderIn(bundle, 'rm_03'), '2026-09-18T10:00:00+09:00', space),
+      ),
+    )
+    expect(dto.bundle.status).toBe('cancelled')
+    expect(dto.bundle.reminders.map(({ reminder_id }) => reminder_id)).toEqual(['rm_03'])
+    expect(cancelReminder(bundle, reminderIn(bundle, 'rm_03'), MOCK_NOW, space)).toEqual({
+      refusal: 'not_editable',
+    })
+  })
+
+  it('보내지 않음으로 닫은 묶음은 그때 함께 취소된 리마인드를 싣는다 — 먼저 뺀 것은 빠진다', () => {
+    const space = workspace()
+    const bundle = bundleIn(space, 'bd_02')
+    accepted(
+      cancelReminder(bundle, reminderIn(bundle, 'rm_02'), '2026-09-18T09:00:00+09:00', space),
+    )
+    expect(cancelBundle(bundle, '2026-09-18T10:00:00+09:00')).toBeNull()
+    expect(bundleDto(bundle).reminders.map(({ reminder_id }) => reminder_id)).toEqual(['rm_03'])
   })
 })

@@ -19,7 +19,8 @@ export function MessagesPage() {
 }
 
 /**
- * 고른 대화는 경로가, 고른 보낼 메시지(묶음)는 검색 파라미터 `review` 가 정한다. URL 값은 여기서 한 번 검증한다 (D-132).
+ * 고른 대화는 경로가, 고른 보낼 메시지(묶음)는 검색 파라미터 `review` 가, 재촉 만들기는 `new=reminder` 가 정한다.
+ * URL 값은 여기서 한 번 검증한다 (D-132).
  * 소속은 RequireTeamMember 가 이미 확인했다
  */
 function Messages({ unknownPath = false }: { unknownPath?: boolean }) {
@@ -38,6 +39,7 @@ function Messages({ unknownPath = false }: { unknownPath?: boolean }) {
       threadId={threadId}
       bundleId={rawBundleId === null ? undefined : parseRouteId(rawBundleId)}
       invalidPath={unknownPath || (rawThreadId !== undefined && threadId === null)}
+      composing={searchParams.get(MESSAGE_PARAMS.compose) === 'reminder'}
     />
   )
 }

@@ -1,6 +1,12 @@
 import { ApiError } from '@/shared/api/errors'
 import { fetchDto, jsonRequest } from '@/shared/test/api'
-import type { BundleDto, InboxDto, MessageDto, ThreadDetailDto } from '@/shared/types/api/message'
+import type {
+  BundleDto,
+  InboxDto,
+  MessageDto,
+  ReminderWithBundleDto,
+  ThreadDetailDto,
+} from '@/shared/types/api/message'
 import { db, initialDb, replaceDb, resetDb } from './db'
 import { MOCK_DB_STORAGE_KEY, restoreDb, saveDb } from './persistence'
 import { setMockRole } from './sessions'
@@ -184,6 +190,100 @@ describe('보낼 메시지 handler — 성공할 때만 db 를 바꾼다 (D-137)
   })
 })
 
+const createReminder = (body: unknown, workspaceId?: string) =>
+  fetchDto<ReminderWithBundleDto>(`${base(workspaceId)}/reminders`, jsonRequest('POST', body))
+const patchReminder = (reminderId: string, body: unknown) =>
+  fetchDto<ReminderWithBundleDto>(`${base()}/reminders/${reminderId}`, jsonRequest('PATCH', body))
+const cancelReminder = (reminderId: string) =>
+  fetchDto<ReminderWithBundleDto>(`${base()}/reminders/${reminderId}/cancel`, { method: 'POST' })
+const NEW_REMINDER = {
+  member_id: 'mb_02',
+  task_id: 'tk_02',
+  scheduled_at: '2026-09-21T09:00:00+09:00',
+}
+
+describe('리마인드 handler — 백엔드 api/messages.py 의 reminders 경로', () => {
+  it('만들기: 201 로 리마인드와 그것이 든 예정 묶음을 주고, 목록에 새 묶음이 보인다', async () => {
+    const created = await createReminder({ ...NEW_REMINDER, note: '  ' })
+    expect(created.reminder).toMatchObject({ task_id: 'tk_02', note: null, origin: 'pm' })
+    expect(created.bundle).toMatchObject({
+      member_id: 'mb_02',
+      status: 'scheduled',
+      scheduled_at: '2026-09-21T00:00:00.000Z',
+      draft_version: 1,
+    })
+    expect((await inbox()).bundles?.map(({ bundle_id }) => bundle_id)).toContain(
+      created.bundle.bundle_id,
+    )
+    const again = await createReminder(NEW_REMINDER)
+    expect(again.reminder.reminder_id).toBe(created.reminder.reminder_id)
+  })
+
+  it('만들기: 없는 태스크·팀원은 404, 지난 시각은 409, 칸이 빠졌거나 시간대가 없으면 400 이고 db 는 그대로다', async () => {
+    const before = snapshot()
+    for (const [body, status, code] of [
+      [{ ...NEW_REMINDER, task_id: 'tk_99' }, 404, 'TASK_NOT_FOUND'],
+      [{ ...NEW_REMINDER, member_id: 'mb_99' }, 404, 'MEMBER_NOT_FOUND'],
+      [
+        { ...NEW_REMINDER, scheduled_at: '2026-09-17T09:00:00+09:00' },
+        409,
+        'REMINDER_SCHEDULED_AT_PASSED',
+      ],
+      [{ ...NEW_REMINDER, scheduled_at: '2026-09-21T09:00:00' }, 400, 'INVALID_REQUEST'],
+      [{ member_id: 'mb_02', scheduled_at: NEW_REMINDER.scheduled_at }, 400, 'INVALID_REQUEST'],
+    ] as const) {
+      const error = await failure(createReminder(body))
+      expect([error.status, error.code]).toEqual([status, code])
+    }
+    expect(snapshot()).toEqual(before)
+  })
+
+  it('메모 고치기: 메모가 바뀌면 판이 오르고, 바꿀 것이 없으면 400, 없는 리마인드는 404 다', async () => {
+    const edited = await patchReminder('rm_02', { note: '시안 3차까지' })
+    expect(edited.reminder.note).toBe('시안 3차까지')
+    expect(edited.bundle).toMatchObject({ bundle_id: 'bd_02', draft_version: 2, approved: false })
+    const cleared = await patchReminder('rm_02', { note: '' })
+    expect(cleared.reminder.note).toBeNull()
+
+    const empty = await failure(patchReminder('rm_02', {}))
+    expect([empty.status, empty.code]).toEqual([400, 'INVALID_REQUEST'])
+    const missing = await failure(patchReminder('rm_99', { note: 'x' }))
+    expect([missing.status, missing.code]).toEqual([404, 'REMINDER_NOT_FOUND'])
+  })
+
+  it('빼기: 남은 태스크가 있으면 예정 묶음이, 마지막이면 취소된 묶음이 오고 목록에서 빠진다. 다시 빼면 409 다', async () => {
+    const first = await cancelReminder('rm_02')
+    expect(first.bundle.status).toBe('scheduled')
+    expect(first.bundle.reminders.map(({ reminder_id }) => reminder_id)).toEqual(['rm_03'])
+
+    const last = await cancelReminder('rm_03')
+    expect(last.bundle.status).toBe('cancelled')
+    expect((await inbox()).bundles?.map(({ bundle_id }) => bundle_id)).toEqual(['bd_01'])
+
+    const again = await failure(cancelReminder('rm_03'))
+    expect([again.status, again.code]).toEqual([409, 'REMINDER_NOT_EDITABLE'])
+    const edit = await failure(patchReminder('rm_03', { note: 'x' }))
+    expect([edit.status, edit.code]).toEqual([409, 'REMINDER_NOT_EDITABLE'])
+  })
+
+  it('PM 이 아니면 세 경로 모두 403 이고, 다른 공간의 리마인드는 404 다', async () => {
+    setMockRole('pm', 'ws_02')
+    const elsewhere = await failure(
+      fetchDto(`${base('ws_02')}/reminders/rm_02/cancel`, { method: 'POST' }),
+    )
+    expect([elsewhere.status, elsewhere.code]).toEqual([404, 'REMINDER_NOT_FOUND'])
+    setMockRole('member')
+    for (const request of [
+      createReminder(NEW_REMINDER),
+      patchReminder('rm_02', { note: 'x' }),
+      cancelReminder('rm_02'),
+    ]) {
+      const error = await failure(request)
+      expect([error.status, error.code]).toEqual([403, 'FORBIDDEN'])
+    }
+  })
+})
+
 describe('메시지 시나리오', () => {
   it('messages-empty: ws_01 의 묶음·대화가 모두 없다', async () => {
     applyScenario('messages-empty')
@@ -282,6 +382,9 @@ describe('메시지 시나리오', () => {
       approve('bd_01', { draft_version: 2 }),
       cancel('bd_01'),
       patchBundle('bd_01', { body: '고친 문구' }),
+      createReminder(NEW_REMINDER),
+      patchReminder('rm_02', { note: 'x' }),
+      cancelReminder('rm_02'),
     ])
       expect((await failure(request)).status).toBe(500)
     expect(snapshot()).toEqual(before)
