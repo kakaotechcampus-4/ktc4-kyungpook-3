@@ -75,12 +75,37 @@ function sendResetMail(email: string): void {
   })
 }
 
+/** BE 본문 검증(pydantic) 오류 한 칸. 400 `INVALID_REQUEST` 의 `details.fields` 에 들어간다 */
+interface FieldError {
+  loc: string[]
+  msg: string
+}
+
+/** 필수 문자열 칸을 BE 처럼 검사한다. 없거나 문자열이 아니면 그 칸의 오류다 */
+function stringField(body: Record<string, unknown>, name: string): FieldError | null {
+  const value = body[name]
+  if (value === undefined) return { loc: ['body', name], msg: 'Field required' }
+  if (typeof value !== 'string')
+    return { loc: ['body', name], msg: 'Input should be a valid string' }
+  return null
+}
+
+const invalidBody = (fields: FieldError[]) =>
+  fail('INVALID_REQUEST', '요청이 올바르지 않습니다.', 400, { fields })
+
+async function readBody(request: Request): Promise<Record<string, unknown>> {
+  const body: unknown = await request.json()
+  return typeof body === 'object' && body !== null ? (body as Record<string, unknown>) : {}
+}
+
 export const passwordResetHandlers = [
   http.post(`${base}/request`, async ({ request }) => {
     if (db.passwordReset.failure === 'server-error') return serverError()
-    const body = (await request.json()) as { email?: unknown }
+    const body = await readBody(request)
+    const emailError = stringField(body, 'email')
+    if (emailError) return invalidBody([emailError])
     if (typeof body.email !== 'string' || !EMAIL.safeParse(body.email).success)
-      return fail('INVALID_REQUEST', '요청이 올바르지 않습니다.', 400)
+      return invalidBody([{ loc: ['body', 'email'], msg: 'value is not a valid email address' }])
     if (db.passwordReset.failure === 'mail-unavailable')
       return fail('MAIL_UNAVAILABLE', '메일을 보낼 수 없습니다.', 503)
     sendResetMail(body.email)
@@ -88,30 +113,36 @@ export const passwordResetHandlers = [
   }),
   http.post(`${base}/verify`, async ({ request }) => {
     if (db.passwordReset.failure === 'server-error') return serverError()
-    const body = (await request.json()) as { token?: unknown }
+    const body = await readBody(request)
+    const tokenError = stringField(body, 'token')
+    if (tokenError) return invalidBody([tokenError])
     const checked = checkToken(body.token)
     if ('reason' in checked) return tokenInvalid(checked.reason)
     return ok({ expires_at: checked.row.expiresAt, email_masked: maskEmail(checked.row.email) })
   }),
   http.post(`${base}/confirm`, async ({ request }) => {
     if (db.passwordReset.failure === 'server-error') return serverError()
-    const body = (await request.json()) as { token?: unknown; new_password?: unknown }
-    // BE 는 본문 검증이 토큰 확인보다 먼저다. 규칙 위반은 토큰을 쓰지 않는다
-    if (typeof body.new_password !== 'string' || !PASSWORD_RULE.test(body.new_password))
-      return fail('INVALID_REQUEST', '요청이 올바르지 않습니다.', 400, {
-        fields: [
-          {
+    const body = await readBody(request)
+    // BE 는 본문 검증이 토큰 확인보다 먼저다. 칸마다 오류를 모아 한 번에 답하고, 규칙 위반은 토큰을 쓰지 않는다
+    const passwordError =
+      stringField(body, 'new_password') ??
+      (PASSWORD_RULE.test(body.new_password as string)
+        ? null
+        : {
             loc: ['body', 'new_password'],
             msg: 'Value error, 비밀번호는 8자 이상이고 숫자를 하나 이상 포함해야 합니다.',
-          },
-        ],
-      })
+          })
+    const fields = [stringField(body, 'token'), passwordError].filter(
+      (error): error is FieldError => error !== null,
+    )
+    if (fields.length > 0) return invalidBody(fields)
+    const newPassword = body.new_password as string
     const checked = checkToken(body.token)
     if ('reason' in checked) return tokenInvalid(checked.reason)
     const { row } = checked
     row.status = 'used'
     const account = db.accounts.find(({ session }) => session.user.email === row.email)
-    if (account) account.password = body.new_password
+    if (account) account.password = newPassword
     // 서버가 그 계정의 세션을 모두 끊는다. 다른 계정으로 로그인한 세션은 그대로다
     if (db.authenticated && db.session.user.email === row.email) db.authenticated = false
     return ok({})

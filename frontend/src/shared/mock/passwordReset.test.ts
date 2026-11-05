@@ -178,6 +178,43 @@ describe('링크 확인과 변경', () => {
   })
 })
 
+describe('본문 검증 (BE pydantic 과 같은 400 INVALID_REQUEST)', () => {
+  const post = (path: string, body: unknown) =>
+    fetchDto(`/auth/password-reset/${path}`, jsonRequest('POST', body))
+  const field = (name: string, msg: string | RegExp) => ({
+    loc: ['body', name],
+    msg: typeof msg === 'string' ? msg : (expect.stringMatching(msg) as string),
+  })
+
+  it.each([
+    ['verify', {}, [field('token', 'Field required')]],
+    ['verify', { token: 123 }, [field('token', 'Input should be a valid string')]],
+    ['confirm', { new_password: 'newpass123' }, [field('token', 'Field required')]],
+    [
+      'confirm',
+      { token: 123, new_password: 'newpass123' },
+      [field('token', 'Input should be a valid string')],
+    ],
+    ['confirm', {}, [field('token', 'Field required'), field('new_password', 'Field required')]],
+    [
+      'confirm',
+      { token: 7, new_password: 'short' },
+      [field('token', 'Input should be a valid string'), field('new_password', /^Value error/)],
+    ],
+    ['request', {}, [field('email', 'Field required')]],
+    ['request', { email: 'pm' }, [field('email', 'value is not a valid email address')]],
+  ] as const)('%s %j 는 칸 오류다', async (path, body, fields) => {
+    await requestReset(EMAIL)
+    await expect(post(path, body)).rejects.toMatchObject({
+      status: 400,
+      code: 'INVALID_REQUEST',
+      details: { fields },
+    })
+    // 본문 오류는 토큰을 건드리지 않는다
+    await expect(verify(lastMailedToken())).resolves.toBeDefined()
+  })
+})
+
 describe('실패 스위치', () => {
   it('server-error 는 세 경로 모두 500 INTERNAL_ERROR 다', async () => {
     db.passwordReset.failure = 'server-error'
