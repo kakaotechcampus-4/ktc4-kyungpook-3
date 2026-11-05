@@ -4,6 +4,8 @@
 """
 from datetime import date, datetime, timedelta, timezone
 
+import pytest
+
 from app.models import (
     DraftStatus,
     Member,
@@ -11,6 +13,7 @@ from app.models import (
     Notification,
     Reminder,
     ReminderBundle,
+    ReminderOrigin,
     ReminderStatus,
     SchedulerSuggestion,
     Task,
@@ -438,23 +441,41 @@ def test_auto_approve_sends_pm_made_reminder_when_due_reminder_off(mdb, mseed):
     assert len(_messages(mdb)) == 1
 
 
-def test_auto_approve_sends_bundle_with_pm_reminder_when_due_reminder_off(mdb, mseed):
-    # PM 이 직접 넣은 재촉이 있는 묶음은 PM 이 보내려던 것이므로 함께 나간다.
-    _assign(mdb, mseed, 0)
-    task = _assign(mdb, mseed, 1, due=DUE + timedelta(days=7))
-    _turn_on(mdb, mseed)
-    tick(mdb, PROPOSE)
-    messages.create_reminder(
-        mdb, workspace_id=mseed["ws"], task_id=task.task_id, member_id=mseed["alice"].member_id,
-        scheduled_at=SLOT, note=None, created_by=mseed["pm"].member_id, now=PROPOSE + H,
-    )
-    mdb.commit()
-    assert len(_bundles(mdb)) == 1
-    _set(mdb, mseed, due_reminder=False)
+def _mixed_bundle_after_due_reminder_off(db, seed, *, add_pm_first):
+    """스케줄러가 할일0 을 제안한 묶음에 PM 이 할일1 재촉을 넣고, 재촉 제안을 끈다. 순서만 바꿔 본다."""
+    _assign(db, seed, 0)
+    task = _assign(db, seed, 1, due=DUE + timedelta(days=7))
+    _turn_on(db, seed)
+    tick(db, PROPOSE)
+
+    def add_pm():
+        messages.create_reminder(
+            db, workspace_id=seed["ws"], task_id=task.task_id, member_id=seed["alice"].member_id,
+            scheduled_at=SLOT, note=None, created_by=seed["pm"].member_id, now=PROPOSE + H,
+        )
+        db.commit()
+
+    if add_pm_first:
+        add_pm()
+        _set(db, seed, due_reminder=False)
+    else:
+        _set(db, seed, due_reminder=False)
+        add_pm()
+    assert len(_bundles(db)) == 1
+
+
+@pytest.mark.parametrize("add_pm_first", [False, True])
+def test_auto_approve_sends_only_pm_reminder_when_due_reminder_off(mdb, mseed, add_pm_first):
+    # 재촉 제안을 끄면 PM 재촉과 같은 묶음에 있던 스케줄러 제안은 빼고 PM 재촉만 보낸다.
+    _mixed_bundle_after_due_reminder_off(mdb, mseed, add_pm_first=add_pm_first)
 
     tick(mdb, SLOT)
 
-    assert len(_messages(mdb)) == 1
+    [message] = _messages(mdb)
+    assert "할일1" in message.body
+    assert "할일0" not in message.body
+    status = {r.origin: r.status for r in mdb.query(Reminder).all()}
+    assert status == {ReminderOrigin.PM: ReminderStatus.SENT, ReminderOrigin.SCHEDULER: ReminderStatus.CANCELLED}
 
 
 def test_drop_notice_asks_approval_when_due_reminder_off(mdb, mseed):
