@@ -1,5 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useRef } from 'react'
+import { useNavigate } from 'react-router'
 import { messageInboxQueryOptions, messageThreadQueryOptions } from '@/entities/message'
 import type { Bundle, MessageInbox as Inbox, MessageThreadSummary } from '@/entities/message'
 import { paths } from '@/shared/config/routes'
@@ -10,6 +11,7 @@ import { avatarText, bundleDateLabel, bundleSummary, shortDate } from '../lib/fo
 import { selectDetail } from '../model/selection'
 import { VIEWER_POLICY } from '../model/viewer'
 import type { MessageViewer, ViewerPolicy } from '../model/viewer'
+import { ComposeDetail } from './ComposeDetail'
 import { InboxListSkeleton, ReviewSkeleton } from './MessageSkeletons'
 import { ReviewDetail } from './ReviewDetail'
 import { ThreadDetail, ThreadUnavailable } from './ThreadDetail'
@@ -45,6 +47,11 @@ const EMPTY_DETAIL = 'flex flex-1 items-center justify-center px-36 pt-48 pb-96 
 const EMPTY_PAGE = 'flex flex-1 items-center justify-center px-48 pt-48 pb-96'
 const EMPTY_ACTION =
   'inline-flex h-40 items-center justify-center rounded-9 bg-ink px-20 text-body font-semibold text-surface hover:bg-dim active:bg-sub'
+/* 빈 화면의 두 번째 행동 — 아웃라인 버튼 모양(design-system §7-12) */
+const EMPTY_SECOND_ACTION =
+  'inline-flex h-40 items-center justify-center rounded-9 border border-line bg-surface px-20 text-body font-semibold text-ink hover:bg-control'
+const COMPOSE_LINK =
+  'shrink-0 rounded-9 px-10 py-4 text-caption font-semibold text-sub hover:bg-surface-sunken hover:text-ink aria-[current=page]:bg-surface-selected aria-[current=page]:text-ink'
 
 export interface MessageInboxProps {
   workspaceId: string
@@ -61,6 +68,8 @@ export interface MessageInboxProps {
   bundleId: string | null | undefined
   /** 없는 하위 경로이거나 대화 ID 모양이 틀리다 */
   invalidPath?: boolean
+  /** 검색 파라미터가 재촉 만들기를 연다. 만들 수 없는 사람(팀원)이면 무시한다 */
+  composing?: boolean
 }
 
 /**
@@ -75,18 +84,28 @@ export function MessageInbox({
   threadId,
   bundleId,
   invalidPath = false,
+  composing = false,
 }: MessageInboxProps) {
   const inbox = useQuery(messageInboxQueryOptions(workspaceId))
   const detailRef = useRef<HTMLElement>(null)
+  const navigate = useNavigate()
   const policy = VIEWER_POLICY[viewer]
-  const selection = selectDetail({ inbox: inbox.data, threadId, bundleId, invalidPath })
+  const selection = selectDetail({
+    inbox: inbox.data,
+    threadId,
+    bundleId,
+    invalidPath,
+    composing: composing && policy.compose,
+  })
   const selectedThreadId = selection.kind === 'thread' ? selection.threadId : null
 
   // 볼 것이 없다 — EmptyMessages 캔버스 한 장. 팀원은 받은 대화가 없을 때, PM 은 보낼 메시지와 대화가 모두 없을 때.
-  // `알림 규칙 보기` 화면은 아직 없어 가장 가까운 팀 설정으로 보낸다 (결과 문서 C 의 차이표)
+  // `알림 규칙 보기` 화면은 아직 없어 가장 가까운 팀 설정으로 보낸다 (결과 문서 C 의 차이표).
+  // 재촉을 만드는 중이면 가로채지 않는다 — 빈 화면에서 `새 재촉 만들기` 로 온 곳이다
   if (
     threadId === null &&
     !invalidPath &&
+    selection.kind !== 'compose' &&
     inbox.data !== undefined &&
     inbox.data.threads.length === 0 &&
     (inbox.data.viewer === 'member' || inbox.data.bundles.length === 0)
@@ -98,9 +117,14 @@ export function MessageInbox({
             title="보낼 메시지가 없어요"
             description="마감이 다가오면 담당자에게 보낼 DM을 여기에 준비해 둘게요. 승인해야 나가요."
             action={
-              <GuardedLink to={paths.settings(workspaceId)} className={EMPTY_ACTION}>
-                알림 규칙 보기
-              </GuardedLink>
+              <div className="flex flex-wrap items-center justify-center gap-10">
+                <GuardedLink to={paths.settings(workspaceId)} className={EMPTY_ACTION}>
+                  알림 규칙 보기
+                </GuardedLink>
+                <GuardedLink to={paths.messageCompose(workspaceId)} className={EMPTY_SECOND_ACTION}>
+                  새 재촉 만들기
+                </GuardedLink>
+              </div>
             }
           />
         ) : (
@@ -136,13 +160,37 @@ export function MessageInbox({
         onSettled={() => detailRef.current?.focus()}
       />
     )
+  else if (selection.kind === 'compose')
+    detail = (
+      <ComposeDetail
+        workspaceId={workspaceId}
+        onCreated={(bundleId) => {
+          // 만든 묶음을 고른다. 뒤로 가기로 만들기 칸에 돌아가지 않게 주소를 바꿔 끼운다
+          detailRef.current?.focus()
+          void navigate(paths.messageReview(workspaceId, bundleId), { replace: true })
+        }}
+        onCancel={() => void navigate(paths.messages(workspaceId), { replace: true })}
+      />
+    )
   else if (selection.kind === 'loading') detail = inbox.error === null ? <ReviewSkeleton /> : null
   else detail = <p className={EMPTY_DETAIL}>왼쪽 목록에서 확인할 메시지나 대화를 골라 주세요.</p>
 
   return (
     <main className={SCREEN}>
       <aside aria-label="메시지 목록" className={ASIDE}>
-        <h1 className={ASIDE_TITLE}>메시지</h1>
+        <div className="flex items-center justify-between gap-8 pr-4">
+          <h1 className={ASIDE_TITLE}>메시지</h1>
+          {policy.compose ? (
+            <GuardedLink
+              to={paths.messageCompose(workspaceId)}
+              end
+              aria-current={selection.kind === 'compose' ? 'page' : 'false'}
+              className={COMPOSE_LINK}
+            >
+              새 재촉
+            </GuardedLink>
+          ) : null}
+        </div>
         {inbox.data !== undefined ? (
           <InboxList
             workspaceId={workspaceId}

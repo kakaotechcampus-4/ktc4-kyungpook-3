@@ -74,9 +74,10 @@ node .cursor/skills/verify-managers-manager/scripts/verify.cjs run tasks
 node .cursor/skills/verify-managers-manager/scripts/verify.cjs run dashboard
 node .cursor/skills/verify-managers-manager/scripts/verify.cjs run connections
 node .cursor/skills/verify-managers-manager/scripts/verify.cjs run notifications
+node .cursor/skills/verify-managers-manager/scripts/verify.cjs run messages
 ```
 
-여섯 명령은 각각 독립 실행이다. 기능 파일의 경로·ARIA 이름·기대 결과를 기준으로 trace와 결과를 읽는다. 일부 진입점만 확인할 때는 실제 테스트 이름으로 필터링한다.
+일곱 명령은 각각 독립 실행이다. 기능 파일의 경로·ARIA 이름·기대 결과를 기준으로 trace와 결과를 읽는다. 일부 진입점만 확인할 때는 실제 테스트 이름으로 필터링한다.
 
 ```powershell
 node .cursor/skills/verify-managers-manager/scripts/verify.cjs run auth --grep '가입 → 워크스페이스 만들기'

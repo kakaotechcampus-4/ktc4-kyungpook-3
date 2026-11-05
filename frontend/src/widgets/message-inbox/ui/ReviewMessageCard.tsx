@@ -5,10 +5,10 @@ import type { BodySource, Bundle } from '@/entities/message'
 import { useUnsavedChanges } from '@/shared/lib/unsaved-changes'
 import { Button } from '@/shared/ui/button'
 import { Icon } from '@/shared/ui/icon'
+import { LockedButton } from '@/shared/ui/locked-button'
 import { Mascot } from '@/shared/ui/mascot'
 import { shortDateTime } from '../lib/format'
 import { DiscordGlyph } from './DiscordGlyph'
-import { LockedButton } from './LockedButton'
 
 /* Messages 캔버스 실측 — 카드 라운드 16 · 선, 머리(좌우 16 · 위아래 12 · 아래 선), 본문(위 18 · 좌우 18 · 아래 14, 간격 12),
    아바타 34(매스), 이름 줄 간격 8, 밑단(좌우 18 · 위아래 12 · 위 구분선).

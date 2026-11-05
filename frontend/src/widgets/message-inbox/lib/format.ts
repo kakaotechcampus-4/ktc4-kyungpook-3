@@ -1,7 +1,5 @@
 import type { Bundle, BundleTask, DmFailureReason } from '@/entities/message'
-import { nudgeSendAt } from '@/entities/message-settings'
-import type { NudgeRule } from '@/entities/message-settings'
-import { addDays, formatSeoulDateTime, seoulDateOf } from '@/shared/lib/date'
+import { formatSeoulDateTime, seoulDateOf } from '@/shared/lib/date'
 
 /* 시각은 모두 한국 시간이다 (D-144). formatSeoulDateTime 은 `YYYY-MM-DD HH:mm` 이다 */
 
@@ -37,26 +35,6 @@ export function earliestDue(tasks: readonly BundleTask[]): string | null {
       dueDate !== null && (earliest === null || dueDate < earliest) ? dueDate : earliest,
     null,
   )
-}
-
-/** 마감 기준 선택지 — 가장 이른 마감에 공간의 재촉 규칙(며칠 전 몇 시, 한국 시간)을 적용한 시각. 마감이 없거나 그 시각이 지났으면 고를 수 없다 */
-export type DeadlineSend =
-  { status: 'none' } | { status: 'open'; at: string } | { status: 'passed'; at: string }
-
-export function deadlineSend(
-  tasks: readonly BundleTask[],
-  rule: NudgeRule,
-  now: number,
-): DeadlineSend {
-  const due = earliestDue(tasks)
-  if (due === null) return { status: 'none' }
-  const at = nudgeSendAt(due, rule)
-  return Date.parse(at) <= now ? { status: 'passed', at } : { status: 'open', at }
-}
-
-/** 같은 순간인가. 서버는 UTC 로, 화면은 +09:00 으로 쓴다 */
-export function sameInstant(left: string, right: string): boolean {
-  return Date.parse(left) === Date.parse(right)
 }
 
 /** 보내기 전 확인 행의 오른쪽 글자 — 승인했으면 `09/23 발송 예정`, 아니면 가장 이른 마감 `09/24 마감`, 마감이 없으면 `09/19 예정` */
@@ -96,23 +74,6 @@ export const DM_FAILURE_TEXT: Record<DmFailureReason, string> = {
 export function awaitingDays(since: string, today: string): number {
   const date = seoulDateOf(since)
   return date === null ? 1 : Math.max(1, daysBetween(date, today) + 1)
-}
-
-/** 서울 시각을 `datetime-local` 입력값 `YYYY-MM-DDTHH:mm` 으로 */
-export function toSeoulInputValue(timestamp: string): string {
-  return formatSeoulDateTime(timestamp).replace(' ', 'T')
-}
-
-const INPUT_VALUE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/
-
-/** `datetime-local` 입력값을 서울 시각(ISO, +09:00)으로. 모양이 틀리면 null 이다 */
-export function fromSeoulInputValue(value: string): string | null {
-  return INPUT_VALUE.test(value) ? `${value}:00+09:00` : null
-}
-
-/** 직접 정하기의 처음 값 — 이미 정한 시각, 없으면 내일 09:00 */
-export function initialCustomTime(scheduledAt: string | null, today: string): string {
-  return scheduledAt === null ? `${addDays(today, 1)}T09:00` : toSeoulInputValue(scheduledAt)
 }
 
 const dayFormatter = new Intl.DateTimeFormat('ko-KR', {

@@ -1,21 +1,25 @@
-import { useId, useState } from 'react'
+import { useId, useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
 import type { Bundle, MessageAction } from '@/entities/message'
+import { SendTimingPicker } from '@/entities/message-settings'
 import {
   ActionFailure,
-  TIME_PASSED_LOCK,
+  NOTE_SAVED_NOTICE,
   TIME_PASSED_MESSAGE,
   TIME_PASSED_TITLE,
   approveNotice,
   cancelNotice,
+  removeTaskNotice,
   useMessageAction,
 } from '@/features/message-action'
 import { paths } from '@/shared/config/routes'
 import { Icon } from '@/shared/ui/icon'
-import { shortDateTime, taskDueLabel, taskTitle } from '../lib/format'
-import { LockedButton } from './LockedButton'
+import { LockedButton } from '@/shared/ui/locked-button'
+import { earliestDue, shortDateTime, taskTitle } from '../lib/format'
+import { NO_DRAFT, liveDraft, lockReason } from '../model/reviewDraft'
+import type { ReviewDraft } from '../model/reviewDraft'
 import { ReviewMessageCard } from './ReviewMessageCard'
-import { SendTimingPicker } from './SendTimingPicker'
+import { ReviewTasks } from './ReviewTasks'
 
 /* Messages 캔버스 실측 — 가운데 604 열(위 44 · 좌우 36 · 아래 56, 간격 24), 제목 28px,
    근거 블록(눌린 면 · 위아래 18 · 좌우 20 · 라운드 12 · 간격 10), 행동 줄 위 구분선.
@@ -25,43 +29,41 @@ import { SendTimingPicker } from './SendTimingPicker'
 const PAGE = 'flex flex-1 justify-center overflow-y-auto px-36 pt-44 pb-56'
 const COLUMN = 'flex w-full max-w-[604px] flex-col gap-24 self-start'
 const TITLE = 'text-[28px] leading-[1.25] font-bold tracking-h1 text-ink'
-const TASKS = 'flex flex-col gap-10 rounded-12 bg-surface-sunken px-20 py-18'
 
 export interface ReviewDetailProps {
   workspaceId: string
   botName: string
   bundle: Bundle
-  /** 승인하거나 보내지 않거나 다른 묶음과 합쳐져 이 항목이 바뀐다 — 누른 버튼도 사라지므로 포커스를 맡길 자리로 옮긴다 */
+  /** 승인하거나 보내지 않거나 마지막 태스크를 빼거나 다른 묶음과 합쳐져 이 항목이 바뀐다 — 누른 버튼도 사라지므로 포커스를 맡길 자리로 옮긴다 */
   onSettled: () => void
-}
-
-/** 행동이 잠긴 이유. 잠긴 버튼의 설명(`aria-describedby`)으로도 읽힌다 */
-function lockReason(editing: boolean, choosingTime: boolean, timePassed: boolean): string | null {
-  if (editing) return '고친 문구를 저장하거나 취소한 뒤에 보낼 수 있어요.'
-  if (choosingTime) return '정한 시각을 저장하거나 취소한 뒤에 보낼 수 있어요.'
-  if (timePassed) return TIME_PASSED_LOCK
-  return null
 }
 
 /**
  * 보내기 전 확인 — 보낼 메시지(묶음) 한 통의 미리보기, 묶은 태스크, 보낼 시각, `보내지 않음`·`이대로 발송` (Messages 시안, 계약 §5.7).
  * `이대로 발송` 은 화면에 보이는 문구의 판(draft_version)으로 승인한다 — 그 사이 문구가 바뀌었으면 서버가 거절하고 다시 불러온다.
  * 모든 행동은 서버가 성공한 뒤에 화면을 바꾼다 — 요청 중에는 행동이 모두 잠기고, 실패하면 그 자리에 알린다 (D-137, 계획 C-5).
- * 문구를 고치거나 시각을 직접 정하는 중에도 발송이 잠긴다 — 화면에 보이는 문구·시각과 다르게 나가지 않게 한다.
+ * 문구·시각·메모를 고치거나 태스크를 뺄지 정하는 중에도 발송이 잠긴다 — 화면에 보이는 것과 다르게 나가지 않게 한다.
+ * 열린 것은 한 번에 하나다(ReviewDraft).
  * 잠금은 `aria-disabled` 라 누른 버튼에서 포커스가 빠지지 않는다. 시각 저장만으로 잠긴 동안은 버튼 모양을 그대로 둔다
  */
 export function ReviewDetail({ workspaceId, botName, bundle, onSettled }: ReviewDetailProps) {
   const headingId = useId()
-  const tasksId = useId()
   const lockHintId = useId()
+  const tasksHeadingRef = useRef<HTMLHeadingElement>(null)
   const navigate = useNavigate()
   const actions = useMessageAction(workspaceId)
-  const [editing, setEditing] = useState(false)
-  const [choosingTime, setChoosingTime] = useState(false)
+  const [openDraft, setDraft] = useState<ReviewDraft>(NO_DRAFT)
+  const draft = liveDraft(
+    openDraft,
+    bundle.tasks.map(({ reminderId }) => reminderId),
+  )
+  // 문구 칸·시각 칸은 닫힐 때 자기 것만 닫는다 — 다른 것이 열린 동안 늦게 온 닫기가 그것을 지우지 않게 한다
+  const toggle = (kind: 'body' | 'time') => (open: boolean) =>
+    setDraft((current) => (open ? { kind } : current.kind === kind ? NO_DRAFT : current))
   const busy = actions.pending !== null
   const timePassed = actions.isTimePassed(bundle.id)
-  const lockHint = lockReason(editing, choosingTime, false)
-  const approveLockHint = lockReason(editing, choosingTime, timePassed)
+  const lockHint = lockReason(draft, false)
+  const approveLockHint = lockReason(draft, timePassed)
   const decisionLocked = busy || lockHint !== null
   const approveLocked = busy || approveLockHint !== null
   // 시각 저장만으로 잠긴 동안은 버튼 모양을 바꾸지 않는다 — 짧은 저장마다 버튼이 깜빡였다.
@@ -101,9 +103,9 @@ export function ReviewDetail({ workspaceId, botName, bundle, onSettled }: Review
         <ReviewMessageCard
           bundle={bundle}
           botName={botName}
-          editing={editing}
-          onEditingChange={setEditing}
-          locked={busy || choosingTime}
+          editing={draft.kind === 'body'}
+          onEditingChange={toggle('body')}
+          locked={busy || (draft.kind !== 'none' && draft.kind !== 'body')}
           keepLockedLook={quietLock}
           saving={pendingKind === 'edit'}
           onSave={(body, onSaved) =>
@@ -112,49 +114,65 @@ export function ReviewDetail({ workspaceId, botName, bundle, onSettled }: Review
           failure={failureOf('edit')}
         />
 
-        <section aria-labelledby={tasksId} className={TASKS}>
-          <h3 id={tasksId} className="mono text-[11px] leading-[1.6] font-normal text-dim">
-            묶은 태스크 {bundle.tasks.length}
-          </h3>
-          <ul className="flex flex-col gap-10">
-            {bundle.tasks.map((task) => (
-              <li key={task.reminderId} className="flex flex-col gap-2">
-                <span className="flex flex-wrap items-baseline gap-x-8">
-                  <span className="text-body font-semibold wrap-anywhere text-ink">
-                    {taskTitle(task)}
-                  </span>
-                  <span className="mono text-meta text-dim">{taskDueLabel(task)}</span>
-                </span>
-                {task.note === null ? null : (
-                  <span className="text-caption leading-[1.6] wrap-anywhere whitespace-pre-line text-sub">
-                    메모: {task.note}
-                  </span>
-                )}
-              </li>
-            ))}
-          </ul>
-        </section>
+        <ReviewTasks
+          bundle={bundle}
+          draft={draft}
+          onDraftChange={setDraft}
+          busy={busy}
+          removing={pendingKind === 'removeTask'}
+          savingNote={pendingKind === 'editNote'}
+          headingRef={tasksHeadingRef}
+          onRemove={(task) =>
+            actions.run(
+              { kind: 'removeTask', bundleId: bundle.id, reminderId: task.reminderId },
+              {
+                notice: (outcome) =>
+                  removeTaskNotice(taskTitle(task), bundle.recipientName, outcome),
+                onSuccess: (outcome) => {
+                  setDraft(NO_DRAFT)
+                  // 마지막 태스크를 빼 묶음이 닫혔다 — 보내지 않음처럼 이 항목을 떠난다
+                  if (outcome.kind === 'closed') leave()
+                  // 뺀 행이 버튼째 사라진다 — 남은 태스크 목록의 제목에 포커스를 둔다
+                  else tasksHeadingRef.current?.focus()
+                },
+              },
+            )
+          }
+          onSaveNote={(task, note, onSaved) =>
+            actions.run(
+              { kind: 'editNote', bundleId: bundle.id, reminderId: task.reminderId, note },
+              { notice: NOTE_SAVED_NOTICE, onSuccess: onSaved },
+            )
+          }
+          failure={failureOf('removeTask', 'editNote')}
+        />
 
         <SendTimingPicker
           workspaceId={workspaceId}
-          bundle={bundle}
-          locked={busy || editing}
+          dueDate={earliestDue(bundle.tasks)}
+          scheduledAt={bundle.scheduledAt}
+          locked={busy || (draft.kind !== 'none' && draft.kind !== 'time')}
           saving={pendingKind === 'schedule'}
-          customOpen={choosingTime}
-          onCustomOpenChange={setChoosingTime}
-          onChange={(action, onSaved) =>
-            actions.run(action, {
-              onSuccess: (outcome) => {
-                if (outcome.kind === 'done') {
-                  onSaved()
-                  return
-                }
-                // 이 묶음은 없어지고 상세가 합친 묶음으로 새로 마운트된다 — 이 상세 안이 아니라 상세 영역에 포커스를 둔다.
-                // 뒤로 가기로 없는 묶음에 돌아가지 않게 주소를 바꿔 끼운다
-                onSettled()
-                void navigate(paths.messageReview(workspaceId, outcome.into.id), { replace: true })
+          customOpen={draft.kind === 'time'}
+          onCustomOpenChange={toggle('time')}
+          onPick={(scheduledAt, onSaved) =>
+            actions.run(
+              { kind: 'schedule', bundleId: bundle.id, scheduledAt },
+              {
+                onSuccess: (outcome) => {
+                  if (outcome.kind !== 'merged') {
+                    onSaved()
+                    return
+                  }
+                  // 이 묶음은 없어지고 상세가 합친 묶음으로 새로 마운트된다 — 이 상세 안이 아니라 상세 영역에 포커스를 둔다.
+                  // 뒤로 가기로 없는 묶음에 돌아가지 않게 주소를 바꿔 끼운다
+                  onSettled()
+                  void navigate(paths.messageReview(workspaceId, outcome.into.id), {
+                    replace: true,
+                  })
+                },
               },
-            })
+            )
           }
           failure={failureOf('schedule')}
         />

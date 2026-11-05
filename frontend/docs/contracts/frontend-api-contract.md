@@ -1438,16 +1438,22 @@ members 에만 있고 Discord 목록에 없으면      → 비활성 (서버를 
 
 **현재 구현 (#315, 2026-11-04).** 프론트엔드는 아래 백엔드 메시지 API 를 production 을 포함한 모든 모드에서 부른다. `준비 중` 안내와 MSW 모드 분기는 지웠다([M8-C 결과](../plan/m8/result-c.md#2026-11-04-실제-메시지-api-연결-315)).
 
-- 쓰는 경로: `GET /messages`, `GET /messages/threads/{thread_id}`, `PATCH /messages/bundles/{bundle_id}`(`body` 또는 `scheduled_at` 하나), `POST /messages/bundles/{bundle_id}/approve`(`{draft_version}`), `POST /messages/bundles/{bundle_id}/cancel`, `POST /messages/threads/{thread_id}/replies`. 재촉 만들기와 리마인드 하나 고치기·빼기(`/messages/reminders…`)는 화면에서 부르지 않는다.
+- 쓰는 경로: `GET /messages`, `GET /messages/threads/{thread_id}`, `PATCH /messages/bundles/{bundle_id}`(`body` 또는 `scheduled_at` 하나), `POST /messages/bundles/{bundle_id}/approve`(`{draft_version}`), `POST /messages/bundles/{bundle_id}/cancel`, `POST /messages/threads/{thread_id}/replies`, 그리고 #370 에서 더한 `POST /messages/reminders`, `PATCH /messages/reminders/{reminder_id}`(`note` 만), `POST /messages/reminders/{reminder_id}/cancel`. 리마인드의 시각만 옮기는 `PATCH …/reminders/{id}`(`scheduled_at`)는 부르지 않는다. 시각은 묶음 단위로 옮긴다.
 - 응답 타입은 [message.ts](../../src/shared/types/api/message.ts)가 `schemas/message.py` 와 칸을 1:1 로 맞춘다. 매퍼는 목록을 `bundles` 가 `null` 인지로 PM·팀원 두 모양으로 나누고, 묶음의 화면 단계(승인 대기·승인함·초안 대기)를 `status`·`approved`·`draft_status` 에서 한 번 정한다. `scheduled` 가 아닌 묶음은 그리지 않는다.
 - 보낼 시각은 마감 기준 시각과 `직접 정한 시각` 둘이고, 화면이 시각을 계산해 `scheduled_at` 으로 보낸다. 마감 기준 시각은 묶은 태스크 중 가장 이른 `due_date` 에 공간의 재촉 규칙(아래 **메시지·알림 설정** 의 `nudge_rule`)을 적용한 KST 시각이다. 카드 제목도 규칙을 따른다(`마감 당일`·`마감 하루 전`·`마감 2일 전`·`마감 3일 전`). 기본 규칙이면 전날 09:00 이다(#340, 2026-11-05). 재촉 규칙을 불러오는 중이거나 불러오지 못했을 때, 마감이 없거나 그 시각이 지났을 때는 이 카드를 고를 수 없다. 시안의 `지금 바로` 는 대응 경로가 없어 지웠다.
+- 재촉 만들기와 태스크 빼기·메모 고치기(#370, 2026-11-05). 모두 PM 에게만 보인다. 팀원 화면에는 진입점이 없고 `?new=reminder` 주소도 무시한다.
+  - 진입점은 둘이다. 태스크 상세의 `재촉` 영역은 그 태스크의 담당자에게 만든다. 메시지 화면의 `새 재촉`(`?new=reminder`)은 팀원과 그 팀원이 맡은 끝나지 않은 태스크를 고른다. 보낼 시각은 묶음과 같은 두 카드(마감 기준·직접 정하기)이고 메모는 선택이다. 빈 메모는 `null` 로 보낸다.
+  - 서버는 담당자 여부와 Discord 연결을 보지 않는다(`services/messages.py` `create_reminder`). 화면은 담당자가 없는 태스크와 완료한 태스크에서 만들기를 막고 이유를 보인다(완료 태스크는 FE 기본값). Discord 가 연결되지 않은 팀원은 막지 않고, 보낼 때 DM 이 실패로 남는다고 알린다.
+  - 만들면 응답의 `bundle` 로 간다. 메시지 화면은 그 묶음의 보내기 전 확인으로 주소를 바꿔 끼우고, 태스크 상세는 결과와 `메시지 화면에서 확인하기` 링크를 보인다. 알림 문구는 돌려받은 묶음으로 고른다. 승인돼 있으면 같은 재촉이 이미 있어 그대로 돌려받은 것이고, 태스크가 둘 이상이면 같은 시각의 메시지에 합쳐진 것이다.
+  - 보내기 전 확인의 `묶은 태스크` 행마다 `메모 고치기`·`빼기` 가 있다. 빼기는 그 자리에서 확인을 받는다. 마지막 태스크면 `빼면 {이름}님에게 이 메시지를 보내지 않아요` 로 묻고, 응답 `bundle.status` 가 `cancelled` 면 보내지 않음처럼 그 항목을 떠난다. 나머지는 문구를 다시 만들고, 승인한 묶음이면 승인이 풀린다고 먼저 알린다. 메모는 바뀐 값만 저장할 수 있고(서버는 같은 메모면 아무것도 하지 않는다) 비우고 저장하면 `null` 로 지운다.
+  - 만들기 실패 중 409 `REMINDER_SCHEDULED_AT_PASSED`, 404 `TASK_NOT_FOUND`·`MEMBER_NOT_FOUND` 는 다시 시도 없이 이유를 보인다([createMessages.ts](../../src/features/reminder-create/lib/createMessages.ts)). 빼기·메모의 404 `REMINDER_NOT_FOUND` 는 아래 표의 `이미 처리된 메시지예요` 와 같다.
 - 오류 코드 처리는 한 표([actionMessages.ts](../../src/features/message-action/lib/actionMessages.ts)의 `KNOWN_FAILURES`)에 있다.
 
 | 코드 | 화면 | 다음 |
 |---|---|---|
 | 409 `BUNDLE_CHANGED` | 행동 자리에 `보낼 메시지가 바뀌었어요. 다시 확인해 주세요.` | 메시지 캐시를 다시 받는다. 다시 시도는 없다 |
 | 409 `REMINDER_SCHEDULED_AT_PASSED` | 승인이면 `예정 시각이 지났어요` 와 승인 잠금 | 그 묶음의 시각 저장이 성공할 때까지 승인을 잠근다 |
-| 409 `REMINDER_NOT_EDITABLE`, 404 `REMINDER_BUNDLE_NOT_FOUND` | 토스트 `이미 처리된 메시지예요. 목록을 다시 불러올게요.` | 메시지 캐시를 다시 받는다 |
+| 409 `REMINDER_NOT_EDITABLE`, 404 `REMINDER_BUNDLE_NOT_FOUND`·`REMINDER_NOT_FOUND` | 토스트 `이미 처리된 메시지예요. 목록을 다시 불러올게요.` | 메시지 캐시를 다시 받는다 |
 | 대화 조회 403·404 | `대화를 찾을 수 없어요` | 다시 시도 없음 |
 | 그 밖 | 행동 자리에 오류 문구와 `다시 시도` | 같은 요청을 다시 보낸다 |
 
@@ -1601,7 +1607,8 @@ FE 연결 (#340, 2026-11-05).
 
 - 흉내 내는 것: 승인 때 `draft_version` 비교(다르면 409 `BUNDLE_CHANGED`, 이미 승인했으면 그대로 200), 지난 시각 승인·시각 고치기 409 `REMINDER_SCHEDULED_AT_PASSED`, 예정이 아닌 묶음 409 `REMINDER_NOT_EDITABLE`, 없는 묶음 404 `REMINDER_BUNDLE_NOT_FOUND`, 문구를 고치면 `body_source: pm`·판 올림·승인 유지, 시각만 옮기면 판 그대로, 팀원에게 `bundles: null`, 남의 대화 조회·답장 403 `FORBIDDEN`(PM 의 답장 포함), 시간대 없는 `scheduled_at` 400, 시각은 UTC 로 응답.
 - 흉내 내는 것(묶음 합치기, #368): 옮긴 시각에 같은 대화의 예정 묶음이 있으면 리마인드를 그 묶음으로 옮기고 합쳐진 묶음을 돌려준다. 두 묶음 모두 문구를 규칙대로 다시 만들고 판을 올리고 승인을 푼다. 리마인드가 남지 않은 옮긴 묶음은 `cancelled` 다. 합쳐지는 시각으로 옮기면서 문구를 같이 보내면 400 `INVALID_REQUEST` 다. 시나리오 `messages-merge` 가 합치기를 재현한다.
-- 흉내 내지 않는 것: 스케줄러의 발송·만료·자동 취소, AI 초안 도착, `POST /messages/reminders` 와 리마인드 하나 고치기·빼기 경로, 봇 경로.
+- 흉내 내는 것(재촉 만들기·리마인드 고치기·빼기, #370): 세 경로 모두 PM 만(403 `FORBIDDEN`), 본문 검사 400 `INVALID_REQUEST`, 없는 태스크·팀원 404 `TASK_NOT_FOUND`·`MEMBER_NOT_FOUND`, 없는 리마인드 404 `REMINDER_NOT_FOUND`, 예정이 아닌 리마인드 409 `REMINDER_NOT_EDITABLE`, 지난 시각 409 `REMINDER_SCHEDULED_AT_PASSED` 를 백엔드 순서대로 낸다. 만들기는 그 팀원의 대화가 없으면 만들고 같은 시각의 예정 묶음에 넣는다. 같은 태스크가 이미 있으면 그 리마인드를 그대로 돌려준다. 빼기·메모·더하기는 문구를 다시 만들고 판을 올리고 승인을 푼다. 리마인드가 다 빠진 묶음은 `cancelled` 이고 마지막에 함께 뺀 리마인드만 싣는다. 리마인드에 `cancelled_at` 을 두어 모의 DB 버전이 11 이 되었다.
+- 흉내 내지 않는 것: 스케줄러의 발송·만료·자동 취소, AI 초안 도착, 봇 경로. 목의 시각은 늘 고정 시각이라 연달아 뺀 리마인드의 취소 시각이 같다.
 
 **프론트엔드가 정한 정책** (D-174, 백엔드·AI 합의 여부 확인 필요). 서버가 해 줘야 하는 일만 적는다. 정책 전문은 D-174 에 있다.
 

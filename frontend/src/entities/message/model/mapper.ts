@@ -2,12 +2,14 @@ import type {
   BundleDto,
   InboxDto,
   MessageDto,
+  ReminderWithBundleDto,
   ThreadDetailDto,
   ThreadSummaryDto,
 } from '@/shared/types/api/message'
 import type {
   Bundle,
   BundleStage,
+  CreatedReminder,
   Message,
   MessageInbox,
   MessageThread,
@@ -111,4 +113,12 @@ export function toMessageThread(dto: ThreadDetailDto): MessageThread {
     messages: dto.messages.map(toMessage),
     upcoming: dto.bundles === null ? [] : toBundles(dto.bundles),
   }
+}
+
+/** 막 만든 재촉의 묶음은 늘 예정이다. 아니면 계약 위반이라 던진다 — 만들기 실패로 보인다 */
+export function toCreatedReminder(dto: ReminderWithBundleDto): CreatedReminder {
+  const bundle = toBundle(dto.bundle)
+  if (bundle === null)
+    throw new Error(`만든 재촉의 묶음이 예정 상태가 아닙니다: ${dto.bundle.bundle_id}`)
+  return { reminderId: dto.reminder.reminder_id, bundle }
 }

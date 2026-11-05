@@ -102,3 +102,23 @@ export interface BundleApproveRequestDto {
 export interface ReplyCreateRequestDto {
   body: string
 }
+
+/** `POST …/messages/reminders` — `ReminderCreateRequest`. scheduled_at 은 시간대가 있어야 한다 */
+export interface ReminderCreateRequestDto {
+  member_id: string
+  task_id: string
+  scheduled_at: string
+  note?: string | null
+}
+
+/** `PATCH …/messages/reminders/{reminder_id}` — `ReminderUpdateRequest`. note 를 null·빈 글로 보내면 메모를 지우고, 빼면 그대로 둔다 */
+export interface ReminderUpdateRequestDto {
+  note?: string | null
+  scheduled_at?: string
+}
+
+/** 리마인드 만들기·고치기·빼기의 응답 — `ReminderWithBundleResponse`. bundle 은 그 리마인드가 지금 든 묶음이다 */
+export interface ReminderWithBundleDto {
+  reminder: ReminderDto
+  bundle: BundleDto
+}

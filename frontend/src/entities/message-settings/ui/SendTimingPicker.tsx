@@ -1,19 +1,17 @@
-import { useQuery } from '@tanstack/react-query'
 import { useId, useRef, useState } from 'react'
 import type { KeyboardEvent, ReactNode, Ref } from 'react'
-import type { Bundle, MessageAction } from '@/entities/message'
-import { messageSettingsQueryOptions, nudgeDayLabel } from '@/entities/message-settings'
-import { now as clockNow, todayInSeoul } from '@/shared/lib/date'
-import { Button } from '@/shared/ui/button'
 import {
-  deadlineSend,
+  now as clockNow,
+  formatSeoulMonthDayTime,
   fromSeoulInputValue,
-  initialCustomTime,
-  sameInstant,
-  shortDateTime,
-} from '../lib/format'
-import { useShownAfter } from '../lib/useShownAfter'
-import { LockedButton } from './LockedButton'
+  todayInSeoul,
+} from '@/shared/lib/date'
+import { useShownAfter } from '@/shared/lib/shown-after'
+import { Button } from '@/shared/ui/button'
+import { LockedButton } from '@/shared/ui/locked-button'
+import { nudgeDayLabel } from '../model/nudgeRule'
+import { initialCustomTime, sameInstant } from '../model/sendTiming'
+import { useDeadlineSend } from '../model/useDeadlineSend'
 
 /* Messages 캔버스 실측 — 라벨 12.5 보조, 카드 간격 9(시안은 3열이고 `지금 바로` 를 뺐다), 카드(위아래 13 · 좌우 15 · 라운드 16 · 선), 고른 카드는 먹 면 흰 글자.
    라디오는 숨기고 카드 전체가 라벨이다. 포커스 선은 카드에 긋는다 — 디자인 시스템대로 테두리 위(offset -1),
@@ -49,7 +47,10 @@ type SendTiming = 'day_before_deadline' | 'custom'
 export interface SendTimingPickerProps {
   /** 마감 기준 카드의 시각은 이 공간의 재촉 규칙(메시지·알림 설정)을 따른다 */
   workspaceId: string
-  bundle: Bundle
+  /** 마감 기준 카드가 쓰는 마감 `YYYY-MM-DD`. 묶음이면 가장 이른 마감이다 */
+  dueDate: string | null
+  /** 지금 정해진 보낼 시각. 아직 없으면 null 이고 어느 카드도 골라지지 않는다 */
+  scheduledAt: string | null
   /** 다른 행동이 진행 중이거나 문구를 고치는 중이라 고를 수 없다. 포커스는 남긴다(`aria-disabled`) */
   locked: boolean
   /** 보낼 시각을 저장하는 중이다. 그동안 시각 묶음이 `aria-busy` 이고, 길어지면 저장 중인 카드에 `저장 중` 이 보인다 */
@@ -57,15 +58,15 @@ export interface SendTimingPickerProps {
   /** 직접 정하는 시각 칸이 열려 있다 — 화면에 골라진 시점이 아직 서버 값이 아니다 */
   customOpen: boolean
   onCustomOpenChange: (open: boolean) => void
-  /** 서버에 새 보낼 시각을 요청한다. 성공하면 `onSaved` 를 부른다 */
-  onChange: (action: Extract<MessageAction, { kind: 'schedule' }>, onSaved: () => void) => void
+  /** 새 보낼 시각을 정한다. 반영되면 `onSaved` 를 부른다 */
+  onPick: (scheduledAt: string, onSaved: () => void) => void
   /** 변경 실패 알림 자리 */
   failure: ReactNode
 }
 
 /**
  * 언제 보낼까요? — 마감 기준 · 직접 정하기 (Messages 시안에서 `지금 바로` 를 뺐다 — 서버는 지난 시각을 받지 않는다).
- * 마감 기준 카드는 묶은 태스크 중 가장 이른 마감에 공간의 재촉 규칙을 적용한 시각이고, 제목도 규칙을 따른다(`마감 하루 전`,
+ * 마감 기준 카드는 주어진 마감(묶음이면 가장 이른 마감)에 공간의 재촉 규칙을 적용한 시각이고, 제목도 규칙을 따른다(`마감 하루 전`,
  * `마감 2일 전`, `마감 당일`). 규칙을 받기 전이나 받지 못했으면 고를 수 없다 — 짐작한 시각으로 저장하지 않는다.
  * 고른 카드는 서버가 저장한 시각에서 정한다 —
  * 누르면 요청하고 성공한 뒤에 카드가 바뀐다 (D-137). `직접 정하기` 는 시각을 고르는 칸을 열 뿐이고, 시각을 정해야 요청한다.
@@ -74,12 +75,13 @@ export interface SendTimingPickerProps {
  */
 export function SendTimingPicker({
   workspaceId,
-  bundle,
+  dueDate,
+  scheduledAt,
   locked,
   saving,
   customOpen,
   onCustomOpenChange,
-  onChange,
+  onPick,
   failure,
 }: SendTimingPickerProps) {
   const name = useId()
@@ -89,22 +91,19 @@ export function SendTimingPicker({
   const [requestedTiming, setRequestedTiming] = useState<SendTiming | null>(null)
   const showSaving = useShownAfter(saving, SAVING_MARK_DELAY_MS)
   const savingTiming = showSaving ? requestedTiming : null
-  const [now] = useState(clockNow)
-  const settings = useQuery(messageSettingsQueryOptions(workspaceId))
-  const rule = settings.data?.nudgeRule
-  const deadline = rule === undefined ? null : deadlineSend(bundle.tasks, rule, now)
+  const { rule, deadline, ruleFailed } = useDeadlineSend(workspaceId, dueDate)
   // 규칙을 모르면 저장된 시각이 어느 카드인지도 모른다 — 어느 카드도 고르지 않은 채로 둔다
   const savedTiming: SendTiming | null =
-    deadline === null
+    deadline === null || scheduledAt === null
       ? null
-      : deadline.status !== 'none' && sameInstant(deadline.at, bundle.scheduledAt)
+      : deadline.status !== 'none' && sameInstant(deadline.at, scheduledAt)
         ? 'day_before_deadline'
         : 'custom'
   const selected: SendTiming | null = customOpen ? 'custom' : savedTiming
 
-  const save = (timing: SendTiming, scheduledAt: string, onSaved: () => void) => {
+  const save = (timing: SendTiming, at: string, onSaved: () => void) => {
     setRequestedTiming(timing)
-    onChange({ kind: 'schedule', bundleId: bundle.id, scheduledAt }, onSaved)
+    onPick(at, onSaved)
   }
 
   const choose = (timing: SendTiming) => {
@@ -154,14 +153,14 @@ export function SendTimingPicker({
           title={rule === undefined ? '마감 기준' : nudgeDayLabel(rule.daysBefore)}
           detail={
             deadline === null
-              ? settings.isError
+              ? ruleFailed
                 ? '규칙을 불러오지 못했어요'
                 : '불러오는 중'
               : deadline.status === 'none'
                 ? '마감 없음'
                 : deadline.status === 'passed'
-                  ? `${shortDateTime(deadline.at)} · 지남`
-                  : shortDateTime(deadline.at)
+                  ? `${formatSeoulMonthDayTime(deadline.at)} · 지남`
+                  : formatSeoulMonthDayTime(deadline.at)
           }
           unavailable={deadline?.status !== 'open'}
         />
@@ -170,18 +169,22 @@ export function SendTimingPicker({
           value="custom"
           inputRef={customRadioRef}
           title="직접 정하기"
-          detail={savedTiming === 'custom' ? shortDateTime(bundle.scheduledAt) : '날짜 · 시각'}
+          detail={
+            savedTiming === 'custom' && scheduledAt !== null
+              ? formatSeoulMonthDayTime(scheduledAt)
+              : '날짜 · 시각'
+          }
         />
       </div>
       {customOpen ? (
         <CustomTimeForm
           initialValue={initialCustomTime(
-            savedTiming === 'custom' ? bundle.scheduledAt : null,
+            savedTiming === 'custom' ? scheduledAt : null,
             todayInSeoul(),
           )}
           saving={saving}
           onCancel={closeCustom}
-          onSubmit={(scheduledAt) => save('custom', scheduledAt, closeCustom)}
+          onSubmit={(at) => save('custom', at, closeCustom)}
         />
       ) : null}
       {failure}
@@ -255,12 +258,12 @@ function CustomTimeForm({
   const [invalid, setInvalid] = useState(false)
 
   const submit = () => {
-    const scheduledAt = fromSeoulInputValue(value)
-    if (scheduledAt === null || Date.parse(scheduledAt) <= clockNow()) {
+    const at = fromSeoulInputValue(value)
+    if (at === null || Date.parse(at) <= clockNow()) {
       setInvalid(true)
       return
     }
-    onSubmit(scheduledAt)
+    onSubmit(at)
   }
 
   return (

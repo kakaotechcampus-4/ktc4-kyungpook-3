@@ -14,9 +14,11 @@ export interface ViewerPolicy {
   foot: 'notice' | 'reply'
   /** 답장 기다림(머리 배지·목록 점·`여기서부터 답장이 없습니다`)을 보인다 */
   awaiting: boolean
+  /** 재촉을 만든다(`새 재촉`). 서버도 PM 만 받는다 */
+  compose: boolean
 }
 
 export const VIEWER_POLICY: Record<MessageViewer, ViewerPolicy> = {
-  pm: { ownSender: 'bot', foot: 'notice', awaiting: true },
-  member: { ownSender: 'member', foot: 'reply', awaiting: false },
+  pm: { ownSender: 'bot', foot: 'notice', awaiting: true, compose: true },
+  member: { ownSender: 'member', foot: 'reply', awaiting: false, compose: false },
 }

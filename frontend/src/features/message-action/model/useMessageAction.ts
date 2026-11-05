@@ -2,8 +2,9 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useCallback, useState, useSyncExternalStore } from 'react'
 import { messageKeys, requestMessageAction } from '@/entities/message'
 import type { MessageAction, MessageActionOutcome } from '@/entities/message'
-import { captureSession } from '@/entities/user'
-import { ApiError } from '@/shared/api/errors'
+import { ApiError, CLIENT_ERROR_CODES, createClientError } from '@/shared/api/errors'
+import { captureSessionScope } from '@/shared/api/sessionScope'
+import type { SessionScope } from '@/shared/api/sessionScope'
 import { toast } from '@/shared/ui/toast'
 import { ACTION_FAILURE_TITLE, KNOWN_FAILURES, mergeNotice } from '../lib/actionMessages'
 import type { KnownFailure } from '../lib/actionMessages'
@@ -12,7 +13,8 @@ type ActionKind = MessageAction['kind']
 
 interface ActionVariables {
   action: MessageAction
-  isCurrentSession: () => boolean
+  /** 행동을 누른 세션. 끝났으면 보내지 않고, 보낸 요청은 취소하며, 화면·캐시에 아무것도 남기지 않는다 */
+  session: SessionScope
 }
 
 /** 행동의 대상 — 보낼 메시지(묶음) 또는 대화 */
@@ -30,8 +32,8 @@ export interface MessageActionFailure {
 }
 
 export interface RunOptions {
-  /** 성공 알림. 없으면 알리지 않는다. 합쳐졌으면 대신 합쳤다고 알린다 */
-  notice?: string
+  /** 성공 알림. 없으면 알리지 않는다. 결과에 따라 다르면 함수로 준다. 합쳐졌으면 대신 합쳤다고 알린다 */
+  notice?: string | ((outcome: MessageActionOutcome) => string)
   /** 서버가 성공하고 메시지 캐시를 다시 받은 뒤에 부른다 */
   onSuccess?: (outcome: MessageActionOutcome) => void
 }
@@ -103,12 +105,12 @@ function knownFailureOf(error: unknown): KnownFailure | null {
 }
 
 /**
- * 메시지 쓰기 — 승인·보내지 않음·문구·보낼 시각·답장 (계약 §5.7).
+ * 메시지 쓰기 — 승인·보내지 않음·문구·보낼 시각·답장·태스크 빼기·메모 (계약 §5.7).
  * - 서버 성공 뒤에만 반영한다. 낙관적 업데이트는 없다 — 메시지 캐시를 무효화해 서버 상태로 다시 그린다 (D-137, 계획 C-5)
  * - 다시 받기까지 끝나야 mutation 이 끝난다. 그래서 성공 뒤 이동이 처리 전 목록을 잠깐 보이지 않는다
  * - 실패하면 화면은 그대로이고 실패를 남긴다. 자동 재시도는 없고 `retry` 로 다시 보낸다. `run` 은 이전 실패를 지운다
  * - 화면이 따로 다루는 거절은 KNOWN_FAILURES 표대로 알리고 다시 받거나 승인을 잠근다
- * - 요청 중 세션이 끝났으면 늦은 응답은 캐시에도 결과에도 남기지 않는다
+ * - 요청 중이나 보내기 전에 세션이 끝났으면 보내지 않고, 늦은 응답은 캐시에도 결과에도 남기지 않는다
  * - 한 공간에서는 한 번에 하나의 쓰기만 나간다
  */
 export function useMessageAction(workspaceId: string): MessageActionControl {
@@ -132,10 +134,14 @@ export function useMessageAction(workspaceId: string): MessageActionControl {
   >({
     mutationKey,
     retry: false,
-    mutationFn: ({ action }) => requestMessageAction(workspaceId, action),
-    onSuccess: (_result, { isCurrentSession }) => (isCurrentSession() ? syncMessages() : undefined),
-    onError: (error, { action, isCurrentSession }) => {
-      if (!isCurrentSession()) return
+    mutationFn: ({ action, session }) => {
+      // 오프라인으로 기다리는 사이 세션이 끝났을 수 있다. 그대로 보내면 다음에 로그인한 계정의 쿠키로 나간다
+      if (!session.isCurrent()) throw createClientError(CLIENT_ERROR_CODES.REQUEST_CANCELED)
+      return requestMessageAction(workspaceId, action, session.signal)
+    },
+    onSuccess: (_result, { session }) => (session.isCurrent() ? syncMessages() : undefined),
+    onError: (error, { action, session }) => {
+      if (!session.isCurrent()) return
       const known = knownFailureOf(error)
       // 서버가 지난 시각으로 거절한 승인만 잠근다. 시계는 보지 않고, 그 묶음의 시각 저장이 성공해야 풀린다
       if (known?.then === 'lockApproval' && action.kind === 'approve')
@@ -159,15 +165,20 @@ export function useMessageAction(workspaceId: string): MessageActionControl {
       if (queryClient.isMutating({ mutationKey: mutationKeyOf(workspaceId) }) > 0) return
       setFailure(null)
       setLastRun({ action, options })
-      const isCurrentSession = captureSession()
+      const session = captureSessionScope()
       mutate(
-        { action, isCurrentSession },
+        { action, session },
         {
           onSuccess: (outcome) => {
-            if (!isCurrentSession()) return
+            if (!session.isCurrent()) return
             if (action.kind === 'schedule')
               forgetTimePassed(queryClient, workspaceId, action.bundleId)
-            const notice = outcome.kind === 'merged' ? mergeNotice(outcome.into) : options.notice
+            const notice =
+              outcome.kind === 'merged'
+                ? mergeNotice(outcome.into)
+                : typeof options.notice === 'function'
+                  ? options.notice(outcome)
+                  : options.notice
             if (notice !== undefined) toast.show({ key: 'message-review-action', title: notice })
             options.onSuccess?.(outcome)
           },
