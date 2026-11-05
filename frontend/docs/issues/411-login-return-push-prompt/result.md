@@ -30,9 +30,10 @@
 - [BrowserPushPrompt.tsx](../../../src/features/browser-push/ui/BrowserPushPrompt.tsx)가 띠다. [ThreadDetail.tsx](../../../src/widgets/message-inbox/ui/ThreadDetail.tsx)가 대화 머리와 본문 사이에 그린다. 조건은 [viewer.ts](../../../src/widgets/message-inbox/model/viewer.ts)의 `pushPrompt`(팀원만)와 대화에 봇 메시지가 하나 이상 있는 것이다.
 - 문구는 사용자 결정(2026-11-05)대로다. 제목 「다음 리마인드를 기기 알림으로 받을까요?」, 설명 「새 리마인드가 오면 이 기기로 바로 알려 드려요.」, 버튼 [알림 켜기] [닫기].
 - 띠가 그릴 것은 [pushPrompt.ts](../../../src/features/browser-push/model/pushPrompt.ts)의 `pushPromptView`가 `PushState`마다 하나로 정한다(`hidden`, `offer`, `install`, `failed`). `subscribed`와 `denied`는 `settlesPushPrompt`가 참이라 닫은 것으로 기록한다.
-- 닫은 기록은 [pushPromptRecord.ts](../../../src/features/browser-push/lib/pushPromptRecord.ts)가 `localStorage`의 `browser-push-prompt-closed:<사용자 ID>`에 둔다. 닫은 계정은 `useBrowserPush`를 붙이지 않아 푸시 상태를 서버에 묻지 않는다.
+- 닫은 기록은 [pushPromptRecord.ts](../../../src/features/browser-push/lib/pushPromptRecord.ts)가 `localStorage`의 `browser-push-prompt-closed:<사용자 ID>`에 둔다. 닫은 계정은 띠에서 `useBrowserPush`를 붙이지 않는다. 이 기록은 띠를 보일지만 정한다.
+- 이미 허용된 기존 구독을 지금 계정으로 옮기는 일은 띠와 따로 한다. [syncPushSubscription.ts](../../../src/features/browser-push/model/syncPushSubscription.ts)의 `useSyncPushSubscription`을 [AuthenticatedLayout.tsx](../../../src/app/router/layouts/AuthenticatedLayout.tsx)가 로그인 세션마다 한 번 부른다. 권한을 묻거나 구독을 새로 만들지 않는다. 독립 리뷰가 찾은 결함에서 나왔다. 띠를 닫은 계정은 세션 만료 뒤 A→B→A로 바뀌어도 재등록을 건너뛰어, 서버 수신자가 B로 남았다.
 - iOS에서 홈 화면 앱이 아니면 버튼 없이 설정과 같은 설치 안내와 [닫기]를 보인다. 설정과 띠가 같은 문구를 [copy.ts](../../../src/features/browser-push/ui/copy.ts)에서 가져온다.
-- 권한 요청과 구독은 기존 `useBrowserPush().enable`을 그대로 쓴다. 새 쓰기 요청을 더하지 않았다. 구독 저장은 기존처럼 시작한 세션을 잡아 두고 바뀌었으면 보내지 않는다.
+- 권한 요청과 구독은 기존 `useBrowserPush().enable`을 그대로 쓴다. 구독 저장([pushApi.ts](../../../src/entities/notification/api/pushApi.ts)의 `savePushSubscription`)은 세션 범위(`isCurrent`, `signal`)를 받는다. 요청 직전에 세대를 확인하고 POST에 `signal`을 넘긴다. 보내는 중 세션이 끝나면 요청이 취소되고 브라우저 구독을 푼다. 전에는 `signal`이 없어 끝난 세션의 POST가 계속 갔다(독립 리뷰 지적).
 
 ## 완료조건 확인
 
@@ -58,6 +59,7 @@
 | 회원가입으로 넘어간 경우 | `next`를 넘기지 않는다. 가입 뒤 시작 방식 선택으로 간다 | 새 계정은 어느 공간에도 속하지 않아 그 주소는 늘 접근 불가다. 초대는 시작 화면에서 받는다 |
 | 띠의 위치 | 리마인드 대화 머리 아래(사용자 결정) | 메시지 목록 위 카드, 알림 종 팝오버, 앱 전역 띠는 후보안에서 빠졌다 |
 | 닫은 기록의 범위 | 이 기기 × 로그인 계정(`localStorage`) | 계정 × 공간: 푸시 구독이 기기 × 계정 단위라(계약 §5.7) 공간마다 같은 질문을 반복한다. 서버 저장: API가 없다 |
+| 띠 표시와 계정 동기화 | 띠의 닫음 기록은 띠 표시에만 쓴다. 기존 구독을 지금 계정으로 옮기는 일은 로그인 세션마다 앱 계층에서 한다 | 띠가 붙을 때만 동기화: 띠를 닫은 계정은 세션 만료 뒤 계정이 바뀌어도 서버 수신자가 앞 계정으로 남는다(독립 리뷰가 재현) |
 | 누른 뒤의 동작 | 허용: 띠가 사라지고 토스트 「이 기기에서 알림을 받아요.」. 거절: 띠가 사라지고 다시 보이지 않는다. 권한 창을 그냥 닫음: 띠가 남는다. 실패: 띠 안에 실패 문구와 [다시 시도] | 거절 뒤 띠에 안내를 남기기: 설정의 알림 절이 이미 거절 상태와 해결 방법을 보인다 |
 
 ## OAuth 로그인 왕복
@@ -76,13 +78,18 @@ Google 로그인은 백엔드에 없어 버튼이 비활성이다([AlternativeAu
 | 커밋 전 | `verify-managers-manager`의 `run messages` | 4개 통과. 띠 표시, 열 때 권한 요청 0회, [알림 켜기] 뒤 1회, [닫기] 뒤 새로고침해도 띠와 `/push/` 요청이 없음, 띠가 나타나도 마지막 메시지가 화면 안 |
 | 커밋 전 | 같은 E2E에서 수정을 일부러 뺀 실행 | 닫은 기록을 읽지 않게 하면 새로고침 뒤 단언이, 맨 아래 유지를 빼면 마지막 메시지 단언이 실패했다. 테스트가 실제로 결함을 잡는다 |
 | 커밋 전 | Storybook `팀원_알림_띠`, `팀원_내_대화` play(Chromium) | 오류 없음. 전체 `test:storybook`은 CI에 맡겼다 |
+| 리뷰 수정 뒤 | 푸시·인증 관련 `vitest` 15개 파일(`pushApi`, `browser-push`, `browserPush`, `browserPushPrompt`, `pushAccountSync`, `logout`, `session`, `loginReturn`, `message-inbox`) | 89개 통과 |
+| 리뷰 수정 뒤 | 새 테스트의 수정 제거 실험 | `signal`을 빼면 POST 중 세션 종료 테스트가, 레이아웃의 동기화를 빼면 A→B→A 테스트가 마지막 A 단계(소유자 `us_02`)에서 실패했다 |
+| 리뷰 수정 뒤 | `verify-managers-manager`의 `run messages` | 4개 통과, `portOpen: false` |
 
 ## 남은 작업과 제한 사항
 
 - 세션 만료 뒤 같은 탭에서 다른 계정이 로그인하면 이전 계정의 주소로 간다. 소속이 아니면 접근 불가 화면이고, 같은 공간의 PM이면 원래 볼 수 있는 화면이다.
 - 거절한 뒤 브라우저 설정에서 알림을 허용해도 띠는 다시 보이지 않는다. 설정의 알림 절에서 켤 수 있다.
 - 닫은 기록은 기기에만 남아 다른 기기에서는 다시 보인다.
-- 이미 구독한 기기는 기록이 남기 전 첫 대화 열기에서 구독을 한 번 다시 등록한다(기존 `useBrowserPush` 동작).
+- 알림을 허용한 기기는 로그인 세션마다 구독 등록 POST를 한 번 더 보낸다. 같은 endpoint라 결과는 같다. 설정이나 띠를 열면 그쪽도 한 번 보낼 수 있다.
+- 로그인 직후의 동기화 POST가 끝나기 전에 세션이 끝나면 브라우저 구독을 푼다. 기존 설정 화면의 확인과 같은 규칙이다. 그때는 알림을 다시 켜야 한다.
+- 서버가 이미 처리한 POST는 취소 신호로 되돌릴 수 없다. 로그아웃이 구독을 먼저 지우는 순서는 그대로 둔다.
 - 설정 알림 절의 문구 「켜면 이 브라우저를 닫아도 새 알림을 받아요.」는 이번 범위 밖이라 그대로다. 사용자 결정이 띠에서 이 표현을 뺐으므로 같은 기준으로 고칠지 정해야 한다.
 - 실제 푸시 서비스 구독, 실기기 iOS, 실서버 연동은 미검증이다.
 
