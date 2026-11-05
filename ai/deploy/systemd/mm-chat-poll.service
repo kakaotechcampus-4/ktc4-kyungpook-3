@@ -12,7 +12,8 @@ Wants=network-online.target
 Type=oneshot
 User=mm
 WorkingDirectory=/opt/mm/ai
-ExecStart=/opt/mm/ai/.venv/bin/python -m capture.chat_poll
+# flock: 타이머 실행과 손 실행이 겹치면 제안이 중복되므로 이미 돌고 있으면 바로 끝낸다. 손으로 돌릴 때도 systemctl start 로 띄운다
+ExecStart=/usr/bin/flock -n /run/lock/mm-chat-poll.lock /opt/mm/ai/.venv/bin/python -m capture.chat_poll
 Nice=10
 # oneshot 은 시작 제한이 없어, 호출이 멈추면 다음 날 실행을 막는다.
 TimeoutStartSec=1h
