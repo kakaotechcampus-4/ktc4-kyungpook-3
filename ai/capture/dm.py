@@ -360,8 +360,24 @@ class DmCog(discord.Cog):
                 print(f"[dm] 답장 {item['message_id']} 판단 실패: {type(e).__name__}", flush=True)
                 body = {"attempt": item["attempt"], "failure_reason": type(e).__name__, "model_name": None,
                         "changes": []}
-            try:
-                await self._call("POST", f"/bot/replies/{item['message_id']}/judgment", body)
-            except BeError as e:
-                if e.code not in JUDGMENT_DROPPED:
-                    print(f"[dm] 답장 {item['message_id']} 판단을 넣지 못했다, 리스 뒤 다시: {e}", flush=True)
+            await self._report_judgment(item, body)
+
+    async def _report_judgment(self, item: dict, body: dict) -> None:
+        """BE 가 본문을 거절하면(400) 같은 판단을 다시 해도 같은 본문이 나온다. 실패로 보고해 PM 에게 바로 알린다."""
+        path = f"/bot/replies/{item['message_id']}/judgment"
+        try:
+            await self._call("POST", path, body)
+            return
+        except BeError as e:
+            if e.code in JUDGMENT_DROPPED:
+                return
+            if e.status != 400 or body["failure_reason"] is not None:
+                print(f"[dm] 답장 {item['message_id']} 판단을 넣지 못했다, 리스 뒤 다시: {e}", flush=True)
+                return
+            print(f"[dm] 답장 {item['message_id']} 판단을 BE 가 거절했다: {e.code}", flush=True)
+        try:
+            await self._call("POST", path, {"attempt": item["attempt"], "failure_reason": "INVALID_REQUEST",
+                                            "model_name": None, "changes": []})
+        except BeError as e:
+            if e.code not in JUDGMENT_DROPPED:
+                print(f"[dm] 답장 {item['message_id']} 판단을 넣지 못했다, 리스 뒤 다시: {e}", flush=True)

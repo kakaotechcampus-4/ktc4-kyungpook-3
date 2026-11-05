@@ -750,6 +750,27 @@ async def test_a_judgment_that_cannot_be_posted_is_left_to_the_lease(tmp_path, c
     assert "reply-1" in capsys.readouterr().out
 
 
+async def test_a_judgment_be_rejects_is_reported_as_failed_with_the_same_attempt(tmp_path):
+    cog, be = _cog(tmp_path, FakeBot(), judger=_judged)
+    be.reply_claims = [_claimed(attempt=2)]
+    be.fail = {"/bot/replies/reply-1/judgment": [_err(400, "INVALID_REQUEST")]}
+    await cog.reply_round()
+    assert _judgments(be)[-1] == ("reply-1", {"attempt": 2, "failure_reason": "INVALID_REQUEST", "model_name": None,
+                                              "changes": []})
+    assert len(_judgments(be)) == 2
+
+
+async def test_a_rejected_failure_report_is_not_sent_again(tmp_path):
+    def boom(item):
+        raise RuntimeError("x")
+
+    cog, be = _cog(tmp_path, FakeBot(), judger=boom)
+    be.reply_claims = [_claimed()]
+    be.fail = {"/bot/replies/reply-1/judgment": [_err(400, "INVALID_REQUEST")]}
+    await cog.reply_round()
+    assert len(_judgments(be)) == 1
+
+
 async def test_a_claim_failure_ends_the_round(tmp_path, capsys):
     cog, be = _cog(tmp_path, FakeBot(), judger=lambda item: pytest.fail("맡은 답장이 없다"))
     be.fail = {"/bot/replies/claim": [_err(500, "HTTP_500")]}
