@@ -122,6 +122,11 @@ def verify_token(db: DbSession, raw: str, *, now: datetime) -> tuple[datetime, s
 
 
 def confirm_reset(db: DbSession, raw: str, new_password: str, *, now: datetime) -> None:
+    # request_reset 과 같은 순서(사용자 행 잠금 -> 토큰 행 UPDATE)로 잡아 PG 교착을 피한다.
+    token_row = _row(db, raw)
+    if token_row is None:
+        raise _invalid("invalid")
+    db.execute(select(User.user_id).where(User.user_id == token_row.user_id).with_for_update())
     result = db.execute(
         update(PasswordResetToken)
         .where(
