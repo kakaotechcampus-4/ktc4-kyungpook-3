@@ -541,10 +541,13 @@ def _approve_only(client, db) -> None:
     assert r.status_code == 200, r.text
 
 
-def test_chat_meeting_create_never_auto(client, db, seed):
+def test_chat_meeting_create_never_auto(client, db, seed, caplog):
     _make_chat(db, seed)
 
-    item = _only_item(client, _extract(client, seed, [_judge()]))
+    with caplog.at_level("INFO", logger="app.api.extractions"):
+        item = _only_item(client, _extract(client, seed, [_judge()]))
+
+    assert "chat 회의라 auto 항목을 review로 내립니다" in caplog.text
 
     assert item["gate"] == "review"
     assert item["task_id"] is None
