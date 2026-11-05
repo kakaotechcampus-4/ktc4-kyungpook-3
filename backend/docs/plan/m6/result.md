@@ -35,9 +35,10 @@ plan.md 가 비어 있어 완료조건이 없다. 아래는 이슈 #381 의 설�
 
 ## 검증 내역
 
-- 2026-11-05 `backend/` 에서 `.venv/Scripts/python.exe -m pytest -q -p no:cacheprovider`: 1265 passed, 777 skipped, 3 warnings(118.75초). skip 는 PostgreSQL 이 필요한 테스트로 보이나 사유는 `-rs` 로 확인하지 않았다. `tests/api/test_meeting_stage.py`와 `tests/api/test_extraction_evidence.py` 만 따로 돌린 결과는 87 passed
+- 2026-11-05 `backend/` 에서 `.venv/Scripts/python.exe -m pytest -q -p no:cacheprovider`: 1266 passed, 777 skipped, 3 warnings(115.94초). skip 는 PostgreSQL 이 필요한 테스트로 보이나 사유는 `-rs` 로 확인하지 않았다. `tests/api/test_meeting_stage.py`와 `tests/api/test_extraction_evidence.py` 만 따로 돌린 결과는 87 passed(handoff 뒤 늦은 stt 테스트 추가 전)
 - 같은 시점 `.venv/Scripts/python.exe -m ruff check --no-cache .`: All checks passed
-- AI 테스트는 이 문서 작성 단계에서 다시 돌리지 않았다. 구현 커밋(02b708fe, 3c9ece5b) 때의 결과는 이 문서에 옮기지 않는다(확인 필요).
+- 같은 시점 저장소 밖 가벼운 venv(`~/.mm-ai-venv`, discord·faster-whisper 없음)에서 `ai/` 의 `python -m pytest tests/capture -q --continue-on-collection-errors`: 9 failed, 272 passed, 11 errors. 실패 목록은 develop 기준과 같다(환경 문제: Windows 경로, discord 미설치, fcntl). discord 가 필요한 테스트는 CI `ai-ci` 가 덮는다.
+- 조건부 UPDATE(`report_stage`)는 sqlite 테스트로만 확인했고 PostgreSQL 에서는 확인하지 않았다.
 - 실제 PostgreSQL 에 대한 마이그레이션 실행, 실제 봇과 BE 를 붙인 종단 확인은 하지 않았다.
 
 ## 계획 대비 변경
@@ -48,7 +49,7 @@ plan.md 가 비어 있어 완료조건이 없다. 아래는 이슈 #381 의 설�
 
 - AI 파트 리뷰. 수동 업로드와 채팅(#378) 경로는 단계를 보고하지 않는다.
 - FE 에 `progress` 의미 변화(그 단계가 시작되면 true), 화면 단계 이름, 단계 값 노출 여부를 알리는 [BE→FE] 이슈. 프론트 계약 문서는 FE 파트가 관리한다.
-- 단계 보고 HTTP 시간(최대 타임아웃 3초)이 AI 쪽 단계 시간(ops)에 들어간다. 시간 기록에서 따로 빼지 않았다.
+- 단계 보고는 진행 표시 뒤, ops 단계를 열기 전에 하므로 보고 시간은 ops 단계 시간에 들어가지 않는다. BE 장애 때 단계 시작이 최대 타임아웃(3초)만큼 늦어질 수 있다.
 - 한 회의의 현재 단계만 저장하므로 단계별 시각 이력은 없다.
 - 마이그레이션을 실제 DB 에 적용해 확인하지 않았다.
 

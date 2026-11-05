@@ -75,7 +75,7 @@
   | `extracted` | `handoff` 이후이거나 항목이 있는 추출이 있을 때 |
 
   회의 상세 `GET /meetings/{meeting_id}`와 `PATCH /meetings/{meeting_id}/fail`의 응답 `progress`가 같은 식을 쓴다. 트랙별 진행률은 보내지 않는다.
-- 봇 동작(`Handoff.report_stage`): `be.meeting_id`가 없으면 부르지 않고, 타임아웃 3초(`STAGE_TIMEOUT_S`)로 한 번만 보낸다. 오류는 모두 로그만 남기고 삼키며 매니페스트에 쓰지 않는다. 호출은 `process_session`의 단계 시작(`begin`)에서 AI 쪽 단계 시간 기록(ops)을 시작한 뒤에 하므로 보고에 걸린 HTTP 시간(최대 타임아웃 3초)이 그 단계의 ops 시간에 들어간다.
+- 봇 동작(`Handoff.report_stage`): `be.meeting_id`가 없으면 부르지 않고, 타임아웃 3초(`STAGE_TIMEOUT_S`)로 한 번만 보낸다. 오류는 모두 로그만 남기고 삼키며 매니페스트에 쓰지 않는다. 호출은 `process_session`의 단계 시작(`begin`)에서 진행 표시 뒤, AI 쪽 단계 시간 기록(ops) 단계를 열기 전에 하므로 보고 시간은 ops 단계 시간에 들어가지 않는다. BE 장애 때 단계 시작이 최대 타임아웃(3초)만큼 늦어질 수 있다.
 - 배포 순서: BE를 먼저 배포한다. 어느 쪽이 먼저 나가도 깨지지 않는다. BE가 먼저면 봇이 아직 보고하지 않아 `progress`는 지금처럼 데이터로 판정한다. 봇이 먼저면 이 경로가 없는 BE는 오류를 돌려주고 봇은 그 오류를 삼켜 처리를 계속한다. 이때 BE 쪽 진행 표시만 앞당겨지지 않는다.
 - DB: `meeting.processing_stage`(문자열 16자)와 `processing_stage_at`(시각)을 nullable로 추가했다(마이그레이션 `a3d7f91c5e28`). 기존 회의는 `null`이다.
 
