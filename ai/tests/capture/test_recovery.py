@@ -16,7 +16,7 @@ import pytest
 from capture import handoff as H
 from capture import recorder as R
 from stt import batch as B
-from tests.capture.fake_be import FakeBe
+from tests.capture.fake_be import FakeBe, without_stage
 from tests.capture.test_recorder import DiesOnLong, EchoStt, _extractor, _run, _session
 
 T0 = datetime(2026, 9, 26, 3, 0, 0, tzinfo=timezone.utc)
@@ -331,7 +331,7 @@ def test_the_loop_resends_only_the_fail_when_be_missed_it_at_give_up(tmp_path, c
     fake.calls.clear()
     r = R.recover_one(rec, target, claims=claims, backend=NoStt(), model_name="echo", workers=1,
                       transcripts_dir=tmp_path / "transcripts", extractor=_extractor({}), handoff=_handoff(fake))
-    assert r is None and [(c[0], c[1]) for c in fake.calls] == [("PATCH", "/meetings/m1/fail")]
+    assert r is None and [(c[0], c[1]) for c in without_stage(fake.calls)] == [("PATCH", "/meetings/m1/fail")]
     assert fake.meetings["m1"]["status"] == "failed" and fake.meetings["m1"]["failed_stage"] == "extract"
     assert _saved(path)["status"] == "failed" and R.recovery_targets(rec, claims=claims)[0] == []
 
