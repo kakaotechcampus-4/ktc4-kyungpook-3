@@ -68,7 +68,7 @@ export const workspaceHandlers = [
     db.workspaces.push(workspace)
     // 백엔드는 생성자를 PM Member 로 함께 저장한다 (workspaces.py 의 create_workspace).
     // 이게 없으면 가입 → 워크스페이스 생성 → 팀원 목록 흐름의 초기 상태가 실 API 와 다르다
-    db.members.push({
+    const creator = {
       member_id: nextId(
         'mb',
         db.members.map(({ member_id }) => member_id),
@@ -80,13 +80,16 @@ export const workspaceHandlers = [
       notion_name: null,
       role: 'pm',
       created_at: MOCK_NOW,
-    })
+    }
+    db.members.push(creator)
     db.integrations[workspace.workspace_id] = {
       discord: { status: 'not_connected', display_name: null, connected_at: null },
       notion: { status: 'not_connected', display_name: null, connected_at: null },
     }
     if (account) {
       account.workspaceIds.push(workspace.workspace_id)
+      // 백엔드의 생성자 PM 행은 user_id 로 이 계정에 이어진다. 응답·답장 판정의 member_id 가 이 행이다
+      account.memberIds[workspace.workspace_id] = creator.member_id
       account.session.workspace_count = account.workspaceIds.length
       account.session.last_workspace_id = workspace.workspace_id
       db.session = structuredClone(account.session)

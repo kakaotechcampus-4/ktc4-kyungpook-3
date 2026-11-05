@@ -482,6 +482,7 @@ function addTeamInvitations(state: MockDb): void {
     },
     password: 'mock-password',
     workspaceIds: [],
+    memberIds: {},
   })
   state.invitations.push(
     invitation('iv_00', 'mb_03', 'jaehwan@exmaple.com', 'canceled', '2026-09-14T09:00:00Z'),
