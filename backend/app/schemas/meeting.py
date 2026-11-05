@@ -1,5 +1,5 @@
 from datetime import date, datetime
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -44,6 +44,19 @@ class MeetingEndResponse(BaseModel):
 
 class MeetingFailRequest(BaseModel):
     failed_stage: str = Field(..., description="어느 단계에서 실패했는지 (e.g., STT, LLM)")
+
+
+class MeetingStageRequest(BaseModel):
+    stage: Literal["stt", "sources", "extract", "handoff"] = Field(
+        ..., description="AI 가 지금 시작한 처리 단계"
+    )
+
+
+class MeetingStageResponse(BaseModel):
+    meeting_id: str
+    status: str
+    processing_stage: str | None
+    applied: bool = Field(..., description="이 보고가 반영됐는지(같은 단계·역행·처리 중이 아님은 False)")
 
 
 class MeetingProgress(BaseModel):

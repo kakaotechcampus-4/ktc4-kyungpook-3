@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user, require_member, require_pm, require_service_token
 from app.core.database import get_db
 from app.core.errors import AppError, Envelope, ErrorCode, success
-from app.models import Extraction, Meeting, MeetingStatus, Member, Source, User
+from app.models import Extraction, Meeting, MeetingProcessingStage, MeetingStatus, Member, Source, User
 from app.schemas.meeting import (
     MeetingCreateRequest,
     MeetingCreateResponse,
@@ -17,9 +17,11 @@ from app.schemas.meeting import (
     MeetingFailRequest,
     MeetingMinutesResponse,
     MeetingProgress,
+    MeetingStageRequest,
+    MeetingStageResponse,
 )
 from app.schemas.upload import SpeakerAssignRequest, SpeakerAssignResponse, SpeakerViewResponse
-from app.services import meeting_failure, speaker_assignment
+from app.services import meeting_failure, meeting_stage, speaker_assignment
 
 router = APIRouter(prefix="/meetings", tags=["meetings"])
 
@@ -47,11 +49,14 @@ def _compute_progress(db: Session, meeting: Meeting) -> MeetingProgress:
         .order_by(Extraction.created_at.desc())
         .first()
     )
-    audio_merged = bool(
+    has_source = bool(
         db.scalar(select(exists().where(Source.meeting_id == meeting.meeting_id)))
     )
-    transcribed = audio_merged
-    extracted = bool(extraction and extraction.items)
+    # AI 가 알린 단계가 기본이고, 발화·추출 항목이 이미 있으면 단계가 늦거나 빠져도 그쪽을 믿는다
+    rank = meeting_stage.stage_rank(meeting.processing_stage)
+    audio_merged = rank >= 1 or has_source
+    transcribed = rank >= 2 or has_source
+    extracted = rank >= 4 or bool(extraction and extraction.items)
     return MeetingProgress(
         audio_merged=audio_merged, transcribed=transcribed, extracted=extracted
     )
@@ -108,6 +113,34 @@ def end_meeting(
 
     return success(
         MeetingEndResponse.model_validate(meeting).model_dump(mode="json")
+    )
+
+
+@router.patch(
+    "/{meeting_id}/stage",
+    status_code=200,
+    response_model=Envelope[MeetingStageResponse],
+    dependencies=[Depends(require_service_token)],
+)
+def report_meeting_stage(
+    meeting_id: str,
+    payload: MeetingStageRequest,
+    db: Session = Depends(get_db),
+) -> dict:
+    """봇이 처리 단계를 시작할 때 알린다. 같은 단계·역행·processing 이 아닌 회의는 오류 없이 applied=false 다."""
+    _get_meeting(db, meeting_id)
+    applied = meeting_stage.report_stage(
+        db, meeting_id, MeetingProcessingStage(payload.stage)
+    )
+    meeting = _get_meeting(db, meeting_id)
+    db.refresh(meeting)
+    return success(
+        MeetingStageResponse(
+            meeting_id=meeting.meeting_id,
+            status=meeting.status,
+            processing_stage=meeting.processing_stage,
+            applied=applied,
+        ).model_dump(mode="json")
     )
 
 
