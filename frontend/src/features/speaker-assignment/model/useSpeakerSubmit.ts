@@ -9,7 +9,8 @@ import {
 import { memberListQueryOptions } from '@/entities/member'
 import { captureSession } from '@/entities/user'
 import { paths } from '@/shared/config/routes'
-import { useGuardedNavigate } from '@/shared/lib/unsaved-changes'
+import { useLivePathname } from '@/shared/lib/live-pathname'
+import { hasPendingLeave, useGuardedNavigate } from '@/shared/lib/unsaved-changes'
 import { toSubmitRejection } from './submitRejection'
 import type { SubmitRejection } from './submitRejection'
 
@@ -22,13 +23,17 @@ export interface SpeakerSubmit {
 }
 
 /**
- * 지정 제출. 받아들여지면 추적에 등록하고 처리 화면으로 바꿔 간다 — 그 뒤 done·failed 는 앱 추적기가 잇는다.
+ * 지정 제출. 받아들여지면 추적에 등록하고, 아직 이 회의의 지정 화면에 있으면 처리 화면으로 바꿔 간다 — 그 뒤
+ * done·failed 는 앱 추적기가 잇는다. 기다리는 사이 다른 화면으로 갔거나 이탈 확인 중이면 옮기지 않는다.
+ * 「있나」는 라우터 기록의 지금 경로로 본다(useLivePathname). 이 훅의 커밋된 경로는 늘 지정 화면이고 떠나면 그 값에
+ * 멈춰 있어 판정을 바꾸지 못한다.
  * 받아들여지지 않으면 이유에 맞게 다시 받는다. 같은 지정을 다시 내도 200 이라(계약 §2.3.1) 응답 유실 뒤 다시 내도 된다.
  * 응답을 기다리는 사이 세션이 끝났으면 그 결과로 아무것도 하지 않는다
  */
 export function useSpeakerSubmit(workspaceId: string, meetingId: string): SpeakerSubmit {
   const queryClient = useQueryClient()
   const navigate = useGuardedNavigate()
+  const livePathname = useLivePathname()
   const inFlight = useRef(false)
   const [pending, setPending] = useState(false)
   const [rejection, setRejection] = useState<SubmitRejection | null>(null)
@@ -75,11 +80,13 @@ export function useSpeakerSubmit(workspaceId: string, meetingId: string): Speake
       }
       if (!isCurrentSession()) return null
       trackMeeting({ workspaceId, meetingId })
-      navigate(paths.meetingProcessing(workspaceId, meetingId), { replace: true })
+      const stillHere =
+        !hasPendingLeave() && livePathname() === paths.meetingSpeakers(workspaceId, meetingId)
+      if (stillHere) navigate(paths.meetingProcessing(workspaceId, meetingId), { replace: true })
       void queryClient.invalidateQueries({ queryKey: meetingKeys(workspaceId) })
       return null
     },
-    [meetingId, navigate, queryClient, refetchAfter, workspaceId],
+    [livePathname, meetingId, navigate, queryClient, refetchAfter, workspaceId],
   )
 
   return { pending, rejection, submit }

@@ -37,6 +37,8 @@ function processingUpload() {
   const meeting = db.meetings.find(({ meeting_id }) => meeting_id === AWAITING_MEETING_ID)!
   meeting.status = 'processing'
   meeting.progress = { audio_merged: false, transcribed: false, extracted: false }
+  db.meetingSummaries.find(({ meeting_id }) => meeting_id === AWAITING_MEETING_ID)!.status =
+    'processing'
 }
 
 function awaitingUpload() {
@@ -99,6 +101,36 @@ describe('처리 추적 — 화자 지정 대기', () => {
     )
     await app.expectPath(PROCESSING_PATH)
   })
+
+  it.each([
+    ['PM', 'pm'],
+    ['팀원', 'member'],
+  ] as const)(
+    '회의록 목록을 연 %s 은 추적 중 회의가 대기가 되면 그 항목이 화자 지정 필요로 바뀐다',
+    async (_label, role) => {
+      vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+      processingUpload()
+      setMockRole(role)
+      renderApp(paths.meetings('ws_01'))
+      await within(await screen.findByRole('complementary', { name: '회의 목록' })).findByRole(
+        'list',
+        { name: '진행 중' },
+      )
+      const row = () =>
+        within(screen.getByRole('list', { name: '진행 중' })).getByRole('link', {
+          name: /주간 회고 녹음/,
+        })
+      expect(row()).toHaveTextContent('정리 중')
+      await waitFor(() =>
+        expect(useMeetingTrackerStore.getState().meetings).toContainEqual(MEETING),
+      )
+
+      awaitSpeakers(AWAITING_MEETING_ID)
+      await act(() => vi.advanceTimersByTimeAsync(3_000))
+      await waitFor(() => expect(row()).toHaveTextContent('화자 지정 필요'))
+      expect(row()).toHaveAttribute('href', SPEAKERS_PATH)
+    },
+  )
 
   it('팀원은 처리 화면에 PM 이 지정 중이라는 안내만 보고 옮겨지거나 토스트를 받지 않는다', async () => {
     awaitingUpload()

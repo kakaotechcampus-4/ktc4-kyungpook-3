@@ -28,8 +28,11 @@ function signInToWs01(state: MockDb): void {
   state.authenticated = true
 }
 
-function addAwaitingUpload(state: MockDb, upload: Partial<MockSpeakerUpload> = {}): void {
-  const meetingId = AWAITING_MEETING_ID
+export function addAwaitingUpload(
+  state: MockDb,
+  upload: Partial<MockSpeakerUpload> = {},
+  meetingId: string = AWAITING_MEETING_ID,
+): void {
   const startedAt = '2026-09-19T01:00:00Z'
   state.meetings.push({
     meeting_id: meetingId,

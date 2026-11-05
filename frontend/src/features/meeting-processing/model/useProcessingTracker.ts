@@ -88,7 +88,8 @@ function invalidateFinished(queryClient: QueryClient, meeting: TrackedMeeting): 
  *   기다리는 중이면 처리 화면이 아직 그려져 있어도 떠난 것이다 (U4 r1 M01, useLivePathname).
  * - 알림·모달·이동은 그 일을 시작한 세션이 아직 이어질 때만 한다. 로그아웃 뒤에 연동 재조회가 끝나거나 만료로 401 이 와도
  *   실패로 보지 않고, 세션 세대가 바뀐 것을 보고 버린다 (U4 r1 M02, captureSession).
- * - 화자 지정 대기(#256): 처음 보였을 때 회의마다 세션당 한 번 PM 에게 안내한다. 그 회의의 처리 화면을 보고 있으면 지정
+ * - 화자 지정 대기(#256): 처음 보였을 때 목록 캐시를 대기로 바꾼다 — 팀원 목록에도 `화자 지정 필요` 가 보여야 한다.
+ *   회의마다 세션당 한 번 PM 에게 안내한다. 그 회의의 처리 화면을 보고 있으면 지정
  *   화면으로 옮기고, 아니면 `화자 지정이 필요해요` + `화자 지정하기` 토스트다. 팀원에게는 안내하지 않는다 — 처리 화면이
  *   「PM이 지정하고 있어요」를 보인다. 대기 중에는 30초 간격으로 지켜보고, 지정 뒤 끝나면 위의 완료·실패 처리가 그대로 돈다.
  * - 끊김 판정의 연동 재조회는 공유 Query 를 `fetchFresh` 로 묻는다. 실패 전에 출발한 조회의 답, 다른 화면이 구독을 거둬
@@ -143,6 +144,12 @@ export function useProcessingTracker(): ProcessingTracker {
   const onAwaitingSpeakers = useCallback(
     (meeting: TrackedMeeting) => {
       const { workspaceId, meetingId } = meeting
+      queryClient.setQueryData(meetingListQueryOptions(workspaceId).queryKey, (list) =>
+        list?.map((item) =>
+          item.id === meetingId ? { ...item, status: 'awaiting_speakers' as const } : item,
+        ),
+      )
+      invalidateMeetings(queryClient, meeting)
       const workspaces = queryClient.getQueryData(workspaceListQueryOptions().queryKey) ?? []
       if (findMemberWorkspace(workspaces, workspaceId)?.role !== 'pm') return
       const isCurrentSession = captureSession()

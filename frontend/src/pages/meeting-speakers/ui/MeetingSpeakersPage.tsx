@@ -40,7 +40,14 @@ export function MeetingSpeakersPage() {
   const workspaceId = useRouteId('workspaceId')
   const meetingId = useRouteId('meetingId')
   if (workspaceId === null || meetingId === null) return null
-  return <MeetingSpeakers workspaceId={workspaceId} meetingId={meetingId} />
+  // 다른 회의의 지정 화면으로 옮겨도(토스트 동작) 같은 화면이 재사용된다. 앞 회의의 거절·고른 화자를 남기지 않는다
+  return (
+    <MeetingSpeakers
+      key={`${workspaceId}/${meetingId}`}
+      workspaceId={workspaceId}
+      meetingId={meetingId}
+    />
+  )
 }
 
 function useSpeakerScreen(

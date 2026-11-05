@@ -1,15 +1,23 @@
-import { act, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http } from 'msw'
 import type { MockInstance } from 'vitest'
-import { clearTrackedMeetings, useMeetingTrackerStore } from '@/entities/meeting'
+import { clearTrackedMeetings, trackMeeting, useMeetingTrackerStore } from '@/entities/meeting'
+import { SPEAKERS_NEEDED_ACTION } from '@/features/meeting-processing'
 import { paths } from '@/shared/config/routes'
 import { db, replaceDb } from '@/shared/mock/db'
 import { fail } from '@/shared/mock/envelope'
+import { setMeetingFlowMode } from '@/shared/mock/meetingFlow'
 import { server } from '@/shared/mock/server'
-import { AWAITING_MEETING_ID, createSpeakerScenarioDb } from '@/shared/mock/speakerScenarios'
+import {
+  addAwaitingUpload,
+  AWAITING_MEETING_ID,
+  createSpeakerScenarioDb,
+} from '@/shared/mock/speakerScenarios'
 import type { SpeakerScenario } from '@/shared/mock/speakerScenarios'
+import { deferred } from '@/shared/test/deferred'
 import { recordRequests } from '@/shared/test/requests'
+import { toast } from '@/shared/ui/toast'
 import { renderApp } from './test/renderApp'
 
 /* jsdom 은 미디어를 재생하지 않는다 — play·pause 만 바꾸고 위치(currentTime)는 테스트가 옮긴다 */
@@ -26,6 +34,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.restoreAllMocks()
   clearTrackedMeetings()
+  toast.clear()
 })
 
 async function openSpeakers(scenario: SpeakerScenario = 'meeting-speakers') {
@@ -135,6 +144,51 @@ describe('화자 지정 화면 — PM', () => {
     expect(
       screen.queryByRole('button', { name: /지정하고 정리 이어 가기/ }),
     ).not.toBeInTheDocument()
+  })
+
+  it('만료된 회의 다음에 연 다른 대기 회의는 만료가 아니라 지정 폼을 보인다', async () => {
+    const user = userEvent.setup()
+    const app = await openSpeakers('meeting-speakers-expired')
+    addAwaitingUpload(db, {}, 'mt_12')
+    await chooseAll(user)
+    await user.click(submitButton())
+    await screen.findByRole('heading', { name: '화자 지정 기한이 지났어요' })
+
+    act(() => trackMeeting({ workspaceId: 'ws_01', meetingId: 'mt_12' }))
+    fireEvent.click(await screen.findByRole('button', { name: SPEAKERS_NEEDED_ACTION }))
+    await app.expectPath(paths.meetingSpeakers('ws_01', 'mt_12'))
+    expect(await screen.findByRole('heading', { name: '화자 1' })).toBeInTheDocument()
+    expect(submitButton()).toBeDisabled()
+    expect(screen.getByText('아직 고르지 않은 화자 3명')).toBeInTheDocument()
+    expect(screen.queryByText('화자 지정 기한이 지났어요')).not.toBeInTheDocument()
+  })
+
+  it('내는 중 다른 화면으로 가면 늦은 성공에도 그 화면에 남고 정리는 추적한다', async () => {
+    const user = userEvent.setup()
+    const app = await openSpeakers()
+    setMeetingFlowMode('manual')
+    const response = deferred()
+    server.use(
+      // 응답 없이 끝나면 기본 handler 가 지정을 받아 200 을 준다
+      http.put('/api/v1/meetings/:meetingId/speakers', async () => {
+        await response.promise
+      }),
+    )
+    await chooseAll(user)
+    await user.click(submitButton())
+    await waitFor(() => expect(submitButton()).toBeDisabled())
+    await user.click(screen.getByRole('link', { name: '팀' }))
+    await screen.findByRole('heading', { level: 1, name: '팀' })
+
+    act(() => response.resolve())
+    const processing = await within(
+      screen.getByRole('navigation', { name: '주요 화면' }),
+    ).findByRole('link', { name: '정리 중' })
+    expect(processing).toHaveAttribute('href', PROCESSING_PATH)
+    // 늦은 이동은 transition 이라 한 번 기다린 뒤에 그 화면에 남았는지 본다
+    await act(() => new Promise((resolve) => setTimeout(resolve, 200)))
+    expect(screen.getByRole('heading', { level: 1, name: '팀' })).toBeInTheDocument()
+    expect(app.visited().map(({ pathname }) => pathname)).not.toContain(PROCESSING_PATH)
   })
 
   it('409 가 이미 처리 중이면 만료로 읽지 않고 처리 화면으로 잇는다', async () => {
