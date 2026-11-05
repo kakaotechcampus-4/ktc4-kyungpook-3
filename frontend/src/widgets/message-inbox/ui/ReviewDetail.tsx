@@ -136,6 +136,7 @@ export function ReviewDetail({ workspaceId, botName, bundle, onSettled }: Review
         </section>
 
         <SendTimingPicker
+          workspaceId={workspaceId}
           bundle={bundle}
           locked={busy || editing}
           saving={pendingKind === 'schedule'}
