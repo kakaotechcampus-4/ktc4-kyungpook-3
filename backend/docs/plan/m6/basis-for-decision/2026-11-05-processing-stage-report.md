@@ -1,0 +1,59 @@
+# AI 처리 단계 보고를 회의 컬럼으로 저장한다
+
+- 기록일: 2026-11-05
+- 관련 마일스톤: M6 (프론트·AI 통합과 계약 확정). M6 지정은 사용자가 했고 [M6 plan.md](../plan.md)는 비어 있다.
+- 근거 이슈: #381. 설계는 이슈 댓글의 "설계 확정"(2026-11-05)과 작업 중 사용자와 정한 내용이다.
+
+## 문제와 제약
+
+- 회의 상세의 `progress`(`audio_merged`, `transcribed`, `extracted`)는 발화나 추출 항목이 저장된 뒤에야 true가 된다. 녹음이 끝나고 전사가 시작돼도 한동안 모두 false라 화면이 "처리 시작 전"처럼 보인다. AI 가 단계를 알려주면 이 시점을 당길 수 있다.
+- FE 계약의 회의 상세 응답 모양은 바꾸지 않는다. 이슈 설계 확정이 정한 제약이다.
+- 단계 보고는 진행 표시일 뿐이라 실패해도 전사·인계를 막으면 안 된다. 어느 쪽(BE·AI)이 먼저 배포돼도 깨지지 않아야 한다.
+- 구현은 [BE 코드](../../../../app/api/meetings.py)와 AI 호출 코드 모두 이 브랜치에서 한다. AI 쪽은 사용자가 이번 PR 한정으로 허락했고 AI 파트 리뷰를 받는다.
+
+## 실제 검토한 선택지
+
+이슈 댓글과 설계 기록에서 확인되는 것은 아래 선택과 그 이유다. 컬럼 대 이력 테이블 대 재사용은 대안과 비교한 기록이 설계 문서에 없어, 선택 이유는 이슈의 확정 문구만 옮기고 대안별 장단점은 쓰지 않는다.
+
+- 저장 방식: 회의에 컬럼 2개(`processing_stage`, `processing_stage_at`)를 추가하는 안을 택했다. 이력 테이블이나 기존 컬럼 재사용을 검토했는지는 기록이 없다(대안 검토 기록 없음).
+- 단계 값: `stt`, `sources`, `extract`, `handoff` 네 개.
+- 트랙별 진행률을 보낼지: 이번에는 보내지 않기로 했다.
+- 무시할 보고의 응답: 200 `applied=false`.
+- 응답에 단계 값을 노출할지: 노출하지 않기로 했다.
+
+## 선택과 이유
+
+1. 회의에 nullable 컬럼 2개를 둔다. `processing_stage`는 문자열 16자, `processing_stage_at`은 시각이다. 마이그레이션 [a3d7f91c5e28](../../../../migrations/versions/a3d7f91c5e28_add_meeting_processing_stage.py) 한 건이고 백필은 없다. 기존 회의는 빈 값이고 보고가 없으면 지금처럼 데이터로 판정한다. 갱신 시각을 함께 두는 이유는 설계 기록에 따로 적혀 있지 않다(확인 필요).
+2. 단계는 네 개다. AI 의 `failed_stage` 이름(`stt`, `sources`, `extract`, `handoff`)과 같게 했다. 이슈는 `handoff`가 있어야 "추출 끝" 시점을 알 수 있다고 이유를 적었다. 순서는 `stt`=1, `sources`=2, `extract`=3, `handoff`=4이고 보고가 없으면 0이다([meeting_stage.py](../../../../app/services/meeting_stage.py)).
+3. 같은 단계 재전송, 역행, `processing`이 아닌 회의는 오류가 아니라 200 `applied=false`로 답하고 저장값을 바꾸지 않는다. 이슈 설계 확정 4항의 결정이다. 늦게 도착한 보고가 앞선 단계를 덮지 않도록 판정과 쓰기를 조건부 UPDATE 한 문장으로 묶었다. 건너뛰기(예: 추출부터 재개)는 허용한다.
+4. `progress`는 단계와 데이터 중 먼저 true가 되는 쪽을 믿는다([`_compute_progress`](../../../../app/api/meetings.py)).
+   - `audio_merged` = 단계 순번 1 이상 또는 발화 있음
+   - `transcribed` = 단계 순번 2 이상 또는 발화 있음
+   - `extracted` = 단계 순번 4 이상 또는 항목 있는 최신 추출 있음
+   - 회의 상세와 실패 응답이 같은 식을 쓴다. 이슈 5항은 "전사 시작·전사 끝·추출 끝 시점만 당긴다"고 적었다.
+5. 회의 상세 응답에는 `processing_stage`를 싣지 않는다. FE 계약 모양을 그대로 두기 위해서이고, 단계 값 노출과 화면 단계 이름은 PR 뒤 [BE→FE] 이슈로 따로 정한다.
+6. 트랙 진행률은 보내지 않는다. 이슈는 화면에 표시할 곳이 생기면 그때 추가한다고 했다.
+7. AI 는 단계가 시작될 때(`process_session`의 `begin`) 짧은 타임아웃(`STAGE_TIMEOUT_S`=3.0초)으로 한 번 보고하고, 모든 오류를 삼킨다. `be.meeting_id`가 없으면 부르지 않는다. 이슈는 배포를 BE 먼저로 권장하되 어느 쪽이 먼저여도 깨지지 않는다고 했다.
+
+## 장단점과 감수한 제약
+
+- 단계 값을 응답에 싣지 않아 FE 가 단계 이름을 직접 보여줄 수 없다. FE 계약 변경을 이번 PR 에서 피하는 대신 감수한다.
+- `progress`의 의미가 "그 일이 끝났다"에서 "그 단계가 시작됐다"로 일부 당겨진다. 예를 들어 `sources` 단계가 시작되면 발화가 저장되기 전에도 `transcribed`가 true다. FE 에는 PR 뒤 이슈로 알린다.
+- 새 컬럼 2개를 쓴다. 한 회의의 현재 단계만 남고 단계별 시각 이력은 남지 않는다.
+- 단계 보고 HTTP 호출의 시간이 AI 쪽 단계 시간(ops)에 들어간다. 리뷰에서 지적된 사실이다. `begin`이 `ops.begin(name)`으로 단계 시간 기록을 시작한 뒤 보고하므로, 보고에 걸린 시간(최대 타임아웃 3초)이 그 단계의 ops 시간에 포함된다. 진행 표시가 처리를 오래 붙들지 않게 타임아웃을 짧게 한 이유이고, 시간 기록에서 이 보고를 따로 빼지는 않았다.
+- 보고가 실패하거나 유실되면 그 단계의 진행 표시만 당겨지지 않는다. 데이터가 저장되면 기존처럼 true가 된다.
+
+## 영향 범위와 재검토 조건
+
+- BE: `PATCH /api/v1/meetings/{meeting_id}/stage`(서비스 토큰) 추가, `meeting` 컬럼 2개, `progress` 판정식. 새 오류 코드는 없다.
+- AI: `ai/capture/handoff.py`, `ai/capture/recorder.py`. 수동 업로드와 채팅(#378) 경로는 보고하지 않는다.
+- FE: 응답 모양은 그대로다. `progress`가 더 일찍 true가 되는 의미 변화가 있다.
+- 계약: [BE↔AI 계약](../../../contracts/backend-ai-contract.md#patch-meetingsmeeting_idstage--200)에 기록했고 합의 상태는 구현됨(#381), AI 리뷰 대기다.
+- 재검토 조건: 화면이 트랙별 진행률이나 단계 값을 필요로 할 때, 수동 업로드·채팅 경로에서도 단계를 알려야 할 때, AI 리뷰가 단계 이름이나 보고 시점을 바꾸라고 할 때.
+- 검증 상태: 구현과 자동 테스트는 이 브랜치에서 했다. 실제 DB 와 운영 환경의 종단 확인은 [결과](../result.md)에 구분해 적는다.
+
+## 근거와 관련 문서
+
+- 이슈 #381 댓글 "설계 확정"(2026-11-05)
+- [BE↔AI 계약](../../../contracts/backend-ai-contract.md)
+- 코드: [meetings.py](../../../../app/api/meetings.py), [meeting_stage.py](../../../../app/services/meeting_stage.py), [models.py](../../../../app/models/models.py), [test_meeting_stage.py](../../../../tests/api/test_meeting_stage.py), `ai/capture/handoff.py`, `ai/capture/recorder.py`
