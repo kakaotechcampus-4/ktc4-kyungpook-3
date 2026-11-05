@@ -168,7 +168,10 @@ export function measure(
       return [
         name,
         {
-          median: sorted[Math.floor(sorted.length / 2)],
+          median:
+            sorted.length % 2 === 1
+              ? sorted[(sorted.length - 1) / 2]
+              : (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2,
           min: sorted[0],
           max: sorted[sorted.length - 1],
           iterations: iterations.get(name)!,
