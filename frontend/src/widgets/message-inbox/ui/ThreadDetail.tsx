@@ -12,7 +12,7 @@ import { Icon } from '@/shared/ui/icon'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
 import { buildConversation } from '../model/conversation'
 import type { BubbleItem } from '../model/conversation'
-import { VIEWER_POLICY } from '../model/viewer'
+import { VIEWER_POLICY, canReply } from '../model/viewer'
 import type { MessageViewer } from '../model/viewer'
 import { ThreadSkeleton } from './MessageSkeletons'
 import { ReplyForm } from './ReplyForm'
@@ -154,8 +154,15 @@ function ThreadView({
     }
   }, [])
   const today = todayInSeoul()
-  const policy = VIEWER_POLICY[viewer]
-  const view = buildConversation(thread, { policy, botName, today, now })
+  const policy = VIEWER_POLICY[viewer.role]
+  const replyable = canReply(viewer, thread.memberId)
+  const view = buildConversation(thread, {
+    policy,
+    replyable,
+    botName,
+    today,
+    now,
+  })
   const waitingDays = view.waitingDays
 
   return (
@@ -209,7 +216,7 @@ function ThreadView({
           </div>
         ))}
       </section>
-      {policy.foot === 'reply' ? (
+      {replyable ? (
         <div className={FOOT}>
           <ReplyForm
             workspaceId={workspaceId}

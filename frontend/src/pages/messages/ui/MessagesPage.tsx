@@ -35,7 +35,7 @@ function Messages({ unknownPath = false }: { unknownPath?: boolean }) {
     <MessageInbox
       workspaceId={workspaceId}
       botName={workspace.name}
-      viewer={workspace.role}
+      viewer={{ role: workspace.role, memberId: workspace.memberId }}
       threadId={threadId}
       bundleId={rawBundleId === null ? undefined : parseRouteId(rawBundleId)}
       invalidPath={unknownPath || (rawThreadId !== undefined && threadId === null)}

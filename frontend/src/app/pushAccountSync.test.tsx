@@ -35,6 +35,7 @@ function addAccountB() {
     },
     password: 'mock-password',
     workspaceIds: ['ws_01'],
+    memberIds: { ws_01: 'mb_03' },
   })
 }
 

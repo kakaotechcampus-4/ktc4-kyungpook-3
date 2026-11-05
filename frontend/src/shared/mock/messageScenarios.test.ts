@@ -7,7 +7,10 @@ import type {
   ReminderWithBundleDto,
   ThreadDetailDto,
 } from '@/shared/types/api/message'
+import type { ListDto } from '@/shared/types/api/envelope'
+import type { WorkspaceDto } from '@/shared/types/api/workspace'
 import { db, initialDb, replaceDb, resetDb } from './db'
+import { messagesMemberThread } from './fixtures/message'
 import { MOCK_DB_STORAGE_KEY, restoreDb, saveDb } from './persistence'
 import { setMockRole } from './sessions'
 import { applyScenario, createScenarioDb } from './scenarios'
@@ -26,6 +29,7 @@ const MESSAGE_SCENARIOS = [
   'messages-send-fail',
   'messages-member',
   'messages-member-push',
+  'messages-pm-self',
   'messages-schedule-passed',
   'messages-merge',
 ] as const satisfies readonly MockScenario[]
@@ -350,6 +354,70 @@ describe('메시지 시나리오', () => {
     const before = snapshot()
     const error = await failure(replyTo('th_01', 'PM 답장'))
     expect([error.status, error.code]).toEqual([403, 'FORBIDDEN'])
+    expect(snapshot()).toEqual(before)
+  })
+
+  it('messages-pm-self: 공간 응답의 member_id 는 PM 의 팀원 행이고, 그 행의 대화 th_06 에만 답장된다', async () => {
+    applyScenario('messages-pm-self')
+    const { items } = await fetchDto<ListDto<WorkspaceDto>>('/workspaces')
+    expect(
+      items.map(({ workspace_id, role, member_id }) => [workspace_id, role, member_id]),
+    ).toEqual([['ws_01', 'pm', 'mb_01']])
+    expect((await fetchDto<WorkspaceDto>('/workspaces/ws_01')).member_id).toBe('mb_01')
+    expect((await inbox()).threads.map(({ thread_id }) => thread_id)).toContain('th_06')
+
+    const created = await replyTo('th_06', 'PM 이 자기 대화에 남긴 답장')
+    expect(created).toMatchObject({ thread_id: 'th_06', sender: 'member', reply_channel: 'web' })
+    expect((await thread('th_06')).messages.at(-1)?.body).toBe('PM 이 자기 대화에 남긴 답장')
+
+    const before = snapshot()
+    const other = await failure(replyTo('th_01', '남의 대화'))
+    expect([other.status, other.code]).toEqual([403, 'FORBIDDEN'])
+    expect(snapshot()).toEqual(before)
+  })
+
+  it('새 공간을 만든 계정은 그 공간의 PM 행이 member_id 이고, 그 행의 대화에 답장된다. 다른 계정은 403 이다', async () => {
+    applyScenario('messages-pm-self')
+    const created = await fetchDto<WorkspaceDto>(
+      '/workspaces',
+      jsonRequest('POST', { name: '새 공간' }),
+    )
+    const workspaceId = created.workspace_id
+    const creator = db.members.find(
+      ({ workspace_id, role }) => workspace_id === workspaceId && role === 'pm',
+    )
+    expect(creator).toBeDefined()
+    const creatorId = creator?.member_id
+    expect(created.member_id).toBe(creatorId)
+    const { items } = await fetchDto<ListDto<WorkspaceDto>>('/workspaces')
+    expect(items.find(({ workspace_id }) => workspace_id === workspaceId)?.member_id).toBe(
+      creatorId,
+    )
+    expect((await fetchDto<WorkspaceDto>(`/workspaces/${workspaceId}`)).member_id).toBe(creatorId)
+
+    db.messageThreads.push({
+      ...structuredClone(messagesMemberThread),
+      thread_id: 'th_90',
+      workspace_id: workspaceId,
+      member_id: creatorId ?? '',
+    })
+    await expect(replyTo('th_90', '만든 사람의 답장', workspaceId)).resolves.toMatchObject({
+      thread_id: 'th_90',
+      sender: 'member',
+    })
+
+    await fetchDto(
+      '/auth/signup',
+      jsonRequest('POST', { email: 'other@example.com', password: 'pass1234', name: '다른 팀원' }),
+    )
+    db.members.push({ ...structuredClone(creator!), member_id: 'mb_91', role: 'member' })
+    const other = db.accounts.find(({ session }) => session.user.email === 'other@example.com')
+    other!.workspaceIds.push(workspaceId)
+    other!.memberIds[workspaceId] = 'mb_91'
+    expect((await fetchDto<WorkspaceDto>(`/workspaces/${workspaceId}`)).member_id).toBe('mb_91')
+    const before = snapshot()
+    const refused = await failure(replyTo('th_90', '남의 대화', workspaceId))
+    expect([refused.status, refused.code]).toEqual([403, 'FORBIDDEN'])
     expect(snapshot()).toEqual(before)
   })
 
