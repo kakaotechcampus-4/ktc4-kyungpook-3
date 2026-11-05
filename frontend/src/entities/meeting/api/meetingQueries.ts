@@ -1,12 +1,12 @@
 import { queryOptions } from '@tanstack/react-query'
 import { request } from '@/shared/api/client'
-import { createWorkspaceMismatchError } from '@/shared/api/errors'
+import { createWorkspaceMismatchError, isWorkspaceMismatch } from '@/shared/api/errors'
 import { STALE_TIME } from '@/shared/api/queryClient'
 import { workspaceKey } from '@/shared/api/queryKeys'
 import type { ListDto } from '@/shared/types/api/envelope'
 import type { MeetingDto, MeetingSummaryDto } from '@/shared/types/api/meeting'
 import { toMeeting, toMeetingSummary } from '../model/mapper'
-import type { MeetingSummary } from '../model/types'
+import type { Meeting, MeetingSummary } from '../model/types'
 
 /** 회의 캐시 전체의 접두어. 정리가 끝나면 이 key 로 목록·상세를 함께 무효화한다 */
 export function meetingKeys(workspaceId: string) {
@@ -59,4 +59,19 @@ export function meetingDetailQueryOptions(workspaceId: string, meetingId: string
       return toMeeting(dto)
     },
   })
+}
+
+/**
+ * 화면이 그려도 되는 상세. 다른 공간의 회의라는 답을 받았으면 받아 둔 정상 상세가 있어도 그리지 않는다 —
+ * 그 회의를 이 공간에서 다루는 화면·후속 조회를 끈다. 403·404 뒤 받아 둔 상세는 그대로 둔다(기존 동작).
+ * 처리 추적기는 이것을 쓰지 않는다. 받아 둔 상태로 계속 지켜본다(trackerOutcome)
+ */
+export function viewableMeeting({
+  data,
+  error,
+}: {
+  data: Meeting | undefined
+  error: unknown
+}): Meeting | null {
+  return data === undefined || isWorkspaceMismatch(error) ? null : data
 }

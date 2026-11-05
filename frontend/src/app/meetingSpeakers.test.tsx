@@ -4,6 +4,7 @@ import { http } from 'msw'
 import type { MockInstance } from 'vitest'
 import { clearTrackedMeetings, trackMeeting, useMeetingTrackerStore } from '@/entities/meeting'
 import { SPEAKERS_NEEDED_ACTION } from '@/features/meeting-processing'
+import { workspaceKey } from '@/shared/api/queryKeys'
 import { paths } from '@/shared/config/routes'
 import { db, replaceDb } from '@/shared/mock/db'
 import { fail, ok } from '@/shared/mock/envelope'
@@ -355,6 +356,31 @@ describe('화자 지정 화면 — 팀원·대기 아님', () => {
     replaceDb(createSpeakerScenarioDb('meeting-speakers'))
     renderApp(paths.meetingSpeakers('ws_01', 'mt_404'))
     expect(await screen.findByRole('heading', { name: '이 회의를 볼 수 없어요' })).toBeVisible()
+  })
+
+  it('지정 폼을 연 뒤 다시 받은 상세가 다른 공간이면 볼 수 없다고 바꾸고 화자 API 를 다시 묻지 않는다 (#349)', async () => {
+    const app = await openSpeakers()
+    server.use(
+      http.get(`/api/v1/meetings/${AWAITING_MEETING_ID}`, () => {
+        const meeting = db.meetings.find(({ meeting_id }) => meeting_id === AWAITING_MEETING_ID)!
+        return ok({ ...meeting, workspace_id: 'ws_02' })
+      }),
+    )
+    await act(() =>
+      app.queryClient.invalidateQueries({
+        queryKey: workspaceKey('ws_01', 'meetings', 'detail', AWAITING_MEETING_ID),
+      }),
+    )
+    expect(await screen.findByRole('heading', { name: '이 회의를 볼 수 없어요' })).toBeVisible()
+    expect(screen.queryByRole('button', { name: /지정하고 정리 이어 가기/ })).toBeNull()
+    const log = recordRequests()
+    await act(() =>
+      app.queryClient.invalidateQueries({
+        queryKey: workspaceKey('ws_01', 'meetings', 'speakers', AWAITING_MEETING_ID),
+      }),
+    )
+    await act(() => new Promise((resolve) => setTimeout(resolve, 150)))
+    expect(log.started.filter(({ path }) => path.includes('/speakers'))).toEqual([])
   })
 
   it('상세가 다른 공간의 회의면 볼 수 없다고 안내하고 화자 API 를 부르지 않는다 (#349)', async () => {

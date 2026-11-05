@@ -4,6 +4,7 @@ import {
   meetingDetailQueryOptions,
   meetingFailure,
   speakerViewQueryOptions,
+  viewableMeeting,
 } from '@/entities/meeting'
 import type { Meeting, MeetingStatus, SpeakerView } from '@/entities/meeting'
 import { memberListQueryOptions } from '@/entities/member'
@@ -57,7 +58,7 @@ function useSpeakerScreen(
 ): SpeakerScreen {
   const role = useMemberWorkspace(workspaceId)?.role ?? null
   const detail = useQuery(meetingDetailQueryOptions(workspaceId, meetingId))
-  const meeting = detail.data ?? null
+  const meeting = viewableMeeting(detail)
   const awaiting = meeting?.status === 'awaiting_speakers'
   const view = useQuery({
     ...speakerViewQueryOptions(workspaceId, meetingId),

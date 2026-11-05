@@ -3,7 +3,7 @@ import { useState } from 'react'
 import type { ReactNode } from 'react'
 import { pendingApprovalListQueryOptions } from '@/entities/approval'
 import { extractionQueryOptions } from '@/entities/extraction'
-import { meetingDetailQueryOptions, meetingFailure } from '@/entities/meeting'
+import { meetingDetailQueryOptions, meetingFailure, viewableMeeting } from '@/entities/meeting'
 import type { Meeting, MeetingSummary } from '@/entities/meeting'
 import { minutesQueryOptions } from '@/entities/minutes'
 import type { Minutes } from '@/entities/minutes'
@@ -151,7 +151,7 @@ export function MinutesDetail({
   keepSkeleton = false,
 }: MinutesDetailProps) {
   const detail = useQuery(meetingDetailQueryOptions(workspaceId, meetingId))
-  const meeting = detail.data ?? null
+  const meeting = viewableMeeting(detail)
   const held = holding ? selected : null
   // 기다리는 동안의 자리. 고른 회의의 요약을 알면 머리 뼈대 대신 그 요약이다 (UX1-M02)
   const loading = (

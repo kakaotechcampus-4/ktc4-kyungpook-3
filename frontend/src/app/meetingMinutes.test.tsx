@@ -2,6 +2,7 @@ import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http } from 'msw'
 import { clearTrackedMeetings, meetingListQueryOptions } from '@/entities/meeting'
+import { workspaceKey } from '@/shared/api/queryKeys'
 import { paths } from '@/shared/config/routes'
 import { db, replaceDb } from '@/shared/mock/db'
 import { fail, list, ok } from '@/shared/mock/envelope'
@@ -369,6 +370,31 @@ describe('회의록 상세 (U5-3)', () => {
 })
 
 describe('공간 확인 (U5-4)', () => {
+  it('받아 둔 회의록이 있어도 다시 받은 상세가 다른 공간이면 볼 수 없는 회의로 바꾸고 본문·추출을 다시 묻지 않는다 (#349)', async () => {
+    const app = renderApp(paths.meetings('ws_01', 'mt_09'))
+    await screen.findByRole('heading', { level: 2, name: '3주차 정기회의' })
+    server.use(
+      http.get('/api/v1/meetings/mt_09', () => {
+        const meeting = db.meetings.find(({ meeting_id }) => meeting_id === 'mt_09')!
+        return ok({ ...meeting, workspace_id: 'ws_02' })
+      }),
+    )
+    await act(() =>
+      app.queryClient.invalidateQueries({
+        queryKey: workspaceKey('ws_01', 'meetings', 'detail', 'mt_09'),
+      }),
+    )
+    expect(
+      await screen.findByRole('heading', { level: 2, name: '이 회의를 볼 수 없어요' }),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { level: 2, name: '3주차 정기회의' })).toBeNull()
+    const log = recordRequests()
+    await act(() => app.queryClient.invalidateQueries({ queryKey: workspaceKey('ws_01') }))
+    await settle(150)
+    expect(minutesRequests(log)).toEqual([])
+    expect(extractionRequests(log)).toEqual([])
+  })
+
   it('회의 상세의 공간이 URL 과 다르면 본문·추출 요청이 0회다', async () => {
     // 다른 공간(ws_02)의 정리 끝난 회의. 상세는 봇 경로라 경로에 공간이 없어 답이 온다
     db.meetings.push({ ...db.meetings[1], meeting_id: 'mt_50', workspace_id: 'ws_02' })

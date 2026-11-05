@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
-import { meetingDetailQueryOptions } from '@/entities/meeting'
+import { meetingDetailQueryOptions, viewableMeeting } from '@/entities/meeting'
 import { minutesQueryOptions } from '@/entities/minutes'
 
 /**
@@ -36,12 +36,13 @@ function useMinutesSettled(workspaceId: string, meetingId: string | null): boole
     ...meetingDetailQueryOptions(workspaceId, meetingId ?? ''),
     enabled: meetingId !== null,
   })
-  const needsMinutes = detail.data?.status === 'done'
+  const meeting = viewableMeeting(detail)
+  const needsMinutes = meeting?.status === 'done'
   const minutes = useQuery({
-    ...minutesQueryOptions(workspaceId, detail.data?.id ?? ''),
+    ...minutesQueryOptions(workspaceId, meeting?.id ?? ''),
     enabled: needsMinutes,
   })
-  if (detail.data === undefined) return detail.error !== null
+  if (meeting === null) return detail.error !== null
   if (!needsMinutes) return true
   return minutes.data !== undefined || minutes.error !== null
 }

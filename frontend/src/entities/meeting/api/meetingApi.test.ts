@@ -2,12 +2,18 @@ import { QueryClient } from '@tanstack/react-query'
 import { File as NodeFile } from 'node:buffer'
 import { http } from 'msw'
 import type { UploadProgress } from '@/shared/api/client'
+import { ApiError, createWorkspaceMismatchError } from '@/shared/api/errors'
 import { STALE_TIME } from '@/shared/api/queryClient'
 import { db } from '@/shared/mock/db'
 import { fail, ok } from '@/shared/mock/envelope'
 import { server } from '@/shared/mock/server'
 import type { UploadMeetingInput } from '../model/types'
-import { meetingDetailQueryOptions, meetingKeys, meetingListQueryOptions } from './meetingQueries'
+import {
+  meetingDetailQueryOptions,
+  meetingKeys,
+  meetingListQueryOptions,
+  viewableMeeting,
+} from './meetingQueries'
 import { toUploadForm, uploadMeeting } from './uploadMeeting'
 
 // 화면이 넘기는 File 은 브라우저(jsdom) File 이다. 전역을 바꾸기 전에 잡아 둔다
@@ -121,6 +127,19 @@ describe('meetingDetailQueryOptions', () => {
       id: 'mt_10',
       workspaceId: 'ws_01',
     })
+  })
+})
+
+describe('viewableMeeting', () => {
+  it('다른 공간의 회의라는 답이면 받아 둔 상세가 있어도 그리지 않고, 403·404 뒤에는 받아 둔 상세를 둔다 (#349)', async () => {
+    const meeting = await new QueryClient().fetchQuery(meetingDetailQueryOptions('ws_01', 'mt_10'))
+    const forbidden = new ApiError({ code: 'FORBIDDEN', message: 'x', details: null }, 403)
+    expect(viewableMeeting({ data: meeting, error: null })).toBe(meeting)
+    expect(viewableMeeting({ data: undefined, error: null })).toBeNull()
+    expect(
+      viewableMeeting({ data: meeting, error: createWorkspaceMismatchError('ws_01', 'ws_02') }),
+    ).toBeNull()
+    expect(viewableMeeting({ data: meeting, error: forbidden })).toBe(meeting)
   })
 })
 

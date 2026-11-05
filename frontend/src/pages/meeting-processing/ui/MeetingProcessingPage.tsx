@@ -8,6 +8,7 @@ import {
   PROCESSING_STEP_COUNT,
   processingSteps,
   trackMeeting,
+  viewableMeeting,
 } from '@/entities/meeting'
 import type { Meeting, ProcessingStep } from '@/entities/meeting'
 import { useMemberWorkspace } from '@/entities/workspace'
@@ -82,7 +83,7 @@ function MeetingProcessing({ workspaceId, meetingId }: { workspaceId: string; me
     ...meetingListQueryOptions(workspaceId),
     select: (meetings) => meetings.find(({ id }) => id === meetingId) ?? null,
   })
-  const meeting = detail.data ?? null
+  const meeting = viewableMeeting(detail)
   const watched = meeting?.status === 'processing' || meeting?.status === 'awaiting_speakers'
   const isPm = useMemberWorkspace(workspaceId)?.role === 'pm'
 

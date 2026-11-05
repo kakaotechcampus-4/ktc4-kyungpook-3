@@ -773,6 +773,20 @@ describe('상세가 다른 공간의 회의라고 답할 때 (#349)', () => {
       return ok({ ...meeting, workspace_id: 'ws_02' })
     })
 
+  it('처리 화면은 받아 둔 정리 중 상태가 있어도 다시 받은 상세가 다른 공간이면 볼 수 없는 회의로 바꾼다', async () => {
+    const app = await openProcessing()
+    server.use(otherWorkspace())
+    await act(() =>
+      app.queryClient.invalidateQueries({
+        queryKey: workspaceKey('ws_01', 'meetings', 'detail', 'mt_10'),
+      }),
+    )
+    expect(
+      await screen.findByRole('heading', { name: '이 회의를 볼 수 없어요' }),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: PROCESSING_HEADING })).toBeNull()
+  })
+
   it('받아 둔 상태가 없으면 알림 없이 추적을 끝내고 더 묻지 않는다', async () => {
     fakeIntervals()
     server.use(otherWorkspace())

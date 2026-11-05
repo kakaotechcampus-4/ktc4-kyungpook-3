@@ -7,13 +7,18 @@ import { extractionQueryOptions } from '@/entities/extraction'
 import type { Extraction, ExtractionItem } from '@/entities/extraction'
 import { integrationsQueryOptions } from '@/entities/integration'
 import type { Integrations } from '@/entities/integration'
-import { meetingDetailQueryOptions, meetingListQueryOptions } from '@/entities/meeting'
+import {
+  meetingDetailQueryOptions,
+  meetingListQueryOptions,
+  viewableMeeting,
+} from '@/entities/meeting'
 import type { Meeting, MeetingSummary } from '@/entities/meeting'
 import { memberListQueryOptions } from '@/entities/member'
 import type { Member } from '@/entities/member'
 import { taskListQueryOptions } from '@/entities/task'
 import type { Task } from '@/entities/task'
 import { NOTION_SYNC_POLL_MS } from '@/features/task-notion-sync'
+import { isWorkspaceMismatch } from '@/shared/api/errors'
 import { queryView } from '@/shared/lib/query-view'
 import { hasPendingSync, latestDoneMeeting, recentAutoItems } from '../lib/dashboard'
 
@@ -116,7 +121,7 @@ export function useDashboardData(workspaceId: string, isPm: boolean): DashboardD
     ...meetingDetailQueryOptions(workspaceId, latest?.id ?? ''),
     enabled: latest !== undefined && latest !== null,
   })
-  const extractionId = detail.data?.extractionId ?? null
+  const extractionId = viewableMeeting(detail)?.extractionId ?? null
   const extraction = useQuery({
     ...extractionQueryOptions(workspaceId, extractionId ?? ''),
     enabled: extractionId !== null,
@@ -137,7 +142,14 @@ export function useDashboardData(workspaceId: string, isPm: boolean): DashboardD
   let recent: RecentSource | null | undefined
   if (latest === undefined || latest === null) recent = latest
   else {
-    const detailState = loadable(detail)
+    // 다른 공간의 회의라는 답은 받아 둔 상세가 있어도 갱신 실패가 아니라 오류다 — 그 추출을 이 공간에 그리지 않는다
+    const detailState: Loadable<Meeting> = isWorkspaceMismatch(detail.error)
+      ? {
+          status: 'error',
+          error: detail.error,
+          retry: () => void detail.refetch({ cancelRefetch: false }),
+        }
+      : loadable(detail)
     recent = {
       meeting: latest,
       detail: detailState,
