@@ -2,7 +2,7 @@
 
 Elice 전사가 멈추면 운영 워커를 평소 꺼 둔 GPU 서버로 사람이 옮기고, 끝나면 되돌린 뒤 서버를 끈다.
 
-이 절차는 아직 리허설을 하지 않았다. 실제 AWS 와 운영 서버에서 한 번도 돌려 보지 않았고, 스크립트는 가짜 `aws` 로만 시험했다. 처음 쓰는 날에는 명령이 그대로 통하지 않을 수 있다고 보고 시간을 잡는다.
+`setup`, `on`, `off` 와 운영 서버에서 GPU 서버를 부르는 데까지는 2026-11-05 에 한 번 돌렸다([측정](../../stt/eval/results/2026-11-05-gpu-fallback-prod/README.md)). 전환 4단계의 drop-in 과 워커 재시작, 재처리, 복귀는 아직 리허설하지 않았다. 처음 쓰는 날에는 그 단계가 그대로 통하지 않을 수 있다고 보고 시간을 잡는다.
 
 서버는 g4dn.xlarge 의 vLLM, whisper-large-v3 이고 측정값은 [결과 문서](../../stt/eval/results/2026-11-04-gpu-serving/README.md), 판단은 [결정 0039](../../docs/basis_for_decision/ai/2026-11-04-0039-gpu-stt-server.md) 에 있다. 서비스 전체의 복구 절차는 [#359](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/359) 에서 다룬다.
 
@@ -25,10 +25,10 @@ ai/deploy/gpu-stt/gpu-stt.sh setup <운영 서버 공인 IP>
 ```bash
 cd ~/Desktop/kakaotech4/secrets/gpu-stt
 . ./env
-PROD='ssh <운영 서버>'
-$PROD "sudo sh -c 'mkdir -p /etc/mm; umask 022; cat > /etc/mm/gpu-stt-ca.pem'" < cert.pem
+prod() { ssh <운영 서버> "$@"; }
+prod "sudo sh -c 'mkdir -p /etc/mm; umask 022; cat > /etc/mm/gpu-stt-ca.pem'" < cert.pem
 printf 'ELICE_STT_BASE_URL=https://%s:8000\nELICE_API_KEY=%s\nELICE_STT_CA_BUNDLE=/etc/mm/gpu-stt-ca.pem\n' \
-  "$EIP" "$(cat api.key)" | $PROD "sudo sh -c 'umask 077; cat > /etc/mm/gpu-stt.env'"
+  "$EIP" "$(cat api.key)" | prod "sudo sh -c 'umask 077; cat > /etc/mm/gpu-stt.env'"
 ```
 
 인증서 파일은 워커 프로세스가 직접 여니 모두 읽을 수 있어야 한다. `gpu-stt.env` 는 systemd 가 root 로 읽으니 root 만 읽으면 된다. 나중에 `setup` 을 다시 돌렸을 때 인증서를 새로 만들었다고 나오면 고정 IP 가 바뀐 것이니 두 파일을 다시 옮긴다.
@@ -52,7 +52,7 @@ systemctl cat mm-worker | grep MM_STT_BACKEND
    ai/deploy/gpu-stt/gpu-stt.sh on
    ```
 
-2. 운영 서버에서 200 이 올 때까지 확인한다. 보안 그룹이 운영 서버만 열어 두어 Mac 에서는 닿지 않는다. 콜드 스타트는 5.0분이었고 한 번 잰 값이다.
+2. 운영 서버에서 200 이 올 때까지 확인한다. 보안 그룹이 운영 서버만 열어 두어 Mac 에서는 닿지 않는다. `on` 부터 첫 200 까지 5.6분 걸렸고 한 번 잰 값이다.
 
    ```bash
    curl -s -o /dev/null -w '%{http_code}\n' --cacert /etc/mm/gpu-stt-ca.pem https://<고정 IP>:8000/health
@@ -88,7 +88,7 @@ sudo systemctl daemon-reload
 sudo systemctl restart mm-worker
 ```
 
-Mac 에서 끄고 0대인지 확인한다. `off` 는 남은 인스턴스가 있으면 실패로 끝난다.
+Mac 에서 끄고 0대인지 확인한다. `off` 는 남은 인스턴스가 있으면 실패로 끝난다. 인스턴스가 사라질 때까지 기다려서 약 7분 걸렸다.
 
 ```bash
 ai/deploy/gpu-stt/gpu-stt.sh off
