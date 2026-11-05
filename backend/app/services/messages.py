@@ -39,6 +39,7 @@ from app.models import (
     Task,
     ThreadMessage,
     Workspace,
+    WorkspaceMessageSettings,
 )
 from app.services import scheduler
 
@@ -442,10 +443,74 @@ def cancel_bundle(db: Session, bundle: ReminderBundle, *, now: datetime) -> Remi
     return bundle
 
 
+def _has_pm_reminder(bundle_id):
+    """묶음에 PM 이 직접 넣은 재촉이 남아 있는지. 재촉 제안을 꺼도 이런 묶음은 PM 이 보내려던 것이다."""
+    return (
+        select(Reminder.reminder_id)
+        .where(
+            Reminder.bundle_id == bundle_id,
+            Reminder.origin == ReminderOrigin.PM,
+            Reminder.status == ReminderStatus.SCHEDULED,
+        )
+        .exists()
+    )
+
+
+def auto_approves(db: Session, settings, bundle: ReminderBundle) -> bool:
+    """이 묶음이 발송 시각에 자동 승인되는지. _auto_approve_due 와 같은 조건이다. settings 는 MessageSettings."""
+    if not settings.reminder_auto_approve or settings.auto_approve_since is None:
+        return False
+    if utc(bundle.scheduled_at) < utc(settings.auto_approve_since):
+        return False
+    return settings.due_reminder or bool(db.scalar(select(_has_pm_reminder(bundle.bundle_id))))
+
+
+def _auto_approve_due(db: Session, now: datetime, exclude: list[str]) -> None:
+    """자동 승인이 켜진 워크스페이스의 승인 전 묶음 중 켠 뒤에 시각이 된 것을 승인한다. 초안 버전·미래 시각은 보지 않는다.
+
+    재촉 제안(due_reminder)이 꺼져 있으면 끄기 전에 만든 스케줄러 제안만 있는 묶음은 승인하지 않는다.
+    PM 재촉이 섞인 묶음은 스케줄러 제안을 취소해 빼고, PM 재촉만으로 문구를 다시 만든 뒤 승인한다.
+    """
+    rows = db.execute(
+        select(ReminderBundle, WorkspaceMessageSettings.due_reminder)
+        .join(
+            WorkspaceMessageSettings,
+            WorkspaceMessageSettings.workspace_id == ReminderBundle.workspace_id,
+        )
+        .where(
+            ReminderBundle.status == ReminderStatus.SCHEDULED,
+            ReminderBundle.approved_at.is_(None),
+            ReminderBundle.scheduled_at <= now,
+            ReminderBundle.bundle_id.notin_(exclude),
+            WorkspaceMessageSettings.reminder_auto_approve.is_(True),
+            ReminderBundle.scheduled_at >= WorkspaceMessageSettings.auto_approve_since,
+            or_(
+                WorkspaceMessageSettings.due_reminder.is_(True),
+                _has_pm_reminder(ReminderBundle.bundle_id),
+            ),
+        )
+        .with_for_update(skip_locked=True, of=ReminderBundle)
+    ).all()
+    for bundle, due_reminder in rows:
+        if not due_reminder:
+            for reminder in bundle_reminders(db, bundle.bundle_id):
+                if reminder.origin == ReminderOrigin.SCHEDULER:
+                    cancel_reminder(db, reminder, now=now)
+            if bundle.status != ReminderStatus.SCHEDULED:
+                continue
+        bundle.approved_at = now
+        bundle.approved_by = None
+        # approve_bundle 과 같이 오던 AI 초안을 닫는다. 보낸 묶음이 초안 대기로 남지 않게 한다.
+        bundle.draft_status = DraftStatus.DONE
+        bundle.updated_at = now
+    db.flush()
+
+
 def dispatch_due(db: Session, now: datetime) -> list[ThreadMessage]:
     """승인됐고 발송 시각이 된 묶음마다 봇 메시지 한 통을 만든다. 문구는 묶음 문구 그대로다. 탈퇴한 팀원의 묶음은 취소한다."""
     now = utc(now)
     unchecked = scheduler.before_dispatch(db, now)
+    _auto_approve_due(db, now, unchecked)
     due = db.scalars(
         select(ReminderBundle)
         .where(
