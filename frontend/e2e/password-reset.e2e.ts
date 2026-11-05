@@ -34,7 +34,7 @@ test('재설정 메일 요청 → 모의 메일함의 링크 → 새 비밀번�
   )
   await page.getByLabel('이메일').fill('pm@example.com')
   await page.getByLabel('비밀번호', { exact: true }).fill('newpass123')
-  await page.getByRole('button', { name: '로그인' }).click()
+  await page.getByRole('button', { name: '로그인', exact: true }).click()
   await expect(page).toHaveURL('/workspaces')
 })
 
