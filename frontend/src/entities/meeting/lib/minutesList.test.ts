@@ -27,16 +27,22 @@ describe('toMinutesList (U5-1, U5-2)', () => {
     expect(list.inProgress).toEqual([])
   })
 
-  it('정리 중·회의 중은 상태 항목으로 따로 두고, 실패 회의는 어디에도 없다', () => {
+  it('정리 중·화자 지정 대기·회의 중은 상태 항목으로 따로 두고, 실패 회의는 어디에도 없다', () => {
     const list = toMinutesList([
       meeting('mt_done', '2026-09-01T00:00:00Z', 'done'),
       meeting('mt_processing', '2026-09-03T00:00:00Z', 'processing'),
+      meeting('mt_awaiting', '2026-09-02T00:00:00Z', 'awaiting_speakers'),
       meeting('mt_failed', '2026-09-04T00:00:00Z', 'failed'),
       meeting('mt_recording', '2026-09-05T00:00:00Z', 'recording'),
     ])
 
     expect(list.minutes.map(({ id }) => id)).toEqual(['mt_done'])
-    expect(list.inProgress.map(({ id }) => id)).toEqual(['mt_recording', 'mt_processing'])
+    expect(list.inProgress.map(({ id }) => id)).toEqual([
+      'mt_recording',
+      'mt_processing',
+      'mt_awaiting',
+    ])
+    expect(list.expired).toEqual([])
   })
 })
 
@@ -54,6 +60,9 @@ describe('latestMinutesId (D-106)', () => {
   it('정리 끝난 회의가 없으면 null 이다', () => {
     expect(latestMinutesId([])).toBeNull()
     expect(latestMinutesId([meeting('mt_10', '2026-09-18T00:00:00Z', 'processing')])).toBeNull()
+    expect(
+      latestMinutesId([meeting('mt_11', '2026-09-19T00:00:00Z', 'awaiting_speakers')]),
+    ).toBeNull()
   })
 })
 
