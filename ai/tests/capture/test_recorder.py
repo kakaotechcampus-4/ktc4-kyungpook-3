@@ -1040,6 +1040,28 @@ def test_stage_report_failure_does_not_change_result(tmp_path):
         assert json.loads(path.read_text(encoding="utf-8"))["status"] == "handed_off"
 
 
+def test_stage_report_goes_out_after_the_progress_note_and_before_the_ops_stage_opens(tmp_path, monkeypatch):
+    """보고 HTTP 시간이 ops 단계 시간에 들어가지 않는다. 진행 표시 -> BE 보고 -> ops.begin 순서."""
+    events = []
+    real_begin = R.ops_record.OpsRun.begin
+    monkeypatch.setattr(R.ops_record.OpsRun, "begin",
+                        lambda self, name: (events.append(("ops", name)), real_begin(self, name))[1])
+    fake = FakeBe()
+    real_request = fake.request
+
+    def spy(method, url, **kw):
+        if method == "PATCH" and url.endswith("/stage"):
+            events.append(("report", kw["json"]["stage"]))
+        return real_request(method, url, **kw)
+
+    fake.request = spy
+    rec, path, manifest = _session(tmp_path)
+    _run(rec, manifest, tmp_path, extractor=_extractor({}), handoff=_be(fake),
+         progress=lambda name, info: events.append(("tell", name)) if info is None else None)   # 단계 시작 알림만
+    for stage in ("stt", "sources", "extract", "handoff"):
+        assert [e[0] for e in events if e[1] == stage] == ["tell", "report", "ops"], stage
+
+
 def test_resume_from_extract_reports_only_remaining_stages(tmp_path):
     rec, path, manifest = _session(tmp_path)
     fake = FakeBe()

@@ -637,10 +637,13 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
             print(f"[progress] 세션 {manifest.get('session')} 진행 표시 실패: {type(e).__name__}: {e}", flush=True)
 
     def begin(name: str) -> None:
-        ops.begin(name)
+        # 순서: 진행 표시 -> BE 보고 -> ops 단계 열기. 앞 단계는 finish 의 ops.end() 로 이미 닫혔고,
+        # ops.begin 앞에서 보고하므로 보고 HTTP 시간은 어느 ops 단계 시간에도 들어가지 않는다.
+        # 진행 표시가 먼저라 BE 지연에 끌려가지 않는다.
         tell(name)
         if handoff is not None:
             handoff.report_stage(manifest, name)       # BE 진행 표시. 실패는 report_stage 가 삼킨다
+        ops.begin(name)
 
     def save() -> None:
         save_manifest(path, manifest)
