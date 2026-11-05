@@ -425,6 +425,27 @@ describe('범위 변경 승인 (#205)', () => {
     expect(scope.compareDocumentPosition(changes) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
+  it('근거 시각은 회의 출처대로다 — 녹음 회의는 녹음 위치, 채팅 회의는 메시지를 쓴 서울 시각 (#397)', async () => {
+    await openApproval('ap_05', '태스크 변경 확인')
+    const recording = within(screen.getByRole('region', { name: '범위 변경' })).getByRole(
+      'figure',
+      { name: '근거' },
+    )
+    await waitFor(() => expect(recording).toHaveTextContent('화자 박민수 · 시각 12:34'))
+  })
+
+  it('채팅 회의에서 나온 범위 변경의 근거 시각은 실제 작성 시각이다 (#397)', async () => {
+    const proposal = db.approvals.find(({ approval_id }) => approval_id === 'ap_05')
+    if (proposal === undefined) throw new Error('ap_05 가 시나리오에 없다')
+    proposal.payload = { ...proposal.payload, meeting_id: 'mt_08', evidence_at_ms: 34_080_000 }
+    await openApproval('ap_05', '태스크 변경 확인')
+    const evidence = within(screen.getByRole('region', { name: '범위 변경' })).getByRole('figure', {
+      name: '근거',
+    })
+    await waitFor(() => expect(evidence).toHaveTextContent('화자 박민수 · 시각 09/11 18:40'))
+    expect(evidence).not.toHaveTextContent('9:28:00')
+  })
+
   it('바꿀 필드가 함께 오면 범위 변경과 비교표를 모두 보인다', async () => {
     await openApproval('ap_06', '태스크 변경 확인')
     expect(
