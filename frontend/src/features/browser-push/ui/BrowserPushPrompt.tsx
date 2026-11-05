@@ -24,7 +24,10 @@ export function BrowserPushPrompt() {
   return <PromptForUser key={userId} userId={userId} />
 }
 
-/** 닫은 사람에게는 푸시 상태를 서버에 묻지도 않는다 — 띠를 그릴 때만 `useBrowserPush` 를 붙인다 */
+/**
+ * 닫은 사람에게는 푸시 상태를 서버에 묻지도 않는다 — 띠를 그릴 때만 `useBrowserPush` 를 붙인다.
+ * 닫음 기록은 띠를 보일지만 정한다. 기존 구독을 지금 계정으로 옮기는 일은 로그인 세션 칸(`useSyncPushSubscription`)이 한다
+ */
 function PromptForUser({ userId }: { userId: string }) {
   const [closed, setClosed] = useState(() => isPushPromptClosed(userId))
   if (closed) return null

@@ -158,12 +158,13 @@ describe('리마인드 대화 위 알림 띠 (#411)', () => {
     expect(db.push.subscriptions).toEqual([{ endpoint: ENDPOINT, keys: KEYS, user_id: 'us_01' }])
   })
 
-  it('이미 켜 둔 기기는 띠도 알림도 없고, 다음에 열 때는 푸시 상태를 묻지 않는다', async () => {
+  it('이미 켜 둔 기기는 띠도 알림도 없고, 다음에 열 때 띠는 푸시 상태를 묻지 않는다', async () => {
     db.push.publicKey = 'AQID'
     installPushBrowser({ permission: 'granted', subscribed: true })
     const bodies = recordRequestBodies('POST', '/push/subscriptions')
     const first = await openThread()
-    await waitFor(() => expect(bodies).toHaveLength(1))
+    // 로그인 세션의 계정 동기화가 한 번, 띠의 상태 확인이 한 번 보낸다
+    await waitFor(() => expect(bodies).toHaveLength(2))
     await waitFor(() =>
       expect(window.localStorage.getItem('browser-push-prompt-closed:us_01')).not.toBeNull(),
     )
@@ -174,7 +175,10 @@ describe('리마인드 대화 위 알림 띠 (#411)', () => {
     const log = recordRequests()
     await openThread()
     expect(band()).toBeNull()
-    expect(pushRequests(log)).toEqual([])
+    // 공개키 조회 없이 로그인 세션의 계정 동기화 하나뿐이다
+    await waitFor(() =>
+      expect(pushRequests(log)).toEqual([{ method: 'POST', path: '/push/subscriptions' }]),
+    )
   })
 
   it('iPhone 의 Safari 탭이면 홈 화면 앱 안내와 닫기만 있다', async () => {

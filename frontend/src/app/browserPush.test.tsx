@@ -116,7 +116,11 @@ describe('설정의 브라우저 푸시 (#330)', () => {
       expect(control).toHaveTextContent('이 기기에서 브라우저 알림을 받고 있어요.'),
     )
     expect(within(control).queryByRole('button')).toBeNull()
-    expect(bodies).toEqual([{ endpoint: ENDPOINT, keys: KEYS }])
+    // 로그인 세션의 계정 동기화가 한 번, 설정 화면의 상태 확인이 한 번 보낸다
+    expect(bodies).toEqual([
+      { endpoint: ENDPOINT, keys: KEYS },
+      { endpoint: ENDPOINT, keys: KEYS },
+    ])
     expect(db.push.subscriptions).toEqual([{ endpoint: ENDPOINT, keys: KEYS, user_id: 'us_01' }])
   })
 
@@ -145,7 +149,9 @@ describe('설정의 브라우저 푸시 (#330)', () => {
     await waitFor(() =>
       expect(control).toHaveTextContent('이 기기에서 브라우저 알림을 받고 있어요.'),
     )
+    // 실패한 켜기 한 번, 다시 연 앱의 로그인 세션 동기화와 설정 화면의 재등록이 한 번씩이다
     expect(bodies).toEqual([
+      { endpoint: ENDPOINT, keys: KEYS },
       { endpoint: ENDPOINT, keys: KEYS },
       { endpoint: ENDPOINT, keys: KEYS },
     ])
@@ -154,10 +160,12 @@ describe('설정의 브라우저 푸시 (#330)', () => {
 
   it('다시 열 때 재등록이 실패하면 켜졌다고 하지 않고 다시 시도할 수 있다 (#330 검증 2)', async () => {
     db.push.publicKey = 'AQID'
+    // 로그인 세션의 계정 동기화도 같은 등록을 보낸다. 다시 시도를 누르기 전까지는 모두 실패한다
+    let serverDown = true
     server.use(
-      http.post('/api/v1/push/subscriptions', () => fail('INTERNAL_ERROR', 'boom', 500), {
-        once: true,
-      }),
+      http.post('/api/v1/push/subscriptions', () =>
+        serverDown ? fail('INTERNAL_ERROR', 'boom', 500) : undefined,
+      ),
     )
     const user = userEvent.setup()
     installPushBrowser({ permission: 'granted', subscribed: true })
@@ -169,6 +177,7 @@ describe('설정의 브라우저 푸시 (#330)', () => {
     expect(control).not.toHaveTextContent('이 기기에서 브라우저 알림을 받고 있어요.')
     expect(db.push.subscriptions).toEqual([])
 
+    serverDown = false
     await user.click(within(control).getByRole('button', { name: '다시 시도' }))
     await waitFor(() =>
       expect(control).toHaveTextContent('이 기기에서 브라우저 알림을 받고 있어요.'),
