@@ -153,3 +153,24 @@ def test_confirm_twice_is_used(mdb):
 )
 def test_mask_email_edges(email, masked):
     assert svc.mask_email(email) == masked
+
+
+def test_confirm_expired_token_keeps_password(mdb):
+    user = _user(mdb)
+    raw = _raw(_request(mdb))
+    with pytest.raises(AppError) as exc:
+        svc.confirm_reset(mdb, raw, "new-pass-1", now=NOW + timedelta(minutes=31))
+    assert exc.value.details["reason"] == "expired"
+    mdb.refresh(user)
+    assert verify_password("old-pass-1", user.password_hash)
+
+
+def test_confirm_invalidated_token_keeps_password(mdb):
+    user = _user(mdb)
+    first = _request(mdb)
+    _request(mdb, NOW + timedelta(seconds=61))
+    with pytest.raises(AppError) as exc:
+        svc.confirm_reset(mdb, _raw(first), "new-pass-1", now=NOW + timedelta(seconds=62))
+    assert exc.value.details["reason"] == "invalid"
+    mdb.refresh(user)
+    assert verify_password("old-pass-1", user.password_hash)
