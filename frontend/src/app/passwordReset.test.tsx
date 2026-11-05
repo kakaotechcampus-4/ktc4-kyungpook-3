@@ -9,11 +9,14 @@ import { fail } from '@/shared/mock/envelope'
 import { applyScenario } from '@/shared/mock/scenarios'
 import { server } from '@/shared/mock/server'
 import { recordRequestBodies, recordRequests } from '@/shared/test/requests'
+import { ENDPOINT, KEYS, installPushBrowser } from './test/pushBrowser'
 import { renderApp } from './test/renderApp'
 
 /* #356 비밀번호 재설정. 제품과 같은 배선(renderApp)에 MSW + 실제 request 경로다 */
 
-const RESET_LINK = '/reset-password#token=mock-reset-normal'
+const TOKEN = 'mock-reset-normal'
+
+const RESET_LINK = `/reset-password#token=${TOKEN}`
 
 const VERIFY = '/auth/password-reset/verify'
 
@@ -153,6 +156,36 @@ describe('메일 링크의 토큰', () => {
     expect(log.started.some(({ path }) => path.includes('mock-reset-normal'))).toBe(false)
   })
 
+  it('토큰은 Query·Mutation 캐시의 key·hash·값 어디에도 남지 않고, 화면을 떠나면 확인 결과도 버린다', async () => {
+    const app = renderApp(RESET_LINK)
+    await screen.findByLabelText('새 비밀번호')
+
+    const cached = () =>
+      JSON.stringify([
+        app.queryClient
+          .getQueryCache()
+          .getAll()
+          .map(({ queryKey, queryHash, state }) => [queryKey, queryHash, state.data]),
+        app.queryClient
+          .getMutationCache()
+          .getAll()
+          .map(({ state }) => state.variables),
+      ])
+    expect(
+      app.queryClient.getQueryCache().find({ queryKey: ['password-reset-link'] }),
+    ).toBeDefined()
+    expect(cached()).not.toContain(TOKEN)
+
+    await userEvent.click(screen.getByRole('link', { name: '로그인' }))
+    await app.expectPath('/login')
+    await waitFor(() =>
+      expect(
+        app.queryClient.getQueryCache().find({ queryKey: ['password-reset-link'] }),
+      ).toBeUndefined(),
+    )
+    expect(cached()).not.toContain(TOKEN)
+  })
+
   it('확인한 링크의 가린 이메일로 어느 계정을 바꾸는지 보인다', async () => {
     renderApp(RESET_LINK)
     expect(await screen.findByLabelText('새 비밀번호')).toBeInTheDocument()
@@ -235,7 +268,9 @@ describe('새 비밀번호', () => {
   it('서버의 INVALID_REQUEST 는 새 비밀번호 칸의 오류다', async () => {
     server.use(
       http.post('/api/v1/auth/password-reset/confirm', () =>
-        fail('INVALID_REQUEST', 'bad', 400, { fields: ['new_password'] }),
+        fail('INVALID_REQUEST', 'bad', 400, {
+          fields: [{ loc: ['body', 'new_password'], msg: 'Value error' }],
+        }),
       ),
     )
     renderApp(RESET_LINK)
@@ -254,6 +289,11 @@ describe('새 비밀번호', () => {
     expect(await screen.findByRole('status')).toHaveTextContent(PASSWORD_CHANGED)
     await app.expectPath('/login')
     expect(app.queryClient.getQueryData(SESSION_QUERY_KEY)).toBeNull()
+    // 안내는 한 번 읽고 그 기록 항목의 state 를 지웠다. 새로고침·뒤로가기로 이 항목에 와도 다시 뜨지 않는다
+    await waitFor(() => expect(app.visited().at(-1)!.state).toBeNull())
+    expect(app.visitedActions().at(-1)).toBe('REPLACE')
+    expect(app.visited().at(-1)!.pathname).toBe('/login')
+    expect(screen.getByRole('status')).toHaveTextContent(PASSWORD_CHANGED)
 
     await userEvent.type(screen.getByLabelText('이메일'), 'pm@example.com')
     await userEvent.type(screen.getByLabelText('비밀번호'), 'newpass123')
@@ -270,11 +310,43 @@ describe('새 비밀번호', () => {
     await app.expectPath('/login')
     expect(app.queryClient.getQueryData(SESSION_QUERY_KEY)).toBeNull()
     expect(db.authenticated).toBe(false)
-    // RedirectIfAuthed 가 워크스페이스로 돌려보내지 않았다
+    // RedirectIfAuthed 가 워크스페이스로 돌려보내지 않았다. 마지막 /login 은 안내 state 를 지운 replace 다
     expect(app.visited().map(({ pathname }) => pathname)).toEqual([
       '/reset-password',
       '/reset-password',
       '/login',
+      '/login',
     ])
+  })
+
+  it.each([
+    ['서버 세션이 끊겨 구독 해제가 401', false],
+    ['구독 해제가 서버 오류 500', true],
+  ] as const)('바꾸면 이 브라우저의 푸시 구독을 푼다 — %s 여도', async (_, serverDown) => {
+    db.authenticated = true
+    db.push.subscriptions = [{ endpoint: ENDPOINT, keys: KEYS, user_id: 'us_01' }]
+    const browser = installPushBrowser({ permission: 'granted', subscribed: true })
+    if (serverDown)
+      server.use(
+        http.delete('/api/v1/push/subscriptions', () => fail('INTERNAL_ERROR', 'down', 500)),
+      )
+    const deleteStatuses: number[] = []
+    const onAnswer = ({ request, response }: { request: Request; response: Response }) => {
+      if (request.method === 'DELETE') deleteStatuses.push(response.status)
+    }
+    server.events.on('response:mocked', onAnswer)
+    onTestFinished(() => {
+      server.events.removeListener('response:mocked', onAnswer)
+    })
+    const app = renderApp(RESET_LINK)
+    await changePassword('newpass123')
+
+    expect(await screen.findByRole('status')).toHaveTextContent(PASSWORD_CHANGED)
+    await waitFor(() => expect(browser.subscription.unsubscribe).toHaveBeenCalledTimes(1))
+    expect(deleteStatuses).toEqual([serverDown ? 500 : 401])
+    expect(await browser.pushManager.getSubscription()).toBeNull()
+    // 그 401 이 세션 만료 처리로 다른 곳에 보내지 않았다
+    await app.expectPath('/login')
+    expect(app.queryClient.getQueryData(SESSION_QUERY_KEY)).toBeNull()
   })
 })

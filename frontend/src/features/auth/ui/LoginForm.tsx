@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { useLocation } from 'react-router'
 import { login } from '@/entities/user'
 import { paths } from '@/shared/config/routes'
 import { useAppForm } from '@/shared/lib/form'
@@ -10,9 +9,9 @@ import { Panel } from '@/shared/ui/panel'
 import { PasswordField } from '@/shared/ui/password-field'
 import { TextField } from '@/shared/ui/text-field'
 import { applyServerError } from '../lib/serverError'
-import { readLoginNotice } from '../model/passwordReset'
 import { loginSchema } from '../model/schemas'
 import { useEnterSession } from '../model/useEnterSession'
+import { useLoginNotice } from '../model/useLoginNotice'
 import { AlternativeAuth } from './AlternativeAuth'
 
 const FORM = 'flex flex-col gap-16'
@@ -41,8 +40,8 @@ export function LoginForm() {
   } = form
   const enterSession = useEnterSession()
   const [formError, setFormError] = useState<string | null>(null)
-  // 비밀번호를 바꾸고 온 경우의 안내. 이동 state 라 새로고침·다시 방문에는 없다
-  const notice = readLoginNotice(useLocation().state)
+  // 비밀번호를 바꾸고 온 경우의 안내. 한 번 읽고 기록에서 지운다 — 새로고침·뒤로가기에 다시 뜨지 않는다
+  const notice = useLoginNotice()
 
   const onSubmit = submit(async (values) => {
     setFormError(null)
