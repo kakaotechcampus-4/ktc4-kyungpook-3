@@ -1,6 +1,8 @@
 from datetime import date, datetime, timedelta, timezone
 from types import SimpleNamespace
 
+import pytest
+
 from capture.chat_poll import clean_text, message_dates, poll, to_transcript
 from capture.handoff import BeClient
 from capture.judge_path import JudgeAllFailed, JudgeOutput
@@ -86,6 +88,12 @@ class FakeExtract:
         if self.error:
             raise self.error
         return JudgeOutput(items=[dict(i) for i in self.items])
+
+
+@pytest.fixture(autouse=True)
+def _runs_dir(tmp_path, monkeypatch):
+    # 시도 기록(runs/chat_poll_attempt.json)이 실제 runs/ 에 남지 않게 한다
+    monkeypatch.setattr("capture.chat_poll.RUNS_DIR", tmp_path)
 
 
 def _env(cursor=None):
@@ -235,3 +243,46 @@ def test_dry_run_writes_nothing_to_be(tmp_path, monkeypatch):
                 now=NOW, cfg=CFG, dry_run=True) == 0
     assert all(m == "GET" for m, _ in _paths(fake))
     assert len(list(tmp_path.glob("chat_poll_*.json"))) == 1
+
+
+def test_repeated_failure_on_same_cursor_warns(capsys):
+    cursor = _at(hours=5)
+    msgs = [("1", "하은", False, _at(hours=4), "로그인 할게요")]
+    for _ in range(2):
+        fake, client = _env(cursor)
+        assert poll(FakeReader(msgs), client, FakeExtract(error=JudgeAllFailed("x")), now=NOW, cfg=CFG) == 1
+    err = capsys.readouterr().err
+    assert err.count("번째 시도") == 1 and "2번째 시도" in err
+
+
+def test_success_clears_attempt_record(tmp_path, capsys):
+    cursor = _at(hours=5)
+    msgs = [("1", "하은", False, _at(hours=4), "로그인 할게요")]
+    fake, client = _env(cursor)
+    poll(FakeReader(msgs), client, FakeExtract(error=JudgeAllFailed("x")), now=NOW, cfg=CFG)
+    fake, client = _env(cursor)
+    assert poll(FakeReader(msgs), client, FakeExtract(), now=NOW, cfg=CFG) == 0
+    assert not (tmp_path / "chat_poll_attempt.json").exists()
+    capsys.readouterr()   # 성공한 두 번째 실행도 시작할 때는 2번째 시도로 경고한다
+    fake, client = _env(cursor)
+    poll(FakeReader(msgs), client, FakeExtract(error=JudgeAllFailed("x")), now=NOW, cfg=CFG)
+    assert "번째 시도" not in capsys.readouterr().err
+
+
+def test_first_run_failure_is_reread_by_next_run():
+    # 커서가 없을 때 실패하면, 다음 날 실행도 now-24h 가 아니라 지난 실행의 시작점부터 읽는다
+    msgs = [("1", "하은", False, _at(hours=20), "로그인 할게요")]
+    fake, client = _env()
+    assert poll(FakeReader(msgs), client, FakeExtract(error=JudgeAllFailed("x")), now=NOW, cfg=CFG) == 1
+    fake, client = _env()
+    reader = FakeReader(msgs)
+    assert poll(reader, client, FakeExtract(), now=NOW + timedelta(days=1), cfg=CFG) == 0
+    assert reader.read_args[0] == NOW - timedelta(hours=24)
+    assert [s["text"] for s in fake.sources["m1"].values()] == ["로그인 할게요"]
+
+
+def test_dry_run_leaves_no_attempt_record(tmp_path):
+    fake, client = _env()
+    poll(FakeReader([("1", "하은", False, _at(hours=1), "글")]), client,
+         FakeExtract(error=JudgeAllFailed("x")), now=NOW, cfg=CFG, dry_run=True)
+    assert not (tmp_path / "chat_poll_attempt.json").exists()

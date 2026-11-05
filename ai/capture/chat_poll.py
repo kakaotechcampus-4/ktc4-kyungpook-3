@@ -16,7 +16,9 @@
 실행 (ai/ 디렉토리 안에서):
     python -m capture.chat_poll [--channel ID] [--dry-run]
 봇 토큰은 CHAT_POLL_BOT_TOKEN, 채널은 --channel 또는 DISCORD_CHANNEL_ID. --dry-run 은 BE 에 쓰지 않고 판단만 해 runs/ 에 저장한다.
-주의: 커서는 워크스페이스 단위(BE 의 가장 최근 done 채팅 회의)라 --channel 은 설정된 채널이어야 한다. 동시에 두 번 돌리면 제안이 중복되니 타이머가 도는 동안 손으로 돌리지 않는다.
+주의: 커서는 워크스페이스 단위(BE 의 가장 최근 done 채팅 회의)라 --channel 은 설정된 채널이어야 한다. 동시에 두 번 돌리면 제안이
+중복된다. 서버에서 손으로 돌릴 때는 `systemctl start mm-chat-poll.service` 를 쓴다(유닛의 flock 이 타이머 실행과 겹치지 않게 막는다).
+실행마다 runs/chat_poll_attempt.json 에 시도를 남기고 성공하면 지운다(_begin_attempt).
 """
 
 from __future__ import annotations
@@ -148,6 +150,40 @@ class DiscordReader:
         return self._run(go())
 
 
+ATTEMPT_FILE = "chat_poll_attempt.json"
+
+
+def _begin_attempt(cursor: datetime | None, after: datetime) -> datetime:
+    """이번 실행을 시도로 남기고 읽기 시작 시각을 돌려준다. 성공하면 _end_attempt 가 지운다.
+
+    실패한 회의는 커서에 들지 않아 같은 구간을 다시 읽는다. 매번 실패하는 구간이면 수집이 멈추므로, 같은 커서에서 두 번째
+    시도부터 경고한다. 시작할 때 남기므로 시간 제한으로 죽어 except 를 못 탄 실행도 센다.
+    커서가 없을 때(첫 실행) 실패하면 다음 실행의 now - initial_hours 가 그 구간을 건너뛰므로 지난 시작점부터 읽는다.
+    ponytail: 기록은 이 서버의 runs/ 에만 있다. 서버를 옮기거나 runs/ 를 지우면 센 횟수와 첫 실행 시작점을 잃는다.
+    """
+    path = RUNS_DIR / ATTEMPT_FILE
+    try:
+        prev = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        prev = None
+    key = cursor.isoformat() if cursor else None
+    count = 1
+    if isinstance(prev, dict) and prev.get("cursor") == key:
+        count = int(prev.get("count", 0)) + 1
+        if cursor is None and prev.get("after"):
+            after = min(after, datetime.fromisoformat(prev["after"]))
+    if count >= 2:
+        print(f"[chat] 경고: 같은 구간(커서 {key or '없음'}, {after:%Y-%m-%d %H:%M} 이후)에서 {count}번째 시도입니다. "
+              f"지난 {count - 1}번은 끝나지 못했습니다(failed 채팅 회의·journal 을 확인하세요).", file=sys.stderr)
+    RUNS_DIR.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"cursor": key, "after": after.isoformat(), "count": count}), encoding="utf-8")
+    return after
+
+
+def _end_attempt() -> None:
+    (RUNS_DIR / ATTEMPT_FILE).unlink(missing_ok=True)
+
+
 def poll(reader: ChannelReader, client, extract, *, now: datetime, cfg, dry_run: bool = False) -> int:
     """한 번 돈다. 종료 코드를 돌려준다(0 정상·읽을 것 없음, 1 실패)."""
     from capture.handoff import clean_item
@@ -156,6 +192,8 @@ def poll(reader: ChannelReader, client, extract, *, now: datetime, cfg, dry_run:
     ws = client.guild_workspace(reader.guild_id())
     cursor = client.chat_cursor(ws)
     after = cursor or now - timedelta(hours=cfg.chat_poll_initial_hours)
+    if not dry_run:
+        after = _begin_attempt(cursor, after)
     # 커서 뒤 ~ now 를 다 읽고 첫 사람 메시지부터 max_days 까지만 보낸다. 나머지는 커서가 나아간 다음 실행이 읽는다.
     # 읽는 구간을 먼저 자르면 그 안에 메시지가 없을 때 커서가 못 나아가 같은 빈 구간에서 영원히 멈춘다.
     # 이미 BE 에 있는 시각(커서 이하)과 now 이후는 뺀다. 리액션 줄도 원래 메시지 시각이라 같이 빠진다
@@ -171,6 +209,8 @@ def poll(reader: ChannelReader, client, extract, *, now: datetime, cfg, dry_run:
     transcript, names = to_transcript(messages)
     if not transcript.segments:
         print("새 메시지가 없습니다.")
+        if not dry_run:
+            _end_attempt()
         return 0
     kept = _kept(messages)
     first_at = kept[0][3]
@@ -224,6 +264,7 @@ def poll(reader: ChannelReader, client, extract, *, now: datetime, cfg, dry_run:
         except Exception as e2:  # noqa: BLE001
             print(f"[chat] 실패 통보도 실패: {e2}", file=sys.stderr)
         return 1
+    _end_attempt()
     print(f"[chat] 회의 {meeting_id} 등록, 항목 {len(out.items)}건, 판단 못 한 것 {len(out.failures)}건")
     return 0
 
