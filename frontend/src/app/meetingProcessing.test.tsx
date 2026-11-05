@@ -110,7 +110,7 @@ async function openDashboard(options: { strict?: boolean } = {}) {
 
 /**
  * 회의 조회가 없는 셸 화면(메시지). M7 부터 대시보드가 태스크·승인·회의 상세·추출을 부르므로,
- * 추적기 요청만 따로 세는 테스트는 여기서 시작한다. 메시지 화면은 자기 메시지 조회만 한다 (quietBusinessRequests)
+ * 추적기 요청만 따로 세는 테스트는 여기서 시작한다. 메시지 화면은 자기 메시지 조회와 보낼 시각의 재촉 규칙(메시지·알림 설정) 조회만 한다 (quietBusinessRequests)
  */
 async function openQuietScreen() {
   const app = renderApp(paths.messages('ws_01'))
@@ -118,9 +118,11 @@ async function openQuietScreen() {
   return app
 }
 
-/** 시작 화면(메시지)의 메시지 조회를 뺀 업무 요청 */
+/** 시작 화면(메시지)의 메시지 조회와 메시지·알림 설정 조회를 뺀 업무 요청 */
 function quietBusinessRequests(log: ReturnType<typeof recordRequests>) {
-  return businessRequests(log.started).filter(({ path }) => !path.includes('/messages'))
+  return businessRequests(log.started).filter(
+    ({ path }) => !path.includes('/messages') && !path.endsWith('/message-settings'),
+  )
 }
 
 async function openProcessing(options: { strict?: boolean } = {}) {
