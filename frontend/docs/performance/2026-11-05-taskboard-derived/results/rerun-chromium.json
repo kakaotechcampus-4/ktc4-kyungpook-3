@@ -1,0 +1,516 @@
+{
+  "runtime": "chromium 153.0.8010.12 (Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.8010.12 Safari/537.36)",
+  "rounds": 15,
+  "targetMs": 50,
+  "50:plain": {
+    "tasks": 50,
+    "approvals": 5,
+    "meetings": 10,
+    "results": {
+      "piece:names": {
+        "median": 0.07915496826171875,
+        "min": 0.05779266359695612,
+        "max": 0.10452270510086237,
+        "iterations": 2097152
+      },
+      "piece:meetingTitles": {
+        "median": 0.27542114276002394,
+        "min": 0.19416809027461568,
+        "max": 0.3684997554955771,
+        "iterations": 262144
+      },
+      "piece:overlaid": {
+        "median": 0.24700164794921875,
+        "min": 0.1823425295697234,
+        "max": 0.3452301025390625,
+        "iterations": 524288
+      },
+      "piece:filtered": {
+        "median": 0.03485679627601712,
+        "min": 0.018835067749023438,
+        "max": 0.05676746371818808,
+        "iterations": 4194304
+      },
+      "piece:board": {
+        "median": 20.971679710783064,
+        "min": 15.185546828433871,
+        "max": 36.32812498835847,
+        "iterations": 4096
+      },
+      "piece:createList": {
+        "median": 0.18920898401120212,
+        "min": 0.1327514651165984,
+        "max": 0.30612945556640625,
+        "iterations": 524288
+      },
+      "piece:calendarMeetings": {
+        "median": 28.4423828125,
+        "min": 20.263671875,
+        "max": 40.4052734375,
+        "iterations": 4096
+      },
+      "piece:boardItems": {
+        "median": 17.260742199141532,
+        "min": 15.600585902575403,
+        "max": 21.508789039216936,
+        "iterations": 4096
+      },
+      "view:list:needed": {
+        "median": 19.4091796875,
+        "min": 17.4560546875,
+        "max": 28.125000011641532,
+        "iterations": 4096
+      },
+      "view:board:needed": {
+        "median": 0.3963470462622354,
+        "min": 0.2956390380859375,
+        "max": 0.5512237548828125,
+        "iterations": 262144
+      },
+      "view:calendar:needed": {
+        "median": 30.419921851716936,
+        "min": 23.095703101716936,
+        "max": 38.061523460783064,
+        "iterations": 4096
+      },
+      "view:gantt:needed": {
+        "median": 0.5374908441808657,
+        "min": 0.38795471209596144,
+        "max": 0.6893157960803364,
+        "iterations": 262144
+      },
+      "view:*:current": {
+        "median": 50.390625023283064,
+        "min": 41.55273444484919,
+        "max": 80.56640625,
+        "iterations": 2048
+      }
+    }
+  },
+  "50:dueFilter": {
+    "tasks": 50,
+    "approvals": 5,
+    "meetings": 10,
+    "results": {
+      "piece:names": {
+        "median": 0.08087158198577526,
+        "min": 0.06446838369811303,
+        "max": 0.10881423941100365,
+        "iterations": 1048576
+      },
+      "piece:meetingTitles": {
+        "median": 0.23918151873658644,
+        "min": 0.21247863787721144,
+        "max": 0.492095947265625,
+        "iterations": 262144
+      },
+      "piece:overlaid": {
+        "median": 0.19912719744752394,
+        "min": 0.18615722638060106,
+        "max": 0.274658203125,
+        "iterations": 262144
+      },
+      "piece:filtered": {
+        "median": 0.02713203423354571,
+        "min": 0.025129318146355217,
+        "max": 0.0522613526072746,
+        "iterations": 2097152
+      },
+      "piece:board": {
+        "median": 149.4140625,
+        "min": 126.17187527939677,
+        "max": 268.5546875,
+        "iterations": 512
+      },
+      "piece:createList": {
+        "median": 0.17509460394649068,
+        "min": 0.13809204119752394,
+        "max": 0.2902984615502646,
+        "iterations": 262144
+      },
+      "piece:calendarMeetings": {
+        "median": 28.564453125,
+        "min": 22.802734398283064,
+        "max": 38.37890631984919,
+        "iterations": 2048
+      },
+      "piece:boardItems": {
+        "median": 30.859374906867743,
+        "min": 26.611328125,
+        "max": 41.69921868015081,
+        "iterations": 2048
+      },
+      "view:list:needed": {
+        "median": 153.3203125,
+        "min": 123.82812518626451,
+        "max": 192.57812481373549,
+        "iterations": 512
+      },
+      "view:board:needed": {
+        "median": 0.4257202144799521,
+        "min": 0.2952575687231729,
+        "max": 0.7446289055224042,
+        "iterations": 131072
+      },
+      "view:calendar:needed": {
+        "median": 31.591796898283064,
+        "min": 25.048828101716936,
+        "max": 47.021484351716936,
+        "iterations": 2048
+      },
+      "view:gantt:needed": {
+        "median": 0.5638122547679814,
+        "min": 0.40740966869634576,
+        "max": 0.850677490234375,
+        "iterations": 131072
+      },
+      "view:*:current": {
+        "median": 156.64062555879354,
+        "min": 146.09375037252903,
+        "max": 457.42187462747097,
+        "iterations": 256
+      }
+    }
+  },
+  "500:plain": {
+    "tasks": 500,
+    "approvals": 50,
+    "meetings": 100,
+    "results": {
+      "piece:names": {
+        "median": 0.09202957153320312,
+        "min": 0.060272216842349735,
+        "max": 0.12302398681640625,
+        "iterations": 1048576
+      },
+      "piece:meetingTitles": {
+        "median": 3.0120849623926915,
+        "min": 1.9989013671875,
+        "max": 4.8370361328125,
+        "iterations": 32768
+      },
+      "piece:overlaid": {
+        "median": 2.6184082016698085,
+        "min": 1.959228509804234,
+        "max": 3.878784176777117,
+        "iterations": 32768
+      },
+      "piece:filtered": {
+        "median": 0.1428604127795552,
+        "min": 0.091552734375,
+        "max": 0.3681182861328125,
+        "iterations": 524288
+      },
+      "piece:board": {
+        "median": 640.625,
+        "min": 557.031249627471,
+        "max": 992.9687511175871,
+        "iterations": 128
+      },
+      "piece:createList": {
+        "median": 0.9223937995557208,
+        "min": 0.7904052727099042,
+        "max": 1.2535095229395665,
+        "iterations": 131072
+      },
+      "piece:calendarMeetings": {
+        "median": 282.81249944120646,
+        "min": 219.53125018626451,
+        "max": 540.625000372529,
+        "iterations": 256
+      },
+      "piece:boardItems": {
+        "median": 595.312500372529,
+        "min": 525.000000372529,
+        "max": 1185.1562485098839,
+        "iterations": 128
+      },
+      "view:list:needed": {
+        "median": 644.53125,
+        "min": 592.9687488824129,
+        "max": 1258.593749254942,
+        "iterations": 128
+      },
+      "view:board:needed": {
+        "median": 2.8015136704198085,
+        "min": 2.13623046875,
+        "max": 3.884887701133266,
+        "iterations": 32768
+      },
+      "view:calendar:needed": {
+        "median": 285.54687462747097,
+        "min": 232.81250055879354,
+        "max": 423.0468748137355,
+        "iterations": 256
+      },
+      "view:gantt:needed": {
+        "median": 3.869628912070766,
+        "min": 2.893066412070766,
+        "max": 6.933593758731149,
+        "iterations": 16384
+      },
+      "view:*:current": {
+        "median": 1043.749999254942,
+        "min": 851.5625,
+        "max": 1618.7500022351742,
+        "iterations": 64
+      }
+    }
+  },
+  "500:dueFilter": {
+    "tasks": 500,
+    "approvals": 50,
+    "meetings": 100,
+    "results": {
+      "piece:names": {
+        "median": 0.08153915405273438,
+        "min": 0.06170272831695911,
+        "max": 0.12922286987304688,
+        "iterations": 1048576
+      },
+      "piece:meetingTitles": {
+        "median": 2.0843505844823085,
+        "min": 1.8463134765625,
+        "max": 3.0609130844823085,
+        "iterations": 32768
+      },
+      "piece:overlaid": {
+        "median": 2.0660400405176915,
+        "min": 1.797485354472883,
+        "max": 4.299926760722883,
+        "iterations": 32768
+      },
+      "piece:filtered": {
+        "median": 0.18424987865728326,
+        "min": 0.12817382776120212,
+        "max": 0.3925323480871157,
+        "iterations": 262144
+      },
+      "piece:board": {
+        "median": 1524.9999985098839,
+        "min": 1396.8750014901161,
+        "max": 2037.4999940395355,
+        "iterations": 32
+      },
+      "piece:createList": {
+        "median": 1.0513305678614415,
+        "min": 0.7308959975489415,
+        "max": 1.2878417983301915,
+        "iterations": 65536
+      },
+      "piece:calendarMeetings": {
+        "median": 253.90625,
+        "min": 208.984375,
+        "max": 457.8125001862645,
+        "iterations": 256
+      },
+      "piece:boardItems": {
+        "median": 470.31250037252903,
+        "min": 380.46875037252903,
+        "max": 643.7500007450581,
+        "iterations": 128
+      },
+      "view:list:needed": {
+        "median": 1487.5000044703484,
+        "min": 1325.0000029802322,
+        "max": 2024.9999985098839,
+        "iterations": 32
+      },
+      "view:board:needed": {
+        "median": 2.8747558608301915,
+        "min": 2.093505856464617,
+        "max": 4.0374755844823085,
+        "iterations": 32768
+      },
+      "view:calendar:needed": {
+        "median": 244.92187518626451,
+        "min": 222.65625,
+        "max": 478.12500037252903,
+        "iterations": 256
+      },
+      "view:gantt:needed": {
+        "median": 3.643798831035383,
+        "min": 2.838134765625,
+        "max": 5.975341802695766,
+        "iterations": 16384
+      },
+      "view:*:current": {
+        "median": 1728.1249985098839,
+        "min": 1534.3749970197678,
+        "max": 4309.375002980232,
+        "iterations": 32
+      }
+    }
+  },
+  "2000:plain": {
+    "tasks": 2000,
+    "approvals": 200,
+    "meetings": 400,
+    "results": {
+      "piece:names": {
+        "median": 0.08935928349274036,
+        "min": 0.06074905400055286,
+        "max": 0.13360977186493983,
+        "iterations": 1048576
+      },
+      "piece:meetingTitles": {
+        "median": 10.473632835783064,
+        "min": 8.154296869179234,
+        "max": 15.13671875,
+        "iterations": 8192
+      },
+      "piece:overlaid": {
+        "median": 10.7421875,
+        "min": 8.544921875,
+        "max": 15.673828078433871,
+        "iterations": 4096
+      },
+      "piece:filtered": {
+        "median": 0.6866455078125,
+        "min": 0.567626950214617,
+        "max": 2.087402346660383,
+        "iterations": 65536
+      },
+      "piece:board": {
+        "median": 3906.25,
+        "min": 2987.500011920929,
+        "max": 5218.75,
+        "iterations": 16
+      },
+      "piece:createList": {
+        "median": 4.08935546875,
+        "min": 2.545166003983468,
+        "max": 5.993652346660383,
+        "iterations": 16384
+      },
+      "piece:calendarMeetings": {
+        "median": 1103.1250022351742,
+        "min": 898.4375,
+        "max": 1487.4999970197678,
+        "iterations": 64
+      },
+      "piece:boardItems": {
+        "median": 3737.4999970197678,
+        "min": 3275.0000059604645,
+        "max": 4668.750002980232,
+        "iterations": 16
+      },
+      "view:list:needed": {
+        "median": 3993.7500059604645,
+        "min": 3168.7500029802322,
+        "max": 6974.9999940395355,
+        "iterations": 16
+      },
+      "view:board:needed": {
+        "median": 13.97705078125,
+        "min": 9.985351556679234,
+        "max": 16.90673828125,
+        "iterations": 8192
+      },
+      "view:calendar:needed": {
+        "median": 1148.4375,
+        "min": 910.9374992549419,
+        "max": 1978.1250022351742,
+        "iterations": 64
+      },
+      "view:gantt:needed": {
+        "median": 14.5263671875,
+        "min": 12.060546898283064,
+        "max": 19.335937511641532,
+        "iterations": 4096
+      },
+      "view:*:current": {
+        "median": 5712.499991059303,
+        "min": 4443.7499940395355,
+        "max": 6518.750011920929,
+        "iterations": 16
+      }
+    }
+  },
+  "2000:dueFilter": {
+    "tasks": 2000,
+    "approvals": 200,
+    "meetings": 400,
+    "results": {
+      "piece:names": {
+        "median": 0.07963180541992188,
+        "min": 0.0591278076171875,
+        "max": 0.15163421630859375,
+        "iterations": 1048576
+      },
+      "piece:meetingTitles": {
+        "median": 8.36181640625,
+        "min": 7.6904296875,
+        "max": 12.841796880820766,
+        "iterations": 8192
+      },
+      "piece:overlaid": {
+        "median": 10.546875011641532,
+        "min": 8.85009765625,
+        "max": 14.46533203125,
+        "iterations": 8192
+      },
+      "piece:filtered": {
+        "median": 0.9124755852099042,
+        "min": 0.5645751953125,
+        "max": 1.392364501953125,
+        "iterations": 131072
+      },
+      "piece:board": {
+        "median": 6850.000023841858,
+        "min": 5599.9999940395355,
+        "max": 10275.000005960464,
+        "iterations": 8
+      },
+      "piece:createList": {
+        "median": 3.1219482407323085,
+        "min": 2.667236331035383,
+        "max": 4.284667964384425,
+        "iterations": 32768
+      },
+      "piece:calendarMeetings": {
+        "median": 1059.374999254942,
+        "min": 887.4999992549419,
+        "max": 2245.312500745058,
+        "iterations": 64
+      },
+      "piece:boardItems": {
+        "median": 2603.124998509884,
+        "min": 2024.9999985098839,
+        "max": 3018.7500044703484,
+        "iterations": 32
+      },
+      "view:list:needed": {
+        "median": 7324.999988079071,
+        "min": 5912.4999940395355,
+        "max": 9837.500005960464,
+        "iterations": 8
+      },
+      "view:board:needed": {
+        "median": 12.20703125,
+        "min": 9.387207013787702,
+        "max": 21.1914062674623,
+        "iterations": 8192
+      },
+      "view:calendar:needed": {
+        "median": 1170.3125014901161,
+        "min": 892.1875022351742,
+        "max": 1521.8750014901161,
+        "iterations": 64
+      },
+      "view:gantt:needed": {
+        "median": 14.111328113358468,
+        "min": 11.3525390625,
+        "max": 31.66503901593387,
+        "iterations": 4096
+      },
+      "view:*:current": {
+        "median": 7774.999976158142,
+        "min": 6662.4999940395355,
+        "max": 12175.000011920929,
+        "iterations": 8
+      }
+    }
+  },
+  "sink": 25611192266
+}
