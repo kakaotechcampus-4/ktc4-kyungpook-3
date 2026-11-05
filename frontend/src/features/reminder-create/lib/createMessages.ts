@@ -18,11 +18,12 @@ export function knownCreateFailure(error: unknown): string | null {
 }
 
 /**
- * 만든 뒤의 알림. 같은 사람·같은 시각의 메시지가 있었으면 서버가 거기에 넣고 승인을 풀었다.
- * 같은 태스크를 다시 만들면 서버가 기존 재촉을 돌려주므로 같은 문구로 충분하다
+ * 만든 뒤의 알림. 서버는 태스크를 더하면 늘 승인을 푼다 — 돌려받은 묶음이 승인돼 있으면 같은 재촉이 이미 있어 그대로 돌려준 것이다.
+ * 같은 사람·같은 시각의 메시지에 들어갔으면 함께 나갈 태스크와 다시 만든 문구를 확인하게 한다
  */
 export function createdNotice({ bundle }: CreatedReminder): string {
+  if (bundle.stage === 'approved') return '같은 재촉이 이미 있어요. 승인한 메시지 그대로 나가요.'
   return bundle.tasks.length > 1
-    ? `같은 시각에 ${bundle.recipientName}님에게 보낼 메시지에 넣었어요. 승인이 풀렸으니 다시 확인하고 승인해 주세요.`
+    ? `같은 시각에 ${bundle.recipientName}님에게 보낼 메시지에 넣었어요. 함께 보낼 태스크와 문구를 확인하고 승인해 주세요.`
     : '재촉을 만들었어요. 메시지 화면에서 확인하고 승인해야 나가요.'
 }

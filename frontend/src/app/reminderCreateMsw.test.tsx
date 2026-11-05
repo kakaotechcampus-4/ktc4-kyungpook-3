@@ -95,7 +95,7 @@ describe('메시지 화면의 새 재촉', () => {
     ])
   })
 
-  it('같은 사람·같은 시각의 메시지가 있으면 거기에 넣고 승인이 풀렸다고 알린다', async () => {
+  it('같은 사람·같은 시각의 메시지가 있으면 거기에 넣고 함께 확인하고 승인하라고 알린다', async () => {
     Object.assign(db.messageBundles[0], {
       approved: true,
       approved_at: '2026-09-17T10:00:00+09:00',
@@ -114,7 +114,7 @@ describe('메시지 화면의 새 재촉', () => {
 
     expect(
       await screen.findByText(
-        '같은 시각에 이재환님에게 보낼 메시지에 넣었어요. 승인이 풀렸으니 다시 확인하고 승인해 주세요.',
+        '같은 시각에 이재환님에게 보낼 메시지에 넣었어요. 함께 보낼 태스크와 문구를 확인하고 승인해 주세요.',
       ),
     ).toBeInTheDocument()
     await app.expectSearch('?review=bd_01')
