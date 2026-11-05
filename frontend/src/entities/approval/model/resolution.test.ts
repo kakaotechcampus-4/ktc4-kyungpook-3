@@ -41,6 +41,10 @@ function updateApproval(overrides: Partial<TaskUpdateApproval> = {}): TaskUpdate
     relatedTaskId: 'tk_01',
     title: null,
     changes: [{ field: 'due_date', value: '2026-10-20' }],
+    category: null,
+    docText: null,
+    evidence: { quote: null, speaker: null, speakerMemberId: null, atMs: null },
+    meetingId: null,
     ...overrides,
   }
 }

@@ -4,11 +4,12 @@ import { getResponse, http } from 'msw'
 import { clearTrackedMeetings } from '@/entities/meeting'
 import { WORKSPACE_LIST_QUERY_KEY } from '@/entities/workspace'
 import { paths } from '@/shared/config/routes'
-import { db } from '@/shared/mock/db'
+import { db, replaceDb } from '@/shared/mock/db'
 import { fail } from '@/shared/mock/envelope'
 import { MOCK_NOW } from '@/shared/mock/fixtures/constants'
 import { handlers } from '@/shared/mock/handlers'
 import { completeMeeting } from '@/shared/mock/meetingFlow'
+import { createScenarioDb } from '@/shared/mock/scenarios'
 import { server } from '@/shared/mock/server'
 import { setMockRole } from '@/shared/mock/sessions'
 import { deferred } from '@/shared/test/deferred'
@@ -381,6 +382,58 @@ describe('변경 승인의 비교와 충돌 재확인 (AC-06)', () => {
     expect(await screen.findByTestId('approval-result')).toHaveTextContent('반려했어요')
     expect(bodies).toEqual([{ status: 'approved' }, { status: 'rejected' }])
     expect(taskOf('tk_01').status).toBe('in_progress')
+  })
+})
+
+describe('범위 변경 승인 (#205)', () => {
+  beforeEach(() => replaceDb(createScenarioDb('approval-scope')))
+
+  it('바꿀 필드가 없으면 범위 변경 문장과 근거를 보이고 빈 비교표 대신 안내한다', async () => {
+    await openApproval('ap_05', '태스크 변경 확인')
+    const scope = screen.getByRole('region', { name: '범위 변경' })
+    expect(within(scope).getByText('소셜 로그인은 이번 범위에서 빼기로 했어요.')).toBeVisible()
+    const evidence = within(scope).getByRole('figure', { name: '근거' })
+    expect(within(evidence).getByText('소셜 로그인은 이번엔 빼기로 했어요.')).toBeVisible()
+    expect(await within(evidence).findByText(/화자 박민수/)).toBeVisible()
+    const changes = screen.getByRole('region', { name: '바꿀 내용' })
+    expect(within(changes).getByText('바꿀 항목 값은 없어요.')).toBeVisible()
+    expect(screen.queryByRole('table', { name: '현재값과 제안값' })).toBeNull()
+    expect(scope.compareDocumentPosition(changes) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('바꿀 필드가 함께 오면 범위 변경과 비교표를 모두 보인다', async () => {
+    await openApproval('ap_06', '태스크 변경 확인')
+    expect(
+      within(screen.getByRole('region', { name: '범위 변경' })).getByText(
+        '회원가입은 이메일 인증까지만 하고 마감을 25일로 미뤄요.',
+      ),
+    ).toBeVisible()
+    const table = screen.getByRole('table', { name: '현재값과 제안값' })
+    await waitFor(() =>
+      expect(
+        within(table)
+          .getAllByRole('row')
+          .map((row) => row.textContent),
+      ).toEqual(['항목현재값확정할 값', '마감2026-09-162026-09-25']),
+    )
+    expect(screen.queryByText('바꿀 항목 값은 없어요.')).toBeNull()
+  })
+
+  it('승인하면 태스크 변경 이력에 범위 변경 한 줄이 보인다', async () => {
+    const user = userEvent.setup()
+    await openApproval('ap_05', '태스크 변경 확인')
+    await waitFor(() => expect(approveButton()).toBeEnabled())
+    await user.click(approveButton())
+    expect(await screen.findByTestId('approval-result')).toHaveTextContent('승인했어요')
+    expect(screen.queryByRole('heading', { name: '원래 제안' })).toBeNull()
+    await user.click(
+      await within(screen.getByLabelText('처리된 태스크')).findByRole('link', {
+        name: '로그인 API 연동',
+      }),
+    )
+    expect(
+      await screen.findByText('범위 변경: 소셜 로그인은 이번 범위에서 빼기로 했어요.'),
+    ).toBeVisible()
   })
 })
 
