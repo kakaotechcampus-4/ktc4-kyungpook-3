@@ -15,6 +15,7 @@ export const approvalFixtures: ApprovalDto[] = extractionFixtures[1].items
       due_raw: index === 0 ? '다음 주 월요일' : item.due_date.raw,
       evidence_quote: item.evidence.quote,
       evidence_speaker: item.evidence.speaker,
+      evidence_speaker_member_id: item.evidence.speaker_member_id,
       evidence_at_ms: item.evidence.at_ms,
       extraction_item_id: item.item_id,
       meeting_id: 'mt_09',

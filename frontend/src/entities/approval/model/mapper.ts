@@ -88,6 +88,7 @@ export function toApproval(dto: ApprovalDto): Approval {
       evidence: {
         quote: text(payload.evidence_quote),
         speaker: text(payload.evidence_speaker),
+        speakerMemberId: text(payload.evidence_speaker_member_id),
         atMs:
           typeof payload.evidence_at_ms === 'number' && Number.isFinite(payload.evidence_at_ms)
             ? payload.evidence_at_ms
