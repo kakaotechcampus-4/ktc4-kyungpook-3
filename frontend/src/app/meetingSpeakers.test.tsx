@@ -6,7 +6,7 @@ import { clearTrackedMeetings, trackMeeting, useMeetingTrackerStore } from '@/en
 import { SPEAKERS_NEEDED_ACTION } from '@/features/meeting-processing'
 import { paths } from '@/shared/config/routes'
 import { db, replaceDb } from '@/shared/mock/db'
-import { fail } from '@/shared/mock/envelope'
+import { fail, ok } from '@/shared/mock/envelope'
 import { setMeetingFlowMode } from '@/shared/mock/meetingFlow'
 import { server } from '@/shared/mock/server'
 import {
@@ -355,5 +355,19 @@ describe('화자 지정 화면 — 팀원·대기 아님', () => {
     replaceDb(createSpeakerScenarioDb('meeting-speakers'))
     renderApp(paths.meetingSpeakers('ws_01', 'mt_404'))
     expect(await screen.findByRole('heading', { name: '이 회의를 볼 수 없어요' })).toBeVisible()
+  })
+
+  it('상세가 다른 공간의 회의면 볼 수 없다고 안내하고 화자 API 를 부르지 않는다 (#349)', async () => {
+    replaceDb(createSpeakerScenarioDb('meeting-speakers'))
+    server.use(
+      http.get(`/api/v1/meetings/${AWAITING_MEETING_ID}`, () => {
+        const meeting = db.meetings.find(({ meeting_id }) => meeting_id === AWAITING_MEETING_ID)!
+        return ok({ ...meeting, workspace_id: 'ws_02' })
+      }),
+    )
+    const log = recordRequests()
+    renderApp(SPEAKERS_PATH)
+    expect(await screen.findByRole('heading', { name: '이 회의를 볼 수 없어요' })).toBeVisible()
+    expect(log.started.filter(({ path }) => path.includes('/speakers'))).toEqual([])
   })
 })
