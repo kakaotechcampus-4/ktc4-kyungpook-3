@@ -4,6 +4,7 @@ import { memberHandlers } from './member'
 import { workspaceHandlers } from './workspace'
 import { integrationHandlers } from './integration'
 import { meetingHandlers } from './meeting'
+import { speakerHandlers } from './speaker'
 import { minutesHandlers } from './minutes'
 import { extractionHandlers } from './extraction'
 import { taskHandlers } from './task'
@@ -19,6 +20,7 @@ export const handlers: RequestHandler[] = [
   ...memberHandlers,
   ...integrationHandlers,
   ...meetingHandlers,
+  ...speakerHandlers,
   ...minutesHandlers,
   ...extractionHandlers,
   ...taskHandlers,

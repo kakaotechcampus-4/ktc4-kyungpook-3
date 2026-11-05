@@ -3,12 +3,13 @@ import userEvent from '@testing-library/user-event'
 import { http } from 'msw'
 import { clearTrackedMeetings, meetingListQueryOptions } from '@/entities/meeting'
 import { paths } from '@/shared/config/routes'
-import { db } from '@/shared/mock/db'
+import { db, replaceDb } from '@/shared/mock/db'
 import { fail, list, ok } from '@/shared/mock/envelope'
 import { meetingSummaryFixtures } from '@/shared/mock/fixtures/meeting'
 import { completeMeeting, failMeeting } from '@/shared/mock/meetingFlow'
 import { server } from '@/shared/mock/server'
 import { setMockRole } from '@/shared/mock/sessions'
+import { AWAITING_MEETING_ID, createSpeakerScenarioDb } from '@/shared/mock/speakerScenarios'
 import { recordRequests } from '@/shared/test/requests'
 import { NOTION_NOTE_FOR_MEMBER, NOTION_NOTE_FOR_PM } from '@/widgets/meeting-minutes'
 import { renderApp } from './test/renderApp'
@@ -667,5 +668,65 @@ describe('채팅 회의 (#379)', () => {
       'href',
       paths.meetingProcessing('ws_01', 'mt_10'),
     )
+  })
+})
+
+describe('화자 지정 대기 (#256)', () => {
+  const MT_11 = paths.meetings('ws_01', AWAITING_MEETING_ID)
+  const SPEAKERS = paths.meetingSpeakers('ws_01', AWAITING_MEETING_ID)
+
+  it.each([
+    ['PM', 'meeting-speakers', '누가 말했는지 골라 주세요'],
+    ['일반 팀원', 'meeting-speakers-member', 'PM이 화자를 지정하고 있어요'],
+  ] as const)(
+    '%s 의 목록 진행 중 항목은 화자 지정 필요로 보이고 지정 화면으로 간다',
+    async (_label, scenario, heading) => {
+      const user = userEvent.setup()
+      replaceDb(createSpeakerScenarioDb(scenario))
+      renderApp(paths.meetings('ws_01'))
+
+      const inProgress = await within(
+        await screen.findByRole('complementary', { name: '회의 목록' }),
+      ).findByRole('list', { name: '진행 중' })
+      const link = within(inProgress).getByRole('link', { name: /주간 회고 녹음/ })
+      expect(link).toHaveAttribute('href', SPEAKERS)
+      expect(link).toHaveTextContent('화자 지정 필요')
+      expect(within(minutesList()).queryByText('주간 회고 녹음')).toBeNull()
+
+      await user.click(link)
+      expect(await screen.findByRole('heading', { level: 1, name: heading })).toBeInTheDocument()
+    },
+  )
+
+  it('PM 이 대기 중인 회의를 직접 열면 회의록을 부르지 않고 지정 화면으로 잇는다', async () => {
+    replaceDb(createSpeakerScenarioDb('meeting-speakers'))
+    const log = recordRequests()
+    renderApp(MT_11)
+
+    expect(
+      await screen.findByRole('heading', { level: 2, name: '화자 지정이 필요해요' }),
+    ).toBeInTheDocument()
+    expect(within(detail()).getByText('주간 회고 녹음')).toBeInTheDocument()
+    expect(within(detail()).getByRole('link', { name: '화자 지정하기' })).toHaveAttribute(
+      'href',
+      SPEAKERS,
+    )
+    await settle()
+    expect(minutesRequests(log)).toEqual([])
+    expect(extractionRequests(log)).toEqual([])
+  })
+
+  it('일반 팀원은 같은 안내를 보지만 지정 링크 대신 PM 이 지정 중이라고 듣는다', async () => {
+    replaceDb(createSpeakerScenarioDb('meeting-speakers-member'))
+    const log = recordRequests()
+    renderApp(MT_11)
+
+    expect(
+      await screen.findByRole('heading', { level: 2, name: '화자 지정이 필요해요' }),
+    ).toBeInTheDocument()
+    expect(within(detail()).getByText(/PM이 화자를 지정하고 있어요/)).toBeInTheDocument()
+    expect(within(detail()).queryByRole('link')).toBeNull()
+    await settle()
+    expect(minutesRequests(log)).toEqual([])
   })
 })

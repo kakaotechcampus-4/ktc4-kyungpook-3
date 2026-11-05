@@ -40,6 +40,7 @@ const items: ExtractionItemDto[] = seeds.map(
       quote: `${raw}님이 ${title}을 맡기로 했어요.`,
       speaker: '1123',
       at_ms: 125000 + index * 10000,
+      speaker_member_id: 'mb_01',
     },
     reverted_at: null,
     task_id,
@@ -71,6 +72,7 @@ export const extractionFixtures: ExtractionDto[] = [
         evidence: {
           quote: '네, 배포 스크립트는 제가 24일까지 마칠게요.',
           speaker: '1123',
+          speaker_member_id: 'mb_01',
           at_ms: 34_080_000,
         },
         reverted_at: null,

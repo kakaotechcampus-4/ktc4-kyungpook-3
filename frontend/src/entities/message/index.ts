@@ -8,6 +8,7 @@ export type {
   MemberMessage,
   Message,
   MessageAction,
+  MessageActionOutcome,
   MessageInbox,
   MessageSender,
   MessageThread,

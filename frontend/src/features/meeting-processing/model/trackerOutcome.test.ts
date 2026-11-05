@@ -1,6 +1,7 @@
 import type { Meeting } from '@/entities/meeting'
 import { ApiError, createClientError } from '@/shared/api/errors'
 import {
+  AWAITING_SPEAKERS_POLL_INTERVAL_MS,
   isAccessLost,
   pollInterval,
   PROCESSING_POLL_INTERVAL_MS,
@@ -51,6 +52,19 @@ describe('trackerOutcome', () => {
     expect(isAccessLost(offline)).toBe(false)
   })
 
+  it('화자 지정 대기는 접근 상실이 아니라 지켜볼 진행이다 (#256)', () => {
+    expect(trackerOutcome(tracked, meeting({ status: 'awaiting_speakers' }), null)).toBe(
+      'awaiting_speakers',
+    )
+    expect(
+      trackerOutcome(
+        tracked,
+        meeting({ status: 'awaiting_speakers' }),
+        createClientError('NETWORK_ERROR'),
+      ),
+    ).toBe('awaiting_speakers')
+  })
+
   it('다른 공간의 회의·정리가 시작되지 않은 회의는 지켜볼 대상이 아니다', () => {
     expect(trackerOutcome(tracked, meeting({ workspaceId: 'ws_04' }), null)).toBe('lost')
     expect(trackerOutcome(tracked, meeting({ status: 'recording' }), null)).toBe('lost')
@@ -65,5 +79,10 @@ describe('pollInterval', () => {
     expect(pollInterval(tracked, meeting({ status: 'done' }), null)).toBe(false)
     expect(pollInterval(tracked, meeting({ status: 'failed' }), null)).toBe(false)
     expect(pollInterval(tracked, undefined, httpError(404))).toBe(false)
+  })
+
+  it('화자 지정 대기는 멈추지 않고 30초마다 묻는다', () => {
+    expect(AWAITING_SPEAKERS_POLL_INTERVAL_MS).toBe(30_000)
+    expect(pollInterval(tracked, meeting({ status: 'awaiting_speakers' }), null)).toBe(30_000)
   })
 })

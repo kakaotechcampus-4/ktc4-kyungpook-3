@@ -6,6 +6,7 @@ import { db } from './db'
 import type { MeetingFlowMode, MockDb } from './db'
 import { MOCK_NOW } from './fixtures/constants'
 import { createTask } from './task-state'
+import { awaitSpeakers, needsSpeakers } from './speakerFlow'
 import { nextId } from './utils'
 
 /*
@@ -146,6 +147,8 @@ export function completeMeeting(meetingId: string, state: MockDb = db): Complete
   const meeting = processingMeeting(state, meetingId)
   const attendees = attendeesOf(state, meeting)
   const speaker = (index: number) => attendees[index % Math.max(attendees.length, 1)]
+  // 업로드 녹음에는 Discord 트랙이 없다. 근거 화자는 화자 지정으로 정한 팀원 ID 만 온다 (#256)
+  const uploaded = sourceOf(state, meeting.meeting_id) === 'manual_upload'
 
   const minutes: MinutesDto = {
     meeting_id: meeting.meeting_id,
@@ -205,8 +208,9 @@ export function completeMeeting(meetingId: string, state: MockDb = db): Complete
       gate: seed.gate,
       evidence: {
         quote: TRANSCRIPT_LINES[index % TRANSCRIPT_LINES.length],
-        speaker: speaker(index)?.discord_user_id ?? null,
+        speaker: uploaded ? null : (speaker(index)?.discord_user_id ?? null),
         at_ms: index * 60_000,
+        speaker_member_id: speaker(index)?.member_id ?? null,
       },
       reverted_at: null,
       task_id: null,
@@ -246,6 +250,7 @@ export function completeMeeting(meetingId: string, state: MockDb = db): Complete
           due_raw: seed.dueRaw,
           evidence_quote: item.evidence.quote,
           evidence_speaker: item.evidence.speaker,
+          evidence_speaker_member_id: item.evidence.speaker_member_id,
           evidence_at_ms: item.evidence.at_ms,
           extraction_item_id: itemId,
           meeting_id: meeting.meeting_id,
@@ -338,6 +343,10 @@ export function tickMeeting(meetingId: string, state: MockDb = db): void {
       return
     case 'fail-expired':
       failMeeting(meetingId, { failedStage: 'speaker_assignment_expired' }, state)
+      return
+    case 'speakers':
+      if (needsSpeakers(meetingId, state)) awaitSpeakers(meetingId, undefined, state)
+      else advanceMeeting(meetingId, state)
       return
   }
 }

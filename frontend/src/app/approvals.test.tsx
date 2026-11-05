@@ -8,6 +8,7 @@ import { db } from '@/shared/mock/db'
 import { fail } from '@/shared/mock/envelope'
 import { MOCK_NOW } from '@/shared/mock/fixtures/constants'
 import { handlers } from '@/shared/mock/handlers'
+import { completeMeeting } from '@/shared/mock/meetingFlow'
 import { server } from '@/shared/mock/server'
 import { setMockRole } from '@/shared/mock/sessions'
 import { deferred } from '@/shared/test/deferred'
@@ -122,6 +123,18 @@ describe('읽기 진입과 실 API 의 생성 승인 (AC-05)', () => {
     expect(screen.queryByRole('textbox')).toBeNull()
     expect(screen.queryByRole('combobox')).toBeNull()
     expect(screen.getByRole('button', { name: '보완하기' })).toBeVisible()
+  })
+
+  it('업로드 회의의 근거는 Discord uid 없이 팀원 ID 로 화자 이름을 찾는다 (#256)', async () => {
+    const { approvalIds } = completeMeeting('mt_10')
+    const approval = db.approvals.find(({ approval_id }) => approval_id === approvalIds[0])!
+    expect(approval.payload).toMatchObject({
+      evidence_speaker: null,
+      evidence_speaker_member_id: 'mb_02',
+    })
+    await openApproval(approval.approval_id)
+    const evidence = screen.getByRole('figure', { name: '근거' })
+    await waitFor(() => expect(evidence).toHaveTextContent('화자 박민수 · 시각 01:00'))
   })
 
   it('미정인 담당자·마감은 승인을 막지 않으며 반려는 status만 보낸다', async () => {

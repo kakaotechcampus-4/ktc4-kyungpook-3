@@ -9,12 +9,13 @@ export const COMMON_MESSAGES = {
   fallback: '문제가 생겼어요. 잠시 후 다시 시도해 주세요.',
 } as const
 
-/* 서버 코드 46개 전부 (backend core/errors.py). `Record<ErrorCode, string>` 이라 코드가 늘면 여기서 타입 오류가 난다 */
+/* 서버 코드 전부 (backend core/errors.py). AI 경로에서만 오는 코드는 뺐다(계약 §2.3.1). `Record<ErrorCode, string>` 이라 코드가 늘면 여기서 타입 오류가 난다 */
 const SERVER_MESSAGES: Record<ErrorCode, string> = {
   INVALID_REQUEST: '요청 내용을 다시 확인해 주세요.',
   MEETING_NOT_FOUND: '회의를 찾을 수 없어요.',
   MEETING_ALREADY_ENDED: '이미 끝난 회의예요.',
   MEETING_NOT_PROCESSING: '정리 중인 회의가 아니에요.',
+  MEETING_NOT_AWAITING_SPEAKERS: '화자를 지정할 수 있는 회의가 아니에요.',
   AUDIO_UPLOAD_FAILED: '파일을 올리지 못했어요. 다시 시도해 주세요.',
   AUDIO_FORMAT_UNSUPPORTED: '지원하지 않는 파일 형식이에요.',
   TRANSCRIPTION_FAILED: '회의 음성을 글로 옮기지 못했어요.',

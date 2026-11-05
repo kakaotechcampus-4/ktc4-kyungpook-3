@@ -1,7 +1,7 @@
 import { expect } from '@playwright/test'
 import type { Page } from '@playwright/test'
 
-/** E2E 시나리오 이름 (shared/mock/scenarios.ts 의 MOCK_SCENARIOS). M4 U1 다섯 개 + M5 회의 흐름 + M6 태스크·승인 + M7 대시보드 + M8 태스크 보기·설정 + #320 팀원 초대 */
+/** E2E 시나리오 이름 (shared/mock/scenarios.ts 의 MOCK_SCENARIOS). M4 U1 다섯 개 + M5 회의 흐름 + M6 태스크·승인 + M7 대시보드 + M8 태스크 보기·설정 + #320 팀원 초대 + #256 화자 지정 */
 export type Scenario =
   | 'signed-out'
   | 'no-workspace'
@@ -18,6 +18,8 @@ export type Scenario =
   | 'meeting-notion-not-connected'
   | 'meeting-notion-revoked'
   | 'meeting-member'
+  | 'meeting-speakers'
+  | 'meeting-speakers-expired'
   | 'tasks-default'
   | 'tasks-empty'
   | 'approval-needs-input'

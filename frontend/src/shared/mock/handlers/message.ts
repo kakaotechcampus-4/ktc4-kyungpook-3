@@ -14,7 +14,7 @@ import {
   threadDetailOf,
   utc,
 } from '../message-state'
-import type { BundleRefusal, Viewer } from '../message-state'
+import type { BundleContext, BundleRefusal, Viewer } from '../message-state'
 import { nextId, readJson } from '../utils'
 
 /*
@@ -45,6 +45,10 @@ const REFUSAL: Record<BundleRefusal, () => ReturnType<typeof fail>> = {
   changed: () => fail('BUNDLE_CHANGED', '보낼 메시지가 바뀌었어요. 다시 확인해 주세요.', 409),
   time_passed: () =>
     fail('REMINDER_SCHEDULED_AT_PASSED', '예정 시각이 지났어요. 시각을 다시 골라 주세요.', 409),
+  merge_with_body: () =>
+    invalid(
+      '다른 보낼 메시지와 합쳐지는 시각으로 옮길 때는 문구를 같이 고칠 수 없습니다. 시각부터 옮겨 주세요.',
+    ),
 }
 
 /** 시간대가 있는 ISO 시각만 받는다 (백엔드 AwareDatetime) */
@@ -68,6 +72,26 @@ function findBundle(workspaceId: string, bundleId: unknown) {
 
 function workspaceBundles(workspaceId: string) {
   return db.messageBundles.filter(({ workspace_id }) => workspace_id === workspaceId)
+}
+
+/** 문구 틀의 PM 은 가장 먼저 등록된 PM 이다 — 픽스처 리마인드에는 만든 사람(created_by)이 없다 */
+function bundleContext(workspaceId: string): BundleContext {
+  const pm = db.members
+    .filter(({ workspace_id, role }) => workspace_id === workspaceId && role === 'pm')
+    .sort(
+      (left, right) =>
+        left.created_at.localeCompare(right.created_at) ||
+        left.member_id.localeCompare(right.member_id),
+    )
+    .at(0)
+  return {
+    bundles: workspaceBundles(workspaceId),
+    tasks: db.tasks.filter(({ workspace_id }) => workspace_id === workspaceId),
+    threads: db.messageThreads.filter(({ workspace_id }) => workspace_id === workspaceId),
+    pmName: pm?.display_name ?? 'PM',
+    workspaceName:
+      db.workspaces.find(({ workspace_id }) => workspace_id === workspaceId)?.name ?? '',
+  }
 }
 
 /** `BundleUpdateRequest`. 틀렸으면 사람이 읽을 이유를 돌려준다 */
@@ -150,7 +174,7 @@ export const messageHandlers = [
     },
   ),
 
-  /** 문구나 시각을 고친다. 승인은 유지한다 */
+  /** 문구나 시각을 고친다. 승인은 유지한다. 같은 시각의 예정 묶음과 합쳐지면 합친 묶음을 돌려준다 */
   http.patch(
     '/api/v1/workspaces/:workspaceId/messages/bundles/:bundleId',
     async ({ params, request }) => {
@@ -162,11 +186,9 @@ export const messageHandlers = [
       const patch = readBundlePatch(await readJson(request))
       if (typeof patch === 'string') return invalid(patch)
       if (db.messageFailures.actions) return actionError()
-      const draft = structuredClone(bundle)
-      const refusal = editBundle(draft, patch, MOCK_NOW)
-      if (refusal !== null) return REFUSAL[refusal]()
-      Object.assign(bundle, draft)
-      return ok(bundleDto(bundle))
+      const result = editBundle(bundle, patch, MOCK_NOW, bundleContext(workspaceId))
+      if ('refusal' in result) return REFUSAL[result.refusal]()
+      return ok(bundleDto(result.bundle))
     },
   ),
 

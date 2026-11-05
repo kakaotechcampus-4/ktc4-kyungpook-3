@@ -7,7 +7,11 @@ import { meetingDetailQueryOptions, meetingFailure } from '@/entities/meeting'
 import type { Meeting, MeetingSummary } from '@/entities/meeting'
 import { minutesQueryOptions } from '@/entities/minutes'
 import type { Minutes } from '@/entities/minutes'
-import { isAccessLost } from '@/features/meeting-processing'
+import {
+  isAccessLost,
+  SPEAKERS_NEEDED_ACTION,
+  SPEAKERS_NEEDED_TITLE,
+} from '@/features/meeting-processing'
 import { ApiError, ERROR_CODES } from '@/shared/api/errors'
 import { paths } from '@/shared/config/routes'
 import { formatSeoulDateTime } from '@/shared/lib/date'
@@ -137,7 +141,7 @@ export function UnavailableMeeting() {
 /**
  * 고른 회의 한 건 (U5-3, U5-4). 회의 상세의 `workspaceId` 가 URL 공간과 같을 때만 회의록 본문·추출을 부른다 —
  * 상세는 봇 경로라 경로에 공간이 없어(계약 §2.3) 다른 공간의 회의 ID 로도 답이 온다. 다르면 볼 수 없는 회의로 그린다.
- * 정리가 끝나지 않은 회의는 회의록이 없다. 정리 중이면 처리 화면으로 잇는다 (U5-2).
+ * 정리가 끝나지 않은 회의는 회의록이 없다. 정리 중이면 처리 화면, 화자 지정 대기면 PM 에게 지정 화면으로 잇는다 (U5-2, #256).
  */
 export function MinutesDetail({
   workspaceId,
@@ -201,6 +205,26 @@ export function MinutesDetail({
           <GuardedLink to={paths.meetingProcessing(workspaceId, meeting.id)} className={LINK}>
             정리 상태 보기
           </GuardedLink>
+        </Notice>
+      )
+    case 'awaiting_speakers':
+      return (
+        <Notice title={SPEAKERS_NEEDED_TITLE}>
+          <p className={NOTICE_TEXT}>{meeting.title || '제목 없는 회의'}</p>
+          {isPm ? (
+            <>
+              <p className={NOTICE_TEXT}>
+                녹음에서 화자를 나눴어요. 화자마다 누구인지 골라 주시면 정리를 이어 갈게요.
+              </p>
+              <GuardedLink to={paths.meetingSpeakers(workspaceId, meeting.id)} className={LINK}>
+                {SPEAKERS_NEEDED_ACTION}
+              </GuardedLink>
+            </>
+          ) : (
+            <p className={NOTICE_TEXT}>
+              PM이 화자를 지정하고 있어요. 지정이 끝나면 정리를 이어 가요.
+            </p>
+          )}
         </Notice>
       )
     case 'failed': {

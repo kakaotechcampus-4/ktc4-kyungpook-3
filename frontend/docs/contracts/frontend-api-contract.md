@@ -394,7 +394,7 @@ AUDIO_TOO_LARGE(413)              DISCORD_USER_ALREADY_MAPPED(409)
 
 ### 2.3.1 업로드 회의 화자 지정 — PM 경로 (#266)
 
-> **상태: BE 구현됨, FE 방향 합의(#256).** 아래는 `backend/app/api/meetings.py` 와 `backend/app/services/speaker_assignment.py` 의 구현 사실이다. #256 에서 FE 가 원본 + 구간 재생, 같은 멤버 다중 지정 허용, 외부 참석자 선택지(`null`)를 받아들였다(2026-11-03). 지정 후보를 업로드 때 고른 참석자로 제한할지는 아직 정하지 않았다. AI 쪽 경로는 [backend-ai-contract.md](../../../backend/docs/contracts/backend-ai-contract.md) 에 있고 프론트는 호출하지 않는다. 실제 서버를 띄운 호출은 검증하지 않았고 테스트([test_speaker_assignment_api.py](../../../backend/tests/api/test_speaker_assignment_api.py))로 확인했다.
+> **상태: BE 구현됨, FE 방향 합의(#256), FE 구현(2026-11-05, MSW 기준).** 아래는 `backend/app/api/meetings.py` 와 `backend/app/services/speaker_assignment.py` 의 구현 사실이다. #256 에서 FE 가 원본 + 구간 재생, 같은 멤버 다중 지정 허용, 외부 참석자 선택지(`null`)를 받아들였다(2026-11-03). 지정 후보를 업로드 때 고른 참석자로 제한할지는 FE 가 2026-11-05 에 「제한하지 않는다」로 정했고 BE 확인은 남았다(아래 「FE 구현」). AI 쪽 경로는 [backend-ai-contract.md](../../../backend/docs/contracts/backend-ai-contract.md) 에 있고 프론트는 호출하지 않는다. 실제 서버를 띄운 호출은 검증하지 않았고 테스트([test_speaker_assignment_api.py](../../../backend/tests/api/test_speaker_assignment_api.py))로 확인했다.
 
 세 경로 모두 로그인 세션이 필요하고 그 회의 워크스페이스의 PM 만 쓴다. 미로그인은 401, PM 이 아니면(일반 팀원, 다른 공간의 PM) 403 `FORBIDDEN`. 회의가 없거나 웹 업로드 회의가 아니거나 `meeting_upload` 행이 없으면 404 `MEETING_NOT_FOUND`.
 
@@ -442,12 +442,26 @@ Content-Disposition: 없음(내려받기 아님). Accept-Ranges: bytes
 - 상태는 보지 않는다. 녹음 폴더가 있는 동안은 받을 수 있다. 처리가 `done`·`failed` 로 끝나 폴더가 지워지면 404 `MEETING_NOT_FOUND` 다.
 - 쿠키 세션으로 인증하므로 같은 출처에서 `<audio src>` 로 바로 쓸 수 있다. 헤더를 붙여야 하는 방식은 쓸 수 없다.
 
-프론트가 맞춰야 할 것:
+프론트가 맞춰야 할 것(2026-11-05 반영, 아래 「FE 구현」):
 
 - `awaiting_speakers` 를 회의 상태로 표시한다. 알 수 없는 상태를 `created` 처럼 읽으면 안 된다.
-- 처리 추적이 이 상태에서 멈추면 안 된다. 현재 [trackerOutcome.ts](../../src/features/meeting-processing/model/trackerOutcome.ts) 는 `processing`·`done`·`failed` 외의 상태를 `lost` 로 보고 polling 을 멈춘다. `awaiting_speakers` 는 PM 의 지정을 기다리는 정상 진행이므로 계속 지켜보거나 지정 화면으로 안내해야 한다.
+- 처리 추적이 이 상태에서 멈추면 안 된다. 2026-11-05 전의 [trackerOutcome.ts](../../src/features/meeting-processing/model/trackerOutcome.ts) 는 `processing`·`done`·`failed` 외의 상태를 `lost` 로 보고 polling 을 멈췄다. `awaiting_speakers` 는 PM 의 지정을 기다리는 정상 진행이므로 계속 지켜보거나 지정 화면으로 안내해야 한다.
 - 이 경로를 쓰는 화면은 PM 에게만 보인다.
 - 새 오류 코드 중 PM 경로에서 오는 것은 `MEETING_NOT_AWAITING_SPEAKERS` 하나다. `UPLOAD_NOT_CLAIMED`·`SPEAKERS_ALREADY_REPORTED`·`SPEAKERS_NOT_ASSIGNED` 는 AI 경로 코드다. 위 「오류 코드」 목록의 개수(31개)에는 이 새 코드들이 들어 있지 않다.
+
+#### FE 구현 (#256·#342, 2026-11-05)
+
+> **상태: FE 구현, MSW 기준 검증.** 실제 서버를 띄운 호출과 실제 m4a 재생 시각은 확인하지 않았다. 아래 「후보 범위」는 사용자가 2026-11-05에 정한 FE 방향이며, BE가 #256에서 물은 「후보를 참석자로 제한할지」에 대한 답을 이슈에 남기는 일과 BE 확인은 남아 있다(합의 여부 확인 필요).
+
+- 상태: `MeetingStatus` 에 `awaiting_speakers` 를 더했다. 상세·목록·업로드 응답 모두 이 값을 정상 상태로 읽는다. 그 밖의 알 수 없는 상태 처리는 바꾸지 않았다(#348 범위). 구현: [types.ts](../../src/entities/meeting/model/types.ts), [mapper.ts](../../src/entities/meeting/model/mapper.ts).
+- 처리 추적: `awaiting_speakers` 는 `lost` 가 아니라 지켜보는 상태다. polling 간격은 `processing` 3초, `awaiting_speakers` 30초다. 처음 대기가 보이면 회의마다 세션당 한 번 PM 에게만 안내한다. 그 회의의 처리 화면을 보고 있으면 지정 화면으로 옮기고, 다른 화면이면 `화자 지정이 필요해요` 토스트의 `화자 지정하기` 로 옮긴다. 지정 뒤 `processing` → `done`·`failed` 는 기존 완료·실패 처리가 잇는다. 새로고침 뒤의 발견은 지금처럼 `processing` 회의만 등록한다. 구현: [trackerOutcome.ts](../../src/features/meeting-processing/model/trackerOutcome.ts), [useProcessingTracker.ts](../../src/features/meeting-processing/model/useProcessingTracker.ts).
+- 지정 화면 주소: `/workspaces/{workspace_id}/meetings/{meeting_id}/speakers`. 새로고침·직접 진입에 열린다. 라우터 PM 가드를 걸지 않고, 팀원에게는 「PM이 화자를 지정하고 있어요」를 보이며 화자 API 를 부르지 않는다. 진입점은 처리 화면, 토스트, 회의록 목록의 `화자 지정 필요` 행, 회의록 상세다. 대기 회의의 상세는 회의록·추출을 조회하지 않고 PM 에게 `화자 지정하기` 링크를, 팀원에게 PM 이 지정 중이라는 안내를 보인다. 구현: [MeetingMinutes.tsx](../../src/widgets/meeting-minutes/ui/MeetingMinutes.tsx), [MinutesDetail.tsx](../../src/widgets/meeting-minutes/ui/MinutesDetail.tsx). 구현: [MeetingSpeakersPage.tsx](../../src/pages/meeting-speakers/ui/MeetingSpeakersPage.tsx).
+- 라벨 표시: `speakers` 응답 순서대로 `화자 1`, `화자 2` 로 보이고 총 발화 시간을 함께 보인다. 라벨 문자열을 해석하지 않는다.
+- 후보 범위: `candidates`(업로드 때 고른 참석자)를 위에 보이고, 펼치는 「다른 팀원」 묶음에 워크스페이스 팀원 목록 중 `candidates` 밖의 팀원을 보인다. 「외부 참석자」를 고르면 `null` 을 보낸다. 같은 팀원을 여러 라벨에 고를 수 있고 다른 라벨의 선택을 알려만 준다. 지금 BE 제출 검증(워크스페이스의 탈퇴하지 않은 멤버면 받음)과 맞는다. BE 가 제출을 참석자로 제한하면 「다른 팀원」 선택은 400 `member_ids` 가 된다.
+- 제출 규칙: 모든 라벨을 직접 골라야 제출할 수 있다. 「외부 참석자」도 직접 고른다. 남은 라벨이 있으면 제출 버튼 옆에 `아직 고르지 않은 화자 n명` 을 보인다. 따라서 FE 는 「지정하지 않은 라벨을 `null` 로 보내는」 경우를 만들지 않는다. 구현: [assignmentDraft.ts](../../src/features/speaker-assignment/model/assignmentDraft.ts).
+- 샘플 재생: 화면에 `<audio preload="metadata" src=/api/v1/meetings/{id}/audio>` 하나를 두고 샘플마다 재생 버튼을 둔다. 누르면 그 `start` 로 옮겨 재생하고 `end` 에서 멈춘다. `timeupdate` 간격으로는 0.5초 구간을 넘기므로 화면 갱신마다와 남은 시간 타이머로 끝을 확인한다. 샘플이 1개, 2초 미만, 0개여도 그린다. `audio` 가 `null` 이거나 녹음을 불러오지 못하면 플레이어를 쓰지 않고 안내한다. 구현: [samplePlayback.ts](../../src/features/speaker-assignment/model/samplePlayback.ts), [useSamplePlayer.ts](../../src/features/speaker-assignment/model/useSamplePlayer.ts).
+- 제출 오류: 400 `INVALID_REQUEST` 의 `unknown_labels`·`missing_labels` 는 화자 목록을 다시 받고 다시 고르게 한다. `member_ids` 는 그 선택만 지우고 다시 받는다. 409 `MEETING_NOT_AWAITING_SPEAKERS` 는 `details.status` 가 `failed` 일 때만 만료로 보고 상세를 다시 받아 그 `failed_stage` 의 안내와 PM 재업로드 링크를 보이며 다시 낼 수 없다. 그 밖의 `details.status` 는 이미 지정됐다고 안내하고 처리 화면이나 회의록으로 잇는다. 403·404·네트워크 오류는 각각 문구로 안내한다. 제출 성공 뒤에는 처리 화면으로 옮겨 기존 추적이 끝까지 따라간다. 구현: [submitRejection.ts](../../src/features/speaker-assignment/model/submitRejection.ts), [useSpeakerSubmit.ts](../../src/features/speaker-assignment/model/useSpeakerSubmit.ts).
+- MSW: GET·PUT `/meetings/{id}/speakers`, GET `/meetings/{id}/audio`(코드로 만든 무음 WAV)와 `meeting-speakers*` 시나리오 다섯 개. 계약의 403·404·400 `details`·409 `details.status`·같은 지정 재제출 200을 흉내 낸다. 목록: [MSW 안내](../msw-guide.md).
 
 ### 2.4 extractions
 
@@ -481,6 +495,7 @@ Content-Disposition: 없음(내려받기 아님). Accept-Ranges: bytes
   **`approval_id` 를 비우지 않는다.** 같은 항목이 두 ID 를 동시에 갖는다 → §3.1, §4.0-②-12.
   화면은 `task_id` 를 우선으로 읽어 `task_id` 가 있으면 `반영됨` 으로 다룬다 (§6).
 - `assignee.member_id` 가 `null` 이면 `raw` 로 대체 표시한다.
+- **2026-11-05 코드 대조(#256 A1):** `evidence` 에 `speaker_member_id: string | null` 이 더 온다([BE 스키마](../../../backend/app/schemas/meeting.py)의 `EvidenceInfo`). 업로드 회의는 Discord uid(`speaker`)가 `null` 이고 이 값만 온다. FE 는 근거 화자 이름을 이 팀원 ID 로 먼저 찾고, 없거나 팀원 목록에 없으면 `speaker` uid 로 찾는다. 둘 다 못 찾으면 `알 수 없음` 이다. 구현: [speakerName.ts](../../src/entities/member/lib/speakerName.ts). MSW 기준 검증, 실서버 미검증.
 - **2026-10-17 코드 대조:** 항목에 `reverted_at`·`approval_status` 가 더 온다. auto 항목을 되돌리면 `gate` 는 `auto` 그대로, `task_id` 는 `null`, `approval_id` 는 새 생성 승인이다 — 생성 시점 배타성의 예외다. 되돌리기는 `POST /extractions/{extraction_id}/items/{item_id}/revert` 다 (위 「M7 대시보드·항목 되돌리기 경계」).
 
 ### 2.5 approvals — `확인 필요` 의 데이터 출처
@@ -543,7 +558,7 @@ Content-Disposition: 없음(내려받기 아님). Accept-Ranges: bytes
 
 - **보완 사유는 서버가 주지 않는다.** `assignee_member_id` 가 `null` 이면 `담당자 없음`, `due_date` 가 `null` 이면 `마감 없음` 으로 프론트엔드가 파생한다.
 - `assignee_raw` 와 `due_raw` 는 회의에서 나온 원문이다. 확정 값이 아니므로 보조 표시한다.
-- `evidence_quote` · `evidence_speaker` · `evidence_at_ms` 로 근거를 보여준다.
+- `evidence_quote` · `evidence_speaker` · `evidence_at_ms` 로 근거를 보여준다. 생성·수정 승인 payload 에는 `evidence_speaker_member_id` 도 온다(BE [extractions.py](../../../backend/app/api/extractions.py)). 화자 이름은 이 값을 먼저 쓰고 `evidence_speaker` uid 로 돌아간다(2026-11-05, #256 A1, 위 §2.4).
 - `type` 마다 화면이 다르므로 **`type` 으로 분기한 뒤 payload 를 읽는다.** 공통 필드를 가정하지 않는다.
 - 목록 정렬이 `created_at` 내림차순 고정이다. **대기 오래된 순(D-050)은 클라이언트에서 뒤집는다.**
 
@@ -1052,7 +1067,7 @@ POST .../meetings/upload            multipart/form-data
 - FE 합의 근거는 [이슈 결정 댓글](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/256#issuecomment-6609243822)과 D-091~D-093의 2026-11-04 보완이다. BE 목록 변경은 이 작업의 구현 제안이며 파트 간 리뷰·합의와 실서버 배포 확인은 별도다.
 - 현재 구현 근거: [BE 목록](../../../backend/app/api/workspaces.py), [FE DTO](../../src/shared/types/api/meeting.ts), [매퍼](../../src/entities/meeting/model/mapper.ts), [실패 안내](../../src/entities/meeting/lib/meetingFailure.ts), [목록 구분](../../src/entities/meeting/lib/minutesList.ts), [추적기](../../src/features/meeting-processing/model/useProcessingTracker.ts).
 - 자동 실패 전환은 미병합 [BE PR #301](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/pull/301)의 동작이다. 이 작업은 sweeper나 화자 지정 기능을 구현하지 않는다.
-- 예정 계약: [BE 알림 댓글](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/256#issuecomment-6604969982)에 따라 지정 제출 직후 만료되면 `409 MEETING_NOT_AWAITING_SPEAKERS`, `details.status=failed`가 온다. FE는 상세를 다시 조회해 실제 사유를 안내하고 재제출을 막는 방향이다. 현재 `develop`에는 화자 지정 제출 UI가 없어 이 오류의 실제 화면 연결은 후속 작업이다. 모든 409를 만료로 해석하지 않는다.
+- 예정 계약: [BE 알림 댓글](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/256#issuecomment-6604969982)에 따라 지정 제출 직후 만료되면 `409 MEETING_NOT_AWAITING_SPEAKERS`, `details.status=failed`가 온다. FE는 상세를 다시 조회해 실제 사유를 안내하고 재제출을 막는 방향이다. 2026-11-05 화자 지정 화면에 연결했다(§2.3.1 「FE 구현」의 제출 오류, MSW 기준). 모든 409를 만료로 해석하지 않는다.
 
 
 ### 4.5 Discord 서버 사용자 목록
@@ -1310,7 +1325,7 @@ members 에만 있고 Discord 목록에 없으면      → 비활성 (서버를 
 | 참석자 선택 | `GET /members?workspace_id=` | **구현됨** §2.2 |
 | 업로드 | `POST /workspaces/{id}/meetings/upload` (multipart) | **구현됨** — 파일·참석자 저장, 화자 지정은 §2.3.1 |
 | 정리 중 — 폴링 | `GET /meetings/{meeting_id}` | **구현됨** §2.3 — `progress` 포함 |
-| 화자 지정(`awaiting_speakers`) | `GET`·`PUT /meetings/{id}/speakers`, `GET /meetings/{id}/audio` | BE 구현됨, FE 방향 합의(#256) §2.3.1 |
+| 화자 지정(`awaiting_speakers`) | `GET`·`PUT /meetings/{id}/speakers`, `GET /meetings/{id}/audio` | BE 구현됨, **FE 구현**(MSW 기준, 실서버 미검증) §2.3.1 |
 | 회의록 목록 | `GET /workspaces/{id}/meetings` | **구현됨** §4.4 |
 | 회의록 본문 | `GET /meetings/{meeting_id}/minutes` | ⚠️ **스텁** §4.4 — `transcript` 가 안내 문구 1줄, `summary` 는 항상 `null` |
 | 회의록의 태스크 영역 | `GET /extractions/{extraction_id}` | **구현됨** §2.4 |
@@ -1459,7 +1474,8 @@ members 에만 있고 Discord 목록에 없으면      → 비활성 (서버를 
 **MSW 동작.** 개발 서버·테스트·Storybook 의 목([handlers/message.ts](../../src/shared/mock/handlers/message.ts))은 위 백엔드 경로·응답 모양·오류 코드를 그대로 쓴다(#315).
 
 - 흉내 내는 것: 승인 때 `draft_version` 비교(다르면 409 `BUNDLE_CHANGED`, 이미 승인했으면 그대로 200), 지난 시각 승인·시각 고치기 409 `REMINDER_SCHEDULED_AT_PASSED`, 예정이 아닌 묶음 409 `REMINDER_NOT_EDITABLE`, 없는 묶음 404 `REMINDER_BUNDLE_NOT_FOUND`, 문구를 고치면 `body_source: pm`·판 올림·승인 유지, 시각만 옮기면 판 그대로, 팀원에게 `bundles: null`, 남의 대화 조회·답장 403 `FORBIDDEN`(PM 의 답장 포함), 시간대 없는 `scheduled_at` 400, 시각은 UTC 로 응답.
-- 흉내 내지 않는 것: 같은 시각으로 옮겼을 때 묶음 합치기, 스케줄러의 발송·만료·자동 취소, AI 초안 도착, `POST /messages/reminders` 와 리마인드 하나 고치기·빼기 경로, 봇 경로.
+- 흉내 내는 것(묶음 합치기, #368): 옮긴 시각에 같은 대화의 예정 묶음이 있으면 리마인드를 그 묶음으로 옮기고 합쳐진 묶음을 돌려준다. 두 묶음 모두 문구를 규칙대로 다시 만들고 판을 올리고 승인을 푼다. 리마인드가 남지 않은 옮긴 묶음은 `cancelled` 다. 합쳐지는 시각으로 옮기면서 문구를 같이 보내면 400 `INVALID_REQUEST` 다. 시나리오 `messages-merge` 가 합치기를 재현한다.
+- 흉내 내지 않는 것: 스케줄러의 발송·만료·자동 취소, AI 초안 도착, `POST /messages/reminders` 와 리마인드 하나 고치기·빼기 경로, 봇 경로.
 
 **프론트엔드가 정한 정책** (D-174, 백엔드·AI 합의 여부 확인 필요). 서버가 해 줘야 하는 일만 적는다. 정책 전문은 D-174 에 있다.
 

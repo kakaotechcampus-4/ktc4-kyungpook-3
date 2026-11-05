@@ -259,32 +259,50 @@ function RowTitle({ meeting }: { meeting: MeetingSummary }) {
   )
 }
 
+function inProgressStatus(
+  workspaceId: string,
+  meeting: MeetingSummary,
+): { label: string; to: string | null } {
+  switch (meeting.status) {
+    case 'processing':
+      return {
+        label: '정리 중',
+        to: MEETING_SOURCE_TRAITS[meeting.source].hasProcessingScreen
+          ? paths.meetingProcessing(workspaceId, meeting.id)
+          : null,
+      }
+    case 'awaiting_speakers':
+      return { label: '화자 지정 필요', to: paths.meetingSpeakers(workspaceId, meeting.id) }
+    default:
+      return { label: '회의 중', to: null }
+  }
+}
+
 /**
- * 회의록이 아직 없는 회의의 상태 항목 (U5-2). 정리 중이면 처리 화면으로 잇는다.
+ * 회의록이 아직 없는 회의의 상태 항목 (U5-2). 정리 중이면 처리 화면, 화자 지정 대기면 지정 화면으로 잇는다.
  * Discord 봇이 기록 중인 회의(`created`·`recording`)는 갈 곳이 없어 상태만 보인다 (U5-9).
  * 채팅 회의는 처리 화면의 단계가 녹음 기준이라 정리 중이어도 잇지 않는다 (#379).
  */
 function InProgressRow({ workspaceId, meeting }: { workspaceId: string; meeting: MeetingSummary }) {
   const title = meeting.title === '' ? '제목 없는 회의' : meeting.title
-  const content = (status: string) => (
+  const status = inProgressStatus(workspaceId, meeting)
+  const content = (
     <>
       <span className="flex w-full items-center gap-8">
         <span className="flex-1 text-body text-sub group-hover:text-ink">{title}</span>
         <SourceBadge meeting={meeting} />
         <span className={STATUS_BADGE}>
           <span aria-hidden="true" className="size-5 shrink-0 rounded-999 bg-ink" />
-          {status}
+          {status.label}
         </span>
       </span>
       <span className={ROW_META}>{listMeta(meeting)}</span>
     </>
   )
-  if (meeting.status !== 'processing') return <div className={ROW}>{content('회의 중')}</div>
-  if (!MEETING_SOURCE_TRAITS[meeting.source].hasProcessingScreen)
-    return <div className={ROW}>{content('정리 중')}</div>
+  if (status.to === null) return <div className={ROW}>{content}</div>
   return (
-    <GuardedLink to={paths.meetingProcessing(workspaceId, meeting.id)} className={ROW}>
-      {content('정리 중')}
+    <GuardedLink to={status.to} className={ROW}>
+      {content}
     </GuardedLink>
   )
 }

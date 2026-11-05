@@ -38,10 +38,10 @@ test('가입한 계정·세션·만든 공간·온보딩 단계가 새로고침 
   await expect(page).toHaveURL(/\/connect_notion$/)
 
   // 가입 계정도 버전 키 봉투로 sessionStorage 에 남아 있다. 버전은 shared/mock/persistence.ts 의 MOCK_DB_VERSION —
-  // E2E 는 앱 모듈을 불러오지 않으므로 숫자를 그대로 맞춘다 (M5 `meetingFlow` 칸 추가로 2, 2026-10-02 · M8 메시지 칸 추가로 3, 2026-10-31 · M8 메시지 필드 추가로 4, 2026-11-01 · 재촉을 검토 행 하나로 두어 5, 2026-11-04 · 팀원 초대 칸 추가로 6 · 메시지를 백엔드 계약 모양으로 옮겨 7, 2026-11-04)
+  // E2E 는 앱 모듈을 불러오지 않으므로 숫자를 그대로 맞춘다 (M5 `meetingFlow` 칸 추가로 2, 2026-10-02 · M8 메시지 칸 추가로 3, 2026-10-31 · M8 메시지 필드 추가로 4, 2026-11-01 · 재촉을 검토 행 하나로 두어 5, 2026-11-04 · 팀원 초대 칸 추가로 6 · 메시지를 백엔드 계약 모양으로 옮겨 7, 2026-11-04 · 화자 지정 칸 추가로 8, 2026-11-05)
   const store = await page.evaluate(() => sessionStorage.getItem('msw-db'))
   expect(store).toContain('restore@example.com')
-  expect(JSON.parse(store ?? '{}')).toMatchObject({ version: 7 })
+  expect(JSON.parse(store ?? '{}')).toMatchObject({ version: 8 })
 })
 
 test('OAuth 왕복(현재 탭 이동 두 번)을 지나도 로그인·연동·단계가 이어진다', async ({ page }) => {
@@ -107,7 +107,7 @@ test('손상된 저장값은 버리고 비로그인으로 시작한다', async (
   // 손상값은 버려지고 비로그인 시작 상태가 현재 버전(MOCK_DB_VERSION, 위 첫 시나리오 참고)으로 새로 저장됐다
   expect(after.stored).not.toBe('{broken')
   expect(JSON.parse(after.stored ?? 'null')).toMatchObject({
-    version: 7,
+    version: 8,
     db: { authenticated: false },
   })
 })
