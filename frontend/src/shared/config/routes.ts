@@ -12,6 +12,9 @@ function workspaceBase(workspaceId: string): string {
 /** 지난 온보딩 단계를 둘러보는 표시. `?review=1` 이면 가드가 저장된 지난 단계를 보여 준다 */
 export const ONBOARDING_REVIEW_PARAM = 'review'
 
+/** 로그인 화면의 검색 파라미터. `next` 는 로그인 뒤 돌아갈 앱 안 경로다 — 받는 쪽이 parseReturnPath 로 다시 확인한다 */
+export const LOGIN_PARAMS = { next: 'next' } as const
+
 /**
  * 설정 화면의 검색 파라미터. `section=notion` 이면 Notion 연결 영역으로 포커스를 옮기고,
  * `next` 는 Notion 연결이 끝난 뒤 돌아갈 곳이다 — 그 공간의 업로드 경로만 받는다 (D-097, D-098)
@@ -36,7 +39,11 @@ function withOptionalId(base: string, id: string | undefined): string {
 
 export const paths = {
   landing: () => '/',
-  login: () => '/login',
+  /** `next` 를 주면 로그인 뒤 그 경로로 돌아간다 (#411) */
+  login: (next?: string) =>
+    next === undefined
+      ? '/login'
+      : `/login?${new URLSearchParams({ [LOGIN_PARAMS.next]: next }).toString()}`,
   signup: () => '/signup',
   /** 비밀번호 재설정 메일 요청. 로그인한 사용자는 가드가 돌려보낸다 */
   forgotPassword: () => '/forgot-password',

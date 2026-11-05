@@ -96,7 +96,8 @@ test('손상된 저장값은 버리고 비로그인으로 시작한다', async (
     sessionStorage.setItem('e2e-corrupted', 'written')
   })
   await page.reload()
-  await expect(page).toHaveURL('/login')
+  // 보던 화면은 로그인 뒤 돌아갈 경로로 남는다 (#411)
+  await expect(page).toHaveURL('/login?next=%2Fworkspaces%2Fws_01%2Fdashboard')
 
   const after = await page.evaluate(() => ({
     marker: sessionStorage.getItem('e2e-corrupted'),
