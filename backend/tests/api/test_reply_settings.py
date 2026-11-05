@@ -2,8 +2,8 @@
 from datetime import timedelta
 
 from app.models import Notification, ReminderWatch, WatchState
-from app.services import message_settings, messages, replies, scheduler
-from tests.api.test_replies import _remind, _reply
+from app.services import message_settings, messages, replies
+from tests.api.test_replies import _reply
 from tests.api.test_reply_clock import DEADLINE, _auto_blocked
 from tests.api.test_reply_judgment import _change, _claim, _judge, two  # noqa: F401
 from tests.api.test_scheduler import H, SLOT, tick
