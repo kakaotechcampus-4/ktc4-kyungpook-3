@@ -423,7 +423,18 @@ def test_create_meeting_with_started_at_and_chat_source(client, db):
     assert db.get(Meeting, data["meeting_id"]).source == "chat"
 
 
-def test_chat_source_accepts_offsets_over_24h(client, db, meeting):
+def _chat_meeting(db) -> Meeting:
+    ws = Workspace(name="C")
+    db.add(ws)
+    db.flush()
+    m = Meeting(workspace_id=ws.workspace_id, source="chat", status=str(MeetingStatus.PROCESSING))
+    db.add(m)
+    db.commit()
+    return m
+
+
+def test_chat_source_accepts_offsets_over_24h(client, db):
+    meeting = _chat_meeting(db)
     r = _post_chat(client, meeting.meeting_id, [_seg(0, start=90000.0, end=90000.0)])
 
     assert r.status_code == 201
@@ -437,7 +448,8 @@ def test_meeting_source_still_rejects_over_24h(client, db, meeting):
     assert r.json()["error"]["code"] == "INVALID_REQUEST"
 
 
-def test_chat_source_over_14_days_rejected(client, db, meeting):
+def test_chat_source_over_14_days_rejected(client, db):
+    meeting = _chat_meeting(db)
     r = _post_chat(client, meeting.meeting_id, [_seg(0, start=1_209_601.0, end=1_209_601.0)])
 
     assert r.status_code == 400
@@ -619,3 +631,56 @@ def test_unknown_segment_keys_are_ignored(client, db, meeting):
     r = _post(client, meeting.meeting_id, [{**_seg(0), "speaker_member_ids": ["x"], "foo": 1}])
 
     assert r.status_code == 201
+
+
+def test_chat_source_on_non_chat_meeting_rejected(client, db, meeting):
+    # 24시간 상한을 요청 필드 하나로 우회하지 못하게, 회의의 출처와 요청의 출처가 같아야 한다
+    r = _post_chat(client, meeting.meeting_id, [_seg(0, start=90000.0, end=90000.0)])
+
+    assert r.status_code == 400
+    assert r.json()["error"]["code"] == "INVALID_REQUEST"
+    assert db.query(Source).filter(Source.meeting_id == meeting.meeting_id).count() == 0
+
+
+def _create_chat_meeting(client, ws_id, started_at):
+    return client.post(
+        "/api/v1/meetings",
+        json={"workspace_id": ws_id, "source": "chat", "started_at": started_at},
+        headers=HEADERS,
+    )
+
+
+def test_started_at_with_offset_is_stored_as_utc(client, db):
+    ws = Workspace(name="A")
+    db.add(ws)
+    db.commit()
+
+    r = _create_chat_meeting(client, ws.workspace_id, "2026-11-03T10:00:00+09:00")
+
+    assert r.status_code == 201
+    db.expire_all()
+    stored = db.get(Meeting, r.json()["data"]["meeting_id"]).started_at
+    assert stored.replace(tzinfo=None) == datetime(2026, 11, 3, 1, 0)   # SQLite 는 벽시계 시각만 돌려준다
+
+
+def test_started_at_without_timezone_rejected(client, db):
+    ws = Workspace(name="A")
+    db.add(ws)
+    db.commit()
+
+    r = _create_chat_meeting(client, ws.workspace_id, "2026-11-03T10:00:00")
+
+    assert r.status_code == 400
+    assert r.json()["error"]["code"] == "INVALID_REQUEST"
+
+
+def test_started_at_in_the_future_rejected(client, db):
+    ws = Workspace(name="A")
+    db.add(ws)
+    db.commit()
+
+    r = _create_chat_meeting(client, ws.workspace_id, "2099-01-01T00:00:00Z")
+
+    assert r.status_code == 400
+    assert r.json()["error"]["code"] == "INVALID_REQUEST"
+    assert db.query(Meeting).count() == 0

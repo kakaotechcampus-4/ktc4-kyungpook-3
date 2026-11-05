@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator
 
 from app.models import (
     ApprovalStatus,
@@ -23,9 +23,19 @@ class MeetingCreateRequest(BaseModel):
     source: MeetingSource = Field(
         MeetingSource.DISCORD, description="discord | manual_upload | chat"
     )
-    started_at: datetime | None = Field(
-        None, description="회의 시작 시각. 없으면 지금. 채팅 출처는 그날 대화의 시작 시각을 보낸다"
+    started_at: AwareDatetime | None = Field(
+        None,
+        description="회의 시작 시각(시간대 필수, UTC 로 저장). 없으면 지금. 지금보다 늦으면 400. "
+        "채팅 출처는 이 회의에 담긴 첫 메시지 시각을 보낸다",
     )
+
+
+class ChatCursorResponse(BaseModel):
+    """봇이 마지막으로 처리한 채팅 위치. 끝난 채팅 회의가 없으면 data 가 null 이다."""
+
+    meeting_id: str
+    # str 로 둔다. datetime 으로 직렬화하면 +00:00 이 Z 로 바뀌어 계약(`+00:00`)과 달라진다
+    last_message_at: str = Field(..., description="마지막 메시지 시각. ISO 8601, UTC(+00:00)")
 
 
 class MeetingCreateResponse(BaseModel):
