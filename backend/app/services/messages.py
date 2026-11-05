@@ -447,10 +447,9 @@ def _auto_approve_due(db: Session, now: datetime, exclude: list[str]) -> None:
     """자동 승인이 켜진 워크스페이스의 승인 전 묶음 중 켠 뒤에 시각이 된 것을 승인한다. 초안 버전·미래 시각은 보지 않는다."""
     bundles = db.scalars(
         select(ReminderBundle)
-        .join(MessageThread, MessageThread.thread_id == ReminderBundle.thread_id)
         .join(
             WorkspaceMessageSettings,
-            WorkspaceMessageSettings.workspace_id == MessageThread.workspace_id,
+            WorkspaceMessageSettings.workspace_id == ReminderBundle.workspace_id,
         )
         .where(
             ReminderBundle.status == ReminderStatus.SCHEDULED,
