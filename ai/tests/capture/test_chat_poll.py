@@ -158,6 +158,18 @@ def test_chat_poll_settings_survive_empty_env(monkeypatch):
         importlib.reload(config)
 
 
+def test_max_days_is_capped_at_be_limit(monkeypatch):
+    # BE 는 chat 발화 시각을 14일까지만 받는다. 더 크게 두면 매일 400 이 나서 커서가 멈춘다
+    import importlib
+    import shared.config as config
+    monkeypatch.setenv("CHAT_POLL_MAX_DAYS", "30")
+    try:
+        assert importlib.reload(config).Settings().chat_poll_max_days == 14
+    finally:
+        monkeypatch.undo()
+        importlib.reload(config)
+
+
 def test_calls_in_order_and_cursor_lands_on_last_message():
     fake, client = _env()
     first, last = _at(hours=3), _at(hours=1)
