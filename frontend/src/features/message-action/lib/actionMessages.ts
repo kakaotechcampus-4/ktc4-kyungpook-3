@@ -9,6 +9,8 @@ export const ACTION_FAILURE_TITLE: Record<MessageAction['kind'], string> = {
   edit: '고친 문구를 저장하지 못했어요',
   schedule: '보낼 시각을 바꾸지 못했어요',
   reply: '답장을 보내지 못했어요',
+  removeTask: '태스크를 빼지 못했어요',
+  editNote: '메모를 저장하지 못했어요',
 }
 
 export const TIME_PASSED_TITLE = '예정 시각이 지났어요'
@@ -51,6 +53,7 @@ export const KNOWN_FAILURES: Readonly<Record<string, KnownFailure>> = {
   },
   REMINDER_NOT_EDITABLE: GONE,
   REMINDER_BUNDLE_NOT_FOUND: GONE,
+  REMINDER_NOT_FOUND: GONE,
 }
 
 /** 승인 성공 알림 */

@@ -148,7 +148,7 @@ export function ReviewDetail({ workspaceId, botName, bundle, onSettled }: Review
               { kind: 'schedule', bundleId: bundle.id, scheduledAt },
               {
                 onSuccess: (outcome) => {
-                  if (outcome.kind === 'done') {
+                  if (outcome.kind !== 'merged') {
                     onSaved()
                     return
                   }
