@@ -153,6 +153,13 @@ describe('메일 링크의 토큰', () => {
     expect(log.started.some(({ path }) => path.includes('mock-reset-normal'))).toBe(false)
   })
 
+  it('확인한 링크의 가린 이메일로 어느 계정을 바꾸는지 보인다', async () => {
+    renderApp(RESET_LINK)
+    expect(await screen.findByLabelText('새 비밀번호')).toBeInTheDocument()
+    expect(screen.getByText('p***@example.com')).toBeInTheDocument()
+    expect(screen.getByText(/계정의 비밀번호를 바꿔요\./)).toBeInTheDocument()
+  })
+
   it('주소에 토큰이 없으면 확인하지 않고 쓸 수 없는 링크로 본다', async () => {
     const log = recordRequests()
     renderApp('/reset-password')

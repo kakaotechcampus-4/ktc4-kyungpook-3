@@ -14,7 +14,7 @@ import { readResetToken } from './passwordReset'
  */
 export type ResetLink =
   | { status: 'checking' }
-  | { status: 'ready'; token: string }
+  | { status: 'ready'; token: string; emailMasked: string }
   | { status: 'rejected'; problem: ResetLinkProblem }
   | { status: 'failed'; error: unknown; retry: () => void }
 
@@ -52,7 +52,7 @@ export function useResetLink(): ResetLinkControl {
   let link: ResetLink
   if (token === null) link = { status: 'rejected', problem: 'invalid' }
   else if (confirmProblem !== null) link = { status: 'rejected', problem: confirmProblem }
-  else if (verify.isSuccess) link = { status: 'ready', token }
+  else if (verify.isSuccess) link = { status: 'ready', token, emailMasked: verify.data.emailMasked }
   else if (verify.isError && !verify.isFetching) {
     const problem = resetLinkProblem(verify.error)
     link =

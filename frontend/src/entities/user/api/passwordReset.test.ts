@@ -17,10 +17,11 @@ describe('비밀번호 재설정 요청', () => {
     await vi.waitFor(() => expect(bodies).toEqual([{ email: 'pm@example.com' }]))
   })
 
-  it('확인은 { token } 을 보내고 만료 시각을 돌려준다', async () => {
+  it('확인은 { token } 을 보내고 만료 시각과 가린 이메일을 돌려준다', async () => {
     const bodies = recordRequestBodies('POST', '/auth/password-reset/verify')
     await expect(verifyPasswordReset('mock-reset-normal')).resolves.toEqual({
       expiresAt: db.passwordReset.tokens[0].expiresAt,
+      emailMasked: 'p***@example.com',
     })
     await vi.waitFor(() => expect(bodies).toEqual([{ token: 'mock-reset-normal' }]))
   })

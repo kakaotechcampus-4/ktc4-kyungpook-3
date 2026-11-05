@@ -17,14 +17,16 @@ export async function requestPasswordReset(email: string): Promise<void> {
   await request<Record<string, never>>('/auth/password-reset/request', { method: 'POST', body })
 }
 
-/** 쓸 수 있는 링크면 만료 시각을 돌려준다. 못 쓰면 400 `PASSWORD_RESET_TOKEN_INVALID` (resetLinkProblem) */
-export async function verifyPasswordReset(token: string): Promise<{ expiresAt: string }> {
+/** 쓸 수 있는 링크면 만료 시각과 가린 이메일을 돌려준다. 못 쓰면 400 `PASSWORD_RESET_TOKEN_INVALID` (resetLinkProblem) */
+export async function verifyPasswordReset(
+  token: string,
+): Promise<{ expiresAt: string; emailMasked: string }> {
   const body: PasswordResetVerifyDto = { token }
   const data = await request<PasswordResetVerifiedDto>('/auth/password-reset/verify', {
     method: 'POST',
     body,
   })
-  return { expiresAt: data.expires_at }
+  return { expiresAt: data.expires_at, emailMasked: data.email_masked }
 }
 
 /** 성공하면 서버가 그 계정의 세션을 모두 끊는다. 자동 로그인은 없다 */

@@ -3,14 +3,17 @@ import { db } from './db'
 import { PASSWORD_RESET_SCENARIO_TOKENS } from './passwordResetScenarios'
 import { applyScenario } from './scenarios'
 
-/* #356 비밀번호 재설정 handler. 합의 댓글(계약 §4.1.1)의 동작을 본다 */
+/* #356 비밀번호 재설정 handler. BE PR #398 의 동작(계약 §4.1.1)을 본다 */
 
 const EMAIL = 'pm@example.com'
 
 const requestReset = (email: string) =>
   fetchDto('/auth/password-reset/request', jsonRequest('POST', { email }))
 const verify = (token: string) =>
-  fetchDto<{ expires_at: string }>('/auth/password-reset/verify', jsonRequest('POST', { token }))
+  fetchDto<{ expires_at: string; email_masked: string }>(
+    '/auth/password-reset/verify',
+    jsonRequest('POST', { token }),
+  )
 const confirm = (token: string, newPassword: string) =>
   fetchDto(
     '/auth/password-reset/confirm',
@@ -47,6 +50,7 @@ describe('재설정 메일 요청', () => {
     ])
     await expect(verify(lastMailedToken())).resolves.toEqual({
       expires_at: '2026-11-05T09:30:00.000Z',
+      email_masked: 'p***@example.com',
     })
   })
 
@@ -63,6 +67,26 @@ describe('재설정 메일 요청', () => {
     vi.advanceTimersByTime(1)
     await requestReset(EMAIL)
     expect(db.passwordReset.outbox).toHaveLength(2)
+  })
+
+  it('1시간에 5번 보낸 뒤에는 60초가 지나도 같은 200 이고 메일이 없다. 첫 메일 뒤 1시간이 지나면 다시 보낸다', async () => {
+    for (let sent = 0; sent < 5; sent += 1) {
+      await requestReset(EMAIL)
+      vi.advanceTimersByTime(60_000)
+    }
+    expect(db.passwordReset.outbox).toHaveLength(5)
+    await expect(requestReset(EMAIL)).resolves.toEqual({})
+    expect(db.passwordReset.outbox).toHaveLength(5)
+    vi.advanceTimersByTime(60 * 60_000 - 5 * 60_000 + 1)
+    await requestReset(EMAIL)
+    expect(db.passwordReset.outbox).toHaveLength(6)
+  })
+
+  it('제한에 걸린 재요청은 앞 링크를 그대로 둔다', async () => {
+    await requestReset(EMAIL)
+    const first = lastMailedToken()
+    await requestReset(EMAIL)
+    await expect(verify(first)).resolves.toBeDefined()
   })
 
   it('새 요청은 앞 링크를 invalid 로 만든다', async () => {
@@ -121,9 +145,29 @@ describe('링크 확인과 변경', () => {
     await expect(confirm(token, 'abcdefgh')).rejects.toMatchObject({
       status: 400,
       code: 'INVALID_REQUEST',
-      details: { fields: ['new_password'] },
+      details: { fields: [{ loc: ['body', 'new_password'], msg: expect.any(String) as string }] },
     })
     await expect(verify(token)).resolves.toBeDefined()
+  })
+
+  it('규칙 위반은 토큰보다 먼저 본다. 쓸 수 없는 링크여도 400 INVALID_REQUEST 다', async () => {
+    await expect(confirm('nope', 'short')).rejects.toMatchObject({ code: 'INVALID_REQUEST' })
+  })
+
+  it('가린 이메일은 아이디 앞 2자, 아이디가 2자 이하면 1자 + *** 다', async () => {
+    for (const email of ['abcdef@gmail.com', 'ab@gmail.com']) {
+      const account = structuredClone(db.accounts[0])
+      account.session.user.email = email
+      db.accounts.push(account)
+    }
+    await requestReset('abcdef@gmail.com')
+    await expect(verify(lastMailedToken())).resolves.toMatchObject({
+      email_masked: 'ab***@gmail.com',
+    })
+    await requestReset('ab@gmail.com')
+    await expect(verify(lastMailedToken())).resolves.toMatchObject({
+      email_masked: 'a***@gmail.com',
+    })
   })
 
   it('그 계정으로 로그인한 세션은 끊긴다', async () => {

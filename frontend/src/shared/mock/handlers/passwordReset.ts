@@ -6,7 +6,7 @@ import type { MockResetToken } from '../db'
 import { fail, ok } from '../envelope'
 
 /*
- * #356 비밀번호 재설정 (계약 §4.1.1). 합의만 됐고 BE 구현은 아직 없다 — 합의 댓글의 동작을 따른다.
+ * #356 비밀번호 재설정 (계약 §4.1.1). BE PR #398 의 동작을 따른다.
  * 시각은 `Date.now()` 다. 브라우저 MSW 는 `now()`(shared/lib/date)를 MOCK_NOW 에 멈추는데, 그 시계로는
  * 60초 쿨다운이 끝나지 않는다. 토큰 만료·쿨다운은 실제로 흐르는 시계로 본다.
  */
@@ -17,9 +17,14 @@ const TOKEN_TTL_MS = 30 * 60_000
 
 const MAIL_COOLDOWN_MS = 60_000
 
+const HOUR_MS = 60 * 60_000
+
+const HOURLY_MAIL_LIMIT = 5
+
 const EMAIL = z.email()
 
-const PASSWORD_RULE = /^(?=.*\d).{8,}$/
+/** BE validate_password. 길이는 코드 포인트로 세고(u), 숫자는 ASCII 0-9 만 본다 */
+const PASSWORD_RULE = /^(?=.*[0-9]).{8,}$/u
 
 type TokenCheck = { row: MockResetToken } | { reason: 'invalid' | 'expired' | 'used' }
 
@@ -36,12 +41,23 @@ const serverError = () => fail('INTERNAL_ERROR', '서버 오류가 발생했습�
 const tokenInvalid = (reason: string) =>
   fail('PASSWORD_RESET_TOKEN_INVALID', '재설정 링크를 사용할 수 없습니다.', 400, { reason })
 
-/** 가입한 이메일이고 쿨다운이 아니면 이전 링크를 무효로 하고 새 링크를 메일함에 넣는다 */
+/** BE 의 가리는 규칙. 아이디 앞 2자(2자 이하면 1자) + `***`, 도메인은 그대로 */
+function maskEmail(email: string): string {
+  const at = email.indexOf('@')
+  const local = email.slice(0, at)
+  return `${local.slice(0, local.length >= 3 ? 2 : 1)}***${email.slice(at)}`
+}
+
+/** 가입한 이메일이고 60초·1시간 5번 제한에 걸리지 않을 때만 이전 링크를 무효로 하고 새 링크를 메일함에 넣는다 */
 function sendResetMail(email: string): void {
   const state = db.passwordReset
   const at = Date.now()
   if (!db.accounts.some(({ session }) => session.user.email === email)) return
   if (at < (state.nextMailAt[email] ?? 0)) return
+  const lastHour = state.outbox.filter(
+    (mail) => mail.to === email && Date.parse(mail.sentAt) > at - HOUR_MS,
+  ).length
+  if (lastHour >= HOURLY_MAIL_LIMIT) return
   for (const row of state.tokens)
     if (row.email === email && row.status === 'active') row.status = 'revoked'
   const token = `mock-reset-${String(state.tokens.length + 1).padStart(2, '0')}`
@@ -75,17 +91,23 @@ export const passwordResetHandlers = [
     const body = (await request.json()) as { token?: unknown }
     const checked = checkToken(body.token)
     if ('reason' in checked) return tokenInvalid(checked.reason)
-    return ok({ expires_at: checked.row.expiresAt })
+    return ok({ expires_at: checked.row.expiresAt, email_masked: maskEmail(checked.row.email) })
   }),
   http.post(`${base}/confirm`, async ({ request }) => {
     if (db.passwordReset.failure === 'server-error') return serverError()
     const body = (await request.json()) as { token?: unknown; new_password?: unknown }
+    // BE 는 본문 검증이 토큰 확인보다 먼저다. 규칙 위반은 토큰을 쓰지 않는다
+    if (typeof body.new_password !== 'string' || !PASSWORD_RULE.test(body.new_password))
+      return fail('INVALID_REQUEST', '요청이 올바르지 않습니다.', 400, {
+        fields: [
+          {
+            loc: ['body', 'new_password'],
+            msg: 'Value error, 비밀번호는 8자 이상이고 숫자를 하나 이상 포함해야 합니다.',
+          },
+        ],
+      })
     const checked = checkToken(body.token)
     if ('reason' in checked) return tokenInvalid(checked.reason)
-    if (typeof body.new_password !== 'string' || !PASSWORD_RULE.test(body.new_password))
-      return fail('INVALID_REQUEST', '비밀번호 규칙에 맞지 않습니다.', 400, {
-        fields: ['new_password'],
-      })
     const { row } = checked
     row.status = 'used'
     const account = db.accounts.find(({ session }) => session.user.email === row.email)

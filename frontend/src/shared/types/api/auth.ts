@@ -25,6 +25,8 @@ export interface PasswordResetVerifyDto {
 }
 export interface PasswordResetVerifiedDto {
   expires_at: string
+  /** 아이디 앞 2자(2자 이하면 1자) + `***`, 도메인은 그대로. 예: `ab***@gmail.com` */
+  email_masked: string
 }
 export interface PasswordResetConfirmDto {
   token: string

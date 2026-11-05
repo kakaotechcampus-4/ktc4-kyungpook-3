@@ -19,6 +19,10 @@ const FORM = 'flex flex-col gap-16'
 
 const CHECKING = 'text-body text-dim'
 
+const LEAD = 'text-[14px] leading-[22px] text-dim'
+
+const ACCOUNT = 'font-semibold text-ink'
+
 /** 이 코드는 새 비밀번호 칸의 오류다. `details.fields` 는 읽지 않는다 — 칸이 하나다 */
 const FIELD_BY_CODE = { INVALID_REQUEST: 'newPassword' } as const
 
@@ -37,7 +41,9 @@ export function ResetPasswordForm() {
       )
       break
     case 'ready':
-      body = <NewPasswordForm token={link.token} onRejected={reject} />
+      body = (
+        <NewPasswordForm token={link.token} emailMasked={link.emailMasked} onRejected={reject} />
+      )
       break
     case 'rejected':
       body = (
@@ -75,10 +81,12 @@ export function ResetPasswordForm() {
 
 interface NewPasswordFormProps {
   token: string
+  /** 어느 계정을 바꾸는지 확인시킨다. 토큰을 가진 사람에게만 가는 값이다 */
+  emailMasked: string
   onRejected: (problem: ResetLinkProblem) => void
 }
 
-function NewPasswordForm({ token, onRejected }: NewPasswordFormProps) {
+function NewPasswordForm({ token, emailMasked, onRejected }: NewPasswordFormProps) {
   const { form, submit } = useAppForm(resetPasswordSchema, { newPassword: '' })
   const {
     register,
@@ -103,6 +111,9 @@ function NewPasswordForm({ token, onRejected }: NewPasswordFormProps) {
 
   return (
     <form noValidate className={FORM} onSubmit={(event) => void onSubmit(event)}>
+      <p className={LEAD}>
+        <span className={ACCOUNT}>{emailMasked}</span> 계정의 비밀번호를 바꿔요.
+      </p>
       <FormErrorPanel message={formError} />
       <PasswordField
         tone="auth"
