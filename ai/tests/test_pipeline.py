@@ -695,6 +695,23 @@ def test_reverting_is_caught_even_when_search_misses_the_task(monkeypatch):
     assert out.items == []
 
 
+def test_scope_merged_into_a_change_goes_as_scope_with_the_change(monkeypatch):
+    scope = {"indices": [3], "summary": "로그인 화면에서 소셜 로그인은 이번 버전에서 빼기로 함",
+             "assignee_type": "none", "reason": "범위"}
+    _install(
+        monkeypatch, stage1={"findings": [LOGIN_DELAY, scope]},
+        terra=[_terra(category="schedule"), _terra(category="scope")],
+        luna_draft=[
+            {"task": None, "due_date": "2026-10-06", "doc_text": "로그인 화면 마감을 10/2에서 10/6으로 연기"},
+            {"task": None, "due_date": None, "doc_text": "소셜 로그인은 이번 버전 범위에서 제외"},
+        ],
+    )
+
+    (card,) = _run_dedup().items
+
+    assert (card["category"], card["due_date"]) == ("scope", "2026-10-06")
+
+
 def test_scope_decision_survives_when_schedule_is_reverted(monkeypatch):
     # 마감 변경 → 같은 Task 범위 결정 → 마감 원래대로. 마감은 지워져도 범위 결정은 남아야 하고,
     # 필드 없는 결정이라 BE 가 받도록 category 를 scope 로(PR #206 리뷰)
