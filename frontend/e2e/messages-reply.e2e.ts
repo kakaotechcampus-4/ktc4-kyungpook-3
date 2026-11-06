@@ -97,7 +97,9 @@ test('답장 칸은 한 줄 44px 에서 92px 까지 자라고 그 뒤로는 칸 
   expect(button.y).toBe(grown.y)
 
   await field.press('Enter')
-  await expect(page.getByRole('region', { name: '대화 내용' }).getByText(/^한 줄/)).toBeVisible()
+  await expect(
+    page.getByRole('region', { name: '대화 내용' }).getByText(/한 줄\s+둘\s+셋\s+넷\s+다섯/),
+  ).toBeVisible()
   await expect(field).toHaveValue('')
   expect((await box(field)).height).toBe(44)
 })
