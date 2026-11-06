@@ -523,7 +523,7 @@ def test_evidence_seqs_are_segment_seqs_not_sentence_positions(monkeypatch):
 
 def test_merged_card_keeps_every_evidence_seq(monkeypatch):
     out = _run_owner(
-        monkeypatch, [REFUND_NEW, REFUND_BOB, REFUND_FRI],
+        monkeypatch, [{**REFUND_NEW, "assignee_type": "none"}, {**REFUND_BOB, "assignee_type": "none"}, REFUND_FRI],
         [_terra(is_new=True, matched_candidate_index=None), _terra(category="assignee"), _terra(category="schedule")],
         [{"task": "결제 환불 기능 구현", "due_date": None, "doc_text": "결제 환불 기능 구현"},
          {"task": None, "due_date": None, "doc_text": "Bob 이 맡기로 함"},
@@ -551,6 +551,27 @@ def test_first_person_without_speaker_does_not_take_a_later_seq(monkeypatch):
     out = run(meeting, workspace_id="ws_1", today=date(2026, 9, 28), candidates=DedupCandidates())
 
     assert out.items[0]["evidence_speaker"] is None
+    assert out.items[0]["evidence_seqs"] == [1]
+
+
+def test_first_person_of_an_upload_label_does_not_take_a_later_seq(monkeypatch):
+    # 업로드는 인계 때 라벨을 지운다. 외부 참석자면 BE 가 가장 큰 seq 의 화자로 찾아, 마감을 말한 팀원이 담당자가 된다
+    meeting = Transcript(segments=[
+        TranscriptSegment(speaker="SPEAKER_00", start=1.0, end=3.0, text="결제 환불 기능 제가 만들게요.", seq=1),
+        TranscriptSegment(speaker="SPEAKER_01", start=4.0, end=5.0, text="환불 기능은 금요일까지 해 주세요.", seq=2),
+    ])
+    _install(
+        monkeypatch,
+        stage1={"findings": [{"indices": [0], "summary": "결제 환불 기능을 맡기로 함", "assignee_type": "first", "reason": "담당"},
+                             {"indices": [1], "summary": "결제 환불 기능 마감을 금요일로 정함", "assignee_type": "none", "reason": "마감"}]},
+        terra=[_terra(is_new=True, matched_candidate_index=None), _terra(category="schedule")],
+        luna_draft=[{"task": "결제 환불 기능 구현", "due_date": None, "doc_text": "결제 환불 기능 구현"},
+                    {"task": None, "due_date": "2026-10-02", "doc_text": "마감을 10/2 로 정함"}],
+    )
+
+    out = run(meeting, workspace_id="ws_1", today=date(2026, 9, 28), candidates=DedupCandidates())
+
+    assert out.items[0]["evidence_speaker"] == "SPEAKER_00"
     assert out.items[0]["evidence_seqs"] == [1]
 
 
