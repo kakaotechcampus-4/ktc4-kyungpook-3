@@ -112,7 +112,10 @@ describe('회의 시나리오 (U2-4)', () => {
 
   it('meeting-chat-processing: 정리 중인 채팅 회의가 있어도 업로드는 202 이고 채팅 회의는 저절로 끝나지 않는다 (#450)', async () => {
     applyScenario('meeting-chat-processing')
-    await expect(detail('mt_11')).resolves.toMatchObject({ status: 'processing' })
+    await expect(detail('mt_11')).resolves.toMatchObject({
+      status: 'processing',
+      progress: { audio_merged: false, transcribed: false, extracted: false },
+    })
     await expect(upload()).resolves.toMatchObject({ meeting_id: 'mt_12', status: 'processing' })
   })
 
@@ -121,6 +124,7 @@ describe('회의 시나리오 (U2-4)', () => {
     await expect(detail('mt_11')).resolves.toMatchObject({
       status: 'failed',
       failed_stage: 'chat_stalled',
+      progress: { audio_merged: false, transcribed: false, extracted: false },
     })
     await upload()
     await expect(detail('mt_12')).resolves.toMatchObject({ status: 'processing' })

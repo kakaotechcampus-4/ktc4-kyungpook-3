@@ -324,7 +324,10 @@ export function isChatMeeting(meetingId: string, state: MockDb = db): boolean {
   )
 }
 
-/** 디스코드 채팅 자동 수집이 정리 중인 회의를 하나 더한다. 녹음이 없어 진행 단계가 없다 (#379, #450) */
+/**
+ * 디스코드 채팅 자동 수집이 정리 중인 회의를 하나 더한다 (#379, #450).
+ * `/end` 뒤 아직 단계를 알리지 않았고 발화도 없는 회의라 서버 `_compute_progress` 처럼 세 값이 모두 false 다
+ */
 export function startChatMeeting(state: MockDb = db): string {
   const meetingId = nextId(
     'mt',
@@ -341,7 +344,7 @@ export function startChatMeeting(state: MockDb = db): string {
     ended_at: '2026-09-18T09:40:00Z',
     extraction_id: null,
     failed_stage: null,
-    progress: null,
+    progress: { audio_merged: false, transcribed: false, extracted: false },
   })
   state.meetingSummaries.push({
     meeting_id: meetingId,
