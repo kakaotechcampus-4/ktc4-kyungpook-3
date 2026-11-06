@@ -6,7 +6,7 @@ M3 plan.md 는 비어 있다. 이번 작업은 #229(추출 근거를 발화 seq 
 
 추출 등록 항목에 `evidence_seqs`(근거 발화의 seq 목록)를 받아 `evidence` 로 저장한다. 찾은 발화 중 seq 가 가장 큰 발화를 대표 근거로 보고, 승인 요청 근거·별칭 판정 로그·추출 조회에 쓴다. 하나도 못 찾으면 지금처럼 요청의 세 필드(`evidence_quote`·`evidence_speaker`·`evidence_at_ms`)를 쓴다. 1인칭 담당자는 요청의 `evidence_speaker` 를 먼저 쓰고, 없을 때는 요청한 seq 중 가장 큰 발화(결론 발화)를 찾았을 때만 그 화자를 쓴다.
 
-2026-11-06 에 #459(승인 때 별칭 학습)의 BE PR ② 를 더했다. 근거는 이슈 #459 의 "정한 규칙"과 설계 확정 댓글이다. 추출 때 담당자를 별칭으로 찾지 못한 이름·역할 지목 항목을 PM 이 담당자를 골라 승인하면서 `save_alias=true` 를 보내면, 회의에서 부른 말을 다듬어 그 팀원의 확인된 별칭으로 저장한다. 이를 위해 추출 항목에 `assignee_type` 을 저장한다. 님·조사 후보 검색과 팀원 이름·디스코드 닉네임 별칭은 PR ① 범위다.
+2026-11-06 에 #459(승인 때 별칭 학습)의 BE PR ② 를 더했다. 근거는 이슈 #459 의 "정한 규칙"과 설계 확정 댓글이다. 추출 때 담당자를 별칭으로 찾지 못한 이름 지목 항목을 PM 이 담당자를 골라 승인하면서 `save_alias=true` 를 보내면, 회의에서 부른 말을 다듬어 그 팀원의 확인된 별칭으로 저장한다. 이를 위해 추출 항목에 `assignee_type` 을 저장한다. 님·조사 후보 검색과 팀원 이름·디스코드 닉네임 별칭은 PR ① 범위다.
 
 ## 실제 구현 및 관련 코드
 
@@ -59,8 +59,9 @@ M3 plan.md 가 비어 있어 완료조건이 없다. 마일스톤 완료를 판�
 | `thirdrole` 새 항목은 auto 아님 | 충족 | `test_legacy_thirdrole_item_is_not_auto` |
 | 다듬기 규칙 | 충족 | `test_trim_alias_text` |
 | 물어볼 항목만 `alias_candidate=true` | 충족 | `test_learnable_alias_text_for_unmatched_name_and_role`, `test_learnable_alias_text_is_none_when_not_learnable`, 추출 조회·승인 목록·단건·반려 뒤·수동 생성 API 테스트 |
-| `save_alias=true` 승인으로 learned·verified·0.9 저장 | 충족 | `test_save_alias_creates_learned_alias`, `test_save_alias_thirdrole_strips_particle` |
+| `save_alias=true` 승인으로 learned·verified·0.9 저장 | 충족 | `test_save_alias_creates_learned_alias` |
 | 저장하지 않는 경우(생략·false·반려·담당자 있던 항목·대상 외 종류·NULL 옛 항목·담당자 미정·수동 승인·task_update·탈퇴하지 않은 누군가가 이미 가짐). 탈퇴 팀원만 가진 글자는 저장함(`test_alias_held_only_by_departed_member_is_still_candidate_and_saved`) 승인은 성공 | 충족 | 같은 파일의 저장 안 됨 테스트들 |
+| `thirdrole` 은 묻지도 저장하지도 않음 | 충족 | `test_thirdrole_item_is_not_alias_candidate_and_not_saved`, `test_learnable_alias_text_is_none_when_not_learnable` |
 | 유니크 충돌을 삼키고 승인 커밋 | 충족(SQLite) | `test_save_alias_ignores_unique_conflict` |
 | 학습한 별칭으로 다음 회의에서 찾힘 | 미검증 | PR ① 머지 뒤 확인하기로 함 |
 
@@ -82,13 +83,15 @@ M3 plan.md 가 비어 있어 완료조건이 없다. 마일스톤 완료를 판�
 
 #459 PR ②: 설계 확정 뒤 최종 리뷰에서 "다른 팀원이 이미 가진 글자를 배우면 그 팀원의 매칭이 애매함으로 바뀐다"는 지적이 나왔다. 사용자 확인을 거쳐 그 글자를 누군가 이미 가졌으면 묻지도 저장하지도 않는 것으로 정했다. PR 리뷰(#464) 뒤 탈퇴 팀원의 별칭은 세지 않는 것으로 바꿨다. #463 의 담당자 찾기가 탈퇴자 별칭을 보지 않아서다. 탈퇴자 별칭은 지우지 않고 PM 이 직접 지울 수 있게 둔다. 이슈 규칙 ④ 의 "이미 있으면 조용히 넘어감"을 다른 팀원까지 넓힌 것이다.
 
+PR 리뷰(#464)에서 AI 가 `thirdrole` 일 때 역할 원문 대신 문맥으로 추측한 이름을 `assignee_raw` 로 보낼 수 있다는 지적이 나왔다. BE 는 원문과 추측을 구분할 수 없어, 사용자 확인을 거쳐 규칙 ④ 의 `thirdrole` 을 학습 대상에서 잠시 뺐다. AI 가 역할 원문만 보내게 되면 다시 넣는다.
+
 ## 남은 작업과 제한 사항
 
 - AI 가 아직 `evidence_seqs` 를 보내지 않는다. 보내기 전까지 `evidence` 는 저장되지 않고 동작은 이전과 같다. AI 요청은 이 PR 머지 뒤 따로 정리한다.
 - 근거 발화 전체를 응답에 싣는 것과 task 에 바로 붙는 근거(`evidence.task_id`)는 #229 범위 밖이다.
 
 - #459 PR ②:
-  - AI 가 역할 원문을 보내지 않아 `thirdrole` 학습은 아직 동작하지 않는다. [BE→AI] 요청은 PR 뒤 따로 올린다.
+  - `thirdrole` 은 학습 대상에서 뺐다. AI 가 역할 원문 대신 추측한 이름을 보낼 수 있어서다(#464 리뷰). AI 가 역할 원문만 보내게 되면 다시 넣는다. [BE→AI] 요청은 PR 뒤 따로 올린다.
   - FE 안내 창과 `save_alias` 전송, 멤버별 별칭 관리 화면은 [BE→FE] 요청으로 올린다.
   - 승인 목록 조회마다 `extraction_item.approval_id` 로 찾는 조회가 늘었고, 그 칸에는 인덱스가 없다.
   - 미확인 별칭 목록은 원문 단위로 남는다(후속).

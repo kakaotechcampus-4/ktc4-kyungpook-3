@@ -324,14 +324,18 @@ def test_save_alias_creates_learned_alias(client, pm_client, db, seed):
     assert r.json()["data"]["alias_candidate"] is False
 
 
-def test_save_alias_thirdrole_strips_particle(client, pm_client, db, seed):
-    _hold_item(client, seed, title="백엔드 배포", raw="백엔드 리더가", type_="thirdrole")
+def test_thirdrole_item_is_not_alias_candidate_and_not_saved(client, pm_client, db, seed):
+    """역할 지목은 AI 가 원문 대신 문맥으로 추측한 이름("환")을 assignee_raw 로 보낼 수 있다. BE 는 둘을 구분할 수 없어
+    AI 가 역할 원문을 보낼 때까지 묻지도 배우지도 않는다(#464 리뷰)."""
+    extraction_id = _hold_item(client, seed, title="백엔드 배포", raw="환", type_="thirdrole")
+    item = _extraction_item(pm_client, extraction_id)
+    before = len(_aliases(db))
 
     r = _approve(pm_client, db, assignee=seed["haeun"].member_id)
 
+    assert (item["alias_candidate"], item["alias_text"]) == (False, None)
     _assert_approved_with_task(db, r, "백엔드 배포")
-    learned = [a for a in _aliases(db) if a.source == "learned"]
-    assert [(a.member_id, a.alias_text) for a in learned] == [(seed["haeun"].member_id, "백엔드 리더")]
+    assert len(_aliases(db)) == before
 
 
 @pytest.mark.parametrize("save_alias", [None, False])

@@ -36,7 +36,7 @@ def test_trim_alias_text(raw, expected):
 
 def test_learning_constants():
     assert alias_learning.LEARNED_CONFIDENCE == 0.9
-    assert alias_learning.LEARNABLE_ASSIGNEE_TYPES == frozenset({"thirdname", "thirdrole"})
+    assert alias_learning.LEARNABLE_ASSIGNEE_TYPES == frozenset({"thirdname"})
     assert alias_learning.KNOWN_ASSIGNEE_TYPES == frozenset(
         {"first", "second", "thirdname", "thirdpronoun", "thirdrole", "group", "none"}
     )
@@ -49,9 +49,8 @@ def _item(**fields) -> ExtractionItem:
     return ExtractionItem(**{**base, **fields})
 
 
-def test_learnable_alias_text_for_unmatched_name_and_role():
+def test_learnable_alias_text_for_unmatched_name():
     assert alias_learning.learnable_alias_text(_item()) == "하은"
-    assert alias_learning.learnable_alias_text(_item(assignee_type="thirdrole", assignee_raw="BE 리더가")) == "BE 리더"
 
 
 @pytest.mark.parametrize(
@@ -61,6 +60,9 @@ def test_learnable_alias_text_for_unmatched_name_and_role():
         {"assignee_type": "first"},
         {"assignee_type": "second"},
         {"assignee_type": "thirdpronoun"},
+        # 역할 지목은 AI 가 원문 대신 추측한 이름을 보낼 수 있어, 원문을 보낼 때까지 배우지 않는다(#464 리뷰)
+        {"assignee_type": "thirdrole", "assignee_raw": "BE 리더가"},
+        {"assignee_type": "thirdrole", "assignee_raw": "환"},
         {"assignee_type": "group"},
         {"assignee_type": "none"},
         {"assignee_type": None},

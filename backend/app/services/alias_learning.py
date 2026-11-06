@@ -1,7 +1,7 @@
 """승인 때 별칭 학습(#459)에 쓰는 규칙과 조회·저장 함수 모음.
 
 추출 항목을 승인할 때 사용자가 담당자를 직접 골랐다면, 발화에 적힌 담당자 표현("하은이가",
-"BE 리더가")을 그 멤버의 별칭으로 저장해 다음 회의부터 자동으로 매칭되게 한다. 이 모듈에는
+STT 가 잘못 받아 적은 "화은이가")을 그 멤버의 별칭으로 저장해 다음 회의부터 자동으로 매칭되게 한다. 이 모듈에는
 저장할 글자를 다듬고 학습 대상을 가리는 규칙(상수·trim_alias_text·learnable_alias_text)과,
 승인 응답에 후보를 채우려고 DB 를 읽는 함수(approval_alias_texts·taken_alias_texts), 승인하며
 별칭을 저장하는 함수(learn_alias)가 함께 있다. 요청 처리 흐름과 권한 확인은 API 쪽이 맡는다.
@@ -32,9 +32,13 @@ KNOWN_ASSIGNEE_TYPES = frozenset(
     {"first", "second", "thirdname", "thirdpronoun", "thirdrole", "group", "none"}
 )
 
-# 별칭으로 배울 유형은 이름·역할처럼 그 사람을 가리키는 표현뿐이다. "나"·"너"·"그"·"우리"
+# 별칭으로 배울 유형은 이름처럼 그 사람을 가리키는 표현뿐이다. "나"·"너"·"그"·"우리"
 # 같은 말은 말하는 사람과 문맥에 따라 가리키는 대상이 달라서 저장하면 엉뚱한 사람에 붙는다.
-LEARNABLE_ASSIGNEE_TYPES = frozenset({"thirdname", "thirdrole"})
+# 역할 지목(thirdrole)은 #459 에서 배우기로 했지만 지금은 뺀다. AI 가 역할 원문("BE 리더가")은 빼고 문맥으로
+# 추측한 이름("환")이 있으면 그것을 assignee_raw 로 보내는데(ai/capture/handoff.py, ai/judge/pipeline.py),
+# BE 는 원문과 추측을 구분할 수 없어 추측한 이름이 확인된 별칭이 될 수 있다(#464 리뷰). AI 가 역할 원문을
+# 보내고 추측 이름을 보내지 않게 되면 다시 넣는다.
+LEARNABLE_ASSIGNEE_TYPES = frozenset({"thirdname"})
 
 # 사용자가 승인하며 확인한 별칭이라 자동 추정(AI·규칙)보다 높게 두되, 1.0 은 남겨 둔다.
 LEARNED_CONFIDENCE = 0.9
@@ -81,7 +85,7 @@ def storable_assignee_type(value: str | None) -> str | None:
 def learnable_alias_text(item: ExtractionItem) -> str | None:
     """이 항목의 담당자 표현을 별칭으로 배울 수 있으면 저장될 글자, 아니면 None.
 
-    새 task 를 만드는 항목인데 담당자를 못 찾았고, 표현이 이름·역할 지목일 때만 대상이다. 승인 상태는
+    새 task 를 만드는 항목인데 담당자를 못 찾았고, 표현이 이름 지목일 때만 대상이다(LEARNABLE_ASSIGNEE_TYPES). 승인 상태는
     보지 않는다. pending 인지는 호출하는 쪽이 이미 가진 승인 상태로 거른다.
     """
     if (
