@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import type { Locator } from '@playwright/test'
+import type { Locator, Page } from '@playwright/test'
 import { expectNoHorizontalOverflow, start } from './support'
 import type { Scenario } from './support'
 
@@ -25,6 +25,10 @@ const SCREENS: {
   role: 'link' | 'button' | 'heading'
   landmark: string
   narrow?: true
+  /** 768px 미만에서만 본다 */
+  phoneOnly?: true
+  /** 데이터 본문(또는 빈 상태)이 그려졌다는 표지. 제목은 불러오는 중에도 보여 그것만으로는 넘침을 잴 때가 아니다 */
+  ready?: (page: Page) => Locator
 }[] = [
   { name: '랜딩', role: 'link', scenario: 'signed-out', path: '/', landmark: '시작하기' },
   { name: '로그인', role: 'button', scenario: 'signed-out', path: '/login', landmark: '로그인' },
@@ -60,21 +64,43 @@ const SCREENS: {
     path: '/workspaces/ws_01/dashboard',
     landmark: '확인이 필요한 일',
     narrow: true,
+    ready: (page) => page.getByRole('list', { name: '확인이 필요한 일 목록' }),
   },
+  {
+    name: '태스크 리스트',
+    role: 'heading',
+    scenario: 'tasks-default',
+    path: '/workspaces/ws_01/tasks',
+    landmark: '태스크',
+    narrow: true,
+    ready: (page) => page.getByRole('list', { name: '태스크 목록' }).getByRole('listitem'),
+  },
+  // 긴 제목·긴 담당자 이름·줄바꿈할 곳 없는 문자열이 9/18 근처에 몰려 있다. 캘린더·간트는 그 달·주를 연다
   ...(
     [
-      ['list', '리스트'],
-      ['board', '보드'],
-      ['calendar', '캘린더'],
-      ['gantt', '간트'],
+      ['리스트', '', (page: Page) => page.getByRole('list', { name: '태스크 목록' })],
+      ['보드', '?view=board', (page: Page) => page.getByRole('main').getByRole('listitem')],
+      [
+        '캘린더',
+        '?view=calendar&month=2026-09',
+        (page: Page) => page.getByRole('table', { name: '2026년 9월' }).getByRole('link'),
+      ],
+      [
+        '간트',
+        '?view=gantt&from=2026-09-14',
+        (page: Page) => page.getByRole('region', { name: '일정 표' }).getByRole('link'),
+      ],
     ] as const
-  ).map(([view, label]) => ({
-    name: `태스크 ${label}`,
+  ).map(([label, search, ready]) => ({
+    name: `태스크 ${label} (긴 내용)`,
     role: 'heading' as const,
-    scenario: 'tasks-default' as const,
-    path: `/workspaces/ws_01/tasks?view=${view}`,
+    scenario: 'tasks-long-content' as const,
+    path: `/workspaces/ws_01/tasks${search}`,
     landmark: '태스크',
     narrow: true as const,
+    // 긴 내용 리스트는 768px 에서 이 PR 전부터 34px 넘친다. 768px 이상 배치를 바꿔야 고쳐져 휴대폰 폭만 본다
+    phoneOnly: label === '리스트' ? (true as const) : undefined,
+    ready,
   })),
   {
     name: '회의록',
@@ -83,6 +109,7 @@ const SCREENS: {
     path: '/workspaces/ws_01/meetings',
     landmark: '회의록',
     narrow: true,
+    ready: (page) => page.getByRole('region', { name: '회의록 본문' }),
   },
   {
     name: '회의 상세',
@@ -91,15 +118,17 @@ const SCREENS: {
     path: '/workspaces/ws_01/meetings/mt_09',
     landmark: '회의록',
     narrow: true,
+    ready: (page) => page.getByRole('region', { name: '회의록 본문' }).getByRole('tabpanel'),
   },
-  {
-    name: '팀',
-    role: 'heading',
-    scenario: 'single-workspace',
+  ...(['single-workspace', 'tasks-long-content'] as const).map((scenario) => ({
+    name: scenario === 'single-workspace' ? '팀' : '팀 (긴 내용)',
+    role: 'heading' as const,
+    scenario,
     path: '/workspaces/ws_01/members',
     landmark: '팀',
-    narrow: true,
-  },
+    narrow: true as const,
+    ready: (page: Page) => page.getByRole('list', { name: /의 일$/ }).getByRole('listitem'),
+  })),
   {
     name: '설정',
     role: 'heading',
@@ -107,6 +136,7 @@ const SCREENS: {
     path: '/workspaces/ws_01/settings',
     landmark: '설정',
     narrow: true,
+    ready: (page) => page.getByRole('textbox', { name: '워크스페이스 이름' }),
   },
 ]
 
@@ -116,10 +146,14 @@ for (const width of VIEWPORTS) {
 
     for (const screen of SCREENS) {
       if (width < NARROW_BELOW && !screen.narrow) continue
+      if (width >= COMPACT_BELOW && screen.phoneOnly) continue
       test(`${screen.name} — 가로 스크롤 없음`, async ({ page }, testInfo) => {
         await start(page, screen.scenario, screen.path)
         const landmark = page.getByRole(screen.role, { name: screen.landmark, exact: true }).first()
         await expect(landmark).toBeInViewport()
+        if (screen.ready !== undefined) await expect(screen.ready(page).first()).toBeVisible()
+        // 뼈대는 aria-busy 를 진다 (M2 Skeleton). 데이터 영역이 모두 그려진 뒤에 잰다
+        await expect(page.getByRole('main').locator('[aria-busy="true"]')).toHaveCount(0)
         await expectNoHorizontalOverflow(page)
         await testInfo.attach(`${screen.name}-${width}`, {
           body: await page.screenshot({ fullPage: true }),
