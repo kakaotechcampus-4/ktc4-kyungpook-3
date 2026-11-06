@@ -16,6 +16,7 @@ from app.schemas.approval import (
     ApprovalResponse,
 )
 from app.services import replies
+from app.services.alias_learning import approval_alias_texts
 from app.services.tasks import (
     apply_task_updates,
     create_task,
@@ -340,8 +341,11 @@ def _apply_approval(
         approval.payload = json.dumps({**payload, "task_overrides": changed}, ensure_ascii=False)
 
 
-def _to_response(row: ApprovalRequest) -> ApprovalResponse:
-    """DB 모델 → Pydantic 응답 변환. payload JSON 파싱 포함."""
+def _to_response(row: ApprovalRequest, alias_text: str | None = None) -> ApprovalResponse:
+    """DB 모델 → Pydantic 응답 변환. payload JSON 파싱 포함.
+
+    alias_text 는 approval_alias_texts 가 구한 값이다. 있으면 별칭 등록을 물어볼 승인이다.
+    """
     return ApprovalResponse(
         approval_id=row.approval_id,
         workspace_id=row.workspace_id,
@@ -353,6 +357,8 @@ def _to_response(row: ApprovalRequest) -> ApprovalResponse:
         resolved_by=row.resolved_by,
         created_at=row.created_at,
         resolved_at=row.resolved_at,
+        alias_candidate=alias_text is not None,
+        alias_text=alias_text,
     )
 
 
@@ -425,7 +431,8 @@ def create_approval(
     db.commit()
     db.refresh(approval)
 
-    return success(_to_response(approval).model_dump(mode="json"))
+    texts = approval_alias_texts(db, [approval])
+    return success(_to_response(approval, texts.get(approval.approval_id)).model_dump(mode="json"))
 
 
 @router.get("", response_model=Envelope[ApprovalListResponse])
@@ -452,9 +459,10 @@ def list_approvals(
         count_stmt = count_stmt.where(ApprovalRequest.status == str(status))
     total = db.execute(count_stmt).scalar() or 0
 
+    texts = approval_alias_texts(db, rows)
     return success(
         ApprovalListResponse(
-            items=[_to_response(r) for r in rows],
+            items=[_to_response(r, texts.get(r.approval_id)) for r in rows],
             total=total,
         ).model_dump(mode="json")
     )
@@ -474,7 +482,8 @@ def get_approval(
             details={"approval_id": approval_id},
         )
     require_member(db, user, approval.workspace_id)
-    return success(_to_response(approval).model_dump(mode="json"))
+    texts = approval_alias_texts(db, [approval])
+    return success(_to_response(approval, texts.get(approval.approval_id)).model_dump(mode="json"))
 
 
 @router.patch("/{approval_id}", response_model=Envelope[ApprovalResponse])
@@ -545,4 +554,5 @@ def resolve_approval(
 
     db.commit()
     db.refresh(approval)
-    return success(_to_response(approval).model_dump(mode="json"))
+    texts = approval_alias_texts(db, [approval])
+    return success(_to_response(approval, texts.get(approval.approval_id)).model_dump(mode="json"))

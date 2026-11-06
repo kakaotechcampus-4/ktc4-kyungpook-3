@@ -5,10 +5,16 @@
 저장할 글자를 다듬는 규칙과 학습 대상 판단에 쓰는 상수만 가지고, DB와 요청 처리 흐름은 모른다.
 """
 import logging
+from collections.abc import Sequence
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app.models import ApprovalRequest, ApprovalStatus, ApprovalType, ExtractionAction, ExtractionItem
 
 logger = logging.getLogger(__name__)
 
-# 추출 단계가 붙이는 담당자 표현 유형. 이 목록에 없는 값은 요청에서 거절한다.
+# 추출 단계가 붙이는 담당자 표현 유형. 이 목록에 없는 값은 NULL 로 저장한다(storable_assignee_type).
 KNOWN_ASSIGNEE_TYPES = frozenset(
     {"first", "second", "thirdname", "thirdpronoun", "thirdrole", "group", "none"}
 )
@@ -57,3 +63,39 @@ def storable_assignee_type(value: str | None) -> str | None:
         return value
     logger.warning("알 수 없는 assignee_type 이라 저장하지 않습니다. value=%.40r", value)
     return None
+
+
+def learnable_alias_text(item: ExtractionItem) -> str | None:
+    """이 항목의 담당자 표현을 별칭으로 배울 수 있으면 저장될 글자, 아니면 None.
+
+    새 task 를 만드는 항목인데 담당자를 못 찾았고, 표현이 이름·역할 지목일 때만 대상이다. 승인 상태는
+    보지 않는다. pending 인지는 호출하는 쪽이 이미 가진 승인 상태로 거른다.
+    """
+    if (
+        item.action != ExtractionAction.CREATE
+        or item.assignee_member_id is not None
+        or item.assignee_type not in LEARNABLE_ASSIGNEE_TYPES
+    ):
+        return None
+    return trim_alias_text(item.assignee_raw)
+
+
+def approval_alias_texts(db: Session, approvals: Sequence[ApprovalRequest]) -> dict[str, str]:
+    """pending 생성 승인 중 별칭을 배울 수 있는 것의 {approval_id: 저장될 글자}.
+
+    승인 목록 응답에 alias_candidate 를 채우려고 쓴다. 항목은 approval_id 로 한 번에 읽어 승인마다 쿼리하지 않는다.
+    """
+    pending_ids = [
+        a.approval_id
+        for a in approvals
+        if a.status == str(ApprovalStatus.PENDING) and a.type == str(ApprovalType.TASK_CREATE)
+    ]
+    if not pending_ids:
+        return {}
+    items = db.execute(select(ExtractionItem).where(ExtractionItem.approval_id.in_(pending_ids))).scalars()
+    texts: dict[str, str] = {}
+    for item in items:
+        text = learnable_alias_text(item)
+        if text is not None:
+            texts[item.approval_id] = text
+    return texts

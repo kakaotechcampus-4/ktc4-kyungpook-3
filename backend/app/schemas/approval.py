@@ -30,6 +30,14 @@ class ApprovalResponse(BaseModel):
     resolved_by: str | None
     created_at: datetime
     resolved_at: datetime | None
+    alias_candidate: bool = Field(
+        False,
+        description="담당자를 못 찾은 이름·역할 지목 항목의 pending 생성 승인이면 true. PM 이 담당자를 골라 save_alias=true 로 승인하면 alias_text 를 그 팀원의 별칭으로 저장한다",
+    )
+    alias_text: str | None = Field(
+        None,
+        description="저장될 별칭 글자(원문에서 끝 조사·님을 뗀 것). alias_candidate 가 false 면 null",
+    )
 
 
 class ApprovalResolveRequest(BaseModel):

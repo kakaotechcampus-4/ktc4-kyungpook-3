@@ -187,6 +187,14 @@ class ExtractionItemResponse(BaseModel):
             "approved는 태스크 반영과 승인 처리가 함께 커밋된 상태다"
         ),
     )
+    alias_candidate: bool = Field(
+        False,
+        description="담당자를 못 찾은 이름·역할 지목 항목의 pending 생성 승인이면 true. PM 이 담당자를 골라 save_alias=true 로 승인하면 alias_text 를 그 팀원의 별칭으로 저장한다",
+    )
+    alias_text: str | None = Field(
+        None,
+        description="저장될 별칭 글자(원문에서 끝 조사·님을 뗀 것). alias_candidate 가 false 면 null",
+    )
 
 
 class ExtractionDetailResponse(BaseModel):

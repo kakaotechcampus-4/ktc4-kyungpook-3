@@ -58,7 +58,7 @@ from app.services.matching import (
     speaker_match,
 )
 from app.services import upload_storage
-from app.services.alias_learning import storable_assignee_type
+from app.services.alias_learning import learnable_alias_text, storable_assignee_type
 from app.services.embedding import has_unsearchable_tasks
 from app.services.tasks import create_task, delete_task
 
@@ -820,6 +820,13 @@ def get_extraction(
 
     evidence_by_item = _representative_evidence(db, [i.item_id for i in items])
 
+    # 별칭 등록을 물어볼 항목은 승인 요청이 pending 인 것뿐이다. 위에서 읽은 승인 상태로 거르므로 쿼리가 늘지 않는다
+    alias_texts = {
+        i.item_id: text
+        for i in items
+        if approval_statuses[i.item_id] == str(ApprovalStatus.PENDING) and (text := learnable_alias_text(i))
+    }
+
     item_responses = [
         ExtractionItemResponse(
             item_id=i.item_id,
@@ -852,6 +859,8 @@ def get_extraction(
             task_id=None if i.item_id in deleted_task_items else i.task_id,
             approval_id=i.approval_id,
             approval_status=approval_statuses[i.item_id],
+            alias_candidate=alias_texts.get(i.item_id) is not None,
+            alias_text=alias_texts.get(i.item_id),
         )
         for i in items
     ]

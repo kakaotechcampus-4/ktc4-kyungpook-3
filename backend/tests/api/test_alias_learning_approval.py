@@ -203,3 +203,78 @@ def test_legacy_thirdname_item_with_same_conditions_is_auto(client, db, seed):
     assert db.execute(select(Task).where(Task.title == "결제 환불")).scalar_one().assignee_member_id == (
         seed["haeun"].member_id
     )
+
+
+def _hold_item(client, seed, title="결제 환불", raw="하은이가", type_="thirdname") -> str:
+    """담당자를 못 찾은 이름 지목 항목을 등록하고 extraction_id 를 돌려준다. 승인 요청이 pending 으로 생긴다."""
+    r = _post(client, seed, [_legacy(title, 0.6, assignee_type=type_, assignee_raw=raw)])
+    assert r.status_code == 201
+    return r.json()["data"]["extraction_id"]
+
+
+def _extraction_item(pm_client, extraction_id: str) -> dict:
+    return pm_client.get(f"/api/v1/extractions/{extraction_id}").json()["data"]["items"][0]
+
+
+def test_extraction_detail_marks_alias_candidate(client, pm_client, db, seed):
+    extraction_id = _hold_item(client, seed)
+
+    item = _extraction_item(pm_client, extraction_id)
+
+    assert item["assignee"]["member_id"] is None
+    assert item["alias_candidate"] is True
+    assert item["alias_text"] == "하은"
+
+
+def test_approval_list_and_detail_mark_alias_candidate(client, pm_client, db, seed):
+    _hold_item(client, seed)
+    approval = _approvals(db, "task_create")[0]
+
+    listed = pm_client.get(
+        "/api/v1/approvals", params={"workspace_id": seed["ws"].workspace_id}
+    ).json()["data"]["items"]
+    detail = pm_client.get(f"/api/v1/approvals/{approval.approval_id}").json()["data"]
+
+    assert [(a["alias_candidate"], a["alias_text"]) for a in listed] == [(True, "하은")]
+    assert (detail["alias_candidate"], detail["alias_text"]) == (True, "하은")
+
+
+def test_rejected_approval_is_no_longer_alias_candidate(client, pm_client, db, seed):
+    extraction_id = _hold_item(client, seed)
+    approval = _approvals(db, "task_create")[0]
+
+    r = pm_client.patch(f"/api/v1/approvals/{approval.approval_id}", json={"status": "rejected"})
+
+    assert r.status_code == 200
+    assert r.json()["data"]["alias_candidate"] is False
+    assert r.json()["data"]["alias_text"] is None
+    item = _extraction_item(pm_client, extraction_id)
+    assert item["alias_candidate"] is False
+    assert item["alias_text"] is None
+
+
+def test_matched_assignee_is_not_alias_candidate(client, pm_client, db, seed):
+    """별칭이 일치해 담당자를 찾은 항목은 학습할 것이 없다."""
+    extraction_id = _hold_item(client, seed, raw="하은")
+
+    item = _extraction_item(pm_client, extraction_id)
+    approval = _approvals(db, "task_create")[0]
+    detail = pm_client.get(f"/api/v1/approvals/{approval.approval_id}").json()["data"]
+
+    assert item["assignee"]["member_id"] == seed["haeun"].member_id
+    assert item["alias_candidate"] is False
+    assert item["alias_text"] is None
+    assert detail["alias_candidate"] is False
+    assert detail["alias_text"] is None
+
+
+def test_manual_task_create_approval_is_not_alias_candidate(pm_client, seed):
+    r = pm_client.post("/api/v1/approvals", json={
+        "workspace_id": seed["ws"].workspace_id,
+        "type": "task_create",
+        "payload": {"title": "수동 요청"},
+    })
+
+    assert r.status_code == 201
+    assert r.json()["data"]["alias_candidate"] is False
+    assert r.json()["data"]["alias_text"] is None

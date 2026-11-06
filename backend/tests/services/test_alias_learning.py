@@ -1,6 +1,7 @@
 """승인 때 별칭을 학습하는 서비스(#459)의 글자 다듬기·상수 규칙."""
 import pytest
 
+from app.models import ExtractionAction, ExtractionItem
 from app.services import alias_learning
 
 
@@ -40,3 +41,33 @@ def test_learning_constants():
         {"first", "second", "thirdname", "thirdpronoun", "thirdrole", "group", "none"}
     )
     assert alias_learning.LEARNABLE_ASSIGNEE_TYPES <= alias_learning.KNOWN_ASSIGNEE_TYPES
+
+
+def _item(**fields) -> ExtractionItem:
+    base = {"action": ExtractionAction.CREATE, "assignee_type": "thirdname", "assignee_raw": "하은이가",
+            "assignee_member_id": None}
+    return ExtractionItem(**{**base, **fields})
+
+
+def test_learnable_alias_text_for_unmatched_name_and_role():
+    assert alias_learning.learnable_alias_text(_item()) == "하은"
+    assert alias_learning.learnable_alias_text(_item(assignee_type="thirdrole", assignee_raw="BE 리더가")) == "BE 리더"
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {"assignee_member_id": "member-1"},
+        {"assignee_type": "first"},
+        {"assignee_type": "second"},
+        {"assignee_type": "thirdpronoun"},
+        {"assignee_type": "group"},
+        {"assignee_type": "none"},
+        {"assignee_type": None},
+        {"action": ExtractionAction.UPDATE},
+        {"assignee_raw": "님"},
+        {"assignee_raw": None},
+    ],
+)
+def test_learnable_alias_text_is_none_when_not_learnable(fields):
+    assert alias_learning.learnable_alias_text(_item(**fields)) is None
