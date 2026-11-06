@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { expect, fn, userEvent, within } from 'storybook/test'
+import { expect, fn, userEvent, waitFor, within } from 'storybook/test'
 import type { Task } from '@/entities/task'
 import { ReminderCreateForm } from './ReminderCreateForm'
 
@@ -87,23 +87,30 @@ export const Discord_미연결: Story = {
   },
 }
 
-/** 메시지 화면의 새 재촉 — 팀원을 고르면 그 팀원이 맡은 끝나지 않은 태스크를 고른다 */
+/** 메시지 화면의 새 재촉 — 팀원을 고르면 그 팀원이 맡은 태스크를 고른다. 끝낸 태스크는 고를 수 없다 */
 export const 팀원과_태스크_고르기: Story = {
   args: { target: { kind: 'choose' } },
   parameters: { route: '/workspaces/ws_01/messages?new=reminder' },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     await expect(canvas.getByText('받을 팀원을 골라 주세요.')).toBeVisible()
+    const body = within(canvasElement.ownerDocument.body)
     const memberField = canvas.getByRole('combobox', { name: '받는 사람' })
-    // 팀원 목록은 요청이 끝난 뒤에 채워진다 — 브라우저에서는 고르기 전에 그 선택지를 기다린다
-    await within(memberField).findByRole('option', { name: '이재환' })
-    await userEvent.selectOptions(memberField, '이재환')
+    // 팀원 목록은 요청이 끝난 뒤에 채워진다 — 브라우저에서는 칸이 풀리기를 기다린다
+    await waitFor(() => expect(memberField).toBeEnabled())
+    await userEvent.click(memberField)
+    await userEvent.click(await body.findByRole('option', { name: /^이재환/ }))
     const taskField = canvas.getByRole('combobox', { name: '태스크' })
-    await expect(
-      await within(taskField).findByRole('option', { name: 'DB 스키마 정리 · 09/22 마감' }),
-    ).toBeInTheDocument()
-    await expect(within(taskField).queryByRole('option', { name: /랜딩 카피/ })).toBeNull()
-    await userEvent.selectOptions(taskField, 'DB 스키마 정리 · 09/22 마감')
+    await waitFor(() => expect(taskField).toBeEnabled())
+    await userEvent.click(taskField)
+    const schema = await body.findByRole('option', { name: /^DB 스키마 정리/ })
+    await expect(schema).toHaveTextContent('09/22 마감 · 막힘')
+    // 끝낸 태스크는 목록 끝에 있지만 고를 수 없다
+    await expect(body.getByRole('option', { name: /^랜딩 카피/ })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    )
+    await userEvent.click(schema)
     await expect(
       await canvas.findByRole('radio', { name: /^마감 하루 전\s*09\/21 09:00$/, checked: true }),
     ).toBeInTheDocument()

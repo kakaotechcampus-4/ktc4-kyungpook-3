@@ -38,12 +38,20 @@ async function openCompose() {
   return app
 }
 
-async function chooseTask(memberName: string, taskLabel: string) {
-  await userEvent.selectOptions(
-    await form().findByRole('combobox', { name: '받는 사람' }),
-    memberName,
-  )
-  await userEvent.selectOptions(form().getByRole('combobox', { name: '태스크' }), taskLabel)
+/** 줄 이름은 이름과 둘째 줄이 이어진 글자다 — 이름으로 시작하는 줄을 찾는다 */
+const startsWith = (prefix: string) => (name: string) => name.startsWith(prefix)
+const field = (name: string) => form().getByRole('combobox', { name })
+
+async function choose(fieldName: string, optionName: string) {
+  await waitFor(() => expect(field(fieldName)).toBeEnabled())
+  await userEvent.click(field(fieldName))
+  await userEvent.click(await screen.findByRole('option', { name: startsWith(optionName) }))
+}
+
+async function chooseTask(memberName: string, taskTitle: string) {
+  await form().findByRole('combobox', { name: '받는 사람' })
+  await choose('받는 사람', memberName)
+  await choose('태스크', taskTitle)
 }
 
 describe('메시지 화면의 새 재촉', () => {
@@ -55,7 +63,7 @@ describe('메시지 화면의 새 재촉', () => {
     expect(form().getByText('받을 팀원을 골라 주세요.')).toBeVisible()
     expect(submit()).toHaveAttribute('aria-disabled', 'true')
 
-    await chooseTask('이재환', 'DB 스키마 정리 · 09/22 마감')
+    await chooseTask('이재환', 'DB 스키마 정리')
     expect(
       await form().findByRole('radio', { name: '마감 하루 전09/21 09:00', checked: true }),
     ).toBeInTheDocument()
@@ -101,7 +109,7 @@ describe('메시지 화면의 새 재촉', () => {
       approved_at: '2026-09-17T10:00:00+09:00',
     })
     const app = await openCompose()
-    await chooseTask('이재환', 'DB 스키마 정리 · 09/22 마감')
+    await chooseTask('이재환', 'DB 스키마 정리')
     await userEvent.click(await form().findByRole('radio', { name: /직접 정하기/ }))
     fireEvent.change(form().getByLabelText('보낼 날짜와 시각'), {
       target: { value: '2026-09-23T09:00' },
@@ -125,17 +133,77 @@ describe('메시지 화면의 새 재촉', () => {
   it('팀원을 바꾸면 태스크를 비우고, 맡은 진행 중인 태스크가 없으면 그렇게 알린다', async () => {
     db.tasks.find(({ task_id }) => task_id === 'tk_06')!.status = 'done'
     await openCompose()
-    await chooseTask('이재환', 'DB 스키마 정리 · 09/22 마감')
-    await userEvent.selectOptions(form().getByRole('combobox', { name: '받는 사람' }), '정하늘')
-    expect(form().getByRole('combobox', { name: '태스크' })).toHaveValue('')
+    await chooseTask('이재환', 'DB 스키마 정리')
+    await choose('받는 사람', '정하늘')
+    expect(field('태스크')).toHaveTextContent('태스크 고르기')
+    expect(field('태스크')).toBeDisabled()
     expect(form().getByText('정하늘님이 맡은 진행 중인 태스크가 없어요.')).toBeVisible()
     expect(form().getByText('재촉할 태스크를 골라 주세요.')).toBeVisible()
     expect(form().queryByRole('group', { name: '언제 보낼까요?' })).toBeNull()
   })
 
+  it('받는 사람 줄의 둘째 줄은 진행 중인 태스크 수이고, Discord 가 없으면 빨간 글씨로 알린다', async () => {
+    await openCompose()
+    await waitFor(() => expect(field('받는 사람')).toBeEnabled())
+    await userEvent.click(field('받는 사람'))
+    const members = within(await screen.findByRole('listbox'))
+    await waitFor(() =>
+      expect(members.getByRole('option', { name: startsWith('김서연') })).toHaveTextContent(
+        '진행 중 2개',
+      ),
+    )
+    const unlinked = members.getByText('Discord 미연결 · DM 이 나가지 않아요')
+    expect(unlinked).toHaveClass('text-accent')
+    // 고를 수는 있다 — 보낼 때 DM 이 실패로 남는다
+    expect(members.getByRole('option', { name: startsWith('이재환') })).not.toHaveAttribute(
+      'aria-disabled',
+    )
+  })
+
+  it('태스크 줄은 마감·상태를 보이고, 기한이 지났으면 빨간 글씨, 완료한 태스크는 고를 수 없다', async () => {
+    await openCompose()
+    await form().findByRole('combobox', { name: '받는 사람' })
+    await choose('받는 사람', '박민수')
+    await waitFor(() => expect(field('태스크')).toBeEnabled())
+    await userEvent.click(field('태스크'))
+    const rows = within(await screen.findByRole('listbox')).getAllByRole('option')
+    expect(rows.map((row) => row.textContent)).toEqual([
+      '회원가입 화면09/16 마감 · 기한 지남',
+      '회의록 요약 검수마감 없음 · 할 일',
+      '토큰 정리완료한 태스크는 재촉할 수 없어요',
+    ])
+    expect(within(rows[0]).getByText('09/16 마감 · 기한 지남')).toHaveClass('text-accent')
+    expect(rows[2]).toHaveAttribute('aria-disabled', 'true')
+    await userEvent.click(rows[2])
+    expect(screen.getByRole('listbox')).toBeInTheDocument()
+  })
+
+  it('태스크가 8개를 넘으면 찾기 칸으로 거르고 골라 만든다', async () => {
+    const base = db.tasks.find(({ task_id }) => task_id === 'tk_06')!
+    for (let index = 1; index <= 8; index += 1)
+      db.tasks.push({
+        ...base,
+        task_id: `tk_9${String(index)}`,
+        title: `측정 보고 ${String(index)}`,
+      })
+    await openCompose()
+    await form().findByRole('combobox', { name: '받는 사람' })
+    await choose('받는 사람', '정하늘')
+    await waitFor(() => expect(field('태스크')).toBeEnabled())
+    await userEvent.click(field('태스크'))
+    const search = await screen.findByRole('combobox', { name: '태스크 찾기' })
+    await waitFor(() => expect(search).toHaveFocus())
+    expect(within(screen.getByRole('listbox')).getAllByRole('option')).toHaveLength(9)
+    await userEvent.keyboard('STT')
+    expect(within(screen.getByRole('listbox')).getAllByRole('option')).toHaveLength(1)
+    await userEvent.keyboard('{Enter}')
+    expect(field('태스크')).toHaveTextContent('STT 정확도 측정')
+    expect(await form().findByRole('group', { name: '언제 보낼까요?' })).toBeVisible()
+  })
+
   it('마감이 지난 태스크는 시각을 직접 골라야 만들 수 있다', async () => {
     await openCompose()
-    await chooseTask('박민수', '회원가입 화면 · 09/16 마감')
+    await chooseTask('박민수', '회원가입 화면')
     expect(await form().findByRole('radio', { name: /마감 하루 전.*지남/ })).toBeDisabled()
     expect(form().getByText('보낼 시각을 골라 주세요.')).toBeVisible()
     expect(submit()).toHaveAttribute('aria-disabled', 'true')
@@ -148,7 +216,7 @@ describe('메시지 화면의 새 재촉', () => {
       ),
     )
     const app = await openCompose()
-    await chooseTask('이재환', 'DB 스키마 정리 · 09/22 마감')
+    await chooseTask('이재환', 'DB 스키마 정리')
     await form().findByRole('radio', { name: /마감 하루 전/, checked: true })
     await userEvent.click(submit())
 
@@ -167,13 +235,13 @@ describe('메시지 화면의 새 재촉', () => {
     )
     await openCompose()
     const bodies = recordRequestBodies('POST', REMINDERS_PATH)
-    await chooseTask('이재환', 'DB 스키마 정리 · 09/22 마감')
+    await chooseTask('이재환', 'DB 스키마 정리')
     await form().findByRole('radio', { name: /마감 하루 전/, checked: true })
     await userEvent.click(submit())
     const alert = await form().findByRole('alert')
     expect(within(alert).getByRole('button', { name: '다시 시도' })).toBeInTheDocument()
 
-    await chooseTask('김서연', '로그인 API 연동 · 09/20 마감')
+    await chooseTask('김서연', '로그인 API 연동')
     // 남은 다시 시도는 화면과 다른 사람·태스크로 만든다 — 입력을 바꾸면 지운다
     expect(form().queryByRole('alert')).toBeNull()
     await form().findByRole('radio', { name: /마감 하루 전/, checked: true })
@@ -194,7 +262,7 @@ describe('메시지 화면의 새 재촉', () => {
     )
     await openCompose()
     const bodies = recordRequestBodies('POST', REMINDERS_PATH)
-    await chooseTask('이재환', 'DB 스키마 정리 · 09/22 마감')
+    await chooseTask('이재환', 'DB 스키마 정리')
     await form().findByRole('radio', { name: /마감 하루 전/, checked: true })
     await userEvent.click(submit())
     await form().findByRole('alert')
@@ -224,7 +292,7 @@ describe('메시지 화면의 새 재촉', () => {
 
     await waitFor(() => expect(form().getByRole('combobox', { name: '받는 사람' })).toBeEnabled())
     expect(form().queryByRole('alert')).toBeNull()
-    await chooseTask('이재환', 'DB 스키마 정리 · 09/22 마감')
+    await chooseTask('이재환', 'DB 스키마 정리')
   })
 
   it('취소하면 목록으로 돌아간다', async () => {
