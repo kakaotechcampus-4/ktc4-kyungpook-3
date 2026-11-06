@@ -5,14 +5,18 @@ import type { Scenario } from './support'
 
 /*
  * U5-4 레이아웃 — 주요 화면에 가로 스크롤이 없고 핵심 요소가 화면 안에 보인다. 최소 지원 폭은 360px 이다 (D-180).
- * 360·390px 은 `narrow` 인 화면만 본다. 나머지는 휴대폰 배치(#478 의 화면 PR)가 들어올 때 더한다.
+ * 1024px 미만(360·390·768)은 `narrow` 인 화면만 본다. 랜딩·로그인·회원가입의 휴대폰 배치는 #478 의 다음 PR 이 한다.
+ * 768px 은 휴대폰 셸과 데스크톱 셸의 경계라 한 번 본다.
  * 화면마다 스크린샷을 테스트 결과에 붙인다(playwright-report).
  */
 
-const VIEWPORTS = [360, 390, 1024, 1280, 1440] as const
+const VIEWPORTS = [360, 390, 768, 1024, 1280, 1440] as const
 
 /** 이 폭 미만은 휴대폰 셸이다 — 헤더 탭 대신 아래 탭 막대 (D-180) */
 const COMPACT_BELOW = 768
+
+/** 이 폭 미만은 휴대폰 폭에 맞춘(`narrow`) 화면만 본다 */
+const NARROW_BELOW = 1024
 
 const SCREENS: {
   name: string
@@ -49,11 +53,60 @@ const SCREENS: {
   },
   {
     name: '대시보드',
-    // M7 부터 빈 상태 껍데기가 아니라 대시보드 본문이다. 오른쪽 단의 `최근 반영` 머리가 화면 안에 있어야 한다
+    // M7 부터 빈 상태 껍데기가 아니라 대시보드 본문이다. 휴대폰은 한 열이라 `최근 반영` 이 첫 화면 아래로 내려간다 —
+    // 두 단에서도 한 열에서도 첫 화면에 있는 `확인이 필요한 일` 머리를 본다
     role: 'heading',
     scenario: 'multiple-workspaces',
     path: '/workspaces/ws_01/dashboard',
-    landmark: '최근 반영',
+    landmark: '확인이 필요한 일',
+    narrow: true,
+  },
+  ...(
+    [
+      ['list', '리스트'],
+      ['board', '보드'],
+      ['calendar', '캘린더'],
+      ['gantt', '간트'],
+    ] as const
+  ).map(([view, label]) => ({
+    name: `태스크 ${label}`,
+    role: 'heading' as const,
+    scenario: 'tasks-default' as const,
+    path: `/workspaces/ws_01/tasks?view=${view}`,
+    landmark: '태스크',
+    narrow: true as const,
+  })),
+  {
+    name: '회의록',
+    role: 'heading',
+    scenario: 'single-workspace',
+    path: '/workspaces/ws_01/meetings',
+    landmark: '회의록',
+    narrow: true,
+  },
+  {
+    name: '회의 상세',
+    role: 'heading',
+    scenario: 'single-workspace',
+    path: '/workspaces/ws_01/meetings/mt_09',
+    landmark: '회의록',
+    narrow: true,
+  },
+  {
+    name: '팀',
+    role: 'heading',
+    scenario: 'single-workspace',
+    path: '/workspaces/ws_01/members',
+    landmark: '팀',
+    narrow: true,
+  },
+  {
+    name: '설정',
+    role: 'heading',
+    scenario: 'single-workspace',
+    path: '/workspaces/ws_01/settings',
+    landmark: '설정',
+    narrow: true,
   },
 ]
 
@@ -62,7 +115,7 @@ for (const width of VIEWPORTS) {
     test.use({ viewport: { width, height: 900 } })
 
     for (const screen of SCREENS) {
-      if (width < COMPACT_BELOW && !screen.narrow) continue
+      if (width < NARROW_BELOW && !screen.narrow) continue
       test(`${screen.name} — 가로 스크롤 없음`, async ({ page }, testInfo) => {
         await start(page, screen.scenario, screen.path)
         const landmark = page.getByRole(screen.role, { name: screen.landmark, exact: true }).first()
@@ -76,6 +129,27 @@ for (const width of VIEWPORTS) {
     }
 
     if (width < COMPACT_BELOW) {
+      test('태스크 보드 — 칸을 나란히 두지 않고 위에서 골라 한 칸씩 본다 (H-3)', async ({
+        page,
+      }) => {
+        await start(page, 'tasks-default', '/workspaces/ws_01/tasks?view=board')
+        const picker = page.getByRole('tablist', { name: '상태' })
+        await expect(picker.getByRole('tab')).toHaveText([
+          /^시작 전 \d+$/,
+          /^진행 중 \d+$/,
+          /^완료 \d+$/,
+        ])
+        for (const tab of await picker.getByRole('tab').all())
+          await expect(tab).toBeInViewport({ ratio: 1 })
+        await expect(picker.getByRole('tab', { name: /^진행 중/ })).toHaveAttribute(
+          'aria-selected',
+          'true',
+        )
+        await picker.getByRole('tab', { name: /^완료/ }).click()
+        await expect(page.getByRole('tabpanel')).toContainText('최근 완료순')
+        await expectNoHorizontalOverflow(page)
+      })
+
       test('아래 탭 막대 — 탭 5개가 화면 안에 있고 지금 화면을 표시하며 토스트가 그 위에 뜬다', async ({
         page,
       }) => {
@@ -86,7 +160,6 @@ for (const width of VIEWPORTS) {
         for (const tab of await nav.getByRole('link').all())
           await expect(tab).toBeInViewport({ ratio: 1 })
         await expect(nav.getByRole('link', { name: '홈' })).toHaveAttribute('aria-current', 'page')
-        // 대시보드 본문은 아직 360px 에 맞추지 않았다 — 문서 대신 막대 자체가 넘치지 않는지 본다
         const bar = await nav.evaluate((element) => ({
           overflow: element.scrollWidth - element.clientWidth,
           bottom: element.getBoundingClientRect().bottom,
