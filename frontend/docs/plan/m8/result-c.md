@@ -17,14 +17,17 @@
 
 | 커밋 | 요지 |
 |---|---|
-| `536c66ac` | 응답 타입 `reply.ts`, 오류 코드 3개, MSW 판단 기록 `reply-state.ts`, 시나리오 `reply-judgment`·`reply-judgment-member`, 모의 DB 버전 14 |
-| `dc14ea21` | 알림 `reply_judged`·`reply_unjudged` 제목과 메시지 알림 분류. 모르는 종류 예시 픽스처를 다른 종류로 바꿨다 |
-| `5ab34099` | 답장에서 온 `task_update` 승인의 `replyMessageId`, 승인 상세의 `팀원 답장` 근거 |
-| `b1369b2d` | D-179 확정, D-058·D-059 와의 관계 |
-| `49e98d90` | 태스크 고르기(`attributions` 쿼리, 쓰기 행동 `attribute`, `AttributionPicker` 복원), MSW 두 경로 |
-| `e49e625a` | 태스크 기록(`/history`+`/timeline`), 되돌리기 훅, MSW 두 경로와 승인 이력 잇기 |
-| `e608f963` | E2E `reply-judgment.e2e.ts`, 검증 스킬 `messages` 여정 |
-| 이 커밋 | 계약 §5.7, 이 결과, README |
+| `22c208a1` | 응답 타입 `reply.ts`, 오류 코드 3개, MSW 판단 기록 `reply-state.ts`, 시나리오 `reply-judgment`·`reply-judgment-member`, 모의 DB 버전 14 |
+| `fcaeed38` | 알림 `reply_judged`·`reply_unjudged` 제목과 메시지 알림 분류. 모르는 종류 예시 픽스처를 다른 종류로 바꿨다 |
+| `58b41965` | 답장에서 온 `task_update` 승인의 `replyMessageId`, 승인 상세의 `팀원 답장` 근거 |
+| `0197947e` | D-179 확정, D-058·D-059 와의 관계 |
+| `aca20295` | 태스크 고르기(`attributions` 쿼리, 쓰기 행동 `attribute`, `AttributionPicker` 복원), MSW 두 경로 |
+| `f564dcd7` | 태스크 기록(`/history`+`/timeline`), 되돌리기 훅, MSW 두 경로와 승인 이력 잇기 |
+| `41a745bd` | E2E `reply-judgment.e2e.ts`, 검증 스킬 `messages` 여정 |
+| `23b56387` | 계약 §5.7, 이 결과, README |
+| `627da256` | 독립 리뷰 1. 알림 종류마다 다시 받을 캐시 표, 판단 알림에 태스크·승인 다시 받기 |
+| `818479bc` | 독립 리뷰 2. 되돌리기 404 면 볼 수 없는 태스크로 바꾸기 |
+| 이 커밋 | 리뷰 반영의 계약·결과 |
 
 ### 바꾼 데이터 모양
 
@@ -35,12 +38,19 @@
 
 ### 검증 (2026-11-06, Node v24.11.0)
 
-전체 게이트 결과는 아래 「최종 게이트」에 적는다. 작업 중에는 바꾼 곳만 `--maxWorkers=1` 로 돌렸다.
+`fb0b6eb8`(리뷰 반영 전)에서 `npm run test -- --maxWorkers=1` 은 240파일 2,899개 중 1개(서버 코드 개수 단언 51 → 54)가 실패해 고쳤다. typecheck·lint·build 는 통과했다. format:check 는 git 이 제외하는 `.verify/` 파일만 걸렸다.
 
 - 화면 테스트: [messagesAttributionMsw](../../../src/app/messagesAttributionMsw.test.tsx)(고르기·해당 없음·중복 누름·5xx 다시 시도·409 다시 받기·고르기 오류에도 대화 보임·늦게 온 고르기의 스크롤·팀원은 요청 없음), [taskReplyTimeline](../../../src/app/taskReplyTimeline.test.tsx)(묶음·되돌리기·팀원 안내), [replyApprovals](../../../src/app/replyApprovals.test.tsx)(답장 근거).
 - MSW: [replyTimeline](../../../src/shared/mock/replyTimeline.test.ts)(묶음·숨김·되돌리기·409·403·승인 이력 잇기), [messageScenarios](../../../src/shared/mock/messageScenarios.test.ts)(고르기 403·404·409·400).
 - 세션: [useReplyChangeUndo](../../../src/features/reply-change-undo/model/useReplyChangeUndo.test.tsx)는 오프라인으로 멈춘 사이 세션이 바뀌면 요청·토스트가 없다.
 - E2E: 검증 스킬 `run messages` 13개 통과(새 3개 포함). 증거는 저장소 루트 `.verify/managers-manager/2026-11-06T12-19-23-963Z-messages-6baeafab/`(git 제외). `restore.e2e.ts`·`tasks-approval.e2e.ts` 22개도 통과했다.
+
+### 독립 리뷰 반영 (2026-11-06)
+
+Codex 독립 리뷰(`d98a754a..fb0b6eb8`, 리베이스 전 해시)가 중간 결함 둘을 찾았다. 둘 다 고치기 전 테스트가 실패하는 것을 확인했다.
+
+- **판단 알림이 태스크·승인을 다시 받지 않았다.** BE 는 태스크를 바꾸고 승인 요청을 만든 뒤 `reply_judged` 를 보내는데, 종은 메시지만 무효화했다. 이제 알림 종류 표가 종류마다 다시 받을 캐시(`messages`·`tasks`·`approvals`)를 정하고, 종이 처음 보는 알림의 합집합을 그 공간에서 무효화한다. `reply_judged` 는 셋 다, `reply_unjudged` 는 메시지·태스크(판단하지 못한 답장도 막힘을 풀 수 있다)다. 같은 이유로 `silence_blocked` 도 태스크를 다시 받는다. 잘려 보이지 않은 알림이 있을 수 있는 경우는 셋 다 다시 받는다. 훅 이름을 `useRefreshOnNotification` 으로 바꾸고 `isMessageNotification` 을 `notificationRefreshes` 로 옮겼다. 회귀 테스트 [replyJudgmentRefresh](../../../src/app/replyJudgmentRefresh.test.tsx) 3개(태스크 상세의 상태·기록, 대시보드 확인 대기 수, 판단 실패 알림의 상태)는 고치기 전 셋 다 알림 뒤 단언에서 실패했다.
+- **되돌리기 404 뒤 지운 태스크가 남았다.** 이제 404 `TASK_NOT_FOUND` 면 상세 쿼리를 비우고(`resetQueries`) 다시 받아 기존 「이 태스크를 볼 수 없어요」로 바뀌고, 이력을 지우고 목록을 다시 받는다. [taskReplyTimeline](../../../src/app/taskReplyTimeline.test.tsx)의 새 테스트는 목록을 먼저 받은 뒤 상세에서 지워진 태스크를 되돌린다. 고치기 전에는 볼 수 없음 화면을 찾지 못해 실패했고, 목록 무효화만 빼면 목록에 지운 태스크가 남아 실패한다.
 
 ### 남은 문제
 
