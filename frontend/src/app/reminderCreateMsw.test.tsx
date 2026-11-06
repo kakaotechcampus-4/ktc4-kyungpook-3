@@ -246,8 +246,8 @@ describe('메시지 화면의 새 재촉', () => {
 describe('태스크 상세의 재촉', () => {
   async function openTask(taskId: string, title: string) {
     renderApp(paths.tasks('ws_01', taskId))
-    await screen.findByRole('heading', { level: 2, name: title })
-    return within(await screen.findByRole('region', { name: '재촉' }))
+    await screen.findByRole('heading', { level: 1, name: title })
+    return within(await screen.findByRole('region', { name: /진행 상황을 물어볼까요\?$/ }))
   }
 
   it('담당자에게 보낼 재촉을 만들면 폼을 접고 그 자리에 결과와 메시지 화면 링크를 알린다', async () => {
@@ -315,9 +315,9 @@ describe('팀원에게는 진입점이 없다', () => {
   it('태스크 상세에 재촉 영역이 없다', async () => {
     setMockRole('member')
     renderApp(paths.tasks('ws_01', 'tk_03'))
-    await screen.findByRole('heading', { level: 2, name: 'DB 스키마 정리' })
+    await screen.findByRole('heading', { level: 1, name: 'DB 스키마 정리' })
     await screen.findByRole('region', { name: '변경 이력' })
-    expect(screen.queryByRole('region', { name: '재촉' })).toBeNull()
+    expect(screen.queryByRole('region', { name: /진행 상황을 물어볼까요\?$/ })).toBeNull()
     expect(screen.queryByRole('button', { name: '재촉 만들기' })).toBeNull()
   })
 })

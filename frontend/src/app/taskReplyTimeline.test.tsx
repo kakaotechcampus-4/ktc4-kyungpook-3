@@ -16,7 +16,7 @@ const REPLY_META = '이재환 답장 · Discord · 2026-09-17 10:00'
 
 async function openTk03() {
   renderApp(paths.tasks('ws_01', 'tk_03'))
-  await screen.findByRole('heading', { level: 2, name: 'DB 스키마 정리' })
+  await screen.findByRole('heading', { level: 1, name: 'DB 스키마 정리' })
   const history = await screen.findByRole('list', { name: '변경 이력' })
   await within(history).findByText(REPLY_META)
   return history
@@ -68,7 +68,7 @@ describe('태스크 상세의 답장 기록 (#344)', () => {
     // 목록을 먼저 받아 두어야 지운 태스크가 남은 목록 캐시를 다시 받는지 볼 수 있다
     renderApp(paths.tasks('ws_01'))
     await user.click(await screen.findByRole('link', { name: /DB 스키마 정리/ }))
-    await screen.findByRole('heading', { level: 2, name: 'DB 스키마 정리' })
+    await screen.findByRole('heading', { level: 1, name: 'DB 스키마 정리' })
     const history = await screen.findByRole('list', { name: '변경 이력' })
     await within(history).findByText(REPLY_META)
     db.tasks = db.tasks.filter(({ task_id }) => task_id !== 'tk_03')
@@ -81,7 +81,7 @@ describe('태스크 상세의 답장 기록 (#344)', () => {
       await screen.findByRole('heading', { level: 2, name: '이 태스크를 볼 수 없어요' }),
     ).toBeVisible()
     expect(screen.queryByRole('button', { name: '되돌리기' })).toBeNull()
-    expect(screen.queryByRole('heading', { level: 2, name: 'DB 스키마 정리' })).toBeNull()
+    expect(screen.queryByRole('heading', { level: 1, name: 'DB 스키마 정리' })).toBeNull()
 
     await user.click(screen.getByRole('link', { name: '태스크 목록으로' }))
     expect(await screen.findByText('회원가입 화면')).toBeInTheDocument()
