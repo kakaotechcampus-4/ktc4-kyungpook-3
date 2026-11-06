@@ -194,6 +194,10 @@
         align-items: center;
         gap: 12px;
       }
+      /* 0.3초 안에 준비됐고 확인(0.1초)만 남았다. 등장 시각이 지나도 보이지 않은 채 걷힌다 */
+      .splash[data-settling] .splash__group {
+        visibility: hidden;
+      }
       .splash__mascot {
         width: 96px;
         height: 96px;

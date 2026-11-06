@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { act, render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { showSplash } from '@/shared/lib/splash'
@@ -80,6 +82,19 @@ const capPressed = () =>
   false
 const shift = () => (overlay() as HTMLElement | null)?.style.getPropertyValue('--splash-shift')
 const leftEyeX = () => Number(document.querySelector('[data-part="eye-l"]')?.getAttribute('x'))
+/** index.html 의 스플래시 CSS 로 본 마스코트. jsdom 은 애니메이션을 돌리지 않아 등장 지연은 보지 못한다 */
+const mascotShown = () => {
+  const mascot = document.querySelector('.splash .splash__mascot')
+  return mascot !== null && getComputedStyle(mascot).visibility !== 'hidden'
+}
+
+beforeAll(() => {
+  const html = readFileSync(resolve(import.meta.dirname, '../../../index.html'), 'utf8')
+  const style = document.createElement('style')
+  style.textContent =
+    new DOMParser().parseFromString(html, 'text/html').querySelector('style')?.textContent ?? ''
+  document.head.append(style)
+})
 
 beforeEach(() => {
   vi.useFakeTimers({
@@ -182,6 +197,46 @@ describe('새로 접속', () => {
     expect(overlay()).toBeNull()
     expect(appRoot).not.toHaveAttribute('inert')
     expect(smiling()).toBe(false)
+  })
+
+  it('0.3초 직전에 준비되면 준비 확인이 0.3초를 넘겨도 마스코트를 보이지 않고 걷힌다', () => {
+    stubMotion()
+    const { appRoot, finishLoading } = boot()
+
+    advance(250)
+    finishLoading()
+    advance(50)
+    for (let ms = 300; ms < 350; ms += 10) {
+      expect(mascotShown()).toBe(false)
+      expect(status()).toBe('')
+      advance(10)
+    }
+    expect(overlay()).toBeNull()
+    expect(smiling()).toBe(false)
+    expect(appRoot).not.toHaveAttribute('inert')
+  })
+
+  it('0.3초 직전에 뼈대가 비었다가 다시 잡히면 그때부터 보이고 눈웃음 → 사라짐으로 끝난다', () => {
+    stubMotion()
+    const { finishLoading } = boot()
+    const nextSkeleton = render(<Screen loading={false} />)
+
+    advance(250)
+    finishLoading()
+    advance(50)
+    nextSkeleton.rerender(<Screen loading />)
+    advance(10)
+    expect(mascotShown()).toBe(true)
+
+    advance(290)
+    nextSkeleton.rerender(<Screen loading={false} />)
+    advance(100)
+    expect(status()).toBe('준비됐어요')
+    advance(1600)
+    expect(smiling()).toBe(true)
+    expect(overlay()).toHaveAttribute('data-phase', 'leave')
+    advance(600)
+    expect(overlay()).toBeNull()
   })
 
   it('React 가 늦게 떠도 등장은 처음부터 다시 돌지 않는다 — 지난 시간만큼 CSS 등장을 앞당긴다', () => {
@@ -333,5 +388,56 @@ describe('로그인 직후', () => {
       advance(50)
       expect(overlay()).toBeNull()
     }
+  })
+
+  it('0.3초 직전에 놓으면 준비 확인이 0.3초를 넘겨도 띄우지 않는다', () => {
+    stubMotion()
+    const appRoot = document.body.appendChild(document.createElement('div'))
+    render(<Screen loading={false} />, { container: appRoot })
+    render(<SplashHost appRoot={appRoot} />)
+
+    let release = () => {}
+    act(() => {
+      release = showSplash()
+    })
+    advance(250)
+    act(() => {
+      release()
+    })
+    for (let ms = 250; ms < 3000; ms += 10) {
+      advance(10)
+      expect(overlay()).toBeNull()
+      expect(appRoot).not.toHaveAttribute('inert')
+    }
+  })
+
+  it('0.3초 직전에 놓았다가 도착 화면이 다시 잡으면 그때부터 덮고 눈웃음 → 사라짐으로 끝난다', () => {
+    stubMotion()
+    const appRoot = document.body.appendChild(document.createElement('div'))
+    const app = render(<Screen loading={false} />, { container: appRoot })
+    render(<SplashHost appRoot={appRoot} />)
+
+    let release = () => {}
+    act(() => {
+      release = showSplash()
+    })
+    advance(250)
+    act(() => {
+      release()
+    })
+    advance(50)
+    app.rerender(<Screen loading />)
+    advance(10)
+    expect(overlay()).toBeInTheDocument()
+    expect(appRoot).toHaveAttribute('inert')
+
+    advance(290)
+    app.rerender(<Screen loading={false} />)
+    advance(100)
+    expect(status()).toBe('준비됐어요')
+    advance(1600)
+    expect(overlay()).toHaveAttribute('data-phase', 'leave')
+    advance(600)
+    expect(overlay()).toBeNull()
   })
 })

@@ -12,7 +12,14 @@ import { createPortal } from 'react-dom'
 import { getSplashHoldCount, onSplashShow, subscribeSplashHolds } from '@/shared/lib/splash'
 import { Mascot } from '@/shared/ui/mascot'
 import type { MascotHandle, MascotPose } from '@/shared/ui/mascot'
-import { REVEAL_MS, SETTLE_MS, splashDeadline, startSplash, stepSplash } from './splashMachine'
+import {
+  REVEAL_MS,
+  SETTLE_MS,
+  splashDeadline,
+  splashSettlingUnseen,
+  startSplash,
+  stepSplash,
+} from './splashMachine'
 import type { SplashState } from './splashMachine'
 
 /** index.html 이 JS 보다 먼저 그리는 스플래시 */
@@ -120,7 +127,11 @@ function SplashRunView({ run, appRoot, onDone }: SplashRunViewProps) {
   }, [state, startedAt])
 
   useEffect(() => {
-    if (holds > 0) return
+    if (holds > 0) {
+      dispatch({ type: 'held' })
+      return
+    }
+    dispatch({ type: 'idle', at: performance.now() - startedAt })
     const timer = setTimeout(() => {
       dispatch({ type: 'ready', at: performance.now() - startedAt })
     }, SETTLE_MS)
@@ -157,6 +168,7 @@ function SplashRunView({ run, appRoot, onDone }: SplashRunViewProps) {
   return createPortal(
     <SplashOverlay
       startedAt={run.startedAt}
+      unseen={splashSettlingUnseen(state)}
       mascotRef={mascot}
       pose={lookStep === null || reduced ? 'idle' : LOOK_POSES[lookStep % LOOK_POSES.length]}
       dial={stage.phase === 'hidden' || stage.phase === 'enter' || stage.phase === 'look'}
@@ -170,6 +182,8 @@ function SplashRunView({ run, appRoot, onDone }: SplashRunViewProps) {
 
 interface SplashOverlayProps {
   startedAt: number
+  /** 등장 시각이 지나도 마스코트·워드마크를 숨긴다. 흰 덮개만 남는다 */
+  unseen: boolean
   mascotRef: Ref<MascotHandle>
   pose: MascotPose
   dial: boolean
@@ -181,6 +195,7 @@ interface SplashOverlayProps {
 /** index.html 의 #boot-splash 와 같은 마크업·클래스다. 모양과 등장·사라짐은 index.html 의 CSS 가 맡는다 */
 function SplashOverlay({
   startedAt,
+  unseen,
   mascotRef,
   pose,
   dial,
@@ -194,6 +209,7 @@ function SplashOverlay({
     <div
       className="splash"
       data-phase={leaving ? 'leave' : undefined}
+      data-settling={unseen ? '' : undefined}
       style={{ '--splash-shift': `${shift}ms` } as CSSProperties}
     >
       <div className="splash__group">

@@ -3,7 +3,8 @@
  * 새로 접속은 index.html 스플래시가 그려지기 시작한 때, 로그인 직후는 띄우기 신호가 시작이다.
  *
  * hidden → enter → look(정면·왼쪽·오른쪽을 돈다) → smile → leave → done
- * - 준비가 hidden 안에 오면 보이지 않은 채 끝난다(번쩍임 방지).
+ * - 준비가 hidden 안에 오면 보이지 않은 채 끝난다(번쩍임 방지). 준비 시각은 잡기가 0이 된 때라, 확인(SETTLE_MS)이
+ *   등장 시각을 넘겨도 hidden 에 머문다.
  * - 준비가 enter·look 에 오면 smile 로 간다. enter 에 오면 둘러보기를 건너뛴 것이다.
  * - 움직임 줄이기면 둘러보기·눈웃음·사라짐이 없다. 준비가 오면 바로 done 이다.
  *
@@ -38,10 +39,19 @@ export interface SplashState {
   reduced: boolean
   /** 보이기 시작하는 시각. 설치한 앱은 시작 이미지에서 이어져 0이다 */
   revealAt: number
+  /** 잡기가 0이 된 시각. 잡혀 있으면 null 이다. 준비는 확인(SETTLE_MS) 뒤에 오지만 0.3초 안인지는 이 시각으로 정한다 */
+  idleAt: number | null
 }
 
-/** timer: 지금 단계가 끝나는 시각이 됐다. ready: 첫 화면이 그 시각에 준비됐다 */
-export type SplashEvent = { type: 'timer' } | { type: 'ready'; at: number }
+/**
+ * timer: 지금 단계가 끝나는 시각이 됐다. idle·held: 잡기가 그 시각에 0이 됐다·다시 잡혔다.
+ * ready: 잡기 0이 SETTLE_MS 이어져 첫 화면이 그 시각에 준비됐다
+ */
+export type SplashEvent =
+  | { type: 'timer' }
+  | { type: 'idle'; at: number }
+  | { type: 'held' }
+  | { type: 'ready'; at: number }
 
 export interface SplashStart {
   /** 스플래시 시작부터 지금까지 */
@@ -62,14 +72,25 @@ function firstStage({ elapsed, reduced, revealAt, landing }: SplashStart): Splas
 }
 
 export function startSplash(start: SplashStart): SplashState {
-  return { stage: firstStage(start), reduced: start.reduced, revealAt: start.revealAt }
+  return {
+    stage: firstStage(start),
+    reduced: start.reduced,
+    revealAt: start.revealAt,
+    idleAt: null,
+  }
+}
+
+/** 보이기 전에 준비돼 확인만 남았다. 확인이 등장 시각을 넘겨도 보이지 않은 채 기다린다 */
+export function splashSettlingUnseen({ stage, revealAt, idleAt }: SplashState): boolean {
+  return stage.phase === 'hidden' && idleAt !== null && idleAt < revealAt
 }
 
 /** 지금 단계가 끝나는 시각. 준비를 기다리기만 하는 단계는 null */
-export function splashDeadline({ stage, reduced, revealAt }: SplashState): number | null {
+export function splashDeadline(state: SplashState): number | null {
+  const { stage, reduced, revealAt } = state
   switch (stage.phase) {
     case 'hidden':
-      return revealAt
+      return splashSettlingUnseen(state) ? null : revealAt
     case 'enter':
       return LOOK_AT_MS
     case 'look':
@@ -110,12 +131,20 @@ function afterReady(state: SplashState, at: number): SplashStage {
 }
 
 export function stepSplash(state: SplashState, event: SplashEvent): SplashState {
-  let stage = state.stage
-  if (event.type === 'ready') {
-    stage = afterReady(state, event.at)
-  } else {
-    const deadline = splashDeadline(state)
-    if (deadline !== null) stage = afterTimer(state, deadline)
+  switch (event.type) {
+    case 'idle':
+      return { ...state, idleAt: event.at }
+    case 'held':
+      return state.idleAt === null ? state : { ...state, idleAt: null }
+    case 'ready':
+      return withStage(state, afterReady(state, event.at))
+    case 'timer': {
+      const deadline = splashDeadline(state)
+      return deadline === null ? state : withStage(state, afterTimer(state, deadline))
+    }
   }
+}
+
+function withStage(state: SplashState, stage: SplashStage): SplashState {
   return stage === state.stage ? state : { ...state, stage }
 }
