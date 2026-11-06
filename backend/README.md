@@ -401,9 +401,9 @@ PM 이 디스코드 서버의 텍스트 채널 하나를 골라 두면 녹음 �
 
 세션 토큰은 sha256 해시로 저장하고 쿠키 값을 해시해 찾는다. 만료된 세션은 워커가 지운다. 쿠키 이름(`session_token`)·값·속성·7일 만료·401 `UNAUTHENTICATED` 는 그대로다. 코드는 `app/services/sessions.py`.
 
-- `session.token_hash`(String(64), 유일 인덱스 `ix_session_token_hash`)에는 해시만 남고 원문은 DB 에 없다. 원문은 로그인 응답의 쿠키로만 나간다.
+- `session.session_token`(String(255), 유일 인덱스 `ix_session_session_token`)에는 쿠키 원문이 아니라 그 sha256 hex 만 남고 원문은 DB 에 없다. 컬럼 이름은 [마이그레이션 호환 원칙](../deploy/README.md)(이름 변경은 두 배포로 나눈다) 때문에 그대로 두었다. 쓸 때는 `hash_session_token` 을 직접 불러 넣는다. 원문은 로그인 응답의 쿠키로만 나간다.
 - 로그아웃은 그 쿠키의 세션 한 행만 지운다. 비밀번호 재설정 confirm 은 그 계정의 세션을 모두 지운다.
-- 기존 세션은 마이그레이션 `3c9a1f7d2b64` 가 원문을 해시로 바꿔 두므로 이미 로그인한 사용자는 그대로 로그인되어 있다. 되돌리면(downgrade) 해시에서 원문을 알 수 없어 모든 세션이 지워진다. 배포 전 확인은 그 파일 설명에 있다.
+- 기존 세션은 마이그레이션 `3c9a1f7d2b64` 가 값만 해시로 바꾼다(스키마 변경 없음). 이미 로그인한 사용자는 그대로 로그인되어 있다. 되돌리면(downgrade) 해시에서 원문을 알 수 없어 모든 세션이 지워지고, 코드만 되돌리면 옛 코드가 쿠키 원문을 해시와 비교해 401 이 되어 모두 다시 로그인한다(500 은 아니다). 배포 전 확인은 그 파일 설명에 있다.
 - 만료 세션 정리 주기는 `SESSION_SWEEP_INTERVAL_SECONDS`([운영 실행](#운영-실행-docker)의 세션 sweeper). 로그인 시에는 정리하지 않는다.
 - 결정 근거는 [M1 결정 기록](docs/plan/m1/basis-for-decision/2026-11-06-session-token-hash.md).
 
