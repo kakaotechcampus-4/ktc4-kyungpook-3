@@ -234,3 +234,20 @@ def test_background_mail_never_uses_more_than_the_mail_workers(monkeypatch):
         assert running["max"] == mailer.MAIL_WORKERS
     finally:
         release.set()
+
+
+def test_send_with_retry_hides_recipient_address_when_refused(monkeypatch, caplog):
+    """수신 거부 예외의 메시지에는 받는 사람 주소가 그대로 든다. 그 예외만 종류만 남겨 이메일이 로그에 남지 않게 한다."""
+    def refused(to, subject, text):
+        raise smtplib.SMTPRecipientsRefused({"victim@corp.com": (550, b"no such user")})
+
+    monkeypatch.setattr(mailer, "send_mail", refused)
+    monkeypatch.setattr(mailer, "_sleep", lambda s: None)
+
+    with caplog.at_level(logging.ERROR):
+        assert mailer.send_with_retry("victim@corp.com", "s", "SECRET-TOKEN", log_label="user=1") is False
+
+    assert "SMTPRecipientsRefused" in caplog.text
+    assert "user=1" in caplog.text
+    assert "victim@corp.com" not in caplog.text
+    assert "SECRET-TOKEN" not in caplog.text

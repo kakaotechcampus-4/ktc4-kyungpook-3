@@ -72,9 +72,9 @@ def send_with_retry(to: str, subject: str, text: str, *, log_label: str) -> bool
                 break
             _sleep(delay)
     # exc_info 는 쓰지 않는다: traceback locals 에 토큰이 든 본문이 보일 수 있다.
-    logger.error(
-        "password reset mail failed: %s (%s: %s)", log_label, type(last_exc).__name__, last_exc
-    )
+    # 수신 거부 예외는 메시지에 받는 사람 주소가 그대로 들어 종류만 남긴다. 나머지는 진단용으로 메시지도 남긴다.
+    detail = "" if isinstance(last_exc, smtplib.SMTPRecipientsRefused) else f": {last_exc}"
+    logger.error("password reset mail failed: %s (%s%s)", log_label, type(last_exc).__name__, detail)
     return False
 
 
