@@ -3,7 +3,7 @@
 - 기록일: 2026-11-07
 - 대상: [#477](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/477)의 바꿀 곳 표와 할 일
 - 기준: develop `83e31c8a`(#471 병합 뒤). PR은 아직 만들지 않았다.
-- 상태: **코드·단위·앱 테스트는 마쳤다.** 브라우저 검증은 다음 단계다.
+- 상태: **코드·단위·앱 테스트, 바꾼 E2E, MSW 모드 브라우저 검증을 마쳤다.** 실제 터치 기기는 확인하지 않았다.
 
 ## 작업 근거와 요약
 
@@ -36,8 +36,8 @@
 | 공용 부품을 그대로 쓰고 담당자·상태 조립을 한 곳에 | 충족 | `entities/member`·`entities/task` 조립, `grep -rn "<select" src` 가 `shared/ui/select` 주석 한 줄뿐 |
 | 찾기 칸 태스크 고르기(콤보박스 역할·키보드) | 충족(단위·앱) | `Combobox.test.tsx`, `reminderCreateMsw.test.tsx` 「8개를 넘으면」 |
 | 560px 아래 시트 | 충족(단위) | `Sheet.test.tsx`, `Select.test.tsx` 휴대폰 폭 절, `Combobox.test.tsx` 휴대폰 폭 |
-| 다섯 곳의 테스트·스토리·E2E 를 새 부품 기준으로 | 충족(단위·앱). 스토리 play·E2E 는 기대값만 고치고 실행하지 않았다 | 아래 검증 |
-| 각 자리 1280·390 스크린샷, 키보드만으로 고르기 | 미완료 | 브라우저 검증은 다음 단계 |
+| 다섯 곳의 테스트·스토리·E2E 를 새 부품 기준으로 | 충족. 스토리 play 는 실행하지 않았다(#482 가 Storybook 을 지운다) | 아래 검증 |
+| 각 자리 1280·390 스크린샷, 키보드만으로 고르기 | 충족(MSW 모드 브라우저) | 아래 검증의 브라우저 줄 |
 
 ## 설계 결정
 
@@ -62,5 +62,7 @@
 | 전체 | `npm run typecheck`·`lint`·`build` | 통과. 빌드의 CSS 경고 1건(`[color:var(...)]`)은 Tailwind 가 기존 문서 마크다운을 읽어 생기는 것으로 이번 변경과 상관없다 |
 | 전체 | `npm run format:check` | git 에서 제외한 `.verify/` 참고 파일 2개만 걸렸다. 그 밖은 통과 |
 | 전체 | `npm run test` | 돌리지 않았다(메모리). CI 에 맡긴다 |
-| 스토리 play·E2E | 기대값만 고쳤다 | 실행하지 않았다. `messages-reminder`·`settings-notifications` E2E, `ReminderCreateForm`·`Select`·`Combobox` 스토리 |
-| 브라우저 | 스크린샷·키보드만 고르기 | 브라우저 검증은 다음 단계 |
+| E2E | `verify-managers-manager` 의 `run messages`·`notifications`·`dashboard`·`tasks`(workers 1) | messages 14/14, notifications 2/2, dashboard 6/6 통과. tasks-approval 은 16 통과, 3개가 테스트가 끝난 뒤 context 정리 60초 초과로 실패했고 그 3개만 다시 돌려 3/3 통과. 부하 시간 초과다 |
+| 스토리 play | 실행하지 않았다 | `Select`·`ReminderCreateForm` 스토리를 고치고 `Combobox` 스토리를 더한 것은 #482 의 스토리 금지 전이다. 그 뒤로 스토리는 고치지 않았다 |
+| 브라우저 | MSW 모드 Playwright 스크립트(Git 제외 `.verify/`), 다섯 자리 × 1280·390 × 닫힘·열림·막힘·잠김, 키보드만 고르기 | 18/18 통과. 시트 줄 52px, 손잡이 36×4, 제목은 칸 이름, Esc·바깥 누르기·140px 끌기로 닫히고 40px 끌기는 남는다. 시각 목록은 고른 09:00 이 가운데(차이 0px). 1280 목록 반경 14·줄 반경 10·그림자 없음·고른 줄 700 + 체크. 태스크 9개에서 찾기 칸·거르기·「맞는 태스크가 없어요」. 상세 저장·수정 제안 PATCH 본문·재촉 팀원 바꾸면 태스크 초기화가 그대로다 |
+| 브라우저에서 찾은 결함 | 같은 스크립트로 다시 확인 | 넓은 화면 찾기 칸 목록의 두 줄 항목이 40px 로 줄어 겹쳤다. 줄이 flex 열에서 줄어들지 않게 고쳐 66px. 390 승인 카드의 좁은 담당자 트리거에서 값이 칸 밖으로 넘쳐 칸 안에서 자르게 했다. 칸이 좁아지는 것 자체는 #478 레이아웃 범위다 |
