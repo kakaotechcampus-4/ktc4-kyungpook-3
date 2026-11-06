@@ -87,7 +87,7 @@ def signup(payload: SignupRequest, response: Response, db: Session = Depends(get
     except IntegrityError:
         # 사전 조회와 저장 사이에 같은 이메일이 먼저 가입된 경우. 유일 제약이 막으므로 409 로 돌려준다.
         db.rollback()
-        raise AppError(ErrorCode.EMAIL_ALREADY_EXISTS)
+        raise AppError(ErrorCode.EMAIL_ALREADY_EXISTS) from None
     db.refresh(user)
 
     _create_session(db, user, response)

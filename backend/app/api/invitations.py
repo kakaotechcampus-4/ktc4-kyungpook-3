@@ -108,8 +108,8 @@ def _email_pending_for_other_member(db: Session, workspace_id: str, email: str, 
 
 
 def _email_in_workspace(db: Session, workspace_id: str, email: str) -> bool:
-    """이 이메일로 가입한 계정이 이미 이 워크스페이스의 (탈퇴하지 않은) 팀원인가. 가입 이메일은 입력 그대로 저장돼 있어,
-    초대·수락과 같은 normalize_email 로 비교한다. SQL lower 는 DB 마다 비 ASCII 글자를 다르게 바꾼다."""
+    """이 이메일로 가입한 계정이 이미 이 워크스페이스의 (탈퇴하지 않은) 팀원인가. 저장된 가입 이메일은 이미 정규화돼 있지만 방어로 한 번 더,
+    초대·수락과 같은 normalize_email 로 정규화해 비교한다. SQL lower 는 DB 마다 비 ASCII 글자를 다르게 바꾼다."""
     linked_emails = db.execute(
         select(User.email)
         .join(Member, Member.user_id == User.user_id)
