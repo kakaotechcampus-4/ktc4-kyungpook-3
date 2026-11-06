@@ -182,12 +182,12 @@ describe('새로 접속', () => {
     expect(overlay()).not.toHaveAttribute('data-phase')
     expect(appRoot).toHaveAttribute('inert')
 
-    advance(1100)
+    advance(100)
     expect(overlay()).toHaveAttribute('data-phase', 'leave')
     expect(appRoot).not.toHaveAttribute('inert')
     expect(screen.getByRole('heading', { name: '첫 화면' })).toBeInTheDocument()
 
-    advance(599)
+    advance(399)
     expect(overlay()).toBeInTheDocument()
     advance(1)
     expect(overlay()).toBeNull()
@@ -207,7 +207,7 @@ describe('새로 접속', () => {
     }
     expect(status()).toBe('준비됐어요')
 
-    for (let ms = 0; ms < 1600; ms += 100) {
+    for (let ms = 0; ms < 600; ms += 100) {
       advance(100)
       seen.push(status())
     }
@@ -215,7 +215,7 @@ describe('새로 접속', () => {
     expect(smiling()).toBe(true)
     expect(overlay()).toHaveAttribute('data-phase', 'leave')
 
-    advance(600)
+    advance(400)
     expect(overlay()).toBeNull()
     expect(appRoot).not.toHaveAttribute('inert')
   })
@@ -268,10 +268,10 @@ describe('새로 접속', () => {
     nextSkeleton.rerender(<Screen loading={false} />)
     advance(100)
     expect(status()).toBe('준비됐어요')
-    advance(1600)
+    advance(600)
     expect(smiling()).toBe(true)
     expect(overlay()).toHaveAttribute('data-phase', 'leave')
-    advance(600)
+    advance(400)
     expect(overlay()).toBeNull()
   })
 
@@ -359,7 +359,7 @@ describe('움직임 줄이기', () => {
 
   it.each([
     ['눈웃음', 300],
-    ['사라짐', 1700],
+    ['사라짐', 700],
   ])('%s 중에 켜면 바로 걷힌다', (_phase, afterReady) => {
     const motion = stubMotion()
     const { appRoot, finishLoading } = boot()
@@ -383,9 +383,9 @@ describe('설치한 앱', () => {
     finishLoading()
     advance(100)
     expect(status()).toBe('준비됐어요')
-    advance(1600)
-    expect(overlay()).toHaveAttribute('data-phase', 'leave')
     advance(600)
+    expect(overlay()).toHaveAttribute('data-phase', 'leave')
+    advance(400)
     expect(overlay()).toBeNull()
   })
 })
@@ -399,7 +399,7 @@ describe('랜딩', () => {
     expect(appRoot).not.toHaveAttribute('inert')
     expect(screen.getByRole('heading', { name: '첫 화면' })).toBeInTheDocument()
     expect(status()).toBe('')
-    advance(600)
+    advance(400)
     expect(overlay()).toBeNull()
     expect(smiling()).toBe(false)
   })
@@ -441,7 +441,7 @@ describe('로그인 직후', () => {
     app.rerender(<Screen loading={false} />)
     advance(100)
     expect(status()).toBe('준비됐어요')
-    advance(2200)
+    advance(1000)
     expect(overlay()).toBeNull()
     expect(appRoot).not.toHaveAttribute('inert')
   })
@@ -511,9 +511,9 @@ describe('로그인 직후', () => {
     app.rerender(<Screen loading={false} />)
     advance(100)
     expect(status()).toBe('준비됐어요')
-    advance(1600)
-    expect(overlay()).toHaveAttribute('data-phase', 'leave')
     advance(600)
+    expect(overlay()).toHaveAttribute('data-phase', 'leave')
+    advance(400)
     expect(overlay()).toBeNull()
   })
 })
@@ -535,11 +535,11 @@ describe('첫 방문 인트로와 함께', () => {
     await pressEnter()
     expect(onClose).not.toHaveBeenCalled()
 
-    advance(1200)
+    advance(200)
     expect(overlay()).toHaveAttribute('data-phase', 'leave')
     expect(intro()).toBeNull()
 
-    advance(600)
+    advance(400)
     expect(overlay()).toBeNull()
     expect(intro()).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '건너뛰기' })).toHaveFocus()

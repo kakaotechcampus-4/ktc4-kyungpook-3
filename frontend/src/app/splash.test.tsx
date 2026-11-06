@@ -79,7 +79,7 @@ it('새로 접속: 로그인 확인을 덮고, 대시보드가 그려지면 카�
   session.resolve()
   expect(await screen.findByRole('heading', { name: '대시보드' })).toBeInTheDocument()
   await waitFor(() => expect(status()).toBe('준비됐어요'))
-  await advance(2200)
+  await advance(1000)
 
   expect(overlay()).toBeNull()
   expect(app.container).not.toHaveAttribute('inert')
@@ -114,7 +114,7 @@ it('로그인 직후: 공간 확인부터 덮고, 도착 화면이 그려지면 
   workspaces.resolve()
   expect(await screen.findByRole('heading', { name: '워크스페이스 선택' })).toBeInTheDocument()
   await waitFor(() => expect(status()).toBe('준비됐어요'))
-  await advance(2200)
+  await advance(1000)
   expect(overlay()).toBeNull()
   expect(app.container).not.toHaveAttribute('inert')
 })
