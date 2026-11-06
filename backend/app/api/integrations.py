@@ -136,7 +136,7 @@ def delete_integration(
     integration = db.query(Integration).filter(
         Integration.workspace_id == workspace_id,
         Integration.provider == provider
-    ).first()
+    ).with_for_update().first()  # 겹친 PUT 이 끝난 뒤의 채널로 끔 공지를 보낸다
     
     if integration:
         old_chat_channel_id = integration.chat_channel_id if provider == "discord" else None

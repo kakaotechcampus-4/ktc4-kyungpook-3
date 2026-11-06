@@ -565,6 +565,30 @@ def test_delete_integration_route_still_matches_provider(client, seed, db, fake_
     assert response.status_code == 204
 
 
+def test_delete_integration_reads_the_row_with_lock(client, seed, db, fake_discord, monkeypatch):
+    """겹친 PUT 이 끝난 뒤의 채널을 읽어야 끔 공지가 새 채널로 간다. sqlite 는 FOR UPDATE 를 무시하므로 호출 여부를 본다."""
+    from sqlalchemy.orm import Query
+
+    calls, _ = _ready(db, seed, fake_discord)
+    assert _put(client, seed["workspace_id"], "31").status_code == 200
+    locked: list[bool] = []
+    original = Query.with_for_update
+
+    def spy(self, *args, **kwargs):
+        locked.append(True)
+        return original(self, *args, **kwargs)
+
+    monkeypatch.setattr(Query, "with_for_update", spy)
+
+    response = client.delete(
+        f"/api/v1/workspaces/{seed['workspace_id']}/integrations/discord", headers=_cookie("alice-token")
+    )
+
+    assert response.status_code == 204
+    assert locked
+    assert calls[-1] == ("post", "31", chat_channel.OFF_NOTICE)
+
+
 # ---------- 봇용 목록 ----------
 
 def _bot_list(client, headers=None):
