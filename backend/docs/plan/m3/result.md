@@ -73,7 +73,8 @@ M3 plan.md 가 비어 있어 완료조건이 없다. 마일스톤 완료를 판�
 
 ### 검증
 
-- 2026-11-06 로컬(SQLite, Python 3.12)에서 새 테스트 7개 파일(`tests/services/test_matching_alias.py`, `tests/api/test_unresolved_aliases_candidates.py`, `tests/services/test_member_aliases.py`, `tests/api/test_member_name_aliases.py`, `tests/api/test_member_discord_alias.py`, `tests/services/test_discord.py`, `tests/test_migration_backfill_member_name_aliases.py`): 123 passed, 41 skipped(PostgreSQL 파라미터). 경고 1건은 설치된 FastAPI 의 `starlette.testclient` 사용 경고로 이번 변경과 무관하다.
+- 2026-11-06 로컬(SQLite, Python 3.12)에서 새 테스트 7개 파일(`tests/services/test_matching_alias.py`, `tests/api/test_unresolved_aliases_candidates.py`, `tests/services/test_member_aliases.py`, `tests/api/test_member_name_aliases.py`, `tests/api/test_member_discord_alias.py`, `tests/services/test_discord.py`, `tests/test_migration_backfill_member_name_aliases.py`): 128 passed, 45 skipped(PostgreSQL 파라미터). 최신 develop 위로 옮긴 뒤 전체 `pytest -q`: 1876 passed, 1315 skipped. `ruff check .` 통과. 경고는 설치된 FastAPI 의 `starlette.testclient` 사용 경고로 이번 변경과 무관하다.
+- 최종 리뷰에서 한 PATCH 로 이름과 디스코드 계정을 함께 바꾸면 이름 별칭이 빠지는 문제가 재현되어 고쳤다(디스코드 별칭 삭제를 먼저 flush 하고 이름 별칭을 다시 맞춘다). 회귀 테스트 3개는 고치기 전 실패를 확인했다.
 - 각 태스크마다 테스트를 먼저 쓰고 구현 전 실패를 확인했다(후보 함수 ImportError, 별칭 0개, 마이그레이션 파일 없음 등).
 - PostgreSQL(`TEST_DATABASE_URL`)과 로컬 DB 의 `alembic upgrade head`·`alembic check` 는 돌리지 않았다. 사용자 결정으로 CI migrations 잡에서 확인한다. 실제 Discord 호출은 하지 않았고 스텁·`httpx.MockTransport` 로 시험했다.
 
