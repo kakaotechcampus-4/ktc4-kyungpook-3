@@ -62,3 +62,25 @@ def test_signup_race_lost_at_the_db_is_409_not_500(mdb, monkeypatch):
 
 def test_invitation_schema_still_normalizes():
     assert InvitationCreateRequest(member_id="m", email=" A@B.com ").email == "a@b.com"
+
+
+def test_user_model_normalizes_email_on_create(mdb):
+    """요청 스키마를 거치지 않는 경로(#427 카카오 등)도 정규화된 값을 저장한다."""
+    user = User(email="  Kim@Example.COM ", name="김", provider="kakao")
+    mdb.add(user)
+    mdb.commit()
+    mdb.refresh(user)
+
+    assert user.email == "kim@example.com"
+
+
+def test_user_model_normalizes_email_on_assignment(mdb):
+    user = User(email="kim@example.com", name="김")
+    mdb.add(user)
+    mdb.commit()
+
+    user.email = "New@Example.COM"
+    mdb.commit()
+    mdb.refresh(user)
+
+    assert user.email == "new@example.com"

@@ -18,7 +18,9 @@ from sqlalchemy import (
     UniqueConstraint,
     text,
 )
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
+
+from app.schemas.email import normalize_email
 
 from app.core.database import Base
 
@@ -190,6 +192,11 @@ class User(Base):
     sessions: Mapped[list["Session"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
+
+    @validates("email")
+    def _normalize_email(self, _key: str, value: str) -> str:
+        # 요청 스키마를 거치지 않는 쓰기 경로도 같은 규칙으로 저장한다(#434). SQL 직접 실행과 update() 는 지나지 않는다.
+        return normalize_email(value)
 
 
 class PasswordResetToken(Base):
