@@ -312,3 +312,50 @@ def test_post_alias_still_accepts_contract_sources(client, mdb, mseed, source):
 
     assert r.status_code == 201
     assert r.json()["data"]["source"] == source
+
+
+def test_lock_member_issues_select_for_update_and_refreshes():
+    # 같은 팀원을 동시에 고치면 두 요청이 모두 "별칭 없음"을 보고 같은 행을 넣어 uq_alias_per_member 로 500 이 된다.
+    # 팀원 행을 잠그고 최신 값으로 다시 읽어 막는다. SQLite 는 행 잠금을 무시해 효과는 PostgreSQL 에서만 난다.
+    from sqlalchemy.dialects import postgresql
+
+    from app.api import members as members_api
+
+    seen = []
+
+    class _DB:
+        def execute(self, stmt):
+            seen.append(stmt)
+
+            class _R:
+                def scalar_one(self):
+                    return None
+
+            return _R()
+
+    members_api._lock_member(_DB(), Member(member_id="m1"))
+
+    (stmt,) = seen
+    assert "FOR UPDATE" in str(stmt.compile(dialect=postgresql.dialect()))
+    assert stmt.get_execution_options().get("populate_existing") is True
+
+
+@pytest.mark.parametrize(
+    "body, locked",
+    [
+        ({"display_name": "김도윤"}, True),
+        ({"discord_user_id": "d_new"}, True),
+        ({"notion_name": "노션밥"}, False),
+    ],
+)
+def test_patch_locks_member_only_when_aliases_may_change(client, mdb, mseed, monkeypatch, body, locked):
+    from app.api import members as members_api
+
+    calls = []
+    original = members_api._lock_member
+    monkeypatch.setattr(members_api, "_lock_member", lambda db, m: (calls.append(m.member_id), original(db, m)))
+
+    r = client.patch(f"{API}/members/{mseed['bob'].member_id}", json=body)
+
+    assert r.status_code == 200
+    assert calls == ([mseed["bob"].member_id] if locked else [])

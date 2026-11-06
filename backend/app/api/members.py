@@ -46,6 +46,20 @@ def _get_member(db: Session, member_id: str, user: User, *, pm: bool = False) ->
     return member
 
 
+def _lock_member(db: Session, member: Member) -> None:
+    """팀원 행을 커밋까지 잠그고 최신 값으로 다시 읽는다. 이름·디스코드 계정을 바꾸는 PATCH 가 쓴다.
+
+    같은 팀원을 동시에 고치면 두 요청이 모두 같은 별칭이 없다고 보고 넣어, 뒤쪽이 uq_alias_per_member 에 걸려
+    500 이 된다(#463 리뷰). 잠근 뒤 별칭을 읽으면 앞 요청이 넣은 것을 보고 건너뛴다.
+    """
+    db.execute(
+        select(Member)
+        .where(Member.member_id == member.member_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    ).scalar_one()
+
+
 def _discord_user_taken(
     db: Session, workspace_id: str, discord_user_id: str, *, exclude_member_id: str | None = None
 ) -> bool:
@@ -296,6 +310,10 @@ def update_member(
     _ensure_discord_user_free(
         db, member.workspace_id, updates.get("discord_user_id"), exclude_member_id=member_id
     )
+
+    # 별칭이 바뀔 수 있는 PATCH 는 팀원 행을 잠근다. 위 PM·초대 검사가 잠그는 행보다 뒤에 잠가 순서가 꼬이지 않게 한다.
+    if "display_name" in updates or "discord_user_id" in updates:
+        _lock_member(db, member)
 
     old_name = member.display_name
     # 디스코드 계정이 바뀌면(풀리는 것 포함) 옛 계정의 닉네임 별칭을 지운다. 조회가 팀원 변경을 먼저 flush 해
