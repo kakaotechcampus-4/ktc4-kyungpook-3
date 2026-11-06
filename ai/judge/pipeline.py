@@ -37,6 +37,8 @@ from shared.schemas import (
 # 문맥으로 풀린 이름(assignee_resolved)이 없으면 보내지 않는다 (capture/handoff.py 와 같은 규칙).
 _NOT_ALIAS_TYPES = {"second", "thirdpronoun", "thirdrole"}
 
+_MAX_EVIDENCE_SEQS = 100  # BE 는 항목 하나에 seq 가 이보다 많으면 요청 전체를 400 으로 막는다
+
 
 def _assignee(finding: JudgeFinding) -> tuple[str | None, str | None]:
     """(assignee_type, assignee_raw) — BE 가 member_id 로 해소할 값."""
@@ -59,6 +61,11 @@ def _evidence(finding: JudgeFinding, transcript: Transcript) -> dict[str, Any]:
         "evidence_speaker": finding.speaker,
         "evidence_at_ms": _evidence_at_ms(finding, transcript),
     }
+
+
+def _evidence_seqs(seqs: list[int]) -> list[int]:
+    """BE 로 보낼 근거 발화 seq. 한 발화의 여러 문장은 seq 하나다. 넘치면 결론에 가까운 뒤쪽을 남긴다."""
+    return sorted(set(seqs))[-_MAX_EVIDENCE_SEQS:]
 
 
 def to_item(
@@ -93,6 +100,7 @@ def to_item(
         "assignee_raw": assignee_raw,
         "doc_text": drafted.doc_text,
         **_evidence(finding, transcript),
+        "evidence_seqs": _evidence_seqs(finding.seqs),
     }
     if result.is_new:
         return item
@@ -208,6 +216,9 @@ def _merge_into(card: dict[str, Any], finding: JudgeFinding, result: JudgeResult
     if result.category == "assignee":
         card["assignee_type"], card["assignee_raw"] = _assignee(finding)
         card.update(_evidence(finding, transcript))
+    # 1인칭인데 화자를 모르면 BE 가 가장 큰 seq 의 화자로 찾는다. 담당과 상관없는 뒤 발화를 더하면 그 사람이 담당자가 된다
+    if not (card["assignee_type"] == "first" and not card["evidence_speaker"] and result.category != "assignee"):
+        card["evidence_seqs"] = _evidence_seqs(card["evidence_seqs"] + finding.seqs)
     # 합친 설명은 자르지 않는다 — DOC_TEXT_MAX 는 Luna 한 문장의 상한이고(BE doc_text 는 길이 제한 없음), 자르면
     # 맨 뒤에 붙은 최신 결정부터 잘린다(PR #206 리뷰)
     card["doc_text"] = f"{card['doc_text']} / {drafted.doc_text}"

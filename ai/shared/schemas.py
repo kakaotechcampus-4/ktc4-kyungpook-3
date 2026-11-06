@@ -150,6 +150,7 @@ class JudgeFinding(_Base):
     indices: list[int] = field(default_factory=list)  # 근거 문장의 전사록 내 위치. evidence 와 같은 순서
     source: str = "meeting"  # "meeting" | "chat"
     seq: int = 0  # 근거 마지막 줄의 TranscriptSegment.seq — 근거 추적용 안정 식별자
+    seqs: list[int] = field(default_factory=list)  # 근거 줄마다의 TranscriptSegment.seq. evidence 와 같은 순서
     speaker: str | None = None  # 근거 마지막 줄의 화자(opaque id) — 문맥 참고/디버깅용
     reason: str = ""  # 왜 후보로 골랐는지 (규칙 기반이면 어떤 규칙에 걸렸는지)
     method: str = "rules"  # rules | llm

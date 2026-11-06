@@ -580,3 +580,25 @@ def test_member_names_come_from_the_meetings_workspace():
     with pytest.raises(H.BeError) as e:
         client.member_names("ws-9")
     assert e.value.code == "WORKSPACE_NOT_FOUND"
+
+
+def test_legacy_item_carries_the_seq_of_the_located_sentence():
+    transcript = {"segments": [
+        {"speaker": "a", "start": 1.0, "end": 2.0, "text": "환불 기능 만들어요.", "seq": 7},
+        {"speaker": "b", "start": 3.0, "end": 4.0, "text": "네 좋아요.", "seq": 8},
+    ]}
+
+    [item] = H.to_extraction_items([{"task": "환불", "source_sentence": "환불 기능 만들어요."}], transcript)
+
+    assert item["evidence_seqs"] == [7]
+
+
+def test_legacy_item_has_no_seq_when_the_speaker_is_unknown():
+    transcript = {"segments": [
+        {"speaker": "a", "start": 1.0, "end": 2.0, "text": "네 좋아요.", "seq": 7},
+        {"speaker": "b", "start": 3.0, "end": 4.0, "text": "네 좋아요.", "seq": 8},
+    ]}
+
+    [item] = H.to_extraction_items([{"task": "환불", "source_sentence": "네 좋아요."}], transcript)
+
+    assert item["evidence_seqs"] == []

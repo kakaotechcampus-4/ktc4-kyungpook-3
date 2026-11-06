@@ -173,19 +173,19 @@ def _squash(text: str) -> str:
     return re.sub(r"[\W_]+", "", text or "")
 
 
-def locate_sentence(sentence: str, segments: list[dict]) -> tuple[str | None, int | None]:
-    """근거 문장을 말한 화자와 시각. 화자가 둘 이상 같은 문장을 말했으면 모른다고 답한다 (PM 확인으로)."""
+def locate_sentence(sentence: str, segments: list[dict]) -> tuple[str | None, int | None, int | None]:
+    """근거 문장을 말한 화자, 시각, 발화 seq. 화자가 둘 이상 같은 문장을 말했으면 모른다고 답한다 (PM 확인으로)."""
     key = _squash(sentence)
     if not key:
-        return None, None
+        return None, None, None
     squashed = [(s, _squash(s.get("text", ""))) for s in segments]
     # 통째로 같은 발화가 있으면 그것. 없으면 그 문장을 품은 발화 (한 발화에 문장이 여럿일 때)
     hits = [s for s, t in squashed if t == key] or [s for s, t in squashed if key in t]
     speakers = {s.get("speaker") for s in hits}
     if len(speakers) != 1:
-        return None, None
+        return None, None, None
     first = min(hits, key=lambda s: float(s.get("start", 0.0)))
-    return first.get("speaker"), int(round(float(first.get("start", 0.0)) * 1000))
+    return first.get("speaker"), int(round(float(first.get("start", 0.0)) * 1000)), first.get("seq")
 
 
 def to_extraction_items(tasks: list[dict], transcript: dict) -> list[dict]:
@@ -198,7 +198,7 @@ def to_extraction_items(tasks: list[dict], transcript: dict) -> list[dict]:
     items = []
     for t in tasks:
         sentence = t.get("source_sentence") or ""
-        speaker, at_ms = locate_sentence(sentence, segments)
+        speaker, at_ms, seq = locate_sentence(sentence, segments)
         kind = t.get("assignee_type")
         # "네가"·"그분"·"백엔드 리더" 는 별칭이 아니다. 이름으로 풀리지 않았으면 BE 에 조회를 시키지 않는다
         mention = None if kind in ("second", "thirdpronoun", "thirdrole") else t.get("assignee_mention")
@@ -214,6 +214,7 @@ def to_extraction_items(tasks: list[dict], transcript: dict) -> list[dict]:
             "evidence_quote": sentence or None,
             "evidence_speaker": speaker,
             "evidence_at_ms": at_ms,
+            "evidence_seqs": [] if seq is None else [seq],
         })
     return items
 

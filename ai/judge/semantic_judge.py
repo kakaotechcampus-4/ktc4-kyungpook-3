@@ -149,6 +149,7 @@ def extract_findings_rules(transcript: Transcript) -> list[JudgeFinding]:
                 indices=[i],  # 문장을 묶을 능력도 없어서 항상 한 줄
                 source=transcript.source,
                 seq=seqs[i],
+                seqs=[seqs[i]],
                 speaker=speakers[i],
                 reason=reason,
                 method="rules",
@@ -299,6 +300,7 @@ def _extract_findings_llm(
                 indices=idxs,
                 source=transcript.source,
                 seq=seqs[anchor],
+                seqs=[seqs[i] for i in idxs],
                 speaker=speakers[anchor],
                 assignee_type=a_type,
                 assignee_raw=a_raw,
