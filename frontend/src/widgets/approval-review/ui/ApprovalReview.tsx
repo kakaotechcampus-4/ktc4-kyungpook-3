@@ -4,6 +4,7 @@ import type { ReactNode } from 'react'
 import {
   APPROVAL_RESOLUTION_REASONS,
   approvalDetailQueryOptions,
+  isScopeChange,
   planApprovalResolution,
   taskCreateValues,
   taskUpdateChanges,
@@ -14,7 +15,7 @@ import type {
   TaskUpdateApproval,
   UnsupportedApproval,
 } from '@/entities/approval'
-import { meetingListQueryOptions } from '@/entities/meeting'
+import { evidenceMoment, meetingListQueryOptions } from '@/entities/meeting'
 import { memberListQueryOptions, speakerName } from '@/entities/member'
 import type { Member } from '@/entities/member'
 import { taskDetailQueryOptions } from '@/entities/task'
@@ -39,7 +40,6 @@ import {
   approvalKindLabel,
   approvalStatusLabel,
   currentFieldValue,
-  evidenceClock,
   fieldLabel,
   fieldValueLabel,
   memberLabel,
@@ -188,6 +188,7 @@ function ApprovalBody({
         <TaskUpdateReview
           workspaceId={workspaceId}
           approval={approval}
+          members={members.data}
           names={names}
           resolver={resolver}
         />
@@ -367,23 +368,21 @@ function FieldValue({ value }: { value: string | null }) {
   return value === null ? <dd className={MISSING}>미정</dd> : <dd className={VALUE}>{value}</dd>
 }
 
-/** 근거 인용·화자·녹음 위치와 연결 회의 */
+/** 근거 인용·화자·시각과 연결 회의 */
 function Evidence({
   workspaceId,
   approval,
   members,
 }: {
   workspaceId: string
-  approval: TaskCreateApproval
+  approval: Pick<TaskCreateApproval | TaskUpdateApproval, 'evidence' | 'meetingId'>
   members: readonly Member[] | undefined
 }) {
   // 처리 추적이 이미 받는 목록이다 — 같은 key 라 따로 요청하지 않는다
   const meetings = useQuery(meetingListQueryOptions(workspaceId))
   const { quote, atMs } = approval.evidence
-  const meetingTitle =
-    approval.meetingId === null
-      ? null
-      : (meetings.data?.find(({ id }) => id === approval.meetingId)?.title ?? '연결된 회의')
+  const meeting = meetings.data?.find(({ id }) => id === approval.meetingId)
+  const meetingTitle = approval.meetingId === null ? null : (meeting?.title ?? '연결된 회의')
   return (
     <figure aria-label="근거" className="flex flex-col gap-8">
       {quote === null ? (
@@ -393,7 +392,7 @@ function Evidence({
       )}
       <figcaption className={META}>
         화자 {speakerName(members, approval.evidence) ?? '알 수 없음'} · 시각{' '}
-        {atMs === null ? '알 수 없음' : evidenceClock(atMs)}
+        {evidenceMoment(meeting, atMs) ?? '알 수 없음'}
         {approval.meetingId === null || meetingTitle === null ? null : (
           <>
             {' · '}
@@ -410,6 +409,7 @@ function Evidence({
 interface TaskUpdateReviewProps {
   workspaceId: string
   approval: TaskUpdateApproval
+  members: readonly Member[] | undefined
   names: ReadonlyMap<string, string>
   resolver: ApprovalResolve
 }
@@ -419,8 +419,16 @@ interface TaskUpdateReviewProps {
  * 충돌이면 기준값·현재값·제안값과 충돌 필드를 보인다. PM 이 다시 누를 때만 서버 버전을 실어 재승인한다 —
  * 다시 충돌하면 새 충돌로 바꿔 보이고 자동으로 보내지 않는다
  */
-function TaskUpdateReview({ workspaceId, approval, names, resolver }: TaskUpdateReviewProps) {
+function TaskUpdateReview({
+  workspaceId,
+  approval,
+  members,
+  names,
+  resolver,
+}: TaskUpdateReviewProps) {
   const titleId = useId()
+  const scopeTitleId = useId()
+  const scope = isScopeChange(approval)
   const pending = approval.status === 'pending'
   const taskId = approval.relatedTaskId
   const task = useQuery({
@@ -452,6 +460,20 @@ function TaskUpdateReview({ workspaceId, approval, names, resolver }: TaskUpdate
 
   return (
     <>
+      {scope ? (
+        <section aria-labelledby={scopeTitleId} className={SECTION}>
+          <h3 id={scopeTitleId} className={SECTION_TITLE}>
+            범위 변경
+          </h3>
+          {approval.docText === null ? (
+            <p className={NOTE}>설명이 없어요.</p>
+          ) : (
+            <p className="text-body text-ink">{approval.docText}</p>
+          )}
+          <Evidence workspaceId={workspaceId} approval={approval} members={members} />
+        </section>
+      ) : null}
+
       <section aria-labelledby={titleId} className={SECTION}>
         <h3 id={titleId} className={SECTION_TITLE}>
           {pending ? '바꿀 내용' : approval.status === 'approved' ? '반영한 값' : '요청한 값'}
@@ -471,39 +493,43 @@ function TaskUpdateReview({ workspaceId, approval, names, resolver }: TaskUpdate
             </GuardedLink>
           </p>
         ) : null}
-        <table aria-label="현재값과 제안값" className={TABLE}>
-          <thead>
-            <tr>
-              <th className={TH}>항목</th>
-              {pending ? <th className={TH}>현재값</th> : null}
-              <th className={TH}>
-                {pending ? '확정할 값' : approval.status === 'approved' ? '반영한 값' : '제안값'}
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {changes.map(({ field, value }) => (
-              <tr key={field}>
-                <th scope="row" className={`${TD} font-semibold`}>
-                  {fieldLabel(field)}
+        {scope && changes.length === 0 ? (
+          <p className={NOTE}>바꿀 항목 값은 없어요.</p>
+        ) : (
+          <table aria-label="현재값과 제안값" className={TABLE}>
+            <thead>
+              <tr>
+                <th className={TH}>항목</th>
+                {pending ? <th className={TH}>현재값</th> : null}
+                <th className={TH}>
+                  {pending ? '확정할 값' : approval.status === 'approved' ? '반영한 값' : '제안값'}
                 </th>
-                {pending ? (
-                  <td className={TD}>
-                    {task.data === undefined
-                      ? task.isError
-                        ? '불러오지 못했어요'
-                        : '불러오는 중'
-                      : fieldValueLabel(field, currentFieldValue(task.data, field), names)}
-                  </td>
-                ) : null}
-                <td className={TD}>{fieldValueLabel(field, value, names)}</td>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {changes.map(({ field, value }) => (
+                <tr key={field}>
+                  <th scope="row" className={`${TD} font-semibold`}>
+                    {fieldLabel(field)}
+                  </th>
+                  {pending ? (
+                    <td className={TD}>
+                      {task.data === undefined
+                        ? task.isError
+                          ? '불러오지 못했어요'
+                          : '불러오는 중'
+                        : fieldValueLabel(field, currentFieldValue(task.data, field), names)}
+                    </td>
+                  ) : null}
+                  <td className={TD}>{fieldValueLabel(field, value, names)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </section>
 
-      {approval.status === 'approved' ? (
+      {approval.status === 'approved' && !(scope && approval.changes.length === 0) ? (
         <section className={SECTION}>
           <h3 className={SECTION_TITLE}>원래 제안</h3>
           <dl aria-label="원래 제안" className={FIELDS}>

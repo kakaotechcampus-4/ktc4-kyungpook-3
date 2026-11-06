@@ -44,8 +44,13 @@ export interface BoardQuery {
  */
 export function readBoardQuery(params: URLSearchParams, isPm: boolean): BoardQuery {
   const tab = parseEnumParam(params.get(BOARD_PARAMS.tab) ?? undefined, boardTabs(isPm)) ?? 'all'
-  const raw = new Set((params.get(BOARD_PARAMS.due) ?? '').split(','))
-  return { tab, due: DUE_CONDITIONS.filter((condition) => raw.has(condition)) }
+  return { tab, due: parseDue(params.get(BOARD_PARAMS.due)) }
+}
+
+/** URL 의 `due` 값(`overdue,soon`)을 DUE_CONDITIONS 순서로 중복 없이 읽는다. 모르는 값은 버린다 */
+export function parseDue(raw: string | null): DueCondition[] {
+  const values = new Set((raw ?? '').split(','))
+  return DUE_CONDITIONS.filter((condition) => values.has(condition))
 }
 
 /**

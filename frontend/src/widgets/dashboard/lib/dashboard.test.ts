@@ -122,6 +122,18 @@ describe('정렬 (AC-02 판정부)', () => {
     expect(approvalReason(hold)).toBe('정보가 부족해 태스크 초안을 만들지 않았어요')
     expect(approvalReason(review)).toBe('마감을 정해야 해요')
   })
+
+  it('범위 변경 승인은 바꿀 값이 있어도 범위 변경을 확인하라고 한다 (#205)', () => {
+    const update = (payload: Record<string, unknown>) =>
+      toApproval({ ...approvalFixtures[0], type: 'task_update', payload })
+    expect(approvalReason(update({ category: 'scope' }))).toBe('범위 변경을 확인해야 해요')
+    expect(approvalReason(update({ category: 'scope', due_date: '2026-09-30' }))).toBe(
+      '범위 변경을 확인해야 해요',
+    )
+    expect(approvalReason(update({ category: 'schedule', due_date: '2026-09-30' }))).toBe(
+      '변경 제안을 확인해야 해요',
+    )
+  })
 })
 
 describe('최근 반영 (AC-03 판정부)', () => {
@@ -132,6 +144,13 @@ describe('최근 반영 (AC-03 판정부)', () => {
     const meetings = meetingSummaryFixtures.map(toMeetingSummary)
     expect(latestDoneMeeting(meetings)?.id).toBe('mt_09')
     expect(latestDoneMeeting(meetings.filter(({ status }) => status !== 'done'))).toBeNull()
+  })
+
+  it('지워진(404) 회의를 빼면 그다음 완료 회의를 고르고, 모두 빼면 null 이다 (#405)', () => {
+    const meetings = meetingSummaryFixtures.map(toMeetingSummary)
+    expect(latestDoneMeeting(meetings, new Set(['mt_09']))?.id).toBe('mt_08')
+    expect(latestDoneMeeting(meetings, new Set(['mt_09', 'mt_08']))?.id).toBe('mt_07')
+    expect(latestDoneMeeting(meetings, new Set(['mt_09', 'mt_08', 'mt_07']))).toBeNull()
   })
 
   describe('최신 완료 회의 선택 기준 (#350)', () => {

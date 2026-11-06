@@ -8,7 +8,6 @@ export {
 } from './model/notices'
 export {
   AWAITING_SPEAKERS_POLL_INTERVAL_MS,
-  isAccessLost,
   pollInterval,
   PROCESSING_POLL_INTERVAL_MS,
   trackerOutcome,

@@ -24,10 +24,15 @@ export interface MockMessageThread {
   messages: MockThreadMessage[]
 }
 
+/** 리마인드. 취소 시각은 응답에 없다 — 닫힌 묶음의 응답에 함께 취소된 것만 싣는 데 쓴다 (백엔드 bundle_reminders) */
+export interface MockReminder extends ReminderDto {
+  cancelled_at: string | null
+}
+
 /** 보낼 메시지. 리마인드는 묶음과 함께 저장하고, 응답에는 묶음과 같은 상태인 것만 싣는다 */
 export interface MockBundle extends Omit<BundleDto, 'reminders'> {
   workspace_id: string
-  reminders: ReminderDto[]
+  reminders: MockReminder[]
 }
 
 type DmResult =
@@ -76,7 +81,7 @@ function reminder(
   bundle_id: string,
   task: { task_id: string; title: string; due_date: string | null },
   note: string | null = null,
-): ReminderDto {
+): MockReminder {
   return {
     reminder_id,
     bundle_id,
@@ -88,6 +93,7 @@ function reminder(
     kind: 'nudge',
     origin: 'scheduler',
     created_at: '2026-09-15T09:00:00+09:00',
+    cancelled_at: null,
   }
 }
 

@@ -158,6 +158,7 @@ await fetch('/api/v1/approvals/ap_01', {
 | `messages-thread-error` | 목록은 정상, `th_01` 대화만 5xx |
 | `messages-send-fail` | 조회는 정상, 승인·보내지 않음·문구·시각 고치기·답장만 5xx(db 는 그대로) |
 | `messages-member` | 팀원. 자기 대화 `th_06` 만 보이고 보내기 전 확인은 없다(`bundles: null`). 마지막 봇 메시지는 `DM 못 보냄`, 웹 답장은 그 대화에만 남는다. 남의 대화는 403 |
+| `messages-member-push` | `messages-member` 에 서버 푸시 공개키를 더했다. `th_06` 대화 머리 아래에 `기기 알림` 띠가 보이고, `알림 켜기` 를 눌러야 브라우저 알림 허용을 묻는다(#411) |
 | `messages-schedule-passed` | `bd_06` 은 승인 전에 보낼 시각이 지났고 마감은 오늘이다. 이대로 발송은 409 `REMINDER_SCHEDULED_AT_PASSED` 이고, 시각을 다시 고른 뒤에 승인할 수 있다 |
 | `messages-merge` | 이재환에게 보낼 메시지가 둘이다. `bd_07`(09/21 18:00, 승인 전)에서 `마감 하루 전`(09/23 09:00)을 고르면 승인해 둔 `bd_01` 과 같은 시각이라 합쳐진다. 화면은 `?review=bd_01` 로 옮겨 가고 승인이 풀렸다고 알린다 |
 
@@ -194,7 +195,7 @@ http://localhost:5173/workspaces/ws_01/members?msw-scenario=settings-unmapped
 
 테스트는 `onUnhandledRequest: 'error'`이므로 등록하지 않은 요청이 실패한다. 로그의 method와 URL을 보고 `/api/v1` prefix, origin, handler 등록, 동적 경로 순서를 확인한다. `/members/aliases`와 `/members/unresolved-aliases`는 `/members/:id`보다 먼저 등록해야 한다.
 
-로컬 브라우저는 `warn`으로 경고하고 실제 네트워크로 보낸다. 의도한 mock에서 경고가 나면 handler 누락을 먼저 확인한다. OAuth `start`·`callback` 같은 302 네비게이션, AI→BE 전용 생성 경로는 M1 mock 범위 밖이다. 메시지는 계약 §5.7 의 화면용 경로(조회 `/workspaces/{id}/messages`, `/workspaces/{id}/messages/threads/{id}`, 행동 `PATCH …/messages/bundles/{id}`, `POST …/bundles/{id}/approve`, `POST …/bundles/{id}/cancel`, `POST …/messages/threads/{id}/replies`)만 둔다. 재촉 만들기·리마인드 경로와 봇 경로는 화면이 부르지 않아 두지 않았다(`messages-*` 시나리오).
+로컬 브라우저는 `warn`으로 경고하고 실제 네트워크로 보낸다. 의도한 mock에서 경고가 나면 handler 누락을 먼저 확인한다. OAuth `start`·`callback` 같은 302 네비게이션, AI→BE 전용 생성 경로는 M1 mock 범위 밖이다. 메시지는 계약 §5.7 의 화면용 경로(조회 `/workspaces/{id}/messages`, `/workspaces/{id}/messages/threads/{id}`, 행동 `PATCH …/messages/bundles/{id}`, `POST …/bundles/{id}/approve`, `POST …/bundles/{id}/cancel`, `POST …/messages/threads/{id}/replies`, #370 의 재촉 만들기 `POST …/messages/reminders`, 리마인드 고치기 `PATCH …/messages/reminders/{id}`, 빼기 `POST …/messages/reminders/{id}/cancel`)만 둔다. 봇 경로는 화면이 부르지 않아 두지 않았다(`messages-*` 시나리오).
 
 ## 실 백엔드와 다른 점
 

@@ -2,16 +2,17 @@ import { useQuery } from '@tanstack/react-query'
 import { useEffect } from 'react'
 import type { ReactNode } from 'react'
 import {
+  isMeetingUnavailable,
   meetingDetailQueryOptions,
   meetingFailure,
   meetingListQueryOptions,
   PROCESSING_STEP_COUNT,
   processingSteps,
   trackMeeting,
+  viewableMeeting,
 } from '@/entities/meeting'
 import type { Meeting, ProcessingStep } from '@/entities/meeting'
 import { useMemberWorkspace } from '@/entities/workspace'
-import { isAccessLost } from '@/features/meeting-processing'
 import { ApiError } from '@/shared/api/errors'
 import { paths } from '@/shared/config/routes'
 import { seoulDateOf } from '@/shared/lib/date'
@@ -82,8 +83,7 @@ function MeetingProcessing({ workspaceId, meetingId }: { workspaceId: string; me
     ...meetingListQueryOptions(workspaceId),
     select: (meetings) => meetings.find(({ id }) => id === meetingId) ?? null,
   })
-  const meeting =
-    detail.data !== undefined && detail.data.workspaceId === workspaceId ? detail.data : null
+  const meeting = viewableMeeting(detail)
   const watched = meeting?.status === 'processing' || meeting?.status === 'awaiting_speakers'
   const isPm = useMemberWorkspace(workspaceId)?.role === 'pm'
 
@@ -91,11 +91,8 @@ function MeetingProcessing({ workspaceId, meetingId }: { workspaceId: string; me
     if (watched) trackMeeting({ workspaceId, meetingId })
   }, [watched, workspaceId, meetingId])
 
-  if (detail.data !== undefined && meeting === null)
-    return <Unavailable workspaceId={workspaceId} />
   if (meeting === null) {
-    if (detail.error !== null && isAccessLost(detail.error))
-      return <Unavailable workspaceId={workspaceId} />
+    if (isMeetingUnavailable(detail.error)) return <Unavailable workspaceId={workspaceId} />
     if (detail.error !== null)
       return (
         <Layout status="정리 상태를 불러오지 못했어요">
@@ -116,7 +113,9 @@ function MeetingProcessing({ workspaceId, meetingId }: { workspaceId: string; me
   }
 
   const attendeeCount = summary.data?.attendeeCount ?? null
-  // 받아 둔 상태가 있는데 다시 묻지 못했다 — 정리 실패가 아니다. 다시 물어볼 때까지 마지막 상태를 둔다 (U4-8)
+  // 받아 둔 상태가 있는데 다시 묻지 못했다 — 정리 실패가 아니다. 다시 물어볼 때까지 마지막 상태를 둔다 (U4-8).
+  // 403·404·다른 공간은 다시 물어도 같은 답이라 viewableMeeting 이 먼저 걸러 볼 수 없는 회의로 그린다. 그 밖의 재조회 실패
+  // (네트워크 오류·408·5xx 등)는 마지막 상태를 두고, 연결 불안정 안내는 네트워크 오류일 때만 보인다 (#405)
   const stale =
     detail.error instanceof ApiError &&
     detail.error.kind === 'network' &&

@@ -11,6 +11,11 @@ import {
 import { completeMeeting, failMeeting, setMeetingFlowMode } from './meetingFlow'
 import { notificationFixtures } from './fixtures/notification'
 import { setMockRole } from './sessions'
+import {
+  PASSWORD_RESET_SCENARIOS,
+  createPasswordResetScenarioDb,
+  isPasswordResetScenario,
+} from './passwordResetScenarios'
 import { SPEAKER_SCENARIOS, createSpeakerScenarioDb, isSpeakerScenario } from './speakerScenarios'
 import { blockBySilence, createTask } from './task-state'
 
@@ -45,6 +50,9 @@ export const MOCK_SCENARIOS = [
   'approval-rejected',
   'approval-resolved',
   'approval-conflict',
+  'approval-scope',
+  // #397 채팅 회의(mt_08)에서 나온 생성 승인 ap_07. 근거 시각이 실제 작성 시각이다
+  'approval-chat',
   'notion-sync-pending',
   'notion-sync-failed',
   'tasks-member',
@@ -70,6 +78,9 @@ export const MOCK_SCENARIOS = [
   'messages-thread-error',
   'messages-send-fail',
   'messages-member',
+  // #411 messages-member 에 서버 푸시 공개키를 더했다. 리마인드 대화 위 알림 띠가 보인다
+  'messages-member-push',
+  'messages-pm-self',
   'messages-schedule-passed',
   'messages-merge',
   // M8-B 설정·팀 연결 관리. settings-discord-skipped 만 새로 만든 공간(ws_03)이고 나머지는 ws_01 이다
@@ -81,6 +92,8 @@ export const MOCK_SCENARIOS = [
   // #320 팀원 초대. team-invitations 는 ws_01 PM 이 보는 초대 상태, invitation-pending 은 초대받은 사람의 가입 전이다
   'team-invitations',
   'invitation-pending',
+  // #356 비밀번호 재설정. 모두 비로그인이다
+  ...PASSWORD_RESET_SCENARIOS,
 ] as const
 export type MockScenario = (typeof MOCK_SCENARIOS)[number]
 
@@ -294,6 +307,106 @@ function conflictingUpdateApproval(state: MockDb): void {
   })
 }
 
+/**
+ * 범위 변경(category scope) 변경 승인 둘과 승인된 범위 변경 이력 하나 (#205). ap_05 는 바꿀 필드가 없고,
+ * ap_06 은 마감 변경이 함께 왔다. 이력 모양은 BE 미구현이라 #205 합의를 따른다
+ */
+function addScopeChanges(state: MockDb): void {
+  const login = taskOf(state, 'tk_01')
+  const signup = taskOf(state, 'tk_02')
+  const proposals = [
+    {
+      id: 'ap_05',
+      task: login,
+      fields: {},
+      baseValues: {},
+      docText: '소셜 로그인은 이번 범위에서 빼기로 했어요.',
+      quote: '소셜 로그인은 이번엔 빼기로 했어요.',
+      createdAt: '2026-09-17T03:00:00Z',
+    },
+    {
+      id: 'ap_06',
+      task: signup,
+      fields: { due_date: '2026-09-25' },
+      baseValues: { due_date: signup.due_date },
+      docText: '회원가입은 이메일 인증까지만 하고 마감을 25일로 미뤄요.',
+      quote: '회원가입은 이메일 인증까지만 하고 25일까지 할게요.',
+      createdAt: '2026-09-17T03:05:00Z',
+    },
+  ]
+  for (const { id, task, fields, baseValues, docText, quote, createdAt } of proposals)
+    state.approvals.push({
+      approval_id: id,
+      workspace_id: 'ws_01',
+      type: 'task_update',
+      payload: {
+        ...fields,
+        base_values: baseValues,
+        base_task_version: task.version,
+        base_title: task.title,
+        task_title: task.title,
+        doc_text: docText,
+        category: 'scope',
+        evidence_quote: quote,
+        evidence_speaker: '1124',
+        evidence_speaker_member_id: 'mb_02',
+        evidence_at_ms: 754_000,
+        meeting_id: 'mt_09',
+        gate: 'review',
+      },
+      related_task_id: task.task_id,
+      requested_by: null,
+      status: 'pending',
+      resolved_by: null,
+      created_at: createdAt,
+      resolved_at: null,
+    })
+  state.taskHistory.push({
+    history_id: 'hs_03',
+    task_id: login.task_id,
+    changed_field: 'scope',
+    old_value: null,
+    new_value: '비밀번호 찾기는 다음 스프린트로 넘기기로 했어요.',
+    change_source: 'meeting',
+    changed_by: 'mb_01',
+    is_auto: false,
+    is_rolled_back: false,
+    rolled_back_at: null,
+    created_at: '2026-09-17T02:00:00Z',
+  })
+}
+
+/**
+ * 채팅 회의 mt_08 에서 나온 생성 승인 (#378). 근거 오프셋 34_080_000 은 첫 메시지부터 9시간 28분 뒤라
+ * 녹음 위치로 읽으면 `9:28:00`, 실제 작성 시각으로 읽으면 `09/11 18:40` 이다 (#397)
+ */
+function addChatApproval(state: MockDb): void {
+  state.approvals.push({
+    approval_id: 'ap_07',
+    workspace_id: 'ws_01',
+    type: 'task_create',
+    payload: {
+      task_title: '배포 체크리스트 정리',
+      assignee_member_id: 'mb_03',
+      assignee_raw: '재환',
+      due_date: null,
+      due_raw: '배포 전',
+      evidence_quote: '배포 체크리스트는 재환님이 배포 전에 정리해 주세요.',
+      evidence_speaker: '1123',
+      evidence_speaker_member_id: 'mb_01',
+      evidence_at_ms: 34_080_000,
+      meeting_id: 'mt_08',
+      gate: 'review',
+    },
+    related_task_id: null,
+    requested_by: null,
+    status: 'pending',
+    resolved_by: null,
+    created_at: '2026-09-12T00:03:00Z',
+    resolved_at: null,
+  })
+}
+
 /** 최근 반영의 세 태스크(tk_01~tk_03)를 모두 반영 완료로 둔다. 픽스처는 tk_01 만 synced 다 */
 function syncRecentTasks(state: MockDb): void {
   for (const id of ['tk_01', 'tk_02', 'tk_03']) taskOf(state, id).notion_sync_status = 'synced'
@@ -371,6 +484,7 @@ function addTeamInvitations(state: MockDb): void {
     },
     password: 'mock-password',
     workspaceIds: [],
+    memberIds: {},
   })
   state.invitations.push(
     invitation('iv_00', 'mb_03', 'jaehwan@exmaple.com', 'canceled', '2026-09-14T09:00:00Z'),
@@ -385,6 +499,7 @@ function addTeamInvitations(state: MockDb): void {
 
 export function createScenarioDb(scenario: MockScenario): MockDb {
   if (isSpeakerScenario(scenario)) return createSpeakerScenarioDb(scenario)
+  if (isPasswordResetScenario(scenario)) return createPasswordResetScenarioDb(scenario)
   const state = initialDb()
   switch (scenario) {
     case 'signed-out':
@@ -471,6 +586,14 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
     case 'approval-conflict':
       signInWith(state, ['ws_01'], 'ws_01')
       conflictingUpdateApproval(state)
+      break
+    case 'approval-scope':
+      signInWith(state, ['ws_01'], 'ws_01')
+      addScopeChanges(state)
+      break
+    case 'approval-chat':
+      signInWith(state, ['ws_01'], 'ws_01')
+      addChatApproval(state)
       break
     case 'notion-sync-pending':
       // tk_04 가 반영 대기다. synced 로 넘기는 워커는 없다 — 테스트가 필드를 직접 바꾼다
@@ -598,9 +721,17 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
       state.messageFailures.actions = true
       break
     case 'messages-member':
+    case 'messages-member-push':
       // 일반 팀원(mb_01). 자기 대화 th_06 만 보이고, 그 대화의 보낼 메시지 bd_05 는 보이지 않는다
       signInWith(state, ['ws_01'], 'ws_01')
       setMockRole('member', 'ws_01', state)
+      state.messageThreads.push(structuredClone(messagesMemberThread))
+      state.messageBundles.push(structuredClone(messagesMemberBundle))
+      if (scenario === 'messages-member-push') state.push.publicKey = 'AQID'
+      break
+    case 'messages-pm-self':
+      // PM 인 픽스처 계정도 팀원 행(mb_01)이 있어 자기 대화 th_06 이 남의 대화들 사이에 있다. 답장은 th_06 에만 된다 (#367)
+      signInWith(state, ['ws_01'], 'ws_01')
       state.messageThreads.push(structuredClone(messagesMemberThread))
       state.messageBundles.push(structuredClone(messagesMemberBundle))
       break

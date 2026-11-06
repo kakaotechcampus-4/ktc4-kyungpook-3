@@ -3,15 +3,18 @@ import { useState } from 'react'
 import type { ReactNode } from 'react'
 import { pendingApprovalListQueryOptions } from '@/entities/approval'
 import { extractionQueryOptions } from '@/entities/extraction'
-import { meetingDetailQueryOptions, meetingFailure } from '@/entities/meeting'
+import {
+  formatMoment,
+  isAccessLost,
+  isMeetingUnavailable,
+  meetingDetailQueryOptions,
+  meetingFailure,
+  viewableMeeting,
+} from '@/entities/meeting'
 import type { Meeting, MeetingSummary } from '@/entities/meeting'
 import { minutesQueryOptions } from '@/entities/minutes'
 import type { Minutes } from '@/entities/minutes'
-import {
-  isAccessLost,
-  SPEAKERS_NEEDED_ACTION,
-  SPEAKERS_NEEDED_TITLE,
-} from '@/features/meeting-processing'
+import { SPEAKERS_NEEDED_ACTION, SPEAKERS_NEEDED_TITLE } from '@/features/meeting-processing'
 import { ApiError, ERROR_CODES } from '@/shared/api/errors'
 import { paths } from '@/shared/config/routes'
 import { formatSeoulDateTime } from '@/shared/lib/date'
@@ -19,7 +22,7 @@ import { GuardedLink } from '@/shared/lib/unsaved-changes'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
 import { MinutesDetailSkeleton } from '@/shared/ui/page-skeleton'
 import { extractedTasks } from '../lib/extractedTasks'
-import { detailMeta, formatMoment, SOURCE_LABEL } from '../lib/format'
+import { detailMeta, SOURCE_LABEL } from '../lib/format'
 import { MINUTES_DIM_DELAY_MS } from '../model/useShownMeeting'
 import { SummaryPanel, TasksPanel, TranscriptPanel } from './MinutesBody'
 import type { ReviewState, TasksState } from './MinutesBody'
@@ -139,8 +142,7 @@ export function UnavailableMeeting() {
 }
 
 /**
- * 고른 회의 한 건 (U5-3, U5-4). 회의 상세의 `workspaceId` 가 URL 공간과 같을 때만 회의록 본문·추출을 부른다 —
- * 상세는 봇 경로라 경로에 공간이 없어(계약 §2.3) 다른 공간의 회의 ID 로도 답이 온다. 다르면 볼 수 없는 회의로 그린다.
+ * 고른 회의 한 건 (U5-3, U5-4).
  * 정리가 끝나지 않은 회의는 회의록이 없다. 정리 중이면 처리 화면, 화자 지정 대기면 PM 에게 지정 화면으로 잇는다 (U5-2, #256).
  */
 export function MinutesDetail({
@@ -152,8 +154,7 @@ export function MinutesDetail({
   keepSkeleton = false,
 }: MinutesDetailProps) {
   const detail = useQuery(meetingDetailQueryOptions(workspaceId, meetingId))
-  const meeting =
-    detail.data !== undefined && detail.data.workspaceId === workspaceId ? detail.data : null
+  const meeting = viewableMeeting(detail)
   const held = holding ? selected : null
   // 기다리는 동안의 자리. 고른 회의의 요약을 알면 머리 뼈대 대신 그 요약이다 (UX1-M02)
   const loading = (
@@ -169,9 +170,8 @@ export function MinutesDetail({
   if (keepSkeleton) return loading
   // 들고 있을 수 있는 것은 이전 회의의 회의록 본문뿐이다. 이전 회의의 안내·오류를 고른 회의의 머리 아래 남기지 않는다
   if (held !== null && meeting?.status !== 'done') return loading
-  if (detail.data !== undefined && meeting === null) return <UnavailableMeeting />
   if (meeting === null) {
-    if (detail.error !== null && isAccessLost(detail.error)) return <UnavailableMeeting />
+    if (isMeetingUnavailable(detail.error)) return <UnavailableMeeting />
     if (detail.error !== null)
       return (
         <div className={NOTICE}>
@@ -276,10 +276,12 @@ function MinutesView({
   loading: ReactNode
 }) {
   const minutes = useQuery(minutesQueryOptions(workspaceId, meeting.id))
+  // 받아 둔 본문도 403·404 뒤에는 쓰지 않는다 — 실패해도 이전 data 가 남는다 (#405)
+  const body = isAccessLost(minutes.error) ? undefined : minutes.data
 
-  if (minutes.data === undefined) {
+  if (body === undefined) {
     if (held !== null) return loading
-    if (minutes.error !== null && isAccessLost(minutes.error)) return <UnavailableMeeting />
+    if (isAccessLost(minutes.error)) return <UnavailableMeeting />
     if (minutes.error !== null)
       return (
         <div className={NOTICE}>
@@ -296,10 +298,10 @@ function MinutesView({
     <MinutesContent
       workspaceId={workspaceId}
       meeting={meeting}
-      minutes={minutes.data}
+      minutes={body}
       held={held}
       // 역할(소속 목록)과 서버가 이 회의록에 준 권한을 함께 본다. 둘 중 하나라도 아니면 확인 필요를 부르지도 그리지도 않는다 (U5-6)
-      canReview={isPm && minutes.data.canReview}
+      canReview={isPm && body.canReview}
     />
   )
 }

@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { request } from '@/shared/api/client'
+import type { SessionScope } from '@/shared/api/sessionScope'
 
 /** 로그아웃을 오래 붙잡지 않는다. 구독 해제 전체가 이 시간을 넘으면 기다리지 않고 로그아웃을 이어 간다 */
 const UNSUBSCRIBE_TIMEOUT_MS = 3000
@@ -37,21 +38,25 @@ export function trackPushSubscribing<T>(work: () => Promise<T>): Promise<T> {
 /**
  * 이 브라우저의 구독을 지금 계정으로 서버에 등록한다. 같은 endpoint 를 다시 보내면 지금 계정으로 옮기므로 반복해도 된다 (계약 §5.7).
  * 절차를 시작한 세션이 끝났으면 보내지 않고 브라우저 구독을 푼다 — 앞 사람의 구독이 다음 사람의 세션으로 등록되거나 남지 않게 한다.
- * 보내는 동안 세션이 끝나도 브라우저 구독을 푼다. 등록했으면 true, 세션이 바뀌어 그만뒀으면 false
+ * 보내는 요청은 그 세션의 신호에 묶여 세션이 끝나면 함께 취소된다. 취소됐거나 응답 전에 세션이 끝났어도 브라우저 구독을 푼다.
+ * 등록했으면 true, 세션이 끝나 그만뒀으면 false. 세션과 무관한 실패는 던진다
  */
 export async function savePushSubscription(
   subscription: PushSubscription,
-  isCurrentSession: () => boolean,
+  session: SessionScope,
 ): Promise<boolean> {
-  if (!isCurrentSession()) {
-    await subscription.unsubscribe()
-    return false
+  if (session.isCurrent()) {
+    try {
+      await request('/push/subscriptions', {
+        method: 'POST',
+        body: subscriptionSchema.parse(subscription.toJSON()),
+        signal: session.signal,
+      })
+    } catch (error) {
+      if (session.isCurrent()) throw error
+    }
   }
-  await request('/push/subscriptions', {
-    method: 'POST',
-    body: subscriptionSchema.parse(subscription.toJSON()),
-  })
-  if (!isCurrentSession()) {
+  if (!session.isCurrent()) {
     await subscription.unsubscribe()
     return false
   }

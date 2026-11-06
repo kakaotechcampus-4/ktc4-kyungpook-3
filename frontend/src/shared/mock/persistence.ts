@@ -1,4 +1,4 @@
-import { MEETING_FLOW_MODES, db, initialDb, replaceDb } from './db'
+import { MEETING_FLOW_MODES, PASSWORD_RESET_FAILURES, db, initialDb, replaceDb } from './db'
 import type { MockDb } from './db'
 
 /*
@@ -16,9 +16,13 @@ export const MOCK_DB_STORAGE_KEY = 'msw-db'
  * 6: 팀원 초대(`invitations`) 칸 추가. 수락한 초대가 계정과 팀원을 잇는다.
  * 7: 메시지를 백엔드 계약 모양으로 옮겨 검토 행(`messageReviews`)을 보낼 메시지(`messageBundles`)로 바꾸다 (#315).
  * 8: 업로드 회의의 화자 지정(`meetingFlow.speakers`) 칸 추가 (#256).
+ * 9: 비밀번호 재설정(`passwordReset`) 칸 추가 (#356). 모의 메일함의 메일이 새로고침·링크 열기 뒤에도 남는다.
+ * 10: 메시지·알림 설정(`messageSettings`) 칸 추가 (#340).
+ * 11: 리마인드에 취소 시각(`cancelled_at`) 칸 추가 (#370). 마지막 태스크를 빼 닫힌 묶음이 함께 취소된 것만 돌려준다.
+ * 12: 계정에 공간별 팀원 행(`memberIds`) 칸 추가 (#367). 공간을 만든 계정이 새 PM 행과 이어진다.
  * 올리면 e2e/restore.e2e.ts 와 src/shared/mock/taskScenarios.test.ts 의 버전 단언도 같이 고친다 (E2E 는 src 를 가져오지 않는다)
  */
-export const MOCK_DB_VERSION = 8
+export const MOCK_DB_VERSION = 12
 
 interface StoredDb {
   version: number
@@ -56,6 +60,18 @@ function isMeetingFlow(value: unknown): boolean {
   )
 }
 
+function isPasswordReset(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    Array.isArray(value.tokens) &&
+    value.tokens.every((token) => hasStrings(token, ['token', 'email', 'expiresAt', 'status'])) &&
+    isRecord(value.nextMailAt) &&
+    Array.isArray(value.outbox) &&
+    value.outbox.every((mail) => hasStrings(mail, ['to', 'resetPath', 'sentAt'])) &&
+    (PASSWORD_RESET_FAILURES as readonly unknown[]).includes(value.failure)
+  )
+}
+
 /**
  * 모양만 본다. 칸마다 시작 상태와 같은 종류(배열·객체·불리언)인지, 화면 흐름이 기대는 칸은
  * 필드까지 맞는지 확인한다. 하나라도 어긋나면 손상으로 본다.
@@ -77,7 +93,8 @@ function isMockDb(value: unknown): value is MockDb {
         isRecord(account) &&
         isSession(account.session) &&
         typeof account.password === 'string' &&
-        Array.isArray(account.workspaceIds),
+        Array.isArray(account.workspaceIds) &&
+        isRecord(account.memberIds),
     ) &&
     state.workspaces.every(
       (workspace) =>
@@ -90,7 +107,8 @@ function isMockDb(value: unknown): value is MockDb {
       (integration) =>
         hasStrings(integration.discord, ['status']) && hasStrings(integration.notion, ['status']),
     ) &&
-    isMeetingFlow(state.meetingFlow)
+    isMeetingFlow(state.meetingFlow) &&
+    isPasswordReset(state.passwordReset)
   )
 }
 

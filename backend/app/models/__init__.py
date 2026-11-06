@@ -15,6 +15,8 @@ from app.models.models import (
     ReminderWatch,
     SchedulerSuggestion,
     WatchState,
+    PmAlertMethod,
+    WorkspaceMessageSettings,
     PushStatus,
     PushSubscription,
     EvidenceStatus,
@@ -79,4 +81,5 @@ __all__ = [
     "BodySource", "BotDmPart", "DmFailureReason", "DmStatus", "DraftStatus", "MessageSender", "MessageThread",
     "Reminder", "ReminderBundle", "ReminderKind", "ReminderOrigin", "ReminderStatus", "ReplyChannel", "ThreadMessage",
     "Notification", "PushStatus", "PushSubscription", "ReminderWatch", "SchedulerSuggestion", "WatchState",
+    "PmAlertMethod", "WorkspaceMessageSettings",
 ]

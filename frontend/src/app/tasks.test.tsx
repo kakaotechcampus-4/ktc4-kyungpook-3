@@ -7,10 +7,11 @@ import { WORKSPACE_LIST_QUERY_KEY } from '@/entities/workspace'
 import { TASK_STATUS_FAILED_TITLE } from '@/features/task-status'
 import { workspaceKey } from '@/shared/api/queryKeys'
 import { paths } from '@/shared/config/routes'
-import { db } from '@/shared/mock/db'
+import { db, replaceDb } from '@/shared/mock/db'
 import { fail, list } from '@/shared/mock/envelope'
 import { MOCK_NOW } from '@/shared/mock/fixtures/constants'
 import { handlers } from '@/shared/mock/handlers'
+import { createScenarioDb } from '@/shared/mock/scenarios'
 import { server } from '@/shared/mock/server'
 import { setMockRole } from '@/shared/mock/sessions'
 import { deferred } from '@/shared/test/deferred'
@@ -228,6 +229,46 @@ describe('목록 안 확인 필요 카드 (시안)', () => {
       ).toHaveLength(2),
     )
     expect(tab('확인 필요')).toHaveTextContent('2')
+  })
+
+  describe('근거 시각 (#397)', () => {
+    const NEEDS_REVIEW = `${paths.tasks('ws_01')}?tab=needs_review`
+    const card = (title: string) => {
+      const found = within(screen.getByRole('list', { name: '확인 필요 목록' }))
+        .getAllByRole('article')
+        .find((each) => each.textContent?.includes(title))
+      if (!found) throw new Error(`approval card ${title} is missing`)
+      return found
+    }
+    const meetingLink = (title: string) =>
+      within(card(title)).getByRole('link', { name: /회의|채팅/ })
+
+    it('채팅 회의에서 나온 카드는 실제 작성 시각, 녹음 회의에서 나온 카드는 녹음 안 위치다', async () => {
+      replaceDb(createScenarioDb('approval-chat'))
+      await openList(NEEDS_REVIEW)
+      await waitFor(() =>
+        expect(meetingLink('배포 체크리스트 정리')).toHaveTextContent('채팅 2026-09-1109/11 18:40'),
+      )
+      expect(meetingLink('배포 체크리스트 정리')).not.toHaveTextContent('9:28:00')
+      expect(meetingLink('테스트 계획 정리')).toHaveTextContent('3주차 정기회의02:45')
+    })
+
+    it('회의 목록을 받지 못하면 시각을 녹음 위치로 짐작하지 않고 숨긴다', async () => {
+      replaceDb(createScenarioDb('approval-chat'))
+      server.use(
+        http.get('/api/v1/workspaces/:workspaceId/meetings', () =>
+          fail('INTERNAL_ERROR', 'x', 500),
+        ),
+      )
+      const log = recordRequests()
+      await openList(NEEDS_REVIEW)
+      await waitFor(() =>
+        expect(log.answered).toContainEqual({ method: 'GET', path: '/workspaces/ws_01/meetings' }),
+      )
+      await settle()
+      expect(meetingLink('배포 체크리스트 정리').textContent).toBe('연결된 회의')
+      expect(meetingLink('테스트 계획 정리').textContent).toBe('연결된 회의')
+    })
   })
 })
 

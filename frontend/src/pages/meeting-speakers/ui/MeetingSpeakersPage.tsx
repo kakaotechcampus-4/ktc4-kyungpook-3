@@ -1,14 +1,16 @@
 import { useQuery } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
 import {
+  isAccessLost,
+  isMeetingUnavailable,
   meetingDetailQueryOptions,
   meetingFailure,
   speakerViewQueryOptions,
+  viewableMeeting,
 } from '@/entities/meeting'
 import type { Meeting, MeetingStatus, SpeakerView } from '@/entities/meeting'
 import { memberListQueryOptions } from '@/entities/member'
 import { useMemberWorkspace } from '@/entities/workspace'
-import { isAccessLost } from '@/features/meeting-processing'
 import { SpeakerAssignmentForm, useSpeakerSubmit } from '@/features/speaker-assignment'
 import type { SubmitRejection } from '@/features/speaker-assignment'
 import { paths } from '@/shared/config/routes'
@@ -57,8 +59,7 @@ function useSpeakerScreen(
 ): SpeakerScreen {
   const role = useMemberWorkspace(workspaceId)?.role ?? null
   const detail = useQuery(meetingDetailQueryOptions(workspaceId, meetingId))
-  const meeting =
-    detail.data !== undefined && detail.data.workspaceId === workspaceId ? detail.data : null
+  const meeting = viewableMeeting(detail)
   const awaiting = meeting?.status === 'awaiting_speakers'
   const view = useQuery({
     ...speakerViewQueryOptions(workspaceId, meetingId),
@@ -68,9 +69,8 @@ function useSpeakerScreen(
     rejection?.kind === 'expired' || rejection?.kind === 'alreadyMoved' ? rejection : null
 
   if (role === null) return { kind: 'loading' }
-  if (detail.data !== undefined && meeting === null) return { kind: 'unavailable' }
   if (meeting === null) {
-    if (detail.error !== null && isAccessLost(detail.error)) return { kind: 'unavailable' }
+    if (isMeetingUnavailable(detail.error)) return { kind: 'unavailable' }
     if (detail.error !== null)
       return { kind: 'error', error: detail.error, retry: () => void detail.refetch() }
     return { kind: 'loading' }
@@ -89,16 +89,18 @@ function useSpeakerScreen(
       movedElsewhere: moved?.kind === 'alreadyMoved',
     }
   if (role !== 'pm') return { kind: 'member' }
-  if (view.data === undefined) {
-    if (view.error !== null && isAccessLost(view.error)) return { kind: 'unavailable' }
+  // 받아 둔 화자 목록도 403·404 뒤에는 쓰지 않는다 — 실패해도 이전 data 가 남는다 (#405)
+  const speakers = isAccessLost(view.error) ? undefined : view.data
+  if (speakers === undefined) {
+    if (isAccessLost(view.error)) return { kind: 'unavailable' }
     if (view.error !== null)
       return { kind: 'error', error: view.error, retry: () => void view.refetch() }
     return { kind: 'loading' }
   }
-  if (view.data.status !== 'awaiting_speakers')
-    return { kind: 'notAwaiting', meeting, status: view.data.status, movedElsewhere: false }
-  if (view.data.speakers.length === 0) return { kind: 'noLabels', retry: () => void view.refetch() }
-  return { kind: 'assigning', meeting, view: view.data }
+  if (speakers.status !== 'awaiting_speakers')
+    return { kind: 'notAwaiting', meeting, status: speakers.status, movedElsewhere: false }
+  if (speakers.speakers.length === 0) return { kind: 'noLabels', retry: () => void view.refetch() }
+  return { kind: 'assigning', meeting, view: speakers }
 }
 
 function MeetingSpeakers({ workspaceId, meetingId }: { workspaceId: string; meetingId: string }) {

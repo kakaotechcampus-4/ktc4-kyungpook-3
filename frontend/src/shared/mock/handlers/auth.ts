@@ -40,6 +40,7 @@ export const authHandlers = [
       session: structuredClone(db.session),
       password: body.password,
       workspaceIds: [],
+      memberIds: {},
     })
     db.authenticated = true
     return ok(authResponse(), { status: 201 })

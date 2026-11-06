@@ -105,6 +105,28 @@ export type MessageAction =
   | { kind: 'edit'; bundleId: string; body: string }
   | { kind: 'schedule'; bundleId: string; scheduledAt: string }
   | { kind: 'reply'; threadId: string; body: string }
+  | { kind: 'removeTask'; bundleId: string; reminderId: string }
+  /** note 가 null 이면 메모를 지운다 */
+  | { kind: 'editNote'; bundleId: string; reminderId: string; note: string | null }
 
-/** 쓰기의 결과. 보낼 시각을 옮긴 자리에 같은 사람의 예정 묶음이 있으면 서버가 그 묶음(into)으로 합친다 */
-export type MessageActionOutcome = { kind: 'done' } | { kind: 'merged'; into: Bundle }
+/**
+ * 쓰기의 결과.
+ * - merged: 보낼 시각을 옮긴 자리에 같은 사람의 예정 묶음이 있어 서버가 그 묶음(into)으로 합쳤다
+ * - closed: 마지막 태스크를 빼 묶음이 취소됐다 — 보내지 않음과 같이 이 묶음은 목록에서 사라진다
+ */
+export type MessageActionOutcome =
+  { kind: 'done' } | { kind: 'merged'; into: Bundle } | { kind: 'closed' }
+
+/** 재촉 만들기. 받는 사람이 그 태스크의 담당자인지는 서버가 보지 않는다 */
+export interface ReminderCreateInput {
+  memberId: string
+  taskId: string
+  scheduledAt: string
+  note: string | null
+}
+
+/** 만든 재촉과 그것이 든 묶음. 같은 사람·같은 시각의 예정 묶음이 있었으면 그 묶음에 합쳐져 태스크가 여럿이다 */
+export interface CreatedReminder {
+  reminderId: string
+  bundle: Bundle
+}

@@ -37,6 +37,8 @@ const BUNDLE_PATH = '/workspaces/ws_01/messages/bundles/bd_01'
 async function openBundle(bundleId = 'bd_01') {
   const app = renderApp(paths.messageReview('ws_01', bundleId))
   await screen.findByRole('heading', { level: 2, name: '이 메시지, 보낼까요?' })
+  // 마감 기준 카드는 재촉 규칙(메시지·알림 설정)을 받은 뒤에 시각과 제목이 정해진다. 기본 규칙은 하루 전 09:00 이다
+  await detail().findByRole('radio', { name: /마감 하루 전/ })
   return app
 }
 const bundleOf = (bundleId: string) => {
