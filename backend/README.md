@@ -389,7 +389,7 @@ PM 이 디스코드 서버의 텍스트 채널 하나를 골라 두면 녹음 �
 
 ## 이메일 정규화
 
-가입(`POST /api/v1/auth/signup`)·로그인(`POST /api/v1/auth/login`)·비밀번호 재설정 요청·워크스페이스 초대는 이메일의 앞뒤 공백을 지우고 소문자로 바꿔(`@` 앞부분 포함) 비교·저장한다. 규칙은 `app/schemas/email.py` 의 `normalize_email`·`NormalizedEmail` 한 곳에 있다. `Kim@Example.com` 과 `kim@example.com` 은 같은 계정이다.
+가입(`POST /api/v1/auth/signup`)·로그인(`POST /api/v1/auth/login`)·비밀번호 재설정 요청·워크스페이스 초대는 이메일의 앞뒤 공백을 지우고 소문자로 바꿔(`@` 앞부분 포함) 비교·저장한다. 규칙은 `app/schemas/email.py` 의 `normalize_email`·`NormalizedEmail` 한 곳에 있고, `User` 모델이 저장할 때도 같은 함수를 부른다. `Kim@Example.com` 과 `kim@example.com` 은 같은 계정이다.
 
 - 응답의 `user.email`·`accepted_user.email`·`email_masked` 는 소문자다.
 - 같은 이메일로 동시에 가입하면 하나만 만들어지고 나머지는 409 `EMAIL_ALREADY_EXISTS` 를 받는다.

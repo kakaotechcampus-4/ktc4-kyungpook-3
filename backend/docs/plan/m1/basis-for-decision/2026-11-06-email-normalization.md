@@ -28,8 +28,8 @@
 
 ## 선택과 이유
 
-- 규칙은 `app/schemas/email.py` 의 `normalize_email`(`strip().lower()`) 한 곳이다. `NormalizedEmail` 은 `EmailStr` 검사를 통과한 값에 이 함수를 적용하는 타입이고, `LoginRequest`·`SignupRequest`·`PasswordResetRequest`·`InvitationCreateRequest` 가 모두 쓴다. `schemas/invitation.py` 는 함수를 다시 내보내 `invitations.py` 의 import 가 그대로다.
-- 서비스 코드(가입·로그인·재설정 조회)는 이미 정규화된 값으로 정확 일치 비교를 한다. 기존 `ix_user_email` 유일 인덱스가 그대로 새 중복을 막는다.
+- 규칙은 `app/schemas/email.py` 의 `normalize_email`(`strip().lower()`) 한 곳이다. `NormalizedEmail` 은 `EmailStr` 검사를 통과한 값에 이 함수를 적용하는 타입이고, `LoginRequest`·`SignupRequest`·`PasswordResetRequest`·`InvitationCreateRequest` 가 모두 쓴다. `User` 모델의 `@validates("email")` 도 같은 함수를 불러, 스키마를 거치지 않는 쓰기 경로도 정규화된 값을 저장한다(PR #441 리뷰, hwnv). SQL 직접 실행과 `update()` 는 이 보장을 지나지 않는다.
+- 서비스 코드(가입·로그인·재설정 조회·초대 수락)는 이미 정규화된 값으로 정확 일치 비교를 한다. 저장값은 모델이 보장하므로 초대 쪽의 읽을 때 재정규화는 뺐다. 기존 `ix_user_email` 유일 인덱스가 그대로 새 중복을 막는다.
 - 마이그레이션 `537911f267dc`(down_revision `fe08fcbd6dc6`, #383·#432 머지 뒤 다시 이음)는 `user_id, email` 을 읽어 마이그레이션 안에 복제한 함수(`strip().lower()`)로 묶는다. 앱 코드가 나중에 바뀌어도 마이그레이션은 그대로여야 해서 import 하지 않고 복제했고, "`normalize_email` 과 같아야 한다"는 주석을 남겼다.
   - 중복이 있으면 아무 행도 바꾸지 않고 `RuntimeError` 로 멈춘다. 오류에는 `user_id` 묶음만 담고 이메일 주소는 넣지 않는다. 검사를 모두 끝낸 뒤에만 UPDATE 를 시작하므로 DDL 트랜잭션이 없는 sqlite 에서도 부분 변경이 남지 않는다.
   - 바뀔 행만 UPDATE 한다. `downgrade` 는 원래 대소문자를 저장하지 않아 아무것도 하지 않는다.
@@ -66,7 +66,7 @@ SELECT count(*) FROM "user" WHERE email <> lower(btrim(email));
 ## 영향 범위와 재검토 조건
 
 - 코드: `app/schemas/email.py`, `app/schemas/auth.py`, `app/schemas/invitation.py`, `app/api/auth.py`(동시 가입 409), 마이그레이션 `537911f267dc`. `app/api/invitations.py`·`app/services/password_reset.py` 는 정규화된 값을 쓸 뿐 바뀌지 않았다. 모델 변경은 없다.
-- 이슈 #427 이 따를 규칙: 이메일을 받는 요청 스키마는 `NormalizedEmail` 을 쓴다(코드 발송 스키마 포함). 카카오 같은 외부에서 받은 이메일은 스키마를 거치지 않으므로 서비스에서 `normalize_email` 을 직접 부른다. 그래야 가입·로그인·재설정과 같은 계정을 가리킨다.
+- 이슈 #427 이 따를 규칙: 이메일을 받는 요청 스키마는 `NormalizedEmail` 을 쓴다(코드 발송 스키마 포함). 카카오 같은 외부에서 받은 이메일은 스키마를 거치지 않아도 `User` 모델이 저장할 때 정규화한다. 다만 저장 전에 같은 계정을 찾는 조회에는 서비스에서 `normalize_email` 을 직접 불러야 한다. 처음에는 저장도 서비스가 직접 부르기로 했는데, 호출을 빠뜨리면 그 계정을 로그인·재설정에서 찾지 못해 모델로 옮겼다.
 - 재검토: 운영 확인에서 중복이 나오면 자동 병합 여부를 다시 정한다. 로컬 파트의 대소문자를 구분해야 하는 서비스와 연동하게 되면 규칙을 다시 본다.
 - 확인 상태: 코드·테스트는 구현됐다. 운영 확인은 아직 하지 않았고 머지 직전 사용자가 한다.
 

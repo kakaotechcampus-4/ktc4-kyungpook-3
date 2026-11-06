@@ -9,7 +9,9 @@ UPDATE 를 시작하므로 sqlite 처럼 DDL 트랜잭션이 없는 곳에서도
 
 배포 전 운영 서버에서 확인할 것(읽기 전용, 이메일·user_id 는 출력하지 않는다). 마이그레이션과 같은
 규칙(strip().lower())으로 세므로 "duplicate groups" 가 0 이어야 컨테이너 시작 때 멈추지 않는다.
-"rows to change" 는 바뀔 행 수다. 저장소 루트에서:
+"rows to change" 는 바뀔 행 수다. develop 에 머지하면 CI 뒤 자동 배포되고 그 사이에도 기존 코드는 대소문자만 다른
+가입을 받으므로, 머지 직전에 한 번, 머지 직후 배포가 서버에 닿기 전에 한 번 더 돌린다. 그 사이 중복이 보이면 Actions 에서
+배포를 취소하고 계정을 정리한다. 저장소 루트에서:
 
     docker compose -f backend/docker-compose.prod.yml exec api python -c 'import os,collections,sqlalchemy as sa;c=sa.create_engine(os.environ["DATABASE_URL"]).connect();g=collections.Counter();r=c.execute(sa.select(sa.table("user", sa.column("email")))).all();[g.update([m.strip().lower()]) for (m,) in r];print("duplicate groups:",sum(v>1 for v in g.values()),"rows to change:",sum(m.strip().lower()!=m for (m,) in r))'
 
