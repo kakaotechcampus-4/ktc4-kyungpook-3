@@ -12,7 +12,7 @@ const FIELD =
 const NOTE = 'text-caption leading-[1.6] text-dim'
 
 /**
- * 팀원의 웹 답장. 성공하면 칸을 비우고, 실패하면 쓰던 글을 둔다.
+ * 대화 주인의 웹 답장 — 팀원, 그리고 팀원 행이 그 대화의 주인인 PM. 성공하면 칸을 비우고, 실패하면 쓰던 글을 둔다.
  * 빈 글은 서버로 보내지 않는다.
  */
 export function ReplyForm({
@@ -74,7 +74,10 @@ export function ReplyForm({
           if (event.target.value.trim() !== '') setBlank(false)
         }}
       />
-      <p className={NOTE}>웹 답장은 Discord로 보내지 않고 이 대화에만 남아요.</p>
+      <p className={NOTE}>
+        웹 답장은 Discord로 보내지 않고 이 대화에만 남아요. 봇 DM 창에 쓴 글은 모두 PM 대화에
+        보여요.
+      </p>
       {blank ? <ErrorText id={blankId}>답장을 입력해 주세요.</ErrorText> : null}
       <div>
         <Button type="submit" aria-busy={saving || undefined} disabled={saving}>

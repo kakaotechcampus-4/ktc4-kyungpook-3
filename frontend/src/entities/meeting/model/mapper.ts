@@ -1,8 +1,26 @@
-import type { MeetingDto, MeetingSummaryDto, MeetingUploadDto } from '@/shared/types/api/meeting'
+import type {
+  MeetingDto,
+  MeetingSummaryDto,
+  MeetingUploadDto,
+  SpeakerViewDto,
+} from '@/shared/types/api/meeting'
 import { enumValue } from '@/shared/lib/enum'
-import type { Meeting, MeetingStatus, MeetingSummary, MeetingUploadResult } from './types'
+import type {
+  Meeting,
+  MeetingStatus,
+  MeetingSummary,
+  MeetingUploadResult,
+  SpeakerView,
+} from './types'
 
-const statuses: readonly MeetingStatus[] = ['created', 'recording', 'processing', 'done', 'failed']
+const statuses: readonly MeetingStatus[] = [
+  'created',
+  'recording',
+  'processing',
+  'awaiting_speakers',
+  'done',
+  'failed',
+]
 export function toMeeting(dto: MeetingDto): Meeting {
   return {
     id: dto.meeting_id,
@@ -29,7 +47,7 @@ export function toMeetingSummary(dto: MeetingSummaryDto): MeetingSummary {
     status: enumValue(dto.status, statuses, 'created', 'meeting status'),
     source: enumValue(
       dto.source,
-      ['discord', 'manual_upload'] as const,
+      ['discord', 'manual_upload', 'chat'] as const,
       'discord',
       'meeting source',
     ),
@@ -44,5 +62,25 @@ export function toMeetingUploadResult(dto: MeetingUploadDto): MeetingUploadResul
   return {
     id: dto.meeting_id,
     status: enumValue(dto.status, statuses, 'processing', 'meeting status'),
+  }
+}
+export function toSpeakerView(dto: SpeakerViewDto): SpeakerView {
+  return {
+    meetingId: dto.meeting_id,
+    status: enumValue(dto.status, statuses, 'created', 'meeting status'),
+    speakers: dto.speakers.map(({ label, total_sec, samples }) => ({
+      label,
+      totalSec: total_sec,
+      samples: samples.map(({ start, end }) => ({ start, end })),
+    })),
+    candidates: dto.candidates.map(({ member_id, display_name }) => ({
+      memberId: member_id,
+      displayName: display_name,
+    })),
+    mapping: dto.mapping,
+    audio: dto.audio && {
+      contentType: dto.audio.content_type,
+      sizeBytes: dto.audio.size_bytes,
+    },
   }
 }

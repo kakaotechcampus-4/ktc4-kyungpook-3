@@ -31,12 +31,13 @@ it('scopes and sorts summaries, excludes failed meetings and maps detail', async
   expect(summaries.items.map(toMeetingSummary).map(({ id }) => id)).toEqual([
     'mt_10',
     'mt_09',
+    'mt_08',
     'mt_07',
   ])
   expect(await fetchDto('/workspaces/ws_02/meetings')).toEqual({ items: [], total: 0 })
   expect(toMeeting(await fetchDto<MeetingDto>('/meetings/mt_09')).extractionId).toBe('ex_01')
   db.meetings[2].status = 'failed'
-  expect((await fetchDto<ListDto<MeetingSummaryDto>>('/workspaces/ws_01/meetings')).total).toBe(2)
+  expect((await fetchDto<ListDto<MeetingSummaryDto>>('/workspaces/ws_01/meetings')).total).toBe(3)
   await expect(fetchDto('/meetings/missing')).rejects.toMatchObject({
     code: 'MEETING_NOT_FOUND',
     status: 404,

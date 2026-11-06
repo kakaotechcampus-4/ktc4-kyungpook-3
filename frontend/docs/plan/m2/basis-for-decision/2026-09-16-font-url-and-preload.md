@@ -26,3 +26,9 @@ preload는 `index.html`에 Regular·Bold만 둔다. 컴포넌트/`main.tsx`에�
 ## 다시 고민할 때
 
 웨이트를 더 쓰게 되면 preload 목록을 그때 늘린다. 경로 조립을 동적으로 바꾸지 않는다.
+
+preload 를 늘리기 전에 [폰트 preload 재측정](../../../performance/2026-11-05-font-loading-remeasure.md)의 방법으로 다시 잰다.
+
+## 바뀐 것 (2026-11-05)
+
+Bold preload 를 뺐다. preload 는 Regular 하나다. Slow 4G 에서 Bold 까지 미리 받으면 첫 화면 JS 와 대역폭을 나눠 LCP 가 0.5~1.0초 늦었다. 굵은 글씨는 첫 그림 뒤 약 1.5초 동안 폴백 폰트로 보이다 바뀐다. 측정과 재현 방법은 [폰트 preload 재측정](../../../performance/2026-11-05-font-loading-remeasure.md)에 있다.

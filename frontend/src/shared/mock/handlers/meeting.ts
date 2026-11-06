@@ -6,6 +6,7 @@ import { MOCK_NOW } from '../fixtures/constants'
 import { requireMember } from '../auth-guard'
 import { readJson, nextId } from '../utils'
 import { tickMeeting } from '../meetingFlow'
+import { registerSpeakerUpload } from '../speakerFlow'
 
 export const meetingHandlers = [
   http.get('/api/v1/workspaces/:workspaceId/meetings', ({ params }) => {
@@ -175,6 +176,7 @@ export const meetingHandlers = [
     // 실 API 는 참석자를 버린다(계약 §4.0-②-9). MSW 는 정리 결과의 참석자로 쓰려고 ID 만 남긴다.
     // 파일은 어디에도 남기지 않는다 — sessionStorage 영속에도 원본이 들어가지 않는다
     db.meetingFlow.attendees[meeting.meeting_id] = attendees.map(String)
+    registerSpeakerUpload(meeting.meeting_id)
     db.meetingSummaries.push({
       meeting_id: meeting.meeting_id,
       title,

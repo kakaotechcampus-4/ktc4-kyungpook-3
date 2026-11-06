@@ -71,7 +71,7 @@ for (const width of [1024, 1440, 1920] as const) {
 
         // 줄바꿈할 곳이 없는 제목은 칸 안에서 접힌다(간트 왼쪽 칸은 말줄임이다)
         if (view !== 'gantt') {
-          const title = area.getByRole('link', { name: /^ABCDEFGHIJ/ }).first()
+          const title = area.getByRole('link', { name: /ABCDEFGHIJ/ }).first()
           const { client, scroll } = await title.evaluate((element) => ({
             client: element.clientWidth,
             scroll: element.scrollWidth,

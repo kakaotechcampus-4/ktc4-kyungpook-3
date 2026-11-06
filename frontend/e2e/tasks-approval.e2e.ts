@@ -446,3 +446,63 @@ test('변경 보완 뒤 충돌하고 입력을 바꿨다 되돌려 취소해도 
   })
   await expect(page.getByRole('table', { name: '현재값과 제안값' })).toContainText('2026-10-22')
 })
+
+test('범위 변경 승인은 결정 문장과 근거를 보이고, 승인하면 태스크 이력에 범위 변경 한 줄이 남는다 (#205)', async ({
+  page,
+}, testInfo) => {
+  await start(page, 'approval-scope', `${WORKSPACE}/tasks?tab=needs_review`)
+  const review = page.getByRole('list', { name: '확인 필요 목록' })
+  const scopeCards = review
+    .locator('[data-kind="approval"]')
+    .filter({ hasText: '범위 변경을 확인해야 해요' })
+  await expect(scopeCards).toHaveCount(2, FIRST_PAINT)
+  await expect(review).not.toContainText('변경 제안을 확인해야 해요')
+
+  await page.goto(`${WORKSPACE}/approvals/ap_06`)
+  const withDue = page.getByRole('region', { name: '범위 변경' })
+  await expect(withDue).toContainText(
+    '회원가입은 이메일 인증까지만 하고 마감을 25일로 미뤄요.',
+    FIRST_PAINT,
+  )
+  await expect(page.getByRole('table', { name: '현재값과 제안값' })).toContainText('2026-09-25')
+  await testInfo.attach('scope-with-due', {
+    body: await page.screenshot({ fullPage: true }),
+    contentType: 'image/png',
+  })
+
+  await page.goto(`${WORKSPACE}/approvals/ap_05`)
+  const scope = page.getByRole('region', { name: '범위 변경' })
+  await expect(scope).toContainText('소셜 로그인은 이번 범위에서 빼기로 했어요.', FIRST_PAINT)
+  await expect(scope.getByRole('figure', { name: '근거' })).toContainText(
+    '소셜 로그인은 이번엔 빼기로 했어요.',
+  )
+  await expect(page.getByText('바꿀 항목 값은 없어요.')).toBeVisible()
+  await expect(page.getByRole('table', { name: '현재값과 제안값' })).toHaveCount(0)
+  await testInfo.attach('scope-only', {
+    body: await page.screenshot({ fullPage: true }),
+    contentType: 'image/png',
+  })
+
+  await page.getByRole('button', { name: '승인', exact: true }).click()
+  await expect(page.getByTestId('approval-result')).toHaveText(/^승인했어요/)
+  await page
+    .getByRole('region', { name: '처리 결과' })
+    .getByRole('link', { name: '로그인 API 연동' })
+    .click()
+  await expect(page).toHaveURL(`${WORKSPACE}/tasks/tk_01`)
+  const history = page.getByRole('list', { name: '변경 이력' })
+  await expect(
+    history.getByText('범위 변경: 소셜 로그인은 이번 범위에서 빼기로 했어요.'),
+  ).toBeVisible(FIRST_PAINT)
+  await expect(history).not.toContainText('제목: 없음')
+  await page.reload()
+  await expect(
+    page
+      .getByRole('list', { name: '변경 이력' })
+      .getByText('범위 변경: 소셜 로그인은 이번 범위에서 빼기로 했어요.'),
+  ).toBeVisible(FIRST_PAINT)
+  await testInfo.attach('scope-history', {
+    body: await page.screenshot({ fullPage: true }),
+    contentType: 'image/png',
+  })
+})

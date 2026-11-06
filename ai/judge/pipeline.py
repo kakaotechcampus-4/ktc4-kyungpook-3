@@ -52,6 +52,15 @@ def _evidence_at_ms(finding: JudgeFinding, transcript: Transcript) -> int | None
     return None
 
 
+def _evidence(finding: JudgeFinding, transcript: Transcript) -> dict[str, Any]:
+    """항목의 근거 필드. 1인칭 담당자는 BE 가 evidence_speaker 로 찾으므로 담당자를 정한 발화와 맞아야 한다."""
+    return {
+        "evidence_quote": finding.evidence[-1] if finding.evidence else finding.text,
+        "evidence_speaker": finding.speaker,
+        "evidence_at_ms": _evidence_at_ms(finding, transcript),
+    }
+
+
 def to_item(
     finding: JudgeFinding,
     result: JudgeResult,
@@ -83,9 +92,7 @@ def to_item(
         "assignee_type": assignee_type,
         "assignee_raw": assignee_raw,
         "doc_text": drafted.doc_text,
-        "evidence_quote": finding.evidence[-1] if finding.evidence else finding.text,
-        "evidence_speaker": finding.speaker,
-        "evidence_at_ms": _evidence_at_ms(finding, transcript),
+        **_evidence(finding, transcript),
     }
     if result.is_new:
         return item
@@ -172,10 +179,12 @@ def _search_fields(found: list[NotionCandidate]) -> dict[str, Any]:
 
 
 def _merge_into(card: dict[str, Any], finding: JudgeFinding, result: JudgeResult, drafted: DraftResult,
-                base: NotionCandidate | None, today: date, found: list[NotionCandidate]) -> None:
+                base: NotionCandidate | None, today: date, found: list[NotionCandidate],
+                transcript: Transcript) -> None:
     """앞 카드에 같은 일을 가리키는 뒤 발화를 합친다.
 
-    마감 · 상태 · 담당은 뒤 발화가 덮어쓴다 — 나중에 말한 것이 최신 결정이다. 제목 · 근거 · 스냅샷은 앞 카드 그대로.
+    마감 · 상태 · 담당은 뒤 발화가 덮어쓴다 — 나중에 말한 것이 최신 결정이다. 제목 · 스냅샷은 앞 카드 그대로다.
+    근거는 담당을 정한 발화를 따른다. 그래야 "제가 맡을게요" 를 BE 가 그 말을 한 사람으로 찾는다.
     base 는 수정 카드의 DB 원래 후보다. 합친 값이 원래 값과 같아지면(되돌림) 그 필드를 지운다.
     마감을 없애자는 결정(due_cleared)은 앞 카드의 마감 제안을 지운다. 원래 마감이 없던 업무면 되돌림이 된다.
     """
@@ -198,6 +207,7 @@ def _merge_into(card: dict[str, Any], finding: JudgeFinding, result: JudgeResult
         card["status"] = result.status
     if result.category == "assignee":
         card["assignee_type"], card["assignee_raw"] = _assignee(finding)
+        card.update(_evidence(finding, transcript))
     # 합친 설명은 자르지 않는다 — DOC_TEXT_MAX 는 Luna 한 문장의 상한이고(BE doc_text 는 길이 제한 없음), 자르면
     # 맨 뒤에 붙은 최신 결정부터 잘린다(PR #206 리뷰)
     card["doc_text"] = f"{card['doc_text']} / {drafted.doc_text}"
@@ -324,11 +334,12 @@ def run(
                 "draft", finding.text, "마감을 없애는 변경은 아직 보낼 수 없습니다(BE 는 null 을 '바꾸지 않음'으로 받음)."))
             continue
         if task_id is not None and task_id.startswith(_PENDING):  # 이번 회의 새 항목 카드에 합친다
-            _merge_into(new_cards[int(task_id[len(_PENDING):])], finding, result, drafted, base=None, today=day, found=found)
+            _merge_into(new_cards[int(task_id[len(_PENDING):])], finding, result, drafted, base=None, today=day, found=found,
+                        transcript=transcript)
             continue
         if task_id in edits:  # 같은 Task 수정 카드에 합친다 — 번복 · 재변경
             base, card = edits[task_id]
-            _merge_into(card, finding, result, drafted, base=base, today=day, found=found)
+            _merge_into(card, finding, result, drafted, base=base, today=day, found=found, transcript=transcript)
             if result.category == "scope":
                 scoped.add(task_id)
             if not _has_change(card):

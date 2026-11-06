@@ -1,0 +1,119 @@
+{
+  "base": "http://localhost:5291",
+  "rounds": 3,
+  "chromium": "153.0.8010.12",
+  "sizes": {
+    "500": [
+      {
+        "action": "assignee→김서연",
+        "busyMs": 191.1919999999999,
+        "buildTaskBoard": 0,
+        "seoulDateOf": 0,
+        "createApprovals": 0,
+        "filterTasksByAssignee": 0,
+        "withPendingStatus": 0
+      },
+      {
+        "action": "assignee→담당자 전체",
+        "busyMs": 543.567,
+        "buildTaskBoard": 0,
+        "seoulDateOf": 0,
+        "createApprovals": 0,
+        "filterTasksByAssignee": 0,
+        "withPendingStatus": 0
+      },
+      {
+        "action": "assignee→김서연",
+        "busyMs": 185.59900000000002,
+        "buildTaskBoard": 0,
+        "seoulDateOf": 0,
+        "createApprovals": 0,
+        "filterTasksByAssignee": 0,
+        "withPendingStatus": 0
+      },
+      {
+        "action": "assignee→담당자 전체",
+        "busyMs": 180.56900000000002,
+        "buildTaskBoard": 6.47,
+        "seoulDateOf": 0,
+        "createApprovals": 0,
+        "filterTasksByAssignee": 0,
+        "withPendingStatus": 0
+      },
+      {
+        "action": "assignee→김서연",
+        "busyMs": 56.837,
+        "buildTaskBoard": 0,
+        "seoulDateOf": 0,
+        "createApprovals": 0,
+        "filterTasksByAssignee": 0,
+        "withPendingStatus": 0
+      },
+      {
+        "action": "assignee→담당자 전체",
+        "busyMs": 291.897,
+        "buildTaskBoard": 0.563,
+        "seoulDateOf": 0,
+        "createApprovals": 0,
+        "filterTasksByAssignee": 0,
+        "withPendingStatus": 0
+      }
+    ],
+    "2000": [
+      {
+        "action": "assignee→김서연",
+        "busyMs": 458.8189999999997,
+        "buildTaskBoard": 0,
+        "seoulDateOf": 0,
+        "createApprovals": 0,
+        "filterTasksByAssignee": 0.683,
+        "withPendingStatus": 0
+      },
+      {
+        "action": "assignee→담당자 전체",
+        "busyMs": 827.6710000000003,
+        "buildTaskBoard": 1.52,
+        "seoulDateOf": 0,
+        "createApprovals": 0,
+        "filterTasksByAssignee": 0,
+        "withPendingStatus": 0
+      },
+      {
+        "action": "assignee→김서연",
+        "busyMs": 446.9099999999999,
+        "buildTaskBoard": 0,
+        "seoulDateOf": 0,
+        "createApprovals": 0,
+        "filterTasksByAssignee": 0,
+        "withPendingStatus": 0
+      },
+      {
+        "action": "assignee→담당자 전체",
+        "busyMs": 1109.772,
+        "buildTaskBoard": 0,
+        "seoulDateOf": 0,
+        "createApprovals": 0,
+        "filterTasksByAssignee": 0,
+        "withPendingStatus": 0
+      },
+      {
+        "action": "assignee→김서연",
+        "busyMs": 406.294,
+        "buildTaskBoard": 0,
+        "seoulDateOf": 0,
+        "createApprovals": 0,
+        "filterTasksByAssignee": 0,
+        "withPendingStatus": 0
+      },
+      {
+        "action": "assignee→담당자 전체",
+        "busyMs": 559.1069999999999,
+        "buildTaskBoard": 1.205,
+        "seoulDateOf": 0,
+        "createApprovals": 0,
+        "filterTasksByAssignee": 0,
+        "withPendingStatus": 0
+      }
+    ]
+  }
+}

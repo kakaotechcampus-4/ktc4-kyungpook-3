@@ -29,6 +29,7 @@ export function toExtractionItem(dto: ExtractionItemDto): ExtractionItem {
     evidence: {
       quote: dto.evidence.quote,
       speaker: dto.evidence.speaker,
+      speakerMemberId: dto.evidence.speaker_member_id,
       atMs: dto.evidence.at_ms,
     },
     appliedTaskId: dto.task_id,

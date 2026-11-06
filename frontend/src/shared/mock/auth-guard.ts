@@ -1,6 +1,6 @@
 import { db } from './db'
 import { fail } from './envelope'
-import { sessionMemberId } from './sessions'
+import { isMemberOf, roleIn, sessionMemberId } from './sessions'
 
 type Denied = ReturnType<typeof fail>
 
@@ -23,10 +23,7 @@ export function requireAuth(): Denied | null {
 export function requireMember(workspaceId: string): Denied | null {
   const unauthenticated = requireAuth()
   if (unauthenticated) return unauthenticated
-  const account = db.accounts.find(
-    ({ session }) => session.user.user_id === db.session.user.user_id,
-  )
-  return account?.workspaceIds.includes(workspaceId)
+  return isMemberOf(workspaceId)
     ? null
     : fail('FORBIDDEN', '이 작업을 수행할 권한이 없습니다.', 403)
 }
@@ -40,24 +37,22 @@ export function requireMember(workspaceId: string): Denied | null {
 export function requirePmRole(workspaceId: string): Denied | null {
   const denied = requireMember(workspaceId)
   if (denied) return denied
-  const workspace = db.workspaces.find(({ workspace_id }) => workspace_id === workspaceId)
-  return workspace?.role === 'pm'
+  return roleIn(workspaceId) === 'pm'
     ? null
     : fail('FORBIDDEN', 'PM만 할 수 있는 작업입니다.', 403, { workspace_id: workspaceId })
 }
 
 /** 백엔드 `deps.require_pm` 에 대응한다. 인증 + 소속 + 그 공간의 PM 이어야 한다.
  *
- * 역할은 워크스페이스 행의 `role` 로 본다(sessions.ts — `setMockRole` 이 바꾸는 값). 통과하면 기록에 쓸
+ * 역할은 sessions.ts 의 `roleIn` 으로 본다(픽스처 계정은 `setMockRole` 이 바꾸는 워크스페이스 행의 값). 통과하면 기록에 쓸
  * 세션 팀원 ID 를 돌려준다. 본문·쿼리의 `changed_by`·`resolved_by` 는 쓰지 않는다. 세션 팀원을 정할 수
  * 없는 공간도 403 이다. handler 는 상태를 바꾸기 전에 `if (pm instanceof Response) return pm` 으로 쓴다.
  */
 export function requirePm(workspaceId: string): Denied | { memberId: string } {
   const denied = requireMember(workspaceId)
   if (denied) return denied
-  const workspace = db.workspaces.find(({ workspace_id }) => workspace_id === workspaceId)
   const memberId = sessionMemberId(workspaceId)
-  if (workspace?.role !== 'pm' || memberId === null)
+  if (roleIn(workspaceId) !== 'pm' || memberId === null)
     return fail('FORBIDDEN', 'PM만 할 수 있는 작업입니다.', 403, { workspace_id: workspaceId })
   return { memberId }
 }

@@ -1,6 +1,6 @@
 import { ApiError } from '@/shared/api/errors'
 import { approvalFixtures } from '@/shared/mock/fixtures/approval'
-import { toApproval, toApprovalResolveFailure } from './mapper'
+import { isScopeChange, toApproval, toApprovalResolveFailure } from './mapper'
 
 it('maps task-create payload and derives each missing-field combination', () => {
   expect(approvalFixtures.map(toApproval)).toMatchObject([
@@ -12,6 +12,7 @@ it('maps task-create payload and derives each missing-field combination', () => 
       gate: 'hold',
       relatedTaskId: null,
       assigneeRaw: '민수',
+      evidence: { speaker: '1123', speakerMemberId: 'mb_01' },
     },
     { id: 'ap_02', missing: ['due'], assigneeMemberId: 'mb_02', gate: 'review' },
     { id: 'ap_03', missing: ['assignee'], dueDate: '2026-09-25', gate: 'review' },
@@ -26,7 +27,7 @@ it('tolerates missing payload leaves and follows the backend title fallback orde
     meetingId: null,
     extractionItemId: null,
     gate: null,
-    evidence: { quote: null, speaker: null, atMs: null },
+    evidence: { quote: null, speaker: null, speakerMemberId: null, atMs: null },
     missing: ['assignee', 'due'],
   })
   expect(toApproval({ ...approvalFixtures[0], payload: {} })).toMatchObject({ title: '' })
@@ -63,6 +64,63 @@ it('names a task_update by the target task, not by the proposed title', () => {
     title: '로그인 연동',
   })
   expect(update({ title: '새 제목' })).toMatchObject({ title: null })
+})
+
+describe('task_update 의 범위 변경 (#205)', () => {
+  const update = (payload: Record<string, unknown>) =>
+    toApproval({ ...approvalFixtures[0], type: 'task_update', payload })
+
+  it('reads the decision sentence, category, evidence, and meeting', () => {
+    const approval = update({
+      category: 'scope',
+      doc_text: '소셜 로그인은 이번 범위에서 빼기로 했어요.',
+      evidence_quote: '소셜 로그인은 이번엔 빼기로 했어요.',
+      evidence_speaker: '1124',
+      evidence_speaker_member_id: 'mb_02',
+      evidence_at_ms: 754_000,
+      meeting_id: 'mt_09',
+    })
+    expect(approval).toMatchObject({
+      kind: 'task_update',
+      category: 'scope',
+      docText: '소셜 로그인은 이번 범위에서 빼기로 했어요.',
+      evidence: {
+        quote: '소셜 로그인은 이번엔 빼기로 했어요.',
+        speaker: '1124',
+        speakerMemberId: 'mb_02',
+        atMs: 754_000,
+      },
+      meetingId: 'mt_09',
+      changes: [],
+    })
+    expect(isScopeChange(approval)).toBe(true)
+  })
+
+  it('leaves missing keys null and is not a scope change', () => {
+    const approval = update({ status: 'done' })
+    expect(approval).toMatchObject({
+      category: null,
+      docText: null,
+      evidence: { quote: null, speaker: null, speakerMemberId: null, atMs: null },
+      meetingId: null,
+    })
+    expect(isScopeChange(approval)).toBe(false)
+    expect(isScopeChange(update({ category: 'schedule' }))).toBe(false)
+    expect(
+      isScopeChange(toApproval({ ...approvalFixtures[0], payload: { category: 'scope' } })),
+    ).toBe(false)
+  })
+
+  it('does not guess an unknown category', () => {
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      expect(update({ category: 'future' })).toMatchObject({ category: null })
+      expect(update({ category: 3 })).toMatchObject({ category: null })
+      expect(warning).toHaveBeenCalledTimes(1)
+    } finally {
+      warning.mockRestore()
+    }
+  })
 })
 
 it('marks reminder and unknown types unsupported and defaults unknown statuses', () => {

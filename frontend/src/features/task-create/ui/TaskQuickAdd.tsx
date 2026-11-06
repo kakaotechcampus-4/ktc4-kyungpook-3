@@ -18,7 +18,7 @@ const TRIGGER =
 const FORM =
   'flex flex-col gap-10 rounded-12 border border-line-strong bg-surface px-13 py-12 has-[input:focus-visible]:outline-2 has-[input:focus-visible]:outline-ink has-[input:focus-visible]:-outline-offset-1'
 const INPUT =
-  'w-full min-w-[0px] bg-transparent text-[13px] leading-[1.45] font-semibold text-ink outline-none placeholder:font-normal placeholder:text-faint'
+  'w-full min-w-[0px] bg-transparent text-[13px] leading-[1.45] font-semibold text-ink outline-none placeholder:font-normal placeholder:text-dim'
 
 export interface TaskQuickAddProps {
   workspaceId: string

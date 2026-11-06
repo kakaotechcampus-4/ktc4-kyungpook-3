@@ -151,3 +151,13 @@ export async function retryTaskNotionSync(workspaceId: string, taskId: string): 
     workspaceId,
   )
 }
+
+/** 무응답 자동 막힘 풀기. PM 전용이다. 상태와 사유가 막히기 전 값으로 돌아간다. 막힌 뒤 값이 바뀌었으면 409 다 */
+export async function undoTaskAutoBlock(workspaceId: string, taskId: string): Promise<Task> {
+  return toWorkspaceTask(
+    await request<TaskDto>(`/tasks/${encodeURIComponent(taskId)}/auto-block/undo`, {
+      method: 'POST',
+    }),
+    workspaceId,
+  )
+}

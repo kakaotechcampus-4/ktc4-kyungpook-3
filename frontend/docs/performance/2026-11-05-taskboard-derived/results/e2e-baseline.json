@@ -1,0 +1,145 @@
+{
+  "base": "http://localhost:5291",
+  "rounds": 5,
+  "chromium": "153.0.8010.12",
+  "sizes": {
+    "500": {
+      "dbTasks": 500,
+      "board": [
+        9033,
+        5484,
+        5755,
+        5349,
+        5364
+      ],
+      "gantt": [
+        3442,
+        4143,
+        16363,
+        4032,
+        3148
+      ],
+      "assignee": [
+        {
+          "target": "김서연",
+          "wallMs": 330.5,
+          "maxEventMs": 88
+        },
+        {
+          "target": "담당자 전체",
+          "wallMs": 384.90000009536743,
+          "maxEventMs": 88
+        },
+        {
+          "target": "김서연",
+          "wallMs": 844.9000000953674,
+          "maxEventMs": 136
+        },
+        {
+          "target": "담당자 전체",
+          "wallMs": 567.0999999046326,
+          "maxEventMs": 72
+        },
+        {
+          "target": "김서연",
+          "wallMs": 544.2999999523163,
+          "maxEventMs": 80
+        },
+        {
+          "target": "담당자 전체",
+          "wallMs": 1365.2000000476837,
+          "maxEventMs": 72
+        },
+        {
+          "target": "김서연",
+          "wallMs": 1106.6000001430511,
+          "maxEventMs": 120
+        },
+        {
+          "target": "담당자 전체",
+          "wallMs": 1395.9000000953674,
+          "maxEventMs": 64
+        },
+        {
+          "target": "김서연",
+          "wallMs": 250.09999990463257,
+          "maxEventMs": 144
+        },
+        {
+          "target": "담당자 전체",
+          "wallMs": 547.5,
+          "maxEventMs": 96
+        }
+      ]
+    },
+    "2000": {
+      "dbTasks": 2000,
+      "board": [
+        42357,
+        40978,
+        40498,
+        40717,
+        42741
+      ],
+      "gantt": [
+        4222,
+        4144,
+        3790,
+        4749,
+        4614
+      ],
+      "assignee": [
+        {
+          "target": "김서연",
+          "wallMs": 537.3000001907349,
+          "maxEventMs": 296
+        },
+        {
+          "target": "담당자 전체",
+          "wallMs": 1237.8999998569489,
+          "maxEventMs": 64
+        },
+        {
+          "target": "김서연",
+          "wallMs": 655.7999999523163,
+          "maxEventMs": 232
+        },
+        {
+          "target": "담당자 전체",
+          "wallMs": 1336.7000000476837,
+          "maxEventMs": 80
+        },
+        {
+          "target": "김서연",
+          "wallMs": 671.2999999523163,
+          "maxEventMs": 272
+        },
+        {
+          "target": "담당자 전체",
+          "wallMs": 1196.2000000476837,
+          "maxEventMs": 128
+        },
+        {
+          "target": "김서연",
+          "wallMs": 545.7999999523163,
+          "maxEventMs": 160
+        },
+        {
+          "target": "담당자 전체",
+          "wallMs": 1330.5,
+          "maxEventMs": 120
+        },
+        {
+          "target": "김서연",
+          "wallMs": 585.6999998092651,
+          "maxEventMs": 216
+        },
+        {
+          "target": "담당자 전체",
+          "wallMs": 1017.7000000476837,
+          "maxEventMs": 96
+        }
+      ]
+    }
+  }
+}

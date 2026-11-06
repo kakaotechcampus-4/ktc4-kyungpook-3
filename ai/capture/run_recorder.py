@@ -16,6 +16,8 @@ from pathlib import Path
 import discord
 
 from capture.discord_adapter import RecordingCog, required_intents
+from capture.dm import DmCog
+from capture.handoff import from_env as handoff_from_env
 from shared.config import settings
 
 S = settings()
@@ -34,6 +36,9 @@ def build_bot() -> discord.Bot:
         debug_guilds=[int(S.discord_guild_id)] if S.discord_guild_id else None,
     )
     bot.add_cog(RecordingCog(bot, on_session_saved=on_session_saved))
+    handoff = handoff_from_env()
+    if handoff is not None:                 # 리마인드 DM 은 BE 설정이 있을 때만 (capture/dm.py)
+        bot.add_cog(DmCog(bot, be=handoff.client))
 
     @bot.event
     async def on_ready() -> None:
