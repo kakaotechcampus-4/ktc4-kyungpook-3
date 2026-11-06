@@ -24,11 +24,13 @@ Preconditions:
 
 - `messages-pm-self`는 `messages-default`에 PM 자신(`mb_01`, 김서연)의 대화 `th_06`과 그 대화의 보낼 메시지 `bd_05`를 더한다. 워크스페이스 응답의 `member_id`가 `mb_01`이다.
 
-- **실행.** `node .cursor/skills/verify-managers-manager/scripts/verify.cjs run messages`로 `messages-reminder.e2e.ts`의 세 테스트와 `messages-reply.e2e.ts`의 두 테스트를 실행한다.
+- **실행.** `node .cursor/skills/verify-managers-manager/scripts/verify.cjs run messages`로 `messages-reminder.e2e.ts`의 세 테스트와 `messages-reply.e2e.ts`의 세 테스트, `messages-approve.e2e.ts`의 세 테스트를 실행한다.
 - **새 재촉.** `getByLabel('받는 사람').selectOption({ label: '이재환' })`, `getByLabel('태스크').selectOption({ label: 'DB 스키마 정리 · 09/22 마감' })` 뒤 마감 하루 전 라디오가 골라져 있다. **재촉 만들기**를 누르면 주소가 `?review=bd_03`이고 목록의 보낼 메시지가 셋이다.
 - **빼기·메모.** `'발표 자료' 빼기` → 확인 그룹(이름이 `빼면 남은 태스크로 문구를 다시 만들어요`로 시작)의 **빼기** → `묶은 태스크 1`. 남은 행의 **메모 고치기** → 메모 칸에 `시안 3차까지` → **저장** → `메모: 시안 3차까지`.
 - **태스크 상세.** **재촉** 영역의 **재촉 만들기** → 폼 그룹 **재촉 만들기** 안의 **재촉 만들기** → 상태 영역의 **메시지 화면에서 확인하기** → `?review=bd_…`.
 - **PM 자기 대화 답장.** 폼 `getByRole('form', { name: '답장' })`의 **답장** 칸에 글을 쓰고 **답장 보내기** → 영역 **대화 내용**에 그 글이 보이고 칸이 빈다. `th_01`에서는 폼이 없고 `메시지는 항상`으로 시작하는 안내 바가 있다.
+- **승인과 바뀐 문구(#371).** `?review=bd_01`에서 **이대로 발송** → 토스트 `09/23 09:00에 이재환님에게 보낼게요`, 대화에 `09/23 09:00 발송 예정 · 승인함`. 409 `BUNDLE_CHANGED`는 페이지에서 `import('/src/shared/mock/db.ts')`로 `bd_01`의 `body`·`draft_version`을 바꾸고 같은 작업 안에서 누른다. 초안 대기(`bd_02`)는 같은 방법으로 `draft_status: 'done'`으로 바꾸면 10초 polling 뒤 미리보기가 바뀐다.
+- **팀원 답장.** `messages-member`(mb_01)는 `/workspaces/ws_01/messages`에서 자기 대화 `th_06`이 골라져 있다. 답장을 보내면 `09:00 · 웹에서 답장`이 붙는다.
 - **후속 상태.** `page.reload()` 뒤에도 같은 묶음 수, 태스크 수, 메모가 남는다. MSW 모드는 모의 DB를 같은 탭의 sessionStorage에 둔다.
 
 ## Gotchas
