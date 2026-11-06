@@ -437,7 +437,7 @@ def test_on_before_setup_stops_without_starting(aws):
 
 
 @pytest.mark.parametrize("args", [("on", "--hours", "0"), ("on", "--hours", "x"), ("on", "3"), ("setup",),
-                                  ("setup", "not-an-ip"), ("setup", "203.0.113.310"), ("off", "--help"),
+                                  ("setup", "not-an-ip"), ("setup", "203.0.113.310"), ("setup", PROD_IP, "--help"), ("off", "--help"),
                                   ("destroy", "--help"), ("status", "--help"), ("reboot",), ()])
 def test_bad_arguments_change_nothing(aws, args):
     r = aws.run(*args)

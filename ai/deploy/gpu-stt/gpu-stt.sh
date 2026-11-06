@@ -121,6 +121,7 @@ valid_ip() {
 
 cmd_setup() {
   local prod_ip=${1:-}
+  [ $# -eq 1 ] || usage
   valid_ip "$prod_ip" || usage
   mkdir -p "$STATE"
   ensure_security_group "$prod_ip"
