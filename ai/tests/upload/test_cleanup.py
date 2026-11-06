@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import io
 import json
+import logging
+import os
 from datetime import datetime, timedelta, timezone
 
 import numpy as np
@@ -14,7 +16,7 @@ from capture.handoff import BeClient, BeError
 from capture.recorder import backoff_s, manifest_path, try_lock
 from tests.capture.fake_be import FakeBe
 from tests.conftest import SEGS, FakeDiarizer
-from upload.cleanup import EXPIRE_AFTER_S, PROBE_EVERY_S, cleanup_one
+from upload.cleanup import EXPIRE_AFTER_S, KEEP_S, PROBE_EVERY_S, cleanup_one
 from upload.intake import intake_one
 from upload.report import report_one
 
@@ -211,6 +213,8 @@ def test_discord_and_cli_uploads_are_untouched(env):
     (env.rec / "session_upload_cli.json").write_text(json.dumps({"session": "upload_cli", "source": "upload"}), encoding="utf-8")
     (env.rec / "upload_cli").mkdir()
     assert _go(env) == (MID, "expired")   # 정리 대상은 intake.json 이 있는 이 회의뿐이다
+    ts = env.clock.t.timestamp()
+    os.utime(env.rec / ".uploads" / MID / "intake.json", (ts, ts))   # 끝난 기록 폴더는 KEEP_S 뒤에 지우니 이 테스트에서는 아직이다
     snap = sorted(p.name for p in env.rec.iterdir()) + sorted(p.name for p in env.tr.iterdir())
     for _ in range(3):
         assert _go(env) is None
@@ -303,3 +307,163 @@ def test_os_error_while_dropping_is_a_transient_failure(env, monkeypatch):
     assert _kept(env)
     ex = _intake(env)["expire"]
     assert ex["state"] == "checking" and ex["attempts"] == 1 and "PermissionError" in ex["error"]
+
+
+def _iso(t):
+    return t.replace(microsecond=0).isoformat()
+
+
+def _set_manifest(e, **over):
+    m = _manifest_file(e)
+    data = json.loads(m.read_text(encoding="utf-8"))
+    for k, v in over.items():
+        data[k] = v
+    m.write_text(json.dumps(data), encoding="utf-8")
+
+
+def _set_intake(e, **over):
+    p = e.rec / ".uploads" / MID / "intake.json"
+    data = json.loads(p.read_text(encoding="utf-8"))
+    for k, v in over.items():
+        if v is None:
+            data.pop(k, None)
+        else:
+            data[k] = v
+    p.write_text(json.dumps(data), encoding="utf-8")
+    return p
+
+
+def _settle(e):
+    """지정 결과 확인 대상에서 빼기 위해 resume 이 mapped 인 상태로 둔다(처리가 이미 시작된 업로드)."""
+    _set_intake(e, resume={"state": "mapped", "attempts": 0, "next_at": None, "error": None})
+
+
+def test_given_up_upload_is_dropped_after_keep(env):
+    _settle(env)
+    t0 = env.clock.t
+    _set_manifest(env, source="upload", status="failed", be={"status": "failed"},
+                  recovery={"attempts": 5, "gave_up_at": _iso(t0), "failed_stage": "transcribe"})
+    env.be.calls.clear()
+    env.clock.t = t0 + timedelta(seconds=KEEP_S - 1)
+    assert _go(env) is None
+    assert _kept(env)
+    env.clock.t = t0 + timedelta(seconds=KEEP_S)
+    assert _go(env) == (MID, "dropped")
+    assert _gone(env)
+    assert _intake(env)["expire"]["state"] == "dropped"
+    assert env.be.calls == []
+
+
+def test_handed_off_upload_drops_only_tracks_after_keep(env):
+    _settle(env)
+    t0 = env.clock.t
+    _set_manifest(env, source="upload", status="handed_off", be={"status": "done"},
+                  stages={"handed_off": _iso(t0)})
+    env.clock.t = t0 + timedelta(seconds=KEEP_S - 1)
+    assert _go(env) is None
+    assert _kept(env)
+    env.clock.t = t0 + timedelta(seconds=KEEP_S)
+    assert _go(env) == (MID, "tracks_dropped")
+    assert not (env.rec / f"upload_{MID}").exists()
+    assert _manifest_file(env).exists() and (env.tr / f"session_upload_{MID}.json").exists()
+    assert (env.rec / ".uploads" / MID / "intake.json").exists()
+    assert _intake(env)["expire"]["state"] == "tracks_dropped"
+    assert _go(env) is None
+    assert env.be.calls[-1][0] != "DELETE"
+
+
+def test_locked_given_up_upload_is_not_dropped(env):
+    _settle(env)
+    t0 = env.clock.t
+    _set_manifest(env, source="upload", status="failed", be={"status": "failed"},
+                  recovery={"attempts": 5, "gave_up_at": _iso(t0), "failed_stage": "transcribe"})
+    env.clock.t = t0 + timedelta(seconds=KEEP_S)
+    lock = try_lock(_manifest_file(env))
+    try:
+        assert _go(env) is None
+        assert _kept(env)
+    finally:
+        lock.release()
+    assert _go(env) == (MID, "dropped")
+
+
+def _age(e, seconds):
+    p = e.rec / ".uploads" / MID / "intake.json"
+    ts = (e.clock.t - timedelta(seconds=seconds)).timestamp()
+    os.utime(p, (ts, ts))
+
+
+def _finish_record(e, **over):
+    """매니페스트와 트랙·전사본을 치운 채 intake.json 만 정해진 모양으로 둔다."""
+    _set_intake(e, **over)
+    from capture.recorder import drop_local
+    drop_local(e.rec, f"upload_{MID}")
+    (e.tr / f"session_upload_{MID}.json").unlink()
+
+
+_FINISHED_RECORDS = {
+    "intake failed": dict(state="failed", fail_pending=None, report=None),
+    "report ended": dict(report={"state": "ended"}),
+    "report failed": dict(report={"state": "failed"}),
+    "resume ended": dict(resume={"state": "ended"}),
+    "resume failed": dict(resume={"state": "failed"}),
+    "expired": dict(expire={"state": "expired"}),
+}
+
+
+@pytest.mark.parametrize("over", list(_FINISHED_RECORDS.values()), ids=list(_FINISHED_RECORDS))
+def test_finished_record_folder_is_removed_after_keep(env, over):
+    _finish_record(env, **over)
+    folder = env.rec / ".uploads" / MID
+    _age(env, KEEP_S - 1)
+    assert _go(env) is None
+    assert folder.exists()
+    _age(env, KEEP_S)
+    assert _go(env) == (MID, "record_removed")
+    assert not folder.exists()
+    assert _go(env) is None
+
+
+_OPEN_RECORDS = {
+    "claiming": dict(state="claiming"),
+    "claimed": dict(state="claimed"),
+    "converted": dict(state="converted"),
+    "submitted": dict(state="submitted"),
+    "fail_pending": dict(state="failed", fail_pending={"error": "x"}),
+    "report reporting": dict(report={"state": "reporting"}),
+    "report failing": dict(report={"state": "failing"}),
+    "resume resuming": dict(resume={"state": "resuming"}),
+    "resume failing": dict(resume={"state": "failing"}),
+}
+
+
+@pytest.mark.parametrize("over", list(_OPEN_RECORDS.values()), ids=list(_OPEN_RECORDS))
+def test_open_records_are_never_removed(env, over):
+    _finish_record(env, **over)
+    _age(env, KEEP_S * 100)
+    env.clock.advance(KEEP_S * 100)
+    assert _go(env) is None
+    assert (env.rec / ".uploads" / MID / "intake.json").exists()
+
+
+def test_record_is_kept_while_manifest_exists(env):
+    _set_intake(env, expire={"state": "expired"})
+    _age(env, KEEP_S * 3)
+    assert _manifest_file(env).exists()
+    assert _go(env) is None
+    assert (env.rec / ".uploads" / MID / "intake.json").exists()
+
+
+def test_broken_record_is_logged_once_not_removed(env, caplog):
+    _settle(env)   # 이 회의는 정리할 것이 없다: 깨진 폴더만 본다
+    folder = env.rec / ".uploads" / "broken"
+    folder.mkdir()
+    (folder / "intake.json").write_text("{not json", encoding="utf-8")
+    ts = (env.clock.t - timedelta(seconds=KEEP_S * 3)).timestamp()
+    os.utime(folder / "intake.json", (ts, ts))
+    env.clock.advance(KEEP_S * 3)
+    with caplog.at_level(logging.WARNING, logger="upload.cleanup"):
+        assert _go(env) is None
+        assert _go(env) is None
+    assert (folder / "intake.json").exists()
+    assert len([r for r in caplog.records if "broken" in r.getMessage()]) == 1

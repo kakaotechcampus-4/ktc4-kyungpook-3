@@ -3,7 +3,9 @@
 기록은 recordings/.uploads/<meeting_id>/intake.json 의 `expire` 키다. intake·report·resume 의 상태 기계는 건드리지 않는다.
   checking  BE 에 다시 물어보는 중이다. 일시 실패는 attempts, next_at 만 바꾼다(포기 한도 없음: 지우지 않으니 해로울 것이 없다)
   expired   BE 가 이미 끝낸 회의다(409 MEETING_ALREADY_ENDED·오류 봉투의 404). 매니페스트·트랙·잠금·전사본을 지웠다(끝)
-  tracks_dropped, dropped 는 이후 단계(인계 뒤 트랙 정리, 처리 포기 정리)가 쓴다.
+  tracks_dropped  인계가 끝나 KEEP_S 가 지나 트랙 폴더만 지웠다(매니페스트·전사본 유지, 다시 보지 않는다)
+  dropped         처리를 포기한 지 KEEP_S 가 지나 매니페스트·트랙·전사본을 지웠다
+끝난 기록 폴더(.uploads/<id>/)는 열린 상태가 없고 이 회의의 매니페스트가 없을 때 intake.json 수정 시각 + KEEP_S 뒤 통째로 지운다. 깨진 intake.json 은 지우지 않고 한 번만 경고한다.
 
 지정 만료 후보: 가져오기가 done 이고 라벨을 reported 했고 resume 키가 없고, 보고한 지 EXPIRE_AFTER_S 가 지난 업로드.
 후보는 기록해 둔 report 본문을 그대로 다시 보내 BE 의 답으로 판정한다. BE 는 같은 내용 재전송에 200(현재 status)을 주고,
@@ -17,7 +19,8 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timedelta
+import shutil
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Callable
 
@@ -30,6 +33,7 @@ log = logging.getLogger(__name__)
 
 EXPIRE_AFTER_S = 7 * 86400 + 3600   # BE SPEAKER_ASSIGNMENT_TTL_SECONDS(7일)에 한 시간을 더한다: BE sweeper 가 먼저 닫을 틈
 LOCKED_RETRY_S = 60.0               # 재전송 사이에 잠금이 생기면 이만큼 뒤에 다시 본다
+KEEP_S = 7 * 86400                  # 처리 포기·인계 완료 뒤, 끝난 기록 폴더를 이만큼 두었다가 지운다
 PROBE_EVERY_S = 3600.0              # BE 가 아직 지정을 기다린다고 답하면 이 간격으로만 다시 묻는다
 
 
@@ -74,7 +78,121 @@ def cleanup_one(recordings_dir: Path, transcripts_dir: Path, *, client,
             locked = locked or Progress(rec["meeting_id"], "locked")
             continue
         return _probe(recordings_dir, transcripts_dir, d, rec, client, t)
+    for d in sorted(root.iterdir()) if root.exists() else ():
+        if not d.is_dir():
+            continue
+        rec = _load(d)
+        if rec is None:
+            _warn_broken(d)
+            continue
+        step = _keep_expired(recordings_dir, transcripts_dir, d, rec, t) or _remove_record(recordings_dir, d, rec, t)
+        if step is not None:
+            return step
     return locked
+
+
+_warned: set[str] = set()
+
+
+def _warn_broken(d: Path) -> None:
+    if not (d / "intake.json").exists() or str(d) in _warned:
+        return
+    _warned.add(str(d))
+    log.warning("업로드 가져오기 기록 %s 이 깨졌다: 지우지 않고 그대로 둔다", d)
+
+
+def _at(value) -> datetime | None:
+    try:
+        t = datetime.fromisoformat(value or "")
+    except (ValueError, TypeError):
+        return None
+    return t if t.tzinfo is not None else None
+
+
+def _keep_expired(recordings_dir: Path, transcripts_dir: Path, d: Path, rec: dict, t: datetime) -> Progress | None:
+    """매니페스트로 판정하는 정리: 처리 포기(KEEP_S 뒤 전부) · 인계 완료(KEEP_S 뒤 트랙만). BE 는 부르지 않는다."""
+    mid = rec["meeting_id"]
+    session = f"upload_{mid}"
+    m = manifest_path(recordings_dir, session)
+    try:
+        manifest = json.loads(m.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(manifest, dict) or manifest.get("source") != "upload":
+        return None
+    be_status = (manifest.get("be") or {}).get("status") if isinstance(manifest.get("be"), dict) else None
+    ex = rec.get("expire")
+    state = ex.get("state") if isinstance(ex, dict) else None
+    if be_status == "failed":
+        rc = manifest.get("recovery")
+        since = _at(rc.get("gave_up_at")) if isinstance(rc, dict) else None
+        event = "dropped"
+    elif manifest.get("status") == "handed_off" and be_status == "done" and state != "tracks_dropped":
+        st = manifest.get("stages")
+        since = _at(st.get("handed_off")) if isinstance(st, dict) else None
+        event = "tracks_dropped"
+    else:
+        return None
+    if since is None or t < since + timedelta(seconds=KEEP_S) or is_locked(m):
+        return None
+    manifest.setdefault("session", session)
+    new = dict(ex) if isinstance(ex, dict) else {}
+    try:
+        if event == "dropped":
+            drop_transcripts(transcripts_dir, manifest)   # 매니페스트가 남아 있는 동안 먼저
+            drop_local(recordings_dir, session)
+        else:
+            shutil.rmtree(recordings_dir / session)   # 트랙만: 매니페스트·전사본·intake.json 은 남긴다
+        new.update(state=event, next_at=None)
+        rec["expire"] = new
+        _save(d, rec)
+    except FileNotFoundError:
+        pass
+    except OSError as e:
+        log.warning("업로드 %s 정리 실패(다음에 다시 한다): %s", mid, e)
+        return None
+    log.info("업로드 %s: %s", mid, event)
+    return Progress(mid, event)
+
+
+_OPEN_REPORT = ("reporting", "failing")
+_OPEN_RESUME = ("resuming", "failing")
+
+
+def _finished(rec: dict) -> bool:
+    """더 진행할 것이 없는 기록인가. 열린 상태가 하나라도 있거나 끝났다는 표시가 없으면 False."""
+    if rec.get("fail_pending"):
+        return False
+    r, u, x = rec.get("report"), rec.get("resume"), rec.get("expire")
+    rs = r.get("state") if isinstance(r, dict) else None
+    us = u.get("state") if isinstance(u, dict) else None
+    xs = x.get("state") if isinstance(x, dict) else None
+    if rs in _OPEN_REPORT or us in _OPEN_RESUME or xs == "checking":
+        return False
+    if rec.get("state") == "failed":
+        return True
+    return rec.get("state") == "done" and (rs in ("ended", "failed") or us in ("ended", "failed")
+                                           or xs in ("expired", "dropped"))
+
+
+def _remove_record(recordings_dir: Path, d: Path, rec: dict, t: datetime) -> Progress | None:
+    """끝난 기록 폴더(.uploads/<id>/)를 통째로 지운다. 이 회의의 매니페스트가 남아 있으면 지우지 않는다."""
+    mid = rec["meeting_id"]
+    if not _finished(rec) or manifest_path(recordings_dir, f"upload_{mid}").exists():
+        return None
+    try:
+        at = datetime.fromtimestamp((d / "intake.json").stat().st_mtime, timezone.utc)
+    except OSError:
+        return None
+    if t < at + timedelta(seconds=KEEP_S):
+        return None
+    try:
+        shutil.rmtree(d)
+    except OSError as e:
+        log.warning("업로드 %s 의 기록 폴더를 지우지 못했다(다음에 다시 한다): %s", mid, e)
+        return None
+    log.info("업로드 %s: 끝난 기록 폴더를 지웠다", mid)
+    return Progress(mid, "record_removed")
 
 
 def _probe(recordings_dir: Path, transcripts_dir: Path, d: Path, rec: dict, client, t: datetime) -> Progress:
