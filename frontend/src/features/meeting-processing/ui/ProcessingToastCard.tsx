@@ -15,7 +15,9 @@ import { signalAnnouncement } from '../model/processingSignal'
 import type { ProcessingSignal } from '../model/processingSignal'
 
 /* 비교 화면(#424) 값. 그림자·전환·스피너가 없다 — 깊이는 테두리 한 겹, 진행은 멈춘 줄무늬다 */
-const CARD = 'flex w-[300px] max-w-[calc(100vw-48px)] flex-col gap-8 rounded-12 border px-14 py-12'
+/* 독은 누름을 통과시킨다. 카드·알약 면만 누름을 받는다 */
+const CARD =
+  'pointer-events-auto flex w-[300px] max-w-[calc(100vw-48px)] flex-col gap-8 rounded-12 border px-14 py-12'
 const NEUTRAL = 'border-line-strong bg-surface'
 const ATTENTION = 'border-accent-chip bg-accent-badge'
 const TOP = 'flex items-start justify-between gap-8'
@@ -31,7 +33,7 @@ const LINK = 'text-caption font-semibold text-ink underline underline-offset-3'
 const SPEAKERS_BUTTON =
   'inline-flex h-32 items-center justify-center rounded-9 bg-accent-solid px-12 text-[13px] font-semibold whitespace-nowrap text-surface hover:bg-accent focus-visible:outline-surface focus-visible:-outline-offset-3'
 const PILL =
-  'inline-flex h-34 items-center gap-8 rounded-999 bg-ink px-14 text-caption font-semibold text-surface focus-visible:outline-surface focus-visible:-outline-offset-3'
+  'pointer-events-auto inline-flex h-34 items-center gap-8 rounded-999 bg-ink px-14 text-caption font-semibold text-surface focus-visible:outline-surface focus-visible:-outline-offset-3'
 
 const SEGMENT: Record<ProcessingStepState, string> = {
   done: 'bg-ink',

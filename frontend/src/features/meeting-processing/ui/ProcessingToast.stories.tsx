@@ -51,7 +51,8 @@ type Story = StoryObj<typeof meta>
 export const 진행_중: Story = {
   play: async ({ args, canvasElement }) => {
     const canvas = within(canvasElement)
-    await expect(canvas.getByText('음성을 텍스트로 옮기고 있어요')).toBeVisible()
+    const card = within(canvas.getByRole('region'))
+    await expect(card.getByText('음성을 텍스트로 옮기고 있어요')).toBeVisible()
     await expect(canvas.getByText('1 / 3 단계 완료')).toBeVisible()
     await expect(canvas.queryByRole('button', { name: '닫기' })).toBeNull()
     await userEvent.click(canvas.getByRole('button', { name: '자세히 보기' }))
@@ -86,7 +87,8 @@ export const 팀원_화자_지정_대기: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await expect(canvas.getByText('화자 지정을 기다리고 있어요')).toBeVisible()
+    const card = within(canvas.getByRole('region'))
+    await expect(card.getByText('화자 지정을 기다리고 있어요')).toBeVisible()
     await expect(canvas.queryByRole('button', { name: '화자 지정하기' })).toBeNull()
   },
 }

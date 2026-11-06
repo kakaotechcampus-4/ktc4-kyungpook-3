@@ -96,6 +96,13 @@ describe('GlobalToaster', () => {
     expect(screen.getByTestId('pinned-toast-slot')).toHaveClass('max-h-[50dvh]', 'overflow-y-auto')
   })
 
+  it('독의 빈 자리는 누름을 통과시키고 토스트 면만 누름을 받는다', () => {
+    render(<GlobalToaster />)
+    act(() => toast.show({ key: 'saved', title: '저장했어요' }))
+    expect(screen.getByTestId('toast-dock')).toHaveClass('pointer-events-none')
+    expect(document.querySelector('[data-toast-key="saved"]')).toHaveClass('pointer-events-auto')
+  })
+
   it('토스트 자리가 없으면 고정 토스트도 그리지 않는다', () => {
     render(
       <PinnedToast>

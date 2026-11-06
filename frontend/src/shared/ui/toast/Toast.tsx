@@ -32,8 +32,9 @@ const VIEWPORT = 'flex flex-col gap-8'
 
 /* 그림자가 없다. 흰 면 위의 흰 토스트를 1px 헤어라인 하나로 띄운다 —
    눈으로 확인하는 것은 M4 다. 반경 12 는 칸반 카드 단으로, 카드 16 보다 한 단 작다. */
+/* 독은 누름을 통과시킨다(GlobalToaster). 토스트 면만 누름을 받는다 */
 const ROOT =
-  'flex min-w-[280px] max-w-[380px] flex-col rounded-12 border border-line bg-surface px-16 py-14'
+  'pointer-events-auto flex min-w-[280px] max-w-[380px] flex-col rounded-12 border border-line bg-surface px-16 py-14'
 
 const TITLE = 'text-body font-semibold text-ink'
 
