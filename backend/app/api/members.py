@@ -28,7 +28,11 @@ from app.schemas.member import (
 )
 from app.api.deps import get_current_member, get_current_user, require_member, require_pm
 from app.services.matching import resolved_texts
-from app.services.member_aliases import sync_name_aliases
+from app.services.member_aliases import (
+    add_discord_nickname_alias,
+    remove_discord_profile_aliases,
+    sync_name_aliases,
+)
 
 router = APIRouter(prefix="/members", tags=["members"])
 
@@ -156,6 +160,11 @@ def create_member(
     sync_name_aliases(db, member)
     _commit_member(db, member)
     db.refresh(member)
+    if payload.discord_user_id:
+        # 서버 닉네임은 팀원 커밋 뒤에 Discord 에서 읽는다. 실패해도 팀원 등록은 그대로다.
+        workspace_id, member_id = payload.workspace_id, member.member_id
+        add_discord_nickname_alias(db, workspace_id, member_id, payload.discord_user_id)
+        db.refresh(member)
     return success(MemberResponse.model_validate(member).model_dump(mode="json"))
 
 
@@ -288,6 +297,11 @@ def update_member(
     )
 
     old_name = member.display_name
+    # 디스코드 계정이 바뀌면(풀리는 것 포함) 옛 계정의 닉네임 별칭을 지운다. 조회가 팀원 변경을 먼저 flush 해
+    # 유일 위반이 409 처리 밖에서 나지 않도록 값을 바꾸기 전에 한다.
+    discord_changed = "discord_user_id" in updates and updates["discord_user_id"] != member.discord_user_id
+    if discord_changed:
+        remove_discord_profile_aliases(db, member)
     for field, value in updates.items():
         if field == "role":
             if value is not None:
@@ -299,8 +313,12 @@ def update_member(
     if "display_name" in updates and updates["display_name"] != old_name:
         sync_name_aliases(db, member, old_name)
 
+    workspace_id, new_discord = member.workspace_id, updates.get("discord_user_id")
     _commit_member(db, member)
     db.refresh(member)
+    if discord_changed and new_discord:
+        add_discord_nickname_alias(db, workspace_id, member_id, new_discord)
+        db.refresh(member)
     return success(MemberResponse.model_validate(member).model_dump(mode="json"))
 
 

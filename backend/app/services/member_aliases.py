@@ -1,16 +1,27 @@
-"""팀원 이름에서 담당자 별칭을 자동으로 만든다 (#459).
+"""팀원 이름과 디스코드 닉네임에서 담당자 별칭을 자동으로 만든다 (#459).
 
-이름 별칭은 source=display_name, verified=True, confidence=1.0 이다. 사람이 정한(manual·learned)
+이름 별칭은 source=display_name, verified=True, confidence=1.0 이다. 닉네임 별칭은 source=discord_profile,
+alias_type=nickname, verified=False, confidence=0.8 이고 한글만으로 된 서버 별명·표시 이름만 쓴다. 사람이 정한(manual·learned)
 별칭과 같은 글자는 자동으로 넣지 않는다. 자동끼리 겹치면 둘 다 넣어 매칭이 ambiguous 가 되게 한다.
 """
+import logging
+import os
 import re
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.models import AliasSource, AliasType, Member, MemberAlias
+from app.models import AliasSource, AliasType, Integration, Member, MemberAlias
+from app.services import discord
+
+logger = logging.getLogger(__name__)
 
 NAME_ALIAS_CONFIDENCE = 1.0
+# 디스코드 닉네임은 사람이 확인하지 않은 값이라 이름 별칭보다 낮게 둔다.
+NICKNAME_ALIAS_CONFIDENCE = 0.8
+# 팀원 등록 요청 안에서 Discord 를 부르므로 오래 기다리지 않는다.
+DISCORD_LOOKUP_TIMEOUT = 3.0
 
 # 같은 글자를 이 출처가 다른 팀원에게 있으면 자동 별칭을 넣지 않는다.
 AUTO_SOURCES_BLOCKED_BY = (AliasSource.MANUAL, AliasSource.LEARNED)
@@ -79,3 +90,88 @@ def sync_name_aliases(db: Session, member: Member, old_display_name: str | None 
                 verified=True,
             )
         )
+
+
+def pick_discord_nickname(guild_member: dict) -> str | None:
+    """디스코드 서버 사용자 정보에서 별칭으로 쓸 닉네임을 고른다. 한글만으로 된 첫 값, 없으면 None.
+
+    서버 별명(nick) → 계정 표시 이름(global_name) 순으로 본다. 사용자 이름(username)은 보지 않는다.
+    """
+    user = guild_member.get("user")
+    candidates = [guild_member.get("nick"), user.get("global_name") if isinstance(user, dict) else None]
+    for value in candidates:
+        if isinstance(value, str) and re.fullmatch(r"[가-힣]+", value.strip()):
+            return value.strip()
+    return None
+
+
+def remove_discord_profile_aliases(db: Session, member: Member) -> None:
+    """팀원의 discord_profile 별칭을 모두 지운다. 디스코드 계정이 바뀌거나 풀릴 때 쓴다. 커밋하지 않는다."""
+    rows = db.execute(
+        select(MemberAlias).where(
+            MemberAlias.member_id == member.member_id,
+            MemberAlias.source == str(AliasSource.DISCORD_PROFILE),
+        )
+    ).scalars()
+    for alias in list(rows):
+        db.delete(alias)
+
+
+def add_discord_nickname_alias(
+    db: Session, workspace_id: str, member_id: str, discord_user_id: str
+) -> None:
+    """디스코드 서버 닉네임을 팀원의 별칭으로 넣는다. 팀원 커밋 뒤에 부르며 모든 실패를 삼킨다.
+
+    Discord 를 부르는 동안 DB 트랜잭션을 잡지 않도록 서버 ID 를 읽고 커밋해 트랜잭션을 닫은 뒤 부른다.
+    토큰·주소는 로그에 남기지 않는다.
+    """
+    token = os.getenv("DISCORD_BOT_TOKEN", "")
+    if not token:
+        logger.warning("DISCORD_BOT_TOKEN이 없어 디스코드 닉네임 별칭을 넣지 못했습니다 (workspace_id=%s)", workspace_id)
+        return
+    guild_id = db.execute(
+        select(Integration.provider_channel_id).where(
+            Integration.workspace_id == workspace_id, Integration.provider == "discord"
+        )
+    ).scalar_one_or_none()
+    db.commit()
+    if not guild_id:
+        logger.warning("Discord 서버가 연결되지 않아 닉네임 별칭을 넣지 못했습니다 (workspace_id=%s)", workspace_id)
+        return
+
+    try:
+        guild_member = discord.get_guild_member(
+            token, guild_id, discord_user_id, timeout=DISCORD_LOOKUP_TIMEOUT
+        )
+    except discord.DiscordApiError as exc:
+        logger.warning(
+            "디스코드 닉네임을 읽지 못했습니다 (workspace_id=%s, status=%s)", workspace_id, exc.status_code
+        )
+        return
+
+    nickname = pick_discord_nickname(guild_member)
+    if nickname is None:
+        return
+    held = db.execute(
+        select(MemberAlias.alias_id).where(
+            MemberAlias.member_id == member_id, MemberAlias.alias_text == nickname
+        ).limit(1)
+    ).first()
+    if held is not None or _taken_by_other(db, workspace_id, member_id, nickname):
+        return
+    db.add(
+        MemberAlias(
+            workspace_id=workspace_id,
+            member_id=member_id,
+            alias_text=nickname,
+            alias_type=AliasType.NICKNAME,
+            source=AliasSource.DISCORD_PROFILE,
+            confidence=NICKNAME_ALIAS_CONFIDENCE,
+            verified=False,
+        )
+    )
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        logger.warning("디스코드 닉네임 별칭을 저장하지 못했습니다 (workspace_id=%s)", workspace_id)
