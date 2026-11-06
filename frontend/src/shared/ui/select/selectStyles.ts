@@ -34,9 +34,10 @@ export const LIST_SIZE = {
   sheet: 'min-h-[0px] flex-1 overflow-y-auto',
 } as const
 
-/* 줄은 격자다 — 보조줄이 앞 아이콘 아래가 아니라 글자 아래에 선다 */
+/* 줄은 격자다 — 보조줄이 앞 아이콘 아래가 아니라 글자 아래에 선다.
+   목록은 높이 상한이 있는 flex 열이라 줄이 줄어들면 두 줄 항목의 글자가 겹친다 — 줄은 줄어들지 않고 목록이 스크롤한다 */
 export const ITEM =
-  'grid cursor-pointer grid-cols-[auto_minmax(0,1fr)_auto] items-center rounded-10 px-10 py-9 outline-none select-none data-[disabled]:cursor-not-allowed data-[disabled]:text-faint data-[highlighted]:bg-surface-selected data-[state=checked]:font-bold'
+  'grid shrink-0 cursor-pointer grid-cols-[auto_minmax(0,1fr)_auto] items-center rounded-10 px-10 py-9 outline-none select-none data-[disabled]:cursor-not-allowed data-[disabled]:text-faint data-[highlighted]:bg-surface-selected data-[state=checked]:font-bold'
 
 /** 시트 줄은 손가락으로 누른다 — 시안 52px */
 export const ITEM_SIZE = {

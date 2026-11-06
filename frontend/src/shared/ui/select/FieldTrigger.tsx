@@ -5,7 +5,7 @@ import { CHEVRON, CHEVRON_RIGHT, TRIGGER, TRIGGER_SIZE, triggerColor } from './s
 /** 닫힌 트리거에 보이는 고른 값 — 앞 아이콘과 글자. 보조줄은 보이지 않는다 */
 export function TriggerValue({ label, leading }: { label: string; leading?: ReactNode }) {
   return (
-    <span className="flex min-w-0 items-center gap-10">
+    <span className="flex min-w-0 items-center gap-10 overflow-hidden">
       {leading ? <span className="flex flex-none">{leading}</span> : null}
       <span className="truncate">{label}</span>
     </span>
