@@ -249,6 +249,44 @@ describe('휴대폰 셸 (D-180)', () => {
       'page',
     )
   })
+
+  it.each([
+    ['공간 메뉴', /^워크스페이스 바꾸기/, 390, 768],
+    ['공간 메뉴', /^워크스페이스 바꾸기/, 1024, 390],
+    ['계정 메뉴', /^내 계정/, 390, 768],
+    ['계정 메뉴', /^내 계정/, 1024, 390],
+  ] as const)(
+    '%s를 연 채 폭이 %ipx → %ipx 로 바뀌어도 열린 채 포커스가 남는다',
+    async (_, name, from, to) => {
+      const resize = stubViewportWidth(from)
+      renderApp('/workspaces/ws_01/dashboard')
+      await userEvent.click(await screen.findByRole('button', { name }))
+      const menu = await screen.findByRole('menu')
+      await waitFor(() => expect(menu).toContainElement(document.activeElement as HTMLElement))
+
+      resize(to)
+      expect(screen.getByRole('menu')).toBe(menu)
+      expect(menu).toContainElement(document.activeElement as HTMLElement)
+      await userEvent.keyboard('{Escape}')
+      await waitFor(() => expect(screen.getByRole('button', { name })).toHaveFocus())
+    },
+  )
+
+  it.each([
+    ['알림', /^알림/, 1024, 390],
+    ['공간 메뉴', /^워크스페이스 바꾸기/, 390, 1024],
+  ] as const)(
+    '자리를 옮기는 %s 버튼에 있던 포커스는 %ipx → %ipx 뒤에도 그 버튼에 있다',
+    async (_, name, from, to) => {
+      const resize = stubViewportWidth(from)
+      renderApp('/workspaces/ws_01/dashboard')
+      const trigger = await screen.findByRole('button', { name })
+      act(() => trigger.focus())
+      resize(to)
+      expect(screen.getByRole('button', { name })).toBe(trigger)
+      expect(trigger).toHaveFocus()
+    },
+  )
 })
 
 describe('메뉴 키보드 (U4-3)', () => {
