@@ -1,5 +1,5 @@
 import { paths } from '@/shared/config/routes'
-import { GuardedLink } from '@/shared/lib/unsaved-changes'
+import { StartLink } from './StartLink'
 import { BrandMark } from '@/shared/ui/brand-mark'
 import { Button } from '@/shared/ui/button'
 import { CARD_WIDTH, LINK_PRIMARY, NAV_SIZE } from './styles'
@@ -47,9 +47,9 @@ export function LandingHeader() {
           <Button variant="outline" size="landing-nav" aria-disabled="true">
             문의하기
           </Button>
-          <GuardedLink to={paths.login()} className={`${LINK_PRIMARY} ${NAV_SIZE}`}>
+          <StartLink to={paths.login()} className={`${LINK_PRIMARY} ${NAV_SIZE}`}>
             시작하기
-          </GuardedLink>
+          </StartLink>
         </div>
       </div>
     </header>

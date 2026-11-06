@@ -3,6 +3,7 @@ import { useCallback } from 'react'
 import { SESSION_QUERY_KEY } from '@/entities/user'
 import type { Session } from '@/entities/user'
 import { fetchFreshWorkspaces } from '@/entities/workspace'
+import { showSplash } from '@/shared/lib/splash'
 import { clearUserScope } from '../lib/userScope'
 import { clearSignOutMark } from './signOutMarker'
 
@@ -21,12 +22,19 @@ export function useEnterSession(): (session: Session) => Promise<void> {
 
   return useCallback(
     async (session) => {
-      await clearUserScope(queryClient)
-      // 가드가 이 캐시를 그대로 쓴다. 세션을 반영하기 전에 받아 둬야 이동이 한 번에 끝난다
-      // 실패는 목록 query 의 오류 상태로 남는다. 가드(RedirectIfAuthed)가 그것을 구독해 보인다
-      await fetchFreshWorkspaces(queryClient).catch(() => undefined)
-      clearSignOutMark()
-      queryClient.setQueryData(SESSION_QUERY_KEY, session)
+      // 로그인 직후의 공간 확인부터 도착한 화면이 그려질 때까지 스플래시가 덮는다 (#430).
+      // 공간 확인은 세션 반영 전에 끝나므로 RedirectIfAuthed 가 세션을 보는 때에는 이미 늦다
+      const releaseSplash = showSplash()
+      try {
+        await clearUserScope(queryClient)
+        // 가드가 이 캐시를 그대로 쓴다. 세션을 반영하기 전에 받아 둬야 이동이 한 번에 끝난다
+        // 실패는 목록 query 의 오류 상태로 남는다. 가드(RedirectIfAuthed)가 그것을 구독해 보인다
+        await fetchFreshWorkspaces(queryClient).catch(() => undefined)
+        clearSignOutMark()
+        queryClient.setQueryData(SESSION_QUERY_KEY, session)
+      } finally {
+        releaseSplash()
+      }
     },
     [queryClient],
   )

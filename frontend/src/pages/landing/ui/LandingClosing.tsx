@@ -1,5 +1,5 @@
 import { paths } from '@/shared/config/routes'
-import { GuardedLink } from '@/shared/lib/unsaved-changes'
+import { StartLink } from './StartLink'
 import { BrandMark } from '@/shared/ui/brand-mark'
 import { Button } from '@/shared/ui/button'
 import {
@@ -21,9 +21,9 @@ export function FinalCta() {
         돼요.
       </p>
       <div className="flex items-center gap-10 pt-8">
-        <GuardedLink to={paths.login()} className={`${LINK_PRIMARY} ${HERO_SIZE}`}>
+        <StartLink to={paths.login()} className={`${LINK_PRIMARY} ${HERO_SIZE}`}>
           시작하기
-        </GuardedLink>
+        </StartLink>
         <Button size="landing-hero" aria-disabled="true">
           문의하기
         </Button>

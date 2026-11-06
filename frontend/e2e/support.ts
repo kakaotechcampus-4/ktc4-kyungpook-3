@@ -52,11 +52,30 @@ export type Scenario =
   | 'messages-member-push'
   | 'messages-pm-self'
 
+/** 첫 방문 인트로를 본 기기 기록 (#430, entities/user introRecord). 키를 바꾸면 여기도 바꾼다 */
+const DEVICE_INTRO_KEY = 'first-visit-intro:device'
+
+export interface StartOptions {
+  /**
+   * 기본 true — 이 기기가 첫 방문 인트로를 이미 본 것으로 두어 랜딩의 `시작하기` 가 바로 로그인으로 간다.
+   * 인트로 자체를 보는 테스트만 false 로 둔다
+   */
+  deviceIntroSeen?: boolean
+}
+
 /**
  * 모의 db 를 그 시나리오로 초기화하고 path 로 들어간다. 시나리오 파라미터는 저장값보다 앞서고
- * 주소에서 바로 지워진다 (browserDb.prepareBrowserDb). 테스트마다 새 컨텍스트라 sessionStorage 도 비어 있다.
+ * 주소에서 바로 지워진다 (browserDb.prepareBrowserDb). 테스트마다 새 컨텍스트라 sessionStorage·localStorage 도 비어 있다.
  */
-export async function start(page: Page, scenario: Scenario, path = '/'): Promise<void> {
+export async function start(
+  page: Page,
+  scenario: Scenario,
+  path = '/',
+  { deviceIntroSeen = true }: StartOptions = {},
+): Promise<void> {
+  if (deviceIntroSeen) {
+    await page.addInitScript((key) => window.localStorage.setItem(key, 'seen'), DEVICE_INTRO_KEY)
+  }
   const url = new URL(path, 'http://placeholder')
   url.searchParams.set('msw-scenario', scenario)
   await page.goto(`${url.pathname}${url.search}`)
@@ -66,6 +85,17 @@ export async function start(page: Page, scenario: Scenario, path = '/'): Promise
   await expect(page.locator('#root main:not([aria-busy]), #root header').first()).toBeVisible({
     timeout: 15_000,
   })
+  // 로딩 스플래시(#430)는 화면 뼈대가 모두 걷힐 때까지 앱을 덮고 #root 를 inert 로 막는다. 헤더가 판 아래에 그려져 있어도
+  // 아직 포커스·클릭이 닿지 않으므로 판이 걷힐 때까지 기다린다
+  await expect(page.locator('.splash')).toHaveCount(0, { timeout: 15_000 })
+}
+
+/** 온보딩을 마친 계정의 첫 대시보드에 뜨는 매스 인트로를 닫는다 (#430). 닫아야 뒤의 대시보드를 읽고 누를 수 있다 */
+export async function closeFirstIntro(page: Page): Promise<void> {
+  const intro = page.getByRole('dialog', { name: '매스 소개' })
+  await expect(intro).toBeVisible()
+  await intro.getByRole('button', { name: '시작하기' }).click()
+  await expect(intro).toHaveCount(0)
 }
 
 /** 모의 OAuth 화면에서 결과를 골라 현재 탭으로 돌아온다 (D-158) */
