@@ -1,33 +1,62 @@
-import { screen, waitFor, within } from '@testing-library/react'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { getResponse, http } from 'msw'
+import { onTestFinished } from 'vitest'
 import { paths } from '@/shared/config/routes'
 import { db } from '@/shared/mock/db'
+import { handlers } from '@/shared/mock/handlers'
 import { applyScenario } from '@/shared/mock/scenarios'
+import { server } from '@/shared/mock/server'
 import { setMockRole } from '@/shared/mock/sessions'
-import { addHistory, updateTask } from '@/shared/mock/task-state'
+import { SILENCE_BLOCKER, blockBySilence, updateTask } from '@/shared/mock/task-state'
+import { deferred } from '@/shared/test/deferred'
+import { recordRequests } from '@/shared/test/requests'
+import type { RecordedRequest } from '@/shared/test/requests'
 import { renderApp } from './test/renderApp'
 
 /*
- * #330 무응답 자동 막힘 풀기. notifications-default 의 tk_06(STT 정확도 측정)은 스케줄러가 막았고,
- * tk_03(DB 스키마 정리)은 사람이 막았다
+ * #330 무응답 자동 막힘 풀기와 #365 판정. notifications-default 의 tk_06(STT 정확도 측정)은 스케줄러가 막았고,
+ * tk_03(DB 스키마 정리)은 사람이 막았다. 자동 막힘인지는 태스크 응답의 auto_blocked 로만 정한다
  */
 
 beforeEach(() => applyScenario('notifications-default'))
 
 const AUTO_NOTICE = '리마인드에 응답이 없어 자동으로 막혔어요.'
 
-function field(term: string): HTMLElement {
-  return within(screen.getByLabelText('태스크 정보')).getByText(term, { selector: 'dt' })
-    .nextElementSibling as HTMLElement
+const mockTask = (taskId: string) => db.tasks.find(({ task_id }) => task_id === taskId)!
+
+/** 자동 막힘 뒤 PM 이 사유만 고쳤다. 이력의 마지막 상태 변경은 스케줄러지만 풀 수 없다 */
+function editBlockerAfterAutoBlock(taskId: string) {
+  updateTask(mockTask(taskId), { blocker: '카톡으로 들었어요' }, 'mb_01')
 }
 
-async function openDetail(taskId: string, title: string) {
-  const app = renderApp(paths.tasks('ws_01', taskId))
-  await screen.findByRole('heading', { level: 2, name: title })
-  return app
+/** 자동 막힘 뒤 사람이 진행 중으로 바꿨다가 다시 막았다. 이력의 마지막 상태 변경은 사람이지만 풀 수 있다 */
+function reblockAfterAutoBlock(taskId: string) {
+  const task = mockTask(taskId)
+  if (task.status !== 'blocked') blockBySilence(task, '2026-09-18T08:30:00+09:00')
+  updateTask(task, { status: 'in_progress' }, 'mb_01')
+  updateTask(task, { status: 'blocked' }, 'mb_01')
 }
 
-describe('태스크 상세의 자동 막힘 (#330)', () => {
+/** 태스크 단건·이력 조회. 판정을 응답 필드로 하면 보드는 이 요청을 내지 않는다 */
+const perTaskReads = (requests: readonly RecordedRequest[]) =>
+  requests.filter(({ method, path }) => method === 'GET' && /^\/tasks\/[^/?]+/.test(path))
+
+const listReads = (requests: readonly RecordedRequest[]) =>
+  requests.filter(({ method, path }) => method === 'GET' && path === '/tasks?workspace_id=ws_01')
+
+describe('태스크 상세의 자동 막힘 (#330, #365)', () => {
+  function field(term: string): HTMLElement {
+    return within(screen.getByLabelText('태스크 정보')).getByText(term, { selector: 'dt' })
+      .nextElementSibling as HTMLElement
+  }
+
+  async function openDetail(taskId: string, title: string) {
+    const app = renderApp(paths.tasks('ws_01', taskId))
+    await screen.findByRole('heading', { level: 2, name: title })
+    return app
+  }
+
   it('PM 이 막힘을 풀면 상태와 사유가 막히기 전 값으로 돌아가고 알린다', async () => {
     const user = userEvent.setup()
     await openDetail('tk_06', 'STT 정확도 측정')
@@ -48,15 +77,23 @@ describe('태스크 상세의 자동 막힘 (#330)', () => {
     expect(within(field('막힌 사유')).queryByRole('button', { name: '막힘 풀기' })).toBeNull()
   })
 
-  it('사람이 건 막힘은 사유가 같은 문구여도 자동 막힘이 아니다', async () => {
-    const task = db.tasks.find(({ task_id }) => task_id === 'tk_03')!
-    task.blocker = '리마인드에 72시간 동안 응답이 없어요'
-    addHistory('tk_03', 'status', 'in_progress', 'blocked', 'mb_01', 'manual')
+  it('사람이 건 막힘은 사유가 스케줄러 문구여도 자동 막힘이 아니다', async () => {
+    mockTask('tk_03').blocker = SILENCE_BLOCKER
     await openDetail('tk_03', 'DB 스키마 정리')
-    await screen.findByRole('list', { name: '변경 이력' })
-    expect(field('막힌 사유')).toHaveTextContent('리마인드에 72시간 동안 응답이 없어요')
+    expect(field('막힌 사유')).toHaveTextContent(SILENCE_BLOCKER)
     expect(screen.queryByText(AUTO_NOTICE)).toBeNull()
     expect(screen.queryByRole('button', { name: '막힘 풀기' })).toBeNull()
+  })
+
+  it('자동 막힘 뒤 사람이 상태를 바꿨다가 다시 막았으면 이력과 달리 자동 막힘이고 풀 수 있다', async () => {
+    const user = userEvent.setup()
+    reblockAfterAutoBlock('tk_06')
+    await openDetail('tk_06', 'STT 정확도 측정')
+
+    await user.click(await within(field('막힌 사유')).findByRole('button', { name: '막힘 풀기' }))
+
+    await waitFor(() => expect(screen.getByTestId('task-status')).toHaveTextContent('진행 중'))
+    expect(field('막힌 사유')).toHaveTextContent('없음')
   })
 
   it('막힌 뒤 값이 바뀌어 409 면 안내하고 태스크를 다시 불러온다', async () => {
@@ -64,11 +101,7 @@ describe('태스크 상세의 자동 막힘 (#330)', () => {
     await openDetail('tk_06', 'STT 정확도 측정')
     const undo = await within(field('막힌 사유')).findByRole('button', { name: '막힘 풀기' })
     // 화면이 모르는 사이 다른 PM 이 사유를 고쳤다
-    updateTask(
-      db.tasks.find(({ task_id }) => task_id === 'tk_06')!,
-      { blocker: '카톡으로 들었어요' },
-      'mb_01',
-    )
+    editBlockerAfterAutoBlock('tk_06')
 
     await user.click(undo)
 
@@ -80,30 +113,92 @@ describe('태스크 상세의 자동 막힘 (#330)', () => {
     ).toBeInTheDocument()
     await waitFor(() => expect(field('막힌 사유')).toHaveTextContent('카톡으로 들었어요'))
     expect(screen.getByTestId('task-status')).toHaveTextContent('막힘')
+    expect(screen.queryByText(AUTO_NOTICE)).toBeNull()
   })
 })
 
-describe('보드의 자동 막힘 배지 (#330)', () => {
+describe('보드의 자동 막힘 배지 (#330, #365)', () => {
   const card = (title: string) =>
     screen.getByRole('link', { name: title }).closest('article') as HTMLElement
+  const badge = (title: string) =>
+    within(card(title)).queryByRole('button', { name: /막힌 사유 보기$/ })
 
-  it('자동 막힌 카드는 자동 막힘 배지이고, 사유 창에서 PM 이 풀 수 있다', async () => {
-    const user = userEvent.setup()
+  async function openBoard() {
     renderApp(`${paths.tasks('ws_01')}?view=board`)
-    const badge = await within(await waitFor(() => card('STT 정확도 측정'))).findByRole('button', {
-      name: '자동 막힘, 막힌 사유 보기',
-    })
+    await waitFor(() => expect(badge('STT 정확도 측정')).not.toBeNull())
+  }
+
+  const settle = () => act(() => new Promise((resolve) => setTimeout(resolve, 80)))
+
+  it('막힌 카드가 여럿이어도 카드마다 태스크·이력을 따로 받지 않는다', async () => {
+    reblockAfterAutoBlock('tk_01')
+    const log = recordRequests()
+    await openBoard()
+    await settle()
+
+    expect(badge('STT 정확도 측정')).toHaveAccessibleName('자동 막힘, 막힌 사유 보기')
+    expect(badge('로그인 API 연동')).toHaveAccessibleName('자동 막힘, 막힌 사유 보기')
+    expect(badge('DB 스키마 정리')).toHaveAccessibleName('막힘, 막힌 사유 보기')
+    expect(listReads(log.started)).toHaveLength(1)
+    expect(perTaskReads(log.started)).toEqual([])
+  })
+
+  it('배지는 이력이 아니라 응답의 auto_blocked 를 따른다', async () => {
+    editBlockerAfterAutoBlock('tk_06')
+    reblockAfterAutoBlock('tk_01')
+    await openBoard()
+
+    // 이력은 스케줄러 막힘이지만 사유를 고쳐 풀 수 없다
+    expect(badge('STT 정확도 측정')).toHaveAccessibleName('막힘, 막힌 사유 보기')
+    // 이력은 사람의 막힘이지만 풀 수 있다
+    expect(badge('로그인 API 연동')).toHaveAccessibleName('자동 막힘, 막힌 사유 보기')
+  })
+
+  it('PM 이 사유 창에서 풀면 목록을 다시 받기 전에 카드가 막히기 전 상태로 바뀐다', async () => {
+    const user = userEvent.setup()
+    const log = recordRequests()
+    await openBoard()
     expect(
       within(card('DB 스키마 정리')).getByRole('button', { name: '막힘, 막힌 사유 보기' }),
     ).toBeVisible()
 
-    await user.click(badge)
+    const listGate = deferred()
+    onTestFinished(() => listGate.resolve())
+    server.use(
+      http.get('/api/v1/tasks', async ({ request }) => {
+        const copy = request.clone()
+        await listGate.promise
+        return getResponse(handlers, copy)
+      }),
+    )
+    await user.click(badge('STT 정확도 측정')!)
     const dialog = await screen.findByRole('dialog', { name: '막힌 사유' })
-    expect(dialog).toHaveTextContent('리마인드에 72시간 동안 응답이 없어요')
+    expect(dialog).toHaveTextContent(SILENCE_BLOCKER)
     await user.click(within(dialog).getByRole('button', { name: '막힘 풀기' }))
 
+    await waitFor(() => expect(badge('STT 정확도 측정')).toBeNull())
+    // 풀기 뒤 다시 받는 목록은 아직 쥐고 있다 — 카드는 풀기 응답으로 바뀌었다
+    const undone = log.timeline.indexOf('answer POST /tasks/tk_06/auto-block/undo')
+    expect(listReads(log.started)).toHaveLength(2)
+    expect(log.timeline.slice(undone)).not.toContain('answer GET /tasks?workspace_id=ws_01')
+    expect(perTaskReads(log.started)).toEqual([])
+  })
+
+  it('PM 이 풀 때 409 면 목록을 다시 받아 배지를 고친다', async () => {
+    const user = userEvent.setup()
+    const log = recordRequests()
+    await openBoard()
+    await user.click(badge('STT 정확도 측정')!)
+    const dialog = await screen.findByRole('dialog', { name: '막힌 사유' })
+    editBlockerAfterAutoBlock('tk_06')
+
+    await user.click(within(dialog).getByRole('button', { name: '막힘 풀기' }))
+
+    expect(await screen.findByText('막힘을 풀지 못했어요')).toBeInTheDocument()
     await waitFor(() =>
-      expect(within(card('STT 정확도 측정')).queryByRole('button', { name: /막힘/ })).toBeNull(),
+      expect(badge('STT 정확도 측정')).toHaveAccessibleName('막힘, 막힌 사유 보기'),
     )
+    const refused = log.timeline.indexOf('answer POST /tasks/tk_06/auto-block/undo')
+    expect(log.timeline.slice(refused)).toContain('answer GET /tasks?workspace_id=ws_01')
   })
 })

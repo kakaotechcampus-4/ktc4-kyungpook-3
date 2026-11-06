@@ -1,4 +1,5 @@
 import { queryOptions } from '@tanstack/react-query'
+import type { QueryClient } from '@tanstack/react-query'
 import { request } from '@/shared/api/client'
 import { ApiError, CLIENT_ERROR_CODES, ERROR_CODES, createClientError } from '@/shared/api/errors'
 import { STALE_TIME } from '@/shared/api/queryClient'
@@ -72,6 +73,18 @@ export function taskDetailQueryOptions(workspaceId: string, taskId: string) {
     queryKey: workspaceKey(workspaceId, 'tasks', 'detail', taskId),
     queryFn: ({ signal }) => fetchTask(workspaceId, taskId, signal),
   })
+}
+
+/** 서버가 돌려준 태스크를 그 태스크의 목록 행·상세 캐시에 쓴다. 다른 태스크와 없는 캐시는 건드리지 않는다 */
+export function writeServerTask(queryClient: QueryClient, workspaceId: string, task: Task): void {
+  // 이미 더 새 버전을 받았으면 그대로 둔다
+  const newer = (current: Task) => (current.version > task.version ? current : task)
+  queryClient.setQueryData(taskDetailQueryOptions(workspaceId, task.id).queryKey, (current) =>
+    current === undefined ? undefined : newer(current),
+  )
+  queryClient.setQueryData(taskListQueryOptions(workspaceId).queryKey, (current) =>
+    current?.map((item) => (item.id === task.id ? newer(item) : item)),
+  )
 }
 
 /**
@@ -152,11 +165,19 @@ export async function retryTaskNotionSync(workspaceId: string, taskId: string): 
   )
 }
 
-/** 무응답 자동 막힘 풀기. PM 전용이다. 상태와 사유가 막히기 전 값으로 돌아간다. 막힌 뒤 값이 바뀌었으면 409 다 */
-export async function undoTaskAutoBlock(workspaceId: string, taskId: string): Promise<Task> {
+/**
+ * 무응답 자동 막힘 풀기. PM 전용이다. 상태와 사유가 막히기 전 값으로 돌아간다. 돌려받은 태스크의 `autoBlocked` 는 false 다.
+ * 지금 풀 수 없으면(`autoBlocked` 가 false 인 상태) 409 다
+ */
+export async function undoTaskAutoBlock(
+  workspaceId: string,
+  taskId: string,
+  signal?: AbortSignal,
+): Promise<Task> {
   return toWorkspaceTask(
     await request<TaskDto>(`/tasks/${encodeURIComponent(taskId)}/auto-block/undo`, {
       method: 'POST',
+      signal,
     }),
     workspaceId,
   )
