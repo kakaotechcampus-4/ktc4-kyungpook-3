@@ -601,6 +601,7 @@ Content-Disposition: 없음(내려받기 아님). Accept-Ranges: bytes
  "start_date": "2026-09-15",            // §4.7-6 반영됨. nullable
  "due_date": "2026-09-20",
  "notion_page_id": null,
+ "auto_blocked": false,                 // 지금 auto-block/undo 가 성공하면 true. 7개 응답 경로 모두 (#365, PR #373) → §5.7
  "created_at": "...", "updated_at": "..."}
 // 2026-10-11 코드 대조: 현재 TaskResponse 에는 "version"(정수)과
 // "notion_sync_status"(pending|synced|failed|null)도 있다 → 상단 「M6 태스크·승인 처리 경계」
@@ -1525,8 +1526,16 @@ members 에만 있고 Discord 목록에 없으면      → 비활성 (서버를 
 **자동 막힘 풀기.** 카톡이나 회의로 이미 들은 경우를 위해 PM 이 한 번에 되돌리는 경로다.
 
 - `POST /api/v1/tasks/{task_id}/auto-block/undo`: 상태와 사유를 막히기 전 값으로 되돌린다. 응답은 `TaskResponse`, 이력 출처는 `manual` 이다. PM 이 아니면 403.
-- 막힌 뒤 상태나 사유가 바뀌었거나 자동 막힘이 없으면 409 `AUTO_BLOCK_NOT_FOUND`.
-- 자동 막힘 여부는 `blocker` 문구로 가르지 말고 태스크 이력의 `status` 변경 중 `change_source: scheduler` 로 가린다.
+- 지금 풀 수 없으면(`auto_blocked` 가 false) 409 `AUTO_BLOCK_NOT_FOUND`. 성공 응답의 `auto_blocked` 는 false 다.
+- ~~자동 막힘 여부는 `blocker` 문구로 가르지 말고 태스크 이력의 `status` 변경 중 `change_source: scheduler` 로 가린다.~~ #365 에서 아래 `auto_blocked` 로 바꿨다.
+
+**자동 막힘 판정 `auto_blocked`** (#365).
+
+- 합의된 규약: 자동 막힘 여부는 `TaskResponse.auto_blocked` 하나로 가린다. 값은 「지금 `POST /tasks/{task_id}/auto-block/undo` 를 부르면 성공하는가」와 정확히 같다. `TaskResponse` 를 돌려주는 7개 경로(`POST /tasks`, `GET /tasks`, `GET /tasks/{task_id}`, `PATCH /tasks/{task_id}`, 이력 되돌리기, 자동 막힘 풀기, Notion 반영 재시도)에 항상 온다. PM·팀원이 같은 값을 받고, 풀기는 계속 PM 전용이라 버튼은 역할로 가린다. 409 를 받으면 다시 불러오는 처리는 그대로 둔다. 근거는 [#365 설계 확정 댓글](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/365#issuecomment-6637008816)과 같은 이슈의 BE 구현 댓글이다.
+- 현재 서버 구현: [BE PR #373](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/pull/373)(병합)을 코드로 확인했다. [scheduler.py](../../../backend/app/services/scheduler.py) 의 `auto_blocked_ids` 와 `undo_auto_block` 이 같은 판정 조각(`_auto_block_state`·`_undoable_watches`)을 쓴다. 태스크가 `blocked` 이고, 사유가 스케줄러 문구이고, 막힘을 직접 건(applied) 열린 무응답 감시 기록이 있고, 지워지지 않았으면 true 다. 이력은 보지 않는다. 목록은 잠금 없이 읽어서 스케줄러가 같은 순간에 커밋하면 잠깐 어긋날 수 있다.
+- 이전 이력 기준과 답이 다른 경우는 둘이다. 자동 막힘 뒤 PM 이 사유만 고치면 이력 기준은 자동 막힘이지만 `auto_blocked` 는 false(풀기 409)다. 자동 막힘 뒤 상태를 진행 중으로 바꿨다가 다시 막으면 이력 기준은 사람의 막힘이지만 `auto_blocked` 는 true(풀기 200, 막히기 전 값으로 되돌림)다.
+- FE 구현(#365): 매퍼가 `Task.autoBlocked` 로 싣고, 불리언이 아니면 던지지 않고 false(풀기 숨김)로 읽는다. 보드 배지와 상세 안내가 이 값만 본다. 막힌 카드마다 내던 `GET /tasks/{task_id}`·`GET /tasks/{task_id}/history` 를 없앴고, 이력 조회 실패 안내도 함께 지웠다. 풀기에 성공하면 응답의 태스크를 목록 행과 상세 캐시에 바로 쓰고 다시 받는다.
+- MSW: 막힘을 건 때의 막기 전 상태·사유를 `autoBlocks` 칸에 남기고, 이 기록과 상태·사유로 BE 와 같은 판정을 한다. 이미 막힌 태스크를 무응답으로 막으면 아무것도 바꾸지 않고 기록도 남기지 않는다. 지운 태스크 상태는 MSW 에 없다. 응답 7개 경로가 모두 이 판정을 싣는다. 모의 DB 버전이 13 이 되었다.
 
 **알림·푸시** (#318 에서 BE 구현, 프론트엔드 요청은 #330). 받는 사람은 팀원(`member`) 단위이고, 푸시 구독은 로그인 계정 단위다.
 

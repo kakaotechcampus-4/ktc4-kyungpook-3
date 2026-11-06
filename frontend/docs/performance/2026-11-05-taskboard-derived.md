@@ -104,6 +104,8 @@ URL 변경 때는 `board` 하나만 다시 돈다. 보드·캘린더·간트에�
 
 이 문제는 [#365](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/365)(태스크 응답에 자동 막힘 여부를 실어 보드의 이력 조회를 없애기)와 BE PR [#373](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/pull/373)(`auto_blocked`)이 다룬다. 위 요청 수는 그 작업의 근거로 남긴다.
 
+후속(#365로 해소, 2026-11-06): 보드와 상세가 이력 대신 태스크 응답의 `auto_blocked` 로 자동 막힘을 가린다. 막힌 카드마다 나가던 단건·이력 조회가 없어졌다. [taskAutoBlock.test.tsx](../../src/app/taskAutoBlock.test.tsx)의 「막힌 카드가 여럿이어도 카드마다 태스크·이력을 따로 받지 않는다」가 막힌 카드 셋(자동 막힘 둘, 사람의 막힘 하나)인 보드에서 태스크 목록 조회 한 번과 단건·이력 조회 0회를 확인한다. 500건 조건의 `reqs.cjs` 는 다시 재지 않았다.
+
 ### 다시 재는 방법
 
 측정 명령은 `frontend/docs/performance/2026-11-05-taskboard-derived/`에서 실행한다. 결과 JSON은 [results/](2026-11-05-taskboard-derived/results/)에 있다.
