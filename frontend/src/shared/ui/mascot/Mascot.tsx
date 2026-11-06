@@ -1,11 +1,33 @@
-import { useEffect, useId, useRef, useState, useSyncExternalStore } from 'react'
+import {
+  useEffect,
+  useId,
+  useImperativeHandle,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react'
+import type { Ref } from 'react'
 
 export type MascotPose =
   'idle' | 'left' | 'right' | 'squint' | 'upLeft' | 'upRight' | 'talking' | 'dial'
 
 export type MascotPalette = 'ink' | 'coral' | 'coralCap'
 
+export interface MascotHandle {
+  /** 클릭과 같은 버튼 눌림 1회. 움직임 줄이기면 아무것도 하지 않는다 */
+  press: () => void
+}
+
 export interface MascotProps {
+  ref?: Ref<MascotHandle>
+  /** 기본 false. 켜면 눈이 아치로 바뀌는 눈웃음 (§8-1) */
+  smile?: boolean
+  /** 주면 포즈와 상관없이 다이얼 줄무늬를 켜거나 끈다. 없으면 포즈 값(dial 포즈만 켜짐) */
+  dial?: boolean
+  /** 포즈 전환 지수 접근 계수. 기본 8 */
+  lambda?: number
+  /** 다이얼 줄무늬 스크롤 속도(칸/초). 기본 1.1 */
+  dialHz?: number
   /** 기본 'idle' */
   pose?: MascotPose
   /** 기본 'ink' — coral 계열은 컬러 스터디다 (§8-7) */
@@ -47,7 +69,7 @@ const STRIPE_ORIGIN = -6
 const DIAL_HZ = 1.1
 const STRIPE_INDICES = Array.from({ length: STRIPE_COUNT }, (_stripe, index) => index)
 
-/** 지수 ease-out 계수. 오버슈트 없음 (§8-1) */
+/** 포즈 전환 지수 ease-out 계수의 기본값. 오버슈트 없음 (§8-1) */
 const LAMBDA = 8
 const BLINK_SECONDS = 0.14
 const PRESS_SECONDS = 0.26
@@ -55,6 +77,19 @@ const PRESS_SECONDS = 0.26
 const PRESS_SCALE = 0.42
 const BOUNCE_HZ = 14
 const BOUNCE_AMOUNT = 0.018
+
+/** 눈웃음 정도(0–1)의 지수 접근 계수. 포즈 λ 와 따로 간다 */
+const SMILE_LAMBDA = 4.5
+/** 이보다 작으면 원래 캡슐 rect 를 그린다 */
+const SMILE_VISIBLE = 0.002
+/** 웃는 동안 눈 중심을 가운데에서 1.18배 바깥으로 */
+const SMILE_SPREAD = 0.18
+/* 아치 모양은 정규화 값이 아니라 240 좌표 그대로다 (§8-1) */
+const SMILE_HALF_WIDTH = 11.5
+const SMILE_END_Y = 4
+const SMILE_PEAK_Y = -5
+const SMILE_HANDLE = 0.4
+
 const REDUCED_MOTION = '(prefers-reduced-motion: reduce)'
 
 interface PoseValues {
@@ -202,9 +237,15 @@ const POSES: Record<MascotPose, PoseValues> = {
 
 const POSE_KEYS = Object.keys(FRONT) as Array<keyof PoseValues>
 
+function targetPose(pose: MascotPose, dial: boolean | undefined): PoseValues {
+  const values = POSES[pose]
+  return dial === undefined ? values : { ...values, dial: dial ? 1 : 0 }
+}
+
 /** 한 프레임에서 실제로 그리는 값. pose 는 목표가 아니라 지금 보간된 자세다 */
 interface MascotFrame {
   pose: PoseValues
+  smile: number
   blink: number
   press: number
   bounce: number
@@ -214,6 +255,7 @@ interface MascotFrame {
 /** rAF 사이에 들고 다니는 가변 상태. 이 객체를 바꾸는 것만으로는 리렌더가 나지 않는다 */
 interface MascotAnimation {
   pose: PoseValues
+  smile: number
   time: number
   last: number
   blinkT: number
@@ -224,9 +266,10 @@ interface MascotAnimation {
   dialPhase: number
 }
 
-function createAnimation(pose: PoseValues): MascotAnimation {
+function createAnimation(pose: PoseValues, smile: number): MascotAnimation {
   return {
     pose,
+    smile,
     time: 0,
     last: 0,
     blinkT: -1,
@@ -239,8 +282,8 @@ function createAnimation(pose: PoseValues): MascotAnimation {
 }
 
 /** 줄이기를 켜면 목표 포즈를 바로 그린다 — 깜빡임·눌림·bounce·줄무늬 스크롤 전부 0 (§8-5) */
-function stillFrame(pose: PoseValues): MascotFrame {
-  return { pose, blink: 0, press: 0, bounce: 0, dialShift: 0 }
+function stillFrame(pose: PoseValues, smile: number): MascotFrame {
+  return { pose, smile, blink: 0, press: 0, bounce: 0, dialShift: 0 }
 }
 
 /* 줄이기 설정은 한 번 읽고 마는 값이 아니라 **바깥 스토어**다 (§8-4). useSyncExternalStore 로 묶으면
@@ -265,11 +308,14 @@ function getServerReducedMotion(): boolean {
   return false
 }
 
-function approach(current: PoseValues, target: PoseValues, dt: number): PoseValues {
-  const factor = 1 - Math.exp(-LAMBDA * dt)
+function expApproach(current: number, target: number, dt: number, lambda: number): number {
+  return current + (target - current) * (1 - Math.exp(-lambda * dt))
+}
+
+function approach(current: PoseValues, target: PoseValues, dt: number, lambda: number): PoseValues {
   const next = { ...current }
   for (const key of POSE_KEYS) {
-    next[key] = current[key] + (target[key] - current[key]) * factor
+    next[key] = expApproach(current[key], target[key], dt, lambda)
   }
   return next
 }
@@ -327,6 +373,45 @@ function eyeAttributes(nx: number, ny: number, nw: number, nh: number, rot: numb
   }
 }
 
+interface SmileAttributes {
+  d: string
+  strokeWidth: number
+}
+
+/**
+ * 눈웃음 아치. 뜬 눈도 같은 3차 곡선의 퇴화형(아래 끝 → 위 → 아래 끝 세로선)으로 보고
+ * 두 모양을 같은 점끼리 보간한다. 그래서 눈이 사라졌다 나타나지 않고 이어서 휜다.
+ * 선 굵기가 캡슐 폭이고 끝이 둥글어서 smile 0 의 세로선은 캡슐과 같은 모양이 된다.
+ * 회전은 넣지 않는다 — 원본 morph 와 같다.
+ */
+function smileAttributes(
+  nx: number,
+  ny: number,
+  nw: number,
+  nh: number,
+  open: number,
+  smile: number,
+): SmileAttributes {
+  const w = nw * R
+  const h = Math.max(nh * R * open, w)
+  const half = (h - w) / 2
+  const cx = CENTER + nx * R * (1 + SMILE_SPREAD * smile)
+  const cy = CENTER + ny * R
+  // 두 제어점이 같으면 곡선 꼭대기는 끝점과 제어점의 1:3 지점이다. 5/3 이어야 꼭대기가 cy - half 에 닿는다
+  const k = (5 / 3) * half
+  const lerp = (from: number, to: number) => round(from + (to - from) * smile, 2)
+  const x0 = lerp(cx, cx - SMILE_HALF_WIDTH)
+  const y0 = lerp(cy + half, cy + SMILE_END_Y)
+  const c1x = lerp(cx, cx - SMILE_HALF_WIDTH * SMILE_HANDLE)
+  const c2x = lerp(cx, cx + SMILE_HALF_WIDTH * SMILE_HANDLE)
+  const cy1 = lerp(cy - k, cy + SMILE_PEAK_Y)
+  const x3 = lerp(cx, cx + SMILE_HALF_WIDTH)
+  return {
+    d: `M${x0} ${y0} C${c1x} ${cy1} ${c2x} ${cy1} ${x3} ${y0}`,
+    strokeWidth: round(w, 2),
+  }
+}
+
 /** 눌림이 없을 때는 아트보드의 정적 SVG 와 글자 그대로 같은 transform 을 낸다 */
 function capTransform(pose: PoseValues, press: number): string {
   const x = round(CENTER + pose.capX * R, 2)
@@ -355,7 +440,12 @@ function puppetTransform(bounce: number): string | undefined {
  * 금지: 그라데이션·그림자·입·눈썹·커서 추적·몸 회전. 승인 워크벤치 본문에는 넣지 않는다 (§8-7).
  */
 export function Mascot({
+  ref,
   pose = 'idle',
+  smile = false,
+  dial,
+  lambda = LAMBDA,
+  dialHz = DIAL_HZ,
   palette = 'ink',
   size = 96,
   label,
@@ -371,18 +461,22 @@ export function Mascot({
     getReducedMotion,
     getServerReducedMotion,
   )
-  const [animated, setAnimated] = useState<MascotFrame>(() => stillFrame(POSES[pose]))
+  const smileTarget = smile ? 1 : 0
+  const [animated, setAnimated] = useState<MascotFrame>(() =>
+    stillFrame(targetPose(pose, dial), smileTarget),
+  )
 
   // 가변 상태는 렌더 밖에서만 읽는다 — 이펙트와 클릭 핸들러가 전부다
   const animationRef = useRef<MascotAnimation | null>(null)
 
   useEffect(() => {
-    const animation = (animationRef.current ??= createAnimation(POSES[pose]))
-    const target = POSES[pose]
+    const target = targetPose(pose, dial)
+    const animation = (animationRef.current ??= createAnimation(target, smileTarget))
 
     // 줄이기를 켜면 루프를 아예 돌리지 않는다. 포즈 전환도 애니메이션하지 않는다 (§8-5)
     if (reduced) {
       animation.pose = target
+      animation.smile = smileTarget
       animation.blinkT = -1
       animation.pressT = -1
       return
@@ -397,9 +491,10 @@ export function Mascot({
       animation.last = now
       animation.time += dt
 
-      animation.pose = approach(animation.pose, target, dt)
+      animation.pose = approach(animation.pose, target, dt, lambda)
+      animation.smile = expApproach(animation.smile, smileTarget, dt, SMILE_LAMBDA)
       if (animation.pose.dial > 0.02 || target.dial > 0.02) {
-        animation.dialPhase += dt * DIAL_HZ
+        animation.dialPhase += dt * dialHz
       }
 
       if (animation.blinkT < 0) {
@@ -436,6 +531,7 @@ export function Mascot({
 
       setAnimated({
         pose: animation.pose,
+        smile: animation.smile,
         blink: blinkEnvelope(animation.blinkT),
         press: pressEnvelope(animation.pressT),
         bounce: Math.sin(animation.time * BOUNCE_HZ) * BOUNCE_AMOUNT * animation.pose.bounce,
@@ -449,16 +545,22 @@ export function Mascot({
     return () => {
       cancelAnimationFrame(raf)
     }
-  }, [pose, reduced])
+  }, [pose, dial, smileTarget, lambda, dialHz, reduced])
 
-  const handleClick = () => {
+  const press = () => {
     const animation = animationRef.current
     if (animation !== null && !reduced) animation.pressT = 0
+  }
+
+  useImperativeHandle(ref, () => ({ press }))
+
+  const handleClick = () => {
+    press()
     onClick?.()
   }
 
   // 줄이기를 켠 화면은 보간값이 아니라 목표 포즈 자체다 — 상태를 거치지 않고 여기서 가른다
-  const frame = reduced ? stillFrame(POSES[pose]) : animated
+  const frame = reduced ? stillFrame(targetPose(pose, dial), smileTarget) : animated
   const colors = PALETTES[palette]
   const current = frame.pose
 
@@ -566,8 +668,43 @@ export function Mascot({
         </g>
         {/* 눈만 얼굴 clip 에 든다. 타이머 버튼은 들어가지 않는다 (§8-7) */}
         <g data-part="eyes" clipPath={`url(#${faceClipId})`}>
-          <rect data-part="eye-l" {...eyeL} fill={colors.eye} />
-          <rect data-part="eye-r" {...eyeR} fill={colors.eye} />
+          {frame.smile > SMILE_VISIBLE ? (
+            <>
+              <path
+                data-part="smile-l"
+                {...smileAttributes(
+                  current.eyeLX,
+                  current.eyeLY,
+                  current.eyeLW,
+                  current.eyeLH,
+                  open,
+                  frame.smile,
+                )}
+                fill="none"
+                stroke={colors.eye}
+                strokeLinecap="round"
+              />
+              <path
+                data-part="smile-r"
+                {...smileAttributes(
+                  current.eyeRX,
+                  current.eyeRY,
+                  current.eyeRW,
+                  current.eyeRH,
+                  open,
+                  frame.smile,
+                )}
+                fill="none"
+                stroke={colors.eye}
+                strokeLinecap="round"
+              />
+            </>
+          ) : (
+            <>
+              <rect data-part="eye-l" {...eyeL} fill={colors.eye} />
+              <rect data-part="eye-r" {...eyeR} fill={colors.eye} />
+            </>
+          )}
         </g>
       </g>
     </svg>
