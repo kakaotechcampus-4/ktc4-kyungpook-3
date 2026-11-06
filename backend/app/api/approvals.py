@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_member, get_current_user, require_member, require_pm
 from app.core.database import get_db
 from app.core.errors import AppError, Envelope, ErrorCode, success
-from app.models import ApprovalRequest, ApprovalStatus, ApprovalType, ChangeSource, ExtractionItem, Member, MemberRole, Task, TaskStatus, User
+from app.models import ApprovalRequest, ApprovalStatus, ApprovalType, ChangeSource, ExtractionItem, Meeting, MeetingSource, Member, MemberRole, Task, TaskStatus, User
 from app.schemas.approval import (
     ApprovalCreateRequest,
     ApprovalListResponse,
@@ -38,6 +38,12 @@ _UNDETERMINABLE_FIELDS = frozenset({"due_date", "assignee_member_id"})
 
 # 제안에 그 필드가 없다는 표시. 제안이 null 인 것과 구분한다
 _ABSENT = object()
+
+
+def _change_source(db: Session, meeting_id: str | None, default: ChangeSource) -> str:
+    """채팅 회의에서 나온 항목이면 이력 출처를 chat으로, 아니면 default로 남긴다."""
+    meeting = db.get(Meeting, meeting_id) if meeting_id else None
+    return str(ChangeSource.CHAT if meeting and meeting.source == MeetingSource.CHAT else default)
 
 
 def _get_linkable_extraction_item(
@@ -230,8 +236,13 @@ def _apply_approval(
             assignee_member_id=final["assignee_member_id"],
             due_date=parse_date(final["due_date"], field="due_date"),
             status=str(TaskStatus.TODO),
+            # PM 이 정한 출처가 먼저다. 없으면 채팅 회의 항목은 chat, 그 밖은 meeting·manual
             change_source=payload.get("change_source")
-            or str(ChangeSource.MEETING if payload.get("meeting_id") else ChangeSource.MANUAL),
+            or _change_source(
+                db,
+                payload.get("meeting_id"),
+                ChangeSource.MEETING if payload.get("meeting_id") else ChangeSource.MANUAL,
+            ),
             changed_by=approval.resolved_by,
             # 제안 제목은 검증하지 않은 payload 값이라 문자열이 아닐 수 있다. 이력 칸에 맞게 문자열로 남긴다
             history_title=str(proposal["task_title"]),
@@ -304,7 +315,8 @@ def _apply_approval(
             db,
             task,
             proposed,
-            change_source=payload.get("change_source") or str(ChangeSource.MEETING),
+            change_source=payload.get("change_source")
+            or _change_source(db, payload.get("meeting_id"), ChangeSource.MEETING),
             changed_by=approval.resolved_by,
         )
         edited = dict(changed)

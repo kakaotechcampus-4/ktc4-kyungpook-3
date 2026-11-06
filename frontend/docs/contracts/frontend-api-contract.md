@@ -23,7 +23,7 @@
 | 확인 해제 | 충돌 후 승인 입력을 바꾸면 이전 확인 버전을 해제한다. 입력을 원래대로 되돌려도 과거 확인을 복원하지 않는다 |
 | 이미 처리됨 | 기존 `APPROVAL_ALREADY_RESOLVED` 재조회와 중복 전송·세션 보호를 유지한다 |
 | 승인 응답 | 원래 제안·근거는 유지하고 제안과 다른 값만 `payload.task_overrides`에 남는다. 완료 화면은 서버 응답의 원래 값에 보완값을 적용하며, `null`을 원래 값으로 대체하지 않는다 |
-| 이력 | PM 수정 필드는 `change_source: "manual"`, `changed_by`는 승인한 PM이다. 다른 필드의 출처는 서버의 payload `change_source`와 생성·수정별 기본값을 따른다. FE는 서버 이력을 표시한다 |
+| 이력 | 채팅 회의(`source: "chat"`)에서 나온 항목을 승인하면 이력 `change_source`가 `"chat"`으로 남는다(구현됨, BE 담당 리뷰 대기). 이 값이 처음으로 실제로 쓰인다. 채팅 회의 항목은 자동 반영되지 않고 모두 승인 대기다. PM 수정 필드는 `change_source: "manual"`, `changed_by`는 승인한 PM이다. 다른 필드의 출처는 서버의 payload `change_source`와 생성·수정별 기본값을 따른다. FE는 서버 이력을 표시한다 |
 
 요청 예시는 다음과 같다. 실행 검증 결과는 아래 연결한 M6 결과에서 별도로 구분한다.
 
@@ -374,7 +374,7 @@ AUDIO_TOO_LARGE(413)              DISCORD_USER_ALREADY_MAPPED(409)
 | GET | `/api/v1/meetings/{meeting_id}` | |
 
 ```jsonc
-// POST 요청 {"workspace_id", "title"?, "source"?}   source: discord | manual_upload
+// POST 요청 {"workspace_id", "title"?, "source"?, "started_at"?}   source: discord | manual_upload | chat
 //      응답 {"meeting_id", "workspace_id", "status", "started_at"}
 // PATCH /end 응답 {"meeting_id", "status", "ended_at"}
 
@@ -1101,8 +1101,8 @@ POST .../meetings/upload            multipart/form-data
   D-085·D-086 의 「로컬 업로드는 참석자 1명 이상」이 서버에서 보장되지 않는다. 프론트엔드가 폼에서 강제한다.
 - ⚠️ **PM 여부를 보지 않는다.** 소속(`get_current_member`)만 확인해 일반 팀원도 올릴 수 있다. M5 는 업로드를 PM 전용으로 정했다 → §4.0-②-17.
 - ⚠️ **파일도 저장하지 않는다** (`# TODO: 파일 저장 및 큐 전송`). 업로드는 `processing` 회의 행만 만든다.
-  회의는 영원히 `processing` 에 머무르며, 이 상태가 **다음 업로드를 409 로 막는다.**
-- `source` 가 `"manual_upload"` 로 고정된다. `MeetingSource` = `discord` \| `manual_upload` 그대로다 (D-157).
+  회의는 영원히 `processing` 에 머무르며, 이 상태가 **다음 업로드를 409 로 막는다(채팅 회의 제외).**
+- `source` 가 `"manual_upload"` 로 고정된다. `MeetingSource` = `discord` \| `manual_upload` \| `chat`이다 (D-157). `chat`은 디스코드 채팅 자동 수집이 만들고(구현됨, BE 담당 리뷰 대기) 웹 업로드는 계속 `manual_upload`다. `chat` 회의가 `processing`이어도 업로드는 막히지 않는다.
 - `started_at` 을 보내지 않으면 서버 시각이 된다. 프론트엔드는 **항상 보낸다** (D-079, D-164).
 
 ```jsonc
