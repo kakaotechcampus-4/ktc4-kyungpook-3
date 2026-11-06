@@ -826,3 +826,36 @@ describe('상세가 다른 공간의 회의라고 답할 때 (#349)', () => {
     expect(tracked()).toEqual([])
   })
 })
+
+describe('받아 둔 상세 뒤 403·404 (#405)', () => {
+  const refusal = (status: 403 | 404) =>
+    http.get('/api/v1/meetings/mt_10', () =>
+      status === 404
+        ? fail('MEETING_NOT_FOUND', '회의가 없습니다.', 404)
+        : fail('FORBIDDEN', '이 작업을 수행할 권한이 없습니다.', 403),
+    )
+
+  it.each([403, 404] as const)(
+    '처리 화면을 보는 중 polling 이 %i 를 받으면 마지막 정리 중 상태에 멈추지 않고 볼 수 없는 회의로 바꾸고 더 묻지 않는다',
+    async (status) => {
+      fakeIntervals()
+      const log = recordRequests()
+      await openProcessing()
+      await until(() => expect(detailRequests(log)).toHaveLength(1))
+
+      server.use(refusal(status))
+      await act(() => vi.advanceTimersByTimeAsync(3_000))
+      await until(() => expect(detailRequests(log)).toHaveLength(2))
+      await until(() => expect(tracked()).toEqual([]))
+      expect(
+        await screen.findByRole('heading', { name: '이 회의를 볼 수 없어요' }),
+      ).toBeInTheDocument()
+      expect(screen.queryByRole('heading', { name: PROCESSING_HEADING })).toBeNull()
+
+      await act(() => vi.advanceTimersByTimeAsync(9_000))
+      await settle()
+      expect(detailRequests(log)).toHaveLength(2)
+      expect(document.querySelectorAll('[data-toast-key]')).toHaveLength(0)
+    },
+  )
+})

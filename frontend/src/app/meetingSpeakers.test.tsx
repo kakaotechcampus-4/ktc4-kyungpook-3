@@ -397,3 +397,50 @@ describe('화자 지정 화면 — 팀원·대기 아님', () => {
     expect(log.started.filter(({ path }) => path.includes('/speakers'))).toEqual([])
   })
 })
+
+describe('받아 둔 지정 정보 뒤 403·404 (#405)', () => {
+  const refusal = (status: 403 | 404) =>
+    status === 404
+      ? fail('MEETING_NOT_FOUND', '회의가 없습니다.', 404)
+      : fail('FORBIDDEN', '이 작업을 수행할 권한이 없습니다.', 403)
+
+  it.each([403, 404] as const)(
+    '지정 폼을 연 뒤 다시 받은 상세가 %i 면 볼 수 없다고 바꾸고 화자 API 를 다시 묻지 않는다',
+    async (status) => {
+      const app = await openSpeakers()
+      server.use(http.get(`/api/v1/meetings/${AWAITING_MEETING_ID}`, () => refusal(status)))
+      await act(() =>
+        app.queryClient.invalidateQueries({
+          queryKey: workspaceKey('ws_01', 'meetings', 'detail', AWAITING_MEETING_ID),
+        }),
+      )
+      expect(await screen.findByRole('heading', { name: '이 회의를 볼 수 없어요' })).toBeVisible()
+      expect(screen.queryByRole('button', { name: /지정하고 정리 이어 가기/ })).toBeNull()
+      const log = recordRequests()
+      await act(() =>
+        app.queryClient.invalidateQueries({
+          queryKey: workspaceKey('ws_01', 'meetings', 'speakers', AWAITING_MEETING_ID),
+        }),
+      )
+      await act(() => new Promise((resolve) => setTimeout(resolve, 150)))
+      expect(log.started.filter(({ path }) => path.includes('/speakers'))).toEqual([])
+    },
+  )
+
+  it.each([403, 404] as const)(
+    '지정 폼을 연 뒤 다시 받은 화자 목록이 %i 면 볼 수 없다고 바꾼다',
+    async (status) => {
+      const app = await openSpeakers()
+      server.use(
+        http.get(`/api/v1/meetings/${AWAITING_MEETING_ID}/speakers`, () => refusal(status)),
+      )
+      await act(() =>
+        app.queryClient.invalidateQueries({
+          queryKey: workspaceKey('ws_01', 'meetings', 'speakers', AWAITING_MEETING_ID),
+        }),
+      )
+      expect(await screen.findByRole('heading', { name: '이 회의를 볼 수 없어요' })).toBeVisible()
+      expect(screen.queryByRole('button', { name: /지정하고 정리 이어 가기/ })).toBeNull()
+    },
+  )
+})
