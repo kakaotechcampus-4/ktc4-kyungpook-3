@@ -14,6 +14,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from capture import handoff as H
 from capture import ops_record as O
 from capture import recorder as R
@@ -31,6 +33,18 @@ def _worker(tmp_path, *, handoff=None, extractor=None, interval_s=3600.0, poll_s
                     extractor_factory=lambda: extractor, handoff_factory=lambda: handoff,
                     interval_s=interval_s, poll_s=poll_s, notifier=notifier, debug=debug,
                     intake_factory=lambda: intake)      # 기본은 intake 없음: 환경 변수에 기대지 않는다
+
+
+@pytest.fixture(autouse=True)
+def _no_assign(monkeypatch):
+    """기본은 지정 받기 없음(가짜 client 문자열로 BE 를 부르지 않는다). 쓰는 테스트가 W.assign_one 을 다시 끼운다."""
+    monkeypatch.setattr(W, "assign_one", lambda *a, **k: None)
+
+
+@pytest.fixture(autouse=True)
+def _no_report(monkeypatch):
+    """기본은 라벨 보고 없음(가짜 client 문자열로 BE 를 부르지 않는다). 쓰는 테스트가 W.report_one 을 다시 끼운다."""
+    monkeypatch.setattr(W, "report_one", lambda *a, **k: None, raising=False)
 
 
 def _status(path):
@@ -678,3 +692,165 @@ def test_default_intake_is_silent_when_the_flag_is_off(monkeypatch, capsys):
     _be_env(monkeypatch, url="", token="", key="", flag=None)
     assert W.intake_from_env() is None
     assert capsys.readouterr().out == ""
+
+
+# ---- 지정 받기(upload.assign)를 가져오기보다 먼저, 같은 한 회의 자리 안에서 부른다 ----
+
+class _Assign:
+    def __init__(self, worker, events=(), order=None):
+        self.worker, self.events, self.calls, self.locked, self.clients, self.order = worker, list(events), 0, [], [], order
+
+    def __call__(self, recordings_dir, *, client, **kw):
+        self.calls += 1
+        self.locked.append(self.worker._sem.locked())
+        self.clients.append(client)
+        if self.order is not None:
+            self.order.append("assign")
+        return self.events.pop(0) if self.events else None
+
+
+async def test_assign_runs_inside_the_sem_before_intake_with_the_intake_client(tmp_path, monkeypatch, capsys):
+    w = _worker(tmp_path, intake=("the-client", "diarizer"))
+    order = []
+    asg = _Assign(w, events=[SimpleNamespace(meeting_id="m7", event="mapped")], order=order)
+    rec = _Intake(w, after=lambda n: order.append("intake"))
+    monkeypatch.setattr(W, "assign_one", asg)
+    monkeypatch.setattr(W, "intake_one", rec)
+    await w._intake_once()
+    assert order == ["assign", "intake"]
+    assert asg.locked == [True] and asg.clients == ["the-client"] and not w._sem.locked() and w._current is None
+    assert "[worker] 업로드 m7 mapped" in capsys.readouterr().out
+
+
+async def test_assign_does_not_run_without_intake_or_after_stop(tmp_path, monkeypatch):
+    w = _worker(tmp_path, intake=None)
+    asg = _Assign(w)
+    monkeypatch.setattr(W, "assign_one", asg)
+    await w._intake_once()
+    w2 = _worker(tmp_path, intake=("c", "d"))
+    asg2 = _Assign(w2)
+    monkeypatch.setattr(W, "assign_one", asg2)
+    monkeypatch.setattr(W, "intake_one", _Intake(w2))
+    w2.stop()
+    await w2._intake_once()
+    assert asg.calls == 0 and asg2.calls == 0
+
+
+async def test_stop_during_assign_skips_intake(tmp_path, monkeypatch):
+    w = _worker(tmp_path, intake=("c", "d"))
+    rec = _Intake(w)
+
+    def stop_midway(*a, **k):
+        w.stop()
+        return None
+
+    monkeypatch.setattr(W, "assign_one", stop_midway)
+    monkeypatch.setattr(W, "intake_one", rec)
+    await w._intake_once()
+    assert rec.calls == 0 and w._current is None
+
+
+async def test_an_assign_crash_is_logged_and_intake_still_runs(tmp_path, monkeypatch, capsys):
+    w = _worker(tmp_path, intake=("c", "d"))
+    rec = _Intake(w)
+
+    def boom(*a, **k):
+        raise RuntimeError("지정 터짐")
+
+    monkeypatch.setattr(W, "assign_one", boom)
+    monkeypatch.setattr(W, "intake_one", rec)
+    await w._intake_once()
+    assert "[worker] 업로드 가져오기 오류: RuntimeError: 지정 터짐" in capsys.readouterr().out
+    assert rec.calls == 1 and w._current is None
+
+
+class _Report:
+    def __init__(self, worker, events=(), order=None, effect=None):
+        self.worker, self.events, self.calls, self.locked, self.clients, self.order, self.effect = worker, list(events), 0, [], [], order, effect
+
+    def __call__(self, recordings_dir, *, client, **kw):
+        self.calls += 1
+        self.locked.append(self.worker._sem.locked())
+        self.clients.append(client)
+        if self.order is not None:
+            self.order.append("report")
+        if self.effect:
+            self.effect()
+        return self.events.pop(0) if self.events else None
+
+
+async def test_report_runs_between_assign_and_intake_inside_the_sem(tmp_path, monkeypatch, capsys):
+    w = _worker(tmp_path, intake=("the-client", "diarizer"))
+    order = []
+    monkeypatch.setattr(W, "assign_one", _Assign(w, order=order))
+    rep = _Report(w, events=[SimpleNamespace(meeting_id="m7", event="reported")], order=order)
+    monkeypatch.setattr(W, "report_one", rep)
+    monkeypatch.setattr(W, "intake_one", _Intake(w, after=lambda n: order.append("intake")))
+    await w._intake_once()
+    assert order == ["assign", "report", "intake"]
+    assert rep.locked == [True] and rep.clients == ["the-client"] and w._current is None
+    assert "[worker] 업로드 m7 reported" in capsys.readouterr().out
+
+
+async def test_stop_during_report_skips_intake(tmp_path, monkeypatch):
+    w = _worker(tmp_path, intake=("c", "d"))
+    rec = _Intake(w)
+    monkeypatch.setattr(W, "report_one", _Report(w, effect=w.stop))
+    monkeypatch.setattr(W, "intake_one", rec)
+    await w._intake_once()
+    assert rec.calls == 0 and w._current is None
+
+
+async def test_stop_during_assign_skips_report_and_intake(tmp_path, monkeypatch):
+    w = _worker(tmp_path, intake=("c", "d"))
+    rep, rec = _Report(w), _Intake(w)
+    monkeypatch.setattr(W, "assign_one", lambda *a, **k: w.stop())
+    monkeypatch.setattr(W, "report_one", rep)
+    monkeypatch.setattr(W, "intake_one", rec)
+    await w._intake_once()
+    assert rep.calls == 0 and rec.calls == 0
+
+
+async def test_a_report_crash_is_logged_and_intake_still_runs(tmp_path, monkeypatch, capsys):
+    w = _worker(tmp_path, intake=("c", "d"))
+    rec = _Intake(w)
+
+    def boom(*a, **k):
+        raise RuntimeError("보고 터짐")
+
+    monkeypatch.setattr(W, "report_one", boom)
+    monkeypatch.setattr(W, "intake_one", rec)
+    await w._intake_once()
+    assert "[worker] 업로드 가져오기 오류: RuntimeError: 보고 터짐" in capsys.readouterr().out
+    assert rec.calls == 1 and w._current is None
+
+
+async def test_diarized_upload_becomes_mapped_through_the_worker_and_the_pass_leaves_it(tmp_path, monkeypatch):
+    import io
+    import numpy as np
+    import soundfile as sf
+    from tests.conftest import SEGS, FakeDiarizer
+    from upload import assign as A
+    from upload import report as RP
+
+    t = np.arange(12 * 16000) / 16000
+    buf = io.BytesIO()
+    sf.write(buf, (0.3 * np.sin(2 * np.pi * 220 * t)).astype(np.float32), 16000, format="WAV", subtype="PCM_16")
+    fake = FakeBe()
+    fake.add_upload("m1", audio=buf.getvalue(), stored_filename="a.wav", original_filename="회의.wav")
+    client = H.BeClient("http://be", session=fake, service_token="svc-token")
+    w = _worker(tmp_path, intake=(client, FakeDiarizer(SEGS)))
+    monkeypatch.setattr(W, "assign_one", A.assign_one)
+    monkeypatch.setattr(W, "report_one", RP.report_one)   # 보고도 진짜로: 워커 바퀴가 intake → report 로 이어진다
+    for _ in range(8):
+        await w._intake_once()
+    path = R.manifest_path(w.recordings_dir, "upload_m1")
+    assert _status(path) == "diarized"
+    assert sum(1 for m, p, _ in fake.calls if m == "POST" and p.endswith("/speakers")) == 1   # 워커가 한 번 보고했다
+    fake.assign("m1", {"SPEAKER_00": "u1", "SPEAKER_01": None})
+    await w._intake_once()
+    assert _status(path) == "mapped"
+    assert sum(1 for m, p, _ in fake.calls if m == "PATCH" and p.endswith("/resume")) == 1
+    assert await w.run_pass() == ([], [])
+    assert await w.run_pass(guild_id="1", manual=True) == ([], [])
+    assert _status(path) == "mapped"

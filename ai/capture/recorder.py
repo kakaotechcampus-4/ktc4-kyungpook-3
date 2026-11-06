@@ -534,7 +534,7 @@ class Claims:
 
 def backoff_s(attempts: int) -> float:
     """attempts 번째 실패 뒤 다음 시도까지 기다리는 초. RECOVERY_BACKOFF_S 에서 두 배씩 늘고 한 시간에서 멈춘다."""
-    return min(RECOVERY_BACKOFF_S * 2 ** max(0, attempts - 1), RECOVERY_BACKOFF_CEIL_S)
+    return min(RECOVERY_BACKOFF_S * 2 ** min(max(0, attempts - 1), 20), RECOVERY_BACKOFF_CEIL_S)
 
 
 def _count_failure(manifest: dict, handoff, failed_stage: str, *, give_up: bool = False) -> dict:

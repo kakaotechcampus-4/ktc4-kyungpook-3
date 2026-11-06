@@ -9,7 +9,7 @@
   claimed    BE 가 우리에게 넘겼다. 다음 단계: 원본 내려받기(size_bytes 비교) + 16k mono wav 변환
   converted  변환 wav 가 있다. 다음 단계: pyannoteAI 에 제출(job_id, submitted_at 기록)
   submitted  결과를 기다린다. 다음 단계: fetch 한 번. 끝났으면 트랙·매니페스트를 쓰고 원본·wav 를 지운다
-  done       diarized 매니페스트가 있다(끝)
+  done       diarized 매니페스트가 있다(끝). 이 뒤 화자 라벨 보고는 upload.report 가 같은 intake.json 의 `report` 키로 이어 간다(이 상태 기계는 그대로)
   failed     BE 에 fail(diarize)을 보냈다(끝)
 claiming -> claimed -> converted -> submitted -> done. 일시 실패는 상태를 그대로 두고 attempts, next_at 만 바꾼다(결과 시간
 초과·job 없음·분리 실패는 converted 로 돌아가 다시 제출한다). 영구 실패이거나 시도가 한도에 닿으면 fail_pending 을 적고

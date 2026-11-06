@@ -7,6 +7,8 @@ requests.Session 자리에 넣는다. 부른 순서를 calls 에 남기고 회�
 
 from __future__ import annotations
 
+import math
+
 
 class _Resp:
     def __init__(self, status: int, body: dict | None, text: str = "", *, raw: bytes | None = None,
@@ -80,6 +82,9 @@ class FakeBe:
         self.claim_lost = False       # True 면 claim 은 서버에 반영되지만 응답이 오지 않는다(시간 초과)
         self.streams: list[bool] = []             # 호출마다 받은 stream 인자(원본을 메모리에 다 올리지 않고 받는지 확인용)
         self.file_break_after: int | None = None   # 파일을 이 바이트까지 보내고 연결이 끊긴다
+        self.resume_lost = False      # True 면 resume 은 서버에 반영되지만 응답이 오지 않는다
+        self.speakers_lost = False    # True 면 라벨 보고는 서버에 반영되지만 응답이 오지 않는다
+        self._assign_n = 0            # 지정 순번. 지정 시각 순 정렬에 쓴다
         # 봇용 팀원 이름 조회 (backend/app/api/bot_lookups.py). 워크스페이스 → [{member_id, name, discord_user_id, aliases}]
         self.members: dict[str, list[dict]] = {}
         # 채팅 커서 (backend chat-cursor). 워크스페이스 → last_message_at 문자열. 없으면 data null
@@ -98,8 +103,34 @@ class FakeBe:
         item.update(over)
         self.meetings[meeting_id] = {"meeting_id": meeting_id, "workspace_id": workspace_id, "status": status,
                                      "title": item["title"]}
-        self.uploads[meeting_id] = {"item": item, "claimed": False, "audio": audio}
+        self.uploads[meeting_id] = {"item": item, "claimed": False, "audio": audio,
+                                     "speakers_assigned": None, "mapping": None, "resumed": False,
+                                     "speakers": None, "reported": False}
         return item
+
+    def mark_reported(self, meeting_id: str, labels: list[str]) -> None:
+        """테스트 준비용: 가져가고(claim) 이 라벨들을 보고한 상태(awaiting_speakers)로 만든다. 샘플 구간은 없다."""
+        u = self.uploads[meeting_id]
+        u["claimed"] = True
+        u["speakers"] = normalize_speakers([{"label": l, "total_sec": 1, "samples": []} for l in labels])
+        u["reported"] = True
+        self.meetings[meeting_id]["status"] = "awaiting_speakers"
+
+    def assign(self, meeting_id: str, mapping: dict) -> None:
+        """PM 이 화자 지정을 끝낸 것을 흉내 낸다(assign_speakers). 엄격하다: awaiting_speakers 이고 지정 키 집합이
+        보고한 라벨 집합과 같을 때만 지정을 기록하고 processing 으로 옮긴다. 아니면 테스트 준비 오류(AssertionError).
+        같은 지정을 반복하면 아무것도 하지 않는다."""
+        u = self.uploads[meeting_id]
+        if u["mapping"] is not None and u["mapping"] == dict(mapping):
+            return
+        status = self.meetings[meeting_id]["status"]
+        assert status == "awaiting_speakers", f"지정은 awaiting_speakers 에서만 받는다(지금 {status}): 먼저 보고하라"
+        labels = {s["label"] for s in u["speakers"] or []}
+        assert set(mapping) == labels, f"지정 키 {sorted(mapping)} 가 보고한 라벨 {sorted(labels)} 과 다르다"
+        self._assign_n += 1
+        u["speakers_assigned"] = self._assign_n
+        u["mapping"] = dict(mapping)
+        self.meetings[meeting_id]["status"] = "processing"
 
     def request(self, method: str, url: str, json=None, timeout=None, headers=None, stream=False):
         if self.down:
@@ -112,7 +143,7 @@ class FakeBe:
         self.streams.append(stream)
         body = json or {}
         if path.startswith("/uploads/"):
-            return self._uploads(method, path, headers or {})
+            return self._uploads(method, path, headers or {}, body)
         if method == "GET" and path.startswith("/integrations/discord/guilds/") and path.endswith("/workspace"):
             return self._guild_workspace(path.split("/")[4], headers or {})
         if method == "GET" and path.startswith("/workspaces/") and path.endswith("/chat-cursor"):
@@ -246,7 +277,7 @@ class FakeBe:
         items = [c for word, cands in self.similar.items() if word in body["text"] for c in cands]
         return _ok(200, {"items": items})
 
-    def _uploads(self, method: str, path: str, headers: dict):
+    def _uploads(self, method: str, path: str, headers: dict, body: dict | None = None):
         """토큰 → 대기 목록·claim·파일. 오류 코드는 uploads.py 와 같다."""
         if headers.get("X-Service-Token") != self.service_token:
             return _err(401, "UNAUTHENTICATED")
@@ -254,6 +285,14 @@ class FakeBe:
             items = [u["item"] for mid, u in self.uploads.items()
                      if not u["claimed"] and self.meetings[mid]["status"] == "processing"]
             return _ok(200, {"items": items})
+        if method == "GET" and path == "/uploads/assigned":   # parts[2] 분기보다 먼저(assigned 는 회의 ID 가 아니다)
+            rows = sorted((u for mid, u in self.uploads.items()
+                           if self.meetings[mid]["status"] == "processing" and u["speakers_assigned"] is not None
+                           and not u["resumed"]), key=lambda u: u["speakers_assigned"])
+            return _ok(200, {"items": [{"meeting_id": u["item"]["meeting_id"], "workspace_id": u["item"]["workspace_id"],
+                                        "title": u["item"]["title"], "started_at": u["item"]["started_at"],
+                                        "mapping": dict(u["mapping"]), "assigned_at": f"assign-{u['speakers_assigned']}"}
+                                       for u in rows]})
         parts = path.split("/")      # ["", "uploads", mid, action]
         mid, action = parts[2], parts[3] if len(parts) > 3 else ""
         u = self.uploads.get(mid)
@@ -270,8 +309,106 @@ class FakeBe:
                 import requests
                 raise requests.ConnectionError("claim 응답을 받지 못했다")
             return _ok(200, {"meeting_id": mid, "status": "processing"})
+        if method == "PATCH" and action == "resume":
+            return self._resume(mid, u)
+        if method == "POST" and action == "speakers":
+            return self._report_speakers(mid, u, body or {})
         if method == "GET" and action == "file":
             if u is None or u["audio"] is None:
                 return _err(404, "MEETING_NOT_FOUND", {"meeting_id": mid})
             return _Resp(200, None, raw=u["audio"], break_after=self.file_break_after)
         return _Resp(404, None, "not found")
+
+    def _resume(self, mid: str, u: dict | None):
+        """404 → ENDED(done·failed) → 이미 resume 했고 processing 이면 200 같은 mapping → 그 밖은 409 SPEAKERS_NOT_ASSIGNED.
+        speaker_assignment.resume_upload 의 판정 순서다. 클래스 상수 ENDED 는 processing 을 포함해 여기 쓰지 않는다."""
+        if u is None:
+            return _err(404, "MEETING_NOT_FOUND", {"meeting_id": mid})
+        status = self.meetings[mid]["status"]
+        if status in ("done", "failed"):
+            return _err(409, "MEETING_ALREADY_ENDED", {"meeting_id": mid, "status": status})
+        first = u["speakers_assigned"] is not None and not u["resumed"] and status == "processing"
+        retry = u["resumed"] and status == "processing"
+        if not (first or retry):
+            return _err(409, "SPEAKERS_NOT_ASSIGNED", {"meeting_id": mid, "status": status})
+        u["resumed"] = True
+        if self.resume_lost:
+            import requests
+            raise requests.ConnectionError("resume 응답을 받지 못했다")
+        return _ok(200, {"meeting_id": mid, "status": status, "mapping": dict(u["mapping"])})
+
+    def _report_speakers(self, mid: str, u: dict | None, body: dict):
+        """토큰(_uploads 가 먼저) → 400 검증 → processing·가져감·미보고면 awaiting_speakers 로 200 → 404 → done·failed 는
+        ENDED → 안 가져갔으면 UPLOAD_NOT_CLAIMED → 정규화한 내용이 같으면 200(status 는 현재 값) → SPEAKERS_ALREADY_REPORTED
+        (details.labels 이름순). speaker_assignment.report_speakers 의 판정 순서다."""
+        fields = _speakers_problems(body.get("speakers"))
+        if fields:
+            return _err(400, "INVALID_REQUEST", {"fields": fields})
+        normalized = normalize_speakers(body["speakers"])
+        if u is not None:
+            m = self.meetings[mid]
+            if m["status"] == "processing" and u["claimed"] and not u["reported"]:
+                m["status"] = "awaiting_speakers"
+                u["speakers"], u["reported"] = normalized, True
+                return self._speakers_response(mid, m["status"])
+        if u is None:
+            return _err(404, "MEETING_NOT_FOUND", {"meeting_id": mid})
+        status = self.meetings[mid]["status"]
+        if status in ("done", "failed"):
+            return _err(409, "MEETING_ALREADY_ENDED", {"meeting_id": mid, "status": status})
+        if not u["claimed"]:
+            return _err(409, "UPLOAD_NOT_CLAIMED", {"meeting_id": mid, "status": status})
+        stored = u["speakers"] or []
+        if u["reported"] and stored == normalized:
+            return self._speakers_response(mid, status)
+        return _err(409, "SPEAKERS_ALREADY_REPORTED",
+                    {"meeting_id": mid, "status": status, "labels": [s["label"] for s in stored]})
+
+    def _speakers_response(self, mid: str, status: str):
+        if self.speakers_lost:
+            import requests
+            raise requests.ConnectionError("라벨 보고 응답을 받지 못했다")
+        return _ok(200, {"meeting_id": mid, "status": status})
+
+
+def normalize_speakers(speakers: list[dict]) -> list[dict]:
+    """BE 의 normalize_speakers 와 같다: 라벨 이름순, 샘플 (start, end) 순, 숫자는 float."""
+    return sorted(({"label": s["label"], "total_sec": float(s["total_sec"]),
+                    "samples": sorted(({"start": float(x["start"]), "end": float(x["end"])} for x in s.get("samples") or []),
+                                      key=lambda x: (x["start"], x["end"]))} for s in speakers),
+                  key=lambda s: s["label"])
+
+
+def _num(v) -> bool:
+    return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+
+
+def _speakers_problems(speakers) -> list[dict]:
+    """schemas/upload.py(SpeakersReportRequest) 의 검증. BE 400 의 details.fields 모양({loc, msg})으로 돌려준다."""
+    if not isinstance(speakers, list) or not speakers:
+        return [{"loc": ["body", "speakers"], "msg": "List should have at least 1 item"}]
+    out: list[dict] = []
+    for i, s in enumerate(speakers):
+        at = ["body", "speakers", i]
+        if not isinstance(s, dict):
+            out.append({"loc": at, "msg": "Input should be an object"})
+            continue
+        label = s.get("label")
+        if not isinstance(label, str) or not 1 <= len(label) <= 64:
+            out.append({"loc": at + ["label"], "msg": "label 은 1~64자 문자열이어야 한다"})
+        elif not label.strip():
+            out.append({"loc": at + ["label"], "msg": "label 은 공백만으로 이루어질 수 없습니다"})
+        if not _num(s.get("total_sec")) or s["total_sec"] < 0:
+            out.append({"loc": at + ["total_sec"], "msg": "total_sec 는 0 이상의 유한한 수여야 한다"})
+        for j, x in enumerate(s.get("samples") or []):
+            xs = at + ["samples", j]
+            if not isinstance(x, dict) or not _num(x.get("start")) or x["start"] < 0:
+                out.append({"loc": xs + ["start"], "msg": "start 는 0 이상의 유한한 수여야 한다"})
+            elif not _num(x.get("end")):
+                out.append({"loc": xs + ["end"], "msg": "end 는 유한한 수여야 한다"})
+            elif x["end"] <= x["start"]:
+                out.append({"loc": xs, "msg": "end 는 start 보다 커야 합니다"})
+    labels = [s.get("label") for s in speakers if isinstance(s, dict) and isinstance(s.get("label"), str)]
+    if len(set(labels)) != len(labels):
+        out.append({"loc": ["body", "speakers"], "msg": "label 이 중복되었습니다"})
+    return out

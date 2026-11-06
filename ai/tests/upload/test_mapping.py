@@ -8,7 +8,7 @@ from capture import recorder as R
 from capture.recorder import STATUS_DIARIZED, STATUS_MAPPED
 from stt.transcribe import parse_wav_stem
 from tests.conftest import SEGS, STARTED, FakeDiarizer, _audio
-from upload.mapping import apply_mapping, main
+from upload.mapping import MappingBusy, apply_mapping, main
 from upload.prepare import prepare_upload
 
 
@@ -93,7 +93,7 @@ def test_locked_manifest_rejected(tmp_path):
     lock = R.try_lock(path)
     try:
         raw = path.read_bytes()
-        with pytest.raises(ValueError):
+        with pytest.raises(MappingBusy):
             apply_mapping(path, {"SPEAKER_00": "u-1", "SPEAKER_01": "u-2"})
         assert path.read_bytes() == raw
     finally:
@@ -188,3 +188,21 @@ def test_missing_manifest_raises_without_creating_lock_or_dir(tmp_path):
     assert not (tmp_path / "nope").exists()
     assert main([str(path), str(tmp_path / "m.json")]) == 1
     assert not (tmp_path / "nope").exists()
+
+
+def test_mapping_busy_is_a_value_error_only_for_lock_contention(tmp_path):
+    assert issubclass(MappingBusy, ValueError)
+    rec, path, _ = _make(tmp_path)
+    with pytest.raises(ValueError) as e:
+        apply_mapping(path, {"SPEAKER_00": "u-1"})
+    assert not isinstance(e.value, MappingBusy)
+
+
+def test_cli_output_does_not_claim_the_worker_ignores_uploads(tmp_path, capsys):
+    """지정은 BE 웹 경로 + upload.assign 이 받고 전사·인계는 #286 이라, '워커가 아직 집지 않는다' 는 오래된 말을 하지 않는다."""
+    rec, path, _ = _make(tmp_path)
+    mp = tmp_path / "m.json"
+    mp.write_text(json.dumps({"SPEAKER_00": "u-1", "SPEAKER_01": None}), encoding="utf-8")
+    assert main([str(path), str(mp)]) == 0
+    out = capsys.readouterr().out
+    assert "아직 집지" not in out and "#254" not in out and "#286" in out
