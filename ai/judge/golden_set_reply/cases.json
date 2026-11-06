@@ -1,0 +1,1277 @@
+{
+ "_meta": {
+  "synthetic": true,
+  "description": "리마인드 답장 판단 평가용 합성 사례. 실제 팀원 답장이 아니다. claim 은 POST /bot/replies/claim 의 item 모양 그대로다.",
+  "expected": "태스크별 변경 줄. task 가 null 이면 unknown·due_clear 줄이다. auto 는 status 줄이 certain 이어야 하는가다. 자동 반영 게이트의 나머지 조건(지금 값, 담당자)은 BE 몫이라 여기서 재지 않는다."
+ },
+ "cases": [
+  {
+   "id": "reply_01",
+   "shape": "한 질문 한 답",
+   "description": "태스크 이름 없이 답해도 물은 태스크 하나로 정해진다",
+   "claim": {
+    "message_id": "reply_01",
+    "attempt": 1,
+    "workspace_id": "eval",
+    "member_name": "재환",
+    "reply_date": "2026-11-04",
+    "lines": [
+     {
+      "sender": "pm",
+      "text": "재환님, API 명세서 작성 마감이 11/7 이라 한번 여쭤봐요. 어떻게 되고 있어요?"
+     },
+     {
+      "sender": "member",
+      "text": "네 완료했어요"
+     }
+    ],
+    "candidates": [
+     {
+      "task_id": "t_api",
+      "title": "API 명세서 작성",
+      "status": "in_progress",
+      "due_date": "2026-11-07",
+      "assignee_member_id": "m_jaehwan",
+      "updated_at": "2026-11-01T09:00:00+00:00"
+     }
+    ]
+   },
+   "expected": [
+    {
+     "task": "t_api",
+     "field": "status",
+     "value": "done",
+     "auto": true
+    }
+   ]
+  },
+  {
+   "id": "reply_02",
+   "shape": "한 질문 한 답",
+   "description": "시작 보고. todo 에서 in_progress",
+   "claim": {
+    "message_id": "reply_02",
+    "attempt": 1,
+    "workspace_id": "eval",
+    "member_name": "재환",
+    "reply_date": "2026-11-04",
+    "lines": [
+     {
+      "sender": "pm",
+      "text": "재환님, 배포 스크립트 작성 마감이 11/12 이라 한번 여쭤봐요. 어떻게 되고 있어요?"
+     },
+     {
+      "sender": "member",
+      "text": "네 오늘 시작했어요"
+     }
+    ],
+    "candidates": [
+     {
+      "task_id": "t_deploy",
+      "title": "배포 스크립트 작성",
+      "status": "todo",
+      "due_date": "2026-11-12",
+      "assignee_member_id": "m_jaehwan",
+      "updated_at": "2026-11-01T09:00:00+00:00"
+     }
+    ]
+   },
+   "expected": [
+    {
+     "task": "t_deploy",
+     "field": "status",
+     "value": "in_progress",
+     "auto": true
+    }
+   ]
+  },
+  {
+   "id": "reply_03",
+   "shape": "여러 질문 한 답",
+   "description": "완료와 마감 연기가 태스크별로 나뉜다",
+   "claim": {
+    "message_id": "reply_03",
+    "attempt": 1,
+    "workspace_id": "eval",
+    "member_name": "재환",
+    "reply_date": "2026-11-04",
+    "lines": [
+     {
+      "sender": "pm",
+      "text": "재환님, API 명세서 작성 마감이 11/7 이라 한번 여쭤봐요. 어떻게 되고 있어요?"
+     },
+     {
+      "sender": "pm",
+      "text": "재환님, 로그인 화면 구현 마감이 11/10 이라 한번 여쭤봐요. 어떻게 되고 있어요?"
+     },
+     {
+      "sender": "member",
+      "text": "API 명세서는 다 했고 로그인 화면은 다음 주 금요일까지 할게요"
+     }
+    ],
+    "candidates": [
+     {
+      "task_id": "t_api",
+      "title": "API 명세서 작성",
+      "status": "in_progress",
+      "due_date": "2026-11-07",
+      "assignee_member_id": "m_jaehwan",
+      "updated_at": "2026-11-01T09:00:00+00:00"
+     },
+     {
+      "task_id": "t_login",
+      "title": "로그인 화면 구현",
+      "status": "in_progress",
+      "due_date": "2026-11-10",
+      "assignee_member_id": "m_jaehwan",
+      "updated_at": "2026-11-01T09:00:00+00:00"
+     }
+    ]
+   },
+   "expected": [
+    {
+     "task": "t_api",
+     "field": "status",
+     "value": "done",
+     "auto": true
+    },
+    {
+     "task": "t_login",
+     "field": "due_date",
+     "value": "2026-11-13",
+     "auto": false
+    }
+   ]
+  },
+  {
+   "id": "reply_04",
+   "shape": "여러 질문 한 답",
+   "description": "한쪽만 바뀐다. 시작 전인 태스크는 줄이 없다",
+   "claim": {
+    "message_id": "reply_04",
+    "attempt": 1,
+    "workspace_id": "eval",
+    "member_name": "재환",
+    "reply_date": "2026-11-04",
+    "lines": [
+     {
+      "sender": "pm",
+      "text": "재환님, API 명세서 작성 마감이 11/7 이라 한번 여쭤봐요. 어떻게 되고 있어요?"
+     },
+     {
+      "sender": "pm",
+      "text": "재환님, 배포 스크립트 작성 마감이 11/12 이라 한번 여쭤봐요. 어떻게 되고 있어요?"
+     },
+     {
+      "sender": "member",
+      "text": "API 명세서는 끝냈고 배포 스크립트는 아직 시작 못 했어요"
+     }
+    ],
+    "candidates": [
+     {
+      "task_id": "t_api",
+      "title": "API 명세서 작성",
+      "status": "in_progress",
+      "due_date": "2026-11-07",
+      "assignee_member_id": "m_jaehwan",
+      "updated_at": "2026-11-01T09:00:00+00:00"
+     },
+     {
+      "task_id": "t_deploy",
+      "title": "배포 스크립트 작성",
+      "status": "todo",
+      "due_date": "2026-11-12",
+      "assignee_member_id": "m_jaehwan",
+      "updated_at": "2026-11-01T09:00:00+00:00"
+     }
+    ]
+   },
+   "expected": [
+    {
+     "task": "t_api",
+     "field": "status",
+     "value": "done",
+     "auto": true
+    }
+   ]
+  },
+  {
+   "id": "reply_05",
+   "shape": "여러 질문 한 답",
+   "description": "완료와 막힘",
+   "claim": {
+    "message_id": "reply_05",
+    "attempt": 1,
+    "workspace_id": "eval",
+    "member_name": "재환",
+    "reply_date": "2026-11-04",
+    "lines": [
+     {
+      "sender": "pm",
+      "text": "재환님, 로그인 화면 구현 마감이 11/10 이라 한번 여쭤봐요. 어떻게 되고 있어요?"
+     },
+     {
+      "sender": "pm",
+      "text": "재환님, API 명세서 작성 마감이 11/7 이라 한번 여쭤봐요. 어떻게 되고 있어요?"
+     },
+     {
+      "sender": "member",
+      "text": "로그인 화면은 다 했는데 API 명세서는 서버 스펙이 안 와서 막혔어요"
+     }
+    ],
+    "candidates": [
+     {
+      "task_id": "t_login",
+      "title": "로그인 화면 구현",
+      "status": "in_progress",
+      "due_date": "2026-11-10",
+      "assignee_member_id": "m_jaehwan",
+      "updated_at": "2026-11-01T09:00:00+00:00"
+     },
+     {
+      "task_id": "t_api",
+      "title": "API 명세서 작성",
+      "status": "in_progress",
+      "due_date": "2026-11-07",
+      "assignee_member_id": "m_jaehwan",
+      "updated_at": "2026-11-01T09:00:00+00:00"
+     }
+    ]
+   },
+   "expected": [
+    {
+     "task": "t_login",
+     "field": "status",
+     "value": "done",
+     "auto": true
+    },
+    {
+     "task": "t_api",
+     "field": "status",
+     "value": "blocked",
+     "auto": true
+    }
+   ]
+  },
+  {
+   "id": "reply_06",
+   "shape": "완료 명시",
+   "description": "다 했어요",
+   "claim": {
+    "message_id": "reply_06",
+    "attempt": 1,
+    "workspace_id": "eval",
+    "member_name": "재환",
+    "reply_date": "2026-11-04",
+    "lines": [
+     {
+      "sender": "pm",
+      "text": "재환님, API 명세서 작성 마감이 11/7 이라 한번 여쭤봐요. 어떻게 되고 있어요?"
+     },
+     {
+      "sender": "member",
+      "text": "API 명세서 다 했어요"
+     }
+    ],
+    "candidates": [
+     {
+      "task_id": "t_api",
+      "title": "API 명세서 작성",
+      "status": "in_progress",
+      "due_date": "2026-11-07",
+      "assignee_member_id": "m_jaehwan",
+      "updated_at": "2026-11-01T09:00:00+00:00"
+     }
+    ]
+   },
+   "expected": [
+    {
+     "task": "t_api",
+     "field": "status",
+     "value": "done",
+     "auto": true
+    }
+   ]
+  },
+  {
+   "id": "reply_07",
+   "shape": "완료 명시",
+   "description": "끝냈습니다",
+   "claim": {
+    "message_id": "reply_07",
+    "attempt": 1,
+    "workspace_id": "eval",
+    "member_name": "재환",
+    "reply_date": "2026-11-04",
+    "lines": [
+     {
+      "sender": "pm",
+      "text": "재환님, 로그인 화면 구현 마감이 11/10 이라 한번 여쭤봐요. 어떻게 되고 있어요?"
+     },
+     {
+      "sender": "member",
+      "text": "로그인 화면 구현 어제 끝냈습니다"
+     }
+    ],
+    "candidates": [
+     {
+      "task_id": "t_login",
+      "title": "로그인 화면 구현",
+      "status": "in_progress",
+      "due_date": "2026-11-10",
+      "assignee_member_id": "m_jaehwan",
+      "updated_at": "2026-11-01T09:00:00+00:00"
+     }
+    ]
+   },
+   "expected": [
+    {
+     "task": "t_login",
+     "field": "status",
+     "value": "done",
+     "auto": true
+    }
+   ]
+  },
+  {
+   "id": "reply_08",
+   "shape": "명시 안 된 완료",
+   "description": "올렸어요",
+   "claim": {
+    "message_id": "reply_08",
+    "attempt": 1,
+    "workspace_id": "eval",
+    "member_name": "재환",
+    "reply_date": "2026-11-04",
+    "lines": [
+     {
+      "sender": "pm",
+      "text": "재환님, API 명세서 작성 마감이 11/7 이라 한번 여쭤봐요. 어떻게 되고 있어요?"
+     },
+     {
+      "sender": "member",
+      "text": "API 명세서 노션에 올렸어요"
+     }
+    ],
+    "candidates": [
+     {
+      "task_id": "t_api",
+      "title": "API 명세서 작성",
+      "status": "in_progress",
+      "due_date": "2026-11-07",
+      "assignee_member_id": "m_jaehwan",
+      "updated_at": "2026-11-01T09:00:00+00:00"
+     }
+    ]
+   },
+   "expected": [
+    {
+     "task": "t_api",
+     "field": "status",
+     "value": "done",
+     "auto": false
+    }
+   ]
+  },
+  {
+   "id": "reply_09",
+   "shape": "명시 안 된 완료",
+   "description": "QA 넘겼어요",
+   "claim": {
+    "message_id": "reply_09",
+    "attempt": 1,
+    "workspace_id": "eval",
+    "member_name": "재환",
+    "reply_date": "2026-11-04",
+    "lines": [
+     {
+      "sender": "pm",
+      "text": "재환님, 로그인 화면 구현 마감이 11/10 이라 한번 여쭤봐요. 어떻게 되고 있어요?"
+     },
+     {
+      "sender": "member",
+      "text": "로그인 화면 QA 넘겼어요"
+     }
+    ],
+    "candidates": [
+     {
+      "task_id": "t_login",
+      "title": "로그인 화면 구현",
+      "status": "in_progress",
+      "due_date": "2026-11-10",
+      "assignee_member_id": "m_jaehwan",
+      "updated_at": "2026-11-01T09:00:00+00:00"
+     }
+    ]
+   },
+   "expected": [
+    {
+     "task": "t_login",
+     "field": "status",
+     "value": "done",
+     "auto": false
+    }
+   ]
+  },
+  {
+   "id": "reply_10",
+   "shape": "명시 안 된 완료",
+   "description": "붙였어요",
+   "claim": {
+    "message_id": "reply_10",
+    "attempt": 1,
+    "workspace_id": "eval",
+    "member_name": "재환",
+    "reply_date": "2026-11-04",
+    "lines": [
+     {
+      "sender": "pm",
+      "text": "재환님, 소셜 로그인 API 연동 마감이 11/9 이라 한번 여쭤봐요. 어떻게 되고 있어요?"
+     },
+     {
+      "sender": "member",
+      "text": "소셜 로그인 API 붙였어요"
+     }
+    ],
+    "candidates": [
+     {
+      "task_id": "t_oauth",
+      "title": "소셜 로그인 API 연동",
+      "status": "in_progress",
+      "due_date": "2026-11-09",
+      "assignee_member_id": "m_jaehwan",
+      "updated_at": "2026-11-01T09:00:00+00:00"
+     }
+    ]
+   },
+   "expected": [
+    {
+     "task": "t_oauth",
+     "field": "status",
+     "value": "done",
+     "auto": false
+    }
+   ]
+  },
+  {
+   "id": "reply_11",
+   "shape": "명시 안 된 완료",
+   "description": "두 태스크 모두 사실 보고",
+   "claim": {
+    "message_id": "reply_11",
+    "attempt": 1,
+    "workspace_id": "eval",
+    "member_name": "재환",
+    "reply_date": "2026-11-04",
+    "lines": [
+     {
+      "sender": "pm",
+      "text": "재환님, API 명세서 작성 마감이 11/7 이라 한번 여쭤봐요. 어떻게 되고 있어요?"
+     },
+     {
+      "sender": "pm",
+      "text": "재환님, QA 시나리오 정리 마감이 11/11 이라 한번 여쭤봐요. 어떻게 되고 있어요?"
+     },
+     {
+      "sender": "member",
+      "text": "API 명세서는 PR 올렸고 QA 시나리오는 QA 팀에 넘겼어요"
+     }
+    ],
+    "candidates": [
+     {
+      "task_id": "t_api",
+      "title": "API 명세서 작성",
+      "status": "in_progress",
+      "due_date": "2026-11-07",
+      "assignee_member_id": "m_jaehwan",
+      "updated_at": "2026-11-01T09:00:00+00:00"
+     },
+     {
+      "task_id": "t_qa",
+      "title": "QA 시나리오 정리",
+      "status": "in_progress",
+      "due_date": "2026-11-11",
+      "assignee_member_id": "m_jaehwan",
+      "updated_at": "2026-11-01T09:00:00+00:00"
+     }
+    ]
+   },
+   "expected": [
+    {
+     "task": "t_api",
+     "field": "status",
+     "value": "done",
+     "auto": false
+    },
+    {
+     "task": "t_qa",
+     "field": "status",
+     "value": "done",
+     "auto": false
+    }
+   ]
+  },
+  {
+   "id": "reply_12",
+   "shape": "명시 안 된 완료",
+   "description": "넘기고 검토 대기. 막힘이 아니고 끝났다는 말도 없다",
+   "claim": {
+    "message_id": "reply_12",
+    "attempt": 1,
+    "workspace_id": "eval",
+    "member_name": "재환",
+    "reply_date": "2026-11-04",
+    "lines": [
+     {
+      "sender": "pm",
+      "text": "재환님, QA 시나리오 정리 마감이 11/11 이라 한번 여쭤봐요. 어떻게 되고 있어요?"
+     },
+     {
+      "sender": "member",
+      "text": "QA 시나리오 넘기고 검토 기다리고 있어요"
+     }
+    ],
+    "candidates": [
+     {
+      "task_id": "t_qa",
+      "title": "QA 시나리오 정리",
+      "status": "in_progress",
+      "due_date": "2026-11-11",
+      "assignee_member_id": "m_jaehwan",
+      "updated_at": "2026-11-01T09:00:00+00:00"
+     }
+    ]
+   },
+   "expected": [
+    {
+     "task": "t_qa",
+     "field": "status",
+     "value": "done",
+     "auto": false
+    }
+   ]
+  },
+  {
+   "id": "reply_13",
+   "shape": "일부 완료",
+   "description": "절반. 상태가 그대로라 바뀌는 것이 없다",
+   "claim": {
+    "message_id": "reply_13",
+    "attempt": 1,
+    "workspace_id": "eval",
+    "member_name": "재환",
+    "reply_date": "2026-11-04",
+    "lines": [
+     {
+      "sender": "pm",
+      "text": "재환님, API 명세서 작성 마감이 11/7 이라 한번 여쭤봐요. 어떻게 되고 있어요?"
+     },
+     {
+      "sender": "member",
+      "text": "API 명세서 절반 정도 했어요"
+     }
+    ],
+    "candidates": [
+     {
+      "task_id": "t_api",
+      "title": "API 명세서 작성",
+      "status": "in_progress",
+      "due_date": "2026-11-07",
+      "assignee_member_id": "m_jaehwan",
+      "updated_at": "2026-11-01T09:00:00+00:00"
+     }
+    ]
+   },
+   "expected": []
+  },
+  {
+   "id": "reply_14",
+   "shape": "일부 완료",
+   "description": "거의",
+   "claim": {
+    "message_id": "reply_14",
+    "attempt": 1,
+    "workspace_id": "eval",
+    "member_name": "재환",
+    "reply_date": "2026-11-04",
+    "lines": [
+     {
+      "sender": "pm",
+      "text": "재환님, 로그인 화면 구현 마감이 11/10 이라 한번 여쭤봐요. 어떻게 되고 있어요?"
+     },
+     {
+      "sender": "member",
+      "text": "로그인 화면 거의 다 했어요"
+     }
+    ],
+    "candidates": [
+     {
+      "task_id": "t_login",
+      "title": "로그인 화면 구현",
+      "status": "in_progress",
+      "due_date": "2026-11-10",
+      "assignee_member_id": "m_jaehwan",
+      "updated_at": "2026-11-01T09:00:00+00:00"
+     }
+    ]
+   },
+   "expected": []
+  },
+  {
+   "id": "reply_15",
+   "shape": "일부 완료",
+   "description": "일부만",
+   "claim": {
+    "message_id": "reply_15",
+    "attempt": 1,
+    "workspace_id": "eval",
+    "member_name": "재환",
+    "reply_date": "2026-11-04",
+    "lines": [
+     {
+      "sender": "pm",
+      "text": "재환님, QA 시나리오 정리 마감이 11/11 이라 한번 여쭤봐요. 어떻게 되고 있어요?"
+     },
+     {
+      "sender": "member",
+      "text": "QA 시나리오 일부만 정리했어요"
+     }
+    ],
+    "candidates": [
+     {
+      "task_id": "t_qa",
+      "title": "QA 시나리오 정리",
+      "status": "in_progress",
+      "due_date": "2026-11-11",
+      "assignee_member_id": "m_jaehwan",
+      "updated_at": "2026-11-01T09:00:00+00:00"
+     }
+    ]
+   },
+   "expected": []
+  },
+  {
+   "id": "reply_16",
+   "shape": "진행 중",
+   "description": "todo 에서 시작",
+   "claim": {
+    "message_id": "reply_16",
+    "attempt": 1,
+    "workspace_id": "eval",
+    "member_name": "재환",
+    "reply_date": "2026-11-04",
+    "lines": [
+     {
+      "sender": "pm",
+      "text": "재환님, 배포 스크립트 작성 마감이 11/12 이라 한번 여쭤봐요. 어떻게 되고 있어요?"
+     },
+     {
+      "sender": "member",
+      "text": "배포 스크립트 지금 작성하고 있어요"
+     }
+    ],
+    "candidates": [
+     {
+      "task_id": "t_deploy",
+      "title": "배포 스크립트 작성",
+      "status": "todo",
+      "due_date": "2026-11-12",
+      "assignee_member_id": "m_jaehwan",
+      "updated_at": "2026-11-01T09:00:00+00:00"
+     }
+    ]
+   },
+   "expected": [
+    {
+     "task": "t_deploy",
+     "field": "status",
+     "value": "in_progress",
+     "auto": true
+    }
+   ]
+  },
+  {
+   "id": "reply_17",
+   "shape": "진행 중",
+   "description": "이미 in_progress 라 바뀌는 것이 없다",
+   "claim": {
+    "message_id": "reply_17",
+    "attempt": 1,
+    "workspace_id": "eval",
+    "member_name": "재환",
+    "reply_date": "2026-11-04",
+    "lines": [
+     {
+      "sender": "pm",
+      "text": "재환님, API 명세서 작성 마감이 11/7 이라 한번 여쭤봐요. 어떻게 되고 있어요?"
+     },
+     {
+      "sender": "member",
+      "text": "네 API 명세서 계속 하고 있어요"
+     }
+    ],
+    "candidates": [
+     {
+      "task_id": "t_api",
+      "title": "API 명세서 작성",
+      "status": "in_progress",
+      "due_date": "2026-11-07",
+      "assignee_member_id": "m_jaehwan",
+      "updated_at": "2026-11-01T09:00:00+00:00"
+     }
+    ]
+   },
+   "expected": []
+  },
+  {
+   "id": "reply_18",
+   "shape": "막힘",
+   "description": "필요한 것이 안 왔다",
+   "claim": {
+    "message_id": "reply_18",
+    "attempt": 1,
+    "workspace_id": "eval",
+    "member_name": "재환",
+    "reply_date": "2026-11-04",
+    "lines": [
+     {
+      "sender": "pm",
+      "text": "재환님, API 명세서 작성 마감이 11/7 이라 한번 여쭤봐요. 어떻게 되고 있어요?"
+     },
+     {
+      "sender": "member",
+      "text": "API 명세서 서버 스펙이 안 와서 더 못 하고 있어요"
+     }
+    ],
+    "candidates": [
+     {
+      "task_id": "t_api",
+      "title": "API 명세서 작성",
+      "status": "in_progress",
+      "due_date": "2026-11-07",
+      "assignee_member_id": "m_jaehwan",
+      "updated_at": "2026-11-01T09:00:00+00:00"
+     }
+    ]
+   },
+   "expected": [
+    {
+     "task": "t_api",
+     "field": "status",
+     "value": "blocked",
+     "auto": true
+    }
+   ]
+  },
+  {
+   "id": "reply_19",
+   "shape": "막힘",
+   "description": "막혔어요. 무응답 막힘의 시계가 도는 태스크는 막기 전 상태로 온다",
+   "claim": {
+    "message_id": "reply_19",
+    "attempt": 1,
+    "workspace_id": "eval",
+    "member_name": "재환",
+    "reply_date": "2026-11-04",
+    "lines": [
+     {
+      "sender": "pm",
+      "text": "재환님, 로그인 화면 구현 마감이 11/10 이라 한번 여쭤봐요. 어떻게 되고 있어요?"
+     },
+     {
+      "sender": "member",
+      "text": "디자인 시안을 못 받아서 로그인 화면이 막혔어요"
+     }
+    ],
+    "candidates": [
+     {
+      "task_id": "t_login",
+      "title": "로그인 화면 구현",
+      "status": "in_progress",
+      "due_date": "2026-11-10",
+      "assignee_member_id": "m_jaehwan",
+      "updated_at": "2026-11-01T09:00:00+00:00"
+     }
+    ]
+   },
+   "expected": [
+    {
+     "task": "t_login",
+     "field": "status",
+     "value": "blocked",
+     "auto": true
+    }
+   ]
+  },
+  {
+   "id": "reply_20",
+   "shape": "마감 연기",
+   "description": "상대 날짜",
+   "claim": {
+    "message_id": "reply_20",
+    "attempt": 1,
+    "workspace_id": "eval",
+    "member_name": "재환",
+    "reply_date": "2026-11-04",
+    "lines": [
+     {
+      "sender": "pm",
+      "text": "재환님, 로그인 화면 구현 마감이 11/10 이라 한번 여쭤봐요. 어떻게 되고 있어요?"
+     },
+     {
+      "sender": "member",
+      "text": "로그인 화면 다음 주 금요일까지 미룰게요"
+     }
+    ],
+    "candidates": [
+     {
+      "task_id": "t_login",
+      "title": "로그인 화면 구현",
+      "status": "in_progress",
+      "due_date": "2026-11-10",
+      "assignee_member_id": "m_jaehwan",
+      "updated_at": "2026-11-01T09:00:00+00:00"
+     }
+    ]
+   },
+   "expected": [
+    {
+     "task": "t_login",
+     "field": "due_date",
+     "value": "2026-11-13",
+     "auto": false
+    }
+   ]
+  },
+  {
+   "id": "reply_21",
+   "shape": "마감 연기",
+   "description": "일만 있는 날짜",
+   "claim": {
+    "message_id": "reply_21",
+    "attempt": 1,
+    "workspace_id": "eval",
+    "member_name": "재환",
+    "reply_date": "2026-11-04",
+    "lines": [
+     {
+      "sender": "pm",
+      "text": "재환님, API 명세서 작성 마감이 11/7 이라 한번 여쭤봐요. 어떻게 되고 있어요?"
+     },
+     {
+      "sender": "member",
+      "text": "API 명세서는 14일까지 할게요"
+     }
+    ],
+    "candidates": [
+     {
+      "task_id": "t_api",
+      "title": "API 명세서 작성",
+      "status": "in_progress",
+      "due_date": "2026-11-07",
+      "assignee_member_id": "m_jaehwan",
+      "updated_at": "2026-11-01T09:00:00+00:00"
+     }
+    ]
+   },
+   "expected": [
+    {
+     "task": "t_api",
+     "field": "due_date",
+     "value": "2026-11-14",
+     "auto": false
+    }
+   ]
+  },
+  {
+   "id": "reply_22",
+   "shape": "관계없는 말",
+   "description": "확인만",
+   "claim": {
+    "message_id": "reply_22",
+    "attempt": 1,
+    "workspace_id": "eval",
+    "member_name": "재환",
+    "reply_date": "2026-11-04",
+    "lines": [
+     {
+      "sender": "pm",
+      "text": "재환님, API 명세서 작성 마감이 11/7 이라 한번 여쭤봐요. 어떻게 되고 있어요?"
+     },
+     {
+      "sender": "member",
+      "text": "네 확인했어요"
+     }
+    ],
+    "candidates": [
+     {
+      "task_id": "t_api",
+      "title": "API 명세서 작성",
+      "status": "in_progress",
+      "due_date": "2026-11-07",
+      "assignee_member_id": "m_jaehwan",
+      "updated_at": "2026-11-01T09:00:00+00:00"
+     }
+    ]
+   },
+   "expected": []
+  },
+  {
+   "id": "reply_23",
+   "shape": "관계없는 말",
+   "description": "잡담",
+   "claim": {
+    "message_id": "reply_23",
+    "attempt": 1,
+    "workspace_id": "eval",
+    "member_name": "재환",
+    "reply_date": "2026-11-04",
+    "lines": [
+     {
+      "sender": "pm",
+      "text": "재환님, 로그인 화면 구현 마감이 11/10 이라 한번 여쭤봐요. 어떻게 되고 있어요?"
+     },
+     {
+      "sender": "member",
+      "text": "오늘 점심 뭐 드셨어요?"
+     }
+    ],
+    "candidates": [
+     {
+      "task_id": "t_login",
+      "title": "로그인 화면 구현",
+      "status": "in_progress",
+      "due_date": "2026-11-10",
+      "assignee_member_id": "m_jaehwan",
+      "updated_at": "2026-11-01T09:00:00+00:00"
+     }
+    ]
+   },
+   "expected": []
+  },
+  {
+   "id": "reply_24",
+   "shape": "후보 둘에 다 했어요",
+   "description": "어느 쪽인지 말하지 않았다",
+   "claim": {
+    "message_id": "reply_24",
+    "attempt": 1,
+    "workspace_id": "eval",
+    "member_name": "재환",
+    "reply_date": "2026-11-04",
+    "lines": [
+     {
+      "sender": "pm",
+      "text": "재환님, API 명세서 작성 마감이 11/7 이라 한번 여쭤봐요. 어떻게 되고 있어요?"
+     },
+     {
+      "sender": "pm",
+      "text": "재환님, 로그인 화면 구현 마감이 11/10 이라 한번 여쭤봐요. 어떻게 되고 있어요?"
+     },
+     {
+      "sender": "member",
+      "text": "다 했어요"
+     }
+    ],
+    "candidates": [
+     {
+      "task_id": "t_api",
+      "title": "API 명세서 작성",
+      "status": "in_progress",
+      "due_date": "2026-11-07",
+      "assignee_member_id": "m_jaehwan",
+      "updated_at": "2026-11-01T09:00:00+00:00"
+     },
+     {
+      "task_id": "t_login",
+      "title": "로그인 화면 구현",
+      "status": "in_progress",
+      "due_date": "2026-11-10",
+      "assignee_member_id": "m_jaehwan",
+      "updated_at": "2026-11-01T09:00:00+00:00"
+     }
+    ]
+   },
+   "expected": [
+    {
+     "task": null,
+     "field": "unknown",
+     "value": null,
+     "auto": false
+    }
+   ]
+  },
+  {
+   "id": "reply_25",
+   "shape": "후보 둘에 다 했어요",
+   "description": "지시어만 있다",
+   "claim": {
+    "message_id": "reply_25",
+    "attempt": 1,
+    "workspace_id": "eval",
+    "member_name": "재환",
+    "reply_date": "2026-11-04",
+    "lines": [
+     {
+      "sender": "pm",
+      "text": "재환님, QA 시나리오 정리 마감이 11/11 이라 한번 여쭤봐요. 어떻게 되고 있어요?"
+     },
+     {
+      "sender": "pm",
+      "text": "재환님, 로그인 화면 구현 마감이 11/10 이라 한번 여쭤봐요. 어떻게 되고 있어요?"
+     },
+     {
+      "sender": "member",
+      "text": "그거 끝났어요"
+     }
+    ],
+    "candidates": [
+     {
+      "task_id": "t_qa",
+      "title": "QA 시나리오 정리",
+      "status": "in_progress",
+      "due_date": "2026-11-11",
+      "assignee_member_id": "m_jaehwan",
+      "updated_at": "2026-11-01T09:00:00+00:00"
+     },
+     {
+      "task_id": "t_login",
+      "title": "로그인 화면 구현",
+      "status": "in_progress",
+      "due_date": "2026-11-10",
+      "assignee_member_id": "m_jaehwan",
+      "updated_at": "2026-11-01T09:00:00+00:00"
+     }
+    ]
+   },
+   "expected": [
+    {
+     "task": null,
+     "field": "unknown",
+     "value": null,
+     "auto": false
+    }
+   ]
+  },
+  {
+   "id": "reply_26",
+   "shape": "앞 답장 문맥",
+   "description": "앞 답장의 마감은 줄이 되지 않는다",
+   "claim": {
+    "message_id": "reply_26",
+    "attempt": 1,
+    "workspace_id": "eval",
+    "member_name": "재환",
+    "reply_date": "2026-11-04",
+    "lines": [
+     {
+      "sender": "pm",
+      "text": "재환님, API 명세서 작성 마감이 11/7 이라 한번 여쭤봐요. 어떻게 되고 있어요?"
+     },
+     {
+      "sender": "pm",
+      "text": "재환님, 로그인 화면 구현 마감이 11/10 이라 한번 여쭤봐요. 어떻게 되고 있어요?"
+     },
+     {
+      "sender": "member",
+      "text": "API 명세서는 금요일까지 할게요"
+     },
+     {
+      "sender": "member",
+      "text": "로그인 화면은 다 했어요"
+     }
+    ],
+    "candidates": [
+     {
+      "task_id": "t_api",
+      "title": "API 명세서 작성",
+      "status": "in_progress",
+      "due_date": "2026-11-07",
+      "assignee_member_id": "m_jaehwan",
+      "updated_at": "2026-11-01T09:00:00+00:00"
+     },
+     {
+      "task_id": "t_login",
+      "title": "로그인 화면 구현",
+      "status": "in_progress",
+      "due_date": "2026-11-10",
+      "assignee_member_id": "m_jaehwan",
+      "updated_at": "2026-11-01T09:00:00+00:00"
+     }
+    ]
+   },
+   "expected": [
+    {
+     "task": "t_login",
+     "field": "status",
+     "value": "done",
+     "auto": true
+    }
+   ]
+  },
+  {
+   "id": "reply_27",
+   "shape": "앞 답장 문맥",
+   "description": "앞 답장이 문맥이고 이번 답장이 완료다",
+   "claim": {
+    "message_id": "reply_27",
+    "attempt": 1,
+    "workspace_id": "eval",
+    "member_name": "재환",
+    "reply_date": "2026-11-04",
+    "lines": [
+     {
+      "sender": "pm",
+      "text": "재환님, API 명세서 작성 마감이 11/7 이라 한번 여쭤봐요. 어떻게 되고 있어요?"
+     },
+     {
+      "sender": "member",
+      "text": "API 명세서 오늘 마무리할게요"
+     },
+     {
+      "sender": "member",
+      "text": "다 했어요"
+     }
+    ],
+    "candidates": [
+     {
+      "task_id": "t_api",
+      "title": "API 명세서 작성",
+      "status": "in_progress",
+      "due_date": "2026-11-07",
+      "assignee_member_id": "m_jaehwan",
+      "updated_at": "2026-11-01T09:00:00+00:00"
+     }
+    ]
+   },
+   "expected": [
+    {
+     "task": "t_api",
+     "field": "status",
+     "value": "done",
+     "auto": true
+    }
+   ]
+  },
+  {
+   "id": "reply_28",
+   "shape": "마감 지움",
+   "description": "마감이 없어졌다",
+   "claim": {
+    "message_id": "reply_28",
+    "attempt": 1,
+    "workspace_id": "eval",
+    "member_name": "재환",
+    "reply_date": "2026-11-04",
+    "lines": [
+     {
+      "sender": "pm",
+      "text": "재환님, API 명세서 작성 마감이 11/7 이라 한번 여쭤봐요. 어떻게 되고 있어요?"
+     },
+     {
+      "sender": "member",
+      "text": "API 명세서 마감이 없어졌어요"
+     }
+    ],
+    "candidates": [
+     {
+      "task_id": "t_api",
+      "title": "API 명세서 작성",
+      "status": "in_progress",
+      "due_date": "2026-11-07",
+      "assignee_member_id": "m_jaehwan",
+      "updated_at": "2026-11-01T09:00:00+00:00"
+     }
+    ]
+   },
+   "expected": [
+    {
+     "task": null,
+     "field": "due_clear",
+     "value": null,
+     "auto": false
+    }
+   ]
+  },
+  {
+   "id": "reply_29",
+   "shape": "후보 밖 말",
+   "description": "후보에 없는 새 일",
+   "claim": {
+    "message_id": "reply_29",
+    "attempt": 1,
+    "workspace_id": "eval",
+    "member_name": "재환",
+    "reply_date": "2026-11-04",
+    "lines": [
+     {
+      "sender": "pm",
+      "text": "재환님, API 명세서 작성 마감이 11/7 이라 한번 여쭤봐요. 어떻게 되고 있어요?"
+     },
+     {
+      "sender": "member",
+      "text": "결제 모듈 리팩터링도 제가 하기로 했어요"
+     }
+    ],
+    "candidates": [
+     {
+      "task_id": "t_api",
+      "title": "API 명세서 작성",
+      "status": "in_progress",
+      "due_date": "2026-11-07",
+      "assignee_member_id": "m_jaehwan",
+      "updated_at": "2026-11-01T09:00:00+00:00"
+     }
+    ]
+   },
+   "expected": [
+    {
+     "task": null,
+     "field": "unknown",
+     "value": null,
+     "auto": false
+    }
+   ]
+  },
+  {
+   "id": "reply_30",
+   "shape": "후보 밖 말",
+   "description": "후보에 없는 일의 완료",
+   "claim": {
+    "message_id": "reply_30",
+    "attempt": 1,
+    "workspace_id": "eval",
+    "member_name": "재환",
+    "reply_date": "2026-11-04",
+    "lines": [
+     {
+      "sender": "pm",
+      "text": "재환님, 로그인 화면 구현 마감이 11/10 이라 한번 여쭤봐요. 어떻게 되고 있어요?"
+     },
+     {
+      "sender": "member",
+      "text": "어제 서버 장애 대응 끝냈어요"
+     }
+    ],
+    "candidates": [
+     {
+      "task_id": "t_login",
+      "title": "로그인 화면 구현",
+      "status": "in_progress",
+      "due_date": "2026-11-10",
+      "assignee_member_id": "m_jaehwan",
+      "updated_at": "2026-11-01T09:00:00+00:00"
+     }
+    ]
+   },
+   "expected": [
+    {
+     "task": null,
+     "field": "unknown",
+     "value": null,
+     "auto": false
+    }
+   ]
+  }
+ ]
+}

@@ -435,7 +435,7 @@ def test_auto_blocked_false_while_watching(mdb, mseed):
 def test_auto_blocked_false_after_reply_released(mdb, mseed):
     task = _silence_blocked(mdb, mseed)
     _web_reply(mdb, mseed, "alice", SLOT + 73 * H)
-    tick(mdb, SLOT + 73 * H)
+    tick(mdb, SLOT + 73 * H + timedelta(minutes=11))  # 판단이 끝나지 않은 답장은 10분 뒤 응답으로 친다
     mdb.refresh(task)
     assert mdb.query(ReminderWatch).one().state == WatchState.RELEASED
     assert _agrees(mdb, task) is False

@@ -57,6 +57,8 @@ test.beforeEach(async ({ page }) => {
 function measureTokenText(page: Page): Promise<Measured[]> {
   return page.evaluate(() => {
     const probe = document.body.appendChild(document.createElement('span'))
+    // 움직임 줄이기에서 앱은 모든 전환을 0.01ms 로 줄일 뿐 없애지 않는다. 그대로 두면 색을 바꾼 직후에 읽은 값이 바꾸기 전 색이다
+    probe.style.setProperty('transition', 'none', 'important')
     const tokenRgb = (name: string) => {
       probe.style.color = `var(${name})`
       return getComputedStyle(probe).color

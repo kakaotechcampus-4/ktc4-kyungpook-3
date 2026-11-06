@@ -271,10 +271,19 @@ def _chat_meeting(db, seed, *, status, ended_ago):
 
 
 def test_chat_meeting_stuck_processing_is_failed(db, seed):
-    stuck = _chat_meeting(db, seed, status="processing", ended_ago=timedelta(hours=4))
+    stuck = _chat_meeting(db, seed, status="processing", ended_ago=timedelta(hours=8))
     _chat_meeting(db, seed, status="processing", ended_ago=timedelta(minutes=10))   # 아직 도는 중
-    _chat_meeting(db, seed, status="done", ended_ago=timedelta(hours=4))
+    _chat_meeting(db, seed, status="done", ended_ago=timedelta(hours=8))
 
     assert upload_sweeper.sweep_stalled_uploads(db) == [(stuck.meeting_id, "chat_stalled")]
     db.expire_all()
     assert db.get(Meeting, stuck.meeting_id).status == "failed"
+
+
+def test_chat_meeting_alive_within_poller_timeout_is_not_swept(db, seed):
+    """폴러 시간 제한(6시간) 안에서 돌고 있는 회의는 정리하지 않는다. 정리하면 추출 결과가 409 로 버려진다."""
+    alive = _chat_meeting(db, seed, status="processing", ended_ago=timedelta(hours=6))
+
+    assert upload_sweeper.sweep_stalled_uploads(db) == []
+    db.expire_all()
+    assert db.get(Meeting, alive.meeting_id).status == "processing"

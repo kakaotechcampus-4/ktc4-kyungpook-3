@@ -1,4 +1,5 @@
 import { matchPath, useLocation } from 'react-router'
+import { useSplashHold } from '@/shared/lib/splash'
 import { parseRouteId } from '@/shared/lib/url'
 import { MinutesPageSkeleton, OnboardingSkeleton, PageSkeleton } from '@/shared/ui/page-skeleton'
 import { WorkspaceShellSkeleton } from './layouts/WorkspaceLayout'
@@ -12,8 +13,12 @@ function isMinutesPath(pathname: string): boolean {
 /**
  * 화면 코드·가드 캐시를 기다리는 동안의 자리. 온보딩은 가운데 열 틀이라 그 모양의 뼈대를 쓴다 —
  * 제품 화면 뼈대(왼쪽 위)를 쓰면 온보딩이 그려질 때 내용이 크게 튄다. 회의록은 같은 이유로 왼쪽 목록 + 오른쪽 본문 2단 뼈대다.
+ *
+ * 그려져 있는 동안은 첫 화면이 아니다. 로딩 스플래시가 떠 있으면 이 뼈대가 모두 사라질 때까지 덮는다 (#430).
+ * 가드 뼈대(GuardSkeleton)와 화면 코드 대기(lazyPage)도 이 컴포넌트를 그리므로 여기 한 곳에서 잡는다.
  */
 export function RouteSkeleton() {
+  useSplashHold()
   const { pathname } = useLocation()
   if (pathname.startsWith('/onboarding/')) return <OnboardingSkeleton />
   if (isMinutesPath(pathname)) return <MinutesPageSkeleton />

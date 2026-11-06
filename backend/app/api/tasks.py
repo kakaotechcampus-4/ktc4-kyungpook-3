@@ -5,10 +5,11 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_member, get_current_user, require_pm, require_task_member
+from app.api.deps import get_current_member, get_current_user, require_member, require_pm, require_task_member
 from app.core.database import get_db
 from app.core.errors import AppError, Envelope, ErrorCode, success
 from app.models import ChangeSource, Member, Task, TaskHistory, TaskStatus, User, Workspace
+from app.schemas.reply import TaskTimelineResponse
 from app.schemas.task import (
     TaskCreateRequest,
     TaskHistoryListResponse,
@@ -18,7 +19,7 @@ from app.schemas.task import (
     TaskResponse,
     TaskUpdateRequest,
 )
-from app.services import scheduler
+from app.services import replies, scheduler
 from app.services.notion_sync import retry_failed_sync
 from app.services.tasks import apply_task_updates, create_task, rollback_task_history
 
@@ -213,6 +214,34 @@ def undo_auto_block(
     member = require_pm(db, user, _get_task(db, task_id).workspace_id)
     task = _get_task(db, task_id, lock=True)
     scheduler.undo_auto_block(db, task, changed_by=member.member_id, now=datetime.now(timezone.utc))
+    db.commit()
+    db.refresh(task)
+    return success(_task_response(db, task))
+
+
+@router.get("/{task_id}/timeline", response_model=Envelope[TaskTimelineResponse])
+def task_timeline(
+    task_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    """답장과 변경을 한 줄로 묶은 태스크 기록. 같은 변경이 두 줄로 나오지 않는다. 기존 /history 는 그대로다."""
+    task = _get_task(db, task_id)
+    items = replies.timeline(db, task, require_member(db, user, task.workspace_id))
+    return success(TaskTimelineResponse(items=items, total=len(items)).model_dump(mode="json"))
+
+
+@router.post("/{task_id}/reply-changes/{change_id}/undo", response_model=Envelope[TaskResponse])
+def undo_reply_change(
+    task_id: str,
+    change_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    """답장으로 자동 반영한 변경을 되돌린다. 그 뒤 바뀌었으면 409."""
+    member = require_pm(db, user, _get_task(db, task_id).workspace_id)
+    task = _get_task(db, task_id, lock=True)
+    replies.undo_change(db, task, change_id, changed_by=member.member_id)
     db.commit()
     db.refresh(task)
     return success(_task_response(db, task))
