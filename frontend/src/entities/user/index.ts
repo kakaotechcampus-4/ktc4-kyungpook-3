@@ -10,3 +10,5 @@ export {
 export { resetLinkProblem } from './model/passwordReset'
 export type { ResetLinkProblem } from './model/passwordReset'
 export { advanceSessionGeneration, captureSession } from './model/sessionGeneration'
+export { captureAccountIntro, isDeviceIntroSeen, markDeviceIntroSeen } from './model/introRecord'
+export type { AccountIntro } from './model/introRecord'
