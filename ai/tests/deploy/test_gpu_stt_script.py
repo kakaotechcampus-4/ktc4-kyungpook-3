@@ -26,7 +26,7 @@ d=$FAKE_AWS_DIR
 printf '%s\n' "$*" >>"$d/calls"
 env | grep '^AWS_' >"$d/env"
 for a in "$@"; do
-  case $a in file://*) cp "${a#file://}" "$d/user-data" ;; esac
+  case $a in file://*) cp "${a#file://}" "$d/user-data"; printf '%s\n' "${a#file://}" >"$d/user-data-path" ;; esac
 done
 
 describe_instances() {
@@ -101,6 +101,7 @@ case $2 in
   stop-instances) [ -f "$d/stuck" ] || set_state running stopped ;;
   wait)
     if [ "$3" = instance-stopped ]; then
+      [ ! -e "$(cat "$d/user-data-path" 2>/dev/null)" ] || touch "$d/key-file-outlived-launch"
       [ ! -f "$d/stuck" ] || exit 255
       set_state running stopped
     fi ;;
@@ -549,6 +550,11 @@ def test_script_uses_the_personal_profile_and_drops_keys_from_the_shell(aws):
     assert env["AWS_CONFIG_FILE"] == "/dev/null" and env["AWS_PROFILE"] == "personal"
     assert env["AWS_REGION"] == "ap-northeast-2"
     assert "AWS_ACCESS_KEY_ID" not in env and "AWS_SESSION_TOKEN" not in env
+
+
+def test_setup_removes_the_key_file_before_waiting_for_first_boot(aws):
+    aws.ok("setup", PROD_IP)
+    assert not (aws.dir / "key-file-outlived-launch").exists()
 
 
 def test_missing_credentials_file_stops_before_any_aws_call(aws):

@@ -231,6 +231,8 @@ launch() {
     --tag-specifications "ResourceType=instance,Tags=[$tags]" "ResourceType=volume,Tags=[$TAGS]" \
     --user-data "file://$USER_DATA" --query 'Instances[0].InstanceId' --output text 2>"$RUN_ERROR") \
     || explain_failed_start
+  # 키가 들어 있다. 첫 부팅을 기다리는 동안 secrets 밖에 두지 않는다
+  rm -f "$USER_DATA"
 }
 
 start_standby() {
