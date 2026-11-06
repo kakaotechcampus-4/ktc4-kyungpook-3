@@ -67,7 +67,7 @@ def test_edits_made_while_creating_the_task_are_not_news(mdb, seed):
     reason, evidence = reminder_reason(mdb, r, _thread_id(r))
 
     assert evidence is None
-    assert reason.endswith("에 만든 뒤로 진행 소식이 없어요.")
+    assert reason.endswith("에 태스크를 만든 뒤로 진행 소식이 없어요.")
 
 
 def test_a_manual_change_just_after_the_creation_window_is_news(mdb, seed):
@@ -83,7 +83,7 @@ def test_a_manual_change_just_after_the_creation_window_is_news(mdb, seed):
 def test_scheduler_reminder_without_news_counts_from_task_creation(mdb, seed):
     r = _make(mdb, seed)
     reason, evidence = reminder_reason(mdb, r, _thread_id(r))
-    assert reason == "'할일0' 마감이 11/14(토)인데, 11/2(월)에 만든 뒤로 진행 소식이 없어요."
+    assert reason == "'할일0' 마감이 11/14(토)인데, 11/2(월)에 태스크를 만든 뒤로 진행 소식이 없어요."
     assert evidence is None
 
 
@@ -131,7 +131,7 @@ def test_ignored_news(mdb, seed):
     _msg(mdb, _thread_id(r), CREATED - timedelta(hours=1))
     reason, evidence = reminder_reason(mdb, r, _thread_id(r))
     assert evidence is None
-    assert reason.endswith("11/2(월)에 만든 뒤로 진행 소식이 없어요.")
+    assert reason.endswith("11/2(월)에 태스크를 만든 뒤로 진행 소식이 없어요.")
 
 
 def test_kst_date_boundary(mdb, seed):
@@ -148,7 +148,7 @@ def test_pm_reminder_names_the_creator_or_falls_back(mdb, seed):
     mdb.commit()
     r = _make(mdb, seed, origin=ReminderOrigin.PM, created_by=seed["pm"].member_id)
     reason, _ = reminder_reason(mdb, r, _thread_id(r))
-    assert reason == "김PM님이 직접 만든 재촉이에요. 11/2(월)에 만든 뒤로 진행 소식이 없어요."
+    assert reason == "김PM님이 직접 만든 재촉이에요. 11/2(월)에 태스크를 만든 뒤로 진행 소식이 없어요."
     r2 = _make(mdb, seed, origin=ReminderOrigin.PM, created_by=old.member_id, who="bob")
     reason2, _ = reminder_reason(mdb, r2, _thread_id(r2))
     assert reason2.startswith("김PM님이 직접 만든 재촉이에요.")
@@ -159,7 +159,7 @@ def test_pm_reminder_on_task_without_due_date(mdb, seed):
     mdb.commit()
     r = _make(mdb, seed, origin=ReminderOrigin.PM, created_by=seed["pm"].member_id)
     reason, _ = reminder_reason(mdb, r, _thread_id(r))
-    assert reason == "PM님이 직접 만든 재촉이에요. 11/2(월)에 만든 뒤로 진행 소식이 없어요."
+    assert reason == "PM님이 직접 만든 재촉이에요. 11/2(월)에 태스크를 만든 뒤로 진행 소식이 없어요."
 
 
 def test_scheduler_reminder_whose_due_date_was_removed(mdb, seed):
@@ -167,7 +167,7 @@ def test_scheduler_reminder_whose_due_date_was_removed(mdb, seed):
     seed["tasks"][0].due_date = None
     mdb.commit()
     reason, _ = reminder_reason(mdb, r, _thread_id(r))
-    assert reason == "11/2(월)에 만든 뒤로 진행 소식이 없어요."
+    assert reason == "11/2(월)에 태스크를 만든 뒤로 진행 소식이 없어요."
 
 
 def test_deleted_task_gives_no_reason(mdb, seed):

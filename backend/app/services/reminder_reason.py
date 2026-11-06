@@ -69,7 +69,7 @@ def reminder_reason(db: Session, reminder: Reminder, thread_id: str) -> tuple[st
     if evidence is not None:
         news = f"{_kst_day(evidence.at)} 이후로 진행 소식이 없어요."
     else:
-        news = f"{_kst_day(task.created_at)}에 만든 뒤로 진행 소식이 없어요."
+        news = f"{_kst_day(task.created_at)}에 태스크를 만든 뒤로 진행 소식이 없어요."
     if reminder.origin == ReminderOrigin.PM:
         name = messages._pm_name(db, reminder.workspace_id, reminder.created_by)
         return f"{name}님이 직접 만든 재촉이에요. {news}", evidence
