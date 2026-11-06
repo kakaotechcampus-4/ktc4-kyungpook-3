@@ -238,7 +238,7 @@ function NotAwaiting({
       return (
         <Layout title={failure.title}>
           <p className={LEAD}>{failure.description}</p>
-          {isPm ? (
+          {!failure.reupload ? null : isPm ? (
             <GuardedLink to={paths.meetingUpload(workspaceId)} className={LINK}>
               다시 업로드
             </GuardedLink>
