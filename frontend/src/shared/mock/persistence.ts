@@ -21,9 +21,10 @@ export const MOCK_DB_STORAGE_KEY = 'msw-db'
  * 11: 리마인드에 취소 시각(`cancelled_at`) 칸 추가 (#370). 마지막 태스크를 빼 닫힌 묶음이 함께 취소된 것만 돌려준다.
  * 12: 계정에 공간별 팀원 행(`memberIds`) 칸 추가 (#367). 공간을 만든 계정이 새 PM 행과 이어진다.
  * 13: 되돌릴 자동 막힘(`autoBlocks`) 칸 추가 (#365). 응답의 `auto_blocked` 를 이력이 아니라 이 기록으로 판정한다.
+ * 14: 가입 인증(`signupVerification`)과 카카오 대기(`kakao`) 칸 추가 (#427).
  * 올리면 e2e/restore.e2e.ts 와 src/shared/mock/taskScenarios.test.ts 의 버전 단언도 같이 고친다 (E2E 는 src 를 가져오지 않는다)
  */
-export const MOCK_DB_VERSION = 13
+export const MOCK_DB_VERSION = 14
 
 interface StoredDb {
   version: number
@@ -73,6 +74,16 @@ function isPasswordReset(value: unknown): boolean {
   )
 }
 
+function isSignupVerification(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    isRecord(value.codes) &&
+    isRecord(value.proofs) &&
+    Array.isArray(value.outbox) &&
+    value.outbox.every((mail) => hasStrings(mail, ['to', 'code', 'sentAt']))
+  )
+}
+
 /**
  * 모양만 본다. 칸마다 시작 상태와 같은 종류(배열·객체·불리언)인지, 화면 흐름이 기대는 칸은
  * 필드까지 맞는지 확인한다. 하나라도 어긋나면 손상으로 본다.
@@ -109,7 +120,9 @@ function isMockDb(value: unknown): value is MockDb {
         hasStrings(integration.discord, ['status']) && hasStrings(integration.notion, ['status']),
     ) &&
     isMeetingFlow(state.meetingFlow) &&
-    isPasswordReset(state.passwordReset)
+    isPasswordReset(state.passwordReset) &&
+    isSignupVerification(state.signupVerification) &&
+    (state.kakao.pending === null || hasStrings(state.kakao.pending, ['kakaoId']))
   )
 }
 

@@ -2,7 +2,7 @@ import { http } from 'msw'
 import { db } from '../db'
 import { fail, ok } from '../envelope'
 import { requireAuth } from '../auth-guard'
-import { workspaceCountOf } from '../sessions'
+import { accountWithEmail, workspaceCountOf } from '../sessions'
 
 const base = '/api/v1/auth'
 
@@ -47,7 +47,7 @@ export const authHandlers = [
   }),
   http.post(`${base}/login`, async ({ request }) => {
     const body = (await request.json()) as { email?: unknown; password?: unknown }
-    const account = db.accounts.find(({ session }) => session.user.email === body.email)
+    const account = typeof body.email === 'string' ? accountWithEmail(body.email) : undefined
     if (!account || body.password !== account.password)
       return fail('INVALID_CREDENTIALS', '이메일 또는 비밀번호가 올바르지 않습니다.', 401)
     db.session = structuredClone(account.session)
@@ -60,6 +60,11 @@ export const authHandlers = [
     db.authenticated = false
     return ok({})
   }),
+  http.get(`${base}/kakao/pending`, () =>
+    db.kakao.pending === null
+      ? fail('KAKAO_LINK_EXPIRED', '카카오 로그인 정보가 만료됐습니다.', 400)
+      : ok({ email: db.kakao.pending.email, nickname: db.kakao.pending.nickname }),
+  ),
   http.get(`${base}/me`, () =>
     db.authenticated ? ok(authResponse()) : fail('UNAUTHENTICATED', '로그인이 필요합니다.', 401),
   ),
