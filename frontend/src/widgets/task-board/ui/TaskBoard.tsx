@@ -57,14 +57,19 @@ const GanttView = lazy(() =>
 )
 
 /* Tasks 시안 — main 패딩 48/48/72, 블록 사이 28px.
- * 리스트 본문 단은 상세·확인 필요 상세와 같이 960px 이하로 가운데에 둔다.
- * 보드·캘린더·간트는 시안 셸 폭을 유지한다. */
-const PAGE = 'mx-auto flex w-full max-w-shell flex-1 justify-center px-48 pt-48 pb-72'
-const PAGE_LIST = 'mx-auto flex w-full max-w-[960px] flex-1 justify-center px-48 pt-48 pb-72'
+ * 리스트·보드는 상세·확인 필요 상세와 같이 960px 이하로 가운데에 둔다. 둘을 오갈 때 제목·탭·도구줄이 움직이지 않는다 (#466).
+ * 캘린더·간트는 날짜 칸이 넓어야 해서 시안 셸 폭을 유지한다. */
+const PAGE_BASE = 'mx-auto flex w-full flex-1 justify-center px-48 pt-48 pb-72'
+const PAGE: Record<TaskView, string> = {
+  list: `${PAGE_BASE} max-w-[960px]`,
+  board: `${PAGE_BASE} max-w-[960px]`,
+  calendar: `${PAGE_BASE} max-w-shell`,
+  gantt: `${PAGE_BASE} max-w-shell`,
+}
 /* 블록 사이 — 리스트 28px, 보드 22px(TasksBoard), 캘린더·간트 20px(TasksCalendar·TasksGantt) */
 const COLUMN: Record<TaskView, string> = {
-  list: 'flex w-full max-w-column flex-col gap-28',
-  board: 'flex w-full max-w-column flex-col gap-22',
+  list: 'flex w-full flex-col gap-28',
+  board: 'flex w-full flex-col gap-22',
   calendar: 'flex w-full flex-col gap-20',
   gantt: 'flex w-full flex-col gap-20',
 }
@@ -353,7 +358,7 @@ export function TaskBoard({
   )
 
   return (
-    <main className={view.view === 'list' ? PAGE_LIST : PAGE}>
+    <main className={PAGE[view.view]}>
       <div className={COLUMN[view.view]}>
         <header className="flex items-end justify-between gap-24">
           <div className="flex flex-col gap-5">
