@@ -1,9 +1,18 @@
 """Discord 서버 사용자 목록(봇 토큰, REST API) 조회와 화면 형식 변환(#171)."""
+import json
+
 import httpx
 import pytest
 
 from app.services import discord
-from app.services.discord import DiscordApiError, list_guild_members, to_member_item
+from app.services.discord import (
+    DiscordApiError,
+    list_guild_members,
+    list_text_channels,
+    post_channel_message,
+    read_one_message,
+    to_member_item,
+)
 
 GUILD = "900000000000000000"
 
@@ -140,3 +149,105 @@ def test_network_failure_names_only_the_kind_and_not_the_token():
     assert caught.value.status_code is None
     assert caught.value.reason == "요청 실패: ConnectError"
     assert "bot-token" not in str(caught.value)
+
+
+# ---------- 채널 호출(#428) ----------
+
+
+def _transport(result, seen: list | None = None) -> httpx.MockTransport:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if seen is not None:
+            seen.append(request)
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+    return httpx.MockTransport(handler)
+
+
+def test_text_channels_keep_only_type_0_in_discord_order():
+    channels = [
+        {"id": "30", "type": 0, "name": "잡담", "position": 1, "parent_id": "10"},
+        {"id": "10", "type": 4, "name": "카테고리B", "position": 2},
+        {"id": "11", "type": 4, "name": "카테고리A", "position": 1},
+        {"id": "31", "type": 0, "name": "회의", "position": 0, "parent_id": "10"},
+        {"id": "32", "type": 0, "name": "공지없는-최상위", "position": 5, "parent_id": None},
+        {"id": "33", "type": 5, "name": "공지"},
+        {"id": "34", "type": 2, "name": "음성"},
+        {"id": "35", "type": 15, "name": "포럼"},
+        {"id": "36", "type": 0, "name": "A채널", "position": 0, "parent_id": "11"},
+    ]
+    seen: list[httpx.Request] = []
+
+    result = list_text_channels("bot-token", GUILD, transport=_transport(httpx.Response(200, json=channels), seen))
+
+    assert result == [
+        {"channel_id": "32", "name": "공지없는-최상위"},
+        {"channel_id": "36", "name": "A채널"},
+        {"channel_id": "31", "name": "회의"},
+        {"channel_id": "30", "name": "잡담"},
+    ]
+    assert seen[0].url.path.endswith(f"/guilds/{GUILD}/channels")
+    assert seen[0].headers["Authorization"] == "Bot bot-token"
+
+
+@pytest.mark.parametrize("response", [httpx.Response(200, json={"a": 1}), httpx.Response(200, content=b"x")])
+def test_text_channels_reject_non_list_or_non_json(response):
+    with pytest.raises(DiscordApiError):
+        list_text_channels("bot-token", GUILD, transport=_transport(response))
+
+
+@pytest.mark.parametrize(
+    ("status", "code"),
+    [(403, 50001), (404, 10003)],
+)
+def test_error_keeps_discord_code(status, code):
+    response = httpx.Response(status, json={"message": "x", "code": code})
+
+    with pytest.raises(DiscordApiError) as info:
+        read_one_message("bot-token", "123", transport=_transport(response))
+
+    assert info.value.status_code == status
+    assert info.value.discord_code == code
+
+
+def test_read_one_message_asks_for_one():
+    seen: list[httpx.Request] = []
+
+    result = read_one_message("bot-token", "123", transport=_transport(httpx.Response(200, json=[]), seen))
+
+    assert result is None
+    assert seen[0].url.path.endswith("/channels/123/messages")
+    assert seen[0].url.params["limit"] == "1"
+
+
+def test_post_channel_message_disables_mentions():
+    seen: list[httpx.Request] = []
+
+    result = post_channel_message("bot-token", "123", "안내", transport=_transport(httpx.Response(200, json={}), seen))
+
+    assert result is None
+    assert seen[0].method == "POST"
+    assert seen[0].url.path.endswith("/channels/123/messages")
+    assert json.loads(seen[0].content) == {"content": "안내", "allowed_mentions": {"parse": []}}
+    with pytest.raises(DiscordApiError) as info:
+        post_channel_message("bot-token", "123", "안내", transport=_transport(httpx.Response(403, json={})))
+    assert info.value.status_code == 403
+
+
+@pytest.mark.parametrize(
+    "call",
+    [
+        lambda t: list_text_channels("bot-token", GUILD, transport=t),
+        lambda t: read_one_message("bot-token", "123", transport=t),
+        lambda t: post_channel_message("bot-token", "123", "안내", transport=t),
+    ],
+)
+def test_network_error_hides_token_and_url(call):
+    error = httpx.ConnectError("https://discord.com/api/v10/... bot-token")
+
+    with pytest.raises(DiscordApiError) as info:
+        call(_transport(error))
+
+    assert "bot-token" not in str(info.value)
+    assert "discord.com" not in str(info.value)
