@@ -121,6 +121,14 @@ class BeClient:
             raise BeError("BAD_RESPONSE", "팀원 이름 응답에 items 목록이 없다")
         return items
 
+    def chat_channels(self) -> list[dict]:
+        """채팅 폴링 대상 채널 목록(BE #428 제안). [{"workspace_id", "guild_id", "channel_id"}] 모두 str."""
+        data = self._call("GET", "/bot/chat-channels")
+        items = data.get("items") if isinstance(data, dict) else None
+        if not isinstance(items, list):
+            raise BeError("BAD_RESPONSE", "채팅 채널 응답에 items 목록이 없다")
+        return items
+
     def create_meeting(self, workspace_id: str, *, title: str | None = None, source: str = "discord",
                        started_at: datetime | None = None) -> dict:
         body = {"workspace_id": workspace_id, "title": title, "source": source}
