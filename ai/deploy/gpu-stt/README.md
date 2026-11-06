@@ -20,6 +20,8 @@ Mac 에서 보안 그룹, 고정 IP, 인증서, API 키와 대기 서버를 만�
 ai/deploy/gpu-stt/gpu-stt.sh setup <운영 서버 공인 IP>
 ```
 
+`setup` 이 끊겼으면 다시 돌린다. 첫 부팅이 돌고 있으면 이어서 기다린다. 이미 꺼졌으면 첫 부팅을 마쳤는지 알 수 없어 멈추니 `destroy` 뒤 `setup` 을 돌린다. `on` 은 `setup` 을 마치지 못한 서버를 쓰지 않는다.
+
 만든 값은 `secrets/gpu-stt/` 에만 있다. 여기서 인증서와 전사 설정을 운영 서버로 옮긴다. 키가 화면에 나오지 않도록 표준 입력으로 보낸다. 운영 서버 접속 방법은 그때의 것을 쓴다.
 
 ```bash
@@ -31,7 +33,7 @@ printf 'ELICE_STT_BASE_URL=https://%s:8000\nELICE_API_KEY=%s\nELICE_STT_CA_BUNDL
   "$EIP" "$(cat api.key)" | prod "sudo sh -c 'umask 077; cat > /etc/mm/gpu-stt.env'"
 ```
 
-인증서 파일은 워커 프로세스가 직접 여니 모두 읽을 수 있어야 한다. `gpu-stt.env` 는 systemd 가 root 로 읽으니 root 만 읽으면 된다. 나중에 `setup` 을 다시 돌렸을 때 인증서를 새로 만들었다고 나오면 고정 IP 가 바뀐 것이다. 인증서는 대기 서버 디스크에도 있어서 `destroy` 뒤 `setup` 을 다시 돌려 서버를 새로 만들고, 두 파일도 다시 옮긴다.
+인증서 파일은 워커 프로세스가 직접 여니 모두 읽을 수 있어야 한다. `gpu-stt.env` 는 systemd 가 root 로 읽으니 root 만 읽으면 된다. 인증서와 키는 대기 서버 디스크에도 있다. 고정 IP 가 바뀌었거나 `secrets/gpu-stt/` 를 잃으면 `setup` 이 아무것도 쓰지 않고 멈춘다. `destroy` 뒤 `setup` 으로 서버를 새로 만들고 두 파일도 다시 옮긴다.
 
 운영 서버의 전사 백엔드가 `elice` 인지 확인한다. 아니면 이 절차로 전사가 옮겨 가지 않는다.
 
@@ -139,7 +141,7 @@ cd /opt/mm/ai && sudo -u <워커 사용자> .venv/bin/python -m capture.worker -
 
 자동 stop 은 워커를 되돌리지 않는다. drop-in 이 남아 있으면 워커는 꺼진 서버를 계속 부르고 전사가 실패한다. 다시 켜거나 복귀 절차를 끝까지 한다.
 
-`off` 와 `destroy` 는 고정 IP 를 놓지 않는다. 놓으면 인증서와 운영 서버 설정을 다시 만들어야 한다.
+`off` 와 `destroy` 는 고정 IP 를 놓지 않는다. 놓으면 인증서와 운영 서버 설정을 다시 만들어야 한다. 놓을 때만 `destroy --release-ip` 를 쓴다.
 
 `destroy` 는 대기 서버와 디스크를 지운다. 인증서를 새로 만들 때와 장애 대응 기간이 끝날 때만 쓴다. 다시 만들려면 `setup` 약 12분과 초기화 약 $0.30 이 든다.
 
@@ -155,10 +157,10 @@ G 계열 vCPU 한도 8 을 같은 계정의 다른 GPU 작업과 나눠 쓴다. 
 
 장애 동안 실제 회의 음성이 TLS 로 개인 AWS 계정을 지난다. 동의 범위는 팀이 정할 일이고 [#360](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/360), [결정 0039](../../docs/basis_for_decision/ai/2026-11-04-0039-gpu-stt-server.md) 와 함께 다룬다.
 
-서버는 음성을 파일로 남기도록 띄우지 않았다. 다만 업로드가 1MiB 를 넘으면 받는 동안 `/tmp` 의 이름 없는 임시 파일에 쓴다. `/tmp` 는 꺼 둔 뒤에도 남는 EBS 디스크다. 운영 워커가 보내는 묶음은 최대 28초, 896,044바이트라 이 기준 아래다. 요청이 끝난 뒤 보이는 음성 파일은 합성음 측정에서 0개였다. 자세한 근거와 한계는 [측정](../../stt/eval/results/2026-11-05-gpu-fallback-prod/README.md#음성-임시-파일)에 있다.
+서버는 음성을 파일로 남기도록 띄우지 않았다. 다만 업로드가 1MiB 를 넘으면 받는 동안 `/tmp` 의 이름 없는 임시 파일에 쓴다. `/tmp` 는 꺼 둔 뒤에도 남는 EBS 디스크다. 운영 워커가 보내는 묶음은 공백을 합쳐 최대 28.2초, 902,444바이트라 이 기준 아래다. 요청이 끝난 뒤 보이는 음성 파일은 합성음 측정에서 0개였다. 자세한 근거와 한계는 [측정](../../stt/eval/results/2026-11-05-gpu-fallback-prod/README.md#음성-임시-파일)에 있다.
 
 인증서 키와 API 키는 꺼 둔 서버의 디스크와 user-data 에 남는다.
 
 비용은 켜 둔 동안 시간당 $0.647 이고 켤 때 초기화 비용은 없다. 켜지 않아도 디스크 75GB 가 월 $6.84, 고정 IP 가 시간당 $0.005 로 든다. 초기화 약 $0.30 은 `setup` 이 서버를 만들 때 한 번만 든다.
 
-장애 대응 기간은 2026-12-31 까지다. 끝나면 `destroy` 로 대기 서버를 지우고 고정 IP 를 놓는다. AMI 삭제 시점은 [결정 0039](../../docs/basis_for_decision/ai/2026-11-04-0039-gpu-stt-server.md) 를 따른다.
+장애 대응 기간은 2026-12-31 까지다. 끝나면 `destroy --release-ip` 로 대기 서버를 지우고 고정 IP 를 놓는다. AMI 삭제 시점은 [결정 0039](../../docs/basis_for_decision/ai/2026-11-04-0039-gpu-stt-server.md) 를 따른다.
