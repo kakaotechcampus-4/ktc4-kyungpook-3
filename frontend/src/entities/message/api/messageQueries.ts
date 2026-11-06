@@ -1,5 +1,6 @@
 import { queryOptions } from '@tanstack/react-query'
 import { request } from '@/shared/api/client'
+import { captureSessionScope } from '@/shared/api/sessionScope'
 import { workspaceKey } from '@/shared/api/queryKeys'
 import type {
   BundleApproveRequestDto,
@@ -28,8 +29,17 @@ import type {
 const AI_WORKER_DRAFT_POLL_MS = 30_000
 const DRAFT_POLL_MS = AI_WORKER_DRAFT_POLL_MS / 3
 
-function pollWhileDrafting(bundles: readonly Bundle[] | undefined): number | false {
-  return bundles?.some((bundle) => bundle.drafting) ? DRAFT_POLL_MS : false
+/**
+ * 조회를 옵션을 만든 세션에 묶는다. TanStack 의 간격은 cancelQueries·removeQueries 로 멈추지 않아,
+ * 로그아웃 전환 중 아직 구독 중인 이전 화면이 다음 틱에 다음 세션으로 요청한다. 끝난 세션의 신호로 보내기 전에 취소하고 간격을 멈춘다
+ */
+function boundToSession() {
+  const session = captureSessionScope()
+  return {
+    signal: (query: AbortSignal) => AbortSignal.any([query, session.signal]),
+    pollWhileDrafting: (bundles: readonly Bundle[] | undefined): number | false =>
+      session.isCurrent() && bundles?.some((bundle) => bundle.drafting) ? DRAFT_POLL_MS : false,
+  }
 }
 
 function messagesPath(workspaceId: string): string {
@@ -43,28 +53,32 @@ export function messageKeys(workspaceId: string) {
 
 /** 왼쪽 목록 — 보낼 메시지(PM 만)와 대화 요약 */
 export function messageInboxQueryOptions(workspaceId: string) {
+  const session = boundToSession()
   return queryOptions({
     queryKey: workspaceKey(workspaceId, 'messages', 'inbox'),
     queryFn: async ({ signal }) =>
-      toMessageInbox(await request<InboxDto>(messagesPath(workspaceId), { signal })),
+      toMessageInbox(
+        await request<InboxDto>(messagesPath(workspaceId), { signal: session.signal(signal) }),
+      ),
     refetchInterval: ({ state: { data } }) =>
-      pollWhileDrafting(data?.viewer === 'pm' ? data.bundles : undefined),
+      session.pollWhileDrafting(data?.viewer === 'pm' ? data.bundles : undefined),
     refetchIntervalInBackground: false,
   })
 }
 
 /** 대화 하나. 목록과 따로 받는다 — 한쪽 오류가 다른 쪽을 막지 않는다 (계획 C-6 5단계) */
 export function messageThreadQueryOptions(workspaceId: string, threadId: string) {
+  const session = boundToSession()
   return queryOptions({
     queryKey: workspaceKey(workspaceId, 'messages', 'threads', threadId),
     queryFn: async ({ signal }) =>
       toMessageThread(
         await request<ThreadDetailDto>(
           `${messagesPath(workspaceId)}/threads/${encodeURIComponent(threadId)}`,
-          { signal },
+          { signal: session.signal(signal) },
         ),
       ),
-    refetchInterval: ({ state: { data } }) => pollWhileDrafting(data?.upcoming),
+    refetchInterval: ({ state: { data } }) => session.pollWhileDrafting(data?.upcoming),
     refetchIntervalInBackground: false,
   })
 }

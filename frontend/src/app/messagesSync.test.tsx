@@ -1,6 +1,7 @@
 import { act, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { focusManager } from '@tanstack/react-query'
+import { messageInboxQueryOptions } from '@/entities/message'
 import { advanceSessionGeneration } from '@/entities/user'
 import { paths } from '@/shared/config/routes'
 import { db } from '@/shared/mock/db'
@@ -68,7 +69,7 @@ function finishDraft() {
     draft_version: 2,
   })
 }
-function notify(id: string, kind: string) {
+function notify(id: string, kind: string, createdAt: string = MOCK_NOW) {
   const notification: MockNotification = {
     notification_id: id,
     workspace_id: 'ws_01',
@@ -77,7 +78,7 @@ function notify(id: string, kind: string) {
     text: '이재환님이 답장해 재촉 하나를 보내지 않기로 했어요.',
     link: { type: 'thread', id: 'th_01' },
     read_at: null,
-    created_at: MOCK_NOW,
+    created_at: createdAt,
   }
   db.notifications.push(notification)
 }
@@ -97,11 +98,11 @@ async function openSettledInbox() {
   finishDraft()
   db.notifications = structuredClone(notificationFixtures)
   const log = recordRequests()
-  renderApp(paths.messages('ws_01'))
+  const app = renderApp(paths.messages('ws_01'))
   await until(() => expect(rowTexts(reviewList())).toHaveLength(2))
   await until(() => expect(notificationGets(log)).toBe(1))
   await pause(150)
-  return log
+  return { app, log }
 }
 
 describe('AI 초안을 기다리는 동안만 다시 받는다', () => {
@@ -184,7 +185,7 @@ describe('AI 초안을 기다리는 동안만 다시 받는다', () => {
 
 describe('처음 보는 메시지 알림이 오면 메시지를 다시 받는다', () => {
   it('첫 알림 목록으로는 다시 받지 않고, 자동 취소 알림이 오면 목록을 다시 받아 취소된 묶음이 빠진다', async () => {
-    const log = await openSettledInbox()
+    const { log } = await openSettledInbox()
     expect(inboxGets(log)).toBe(1)
 
     bundleOf('bd_01').status = 'cancelled'
@@ -196,7 +197,7 @@ describe('처음 보는 메시지 알림이 오면 메시지를 다시 받는다
   })
 
   it('태스크 알림(무응답 막힘)으로는 메시지를 다시 받지 않는다', async () => {
-    const log = await openSettledInbox()
+    const { log } = await openSettledInbox()
 
     bundleOf('bd_01').status = 'cancelled'
     notify('nt_10', 'silence_blocked')
@@ -207,8 +208,31 @@ describe('처음 보는 메시지 알림이 오면 메시지를 다시 받는다
     expect(rowTexts(reviewList())).toHaveLength(2)
   })
 
-  it('세션이 바뀐 뒤 처음 받은 알림 목록은 새 기준이라, 이전 세션의 기준으로 메시지를 다시 받지 않는다', async () => {
-    const log = await openSettledInbox()
+  it('메시지 알림이 더 최신 알림 50개에 밀려 목록에 보이지 않아도, 이전 목록과 겹치지 않는 꽉 찬 목록이면 한 번 다시 받는다', async () => {
+    const { log } = await openSettledInbox()
+
+    bundleOf('bd_01').status = 'cancelled'
+    notify('nt_10', 'reminder_auto_cancelled')
+    for (let n = 1; n <= 50; n += 1)
+      notify(
+        `nt_${100 + n}`,
+        'silence_blocked',
+        new Date(Date.parse(MOCK_NOW) + n * 1_000).toISOString(),
+      )
+    await advance(30_000)
+    await until(() => expect(rowTexts(reviewList())).toHaveLength(1))
+    expect(inboxGets(log)).toBe(2)
+
+    await advance(30_000)
+    await until(() => expect(notificationGets(log)).toBe(3))
+    await pause(150)
+    expect(inboxGets(log)).toBe(2)
+  })
+
+  it('세션이 바뀐 뒤 처음 받은 알림 목록은 새 기준이라 이전 기준으로 무효화하지 않고, 이전 세션에 남은 화면은 무효화돼도 다시 받지 않는다', async () => {
+    const { app, log } = await openSettledInbox()
+    const inboxInvalidated = () =>
+      app.queryClient.getQueryState(messageInboxQueryOptions('ws_01').queryKey)?.isInvalidated
 
     act(() => advanceSessionGeneration())
     bundleOf('bd_01').status = 'cancelled'
@@ -216,12 +240,13 @@ describe('처음 보는 메시지 알림이 오면 메시지를 다시 받는다
     await advance(30_000)
     await until(() => expect(notificationGets(log)).toBe(2))
     await pause(150)
-    expect(inboxGets(log)).toBe(1)
-    expect(rowTexts(reviewList())).toHaveLength(2)
+    expect(inboxInvalidated()).toBe(false)
 
     notify('nt_11', 'nudge_suggested')
     await advance(30_000)
-    await until(() => expect(rowTexts(reviewList())).toHaveLength(1))
-    expect(inboxGets(log)).toBe(2)
+    await until(() => expect(inboxInvalidated()).toBe(true))
+    await pause(150)
+    expect(inboxGets(log)).toBe(1)
+    expect(rowTexts(reviewList())).toHaveLength(2)
   })
 })

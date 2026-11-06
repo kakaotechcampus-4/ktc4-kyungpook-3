@@ -12,6 +12,7 @@ export {
   notificationTitle,
 } from './model/display'
 export {
+  NOTIFICATION_LIST_LIMIT,
   fetchNotifications,
   notificationKeys,
   notificationListQueryOptions,
