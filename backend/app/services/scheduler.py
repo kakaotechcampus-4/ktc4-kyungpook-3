@@ -536,7 +536,7 @@ def _release(db: Session, task: Task, watch: ReminderWatch, left_at: datetime | 
     """답장이 응답으로 판단된 재촉의 태스크를 푼다. 답장을 본 뒤 사람이 건 막힘은 그대로 둔다."""
     if task.status == TaskStatus.BLOCKED:
         since = _blocked_since(db, task) or messages.utc(watch.sent_at)
-        if _replied_after(db, watch.thread_id, since, before=left_at):
+        if replies.clock_effect(db, watch, before=left_at, after=since) == replies.ClockEffect.ANSWERED:
             _unblock(db, task, watch, now)
     elif task.blocker == BLOCKER_TEXT:
         _stamp(tasks.apply_task_updates(db, task, {"blocker": None}, change_source=ChangeSource.REMINDER_REPLY), now)

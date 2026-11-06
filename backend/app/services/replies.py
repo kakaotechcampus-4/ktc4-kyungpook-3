@@ -758,8 +758,10 @@ def _result(line: ReplyChange, approvals: dict[str, str], entries: list[TaskHist
     return "noted"
 
 
-def clock_effect(db: Session, watch: ReminderWatch, *, before: datetime | None) -> ClockEffect:
-    """시계가 나간 뒤(before 가 있으면 그 앞) 온 팀원 답장들이 이 시계에 뜻하는 바."""
+def clock_effect(
+    db: Session, watch: ReminderWatch, *, before: datetime | None, after: datetime | None = None
+) -> ClockEffect:
+    """after(없으면 시계가 나간 때) 뒤, before 앞에 온 팀원 답장들이 이 시계에 뜻하는 바."""
     db.flush()
     query = (
         select(
@@ -769,7 +771,7 @@ def clock_effect(db: Session, watch: ReminderWatch, *, before: datetime | None) 
         .where(
             ThreadMessage.thread_id == watch.thread_id,
             ThreadMessage.sender == MessageSender.MEMBER,
-            ThreadMessage.created_at > messages.utc(watch.sent_at),
+            ThreadMessage.created_at > messages.utc(after or watch.sent_at),
         )
     )
     if before is not None:

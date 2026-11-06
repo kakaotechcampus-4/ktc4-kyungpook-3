@@ -722,3 +722,21 @@ def test_a_rejected_body_leaves_the_attempt_open_for_a_failure_report(mdb, mseed
 
     _judge(item, failure="INVALID_REQUEST")
     assert _row(mdb, item).state == S.FAILED
+
+
+def test_a_reply_about_another_task_does_not_release_a_block_the_pm_set_after_the_answer(mdb, mseed, two):
+    a, b = two
+    _reply(mdb, mseed, AT, body="API 명세서는 금요일까지요")
+    first = _claim()
+    client("pm").patch(f"{P}/tasks/{a.task_id}", json={"status": "blocked", "blocker": "PM 사유"})
+    blocked = mdb.query(TaskHistory).filter(TaskHistory.task_id == a.task_id, TaskHistory.new_value == "blocked").one()
+    blocked.created_at = AT + MIN
+    mdb.commit()
+    _judge(first, _change(a, "due_date", "2026-12-01", claimed=first))
+    _reply(mdb, mseed, AT + 2 * MIN, body="로그인은 다 했어요")
+    second = _claim()
+    _judge(second, _change(b, "status", "done", evidence="certain", claimed=second))
+    tick(mdb, AT + 3 * MIN)
+
+    mdb.expire_all()
+    assert (a.status, a.blocker) == ("blocked", "PM 사유")
