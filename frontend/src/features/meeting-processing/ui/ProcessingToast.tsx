@@ -88,11 +88,7 @@ export function ProcessingToast({ workspaceId }: { workspaceId: string }) {
   return (
     <PinnedToast>
       {items.map(({ meeting, signal }) => (
-        <ProcessingToastItem
-          key={keyOf(meeting)}
-          meeting={meeting}
-          signal={signal}
-        />
+        <ProcessingToastItem key={keyOf(meeting)} meeting={meeting} signal={signal} />
       ))}
     </PinnedToast>
   )

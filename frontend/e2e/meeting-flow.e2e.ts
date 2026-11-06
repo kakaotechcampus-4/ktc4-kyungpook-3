@@ -127,7 +127,10 @@ test('② 정리 중에 다른 화면으로 가면 진행 토스트가 따라오
   await header.getByRole('link', { name: '태스크', exact: true }).click()
   await expect(page).toHaveURL(`${WORKSPACE}/tasks`)
   // 진행 토스트는 접힌 알약으로 시작한다. 누르면 펼쳐 지금 단계와 `자세히 보기`가 보인다
-  await page.getByTestId('pinned-toast-slot').getByRole('button', { name: /펼치기/ }).click()
+  await page
+    .getByTestId('pinned-toast-slot')
+    .getByRole('button', { name: /펼치기/ })
+    .click()
   await expect(processing.getByRole('button', { name: '자세히 보기' })).toBeVisible()
 
   // 앱 수준 추적기가 polling 을 이어 간다(3초 간격, 세 단계 + 완료). 다른 화면이라 옮기지 않고 토스트만 완료로 바뀐다 (U4-1, U4-5)
