@@ -1,6 +1,7 @@
 """PM 이 화자 지정을 끝낸 업로드 회의를 BE 에서 받아 diarized 매니페스트를 mapped 로 바꾼다.
 
-워커가 바퀴 끝에서(intake_one 보다 먼저) assign_one 을 한 번 부른다. 한 호출은 한 건을 한 번 진전시키고 돌아온다.
+워커가 바퀴 끝에서 assign_one → report_one(upload.report) → intake_one 순서로 한 번씩 부른다. BE 는 라벨 보고를 받은 회의만 지정받게 하므로
+보고는 이 지정 받기 앞 단계다. 한 호출은 한 건을 한 번 진전시키고 돌아온다.
 BE 의 GET /uploads/assigned 는 resume 하지 않은 건만 주므로, resume 직전에 로컬 기록을 남겨 두고 응답을 잃거나 죽어도
 기록을 보고 다시 resume 한다(resume 은 멱등: processing 이면 같은 mapping 으로 200).
 

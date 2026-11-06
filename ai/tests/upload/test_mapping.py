@@ -196,3 +196,13 @@ def test_mapping_busy_is_a_value_error_only_for_lock_contention(tmp_path):
     with pytest.raises(ValueError) as e:
         apply_mapping(path, {"SPEAKER_00": "u-1"})
     assert not isinstance(e.value, MappingBusy)
+
+
+def test_cli_output_does_not_claim_the_worker_ignores_uploads(tmp_path, capsys):
+    """지정은 BE 웹 경로 + upload.assign 이 받고 전사·인계는 #286 이라, '워커가 아직 집지 않는다' 는 오래된 말을 하지 않는다."""
+    rec, path, _ = _make(tmp_path)
+    mp = tmp_path / "m.json"
+    mp.write_text(json.dumps({"SPEAKER_00": "u-1", "SPEAKER_01": None}), encoding="utf-8")
+    assert main([str(path), str(mp)]) == 0
+    out = capsys.readouterr().out
+    assert "아직 집지" not in out and "#254" not in out and "#286" in out

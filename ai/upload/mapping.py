@@ -3,7 +3,7 @@
 지정은 speakers[].member_id (멤버 ID 문자열, 외부 참석자는 null) 와 최상위 mapped_at 을 더하고 status 를 mapped 로 바꾼다.
 user_id(라벨 id)·file·wav 파일명은 그대로라 parse_wav_stem 이 보는 화자 id 가 변하지 않는다. 멤버 ID 는 형식만 보고(비어 있거나 앞뒤 공백이 있으면 거절) 바꾸지 않는다.
 같은 멤버를 여러 라벨에 지정해도 된다. mapped 에서 다시 지정하면 덮어쓴다.
-PM 의 지정은 upload.assign.assign_one 이 BE 의 resume 응답 mapping 으로 이 함수를 불러 매니페스트에 쓴다. 지정 뒤의 처리(워커 이어받기·BE 인계)는 아직 정해지지 않았고 워커의 처리 바퀴는 업로드 회의를 집지 않는다.
+PM 의 지정은 upload.assign.assign_one 이 BE 의 resume 응답 mapping 으로 이 함수를 불러 매니페스트에 쓴다. 지정 뒤의 전사·BE 인계는 #286 에서 하고, 그 전까지 워커의 처리 바퀴는 업로드 회의를 집지 않는다.
 이 함수가 지정 결과를 매니페스트에 쓰는 유일한 자리이고, CLI 는 개발·운영용 입구다. PM 이 쓰는 경로가 아니다(PM 은 AI 서버 셸에 들어가지 않고 CLI 에는 샘플 구간도 없다).
 실행(내장 map 과 이름이 겹치지 않게 모듈 이름은 mapping): python -m upload.mapping <매니페스트> <mapping.json>
 mapping.json 은 {"mapping": {"SPEAKER_00": "멤버ID", "SPEAKER_01": null}} 또는 안쪽 dict 그대로. 키는 SPEAKER_00 도 SPEAKER00 도 된다.
@@ -92,7 +92,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"지정 실패: {e}", file=sys.stderr)
         return 1
     print(f"{a.manifest}  status={m['status']}  화자 {len(m['speakers'])}명 지정. "
-          "워커는 업로드 회의를 아직 집지 않는다(#254·#255 인계 합의 전까지).")
+          "PM 의 지정은 BE 웹 경로와 upload.assign 이 받고, 전사·인계는 #286 에서 한다(그 전까지 워커는 mapped 업로드를 처리하지 않는다).")
     return 0
 
 
