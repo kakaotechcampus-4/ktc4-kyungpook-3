@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user, require_member, require_pm, require_service_token
 from app.core.database import get_db
 from app.core.errors import AppError, Envelope, ErrorCode, success
-from app.models import Extraction, Meeting, MeetingProcessingStage, MeetingStatus, Member, Source, User
+from app.models import Extraction, Meeting, MeetingStatus, Member, Source, User
 from app.schemas.meeting import (
     MeetingCreateRequest,
     MeetingCreateResponse,
@@ -129,9 +129,7 @@ def report_meeting_stage(
 ) -> dict:
     """봇이 처리 단계를 시작할 때 알린다. 같은 단계·역행·processing 이 아닌 회의는 오류 없이 applied=false 다."""
     _get_meeting(db, meeting_id)
-    applied = meeting_stage.report_stage(
-        db, meeting_id, MeetingProcessingStage(payload.stage)
-    )
+    applied = meeting_stage.report_stage(db, meeting_id, payload.stage)
     meeting = _get_meeting(db, meeting_id)
     db.refresh(meeting)
     return success(

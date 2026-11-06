@@ -1,5 +1,5 @@
 from datetime import date, datetime
-from typing import Annotated, Literal
+from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -8,6 +8,7 @@ from app.models import (
     EvidenceStatus,
     ExtractionAction,
     ExtractionPath,
+    MeetingProcessingStage,
     MeetingSource,
     TaskStatus,
 )
@@ -47,7 +48,7 @@ class MeetingFailRequest(BaseModel):
 
 
 class MeetingStageRequest(BaseModel):
-    stage: Literal["stt", "sources", "extract", "handoff"] = Field(
+    stage: MeetingProcessingStage = Field(
         ..., description="AI 가 지금 시작한 처리 단계"
     )
 
