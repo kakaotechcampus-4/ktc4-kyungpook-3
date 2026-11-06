@@ -1,0 +1,216 @@
+"""로그인 시도 제한(#436): 이메일 10회·IP 50회를 넘으면 429, 맞는 비밀번호도 막는다."""
+import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy import event
+
+from app.api import auth
+from app.main import app
+from app.services import login_limit
+
+EMAIL = "limit@example.com"
+PW = "rightpass123"
+BLOCK_MESSAGE = "로그인 시도가 너무 많습니다. 잠시 후 다시 시도해 주세요."
+
+
+@pytest.fixture(autouse=True)
+def _cheap_hash(monkeypatch):
+    # 수십 번 로그인하므로 해시 반복을 줄인다. 해시 횟수는 test_login_timing 이 맡는다.
+    monkeypatch.setattr("app.services.passwords._PBKDF2_ITERATIONS", 1)
+
+
+def _client(**kwargs):
+    return TestClient(app, base_url="https://testserver", **kwargs)
+
+
+def _signup(c, email=EMAIL):
+    r = c.post("/api/v1/auth/signup", json={"email": email, "password": PW, "name": "t"})
+    assert r.status_code == 201, r.text
+
+
+def _login(c, email=EMAIL, password=PW):
+    return c.post("/api/v1/auth/login", json={"email": email, "password": password})
+
+
+def _fail(c, email=EMAIL):
+    return _login(c, email, "wrongpass123")
+
+
+def _fail_n(c, n, email=EMAIL):
+    for _ in range(n):
+        r = _fail(c, email)
+        assert r.status_code == 401, r.text
+
+
+def test_blocks_after_limit_even_with_correct_password(mdb, monkeypatch):
+    c = _client()
+    _signup(c)
+    _fail_n(c, 10)
+    calls = []
+    real = auth.verify_password
+    monkeypatch.setattr(auth, "verify_password", lambda *a: calls.append(1) or real(*a))
+
+    r = _login(c)
+
+    assert r.status_code == 429, r.text
+    assert r.json()["error"]["code"] == "TOO_MANY_LOGIN_ATTEMPTS"
+    assert calls == []
+
+
+def test_block_response_is_same_for_unknown_email(mdb, monkeypatch):
+    monkeypatch.setattr(login_limit, "clock", lambda: 1000.0)
+    c = _client()
+    _signup(c)
+    results = []
+    for email in (EMAIL, "nobody@example.com"):
+        _fail_n(c, 10, email)
+        r = _fail(c, email)
+        results.append((r.status_code, r.json()["error"], r.headers["Retry-After"]))
+
+    assert results[0][0] == 429
+    assert results[0] == results[1]
+
+
+def test_retry_after_header_and_details_match(mdb, monkeypatch):
+    monkeypatch.setattr(login_limit, "clock", lambda: 1000.0)
+    c = _client()
+    _signup(c)
+    _fail_n(c, 10)
+
+    r = _fail(c)
+
+    assert r.status_code == 429
+    error = r.json()["error"]
+    assert error["message"] == BLOCK_MESSAGE
+    assert error["details"]["retry_after_seconds"] == int(r.headers["Retry-After"]) == 900
+
+
+def test_block_expires_after_window(mdb, monkeypatch):
+    now = [1000.0]
+    monkeypatch.setattr(login_limit, "clock", lambda: now[0])
+    c = _client()
+    _signup(c)
+    _fail_n(c, 10)
+    assert _login(c).status_code == 429
+
+    now[0] += 901
+
+    assert _login(c).status_code == 200
+
+
+def test_success_clears_email_count(mdb):
+    c = _client()
+    _signup(c)
+    _fail_n(c, 9)
+    assert _login(c).status_code == 200
+
+    _fail_n(c, 10)
+
+
+def test_success_does_not_clear_ip_count(mdb):
+    c = _client(client=("8.8.8.8", 50000))
+    _signup(c)
+    for i in range(49):
+        r = _fail(c, f"other{i}@example.com")
+        assert r.status_code == 401, r.text
+    assert _login(c).status_code == 200
+    assert _fail(c, "last@example.com").status_code == 401
+
+    assert _fail(c, "after@example.com").status_code == 429
+
+
+def test_ip_limit_blocks_across_emails(mdb):
+    c = _client(client=("8.8.8.8", 50000))
+    for i in range(50):
+        r = _fail(c, f"other{i}@example.com")
+        assert r.status_code == 401, r.text
+
+    r = _fail(c, "other50@example.com")
+
+    assert r.status_code == 429
+    assert r.json()["error"]["code"] == "TOO_MANY_LOGIN_ATTEMPTS"
+
+
+def test_private_client_skips_ip_limit(mdb):
+    c = _client()
+    for i in range(51):
+        r = _fail(c, f"other{i}@example.com")
+        assert r.status_code == 401, r.text
+
+
+def test_existing_session_works_while_blocked(mdb):
+    c = _client()
+    _signup(c)
+    assert _login(c).status_code == 200
+    other = _client()
+    _fail_n(other, 10)
+    assert _login(other).status_code == 429
+
+    assert c.get("/api/v1/auth/me").status_code == 200
+
+
+def test_unexpected_error_does_not_count(mdb, monkeypatch):
+    c = _client(raise_server_exceptions=False)
+    _signup(c)
+
+    def boom(*_a):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(auth, "verify_password", boom)
+    for _ in range(12):
+        assert _login(c).status_code == 500
+    monkeypatch.undo()
+    monkeypatch.setattr("app.services.passwords._PBKDF2_ITERATIONS", 1)
+
+    assert _login(c).status_code == 200
+
+
+def test_invalid_body_is_not_counted(mdb):
+    c = _client()
+    _signup(c)
+    for _ in range(11):
+        assert c.post("/api/v1/auth/login", json={"email": "not-an-email", "password": "x"}).status_code == 400
+        assert c.post("/api/v1/auth/login", json={"email": EMAIL}).status_code == 400
+
+    assert _login(c).status_code == 200
+
+
+def test_blocked_request_sends_no_sql(mdb):
+    c = _client()
+    _signup(c)
+    _fail_n(c, 10)
+    queries = []
+
+    def record(*_a, **_k):
+        queries.append(1)
+
+    engine = mdb.get_bind()
+    event.listen(engine, "before_cursor_execute", record)
+    try:
+        r = _login(c)
+    finally:
+        event.remove(engine, "before_cursor_execute", record)
+
+    assert r.status_code == 429
+    assert queries == []
+
+
+def test_uvicorn_proxy_headers_resolve_client():
+    from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
+
+    seen = {}
+
+    async def inner(scope, receive, send):
+        seen["client"] = scope["client"]
+
+    wrapped = ProxyHeadersMiddleware(inner, trusted_hosts="*")
+    scope = {
+        "type": "http",
+        "client": ("10.0.0.1", 1234),
+        "headers": [(b"x-forwarded-for", b"8.8.8.8")],
+    }
+
+    import asyncio
+
+    asyncio.run(wrapped(scope, None, None))
+
+    assert seen["client"][0] == "8.8.8.8"
