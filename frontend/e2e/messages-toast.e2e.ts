@@ -6,7 +6,7 @@ import { start } from './support'
 /*
  * #474 — 메시지 화면에서 정리 중 토스트(#424)는 대화 영역 오른쪽 아래에 앉는다. 대화 아래 고정 줄(답장 줄·안내 줄)이 있으면
  * 그 위 16px, 없으면(보내기 전 확인) 영역 아래 24px, 오른쪽은 24px 이다. 셸의 아래 여백이 없어 바깥 페이지는 스크롤하지 않고,
- * 스크롤 칸을 끝까지 내리면 마지막 버튼·`확인하기` 가 토스트 위 16px 까지 올라온다. 768px 미만은 예전 독 자리 그대로다.
+ * 스크롤 칸을 끝까지 내리면 마지막 버튼·`확인하기` 가 토스트 위 16px 까지 올라온다. 768px 미만은 목록이면 독 자리, 화면 전체로 연 상세면 같은 규칙이다 (#478).
  * 자리를 바꾸는 것과 셸 여백이 0 이 되는 것은 shared/ui/toast/PinnedToastHost.test.tsx 가 본다
  */
 
@@ -158,22 +158,54 @@ test('화면을 오가도 정리 중 토스트의 펼침이 그대로다', async
   await expect(pill(page)).toHaveCount(0)
 })
 
-test.describe('768px 미만', () => {
+test.describe('768px 미만 (#478)', () => {
   test.use({ viewport: { width: 390, height: 844 } })
 
-  test('토스트는 대화 영역이 아니라 예전처럼 독에 있고, 독은 아래 탭 막대 위 24px 이다 (#478)', async ({
+  test('목록에서는 토스트가 셸 독과 같은 자리(아래 탭 막대 위 24px · 오른쪽 24px)이고 바깥 페이지는 스크롤하지 않는다', async ({
     page,
   }) => {
     await start(page, 'messages-member', '/workspaces/ws_01/messages')
     await expect(pill(page)).toBeVisible()
-    await expect(detail(page)).not.toContainText('정리 중')
-    await expect(page.getByTestId('pinned-toast-slot')).toContainText('정리 중')
+    await expect(detail(page)).toHaveCount(0)
     const bar = await box(page.getByRole('navigation', { name: '주요 화면' }))
     for (const next of FOLDS) {
       if (next === 'expanded') await fold(page, next)
-      const placed = await box(toast(page, next))
-      expect(390 - (placed.x + placed.width)).toBeCloseTo(24, 0)
-      expect(bar.y - (placed.y + placed.height)).toBeCloseTo(24, 0)
+      await expect
+        .poll(async () => {
+          const placed = await box(toast(page, next))
+          return [
+            Math.round(390 - (placed.x + placed.width)),
+            Math.round(bar.y - (placed.y + placed.height)),
+          ]
+        })
+        .toEqual([24, 24])
+      const pageScroll = await page.evaluate(
+        () => document.documentElement.scrollHeight - window.innerHeight,
+      )
+      expect(pageScroll).toBe(0)
+    }
+  })
+
+  test('펼친 토스트 아래로도 목록 끝까지 내리면 마지막 행이 토스트 위 16px 까지 올라온다', async ({
+    page,
+  }) => {
+    await start(page, 'messages-pm-self', '/workspaces/ws_01/messages')
+    await fold(page, 'expanded')
+    const list = page.getByRole('complementary', { name: '메시지 목록' })
+    await expectClearOfToast(page, 'expanded', list, [list.getByRole('link').last()])
+  })
+
+  test('대화를 화면 전체로 열면 탭 막대가 없고 토스트는 답장 줄 위 16px · 오른쪽 24px 이다', async ({
+    page,
+  }) => {
+    await start(page, 'messages-member', '/workspaces/ws_01/messages/threads/th_06')
+    const footer = page.getByRole('form', { name: '답장' }).locator('..')
+    await expect(pill(page)).toBeVisible()
+    await expect(page.getByRole('navigation', { name: '주요 화면' })).toHaveCount(0)
+    await expect(page.getByRole('link', { name: '메시지 목록으로' })).toBeVisible()
+    for (const state of FOLDS) {
+      if (state === 'expanded') await fold(page, 'expanded')
+      await expectPlaced(page, state, footer)
     }
   })
 })

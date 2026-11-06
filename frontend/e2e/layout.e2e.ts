@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import type { Locator } from '@playwright/test'
+import type { Locator, Page } from '@playwright/test'
 import { expectNoHorizontalOverflow, start } from './support'
 import type { Scenario } from './support'
 
@@ -208,3 +208,88 @@ test.describe('768px 경계와 안전 영역 (D-180)', () => {
     })
   }
 })
+
+/*
+ * #478 PR ②b — 메시지 목록·대화(H-4·H-5)와 태스크 상세·승인 확인. 데이터 본문이 뜬 뒤에 잰다 — 제목만 기다리면
+ * 데이터 전 빈 틀에서 통과한다. 메시지 화면은 목록·상세가 각자 스크롤하므로 바깥 페이지가 세로로도 스크롤하지 않는다
+ */
+const DATA_SCREENS: {
+  name: string
+  scenario: Scenario
+  path: string
+  /** 데이터가 그려진 뒤에만 보이는 것 */
+  body: (page: Page) => Locator
+  /** 목록·상세가 각자 스크롤하는 화면 */
+  fixedHeight?: true
+}[] = [
+  {
+    name: '메시지 목록(PM)',
+    scenario: 'messages-pm-self',
+    path: '/workspaces/ws_01/messages',
+    body: (page) =>
+      page
+        .getByRole('complementary', { name: '메시지 목록' })
+        .getByRole('region', { name: '대화' })
+        .getByRole('link')
+        .first(),
+    fixedHeight: true,
+  },
+  {
+    name: 'PM 자기 대화',
+    scenario: 'messages-pm-self',
+    path: '/workspaces/ws_01/messages/threads/th_06',
+    body: (page) => page.getByRole('region', { name: '대화 내용' }).getByRole('listitem').first(),
+    fixedHeight: true,
+  },
+  {
+    name: 'PM 이 보는 팀원 대화',
+    scenario: 'messages-pm-self',
+    path: '/workspaces/ws_01/messages/threads/th_01',
+    body: (page) => page.getByRole('region', { name: '대화 내용' }).getByRole('listitem').first(),
+    fixedHeight: true,
+  },
+  {
+    name: '팀원 대화',
+    scenario: 'messages-member',
+    path: '/workspaces/ws_01/messages/threads/th_06',
+    body: (page) => page.getByRole('region', { name: '대화 내용' }).getByRole('listitem').first(),
+    fixedHeight: true,
+  },
+  {
+    name: '태스크 상세',
+    scenario: 'tasks-default',
+    path: '/workspaces/ws_01/tasks/tk_01',
+    body: (page) => page.getByRole('list', { name: '변경 이력' }),
+  },
+  {
+    name: '승인 확인',
+    scenario: 'tasks-default',
+    path: '/workspaces/ws_01/approvals/ap_01',
+    body: (page) => page.getByRole('button', { name: '승인', exact: true }),
+  },
+]
+
+for (const width of [360, 390, 768] as const) {
+  test.describe(`${width}px — 메시지·태스크 상세·승인 확인 (#478)`, () => {
+    test.use({ viewport: { width, height: 844 } })
+
+    for (const screen of DATA_SCREENS) {
+      test(`${screen.name} — 가로 스크롤 없음`, async ({ page }, testInfo) => {
+        await start(page, screen.scenario, screen.path)
+        await expect(screen.body(page)).toBeVisible()
+        await expect(page.locator('[aria-busy="true"]')).toHaveCount(0)
+        await expectNoHorizontalOverflow(page)
+        if (screen.fixedHeight) {
+          const pageScroll = await page.evaluate(
+            () => document.documentElement.scrollHeight - window.innerHeight,
+          )
+          expect(pageScroll).toBeLessThanOrEqual(0)
+        }
+        await testInfo.attach(`${screen.name}-${width}`, {
+          body: await page.screenshot({ fullPage: true }),
+          contentType: 'image/png',
+        })
+      })
+    }
+  })
+}
