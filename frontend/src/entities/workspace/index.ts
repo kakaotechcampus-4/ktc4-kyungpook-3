@@ -26,6 +26,7 @@ export {
 } from './lib/onboardingReview'
 export {
   WORKSPACE_LIST_QUERY_KEY,
+  fetchFreshWorkspaces,
   fetchWorkspaces,
   useMemberWorkspace,
   workspaceListQueryOptions,

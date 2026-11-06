@@ -92,6 +92,7 @@ export const 만들기_둘러보기: Story = {
         id: 'ws_03',
         name: '설정 중인 팀',
         role: 'pm',
+        memberId: null,
         createdAt: '2026-09-03T00:00:00Z',
         onboarding: { completed: false, currentStep: 'connect_discord', steps: [] },
       }}

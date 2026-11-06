@@ -1,18 +1,24 @@
-"""채팅 폴링 검증 스크립트 — 채널의 최근 메시지를 한 번 읽어 봇·워커와 같은 판단 경로(capture/judge_path.py)에 넣는다.
+"""채팅 폴링 — 하루 한 번(systemd timer) 채널의 새 메시지를 읽어 BE 에 채팅 회의 하나로 넘긴다.
 
-음성 회의의 전사록 자리에 채팅을 넣어 보는 실험용이다. 정식 진입점이 아니다. BE 에는 인계하지 않는다.
-유사 task 검색은 eval_pipeline 처럼 --tasks 의 task 목록을 실제 임베딩으로 검색해 흉내 낸다. 없으면 후보 없음.
+이어 읽는 자리는 BE 가 정한다. GET /workspaces/{id}/chat-cursor 가 BE 가 이미 가진 마지막 채팅 메시지 시각을 주고,
+그 뒤 메시지만 읽는다(없으면 now - chat_poll_initial_hours). 한 번에 chat_poll_max_days 까지만 따라잡는다.
 
-화자는 음성 회의와 같이 작성자 uid 로 둔다(전사 계약). 판단은 음성과 같은 추출기(capture/judge_path.py)로 돌려서
-LLM 에는 이름을 보이고 결과의 evidence_speaker 는 uid 로 돌려받는다. 그래야 BE 가 1인칭 담당자를 uid 로 찾는다.
+  1 길드 → 워크스페이스, 커서 조회   2 커서 뒤 사람 메시지 읽기   3 그 앞 메시지를 참고 문맥으로 읽기(판단만, 저장 안 함)
+  4 POST /meetings(source=chat, started_at=첫 새 메시지)   5 end   6 sources(새 메시지만)   7 판단   8 POST /extractions
 
-봇 메시지(음성 테스트 때 올린 회의록 등)와 본문 없는 메시지는 뺀다. 게이트웨이에 붙지 않고 REST 로만 읽는다.
-Discord 개발자 포털에서 Message Content Intent 를 켜야 본문이 온다. 꺼져 있으면 본문이 빈 문자열로 와서 멈춘다.
+메시지마다 end = start 로 보낸다. BE 의 커서는 started_at + 가장 늦은 발화 끝이라 마지막 새 메시지 시각과 정확히 같아지고,
+다음 실행이 거기서 이어 읽는다. 같은 메시지를 두 번 읽지 않으므로 제안이 중복되지 않는다. 회의를 만든 뒤 실패하면 fail 로
+닫는다. failed 회의는 커서에 들지 않아 다음 실행이 같은 구간을 다시 읽는다.
+
+화자는 음성 회의와 같이 작성자 uid, 판단은 같은 추출기(capture/judge_path.py)다. 봇 메시지와 본문 없는 메시지는 뺀다.
+게이트웨이에 붙지 않고 REST 로만 읽는다. 개발자 포털에서 Message Content Intent 를 켜야 본문이 온다.
 
 실행 (ai/ 디렉토리 안에서):
-    python -m capture.chat_poll --minutes 60
-    python -m capture.chat_poll --minutes 60 --tasks judge/golden_set_pipeline/meeting_01.json
-봇 토큰은 .env 의 CHAT_POLL_BOT_TOKEN, 채널은 --channel 또는 DISCORD_CHANNEL_ID. 결과는 runs/chat_poll_<시각>.json
+    python -m capture.chat_poll [--channel ID] [--dry-run]
+봇 토큰은 CHAT_POLL_BOT_TOKEN, 채널은 --channel 또는 DISCORD_CHANNEL_ID. --dry-run 은 BE 에 쓰지 않고 판단만 해 runs/ 에 저장한다.
+주의: 커서는 워크스페이스 단위(BE 의 가장 최근 done 채팅 회의)라 --channel 은 설정된 채널이어야 한다. 동시에 두 번 돌리면 제안이
+중복된다. 서버에서 손으로 돌릴 때는 `systemctl start mm-chat-poll.service` 를 쓴다(유닛의 flock 이 타이머 실행과 겹치지 않게 막는다).
+실행마다 runs/chat_poll_attempt.json 에 시도를 남기고 성공하면 지운다(_begin_attempt).
 """
 
 from __future__ import annotations
@@ -21,7 +27,8 @@ import argparse
 import asyncio
 import json
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
+from typing import Protocol
 from zoneinfo import ZoneInfo
 
 from shared.config import RUNS_DIR, settings
@@ -42,13 +49,17 @@ def clean_text(content: str, mentions: dict[int, str]) -> str:
     return " ".join(content.split())
 
 
+def _kept(messages: list[Message]) -> list[Message]:
+    # 리액션 줄은 원래 메시지와 시각이 같고 목록에서 바로 뒤에 있다. 정렬이 안정적이라 그 자리를 지킨다
+    return sorted((m for m in messages if not m[2] and m[4].strip()), key=lambda m: m[3])
+
+
 def to_transcript(messages: list[Message]) -> tuple[Transcript, dict[str, str]]:
     """사람이 쓴 본문 있는 메시지만 시간순 전사록으로. start 는 첫 메시지 기준 초다.
 
     speaker 는 작성자 uid 다. 표시 이름은 {uid: 이름} 으로 따로 돌려준다(음성 매니페스트의 speakers 와 같은 구실).
-    리액션 줄은 원래 메시지와 시각이 같고 목록에서 바로 뒤에 있다. 정렬이 안정적이라 그 자리를 지킨다.
     """
-    kept = sorted((m for m in messages if not m[2] and m[4].strip()), key=lambda m: m[3])
+    kept = _kept(messages)
     if not kept:
         return Transcript(segments=[], source="chat"), {}
     t0 = kept[0][3]
@@ -60,48 +71,208 @@ def to_transcript(messages: list[Message]) -> tuple[Transcript, dict[str, str]]:
     return Transcript(segments=segments, source="chat"), names
 
 
-async def fetch_messages(token: str, channel_id: int, after: datetime) -> list[Message]:
-    import discord
-
-    client = discord.Client(intents=discord.Intents.none())
-    await client.login(token)
-    try:
-        channel = await client.fetch_channel(channel_id)
-        out: list[Message] = []
-        async for m in channel.history(after=after, oldest_first=True, limit=None):
-            text = clean_text(m.content, {u.id: u.display_name for u in m.mentions})
-            out.append((str(m.author.id), m.author.display_name, m.author.bot, m.created_at, text))
-            if m.author.bot or not text:
-                continue  # 빠지는 메시지에 단 리액션은 가리킬 말이 없다
-            # 리액션은 누른 시각을 주지 않아 원래 메시지 바로 뒤에 둔다. "네 그렇게 해요" 처럼 합의로 읽힌다
-            for r in m.reactions:
-                emoji = r.emoji if isinstance(r.emoji, str) else f":{r.emoji.name}:"
-                async for u in r.users():
-                    out.append((str(u.id), u.display_name, u.bot, m.created_at, f"{emoji} (위 메시지에 반응)"))
-        return out
-    finally:
-        await client.close()
+def message_dates(messages: list[Message], tz: str) -> dict[int, date]:
+    """to_transcript 의 seq → 그 메시지를 쓴 날(tz 기준). "내일" 같은 상대 날짜는 메시지 작성일로 푼다."""
+    zone = ZoneInfo(tz)
+    return {seq: m[3].astimezone(zone).date() for seq, m in enumerate(_kept(messages), start=1)}
 
 
-def judge_chat(transcript: Transcript, names: dict[str, str], today, candidates, *, run=None, cfg=None):
-    """봇·워커와 같은 판단 경로(capture.judge_path)로 판단한다. (JudgeOutput, []) 또는 (None, 빠진 설정 이름).
+class ChannelReader(Protocol):
+    def guild_id(self) -> str: ...
 
-    유사 검색은 BE 대신 candidates 로 끼우므로 BE 설정은 보지 않는다. names 는 to_transcript 의 {uid: 이름} 이다.
-    등록할 항목 없이 판단 실패만 남으면 judge_path.JudgeAllFailed 가 난다.
+    def read(self, after: datetime, before: datetime) -> list[Message]:
+        """after 이후 before 까지(리액션 포함), 오래된 것부터."""
+
+    def read_before(self, before: datetime, limit: int) -> list[Message]:
+        """before 앞의 사람 메시지 최대 limit 개, 오래된 것부터. 리액션은 없다."""
+
+
+class DiscordReader:
+    """REST 로 채널을 읽는다. 로그인은 한 번이고 세 메서드가 나눠 쓴다. close() 로 닫는다."""
+
+    def __init__(self, token: str, channel_id: int) -> None:
+        self._token, self._channel_id = token, channel_id
+        self._loop = asyncio.new_event_loop()
+        self._client = None
+        self._channel = None
+
+    def _run(self, coro):
+        return self._loop.run_until_complete(coro)
+
+    async def _channel_(self):
+        if self._channel is None:
+            import discord
+
+            self._client = discord.Client(intents=discord.Intents.none())
+            await self._client.login(self._token)
+            self._channel = await self._client.fetch_channel(self._channel_id)
+        return self._channel
+
+    def close(self) -> None:
+        if self._client is not None:
+            self._run(self._client.close())
+        self._loop.close()
+
+    def guild_id(self) -> str:
+        async def go():
+            return str((await self._channel_()).guild.id)
+
+        return self._run(go())
+
+    def read(self, after: datetime, before: datetime) -> list[Message]:
+        async def go():
+            channel = await self._channel_()
+            out: list[Message] = []
+            async for m in channel.history(after=after, before=before, oldest_first=True, limit=None):
+                text = clean_text(m.content, {u.id: u.display_name for u in m.mentions})
+                out.append((str(m.author.id), m.author.display_name, m.author.bot, m.created_at, text))
+                if m.author.bot or not text:
+                    continue  # 빠지는 메시지에 단 리액션은 가리킬 말이 없다
+                # 리액션은 누른 시각을 주지 않아 원래 메시지 바로 뒤에 둔다. "네 그렇게 해요" 처럼 합의로 읽힌다
+                for r in m.reactions:
+                    emoji = r.emoji if isinstance(r.emoji, str) else f":{r.emoji.name}:"
+                    async for u in r.users():
+                        out.append((str(u.id), u.display_name, u.bot, m.created_at, f"{emoji} (위 메시지에 반응)"))
+            return out
+
+        return self._run(go())
+
+    def read_before(self, before: datetime, limit: int) -> list[Message]:
+        async def go():
+            channel = await self._channel_()
+            out: list[Message] = []
+            async for m in channel.history(before=before, limit=limit):
+                text = clean_text(m.content, {u.id: u.display_name for u in m.mentions})
+                if not m.author.bot and text:
+                    out.append((str(m.author.id), m.author.display_name, False, m.created_at, text))
+            return out[::-1]
+
+        return self._run(go())
+
+
+ATTEMPT_FILE = "chat_poll_attempt.json"
+
+
+def _begin_attempt(cursor: datetime | None, after: datetime) -> datetime:
+    """이번 실행을 시도로 남기고 읽기 시작 시각을 돌려준다. 성공하면 _end_attempt 가 지운다.
+
+    실패한 회의는 커서에 들지 않아 같은 구간을 다시 읽는다. 매번 실패하는 구간이면 수집이 멈추므로, 같은 커서에서 두 번째
+    시도부터 경고한다. 시작할 때 남기므로 시간 제한으로 죽어 except 를 못 탄 실행도 센다.
+    커서가 없을 때(첫 실행) 실패하면 다음 실행의 now - initial_hours 가 그 구간을 건너뛰므로 지난 시작점부터 읽는다.
+    ponytail: 기록은 이 서버의 runs/ 에만 있다. 서버를 옮기거나 runs/ 를 지우면 센 횟수와 첫 실행 시작점을 잃는다.
     """
-    from capture import judge_path
+    path = RUNS_DIR / ATTEMPT_FILE
+    try:
+        prev = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        prev = None
+    key = cursor.isoformat() if cursor else None
+    count = 1
+    if isinstance(prev, dict) and prev.get("cursor") == key:
+        count = int(prev.get("count", 0)) + 1
+        if cursor is None and prev.get("after"):
+            after = min(after, datetime.fromisoformat(prev["after"]))
+    if count >= 2:
+        print(f"[chat] 경고: 같은 구간(커서 {key or '없음'}, {after:%Y-%m-%d %H:%M} 이후)에서 {count}번째 시도입니다. "
+              f"지난 {count - 1}번은 끝나지 못했습니다(failed 채팅 회의·journal 을 확인하세요).", file=sys.stderr)
+    RUNS_DIR.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"cursor": key, "after": after.isoformat(), "count": count}), encoding="utf-8")
+    return after
 
-    extract = judge_path.build_extractor(run=run, candidates=candidates, cfg=cfg)
-    if extract is None:
-        return None, judge_path.missing_settings(cfg, run=run, candidates=candidates)
-    return extract(transcript, names, today, workspace_id="chat_poll"), []
+
+def _end_attempt() -> None:
+    (RUNS_DIR / ATTEMPT_FILE).unlink(missing_ok=True)
+
+
+def poll(reader: ChannelReader, client, extract, *, now: datetime, cfg, dry_run: bool = False) -> int:
+    """한 번 돈다. 종료 코드를 돌려준다(0 정상·읽을 것 없음, 1 실패)."""
+    from capture.handoff import clean_item
+    from capture.judge_path import JudgeAllFailed
+
+    ws = client.guild_workspace(reader.guild_id())
+    cursor = client.chat_cursor(ws)
+    after = cursor or now - timedelta(hours=cfg.chat_poll_initial_hours)
+    if not dry_run:
+        after = _begin_attempt(cursor, after)
+    # 커서 뒤 ~ now 를 다 읽고 첫 사람 메시지부터 max_days 까지만 보낸다. 나머지는 커서가 나아간 다음 실행이 읽는다.
+    # 읽는 구간을 먼저 자르면 그 안에 메시지가 없을 때 커서가 못 나아가 같은 빈 구간에서 영원히 멈춘다.
+    # 이미 BE 에 있는 시각(커서 이하)과 now 이후는 뺀다. 리액션 줄도 원래 메시지 시각이라 같이 빠진다
+    messages = [m for m in reader.read(after, now) if after < m[3] < now]
+    kept0 = _kept(messages)
+    if kept0:
+        limit = kept0[0][3] + timedelta(days=cfg.chat_poll_max_days)   # 발화 offset 은 BE 가 14일까지만 받는다
+        messages = [m for m in messages if m[3] <= limit]
+    humans = [m for m in messages if not m[2]]
+    if humans and not any(m[4].strip() for m in humans):
+        print("사람 메시지 본문이 전부 비어 있습니다. 개발자 포털에서 Message Content Intent 를 켜세요.", file=sys.stderr)
+        return 1
+    transcript, names = to_transcript(messages)
+    if not transcript.segments:
+        print("새 메시지가 없습니다.")
+        if not dry_run:
+            _end_attempt()
+        return 0
+    kept = _kept(messages)
+    first_at = kept[0][3]
+    tz = ZoneInfo(cfg.meeting_timezone)
+    dates = message_dates(messages, cfg.meeting_timezone)
+    today = kept[-1][3].astimezone(tz).date()
+    print(f"[chat] 새 메시지 {len(transcript.segments)}개 ({after:%Y-%m-%d %H:%M} 이후)")
+
+    ctx_messages = reader.read_before(first_at, cfg.chat_poll_context_messages)
+    # 한 줄로 접는다. 여러 줄 메시지가 번호 매긴 프롬프트 줄처럼 보이면 안 된다(reader 가 이미 접었어도 한 번 더 지킨다)
+    context, ctx_names = to_transcript([(*m[:4], clean_text(m[4], {})) for m in ctx_messages])
+    # 참고 문맥은 판단에만 쓴다. 저장(sources)에는 새 메시지만 간다
+    all_names = {**ctx_names, **names}
+    extra = {"context": context} if context.segments else {}
+
+    def run_extract():
+        return extract(transcript, all_names, today, workspace_id=ws, dates=dates, **extra)
+
+    if dry_run:
+        try:
+            out = run_extract()
+        except JudgeAllFailed as e:
+            print(f"판단 실패: {e}", file=sys.stderr)
+            return 1
+        print(f"[items {len(out.items)}건]")
+        for i in out.items:
+            print(f"  {str(i.get('action')):<6} title={i.get('task_title')!r} due={i.get('due_date')}")
+        RUNS_DIR.mkdir(parents=True, exist_ok=True)
+        path = RUNS_DIR / f"chat_poll_{datetime.now():%Y%m%d_%H%M%S}.json"
+        path.write_text(json.dumps({"transcript": transcript.to_dict(), "speaker_names": all_names,
+                                    "context": context.to_dict(), "items": out.items, "failures": out.failures,
+                                    "dropped": out.dropped}, ensure_ascii=False, indent=2), encoding="utf-8")
+        print(f"결과 저장: {path}")
+        return 0
+
+    title = "채팅 " + first_at.astimezone(tz).strftime("%Y-%m-%d")
+    meeting_id = client.create_meeting(ws, title=title, source="chat", started_at=first_at)["meeting_id"]
+    stage = "sources"
+    try:
+        client.end_meeting(meeting_id)
+        client.create_sources(meeting_id, transcript.to_dict(), names)
+        stage = "extract"
+        out = run_extract()
+        stage = "handoff"
+        client.create_extraction(meeting_id, ws, transcript_path=None, model_name=None,
+                                 items=[clean_item(i) for i in out.items])
+    except Exception as e:  # noqa: BLE001 - 어느 단계든 회의를 failed 로 닫고 1 로 끝낸다
+        print(f"[chat] {stage} 실패: {type(e).__name__}: {e}", file=sys.stderr)
+        try:
+            client.fail_meeting(meeting_id, stage)
+        except Exception as e2:  # noqa: BLE001
+            print(f"[chat] 실패 통보도 실패: {e2}", file=sys.stderr)
+        return 1
+    _end_attempt()
+    print(f"[chat] 회의 {meeting_id} 등록, 항목 {len(out.items)}건, 판단 못 한 것 {len(out.failures)}건")
+    return 0
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--channel", help="채널 ID. 없으면 DISCORD_CHANNEL_ID")
-    parser.add_argument("--minutes", type=int, default=60, help="최근 몇 분의 메시지를 읽을지")
-    parser.add_argument("--tasks", help='기존 task 목록 JSON ({"tasks": [...]}, golden_set_pipeline 형식)')
+    parser.add_argument("--dry-run", action="store_true", help="BE 에 쓰지 않고 판단만 해 runs/ 에 저장")
     args = parser.parse_args()
 
     cfg = settings()
@@ -109,51 +280,24 @@ def main() -> int:
     if not cfg.chat_poll_bot_token or not channel:
         print("CHAT_POLL_BOT_TOKEN 과 채널 ID(--channel 또는 DISCORD_CHANNEL_ID)가 필요합니다.", file=sys.stderr)
         return 1
-
-    after = datetime.now(timezone.utc) - timedelta(minutes=args.minutes)
-    messages = asyncio.run(fetch_messages(cfg.chat_poll_bot_token, int(channel), after))
-    humans = [m for m in messages if not m[2]]
-    print(f"[chat] 메시지 {len(messages)}개 (사람 {len(humans)}개)")
-    if humans and not any(m[4].strip() for m in humans):
-        print("사람 메시지 본문이 전부 비어 있습니다. 개발자 포털에서 Message Content Intent 를 켜세요.", file=sys.stderr)
+    if not cfg.be_base_url or not cfg.be_service_token:
+        print("BE_BASE_URL 과 BE_SERVICE_TOKEN 이 필요합니다.", file=sys.stderr)
         return 1
 
-    transcript, names = to_transcript(messages)
-    if not transcript.segments:
-        print("판단할 메시지가 없습니다.")
-        return 0
-    for s in transcript.segments:
-        print(f"  {s.seq:>3} {names.get(s.speaker, s.speaker)}: {s.text}")
+    from capture import judge_path
+    from capture.handoff import BeClient
 
-    from capture.judge_path import JudgeAllFailed
-    from judge.eval_pipeline import EmbeddingCandidates
-
-    tasks = json.loads(open(args.tasks, encoding="utf-8").read())["tasks"] if args.tasks else []
-    today = datetime.now(ZoneInfo(cfg.meeting_timezone)).date()
+    client = BeClient(cfg.be_base_url, service_token=cfg.be_service_token)
+    extract = judge_path.build_extractor(candidates=client, cfg=cfg)
+    if extract is None:
+        print(f"판단 경로 설정이 없습니다: {', '.join(judge_path.missing_settings(cfg, candidates=client))}",
+              file=sys.stderr)
+        return 1
+    reader = DiscordReader(cfg.chat_poll_bot_token, int(channel))
     try:
-        out, missing = judge_chat(transcript, names, today, EmbeddingCandidates(tasks), cfg=cfg)
-    except JudgeAllFailed as e:
-        print(f"판단 실패: {e}", file=sys.stderr)
-        return 1
-    if out is None:
-        print(f"판단 경로 설정이 없습니다: {', '.join(missing)}", file=sys.stderr)
-        return 1
-
-    print(f"\n[items {len(out.items)}건]")
-    for i in out.items:
-        print(f"  {i['action']:<6} target={i['target_task_id']} category={i['category']} title={i['task_title']!r} "
-              f"due={i['due_date']} status={i['status']} assignee={i['assignee_raw']!r}\n         {i['doc_text']}")
-    print(f"[failures {len(out.failures)}건]")
-    for f in out.failures:
-        print(f"  {f['stage']}: {f['text']!r} — {f['reason']}")
-
-    RUNS_DIR.mkdir(parents=True, exist_ok=True)
-    path = RUNS_DIR / f"chat_poll_{datetime.now():%Y%m%d_%H%M%S}.json"
-    path.write_text(json.dumps({"transcript": transcript.to_dict(), "speaker_names": names, "items": out.items,
-                                "failures": out.failures, "dropped": out.dropped},
-                               ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"결과 저장: {path}")
-    return 0
+        return poll(reader, client, extract, now=datetime.now(timezone.utc), cfg=cfg, dry_run=args.dry_run)
+    finally:
+        reader.close()
 
 
 if __name__ == "__main__":

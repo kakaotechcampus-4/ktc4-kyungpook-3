@@ -26,11 +26,18 @@ export interface TaskCreateApproval extends ApprovalBase {
   extractionItemId: string | null
   gate: 'review' | 'hold' | null
 }
+/** AI 판정 분류 (ai/shared/schemas.py JudgeCategory) */
+export type TaskUpdateCategory = 'schedule' | 'assignee' | 'status' | 'scope' | 'decision' | 'none'
 export interface TaskUpdateApproval extends ApprovalBase {
   kind: 'task_update'
   storedOverrides?: TaskUpdateEdits
   title: string | null
   changes: { field: string; value: unknown }[]
+  /** 모르는 값이거나 없으면 null 이다 */
+  category: TaskUpdateCategory | null
+  docText: string | null
+  evidence: ExtractionEvidence
+  meetingId: string | null
 }
 export interface UnsupportedApproval extends ApprovalBase {
   kind: 'unsupported'

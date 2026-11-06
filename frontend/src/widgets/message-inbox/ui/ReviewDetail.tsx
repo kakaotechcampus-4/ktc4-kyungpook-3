@@ -1,79 +1,78 @@
-import { useId, useState } from 'react'
+import { useId, useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
-import type { MessageAction, MessageReview } from '@/entities/message'
+import type { Bundle, MessageAction } from '@/entities/message'
+import { SendTimingPicker } from '@/entities/message-settings'
 import {
   ActionFailure,
-  TIME_PASSED_LOCK,
+  NOTE_SAVED_NOTICE,
   TIME_PASSED_MESSAGE,
   TIME_PASSED_TITLE,
-  dismissNotice,
-  sendNotice,
+  approveNotice,
+  cancelNotice,
+  removeTaskNotice,
   useMessageAction,
 } from '@/features/message-action'
 import { paths } from '@/shared/config/routes'
 import { Icon } from '@/shared/ui/icon'
-import { shortDateTime } from '../lib/format'
-import { LockedButton } from './LockedButton'
+import { LockedButton } from '@/shared/ui/locked-button'
+import { earliestDue, shortDateTime, taskTitle } from '../lib/format'
+import { NO_DRAFT, liveDraft, lockReason } from '../model/reviewDraft'
+import type { ReviewDraft } from '../model/reviewDraft'
 import { ReviewMessageCard } from './ReviewMessageCard'
-import { SendTimingPicker } from './SendTimingPicker'
+import { ReviewTasks } from './ReviewTasks'
 
 /* Messages 캔버스 실측 — 가운데 604 열(위 44 · 좌우 36 · 아래 56, 간격 24), 제목 28px,
    근거 블록(눌린 면 · 위아래 18 · 좌우 20 · 라운드 12 · 간격 10), 행동 줄 위 구분선.
    열은 내용 높이를 따르고(`self-start`) 넘치면 PAGE 가 스크롤한다 — 칸 높이로 늘어나면(stretch) 세로 flex 가 자식을 줄이고,
    overflow-hidden 인 미리보기 카드는 최소 높이가 0 이라 본문이 잘린다.
-   이름·사유·본문은 띄어 쓰지 않은 긴 글자(주소, 전역 `keep-all` 의 긴 한글)도 칸 안에서 줄을 바꾼다(`wrap-anywhere`) */
+   이름·태스크·본문은 띄어 쓰지 않은 긴 글자(주소, 전역 `keep-all` 의 긴 한글)도 칸 안에서 줄을 바꾼다(`wrap-anywhere`) */
 const PAGE = 'flex flex-1 justify-center overflow-y-auto px-36 pt-44 pb-56'
 const COLUMN = 'flex w-full max-w-[604px] flex-col gap-24 self-start'
 const TITLE = 'text-[28px] leading-[1.25] font-bold tracking-h1 text-ink'
-const REASON = 'flex flex-col items-start gap-10 rounded-12 bg-surface-sunken px-20 py-18'
-const REASON_LINK =
-  'inline-flex items-center gap-5 text-caption text-dim underline underline-offset-3 hover:text-sub'
 
 export interface ReviewDetailProps {
   workspaceId: string
   botName: string
-  review: MessageReview
-  /** 보내거나 보내지 않아 이 항목이 사라진다 — 누른 버튼도 사라지므로 포커스를 맡길 자리로 옮긴다 */
+  bundle: Bundle
+  /** 승인하거나 보내지 않거나 마지막 태스크를 빼거나 다른 묶음과 합쳐져 이 항목이 바뀐다 — 누른 버튼도 사라지므로 포커스를 맡길 자리로 옮긴다 */
   onSettled: () => void
 }
 
-/** 행동이 잠긴 이유. 잠긴 버튼의 설명(`aria-describedby`)으로도 읽힌다 */
-function lockReason(editing: boolean, choosingTime: boolean, timePassed: boolean): string | null {
-  if (editing) return '고친 문구를 저장하거나 취소한 뒤에 보낼 수 있어요.'
-  if (choosingTime) return '정한 시각을 저장하거나 취소한 뒤에 보낼 수 있어요.'
-  if (timePassed) return TIME_PASSED_LOCK
-  return null
-}
-
 /**
- * 보내기 전 확인 — 나갈 DM 미리보기, 왜 보내려 하는지, 언제 보낼지, `보내지 않음`·`이대로 발송` (Messages 시안).
- * 결정 4 의 UI 범위는 디자인 캔버스 기준이고 발송 정책은 MSW 목 동작이다. 모든 행동은 서버가 성공한 뒤에 화면을 바꾼다 —
- * 요청 중에는 행동이 모두 잠기고, 실패하면 그 자리에 다시 시도를 알린다 (D-137, 계획 C-5).
- * 문구를 고치거나 시각을 직접 정하는 중에도 발송이 잠긴다 — 화면에 보이는 문구·시점과 다르게 나가지 않게 한다.
- * 잠금은 `aria-disabled` 라 누른 버튼에서 포커스가 빠지지 않는다. 발송 시점 저장만으로 잠긴 동안은 버튼 모양을 그대로 둔다.
- * 보내거나 보내지 않으면 이 항목이 목록에서 빠지고 다음 항목이 골라진다
+ * 보내기 전 확인 — 보낼 메시지(묶음) 한 통의 미리보기, 묶은 태스크, 보낼 시각, `보내지 않음`·`이대로 발송` (Messages 시안, 계약 §5.7).
+ * `이대로 발송` 은 화면에 보이는 문구의 판(draft_version)으로 승인한다 — 그 사이 문구가 바뀌었으면 서버가 거절하고 다시 불러온다.
+ * 모든 행동은 서버가 성공한 뒤에 화면을 바꾼다 — 요청 중에는 행동이 모두 잠기고, 실패하면 그 자리에 알린다 (D-137, 계획 C-5).
+ * 문구·시각·메모를 고치거나 태스크를 뺄지 정하는 중에도 발송이 잠긴다 — 화면에 보이는 것과 다르게 나가지 않게 한다.
+ * 열린 것은 한 번에 하나다(ReviewDraft).
+ * 잠금은 `aria-disabled` 라 누른 버튼에서 포커스가 빠지지 않는다. 시각 저장만으로 잠긴 동안은 버튼 모양을 그대로 둔다
  */
-export function ReviewDetail({ workspaceId, botName, review, onSettled }: ReviewDetailProps) {
+export function ReviewDetail({ workspaceId, botName, bundle, onSettled }: ReviewDetailProps) {
   const headingId = useId()
-  const reasonId = useId()
   const lockHintId = useId()
+  const tasksHeadingRef = useRef<HTMLHeadingElement>(null)
   const navigate = useNavigate()
   const actions = useMessageAction(workspaceId)
-  const [editing, setEditing] = useState(false)
-  const [choosingTime, setChoosingTime] = useState(false)
+  const [openDraft, setDraft] = useState<ReviewDraft>(NO_DRAFT)
+  const draft = liveDraft(
+    openDraft,
+    bundle.tasks.map(({ reminderId }) => reminderId),
+  )
+  // 문구 칸·시각 칸은 닫힐 때 자기 것만 닫는다 — 다른 것이 열린 동안 늦게 온 닫기가 그것을 지우지 않게 한다
+  const toggle = (kind: 'body' | 'time') => (open: boolean) =>
+    setDraft((current) => (open ? { kind } : current.kind === kind ? NO_DRAFT : current))
   const busy = actions.pending !== null
-  const timePassed = actions.isTimePassed(review.id)
-  const lockHint = lockReason(editing, choosingTime, false)
-  const sendLockHint = lockReason(editing, choosingTime, timePassed)
+  const timePassed = actions.isTimePassed(bundle.id)
+  const lockHint = lockReason(draft, false)
+  const approveLockHint = lockReason(draft, timePassed)
   const decisionLocked = busy || lockHint !== null
-  const sendLocked = busy || sendLockHint !== null
-  // 발송 시점 저장만으로 잠긴 동안은 버튼 모양을 바꾸지 않는다 — 짧은 저장마다 버튼이 깜빡였다.
-  // 잠금(aria-disabled, 누름을 버림)은 그대로이고, 누름이 왜 안 되는지는 저장 중인 시점 카드가 보여 준다
+  const approveLocked = busy || approveLockHint !== null
+  // 시각 저장만으로 잠긴 동안은 버튼 모양을 바꾸지 않는다 — 짧은 저장마다 버튼이 깜빡였다.
+  // 잠금(aria-disabled, 누름을 버림)은 그대로이고, 누름이 왜 안 되는지는 저장 중인 시각 카드가 보여 준다
   const quietLock = actions.pending?.kind === 'schedule' && lockHint === null
-  const pendingKind = actions.pending?.target === review.id ? actions.pending.kind : null
-  const state = review.state
+  const pendingKind = actions.pending?.target === bundle.id ? actions.pending.kind : null
+  const awaiting = bundle.stage === 'awaitingApproval'
   const failureOf = (...kinds: MessageAction['kind'][]) => (
-    <ActionFailure target={review.id} actions={actions} kinds={kinds} />
+    <ActionFailure target={bundle.id} actions={actions} kinds={kinds} />
   )
   // 처리한 항목의 주소에 머물지 않는다 — 목록의 다음 항목이 기본으로 골라진다
   const leave = () => {
@@ -86,64 +85,95 @@ export function ReviewDetail({ workspaceId, botName, review, onSettled }: Review
       <article aria-labelledby={headingId} className={COLUMN}>
         <div className="flex flex-col gap-8">
           <h2 id={headingId} className={TITLE}>
-            {state.status === 'scheduled' ? '보낼 예정인 메시지예요' : '이 메시지, 보낼까요?'}
+            {awaiting ? '이 메시지, 보낼까요?' : '보낼 예정인 메시지예요'}
           </h2>
           <p className="text-[14px] wrap-anywhere text-sub">
-            {state.status === 'scheduled' ? (
-              <>
-                <strong className="font-semibold text-ink">{review.recipientName}</strong>
-                에게 {review.scheduledAt === null ? '' : shortDateTime(review.scheduledAt)}에
-                Discord 개인 메시지로 나갑니다. {state.approvedBy}님이 승인했어요.
-              </>
-            ) : (
-              <>
-                <strong className="font-semibold text-ink">{review.recipientName}</strong>에게
-                Discord 개인 메시지로 나갑니다. 보낸 뒤에는 되돌릴 수 없어요.
-              </>
-            )}
+            <strong className="font-semibold text-ink">{bundle.recipientName}</strong>
+            에게 {shortDateTime(bundle.scheduledAt)}에 Discord 개인 메시지로 나갑니다.{' '}
+            {awaiting ? '승인해야 나가요.' : '승인했어요.'}
           </p>
-          {state.status === 'scheduled' ? (
+          {awaiting ? null : (
             <p className="text-caption text-dim">
-              문구나 시각을 바꾸면 다시 승인해야 보낼 수 있어요.
+              승인한 뒤에도 문구와 시각을 고칠 수 있어요. 같은 시각의 다른 메시지와 합쳐지면 다시
+              승인해야 해요.
             </p>
-          ) : null}
+          )}
         </div>
 
         <ReviewMessageCard
-          review={review}
+          bundle={bundle}
           botName={botName}
-          editing={editing}
-          onEditingChange={setEditing}
-          locked={busy || choosingTime}
+          editing={draft.kind === 'body'}
+          onEditingChange={toggle('body')}
+          locked={busy || (draft.kind !== 'none' && draft.kind !== 'body')}
           keepLockedLook={quietLock}
           saving={pendingKind === 'edit'}
           onSave={(body, onSaved) =>
-            actions.run({ kind: 'edit', reviewId: review.id, body }, { onSuccess: onSaved })
+            actions.run({ kind: 'edit', bundleId: bundle.id, body }, { onSuccess: onSaved })
           }
           failure={failureOf('edit')}
         />
 
-        <section aria-labelledby={reasonId} className={REASON}>
-          <h3 id={reasonId} className="mono text-[11px] leading-[1.6] font-normal text-dim">
-            왜 보내려 하나요
-          </h3>
-          <p className="text-body leading-[1.75] wrap-anywhere text-ink">{review.reason}</p>
-          {review.reasonUrl === null ? null : (
-            <a href={review.reasonUrl} target="_blank" rel="noreferrer" className={REASON_LINK}>
-              마지막 메시지 보기
-              <Icon name="link-out" size={12} />
-              <span className="sr-only">(Discord, 새 창)</span>
-            </a>
-          )}
-        </section>
+        <ReviewTasks
+          bundle={bundle}
+          draft={draft}
+          onDraftChange={setDraft}
+          busy={busy}
+          removing={pendingKind === 'removeTask'}
+          savingNote={pendingKind === 'editNote'}
+          headingRef={tasksHeadingRef}
+          onRemove={(task) =>
+            actions.run(
+              { kind: 'removeTask', bundleId: bundle.id, reminderId: task.reminderId },
+              {
+                notice: (outcome) =>
+                  removeTaskNotice(taskTitle(task), bundle.recipientName, outcome),
+                onSuccess: (outcome) => {
+                  setDraft(NO_DRAFT)
+                  // 마지막 태스크를 빼 묶음이 닫혔다 — 보내지 않음처럼 이 항목을 떠난다
+                  if (outcome.kind === 'closed') leave()
+                  // 뺀 행이 버튼째 사라진다 — 남은 태스크 목록의 제목에 포커스를 둔다
+                  else tasksHeadingRef.current?.focus()
+                },
+              },
+            )
+          }
+          onSaveNote={(task, note, onSaved) =>
+            actions.run(
+              { kind: 'editNote', bundleId: bundle.id, reminderId: task.reminderId, note },
+              { notice: NOTE_SAVED_NOTICE, onSuccess: onSaved },
+            )
+          }
+          failure={failureOf('removeTask', 'editNote')}
+        />
 
         <SendTimingPicker
-          review={review}
-          locked={busy || editing}
+          workspaceId={workspaceId}
+          dueDate={earliestDue(bundle.tasks)}
+          scheduledAt={bundle.scheduledAt}
+          locked={busy || (draft.kind !== 'none' && draft.kind !== 'time')}
           saving={pendingKind === 'schedule'}
-          customOpen={choosingTime}
-          onCustomOpenChange={setChoosingTime}
-          onChange={(action, onSaved) => actions.run(action, { onSuccess: onSaved })}
+          customOpen={draft.kind === 'time'}
+          onCustomOpenChange={toggle('time')}
+          onPick={(scheduledAt, onSaved) =>
+            actions.run(
+              { kind: 'schedule', bundleId: bundle.id, scheduledAt },
+              {
+                onSuccess: (outcome) => {
+                  if (outcome.kind !== 'merged') {
+                    onSaved()
+                    return
+                  }
+                  // 이 묶음은 없어지고 상세가 합친 묶음으로 새로 마운트된다 — 이 상세 안이 아니라 상세 영역에 포커스를 둔다.
+                  // 뒤로 가기로 없는 묶음에 돌아가지 않게 주소를 바꿔 끼운다
+                  onSettled()
+                  void navigate(paths.messageReview(workspaceId, outcome.into.id), {
+                    replace: true,
+                  })
+                },
+              },
+            )
+          }
           failure={failureOf('schedule')}
         />
 
@@ -154,33 +184,33 @@ export function ReviewDetail({ workspaceId, botName, review, onSettled }: Review
             <LockedButton
               variant="ghost"
               size="message-dismiss"
-              aria-busy={pendingKind === 'dismiss' || undefined}
+              aria-busy={pendingKind === 'cancel' || undefined}
               aria-describedby={lockHint === null ? undefined : lockHintId}
               locked={decisionLocked}
               keepLook={quietLock}
               onClick={() =>
                 actions.run(
-                  { kind: 'dismiss', reviewId: review.id },
-                  { notice: dismissNotice(review.recipientName), onSuccess: leave },
+                  { kind: 'cancel', bundleId: bundle.id },
+                  { notice: cancelNotice(bundle.recipientName), onSuccess: leave },
                 )
               }
             >
               보내지 않음
             </LockedButton>
-            {state.status === 'scheduled' ? null : (
+            {awaiting ? (
               <LockedButton
                 variant="primary"
                 size="message-send"
                 endIcon={<Icon name="send" size={16} />}
-                aria-busy={pendingKind === 'send' || undefined}
-                aria-describedby={sendLockHint === null ? undefined : lockHintId}
-                locked={sendLocked}
+                aria-busy={pendingKind === 'approve' || undefined}
+                aria-describedby={approveLockHint === null ? undefined : lockHintId}
+                locked={approveLocked}
                 keepLook={quietLock}
                 onClick={() =>
                   actions.run(
-                    { kind: 'send', reviewId: review.id },
+                    { kind: 'approve', bundleId: bundle.id, draftVersion: bundle.draftVersion },
                     {
-                      notice: sendNotice(review.recipientName, review.scheduledAt),
+                      notice: approveNotice(bundle.recipientName, bundle.scheduledAt),
                       onSuccess: leave,
                     },
                   )
@@ -188,7 +218,7 @@ export function ReviewDetail({ workspaceId, botName, review, onSettled }: Review
               >
                 이대로 발송
               </LockedButton>
-            )}
+            ) : null}
           </div>
           {/* 지난 시각 알림을 잠금 이유보다 먼저 읽는다 */}
           {timePassed ? (
@@ -197,12 +227,12 @@ export function ReviewDetail({ workspaceId, botName, review, onSettled }: Review
               <p className="text-caption text-dim">{TIME_PASSED_MESSAGE}</p>
             </div>
           ) : null}
-          {sendLockHint === null ? null : (
+          {approveLockHint === null ? null : (
             <p id={lockHintId} className="text-caption text-dim">
-              {sendLockHint}
+              {approveLockHint}
             </p>
           )}
-          {failureOf('send', 'dismiss')}
+          {failureOf('approve', 'cancel')}
         </div>
 
         <p className="text-caption text-dim">

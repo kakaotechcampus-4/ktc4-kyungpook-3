@@ -14,6 +14,7 @@ interface MeetingTrackerState {
    * 끝난 뒤 낡은 목록 캐시가 같은 회의를 다시 「정리 중」으로 보여 줘도 다시 등록하지 않는다 (U4-5)
    */
   finished: readonly string[]
+  prompted: readonly string[]
 }
 
 /*
@@ -28,6 +29,7 @@ interface MeetingTrackerState {
 export const useMeetingTrackerStore = create<MeetingTrackerState>()(() => ({
   meetings: [],
   finished: [],
+  prompted: [],
 }))
 
 function isSame(a: TrackedMeeting, b: TrackedMeeting): boolean {
@@ -71,7 +73,18 @@ export function finishMeeting(meeting: TrackedMeeting): boolean {
   return true
 }
 
+/**
+ * 화자 지정 대기를 안내한 것으로 적는다. `finishMeeting` 처럼 **이 호출이 처음 적었을 때만 true** 다 —
+ * 30초 polling·재렌더·화면 이동이 같은 회의를 두 번 안내하지 못한다. 추적은 끝내지 않는다
+ */
+export function promptSpeakers(meeting: TrackedMeeting): boolean {
+  const key = keyOf(meeting)
+  if (useMeetingTrackerStore.getState().prompted.includes(key)) return false
+  useMeetingTrackerStore.setState((state) => ({ prompted: [...state.prompted, key] }))
+  return true
+}
+
 /** 로그아웃·세션 만료 때 모두 비운다 */
 export function clearTrackedMeetings(): void {
-  useMeetingTrackerStore.setState({ meetings: [], finished: [] })
+  useMeetingTrackerStore.setState({ meetings: [], finished: [], prompted: [] })
 }

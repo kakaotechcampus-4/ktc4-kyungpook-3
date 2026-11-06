@@ -52,7 +52,7 @@ const VARIANT: Record<ButtonVariant, string> = {
   // 실측 .modal-cancel:hover = 컨트롤 면
   ghost:
     'bg-transparent text-sub hover:bg-control active:bg-line disabled:text-line-strong aria-disabled:text-line-strong',
-  text: 'bg-transparent text-faint hover:text-dim active:text-sub disabled:text-line-strong aria-disabled:text-line-strong',
+  text: 'bg-transparent text-dim hover:text-sub active:text-ink disabled:text-line-strong aria-disabled:text-line-strong',
   // hover 면은 ghost 와 같다 (컨트롤 #EDEDED). 테두리는 유지
   outline:
     'border border-line bg-surface text-ink hover:bg-control active:bg-surface-selected disabled:border-surface-selected disabled:text-line-strong aria-disabled:border-surface-selected aria-disabled:text-line-strong',

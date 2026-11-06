@@ -81,7 +81,12 @@ describe('SelectCard', () => {
     const card = screen.getByRole('radio', { name: /담당자/ })
 
     expect(card).toHaveClass('flex', 'items-start', 'gap-13')
-    expect(card.firstElementChild).toHaveClass('h-[17px]', 'w-[17px]', 'mt-3', 'border-faint')
+    expect(card.firstElementChild).toHaveClass(
+      'h-[17px]',
+      'w-[17px]',
+      'mt-3',
+      'border-input-border',
+    )
   })
 
   it('dims the title and the mark on a disabled card', () => {

@@ -5,6 +5,7 @@ import type { KeyboardEvent, ReactNode } from 'react'
 import { pendingApprovalListQueryOptions } from '@/entities/approval'
 import type { Approval } from '@/entities/approval'
 import { meetingListQueryOptions } from '@/entities/meeting'
+import type { MeetingSummary } from '@/entities/meeting'
 import { memberListQueryOptions } from '@/entities/member'
 import type { Member } from '@/entities/member'
 import { isDueSoon, isOverdue, taskListQueryOptions, withAssigneeName } from '@/entities/task'
@@ -13,13 +14,15 @@ import { TASK_STATUS_LABEL, useTaskStatusOverlay } from '@/features/task-status'
 import { COMMON_MESSAGES } from '@/shared/api/errorMessages'
 import { paths } from '@/shared/config/routes'
 import { seoulDateOf, soonUntil } from '@/shared/lib/date'
+import { queryView } from '@/shared/lib/query-view'
+import { panelTabStop } from '@/shared/lib/tab-panel'
 import { GuardedLink } from '@/shared/lib/unsaved-changes'
 import { Button } from '@/shared/ui/button'
 import { EmptyState } from '@/shared/ui/empty-state'
 import { Icon } from '@/shared/ui/icon'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
 import { Skeleton } from '@/shared/ui/skeleton'
-import { boardTabs, buildTaskBoard, withPendingStatus } from '../lib/taskBoard'
+import { boardTabs, buildTaskBoard, parseDue, withPendingStatus } from '../lib/taskBoard'
 import type { BoardItem, BoardQuery } from '../lib/taskBoard'
 import {
   createApprovals,
@@ -27,7 +30,6 @@ import {
   memberNames,
   mondayOf,
   monthOf,
-  queryView,
   shortDate,
   VIEW_LABEL,
 } from '../lib/taskViews'
@@ -154,7 +156,7 @@ export function TaskBoard({
   const tasks = useQuery(taskListQueryOptions(workspaceId))
   const approvals = useQuery({ ...pendingApprovalListQueryOptions(workspaceId), enabled: isPm })
   const members = useQuery(memberListQueryOptions(workspaceId))
-  // 카드의 회의 링크 이름과 캘린더의 회의 칩에만 쓴다. 못 받아도 화면은 그린다
+  // 카드의 회의 링크 이름·근거 시각과 캘린더의 회의 칩에만 쓴다. 못 받아도 화면은 그린다
   const meetings = useQuery({
     ...meetingListQueryOptions(workspaceId),
     enabled: isPm || view.view === 'calendar',
@@ -162,8 +164,8 @@ export function TaskBoard({
   const pending = useTaskStatusOverlay(workspaceId)
 
   const names = useMemo(() => memberNames(members.data), [members.data])
-  const meetingTitles = useMemo(
-    () => new Map((meetings.data ?? []).map(({ id, title }) => [id, title])),
+  const meetingById = useMemo(
+    () => new Map((meetings.data ?? []).map((meeting) => [meeting.id, meeting])),
     [meetings.data],
   )
   const approvalList: readonly Approval[] | null = isPm ? (approvals.data ?? null) : null
@@ -177,16 +179,24 @@ export function TaskBoard({
     () => (overlaid === null ? null : filterTasksByAssignee(overlaid, view.assignee)),
     [overlaid, view.assignee],
   )
+  // `query.due` 는 URL 을 읽을 때마다 새 배열이다. URL 의 값으로 비교해 보기 전환·달·주 이동에는 다시 계산하지 않는다 (#391)
+  const dueParam = query.due.join(',')
   const board = useMemo(
     () =>
       filtered === null
         ? null
         : buildTaskBoard(
-            { tasks: filtered, approvals: approvalList, due: query.due, today, sort: view.sort },
+            {
+              tasks: filtered,
+              approvals: approvalList,
+              due: parseDue(dueParam),
+              today,
+              sort: view.sort,
+            },
             isPm,
             query.tab,
           ),
-    [filtered, approvalList, query.due, query.tab, today, isPm, view.sort],
+    [filtered, approvalList, dueParam, query.tab, today, isPm, view.sort],
   )
 
   const isList = view.view === 'list'
@@ -230,7 +240,7 @@ export function TaskBoard({
           items={board.items}
           reflected={query.tab === 'needs_review' ? reflectedTasks(filtered) : []}
           members={members.data}
-          meetingTitles={meetingTitles}
+          meetings={meetingById}
           names={names}
           today={today}
           query={query}
@@ -515,10 +525,10 @@ function BoardTabs({ tabs, selected, onSelect, trailing, panel }: BoardTabsProps
         {trailing}
       </div>
       <div
+        ref={panelTabStop}
         role="tabpanel"
         id={`${prefix}-panel`}
         aria-labelledby={`${prefix}-tab-${current.tab}`}
-        tabIndex={0}
         className="flex flex-col gap-28"
       >
         {panel}
@@ -533,7 +543,7 @@ interface BoardListProps {
   /** 확인 필요 탭 아래에 보이는 `이미 반영된 일` */
   reflected: readonly Task[]
   members: readonly Member[] | undefined
-  meetingTitles: ReadonlyMap<string, string>
+  meetings: ReadonlyMap<string, MeetingSummary>
   names: ReadonlyMap<string, string>
   today: string
   query: BoardQuery
@@ -545,7 +555,7 @@ function BoardList({
   items,
   reflected,
   members,
-  meetingTitles,
+  meetings,
   names,
   today,
   query,
@@ -610,7 +620,7 @@ function BoardList({
                 workspaceId={workspaceId}
                 approval={approval}
                 members={members}
-                meetingTitles={meetingTitles}
+                meetings={meetings}
               />
             </li>
           ))}

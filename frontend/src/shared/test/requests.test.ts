@@ -1,15 +1,15 @@
 import { db } from '@/shared/mock/db'
-import { isDashboardRequest, latestDoneExtractionId } from './requests'
+import { businessRequests, isDashboardRequest, latestDoneExtractionId } from './requests'
 
 /* E-05 — 대시보드 요청 판별이 최신 완료 회의의 추출만 인정한다. 다른 회의·공간의 추출 조회 회귀를 숨기지 않는다 */
 
 const get = (path: string) => ({ method: 'GET', path })
 
 it('최신 완료 회의의 추출 ID 를 모의 db 에서 읽는다 — 정리 중 회의는 아니다', () => {
-  // 픽스처의 ws_01: mt_10 정리 중, mt_09(ex_01)·mt_07(ex_00) 완료
+  // 픽스처의 ws_01: mt_10 정리 중, mt_09(ex_01)·채팅 mt_08(ex_02)·mt_07(ex_00) 완료
   expect(latestDoneExtractionId()).toBe('ex_01')
   db.meetings = db.meetings.filter(({ meeting_id }) => meeting_id !== 'mt_09')
-  expect(latestDoneExtractionId()).toBe('ex_00')
+  expect(latestDoneExtractionId()).toBe('ex_02')
   expect(latestDoneExtractionId('ws_02')).toBeNull()
 })
 
@@ -36,4 +36,15 @@ it('공간 기본값은 ws_01 이고, 다른 공간의 목록 조회는 그 공�
     '/workspaces/ws_01/integrations',
   ])
     expect(isDashboardRequest(get(path))).toBe(true)
+})
+
+it('알림 종 조회는 지금 URL 공간의 것만 업무 요청에서 뺀다 — 다른 공간의 알림 조회는 남는다', () => {
+  const forbidden = get('/workspaces/forbidden/notifications')
+  const current = get('/workspaces/ws_01/notifications')
+  const limited = get('/workspaces/ws_01/notifications?limit=50')
+  expect(businessRequests([current, limited, forbidden])).toEqual([forbidden])
+  expect(businessRequests([forbidden], { trackerWorkspaceId: 'forbidden' })).toEqual([])
+  expect(
+    businessRequests([{ method: 'POST', path: '/workspaces/ws_01/notifications' }]),
+  ).toHaveLength(1)
 })

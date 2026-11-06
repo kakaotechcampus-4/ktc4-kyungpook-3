@@ -8,7 +8,7 @@ import { TeamOverview } from './TeamOverview'
 /*
  * 팀 화면 (M8-B, Team 캔버스). 오늘은 픽스처의 서울 오늘(2026-09-18)로 고정한다 — 상태 배지·먼저 챙길 것·앞으로 7일이 캔버스처럼 찬다.
  * settings-unmapped 는 ws_01 Discord 연결됨(jihun_dev 미연결, 정하늘은 서버를 떠남), settings-discord-skipped 는 ws_03 Discord 미연결,
- * settings-member 는 ws_01 의 일반 팀원이다. 팀원 연결 창은 주소가 쥐어 여기서는 `connectOpen` 으로 연다
+ * settings-member 는 ws_01 의 일반 팀원, team-invitations 는 팀원마다 초대 상태가 다른 ws_01 이다. 팀원 연결 창은 주소가 쥐어 여기서는 `connectOpen` 으로 연다
  */
 
 const meta = {
@@ -54,6 +54,24 @@ export const 팀원: Story = {
       await unlinked.findByText('Discord를 연결하지 않아 서버의 계정을 불러올 수 없어요.'),
     ).toBeInTheDocument()
     await expect(unlinked.queryByRole('link')).toBeNull()
+  },
+}
+
+/** PM — 팀원마다 최근 초대 상태. 이재환 대기, 정하늘 거절, 박민수는 수락한 계정과 연결 끊기, PM 김서연은 아무것도 없다 (#320) */
+export const PM_초대_상태: Story = {
+  parameters: { scenario: 'team-invitations' },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const jaehwan = within(await canvas.findByRole('region', { name: '이재환' }))
+    await expect(await jaehwan.findByText('대기')).toBeInTheDocument()
+    await expect(jaehwan.getByRole('button', { name: '초대 취소' })).toBeInTheDocument()
+    const haneul = within(canvas.getByRole('region', { name: '정하늘' }))
+    await expect(haneul.getByText('거절')).toBeInTheDocument()
+    const minsu = within(canvas.getByRole('region', { name: '박민수' }))
+    await expect(minsu.getByText('박민수 · minsu@example.com')).toBeInTheDocument()
+    await expect(minsu.getByRole('button', { name: '연결 끊기' })).toBeInTheDocument()
+    const seoyeon = within(canvas.getByRole('region', { name: '김서연' }))
+    await expect(seoyeon.queryByRole('button')).toBeNull()
   },
 }
 

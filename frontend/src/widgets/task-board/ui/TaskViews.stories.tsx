@@ -186,7 +186,12 @@ export const 캘린더_PM: Story = {
       'rgb(90, 90, 90)',
     ])
     const urgent = within(table).getByRole('link', { name: /온보딩 문구 수정/ })
-    await expect(getComputedStyle(urgent).backgroundColor).toBe('rgb(255, 105, 105)')
+    // #423 마감 임박 칩은 연한 레드 면(accent-chip)에 먹 제목, sub 보조 줄이다
+    await expect([
+      getComputedStyle(urgent).backgroundColor,
+      getComputedStyle(urgent.firstElementChild!).color,
+      getComputedStyle(urgent.lastElementChild!).color,
+    ]).toEqual(['rgb(244, 217, 215)', 'rgb(23, 23, 23)', 'rgb(90, 90, 90)'])
     await expect(getComputedStyle(urgent.firstElementChild!).fontWeight).toBe('600')
   },
 }

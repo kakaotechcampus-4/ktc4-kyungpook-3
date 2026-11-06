@@ -1,6 +1,7 @@
 import {
   clearTrackedMeetings,
   finishMeeting,
+  promptSpeakers,
   trackMeeting,
   untrackMeeting,
   useMeetingTrackerStore,
@@ -69,8 +70,26 @@ describe('추적 끝내기 (U4-5)', () => {
   it('로그아웃(모두 비우기)은 끝낸 기록도 지운다 — 다음 사용자는 처음부터다', () => {
     finishMeeting(meeting)
     clearTrackedMeetings()
-    expect(useMeetingTrackerStore.getState()).toEqual({ meetings: [], finished: [] })
+    expect(useMeetingTrackerStore.getState()).toEqual({ meetings: [], finished: [], prompted: [] })
     trackMeeting(meeting)
     expect(tracked()).toEqual([meeting])
+  })
+})
+
+describe('화자 지정 안내 (#256)', () => {
+  const meeting = { workspaceId: 'ws_01', meetingId: 'mt_11' }
+
+  it('회의마다 처음 한 번만 true 이고 추적은 그대로다', () => {
+    trackMeeting(meeting)
+    expect(promptSpeakers(meeting)).toBe(true)
+    expect(promptSpeakers(meeting)).toBe(false)
+    expect(promptSpeakers({ workspaceId: 'ws_04', meetingId: 'mt_11' })).toBe(true)
+    expect(tracked()).toEqual([meeting])
+  })
+
+  it('세션을 비우면 다시 안내할 수 있다', () => {
+    promptSpeakers(meeting)
+    clearTrackedMeetings()
+    expect(promptSpeakers(meeting)).toBe(true)
   })
 })

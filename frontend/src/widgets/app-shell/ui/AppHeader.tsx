@@ -1,4 +1,5 @@
 import { Fragment } from 'react'
+import { NotificationBell } from '@/features/notifications'
 import { paths } from '@/shared/config/routes'
 import { GuardedLink } from '@/shared/lib/unsaved-changes'
 import { BrandMark } from '@/shared/ui/brand-mark'
@@ -64,6 +65,7 @@ export function AppHeader({ workspaceId, processingHref = null }: AppHeaderProps
         </nav>
       </div>
       <div className="flex items-center gap-24">
+        <NotificationBell key={workspaceId} workspaceId={workspaceId} />
         <WorkspaceMenu workspaceId={workspaceId} />
         <UserMenu workspaceId={workspaceId} />
       </div>
