@@ -238,7 +238,8 @@ export function MessageInbox({
         {/* 상세 칸이 바뀌어도 자리는 그대로다 — 토스트가 다시 마운트되지 않아 접힘이 유지된다 */}
         <PinnedToastHost
           className="absolute right-24 z-10"
-          style={{ bottom: toastBottom }}
+          // 좁은 화면에서 안내 줄이 영역보다 길어지면 토스트가 위로 밀려 나간다 — 영역 위 16 에서 멈춘다
+          style={{ bottom: `min(${toastBottom}px, calc(100% - ${toastHeight + 16}px))` }}
           onHeightChange={setToastHeight}
         />
       </section>
