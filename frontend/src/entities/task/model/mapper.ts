@@ -47,6 +47,8 @@ export function toTask(dto: TaskDto): Task {
     notionPageId: dto.notion_page_id,
     version,
     notionSyncStatus: toNotionSyncStatus(dto.notion_sync_status),
+    // 버전과 달리 표시용이라 던지지 않는다. 모르는 값은 풀기 버튼을 숨기는 false 다
+    autoBlocked: dto.auto_blocked === true,
     createdAt: dto.created_at,
     updatedAt: dto.updated_at,
   }

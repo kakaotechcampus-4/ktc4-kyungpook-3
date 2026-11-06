@@ -2,6 +2,7 @@ import { fetchDto, jsonRequest } from '@/shared/test/api'
 import type { ApprovalDto } from '@/shared/types/api/approval'
 import type { ListDto } from '@/shared/types/api/envelope'
 import type { TaskDto, TaskHistoryDto } from '@/shared/types/api/task'
+import type { MockTask } from './fixtures/task'
 import { db } from './db'
 import { MOCK_NOW } from './fixtures/constants'
 import { setMockRole } from './sessions'
@@ -64,7 +65,10 @@ describe('버전과 Notion 반영 상태 (services/tasks.py, notion_sync.enqueue
     const before = structuredClone(task('tk_09'))
     expect(before).toMatchObject({ status: 'done', notion_sync_status: 'synced', version: 1 })
     const historyCount = db.taskHistory.length
-    expect(await patchTask('tk_09', { status: 'done', blocker: null })).toEqual(before)
+    expect(await patchTask('tk_09', { status: 'done', blocker: null })).toEqual({
+      ...before,
+      auto_blocked: false,
+    })
     expect(db.taskHistory).toHaveLength(historyCount)
   })
 
@@ -167,7 +171,7 @@ describe('세션 팀원 기록 (본문·쿼리의 changed_by·resolved_by 무시
 
   it('세션 팀원 대응이 없는 공간의 쓰기는 PM 이어도 403 이고 아무것도 바꾸지 않는다', async () => {
     // 그 공간의 태스크는 생성 API 로 만들 수 없어(아래 POST 가 403) db 에 직접 둔다
-    const created: TaskDto = {
+    const created: MockTask = {
       ...structuredClone(task('tk_02')),
       task_id: 'tk_80',
       workspace_id: 'ws_02',
@@ -545,7 +549,11 @@ describe('Notion 반영 재시도 (POST /tasks/{id}/notion-sync/retry)', () => {
   it('failed 이고 연동된 태스크는 빈 본문 POST 로 pending 이 된다', async () => {
     task('tk_04').notion_sync_status = 'failed'
     const before = structuredClone(task('tk_04'))
-    expect(await retry('tk_04')).toEqual({ ...before, notion_sync_status: 'pending' })
+    expect(await retry('tk_04')).toEqual({
+      ...before,
+      notion_sync_status: 'pending',
+      auto_blocked: false,
+    })
     expect(historyOf('tk_04')).toEqual([])
   })
 

@@ -17,6 +17,8 @@ export interface Task {
   version: number
   /** 페이지 ID 가 있어도 `synced` 가 아니면 반영 완료가 아니다. 모르는 값은 null 로 둔다 */
   notionSyncStatus: NotionSyncStatus | null
+  /** 무응답 자동 막힘이고 지금 풀 수 있다. 서버의 `auto_blocked` 그대로다 — 이력으로 다시 가리지 않는다 */
+  autoBlocked: boolean
   createdAt: string
   updatedAt: string
 }

@@ -4,6 +4,7 @@ import { toTask } from '@/entities/task'
 import type { Task } from '@/entities/task'
 import { approvalFixtures } from '@/shared/mock/fixtures/approval'
 import { taskFixtures } from '@/shared/mock/fixtures/task'
+import { toTaskResponse } from '@/shared/mock/task-state'
 import {
   TASK_SORTS,
   doneColumnNote,
@@ -15,7 +16,7 @@ import {
 
 /* 리스트·보드 정렬 (D-175). 화면에서 고르는 흐름은 app/tasks.test.tsx · app/taskViews.test.tsx 가 본다 */
 
-const base = toTask(taskFixtures[0])
+const base = toTask(toTaskResponse(taskFixtures[0]))
 const baseApproval = toApproval(approvalFixtures[0])
 
 function task(id: string, patch: Partial<Task> = {}): Task {
