@@ -18,9 +18,10 @@ from sqlalchemy import (
     UniqueConstraint,
     text,
 )
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 
 from app.core.database import Base
+from app.schemas.email import normalize_email
 
 # text-embedding-3-small의 차원. 모델을 바꾸면 컬럼과 저장된 벡터를 모두 다시 만들어야 한다.
 EMBEDDING_DIMENSIONS = 1536
@@ -190,6 +191,11 @@ class User(Base):
     sessions: Mapped[list["Session"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
+
+    @validates("email")
+    def _normalize_email(self, _key: str, value: str) -> str:
+        # 요청 스키마를 거치지 않는 쓰기 경로도 같은 규칙으로 저장한다(#434). SQL 직접 실행과 update() 는 지나지 않는다.
+        return normalize_email(value)
 
 
 class PasswordResetToken(Base):
