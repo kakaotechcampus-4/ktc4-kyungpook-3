@@ -4,7 +4,7 @@ import { MOCK_NOW, MOCK_TODAY } from '@/shared/mock/fixtures/constants'
 import { start } from './support'
 
 /*
- * M8 A — 태스크 보기(보드·캘린더·간트)의 시안 값 (#482, Storybook M8 태스크/보기에서 옮겼다). jsdom 은 Tailwind 를 계산하지 않고
+ * M8 A — 태스크 보기(보드·캘린더·간트)의 시안 값 (#482). jsdom 은 Tailwind 를 계산하지 않고
  * 배치를 재지 못해 실제 브라우저에서 잰다. 흐름·링크·조회 상태는 src/app/taskViews*.test.tsx 가 본다.
  * 마감 임박과 간트 오늘 선은 오늘에 기대므로 시계를 픽스처의 서울 오늘(2026-09-18 09:00 KST)로 멈춘다.
  *

@@ -9,7 +9,7 @@ import {
 import { start } from './support'
 
 /*
- * M8 메시지 — 실제 브라우저에서만 잴 수 있는 배치·넘침과 hover 면 (#482, Storybook MessageInbox 에서 옮겼다).
+ * M8 메시지 — 실제 브라우저에서만 잴 수 있는 배치·넘침과 hover 면 (#482).
  * 흐름(잠금·저장 중·승인 요청)은 src/app/messagesActionsMsw.test.tsx 가 본다.
  *
  * - messages-long-content: messages-default 에 긴 공간(봇) 이름, 이재환(bd_01·th_01)의 긴 이름·여러 줄 본문·줄바꿈할 곳이 없는 주소,
