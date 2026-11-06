@@ -10,7 +10,7 @@ from sqlalchemy.pool import StaticPool
 from app.core.database import Base, get_db
 from app.main import app
 from app.models import Member, Session as SessionModel, Task, User, Workspace
-from app.schemas.invitation import normalize_email
+from app.schemas.email import normalize_email
 from app.services import oauth_state, signup_codes
 
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")

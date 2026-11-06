@@ -298,15 +298,6 @@ def test_verified_email_links_the_existing_account_and_logs_in(mdb, client, kaka
     assert row.password_hash
 
 
-def test_verified_email_links_a_legacy_mixed_case_account(mdb, client, kakao):
-    _user(mdb, "Kim@example.com")
-
-    res = _login(client, VERIFIED, kakao)
-
-    assert _query(res)["oauth_result"] == ["success"]
-    assert _row(mdb, "Kim@example.com").provider_id == "77"
-
-
 def test_account_bound_to_another_kakao_is_not_overwritten(mdb, client, kakao):
     _user(mdb)
     mdb.execute(User.__table__.update().values(provider="kakao", provider_id="other"))
@@ -445,7 +436,7 @@ def test_kakao_bound_elsewhere_in_the_gap_logs_into_that_account(mdb, client, ka
     _user(mdb)
     state = _state(client)
     make = sessionmaker(bind=mdb.get_bind(), autoflush=False)
-    real = auth.by_email_stmt
+    real = auth._login_user_stmt
 
     def bound_first(email):
         with make() as other:
@@ -453,7 +444,7 @@ def test_kakao_bound_elsewhere_in_the_gap_logs_into_that_account(mdb, client, ka
             other.commit()
         return real(email)
 
-    monkeypatch.setattr(auth, "by_email_stmt", bound_first)
+    monkeypatch.setattr(auth, "_login_user_stmt", bound_first)
 
     res = _callback(client, code="c", state=state)
 

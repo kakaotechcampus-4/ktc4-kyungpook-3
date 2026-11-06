@@ -6,7 +6,7 @@
 되돌리면 signup_email_code 테이블과 진행 중인 인증 코드가 지워진다. 이어 둔 카카오 값은 user 행에 남는다.
 
 Revision ID: d2f6b81c4e07
-Revises: a3d7f91c5e28
+Revises: 537911f267dc
 Create Date: 2026-11-06 12:00:00.000000
 
 """
@@ -18,7 +18,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = 'd2f6b81c4e07'
-down_revision: Union[str, Sequence[str], None] = 'a3d7f91c5e28'
+down_revision: Union[str, Sequence[str], None] = '537911f267dc'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

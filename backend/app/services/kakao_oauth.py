@@ -11,7 +11,7 @@ from urllib.parse import urlencode
 
 import httpx
 
-from app.schemas.invitation import normalize_email
+from app.schemas.email import normalize_email
 from app.services import oauth_state
 from app.services.oauth_state import require_env
 

@@ -14,10 +14,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session as DbSession
 
 from app.core.errors import AppError, ErrorCode
-from app.models import SignupEmailCode
+from app.models import SignupEmailCode, User
 from app.services import oauth_state
 from app.services.messages import utc
-from app.services.users import by_email_stmt
 
 CODE_TTL = timedelta(minutes=10)
 MAX_ATTEMPTS = 5
@@ -52,7 +51,7 @@ def _invalid(reason: str, **details: int) -> AppError:
 
 def request_code(db: DbSession, email: str, *, now: datetime) -> SignupCodeMail:
     """정규화한 이메일에 새 코드를 만든다. commit 은 호출자가 한다."""
-    if db.scalars(by_email_stmt(email)).first() is not None:
+    if db.scalar(select(User.user_id).where(User.email == email)) is not None:
         raise AppError(ErrorCode.EMAIL_ALREADY_EXISTS)
     db.execute(delete(SignupEmailCode).where(SignupEmailCode.sent_at < now - RETENTION))
 

@@ -111,7 +111,7 @@ def _kakao_user_stmt(provider_id: str):
 
 
 def _signup_conflict(db: Session, email: str, kakao: KakaoIdentity | None) -> ErrorCode | None:
-    if db.scalars(by_email_stmt(email)).first() is not None:
+    if db.scalars(_login_user_stmt(email)).first() is not None:
         return ErrorCode.EMAIL_ALREADY_EXISTS
     if kakao is not None and db.scalars(_kakao_user_stmt(kakao.provider_id)).first() is not None:
         return ErrorCode.KAKAO_ALREADY_LINKED
@@ -228,7 +228,7 @@ def _kakao_outcome(db: Session, identity: KakaoIdentity) -> User | Literal["emai
     known = db.scalars(_kakao_session_user_stmt(identity.provider_id)).first()
     if known is not None:
         return known
-    owner = db.scalars(by_email_stmt(identity.email)).first() if identity.email else None
+    owner = db.scalars(_login_user_stmt(identity.email)).first() if identity.email else None
     if owner is None:
         return "needs_signup"
     if not identity.email_verified:
