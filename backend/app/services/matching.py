@@ -1,7 +1,7 @@
 from collections.abc import Iterable
 from dataclasses import dataclass
 
-from sqlalchemy import case, func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import (
@@ -30,6 +30,33 @@ class MatchResult:
     candidate_count: int
 
 
+# 담당자 이름 뒤에 붙는 조사. AI 의 _PARTICLES(ai/extract/eval_golden_set.py)와 순서까지 같게 둔다
+_PARTICLES = ("께서", "한테", "에게", "이가", "이", "가", "은", "는", "을", "를", "께")
+
+
+def name_candidates(text: str | None) -> list[str]:
+    """담당자 표기에서 님·조사를 뗀 후보들을 긴 것부터 돌려준다. 빈 표기는 빈 리스트다.
+
+    AI 의 _name_candidates(ai/extract/eval_golden_set.py)와 같은 규칙이다. 바꾸면 둘 다 바꾼다.
+    조사가 붙었는지 겉보기로 알 수 없다("하은"의 "은"은 이름, "환은"의 "은"은 조사). 그래서 조사를 뗀 것까지
+    후보를 모두 만들고, 긴 후보(원문에 가까운 것)부터 찾는다. 예: "하은이가" → 하은이가, 하은이, 하은.
+    """
+    if not text:
+        return []
+    base = text.strip()
+    out = {base}
+    if base.endswith("님"):
+        out.add(base[:-1])
+    for form in list(out):
+        for particle in _PARTICLES:
+            if form.endswith(particle) and len(form) > len(particle):
+                stripped = form[: -len(particle)]
+                out.add(stripped)
+                if stripped.endswith("님"):
+                    out.add(stripped[:-1])
+    return sorted((x for x in out if x), key=lambda s: (-len(s), s))
+
+
 def resolve_assignee(
     db: Session,
     workspace_id: str,
@@ -37,9 +64,11 @@ def resolve_assignee(
 ) -> MatchResult:
     """추출된 이름 문자열로 실제 팀원을 찾는다.
 
-    1건 매칭 → 확정 / 2건 이상 → ambiguous / 0건 → not_found
+    님·조사를 뗀 후보(name_candidates)를 긴 것부터 보고, 별칭이 처음 걸린 후보의 행만으로 판정한다.
+    1건 매칭 → 확정 / 2건 이상 → ambiguous / 걸린 후보 없음 → not_found. 탈퇴한 팀원의 별칭은 보지 않는다.
     """
-    if not alias_text:
+    candidates = name_candidates(alias_text)
+    if not candidates:
         return MatchResult(None, None, 0.0, ResolutionResult.NOT_FOUND, True, 0)
 
     stmt = (
@@ -47,11 +76,17 @@ def resolve_assignee(
         .join(Member, Member.member_id == MemberAlias.member_id)
         .where(
             MemberAlias.workspace_id == workspace_id,
-            MemberAlias.alias_text == alias_text,
+            MemberAlias.alias_text.in_(candidates),
+            Member.is_deleted.is_(False),
         )
         .order_by(MemberAlias.verified.desc(), MemberAlias.confidence.desc())
     )
-    rows = db.execute(stmt).all()
+    hits = db.execute(stmt).all()
+    # 후보는 긴 순서다. 처음 걸린 후보의 행만 남긴다
+    rows = next(
+        (matched for c in candidates if (matched := [h for h in hits if h[0].alias_text == c])),
+        [],
+    )
 
     if len(rows) == 1:
         alias, member = rows[0]
@@ -148,23 +183,31 @@ def active_members_by_id(
     return {m.member_id: m for m in members}
 
 
-def resolved_alias_texts(db: Session, workspace_id: str) -> set[str]:
-    """resolve_assignee가 확정 매칭(MATCHED, needs_check=False)으로 판정할 별칭 목록.
+def resolved_texts(db: Session, workspace_id: str, texts: Iterable[str]) -> set[str]:
+    """texts 중 resolve_assignee 가 확정 매칭(MATCHED, needs_check=False)으로 판정할 것.
 
-    검증 여부와 상관없이 전체 후보가 정확히 1명이고, 그 1명이 검증된 경우만 해결된 것으로 본다.
-    검증 1명 + 미검증 1명처럼 후보가 여럿이면 매칭은 ambiguous이므로 해결 대기로 남는다.
+    각 text 의 첫 히트 후보(name_candidates 순서)에 걸린 별칭이 정확히 1개이고 그 별칭이 검증된 경우만
+    해결된 것으로 본다. 검증 1명 + 미검증 1명처럼 여럿이면 ambiguous 이므로 해결 대기로 남는다.
+    탈퇴한 팀원의 별칭은 세지 않는다.
     """
-    stmt = (
-        select(MemberAlias.alias_text)
+    rows = db.execute(
+        select(MemberAlias.alias_text, MemberAlias.verified)
         .join(Member, Member.member_id == MemberAlias.member_id)
-        .where(MemberAlias.workspace_id == workspace_id)
-        .group_by(MemberAlias.alias_text)
-        .having(
-            func.count() == 1,
-            func.sum(case((MemberAlias.verified.is_(True), 1), else_=0)) == 1,
-        )
-    )
-    return set(db.execute(stmt).scalars())
+        .where(MemberAlias.workspace_id == workspace_id, Member.is_deleted.is_(False))
+    ).all()
+    verified_by_text: dict[str, list[bool]] = {}
+    for alias_text, verified in rows:
+        verified_by_text.setdefault(alias_text, []).append(verified)
+
+    resolved: set[str] = set()
+    for text in texts:
+        for candidate in name_candidates(text):
+            hit = verified_by_text.get(candidate)
+            if hit:
+                if len(hit) == 1 and hit[0]:
+                    resolved.add(text)
+                break
+    return resolved
 
 
 def log_resolution(
