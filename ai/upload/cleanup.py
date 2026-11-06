@@ -142,12 +142,13 @@ def _keep_expired(recordings_dir: Path, transcripts_dir: Path, d: Path, rec: dic
             drop_transcripts(transcripts_dir, manifest)   # 매니페스트가 남아 있는 동안 먼저
             drop_local(recordings_dir, session)
         else:
-            shutil.rmtree(recordings_dir / session)   # 트랙만: 매니페스트·전사본·intake.json 은 남긴다
+            try:
+                shutil.rmtree(recordings_dir / session)   # 트랙만: 매니페스트·전사본·intake.json 은 남긴다
+            except FileNotFoundError:
+                pass   # 이미 없어도 표시는 남긴다: 안 그러면 매번 같은 후보로 돌아온다
         new.update(state=event, next_at=None)
         rec["expire"] = new
         _save(d, rec)
-    except FileNotFoundError:
-        pass
     except OSError as e:
         log.warning("업로드 %s 정리 실패(다음에 다시 한다): %s", mid, e)
         return None
@@ -160,7 +161,7 @@ _OPEN_RESUME = ("resuming", "failing")
 
 
 def _finished(rec: dict) -> bool:
-    """더 진행할 것이 없는 기록인가. 열린 상태가 하나라도 있거나 끝났다는 표시가 없으면 False."""
+    """더 진행할 것이 없는 기록인가. 열린 상태(fail_pending·report·resume·expire)가 하나라도 있으면 False."""
     if rec.get("fail_pending"):
         return False
     r, u, x = rec.get("report"), rec.get("resume"), rec.get("expire")
@@ -169,10 +170,7 @@ def _finished(rec: dict) -> bool:
     xs = x.get("state") if isinstance(x, dict) else None
     if rs in _OPEN_REPORT or us in _OPEN_RESUME or xs == "checking":
         return False
-    if rec.get("state") == "failed":
-        return True
-    return rec.get("state") == "done" and (rs in ("ended", "failed") or us in ("ended", "failed")
-                                           or xs in ("expired", "dropped"))
+    return rec.get("state") in ("failed", "done")   # done 은 위의 열린 상태가 없고 호출한 쪽이 매니페스트 없음을 확인한다
 
 
 def _remove_record(recordings_dir: Path, d: Path, rec: dict, t: datetime) -> Progress | None:

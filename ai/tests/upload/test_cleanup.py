@@ -395,7 +395,7 @@ def _age(e, seconds):
 
 def _finish_record(e, **over):
     """매니페스트와 트랙·전사본을 치운 채 intake.json 만 정해진 모양으로 둔다."""
-    _set_intake(e, **over)
+    _set_intake(e, **{"state": "done", **over})   # 가져오기 state 는 항상 명시한다
     from capture.recorder import drop_local
     drop_local(e.rec, f"upload_{MID}")
     (e.tr / f"session_upload_{MID}.json").unlink()
@@ -408,6 +408,8 @@ _FINISHED_RECORDS = {
     "resume ended": dict(resume={"state": "ended"}),
     "resume failed": dict(resume={"state": "failed"}),
     "expired": dict(expire={"state": "expired"}),
+    "resume mapped without manifest": dict(resume={"state": "mapped"}),
+    "intake done without manifest": dict(),
 }
 
 
@@ -467,3 +469,26 @@ def test_broken_record_is_logged_once_not_removed(env, caplog):
         assert _go(env) is None
     assert (folder / "intake.json").exists()
     assert len([r for r in caplog.records if "broken" in r.getMessage()]) == 1
+
+
+@pytest.mark.parametrize("over", [dict(resume={"state": "mapped"}), dict()], ids=["resume mapped", "intake done"])
+def test_record_with_manifest_is_kept_even_if_done(env, over):
+    _settle(env)   # 지정 확인 후보에서 뺀다
+    _set_intake(env, **{"state": "done", **over})
+    _age(env, KEEP_S * 3)
+    _age(env, KEEP_S * 3)
+    env.clock.advance(KEEP_S * 3)
+    assert _go(env) is None
+    assert (env.rec / ".uploads" / MID / "intake.json").exists()
+
+
+def test_handed_off_without_track_folder_still_records_tracks_dropped(env):
+    import shutil
+    _settle(env)
+    t0 = env.clock.t
+    _set_manifest(env, source="upload", status="handed_off", be={"status": "done"}, stages={"handed_off": _iso(t0)})
+    shutil.rmtree(env.rec / f"upload_{MID}")
+    env.clock.t = t0 + timedelta(seconds=KEEP_S)
+    assert _go(env) == (MID, "tracks_dropped")
+    assert _intake(env)["expire"]["state"] == "tracks_dropped"
+    assert _go(env) is None
