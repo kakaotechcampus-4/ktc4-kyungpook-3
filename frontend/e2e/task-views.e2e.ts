@@ -110,6 +110,16 @@ for (const width of [1024, 1440, 1920] as const) {
         })
       })
     }
+
+    test('간트 — 긴 제목·줄바꿈할 곳이 없는 제목·긴 담당자 이름이 있어도 왼쪽 칸은 252px 이다', async ({
+      page,
+    }) => {
+      await start(page, 'tasks-long-content', viewPath('gantt'))
+      const row = page.getByRole('row', { name: /^ABCDEFGHIJ/ })
+      await expect(row).toBeVisible(FIRST_PAINT)
+      const firstCell = row.locator('xpath=*[1]')
+      expect(await firstCell.evaluate((element) => element.getBoundingClientRect().width)).toBe(252)
+    })
   })
 }
 

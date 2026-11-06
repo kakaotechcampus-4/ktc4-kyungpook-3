@@ -281,6 +281,17 @@ describe('태스크 상세의 재촉', () => {
     ])
   })
 
+  it('Discord 가 연결된 담당자에게는 미연결 안내 없이 마감 기준 시각을 골라 두고 바로 만들 수 있다', async () => {
+    const section = await openTask('tk_01', '로그인 API 연동')
+    await userEvent.click(section.getByRole('button', { name: '재촉 만들기' }))
+    expect(form().getByText('김서연')).toBeVisible()
+    expect(
+      await form().findByRole('radio', { name: '마감 하루 전09/19 09:00', checked: true }),
+    ).toBeInTheDocument()
+    expect(form().queryByText(/Discord가 연결되지 않아/)).toBeNull()
+    expect(submit()).not.toHaveAttribute('aria-disabled')
+  })
+
   it('취소하면 폼을 접고 재촉 만들기로 포커스가 돌아간다', async () => {
     const section = await openTask('tk_03', 'DB 스키마 정리')
     await userEvent.click(section.getByRole('button', { name: '재촉 만들기' }))

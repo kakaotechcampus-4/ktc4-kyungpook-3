@@ -246,6 +246,20 @@ describe('입력 검증 — 칸에 연결된 오류 (AC-05)', () => {
     expect(patches(log)).toEqual([])
   })
 
+  it('서버가 제목·담당자·마감을 비워 보내면 들어오자마자 승인이 꺼지고 이유가 버튼에 이어진다. 반려는 할 수 있다', async () => {
+    replaceDb(createScenarioDb('approval-needs-input'))
+    await openApproval('ap_01')
+    expect(screen.getByRole('combobox', { name: '담당자 · 미정' })).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: '마감 · 미정' })).toBeInTheDocument()
+    expect(approveButton()).toBeDisabled()
+    await waitFor(() =>
+      expect(approveButton()).toHaveAccessibleDescription(
+        '승인하려면 제목 정보를 올바르게 채워야 해요.',
+      ),
+    )
+    expect(rejectButton()).toBeEnabled()
+  })
+
   it('제목은 trim 뒤 코드 포인트로 1~300자다 — 301자는 오류, 이모지 300자는 받고 앞뒤 공백을 지워 보낸다', async () => {
     const bodies = recordRequestBodies('PATCH', '/approvals/ap_01')
     await openApproval('ap_01')

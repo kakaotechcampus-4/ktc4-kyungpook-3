@@ -226,10 +226,12 @@ describe('로그인 제출 (U2-4·U2-6·U2-8)', () => {
     const log = recordRequests()
     await openLogin()
     await fillLogin('pm@example.com', 'mock-password')
-    const form = screen.getByRole('button', { name: '로그인' }).closest('form')!
+    const submitButton = screen.getByRole('button', { name: '로그인' })
+    const form = submitButton.closest('form')!
     fireEvent.submit(form)
     fireEvent.submit(form)
     fireEvent.submit(form)
+    await waitFor(() => expect(submitButton).toBeDisabled())
     gate.resolve()
     await screen.findByRole('heading', { name: '워크스페이스 선택' })
     expect(posts(log, '/auth/login')).toHaveLength(1)

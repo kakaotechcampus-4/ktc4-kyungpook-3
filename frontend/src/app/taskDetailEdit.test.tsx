@@ -54,6 +54,7 @@ describe('태스크 상세의 머리와 권한 (#471)', () => {
     const subline = title.nextElementSibling as HTMLElement
     await waitFor(() => expect(subline).toHaveTextContent('박민수 담당 · 09/16 마감'))
     expect(within(subline).getByText('기한 지남')).toBeVisible()
+    expect(await screen.findByText(/^마감이 지났어요\./)).toBeVisible()
   })
 
   it('마감 전이면 기한 지남이 없다', async () => {

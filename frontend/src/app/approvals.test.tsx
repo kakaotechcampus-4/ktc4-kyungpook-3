@@ -14,6 +14,7 @@ import { server } from '@/shared/mock/server'
 import { setMockRole } from '@/shared/mock/sessions'
 import { deferred } from '@/shared/test/deferred'
 import { recordRequestBodies, recordRequests } from '@/shared/test/requests'
+import { onTestFinished } from 'vitest'
 import { renderApp } from './test/renderApp'
 
 vi.setConfig({ testTimeout: 20_000 })
@@ -300,11 +301,27 @@ describe('승인·반려는 서버 성공 뒤에, 한 번만 (AC-05 · AC-06)', 
     const log = recordRequests()
     await openApproval('ap_03', '새 태스크 확인')
     expect(screen.getByTestId('approval-result')).toHaveTextContent('반려했어요')
+    expect(screen.getByText('태스크를 만들지 않았어요.')).toBeVisible()
     expect(screen.getByLabelText('요청한 값')).toBeVisible()
     expect(screen.queryByRole('button', { name: '승인' })).toBeNull()
     expect(screen.queryByRole('button', { name: '반려' })).toBeNull()
     await settle()
     expect(patches(log)).toEqual([])
+  })
+
+  it('승인된 채로 들어오면 생성된 태스크 링크와 반영 상태를 보이고 처리 버튼이 없다', async () => {
+    replaceDb(createScenarioDb('approval-resolved'))
+    renderApp(paths.approval('ws_01', 'ap_02'))
+    expect(await screen.findByTestId('approval-result')).toHaveTextContent('승인했어요')
+    const resolved = screen.getByLabelText('처리된 태스크')
+    expect(within(resolved).getByText('생성된 태스크')).toBeVisible()
+    expect(await within(resolved).findByRole('link', { name: '테스트 계획 정리' })).toHaveAttribute(
+      'href',
+      paths.tasks('ws_01', 'tk_90'),
+    )
+    await waitFor(() => expect(notionStatus()).toHaveTextContent('반영 중'))
+    expect(screen.queryByRole('button', { name: '승인' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '반려' })).toBeNull()
   })
 
   it('지원하지 않는 종류는 읽기 전용이고 승인 액션이 없다', async () => {
@@ -324,9 +341,36 @@ describe('승인·반려는 서버 성공 뒤에, 한 번만 (AC-05 · AC-06)', 
     expect(patches(log)).toEqual([])
   })
 
+  it('확인 요청을 받는 동안 태스크 목록 링크와 기다림 표시가 있고 승인 버튼은 없다', async () => {
+    const gate = deferred()
+    onTestFinished(() => gate.resolve())
+    server.use(
+      http.get('/api/v1/approvals/:approvalId', async () => {
+        await gate.promise
+        return undefined
+      }),
+    )
+    renderApp(paths.approval('ws_01', 'ap_01'))
+    const back = await screen.findByRole('link', { name: '태스크 목록' })
+    expect(back).toHaveAttribute('href', paths.tasks('ws_01'))
+    expect(back.closest('main')?.querySelector('[aria-busy="true"]')).not.toBeNull()
+    expect(screen.queryByRole('button', { name: '승인' })).toBeNull()
+  })
+
+  it('확인 요청을 받지 못하면 다시 시도와 함께 알린다', async () => {
+    server.use(http.get('/api/v1/approvals/:approvalId', () => fail('INVALID_REQUEST', 'x', 400)))
+    renderApp(paths.approval('ws_01', 'ap_01'))
+    expect(await screen.findByText('확인 요청을 불러오지 못했어요')).toBeVisible()
+    expect(screen.getByRole('button', { name: '다시 시도' })).toBeVisible()
+  })
+
   it('없는 승인은 찾을 수 없다고 알린다', async () => {
     renderApp(paths.approval('ws_01', 'ap_99'))
     expect(await screen.findByRole('heading', { name: '확인 요청을 찾을 수 없어요' })).toBeVisible()
+    expect(screen.getByRole('link', { name: '태스크 목록으로' })).toHaveAttribute(
+      'href',
+      paths.tasks('ws_01'),
+    )
   })
 })
 

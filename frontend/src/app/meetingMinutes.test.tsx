@@ -11,8 +11,10 @@ import { completeMeeting, failMeeting } from '@/shared/mock/meetingFlow'
 import { server } from '@/shared/mock/server'
 import { setMockRole } from '@/shared/mock/sessions'
 import { AWAITING_MEETING_ID, createSpeakerScenarioDb } from '@/shared/mock/speakerScenarios'
+import { deferred } from '@/shared/test/deferred'
 import { recordRequests } from '@/shared/test/requests'
 import { NOTION_NOTE_FOR_MEMBER, NOTION_NOTE_FOR_PM } from '@/widgets/meeting-minutes'
+import { onTestFinished } from 'vitest'
 import { renderApp } from './test/renderApp'
 
 /*
@@ -286,6 +288,26 @@ describe('회의록 상세 (U5-3)', () => {
     const tasks = await openTab(user, /추출된 일/)
     expect(await within(tasks).findByRole('link', { name: '로그인 API 연동' })).toBeInTheDocument()
     expect(within(tasks).getByText('담당 김서연 · 마감 9/20')).toBeInTheDocument()
+  })
+
+  it('직접 들어온 회의의 상세가 늦으면 목록은 보이고, 본문 자리는 스켈레톤이며 회의 제목이 없다', async () => {
+    const gate = deferred()
+    onTestFinished(() => gate.resolve())
+    server.use(
+      http.get('/api/v1/meetings/mt_09', async () => {
+        await gate.promise
+        return undefined
+      }),
+    )
+    renderApp(MT_09)
+
+    expect(await screen.findByTestId('minutes-detail-skeleton')).toHaveAttribute(
+      'aria-busy',
+      'true',
+    )
+    expect(await screen.findByRole('link', { name: /2주차 정기회의/ })).toBeInTheDocument()
+    expect(within(meetingList()).getByRole('link', { name: /2주차 정기회의/ })).toBeVisible()
+    expect(screen.queryByRole('heading', { level: 2 })).toBeNull()
   })
 
   it('요약 null · 빈 전사문 · 참석자 없음 · 추출 결과 없음은 각각 빈 상태다 — 추출 요청을 보내지 않는다', async () => {

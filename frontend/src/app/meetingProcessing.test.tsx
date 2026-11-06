@@ -447,6 +447,16 @@ describe('처리 화면 (U4-4, U4-10)', () => {
     expect(main).toHaveTextContent('회의록과 확실한 태스크는 바로 Notion에 반영하고')
   })
 
+  it('아직 끝난 단계가 없으면 정리하고 있다는 제목과 0 / 3 단계 완료를 알린다', async () => {
+    db.meetings.find(({ meeting_id }) => meeting_id === 'mt_10')!.progress = {
+      audio_merged: false,
+      transcribed: false,
+      extracted: false,
+    }
+    await openProcessing()
+    expect(screen.getByRole('status')).toHaveTextContent('0 / 3 단계 완료')
+  })
+
   it('단계가 바뀌면 role="status" 안내가 바뀐다 (U4-10)', async () => {
     fakeIntervals()
     await openProcessing()
@@ -488,6 +498,13 @@ describe('처리 화면 (U4-4, U4-10)', () => {
     server.use(http.get('/api/v1/workspaces/:workspaceId/meetings', () => list([])))
     await openProcessing()
     await waitFor(() => expect(tracked()).toEqual([MEETING]))
+  })
+
+  it('처음 상세 조회가 실패하면 불러오지 못했다고 알리고 다시 시도를 준다', async () => {
+    server.use(http.get('/api/v1/meetings/:meetingId', () => fail('INVALID_REQUEST', 'x', 400)))
+    renderApp(PROCESSING_PATH)
+    expect(await screen.findByRole('button', { name: '다시 시도' })).toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('정리 상태를 불러오지 못했어요')
   })
 
   it('볼 수 없는 회의는 안내를 보인다', async () => {

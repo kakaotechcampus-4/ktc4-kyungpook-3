@@ -62,6 +62,21 @@ describe('설정의 Discord 연결 영역 — PM', () => {
     expect((await notionArea()).queryByRole('button', { name: /연결하기/ })).toBeNull()
   })
 
+  it('연결된 Discord 에는 연결 액션 대신 `채널 바꾸기` 와 `연결 끊기` 만 있다', async () => {
+    db.integrations[WS].discord = {
+      status: 'connected',
+      display_name: 'Discord 연결됨',
+      connected_at: '2026-09-01T00:00:00Z',
+    }
+    renderApp(SETTINGS)
+    const area = await discordArea()
+    expect(await area.findByText('연결됨')).toBeInTheDocument()
+    expect(area.getAllByRole('button').map((button) => button.textContent)).toEqual([
+      '채널 바꾸기',
+      '연결 끊기',
+    ])
+  })
+
   it('끊긴(revoked) Discord 는 `연결 끊김` 과 `Discord 다시 연결하기` 다 — 문구로도 구분한다', async () => {
     db.integrations[WS].discord = { status: 'revoked', display_name: null, connected_at: null }
     renderApp(SETTINGS)
@@ -128,7 +143,7 @@ describe('설정의 Discord 연결 영역 — PM', () => {
     expect(leaveApp).toHaveBeenCalledOnce()
   })
 
-  it('연동 조회가 실패하면 인라인 안내와 다시 시도를 보이고, 다시 시도하면 회복한다', async () => {
+  it('연동 조회가 실패하면 미연결로 보이지 않고 인라인 안내와 다시 시도를 보이며, 다시 시도하면 회복한다', async () => {
     server.use(
       http.get(`/api/v1/workspaces/${WS}/integrations`, () => fail('FORBIDDEN', 'denied', 403), {
         once: true,
@@ -137,7 +152,9 @@ describe('설정의 Discord 연결 영역 — PM', () => {
     const user = userEvent.setup()
     renderApp(SETTINGS)
     const area = await discordArea()
-    await user.click(await area.findByRole('button', { name: '다시 시도' }))
+    const retry = await area.findByRole('button', { name: '다시 시도' })
+    expect(area.queryByText('연결 안 됨')).toBeNull()
+    await user.click(retry)
     expect(await area.findByText('연결 안 됨')).toBeInTheDocument()
     expect(area.getByRole('button', { name: 'Discord 연결하기' })).toBeInTheDocument()
   })
