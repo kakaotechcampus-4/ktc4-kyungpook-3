@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 CLAIM_STALL_SECONDS = 3 * 3600
 SPEAKER_ASSIGNMENT_TTL_SECONDS = 7 * 86400
-CHAT_STALL_SECONDS = 3 * 3600   # 채팅 폴러는 TimeoutStartSec=1h 라 3시간이면 죽은 것이다
+CHAT_STALL_SECONDS = 7 * 3600   # 채팅 폴러 시간 제한(TimeoutStartSec=6h, #431)보다 길어야 살아 있는 폴러의 결과를 버리지 않는다
 FAILED_STAGE_STALLED = "diarize"
 FAILED_STAGE_CHAT = "chat_stalled"
 FAILED_STAGE_EXPIRED = "speaker_assignment_expired"
