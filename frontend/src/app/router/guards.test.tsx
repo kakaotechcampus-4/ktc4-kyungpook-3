@@ -208,7 +208,10 @@ describe('RequirePM', () => {
     const title = String(db.approvals[0].payload.task_title)
     const log = recordRequests()
     renderApp('/workspaces/ws_01/approvals/ap_01')
-    expect(await screen.findByText(title)).toBeInTheDocument()
+    expect(
+      await screen.findByRole('heading', { level: 1, name: '이 태스크, 승인할까요?' }),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: /^태스크명/ })).toHaveValue(title)
 
     // M6 S4 부터 상세가 담당자 이름·보완 판정에 쓰는 팀원 목록을 함께 받는다. 승인 상세와 팀원 목록 말고는 아무것도 없다
     await waitFor(() =>

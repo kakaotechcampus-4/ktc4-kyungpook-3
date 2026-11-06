@@ -23,15 +23,23 @@ export interface TextFieldProps extends Omit<ComponentPropsWithRef<'input'>, 'si
   startAdornment?: ReactNode
   /** 비밀번호 보기 버튼, 캘린더 아이콘 등 */
   endAdornment?: ReactNode
+  /** 'lg' 는 44px — 선택 상자(Select md)와 한 줄에 둘 때. 기본은 화면군 높이다 */
+  size?: 'lg'
 }
 
 /* 표는 모듈 스코프. 42px 는 §5-7 이 이미 `h-[42px]` 로 적어 둔 값이고,
    15px 는 타이포 스케일 밖이다 — docs/impl-decision/2026-09-16-values-outside-token-scale.md */
 
 const TONE_SHAPE: Record<FieldTone, string> = {
-  product: 'h-[42px] rounded-9 px-13',
-  onboarding: 'h-[42px] rounded-8 px-13',
-  auth: 'h-48 rounded-12 px-16',
+  product: 'rounded-9 px-13',
+  onboarding: 'rounded-8 px-13',
+  auth: 'rounded-12 px-16',
+}
+
+const TONE_HEIGHT: Record<FieldTone, string> = {
+  product: 'h-[42px]',
+  onboarding: 'h-[42px]',
+  auth: 'h-48',
 }
 
 const TONE_TEXT: Record<FieldTone, string> = {
@@ -100,6 +108,7 @@ export function TextField({
   error,
   startAdornment,
   endAdornment,
+  size,
   id,
   className,
   ...rest
@@ -124,6 +133,7 @@ export function TextField({
       .join(' ') || undefined
 
   const hasAdornment = Boolean(startAdornment) || Boolean(endAdornment)
+  const height = size === 'lg' ? 'h-44' : TONE_HEIGHT[tone]
 
   const inputProps = {
     id: fieldId,
@@ -152,6 +162,7 @@ export function TextField({
           className={[
             ADORNED_BOX,
             adornedFocusColor,
+            height,
             TONE_SHAPE[tone],
             TONE_TEXT[tone],
             borderColor,
@@ -166,6 +177,7 @@ export function TextField({
           className={[
             INPUT_BASE,
             INPUT_DISABLED,
+            height,
             TONE_SHAPE[tone],
             TONE_TEXT[tone],
             borderColor,
