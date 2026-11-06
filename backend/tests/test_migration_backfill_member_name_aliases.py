@@ -87,9 +87,10 @@ def _alias(engine, member_id, alias_text, source, *, workspace_id=WORKSPACE):
 def _aliases(engine) -> list[tuple]:
     with engine.connect() as conn:
         rows = conn.execute(
-            text("SELECT member_id, alias_text, source FROM member_alias ORDER BY member_id, alias_text")
+            text("SELECT member_id, alias_text, source FROM member_alias")
         ).all()
-    return [tuple(row) for row in rows]
+    # 한글 정렬은 DB 콜레이션마다 달라 SQL ORDER BY 를 쓰지 않고 코드포인트 순서로 직접 정렬한다.
+    return sorted(tuple(row) for row in rows)
 
 
 def _run(engine, fn_name: str):
