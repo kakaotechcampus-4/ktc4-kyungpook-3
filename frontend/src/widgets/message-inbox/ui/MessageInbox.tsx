@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useRef } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { messageInboxQueryOptions, messageThreadQueryOptions } from '@/entities/message'
 import type { Bundle, MessageInbox as Inbox, MessageThreadSummary } from '@/entities/message'
@@ -7,6 +7,7 @@ import { paths } from '@/shared/config/routes'
 import { GuardedLink } from '@/shared/lib/unsaved-changes'
 import { EmptyState } from '@/shared/ui/empty-state'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
+import { PinnedToastHost } from '@/shared/ui/toast'
 import { avatarText, bundleDateLabel, bundleSummary, shortDate } from '../lib/format'
 import { selectDetail } from '../model/selection'
 import { VIEWER_POLICY } from '../model/viewer'
@@ -23,7 +24,7 @@ const SCREEN = 'flex h-[calc(100dvh-var(--spacing-header))] items-stretch'
 const ASIDE =
   'relative flex w-aside shrink-0 flex-col gap-18 overflow-y-auto border-r border-divider px-12 pt-18 pb-24'
 const ASIDE_TITLE = 'px-8 text-[17px] leading-[1.55] font-bold tracking-h2 text-ink'
-const DETAIL = 'flex min-w-[0px] flex-1 flex-col'
+const DETAIL = 'relative flex min-w-[0px] flex-1 flex-col'
 const GROUP_LABEL = 'mono text-[10.5px] leading-[1.75] font-normal tracking-[0.1em] text-dim'
 const GROUP_NOTE = 'px-8 text-caption text-dim'
 const REVIEW_ROW =
@@ -98,6 +99,20 @@ export function MessageInbox({
     composing: composing && policy.compose,
   })
   const selectedThreadId = selection.kind === 'thread' ? selection.threadId : null
+  // 정리 중 토스트(#424)는 이 화면에서 대화 영역 오른쪽 아래에 앉는다 (#474). 대화 아래 고정 줄(답장·안내)이 있으면 그 위 16,
+  // 없으면 영역 아래 24 다. 상세의 스크롤 칸은 끝에 여백을 둬 마지막 내용이 토스트 위 16 까지 올라오게 한다
+  const [floor, setFloor] = useState<HTMLElement | null>(null)
+  const [floorHeight, setFloorHeight] = useState(0)
+  const [toastHeight, setToastHeight] = useState(0)
+  useLayoutEffect(() => {
+    if (floor === null || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(() => setFloorHeight(floor.getBoundingClientRect().height))
+    observer.observe(floor)
+    return () => observer.disconnect()
+  }, [floor])
+  const toastOffset = floor === null ? 24 : 16
+  const toastBottom = (floor === null ? 0 : floorHeight) + toastOffset
+  const toastClearance = toastHeight > 0 ? toastHeight + toastOffset + 16 : 0
 
   // 볼 것이 없다 — EmptyMessages 캔버스 한 장. 팀원은 받은 대화가 없을 때, PM 은 보낼 메시지와 대화가 모두 없을 때.
   // `알림 규칙 보기` 화면은 아직 없어 가장 가까운 팀 설정으로 보낸다 (결과 문서 C 의 차이표).
@@ -147,6 +162,8 @@ export function MessageInbox({
         threadId={selection.threadId}
         botName={botName}
         viewer={viewer}
+        floorRef={setFloor}
+        toastClearance={toastClearance}
       />
     )
   else if (selection.kind === 'bundle')
@@ -157,6 +174,7 @@ export function MessageInbox({
         workspaceId={workspaceId}
         botName={botName}
         bundle={selection.bundle}
+        toastClearance={toastClearance}
         onSettled={() => detailRef.current?.focus()}
       />
     )
@@ -164,6 +182,7 @@ export function MessageInbox({
     detail = (
       <ComposeDetail
         workspaceId={workspaceId}
+        toastClearance={toastClearance}
         onCreated={(bundleId) => {
           // 만든 묶음을 고른다. 뒤로 가기로 만들기 칸에 돌아가지 않게 주소를 바꿔 끼운다
           detailRef.current?.focus()
@@ -216,6 +235,12 @@ export function MessageInbox({
       {/* 처리한 항목이 버튼째 사라지면 포커스를 이 칸이 받는다 — 다음 Tab 이 새로 골라진 항목으로 간다 */}
       <section ref={detailRef} aria-label="메시지 내용" tabIndex={-1} className={DETAIL}>
         {detail}
+        {/* 상세 칸이 바뀌어도 자리는 그대로다 — 토스트가 다시 마운트되지 않아 접힘이 유지된다 */}
+        <PinnedToastHost
+          className="absolute right-24 z-10"
+          style={{ bottom: toastBottom }}
+          onHeightChange={setToastHeight}
+        />
       </section>
     </main>
   )
