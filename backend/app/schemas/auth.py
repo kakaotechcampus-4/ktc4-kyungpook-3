@@ -1,4 +1,5 @@
 import re
+import unicodedata
 from datetime import datetime
 from typing import Optional
 
@@ -11,6 +12,23 @@ def validate_password(value: str) -> str:
     # \d 는 유니코드 숫자도 받으므로 ASCII 숫자만 본다.
     if len(value) < 8 or not re.search(r"[0-9]", value):
         raise ValueError(PASSWORD_RULE_MESSAGE)
+    return value
+
+
+NAME_MAX_LENGTH = 100
+NAME_RULE_MESSAGE = "이름은 앞뒤 공백을 뺀 1~100자이고 제어문자를 포함할 수 없습니다."
+
+
+def validate_name(value: str) -> str:
+    value = value.strip()
+    categories = [unicodedata.category(ch) for ch in value]
+    if (
+        not value
+        or all(c == "Cf" for c in categories)
+        or any(c in ("Cc", "Cs", "Zl", "Zp") for c in categories)
+        or len(value) > NAME_MAX_LENGTH
+    ):
+        raise ValueError(NAME_RULE_MESSAGE)
     return value
 
 
@@ -38,6 +56,11 @@ class SignupRequest(BaseModel):
     @classmethod
     def _check_password(cls, value: str) -> str:
         return validate_password(value)
+
+    @field_validator("name")
+    @classmethod
+    def _check_name(cls, value: str) -> str:
+        return validate_name(value)
 
 
 class PasswordResetRequest(BaseModel):
