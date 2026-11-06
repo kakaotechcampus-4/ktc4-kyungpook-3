@@ -15,7 +15,7 @@ M6 plan.md 는 비어 있어 완료조건이 없다. 마일스톤을 M6 으로 �
 | 조건부 UPDATE 한 문장으로 `processing` 이고 단계가 없거나 앞선 회의만 갱신. 반영하지 않으면 `applied=false` | [meeting_stage.py](../../../app/services/meeting_stage.py) |
 | `progress` 판정식에 단계 반영(회의 상세·실패 응답 공통). 응답에 단계 값은 싣지 않음 | [meetings.py](../../../app/api/meetings.py) `_compute_progress` |
 | AI: `BeClient.report_stage`(타임아웃 3초), `Handoff.report_stage`(회의 ID 없으면 안 부름, 오류는 로그만), `process_session` 단계 시작에서 보고 | `ai/capture/handoff.py`, `ai/capture/recorder.py` (사용자가 이번 PR 한정으로 허락) |
-| 테스트 | [test_meeting_stage.py](../../../tests/api/test_meeting_stage.py), AI 쪽은 `ai/tests/capture/`의 `test_handoff.py`, `test_recorder.py`, `test_recovery.py`, `fake_be.py` |
+| 테스트 | [test_meeting_stage.py](../../../tests/api/test_meeting_stage.py), AI 쪽은 `ai/tests/capture/`의 `test_handoff.py`, `test_recorder.py`, `test_discord_adapter.py`, `fake_be.py` |
 | 계약 | [BE↔AI 계약 처리 단계 보고](../../contracts/backend-ai-contract.md#patch-meetingsmeeting_idstage--200). FE 계약 문서는 고치지 않았다 |
 
 ## 완료조건 확인
@@ -31,7 +31,7 @@ plan.md 가 비어 있어 완료조건이 없다. 아래는 이슈 #381 의 설�
 | 응답에 `processing_stage` 를 싣지 않음 | 구현 | 회의 상세 스키마를 바꾸지 않았다 |
 | AI 보고(단계 시작 시점, 실패 삼킴) | 구현. AI 파트 리뷰 대기 | AI 테스트 실행 결과는 아래 검증 내역 |
 | 계약 문서 갱신 | 완료 | 합의 상태는 "구현됨(#381), AI 리뷰 대기" |
-| [BE→FE] 이슈, `progress` 의미 변화 전달 | 미수행 | PR 뒤 따로 올린다 |
+| [BE→FE] 이슈, `progress` 의미 변화 전달 | 완료 | #384 로 올렸고 FE 답변(`processing_stage` 불필요, 계약 반영은 FE PR #399)을 받아 닫았다 |
 
 ## 검증 내역
 
