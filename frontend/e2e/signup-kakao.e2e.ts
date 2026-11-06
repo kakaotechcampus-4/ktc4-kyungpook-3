@@ -65,6 +65,15 @@ test('모의 메일함의 코드를 보고 돌아와 같은 이메일을 넣으�
   await expect(page.getByLabel('이름')).toBeVisible()
 })
 
+/** 모의 서버는 응답 뒤에 sessionStorage 로 저장해서, 바로 옮기면 로그인 상태가 복원될 수 있다 */
+async function logOutToLogin(page: Page) {
+  await expect(async () => {
+    await page.evaluate(() => fetch('/api/v1/auth/logout', { method: 'POST' }))
+    await page.goto('/login')
+    await expect(page.getByRole('button', { name: '카카오로 로그인' })).toBeVisible({ timeout: 2_000 })
+  }).toPass({ timeout: 15_000 })
+}
+
 test('카카오 새 사용자: 잠긴 이메일로 가입하면 다음에는 이메일과 카카오 둘 다 로그인된다', async ({
   page,
 }) => {
@@ -83,15 +92,13 @@ test('카카오 새 사용자: 잠긴 이메일로 가입하면 다음에는 이
   await page.getByRole('button', { name: '계정 만들기' }).click()
   await expect(page).toHaveURL('/onboarding/start')
 
-  await page.evaluate(() => fetch('/api/v1/auth/logout', { method: 'POST' }))
-  await page.goto('/login')
+  await logOutToLogin(page)
   await page.getByLabel('이메일').fill(NEW_EMAIL)
   await page.getByLabel('비밀번호', { exact: true }).fill('pass1234')
   await page.getByRole('button', { name: '로그인', exact: true }).click()
   await expect(page).toHaveURL('/onboarding/start')
 
-  await page.evaluate(() => fetch('/api/v1/auth/logout', { method: 'POST' }))
-  await page.goto('/login')
+  await logOutToLogin(page)
   await page.getByRole('button', { name: '카카오로 로그인' }).click()
   await chooseOnMockKakao(page, '새 사용자 (이메일 있음)')
   await expect(page).toHaveURL('/onboarding/start', { timeout: 15_000 })
