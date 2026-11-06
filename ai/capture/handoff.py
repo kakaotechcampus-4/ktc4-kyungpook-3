@@ -5,6 +5,7 @@ extractions.py). 봇이 이 전이를 순서대로 부른다.
 
   /record 직후       POST  /api/v1/meetings              created. 매니페스트 be.meeting_id
   트랙을 닫은 뒤     PATCH /api/v1/meetings/{id}/end     processing
+  단계가 시작될 때   PATCH /api/v1/meetings/{id}/stage   변화 없음(BE 진행 표시). 실패는 삼킨다
   전사가 닫힌 뒤     POST  /api/v1/meetings/{id}/sources 발화 저장(X-Service-Token). 같은 seq 는 BE 가 건너뛴다
   추출이 끝난 뒤     POST  /api/v1/extractions           done. 항목 저장, 담당자 매칭, 게이트 판정
   어느 단계든 실패   PATCH /api/v1/meetings/{id}/fail    failed, failed_stage
@@ -44,6 +45,8 @@ API_PREFIX = "/api/v1"
 TIMEOUT_S = 10.0
 # 유사 검색은 BE 가 임베딩 서버를 10초까지 기다린다. 그보다 길어야 BE 의 502 를 받고, 짧으면 이쪽이 먼저 끊는다
 SIMILAR_TIMEOUT_S = 15.0
+# 단계 보고는 진행 표시일 뿐이다. BE 가 느려도 처리를 붙들지 않게 짧게 끊는다
+STAGE_TIMEOUT_S = 3.0
 
 # 서버(길드)에 연결된 워크스페이스가 없을 때 BE 가 주는 코드(backend/app/api/integrations.py, #180)
 NOT_CONNECTED = "INTEGRATION_NOT_CONNECTED"
@@ -144,6 +147,14 @@ class BeClient:
             if e.code == "MEETING_ALREADY_ENDED":
                 return str(e.details.get("status", "processing"))
             raise
+
+    def report_stage(self, meeting_id: str, stage: str) -> dict:
+        """처리 단계가 시작됐다고 알린다(stt, sources, extract, handoff). BE 가 진행 표시에 쓴다.
+
+        data 는 {meeting_id, status, processing_stage, applied}. 처리 중이 아니거나 같은·앞선 단계면 applied 가 False 다.
+        오류는 BeError 그대로 올린다. 삼키는 것은 Handoff.report_stage 다.
+        """
+        return self._call("PATCH", f"/meetings/{meeting_id}/stage", {"stage": stage}, timeout=STAGE_TIMEOUT_S)
 
     def fail_meeting(self, meeting_id: str, failed_stage: str) -> dict:
         try:
@@ -298,6 +309,19 @@ class Handoff:
             status = self.client.end_meeting(be["meeting_id"])
         be["status"] = status
         return be
+
+    def report_stage(self, manifest: dict, stage: str) -> None:
+        """단계가 시작될 때 BE 에 알린다. 진행 표시용이라 매니페스트를 바꾸지 않고, 어떤 실패도 삼킨다.
+
+        BE 회의가 아직 없으면(be.meeting_id 없음) 부르지 않는다. 처리 결과를 바꾸면 안 되므로 예외는 로그만 남긴다.
+        """
+        meeting_id = (manifest.get("be") or {}).get("meeting_id")
+        if not meeting_id:
+            return
+        try:
+            self.client.report_stage(meeting_id, stage)
+        except Exception as e:  # noqa: BLE001 - 진행 표시 실패가 전사·인계를 막으면 안 된다
+            print(f"[stage] 세션 {manifest.get('session')} 단계 보고 실패({stage}): {type(e).__name__}: {e}", flush=True)
 
     def save_sources(self, manifest: dict, *, transcripts_dir: Path, title: str | None = None) -> dict:
         """전사 발화를 BE 에 저장한다. processing 이나 done 회의에 보낸다. end 로 회의를 확보하고, BE 가 failed 로 닫아
