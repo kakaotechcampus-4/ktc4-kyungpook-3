@@ -1,11 +1,13 @@
 """로그인 시도 제한(#436): 이메일 10회·IP 50회를 넘으면 429, 맞는 비밀번호도 막는다."""
+import re
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import event
 
 from app.api import auth
 from app.main import app
-from app.services import login_limit
+from app.services import login_limit, mailer
 
 EMAIL = "limit@example.com"
 PW = "rightpass123"
@@ -16,6 +18,25 @@ BLOCK_MESSAGE = "로그인 시도가 너무 많습니다. 잠시 후 다시 시�
 def _cheap_hash(monkeypatch):
     # 수십 번 로그인하므로 해시 반복을 줄인다. 해시 횟수는 test_login_timing 이 맡는다.
     monkeypatch.setattr("app.services.passwords._PBKDF2_ITERATIONS", 1)
+
+
+class _InlineExecutor:
+    def submit(self, fn, *args, **kwargs):
+        return fn(*args, **kwargs)
+
+
+@pytest.fixture
+def sent(monkeypatch):
+    # 실제 SMTP 에 접속하지 않고 발송 내용만 모은다.
+    box = []
+    monkeypatch.setattr(mailer, "_executor", _InlineExecutor())
+    monkeypatch.setattr(mailer, "send_mail", lambda to, subject, text: box.append((to, subject, text)))
+    monkeypatch.setattr(mailer, "_sleep", lambda s: None)
+    monkeypatch.setenv("SMTP_HOST", "smtp.example")
+    monkeypatch.setenv("SMTP_USERNAME", "user")
+    monkeypatch.setenv("SMTP_PASSWORD", "pw")
+    monkeypatch.setenv("APP_BASE_URL", "https://mm.example/")
+    return box
 
 
 def _client(**kwargs):
@@ -192,6 +213,55 @@ def test_blocked_request_sends_no_sql(mdb):
 
     assert r.status_code == 429
     assert queries == []
+
+
+def _reset_token(c, sent):
+    assert c.post("/api/v1/auth/password-reset/request", json={"email": EMAIL}).status_code == 200
+    return re.search(r"#token=(\S+)", sent[-1][2]).group(1)
+
+
+def _confirm(c, token, password="newpass456"):
+    return c.post("/api/v1/auth/password-reset/confirm", json={"token": token, "new_password": password})
+
+
+def test_password_reset_confirm_unblocks_email(mdb, sent):
+    c = _client()
+    _signup(c)
+    _fail_n(c, 10)
+    assert _login(c).status_code == 429
+    token = _reset_token(c, sent)
+
+    assert _confirm(c, token).status_code == 200
+
+    assert _login(c, password="newpass456").status_code == 200
+
+
+def test_failed_confirm_keeps_block(mdb, sent):
+    c = _client()
+    _signup(c)
+    _fail_n(c, 10)
+    _reset_token(c, sent)
+
+    assert _confirm(c, "wrong-token").status_code == 400
+
+    assert _login(c).status_code == 429
+
+
+def test_commit_failure_keeps_block(mdb, sent, monkeypatch):
+    c = _client(raise_server_exceptions=False)
+    _signup(c)
+    _fail_n(c, 10)
+    token = _reset_token(c, sent)
+
+    def boom(self):
+        raise RuntimeError("commit failed")
+
+    monkeypatch.setattr("sqlalchemy.orm.Session.commit", boom)
+    assert _confirm(c, token).status_code == 500
+    monkeypatch.undo()
+    monkeypatch.setattr("app.services.passwords._PBKDF2_ITERATIONS", 1)
+
+    assert _login(c).status_code == 429
 
 
 def test_uvicorn_proxy_headers_resolve_client():
