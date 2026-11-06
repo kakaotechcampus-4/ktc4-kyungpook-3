@@ -321,7 +321,7 @@ def test_unverified_email_on_a_registered_account_points_to_login(mdb, client, k
     assert _path(res) == "/login"
     assert _query(res)["oauth_reason"] == ["email_exists"]
     assert _row(mdb).provider_id is None
-    assert _cookie(res, kakao_oauth.PENDING_COOKIE) is None
+    assert _clears_pending(res)
     assert _session_count(mdb) == 0
 
 
