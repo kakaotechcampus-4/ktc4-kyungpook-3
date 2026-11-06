@@ -87,7 +87,7 @@ def request_signup_code(payload: SignupCodeRequest, db: Session = Depends(get_db
         raise AppError(ErrorCode.MAIL_UNAVAILABLE)
     mail = signup_codes.request_code(db, payload.email, now=datetime.now(timezone.utc))
     db.commit()
-    mailer.send_in_background(mail.to, mail.subject, mail.text, log_label="signup_code")
+    mailer.send_in_background(mail.to, mail.subject, mail.text, log_label="signup_code", html=mail.html)
     return success(
         SignupCodeResponse(
             expires_in=int(signup_codes.CODE_TTL.total_seconds()),

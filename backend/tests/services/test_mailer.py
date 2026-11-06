@@ -139,7 +139,7 @@ def _patch_send(monkeypatch, fail_times):
     attempts = []
     sleeps = []
 
-    def fake_send(to, subject, text):
+    def fake_send(to, subject, text, html=None):
         attempts.append(1)
         if len(attempts) <= fail_times:
             raise OSError("boom")
@@ -173,7 +173,7 @@ def test_send_with_retry_gives_up_after_four_tries(monkeypatch, caplog):
 
 
 def test_send_with_retry_logs_last_exception_type_and_message_without_body(monkeypatch, caplog):
-    def always_fail(to, subject, text):
+    def always_fail(to, subject, text, html=None):
         raise smtplib.SMTPAuthenticationError(535, b"bad creds")
 
     monkeypatch.setattr(mailer, "send_mail", always_fail)
@@ -209,7 +209,7 @@ def test_app_base_url_strips_trailing_slash(monkeypatch):
 def test_send_in_background_returns_before_the_mail_is_sent(monkeypatch):
     started, release = threading.Event(), threading.Event()
 
-    def slow(to, subject, text, *, log_label):
+    def slow(to, subject, text, *, log_label, html=None):
         started.set()
         release.wait(5)
 
@@ -227,7 +227,7 @@ def test_background_mail_never_uses_more_than_the_mail_workers(monkeypatch):
     running = {"now": 0, "max": 0}
     release = threading.Event()
 
-    def blocked(to, subject, text, *, log_label):
+    def blocked(to, subject, text, *, log_label, html=None):
         with lock:
             running["now"] += 1
             running["max"] = max(running["max"], running["now"])
@@ -250,7 +250,7 @@ def test_background_mail_never_uses_more_than_the_mail_workers(monkeypatch):
 
 def test_send_with_retry_hides_recipient_address_when_refused(monkeypatch, caplog):
     """수신 거부 예외의 메시지에는 받는 사람 주소가 그대로 든다. 그 예외만 종류만 남겨 이메일이 로그에 남지 않게 한다."""
-    def refused(to, subject, text):
+    def refused(to, subject, text, html=None):
         raise smtplib.SMTPRecipientsRefused({"victim@corp.com": (550, b"no such user")})
 
     monkeypatch.setattr(mailer, "send_mail", refused)
@@ -263,3 +263,19 @@ def test_send_with_retry_hides_recipient_address_when_refused(monkeypatch, caplo
     assert "user=1" in caplog.text
     assert "victim@corp.com" not in caplog.text
     assert "SECRET-TOKEN" not in caplog.text
+
+
+def test_html_mail_keeps_the_text_part_and_embeds_the_logo(monkeypatch):
+    set_env(monkeypatch)
+    calls: list = []
+    monkeypatch.setattr(smtplib, "SMTP", make_fake(calls, "init"))
+
+    mailer.send_mail("to@example.com", "제목", "본문", html='<img src="cid:logo">')
+
+    msg = calls[-1]
+    assert msg.get_content_type() == "multipart/alternative"
+    assert msg.get_body(("plain",)).get_content().strip() == "본문"
+    assert "cid:logo" in msg.get_body(("html",)).get_content()
+    logo = next(part for part in msg.walk() if part.get_content_maintype() == "image")
+    assert logo["Content-ID"] == "<logo>"
+    assert logo.get_content_disposition() == "inline"

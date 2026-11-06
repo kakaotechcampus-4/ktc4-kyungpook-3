@@ -64,7 +64,7 @@ NO_EMAIL = KakaoIdentity("77", None, False, "동우")
 def test_full_flow_from_code_to_account(mdb, client, monkeypatch):
     box = []
     monkeypatch.setattr(mailer, "_executor", _InlineExecutor())
-    monkeypatch.setattr(mailer, "send_mail", lambda to, subject, text: box.append(text))
+    monkeypatch.setattr(mailer, "send_mail", lambda to, subject, text, html=None: box.append(text))
     for key in ("SMTP_HOST", "SMTP_USERNAME", "SMTP_PASSWORD", "APP_BASE_URL"):
         monkeypatch.setenv(key, "x")
 

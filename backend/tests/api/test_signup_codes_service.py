@@ -283,3 +283,13 @@ def test_parallel_first_requests_send_one_mail(mdb):
     mails = [r for r in results if isinstance(r, svc.SignupCodeMail)]
     assert len(mails) == 1
     assert [r for r in results if r not in mails] == ["cooldown"] * 5
+
+
+def test_html_mail_shows_the_code_but_the_subject_does_not(mdb):
+    mail = svc.request_code(mdb, EMAIL, now=NOW)
+    code = _code(mail)
+
+    assert code in mail.html
+    assert code not in mail.subject
+    assert "cid:logo" in mail.html
+    assert "10분" in mail.html

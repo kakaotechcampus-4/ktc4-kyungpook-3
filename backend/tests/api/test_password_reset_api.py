@@ -32,7 +32,7 @@ def inline_mail(monkeypatch):
 @pytest.fixture
 def sent(monkeypatch):
     box = []
-    monkeypatch.setattr(mailer, "send_mail", lambda to, subject, text: box.append((to, subject, text)))
+    monkeypatch.setattr(mailer, "send_mail", lambda to, subject, text, html=None: box.append((to, subject, text)))
     monkeypatch.setattr(mailer, "_sleep", lambda s: None)
     return box
 
@@ -112,7 +112,7 @@ def test_request_invalid_email_returns_400(mdb, sent, smtp_env):
 def test_request_send_failure_still_200_and_no_token_in_logs(mdb, smtp_env, monkeypatch, caplog):
     attempts = []
 
-    def boom(to, subject, text):
+    def boom(to, subject, text, html=None):
         attempts.append(1)
         raise RuntimeError("smtp down")
 

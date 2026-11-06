@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session as DbSession
 
 from app.core.errors import AppError, ErrorCode
 from app.models import SignupEmailCode, User
-from app.services import oauth_state
+from app.services import oauth_state, signup_mail
 from app.services.messages import utc
 
 CODE_TTL = timedelta(minutes=10)
@@ -33,6 +33,7 @@ class SignupCodeMail:
     to: str
     subject: str
     text: str
+    html: str
 
 
 def _hash(email: str, code: str) -> str:
@@ -97,7 +98,9 @@ def request_code(db: DbSession, email: str, *, now: datetime) -> SignupCodeMail:
         "이 코드는 10분 동안만 쓸 수 있습니다.\n"
         "요청하지 않으셨다면 이 메일을 무시해 주세요."
     )
-    return SignupCodeMail(to=email, subject="[Manager's Manager] 가입 인증 코드", text=text)
+    return SignupCodeMail(
+        to=email, subject="[Manager's Manager] 가입 인증 코드", text=text, html=signup_mail.render(code)
+    )
 
 
 def confirm_code(db: DbSession, email: str, code: str, *, now: datetime) -> str:

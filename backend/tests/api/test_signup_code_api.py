@@ -31,7 +31,7 @@ def env(monkeypatch):
 @pytest.fixture
 def sent(monkeypatch):
     box = []
-    monkeypatch.setattr(mailer, "send_mail", lambda to, subject, text: box.append((to, subject, text)))
+    monkeypatch.setattr(mailer, "send_mail", lambda to, subject, text, html=None: box.append((to, subject, text)))
     return box
 
 
@@ -133,7 +133,7 @@ def test_malformed_code_is_invalid_request_and_does_not_count(mdb, client, sent,
 def test_failed_mail_is_logged_without_the_code(mdb, client, monkeypatch, caplog):
     bodies = []
 
-    def fail(to, subject, text):
+    def fail(to, subject, text, html=None):
         bodies.append(text)
         raise OSError("connection refused")
 
