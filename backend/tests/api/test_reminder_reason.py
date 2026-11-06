@@ -58,6 +58,28 @@ def _hist(db, task, field, source, at):
     db.commit()
 
 
+def test_edits_made_while_creating_the_task_are_not_news(mdb, seed):
+    """승인 카드에서 PM 이 값을 고쳐 만든 태스크는 생성 직후 manual 이력이 남는다. 그것은 진행 소식이 아니다."""
+    r = _make(mdb, seed)
+    task = r.task
+    _hist(mdb, task, "due_date", "manual", CREATED + timedelta(milliseconds=2))
+
+    reason, evidence = reminder_reason(mdb, r, _thread_id(r))
+
+    assert evidence is None
+    assert reason.endswith("에 만든 뒤로 진행 소식이 없어요.")
+
+
+def test_a_manual_change_just_after_the_creation_window_is_news(mdb, seed):
+    r = _make(mdb, seed)
+    at = CREATED + timedelta(seconds=10)
+    _hist(mdb, r.task, "due_date", "manual", at)
+
+    _, evidence = reminder_reason(mdb, r, _thread_id(r))
+
+    assert evidence == Evidence("task_change", at, None)
+
+
 def test_scheduler_reminder_without_news_counts_from_task_creation(mdb, seed):
     r = _make(mdb, seed)
     reason, evidence = reminder_reason(mdb, r, _thread_id(r))

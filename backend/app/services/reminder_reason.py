@@ -1,10 +1,10 @@
 """리마인드가 왜 나가는지(이유)와 그 근거, 묶음 요약을 계산한다. 읽기 전용이다.
 
 "진행 소식"의 정의는 스케줄러의 응답 정의와 같다(scheduler._RESPONSE_FIELDS, _NOT_RESPONSE_SOURCES).
-묶음 대화의 팀원 메시지, 또는 그 태스크의 응답 이력 중 늦은 것이 기준이고, 태스크 생성 이전 것은 세지 않는다.
+묶음 대화의 팀원 메시지, 또는 그 태스크의 응답 이력 중 늦은 것이 기준이고, 태스크 생성 이전 것은 세지 않고, 태스크 변경은 생성 직후 CREATION_GRACE 안의 것도 세지 않는다.
 """
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Literal
 
 from sqlalchemy import select
@@ -14,6 +14,8 @@ from app.models import MessageSender, Reminder, ReminderOrigin, TaskHistory, Thr
 from app.services import messages, scheduler
 
 DELETED_TASK_TITLE = "지워진 태스크"
+# 승인 카드에서 PM 이 값을 고쳐 만든 태스크는 생성 직후(같은 요청 안에서) manual 이력이 남는다. 생성의 일부라 소식이 아니다.
+CREATION_GRACE = timedelta(seconds=5)
 
 
 @dataclass(frozen=True)
@@ -50,6 +52,8 @@ def _latest_news(db: Session, task, thread_id: str) -> Evidence | None:
     )
     reply_ev = Evidence("reply", messages.utc(reply.created_at), reply.message_id) if reply else None
     change_ev = Evidence("task_change", messages.utc(change), None) if change is not None else None
+    if change_ev is not None and change_ev.at <= floor + CREATION_GRACE:
+        change_ev = None
     candidates = [e for e in (reply_ev, change_ev) if e is not None and e.at > floor]
     if not candidates:
         return None
