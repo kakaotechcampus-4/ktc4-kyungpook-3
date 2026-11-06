@@ -74,7 +74,7 @@ export function SignupEmailStep({ linkKakao, notice, onSent }: SignupEmailStepPr
           인증 코드 받기
         </Button>
       </form>
-      {linkKakao ? null : <AlternativeAuth label="카카오로 가입하기" />}
+      {linkKakao ? null : <AlternativeAuth />}
     </>
   )
 }

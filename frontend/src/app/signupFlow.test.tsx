@@ -430,7 +430,7 @@ describe('카카오 버튼', () => {
   it('next 를 들고 현재 탭을 옮기고, 앞 사용자의 복귀 공간을 지운다', async () => {
     rememberReturnWorkspace('ws_09')
     await openSignup(paths.signup({ next: NEXT }))
-    await click('카카오로 가입하기')
+    await click('카카오 로그인')
     expect(leaveApp).toHaveBeenCalledExactlyOnceWith(
       '/api/v1/auth/kakao/start?next=%2Fworkspaces%2Fws_01%2Ftasks%2Ftk_01',
     )
@@ -439,7 +439,7 @@ describe('카카오 버튼', () => {
 
   it('앱 밖 next 는 싣지 않는다', async () => {
     await openSignup('/signup?next=https%3A%2F%2Fevil.example')
-    await click('카카오로 가입하기')
+    await click('카카오 로그인')
     expect(leaveApp).toHaveBeenCalledExactlyOnceWith('/api/v1/auth/kakao/start')
   })
 })
@@ -470,7 +470,7 @@ describe('카카오 연결 가입: 인증된 이메일이 있다', () => {
     await userEvent.clear(name)
     await userEvent.type(name, '고친 이름')
     expect(name).toHaveValue('고친 이름')
-    expect(screen.queryByRole('button', { name: '카카오로 가입하기' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '카카오 로그인' })).not.toBeInTheDocument()
   })
 
   it('닉네임이 없으면 이름은 비어 있다', async () => {

@@ -49,7 +49,7 @@ export const 아이콘: Story = {
   args: { variant: 'outline', size: 'auth', startIcon: <Icon name="external" size={18} /> },
   render: (args) => (
     <div className="w-[384px]">
-      <Button {...args}>카카오로 로그인</Button>
+      <Button {...args}>카카오 로그인</Button>
     </div>
   ),
 }

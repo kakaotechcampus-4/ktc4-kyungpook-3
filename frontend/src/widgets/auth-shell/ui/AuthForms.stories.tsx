@@ -150,7 +150,7 @@ export const 회원가입_카카오_버튼: Story = {
   parameters: { route: '/signup' },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await expect(canvas.getByRole('button', { name: '카카오로 가입하기' })).toBeEnabled()
+    await expect(canvas.getByRole('button', { name: '카카오 로그인' })).toBeEnabled()
     await expect(canvas.queryByRole('button', { name: /Google/ })).not.toBeInTheDocument()
   },
 }

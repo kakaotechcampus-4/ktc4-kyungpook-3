@@ -23,7 +23,7 @@ beforeEach(() => {
   vi.mocked(leaveApp).mockClear()
 })
 
-describe('카카오로 로그인 버튼', () => {
+describe('카카오 로그인 버튼', () => {
   beforeEach(() => {
     db.authenticated = false
   })
@@ -31,7 +31,7 @@ describe('카카오로 로그인 버튼', () => {
   it('next 를 들고 현재 탭을 옮기고, 앞 사용자의 복귀 공간을 지운다', async () => {
     rememberReturnWorkspace('ws_09')
     renderApp(paths.login(NEXT))
-    await userEvent.click(await screen.findByRole('button', { name: '카카오로 로그인' }))
+    await userEvent.click(await screen.findByRole('button', { name: '카카오 로그인' }))
     expect(leaveApp).toHaveBeenCalledExactlyOnceWith(`/api/v1/auth/kakao/start${NEXT_QUERY}`)
     expect(readReturnWorkspace()).toBeNull()
   })

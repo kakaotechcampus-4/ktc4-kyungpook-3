@@ -24,19 +24,20 @@ export interface AuthShellProps {
 /* Login·Signup 캔버스 실측. 88px 간격 · 384px 폼 열 · 460px 카드 · 카드 높이 468px ·
    카드 반경 28px(Card 에 없는 인증 화면 일회성 값, m2 §7-4) · 제목 32/38 · 카드 제목 24/32 · 설명 15/24 ·
    캡션 12 는 토큰 스케일 밖이라 그 자리에 임의값으로 쓴다 — docs/impl-decision/2026-09-16-values-outside-token-scale.md */
-const SCREEN = 'flex min-h-dvh items-center justify-center bg-surface px-48 py-56 text-ink'
+/* 1024px 미만은 D-123 범위 밖이지만 초대받은 팀원이 휴대폰으로 가입할 수 있게 폼만 남긴다 (#427) */
+const SCREEN = 'flex min-h-dvh items-center justify-center bg-surface px-16 py-56 text-ink lg:px-48'
 
-const ROW = 'flex items-center gap-[88px]'
+const ROW = 'flex w-full items-center justify-center gap-[88px]'
 
-const COLUMN = 'flex w-[384px] shrink-0 flex-col gap-24'
+const COLUMN = 'flex w-full max-w-[384px] shrink-0 flex-col gap-24'
 
-const HEADING_ROW = 'flex items-center justify-center gap-16'
+const HEADING_ROW = 'flex flex-wrap items-center justify-center gap-16'
 
 const HEADING = 'mb-2 text-[32px] leading-[38px] font-bold tracking-h3 text-ink'
 
 /* 1024px 에서는 460px 를 다 못 쓴다 — 카드만 줄어든다 */
 const ASIDE =
-  'flex h-[468px] min-w-[0px] flex-[0_1_460px] flex-col items-center justify-center gap-34 rounded-[28px] bg-surface-sunken p-44 text-center'
+  'hidden h-[468px] min-w-[0px] flex-[0_1_460px] flex-col items-center justify-center gap-34 rounded-[28px] bg-surface-sunken p-44 text-center lg:flex'
 
 const ASIDE_TEXT = 'flex flex-col items-center gap-12'
 

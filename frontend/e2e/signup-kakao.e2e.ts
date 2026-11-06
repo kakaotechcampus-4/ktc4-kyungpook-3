@@ -19,7 +19,7 @@ async function chooseOnMockKakao(page: Page, choice: string): Promise<void> {
 
 async function startKakaoLogin(page: Page, choice: string): Promise<void> {
   await start(page, 'signed-out', '/login')
-  await page.getByRole('button', { name: '카카오로 로그인' }).click()
+  await page.getByRole('button', { name: '카카오 로그인' }).click()
   await chooseOnMockKakao(page, choice)
 }
 
@@ -70,7 +70,7 @@ async function logOutToLogin(page: Page) {
   await expect(async () => {
     await page.evaluate(() => fetch('/api/v1/auth/logout', { method: 'POST' }))
     await page.goto('/login')
-    await expect(page.getByRole('button', { name: '카카오로 로그인' })).toBeVisible({ timeout: 2_000 })
+    await expect(page.getByRole('button', { name: '카카오 로그인' })).toBeVisible({ timeout: 2_000 })
   }).toPass({ timeout: 15_000 })
 }
 
@@ -99,7 +99,7 @@ test('카카오 새 사용자: 잠긴 이메일로 가입하면 다음에는 이
   await expect(page).toHaveURL('/onboarding/start')
 
   await logOutToLogin(page)
-  await page.getByRole('button', { name: '카카오로 로그인' }).click()
+  await page.getByRole('button', { name: '카카오 로그인' }).click()
   await chooseOnMockKakao(page, '새 사용자 (이메일 있음)')
   await expect(page).toHaveURL('/onboarding/start', { timeout: 15_000 })
 })
@@ -155,4 +155,16 @@ test('취소: 조용한 안내를 보이고 로그인 화면에 머문다', asyn
 test('이어진 계정의 카카오 로그인은 이메일 로그인과 같은 곳으로 간다', async ({ page }) => {
   await startKakaoLogin(page, '이어진 계정으로 로그인')
   await expect(page).toHaveURL('/workspaces', { timeout: 15_000 })
+})
+
+test('휴대폰 폭에서도 인증 화면을 끝까지 쓸 수 있다', async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 780 })
+  for (const path of ['/login', '/signup', '/forgot-password']) {
+    await page.goto(path)
+    await expect(page.getByLabel('이메일')).toBeVisible({ timeout: 15_000 })
+    const overflow = await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    )
+    expect(overflow, path).toBe(0)
+  }
 })

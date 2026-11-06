@@ -89,7 +89,7 @@ export function LoginForm() {
           로그인
         </Button>
       </form>
-      <AlternativeAuth label="카카오로 로그인" />
+      <AlternativeAuth />
       <p className={FOOTNOTE}>
         처음이신가요?{' '}
         <GuardedLink to={paths.signup({ next })} className={FOOTNOTE_LINK}>
