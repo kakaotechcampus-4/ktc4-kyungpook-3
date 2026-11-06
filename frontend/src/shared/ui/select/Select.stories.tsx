@@ -31,7 +31,7 @@ function Demo({ label, initialValue, ...props }: DemoProps) {
 }
 
 const meta = {
-  title: 'M6 공통/Select',
+  title: 'M4 공통/Select',
   component: Demo,
   args: { label: '담당자', initialValue: '박민수', options: MEMBERS, noneOption: NONE },
   parameters: { layout: 'centered' },

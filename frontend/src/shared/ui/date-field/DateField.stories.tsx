@@ -16,7 +16,7 @@ function Demo({ initialValue, ...props }: DemoProps) {
 }
 
 const meta = {
-  title: 'M6 공통/DateField',
+  title: 'M4 공통/DateField',
   component: Demo,
   args: {
     label: '마감',
