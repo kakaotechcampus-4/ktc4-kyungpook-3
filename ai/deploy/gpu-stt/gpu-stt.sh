@@ -49,7 +49,7 @@ fallback_ids() {
 
 fallback_rows() {
   aws ec2 describe-instances --filters "$ROLE_FILTER" "Name=instance-state-name,Values=$1" --output text --query \
-    "Reservations[].Instances[].[InstanceId, State.Name, LaunchTime, Tags[?Key=='StopAt'] | [0].Value]"
+    "Reservations[].Instances[].[InstanceId, State.Name, LaunchTime, Tags[?Key=='StopAt'] | [0].Value, Tags[?Key=='Ready'] | [0].Value]"
 }
 
 g_family_up() {
@@ -96,17 +96,25 @@ ensure_eip() {
   read -r EIP_ALLOC EIP <<<"$found"
 }
 
+# 인증서와 키는 대기 서버의 디스크에도 있다. 여기서 새로 만들면 서버와 어긋나니 파일을 쓰기 전에 멈춘다
+refuse_if_standby_exists() {
+  local found
+  found=$(fallback_ids "$STANDBY")
+  [ -z "$found" ] || die "대기 서버 $found 가 지금 인증서와 키를 들고 있습니다. destroy 뒤 setup 을 다시 돌립니다."
+}
+
 ensure_cert_and_key() {
   local cert=$STATE/cert.pem key=$STATE/key.pem
   # IP 만 바뀌어도 SAN 이 어긋나 운영 서버의 검증이 실패한다
   if [ ! -s "$key" ] || ! openssl x509 -in "$cert" -noout -text 2>/dev/null | tr -d ' ' | grep -Fqx "IPAddress:$EIP"; then
+    refuse_if_standby_exists
     openssl req -x509 -newkey rsa:2048 -nodes -days 400 -subj /CN=gpu-stt-fallback \
       -addext "subjectAltName=IP:$EIP" -keyout "$key" -out "$cert" >/dev/null 2>&1 \
       || die "인증서를 만들지 못했습니다."
     echo "인증서를 새로 만들었습니다. 운영 서버의 $CA_ON_PROD 도 바꿔야 합니다."
-    CERT_RENEWED=1
   fi
   if [ ! -s "$STATE/api.key" ]; then
+    refuse_if_standby_exists
     openssl rand -hex 24 >"$STATE/api.key"
   fi
 }
@@ -134,27 +142,43 @@ cmd_setup() {
 }
 
 ensure_standby() {
-  local found i
-  found=$(fallback_ids "$STANDBY")
-  if [ -n "$found" ]; then
-    # 인증서는 대기 서버의 디스크에 있어 여기서 새로 만들어도 서버에는 닿지 않는다
-    [ -z "${CERT_RENEWED:-}" ] || die "대기 서버 $found 에 옛 인증서가 있습니다. destroy 뒤 setup 을 다시 돌립니다."
-    return
-  fi
+  local id state ready
+  read -r id state _ _ ready <<<"$(fallback_rows "$STANDBY")" || true
+  [ "$ready" != 1 ] || return 0
 
   USER_DATA=$(mktemp)
   RUN_ERROR=$(mktemp)
   trap 'rm -f "$USER_DATA" "$RUN_ERROR"' EXIT
-  launch
-  echo "$INSTANCE_ID 를 만들었습니다. 첫 부팅이 모델을 올린 뒤 스스로 꺼집니다. 약 12분 걸립니다."
+  case $state in
+    '')
+      launch
+      echo "$INSTANCE_ID 를 만들었습니다. 첫 부팅이 모델을 올린 뒤 스스로 꺼집니다. 약 12분 걸립니다."
+      ;;
+    pending | running)
+      INSTANCE_ID=$id
+      echo "$INSTANCE_ID 의 첫 부팅을 다시 기다립니다."
+      ;;
+    *) die "$id 는 첫 부팅을 마치지 못했습니다. destroy 뒤 setup 을 다시 돌립니다." ;;
+  esac
   aws ec2 wait instance-running --instance-ids "$INSTANCE_ID"
   aws ec2 associate-address --allocation-id "$EIP_ALLOC" --instance-id "$INSTANCE_ID" \
     --allow-reassociation >/dev/null
+  wait_for_first_boot
+}
+
+wait_for_first_boot() {
+  local i
   # 대기 한 번이 최대 10분이라 첫 부팅과 stop 을 합친 시간을 덮지 못한다
   for i in 1 2 3 4; do
-    if aws ec2 wait instance-stopped --instance-ids "$INSTANCE_ID" 2>/dev/null; then
+    if aws ec2 wait instance-stopped --instance-ids "$INSTANCE_ID" 2>"$RUN_ERROR"; then
+      # 이 표시가 없는 서버는 모델을 한 번도 올리지 못했을 수 있다
+      aws ec2 create-tags --resources "$INSTANCE_ID" --tags Key=Ready,Value=1
       echo "대기 서버 $INSTANCE_ID 를 꺼 두었습니다."
       return
+    fi
+    if ! grep -q 'Max attempts exceeded' "$RUN_ERROR"; then
+      cat "$RUN_ERROR" >&2
+      die "기다리는 AWS 호출이 실패했습니다. 첫 부팅은 서버에서 이어집니다. 연결을 확인하고 setup 을 다시 돌립니다."
     fi
   done
   die "$INSTANCE_ID 가 꺼지지 않았습니다. status 로 본 뒤 destroy 하고 setup 을 다시 돌립니다."
@@ -242,7 +266,7 @@ start_standby() {
 }
 
 cmd_on() {
-  local hours=3 state
+  local hours=3 state ready
   if [ $# -gt 0 ]; then
     [ "$1" = --hours ] && [ $# -eq 2 ] || usage
     hours=$2
@@ -256,7 +280,10 @@ cmd_on() {
   RUN_ERROR=$(mktemp)
   trap 'rm -f "$RUN_ERROR"' EXIT
 
-  read -r INSTANCE_ID state _ <<<"$(fallback_rows "$STANDBY")" || true
+  read -r INSTANCE_ID state _ _ ready <<<"$(fallback_rows "$STANDBY")" || true
+  if [ -n "$state" ] && [ "$ready" != 1 ]; then
+    die "$INSTANCE_ID 는 setup 을 마치지 못했습니다. 켜도 곧 꺼질 수 있어 쓰지 않습니다. setup 을 다시 돌리거나 destroy 뒤 setup 을 돌립니다."
+  fi
   case $state in
     stopped)
       start_standby "$hours"
@@ -323,7 +350,7 @@ cmd_status() {
   if [ -z "$rows" ]; then
     echo "Role=stt-fallback 인스턴스 0대"
   else
-    while read -r id state launched at; do
+    while read -r id state launched at _; do
       case $state in
         stopped) echo "$id stopped 꺼 둠" ;;
         stopping) echo "$id stopping $STOPPING_NOTE" ;;

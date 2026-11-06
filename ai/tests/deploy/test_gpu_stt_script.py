@@ -42,11 +42,11 @@ describe_instances() {
   esac
   want=$(printf '%s\n' "$@" | sed -n 's/^Name=instance-state-name,Values=//p')
   [ -f "$d/instances" ] || return 0
-  while read -r id state launched at; do
+  while read -r id state launched at ready; do
     case ",$want," in
       *",$state,"*)
         case "$*" in
-          *State.Name*) printf '%s\t%s\t%s\t%s\n' "$id" "$state" "$launched" "$at" ;;
+          *State.Name*) printf '%s\t%s\t%s\t%s\t%s\n' "$id" "$state" "$launched" "$at" "${ready:-None}" ;;
           *) echo "$id" ;;
         esac ;;
     esac
@@ -102,9 +102,22 @@ case $2 in
   wait)
     if [ "$3" = instance-stopped ]; then
       [ ! -e "$(cat "$d/user-data-path" 2>/dev/null)" ] || touch "$d/key-file-outlived-launch"
-      [ ! -f "$d/stuck" ] || exit 255
+      if [ -f "$d/wait_error" ]; then
+        echo 'Could not connect to the endpoint URL' >&2
+        exit 255
+      fi
+      if [ -f "$d/stuck" ]; then
+        echo 'Waiter InstanceStopped failed: Max attempts exceeded' >&2
+        exit 255
+      fi
       set_state running stopped
     fi ;;
+  create-tags)
+    case "$*" in
+      *Key=Ready,Value=1*)
+        awk '{ print $1, $2, $3, $4, 1 }' "$d/instances" >"$d/instances.new"
+        mv "$d/instances.new" "$d/instances" ;;
+    esac ;;
   terminate-instances) [ -f "$d/stuck" ] || rm -f "$d/instances" ;;
   authorize-security-group-ingress) printf '%s\n' "$*" >"$d/authorized" ;;
 esac
@@ -163,7 +176,7 @@ def aws(tmp_path):
 def standby(aws, state: str = "stopped") -> None:
     """setup 으로 대기 서버를 만든 뒤 호출 기록을 비운다."""
     aws.ok("setup", PROD_IP)
-    aws.set_instances(f"i-0fallback {state} {LAUNCHED} {STOP_AT}")
+    aws.set_instances(f"i-0fallback {state} {LAUNCHED} {STOP_AT} 1")
     aws.forget_calls()
 
 
@@ -261,6 +274,7 @@ def test_setup_leaves_a_tagged_standby_stopped_with_the_ip_attached(aws):
     assert "i-0fresh" in aws.calls("associate-address")[0]
     assert (aws.dir / "instances").read_text().split()[1] == "stopped"
     assert "i-0fresh" in out
+    assert "--resources i-0fresh --tags Key=Ready,Value=1" in aws.calls("create-tags")[0]
 
 
 def test_setup_says_so_when_the_standby_does_not_stop(aws):
@@ -275,12 +289,23 @@ def test_setup_with_a_standby_does_not_launch_another(aws):
     assert aws.calls("run-instances") == []
 
 
-def test_setup_refuses_a_new_certificate_while_the_standby_has_the_old_one(aws):
+def test_setup_keeps_refusing_a_new_certificate_while_the_standby_has_the_old_one(aws):
     standby(aws)
+    before = {n: (aws.state / n).read_text() for n in ("cert.pem", "key.pem", "env")}
     (aws.dir / "address").write_text("eipalloc-0other\t198.51.100.8\n")
+    for _ in range(2):
+        r = aws.run("setup", PROD_IP)
+        assert r.returncode != 0 and "destroy" in r.stderr
+    assert aws.calls("run-instances") == []
+    assert before == {n: (aws.state / n).read_text() for n in before}
+
+
+def test_setup_refuses_a_new_api_key_while_the_standby_has_the_old_one(aws):
+    standby(aws)
+    (aws.state / "api.key").unlink()
     r = aws.run("setup", PROD_IP)
     assert r.returncode != 0 and "destroy" in r.stderr
-    assert aws.calls("run-instances") == []
+    assert not (aws.state / "api.key").exists()
 
 
 def test_destroy_terminates_only_the_exact_tag_and_keeps_the_ip(aws):
@@ -557,6 +582,43 @@ def test_script_uses_the_personal_profile_and_drops_keys_from_the_shell(aws):
 def test_setup_removes_the_key_file_before_waiting_for_first_boot(aws):
     aws.ok("setup", PROD_IP)
     assert not (aws.dir / "key-file-outlived-launch").exists()
+
+
+@pytest.mark.parametrize("state", ["running", "stopped"])
+def test_on_refuses_a_standby_that_never_finished_first_boot(aws, state):
+    aws.ok("setup", PROD_IP)
+    aws.set_instances(f"i-0half {state} {LAUNCHED} {STOP_AT}")
+    aws.forget_calls()
+    r = aws.run("on")
+    assert r.returncode != 0 and "destroy" in r.stderr and "setup" in r.stderr
+    assert aws.calls("start-instances") == []
+
+
+def test_setup_resumes_waiting_for_a_first_boot_still_running(aws):
+    aws.ok("setup", PROD_IP)
+    aws.set_instances(f"i-0half running {LAUNCHED} {STOP_AT}")
+    aws.forget_calls()
+    aws.ok("setup", PROD_IP)
+    assert aws.calls("run-instances") == []
+    assert "--resources i-0half --tags Key=Ready,Value=1" in aws.calls("create-tags")[0]
+
+
+def test_setup_refuses_a_stopped_standby_that_never_finished_first_boot(aws):
+    aws.ok("setup", PROD_IP)
+    aws.set_instances(f"i-0half stopped {LAUNCHED} {STOP_AT}")
+    aws.forget_calls()
+    r = aws.run("setup", PROD_IP)
+    assert r.returncode != 0 and "destroy" in r.stderr
+    assert aws.calls("create-tags") == [] and aws.calls("run-instances") == []
+
+
+def test_setup_shows_a_wait_error_and_does_not_tell_to_destroy(aws):
+    (aws.dir / "wait_error").touch()
+    r = aws.run("setup", PROD_IP)
+    assert r.returncode != 0
+    assert "Could not connect" in r.stderr and "destroy" not in r.stderr
+    assert len([c for c in aws.calls() if c.startswith("ec2 wait instance-stopped")]) == 1
+    assert aws.calls("create-tags") == []
 
 
 def test_missing_credentials_file_stops_before_any_aws_call(aws):
