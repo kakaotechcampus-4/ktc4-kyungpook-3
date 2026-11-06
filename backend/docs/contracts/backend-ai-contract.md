@@ -77,6 +77,7 @@
 ```
 
 - 워크스페이스마다 채널 하나다. 디스코드 연결이 해제된 워크스페이스는 목록에서 빠진다.
+- 채팅 채널이 켜진 워크스페이스만 담는다. 켜진 곳이 없으면 `items: []` 이다. id 는 모두 문자열이다.
 - 제안, BE #428 대기(BE 미구현). AI 는 `BeClient.chat_channels` 로 부르고, 목록이 `workspace_id` 를 주므로 chat_poll 은 `guild_workspace` 를 부르지 않는다. 항목마다 기존 흐름(chat-cursor, `POST /meetings` source=chat)을 돈다.
 
 ### `PATCH /meetings/{meeting_id}/end` → 202

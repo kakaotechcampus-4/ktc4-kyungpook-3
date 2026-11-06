@@ -39,7 +39,7 @@
 - 채널은 BE 목록 `GET /bot/chat-channels`(X-Service-Token, 제안)이 알려 준다. 목록이 `workspace_id` 를 주므로 chat_poll 은 `guild_workspace` 를 부르지 않는다(녹음 경로는 계속 쓴다).
 - 워크스페이스마다 기존 poll 흐름(커서·14일·문맥 30·채팅 회의·fail_meeting·시도 기록)을 그대로 돈다. 순차 실행이고 워크스페이스마다 DiscordReader 를 새로 열고 닫는다.
 - 한 워크스페이스가 실패(예외 포함)해도 다음으로 넘어가고 종료 코드는 1이다. 목록이 비면 0이다.
-- 디스코드 403/404 는 `ChannelUnreadable` 로 그 워크스페이스만 건너뛰고 stderr 경고를 남긴다. 종료 코드에 세지 않는다(0). 시도 기록은 건드리지 않아 다음 날 "N번째 시도" 경고가 남는다.
+- 디스코드 403/404 는 `ChannelUnreadable` 로 그 워크스페이스만 건너뛰고 stderr 경고를 남긴다. 종료 코드에 세지 않는다(0). 건너뛴 실행도 시작할 때 시도 기록을 남기므로(지우지 않음) 다음 날 "N번째 시도" 경고가 남는다.
 - 시도 기록은 `runs/chat_poll_attempt_<workspace_id>.json`. CLI 는 `--workspace ID`(목록에 없으면 exit 1)와 `--dry-run`. `CHAT_POLL_BOT_TOKEN`·`DISCORD_CHANNEL_ID`·`--channel` 은 없앴다.
 - systemd `TimeoutStartSec=6h`. 순차라 전체 합을 제한하는 값이고, 멈춘 실행이 다음 날을 막지 않으면 되므로 24시간 미만이면 된다. 워크스페이스마다 걸린 시간을 로그 한 줄로 남긴다.
 
@@ -54,7 +54,7 @@
 
 ## 영향 범위와 재검토 조건
 
-- 바뀐 곳: `ai/capture/chat_poll.py`, `ai/capture/handoff.py`(`BeClient.chat_channels`), `ai/deploy/systemd/mm-chat-poll.service`, `ai/.env.example`, [backend-ai 계약](../../../../backend/docs/contracts/backend-ai-contract.md).
+- 바뀐 곳: `ai/capture/chat_poll.py`, `ai/capture/handoff.py`(`BeClient.chat_channels`), `ai/deploy/systemd/mm-chat-poll.service`, `ai/.env.example`, `ai/shared/config.py`(필드 2개 삭제), realtime 주석 2곳(`ai/capture/realtime/adapter.py`, `run.py`), [backend-ai 계약](../../../../backend/docs/contracts/backend-ai-contract.md).
 - 이 기록이 정한 것 중 BE 몫은 [#428](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/428), FE 몫은 [#429](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/429)다.
   - BE #428: 채널 설정 저장 위치, 저장 때 봇이 읽을 수 있는지 확인, 저장 즉시 채널 공지(켤 때·끌 때), 디스코드 연결 해제 시 채널 설정 삭제, `GET /bot/chat-channels`.
   - FE #429: 웹 설정 화면(PM 만)과 화면 안내.
