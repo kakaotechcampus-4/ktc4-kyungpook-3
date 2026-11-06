@@ -17,10 +17,14 @@ from app.schemas.auth import (
     PasswordResetRequest,
     PasswordResetVerifyRequest,
     PasswordResetVerifyResponse,
+    SignupCodeConfirmRequest,
+    SignupCodeConfirmResponse,
+    SignupCodeRequest,
+    SignupCodeResponse,
     SignupRequest,
     UserResponse,
 )
-from app.services import mailer, password_reset
+from app.services import mailer, password_reset, signup_codes
 from app.services.passwords import hash_password, verify_password
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -68,6 +72,31 @@ def _build_auth_response(db: Session, user: User) -> AuthResponse:
         workspace_count=workspace_count,
         last_workspace_id=last_workspace.workspace_id if last_workspace else None
     )
+
+@router.post("/signup/code", response_model=Envelope[SignupCodeResponse])
+def request_signup_code(payload: SignupCodeRequest, db: Session = Depends(get_db)):
+    if not mailer.is_configured():
+        raise AppError(ErrorCode.MAIL_UNAVAILABLE)
+    mail = signup_codes.request_code(db, payload.email, now=datetime.now(timezone.utc))
+    db.commit()
+    mailer.send_in_background(mail.to, mail.subject, mail.text, log_label="signup_code")
+    return success(
+        SignupCodeResponse(
+            expires_in=int(signup_codes.CODE_TTL.total_seconds()),
+            resend_after=int(signup_codes.COOLDOWN.total_seconds()),
+        ).model_dump(mode="json")
+    )
+
+
+@router.post("/signup/code/confirm", response_model=Envelope[SignupCodeConfirmResponse])
+def confirm_signup_code(payload: SignupCodeConfirmRequest, db: Session = Depends(get_db)):
+    token = signup_codes.confirm_code(db, payload.email, payload.code, now=datetime.now(timezone.utc))
+    return success(
+        SignupCodeConfirmResponse(
+            verification_token=token, expires_in=signup_codes.PROOF_TTL_SECONDS
+        ).model_dump(mode="json")
+    )
+
 
 @router.post("/signup", status_code=201, response_model=Envelope[AuthResponse])
 def signup(payload: SignupRequest, response: Response, db: Session = Depends(get_db)):

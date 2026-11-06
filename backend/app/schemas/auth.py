@@ -2,7 +2,7 @@ import re
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 from app.schemas.email import NormalizedEmail
 
@@ -40,6 +40,25 @@ class SignupRequest(BaseModel):
     @classmethod
     def _check_password(cls, value: str) -> str:
         return validate_password(value)
+
+
+class SignupCodeRequest(BaseModel):
+    email: NormalizedEmail
+
+
+class SignupCodeResponse(BaseModel):
+    expires_in: int
+    resend_after: int
+
+
+class SignupCodeConfirmRequest(BaseModel):
+    email: NormalizedEmail
+    code: str = Field(pattern=r"^[0-9]{6}$")
+
+
+class SignupCodeConfirmResponse(BaseModel):
+    verification_token: str
+    expires_in: int
 
 
 class PasswordResetRequest(BaseModel):

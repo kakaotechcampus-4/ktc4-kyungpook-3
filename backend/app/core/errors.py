@@ -81,6 +81,13 @@ class ErrorCode(StrEnum):
     PASSWORD_RESET_TOKEN_INVALID = "PASSWORD_RESET_TOKEN_INVALID"
     MAIL_UNAVAILABLE = "MAIL_UNAVAILABLE"
 
+    # 가입 이메일 인증·카카오 로그인
+    SIGNUP_CODE_RATE_LIMITED = "SIGNUP_CODE_RATE_LIMITED"
+    SIGNUP_CODE_INVALID = "SIGNUP_CODE_INVALID"
+    SIGNUP_VERIFICATION_INVALID = "SIGNUP_VERIFICATION_INVALID"
+    KAKAO_LINK_EXPIRED = "KAKAO_LINK_EXPIRED"
+    KAKAO_ALREADY_LINKED = "KAKAO_ALREADY_LINKED"
+
 
 ERROR_STATUS: dict[ErrorCode, int] = {
     ErrorCode.INVALID_REQUEST: 400,
@@ -148,6 +155,11 @@ ERROR_STATUS: dict[ErrorCode, int] = {
     ErrorCode.MEMBER_HAS_PENDING_INVITATION: 409,
     ErrorCode.PASSWORD_RESET_TOKEN_INVALID: 400,
     ErrorCode.MAIL_UNAVAILABLE: 503,
+    ErrorCode.SIGNUP_CODE_RATE_LIMITED: 429,
+    ErrorCode.SIGNUP_CODE_INVALID: 400,
+    ErrorCode.SIGNUP_VERIFICATION_INVALID: 400,
+    ErrorCode.KAKAO_LINK_EXPIRED: 400,
+    ErrorCode.KAKAO_ALREADY_LINKED: 409,
 }
 
 ERROR_MESSAGE: dict[ErrorCode, str] = {
@@ -216,6 +228,11 @@ ERROR_MESSAGE: dict[ErrorCode, str] = {
     ErrorCode.MEMBER_HAS_PENDING_INVITATION: "대기 중인 초대가 있어 PM 으로 바꿀 수 없습니다. 초대를 수락한 뒤 바꾸거나 초대를 취소해 주세요.",
     ErrorCode.PASSWORD_RESET_TOKEN_INVALID: "쓸 수 없는 재설정 링크입니다.",
     ErrorCode.MAIL_UNAVAILABLE: "지금은 메일을 보낼 수 없습니다.",
+    ErrorCode.SIGNUP_CODE_RATE_LIMITED: "인증 코드를 너무 자주 요청했습니다. 잠시 후 다시 시도해 주세요.",
+    ErrorCode.SIGNUP_CODE_INVALID: "인증 코드가 맞지 않습니다.",
+    ErrorCode.SIGNUP_VERIFICATION_INVALID: "이메일 인증이 필요합니다. 인증을 다시 진행해 주세요.",
+    ErrorCode.KAKAO_LINK_EXPIRED: "카카오 로그인 정보가 만료됐습니다. 카카오로 다시 시작해 주세요.",
+    ErrorCode.KAKAO_ALREADY_LINKED: "이미 다른 계정에 연결된 카카오 계정입니다.",
 }
 
 
