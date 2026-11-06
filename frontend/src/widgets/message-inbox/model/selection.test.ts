@@ -1,5 +1,5 @@
 import type { Bundle, MessageInbox, MessageThreadSummary } from '@/entities/message'
-import { selectDetail } from './selection'
+import { inboxPane, selectDetail } from './selection'
 
 const bundle = (id: string, stage: Bundle['stage'] = 'awaitingApproval') =>
   ({ id, stage }) as Bundle
@@ -80,4 +80,33 @@ it('재촉 만들기는 목록을 기다리지 않고 고른 묶음보다 앞선
   ).toEqual({ kind: 'compose' })
   expect(select({ threadId: 'th_01', composing: true }).kind).toBe('thread')
   expect(select({ invalidPath: true, composing: true }).kind).toBe('invalid')
+})
+
+describe('inboxPane', () => {
+  const pane = (input: Partial<Parameters<typeof inboxPane>[0]>) =>
+    inboxPane({
+      compact: true,
+      threadId: null,
+      bundleId: undefined,
+      invalidPath: false,
+      composing: false,
+      ...input,
+    })
+
+  it('넓은 화면은 무엇을 골랐든 목록과 상세를 나란히 둔다', () => {
+    expect(pane({ compact: false })).toBe('both')
+    expect(pane({ compact: false, threadId: 'th_01' })).toBe('both')
+  })
+
+  it('휴대폰은 주소가 아무것도 가리키지 않으면 목록이다 — 첫 항목을 대신 고르지 않는다', () => {
+    expect(pane({})).toBe('list')
+  })
+
+  it('휴대폰은 주소가 대화·묶음·새 재촉·틀린 주소를 가리키면 상세를 화면 전체로 연다', () => {
+    expect(pane({ threadId: 'th_01' })).toBe('detail')
+    expect(pane({ bundleId: 'bd_01' })).toBe('detail')
+    expect(pane({ bundleId: null })).toBe('detail')
+    expect(pane({ composing: true })).toBe('detail')
+    expect(pane({ invalidPath: true })).toBe('detail')
+  })
 })

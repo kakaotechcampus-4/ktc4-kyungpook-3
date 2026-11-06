@@ -14,7 +14,8 @@ const ROW = 'flex items-start gap-8'
 const FIELD = [
   // 위아래 여백 9 — 시안의 10 이면 한 줄이 23.2 + 20 + 테두리 2 = 45px 라 44px 버튼보다 1px 커진다
   'block min-h-44 max-h-[92px] min-w-[0px] flex-1 resize-none rounded-12 border border-input-border bg-surface px-14 py-9',
-  'text-[14.5px] leading-[1.6] text-ink placeholder:text-dim',
+  // 768 미만은 글자 16px(H-5) — iOS 가 16px 보다 작은 입력 칸에 들어갈 때 화면을 확대하지 않는다. 줄 높이 1.5 로 한 줄이 44px 그대로다
+  'text-[14.5px] leading-[1.6] text-ink placeholder:text-dim max-md:text-[16px] max-md:leading-[1.5]',
   'focus:outline-2 focus:-outline-offset-1 focus:outline-ink disabled:bg-surface-sunken disabled:text-sub',
   '[&::-webkit-scrollbar]:w-10 [&::-webkit-scrollbar-button]:hidden [&::-webkit-scrollbar-track]:my-6 [&::-webkit-scrollbar-track]:bg-transparent',
   '[&::-webkit-scrollbar-thumb]:rounded-999 [&::-webkit-scrollbar-thumb]:border-3 [&::-webkit-scrollbar-thumb]:border-solid [&::-webkit-scrollbar-thumb]:border-surface [&::-webkit-scrollbar-thumb]:bg-line-strong',

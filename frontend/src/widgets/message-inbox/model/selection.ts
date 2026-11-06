@@ -39,3 +39,23 @@ export function selectDetail(input: {
       : input.inbox.bundles.find(({ id }) => id === input.bundleId)
   return bundle === undefined ? { kind: 'choose' } : { kind: 'bundle', bundle }
 }
+
+/** 넓은 화면은 목록과 상세를 나란히(both), 휴대폰은 둘 중 하나만 화면 전체로 보인다 (H-4·H-5) */
+export type InboxPane = 'both' | 'list' | 'detail'
+
+/**
+ * 휴대폰에서는 주소가 무엇을 가리킬 때만 상세가 열린다 — 넓은 화면처럼 첫 항목을 대신 고르지 않고 목록을 보인다.
+ * 고른 것은 주소에만 있으므로 폭이 768 을 넘나들어도 같은 항목이 열린다
+ */
+export function inboxPane(input: {
+  compact: boolean
+  threadId: string | null
+  bundleId: string | null | undefined
+  invalidPath: boolean
+  composing: boolean
+}): InboxPane {
+  if (!input.compact) return 'both'
+  const addressed =
+    input.invalidPath || input.threadId !== null || input.bundleId !== undefined || input.composing
+  return addressed ? 'detail' : 'list'
+}

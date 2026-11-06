@@ -3,9 +3,10 @@ import { ReminderCreateForm, createdNotice } from '@/features/reminder-create'
 import { toast } from '@/shared/ui/toast'
 
 /* 보내기 전 확인과 같은 가운데 604 열이다(ReviewDetail) */
-const PAGE = 'flex flex-1 justify-center overflow-y-auto px-36 pt-44 pb-56'
+const PAGE =
+  'flex flex-1 justify-center overflow-y-auto px-36 pt-44 pb-56 max-md:px-20 max-md:pt-24 max-md:pb-32'
 const COLUMN = 'flex w-full max-w-[604px] flex-col gap-24 self-start'
-const TITLE = 'text-[28px] leading-[1.25] font-bold tracking-h1 text-ink'
+const TITLE = 'text-[28px] leading-[1.25] font-bold tracking-h1 text-ink max-md:text-[24px]'
 
 export interface ComposeDetailProps {
   workspaceId: string
