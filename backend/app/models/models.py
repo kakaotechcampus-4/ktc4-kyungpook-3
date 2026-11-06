@@ -258,6 +258,9 @@ class Integration(Base):
     access_token: Mapped[str | None] = mapped_column(Text, nullable=True)
     refresh_token: Mapped[str | None] = mapped_column(Text, nullable=True)
     provider_channel_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # 디스코드 전용: 채팅 수집 채널(#428)
+    chat_channel_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    chat_channel_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_now, onupdate=_now

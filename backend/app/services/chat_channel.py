@@ -65,3 +65,102 @@ def list_channels(db: Session, workspace_id: str) -> list[dict]:
             workspace_id, exc.status_code, exc.reason,
         )
         raise to_app_error(exc, channel_id=None, need=None) from None
+
+
+def set_chat_channel(db: Session, workspace_id: str, channel_id: str) -> dict:
+    """채널을 확인(목록·읽기)하고 켬 공지를 보낸 뒤 저장한다. 실패하면 아무것도 저장하지 않는다.
+
+    행을 FOR UPDATE 로 잡은 채 Discord 를 부르므로, 같은 워크스페이스의 동시 저장은 순서대로 처리된다.
+    """
+    token = bot_token()
+    integration = connected_discord(db, workspace_id, lock=True)
+    guild_id = integration.provider_channel_id  # 잠근 뒤에 읽는다
+    if integration.chat_channel_id == channel_id:
+        current = {"channel_id": channel_id, "name": integration.chat_channel_name}
+        db.commit()
+        return current
+
+    try:
+        channel = next(
+            (c for c in discord.list_text_channels(token, guild_id) if c["channel_id"] == channel_id), None
+        )
+        if channel is None:
+            raise AppError(ErrorCode.DISCORD_CHANNEL_NOT_FOUND, details={"channel_id": channel_id})
+        try:
+            discord.read_one_message(token, channel_id)
+        except discord.DiscordApiError as exc:
+            logger.warning(
+                "채팅 채널 읽기 확인 실패 workspace_id=%s channel_id=%s status=%s reason=%s",
+                workspace_id, channel_id, exc.status_code, exc.reason,
+            )
+            raise to_app_error(exc, channel_id=channel_id, need="read") from None
+        try:
+            discord.post_channel_message(token, channel_id, ON_NOTICE)
+        except discord.DiscordApiError as exc:
+            logger.warning(
+                "채팅 채널 켬 공지 실패 workspace_id=%s channel_id=%s status=%s reason=%s",
+                workspace_id, channel_id, exc.status_code, exc.reason,
+            )
+            raise to_app_error(exc, channel_id=channel_id, need="send") from None
+    except discord.DiscordApiError as exc:  # 목록 조회 실패
+        db.rollback()
+        logger.warning(
+            "Discord 채널 목록 조회 실패 workspace_id=%s status=%s reason=%s",
+            workspace_id, exc.status_code, exc.reason,
+        )
+        raise to_app_error(exc, channel_id=None, need=None) from None
+    except AppError:
+        db.rollback()
+        raise
+
+    old_channel_id = integration.chat_channel_id
+    integration.chat_channel_id = channel["channel_id"]
+    integration.chat_channel_name = channel["name"]
+    saved = {"channel_id": channel["channel_id"], "name": channel["name"]}
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        logger.error(
+            "켬 공지는 보냈지만 저장 실패 workspace_id=%s channel_id=%s", workspace_id, channel_id,
+            exc_info=True,
+        )
+        raise
+    if old_channel_id and old_channel_id != channel_id:
+        notify_off_best_effort(old_channel_id, workspace_id=workspace_id)
+    return saved
+
+
+def clear_chat_channel(db: Session, workspace_id: str) -> bool:
+    """수집 채널을 지운다. 연결이 없거나 이미 꺼져 있어도 성공(False)이다. 끔 공지를 보냈으면 True."""
+    integration = (
+        db.query(Integration)
+        .filter(Integration.workspace_id == workspace_id, Integration.provider == "discord")
+        .with_for_update()
+        .first()
+    )
+    if integration is None or not integration.chat_channel_id:
+        db.commit()
+        return False
+    old_channel_id = integration.chat_channel_id
+    integration.chat_channel_id = None
+    integration.chat_channel_name = None
+    db.commit()
+    return notify_off_best_effort(old_channel_id, workspace_id=workspace_id)
+
+
+def notify_off_best_effort(channel_id: str, *, workspace_id: str) -> bool:
+    """끔 공지. 봇 토큰이 없거나 Discord 오류면 로그만 남기고 False. 예외를 밖으로 내지 않는다."""
+    token = os.getenv("DISCORD_BOT_TOKEN", "")
+    if not token:
+        logger.warning("봇 토큰이 없어 끔 공지를 보내지 못했습니다 workspace_id=%s channel_id=%s", workspace_id, channel_id)
+        return False
+    try:
+        discord.post_channel_message(token, channel_id, OFF_NOTICE)
+    except discord.DiscordApiError as exc:
+        logger.warning(
+            "끔 공지 실패 workspace_id=%s channel_id=%s status=%s reason=%s",
+            workspace_id, channel_id, exc.status_code, exc.reason,
+        )
+        return False
+    return True

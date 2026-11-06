@@ -14,7 +14,9 @@ from app.core.database import get_db
 from app.core.errors import AppError, Envelope, ErrorCode, success
 from app.models import Integration, Member, MemberRole
 from app.api.deps import get_current_member, get_current_pm, get_current_user, require_member, require_service_token
-from app.schemas.integration import DiscordChannelListResponse
+from app.schemas.integration import (
+    ChatChannelClearResponse, ChatChannelResponse, ChatChannelSetRequest, DiscordChannelListResponse,
+)
 from app.schemas.workspace import DiscordGuildWorkspaceResponse
 from app.services import chat_channel, discord, discord_oauth, notion, notion_connect, notion_oauth, oauth_state
 
@@ -74,7 +76,7 @@ def get_integrations(
     integrations = db.query(Integration).filter(Integration.workspace_id == workspace_id).all()
 
     resp = {
-        "discord": {"status": "not_connected", "display_name": None, "connected_at": None},
+        "discord": {"status": "not_connected", "display_name": None, "connected_at": None, "chat_channel": None},
         "notion": {"status": "not_connected", "display_name": None, "connected_at": None}
     }
 
@@ -88,8 +90,39 @@ def get_integrations(
                 "display_name": f"{i.provider.capitalize()} 연결됨",
                 "connected_at": i.created_at.isoformat() if i.created_at else None
             }
-            
+            if i.provider == "discord":
+                resp["discord"]["chat_channel"] = (
+                    {"channel_id": i.chat_channel_id, "name": i.chat_channel_name}
+                    if i.chat_channel_id else None
+                )
+
     return success(resp)
+
+
+@router.put(
+    "/{workspace_id}/integrations/discord/chat-channel", response_model=Envelope[ChatChannelResponse]
+)
+def set_discord_chat_channel(
+    workspace_id: str,
+    body: ChatChannelSetRequest,
+    member = Depends(get_current_pm),
+    db: Session = Depends(get_db)
+) -> dict:
+    """채팅 수집 채널을 정한다. 목록·읽기 확인과 켬 공지를 마친 뒤에만 저장한다."""
+    return success(chat_channel.set_chat_channel(db, workspace_id, body.channel_id))
+
+
+@router.delete(
+    "/{workspace_id}/integrations/discord/chat-channel", response_model=Envelope[ChatChannelClearResponse]
+)
+def clear_discord_chat_channel(
+    workspace_id: str,
+    member = Depends(get_current_pm),
+    db: Session = Depends(get_db)
+) -> dict:
+    """채팅 수집을 끈다. 이미 꺼져 있어도 200 이다."""
+    return success({"off_notice_sent": chat_channel.clear_chat_channel(db, workspace_id)})
+
 
 @router.delete("/{workspace_id}/integrations/{provider}", status_code=204)
 def delete_integration(
