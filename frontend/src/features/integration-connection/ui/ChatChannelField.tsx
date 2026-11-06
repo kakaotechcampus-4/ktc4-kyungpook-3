@@ -35,7 +35,14 @@ export function ChatChannelField({ workspaceId, integration }: ChatChannelFieldP
   const [draft, setDraft] = useState<string | null | undefined>(undefined)
   const saved = integration.chatChannel
   const savedId = saved?.channelId ?? null
-  const selected = connected && draft !== undefined ? draft : savedId
+  const listed = setting.channels.data ?? []
+  const channels =
+    saved !== null && !listed.some(({ channelId }) => channelId === saved.channelId)
+      ? [saved, ...listed]
+      : listed
+  // 고른 채널이 다시 받은 목록에서 사라졌으면(저장이 NOT_FOUND) 저장한 값으로 돌아간다 — 빈칸에서 같은 PUT 을 다시 보내지 않는다
+  const draftListed = draft === null || channels.some(({ channelId }) => channelId === draft)
+  const selected = connected && draft !== undefined && draftListed ? draft : savedId
   const isDirty = selected !== savedId
   useUnsavedChanges(isDirty)
 
@@ -44,11 +51,6 @@ export function ChatChannelField({ workspaceId, integration }: ChatChannelFieldP
   const noticeId = `${id}-notice`
   const failureId = `${id}-failure`
   const showNotice = isDirty && selected !== null
-  const listed = setting.channels.data ?? []
-  const channels =
-    saved !== null && !listed.some(({ channelId }) => channelId === saved.channelId)
-      ? [saved, ...listed]
-      : listed
 
   const options = channels.map(({ channelId, name }) => ({ value: channelId, label: `#${name}` }))
 

@@ -392,6 +392,11 @@ describe('설정의 회의 채팅 채널 — PM (#429)', () => {
       '연결된 Discord 서버에서 이 텍스트 채널을 찾을 수 없어요. 채널 목록을 다시 불러왔으니 다시 골라 주세요.',
     )
     await waitFor(() => expect(requestsTo(log, 'GET', CHANNELS)).toHaveLength(1))
+    // 사라진 채널을 고른 채로 두면 빈칸에서 같은 PUT 을 다시 보낸다. 저장한 값으로 돌아가고 저장 버튼이 없다
+    await waitFor(() => expect(select).toHaveTextContent('사용 안 함'))
+    expect(area.queryByRole('button', { name: '저장' })).toBeNull()
+    expect(area.getByRole('alert')).toHaveTextContent('다시 골라 주세요.')
+    expect(requestsTo(log, 'PUT', CHAT_CHANNEL)).toHaveLength(1)
     await waitFor(() => expect(select).toBeEnabled())
     expect(within(await openList(select)).queryByRole('option', { name: '#회의록' })).toBeNull()
     expect(screen.getByRole('option', { name: '#일반' })).toBeInTheDocument()
