@@ -164,6 +164,10 @@ def test_the_wait_stops_growing_at_an_hour(monkeypatch):
     assert [R.backoff_s(n) for n in (1, 2, 3, 4)] == [1000.0, 2000.0, 3600.0, 3600.0]
 
 
+def test_the_wait_does_not_overflow_for_huge_attempt_counts():
+    assert R.backoff_s(1100) == R.RECOVERY_BACKOFF_CEIL_S
+
+
 def test_be_is_told_failed_only_when_the_retries_run_out(tmp_path, clock, limits, monkeypatch):
     monkeypatch.setattr(R, "RECOVERY_MAX_ATTEMPTS", 3)
     rec, path, _ = _session(tmp_path)
@@ -532,8 +536,9 @@ def _upload(tmp_path, status):
 
 @pytest.mark.parametrize("status", [R.STATUS_DIARIZED, R.STATUS_MAPPED, R.STATUS_SAVED, R.STATUS_FAILED,
                                     R.STATUS_HANDED_OFF, R.STATUS_RECORDING])
-def test_an_upload_manifest_is_never_picked_up_by_recovery(tmp_path, clock, status):
-    """업로드는 화자 지정(#254)·인계(#255) 합의 전까지 어떤 복구 경로도 돌리지 않는다. 사람이 saved 로 고쳐도 그렇다."""
+def test_an_unready_upload_manifest_is_never_picked_up_by_recovery(tmp_path, clock, status):
+    """지정(mapped_at, 모든 화자의 member_id)·BE 회의·워크스페이스가 갖춰지지 않은 업로드는 어떤 복구 경로도 돌리지 않는다.
+    사람이 status 만 saved·mapped 로 고쳐도 그렇다. 갖춘 업로드는 아래 테스트가 본다(#286)."""
     rec, path = _upload(tmp_path, status)
     claims = R.Claims(owner="host:1:a")
     assert R.pending_sessions(rec) == []
@@ -547,3 +552,94 @@ def test_an_upload_manifest_is_never_picked_up_by_recovery(tmp_path, clock, stat
 
     assert R.recover(rec, backend=Boom(), model_name="x", workers=1, claims=claims) == []
     assert R.recover(rec, backend=Boom(), model_name="x", workers=1, claims=claims, guild_id="123") == []
+
+
+def _ready_upload(tmp_path):
+    from tests.capture.test_recorder import _mapped_upload
+    return _mapped_upload(tmp_path)
+
+
+def test_a_ready_mapped_upload_is_picked_up_by_the_all_server_and_manual_paths_but_not_a_server_wheel(tmp_path, clock):
+    rec, path, _ = _ready_upload(tmp_path)
+    claims = R.Claims(owner="host:1:a")
+    assert R.pending_sessions(rec) == [path]
+    assert [p for p, _ in R.recovery_targets(rec, claims=claims)[0]] == [path]
+    assert [p for p, _ in R.recovery_targets(rec, claims=claims, manual=True)[0]] == [path]
+    assert R.recovery_targets(rec, claims=claims, guild_id="123", manual=True)[0] == []     # 서버가 없으니 서버별 바퀴는 안 집는다
+
+
+def test_recover_pass_for_all_servers_keeps_an_upload_that_has_no_guild_id(tmp_path, clock):
+    import asyncio
+    from tests.capture.test_recorder import _upload_be
+    rec, path, m = _ready_upload(tmp_path)
+    _, dpath, _ = _session(tmp_path, ts=500)
+    assert "guild_id" not in m
+    fake = _upload_be()
+    seen = []
+
+    async def go():
+        return await R.recover_pass(rec, claims=R.Claims(owner="host:1:a"), sem=asyncio.Semaphore(1),
+                                    stt_factory=lambda: (EchoStt(), "echo", 1), gate_factory=lambda: None,
+                                    extractor_factory=lambda: _extractor({}), handoff_factory=lambda: _handoff(fake),
+                                    transcripts_dir=tmp_path / "transcripts", on_result=lambda r: _record(seen, r))
+
+    async def _record(seen, r):
+        seen.append(r["session"])
+
+    results, _ = asyncio.run(go())
+    assert [r["session"] for r in results] == seen == [m["session"], "77_500"]       # 업로드가 디스코드 회의보다 먼저
+
+
+def _ended_upload(tmp_path):
+    from tests.capture.test_recorder import _upload_be
+    rec, path, m = _ready_upload(tmp_path)
+    fake = _upload_be()
+    fake.meetings["m-up1"]["status"] = "failed"          # BE 가 이미 끝냈다
+    return rec, path, m, fake
+
+
+@pytest.mark.parametrize("how", ["sources_409", "register_409", "sources_404"])
+def test_an_upload_ended_in_be_is_dropped_locally_after_the_lock_is_released_and_never_comes_back(tmp_path, clock, how):
+    rec, path, m, fake = _ended_upload(tmp_path)
+    if how == "register_409":
+        fake.meetings["m-up1"]["status"] = "processing"
+        orig = fake.request
+
+        def late(method, url, *a, **k):
+            if url.endswith("/extractions"):
+                fake.meetings["m-up1"]["status"] = "failed"      # 추출 등록 직전에 닫혔다
+            return orig(method, url, *a, **k)
+        fake.request = late
+    if how == "sources_404":
+        del fake.meetings["m-up1"]
+    others = ["session_77_500.transcript.json", "SPEAKER00_1__echo.json"]   # 다른 회의의 전사본은 남는다
+    (tmp_path / "transcripts").mkdir()
+    for n in others:
+        (tmp_path / "transcripts" / n).write_text("{}", encoding="utf-8")
+    claims = R.Claims(owner="host:1:a")
+    r = R.recover_one(rec, path, claims=claims, backend=EchoStt(), model_name="echo", workers=1,
+                      transcripts_dir=tmp_path / "transcripts", extractor=_extractor({}), handoff=_handoff(fake),
+                      wait_for_workspace=True)
+    assert r["ended"] and r["error"] is None and not r["gave_up"] and r["attempts"] == 0
+    assert not path.exists() and not path.with_suffix(".lock").exists() and not (rec / m["session"]).exists()
+    assert sorted(p.name for p in (tmp_path / "transcripts").iterdir()) == sorted(others)   # 이 회의 전사본만 지운다(#389 리뷰)
+    assert not any(c[1].endswith("/fail") or c[1] == "/meetings" or c[1].endswith("/end") for c in fake.calls)
+    assert R.pending_sessions(rec) == [] and R.recover(rec, backend=EchoStt(), model_name="echo", workers=1,
+                                                      claims=claims, handoff=_handoff(fake)) == []
+    assert not path.exists() and not path.with_suffix(".lock").exists()          # 정리한 뒤 다시 생기지 않는다
+
+
+def test_a_failed_upload_stage_is_counted_and_kept_not_dropped(tmp_path, clock):
+    """끝난 회의(MeetingEnded)만 지운다. 일반 단계 실패는 실패 횟수를 세고 매니페스트를 남긴다."""
+    rec, path, m, _ = _ended_upload(tmp_path)
+    claims = R.Claims(owner="host:1:a")
+    r = R.recover_one(rec, path, claims=claims, backend=EchoStt(), model_name="echo", workers=1,
+                      transcripts_dir=tmp_path / "transcripts", extractor=_dying, handoff=_handoff(_ok_upload()),
+                      wait_for_workspace=True)
+    assert r["status"] == "failed" and r["attempts"] == 1 and r["ended"] is None
+    assert path.exists()
+
+
+def _ok_upload():
+    from tests.capture.test_recorder import _upload_be
+    return _upload_be()
