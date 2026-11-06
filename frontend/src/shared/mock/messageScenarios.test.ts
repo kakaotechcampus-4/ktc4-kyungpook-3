@@ -28,6 +28,7 @@ const MESSAGE_SCENARIOS = [
   'messages-thread-error',
   'messages-send-fail',
   'messages-member',
+  'messages-member-push',
   'messages-pm-self',
   'messages-schedule-passed',
   'messages-merge',
@@ -324,6 +325,12 @@ describe('메시지 시나리오', () => {
     ])
       expect((await failure(request)).status).toBe(403)
     expect(snapshot()).toEqual(before)
+  })
+
+  it('messages-member-push: messages-member 에 서버 푸시 공개키만 더했다', async () => {
+    applyScenario('messages-member-push')
+    await expect(fetchDto('/push/vapid-public-key')).resolves.toEqual({ public_key: 'AQID' })
+    expect({ ...db, push: initialDb().push }).toEqual(createScenarioDb('messages-member'))
   })
 
   it('답장은 대화 주인만 한다 — 웹 답장은 201 로 대화에 남고 답장 대기를 끝낸다. 빈 답장은 400 이다', async () => {

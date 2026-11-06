@@ -3,6 +3,10 @@ import { paths } from './routes'
 it.each([
   [paths.landing(), '/'],
   [paths.login(), '/login'],
+  [
+    paths.login('/workspaces/ws_01/tasks/tk_01'),
+    '/login?next=%2Fworkspaces%2Fws_01%2Ftasks%2Ftk_01',
+  ],
   [paths.signup(), '/signup'],
   [paths.workspaceSelect(), '/workspaces'],
   [paths.onboardingCreate(), '/onboarding/create_workspace'],

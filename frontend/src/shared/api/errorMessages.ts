@@ -9,7 +9,7 @@ export const COMMON_MESSAGES = {
   fallback: '문제가 생겼어요. 잠시 후 다시 시도해 주세요.',
 } as const
 
-/* 서버 코드 전부 (backend core/errors.py). AI 경로에서만 오는 코드는 뺐다(계약 §2.3.1). 비밀번호 재설정의 두 코드는 합의만 됐고 BE 에 아직 없다(계약 §4.1.1). `Record<ErrorCode, string>` 이라 코드가 늘면 여기서 타입 오류가 난다 */
+/* 서버 코드 전부 (backend core/errors.py). AI 경로에서만 오는 코드는 뺐다(계약 §2.3.1). 비밀번호 재설정의 두 코드는 합의만 됐고 BE 에 아직 없다(계약 §4.1.1) */
 const SERVER_MESSAGES: Record<ErrorCode, string> = {
   INVALID_REQUEST: '요청 내용을 다시 확인해 주세요.',
   MEETING_NOT_FOUND: '회의를 찾을 수 없어요.',

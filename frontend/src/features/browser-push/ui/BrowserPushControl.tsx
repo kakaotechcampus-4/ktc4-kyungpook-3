@@ -1,13 +1,14 @@
 import { Button } from '@/shared/ui/button'
 import { useBrowserPush } from '../model/useBrowserPush'
 import type { PushState } from '../model/useBrowserPush'
+import { PUSH_COPY } from './copy'
 
 function message(state: PushState): string {
   switch (state.status) {
     case 'unsupported':
       return '이 브라우저는 푸시 알림을 받을 수 없어요. 알림은 화면 위 종에서 확인해 주세요.'
     case 'needs-install':
-      return 'iPhone·iPad 는 Safari 공유 메뉴에서 홈 화면에 추가한 앱으로 열어야 알림을 받을 수 있어요.'
+      return PUSH_COPY.needsInstall
     case 'no-server-key':
       return '아직 브라우저 알림을 보낼 수 없어요. 알림은 화면 위 종에서 확인해 주세요.'
     case 'idle':
@@ -23,7 +24,7 @@ function message(state: PushState): string {
     case 'error':
       return state.publicKey === null
         ? '브라우저 알림 상태를 확인하지 못했어요. 다시 시도해 주세요.'
-        : '브라우저 알림을 켜지 못했어요. 다시 시도해 주세요.'
+        : PUSH_COPY.enableFailed
   }
 }
 

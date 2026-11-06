@@ -15,11 +15,13 @@ export interface ViewerPolicy {
   awaiting: boolean
   /** 재촉을 만든다(`새 재촉`). 서버도 PM 만 받는다 */
   compose: boolean
+  /** 리마인드를 받은 대화 위에 이 기기의 알림을 켜자는 띠를 보인다 (#411). 리마인드는 팀원이 받는다 */
+  pushPrompt: boolean
 }
 
 export const VIEWER_POLICY: Record<Role, ViewerPolicy> = {
-  pm: { ownSender: 'bot', awaiting: true, compose: true },
-  member: { ownSender: 'member', awaiting: false, compose: false },
+  pm: { ownSender: 'bot', awaiting: true, compose: true, pushPrompt: false },
+  member: { ownSender: 'member', awaiting: false, compose: false, pushPrompt: true },
 }
 
 /**

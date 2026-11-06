@@ -158,6 +158,7 @@ await fetch('/api/v1/approvals/ap_01', {
 | `messages-thread-error` | 목록은 정상, `th_01` 대화만 5xx |
 | `messages-send-fail` | 조회는 정상, 승인·보내지 않음·문구·시각 고치기·답장만 5xx(db 는 그대로) |
 | `messages-member` | 팀원. 자기 대화 `th_06` 만 보이고 보내기 전 확인은 없다(`bundles: null`). 마지막 봇 메시지는 `DM 못 보냄`, 웹 답장은 그 대화에만 남는다. 남의 대화는 403 |
+| `messages-member-push` | `messages-member` 에 서버 푸시 공개키를 더했다. `th_06` 대화 머리 아래에 `기기 알림` 띠가 보이고, `알림 켜기` 를 눌러야 브라우저 알림 허용을 묻는다(#411) |
 | `messages-schedule-passed` | `bd_06` 은 승인 전에 보낼 시각이 지났고 마감은 오늘이다. 이대로 발송은 409 `REMINDER_SCHEDULED_AT_PASSED` 이고, 시각을 다시 고른 뒤에 승인할 수 있다 |
 | `messages-merge` | 이재환에게 보낼 메시지가 둘이다. `bd_07`(09/21 18:00, 승인 전)에서 `마감 하루 전`(09/23 09:00)을 고르면 승인해 둔 `bd_01` 과 같은 시각이라 합쳐진다. 화면은 `?review=bd_01` 로 옮겨 가고 승인이 풀렸다고 알린다 |
 
