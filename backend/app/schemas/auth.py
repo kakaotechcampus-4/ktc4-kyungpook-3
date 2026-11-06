@@ -2,7 +2,9 @@ import re
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, EmailStr, field_validator
+from pydantic import BaseModel, field_validator
+
+from app.schemas.email import NormalizedEmail
 
 PASSWORD_RULE_MESSAGE = "비밀번호는 8자 이상이고 숫자를 하나 이상 포함해야 합니다."
 
@@ -26,11 +28,11 @@ class AuthResponse(BaseModel):
     last_workspace_id: Optional[str] = None
 
 class LoginRequest(BaseModel):
-    email: EmailStr
+    email: NormalizedEmail
     password: str
 
 class SignupRequest(BaseModel):
-    email: EmailStr
+    email: NormalizedEmail
     password: str
     name: str
 
@@ -41,7 +43,7 @@ class SignupRequest(BaseModel):
 
 
 class PasswordResetRequest(BaseModel):
-    email: EmailStr
+    email: NormalizedEmail
 
 
 class PasswordResetVerifyRequest(BaseModel):
