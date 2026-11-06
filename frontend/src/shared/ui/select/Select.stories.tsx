@@ -3,7 +3,8 @@ import type { Meta, StoryObj } from '@storybook/react-vite'
 import { expect, userEvent, within } from 'storybook/test'
 import { Label } from '../label/Label'
 import { Select, SelectInitial, SelectNoneMark } from './Select'
-import type { SelectOption, SelectProps } from './Select'
+import type { SelectProps } from './Select'
+import type { SelectOption } from './options'
 
 const MEMBERS: readonly SelectOption<string>[] = ['김서연', '박민수', '이재환', '정하늘'].map(
   (name) => ({ value: name, label: name, leading: <SelectInitial name={name} /> }),
@@ -25,7 +26,7 @@ function Demo({ label, initialValue, ...props }: DemoProps) {
       <Label htmlFor={id} blocking={props.tone === 'blocking'}>
         {label}
       </Label>
-      <Select id={id} value={value} onValueChange={setValue} {...props} />
+      <Select id={id} label={label} value={value} onValueChange={setValue} {...props} />
     </div>
   )
 }

@@ -1,29 +1,42 @@
 import * as RadixSelect from '@radix-ui/react-select'
+import { useId, useRef, useState } from 'react'
 import type { FocusEventHandler, ReactNode, Ref } from 'react'
+import { useNarrowViewport } from '@/shared/lib/narrow-viewport'
 import { Icon } from '../icon/Icon'
+import { Sheet } from '../sheet/Sheet'
+import { FieldTrigger, TriggerChevron, TriggerValue } from './FieldTrigger'
+import { OptionList } from './OptionList'
+import { initialActive } from './options'
+import type { SelectOption } from './options'
+import {
+  ITEM,
+  ITEM_CHECK,
+  ITEM_DESCRIPTION,
+  ITEM_LABEL,
+  ITEM_LEADING,
+  ITEM_SIZE,
+  LIST,
+  PANEL,
+  TRIGGER,
+  TRIGGER_SIZE,
+  centerInList,
+  triggerColor,
+} from './selectStyles'
 
 /*
- * Radix Select 에 시각만 입힌다. 동작 — 화살표 이동, 비활성 건너뛰기, 글자 검색, Enter 고르기,
+ * 넓은 화면은 Radix Select 에 시각만 입힌다. 동작 — 화살표 이동, 비활성 건너뛰기, 글자 검색, Enter 고르기,
  * Esc 닫기, 닫을 때 트리거로 포커스 복귀 — 는 전부 Radix 가 한다.
+ * 휴대폰 폭(560px 미만)은 같은 모양의 트리거로 아래 시트를 열고, 시트 안 목록(OptionList)이 같은 키보드 규칙을 따른다.
  * 목록 모양은 DropdownMenu 와 같다 (반경 14 · 줄 반경 10 · 고른 줄 surface-selected · 그림자 없음).
  * docs/plan/m6/basis-for-decision/2026-11-07-shared-select-on-radix.md
  */
-
-export interface SelectOption<V extends string> {
-  value: V
-  /** 트리거에 보이는 글자이자 글자 검색 대상 */
-  label: string
-  /** 글자 앞 아이콘 자리 — 이니셜 원, 상태 표식 */
-  leading?: ReactNode
-  /** 글자 아래 둘째 줄. 트리거에는 보이지 않는다 */
-  description?: ReactNode
-  disabled?: boolean
-}
 
 export interface SelectProps<V extends string> {
   value: V | null
   onValueChange: (value: V | null) => void
   options: readonly SelectOption<V>[]
+  /** 칸 이름. 휴대폰 폭 시트의 제목이다 — 트리거의 라벨은 따로 `<Label htmlFor>`·`aria-label` 로 잇는다 */
+  label: string
   /** 맨 위 「값 없음」 줄. 고르면 onValueChange(null) */
   noneOption?: { label: string; leading?: ReactNode }
   /** value 가 null 일 때 보이는 글자. 없으면 noneOption 줄이 고른 값으로 보인다 */
@@ -50,98 +63,86 @@ export interface SelectProps<V extends string> {
    그래서 「값 없음」 줄은 이 값으로 두고, 바깥으로는 null 로만 낸다 */
 const NONE = '__none__'
 
-/* 15px · 14px · 11px 는 타이포 스케일 밖이다 — 시안 select-design.html 실측.
-   docs/plan/m2/basis-for-decision/2026-09-16-values-outside-token-scale.md */
-
-const TRIGGER = 'group relative flex w-full items-center rounded-9 border text-left'
-
-const TRIGGER_SIZE = {
-  md: 'min-h-44 pr-40 pl-13 text-[15px]',
-  sm: 'min-h-36 pr-34 pl-12 text-[14px]',
-} as const
-
-const CHEVRON_RIGHT = { md: 'right-13', sm: 'right-11' } as const
-
-/* 경계·글자·포커스 선 색은 한 곳에서만 고른다 — 두 클래스를 같이 붙이면 CSS 순서가 이긴다.
-   막힌 칸의 포커스 선은 강조색이다 — 먹 선이 덮으면 포커스 중에 "승인이 막힌 칸"이라는 신호가 사라진다.
-   보통 칸은 전역 먹 선을 그대로 쓴다. docs/plan/m2/basis-for-decision/2026-09-23-focus-outline-over-border.md */
-function triggerColor(tone: 'normal' | 'blocking', disabled: boolean) {
-  if (disabled) return 'cursor-not-allowed border-line bg-surface-sunken text-faint'
-  if (tone === 'blocking')
-    return 'cursor-pointer border-accent bg-surface text-ink data-[placeholder]:text-accent-solid focus-visible:outline-accent-point'
-  return 'cursor-pointer border-input-border bg-surface text-ink data-[placeholder]:text-dim hover:not-data-[state=open]:border-sub data-[state=open]:border-ink'
+/**
+ * 값 하나를 고르는 선택 상자. 기본 `<select>` 대신 쓴다.
+ *
+ * 넓은 화면의 목록은 늘 트리거 아래로 연다(popper). Radix 기본인 item-aligned 는 쓰지 않는다.
+ * 열면 고른 줄이 목록 가운데에 온다 — 시각처럼 긴 목록에서 고른 값 앞뒤가 함께 보인다. 문구는 전부 props 다.
+ */
+export function Select<V extends string>(props: SelectProps<V>) {
+  return useNarrowViewport() ? <SheetSelect {...props} /> : <PopperSelect {...props} />
 }
 
-const CONTENT =
-  'z-100 max-w-[340px] min-w-[var(--radix-select-trigger-width)] rounded-[14px] border border-line bg-surface p-8 text-ink'
+/** 목록에 놓는 줄 — 「값 없음」 줄이 맨 위다 */
+function listOptions<V extends string>({
+  options,
+  noneOption,
+}: SelectProps<V>): readonly SelectOption<string>[] {
+  return noneOption ? [{ value: NONE, ...noneOption }, ...options] : options
+}
 
-/* 스크롤 버튼 대신 스크롤바를 쓴다. Radix 가 뷰포트 스크롤바를 숨기는 style 을 넣어서 덮는다 */
-const VIEWPORT = 'flex max-h-[264px] flex-col gap-1 [scrollbar-width:thin]!'
+/** 목록에서 고른 줄. 값이 null 이고 플레이스홀더가 없으면 「값 없음」 줄이다 */
+function chosenValue<V extends string>({ value, noneOption, placeholder }: SelectProps<V>) {
+  return value ?? (placeholder === undefined && noneOption ? NONE : null)
+}
 
-/* 줄은 격자다 — 보조줄이 앞 아이콘 아래가 아니라 글자 아래에 선다.
-   Radix 2.3.7 의 ItemText·Value 는 className 을 버린다. 그래서 ItemText 에는 글자만 두고 격자 칸은 감싼 span 이 잡으며,
+/** 목록 줄의 값을 바깥 값으로. 「값 없음」 줄은 null 이다 */
+function fromList<V extends string>(options: readonly SelectOption<V>[], next: string): V | null {
+  return options.find((option) => option.value === next)?.value ?? null
+}
+
+/* Radix 2.3.7 의 ItemText·Value 는 className 을 버린다. 그래서 ItemText 에는 글자만 두고 격자 칸은 감싼 span 이 잡으며,
    트리거 내용은 Value 의 children 으로 따로 그린다 */
-const ITEM =
-  'grid min-h-40 cursor-pointer grid-cols-[auto_minmax(0,1fr)_auto] items-center rounded-10 px-10 py-9 text-[15px] outline-none select-none data-[disabled]:cursor-not-allowed data-[disabled]:text-faint data-[highlighted]:bg-surface-selected data-[state=checked]:font-bold'
-
 function Item({ value, label, leading, description, disabled }: SelectOption<string>) {
   return (
-    <RadixSelect.Item value={value} textValue={label} disabled={disabled} className={ITEM}>
-      {leading ? <span className="col-start-1 mr-10 flex flex-none">{leading}</span> : null}
-      <span className="col-start-2 truncate">
+    <RadixSelect.Item
+      value={value}
+      textValue={label}
+      disabled={disabled}
+      className={`${ITEM} ${ITEM_SIZE.menu}`}
+    >
+      {leading ? <span className={ITEM_LEADING}>{leading}</span> : null}
+      <span className={ITEM_LABEL}>
         <RadixSelect.ItemText>{label}</RadixSelect.ItemText>
       </span>
-      {description ? (
-        <span className="col-start-2 row-start-2 text-caption font-normal text-dim">
-          {description}
-        </span>
-      ) : null}
-      <RadixSelect.ItemIndicator className="col-start-3 row-span-2 row-start-1 ml-10 flex">
+      {description ? <span className={ITEM_DESCRIPTION}>{description}</span> : null}
+      <RadixSelect.ItemIndicator className={ITEM_CHECK}>
         <Icon name="check" size={16} />
       </RadixSelect.ItemIndicator>
     </RadixSelect.Item>
   )
 }
 
-/**
- * 값 하나를 고르는 선택 상자. 기본 `<select>` 대신 쓴다.
- *
- * 목록은 늘 트리거 아래로 연다(popper). Radix 기본인 item-aligned 는 쓰지 않는다.
- * 문구는 전부 props 다. 라벨은 호출부가 `<Label htmlFor={id}>` 나 `aria-labelledby` 로 잇는다.
- */
-export function Select<V extends string>({
-  value,
-  onValueChange,
-  options,
-  noneOption,
-  placeholder,
-  size = 'md',
-  tone = 'normal',
-  disabled = false,
-  id,
-  name,
-  ref,
-  onBlur,
-  'aria-invalid': invalid,
-  ...aria
-}: SelectProps<V>) {
-  const rootValue = value ?? (placeholder === undefined && noneOption ? NONE : '')
-
-  const shown =
-    value === null
-      ? placeholder === undefined
-        ? noneOption
-        : undefined
-      : options.find((option) => option.value === value)
-
-  function handleValueChange(next: string) {
-    onValueChange(options.find((option) => option.value === next)?.value ?? null)
-  }
+function PopperSelect<V extends string>(props: SelectProps<V>) {
+  const {
+    onValueChange,
+    options,
+    placeholder,
+    size = 'md',
+    tone = 'normal',
+    disabled = false,
+    id,
+    name,
+    ref,
+    onBlur,
+    'aria-invalid': invalid,
+    'aria-label': ariaLabel,
+    'aria-labelledby': labelledBy,
+    'aria-describedby': describedBy,
+  } = props
+  const items = listOptions(props)
+  const chosen = chosenValue(props)
+  const shown = items.find((option) => option.value === chosen)
+  // 열 때 Radix 가 고른 줄에 처음 포커스를 줄 때만 가운데로 굴린다. 화살표로 옮길 때는 Radix 의 「가까이」 스크롤을 둔다
+  const centered = useRef(false)
 
   return (
     <RadixSelect.Root
-      value={rootValue}
-      onValueChange={handleValueChange}
+      value={chosen ?? ''}
+      onValueChange={(next) => onValueChange(fromList(options, next))}
+      onOpenChange={(open) => {
+        if (open) centered.current = false
+      }}
       disabled={disabled}
       name={name}
     >
@@ -150,26 +151,15 @@ export function Select<V extends string>({
         id={id}
         onBlur={onBlur}
         aria-invalid={invalid || undefined}
+        aria-label={ariaLabel}
+        aria-labelledby={labelledBy}
+        aria-describedby={describedBy}
         className={[TRIGGER, TRIGGER_SIZE[size], triggerColor(tone, disabled)].join(' ')}
-        {...aria}
       >
         <RadixSelect.Value placeholder={placeholder}>
-          {shown ? (
-            <span className="flex min-w-0 items-center gap-10">
-              {shown.leading ? <span className="flex flex-none">{shown.leading}</span> : null}
-              <span className="truncate">{shown.label}</span>
-            </span>
-          ) : undefined}
+          {shown ? <TriggerValue {...shown} /> : undefined}
         </RadixSelect.Value>
-        <RadixSelect.Icon
-          className={[
-            'absolute top-1/2 flex -translate-y-1/2 group-data-[state=open]:rotate-180',
-            CHEVRON_RIGHT[size],
-            disabled ? 'text-line-strong' : 'text-dim',
-          ].join(' ')}
-        >
-          <Icon name="chevron-down" size={14} />
-        </RadixSelect.Icon>
+        <TriggerChevron size={size} disabled={disabled} />
       </RadixSelect.Trigger>
       <RadixSelect.Portal>
         <RadixSelect.Content
@@ -177,19 +167,102 @@ export function Select<V extends string>({
           side="bottom"
           align="start"
           sideOffset={6}
-          className={CONTENT}
+          className={`${PANEL} min-w-[var(--radix-select-trigger-width)]`}
+          onFocus={(event) => {
+            const viewport = event.target.parentElement
+            if (
+              centered.current ||
+              viewport === null ||
+              event.target.getAttribute('role') !== 'option'
+            )
+              return
+            centered.current = true
+            centerInList(viewport, event.target)
+          }}
         >
-          <RadixSelect.Viewport className={VIEWPORT}>
-            {noneOption ? (
-              <Item value={NONE} label={noneOption.label} leading={noneOption.leading} />
-            ) : null}
-            {options.map((option) => (
+          <RadixSelect.Viewport className={`${LIST} max-h-[264px]`}>
+            {items.map((option) => (
               <Item key={option.value} {...option} />
             ))}
           </RadixSelect.Viewport>
         </RadixSelect.Content>
       </RadixSelect.Portal>
     </RadixSelect.Root>
+  )
+}
+
+function SheetSelect<V extends string>(props: SelectProps<V>) {
+  const {
+    onValueChange,
+    options,
+    label,
+    placeholder,
+    size = 'md',
+    tone = 'normal',
+    disabled = false,
+    id,
+    ref,
+    onBlur,
+    'aria-invalid': invalid,
+    'aria-label': ariaLabel,
+    'aria-labelledby': labelledBy,
+    'aria-describedby': describedBy,
+  } = props
+  const listId = useId()
+  const [open, setOpen] = useState(false)
+  const [active, setActive] = useState<string | null>(null)
+  const items = listOptions(props)
+  const chosen = chosenValue(props)
+
+  function openChange(next: boolean) {
+    if (next) setActive(initialActive(items, chosen))
+    setOpen(next)
+  }
+
+  return (
+    <Sheet
+      open={open}
+      onOpenChange={openChange}
+      title={label}
+      trigger={
+        <FieldTrigger
+          ref={ref}
+          id={id}
+          listId={listId}
+          open={open}
+          shown={items.find((option) => option.value === chosen)}
+          placeholder={placeholder}
+          size={size}
+          tone={tone}
+          disabled={disabled}
+          onBlur={onBlur}
+          aria-invalid={invalid || undefined}
+          aria-label={ariaLabel}
+          aria-labelledby={labelledBy}
+          aria-describedby={describedBy}
+          onKeyDown={(event) => {
+            if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return
+            event.preventDefault()
+            openChange(true)
+          }}
+        />
+      }
+    >
+      <OptionList
+        id={listId}
+        options={items}
+        selected={chosen}
+        active={active}
+        onActiveChange={setActive}
+        onSelect={(next) => {
+          setOpen(false)
+          onValueChange(fromList(options, next))
+        }}
+        rowSize="sheet"
+        focusable
+        aria-label={label}
+      />
+    </Sheet>
   )
 }
 
