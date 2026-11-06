@@ -20,9 +20,8 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 
-from app.schemas.email import normalize_email
-
 from app.core.database import Base
+from app.schemas.email import normalize_email
 
 # text-embedding-3-small의 차원. 모델을 바꾸면 컬럼과 저장된 벡터를 모두 다시 만들어야 한다.
 EMBEDDING_DIMENSIONS = 1536
