@@ -47,6 +47,7 @@ export type Scenario =
   | 'team-invitations'
   | 'invitation-pending'
   | 'messages-default'
+  | 'messages-pm-self'
 
 /**
  * 모의 db 를 그 시나리오로 초기화하고 path 로 들어간다. 시나리오 파라미터는 저장값보다 앞서고

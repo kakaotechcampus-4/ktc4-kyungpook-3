@@ -18,6 +18,9 @@ export { MEETING_SOURCE_TRAITS } from './model/sourceTraits'
 export { evidenceMoment, formatClock, formatMoment, offsetInstant } from './lib/moment'
 export {
   fetchMeetingList,
+  isAccessLost,
+  isMeetingGone,
+  isMeetingUnavailable,
   meetingDetailQueryOptions,
   meetingKeys,
   meetingListQueryOptions,

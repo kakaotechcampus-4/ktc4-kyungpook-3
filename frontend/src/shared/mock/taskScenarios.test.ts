@@ -72,7 +72,7 @@ describe('M6 시나리오 목록', () => {
   })
 
   it.each(M6_SCENARIOS)('%s 는 저장 버전 그대로 sessionStorage 에서 복원된다', (scenario) => {
-    expect(MOCK_DB_VERSION).toBe(11)
+    expect(MOCK_DB_VERSION).toBe(12)
     replaceDb(createScenarioDb(scenario))
     saveDb(sessionStorage)
     resetDb()

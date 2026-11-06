@@ -2,7 +2,12 @@ import { QueryClient } from '@tanstack/react-query'
 import { File as NodeFile } from 'node:buffer'
 import { http } from 'msw'
 import type { UploadProgress } from '@/shared/api/client'
-import { ApiError, createWorkspaceMismatchError } from '@/shared/api/errors'
+import {
+  ApiError,
+  CLIENT_ERROR_CODES,
+  createClientError,
+  createWorkspaceMismatchError,
+} from '@/shared/api/errors'
 import { STALE_TIME } from '@/shared/api/queryClient'
 import { db } from '@/shared/mock/db'
 import { fail, ok } from '@/shared/mock/envelope'
@@ -132,15 +137,23 @@ describe('meetingDetailQueryOptions', () => {
 })
 
 describe('viewableMeeting', () => {
-  it('다른 공간의 회의라는 답이면 받아 둔 상세가 있어도 그리지 않고, 403·404 뒤에는 받아 둔 상세를 둔다 (#349)', async () => {
+  it('볼 수 없는 회의라는 답(다른 공간, 403·404)이면 받아 둔 상세가 있어도 그리지 않고, 일시적 실패에는 둔다 (#349, #405)', async () => {
     const meeting = await new QueryClient().fetchQuery(meetingDetailQueryOptions('ws_01', 'mt_10'))
     const forbidden = new ApiError({ code: 'FORBIDDEN', message: 'x', details: null }, 403)
+    const notFound = new ApiError({ code: 'MEETING_NOT_FOUND', message: 'x', details: null }, 404)
     expect(viewableMeeting({ data: meeting, error: null })).toBe(meeting)
     expect(viewableMeeting({ data: undefined, error: null })).toBeNull()
     expect(
       viewableMeeting({ data: meeting, error: createWorkspaceMismatchError('ws_01', 'ws_02') }),
     ).toBeNull()
-    expect(viewableMeeting({ data: meeting, error: forbidden })).toBe(meeting)
+    expect(viewableMeeting({ data: meeting, error: forbidden })).toBeNull()
+    expect(viewableMeeting({ data: meeting, error: notFound })).toBeNull()
+    expect(
+      viewableMeeting({
+        data: meeting,
+        error: createClientError(CLIENT_ERROR_CODES.NETWORK_ERROR),
+      }),
+    ).toBe(meeting)
   })
 })
 

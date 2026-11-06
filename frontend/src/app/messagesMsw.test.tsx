@@ -5,12 +5,12 @@ import { messageThreadQueryOptions } from '@/entities/message'
 import { STALE_TIME } from '@/shared/api/queryClient'
 import { paths } from '@/shared/config/routes'
 import { db } from '@/shared/mock/db'
-import { fail } from '@/shared/mock/envelope'
+import { fail, list as listResponse } from '@/shared/mock/envelope'
 import { MOCK_NOW } from '@/shared/mock/fixtures/constants'
 import { botMessage } from '@/shared/mock/fixtures/message'
 import { applyScenario } from '@/shared/mock/scenarios'
 import { server } from '@/shared/mock/server'
-import { setMockRole } from '@/shared/mock/sessions'
+import { isMemberOf, setMockRole } from '@/shared/mock/sessions'
 import { recordRequests } from '@/shared/test/requests'
 import {
   conversation,
@@ -688,5 +688,53 @@ describe('팀원은 자기 대화만 보고 웹에서 답장한다', () => {
     await openInbox(paths.messageThread('ws_01', 'th_01'))
     expect(await detail().findByRole('heading', { name: '대화를 찾을 수 없어요' })).toBeVisible()
     expect(screen.queryByRole('alert')).toBeNull()
+  })
+})
+
+describe('팀원 행이 있는 PM 은 자기 대화에서만 웹으로 답장한다 (#367)', () => {
+  const replyForm = () => detail().queryByRole('form', { name: '답장' })
+  const footNote = () => detail().getByText(/메시지는 항상/)
+
+  it('자기 대화에는 답장 칸이 있고, 보낸 답장은 웹에서 답장으로 대화에 남는다', async () => {
+    applyScenario('messages-pm-self')
+    await openInbox(paths.messageThread('ws_01', 'th_06'))
+    const field = await detail().findByRole('textbox', { name: '답장' })
+    expect(detail().getByText('Discord 개인 메시지 · 웹에서도 답장할 수 있어요')).toBeVisible()
+    expect(detail().queryByText(/메시지는 항상/)).toBeNull()
+
+    await userEvent.type(field, 'PM 이 웹에서 남긴 답장')
+    await userEvent.click(detail().getByRole('button', { name: '답장 보내기' }))
+    expect(await within(conversation()).findByText('PM 이 웹에서 남긴 답장')).toBeVisible()
+    expect(within(conversation()).getByText('09:00 · 웹에서 답장')).toBeVisible()
+    expect(field).toHaveValue('')
+  })
+
+  it('남의 대화에는 답장 칸 대신 봇 안내가 있다', async () => {
+    applyScenario('messages-pm-self')
+    await openInbox(paths.messageThread('ws_01', 'th_01'))
+    expect(await detail().findByRole('heading', { level: 2, name: '이재환' })).toBeVisible()
+    expect(footNote()).toBeVisible()
+    expect(replyForm()).toBeNull()
+  })
+
+  // 이 칸을 넣기 전 백엔드는 member_id 를 주지 않는다. 자기 대화인지 모르면 서버가 403 으로 막을 답장 칸을 두지 않는다
+  it.each([
+    ['공간 응답에 member_id 가 없으면', {}],
+    ['공간 응답의 member_id 가 null 이면', { member_id: null }],
+  ])('%s 자기 대화에도 답장 칸이 없다', async (_, field) => {
+    applyScenario('messages-pm-self')
+    server.use(
+      http.get('/api/v1/workspaces', () =>
+        listResponse(
+          db.workspaces
+            .filter(({ workspace_id }) => isMemberOf(workspace_id))
+            .map((workspace) => ({ ...workspace, ...field })),
+        ),
+      ),
+    )
+    await openInbox(paths.messageThread('ws_01', 'th_06'))
+    expect(await detail().findByRole('heading', { level: 2, name: '김서연' })).toBeVisible()
+    expect(footNote()).toBeVisible()
+    expect(replyForm()).toBeNull()
   })
 })

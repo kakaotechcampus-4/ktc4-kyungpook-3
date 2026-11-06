@@ -16,7 +16,7 @@ const features = {
   dashboard: { files: ['dashboard.e2e.ts'] },
   connections: { files: ['settings-team.e2e.ts'], grep: 'PM 이 설정에서 Discord' },
   notifications: { files: ['settings-notifications.e2e.ts'] },
-  messages: { files: ['messages-reminder.e2e.ts'] },
+  messages: { files: ['messages-reminder.e2e.ts', 'messages-reply.e2e.ts'] },
 }
 
 async function unusedPort() {
