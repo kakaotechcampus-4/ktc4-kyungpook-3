@@ -419,10 +419,10 @@ describe('프로필 단계', () => {
     expect(posts(log, '/auth/signup')).toHaveLength(1)
   })
 
-  it('가입 뒤 next 가 있으면 그곳으로 간다', async () => {
+  it('가입 뒤에는 next 가 있어도 시작 화면으로 간다 (#411)', async () => {
     const app = await openSignup(paths.signup({ next: paths.workspaceSelect() }))
     await walkSignup(NEW_USER)
-    await app.expectPath(paths.workspaceSelect())
+    await app.expectPath('/onboarding/start')
   })
 })
 
@@ -486,7 +486,7 @@ describe('카카오 연결 가입: 인증된 이메일이 있다', () => {
     await userEvent.type(screen.getByLabelText('비밀번호'), NEW_USER.password)
     await click('계정 만들기')
 
-    await app.expectPath(paths.workspaceSelect())
+    await app.expectPath('/onboarding/start')
     expect(bodies).toEqual([
       { password: NEW_USER.password, name: KAKAO.nickname, link_kakao: true },
     ])
@@ -536,7 +536,7 @@ describe('카카오 연결 가입: 인증된 이메일이 있다', () => {
     expect(screen.queryByText('가입을 마치면 카카오 계정이 연결돼요.')).not.toBeInTheDocument()
 
     await walkSignup(NEW_USER)
-    await app.expectPath(paths.workspaceSelect())
+    await app.expectPath('/onboarding/start')
     expect(bodies).toEqual([
       {
         verification_token: Object.keys(db.signupVerification.proofs)[0],
@@ -563,7 +563,7 @@ describe('카카오 연결 가입: 이메일이 없다', () => {
     await userEvent.type(screen.getByLabelText('비밀번호'), NEW_USER.password)
     await click('계정 만들기')
 
-    await app.expectPath(paths.workspaceSelect())
+    await app.expectPath('/onboarding/start')
     expect(bodies).toEqual([
       {
         verification_token: Object.keys(db.signupVerification.proofs)[0],

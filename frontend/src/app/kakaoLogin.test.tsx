@@ -6,6 +6,7 @@ import { readReturnWorkspace, rememberReturnWorkspace } from '@/shared/lib/retur
 import { db } from '@/shared/mock/db'
 import { applyScenario } from '@/shared/mock/scenarios'
 import { renderApp } from './test/renderApp'
+import { walkSignup } from './test/walkSignup'
 
 /* #427 로그인 화면의 카카오. 복귀는 새 문서라 주소만 들고 들어온다 */
 
@@ -40,6 +41,13 @@ describe('카카오로 로그인 버튼', () => {
     await userEvent.click(await screen.findByRole('link', { name: '회원가입' }))
     await app.expectPath('/signup')
     await app.expectSearch(NEXT_QUERY)
+  })
+
+  it('가입한 새 계정은 next 대신 시작 화면으로 간다. 초대는 그곳에서 받는다 (#411)', async () => {
+    const app = renderApp(paths.signup({ next: NEXT }))
+    await screen.findByLabelText('이메일')
+    await walkSignup({ name: '새 사용자', email: 'new-next@example.com', password: 'password1' })
+    await app.expectPath('/onboarding/start')
   })
 })
 
