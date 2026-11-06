@@ -1137,6 +1137,19 @@ def test_an_upload_is_queued_before_discord_meetings(tmp_path):
     assert R._queue_key(upath) < R._queue_key(dpath)
 
 
+def test_uploads_are_queued_by_when_they_were_mapped_not_by_file_name(tmp_path):
+    """#389 리뷰: 업로드끼리는 먼저 지정된(BE sweeper 시계가 먼저 도는) 회의가 먼저다. 파일 이름(uuid) 순이 아니다."""
+    def up(name, mapped_at):
+        p = tmp_path / f"session_upload_{name}.json"
+        p.write_text(json.dumps({"session": f"upload_{name}", "source": "upload", "mapped_at": mapped_at}), encoding="utf-8")
+        return p
+    late = up("aaa", "2026-11-05T10:00:05+00:00")
+    early = up("zzz", "2026-11-05T10:00:00+00:00")
+    unknown = up("bbb", None)                       # 지정 시각이 없거나 깨지면 업로드 중 맨 뒤
+    rec, dpath, _ = _session(tmp_path / "d", ts=500)
+    assert sorted([late, unknown, early, dpath], key=R._queue_key) == [early, late, unknown, dpath]
+
+
 def test_remember_member_names_keeps_the_member_id_too(tmp_path):
     manifest = {"workspace_id": "ws-1"}
     assert R.remember_member_names(manifest, _be(_members(FakeBe()))) is True

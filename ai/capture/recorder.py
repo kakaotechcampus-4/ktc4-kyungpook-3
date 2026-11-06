@@ -448,10 +448,16 @@ UPLOAD_PREFIX = "session_upload_"
 
 def _queue_key(path: Path) -> tuple[int, int, str]:
     """처리 순서. 업로드 회의(파일 이름이 session_upload_ 로 시작)가 디스코드 회의보다 앞이고(결정 기록 0043),
-    디스코드 회의는 회의 ID 끝의 시작 초(<guild>_<ts>) 순이다. 같으면 파일 이름 순이다. 먼저 시작한 회의가 먼저다."""
-    tail = path.stem.rsplit("_", 1)[-1]
+    업로드끼리는 먼저 지정된(mapped_at, BE sweeper 의 3시간 시계가 먼저 도는) 회의가 먼저다. 지정 시각이 없거나 깨지면
+    업로드 중 맨 뒤. 디스코드 회의는 회의 ID 끝의 시작 초(<guild>_<ts>) 순이다. 같으면 파일 이름 순이다."""
     if path.name.startswith(UPLOAD_PREFIX):
-        return (0, 0, path.name)
+        m = _load(path) or {}
+        try:
+            at = int(datetime.fromisoformat(str(m.get("mapped_at"))).timestamp() * 1000)
+        except (TypeError, ValueError):
+            at = 2**63
+        return (0, at, path.name)
+    tail = path.stem.rsplit("_", 1)[-1]
     return (1, int(tail) if tail.isdigit() else 2**63, path.name)
 
 
