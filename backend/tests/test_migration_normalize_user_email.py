@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.pool import StaticPool
 
 from app.core.database import Base
@@ -92,8 +92,20 @@ def test_running_twice_changes_nothing_more(engine):
 def test_duplicates_abort_without_changing_rows(engine):
     a, b, c = _insert(engine, "dup@x.com", "DUP@x.com", "Other@x.com")
     # PostgreSQL 은 유일 인덱스가 대소문자를 구분하므로 이 입력은 그대로 들어간다.
-    with pytest.raises(RuntimeError) as exc:
-        _run(engine, "upgrade")
+    # _run 은 실패 시 롤백하므로 행 값만으로는 "UPDATE 전에 멈췄는지" 알 수 없다. 실행된 UPDATE 문 수로 고정한다.
+    updates = []
+
+    def count_update(conn, cursor, statement, *args):
+        if statement.lstrip().upper().startswith("UPDATE"):
+            updates.append(statement)
+
+    event.listen(engine, "before_cursor_execute", count_update)
+    try:
+        with pytest.raises(RuntimeError) as exc:
+            _run(engine, "upgrade")
+    finally:
+        event.remove(engine, "before_cursor_execute", count_update)
+    assert updates == []
     message = str(exc.value)
     assert a in message and b in message
     assert c not in message
