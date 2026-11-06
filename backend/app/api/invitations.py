@@ -24,7 +24,6 @@ from app.schemas.invitation import (
     InvitedUser,
     MyInvitationListResponse,
     MyInvitationResponse,
-    normalize_email,
 )
 
 router = APIRouter(tags=["invitations"])
@@ -108,14 +107,13 @@ def _email_pending_for_other_member(db: Session, workspace_id: str, email: str, 
 
 
 def _email_in_workspace(db: Session, workspace_id: str, email: str) -> bool:
-    """이 이메일로 가입한 계정이 이미 이 워크스페이스의 (탈퇴하지 않은) 팀원인가. 저장된 가입 이메일은 이미 정규화돼 있지만 방어로 한 번 더,
-    초대·수락과 같은 normalize_email 로 정규화해 비교한다. SQL lower 는 DB 마다 비 ASCII 글자를 다르게 바꾼다."""
-    linked_emails = db.execute(
-        select(User.email)
+    """이 이메일로 가입한 계정이 이미 이 워크스페이스의 (탈퇴하지 않은) 팀원인가. 저장된 이메일은 User 모델이 정규화한다."""
+    return db.execute(
+        select(User.user_id)
         .join(Member, Member.user_id == User.user_id)
-        .where(Member.workspace_id == workspace_id, Member.is_deleted.is_(False))
-    ).scalars()
-    return any(normalize_email(linked) == email for linked in linked_emails)
+        .where(Member.workspace_id == workspace_id, Member.is_deleted.is_(False), User.email == email)
+        .limit(1)
+    ).first() is not None
 
 
 def _user_in_workspace(db: Session, workspace_id: str, user_id: str) -> bool:
@@ -140,7 +138,7 @@ def _pm_invitation(db: Session, invitation_id: str, user: User) -> Invitation:
 def _my_pending_invitation(db: Session, invitation_id: str, user: User, to: InvitationStatus) -> tuple[Invitation, Member]:
     """내 이메일로 온 초대가 아니면 있는지도 알려 주지 않는다(404). 팀원이 탈퇴한 초대는 닫힌 것으로 본다."""
     invitation = db.get(Invitation, invitation_id)
-    if invitation is None or invitation.email != normalize_email(user.email):
+    if invitation is None or invitation.email != user.email:
         raise AppError(ErrorCode.INVITATION_NOT_FOUND, details={"invitation_id": invitation_id})
     _check_can_move(invitation, to)
     member = db.get(Member, invitation.member_id)
@@ -266,7 +264,7 @@ def list_my_invitations(
         .join(Member, Member.member_id == Invitation.member_id)
         .outerjoin(_Inviter, _Inviter.user_id == Invitation.invited_by_user_id)
         .where(
-            Invitation.email == normalize_email(user.email),
+            Invitation.email == user.email,
             Invitation.status == str(InvitationStatus.PENDING),
             Member.is_deleted.is_(False),
         )

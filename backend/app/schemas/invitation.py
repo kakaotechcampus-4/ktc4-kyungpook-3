@@ -2,7 +2,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
-from app.schemas.email import NormalizedEmail, normalize_email as normalize_email
+from app.schemas.email import NormalizedEmail
 
 
 class InvitationCreateRequest(BaseModel):
