@@ -5,6 +5,7 @@ export {
   TIME_PASSED_MESSAGE,
   TIME_PASSED_TITLE,
   approveNotice,
+  attributeNotice,
   cancelNotice,
   mergeNotice,
   removeTaskNotice,
