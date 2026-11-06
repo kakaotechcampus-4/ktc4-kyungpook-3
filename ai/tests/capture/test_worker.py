@@ -924,7 +924,7 @@ async def test_an_upload_goes_from_intake_to_handed_off_through_the_worker_laps(
     assert fake.meetings["m1"]["status"] == "done" and "m1" in fake.extractions
     assert {s["member_id"] for s in fake.sources["m1"].values() if s.get("member_id")} == {"u1"}
     await w._intake_once()                                  # 인계 직후 정리 바퀴: 보관 기간 안이라 아무것도 지우지 않는다
-    assert path.exists() and path.parent.is_dir() and (w.recordings_dir / ".uploads" / "m1" / "intake.json").exists()
+    assert path.exists() and (w.recordings_dir / "upload_m1").is_dir() and (w.recordings_dir / ".uploads" / "m1" / "intake.json").exists()
     assert sum(1 for m, p, _ in fake.calls if m == "POST" and p.endswith("/speakers")) == 1   # 정리 때문에 재전송 없음
 
 

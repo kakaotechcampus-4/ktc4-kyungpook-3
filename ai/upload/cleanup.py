@@ -69,7 +69,12 @@ def cleanup_one(recordings_dir: Path, transcripts_dir: Path, *, client,
     t = now()
     root = recordings_dir / ".uploads"
     locked = None
-    for d in sorted(root.iterdir()) if root.exists() else ():
+    try:
+        dirs = sorted(root.iterdir()) if root.exists() else []
+    except OSError as e:
+        log.warning("업로드 가져오기 기록 폴더를 읽지 못했다(다음에 다시 한다): %s", e)
+        return None
+    for d in dirs:
         rec = _load(d) if d.is_dir() else None
         if rec is None or not _candidate(rec, t):
             continue
@@ -78,7 +83,7 @@ def cleanup_one(recordings_dir: Path, transcripts_dir: Path, *, client,
             locked = locked or Progress(rec["meeting_id"], "locked")
             continue
         return _probe(recordings_dir, transcripts_dir, d, rec, client, t)
-    for d in sorted(root.iterdir()) if root.exists() else ():
+    for d in dirs:
         if not d.is_dir():
             continue
         rec = _load(d)
@@ -168,8 +173,8 @@ def _finished(rec: dict) -> bool:
     rs = r.get("state") if isinstance(r, dict) else None
     us = u.get("state") if isinstance(u, dict) else None
     xs = x.get("state") if isinstance(x, dict) else None
-    if rs in _OPEN_REPORT or us in _OPEN_RESUME or xs == "checking":
-        return False
+    if rs in _OPEN_REPORT or us in _OPEN_RESUME or (xs == "checking" and "resume" not in rec):
+        return False   # resume 이 있으면 지정이 끝난 것: checking 은 더 돌지 않으니 열린 상태가 아니다
     return rec.get("state") in ("failed", "done")   # done 은 위의 열린 상태가 없고 호출한 쪽이 매니페스트 없음을 확인한다
 
 
@@ -206,7 +211,7 @@ def _probe(recordings_dir: Path, transcripts_dir: Path, d: Path, rec: dict, clie
     except Exception as e:  # noqa: BLE001 - 연결 오류 등
         return _later(d, rec, t, f"{type(e).__name__}: {e}")
     ex.update(attempts=0, error=None, next_at=_iso(t + timedelta(seconds=PROBE_EVERY_S)))
-    _save(d, rec)
+    _try_save(d, rec)
     return Progress(mid, "still_waiting")
 
 
@@ -216,7 +221,7 @@ def _expire(recordings_dir: Path, transcripts_dir: Path, d: Path, rec: dict, why
     m = manifest_path(recordings_dir, session)
     if is_locked(m):   # 재전송하는 사이에 잠겼다: 지우지 않고 잠시 뒤에 다시 본다
         rec["expire"]["next_at"] = _iso(t + timedelta(seconds=LOCKED_RETRY_S))
-        _save(d, rec)
+        _try_save(d, rec)
         return Progress(mid, "locked")
     try:
         manifest = json.loads(m.read_text(encoding="utf-8"))
@@ -235,6 +240,13 @@ def _expire(recordings_dir: Path, transcripts_dir: Path, d: Path, rec: dict, why
         return _later(d, rec, t, f"{type(e).__name__}: {e}")
     log.info("업로드 %s: BE 가 이미 끝낸 회의라 로컬을 지웠다(%s)", mid, why)
     return Progress(mid, "expired")
+
+
+def _try_save(d: Path, rec: dict) -> None:
+    try:
+        _save(d, rec)
+    except OSError as e:   # 기록을 못 쓴다: 다음 바퀴에 같은 일을 다시 한다
+        log.warning("업로드 %s 의 expire 기록을 쓰지 못했다: %s", rec["meeting_id"], e)
 
 
 def _later(d: Path, rec: dict, t: datetime, error: str) -> Progress:

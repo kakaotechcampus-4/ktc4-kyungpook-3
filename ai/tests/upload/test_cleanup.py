@@ -359,6 +359,7 @@ def test_handed_off_upload_drops_only_tracks_after_keep(env):
     t0 = env.clock.t
     _set_manifest(env, source="upload", status="handed_off", be={"status": "done"},
                   stages={"handed_off": _iso(t0)})
+    env.be.calls.clear()
     env.clock.t = t0 + timedelta(seconds=KEEP_S - 1)
     assert _go(env) is None
     assert _kept(env)
@@ -369,7 +370,7 @@ def test_handed_off_upload_drops_only_tracks_after_keep(env):
     assert (env.rec / ".uploads" / MID / "intake.json").exists()
     assert _intake(env)["expire"]["state"] == "tracks_dropped"
     assert _go(env) is None
-    assert env.be.calls[-1][0] != "DELETE"
+    assert env.be.calls == []   # BE 는 부르지 않는다
 
 
 def test_locked_given_up_upload_is_not_dropped(env):
@@ -476,7 +477,6 @@ def test_record_with_manifest_is_kept_even_if_done(env, over):
     _settle(env)   # 지정 확인 후보에서 뺀다
     _set_intake(env, **{"state": "done", **over})
     _age(env, KEEP_S * 3)
-    _age(env, KEEP_S * 3)
     env.clock.advance(KEEP_S * 3)
     assert _go(env) is None
     assert (env.rec / ".uploads" / MID / "intake.json").exists()
@@ -492,3 +492,32 @@ def test_handed_off_without_track_folder_still_records_tracks_dropped(env):
     assert _go(env) == (MID, "tracks_dropped")
     assert _intake(env)["expire"]["state"] == "tracks_dropped"
     assert _go(env) is None
+
+
+def test_record_whose_resume_ended_after_a_200_resend_is_removed(env):
+    """재전송이 200 이라 expire 는 checking 으로 남았지만 PM 이 지정해 resume 이 끝났고 매니페스트도 지워졌다."""
+    _finish_record(env, expire={"state": "checking", "attempts": 0}, resume={"state": "ended"})
+    _age(env, KEEP_S)
+    assert _go(env) == (MID, "record_removed")
+    assert not (env.rec / ".uploads" / MID).exists()
+
+
+def test_save_failure_while_still_waiting_does_not_raise(env, monkeypatch):
+    import upload.cleanup as c
+    env.clock.advance(EXPIRE_AFTER_S)
+
+    def boom(*a, **k):
+        raise PermissionError("읽기 전용")
+    monkeypatch.setattr(c, "_save", boom)
+    assert _go(env) == (MID, "still_waiting")
+
+
+def test_listing_error_does_not_raise(env, monkeypatch, caplog):
+    from pathlib import Path
+
+    def boom(self):
+        raise PermissionError("목록 불가")
+    monkeypatch.setattr(Path, "iterdir", boom)
+    with caplog.at_level(logging.WARNING, logger="upload.cleanup"):
+        assert _go(env) is None
+    assert caplog.records
