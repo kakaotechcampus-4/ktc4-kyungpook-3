@@ -415,6 +415,19 @@ def test_put_without_bot_token_is_502_and_saves_nothing(client, seed, db, fake_d
     _assert_untouched(db, seed)
 
 
+def _spy_rollback(db, monkeypatch) -> list[int]:
+    """db.rollback 호출을 센다. 공유 세션은 expire_all 로 읽으므로 행 상태만으로는 rollback 유무를 알 수 없다."""
+    rollbacks: list[int] = []
+    original = db.rollback
+
+    def spy():
+        rollbacks.append(1)
+        return original()
+
+    monkeypatch.setattr(db, "rollback", spy)
+    return rollbacks
+
+
 def test_put_uses_the_guild_read_after_lock(client, seed, db, fake_discord, monkeypatch):
     calls, state = fake_discord
     _connect(db, seed["workspace_id"], guild_id="A")
@@ -422,6 +435,7 @@ def test_put_uses_the_guild_read_after_lock(client, seed, db, fake_discord, monk
     original = chat_channel.connected_discord
 
     def swap_guild_after_lock(session, workspace_id, *, lock=False):
+        assert lock is True  # 행을 잠근 채 서버 ID 를 읽는다
         integration = original(session, workspace_id, lock=lock)
         integration.provider_channel_id = "B"
         return integration
@@ -434,12 +448,27 @@ def test_put_uses_the_guild_read_after_lock(client, seed, db, fake_discord, monk
     assert calls[0] == ("list", "B")
 
 
+def test_put_channel_list_failure_is_502_and_saves_nothing(client, seed, db, fake_discord, monkeypatch):
+    calls, state = _ready(db, seed, fake_discord)
+    state["channels"] = discord.DiscordApiError("HTTP 500", status_code=500)
+    rollbacks = _spy_rollback(db, monkeypatch)
+
+    response = _put(client, seed["workspace_id"], "31")
+
+    assert response.status_code == 502
+    assert response.json()["error"]["code"] == "DISCORD_API_FAILED"
+    assert [c[0] for c in calls] == ["list"]
+    assert rollbacks
+    _assert_untouched(db, seed)
+
+
 def test_commit_failure_after_on_notice_is_logged_as_error(seed, db, fake_discord, monkeypatch, caplog):
     calls, _ = _ready(db, seed, fake_discord)
 
     def failing_commit():
         raise RuntimeError("commit 실패")
 
+    rollbacks = _spy_rollback(db, monkeypatch)
     monkeypatch.setattr(db, "commit", failing_commit)
     safe_client = TestClient(app, raise_server_exceptions=False)
 
@@ -447,6 +476,7 @@ def test_commit_failure_after_on_notice_is_logged_as_error(seed, db, fake_discor
         response = _put(safe_client, seed["workspace_id"], "31")
 
     assert response.status_code == 500
+    assert rollbacks, "commit 실패 뒤 rollback 이 호출돼야 한다"
     assert ("post", "31", chat_channel.ON_NOTICE) in calls
     assert any(r.levelname == "ERROR" and "저장 실패" in r.getMessage() for r in caplog.records)
     monkeypatch.undo()
@@ -533,3 +563,88 @@ def test_delete_integration_route_still_matches_provider(client, seed, db, fake_
     )
 
     assert response.status_code == 204
+
+
+# ---------- 봇용 목록 ----------
+
+def _bot_list(client, headers=None):
+    return client.get("/api/v1/bot/chat-channels", headers=headers or {"X-Service-Token": SERVICE_TOKEN})
+
+
+@pytest.mark.parametrize("headers", [{}, {"X-Service-Token": "wrong"}])
+def test_bot_chat_channels_needs_service_token(client, seed, db, headers):
+    response = client.get("/api/v1/bot/chat-channels", headers=headers)
+
+    assert response.status_code == 401
+
+
+def test_bot_chat_channels_lists_enabled_only(client, seed, db):
+    db.add(Workspace(workspace_id="ws-zzz", name="C"))
+    db.flush()
+    first, second = sorted([seed["workspace_id"], seed["other_workspace_id"]])
+    db.add_all([
+        Integration(workspace_id="ws-zzz", provider="discord", provider_channel_id="g3", chat_channel_id="c3"),
+        Integration(workspace_id=first, provider="discord", provider_channel_id="g1", chat_channel_id="c1"),
+        Integration(workspace_id=second, provider="discord", provider_channel_id="g2"),  # 연결만
+        Integration(workspace_id=second, provider="notion", provider_channel_id="n1", chat_channel_id="x"),
+    ])
+    db.commit()
+
+    response = _bot_list(client)
+
+    assert response.status_code == 200
+    assert response.json()["data"] == {"items": [
+        {"workspace_id": first, "guild_id": "g1", "channel_id": "c1"},
+        {"workspace_id": "ws-zzz", "guild_id": "g3", "channel_id": "c3"},
+    ]}
+
+
+def test_bot_chat_channels_empty(client, seed, db):
+    response = _bot_list(client)
+
+    assert response.status_code == 200
+    assert response.json()["data"] == {"items": []}
+
+
+def test_bot_chat_channels_response_model_in_openapi():
+    operation = app.openapi()["paths"]["/api/v1/bot/chat-channels"]["get"]
+
+    assert "BotChatChannelListResponse" in str(operation["responses"]["200"])
+
+
+# ---------- 연결 해제 ----------
+
+def _disconnect(client, workspace_id, session="alice-token"):
+    return client.delete(f"/api/v1/workspaces/{workspace_id}/integrations/discord", headers=_cookie(session))
+
+
+def test_disconnect_drops_chat_channel_and_sends_off_notice(client, seed, db, fake_discord):
+    calls, _ = _ready(db, seed, fake_discord)
+    assert _put(client, seed["workspace_id"], "31").status_code == 200
+    assert _bot_list(client).json()["data"]["items"] != []
+
+    response = _disconnect(client, seed["workspace_id"])
+
+    assert response.status_code == 204
+    assert _bot_list(client).json()["data"] == {"items": []}
+    assert calls[-1] == ("post", "31", chat_channel.OFF_NOTICE)
+
+
+def test_disconnect_succeeds_when_off_notice_fails(client, seed, db, fake_discord):
+    _, state = _ready(db, seed, fake_discord)
+    assert _put(client, seed["workspace_id"], "31").status_code == 200
+    state["post_error"] = discord.DiscordApiError("HTTP 500", status_code=500)
+
+    response = _disconnect(client, seed["workspace_id"])
+
+    assert response.status_code == 204
+    assert _bot_list(client).json()["data"] == {"items": []}
+
+
+def test_disconnect_without_chat_channel_sends_nothing(client, seed, db, fake_discord):
+    calls, _ = _ready(db, seed, fake_discord)
+
+    response = _disconnect(client, seed["workspace_id"])
+
+    assert response.status_code == 204
+    assert calls == []
