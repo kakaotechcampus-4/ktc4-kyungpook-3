@@ -1043,7 +1043,7 @@ MSW 는 **API 를 흉내내므로 100자 기준을 그대로 쓴다.** 여기에
 
 - 오류 코드: `TOO_MANY_LOGIN_ATTEMPTS`를 [오류 코드 목록](../../src/shared/api/errors.ts)과 [문구](../../src/shared/api/errorMessages.ts)에 더했다. [LoginForm](../../src/features/auth/ui/LoginForm.tsx)은 바꾸지 않았다. 401처럼 비필드 오류라 기존 경로로 폼 상단에 보인다. §1 「오류 코드」의 서버 목록은 BE PR 병합 뒤에 고친다.
 - 재시도: [queryClient](../../src/shared/api/queryClient.ts)는 네트워크 오류·408·5xx만 다시 보내고 mutation은 다시 보내지 않는다. 429를 다시 보내지 않는 것은 기존 테스트가 확인한다.
-- MSW: [로그인 handler](../../src/shared/mock/handlers/auth.ts)가 이메일별로 실패를 센다. BE처럼 10번째 실패는 401이고 그 뒤 15분 동안은 맞는 비밀번호도 429이며 `retry_after_seconds`와 `Retry-After`를 같은 값으로 준다. 성공하면 그 이메일의 횟수를 지우고, 재설정 confirm을 마쳐도 지운다. IP 제한과 15분 실패 창은 흉내 내지 않는다. 시나리오 `login-rate-limited`는 `pm@example.com`이 이미 막힌 상태로 시작하고 남은 시간은 900초다.
+- MSW: [로그인 handler](../../src/shared/mock/handlers/auth.ts)가 BE처럼 앞뒤 공백을 지우고 소문자로 바꾼 이메일별로 실패를 센다. 첫 실패부터 15분 안에 10번째 실패는 401이고, 그 뒤 15분 동안은 맞는 비밀번호도 429이며 `retry_after_seconds`와 `Retry-After`를 같은 값으로 준다. 막히기 전에 첫 실패부터 15분이 지나면 횟수를 새로 센다. 성공하면 그 이메일의 횟수를 지우고, 재설정 confirm을 마쳐도 지운다. IP 제한은 흉내 내지 않는다. BE는 공인 IP만 세고 사설·루프백 주소는 세지 않아 로컬 개발 요청은 IP 제한에 닿지 않고, 모의 요청에는 클라이언트 IP도 없다. 시나리오 `login-rate-limited`는 `pm@example.com`이 이미 막힌 상태로 시작하고 남은 시간은 900초다.
 - 검증: Vitest(MSW handler 규칙, 로그인 화면 통합)와 MSW 모드 브라우저 확인. 실서버 왕복은 BE PR 병합·배포 뒤 확인한다.
 
 ### 4.2 워크스페이스의 사용자 스코프 · 역할 · 온보딩
