@@ -5,6 +5,7 @@
 - 기준: develop `e94f7a26`. PR은 아직 만들지 않았다.
 - 상태: **이슈 항목을 모두 반영했다.** MSW 개발 서버와 프로덕션 번들(Chromium)로 검증했다. 실제 iOS 기기와 실서버는 미검증이다.
 - 이후 변경: 첫 방문 인트로는 사용자 결정으로 [#465](../465-remove-intro/result.md)(2026-11-06)에서 뺐다. 아래 인트로 내용은 #430 때의 기록이고 지금 코드에는 없다.
+- 이후 변경: 스플래시 크기(마스코트 96 → 176px, 워드마크 18 → 24px, 간격 12 → 18px)와 올라오는 거리(12 → 22px, 6 → 8px)를 사용자 결정으로 [#472](../472-splash-size/result.md)(2026-11-07)에서 키웠다. 아래 크기·위치 값은 #430 때의 것이다.
 
 ## 작업 근거와 요약
 
@@ -31,7 +32,7 @@
   - 설치한 앱(`display-mode: standalone`)은 시작 이미지에서 이어지도록 등장 없이 처음부터 보인다.
   - 움직임 줄이기면 등장 없이 0.3초 뒤 바로 보이고 줄무늬가 멈춘다.
 - [SplashHost.tsx](../../../src/app/splash/SplashHost.tsx)가 React 쪽이다. [main.tsx](../../../src/main.tsx)가 `App` 밖에 붙인다. 앱 테스트(`renderApp`)에는 없다.
-  - 같은 클래스의 판을 `document.body` 에 그리고 같은 커밋에서 정적 판을 지운다. CSS 등장은 `--splash-shift`(경과 시간)로 이어 간다. Chromium 에서 정지 위치가 정적 판과 같다(1280×800 에서 `592, 335.2, 96`).
+  - 같은 클래스의 판을 `document.body` 에 그리고 같은 커밋에서 정적 판을 지운다. CSS 등장은 `--splash-shift`(경과 시간)로 이어 간다. Chromium 에서 정지 위치가 정적 판과 같다(1280×800 에서 `592, 335.2, 96`. #472 뒤 `552, 288.6, 176`).
   - 덮는 동안 `#root` 는 `inert` 이고 상태 문구는 `role="status"` 다.
 - 순서는 [splashMachine.ts](../../../src/app/splash/splashMachine.ts)의 상태 기계 하나다. 단계는 `hidden → enter → look → smile → leave → done` 이고 단계마다 끝나는 시각을 스플래시 시계에 고정한다.
   - 1.5초에 모자를 누르고 둘러보기(정면 → 왼쪽 → 오른쪽, 1.7초씩, 「로그인 확인 중」)를 시작한다.
@@ -51,7 +52,7 @@
 - 안드로이드: [manifest.webmanifest](../../../public/manifest.webmanifest)의 이름, `background_color #ffffff`, 아이콘을 확인했고 바꾸지 않았다.
 - iOS: [startup-images.mjs](../../../scripts/startup-images.mjs)(`npm run startup-images`)가 [Mascot.tsx](../../../src/shared/ui/mascot/Mascot.tsx)를 Vite SSR 로 그려 Playwright Chromium 으로 `public/splash/` 에 29장을 찍고, `index.html` 에 넣을 `<link>` 줄을 낸다. 두 번 돌리면 같은 바이트가 나온다.
   - 크기 목록은 iOS 26·iPadOS 26 지원 기기와 그 뒤 기기다. iPhone 11줄(세로), iPad 9줄(세로·가로)이다. 근거는 스크립트 머리에 있다.
-  - 마스코트 96px, 간격 12px, 워드마크 18px 를 기기 픽셀 비율로 찍는다. 웹 스플래시와 같은 크기라 이어받을 때 튀지 않는다.
+  - 마스코트 96px, 간격 12px, 워드마크 18px 를 기기 픽셀 비율로 찍는다. 웹 스플래시와 같은 크기라 이어받을 때 튀지 않는다. #472 부터 176·18·24px 이고, 값은 [splashSize.ts](../../../src/app/splash/splashSize.ts) 한 곳에서 읽는다.
 - `index.html` 에 `apple-mobile-web-app-capable` 을 더했다. iOS 가 시작 이미지를 쓰는 조건이다.
 
 ### 첫 방문 인트로 (#465 로 뺐다)
@@ -113,5 +114,5 @@
 
 - 실제 iOS·안드로이드 기기의 설치한 앱 시작 화면, 상태 표시줄 높이만큼의 중심 차이.
 - 실서버 연동.
-- 다이얼 줄무늬의 이어받기 위상(최대 한 칸, 마스코트 크기 96에서 약 3.9px). 마스코트 위치는 그대로다.
+- 다이얼 줄무늬의 이어받기 위상(최대 한 칸, 마스코트 크기 96에서 약 3.9px, #472 의 176에서 약 7.1px). 마스코트 위치는 그대로다.
 - Storybook 의 인트로 휴대폰 스토리 렌더. #465 로 스토리를 지워 더 확인할 것이 없다.

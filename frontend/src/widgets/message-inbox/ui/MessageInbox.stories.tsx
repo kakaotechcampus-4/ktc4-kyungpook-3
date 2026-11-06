@@ -5,6 +5,7 @@ import { paths } from '@/shared/config/routes'
 import { db } from '@/shared/mock/db'
 import { botMessage, reply } from '@/shared/mock/fixtures/message'
 import { deferred } from '@/shared/test/deferred'
+import { SELF_SECTION_TITLE } from '../model/viewer'
 import { MessageInbox } from './MessageInbox'
 
 /*
@@ -260,13 +261,21 @@ export const 팀원_알림_띠: Story = {
   },
 }
 
-/** 팀원 행이 있는 PM 은 남의 대화들 사이에 있는 자기 대화에서 웹으로 답한다 (#367) */
+/** 팀원 행이 있는 PM 의 자기 대화는 목록 맨 위 구역에 있고, 팀원 화면처럼 그려 웹으로 답한다 (#367, #417) */
 export const PM_내_대화: Story = {
   args: { threadId: 'th_06' },
   parameters: { scenario: 'messages-pm-self', route: paths.messageThread('ws_01', 'th_06') },
   play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
     const detail = detailOf(canvasElement)
-    await expect(await detail.findByRole('heading', { level: 2, name: '김서연' })).toBeVisible()
+    await expect(
+      await detail.findByRole('heading', { level: 2, name: '카테캠 3팀 봇' }),
+    ).toBeVisible()
+    const self = await canvas.findByRole('region', { name: SELF_SECTION_TITLE })
+    await expect(within(self).getByRole('link')).toHaveAttribute('aria-current', 'page')
+    await expect(
+      within(canvas.getByRole('region', { name: '대화' })).getAllByRole('link'),
+    ).toHaveLength(4)
     await expect(detail.getByText('Discord 개인 메시지 · 웹에서도 답장할 수 있어요')).toBeVisible()
     await expect(detail.getByRole('button', { name: '답장 보내기' })).toBeEnabled()
     await expect(detail.queryByText(/메시지는 항상/)).toBeNull()
