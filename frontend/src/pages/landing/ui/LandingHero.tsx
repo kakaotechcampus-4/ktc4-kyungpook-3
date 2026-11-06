@@ -1,5 +1,5 @@
 import { paths } from '@/shared/config/routes'
-import { StartLink } from './StartLink'
+import { GuardedLink } from '@/shared/lib/unsaved-changes'
 import { HERO_SIZE, LINK_PRIMARY, LINK_SECONDARY, TEXT_WIDTH } from './styles'
 
 const SECTION = `${TEXT_WIDTH} flex flex-col items-center gap-28 pt-72`
@@ -32,9 +32,9 @@ export function LandingHero() {
         알립니다. 확인이 필요한 것만 골라 드려요.
       </p>
       <div className="flex items-center gap-10 pt-4">
-        <StartLink to={paths.login()} className={`${LINK_PRIMARY} ${HERO_SIZE}`}>
+        <GuardedLink to={paths.login()} className={`${LINK_PRIMARY} ${HERO_SIZE}`}>
           시작하기
-        </StartLink>
+        </GuardedLink>
         <a href="#product" className={`${LINK_SECONDARY} ${HERO_SIZE}`}>
           살펴보기
         </a>
