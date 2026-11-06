@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { finishOAuth, signUp, start } from './support'
+import { closeFirstIntro, finishOAuth, signUp, start } from './support'
 
 /* 시나리오 ① 가입 → 온보딩 전 단계(모의 OAuth 포함) → 새 공간 대시보드 (U5-2) */
 
@@ -45,6 +45,8 @@ test('가입 → 워크스페이스 만들기 → Discord·Notion 모의 OAuth �
 
   // 새 공간의 대시보드 (D-013) — 헤더와 5개 탭이 있는 앱 셸
   await expect(page).toHaveURL(/\/workspaces\/ws_\d+\/dashboard$/)
+  // 이 브라우저에서 온보딩을 마친 계정이라 첫 대시보드에 매스 인트로가 먼저 뜬다 (#430)
+  await closeFirstIntro(page)
   // M7 대시보드 — 회의가 없는 새 공간이라 최근 반영은 빈 상태 ①이다
   await expect(page.getByRole('heading', { name: '최근 반영' })).toBeVisible()
   await expect(page.getByRole('navigation', { name: '주요 화면' }).getByRole('link')).toHaveCount(5)
@@ -87,6 +89,7 @@ test('팀원 연결: 이름이 달라도 PM 을 체크해 잇고, 다시 들어�
 
   // 같은 PM 계정으로 대시보드에 들어간다
   await expect(page).toHaveURL('/workspaces/ws_03/dashboard')
+  await closeFirstIntro(page)
   // M7 대시보드 — 회의가 없는 새 공간이라 최근 반영은 빈 상태 ①이다
   await expect(page.getByRole('heading', { name: '최근 반영' })).toBeVisible()
 

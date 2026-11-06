@@ -1570,7 +1570,13 @@ interface SkeletonProps extends React.ComponentPropsWithoutRef<'div'> {
 | 레이어 순서 | Outer(원) → Inner(타원) → Cap(g>rect) → Dial stripes(cap clip) → Eyes(face clip) |
 | 눈 캡슐 반경 | `min(w, h) / 2` |
 | 눈 회전 | 눈 **중심** 기준. 바운딩 박스가 아니라 **회전 전 w×h**를 쓴다 |
-| 전환 | 지수 ease-out, `λ = 8`. 오버슈트 없음 |
+| 전환 | 지수 ease-out, `λ = 8`. 오버슈트 없음. `lambda` 옵션으로 바꿀 수 있고 기본값이 8이다 |
+| 다이얼 속도 | `dialHz` 옵션, 기본 `DIAL_HZ 1.1`. 스플래시(#430)는 호출부에서 `λ 3.2`·`0.55Hz`를 준다. 컴포넌트 기본값은 바꾸지 않는다 |
+| 눈웃음 전환 | `smile` 0 → 1을 지수 ease-out, `λ = 4.5`(포즈 λ와 따로). 0.002보다 작으면 원래 캡슐 rect를 그린다 |
+| 눈웃음 모양 | 240 좌표, 눈 중심 `cx, cy` 기준 3차 곡선 `M (cx−11.5, cy+4) C (cx−4.6, cy−5) (cx+4.6, cy−5) (cx+11.5, cy+4)`. 기울지 않는다(눈 회전 무시) |
+| 눈웃음 굵기 | 선 굵기 = 눈 캡슐 폭 `eyeW × R`(idle 14.78), 양 끝 둥글게(`stroke-linecap: round`) |
+| 눈웃음 미간 | 웃는 동안 눈 중심 x를 몸 중심에서 `1 + 0.18 × smile`배로 민다(끝에서 1.18배) |
+| 눈웃음 보간 | 뜬 눈을 같은 곡선의 퇴화형(아래 끝 `cy+half` → 제어점 `cy − 5/3·half` → 아래 끝, `half = (h − w)/2`)으로 그리고 같은 점끼리 보간한다. 눈이 사라졌다 나타나지 않는다 |
 | 깜빡임 | 2.1–4.4초 간격, 0.14초 길이, 16% 확률로 더블 블링크(0.09초 뒤 재실행) |
 | 버튼 눌림 | 4.6–8.4초 간격, 0.26초. **아랫변 고정**, 윗면만 `scaleY 1 → 0.58` |
 | talking bounce | `sin(t * 14) * 0.018`, `puppet`에 `scale(1, 1+b)` |
@@ -1634,6 +1640,8 @@ export type MascotPose = 'idle' | 'left' | 'right' | 'squint' | 'upLeft' | 'upRi
 | `svg.addEventListener('click', …)` + `cursor: pointer` | **기본값 없음.** `onClick`을 받으면 그때만 `cursor: pointer`와 `pressNow()`를 붙인다. 아무 데나 놓인 마스코트가 커서를 바꾸면 클릭 가능해 보인다 |
 | `aria-hidden="true"` 고정 | `label`을 주면 `role="img" aria-label={label}`, 없으면 `aria-hidden="true"`. 아트보드는 `aria-label="매스"`를 쓰지만 **장식일 때가 많다** |
 | `setExpression` / `setTalking` / `setPalette` 메서드 | `pose` / `palette` props. React 방식으로 뒤집는다 |
+| `setSmile(on)` · `opts.lambda` · `opts.dialHz` · `poseTarget.dial = 1` | `smile` / `lambda` / `dialHz` / `dial` props. 원본 `setSmile`은 포즈를 `idle`로 돌리지만 TSX는 포즈를 건드리지 않는다 — 호출부가 `pose`로 고른다 |
+| `pressNow()` | `ref.press()` (`useImperativeHandle`). 클릭 핸들러와 같은 함수다 |
 | `size` 기본 320 | **기본 96.** 빈 상태 3장이 96px이고 제품에서 가장 흔하다 |
 | `svg.style.overflow = 'visible'` | 유지 — **타이머 버튼이 viewBox 밖으로 나간다.** 빼면 버튼이 잘린다 |
 
@@ -1654,8 +1662,17 @@ export type MascotPose = 'idle' | 'left' | 'right' | 'squint' | 'upLeft' | 'upRi
 export type MascotPose = 'idle' | 'left' | 'right' | 'squint' | 'upLeft' | 'upRight' | 'talking' | 'dial'
 export type MascotPalette = 'ink' | 'coral' | 'coralCap'
 
+interface MascotHandle {
+  press: () => void        // 클릭과 같은 버튼 눌림 1회. 움직임 줄이기면 무시
+}
+
 interface MascotProps {
+  ref?: Ref<MascotHandle>  // React 19 ref prop
   pose?: MascotPose        // 기본 'idle'
+  smile?: boolean          // 기본 false. 눈웃음 아치
+  dial?: boolean           // 주면 어느 포즈에서든 줄무늬를 켜고 끈다. 없으면 포즈 값
+  lambda?: number          // 기본 8. 포즈 전환 계수
+  dialHz?: number          // 기본 1.1. 줄무늬 스크롤 칸/초
   palette?: MascotPalette  // 기본 'ink'
   size?: number            // 기본 96
   label?: string           // 주면 role="img" aria-label, 없으면 aria-hidden
@@ -1663,6 +1680,9 @@ interface MascotProps {
   className?: string
 }
 ```
+
+새 옵션을 하나도 주지 않으면 렌더 결과가 이전과 같다. `smile`이 0이면 눈은 원래 `rect` 두 개이고 `path`가 없다.
+움직임 줄이기면 `smile`은 보간 없이 바로 끝 모양(아치)을 그린다.
 
 ### 8-7. 마스코트 금지 사항
 

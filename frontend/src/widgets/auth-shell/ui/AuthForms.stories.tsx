@@ -31,7 +31,7 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-/** `비밀번호를 잊으셨나요?` 는 비활성이다 (D-005). 카카오 로그인 버튼이 있다 (D-179) */
+/** `비밀번호를 잊으셨나요?` 는 비활성이다 (D-005). 카카오 로그인 버튼이 있다 (D-180) */
 export const 로그인_기본: Story = {}
 
 /** 카카오에서 돌아온 안내. 취소는 조용한 안내다 */
@@ -144,7 +144,7 @@ export const 회원가입_제출_중: Story = {
   },
 }
 
-/** 카카오 가입 버튼이 있고 Google 버튼은 없다 (D-179) */
+/** 카카오 가입 버튼이 있고 Google 버튼은 없다 (D-180) */
 export const 회원가입_카카오_버튼: Story = {
   render: () => <Signup />,
   parameters: { route: '/signup' },

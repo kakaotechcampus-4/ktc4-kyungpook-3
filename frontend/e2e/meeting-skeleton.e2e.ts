@@ -538,10 +538,16 @@ interface AttendeeRowState {
 }
 
 async function readAttendeeRow(page: Page): Promise<AttendeeRowState> {
-  return page.evaluate(() => {
+  return page.evaluate(async () => {
     const region = document.querySelector('section[aria-label="회의록 본문"]')!
     const list = region.querySelector('ul[aria-label="참석자"]')!
     const row = list.parentElement!
+    // 움직임 줄이기에서 앱은 모든 전환을 0.01ms 로 줄일 뿐 없애지 않는다. 숨김(sr-only)에서 칩으로 바뀐 이름은 전환이 끝나기
+    // 전까지 1px 높이로 줄 가운데에 있다
+    const transitions = row
+      .getAnimations({ subtree: true })
+      .filter((a) => a instanceof CSSTransition)
+    await Promise.allSettled(transitions.map((transition) => transition.finished))
     const { left, top, width, height } = row.getBoundingClientRect()
     const more = row.querySelector(':scope > button')
     const measure = row.querySelector('[data-testid="attendee-measure"]')!
