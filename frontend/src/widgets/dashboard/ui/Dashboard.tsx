@@ -55,8 +55,9 @@ const TODAY = 'text-caption text-dim tabular-nums'
 const SUMMARY =
   'flex flex-wrap items-baseline gap-36 pb-8 max-md:grid max-md:auto-cols-fr max-md:items-stretch max-md:grid-flow-col max-md:gap-8 max-md:pb-[0px]'
 const SUMMARY_ITEM =
-  'relative flex items-center gap-5 text-control text-sub max-md:flex-col max-md:items-start max-md:justify-between max-md:gap-2 max-md:rounded-12 max-md:bg-surface-sunken max-md:px-10 max-md:pt-10 max-md:pb-12 max-md:text-[11px] max-md:leading-[1.45]'
-/* 기한 지남 칸은 휴대폰에서 지난 일이 있을 때 경고 면이다 (H-2) */
+  'relative flex items-center gap-5 text-control text-sub max-md:flex-col max-md:items-start max-md:justify-between max-md:gap-2 max-md:rounded-12 max-md:px-10 max-md:pt-10 max-md:pb-12 max-md:text-[11px] max-md:leading-[1.45]'
+/* 휴대폰 칸 면. 기한 지남 칸은 지난 일이 있을 때 경고 면이다 (H-2). 두 면 클래스를 같이 붙이면 CSS 순서로 하나가 이겨 하나만 붙인다 */
+const SUMMARY_ITEM_PLAIN = 'max-md:bg-surface-sunken'
 const SUMMARY_ITEM_ALERT = 'max-md:bg-accent-badge max-md:text-accent'
 const SUMMARY_VALUE =
   'text-[20px] leading-none font-semibold text-ink tabular-nums max-md:text-[22px] max-md:leading-[1.3] max-md:font-bold'
@@ -289,7 +290,7 @@ function SummaryItem({
       </GuardedLink>
     )
   return (
-    <div className={alert ? `${SUMMARY_ITEM} ${SUMMARY_ITEM_ALERT}` : SUMMARY_ITEM}>
+    <div className={`${SUMMARY_ITEM} ${alert ? SUMMARY_ITEM_ALERT : SUMMARY_ITEM_PLAIN}`}>
       <dt>{label}</dt>
       <dd className={alert ? `${SUMMARY_VALUE} max-md:text-accent` : SUMMARY_VALUE}>{shown}</dd>
     </div>

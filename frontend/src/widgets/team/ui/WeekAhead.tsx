@@ -3,7 +3,7 @@ import { monthDayOf } from '@/shared/lib/date'
 import { isWeekend, nextSevenDays, openTasksDueOn, weekdayOf } from '../lib/team'
 
 const CELL = 'flex min-h-[138px] min-w-[0px] flex-col gap-9 rounded-16 border bg-surface p-12'
-const CHIP = 'flex flex-col gap-3 rounded-7 bg-surface-selected px-9 py-8'
+const CHIP = 'flex flex-col gap-3 rounded-7 bg-surface-selected px-9 py-8 max-md:wrap-anywhere'
 
 export interface WeekAheadProps {
   tasks: readonly Task[]
