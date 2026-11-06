@@ -33,7 +33,9 @@ def _utc(value: datetime) -> datetime:
 
 
 def hash_token(raw: str) -> str:
-    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+    # 짝 없는 서로게이트("\ud800")는 JSON·스키마를 통과하지만 utf-8 로 바뀌지 않는다. surrogatepass 로 해시해
+    # 어떤 행과도 맞지 않게 두어 500 대신 invalid(400)가 되게 한다. 발급한 토큰은 ASCII 라 결과가 같다.
+    return hashlib.sha256(raw.encode("utf-8", "surrogatepass")).hexdigest()
 
 
 def mask_email(email: str) -> str:

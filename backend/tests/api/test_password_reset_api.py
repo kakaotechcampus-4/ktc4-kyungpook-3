@@ -172,3 +172,18 @@ def test_verify_and_confirm_invalid_token_reason(mdb, sent, smtp_env):
     assert again.status_code == 400
     assert again.json()["error"]["code"] == "PASSWORD_RESET_TOKEN_INVALID"
     assert again.json()["error"]["details"]["reason"] == "used"
+
+
+@pytest.mark.parametrize("path, extra", [("verify", {}), ("confirm", {"new_password": NEW_PW})])
+def test_unpaired_surrogate_token_is_invalid_not_500(mdb, sent, smtp_env, path, extra):
+    """짝 없는 서로게이트는 JSON·스키마를 통과하지만 utf-8 로 바뀌지 않는다. 500 대신 계약대로 400 이다."""
+    c = _client()
+    _signup(c)
+    # JSON 본문 안의 \ud800 이스케이프 글자 그대로 보낸다(파이썬 문자열의 서로게이트가 아니다).
+    body = '{"token": "\\ud800"' + "".join(f', "{k}": "{v}"' for k, v in extra.items()) + "}"
+
+    r = c.post(f"/api/v1/auth/password-reset/{path}", content=body, headers={"Content-Type": "application/json"})
+
+    assert r.status_code == 400, r.text
+    assert r.json()["error"]["code"] == "PASSWORD_RESET_TOKEN_INVALID"
+    assert r.json()["error"]["details"]["reason"] == "invalid"
