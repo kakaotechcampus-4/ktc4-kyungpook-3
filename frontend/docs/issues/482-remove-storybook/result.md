@@ -82,7 +82,7 @@ play 가 있는 스토리를 셋으로 나눴다. ① 같은 상태와 같은 �
 ## 지운 것
 
 - 스토리 43개(`src/**/*.stories.tsx`), `.storybook/`(`main.ts`, `preview.tsx`, `playOutcome.ts`), `e2e/storybook/`(`serve.mjs`, `stories.sb.ts`), `playwright.storybook.config.ts`.
-- `package.json` 스크립트 `storybook`·`build-storybook`·`test:storybook`, 의존성 `storybook`·`@storybook/react-vite`. `package-lock.json` 은 develop 의 lock 에서 Node 24 `npm uninstall --package-lock-only` 로 다시 만들었다. 엔트리가 740개에서 602개로 줄었다. develop 대비 버전이 바뀐 것은 wasm32 선택 바이너리의 `@emnapi/wasi-threads`(1.2.1 → 1.2.3) 하나다(옛 lock 과 비교한 스크립트).
+- `package.json` 스크립트 `storybook`·`build-storybook`·`test:storybook`, 의존성 `storybook`·`@storybook/react-vite`. `package-lock.json` 은 develop 의 lock 에서 root 의 두 의존성을 빼고, root 에서 lock 그래프(dependencies·optionalDependencies·필수 peer)로 더 닿지 않는 엔트리 143개만 스크립트로 지웠다(740 → 597). 남은 엔트리는 develop 과 글자 그대로 같고 diff 는 삭제뿐이다. Windows 의 npm 으로 lock 을 다시 만들면 wasm32 전용 `@emnapi/core`·`@emnapi/runtime` 까지 빠져 Linux CI 의 `npm ci` 가 실패했기 때문이다.
 - `.gitignore`·`.prettierignore`·`eslint.config.js` ignores 의 `storybook-static`·`playwright-report-storybook`·`test-results-storybook`. eslint 의 `.storybook`·`*.stories.tsx` 대상, `tsconfig.json` include 의 `.storybook`·`playwright.storybook.config.ts`.
 - `.github/workflows/frontend-ci.yml` 의 `storybook` job. 이 job 을 `needs` 로 기다리는 job 은 없다. check·build·e2e job 은 그대로다.
 - 스토리만 쓰던 `widgets/task-board` barrel 의 `TaskBoardProps`·`DEFAULT_VIEW_QUERY` export. 다른 barrel 에서 스토리만 쓰던 export 는 없었다(스크립트로 확인).
@@ -141,7 +141,7 @@ play 가 있는 스토리를 셋으로 나눴다. ① 같은 상태와 같은 �
 | 타입·린트·포맷 | `npm run typecheck`, `npm run lint`, `npm run format:check` | 통과(포맷 경고는 git 제외 `.verify/` 두 파일뿐) |
 | 빌드 | `npm run build` | 통과 |
 | 전체 Vitest | `npm run test -- --maxWorkers=1` | 252개 파일 중 251개, 3121개 중 3119개 통과. 실패 2개는 이번에 고치지 않은 `settingsPage.test.tsx` 의 저장 실패 알림 두 행이다. 그 파일만 다시 돌리면 21개 모두 통과해 부하로 인한 시간 초과로 본다 |
-| 설치 | 커밋한 `package.json`·`package-lock.json` 만 둔 새 폴더에서 `npm ci` | 통과(596개). 처음 만든 lock 은 `@emnapi/core`·`@emnapi/runtime` 이 빠져 `npm ci` 가 실패했고, develop 의 lock 에서 `npm uninstall --package-lock-only` 로 다시 만들었다 |
+| 설치 | 커밋한 `package.json`·`package-lock.json` 으로 WSL Linux(CI 와 같은 Node 24.22.2·npm 11.19.1)와 Windows 에서 `npm ci`, lock 그래프 대조 스크립트 | Linux 529개·Windows 596개 설치 통과, 풀리지 않는 요구 0건(develop 과 같다). Windows npm 으로 만든 이전 lock 은 Linux 에서 CI 와 같은 `Missing: @emnapi/core@1.11.3` 으로 실패했다 |
 | 흔적 | `git grep -i "storybook\|\.stories\|playOutcome\|watchStoryPlay"` (결정·결과·지난 기록 제외) | 코드·설정·CI 에 없음. `playwright.config.ts` 28행 주석의 옛 결정 문서 파일 이름 하나만 남는다 |
 
 ## 확인하지 못한 것
