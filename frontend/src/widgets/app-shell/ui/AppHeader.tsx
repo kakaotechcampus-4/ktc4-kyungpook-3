@@ -1,9 +1,10 @@
 import { NotificationBell } from '@/features/notifications'
 import { paths } from '@/shared/config/routes'
+import { useCompactScreen } from '@/shared/lib/compact-screen'
 import { GuardedLink } from '@/shared/lib/unsaved-changes'
 import { BrandMark } from '@/shared/ui/brand-mark'
 import { Skeleton } from '@/shared/ui/skeleton'
-import { SHELL_TABS, useCompactShell } from '../model/shellTabs'
+import { SHELL_TABS } from '../model/shellTabs'
 import { UserMenu } from './UserMenu'
 import { WorkspaceMenu } from './WorkspaceMenu'
 
@@ -38,7 +39,7 @@ export interface AppHeaderProps {
  * 다시 마운트되지 않아 열린 메뉴와 그 안의 포커스, 버튼의 포커스가 그대로 남는다.
  */
 export function AppHeader({ workspaceId }: AppHeaderProps) {
-  const compact = useCompactShell()
+  const compact = useCompactScreen()
 
   const bell = <NotificationBell key={`bell-${workspaceId}`} workspaceId={workspaceId} />
   const workspace = <WorkspaceMenu key="workspace" workspaceId={workspaceId} />
@@ -81,7 +82,7 @@ const TAB_SKELETON_WIDTHS = [52, 39, 39, 39, 13]
  * 기다리는 표시(aria-busy)는 아래 화면 뼈대가 진다.
  */
 export function AppHeaderSkeleton() {
-  const compact = useCompactShell()
+  const compact = useCompactScreen()
   if (compact) {
     return (
       <div aria-hidden="true" data-testid="app-header-skeleton" className={COMPACT_HEADER}>

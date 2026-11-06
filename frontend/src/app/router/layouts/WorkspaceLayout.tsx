@@ -2,9 +2,10 @@ import { Fragment } from 'react'
 import type { ReactNode } from 'react'
 import { Outlet } from 'react-router'
 import { ProcessingToast, useProcessingDiscovery } from '@/features/meeting-processing'
+import { useCompactScreen, useShellChromeHidden } from '@/shared/lib/compact-screen'
 import { useRouteId } from '@/shared/lib/url'
 import { usePinnedToastReserve } from '@/shared/ui/toast'
-import { AppHeader, AppHeaderSkeleton, BottomTabBar, useCompactShell } from '@/widgets/app-shell'
+import { AppHeader, AppHeaderSkeleton, BottomTabBar } from '@/widgets/app-shell'
 
 /** 앱 셸 틀 — 헤더 아래에 화면이 세로로 이어진다. 가드 대기 뼈대(WorkspaceShellSkeleton)도 같은 틀이다 */
 const SHELL = 'flex min-h-dvh flex-col bg-surface'
@@ -27,17 +28,19 @@ function WorkspaceShell({ workspaceId }: { workspaceId: string }) {
   // 오른쪽 아래 진행 토스트가 있는 동안 본문 아래를 그 높이만큼 비운다 — 본문 끝의 버튼을 스크롤로 꺼낼 수 있다 (#424).
   // 아래 탭 막대가 있으면 그 높이도 더한다. 막대가 없으면 `--bottom-tab-bar` 는 0 이다
   const reserve = usePinnedToastReserve()
-  const compact = useCompactShell()
+  const compact = useCompactScreen()
+  // 휴대폰의 메시지 상세처럼 화면 전체를 쓰는 화면은 헤더와 탭 막대를 걷는다(PwaThreadMember). 막대가 없으면 `--bottom-tab-bar` 도 0 이다
+  const chromeHidden = useShellChromeHidden()
 
   return (
     <div className={SHELL} style={{ paddingBottom: `calc(${reserve}px + var(--bottom-tab-bar))` }}>
-      <AppHeader workspaceId={workspaceId} />
+      {chromeHidden ? null : <AppHeader workspaceId={workspaceId} />}
       {/* 공간이 바뀌면 화면을 새로 마운트한다. 이전 공간의 화면 상태가 새 공간으로 넘어가지 않는다 */}
       <Fragment key={workspaceId}>
         <Outlet />
       </Fragment>
       <ProcessingToast workspaceId={workspaceId} />
-      {compact ? <BottomTabBar workspaceId={workspaceId} /> : null}
+      {compact && !chromeHidden ? <BottomTabBar workspaceId={workspaceId} /> : null}
     </div>
   )
 }

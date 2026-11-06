@@ -1,7 +1,6 @@
 export { AppHeader, AppHeaderSkeleton } from './ui/AppHeader'
 export type { AppHeaderProps } from './ui/AppHeader'
 export { BottomTabBar } from './ui/BottomTabBar'
-export { useCompactShell } from './model/shellTabs'
 export { WorkspaceMenu } from './ui/WorkspaceMenu'
 export type { WorkspaceMenuProps } from './ui/WorkspaceMenu'
 export { UserMenu } from './ui/UserMenu'
