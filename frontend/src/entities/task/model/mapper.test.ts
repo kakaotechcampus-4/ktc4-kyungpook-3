@@ -1,7 +1,8 @@
 import { ApiError } from '@/shared/api/errors'
+import type { TimelineItemDto } from '@/shared/types/api/reply'
 import type { TaskDto } from '@/shared/types/api/task'
 import { taskFixtures, taskHistoryFixtures } from '@/shared/mock/fixtures/task'
-import { isNotionSynced, toTask, toTaskHistory } from './mapper'
+import { isNotionSynced, toTask, toTaskHistory, toTaskTimeline } from './mapper'
 
 const taskDtos: TaskDto[] = taskFixtures.map((row) => ({ ...row, auto_blocked: false }))
 
@@ -195,5 +196,114 @@ describe('자동 막힘', () => {
   ])('auto_blocked 가 %s 이면 던지지 않고 풀 수 없는 것(false)으로 읽는다', (_label, raw) => {
     const dto = { ...taskDtos[2], status: 'blocked', auto_blocked: raw } as unknown as TaskDto
     expect(toTask(dto).autoBlocked).toBe(false)
+  })
+})
+
+describe('태스크 기록 (#344)', () => {
+  const reply: TimelineItemDto = {
+    kind: 'reply',
+    at: '2026-09-17T01:00:00Z',
+    message_id: 'mg_31',
+    member_name: '이재환',
+    channel: 'discord',
+    body: 'DB 스키마 정리는 끝냈어요.',
+    changes: [
+      {
+        change_id: 'rc_02',
+        field: 'status',
+        new_value: 'done',
+        evidence_status: 'certain',
+        summary: 'DB 스키마 정리를 끝냈대요',
+        evidence_quote: 'DB 스키마 정리는 끝냈어요',
+        result: 'applied',
+        undoable: true,
+      },
+    ],
+  }
+  const historyRow = (historyId: string): TimelineItemDto => ({
+    kind: 'history',
+    at: '2026-09-16T06:00:00Z',
+    history_id: historyId,
+    changed_field: 'due_date',
+    old_value: '2026-09-13',
+    new_value: '2026-09-20',
+    change_source: 'meeting',
+  })
+
+  it('답장은 그 답장이 바꾼 줄과 한 칸이다', () => {
+    expect(toTaskTimeline([reply], [], 'tk_03')).toEqual([
+      {
+        kind: 'reply',
+        id: 'mg_31',
+        at: '2026-09-17T01:00:00Z',
+        memberName: '이재환',
+        channel: 'discord',
+        body: 'DB 스키마 정리는 끝냈어요.',
+        changes: [
+          {
+            id: 'rc_02',
+            field: 'status',
+            newValue: 'done',
+            evidenceStatus: 'certain',
+            summary: 'DB 스키마 정리를 끝냈대요',
+            evidenceQuote: 'DB 스키마 정리는 끝냈어요',
+            result: 'applied',
+            undoable: true,
+          },
+        ],
+      },
+    ])
+  })
+
+  it('이력 칸은 /history 의 같은 이력으로 변경자·되돌림을 채운다', () => {
+    const full = toTaskHistory({
+      ...taskHistoryFixtures[0],
+      changed_by: 'mb_01',
+      is_auto: false,
+      is_rolled_back: true,
+      rolled_back_at: '2026-09-17T00:00:00Z',
+    })
+    expect(toTaskTimeline([historyRow(full.id)], [full], 'tk_01')).toEqual([
+      { kind: 'history', entry: full },
+    ])
+  })
+
+  it('/history 에 없는 이력 칸은 타임라인 칸만으로 만들고 변경자는 모른다', () => {
+    expect(toTaskTimeline([historyRow('hs_99')], [], 'tk_01')).toEqual([
+      {
+        kind: 'history',
+        entry: {
+          id: 'hs_99',
+          taskId: 'tk_01',
+          field: 'due_date',
+          oldValue: '2026-09-13',
+          newValue: '2026-09-20',
+          source: 'meeting',
+          changedBy: null,
+          isAuto: false,
+          isRolledBack: false,
+          rolledBackAt: null,
+          createdAt: '2026-09-16T06:00:00Z',
+        },
+      },
+    ])
+  })
+
+  it('모르는 줄·결과는 값을 읽지 못한 줄, 반영하지 않음으로 둔다', () => {
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      const future = {
+        ...reply,
+        changes: [{ ...reply.changes[0], field: 'priority', result: 'escalated' }],
+      } as unknown as TimelineItemDto
+      const [item] = toTaskTimeline([future], [], 'tk_03')
+      expect(item.kind === 'reply' && item.changes[0]).toMatchObject({
+        field: 'failed',
+        result: 'noted',
+        undoable: true,
+      })
+    } finally {
+      warning.mockRestore()
+    }
   })
 })

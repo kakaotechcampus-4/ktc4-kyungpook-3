@@ -92,6 +92,20 @@ export interface MessageThread extends MessageThreadSummary {
   upcoming: Bundle[]
 }
 
+export interface TaskRef {
+  id: string
+  title: string
+}
+
+/**
+ * 리마인드 답장이 어느 태스크에 대한 것인지. AI 가 정하지 못한 답장만 있다.
+ * - needsPick: PM 이 후보에서 고를 차례다. 지운 태스크는 후보에 없다
+ * - picked: PM 이 골랐다. task 가 null 이면 해당 없음이다
+ */
+export type ReplyAttribution =
+  | { messageId: string; kind: 'needsPick'; candidates: TaskRef[] }
+  | { messageId: string; kind: 'picked'; task: TaskRef | null }
+
 /** Discord DM 한 건의 글자 수 한도. 미리보기와 답장이 같이 쓴다 */
 export const MESSAGE_BODY_MAX_LENGTH = 2000
 
@@ -108,6 +122,8 @@ export type MessageAction =
   | { kind: 'removeTask'; bundleId: string; reminderId: string }
   /** note 가 null 이면 메모를 지운다 */
   | { kind: 'editNote'; bundleId: string; reminderId: string; note: string | null }
+  /** taskId 가 null 이면 해당 없음이다 */
+  | { kind: 'attribute'; messageId: string; taskId: string | null }
 
 /**
  * 쓰기의 결과.

@@ -19,6 +19,7 @@ import { taskFixtures, taskHistoryFixtures } from './fixtures/task'
 import { approvalFixtures } from './fixtures/approval'
 import { messageBundleFixtures, messageThreadFixtures } from './fixtures/message'
 import type { MockNotification, MockPushSubscription } from './fixtures/notification'
+import type { MockReplies } from './reply-state'
 
 /**
  * 처리 중 회의를 상세 조회(`GET /meetings/{id}`)가 어떻게 진행시키는가. 진행 규칙은 meetingFlow.ts 에 있다.
@@ -164,6 +165,8 @@ export interface MockDb {
   tasks: typeof taskFixtures
   taskHistory: typeof taskHistoryFixtures
   autoBlocks: Record<string, MockAutoBlock>
+  /** #344 리마인드 답장 판단 결과. 판단은 시나리오가 넣는다 (reply-state.ts) */
+  replies: MockReplies
   approvals: typeof approvalFixtures
   /** 회의 정리 흐름. 원본 파일은 담지 않는다 — 생성 결과는 위의 meetings·minutes·extractions·tasks·approvals 에 들어간다 */
   meetingFlow: MeetingFlowState
@@ -206,6 +209,7 @@ export function initialDb(): MockDb {
     tasks: structuredClone(taskFixtures),
     taskHistory: structuredClone(taskHistoryFixtures),
     autoBlocks: {},
+    replies: { judgments: [], changes: [], historyLinks: {} },
     approvals: structuredClone(approvalFixtures),
     meetingFlow: { mode: 'manual', attendees: {}, speakers: {} },
     messageBundles: structuredClone(messageBundleFixtures),

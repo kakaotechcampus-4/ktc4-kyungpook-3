@@ -19,6 +19,8 @@ import {
 import { MOCK_NOW } from '../fixtures/constants'
 import { requireAuth, requireMember, requirePm } from '../auth-guard'
 import type { MockTask } from '../fixtures/task'
+import { taskTimeline, undoReplyChange } from '../reply-state'
+import { roleIn, sessionMemberId } from '../sessions'
 
 /*
  * 백엔드 api/tasks.py 와 같은 권한 순서다. 인증(401) → 태스크 존재(404) → 그 공간 소속(403) → 쓰기면 PM(403).
@@ -140,6 +142,34 @@ export const taskHandlers = [
         .filter(({ task_id }) => task_id === params.taskId)
         .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at)),
     )
+  }),
+  // 답장과 그 답장이 바꾼 값을 묶은 기록 (계약 §5.7). 답장 글은 대화 주인과 PM 만 본다
+  http.get('/api/v1/tasks/:taskId/timeline', ({ params }) => {
+    const unauthenticated = requireAuth()
+    if (unauthenticated) return unauthenticated
+    const task = findTask(params.taskId)
+    if (!task) return fail('TASK_NOT_FOUND', '태스크가 없습니다.', 404)
+    const denied = requireMember(task.workspace_id)
+    if (denied) return denied
+    return list(
+      taskTimeline(task, {
+        memberId: sessionMemberId(task.workspace_id),
+        isPm: roleIn(task.workspace_id) === 'pm',
+      }),
+    )
+  }),
+  // 답장 자동 반영 되돌리기 (계약 §5.7). PM 전용이다. 되돌릴 수 없으면 409 이고 아무것도 바꾸지 않는다
+  http.post('/api/v1/tasks/:taskId/reply-changes/:changeId/undo', ({ params }) => {
+    const unauthenticated = requireAuth()
+    if (unauthenticated) return unauthenticated
+    const task = findTask(params.taskId)
+    if (!task) return fail('TASK_NOT_FOUND', '태스크가 없습니다.', 404)
+    const pm = requirePm(task.workspace_id)
+    if (pm instanceof Response) return pm
+    const failed = undoReplyChange(task, String(params.changeId), pm.memberId)
+    if (failed)
+      return fail(failed, '되돌릴 수 없는 변경입니다.', 409, { change_id: params.changeId })
+    return ok(toTaskResponse(task))
   }),
   http.post('/api/v1/tasks/:taskId/history/:historyId/rollback', ({ params }) => {
     const unauthenticated = requireAuth()

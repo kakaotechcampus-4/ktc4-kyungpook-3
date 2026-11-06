@@ -1,8 +1,8 @@
 import { useQuery } from '@tanstack/react-query'
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { BrowserPushPrompt } from '@/features/browser-push'
-import { messageThreadQueryOptions } from '@/entities/message'
-import type { MessageThread } from '@/entities/message'
+import { messageThreadQueryOptions, replyAttributionsQueryOptions } from '@/entities/message'
+import type { MessageThread, ReplyAttribution } from '@/entities/message'
 import { ApiError } from '@/shared/api/errors'
 import { paths } from '@/shared/config/routes'
 import { now as clockNow, todayInSeoul } from '@/shared/lib/date'
@@ -14,6 +14,7 @@ import { buildConversation } from '../model/conversation'
 import type { BubbleItem } from '../model/conversation'
 import { VIEWER_POLICY, canReply } from '../model/viewer'
 import type { MessageViewer } from '../model/viewer'
+import { AttributionPicker } from './AttributionPicker'
 import { ThreadSkeleton } from './MessageSkeletons'
 import { ReplyForm } from './ReplyForm'
 
@@ -42,6 +43,8 @@ const TIME = 'mono text-[10.5px] text-dim'
 /* DM 못 보냄 — 웹 대화에는 들어갔지만 Discord 로는 가지 않았다. 강조색 글자로 시각 줄보다 앞에 둔다 */
 const DM_FAILED = 'text-meta font-semibold text-accent'
 const DRAFTING = 'text-meta text-sub'
+const PICKED = 'text-meta text-sub'
+const ATTRIBUTIONS_ERROR = 'shrink-0 border-b border-divider px-28 py-12'
 const WAITING_NOTE =
   'inline-flex items-center gap-7 self-center rounded-999 bg-divider px-13 py-7 text-meta text-sub'
 const FOOT = 'shrink-0 border-t border-divider px-28 pt-14 pb-20'
@@ -123,6 +126,7 @@ function ThreadView({
   const replyAnchor = useRef<number | null>(null)
   const [replyTick, setReplyTick] = useState(0)
   const [now] = useState(clockNow)
+  const atBottom = useRef(true)
   // 대화를 열면 가장 최근 메시지부터 보인다. 대화가 바뀌면 화면이 새로 마운트된다 (MessageInbox 의 key)
   useLayoutEffect(() => {
     const body = bodyRef.current
@@ -139,12 +143,11 @@ function ThreadView({
   useEffect(() => {
     const body = bodyRef.current
     if (body === null || typeof ResizeObserver === 'undefined') return
-    let atBottom = true
     const onScroll = () => {
-      atBottom = body.scrollHeight - body.scrollTop - body.clientHeight <= 2
+      atBottom.current = body.scrollHeight - body.scrollTop - body.clientHeight <= 2
     }
     const resize = new ResizeObserver(() => {
-      if (atBottom) body.scrollTop = body.scrollHeight
+      if (atBottom.current) body.scrollTop = body.scrollHeight
     })
     body.addEventListener('scroll', onScroll, { passive: true })
     resize.observe(body)
@@ -155,6 +158,19 @@ function ThreadView({
   }, [])
   const today = todayInSeoul()
   const policy = VIEWER_POLICY[viewer.role]
+  // 고르기를 받지 못해도 대화는 그대로 보인다 — 고르기만 빠지고 위에 다시 시도를 둔다
+  const attributionsQuery = useQuery({
+    ...replyAttributionsQueryOptions(workspaceId, thread.id),
+    enabled: policy.pickTask,
+  })
+  const attributions = new Map(
+    (attributionsQuery.data ?? []).map((attribution) => [attribution.messageId, attribution]),
+  )
+  // 고르기는 대화보다 늦게 와 마지막 답장 아래에 붙는다. 맨 아래를 보던 사람에게는 가려지지 않게 내린다
+  useLayoutEffect(() => {
+    const body = bodyRef.current
+    if (body !== null && atBottom.current) body.scrollTop = body.scrollHeight
+  }, [attributionsQuery.data])
   const replyable = canReply(viewer, thread.memberId)
   const view = buildConversation(thread, {
     policy,
@@ -188,6 +204,15 @@ function ThreadView({
       {policy.pushPrompt && thread.messages.some(({ sender }) => sender === 'bot') ? (
         <BrowserPushPrompt />
       ) : null}
+      {attributionsQuery.error === null ? null : (
+        <div className={ATTRIBUTIONS_ERROR}>
+          <QueryErrorState
+            error={attributionsQuery.error}
+            onRetry={() => void attributionsQuery.refetch()}
+            title="답장의 태스크 고르기를 불러오지 못했어요"
+          />
+        </div>
+      )}
       {/* 스크롤 칸이라 키보드로도 내릴 수 있게 Tab 자리를 준다 (WCAG 2.1.1) */}
       {/* eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex */}
       <section ref={bodyRef} aria-label="대화 내용" tabIndex={0} className={BODY}>
@@ -208,7 +233,11 @@ function ThreadView({
                   </li>
                 ) : (
                   <li key={item.id}>
-                    <Bubble workspaceId={workspaceId} item={item} />
+                    <Bubble
+                      workspaceId={workspaceId}
+                      item={item}
+                      attribution={attributions.get(item.id)}
+                    />
                   </li>
                 ),
               )}
@@ -252,7 +281,16 @@ const BUBBLE_CLASS = {
 } as const
 
 /** 보낸 쪽은 자리와 면으로, 화면 읽기에는 숨긴 글자로 구분한다 — 색에만 기대지 않는다 (D-128) */
-function Bubble({ workspaceId, item }: { workspaceId: string; item: BubbleItem }) {
+function Bubble({
+  workspaceId,
+  item,
+  attribution,
+}: {
+  workspaceId: string
+  item: BubbleItem
+  /** AI 가 태스크를 정하지 못한 답장이면 그 고르기. PM 에게만 있다 */
+  attribution: ReplyAttribution | undefined
+}) {
   const timeId = useId()
   const column = (
     <div
@@ -265,6 +303,20 @@ function Bubble({ workspaceId, item }: { workspaceId: string; item: BubbleItem }
         {item.body}
       </p>
       {item.dmFailure === null ? null : <p className={DM_FAILED}>{item.dmFailure}</p>}
+      {attribution?.kind === 'needsPick' ? (
+        <AttributionPicker
+          workspaceId={workspaceId}
+          messageId={attribution.messageId}
+          candidates={attribution.candidates}
+        />
+      ) : null}
+      {attribution?.kind === 'picked' ? (
+        <p className={PICKED}>
+          {attribution.task === null
+            ? '해당 없음으로 정했어요'
+            : `태스크: ${attribution.task.title}`}
+        </p>
+      ) : null}
       {item.drafting ? <p className={DRAFTING}>문구 다듬는 중</p> : null}
       <span id={timeId} className={TIME}>
         {item.timeLine}

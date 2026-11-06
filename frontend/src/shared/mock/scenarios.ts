@@ -10,6 +10,7 @@ import {
 } from './fixtures/message'
 import { completeMeeting, failMeeting, setMeetingFlowMode } from './meetingFlow'
 import { notificationFixtures } from './fixtures/notification'
+import { addReplyJudgments } from './fixtures/reply'
 import { setMockRole } from './sessions'
 import {
   PASSWORD_RESET_SCENARIOS,
@@ -91,6 +92,9 @@ export const MOCK_SCENARIOS = [
   'settings-member',
   // #330 알림·자동 막힘. ws_01 PM 이다
   'notifications-default',
+  // #344 리마인드 답장 판단. reply-judgment 는 ws_01 PM, reply-judgment-member 는 같은 상태의 일반 팀원(mb_01)이다
+  'reply-judgment',
+  'reply-judgment-member',
   // #320 팀원 초대. team-invitations 는 ws_01 PM 이 보는 초대 상태, invitation-pending 은 초대받은 사람의 가입 전이다
   'team-invitations',
   'invitation-pending',
@@ -841,6 +845,14 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
       signInWith(state, ['ws_01'], 'ws_01')
       state.notifications = structuredClone(notificationFixtures)
       blockBySilence(taskOf(state, 'tk_06'), '2026-09-18T08:30:00+09:00', state)
+      break
+    case 'reply-judgment':
+    case 'reply-judgment-member':
+      // 박민수 th_02 의 답장은 PM 이 태스크를 고를 차례다. 이재환 th_01 의 새 답장이 tk_03 을 완료로 바꿨고(되돌리기),
+      // tk_03 마감·tk_08 담당자 승인 카드 ap_31·ap_32 를 남겼다. 팀원에게는 답장 글이 보이지 않는다
+      signInWith(state, ['ws_01'], 'ws_01')
+      addReplyJudgments(state)
+      if (scenario === 'reply-judgment-member') setMockRole('member', 'ws_01', state)
       break
     case 'team-invitations':
       signInWith(state, ['ws_01'], 'ws_01')
