@@ -14,7 +14,7 @@ from capture.recorder import RECOVERY_MAX_ATTEMPTS, backoff_s
 from tests.capture.fake_be import FakeBe
 from tests.conftest import SEGS, FakeDiarizer
 from upload.diarize import JobNotFound
-from upload.intake import INTAKE_DEADLINE_S, SUBMIT_TIMEOUT_S, intake_one
+from upload.intake import FETCH_POLL_S, INTAKE_DEADLINE_S, SUBMIT_TIMEOUT_S, intake_one
 
 MID = "mtg-1"
 TZ = "Asia/Seoul"
@@ -59,6 +59,8 @@ def _drive(e, diar=None, client=None, limit=30):
     for _ in range(limit):
         ev = _step(e, diar, client)
         events.append(ev.event if ev else None)
+        if ev is not None and ev.event == "waiting":
+            e.clock.advance(FETCH_POLL_S)   # 기다리는 건은 다음 확인 시각까지 쉰다
         if ev is None or ev.event in ("done", "failed", "fail_pending", "retry"):
             break
     return events
@@ -331,10 +333,10 @@ def test_restart_removes_track_folder_left_without_manifest(env):
 
 def test_result_timeout_resubmits(env):
     diar = FakeDiarizer(SEGS, pending_fetches=99)
-    _drive(env, diar, limit=4)
-    env.clock.advance(SUBMIT_TIMEOUT_S - 1)
+    _drive(env, diar, limit=4)                   # 마지막 waiting 뒤 FETCH_POLL_S 가 흘렀다
+    env.clock.advance(SUBMIT_TIMEOUT_S - FETCH_POLL_S - 1)
     assert _step(env, diar).event == "waiting" and len(diar.submits) == 1
-    env.clock.advance(2)
+    env.clock.advance(FETCH_POLL_S)               # 다음 확인 때는 제출 뒤 결과 시간을 넘었다
     assert _step(env, diar).event == "retry"
     s = _state(env)
     assert s["state"] == "converted" and s["attempts"] == 1 and not s.get("job_id")
@@ -593,3 +595,26 @@ def test_a_bare_404_on_the_fail_report_keeps_it_pending(env):
     env.clock.advance(backoff_s(1))
     assert _step(env, client=client).event == "failed"
     assert env.be.meetings[MID]["status"] == "failed"
+
+
+def test_waiting_for_a_result_lets_the_next_upload_be_claimed(env):
+    """#289 리뷰: 분리 결과를 기다리는 건이 매 바퀴를 차지하면 다음 업로드가 claim 되지 않는다.
+    기다릴 때는 잠깐 뒤(FETCH_POLL_S)를 다음 시각으로 적어 그 사이 다른 건을 처리한다."""
+    env.be.add_upload("mtg-2", audio=env.audio, stored_filename="audio.wav", original_filename="둘째.wav")
+    diar = FakeDiarizer(SEGS, pending_fetches=99)
+    _claim_then_submit(env, diar)
+    assert _step(env, diar).event == "waiting"
+    assert _step(env, diar).event == "claimed" and _state(env, "mtg-2")["state"] == "claimed"
+    env.clock.advance(FETCH_POLL_S)
+    assert _step(env, diar).event == "waiting" and len(diar.fetches) == 2   # 때가 되면 첫 건을 다시 확인한다
+
+
+def test_waiting_does_not_sleep_past_the_deadline(env, monkeypatch):
+    """기다리는 다음 시각이 기한을 넘지 않는다. 기한 직후 바로 실패로 보고한다."""
+    monkeypatch.setattr("upload.intake.SUBMIT_TIMEOUT_S", INTAKE_DEADLINE_S * 10)
+    diar = FakeDiarizer(SEGS, pending_fetches=99)
+    _claim_then_submit(env, diar)
+    env.clock.advance(INTAKE_DEADLINE_S - FETCH_POLL_S / 2)
+    assert _step(env, diar).event == "waiting"
+    env.clock.advance(FETCH_POLL_S / 2 + 1)
+    assert _step(env, diar).event == "failed"
