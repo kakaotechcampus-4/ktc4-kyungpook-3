@@ -14,6 +14,7 @@
 - 프론트: 이메일, 코드, 프로필 세 단계 가입, 카카오 연결 가입, 카카오 버튼, 실패 안내. Google 비활성 버튼을 지웠다
 - 인증 화면을 휴대폰 폭에 맞췄다. 나머지 화면은 FE 요청으로 넘긴다
 - 가입 인증 메일을 로고가 들어간 HTML 로 보낸다. 텍스트 본문도 함께 보낸다
+- 기존 계정에 카카오를 처음 이으면 계정 이메일로 연결 알림을 보낸다
 - 메일 실패 로그에서 메일 종류를 뺐다
 
 ## 왜
@@ -24,8 +25,8 @@
 
 | 항목 | 값 |
 |---|---|
-| backend pytest sqlite | 1923 통과, 1375 건너뜀 |
-| backend pytest PostgreSQL | 3254 통과, 44 건너뜀 |
+| backend pytest sqlite | 1929 통과, 1381 건너뜀 |
+| backend pytest PostgreSQL | 3266 통과, 44 건너뜀 |
 | alembic | 빈 PostgreSQL 에서 upgrade, check, downgrade, upgrade 통과 |
 | frontend vitest | 2955 통과 |
 | frontend e2e | 149 통과, 1 실패. `tasks-approval.e2e.ts` 의 키보드 시나리오이고 이번 변경 전 develop 에서도 실패한다 |
