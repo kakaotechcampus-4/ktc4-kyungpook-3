@@ -14,7 +14,7 @@ import { toMinutes } from '@/entities/minutes'
 import { workspaceKey } from '@/shared/api/queryKeys'
 import { paths } from '@/shared/config/routes'
 import { db } from '@/shared/mock/db'
-import { fail, list } from '@/shared/mock/envelope'
+import { fail, list, ok } from '@/shared/mock/envelope'
 import { MOCK_NOW } from '@/shared/mock/fixtures/constants'
 import { minutesFixtures } from '@/shared/mock/fixtures/minutes'
 import { advanceMeeting, completeMeeting, failMeeting } from '@/shared/mock/meetingFlow'
@@ -110,7 +110,7 @@ async function openDashboard(options: { strict?: boolean } = {}) {
 
 /**
  * 회의 조회가 없는 셸 화면(메시지). M7 부터 대시보드가 태스크·승인·회의 상세·추출을 부르므로,
- * 추적기 요청만 따로 세는 테스트는 여기서 시작한다. 메시지 화면은 자기 메시지 조회만 한다 (quietBusinessRequests)
+ * 추적기 요청만 따로 세는 테스트는 여기서 시작한다. 메시지 화면은 자기 메시지 조회와 보낼 시각의 재촉 규칙(메시지·알림 설정) 조회만 한다 (quietBusinessRequests)
  */
 async function openQuietScreen() {
   const app = renderApp(paths.messages('ws_01'))
@@ -118,9 +118,11 @@ async function openQuietScreen() {
   return app
 }
 
-/** 시작 화면(메시지)의 메시지 조회를 뺀 업무 요청 */
+/** 시작 화면(메시지)의 메시지 조회와 메시지·알림 설정 조회를 뺀 업무 요청 */
 function quietBusinessRequests(log: ReturnType<typeof recordRequests>) {
-  return businessRequests(log.started).filter(({ path }) => !path.includes('/messages'))
+  return businessRequests(log.started).filter(
+    ({ path }) => !path.includes('/messages') && !path.endsWith('/message-settings'),
+  )
 }
 
 async function openProcessing(options: { strict?: boolean } = {}) {
@@ -388,7 +390,7 @@ describe('polling (U4-3)', () => {
     await user.click(await screen.findByRole('menuitem', { name: '로그아웃' }))
     await screen.findByRole('heading', { name: '로그인' })
     await app.expectPath('/login')
-    expect(useMeetingTrackerStore.getState()).toEqual({ meetings: [], finished: [] })
+    expect(useMeetingTrackerStore.getState()).toEqual({ meetings: [], finished: [], prompted: [] })
 
     // 다음 polling 시점이 지나도 이전 사용자의 회의를 묻지 않는다
     completeMeeting('mt_10')
@@ -407,7 +409,7 @@ describe('polling (U4-3)', () => {
       expireSession(app.queryClient)
     })
     await screen.findByRole('heading', { name: '로그인' })
-    expect(useMeetingTrackerStore.getState()).toEqual({ meetings: [], finished: [] })
+    expect(useMeetingTrackerStore.getState()).toEqual({ meetings: [], finished: [], prompted: [] })
   })
 })
 
@@ -639,7 +641,7 @@ describe('실패 (U4-6, U4-7)', () => {
         app.queryClient
           .getQueryData(meetingListQueryOptions('ws_01').queryKey)
           ?.map(({ id }) => id),
-      ).toEqual(['mt_09', 'mt_07']),
+      ).toEqual(['mt_09', 'mt_08', 'mt_07']),
     )
     expect(tracked()).toEqual([])
   })
@@ -763,5 +765,97 @@ describe('일시적 조회 오류 (U4-8)', () => {
       await until(() => expect(toastsWith(PROCESSING_DONE_TITLE)).toHaveLength(1))
     },
     10_000,
+  )
+})
+
+describe('상세가 다른 공간의 회의라고 답할 때 (#349)', () => {
+  const otherWorkspace = () =>
+    http.get('/api/v1/meetings/mt_10', () => {
+      const meeting = db.meetings.find(({ meeting_id }) => meeting_id === 'mt_10')!
+      return ok({ ...meeting, workspace_id: 'ws_02' })
+    })
+
+  it('처리 화면은 받아 둔 정리 중 상태가 있어도 다시 받은 상세가 다른 공간이면 볼 수 없는 회의로 바꾼다', async () => {
+    const app = await openProcessing()
+    server.use(otherWorkspace())
+    await act(() =>
+      app.queryClient.invalidateQueries({
+        queryKey: workspaceKey('ws_01', 'meetings', 'detail', 'mt_10'),
+      }),
+    )
+    expect(
+      await screen.findByRole('heading', { name: '이 회의를 볼 수 없어요' }),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: PROCESSING_HEADING })).toBeNull()
+  })
+
+  it('받아 둔 상태가 없으면 알림 없이 추적을 끝내고 더 묻지 않는다', async () => {
+    fakeIntervals()
+    server.use(otherWorkspace())
+    const log = recordRequests()
+    await openQuietScreen()
+    act(() => trackMeeting(MEETING))
+    await until(() => expect(detailRequests(log)).toHaveLength(1))
+    await until(() => expect(tracked()).toEqual([]))
+
+    await act(() => vi.advanceTimersByTimeAsync(9_000))
+    await settle()
+    expect(detailRequests(log)).toHaveLength(1)
+    expect(document.querySelectorAll('[data-toast-key]')).toHaveLength(0)
+  })
+
+  it('받아 둔 정리 중 상태가 있으면 그 상태로 계속 지켜보고, 바른 답이 오면 끝을 알린다', async () => {
+    fakeIntervals()
+    const log = recordRequests()
+    await openQuietScreen()
+    act(() => trackMeeting(MEETING))
+    await until(() => expect(detailRequests(log)).toHaveLength(1))
+
+    server.use(otherWorkspace())
+    await act(() => vi.advanceTimersByTimeAsync(3_000))
+    await until(() => expect(detailRequests(log)).toHaveLength(2))
+    await settle()
+    expect(tracked()).toEqual([MEETING])
+    expect(document.querySelectorAll('[data-toast-key]')).toHaveLength(0)
+
+    server.resetHandlers()
+    completeMeeting('mt_10')
+    await act(() => vi.advanceTimersByTimeAsync(3_000))
+    await until(() => expect(detailRequests(log)).toHaveLength(3))
+    await until(() => expect(toastsWith(PROCESSING_DONE_TITLE)).toHaveLength(1))
+    expect(tracked()).toEqual([])
+  })
+})
+
+describe('받아 둔 상세 뒤 403·404 (#405)', () => {
+  const refusal = (status: 403 | 404) =>
+    http.get('/api/v1/meetings/mt_10', () =>
+      status === 404
+        ? fail('MEETING_NOT_FOUND', '회의가 없습니다.', 404)
+        : fail('FORBIDDEN', '이 작업을 수행할 권한이 없습니다.', 403),
+    )
+
+  it.each([403, 404] as const)(
+    '처리 화면을 보는 중 polling 이 %i 를 받으면 마지막 정리 중 상태에 멈추지 않고 볼 수 없는 회의로 바꾸고 더 묻지 않는다',
+    async (status) => {
+      fakeIntervals()
+      const log = recordRequests()
+      await openProcessing()
+      await until(() => expect(detailRequests(log)).toHaveLength(1))
+
+      server.use(refusal(status))
+      await act(() => vi.advanceTimersByTimeAsync(3_000))
+      await until(() => expect(detailRequests(log)).toHaveLength(2))
+      await until(() => expect(tracked()).toEqual([]))
+      expect(
+        await screen.findByRole('heading', { name: '이 회의를 볼 수 없어요' }),
+      ).toBeInTheDocument()
+      expect(screen.queryByRole('heading', { name: PROCESSING_HEADING })).toBeNull()
+
+      await act(() => vi.advanceTimersByTimeAsync(9_000))
+      await settle()
+      expect(detailRequests(log)).toHaveLength(2)
+      expect(document.querySelectorAll('[data-toast-key]')).toHaveLength(0)
+    },
   )
 })

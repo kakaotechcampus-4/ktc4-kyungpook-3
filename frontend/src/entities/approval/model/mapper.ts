@@ -3,17 +3,55 @@ import type { ApprovalDto, ApprovalResolveRequestDto } from '@/shared/types/api/
 import { enumValue } from '@/shared/lib/enum'
 import { z } from 'zod'
 import type { ApprovalResolution } from './resolution'
+import type { ExtractionEvidence } from '@/shared/types/common'
 import type {
   Approval,
   ApprovalConflict,
   ApprovalMissing,
   ApprovalResolveFailure,
   ApprovalStatus,
+  TaskUpdateCategory,
 } from './types'
 
 function text(value: unknown): string | null {
   return typeof value === 'string' ? value : null
 }
+
+function evidence(payload: Record<string, unknown>): ExtractionEvidence {
+  return {
+    quote: text(payload.evidence_quote),
+    speaker: text(payload.evidence_speaker),
+    speakerMemberId: text(payload.evidence_speaker_member_id),
+    atMs:
+      typeof payload.evidence_at_ms === 'number' && Number.isFinite(payload.evidence_at_ms)
+        ? payload.evidence_at_ms
+        : null,
+  }
+}
+
+const taskUpdateCategories: readonly TaskUpdateCategory[] = [
+  'schedule',
+  'assignee',
+  'status',
+  'scope',
+  'decision',
+  'none',
+]
+
+/** 모르는 분류는 어느 것으로도 추정하지 않고 null 로 둔다 */
+function taskUpdateCategory(value: unknown): TaskUpdateCategory | null {
+  if ((taskUpdateCategories as readonly unknown[]).includes(value))
+    return value as TaskUpdateCategory
+  if (typeof value === 'string' && import.meta.env.DEV)
+    console.warn(`Unknown approval category: ${value}`)
+  return null
+}
+
+/** 범위 변경은 바꿀 필드가 없어도 승인 요청이 된다 (#205). 화면은 모두 이 판정을 쓴다 */
+export function isScopeChange(approval: Approval): boolean {
+  return approval.kind === 'task_update' && approval.category === 'scope'
+}
+
 const createOverridesSchema = z.object({
   task_title: z.string().optional(),
   assignee_member_id: z.string().nullable().optional(),
@@ -85,14 +123,7 @@ export function toApproval(dto: ApprovalDto): Approval {
       dueDate,
       dueRaw: text(payload.due_raw),
       missing,
-      evidence: {
-        quote: text(payload.evidence_quote),
-        speaker: text(payload.evidence_speaker),
-        atMs:
-          typeof payload.evidence_at_ms === 'number' && Number.isFinite(payload.evidence_at_ms)
-            ? payload.evidence_at_ms
-            : null,
-      },
+      evidence: evidence(payload),
       meetingId: text(payload.meeting_id),
       extractionItemId: text(payload.extraction_item_id),
       gate,
@@ -111,6 +142,10 @@ export function toApproval(dto: ApprovalDto): Approval {
           ['title', 'assignee_member_id', 'status', 'blocker', 'due_date'].includes(field),
         )
         .map(([field, value]) => ({ field, value })),
+      category: taskUpdateCategory(payload.category),
+      docText: text(payload.doc_text) || null,
+      evidence: evidence(payload),
+      meetingId: text(payload.meeting_id),
     }
   return { ...base, kind: 'unsupported', type: dto.type }
 }

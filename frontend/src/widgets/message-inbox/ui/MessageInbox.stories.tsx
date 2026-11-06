@@ -8,7 +8,7 @@ import { deferred } from '@/shared/test/deferred'
 import { MessageInbox } from './MessageInbox'
 
 /*
- * 메시지 (M8, Messages·MessagesThread·EmptyMessages 시안, 계약 §5.7). ws_01 하나에 PM 으로 로그인한 상태다.
+ * 메시지 (M8, Messages·MessagesThread·EmptyMessages 시안, 계약 §5.7). ws_01 하나에 PM(팀원 행 mb_01)으로 로그인한 상태다.
  * 데이터는 백엔드 메시지 API 와 같은 모양의 MSW handler 다. 시작 db 는 shared/mock/scenarios.ts 의 `messages-*` 시나리오다.
  * 행동(승인·보내지 않음·문구·보낼 시각)은 MSW 목이 성공한 뒤에만 화면을 바꾼다 (D-137).
  * 보낼 시각이 지났는지는 목과 같은 고정 시각(MOCK_NOW, shared/lib/date/clock)으로 판단한다.
@@ -21,7 +21,7 @@ const meta = {
   args: {
     workspaceId: 'ws_01',
     botName: '카테캠 3팀',
-    viewer: 'pm',
+    viewer: { role: 'pm', memberId: 'mb_01' },
     threadId: null,
     bundleId: undefined,
   },
@@ -60,7 +60,7 @@ export const 검토_항목: Story = {
     await expect(detail.getByText('09/23 09:00 예정')).toBeInTheDocument()
     await expect(detail.getByRole('button', { name: '고쳐 쓰기' })).toBeEnabled()
     await expect(detail.getByText('묶은 태스크 1')).toBeInTheDocument()
-    await expect(detail.getByRole('radio', { name: /마감 하루 전/ })).toBeChecked()
+    await expect(await detail.findByRole('radio', { name: /마감 하루 전/ })).toBeChecked()
     await expect(detail.getByRole('button', { name: '보내지 않음' })).toBeEnabled()
     await expect(detail.getByRole('button', { name: '이대로 발송' })).toBeEnabled()
   },
@@ -75,7 +75,9 @@ export const 초안_대기: Story = {
     await expect(await detail.findByText('문구 다듬는 중')).toBeInTheDocument()
     await expect(detail.getByText('묶은 태스크 2')).toBeInTheDocument()
     await expect(detail.getByText('마감 없음')).toBeInTheDocument()
-    await expect(detail.getByRole('radio', { name: /직접 정하기/ })).toBeChecked()
+    await expect(
+      await detail.findByRole('radio', { name: /직접 정하기/, checked: true }),
+    ).toBeInTheDocument()
   },
 }
 
@@ -93,6 +95,68 @@ export const 고쳐_쓰기: Story = {
       'aria-disabled',
       'true',
     )
+  },
+}
+
+/** 묶은 태스크 빼기 확인 — 남는 태스크가 있다. 확인하기 전에는 빼지 않고 발송이 잠긴다 (#370) */
+export const 태스크_빼기_확인: Story = {
+  args: { bundleId: 'bd_02' },
+  parameters: { route: paths.messageReview('ws_01', 'bd_02') },
+  play: async ({ canvasElement }) => {
+    const detail = detailOf(canvasElement)
+    await userEvent.click(await detail.findByRole('button', { name: "'퍼블리싱' 빼기" }))
+    const confirm = detail.getByRole('group', { name: '빼면 남은 태스크로 문구를 다시 만들어요.' })
+    await expect(confirm).toHaveFocus()
+    await expect(within(confirm).getByRole('button', { name: '빼기' })).toBeEnabled()
+    await expect(detail.getByText('태스크를 뺄지 정한 뒤에 보낼 수 있어요.')).toBeVisible()
+  },
+}
+
+/** 마지막 태스크 빼기 확인 — 빼면 이 메시지를 보내지 않는다 (#370) */
+export const 마지막_태스크_빼기_확인: Story = {
+  args: { bundleId: 'bd_01' },
+  parameters: { route: paths.messageReview('ws_01', 'bd_01') },
+  play: async ({ canvasElement }) => {
+    const detail = detailOf(canvasElement)
+    await userEvent.click(await detail.findByRole('button', { name: "'API 명세서' 빼기" }))
+    const confirm = detail.getByRole('group', {
+      name: '마지막 태스크예요. 빼면 이재환님에게 이 메시지를 보내지 않아요.',
+    })
+    await expect(within(confirm).getByRole('button', { name: '빼고 보내지 않기' })).toBeEnabled()
+  },
+}
+
+/** 메모 고치기 — 지금 메모로 채운 칸. 바꾸기 전에는 저장이 잠기고, 바꾸면 문구를 다시 만든다고 알린다 (#370) */
+export const 메모_고치기: Story = {
+  args: { bundleId: 'bd_02' },
+  parameters: { route: paths.messageReview('ws_01', 'bd_02') },
+  play: async ({ canvasElement }) => {
+    const detail = detailOf(canvasElement)
+    await userEvent.click(await detail.findByRole('button', { name: "'퍼블리싱' 메모 고치기" }))
+    const field = detail.getByRole('textbox', { name: "'퍼블리싱' 메모" })
+    await expect(field).toHaveFocus()
+    await expect(field).toHaveValue('시안 2차 반영분까지')
+    await expect(detail.getByRole('button', { name: '저장' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    )
+    await expect(detail.getByText(/메모를 바꾸면 문구를 다시 만들고 승인이 풀려요/)).toBeVisible()
+  },
+}
+
+/** 새 재촉 — 목록 제목 줄의 `새 재촉` 으로 오른쪽 칸에 재촉 만들기를 연다 (#370) */
+export const 새_재촉: Story = {
+  args: { composing: true },
+  parameters: { route: paths.messageCompose('ws_01') },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const detail = detailOf(canvasElement)
+    await expect(await detail.findByRole('heading', { level: 2, name: '새 재촉' })).toBeVisible()
+    await expect(canvas.getByRole('link', { name: '새 재촉' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    )
+    await expect(detail.getByRole('combobox', { name: '받는 사람' })).toBeInTheDocument()
   },
 }
 
@@ -142,7 +206,7 @@ export const DM_못_보냄: Story = {
 
 /** 팀원은 자기 대화만 보고, 보낼 메시지 없이 웹에서 답한다 */
 export const 팀원_내_대화: Story = {
-  args: { viewer: 'member' },
+  args: { viewer: { role: 'member', memberId: 'mb_01' } },
   parameters: { scenario: 'messages-member', route: paths.messages('ws_01') },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
@@ -156,6 +220,56 @@ export const 팀원_내_대화: Story = {
     await expect(detail.getByText(/봇 DM 창에 쓴 글은 모두 PM 대화에 보여요/)).toBeVisible()
     await expect(detail.queryByRole('link', { name: '확인하기' })).toBeNull()
     await expect(detail.getByRole('button', { name: '답장 보내기' })).toBeEnabled()
+  },
+}
+
+/**
+ * 리마인드를 받은 팀원 대화 위 알림 띠 (#411). 띠는 브라우저의 알림 허용 상태를 따른다 —
+ * 아직 묻지 않은 기기로 바꿔 끼우고 닫은 기록을 비워, 어느 브라우저에서 열어도 띠가 보인다
+ */
+export const 팀원_알림_띠: Story = {
+  args: { viewer: { role: 'member', memberId: 'mb_01' } },
+  parameters: {
+    scenario: 'messages-member',
+    route: paths.messages('ws_01'),
+    setup: () => {
+      db.push.publicKey = 'AQID'
+    },
+  },
+  beforeEach: () => {
+    window.localStorage.clear()
+    const original = Object.getOwnPropertyDescriptor(window, 'Notification')
+    Object.defineProperty(window, 'Notification', {
+      configurable: true,
+      value: { permission: 'default', requestPermission: () => Promise.resolve('default') },
+    })
+    return () => {
+      if (original) Object.defineProperty(window, 'Notification', original)
+      else Reflect.deleteProperty(window, 'Notification')
+    }
+  },
+  play: async ({ canvasElement }) => {
+    const detail = detailOf(canvasElement)
+    const band = within(await detail.findByRole('region', { name: '기기 알림' }))
+    await expect(
+      band.getByRole('heading', { name: '다음 리마인드를 기기 알림으로 받을까요?' }),
+    ).toBeVisible()
+    await expect(band.getByText('새 리마인드가 오면 이 기기로 바로 알려 드려요.')).toBeVisible()
+    await expect(band.getByRole('button', { name: '알림 켜기' })).toBeEnabled()
+    await expect(band.getByRole('button', { name: '닫기' })).toBeEnabled()
+  },
+}
+
+/** 팀원 행이 있는 PM 은 남의 대화들 사이에 있는 자기 대화에서 웹으로 답한다 (#367) */
+export const PM_내_대화: Story = {
+  args: { threadId: 'th_06' },
+  parameters: { scenario: 'messages-pm-self', route: paths.messageThread('ws_01', 'th_06') },
+  play: async ({ canvasElement }) => {
+    const detail = detailOf(canvasElement)
+    await expect(await detail.findByRole('heading', { level: 2, name: '김서연' })).toBeVisible()
+    await expect(detail.getByText('Discord 개인 메시지 · 웹에서도 답장할 수 있어요')).toBeVisible()
+    await expect(detail.getByRole('button', { name: '답장 보내기' })).toBeEnabled()
+    await expect(detail.queryByText(/메시지는 항상/)).toBeNull()
   },
 }
 
@@ -188,6 +302,7 @@ export const 빈_상태: Story = {
     await expect(await canvas.findByText('보낼 메시지가 없어요')).toBeInTheDocument()
     await expect(canvas.queryByRole('complementary')).toBeNull()
     await expect(canvas.getByRole('link', { name: '알림 규칙 보기' })).toBeInTheDocument()
+    await expect(canvas.getByRole('link', { name: '새 재촉 만들기' })).toBeInTheDocument()
   },
 }
 
@@ -391,13 +506,15 @@ export const 발송_시점_hover: Story = {
   parameters: { route: paths.messageReview('ws_01', 'bd_02') },
   play: async ({ canvasElement }) => {
     const detail = detailOf(canvasElement)
-    await expect(await detail.findByRole('radio', { name: /직접 정하기/ })).toBeChecked()
+    await expect(
+      await detail.findByRole('radio', { name: /직접 정하기/, checked: true }),
+    ).toBeInTheDocument()
     await expect(hoverBackground(timingCard(detail, /마감 하루 전/))).toBe('rgb(237, 237, 237)')
     await expect(hoverBackground(timingCard(detail, /직접 정하기/))).toBeNull()
   },
 }
 
-/** 마감이 지난 `마감 하루 전` 은 고를 수 없어 hover 면이 없다 */
+/** 마감 기준 시각(기본 규칙은 하루 전 09:00)이 지난 `마감 하루 전` 은 고를 수 없어 hover 면이 없다 */
 export const 발송_시점_고를_수_없음: Story = {
   args: { bundleId: 'bd_06' },
   parameters: {

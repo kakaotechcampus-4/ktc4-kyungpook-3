@@ -11,8 +11,6 @@ import { nextId, readJson } from '../utils'
 
 /*
  * 팀원 초대 (계약 §5.9). 검사 순서는 백엔드 api/invitations.py 와 같다.
- * 흉내내지 않는 것: POST /workspaces 의 생성자 팀원은 workspaceIds 로만 이어져 있어 linkedUserIdOf 가 모른다 —
- * 실 API 는 MEMBER_ALREADY_LINKED 인데 여기서는 PM_MEMBER_NOT_INVITABLE 이다.
  */
 
 /** 백엔드 EmailStr 처럼 연속 점·도메인 없는 주소를 거절한다. 화면(InviteDialog)과 같은 검사다 */

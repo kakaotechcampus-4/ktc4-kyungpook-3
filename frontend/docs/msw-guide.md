@@ -102,6 +102,11 @@ it('빈 목록의 total도 0이다', async () => {
 | `meeting-notion-not-connected` | PM | `instant` | 미연결 | 회의 올리기 진입 차단 모달 → 설정 Notion 영역 → 모의 OAuth → 복귀 |
 | `meeting-notion-revoked` | PM | `instant` | 끊김 | 재연결 차단 모달 |
 | `meeting-member` | 일반 팀원 | `instant` | 연결됨 | 헤더 `정리 중`·회의록. 업로드 주소는 막힌다 |
+| `meeting-speakers` | PM | `speakers` | 연결됨 | 업로드 회의 `mt_11` 이 화자 지정 대기. 목록의 `화자 지정 필요` 행 → 지정 화면 → 제출 → 처리 재개 (#256) |
+| `meeting-speakers-flow` | PM | `speakers` | 연결됨 | 올리면 첫 상세 조회에 화자 지정 대기가 된다. 처리 화면 → 지정 화면 이동, 다른 화면이면 `화자 지정하기` 토스트 |
+| `meeting-speakers-expired` | PM | `speakers` | 연결됨 | 지정을 내면 409 `details.status=failed`. 만료 안내와 재업로드 링크, 다시 낼 수 없다 |
+| `meeting-speakers-member` | 일반 팀원 | `speakers` | 연결됨 | 지정 화면에서 `PM이 화자를 지정하고 있어요` 안내만 본다. 화자 API 를 부르지 않는다 |
+| `meeting-speakers-no-audio` | PM | `speakers` | 연결됨 | 녹음이 없어(`audio: null`) 샘플 버튼 없이 고른다 |
 
 ```text
 http://localhost:5173/workspaces/ws_01/meetings/upload?msw-scenario=meeting-demo
@@ -143,7 +148,7 @@ await fetch('/api/v1/approvals/ap_01', {
 
 ## 메시지 화면 (M8)
 
-메시지 화면은 모든 모드에서 실제 메시지 API(계약 §5.7)를 부른다. MSW 를 켜면 같은 경로·응답 모양·오류 코드(`BUNDLE_CHANGED`, `REMINDER_SCHEDULED_AT_PASSED`, `REMINDER_NOT_EDITABLE`, `REMINDER_BUNDLE_NOT_FOUND`, `MESSAGE_THREAD_NOT_FOUND`)로 목이 답한다(#315, [M8-C 결과](plan/m8/result-c.md)). 시나리오는 위와 같이 `?msw-scenario=<이름>` 으로 고른다. `messages-member` 만 팀원이고, 나머지는 `ws_01` 의 PM 이다. 목은 묶음 합치기·스케줄러 발송·만료·AI 초안 도착을 흉내 내지 않는다 — 예정 시각이 지나도 스스로 나가지 않는다.
+메시지 화면은 모든 모드에서 실제 메시지 API(계약 §5.7)를 부른다. MSW 를 켜면 같은 경로·응답 모양·오류 코드(`BUNDLE_CHANGED`, `REMINDER_SCHEDULED_AT_PASSED`, `REMINDER_NOT_EDITABLE`, `REMINDER_BUNDLE_NOT_FOUND`, `MESSAGE_THREAD_NOT_FOUND`)로 목이 답한다(#315, [M8-C 결과](plan/m8/result-c.md)). 시나리오는 위와 같이 `?msw-scenario=<이름>` 으로 고른다. `messages-member` 만 팀원이고, 나머지는 `ws_01` 의 PM 이다. 보낼 시각을 같은 대화의 다른 예정 묶음과 같은 시각으로 옮기면 목도 BE 처럼 그 묶음으로 합치고 문구를 다시 만들고 승인을 푼다(#368). 스케줄러 발송·만료·AI 초안 도착은 흉내 내지 않는다 — 예정 시각이 지나도 스스로 나가지 않는다.
 
 | 시나리오 | 해 볼 것 |
 |---|---|
@@ -153,7 +158,9 @@ await fetch('/api/v1/approvals/ap_01', {
 | `messages-thread-error` | 목록은 정상, `th_01` 대화만 5xx |
 | `messages-send-fail` | 조회는 정상, 승인·보내지 않음·문구·시각 고치기·답장만 5xx(db 는 그대로) |
 | `messages-member` | 팀원. 자기 대화 `th_06` 만 보이고 보내기 전 확인은 없다(`bundles: null`). 마지막 봇 메시지는 `DM 못 보냄`, 웹 답장은 그 대화에만 남는다. 남의 대화는 403 |
+| `messages-member-push` | `messages-member` 에 서버 푸시 공개키를 더했다. `th_06` 대화 머리 아래에 `기기 알림` 띠가 보이고, `알림 켜기` 를 눌러야 브라우저 알림 허용을 묻는다(#411) |
 | `messages-schedule-passed` | `bd_06` 은 승인 전에 보낼 시각이 지났고 마감은 오늘이다. 이대로 발송은 409 `REMINDER_SCHEDULED_AT_PASSED` 이고, 시각을 다시 고른 뒤에 승인할 수 있다 |
+| `messages-merge` | 이재환에게 보낼 메시지가 둘이다. `bd_07`(09/21 18:00, 승인 전)에서 `마감 하루 전`(09/23 09:00)을 고르면 승인해 둔 `bd_01` 과 같은 시각이라 합쳐진다. 화면은 `?review=bd_01` 로 옮겨 가고 승인이 풀렸다고 알린다 |
 
 ```text
 http://localhost:5173/workspaces/ws_01/messages?msw-scenario=messages-default
@@ -188,7 +195,7 @@ http://localhost:5173/workspaces/ws_01/members?msw-scenario=settings-unmapped
 
 테스트는 `onUnhandledRequest: 'error'`이므로 등록하지 않은 요청이 실패한다. 로그의 method와 URL을 보고 `/api/v1` prefix, origin, handler 등록, 동적 경로 순서를 확인한다. `/members/aliases`와 `/members/unresolved-aliases`는 `/members/:id`보다 먼저 등록해야 한다.
 
-로컬 브라우저는 `warn`으로 경고하고 실제 네트워크로 보낸다. 의도한 mock에서 경고가 나면 handler 누락을 먼저 확인한다. OAuth `start`·`callback` 같은 302 네비게이션, AI→BE 전용 생성 경로는 M1 mock 범위 밖이다. 메시지는 계약 §5.7 의 화면용 경로(조회 `/workspaces/{id}/messages`, `/workspaces/{id}/messages/threads/{id}`, 행동 `PATCH …/messages/bundles/{id}`, `POST …/bundles/{id}/approve`, `POST …/bundles/{id}/cancel`, `POST …/messages/threads/{id}/replies`)만 둔다. 재촉 만들기·리마인드 경로와 봇 경로는 화면이 부르지 않아 두지 않았다(`messages-*` 시나리오).
+로컬 브라우저는 `warn`으로 경고하고 실제 네트워크로 보낸다. 의도한 mock에서 경고가 나면 handler 누락을 먼저 확인한다. OAuth `start`·`callback` 같은 302 네비게이션, AI→BE 전용 생성 경로는 M1 mock 범위 밖이다. 메시지는 계약 §5.7 의 화면용 경로(조회 `/workspaces/{id}/messages`, `/workspaces/{id}/messages/threads/{id}`, 행동 `PATCH …/messages/bundles/{id}`, `POST …/bundles/{id}/approve`, `POST …/bundles/{id}/cancel`, `POST …/messages/threads/{id}/replies`, #370 의 재촉 만들기 `POST …/messages/reminders`, 리마인드 고치기 `PATCH …/messages/reminders/{id}`, 빼기 `POST …/messages/reminders/{id}/cancel`)만 둔다. 봇 경로는 화면이 부르지 않아 두지 않았다(`messages-*` 시나리오).
 
 ## 실 백엔드와 다른 점
 

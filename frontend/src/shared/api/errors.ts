@@ -31,6 +31,7 @@ export const ERROR_CODES = {
   MEETING_NOT_FOUND: 'MEETING_NOT_FOUND',
   MEETING_ALREADY_ENDED: 'MEETING_ALREADY_ENDED',
   MEETING_NOT_PROCESSING: 'MEETING_NOT_PROCESSING',
+  MEETING_NOT_AWAITING_SPEAKERS: 'MEETING_NOT_AWAITING_SPEAKERS',
   AUDIO_UPLOAD_FAILED: 'AUDIO_UPLOAD_FAILED',
   AUDIO_FORMAT_UNSUPPORTED: 'AUDIO_FORMAT_UNSUPPORTED',
   TRANSCRIPTION_FAILED: 'TRANSCRIPTION_FAILED',
@@ -75,6 +76,9 @@ export const ERROR_CODES = {
   EMAIL_ALREADY_INVITED: 'EMAIL_ALREADY_INVITED',
   PM_MEMBER_NOT_INVITABLE: 'PM_MEMBER_NOT_INVITABLE',
   MEMBER_HAS_PENDING_INVITATION: 'MEMBER_HAS_PENDING_INVITATION',
+  // #356 에서 BE 와 합의했고 backend core/errors.py 에는 아직 없다 (계약 §4.1.1)
+  PASSWORD_RESET_TOKEN_INVALID: 'PASSWORD_RESET_TOKEN_INVALID',
+  MAIL_UNAVAILABLE: 'MAIL_UNAVAILABLE',
 } as const
 
 export type ErrorCode = (typeof ERROR_CODES)[keyof typeof ERROR_CODES]
@@ -100,6 +104,37 @@ const CLIENT_ERROR_KIND: Record<ClientErrorCode, ApiErrorKind> = {
 /** 응답을 못 받았거나 읽을 수 없을 때 만드는 오류. 상태 코드를 모르면 0 이다 */
 export function createClientError(code: ClientErrorCode, status = 0): ApiError {
   return new ApiError({ code, message: code, details: null }, status, CLIENT_ERROR_KIND[code])
+}
+
+/**
+ * 응답이 요청한 공간의 것이 아니다. 경로에 공간이 없는 조회가 캐시에 쓰기 전에 던진다 — 다른 공간의 데이터가
+ * 이 공간의 key 로 성공 캐시에 들어가지 않는다. 서버 응답이 아니라 클라이언트 판정이라 kind 는 `invalid_response` 다(재시도 안 함)
+ */
+export function createWorkspaceMismatchError(
+  requestedWorkspaceId: string,
+  responseWorkspaceId: string,
+): ApiError {
+  return new ApiError(
+    {
+      code: ERROR_CODES.WORKSPACE_MISMATCH,
+      message: 'response belongs to another workspace',
+      details: {
+        requested_workspace_id: requestedWorkspaceId,
+        response_workspace_id: responseWorkspaceId,
+      },
+    },
+    0,
+    'invalid_response',
+  )
+}
+
+/** `createWorkspaceMismatchError` 가 만든 오류다. 서버가 거절한 400 `WORKSPACE_MISMATCH` 는 아니다 */
+export function isWorkspaceMismatch(error: unknown): boolean {
+  return (
+    error instanceof ApiError &&
+    error.kind === 'invalid_response' &&
+    error.code === ERROR_CODES.WORKSPACE_MISMATCH
+  )
 }
 
 /** 우리 클라이언트의 취소와 TanStack Query 의 취소를 모두 취소로 본다 */

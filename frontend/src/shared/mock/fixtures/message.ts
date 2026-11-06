@@ -24,10 +24,15 @@ export interface MockMessageThread {
   messages: MockThreadMessage[]
 }
 
+/** 리마인드. 취소 시각은 응답에 없다 — 닫힌 묶음의 응답에 함께 취소된 것만 싣는 데 쓴다 (백엔드 bundle_reminders) */
+export interface MockReminder extends ReminderDto {
+  cancelled_at: string | null
+}
+
 /** 보낼 메시지. 리마인드는 묶음과 함께 저장하고, 응답에는 묶음과 같은 상태인 것만 싣는다 */
 export interface MockBundle extends Omit<BundleDto, 'reminders'> {
   workspace_id: string
-  reminders: ReminderDto[]
+  reminders: MockReminder[]
 }
 
 type DmResult =
@@ -76,7 +81,7 @@ function reminder(
   bundle_id: string,
   task: { task_id: string; title: string; due_date: string | null },
   note: string | null = null,
-): ReminderDto {
+): MockReminder {
   return {
     reminder_id,
     bundle_id,
@@ -88,6 +93,7 @@ function reminder(
     kind: 'nudge',
     origin: 'scheduler',
     created_at: '2026-09-15T09:00:00+09:00',
+    cancelled_at: null,
   }
 }
 
@@ -157,6 +163,27 @@ export const schedulePassedBundle: MockBundle = {
       title: '배포 체크리스트',
       due_date: '2026-09-18',
     }),
+  ],
+}
+
+/**
+ * 기본 목록에 넣지 않는다. `messages-merge` 만 더한다. 이재환에게 보낼 두 번째 메시지이고 승인 전이다.
+ * 마감 하루 전(9/23 09:00)이 bd_01 의 시각이라 그 카드를 고르면 bd_01 로 합쳐진다
+ */
+export const mergeSourceBundle: MockBundle = {
+  bundle_id: 'bd_07',
+  workspace_id: 'ws_01',
+  thread_id: 'th_01',
+  member_id: 'mb_03',
+  recipient_name: '이재환',
+  scheduled_at: '2026-09-21T18:00:00+09:00',
+  ...waiting,
+  body: '재환님, ERD 정리도 9/24 마감이에요. 어디까지 됐는지 알려 주세요.',
+  body_source: 'ai',
+  draft_status: 'done',
+  draft_version: 1,
+  reminders: [
+    reminder('rm_07', 'bd_07', { task_id: 'tk_11', title: 'ERD 정리', due_date: '2026-09-24' }),
   ],
 }
 

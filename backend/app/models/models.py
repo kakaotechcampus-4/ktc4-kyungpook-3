@@ -1119,3 +1119,36 @@ class Invitation(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     # 마지막으로 상태가 바뀐 시각. 끊으면 수락 시각 대신 끊은 시각이 된다.
     responded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class PmAlertMethod(StrEnum):
+    WEB = "web"
+    DISCORD_DM = "discord_dm"
+    BOTH = "both"
+
+
+class WorkspaceMessageSettings(Base):
+    """워크스페이스의 메시지·알림 설정. 행이 없으면 기본값으로 본다(서비스 message_settings.DEFAULTS)."""
+
+    __tablename__ = "workspace_message_settings"
+
+    workspace_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("workspace.workspace_id", ondelete="CASCADE"), primary_key=True
+    )
+    due_reminder: Mapped[bool] = mapped_column(Boolean, default=True, server_default=text("true"))
+    minutes_summary: Mapped[bool] = mapped_column(Boolean, default=True, server_default=text("true"))
+    silence_alert: Mapped[bool] = mapped_column(Boolean, default=True, server_default=text("true"))
+    nudge_days_before: Mapped[int] = mapped_column(Integer, default=1, server_default=text("1"))
+    nudge_hour: Mapped[int] = mapped_column(Integer, default=9, server_default=text("9"))
+    pm_alert_method: Mapped[str] = mapped_column(
+        String(16), default=PmAlertMethod.BOTH, server_default=PmAlertMethod.BOTH.value
+    )
+    reminder_auto_approve: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"))
+    # reminder_auto_approve 를 켠 시각. 이 시각 이후의 리마인드부터 자동 승인한다.
+    auto_approve_since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, server_default=text("CURRENT_TIMESTAMP")
+    )
+    updated_by: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("member.member_id", ondelete="SET NULL"), nullable=True
+    )

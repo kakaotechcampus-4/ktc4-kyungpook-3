@@ -12,7 +12,7 @@ const FIELD =
 const NOTE = 'text-caption leading-[1.6] text-dim'
 
 /**
- * 대화 주인(팀원)의 웹 답장. 성공하면 칸을 비우고, 실패하면 쓰던 글을 둔다.
+ * 대화 주인의 웹 답장 — 팀원, 그리고 팀원 행이 그 대화의 주인인 PM. 성공하면 칸을 비우고, 실패하면 쓰던 글을 둔다.
  * 빈 글은 서버로 보내지 않는다.
  */
 export function ReplyForm({

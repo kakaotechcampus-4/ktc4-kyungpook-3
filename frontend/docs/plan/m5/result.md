@@ -45,7 +45,7 @@
 ## 남은 작업과 제한 사항
 
 - 자동 실패 전환은 미병합 BE PR #301의 담당 범위다. 이 작업에서 실제 3시간·7일 경과를 검증하지 않았다.
-- 화자 지정 제출 UI 구현 후 `409 MEETING_NOT_AWAITING_SPEAKERS(details.status=failed)`의 상세 재조회·재제출 차단을 연결해야 한다.
+- 화자 지정 제출 UI 구현 후 `409 MEETING_NOT_AWAITING_SPEAKERS(details.status=failed)`의 상세 재조회·재제출 차단을 연결해야 한다. 2026-11-05에 연결했다(아래 추가 결과).
 - BE 목록 변경은 구현 제안이며 파트 간 리뷰·합의와 실서버 배포 검증이 남았다. 운영 API·실제 AI 처리·Notion 반영은 이번 검증 대상이 아니다.
 
 ## 관련 기록
@@ -97,3 +97,62 @@ MSW 모의 서버(verify-frontend 절차)를 띄워 Tab마다 초점이 간 접�
 
 - 검수 측이 회의 날짜 갇힘을 다른 환경(보조기술, 확장 프로그램, Chrome 155)에서 다시 보이면 재현 절차를 받아 다시 확인한다. 회신 문안은 이슈 #337 댓글에 남겼다.
 - 숨겨진 요소나 비활성 `fieldset` 안의 버튼은 Tab 대상으로 셀 수 있다. 현재 두 패널에는 그런 구성이 없다.
+
+## 2026-11-05 추가 결과: 화자 지정 화면과 샘플 구간 (#256, #342)
+
+### 작업 근거와 요약
+
+2026-11-05 사용자가 #256의 화자 지정 화면과 #342의 샘플 구간 규칙을 구현하도록 지시했다. 진입점 세 곳, 별도 주소, 후보 범위, 제출 규칙은 사용자가 정했고 나머지는 기본값으로 정했다. 위 「남은 작업」의 409 만료 연결도 이번에 했다. M5 계획과 완료조건 원문은 고치지 않았고 마일스톤 완료를 다시 판정하지 않는다.
+
+### 실제 구현 및 관련 코드
+
+- 회의 상태에 `awaiting_speakers`를 더했다. 화자 조회·제출 API와 원본 재생 주소를 이었다([types.ts](../../../src/entities/meeting/model/types.ts), [speakers.ts](../../../src/entities/meeting/api/speakers.ts)).
+- [처리 추적](../../../src/features/meeting-processing/model/trackerOutcome.ts)은 대기 중에도 30초 간격으로 지켜본다. PM에게만 처리 화면 이동이나 `화자 지정이 필요해요` 토스트로 한 번 안내한다. [처리 화면](../../../src/pages/meeting-processing/ui/MeetingProcessingPage.tsx)은 대기 안내를 보인다.
+- [지정 화면](../../../src/pages/meeting-speakers/ui/MeetingSpeakersPage.tsx)은 `/workspaces/:workspaceId/meetings/:meetingId/speakers`에 있다. 라벨을 `화자 N`과 총 발화 시간으로 보이고 샘플 구간을 재생한다. 참석자, 펼치는 다른 팀원, 외부 참석자 중에서 고른다. 모든 라벨을 골라야 제출되고, 제출 오류는 [이유 하나](../../../src/features/speaker-assignment/model/submitRejection.ts)로 바꿔 안내한다. 팀원에게는 안내만 보인다.
+- [회의록 목록·상세](../../../src/widgets/meeting-minutes/ui/MeetingMinutes.tsx)가 대기 회의를 `화자 지정 필요`로 보이고 지정 화면으로 잇는다.
+- #256 A1에 따라 [근거 화자 이름](../../../src/entities/member/lib/speakerName.ts)을 팀원 ID로 먼저 찾는다. BE 응답에 `evidence.speaker_member_id`와 승인 payload의 `evidence_speaker_member_id`가 실리는 것을 `backend/app/schemas/meeting.py`와 `backend/app/api/extractions.py`에서 확인했다.
+- MSW에 화자 조회·제출·녹음 재생 목, 코드로 만든 무음 WAV, `meeting-speakers*` 시나리오 다섯 개를 더했다. 모의 DB 버전은 8이다. 대표 계약 §2.3.1·§2.4·§2.5·§4.4.1·§5.5와 [MSW 안내](../../msw-guide.md)를 갱신했다.
+
+### 완료조건 확인
+
+이번 작업은 M5 계획의 완료조건이 아니라 사용자 지시로 진행했다. 아래는 지시 항목별 상태다.
+
+| 지시 항목 | 상태 | 근거 |
+|---|---|---|
+| 처리 화면을 보던 PM을 대기 순간 지정 화면으로 안내 | 충족(MSW) | 브라우저 여정 `meeting-speakers`, `meetingSpeakersTracking.test.tsx` |
+| 목록 `화자 지정 필요` 행에서 지정 화면 진입 | 충족(MSW) | 브라우저 여정 `meeting-speakers-list`, `meetingMinutes.test.tsx`, E2E `meeting-speakers.e2e.ts` |
+| 다른 화면이면 토스트로 알리고 지정 화면으로 이동 | 충족(Vitest), 브라우저 미검증 | `meetingSpeakersTracking.test.tsx`. MSW 흐름은 첫 조회에 대기가 되어 브라우저에서 다른 화면으로 떠날 틈이 없다 |
+| 별도 주소, 새로고침·직접 진입, 팀원 안내 | 충족(MSW) | 여정 `meeting-speakers-edges`, `meetingSpeakers.test.tsx` |
+| 후보 범위(참석자, 다른 팀원, 외부 참석자 `null`), 다중 지정 | 충족(MSW) | 여정 `meeting-speakers`의 PUT 본문, `assignmentDraft.test.ts` |
+| 모든 라벨을 골라야 제출, 남은 수 표시 | 충족(MSW) | 여정 `meeting-speakers`, `meetingSpeakers.test.tsx` |
+| 샘플 재생(구간 끝 멈춤, 1개·2초 미만, `audio: null`) | 충족(MSW·jsdom) | 여정의 0.8초 샘플 자동 멈춤, `samplePlayback.test.ts`. m4a 시작 지연은 미검증 |
+| 409 `details.status=failed` 상세 재조회·재제출 차단 | 충족(MSW) | 여정 `meeting-speakers-edges`, E2E `meeting-speakers.e2e.ts` |
+| 제출 뒤 처리 재개, `done`까지 추적 | 충족(MSW) | 여정 `meeting-speakers`가 회의록까지 감 |
+| A1 근거 화자 이름 | 충족(MSW) | `speakerName.test.ts`, `approvals.test.tsx` |
+
+### 검증 내역
+
+실행일은 2026-11-05, Node v24.11.0이다. 모두 `frontend/`에서 실행했다.
+
+- `npm.cmd run typecheck`, `npm.cmd run lint`, `npm.cmd run format:check`, `npm.cmd run build`: 통과. 빌드 산출물에 `meeting-speakers` 시나리오 이름은 없고 지연 로드 화면 조각 이름만 있다.
+- 범위 Vitest(`npx vitest run --maxWorkers=1 <파일>`): 화자·추적·회의 엔티티·MSW 20개 파일 159개, 회의록 목록·상세 2개 파일 42개, A1·승인·추출·MSW 흐름 7개 파일 113개가 통과했다. 전체 `npm run test`는 다른 워크트리 부하 때문에 실행하지 않았다.
+- E2E `E2E_PORT=5236 npx playwright test e2e/meeting-speakers.e2e.ts`: 두 사례가 로그에서 통과했다. 실행 뒤 메모리 부족으로 프로세스가 회수되어 요약 줄과 종료 코드는 남지 않았다. E2E 전체는 실행하지 않았다.
+- 로컬 검증 스킬의 브라우저 여정(MSW, Chromium 1280×900, 포트 5246): `meeting-speakers`, `meeting-speakers-edges`, `meeting-speakers-list` 모두 `JOURNEY PASS`. 증거는 git 무시 경로 `frontend/.verify/artifacts/spk-2/`, `spk-3/`이다. 화면 선택, 만료 안내, 목록 행 스크린샷을 직접 확인했다. 콘솔 오류는 없었다.
+- 브랜치를 origin/develop 위로 옮긴 뒤 같은 검사를 다시 실행했다. 모의 DB 버전이 #315의 7과 겹쳐 8로 올렸고 `e2e/restore.e2e.ts`의 단언도 맞췄다.
+
+### 계획 대비 변경
+
+M5 계획에는 화자 지정 단계가 없었다. 수동 업로드에 AI 화자 분리와 PM 지정 단계가 생겨(#255, #266) 이번 지시로 화면과 상태를 추가했다. 처리 추적의 「정리 중일 때만 polling」 규칙에 대기 상태 30초 polling을 더했다. 이유와 대안은 [결정 기록](basis-for-decision/2026-11-05-speaker-assignment-screen.md)에 있다.
+
+### 남은 작업과 제한 사항
+
+- 실서버 연동은 검증하지 않았다. 화자 조회·제출·원본 재생과 m4a 원본의 재생 시각 어긋남(#342)을 실서버에서 확인해야 한다.
+- 후보를 참석자로 제한하지 않는다는 FE 결정을 #256에 답하고 BE 확인을 받아야 한다. BE가 제출을 참석자로 제한하면 「다른 팀원」 묶음을 지운다.
+- 다른 화면 토스트는 브라우저 여정 없이 Vitest로만 확인했다.
+- 전체 단위 테스트와 E2E 전체는 실행하지 않았다.
+
+### 관련 기록
+
+- [화자 지정 화면 결정](basis-for-decision/2026-11-05-speaker-assignment-screen.md)
+- [대표 계약 §2.3.1](../../contracts/frontend-api-contract.md#231-업로드-회의-화자-지정--pm-경로-266)
+- [이슈 #256](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/256), [이슈 #342](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/342)

@@ -6,9 +6,10 @@ export type {
   ApprovalMissing,
   TaskCreateApproval,
   TaskUpdateApproval,
+  TaskUpdateCategory,
   UnsupportedApproval,
 } from './model/types'
-export { toApproval, toApprovalResolveFailure } from './model/mapper'
+export { isScopeChange, toApproval, toApprovalResolveFailure } from './model/mapper'
 export type {
   ApprovalDecision,
   ApprovalResolution,

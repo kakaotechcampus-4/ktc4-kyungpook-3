@@ -41,3 +41,7 @@ it('preserves false permissions and does not treat an empty display name as null
   expect(toMinutes(dto)).toMatchObject({ canReview: false, canUndo: false })
   expect(toMinutes(dto).transcript[0]).toMatchObject({ speakerName: '', isFallbackName: false })
 })
+
+it('keeps a chat source instead of falling back to discord', () => {
+  expect(toMinutes({ ...minutesFixtures[1], source: 'chat' }).source).toBe('chat')
+})

@@ -87,6 +87,27 @@ it('keeps start_date history as its own field instead of falling back to title',
   }
 })
 
+it('keeps scope history as its own field with only the new sentence (#205)', () => {
+  const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  try {
+    expect(
+      toTaskHistory({
+        ...taskHistoryFixtures[0],
+        changed_field: 'scope',
+        old_value: null,
+        new_value: '소셜 로그인은 이번 범위에서 빼기로 했어요.',
+      }),
+    ).toMatchObject({
+      field: 'scope',
+      oldValue: null,
+      newValue: '소셜 로그인은 이번 범위에서 빼기로 했어요.',
+    })
+    expect(warning).not.toHaveBeenCalled()
+  } finally {
+    warning.mockRestore()
+  }
+})
+
 describe('Notion 반영 상태', () => {
   it.each([
     ['pending', 'pending', false],

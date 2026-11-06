@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { delay, http } from 'msw'
 import { expect, userEvent, within } from 'storybook/test'
-import { LoginForm, SignupForm } from '@/features/auth'
+import { ForgotPasswordForm, LoginForm, ResetPasswordForm, SignupForm } from '@/features/auth'
 import { AuthShell } from './AuthShell'
 
 /* 로그인·회원가입 폼 (M4 ①). MSW 가 실제 request 경로로 답한다. 비로그인 시나리오에서 시작한다 */
@@ -134,5 +134,83 @@ export const 회원가입_비활성: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     await expect(canvas.getByRole('button', { name: 'Google 계정으로 가입하기' })).toBeDisabled()
+  },
+}
+
+/* #356 비밀번호 재설정. 캔버스가 없어 로그인·회원가입의 틀을 그대로 쓴다 (pages/forgot-password, pages/reset-password) */
+
+function ForgotPassword() {
+  return (
+    <AuthShell
+      title="비밀번호 찾기"
+      formLabel="비밀번호 재설정 요청"
+      aside={{
+        pose: 'talking',
+        title: '메일로 링크를 보내 드릴게요',
+        description: '링크를 열고 새 비밀번호를 정하면 다시 로그인할 수 있어요.',
+        caption: "Manager's Manager",
+      }}
+    >
+      <ForgotPasswordForm />
+    </AuthShell>
+  )
+}
+
+function ResetPassword() {
+  return (
+    <AuthShell
+      title="새 비밀번호"
+      formLabel="비밀번호 재설정"
+      aside={{
+        pose: 'squint',
+        title: '새 비밀번호를 정해 주세요',
+        description: '바꾸면 로그인된 모든 기기에서 로그아웃돼요.',
+        caption: "Manager's Manager",
+      }}
+    >
+      <ResetPasswordForm />
+    </AuthShell>
+  )
+}
+
+export const 재설정_요청: Story = {
+  render: () => <ForgotPassword />,
+  parameters: { route: '/forgot-password' },
+}
+
+/** 보낸 뒤 — 같은 이메일로 다시 보내기는 60초 동안 막히고 남은 초가 보인다 */
+export const 재설정_메일_보냄: Story = {
+  render: () => <ForgotPassword />,
+  parameters: { route: '/forgot-password' },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.type(canvas.getByLabelText('이메일'), 'pm@example.com')
+    await userEvent.click(canvas.getByRole('button', { name: '재설정 링크 보내기' }))
+    await expect(await canvas.findByRole('status')).toHaveTextContent('스팸함')
+    await expect(canvas.getByRole('button', { name: /^다시 보내기 \(\d+초\)$/ })).toBeDisabled()
+  },
+}
+
+export const 재설정_변경: Story = {
+  render: () => <ResetPassword />,
+  parameters: { scenario: 'password-reset', route: '/reset-password#token=mock-reset-normal' },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(await canvas.findByLabelText('새 비밀번호')).toBeInTheDocument()
+  },
+}
+
+/** 쓸 수 없는 링크 — 까닭별 문구와 `다시 요청하기` */
+export const 재설정_만료된_링크: Story = {
+  render: () => <ResetPassword />,
+  parameters: {
+    scenario: 'password-reset-expired',
+    route: '/reset-password#token=mock-reset-expired',
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(await canvas.findByRole('alert')).toHaveTextContent(
+      '링크 유효 시간(30분)이 지났어요.',
+    )
   },
 }
