@@ -4,7 +4,8 @@ import { start } from './support'
 
 /*
  * #336 — 강조색·흐린 글자의 명도 대비 (KWCAG 2.2 / WCAG 1.4.3). 브라우저가 실제로 칠한 글자색과 그 뒤 면의 색으로 잰다.
- * 강조색(accent·accent-soft) 글자, 강조색 면 위 글자, 흐린(faint) 글자를 화면에서 모두 찾아 4.5:1 이상인지 본다.
+ * 레드 글자(accent·accent-point·accent-solid), 레드 면(같은 셋과 accent-badge·accent-chip) 위 글자, 흐린(faint) 글자를 화면에서 모두 찾아 4.5:1 이상인지 본다.
+ * accent-point 는 점·포커스 선용 3:1 값이라 글자에 쓰이면 여기서 미달로 잡힌다. 점은 글자가 없어 세지 않는다.
  * 비활성·작업 중 컨트롤의 글자는 기준 예외라 세지 않는다.
  */
 
@@ -60,12 +61,19 @@ function measureTokenText(page: Page): Promise<Measured[]> {
       probe.style.color = `var(${name})`
       return getComputedStyle(probe).color
     }
-    const accentFace = tokenRgb('--color-accent')
-    const watched = new Set([
-      accentFace,
-      tokenRgb('--color-accent-soft'),
-      tokenRgb('--color-faint'),
-    ])
+    const watched = new Set(
+      ['--color-accent', '--color-accent-point', '--color-accent-solid', '--color-faint'].map(
+        tokenRgb,
+      ),
+    )
+    const redFaces = new Set(
+      [
+        '--color-accent-point',
+        '--color-accent-solid',
+        '--color-accent-badge',
+        '--color-accent-chip',
+      ].map(tokenRgb),
+    )
     probe.remove()
 
     const found: Measured[] = []
@@ -79,7 +87,7 @@ function measureTokenText(page: Page): Promise<Measured[]> {
       const style = getComputedStyle(element)
       if (style.visibility !== 'visible') continue
       const face = window.contrast.faceBehind(element)
-      if (!watched.has(style.color) && face !== accentFace) continue
+      if (!watched.has(style.color) && !redFaces.has(face)) continue
       found.push({ text: own.slice(0, 30), ratio: window.contrast.ratio(style.color, face) })
     }
     return found
@@ -131,7 +139,9 @@ test('대시보드 — 지난 마감 날짜와 `기한 지남` 배지는 4.5:1 �
 const VIEW_LABEL = { board: '보드', calendar: '캘린더', gantt: '간트' } as const
 
 for (const view of ['board', 'calendar', 'gantt'] as const) {
-  test(`태스크 ${VIEW_LABEL[view]} — 강조색 면의 흰 글자는 4.5:1 이상이다`, async ({ page }) => {
+  test(`태스크 ${VIEW_LABEL[view]} — 레드 면(흰 글자 면·배지·칩) 위 글자는 4.5:1 이상이다`, async ({
+    page,
+  }) => {
     await page.clock.setFixedTime(new Date('2026-09-18T09:00:00+09:00'))
     await start(
       page,

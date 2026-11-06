@@ -171,7 +171,7 @@ describe('Checkbox', () => {
     const box = screen.getByRole('checkbox')
 
     expect(box).toHaveClass(
-      'focus-visible:outline-accent',
+      'focus-visible:outline-accent-point',
       'data-[state=checked]:focus-visible:outline-surface',
       'data-[state=indeterminate]:focus-visible:outline-surface',
     )
