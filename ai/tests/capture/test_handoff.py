@@ -72,6 +72,28 @@ def test_sentence_said_by_two_speakers_leaves_the_speaker_empty():
     assert H.to_extraction_items([_task(source_sentence="")], TRANSCRIPT)[0]["evidence_speaker"] is None
 
 
+def test_legacy_item_carries_the_seq_of_the_located_sentence():
+    transcript = {"segments": [
+        {"speaker": "a", "start": 1.0, "end": 2.0, "text": "환불 기능 만들어요.", "seq": 7},
+        {"speaker": "b", "start": 3.0, "end": 4.0, "text": "네 좋아요.", "seq": 8},
+    ]}
+
+    [item] = H.to_extraction_items([{"task": "환불", "source_sentence": "환불 기능 만들어요."}], transcript)
+
+    assert item["evidence_seqs"] == [7]
+
+
+def test_legacy_item_has_no_seq_when_the_speaker_is_unknown():
+    transcript = {"segments": [
+        {"speaker": "a", "start": 1.0, "end": 2.0, "text": "네 좋아요.", "seq": 7},
+        {"speaker": "b", "start": 3.0, "end": 4.0, "text": "네 좋아요.", "seq": 8},
+    ]}
+
+    [item] = H.to_extraction_items([{"task": "환불", "source_sentence": "네 좋아요."}], transcript)
+
+    assert item["evidence_seqs"] == []
+
+
 def test_register_calls_create_end_extraction_in_order(tmp_path):
     fake = FakeBe()
     m, tdir = _manifest(tmp_path)

@@ -18,9 +18,10 @@ from sqlalchemy import (
     UniqueConstraint,
     text,
 )
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 
 from app.core.database import Base
+from app.schemas.email import normalize_email
 
 # text-embedding-3-small의 차원. 모델을 바꾸면 컬럼과 저장된 벡터를 모두 다시 만들어야 한다.
 EMBEDDING_DIMENSIONS = 1536
@@ -191,6 +192,11 @@ class User(Base):
         back_populates="user", cascade="all, delete-orphan"
     )
 
+    @validates("email")
+    def _normalize_email(self, _key: str, value: str) -> str:
+        # 요청 스키마를 거치지 않는 쓰기 경로도 같은 규칙으로 저장한다(#434). SQL 직접 실행과 update() 는 지나지 않는다.
+        return normalize_email(value)
+
 
 class PasswordResetToken(Base):
     """비밀번호 재설정 링크 토큰. 원문은 저장하지 않고 sha256 해시만 둔다(#356)."""
@@ -282,6 +288,9 @@ class Integration(Base):
     access_token: Mapped[str | None] = mapped_column(Text, nullable=True)
     refresh_token: Mapped[str | None] = mapped_column(Text, nullable=True)
     provider_channel_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # 디스코드 전용: 채팅 수집 채널(#428)
+    chat_channel_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    chat_channel_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_now, onupdate=_now

@@ -285,6 +285,46 @@ def test_reconnect_replaces_the_guild_of_the_same_workspace(client, seed, db, fa
     assert db.query(Integration).filter(Integration.provider == "discord").count() == 1
 
 
+def _connect_with_chat_channel(db, workspace_id, guild_id) -> None:
+    db.add(Integration(
+        workspace_id=workspace_id, provider="discord", provider_channel_id=guild_id,
+        chat_channel_id="31", chat_channel_name="general",
+    ))
+    db.commit()
+
+
+def test_reconnect_to_another_guild_clears_chat_channel(client, seed, db, fake_discord, monkeypatch):
+    posts = []
+    monkeypatch.setattr(discord, "post_channel_message", lambda *args, **kwargs: posts.append(args))
+    _, state_ = fake_discord
+    _connect_with_chat_channel(db, seed["workspace_id"], "old-guild")
+    state_["guild"] = DiscordGuild(guild_id=GUILD, name=None)
+    state, nonce = _signed(seed)
+
+    response = _callback(client, state=state, nonce=nonce, code="the-code")
+
+    assert response.headers["location"].endswith("oauth_result=success")
+    row = _row(db, seed["workspace_id"])
+    assert row.provider_channel_id == GUILD
+    assert row.chat_channel_id is None
+    assert row.chat_channel_name is None
+    assert posts == []
+
+
+def test_reconnect_to_same_guild_keeps_chat_channel(client, seed, db, fake_discord):
+    _, state_ = fake_discord
+    _connect_with_chat_channel(db, seed["workspace_id"], GUILD)
+    state_["guild"] = DiscordGuild(guild_id=GUILD, name=None)
+    state, nonce = _signed(seed)
+
+    response = _callback(client, state=state, nonce=nonce, code="the-code")
+
+    assert response.headers["location"].endswith("oauth_result=success")
+    row = _row(db, seed["workspace_id"])
+    assert row.chat_channel_id == "31"
+    assert row.chat_channel_name == "general"
+
+
 def test_callback_rejects_a_guild_id_the_user_changed_in_the_address(client, seed, db, fake_discord):
     state, nonce = _signed(seed)
 
