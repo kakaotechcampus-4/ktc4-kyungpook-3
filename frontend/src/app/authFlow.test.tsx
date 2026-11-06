@@ -129,6 +129,22 @@ describe('회원가입 제출 (U2-6·U2-8)', () => {
     await waitFor(() => expect(email).not.toHaveAttribute('aria-invalid'))
   })
 
+  it('이름이 100자를 넘으면 이름 입력 아래에 알리고 가입 요청을 보내지 않는다 (#446)', async () => {
+    const log = recordRequests()
+    await openSignup()
+    const name = screen.getByLabelText('이름')
+    await userEvent.click(name)
+    await userEvent.paste('가'.repeat(101))
+    await userEvent.type(screen.getByLabelText('이메일'), 'new@example.com')
+    await userEvent.type(screen.getByLabelText('비밀번호'), 'pass1234')
+    await userEvent.click(screen.getByRole('button', { name: '계정 만들기' }))
+
+    await waitFor(() => expect(name).toHaveAttribute('aria-invalid', 'true'))
+    expect(name).toHaveAccessibleDescription(AUTH_MESSAGES.nameTooLong)
+    expect(name).toHaveFocus()
+    expect(posts(log, '/auth/signup')).toEqual([])
+  })
+
   it('중복 제출 방지: 응답 전의 연속 제출은 가입 요청 하나다', async () => {
     const gate = deferred()
     server.use(

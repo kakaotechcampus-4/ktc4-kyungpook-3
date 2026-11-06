@@ -6,6 +6,26 @@ import { workspaceCountOf } from '../sessions'
 
 const base = '/api/v1/auth'
 
+const NAME_MAX_LENGTH = 100
+
+/** Python `str.strip()` 의 공백. JS `trim()` 과 달리 \x1c-\x1f·\x85 를 지우고 \ufeff 는 남긴다 */
+const PYTHON_STRIP =
+  // eslint-disable-next-line no-control-regex
+  /^[\t-\r\x1c-\x20\x85\xa0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+|[\t-\r\x1c-\x20\x85\xa0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+$/g
+
+/** 제어·서로게이트·줄/문단 구분자와 글자 방향 제어. ZWJ·ZWNJ 는 허용한다 */
+const NAME_FORBIDDEN = /[\p{Cc}\p{Cs}\p{Zl}\p{Zp}\u202a-\u202e\u2066-\u2069]/u
+
+/** 형식 문자·결합 부호·공백이 아닌 글자. 이것이 하나도 없는 이름은 빈칸으로 본다 */
+const NAME_VISIBLE = /[^\p{Cf}\p{Mn}\p{Me}\p{Z}]/u
+
+/** BE validate_name. 앞뒤 공백을 지운 이름을 돌려주고 규칙에 어긋나면 null 이다. 길이는 코드 포인트로 센다 */
+function checkedName(value: string): string | null {
+  const name = value.replace(PYTHON_STRIP, '')
+  if (!name || [...name].length > NAME_MAX_LENGTH) return null
+  return NAME_FORBIDDEN.test(name) || !NAME_VISIBLE.test(name) ? null : name
+}
+
 /** 소속 수는 응답할 때 센다 — 저장한 세션 값에는 수락한 초대로 생긴 소속이 없다 */
 const authResponse = () => ({
   ...db.session,
@@ -15,22 +35,30 @@ const authResponse = () => ({
 export const authHandlers = [
   http.post(`${base}/signup`, async ({ request }) => {
     const body = (await request.json()) as { email?: unknown; password?: unknown; name?: unknown }
-    if (
-      typeof body.email === 'string' &&
-      db.accounts.some((account) => account.session.user.email === body.email)
-    )
-      return fail('EMAIL_ALREADY_EXISTS', '이미 가입된 이메일입니다.', 409)
+    // BE 는 본문 검증(pydantic)이 중복 이메일 확인보다 먼저다
     if (
       typeof body.email !== 'string' ||
       typeof body.password !== 'string' ||
       typeof body.name !== 'string'
     )
       return fail('INVALID_REQUEST', '요청이 올바르지 않습니다.', 400)
+    const name = checkedName(body.name)
+    if (name === null)
+      return fail('INVALID_REQUEST', '요청이 올바르지 않습니다.', 400, {
+        fields: [
+          {
+            loc: ['body', 'name'],
+            msg: 'Value error, 이름은 앞뒤 공백을 뺀 1~100자이고 제어문자를 포함할 수 없습니다.',
+          },
+        ],
+      })
+    if (db.accounts.some((account) => account.session.user.email === body.email))
+      return fail('EMAIL_ALREADY_EXISTS', '이미 가입된 이메일입니다.', 409)
     db.session = {
       user: {
         user_id: `us_${String(db.accounts.length + 1).padStart(2, '0')}`,
         email: body.email,
-        name: body.name,
+        name,
         avatar_url: null,
       },
       workspace_count: 0,
