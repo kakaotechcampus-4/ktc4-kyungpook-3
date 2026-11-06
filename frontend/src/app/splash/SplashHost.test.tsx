@@ -1,10 +1,8 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { act, render, screen } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router'
 import { showSplash } from '@/shared/lib/splash'
-import { FirstVisitIntro } from '@/widgets/first-visit-intro'
 import { RouteSkeleton } from '../router/RouteSkeleton'
 import { SplashHost } from './SplashHost'
 
@@ -109,19 +107,6 @@ const leftEyeX = () => Number(document.querySelector('[data-part="eye-l"]')?.get
 const mascotShown = () => {
   const mascot = document.querySelector('.splash .splash__mascot')
   return mascot !== null && getComputedStyle(mascot).visibility !== 'hidden'
-}
-
-/** Testing Library 는 입력 뒤 setTimeout(0) 을 기다린다. 가짜 시계에서는 그 0ms 를 흘려 줘야 끝난다 */
-async function pressEnter() {
-  let pressed = false
-  const pressing = userEvent
-    .setup({ delay: null })
-    .keyboard('{Enter}')
-    .then(() => {
-      pressed = true
-    })
-  while (!pressed) await vi.advanceTimersByTimeAsync(0)
-  await pressing
 }
 
 beforeAll(() => {
@@ -515,37 +500,5 @@ describe('로그인 직후', () => {
     expect(overlay()).toHaveAttribute('data-phase', 'leave')
     advance(400)
     expect(overlay()).toBeNull()
-  })
-})
-
-describe('첫 방문 인트로와 함께', () => {
-  it('스플래시가 덮는 동안 인트로는 열리지 않고, 걷힌 뒤에 열려 건너뛰기에 포커스가 간다', async () => {
-    stubMotion()
-    const onClose = vi.fn()
-    const intro = () => screen.queryByRole('dialog', { name: '매스 소개' })
-    const { finishLoading } = boot()
-
-    advance(2000)
-    finishLoading()
-    render(<FirstVisitIntro open onClose={onClose} />)
-    advance(500)
-    expect(smiling()).toBe(true)
-    expect(intro()).toBeNull()
-    expect(document.activeElement).toBe(document.body)
-    await pressEnter()
-    expect(onClose).not.toHaveBeenCalled()
-
-    advance(200)
-    expect(overlay()).toHaveAttribute('data-phase', 'leave')
-    expect(intro()).toBeNull()
-
-    advance(400)
-    expect(overlay()).toBeNull()
-    expect(intro()).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '건너뛰기' })).toHaveFocus()
-    advance(2590)
-    expect(screen.getByRole('button', { name: '1번째 말' })).toHaveAttribute('aria-current', 'step')
-    advance(10)
-    expect(screen.getByRole('button', { name: '2번째 말' })).toHaveAttribute('aria-current', 'step')
   })
 })

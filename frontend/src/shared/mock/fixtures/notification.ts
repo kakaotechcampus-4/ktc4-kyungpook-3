@@ -50,7 +50,7 @@ export const notificationFixtures: MockNotification[] = [
     notification_id: 'nt_04',
     workspace_id: 'ws_01',
     member_id: 'mb_01',
-    kind: 'reply_judged',
+    kind: 'checkin_digest',
     text: '정하늘님의 답장을 태스크에 반영했어요.',
     link: { type: 'reply', id: 'rp_01' },
     read_at: null,

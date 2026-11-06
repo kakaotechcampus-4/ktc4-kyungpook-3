@@ -10,8 +10,8 @@ import { QueryErrorState } from '@/shared/ui/query-error-state'
 import { PinnedToastHost } from '@/shared/ui/toast'
 import { avatarText, bundleDateLabel, bundleSummary, shortDate } from '../lib/format'
 import { selectDetail } from '../model/selection'
-import { VIEWER_POLICY } from '../model/viewer'
-import type { MessageViewer, ViewerPolicy } from '../model/viewer'
+import { SELF_SECTION_TITLE, threadPolicy } from '../model/viewer'
+import type { MessageViewer, ThreadPolicy } from '../model/viewer'
 import { ComposeDetail } from './ComposeDetail'
 import { InboxListSkeleton, ReviewSkeleton } from './MessageSkeletons'
 import { ReviewDetail } from './ReviewDetail'
@@ -58,7 +58,7 @@ export interface MessageInboxProps {
   workspaceId: string
   /** 메시지를 보내는 봇의 이름. 공간 이름을 쓴다 (Messages 시안의 `캡스톤 5조 봇`) */
   botName: string
-  /** 이 공간에서 화면을 보는 사람. 역할이 표를 고르고, 팀원 행은 답장할 수 있는 대화를 가른다 */
+  /** 이 공간에서 화면을 보는 사람. 역할과 팀원 행이 대화마다 그리는 규칙을 고른다 */
   viewer: MessageViewer
   /** URL 이 가리키는 대화. 없으면 null */
   threadId: string | null
@@ -74,7 +74,7 @@ export interface MessageInboxProps {
 }
 
 /**
- * 메시지 화면 (M8, Messages·MessagesThread·EmptyMessages 시안, 계약 §5.7) — 왼쪽 목록(보내기 전 확인 · 대화), 오른쪽 상세의 2단이다.
+ * 메시지 화면 (M8, Messages·MessagesThread·EmptyMessages 시안, 계약 §5.7) — 왼쪽 목록(PM 의 자기 대화 · 보내기 전 확인 · 대화), 오른쪽 상세의 2단이다.
  * 고른 항목은 URL 이 정한다. 그래서 새로고침·뒤로가기에서 그대로다. 아무것도 고르지 않고 들어오면
  * 아직 승인하지 않은 첫 보낼 메시지가 골라진다. 팀원에게는 보내기 전 확인이 없다
  */
@@ -90,13 +90,12 @@ export function MessageInbox({
   const inbox = useQuery(messageInboxQueryOptions(workspaceId))
   const detailRef = useRef<HTMLElement>(null)
   const navigate = useNavigate()
-  const policy = VIEWER_POLICY[viewer.role]
   const selection = selectDetail({
     inbox: inbox.data,
     threadId,
     bundleId,
     invalidPath,
-    composing: composing && policy.compose,
+    composing: composing && viewer.role === 'pm',
   })
   const selectedThreadId = selection.kind === 'thread' ? selection.threadId : null
   // 정리 중 토스트(#424)는 이 화면에서 대화 영역 오른쪽 아래에 앉는다 (#474). 대화 아래 고정 줄(답장·안내)이 있으면 그 위 16,
@@ -201,7 +200,7 @@ export function MessageInbox({
       <aside aria-label="메시지 목록" className={ASIDE}>
         <div className="flex items-center justify-between gap-8 pr-4">
           <h1 className={ASIDE_TITLE}>메시지</h1>
-          {policy.compose ? (
+          {viewer.role === 'pm' ? (
             <GuardedLink
               to={paths.messageCompose(workspaceId)}
               end
@@ -217,7 +216,7 @@ export function MessageInbox({
             workspaceId={workspaceId}
             botName={botName}
             inbox={inbox.data}
-            policy={policy}
+            viewer={viewer}
             threadId={selectedThreadId}
             bundleId={selection.kind === 'bundle' ? selection.bundle.id : null}
           />
@@ -267,22 +266,51 @@ function InboxList({
   workspaceId,
   botName,
   inbox,
-  policy,
+  viewer,
   threadId,
   bundleId,
 }: {
   workspaceId: string
   botName: string
   inbox: Inbox
-  policy: ViewerPolicy
+  viewer: MessageViewer
   threadId: string | null
   bundleId: string | null
 }) {
-  const awaiting = policy.awaiting
-    ? inbox.threads.filter(({ awaitingReplySince }) => awaitingReplySince !== null).length
-    : 0
+  const rows = inbox.threads.map((thread) => ({
+    thread,
+    policy: threadPolicy(viewer, thread.memberId),
+  }))
+  const selfRows = rows.filter(({ policy }) => policy.section === 'self')
+  const threadRows = rows.filter(({ policy }) => policy.section === 'threads')
+  const awaiting = threadRows.filter(
+    ({ thread, policy }) => policy.awaiting && thread.awaitingReplySince !== null,
+  ).length
+  const threadList = (list: typeof rows) => (
+    <ul className="flex flex-col gap-4">
+      {list.map(({ thread, policy }) => (
+        <li key={thread.id}>
+          <ThreadRow
+            workspaceId={workspaceId}
+            botName={botName}
+            thread={thread}
+            policy={policy}
+            selected={thread.id === threadId}
+          />
+        </li>
+      ))}
+    </ul>
+  )
   return (
     <>
+      {selfRows.length === 0 ? null : (
+        <section aria-labelledby="messages-self" className="flex flex-col gap-4">
+          <h2 id="messages-self" className={`${GROUP_LABEL} px-8`}>
+            {SELF_SECTION_TITLE}
+          </h2>
+          {threadList(selfRows)}
+        </section>
+      )}
       {inbox.viewer === 'pm' ? (
         <section aria-labelledby="messages-reviews" className="flex flex-col gap-6">
           <h2 id="messages-reviews" className={`${GROUP_LABEL} px-8`}>
@@ -314,22 +342,10 @@ function InboxList({
             <span className="text-[10.5px] text-dim">답장 기다리는 중 {awaiting}</span>
           )}
         </div>
-        {inbox.threads.length === 0 ? (
+        {threadRows.length === 0 ? (
           <p className={GROUP_NOTE}>아직 주고받은 대화가 없어요.</p>
         ) : (
-          <ul className="flex flex-col gap-4">
-            {inbox.threads.map((thread) => (
-              <li key={thread.id}>
-                <ThreadRow
-                  workspaceId={workspaceId}
-                  botName={botName}
-                  thread={thread}
-                  policy={policy}
-                  selected={thread.id === threadId}
-                />
-              </li>
-            ))}
-          </ul>
+          threadList(threadRows)
         )}
       </section>
     </>
@@ -378,7 +394,7 @@ function ThreadRow({
   workspaceId: string
   botName: string
   thread: MessageThreadSummary
-  policy: ViewerPolicy
+  policy: ThreadPolicy
   selected: boolean
 }) {
   const title = policy.ownSender === 'member' ? `${botName} 봇` : thread.name

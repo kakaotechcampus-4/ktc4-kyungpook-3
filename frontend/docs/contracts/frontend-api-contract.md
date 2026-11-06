@@ -1047,7 +1047,7 @@ MSW 는 **API 를 흉내내므로 100자 기준을 그대로 쓴다.** 여기에
 - **합의된 규약.** [#367](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/367) 댓글의 BE 설계 확정과 구현 완료(PR #374, develop 병합)에 따른다. `POST /workspaces`, `GET /workspaces` 의 각 항목, `GET /workspaces/{id}` 응답의 `role` 바로 뒤에 `member_id: string | null` 이 온다.
 - 값은 로그인 계정이 연결된, 탈퇴하지 않은 이 공간의 팀원 행이다. 같은 응답의 `role` 과 같은 행이고, 메시지 답장 API 가 대화 주인을 판정하는 행과 같다(§5.7). `null` 은 `role` 이 `null` 인 경우와 같은 뜻(이 공간 팀원이 아님)이고 정상 경로에서는 오지 않는다.
 - **현재 서버 구현.** [schemas/workspace.py](../../../backend/app/schemas/workspace.py)의 `WorkspaceResponse.member_id` 는 `Optional[str]`, 기본값 `None` 이다. [api/workspaces.py](../../../backend/app/api/workspaces.py)의 `_build_workspace_response` 가 팀원 행이 있을 때만 채운다.
-- **현재 프론트 구현.** DTO [workspace.ts](../../src/shared/types/api/workspace.ts)는 이 필드를 선택(`member_id?: string | null`)으로 받는다. 이 필드가 없는 BE 배포 전 응답도 깨지지 않게 하려는 것이다. 매퍼는 필드가 없거나 `null` 이면 `memberId: null` 로 둔다. 화면은 이 값을 메시지 답장 칸 판정에만 쓴다(§5.7). 소속 판정은 지금처럼 목록에 있는지로 한다(§4.0-①).
+- **현재 프론트 구현.** DTO [workspace.ts](../../src/shared/types/api/workspace.ts)는 이 필드를 선택(`member_id?: string | null`)으로 받는다. 이 필드가 없는 BE 배포 전 응답도 깨지지 않게 하려는 것이다. 매퍼는 필드가 없거나 `null` 이면 `memberId: null` 로 둔다. 화면은 이 값을 메시지 대화 주인 판정(답장 칸, #417 의 PM 자기 대화 구역과 표시 규칙)에만 쓴다(§5.7). 소속 판정은 지금처럼 목록에 있는지로 한다(§4.0-①).
 - **모의 서버(MSW).** 목록·상세·생성 응답에 세션의 팀원 ID(`sessionMemberId`)를 싣는다. 계정과 팀원 행의 대응은 수락한 초대, 아니면 모의 DB 계정의 `memberIds` 다. 픽스처 계정은 `ws_01` 에서 PM 이면서 팀원 행 `mb_01` 이다. 공간을 만들면 BE 처럼 생성자 계정이 새 PM 행과 이어진다. 그래서 생성·목록·상세의 `member_id` 가 그 행 ID 이고, 그 행 대화의 답장은 201 이다. 같은 대응 때문에 생성자 PM 행을 초대하면 BE 처럼 409 `MEMBER_ALREADY_LINKED` 다.
 
 ### 4.3 integrations
@@ -1482,7 +1482,8 @@ members 에만 있고 Discord 목록에 없으면      → 비활성 (서버를 
 - 화면 표시: `draft_status` 가 `needed`·`claimed` 면 `문구 다듬는 중`, `body` 는 줄바꿈 그대로(`whitespace-pre-line`), `body_source` 는 미리보기 밑단의 작은 글자(`직접 고친 문구`·`AI 초안`·`기본 문구`)다. 봇 메시지 `dm_status: failed` 는 말풍선 아래 `DM 못 보냄 · {이유}`(`dm_blocked` 서버 DM 이 막혀 있어요, `discord_not_linked` Discord 계정이 연결되지 않았어요, `unknown` 이유를 알 수 없어요), 목록 행의 `dm_failed` 는 `DM 못 보냄` 표시다. 팀원 메시지 `reply_channel: web` 은 `웹에서 답장` 을 붙인다.
 - 대화 화면은 메시지와(PM 에게만) 예정 묶음을 나갈 시각 순으로 섞는다. 취소·만료된 재촉 줄은 응답에 없어 그리지 않는다.
 - 팀원 화면: 자기 대화를 보고 웹 답장을 쓴다. 답장 칸 아래에 `봇 DM 창에 쓴 글은 모두 PM 대화에 보여요.` 를 보인다.
-- 대화 주인 판정(#367, 2026-11-05): 화면은 워크스페이스 응답의 `member_id`(§4.2.1)를 대화의 `member_id` 와 비교한다. 같으면 PM 이어도 자기 대화라 답장 칸을 보인다. BE 답장 API 도 같은 팀원 행으로 판정해 201 이고, 다르면 403 이다([api/messages.py](../../../backend/app/api/messages.py)의 답장 경로). PM 이 남의 대화를 열면 지금처럼 답장 칸 대신 안내 바를 보인다. 워크스페이스 응답에 `member_id` 가 없거나 `null` 이면 PM 에게는 답장 칸을 숨긴다. 팀원은 자기 대화만 받으므로 이 값과 상관없이 답장 칸을 보인다. PM 의 자기 대화도 답장 기다림 배지·`여기서부터 답장이 없습니다`·말풍선 자리(봇이 오른쪽)는 PM 화면 그대로다.
+- 대화 주인 판정(#367, 2026-11-05): 화면은 워크스페이스 응답의 `member_id`(§4.2.1)를 대화의 `member_id` 와 비교한다. 같으면 PM 이어도 자기 대화라 답장 칸을 보인다. BE 답장 API 도 같은 팀원 행으로 판정해 201 이고, 다르면 403 이다([api/messages.py](../../../backend/app/api/messages.py)의 답장 경로). PM 이 남의 대화를 열면 지금처럼 답장 칸 대신 안내 바를 보인다. 워크스페이스 응답에 `member_id` 가 없거나 `null` 이면 PM 에게는 답장 칸을 숨긴다. 팀원은 자기 대화만 받으므로 이 값과 상관없이 답장 칸을 보인다.
+- PM 자기 대화의 표시(#417, 2026-11-07): 위 판정으로 PM 의 자기 대화로 가려진 대화는 메시지 목록 맨 위의 별도 구역 `내 리마인드`(이름은 사용자 결정, 2026-11-07)에 두고, 그 아래 `보내기 전 확인`·`대화` 는 그대로다. `대화` 목록과 `답장 기다리는 중 N` 에서는 뺀다. 상세는 팀원 화면 규칙이다. 봇 말풍선이 왼쪽, 자기 답장이 오른쪽이고, 답장 기다림 배지·목록 점·`여기서부터 답장이 없습니다` 가 없으며, #411 기기 알림 띠를 보인다. 예정 묶음과 `확인하기`, 답장의 태스크 고르기 같은 PM 권한 기능은 그대로다. 워크스페이스 응답에 `member_id` 가 없거나 `null` 이면 구역을 만들지 않고 전처럼 `대화` 에 PM 화면 규칙으로 둔다. 표시 규칙은 (역할, 대화 주인)으로 고르는 표 하나([viewer.ts](../../src/widgets/message-inbox/model/viewer.ts)의 `threadPolicy`)가 정하고 답장 칸도 그 표의 값이다. 새 경로·필드는 없다. **FE 화면 규칙이며 BE 합의가 필요한 변경은 없다.**
 - 다시 받기(#371, 2026-11-06, D-136): 화면 재진입·탭 복귀·행동 성공 뒤 다시 받기는 그대로다. 받은 `GET /messages` 나 `GET /messages/threads/{thread_id}` 응답에 `draft_status` 가 `needed`·`claimed` 인 묶음이 있으면 그 조회만 10초마다 다시 부르고, 없으면 멈춘다. 탭이 백그라운드면 부르지 않는다. 알림 목록(30초 polling)에 메시지 알림(`reminder_sent`·`nudge_suggested`·`nudge_reapprove`·`reminder_auto_cancelled`)이 새로 들어오면 그 공간의 메시지 조회를 다시 부른다. 알림 목록은 `limit=50` 으로 부르고, 꽉 찬 목록이 지난 목록과 하나도 겹치지 않으면 놓친 알림이 있을 수 있어 메시지 조회를 한 번 다시 부른다. 메시지 조회는 시작한 세션이 끝나면 보내지 않는다. 새 경로·필드는 없고 BE 가 받는 요청 수만 는다. 구현: [messageQueries.ts](../../src/entities/message/api/messageQueries.ts), [알림 종류](../../src/entities/notification/model/display.ts).
 - 화면에서 뺀 것은 [결정 기록](../plan/m8/basis-for-decision/2026-11-04-messages-real-api-drop-unbacked-ui.md)에 있다: 답장의 태스크 판정, `지금 바로`, 채널 대화, 팀 역할, Discord 대화 주소, 재촉 이유 문장·근거 링크·요약, 취소·만료 재촉 줄, 승인자 이름.
 - 검증: MSW 기준 단위·화면 테스트와 브라우저 확인만 했다. 실제 서버(배포 BE)에 붙인 확인은 하지 않았다.
@@ -1525,7 +1526,7 @@ members 에만 있고 Discord 목록에 없으면      → 비활성 (서버를 
 - 대화 목록 한 줄은 `{thread_id, member_id, name, last_message, awaiting_reply_since, dm_failed}` 다. `dm_failed` 는 그 팀원에게 마지막으로 나간 봇 메시지가 `failed` 인지다. 최근 메시지 순이고, 메시지가 없는 대화는 아래에 둔다.
 - 팀원이 봇 DM 창에 쓴 글은 리마인드에 대한 답인지와 상관없이 모두 대화에 들어가 PM 이 본다. 팀원 화면에 이를 안내해야 한다.
 - 팀원 권한은 로그인 계정이 연결된 팀원(`member.user_id`) 기준이다. 계정이 연결되지 않은 팀원은 웹 답장을 할 수 없다. 대화 주인은 팀원 행으로 판단하므로, 탈퇴했다가 새 팀원 행으로 돌아온 계정은 예전 행의 대화를 열 수 없다.
-- 아직 없는 것: 웹의 답장 판정 입력(`답장 확인 필요`)과 판정 결과 표시(BE 는 아래 「리마인드 답장 판단」에 구현, 프론트엔드 미연결, 합의 여부 확인 필요), 태스크 안내 DM·#회의록 요약, `지금 바로` 5분 합치기, AI 초안 워커, 시안의 `지금 바로`(`send_timing: now`)에 대응하는 BE 경로. 프론트엔드는 #315 에서 MSW 임시 경로 `reviews/{id}/send|dismiss` 를 `bundles/{id}/approve|cancel` 로 옮겼다.
+- 아직 없는 것: ~~웹의 답장 판정 입력(`답장 확인 필요`)과 판정 결과 표시~~(#344 에서 연결, 아래 「리마인드 답장 판단」의 FE 연결), 태스크 안내 DM·#회의록 요약, `지금 바로` 5분 합치기, AI 초안 워커, 시안의 `지금 바로`(`send_timing: now`)에 대응하는 BE 경로. 프론트엔드는 #315 에서 MSW 임시 경로 `reviews/{id}/send|dismiss` 를 `bundles/{id}/approve|cancel` 로 옮겼다.
 
 **스케줄러** (#318 에서 BE 구현). 결정 근거는 [결정 0038](../../../ai/docs/basis_for_decision/ai/2026-11-04-0038-reminder-scheduler-and-notifications.md). 시각 기준은 한국 시간이다.
 
@@ -1535,7 +1536,7 @@ members 에만 있고 Discord 목록에 없으면      → 비활성 (서버를 
 - 마감이 지난 예정 재촉은 `expired` 가 된다. 서버가 멈췄던 경우도 같고, 마감 전이면 응답을 다시 확인한 뒤 보낸다. 묶음의 나머지가 남아 승인이 풀리면 PM 에게 알린다.
 - 담당자가 바뀌면 처음부터 다시 시작한다. 예정 재촉은 승인된 것까지 취소하고 PM 에게 알리며, 열린 시계는 막지 않고 닫는다. 같은 마감이어도 새 담당자에게 다시 제안하고 PM 이 다시 승인한다(기본값. 메시지·알림 설정 항목 참조). 이미 걸린 자동 막힘은 그대로 두며, PM 이 풀거나 새 재촉에 대한 답장으로 풀린다(답장이 막혔다는 내용이면 풀지 않는다). 담당자가 바뀐 뒤 옛 담당자 대화에 온 답장은 응답으로 세지 않는다.
 - DM 전달 보고 시각부터 72시간 안에 응답이 없으면 태스크를 `blocked` 로 바꾸고 사유를 `리마인드에 72시간 동안 응답이 없어요` 로 적고 PM 에게 알린다(기본값. `silence_alert` 를 끄면 알리지 않는다. 메시지·알림 설정 항목 참조). 새 재촉이 나가면 처음부터 다시 잰다. DM 이 실패했거나 전달 보고 전이면 막지 않는다. 자동 막힘이 걸린 채 새 재촉이 나간 경우도 완료, 담당자 변경, 사람의 상태·마감 변경이 있으면 다시 막지 않는다. 이미 막힘이면 상태와 사유는 그대로 두고 PM 에게만 알린다.
-- 대화에 답장이 오면 판단이 끝나기를 기다렸다가 그 결과를 따른다(#331 에서 BE 구현, 합의 여부 확인 필요, 아래 「리마인드 답장 판단」). 그 태스크를 말했거나 바꿀 것이 없는 답장이면 재촉이 나갔던 태스크의 막힘을 풀고 사유를 비운다. 판단이 실패했거나 10분 안에 끝나지 않은 답장도 같다. 막혔다는 답장이면 막힘을 풀지 않고 시계만 닫으며(D-179), 사유가 비었거나 무응답 문구일 때만 답장 근거로 바꾼다. PM 이 쓴 사유는 둔다. 다른 태스크만 말한 답장이면 시계는 계속 간다. 이력 출처는 `reminder_reply` 다. 답장보다 뒤에 사람이 건 막힘은 풀지 않는다.
+- 대화에 답장이 오면 판단이 끝나기를 기다렸다가 그 결과를 따른다(#331 에서 BE 구현, #344 에서 FE 연결, 아래 「리마인드 답장 판단」). 그 태스크를 말했거나 바꿀 것이 없는 답장이면 재촉이 나갔던 태스크의 막힘을 풀고 사유를 비운다. 판단이 실패했거나 10분 안에 끝나지 않은 답장도 같다. 막혔다는 답장이면 막힘을 풀지 않고 시계만 닫으며(D-179, 2026-11-06 확정), 사유가 비었거나 무응답 문구일 때만 답장 근거로 바꾼다. PM 이 쓴 사유는 둔다. 다른 태스크만 말한 답장이면 시계는 계속 간다. 이력 출처는 `reminder_reply` 다. 답장보다 뒤에 사람이 건 막힘은 풀지 않는다.
 
 **자동 막힘 풀기.** 카톡이나 회의로 이미 들은 경우를 위해 PM 이 한 번에 되돌리는 경로다.
 
@@ -1577,7 +1578,7 @@ members 에만 있고 Discord 목록에 없으면      → 비활성 (서버를 
 - 계정이 연결되지 않은 팀원은 목록에만 쌓인다. 푸시가 실패해도 목록에는 남는다.
 - 일시 오류는 최대 3번 다시 보낸다. 기기가 꺼져 있으면 푸시 서비스가 24시간까지 붙잡아 두고, 그 뒤에는 버린다. 푸시 서비스가 구독이 없어졌다고 답하면(404·410) 그 구독을 지운다. 요청을 거절하면(400·401·403) 다시 보내지 않고 구독은 남긴다. VAPID 키를 바꾸면 기존 구독이 이렇게 거절되니 브라우저에서 다시 구독한다.
 
-**리마인드 답장 판단** (#331 에서 BE 구현, 프론트엔드 미연결, 합의 여부 확인 필요). 봇 쪽 경로는 [backend-ai 계약](../../../backend/docs/contracts/backend-ai-contract.md)의 「리마인드 답장 판단」에 있다. 시계는 판단이 끝난 뒤 판단 결과대로 움직이고, 10분 안에 끝나지 않으면 답장을 응답으로 친다.
+**리마인드 답장 판단** (#331 에서 BE 구현, #344 에서 FE 연결. 경로·모양은 #344 이슈 본문의 BE 요청 그대로 쓴다). 봇 쪽 경로는 [backend-ai 계약](../../../backend/docs/contracts/backend-ai-contract.md)의 「리마인드 답장 판단」에 있다. 시계는 판단이 끝난 뒤 판단 결과대로 움직이고, 10분 안에 끝나지 않으면 답장을 응답으로 친다.
 
 - 상태 변경이면서 근거가 확실한 변경만 자동 반영하고, 나머지는 기존 `task_update` 승인 요청으로 간다. 승인 payload 는 추출 경로와 키가 같고 `change_source: "reminder_reply"`, `reply_message_id` 가 더해지며 `meeting_id`, `extraction_item_id` 가 없다.
 - 답장 하나에 알림 하나다. 바꿀 것이 없는 답장은 알리지 않는다.
@@ -1618,7 +1619,18 @@ members 에만 있고 Discord 목록에 없으면      → 비활성 (서버를 
 | `reply_judged` | PM 전원 | `task` · `thread` | 변경 한 건이면 태스크 상세, 그 밖은 대화. PM 이 고른 뒤 바꿀 내용을 못 찾아도 대화로 온다 |
 | `reply_unjudged` | PM 전원 | `thread` | 그 대화. 판단 실패는 바로, 끝나지 않으면 10분 뒤 한 번 |
 
-- MSW 와 다른 점(합의 필요). 메시지 DTO 의 `attribution`, 대화 요약의 `needs_attribution` 은 BE 응답에 없고 새 `…/attributions` 경로로 준다. 고를 차례가 아닌 답장은 MSW 의 404 `MESSAGE_REPLY_NOT_FOUND` 대신 위 오류 코드다. 답장 승인 카드에는 `meeting_id` 가 없다.
+- ~~MSW 와 다른 점(합의 필요). 메시지 DTO 의 `attribution`, 대화 요약의 `needs_attribution` 은 BE 응답에 없고 새 `…/attributions` 경로로 준다. 고를 차례가 아닌 답장은 MSW 의 404 `MESSAGE_REPLY_NOT_FOUND` 대신 위 오류 코드다. 답장 승인 카드에는 `meeting_id` 가 없다.~~ #315 가 MSW 의 두 칸을 이미 지웠고, #344 에서 MSW 가 위 경로·모양·오류 코드를 그대로 쓴다(아래).
+
+FE 연결 (#344, 2026-11-06). 응답 타입은 [reply.ts](../../src/shared/types/api/reply.ts)가 `schemas/reply.py` 와 칸을 1:1 로 맞춘다.
+
+- 태스크 고르기. PM 이 대화를 열면 `…/attributions` 를 받는다(쿼리 키 `['workspace', id, 'messages', 'threads', thread_id, 'attributions']`, 메시지 행동이 무효화하는 `messages` 접두어 안). 팀원은 부르지 않는다. `needs_pm` 답장 아래에 후보와 `해당 없음` 라디오, `정하기` 가 있고(라디오만 옮겨서는 보내지 않는다), `resolved` 답장 아래에는 `태스크: {제목}` 또는 `해당 없음으로 정했어요` 가 붙는다([ThreadDetail](../../src/widgets/message-inbox/ui/ThreadDetail.tsx)·[AttributionPicker](../../src/widgets/message-inbox/ui/AttributionPicker.tsx)). 고르기는 메시지 쓰기 행동 `attribute` 다. 다른 쓰기처럼 세션을 잡아 끝난 세션이면 보내지 않고, 한 공간에서 한 번에 하나만 나간다. 404 `REPLY_JUDGMENT_NOT_FOUND`·409 `REPLY_ATTRIBUTION_NOT_NEEDED` 는 `이미 처리된 답장이에요. 대화를 다시 불러올게요.` 토스트 뒤 다시 받는다. 고르기를 받지 못해도 대화는 보이고 위에 다시 시도가 붙는다. 대화 목록의 `답장 확인 필요` 표시는 두지 않았다. 목록 응답에 칸이 없고 대화마다 부르면 요청이 대화 수만큼 늘어난다. PM 은 `reply_judged` 알림(`어느 태스크인지 골라 주세요`)으로 그 대화에 온다.
+- 태스크 기록. 태스크 상세의 `변경 이력` 이 `/history` 와 `/timeline` 을 함께 받아 `/timeline` 순서대로 그린다. 타임라인의 `history` 칸에는 변경자·되돌림이 없어서 같은 `history_id` 의 `/history` 행으로 채운다. 두 응답은 기존 이력 쿼리 키 `['workspace', id, 'tasks', 'history', task_id]` 하나에 둔다. 상태 변경·승인 처리가 이 키를 정확히 무효화하기 때문이다([taskApi](../../src/entities/task/api/taskApi.ts)). 답장 칸은 `{이름} 답장 · Discord|웹 · 시각`, 답장 글, 바뀐 값 줄(값과 결과 표시 `자동 반영`·`되돌림`·`승인 대기`·`승인함`·`반려함`·`반영하지 않음`·`기록함`, AI 해석)이다. `body` 가 null 이면 `답장 내용은 PM과 답장한 팀원만 볼 수 있어요.` 다. 모르는 `field` 는 `failed`, 모르는 `result` 는 `noted` 로 읽는다.
+- 되돌리기. `undoable` 이 true 인 줄에 PM 에게만 `되돌리기` 가 있다([useReplyChangeUndo](../../src/features/reply-change-undo/model/useReplyChangeUndo.ts)). 누를 때 세션을 잡고, 성공하면 응답 태스크를 상세·목록 캐시에 쓰고 `tasks` 접두어 전체(상세·목록·이력)를 무효화한다. 409 `REPLY_CHANGE_NOT_UNDOABLE` 이면 같은 무효화 뒤 `되돌리지 못했어요` 토스트다. 404 `TASK_NOT_FOUND`(보는 사이 지워짐)면 상세를 비우고 다시 받아 `이 태스크를 볼 수 없어요` 로 바꾸고, 이력을 지우고 목록을 다시 받는다.
+- 승인. 답장에서 온 `task_update` 는 `replyMessageId` 로 읽는다(`change_source` 가 `reminder_reply` 일 때만). 승인 상세는 `팀원 답장` 칸에 AI 해석(`doc_text`)과 근거 인용, `리마인드 답장 · {이름}` 을 보이고 회의 링크·회의 시각을 만들지 않는다. 담당자를 찾지 못한 카드(`assignee_member_id` 없이 `assignee_raw` 만 있음)는 이 단계에서 따로 다루지 않아 바꿀 값 표가 빈 채 승인할 수 있다. 승인해도 담당자는 바뀌지 않는다. 카드에서 담당자를 고르는 화면은 BE #460 합의 뒤 붙인다.
+- 알림. `reply_judged` 제목은 `팀원 답장을 판단했어요`, `reply_unjudged` 는 `답장을 자동으로 판단하지 못했어요` 다. 종이 처음 보면 그 공간의 캐시를 다시 받는다. `reply_judged` 는 메시지·태스크(상세·목록·기록)·승인을, `reply_unjudged` 는 메시지·태스크를 받는다. BE 는 태스크를 바꾸고 승인 요청을 만든 뒤 알리고, 판단하지 못한 답장도 막힘을 풀 수 있다. 같은 이유로 `silence_blocked` 는 태스크를 받는다([display.ts](../../src/entities/notification/model/display.ts)의 종류 표). 링크는 기존 `task`·`thread` 경로다.
+- 검증. MSW 기준 단위·화면 테스트와 E2E `reply-judgment.e2e.ts` 3개. 실제 서버와 봇의 다시 판단은 확인하지 않았다.
+
+**MSW 동작 (리마인드 답장 판단).** [reply-state.ts](../../src/shared/mock/reply-state.ts)가 판단 결과(`judgments`·`changes`)와 답장 줄에 이어진 이력(`historyLinks`)을 들고 BE `attributions`·`attribute`·`timeline`·`undo_change`·`link_history` 를 따른다. 판단 자체(봇·AI)와 PM 이 고른 뒤의 다시 판단, 무응답 자동 막힘을 넘어온 변경의 막기 전 상태 복원은 흉내 내지 않는다. 시나리오 `reply-judgment`(PM)·`reply-judgment-member`(팀원)가 결과를 넣는다. 모의 DB 버전이 14 가 되었다.
 
 **MSW 동작 (임시, 합의 전).** 아래는 개발 서버 목의 현재 구현이다. 백엔드와 합의한 규약이 아니고, 합의 여부 확인 필요. 재촉 자동 승인은 목에서 꺼져 있으며, 예약 시각이 지나도 스스로 나가지 않는다.
 

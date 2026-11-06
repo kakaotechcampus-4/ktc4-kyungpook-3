@@ -75,6 +75,22 @@ export const 범위_변경: Story = {
   },
 }
 
+/** 리마인드 답장에서 온 변경 — 회의 대신 팀원 답장과 AI 해석을 근거로 보인다 (#344) */
+export const 답장_변경: Story = {
+  args: { approvalId: 'ap_31' },
+  parameters: { scenario: 'reply-judgment', route: '/workspaces/ws_01/approvals/ap_31' },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const reply = await canvas.findByRole('region', { name: '팀원 답장' })
+    await expect(within(reply).getByText('마감을 26일로 미루자고 했어요')).toBeVisible()
+    await waitFor(() =>
+      expect(within(reply).getByRole('figure', { name: '근거' })).toHaveTextContent(
+        '리마인드 답장 · 이재환',
+      ),
+    )
+  },
+}
+
 /** 충돌 — 승인하면 409. 기준값·현재값·제안값과 충돌 필드를 보이고, 다시 승인은 PM 이 누를 때만이다 */
 export const 충돌: Story = {
   args: { approvalId: 'ap_04' },

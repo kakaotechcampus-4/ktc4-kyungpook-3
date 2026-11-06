@@ -11,6 +11,7 @@ export const ACTION_FAILURE_TITLE: Record<MessageAction['kind'], string> = {
   reply: '답장을 보내지 못했어요',
   removeTask: '태스크를 빼지 못했어요',
   editNote: '메모를 저장하지 못했어요',
+  attribute: '답장의 태스크를 정하지 못했어요',
 }
 
 export const TIME_PASSED_TITLE = '예정 시각이 지났어요'
@@ -37,6 +38,14 @@ const GONE: KnownFailure = {
   place: 'toast',
 }
 
+/** 다른 PM 이 먼저 골랐거나 판단이 사라졌다. 다시 받으면 고르기가 사라진다 */
+const REPLY_GONE: KnownFailure = {
+  cause: 'gone',
+  message: '이미 처리된 답장이에요. 대화를 다시 불러올게요.',
+  then: 'refetch',
+  place: 'toast',
+}
+
 /** 오류 코드 → (문구, 후속 동작). 계약 §5.7 */
 export const KNOWN_FAILURES: Readonly<Record<string, KnownFailure>> = {
   BUNDLE_CHANGED: {
@@ -54,6 +63,8 @@ export const KNOWN_FAILURES: Readonly<Record<string, KnownFailure>> = {
   REMINDER_NOT_EDITABLE: GONE,
   REMINDER_BUNDLE_NOT_FOUND: GONE,
   REMINDER_NOT_FOUND: GONE,
+  REPLY_JUDGMENT_NOT_FOUND: REPLY_GONE,
+  REPLY_ATTRIBUTION_NOT_NEEDED: REPLY_GONE,
 }
 
 /** 승인 성공 알림 */
@@ -74,6 +85,13 @@ export function removeTaskNotice(
   return outcome.kind === 'closed'
     ? `마지막 태스크를 빼서 ${recipientName}님에게 보낼 메시지를 보내지 않기로 했어요.`
     : `'${taskTitle}'을 뺐어요. 문구를 다시 만들었으니 확인하고 승인해 주세요.`
+}
+
+/** 답장의 태스크를 정한 알림. task 가 null 이면 해당 없음이다 */
+export function attributeNotice(task: { title: string } | null): string {
+  return task === null
+    ? '해당 없음으로 정했어요.'
+    : `'${task.title}'에 대한 답장으로 정했어요. AI가 다시 판단해요.`
 }
 
 export const NOTE_SAVED_NOTICE = '메모를 고쳤어요. 문구를 다시 만들었으니 확인하고 승인해 주세요.'

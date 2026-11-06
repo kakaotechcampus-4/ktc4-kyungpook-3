@@ -45,6 +45,7 @@ function updateApproval(overrides: Partial<TaskUpdateApproval> = {}): TaskUpdate
     docText: null,
     evidence: { quote: null, speaker: null, speakerMemberId: null, atMs: null },
     meetingId: null,
+    replyMessageId: null,
     ...overrides,
   }
 }

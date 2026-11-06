@@ -5,11 +5,7 @@ import { db } from '@/shared/mock/db'
 import { finishMockOAuth } from '@/shared/mock/oauth/mockOAuth'
 import { applyScenario } from '@/shared/mock/scenarios'
 import { recordRequestBodies } from '@/shared/test/requests'
-import { seenDashboardIntro } from './test/firstVisitIntro'
 import { renderApp } from './test/renderApp'
-
-// 온보딩을 마치면 첫 대시보드에 인트로가 뜬다(#430). 이 파일은 그 뒤 대시보드를 본다
-beforeEach(() => seenDashboardIntro())
 
 /* U3-11 전체 흐름. OAuth 는 현재 탭 이동이라 복귀는 새 문서다 — 화면을 내리고 복귀 주소로 새로 띄워 흉내낸다.
    모의 OAuth 화면이 하는 일(finishMockOAuth)을 그대로 불러 복귀 주소를 얻는다 */

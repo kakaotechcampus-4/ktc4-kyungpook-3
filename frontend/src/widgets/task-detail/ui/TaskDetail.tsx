@@ -4,7 +4,9 @@ import type { ReactNode } from 'react'
 import { meetingListQueryOptions } from '@/entities/meeting'
 import { memberListQueryOptions } from '@/entities/member'
 import { taskDetailQueryOptions, taskHistoryQueryOptions } from '@/entities/task'
-import type { Task } from '@/entities/task'
+import type { Task, TaskHistoryEntry } from '@/entities/task'
+import { useReplyChangeUndo } from '@/features/reply-change-undo'
+import type { ReplyChangeUndo } from '@/features/reply-change-undo'
 import { TaskAutoBlockNotice } from '@/features/task-auto-block'
 import { TaskNotionSyncStatus } from '@/features/task-notion-sync'
 import { TASK_STATUS_LABEL, TaskStatusControl, useTaskStatusOverlay } from '@/features/task-status'
@@ -17,7 +19,8 @@ import { Button } from '@/shared/ui/button'
 import { EmptyState } from '@/shared/ui/empty-state'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
 import { Skeleton } from '@/shared/ui/skeleton'
-import { assigneeLabel, historyLine } from '../lib/history'
+import { REPLY_BODY_HIDDEN, assigneeLabel, historyLine, replyGroup } from '../lib/history'
+import type { ReplyGroup } from '../lib/history'
 import { TaskReminder } from './TaskReminder'
 
 const ROOT = 'mx-auto flex w-full max-w-[960px] flex-col gap-24 px-36 pt-32 pb-56'
@@ -32,6 +35,10 @@ const SECTION_TITLE = 'text-[17px] leading-[1.55] font-bold tracking-h2 text-ink
 const HISTORY = 'flex flex-col gap-10'
 const HISTORY_ROW = 'flex flex-col gap-2 border-b border-line pb-10'
 const HISTORY_META = 'text-meta text-dim tabular-nums'
+const REPLY_QUOTE = 'border-l-2 border-line pl-12 text-body text-sub whitespace-pre-line'
+const REPLY_CHANGES = 'flex flex-col gap-8'
+const REPLY_ROW = 'flex flex-col gap-8 border-b border-line pb-10'
+const RESULT_TAG = 'rounded-6 bg-control px-6 py-2 text-caption font-semibold text-sub'
 const LINK = 'text-body font-semibold text-ink underline underline-offset-4 hover:text-sub'
 
 export interface TaskDetailProps {
@@ -188,49 +195,55 @@ function TaskBody({ workspaceId, task, isPm }: { workspaceId: string; task: Task
         </dd>
       </dl>
       {isPm ? <TaskReminder workspaceId={workspaceId} task={task} status={status} /> : null}
-      <TaskHistory workspaceId={workspaceId} taskId={task.id} names={names} />
+      <TaskHistory workspaceId={workspaceId} taskId={task.id} names={names} isPm={isPm} />
     </>
   )
 }
 
+/**
+ * 변경 이력. 답장은 그 답장이 바꾼 값과 한 칸으로 묶이고, 그 값은 따로 한 줄이 되지 않는다.
+ * PM 은 자동 반영한 값을 그 줄에서 되돌린다
+ */
 function TaskHistory({
   workspaceId,
   taskId,
   names,
+  isPm,
 }: {
   workspaceId: string
   taskId: string
   names: ReadonlyMap<string, string>
+  isPm: boolean
 }) {
   const titleId = useId()
-  const history = useQuery(taskHistoryQueryOptions(workspaceId, taskId))
+  const timeline = useQuery(taskHistoryQueryOptions(workspaceId, taskId))
+  const undo = useReplyChangeUndo(workspaceId, taskId)
   let body: ReactNode
-  if (history.data !== undefined)
+  if (timeline.data !== undefined)
     body =
-      history.data.length === 0 ? (
+      timeline.data.length === 0 ? (
         <p className="text-body text-sub">아직 변경 이력이 없어요.</p>
       ) : (
         <ol aria-label="변경 이력" className={HISTORY}>
-          {history.data.map((entry) => {
-            const line = historyLine(entry, names)
-            return (
-              <li key={line.id} className={HISTORY_ROW}>
-                <p className="text-body text-ink">
-                  {line.change}
-                  {line.rolledBack ? ' (되돌림)' : ''}
-                </p>
-                <p className={HISTORY_META}>{line.meta}</p>
-              </li>
-            )
-          })}
+          {timeline.data.map((item) =>
+            item.kind === 'reply' ? (
+              <ReplyRow
+                key={`reply-${item.id}`}
+                group={replyGroup(item, names)}
+                undo={isPm ? undo : null}
+              />
+            ) : (
+              <HistoryRow key={item.entry.id} entry={item.entry} names={names} />
+            ),
+          )}
         </ol>
       )
-  else if (history.error !== null)
+  else if (timeline.error !== null)
     body = (
       <QueryErrorState
-        error={history.error}
+        error={timeline.error}
         title="변경 이력을 불러오지 못했어요"
-        onRetry={() => void history.refetch()}
+        onRetry={() => void timeline.refetch()}
       />
     )
   else
@@ -246,5 +259,62 @@ function TaskHistory({
       </h3>
       {body}
     </section>
+  )
+}
+
+function HistoryRow({
+  entry,
+  names,
+}: {
+  entry: TaskHistoryEntry
+  names: ReadonlyMap<string, string>
+}) {
+  const line = historyLine(entry, names)
+  return (
+    <li className={HISTORY_ROW}>
+      <p className="text-body text-ink">
+        {line.change}
+        {line.rolledBack ? ' (되돌림)' : ''}
+      </p>
+      <p className={HISTORY_META}>{line.meta}</p>
+    </li>
+  )
+}
+
+/** `undo` 가 null 이면 되돌릴 수 없는 사람이다 */
+function ReplyRow({ group, undo }: { group: ReplyGroup; undo: ReplyChangeUndo | null }) {
+  const pending = undo?.pendingChangeId ?? null
+  return (
+    <li className={REPLY_ROW}>
+      <p className={HISTORY_META}>{group.meta}</p>
+      {group.body === null ? (
+        <p className="text-caption text-dim">{REPLY_BODY_HIDDEN}</p>
+      ) : (
+        <blockquote className={REPLY_QUOTE}>{group.body}</blockquote>
+      )}
+      <ul aria-label="답장으로 바뀐 값" className={REPLY_CHANGES}>
+        {group.changes.map((change) => (
+          <li key={change.id} className="flex flex-col gap-2">
+            <div className="flex flex-wrap items-center gap-8">
+              <span className="text-body text-ink">{change.change}</span>
+              <span className={RESULT_TAG}>{change.result}</span>
+              {undo !== null && change.undoable ? (
+                <Button
+                  size="sm"
+                  loading={pending === change.id}
+                  disabled={pending !== null && pending !== change.id}
+                  onClick={() => undo.undo(change.id)}
+                >
+                  되돌리기
+                </Button>
+              ) : null}
+            </div>
+            {change.summary === null ? null : (
+              <p className="text-caption text-dim">{change.summary}</p>
+            )}
+          </li>
+        ))}
+      </ul>
+    </li>
   )
 }

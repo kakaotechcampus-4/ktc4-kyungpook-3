@@ -34,7 +34,7 @@ export function OnboardingStartPage() {
         description="함께할 팀에 맞는 시작 방식을 선택해 주세요."
       >
         <div className="flex flex-col gap-12 pt-8">
-          <MyInvitations onboarding />
+          <MyInvitations />
           {Object.entries(OPTIONS).map(([intent, option]) => (
             <GuardedLink
               key={intent}

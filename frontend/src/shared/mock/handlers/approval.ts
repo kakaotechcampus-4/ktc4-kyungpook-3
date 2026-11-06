@@ -16,6 +16,7 @@ import {
   validDate,
   addHistory,
 } from '../task-state'
+import { linkApprovalHistory } from '../reply-state'
 import type { ApprovalDto } from '@/shared/types/api/approval'
 
 type Failure = ReturnType<typeof fail>
@@ -352,7 +353,10 @@ export const approvalHandlers = [
             : // 그 밖의 종류(reminder_dm 등)는 태스크에 반영할 내용이 없다 — 백엔드와 같다
               () => {}
       if (prepared instanceof Response) return prepared
+      const since = db.taskHistory.length
       prepared(pm.memberId)
+      // 답장이 보낸 카드면 승인이 남긴 이력을 그 답장 줄에 잇는다 (BE link_history)
+      linkApprovalHistory(approval.approval_id, since)
     }
     approval.status = body.status
     approval.resolved_by = pm.memberId

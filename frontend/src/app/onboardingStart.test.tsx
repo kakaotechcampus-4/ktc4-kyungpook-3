@@ -6,11 +6,7 @@ import { fail } from '@/shared/mock/envelope'
 import { applyScenario } from '@/shared/mock/scenarios'
 import { server } from '@/shared/mock/server'
 import { recordRequests } from '@/shared/test/requests'
-import { seenDashboardIntro } from './test/firstVisitIntro'
 import { renderApp } from './test/renderApp'
-
-// 온보딩을 마치면 첫 대시보드에 인트로가 뜬다(#430). 이 파일은 그 뒤 대시보드를 본다
-beforeEach(() => seenDashboardIntro())
 
 function expectNoWorkspaceWrites(log: ReturnType<typeof recordRequests>) {
   expect(
