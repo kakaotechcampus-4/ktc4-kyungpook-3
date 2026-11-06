@@ -146,7 +146,9 @@ docker compose -f docker-compose.prod.yml logs -f api
 | `EXTRACTION_FAILED` | 502 | 회의 분석 실패 *(아직 미구현 경로)* |
 | `NOTION_WRITE_FAILED` | 502 | Notion 페이지 생성/갱신 실패 *(Task API는 더 이상 내려주지 않음 — 아래 Notion 연동 참고)* |
 | `EMBEDDING_UNAVAILABLE` | 502 | 임베딩 서버 호출 실패 또는 임베딩 키 미설정 (유사 task 검색) |
-| `DISCORD_API_FAILED` | 502 | Discord 서버 사용자 목록을 가져오지 못함(봇 토큰 미설정·권한·네트워크). `details.status`에 Discord 응답 상태(응답이 없으면 null) |
+| `DISCORD_API_FAILED` | 502 | Discord 요청 실패(봇 토큰 미설정·권한·네트워크). `details.status`에 Discord 응답 상태(응답이 없으면 null), 채널 API 는 `details.reason` 도 준다 |
+| `DISCORD_CHANNEL_NOT_FOUND` | 404 | 연결한 서버에서 그 텍스트 채널을 찾지 못함. `details.channel_id` |
+| `DISCORD_CHANNEL_NOT_ACCESSIBLE` | 409 | 봇이 그 채널을 읽거나 메시지를 보낼 수 없음. `details`는 `{channel_id, need: "read"\|"send", discord_code}` |
 | `INTERNAL_ERROR` | 500 | 그 외 서버 내부 오류 |
 
 *(아직 미구현 경로)* 표시가 붙은 코드는 음성 전사·회의 분석이 실제로 붙기
@@ -273,7 +275,7 @@ scope는 `bot applications.commands identify`다. 봇 초대 scope만 요청하�
 | 한 서버 한 워크스페이스 | 다른 워크스페이스에 이미 연결된 서버면 `failed`(DB 부분 유일 인덱스 `uq_integration_discord_guild`도 막는다). 같은 워크스페이스에서 다시 연결하면 서버 ID를 바꾼다 |
 | 봇 권한 | 채널 보기, 메시지·링크·파일 보내기, 메시지 기록 보기, 음성 채널 접속(`discord_oauth.DEFAULT_BOT_PERMISSIONS`). `DISCORD_BOT_PERMISSIONS`로 바꿀 수 있다 |
 | 보안 | Notion 연결과 같다. state는 제공자까지 서명해서 Notion 연결의 state로는 통과하지 못한다 |
-| 회의 인계 | 봇은 아직 `ai/.env`의 `BE_WORKSPACE_ID` 하나로 회의를 보낸다. 봇이 아래 [서버로 워크스페이스 찾기](#서버로-워크스페이스-찾기)를 쓰도록 바꾸는 작업은 AI 쪽 #180 후속이며 #194 머지 뒤에 시작한다 |
+| 회의 인계 | 봇은 회의마다 아래 [서버로 워크스페이스 찾기](#서버로-워크스페이스-찾기)로 워크스페이스를 정한다(AI #199). `ai/.env`에는 `BE_WORKSPACE_ID`가 필요 없다 |
 
 ### Discord 서버 사용자 목록
 
@@ -287,6 +289,34 @@ scope는 `bot applications.commands identify`다. 봇 초대 scope만 요청하�
 | 아바타 | 서버 전용 아바타 → 계정 아바타 → 없으면 `null` |
 | 미연결 | 연결 행이 없거나 서버 ID가 비어 있으면 409 `INTEGRATION_NOT_CONNECTED` |
 | 실패 | 봇 토큰이 없거나 Discord가 목록을 주지 않으면 502 `DISCORD_API_FAILED`(`details.status`). 401은 봇 토큰, 403은 Server Members Intent·권한, 404는 봇이 서버에 없는 경우가 많다 |
+
+### 채팅 수집 채널
+
+PM 이 디스코드 서버의 텍스트 채널 하나를 골라 두면 녹음 봇이 매일 그 채널 대화를 읽어 task 제안에 쓴다(#428).
+채널은 디스코드 `Integration` 행의 `chat_channel_id`·`chat_channel_name`에 저장한다(연결 행을 지우면 같이 사라진다).
+결정 근거는 [채팅 수집 채널 설정 결정 기록](docs/plan/m4/basis-for-decision/2026-11-06-discord-chat-channel-setting.md).
+
+| 경로 | 권한 | 동작 |
+|---|---|---|
+| `GET /workspaces/{workspace_id}/discord/channels` | PM | 고를 수 있는 채널 `{items: [{channel_id, name}], total}`. 미연결이면 409 `INTEGRATION_NOT_CONNECTED`, 봇 토큰이 없거나 Discord 가 실패하면 502 `DISCORD_API_FAILED`(`details.status`, `details.reason`) |
+| `PUT /workspaces/{workspace_id}/integrations/discord/chat-channel` | PM | 요청 `{channel_id}` → `{channel_id, name}`. 채널을 확인하고 켬 공지를 보낸 뒤 저장 |
+| `DELETE /workspaces/{workspace_id}/integrations/discord/chat-channel` | PM | 수집을 끈다. 200 `{off_notice_sent}` |
+| `GET /bot/chat-channels` | 서비스 토큰 | 봇이 읽을 대상 `{items: [{workspace_id, guild_id, channel_id}]}`, `workspace_id` 순. 서버와 채널이 모두 있는 연결만 준다 |
+
+연결 조회(`GET /workspaces/{workspace_id}/integrations`)의 `discord`에는 `chat_channel: {channel_id, name}`이 있다(꺼져 있거나 연결 전이면 `null`). 소속이면 누구나 본다.
+
+| 항목 | 동작 |
+|---|---|
+| 채널 목록 | 일반 텍스트 채널(type 0)만. 공지·포럼·음성 채팅 채널은 뺀다. 순서는 카테고리 없는 채널, 그다음 카테고리 position 순이고 같은 카테고리 안은 채널 position, 같으면 id 순이다 |
+| 저장 순서 | 연결 행을 `FOR UPDATE`로 잠근 채 (1) 서버의 텍스트 채널인지 (2) 읽기 확인(`GET /channels/{id}/messages?limit=1`) (3) 켬 공지 전송을 차례로 하고, 모두 성공하면 두 열을 저장·커밋한다. 하나라도 실패하면 아무것도 저장하지 않는다. 같은 워크스페이스의 동시 저장은 순서대로 처리된다. Discord 호출마다 5초 제한이 있고 세 번 부르므로 대략 15초 안팎 걸릴 수 있다(합계 상한은 아니다). 그동안 같은 워크스페이스의 연결 해제도 기다린다 |
+| 켬 공지 | "이 채널 대화는 매일 09:00(KST)에 Manager's Manager 가 읽어 task 추가·수정 제안에 씁니다. 제안은 PM 승인 뒤에만 반영됩니다." 멘션 알림은 보내지 않는다(`allowed_mentions.parse: []`). 보내지 못하면 저장 실패다 |
+| 끔 공지 | "이 채널 대화 수집을 껐습니다." 채널 해제, 다른 채널로 변경(옛 채널), 디스코드 연결 해제 때 DB 커밋 **뒤** 시도한다. 실패해도 해제·변경·연결 해제는 성공이다 |
+| 읽기 확인의 한계 | `GET /channels/{id}/messages?limit=1`은 VIEW_CHANNEL 만 있고 READ_MESSAGE_HISTORY 가 없으면 403 이 아니라 200 빈 목록을 줄 수 있다(Discord 동작, 확인 필요). 그러면 읽을 수 없는 채널도 통과할 수 있다 |
+| 같은 채널 재저장 | Discord 를 부르지 않고 현재 값을 200 으로 준다. 채널 이름은 저장한 시점의 값이다. 다만 봇 토큰 확인이 먼저라 `DISCORD_BOT_TOKEN`이 없으면 이 경우도 502 |
+| 해제 응답 | `DELETE`는 204 가 아니라 200 `{off_notice_sent}`다. 공지를 보냈으면 `true`. 이미 꺼져 있거나 연결 행이 없어도 200 `false`이고 공지는 없다 |
+| 연결 해제·재연결 | `DELETE .../integrations/discord`(204 그대로)는 채팅 채널도 지우고 커밋 뒤 끔 공지를 시도한다. 다른 서버로 다시 연결하면 공지 없이 채널을 비운다(이전 서버의 채널은 의미가 없다). 같은 서버로 다시 연결하면 유지한다 |
+| 요청 검증 | `channel_id`는 앞뒤 공백을 지운 숫자 1~20자. 아니면 400 `INVALID_REQUEST` |
+| 오류 | 연결이 없으면 409 `INTEGRATION_NOT_CONNECTED`(채널 목록은 연결 확인이 먼저, PUT 은 봇 토큰 확인이 먼저라 토큰이 없으면 연결 없음도 502 `DISCORD_API_FAILED`, `details.reason: "bot_token_missing"`). 서버의 텍스트 채널이 아니면 404 `DISCORD_CHANNEL_NOT_FOUND`. 봇이 읽지 못하면(403) 409 `DISCORD_CHANNEL_NOT_ACCESSIBLE` `need: "read"`, 켬 공지를 보내지 못하면(403) `need: "send"`. 봇 토큰이 없거나 그 밖의 Discord 실패(채널 목록 조회 실패 포함)는 502 `DISCORD_API_FAILED` |
 
 ### 서버로 워크스페이스 찾기
 
@@ -305,13 +335,14 @@ scope는 `bot applications.commands identify`다. 봇 초대 scope만 요청하�
 |---|---|
 | `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET` | Discord 개발자 포털 → 앱 → OAuth2 |
 | `DISCORD_REDIRECT_URI` | 프론트와 같은 주소의 callback. 로컬 `http://localhost:5173/api/v1/integrations/discord/callback`, 운영 `https://<서비스 주소>/api/v1/integrations/discord/callback` |
-| `DISCORD_BOT_TOKEN` | 녹음 봇(`ai/.env`)과 같은 봇의 토큰. 서버 사용자 목록을 읽는다 |
+| `DISCORD_BOT_TOKEN` | 녹음 봇(`ai/.env`)과 같은 봇의 토큰. 서버 사용자 목록을 읽고, 채팅 수집 채널 설정의 채널 목록·읽기 확인·켬·끔 공지 전송에도 쓴다 |
 | `OAUTH_STATE_SECRET` | Notion 연결과 같은 서명 키를 쓴다 |
 
 **Discord 개발자 포털 설정**
 
 - OAuth2 → Redirects에 위 `DISCORD_REDIRECT_URI`와 같은 값을 등록한다.
 - Bot → Privileged Gateway Intents에서 **Server Members Intent**를 켠다(녹음 봇도 이미 쓴다).
+- 채팅 수집을 쓰려면 **Message Content Intent**도 켠다(AI 담당이 켠다).
 
 ## 유사 task 검색과 AI 판단 접수
 
@@ -398,17 +429,17 @@ Gmail 은 하루 발송 한도(약 500통)가 있다. 다른 SMTP 로 옮길 때
 
 | 구분 | API |
 |---|---|
-| PM 전용 | 승인·반려(`PATCH /approvals/{id}`), 할일 생성·수정(`POST /tasks`, `PATCH /tasks/{id}`), 되돌리기, auto 되돌리기(`POST /extractions/{id}/items/{item_id}/revert`), Notion 재시도, 팀원 생성·수정, 별칭 생성·삭제, Notion 연결 시작·콜백(`GET .../integrations/notion/start`, `GET /integrations/notion/callback`), Discord 연결 시작·콜백(`GET .../integrations/discord/start`, `GET /integrations/discord/callback`), 연동 해제, 회의 업로드, 온보딩 저장, 메시지 설정 변경(`PATCH /workspaces/{workspace_id}/message-settings`) |
+| PM 전용 | 승인·반려(`PATCH /approvals/{id}`), 할일 생성·수정(`POST /tasks`, `PATCH /tasks/{id}`), 되돌리기, auto 되돌리기(`POST /extractions/{id}/items/{item_id}/revert`), Notion 재시도, 팀원 생성·수정, 별칭 생성·삭제, Notion 연결 시작·콜백(`GET .../integrations/notion/start`, `GET /integrations/notion/callback`), Discord 연결 시작·콜백(`GET .../integrations/discord/start`, `GET /integrations/discord/callback`), Discord 채널 목록·채팅 수집 채널 저장·해제(`GET .../discord/channels`, `PUT`·`DELETE .../integrations/discord/chat-channel`), 연동 해제, 회의 업로드, 온보딩 저장, 메시지 설정 변경(`PATCH /workspaces/{workspace_id}/message-settings`) |
 | 소속이면 누구나 | 조회 API 전부(메시지 설정 조회 `GET .../message-settings` 포함), 승인 요청 생성(`POST /approvals`) |
 
 - Notion 연결 시작·콜백은 브라우저 페이지 이동이라 403 대신 앱 화면의 `?oauth=notion&oauth_result=failed`로 돌려보낸다.
 - 일반 팀원은 할일을 직접 바꾸지 못하고 승인 요청을 올려 PM의 승인을 받는다. 요청자(`requested_by`)는 바디 값이 아니라 로그인한 팀원으로 기록한다.
 - PM 역할은 `PATCH /members/{id}`의 `role`로 바꾼다. PM을 넘길 때는 다른 팀원을 먼저 PM으로 올린 뒤 자기를 내린다. 로그인 계정이 있는 PM이 한 명도 남지 않게 되면 409 `LAST_PM_REQUIRED`.
-- 봇 경로(회의 생성·종료·단계 보고·실패, 발화 저장, 유사 task 검색, 추출 등록, 서버로 워크스페이스 찾기, 전사 힌트 조회)는 사용자 세션 대신 서비스 토큰(`X-Service-Token`, `deps.require_service_token`)으로 막는다. 없거나 틀리면 401 `UNAUTHENTICATED`. 자세한 내용은 [AI(녹음 봇) 계약](docs/contracts/backend-ai-contract.md#인증).
+- 봇 경로(회의 생성·종료·단계 보고·실패, 발화 저장, 유사 task 검색, 추출 등록, 서버로 워크스페이스 찾기, 전사 힌트 조회, 채팅 수집 대상 목록 `GET /bot/chat-channels`)는 사용자 세션 대신 서비스 토큰(`X-Service-Token`, `deps.require_service_token`)으로 막는다. 없거나 틀리면 401 `UNAUTHENTICATED`. 자세한 내용은 [AI(녹음 봇) 계약](docs/contracts/backend-ai-contract.md#인증).
 
 ## 아직 없는 것
 
-봇이 서버로 워크스페이스를 찾아 회의를 보내는 연결(BE 조회는 있고 봇은 아직 `ai/.env`의 `BE_WORKSPACE_ID` 하나로 보낸다, AI #180 후속), 워크스페이스 초대, 업로드 녹음을 AI가 처리하는 경로(BE 가져가기 API는 있고 AI 쪽이 없다, [M5 결과](docs/plan/m5/result.md)), 메시지 로그. PM 알림을 DM 으로 보내는 경로와 #회의록 요약 게시를 읽는 경로는 없어서 설정의 PM 알림 방식·요약 값은 저장만 하고 PM 알림은 항상 웹으로 간다.
+워크스페이스 초대, 업로드 녹음을 AI가 처리하는 경로(BE 가져가기 API는 있고 AI 쪽이 없다, [M5 결과](docs/plan/m5/result.md)), 메시지 로그. PM 알림을 DM 으로 보내는 경로와 #회의록 요약 게시를 읽는 경로는 없어서 설정의 PM 알림 방식·요약 값은 저장만 하고 PM 알림은 항상 웹으로 간다.
 
 ## 메시지·알림 설정
 
