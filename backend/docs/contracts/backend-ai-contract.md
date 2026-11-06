@@ -51,10 +51,10 @@
 
 봇은 `meeting_id`를 매니페스트 `be.meeting_id`에 남기고 이후 모든 단계의 재시도 키로 쓴다.
 
-- `source: "chat"`과 `started_at`은 디스코드 채팅 자동 수집용이다(구현됨, BE 담당 리뷰 대기). `started_at`은 이 회의에 담긴 첫 메시지 시각이고, 채팅 회의의 발화 `start`·`end`(초)는 이 시각에서 잰 값이다.
+- `source: "chat"`과 `started_at`은 디스코드 채팅 자동 수집용이다(구현됨, #378). `started_at`은 이 회의에 담긴 첫 메시지 시각이고, 채팅 회의의 발화 `start`·`end`(초)는 이 시각에서 잰 값이다.
 - 요청 본문 `source: "chat"`(sources)은 `source`가 `chat`인 회의에만 보낼 수 있다. 다른 회의에 보내면 400 `INVALID_REQUEST`다(24시간 상한 우회 방지).
-- 채팅 회의가 `processing`으로 남아도 웹 업로드를 막지 않는다. 폴러가 죽어 `/end` 뒤 3시간이 지나도록 `processing`이면 BE sweeper가 `failed`(`failed_stage=chat_stalled`)로 바꾼다. 업로드 409 검사(`MEETING_PROCESSING_IN_PROGRESS`)는 `source`가 `chat`인 회의를 세지 않는다.
-- 합의 상태: AI 담당이 설계를 정하고 이 PR 에 포함했다. BE 담당 리뷰 전이라 BE·AI 합의는 확인 필요.
+- 채팅 회의가 `processing`으로 남아도 웹 업로드를 막지 않는다. 폴러가 죽어 `/end` 뒤 7시간이 지나도록 `processing`이면 BE sweeper가 `failed`(`failed_stage=chat_stalled`)로 바꾼다. 폴러 시간 제한을 6시간까지 올리는 #431 에 맞춰 그보다 길게 잡은 값이라, 제한을 7시간 이상으로 올리면 이 값도 함께 올린다. 업로드 409 검사(`MEETING_PROCESSING_IN_PROGRESS`)는 `source`가 `chat`인 회의를 세지 않는다.
+- 합의 상태: 채팅 수집은 AI 담당이 설계를 정했고 #378 에서 BE 리뷰를 거쳐 머지됐다. 정리 기준 7시간은 #431 리뷰에서 BE 가 맡기로 한 값이고, #431 에 알렸으나 AI 담당의 확인은 아직 없다(#449).
 
 ### `GET /workspaces/{workspace_id}/chat-cursor` → 200
 
@@ -124,7 +124,7 @@ AI `Transcript.to_dict()` 모양에 화자 이름을 더해 보낸다. 한 회�
 
 | 항목 | 동작 |
 |---|---|
-| 시각 | 초 단위, 0 이상, `end >= start`. `source: "meeting"`은 24시간 이하, `"chat"`은 14일 이하(하루치 대화를 며칠 뒤에 올릴 수 있어 회의 시작 기준 오프셋이 더 크다). 구현됨, BE 담당 리뷰 대기 |
+| 시각 | 초 단위, 0 이상, `end >= start`. `source: "meeting"`은 24시간 이하, `"chat"`은 14일 이하(하루치 대화를 며칠 뒤에 올릴 수 있어 회의 시작 기준 오프셋이 더 크다). 구현됨(#378) |
 | `seq` | 0 이상 int4 범위. 한 요청 안에서 겹치면 400. 사이가 비어도 된다 |
 | 재전송 | `(meeting_id, seq)`가 이미 있으면 덮어쓰지 않고 건너뛴다 (`skipped`). 같은 seq의 `speaker_names`도 다시 반영하지 않으므로 처음 보낼 때 같이 보낸다 |
 | 화자 | 빈 문자열은 null. `speaker_member_id`가 없는 세그먼트만 uid로 그 워크스페이스 팀원을 찾아 `member_id`를 채운다. 이름이 uid와 같으면 이름을 버린다 |
@@ -132,9 +132,9 @@ AI `Transcript.to_dict()` 모양에 화자 이름을 더해 보낸다. 한 회�
 | `duration_ms` | 저장된 발화 전체의 `end_ms` 최댓값 |
 | 상태 | `done` 회의도 받는다. `failed` 회의는 409 `MEETING_FAILED` (`MEETING_ALREADY_ENDED`와 다르다. 저장되지 않았으니 새 회의로 다시 올려야 한다) |
 
-## 채팅 회의의 반영 규칙 (구현됨, BE 담당 리뷰 대기)
+## 채팅 회의의 반영 규칙 (구현됨, #378)
 
-`source`가 `chat`인 회의의 추출 항목은 PM 승인을 거쳐야 task에 반영된다. AI 담당이 설계를 정하고 이 PR 에 포함했다. BE 담당 리뷰 전이라 BE·AI 합의는 확인 필요.
+`source`가 `chat`인 회의의 추출 항목은 PM 승인을 거쳐야 task에 반영된다. AI 담당이 설계를 정했고 #378 에서 BE 리뷰를 거쳐 머지됐다.
 
 - 추출 등록(`POST /extractions`)에서 새 항목의 게이트가 `auto`가 되면 `review`로 낮춘다. `hold`는 그대로다. 수정 항목은 원래 항상 `review`다.
 - 승인으로 task가 생기거나 바뀌면 `TaskHistory.change_source`가 `chat`이다(그 외 회의는 기존대로 `meeting`·`manual`). 이력 응답의 `is_auto`는 `changed_by`로 계산하므로 승인한 PM이 기록된다.
