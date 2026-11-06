@@ -30,6 +30,7 @@ import type { SplashState } from './splashMachine'
 /** index.html 이 JS 보다 먼저 그리는 스플래시 */
 const STATIC_SPLASH_ID = 'boot-splash'
 const LOOK_POSES: readonly MascotPose[] = ['idle', 'left', 'right']
+const REDUCED_MOTION = '(prefers-reduced-motion: reduce)'
 
 interface SplashRun {
   /** performance.now() 기준 시작 시각 */
@@ -65,7 +66,7 @@ function bootRun(): SplashRun | null {
 function initialState(run: SplashRun): SplashState {
   return startSplash({
     elapsed: performance.now() - run.startedAt,
-    reduced: window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+    reduced: window.matchMedia(REDUCED_MOTION).matches,
     revealAt: window.matchMedia('(display-mode: standalone)').matches ? 0 : REVEAL_MS,
     landing: run.landing,
   })
@@ -110,6 +111,19 @@ function SplashRunView({ run, appRoot, onDone }: SplashRunViewProps) {
   const holds = useSyncExternalStore(subscribeSplashHolds, getSplashHoldCount)
   const mascot = useRef<MascotHandle>(null)
   const { stage, reduced } = state
+
+  useEffect(() => {
+    const query = window.matchMedia(REDUCED_MOTION)
+    const onChange = () => {
+      dispatch({ type: 'reduced', reduced: query.matches })
+    }
+    // 첫 상태를 읽은 뒤 구독하기 전에 바뀐 것도 맞춘다
+    onChange()
+    query.addEventListener('change', onChange)
+    return () => {
+      query.removeEventListener('change', onChange)
+    }
+  }, [])
 
   // React 판이 같은 커밋에 그려지므로 두 판이 함께 보이거나 둘 다 없는 프레임이 없다
   useLayoutEffect(() => {

@@ -7,6 +7,7 @@
  *   등장 시각을 넘겨도 hidden 에 머문다.
  * - 준비가 enter·look 에 오면 smile 로 간다. enter 에 오면 둘러보기를 건너뛴 것이다.
  * - 움직임 줄이기면 둘러보기·눈웃음·사라짐이 없다. 준비가 오면 바로 done 이다.
+ *   도중에 켜면 눈웃음·사라짐은 바로 done 이고, 둘러보기는 정면으로 멈춰 준비를 기다린다.
  *
  * 단계마다 끝나는 시각을 스플래시 시계에 고정한다. 타이머를 렌더 뒤에 다시 걸어도 밀리지 않고,
  * CSS 등장(같은 시계)과 어긋나지 않는다.
@@ -45,13 +46,14 @@ export interface SplashState {
 
 /**
  * timer: 지금 단계가 끝나는 시각이 됐다. idle·held: 잡기가 그 시각에 0이 됐다·다시 잡혔다.
- * ready: 잡기 0이 SETTLE_MS 이어져 첫 화면이 그 시각에 준비됐다
+ * ready: 잡기 0이 SETTLE_MS 이어져 첫 화면이 그 시각에 준비됐다. reduced: 움직임 줄이기 설정이 바뀌었다
  */
 export type SplashEvent =
   | { type: 'timer' }
   | { type: 'idle'; at: number }
   | { type: 'held' }
   | { type: 'ready'; at: number }
+  | { type: 'reduced'; reduced: boolean }
 
 export interface SplashStart {
   /** 스플래시 시작부터 지금까지 */
@@ -130,6 +132,10 @@ function afterReady(state: SplashState, at: number): SplashStage {
   return stage
 }
 
+function afterReducedOn(stage: SplashStage): SplashStage {
+  return stage.phase === 'smile' || stage.phase === 'leave' ? DONE : stage
+}
+
 export function stepSplash(state: SplashState, event: SplashEvent): SplashState {
   switch (event.type) {
     case 'idle':
@@ -138,6 +144,13 @@ export function stepSplash(state: SplashState, event: SplashEvent): SplashState 
       return state.idleAt === null ? state : { ...state, idleAt: null }
     case 'ready':
       return withStage(state, afterReady(state, event.at))
+    case 'reduced':
+      if (event.reduced === state.reduced) return state
+      return {
+        ...state,
+        reduced: event.reduced,
+        stage: event.reduced ? afterReducedOn(state.stage) : state.stage,
+      }
     case 'timer': {
       const deadline = splashDeadline(state)
       return deadline === null ? state : withStage(state, afterTimer(state, deadline))

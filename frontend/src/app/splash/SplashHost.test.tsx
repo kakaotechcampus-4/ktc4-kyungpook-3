@@ -18,19 +18,40 @@ interface Motion {
   standalone?: boolean
 }
 
+const REDUCED_MOTION = '(prefers-reduced-motion: reduce)'
+type MediaListener = (event: { matches: boolean }) => void
+
+/** 돌려받은 setReduced 로 실행 중에 OS 의 움직임 줄이기 설정을 바꾼다 */
 function stubMotion({ reduced = false, standalone = false }: Motion = {}) {
+  let reducedNow = reduced
+  const reducedListeners = new Set<MediaListener>()
   vi.stubGlobal('matchMedia', (query: string) => ({
-    matches:
-      (query === '(prefers-reduced-motion: reduce)' && reduced) ||
-      (query === '(display-mode: standalone)' && standalone),
+    get matches() {
+      return (
+        (query === REDUCED_MOTION && reducedNow) ||
+        (query === '(display-mode: standalone)' && standalone)
+      )
+    },
     media: query,
     onchange: null,
     addListener: () => {},
     removeListener: () => {},
-    addEventListener: () => {},
-    removeEventListener: () => {},
+    addEventListener: (_type: string, listener: MediaListener) => {
+      if (query === REDUCED_MOTION) reducedListeners.add(listener)
+    },
+    removeEventListener: (_type: string, listener: MediaListener) => {
+      reducedListeners.delete(listener)
+    },
     dispatchEvent: () => true,
   }))
+  return {
+    setReduced: (next: boolean) => {
+      reducedNow = next
+      act(() => {
+        for (const listener of reducedListeners) listener({ matches: next })
+      })
+    },
+  }
 }
 
 function Screen({ loading }: { loading: boolean }) {
@@ -311,6 +332,46 @@ describe('움직임 줄이기', () => {
     advance(1)
     expect(overlay()).toBeNull()
     expect(smiling()).toBe(false)
+  })
+
+  it('둘러보는 중에 켜면 정면으로 돌아와 기다리고, 준비되면 눈웃음 없이 바로 걷힌다', () => {
+    const motion = stubMotion()
+    const { appRoot, finishLoading } = boot()
+
+    advance(1500)
+    const front = leftEyeX()
+    advance(1800)
+    expect(leftEyeX()).not.toBe(front)
+
+    motion.setReduced(true)
+    advance(10)
+    expect(leftEyeX()).toBe(front)
+    advance(3000)
+    expect(leftEyeX()).toBe(front)
+    expect(status()).toBe('로그인 확인 중')
+
+    finishLoading()
+    expect(appRoot).not.toHaveAttribute('inert')
+    advance(100)
+    expect(overlay()).toBeNull()
+    expect(smiling()).toBe(false)
+  })
+
+  it.each([
+    ['눈웃음', 300],
+    ['사라짐', 1700],
+  ])('%s 중에 켜면 바로 걷힌다', (_phase, afterReady) => {
+    const motion = stubMotion()
+    const { appRoot, finishLoading } = boot()
+
+    advance(2000)
+    finishLoading()
+    advance(100 + afterReady)
+    expect(smiling()).toBe(true)
+
+    motion.setReduced(true)
+    expect(overlay()).toBeNull()
+    expect(appRoot).not.toHaveAttribute('inert')
   })
 })
 
