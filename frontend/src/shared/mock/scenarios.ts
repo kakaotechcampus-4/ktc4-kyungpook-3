@@ -574,6 +574,7 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
       // 같은 시나리오는 늘 같은 db 여야 해서 지금 시각이 아니라 고정 시각까지 막는다
       state.loginLimit['pm@example.com'] = {
         failures: 10,
+        windowStartedAt: Date.parse('2099-12-30T23:45:00.000Z'),
         blockedUntil: Date.parse('2099-12-31T00:00:00.000Z'),
       }
       break

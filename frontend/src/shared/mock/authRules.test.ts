@@ -32,6 +32,17 @@ async function failLogins(times: number, email = EMAIL) {
     await expect(login('wrong-password', email)).rejects.toMatchObject({ status: 401 })
 }
 
+async function resetPassword(newPassword: string) {
+  await fetchDto('/auth/password-reset/request', jsonRequest('POST', { email: EMAIL }))
+  const mail = db.passwordReset.outbox.at(-1)
+  if (!mail) throw new Error('no mail')
+  const token = decodeURIComponent(mail.resetPath.split('#token=')[1])
+  await fetchDto(
+    '/auth/password-reset/confirm',
+    jsonRequest('POST', { token, new_password: newPassword }),
+  )
+}
+
 beforeEach(() => {
   applyScenario('signed-out')
   vi.useFakeTimers({ toFake: ['Date'], now: Date.parse('2026-11-07T09:00:00Z') })
@@ -122,15 +133,37 @@ describe('로그인 시도 제한 (#457, BE login_limit)', () => {
 
   it('비밀번호 재설정을 마치면 막힘이 풀린다', async () => {
     await failLogins(10)
-    await fetchDto('/auth/password-reset/request', jsonRequest('POST', { email: EMAIL }))
-    const mail = db.passwordReset.outbox.at(-1)
-    if (!mail) throw new Error('no mail')
-    const token = decodeURIComponent(mail.resetPath.split('#token=')[1])
-    await fetchDto(
-      '/auth/password-reset/confirm',
-      jsonRequest('POST', { token, new_password: 'newpass123' }),
-    )
+    await resetPassword('newpass123')
     await expect(login('newpass123')).resolves.toMatchObject({ user: { email: EMAIL } })
+  })
+
+  it('대소문자가 다른 이메일로 막혀도 재설정을 마치면 풀린다', async () => {
+    await failLogins(10, 'PM@example.com')
+    await expect(login(PASSWORD)).rejects.toMatchObject({ status: 429 })
+    await resetPassword('newpass123')
+    await expect(login('newpass123')).resolves.toMatchObject({ user: { email: EMAIL } })
+  })
+
+  it('첫 실패부터 15분이 지나면 실패를 처음부터 센다', async () => {
+    await failLogins(9)
+    vi.advanceTimersByTime(BLOCK_SECONDS * 1000)
+    await failLogins(1)
+    await expect(login(PASSWORD)).resolves.toMatchObject({ user: { email: EMAIL } })
+  })
+
+  it('첫 실패부터 15분이 되기 직전의 10번째 실패는 막는다', async () => {
+    await failLogins(9)
+    vi.advanceTimersByTime(BLOCK_SECONDS * 1000 - 1)
+    await failLogins(1)
+    await expect(login(PASSWORD)).rejects.toMatchObject({ status: 429 })
+  })
+
+  it('이메일은 앞뒤 공백과 대소문자를 무시하고 함께 센다', async () => {
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      await failLogins(1)
+      await failLogins(1, 'PM@Example.com ')
+    }
+    await expect(login(PASSWORD)).rejects.toMatchObject({ status: 429 })
   })
 
   it('login-rate-limited 는 맞는 비밀번호도 바로 429 이고 남은 시간은 900초다', async () => {

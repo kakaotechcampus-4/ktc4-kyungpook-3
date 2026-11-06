@@ -116,6 +116,7 @@ function isMockDb(value: unknown): value is MockDb {
       (entry) =>
         isRecord(entry) &&
         typeof entry.failures === 'number' &&
+        typeof entry.windowStartedAt === 'number' &&
         (entry.blockedUntil === null || typeof entry.blockedUntil === 'number'),
     )
   )

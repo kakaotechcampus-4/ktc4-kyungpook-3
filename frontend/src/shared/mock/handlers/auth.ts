@@ -1,5 +1,5 @@
 import { http } from 'msw'
-import { db } from '../db'
+import { db, loginLimitKey, type MockLoginLimit } from '../db'
 import { fail, ok } from '../envelope'
 import { requireAuth } from '../auth-guard'
 import { workspaceCountOf } from '../sessions'
@@ -28,7 +28,16 @@ function checkedName(value: string): string | null {
 
 const LOGIN_FAILURE_LIMIT = 10
 
+const LOGIN_WINDOW_MS = 15 * 60_000
+
 const LOGIN_BLOCK_MS = 15 * 60_000
+
+/** BE _fresh_view. 막힘이 끝났거나, 막히지 않은 채 첫 실패부터 15분이 지난 행은 없는 것으로 본다 */
+function freshLoginLimit(key: string, at: number): MockLoginLimit | null {
+  const entry = db.loginLimit[key]
+  if (!entry) return null
+  return at < (entry.blockedUntil ?? entry.windowStartedAt + LOGIN_WINDOW_MS) ? entry : null
+}
 
 /** 소속 수는 응답할 때 센다 — 저장한 세션 값에는 수락한 초대로 생긴 소속이 없다 */
 const authResponse = () => ({
@@ -82,8 +91,10 @@ export const authHandlers = [
     const email = typeof body.email === 'string' ? body.email : ''
     // passwordReset.ts 처럼 멈춘 now() 가 아니라 흐르는 시계로 본다. 멈춘 시계로는 15분이 끝나지 않는다
     const at = Date.now()
-    const blockedUntil = db.loginLimit[email]?.blockedUntil ?? null
-    if (blockedUntil !== null && blockedUntil > at) {
+    const key = loginLimitKey(email)
+    const limit = freshLoginLimit(key, at)
+    const blockedUntil = limit?.blockedUntil ?? null
+    if (blockedUntil !== null) {
       // 시나리오는 먼 미래까지 막아 둔다. BE 는 15분을 넘겨 답하지 않는다
       const seconds = Math.min(
         Math.max(Math.ceil((blockedUntil - at) / 1000), 1),
@@ -97,18 +108,18 @@ export const authHandlers = [
         { 'Retry-After': String(seconds) },
       )
     }
-    if (blockedUntil !== null) delete db.loginLimit[email]
     const account = db.accounts.find(({ session }) => session.user.email === email)
     if (!account || body.password !== account.password) {
       // BE _bump 처럼 센 뒤에 본다. 10번째 실패는 401 이고 그다음 시도부터 막힌다
-      const failures = (db.loginLimit[email]?.failures ?? 0) + 1
-      db.loginLimit[email] = {
+      const failures = (limit?.failures ?? 0) + 1
+      db.loginLimit[key] = {
         failures,
+        windowStartedAt: limit?.windowStartedAt ?? at,
         blockedUntil: failures >= LOGIN_FAILURE_LIMIT ? at + LOGIN_BLOCK_MS : null,
       }
       return fail('INVALID_CREDENTIALS', '이메일 또는 비밀번호가 올바르지 않습니다.', 401)
     }
-    delete db.loginLimit[email]
+    delete db.loginLimit[key]
     db.session = structuredClone(account.session)
     db.authenticated = true
     return ok(authResponse())
