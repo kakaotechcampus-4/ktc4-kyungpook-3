@@ -1,5 +1,6 @@
 import logging
 import smtplib
+import ssl
 
 import pytest
 
@@ -16,6 +17,7 @@ ALL_KEYS = [*ENV, "SMTP_PORT", "SMTP_SECURITY", "SMTP_FROM", "SMTP_TIMEOUT_SECON
 
 @pytest.fixture(autouse=True)
 def clean_env(monkeypatch):
+    CONTEXTS.clear()
     for key in ALL_KEYS:
         monkeypatch.delenv(key, raising=False)
 
@@ -25,9 +27,13 @@ def set_env(monkeypatch, **overrides):
         monkeypatch.setenv(key, value)
 
 
+CONTEXTS: list = []
+
+
 def make_fake(calls: list, kind: str):
     class FakeSMTP:
-        def __init__(self, host, port, timeout=None):
+        def __init__(self, host, port, timeout=None, context=None):
+            CONTEXTS.append(("init", context))
             calls.append(f"{kind}({host},{port},{timeout})" if kind != "init" else f"init({host},{port},{timeout})")
             self.messages = []
 
@@ -37,7 +43,8 @@ def make_fake(calls: list, kind: str):
         def __exit__(self, *exc):
             return False
 
-        def starttls(self):
+        def starttls(self, context=None):
+            CONTEXTS.append(("starttls", context))
             calls.append("starttls")
 
         def login(self, username, password):
@@ -75,6 +82,33 @@ def test_send_mail_uses_starttls_by_default(monkeypatch):
     assert msg["To"] == "to@example.com"
     assert msg["From"] == "user@example.com"
     assert msg["Subject"] == "제목"
+
+
+def _assert_verifying(context):
+    assert isinstance(context, ssl.SSLContext)
+    assert context.verify_mode == ssl.CERT_REQUIRED
+    assert context.check_hostname is True
+
+
+def test_starttls_verifies_the_server_certificate(monkeypatch):
+    """context 를 주지 않으면 인증서를 검증하지 않아 앱 비밀번호와 재설정 토큰이 가짜 서버로 넘어갈 수 있다."""
+    set_env(monkeypatch)
+    monkeypatch.setattr(smtplib, "SMTP", make_fake([], "init"))
+
+    mailer.send_mail("to@example.com", "s", "t")
+
+    [context] = [c for name, c in CONTEXTS if name == "starttls"]
+    _assert_verifying(context)
+
+
+def test_smtp_ssl_verifies_the_server_certificate(monkeypatch):
+    set_env(monkeypatch, SMTP_SECURITY="ssl", SMTP_PORT="465")
+    monkeypatch.setattr(smtplib, "SMTP_SSL", make_fake([], "ssl"))
+
+    mailer.send_mail("to@example.com", "s", "t")
+
+    [context] = [c for name, c in CONTEXTS if name == "init"]
+    _assert_verifying(context)
 
 
 def test_send_mail_uses_from_env_when_set(monkeypatch):
@@ -156,3 +190,4 @@ def test_send_with_retry_logs_last_exception_type_and_message_without_body(monke
 def test_app_base_url_strips_trailing_slash(monkeypatch):
     monkeypatch.setenv("APP_BASE_URL", "https://app.example.com/")
     assert mailer.app_base_url() == "https://app.example.com"
+

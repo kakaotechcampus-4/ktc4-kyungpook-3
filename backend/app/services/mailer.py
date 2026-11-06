@@ -2,6 +2,7 @@
 import logging
 import os
 import smtplib
+import ssl
 import time
 from email.message import EmailMessage
 
@@ -39,10 +40,15 @@ def send_mail(to: str, subject: str, text: str) -> None:
     msg["Subject"] = subject
     msg.set_content(text)
 
-    smtp_cls = smtplib.SMTP_SSL if use_ssl else smtplib.SMTP
-    with smtp_cls(host, port, timeout=timeout) as smtp:
+    # context 를 주지 않으면 서버 인증서를 검증하지 않는다. 앱 비밀번호와 재설정 토큰이 가짜 서버로 넘어갈 수 있다.
+    context = ssl.create_default_context()
+    if use_ssl:
+        smtp_cm = smtplib.SMTP_SSL(host, port, timeout=timeout, context=context)
+    else:
+        smtp_cm = smtplib.SMTP(host, port, timeout=timeout)
+    with smtp_cm as smtp:
         if not use_ssl:
-            smtp.starttls()
+            smtp.starttls(context=context)
         smtp.login(username, password)
         smtp.send_message(msg)
 
@@ -64,3 +70,4 @@ def send_with_retry(to: str, subject: str, text: str, *, log_label: str) -> bool
         "password reset mail failed: %s (%s: %s)", log_label, type(last_exc).__name__, last_exc
     )
     return False
+
