@@ -31,6 +31,7 @@ export function PinnedToastHost({ className = '', style, onHeightChange }: Pinne
   }, [host])
   return (
     <div
+      data-testid="pinned-toast-host"
       ref={setHost}
       className={`${PINNED_STACK} pointer-events-none ${className}`}
       style={style}
