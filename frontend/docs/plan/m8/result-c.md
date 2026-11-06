@@ -1,10 +1,141 @@
 # M8-C 구현 결과 — 메시지
 
-- 기록일: 2026-10-31 (2026-11-01 디자인 캔버스 기준 재작업과 검증 VR-C 발견 수정, 2026-11-02 Discord DM 카드 잘림 수정, 발송 시점 카드 hover·저장 중 버튼 깜빡임 수정, 대화 미리 받기 반영, 2026-11-04 실제 메시지 API 연결, 2026-11-05 합친 묶음으로 선택 옮기기)
-- 이슈: #245, 후속 #315(실제 API 연결), #368(묶음 합치기)
+- 기록일: 2026-10-31 (2026-11-01 디자인 캔버스 기준 재작업과 검증 VR-C 발견 수정, 2026-11-02 Discord DM 카드 잘림 수정, 발송 시점 카드 hover·저장 중 버튼 깜빡임 수정, 대화 미리 받기 반영, 2026-11-04 실제 메시지 API 연결, 2026-11-05 합친 묶음으로 선택 옮기기, 재촉 직접 만들기와 태스크 빼기·메모 고치기, 2026-11-06 PM 자기 대화 답장)
+- 이슈: #245, 후속 #315(실제 API 연결), #368(묶음 합치기), #370(재촉 만들기·태스크 빼기), #367(PM 자기 대화 답장)
 - 대상: [M8 계획](plan.md) C 절의 구현 순서 1~6(결정 전)과 최종 게이트, 2026-11-01 사용자 결정(결정 4의 UI 범위 = 디자인 캔버스 기준, MSW 목)에 따른 재작업
+- 상태 (2026-11-06, #367): **팀원 행에도 연결된 PM 이 자기 대화에서 웹 답장을 쓴다.** 남의 대화와 워크스페이스 응답에 `member_id` 가 없거나 `null` 인 경우는 지금처럼 안내 바다. MSW 기준으로 게이트·E2E·브라우저 확인을 했고 실제 서버 연동은 미검증이다(아래 2026-11-06 #367 절).
+- 상태 (2026-11-05, #370): **PM 이 태스크 상세와 메시지 화면에서 재촉을 직접 만들고, 보내기 전 확인에서 묶은 태스크를 빼거나 메모를 고친다.** MSW 기준으로 게이트·E2E·브라우저 확인을 했고 실제 서버 연동은 미검증이다(아래 2026-11-05 #370 절).
 - 상태 (2026-11-04, #315): **화면을 계약 §5.7 의 실제 메시지 API 로 옮기고 production 을 포함한 모든 모드에서 연다.** 준비 중 안내와 MSW 모드 분기는 지웠다. 서버에 경로·값이 없는 시안 항목(답장 판정, `지금 바로`, 채널, 재촉 이유 등)은 뺐다. typecheck·lint·format·build·전체 테스트와 브라우저 확인은 MSW 기준으로 통과했고, 실제 서버 연동은 미검증이다(아래 2026-11-04 절). 아래 2026-11-02 까지의 상태 문장은 그때 기록이다.
 - 상태 (2026-11-02 까지): **AC-01~AC-07 충족(프론트·MSW 기준, UI/UX만), 목록·보내기 전 확인·대화·빈 상태가 디자인 캔버스의 항목·문구·상태와 일치(차이표, 남은 차이 4개는 아래).** 메시지 API가 없어 화면은 MSW 모드에서만 보이고, 실 API 모드와 production은 기존 「메시지는 준비 중이에요」 안내를 그대로 둔다. 보내기 전 확인의 행동(발송·보내지 않음·고쳐 쓰기·발송 시점, 대화의 승인·반려)은 MSW 목으로 서버 성공 뒤 반영한다. 권한 분기·상태 동기화(polling)·메시지 E2E는 하지 않았다. 전체 `test:e2e`는 실행하지 않았다. 실제 메시지 API 연동과 Discord 발송은 범위 밖이며 검증하지 않았다.
+
+## 2026-11-06 PM 자기 대화 답장 (#367)
+
+### 근거와 요약
+
+이슈 #367 의 BE 구현 완료 댓글(PR #374, develop 병합)과 코디네이터 작업 지시에 따랐다. 계획 [plan.md](plan.md)에 이 작업의 완료조건이 없어 새 AC 를 만들지 않았다. 기준은 `bd44cec6` 이다.
+
+PM 이 리마인드를 받는 팀원이기도 하면 자기 대화가 생긴다. BE 답장 API 는 대화 주인이면 PM 도 받는다. 전에는 화면이 로그인 계정의 팀원 행을 몰라 PM 의 자기 대화에도 답장 칸이 없었다. BE 가 워크스페이스 응답에 `member_id` 를 실어(계약 §4.2.1) 화면이 이 값을 대화의 `member_id` 와 비교한다.
+
+| 커밋 | 요지 |
+|---|---|
+| `9d1a8e48` | 워크스페이스 DTO·매퍼에 `member_id` → `memberId`. MSW 워크스페이스 응답에 세션 팀원 ID |
+| `0fe0830d` | `MessageViewer` 를 `{ role, memberId }` 로, 답장 칸은 `canReply` 하나가 정한다. 시나리오 `messages-pm-self`, 화면·MSW 테스트, 스토리 |
+| `16d1184e` | E2E `messages-reply.e2e.ts` 와 검증 스킬 `messages` 여정 |
+| `3fc61b84` | 계약 §4.2.1·§5.7 |
+| `1ebe96c5` | 리뷰 R1. MSW 에서 공간을 만든 계정을 새 PM 행과 잇는다. 계정의 `memberIds`, 모의 DB 버전 12 |
+
+### 바꾼 데이터 모양
+
+- `WorkspaceSummaryDto.member_id?: string | null`. 필드가 없는 BE 배포 전 응답을 받으려고 선택 필드로 두었다. `WorkspaceSummary.memberId: string | null` 이고 매퍼는 `dto.member_id ?? null` 이다.
+- `MessageViewer` 는 `Role` 에서 `{ role: Role; memberId: string | null }` 이 되었다. `VIEWER_POLICY` 는 역할로 고르고 값(봇 자리·답장 기다림·재촉 만들기)은 그대로다. 정책의 `foot` 을 지우고 `canReply(viewer, threadMemberId)` 를 두었다. 팀원은 늘 참이고, PM 은 `memberId` 가 그 대화의 `member_id` 와 같을 때만 참이다. `memberId` 가 `null` 이면 대화의 `member_id` 와 같을 수 없어 거짓이다.
+
+### 화면
+
+- PM 이 자기 대화를 열면 답장 칸이 보이고 머리 부제가 `Discord 개인 메시지 · 웹에서도 답장할 수 있어요` 다. 팀원 화면의 문구를 그대로 쓴다. 남의 대화는 지금처럼 안내 바와 `… 봇으로 보냄` 부제다.
+- PM 자기 대화의 다른 표시는 PM 화면 그대로 두었다. 봇 말풍선은 오른쪽, PM 자신의 답장은 왼쪽에 자기 이름으로 그려진다. 답장 기다림 배지·목록 점·`여기서부터 답장이 없습니다`, 예정 묶음과 `확인하기` 도 보인다. 이슈와 작업 지시가 PM 정책을 그대로 두라고 했다.
+
+### MSW
+
+- 워크스페이스 목록·상세·생성 응답에 `member_id: sessionMemberId(id)` 를 싣는다.
+- 계정과 팀원 행의 대응을 `sessions.ts` 의 고정 상수에서 모의 DB 계정의 `memberIds` 로 옮겼다. 공간을 만들면 BE `create_workspace` 처럼 생성자 계정이 새 PM 행과 이어진다. 그래서 새 공간에서도 생성·목록·상세의 `member_id` 가 그 행 ID 이고 그 행 대화의 답장이 201 이다. 독립 리뷰 지적 R1 을 고친 것이다. 같은 대응으로 생성자 PM 행 초대가 BE 처럼 409 `MEMBER_ALREADY_LINKED` 가 되었다. 전에는 `PM_MEMBER_NOT_INVITABLE` 이었다. 모의 DB 버전이 12 가 되었다.
+- 답장 핸들러는 이미 BE `post_reply` 처럼 대화 주인만 201, 아니면 403 이었다. 고치지 않았다.
+- 시나리오 `messages-pm-self` 는 `messages-default`(PM `mb_01`)에 `mb_01` 의 대화 `th_06` 과 보낼 메시지 `bd_05` 를 더한다.
+
+### 검증 (2026-11-06, Node v24.11.0, `0fe0830d` 코드 기준)
+
+| 명령 | 종료 코드 | 결과 |
+|---|---:|---|
+| `npm run typecheck` | 0 | |
+| `npm run lint` | 0 | |
+| `npm run format:check` | 1 | git 이 제외하는 `.verify/` 의 로컬 파일 2개(`brief.md`, 증거 JSON)만 걸렸다. git 이 추적하는 파일만 `prettier --check --ignore-unknown` 으로 본 결과는 통과다 |
+| `npm run build` | 0 | |
+| `npm run test -- --maxWorkers=1` | 0 | 222파일 2,641개 통과 |
+| `node .cursor/skills/verify-managers-manager/scripts/verify.cjs run messages` | 0 | 5개 통과(새 `messages-reply.e2e.ts` 2개 포함). 증거는 저장소 루트 `.verify/managers-manager/2026-11-05T15-28-12-185Z-messages-16aaba50/` (git 제외) |
+
+새 테스트:
+
+- [messagesMsw](../../../src/app/messagesMsw.test.tsx): PM 자기 대화의 답장 칸·부제와 보낸 답장, PM 남의 대화의 안내 바, 워크스페이스 응답에 `member_id` 가 없을 때와 `null` 일 때 답장 칸 없음.
+- [messageScenarios](../../../src/shared/mock/messageScenarios.test.ts): `messages-pm-self` 에서 워크스페이스 목록·상세의 `member_id` 가 `mb_01`, `th_06` 답장 201, `th_01` 답장 403 과 db 그대로.
+- [mapper](../../../src/entities/workspace/model/mapper.test.ts): `member_id` 있음·`null`·없음.
+- [messages-reply.e2e.ts](../../../e2e/messages-reply.e2e.ts): Chromium 에서 PM 자기 대화 답장을 보내고 새로고침 뒤에도 남는지, 남의 대화에는 폼이 없고 안내 바가 있는지.
+- 스토리 `PM_내_대화`. Storybook play 는 실행하지 않았다(CI 가 돈다).
+- 리뷰 R1 수정 뒤(`1ebe96c5`) 바꾼 곳의 테스트 36파일 604개가 통과했다. 세션·초대·저장·가입·워크스페이스를 쓰는 테스트, `messageScenarios`, `messagesMsw` 다. `typecheck` 와 바꾼 파일의 `eslint`·`prettier` 도 통과했다. Chromium 에서 `restore.e2e.ts` 4개와 `messages-reply.e2e.ts` 2개가 통과했다.
+- [messageScenarios](../../../src/shared/mock/messageScenarios.test.ts)에 새 공간 테스트를 더했다. 공간을 만들면 생성·목록·상세의 `member_id` 가 생성자 PM 행이다. 그 행의 대화 답장은 201 이고, 같은 공간의 다른 계정이 답장하면 403 이며 db 는 그대로다. 생성 핸들러에서 대응을 기록하는 줄을 빼면 이 테스트가 실패한다.
+- 구현 위임이 `canReply` 를 모든 PM 에게 참으로 바꿔 보았을 때 새 화면 테스트 4개 중 3개가 실패했다. 원래대로 돌려 두었다.
+
+### 남은 문제
+
+- 실제 서버에 붙여 PM 자기 대화 답장을 보내 보지 않았다. MSW 기준 확인이다.
+- PM 자기 대화의 말풍선 자리, 답장 기다림 표시, 예정 묶음 표시는 PM 화면 그대로다. 바꾸려면 화면 정책을 따로 정해야 한다.
+
+## 2026-11-05 재촉 직접 만들기와 묶음에서 태스크 빼기·메모 고치기 (#370)
+
+### 근거와 요약
+
+이슈 #370 과 코디네이터 작업 지시(2026-11-05)에 따랐다. 진입점(태스크 상세와 메시지 화면 둘 다)과 보낼 시각 규칙(`SendTimingPicker` 재사용)은 같은 날 사용자가 정했다. 계획 [plan.md](plan.md)는 읽기만 했고, 계획에 이 작업의 완료조건이 없어 새 AC 를 만들지 않았다. 기준 브랜치는 #340(PR #407)의 `2244262c` 다. 코디네이터 허락으로 그 위에 한 번 다시 쌓았고 충돌은 없었다.
+
+BE 의 `POST /messages/reminders`, `PATCH /messages/reminders/{id}`, `POST /messages/reminders/{id}/cancel`(#310)은 있었지만 화면이 부르지 않았다. 이제 PM 이 재촉을 직접 만들고, 보내기 전 확인에서 묶은 태스크 하나를 빼거나 메모를 고친다. 서버가 막지 않는 경우(담당자 없음·완료 태스크·Discord 미연결)를 화면이 다루는 방식은 [결정 기록](basis-for-decision/2026-11-05-reminder-create-entry-rules.md)에 있다.
+
+| 커밋 | 요지 |
+|---|---|
+| `e562fb47` | 보낼 시각 고르기를 묶음에서 떼어 `entities/message-settings/ui` 로 옮긴다. `LockedButton`·`useShownAfter`·날짜 입력 변환은 `shared` 로 |
+| `d621049c` | 행동 `removeTask`·`editNote`, 결과 `closed`, 행동 표의 응답 읽기, `createReminder` 요청 |
+| `ed62497b` | MSW 세 경로를 BE 규칙과 오류 순서로. 모의 DB 버전 11 |
+| `ead72a22` | 보내기 전 확인의 행마다 `메모 고치기`·`빼기`, 열린 것 하나를 담는 `ReviewDraft` |
+| `dff59fea` | 태스크 상세 `재촉` 영역, 메시지 화면 `새 재촉`(`?new=reminder`), 재촉 만들기 폼 |
+| `a8f89d2b` | M6 시나리오 테스트의 모의 DB 버전 단언 |
+| `941abcf2` | E2E 두 개 더하기와 검증 스킬 `messages` 여정 |
+| `270b1d9c` | 만든 뒤 알림을 돌려받은 묶음의 승인 상태로 고른다 |
+| `be334dee` | 재촉 만들기 스토리 play 선택자 |
+| 문서 커밋 | 계약 §5.7, [MSW 안내](../../msw-guide.md), 결정 기록, 이 결과 |
+
+### 바꾼 데이터 모양
+
+- `MessageAction` 에 `{ kind: 'removeTask'; bundleId; reminderId }` 와 `{ kind: 'editNote'; bundleId; reminderId; note: string | null }` 을 더했다. 결과 `MessageActionOutcome` 에 `{ kind: 'closed' }`(마지막 태스크를 빼 묶음이 `cancelled`)를 더했다.
+- 행동 표(`ROUTE`)가 경로마다 응답 읽기(`read`)를 갖는다. 시각 옮기기는 합쳐졌는지, 빼기는 닫혔는지를 읽는다. 전에는 `schedule` 만 분기로 읽었다.
+- 재촉 만들기는 대상 묶음이 아직 없어 행동이 아니다. `createReminder(workspaceId, { memberId, taskId, scheduledAt, note })` 가 `{ reminderId, bundle }` 을 돌려준다. 돌려받은 묶음이 예정이 아니면 계약 위반으로 던진다.
+- 보내기 전 확인의 두 boolean(문구 고치기·시각 고르기)을 `ReviewDraft`(`none`·`body`·`time`·`note`·`remove`) 하나로 바꿨다. 잠금 이유는 종류별 표다.
+
+### 화면
+
+- 보내기 전 확인 `묶은 태스크` 행마다 `메모 고치기`·`빼기`. 빼기는 그 행 안에서 확인을 받는다. 마지막 태스크면 `마지막 태스크예요. 빼면 {이름}님에게 이 메시지를 보내지 않아요.` 와 `빼고 보내지 않기`, 성공하면 보내지 않음처럼 그 항목을 떠난다. 나머지는 `빼면 남은 태스크로 문구를 다시 만들어요.` 이고, 승인한 묶음이면 `승인이 풀려 다시 승인해야 해요.` 를 붙인다.
+- 메모 칸은 지금 메모로 채워 열린다. 바뀐 값만 저장할 수 있고 비우면 지운다(`null`). 안내는 `메모를 바꾸면 문구를 다시 만들고 승인이 풀려요. 비우고 저장하면 메모를 지워요.` 다.
+- 태스크 상세 `재촉`(PM 만): 담당자에게 만드는 폼을 그 자리에 펼친다. 만들면 결과와 `메시지 화면에서 확인하기` 링크를 `role=status` 로 알린다. 담당자가 없거나 완료한 태스크는 이유만 보인다.
+- 메시지 화면 `새 재촉`(PM 만, 목록 머리와 빈 화면): 팀원과 그 팀원이 맡은 끝나지 않은 태스크를 고른다. 만들면 그 묶음의 보내기 전 확인으로 주소를 바꿔 끼운다. 팀원 화면에는 진입점이 없고 `?new=reminder` 도 무시한다.
+- Discord 가 연결되지 않은 팀원은 막지 않고 팀 화면 연결 링크와 함께 알린다.
+- 시안이 없는 화면이다. 승인 보완 폼의 select, 문구 고쳐 쓰기의 칸, 보낼 시각 카드를 그대로 썼다.
+
+### MSW
+
+세 경로가 BE 와 같은 순서로 403 → 400 → 404 → 409 를 낸다. 만들기는 대화가 없으면 만들고 같은 시각의 예정 묶음에 넣으며, 같은 태스크가 이미 있으면 그 리마인드를 그대로 돌려준다. 빼기·메모·더하기는 문구를 다시 만들고 판을 올리고 승인을 푼다. 리마인드에 `cancelled_at` 을 두어 닫힌 묶음의 응답에 마지막에 함께 뺀 리마인드만 싣는다. 모의 DB 버전이 11 이 되었다.
+
+### 검증 (2026-11-05, Node v24.11.0, `2244262c` 위로 다시 쌓은 뒤)
+
+| 명령 | 종료 코드 | 결과 |
+|---|---:|---|
+| `npm run typecheck` | 0 | |
+| `npm run lint` | 0 | |
+| `npm run format:check` | 1 | git 이 제외하는 로컬 작업 지시 파일 `.verify/brief.md` 하나만 걸렸다. `.verify/` 를 빼고 `.prettierignore` 를 그대로 쓴 `prettier --check .` 는 통과했다. CI 에는 이 파일이 없다 |
+| `npm run build` | 0 | |
+| `npm run test -- --maxWorkers=1` | 0 | 219파일 2,613개 통과 |
+| `npm run test:storybook` | 1 → 0 | 처음에는 166개 중 재촉 만들기 스토리 2개가 실패했다(브라우저 접근 이름의 공백, 팀원 목록이 오기 전 고르기). `be334dee` 로 고친 뒤 다시 빌드해 166개 통과 |
+| `npx playwright test` | 0 | 124개 통과(새 `messages-reminder.e2e.ts` 3개 포함) |
+| `node .cursor/skills/verify-managers-manager/scripts/verify.cjs run messages` | 0 | 3개 통과. 증거는 저장소 루트 `.verify/managers-manager/2026-11-05T12-30-34-456Z-messages-37dbc5c3/` (git 제외) |
+
+새 테스트:
+
+- [messagesReviewTasksMsw](../../../src/app/messagesReviewTasksMsw.test.tsx): 확인 뒤에만 빼기, 승인한 묶음의 경고와 취소 뒤 포커스, 마지막 태스크를 빼면 닫히고 떠남(REPLACE), 실패와 다시 시도, 메모 저장 본문(`{note}`)·빈 메모 `null`·없어진 리마인드.
+- [reminderCreateMsw](../../../src/app/reminderCreateMsw.test.tsx): 고르기와 마감 기준 시각, 같은 시각 묶음에 합치기, 맡은 태스크 없음, 마감 지난 태스크, 지난 시각 409, 취소, 빈 화면 진입, 태스크 상세 만들기·취소, 담당자 없음·완료 태스크, 일반 팀원에게 진입점 없음.
+- [messages-reminder.e2e.ts](../../../e2e/messages-reminder.e2e.ts): `새 재촉` 으로 만들고 새로고침, 태스크 빼기와 메모 고치기 뒤 새로고침, 태스크 상세에서 만들고 링크로 이동. 구현 위임이 쓴 첫 테스트는 실행하지 않은 상태였고, 브라우저 접근 이름(`마감 하루 전 09/21 09:00`, 사이 공백)과 알림 두 곳 중복 때문에 선택자를 고쳐 통과시켰다.
+- 단위: `messageQueries`(경로·본문·응답 읽기), `mapper`, `message-state`·`messageScenarios`(BE 규칙), `reviewDraft`, `sendTiming`, `createMessages`, `selection`, `routes`.
+
+### 남은 문제
+
+- 실제 서버에서 세 경로를 불러 보지 않았다. MSW 기준 확인이다.
+- 완료 태스크 차단은 FE 기본값이다. 서버는 막지 않는다.
+- 목의 시각은 고정이라 연달아 뺀 리마인드의 `cancelled_at` 이 같다. 그래서 MSW 에서는 닫힌 묶음 응답에 앞서 뺀 리마인드까지 들어갈 수 있다. 화면은 닫힌 묶음의 리마인드를 그리지 않아 영향이 없다.
+- 메시지 픽스처의 태스크 ID 와 태스크 픽스처 제목이 다른 문제(#368 절)가 남아 있다. 빼기·메모 뒤 남은 행의 제목이 바뀌어 보인다(`bd_02` 의 퍼블리싱 → 배포 스크립트).
+- 같은 시각 묶음에 넣은 알림은 합치기 전 승인 여부를 모른다. 그래서 `승인이 풀렸으니` 대신 `함께 보낼 태스크와 문구를 확인하고 승인해 주세요` 로 쓴다.
 
 ## 2026-11-05 합친 묶음으로 선택 옮기기 (#368)
 

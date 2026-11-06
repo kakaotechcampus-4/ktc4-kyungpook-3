@@ -1,13 +1,5 @@
 import type { MeetingSummary } from '@/entities/meeting'
-import {
-  detailMeta,
-  formatClock,
-  formatDue,
-  formatMinutesLength,
-  formatMoment,
-  listMeta,
-  SOURCE_LABEL,
-} from './format'
+import { detailMeta, formatDue, formatMinutesLength, listMeta, SOURCE_LABEL } from './format'
 
 const summary: MeetingSummary = {
   id: 'mt_09',
@@ -22,13 +14,6 @@ const summary: MeetingSummary = {
 }
 
 describe('회의록 표시 형식', () => {
-  it('회의 안 시각은 mm:ss, 한 시간이 넘으면 h:mm:ss 다', () => {
-    expect(formatClock(0)).toBe('00:00')
-    expect(formatClock(125_000)).toBe('02:05')
-    expect(formatClock(2_730_000)).toBe('45:30')
-    expect(formatClock(3_725_000)).toBe('1:02:05')
-  })
-
   it('목록 길이는 분 단위이고 모르면(0·null) 쓰지 않는다', () => {
     expect(formatMinutesLength(2_730_000)).toBe('46분')
     expect(formatMinutesLength(20_000)).toBe('1분')
@@ -68,13 +53,6 @@ describe('회의록 표시 형식', () => {
 
     it('길이를 모르면 머리 메타는 시작 시각만이다', () => {
       expect(detailMeta('chat', chat.startedAt, 0)).toBe('2026-09-15 09:12')
-    })
-
-    it('전사문·근거 시각은 메시지를 쓴 서울 시각이고, 녹음 회의는 녹음 안 위치 그대로다', () => {
-      expect(formatMoment('chat', chat.startedAt, 0)).toBe('09/15 09:12')
-      expect(formatMoment('chat', chat.startedAt, 84_480_000)).toBe('09/16 08:40')
-      expect(formatMoment('discord', chat.startedAt, 125_000)).toBe('02:05')
-      expect(formatMoment('manual_upload', chat.startedAt, 3_725_000)).toBe('1:02:05')
     })
 
     it('출처 칩은 Discord 채팅이다', () => {

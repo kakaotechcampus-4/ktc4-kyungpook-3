@@ -15,7 +15,7 @@ import type {
   TaskUpdateApproval,
   UnsupportedApproval,
 } from '@/entities/approval'
-import { meetingListQueryOptions } from '@/entities/meeting'
+import { evidenceMoment, meetingListQueryOptions } from '@/entities/meeting'
 import { memberListQueryOptions, speakerName } from '@/entities/member'
 import type { Member } from '@/entities/member'
 import { taskDetailQueryOptions } from '@/entities/task'
@@ -40,7 +40,6 @@ import {
   approvalKindLabel,
   approvalStatusLabel,
   currentFieldValue,
-  evidenceClock,
   fieldLabel,
   fieldValueLabel,
   memberLabel,
@@ -369,7 +368,7 @@ function FieldValue({ value }: { value: string | null }) {
   return value === null ? <dd className={MISSING}>미정</dd> : <dd className={VALUE}>{value}</dd>
 }
 
-/** 근거 인용·화자·녹음 위치와 연결 회의 */
+/** 근거 인용·화자·시각과 연결 회의 */
 function Evidence({
   workspaceId,
   approval,
@@ -382,10 +381,8 @@ function Evidence({
   // 처리 추적이 이미 받는 목록이다 — 같은 key 라 따로 요청하지 않는다
   const meetings = useQuery(meetingListQueryOptions(workspaceId))
   const { quote, atMs } = approval.evidence
-  const meetingTitle =
-    approval.meetingId === null
-      ? null
-      : (meetings.data?.find(({ id }) => id === approval.meetingId)?.title ?? '연결된 회의')
+  const meeting = meetings.data?.find(({ id }) => id === approval.meetingId)
+  const meetingTitle = approval.meetingId === null ? null : (meeting?.title ?? '연결된 회의')
   return (
     <figure aria-label="근거" className="flex flex-col gap-8">
       {quote === null ? (
@@ -395,7 +392,7 @@ function Evidence({
       )}
       <figcaption className={META}>
         화자 {speakerName(members, approval.evidence) ?? '알 수 없음'} · 시각{' '}
-        {atMs === null ? '알 수 없음' : evidenceClock(atMs)}
+        {evidenceMoment(meeting, atMs) ?? '알 수 없음'}
         {approval.meetingId === null || meetingTitle === null ? null : (
           <>
             {' · '}

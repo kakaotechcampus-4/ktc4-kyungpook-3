@@ -5,6 +5,7 @@ import type { KeyboardEvent, ReactNode } from 'react'
 import { pendingApprovalListQueryOptions } from '@/entities/approval'
 import type { Approval } from '@/entities/approval'
 import { meetingListQueryOptions } from '@/entities/meeting'
+import type { MeetingSummary } from '@/entities/meeting'
 import { memberListQueryOptions } from '@/entities/member'
 import type { Member } from '@/entities/member'
 import { isDueSoon, isOverdue, taskListQueryOptions, withAssigneeName } from '@/entities/task'
@@ -155,7 +156,7 @@ export function TaskBoard({
   const tasks = useQuery(taskListQueryOptions(workspaceId))
   const approvals = useQuery({ ...pendingApprovalListQueryOptions(workspaceId), enabled: isPm })
   const members = useQuery(memberListQueryOptions(workspaceId))
-  // 카드의 회의 링크 이름과 캘린더의 회의 칩에만 쓴다. 못 받아도 화면은 그린다
+  // 카드의 회의 링크 이름·근거 시각과 캘린더의 회의 칩에만 쓴다. 못 받아도 화면은 그린다
   const meetings = useQuery({
     ...meetingListQueryOptions(workspaceId),
     enabled: isPm || view.view === 'calendar',
@@ -163,8 +164,8 @@ export function TaskBoard({
   const pending = useTaskStatusOverlay(workspaceId)
 
   const names = useMemo(() => memberNames(members.data), [members.data])
-  const meetingTitles = useMemo(
-    () => new Map((meetings.data ?? []).map(({ id, title }) => [id, title])),
+  const meetingById = useMemo(
+    () => new Map((meetings.data ?? []).map((meeting) => [meeting.id, meeting])),
     [meetings.data],
   )
   const approvalList: readonly Approval[] | null = isPm ? (approvals.data ?? null) : null
@@ -239,7 +240,7 @@ export function TaskBoard({
           items={board.items}
           reflected={query.tab === 'needs_review' ? reflectedTasks(filtered) : []}
           members={members.data}
-          meetingTitles={meetingTitles}
+          meetings={meetingById}
           names={names}
           today={today}
           query={query}
@@ -542,7 +543,7 @@ interface BoardListProps {
   /** 확인 필요 탭 아래에 보이는 `이미 반영된 일` */
   reflected: readonly Task[]
   members: readonly Member[] | undefined
-  meetingTitles: ReadonlyMap<string, string>
+  meetings: ReadonlyMap<string, MeetingSummary>
   names: ReadonlyMap<string, string>
   today: string
   query: BoardQuery
@@ -554,7 +555,7 @@ function BoardList({
   items,
   reflected,
   members,
-  meetingTitles,
+  meetings,
   names,
   today,
   query,
@@ -619,7 +620,7 @@ function BoardList({
                 workspaceId={workspaceId}
                 approval={approval}
                 members={members}
-                meetingTitles={meetingTitles}
+                meetings={meetings}
               />
             </li>
           ))}

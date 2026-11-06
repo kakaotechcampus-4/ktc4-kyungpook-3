@@ -17,9 +17,12 @@ export const MOCK_DB_STORAGE_KEY = 'msw-db'
  * 7: 메시지를 백엔드 계약 모양으로 옮겨 검토 행(`messageReviews`)을 보낼 메시지(`messageBundles`)로 바꾸다 (#315).
  * 8: 업로드 회의의 화자 지정(`meetingFlow.speakers`) 칸 추가 (#256).
  * 9: 비밀번호 재설정(`passwordReset`) 칸 추가 (#356). 모의 메일함의 메일이 새로고침·링크 열기 뒤에도 남는다.
+ * 10: 메시지·알림 설정(`messageSettings`) 칸 추가 (#340).
+ * 11: 리마인드에 취소 시각(`cancelled_at`) 칸 추가 (#370). 마지막 태스크를 빼 닫힌 묶음이 함께 취소된 것만 돌려준다.
+ * 12: 계정에 공간별 팀원 행(`memberIds`) 칸 추가 (#367). 공간을 만든 계정이 새 PM 행과 이어진다.
  * 올리면 e2e/restore.e2e.ts 와 src/shared/mock/taskScenarios.test.ts 의 버전 단언도 같이 고친다 (E2E 는 src 를 가져오지 않는다)
  */
-export const MOCK_DB_VERSION = 9
+export const MOCK_DB_VERSION = 12
 
 interface StoredDb {
   version: number
@@ -90,7 +93,8 @@ function isMockDb(value: unknown): value is MockDb {
         isRecord(account) &&
         isSession(account.session) &&
         typeof account.password === 'string' &&
-        Array.isArray(account.workspaceIds),
+        Array.isArray(account.workspaceIds) &&
+        isRecord(account.memberIds),
     ) &&
     state.workspaces.every(
       (workspace) =>

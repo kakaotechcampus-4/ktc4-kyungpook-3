@@ -1,6 +1,6 @@
 # Manager's Manager 검증 기능 지도
 
-프론트엔드의 주요 다섯 영역을 다룬다. 메시지 화면과 Discord 봇·AI·실제 백엔드 연동은 아직 지도에 포함하지 않았다. 이 지도를 전체 제품 검증 목록으로 보고하지 않는다.
+프론트엔드의 주요 일곱 영역을 다룬다. 메시지 화면은 재촉 만들기, 보내기 전 확인의 태스크 빼기·메모 고치기, 팀원 리마인드 대화의 알림 띠만 다룬다. Discord 봇·AI·실제 백엔드 연동은 아직 지도에 포함하지 않았다. 이 지도를 전체 제품 검증 목록으로 보고하지 않는다.
 
 ## 기본 전제
 
@@ -12,11 +12,13 @@
 
 | 기능 | 명령의 기능명 | 테스트 파일 | 시작 상태 |
 |---|---|---|---|
-| [가입·온보딩·공간 선택](auth-workspaces.md) | `auth` | `signup-onboarding.e2e.ts`, `select-switch.e2e.ts`, `onboarding-start.e2e.ts`, `onboarding-design.e2e.ts`, `restore.e2e.ts`, `password-reset.e2e.ts` | signed-out, no-workspace, incomplete-workspace, multiple-workspaces, password-reset-expired |
+| [가입·온보딩·공간 선택](auth-workspaces.md) | `auth` | `signup-onboarding.e2e.ts`, `select-switch.e2e.ts`, `onboarding-start.e2e.ts`, `onboarding-design.e2e.ts`, `restore.e2e.ts`, `password-reset.e2e.ts`, `login-return.e2e.ts` | signed-out, no-workspace, incomplete-workspace, multiple-workspaces, password-reset-expired |
 | [회의 업로드·처리·회의록](meetings.md) | `meetings` | `meeting-flow.e2e.ts` | meeting-instant, meeting-demo, meeting-member, meeting-fail |
 | [태스크·확인 필요 승인](tasks-approval.md) | `tasks` | `tasks-approval.e2e.ts`의 UI 테스트 3개 | tasks-default, tasks-member |
 | [대시보드·자동 반영 되돌리기](dashboard.md) | `dashboard` | `dashboard.e2e.ts` | dashboard-default, dashboard-member |
 | [설정에서 Discord·팀 연결](connections-team.md) | `connections` | `settings-team.e2e.ts`의 PM 연결 테스트 1개 | settings-discord-skipped |
+| [설정의 알림](notifications-settings.md) | `notifications` | `settings-notifications.e2e.ts` | settings-unmapped, settings-member |
+| [메시지의 재촉 만들기·태스크 빼기·알림 띠](messages-reminders.md) | `messages` | `messages-reminder.e2e.ts` | messages-default, messages-member-push |
 
 ## 증거와 판정
 

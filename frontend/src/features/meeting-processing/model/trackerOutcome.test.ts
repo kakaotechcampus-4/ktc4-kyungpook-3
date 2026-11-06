@@ -1,8 +1,8 @@
+import { isAccessLost } from '@/entities/meeting'
 import type { Meeting } from '@/entities/meeting'
 import { ApiError, createClientError, createWorkspaceMismatchError } from '@/shared/api/errors'
 import {
   AWAITING_SPEAKERS_POLL_INTERVAL_MS,
-  isAccessLost,
   pollInterval,
   PROCESSING_POLL_INTERVAL_MS,
   trackerOutcome,

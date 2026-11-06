@@ -21,7 +21,14 @@ function progress(statuses: Statuses, currentStep: OnboardingProgress['currentSt
 }
 
 function workspace(onboarding: OnboardingProgress): Workspace {
-  return { id: 'ws_03', name: '팀', role: 'pm', createdAt: '2026-09-01T00:00:00Z', onboarding }
+  return {
+    id: 'ws_03',
+    name: '팀',
+    role: 'pm',
+    memberId: null,
+    createdAt: '2026-09-01T00:00:00Z',
+    onboarding,
+  }
 }
 
 /* Notion 단계에서 멈춘 공간. Discord 는 연결했다 */

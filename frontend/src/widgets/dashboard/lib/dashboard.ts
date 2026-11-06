@@ -61,12 +61,18 @@ export function dueSoonTasks(tasks: readonly Task[], today: string): Task[] {
     })
 }
 
-/** 가장 최근에 열린 정리 끝난 회의 — 시작 시각 기준 (D-063, D-065). 없으면 null */
-export function latestDoneMeeting(meetings: readonly MeetingSummary[]): MeetingSummary | null {
+/**
+ * 가장 최근에 열린 정리 끝난 회의 — 시작 시각 기준 (D-063, D-065). 없으면 null.
+ * `excluded` 의 회의는 고르지 않는다 — 상세가 404(지워짐)였던 회의다 (#405)
+ */
+export function latestDoneMeeting(
+  meetings: readonly MeetingSummary[],
+  excluded?: ReadonlySet<string>,
+): MeetingSummary | null {
   let latest: MeetingSummary | null = null
   let latestAt = Number.NEGATIVE_INFINITY
   for (const meeting of meetings) {
-    if (meeting.status !== 'done') continue
+    if (meeting.status !== 'done' || excluded?.has(meeting.id)) continue
     const parsed = Date.parse(meeting.startedAt)
     const at = Number.isNaN(parsed) ? Number.NEGATIVE_INFINITY : parsed
     if (latest === null || at > latestAt) {
@@ -222,14 +228,6 @@ export function objectParticle(word: string): string {
   const code = last.charCodeAt(0) - 0xac00
   if (code < 0 || code > 11171) return '을(를)'
   return code % 28 === 0 ? '를' : '을'
-}
-
-/** 근거 시각. 한 시간 미만은 `mm:ss`, 넘으면 `h:mm:ss` */
-export function clock(ms: number): string {
-  const total = Math.max(0, Math.floor(ms / 1000))
-  const hours = Math.floor(total / 3600)
-  const mmss = `${String(Math.floor((total % 3600) / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`
-  return hours > 0 ? `${hours}:${mmss}` : mmss
 }
 
 /** 확인 필요 행 아래 한 줄 — 왜 확인해야 하는지. 회의록·태스크 목록의 문구와 같다 */

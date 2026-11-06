@@ -110,7 +110,7 @@ async function openDashboard(options: { strict?: boolean } = {}) {
 
 /**
  * 회의 조회가 없는 셸 화면(메시지). M7 부터 대시보드가 태스크·승인·회의 상세·추출을 부르므로,
- * 추적기 요청만 따로 세는 테스트는 여기서 시작한다. 메시지 화면은 자기 메시지 조회만 한다 (quietBusinessRequests)
+ * 추적기 요청만 따로 세는 테스트는 여기서 시작한다. 메시지 화면은 자기 메시지 조회와 보낼 시각의 재촉 규칙(메시지·알림 설정) 조회만 한다 (quietBusinessRequests)
  */
 async function openQuietScreen() {
   const app = renderApp(paths.messages('ws_01'))
@@ -118,9 +118,11 @@ async function openQuietScreen() {
   return app
 }
 
-/** 시작 화면(메시지)의 메시지 조회를 뺀 업무 요청 */
+/** 시작 화면(메시지)의 메시지 조회와 메시지·알림 설정 조회를 뺀 업무 요청 */
 function quietBusinessRequests(log: ReturnType<typeof recordRequests>) {
-  return businessRequests(log.started).filter(({ path }) => !path.includes('/messages'))
+  return businessRequests(log.started).filter(
+    ({ path }) => !path.includes('/messages') && !path.endsWith('/message-settings'),
+  )
 }
 
 async function openProcessing(options: { strict?: boolean } = {}) {
@@ -823,4 +825,37 @@ describe('상세가 다른 공간의 회의라고 답할 때 (#349)', () => {
     await until(() => expect(toastsWith(PROCESSING_DONE_TITLE)).toHaveLength(1))
     expect(tracked()).toEqual([])
   })
+})
+
+describe('받아 둔 상세 뒤 403·404 (#405)', () => {
+  const refusal = (status: 403 | 404) =>
+    http.get('/api/v1/meetings/mt_10', () =>
+      status === 404
+        ? fail('MEETING_NOT_FOUND', '회의가 없습니다.', 404)
+        : fail('FORBIDDEN', '이 작업을 수행할 권한이 없습니다.', 403),
+    )
+
+  it.each([403, 404] as const)(
+    '처리 화면을 보는 중 polling 이 %i 를 받으면 마지막 정리 중 상태에 멈추지 않고 볼 수 없는 회의로 바꾸고 더 묻지 않는다',
+    async (status) => {
+      fakeIntervals()
+      const log = recordRequests()
+      await openProcessing()
+      await until(() => expect(detailRequests(log)).toHaveLength(1))
+
+      server.use(refusal(status))
+      await act(() => vi.advanceTimersByTimeAsync(3_000))
+      await until(() => expect(detailRequests(log)).toHaveLength(2))
+      await until(() => expect(tracked()).toEqual([]))
+      expect(
+        await screen.findByRole('heading', { name: '이 회의를 볼 수 없어요' }),
+      ).toBeInTheDocument()
+      expect(screen.queryByRole('heading', { name: PROCESSING_HEADING })).toBeNull()
+
+      await act(() => vi.advanceTimersByTimeAsync(9_000))
+      await settle()
+      expect(detailRequests(log)).toHaveLength(2)
+      expect(document.querySelectorAll('[data-toast-key]')).toHaveLength(0)
+    },
+  )
 })

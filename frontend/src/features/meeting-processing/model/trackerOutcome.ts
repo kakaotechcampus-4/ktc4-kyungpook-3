@@ -1,5 +1,6 @@
+import { isAccessLost } from '@/entities/meeting'
 import type { Meeting } from '@/entities/meeting'
-import { ApiError, isWorkspaceMismatch } from '@/shared/api/errors'
+import { isWorkspaceMismatch } from '@/shared/api/errors'
 
 /** 상세 polling 간격. 정리 중일 때만 돈다 (계획 §3 처리 추적) */
 export const PROCESSING_POLL_INTERVAL_MS = 3_000
@@ -14,15 +15,6 @@ export const AWAITING_SPEAKERS_POLL_INTERVAL_MS = 30_000
  * - `lost`: 볼 수 없게 됐다(403·404, 받아 둔 상태 없이 다른 공간의 회의라는 답) — 알림 없이 그만 본다
  */
 export type TrackerOutcome = 'processing' | 'awaiting_speakers' | 'done' | 'failed' | 'lost'
-
-/** 접근 권한을 잃었다. 다시 물어도 같다 */
-export function isAccessLost(error: unknown): boolean {
-  return error instanceof ApiError && error.kind === 'http' && [403, 404].includes(error.status)
-}
-
-export function isMeetingUnavailable(error: unknown): boolean {
-  return isAccessLost(error) || isWorkspaceMismatch(error)
-}
 
 /**
  * 상세 조회 결과로 판정한다. 네트워크 오류 같은 일시적 실패는 정리 실패가 아니다 —

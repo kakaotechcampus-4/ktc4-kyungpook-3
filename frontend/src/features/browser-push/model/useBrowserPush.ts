@@ -5,7 +5,7 @@ import {
   savePushSubscription,
   trackPushSubscribing,
 } from '@/entities/notification'
-import { captureSession } from '@/entities/user'
+import { captureSessionScope } from '@/shared/api/sessionScope'
 import { applicationServerKey, registerPushWorker } from '../lib/pushWorker'
 
 /**
@@ -54,7 +54,7 @@ function environmentState(): PushState {
  * 같은 endpoint 를 다시 보내면 지금 계정으로 옮기므로 열 때마다 보내도 된다. 재등록이 실패하면 `error` 라 다시 시도할 수 있다
  */
 function serverState(): Promise<PushState> {
-  const isCurrentSession = captureSession()
+  const session = captureSessionScope()
   return trackPushSubscribing(async (): Promise<PushState> => {
     const [publicKey, subscription] = await Promise.all([
       fetchPushPublicKey(),
@@ -63,7 +63,7 @@ function serverState(): Promise<PushState> {
     if (publicKey === null) return { status: 'no-server-key' }
     if (!subscription || Notification.permission !== 'granted') return { status: 'idle', publicKey }
     try {
-      const saved = await savePushSubscription(subscription, isCurrentSession)
+      const saved = await savePushSubscription(subscription, session)
       return saved ? { status: 'subscribed' } : { status: 'idle', publicKey }
     } catch {
       return { status: 'error', publicKey }
@@ -106,8 +106,8 @@ export function useBrowserPush(): BrowserPush {
       return
     }
     setState({ status: 'subscribing' })
-    // 시작한 세션을 잡아 둔다. 끝나기 전에 세션이 바뀌면 서버에 보내지 않고 브라우저 구독을 푼다
-    const isCurrentSession = captureSession()
+    // 시작한 세션을 잡아 둔다. 끝나기 전에 세션이 바뀌면 서버에 보내지 않거나 보낸 요청을 취소하고 브라우저 구독을 푼다
+    const session = captureSessionScope()
     void trackPushSubscribing(async (): Promise<PushState> => {
       const permission = await Notification.requestPermission()
       if (permission !== 'granted')
@@ -119,7 +119,7 @@ export function useBrowserPush(): BrowserPush {
           userVisibleOnly: true,
           applicationServerKey: applicationServerKey(publicKey),
         }))
-      const saved = await savePushSubscription(subscription, isCurrentSession)
+      const saved = await savePushSubscription(subscription, session)
       return saved ? { status: 'subscribed' } : { status: 'idle', publicKey }
     }).then(setState, () => setState({ status: 'error', publicKey }))
   }, [state])
