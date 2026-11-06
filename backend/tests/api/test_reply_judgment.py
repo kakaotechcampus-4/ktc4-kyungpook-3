@@ -925,6 +925,20 @@ def test_card_without_that_field_does_not_catch_a_line_with_no_value(mdb, mseed,
     assert len(_cards(mdb)) == 2
 
 
+def test_card_with_a_value_that_is_not_text_does_not_break_the_judgment(mdb, mseed, two):
+    a, _ = two
+    r = client("alice").post(f"{P}/approvals", json={
+        "workspace_id": mseed["ws"], "type": "task_update", "related_task_id": a.task_id,
+        "payload": {"due_date": ["2026-11-27"]},
+    })
+    assert r.status_code == 201, r.text
+    _reply(mdb, mseed, AT)
+    item = _claim()
+    _judge(item, _change(a, "due_date", "2026-11-28", claimed=item))
+
+    assert len(_cards(mdb)) == 2
+
+
 def test_repeated_blocked_line_still_keeps_the_clock_blocked(mdb, mseed, two):
     a, _ = two
     _same_again(mdb, mseed, a, ("status", "blocked"))

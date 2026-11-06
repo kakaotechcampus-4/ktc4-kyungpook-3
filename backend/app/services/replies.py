@@ -495,7 +495,11 @@ def _waiting_cards(db: Session, task_id: str, group: list[tuple]) -> list[str] |
     waiting = {}
     for card in cards:
         payload = json.loads(card.payload)
-        waiting.update({(key, payload[key]): card.approval_id for key in _PAYLOAD_KEY.values() if payload.get(key)})
+        # 수동 생성(POST /approvals)은 payload 값을 검사하지 않는다. 줄의 값은 문자열이라 문자열만 견준다.
+        waiting.update({
+            (key, payload[key]): card.approval_id
+            for key in _PAYLOAD_KEY.values() if isinstance(payload.get(key), str) and payload[key]
+        })
     found = [waiting.get((_PAYLOAD_KEY.get(line.field), line.new_value)) for line, *_ in group]
     return None if None in found else found
 
