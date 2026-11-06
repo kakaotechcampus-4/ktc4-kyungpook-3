@@ -28,6 +28,7 @@ async function open(kind = '이 변경, 승인할까요?') {
   return app
 }
 const dueInput = () => screen.getByRole('textbox', { name: '마감' })
+const undecideDue = () => screen.getByRole('button', { name: '마감 미정' })
 function edit(values: { due?: string; status?: string }) {
   if (values.due !== undefined) fireEvent.change(dueInput(), { target: { value: values.due } })
   if (values.status !== undefined)
@@ -66,7 +67,7 @@ it('creates with undecided assignee/deadline through the live path and shows sav
   })
 })
 
-it('adds only the touched update field absent from proposal despite a current task refetch', async () => {
+it('a deadline absent from proposal goes back to keeping the current task due once cleared, despite a current task refetch', async () => {
   updateProposal({ blocker: '제안 막힘 사유' })
   const bodies = recordRequestBodies('PATCH', '/approvals/ap_01')
   const app = await open()
@@ -83,18 +84,52 @@ it('adds only the touched update field absent from proposal despite a current ta
   )
   expect(screen.getByRole('combobox', { name: '상태' })).toHaveValue('')
   expect(dueInput()).toHaveValue('')
-  // 제안에 없던 마감도 만진 뒤 비우면 미정으로 보낸다
+  // 미정으로 바꿨다가 날짜를 적으면 그 날짜이고, 칸을 비우면 원래 제안 유지로 돌아간다
+  await userEvent.click(undecideDue())
+  expect(dueInput()).toHaveAttribute('placeholder', '미정')
   edit({ due: '2026-10-01' })
   edit({ due: '' })
+  expect(dueInput()).toHaveAttribute('placeholder', '원래 제안 유지 · YYYY-MM-DD')
+  await userEvent.click(approve())
+  await screen.findByTestId('approval-result')
+  expect(bodies).toEqual([{ status: 'approved' }])
+  expect(db.tasks[0]).toMatchObject({
+    status: 'blocked',
+    due_date: '2026-11-10',
+    blocker: '제안 막힘 사유',
+  })
+})
+
+it('「마감 미정」 sends an explicit null deadline absent from proposal', async () => {
+  updateProposal({ blocker: '제안 막힘 사유' })
+  db.tasks[0].due_date = '2026-11-10'
+  const bodies = recordRequestBodies('PATCH', '/approvals/ap_01')
+  await open()
+  await userEvent.click(undecideDue())
+  expect(dueInput()).toHaveValue('')
   expect(dueInput()).toHaveAttribute('placeholder', '미정')
   await userEvent.click(approve())
   await screen.findByTestId('approval-result')
   expect(bodies).toEqual([{ status: 'approved', task_overrides: { due_date: null } }])
-  expect(db.tasks[0]).toMatchObject({
-    status: 'blocked',
-    due_date: null,
-    blocker: '제안 막힘 사유',
-  })
+  expect(db.tasks[0]).toMatchObject({ due_date: null, blocker: '제안 막힘 사유' })
+})
+
+it('clearing a proposed deadline keeps the field empty and approves the original proposal', async () => {
+  updateProposal({ due_date: '2026-10-10', base_values: { due_date: '2026-09-13' } })
+  db.tasks[0].due_date = '2026-09-13'
+  const bodies = recordRequestBodies('PATCH', '/approvals/ap_01')
+  await open()
+  expect(dueInput()).toHaveValue('2026-10-10')
+  await userEvent.clear(dueInput())
+  expect(dueInput()).toHaveValue('')
+  expect(dueInput()).toHaveAttribute('placeholder', '원래 제안 유지 · 2026-10-10')
+  await userEvent.type(dueInput(), '2026-10-12')
+  expect(dueInput()).toHaveValue('2026-10-12')
+  await userEvent.clear(dueInput())
+  await userEvent.click(approve())
+  await screen.findByTestId('approval-result')
+  expect(bodies).toEqual([{ status: 'approved' }])
+  expect(db.tasks[0]).toMatchObject({ due_date: '2026-10-10' })
 })
 
 it('replays exact saved edits with each explicit conflict version, retaining drafts across repeated conflicts', async () => {
@@ -105,7 +140,7 @@ it('replays exact saved edits with each explicit conflict version, retaining dra
   })
   const bodies = recordRequestBodies('PATCH', '/approvals/ap_01')
   await open()
-  edit({ due: '' })
+  await userEvent.click(undecideDue())
   await userEvent.click(approve())
   const alert = await screen.findByRole('alert', { name: '변경 충돌' })
   expect(within(alert).getByRole('columnheader', { name: '확정할 값' })).toBeVisible()

@@ -1,5 +1,5 @@
 import * as RadixSelect from '@radix-ui/react-select'
-import type { ReactNode } from 'react'
+import type { FocusEventHandler, ReactNode, Ref } from 'react'
 import { Icon } from '../icon/Icon'
 
 /*
@@ -35,6 +35,12 @@ export interface SelectProps<V extends string> {
   disabled?: boolean
   id?: string
   name?: string
+  /** 트리거 버튼으로 간다 — React Hook Form 의 Controller 가 오류 칸 포커스에 쓴다. React 19 라 일반 prop 이다 */
+  ref?: Ref<HTMLButtonElement>
+  /** 트리거를 떠날 때. 목록을 열어 포커스가 목록으로 갈 때도 부른다 */
+  onBlur?: FocusEventHandler<HTMLButtonElement>
+  /** 지금 값으로는 승인할 수 없다. 미정(null)은 오류가 아니다 — 호출부가 정한다 */
+  'aria-invalid'?: boolean
   'aria-label'?: string
   'aria-labelledby'?: string
   'aria-describedby'?: string
@@ -114,6 +120,9 @@ export function Select<V extends string>({
   disabled = false,
   id,
   name,
+  ref,
+  onBlur,
+  'aria-invalid': invalid,
   ...aria
 }: SelectProps<V>) {
   const rootValue = value ?? (placeholder === undefined && noneOption ? NONE : '')
@@ -137,7 +146,10 @@ export function Select<V extends string>({
       name={name}
     >
       <RadixSelect.Trigger
+        ref={ref}
         id={id}
+        onBlur={onBlur}
+        aria-invalid={invalid || undefined}
         className={[TRIGGER, TRIGGER_SIZE[size], triggerColor(tone, disabled)].join(' ')}
         {...aria}
       >

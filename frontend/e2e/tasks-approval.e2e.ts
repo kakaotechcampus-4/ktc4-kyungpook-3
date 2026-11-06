@@ -319,9 +319,10 @@ test('키보드 — 목록 탭은 화살표로 옮겨 URL 에 남고, 카드 칸
   await tabTo(page, assignee)
   await page.keyboard.press('Enter')
   await expect(page.getByRole('listbox')).toBeVisible()
-  // 고른 줄이 없으면 목록에 포커스가 있다 — 첫 화살표가 맨 위 「미정」, 다음이 첫 팀원이다
+  // 고른 줄이 없으면 Radix 가 첫 활성 줄인 맨 위 「미정」에 포커스를 둔다 — 화살표 한 번이 첫 팀원이다
+  await expect(page.getByRole('option', { name: '미정' })).toBeFocused()
   await page.keyboard.press('ArrowDown')
-  await page.keyboard.press('ArrowDown')
+  await expect(page.getByRole('option', { name: '김서연' })).toBeFocused()
   await page.keyboard.press('Enter')
   await expect(page.getByRole('listbox')).toHaveCount(0)
   await expect(assignee).toBeFocused()
@@ -407,7 +408,7 @@ async function expectCardFieldsInOneRow(page: Page) {
 test.describe('390px 휴대폰', () => {
   test.use({ viewport: { width: 390, height: 844 } })
 
-  test('확인 필요 상세 — 가로 스크롤 없이 세 칸이 위아래로 쌓이고 채우기가 보인다', async ({
+  test('확인 필요 상세 — 본문과 카드가 화면 폭 안에 들고 세 칸이 위아래로 쌓이며 채우기가 보인다', async ({
     page,
   }, testInfo) => {
     await start(page, 'tasks-default', `${WORKSPACE}/approvals/ap_01`)
@@ -417,7 +418,15 @@ test.describe('390px 휴대폰', () => {
     const due = await boxOf(card.getByRole('textbox', { name: /^마감/ }).locator('..'))
     expect(due.y).toBeGreaterThan(title.y + title.height)
     await expect(page.getByRole('button', { name: '9/21(월)로 채우기' })).toBeVisible()
-    await expectNoHorizontalOverflow(page)
+    // 본문과 카드만 화면 폭에 맞는지 본다. 앱 셸의 넘침은 #478 범위다
+    const { mainWidth, innerWidth } = await page.evaluate(() => ({
+      mainWidth: document.querySelector('#root main')?.scrollWidth ?? Infinity,
+      innerWidth: window.innerWidth,
+    }))
+    expect(mainWidth).toBeLessThanOrEqual(innerWidth)
+    const box = await boxOf(card)
+    expect(box.x).toBeGreaterThanOrEqual(0)
+    expect(box.x + box.width).toBeLessThanOrEqual(innerWidth)
     await testInfo.attach('approval-390', {
       body: await page.screenshot({ fullPage: true }),
       contentType: 'image/png',

@@ -90,6 +90,7 @@ describe('승인 확인은 한 카드에서 바로 고친다 (E-6 · AC-05)', ()
     expect(titleInput()).toHaveValue('알림 문구 검토')
     expect(assigneeSelect()).toHaveAccessibleName('담당자 · 미정')
     expect(assigneeSelect()).toHaveTextContent('담당자 고르기')
+    expect(assigneeSelect()).not.toHaveAttribute('aria-invalid')
     expect(assigneeSelect()).toHaveClass('border-accent', 'focus-visible:outline-accent-point')
     expect(dueInput()).toHaveAccessibleName('마감 · 미정')
     expect(dueInput()).toHaveValue('')
@@ -191,15 +192,16 @@ describe('담당자 선택 상자 (#471)', () => {
     await userEvent.click(within(list).getByRole('option', { name: '미정' }))
     await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull())
     expect(assigneeSelect()).toHaveTextContent('미정')
-    // 원래 정해져 있던 값이라 빠진 값이 아니다
+    // 원래 정해져 있던 값이라 빠진 값이 아니다. 미정은 고를 수 있는 값이라 오류도 아니다
     expect(assigneeSelect()).toHaveAccessibleName('담당자')
+    expect(assigneeSelect()).not.toHaveAttribute('aria-invalid')
 
     await userEvent.click(approveButton())
     await screen.findByTestId('approval-result')
     expect(bodies).toEqual([{ status: 'approved', task_overrides: { assignee_member_id: null } }])
   })
 
-  it('현재 공간 팀원이 아닌 담당자가 오면 그 칸이 레드 R2 이고 승인할 수 없다. 팀원을 고르면 풀린다', async () => {
+  it('현재 공간 팀원이 아닌 담당자가 오면 그 칸이 레드 R2 이고 오류 문구가 칸에 이어지며 승인할 수 없다. 팀원을 고르면 풀린다', async () => {
     approvalOf('ap_02').payload.assignee_member_id = 'mb_99'
     renderApp(paths.approval('ws_01', 'ap_02'))
     await screen.findByRole('heading', { level: 1, name: CREATE })
@@ -210,9 +212,16 @@ describe('담당자 선택 상자 (#471)', () => {
     )
     expect(approveButton()).toBeDisabled()
     expect(assigneeSelect()).toHaveClass('border-accent')
+    expect(assigneeSelect()).toHaveAttribute('aria-invalid', 'true')
+    expect(assigneeSelect()).toHaveAccessibleDescription(
+      '이 워크스페이스의 팀원 중에서 담당자를 골라 주세요.',
+    )
+    expect(screen.getByText('이 워크스페이스의 팀원 중에서 담당자를 골라 주세요.')).toBeVisible()
     await pickAssignee('김서연')
     expect(approveButton()).toBeEnabled()
     expect(assigneeSelect()).not.toHaveClass('border-accent')
+    expect(assigneeSelect()).not.toHaveAttribute('aria-invalid')
+    expect(screen.queryByText('이 워크스페이스의 팀원 중에서 담당자를 골라 주세요.')).toBeNull()
   })
 })
 

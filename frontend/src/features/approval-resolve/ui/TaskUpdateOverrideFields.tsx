@@ -1,6 +1,7 @@
 import { useId, useState } from 'react'
 import { isDateOnly } from '@/shared/lib/date'
 import type { TaskStatus } from '@/shared/types/common'
+import { Button } from '@/shared/ui/button'
 import { DateField } from '@/shared/ui/date-field'
 import { Icon } from '@/shared/ui/icon'
 import { Label } from '@/shared/ui/label'
@@ -74,22 +75,42 @@ export function TaskUpdateOverrideFields({
           />
         </div>
       </div>
-      <DateField
-        size="lg"
-        label="마감"
-        // 만진 뒤 비우면 미정으로 보낸다 — 그 전에는 원래 제안 유지다
-        placeholder={edits.dueDate === undefined ? '원래 제안 유지 · YYYY-MM-DD' : '미정'}
-        calendarLabel="마감 달력 열기"
-        labelTone={dueInvalid ? 'required-blocking' : 'normal'}
-        error={dueInvalid ? '마감은 YYYY-MM-DD 형식의 있는 날짜여야 해요.' : undefined}
-        disabled={disabled}
-        value={dueDate}
-        onBlur={() => setDueLeft(true)}
-        onChange={(value) => {
-          onInputChange()
-          overrides.setDueDate(value)
-        }}
-      />
+      <div className="flex flex-col">
+        <DateField
+          size="lg"
+          label="마감"
+          // 비운 칸은 원래 제안 유지다. 미정은 「마감 미정」으로만 바꾼다
+          placeholder={
+            edits.dueDate === undefined
+              ? `원래 제안 유지 · ${overrides.proposedDue ?? 'YYYY-MM-DD'}`
+              : '미정'
+          }
+          calendarLabel="마감 달력 열기"
+          labelTone={dueInvalid ? 'required-blocking' : 'normal'}
+          error={dueInvalid ? '마감은 YYYY-MM-DD 형식의 있는 날짜여야 해요.' : undefined}
+          description="마감을 미정으로 바꾸려면 마감 미정을 누르세요."
+          disabled={disabled}
+          value={dueDate}
+          onBlur={() => setDueLeft(true)}
+          onChange={(value) => {
+            onInputChange()
+            overrides.setDueDate(value)
+          }}
+        />
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="mt-6 self-start"
+          disabled={disabled}
+          onClick={() => {
+            onInputChange()
+            overrides.setDueDate(null)
+          }}
+        >
+          마감 미정
+        </Button>
+      </div>
     </div>
   )
 }

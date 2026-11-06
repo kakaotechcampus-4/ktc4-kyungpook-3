@@ -1,3 +1,4 @@
+import { createRef } from 'react'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Select, SelectInitial, SelectNoneMark } from './Select'
@@ -96,6 +97,34 @@ describe('Select', () => {
     expect(trigger).toHaveTextContent('미정')
     await openWithKeyboard(trigger)
     expect(screen.getByRole('option', { name: '미정' })).toHaveAttribute('aria-selected', 'true')
+  })
+
+  it('고른 값이 없으면(플레이스홀더) Enter 로 열 때 맨 위 미정 줄에 포커스가 간다', async () => {
+    const { trigger } = renderSelect({ value: null, placeholder: '담당자 고르기' })
+    await openWithKeyboard(trigger)
+    await waitFor(() => expect(screen.getByRole('option', { name: '미정' })).toHaveFocus())
+    await userEvent.keyboard('{ArrowDown}')
+    expect(screen.getByRole('option', { name: '김서연' })).toHaveFocus()
+  })
+
+  it('aria-invalid 는 true 일 때만 트리거에 붙는다', () => {
+    const { trigger } = renderSelect({ 'aria-invalid': true })
+    expect(trigger).toHaveAttribute('aria-invalid', 'true')
+  })
+
+  it('aria-invalid 가 false 면 속성을 붙이지 않는다', () => {
+    const { trigger } = renderSelect({ 'aria-invalid': false })
+    expect(trigger).not.toHaveAttribute('aria-invalid')
+  })
+
+  it('ref 는 트리거 버튼을 가리키고, 트리거를 떠나면 onBlur 를 부른다', async () => {
+    const ref = createRef<HTMLButtonElement>()
+    const onBlur = vi.fn()
+    const { trigger } = renderSelect({ ref, onBlur })
+    expect(ref.current).toBe(trigger)
+    trigger.focus()
+    await userEvent.tab()
+    expect(onBlur).toHaveBeenCalledOnce()
   })
 
   it('비활성 트리거는 열리지 않는다', async () => {

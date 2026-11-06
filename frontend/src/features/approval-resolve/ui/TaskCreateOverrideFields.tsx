@@ -6,6 +6,7 @@ import { ErrorText } from '@/shared/ui/error-text'
 import { Label } from '@/shared/ui/label'
 import { Select, SelectInitial, SelectNoneMark } from '@/shared/ui/select'
 import { TextField } from '@/shared/ui/text-field'
+import { OVERRIDE_FORM_MESSAGES } from '../model/overridesSchema'
 import type { TaskCreateOverrides } from '../model/useTaskCreateOverrides'
 
 const OVERRIDE_FIELDS_ROW =
@@ -74,6 +75,8 @@ export function TaskCreateOverrideFields({
 
   const title = form.register('taskTitle')
   const assigneeMissing = attention.assignee === 'missing'
+  // 팀원 목록을 받기 전에는 어떤 담당자든 목록에 없으므로 오류로 보이지 않는다. 미정(null)은 invalid 가 되지 않는다
+  const assigneeInvalid = loaded && attention.assignee === 'invalid'
   const dueMissing = attention.due === 'missing'
 
   return (
@@ -100,6 +103,7 @@ export function TaskCreateOverrideFields({
               {labelOf('담당자', assigneeMissing)}
             </Label>
             <Select
+              ref={field.ref}
               id={assigneeId}
               name={field.name}
               value={field.value === '' ? null : field.value}
@@ -112,11 +116,13 @@ export function TaskCreateOverrideFields({
               placeholder={assigneeMissing ? '담당자 고르기' : undefined}
               tone={attention.assignee === null ? 'normal' : 'blocking'}
               disabled={disabled || !loaded}
-              aria-describedby={errors.assigneeMemberId ? assigneeErrorId : undefined}
+              onBlur={field.onBlur}
+              aria-invalid={assigneeInvalid}
+              aria-describedby={assigneeInvalid ? assigneeErrorId : undefined}
             />
-            {errors.assigneeMemberId?.message ? (
+            {assigneeInvalid ? (
               <ErrorText id={assigneeErrorId} className="mt-6">
-                {errors.assigneeMemberId.message}
+                {OVERRIDE_FORM_MESSAGES.assignee}
               </ErrorText>
             ) : null}
           </div>
