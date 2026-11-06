@@ -347,7 +347,7 @@ AI가 화자 분리로 얻은 라벨을 보낸다. 회의가 `awaiting_speakers`
 - `processing`이고 `claimed_at`이 있으며 라벨을 아직 받지 않았을 때만 회의 상태를 바꾸는 조건부 UPDATE 한 문장으로 판정한다. 이긴 요청만 라벨(`meeting_upload.speakers`)과 보고 시각을 같은 트랜잭션에서 저장한다. 실패 응답은 상태를 바꾸지 않는다.
 - 같은 내용을 다시 보내면 200이고 `status`는 현재 상태(`awaiting_speakers`, PM 이 지정한 뒤에는 `processing`)다. 이때 BE 는 아무것도 쓰지 않는다. 라벨, 보고 시각(`speakers_reported_at`, 지정 대기 7일 만료의 기준), 회의 상태가 그대로라서 재전송으로 만료 시계가 늘지 않는다. 응답을 못 받은 재시도와, AI 가 지정 대기 만료를 확인하는 데(#325, #438) 쓴다. BE 는 이 동작을 유지한다.
 - "같은 내용"은 라벨 이름, `total_sec`, 샘플의 `start`·`end` 값이 모두 같다는 뜻이다. 라벨·샘플 순서와 `1`·`1.0` 같은 표기 차이는 보지 않고, 스키마에 없는 필드는 무시한다.
-- 판정 순서: `done`·`failed`면 보낸 내용과 상관없이 409 `MEETING_ALREADY_ENDED`가 먼저다. 그다음 claim 여부(`UPLOAD_NOT_CLAIMED`), 그다음 내용 비교(`SPEAKERS_ALREADY_REPORTED`) 순이다.
+- 판정 순서: 401 `UNAUTHENTICATED`(토큰) → 400 `INVALID_REQUEST`(본문 검증) → 404 `MEETING_NOT_FOUND` 다음에, `done`·`failed`면 보낸 라벨 내용과 상관없이 409 `MEETING_ALREADY_ENDED`가 먼저다. 그다음 claim 여부(`UPLOAD_NOT_CLAIMED`), 그다음 내용 비교(`SPEAKERS_ALREADY_REPORTED`) 순이다.
 - 400 `INVALID_REQUEST`: 위 검증에 걸린 경우. 숫자는 유한해야 하며 `NaN`·`Infinity`도 400이다.
 - 404 `MEETING_NOT_FOUND`: 없는 회의, 업로드 회의가 아님, `meeting_upload` 행 없음. 봉투의 `error.code`가 `MEETING_NOT_FOUND`일 때만 회의가 없다는 뜻이다. 없는 경로처럼 다른 이유의 404 는 `INVALID_REQUEST`다. BE 에는 회의나 업로드 행을 지우는 경로가 없다.
 - 409 `MEETING_ALREADY_ENDED`(`details.status`): `done`·`failed`.
