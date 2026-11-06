@@ -47,7 +47,7 @@ const PICKED = 'text-meta text-sub'
 const ATTRIBUTIONS_ERROR = 'shrink-0 border-b border-divider px-28 py-12'
 const WAITING_NOTE =
   'inline-flex items-center gap-7 self-center rounded-999 bg-divider px-13 py-7 text-meta text-sub'
-const FOOT = 'shrink-0 border-t border-divider px-28 pt-14 pb-20'
+const FOOT = 'shrink-0 border-t border-divider px-28 pt-14 pb-16'
 const FOOT_CARD =
   'flex items-center gap-12 rounded-[14px] border border-line bg-surface px-14 py-12 text-dim'
 const FOOT_LINK =
@@ -63,11 +63,17 @@ export function ThreadDetail({
   threadId,
   botName,
   viewer,
+  floorRef,
+  toastClearance,
 }: {
   workspaceId: string
   threadId: string
   botName: string
   viewer: MessageViewer
+  /** 대화 아래 고정 줄(답장·안내). 화면이 그 위에 정리 중 토스트를 놓는다 */
+  floorRef: (element: HTMLElement | null) => void
+  /** 대화 칸 끝에 둘 여백(px). 마지막 내용이 그 위의 토스트에 가리지 않게 한다. 토스트가 없으면 0 */
+  toastClearance: number
 }) {
   const thread = useQuery(messageThreadQueryOptions(workspaceId, threadId))
   if (thread.data !== undefined)
@@ -77,6 +83,8 @@ export function ThreadDetail({
         botName={botName}
         thread={thread.data}
         viewer={viewer}
+        floorRef={floorRef}
+        toastClearance={toastClearance}
       />
     )
   if (thread.error === null) return <ThreadSkeleton />
@@ -115,11 +123,15 @@ function ThreadView({
   botName,
   thread,
   viewer,
+  floorRef,
+  toastClearance,
 }: {
   workspaceId: string
   botName: string
   thread: MessageThread
   viewer: MessageViewer
+  floorRef: (element: HTMLElement | null) => void
+  toastClearance: number
 }) {
   const bodyRef = useRef<HTMLElement>(null)
   // 자기 답장을 보내기 직전의 메시지 수. 그 답장이 그려진 뒤에만 그 줄로 내리고, 다른 갱신에는 자리를 움직이지 않는다
@@ -208,8 +220,14 @@ function ThreadView({
         </div>
       )}
       {/* 스크롤 칸이라 키보드로도 내릴 수 있게 Tab 자리를 준다 (WCAG 2.1.1) */}
-      {/* eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex */}
-      <section ref={bodyRef} aria-label="대화 내용" tabIndex={0} className={BODY}>
+      <section
+        ref={bodyRef}
+        aria-label="대화 내용"
+        // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex
+        tabIndex={0}
+        className={BODY}
+        style={toastClearance > 18 ? { paddingBottom: toastClearance } : undefined}
+      >
         {view.days.length === 0 ? (
           <p className="self-center pt-24 text-body text-dim">아직 주고받은 메시지가 없어요.</p>
         ) : null}
@@ -240,7 +258,7 @@ function ThreadView({
         ))}
       </section>
       {replyable ? (
-        <div className={FOOT}>
+        <div ref={floorRef} className={FOOT}>
           <ReplyForm
             workspaceId={workspaceId}
             threadId={thread.id}
@@ -252,7 +270,7 @@ function ThreadView({
           />
         </div>
       ) : (
-        <ThreadNotice botName={botName} />
+        <ThreadNotice botName={botName} floorRef={floorRef} />
       )}
     </div>
   )
@@ -338,9 +356,15 @@ function Bubble({
 }
 
 /** 메시지는 봇만 보낸다. 승인·고쳐 쓰기·보내지 않음은 보내기 전 확인에서 한다 */
-function ThreadNotice({ botName }: { botName: string }) {
+function ThreadNotice({
+  botName,
+  floorRef,
+}: {
+  botName: string
+  floorRef: (element: HTMLElement | null) => void
+}) {
   return (
-    <div className={FOOT}>
+    <div ref={floorRef} className={FOOT}>
       <div className={FOOT_CARD}>
         <Icon name="info" size={16} />
         <p className="flex-1 text-caption leading-[1.6] wrap-anywhere text-sub">

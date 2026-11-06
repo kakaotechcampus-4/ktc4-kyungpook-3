@@ -9,16 +9,26 @@ const TITLE = 'text-[28px] leading-[1.25] font-bold tracking-h1 text-ink'
 
 export interface ComposeDetailProps {
   workspaceId: string
+  /** 스크롤 끝에 둘 여백(px). 마지막 버튼을 정리 중 토스트 위로 꺼낼 수 있게 한다. 토스트가 없으면 0 */
+  toastClearance: number
   /** 만든 재촉이 든 묶음. 화면이 그 묶음을 고른다 */
   onCreated: (bundleId: string) => void
   onCancel: () => void
 }
 
 /** 새 재촉 — PM 이 팀원과 그 팀원이 맡은 태스크를 골라 재촉을 만든다. 만들면 그 보낼 메시지의 보내기 전 확인으로 간다 */
-export function ComposeDetail({ workspaceId, onCreated, onCancel }: ComposeDetailProps) {
+export function ComposeDetail({
+  workspaceId,
+  toastClearance,
+  onCreated,
+  onCancel,
+}: ComposeDetailProps) {
   const headingId = useId()
   return (
-    <div className={PAGE}>
+    <div
+      className={PAGE}
+      style={toastClearance > 56 ? { paddingBottom: toastClearance } : undefined}
+    >
       <section aria-labelledby={headingId} className={COLUMN}>
         <div className="flex flex-col gap-8">
           <h2 id={headingId} className={TITLE}>
