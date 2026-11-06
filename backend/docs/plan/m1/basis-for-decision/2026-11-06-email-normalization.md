@@ -43,17 +43,17 @@
 주 확인은 API 컨테이너 안에서 마이그레이션과 같은 규칙(`strip().lower()`)으로 센다. 저장소 루트에서 실행한다. `duplicate groups` 가 0 이어야 컨테이너 시작 때 멈추지 않고, `rows to change` 는 바뀔 행 수다.
 
 ```
-docker compose -f backend/docker-compose.prod.yml exec api python -c 'import os,collections,sqlalchemy as sa;c=sa.create_engine(os.environ["DATABASE_URL"]).connect();g=collections.Counter();r=c.execute(sa.text("SELECT email FROM \"user\"")).all();[g.update([m.strip().lower()]) for (m,) in r];print("duplicate groups:",sum(v>1 for v in g.values()),"rows to change:",sum(m.strip().lower()!=m for (m,) in r))'
+docker compose -f backend/docker-compose.prod.yml exec api python -c 'import os,collections,sqlalchemy as sa;c=sa.create_engine(os.environ["DATABASE_URL"]).connect();g=collections.Counter();r=c.execute(sa.select(sa.table("user", sa.column("email")))).all();[g.update([m.strip().lower()]) for (m,) in r];print("duplicate groups:",sum(v>1 for v in g.values()),"rows to change:",sum(m.strip().lower()!=m for (m,) in r))'
 ```
 
-SQL 두 개는 ASCII·공백만 다루는 근사치 보조다. 0 이 아니면 확실히 문제지만 0 이어도 위 확인이 0 이 아닐 수 있다.
+보조로 SQL 두 개를 쓸 수 있으나 ASCII·공백만 다루는 근사치다. 0 이 아니면 확실히 문제지만 0 이어도 위 Python 확인이 0 이 아닐 수 있다.
 
 ```sql
 SELECT count(*) FROM (SELECT lower(btrim(email)) FROM "user" GROUP BY 1 HAVING count(*) > 1) d;
 SELECT count(*) FROM "user" WHERE email <> lower(btrim(email));
 ```
 
-(위 명령은 마이그레이션 파일 설명의 것과 같다. 셸에서 따옴표가 달라지면 파일 설명을 기준으로 한다.)
+(위 Python 확인 명령은 마이그레이션 파일 설명의 명령과 같다.)
 
 ## 장단점과 감수한 제약
 

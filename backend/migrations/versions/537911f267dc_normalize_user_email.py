@@ -11,7 +11,7 @@ UPDATE 를 시작하므로 sqlite 처럼 DDL 트랜잭션이 없는 곳에서도
 규칙(strip().lower())으로 세므로 "duplicate groups" 가 0 이어야 컨테이너 시작 때 멈추지 않는다.
 "rows to change" 는 바뀔 행 수다. 저장소 루트에서:
 
-    docker compose -f backend/docker-compose.prod.yml exec api python -c 'import os,collections,sqlalchemy as sa;c=sa.create_engine(os.environ["DATABASE_URL"]).connect();g=collections.Counter();r=c.execute(sa.text("SELECT email FROM \\"user\\"")).all();[g.update([m.strip().lower()]) for (m,) in r];print("duplicate groups:",sum(v>1 for v in g.values()),"rows to change:",sum(m.strip().lower()!=m for (m,) in r))'
+    docker compose -f backend/docker-compose.prod.yml exec api python -c 'import os,collections,sqlalchemy as sa;c=sa.create_engine(os.environ["DATABASE_URL"]).connect();g=collections.Counter();r=c.execute(sa.select(sa.table("user", sa.column("email")))).all();[g.update([m.strip().lower()]) for (m,) in r];print("duplicate groups:",sum(v>1 for v in g.values()),"rows to change:",sum(m.strip().lower()!=m for (m,) in r))'
 
 보조로 SQL 두 개를 쓸 수 있으나 ASCII·공백만 다루는 근사치다. btrim 은 공백만 지우고 PostgreSQL lower 는
 DB 로케일에 따라 Python str.lower() 와 다를 수 있어, 0 이어도 위 Python 확인이 0 이 아닐 수 있다:
