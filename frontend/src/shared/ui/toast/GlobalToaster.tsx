@@ -1,4 +1,4 @@
-import { PINNED_STACK, setPinnedSlot } from './pinnedSlot'
+import { setPinnedSlot } from './pinnedSlot'
 import { Toast, ToastProvider, ToastViewport } from './Toast'
 import { useToastStore } from './toastStore'
 
@@ -8,6 +8,7 @@ import { useToastStore } from './toastStore'
    독과 칸은 누름을 통과시킨다 — 카드 사이 간격·빈 목록·알약 옆 빈 자리가 아래 화면의 버튼을 막지 않는다.
    누름은 토스트 면(Toast·고정 토스트가 직접 켠다)만 받는다 */
 const DOCK = 'pointer-events-none fixed right-24 bottom-24 z-100 flex flex-col items-end gap-8'
+const PINNED_SLOT = 'flex max-h-[50dvh] flex-col items-end gap-8 overflow-y-auto empty:hidden'
 
 /**
  * 앱에 하나 올리는 토스트 자리. store 의 항목을 `Toast` 로 그린다.
@@ -33,7 +34,7 @@ export function GlobalToaster() {
       ))}
       <div data-testid="toast-dock" className={DOCK}>
         <ToastViewport />
-        <div data-testid="pinned-toast-slot" ref={setPinnedSlot} className={PINNED_STACK} />
+        <div data-testid="pinned-toast-slot" ref={setPinnedSlot} className={PINNED_SLOT} />
       </div>
     </ToastProvider>
   )

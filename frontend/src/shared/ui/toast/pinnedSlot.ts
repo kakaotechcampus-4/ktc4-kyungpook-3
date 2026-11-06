@@ -3,7 +3,7 @@ import { create } from 'zustand'
 /** 독의 아래 가장자리(`bottom-24`). 고정 토스트가 차지하는 높이에 더해 본문 아래 여백을 만든다 */
 const DOCK_EDGE = 24
 
-/** 고정 토스트를 쌓는 칸. 독의 칸과 화면이 두는 자리(PinnedToastHost)가 같은 모양이다 */
+/** 화면이 두는 고정 토스트 자리(PinnedToastHost)의 쌓기 모양. GlobalToaster 의 PINNED_SLOT 과 같게 둔다 */
 export const PINNED_STACK =
   'flex max-h-[50dvh] flex-col items-end gap-8 overflow-y-auto empty:hidden'
 
