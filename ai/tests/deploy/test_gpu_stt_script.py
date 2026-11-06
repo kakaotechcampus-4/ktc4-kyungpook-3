@@ -300,7 +300,9 @@ def test_destroy_fails_and_names_what_is_still_alive(aws):
 
 def test_on_says_how_to_check_health_from_production(aws):
     standby(aws)
-    assert f"curl --cacert /etc/mm/gpu-stt-ca.pem https://{EIP}:8000/health" in aws.ok("on")
+    printed = aws.ok("on")
+    assert f"--cacert /etc/mm/gpu-stt-ca.pem https://{EIP}:8000/health" in printed
+    assert "-w '%{http_code}\\n'" in printed
 
 
 def test_user_data_starts_the_timer_before_anything_else(aws):

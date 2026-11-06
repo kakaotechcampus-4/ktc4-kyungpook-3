@@ -277,7 +277,7 @@ cmd_on() {
   cmd_status
   echo
   echo "보안 그룹이 운영 서버만 열어 두어 Mac 에서는 닿지 않습니다. 운영 서버에서 200 이 올 때까지 확인합니다."
-  echo "  curl --cacert $CA_ON_PROD https://$EIP:8000/health"
+  echo "  curl -s -o /dev/null -w '%{http_code}\n' --cacert $CA_ON_PROD https://$EIP:8000/health"
 }
 
 cmd_off() {
