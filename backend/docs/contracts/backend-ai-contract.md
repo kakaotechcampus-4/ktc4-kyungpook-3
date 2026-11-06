@@ -4,7 +4,7 @@
 
 - 제공자: Backend (`backend/app/api/`)
 - 소비자: AI 녹음 봇 (`ai/capture/handoff.py`의 `BeClient`·`Handoff`, 판단 파이프라인 `ai/judge/pipeline.py`). [웹 업로드 가져가기](#웹-업로드-가져가기)의 소비자는 AI 쪽 업로드 처리 워커이며 아직 없다
-- 기준: 2026-10-08 develop 코드 대조. 봇 회의 쓰기 경로의 서비스 토큰은 2026-10-09 #179 변경 코드로, 추출 등록의 auto 판단 키는 2026-10-16 #232 변경 코드로 다시 대조했다. 웹 업로드 가져가기는 2026-10-14 #219 브랜치 코드로, 화자 지정 경로(speakers·assigned·resume)는 2026-11-02 #266 브랜치 코드로 대조했다
+- 기준: 2026-10-08 develop 코드 대조. 봇 회의 쓰기 경로의 서비스 토큰은 2026-10-09 #179 변경 코드로, 추출 등록의 auto 판단 키는 2026-10-16 #232 변경 코드로 다시 대조했다. 웹 업로드 가져가기는 2026-10-14 #219 브랜치 코드로, 화자 지정 경로(speakers·assigned·resume)는 2026-11-02 #266 브랜치 코드로, 처리 단계 보고(`PATCH /meetings/{meeting_id}/stage`)는 2026-11-05 #381 브랜치 코드로 대조했다
 - 합의 근거: 인계 방식은 [AI 결정 0009](../../../ai/decision_log/0009-bot-hands-off-to-be-api.md), 발화 저장은 [AI 결정 0017](../../../ai/decision_log/0017-transcript-sources-stage.md)에 AI 쪽 기록이 있다. 이 문서는 그 이후의 필드·오류 세부를 코드에서 읽은 것이며, 별도 합의 문서가 없는 항목은 구현 사실로만 적는다.
 
 ## 공통
@@ -20,6 +20,7 @@
 |---|---|---|---|
 | `/record` 직후 | `POST /meetings` | `created` | `X-Service-Token` |
 | 트랙을 닫은 뒤 | `PATCH /meetings/{meeting_id}/end` | `processing` | `X-Service-Token` |
+| 처리 단계가 시작될 때 (`stt`·`sources`·`extract`·`handoff`) | `PATCH /meetings/{meeting_id}/stage` | 변화 없음 | `X-Service-Token` |
 | 전사가 닫힌 뒤 | `POST /meetings/{meeting_id}/sources` | 변화 없음 | `X-Service-Token` |
 | 추출 도중 (항목마다) | `POST /workspaces/{workspace_id}/tasks/similar` | 변화 없음 | `X-Service-Token` |
 | 추출이 끝난 뒤 | `POST /extractions` | `done` | `X-Service-Token` |
@@ -29,7 +30,7 @@
 
 ## 인증
 
-- `X-Service-Token`: 봇이 부르는 경로 전부(회의 생성·종료·실패, 발화 저장, 유사 task 검색, 추출 등록, 서버로 워크스페이스 찾기, 전사 힌트 조회, 리마인드 DM 다섯 경로)와 웹 업로드 가져가기 여섯 경로에 건다 (`deps.require_service_token`). 헤더 값을 서버의 `SERVICE_TOKEN`과 비교하고, 없거나 다르면 401 `UNAUTHENTICATED`다. 서버에 `SERVICE_TOKEN`이 비어 있으면 모든 요청을 거절한다. 사용자 세션은 서비스 토큰을 대신하지 못한다.
+- `X-Service-Token`: 봇이 부르는 경로 전부(회의 생성·종료·단계 보고·실패, 발화 저장, 유사 task 검색, 추출 등록, 서버로 워크스페이스 찾기, 전사 힌트 조회, 리마인드 DM 다섯 경로)와 웹 업로드 가져가기 여섯 경로에 건다 (`deps.require_service_token`). 헤더 값을 서버의 `SERVICE_TOKEN`과 비교하고, 없거나 다르면 401 `UNAUTHENTICATED`다. 서버에 `SERVICE_TOKEN`이 비어 있으면 모든 요청을 거절한다. 사용자 세션은 서비스 토큰을 대신하지 못한다.
 - 합의 근거: 이슈 #179(BE)와 #193(AI). 회의 생성·종료·실패와 추출 등록이 리버스 프록시 설정에만 기대던 것을 서비스 토큰으로 막는다.
 - 현재 구현
   - BE(#179): 회의 생성·종료·실패와 추출 등록에 `require_service_token`을 건다. #179 전에는 발화 저장, 유사 검색, 서버로 워크스페이스 찾기에만 걸었다.
@@ -72,6 +73,29 @@
 - `data`: `{meeting_id, status: "processing", ended_at}`
 - 이미 `processing`·`awaiting_speakers`·`done`·`failed`면 409 `MEETING_ALREADY_ENDED`, `details.status`에 지금 상태. 봇은 이 값을 지금 상태로 받아들이고 계속한다. `awaiting_speakers`는 웹 업로드 회의가 PM의 화자 지정을 기다리는 상태다(#266). `POST /uploads/{meeting_id}/speakers`가 이 상태로 바꾼다. PM이 지정하는 API는 아직 없다. 디스코드 회의는 이 상태가 되지 않는다.
 - 없는 회의는 404 `MEETING_NOT_FOUND`.
+
+### `PATCH /meetings/{meeting_id}/stage` → 200
+
+봇이 처리 단계를 시작할 때 알린다. 웹 화면의 진행 표시(`progress`)를 데이터가 생기기 전에 앞당기는 데 쓴다. 진행 표시일 뿐이라 처리 결과를 바꾸지 않는다.
+
+- 합의 상태: 구현됨(#381), AI 리뷰 대기. 호출하는 쪽(`ai/capture/handoff.py`, `ai/capture/recorder.py`)도 같은 브랜치에서 구현했고 AI 파트 리뷰를 받기 전이다. 다른 AI 호출 경로(수동 업로드, 채팅)는 보고하지 않는다.
+- 요청: `{ "stage": "stt" | "sources" | "extract" | "handoff" }`. 이 네 값은 AI의 `failed_stage` 이름과 같다. 다른 값이나 빠진 값은 400 `INVALID_REQUEST`.
+- `data`: `{meeting_id, status, processing_stage, applied}`. `processing_stage`는 이 요청을 처리한 뒤 저장된 값이고 아직 보고가 없으면 `null`이다.
+- 순서는 `stt` < `sources` < `extract` < `handoff`이고 단계는 앞으로만 간다. 건너뛰어도 된다(`extract`부터 재개하면 `extract`, `handoff`만 온다).
+- 다음은 오류가 아니라 200 `applied=false`이고 저장값을 바꾸지 않는다: 회의가 `processing`이 아닐 때(`created`·`awaiting_speakers`·`done`·`failed`), 같은 단계를 다시 보낼 때, 이미 보고한 단계보다 앞선 단계일 때. 반영할 때만 `applied=true`이고 단계와 갱신 시각을 함께 저장한다. 판정과 쓰기는 조건부 UPDATE 한 문장이라 늦게 도착한 보고가 앞선 단계를 덮지 않는다.
+- 없는 회의는 404 `MEETING_NOT_FOUND`. 새 오류 코드는 없다.
+- 회의 상세 응답에는 `processing_stage`를 싣지 않는다. 대신 `progress`가 이 값을 반영한다. 보고가 없으면 지금처럼 데이터만으로 판정한다. 아래 단계는 "그 단계가 시작됐다"는 뜻이다.
+
+  | progress 키 | true가 되는 때 |
+  |---|---|
+  | `audio_merged` | `stt` 이후이거나 발화가 있을 때 |
+  | `transcribed` | `sources` 이후이거나 발화가 있을 때 |
+  | `extracted` | `handoff` 이후이거나 항목이 있는 추출이 있을 때 |
+
+  회의 상세 `GET /meetings/{meeting_id}`와 `PATCH /meetings/{meeting_id}/fail`의 응답 `progress`가 같은 식을 쓴다. 트랙별 진행률은 보내지 않는다.
+- 봇 동작(`Handoff.report_stage`): `be.meeting_id`가 없으면 부르지 않고, 타임아웃 3초(`STAGE_TIMEOUT_S`)로 한 번만 보낸다. 오류는 모두 로그만 남기고 삼키며 매니페스트에 쓰지 않는다. 호출은 `process_session`의 단계 시작(`begin`)에서 진행 표시 뒤, AI 쪽 단계 시간 기록(ops) 단계를 열기 전에 하므로 보고 시간은 ops 단계 시간에 들어가지 않는다. BE 장애 때 단계 시작이 최대 타임아웃(3초)만큼 늦어질 수 있다.
+- 배포 순서: BE를 먼저 배포한다. 어느 쪽이 먼저 나가도 깨지지 않는다. BE가 먼저면 봇이 아직 보고하지 않아 `progress`는 지금처럼 데이터로 판정한다. 봇이 먼저면 이 경로가 없는 BE는 오류를 돌려주고 봇은 그 오류를 삼켜 처리를 계속한다. 이때 BE 쪽 진행 표시만 앞당겨지지 않는다.
+- DB: `meeting.processing_stage`(문자열 16자)와 `processing_stage_at`(시각)을 nullable로 추가했다(마이그레이션 `a3d7f91c5e28`). 기존 회의는 `null`이다.
 
 ### `PATCH /meetings/{meeting_id}/fail` → 200
 
@@ -478,7 +502,7 @@ AI 가 문구를 써야 하는 묶음을 준다. 요청 본문은 없다. 승인
 | 코드 | HTTP | 나오는 경로 | 봇 처리 |
 |---|---|---|---|
 | `UNAUTHENTICATED` | 401 | 봇 경로 전부 | 실패 |
-| `MEETING_NOT_FOUND` | 404 | end, fail, sources, extractions, uploads claim·file·speakers·resume | 실패 |
+| `MEETING_NOT_FOUND` | 404 | end, stage, fail, sources, extractions, uploads claim·file·speakers·resume | 실패 |
 | `WORKSPACE_NOT_FOUND` | 404 | tasks/similar, members/names | 실패 |
 | `WORKSPACE_MISMATCH` | 400 | extractions | 실패 |
 | `MEETING_ALREADY_ENDED` | 409 | end, fail, uploads claim·speakers·resume | 지금 상태로 보고 계속 (claim이면 다음 회의로) |
@@ -499,5 +523,5 @@ AI 가 문구를 써야 하는 묶음을 준다. 요청 본문은 없다. 승인
 
 ## 코드 근거
 
-- Backend: `app/api/meetings.py`, `app/api/sources.py`, `app/api/similar_tasks.py`, `app/api/extractions.py`, `app/api/integrations.py`의 `get_discord_guild_workspace`, `app/api/bot_lookups.py`(`chat-cursor` 포함), `app/api/approvals.py`(채팅 이력 출처), `app/api/workspaces.py`(업로드 가드), `app/api/uploads.py`, `app/services/speaker_assignment.py`, `app/api/deps.py`의 `require_service_token`, `app/schemas/meeting.py`, `app/schemas/member.py`, `app/schemas/source.py`, `app/schemas/task.py`, `app/schemas/workspace.py`, `app/schemas/upload.py`, `app/services/upload_storage.py`, `app/api/bot_messages.py`, `app/services/messages.py`, `app/schemas/message.py`
-- AI: `ai/capture/handoff.py`의 `BeClient`, `Handoff`, `from_env`, `ai/draft/reminder_draft.py`의 `draft_reminder`, `ai/capture/dm.py`의 `DmCog`
+- Backend: `app/api/meetings.py`, `app/api/sources.py`, `app/api/similar_tasks.py`, `app/api/extractions.py`, `app/api/integrations.py`의 `get_discord_guild_workspace`, `app/api/bot_lookups.py`(`chat-cursor` 포함), `app/api/approvals.py`(채팅 이력 출처), `app/api/workspaces.py`(업로드 가드), `app/api/uploads.py`, `app/services/speaker_assignment.py`, `app/services/meeting_stage.py`, `app/api/deps.py`의 `require_service_token`, `app/schemas/meeting.py`, `app/schemas/member.py`, `app/schemas/source.py`, `app/schemas/task.py`, `app/schemas/workspace.py`, `app/schemas/upload.py`, `app/services/upload_storage.py`, `app/api/bot_messages.py`, `app/services/messages.py`, `app/schemas/message.py`
+- AI: `ai/capture/handoff.py`의 `BeClient`(`report_stage`, `STAGE_TIMEOUT_S`), `Handoff`(`report_stage`), `from_env`, `ai/capture/recorder.py`의 `process_session`(`begin`), `ai/draft/reminder_draft.py`의 `draft_reminder`, `ai/capture/dm.py`의 `DmCog`

@@ -18,7 +18,7 @@ from capture import recorder as R
 from capture.judge_path import JudgeOutput
 from stt import batch as B
 from stt.backend import SttResult, Word
-from tests.capture.fake_be import FakeBe
+from tests.capture.fake_be import FakeBe, without_stage
 
 SR = 16_000
 
@@ -161,11 +161,11 @@ def test_process_session_runs_every_stage_and_records_when(tmp_path):
     assert saved["be"]["meeting_id"] == "m1" and saved["be"]["status"] == "done" and saved["be"]["extraction_id"] == "e-m1"
     assert seen["today"] == date(2026, 9, 16) and seen["names"] == {"1": "민수", "2": "서연"} and seen["n"] == 3
     # BE 에는 회의 생성 → 종료 → 발화 저장 → 추출 등록 순서로 갔고, 1인칭 항목에 그 트랙의 uid 가 실렸다
-    assert [(c[0], c[1]) for c in fake.calls] == [("POST", "/meetings"), ("PATCH", "/meetings/m1/end"),
+    assert [(c[0], c[1]) for c in without_stage(fake.calls)] == [("POST", "/meetings"), ("PATCH", "/meetings/m1/end"),
                                                    ("GET", "/workspaces/ws-1/members/names"),
                                                    ("POST", "/meetings/m1/sources"), ("POST", "/extractions")]
     assert fake.calls[0][2]["title"] == "회의방 2026-09-16"
-    assert fake.calls[4][2]["items"][0]["evidence_speaker"] == "1"
+    assert without_stage(fake.calls)[4][2]["items"][0]["evidence_speaker"] == "1"
     assert R.pending_sessions(rec) == []
 
 
@@ -185,7 +185,7 @@ def test_process_session_stops_where_settings_are_missing_and_recover_resumes(tm
                         transcripts_dir=tmp_path / "transcripts", extractor=_extractor({}),
                         handoff=H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token")))
     assert results[0]["ran"] == ["sourced", "handed_off"] and results[0]["status"] == "handed_off"
-    assert [c[1] for c in fake.calls] == ["/meetings", "/meetings/m1/end", "/meetings/m1/sources", "/extractions"]
+    assert [c[1] for c in without_stage(fake.calls)] == ["/meetings", "/meetings/m1/end", "/meetings/m1/sources", "/extractions"]
     assert R.pending_sessions(rec) == []
 
 
@@ -407,7 +407,7 @@ def test_lines_are_saved_to_the_be_between_transcription_and_extraction(tmp_path
     r = _run(rec, manifest, tmp_path, extractor=_extractor({}), handoff=_be(fake))
     assert r["ran"] == ["transcribed", "sourced", "extracted", "handed_off"] and r["status"] == "handed_off"
     # 발화 먼저, 추출 등록 나중 (BE 명세)
-    assert [(c[0], c[1]) for c in fake.calls] == [("POST", "/meetings"), ("PATCH", "/meetings/m1/end"),
+    assert [(c[0], c[1]) for c in without_stage(fake.calls)] == [("POST", "/meetings"), ("PATCH", "/meetings/m1/end"),
                                                    ("GET", "/workspaces/ws-1/members/names"),
                                                    ("POST", "/meetings/m1/sources"), ("POST", "/extractions")]
     assert sorted(fake.sources["m1"]) == [1, 2, 3]
@@ -493,7 +493,7 @@ def test_lines_follow_the_meeting_when_the_be_meeting_is_replaced(tmp_path, monk
     saved = json.loads(path.read_text(encoding="utf-8"))
     assert saved["be"]["meeting_id"] == "m2" and saved["be"]["sources"]["meeting_id"] == "m2"
     assert sorted(fake.sources["m2"]) == [1, 2, 3]
-    paths = [c[1] for c in fake.calls]
+    paths = [c[1] for c in without_stage(fake.calls)]
     assert paths.index("/meetings/m2/sources") < paths.index("/extractions")
 
 
@@ -508,7 +508,7 @@ def test_a_meeting_the_be_failed_during_extraction_moves_with_its_lines(tmp_path
 
     r = _run(rec, manifest, tmp_path, extractor=meanwhile_failed, handoff=_be(fake))
     assert r["status"] == "handed_off" and r["be"]["meeting_id"] == "m2"
-    assert [c[1] for c in fake.calls][-4:] == ["/meetings", "/meetings/m2/end", "/meetings/m2/sources", "/extractions"]
+    assert [c[1] for c in without_stage(fake.calls)][-4:] == ["/meetings", "/meetings/m2/end", "/meetings/m2/sources", "/extractions"]
     assert sorted(fake.sources["m2"]) == [1, 2, 3] and list(fake.extractions) == ["m2"]
     assert json.loads(path.read_text(encoding="utf-8"))["be"]["sources"]["meeting_id"] == "m2"
 
@@ -999,3 +999,96 @@ def test_the_production_hint_skips_short_chunks():
     from stt.backend import PROMPT_MIN_S
 
     assert R.hinted(PromptEcho(), {"hint_names": ["동우"]}).min_s == PROMPT_MIN_S
+
+
+# ─────────────────────────────────────────────────────────── 처리 단계 보고
+def _stages_reported(fake):
+    return [c[2]["stage"] for c in fake.calls if c[0] == "PATCH" and c[1].endswith("/stage")]
+
+
+def _paths(fake):
+    return [c[1] for c in fake.calls]
+
+
+def test_process_session_reports_stages_in_order(tmp_path):
+    rec, path, manifest = _session(tmp_path)
+    fake = FakeBe()
+    r = _run(rec, manifest, tmp_path, extractor=_extractor({}), handoff=_be(fake))
+    assert r["status"] == "handed_off"
+    assert _stages_reported(fake) == ["stt", "sources", "extract", "handoff"]
+    # 단계는 그 일이 시작되기 전에 알린다. 발화 저장 앞에 sources, 추출 등록 앞에 handoff
+    paths = _paths(fake)
+    stage_at = [i for i, p in enumerate(paths) if p.endswith("/stage")]
+    assert stage_at[0] < paths.index("/meetings/m1/sources") and stage_at[1] < paths.index("/meetings/m1/sources")
+    assert stage_at[3] < paths.index("/extractions")
+
+
+def test_stage_report_failure_does_not_change_result(tmp_path):
+    ok_rec, _, ok_manifest = _session(tmp_path / "ok")
+    ok_fake = FakeBe()
+    ok = _run(ok_rec, ok_manifest, tmp_path / "ok", extractor=_extractor({}), handoff=_be(ok_fake))
+    for trouble in (500, 404):
+        sub = tmp_path / f"fail{trouble}"
+        rec, path, manifest = _session(sub)
+        fake = FakeBe()
+        fake.stage_fail = trouble
+        r = _run(rec, manifest, sub, extractor=_extractor({}), handoff=_be(fake))
+        assert r["status"] == ok["status"] == "handed_off" and r["ran"] == ok["ran"]
+        # 본문에는 임시 경로(transcript_path)가 있어 호출 순서와 대상만 비교한다
+        assert [c[:2] for c in without_stage(fake.calls)] == [c[:2] for c in without_stage(ok_fake.calls)]
+        assert _stages_reported(fake) == ["stt", "sources", "extract", "handoff"]   # 실패해도 단계마다 시도는 한다
+        assert json.loads(path.read_text(encoding="utf-8"))["status"] == "handed_off"
+
+
+def test_stage_report_goes_out_after_the_progress_note_and_before_the_ops_stage_opens(tmp_path, monkeypatch):
+    """보고 HTTP 시간이 ops 단계 시간에 들어가지 않는다. 진행 표시 -> BE 보고 -> ops.begin 순서."""
+    events = []
+    real_begin = R.ops_record.OpsRun.begin
+    monkeypatch.setattr(R.ops_record.OpsRun, "begin",
+                        lambda self, name: (events.append(("ops", name)), real_begin(self, name))[1])
+    fake = FakeBe()
+    real_request = fake.request
+
+    def spy(method, url, **kw):
+        if method == "PATCH" and url.endswith("/stage"):
+            events.append(("report", kw["json"]["stage"]))
+        return real_request(method, url, **kw)
+
+    fake.request = spy
+    rec, path, manifest = _session(tmp_path)
+    _run(rec, manifest, tmp_path, extractor=_extractor({}), handoff=_be(fake),
+         progress=lambda name, info: events.append(("tell", name)) if info is None else None)   # 단계 시작 알림만
+    for stage in ("stt", "sources", "extract", "handoff"):
+        assert [e[0] for e in events if e[1] == stage] == ["tell", "report", "ops"], stage
+
+
+def test_resume_from_extract_reports_only_remaining_stages(tmp_path):
+    rec, path, manifest = _session(tmp_path)
+    fake = FakeBe()
+    first = _run(rec, manifest, tmp_path, extractor=None, handoff=_be(fake))
+    assert first["ran"] == ["transcribed", "sourced"]
+    assert _stages_reported(fake) == ["stt", "sources"]
+    fake.calls.clear()
+    r = _run(rec, json.loads(path.read_text(encoding="utf-8")), tmp_path, extractor=_extractor({}), handoff=_be(fake))
+    assert r["ran"] == ["extracted", "handed_off"]
+    assert _stages_reported(fake) == ["extract", "handoff"]
+
+
+def test_no_handoff_no_stage_calls(tmp_path):
+    rec, path, manifest = _session(tmp_path)
+    r = _run(rec, manifest, tmp_path, extractor=_extractor({}), handoff=None)
+    assert r["ran"] == ["transcribed", "extracted"]          # 예외 없이 BE 없는 길을 끝까지 간다
+
+
+def test_partial_retry_reports_stt(tmp_path, monkeypatch):
+    monkeypatch.setattr(B, "RETRY_WAIT_S", 0.0)
+    rec, path, manifest = _session(tmp_path)
+    stt = DiesOnLong()
+    fake = FakeBe()
+    r = _run(rec, manifest, tmp_path, backend=stt, extractor=_extractor({}), handoff=_be(fake))
+    assert r["status"] == "partial" and _stages_reported(fake) == ["stt"]
+    fake.calls.clear()
+    results = R.recover(rec, backend=stt, model_name="echo", workers=1, gate=None,
+                        transcripts_dir=tmp_path / "transcripts", extractor=_extractor({}), handoff=_be(fake))
+    assert results[0]["ran"][0] == "retried"
+    assert _stages_reported(fake).count("stt") == 1          # 다시 보내는 길도 전사 단계로 알린다
