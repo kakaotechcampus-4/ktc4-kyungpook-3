@@ -46,6 +46,8 @@ class TranscriptSegment(_Base):
     speaker: 플랫폼 사용자 ID(문자열) 또는 None
     start/end: **회의 시작 기준 초**. 화자 트랙 파일 안의 위치가 아니다
     seq: 회의 전체에서의 발화 순번. 근거 점프가 참조하는 안정된 식별자
+    speaker_member_id: 화자의 BE 멤버 ID. 업로드 회의를 BE 에 인계할 때만 채운다(speaker 는 None).
+        None 이면 to_dict 가 키를 뺀다. 디스코드 회의의 본문은 이 필드가 생기기 전과 같다
     """
 
     speaker: str | None
@@ -53,6 +55,13 @@ class TranscriptSegment(_Base):
     end: float
     text: str
     seq: int = 0
+    speaker_member_id: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        d = super().to_dict()
+        if d["speaker_member_id"] is None:
+            del d["speaker_member_id"]
+        return d
 
 
 @dataclass

@@ -48,7 +48,7 @@ const MARK: Record<Column, string> = {
 const CARD_BASE = 'flex flex-col gap-12 rounded-12 border px-13 py-12'
 const PILL = 'inline-flex h-20 shrink-0 items-center rounded-6 px-7 text-[10.5px] leading-none'
 /* 막힘은 누르는 배지라 채운 `위험` 과 달리 테두리만 accent 로 그린다. 시안이 없어 위험 배지의 색·크기를 따른다 */
-const BLOCKED_PILL = `${PILL} cursor-pointer border border-accent bg-surface font-bold text-accent hover:bg-accent hover:text-surface data-[state=open]:bg-accent data-[state=open]:text-surface`
+const BLOCKED_PILL = `${PILL} cursor-pointer border border-accent bg-surface font-bold text-accent hover:bg-accent-solid hover:text-surface data-[state=open]:bg-accent-solid data-[state=open]:text-surface`
 
 export interface BoardViewProps {
   workspaceId: string
@@ -250,7 +250,7 @@ const TaskCard = memo(function TaskCard({
 
 function TonePill({ tone }: { tone: 'danger' | 'warn' }) {
   return tone === 'danger' ? (
-    <span className={`${PILL} bg-accent font-bold text-surface`}>위험</span>
+    <span className={`${PILL} bg-accent-badge font-bold text-accent`}>위험</span>
   ) : (
     <span className={`${PILL} gap-3 bg-ink font-semibold text-surface`}>
       <span aria-hidden="true" className="mr-3 h-5 w-5 rounded-999 bg-current" />

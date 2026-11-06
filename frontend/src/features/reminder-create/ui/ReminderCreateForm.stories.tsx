@@ -22,6 +22,7 @@ const loginTask: Task = {
   notionPageId: 'notion_tk_01',
   version: 1,
   notionSyncStatus: 'synced',
+  autoBlocked: false,
   createdAt: '2026-09-15T04:00:00Z',
   updatedAt: '2026-09-17T04:00:00Z',
 }

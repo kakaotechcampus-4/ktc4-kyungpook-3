@@ -199,6 +199,16 @@ def _valid_assignee(item: dict) -> tuple[str | None, str | None, str | None]:
     return a_type, raw, resolved
 
 
+def _context_block(context: Transcript | None) -> str:
+    """이전 대화를 번호 없이 보여 준다. 번호가 없으니 indices 로 고를 수 없고, 근거는 아래 번호 목록에서만 나온다."""
+    if context is None:
+        return ""
+    lines = [f"(이전) {seg.speaker or '?'}: {seg.text}" for seg in context.segments]
+    if not lines:
+        return ""
+    return "다음은 이전 대화다. 참고만 하고 근거(indices)로 고르지 마라.\n" + "\n".join(lines) + "\n\n"
+
+
 def _luna_user_prompt(numbered: str) -> str:
     return (
         "다음은 번호가 매겨진 발화 목록이다. 의미 있다고 판단한 내용마다 근거가 되는 줄 번호 "
@@ -254,7 +264,7 @@ def extract_findings_llm(transcript: Transcript, client: LLMClient) -> list[Judg
 
 
 def _extract_findings_llm(
-    transcript: Transcript, client: LLMClient
+    transcript: Transcript, client: LLMClient, context: Transcript | None = None
 ) -> tuple[list[JudgeFinding] | None, dict[str, Any]]:
     """extract_findings_llm 과 같고, 검증에서 탈락한 항목 기록(empty_drops)을 함께 돌려준다."""
     dropped = empty_drops()
@@ -263,7 +273,8 @@ def _extract_findings_llm(
     if not sentences:
         return [], dropped
 
-    prompt = _LUNA_SYSTEM_PROMPT + "\n\n" + _luna_user_prompt(_numbered_lines(sentences, speakers))
+    prompt = (_LUNA_SYSTEM_PROMPT + "\n\n" + _context_block(context)
+              + _luna_user_prompt(_numbered_lines(sentences, speakers)))
     result = client.generate_json(prompt, reasoning_effort="low")
     if result is None:
         return None, dropped
@@ -328,12 +339,14 @@ def extract_findings(transcript: Transcript) -> list[JudgeFinding]:
     return extract_findings_counted(transcript)[0]
 
 
-def extract_findings_counted(transcript: Transcript) -> tuple[list[JudgeFinding], dict[str, Any]]:
+def extract_findings_counted(
+    transcript: Transcript, context: Transcript | None = None
+) -> tuple[list[JudgeFinding], dict[str, Any]]:
     """extract_findings 와 같고, 검증에서 탈락한 항목 기록(empty_drops)을 함께 돌려준다(#186)."""
     client = get_llm("luna")
     if client.name == "off":
         raise FindingExtractionUnavailableError("Luna API 키가 없어 1단계 판단을 할 수 없습니다.")
-    result, dropped = _extract_findings_llm(transcript, client)
+    result, dropped = _extract_findings_llm(transcript, client, context)
     if result is None:
         raise FindingExtractionUnavailableError("Luna 응답을 파싱하지 못했습니다.")
     return result, dropped

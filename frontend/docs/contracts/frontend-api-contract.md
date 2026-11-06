@@ -23,7 +23,7 @@
 | 확인 해제 | 충돌 후 승인 입력을 바꾸면 이전 확인 버전을 해제한다. 입력을 원래대로 되돌려도 과거 확인을 복원하지 않는다 |
 | 이미 처리됨 | 기존 `APPROVAL_ALREADY_RESOLVED` 재조회와 중복 전송·세션 보호를 유지한다 |
 | 승인 응답 | 원래 제안·근거는 유지하고 제안과 다른 값만 `payload.task_overrides`에 남는다. 완료 화면은 서버 응답의 원래 값에 보완값을 적용하며, `null`을 원래 값으로 대체하지 않는다 |
-| 이력 | PM 수정 필드는 `change_source: "manual"`, `changed_by`는 승인한 PM이다. 다른 필드의 출처는 서버의 payload `change_source`와 생성·수정별 기본값을 따른다. FE는 서버 이력을 표시한다 |
+| 이력 | 채팅 회의(`source: "chat"`)에서 나온 항목을 승인하면 이력 `change_source`가 `"chat"`으로 남는다(구현됨, BE 담당 리뷰 대기). 이 값이 처음으로 실제로 쓰인다. 채팅 회의 항목은 자동 반영되지 않고 모두 승인 대기다. PM 수정 필드는 `change_source: "manual"`, `changed_by`는 승인한 PM이다. 다른 필드의 출처는 서버의 payload `change_source`와 생성·수정별 기본값을 따른다. FE는 서버 이력을 표시한다 |
 
 요청 예시는 다음과 같다. 실행 검증 결과는 아래 연결한 M6 결과에서 별도로 구분한다.
 
@@ -206,7 +206,7 @@ M7 구현에서 소비하기 시작한 서버 인터페이스다. 「현재 서�
 | 대시보드 조회 | 집계 API 없이 기존 조회를 조립한다(§4.6 철회 유지). 아래 §5.4 | [useDashboardData](../../src/widgets/dashboard/model/useDashboardData.ts) |
 | 프론트 오류 코드 | `EXTRACTION_ITEM_NOT_FOUND`·`AUTO_TASK_NOT_REVERTIBLE`을 추가해 서버 38개와 같다 | [오류 문구](../../src/shared/api/errorMessages.ts) |
 
-`approval_status`는 모델에 옮겼으나 M7 화면 판정에는 쓰지 않는다. 확인 필요 판정은 계속 대기 승인 목록과의 조인이다(§3.1, `pendingItems`).
+`approval_status`는 M7 대시보드의 되돌림 결과(`revertOutcome`)에 쓴다. #419(2026-11-06)부터 회의록 태스크 영역의 반영 판정에도 쓴다. 확인 필요 판정은 계속 대기 승인 목록과의 조인이다(§3.1, `pendingItems`).
 
 #### 모의 서버(MSW)
 
@@ -374,7 +374,7 @@ AUDIO_TOO_LARGE(413)              DISCORD_USER_ALREADY_MAPPED(409)
 | GET | `/api/v1/meetings/{meeting_id}` | |
 
 ```jsonc
-// POST 요청 {"workspace_id", "title"?, "source"?}   source: discord | manual_upload
+// POST 요청 {"workspace_id", "title"?, "source"?, "started_at"?}   source: discord | manual_upload | chat
 //      응답 {"meeting_id", "workspace_id", "status", "started_at"}
 // PATCH /end 응답 {"meeting_id", "status", "ended_at"}
 
@@ -508,8 +508,10 @@ Content-Disposition: 없음(내려받기 아님). Accept-Ranges: bytes
 - **생성 시점에는** `task_id` 와 `approval_id` 가 배타적으로 채워진다. `gate=auto` 면 `task_id`, `review`·`hold` 면 `approval_id`.
 - **승인 뒤에는 배타적이지 않다.** `PATCH /approvals/{id}` 로 승인하면 백엔드가 `extraction_item.task_id` 를 채우면서
   **`approval_id` 를 비우지 않는다.** 같은 항목이 두 ID 를 동시에 갖는다 → §3.1, §4.0-②-12.
-  화면은 `task_id` 를 우선으로 읽어 `task_id` 가 있으면 `반영됨` 으로 다룬다 (§6).
+  화면은 `task_id` 를 우선으로 읽어 `task_id` 가 있으면 `반영됨` 으로 다룬다 (§6). 아래 #419 대조로 바뀌었다.
 - `assignee.member_id` 가 `null` 이면 `raw` 로 대체 표시한다.
+- **2026-11-06 코드 대조(#419):** 수정 항목(`action: update`)은 생성 시점부터 `task_id` 가 수정 대상 태스크이고, 바꿀 값이 있으면 `TASK_UPDATE` 승인의 `approval_id` 도 함께 있다. 승인 전에도 `task_id` 가 있으므로 `task_id` 만으로는 반영 여부를 알 수 없다. 서버 스키마 설명은 "반영 여부는 `approval_status` 로 본다" 이다([BE 스키마](../../../backend/app/schemas/meeting.py)의 `ExtractionItemResponse.task_id`).
+  화면은 `task_id` 가 있고, `approval_id` 가 없거나 `approval_status` 가 `approved` 일 때만 `반영됨` 으로 다룬다. `approval_id` 가 있는데 `approval_status` 가 `null`(모르는 값)이면 반영으로 보지 않는다. 구현: [extractionView.ts](../../src/entities/extraction/lib/extractionView.ts). MSW 기준 검증, 실서버 미검증.
 - **2026-11-05 코드 대조(#256 A1):** `evidence` 에 `speaker_member_id: string | null` 이 더 온다([BE 스키마](../../../backend/app/schemas/meeting.py)의 `EvidenceInfo`). 업로드 회의는 Discord uid(`speaker`)가 `null` 이고 이 값만 온다. FE 는 근거 화자 이름을 이 팀원 ID 로 먼저 찾고, 없거나 팀원 목록에 없으면 `speaker` uid 로 찾는다. 둘 다 못 찾으면 `알 수 없음` 이다. 구현: [speakerName.ts](../../src/entities/member/lib/speakerName.ts). MSW 기준 검증, 실서버 미검증.
 - **2026-10-17 코드 대조:** 항목에 `reverted_at`·`approval_status` 가 더 온다. auto 항목을 되돌리면 `gate` 는 `auto` 그대로, `task_id` 는 `null`, `approval_id` 는 새 생성 승인이다 — 생성 시점 배타성의 예외다. 되돌리기는 `POST /extractions/{extraction_id}/items/{item_id}/revert` 다 (위 「M7 대시보드·항목 되돌리기 경계」).
 
@@ -601,6 +603,7 @@ Content-Disposition: 없음(내려받기 아님). Accept-Ranges: bytes
  "start_date": "2026-09-15",            // §4.7-6 반영됨. nullable
  "due_date": "2026-09-20",
  "notion_page_id": null,
+ "auto_blocked": false,                 // 지금 auto-block/undo 가 성공하면 true. 7개 응답 경로 모두 (#365, PR #373) → §5.7
  "created_at": "...", "updated_at": "..."}
 // 2026-10-11 코드 대조: 현재 TaskResponse 에는 "version"(정수)과
 // "notion_sync_status"(pending|synced|failed|null)도 있다 → 상단 「M6 태스크·승인 처리 경계」
@@ -705,8 +708,19 @@ Content-Disposition: 없음(내려받기 아님). Accept-Ranges: bytes
 >   - **PM** — `GET /approvals?status=pending` 과 조인한다. 그 목록에 있는 `approval_id` 만 `확인 필요` 다.
 >     승인이든 반려든 닫힌 승인은 목록에서 빠지므로 자동으로 제외된다. 백엔드가 ②-12 를 고쳐도 그대로 맞는다 (§6).
 
-**따라서 `확인 필요` 항목에는 `task_id` 가 없다.** 승인 전까지 태스크 행이 존재하지 않는다.
-식별자는 `approval_id` 뿐이며, 이것이 D-161·D-162 의 근거다.
+> **2026-11-06 코드 대조(#419).** 위 인용의 두 전제가 지금 서버와 다르다.
+>
+> - 응답에 `approval_status`(`pending`·`approved`·`rejected`, 승인이 없으면 `null`)가 있다. 대기와 반려를 항목만으로 구분할 수 있다.
+> - 수정 항목은 승인 전에도 `task_id` 가 수정 대상 태스크다(§2.4). `task_id` 가 있다고 반영된 것이 아니다.
+>
+> 프론트엔드 판정은 다음과 같다. 구현: [extractionView.ts](../../src/entities/extraction/lib/extractionView.ts).
+>
+> - **반영됨** — `task_id` 가 있고, `approval_id` 가 없거나 `approval_status` 가 `approved` 다.
+> - **일반 팀원** — `approval_id` 가 있고 반영되지 않은 항목을 숨긴다. 생성·수정 어느 쪽이든 대기·반려는 보이지 않는다.
+> - **PM** — `확인 필요` 는 반영되지 않았고 `approval_status` 가 `rejected` 가 아닌 항목 중 `GET /approvals?status=pending` 의 ID 와 조인한 것이다. 조인은 그대로 둔다. 항목마다 승인의 빠진 값(`missing`)이 필요하기 때문이다. 반려 뒤 추출만 다시 받고 대기 목록이 아직 낡았어도 항목 쪽 `rejected` 로 빠진다. `approval_status` 가 `null` 이면 대기 목록을 따른다.
+
+**따라서 생성 항목의 `확인 필요` 에는 `task_id` 가 없다.** 승인 전까지 태스크 행이 존재하지 않는다.
+식별자는 `approval_id` 뿐이며, 이것이 D-161·D-162 의 근거다. 수정 항목은 `task_id` 가 있지만 `확인하기` 는 똑같이 `approval_id` 로 간다.
 
 승인 직후 프론트엔드가 다시 조회해야 할 것:
 
@@ -1101,8 +1115,8 @@ POST .../meetings/upload            multipart/form-data
   D-085·D-086 의 「로컬 업로드는 참석자 1명 이상」이 서버에서 보장되지 않는다. 프론트엔드가 폼에서 강제한다.
 - ⚠️ **PM 여부를 보지 않는다.** 소속(`get_current_member`)만 확인해 일반 팀원도 올릴 수 있다. M5 는 업로드를 PM 전용으로 정했다 → §4.0-②-17.
 - ⚠️ **파일도 저장하지 않는다** (`# TODO: 파일 저장 및 큐 전송`). 업로드는 `processing` 회의 행만 만든다.
-  회의는 영원히 `processing` 에 머무르며, 이 상태가 **다음 업로드를 409 로 막는다.**
-- `source` 가 `"manual_upload"` 로 고정된다. `MeetingSource` = `discord` \| `manual_upload` 그대로다 (D-157).
+  회의는 영원히 `processing` 에 머무르며, 이 상태가 **다음 업로드를 409 로 막는다(채팅 회의 제외).**
+- `source` 가 `"manual_upload"` 로 고정된다. `MeetingSource` = `discord` \| `manual_upload` \| `chat`이다 (D-157). `chat`은 디스코드 채팅 자동 수집이 만들고(구현됨, BE 담당 리뷰 대기) 웹 업로드는 계속 `manual_upload`다. `chat` 회의가 `processing`이어도 업로드는 막히지 않는다.
 - `started_at` 을 보내지 않으면 서버 시각이 된다. 프론트엔드는 **항상 보낸다** (D-079, D-164).
 
 ```jsonc
@@ -1408,11 +1422,11 @@ members 에만 있고 Discord 목록에 없으면      → 비활성 (서버를 
 
 - Notion 미연결이면 업로드 화면으로 보내지 않고 차단 모달을 띄운다 (D-097).
 - 회의록 상세의 `반영된 태스크` 와 `확인이 필요한 일` 은 **`minutes` 가 아니라 `extractions` 에서 온다** (§2.4, §3.1).
-  - `반영된 태스크` — `task_id` 가 있는 항목.
-  - `확인이 필요한 일` — **PM 전용이고 `extractions` 만으로는 판정할 수 없다.** `GET /approvals?workspace_id=&status=pending` 과 조인해
-    그 목록에 있는 `approval_id` 만 고른다. 반려된 항목이 `extraction_item` 에 그대로 남기 때문이다 (§3.1, §4.0-②-12).
-- 일반 팀원에게는 `task_id` 가 없고 `approval_id` 가 있는 항목을 화면에서 제거한다. 개수도 노출하지 않는다 (D-104).
-  대기든 반려든 보여줄 태스크가 없으므로 조인 없이 판정되며, D-163 대로 승인 목록을 부르지 않아도 된다.
+  - `반영된 태스크` — `task_id` 가 있고, `approval_id` 가 없거나 `approval_status` 가 `approved` 인 항목. 수정 항목은 승인 전에도 `task_id` 가 있어 `task_id` 만으로는 고르지 않는다 (#419, §2.4).
+  - `확인이 필요한 일` — **PM 전용이다.** 반영되지 않은 항목 중 `GET /approvals?workspace_id=&status=pending` 과 조인해
+    그 목록에 있는 `approval_id` 만 고른다. 행에 승인의 빠진 값으로 만든 이유를 보이려고 조인을 유지한다 (§3.1, §4.0-②-12).
+- 일반 팀원에게는 `approval_id` 가 있고 반영되지 않은 항목(대기·반려된 생성·수정)을 화면에서 제거한다. 개수도 노출하지 않는다 (D-104).
+  `approval_status` 로 조인 없이 판정되며, D-163 대로 승인 목록을 부르지 않아도 된다.
 - 정리 실패 시 사유를 안내한다. 화자 지정 만료는 해당 회의의 실패 상세로 이동하고 목록에 이력을 남긴다. 나머지 실패 회의는 목록에서 제외한다 (D-091~D-093 개정, §4.4.1).
 
 ### 5.6 태스크 목록 · 보드 · 캘린더 · 간트
@@ -1469,6 +1483,7 @@ members 에만 있고 Discord 목록에 없으면      → 비활성 (서버를 
 - 대화 화면은 메시지와(PM 에게만) 예정 묶음을 나갈 시각 순으로 섞는다. 취소·만료된 재촉 줄은 응답에 없어 그리지 않는다.
 - 팀원 화면: 자기 대화를 보고 웹 답장을 쓴다. 답장 칸 아래에 `봇 DM 창에 쓴 글은 모두 PM 대화에 보여요.` 를 보인다.
 - 대화 주인 판정(#367, 2026-11-05): 화면은 워크스페이스 응답의 `member_id`(§4.2.1)를 대화의 `member_id` 와 비교한다. 같으면 PM 이어도 자기 대화라 답장 칸을 보인다. BE 답장 API 도 같은 팀원 행으로 판정해 201 이고, 다르면 403 이다([api/messages.py](../../../backend/app/api/messages.py)의 답장 경로). PM 이 남의 대화를 열면 지금처럼 답장 칸 대신 안내 바를 보인다. 워크스페이스 응답에 `member_id` 가 없거나 `null` 이면 PM 에게는 답장 칸을 숨긴다. 팀원은 자기 대화만 받으므로 이 값과 상관없이 답장 칸을 보인다. PM 의 자기 대화도 답장 기다림 배지·`여기서부터 답장이 없습니다`·말풍선 자리(봇이 오른쪽)는 PM 화면 그대로다.
+- 다시 받기(#371, 2026-11-06, D-136): 화면 재진입·탭 복귀·행동 성공 뒤 다시 받기는 그대로다. 받은 `GET /messages` 나 `GET /messages/threads/{thread_id}` 응답에 `draft_status` 가 `needed`·`claimed` 인 묶음이 있으면 그 조회만 10초마다 다시 부르고, 없으면 멈춘다. 탭이 백그라운드면 부르지 않는다. 알림 목록(30초 polling)에 메시지 알림(`reminder_sent`·`nudge_suggested`·`nudge_reapprove`·`reminder_auto_cancelled`)이 새로 들어오면 그 공간의 메시지 조회를 다시 부른다. 알림 목록은 `limit=50` 으로 부르고, 꽉 찬 목록이 지난 목록과 하나도 겹치지 않으면 놓친 알림이 있을 수 있어 메시지 조회를 한 번 다시 부른다. 메시지 조회는 시작한 세션이 끝나면 보내지 않는다. 새 경로·필드는 없고 BE 가 받는 요청 수만 는다. 구현: [messageQueries.ts](../../src/entities/message/api/messageQueries.ts), [알림 종류](../../src/entities/notification/model/display.ts).
 - 화면에서 뺀 것은 [결정 기록](../plan/m8/basis-for-decision/2026-11-04-messages-real-api-drop-unbacked-ui.md)에 있다: 답장의 태스크 판정, `지금 바로`, 채널 대화, 팀 역할, Discord 대화 주소, 재촉 이유 문장·근거 링크·요약, 취소·만료 재촉 줄, 승인자 이름.
 - 검증: MSW 기준 단위·화면 테스트와 브라우저 확인만 했다. 실제 서버(배포 BE)에 붙인 확인은 하지 않았다.
 
@@ -1525,8 +1540,16 @@ members 에만 있고 Discord 목록에 없으면      → 비활성 (서버를 
 **자동 막힘 풀기.** 카톡이나 회의로 이미 들은 경우를 위해 PM 이 한 번에 되돌리는 경로다.
 
 - `POST /api/v1/tasks/{task_id}/auto-block/undo`: 상태와 사유를 막히기 전 값으로 되돌린다. 응답은 `TaskResponse`, 이력 출처는 `manual` 이다. PM 이 아니면 403.
-- 막힌 뒤 상태나 사유가 바뀌었거나 자동 막힘이 없으면 409 `AUTO_BLOCK_NOT_FOUND`.
-- 자동 막힘 여부는 `blocker` 문구로 가르지 말고 태스크 이력의 `status` 변경 중 `change_source: scheduler` 로 가린다.
+- 지금 풀 수 없으면(`auto_blocked` 가 false) 409 `AUTO_BLOCK_NOT_FOUND`. 성공 응답의 `auto_blocked` 는 false 다.
+- ~~자동 막힘 여부는 `blocker` 문구로 가르지 말고 태스크 이력의 `status` 변경 중 `change_source: scheduler` 로 가린다.~~ #365 에서 아래 `auto_blocked` 로 바꿨다.
+
+**자동 막힘 판정 `auto_blocked`** (#365).
+
+- 합의된 규약: 자동 막힘 여부는 `TaskResponse.auto_blocked` 하나로 가린다. 값은 「지금 `POST /tasks/{task_id}/auto-block/undo` 를 부르면 성공하는가」와 정확히 같다. `TaskResponse` 를 돌려주는 7개 경로(`POST /tasks`, `GET /tasks`, `GET /tasks/{task_id}`, `PATCH /tasks/{task_id}`, 이력 되돌리기, 자동 막힘 풀기, Notion 반영 재시도)에 항상 온다. PM·팀원이 같은 값을 받고, 풀기는 계속 PM 전용이라 버튼은 역할로 가린다. 409 를 받으면 다시 불러오는 처리는 그대로 둔다. 근거는 [#365 설계 확정 댓글](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/365#issuecomment-6637008816)과 같은 이슈의 BE 구현 댓글이다.
+- 현재 서버 구현: [BE PR #373](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/pull/373)(병합)을 코드로 확인했다. [scheduler.py](../../../backend/app/services/scheduler.py) 의 `auto_blocked_ids` 와 `undo_auto_block` 이 같은 판정 조각(`_auto_block_state`·`_undoable_watches`)을 쓴다. 태스크가 `blocked` 이고, 사유가 스케줄러 문구이고, 막힘을 직접 건(applied) 열린 무응답 감시 기록이 있고, 지워지지 않았으면 true 다. 이력은 보지 않는다. 목록은 잠금 없이 읽어서 스케줄러가 같은 순간에 커밋하면 잠깐 어긋날 수 있다.
+- 이전 이력 기준과 답이 다른 경우는 둘이다. 자동 막힘 뒤 PM 이 사유만 고치면 이력 기준은 자동 막힘이지만 `auto_blocked` 는 false(풀기 409)다. 자동 막힘 뒤 상태를 진행 중으로 바꿨다가 다시 막으면 이력 기준은 사람의 막힘이지만 `auto_blocked` 는 true(풀기 200, 막히기 전 값으로 되돌림)다.
+- FE 구현(#365): 매퍼가 `Task.autoBlocked` 로 싣고, 불리언이 아니면 던지지 않고 false(풀기 숨김)로 읽는다. 보드 배지와 상세 안내가 이 값만 본다. 막힌 카드마다 내던 `GET /tasks/{task_id}`·`GET /tasks/{task_id}/history` 를 없앴고, 이력 조회 실패 안내도 함께 지웠다. 풀기에 성공하면 응답의 태스크를 목록 행과 상세 캐시에 바로 쓰고 다시 받는다.
+- MSW: 막힘을 건 때의 막기 전 상태·사유를 `autoBlocks` 칸에 남기고, 이 기록과 상태·사유로 BE 와 같은 판정을 한다. 이미 막힌 태스크를 무응답으로 막으면 아무것도 바꾸지 않고 기록도 남기지 않는다. 지운 태스크 상태는 MSW 에 없다. 응답 7개 경로가 모두 이 판정을 싣는다. 모의 DB 버전이 13 이 되었다.
 
 **알림·푸시** (#318 에서 BE 구현, 프론트엔드 요청은 #330). 받는 사람은 팀원(`member`) 단위이고, 푸시 구독은 로그인 계정 단위다.
 
@@ -1637,7 +1660,7 @@ FE 연결 (#340, 2026-11-05).
   - 일반 팀원은 자기 대화만 조회하고 답장할 수 있다.
 - 화면에 필요한 메시지 상태: `예정` · `발송됨` · `취소됨` · `만료됨`, 그리고 `답장 확인 필요`.
 
-실제 API 는 #315 에서 연결했다. D-117(메시지 E2E)과 D-136(polling)은 이번에도 하지 않았다.
+실제 API 는 #315 에서 연결했다. ~~D-117(메시지 E2E)과 D-136(polling)은 이번에도 하지 않았다.~~ **2026-11-06(#371).** D-136 은 위 `다시 받기` 로, D-117 은 MSW 기준 E2E 로 정했다.
 
 ### 5.8 워크스페이스 관리 · 설정
 
@@ -1757,10 +1780,11 @@ FE 연결 (#340, 2026-11-05).
 - **`current_step` 정규화** — 완료 시 빈 문자열 `''` 이 온다 (§4.0-②-4). `null` 과 같게 다룬다.
 - **`display_name` 무시** — 연동의 `display_name` 이 생성 문자열이다 (②-7). 화면은 provider 이름을 쓴다.
 - **빈 `transcript`·`summary`** — `/minutes` 가 스텁이다 (②-11). 빈 배열과 `null` 이 **정상 경로**다. 오류로 다루지 않는다.
-- **`확인 필요` 판정** — 승인·반려 어느 쪽으로 닫혀도 `approval_id` 가 남는다 (②-12). 파생 함수를 둘로 나눈다.
-  - `isUnresolved(item)` = `approval_id != null && task_id == null`. **extraction 단독으로 알 수 있는 한계**다 — 대기와 반려를 구분하지 못한다.
-    일반 팀원 화면(`visibleItems`)은 이것으로 충분하다. 둘 다 숨기는 것이 맞기 때문이다.
-  - `pendingItems(extraction, openApprovalIds)` — PM 전용. `GET /approvals?status=pending` 의 ID 집합을 받아 조인한다.
+- **`확인 필요` 판정** — 승인·반려 어느 쪽으로 닫혀도 `approval_id` 가 남고(②-12), 수정 항목은 승인 전에도 `task_id` 가 있다(#419). 반영 여부는 `approval_status` 로 본다.
+  - `appliedItems(extraction)` — `task_id != null && (approval_id == null || approval_status == 'approved')`.
+  - `isUnresolved(item)` = `approval_id != null` 이고 반영되지 않았다. 대기와 반려를 모두 포함한다.
+    일반 팀원 화면(`visibleItems`)은 이것으로 숨긴다. 둘 다 숨기는 것이 맞기 때문이다.
+  - `pendingItems(extraction, openApprovalIds)` — PM 전용. 반영되지 않았고 `approval_status != 'rejected'` 인 항목 중 `GET /approvals?status=pending` 의 ID 집합에 있는 것만 고른다. 두 조회의 갱신 시점이 달라 대기 목록에 반려된 ID 가 남아도 빠진다. `null` 은 대기 목록을 따른다.
     `entities → entities` 를 피해 **`ReadonlySet<string>` 만 받고**, 그 집합은 두 엔티티를 모두 보는 `widgets` 가 만든다.
 
 ---

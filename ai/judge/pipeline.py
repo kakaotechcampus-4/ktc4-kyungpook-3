@@ -271,10 +271,14 @@ def run(
     workspace_id: str,
     today: date,
     candidates: CandidateSource,
+    context: Transcript | None = None,
+    dates: dict[int, date] | None = None,
 ) -> PipelineResult:
     """회의 전사록 하나를 /extractions item 목록으로.
 
     today 는 회의 날짜다 — "다음 주 화요일"을 날짜로 바꾸는 기준.
+    context 는 이전 대화(참고만, 근거가 되지 않는다), dates 는 메시지 seq → 작성일(채팅). dates 에 있는 finding 은
+    today 대신 그 날을 기준일로 쓴다. 둘 다 None 이면 예전과 같다.
     키가 없으면 PipelineUnavailableError, 1단계가 실패하면 FindingExtractionUnavailableError.
 
     같은 회의에서 앞서 만든 카드는 다음 finding 의 후보로 보여 주고, Terra 가 고르면 새 카드 대신 합친다(#140).
@@ -282,7 +286,7 @@ def run(
     """
     _check_llm_keys()
     # 실패하면 그대로 올린다 — finding 자체가 없다
-    findings, dropped = extract_findings_counted(transcript)
+    findings, dropped = extract_findings_counted(transcript, context=context)
     findings = sorted(findings, key=lambda f: float("inf") if f.seq is None else f.seq)
 
     out = PipelineResult(dropped=dropped)
@@ -325,8 +329,9 @@ def run(
                 out.failures.append(PipelineFailure("target", finding.text, "수정 대상 후보를 찾지 못했습니다."))
                 continue
 
+        day = (dates or {}).get(finding.seq, today)
         try:
-            drafted = draft(finding, result, candidate=target, today=today)
+            drafted = draft(finding, result, candidate=target, today=day)
         except DraftUnavailableError as e:
             out.failures.append(PipelineFailure("draft", finding.text, str(e)))
             continue
@@ -341,12 +346,12 @@ def run(
                 "draft", finding.text, "마감을 없애는 변경은 아직 보낼 수 없습니다(BE 는 null 을 '바꾸지 않음'으로 받음)."))
             continue
         if task_id is not None and task_id.startswith(_PENDING):  # 이번 회의 새 항목 카드에 합친다
-            _merge_into(new_cards[int(task_id[len(_PENDING):])], finding, result, drafted, base=None, today=today, found=found,
+            _merge_into(new_cards[int(task_id[len(_PENDING):])], finding, result, drafted, base=None, today=day, found=found,
                         transcript=transcript)
             continue
         if task_id in edits:  # 같은 Task 수정 카드에 합친다 — 번복 · 재변경
             base, card = edits[task_id]
-            _merge_into(card, finding, result, drafted, base=base, today=today, found=found, transcript=transcript)
+            _merge_into(card, finding, result, drafted, base=base, today=day, found=found, transcript=transcript)
             if result.category == "scope":
                 scoped.add(task_id)
             if not _has_change(card):
@@ -363,7 +368,7 @@ def run(
             continue
         out.items.append(item)
         if result.is_new:
-            item.update(_evidence_fields(finding, drafted, item["task_title"], today))
+            item.update(_evidence_fields(finding, drafted, item["task_title"], day))
             item.update(_search_fields(found))
             new_cards.append(item)
         else:
