@@ -1,6 +1,6 @@
 import type { Approval, ApprovalMissing } from '@/entities/approval'
 import type { Task } from '@/entities/task'
-import { TASK_STATUSES, TASK_STATUS_LABEL } from '@/features/task-status'
+import { TASK_STATUSES, TASK_STATUS_LABEL } from '@/entities/task'
 import { parseEnumParam } from '@/shared/lib/url'
 
 /** 승인 payload·충돌의 필드 이름. 서버 `_TASK_UPDATE_FIELDS` 와 같은 집합이다 */

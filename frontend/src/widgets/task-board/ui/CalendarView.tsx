@@ -1,7 +1,7 @@
 import { memo, useMemo } from 'react'
 import type { TaskCreateApproval } from '@/entities/approval'
 import type { Task } from '@/entities/task'
-import { TASK_STATUS_LABEL } from '@/features/task-status'
+import { TASK_STATUS_LABEL } from '@/entities/task'
 import { paths } from '@/shared/config/routes'
 import { GuardedLink } from '@/shared/lib/unsaved-changes'
 import { Icon } from '@/shared/ui/icon'
