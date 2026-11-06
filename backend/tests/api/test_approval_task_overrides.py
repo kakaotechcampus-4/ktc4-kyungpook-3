@@ -270,6 +270,7 @@ def test_legacy_reminder_dm_with_overrides_is_400(client, db, seed):
 
 
 def test_legacy_reminder_dm_approves_without_touching_tasks(client, db, seed):
+    """남은 행은 승인돼도 태스크를 바꾸지 않을 뿐, 어디로도 발송되지 않는다. #335 2차 PR 에서 이 분기와 함께 지운다."""
     approval_id = _legacy_reminder_dm(db, seed)
     before = _task_count(db)
 
