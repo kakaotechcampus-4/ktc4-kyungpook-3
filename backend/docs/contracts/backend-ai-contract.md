@@ -4,7 +4,7 @@
 
 - 제공자: Backend (`backend/app/api/`)
 - 소비자: AI 녹음 봇 (`ai/capture/handoff.py`의 `BeClient`·`Handoff`, 판단 파이프라인 `ai/judge/pipeline.py`). [웹 업로드 가져가기](#웹-업로드-가져가기)의 소비자는 AI 쪽 업로드 처리 워커이며 아직 없다
-- 기준: 2026-10-08 develop 코드 대조. 봇 회의 쓰기 경로의 서비스 토큰은 2026-10-09 #179 변경 코드로, 추출 등록의 auto 판단 키는 2026-10-16 #232 변경 코드로 다시 대조했다. 웹 업로드 가져가기는 2026-10-14 #219 브랜치 코드로, 화자 지정 경로(speakers·assigned·resume)는 2026-11-02 #266 브랜치 코드로, 처리 단계 보고(`PATCH /meetings/{meeting_id}/stage`)는 2026-11-05 #381 브랜치 코드로 대조했다
+- 기준: 2026-10-08 develop 코드 대조. 봇 회의 쓰기 경로의 서비스 토큰은 2026-10-09 #179 변경 코드로, 추출 등록의 auto 판단 키는 2026-10-16 #232 변경 코드로 다시 대조했다. 웹 업로드 가져가기는 2026-10-14 #219 브랜치 코드로, 화자 지정 경로(speakers·assigned·resume)는 2026-11-02 #266 브랜치 코드로, 처리 단계 보고(`PATCH /meetings/{meeting_id}/stage`)는 2026-11-05 #381 브랜치 코드로 대조했다. 라벨 보고 재전송과 지정 대기 만료는 2026-11-06 #438 에서 develop 코드로 다시 대조했다
 - 합의 근거: 인계 방식은 [AI 결정 0009](../../../ai/decision_log/0009-bot-hands-off-to-be-api.md), 발화 저장은 [AI 결정 0017](../../../ai/decision_log/0017-transcript-sources-stage.md)에 AI 쪽 기록이 있다. 이 문서는 그 이후의 필드·오류 세부를 코드에서 읽은 것이며, 별도 합의 문서가 없는 항목은 구현 사실로만 적는다.
 
 ## 공통
@@ -71,7 +71,7 @@
 ### `PATCH /meetings/{meeting_id}/end` → 202
 
 - `data`: `{meeting_id, status: "processing", ended_at}`
-- 이미 `processing`·`awaiting_speakers`·`done`·`failed`면 409 `MEETING_ALREADY_ENDED`, `details.status`에 지금 상태. 봇은 이 값을 지금 상태로 받아들이고 계속한다. `awaiting_speakers`는 웹 업로드 회의가 PM의 화자 지정을 기다리는 상태다(#266). `POST /uploads/{meeting_id}/speakers`가 이 상태로 바꾼다. PM이 지정하는 API는 아직 없다. 디스코드 회의는 이 상태가 되지 않는다.
+- 이미 `processing`·`awaiting_speakers`·`done`·`failed`면 409 `MEETING_ALREADY_ENDED`, `details.status`에 지금 상태. 봇은 이 값을 지금 상태로 받아들이고 계속한다. `awaiting_speakers`는 웹 업로드 회의가 PM의 화자 지정을 기다리는 상태다(#266). `POST /uploads/{meeting_id}/speakers`가 이 상태로 바꾸고, PM 이 웹에서 지정하면(`PUT /meetings/{meeting_id}/speakers`) `processing`으로 돌아간다. 디스코드 회의는 이 상태가 되지 않는다.
 - 없는 회의는 404 `MEETING_NOT_FOUND`.
 
 ### `PATCH /meetings/{meeting_id}/stage` → 200
@@ -295,7 +295,7 @@ AI `Transcript.to_dict()` 모양에 화자 이름을 더해 보낸다. 한 회�
 | 화자 4 | `PATCH /uploads/{meeting_id}/resume` (다시 가져가기) | `processing` (가져간 시각만 기록) |
 
 - 대기 중(`awaiting_speakers`)에는 추출 등록을 받지 않는다(409 `MEETING_NOT_PROCESSING`). 지정 제출 뒤 `processing`으로 돌아오면 받는다.
-- 지정이 멈추면 BE sweeper가 라벨 보고 뒤 7일이 지난 `awaiting_speakers` 회의를 `failed`(`failed_stage=speaker_assignment_expired`)로 바꾸고 녹음 폴더를 지운다. 그 전에 풀려면 `PATCH /meetings/{meeting_id}/fail`을 쓴다.
+- 지정이 멈추면 BE sweeper가 라벨 보고 뒤 7일이 지난 `awaiting_speakers` 회의를 `failed`(`failed_stage=speaker_assignment_expired`)로 바꾸고 녹음 폴더를 지운다. 7일은 첫 라벨 보고가 성공한 시각(`speakers_reported_at`)부터 센다. 실제로 `failed`가 되는 때와 sweeper 가 돌지 않는 경우는 [처리할 때 주의할 점](#처리할-때-주의할-점)에 있다. 그 전에 풀려면 `PATCH /meetings/{meeting_id}/fail`을 쓴다.
 
 ### `GET /uploads/pending` → 200
 
@@ -345,9 +345,11 @@ AI가 화자 분리로 얻은 라벨을 보낸다. 회의가 `awaiting_speakers`
 ```
 
 - `processing`이고 `claimed_at`이 있으며 라벨을 아직 받지 않았을 때만 회의 상태를 바꾸는 조건부 UPDATE 한 문장으로 판정한다. 이긴 요청만 라벨(`meeting_upload.speakers`)과 보고 시각을 같은 트랜잭션에서 저장한다. 실패 응답은 상태를 바꾸지 않는다.
-- 같은 내용을 다시 보내면(라벨·샘플 순서가 달라도, 숫자 표기가 `1`과 `1.0`이어도) 200이고 `status`는 현재 상태다. 응답을 못 받은 재시도를 위한 것이다.
+- 같은 내용을 다시 보내면 200이고 `status`는 현재 상태(`awaiting_speakers`, PM 이 지정한 뒤에는 `processing`)다. 이때 BE 는 아무것도 쓰지 않는다. 라벨, 보고 시각(`speakers_reported_at`, 지정 대기 7일 만료의 기준), 회의 상태가 그대로라서 재전송으로 만료 시계가 늘지 않는다. 응답을 못 받은 재시도와, AI 가 지정 대기 만료를 확인하는 데(#325, #438) 쓴다. BE 는 이 동작을 유지한다.
+- "같은 내용"은 라벨 이름, `total_sec`, 샘플의 `start`·`end` 값이 모두 같다는 뜻이다. 라벨·샘플 순서와 `1`·`1.0` 같은 표기 차이는 보지 않고, 스키마에 없는 필드는 무시한다.
+- 판정 순서: 401 `UNAUTHENTICATED`(토큰) → 400 `INVALID_REQUEST`(본문 검증) → 404 `MEETING_NOT_FOUND` 다음에, `done`·`failed`면 보낸 라벨 내용과 상관없이 409 `MEETING_ALREADY_ENDED`가 먼저다. 그다음 claim 여부(`UPLOAD_NOT_CLAIMED`), 그다음 내용 비교(`SPEAKERS_ALREADY_REPORTED`) 순이다.
 - 400 `INVALID_REQUEST`: 위 검증에 걸린 경우. 숫자는 유한해야 하며 `NaN`·`Infinity`도 400이다.
-- 404 `MEETING_NOT_FOUND`: 없는 회의, 업로드 회의가 아님, `meeting_upload` 행 없음.
+- 404 `MEETING_NOT_FOUND`: 없는 회의, 업로드 회의가 아님, `meeting_upload` 행 없음. 봉투의 `error.code`가 `MEETING_NOT_FOUND`일 때만 회의가 없다는 뜻이다. 없는 경로처럼 다른 이유의 404 는 `INVALID_REQUEST`다. BE 에는 회의나 업로드 행을 지우는 경로가 없다.
 - 409 `MEETING_ALREADY_ENDED`(`details.status`): `done`·`failed`.
 - 409 `UPLOAD_NOT_CLAIMED`(`details.status`): 아직 claim 하지 않았다.
 - 409 `SPEAKERS_ALREADY_REPORTED`(`details.status`, `details.labels`): 이미 다른 내용의 라벨을 받았다. 지정이 제출돼 `processing`으로 돌아온 뒤에도 같다. `details.labels`는 저장된 라벨 이름을 이름 순으로 담는다. AI가 분리를 다시 돌려 라벨이 달라졌는지 이것으로 알 수 있다.
@@ -379,9 +381,9 @@ PM이 지정을 끝냈고(`speakers_assigned_at` 있음) 아직 다시 가져가
 
 - **녹음은 결과 보고 전에 받는다.** 추출 등록으로 `done`이 되거나 실패 보고로 `failed`가 되면 BE가 그 회의의 녹음 폴더를 바로 지운다.
 - 업로드 녹음에는 Discord uid가 없다. 화자 분리 없이 전사하면 발화의 `speaker`는 null이고, 회의록 참석자는 발화에서 만들므로 비어 보인다. 업로드 참석자는 지금 `meeting_upload.attendees` 에만 있고 회의록은 이를 읽지 않는다.
-- AI 가 없거나 처리 도중 멈추면 업로드 회의가 `processing`에 남아 그 워크스페이스의 업로드가 409 로 막힌다. AI가 가져간 회의는 BE sweeper가 정리한다(5분마다, `UPLOAD_SWEEP_INTERVAL_SECONDS`).
+- AI 가 없거나 처리 도중 멈추면 업로드 회의가 `processing`에 남아 그 워크스페이스의 업로드가 409 로 막힌다. AI가 가져간 회의는 BE sweeper가 정리한다(기본 5분마다, `UPLOAD_SWEEP_INTERVAL_SECONDS`가 0 이하면 sweeper가 돌지 않아 7일이 지나도 `failed`가 되지 않는다).
   - `processing`이고 가져간 업로드: 가져간 시각·지정 시각·다시 가져간 시각·마지막 발화 저장 시각 중 가장 늦은 것에서 3시간이 지나면 `failed`(`failed_stage=diarize`). 지정 뒤에 멈춰도 같은 값이다. AI가 발화를 나눠 보내면 그때마다 3시간이 다시 시작된다.
-  - `awaiting_speakers`: 라벨 보고 뒤 7일이 지나면 `failed`(`failed_stage=speaker_assignment_expired`). 3시간 규칙은 쓰지 않는다.
+  - `awaiting_speakers`: 라벨 보고 뒤 7일이 지나면 `failed`(`failed_stage=speaker_assignment_expired`). 3시간 규칙은 쓰지 않는다. 7일은 첫 라벨 보고가 성공한 시각(`speakers_reported_at`)부터 센다. sweeper 가 5분마다 돌아서 실제로 `failed`가 되는 때는 조금 늦을 수 있고, 서버가 멈춰 있었으면 더 늦다. 같은 내용 재전송은 이 시각을 바꾸지 않는다.
   - 정리하면 녹음 폴더를 지우고 그 워크스페이스의 업로드 막힘이 풀린다. pending으로 되돌리지 않는다(#288).
   - 정리된 뒤 AI는 `/fail`·라벨 보고·claim·resume에서 409 `MEETING_ALREADY_ENDED`(`details.status=failed`), 발화 저장에서 409 `MEETING_FAILED`, 원본 받기에서 404를 받는다. 다시 보내지 않고 로컬 파일을 지우고 끝낸다(#288).
   - 아직 아무도 가져가지 않은 업로드는 정리하지 않는다. AI가 꺼져 있으면 그 공간의 업로드는 계속 409이고, `PATCH /meetings/{meeting_id}/fail`(서비스 토큰)로 풀 수 있다.
