@@ -658,8 +658,7 @@ def fail_next(aws, action: str) -> None:
 def test_a_failed_lookup_does_not_look_like_a_missing_standby_to_setup(aws):
     standby(aws)
     (aws.dir / "rules").write_text(f"tcp 8000 8000 {PROD_IP}/32\n")
-    aws_calls_before_standby_lookup = "describe-instances"
-    fail_next(aws, aws_calls_before_standby_lookup)
+    fail_next(aws, "describe-instances")
     r = aws.run("setup", PROD_IP)
     assert r.returncode != 0 and "Could not connect" in r.stderr
     assert aws.calls("run-instances") == []
