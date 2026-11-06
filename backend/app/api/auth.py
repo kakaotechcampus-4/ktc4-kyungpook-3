@@ -88,15 +88,23 @@ def signup(payload: SignupRequest, response: Response, db: Session = Depends(get
     return success(_build_auth_response(db, user).model_dump(mode="json"))
 
 def _login_user_stmt(email: str):
-    # 비밀번호 재설정 confirm 은 사용자 행을 잠근 채 옛 세션을 지운다. 로그인도 사용자 행을 공유 잠금으로 읽어,
-    # 옛 비밀번호 로그인이 confirm 이 끝난 뒤에 세션을 넣어 7일 동안 남기는 일을 막는다(읽는 쪽끼리는 서로 막지 않는다).
-    return select(User).where(User.email == email).with_for_update(read=True)
+    # 비밀번호 검사(PBKDF2, 약 0.2초)는 잠금 없이 한다. 검사 내내 공유 잠금을 잡으면 로그인이 계속 겹칠 때
+    # 재설정 confirm 의 FOR UPDATE 가 끝없이 밀린다(PostgreSQL 은 대기 중인 배타 잠금이 있어도 새 공유 잠금을 준다).
+    return select(User).where(User.email == email)
+
+
+def _password_hash_lock_stmt(user_id: str):
+    # 세션을 넣기 직전에만 사용자 행을 공유 잠금으로 다시 읽는다. confirm 은 이 행을 잠근 채 비밀번호를 바꾸고
+    # 옛 세션을 지우므로, 그 사이에 비밀번호가 바뀌었으면 해시가 달라 옛 비밀번호 세션을 7일 동안 남기지 않는다.
+    return select(User.password_hash).where(User.user_id == user_id).with_for_update(read=True)
 
 
 @router.post("/login", response_model=Envelope[AuthResponse])
 def login(payload: LoginRequest, response: Response, db: Session = Depends(get_db)):
     user = db.scalars(_login_user_stmt(payload.email)).first()
     if not user or not user.password_hash or not verify_password(payload.password, user.password_hash):
+        raise AppError(ErrorCode.INVALID_CREDENTIALS)
+    if db.scalar(_password_hash_lock_stmt(user.user_id)) != user.password_hash:
         raise AppError(ErrorCode.INVALID_CREDENTIALS)
 
     _create_session(db, user, response)
