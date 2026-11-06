@@ -2,7 +2,7 @@
 
 - 날짜: 2026-11-06
 - 이슈: BE #428, FE #429
-- PR: (생성 예정)
+- PR: #431
 - 브랜치: feature/chat-channel-per-workspace
 
 ## 한 일
