@@ -356,6 +356,15 @@ scope는 `bot applications.commands identify`다. 봇 초대 scope만 요청하�
 | 오류 | 토큰이 없거나 틀리면 401 `UNAUTHENTICATED`, 없는 워크스페이스는 404 `WORKSPACE_NOT_FOUND` |
 | 봇 사용 | 봇은 아직 부르지 않는다. 디스코드 표시 이름 대신 이 값을 힌트로 쓰는 작업은 AI 후속이다. 자세한 내용은 [AI(녹음 봇) 계약](docs/contracts/backend-ai-contract.md#전사-힌트-조회) |
 
+## 이메일 정규화
+
+가입(`POST /api/v1/auth/signup`)·로그인(`POST /api/v1/auth/login`)·비밀번호 재설정 요청·워크스페이스 초대는 이메일의 앞뒤 공백을 지우고 소문자로 바꿔(`@` 앞부분 포함) 비교·저장한다. 규칙은 `app/schemas/email.py` 의 `normalize_email`·`NormalizedEmail` 한 곳에 있다. `Kim@Example.com` 과 `kim@example.com` 은 같은 계정이다.
+
+- 응답의 `user.email`·`accepted_user.email`·`email_masked` 는 소문자다.
+- 같은 이메일로 동시에 가입하면 하나만 만들어지고 나머지는 409 `EMAIL_ALREADY_EXISTS` 를 받는다.
+- 기존 계정은 마이그레이션 `537911f267dc` 가 소문자로 바꾼다. 소문자로 같아지는 계정이 있으면 아무것도 바꾸지 않고 멈춘다. 되돌릴 수 없고 배포 전 확인 방법은 그 파일 설명에 있다.
+- 결정 근거는 [M1 결정 기록](docs/plan/m1/basis-for-decision/2026-11-06-email-normalization.md).
+
 ## 비밀번호 재설정
 
 로그인 없이 부르는 경로 3개다. 결정 근거는 [M1 결정 기록](docs/plan/m1/basis-for-decision/2026-11-05-password-reset.md), 원본은 `app/services/password_reset.py`·`app/services/mailer.py`.
@@ -367,7 +376,7 @@ scope는 `bot applications.commands identify`다. 봇 초대 scope만 요청하�
 | `POST /api/v1/auth/password-reset/confirm` | `{token, new_password}` | 200 `{}`. 그 계정의 세션을 모두 지운다(새 세션은 만들지 않는다) |
 
 - 링크: `{APP_BASE_URL}/reset-password#token=<토큰>`. 30분 동안 한 번만 쓸 수 있고 DB 에는 sha256 해시만 둔다. 새 토큰을 발급하면 이전 미사용 토큰은 `invalid` 가 된다.
-- 요청 제한: 계정마다 60초에 1번, 1시간에 5번. 걸려도 응답은 같은 200 이고 이전 링크는 살아 있다. 이메일은 로그인처럼 정확히 일치해야 찾는다.
+- 요청 제한: 계정마다 60초에 1번, 1시간에 5번. 걸려도 응답은 같은 200 이고 이전 링크는 살아 있다. 이메일은 [정규화한 값](#이메일-정규화)으로 찾는다.
 - 발송: 응답 뒤 백그라운드에서 보내고, 실패하면 2·4·8초 뒤 3번 더 보낸다. 그래도 실패하면 로그만 남긴다(사용자는 다시 요청한다). 서버가 재시작되면 보내던 메일은 사라진다.
 - 비밀번호 규칙: 8자 이상, 숫자(0-9) 하나 이상. 회원가입(`POST /api/v1/auth/signup`)에도 같이 적용되고 어기면 400 `INVALID_REQUEST`.
 
