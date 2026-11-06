@@ -31,6 +31,13 @@ describe('회의 경로 해석', () => {
     })
   })
 
+  it('화자 지정 경로는 회의 ID 를 읽는다', () => {
+    expect(resolve(paths.meetingSpeakers('ws_01', 'mt_11'))).toMatchObject({
+      pattern: 'meetings/:meetingId/speakers',
+      params: { workspaceId: 'ws_01', meetingId: 'mt_11' },
+    })
+  })
+
   it('기존 meetings/:meetingId? 는 그대로다 — 목록과 상세가 같은 경로다', () => {
     expect(resolve(paths.meetings('ws_01'))).toMatchObject({ pattern: 'meetings/:meetingId?' })
     expect(resolve(paths.meetings('ws_01', 'mt_09'))).toMatchObject({

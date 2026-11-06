@@ -5,18 +5,22 @@ import { useAppForm } from '@/shared/lib/form'
 import { GuardedLink } from '@/shared/lib/unsaved-changes'
 import { Button } from '@/shared/ui/button'
 import { FormErrorPanel } from '@/shared/ui/form-error-panel'
+import { Panel } from '@/shared/ui/panel'
 import { PasswordField } from '@/shared/ui/password-field'
 import { TextField } from '@/shared/ui/text-field'
 import { applyServerError } from '../lib/serverError'
 import { loginSchema } from '../model/schemas'
 import { useEnterSession } from '../model/useEnterSession'
+import { useLoginNotice } from '../model/useLoginNotice'
 import { AlternativeAuth } from './AlternativeAuth'
 
 const FORM = 'flex flex-col gap-16'
 
-/* 비밀번호 재설정은 1차 범위 밖이라 비활성이다. 누를 수도, 포커스를 받을 수도 없다.
-   준비 중 문구·배지를 달지 않는다 (D-005, D-006) */
-const FORGOT = 'text-[13px] text-faint'
+/* 재설정 화면(/forgot-password, /reset-password)은 있지만 BE 배포 전이라 링크는 비활성이다. 배포 뒤에 켠다 (#356).
+   그 전에는 누를 수도, 포커스를 받을 수도 없다. 준비 중 문구·배지를 달지 않는다 (D-005, D-006) */
+const FORGOT = 'text-[13px] text-dim'
+
+const NOTICE = 'text-body text-ink'
 
 const FOOTNOTE = 'text-center text-[14px] text-dim'
 
@@ -36,6 +40,8 @@ export function LoginForm() {
   } = form
   const enterSession = useEnterSession()
   const [formError, setFormError] = useState<string | null>(null)
+  // 비밀번호를 바꾸고 온 경우의 안내. 한 번 읽고 기록에서 지운다 — 새로고침·뒤로가기에 다시 뜨지 않는다
+  const notice = useLoginNotice()
 
   const onSubmit = submit(async (values) => {
     setFormError(null)
@@ -49,6 +55,11 @@ export function LoginForm() {
   return (
     <>
       <form noValidate className={FORM} onSubmit={(event) => void onSubmit(event)}>
+        {notice === null ? null : (
+          <Panel role="status">
+            <p className={NOTICE}>{notice}</p>
+          </Panel>
+        )}
         <FormErrorPanel message={formError} />
         <TextField
           tone="auth"

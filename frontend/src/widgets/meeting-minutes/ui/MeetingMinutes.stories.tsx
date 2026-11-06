@@ -108,9 +108,10 @@ export const 화자_지정_기한_만료: Story = {
     await expect(
       await canvas.findByRole('heading', { name: '화자 지정 기한이 지났어요' }),
     ).toBeInTheDocument()
-    await expect(canvas.getByRole('list', { name: '화자 지정 기한 만료' })).toHaveTextContent(
-      '기획 논의 녹음',
-    )
+    // 목록은 상세와 따로 받아 상세 머리보다 늦게 올 수 있다
+    await expect(
+      await canvas.findByRole('list', { name: '화자 지정 기한 만료' }),
+    ).toHaveTextContent('기획 논의 녹음')
     await expect(canvas.getByRole('link', { name: '다시 업로드' })).toHaveAttribute(
       'href',
       '/workspaces/ws_01/meetings/upload',

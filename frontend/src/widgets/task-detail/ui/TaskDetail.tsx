@@ -5,6 +5,7 @@ import { meetingListQueryOptions } from '@/entities/meeting'
 import { memberListQueryOptions } from '@/entities/member'
 import { taskDetailQueryOptions, taskHistoryQueryOptions } from '@/entities/task'
 import type { Task } from '@/entities/task'
+import { TaskAutoBlockNotice } from '@/features/task-auto-block'
 import { TaskNotionSyncStatus } from '@/features/task-notion-sync'
 import { TASK_STATUS_LABEL, TaskStatusControl, useTaskStatusOverlay } from '@/features/task-status'
 import { COMMON_MESSAGES } from '@/shared/api/errorMessages'
@@ -17,6 +18,7 @@ import { EmptyState } from '@/shared/ui/empty-state'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
 import { Skeleton } from '@/shared/ui/skeleton'
 import { assigneeLabel, historyLine } from '../lib/history'
+import { TaskReminder } from './TaskReminder'
 
 const ROOT = 'mx-auto flex w-full max-w-[960px] flex-col gap-24 px-36 pt-32 pb-56'
 const BACK = 'text-caption font-semibold text-dim hover:text-ink'
@@ -52,7 +54,7 @@ function isUnavailable(error: unknown): boolean {
 /**
  * 태스크 상세 (M6 §3-5). 담당자·상태·마감·진행률·막힌 사유·연결 회의·변경 이력을 읽는다.
  * Notion 반영 상태는 서버 상태만 따르고, 반영 중이면 이 화면에 있는 동안 polling 한다. PM 은 반영 실패를 다시 요청한다 (§4-7, §4-8).
- * 담당자·마감이 없는 기존 태스크도 그대로 읽는다. PM 만 상태를 바꾼다 — 다른 필드 편집은 없다.
+ * 담당자·마감이 없는 기존 태스크도 그대로 읽는다. PM 만 상태를 바꾸고 담당자에게 보낼 재촉을 만든다 — 다른 필드 편집은 없다.
  * 진행 중인 상태 변경은 여기에도 먼저 보인다(`useTaskStatusOverlay`).
  */
 export function TaskDetail({ workspaceId, taskId, isPm }: TaskDetailProps) {
@@ -166,7 +168,10 @@ function TaskBody({ workspaceId, task, isPm }: { workspaceId: string; task: Task
         <dt className={TERM}>마감</dt>
         <dd className={VALUE}>{task.dueDate ?? '마감 없음'}</dd>
         <dt className={TERM}>막힌 사유</dt>
-        <dd className={VALUE}>{task.blocker ?? '없음'}</dd>
+        <dd className={`${VALUE} flex flex-col items-start gap-8`}>
+          <span>{task.blocker ?? '없음'}</span>
+          <TaskAutoBlockNotice workspaceId={workspaceId} task={task} isPm={isPm} />
+        </dd>
         <dt className={TERM}>연결 회의</dt>
         <dd className={VALUE}>
           {task.meetingId === null || meetingTitle === null ? (
@@ -182,6 +187,7 @@ function TaskBody({ workspaceId, task, isPm }: { workspaceId: string; task: Task
           <TaskNotionSyncStatus workspaceId={workspaceId} taskId={task.id} canRetry={isPm} />
         </dd>
       </dl>
+      {isPm ? <TaskReminder workspaceId={workspaceId} task={task} status={status} /> : null}
       <TaskHistory workspaceId={workspaceId} taskId={task.id} names={names} />
     </>
   )

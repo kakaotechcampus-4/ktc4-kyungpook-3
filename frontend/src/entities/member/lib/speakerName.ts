@@ -1,13 +1,18 @@
+import type { ExtractionEvidence } from '@/shared/types/common'
 import type { Member } from '../model/types'
 
 /**
- * 근거 화자(`evidence_speaker`)는 별칭이 아니라 발화 트랙의 Discord uid 다 (backend schemas/meeting.py).
- * 같은 Discord 계정을 연결한 팀원 이름을 돌려준다. 못 찾으면 null — uid 를 이름처럼 보여 주지 않는다
+ * 근거 화자의 팀원 이름. 서버처럼 팀원 ID 를 먼저 보고, 없거나 목록에 없으면 발화 트랙의 Discord uid 로 같은 계정을 연결한
+ * 팀원을 찾는다 (backend schemas/meeting.py). 업로드 회의는 uid 가 없고 팀원 ID 만 온다 (#256).
+ * 못 찾으면 null — ID·uid 를 이름처럼 보여 주지 않는다
  */
 export function speakerName(
   members: readonly Member[] | undefined,
-  discordUserId: string | null,
+  { speaker, speakerMemberId }: Pick<ExtractionEvidence, 'speaker' | 'speakerMemberId'>,
 ): string | null {
-  if (discordUserId === null || members === undefined) return null
-  return members.find((member) => member.discordUserId === discordUserId)?.displayName ?? null
+  if (members === undefined) return null
+  const found =
+    (speakerMemberId === null ? undefined : members.find(({ id }) => id === speakerMemberId)) ??
+    (speaker === null ? undefined : members.find(({ discordUserId }) => discordUserId === speaker))
+  return found?.displayName ?? null
 }

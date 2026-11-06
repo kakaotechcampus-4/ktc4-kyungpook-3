@@ -37,3 +37,15 @@ export interface MeetingUploadDto {
   meeting_id: string
   status: string
 }
+export interface SpeakerViewDto {
+  meeting_id: string
+  status: string
+  speakers: { label: string; total_sec: number; samples: { start: number; end: number }[] }[]
+  candidates: { member_id: string; display_name: string }[]
+  mapping: Record<string, string | null> | null
+  audio: { content_type: string; size_bytes: number } | null
+}
+export interface SpeakerAssignDto {
+  meeting_id: string
+  status: string
+}

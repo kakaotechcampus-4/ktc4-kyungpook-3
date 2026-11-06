@@ -682,6 +682,7 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
     progress("stt", {done, sent, tracks, tracks_total}) 를, 단계가 끝나면 progress("done", {stage, result}) 를 부른다.
     시작 단계 이름은 FAILED_STAGE 의 값(stt, sources, extract, handoff)이고 끝난 단계는 상태 이름(transcribed 등)이다.
     result 는 그때까지 채운 이 결과다. 다른 스레드에서 불리고, 여기서 난 예외는 로그만 남긴다.
+    handoff 가 있으면 같은 시작 단계 이름을 BE 에도 알린다(handoff.report_stage). 진행 표시용이라 실패는 무시한다.
 
     처리 기록은 일찍 돌아가는 경로까지 finally 에서 남긴다(_keep_ops). 모델 올리기는 전사 단계 앞에서 따로 잰다.
     """
@@ -707,8 +708,13 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
             print(f"[progress] 세션 {manifest.get('session')} 진행 표시 실패: {type(e).__name__}: {e}", flush=True)
 
     def begin(name: str) -> None:
-        ops.begin(name)
+        # 순서: 진행 표시 -> BE 보고 -> ops 단계 열기. 앞 단계는 finish 의 ops.end() 로 이미 닫혔고,
+        # ops.begin 앞에서 보고하므로 보고 HTTP 시간은 어느 ops 단계 시간에도 들어가지 않는다.
+        # 진행 표시가 먼저라 BE 지연에 끌려가지 않는다.
         tell(name)
+        if handoff is not None:
+            handoff.report_stage(manifest, name)       # BE 진행 표시. 실패는 report_stage 가 삼킨다
+        ops.begin(name)
 
     def save() -> None:
         save_manifest(path, manifest)

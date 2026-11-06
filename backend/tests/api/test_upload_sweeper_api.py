@@ -219,3 +219,23 @@ def test_ai_transcript_after_sweep_gets_409_meeting_failed(db, seed):
 
     assert r.status_code == 409, r.text
     assert r.json()["error"]["code"] == "MEETING_FAILED"
+
+
+def _chat_meeting(db, seed, *, status, ended_ago):
+    meeting = Meeting(
+        workspace_id=seed["ws"].workspace_id, source="chat", status=status,
+        ended_at=datetime.now(timezone.utc) - ended_ago,
+    )
+    db.add(meeting)
+    db.commit()
+    return meeting
+
+
+def test_chat_meeting_stuck_processing_is_failed(db, seed):
+    stuck = _chat_meeting(db, seed, status="processing", ended_ago=timedelta(hours=4))
+    _chat_meeting(db, seed, status="processing", ended_ago=timedelta(minutes=10))   # 아직 도는 중
+    _chat_meeting(db, seed, status="done", ended_ago=timedelta(hours=4))
+
+    assert upload_sweeper.sweep_stalled_uploads(db) == [(stuck.meeting_id, "chat_stalled")]
+    db.expire_all()
+    assert db.get(Meeting, stuck.meeting_id).status == "failed"

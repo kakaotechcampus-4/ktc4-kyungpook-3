@@ -26,7 +26,7 @@ function createApproval(overrides: Partial<TaskCreateApproval> = {}): TaskCreate
     dueDate: '2026-10-15',
     dueRaw: '다음 주 목요일',
     missing: [],
-    evidence: { quote: null, speaker: null, atMs: null },
+    evidence: { quote: null, speaker: null, speakerMemberId: null, atMs: null },
     meetingId: 'mt_09',
     extractionItemId: 'ei_04',
     gate: 'review',
@@ -41,6 +41,10 @@ function updateApproval(overrides: Partial<TaskUpdateApproval> = {}): TaskUpdate
     relatedTaskId: 'tk_01',
     title: null,
     changes: [{ field: 'due_date', value: '2026-10-20' }],
+    category: null,
+    docText: null,
+    evidence: { quote: null, speaker: null, speakerMemberId: null, atMs: null },
+    meetingId: null,
     ...overrides,
   }
 }

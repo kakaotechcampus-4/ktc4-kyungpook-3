@@ -11,7 +11,11 @@ const FIELD_LABEL: Record<TaskHistoryEntry['field'], string> = {
   title: '제목',
   progress: '진행률',
   blocker: '막힌 사유',
+  scope: '범위 변경',
 }
+
+/** 이전 값이 없는 결정이라 `이전 → 이후` 대신 새 값만 보인다 (#205) */
+const STATEMENT_FIELDS: ReadonlySet<TaskHistoryEntry['field']> = new Set(['scope'])
 
 const SOURCE_LABEL: Record<TaskHistoryEntry['source'], string> = {
   meeting: '회의',
@@ -20,6 +24,7 @@ const SOURCE_LABEL: Record<TaskHistoryEntry['source'], string> = {
   notion: 'Notion',
   reminder_reply: '리마인더 답장',
   manual: '직접 변경',
+  scheduler: '스케줄러',
 }
 
 /** 담당자 이름. 없으면 `담당자 없음`, 이름을 모르면 `알 수 없는 담당자` */
@@ -45,7 +50,7 @@ function valueLabel(
 
 export interface HistoryLine {
   id: string
-  /** `상태: 할 일 → 진행 중` */
+  /** `상태: 할 일 → 진행 중`, 범위 변경은 `범위 변경: 소셜 로그인은 빼기로 했어요.` */
   change: string
   /** `김서연 · 직접 변경 · 2026-09-16 15:00` */
   meta: string
@@ -63,9 +68,12 @@ export function historyLine(
         ? '자동'
         : '알 수 없음'
       : (names.get(entry.changedBy) ?? '알 수 없는 팀원')
+  const after = valueLabel(entry.field, entry.newValue, names)
   return {
     id: entry.id,
-    change: `${FIELD_LABEL[entry.field]}: ${valueLabel(entry.field, entry.oldValue, names)} → ${valueLabel(entry.field, entry.newValue, names)}`,
+    change: STATEMENT_FIELDS.has(entry.field)
+      ? `${FIELD_LABEL[entry.field]}: ${after}`
+      : `${FIELD_LABEL[entry.field]}: ${valueLabel(entry.field, entry.oldValue, names)} → ${after}`,
     meta: [who, SOURCE_LABEL[entry.source], formatSeoulDateTime(entry.createdAt)]
       .filter(Boolean)
       .join(' · '),

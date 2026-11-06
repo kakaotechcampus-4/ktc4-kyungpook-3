@@ -39,6 +39,14 @@ describe('processingSteps (U4-4)', () => {
     expect(states(half, 'failed')).toEqual(['done', 'waiting', 'waiting'])
   })
 
+  it('#383 뒤 extracted 가 남은 완료·실패 회의도 진행 중 단계가 없다 (#384)', () => {
+    const handedOff = { audioMerged: true, transcribed: true, extracted: true }
+    const noItems = { audioMerged: true, transcribed: true, extracted: false }
+    expect(states(handedOff, 'done')).toEqual(['done', 'done', 'done'])
+    expect(states(noItems, 'done')).toEqual(['done', 'done', 'done'])
+    expect(states(handedOff, 'failed')).toEqual(['done', 'done', 'done'])
+  })
+
   it('단계 이름 말고 숫자(백분율·시간)를 내지 않는다', () => {
     for (const step of processingSteps(null, 'processing'))
       expect(Object.keys(step).sort()).toEqual(['key', 'label', 'state'])

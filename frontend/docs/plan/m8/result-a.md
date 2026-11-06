@@ -32,7 +32,7 @@
 - **캘린더 빈 상태** — 태스크·확인 필요가 모두 비어도 받은 회의가 있으면 전체 빈 상태 대신 캘린더 격자와 회의를 그린다(`TaskBoard`의 `calendarMeetings.length` 판정).
 - **너비** — 보드·캘린더는 긴 문자열을 칸 안에서 접어 넘침을 없앴고 최소 폭을 두지 않았다. 간트는 왼쪽 칸 252px + 날짜 21칸 × 최소 48px을 표의 최소 폭으로 둔다. 이 폭이 영역보다 크면 [viewParts](../../../src/widgets/task-board/ui/viewParts.tsx)의 `HorizontalScroll` 영역 안에서 가로로 스크롤한다. 넘칠 때만 `tabIndex=0`이며 넘침은 `ResizeObserver`로 판정한다. 48px은 시안 셸 본문 1264px에서의 칸 폭이다. 1024px의 균등 분할(약 32px)에서는 `tasks-default` 실측으로 막대 라벨이 3건 잘렸다(1440·1920px은 1건).
 - **렌더** — 보드 `TaskCard`, 캘린더 `TaskChip`·`UndatedTask`, 간트 `TaskRow`·`ApprovalRow`·`UnscheduledRow`를 `memo`로 나눴다. 부모가 넘기는 이름 맵·상태 overlay·승인·회의 배열과 날짜별 묶음은 `useMemo`로 유지한다. 구독은 바꾸지 않았다(같은 데이터 재조회·다른 공간 mutation은 변경 전에도 커밋 0이었다).
-- **`queryView` 사본** — `widgets/dashboard/lib/queryView.ts`와 같은 판정을 `widgets/task-board/lib/taskViews.ts`에 따로 두었다. [사본 결정](basis-for-decision/2026-10-31-task-views-queryview-copy.md).
+- **`queryView` 사본** — 대시보드와 같은 판정을 `widgets/task-board/lib/taskViews.ts`에 따로 두었다. #236 뒤 [shared/lib/query-view/queryView.ts](../../../src/shared/lib/query-view/queryView.ts)로 합쳐 사본을 지웠다(#396). [사본 결정](basis-for-decision/2026-10-31-task-views-queryview-copy.md).
 - **테스트·스토리·MSW** — 통합 테스트는 [taskViews.test.tsx](../../../src/app/taskViews.test.tsx)(상태·역할·공간·상세 링크), [taskViewsCodeSplit.test.tsx](../../../src/app/taskViewsCodeSplit.test.tsx)(코드 분리), [taskViewsRender.test.tsx](../../../src/app/taskViewsRender.test.tsx)(렌더 횟수·변경 표시)이고, 디자인 차이 보완에서 [taskViewsCreate.test.tsx](../../../src/app/taskViewsCreate.test.tsx)(보드 직접 추가)를 더했다. 스토리는 [TaskViews.stories.tsx](../../../src/widgets/task-board/ui/TaskViews.stories.tsx) 12개(디자인 차이 보완 뒤 14개)로, [stories.sb.ts](../../../e2e/storybook/stories.sb.ts)가 play 회귀에 포함한다. 앱 E2E는 [task-views.e2e.ts](../../../e2e/task-views.e2e.ts) 9건이다. MSW 시나리오 `tasks-long-content`를 [scenarios.ts](../../../src/shared/mock/scenarios.ts)에 추가했다.
 - **보존한 것** — `?view=` URL 해석(`readViewQuery`·`viewSearch`), 보드 세 컬럼과 상태 묶음, 상태 전이, 간트 21일과 막대 범위 계산, 캘린더 마감일·회의일 기준, 필터·정렬을 보존했다. `taskBoard.ts` 모델, `task-status` feature, `TasksPage`·라우터, `ApprovalCard`는 diff에 없다(V2·V3 확인).
 
@@ -311,4 +311,23 @@ A(#243): [결과](m8/result-a.md) — AC-A-01 `?view=` 유지 결정, 완료 판
 - [`queryView` 판정을 task-board 안에 사본으로 두는 선택](basis-for-decision/2026-10-31-task-views-queryview-copy.md)
 - [태스크 보기 URL을 한 경로의 `?view=`로 유지하는 선택](basis-for-decision/2026-11-02-task-view-url.md)
 - [태스크 보기의 디자인 차이 보완 — 보드 직접 추가와 기간 필터 기본값](basis-for-decision/2026-11-01-task-views-design-gaps.md)
+- [캘린더 상태는 색에 아이콘과 낭독 이름을 더해 구분한다](basis-for-decision/2026-11-05-calendar-status-marks.md)
 - [M7 결과](../m7/result.md): 대시보드의 영역별 실패 표시(AC-05)와 #236 분리([E-06](../m7/errors/E-06-m6-detail-refetch-error-hidden.md))
+
+## 2026-11-05 추가 결과: 캘린더 상태를 색 외 표식으로도 구분 (#338)
+
+- 근거: 이슈 #338(2026.10.30 접근성 상세 이슈 보고서, KWCAG 2.2 '색에 무관한 콘텐츠 인식'). 계획 A 절 밖의 후속 수정이며 AC를 새로 만들거나 완료를 선언하지 않는다.
+- 변경: 캘린더 칩과 범례가 `CalendarView.tsx`의 `MARK` 표 하나를 읽는다. `마감 임박`(위험·주의)은 `alert`, `확인 필요`는 `eye` 아이콘을 제목 앞과 범례 견본에 넣고, 진행 중은 표식이 없다. 완료는 기존 취소선을 유지한다. 아이콘은 장식(`aria-hidden`)이다.
+- 낭독 이름: 아이콘이 없는 진행 중·할 일·완료를 포함해 모든 칩 링크 이름을 `상태, 제목, 담당자`로 직접 짓는다(`aria-label`, 예: '마감 임박, 회원가입 화면, 박민수', '진행 중, 배포 스크립트, 김서연'). 아이콘 유무(`MARK`의 `icon`)와 읽는 상태(`label`)는 따로다. 숨김 텍스트(`sr-only`)로 처음 만들었을 때 Chromium이 '회원가입 화면 , 박민수'로 이어 jsdom 결과와 달랐다. 그래서 바꿨다. `마감일 없음` 칸의 확인 필요는 `확인 필요`, 태스크는 태스크 상태 이름(예: '할 일, 회의록 요약 검수, 박민수 · 마감 없음')으로 시작한다.
+- 독립 검증(verify-375): 처음 구현은 진행 중 칩의 이름에 상태가 없었다('배포 스크립트, 김서연'). 고정한 오늘 9/18에는 마감 있는 미완료가 모두 마감 임박이라 드러나지 않았고, 9/16으로 시계를 옮긴 검증에서 찾았다. 아이콘과 낭독 상태를 나눠 고치고, 진행 중·할 일 칩이 나오는 데이터로 테스트를 더했다.
+- 같은 기준의 다른 화면: 보드·간트는 글자 배지·모양 구분이 이미 있어 바꾸지 않았다. 팀 화면 맡은 일의 기한 지난 마감은 글자색으로만 갈렸으므로 같은 `alert` 아이콘을 붙였다(`MemberList.tsx`, 낭독용 `기한 지남`은 원래 있었다).
+- 표식 모양은 디자인 합의 전 기본값이다. [결정 기록](basis-for-decision/2026-11-05-calendar-status-marks.md)에 선택지와 바꾸는 곳을 적었다. 색 값(#336)은 바꾸지 않았다.
+
+| 검증 (2026-11-05, Node v24.11.0) | 결과 |
+|---|---|
+| 관련 Vitest(`taskViews`·`taskViewsRender`·`taskViewsCodeSplit`·`team`·`tasks`·`Icon`, `--maxWorkers=1`) | 통과. 칩 이름이 상태부터 읽히는지, 칩과 범례의 아이콘이 같은지, 진행 중·완료에 아이콘이 없는지, 팀 화면 기한 지남 표식을 단언한다 |
+| typecheck·lint(바뀐 범위)·format·build | 통과 |
+| 실제 화면(verify-frontend, MSW, Chromium 1440×900) | 캘린더와 팀 화면을 색과 흑백(`grayscale(1)`)으로 캡처했다. 흑백에서 마감 임박(회색+경고)·확인 필요(먹+눈)·완료(취소선)·진행 중(표식 없음)이 갈린다. ARIA 스냅샷의 칩 이름은 '마감 임박, 온보딩 문구 수정, 담당자 없음' 형식이다. 시계를 9/16으로 둔 화면에서 9/24 칩 이름이 '진행 중, 배포 스크립트, 김서연'이다. 증거는 로컬 `.verify/`에만 있다 |
+| 전체 Vitest·Storybook play | 이 작업 폴더에서는 돌리지 않았다. PR CI로 확인한다 |
+
+실제 서버와 실제 화면 낭독기(NVDA·VoiceOver) 낭독은 확인하지 않았다.

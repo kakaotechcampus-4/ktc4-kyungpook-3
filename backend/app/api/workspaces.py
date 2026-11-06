@@ -70,6 +70,7 @@ def _build_workspace_response(workspace: Workspace, member: Member | None = None
     data = WorkspaceResponse.model_validate(workspace).model_dump()
     if member:
         data["role"] = member.role
+        data["member_id"] = member.member_id
     data["onboarding"] = _build_onboarding(workspace).model_dump()
     return data
 
@@ -119,7 +120,10 @@ def list_workspaces(
         .all()
     )
     
-    member_by_ws = {m.workspace_id: m for m in members}
+    # require_member 의 .first() 처럼 공간마다 첫 행을 고른다(정상 데이터에서는 활성 행이 하나다)
+    member_by_ws: dict[str, Member] = {}
+    for m in members:
+        member_by_ws.setdefault(m.workspace_id, m)
     items = [_build_workspace_response(ws, member_by_ws.get(ws.workspace_id)) for ws in workspaces]
 
     return success(
@@ -266,7 +270,9 @@ def upload_meeting(
     """
     processing = db.query(Meeting).filter(
         Meeting.workspace_id == workspace_id, 
-        Meeting.status == MeetingStatus.PROCESSING
+        Meeting.status == MeetingStatus.PROCESSING,
+        # 채팅 회의는 처리 중으로 오래 남을 수 있어 녹음 업로드를 막지 않는다
+        Meeting.source != MeetingSource.CHAT,
     ).first()
     if processing:
         raise AppError(
@@ -357,6 +363,7 @@ def upload_meeting(
             select(Meeting.meeting_id).where(
                 Meeting.workspace_id == workspace_id,
                 Meeting.status == str(MeetingStatus.PROCESSING),
+                Meeting.source != MeetingSource.CHAT,
             )
         )
         if busy_id is not None:

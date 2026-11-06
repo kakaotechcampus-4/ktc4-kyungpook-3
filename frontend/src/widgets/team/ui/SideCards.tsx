@@ -113,7 +113,7 @@ export function UnlinkedAccountsCard({ workspaceId, state, onConnect }: Unlinked
               <li key={user.discordUserId} className="flex items-center gap-10">
                 <span
                   aria-hidden="true"
-                  className="inline-flex h-26 w-26 shrink-0 items-center justify-center rounded-999 border border-faint bg-surface text-[12px] leading-none text-ink"
+                  className="inline-flex h-26 w-26 shrink-0 items-center justify-center rounded-999 border border-input-border bg-surface text-[12px] leading-none text-ink"
                 >
                   ?
                 </span>
