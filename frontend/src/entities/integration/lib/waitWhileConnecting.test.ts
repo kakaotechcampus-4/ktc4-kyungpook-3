@@ -3,7 +3,13 @@ import { waitWhileConnecting } from './waitWhileConnecting'
 
 function integrations(notion: IntegrationStatus): Integrations {
   return {
-    discord: { provider: 'discord', status: 'connected', displayName: null, connectedAt: null },
+    discord: {
+      provider: 'discord',
+      status: 'connected',
+      displayName: null,
+      connectedAt: null,
+      chatChannel: null,
+    },
     notion: { provider: 'notion', status: notion, displayName: null, connectedAt: null },
   }
 }

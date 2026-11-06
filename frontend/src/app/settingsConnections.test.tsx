@@ -63,7 +63,12 @@ describe('설정의 Discord 연결 영역 — PM', () => {
   })
 
   it('끊긴(revoked) Discord 는 `연결 끊김` 과 `Discord 다시 연결하기` 다 — 문구로도 구분한다', async () => {
-    db.integrations[WS].discord = { status: 'revoked', display_name: null, connected_at: null }
+    db.integrations[WS].discord = {
+      status: 'revoked',
+      display_name: null,
+      connected_at: null,
+      chat_channel: null,
+    }
     renderApp(SETTINGS)
     const area = await discordArea()
     expect(await area.findByText('연결 끊김')).toBeInTheDocument()
@@ -179,6 +184,7 @@ describe('설정의 연결 영역 — 일반 팀원', () => {
       status: 'connected',
       display_name: 'Discord 연결됨',
       connected_at: '2026-09-01T00:00:00Z',
+      chat_channel: null,
     }
     renderApp(paths.settings('ws_01'))
     const discord = await discordArea()
