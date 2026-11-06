@@ -2,7 +2,7 @@ import secrets
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Request, Response
-from sqlalchemy import and_, func
+from sqlalchemy import and_, func, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
@@ -87,9 +87,15 @@ def signup(payload: SignupRequest, response: Response, db: Session = Depends(get
     _create_session(db, user, response)
     return success(_build_auth_response(db, user).model_dump(mode="json"))
 
+def _login_user_stmt(email: str):
+    # 비밀번호 재설정 confirm 은 사용자 행을 잠근 채 옛 세션을 지운다. 로그인도 사용자 행을 공유 잠금으로 읽어,
+    # 옛 비밀번호 로그인이 confirm 이 끝난 뒤에 세션을 넣어 7일 동안 남기는 일을 막는다(읽는 쪽끼리는 서로 막지 않는다).
+    return select(User).where(User.email == email).with_for_update(read=True)
+
+
 @router.post("/login", response_model=Envelope[AuthResponse])
 def login(payload: LoginRequest, response: Response, db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.email == payload.email).first()
+    user = db.scalars(_login_user_stmt(payload.email)).first()
     if not user or not user.password_hash or not verify_password(payload.password, user.password_hash):
         raise AppError(ErrorCode.INVALID_CREDENTIALS)
 
