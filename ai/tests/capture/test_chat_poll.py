@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from capture.chat_poll import clean_text, message_dates, poll, to_transcript
+from capture.chat_poll import ChannelUnreadable, DiscordReader, clean_text, message_dates, poll, poll_all, to_transcript
 from capture.handoff import BeClient
 from capture.judge_path import JudgeAllFailed, JudgeOutput
 from tests.capture.fake_be import FakeBe
@@ -64,9 +64,16 @@ class FakeReader:
     def __init__(self, messages=(), before=()):
         self.messages, self.before = list(messages), list(before)
         self.read_args, self.before_args = None, None
+        self.closed = False
+        self.read_error = None
+
+    def close(self):
+        self.closed = True
 
     def read(self, after, before):
         self.read_args = (after, before)
+        if self.read_error:
+            raise self.read_error
         return [m for m in self.messages if after < m[3] < before]   # Discord history 처럼 열린 구간
 
     def read_before(self, before, limit):
@@ -305,3 +312,128 @@ def test_poll_does_not_look_up_guild():
     reader = FakeReader([("1", "하은", False, _at(hours=1), "글")])
     assert poll(reader, client, FakeExtract(), workspace_id="ws-1", now=NOW, cfg=CFG) == 0
     assert not any("/integrations/discord/guilds/" in p for _, p in _paths(fake))
+
+
+# --- poll_all ---
+
+CHANNELS = [{"workspace_id": "ws-1", "guild_id": "g1", "channel_id": "1"},
+            {"workspace_id": "ws-2", "guild_id": "g2", "channel_id": "2"}]
+
+
+def _all(client, readers, extract=None, **kw):
+    opened = []
+
+    def open_reader(cid):
+        opened.append(cid)
+        return readers[cid]
+
+    rc = poll_all(CHANNELS, open_reader, client, extract or FakeExtract(), now=NOW, cfg=CFG, **kw)
+    return rc, opened
+
+
+def _msg(text="글"):
+    return [("1", "하은", False, _at(hours=1), text)]
+
+
+def _meeting_workspaces(fake):
+    return sorted(m["workspace_id"] for m in fake.meetings.values())
+
+
+def test_poll_all_runs_each_workspace_with_its_channel():
+    fake, client = _env()
+    readers = {1: FakeReader(_msg()), 2: FakeReader(_msg())}
+    rc, opened = _all(client, readers)
+    assert rc == 0 and opened == [1, 2]
+    assert _meeting_workspaces(fake) == ["ws-1", "ws-2"]
+    assert readers[1].closed and readers[2].closed
+
+
+def test_one_workspace_failure_does_not_stop_others():
+    fake, client = _env()
+    readers = {1: FakeReader(_msg()), 2: FakeReader(_msg())}
+
+    class Extract(FakeExtract):
+        def __call__(self, transcript, names, today, workspace_id=None, **kw):
+            if workspace_id == "ws-1":
+                raise JudgeAllFailed("x")
+            return super().__call__(transcript, names, today, workspace_id, **kw)
+
+    rc, _ = _all(client, readers, Extract())
+    assert rc == 1
+    assert [m["status"] for m in fake.meetings.values() if m["workspace_id"] == "ws-2"] == ["done"]
+
+
+def test_error_before_meeting_is_contained():
+    fake, client = _env()
+    orig = fake.request
+
+    def request(method, url, **kw):
+        if "/workspaces/ws-1/chat-cursor" in url:
+            from tests.capture.fake_be import _err
+            return _err(500, "INTERNAL")
+        return orig(method, url, **kw)
+
+    fake.request = request
+    readers = {1: FakeReader(_msg()), 2: FakeReader(_msg())}
+    rc, _ = _all(client, readers)
+    assert rc == 1
+    assert _meeting_workspaces(fake) == ["ws-2"] and readers[1].closed
+
+
+def test_unreadable_channel_is_skipped_with_warning(capsys):
+    fake, client = _env()
+    bad = FakeReader(_msg())
+    bad.read_error = ChannelUnreadable("403")
+    readers = {1: bad, 2: FakeReader(_msg())}
+    rc, _ = _all(client, readers)
+    assert rc == 0
+    assert _meeting_workspaces(fake) == ["ws-2"]
+    assert "건너뜁니다" in capsys.readouterr().err and bad.closed
+
+
+def test_discord_forbidden_and_notfound_become_channel_unreadable():
+    import discord
+
+    def raiser(exc):
+        async def go():
+            raise exc
+        return go()
+
+    reader = DiscordReader("t", 1)
+    try:
+        for exc in (discord.Forbidden(SimpleNamespace(status=403, reason="Forbidden"), "x"),
+                    discord.NotFound(SimpleNamespace(status=404, reason="Not Found"), "x")):
+            with pytest.raises(ChannelUnreadable) as ei:
+                reader._run(raiser(exc))
+            assert ei.value.__cause__ is exc
+        with pytest.raises(discord.HTTPException):
+            reader._run(raiser(discord.HTTPException(SimpleNamespace(status=500, reason="Err"), "x")))
+    finally:
+        reader.close()
+
+
+def test_empty_channel_list_does_nothing():
+    fake, client = _env()
+    assert poll_all([], lambda cid: FakeReader(), client, FakeExtract(), now=NOW, cfg=CFG) == 0
+    assert ("POST", "/meetings") not in _paths(fake)
+
+
+def test_only_workspace_filters():
+    fake, client = _env()
+    rc, opened = _all(client, {1: FakeReader(_msg()), 2: FakeReader(_msg())}, only="ws-2")
+    assert rc == 0 and opened == [2] and _meeting_workspaces(fake) == ["ws-2"]
+
+
+def test_only_unknown_workspace_fails(capsys):
+    fake, client = _env()
+    rc, opened = _all(client, {}, only="ws-9")
+    assert rc == 1 and opened == [] and ("POST", "/meetings") not in _paths(fake)
+    assert "ws-9" in capsys.readouterr().err
+
+
+def test_entry_missing_key_fails_only_that_entry():
+    fake, client = _env()
+    readers = {2: FakeReader(_msg())}
+    rc = poll_all([{"workspace_id": "ws-1"}, CHANNELS[1]], lambda cid: readers[cid], client, FakeExtract(),
+                  now=NOW, cfg=CFG)
+    assert rc == 1 and _meeting_workspaces(fake) == ["ws-2"]

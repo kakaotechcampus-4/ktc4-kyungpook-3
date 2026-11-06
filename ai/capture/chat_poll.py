@@ -14,10 +14,11 @@
 게이트웨이에 붙지 않고 REST 로만 읽는다. 개발자 포털에서 Message Content Intent 를 켜야 본문이 온다.
 
 실행 (ai/ 디렉토리 안에서):
-    python -m capture.chat_poll [--channel ID] [--dry-run]
-봇 토큰은 CHAT_POLL_BOT_TOKEN, 채널은 --channel 또는 DISCORD_CHANNEL_ID. --dry-run 은 BE 에 쓰지 않고 판단만 해 runs/ 에 저장한다.
-주의: 커서는 워크스페이스 단위(BE 의 가장 최근 done 채팅 회의)라 --channel 은 설정된 채널이어야 한다. 동시에 두 번 돌리면 제안이
-중복된다. 서버에서 손으로 돌릴 때는 `systemctl start mm-chat-poll.service` 를 쓴다(유닛의 flock 이 타이머 실행과 겹치지 않게 막는다).
+    python -m capture.chat_poll [--workspace ID] [--dry-run]
+봇 토큰은 DISCORD_BOT_TOKEN(음성 봇과 같다). 읽을 채널은 BE 가 알려 준다(GET /bot/chat-channels, 워크스페이스마다 하나).
+--workspace 는 그 워크스페이스만. --dry-run 은 BE 에 쓰지 않고 판단만 해 runs/ 에 저장한다.
+워크스페이스 하나가 실패해도 나머지는 돌고 종료 코드는 1 이다. 봇이 채널을 읽을 수 없으면(403·404) 경고하고 건너뛴다(종료 코드 0).
+주의: 동시에 두 번 돌리면 제안이 중복된다. 서버에서 손으로 돌릴 때는 `systemctl start mm-chat-poll.service` 를 쓴다(유닛의 flock 이 타이머 실행과 겹치지 않게 막는다).
 실행마다 runs/chat_poll_attempt_<워크스페이스>.json 에 시도를 남기고 성공하면 지운다(_begin_attempt).
 """
 
@@ -27,6 +28,7 @@ import argparse
 import asyncio
 import json
 import sys
+import time
 from datetime import date, datetime, timedelta, timezone
 from typing import Protocol
 from zoneinfo import ZoneInfo
@@ -77,6 +79,10 @@ def message_dates(messages: list[Message], tz: str) -> dict[int, date]:
     return {seq: m[3].astimezone(zone).date() for seq, m in enumerate(_kept(messages), start=1)}
 
 
+class ChannelUnreadable(Exception):
+    """봇이 채널을 읽을 수 없다(디스코드 403·404). 설정 문제라 그 워크스페이스만 건너뛴다."""
+
+
 class ChannelReader(Protocol):
     def read(self, after: datetime, before: datetime) -> list[Message]:
         """after 이후 before 까지(리액션 포함), 오래된 것부터."""
@@ -95,7 +101,12 @@ class DiscordReader:
         self._channel = None
 
     def _run(self, coro):
-        return self._loop.run_until_complete(coro)
+        import discord
+
+        try:
+            return self._loop.run_until_complete(coro)
+        except (discord.Forbidden, discord.NotFound) as e:
+            raise ChannelUnreadable(f"{type(e).__name__}: {e}") from e
 
     async def _channel_(self):
         if self._channel is None:
@@ -110,12 +121,6 @@ class DiscordReader:
         if self._client is not None:
             self._run(self._client.close())
         self._loop.close()
-
-    def guild_id(self) -> str:
-        async def go():
-            return str((await self._channel_()).guild.id)
-
-        return self._run(go())
 
     def read(self, after: datetime, before: datetime) -> list[Message]:
         async def go():
@@ -268,16 +273,44 @@ def poll(reader: ChannelReader, client, extract, *, workspace_id: str, now: date
     return 0
 
 
+def poll_all(channels: list[dict], open_reader, client, extract, *, now: datetime, cfg, dry_run: bool = False,
+             only: str | None = None) -> int:
+    """BE 가 준 채널마다 워크스페이스별로 poll 한다. 하나가 실패해도 나머지는 돌고, 실패가 있으면 1."""
+    if only is not None:
+        channels = [c for c in channels if c.get("workspace_id") == only]
+        if not channels:
+            print(f"[chat] 워크스페이스 {only} 는 채팅 채널 목록에 없습니다.", file=sys.stderr)
+            return 1
+    rc = 0
+    for c in channels:
+        ws, started = c.get("workspace_id"), time.monotonic()
+        try:
+            ws, channel_id = c["workspace_id"], c["channel_id"]
+            reader = open_reader(int(channel_id))
+            try:
+                if poll(reader, client, extract, workspace_id=ws, now=now, cfg=cfg, dry_run=dry_run):
+                    rc = 1
+            finally:
+                if hasattr(reader, "close"):
+                    reader.close()
+        except ChannelUnreadable as e:
+            print(f"[chat] ws={ws} 채널 {c.get('channel_id')} 을 읽을 수 없어 건너뜁니다: {e}", file=sys.stderr)
+        except Exception as e:  # noqa: BLE001 - 한 워크스페이스의 실패가 나머지를 막지 않는다
+            print(f"[chat] ws={ws} 실패: {type(e).__name__}: {e}", file=sys.stderr)
+            rc = 1
+        print(f"[chat] ws={ws} {time.monotonic() - started:.1f}초")
+    return rc
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--channel", help="채널 ID. 없으면 DISCORD_CHANNEL_ID")
+    parser.add_argument("--workspace", help="이 워크스페이스 ID 만 돈다. 없으면 BE 가 알려 준 전부")
     parser.add_argument("--dry-run", action="store_true", help="BE 에 쓰지 않고 판단만 해 runs/ 에 저장")
     args = parser.parse_args()
 
     cfg = settings()
-    channel = args.channel or cfg.discord_channel_id
-    if not cfg.chat_poll_bot_token or not channel:
-        print("CHAT_POLL_BOT_TOKEN 과 채널 ID(--channel 또는 DISCORD_CHANNEL_ID)가 필요합니다.", file=sys.stderr)
+    if not cfg.discord_bot_token:
+        print("DISCORD_BOT_TOKEN 이 필요합니다.", file=sys.stderr)
         return 1
     if not cfg.be_base_url or not cfg.be_service_token:
         print("BE_BASE_URL 과 BE_SERVICE_TOKEN 이 필요합니다.", file=sys.stderr)
@@ -292,11 +325,15 @@ def main() -> int:
         print(f"판단 경로 설정이 없습니다: {', '.join(judge_path.missing_settings(cfg, candidates=client))}",
               file=sys.stderr)
         return 1
-    reader = DiscordReader(cfg.chat_poll_bot_token, int(channel))
+    from capture.handoff import BeError
+
     try:
-        return poll(reader, client, extract, workspace_id=client.guild_workspace(reader.guild_id()), now=datetime.now(timezone.utc), cfg=cfg, dry_run=args.dry_run)
-    finally:
-        reader.close()
+        channels = client.chat_channels()
+    except BeError as e:
+        print(f"채팅 채널 목록을 못 받았습니다: {e}", file=sys.stderr)
+        return 1
+    return poll_all(channels, lambda cid: DiscordReader(cfg.discord_bot_token, cid), client, extract,
+                    now=datetime.now(timezone.utc), cfg=cfg, dry_run=args.dry_run, only=args.workspace)
 
 
 if __name__ == "__main__":
