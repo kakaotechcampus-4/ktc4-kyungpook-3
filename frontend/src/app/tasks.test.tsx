@@ -774,7 +774,9 @@ describe('상세·이력과 PM 의 상태 변경 (AC-04)', () => {
     // mutation 캐시 알림은 다음 틱에 묶여 온다 — 응답(쥐고 있음)보다 먼저 보이는지를 본다
     await waitFor(() => expect(shownStatus()).toBe('완료'))
     expect(select).toBeDisabled()
-    expect(screen.getByRole('status')).toHaveTextContent('바꾸는 중이에요')
+    expect(within(screen.getByRole('main')).getByRole('status')).toHaveTextContent(
+      '바꾸는 중이에요',
+    )
     // 잠긴 뒤의 입력도 보내지 않는다
     fireEvent.change(select, { target: { value: 'todo' } })
     await settle()
