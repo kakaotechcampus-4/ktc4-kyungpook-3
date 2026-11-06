@@ -211,6 +211,7 @@ def _bot_requests(ids: dict) -> list[tuple[str, str, dict]]:
         ("POST", "/api/v1/meetings", {"workspace_id": ids["ws"], "source": "discord"}),
         ("PATCH", f"/api/v1/meetings/{ids['created_meeting']}/end", {}),
         ("PATCH", f"/api/v1/meetings/{ids['failing_meeting']}/fail", {"failed_stage": "stt"}),
+        ("PATCH", f"/api/v1/meetings/{ids['processing_meeting']}/stage", {"stage": "stt"}),
         ("POST", "/api/v1/extractions",
          {"meeting_id": ids["processing_meeting"], "workspace_id": ids["ws"], "items": []}),
     ]
@@ -257,7 +258,7 @@ def test_bot_routes_reject_requests_without_valid_service_token(db, bot_seed, cl
 
 def test_bot_routes_accept_service_token_without_session(bot_seed):
     client = TestClient(app, headers={"X-Service-Token": SERVICE_TOKEN})
-    expected = [201, 202, 200, 201]
+    expected = [201, 202, 200, 200, 201]
     for (method, url, body), status in zip(_bot_requests(bot_seed), expected):
         response = client.request(method, url, json=body)
         assert response.status_code == status, (method, url, response.text)

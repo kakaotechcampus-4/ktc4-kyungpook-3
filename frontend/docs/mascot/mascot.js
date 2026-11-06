@@ -231,6 +231,10 @@
       this.time = 0;
       this.last = 0;
       this.paletteName = PALETTES[opts.palette] ? opts.palette : "ink";
+      this.lambda = opts.lambda || 8;
+      this.dialHz = opts.dialHz || DIAL_HZ;
+      this.smileAmt = 0;
+      this.smileTarget = 0;
 
       this._build();
       this._applyPalette();
@@ -294,6 +298,10 @@
       this.eyeR = el("rect", { "data-part": "eye-r", fill: INK });
       this.eyesG.appendChild(this.eyeL);
       this.eyesG.appendChild(this.eyeR);
+      this.smileL = el("path", { fill: "none", stroke: INK, "stroke-width": "10", "stroke-linecap": "round", opacity: "0" });
+      this.smileR = el("path", { fill: "none", stroke: INK, "stroke-width": "10", "stroke-linecap": "round", opacity: "0" });
+      this.eyesG.appendChild(this.smileL);
+      this.eyesG.appendChild(this.smileR);
 
       this.puppet.appendChild(this.outer);
       this.puppet.appendChild(this.inner);
@@ -320,6 +328,11 @@
       if (on) this.setExpression("talking");
     }
 
+    setSmile(on) {
+      this.smileTarget = on ? 1 : 0;
+      if (on) this.setExpression("idle");
+    }
+
     setPalette(name) {
       if (!PALETTES[name]) return;
       this.paletteName = name;
@@ -332,6 +345,8 @@
       this.cap.setAttribute("fill", pal.cap);
       this.eyeL.setAttribute("fill", pal.eye);
       this.eyeR.setAttribute("fill", pal.eye);
+      this.smileL.setAttribute("stroke", pal.eye);
+      this.smileR.setAttribute("stroke", pal.eye);
     }
 
     pressNow() {
@@ -358,11 +373,12 @@
       const keys = Object.keys(this.poseTarget);
       for (let i = 0; i < keys.length; i++) {
         const key = keys[i];
-        this.pose[key] = expApproach(this.pose[key], this.poseTarget[key], dt, 8);
+        this.pose[key] = expApproach(this.pose[key], this.poseTarget[key], dt, this.lambda);
       }
       this.talking = expApproach(this.talking, this.talkingTarget, dt, 6);
+      this.smileAmt = expApproach(this.smileAmt, this.smileTarget, dt, 4.5);
       if (!this.reduced && (this.pose.dial > 0.02 || this.poseTarget.dial > 0.02)) {
-        this.dialPhase += dt * DIAL_HZ;
+        this.dialPhase += dt * this.dialHz;
       }
 
       if (this.reduced) {
@@ -429,6 +445,38 @@
       const open = Math.max(0.08, p.open * (1 - blink * 0.92));
       this._eye(this.eyeL, p.eyeLX, p.eyeLY, p.eyeLW, p.eyeLH * open, p.eyeLRot);
       this._eye(this.eyeR, p.eyeRX, p.eyeRY, p.eyeRW, p.eyeRH * open, p.eyeRRot);
+
+      const sm = this.smileAmt;
+      const morphing = sm > 0.002;
+      this.eyeL.setAttribute("opacity", morphing ? "0" : "1");
+      this.eyeR.setAttribute("opacity", morphing ? "0" : "1");
+      this.smileL.setAttribute("opacity", morphing ? "1" : "0");
+      this.smileR.setAttribute("opacity", morphing ? "1" : "0");
+      if (morphing) {
+        this._smile(this.smileL, p.eyeLX, p.eyeLY, p.eyeLW, p.eyeLH, open, sm);
+        this._smile(this.smileR, p.eyeRX, p.eyeRY, p.eyeRW, p.eyeRH, open, sm);
+      }
+    }
+
+    // Smile arch. The open eye is the same cubic collapsed to a vertical line
+    // (bottom end -> top -> bottom end), so both shapes interpolate point by point.
+    // k = 5/3 * half puts the collapsed curve's peak at cy - half.
+    _smile(node, nx, ny, nw, nh, open, sm) {
+      const lerp = (x, y) => x + (y - x) * sm;
+      const w = nw * R;
+      const h = Math.max(nh * R * open, w);
+      const half = (h - w) / 2;
+      const cx = nx * R * (1 + 0.18 * sm);
+      const cy = ny * R;
+      const a = 11.5;
+      const k = (5 / 3) * half;
+      const f = (n) => n.toFixed(2);
+      const x0 = lerp(cx, cx - a), y0 = lerp(cy + half, cy + 4);
+      const c1x = lerp(cx, cx - a * 0.4), c1y = lerp(cy - k, cy - 5);
+      const c2x = lerp(cx, cx + a * 0.4), c2y = lerp(cy - k, cy - 5);
+      const x3 = lerp(cx, cx + a), y3 = lerp(cy + half, cy + 4);
+      node.setAttribute("stroke-width", w.toFixed(2));
+      node.setAttribute("d", "M" + f(x0) + " " + f(y0) + " C" + f(c1x) + " " + f(c1y) + " " + f(c2x) + " " + f(c2y) + " " + f(x3) + " " + f(y3));
     }
 
     _cap(p) {

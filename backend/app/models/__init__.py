@@ -29,6 +29,7 @@ from app.models.models import (
     Invitation,
     InvitationStatus,
     Meeting,
+    MeetingProcessingStage,
     MeetingSource,
     MeetingStatus,
     MeetingUpload,
@@ -63,7 +64,12 @@ from app.models.models import (
     ReminderKind,
     ReminderOrigin,
     ReminderStatus,
+    ReplyChange,
+    ReplyChangeField,
+    ReplyChangeOutcome,
     ReplyChannel,
+    ReplyJudgment,
+    ReplyJudgmentState,
     ThreadMessage,
 )
 
@@ -72,7 +78,7 @@ __all__ = [
     "AliasResolutionLog", "AliasReview", "AliasSource", "AliasType",
     "ApprovalRequest", "ApprovalStatus", "ApprovalType",
     "ChangeSource", "ChangedField", "Evidence", "EvidenceStatus", "EvidenceType", "Extraction",
-    "ExtractionAction", "ExtractionItem", "ExtractionPath", "Gate", "Invitation", "InvitationStatus", "Meeting", "MeetingSource", "MeetingUpload",
+    "ExtractionAction", "ExtractionItem", "ExtractionPath", "Gate", "Invitation", "InvitationStatus", "Meeting", "MeetingProcessingStage", "MeetingSource", "MeetingUpload",
     "MeetingStatus", "Member", "MemberAlias", "MemberRole",
     "NotionSyncJob", "NotionSyncJobStatus", "NotionSyncStatus",
     "OnboardingStep", "OnboardingStepStatus", "PasswordResetToken",
@@ -81,5 +87,6 @@ __all__ = [
     "BodySource", "BotDmPart", "DmFailureReason", "DmStatus", "DraftStatus", "MessageSender", "MessageThread",
     "Reminder", "ReminderBundle", "ReminderKind", "ReminderOrigin", "ReminderStatus", "ReplyChannel", "ThreadMessage",
     "Notification", "PushStatus", "PushSubscription", "ReminderWatch", "SchedulerSuggestion", "WatchState",
+    "ReplyChange", "ReplyChangeField", "ReplyChangeOutcome", "ReplyJudgment", "ReplyJudgmentState",
     "PmAlertMethod", "WorkspaceMessageSettings",
 ]

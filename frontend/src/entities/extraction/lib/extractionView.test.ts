@@ -18,7 +18,8 @@ it('treats an approved item as applied even though the backend leaves approval_i
   const dto = structuredClone(extractionFixtures[1])
   const resolved = dto.items.find(({ item_id }) => item_id === 'it_04')
   expect(resolved?.approval_id).not.toBeNull()
-  resolved!.task_id = 'tk_90' // 승인 반영. approval_id 는 그대로 남는다
+  // 승인 반영. approval_id 는 그대로 남고 approval_status 가 approved 가 된다
+  Object.assign(resolved!, { task_id: 'tk_90', approval_status: 'approved' })
 
   const extraction = toExtraction(dto)
   expect(appliedItems(extraction).map(({ id }) => id)).toContain('it_04')
@@ -31,13 +32,13 @@ it('treats an approved item as applied even though the backend leaves approval_i
   expect(visibleItems(extraction, false).map(({ id }) => id)).toContain('it_04')
 })
 
-// 반려는 extraction_item 을 전혀 건드리지 않는다. 대기 중인 항목과 응답이 완전히 같아서
-// isUnresolved 로는 구분되지 않고, 열린 승인 목록과 조인해야만 빠진다 (계약 §3.1)
-it('drops a rejected item from the pending list although the item itself never changes', () => {
-  const extraction = toExtraction(extractionFixtures[1])
+// 반려는 extraction_item 을 건드리지 않는다. 응답에서는 approval_status 만 rejected 로 바뀐다
+it('drops a rejected item from the pending list and keeps it hidden from members', () => {
+  const dto = structuredClone(extractionFixtures[1])
+  dto.items.find(({ approval_id }) => approval_id === 'ap_01')!.approval_status = 'rejected'
+  const extraction = toExtraction(dto)
   const rejected = extraction.items.find(({ approvalId }) => approvalId === 'ap_01')!
 
-  // 항목만 보면 대기 중인 것과 구분되지 않는다
   expect(isUnresolved(rejected)).toBe(true)
   expect(rejected.appliedTaskId).toBeNull()
 
@@ -48,4 +49,53 @@ it('drops a rejected item from the pending list although the item itself never c
 
   // 일반 팀원에게는 여전히 숨긴다 — 반려됐으니 보여줄 태스크가 없다
   expect(visibleItems(extraction, false).map(({ id }) => id)).not.toContain(rejected.id)
+})
+
+// 수정 항목은 승인 전에도 task_id 가 수정 대상 태스크다. 반영 여부는 approval_status 로 본다 (#419)
+describe('edit proposal', () => {
+  function withEdit(status: 'pending' | 'approved' | 'rejected') {
+    const dto = structuredClone(extractionFixtures[1])
+    dto.items.push({
+      ...structuredClone(dto.items[4]),
+      item_id: 'it_08',
+      gate: 'review',
+      task_id: 'tk_01',
+      approval_id: 'ap_08',
+      approval_status: status,
+    })
+    return toExtraction(dto)
+  }
+  const open = new Set([...allOpen, 'ap_08'])
+
+  it('is pending, not applied, and hidden from members while its approval waits', () => {
+    const extraction = withEdit('pending')
+
+    expect(appliedItems(extraction).map(({ id }) => id)).not.toContain('it_08')
+    expect(pendingItems(extraction, open).map(({ id }) => id)).toContain('it_08')
+    expect(visibleItems(extraction, false).map(({ id }) => id)).not.toContain('it_08')
+    expect(visibleItems(extraction, true).map(({ id }) => id)).toContain('it_08')
+  })
+
+  it('is neither applied nor pending once rejected', () => {
+    const extraction = withEdit('rejected')
+
+    expect(appliedItems(extraction).map(({ id }) => id)).not.toContain('it_08')
+    expect(pendingItems(extraction, allOpen).map(({ id }) => id)).not.toContain('it_08')
+    expect(visibleItems(extraction, false).map(({ id }) => id)).not.toContain('it_08')
+  })
+
+  // 반려 뒤 추출만 다시 받고 대기 목록 재조회가 늦거나 실패하면 그 ID 가 남아 있다
+  it('stays out of the pending list once rejected even if a stale pending list still has its approval', () => {
+    const extraction = withEdit('rejected')
+
+    expect(pendingItems(extraction, open).map(({ id }) => id)).not.toContain('it_08')
+  })
+
+  it('is applied and visible to members once approved', () => {
+    const extraction = withEdit('approved')
+
+    expect(appliedItems(extraction).map(({ id }) => id)).toContain('it_08')
+    expect(pendingItems(extraction, open).map(({ id }) => id)).not.toContain('it_08')
+    expect(visibleItems(extraction, false).map(({ id }) => id)).toContain('it_08')
+  })
 })
