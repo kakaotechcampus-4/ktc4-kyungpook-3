@@ -64,7 +64,7 @@ const label = () => screen.getByTestId('notion-sync-status').textContent
 async function openTask(id: string, title: string) {
   const log = recordRequests()
   const app = renderApp(paths.tasks('ws_01', id))
-  await screen.findByRole('heading', { level: 2, name: title })
+  await screen.findByRole('heading', { level: 1, name: title })
   await waitFor(() => expect(screen.getByTestId('notion-sync-status')).toBeInTheDocument())
   // 첫 조회(상세·이력·팀원)가 끝나 조용해질 때까지
   await pause(150)
@@ -223,7 +223,7 @@ describe('재조회 실패 안내 (#236)', () => {
       const shown = await failNextPoll()
       expect(shown).toHaveLength(1)
       expect(shown[0]?.closest('[role="alert"]')).not.toBeNull()
-      expect(screen.getByRole('heading', { level: 2, name: '배포 스크립트' })).toBeVisible()
+      expect(screen.getByRole('heading', { level: 1, name: '배포 스크립트' })).toBeVisible()
       expect(label()).toBe('반영 중')
       expect(screen.queryByText('태스크를 불러오지 못했어요')).toBeNull()
 
@@ -287,7 +287,7 @@ describe('재조회 실패 안내 (#236)', () => {
     await waitFor(() => expect(retryButton()).toBeEnabled(), { timeout: 5_000 })
     expect(notices()).toHaveLength(1)
     expect(label()).toBe('반영 중')
-    expect(screen.getByRole('heading', { level: 2, name: '배포 스크립트' })).toBeVisible()
+    expect(screen.getByRole('heading', { level: 1, name: '배포 스크립트' })).toBeVisible()
 
     server.resetHandlers()
     await pause(150)

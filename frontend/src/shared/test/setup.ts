@@ -19,6 +19,16 @@ if (typeof globalThis.ResizeObserver === 'undefined') {
   }
 }
 
+// jsdom 에는 포인터 캡처와 scrollIntoView 가 없다. Radix Select 는 트리거를 누를 때 캡처를 풀고,
+// 목록을 열 때 고른 줄을 보이게 굴린다 — 아무것도 하지 않는 구현으로 둔다
+if (!Reflect.has(Element.prototype, 'hasPointerCapture')) {
+  Element.prototype.hasPointerCapture = () => false
+  Element.prototype.releasePointerCapture = () => {}
+}
+if (!Reflect.has(Element.prototype, 'scrollIntoView')) {
+  Element.prototype.scrollIntoView = () => {}
+}
+
 beforeAll(() => server.listen({ onUnhandledRequest: 'error' }))
 
 beforeEach(() => {

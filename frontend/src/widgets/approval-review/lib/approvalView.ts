@@ -1,4 +1,4 @@
-import type { Approval } from '@/entities/approval'
+import type { Approval, ApprovalMissing } from '@/entities/approval'
 import type { Task } from '@/entities/task'
 import { TASK_STATUSES, TASK_STATUS_LABEL } from '@/features/task-status'
 import { parseEnumParam } from '@/shared/lib/url'
@@ -54,6 +54,48 @@ export function currentFieldValue(task: Task, field: string): unknown {
     default:
       return undefined
   }
+}
+
+/** 대기 중인 승인은 질문으로 묻는다(보내기 전 확인 「이 메시지, 보낼까요?」와 같은 꼴). 처리된 승인은 종류 이름이다 */
+export function approvalHeading(approval: Approval): string {
+  if (approval.status === 'pending' && approval.kind === 'task_create')
+    return '이 태스크, 승인할까요?'
+  if (approval.status === 'pending' && approval.kind === 'task_update')
+    return '이 변경, 승인할까요?'
+  return approvalKindLabel(approval)
+}
+
+/* 빠진 값 이름과 그 조사. 빠진 값은 담당자·마감 둘뿐이라 조사를 표로 둔다 */
+const GAP_SUBJECT: Record<ApprovalMissing, string> = { assignee: '담당자가', due: '마감이' }
+const GAP_OBJECT: Record<ApprovalMissing, string> = { assignee: '담당자를', due: '마감을' }
+const GAP_DECIDED: Record<ApprovalMissing, string> = { assignee: '담당자를', due: '날짜를' }
+
+/** 마지막 한글 글자에 받침이 있는가. 받침 ㄹ 은 `ㄹ` 로 따로 돌려준다. 한글이 없으면 null */
+function finalConsonant(text: string): 'none' | 'ㄹ' | 'other' | null {
+  const last = [...text].reverse().find((char) => char >= '가' && char <= '힣')
+  if (last === undefined) return null
+  const index = (last.charCodeAt(0) - 0xac00) % 28
+  return index === 0 ? 'none' : index === 8 ? 'ㄹ' : 'other'
+}
+
+/** 제목 아래 안내. 빠진 값이 없으면 null */
+export function gapSummary(gaps: readonly ApprovalMissing[]): string | null {
+  if (gaps.length === 0) return null
+  const subject = gaps.length === 1 ? GAP_SUBJECT[gaps[0]] : '담당자와 마감이'
+  return `${subject} 아직 정해지지 않았어요.`
+}
+
+/** 「확인이 필요한 이유」 한 줄. 회의에서 한 말이 있으면 그 말을 인용한다 */
+export function gapReason(gap: ApprovalMissing, raw: string | null): string {
+  if (raw === null || raw.trim() === '') return `회의에서 ${GAP_OBJECT[gap]} 말하지 않았어요`
+  const quoted = finalConsonant(raw) === 'none' ? '라고' : '이라고'
+  return `회의에서는 「${raw}」${quoted}만 해서 ${GAP_DECIDED[gap]} 정하지 못했어요`
+}
+
+/** `9/21(월)로 채우기`. 요일 글자의 받침으로 로·으로를 고른다 */
+export function fillLabel(monthDayWeekday: string): string {
+  const consonant = finalConsonant(monthDayWeekday)
+  return `${monthDayWeekday}${consonant === 'other' ? '으로' : '로'} 채우기`
 }
 
 export function approvalKindLabel(approval: Approval): string {
