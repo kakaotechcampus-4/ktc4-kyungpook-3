@@ -14,6 +14,7 @@ import type {
 } from '@/shared/types/api/message'
 import { toBundle, toCreatedReminder, toMessageInbox, toMessageThread } from '../model/mapper'
 import type {
+  Bundle,
   CreatedReminder,
   MessageAction,
   MessageActionOutcome,
@@ -21,8 +22,15 @@ import type {
 } from '../model/types'
 
 /*
- * 메시지 조회와 쓰기 (계약 §5.7). 상태 동기화(polling)는 두지 않는다 (D-136) — 행동이 성공하면 아래 key 를 무효화해 다시 받는다
+ * 메시지 조회와 쓰기 (계약 §5.7). 상시 polling 은 두지 않는다 (D-136)
  */
+
+const AI_WORKER_DRAFT_POLL_MS = 30_000
+const DRAFT_POLL_MS = AI_WORKER_DRAFT_POLL_MS / 3
+
+function pollWhileDrafting(bundles: readonly Bundle[] | undefined): number | false {
+  return bundles?.some((bundle) => bundle.drafting) ? DRAFT_POLL_MS : false
+}
 
 function messagesPath(workspaceId: string): string {
   return `/workspaces/${encodeURIComponent(workspaceId)}/messages`
@@ -39,6 +47,9 @@ export function messageInboxQueryOptions(workspaceId: string) {
     queryKey: workspaceKey(workspaceId, 'messages', 'inbox'),
     queryFn: async ({ signal }) =>
       toMessageInbox(await request<InboxDto>(messagesPath(workspaceId), { signal })),
+    refetchInterval: ({ state: { data } }) =>
+      pollWhileDrafting(data?.viewer === 'pm' ? data.bundles : undefined),
+    refetchIntervalInBackground: false,
   })
 }
 
@@ -53,6 +64,8 @@ export function messageThreadQueryOptions(workspaceId: string, threadId: string)
           { signal },
         ),
       ),
+    refetchInterval: ({ state: { data } }) => pollWhileDrafting(data?.upcoming),
+    refetchIntervalInBackground: false,
   })
 }
 

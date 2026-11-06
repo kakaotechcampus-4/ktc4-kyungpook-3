@@ -5,7 +5,12 @@ export type {
   PushNotification,
 } from './model/types'
 export { toNotification, toPushNotification } from './model/mapper'
-export { DEFAULT_NOTIFICATION_TITLE, notificationPath, notificationTitle } from './model/display'
+export {
+  DEFAULT_NOTIFICATION_TITLE,
+  isMessageNotification,
+  notificationPath,
+  notificationTitle,
+} from './model/display'
 export {
   fetchNotifications,
   notificationKeys,
