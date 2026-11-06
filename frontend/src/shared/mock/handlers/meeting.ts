@@ -144,8 +144,14 @@ export const meetingHandlers = [
       )
     )
       return fail('INVALID_REQUEST', '파일·제목·회의 날짜·참석자가 필요합니다.', 400)
+    // 채팅 회의는 정리 중이어도 업로드를 막지 않는다 (backend-ai-contract 「회의」, #450)
     const processing = db.meetings.find(
-      (meeting) => meeting.workspace_id === workspaceId && meeting.status === 'processing',
+      (meeting) =>
+        meeting.workspace_id === workspaceId &&
+        meeting.status === 'processing' &&
+        !db.meetingSummaries.some(
+          (summary) => summary.meeting_id === meeting.meeting_id && summary.source === 'chat',
+        ),
     )
     if (processing)
       return fail('MEETING_PROCESSING_IN_PROGRESS', '처리 중인 회의가 있습니다.', 409, {

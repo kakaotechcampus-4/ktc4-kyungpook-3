@@ -8,7 +8,7 @@ import {
   messagesMemberThread,
   schedulePassedBundle,
 } from './fixtures/message'
-import { completeMeeting, failMeeting, setMeetingFlowMode } from './meetingFlow'
+import { completeMeeting, failMeeting, setMeetingFlowMode, startChatMeeting } from './meetingFlow'
 import { notificationFixtures } from './fixtures/notification'
 import { addReplyJudgments } from './fixtures/reply'
 import { setMockRole } from './sessions'
@@ -43,6 +43,9 @@ export const MOCK_SCENARIOS = [
   'meeting-notion-not-connected',
   'meeting-notion-revoked',
   'meeting-member',
+  // 정리 중 채팅 회의가 있는 업로드 (#450). 둘째는 그 회의가 첫 상세 조회에 chat_stalled 로 실패한다
+  'meeting-chat-processing',
+  'meeting-chat-stalled',
   ...SPEAKER_SCENARIOS,
   // M6 태스크·승인. 모두 ws_01 하나에 PM 으로 로그인한다(마지막만 일반 팀원). 전이는 handler 가 만든다
   'tasks-default',
@@ -618,6 +621,14 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
       signInWith(state, ['ws_01'], 'ws_01')
       setMockRole('member', 'ws_01', state)
       setMeetingFlowMode('instant', state)
+      break
+    case 'meeting-chat-processing':
+      readyToUpload(state, 'manual')
+      startChatMeeting(state)
+      break
+    case 'meeting-chat-stalled':
+      readyToUpload(state, 'fail-chat-stalled')
+      startChatMeeting(state)
       break
     case 'tasks-default':
       // 픽스처 그대로의 정상 목록: 태스크 10개(반영 완료 2개), 보완이 필요한 대기 생성 승인 3개
