@@ -243,3 +243,63 @@ def test_one_step_per_call(env):
     assert manifest_path(rec, "upload_mtg-2").exists()
     assert _go(env) == ("mtg-2", "expired")
     assert _go(env) is None
+
+
+def _second_upload(env):
+    env.be.add_upload("mtg-2", audio=_wav_bytes(), stored_filename="audio.wav", original_filename="b.wav")
+    diarizer = FakeDiarizer(SEGS)
+    for _ in range(40):
+        if intake_one(env.rec, client=env.client, diarizer=diarizer, now=env.clock, timezone="Asia/Seoul") is None:
+            break
+    assert report_one(env.rec, client=env.client, now=env.clock) == ("mtg-2", "reported")
+    env.be.expire(MID)
+    env.be.expire("mtg-2")
+    env.clock.advance(EXPIRE_AFTER_S)
+
+
+def test_locked_meeting_is_skipped_without_a_resend_and_does_not_block_the_next(env):
+    _second_upload(env)
+    lock = try_lock(_manifest_file(env))
+    try:
+        env.be.calls.clear()
+        assert _go(env) == ("mtg-2", "expired")
+        assert [p for _, p, _ in env.be.calls if MID in p] == []   # 잠긴 회의에는 재전송이 없다
+        assert _kept(env)
+        assert _go(env) == (MID, "locked")                          # 남은 후보가 모두 잠겨 있다
+        assert [p for _, p, _ in env.be.calls if MID in p] == []
+    finally:
+        lock.release()
+    assert _go(env) == (MID, "expired")
+
+
+def test_lock_taken_during_the_resend_keeps_files_and_retries_in_a_minute(env):
+    env.be.expire(MID)
+    env.clock.advance(EXPIRE_AFTER_S)
+    held = []
+
+    class Racer:
+        def report_speakers(self, mid, speakers):
+            held.append(try_lock(_manifest_file(env)))   # 재전송 사이에 다른 쪽이 잠근다
+            return env.client.report_speakers(mid, speakers)
+
+    assert _go(env, Racer()) == (MID, "locked")
+    held[0].release()
+    assert _kept(env)
+    assert _intake(env)["expire"]["next_at"] == (env.clock.t + timedelta(seconds=60)).replace(microsecond=0).isoformat()
+    assert _go(env) is None
+    env.clock.advance(60)
+    assert _go(env) == (MID, "expired")
+
+
+def test_os_error_while_dropping_is_a_transient_failure(env, monkeypatch):
+    import upload.cleanup as c
+    env.be.expire(MID)
+    env.clock.advance(EXPIRE_AFTER_S)
+
+    def boom(*a, **k):
+        raise PermissionError("잠겨 있다")
+    monkeypatch.setattr(c, "drop_transcripts", boom)
+    assert _go(env) == (MID, "retry")
+    assert _kept(env)
+    ex = _intake(env)["expire"]
+    assert ex["state"] == "checking" and ex["attempts"] == 1 and "PermissionError" in ex["error"]
