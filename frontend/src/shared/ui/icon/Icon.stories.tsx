@@ -14,7 +14,6 @@ const NAMES: IconName[] = [
   'arrow-left',
   'eye',
   'eye-off',
-  'globe',
   'search',
   'play',
   'external',

@@ -46,10 +46,10 @@ export const 포커스를_남기는_비활성: Story = {
 }
 
 export const 아이콘: Story = {
-  args: { variant: 'outline', size: 'auth', startIcon: <Icon name="globe" size={18} /> },
+  args: { variant: 'outline', size: 'auth', startIcon: <Icon name="external" size={18} /> },
   render: (args) => (
     <div className="w-[384px]">
-      <Button {...args}>Google 계정으로 로그인</Button>
+      <Button {...args}>카카오로 로그인</Button>
     </div>
   ),
 }

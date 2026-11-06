@@ -71,7 +71,8 @@ export const signupCodeHandlers = [
     const at = Date.now()
     const row: MockSignupCode | undefined = state.codes[email]
     if (row !== undefined) {
-      if (row.sentAt + COOLDOWN_MS > at) return rateLimited('cooldown', row.sentAt + COOLDOWN_MS, at)
+      if (row.sentAt + COOLDOWN_MS > at)
+        return rateLimited('cooldown', row.sentAt + COOLDOWN_MS, at)
       const windowEnds = row.windowStartedAt + WINDOW_MS
       if (windowEnds > at && row.windowCount >= HOURLY_LIMIT)
         return rateLimited('hourly', windowEnds, at)
