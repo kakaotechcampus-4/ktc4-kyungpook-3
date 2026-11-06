@@ -244,7 +244,7 @@ def undo_reply_change(
     replies.undo_change(db, task, change_id, changed_by=member.member_id)
     db.commit()
     db.refresh(task)
-    return success(TaskResponse.model_validate(task).model_dump(mode="json"))
+    return success(_task_response(db, task))
 
 
 @router.post("/{task_id}/notion-sync/retry", response_model=Envelope[TaskResponse])
