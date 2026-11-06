@@ -14,23 +14,16 @@ import { recordRequests } from '@/shared/test/requests'
 import type { RecordedRequest } from '@/shared/test/requests'
 import { renderApp } from './test/renderApp'
 
-/*
- * #330 무응답 자동 막힘 풀기와 #365 판정. notifications-default 의 tk_06(STT 정확도 측정)은 스케줄러가 막았고,
- * tk_03(DB 스키마 정리)은 사람이 막았다. 자동 막힘인지는 태스크 응답의 auto_blocked 로만 정한다
- */
-
 beforeEach(() => applyScenario('notifications-default'))
 
 const AUTO_NOTICE = '리마인드에 응답이 없어 자동으로 막혔어요.'
 
 const mockTask = (taskId: string) => db.tasks.find(({ task_id }) => task_id === taskId)!
 
-/** 자동 막힘 뒤 PM 이 사유만 고쳤다. 이력의 마지막 상태 변경은 스케줄러지만 풀 수 없다 */
 function editBlockerAfterAutoBlock(taskId: string) {
   updateTask(mockTask(taskId), { blocker: '카톡으로 들었어요' }, 'mb_01')
 }
 
-/** 자동 막힘 뒤 사람이 진행 중으로 바꿨다가 다시 막았다. 이력의 마지막 상태 변경은 사람이지만 풀 수 있다 */
 function reblockAfterAutoBlock(taskId: string) {
   const task = mockTask(taskId)
   if (task.status !== 'blocked') blockBySilence(task, '2026-09-18T08:30:00+09:00')
@@ -38,7 +31,6 @@ function reblockAfterAutoBlock(taskId: string) {
   updateTask(task, { status: 'blocked' }, 'mb_01')
 }
 
-/** 태스크 단건·이력 조회. 판정을 응답 필드로 하면 보드는 이 요청을 내지 않는다 */
 const perTaskReads = (requests: readonly RecordedRequest[]) =>
   requests.filter(({ method, path }) => method === 'GET' && /^\/tasks\/[^/?]+/.test(path))
 
@@ -148,9 +140,7 @@ describe('보드의 자동 막힘 배지 (#330, #365)', () => {
     reblockAfterAutoBlock('tk_01')
     await openBoard()
 
-    // 이력은 스케줄러 막힘이지만 사유를 고쳐 풀 수 없다
     expect(badge('STT 정확도 측정')).toHaveAccessibleName('막힘, 막힌 사유 보기')
-    // 이력은 사람의 막힘이지만 풀 수 있다
     expect(badge('로그인 API 연동')).toHaveAccessibleName('자동 막힘, 막힌 사유 보기')
   })
 
@@ -162,12 +152,12 @@ describe('보드의 자동 막힘 배지 (#330, #365)', () => {
       within(card('DB 스키마 정리')).getByRole('button', { name: '막힘, 막힌 사유 보기' }),
     ).toBeVisible()
 
-    const listGate = deferred()
-    onTestFinished(() => listGate.resolve())
+    const heldListRefetch = deferred()
+    onTestFinished(() => heldListRefetch.resolve())
     server.use(
       http.get('/api/v1/tasks', async ({ request }) => {
         const copy = request.clone()
-        await listGate.promise
+        await heldListRefetch.promise
         return getResponse(handlers, copy)
       }),
     )
@@ -177,7 +167,6 @@ describe('보드의 자동 막힘 배지 (#330, #365)', () => {
     await user.click(within(dialog).getByRole('button', { name: '막힘 풀기' }))
 
     await waitFor(() => expect(badge('STT 정확도 측정')).toBeNull())
-    // 풀기 뒤 다시 받는 목록은 아직 쥐고 있다 — 카드는 풀기 응답으로 바뀌었다
     const undone = log.timeline.indexOf('answer POST /tasks/tk_06/auto-block/undo')
     expect(listReads(log.started)).toHaveLength(2)
     expect(log.timeline.slice(undone)).not.toContain('answer GET /tasks?workspace_id=ws_01')

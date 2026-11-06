@@ -3,7 +3,6 @@ import { Button } from '@/shared/ui/button'
 import { useTaskAutoBlock } from '../model/useTaskAutoBlock'
 import type { TaskAutoBlock } from '../model/useTaskAutoBlock'
 
-/** 자동 막힘 표시와 PM 의 `막힘 풀기`. 자동 막힘이 아니면 아무것도 그리지 않는다 */
 export function AutoBlockNotice({ autoBlock, isPm }: { autoBlock: TaskAutoBlock; isPm: boolean }) {
   if (!autoBlock.automatic) return null
   return (
@@ -18,7 +17,6 @@ export function AutoBlockNotice({ autoBlock, isPm }: { autoBlock: TaskAutoBlock;
   )
 }
 
-/** 태스크 하나의 자동 막힘 표시 */
 export function TaskAutoBlockNotice({
   workspaceId,
   task,

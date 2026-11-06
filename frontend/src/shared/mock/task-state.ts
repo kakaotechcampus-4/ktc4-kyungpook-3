@@ -261,10 +261,7 @@ export function taskUpdates(body: Record<string, unknown>): TaskUpdates {
 /** 스케줄러가 72시간 무응답으로 건 막힘의 사유 (계약 §5.7 「스케줄러」) */
 export const SILENCE_BLOCKER = '리마인드에 72시간 동안 응답이 없어요'
 
-/**
- * 스케줄러의 무응답 막힘 (백엔드 scheduler `_block`). 이미 막혀 있으면 아무것도 바꾸지 않고 되돌릴 값도 남기지 않는다.
- * 아니면 막기 전 값을 남기고 상태와 사유를 같은 시각에 바꾼다. 이력 출처는 scheduler 다
- */
+/** 백엔드 scheduler `_block` 과 같다. 이력 출처는 scheduler 다 */
 export function blockBySilence(task: MockTask, at: string, state: MockDb = db): void {
   if (task.status === 'blocked') return
   state.autoBlocks[task.task_id] = { prev_status: task.status, prev_blocker: task.blocker }
@@ -282,10 +279,7 @@ export function blockBySilence(task: MockTask, at: string, state: MockDb = db): 
   task.version += 1
 }
 
-/**
- * 지금 자동 막힘 풀기가 성공하는가 (백엔드 `_auto_block_state`·`_undoable_watches`). 이력은 보지 않는다.
- * 풀기와 응답의 `auto_blocked` 가 이 판정 하나를 같이 쓴다
- */
+/** 백엔드 `_auto_block_state`·`_undoable_watches` 와 같다. 풀기와 응답 조립이 이 판정 하나를 같이 쓴다 */
 export function canUndoAutoBlock(task: MockTask, state: MockDb = db): boolean {
   return (
     Object.hasOwn(state.autoBlocks, task.task_id) &&
@@ -294,15 +288,11 @@ export function canUndoAutoBlock(task: MockTask, state: MockDb = db): boolean {
   )
 }
 
-/** 저장한 행을 TaskResponse 로. 태스크를 돌려주는 handler 는 모두 이것을 거친다 */
 export function toTaskResponse(task: MockTask, state: MockDb = db): TaskDto {
   return { ...task, auto_blocked: canUndoAutoBlock(task, state) }
 }
 
-/**
- * 백엔드 `undo_auto_block`. 풀 수 있으면 막히기 전 상태와 사유로 되돌리고 true 다. 출처는 manual 이다.
- * 아니면 아무것도 바꾸지 않고 false 다 — 409 `AUTO_BLOCK_NOT_FOUND`
- */
+/** 백엔드 `undo_auto_block` 과 같다. false 면 409 `AUTO_BLOCK_NOT_FOUND` 다 */
 export function undoAutoBlock(task: MockTask, actor: string): boolean {
   if (!canUndoAutoBlock(task)) return false
   const { prev_status, prev_blocker } = db.autoBlocks[task.task_id]

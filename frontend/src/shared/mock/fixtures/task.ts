@@ -1,6 +1,5 @@
 import type { TaskDto, TaskHistoryDto } from '@/shared/types/api/task'
 
-/** 모의 DB 의 태스크 행. `auto_blocked` 는 저장하지 않고 응답할 때 판정한다 (task-state `toTaskResponse`) */
 export type MockTask = Omit<TaskDto, 'auto_blocked'>
 
 const seeds: [string, string, string | null, string, string | null, string | null, string][] = [

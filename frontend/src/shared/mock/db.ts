@@ -131,10 +131,7 @@ export interface MockPasswordReset {
   failure: PasswordResetFailure
 }
 
-/**
- * 무응답 자동 막힘을 되돌릴 값. 백엔드에서 막힘을 직접 건(applied) 열린 무응답 감시 기록에 대응한다.
- * 막기 전에 이미 막혀 있었으면 남기지 않고, 풀면 지운다 (task-state `blockBySilence`·`undoAutoBlock`)
- */
+/** 백엔드에서 막힘을 직접 건(applied) 열린 무응답 감시 기록에 대응한다. 막기 전 상태·사유를 든다 */
 export interface MockAutoBlock {
   prev_status: string
   prev_blocker: string | null
@@ -166,7 +163,6 @@ export interface MockDb {
   extractions: typeof extractionFixtures
   tasks: typeof taskFixtures
   taskHistory: typeof taskHistoryFixtures
-  /** #365 태스크 ID → 그 태스크의 되돌릴 자동 막힘 */
   autoBlocks: Record<string, MockAutoBlock>
   approvals: typeof approvalFixtures
   /** 회의 정리 흐름. 원본 파일은 담지 않는다 — 생성 결과는 위의 meetings·minutes·extractions·tasks·approvals 에 들어간다 */

@@ -7,11 +7,6 @@ import { applyScenario } from './scenarios'
 import { setMockRole } from './sessions'
 import { SILENCE_BLOCKER, blockBySilence } from './task-state'
 
-/*
- * #330 무응답 자동 막힘 풀기와 #365 응답의 `auto_blocked` (계약 §5.7 「자동 막힘 풀기」).
- * `auto_blocked` 는 「지금 풀기가 성공하는가」와 같아야 한다. 화면 흐름은 app/taskAutoBlock.test.tsx 가 본다
- */
-
 const undo = (taskId = 'tk_06') =>
   fetchDto<TaskDto>(`/tasks/${taskId}/auto-block/undo`, { method: 'POST' })
 const get = (taskId = 'tk_06') => fetchDto<TaskDto>(`/tasks/${taskId}`)

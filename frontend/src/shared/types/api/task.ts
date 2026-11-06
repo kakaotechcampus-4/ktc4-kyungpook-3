@@ -14,7 +14,7 @@ export interface TaskDto {
   version: number
   // 서버 NotionSyncStatus: pending | synced | failed, 미연동이면 null. 페이지 ID 와 따로 본다
   notion_sync_status: string | null
-  // 지금 POST /tasks/{id}/auto-block/undo 가 성공하는 상태인가. 7개 응답 경로 모두에 온다 (#365, PR #373)
+  // 지금 POST /tasks/{id}/auto-block/undo 가 성공하는 상태인가
   auto_blocked: boolean
   created_at: string
   updated_at: string

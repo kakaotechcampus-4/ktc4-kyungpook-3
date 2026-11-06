@@ -12,12 +12,10 @@ export const AUTO_BLOCK_UNDONE = '자동 막힘을 풀었어요'
 export const AUTO_BLOCK_UNDO_FAILED = '막힘을 풀지 못했어요'
 
 interface UndoVariables {
-  /** 풀기를 누른 세션. 끝났으면 보내지 않고, 보낸 요청은 취소하며, 캐시·알림에 아무것도 남기지 않는다 */
   session: SessionScope
 }
 
 export interface TaskAutoBlock {
-  /** 무응답 자동 막힘이고 지금 풀 수 있다. 서버의 `auto_blocked` 다 */
   automatic: boolean
   undo: () => void
   undoPending: boolean
@@ -31,11 +29,6 @@ function isStale(error: unknown): boolean {
   )
 }
 
-/**
- * 무응답 자동 막힘과 그 풀기 (#330, #365). 판정은 태스크 응답의 `auto_blocked` 하나라 따로 조회하지 않는다.
- * 풀면 돌려받은 태스크를 목록·상세 캐시에 바로 쓰고 다시 받는다.
- * 409 `AUTO_BLOCK_NOT_FOUND` 는 보여 준 값이 낡은 것이라(목록은 스케줄러와 잠금 없이 읽는다) 태스크를 다시 받는다
- */
 export function useTaskAutoBlock(workspaceId: string, task: Task): TaskAutoBlock {
   const queryClient = useQueryClient()
   const { mutate, isPending } = useMutation<Task, Error, UndoVariables>({
@@ -51,6 +44,7 @@ export function useTaskAutoBlock(workspaceId: string, task: Task): TaskAutoBlock
     },
     onError: (error, { session }) => {
       if (!session.isCurrent()) return
+      // 목록은 스케줄러와 잠금 없이 읽어서 보여 준 값이 낡았을 수 있다
       if (isStale(error)) void queryClient.invalidateQueries({ queryKey: taskKeys(workspaceId) })
       toast.show({ title: AUTO_BLOCK_UNDO_FAILED, description: errorMessage(error) })
     },
