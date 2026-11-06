@@ -224,3 +224,71 @@ def test_failed_alias_insert_is_swallowed(client, mdb, mseed, discord_env, calls
     assert r.json()["data"]["discord_user_id"] == "d1"
     monkeypatch.setattr(mdb, "commit", real_commit)
     assert _profile(mdb, r.json()["data"]["member_id"]) == []
+
+
+def _texts(db, member_id: str) -> dict[str, str]:
+    """팀원의 별칭을 {글자: 출처} 로 돌려준다."""
+    db.expire_all()
+    rows = db.execute(select(MemberAlias).where(MemberAlias.member_id == member_id)).scalars()
+    return {x.alias_text: x.source for x in rows}
+
+
+def test_patch_name_and_discord_together_keeps_name_alias(client, mdb, mseed, discord_env, calls):
+    """이름과 디스코드 계정을 한 번에 바꿔도, 지워지는 닉네임과 같은 글자의 이름 꼴이 남는다."""
+    member_id = _post(client, mseed["ws"], "Alice", "d1").json()["data"]["member_id"]
+    assert _texts(mdb, member_id) == {"동우": "discord_profile"}
+    calls.nick = "dongwoo"
+
+    r = client.patch(f"{API}/members/{member_id}", json={"display_name": "김동우", "discord_user_id": "d2"})
+
+    assert r.status_code == 200
+    assert _texts(mdb, member_id) == {"김동우": "display_name", "동우": "display_name"}
+
+
+def test_patch_name_then_discord_change_refills_name_alias(client, mdb, mseed, discord_env, calls):
+    """이름을 먼저 바꿔 닉네임과 겹쳐 건너뛴 꼴이, 나중에 디스코드 계정을 바꾸면 채워진다."""
+    member_id = _post(client, mseed["ws"], "Alice", "d1").json()["data"]["member_id"]
+    r = client.patch(f"{API}/members/{member_id}", json={"display_name": "김동우"})
+    assert r.status_code == 200
+    assert _texts(mdb, member_id) == {"김동우": "display_name", "동우": "discord_profile"}
+    calls.nick = "dongwoo"
+
+    r = client.patch(f"{API}/members/{member_id}", json={"discord_user_id": "d2"})
+
+    assert r.status_code == 200
+    assert _texts(mdb, member_id) == {"김동우": "display_name", "동우": "display_name"}
+
+
+def test_patch_name_then_discord_unlink_refills_name_alias(client, mdb, mseed, discord_env, calls):
+    member_id = _post(client, mseed["ws"], "Alice", "d1").json()["data"]["member_id"]
+    client.patch(f"{API}/members/{member_id}", json={"display_name": "김동우"})
+    calls.clear()
+
+    r = client.patch(f"{API}/members/{member_id}", json={"discord_user_id": None})
+
+    assert r.status_code == 200
+    assert _texts(mdb, member_id) == {"김동우": "display_name", "동우": "display_name"}
+    assert calls == []
+
+
+def test_operational_error_on_alias_commit_is_swallowed(client, mdb, mseed, discord_env, calls, monkeypatch):
+    """닉네임 저장 중 DB 오류가 IntegrityError 가 아니어도 팀원 응답은 그대로다."""
+    from sqlalchemy.exc import OperationalError
+
+    real_commit = mdb.commit
+    state = {"failed": False}
+
+    def commit_that_fails_after_discord():
+        if calls and not state["failed"]:
+            state["failed"] = True
+            raise OperationalError("x", {}, Exception("connection lost"))
+        return real_commit()
+
+    monkeypatch.setattr(mdb, "commit", commit_that_fails_after_discord)
+
+    r = _post(client, mseed["ws"], "Alice", "d1")
+
+    assert r.status_code == 201
+    assert r.json()["data"]["discord_user_id"] == "d1"
+    monkeypatch.setattr(mdb, "commit", real_commit)
+    assert _profile(mdb, r.json()["data"]["member_id"]) == []

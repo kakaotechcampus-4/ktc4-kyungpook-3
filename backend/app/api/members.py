@@ -309,9 +309,11 @@ def update_member(
             continue
         setattr(member, field, value)
 
-    # 이름이 실제로 바뀐 때만 이름 별칭을 다시 맞춘다. 그 외에는 별칭 행을 건드리지 않는다.
-    if "display_name" in updates and updates["display_name"] != old_name:
-        sync_name_aliases(db, member, old_name)
+    # 이름이 바뀌었거나 닉네임 별칭을 지웠을 때 이름 별칭을 다시 맞춘다. 닉네임과 겹쳐 건너뛴 이름 꼴이 있을 수
+    # 있어서다. 이름이 그대로면 old_name 을 넘기지 않아 기존 이름 별칭은 지우지 않는다.
+    name_changed = "display_name" in updates and updates["display_name"] != old_name
+    if name_changed or discord_changed:
+        sync_name_aliases(db, member, old_name if name_changed else None)
 
     workspace_id, new_discord = member.workspace_id, updates.get("discord_user_id")
     _commit_member(db, member)

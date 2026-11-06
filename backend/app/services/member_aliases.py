@@ -9,7 +9,7 @@ import os
 import re
 
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.models import AliasSource, AliasType, Integration, Member, MemberAlias
@@ -64,32 +64,34 @@ def sync_name_aliases(db: Session, member: Member, old_display_name: str | None 
     member.aliases 에 붙여 팀원과 한 커밋으로 들어가게 한다. 새 팀원을 먼저 flush 하면 디스코드 계정 유일
     위반이 호출한 쪽의 409 처리 밖에서 터진다. manual·learned·discord_profile 별칭은 건드리지 않는다.
     """
-    forms = name_alias_forms(member.display_name)
+    # 조회 autoflush 가 대기 중인 팀원 변경을 먼저 내보내지 않게 한다(위 설명 참고).
+    with db.no_autoflush:
+        forms = name_alias_forms(member.display_name)
 
-    existing: list[MemberAlias] = []
-    if member.member_id is not None:
-        existing = list(
-            db.execute(select(MemberAlias).where(MemberAlias.member_id == member.member_id)).scalars()
-        )
-    if old_display_name is not None:
-        for alias in existing:
-            if alias.source == AliasSource.DISPLAY_NAME and alias.alias_text not in forms:
-                db.delete(alias)
-    own_texts = {alias.alias_text for alias in existing}
-
-    for text in forms:
-        if text in own_texts or _taken_by_other(db, member.workspace_id, member.member_id, text):
-            continue
-        member.aliases.append(
-            MemberAlias(
-                workspace_id=member.workspace_id,
-                alias_text=text,
-                alias_type=AliasType.REALNAME,
-                source=AliasSource.DISPLAY_NAME,
-                confidence=NAME_ALIAS_CONFIDENCE,
-                verified=True,
+        existing: list[MemberAlias] = []
+        if member.member_id is not None:
+            existing = list(
+                db.execute(select(MemberAlias).where(MemberAlias.member_id == member.member_id)).scalars()
             )
-        )
+        if old_display_name is not None:
+            for alias in existing:
+                if alias.source == AliasSource.DISPLAY_NAME and alias.alias_text not in forms:
+                    db.delete(alias)
+        own_texts = {alias.alias_text for alias in existing}
+
+        for text in forms:
+            if text in own_texts or _taken_by_other(db, member.workspace_id, member.member_id, text):
+                continue
+            member.aliases.append(
+                MemberAlias(
+                    workspace_id=member.workspace_id,
+                    alias_text=text,
+                    alias_type=AliasType.REALNAME,
+                    source=AliasSource.DISPLAY_NAME,
+                    confidence=NAME_ALIAS_CONFIDENCE,
+                    verified=True,
+                )
+            )
 
 
 def pick_discord_nickname(guild_member: dict) -> str | None:
@@ -106,7 +108,11 @@ def pick_discord_nickname(guild_member: dict) -> str | None:
 
 
 def remove_discord_profile_aliases(db: Session, member: Member) -> None:
-    """팀원의 discord_profile 별칭을 모두 지운다. 디스코드 계정이 바뀌거나 풀릴 때 쓴다. 커밋하지 않는다."""
+    """팀원의 discord_profile 별칭을 모두 지운다. 디스코드 계정이 바뀌거나 풀릴 때 쓴다. 커밋하지 않는다.
+
+    지운 행을 바로 flush 한다. 앱 세션은 autoflush 가 꺼져 있어, 안 하면 뒤따르는 sync_name_aliases 가 이미 지워질
+    행을 아직 있는 것으로 보고 같은 글자의 이름 별칭을 건너뛴다. 값을 바꾸기 전이라 flush 되는 것은 삭제뿐이다.
+    """
     rows = db.execute(
         select(MemberAlias).where(
             MemberAlias.member_id == member.member_id,
@@ -115,6 +121,7 @@ def remove_discord_profile_aliases(db: Session, member: Member) -> None:
     ).scalars()
     for alias in list(rows):
         db.delete(alias)
+    db.flush()
 
 
 def add_discord_nickname_alias(
@@ -172,6 +179,6 @@ def add_discord_nickname_alias(
     )
     try:
         db.commit()
-    except IntegrityError:
+    except SQLAlchemyError:
         db.rollback()
         logger.warning("디스코드 닉네임 별칭을 저장하지 못했습니다 (workspace_id=%s)", workspace_id)
