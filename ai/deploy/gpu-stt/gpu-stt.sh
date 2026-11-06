@@ -151,7 +151,7 @@ ensure_standby() {
     --allow-reassociation >/dev/null
   # 대기 한 번이 최대 10분이라 첫 부팅과 stop 을 합친 시간을 덮지 못한다
   for i in 1 2 3 4; do
-    if aws ec2 wait instance-stopped --instance-ids "$INSTANCE_ID"; then
+    if aws ec2 wait instance-stopped --instance-ids "$INSTANCE_ID" 2>/dev/null; then
       echo "대기 서버 $INSTANCE_ID 를 꺼 두었습니다."
       return
     fi
