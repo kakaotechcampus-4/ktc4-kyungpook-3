@@ -300,8 +300,9 @@ def update_member(
     # 디스코드 계정이 바뀌면(풀리는 것 포함) 옛 계정의 닉네임 별칭을 지운다. 조회가 팀원 변경을 먼저 flush 해
     # 유일 위반이 409 처리 밖에서 나지 않도록 값을 바꾸기 전에 한다.
     discord_changed = "discord_user_id" in updates and updates["discord_user_id"] != member.discord_user_id
+    removed_nicknames: set[str] = set()
     if discord_changed:
-        remove_discord_profile_aliases(db, member)
+        removed_nicknames = remove_discord_profile_aliases(db, member)
     for field, value in updates.items():
         if field == "role":
             if value is not None:
@@ -309,11 +310,13 @@ def update_member(
             continue
         setattr(member, field, value)
 
-    # 이름이 바뀌었거나 닉네임 별칭을 지웠을 때 이름 별칭을 다시 맞춘다. 닉네임과 겹쳐 건너뛴 이름 꼴이 있을 수
-    # 있어서다. 이름이 그대로면 old_name 을 넘기지 않아 기존 이름 별칭은 지우지 않는다.
+    # 이름이 바뀌면 이름 별칭을 전부 다시 맞춘다. 이름이 그대로인데 닉네임 별칭을 지웠다면, 닉네임과 겹쳐 건너뛴
+    # 이름 꼴만 채운다. PM 이 지운 다른 이름 별칭을 되살리지 않기 위해서다.
     name_changed = "display_name" in updates and updates["display_name"] != old_name
-    if name_changed or discord_changed:
-        sync_name_aliases(db, member, old_name if name_changed else None)
+    if name_changed:
+        sync_name_aliases(db, member, old_name)
+    elif removed_nicknames:
+        sync_name_aliases(db, member, only_texts=removed_nicknames)
 
     workspace_id, new_discord = member.workspace_id, updates.get("discord_user_id")
     _commit_member(db, member)

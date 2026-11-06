@@ -271,6 +271,70 @@ def test_patch_name_then_discord_unlink_refills_name_alias(client, mdb, mseed, d
     assert calls == []
 
 
+def _delete_alias(client, db, member_id: str, text: str) -> None:
+    """PM 이 팀원의 별칭 한 줄을 지운다(DELETE /members/aliases/{alias_id})."""
+    db.expire_all()
+    alias = db.execute(
+        select(MemberAlias).where(MemberAlias.member_id == member_id, MemberAlias.alias_text == text)
+    ).scalar_one()
+    assert client.delete(f"{API}/members/aliases/{alias.alias_id}").status_code == 204
+
+
+def _overlapping_minsu(client, mdb, mseed) -> str:
+    """김민수·이민수 모두 자동 별칭 "민수" 를 갖게 한 뒤 PM 이 이민수의 "민수" 를 지운다. 이민수의 member_id 를 돌려준다."""
+    _post(client, mseed["ws"], "김민수", None)
+    member_id = _post(client, mseed["ws"], "이민수", None).json()["data"]["member_id"]
+    assert _texts(mdb, member_id) == {"이민수": "display_name", "민수": "display_name"}
+    _delete_alias(client, mdb, member_id, "민수")
+    return member_id
+
+
+def test_patch_discord_change_with_same_name_keeps_name_alias_pm_deleted(client, mdb, mseed, discord_env, calls):
+    """이름이 그대로인 PATCH 가 PM 이 지운 이름 별칭을 되살리지 않는다."""
+    member_id = _overlapping_minsu(client, mdb, mseed)
+    calls.nick = "dongwoo"
+
+    r = client.patch(f"{API}/members/{member_id}", json={"discord_user_id": "d1"})
+
+    assert r.status_code == 200
+    assert _texts(mdb, member_id) == {"이민수": "display_name"}
+
+
+def test_patch_discord_change_again_keeps_name_alias_pm_deleted(client, mdb, mseed, discord_env, calls):
+    member_id = _overlapping_minsu(client, mdb, mseed)
+    calls.nick = "dongwoo"
+    client.patch(f"{API}/members/{member_id}", json={"discord_user_id": "d1"})
+
+    r = client.patch(f"{API}/members/{member_id}", json={"discord_user_id": "d2"})
+
+    assert r.status_code == 200
+    assert _texts(mdb, member_id) == {"이민수": "display_name"}
+
+
+def test_patch_discord_unlink_with_same_name_keeps_name_alias_pm_deleted(client, mdb, mseed, discord_env, calls):
+    member_id = _overlapping_minsu(client, mdb, mseed)
+    calls.nick = "dongwoo"
+    client.patch(f"{API}/members/{member_id}", json={"discord_user_id": "d1"})
+
+    r = client.patch(f"{API}/members/{member_id}", json={"discord_user_id": None})
+
+    assert r.status_code == 200
+    assert _texts(mdb, member_id) == {"이민수": "display_name"}
+
+
+def test_patch_unlink_with_same_name_refills_only_the_removed_nickname_text(client, mdb, mseed, discord_env, calls):
+    """지운 닉네임과 겹쳐 건너뛴 이름 꼴만 채운다. 그 밖에 PM 이 지운 이름 별칭은 그대로 둔다."""
+    member_id = _post(client, mseed["ws"], "Alice", "d1").json()["data"]["member_id"]
+    client.patch(f"{API}/members/{member_id}", json={"display_name": "김동우"})
+    assert _texts(mdb, member_id) == {"김동우": "display_name", "동우": "discord_profile"}
+    _delete_alias(client, mdb, member_id, "김동우")
+
+    r = client.patch(f"{API}/members/{member_id}", json={"discord_user_id": None})
+
+    assert r.status_code == 200
+    assert _texts(mdb, member_id) == {"동우": "display_name"}
+
+
 def test_operational_error_on_alias_commit_is_swallowed(client, mdb, mseed, discord_env, calls, monkeypatch):
     """닉네임 저장 중 DB 오류가 IntegrityError 가 아니어도 팀원 응답은 그대로다."""
     from sqlalchemy.exc import OperationalError

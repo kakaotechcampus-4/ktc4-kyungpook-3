@@ -57,12 +57,20 @@ def _taken_by_other(db: Session, workspace_id: str, member_id: str | None, text:
     return db.execute(stmt.limit(1)).first() is not None
 
 
-def sync_name_aliases(db: Session, member: Member, old_display_name: str | None = None) -> None:
+def sync_name_aliases(
+    db: Session,
+    member: Member,
+    old_display_name: str | None = None,
+    only_texts: set[str] | None = None,
+) -> None:
     """팀원 이름에 맞춰 source=display_name 별칭을 맞춘다. 커밋도 flush 도 하지 않는다.
 
     old_display_name 이 있으면 이름이 바뀐 것이므로 새 꼴에 없는 display_name 별칭을 지운다. 새 별칭은
     member.aliases 에 붙여 팀원과 한 커밋으로 들어가게 한다. 새 팀원을 먼저 flush 하면 디스코드 계정 유일
     위반이 호출한 쪽의 409 처리 밖에서 터진다. manual·learned·discord_profile 별칭은 건드리지 않는다.
+
+    only_texts 가 있으면 이름 꼴 중 그 글자만 채운다. 이름은 그대로인데 닉네임 별칭만 지운 경우, 닉네임과 겹쳐
+    건너뛴 꼴만 채우고 PM 이 지운 다른 이름 별칭은 되살리지 않기 위해서다.
     """
     # 조회 autoflush 가 대기 중인 팀원 변경을 먼저 내보내지 않게 한다(위 설명 참고).
     with db.no_autoflush:
@@ -80,6 +88,8 @@ def sync_name_aliases(db: Session, member: Member, old_display_name: str | None 
         own_texts = {alias.alias_text for alias in existing}
 
         for text in forms:
+            if only_texts is not None and text not in only_texts:
+                continue
             if text in own_texts or _taken_by_other(db, member.workspace_id, member.member_id, text):
                 continue
             member.aliases.append(
@@ -107,8 +117,9 @@ def pick_discord_nickname(guild_member: dict) -> str | None:
     return None
 
 
-def remove_discord_profile_aliases(db: Session, member: Member) -> None:
-    """팀원의 discord_profile 별칭을 모두 지운다. 디스코드 계정이 바뀌거나 풀릴 때 쓴다. 커밋하지 않는다.
+def remove_discord_profile_aliases(db: Session, member: Member) -> set[str]:
+    """팀원의 discord_profile 별칭을 모두 지우고 지운 글자의 집합을 돌려준다. 디스코드 계정이 바뀌거나 풀릴 때 쓴다.
+    커밋하지 않는다.
 
     지운 행을 바로 flush 한다. 앱 세션은 autoflush 가 꺼져 있어, 안 하면 뒤따르는 sync_name_aliases 가 이미 지워질
     행을 아직 있는 것으로 보고 같은 글자의 이름 별칭을 건너뛴다. 값을 바꾸기 전이라 flush 되는 것은 삭제뿐이다.
@@ -119,9 +130,12 @@ def remove_discord_profile_aliases(db: Session, member: Member) -> None:
             MemberAlias.source == str(AliasSource.DISCORD_PROFILE),
         )
     ).scalars()
+    removed: set[str] = set()
     for alias in list(rows):
+        removed.add(alias.alias_text)
         db.delete(alias)
     db.flush()
+    return removed
 
 
 def add_discord_nickname_alias(
