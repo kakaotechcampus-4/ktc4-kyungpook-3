@@ -33,6 +33,7 @@ export function toWorkspaceSummary(dto: WorkspaceSummaryDto): WorkspaceSummary {
     id: dto.workspace_id,
     name: dto.name,
     role: safeRole(dto.role),
+    memberId: dto.member_id ?? null,
     createdAt: dto.created_at,
   }
 }

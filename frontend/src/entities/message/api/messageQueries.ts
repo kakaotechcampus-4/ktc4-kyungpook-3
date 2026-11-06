@@ -1,20 +1,46 @@
 import { queryOptions } from '@tanstack/react-query'
 import { request } from '@/shared/api/client'
+import { captureSessionScope } from '@/shared/api/sessionScope'
 import { workspaceKey } from '@/shared/api/queryKeys'
 import type {
   BundleApproveRequestDto,
   BundleDto,
   BundleUpdateRequestDto,
   InboxDto,
+  ReminderCreateRequestDto,
+  ReminderUpdateRequestDto,
+  ReminderWithBundleDto,
   ReplyCreateRequestDto,
   ThreadDetailDto,
 } from '@/shared/types/api/message'
-import { toBundle, toMessageInbox, toMessageThread } from '../model/mapper'
-import type { MessageAction, MessageActionOutcome } from '../model/types'
+import { toBundle, toCreatedReminder, toMessageInbox, toMessageThread } from '../model/mapper'
+import type {
+  Bundle,
+  CreatedReminder,
+  MessageAction,
+  MessageActionOutcome,
+  ReminderCreateInput,
+} from '../model/types'
 
 /*
- * 메시지 조회와 쓰기 (계약 §5.7). 상태 동기화(polling)는 두지 않는다 (D-136) — 행동이 성공하면 아래 key 를 무효화해 다시 받는다
+ * 메시지 조회와 쓰기 (계약 §5.7). 상시 polling 은 두지 않는다 (D-136)
  */
+
+const AI_WORKER_DRAFT_POLL_MS = 30_000
+const DRAFT_POLL_MS = AI_WORKER_DRAFT_POLL_MS / 3
+
+/**
+ * 조회를 옵션을 만든 세션에 묶는다. TanStack 의 간격은 cancelQueries·removeQueries 로 멈추지 않아,
+ * 로그아웃 전환 중 아직 구독 중인 이전 화면이 다음 틱에 다음 세션으로 요청한다. 끝난 세션의 신호로 보내기 전에 취소하고 간격을 멈춘다
+ */
+function boundToSession() {
+  const session = captureSessionScope()
+  return {
+    signal: (query: AbortSignal) => AbortSignal.any([query, session.signal]),
+    pollWhileDrafting: (bundles: readonly Bundle[] | undefined): number | false =>
+      session.isCurrent() && bundles?.some((bundle) => bundle.drafting) ? DRAFT_POLL_MS : false,
+  }
+}
 
 function messagesPath(workspaceId: string): string {
   return `/workspaces/${encodeURIComponent(workspaceId)}/messages`
@@ -27,24 +53,33 @@ export function messageKeys(workspaceId: string) {
 
 /** 왼쪽 목록 — 보낼 메시지(PM 만)와 대화 요약 */
 export function messageInboxQueryOptions(workspaceId: string) {
+  const session = boundToSession()
   return queryOptions({
     queryKey: workspaceKey(workspaceId, 'messages', 'inbox'),
     queryFn: async ({ signal }) =>
-      toMessageInbox(await request<InboxDto>(messagesPath(workspaceId), { signal })),
+      toMessageInbox(
+        await request<InboxDto>(messagesPath(workspaceId), { signal: session.signal(signal) }),
+      ),
+    refetchInterval: ({ state: { data } }) =>
+      session.pollWhileDrafting(data?.viewer === 'pm' ? data.bundles : undefined),
+    refetchIntervalInBackground: false,
   })
 }
 
 /** 대화 하나. 목록과 따로 받는다 — 한쪽 오류가 다른 쪽을 막지 않는다 (계획 C-6 5단계) */
 export function messageThreadQueryOptions(workspaceId: string, threadId: string) {
+  const session = boundToSession()
   return queryOptions({
     queryKey: workspaceKey(workspaceId, 'messages', 'threads', threadId),
     queryFn: async ({ signal }) =>
       toMessageThread(
         await request<ThreadDetailDto>(
           `${messagesPath(workspaceId)}/threads/${encodeURIComponent(threadId)}`,
-          { signal },
+          { signal: session.signal(signal) },
         ),
       ),
+    refetchInterval: ({ state: { data } }) => session.pollWhileDrafting(data?.upcoming),
+    refetchIntervalInBackground: false,
   })
 }
 
@@ -52,13 +87,34 @@ function enc(id: string): string {
   return encodeURIComponent(id)
 }
 
+const DONE: MessageActionOutcome = { kind: 'done' }
+const CLOSED: MessageActionOutcome = { kind: 'closed' }
+
 interface Route {
   method: 'POST' | 'PATCH'
   path: string
   body?: unknown
+  /** 응답 본문을 결과로 읽는다. 없으면 본문을 보지 않고 done 이다 */
+  read?: (data: unknown) => MessageActionOutcome
 }
 
-/** 행동 종류마다 경로가 하나다. 종류를 더하면 이 표가 빠져 빌드가 깨진다 */
+/** 응답 본문을 그 경로의 DTO 로 읽는다. request<T> 처럼 모양은 계약을 믿는다 */
+function reads<T>(
+  toOutcome: (dto: T) => MessageActionOutcome,
+): (data: unknown) => MessageActionOutcome {
+  return (data) => toOutcome(data as T)
+}
+
+/** 옮긴 시각에 같은 사람의 예정 묶음이 있으면 서버가 그쪽으로 합치고 합친 묶음을 돌려준다 — ID 가 달라진다 */
+function scheduleOutcome(bundleId: string, dto: BundleDto): MessageActionOutcome {
+  const into = toBundle(dto)
+  return into !== null && into.id !== bundleId ? { kind: 'merged', into } : DONE
+}
+
+/**
+ * 행동 종류마다 경로와 응답 읽기가 하나다. 종류를 더하면 이 표가 빠져 빌드가 깨진다.
+ * 응답은 화면이 고른 묶음이 없어지는 행동만 읽는다 — 합쳐지거나(시각 옮기기) 닫히면(마지막 태스크 빼기) 화면이 떠나야 한다
+ */
 const ROUTE: {
   [K in MessageAction['kind']]: (action: Extract<MessageAction, { kind: K }>) => Route
 } = {
@@ -77,11 +133,25 @@ const ROUTE: {
     method: 'PATCH',
     path: `bundles/${enc(action.bundleId)}`,
     body: { scheduled_at: action.scheduledAt } satisfies BundleUpdateRequestDto,
+    read: reads<BundleDto>((dto) => scheduleOutcome(action.bundleId, dto)),
   }),
   reply: (action) => ({
     method: 'POST',
     path: `threads/${enc(action.threadId)}/replies`,
     body: { body: action.body } satisfies ReplyCreateRequestDto,
+  }),
+  // 마지막 하나였으면 서버가 묶음을 취소하고 그 묶음을 돌려준다
+  removeTask: (action) => ({
+    method: 'POST',
+    path: `reminders/${enc(action.reminderId)}/cancel`,
+    read: reads<ReminderWithBundleDto>((dto) =>
+      dto.bundle.status === 'cancelled' ? CLOSED : DONE,
+    ),
+  }),
+  editNote: (action) => ({
+    method: 'PATCH',
+    path: `reminders/${enc(action.reminderId)}`,
+    body: { note: action.note } satisfies ReminderUpdateRequestDto,
   }),
 }
 
@@ -97,31 +167,51 @@ function routeOf(action: MessageAction): Route {
       return ROUTE.schedule(action)
     case 'reply':
       return ROUTE.reply(action)
+    case 'removeTask':
+      return ROUTE.removeTask(action)
+    case 'editNote':
+      return ROUTE.editNote(action)
   }
-}
-
-const DONE: MessageActionOutcome = { kind: 'done' }
-
-/** 옮긴 시각에 같은 사람의 예정 묶음이 있으면 서버가 그쪽으로 합치고 합친 묶음을 돌려준다 — ID 가 달라진다 */
-function scheduleOutcome(bundleId: string, dto: BundleDto): MessageActionOutcome {
-  const into = toBundle(dto)
-  return into !== null && into.id !== bundleId ? { kind: 'merged', into } : DONE
 }
 
 /**
  * 메시지 쓰기 하나를 요청한다. 부른 쪽이 캐시를 무효화해 서버 상태로 다시 그린다.
- * 응답 본문은 시각 옮기기만 읽는다 — 합쳐졌으면 고른 묶음이 없어지므로 화면이 합친 묶음으로 옮겨 가야 한다
+ * `signal` 은 그 쓰기를 만든 세션의 취소 신호다 — 세션이 끝나면 요청도 끊긴다
  */
 export async function requestMessageAction(
   workspaceId: string,
   action: MessageAction,
+  signal?: AbortSignal,
 ): Promise<MessageActionOutcome> {
-  const route = routeOf(action)
-  const path = `${messagesPath(workspaceId)}/${route.path}`
-  const init = { method: route.method, body: route.body }
-  if (action.kind !== 'schedule') {
-    await request(path, init)
-    return DONE
+  const { method, path, body, read } = routeOf(action)
+  const data = await request<unknown>(`${messagesPath(workspaceId)}/${path}`, {
+    method,
+    body,
+    signal,
+  })
+  return read === undefined ? DONE : read(data)
+}
+
+/**
+ * 재촉 하나를 만든다. 대상 묶음이 아직 없어 묶음 행동(MessageAction)이 아니다.
+ * 서버가 그 팀원·시각의 예정 묶음에 넣는다 — 있으면 합쳐 승인이 풀리고, 같은 태스크가 이미 있으면 그 재촉을 그대로 돌려준다
+ */
+export async function createReminder(
+  workspaceId: string,
+  input: ReminderCreateInput,
+  signal?: AbortSignal,
+): Promise<CreatedReminder> {
+  const body: ReminderCreateRequestDto = {
+    member_id: input.memberId,
+    task_id: input.taskId,
+    scheduled_at: input.scheduledAt,
+    note: input.note,
   }
-  return scheduleOutcome(action.bundleId, await request<BundleDto>(path, init))
+  return toCreatedReminder(
+    await request<ReminderWithBundleDto>(`${messagesPath(workspaceId)}/reminders`, {
+      method: 'POST',
+      body,
+      signal,
+    }),
+  )
 }

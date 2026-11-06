@@ -1,13 +1,16 @@
 import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { http } from 'msw'
 import { messageThreadQueryOptions } from '@/entities/message'
 import { STALE_TIME } from '@/shared/api/queryClient'
 import { paths } from '@/shared/config/routes'
 import { db } from '@/shared/mock/db'
+import { fail, list as listResponse } from '@/shared/mock/envelope'
 import { MOCK_NOW } from '@/shared/mock/fixtures/constants'
 import { botMessage } from '@/shared/mock/fixtures/message'
 import { applyScenario } from '@/shared/mock/scenarios'
-import { setMockRole } from '@/shared/mock/sessions'
+import { server } from '@/shared/mock/server'
+import { isMemberOf, setMockRole } from '@/shared/mock/sessions'
 import { recordRequests } from '@/shared/test/requests'
 import {
   conversation,
@@ -98,7 +101,8 @@ describe('왼쪽 목록 두 영역과 오른쪽 상세의 2단이고, 선택은 
     )
     expect(within(preview).getByText(/하늘님, 최진호예요/)).toHaveClass('whitespace-pre-line')
     expect(readable(detail().getByRole('region', { name: '묶은 태스크 2' }))).toBe(
-      '묶은 태스크 2퍼블리싱마감 없음메모: 시안 2차 반영분까지발표 자료09/30 마감',
+      '묶은 태스크 2퍼블리싱마감 없음메모: 시안 2차 반영분까지메모 고치기빼기' +
+        '발표 자료09/30 마감메모 고치기빼기',
     )
     // 서버가 정한 시각이 마감 하루 전(9/29 09:00)이 아니라 직접 정한 시각이다
     expect(detail().getByRole('radio', { name: '마감 하루 전09/29 09:00' })).not.toBeChecked()
@@ -121,7 +125,9 @@ describe('왼쪽 목록 두 영역과 오른쪽 상세의 2단이고, 선택은 
         .getAllByRole('radio')
         .map((radio) => radio.getAttribute('value')),
     ).toEqual(['day_before_deadline', 'custom'])
-    expect(within(timing).getByRole('radio', { name: '마감 하루 전09/23 09:00' })).toBeChecked()
+    expect(
+      await within(timing).findByRole('radio', { name: '마감 하루 전09/23 09:00' }),
+    ).toBeChecked()
     expect(within(timing).getByRole('radio', { name: '직접 정하기날짜 · 시각' })).not.toBeChecked()
 
     expect(detail().getByRole('button', { name: '보내지 않음' })).toBeEnabled()
@@ -152,6 +158,68 @@ describe('왼쪽 목록 두 영역과 오른쪽 상세의 2단이고, 선택은 
     await app.expectSearch('')
     await waitFor(() => expect(current()).toHaveLength(1))
     expect(current()[0]).toHaveTextContent('박민수')
+  })
+})
+
+describe('마감 기준 카드는 공간의 재촉 규칙(메시지·알림 설정)을 따른다 (#340)', () => {
+  const timing = () => detail().getByRole('group', { name: '언제 보낼까요?' })
+  const rule = (days_before: number, hour: number) => {
+    db.messageSettings.ws_01 = {
+      due_reminder: true,
+      minutes_summary: true,
+      silence_alert: true,
+      nudge_rule: { days_before, hour },
+      pm_alert_method: 'both',
+      reminder_auto_approve: false,
+      updated_at: '2026-09-17T00:00:00Z',
+      updated_by: 'mb_01',
+    }
+  }
+
+  it('2일 전 18시면 `마감 2일 전` 카드가 가장 이른 마감(9/24)의 이틀 전 18:00 이다', async () => {
+    rule(2, 18)
+    await openInbox(paths.messageReview('ws_01', 'bd_01'))
+    const card = await within(timing()).findByRole('radio', { name: '마감 2일 전09/22 18:00' })
+    expect(card).toBeEnabled()
+    // bd_01 은 9/23 09:00 에 나간다 — 규칙의 시각이 아니므로 직접 정한 시각으로 보인다
+    expect(card).not.toBeChecked()
+    expect(within(timing()).getByRole('radio', { name: '직접 정하기09/23 09:00' })).toBeChecked()
+  })
+
+  it('당일이면 `마감 당일` 이고 그 날 정시다', async () => {
+    rule(0, 7)
+    await openInbox(paths.messageReview('ws_01', 'bd_01'))
+    expect(
+      await within(timing()).findByRole('radio', { name: '마감 당일09/24 07:00' }),
+    ).toBeEnabled()
+  })
+
+  it('규칙을 받기 전에는 마감 기준 카드를 고를 수 없다 — 짐작한 시각을 보이지 않는다', async () => {
+    const gate = hold('/workspaces/ws_01/message-settings')
+    await openInbox(paths.messageReview('ws_01', 'bd_01'))
+    const card = await within(timing()).findByRole('radio', { name: '마감 기준불러오는 중' })
+    expect(card).toBeDisabled()
+    expect(within(timing()).getByRole('radio', { name: /직접 정하기/ })).not.toBeChecked()
+    gate.resolve()
+    expect(
+      await within(timing()).findByRole('radio', { name: '마감 하루 전09/23 09:00' }),
+    ).toBeChecked()
+  })
+
+  it('규칙을 받지 못하면 마감 기준 카드를 고를 수 없고 그렇다고 쓴다', async () => {
+    server.use(
+      http.get('/api/v1/workspaces/ws_01/message-settings', () =>
+        fail('INTERNAL_ERROR', 'boom', 500),
+      ),
+    )
+    await openInbox(paths.messageReview('ws_01', 'bd_01'))
+    expect(
+      await within(timing()).findByRole(
+        'radio',
+        { name: '마감 기준규칙을 불러오지 못했어요' },
+        { timeout: 5_000 },
+      ),
+    ).toBeDisabled()
   })
 })
 
@@ -488,7 +556,7 @@ describe('키보드만으로 목록 이동·선택·상세 확인이 되고, 이
 
   it('보낼 시각 카드는 Tab 으로 닿는 라디오이고, 서버가 정한 시각의 카드가 골라져 있다', async () => {
     await openInbox(paths.messageReview('ws_01', 'bd_01'))
-    const deadline = detail().getByRole('radio', { name: /마감 하루 전/ })
+    const deadline = await detail().findByRole('radio', { name: /마감 하루 전/ })
     await tabTo(deadline)
     expect(deadline).toBeChecked()
   })
@@ -620,5 +688,53 @@ describe('팀원은 자기 대화만 보고 웹에서 답장한다', () => {
     await openInbox(paths.messageThread('ws_01', 'th_01'))
     expect(await detail().findByRole('heading', { name: '대화를 찾을 수 없어요' })).toBeVisible()
     expect(screen.queryByRole('alert')).toBeNull()
+  })
+})
+
+describe('팀원 행이 있는 PM 은 자기 대화에서만 웹으로 답장한다 (#367)', () => {
+  const replyForm = () => detail().queryByRole('form', { name: '답장' })
+  const footNote = () => detail().getByText(/메시지는 항상/)
+
+  it('자기 대화에는 답장 칸이 있고, 보낸 답장은 웹에서 답장으로 대화에 남는다', async () => {
+    applyScenario('messages-pm-self')
+    await openInbox(paths.messageThread('ws_01', 'th_06'))
+    const field = await detail().findByRole('textbox', { name: '답장' })
+    expect(detail().getByText('Discord 개인 메시지 · 웹에서도 답장할 수 있어요')).toBeVisible()
+    expect(detail().queryByText(/메시지는 항상/)).toBeNull()
+
+    await userEvent.type(field, 'PM 이 웹에서 남긴 답장')
+    await userEvent.click(detail().getByRole('button', { name: '답장 보내기' }))
+    expect(await within(conversation()).findByText('PM 이 웹에서 남긴 답장')).toBeVisible()
+    expect(within(conversation()).getByText('09:00 · 웹에서 답장')).toBeVisible()
+    expect(field).toHaveValue('')
+  })
+
+  it('남의 대화에는 답장 칸 대신 봇 안내가 있다', async () => {
+    applyScenario('messages-pm-self')
+    await openInbox(paths.messageThread('ws_01', 'th_01'))
+    expect(await detail().findByRole('heading', { level: 2, name: '이재환' })).toBeVisible()
+    expect(footNote()).toBeVisible()
+    expect(replyForm()).toBeNull()
+  })
+
+  // 이 칸을 넣기 전 백엔드는 member_id 를 주지 않는다. 자기 대화인지 모르면 서버가 403 으로 막을 답장 칸을 두지 않는다
+  it.each([
+    ['공간 응답에 member_id 가 없으면', {}],
+    ['공간 응답의 member_id 가 null 이면', { member_id: null }],
+  ])('%s 자기 대화에도 답장 칸이 없다', async (_, field) => {
+    applyScenario('messages-pm-self')
+    server.use(
+      http.get('/api/v1/workspaces', () =>
+        listResponse(
+          db.workspaces
+            .filter(({ workspace_id }) => isMemberOf(workspace_id))
+            .map((workspace) => ({ ...workspace, ...field })),
+        ),
+      ),
+    )
+    await openInbox(paths.messageThread('ws_01', 'th_06'))
+    expect(await detail().findByRole('heading', { level: 2, name: '김서연' })).toBeVisible()
+    expect(footNote()).toBeVisible()
+    expect(replyForm()).toBeNull()
   })
 })

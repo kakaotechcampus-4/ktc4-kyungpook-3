@@ -11,6 +11,7 @@ import { extractionHandlers } from './extraction'
 import { taskHandlers } from './task'
 import { approvalHandlers } from './approval'
 import { messageHandlers } from './message'
+import { messageSettingsHandlers } from './messageSettings'
 import { notificationHandlers } from './notification'
 import { invitationHandlers } from './invitation'
 
@@ -28,6 +29,7 @@ export const handlers: RequestHandler[] = [
   ...taskHandlers,
   ...approvalHandlers,
   ...messageHandlers,
+  ...messageSettingsHandlers,
   ...notificationHandlers,
   ...invitationHandlers,
 ]

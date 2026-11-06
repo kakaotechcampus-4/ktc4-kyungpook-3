@@ -74,6 +74,11 @@ def create_meeting(
         source=str(payload.source),
         status=str(MeetingStatus.CREATED),
     )
+    if payload.started_at is not None:
+        # 미래 시각이 done 이 되면 chat-cursor 가 그 뒤를 가리켜 채팅 수집이 멈춘다
+        if payload.started_at > datetime.now(timezone.utc):
+            raise AppError(ErrorCode.INVALID_REQUEST, message="started_at 은 지금보다 늦을 수 없습니다.")
+        meeting.started_at = payload.started_at.astimezone(timezone.utc)
     db.add(meeting)
     db.commit()
     db.refresh(meeting)

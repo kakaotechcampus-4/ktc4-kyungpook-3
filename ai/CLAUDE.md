@@ -16,6 +16,7 @@ make setup                      # uv venv + 의존성 + .env.example 복사. ven
 .venv/bin/python -m pytest -q   # 외부 서비스·API 키 없이 돈다. 변경 후 항상 실행
 python -m capture.run_recorder  # 개발용 봇 (/join /record /stop)
 python -m capture.worker        # 저장된 회의 처리. --retry <서버ID> 로 포기한 회의 재시도
+python -m capture.chat_poll     # 채팅 폴링 (운영은 타이머). --dry-run 은 BE 에 쓰지 않고 판단만
 ```
 
 lint/format 설정은 없다. 있다고 가정하지 않는다.
@@ -32,7 +33,7 @@ lint/format 설정은 없다. 있다고 가정하지 않는다.
 | `draft/` | 승인 항목의 제목·마감일·설명 초안 (Luna Phase 2) | `doc_draft.py` |
 | `shared/` | BE와 공유하는 타입 계약, `.env` 로딩 | `schemas.py`, `config.py` |
 | `llm.py`, `embedding.py`, `jev.py` | Terra·Luna·임베딩·Jev(판정 API) 클라이언트 (Elice MLAPI) | 파일 상단 주석 |
-| `deploy/systemd/` | 운영 서비스 `mm-bot`, `mm-worker` | |
+| `deploy/systemd/` | 운영 서비스 `mm-bot`, `mm-worker`, 매일 09:00 KST 타이머 `mm-chat-poll` | |
 | `deploy/gpu-stt/` | Elice 장애 때 쓰는 GPU 전사 서버 켜기·끄기와 전환 절차 | `README.md` |
 
 추출 경로는 `MM_EXTRACT_PATH`로 고른다(`capture/judge_path.py`). 매니페스트 형식과 단계 상태(recording →
@@ -53,7 +54,7 @@ saved → transcribed → extracted → handed_off)는 [README](README.md)의 "A
 5. **실제 API를 부르는 평가 스크립트는 pytest에 넣지 않는다.** 비용이 들고 결과가 매번 다르다.
    요청받았을 때만 돌리고, 한 번 어긋났다고 프롬프트를 바로 고치지 않는다.
 6. **상대 날짜("내일")의 기준일은 처리한 날이 아니라 회의 날짜다.** `started_at`을 매니페스트의
-   `timezone`으로 바꾼 날짜(`recorder.meeting_date`).
+   `timezone`으로 바꾼 날짜(`recorder.meeting_date`). 채팅(`chat_poll`)은 근거 메시지의 작성일(KST)이다.
 7. **`.env`는 읽지 않는다.** 필요한 변수 이름은 `.env.example`에서 확인한다.
 
 ## 검증

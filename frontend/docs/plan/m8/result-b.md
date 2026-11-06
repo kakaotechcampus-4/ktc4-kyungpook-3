@@ -10,6 +10,61 @@
   - 2026-11-01 검증(VR-B, FAIL·발견 10건) 뒤 수정 라운드에서 발견 10건을 모두 반영했다(아래 「수정 라운드 — VR-B 검증 결과 반영」). VR-08의 `팀 삭제` 좌우 패딩만 공용 버튼 크기 때문에 남겼다. 수정 뒤 typecheck·lint·format:check·전체 test(`--maxWorkers=2`)·build·test:storybook이 모두 exit 0이다.
   - 2026-11-02 사용자 추가 요청으로 설정 진입을 헤더 왼쪽 워크스페이스 메뉴에서 오른쪽 프로필(아바타) 메뉴로 옮기고, 그 메뉴를 논모달로 바꿨다(아래 「추가 요청 — 설정 진입을 프로필 메뉴로」).
   - 같은 날 후속 지적으로, 프로필 메뉴에서 설정으로 옮겨 가면 포커스가 아바타에 남던 것을 설정 제목으로 옮겼다(같은 절 「후속 — 설정으로 옮긴 뒤의 포커스」).
+  - 2026-11-05 알림 절을 메시지·알림 설정 API 에 연결했다(아래 「2026-11-05 알림 절의 설정 저장 API 연결 (#340)」).
+
+## 2026-11-05 알림 절의 설정 저장 API 연결 (#340)
+
+### 작업 근거와 요약
+
+- 근거는 이슈 #340(BE→FE 요청과 2026-11-05 BE 댓글)과 코디네이터 작업 지시다. BE 는 PR #341 로 `GET`·`PATCH /workspaces/{workspace_id}/message-settings` 를 병합·배포했다. M8 계획에는 이 작업의 완료조건이 없어 아래는 지시의 할 일에 대응시킨다. M8-B 전체 완료로 표시하지 않는다.
+- 사용자가 정한 것(2026-11-05): 재촉 시각은 0~23시 정시를 모두 고른다(야간 제한 없음). 며칠 전은 0~3. 설정을 바꿔도 이미 만든 재촉 제안은 그대로라는 점을 짧게 안내하고, 자동 승인·`due_reminder` 를 끈 경우의 예외도 틀리지 않게 맞춘다.
+- 알림 절은 이제 서버 값을 읽고, PM 이 바꾸면 바꾼 키만 저장한다. 일반 팀원은 읽기만 한다. 재촉 규칙이 토글 제목과 메시지 화면의 마감 기준 보낼 시각을 함께 정한다.
+
+### 실제 구현 및 관련 코드
+
+- 응답 타입 [messageSettings.ts](../../../src/shared/types/api/messageSettings.ts), 엔티티 [entities/message-settings](../../../src/entities/message-settings/index.ts)(매퍼·조회·변경, 재촉 규칙 문구 `nudgeRule.ts`). 쿼리 키는 `['workspace', id, 'message-settings']` 다.
+- 변경 훅 [useMessageSettings](../../../src/features/message-settings/model/useMessageSettings.ts): mutation `scope` 로 한 공간의 변경을 순서대로 보내고, 진행 중 변경을 서버 값 위에 겹쳐 보인다. 실패하면 겹침이 사라져 값이 돌아오고 토스트 `알림 설정을 저장하지 못했어요` 가 뜬다.
+- [NotificationSection](../../../src/pages/settings/ui/NotificationSection.tsx)과 문구 함수 [notificationCopy.ts](../../../src/pages/settings/lib/notificationCopy.ts): 재촉 규칙 선택 두 개(`재촉 며칠 전`·`재촉 보낼 시각`), 규칙을 따르는 토글 제목, `pms[].discord_linked` 기준 `웹으로만` 안내, 이미 만든 제안 안내와 예외 문구, 저장만 되는 두 항목의 준비 중 문구.
+- 메시지 화면 [SendTimingPicker](../../../src/widgets/message-inbox/ui/SendTimingPicker.tsx)·[format.ts](../../../src/widgets/message-inbox/lib/format.ts): 마감 기준 카드의 제목·시각이 공간의 규칙을 따른다. 규칙을 받기 전·실패면 고를 수 없다.
+- MSW [handlers/messageSettings.ts](../../../src/shared/mock/handlers/messageSettings.ts): 기본값·`saved`, PM 아닌 `PATCH` 403, 형식 오류 400. 모의 DB 버전 10.
+- E2E [settings-notifications.e2e.ts](../../../e2e/settings-notifications.e2e.ts)와 검증 스킬의 `notifications` 여정.
+
+### 완료조건 확인
+
+| 지시의 할 일 | 상태 | 근거 |
+|---|---|---|
+| GET 으로 읽고 바꾼 키만 PATCH, 저장 전 기본값·`saved: false` | 충족(MSW) | `settingsPage.test.tsx`, 엔티티 API 테스트, 브라우저 확인의 PATCH 본문 |
+| 일반 팀원 읽기 전용, 실패 시 되돌리고 안내 | 충족(MSW) | `settingsPage.test.tsx`(403·500 되돌림), E2E 일반 팀원 테스트 |
+| 화면 키를 API 이름에 맞춤 | 충족 | 응답 타입은 API 이름 그대로, 화면 모델은 매퍼 한 곳에서 camelCase 로 1:1 대응 |
+| 재촉 규칙 입력과 토글 제목·메시지 보낼 시각 반영 | 충족(MSW) | `messagesMsw.test.tsx` 규칙별 카드, 브라우저 확인(`마감 당일 09/24 18:00`) |
+| `웹으로만` 안내를 `pms[].discord_linked` 로 | 충족 | `notificationCopy.test.ts`, `settingsPage.test.tsx` |
+| 자동 승인 묶음의 승인자 표시 | 해당 없음 | 승인자를 보이는 곳이 없다(메시지 화면은 이름 없이 `승인함`) |
+| DTO·쿼리·MSW·테스트·스토리, 계약 갱신 | 충족 | 커밋 목록, [계약 §5.7](../../contracts/frontend-api-contract.md) |
+
+### 검증 내역
+
+- 2026-11-05, Node v24.11.0. `npm run typecheck`·`npm run lint`·`npm run build` exit 0. 마지막 커밋 뒤 typecheck·lint 다시 exit 0.
+- `npm run format:check` exit 1. 경고는 git 에서 제외한 로컬 작업 지시 `.verify/brief.md` 한 파일이다. 저장소 파일은 `npx prettier --check src e2e docs/contracts/frontend-api-contract.md` 로 통과했다.
+- `npm run test -- --maxWorkers=1`: 212개 파일 중 2개, 2,555개 중 2개 실패. `session.test.tsx` 는 단독 재실행에서 통과해 부하로 본다. `meetingProcessing.test.tsx` 의 한 건은 이번 변경 탓이었다(메시지 화면이 설정을 조회한다). 단언을 고친 뒤 그 파일 35개가 통과했다. 고친 뒤 전체 묶음은 다시 돌리지 않았다.
+- 브라우저(MSW): `node .cursor/skills/verify-managers-manager/scripts/verify.cjs run notifications` 2개 통과(실행 `2026-11-05T11-01-04-208Z-notifications-480f51c7`, 포트 닫힘 확인). 별도 스크립트로 규칙을 2일 전 18시·당일 18시로 바꾸고 메시지 화면 카드를 확인했다(로컬 증거 `frontend/.verify/picker-evidence/`, 커밋하지 않음).
+
+### 계획 대비 변경
+
+- 계획에 이 작업이 없다. 지시에 따른 추가 작업이다.
+- 메시지 화면 시작 요청 단언(`meetingProcessing.test.tsx`)에 설정 조회를 더했다. 보낼 시각 선택이 규칙을 읽어서다.
+
+### 남은 작업과 제한 사항
+
+- 실서버(운영 BE)와의 연동은 확인하지 않았다. MSW 기준이다.
+- 전체 Storybook play 와 전체 E2E 는 CI 에 맡겼다.
+- 규칙을 바꾸면 옛 규칙으로 잡힌 묶음의 시각은 새 규칙 시각과 달라 `직접 정하기` 카드로 보인다. 서버 응답에 시각의 출처가 없어 화면이 가를 수 없다.
+- 설정 저장이 끝나기 전에 다른 화면으로 옮기면 그 요청이 끊길 수 있다. 막지 않았다.
+- `pm_alert_method`·`minutes_summary` 는 BE 가 저장만 한다. 동작이 생기면 준비 중 문구를 지운다.
+
+### 관련 기록
+
+- [BE 결정 기록](../../../../backend/docs/plan/m6/basis-for-decision/2026-11-04-message-settings.md)
+- [API 계약 §5.7](../../contracts/frontend-api-contract.md)
 
 ## 재작업 — 디자인 캔버스 기준 (결정 5 해결 뒤)
 

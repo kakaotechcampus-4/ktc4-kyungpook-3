@@ -1,4 +1,4 @@
-import { MEETING_SOURCE_TRAITS } from '@/entities/meeting'
+import { formatClock, MEETING_SOURCE_TRAITS, offsetInstant } from '@/entities/meeting'
 import type { MeetingSource, MeetingSummary, MeetingTimeAxis } from '@/entities/meeting'
 import {
   formatSeoulDateTime,
@@ -6,16 +6,6 @@ import {
   readDateOnly,
   seoulDateOf,
 } from '@/shared/lib/date'
-
-/** 회의 안 시각·길이. 1시간 미만은 `mm:ss`, 넘으면 `h:mm:ss` — Meetings 캔버스의 `12:40` · `52:14` 모양이다 */
-export function formatClock(ms: number): string {
-  const total = Math.max(0, Math.floor(ms / 1000))
-  const hours = Math.floor(total / 3600)
-  const minutes = Math.floor((total % 3600) / 60)
-  const seconds = total % 60
-  const mmss = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
-  return hours > 0 ? `${hours}:${mmss}` : mmss
-}
 
 /** 목록 한 줄의 길이 — `52분`. 길이를 모르면(0·null) 쓰지 않는다. 실 API 는 오디오가 없으면 0 을 준다 (계약 §4.4) */
 export function formatMinutesLength(ms: number | null): string | null {
@@ -42,11 +32,6 @@ export function listMeta(meeting: MeetingSummary): string {
     .join(' · ')
 }
 
-function offsetInstant(startedAt: string, offsetMs: number): string | null {
-  const start = Date.parse(startedAt)
-  return Number.isNaN(start) ? null : new Date(start + offsetMs).toISOString()
-}
-
 /** 첫 메시지부터 마지막 메시지까지 — `2026-09-15 09:12 ~ 09/16 08:40`, 같은 날 끝나면 `2026-09-15 09:12 ~ 18:40` */
 function chatRange(startedAt: string, durationMs: number): string {
   const start = formatSeoulDateTime(startedAt)
@@ -68,19 +53,6 @@ const DETAIL_META: Record<MeetingTimeAxis, (startedAt: string, durationMs: numbe
 /** 회의록 머리의 메타 — 녹음 회의는 `2026-09-15 14:00 · 45:30`, 채팅 회의는 서울 시각 범위다. 길이를 모르면 시작 시각만이다 */
 export function detailMeta(source: MeetingSource, startedAt: string, durationMs: number): string {
   return DETAIL_META[MEETING_SOURCE_TRAITS[source].timeAxis](startedAt, durationMs)
-}
-
-const MOMENT: Record<MeetingTimeAxis, (startedAt: string, atMs: number) => string> = {
-  recording: (_startedAt, atMs) => formatClock(atMs),
-  wall_clock: (startedAt, atMs) => {
-    const instant = offsetInstant(startedAt, atMs)
-    return instant === null ? '' : formatSeoulMonthDayTime(instant)
-  },
-}
-
-/** 전사문 줄·근거의 시각. 녹음 회의는 녹음 안 위치 `12:40`, 채팅 회의는 메시지를 쓴 서울 시각 `09/15 18:40` 이다 */
-export function formatMoment(source: MeetingSource, startedAt: string, atMs: number): string {
-  return MOMENT[MEETING_SOURCE_TRAITS[source].timeAxis](startedAt, atMs)
 }
 
 /** 마감일 — `9/20`. 날짜 전용 값이라 시간대를 바꾸지 않는다 (D-144). 형식이 틀리면 null */

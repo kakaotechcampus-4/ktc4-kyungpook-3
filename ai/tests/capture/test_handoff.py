@@ -580,3 +580,24 @@ def test_member_names_come_from_the_meetings_workspace():
     with pytest.raises(H.BeError) as e:
         client.member_names("ws-9")
     assert e.value.code == "WORKSPACE_NOT_FOUND"
+
+
+def test_chat_cursor_parses_and_null():
+    from datetime import datetime, timezone
+    fake = FakeBe()
+    c = _client(fake)
+    assert c.chat_cursor("ws-1") is None
+    fake.chat_cursors["ws-1"] = "2026-11-03T15:30:00+00:00"
+    assert c.chat_cursor("ws-1") == datetime(2026, 11, 3, 15, 30, tzinfo=timezone.utc)
+    assert fake.calls[-1] == ("GET", "/workspaces/ws-1/chat-cursor", None)
+    assert fake.headers[-1]["X-Service-Token"] == "svc-token"
+
+
+def test_create_meeting_sends_started_at():
+    from datetime import datetime, timezone
+    fake = FakeBe()
+    at = datetime(2026, 11, 3, 15, 30, tzinfo=timezone.utc)
+    _client(fake).create_meeting("ws-1", title="t", source="chat", started_at=at)
+    assert fake.calls[-1][2]["started_at"] == at.isoformat() and fake.calls[-1][2]["source"] == "chat"
+    _client(fake).create_meeting("ws-1")
+    assert "started_at" not in fake.calls[-1][2]

@@ -5,19 +5,22 @@ import type { NotificationLink } from './types'
  * 서비스 워커도 이 파일을 가져온다. 워커에는 window 가 없으므로 API 클라이언트를 끌어오는 모듈을 여기서 가져오지 않는다
  */
 
-/** 서버는 제목을 주지 않는다. 모르는 종류는 기본 제목이다 */
-const TITLES: Readonly<Record<string, string>> = {
-  reminder_sent: '태스크 진행 상황을 물어봤어요',
-  nudge_suggested: '보낼 재촉을 확인해 주세요',
-  nudge_reapprove: '재촉을 다시 승인해 주세요',
-  reminder_auto_cancelled: '재촉이 자동으로 취소됐어요',
-  silence_blocked: '응답이 없어 태스크가 막혔어요',
+const KINDS: Readonly<Record<string, { title: string; aboutMessages: boolean }>> = {
+  reminder_sent: { title: '태스크 진행 상황을 물어봤어요', aboutMessages: true },
+  nudge_suggested: { title: '보낼 재촉을 확인해 주세요', aboutMessages: true },
+  nudge_reapprove: { title: '재촉을 다시 승인해 주세요', aboutMessages: true },
+  reminder_auto_cancelled: { title: '재촉이 자동으로 취소됐어요', aboutMessages: true },
+  silence_blocked: { title: '응답이 없어 태스크가 막혔어요', aboutMessages: false },
 }
 
 export const DEFAULT_NOTIFICATION_TITLE = '새 알림'
 
 export function notificationTitle(kind: string): string {
-  return Object.hasOwn(TITLES, kind) ? TITLES[kind] : DEFAULT_NOTIFICATION_TITLE
+  return Object.hasOwn(KINDS, kind) ? KINDS[kind].title : DEFAULT_NOTIFICATION_TITLE
+}
+
+export function isMessageNotification(kind: string): boolean {
+  return Object.hasOwn(KINDS, kind) && KINDS[kind].aboutMessages
 }
 
 /**

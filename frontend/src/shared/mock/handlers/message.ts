@@ -9,18 +9,29 @@ import {
   approveBundle,
   bundleDto,
   cancelBundle,
+  cancelReminder,
+  createReminder,
   editBundle,
+  editReminder,
   inboxOf,
+  reminderWithBundleDto,
   threadDetailOf,
   utc,
 } from '../message-state'
-import type { BundleContext, BundleRefusal, Viewer } from '../message-state'
+import type {
+  BundleContext,
+  BundleRefusal,
+  ReminderContext,
+  ReminderRefusal,
+  ReminderResult,
+  Viewer,
+} from '../message-state'
 import { nextId, readJson } from '../utils'
 
 /*
  * 메시지 (계약 §5.7). 경로·응답·오류 코드는 백엔드 api/messages.py 와 같다.
  * 상태를 바꾸는 요청은 성공 응답을 낼 때만 db 를 바꾼다 (D-137). 시각은 MOCK_NOW, ID 는 nextId 다 (msw-guide 「지킬 규칙」).
- * 재촉 만들기·리마인드 하나 고치기·빼기 경로는 화면이 쓰지 않아 두지 않는다
+ * 검사 순서도 백엔드와 같다 — PM 확인, 요청 본문(400), 대상 찾기(404), 상태 규칙(409)
  */
 
 const serverError = () => fail('INTERNAL_ERROR', '메시지를 불러오지 못했습니다.', 500)
@@ -35,7 +46,10 @@ const bundleNotFound = (bundleId: unknown) =>
     bundle_id: bundleId,
   })
 
-const REFUSAL: Record<BundleRefusal, () => ReturnType<typeof fail>> = {
+const reminderNotFound = (reminderId: unknown) =>
+  fail('REMINDER_NOT_FOUND', '해당 리마인드를 찾을 수 없습니다.', 404, { reminder_id: reminderId })
+
+const REFUSAL: Record<BundleRefusal | ReminderRefusal, () => ReturnType<typeof fail>> = {
   not_editable: () =>
     fail(
       'REMINDER_NOT_EDITABLE',
@@ -49,6 +63,13 @@ const REFUSAL: Record<BundleRefusal, () => ReturnType<typeof fail>> = {
     invalid(
       '다른 보낼 메시지와 합쳐지는 시각으로 옮길 때는 문구를 같이 고칠 수 없습니다. 시각부터 옮겨 주세요.',
     ),
+  task_not_found: () => fail('TASK_NOT_FOUND', '해당 태스크를 찾을 수 없습니다.', 404),
+  member_not_found: () => fail('MEMBER_NOT_FOUND', '해당 팀원을 찾을 수 없습니다.', 404),
+}
+
+function reminderResponse(result: ReminderResult, status = 200) {
+  if ('refusal' in result) return REFUSAL[result.refusal]()
+  return ok(reminderWithBundleDto(result), { status })
 }
 
 /** 시간대가 있는 ISO 시각만 받는다 (백엔드 AwareDatetime) */
@@ -94,6 +115,68 @@ function bundleContext(workspaceId: string): BundleContext {
   }
 }
 
+function reminderContext(workspaceId: string): ReminderContext {
+  return {
+    ...bundleContext(workspaceId),
+    workspaceId,
+    members: db.members.filter(({ workspace_id }) => workspace_id === workspaceId),
+    allThreads: db.messageThreads,
+    allBundles: db.messageBundles,
+  }
+}
+
+/** 그 공간의 리마인드와 그것이 든 묶음 */
+function findReminder(workspaceId: string, reminderId: unknown) {
+  for (const bundle of workspaceBundles(workspaceId)) {
+    const reminder = bundle.reminders.find(({ reminder_id }) => reminder_id === reminderId)
+    if (reminder) return { bundle, reminder }
+  }
+  return null
+}
+
+function isAware(value: unknown): value is string {
+  return typeof value === 'string' && AWARE.test(value) && !Number.isNaN(Date.parse(value))
+}
+
+/** 빈 메모는 메모가 없는 것으로 본다 (백엔드 _note) */
+function readNote(value: unknown): string | null | undefined {
+  if (value === null) return null
+  if (typeof value !== 'string') return undefined
+  return value.trim() === '' ? null : value.trim()
+}
+
+/** `ReminderCreateRequest`. 틀렸으면 사람이 읽을 이유를 돌려준다 */
+function readReminderCreate(
+  input: Record<string, unknown> | null,
+): { member_id: string; task_id: string; scheduled_at: string; note: string | null } | string {
+  if (input === null) return '요청 본문이 없습니다.'
+  const { member_id, task_id, scheduled_at } = input
+  if (typeof member_id !== 'string' || typeof task_id !== 'string')
+    return 'member_id 와 task_id 가 필요합니다.'
+  if (!isAware(scheduled_at)) return 'scheduled_at 은 시간대가 있는 ISO 시각이어야 합니다.'
+  const note = input.note === undefined ? null : readNote(input.note)
+  if (note === undefined) return 'note 는 글이어야 합니다.'
+  return { member_id, task_id, scheduled_at, note }
+}
+
+/** `ReminderUpdateRequest`. note 를 보내지 않으면 그대로, null·빈 글이면 지운다 */
+function readReminderPatch(
+  input: Record<string, unknown> | null,
+): { note?: string | null; scheduled_at?: string } | string {
+  if (input === null) return '요청 본문이 없습니다.'
+  const patch: { note?: string | null; scheduled_at?: string } = {}
+  if ('note' in input) {
+    const note = readNote(input.note)
+    if (note === undefined) return 'note 는 글이어야 합니다.'
+    patch.note = note
+  }
+  if (input.scheduled_at !== undefined && input.scheduled_at !== null) {
+    if (!isAware(input.scheduled_at)) return 'scheduled_at 은 시간대가 있는 ISO 시각이어야 합니다.'
+    patch.scheduled_at = input.scheduled_at
+  }
+  return Object.keys(patch).length === 0 ? 'note 나 scheduled_at 중 하나는 있어야 합니다.' : patch
+}
+
 /** `BundleUpdateRequest`. 틀렸으면 사람이 읽을 이유를 돌려준다 */
 function readBundlePatch(
   input: Record<string, unknown> | null,
@@ -105,12 +188,7 @@ function readBundlePatch(
     patch.body = input.body.trim()
   }
   if (input.scheduled_at !== undefined && input.scheduled_at !== null) {
-    if (
-      typeof input.scheduled_at !== 'string' ||
-      !AWARE.test(input.scheduled_at) ||
-      Number.isNaN(Date.parse(input.scheduled_at))
-    )
-      return 'scheduled_at 은 시간대가 있는 ISO 시각이어야 합니다.'
+    if (!isAware(input.scheduled_at)) return 'scheduled_at 은 시간대가 있는 ISO 시각이어야 합니다.'
     patch.scheduled_at = input.scheduled_at
   }
   return Object.keys(patch).length === 0 ? 'body 나 scheduled_at 중 하나는 있어야 합니다.' : patch
@@ -220,8 +298,53 @@ export const messageHandlers = [
     const bundle = findBundle(workspaceId, params.bundleId)
     if (!bundle) return bundleNotFound(params.bundleId)
     if (db.messageFailures.actions) return actionError()
-    const refusal = cancelBundle(bundle)
+    const refusal = cancelBundle(bundle, MOCK_NOW)
     if (refusal !== null) return REFUSAL[refusal]()
     return ok(bundleDto(bundle))
   }),
+
+  /** 재촉을 만들어 그 팀원·시각의 보낼 메시지에 넣는다. 같은 시각의 메시지가 있으면 합쳐지고 승인이 풀린다 */
+  http.post('/api/v1/workspaces/:workspaceId/messages/reminders', async ({ params, request }) => {
+    const workspaceId = String(params.workspaceId)
+    const denied = requirePmRole(workspaceId)
+    if (denied) return denied
+    const input = readReminderCreate(await readJson(request))
+    if (typeof input === 'string') return invalid(input)
+    if (db.messageFailures.actions) return actionError()
+    return reminderResponse(createReminder(input, MOCK_NOW, reminderContext(workspaceId)), 201)
+  }),
+
+  /** 메모를 고치거나 다른 시각으로 옮긴다. 메모가 바뀌거나 옮기면 묶음 문구를 다시 만들고 승인이 풀린다 */
+  http.patch(
+    '/api/v1/workspaces/:workspaceId/messages/reminders/:reminderId',
+    async ({ params, request }) => {
+      const workspaceId = String(params.workspaceId)
+      const denied = requirePmRole(workspaceId)
+      if (denied) return denied
+      const patch = readReminderPatch(await readJson(request))
+      if (typeof patch === 'string') return invalid(patch)
+      const found = findReminder(workspaceId, params.reminderId)
+      if (!found) return reminderNotFound(params.reminderId)
+      if (db.messageFailures.actions) return actionError()
+      return reminderResponse(
+        editReminder(found.bundle, found.reminder, patch, MOCK_NOW, reminderContext(workspaceId)),
+      )
+    },
+  ),
+
+  /** 리마인드 하나를 뺀다. 마지막 하나였으면 보낼 메시지도 취소된다 */
+  http.post(
+    '/api/v1/workspaces/:workspaceId/messages/reminders/:reminderId/cancel',
+    ({ params }) => {
+      const workspaceId = String(params.workspaceId)
+      const denied = requirePmRole(workspaceId)
+      if (denied) return denied
+      const found = findReminder(workspaceId, params.reminderId)
+      if (!found) return reminderNotFound(params.reminderId)
+      if (db.messageFailures.actions) return actionError()
+      return reminderResponse(
+        cancelReminder(found.bundle, found.reminder, MOCK_NOW, bundleContext(workspaceId)),
+      )
+    },
+  ),
 ]

@@ -15,8 +15,12 @@ export { toMeeting, toMeetingSummary, toMeetingUploadResult, toSpeakerView } fro
 export { MEETING_UPLOAD_POLICY } from './model/uploadPolicy'
 export type { MeetingSourceTraits, MeetingTimeAxis } from './model/sourceTraits'
 export { MEETING_SOURCE_TRAITS } from './model/sourceTraits'
+export { evidenceMoment, formatClock, formatMoment, offsetInstant } from './lib/moment'
 export {
   fetchMeetingList,
+  isAccessLost,
+  isMeetingGone,
+  isMeetingUnavailable,
   meetingDetailQueryOptions,
   meetingKeys,
   meetingListQueryOptions,

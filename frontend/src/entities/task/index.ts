@@ -11,10 +11,10 @@ export {
   taskListQueryOptions,
   updateTaskStatus,
   undoTaskAutoBlock,
+  writeServerTask,
 } from './api/taskApi'
 export type { TaskCreateInput } from './api/taskApi'
 export { filterByTab } from './lib/taskFilter'
 export { isOverdue, isDueSoon } from './lib/taskDate'
 export { withAssigneeName } from './lib/assignee'
 export type { TaskWithAssignee } from './lib/assignee'
-export { isAutoBlocked } from './lib/autoBlock'

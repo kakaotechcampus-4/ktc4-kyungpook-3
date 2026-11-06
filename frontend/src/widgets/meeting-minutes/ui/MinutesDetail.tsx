@@ -3,16 +3,18 @@ import { useState } from 'react'
 import type { ReactNode } from 'react'
 import { pendingApprovalListQueryOptions } from '@/entities/approval'
 import { extractionQueryOptions } from '@/entities/extraction'
-import { meetingDetailQueryOptions, meetingFailure, viewableMeeting } from '@/entities/meeting'
+import {
+  formatMoment,
+  isAccessLost,
+  isMeetingUnavailable,
+  meetingDetailQueryOptions,
+  meetingFailure,
+  viewableMeeting,
+} from '@/entities/meeting'
 import type { Meeting, MeetingSummary } from '@/entities/meeting'
 import { minutesQueryOptions } from '@/entities/minutes'
 import type { Minutes } from '@/entities/minutes'
-import {
-  isAccessLost,
-  isMeetingUnavailable,
-  SPEAKERS_NEEDED_ACTION,
-  SPEAKERS_NEEDED_TITLE,
-} from '@/features/meeting-processing'
+import { SPEAKERS_NEEDED_ACTION, SPEAKERS_NEEDED_TITLE } from '@/features/meeting-processing'
 import { ApiError, ERROR_CODES } from '@/shared/api/errors'
 import { paths } from '@/shared/config/routes'
 import { formatSeoulDateTime } from '@/shared/lib/date'
@@ -20,7 +22,7 @@ import { GuardedLink } from '@/shared/lib/unsaved-changes'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
 import { MinutesDetailSkeleton } from '@/shared/ui/page-skeleton'
 import { extractedTasks } from '../lib/extractedTasks'
-import { detailMeta, formatMoment, SOURCE_LABEL } from '../lib/format'
+import { detailMeta, SOURCE_LABEL } from '../lib/format'
 import { MINUTES_DIM_DELAY_MS } from '../model/useShownMeeting'
 import { SummaryPanel, TasksPanel, TranscriptPanel } from './MinutesBody'
 import type { ReviewState, TasksState } from './MinutesBody'
@@ -274,10 +276,12 @@ function MinutesView({
   loading: ReactNode
 }) {
   const minutes = useQuery(minutesQueryOptions(workspaceId, meeting.id))
+  // 받아 둔 본문도 403·404 뒤에는 쓰지 않는다 — 실패해도 이전 data 가 남는다 (#405)
+  const body = isAccessLost(minutes.error) ? undefined : minutes.data
 
-  if (minutes.data === undefined) {
+  if (body === undefined) {
     if (held !== null) return loading
-    if (minutes.error !== null && isAccessLost(minutes.error)) return <UnavailableMeeting />
+    if (isAccessLost(minutes.error)) return <UnavailableMeeting />
     if (minutes.error !== null)
       return (
         <div className={NOTICE}>
@@ -294,10 +298,10 @@ function MinutesView({
     <MinutesContent
       workspaceId={workspaceId}
       meeting={meeting}
-      minutes={minutes.data}
+      minutes={body}
       held={held}
       // 역할(소속 목록)과 서버가 이 회의록에 준 권한을 함께 본다. 둘 중 하나라도 아니면 확인 필요를 부르지도 그리지도 않는다 (U5-6)
-      canReview={isPm && minutes.data.canReview}
+      canReview={isPm && body.canReview}
     />
   )
 }

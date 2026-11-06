@@ -10,6 +10,7 @@ import { MOCK_TODAY } from '@/shared/mock/fixtures/constants'
 import { extractionFixtures } from '@/shared/mock/fixtures/extraction'
 import { meetingSummaryFixtures } from '@/shared/mock/fixtures/meeting'
 import { taskFixtures } from '@/shared/mock/fixtures/task'
+import { toTaskResponse } from '@/shared/mock/task-state'
 import {
   LIST_LIMIT,
   RECENT_MORE_LINE_PX,
@@ -36,7 +37,7 @@ import {
  * 픽스처: ws_01 의 태스크 10건, 대기 승인 3건, 최신 완료 회의 mt_09(auto 항목 it_01~it_03), 서울 오늘 2026-09-18.
  */
 
-const tasks = taskFixtures.map(toTask)
+const tasks = taskFixtures.map((row) => toTask(toTaskResponse(row)))
 const base = tasks[0]
 
 function task(id: string, patch: Partial<Task> = {}): Task {
@@ -144,6 +145,13 @@ describe('최근 반영 (AC-03 판정부)', () => {
     const meetings = meetingSummaryFixtures.map(toMeetingSummary)
     expect(latestDoneMeeting(meetings)?.id).toBe('mt_09')
     expect(latestDoneMeeting(meetings.filter(({ status }) => status !== 'done'))).toBeNull()
+  })
+
+  it('지워진(404) 회의를 빼면 그다음 완료 회의를 고르고, 모두 빼면 null 이다 (#405)', () => {
+    const meetings = meetingSummaryFixtures.map(toMeetingSummary)
+    expect(latestDoneMeeting(meetings, new Set(['mt_09']))?.id).toBe('mt_08')
+    expect(latestDoneMeeting(meetings, new Set(['mt_09', 'mt_08']))?.id).toBe('mt_07')
+    expect(latestDoneMeeting(meetings, new Set(['mt_09', 'mt_08', 'mt_07']))).toBeNull()
   })
 
   describe('최신 완료 회의 선택 기준 (#350)', () => {

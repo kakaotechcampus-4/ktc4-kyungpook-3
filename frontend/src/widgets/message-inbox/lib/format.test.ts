@@ -6,15 +6,10 @@ import {
   bundleSummary,
   clockTime,
   dayLabel,
-  deadlineSend,
   earliestDue,
-  fromSeoulInputValue,
   groupByDay,
-  initialCustomTime,
-  sameInstant,
   shortDate,
   shortDateTime,
-  toSeoulInputValue,
 } from './format'
 
 const message = (id: string, at: string) => ({ id, at })
@@ -77,17 +72,9 @@ const task = (dueDate: string | null, title: string | null = '태스크'): Bundl
   note: null,
 })
 
-it('마감 하루 전은 가장 이른 마감의 전날 09:00(한국 시간)이고, 마감이 없거나 지났으면 고를 수 없다', () => {
-  const now = Date.parse('2026-09-18T09:00:00+09:00')
-  expect(deadlineSend([task(null), task('2026-09-30'), task('2026-09-24')], now)).toEqual({
-    status: 'open',
-    at: '2026-09-23T09:00:00+09:00',
-  })
-  expect(deadlineSend([task(null)], now)).toEqual({ status: 'none' })
-  expect(deadlineSend([task('2026-09-19')], now)).toEqual({
-    status: 'passed',
-    at: '2026-09-18T09:00:00+09:00',
-  })
+it('가장 이른 마감은 마감 없는 태스크를 건너뛰고, 모두 없으면 null 이다', () => {
+  expect(earliestDue([task(null), task('2026-09-30'), task('2026-09-24')])).toBe('2026-09-24')
+  expect(earliestDue([task(null)])).toBeNull()
   expect(earliestDue([])).toBeNull()
 })
 
@@ -106,22 +93,8 @@ it('보내기 전 확인 행은 승인했으면 발송 예정, 아니면 가장 
   expect(bundleSummary({ ...bundle, tasks: [task(null, null)] })).toBe('지워진 태스크')
 })
 
-it('서버의 UTC 와 화면의 +09:00 이 같은 순간이면 같다', () => {
-  expect(sameInstant('2026-09-23T00:00:00.000Z', '2026-09-23T09:00:00+09:00')).toBe(true)
-  expect(sameInstant('2026-09-23T00:00:00Z', '2026-09-23T09:01:00+09:00')).toBe(false)
-})
-
 it('답장이 없는 날은 보낸 날을 1일째로 센다', () => {
   expect(awaitingDays('2026-09-16T18:00:00+09:00', '2026-09-18')).toBe(3)
   expect(awaitingDays('2026-09-18T08:00:00+09:00', '2026-09-18')).toBe(1)
   expect(awaitingDays('2026-09-30T08:00:00+09:00', '2026-09-18')).toBe(1)
-})
-
-it('직접 정하기 입력값은 한국 시각으로 오가고, 처음 값은 정한 시각이나 내일 09:00 이다', () => {
-  expect(toSeoulInputValue('2026-09-25T05:30:00Z')).toBe('2026-09-25T14:30')
-  expect(fromSeoulInputValue('2026-09-25T14:30')).toBe('2026-09-25T14:30:00+09:00')
-  expect(fromSeoulInputValue('')).toBeNull()
-  expect(fromSeoulInputValue('2026-09-25')).toBeNull()
-  expect(initialCustomTime(null, '2026-09-18')).toBe('2026-09-19T09:00')
-  expect(initialCustomTime('2026-09-25T14:30:00+09:00', '2026-09-18')).toBe('2026-09-25T14:30')
 })
