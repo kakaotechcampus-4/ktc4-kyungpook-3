@@ -544,3 +544,23 @@ def test_save_alias_ignored_on_task_update_approval(pm_client, db, seed):
     assert r.status_code == 200, r.text
     assert r.json()["data"]["status"] == "approved"
     assert len(_aliases(db)) == before
+
+
+def test_chat_meeting_log_does_not_count_thirdrole_item_as_would_have_been_auto(client, db, seed, caplog):
+    """채팅 강등 로그는 chat 이 아니었으면 auto 였을 항목 수의 근거다(결정 기록 0042). 어차피 review 인 역할 항목은 세지 않는다."""
+    seed["meeting"].source = "chat"
+    db.commit()
+    items = [
+        _legacy("백엔드 배포", 0.95, assignee_type="thirdrole", assignee_raw="BE 리더"),
+        _legacy("결제 환불", 0.95, assignee_type="thirdname", assignee_raw="하은"),
+    ]
+
+    with caplog.at_level(logging.INFO):
+        r = _post(client, seed, items)
+
+    assert r.status_code == 201
+    assert _item(db, "백엔드 배포").gate == "review"
+    assert _item(db, "결제 환불").gate == "review"
+    lines = [m for m in caplog.messages if "chat 회의라 auto 항목을 review로 내립니다" in m]
+    assert len(lines) == 1
+    assert "title=결제 환불" in lines[0]

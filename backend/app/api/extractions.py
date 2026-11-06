@@ -254,6 +254,11 @@ def create_extraction(
                 assignee_confidence=match.confidence if mentioned else None,
                 blockers=blockers,
             )
+            if raw_item.assignee_type == "thirdrole" and gate == Gate.AUTO:
+                # 역할 지목("BE 리더가")은 학습한 별칭(0.9)으로 legacy 확신도가 높아져도 PM이 본다(#459).
+                # 판단 경로(judge)는 auto_blockers가 이미 막으므로 사실상 legacy에 걸리지만, 경로와 무관하게 막는다.
+                # 채팅 강등보다 먼저 둔다. 아래 로그가 "채팅이 아니었으면 auto였을 항목"만 세게 하려는 것이다
+                gate = Gate.REVIEW
             if meeting.source == MeetingSource.CHAT and gate == Gate.AUTO:
                 # 채팅에서 나온 항목은 PM이 보지 않고 반영하지 않는다. hold는 그대로 둔다
                 gate = Gate.REVIEW
@@ -262,10 +267,6 @@ def create_extraction(
                     "chat 회의라 auto 항목을 review로 내립니다. meeting_id=%s title=%s",
                     meeting.meeting_id, raw_item.task_title,
                 )
-            if raw_item.assignee_type == "thirdrole" and gate == Gate.AUTO:
-                # 역할 지목("BE 리더가")은 학습한 별칭(0.9)으로 legacy 확신도가 높아져도 PM이 본다(#459).
-                # 판단 경로(judge)는 auto_blockers가 이미 막으므로 사실상 legacy에 걸리지만, 경로와 무관하게 막는다
-                gate = Gate.REVIEW
                 logger.info(
                     "역할 지목 항목이라 auto를 review로 내립니다. meeting_id=%s title=%s",
                     meeting.meeting_id, raw_item.task_title,
