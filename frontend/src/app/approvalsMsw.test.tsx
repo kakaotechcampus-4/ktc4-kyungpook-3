@@ -185,6 +185,7 @@ describe('보완 값 검증 — 필드에 연결된 오류 (AC-05)', () => {
     fill({ assignee: 'mb_99', due: '2026-10-15' })
     await confirmForm()
     await expectFieldError(select, '이 워크스페이스의 팀원 중에서 담당자를 골라 주세요.')
+    expect(select).toHaveClass('border-accent', 'focus-visible:outline-accent-point')
     expect(dueInput()).not.toHaveAttribute('aria-invalid')
   })
 

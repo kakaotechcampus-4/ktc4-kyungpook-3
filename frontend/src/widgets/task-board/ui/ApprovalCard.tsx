@@ -294,7 +294,7 @@ function ApprovalFields({ values, issues, members, editable, onChange }: Approva
         <div className="relative">
           <select
             id={assigneeId}
-            className={`${SELECT} ${assigneeMissing ? 'border-accent text-accent-solid' : 'border-input-border text-ink'}`}
+            className={`${SELECT} ${assigneeMissing ? 'border-accent text-accent-solid focus-visible:outline-accent-point' : 'border-input-border text-ink'}`}
             aria-invalid={assigneeMissing ? true : undefined}
             disabled={!editable}
             value={values.assigneeMemberId ?? ''}

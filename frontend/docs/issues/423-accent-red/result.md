@@ -34,7 +34,7 @@
 - 흰 글자를 얹는 면은 `bg-accent-solid`다. 간트 위험 막대, 알림 개수 배지([NotificationBell.tsx](../../../src/features/notifications/ui/NotificationBell.tsx)), 막힘 알약의 hover·열림이다. 막힘 알약의 평상시 테두리·글자는 `accent`다.
 - 캘린더의 위험·주의 칩과 범례 견본은 `bg-accent-chip`에 먹 제목, `sub` 보조 줄이다([CalendarView.tsx](../../../src/widgets/task-board/ui/CalendarView.tsx)). 칩의 상태 아이콘은 제목 색(먹)을 따른다.
 - 점은 `bg-accent-point`다. 알림 안 읽음 점과 연결 끊김 점([connectionStyles.ts](../../../src/features/integration-connection/ui/connectionStyles.ts))이다.
-- 오류·막는 입력의 포커스 선은 `outline-accent-point`, 플레이스홀더는 `accent-solid`다([TextField.tsx](../../../src/shared/ui/text-field/TextField.tsx), [Checkbox.tsx](../../../src/shared/ui/checkbox/Checkbox.tsx), [ApprovalCard.tsx](../../../src/widgets/task-board/ui/ApprovalCard.tsx)).
+- 오류·막는 입력의 포커스 선은 `outline-accent-point`, 플레이스홀더는 `accent-solid`다([TextField.tsx](../../../src/shared/ui/text-field/TextField.tsx), [Checkbox.tsx](../../../src/shared/ui/checkbox/Checkbox.tsx), [ApprovalCard.tsx](../../../src/widgets/task-board/ui/ApprovalCard.tsx)). 승인 카드의 막힌 담당자 select와 보완 폼([TaskCreateOverridesForm.tsx](../../../src/features/approval-resolve/ui/TaskCreateOverridesForm.tsx))의 오류 담당자 select도 포커스 선이 포인트다. 전에는 전역 먹 선이었다.
 - 나머지 `text-accent`·`border-accent`(라벨, 오류 문구, 대시보드 `기한 지남`, 최근 반영 실패 등)는 클래스가 그대로이고 값만 `#c62828`로 바뀌었다.
 - 마스코트의 `#FF6969`와 바탕 면·선은 바꾸지 않았다.
 
@@ -44,8 +44,9 @@
 
 ### 테스트
 
-- [color-contrast.e2e.ts](../../../e2e/color-contrast.e2e.ts)가 `accent`·`accent-solid`·`faint` 글자와, `accent-solid`·`accent-badge`·`accent-chip` 면 위의 글자를 화면에서 찾아 4.5:1 이상인지 잰다. 점·포커스 선(`accent-point`)은 3:1 기준이라 세지 않는다.
-- 클래스를 단언하는 `TextField`·`Checkbox` 테스트를 새 토큰으로 맞췄다.
+- [color-contrast.e2e.ts](../../../e2e/color-contrast.e2e.ts)가 `accent`·`accent-point`·`accent-solid`·`faint` 글자와, 레드 다섯 값 중 `accent` 외 네 면 위의 글자를 화면에서 찾아 4.5:1 이상인지 잰다. `accent-point`는 점·포커스 선용 3:1 값이라 글자나 글자 바탕에 쓰이면 미달로 잡힌다. 점 자체는 글자가 없어 세지 않는다.
+- 캘린더 Storybook play(`TaskViews.stories.tsx`)가 마감 임박 칩의 면 `accent-chip`, 먹 제목, `sub` 보조 줄을 단언한다. 전에는 벽돌색 면을 기대했다.
+- 클래스를 단언하는 `TextField`·`Checkbox` 테스트를 새 토큰으로 맞췄다. 막힌·오류 담당자 select의 포인트 포커스 선을 `tasks.test.tsx`·`approvalsMsw.test.tsx`가 단언한다.
 - [browserPush.test.tsx](../../../src/app/browserPush.test.tsx)가 설정의 대기 상태 문구를 단언한다. 이전에는 이 문구를 단언하는 테스트가 없었다.
 
 ## 검증
