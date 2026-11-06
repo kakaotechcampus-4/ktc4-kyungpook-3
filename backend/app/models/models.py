@@ -89,6 +89,15 @@ class MeetingStatus(StrEnum):
     FAILED = "failed"
 
 
+class MeetingProcessingStage(StrEnum):
+    """AI 가 처리 중인 회의에서 지금 하는 일(#381). 순서는 services/meeting_stage.py 의 stage_rank 가 정한다."""
+
+    STT = "stt"
+    SOURCES = "sources"
+    EXTRACT = "extract"
+    HANDOFF = "handoff"
+
+
 class MeetingSource(StrEnum):
     DISCORD = "discord"
     MANUAL_UPLOAD = "manual_upload"
@@ -181,6 +190,21 @@ class User(Base):
     sessions: Mapped[list["Session"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
+
+
+class PasswordResetToken(Base):
+    """비밀번호 재설정 링크 토큰. 원문은 저장하지 않고 sha256 해시만 둔다(#356)."""
+
+    __tablename__ = "password_reset_token"
+    __table_args__ = (Index("ix_password_reset_token_user_created", "user_id", "created_at"),)
+
+    token_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("user.user_id", ondelete="CASCADE"))
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    invalidated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class Session(Base):
@@ -381,6 +405,11 @@ class Meeting(Base):
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # 전사 길이(ms). 전사가 들어오기 전에는 모르므로 NULL이다.
     duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # AI 가 알린 처리 단계(MeetingProcessingStage). processing 중에만 쓰고, 알리지 않았으면 NULL 이다
+    processing_stage: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    processing_stage_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     extractions: Mapped[list["Extraction"]] = relationship(
         back_populates="meeting", cascade="all, delete-orphan"

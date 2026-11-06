@@ -28,9 +28,9 @@ const HEAD =
   'flex h-header shrink-0 items-center justify-between gap-16 border-b border-divider px-28'
 const AVATAR =
   'inline-flex shrink-0 items-center justify-center rounded-999 bg-divider font-semibold text-ink'
-/* 강조색 면 흰 글자 — 지금 봐야 하는 위험 배지 (디자인 시스템 강조색) */
+/* 연한 레드 면에 강조색 글자. 지금 봐야 하는 위험 배지 (디자인 시스템 강조색) */
 const WAITING_BADGE =
-  'inline-flex h-22 shrink-0 items-center rounded-6 bg-accent px-9 text-meta leading-none font-semibold text-surface'
+  'inline-flex h-22 shrink-0 items-center rounded-6 bg-accent-badge px-9 text-meta leading-none font-semibold text-accent'
 const BODY =
   'relative flex min-h-[0px] flex-1 flex-col gap-16 overflow-y-auto bg-surface-sunken px-28 pt-24 pb-18'
 const DAY_RULE = 'h-1 flex-1 bg-line'
