@@ -18,9 +18,11 @@ import type { SettingsSectionId } from './settingsSections'
 import { SettingsSection } from './SettingsSection'
 
 /* Settings 캔버스 — main 패딩 48/48/72, 안쪽 1000px 에 목차 176px 과 본문(간격 44), 절 사이 40px */
-const MAIN = 'mx-auto flex w-full max-w-shell flex-1 justify-center px-48 pt-48 pb-72'
-const COLUMNS = 'flex w-full max-w-column items-start gap-44'
-const ASIDE = 'sticky top-[34px] flex w-[176px] shrink-0 flex-col gap-16'
+const MAIN = 'mx-auto flex w-full max-w-shell flex-1 justify-center px-48 pt-48 pb-72 max-md:px-20'
+/* 폭 768 미만은 목차 위 · 절 아래 한 열이다(D-180). 목차는 따라 내려오지 않는다 — 붙어 있으면 절을 가린다 */
+const COLUMNS = 'flex w-full max-w-column items-start gap-44 max-md:flex-col max-md:items-stretch'
+const ASIDE =
+  'sticky top-[34px] flex w-[176px] shrink-0 flex-col gap-16 max-md:static max-md:w-full'
 /* 제목은 들어올 때 포커스를 받는 자리다(tabIndex -1). 절 제목과 같이 포커스 표시는 없다 */
 const TITLE =
   'px-10 text-[22px] leading-[1.4] font-bold tracking-h1 text-ink focus-visible:outline-none'
