@@ -1,5 +1,15 @@
-export type { NotionSyncStatus, Task, TaskStatus, TaskTab, TaskHistoryEntry } from './model/types'
-export { isNotionSynced, toTask, toTaskHistory } from './model/mapper'
+export type {
+  NotionSyncStatus,
+  ReplyChangeField,
+  ReplyChangeLine,
+  ReplyChangeResult,
+  Task,
+  TaskStatus,
+  TaskTab,
+  TaskHistoryEntry,
+  TaskTimelineItem,
+} from './model/types'
+export { isNotionSynced, toTask, toTaskHistory, toTaskTimeline } from './model/mapper'
 export {
   createTask,
   fetchTask,
@@ -11,6 +21,7 @@ export {
   taskListQueryOptions,
   updateTaskStatus,
   undoTaskAutoBlock,
+  undoReplyChange,
   writeServerTask,
 } from './api/taskApi'
 export type { TaskCreateInput } from './api/taskApi'
