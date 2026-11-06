@@ -52,12 +52,21 @@ Codex 독립 리뷰(`d98a754a..fb0b6eb8`, 리베이스 전 해시)가 중간 결
 - **판단 알림이 태스크·승인을 다시 받지 않았다.** BE 는 태스크를 바꾸고 승인 요청을 만든 뒤 `reply_judged` 를 보내는데, 종은 메시지만 무효화했다. 이제 알림 종류 표가 종류마다 다시 받을 캐시(`messages`·`tasks`·`approvals`)를 정하고, 종이 처음 보는 알림의 합집합을 그 공간에서 무효화한다. `reply_judged` 는 셋 다, `reply_unjudged` 는 메시지·태스크(판단하지 못한 답장도 막힘을 풀 수 있다)다. 같은 이유로 `silence_blocked` 도 태스크를 다시 받는다. 잘려 보이지 않은 알림이 있을 수 있는 경우는 셋 다 다시 받는다. 훅 이름을 `useRefreshOnNotification` 으로 바꾸고 `isMessageNotification` 을 `notificationRefreshes` 로 옮겼다. 회귀 테스트 [replyJudgmentRefresh](../../../src/app/replyJudgmentRefresh.test.tsx) 3개(태스크 상세의 상태·기록, 대시보드 확인 대기 수, 판단 실패 알림의 상태)는 고치기 전 셋 다 알림 뒤 단언에서 실패했다.
 - **되돌리기 404 뒤 지운 태스크가 남았다.** 이제 404 `TASK_NOT_FOUND` 면 상세 쿼리를 비우고(`resetQueries`) 다시 받아 기존 「이 태스크를 볼 수 없어요」로 바뀌고, 이력을 지우고 목록을 다시 받는다. [taskReplyTimeline](../../../src/app/taskReplyTimeline.test.tsx)의 새 테스트는 목록을 먼저 받은 뒤 상세에서 지워진 태스크를 되돌린다. 고치기 전에는 볼 수 없음 화면을 찾지 못해 실패했고, 목록 무효화만 빼면 목록에 지운 태스크가 남아 실패한다.
 
+### 담당자를 찾지 못한 답장 카드 (2026-11-06, 나눔 지점 뒤)
+
+사용자 결정(코디네이터 전달): 이 카드는 PM 이 카드 안에서 담당자(미정 포함)를 골라야 승인할 수 있다. BE 는 `task_update` 의 `assignee_member_id` 덮어쓰기를 아직 받지 않아(#460) MSW 로 만들고, 앞 범위와 따로 병합할 수 있게 `b8367162` 뒤의 커밋으로만 두었다.
+
+- 모델: `TaskUpdateApproval.assigneePick: {raw} | null`, `TaskUpdateEdits.assigneeMemberId`. 승인 계획이 고르기 전이면 `담당자를 골라 주세요.` 로, 팀원이 아닌 값이면 막는다. 요청 본문에 `assignee_member_id` 를 싣는다.
+- 화면: 승인 상세의 `AssigneePickField`(안내 문장·고르기), 대시보드·태스크 보드 요약 줄. 을/를 고르기를 `shared/lib/korean` 으로 옮겨 대시보드와 같이 쓴다.
+- MSW: 이 카드에 한해 `assignee_member_id` 를 받는다. 일반 `task_update` 의 담당자 덮어쓰기는 지금처럼 400 이다(기존 `taskApprovalFlow` 테스트).
+- 테스트: [replyApprovals](../../../src/app/replyApprovals.test.tsx)(막힘·반려·고른 팀원·미정·대시보드 줄), [replyTimeline](../../../src/shared/mock/replyTimeline.test.ts)(승인 뒤 `rc_04` 가 `approved`, 담당자 없이 승인하면 `noted`), 모델 단위 테스트.
+
 ### 남은 문제
 
 - 실제 서버에 붙여 보지 않았다. 봇이 다시 판단한 결과가 화면에 오는 흐름은 MSW 가 흉내 내지 않는다.
 - 대화 목록에는 `답장 확인 필요` 표시가 없다(위 계약 FE 연결).
 - 한 답장에 되돌릴 줄이 여럿이면 `되돌리기` 버튼 이름이 같다. 지금 데이터에서는 줄마다 하나다.
-- 담당자를 찾지 못한 답장 카드의 담당자 고르기는 BE #460 합의 뒤 별도 커밋으로 둔다.
+- 담당자를 찾지 못한 답장 카드의 담당자 고르기는 BE #460 합의 대기다. 위 절의 커밋은 #460 배포 뒤 병합한다.
 
 ## 2026-11-06 메시지 갱신과 메시지 E2E (#371)
 
