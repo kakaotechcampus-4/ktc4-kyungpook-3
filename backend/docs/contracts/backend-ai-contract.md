@@ -549,7 +549,85 @@ AI 가 문구를 써야 하는 묶음을 준다. 요청 본문은 없다. 승인
   2. 그 DM 창에서 이 글 바로 앞에 나간 봇 DM 의 워크스페이스. 두 글의 시각은 보고 받은 시각이 아니라 디스코드 메시지 id(snowflake)에 든 보낸 시각으로 비교한다. 결과 보고는 답장보다 늦게 올 수 있으므로, 봇이 가져갔지만 아직 보고하지 않은 메시지(10분 시간 초과로 닫힌 것 포함)는 가져간 시각에 나간 것으로 본다. 이 글의 id 가 숫자가 아니면 `sent_at` 을 쓴다
   3. 봇이 가장 최근에 DM 을 보낸 워크스페이스, 그것도 없으면 가장 나중에 등록된 팀원
 - 404 `MEMBER_NOT_FOUND`: 어느 워크스페이스에도 그 디스코드 계정의 팀원이 없다. 버리고 넘어간다.
-- 답장이 어느 태스크에 대한 것인지는 판단하지 않는다. 답장 판단 작업이 붙일 몫이다.
+- 응답에는 판단 결과가 없다. 이 경로는 리마인드 후보가 있는 글을 저장과 같은 트랜잭션에서 판단 큐에 넣고, 어느 태스크에 대한 답인지는 아래 「리마인드 답장 판단」 경로가 정한다.
+
+## 리마인드 답장 판단
+
+팀원 답장을 봇이 맡아 태스크별 변경으로 판단해 돌려주는 경로다. 게이트·반영·승인 요청·기록·PM 알림은 BE 가 결과를 받는 트랜잭션에서 끝낸다.
+
+- 합의 상태: **BE 구현(#331), 합의 여부 확인 필요.** 소비자는 봇의 판단 워커(`ai/capture/dm.py`)다.
+- 판단은 답장 저장과 같은 트랜잭션에서 큐에 들어간다. 후보가 없는 글(리마인드와 무관한 글)은 큐에 들어가지 않고 판단하지 않는다.
+- 후보는 답장 앞에 나간 마지막 묶음의 태스크와 답장 앞에 열린 72시간 시계의 태스크를 합친 것이다. 지운 태스크, 담당이 대화 주인이 아닌 태스크는 뺀다.
+- 답장 한 통에 판단 하나다. 대화마다 가장 오래된 답장부터 한 통씩 맡기므로, 뒤 답장은 앞 답장의 반영 값을 본다.
+
+| 시점 | 요청 | 인증 |
+|---|---|---|
+| 주기적으로(판단 워커) | `POST /bot/replies/claim` | `X-Service-Token` |
+| 판단이 끝난 뒤(실패 포함) | `POST /bot/replies/{message_id}/judgment` | `X-Service-Token` |
+
+### `POST /bot/replies/claim` → 200
+
+맡길 답장 한 통을 준다. 없으면 `item` 이 null 이다. 3분 안에 결과가 없으면 `attempt` 를 올려 다시 맡긴다.
+
+```jsonc
+// data
+{ "item": {
+    "message_id": "…", "attempt": 1, "workspace_id": "…", "member_name": "재환",
+    "reply_date": "2026-11-04",                        // 보낸 날, 한국 시간
+    "lines": [{ "sender": "pm" | "member", "text": "…" }],  // 시간순, 마지막이 이번 답장, 최대 12줄
+    "candidates": [{ "task_id": "…", "title": "…", "status": "in_progress", "due_date": "2026-11-20" | null,
+                     "assignee_member_id": "…" | null, "updated_at": "…" }]
+} }   // 맡길 것이 없으면 { "item": null }
+```
+
+- `lines` 는 후보 태스크들의 마지막 리마인드 중 가장 앞선 것부터 이번 답장까지다. 이번 답장 뒤의 글은 싣지 않는다.
+- `candidates[].status` 는 열린 시계가 있는 막힘 태스크면 막기 전 상태다. 게이트도 같은 값과 비교한다.
+- PM 이 태스크를 고른 답장은 그 태스크만 후보로 다시 나온다.
+
+### `POST /bot/replies/{message_id}/judgment` → 200
+
+```jsonc
+// 요청
+{ "attempt": 1, "failure_reason": null, "model_name": "terra+luna+jev",
+  "changes": [{
+    "task_id": "…" | null,
+    "field": "status" | "due_date" | "assignee" | "scope" | "unknown" | "due_clear" | "failed",
+    "new_value": "done",
+    "evidence_status": "certain" | "inferred" | null,
+    "summary": "…", "evidence_quote": "…",
+    "assignee_type": null, "assignee_raw": null,
+    "base": { "status": "…", "due_date": "…", "assignee_member_id": "…", "title": "…", "updated_at": "…" }
+  }] }
+// data: null
+```
+
+- `failure_reason` 이 있으면 판단 전체 실패다. 예외 종류만 싣고 답장 글을 싣지 않는다. 120자에서 자른다.
+- `base` 는 판단이 본 값(`candidates` 그대로)이다. 게이트와 마감·담당자 승인 충돌 확인의 기준이다. 상태의 승인 충돌 기준은 BE 가 맡길 때 저장한 실제 상태다. `candidates[].status` 는 막기 전 상태일 수 있어서다. 답장으로 막힘이 풀리면 대기 중인 답장 카드의 기준도 풀린 상태로 옮긴다.
+- `unknown` 줄의 `task_id` 는 쓰지 않는다. `due_clear`·`failed` 줄은 어느 태스크인지 알면 `task_id` 를 싣고 모르면 null 이다. 실린 `task_id` 와 그 밖의 줄의 `task_id` 는 `candidates` 안의 태스크여야 한다.
+- `changes` 가 비면 바꿀 것 없는 답장이다. 푸시 없이 답장 기록에만 남는다. PM 이 태스크를 고른 재판단은 예외로 `→ 바꿀 내용을 찾지 못했어요. 직접 확인해 주세요` 를 알린다.
+
+| 줄 | BE 처리 |
+|---|---|
+| 지금 값과 같음, 지운 태스크 | 기록만 |
+| `status`, `certain`, `base.status` 가 지금과 같음, 답장 뒤 사람이 바꾼 상태 이력이 없음, 담당이 대화 주인 | 자동 반영(`change_source: reminder_reply`) |
+| 이미 막힌 태스크에 `blocked` 인데 자동 반영이 아님 | 기록만. 상태는 그대로이고 사유는 아래 규칙을 따른다 |
+| 그 밖의 `status`, `due_date`, `assignee`, `scope` | PM 승인 요청. 태스크당 한 장 |
+| `unknown` | 답장이 PM 차례가 되고 후보 시계가 멈춘다 |
+| `due_clear` | 자동 변경 없이 PM 에게 알린다. `task_id` 가 있으면 그 태스크 시계는 응답으로 친다 |
+| `failed` | 된 변경은 반영하고 확인 필요로 센다. `task_id` 가 있으면 그 태스크 시계는 응답으로 친다 |
+
+- `status=blocked` 는 자동 반영이든 기록만이든 사유가 비었거나 무응답 문구일 때만 사유를 쓴다. 사유는 `summary` 이고 비어 있으면 `팀원이 막혔다고 답했어요` 다. 태스크 사유는 모든 팀원에게 보이므로 답장 원문(`evidence_quote`)을 쓰지 않는다. PM 이 쓴 사유는 둔다.
+- 같은 `attempt` 재전송은 200 이고 아무것도 다시 하지 않는다. `attempt` 가 다르면 409 다.
+- 답장을 받은 뒤(PM 이 고르면 고른 뒤) 10분 안에 결과가 없으면 BE 가 판단을 끝내고 PM 에게 한 번 알린다. 그 뒤 온 결과는 200 으로 받아 기록만 하고 반영·승인·알림은 없다.
+- PM 이 태스크를 고른 뒤의 재판단은 `unknown` 을 버린다. 이미 적은 태스크·필드는 다시 반영하지 않는다.
+- 재판단은 더 새 답장이 그 태스크를 말한 줄(`applied`·`proposed`·`skipped`·`noted`, 말하지 않은 후보에 붙는 `field=none` 은 제외)을 남겼으면 자동 반영하지 않고 PM 승인 요청으로 보낸다.
+- PM 이 태스크를 고르면 고르지 않은 태스크의 시계는 재판단 결과와 상관없이 남은 시간부터 다시 센다. 재판단이 실패하거나 시간이 지나도 응답으로 치는 것은 고른 태스크뿐이다.
+
+| 코드 | HTTP | 봇 처리 |
+|---|---|---|
+| `REPLY_JUDGMENT_NOT_FOUND` | 404 | 버리고 넘어간다 |
+| `REPLY_JUDGMENT_STALE` | 409 | 버리고 넘어간다. 다시 맡긴 판단이나 PM 이 고른 뒤의 결과다 |
+| `INVALID_REQUEST` | 400 | 후보 밖 태스크, 값이 잘못된 줄. 아무것도 반영하지 않는다. 봇은 같은 attempt 로 `failure_reason: "INVALID_REQUEST"` 를 한 번 보내 PM 에게 바로 알린다 |
 
 ## 오류 코드 요약
 

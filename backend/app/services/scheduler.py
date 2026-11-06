@@ -7,7 +7,8 @@
 다른 워크스페이스의 일을 막지 않는다.
 
 응답은 그 팀원의 대화에 온 답장(디스코드, 웹)과 사람이 바꾼 태스크 상태·마감이다. 스케줄러가 건 막힘(출처 scheduler)은
-응답이 아니다. 답장 판단 작업 전까지는 대화 답장 하나가 그 대화로 나간 모든 태스크의 응답이다.
+응답이 아니다. 답장이 시계에 뜻하는 바는 판단이 끝난 뒤 replies.clock_effect 가 정한다. 발송 직전 재확인은 판단을 기다리지
+않고 답장이 왔는지만 본다.
 """
 import logging
 import threading
@@ -40,7 +41,7 @@ from app.models import (
     ThreadMessage,
     WatchState,
 )
-from app.services import message_settings, messages, notifications, push, tasks
+from app.services import message_settings, messages, notifications, push, replies, tasks
 from app.services.message_settings import MessageSettings
 
 logger = logging.getLogger(__name__)
@@ -435,7 +436,7 @@ def _preview(body: str, limit: int = 60) -> str:
 
 
 def settle_watches(db: Session, now: datetime) -> None:
-    """열린 시계를 응답·시각에 따라 닫거나 막는다. 막힌 태스크는 답장이 오면 푼다(D-059)."""
+    """열린 시계를 응답·시각에 따라 닫거나 막는다. 답장은 판단이 끝난 뒤 clock_effect 대로 푼다. 막혔다는 답장은 시계만 닫는다."""
     db.flush()
     watch_ids = db.scalars(
         select(ReminderWatch.watch_id)
@@ -456,9 +457,16 @@ def _settle(db: Session, watch_id: str, now: datetime) -> None:
         return
     sent_at = messages.utc(watch.sent_at)
     left_at = _left_thread_at(db, task, watch)
-    if _replied_after(db, watch.thread_id, sent_at, before=left_at):
+    effect = replies.clock_effect(db, watch, before=left_at)
+    if effect == replies.ClockEffect.WAIT:
+        return
+    _sync_pause(watch, effect == replies.ClockEffect.PAUSE, now)
+    if effect == replies.ClockEffect.ANSWERED:
         _release(db, task, watch, left_at, now)
         _close(watch, WatchState.RELEASED if watch.state == WatchState.BLOCKED else WatchState.ANSWERED, now)
+        return
+    if effect == replies.ClockEffect.KEEP_BLOCKED:
+        _close(watch, WatchState.ANSWERED, now)
         return
     if watch.state == WatchState.BLOCKED:
         return
@@ -468,6 +476,16 @@ def _settle(db: Session, watch_id: str, now: datetime) -> None:
     elif not (watch.applied and task.blocker == BLOCKER_TEXT):
         # 자동 막힘 사유가 남아 있으면 시계는 더 재지 않고, 되돌릴 값을 들고 답장이나 되돌리기를 기다린다.
         _close(watch, WatchState.STOPPED if stopped else WatchState.ANSWERED, now)
+
+
+def _sync_pause(watch: ReminderWatch, paused: bool, now: datetime) -> None:
+    """paused_at 의 유일한 쓰기 주체다. 멈춘 시간만큼 시한을 밀어 남은 시간부터 다시 센다."""
+    if paused and watch.paused_at is None:
+        watch.paused_at = now
+    elif not paused and watch.paused_at is not None:
+        if watch.deadline_at is not None:
+            watch.deadline_at = messages.utc(watch.deadline_at) + (now - messages.utc(watch.paused_at))
+        watch.paused_at = None
 
 
 def _run_clock(db: Session, task: Task, watch: ReminderWatch, now: datetime) -> None:
@@ -515,10 +533,10 @@ def _block(db: Session, task: Task, watch: ReminderWatch, now: datetime) -> None
 
 
 def _release(db: Session, task: Task, watch: ReminderWatch, left_at: datetime | None, now: datetime) -> None:
-    """답장이 온 재촉의 태스크를 푼다. 답장을 본 뒤 사람이 건 막힘은 그대로 둔다."""
+    """답장이 응답으로 판단된 재촉의 태스크를 푼다. 답장을 본 뒤 사람이 건 막힘은 그대로 둔다."""
     if task.status == TaskStatus.BLOCKED:
         since = _blocked_since(db, task) or messages.utc(watch.sent_at)
-        if _replied_after(db, watch.thread_id, since, before=left_at):
+        if replies.clock_effect(db, watch, before=left_at, after=since) == replies.ClockEffect.ANSWERED:
             _unblock(db, task, watch, now)
     elif task.blocker == BLOCKER_TEXT:
         _stamp(tasks.apply_task_updates(db, task, {"blocker": None}, change_source=ChangeSource.REMINDER_REPLY), now)
@@ -538,18 +556,44 @@ def _blocked_since(db: Session, task: Task) -> datetime | None:
 
 
 def _unblock(db: Session, task: Task, watch: ReminderWatch, now: datetime) -> None:
-    auto = watch.applied and watch.prev_status and task.blocker == BLOCKER_TEXT
-    status = watch.prev_status if auto else _status_before_block(db, task)
     _stamp(tasks.apply_task_updates(
-        db, task, {"status": status, "blocker": None}, change_source=ChangeSource.REMINDER_REPLY,
+        db, task, {"status": status_after_release(db, task, watch), "blocker": None},
+        change_source=ChangeSource.REMINDER_REPLY,
     ), now)
     db.flush()
+    replies.rebase_cards(db, task)
+
+
+def status_after_release(db: Session, task: Task, watch: ReminderWatch) -> str:
+    """막힌 태스크를 풀 때 돌아갈 상태."""
+    auto = watch.applied and watch.prev_status and task.blocker == BLOCKER_TEXT
+    return watch.prev_status if auto else _status_before_block(db, task)
 
 
 def _status_before_block(db: Session, task: Task) -> str:
-    """사람이 건 막힘의 이전 상태. 이력이 없으면 할 일로 돌린다."""
+    """사람이 건 막힘의 이전 상태. 이력이 없으면 할 일로 돌린다.
+
+    완료에서 막힘으로 온 줄은 건너뛴다. 되돌린 자동 완료가 그 모양으로 남아 답장이 풀 때 완료가 되살아나면 안 된다.
+    """
     old = db.scalar(
         select(TaskHistory.old_value)
+        .where(
+            TaskHistory.task_id == task.task_id,
+            TaskHistory.changed_field == ChangedField.STATUS,
+            TaskHistory.new_value == TaskStatus.BLOCKED,
+            TaskHistory.old_value != TaskStatus.DONE,
+        )
+        .order_by(TaskHistory.created_at.desc())
+        .limit(1)
+    )
+    return old if old and old != TaskStatus.BLOCKED else TaskStatus.TODO
+
+
+def auto_block_watch(db: Session, task: Task) -> ReminderWatch | None:
+    """태스크의 마지막 막힘을 스케줄러가 걸었으면 되돌릴 값을 든 시계. 닫힌 시계도 본다."""
+    db.flush()
+    source = db.scalar(
+        select(TaskHistory.change_source)
         .where(
             TaskHistory.task_id == task.task_id,
             TaskHistory.changed_field == ChangedField.STATUS,
@@ -558,7 +602,14 @@ def _status_before_block(db: Session, task: Task) -> str:
         .order_by(TaskHistory.created_at.desc())
         .limit(1)
     )
-    return old if old and old != TaskStatus.BLOCKED else TaskStatus.TODO
+    if source != ChangeSource.SCHEDULER:
+        return None
+    return db.scalar(
+        select(ReminderWatch)
+        .where(ReminderWatch.task_id == task.task_id, ReminderWatch.applied.is_(True))
+        .order_by(ReminderWatch.sent_at.desc())
+        .limit(1)
+    )
 
 
 def _auto_block_state(task: Task) -> bool:
@@ -595,6 +646,7 @@ def undo_auto_block(db: Session, task: Task, *, changed_by: str, now: datetime) 
     )
     _close(watch, WatchState.RELEASED, now)
     db.flush()
+    replies.rebase_cards(db, task)
     return task
 
 
@@ -634,6 +686,7 @@ def run_tick(
     except Exception:
         logger.exception("리마인드 발송 단계 실패")
         db.rollback()
+    _each(db, replies.overdue(db, now), lambda message_id: replies.expire(db, message_id, now))
     settle_watches(db, now)
     notifications.send_pending_pushes(db, now=now, send=send)
     db.commit()

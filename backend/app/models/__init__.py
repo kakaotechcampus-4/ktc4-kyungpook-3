@@ -64,7 +64,12 @@ from app.models.models import (
     ReminderKind,
     ReminderOrigin,
     ReminderStatus,
+    ReplyChange,
+    ReplyChangeField,
+    ReplyChangeOutcome,
     ReplyChannel,
+    ReplyJudgment,
+    ReplyJudgmentState,
     ThreadMessage,
 )
 
@@ -82,5 +87,6 @@ __all__ = [
     "BodySource", "BotDmPart", "DmFailureReason", "DmStatus", "DraftStatus", "MessageSender", "MessageThread",
     "Reminder", "ReminderBundle", "ReminderKind", "ReminderOrigin", "ReminderStatus", "ReplyChannel", "ThreadMessage",
     "Notification", "PushStatus", "PushSubscription", "ReminderWatch", "SchedulerSuggestion", "WatchState",
+    "ReplyChange", "ReplyChangeField", "ReplyChangeOutcome", "ReplyJudgment", "ReplyJudgmentState",
     "PmAlertMethod", "WorkspaceMessageSettings",
 ]

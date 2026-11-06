@@ -41,7 +41,7 @@ from app.models import (
     Workspace,
     WorkspaceMessageSettings,
 )
-from app.services import scheduler
+from app.services import replies, scheduler
 
 # 봇이 가져간 뒤 결과 보고가 이 시간 안에 없으면 못 보냄(알 수 없음)으로 닫는다. 다시 주지 않는다(최대 한 번).
 CLAIM_TIMEOUT = timedelta(minutes=10)
@@ -816,6 +816,7 @@ def ingest_discord_reply(
     except IntegrityError:
         # 같은 id 가 동시에 들어와 다른 요청이 먼저 저장했다.
         return _message_by_discord_id(db, discord_message_id), False
+    replies.open_judgment(db, message, now)
     return message, True
 
 
@@ -907,4 +908,5 @@ def add_web_reply(db: Session, thread: MessageThread, *, body: str, now: datetim
     )
     db.add(message)
     db.flush()
+    replies.open_judgment(db, message, now)
     return message
