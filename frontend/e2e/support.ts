@@ -85,6 +85,9 @@ export async function start(
   await expect(page.locator('#root main:not([aria-busy]), #root header').first()).toBeVisible({
     timeout: 15_000,
   })
+  // 로딩 스플래시(#430)는 화면 뼈대가 모두 걷힐 때까지 앱을 덮고 #root 를 inert 로 막는다. 헤더가 판 아래에 그려져 있어도
+  // 아직 포커스·클릭이 닿지 않으므로 판이 걷힐 때까지 기다린다
+  await expect(page.locator('.splash')).toHaveCount(0, { timeout: 15_000 })
 }
 
 /** 온보딩을 마친 계정의 첫 대시보드에 뜨는 매스 인트로를 닫는다 (#430). 닫아야 뒤의 대시보드를 읽고 누를 수 있다 */
