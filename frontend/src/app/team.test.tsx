@@ -4,6 +4,7 @@ import { http } from 'msw'
 import { paths } from '@/shared/config/routes'
 import { db } from '@/shared/mock/db'
 import { fail } from '@/shared/mock/envelope'
+import { MOCK_NOW } from '@/shared/mock/fixtures/constants'
 import { applyScenario } from '@/shared/mock/scenarios'
 import { server } from '@/shared/mock/server'
 import { deferred } from '@/shared/test/deferred'
@@ -238,5 +239,45 @@ describe('팀 화면 — 일반 팀원', () => {
     expect(area.queryByRole('button')).toBeNull()
     expect(screen.queryByRole('button', { name: '팀원 관리' })).toBeNull()
     expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('팀원 초대 상태와 조작이 없고 PM 전용 초대 목록을 부르지 않는다', async () => {
+    const log = recordRequests()
+    renderApp(TEAM)
+    expect(await screen.findByRole('heading', { name: '앞으로 7일' })).toBeInTheDocument()
+    for (const name of ['김서연', '박민수', '이재환', '정하늘'])
+      expect(
+        within(screen.getByRole('region', { name })).queryByRole('button', {
+          name: /초대|연결 끊기/,
+        }),
+        name,
+      ).toBeNull()
+    expect(log.started.filter(({ path }) => path.includes('/invitations'))).toEqual([])
+  })
+})
+
+describe('팀 화면 — 기한 지남을 색 말고도 알린다 (KWCAG 색에 무관한 인식)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date(MOCK_NOW))
+    applyScenario('settings-unmapped')
+  })
+  afterEach(() => vi.useRealTimers())
+
+  it('기한이 지난 마감에만 경고 표식이 붙고 기한 지남으로 읽힌다', async () => {
+    renderApp(TEAM)
+    const rows = within(
+      within(await screen.findByRole('region', { name: '박민수' })).getByRole('list', {
+        name: '박민수의 일',
+      }),
+    ).getAllByRole('listitem')
+    const due = (title: string) => {
+      const row = rows.find((item) => within(item).queryByText(title) !== null)
+      return row?.querySelector('span.tabular-nums') as HTMLElement
+    }
+    expect(due('회원가입 화면')).toHaveTextContent('09/16 기한 지남')
+    expect(due('회원가입 화면').querySelector('svg')).not.toBeNull()
+    expect(due('토큰 정리')).toHaveTextContent(/^09\/17$/)
+    expect(due('토큰 정리').querySelector('svg')).toBeNull()
   })
 })

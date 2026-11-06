@@ -1,13 +1,14 @@
 from datetime import date, datetime
 from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator
 
 from app.models import (
     ApprovalStatus,
     EvidenceStatus,
     ExtractionAction,
     ExtractionPath,
+    MeetingProcessingStage,
     MeetingSource,
     TaskStatus,
 )
@@ -21,8 +22,21 @@ class MeetingCreateRequest(BaseModel):
     workspace_id: str = Field(..., description="소속 워크스페이스 ID")
     title: str | None = Field(None, description="회의 제목 (optional)")
     source: MeetingSource = Field(
-        MeetingSource.DISCORD, description="discord | manual_upload"
+        MeetingSource.DISCORD, description="discord | manual_upload | chat"
     )
+    started_at: AwareDatetime | None = Field(
+        None,
+        description="회의 시작 시각(시간대 필수, UTC 로 저장). 없으면 지금. 지금보다 늦으면 400. "
+        "채팅 출처는 이 회의에 담긴 첫 메시지 시각을 보낸다",
+    )
+
+
+class ChatCursorResponse(BaseModel):
+    """봇이 마지막으로 처리한 채팅 위치. 끝난 채팅 회의가 없으면 data 가 null 이다."""
+
+    meeting_id: str
+    # str 로 둔다. datetime 으로 직렬화하면 +00:00 이 Z 로 바뀌어 계약(`+00:00`)과 달라진다
+    last_message_at: str = Field(..., description="마지막 메시지 시각. ISO 8601, UTC(+00:00)")
 
 
 class MeetingCreateResponse(BaseModel):
@@ -44,6 +58,19 @@ class MeetingEndResponse(BaseModel):
 
 class MeetingFailRequest(BaseModel):
     failed_stage: str = Field(..., description="어느 단계에서 실패했는지 (e.g., STT, LLM)")
+
+
+class MeetingStageRequest(BaseModel):
+    stage: MeetingProcessingStage = Field(
+        ..., description="AI 가 지금 시작한 처리 단계"
+    )
+
+
+class MeetingStageResponse(BaseModel):
+    meeting_id: str
+    status: str
+    processing_stage: str | None
+    applied: bool = Field(..., description="이 보고가 반영됐는지(같은 단계·역행·처리 중이 아님은 False)")
 
 
 class MeetingProgress(BaseModel):

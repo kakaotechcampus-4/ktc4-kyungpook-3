@@ -1,35 +1,33 @@
 import type { MessageSender } from '@/entities/message'
 import type { Role } from '@/shared/types/common'
 
-/** 메시지 화면을 보는 사람. 페이지가 공간 역할을 넘기고, 아래는 이 표만 본다 */
-export type MessageViewer = Role
-
-export interface ViewerPolicy {
-  /** 보내기 전 확인 영역을 보이고, 아무것도 고르지 않았으면 첫 항목을 고른다 */
-  reviews: boolean
-  /** 답장의 태스크를 고른다. 보내기 전 확인과 따로다 */
-  attribution: boolean
-  /** 오른쪽 먹 면에 그리는 보낸 쪽 */
-  ownSender: MessageSender
-  /** 봇 말풍선 시각 줄에 `자동 발송`·`… 승인` 을 붙인다 */
-  deliveryNote: boolean
-  /** 대화 아래 — PM 은 안내 바, 팀원은 답장 입력 */
-  foot: 'notice' | 'reply'
+/** 메시지 화면을 보는 사람. 페이지가 공간 역할과 팀원 행을 넘긴다 */
+export interface MessageViewer {
+  role: Role
+  /** 이 공간에서 보는 사람의 팀원 행. 없으면 null */
+  memberId: string | null
 }
 
-export const VIEWER_POLICY: Record<MessageViewer, ViewerPolicy> = {
-  pm: {
-    reviews: true,
-    attribution: true,
-    ownSender: 'bot',
-    deliveryNote: true,
-    foot: 'notice',
-  },
-  member: {
-    reviews: false,
-    attribution: false,
-    ownSender: 'member',
-    deliveryNote: false,
-    foot: 'reply',
-  },
+export interface ViewerPolicy {
+  /** 오른쪽 먹 면에 그리는 보낸 쪽 */
+  ownSender: MessageSender
+  /** 답장 기다림(머리 배지·목록 점·`여기서부터 답장이 없습니다`)을 보인다 */
+  awaiting: boolean
+  /** 재촉을 만든다(`새 재촉`). 서버도 PM 만 받는다 */
+  compose: boolean
+  /** 리마인드를 받은 대화 위에 이 기기의 알림을 켜자는 띠를 보인다 (#411). 리마인드는 팀원이 받는다 */
+  pushPrompt: boolean
+}
+
+export const VIEWER_POLICY: Record<Role, ViewerPolicy> = {
+  pm: { ownSender: 'bot', awaiting: true, compose: true, pushPrompt: false },
+  member: { ownSender: 'member', awaiting: false, compose: false, pushPrompt: true },
+}
+
+/**
+ * 웹 답장은 대화 주인만 한다(계약 §5.7). 팀원이 여는 대화는 모두 자기 대화라 팀원 행을 몰라도 답장 칸을 둔다.
+ * PM 은 팀원 행이 그 대화의 주인일 때만이다 — 팀원 행이 없거나(옛 백엔드) 남의 대화면 서버가 403 이다
+ */
+export function canReply(viewer: MessageViewer, threadMemberId: string): boolean {
+  return viewer.role === 'member' || viewer.memberId === threadMemberId
 }

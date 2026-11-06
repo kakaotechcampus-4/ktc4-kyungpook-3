@@ -51,7 +51,7 @@ npm run typecheck && npm run lint && npm run format:check && npm run test && npm
 | 1 | **`font-weight: 500` 사용 금지** | 나눔스퀘어는 Light 300 · Regular 400 · Bold 700 · ExtraBold 800 **네 단뿐**이라 500은 조용히 400으로 떨어진다. 캔버스 25장 전체에서 `font-weight: 500`이 **0건**이다(실측: 400 → 114회, 600 → 526회, 700 → 211회). 600은 700으로 렌더되지만 문서와 시안이 쓰므로 유지한다. 토큰에서 `font-medium` 유틸 자체를 제거한다(§5-6) |
 | 2 | **`#000000` 금지** | 잉크는 `#171717` 하나다. 마스코트의 몸·눈·타이머 버튼도 `#171717`이다. design-system.md §12 명시. Tailwind 기본 팔레트를 `--color-*: initial`로 비워 `black`·`red-500` 같은 유틸이 아예 생기지 않게 한다 |
 | 3 | **그림자로 고도를 만들지 않는다** | design-system.md §5 "그림자로 고도를 만들지 않는다(거의 안 씀)". 깊이는 1px 헤어라인이 낸다. **그림자 토큰을 만들지 않는다** — 시안에 4곳 있지만 §3-④ 충돌 항목 참고 |
-| 4 | **`ok`/`warn`/`bad`/`pri` 같은 의미색 토큰을 만들지 않는다** | design-system.md §3-3·§12 명시. 문서가 쓰는 역할 이름(ink · 보조 · 흐림 · 미세 · 면 · 선 · 구분선 · 컨트롤 · 비활성 · 입력 경계 · 강조)을 그대로 옮긴다. 유채색은 `#FF6969`·`#FF8989` 두 값뿐이고 그 밖에 유채색을 만들지 않는다 |
+| 4 | **`ok`/`warn`/`bad`/`pri` 같은 의미색 토큰을 만들지 않는다** | design-system.md §3-3·§12 명시. 문서가 쓰는 역할 이름(ink · 보조 · 흐림 · 미세 · 면 · 선 · 구분선 · 컨트롤 · 비활성 · 입력 경계 · 강조)을 그대로 옮긴다. 유채색은 강조색 레드 다섯 값(`#C62828`·`#E62E2D`·`#D32F2F`·`#FBE9E7`·`#F4D9D7`)뿐이고 그 밖에 유채색을 만들지 않는다 ([레드 R2 기록](basis-for-decision/2026-11-06-accent-red-r2.md)) |
 | 5 | **`site-runtime/*.ttf`를 쓰지 않는다** | IBM Plex / JetBrains / Space Grotesk는 폐기된 프로토타입 자산이다. 루트 `.gitignore:76`에 `frontend/docs/design/site-runtime/`이 등록돼 있고 이 워크트리에는 **디렉터리 자체가 없다.** 번들에 포함하지 않는다 |
 | 6 | **`canvas/`를 수정하지 않는다** | 읽기 전용 스냅샷이다. 값이 틀려 보여도 고치지 않고 이 문서에 충돌로 기록한다 |
 | 7 | **공통 컴포넌트에 기능 전용 한국어 문구를 하드코딩하지 않는다** | `승인`·`반려`·`회의 올리기` 같은 문구를 `Button`·`EmptyState` 안에 박지 않는다. `label`·`title`·`description`·`action` 등 props로 받는다(D-149). 예외: `aria-label="닫기"` 같은 **컴포넌트 자신의 구조에 속하는 접근성 문구**는 기본값을 두되 props로 덮을 수 있게 한다 |
@@ -516,11 +516,14 @@ import './app/styles/index.css'
 | 선 | 구분선 | `divider` | `#EFEFEF` | 헤더 아래 · 행과 행 사이 | 선으로 38회 |
 | 선 | 강조 테두리 | `line-strong` | `#C9C9C9` | 지금 봐야 하는 카드 한 겹 · 인증/온보딩 입력 경계 | 선으로 28회 |
 | 선 | 점선 | `dashed` | `#BDBDBD` | 비어 있음 · 아직 정해지지 않음 | 선으로 21회 |
-| 강조 | 강조 · 경고 | `accent` | `#FF6969` | 위험 배지 · 승인을 막는 입력의 라벨·경계 | 면·선·글자 22회 |
-| 강조 | 연한 짝 | `accent-soft` | `#FF8989` | 위 입력의 플레이스홀더에만 | 글자 2회 |
+| 강조 | 강조 · 경고 (글자) | `accent` | `#C62828` | 작은 글자 · 오류·승인을 막는 입력의 라벨·경계 · 배지 글자 ([레드 R2 기록](basis-for-decision/2026-11-06-accent-red-r2.md)) | 시안 `#FF6969` 면·선·글자 22회 |
+| 강조 | 포인트 | `accent-point` | `#E62E2D` | 글자가 아닌 표식: 안 읽음·끊김 점 · 강조색 포커스 선 | — |
+| 강조 | 면 | `accent-solid` | `#D32F2F` | 흰 글자를 얹는 면 · 흰 입력의 플레이스홀더 | 시안 `#FF8989` 플레이스홀더 2회 |
+| 강조 | 배지 면 | `accent-badge` | `#FBE9E7` | 글자 있는 배지의 바탕 (글자는 `accent`) | — |
+| 강조 | 칩·띠 | `accent-chip` | `#F4D9D7` | 캘린더 칩 · 안내 띠의 바탕 (글자는 먹) | — |
 
 **`accent`라는 이름에 대해** — 금지된 것은 `ok`/`warn`/`bad`/`pri`처럼 **상태 의미를 발명하는** 이름이다.
-`accent`는 문서가 쓰는 역할 이름 "**강조** · 경고"의 직역이고, 값이 `#FF6969` 하나뿐이라 새 의미 축을 만들지 않는다.
+`accent`는 문서가 쓰는 역할 이름 "**강조** · 경고"의 직역이다. 레드 한 계열을 칠하는 자리(`point`·`solid`·`badge`·`chip`)로 나눴을 뿐 새 의미 축을 만들지 않는다 ([레드 R2 기록](basis-for-decision/2026-11-06-accent-red-r2.md)).
 `--color-danger`·`--color-error`로 부르면 안 된다.
 
 **선 색 3개가 글자에도 쓰인다** (Foundations 명시, 실제로는 7단):
@@ -696,9 +699,13 @@ Foundations "치수" 표 실측:
   --color-line-strong: #c9c9c9; /* 강조 테두리 — 지금 봐야 하는 카드 한 겹 */
   --color-dashed: #bdbdbd; /* 점선 — 비어 있음·아직 정해지지 않음 */
 
-  /* ---------- 색 · 강조 (유일한 유채색 2개) ---------- */
-  --color-accent: #ff6969; /* 강조·경고 — 위험 배지, 승인을 막는 입력의 라벨·경계 */
-  --color-accent-soft: #ff8989; /* 연한 짝 — 위 입력의 플레이스홀더에만 */
+  /* ---------- 색 · 강조 (유일한 유채색, 레드 5종) ----------
+     docs/plan/m2/basis-for-decision/2026-11-06-accent-red-r2.md */
+  --color-accent: #c62828; /* 작은 글자·오류·승인을 막는 입력의 라벨과 경계·배지 글자. 면 4종 위 4.5:1 이상 */
+  --color-accent-point: #e62e2d; /* 글자 아닌 표식. 안 읽음 점·끊김 점·포커스 선. 면 4종 위 3:1 이상 */
+  --color-accent-solid: #d32f2f; /* 흰 글자를 얹는 면, 흰 입력의 플레이스홀더. 흰색과 4.5:1 이상 */
+  --color-accent-badge: #fbe9e7; /* 글자 있는 배지의 면. 글자는 accent */
+  --color-accent-chip: #f4d9d7; /* 캘린더 칩·안내 띠의 면. 글자는 ink·sub */
 
   /* ---------- 간격 ----------
      4px 배수 스케일이 아니다. 아트보드 22장에서 3회 이상 쓰인 34종.
@@ -1085,7 +1092,7 @@ interface ButtonProps extends React.ComponentPropsWithoutRef<'button'> {
 **규칙**
 
 - **주 액션은 화면당 1개.** 컴포넌트가 강제할 수 없으므로 **JSDoc에 적어 둔다.** (승인 카드가 여럿이면 카드마다 하나.)
-- **파괴적 빨강 채움 버튼은 없다.** `반려`·`보내지 않음`·`팀 삭제`도 `ghost` 또는 `default`로 그린다. `#FF6969` 채움 버튼을 만들지 않는다.
+- **파괴적 빨강 채움 버튼은 없다.** `반려`·`보내지 않음`·`팀 삭제`도 `ghost` 또는 `default`로 그린다. 강조색 면(`accent-solid` `#D32F2F`) 채움 버튼을 만들지 않는다 ([레드 R2 기록](basis-for-decision/2026-11-06-accent-red-r2.md)).
 - `disabled` 대신 `aria-disabled`를 쓰는 자리가 있다(`SetupTeam`의 `이전`). 포커스를 남겨야 하면 `aria-disabled`, 완전히 뺄 것이면 `disabled`.
 
 ---
@@ -1128,7 +1135,8 @@ interface ButtonProps extends React.ComponentPropsWithoutRef<'button'> {
 </div>
 ```
 
-> `#FF6969`는 **"비우면 승인이 막히는 입력"에만** 쓴다(Foundations 강조 절). 일반 검증 실패에 쓰지 않는다.
+> 강조색은 **"비우면 승인이 막히는 입력"에만** 쓴다(Foundations 강조 절). 일반 검증 실패에 쓰지 않는다.
+> 위 실측의 `#FF6969`·`#FF8989`는 캔버스 값이다. 제품은 라벨·경계 `accent` `#C62828`, 플레이스홀더 `accent-solid` `#D32F2F`, 포커스 선 `accent-point` `#E62E2D`를 쓴다 ([레드 R2 기록](basis-for-decision/2026-11-06-accent-red-r2.md)).
 > 일반 미입력 필수칸은 design-system.md §7-7대로 **경계를 먹(`#171717`)으로** 그린다.
 > **확인 필요** — 먹 경계의 실측 사례가 캔버스에 없다. M4에서 첫 사례를 만들 때 정한다.
 > → **M4 에서 정했다**: 검증 오류가 난 칸(오류 문구가 붙은 동안)은 강조색이다. 먹 경계는 오류 전에 필수칸을 미리 표시할 때의 규칙으로 남기고,
@@ -1142,7 +1150,7 @@ type FieldTone = 'product' | 'onboarding' | 'auth'
 interface TextFieldProps extends Omit<React.ComponentPropsWithoutRef<'input'>, 'size'> {
   tone?: FieldTone            // 기본 'product'
   label?: string              // 없으면 라벨을 그리지 않는다 (aria-label 을 직접 넘긴다)
-  labelTone?: 'normal' | 'required-blocking'  // 'required-blocking' 이면 라벨·경계가 #FF6969
+  labelTone?: 'normal' | 'required-blocking'  // 'required-blocking' 이면 라벨·경계가 accent (#C62828)
   description?: string
   error?: string              // 있으면 ErrorText 를 그리고 aria-invalid + aria-describedby 를 잇는다
   startAdornment?: React.ReactNode
@@ -1169,7 +1177,7 @@ interface TextFieldProps extends Omit<React.ComponentPropsWithoutRef<'input'>, '
 | `product` (Upload) | 12.5 / 400 | `#5A5A5A` | 입력 위, `gap: 7px` | `Upload.dc.html` |
 | `onboarding` | 12 / 400 | `#666666` (흐림) | 입력 위, `gap: 7px` | `SetupTeam.dc.html` |
 | `auth` | 13 / 400 | `#666666` | 입력 위, `gap: 8px` | `Login.dc.html` `Signup.dc.html` |
-| `required-blocking` | 12 / 400 | **`#FF6969`** | 〃 | `Tasks.dc.html` |
+| `required-blocking` | 12 / 400 | **`#C62828`** (`accent`, [레드 R2 기록](basis-for-decision/2026-11-06-accent-red-r2.md)) | 〃 | `Tasks.dc.html` |
 
 **굵기는 4/4 화면군 전부 400이다.** 라벨에 600을 쓰지 않는다.
 (design-system.md §4-1의 "버튼·라벨·배지 13/600"은 **배지·버튼**을 말한다. 필드 라벨은 §7-7대로 400이다. 이 둘을 섞지 않는다.)
@@ -1177,7 +1185,7 @@ interface TextFieldProps extends Omit<React.ComponentPropsWithoutRef<'input'>, '
 ```ts
 interface LabelProps extends React.ComponentPropsWithoutRef<'label'> {
   tone?: 'product' | 'onboarding' | 'auth'
-  blocking?: boolean   // true 면 #FF6969 — "비우면 승인이 막히는 입력"에만
+  blocking?: boolean   // true 면 accent (#C62828) — "비우면 승인이 막히는 입력"에만
 }
 ```
 
@@ -1189,7 +1197,7 @@ interface LabelProps extends React.ComponentPropsWithoutRef<'label'> {
 | 항목 | 제안 값 | 근거 |
 |---|---|---|
 | 크기 / 굵기 | 12 / 400 | 라벨과 같은 단. 오류가 라벨보다 커지면 시선을 뺏는다 |
-| 색 | `#FF6969` | 경계·라벨과 같은 색. 유채색을 새로 만들지 않는다 |
+| 색 | `#C62828` (`accent`) | 경계·라벨과 같은 색. 유채색을 새로 만들지 않는다 ([레드 R2 기록](basis-for-decision/2026-11-06-accent-red-r2.md)) |
 | 위치 | 입력 **아래**, `margin-top: 6px` | D-142 "필드 오류는 입력 아래" |
 | 역할 | ~~`<p role="alert" id={errorId}>`~~ → `<p id={errorId}>` (M4) | 입력의 `aria-describedby`가 이걸 가리키고 `aria-invalid="true"`가 붙는다. alert 를 겹치면 두 번 읽혀 M4 에서 뺐다 (`impl-decision/2026-09-29-field-error-announcement.md`) |
 | 아이콘 | 없음 | design-system.md §7-13 "유채 정보/성공/경고/오류 박스를 쓰지 않는다" |
@@ -1267,7 +1275,7 @@ interface PanelProps extends React.ComponentPropsWithoutRef<'div'> {}
 | pressed | 면 `#5A5A5A` (checked) / 테두리 `#171717` (unchecked) | **제안** — `:active` 실측 0건 |
 | focus | `outline: 2px solid #171717; outline-offset: 4px` | 전역 |
 | **disabled** | 면 `#DCDCDC`(비활성 표식) · 테두리 없음 · 체크 `#FFFFFF` / unchecked 테두리 `#C9C9C9` | **제안** — `#DCDCDC`의 Foundations 용례가 "비활성 표식"이다 |
-| error | 테두리 `#FF6969` | **제안** — 약관 동의 미체크 차단에만 |
+| error | 테두리 `#C62828` (`accent`) · 포커스 선 `#E62E2D` (`accent-point`) | **제안** — 약관 동의 미체크 차단에만 ([레드 R2 기록](basis-for-decision/2026-11-06-accent-red-r2.md)) |
 
 > 2026-09-23: 체크·중간 상태의 눌림 면 변화는 없앴다. 미체크 테두리 눌림은 남는다 — docs/impl-decision/2026-09-23-no-pressed-face-checkbox-segmented.md
 
@@ -1818,7 +1826,7 @@ cd frontend && npm run dev   # http://localhost:5173
 | 7 | 모든 컴포넌트의 pressed(`:active`) | 캔버스에 `:active` 0건 | M4에서 일괄 확정 |
 | 8 | ~~`Button variant="primary"`의 hover~~ | **채택.** `#666666` / 흰 글자. 기본 버튼은 `#C9C9C9` / 먹 글자 | design-system.md §7-6 |
 | 9 | **키보드 포커스 표시가 없다 — 최우선** | `outline` 배제만 정하고 대체 표현을 안 정했다. 탭 이동 시 화면 변화 0 (§6-4) | **닫힘 (2026-09-23, #73).** `docs/impl-decision/2026-09-23-focus-outline-over-border.md` |
-| 10 | 필수 미입력칸의 **먹 경계** | design-system.md §7-7이 "먹 또는 `#FF6969`"라 하는데 먹 사례가 캔버스에 없다 | M4 첫 사례에서 정한다 |
+| 10 | 필수 미입력칸의 **먹 경계** | design-system.md §7-7이 "먹 또는 강조색(`#C62828`, [레드 R2 기록](basis-for-decision/2026-11-06-accent-red-r2.md))"이라 하는데 먹 사례가 캔버스에 없다 | M4 첫 사례에서 정한다 |
 | 11 | `Tasks` 카드 안 입력의 12px/13px vs 표준 13px/13.5px | Foundations 샘플과 `Tasks` 실물이 1px씩 다르다 (§3-⑩) | M4에서 3열 그리드를 실제로 짜고 결정 |
 | 12 | `Modal`에 닫기 X 버튼을 넣을지 | 시안에 X가 없다 | M4에서 결정 |
 | 13 | 아이콘 라이브러리 | 아직 고르지 않았다. 시안은 전부 인라인 SVG | design-system.md §6 조건(1.5–1.9px 스트로크, 13–17px, 단일 세트)에 맞는 것을 M4 전에 고른다 |

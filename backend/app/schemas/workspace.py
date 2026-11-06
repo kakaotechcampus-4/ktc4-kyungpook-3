@@ -33,6 +33,10 @@ class WorkspaceResponse(BaseModel):
     name: str
     created_at: datetime
     role: Optional[str] = None
+    member_id: Optional[str] = Field(
+        None,
+        description="로그인 사용자의 이 워크스페이스 팀원 행 ID. 탈퇴하지 않은 행이고 role 과 같은 행. 없으면 null",
+    )
     onboarding: Optional[WorkspaceOnboarding] = None
 
 

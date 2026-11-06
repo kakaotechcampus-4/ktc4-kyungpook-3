@@ -1,0 +1,105 @@
+{
+  "wall": 38700,
+  "top": [
+    [
+      "setItem :0",
+      24490.14900000002
+    ],
+    [
+      "saveDb mock/persistence.ts:54",
+      3279.8819999999987
+    ],
+    [
+      "(garbage collector) :0",
+      1598.1220000000008
+    ],
+    [
+      "(program) :0",
+      1205.5319999999995
+    ],
+    [
+      "send :0",
+      934.616
+    ],
+    [
+      "get cookie :0",
+      694.7679999999999
+    ],
+    [
+      "(idle) :0",
+      561.956
+    ],
+    [
+      "Blob :0",
+      440.1329999999999
+    ],
+    [
+      "postMessage :0",
+      428.33600000000007
+    ],
+    [
+      "clone :0",
+      302.817
+    ],
+    [
+      "runWithFiberInDEV deps/react-dom_client.js:940",
+      264.79699999999997
+    ],
+    [
+      "now :0",
+      256.94900000000007
+    ],
+    [
+      "text :0",
+      230.69099999999997
+    ],
+    [
+      "dispatchXhrRequest deps/axios.js:2504",
+      212.71400000000003
+    ],
+    [
+      "WorkerChannel.navigator.serviceWorker.addEventListener.signal deps/msw_browser.js:3212",
+      183.55999999999997
+    ],
+    [
+      "abort :0",
+      175.90699999999998
+    ],
+    [
+      "log deps/msw.js:410",
+      149.70999999999998
+    ],
+    [
+      "deserializeRequest deps/msw_browser.js:3241",
+      131.087
+    ],
+    [
+      "URL :0",
+      128.387
+    ],
+    [
+      "bubbleProperties deps/react-dom_client.js:6517",
+      123.77799999999999
+    ],
+    [
+      "MessageEvent :0",
+      112.30099999999999
+    ],
+    [
+      "Request :0",
+      106.595
+    ],
+    [
+      "(anon) handlers/task.ts:14",
+      101.884
+    ],
+    [
+      "exports.jsx deps/react_jsx-runtime.js:192",
+      99.272
+    ],
+    [
+      "TypedEvent deps/storeResponseCookies-Cm2dXZUs.js:177",
+      95.24199999999999
+    ]
+  ]
+}

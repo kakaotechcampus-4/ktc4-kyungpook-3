@@ -1,6 +1,7 @@
 import type { QueryClient } from '@tanstack/react-query'
 import { clearTrackedMeetings } from '@/entities/meeting'
 import { advanceSessionGeneration } from '@/entities/user'
+import { clearSignOutMark } from '@/features/auth'
 import { onUnauthorized } from '@/shared/api/client'
 import { createQueryClient } from '@/shared/api/queryClient'
 import { startBootQueries } from './bootQueries'
@@ -30,8 +31,9 @@ export function createApp(): AppInstance {
       stopListening()
       // 앱 한 벌의 세션도 끝난다. 버린 앱의 늦은 비동기 작업이 다음 앱(테스트)에 알림을 남기지 않는다
       advanceSessionGeneration()
-      // 정리 추적 store 는 모듈과 함께 살아남는다. 앱 한 벌을 버릴 때 함께 비운다
+      // 정리 추적 store·로그아웃 표시는 모듈과 함께 살아남는다. 앱 한 벌을 버릴 때 함께 비운다
       clearTrackedMeetings()
+      clearSignOutMark()
       queryClient.clear()
     },
   }

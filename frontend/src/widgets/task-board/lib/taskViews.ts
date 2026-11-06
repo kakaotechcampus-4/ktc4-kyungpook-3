@@ -251,19 +251,3 @@ export function assigneeLabel(
 ): string {
   return memberId === null ? none : (names.get(memberId) ?? '알 수 없는 담당자')
 }
-
-/* ---------- 조회 상태 ---------- */
-
-/**
- * 조회 하나를 화면 상태로 읽는다. widgets/dashboard 의 `queryView` 와 같은 판정이다 — 위젯끼리는 서로 가져다 쓰지 않아
- * 여기 따로 둔다. #236 에서 shared 로 옮겨지면 그쪽으로 바꾼다.
- * - `loading` 데이터도 오류도 아직 없다 · `error` 처음부터 받지 못했다
- * - `ready` 마지막 조회가 성공했다 · `refreshFailed` 데이터는 있으나 마지막 재조회가 실패했다
- */
-export type QueryView = 'loading' | 'error' | 'ready' | 'refreshFailed'
-
-export function queryView({ data, error }: { data: unknown; error: unknown }): QueryView {
-  const failed = error !== null && error !== undefined
-  if (data !== undefined) return failed ? 'refreshFailed' : 'ready'
-  return failed ? 'error' : 'loading'
-}

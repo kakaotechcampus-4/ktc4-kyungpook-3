@@ -72,3 +72,15 @@ export function readDateOnly(value: string | null | undefined): string | null {
 export function seoulMidnightIso(date: string): string | null {
   return isDateOnly(date) ? new Date(`${date}T00:00:00+09:00`).toISOString() : null
 }
+
+/** 한국 시각을 `datetime-local` 입력값 `YYYY-MM-DDTHH:mm` 으로 */
+export function toSeoulInputValue(timestamp: string): string {
+  return formatSeoulDateTime(timestamp).replace(' ', 'T')
+}
+
+const INPUT_VALUE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/
+
+/** `datetime-local` 입력값을 한국 시각(ISO, +09:00)으로. 모양이 틀리면 null 이다 */
+export function fromSeoulInputValue(value: string): string | null {
+  return INPUT_VALUE.test(value) ? `${value}:00+09:00` : null
+}

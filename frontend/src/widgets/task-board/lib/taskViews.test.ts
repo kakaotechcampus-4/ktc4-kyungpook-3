@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { toTask } from '@/entities/task'
 import type { Task } from '@/entities/task'
 import { taskFixtures } from '@/shared/mock/fixtures/task'
+import { toTaskResponse } from '@/shared/mock/task-state'
 import {
   addMonths,
   calendarGrid,
@@ -59,7 +60,7 @@ describe('보기 조건 URL', () => {
 describe('보드 카드 배지', () => {
   const today = '2026-09-18'
   const task = (status: Task['status'], dueDate: string | null): Task => ({
-    ...toTask(taskFixtures[0]),
+    ...toTask(toTaskResponse(taskFixtures[0])),
     status,
     dueDate,
   })

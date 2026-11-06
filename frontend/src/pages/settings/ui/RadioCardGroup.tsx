@@ -58,7 +58,7 @@ export function RadioCardGroup<V extends string>({
             />
             <span
               aria-hidden="true"
-              className={`${RADIO} ${option.unsupported ? 'border-line-strong' : 'border-faint'}`}
+              className={`${RADIO} ${option.unsupported ? 'border-line-strong' : 'border-input-border'}`}
             >
               {checked ? <span className="h-8 w-8 rounded-999 bg-ink" /> : null}
             </span>

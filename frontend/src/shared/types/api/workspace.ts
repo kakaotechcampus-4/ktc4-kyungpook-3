@@ -12,6 +12,8 @@ export interface WorkspaceSummaryDto {
   // 현재 사용자 기준이다 (WorkspaceResponse.role 이 Optional). 목록·상세 모두 소속만 받으므로
   // 지금은 늘 채워진다 — 상세도 비소속에게 403 이다(require_member). 타입은 스키마대로 null 을 남긴다
   role: string | null
+  // role 과 같은 팀원 행. 그 행이 없으면 null 이고, 이 칸을 넣기 전 백엔드는 아예 주지 않는다 (#367)
+  member_id?: string | null
   created_at: string
 }
 export interface WorkspaceDto extends WorkspaceSummaryDto {

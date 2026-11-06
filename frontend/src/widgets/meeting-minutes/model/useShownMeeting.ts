@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
-import { meetingDetailQueryOptions } from '@/entities/meeting'
+import { meetingDetailQueryOptions, viewableMeeting } from '@/entities/meeting'
 import { minutesQueryOptions } from '@/entities/minutes'
 
 /**
@@ -28,22 +28,21 @@ export const MINUTES_SKELETON_MIN_MS = 300
 
 /**
  * 새 회의의 회의록을 그릴 수 있나 — 화면이 그릴 조회가 답(또는 실패)을 받았다.
- * MinutesDetail 과 같은 Query 를 같은 조건으로 본다. 상세의 `workspaceId` 가 URL 공간과 같고 정리가 끝난 회의일 때만
- * 회의록 본문을 부른다 (U5-4). 같은 key 라 MinutesDetail 이 마운트되면 이 조회에 합쳐지고 따로 요청하지 않는다.
+ * MinutesDetail 과 같은 Query 를 같은 조건으로 본다. 상세를 받았고 정리가 끝난 회의일 때만 회의록 본문을 부른다 (U5-4).
+ * 같은 key 라 MinutesDetail 이 마운트되면 이 조회에 합쳐지고 따로 요청하지 않는다.
  */
 function useMinutesSettled(workspaceId: string, meetingId: string | null): boolean {
   const detail = useQuery({
     ...meetingDetailQueryOptions(workspaceId, meetingId ?? ''),
     enabled: meetingId !== null,
   })
-  const meeting =
-    detail.data !== undefined && detail.data.workspaceId === workspaceId ? detail.data : null
-  const needsMinutes = meeting !== null && meeting.status === 'done'
+  const meeting = viewableMeeting(detail)
+  const needsMinutes = meeting?.status === 'done'
   const minutes = useQuery({
     ...minutesQueryOptions(workspaceId, meeting?.id ?? ''),
     enabled: needsMinutes,
   })
-  if (detail.data === undefined) return detail.error !== null
+  if (meeting === null) return detail.error !== null
   if (!needsMinutes) return true
   return minutes.data !== undefined || minutes.error !== null
 }

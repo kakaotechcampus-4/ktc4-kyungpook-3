@@ -1,5 +1,6 @@
 import { memo, useId } from 'react'
 import type { Task, TaskStatus } from '@/entities/task'
+import { AutoBlockNotice, useTaskAutoBlock } from '@/features/task-auto-block'
 import { TaskQuickAdd } from '@/features/task-create'
 import { paths } from '@/shared/config/routes'
 import { GuardedLink } from '@/shared/lib/unsaved-changes'
@@ -47,7 +48,7 @@ const MARK: Record<Column, string> = {
 const CARD_BASE = 'flex flex-col gap-12 rounded-12 border px-13 py-12'
 const PILL = 'inline-flex h-20 shrink-0 items-center rounded-6 px-7 text-[10.5px] leading-none'
 /* 막힘은 누르는 배지라 채운 `위험` 과 달리 테두리만 accent 로 그린다. 시안이 없어 위험 배지의 색·크기를 따른다 */
-const BLOCKED_PILL = `${PILL} cursor-pointer border border-accent bg-surface font-bold text-accent hover:bg-accent hover:text-surface data-[state=open]:bg-accent data-[state=open]:text-surface`
+const BLOCKED_PILL = `${PILL} cursor-pointer border border-accent bg-surface font-bold text-accent hover:bg-accent-solid hover:text-surface data-[state=open]:bg-accent-solid data-[state=open]:text-surface`
 
 export interface BoardViewProps {
   workspaceId: string
@@ -104,6 +105,7 @@ export function BoardView({
                       names={names}
                       today={today}
                       emphasized={key === 'active'}
+                      isPm={canCreate}
                     />
                   </li>
                 ))}
@@ -195,6 +197,7 @@ const TaskCard = memo(function TaskCard({
   names,
   today,
   emphasized,
+  isPm,
 }: {
   workspaceId: string
   task: Task
@@ -202,6 +205,7 @@ const TaskCard = memo(function TaskCard({
   today: string
   /** 진행 중 칸의 카드다. 시안은 이 칸의 카드를 모두 강조 테두리(`#C9C9C9`)로 그린다 */
   emphasized: boolean
+  isPm: boolean
 }) {
   const tone = taskTone(task, today)
   const badges = cardBadges(task, today)
@@ -221,7 +225,7 @@ const TaskCard = memo(function TaskCard({
           <div className="flex shrink-0 items-center gap-4">
             {badges.map((badge) =>
               badge === 'blocked' ? (
-                <BlockedBadge key={badge} blocker={task.blocker} />
+                <BlockedBadge key={badge} workspaceId={workspaceId} task={task} isPm={isPm} />
               ) : (
                 <TonePill key={badge} tone={badge} />
               ),
@@ -246,7 +250,7 @@ const TaskCard = memo(function TaskCard({
 
 function TonePill({ tone }: { tone: 'danger' | 'warn' }) {
   return tone === 'danger' ? (
-    <span className={`${PILL} bg-accent font-bold text-surface`}>위험</span>
+    <span className={`${PILL} bg-accent-badge font-bold text-accent`}>위험</span>
   ) : (
     <span className={`${PILL} gap-3 bg-ink font-semibold text-surface`}>
       <span aria-hidden="true" className="mr-3 h-5 w-5 rounded-999 bg-current" />
@@ -255,14 +259,27 @@ function TonePill({ tone }: { tone: 'danger' | 'warn' }) {
   )
 }
 
-/** `막힘` 배지. 누르면 막힌 사유를 보인다. 제목 링크 옆에 둔다 — 링크 안에는 버튼을 둘 수 없다 */
-function BlockedBadge({ blocker }: { blocker: string | null }) {
+/**
+ * `막힘` 배지. 누르면 막힌 사유를 보인다. 무응답 자동 막힘이면 `자동 막힘` 이고 PM 은 여기서 풀 수 있다.
+ * 제목 링크 옆에 둔다 — 링크 안에는 버튼을 둘 수 없다
+ */
+function BlockedBadge({
+  workspaceId,
+  task,
+  isPm,
+}: {
+  workspaceId: string
+  task: Task
+  isPm: boolean
+}) {
   const headingId = useId()
-  const reason = blocker?.trim() ?? ''
+  const autoBlock = useTaskAutoBlock(workspaceId, task)
+  const label = autoBlock.automatic ? '자동 막힘' : '막힘'
+  const reason = task.blocker?.trim() ?? ''
   return (
     <Popover>
-      <PopoverTrigger className={BLOCKED_PILL} aria-label="막힘, 막힌 사유 보기">
-        막힘
+      <PopoverTrigger className={BLOCKED_PILL} aria-label={`${label}, 막힌 사유 보기`}>
+        {label}
       </PopoverTrigger>
       <PopoverContent aria-labelledby={headingId}>
         <p id={headingId} className="text-meta leading-none font-semibold text-dim">
@@ -271,6 +288,7 @@ function BlockedBadge({ blocker }: { blocker: string | null }) {
         <p className="text-caption text-ink wrap-anywhere">
           {reason === '' ? '적힌 사유가 없어요' : reason}
         </p>
+        <AutoBlockNotice autoBlock={autoBlock} isPm={isPm} />
       </PopoverContent>
     </Popover>
   )

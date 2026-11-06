@@ -50,6 +50,11 @@ def _err(status: int, code: str, details: dict | None = None) -> _Resp:
     return _Resp(status, {"data": None, "error": {"code": code, "message": code, "details": details or {}}})
 
 
+def without_stage(calls: list) -> list:
+    """처리 단계 보고(PATCH .../stage)를 뺀 호출 목록. 단계 보고는 진행 표시용이라 흐름 단정에서는 보지 않는다."""
+    return [c for c in calls if not (c[0] == "PATCH" and c[1].endswith("/stage"))]
+
+
 class FakeBe:
     ENDED = ("processing", "done", "failed")
 
@@ -60,6 +65,7 @@ class FakeBe:
         self.headers: list[dict] = []        # calls 와 같은 순서. 호출마다 받은 헤더
         self.timeouts: list[float | None] = []
         self.down = False          # True 면 연결 오류처럼 군다
+        self.stage_fail: int | None = None         # HTTP 코드를 넣으면 /stage 만 그 코드로 실패한다
         # 유사 task 검색 (backend/app/api/similar_tasks.py)
         self.service_token = "svc-token"
         self.workspaces = {"ws-1"}
@@ -81,6 +87,8 @@ class FakeBe:
         self._assign_n = 0            # 지정 순번. 지정 시각 순 정렬에 쓴다
         # 봇용 팀원 이름 조회 (backend/app/api/bot_lookups.py). 워크스페이스 → [{member_id, name, discord_user_id, aliases}]
         self.members: dict[str, list[dict]] = {}
+        # 채팅 커서 (backend chat-cursor). 워크스페이스 → last_message_at 문자열. 없으면 data null
+        self.chat_cursors: dict[str, str] = {}
         self._n = 0
 
     def add_upload(self, meeting_id: str, *, workspace_id: str = "ws-1", audio: bytes | None = b"RIFFfake-audio",
@@ -138,6 +146,10 @@ class FakeBe:
             return self._uploads(method, path, headers or {}, body)
         if method == "GET" and path.startswith("/integrations/discord/guilds/") and path.endswith("/workspace"):
             return self._guild_workspace(path.split("/")[4], headers or {})
+        if method == "GET" and path.startswith("/workspaces/") and path.endswith("/chat-cursor"):
+            ws = path.split("/")[2]
+            at = self.chat_cursors.get(ws)
+            return _ok(200, {"meeting_id": "m-prev", "last_message_at": at} if at else None)
         if method == "GET" and path.startswith("/workspaces/") and path.endswith("/members/names"):
             return self._member_names(path.split("/")[2], headers or {})
         if method == "POST" and path.startswith("/workspaces/") and path.endswith("/tasks/similar"):
@@ -149,7 +161,8 @@ class FakeBe:
             self._n += 1
             mid = f"m{self._n}"
             self.meetings[mid] = {"meeting_id": mid, "workspace_id": body["workspace_id"], "status": "created",
-                                  "title": body.get("title")}
+                                  "title": body.get("title"), "source": body.get("source"),
+                                  "started_at": body.get("started_at")}
             return _ok(201, {"meeting_id": mid, "workspace_id": body["workspace_id"], "status": "created",
                              "started_at": "2026-09-19T00:00:00+00:00"})
         if method == "POST" and path == "/extractions":
@@ -161,6 +174,8 @@ class FakeBe:
             m = self.meetings.get(mid)
             if m is None:
                 return _err(404, "MEETING_NOT_FOUND", {"meeting_id": mid})
+            if action == "stage":
+                return self._stage(m, mid, body)
             if action == "end":
                 if m["status"] in self.ENDED:
                     return _err(409, "MEETING_ALREADY_ENDED", {"meeting_id": mid, "status": m["status"]})
@@ -173,6 +188,21 @@ class FakeBe:
                 m["failed_stage"] = body["failed_stage"]
                 return _ok(200, {"meeting_id": mid, "status": "failed", "failed_stage": body["failed_stage"]})
         return _Resp(404, None, "not found")
+
+    # 단계 순서 (backend 의 처리 단계). 앞으로만 간다
+    STAGES = ("stt", "sources", "extract", "handoff")
+
+    def _stage(self, m: dict, mid: str, body: dict):
+        """PATCH /meetings/{id}/stage. processing 회의에서 앞으로 가는 단계만 적용하고, 아니면 200 applied False."""
+        if self.stage_fail is not None:
+            return _err(self.stage_fail, "MEETING_NOT_FOUND" if self.stage_fail == 404 else "INTERNAL_ERROR")
+        stage = body["stage"]
+        old = m.get("stage")
+        applied = m["status"] == "processing" and (old is None or self.STAGES.index(stage) > self.STAGES.index(old))
+        if applied:
+            m["stage"] = stage
+        return _ok(200, {"meeting_id": mid, "status": m["status"], "processing_stage": m.get("stage"),
+                         "applied": applied})
 
     def _create_extraction(self, body: dict):
         mid = body["meeting_id"]

@@ -97,7 +97,7 @@ export function TaskCreateOverridesForm({
             </Label>
             <select
               id={assigneeId}
-              className={`${SELECT} ${errors.assigneeMemberId ? 'border-accent' : 'border-input-border'}`}
+              className={`${SELECT} ${errors.assigneeMemberId ? 'border-accent focus-visible:outline-accent-point' : 'border-input-border'}`}
               aria-invalid={errors.assigneeMemberId ? true : undefined}
               aria-describedby={errors.assigneeMemberId ? assigneeErrorId : undefined}
               {...form.register('assigneeMemberId')}

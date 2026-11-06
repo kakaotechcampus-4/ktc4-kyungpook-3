@@ -1,11 +1,13 @@
 import {
   formatSeoulDateTime,
   formatSeoulMonthDayTime,
+  fromSeoulInputValue,
   isDateOnly,
   monthDayOf,
   readDateOnly,
   seoulDateOf,
   seoulMidnightIso,
+  toSeoulInputValue,
 } from './format'
 
 describe('timestamp 는 한국 시간으로 보여 준다', () => {
@@ -89,4 +91,11 @@ describe('서울 자정', () => {
   it('다시 서울 날짜로 읽으면 같은 날이다', () => {
     expect(seoulDateOf(seoulMidnightIso('2026-09-18')!)).toBe('2026-09-18')
   })
+})
+
+it('datetime-local 입력값은 한국 시각으로 오간다', () => {
+  expect(toSeoulInputValue('2026-09-25T05:30:00Z')).toBe('2026-09-25T14:30')
+  expect(fromSeoulInputValue('2026-09-25T14:30')).toBe('2026-09-25T14:30:00+09:00')
+  expect(fromSeoulInputValue('')).toBeNull()
+  expect(fromSeoulInputValue('2026-09-25')).toBeNull()
 })

@@ -16,7 +16,7 @@ function unfinished(progress: Partial<OnboardingProgress>): OnboardingProgress {
 }
 
 function workspace(id: string, onboarding: OnboardingProgress = DONE): Workspace {
-  return { id, name: id, role: 'pm', createdAt: '2026-09-01T00:00:00Z', onboarding }
+  return { id, name: id, role: 'pm', memberId: null, createdAt: '2026-09-01T00:00:00Z', onboarding }
 }
 
 describe('resumeStep', () => {

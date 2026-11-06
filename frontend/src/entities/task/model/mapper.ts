@@ -47,6 +47,7 @@ export function toTask(dto: TaskDto): Task {
     notionPageId: dto.notion_page_id,
     version,
     notionSyncStatus: toNotionSyncStatus(dto.notion_sync_status),
+    autoBlocked: dto.auto_blocked === true,
     createdAt: dto.created_at,
     updatedAt: dto.updated_at,
   }
@@ -57,7 +58,16 @@ export function toTaskHistory(dto: TaskHistoryDto): TaskHistoryEntry {
     taskId: dto.task_id,
     field: enumValue(
       dto.changed_field,
-      ['assignee', 'start_date', 'due_date', 'status', 'title', 'progress', 'blocker'] as const,
+      [
+        'assignee',
+        'start_date',
+        'due_date',
+        'status',
+        'title',
+        'progress',
+        'blocker',
+        'scope',
+      ] as const,
       'title',
       'history field',
     ),
@@ -65,7 +75,7 @@ export function toTaskHistory(dto: TaskHistoryDto): TaskHistoryEntry {
     newValue: dto.new_value,
     source: enumValue(
       dto.change_source,
-      ['meeting', 'chat', 'checkin', 'notion', 'reminder_reply', 'manual'] as const,
+      ['meeting', 'chat', 'checkin', 'notion', 'reminder_reply', 'manual', 'scheduler'] as const,
       'manual',
       'history source',
     ),
