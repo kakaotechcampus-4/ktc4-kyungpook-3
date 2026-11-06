@@ -5,7 +5,7 @@ import { ok, list, fail } from '../envelope'
 import { MOCK_NOW } from '../fixtures/constants'
 import { requireMember } from '../auth-guard'
 import { readJson, nextId } from '../utils'
-import { tickMeeting } from '../meetingFlow'
+import { isChatMeeting, tickMeeting } from '../meetingFlow'
 import { registerSpeakerUpload } from '../speakerFlow'
 
 export const meetingHandlers = [
@@ -149,9 +149,7 @@ export const meetingHandlers = [
       (meeting) =>
         meeting.workspace_id === workspaceId &&
         meeting.status === 'processing' &&
-        !db.meetingSummaries.some(
-          (summary) => summary.meeting_id === meeting.meeting_id && summary.source === 'chat',
-        ),
+        !isChatMeeting(meeting.meeting_id),
     )
     if (processing)
       return fail('MEETING_PROCESSING_IN_PROGRESS', '처리 중인 회의가 있습니다.', 409, {

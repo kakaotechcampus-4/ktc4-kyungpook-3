@@ -318,7 +318,7 @@ export function failMeeting(
   return meeting
 }
 
-function isChatMeeting(meetingId: string, state: MockDb): boolean {
+export function isChatMeeting(meetingId: string, state: MockDb = db): boolean {
   return state.meetingSummaries.some(
     (summary) => summary.meeting_id === meetingId && summary.source === 'chat',
   )
