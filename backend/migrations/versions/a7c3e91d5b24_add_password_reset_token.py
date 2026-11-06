@@ -5,7 +5,7 @@
 되돌리면 password_reset_token 테이블과 발급된 토큰이 지워진다(이미 바꾼 비밀번호는 그대로).
 
 Revision ID: a7c3e91d5b24
-Revises: 8b3090f39aec
+Revises: c4e9a71b3d52
 Create Date: 2026-11-05 12:00:00.000000
 
 """
@@ -17,7 +17,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = 'a7c3e91d5b24'
-down_revision: Union[str, Sequence[str], None] = '8b3090f39aec'
+down_revision: Union[str, Sequence[str], None] = 'c4e9a71b3d52'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
