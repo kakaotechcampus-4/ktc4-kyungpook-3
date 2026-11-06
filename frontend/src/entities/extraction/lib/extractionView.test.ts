@@ -84,6 +84,13 @@ describe('edit proposal', () => {
     expect(visibleItems(extraction, false).map(({ id }) => id)).not.toContain('it_08')
   })
 
+  // 반려 뒤 추출만 다시 받고 대기 목록 재조회가 늦거나 실패하면 그 ID 가 남아 있다
+  it('stays out of the pending list once rejected even if a stale pending list still has its approval', () => {
+    const extraction = withEdit('rejected')
+
+    expect(pendingItems(extraction, open).map(({ id }) => id)).not.toContain('it_08')
+  })
+
   it('is applied and visible to members once approved', () => {
     const extraction = withEdit('approved')
 

@@ -117,6 +117,16 @@ describe('extractedTasks (U5-5)', () => {
       expect(pending?.map(({ item }) => item.id)).not.toContain('it_08')
     })
 
+    it('반려 뒤 대기 목록이 아직 갱신되지 않았어도 확인 필요에 남지 않는다', () => {
+      const { dto, approval } = withEditProposal('rejected')
+      const stale = openApprovals({ ...approval, status: 'pending' })
+
+      const { applied, pending } = extractedTasks(toExtraction(dto), stale)
+
+      expect(ids(applied)).not.toContain('it_08')
+      expect(pending?.map(({ item }) => item.id)).toEqual(['it_04', 'it_05', 'it_06'])
+    })
+
     it('승인되면 반영으로 옮겨 간다', () => {
       const { dto, approval } = withEditProposal('approved')
 

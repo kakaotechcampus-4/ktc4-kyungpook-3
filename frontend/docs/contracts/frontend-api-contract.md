@@ -717,7 +717,7 @@ Content-Disposition: 없음(내려받기 아님). Accept-Ranges: bytes
 >
 > - **반영됨** — `task_id` 가 있고, `approval_id` 가 없거나 `approval_status` 가 `approved` 다.
 > - **일반 팀원** — `approval_id` 가 있고 반영되지 않은 항목을 숨긴다. 생성·수정 어느 쪽이든 대기·반려는 보이지 않는다.
-> - **PM** — `확인 필요` 는 반영되지 않은 항목 중 `GET /approvals?status=pending` 의 ID 와 조인한 것이다. 조인은 그대로 둔다. 항목마다 승인의 빠진 값(`missing`)이 필요하기 때문이다.
+> - **PM** — `확인 필요` 는 반영되지 않았고 `approval_status` 가 `rejected` 가 아닌 항목 중 `GET /approvals?status=pending` 의 ID 와 조인한 것이다. 조인은 그대로 둔다. 항목마다 승인의 빠진 값(`missing`)이 필요하기 때문이다. 반려 뒤 추출만 다시 받고 대기 목록이 아직 낡았어도 항목 쪽 `rejected` 로 빠진다. `approval_status` 가 `null` 이면 대기 목록을 따른다.
 
 **따라서 생성 항목의 `확인 필요` 에는 `task_id` 가 없다.** 승인 전까지 태스크 행이 존재하지 않는다.
 식별자는 `approval_id` 뿐이며, 이것이 D-161·D-162 의 근거다. 수정 항목은 `task_id` 가 있지만 `확인하기` 는 똑같이 `approval_id` 로 간다.
@@ -1784,7 +1784,7 @@ FE 연결 (#340, 2026-11-05).
   - `appliedItems(extraction)` — `task_id != null && (approval_id == null || approval_status == 'approved')`.
   - `isUnresolved(item)` = `approval_id != null` 이고 반영되지 않았다. 대기와 반려를 모두 포함한다.
     일반 팀원 화면(`visibleItems`)은 이것으로 숨긴다. 둘 다 숨기는 것이 맞기 때문이다.
-  - `pendingItems(extraction, openApprovalIds)` — PM 전용. 반영되지 않은 항목 중 `GET /approvals?status=pending` 의 ID 집합에 있는 것만 고른다.
+  - `pendingItems(extraction, openApprovalIds)` — PM 전용. 반영되지 않았고 `approval_status != 'rejected'` 인 항목 중 `GET /approvals?status=pending` 의 ID 집합에 있는 것만 고른다. 두 조회의 갱신 시점이 달라 대기 목록에 반려된 ID 가 남아도 빠진다. `null` 은 대기 목록을 따른다.
     `entities → entities` 를 피해 **`ReadonlySet<string>` 만 받고**, 그 집합은 두 엔티티를 모두 보는 `widgets` 가 만든다.
 
 ---

@@ -25,7 +25,8 @@ export function appliedItems(extraction: Extraction): ExtractionItem[] {
  *
  * `openApprovalIds` 는 `GET /approvals?workspace_id=&status=pending` 의 승인 ID 집합이다.
  * 행마다 그 승인의 빠진 값으로 이유를 보이므로 `approval_status` 만 보지 않고 대기 목록과 조인한다.
- * 반영된 항목은 대기 목록이 늦게 갱신돼도 빼서 `반영 완료` 와 겹치지 않게 한다.
+ * 두 조회의 갱신 시점이 달라 대기 목록에 닫힌 승인 ID 가 남을 수 있다. 반영된 항목과 `rejected` 항목은
+ * 항목 쪽 상태로 뺀다. 모르는 상태(null)는 대기 목록을 따른다.
  *
  * `entities → entities` 를 피해 `Approval` 이 아니라 ID 집합만 받는다. 그 집합은 두 엔티티를
  * 모두 볼 수 있는 `widgets` 가 만든다 (§3-2 의 조인 규칙과 같다).
@@ -35,7 +36,11 @@ export function pendingItems(
   openApprovalIds: ReadonlySet<string>,
 ): ExtractionItem[] {
   return extraction.items.filter(
-    (item) => !isApplied(item) && item.approvalId !== null && openApprovalIds.has(item.approvalId),
+    (item) =>
+      !isApplied(item) &&
+      item.approvalStatus !== 'rejected' &&
+      item.approvalId !== null &&
+      openApprovalIds.has(item.approvalId),
   )
 }
 
