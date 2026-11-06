@@ -129,6 +129,32 @@ export async function updateTaskStatus(
   )
 }
 
+/** 상세에서 고치는 담당자·마감. 있는 키만 보낸다. null 은 비우기다 */
+export type TaskFieldsPatch = Partial<Pick<Task, 'assigneeMemberId' | 'dueDate'>>
+
+/**
+ * PM 의 담당자·마감 변경 (`PATCH /tasks/{task_id}`, PM 전용). 서버는 보낸 키만 바꾸고(`exclude_unset`) 버전을 비교하지 않아
+ * 나중에 저장한 값이 남는다. 변경자는 보내지 않는다 — 서버가 세션의 팀원으로 기록한다. 서버가 돌려준 태스크의 공간을 확인한다
+ */
+export async function updateTaskFields(
+  workspaceId: string,
+  taskId: string,
+  patch: TaskFieldsPatch,
+  init: { signal?: AbortSignal } = {},
+): Promise<Task> {
+  return toWorkspaceTask(
+    await request<TaskDto>(`/tasks/${encodeURIComponent(taskId)}`, {
+      method: 'PATCH',
+      body: {
+        ...('assigneeMemberId' in patch ? { assignee_member_id: patch.assigneeMemberId } : {}),
+        ...('dueDate' in patch ? { due_date: patch.dueDate } : {}),
+      },
+      signal: init.signal,
+    }),
+    workspaceId,
+  )
+}
+
 export interface TaskCreateInput {
   title: string
   status: TaskStatus

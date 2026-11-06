@@ -14,26 +14,52 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
+/**
+ * 생성 승인 (E-6) — 값·근거·까닭을 한 카드에 두고 바로 고친다. 빠진 담당자·마감은 레드 R2.
+ * 「다음 주 월요일」은 회의 날(9/15) 기준 9/21(월)로 채울 수 있다 — 누르면 마감 칸만 채운다
+ */
 export const 생성_승인: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await expect(await canvas.findByRole('heading', { name: '새 태스크 확인' })).toBeVisible()
-    await expect(canvas.getByRole('heading', { name: '회의 원문' })).toBeVisible()
-    await expect(canvas.getByRole('figure', { name: '근거' })).toBeInTheDocument()
+    await expect(
+      await canvas.findByRole('heading', { level: 1, name: '이 태스크, 승인할까요?' }),
+    ).toBeVisible()
+    const card = canvas.getByRole('region', { name: 'Notion 에 올라갈 태스크' })
+    await expect(within(card).getByRole('figure', { name: '근거' })).toBeInTheDocument()
     await expect(canvas.getByRole('button', { name: '반려' })).toBeEnabled()
     const approve = await canvas.findByRole('button', { name: '승인' })
     await waitFor(() => expect(approve).toBeEnabled())
-    await expect(canvas.getByRole('button', { name: '보완하기' })).toBeEnabled()
+    const reasons = canvas.getByRole('region', { name: '확인이 필요한 이유' })
+    await userEvent.click(await within(reasons).findByRole('button', { name: '9/21(월)로 채우기' }))
+    await expect(canvas.getByRole('textbox', { name: '마감' })).toHaveValue('2026-09-21')
   },
 }
 
-/** 보완 누락 — 세 값이 모두 비었다. `승인` 은 꺼지고 이유가 버튼에 연결된다. `반려` 는 누를 수 있다 */
-export const 보완_누락: Story = {
+/** 「배포 전」처럼 날짜 하나로 정해지지 않는 말 — 안내만 두고 채우기 버튼이 없다 */
+export const 채우기_없음: Story = {
+  args: { approvalId: 'ap_07' },
+  parameters: { scenario: 'approval-chat', route: '/workspaces/ws_01/approvals/ap_07' },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const reasons = await canvas.findByRole('region', { name: '확인이 필요한 이유' })
+    await expect(reasons).toHaveTextContent('「배포 전」이라고만 해서 날짜를 정하지 못했어요')
+    await waitFor(() =>
+      expect(canvas.getByRole('figure', { name: '근거' })).toHaveTextContent('전사문 09/11'),
+    )
+    await expect(within(reasons).queryByRole('button')).toBeNull()
+  },
+}
+
+/** 빠진 값 — 세 값이 모두 비었다. `승인` 은 꺼지고 이유가 버튼에 연결된다. `반려` 는 누를 수 있다 */
+export const 빠진_값: Story = {
   parameters: { scenario: 'approval-needs-input' },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await expect(await canvas.findByRole('heading', { name: '새 태스크 확인' })).toBeVisible()
-    await expect(canvas.getAllByText('미정')).toHaveLength(3)
+    await expect(
+      await canvas.findByRole('heading', { level: 1, name: '이 태스크, 승인할까요?' }),
+    ).toBeVisible()
+    await expect(canvas.getByRole('combobox', { name: '담당자 · 미정' })).toBeInTheDocument()
+    await expect(canvas.getByRole('textbox', { name: '마감 · 미정' })).toBeInTheDocument()
     const approve = await canvas.findByRole('button', { name: '승인' })
     await expect(approve).toBeDisabled()
     // 팀원 목록이 오기 전에는 `팀원 목록을 불러온 뒤` 가 이유다 — 온 뒤의 이유를 기다린다
@@ -50,7 +76,9 @@ export const 변경_승인: Story = {
   parameters: { scenario: 'approval-conflict', route: '/workspaces/ws_01/approvals/ap_04' },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await expect(await canvas.findByRole('heading', { name: '태스크 변경 확인' })).toBeVisible()
+    await expect(
+      await canvas.findByRole('heading', { level: 1, name: '이 변경, 승인할까요?' }),
+    ).toBeVisible()
     const table = canvas.getByRole('table', { name: '현재값과 제안값' })
     await expect(await within(table).findByText('진행 중')).toBeInTheDocument()
     await expect(within(table).getByText('완료')).toBeInTheDocument()
@@ -147,7 +175,7 @@ export const 로딩: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await expect(await canvas.findByRole('link', { name: '← 태스크 목록' })).toBeInTheDocument()
+    await expect(await canvas.findByRole('link', { name: '태스크 목록' })).toBeInTheDocument()
     await expect(canvasElement.querySelector('[aria-busy="true"]')).not.toBeNull()
     await expect(canvas.queryByRole('button', { name: '승인' })).toBeNull()
   },
