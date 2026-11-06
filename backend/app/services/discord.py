@@ -7,7 +7,8 @@
 읽힌다. 녹음 봇(ai/capture)과 같은 봇 토큰을 쓴다. 토큰은 로그·오류 메시지에 남기지 않는다.
 
 채팅 수집 채널 설정(#428)을 위해 텍스트 채널 목록·메시지 읽기 확인·메시지 보내기도 한다. 읽기 확인(GET
-messages)은 Message Content Intent 가 켜져 있는지는 확인하지 못한다. 채널 읽기 권한만 확인한다.
+messages)은 Message Content Intent 가 켜져 있는지는 확인하지 못한다. 채널 읽기 권한만 확인한다. 또 VIEW_CHANNEL 만 있고 READ_MESSAGE_HISTORY 가 없으면
+Discord 가 403 대신 200 빈 목록을 줄 수 있어(확인 필요) 이 경우 읽기 확인을 통과할 수 있다.
 """
 from urllib.parse import quote
 

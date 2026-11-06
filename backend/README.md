@@ -309,6 +309,7 @@ PM 이 디스코드 서버의 텍스트 채널 하나를 골라 두면 녹음 �
 | 저장 순서 | 연결 행을 `FOR UPDATE`로 잠근 채 (1) 서버의 텍스트 채널인지 (2) 읽기 확인(`GET /channels/{id}/messages?limit=1`) (3) 켬 공지 전송을 차례로 하고, 모두 성공하면 두 열을 저장·커밋한다. 하나라도 실패하면 아무것도 저장하지 않는다. 같은 워크스페이스의 동시 저장은 순서대로 처리된다. Discord 호출마다 5초 제한이 있고 세 번 부르므로 대략 15초 안팎 걸릴 수 있다(합계 상한은 아니다). 그동안 같은 워크스페이스의 연결 해제도 기다린다 |
 | 켬 공지 | "이 채널 대화는 매일 09:00(KST)에 Manager's Manager 가 읽어 task 추가·수정 제안에 씁니다. 제안은 PM 승인 뒤에만 반영됩니다." 멘션 알림은 보내지 않는다(`allowed_mentions.parse: []`). 보내지 못하면 저장 실패다 |
 | 끔 공지 | "이 채널 대화 수집을 껐습니다." 채널 해제, 다른 채널로 변경(옛 채널), 디스코드 연결 해제 때 DB 커밋 **뒤** 시도한다. 실패해도 해제·변경·연결 해제는 성공이다 |
+| 읽기 확인의 한계 | `GET /channels/{id}/messages?limit=1`은 VIEW_CHANNEL 만 있고 READ_MESSAGE_HISTORY 가 없으면 403 이 아니라 200 빈 목록을 줄 수 있다(Discord 동작, 확인 필요). 그러면 읽을 수 없는 채널도 통과할 수 있다 |
 | 같은 채널 재저장 | Discord 를 부르지 않고 현재 값을 200 으로 준다. 채널 이름은 저장한 시점의 값이다. 다만 봇 토큰 확인이 먼저라 `DISCORD_BOT_TOKEN`이 없으면 이 경우도 502 |
 | 해제 응답 | `DELETE`는 204 가 아니라 200 `{off_notice_sent}`다. 공지를 보냈으면 `true`. 이미 꺼져 있거나 연결 행이 없어도 200 `false`이고 공지는 없다 |
 | 연결 해제·재연결 | `DELETE .../integrations/discord`(204 그대로)는 채팅 채널도 지우고 커밋 뒤 끔 공지를 시도한다. 다른 서버로 다시 연결하면 공지 없이 채널을 비운다(이전 서버의 채널은 의미가 없다). 같은 서버로 다시 연결하면 유지한다 |
@@ -332,7 +333,7 @@ PM 이 디스코드 서버의 텍스트 채널 하나를 골라 두면 녹음 �
 |---|---|
 | `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET` | Discord 개발자 포털 → 앱 → OAuth2 |
 | `DISCORD_REDIRECT_URI` | 프론트와 같은 주소의 callback. 로컬 `http://localhost:5173/api/v1/integrations/discord/callback`, 운영 `https://<서비스 주소>/api/v1/integrations/discord/callback` |
-| `DISCORD_BOT_TOKEN` | 녹음 봇(`ai/.env`)과 같은 봇의 토큰. 서버 사용자 목록을 읽는다 |
+| `DISCORD_BOT_TOKEN` | 녹음 봇(`ai/.env`)과 같은 봇의 토큰. 서버 사용자 목록을 읽고, 채팅 수집 채널 설정의 채널 목록·읽기 확인·켬·끔 공지 전송에도 쓴다 |
 | `OAUTH_STATE_SECRET` | Notion 연결과 같은 서명 키를 쓴다 |
 
 **Discord 개발자 포털 설정**
