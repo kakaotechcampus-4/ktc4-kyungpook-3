@@ -4,6 +4,9 @@
 "BE 리더가")을 그 멤버의 별칭으로 저장해 다음 회의부터 자동으로 매칭되게 한다. 이 모듈은
 저장할 글자를 다듬는 규칙과 학습 대상 판단에 쓰는 상수만 가지고, DB와 요청 처리 흐름은 모른다.
 """
+import logging
+
+logger = logging.getLogger(__name__)
 
 # 추출 단계가 붙이는 담당자 표현 유형. 이 목록에 없는 값은 요청에서 거절한다.
 KNOWN_ASSIGNEE_TYPES = frozenset(
@@ -40,3 +43,17 @@ def trim_alias_text(raw: str | None) -> str | None:
         text = text[: -len(_HONORIFIC)]
     text = " ".join(text.split())
     return text or None
+
+
+def storable_assignee_type(value: str | None) -> str | None:
+    """추출 항목에 저장할 담당자 종류. 알려진 값이 아니면 None 으로 저장한다.
+
+    AI 가 새 종류를 보내거나 값이 이상해도 추출 등록은 받아야 해서(봇이 재시도하다 회의 전체가 반영되지
+    않는다) 요청을 거절하지 않고, 학습 대상이 아닌 항목으로 남긴다. 버린 값은 경고로 남긴다.
+    """
+    if value is None:
+        return None
+    if value in KNOWN_ASSIGNEE_TYPES:
+        return value
+    logger.warning("알 수 없는 assignee_type 이라 저장하지 않습니다. value=%.40r", value)
+    return None

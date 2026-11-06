@@ -246,7 +246,8 @@ class ExtractionItemCreate(BaseModel):
     )
     assignee_type: str | None = Field(
         None,
-        description="'first'(1인칭), 'second', 'thirdname', 'group', 'none' 등. "
+        description="담당자 표현의 종류. 'first'(1인칭), 'second', 'thirdname', 'thirdpronoun', 'thirdrole', "
+        "'group', 'none' 중 하나다. BE가 추출 항목에 저장하며(승인 때 별칭 학습에 쓴다) 모르는 값은 NULL로 저장한다. "
         "first이면 assignee_raw 대신 화자로 팀원을 찾는다. 화자는 다음 순서로 정한다. "
         "(1) evidence_speaker_member_id가 있으면 그 팀원이다. 이 워크스페이스의 탈퇴하지 않은 팀원이 아니면 "
         "화자를 못 찾은 것이고 (2)(3)으로 넘어가지 않는다. "
