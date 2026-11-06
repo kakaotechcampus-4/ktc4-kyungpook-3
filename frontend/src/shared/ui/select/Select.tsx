@@ -73,25 +73,18 @@ const CONTENT =
 const VIEWPORT = 'flex max-h-[264px] flex-col gap-1 [scrollbar-width:thin]!'
 
 /* 줄은 격자다 — 보조줄이 앞 아이콘 아래가 아니라 글자 아래에 선다.
-   ItemText 는 contents 로 풀어서 앞 아이콘과 글자가 격자 칸에 바로 앉는다 */
+   Radix 2.3.7 의 ItemText·Value 는 className 을 버린다. 그래서 ItemText 에는 글자만 두고 격자 칸은 감싼 span 이 잡으며,
+   트리거 내용은 Value 의 children 으로 따로 그린다 */
 const ITEM =
   'grid min-h-40 cursor-pointer grid-cols-[auto_minmax(0,1fr)_auto] items-center rounded-10 px-10 py-9 text-[15px] outline-none select-none data-[disabled]:cursor-not-allowed data-[disabled]:text-faint data-[highlighted]:bg-surface-selected data-[state=checked]:font-bold'
-
-function OptionText({ leading, label }: { leading?: ReactNode; label: string }) {
-  return (
-    <>
-      {leading ? <span className="col-start-1 mr-10 flex flex-none">{leading}</span> : null}
-      <span className="col-start-2 truncate">{label}</span>
-    </>
-  )
-}
 
 function Item({ value, label, leading, description, disabled }: SelectOption<string>) {
   return (
     <RadixSelect.Item value={value} textValue={label} disabled={disabled} className={ITEM}>
-      <RadixSelect.ItemText className="contents">
-        <OptionText leading={leading} label={label} />
-      </RadixSelect.ItemText>
+      {leading ? <span className="col-start-1 mr-10 flex flex-none">{leading}</span> : null}
+      <span className="col-start-2 truncate">
+        <RadixSelect.ItemText>{label}</RadixSelect.ItemText>
+      </span>
       {description ? (
         <span className="col-start-2 row-start-2 text-caption font-normal text-dim">
           {description}
@@ -125,6 +118,13 @@ export function Select<V extends string>({
 }: SelectProps<V>) {
   const rootValue = value ?? (placeholder === undefined && noneOption ? NONE : '')
 
+  const shown =
+    value === null
+      ? placeholder === undefined
+        ? noneOption
+        : undefined
+      : options.find((option) => option.value === value)
+
   function handleValueChange(next: string) {
     onValueChange(options.find((option) => option.value === next)?.value ?? null)
   }
@@ -141,7 +141,14 @@ export function Select<V extends string>({
         className={[TRIGGER, TRIGGER_SIZE[size], triggerColor(tone, disabled)].join(' ')}
         {...aria}
       >
-        <RadixSelect.Value placeholder={placeholder} className="flex min-w-0 items-center" />
+        <RadixSelect.Value placeholder={placeholder}>
+          {shown ? (
+            <span className="flex min-w-0 items-center gap-10">
+              {shown.leading ? <span className="flex flex-none">{shown.leading}</span> : null}
+              <span className="truncate">{shown.label}</span>
+            </span>
+          ) : undefined}
+        </RadixSelect.Value>
         <RadixSelect.Icon
           className={[
             'absolute top-1/2 flex -translate-y-1/2 group-data-[state=open]:rotate-180',
