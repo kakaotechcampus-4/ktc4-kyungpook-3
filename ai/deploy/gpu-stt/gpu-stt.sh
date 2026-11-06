@@ -142,10 +142,10 @@ cmd_setup() {
 }
 
 ensure_standby() {
-  local rows id state ready
+  local rows id state at ready
   # 조회를 따로 받아야 실패가 set -e 에 걸린다. 빈 값이면 서버가 없다고 보고 하나 더 만든다
   rows=$(fallback_rows "$STANDBY")
-  read -r id state _ _ ready <<<"$rows" || true
+  read -r id state _ at ready <<<"$rows" || true
   [ "$ready" != 1 ] || return 0
 
   USER_DATA=$(mktemp)
@@ -158,6 +158,7 @@ ensure_standby() {
       ;;
     pending | running)
       INSTANCE_ID=$id
+      FIRST_BOOT_STOP_AT=$at
       echo "$INSTANCE_ID 의 첫 부팅을 다시 기다립니다."
       ;;
     *) die "$id 는 첫 부팅을 마치지 못했습니다. destroy 뒤 setup 을 다시 돌립니다." ;;
@@ -173,6 +174,9 @@ wait_for_first_boot() {
   # 대기 한 번이 최대 10분이라 첫 부팅과 stop 을 합친 시간을 덮지 못한다
   for i in 1 2 3 4; do
     if aws ec2 wait instance-stopped --instance-ids "$INSTANCE_ID" 2>"$RUN_ERROR"; then
+      # 타이머는 StopAt 전에 울리지 않는다. 이 시각 뒤의 stop 은 첫 부팅이 끝났다는 신호가 아니다
+      [ "$(date +%s)" -lt "$FIRST_BOOT_STOP_AT" ] \
+        || die "$INSTANCE_ID 가 종료 예약으로 꺼졌을 수 있습니다. destroy 뒤 setup 을 다시 돌립니다."
       # 이 표시가 없는 서버는 모델을 한 번도 올리지 못했을 수 있다
       aws ec2 create-tags --resources "$INSTANCE_ID" --tags Key=Ready,Value=1
       echo "대기 서버 $INSTANCE_ID 를 꺼 두었습니다."
@@ -247,8 +251,9 @@ explain_failed_start() {
 
 launch() {
   local tags
+  FIRST_BOOT_STOP_AT=$(($(date +%s) + SETUP_STOP_HOURS * 3600))
   # 태그는 만드는 호출에 같이 싣는다. 따로 붙이다 끊기면 스크립트가 찾지 못하는 GPU 가 남는다
-  tags="$TAGS,{Key=StopAt,Value=$(($(date +%s) + SETUP_STOP_HOURS * 3600))}"
+  tags="$TAGS,{Key=StopAt,Value=$FIRST_BOOT_STOP_AT}"
   write_user_data
   INSTANCE_ID=$(aws ec2 run-instances --image-id "$AMI" --instance-type "$INSTANCE_TYPE" \
     --security-group-ids "$SG_ID" --instance-initiated-shutdown-behavior stop \

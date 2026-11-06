@@ -617,11 +617,20 @@ def test_on_refuses_a_standby_that_never_finished_first_boot(aws, state):
 
 def test_setup_resumes_waiting_for_a_first_boot_still_running(aws):
     aws.ok("setup", PROD_IP)
-    aws.set_instances(f"i-0half running {LAUNCHED} {STOP_AT}")
+    aws.set_instances(f"i-0half running {LAUNCHED} {int(time.time()) + 3600}")
     aws.forget_calls()
     aws.ok("setup", PROD_IP)
     assert aws.calls("run-instances") == []
     assert "--resources i-0half --tags Key=Ready,Value=1" in aws.calls("create-tags")[0]
+
+
+def test_setup_does_not_trust_a_stop_after_the_first_boot_timer(aws):
+    aws.ok("setup", PROD_IP)
+    aws.set_instances(f"i-0half running {LAUNCHED} {int(time.time()) - 60}")
+    aws.forget_calls()
+    r = aws.run("setup", PROD_IP)
+    assert r.returncode != 0 and "destroy" in r.stderr
+    assert aws.calls("create-tags") == []
 
 
 def test_setup_refuses_a_stopped_standby_that_never_finished_first_boot(aws):
