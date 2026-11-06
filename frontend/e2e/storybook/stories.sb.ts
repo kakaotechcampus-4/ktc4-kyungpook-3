@@ -197,7 +197,7 @@ test('멈춘 요청·조회 오류 스토리를 지나도 온보딩 기본 스�
 /*
  * M5 스토리의 play 가 끝까지 통과한다 (U6-1). 렌더 단계는 play 가 던져도 `finished` 로 끝나므로 play 결과의 오류 목록을
  * 본다(expectStoryFinished) — 화면만 그려지고 play 가 깨진 스토리를 여기서 잡는다. 목록은 막 빌드한 index.json 에서 읽는다
- * (`npm run test:storybook` 이 빌드부터 한다). 헤더 `정리 중` 링크와 가드 대기의 헤더 뼈대(UX1-M01)는 M4 앱 셸 스토리 묶음에 있다.
+ * (`npm run test:storybook` 이 빌드부터 한다). 가드 대기의 헤더 뼈대(UX1-M01)는 M4 앱 셸 스토리 묶음에 있다.
  */
 const STORY_INDEX = resolve(import.meta.dirname, '../../storybook-static/index.json')
 const M5_STORIES = Object.values(
@@ -209,7 +209,7 @@ const M5_STORIES = Object.values(
 )
   .filter(({ id, type }) => type === 'story' && id.startsWith('m5-'))
   .map(({ id }) => id)
-  .concat('m4-메뉴-앱-셸--헤더-정리-중', 'm4-메뉴-앱-셸--헤더-뼈대')
+  .concat('m4-메뉴-앱-셸--헤더-뼈대')
   // 팀원 연결의 PM 체크(#228)도 play 로 확인한다
   .concat(
     'm4-온보딩-단계--팀원-pm-체크',

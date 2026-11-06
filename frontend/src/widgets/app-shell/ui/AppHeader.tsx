@@ -1,4 +1,3 @@
-import { Fragment } from 'react'
 import { NotificationBell } from '@/features/notifications'
 import { paths } from '@/shared/config/routes'
 import { GuardedLink } from '@/shared/lib/unsaved-changes'
@@ -24,20 +23,15 @@ const HEADER =
 const TAB =
   'inline-flex h-36 items-center rounded-9 px-12 text-control leading-none font-semibold text-sub hover:text-ink aria-[current=page]:bg-surface-selected aria-[current=page]:text-ink'
 
-/* `정리 중` 링크 — 탭과 같은 단에 먹 점 하나. 회전하지 않는다(공통 UI 는 스피너를 쓰지 않는다) */
-const PROCESSING_DOT = 'size-6 shrink-0 rounded-999 bg-ink'
-
 export interface AppHeaderProps {
   workspaceId: string
-  /**
-   * 이 공간에서 정리 중인 회의의 처리 화면 경로. 있을 때만 회의록 탭 옆에 `정리 중` 링크를 그린다 (U4-9).
-   * 무엇이 정리 중인지는 앱 계층이 처리 추적에서 읽어 넘긴다 — 헤더는 추적기를 모른다 (G4)
-   */
-  processingHref?: string | null
 }
 
-/** 앱 셸의 헤더. 탭은 지금 공간의 화면으로만 간다. 모든 이동은 관문(GuardedLink)을 탄다 */
-export function AppHeader({ workspaceId, processingHref = null }: AppHeaderProps) {
+/**
+ * 앱 셸의 헤더. 탭은 지금 공간의 화면으로만 간다. 모든 이동은 관문(GuardedLink)을 탄다.
+ * 정리 중 신호는 헤더가 아니라 오른쪽 아래 진행 토스트가 갖는다 (#424)
+ */
+export function AppHeader({ workspaceId }: AppHeaderProps) {
   return (
     <header className={HEADER}>
       <div className="flex items-center gap-30">
@@ -50,17 +44,9 @@ export function AppHeader({ workspaceId, processingHref = null }: AppHeaderProps
         </GuardedLink>
         <nav aria-label="주요 화면" className="flex items-center gap-2">
           {TABS.map(({ label, to }) => (
-            <Fragment key={label}>
-              <GuardedLink to={to(workspaceId)} className={TAB}>
-                {label}
-              </GuardedLink>
-              {label === '회의록' && processingHref !== null ? (
-                <GuardedLink to={processingHref} className={`${TAB} gap-7`}>
-                  <span aria-hidden="true" className={PROCESSING_DOT} />
-                  정리 중
-                </GuardedLink>
-              ) : null}
-            </Fragment>
+            <GuardedLink key={label} to={to(workspaceId)} className={TAB}>
+              {label}
+            </GuardedLink>
           ))}
         </nav>
       </div>

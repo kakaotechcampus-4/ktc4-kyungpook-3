@@ -43,16 +43,6 @@ export const 헤더_뼈대: Story = {
   },
 }
 
-/** M5 U4 — 이 공간에 정리 중 회의가 있으면 회의록 탭 옆에 `정리 중` 링크. 경로는 앱 계층이 넘긴다 */
-export const 헤더_정리_중: Story = {
-  args: { processingHref: '/workspaces/ws_01/meetings/mt_10/processing' },
-  play: async ({ canvasElement }) => {
-    await expect(
-      await within(canvasElement).findByRole('link', { name: '정리 중' }),
-    ).toHaveAttribute('href', '/workspaces/ws_01/meetings/mt_10/processing')
-  },
-}
-
 /** 워크스페이스 메뉴 — 미완료 공간 `설정 미완료`, 지금 공간 체크, 새 공간·목록. 설정은 계정 메뉴에 있다 (#244) */
 export const 워크스페이스_메뉴_열림: Story = {
   play: async ({ canvasElement }) => {

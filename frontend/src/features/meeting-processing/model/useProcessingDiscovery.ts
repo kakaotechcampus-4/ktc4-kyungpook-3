@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { useEffect } from 'react'
-import { meetingListQueryOptions, trackMeeting, useMeetingTrackerStore } from '@/entities/meeting'
+import { meetingListQueryOptions, trackMeeting } from '@/entities/meeting'
 
 /**
  * 지금 공간의 회의 목록에서 정리 중 회의를 찾아 추적에 등록한다 (U4-1, U4-2).
@@ -14,15 +14,4 @@ export function useProcessingDiscovery(workspaceId: string): void {
     for (const meeting of data ?? [])
       if (meeting.status === 'processing') trackMeeting({ workspaceId, meetingId: meeting.id })
   }, [data, workspaceId])
-}
-
-/**
- * 이 공간에서 정리 중인(추적 중인) 회의 ID. 없으면 null — 헤더의 `정리 중` 링크가 이 값으로 그려진다 (U4-9).
- * 공간마다 한 번에 하나만 정리한다(D-089). 여럿이면 먼저 등록된 것이다.
- */
-export function useProcessingMeetingId(workspaceId: string): string | null {
-  return useMeetingTrackerStore(
-    (state) =>
-      state.meetings.find((meeting) => meeting.workspaceId === workspaceId)?.meetingId ?? null,
-  )
 }

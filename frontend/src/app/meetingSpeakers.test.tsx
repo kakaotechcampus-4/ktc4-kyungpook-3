@@ -182,10 +182,8 @@ describe('화자 지정 화면 — PM', () => {
     await screen.findByRole('heading', { level: 1, name: '팀' })
 
     act(() => response.resolve())
-    const processing = await within(
-      screen.getByRole('navigation', { name: '주요 화면' }),
-    ).findByRole('link', { name: '정리 중' })
-    expect(processing).toHaveAttribute('href', PROCESSING_PATH)
+    // 추적은 이어진다 — 지금 화면(팀)의 진행 토스트가 정리 중으로 보인다
+    expect(await screen.findByRole('region', { name: /정리 중$/ })).toBeInTheDocument()
     // 늦은 이동은 transition 이라 한 번 기다린 뒤에 그 화면에 남았는지 본다
     await act(() => new Promise((resolve) => setTimeout(resolve, 200)))
     expect(screen.getByRole('heading', { level: 1, name: '팀' })).toBeInTheDocument()

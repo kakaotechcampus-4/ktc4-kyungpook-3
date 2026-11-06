@@ -1,7 +1,7 @@
 import { meetingFailure, processingSteps } from '@/entities/meeting'
 import type { MeetingProgress, ProcessingStep, ProcessingStepState } from '@/entities/meeting'
 import type { Role } from '@/shared/types/common'
-import { PROCESSING_DONE_TITLE, SPEAKERS_NEEDED_TITLE } from './notices'
+import { PROCESSING_DONE_TITLE, PROCESSING_FAILED_TITLE, SPEAKERS_NEEDED_TITLE } from './notices'
 
 /** 진행 토스트가 보는 회의 하나. 정리 중·대기는 상세 캐시에서, 완료·실패는 끝난 결과 기록에서 온다 (#424) */
 export type ProcessingSubject =
@@ -43,9 +43,6 @@ const STAGE_SENTENCES: Record<ProcessingStep['key'], string> = {
 }
 
 const WAITING_SENTENCE = '화자 지정을 기다리고 있어요'
-
-/** 실패 사유와 상관없이 같은 제목이다. 사유는 설명이 갖는다 */
-export const FAILED_TITLE = meetingFailure(null).title
 
 function progressSignal(
   subject: Extract<ProcessingSubject, { phase: 'processing' | 'awaiting_speakers' }>,
@@ -92,6 +89,6 @@ export function signalAnnouncement(signal: ProcessingSignal): string {
     case 'done':
       return PROCESSING_DONE_TITLE
     case 'failed':
-      return FAILED_TITLE
+      return PROCESSING_FAILED_TITLE
   }
 }

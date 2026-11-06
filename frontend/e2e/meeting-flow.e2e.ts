@@ -51,6 +51,11 @@ function toastOf(page: Page, text: string) {
     .filter({ hasText: text })
 }
 
+/** 오른쪽 아래 정리 진행 토스트 (#424). 짧은 토스트 목록 아래 고정 칸에 회의마다 카드 하나다 */
+function signalOf(page: Page, text: string) {
+  return page.getByTestId('pinned-toast-slot').locator('section').filter({ hasText: text })
+}
+
 /** 지나간 주소 — 클라이언트 이동(history)도 프레임 이동으로 잡힌다 */
 function recordUrls(page: Page) {
   const urls: string[] = []
@@ -97,11 +102,11 @@ test('① 짧은 음원을 올리면 정리가 끝나고 그 회의의 회의록
       .getByRole('complementary', { name: '회의 목록' })
       .getByRole('link', { name: new RegExp(SHORT_AUDIO.name) }),
   ).toHaveAttribute('aria-current', 'page')
-  // 처리 화면을 보고 있었으니 토스트와 함께 바로 옮겨졌다
-  await expect(toastOf(page, '회의 정리가 끝났어요')).toBeVisible()
+  // 처리 화면을 보고 있었으니 바로 옮겨졌고, 진행 토스트는 완료로 바뀌었다
+  await expect(signalOf(page, '회의 정리가 끝났어요')).toBeVisible()
 })
 
-test('② 정리 중에 다른 화면으로 가도 완료 토스트의 `회의록 보기`로 그 회의록에 간다', async ({
+test('② 정리 중에 다른 화면으로 가면 진행 토스트가 따라오고, 완료로 바뀐 토스트의 `회의록 보기`로 그 회의록에 간다', async ({
   page,
 }) => {
   await start(page, 'meeting-demo', UPLOAD)
@@ -112,22 +117,22 @@ test('② 정리 중에 다른 화면으로 가도 완료 토스트의 `회의�
   expect(meetingId).toBeDefined()
   await expect(page.getByRole('heading', { name: '정리하고 있어요' })).toBeVisible(FIRST_PAINT)
 
-  // 헤더의 `정리 중` 링크가 이 회의의 처리 화면을 가리킨다 (U4-9)
+  // 처리 화면에서는 진행 토스트를 숨긴다. 헤더에는 `정리 중` 링크가 없다 (#424)
   const header = page.getByRole('banner')
-  await expect(header.getByRole('link', { name: '정리 중', exact: true })).toHaveAttribute(
-    'href',
-    `${WORKSPACE}/meetings/${meetingId}/processing`,
-  )
+  const processing = page.getByRole('region', { name: `${SHORT_AUDIO.name} 정리 중` })
+  await expect(processing).toHaveCount(0)
+  await expect(header.getByRole('link', { name: '정리 중' })).toHaveCount(0)
 
   // 정리 중에 태스크 화면으로 떠난다 — 업로드가 끝나 입력이 없으니 이탈 확인은 없다 (U3-9)
   await header.getByRole('link', { name: '태스크', exact: true }).click()
   await expect(page).toHaveURL(`${WORKSPACE}/tasks`)
+  await expect(processing.getByRole('button', { name: '자세히 보기' })).toBeVisible()
 
-  // 앱 수준 추적기가 polling 을 이어 간다(3초 간격, 세 단계 + 완료). 다른 화면이라 옮기지 않고 토스트만 띄운다 (U4-1, U4-5)
-  const toast = toastOf(page, '회의 정리가 끝났어요')
+  // 앱 수준 추적기가 polling 을 이어 간다(3초 간격, 세 단계 + 완료). 다른 화면이라 옮기지 않고 토스트만 완료로 바뀐다 (U4-1, U4-5)
+  const toast = signalOf(page, '회의 정리가 끝났어요')
   await expect(toast).toBeVisible({ timeout: 20_000 })
   await expect(page).toHaveURL(`${WORKSPACE}/tasks`)
-  await expect(header.getByRole('link', { name: '정리 중', exact: true })).toHaveCount(0)
+  await expect(processing).toHaveCount(0)
 
   await toast.getByRole('button', { name: '회의록 보기' }).click()
   await expect(page).toHaveURL(`${WORKSPACE}/meetings/${meetingId}`)
@@ -162,12 +167,14 @@ test('③ 일반 팀원이 회의 올리기 주소로 바로 들어오면 막히
   await expect(page.getByRole('link', { name: '회의 올리기' })).toHaveCount(0)
 })
 
-test('④ 정리에 실패하면 재업로드 토스트가 뜨고 그 회의는 목록에 없다', async ({ page }) => {
+test('④ 정리에 실패하면 진행 토스트가 재업로드 안내로 바뀌고 그 회의는 목록에 없다', async ({
+  page,
+}) => {
   await start(page, 'meeting-fail', UPLOAD)
   await uploadShortAudio(page)
 
   // 처리 화면을 보고 있었으니 회의록 목록으로 옮긴다 (U4-6). 목록은 가장 최근 완료 회의를 고른다 (U5-1)
-  await expect(toastOf(page, '회의를 정리하지 못했어요. 파일을 다시 올려 주세요.')).toBeVisible({
+  await expect(signalOf(page, '회의를 정리하지 못했어요. 파일을 다시 올려 주세요.')).toBeVisible({
     timeout: 15_000,
   })
   await expect(page).toHaveURL(/\/workspaces\/ws_01\/meetings\/mt_\w+$/)
@@ -176,7 +183,7 @@ test('④ 정리에 실패하면 재업로드 토스트가 뜨고 그 회의는 
   // 실패 회의는 목록에 없다 (D-093). 일반 실패라 재연결 모달도 없다 (D-100 은 끊김일 때만)
   await expect(list.getByText(SHORT_AUDIO.name)).toHaveCount(0)
   await expect(page.getByRole('dialog')).toHaveCount(0)
-  await expect(page.getByRole('banner').getByRole('link', { name: '정리 중' })).toHaveCount(0)
+  await expect(page.getByRole('region', { name: /정리 중$/ })).toHaveCount(0)
 })
 
 test('⑤ 화자 지정 기한 만료는 목록과 상세에 남고 새로고침 뒤에도 다시 업로드할 수 있다', async ({
@@ -223,7 +230,7 @@ test('⑥ 음성 처리 실패는 Notion 연결도 끊겨 있어도 해당 사�
   await start(page, 'meeting-fail-diarize', UPLOAD)
   await uploadShortAudio(page)
   await expect(
-    toastOf(page, '음성 처리 중 회의 정리를 완료하지 못했어요. 파일을 다시 올려 주세요.'),
+    signalOf(page, '음성 처리 중 회의 정리를 완료하지 못했어요. 파일을 다시 올려 주세요.'),
   ).toBeVisible(FIRST_PAINT)
   await expect(page.getByRole('dialog')).toHaveCount(0)
   await expect(
