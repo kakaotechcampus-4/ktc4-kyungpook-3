@@ -3,6 +3,8 @@ import { db } from '../db'
 import { fail, ok } from '../envelope'
 import { requireAuth } from '../auth-guard'
 import { workspaceCountOf } from '../sessions'
+import { readJson } from '../utils'
+import { invalidBody, passwordField, stringField } from '../validation'
 
 const base = '/api/v1/auth'
 
@@ -14,23 +16,22 @@ const authResponse = () => ({
 
 export const authHandlers = [
   http.post(`${base}/signup`, async ({ request }) => {
-    const body = (await request.json()) as { email?: unknown; password?: unknown; name?: unknown }
-    if (
-      typeof body.email === 'string' &&
-      db.accounts.some((account) => account.session.user.email === body.email)
+    const body = (await readJson(request)) ?? {}
+    // BE 는 본문 검증(pydantic)이 중복 이메일 확인보다 먼저다. 규칙 위반이면 이미 있는 이메일이어도 400 이다
+    const bodyError = invalidBody(
+      stringField(body, 'email'),
+      passwordField(body, 'password'),
+      stringField(body, 'name'),
     )
+    if (bodyError) return bodyError
+    const { email, password, name } = body as { email: string; password: string; name: string }
+    if (db.accounts.some((account) => account.session.user.email === email))
       return fail('EMAIL_ALREADY_EXISTS', '이미 가입된 이메일입니다.', 409)
-    if (
-      typeof body.email !== 'string' ||
-      typeof body.password !== 'string' ||
-      typeof body.name !== 'string'
-    )
-      return fail('INVALID_REQUEST', '요청이 올바르지 않습니다.', 400)
     db.session = {
       user: {
         user_id: `us_${String(db.accounts.length + 1).padStart(2, '0')}`,
-        email: body.email,
-        name: body.name,
+        email,
+        name,
         avatar_url: null,
       },
       workspace_count: 0,
@@ -38,7 +39,7 @@ export const authHandlers = [
     }
     db.accounts.push({
       session: structuredClone(db.session),
-      password: body.password,
+      password,
       workspaceIds: [],
       memberIds: {},
     })

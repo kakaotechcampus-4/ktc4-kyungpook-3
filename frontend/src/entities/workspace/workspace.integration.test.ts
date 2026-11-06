@@ -68,7 +68,7 @@ it('allows different accounts to use the same workspace name', async () => {
   const signup = await fetch('http://localhost:3000/api/v1/auth/signup', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ email: 'new@example.com', password: 'secret', name: '새 사용자' }),
+    body: JSON.stringify({ email: 'new@example.com', password: 'secret12', name: '새 사용자' }),
   })
   expect(signup.status).toBe(201)
 
@@ -156,7 +156,7 @@ it('refuses the detail of a workspace the signed-in user does not belong to', as
   const signup = await fetch(`${base}/auth/signup`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ email: 'outsider@example.com', password: 'secret', name: '외부인' }),
+    body: JSON.stringify({ email: 'outsider@example.com', password: 'secret12', name: '외부인' }),
   })
   expect(signup.status).toBe(201)
 
