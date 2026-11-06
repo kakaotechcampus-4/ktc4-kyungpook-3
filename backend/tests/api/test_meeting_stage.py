@@ -1,9 +1,13 @@
-"""AI 가 알리는 처리 단계(PATCH /meetings/{id}/stage)의 저장·무시 규칙과 progress 판정을 확인한다."""
+"""AI 가 알리는 처리 단계(PATCH /meetings/{id}/stage)의 저장·무시 규칙과 progress 판정을 확인한다.
+
+핵심인 조건부 UPDATE(`meeting_stage.report_stage`)가 DB 마다 다르게 동작할 수 있어서, TEST_DATABASE_URL 이 있으면 PostgreSQL 에서도 돈다.
+"""
+import os
 from datetime import datetime, timedelta, timezone
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -15,11 +19,34 @@ SERVICE_TOKEN = "test-service-token"
 SERVICE_HEADERS = {"X-Service-Token": SERVICE_TOKEN}
 
 
-@pytest.fixture
-def db():
-    engine = create_engine(
+TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
+
+
+def _sqlite_engine():
+    return create_engine(
         "sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool
     )
+
+
+def _pg_engine():
+    engine = create_engine(TEST_DATABASE_URL)
+    with engine.begin() as conn:
+        conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+    Base.metadata.drop_all(engine)
+    return engine
+
+
+@pytest.fixture(
+    params=[
+        "sqlite",
+        pytest.param(
+            "postgresql",
+            marks=pytest.mark.skipif(not TEST_DATABASE_URL, reason="TEST_DATABASE_URL(PostgreSQL)이 없습니다."),
+        ),
+    ]
+)
+def db(request):
+    engine = _pg_engine() if request.param == "postgresql" else _sqlite_engine()
     Base.metadata.create_all(engine)
     session = sessionmaker(bind=engine)()
 
@@ -32,6 +59,8 @@ def db():
     finally:
         app.dependency_overrides.pop(get_db, None)
         session.close()
+        Base.metadata.drop_all(engine)
+        engine.dispose()
 
 
 @pytest.fixture
