@@ -6,6 +6,7 @@ import { FormErrorPanel } from '@/shared/ui/form-error-panel'
 import { Label } from '@/shared/ui/label'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
 import { Select } from '@/shared/ui/select'
+import { chatChannelListFailure } from '../lib/chatChannelMessages'
 import { useChatChannelSetting } from '../model/useChatChannelSetting'
 
 export interface ChatChannelFieldProps {
@@ -96,6 +97,7 @@ export function ChatChannelField({ workspaceId, integration }: ChatChannelFieldP
             error={setting.channels.error}
             onRetry={setting.channels.retry}
             title="채널 목록을 불러오지 못했어요"
+            message={chatChannelListFailure(setting.channels.error) ?? undefined}
           />
         </div>
       ) : null}

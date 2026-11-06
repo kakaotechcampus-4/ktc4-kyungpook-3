@@ -245,6 +245,8 @@ describe('Discord 연결 끊기 확인 — 회의 채팅 채널', () => {
 
 describe('설정의 회의 채팅 채널 — PM (#429)', () => {
   const NOT_CONNECTED = 'Discord를 먼저 연결해 주세요. 연결하면 회의 채팅 채널을 고를 수 있어요.'
+  const CHANNEL_LIST_FAILED =
+    'Discord에서 채널 목록을 가져오지 못했어요. 잠시 후 다시 시도해 주세요.'
   const SAVE_NOTICE =
     '이 채널 대화는 매일 09:00에 읽혀 task 제안에 쓰여요. 저장하면 봇이 채널에 안내 메시지를 남겨요. 제안은 PM 승인 뒤에만 반영돼요.'
   const GENERAL = { channel_id: '1300000000000000001', name: '일반' }
@@ -425,6 +427,9 @@ describe('설정의 회의 채팅 채널 — PM (#429)', () => {
     expect(
       await area.findByText('채널 목록을 불러오지 못했어요', undefined, { timeout: 5_000 }),
     ).toBeInTheDocument()
+    // 공용 DISCORD_API_FAILED 문구는 팀원 연결의 사용자 목록 문구다. 채널 목록에서는 쓰지 않는다
+    expect(area.getByText(CHANNEL_LIST_FAILED)).toBeInTheDocument()
+    expect(area.queryByText(/사용자 목록/)).toBeNull()
     failing = false
     await user.click(area.getByRole('button', { name: '다시 시도' }))
     const select = area.getByRole('combobox', { name: '회의 채팅 채널' })

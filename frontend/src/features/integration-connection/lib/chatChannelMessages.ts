@@ -21,6 +21,13 @@ const KNOWN: Readonly<Record<string, string>> = {
     'Discord 연결이 끊겼어요. Discord를 다시 연결한 뒤 골라 주세요.',
 }
 
+/** 채널 목록 조회 실패 문구. 공용 `DISCORD_API_FAILED` 문구는 팀원 연결의 사용자 목록 조회 문구라 여기서 쓰지 않는다 */
+export function chatChannelListFailure(error: unknown): string | null {
+  if (error instanceof ApiError && error.code === ERROR_CODES.DISCORD_API_FAILED)
+    return 'Discord에서 채널 목록을 가져오지 못했어요. 잠시 후 다시 시도해 주세요.'
+  return chatChannelFailure(error)
+}
+
 /** 저장 실패 문구. 취소는 실패가 아니라 null 이다 */
 export function chatChannelFailure(error: unknown): string | null {
   if (isCanceledError(error)) return null
