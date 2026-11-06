@@ -80,6 +80,15 @@ def test_request_unknown_email_returns_200_and_sends_nothing(mdb, sent, smtp_env
     assert sent == []
 
 
+def test_request_with_uppercase_email_sends_to_stored_address(mdb, sent, smtp_env):
+    c = _client()
+    _signup(c)
+    r = _request(c, EMAIL.upper())
+    assert r.status_code == 200
+    assert len(sent) == 1
+    assert sent[0][0] == EMAIL
+
+
 def test_request_known_email_sends_link(mdb, sent, smtp_env):
     c = _client()
     _signup(c)
