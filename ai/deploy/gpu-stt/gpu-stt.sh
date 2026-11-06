@@ -273,7 +273,7 @@ start_standby() {
 }
 
 cmd_on() {
-  local hours=3 rows state ready
+  local hours=3 allocation rows state ready
   if [ $# -gt 0 ]; then
     [ "$1" = --hours ] && [ $# -eq 2 ] || usage
     hours=$2
@@ -281,8 +281,9 @@ cmd_on() {
   [[ $hours =~ ^[1-9][0-9]*$ ]] || usage
   [ -f "$STATE/env" ] || die "먼저 setup 을 돌립니다."
   . "$STATE/env"
-  [ -n "$(aws ec2 describe-addresses --filters "Name=allocation-id,Values=$EIP_ALLOC" \
-    --query 'Addresses[].AllocationId' --output text)" ] || die "고정 IP 가 없습니다. setup 을 다시 돌립니다."
+  allocation=$(aws ec2 describe-addresses --filters "Name=allocation-id,Values=$EIP_ALLOC" \
+    --query 'Addresses[].AllocationId' --output text)
+  [ -n "$allocation" ] || die "고정 IP 가 없습니다. setup 을 다시 돌립니다."
 
   RUN_ERROR=$(mktemp)
   trap 'rm -f "$RUN_ERROR"' EXIT

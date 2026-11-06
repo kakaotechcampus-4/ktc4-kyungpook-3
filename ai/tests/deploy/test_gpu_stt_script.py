@@ -624,9 +624,10 @@ def test_setup_resumes_waiting_for_a_first_boot_still_running(aws):
     assert "--resources i-0half --tags Key=Ready,Value=1" in aws.calls("create-tags")[0]
 
 
-def test_setup_does_not_trust_a_stop_after_the_first_boot_timer(aws):
+@pytest.mark.parametrize("stop_at", [int(time.time()) - 60, "None", "abc"])
+def test_setup_does_not_trust_a_stop_after_the_first_boot_timer(aws, stop_at):
     aws.ok("setup", PROD_IP)
-    aws.set_instances(f"i-0half running {LAUNCHED} {int(time.time()) - 60}")
+    aws.set_instances(f"i-0half running {LAUNCHED} {stop_at}")
     aws.forget_calls()
     r = aws.run("setup", PROD_IP)
     assert r.returncode != 0 and "destroy" in r.stderr
@@ -670,6 +671,14 @@ def test_a_failed_lookup_does_not_look_like_a_missing_standby_to_on(aws):
     r = aws.run("on")
     assert r.returncode != 0 and "Could not connect" in r.stderr
     assert "먼저 setup" not in r.stderr
+
+
+def test_a_failed_ip_lookup_does_not_look_like_a_missing_ip_to_on(aws):
+    standby(aws)
+    fail_next(aws, "describe-addresses")
+    r = aws.run("on")
+    assert r.returncode != 0 and "Could not connect" in r.stderr
+    assert "고정 IP 가 없습니다" not in r.stderr
 
 
 def test_release_ip_does_not_claim_success_when_the_lookup_failed(aws):
