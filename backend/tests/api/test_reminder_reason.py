@@ -168,3 +168,29 @@ def test_bundle_summary(mdb, seed):
     mdb.refresh(r0)
     assert bundle_summary([r0, r1]) == "지워진 태스크 외 1건 진행 상황 확인"
     assert bundle_summary([]) == ""
+
+
+def test_reply_beats_manual_status_change_at_the_same_time(mdb, seed):
+    r = _make(mdb, seed)
+    at = datetime(2026, 11, 5, 1, 0, tzinfo=timezone.utc)
+    m = _msg(mdb, _thread_id(r), at)
+    _hist(mdb, seed["tasks"][0], ChangedField.STATUS, ChangeSource.MANUAL, at)
+    _, evidence = reminder_reason(mdb, r, _thread_id(r))
+    assert evidence.kind == "reply" and evidence.message_id == m.message_id
+
+
+def test_manual_due_date_change_is_task_change_evidence(mdb, seed):
+    r = _make(mdb, seed)
+    at = datetime(2026, 11, 5, 1, 0, tzinfo=timezone.utc)
+    _hist(mdb, seed["tasks"][0], ChangedField.DUE_DATE, ChangeSource.MANUAL, at)
+    reason, evidence = reminder_reason(mdb, r, _thread_id(r))
+    assert evidence == Evidence("task_change", at, None)
+    assert reason.endswith("11/5(목) 이후로 진행 소식이 없어요.")
+
+
+def test_same_time_replies_pick_the_largest_message_id(mdb, seed):
+    r = _make(mdb, seed)
+    at = datetime(2026, 11, 5, 1, 0, tzinfo=timezone.utc)
+    ids = [_msg(mdb, _thread_id(r), at).message_id for _ in range(5)]
+    _, evidence = reminder_reason(mdb, r, _thread_id(r))
+    assert evidence.message_id == max(ids)

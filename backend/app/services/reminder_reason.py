@@ -35,7 +35,7 @@ def _latest_news(db: Session, task, thread_id: str) -> Evidence | None:
     reply = db.execute(
         select(ThreadMessage.message_id, ThreadMessage.created_at)
         .where(ThreadMessage.thread_id == thread_id, ThreadMessage.sender == MessageSender.MEMBER)
-        .order_by(ThreadMessage.created_at.desc())
+        .order_by(ThreadMessage.created_at.desc(), ThreadMessage.message_id.desc())
         .limit(1)
     ).first()
     change = db.scalar(
@@ -45,7 +45,7 @@ def _latest_news(db: Session, task, thread_id: str) -> Evidence | None:
             TaskHistory.changed_field.in_(scheduler._RESPONSE_FIELDS),
             TaskHistory.change_source.notin_(scheduler._NOT_RESPONSE_SOURCES),
         )
-        .order_by(TaskHistory.created_at.desc())
+        .order_by(TaskHistory.created_at.desc(), TaskHistory.history_id.desc())
         .limit(1)
     )
     reply_ev = Evidence("reply", messages.utc(reply.created_at), reply.message_id) if reply else None
