@@ -24,7 +24,8 @@ def validate_name(value: str) -> str:
     categories = [unicodedata.category(ch) for ch in value]
     if (
         not value
-        or all(c == "Cf" for c in categories)
+        # strip 은 양 끝의 형식 문자(Cf)에서 멈추므로, 안쪽에 공백(Z*)이 남아도 보이는 글자가 없으면 막는다.
+        or all(c == "Cf" or c.startswith("Z") for c in categories)
         or any(c in ("Cc", "Cs", "Zl", "Zp") for c in categories)
         or len(value) > NAME_MAX_LENGTH
     ):
