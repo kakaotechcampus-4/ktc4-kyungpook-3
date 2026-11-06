@@ -12,7 +12,7 @@ import { Icon } from '@/shared/ui/icon'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
 import { buildConversation } from '../model/conversation'
 import type { BubbleItem } from '../model/conversation'
-import { VIEWER_POLICY, canReply } from '../model/viewer'
+import { threadPolicy } from '../model/viewer'
 import type { MessageViewer } from '../model/viewer'
 import { AttributionPicker } from './AttributionPicker'
 import { ThreadSkeleton } from './MessageSkeletons'
@@ -157,7 +157,7 @@ function ThreadView({
     }
   }, [])
   const today = todayInSeoul()
-  const policy = VIEWER_POLICY[viewer.role]
+  const policy = threadPolicy(viewer, thread.memberId)
   // 고르기를 받지 못해도 대화는 그대로 보인다 — 고르기만 빠지고 위에 다시 시도를 둔다
   const attributionsQuery = useQuery({
     ...replyAttributionsQueryOptions(workspaceId, thread.id),
@@ -171,14 +171,8 @@ function ThreadView({
     const body = bodyRef.current
     if (body !== null && atBottom.current) body.scrollTop = body.scrollHeight
   }, [attributionsQuery.data])
-  const replyable = canReply(viewer, thread.memberId)
-  const view = buildConversation(thread, {
-    policy,
-    replyable,
-    botName,
-    today,
-    now,
-  })
+  const replyable = policy.reply
+  const view = buildConversation(thread, { policy, botName, today, now })
   const waitingDays = view.waitingDays
 
   return (

@@ -66,7 +66,7 @@ test('태스크 상세에서 만든 재촉은 메시지 화면 링크로 그 보
   page,
 }) => {
   await start(page, 'messages-default', '/workspaces/ws_01/tasks/tk_01')
-  const section = page.getByRole('region', { name: '재촉', exact: true })
+  const section = page.getByRole('region', { name: '김서연에게 진행 상황을 물어볼까요?' })
   await section.getByRole('button', { name: '재촉 만들기' }).click()
   await section
     .getByRole('group', { name: '재촉 만들기' })
