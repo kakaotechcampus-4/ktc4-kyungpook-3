@@ -120,6 +120,7 @@ case $2 in
     esac ;;
   terminate-instances) [ -f "$d/stuck" ] || rm -f "$d/instances" ;;
   authorize-security-group-ingress) printf '%s\n' "$*" >"$d/authorized" ;;
+  release-address) rm -f "$d/address" ;;
 esac
 exit 0
 """
@@ -316,6 +317,21 @@ def test_destroy_terminates_only_the_exact_tag_and_keeps_the_ip(aws):
     assert aws.calls("release-address") == []
 
 
+def test_destroy_can_release_the_ip_found_by_its_tag(aws):
+    standby(aws)
+    out = aws.ok("destroy", "--release-ip")
+    assert [c.split()[-1] for c in aws.calls("release-address")] == ["eipalloc-0fallback"]
+    assert any(ROLE_FILTER in c for c in aws.calls("describe-addresses"))
+    assert "고정 IP" in out
+
+
+def test_destroy_keeps_the_ip_when_the_server_will_not_go(aws):
+    standby(aws)
+    (aws.dir / "stuck").touch()
+    assert aws.run("destroy", "--release-ip").returncode != 0
+    assert aws.calls("release-address") == []
+
+
 def test_destroy_fails_and_names_what_is_still_alive(aws):
     standby(aws)
     (aws.dir / "stuck").touch()
@@ -466,7 +482,7 @@ def test_on_before_setup_stops_without_starting(aws):
 
 @pytest.mark.parametrize("args", [("on", "--hours", "0"), ("on", "--hours", "x"), ("on", "3"), ("setup",),
                                   ("setup", "not-an-ip"), ("setup", "203.0.113.310"), ("setup", PROD_IP, "--help"), ("off", "--help"),
-                                  ("destroy", "--help"), ("status", "--help"), ("reboot",), ()])
+                                  ("destroy", "--help"), ("destroy", "--release-ip", "x"), ("status", "--help"), ("reboot",), ()])
 def test_bad_arguments_change_nothing(aws, args):
     r = aws.run(*args)
     assert r.returncode != 0

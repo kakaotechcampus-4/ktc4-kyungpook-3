@@ -5,7 +5,7 @@
 #   gpu-stt.sh setup <운영 서버 공인 IP>
 #   gpu-stt.sh on [--hours N]
 #   gpu-stt.sh off
-#   gpu-stt.sh destroy
+#   gpu-stt.sh destroy [--release-ip]
 #   gpu-stt.sh status
 #
 # 같은 계정에 다른 작업의 gpu-stt-* 자원이 있다. 이 스크립트의 자원은 태그 Role=stt-fallback 이 정확히 붙은
@@ -39,7 +39,7 @@ die() {
 }
 
 usage() {
-  die "사용법: gpu-stt.sh setup <운영 서버 공인 IP> | on [--hours N] | off | destroy | status"
+  die "사용법: gpu-stt.sh setup <운영 서버 공인 IP> | on [--hours N] | off | destroy [--release-ip] | status"
 }
 
 fallback_ids() {
@@ -328,8 +328,11 @@ cmd_off() {
 }
 
 cmd_destroy() {
-  local ids remaining
-  [ $# -eq 0 ] || usage
+  local ids remaining release=no allocation
+  if [ $# -gt 0 ]; then
+    [ "$1" = --release-ip ] && [ $# -eq 1 ] || usage
+    release=yes
+  fi
   ids=$(fallback_ids "$NOT_GONE")
   if [ -n "$ids" ]; then
     # id 가 여럿이면 공백으로 나뉜다. 일부러 따옴표 없이 넘긴다
@@ -340,7 +343,16 @@ cmd_destroy() {
   if [ -n "$remaining" ]; then
     die "아직 지워지지 않았습니다: $remaining"
   fi
-  echo "Role=stt-fallback 인스턴스 0대. 고정 IP 는 남겨 둡니다."
+  if [ "$release" = no ]; then
+    echo "Role=stt-fallback 인스턴스 0대. 고정 IP 는 남겨 둡니다."
+    return
+  fi
+  read -r allocation _ <<<"$(aws ec2 describe-addresses --filters "$ROLE_FILTER" \
+    --query 'Addresses[].AllocationId' --output text)" || true
+  if [ -n "$allocation" ]; then
+    aws ec2 release-address --allocation-id "$allocation"
+  fi
+  echo "Role=stt-fallback 인스턴스 0대. 고정 IP 를 놓았습니다."
 }
 
 cmd_status() {
