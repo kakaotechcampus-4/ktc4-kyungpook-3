@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from capture import handoff as H
+from tests.capture import fake_be
 from tests.capture.fake_be import FakeBe, without_stage
 
 TRANSCRIPT = {
@@ -695,6 +696,113 @@ def test_an_upload_meeting_can_be_failed_through_fail_meeting():
     fake.add_upload("m-up1")
     _upload_client(fake).fail_meeting("m-up1", "stt")
     assert fake.meetings["m-up1"]["status"] == "failed"
+
+
+# ─────────────────────────────────────────────────────────── 화자 지정 결과 받기
+def _assigned_upload(fake, mid, mapping=None, **kw):
+    fake.add_upload(mid, **kw)
+    fake.assign(mid, mapping or {"SPEAKER_00": "u1"})
+
+
+def test_assigned_uploads_lists_assigned_not_resumed_in_assign_order_with_the_token():
+    fake = FakeBe()
+    fake.add_upload("m-none")                                   # 지정 안 됨
+    _assigned_upload(fake, "m-b", {"SPEAKER_00": "u2"})
+    _assigned_upload(fake, "m-a")
+    client = _upload_client(fake)
+    got = client.assigned_uploads()
+    assert [i["meeting_id"] for i in got] == ["m-b", "m-a"]
+    assert got[0]["mapping"] == {"SPEAKER_00": "u2"}
+    assert fake.calls[-1][:2] == ("GET", "/uploads/assigned")
+    assert fake.headers[-1]["X-Service-Token"] == "svc-token"
+
+
+def test_assigned_uploads_drops_resumed_and_ended_meetings():
+    fake = FakeBe()
+    _assigned_upload(fake, "m-r")
+    _assigned_upload(fake, "m-d")
+    _assigned_upload(fake, "m-ok")
+    client = _upload_client(fake)
+    client.resume_upload("m-r")
+    fake.meetings["m-d"]["status"] = "done"
+    assert [i["meeting_id"] for i in client.assigned_uploads()] == ["m-ok"]
+
+
+def test_assigned_uploads_with_a_wrong_token_is_unauthenticated():
+    fake = FakeBe()
+    with pytest.raises(H.BeError) as e:
+        _upload_client(fake, token="wrong").assigned_uploads()
+    assert e.value.code == "UNAUTHENTICATED"
+
+
+def test_assigned_uploads_without_an_items_list_is_bad_response():
+    class Odd(FakeBe):
+        def _uploads(self, *a, **k):
+            return fake_be._ok(200, {"items": None})
+    with pytest.raises(H.BeError) as e:
+        _upload_client(Odd()).assigned_uploads()
+    assert e.value.code == "BAD_RESPONSE"
+
+
+def test_resume_returns_meeting_status_and_mapping():
+    fake = FakeBe()
+    _assigned_upload(fake, "m-up1", {"SPEAKER_00": "u1", "SPEAKER_01": None})
+    got = _upload_client(fake).resume_upload("m-up1")
+    assert got == {"meeting_id": "m-up1", "status": "processing", "mapping": {"SPEAKER_00": "u1", "SPEAKER_01": None}}
+    assert fake.calls[-1][:2] == ("PATCH", "/uploads/m-up1/resume")
+
+
+def test_resume_is_idempotent_while_processing_and_lost_response_is_retried():
+    fake = FakeBe()
+    _assigned_upload(fake, "m-up1")
+    client = _upload_client(fake)
+    fake.resume_lost = True
+    with pytest.raises(H.BeError) as e:
+        client.resume_upload("m-up1")
+    assert e.value.code == "NETWORK"
+    fake.resume_lost = False
+    assert client.resume_upload("m-up1")["mapping"] == {"SPEAKER_00": "u1"}
+    assert client.resume_upload("m-up1")["mapping"] == {"SPEAKER_00": "u1"}
+    assert client.assigned_uploads() == []
+
+
+def test_resume_before_assignment_is_not_assigned_409_with_the_status():
+    fake = FakeBe()
+    fake.add_upload("m-up1")
+    with pytest.raises(H.BeError) as e:
+        _upload_client(fake).resume_upload("m-up1")
+    assert (e.value.status, e.value.code) == (409, "SPEAKERS_NOT_ASSIGNED")
+    assert e.value.details["status"] == "processing"
+    fake.meetings["m-up1"]["status"] = "awaiting_speakers"
+    with pytest.raises(H.BeError) as e:
+        _upload_client(fake).resume_upload("m-up1")
+    assert (e.value.code, e.value.details["status"]) == ("SPEAKERS_NOT_ASSIGNED", "awaiting_speakers")
+
+
+@pytest.mark.parametrize("status", ["done", "failed"])
+def test_resume_of_an_ended_meeting_is_already_ended_with_the_status(status):
+    fake = FakeBe()
+    _assigned_upload(fake, "m-up1")
+    fake.meetings["m-up1"]["status"] = status
+    with pytest.raises(H.BeError) as e:
+        _upload_client(fake).resume_upload("m-up1")
+    assert (e.value.status, e.value.code) == (409, "MEETING_ALREADY_ENDED")
+    assert e.value.details["status"] == status
+
+
+def test_resume_of_an_unknown_meeting_is_not_found():
+    with pytest.raises(H.BeError) as e:
+        _upload_client(FakeBe()).resume_upload("nope")
+    assert (e.value.status, e.value.code) == (404, "MEETING_NOT_FOUND")
+
+
+def test_resume_without_an_object_mapping_is_bad_response():
+    class Odd(FakeBe):
+        def _uploads(self, *a, **k):
+            return fake_be._ok(200, {"meeting_id": "m", "status": "processing", "mapping": ["x"]})
+    with pytest.raises(H.BeError) as e:
+        _upload_client(Odd()).resume_upload("m")
+    assert e.value.code == "BAD_RESPONSE"
 
 
 def test_member_names_come_from_the_meetings_workspace():

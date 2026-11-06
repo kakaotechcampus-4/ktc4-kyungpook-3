@@ -164,6 +164,10 @@ def test_the_wait_stops_growing_at_an_hour(monkeypatch):
     assert [R.backoff_s(n) for n in (1, 2, 3, 4)] == [1000.0, 2000.0, 3600.0, 3600.0]
 
 
+def test_the_wait_does_not_overflow_for_huge_attempt_counts():
+    assert R.backoff_s(1100) == R.RECOVERY_BACKOFF_CEIL_S
+
+
 def test_be_is_told_failed_only_when_the_retries_run_out(tmp_path, clock, limits, monkeypatch):
     monkeypatch.setattr(R, "RECOVERY_MAX_ATTEMPTS", 3)
     rec, path, _ = _session(tmp_path)

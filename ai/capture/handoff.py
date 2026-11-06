@@ -137,6 +137,29 @@ class BeClient:
         """
         return self._call("PATCH", f"/uploads/{meeting_id}/claim")
 
+    def assigned_uploads(self) -> list[dict]:
+        """PM 이 화자 지정을 끝냈고 아직 resume 하지 않은 업로드 회의(GET /uploads/assigned), 지정 순서.
+
+        항목: {meeting_id, workspace_id, title, started_at, mapping, assigned_at}. 여기 mapping 은 쓰지 않고
+        resume 응답의 것을 쓴다.
+        """
+        data = self._call("GET", "/uploads/assigned")
+        items = data.get("items") if isinstance(data, dict) else None
+        if not isinstance(items, list):
+            raise BeError("BAD_RESPONSE", "지정 목록 응답에 items 목록이 없다")
+        return items
+
+    def resume_upload(self, meeting_id: str) -> dict:
+        """지정 결과를 가져간다(PATCH /uploads/{id}/resume). 성공하면 {meeting_id, status, mapping}.
+
+        processing 이면 몇 번 불러도 같은 mapping 으로 200 이라 응답을 잃은 재시도가 안전하다. BeError:
+        409 SPEAKERS_NOT_ASSIGNED(details.status), 409 MEETING_ALREADY_ENDED(details.status), 404 MEETING_NOT_FOUND.
+        """
+        data = self._call("PATCH", f"/uploads/{meeting_id}/resume")
+        if not isinstance(data, dict) or not isinstance(data.get("mapping"), dict):
+            raise BeError("BAD_RESPONSE", "resume 응답에 mapping 객체가 없다")
+        return data
+
     def download_upload(self, meeting_id: str, dest: Path) -> int:
         """업로드 녹음 원본을 dest 로 스트리밍으로 받고 바이트 수를 돌려준다(GET /uploads/{id}/file).
 
