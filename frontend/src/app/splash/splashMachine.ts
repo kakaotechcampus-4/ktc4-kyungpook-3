@@ -20,9 +20,9 @@ export const LOOK_AT_MS = 1500
 /** 둘러보기 한 동작 */
 export const LOOK_MS = 1700
 /** 눈웃음을 보이는 시간 */
-export const SMILE_MS = 1600
-/** 사라짐. index.html 의 splash-out 0.6s 와 같다 */
-export const FADE_MS = 600
+export const SMILE_MS = 600
+/** 사라짐. index.html 의 splash-out 0.4s 와 같다 */
+export const FADE_MS = 400
 /** 잡기가 0이 된 뒤 이만큼 0이 이어져야 준비다. 가드 → 이동 → 화면 코드 사이 빈 커밋에서 끝나지 않게 한다 */
 export const SETTLE_MS = 100
 
