@@ -14,6 +14,8 @@ interface IconShape {
 const ICONS = {
   /** Main 팀 버튼 · 드롭다운 열기 */
   'chevron-down': { strokeWidth: 1.9, paths: <path d="m6 9 6 6 6-6" /> },
+  /** 접힌 정리 알약의 펼치기 (#424). chevron-down 을 뒤집었다 */
+  'chevron-up': { strokeWidth: 1.9, paths: <path d="m6 15 6-6 6 6" /> },
   /** Main · Landing 의 `확인하기` · `전부 보기` */
   'chevron-right': { strokeWidth: 2, paths: <path d="m9 6 6 6-6 6" /> },
   /** 온보딩 `이전 단계`. 캔버스에 없어 chevron-right 를 뒤집었다 */

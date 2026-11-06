@@ -1,5 +1,11 @@
+import { setPinnedSlot } from './pinnedSlot'
 import { Toast, ToastProvider, ToastViewport } from './Toast'
 import { useToastStore } from './toastStore'
+
+/* 오른쪽 아래 24px. 짧은 토스트 목록 아래에 고정 토스트(PinnedToast) 칸이 있다 — 다른 토스트는 그 위로 쌓인다.
+   빈 칸은 숨겨 간격(gap)이 생기지 않게 한다 */
+const DOCK = 'fixed right-24 bottom-24 z-100 flex flex-col items-end gap-8'
+const PINNED_SLOT = 'flex flex-col items-end gap-8 empty:hidden'
 
 /**
  * 앱에 하나 올리는 토스트 자리. store 의 항목을 `Toast` 로 그린다.
@@ -23,7 +29,10 @@ export function GlobalToaster() {
           }}
         />
       ))}
-      <ToastViewport />
+      <div data-testid="toast-dock" className={DOCK}>
+        <ToastViewport />
+        <div data-testid="pinned-toast-slot" ref={setPinnedSlot} className={PINNED_SLOT} />
+      </div>
     </ToastProvider>
   )
 }

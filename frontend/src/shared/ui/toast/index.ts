@@ -1,5 +1,6 @@
 export { Toast, ToastProvider, ToastViewport } from './Toast'
 export type { ToastActionSpec, ToastProps, ToastProviderProps, ToastViewportProps } from './Toast'
 export { GlobalToaster } from './GlobalToaster'
+export { PinnedToast } from './PinnedToast'
 export { MAX_VISIBLE_TOASTS, toast, useToastStore } from './toastStore'
 export type { ToastInput, ToastItem } from './toastStore'

@@ -77,18 +77,11 @@ describe('Toast', () => {
     expect(root()).not.toHaveAttribute('data-variant')
   })
 
-  it('pins the viewport to the bottom right', () => {
+  it('stacks toasts in a column and leaves placement to the dock', () => {
     renderInProvider(<Toast data-testid="toast" title="정리가 끝났습니다" />)
 
-    expect(root().parentElement).toHaveClass(
-      'fixed',
-      'bottom-24',
-      'right-24',
-      'flex',
-      'flex-col',
-      'gap-8',
-      'z-100',
-    )
+    expect(root().parentElement).toHaveClass('flex', 'flex-col', 'gap-8')
+    expect(root().parentElement).not.toHaveClass('fixed')
   })
 
   it('appends the caller className to the root and to the viewport', () => {
@@ -100,7 +93,7 @@ describe('Toast', () => {
     )
 
     expect(root()).toHaveClass('rounded-12', 'max-w-full')
-    expect(root().parentElement).toHaveClass('fixed', 'bottom-48')
+    expect(root().parentElement).toHaveClass('flex', 'bottom-48')
   })
 
   /* 클릭은 `fireEvent` 로 낸다. `userEvent` 는 pointerdown 까지 내는데
