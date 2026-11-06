@@ -380,9 +380,9 @@ PM 이 디스코드 서버의 텍스트 채널 하나를 골라 두면 녹음 �
 
 | 항목 | 동작 |
 |---|---|
-| 찾기 | `resolve_assignee`가 `assignee_raw`에서 "님"·조사를 뗀 후보를 만들어 긴 것부터 찾는다("하은이가" → 하은이가, 하은이, 하은). 처음 걸린 후보에 팀원이 1명이면 매칭, 2명 이상이면 애매함, 아무 후보도 안 걸리면 못 찾음이다. 탈퇴한 팀원의 별칭은 보지 않는다. 후보 규칙(`matching.name_candidates`)은 AI 채점 코드 `_name_candidates`(`ai/extract/eval_golden_set.py`)와 같다 |
-| 미매칭 목록 | `GET /members/unresolved-aliases`도 같은 후보 규칙으로 판정한다. 처음 걸린 후보의 별칭이 1개이고 확인된(`verified`) 것이면 해결로 보고 목록에서 뺀다 |
-| 팀원 이름 | 팀원을 만들 때(`POST /members`, 워크스페이스를 만들 때의 PM)와 이름을 바꿀 때 이름과 성 뗀 이름을 `source=display_name` 별칭으로 넣는다(확인됨, 확신도 1.0). 한글 2글자 이상만 넣고, 4글자는 앞 두 글자, 그 외는 첫 글자를 성으로 본다("김동우" → 김동우, 동우). 규칙은 AI 전사 힌트 `member_forms`(`ai/stt/backend.py`)와 같다. 이름을 바꾸면 옛 이름에서 만든 `display_name` 별칭만 지우고, PM이 넣은 별칭과 닉네임 별칭은 남긴다. 기존 팀원은 마이그레이션 `1032faab5855`가 채웠다 |
+| 찾기 | `resolve_assignee`가 `assignee_raw`에서 "님"·조사를 뗀 후보를 만들어 긴 것부터 찾는다("하은이가" → 하은이가, 하은이, 하은). 처음 걸린 후보에 팀원이 1명이면 매칭, 2명 이상이면 애매함, 아무 후보도 안 걸리면 못 찾음이다. 탈퇴한 팀원의 별칭은 보지 않는다. 한 글자 별칭으로 찾으면 담당자는 채우되 확인 필요로 둬서 auto 가 되지 않는다(조사를 떼면 "하은" → "하"처럼 한 글자 후보가 생겨, 팀에 없는 사람이 엉뚱한 팀원에게 자동 배정될 수 있다). 후보 규칙(`matching.name_candidates`)은 AI 채점 코드 `_name_candidates`(`ai/extract/eval_golden_set.py`)와 같다 |
+| 미매칭 목록 | `GET /members/unresolved-aliases`도 같은 후보 규칙으로 판정한다. 처음 걸린 후보의 별칭이 1개이고 확인된(`verified`) 두 글자 이상 별칭이면 해결로 보고 목록에서 뺀다 |
+| 팀원 이름 | 팀원을 만들 때(`POST /members`, 워크스페이스를 만들 때의 PM)와 이름을 바꿀 때 이름과 성 뗀 이름을 `source=display_name` 별칭으로 넣는다(확인됨, 확신도 1.0). 한글 2글자 이상만 넣고, 4글자는 앞 두 글자, 그 외는 첫 글자를 성으로 본다("김동우" → 김동우, 동우). 규칙은 AI 전사 힌트 `member_forms`(`ai/stt/backend.py`)와 같다. 이름을 바꾸면 옛 이름에서 만든 `display_name` 별칭만 지우고, PM이 넣은 별칭과 닉네임 별칭은 남긴다. `display_name` 은 서버만 쓰는 값이라 별칭 등록 API(`POST /members/{id}/aliases`)에 보내면 400 `INVALID_REQUEST` 다. 기존 팀원은 마이그레이션 `1032faab5855`가 채웠다 |
 | 디스코드 닉네임 | 팀원에 `discord_user_id`를 붙이면 팀원을 저장한 뒤 봇 토큰으로 Discord `GET /guilds/{guild_id}/members/{user_id}`를 부른다(제한 3초, 호출 동안 DB 트랜잭션을 열지 않는다). 서버 닉네임, 계정 표시 이름(`global_name`) 순서로 한글로만 된 첫 값을 `source=discord_profile` 별칭으로 넣는다(미확인, 확신도 0.8. 이 별칭으로 찾으면 담당자는 채워지지만 PM 검토로 간다). 토큰·연동이 없거나 호출이 실패해도 경고 로그만 남기고 응답은 그대로다. `discord_user_id`가 바뀌거나 풀리면 그 팀원의 `discord_profile` 별칭을 지우고 새 계정이면 다시 넣는다. 이미 연결돼 있던 팀원의 닉네임은 채우지 않았다 |
 | 겹칠 때 | 자동 별칭은 같은 팀원이 이미 같은 글자를 가졌거나, 탈퇴하지 않은 다른 팀원이 PM이 넣은(`manual`·`learned`) 같은 글자를 가졌으면 넣지 않는다. 자동 별칭끼리 겹치면(김민수·이민수 → "민수") 둘 다 넣어 애매함이 된다 |
 

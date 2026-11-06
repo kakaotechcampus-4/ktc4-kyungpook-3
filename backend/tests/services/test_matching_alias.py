@@ -189,3 +189,30 @@ def test_resolved_texts_first_hit_decides(db, ws):
 
 def test_resolved_texts_with_no_texts(db, ws):
     assert resolved_texts(db, ws, []) == set()
+
+
+def test_one_letter_alias_match_needs_check(db, ws):
+    # 한 글자 별칭은 확정 근거로 쓰지 않는다. 팀에 없는 "하은"이 김하의 "하"로 자동 배정되면 안 된다.
+    kim_ha = _member(db, ws, "김하")
+    _alias(db, kim_ha, "하")
+
+    for said in ("하은", "하가", "하"):
+        r = resolve_assignee(db, ws, said)
+        assert (r.result, r.member_id, r.needs_check, r.confidence) == (
+            ResolutionResult.MATCHED, kim_ha.member_id, True, 1.0
+        ), said
+
+
+def test_two_letter_alias_match_stays_confirmed(db, ws):
+    lee = _member(db, ws, "이하은")
+    _alias(db, lee, "하은")
+
+    r = resolve_assignee(db, ws, "하은이가")
+    assert (r.result, r.member_id, r.needs_check) == (ResolutionResult.MATCHED, lee.member_id, False)
+
+
+def test_resolved_texts_one_letter_alias_stays_unresolved(db, ws):
+    _alias(db, _member(db, ws, "이준"), "준")
+    _alias(db, _member(db, ws, "김동우"), "동우")
+
+    assert resolved_texts(db, ws, ["준이가", "준", "동우가"]) == {"동우가"}

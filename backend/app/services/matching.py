@@ -57,6 +57,11 @@ def name_candidates(text: str | None) -> list[str]:
     return sorted((x for x in out if x), key=lambda s: (-len(s), s))
 
 
+def _is_one_letter(text: str) -> bool:
+    """한 글자 별칭인가. 한 글자 별칭은 확정 근거로 쓰지 않는다(resolve_assignee 참고)."""
+    return len(text) == 1
+
+
 def resolve_assignee(
     db: Session,
     workspace_id: str,
@@ -66,6 +71,8 @@ def resolve_assignee(
 
     님·조사를 뗀 후보(name_candidates)를 긴 것부터 보고, 별칭이 처음 걸린 후보의 행만으로 판정한다.
     1건 매칭 → 확정 / 2건 이상 → ambiguous / 걸린 후보 없음 → not_found. 탈퇴한 팀원의 별칭은 보지 않는다.
+    한 글자 별칭으로 찾으면 담당자는 채우되 확인 필요로 둔다. 조사를 떼면 "하은" → "하"처럼 한 글자 후보가
+    생겨, 팀에 없는 사람이 한 글자 별칭을 가진 팀원에게 자동 배정될 수 있어서다(#463 리뷰).
     """
     candidates = name_candidates(alias_text)
     if not candidates:
@@ -95,7 +102,7 @@ def resolve_assignee(
             display_name=member.display_name,
             confidence=alias.confidence,
             result=ResolutionResult.MATCHED,
-            needs_check=not alias.verified,
+            needs_check=not alias.verified or _is_one_letter(alias.alias_text),
             candidate_count=1,
         )
 
@@ -188,7 +195,7 @@ def resolved_texts(db: Session, workspace_id: str, texts: Iterable[str]) -> set[
 
     각 text 의 첫 히트 후보(name_candidates 순서)에 걸린 별칭이 정확히 1개이고 그 별칭이 검증된 경우만
     해결된 것으로 본다. 검증 1명 + 미검증 1명처럼 여럿이면 ambiguous 이므로 해결 대기로 남는다.
-    탈퇴한 팀원의 별칭은 세지 않는다.
+    탈퇴한 팀원의 별칭은 세지 않는다. 한 글자 별칭으로 걸린 것은 확인 필요라 해결로 보지 않는다.
     """
     rows = db.execute(
         select(MemberAlias.alias_text, MemberAlias.verified)
@@ -204,7 +211,7 @@ def resolved_texts(db: Session, workspace_id: str, texts: Iterable[str]) -> set[
         for candidate in name_candidates(text):
             hit = verified_by_text.get(candidate)
             if hit:
-                if len(hit) == 1 and hit[0]:
+                if len(hit) == 1 and hit[0] and not _is_one_letter(candidate):
                     resolved.add(text)
                 break
     return resolved
