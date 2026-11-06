@@ -612,12 +612,17 @@ def test_an_upload_ended_in_be_is_dropped_locally_after_the_lock_is_released_and
         fake.request = late
     if how == "sources_404":
         del fake.meetings["m-up1"]
+    others = ["session_77_500.transcript.json", "SPEAKER00_1__echo.json"]   # 다른 회의의 전사본은 남는다
+    (tmp_path / "transcripts").mkdir()
+    for n in others:
+        (tmp_path / "transcripts" / n).write_text("{}", encoding="utf-8")
     claims = R.Claims(owner="host:1:a")
     r = R.recover_one(rec, path, claims=claims, backend=EchoStt(), model_name="echo", workers=1,
                       transcripts_dir=tmp_path / "transcripts", extractor=_extractor({}), handoff=_handoff(fake),
                       wait_for_workspace=True)
     assert r["ended"] and r["error"] is None and not r["gave_up"] and r["attempts"] == 0
     assert not path.exists() and not path.with_suffix(".lock").exists() and not (rec / m["session"]).exists()
+    assert sorted(p.name for p in (tmp_path / "transcripts").iterdir()) == sorted(others)   # 이 회의 전사본만 지운다(#389 리뷰)
     assert not any(c[1].endswith("/fail") or c[1] == "/meetings" or c[1].endswith("/end") for c in fake.calls)
     assert R.pending_sessions(rec) == [] and R.recover(rec, backend=EchoStt(), model_name="echo", workers=1,
                                                       claims=claims, handoff=_handoff(fake)) == []

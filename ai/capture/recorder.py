@@ -465,6 +465,20 @@ def drop_local(recordings_dir: Path, session: str) -> None:
     shutil.rmtree(recordings_dir / session, ignore_errors=True)
 
 
+def drop_transcripts(transcripts_dir: Path, manifest: dict) -> None:
+    """이 회의의 전사 산출물을 지운다: session_<회의>.* (계약 파일·줄 목록·추출 결과)와 session_<회의>__*(세션 통계),
+    트랙마다 쓴 <트랙 이름>__<모델>.* (파일당 전사). BE 가 끝낸 업로드를 정리할 때 drop_local 과 같이 쓴다(#288, #389 리뷰)."""
+    if not transcripts_dir.exists():
+        return
+    session = str(manifest["session"])
+    patterns = [f"session_{session}.*", f"session_{session}__*"]
+    patterns += [f"{Path(e['file']).stem}__*" for e in manifest.get("speakers") or [] if e.get("file")]
+    for pat in patterns:
+        for f in transcripts_dir.glob(pat):
+            if f.is_file():
+                f.unlink(missing_ok=True)
+
+
 def _resume_mapped(recordings_dir: Path, meeting_id: str) -> bool:
     """지정 받기(upload.assign)가 이 업로드의 resume.state 를 mapped 로 닫았는가. 기록이 없거나 깨졌으면 False.
     resuming 인 동안 처리를 시작하면 assign 의 재시도(ended·failing)가 같은 회의의 로컬을 지울 수 있다."""
@@ -1072,6 +1086,7 @@ def recover_one(recordings_dir: Path, path: Path, *, claims: Claims, manual: boo
         claims.release(path, m)
         if ended:
             drop_local(recordings_dir, str(m["session"]))   # 잠금을 놓은 뒤에 지운다. 놓기 전에 지우면 release 가 매니페스트를 다시 쓴다
+            drop_transcripts(transcripts_dir or TRANSCRIPTS_DIR, m)
 
 
 def queue_ahead(recordings_dir: Path, session, *, exclude=None) -> int:
