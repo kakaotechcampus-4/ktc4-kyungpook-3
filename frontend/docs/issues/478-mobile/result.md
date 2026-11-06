@@ -72,3 +72,61 @@
 
 - [D-180](../../decision/frontend-decisions.md#d-180-휴대폰-폭-지원과-아래-탭-막대-d-123d-124-대체): 휴대폰 폭 지원과 아래 탭 막대
 - [디자인 시스템 §7-11·§10](../../design/design-system.md)
+
+## PR ②a — 휴대폰 화면 배치 (겹치지 않는 화면)
+
+- 기록일: 2026-11-07
+- 브랜치: `feature/478-mobile-screens`. PR ① 브랜치(`feature/478-mobile-shell`)를 merge 한 위다. PR 은 아직 만들지 않았다.
+- 상태: 대시보드(H-2)와 태스크 보드(H-3)를 시안대로, 시안 없는 화면(태스크 리스트·캘린더·간트, 회의록·회의 상세, 팀, 설정, 회의 올리기)을 한 열로 바꿨다. 메시지(H-4·H-5)와 로그인(H-1)은 다른 세션이 고치는 중이라 다음 PR(②b) 몫이다. MSW 기준으로 검증했다.
+
+### 방법
+
+- 배치는 CSS 로만 바꿨다. 기존 클래스는 그대로 두고 Tailwind `max-md:`(폭 768px 미만) 클래스만 더했다. 그래서 768px 이상은 클래스가 하나도 달라지지 않는다.
+- 동작이 달라지는 곳은 태스크 보드 하나다. [TasksPage.tsx](../../../src/pages/tasks/ui/TasksPage.tsx) 가 셸의 `useCompactShell()` 을 읽어 `compact` 로 넘긴다. 위젯끼리는 import 할 수 없어 pages 층에서 넘긴다. 폭 판정은 셸과 같은 하나다.
+- 휴대폰 본문 여백은 시안대로 좌우 20px, 위 12px, 아래 32px 이다(대시보드·태스크·팀·설정).
+
+### 화면별
+
+- [Dashboard.tsx](../../../src/widgets/dashboard/ui/Dashboard.tsx) (H-2): 요약이 같은 폭 카드 칸(PM 넷, 팀원 셋)이 된다. `기한 지남` 칸은 지난 일이 있을 때만 경고 면(`accent-badge`·`accent`)이다. 0 건을 빨갛게 그리면 경고가 아닌데 경고처럼 읽힌다. 두 단은 한 열이 되고 순서는 DOM 그대로다(PM: 확인이 필요한 일 → 마감 임박 → 최근 반영, 팀원: 마감 임박 → 최근 반영). 최근 반영은 빼지 않고 아래에 쌓는다. 제목 문장은 24px, 절 제목은 17px 이다. 공간 이름은 셸 헤더가 이미 보여 더하지 않았다.
+- [BoardView.tsx](../../../src/widgets/task-board/ui/BoardView.tsx) (H-3): 세 칸을 나란히 두지 않고 위에 칸 고르기(`tablist` `상태`, `시작 전 n / 진행 중 n / 완료 n`)를 둔다. 처음 고른 칸은 시안처럼 `진행 중` 이다. 그 아래 한 줄은 고른 칸의 `막힘 n · 위험 n` 과 그 칸의 순서다(0 은 뺀다, 완료 칸은 `최근 완료순`). 그 아래에 고른 칸의 카드와 `직접 추가` 를 한 열로 둔다. 칸 표 `COLUMNS` 하나가 넓은 화면의 세 칸, 탭, 패널을 모두 만든다. 탭 키(화살표·Home·End)는 목록 탭과 같은 [tabKeys.ts](../../../src/widgets/task-board/lib/tabKeys.ts) 를 쓴다. 승인 카드(`ApprovalCard.tsx`)는 보드에 그려지지 않아 바꾸지 않았다.
+- [TaskBoard.tsx](../../../src/widgets/task-board/ui/TaskBoard.tsx): 머리와 보기 방식을 위아래로 쌓고 보드 필터 줄을 감싼다. 리스트 행은 긴 제목을 줄바꿈하고 담당자 칸을 112px 에서 줄인다. 긴 담당자 이름이 제목 칸을 0 으로 눌러 `tasks-long-content` 가 360px 에서 442px 넘쳤다. 캘린더는 360px 에 들어가고, 간트는 그 칸 안에서만 가로로 민다(D-124).
+- [MeetingMinutes.tsx](../../../src/widgets/meeting-minutes/ui/MeetingMinutes.tsx)·[MinutesDetail.tsx](../../../src/widgets/meeting-minutes/ui/MinutesDetail.tsx)·[MinutesTabs.tsx](../../../src/widgets/meeting-minutes/ui/MinutesTabs.tsx): 회의 목록이 위, 회의록이 아래인 한 열이다. 넘침 원인은 참석자 칩이 아니라 목록 308px 가 본문을 민 것이었다. 참석자 줄은 기존대로 한 줄과 `+N` 이다. 줄바꿈으로 바꾸면 탭 줄 위치를 고정한 약속(UX1-M03)이 깨진다. 라우트 뼈대 [MinutesSkeleton.tsx](../../../src/shared/ui/page-skeleton/MinutesSkeleton.tsx) 도 같은 치수로 맞췄다.
+- [TeamOverview.tsx](../../../src/widgets/team/ui/TeamOverview.tsx)·[WeekAhead.tsx](../../../src/widgets/team/ui/WeekAhead.tsx): 한 열로 쌓는다. 7일 줄은 칸을 112px 이상으로 두고 그 줄 안에서만 가로로 민다. 일곱 칸을 360px 에 넣으면 칸이 38px 가 되어 요일과 날짜가 겹쳤다.
+- [SettingsPage.tsx](../../../src/pages/settings/ui/SettingsPage.tsx): 목차 위, 절 아래 한 열이다. 목차는 따라 내려오지 않는다(붙어 있으면 절을 가린다). 연결 행의 버튼 묶음([connectionStyles.ts](../../../src/features/integration-connection/ui/connectionStyles.ts))은 이름 아래 줄로 내려간다. `NotificationSection.tsx` 는 고치지 않아도 넘치지 않았다.
+- [MeetingUploadForm.tsx](../../../src/features/meeting-upload/ui/MeetingUploadForm.tsx): 제목·날짜를 한 열로 쌓는다. 날짜 칸 200px 이 옆에 남으면 제목 칸이 몇 px 로 눌리고 날짜 입력이 겹쳤다(문서 넘침은 0 이라 숫자로는 안 보였다). 회의 올리기·처리·화자 지정 화면은 좌우 여백만 20px 로 줄였다.
+
+### 테스트
+
+- [BoardView.test.tsx](../../../src/widgets/task-board/ui/BoardView.test.tsx): 칸 고르기의 이름과 개수, 처음 `진행 중`, 요약 줄, 탭을 누르면 그 칸 카드만, 화살표 키, PM 의 `직접 추가`, 넓은 화면은 세 칸에 탭 없음.
+- [taskViews.test.ts](../../../src/widgets/task-board/lib/taskViews.test.ts): `columnSummary` (0 빼기, 순서 붙이기).
+- [layout.e2e.ts](../../../e2e/layout.e2e.ts): 폭에 768px 을 더했다. 360·390·768px 에서 대시보드, 태스크(리스트·보드·캘린더·간트), 회의록, 회의 상세, 팀, 설정의 가로 넘침 0 을 본다. 랜딩·로그인·회원가입은 1024px 이상만 본다(다음 PR). 768px 미만에서 보드 칸 고르기(탭 셋이 화면 안, 처음 `진행 중`, `완료` 를 고르면 `최근 완료순`)를 본다. 대시보드 표지는 두 단에서도 한 열에서도 첫 화면에 있는 `확인이 필요한 일` 머리로 바꿨다.
+
+### 검증
+
+Vite 개발 서버(MSW) + Playwright Chromium. 증거는 커밋하지 않는 `frontend/.verify/reports/478-screens/` 에 있다(`final/` 은 이 브랜치 전체, 나머지는 화면 묶음별 전후).
+
+| 화면 | 360 | 390 | 768 | 1024 | 1280 |
+|---|---|---|---|---|---|
+| 대시보드 | 116 → 0 | 86 → 0 | 0 | 0 | 0 |
+| 태스크 리스트 | 19 → 0 | 0 | 0 | 0 | 0 |
+| 태스크 리스트(긴 내용) | 442 → 0 | 412 → 0 | 34 → 34 | 0 | 0 |
+| 태스크 보드·캘린더·간트 | 19 → 0 | 0 | 0 | 0 | 0 |
+| 회의록·회의 상세 | 228 → 0 | 198 → 0 | 0 | 0 | 0 |
+| 팀 | 124 → 0 | 94 → 0 | 0 | 0 | 0 |
+| 설정 | 126 → 0 | 96 → 0 | 0 | 0 | 0 |
+| 회의 올리기 | 0 | 0 | 0 | 0 | 0 |
+| 메시지(②b) | 20 | 0 | 0 | 0 | 0 |
+| 로그인·회원가입(#454) | 174 | 159 | 0 | 0 | 0 |
+| 랜딩 | 411 | 381 | 3 | 0 | 0 |
+
+- 768px 이상이 같은지: 화면마다 `max-md:` 클래스를 모두 지우고 `main` 안 모든 요소의 위치·크기를 비교했다. 768·1024·1280px 에서 바뀐 요소가 0 개다. 같은 검사가 767px 에서는 대시보드 140개, 태스크 235개처럼 움직여 검사가 차이를 잡는다는 것도 확인했다. 스크린샷 픽셀 비교는 같은 코드를 두 번 찍어도 굵은 글꼴이 늦게 붙어 달라져(PR ① 과 같은 현상) 배치 비교에 쓰지 않았다.
+- 긴 내용 리스트의 768px 34px 는 이 PR 전에도 같았다. 고치려면 768px 이상 배치를 바꿔야 해서 두었다.
+- 360px 스크린샷을 열어 H-2·H-3 시안과 한 열 배치를 눈으로 확인했다.
+
+### 남은 작업
+
+- 메시지(H-4·H-5), 로그인(H-1)과 그 화면들의 넘침 검사는 #478 의 다음 PR(②b) 몫이다.
+- 시안의 화면 머리(`태스크` 옆 보기 고르기)와 떠 있는 태스크 추가 버튼은 넣지 않았다. 보드는 기존 보기 방식 세그먼트와 칸마다 `직접 추가` 를 그대로 쓴다.
+- 회의가 많은 팀은 회의록 한 열에서 목록이 길어 회의록 본문이 아래로 밀린다. 목록을 접거나 고른 회의를 먼저 보이는 방식은 새 화면 단계라 넣지 않았다.
+- 승인 카드 안쪽은 360px 에서 입력이 좁다(#477 이 고친다). 화면은 넘치지 않는다.
+- 정리 중 토스트(셸)는 휴대폰에서 본문 위에 떠 있어 아래 내용을 잠깐 가린다. 내리면 비켜난다.
