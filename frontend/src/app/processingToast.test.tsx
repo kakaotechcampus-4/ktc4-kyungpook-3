@@ -29,7 +29,6 @@ import { renderApp } from './test/renderApp'
  */
 
 const UPLOAD = { workspaceId: 'ws_01', meetingId: AWAITING_MEETING_ID }
-const COLLAPSE_KEY = 'meeting-processing-toast-collapsed'
 
 afterEach(() => {
   vi.useRealTimers()
@@ -66,6 +65,20 @@ async function waitForCard() {
   })
 }
 
+async function waitForPill() {
+  return waitFor(() => {
+    const button = pill()
+    expect(button).not.toBeNull()
+    return button!
+  })
+}
+
+/** 정리 중은 알약으로 시작한다. 눌러 펼친 카드를 돌려준다 */
+async function openCard() {
+  fireEvent.click(await waitForPill())
+  return waitForCard()
+}
+
 /** 업로드 회의(mt_11)를 정리 중으로 둔다. 화자 지정 대기·지정 뒤 재개를 테스트가 직접 바꾼다 */
 function processingUpload() {
   replaceDb(createSpeakerScenarioDb('meeting-speakers'))
@@ -91,7 +104,7 @@ describe('상태 전환 — 같은 회의의 토스트 하나가 바뀐다', () 
     expect(await screen.findByRole('heading', { level: 1 })).toHaveTextContent(/^팀$/)
     act(() => trackMeeting(UPLOAD))
 
-    const processing = await waitForCard()
+    const processing = await openCard()
     expect(processing).toHaveTextContent('주간 회고 녹음 정리 중')
     expect(processing).toHaveTextContent('음성 파일을 준비하고 있어요')
     expect(processing).toHaveTextContent('0 / 3 단계 완료')
@@ -137,7 +150,7 @@ describe('상태 전환 — 같은 회의의 토스트 하나가 바뀐다', () 
     fakeIntervals()
     const user = userEvent.setup()
     await openTasks()
-    await waitForCard()
+    await openCard()
 
     failMeeting('mt_10', { failedStage: 'diarize' })
     await poll()
@@ -164,33 +177,37 @@ describe('역할별 노출', () => {
     expect(await screen.findByRole('heading', { level: 1 })).toHaveTextContent(/^팀$/)
     act(() => trackMeeting(UPLOAD))
 
-    const card = await waitForCard()
+    const card = await openCard()
     expect(card).toHaveTextContent('화자 지정을 기다리고 있어요')
     expect(card).toHaveTextContent('1 / 3 단계 완료')
     expect(signalsWith(SPEAKERS_NEEDED_TITLE)).toEqual([])
     expect(screen.queryByRole('button', { name: '화자 지정하기' })).toBeNull()
   })
 
-  it.each([
-    ['PM', 'meeting-speakers', SPEAKERS_NEEDED_TITLE],
-    ['팀원', 'meeting-speakers-member', '화자 지정을 기다리고 있어요'],
-  ] as const)(
-    '%s: 새로 연 앱도 공간 목록에서 화자 지정 대기 회의를 찾아 토스트를 보인다',
-    async (_role, scenario, text) => {
-      replaceDb(createSpeakerScenarioDb(scenario))
-      setMeetingFlowMode('manual')
-      await openTasks()
+  it('PM: 새로 연 앱도 공간 목록에서 화자 지정 대기 회의를 찾아 펼친 화자 지정 카드를 보인다', async () => {
+    replaceDb(createSpeakerScenarioDb('meeting-speakers'))
+    setMeetingFlowMode('manual')
+    await openTasks()
 
-      await waitFor(() => expect(signalsWith(text)).toHaveLength(1))
-      expect(processingSignals()).toHaveLength(1)
-    },
-  )
+    await waitFor(() => expect(signalsWith(SPEAKERS_NEEDED_TITLE)).toHaveLength(1))
+    expect(signalsWith(SPEAKERS_NEEDED_TITLE)[0].tagName).toBe('SECTION')
+    expect(processingSignals()).toHaveLength(1)
+  })
+
+  it('팀원: 새로 연 앱도 화자 지정 대기 회의를 찾아 정리 중 알약을 보이고, 펼치면 기다린다는 문장이다', async () => {
+    replaceDb(createSpeakerScenarioDb('meeting-speakers-member'))
+    setMeetingFlowMode('manual')
+    await openTasks()
+
+    expect(await openCard()).toHaveTextContent('화자 지정을 기다리고 있어요')
+    expect(processingSignals()).toHaveLength(1)
+  })
 
   it('팀원: 실패하면 토스트가 조용히 사라진다', async () => {
     fakeIntervals()
     setMockRole('member')
     await openTasks()
-    await waitForCard()
+    await openCard()
 
     failMeeting('mt_10')
     await poll()
@@ -203,7 +220,7 @@ describe('역할별 노출', () => {
     fakeIntervals()
     setMockRole('member')
     const app = await openTasks()
-    await waitForCard()
+    await openCard()
 
     completeMeeting('mt_10')
     await poll()
@@ -223,7 +240,7 @@ describe('같은 공간의 이어진 정리', () => {
     renderApp(paths.members('ws_01'))
     expect(await screen.findByRole('heading', { level: 1 })).toHaveTextContent(/^팀$/)
     act(() => trackMeeting(UPLOAD))
-    await waitForCard()
+    await openCard()
 
     completeMeeting(AWAITING_MEETING_ID)
     await poll()
@@ -238,12 +255,12 @@ describe('같은 공간의 이어진 정리', () => {
     })
     db.meetingFlow.attendees.mt_12 = db.meetingFlow.attendees[AWAITING_MEETING_ID]
     act(() => trackMeeting({ workspaceId: 'ws_01', meetingId: 'mt_12' }))
-    await waitFor(() => expect(processingCard()).toHaveTextContent('두 번째 회의 정리 중'))
-    expect(processingSignals()).toHaveLength(2)
+    await waitFor(() => expect(processingSignals()).toHaveLength(2))
+    expect(pill()).toHaveTextContent('정리 중0/3')
 
     completeMeeting('mt_12')
     await poll()
-    await waitFor(() => expect(processingCard()).toBeNull())
+    await waitFor(() => expect(pill()).toBeNull())
     expect(processingSignals()).toHaveLength(1)
     expect(signalsWith(PROCESSING_DONE_TITLE)[0]).toHaveTextContent('두 번째 회의')
     expect(useMeetingTrackerStore.getState().settled).toHaveLength(1)
@@ -260,7 +277,7 @@ describe('보이는 자리', () => {
 
     await user.click(screen.getByRole('link', { name: '태스크' }))
     await screen.findByRole('heading', { name: '태스크' })
-    await waitForCard()
+    await openCard()
   })
 
   it('그 회의의 화자 지정 화면에서는 숨긴다', async () => {
@@ -294,7 +311,7 @@ describe('보이는 자리', () => {
       notion: { status: 'connected', display_name: 'x', connected_at: MOCK_NOW },
     }
     const app = await openTasks()
-    await waitForCard()
+    await openCard()
 
     act(() => app.navigate(paths.dashboard('ws_04')))
     await app.expectPath(paths.dashboard('ws_04'))
@@ -306,7 +323,7 @@ describe('보이는 자리', () => {
 
     act(() => app.navigate(paths.tasks('ws_01')))
     await screen.findByRole('heading', { name: '태스크' })
-    await waitForCard()
+    await openCard()
   })
 })
 
@@ -317,7 +334,7 @@ describe('세션 경계', () => {
   ] as const)('세션이 바뀐 뒤 누른 「%s」는 옮기지 않는다', async (action, state) => {
     fakeIntervals()
     const app = await openTasks()
-    await waitForCard()
+    await openCard()
     if (state === 'done') {
       completeMeeting('mt_10')
       await poll()
@@ -345,28 +362,32 @@ describe('세션 경계', () => {
 })
 
 describe('접기', () => {
-  it('접으면 「정리 중 n/3」 알약이 되고, 이 기기에 기억해 다시 열어도 접혀 있다', async () => {
+  it('화면 폭과 상관없이 정리 중은 「정리 중 n/3」 알약으로 시작하고, 펼치면 같은 공간의 다른 화면에서도 펼친 채다. 새로 열면 다시 알약이다', async () => {
     const user = userEvent.setup()
     const first = await openTasks()
-    const card = await waitForCard()
-
-    const collapse = within(card).getByRole('button', { name: '접기' })
-    expect(collapse).toHaveAttribute('aria-expanded', 'true')
-    await user.click(collapse)
+    const button = await waitForPill()
     expect(processingCard()).toBeNull()
-    expect(pill()).toHaveTextContent('정리 중1/3')
-    expect(pill()).toHaveAttribute('aria-expanded', 'false')
+    expect(button).toHaveTextContent('정리 중1/3')
+    expect(button).toHaveAttribute('aria-expanded', 'false')
+
+    await user.click(button)
+    const collapse = within(await waitForCard()).getByRole('button', { name: '접기' })
+    expect(collapse).toHaveFocus()
+    expect(collapse).toHaveAttribute('aria-expanded', 'true')
+
+    await user.click(screen.getByRole('link', { name: '팀' }))
+    await screen.findByRole('heading', { level: 1, name: '팀' })
+    expect(processingCard()).not.toBeNull()
+
+    await user.click(within(processingCard()!).getByRole('button', { name: '접기' }))
     expect(pill()).toHaveFocus()
-    expect(localStorage.getItem(COLLAPSE_KEY)).toBe('true')
 
     first.unmount()
+    clearTrackedMeetings()
     await openTasks()
-    await waitFor(() => expect(pill()).not.toBeNull())
+    await waitForPill()
     expect(processingCard()).toBeNull()
-
-    await user.click(pill()!)
-    expect(within(await waitForCard()).getByRole('button', { name: '접기' })).toHaveFocus()
-    expect(localStorage.getItem(COLLAPSE_KEY)).toBe('false')
+    expect(localStorage.length).toBe(0)
   })
 
   it('화자 지정 필요도 접어 알약으로 둔다. 상태가 바뀌면 다시 펼치고, 정리 중의 단계 진행은 접힘을 그대로 둔다', async () => {
@@ -377,9 +398,7 @@ describe('접기', () => {
     expect(await screen.findByRole('heading', { level: 1 })).toHaveTextContent(/^팀$/)
     act(() => trackMeeting(UPLOAD))
 
-    await user.click(within(await waitForCard()).getByRole('button', { name: '접기' }))
-    expect(pill()).toHaveTextContent('정리 중0/3')
-    expect(localStorage.getItem(COLLAPSE_KEY)).toBe('true')
+    expect(await waitForPill()).toHaveTextContent('정리 중0/3')
 
     meetingRow().progress = { audio_merged: true, transcribed: false, extracted: false }
     await poll()
@@ -400,7 +419,6 @@ describe('접기', () => {
     expect(pill()).not.toHaveTextContent(/\d\/3/)
     expect(pill()).toHaveFocus()
     expect(screen.queryByRole('button', { name: '닫기' })).toBeNull()
-    expect(localStorage.getItem(COLLAPSE_KEY)).toBe('true')
 
     setStatus('processing')
     meetingRow().progress = { audio_merged: true, transcribed: true, extracted: false }
@@ -409,18 +427,15 @@ describe('접기', () => {
       expect(processingCard()).toHaveTextContent('결정사항과 할 일을 뽑고 있어요'),
     )
     expect(pill()).toBeNull()
-    expect(localStorage.getItem(COLLAPSE_KEY)).toBe('true')
   }, 15_000)
 
-  it('접은 정리 중이 화자 지정 필요를 거쳐 정리 중으로 돌아오면 펼쳐 보인다', async () => {
+  it('알약으로 시작한 정리 중이 화자 지정 필요를 거쳐 정리 중으로 돌아오면 펼쳐 보인다', async () => {
     fakeIntervals()
-    const user = userEvent.setup()
     processingUpload()
     renderApp(paths.members('ws_01'))
     expect(await screen.findByRole('heading', { level: 1 })).toHaveTextContent(/^팀$/)
     act(() => trackMeeting(UPLOAD))
-    await user.click(within(await waitForCard()).getByRole('button', { name: '접기' }))
-    expect(pill()).not.toBeNull()
+    await waitForPill()
 
     awaitSpeakers(AWAITING_MEETING_ID)
     await poll()
@@ -432,50 +447,6 @@ describe('접기', () => {
     await waitForCard()
     expect(pill()).toBeNull()
   }, 15_000)
-
-  it('저장소가 막혀 있어도 접고 펼친다', async () => {
-    const blocked = () => {
-      throw new DOMException('blocked', 'SecurityError')
-    }
-    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(blocked)
-    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(blocked)
-    onTestFinished(() => {
-      vi.restoreAllMocks()
-    })
-    const user = userEvent.setup()
-    await openTasks()
-
-    await user.click(within(await waitForCard()).getByRole('button', { name: '접기' }))
-    expect(pill()).not.toBeNull()
-    await user.click(pill()!)
-    await waitForCard()
-  })
-
-  it('휴대폰 폭은 접힌 알약으로 시작하고, 완료는 펼쳐 보인다', async () => {
-    fakeIntervals()
-    vi.stubGlobal('matchMedia', (query: string) => ({
-      matches: query === '(max-width: 639px)',
-      media: query,
-      onchange: null,
-      addListener: () => {},
-      removeListener: () => {},
-      addEventListener: () => {},
-      removeEventListener: () => {},
-      dispatchEvent: () => true,
-    }))
-    await openTasks()
-    await waitFor(() => expect(pill()).not.toBeNull())
-    expect(processingCard()).toBeNull()
-
-    completeMeeting('mt_10')
-    await poll()
-    const done = await waitFor(() => {
-      expect(signalsWith(PROCESSING_DONE_TITLE)).toHaveLength(1)
-      return signalsWith(PROCESSING_DONE_TITLE)[0]
-    })
-    expect(within(done).getByRole('button', { name: '회의록 보기' })).toBeVisible()
-    expect(pill()).toBeNull()
-  })
 })
 
 describe('화면 읽기 알림 (role=status)', () => {
@@ -483,7 +454,7 @@ describe('화면 읽기 알림 (role=status)', () => {
     fakeIntervals()
     const user = userEvent.setup()
     await openTasks()
-    await waitForCard()
+    await openCard()
     const status = announcement()!
     expect(status).toHaveTextContent('음성을 텍스트로 옮기고 있어요')
     expect(status).not.toHaveTextContent(/단계 완료|\d\/3/)

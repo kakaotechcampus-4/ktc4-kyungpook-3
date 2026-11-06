@@ -12,7 +12,6 @@ import { useMemberWorkspace } from '@/entities/workspace'
 import { paths } from '@/shared/config/routes'
 import { useGuardedNavigate } from '@/shared/lib/unsaved-changes'
 import { PinnedToast } from '@/shared/ui/toast'
-import { useCollapsePreference } from '../lib/collapsePreference'
 import { processingSignal } from '../model/processingSignal'
 import type { ProcessingSignal, ProcessingSubject } from '../model/processingSignal'
 import { ProcessingToastCard } from './ProcessingToastCard'
@@ -51,14 +50,13 @@ function trackedSubject(detail: Meeting | undefined): ProcessingSubject | null {
  *   적은 결과 기록이다 — 같은 회의면 결과가 이긴다.
  * - 그 회의의 처리 화면·화자 지정 화면에서는 숨긴다. 같은 내용을 두 번 보이지 않는다.
  * - 역할에 따라 보이는 것이 다르다(processingSignal). 소속을 아직 모르면 그리지 않는다.
- * - 접기는 카드마다다(ProcessingToastItem). 이 기기의 접은 기록은 정리 중 카드가 처음 보일 때만 따른다.
+ * - 접기는 카드마다다(ProcessingToastItem). 정리 중은 화면 폭과 상관없이 접힌 알약으로 시작한다 — 평소 본문을 덮지 않는다.
  */
 export function ProcessingToast({ workspaceId }: { workspaceId: string }) {
   const tracked = useMeetingTrackerStore((state) => state.meetings)
   const settled = useMeetingTrackerStore((state) => state.settled)
   const role = useMemberWorkspace(workspaceId)?.role
   const { pathname } = useLocation()
-  const [rememberedCollapsed, rememberCollapsed] = useCollapsePreference()
 
   const settledHere = settled.filter((record) => record.workspaceId === workspaceId)
   const trackedHere = tracked.filter(
@@ -94,8 +92,6 @@ export function ProcessingToast({ workspaceId }: { workspaceId: string }) {
           key={keyOf(meeting)}
           meeting={meeting}
           signal={signal}
-          rememberedCollapsed={rememberedCollapsed}
-          rememberCollapsed={rememberCollapsed}
         />
       ))}
     </PinnedToast>
@@ -104,29 +100,24 @@ export function ProcessingToast({ workspaceId }: { workspaceId: string }) {
 
 /**
  * 카드 하나의 접힘. 상태(정리 중·화자 지정 필요·완료·실패)가 바뀌면 펼친다 — 정리 중의 단계 진행은 상태 변화가 아니다.
- * 정리 중으로 처음 보이면 이 기기의 접은 기록(없으면 휴대폰 폭)을 따르고, 정리 중에서 접고 펼친 것만 기록한다.
- * 화자 지정 필요를 접은 것은 그 상태 동안만이다
+ * 정리 중으로 처음 보이면 알약이고, 화자 지정 필요·완료·실패는 펼쳐 보인다. 고른 접힘은 카드가 보이는 동안만이다 —
+ * 기기에 「펼침」을 기억하면 한 번 펼쳐 본 사람에게 평소 본문을 덮는 카드가 돌아온다
  */
 function ProcessingToastItem({
   meeting,
   signal,
-  rememberedCollapsed,
-  rememberCollapsed,
 }: {
   meeting: TrackedMeeting
   signal: ProcessingSignal
-  rememberedCollapsed: boolean
-  rememberCollapsed: (collapsed: boolean) => void
 }) {
   const [fold, setFold] = useState(() => ({
     kind: signal.kind,
-    collapsed: signal.kind === 'processing' && rememberedCollapsed,
+    collapsed: signal.kind === 'processing',
   }))
   if (fold.kind !== signal.kind) setFold({ kind: signal.kind, collapsed: false })
   const collapsed = fold.kind === signal.kind && fold.collapsed
   const onCollapsedChange = (next: boolean) => {
     setFold({ kind: signal.kind, collapsed: next })
-    if (signal.kind === 'processing') rememberCollapsed(next)
   }
   const { workspaceId, meetingId } = meeting
   // 토스트가 처음 보인 세션. 세션이 끝난 뒤 누른 이동은 다음 계정으로 가지 않는다

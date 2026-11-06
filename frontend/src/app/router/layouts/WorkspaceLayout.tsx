@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import { Outlet } from 'react-router'
 import { ProcessingToast, useProcessingDiscovery } from '@/features/meeting-processing'
 import { useRouteId } from '@/shared/lib/url'
+import { usePinnedToastReserve } from '@/shared/ui/toast'
 import { AppHeader, AppHeaderSkeleton } from '@/widgets/app-shell'
 
 /** 앱 셸 틀 — 헤더 아래에 화면이 세로로 이어진다. 가드 대기 뼈대(WorkspaceShellSkeleton)도 같은 틀이다 */
@@ -23,9 +24,11 @@ export function WorkspaceLayout() {
 
 function WorkspaceShell({ workspaceId }: { workspaceId: string }) {
   useProcessingDiscovery(workspaceId)
+  // 오른쪽 아래 진행 토스트가 있는 동안 본문 아래를 그 높이만큼 비운다 — 본문 끝의 버튼을 스크롤로 꺼낼 수 있다 (#424)
+  const reserve = usePinnedToastReserve()
 
   return (
-    <div className={SHELL}>
+    <div className={SHELL} style={reserve > 0 ? { paddingBottom: reserve } : undefined}>
       <AppHeader workspaceId={workspaceId} />
       {/* 공간이 바뀌면 화면을 새로 마운트한다. 이전 공간의 화면 상태가 새 공간으로 넘어가지 않는다 */}
       <Fragment key={workspaceId}>

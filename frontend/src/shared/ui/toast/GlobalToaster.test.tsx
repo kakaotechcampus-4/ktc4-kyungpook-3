@@ -1,7 +1,19 @@
-import { act, render, screen } from '@testing-library/react'
+import type { ReactNode } from 'react'
+import { act, render, renderHook, screen } from '@testing-library/react'
+import { onTestFinished } from 'vitest'
 import { GlobalToaster } from './GlobalToaster'
 import { PinnedToast } from './PinnedToast'
+import { usePinnedToastReserve } from './pinnedSlot'
 import { toast } from './toastStore'
+
+function WithToaster({ children }: { children: ReactNode }) {
+  return (
+    <>
+      <GlobalToaster />
+      {children}
+    </>
+  )
+}
 
 function visibleKeys(): (string | undefined)[] {
   return Array.from(
@@ -94,6 +106,36 @@ describe('GlobalToaster', () => {
     expect(saved.compareDocumentPosition(pinned) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     // 고정 토스트가 늘어도 위의 짧은 토스트를 화면 밖으로 밀지 않게 칸 안에서 스크롤한다
     expect(screen.getByTestId('pinned-toast-slot')).toHaveClass('max-h-[50dvh]', 'overflow-y-auto')
+  })
+
+  it('고정 토스트가 있는 동안 본문 아래 여백은 칸 높이 + 24 이고, 칸이 비면 0 이다', () => {
+    let resized = () => {}
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(callback: () => void) {
+          resized = callback
+        }
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    )
+    onTestFinished(() => {
+      vi.unstubAllGlobals()
+    })
+    const { result } = renderHook(() => usePinnedToastReserve(), { wrapper: WithToaster })
+    expect(result.current).toBe(0)
+
+    const slot = screen.getByTestId('pinned-toast-slot')
+    const height = vi.spyOn(slot, 'getBoundingClientRect')
+    height.mockReturnValue({ height: 120.4 } as DOMRect)
+    act(() => resized())
+    expect(result.current).toBe(145)
+
+    height.mockReturnValue({ height: 0 } as DOMRect)
+    act(() => resized())
+    expect(result.current).toBe(0)
   })
 
   it('독의 빈 자리는 누름을 통과시키고 토스트 면만 누름을 받는다', () => {

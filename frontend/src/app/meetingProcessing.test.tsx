@@ -126,9 +126,18 @@ async function openProcessing(options: { strict?: boolean } = {}) {
   return app
 }
 
-/** 정리 중 진행 토스트(펼침). 지금 공간·지금 화면에서 보이는 것 */
+/** 정리 중 진행 토스트. 접힌 알약으로 시작하므로 알약이나 펼친 카드다. 지금 공간·지금 화면에서 보이는 것 */
 function processingCard() {
-  return screen.queryByRole('region', { name: /정리 중$/ })
+  return (
+    screen.queryByRole('region', { name: /정리 중$/ }) ??
+    screen.queryByRole('button', { name: /^정리 중.*펼치기$/ })
+  )
+}
+
+/** 알약을 눌러 펼친 정리 중 카드 */
+async function openProcessingCard() {
+  fireEvent.click(await screen.findByRole('button', { name: /^정리 중.*펼치기$/ }))
+  return screen.findByRole('region', { name: /정리 중$/ })
 }
 
 describe('발견과 등록 (U4-1, U4-2)', () => {
@@ -136,11 +145,7 @@ describe('발견과 등록 (U4-1, U4-2)', () => {
     const log = recordRequests()
     await openQuietScreen()
 
-    const card = await waitFor(() => {
-      const found = processingCard()
-      expect(found).not.toBeNull()
-      return found!
-    })
+    const card = await openProcessingCard()
     expect(card).toHaveTextContent('음성을 텍스트로 옮기고 있어요')
     expect(card).toHaveTextContent('1 / 3 단계 완료')
     const names = within(screen.getByRole('navigation', { name: '주요 화면' }))
@@ -472,11 +477,7 @@ describe('처리 화면 (U4-4, U4-10)', () => {
     const user = userEvent.setup()
     const app = renderApp(paths.tasks('ws_01'))
     await screen.findByRole('heading', { name: '태스크' })
-    const card = await waitFor(() => {
-      const found = processingCard()
-      expect(found).not.toBeNull()
-      return found!
-    })
+    const card = await openProcessingCard()
     await user.click(within(card).getByRole('button', { name: '자세히 보기' }))
     expect(await screen.findByRole('heading', { name: PROCESSING_HEADING })).toBeInTheDocument()
     await app.expectPath(PROCESSING_PATH)
