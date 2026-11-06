@@ -740,3 +740,13 @@ def test_a_reply_about_another_task_does_not_release_a_block_the_pm_set_after_th
 
     mdb.expire_all()
     assert (a.status, a.blocker) == ("blocked", "PM 사유")
+
+
+def test_two_failed_lines_on_one_task_are_kept_as_one(mdb, mseed, two):
+    a, _ = two
+    _reply(mdb, mseed, AT, body="API 명세서 어떻게든 했어요")
+    item = _claim()
+    _judge(item, _change(a, "failed"), _change(a, "failed"))
+
+    assert _row(mdb, item).state == S.DONE
+    assert list(_lines(mdb, item)) == [(a.task_id, "failed")]

@@ -970,7 +970,8 @@ def test_clearing_an_existing_due_carries_the_reason_callers_can_match(monkeypat
         luna_draft=[{"task": None, "due_date": "none", "doc_text": "로그인 화면 마감을 없앰"}],
     )
 
-    assert [f.reason for f in _run_dedup().failures] == [pipeline.DUE_CLEARED_REASON]
+    (failure,) = _run_dedup().failures
+    assert (failure.reason, failure.task_id) == (pipeline.DUE_CLEARED_REASON, LOGIN_FRI.task_id)
 
 
 def test_run_uses_per_seq_dates(monkeypatch):

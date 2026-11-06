@@ -89,6 +89,7 @@ def _changes(result: pipeline.PipelineResult, claim: dict[str, Any], jev: JevCli
     today = date.fromisoformat(claim["reply_date"])
     titles = {c["task_id"]: c["title"] for c in claim["candidates"]}
     run_chose = any(item["target_task_id"] not in supplemented for item in result.items)
+    only = next(iter(titles)) if len(titles) == 1 else None
     changes: list[dict[str, Any]] = []
     for item in result.items:
         if item["action"] == "create":
@@ -104,7 +105,8 @@ def _changes(result: pipeline.PipelineResult, claim: dict[str, Any], jev: JevCli
     for failure in result.failures:
         field = ("due_clear" if failure.reason == pipeline.DUE_CLEARED_REASON
                  else "unknown" if failure.stage == "target" else "failed")
-        changes.append(_line(field, failure.finding_text, reply))
+        changes.append(_line(field, failure.finding_text, reply,
+                             task_id=None if field == "unknown" else failure.task_id or only))
     return changes
 
 

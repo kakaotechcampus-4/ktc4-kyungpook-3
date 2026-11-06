@@ -214,7 +214,7 @@ def test_a_target_failure_becomes_unknown():
 
 def test_the_due_cleared_reason_becomes_due_clear():
     body = _judge(FakeRun(failures=[PipelineFailure("draft", "마감을 없앰", DUE_CLEARED_REASON)]))
-    assert _shape(body) == [(None, "due_clear", None, None)]
+    assert _shape(body) == [("t_api", "due_clear", None, None)]
     assert (body["changes"][0]["summary"], body["changes"][0]["evidence_quote"]) == ("마감을 없앰", REPLY)
 
 
@@ -223,8 +223,22 @@ def test_another_failure_next_to_a_change_is_a_failed_line():
     run = FakeRun(_update(status="done"), failures=[PipelineFailure("judge", "요약", "Terra 응답을 파싱하지 못했습니다.")])
     body = _judge(run, jev=jev)
 
-    assert _shape(body) == [("t_api", "status", "done", "certain"), (None, "failed", None, None)]
+    assert _shape(body) == [("t_api", "status", "done", "certain"), ("t_api", "failed", None, None)]
     assert body["failure_reason"] is None
+
+
+def test_a_failure_of_a_known_task_keeps_it_among_several_candidates():
+    run = FakeRun(_update(status="done"),
+                  failures=[PipelineFailure("draft", "마감을 없앰", DUE_CLEARED_REASON, "t_login"),
+                            PipelineFailure("judge", "요약", "x")])
+    body = _judge(run, _claim(API, LOGIN), jev=FakeJev([_yes(status=0.9, target=0.9)]))
+
+    assert [(c["task_id"], c["field"]) for c in body["changes"]] == [
+        ("t_api", "status"), ("t_login", "due_clear"), (None, "failed")]
+
+
+def test_a_target_failure_stays_without_a_task_even_with_one_candidate():
+    assert _shape(_judge(FakeRun(failures=[PipelineFailure("target", "요약", "x")])))[0][:2] == (None, "unknown")
 
 
 def test_no_live_candidate_judges_nothing():
@@ -478,7 +492,7 @@ def test_the_real_run_reports_a_cleared_due_as_due_clear(monkeypatch):
     body = judge_reply(_claim(lines=[{"sender": "pm", "text": "마감 괜찮아요?"},
                                      {"sender": "member", "text": "마감이 없어졌어요"}]), jev=FakeJev())
 
-    assert _shape(body) == [(None, "due_clear", None, None)]
+    assert _shape(body) == [("t_api", "due_clear", None, None)]
     assert body["changes"][0]["evidence_quote"] == "마감이 없어졌어요"
 
 

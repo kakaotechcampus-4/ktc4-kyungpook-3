@@ -234,6 +234,7 @@ class PipelineFailure:
     stage: str  # similar | judge | target | draft — 어느 단계에서 실패했나
     finding_text: str
     reason: str
+    task_id: str | None = None  # 대상을 고른 뒤 실패했으면 그 Task. 답장 판단이 줄을 그 태스크에 단다
 
 
 @dataclass
@@ -328,7 +329,8 @@ def run(
         try:
             drafted = draft(finding, result, candidate=target, today=day)
         except DraftUnavailableError as e:
-            out.failures.append(PipelineFailure("draft", finding.text, str(e)))
+            failed_id = target.task_id if target is not None and not target.task_id.startswith(_PENDING) else None
+            out.failures.append(PipelineFailure("draft", finding.text, str(e), failed_id))
             continue
 
         task_id = target.task_id if target is not None else None
@@ -337,7 +339,7 @@ def run(
         if drafted.structured.due_cleared and (
                 task_id in edits and edits[task_id][0].due_date is not None
                 or task_id not in edits and not (task_id or "").startswith(_PENDING)):
-            out.failures.append(PipelineFailure("draft", finding.text, DUE_CLEARED_REASON))
+            out.failures.append(PipelineFailure("draft", finding.text, DUE_CLEARED_REASON, task_id))
             continue
         if task_id is not None and task_id.startswith(_PENDING):  # 이번 회의 새 항목 카드에 합친다
             _merge_into(new_cards[int(task_id[len(_PENDING):])], finding, result, drafted, base=None, today=day, found=found,
