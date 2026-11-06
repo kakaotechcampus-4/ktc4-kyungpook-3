@@ -20,6 +20,7 @@ from app.models import (
     Session as SessionModel,
     Source,
     Task,
+    TaskHistory,
     User,
     Workspace,
 )
@@ -524,3 +525,71 @@ def test_notion_retry_still_reaches_deleted_task(client, seed):
 
     # 404가 아니라 재시도 자체의 판단까지 간다(이 워크스페이스는 Notion 미연동)
     assert r.json()["error"]["code"] == "INTEGRATION_NOT_CONNECTED"
+
+
+# ── 채팅 회의: 자동 반영 금지, 승인 이력 출처 chat ─────────────────────────────
+
+
+def _make_chat(db, seed) -> None:
+    seed["meeting"].source = "chat"
+    db.commit()
+
+
+def _approve_only(client, db) -> None:
+    [approval] = _approvals(db)
+    r = client.patch(f"/api/v1/approvals/{approval.approval_id}", json={"status": "approved"})
+    assert r.status_code == 200, r.text
+
+
+def test_chat_meeting_create_never_auto(client, db, seed, caplog):
+    _make_chat(db, seed)
+
+    with caplog.at_level("INFO", logger="app.api.extractions"):
+        item = _only_item(client, _extract(client, seed, [_judge()]))
+
+    assert "chat 회의라 auto 항목을 review로 내립니다" in caplog.text
+
+    assert item["gate"] == "review"
+    assert item["task_id"] is None
+    assert db.execute(select(Task).where(Task.title == "결제 API 연동")).scalar_one_or_none() is None
+
+
+def test_chat_meeting_hold_stays_hold(client, db, seed):
+    _make_chat(db, seed)
+
+    assert _gate(client, seed, assignee_raw="없는사람") == "hold"
+
+
+def test_approve_chat_create_records_chat_source(client, db, seed):
+    _make_chat(db, seed)
+    _only_item(client, _extract(client, seed, [_judge()]))
+
+    _approve_only(client, db)
+
+    task = db.execute(select(Task).where(Task.title == "결제 API 연동")).scalar_one()
+    [history] = db.execute(select(TaskHistory).where(TaskHistory.task_id == task.task_id)).scalars().all()
+    assert history.change_source == "chat"
+
+
+def test_approve_chat_update_records_chat_source(client, db, seed):
+    _make_chat(db, seed)
+    _only_item(client, _extract(client, seed, [_judge(
+        action="update", target_task_id=seed["login"].task_id, due_date="2026-10-06",
+    )]))
+
+    _approve_only(client, db)
+
+    sources = db.execute(
+        select(TaskHistory.change_source).where(TaskHistory.task_id == seed["login"].task_id)
+    ).scalars().all()
+    assert sources and set(sources) == {"chat"}
+
+
+def test_approve_meeting_create_still_records_meeting_source(client, db, seed):
+    _only_item(client, _extract(client, seed, [_judge(similar_count=1, top_similarity=0.5)]))
+
+    _approve_only(client, db)
+
+    task = db.execute(select(Task).where(Task.title == "결제 API 연동")).scalar_one()
+    [history] = db.execute(select(TaskHistory).where(TaskHistory.task_id == task.task_id)).scalars().all()
+    assert history.change_source == "meeting"

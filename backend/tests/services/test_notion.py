@@ -43,7 +43,6 @@ def _make_task(db) -> tuple[Integration, Task]:
         title="설계 문서 작성",
         assignee_member_id=member.member_id,
         status="todo",
-        progress=30,
     )
     db.add(task)
     db.flush()
@@ -132,17 +131,14 @@ def test_build_properties_sends_explicit_clear_values_when_fields_are_emptied(db
     assert properties[notion.PROPERTY_NAMES["assignee"]] == {
         "rich_text": [{"text": {"content": "Seoyeon"}}]
     }
-    assert properties[notion.PROPERTY_NAMES["progress"]] == {"number": 30}
 
     task.assignee_member_id = None
     task.due_date = None
-    task.progress = None
     task.blocker = None
 
     cleared = notion.build_properties(db, task)
     assert cleared[notion.PROPERTY_NAMES["assignee"]] == {"rich_text": []}
     assert cleared[notion.PROPERTY_NAMES["due_date"]] == {"date": None}
-    assert cleared[notion.PROPERTY_NAMES["progress"]] == {"number": None}
     assert cleared[notion.PROPERTY_NAMES["blocker"]] == {"rich_text": []}
 
 
@@ -280,9 +276,25 @@ def test_verify_database_schema_reports_misspelled_property():
 
 
 def test_verify_database_schema_reports_wrong_property_type():
-    assert _verify(_schema(Progress={"type": "rich_text"})) == [
-        "'Progress' 속성 종류가 rich_text임 (필요: number)"
+    assert _verify(_schema(Due_Date={"type": "rich_text"})) == [
+        "'Due Date' 속성 종류가 rich_text임 (필요: date)"
     ]
+
+
+def test_verify_database_schema_passes_without_progress_property():
+    body = _schema(Progress=None)
+    assert "Progress" not in body["properties"]
+    assert _verify(body) == []
+
+
+def test_verify_database_schema_passes_when_old_progress_property_remains():
+    assert _verify(_schema(Progress={"type": "number"})) == []
+
+
+def test_build_properties_does_not_write_progress(db):
+    integration, task = _make_task(db)
+
+    assert "Progress" not in notion.build_properties(db, task)
 
 
 def test_verify_database_schema_reports_missing_status_options():

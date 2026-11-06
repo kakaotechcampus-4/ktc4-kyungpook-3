@@ -7,7 +7,7 @@ import pytest
 
 from capture import handoff as H
 from tests.capture import fake_be
-from tests.capture.fake_be import FakeBe
+from tests.capture.fake_be import FakeBe, without_stage
 
 TRANSCRIPT = {
     "speakers": {"101": "민수", "103": "재환"},
@@ -816,3 +816,59 @@ def test_member_names_come_from_the_meetings_workspace():
     with pytest.raises(H.BeError) as e:
         client.member_names("ws-9")
     assert e.value.code == "WORKSPACE_NOT_FOUND"
+
+
+# ─────────────────────────────────────────────────────────── 처리 단계 보고
+def _staged(be=True):
+    return {"session": "500", "status": "saved", **({"be": {"meeting_id": "m1", "status": "processing"}} if be else {})}
+
+
+def test_report_stage_patches_stage_with_token_and_short_timeout():
+    fake = FakeBe()
+    fake.meetings["m1"] = {"meeting_id": "m1", "workspace_id": "ws-1", "status": "processing"}
+    _handoff(fake).report_stage(_staged(), "stt")
+    assert fake.calls[-1] == ("PATCH", "/meetings/m1/stage", {"stage": "stt"})
+    assert fake.headers[-1] == {"X-Service-Token": "svc-token"}
+    assert fake.timeouts[-1] == H.STAGE_TIMEOUT_S == 3.0
+    assert fake.meetings["m1"]["stage"] == "stt"
+
+
+def test_report_stage_without_meeting_id_is_noop():
+    fake = FakeBe()
+    _handoff(fake).report_stage(_staged(be=False), "stt")
+    _handoff(fake).report_stage({"session": "500", "be": {}}, "stt")
+    assert fake.calls == []
+
+
+@pytest.mark.parametrize("trouble", [{"down": True}, {"stage_fail": 500}, {"stage_fail": 404}])
+def test_report_stage_swallows_errors(trouble):
+    fake = FakeBe()
+    fake.meetings["m1"] = {"meeting_id": "m1", "workspace_id": "ws-1", "status": "processing"}
+    for k, v in trouble.items():
+        setattr(fake, k, v)
+    manifest = _staged()
+    before = json.loads(json.dumps(manifest))
+    _handoff(fake).report_stage(manifest, "sources")        # 예외가 나면 이 줄에서 테스트가 죽는다
+    assert manifest == before
+    assert without_stage(fake.calls) == []
+
+
+def test_chat_cursor_parses_and_null():
+    from datetime import datetime, timezone
+    fake = FakeBe()
+    c = _client(fake)
+    assert c.chat_cursor("ws-1") is None
+    fake.chat_cursors["ws-1"] = "2026-11-03T15:30:00+00:00"
+    assert c.chat_cursor("ws-1") == datetime(2026, 11, 3, 15, 30, tzinfo=timezone.utc)
+    assert fake.calls[-1] == ("GET", "/workspaces/ws-1/chat-cursor", None)
+    assert fake.headers[-1]["X-Service-Token"] == "svc-token"
+
+
+def test_create_meeting_sends_started_at():
+    from datetime import datetime, timezone
+    fake = FakeBe()
+    at = datetime(2026, 11, 3, 15, 30, tzinfo=timezone.utc)
+    _client(fake).create_meeting("ws-1", title="t", source="chat", started_at=at)
+    assert fake.calls[-1][2]["started_at"] == at.isoformat() and fake.calls[-1][2]["source"] == "chat"
+    _client(fake).create_meeting("ws-1")
+    assert "started_at" not in fake.calls[-1][2]

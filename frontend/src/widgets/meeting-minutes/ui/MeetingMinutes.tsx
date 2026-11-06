@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { meetingListQueryOptions, toMinutesList } from '@/entities/meeting'
+import { MEETING_SOURCE_TRAITS, meetingListQueryOptions, toMinutesList } from '@/entities/meeting'
 import type { MeetingSummary, MinutesList } from '@/entities/meeting'
 import { paths } from '@/shared/config/routes'
 import { GuardedLink } from '@/shared/lib/unsaved-changes'
@@ -7,7 +7,7 @@ import { EmptyState } from '@/shared/ui/empty-state'
 import { Icon } from '@/shared/ui/icon'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
 import { MinutesDetailSkeleton, MinutesListSkeleton } from '@/shared/ui/page-skeleton'
-import { listMeta } from '../lib/format'
+import { listMeta, SOURCE_BADGE } from '../lib/format'
 import { prefetchMinutes } from '../lib/prefetchMinutes'
 import { useShownMeeting } from '../model/useShownMeeting'
 import { MinutesDetail, UnavailableMeeting } from './MinutesDetail'
@@ -216,9 +216,7 @@ function MeetingList({
                 onPointerEnter={() => prefetch(meeting.id)}
                 onFocus={() => prefetch(meeting.id)}
               >
-                <span className={ROW_TITLE}>
-                  {meeting.title === '' ? '제목 없는 회의' : meeting.title}
-                </span>
+                <RowTitle meeting={meeting} />
                 <span className={ROW_META}>{listMeta(meeting)}</span>
               </GuardedLink>
             </li>
@@ -234,9 +232,7 @@ function MeetingList({
             {list.expired.map((meeting) => (
               <li key={meeting.id}>
                 <GuardedLink to={paths.meetings(workspaceId, meeting.id)} className={ROW}>
-                  <span className={ROW_TITLE}>
-                    {meeting.title === '' ? '제목 없는 회의' : meeting.title}
-                  </span>
+                  <RowTitle meeting={meeting} />
                   <span className={STATUS_BADGE}>화자 지정 기한 만료</span>
                   <span className={ROW_META}>{listMeta(meeting)}</span>
                 </GuardedLink>
@@ -249,29 +245,64 @@ function MeetingList({
   )
 }
 
+function SourceBadge({ meeting }: { meeting: MeetingSummary }) {
+  const badge = SOURCE_BADGE[meeting.source]
+  return badge === null ? null : <span className={STATUS_BADGE}>{badge}</span>
+}
+
+function RowTitle({ meeting }: { meeting: MeetingSummary }) {
+  return (
+    <span className="flex w-full items-center gap-8">
+      <span className={ROW_TITLE}>{meeting.title === '' ? '제목 없는 회의' : meeting.title}</span>
+      <SourceBadge meeting={meeting} />
+    </span>
+  )
+}
+
+function inProgressStatus(
+  workspaceId: string,
+  meeting: MeetingSummary,
+): { label: string; to: string | null } {
+  switch (meeting.status) {
+    case 'processing':
+      return {
+        label: '정리 중',
+        to: MEETING_SOURCE_TRAITS[meeting.source].hasProcessingScreen
+          ? paths.meetingProcessing(workspaceId, meeting.id)
+          : null,
+      }
+    case 'awaiting_speakers':
+      return { label: '화자 지정 필요', to: paths.meetingSpeakers(workspaceId, meeting.id) }
+    default:
+      return { label: '회의 중', to: null }
+  }
+}
+
 /**
- * 회의록이 아직 없는 회의의 상태 항목 (U5-2). 정리 중이면 처리 화면으로 잇는다.
+ * 회의록이 아직 없는 회의의 상태 항목 (U5-2). 정리 중이면 처리 화면, 화자 지정 대기면 지정 화면으로 잇는다.
  * Discord 봇이 기록 중인 회의(`created`·`recording`)는 갈 곳이 없어 상태만 보인다 (U5-9).
+ * 채팅 회의는 처리 화면의 단계가 녹음 기준이라 정리 중이어도 잇지 않는다 (#379).
  */
 function InProgressRow({ workspaceId, meeting }: { workspaceId: string; meeting: MeetingSummary }) {
   const title = meeting.title === '' ? '제목 없는 회의' : meeting.title
-  const content = (status: string) => (
+  const status = inProgressStatus(workspaceId, meeting)
+  const content = (
     <>
       <span className="flex w-full items-center gap-8">
         <span className="flex-1 text-body text-sub group-hover:text-ink">{title}</span>
+        <SourceBadge meeting={meeting} />
         <span className={STATUS_BADGE}>
           <span aria-hidden="true" className="size-5 shrink-0 rounded-999 bg-ink" />
-          {status}
+          {status.label}
         </span>
       </span>
       <span className={ROW_META}>{listMeta(meeting)}</span>
     </>
   )
-  if (meeting.status === 'processing')
-    return (
-      <GuardedLink to={paths.meetingProcessing(workspaceId, meeting.id)} className={ROW}>
-        {content('정리 중')}
-      </GuardedLink>
-    )
-  return <div className={ROW}>{content('회의 중')}</div>
+  if (status.to === null) return <div className={ROW}>{content}</div>
+  return (
+    <GuardedLink to={status.to} className={ROW}>
+      {content}
+    </GuardedLink>
+  )
 }

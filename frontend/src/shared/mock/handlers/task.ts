@@ -13,10 +13,12 @@ import {
   ownershipError,
   enqueueTaskSync,
   notionConnected,
+  toTaskResponse,
+  undoAutoBlock,
 } from '../task-state'
 import { MOCK_NOW } from '../fixtures/constants'
 import { requireAuth, requireMember, requirePm } from '../auth-guard'
-import type { TaskDto } from '@/shared/types/api/task'
+import type { MockTask } from '../fixtures/task'
 
 /*
  * 백엔드 api/tasks.py 와 같은 권한 순서다. 인증(401) → 태스크 존재(404) → 그 공간 소속(403) → 쓰기면 PM(403).
@@ -24,7 +26,7 @@ import type { TaskDto } from '@/shared/types/api/task'
  * 권한 검사는 db 를 바꾸는 어떤 코드보다도 앞에 있다
  */
 
-function findTask(taskId: unknown): TaskDto | undefined {
+function findTask(taskId: unknown): MockTask | undefined {
   return db.tasks.find(({ task_id }) => task_id === taskId)
 }
 
@@ -60,7 +62,7 @@ export const taskHandlers = [
         (a.due_date ?? '').localeCompare(b.due_date ?? '') ||
         Date.parse(b.created_at) - Date.parse(a.created_at),
     )
-    return list(tasks)
+    return list(tasks.map((task) => toTaskResponse(task)))
   }),
   // 생성은 공간 존재(404) 뒤 PM(403) 이다 (api/tasks.py create_task_endpoint). 생성자는 본문 created_by 가 아니라 세션 팀원이다
   http.post('/api/v1/tasks', async ({ request }) => {
@@ -82,14 +84,16 @@ export const taskHandlers = [
     if (owned)
       return fail(owned.code, owned.message, owned.code === 'WORKSPACE_MISMATCH' ? 400 : 404)
     return ok(
-      createTask(
-        {
-          ...taskUpdates(body),
-          workspace_id: body.workspace_id,
-          title: body.title,
-          meeting_id: typeof body.meeting_id === 'string' ? body.meeting_id : null,
-        },
-        pm.memberId,
+      toTaskResponse(
+        createTask(
+          {
+            ...taskUpdates(body),
+            workspace_id: body.workspace_id,
+            title: body.title,
+            meeting_id: typeof body.meeting_id === 'string' ? body.meeting_id : null,
+          },
+          pm.memberId,
+        ),
       ),
       { status: 201 },
     )
@@ -99,7 +103,7 @@ export const taskHandlers = [
     if (unauthenticated) return unauthenticated
     const task = findTask(params.taskId)
     if (!task) return fail('TASK_NOT_FOUND', '태스크가 없습니다.', 404)
-    return requireMember(task.workspace_id) ?? ok(task)
+    return requireMember(task.workspace_id) ?? ok(toTaskResponse(task))
   }),
   http.patch('/api/v1/tasks/:taskId', async ({ params, request }) => {
     const unauthenticated = requireAuth()
@@ -122,7 +126,7 @@ export const taskHandlers = [
       return fail(owned.code, owned.message, owned.code === 'WORKSPACE_MISMATCH' ? 400 : 404)
     // 본문의 changed_by 는 taskUpdates 가 읽지 않는다. 백엔드처럼 세션 팀원으로 기록한다
     updateTask(task, updates, pm.memberId)
-    return ok(task)
+    return ok(toTaskResponse(task))
   }),
   http.get('/api/v1/tasks/:taskId/history', ({ params }) => {
     const unauthenticated = requireAuth()
@@ -182,7 +186,7 @@ export const taskHandlers = [
     // 백엔드 rollback_task_history 는 성공하면 항상 version 을 올리고 대기열에 넣는다
     task.version += 1
     enqueueTaskSync(task)
-    return ok(task)
+    return ok(toTaskResponse(task))
   }),
   /*
    * 백엔드 notion_sync.retry_failed_sync 의 단순화. 본문이 없다. 미연동이면 409, 실패 상태가 아니면 400 이고
@@ -203,6 +207,20 @@ export const taskHandlers = [
         task_id: task.task_id,
       })
     task.notion_sync_status = 'pending'
-    return ok(task)
+    return ok(toTaskResponse(task))
+  }),
+  // 무응답 자동 막힘 풀기 (계약 §5.7). PM 전용이다. 되돌릴 자동 막힘이 없으면 409 이고 아무것도 바꾸지 않는다
+  http.post('/api/v1/tasks/:taskId/auto-block/undo', ({ params }) => {
+    const unauthenticated = requireAuth()
+    if (unauthenticated) return unauthenticated
+    const task = findTask(params.taskId)
+    if (!task) return fail('TASK_NOT_FOUND', '태스크가 없습니다.', 404)
+    const pm = requirePm(task.workspace_id)
+    if (pm instanceof Response) return pm
+    if (!undoAutoBlock(task, pm.memberId))
+      return fail('AUTO_BLOCK_NOT_FOUND', '되돌릴 자동 막힘이 없습니다.', 409, {
+        task_id: task.task_id,
+      })
+    return ok(toTaskResponse(task))
   }),
 ]

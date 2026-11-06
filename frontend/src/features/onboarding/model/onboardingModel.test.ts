@@ -23,6 +23,7 @@ function workspace(
     id: 'ws_09',
     name: '새 팀',
     role: 'pm',
+    memberId: null,
     createdAt: '2026-09-28T00:00:00Z',
     onboarding: {
       completed: statuses.every((status) => status !== 'pending'),

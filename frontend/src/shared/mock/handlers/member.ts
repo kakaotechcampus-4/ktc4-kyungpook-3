@@ -119,6 +119,15 @@ export const memberHandlers = [
       notion_name?: unknown
       role?: unknown
     }
+    // 초대를 기다리는 팀원을 PM 으로 올리면 수락한 계정이 곧바로 PM 이 된다. 아무것도 바꾸지 않고 막는다 (결정 0036)
+    if (
+      body.role === 'pm' &&
+      member.role !== 'pm' &&
+      db.invitations.some(
+        ({ member_id, status }) => member_id === member.member_id && status === 'pending',
+      )
+    )
+      return fail('MEMBER_HAS_PENDING_INVITATION', '대기 중인 초대가 있는 팀원입니다.', 409)
     if (
       typeof body.discord_user_id === 'string' &&
       db.members.some(

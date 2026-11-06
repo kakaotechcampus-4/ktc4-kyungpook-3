@@ -221,7 +221,7 @@ describe('M7 대시보드 시나리오', () => {
   it('기본: 최근 반영 세 태스크가 모두 반영 완료다', async () => {
     applyScenario('dashboard-default')
     expect(await syncOf()).toEqual({ tk_01: 'synced', tk_02: 'synced', tk_03: 'synced' })
-    expect(await doneMeetings()).toEqual(['mt_09', 'mt_07'])
+    expect(await doneMeetings()).toEqual(['mt_09', 'mt_08', 'mt_07'])
   })
 
   it('회의 없음: 정리 끝난 회의가 없다', async () => {
@@ -244,7 +244,7 @@ describe('M7 대시보드 시나리오', () => {
 
   it('최근 반영 넘침: mt_09 의 추출에 auto 항목이 12개다. 붙인 항목은 tk_01(반영 완료)을 가리킨다', async () => {
     applyScenario('dashboard-recent-overflow')
-    expect(await doneMeetings()).toEqual(['mt_09', 'mt_07'])
+    expect(await doneMeetings()).toEqual(['mt_09', 'mt_08', 'mt_07'])
     const auto = (await extraction()).items.filter(({ gate }) => gate === 'auto')
     expect(auto.map(({ item_id }) => item_id)).toEqual([
       'it_01',

@@ -160,6 +160,9 @@ describe('sessionStorage 영속 (U2-4)', () => {
     expect(db.meetingFlow).toEqual({
       mode: 'staged',
       attendees: { [meeting_id]: ['mb_01', 'mb_04'] },
+      speakers: {
+        [meeting_id]: { speakers: [], mapping: null, audio: true, expireOnSubmit: false },
+      },
     })
     // 복원된 진행 단계에서 이어 간다
     await expect(detail(meeting_id)).resolves.toMatchObject({

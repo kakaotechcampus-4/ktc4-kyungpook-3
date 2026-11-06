@@ -56,14 +56,6 @@ export function currentFieldValue(task: Task, field: string): unknown {
   }
 }
 
-/** 회의 녹음 안의 위치. 회의록 화면과 같은 모양이다 — `02:05` · `1:02:05` */
-export function evidenceClock(ms: number): string {
-  const total = Math.max(0, Math.floor(ms / 1000))
-  const hours = Math.floor(total / 3600)
-  const mmss = `${String(Math.floor((total % 3600) / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`
-  return hours > 0 ? `${hours}:${mmss}` : mmss
-}
-
 export function approvalKindLabel(approval: Approval): string {
   if (approval.kind === 'task_create') return '새 태스크 확인'
   if (approval.kind === 'task_update') return '태스크 변경 확인'
