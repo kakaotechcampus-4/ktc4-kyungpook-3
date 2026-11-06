@@ -66,6 +66,25 @@ describe('태스크 기록 (GET /tasks/{id}/timeline)', () => {
     const dueRows = (await history()).filter(({ changed_field }) => changed_field === 'due_date')
     expect(dueRows[0]).toMatchObject({ new_value: '2026-09-26', change_source: 'reminder_reply' })
   })
+
+  it('담당자를 찾지 못한 ap_32 를 고른 담당자로 승인하면 rc_04 가 그 팀원으로 승인함이 된다 (#460 합의 대기)', async () => {
+    expect(change(await timeline('tk_08'), 'rc_04')).toMatchObject({ result: 'pending' })
+    await fetchDto(
+      `/approvals/ap_32`,
+      jsonRequest('PATCH', { status: 'approved', task_overrides: { assignee_member_id: 'mb_02' } }),
+    )
+
+    const items = await timeline('tk_08')
+    expect(change(items, 'rc_04')).toMatchObject({ result: 'approved', new_value: 'mb_02' })
+    expect(items.filter(({ kind }) => kind === 'history')).toEqual([])
+    expect((await fetchDto<TaskDto>('/tasks/tk_08')).assignee_member_id).toBe('mb_02')
+  })
+
+  it('ap_32 를 담당자 없이 승인하면 담당자는 그대로이고 rc_04 는 반영하지 않음이다', async () => {
+    await fetchDto(`/approvals/ap_32`, jsonRequest('PATCH', { status: 'approved' }))
+    expect(change(await timeline('tk_08'), 'rc_04')).toMatchObject({ result: 'noted' })
+    expect((await fetchDto<TaskDto>('/tasks/tk_08')).assignee_member_id).toBe('mb_03')
+  })
 })
 
 describe('일반 팀원의 태스크 기록', () => {

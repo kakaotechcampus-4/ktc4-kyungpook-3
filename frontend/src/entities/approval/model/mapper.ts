@@ -148,6 +148,12 @@ export function toApproval(dto: ApprovalDto): Approval {
       meetingId: text(payload.meeting_id),
       replyMessageId:
         payload.change_source === 'reminder_reply' ? text(payload.reply_message_id) : null,
+      assigneePick:
+        payload.change_source === 'reminder_reply' &&
+        payload.category === 'assignee' &&
+        !Object.hasOwn(payload, 'assignee_member_id')
+          ? { raw: text(payload.assignee_raw) }
+          : null,
     }
   return { ...base, kind: 'unsupported', type: dto.type }
 }
@@ -165,6 +171,9 @@ export function toApprovalResolveRequestDto(
       body.task_overrides = {
         ...(edits.status !== undefined ? { status: edits.status } : {}),
         ...(edits.dueDate !== undefined ? { due_date: edits.dueDate } : {}),
+        ...(edits.assigneeMemberId !== undefined
+          ? { assignee_member_id: edits.assigneeMemberId }
+          : {}),
       }
   } else {
     const edits = resolution.taskOverrides

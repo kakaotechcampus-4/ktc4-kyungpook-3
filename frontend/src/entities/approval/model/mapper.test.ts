@@ -130,6 +130,25 @@ describe('task_update 의 범위 변경 (#205)', () => {
     })
   })
 
+  it('담당자를 팀원에서 찾지 못한 답장 카드만 담당자를 고를 카드다', () => {
+    const reply = {
+      change_source: 'reminder_reply',
+      reply_message_id: 'mg_31',
+      category: 'assignee',
+    }
+    expect(update({ ...reply, assignee_raw: '민지' })).toMatchObject({
+      assigneePick: { raw: '민지' },
+      changes: [],
+    })
+    expect(update({ ...reply, assignee_member_id: 'mb_02' })).toMatchObject({ assigneePick: null })
+    expect(update({ category: 'assignee', assignee_raw: '민지' })).toMatchObject({
+      assigneePick: null,
+    })
+    expect(update({ ...reply, category: 'schedule', due_date: '2026-09-26' })).toMatchObject({
+      assigneePick: null,
+    })
+  })
+
   it('does not guess an unknown category', () => {
     const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
     try {

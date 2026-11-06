@@ -13,6 +13,8 @@ export {
 } from './model/useApprovalResolve'
 export type { ApprovalResolve, ApprovalResolveProblem } from './model/useApprovalResolve'
 export { ApprovalActions } from './ui/ApprovalActions'
+export { assigneePickNotice } from './model/assigneePick'
+export { AssigneePickField } from './ui/AssigneePickField'
 export type { ApprovalActionsProps } from './ui/ApprovalActions'
 export { TaskCreateOverridesForm } from './ui/TaskCreateOverridesForm'
 export type { TaskCreateOverridesFormProps } from './ui/TaskCreateOverridesForm'

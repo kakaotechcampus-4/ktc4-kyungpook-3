@@ -3,6 +3,7 @@ import { useId, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import {
   APPROVAL_RESOLUTION_REASONS,
+  ASSIGNEE_PICK_REASON,
   approvalDetailQueryOptions,
   isScopeChange,
   planApprovalResolution,
@@ -21,6 +22,7 @@ import type { Member } from '@/entities/member'
 import { taskDetailQueryOptions } from '@/entities/task'
 import {
   ApprovalActions,
+  AssigneePickField,
   TaskCreateOverridesForm,
   TaskUpdateOverridesForm,
   useApprovalResolve,
@@ -512,6 +514,15 @@ function TaskUpdateReview({
             </GuardedLink>
           </p>
         ) : null}
+        {pending && approval.assigneePick !== null ? (
+          <AssigneePickField
+            raw={approval.assigneePick.raw}
+            members={members ?? []}
+            value={edits.assigneeMemberId}
+            disabled={resolver.pending || members === undefined}
+            onChange={(assigneeMemberId) => resolver.editUpdate({ assigneeMemberId })}
+          />
+        ) : null}
         {scope && changes.length === 0 ? (
           <p className={NOTE}>바꿀 항목 값은 없어요.</p>
         ) : (
@@ -616,7 +627,13 @@ function TaskUpdateReview({
                 ? EDITING_REASON
                 : taskId === null
                   ? '바꿀 태스크가 없어 승인할 수 없어요.'
-                  : null
+                  : approval.assigneePick === null
+                    ? null
+                    : members === undefined
+                      ? MEMBERS_LOADING_REASON
+                      : edits.assigneeMemberId === undefined
+                        ? ASSIGNEE_PICK_REASON
+                        : null
             }
             approveLabel={conflict === null ? '승인' : '지금 값을 확인했어요, 다시 승인'}
             pending={resolver.pending}

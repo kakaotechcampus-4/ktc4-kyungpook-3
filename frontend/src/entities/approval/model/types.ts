@@ -40,6 +40,11 @@ export interface TaskUpdateApproval extends ApprovalBase {
   meetingId: string | null
   /** 리마인드 답장에서 온 제안이면 그 답장. 이때 meetingId 는 null 이고 근거는 답장 글이다 */
   replyMessageId: string | null
+  /**
+   * 답장이 말한 담당자를 팀원에서 찾지 못한 담당자 변경 카드. 제안에 담당자 값이 없어 PM 이 카드에서 고른다(미정 포함).
+   * `raw` 는 답장에 적힌 이름이다. 그 밖의 카드는 null 이다
+   */
+  assigneePick: { raw: string | null } | null
 }
 export interface UnsupportedApproval extends ApprovalBase {
   kind: 'unsupported'

@@ -87,11 +87,14 @@ export function ApprovalCard(props: ApprovalCardProps) {
 function SummaryCard({ workspaceId, approval }: { workspaceId: string; approval: Approval }) {
   const title =
     approval.kind === 'unsupported' ? approval.type : (approval.title ?? '제목 없는 확인 요청')
-  const reason = isScopeChange(approval)
-    ? '범위 변경을 확인해야 해요'
-    : approval.kind === 'task_update'
-      ? '변경 제안을 확인해야 해요'
-      : '지원하지 않는 종류라 여기서 처리할 수 없어요'
+  const reason =
+    approval.kind === 'task_update' && approval.assigneePick !== null
+      ? '담당자를 골라야 하는 답장이에요'
+      : isScopeChange(approval)
+        ? '범위 변경을 확인해야 해요'
+        : approval.kind === 'task_update'
+          ? '변경 제안을 확인해야 해요'
+          : '지원하지 않는 종류라 여기서 처리할 수 없어요'
   return (
     <Card
       as="article"

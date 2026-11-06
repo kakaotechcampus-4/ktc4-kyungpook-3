@@ -223,6 +223,8 @@ export function durationLabel(durationMs: number | null): string | null {
 
 /** 확인 필요 행 아래 한 줄 — 왜 확인해야 하는지. 회의록·태스크 목록의 문구와 같다 */
 export function approvalReason(approval: Approval): string {
+  if (approval.kind === 'task_update' && approval.assigneePick !== null)
+    return '담당자를 골라야 하는 답장이에요'
   if (isScopeChange(approval)) return '범위 변경을 확인해야 해요'
   if (approval.kind === 'task_update') return '변경 제안을 확인해야 해요'
   if (approval.kind === 'unsupported') return '지원하지 않는 종류라 상세에서 확인해 주세요'

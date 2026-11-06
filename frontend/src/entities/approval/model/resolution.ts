@@ -9,7 +9,12 @@ export interface TaskCreateFields {
   dueDate: string | null
 }
 export type TaskCreateEdits = Partial<TaskCreateFields>
-export type TaskUpdateEdits = Partial<{ status: TaskStatus; dueDate: string | null }>
+/** `assigneeMemberId` 는 담당자를 찾지 못한 답장 카드(`assigneePick`)에서만 고른다. null 은 미정이다 (BE #460 합의 대기) */
+export type TaskUpdateEdits = Partial<{
+  status: TaskStatus
+  dueDate: string | null
+  assigneeMemberId: string | null
+}>
 export type ApprovalEdits =
   | { kind: 'task_create'; values: TaskCreateEdits }
   | { kind: 'task_update'; values: TaskUpdateEdits }
@@ -34,6 +39,8 @@ export type ApprovalResolutionPlan =
   | { ok: true; resolution: ApprovalResolution }
   | { ok: false; reason: string; issues: TaskCreateIssue[] }
 
+export const ASSIGNEE_PICK_REASON = '담당자를 골라 주세요.'
+
 export const APPROVAL_RESOLUTION_REASONS = {
   resolved: '이미 처리된 확인 요청이에요.',
   unsupported: '지원하지 않는 확인 요청이라 여기서 처리할 수 없어요.',
@@ -57,6 +64,8 @@ export function taskUpdateChanges(approval: TaskUpdateApproval, edits: TaskUpdat
   const changes = new Map(approval.changes.map(({ field, value }) => [field, value]))
   if (edits.status !== undefined) changes.set('status', edits.status)
   if (edits.dueDate !== undefined) changes.set('due_date', edits.dueDate)
+  if (edits.assigneeMemberId !== undefined)
+    changes.set('assignee_member_id', edits.assigneeMemberId)
   return Array.from(changes, ([field, value]) => ({ field, value }))
 }
 
@@ -93,6 +102,13 @@ export function planApprovalResolution(
         !['todo', 'in_progress', 'blocked', 'done'].includes(edits.status))
     )
       return { ok: false, issues: [], reason: '상태와 마감 날짜를 올바르게 입력해 주세요.' }
+    if (approval.assigneePick !== null && edits.assigneeMemberId === undefined)
+      return { ok: false, issues: ['assignee'], reason: ASSIGNEE_PICK_REASON }
+    if (
+      typeof edits.assigneeMemberId === 'string' &&
+      !(context.memberIds ?? []).includes(edits.assigneeMemberId)
+    )
+      return { ok: false, issues: ['assignee'], reason: '담당자를 팀원 중에서 골라 주세요.' }
     const version = context.confirmTaskVersion
     return {
       ok: true,

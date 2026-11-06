@@ -91,6 +91,25 @@ export const 답장_변경: Story = {
   },
 }
 
+/** 답장이 말한 담당자를 팀원에서 찾지 못한 카드 — 담당자를 고르기 전에는 승인이 막힌다 (#344, BE #460 합의 대기) */
+export const 답장_담당자_고르기: Story = {
+  args: { approvalId: 'ap_32' },
+  parameters: { scenario: 'reply-judgment', route: '/workspaces/ws_01/approvals/ap_32' },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(
+      await canvas.findByText(
+        '답장에서 말한 담당자 민지를 팀원에서 찾지 못했어요. 담당자를 골라 주세요.',
+      ),
+    ).toBeVisible()
+    await expect(canvas.getByRole('button', { name: '승인' })).toBeDisabled()
+    const select = canvas.getByRole('combobox', { name: '담당자' })
+    await waitFor(() => expect(select).toBeEnabled())
+    await userEvent.selectOptions(select, '박민수')
+    await expect(canvas.getByRole('button', { name: '승인' })).toBeEnabled()
+  },
+}
+
 /** 충돌 — 승인하면 409. 기준값·현재값·제안값과 충돌 필드를 보이고, 다시 승인은 PM 이 누를 때만이다 */
 export const 충돌: Story = {
   args: { approvalId: 'ap_04' },

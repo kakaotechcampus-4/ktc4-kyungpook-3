@@ -34,11 +34,23 @@ function historyText(value: unknown): string | null {
   return typeof value === 'string' ? value : (JSON.stringify(value) ?? null)
 }
 
+/** 답장이 말한 담당자를 팀원에서 찾지 못한 담당자 변경 카드. PM 이 카드에서 담당자를 고른다 (#344, BE #460 합의 대기) */
+function picksAssignee(approval: ApprovalDto): boolean {
+  const payload = approval.payload
+  return (
+    approval.type === 'task_update' &&
+    payload.change_source === 'reminder_reply' &&
+    payload.category === 'assignee' &&
+    !Object.hasOwn(payload, 'assignee_member_id')
+  )
+}
+
 function normalizeOverrides(
-  type: string,
+  approval: ApprovalDto,
   status: unknown,
   value: unknown,
 ): Record<string, unknown> | Failure {
+  const type = approval.type
   if (value === undefined || value === null) return {}
   if (!isRecord(value)) return fail('INVALID_REQUEST', '보완 값이 올바르지 않습니다.', 400)
   if (Object.keys(value).length === 0) return {}
@@ -46,7 +58,7 @@ function normalizeOverrides(
     type === 'task_create'
       ? ['task_title', 'assignee_member_id', 'due_date']
       : type === 'task_update'
-        ? ['status', 'due_date']
+        ? ['status', 'due_date', ...(picksAssignee(approval) ? ['assignee_member_id'] : [])]
         : []
   if (status !== 'approved' || Object.keys(value).some((field) => !allowed.includes(field)))
     return fail('INVALID_REQUEST', '이 요청에서 고칠 수 없는 필드입니다.', 400)
@@ -337,7 +349,7 @@ export const approvalHandlers = [
     if (!approval) return fail('APPROVAL_NOT_FOUND', '승인 요청이 없습니다.', 404)
     const pm = requirePm(approval.workspace_id)
     if (pm instanceof Response) return pm
-    const overrides = normalizeOverrides(approval.type, body.status, body.task_overrides)
+    const overrides = normalizeOverrides(approval, body.status, body.task_overrides)
     if (overrides instanceof Response) return overrides
     if (approval.status !== 'pending')
       return fail('APPROVAL_ALREADY_RESOLVED', '이미 처리된 승인 요청입니다.', 409, {

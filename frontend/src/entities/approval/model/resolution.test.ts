@@ -46,6 +46,7 @@ function updateApproval(overrides: Partial<TaskUpdateApproval> = {}): TaskUpdate
     evidence: { quote: null, speaker: null, speakerMemberId: null, atMs: null },
     meetingId: null,
     replyMessageId: null,
+    assigneePick: null,
     ...overrides,
   }
 }
@@ -202,6 +203,43 @@ describe('생성 승인과 부분 보완', () => {
     expect(
       body(updateApproval(), 'approved', { edits: { kind: 'task_create', values: OVERRIDES } }),
     ).toBeNull()
+  })
+})
+
+describe('담당자를 찾지 못한 답장 카드 (#344, BE #460 합의 대기)', () => {
+  const pickCard = () =>
+    updateApproval({
+      changes: [],
+      category: 'assignee',
+      replyMessageId: 'mg_31',
+      assigneePick: { raw: '민지' },
+    })
+  const pick = (assigneeMemberId: string | null) => ({
+    memberIds: MEMBERS,
+    edits: { kind: 'task_update' as const, values: { assigneeMemberId } },
+  })
+
+  it('담당자를 고르기 전에는 승인할 수 없고 반려는 된다', () => {
+    expect(planApprovalResolution(pickCard(), 'approved', { memberIds: MEMBERS })).toMatchObject({
+      ok: false,
+      reason: '담당자를 골라 주세요.',
+    })
+    expect(body(pickCard(), 'rejected', {})).toEqual({ status: 'rejected' })
+  })
+
+  it('고른 팀원이나 미정(null)을 task_overrides.assignee_member_id 로 보낸다', () => {
+    expect(body(pickCard(), 'approved', pick('mb_02'))).toEqual({
+      status: 'approved',
+      task_overrides: { assignee_member_id: 'mb_02' },
+    })
+    expect(body(pickCard(), 'approved', pick(null))).toEqual({
+      status: 'approved',
+      task_overrides: { assignee_member_id: null },
+    })
+  })
+
+  it('팀원이 아닌 값은 보내지 않는다', () => {
+    expect(body(pickCard(), 'approved', pick('mb_99'))).toBeNull()
   })
 })
 
