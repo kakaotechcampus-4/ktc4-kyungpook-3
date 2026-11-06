@@ -36,7 +36,7 @@
 - 자동 별칭 규칙은 `app/services/member_aliases.py`에 모았다. 라우터(`members.py`, `workspaces.py`)는 부르기만 한다.
   - 이름 별칭은 flush 하지 않고 `member.aliases`에 붙여 팀원과 함께 커밋한다. 같은 디스코드 계정 중복이 `_commit_member`의 409 처리 안에서 나도록 하기 위해서다.
   - 닉네임은 팀원 커밋 뒤 Integration 의 guild ID 를 읽고 `db.commit()`으로 트랜잭션을 닫은 다음 부른다. #270 처럼 외부 호출 동안 DB 연결을 잡지 않기 위해서다. 모든 실패는 경고 로그(토큰·주소 없이)로만 남긴다.
-- 기존 팀원은 데이터 마이그레이션 `1032faab5855`(down_revision `537911f267dc`)가 채운다. 앱 코드가 나중에 바뀌어도 마이그레이션은 그대로여야 해서 규칙을 import 하지 않고 복제했고, 테스트가 앱 `name_alias_forms`와 같은지 비교한다. downgrade 는 `source=display_name` 행을 지운다.
+- 기존 팀원은 데이터 마이그레이션 `1032faab5855`(down_revision `b0d32ee4abcb`, #345 머지 뒤. 열린 PR #454 는 아직 `537911f267dc` 뒤라 머지 때 맞춰야 한다)가 채운다. 앱 코드가 나중에 바뀌어도 마이그레이션은 그대로여야 해서 규칙을 import 하지 않고 복제했고, 테스트가 앱 `name_alias_forms`와 같은지 비교한다. downgrade 는 `source=display_name` 행을 지운다.
 - "님" 꼴("동우님")은 별칭으로 넣지 않는다. 찾을 때 "님"을 떼므로 필요 없고, 봇 힌트도 `member_forms`가 따로 만든다.
 
 ## 장단점과 감수한 제약

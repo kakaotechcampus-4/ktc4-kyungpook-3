@@ -14,7 +14,7 @@ downgrade 는 source=display_name 별칭을 모두 지운다. 이 마이그레�
 없었으므로(앱이 이 값을 쓰기 시작한 것이 같은 변경이다) 되돌려도 다른 별칭은 남는다.
 
 Revision ID: 1032faab5855
-Revises: 537911f267dc
+Revises: b0d32ee4abcb
 Create Date: 2026-11-06 15:00:00.000000
 
 """
@@ -29,7 +29,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = '1032faab5855'
-down_revision: Union[str, Sequence[str], None] = '537911f267dc'
+down_revision: Union[str, Sequence[str], None] = 'b0d32ee4abcb'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
