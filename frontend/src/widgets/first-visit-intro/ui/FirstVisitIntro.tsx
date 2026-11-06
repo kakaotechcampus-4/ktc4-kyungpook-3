@@ -1,5 +1,6 @@
 import * as DialogPrimitive from '@radix-ui/react-dialog'
 import { useEffect, useState, useSyncExternalStore } from 'react'
+import { useSplashCovering } from '@/shared/lib/splash'
 import { Button } from '@/shared/ui/button'
 import { Mascot } from '@/shared/ui/mascot'
 
@@ -43,9 +44,11 @@ export interface FirstVisitIntroProps {
  * 화면 전체를 덮는 대화상자라 포커스가 안에 갇히고 Esc 는 건너뛰기와 같다.
  */
 export function FirstVisitIntro({ open, onClose }: FirstVisitIntroProps) {
+  // 스플래시가 걷힐 때까지 열지 않는다. 포커스·말풍선 시간·닫기 기록이 실제로 보인 때부터 시작한다
+  const covering = useSplashCovering()
   return (
     <DialogPrimitive.Root
-      open={open}
+      open={open && !covering}
       onOpenChange={(next) => {
         if (!next) onClose()
       }}
