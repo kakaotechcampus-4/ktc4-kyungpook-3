@@ -11,7 +11,7 @@ from capture import handoff as H
 from capture import recorder as R
 from capture.streaming_sink import StreamingSink
 from stt.backend import SttResult, Word
-from tests.capture.fake_be import FakeBe
+from tests.capture.fake_be import FakeBe, without_stage
 
 GUILD_ID = 77
 ROOM_ID = 5
@@ -305,10 +305,11 @@ async def test_record_creates_the_be_meeting_and_the_worker_hands_the_tasks_off(
     await _worker(tmp_path, extractor=first_person_extractor, handoff=handoff).run_pass()
     m = _manifest(tmp_path, rec)
     assert m["status"] == "handed_off" and set(m["stages"]) == {"transcribed", "sourced", "extracted", "handed_off"}
-    assert [c[1] for c in fake.calls] == [f"/integrations/discord/guilds/{GUILD_ID}/workspace", "/meetings",
-                                          "/meetings/m1/end", "/workspaces/ws-1/members/names",
-                                          "/meetings/m1/sources", "/extractions"]
-    sent = fake.calls[5][2]["items"][0]
+    calls = without_stage(fake.calls)                  # 단계 보고(진행 표시)는 흐름 단정에서 뺀다
+    assert [c[1] for c in calls] == [f"/integrations/discord/guilds/{GUILD_ID}/workspace", "/meetings",
+                                     "/meetings/m1/end", "/workspaces/ws-1/members/names",
+                                     "/meetings/m1/sources", "/extractions"]
+    sent = calls[5][2]["items"][0]
     assert sent["evidence_speaker"] == "1" and sent["assignee_type"] == "first" and sent["assignee_raw"] is None
     await cog._drain_outbox()
     assert [t.split(" ", 1)[0] for t, _ in channel.sent][-5:] == ["⏳", "📝", "🗂", "📋", "📨"]

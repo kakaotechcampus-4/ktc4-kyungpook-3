@@ -49,6 +49,7 @@ describe('설정의 브라우저 푸시 (#330)', () => {
     const { control } = await openSettings()
     const enable = await within(control).findByRole('button', { name: '브라우저 알림 켜기' })
     await waitFor(() => expect(enable).toBeEnabled())
+    expect(control).toHaveTextContent('켜면 새 알림이 올 때 이 기기로 바로 알려 드려요.')
     expect(browser.notification.requestPermission).not.toHaveBeenCalled()
 
     await user.click(enable)

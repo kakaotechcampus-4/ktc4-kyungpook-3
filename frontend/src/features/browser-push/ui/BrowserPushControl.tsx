@@ -14,7 +14,7 @@ function message(state: PushState): string {
     case 'idle':
       return state.publicKey === null
         ? '이 기기에서 알림을 받을 수 있는지 확인하고 있어요.'
-        : '켜면 이 브라우저를 닫아도 새 알림을 받아요.'
+        : '켜면 새 알림이 올 때 이 기기로 바로 알려 드려요.'
     case 'denied':
       return '알림이 막혀 있어요. 브라우저 설정에서 이 사이트의 알림을 허용해 주세요.'
     case 'subscribing':
