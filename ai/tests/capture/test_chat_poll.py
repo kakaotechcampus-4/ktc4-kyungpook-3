@@ -1,3 +1,4 @@
+import json
 from datetime import date, datetime, timedelta, timezone
 from types import SimpleNamespace
 
@@ -245,7 +246,9 @@ def test_dry_run_writes_nothing_to_be(tmp_path, monkeypatch):
     assert poll(reader, client, FakeExtract([{"action": "create", "task_title": "로그인"}]),
                 workspace_id="ws-1", now=NOW, cfg=CFG, dry_run=True) == 0
     assert all(m == "GET" for m, _ in _paths(fake))
-    assert len(list(tmp_path.glob("chat_poll_*.json"))) == 1
+    files = list(tmp_path.glob("chat_poll_*.json"))
+    assert len(files) == 1 and files[0].name.startswith("chat_poll_ws-1_")
+    assert json.loads(files[0].read_text(encoding="utf-8"))["workspace_id"] == "ws-1"
 
 
 def test_repeated_failure_on_same_cursor_warns(capsys):
@@ -437,3 +440,57 @@ def test_entry_missing_key_fails_only_that_entry():
     rc = poll_all([{"workspace_id": "ws-1"}, CHANNELS[1]], lambda cid: readers[cid], client, FakeExtract(),
                   now=NOW, cfg=CFG)
     assert rc == 1 and _meeting_workspaces(fake) == ["ws-2"]
+
+
+def _main_env(monkeypatch, *, token="tok", channels=None, error=None):
+    import capture.chat_poll as cp
+    from capture import handoff, judge_path
+
+    seen = {}
+    cfg = SimpleNamespace(discord_bot_token=token, be_base_url="http://be.local", be_service_token="s")
+
+    class StubBe:
+        def __init__(self, *a, **k):
+            pass
+
+        def chat_channels(self):
+            if error:
+                raise error
+            return channels or []
+
+    class StubReader:
+        def __init__(self, tok, cid):
+            seen["reader"] = (tok, cid)
+
+    def fake_poll_all(chs, open_reader, client, extract, **kw):
+        seen["only"] = kw["only"]
+        open_reader(7)
+        return 0
+
+    monkeypatch.setattr(cp, "settings", lambda: cfg)
+    monkeypatch.setattr(handoff, "BeClient", StubBe)
+    monkeypatch.setattr(judge_path, "build_extractor", lambda **k: object())
+    monkeypatch.setattr(cp, "DiscordReader", StubReader)
+    monkeypatch.setattr(cp, "poll_all", fake_poll_all)
+    return cp, seen
+
+
+def test_main_without_bot_token_returns_1(monkeypatch):
+    cp, _ = _main_env(monkeypatch, token="")
+    monkeypatch.setattr("sys.argv", ["chat_poll"])
+    assert cp.main() == 1
+
+
+def test_main_chat_channels_error_returns_1(monkeypatch):
+    from capture.handoff import BeError
+
+    cp, _ = _main_env(monkeypatch, error=BeError("BAD_RESPONSE", "x"))
+    monkeypatch.setattr("sys.argv", ["chat_poll"])
+    assert cp.main() == 1
+
+
+def test_main_passes_workspace_as_only_and_token_to_reader(monkeypatch):
+    cp, seen = _main_env(monkeypatch)
+    monkeypatch.setattr("sys.argv", ["chat_poll", "--workspace", "ws-2"])
+    assert cp.main() == 0
+    assert seen["only"] == "ws-2" and seen["reader"] == ("tok", 7)

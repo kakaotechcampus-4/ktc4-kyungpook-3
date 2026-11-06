@@ -18,7 +18,9 @@
 봇 토큰은 DISCORD_BOT_TOKEN(음성 봇과 같다). 읽을 채널은 BE 가 알려 준다(GET /bot/chat-channels, 워크스페이스마다 하나).
 --workspace 는 그 워크스페이스만. --dry-run 은 BE 에 쓰지 않고 판단만 해 runs/ 에 저장한다.
 워크스페이스 하나가 실패해도 나머지는 돌고 종료 코드는 1 이다. 봇이 채널을 읽을 수 없으면(403·404) 경고하고 건너뛴다(종료 코드 0).
-주의: 동시에 두 번 돌리면 제안이 중복된다. 서버에서 손으로 돌릴 때는 `systemctl start mm-chat-poll.service` 를 쓴다(유닛의 flock 이 타이머 실행과 겹치지 않게 막는다).
+주의: 동시에 두 번 돌리면 제안이 중복된다. 서버에서 손으로 돌릴 때: 전체는 `systemctl start mm-chat-poll.service`,
+한 워크스페이스만이면 `/usr/bin/flock -n /run/lock/mm-chat-poll.lock /opt/mm/ai/.venv/bin/python -m capture.chat_poll --workspace <ID>`
+(flock 이 타이머 실행과 겹치지 않게 막는다).
 실행마다 runs/chat_poll_attempt_<워크스페이스>.json 에 시도를 남기고 성공하면 지운다(_begin_attempt).
 """
 
@@ -208,11 +210,11 @@ def poll(reader: ChannelReader, client, extract, *, workspace_id: str, now: date
         messages = [m for m in messages if m[3] <= limit]
     humans = [m for m in messages if not m[2]]
     if humans and not any(m[4].strip() for m in humans):
-        print("사람 메시지 본문이 전부 비어 있습니다. 개발자 포털에서 Message Content Intent 를 켜세요.", file=sys.stderr)
+        print(f"[chat] ws={ws} 사람 메시지 본문이 전부 비어 있습니다. 개발자 포털에서 Message Content Intent 를 켜세요.", file=sys.stderr)
         return 1
     transcript, names = to_transcript(messages)
     if not transcript.segments:
-        print("새 메시지가 없습니다.")
+        print(f"[chat] ws={ws} 새 메시지가 없습니다.")
         if not dry_run:
             _end_attempt(ws)
         return 0
@@ -237,14 +239,14 @@ def poll(reader: ChannelReader, client, extract, *, workspace_id: str, now: date
         try:
             out = run_extract()
         except JudgeAllFailed as e:
-            print(f"판단 실패: {e}", file=sys.stderr)
+            print(f"[chat] ws={ws} 판단 실패: {e}", file=sys.stderr)
             return 1
         print(f"[items {len(out.items)}건]")
         for i in out.items:
             print(f"  {str(i.get('action')):<6} title={i.get('task_title')!r} due={i.get('due_date')}")
         RUNS_DIR.mkdir(parents=True, exist_ok=True)
-        path = RUNS_DIR / f"chat_poll_{datetime.now():%Y%m%d_%H%M%S}.json"
-        path.write_text(json.dumps({"transcript": transcript.to_dict(), "speaker_names": all_names,
+        path = RUNS_DIR / f"chat_poll_{ws}_{datetime.now():%Y%m%d_%H%M%S}.json"
+        path.write_text(json.dumps({"workspace_id": ws, "transcript": transcript.to_dict(), "speaker_names": all_names,
                                     "context": context.to_dict(), "items": out.items, "failures": out.failures,
                                     "dropped": out.dropped}, ensure_ascii=False, indent=2), encoding="utf-8")
         print(f"결과 저장: {path}")

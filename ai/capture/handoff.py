@@ -125,7 +125,7 @@ class BeClient:
         """채팅 폴링 대상 채널 목록(BE #428 제안). [{"workspace_id", "guild_id", "channel_id"}] 모두 str."""
         data = self._call("GET", "/bot/chat-channels")
         items = data.get("items") if isinstance(data, dict) else None
-        if not isinstance(items, list):
+        if not isinstance(items, list) or not all(isinstance(i, dict) for i in items):
             raise BeError("BAD_RESPONSE", "채팅 채널 응답에 items 목록이 없다")
         return items
 

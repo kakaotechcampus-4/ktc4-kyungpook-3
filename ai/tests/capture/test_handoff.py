@@ -621,6 +621,15 @@ def test_chat_channels_without_items_is_bad_response():
     assert e.value.code == "BAD_RESPONSE"
 
 
+def test_chat_channels_non_dict_item_is_bad_response():
+    fake = FakeBe()
+    fake.chat_channels = ["x"]
+    client = H.BeClient("http://be.local", session=fake, service_token="svc-token")
+    with pytest.raises(H.BeError) as e:
+        client.chat_channels()
+    assert e.value.code == "BAD_RESPONSE"
+
+
 def test_chat_channels_wrong_token_is_unauthenticated():
     with pytest.raises(H.BeError) as e:
         H.BeClient("http://be.local", session=FakeBe(), service_token="틀린 토큰").chat_channels()
