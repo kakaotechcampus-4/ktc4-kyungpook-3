@@ -206,7 +206,7 @@ M7 구현에서 소비하기 시작한 서버 인터페이스다. 「현재 서�
 | 대시보드 조회 | 집계 API 없이 기존 조회를 조립한다(§4.6 철회 유지). 아래 §5.4 | [useDashboardData](../../src/widgets/dashboard/model/useDashboardData.ts) |
 | 프론트 오류 코드 | `EXTRACTION_ITEM_NOT_FOUND`·`AUTO_TASK_NOT_REVERTIBLE`을 추가해 서버 38개와 같다 | [오류 문구](../../src/shared/api/errorMessages.ts) |
 
-`approval_status`는 모델에 옮겼으나 M7 화면 판정에는 쓰지 않는다. 확인 필요 판정은 계속 대기 승인 목록과의 조인이다(§3.1, `pendingItems`).
+`approval_status`는 M7 대시보드의 되돌림 결과(`revertOutcome`)에 쓴다. #419(2026-11-06)부터 회의록 태스크 영역의 반영 판정에도 쓴다. 확인 필요 판정은 계속 대기 승인 목록과의 조인이다(§3.1, `pendingItems`).
 
 #### 모의 서버(MSW)
 
@@ -508,8 +508,10 @@ Content-Disposition: 없음(내려받기 아님). Accept-Ranges: bytes
 - **생성 시점에는** `task_id` 와 `approval_id` 가 배타적으로 채워진다. `gate=auto` 면 `task_id`, `review`·`hold` 면 `approval_id`.
 - **승인 뒤에는 배타적이지 않다.** `PATCH /approvals/{id}` 로 승인하면 백엔드가 `extraction_item.task_id` 를 채우면서
   **`approval_id` 를 비우지 않는다.** 같은 항목이 두 ID 를 동시에 갖는다 → §3.1, §4.0-②-12.
-  화면은 `task_id` 를 우선으로 읽어 `task_id` 가 있으면 `반영됨` 으로 다룬다 (§6).
+  화면은 `task_id` 를 우선으로 읽어 `task_id` 가 있으면 `반영됨` 으로 다룬다 (§6). 아래 #419 대조로 바뀌었다.
 - `assignee.member_id` 가 `null` 이면 `raw` 로 대체 표시한다.
+- **2026-11-06 코드 대조(#419):** 수정 항목(`action: update`)은 생성 시점부터 `task_id` 가 수정 대상 태스크이고, 바꿀 값이 있으면 `TASK_UPDATE` 승인의 `approval_id` 도 함께 있다. 승인 전에도 `task_id` 가 있으므로 `task_id` 만으로는 반영 여부를 알 수 없다. 서버 스키마 설명은 "반영 여부는 `approval_status` 로 본다" 이다([BE 스키마](../../../backend/app/schemas/meeting.py)의 `ExtractionItemResponse.task_id`).
+  화면은 `task_id` 가 있고, `approval_id` 가 없거나 `approval_status` 가 `approved` 일 때만 `반영됨` 으로 다룬다. `approval_id` 가 있는데 `approval_status` 가 `null`(모르는 값)이면 반영으로 보지 않는다. 구현: [extractionView.ts](../../src/entities/extraction/lib/extractionView.ts). MSW 기준 검증, 실서버 미검증.
 - **2026-11-05 코드 대조(#256 A1):** `evidence` 에 `speaker_member_id: string | null` 이 더 온다([BE 스키마](../../../backend/app/schemas/meeting.py)의 `EvidenceInfo`). 업로드 회의는 Discord uid(`speaker`)가 `null` 이고 이 값만 온다. FE 는 근거 화자 이름을 이 팀원 ID 로 먼저 찾고, 없거나 팀원 목록에 없으면 `speaker` uid 로 찾는다. 둘 다 못 찾으면 `알 수 없음` 이다. 구현: [speakerName.ts](../../src/entities/member/lib/speakerName.ts). MSW 기준 검증, 실서버 미검증.
 - **2026-10-17 코드 대조:** 항목에 `reverted_at`·`approval_status` 가 더 온다. auto 항목을 되돌리면 `gate` 는 `auto` 그대로, `task_id` 는 `null`, `approval_id` 는 새 생성 승인이다 — 생성 시점 배타성의 예외다. 되돌리기는 `POST /extractions/{extraction_id}/items/{item_id}/revert` 다 (위 「M7 대시보드·항목 되돌리기 경계」).
 
@@ -706,8 +708,19 @@ Content-Disposition: 없음(내려받기 아님). Accept-Ranges: bytes
 >   - **PM** — `GET /approvals?status=pending` 과 조인한다. 그 목록에 있는 `approval_id` 만 `확인 필요` 다.
 >     승인이든 반려든 닫힌 승인은 목록에서 빠지므로 자동으로 제외된다. 백엔드가 ②-12 를 고쳐도 그대로 맞는다 (§6).
 
-**따라서 `확인 필요` 항목에는 `task_id` 가 없다.** 승인 전까지 태스크 행이 존재하지 않는다.
-식별자는 `approval_id` 뿐이며, 이것이 D-161·D-162 의 근거다.
+> **2026-11-06 코드 대조(#419).** 위 인용의 두 전제가 지금 서버와 다르다.
+>
+> - 응답에 `approval_status`(`pending`·`approved`·`rejected`, 승인이 없으면 `null`)가 있다. 대기와 반려를 항목만으로 구분할 수 있다.
+> - 수정 항목은 승인 전에도 `task_id` 가 수정 대상 태스크다(§2.4). `task_id` 가 있다고 반영된 것이 아니다.
+>
+> 프론트엔드 판정은 다음과 같다. 구현: [extractionView.ts](../../src/entities/extraction/lib/extractionView.ts).
+>
+> - **반영됨** — `task_id` 가 있고, `approval_id` 가 없거나 `approval_status` 가 `approved` 다.
+> - **일반 팀원** — `approval_id` 가 있고 반영되지 않은 항목을 숨긴다. 생성·수정 어느 쪽이든 대기·반려는 보이지 않는다.
+> - **PM** — `확인 필요` 는 반영되지 않은 항목 중 `GET /approvals?status=pending` 의 ID 와 조인한 것이다. 조인은 그대로 둔다. 항목마다 승인의 빠진 값(`missing`)이 필요하기 때문이다.
+
+**따라서 생성 항목의 `확인 필요` 에는 `task_id` 가 없다.** 승인 전까지 태스크 행이 존재하지 않는다.
+식별자는 `approval_id` 뿐이며, 이것이 D-161·D-162 의 근거다. 수정 항목은 `task_id` 가 있지만 `확인하기` 는 똑같이 `approval_id` 로 간다.
 
 승인 직후 프론트엔드가 다시 조회해야 할 것:
 
@@ -1409,11 +1422,11 @@ members 에만 있고 Discord 목록에 없으면      → 비활성 (서버를 
 
 - Notion 미연결이면 업로드 화면으로 보내지 않고 차단 모달을 띄운다 (D-097).
 - 회의록 상세의 `반영된 태스크` 와 `확인이 필요한 일` 은 **`minutes` 가 아니라 `extractions` 에서 온다** (§2.4, §3.1).
-  - `반영된 태스크` — `task_id` 가 있는 항목.
-  - `확인이 필요한 일` — **PM 전용이고 `extractions` 만으로는 판정할 수 없다.** `GET /approvals?workspace_id=&status=pending` 과 조인해
-    그 목록에 있는 `approval_id` 만 고른다. 반려된 항목이 `extraction_item` 에 그대로 남기 때문이다 (§3.1, §4.0-②-12).
-- 일반 팀원에게는 `task_id` 가 없고 `approval_id` 가 있는 항목을 화면에서 제거한다. 개수도 노출하지 않는다 (D-104).
-  대기든 반려든 보여줄 태스크가 없으므로 조인 없이 판정되며, D-163 대로 승인 목록을 부르지 않아도 된다.
+  - `반영된 태스크` — `task_id` 가 있고, `approval_id` 가 없거나 `approval_status` 가 `approved` 인 항목. 수정 항목은 승인 전에도 `task_id` 가 있어 `task_id` 만으로는 고르지 않는다 (#419, §2.4).
+  - `확인이 필요한 일` — **PM 전용이다.** 반영되지 않은 항목 중 `GET /approvals?workspace_id=&status=pending` 과 조인해
+    그 목록에 있는 `approval_id` 만 고른다. 행에 승인의 빠진 값으로 만든 이유를 보이려고 조인을 유지한다 (§3.1, §4.0-②-12).
+- 일반 팀원에게는 `approval_id` 가 있고 반영되지 않은 항목(대기·반려된 생성·수정)을 화면에서 제거한다. 개수도 노출하지 않는다 (D-104).
+  `approval_status` 로 조인 없이 판정되며, D-163 대로 승인 목록을 부르지 않아도 된다.
 - 정리 실패 시 사유를 안내한다. 화자 지정 만료는 해당 회의의 실패 상세로 이동하고 목록에 이력을 남긴다. 나머지 실패 회의는 목록에서 제외한다 (D-091~D-093 개정, §4.4.1).
 
 ### 5.6 태스크 목록 · 보드 · 캘린더 · 간트
@@ -1767,10 +1780,11 @@ FE 연결 (#340, 2026-11-05).
 - **`current_step` 정규화** — 완료 시 빈 문자열 `''` 이 온다 (§4.0-②-4). `null` 과 같게 다룬다.
 - **`display_name` 무시** — 연동의 `display_name` 이 생성 문자열이다 (②-7). 화면은 provider 이름을 쓴다.
 - **빈 `transcript`·`summary`** — `/minutes` 가 스텁이다 (②-11). 빈 배열과 `null` 이 **정상 경로**다. 오류로 다루지 않는다.
-- **`확인 필요` 판정** — 승인·반려 어느 쪽으로 닫혀도 `approval_id` 가 남는다 (②-12). 파생 함수를 둘로 나눈다.
-  - `isUnresolved(item)` = `approval_id != null && task_id == null`. **extraction 단독으로 알 수 있는 한계**다 — 대기와 반려를 구분하지 못한다.
-    일반 팀원 화면(`visibleItems`)은 이것으로 충분하다. 둘 다 숨기는 것이 맞기 때문이다.
-  - `pendingItems(extraction, openApprovalIds)` — PM 전용. `GET /approvals?status=pending` 의 ID 집합을 받아 조인한다.
+- **`확인 필요` 판정** — 승인·반려 어느 쪽으로 닫혀도 `approval_id` 가 남고(②-12), 수정 항목은 승인 전에도 `task_id` 가 있다(#419). 반영 여부는 `approval_status` 로 본다.
+  - `appliedItems(extraction)` — `task_id != null && (approval_id == null || approval_status == 'approved')`.
+  - `isUnresolved(item)` = `approval_id != null` 이고 반영되지 않았다. 대기와 반려를 모두 포함한다.
+    일반 팀원 화면(`visibleItems`)은 이것으로 숨긴다. 둘 다 숨기는 것이 맞기 때문이다.
+  - `pendingItems(extraction, openApprovalIds)` — PM 전용. 반영되지 않은 항목 중 `GET /approvals?status=pending` 의 ID 집합에 있는 것만 고른다.
     `entities → entities` 를 피해 **`ReadonlySet<string>` 만 받고**, 그 집합은 두 엔티티를 모두 보는 `widgets` 가 만든다.
 
 ---
