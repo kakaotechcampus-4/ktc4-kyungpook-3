@@ -10,6 +10,8 @@ from sqlalchemy.pool import StaticPool
 from app.core.database import Base, get_db
 from app.main import app
 from app.models import Member, Session as SessionModel, Task, User, Workspace
+from app.schemas.invitation import normalize_email
+from app.services import oauth_state, signup_codes
 
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
 SERVICE_TOKEN = "test-service-token"
@@ -50,6 +52,20 @@ def mdb(request, monkeypatch):
         session.close()
         Base.metadata.drop_all(engine)
         engine.dispose()
+
+
+@pytest.fixture
+def signup_secret(monkeypatch):
+    """`signup_verified` 가 증명을 서명할 키. 키 없는 경우를 재는 Notion·Discord 테스트 때문에 전역으로 두지 않는다."""
+    monkeypatch.setenv("OAUTH_STATE_SECRET", "k" * 40)
+
+
+def signup_verified(client, email: str, password: str = "pw-123456", name: str = "테스터"):
+    """코드 메일을 거치지 않고 인증을 마친 상태로 가입한다. 코드 흐름은 test_signup_api.py 가 잰다."""
+    proof = oauth_state.seal(signup_codes.PROOF_KIND, 60, {"m": normalize_email(email)})
+    return client.post(
+        "/api/v1/auth/signup", json={"verification_token": proof, "password": password, "name": name}
+    )
 
 
 def _user(db, name: str) -> User:

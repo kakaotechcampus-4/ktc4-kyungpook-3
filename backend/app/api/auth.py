@@ -24,7 +24,8 @@ from app.schemas.auth import (
     SignupRequest,
     UserResponse,
 )
-from app.services import mailer, password_reset, signup_codes
+from app.services import kakao_oauth, mailer, password_reset, signup_codes
+from app.services.kakao_oauth import KakaoIdentity
 from app.services.passwords import hash_password, verify_password
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -98,29 +99,53 @@ def confirm_signup_code(payload: SignupCodeConfirmRequest, db: Session = Depends
     )
 
 
+def _kakao_user_stmt(provider_id: str):
+    return select(User).where(User.provider == kakao_oauth.PROVIDER, User.provider_id == provider_id)
+
+
+def _signup_conflict(db: Session, email: str, kakao: KakaoIdentity | None) -> ErrorCode | None:
+    if db.scalars(by_email_stmt(email)).first() is not None:
+        return ErrorCode.EMAIL_ALREADY_EXISTS
+    if kakao is not None and db.scalars(_kakao_user_stmt(kakao.provider_id)).first() is not None:
+        return ErrorCode.KAKAO_ALREADY_LINKED
+    return None
+
+
 @router.post("/signup", status_code=201, response_model=Envelope[AuthResponse])
-def signup(payload: SignupRequest, response: Response, db: Session = Depends(get_db)):
-    existing = db.query(User).filter(User.email == payload.email).first()
-    if existing:
-        raise AppError(ErrorCode.EMAIL_ALREADY_EXISTS)
+def signup(payload: SignupRequest, request: Request, response: Response, db: Session = Depends(get_db)):
+    kakao = None
+    if payload.link_kakao:
+        kakao = kakao_oauth.read_pending(request.cookies.get(kakao_oauth.PENDING_COOKIE, ""))
+        if kakao is None:
+            raise AppError(ErrorCode.KAKAO_LINK_EXPIRED)
+    email = (kakao.email if kakao else None) or signup_codes.read_proof(payload.verification_token or "")
+    if email is None:
+        raise AppError(ErrorCode.SIGNUP_VERIFICATION_INVALID)
+
+    conflict = _signup_conflict(db, email, kakao)
+    if conflict is not None:
+        raise AppError(conflict)
 
     user = User(
-        email=payload.email,
+        email=email,
         password_hash=hash_password(payload.password),
         name=payload.name,
-        provider="local"
+        provider=kakao_oauth.PROVIDER if kakao else "local",
+        provider_id=kakao.provider_id if kakao else None,
     )
     db.add(user)
     try:
         db.commit()
     except IntegrityError:
-        # 사전 조회와 저장 사이에 같은 이메일이 먼저 가입된 경우. 유일 제약이 막으므로 409 로 돌려준다.
-        # user 테이블의 제약은 PK(서버가 만든 UUID)와 이메일 유일뿐이라 종류를 가리지 않는다. 제약이 늘면 이메일 충돌만 고른다.
+        # PostgreSQL 은 실패한 트랜잭션에서 다시 읽지 못하므로 되돌린 뒤 어느 쪽과 겹쳤는지 찾는다.
         db.rollback()
-        raise AppError(ErrorCode.EMAIL_ALREADY_EXISTS) from None
+        raise AppError(_signup_conflict(db, email, kakao) or ErrorCode.EMAIL_ALREADY_EXISTS) from None
     db.refresh(user)
 
     _create_session(db, user, response)
+    response.delete_cookie(
+        kakao_oauth.PENDING_COOKIE, path=kakao_oauth.PENDING_PATH, httponly=True, secure=True, samesite="lax"
+    )
     return success(_build_auth_response(db, user).model_dump(mode="json"))
 
 def _login_user_stmt(email: str):

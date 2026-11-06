@@ -7,6 +7,9 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.services import mailer, password_reset
+from tests.api.conftest import signup_verified
+
+pytestmark = pytest.mark.usefixtures("signup_secret")
 
 EMAIL = "reset@example.com"
 OLD_PW = "oldpass123"
@@ -47,7 +50,7 @@ def _client():
 
 
 def _signup(c):
-    r = c.post("/api/v1/auth/signup", json={"email": EMAIL, "password": OLD_PW, "name": "r"})
+    r = signup_verified(c, EMAIL, OLD_PW, "r")
     assert r.status_code == 201
 
 
