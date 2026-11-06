@@ -161,12 +161,19 @@ test('화면을 오가도 정리 중 토스트의 펼침이 그대로다', async
 test.describe('768px 미만', () => {
   test.use({ viewport: { width: 390, height: 844 } })
 
-  test('토스트는 대화 영역이 아니라 예전처럼 뷰포트 오른쪽 아래 독에 있다', async ({ page }) => {
+  test('토스트는 대화 영역이 아니라 예전처럼 독에 있고, 독은 아래 탭 막대 위 24px 이다 (#478)', async ({
+    page,
+  }) => {
     await start(page, 'messages-member', '/workspaces/ws_01/messages')
     await expect(pill(page)).toBeVisible()
     await expect(detail(page)).not.toContainText('정리 중')
     await expect(page.getByTestId('pinned-toast-slot')).toContainText('정리 중')
-    const placed = await box(pill(page))
-    expect(390 - (placed.x + placed.width)).toBeCloseTo(24, 0)
+    const bar = await box(page.getByRole('navigation', { name: '주요 화면' }))
+    for (const next of FOLDS) {
+      if (next === 'expanded') await fold(page, next)
+      const placed = await box(toast(page, next))
+      expect(390 - (placed.x + placed.width)).toBeCloseTo(24, 0)
+      expect(bar.y - (placed.y + placed.height)).toBeCloseTo(24, 0)
+    }
   })
 })
