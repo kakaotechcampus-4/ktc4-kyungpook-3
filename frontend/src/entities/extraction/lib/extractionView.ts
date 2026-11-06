@@ -1,25 +1,32 @@
 import type { Extraction, ExtractionItem } from '../model/types'
 
-/** 태스크가 만들어지지 않았고 승인이 걸려 있다.
+/** 태스크에 반영됐다.
  *
- * 대기 중인지 반려됐는지는 **여기서 알 수 없다.** 백엔드는 승인·반려 어느 쪽으로 닫혀도
- * `extraction_item.approval_id` 를 비우지 않고, 반려는 `extraction_item` 을 아예 건드리지 않아
- * 두 경우의 응답이 완전히 같다. `ExtractionItemResponse` 에 승인 상태 필드도 없다
- * (계약 §3.1, §4.0-②-12).
+ * `task_id` 만으로는 알 수 없다. 수정 항목은 승인 전에도 `task_id` 가 수정 대상 태스크이고(#419),
+ * 백엔드는 승인·반려 뒤에도 `approval_id` 를 비우지 않는다(계약 §4.0-②-12). 승인이 걸린 항목은
+ * `approval_status` 가 `approved` 일 때만 반영이다. 모르는 승인 상태(null)는 반영으로 보지 않는다.
  */
+function isApplied(item: ExtractionItem): boolean {
+  return (
+    item.appliedTaskId !== null && (item.approvalId === null || item.approvalStatus === 'approved')
+  )
+}
+
+/** 승인이 걸려 있고 반영되지 않았다. 대기와 반려를 모두 포함한다 (계약 §3.1) */
 export function isUnresolved(item: ExtractionItem): boolean {
-  return item.approvalId !== null && item.appliedTaskId === null
+  return item.approvalId !== null && !isApplied(item)
 }
 
 export function appliedItems(extraction: Extraction): ExtractionItem[] {
-  return extraction.items.filter((item) => item.appliedTaskId !== null)
+  return extraction.items.filter(isApplied)
 }
 
 /** `확인 필요` — PM 전용.
  *
  * `openApprovalIds` 는 `GET /approvals?workspace_id=&status=pending` 의 승인 ID 집합이다.
- * 승인이든 반려든 닫힌 승인은 그 목록에서 빠지므로 자동으로 제외된다.
- * 백엔드가 §4.0-②-12 를 고쳐 `approval_id` 를 비우게 되어도 이 판정은 그대로 맞다.
+ * 행마다 그 승인의 빠진 값으로 이유를 보이므로 `approval_status` 만 보지 않고 대기 목록과 조인한다.
+ * 두 조회의 갱신 시점이 달라 대기 목록에 닫힌 승인 ID 가 남을 수 있다. 반영된 항목과 `rejected` 항목은
+ * 항목 쪽 상태로 뺀다. 모르는 상태(null)는 대기 목록을 따른다.
  *
  * `entities → entities` 를 피해 `Approval` 이 아니라 ID 집합만 받는다. 그 집합은 두 엔티티를
  * 모두 볼 수 있는 `widgets` 가 만든다 (§3-2 의 조인 규칙과 같다).
@@ -30,7 +37,8 @@ export function pendingItems(
 ): ExtractionItem[] {
   return extraction.items.filter(
     (item) =>
-      item.appliedTaskId === null &&
+      !isApplied(item) &&
+      item.approvalStatus !== 'rejected' &&
       item.approvalId !== null &&
       openApprovalIds.has(item.approvalId),
   )
@@ -38,7 +46,7 @@ export function pendingItems(
 
 /** 일반 팀원에게는 해결되지 않은 항목을 숨긴다. 개수에서도 뺀다 (D-104).
  *
- * 여기서는 조인이 필요 없다. 대기든 반려든 보여줄 태스크가 없어 둘 다 숨기는 것이 맞고,
+ * 대기든 반려든 반영된 태스크가 없어 둘 다 숨기는 것이 맞다. `approval_status` 로 판정하므로
  * D-163 대로 일반 팀원은 승인 목록을 조회하지 않는다.
  */
 export function visibleItems(extraction: Extraction, canReview: boolean): ExtractionItem[] {
