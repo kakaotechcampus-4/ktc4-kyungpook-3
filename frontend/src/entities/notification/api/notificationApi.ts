@@ -8,6 +8,9 @@ import type { NotificationList } from '../model/types'
 /** 새 알림을 놓치지 않을 만큼만 다시 받는다. 푸시를 켜지 않은 기기는 이 간격으로 배지가 바뀐다 */
 const NOTIFICATION_POLL_MS = 30_000
 
+/** 한 번에 받는 최신 알림 수. 서버 기본값과 같지만 목록이 잘리는 경계를 FE 가 알도록 직접 보낸다 */
+export const NOTIFICATION_LIST_LIMIT = 50
+
 const listSchema = z.object({
   items: z.array(z.unknown()),
   unread_count: z.number().int().nonnegative(),
@@ -23,6 +26,7 @@ export async function fetchNotifications(
 ): Promise<NotificationList> {
   const response = listSchema.parse(
     await request<unknown>(`/workspaces/${encodeURIComponent(workspaceId)}/notifications`, {
+      params: { limit: NOTIFICATION_LIST_LIMIT },
       signal,
     }),
   )

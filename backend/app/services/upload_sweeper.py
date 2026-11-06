@@ -7,6 +7,7 @@ AI 가 업로드를 가져간 뒤 죽거나 PM 이 화자 지정을 하지 않�
   가장 늦은 것)에서 CLAIM_STALL_SECONDS 가 지나면 failed_stage=diarize
 - 화자 지정 대기(awaiting_speakers): 라벨 보고 시각에서 SPEAKER_ASSIGNMENT_TTL_SECONDS 가 지나면
   failed_stage=speaker_assignment_expired. 3시간 규칙은 쓰지 않는다
+- 채팅 회의가 /end 뒤 CHAT_STALL_SECONDS 가 지나도록 processing: failed_stage=chat_stalled
 - 아직 가져가지 않은 업로드, Discord 회의, 끝난 회의는 대상이 아니다
 
 회의마다 조건부 UPDATE 한 번으로 바꾼다. 후보를 고른 뒤 AI 의 보고나 PM 의 제출이 먼저 반영되면 UPDATE 가
@@ -27,7 +28,9 @@ logger = logging.getLogger(__name__)
 
 CLAIM_STALL_SECONDS = 3 * 3600
 SPEAKER_ASSIGNMENT_TTL_SECONDS = 7 * 86400
+CHAT_STALL_SECONDS = 3 * 3600   # 채팅 폴러는 TimeoutStartSec=1h 라 3시간이면 죽은 것이다
 FAILED_STAGE_STALLED = "diarize"
+FAILED_STAGE_CHAT = "chat_stalled"
 FAILED_STAGE_EXPIRED = "speaker_assignment_expired"
 
 
@@ -73,12 +76,23 @@ def _expired_condition(cutoff: datetime):
     )
 
 
+def _chat_stalled_condition(cutoff: datetime):
+    """채팅 회의가 /end 뒤 cutoff 가 지나도록 processing 에 머문다(폴러가 /fail 도 못 보내고 죽은 경우)."""
+    return and_(
+        Meeting.source == str(MeetingSource.CHAT),
+        Meeting.status == str(MeetingStatus.PROCESSING),
+        Meeting.ended_at.is_not(None),
+        Meeting.ended_at < cutoff,
+    )
+
+
 def sweep_stalled_uploads(db: Session, now: datetime | None = None) -> list[tuple[str, str]]:
     """멈춘 업로드 회의를 failed 로 바꾸고 (meeting_id, failed_stage) 목록을 돌려준다."""
     now = now or datetime.now(timezone.utc)
     rules = [
         (_stalled_condition, now - timedelta(seconds=CLAIM_STALL_SECONDS), FAILED_STAGE_STALLED),
         (_expired_condition, now - timedelta(seconds=SPEAKER_ASSIGNMENT_TTL_SECONDS), FAILED_STAGE_EXPIRED),
+        (_chat_stalled_condition, now - timedelta(seconds=CHAT_STALL_SECONDS), FAILED_STAGE_CHAT),
     ]
     swept: list[tuple[str, str]] = []
     for condition, cutoff, failed_stage in rules:

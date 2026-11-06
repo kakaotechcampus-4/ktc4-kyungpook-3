@@ -1,8 +1,19 @@
+import { QueryObserver } from '@tanstack/react-query'
+import type { QueryClient } from '@tanstack/react-query'
 import { http } from 'msw'
+import { createQueryClient } from '@/shared/api/queryClient'
+import { endSessionScope } from '@/shared/api/sessionScope'
 import { ok } from '@/shared/mock/envelope'
 import { server } from '@/shared/mock/server'
+import { recordRequests } from '@/shared/test/requests'
+import type { RecordedRequest } from '@/shared/test/requests'
 import type { BundleDto, ReminderDto } from '@/shared/types/api/message'
-import { createReminder, requestMessageAction } from './messageQueries'
+import {
+  createReminder,
+  messageInboxQueryOptions,
+  messageThreadQueryOptions,
+  requestMessageAction,
+} from './messageQueries'
 
 /* 행동 종류마다 서버가 받는 경로·본문과, 응답을 읽은 결과. 서버 상태 규칙은 shared/mock 의 테스트가 본다 */
 
@@ -164,4 +175,52 @@ describe('재촉 만들기', () => {
     expect(created.bundle).toMatchObject({ id: 'bd_02', recipientName: '정하늘' })
     expect(created.bundle.tasks.map(({ reminderId }) => reminderId)).toEqual(['rm_02'])
   })
+})
+
+describe('초안을 기다리는 조회는 옵션을 만든 세션에 묶인다', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  const messageReads = (requests: readonly RecordedRequest[]) =>
+    requests.filter(({ path }) => path.startsWith('/workspaces/ws_01/messages'))
+
+  interface Observed {
+    subscribe: (listener: () => void) => () => void
+    getCurrentResult: () => { data: unknown }
+  }
+
+  it.each<[string, (client: QueryClient) => Observed]>([
+    ['목록', (client) => new QueryObserver(client, messageInboxQueryOptions('ws_01'))],
+    ['대화', (client) => new QueryObserver(client, messageThreadQueryOptions('ws_01', 'th_03'))],
+  ])(
+    '%s: 세션이 끝난 뒤에도 구독 중인 이전 관찰자는 다시 받지 않고, 새 세션의 구독은 받고 10초마다 다시 받는다',
+    async (_, observe) => {
+      const client = createQueryClient()
+      const log = recordRequests()
+      const stale = observe(client)
+      const stopStale = stale.subscribe(() => {})
+      onTestFinished(stopStale)
+      await vi.waitFor(() => expect(stale.getCurrentResult().data).toBeDefined())
+      expect(messageReads(log.started)).toHaveLength(1)
+
+      endSessionScope()
+      await client.cancelQueries()
+      client.removeQueries()
+      const ended = log.started.length
+      await vi.advanceTimersByTimeAsync(30_000)
+      expect(messageReads(log.started.slice(ended))).toEqual([])
+      stopStale()
+
+      const fresh = observe(client)
+      onTestFinished(fresh.subscribe(() => {}))
+      await vi.waitFor(() => expect(fresh.getCurrentResult().data).toBeDefined())
+      expect(messageReads(log.started.slice(ended))).toHaveLength(1)
+      await vi.advanceTimersByTimeAsync(10_000)
+      await vi.waitFor(() => expect(messageReads(log.started.slice(ended))).toHaveLength(2))
+    },
+  )
 })

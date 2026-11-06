@@ -231,6 +231,25 @@ describe('목록 안 확인 필요 카드 (시안)', () => {
     expect(tab('확인 필요')).toHaveTextContent('2')
   })
 
+  it('팀원이 아닌 담당자로 승인이 막힌 칸은 포커스 선도 포인트 빨강이다 (#423)', async () => {
+    const user = userEvent.setup()
+    const outsider = db.approvals.find(
+      ({ status, workspace_id, type }) =>
+        status === 'pending' && workspace_id === 'ws_01' && type === 'task_create',
+    )!
+    Object.assign(outsider.payload, { assignee_member_id: 'mb_99' })
+    await openList(`${paths.tasks('ws_01')}?tab=needs_review`)
+    const list = screen.getByRole('list', { name: '확인 필요 목록' })
+    for (const fill of within(list).queryAllByRole('button', { name: '직접 채우기' }))
+      await user.click(fill)
+    const selects = await within(list).findAllByRole('combobox', { name: /담당자/ })
+    const blocked = selects.filter((each) => each.getAttribute('aria-invalid') === 'true')
+    expect(blocked).toHaveLength(1)
+    expect(blocked[0]).toHaveClass('border-accent', 'focus-visible:outline-accent-point')
+    for (const select of selects.filter((each) => !blocked.includes(each)))
+      expect(select).not.toHaveClass('focus-visible:outline-accent-point')
+  })
+
   describe('근거 시각 (#397)', () => {
     const NEEDS_REVIEW = `${paths.tasks('ws_01')}?tab=needs_review`
     const card = (title: string) => {

@@ -685,9 +685,14 @@ def claim_for_bot(db: Session, now: datetime) -> list[ClaimedMessage]:
     ).all()
     claimed = []
     for message in pending:
+        member = message.thread.member
+        if member.is_deleted or not member.discord_user_id:
+            # 발송 요청을 만든 뒤 연결이 끊기거나 탈퇴했다. 이 메시지만 닫고 같은 배치의 나머지는 준다.
+            message.dm_status = DmStatus.FAILED
+            message.dm_failure_reason = DmFailureReason.DISCORD_NOT_LINKED
+            continue
         message.dm_status = DmStatus.CLAIMED
         message.claimed_at = now
-        member = message.thread.member
         claimed.append(ClaimedMessage(message, message.thread.workspace_id, member.member_id, member.discord_user_id))
     db.flush()
     return claimed

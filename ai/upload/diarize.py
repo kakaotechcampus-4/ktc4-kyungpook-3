@@ -30,8 +30,21 @@ class Segment:
     label: str
 
 
+class JobNotFound(LookupError):
+    """분리 job 이 서버에 없다(404). 만료됐거나 잘못된 id 라 더 기다려도 소용없다."""
+
+
 class Diarizer(Protocol):
     def diarize(self, path: Path) -> list[Segment]: ...
+
+    def submit(self, path: Path) -> str:
+        """파일을 올리고 분리 job 을 만들어 job_id 를 돌려준다. 기다리지 않는다."""
+        ...
+
+    def fetch(self, job_id: str) -> list[Segment] | None:
+        """job 을 한 번 조회한다. 끝났으면 normalize 전 구간, 진행 중이면 None.
+        실패·취소는 RuntimeError, job 이 없으면 JobNotFound."""
+        ...
 
 
 def normalize(segments: list[Segment], total_s: float) -> list[Segment]:
@@ -104,12 +117,15 @@ class PyannoteAiDiarizer:
                 errors += 1
                 self._sleep(self._poll_s)
 
-    def diarize(self, path: Path) -> list[Segment]:
+    def _headers(self) -> dict:
         key = self._key or os.environ.get("PYANNOTEAI_API_KEY", "").strip()
         if not key:
             raise RuntimeError("PYANNOTEAI_API_KEY 환경변수가 없습니다.")
+        return {"Authorization": f"Bearer {key}"}
+
+    def submit(self, path: Path) -> str:
+        headers = self._headers()
         http = self._http()
-        headers = {"Authorization": f"Bearer {key}"}
         media = f"media://mm-upload/{uuid.uuid4().hex}"
 
         r = http.post(f"{API}/v1/media/input", json={"url": media}, headers=headers, timeout=HTTP_TIMEOUT_S)
@@ -119,19 +135,33 @@ class PyannoteAiDiarizer:
 
         r = http.post(f"{API}/v1/diarize", json={"url": media}, headers=headers, timeout=HTTP_TIMEOUT_S)
         r.raise_for_status()
-        job_id = r.json()["jobId"]
+        return r.json()["jobId"]
 
+    def fetch(self, job_id: str) -> list[Segment] | None:
+        headers = self._headers()
+        try:
+            body = self._poll(self._http(), f"{API}/v1/jobs/{job_id}", headers)
+        except Exception as exc:
+            if getattr(getattr(exc, "response", None), "status_code", None) == 404:
+                raise JobNotFound(f"pyannoteAI job 이 없다 (job {job_id})") from exc
+            raise
+        status = body.get("status")
+        if status == "succeeded":
+            return [
+                Segment(float(d["start"]), float(d["end"]), str(d["speaker"]))
+                for d in (body.get("output") or {}).get("diarization", [])
+            ]
+        if status in ("failed", "canceled"):
+            raise RuntimeError(f"pyannoteAI 화자 분리 {status} (job {job_id})")
+        return None
+
+    def diarize(self, path: Path) -> list[Segment]:
+        job_id = self.submit(path)
         waited = 0.0
         while True:
-            body = self._poll(http, f"{API}/v1/jobs/{job_id}", headers)
-            status = body.get("status")
-            if status == "succeeded":
-                return [
-                    Segment(float(d["start"]), float(d["end"]), str(d["speaker"]))
-                    for d in (body.get("output") or {}).get("diarization", [])
-                ]
-            if status in ("failed", "canceled"):
-                raise RuntimeError(f"pyannoteAI 화자 분리 {status} (job {job_id})")
+            segs = self.fetch(job_id)
+            if segs is not None:
+                return segs
             if waited >= self._timeout_s:
                 raise TimeoutError(f"pyannoteAI 화자 분리가 {self._timeout_s:.0f}초 안에 끝나지 않았다 (job {job_id})")
             self._sleep(self._poll_s)

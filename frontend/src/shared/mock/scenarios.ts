@@ -53,6 +53,8 @@ export const MOCK_SCENARIOS = [
   'approval-scope',
   // #397 채팅 회의(mt_08)에서 나온 생성 승인 ap_07. 근거 시각이 실제 작성 시각이다
   'approval-chat',
+  // #419 회의록 mt_09 의 수정 제안 it_08(tk_04 마감 변경). 승인 전에도 task_id 가 tk_04 다
+  'minutes-edit-pending',
   'notion-sync-pending',
   'notion-sync-failed',
   'tasks-member',
@@ -377,6 +379,62 @@ function addScopeChanges(state: MockDb): void {
 }
 
 /**
+ * 회의 mt_09 에서 나온 수정 제안. 백엔드 수정 항목처럼 추출 항목의 task_id 는 승인 전에도 대상 태스크 tk_04 이고,
+ * 반영 여부는 조회 handler 가 채우는 approval_status 로만 알 수 있다 (#419)
+ */
+function addEditProposal(state: MockDb): void {
+  const task = taskOf(state, 'tk_04')
+  const extraction = state.extractions.find(({ extraction_id }) => extraction_id === 'ex_01')
+  if (!extraction) throw new Error('mock extraction ex_01 is missing')
+  const quote = '배포 스크립트는 26일까지로 미룰게요.'
+  extraction.items.push({
+    item_id: 'it_08',
+    task: { title: task.title, confidence: 0.9 },
+    assignee: {
+      raw: '김서연',
+      member_id: 'mb_01',
+      display_name: '김서연',
+      confidence: 0.95,
+      needs_check: false,
+    },
+    due_date: { value: '2026-09-26', raw: '26일', confidence: 0.9 },
+    confidence: 0.9,
+    gate: 'review',
+    evidence: { quote, speaker: '1123', speaker_member_id: 'mb_01', at_ms: 190_000 },
+    reverted_at: null,
+    task_id: task.task_id,
+    approval_id: 'ap_08',
+    approval_status: 'pending',
+  })
+  state.approvals.push({
+    approval_id: 'ap_08',
+    workspace_id: 'ws_01',
+    type: 'task_update',
+    payload: {
+      due_date: '2026-09-26',
+      base_values: { due_date: task.due_date },
+      base_task_version: task.version,
+      base_title: task.title,
+      task_title: task.title,
+      due_raw: '26일',
+      evidence_quote: quote,
+      evidence_speaker: '1123',
+      evidence_speaker_member_id: 'mb_01',
+      evidence_at_ms: 190_000,
+      extraction_item_id: 'it_08',
+      meeting_id: 'mt_09',
+      gate: 'review',
+    },
+    related_task_id: task.task_id,
+    requested_by: null,
+    status: 'pending',
+    resolved_by: null,
+    created_at: '2026-09-17T04:00:00Z',
+    resolved_at: null,
+  })
+}
+
+/**
  * 채팅 회의 mt_08 에서 나온 생성 승인 (#378). 근거 오프셋 34_080_000 은 첫 메시지부터 9시간 28분 뒤라
  * 녹음 위치로 읽으면 `9:28:00`, 실제 작성 시각으로 읽으면 `09/11 18:40` 이다 (#397)
  */
@@ -594,6 +652,10 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
     case 'approval-chat':
       signInWith(state, ['ws_01'], 'ws_01')
       addChatApproval(state)
+      break
+    case 'minutes-edit-pending':
+      signInWith(state, ['ws_01'], 'ws_01')
+      addEditProposal(state)
       break
     case 'notion-sync-pending':
       // tk_04 가 반영 대기다. synced 로 넘기는 워커는 없다 — 테스트가 필드를 직접 바꾼다

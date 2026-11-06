@@ -36,9 +36,9 @@ const REVIEW_SUMMARY =
   'text-caption leading-[1.55] wrap-anywhere text-dim group-aria-[current=page]:text-sub'
 const THREAD_ROW =
   'group flex w-full items-center gap-10 rounded-10 px-12 py-9 text-left hover:bg-surface-sunken aria-[current=page]:bg-surface-selected'
-/* DM 못 보냄 — 대화 머리의 답장 대기 배지와 같은 강조색 면 */
+/* DM 못 보냄. 대화 머리의 답장 대기 배지와 같은 연한 레드 면 */
 const DM_FAILED_CHIP =
-  'inline-flex h-22 shrink-0 items-center rounded-6 bg-accent px-9 text-meta leading-none font-semibold text-surface'
+  'inline-flex h-22 shrink-0 items-center rounded-6 bg-accent-badge px-9 text-meta leading-none font-semibold text-accent'
 const AVATAR =
   'inline-flex shrink-0 items-center justify-center rounded-999 bg-divider font-semibold text-ink'
 const DATE = 'mono text-[11px] text-dim'

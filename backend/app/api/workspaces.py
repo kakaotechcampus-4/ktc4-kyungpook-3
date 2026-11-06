@@ -270,7 +270,9 @@ def upload_meeting(
     """
     processing = db.query(Meeting).filter(
         Meeting.workspace_id == workspace_id, 
-        Meeting.status == MeetingStatus.PROCESSING
+        Meeting.status == MeetingStatus.PROCESSING,
+        # 채팅 회의는 처리 중으로 오래 남을 수 있어 녹음 업로드를 막지 않는다
+        Meeting.source != MeetingSource.CHAT,
     ).first()
     if processing:
         raise AppError(
@@ -361,6 +363,7 @@ def upload_meeting(
             select(Meeting.meeting_id).where(
                 Meeting.workspace_id == workspace_id,
                 Meeting.status == str(MeetingStatus.PROCESSING),
+                Meeting.source != MeetingSource.CHAT,
             )
         )
         if busy_id is not None:

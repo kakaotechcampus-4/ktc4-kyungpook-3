@@ -47,6 +47,8 @@ class ErrorCode(StrEnum):
     LAST_PM_REQUIRED = "LAST_PM_REQUIRED"
     EMBEDDING_UNAVAILABLE = "EMBEDDING_UNAVAILABLE"
     DISCORD_API_FAILED = "DISCORD_API_FAILED"
+    DISCORD_CHANNEL_NOT_FOUND = "DISCORD_CHANNEL_NOT_FOUND"
+    DISCORD_CHANNEL_NOT_ACCESSIBLE = "DISCORD_CHANNEL_NOT_ACCESSIBLE"
     UPLOAD_NOT_CLAIMED = "UPLOAD_NOT_CLAIMED"
     SPEAKERS_ALREADY_REPORTED = "SPEAKERS_ALREADY_REPORTED"
     MEETING_NOT_AWAITING_SPEAKERS = "MEETING_NOT_AWAITING_SPEAKERS"
@@ -80,6 +82,9 @@ class ErrorCode(StrEnum):
     REPLY_JUDGMENT_STALE = "REPLY_JUDGMENT_STALE"
     REPLY_ATTRIBUTION_NOT_NEEDED = "REPLY_ATTRIBUTION_NOT_NEEDED"
     REPLY_CHANGE_NOT_UNDOABLE = "REPLY_CHANGE_NOT_UNDOABLE"
+    # 비밀번호 재설정
+    PASSWORD_RESET_TOKEN_INVALID = "PASSWORD_RESET_TOKEN_INVALID"
+    MAIL_UNAVAILABLE = "MAIL_UNAVAILABLE"
 
 
 ERROR_STATUS: dict[ErrorCode, int] = {
@@ -121,6 +126,8 @@ ERROR_STATUS: dict[ErrorCode, int] = {
     ErrorCode.LAST_PM_REQUIRED: 409,
     ErrorCode.EMBEDDING_UNAVAILABLE: 502,
     ErrorCode.DISCORD_API_FAILED: 502,
+    ErrorCode.DISCORD_CHANNEL_NOT_FOUND: 404,
+    ErrorCode.DISCORD_CHANNEL_NOT_ACCESSIBLE: 409,
     ErrorCode.UPLOAD_NOT_CLAIMED: 409,
     ErrorCode.SPEAKERS_ALREADY_REPORTED: 409,
     ErrorCode.MEETING_NOT_AWAITING_SPEAKERS: 409,
@@ -148,6 +155,8 @@ ERROR_STATUS: dict[ErrorCode, int] = {
     ErrorCode.REPLY_JUDGMENT_STALE: 409,
     ErrorCode.REPLY_ATTRIBUTION_NOT_NEEDED: 409,
     ErrorCode.REPLY_CHANGE_NOT_UNDOABLE: 409,
+    ErrorCode.PASSWORD_RESET_TOKEN_INVALID: 400,
+    ErrorCode.MAIL_UNAVAILABLE: 503,
 }
 
 ERROR_MESSAGE: dict[ErrorCode, str] = {
@@ -188,7 +197,9 @@ ERROR_MESSAGE: dict[ErrorCode, str] = {
     ErrorCode.DISCORD_USER_ALREADY_MAPPED: "이미 다른 팀원에 연결된 Discord 사용자입니다.",
     ErrorCode.LAST_PM_REQUIRED: "워크스페이스에 PM이 한 명은 있어야 합니다. 다른 팀원을 먼저 PM으로 지정해 주세요.",
     ErrorCode.EMBEDDING_UNAVAILABLE: "임베딩 서버 호출에 실패했습니다. 잠시 후 다시 시도해 주세요.",
-    ErrorCode.DISCORD_API_FAILED: "Discord 서버의 사용자 목록을 가져오지 못했습니다. 잠시 후 다시 시도해 주세요.",
+    ErrorCode.DISCORD_API_FAILED: "Discord 요청에 실패했습니다. 잠시 후 다시 시도해 주세요.",
+    ErrorCode.DISCORD_CHANNEL_NOT_FOUND: "연결된 Discord 서버에서 이 텍스트 채널을 찾을 수 없습니다. 목록을 새로고침해 주세요.",
+    ErrorCode.DISCORD_CHANNEL_NOT_ACCESSIBLE: "봇이 이 채널을 읽거나 메시지를 보낼 수 없습니다. 채널 권한에 봇을 추가해 주세요.",
     ErrorCode.UPLOAD_NOT_CLAIMED: "AI가 아직 가져가지 않은 업로드입니다.",
     ErrorCode.SPEAKERS_ALREADY_REPORTED: "이미 화자 목록을 받은 업로드입니다.",
     ErrorCode.MEETING_NOT_AWAITING_SPEAKERS: "회의가 화자 지정 대기 상태가 아닙니다.",
@@ -216,6 +227,8 @@ ERROR_MESSAGE: dict[ErrorCode, str] = {
     ErrorCode.REPLY_JUDGMENT_STALE: "이미 끝났거나 다시 맡긴 판단입니다.",
     ErrorCode.REPLY_ATTRIBUTION_NOT_NEEDED: "태스크를 고를 필요가 없는 답장입니다.",
     ErrorCode.REPLY_CHANGE_NOT_UNDOABLE: "되돌릴 수 없는 답장 변경입니다.",
+    ErrorCode.PASSWORD_RESET_TOKEN_INVALID: "쓸 수 없는 재설정 링크입니다.",
+    ErrorCode.MAIL_UNAVAILABLE: "지금은 메일을 보낼 수 없습니다.",
 }
 
 

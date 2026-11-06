@@ -72,6 +72,12 @@ class ReplyCreateRequest(BaseModel):
     _strip_body = field_validator("body")(_non_blank)
 
 
+class ReminderEvidence(BaseModel):
+    kind: Literal["reply", "task_change"]
+    at: datetime
+    message_id: str | None
+
+
 class ReminderResponse(BaseModel):
     reminder_id: str
     bundle_id: str
@@ -83,6 +89,8 @@ class ReminderResponse(BaseModel):
     kind: str
     origin: str
     created_at: datetime
+    reason: str | None = None
+    evidence: ReminderEvidence | None = None
 
 
 class BundleResponse(BaseModel):
@@ -98,6 +106,7 @@ class BundleResponse(BaseModel):
     body_source: str
     draft_status: str
     draft_version: int
+    summary: str
     reminders: list[ReminderResponse]
 
 

@@ -85,7 +85,10 @@ export function isNotificationListRequest(
   { method, path }: RecordedRequest,
   workspaceId: string = DEFAULT_TRACKER_WORKSPACE,
 ): boolean {
-  return method === 'GET' && path === `/workspaces/${encodeURIComponent(workspaceId)}/notifications`
+  const [pathname] = path.split('?')
+  return (
+    method === 'GET' && pathname === `/workspaces/${encodeURIComponent(workspaceId)}/notifications`
+  )
 }
 
 export interface BusinessRequestOptions {

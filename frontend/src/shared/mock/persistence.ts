@@ -20,9 +20,10 @@ export const MOCK_DB_STORAGE_KEY = 'msw-db'
  * 10: 메시지·알림 설정(`messageSettings`) 칸 추가 (#340).
  * 11: 리마인드에 취소 시각(`cancelled_at`) 칸 추가 (#370). 마지막 태스크를 빼 닫힌 묶음이 함께 취소된 것만 돌려준다.
  * 12: 계정에 공간별 팀원 행(`memberIds`) 칸 추가 (#367). 공간을 만든 계정이 새 PM 행과 이어진다.
+ * 13: 되돌릴 자동 막힘(`autoBlocks`) 칸 추가 (#365). 응답의 `auto_blocked` 를 이력이 아니라 이 기록으로 판정한다.
  * 올리면 e2e/restore.e2e.ts 와 src/shared/mock/taskScenarios.test.ts 의 버전 단언도 같이 고친다 (E2E 는 src 를 가져오지 않는다)
  */
-export const MOCK_DB_VERSION = 12
+export const MOCK_DB_VERSION = 13
 
 interface StoredDb {
   version: number

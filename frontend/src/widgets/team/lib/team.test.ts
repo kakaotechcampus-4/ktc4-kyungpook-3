@@ -4,6 +4,7 @@ import type { Task } from '@/entities/task'
 import { MOCK_TODAY } from '@/shared/mock/fixtures/constants'
 import { discordUserFixtures, memberFixtures } from '@/shared/mock/fixtures/member'
 import { taskFixtures } from '@/shared/mock/fixtures/task'
+import { toTaskResponse } from '@/shared/mock/task-state'
 import {
   avatarText,
   firstAttention,
@@ -22,7 +23,7 @@ import {
  * 픽스처: ws_01 팀원 넷(mb_01 PM), 태스크 10건, 서울 오늘 2026-09-18.
  */
 
-const tasks = taskFixtures.map(toTask)
+const tasks = taskFixtures.map((row) => toTask(toTaskResponse(row)))
 const members = memberFixtures.map(toMember)
 const discordUsers = discordUserFixtures.map(toDiscordUser)
 const base = tasks[0]

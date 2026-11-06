@@ -47,6 +47,7 @@ export function toTask(dto: TaskDto): Task {
     notionPageId: dto.notion_page_id,
     version,
     notionSyncStatus: toNotionSyncStatus(dto.notion_sync_status),
+    autoBlocked: dto.auto_blocked === true,
     createdAt: dto.created_at,
     updatedAt: dto.updated_at,
   }

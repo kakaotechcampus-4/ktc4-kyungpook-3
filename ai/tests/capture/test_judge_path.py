@@ -205,3 +205,23 @@ def test_no_reply_judger_without_settings():
 def test_the_reply_judger_is_judge_reply():
     from judge.reply import judge_reply
     assert J.reply_judger(_cfg()) is judge_reply
+
+
+def test_extract_passes_context_and_dates_to_run():
+    """문맥은 본문과 같은 이름 꼬리표를 달아 넘기고, dates 는 그대로 넘긴다. 둘 다 없으면 run 은 예전 인자만 받는다."""
+    seen = {}
+
+    def run(transcript, *, workspace_id, today, candidates, **extra):
+        seen.update(extra)
+        return SimpleNamespace(items=[], failures=[], dropped=empty_drops())
+
+    extract, _ = _extractor(run)
+    context = Transcript(segments=[TranscriptSegment(speaker="101", start=0.0, end=0.0, text="이전", seq=0)], source="meeting")
+    dates = {2: date(2026, 11, 4)}
+    extract(TRANSCRIPT, NAMES, date(2026, 11, 5), workspace_id="ws-1", context=context, dates=dates)
+    assert [s.speaker for s in seen["context"].segments] == ["민수"]
+    assert seen["dates"] == dates
+
+    seen.clear()
+    extract(TRANSCRIPT, NAMES, date(2026, 11, 5), workspace_id="ws-1")
+    assert seen == {}
