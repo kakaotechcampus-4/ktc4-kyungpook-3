@@ -297,6 +297,7 @@ AUDIO_TOO_LARGE(413)              DISCORD_USER_ALREADY_MAPPED(409)
 ```
 
 - `WORKSPACE_MISMATCH` 는 **400** 이다. 이전 판이 409 로 적은 것은 오류였다.
+- 로그인 시도 제한 `TOO_MANY_LOGIN_ATTEMPTS(429)` 는 BE PR #456 에 있고 병합 전이라 위 목록에 넣지 않았다. FE 는 먼저 반영했다 → §4.1.3.
 - 아래 3개는 **정의만 되고 아직 아무도 던지지 않는다.** 화면은 처리 경로를 갖되 실제로 오는지는 기대하지 않는다 → §4.0.
   `ONBOARDING_INCOMPLETE` · `INTEGRATION_REVOKED` · `AUDIO_TOO_LARGE`
 
@@ -1000,6 +1001,51 @@ MSW 는 **API 를 흉내내므로 100자 기준을 그대로 쓴다.** 여기에
 - MSW: [handler](../../src/shared/mock/handlers/passwordReset.ts), [시나리오](../../src/shared/mock/passwordResetScenarios.ts). 정상·만료·재사용·재요청 무효·재요청 제한·서버 오류(500)·메일 미설정(503)을 고정 토큰으로 재현한다. 개발·MSW 모드에서만 모의 메일함 `/__mock/mail`이 보낸 링크를 보여 준다.
 - 검증: Vitest 단위·통합, 실제 Chromium E2E [password-reset.e2e.ts](../../e2e/password-reset.e2e.ts)(요청 → 모의 메일함 링크 → 변경 → 새 비밀번호 로그인, 만료 링크). BE PR 코드는 읽어서 대조만 했다. 실서버 왕복, 실제 메일 발송, 서버 세션 끊김은 BE 병합·배포와 메일 설정 뒤 확인한다.
 
+#### 4.1.2 가입 이름 규칙 (#446) — BE PR #445 병합됨
+
+제공자는 BE `POST /api/v1/auth/signup`, 소비자는 FE 회원가입 폼이다. 근거는 [#446 요청](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/446)과 [FE 반영 방침](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/446#issuecomment-6690116872) 댓글이다. 서버 구현은 [BE PR #445](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/pull/445)이고 2026-11-06 develop에 병합됐다. 아래 규약은 develop의 `backend/app/schemas/auth.py` `validate_name`을 읽고 대조했다. 배포 서버에 적용됐는지는 확인하지 않았다.
+
+**규약 (BE 코드 기준).** 경로·필드·오류 코드는 그대로다.
+
+- 앞뒤 공백을 지운 이름을 저장한다. 응답 `user.name`도 지운 값이다.
+- 지운 뒤 비었거나, 100자(코드 포인트)를 넘거나, 제어문자(Cc)·서로게이트(Cs)·줄 구분자(Zl·Zp)·글자 방향 제어 문자(U+202A~202E, U+2066~2069)가 있거나, 보이지 않는 글자(Cf·Mn·Me)와 공백(Z*)만 있으면 400 `INVALID_REQUEST`다. `details.fields`는 `[{"loc": ["body", "name"], "msg": "Value error, 이름은 앞뒤 공백을 뺀 1~100자이고 제어문자를 포함할 수 없습니다."}]` 모양이다.
+- 본문 검증이 이메일 중복 확인보다 먼저다. 규칙을 어긴 이름과 이미 있는 이메일이 함께 오면 409 대신 400이다.
+- ZWJ·ZWNJ는 허용한다.
+
+**현재 구현 (2026-11-07).**
+
+- 폼: [signupSchema](../../src/features/auth/model/schemas.ts)가 앞뒤 공백을 지운 뒤 비었으면 「이름을 입력해 주세요.」, 100자를 넘으면 「이름은 100자 이하로 입력해 주세요.」를 이름 칸 아래에 보이고 요청을 보내지 않는다. 길이는 UTF-16 단위로 센다. BE(코드 포인트)보다 엄격해서 폼을 통과한 이름이 길이로 400이 되지 않는다. 이모지 같은 BMP 밖 글자가 많은 이름은 100 코드 포인트 안이어도 폼에서 막힐 수 있다.
+- 폼은 보이지 않는 글자·제어문자를 검사하지 않는다. 그런 이름은 BE 400을 받아 폼 상단에 「요청 내용을 다시 확인해 주세요.」가 보인다. 입력창으로 넣기 어려운 글자라 이번에는 폼 검사를 더하지 않았다.
+- MSW: [가입 handler](../../src/shared/mock/handlers/auth.ts)가 위 규칙과 순서를 따른다. 공백 제거는 Python `str.strip()`과 같은 글자 집합이고 길이는 코드 포인트로 센다. 비밀번호 규칙은 여전히 검사하지 않는다(§4.1.1 「합의와 구현의 차이」).
+- 검증: Vitest(스키마, MSW handler 규칙, 회원가입 화면 통합)와 MSW 모드 브라우저 확인. 실서버 왕복은 확인하지 않았다.
+
+#### 4.1.3 로그인 시도 제한 429 (#457) — 합의됨, BE PR #456 열림·미병합
+
+제공자는 BE `POST /api/v1/auth/login`, 소비자는 FE 로그인 폼이다. 근거는 [#457 요청](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/457)과 [FE 반영 방침](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/457#issuecomment-6690117714) 댓글이다. 서버 구현은 [BE PR #456](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/pull/456)이다. 2026-11-07 확인 당시 PR은 열려 있고 병합 전이다. 아래 규약은 그 PR의 `backend/app/api/auth.py`, `services/login_limit.py`, `core/errors.py`를 읽고 대조했다. 로컬 백엔드나 배포 서버에 적용됐다고 가정하지 않는다.
+
+**규약 (BE PR #456 코드 기준).**
+
+| 상태 | code | message | details | 헤더 |
+|---|---|---|---|---|
+| 429 | `TOO_MANY_LOGIN_ATTEMPTS` | 로그인 시도가 너무 많습니다. 잠시 후 다시 시도해 주세요. | `{"retry_after_seconds": <정수 초>}` | `Retry-After: <같은 값>` |
+
+- 같은 이메일로 15분 안에 10번 실패하거나 같은 IP에서 15분 안에 50번 실패하면 15분 동안 막힌다. 막힌 동안에는 맞는 비밀번호도 429다.
+- 시간이 지나거나 비밀번호 재설정(§4.1.1 confirm)을 마치면 풀린다. 이미 로그인한 세션은 영향이 없다.
+- 있는 이메일과 없는 이메일의 응답이 같다. 화면은 계정이 잠겼다고 단정하면 안 된다.
+- 로그인의 오류는 이로써 400 `INVALID_REQUEST`(본문 검증), 401 `INVALID_CREDENTIALS`, 429 `TOO_MANY_LOGIN_ATTEMPTS`다.
+
+**FE가 정한 동작.** [FE 반영 방침](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/457#issuecomment-6690117714)은 감독 세션이 사용자 대신 정한 기본값이고 사용자 확인 전이다.
+
+- 서버 문구를 그대로 폼 상단 오류로 보인다. 다른 오류 문구의 해요체와 다르다. 남은 시간은 보이지 않는다. `retry_after_seconds`와 `Retry-After`는 읽지 않는다.
+- 로그인 화면의 「비밀번호를 잊으셨나요?」는 이 작업에서 켜지 않는다. #451(PR #458)이 BE 메일 설정 뒤에 켠다.
+
+**현재 구현 (2026-11-07).**
+
+- 오류 코드: `TOO_MANY_LOGIN_ATTEMPTS`를 [오류 코드 목록](../../src/shared/api/errors.ts)과 [문구](../../src/shared/api/errorMessages.ts)에 더했다. [LoginForm](../../src/features/auth/ui/LoginForm.tsx)은 바꾸지 않았다. 401처럼 비필드 오류라 기존 경로로 폼 상단에 보인다. §1 「오류 코드」의 서버 목록은 BE PR 병합 뒤에 고친다.
+- 재시도: [queryClient](../../src/shared/api/queryClient.ts)는 네트워크 오류·408·5xx만 다시 보내고 mutation은 다시 보내지 않는다. 429를 다시 보내지 않는 것은 기존 테스트가 확인한다.
+- MSW: [로그인 handler](../../src/shared/mock/handlers/auth.ts)가 이메일별로 실패를 센다. BE처럼 10번째 실패는 401이고 그 뒤 15분 동안은 맞는 비밀번호도 429이며 `retry_after_seconds`와 `Retry-After`를 같은 값으로 준다. 성공하면 그 이메일의 횟수를 지우고, 재설정 confirm을 마쳐도 지운다. IP 제한과 15분 실패 창은 흉내 내지 않는다. 시나리오 `login-rate-limited`는 `pm@example.com`이 이미 막힌 상태로 시작하고 남은 시간은 900초다.
+- 검증: Vitest(MSW handler 규칙, 로그인 화면 통합)와 MSW 모드 브라우저 확인. 실서버 왕복은 BE PR 병합·배포 뒤 확인한다.
+
 ### 4.2 워크스페이스의 사용자 스코프 · 역할 · 온보딩
 
 ~~`GET /workspaces` 가 **전체 워크스페이스**를 반환한다.~~ **세 가지 모두 PR #59 가 넣었다.** 온보딩만 스텁이다.
@@ -1309,8 +1355,8 @@ MSW 픽스처의 단위이자 M1-C 의 작업 단위이기도 하다.
 | 화면 | 호출 | 상태 |
 |---|---|---|
 | 랜딩 | 없음 | — |
-| 로그인 | `POST /auth/login` | **구현됨** §4.1 |
-| 회원가입 | `POST /auth/signup` | **구현됨** §4.1 — 201 |
+| 로그인 | `POST /auth/login` | **구현됨** §4.1 — 429 시도 제한은 BE PR #456 미병합 §4.1.3 |
+| 회원가입 | `POST /auth/signup` | **구현됨** §4.1 — 201, 이름 규칙 §4.1.2 |
 | 비밀번호 재설정 요청·변경 | `POST /auth/password-reset/request` · `verify` · `confirm` | ❌ **없다** §4.1.1 — BE PR #398 열림·미병합. MSW 로 개발 |
 | Google 로그인 | `GET /auth/google/start?state=` 로 **페이지 이동** | ❌ **없다** §4.1 — M4 에서 버튼 비활성 |
 | 앱 부팅 | `GET /auth/me` | **구현됨** §4.1 |
