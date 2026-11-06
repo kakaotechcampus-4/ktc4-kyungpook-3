@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent, { PointerEventsCheckLevel } from '@testing-library/user-event'
 import { stubViewport } from '@/shared/test/viewport'
 import { Combobox } from './Combobox'
@@ -86,6 +86,23 @@ describe('Combobox', () => {
     expect(active(search)).toBe(rows[0])
     await user.keyboard('{ArrowDown}{Enter}')
     expect(onValueChange).toHaveBeenCalledExactlyOnceWith('profile')
+  })
+
+  it('한글 조합 중의 Enter·화살표는 고르거나 옮기지 않고, 조합이 끝난 뒤 Enter 로 고른다', async () => {
+    const { user, trigger, onValueChange } = renderCombobox()
+    const { search, listbox } = await open(user, trigger)
+    fireEvent.compositionStart(search)
+    fireEvent.change(search, { target: { value: '화면' } })
+    fireEvent.keyDown(search, { key: 'ArrowDown', isComposing: true })
+    fireEvent.keyDown(search, { key: 'Enter', isComposing: true })
+    fireEvent.compositionEnd(search)
+    fireEvent.keyDown(search, { key: 'Enter', keyCode: 229 })
+    expect(onValueChange).not.toHaveBeenCalled()
+    expect(listbox).toBeInTheDocument()
+    expect(active(search)).toHaveAccessibleName('회원가입 화면')
+
+    await user.keyboard('{Enter}')
+    expect(onValueChange).toHaveBeenCalledExactlyOnceWith('signup')
   })
 
   it('맞는 줄이 없으면 안내를 보이고 Enter 는 아무것도 고르지 않는다', async () => {

@@ -152,8 +152,14 @@ describe('메시지 화면의 새 재촉', () => {
         '진행 중 2개',
       ),
     )
+    expect(members.getByRole('option', { name: '김서연' })).toHaveAccessibleDescription(
+      '진행 중 2개',
+    )
     const unlinked = members.getByText('Discord 미연결 · DM 이 나가지 않아요')
     expect(unlinked).toHaveClass('text-accent')
+    expect(members.getByRole('option', { name: '이재환' })).toHaveAccessibleDescription(
+      'Discord 미연결 · DM 이 나가지 않아요',
+    )
     // 고를 수는 있다 — 보낼 때 DM 이 실패로 남는다
     expect(members.getByRole('option', { name: startsWith('이재환') })).not.toHaveAttribute(
       'aria-disabled',
@@ -173,6 +179,10 @@ describe('메시지 화면의 새 재촉', () => {
       '토큰 정리완료한 태스크는 재촉할 수 없어요',
     ])
     expect(within(rows[0]).getByText('09/16 마감 · 기한 지남')).toHaveClass('text-accent')
+    expect(rows[0]).toHaveAccessibleName('회원가입 화면')
+    expect(rows[0]).toHaveAccessibleDescription('09/16 마감 · 기한 지남')
+    expect(rows[1]).toHaveAccessibleDescription('마감 없음 · 할 일')
+    expect(rows[2]).toHaveAccessibleDescription('완료한 태스크는 재촉할 수 없어요')
     expect(rows[2]).toHaveAttribute('aria-disabled', 'true')
     await userEvent.click(rows[2])
     expect(screen.getByRole('listbox')).toBeInTheDocument()

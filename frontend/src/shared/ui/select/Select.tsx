@@ -1,5 +1,5 @@
 import * as RadixSelect from '@radix-ui/react-select'
-import { useId, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import type { FocusEventHandler, ReactNode, Ref } from 'react'
 import { useNarrowViewport } from '@/shared/lib/narrow-viewport'
 import { Icon } from '../icon/Icon'
@@ -70,7 +70,42 @@ const NONE = '__none__'
  * 열면 고른 줄이 목록 가운데에 온다 — 시각처럼 긴 목록에서 고른 값 앞뒤가 함께 보인다. 문구는 전부 props 다.
  */
 export function Select<V extends string>(props: SelectProps<V>) {
-  return useNarrowViewport() ? <SheetSelect {...props} /> : <PopperSelect {...props} />
+  const narrow = useNarrowViewport()
+  const shownNarrow = useRef(narrow)
+  const open = useRef(false)
+  const trigger = useRef<HTMLButtonElement | null>(null)
+  const { ref } = props
+  const setTrigger = useCallback(
+    (node: HTMLButtonElement | null) => {
+      trigger.current = node
+      if (typeof ref === 'function') ref(node)
+      else if (ref) ref.current = node
+    },
+    [ref],
+  )
+
+  // 열린 채 폭이 560 경계를 넘으면 목록 대신 시트(또는 그 반대)가 새로 그려져 열린 목록과 포커스가 함께 사라진다.
+  // 열린 상태는 넘기지 않고 닫힌 채 두되, 포커스는 새 트리거로 돌린다
+  useEffect(() => {
+    if (shownNarrow.current === narrow) return
+    shownNarrow.current = narrow
+    if (!open.current) return
+    open.current = false
+    trigger.current?.focus()
+  }, [narrow])
+
+  const inner = {
+    ...props,
+    ref: setTrigger,
+    onOpenChange: (next: boolean) => {
+      open.current = next
+    },
+  }
+  return narrow ? <SheetSelect {...inner} /> : <PopperSelect {...inner} />
+}
+
+type InnerSelectProps<V extends string> = SelectProps<V> & {
+  onOpenChange: (open: boolean) => void
 }
 
 /** 목록에 놓는 줄 — 「값 없음」 줄이 맨 위다 */
@@ -94,18 +129,25 @@ function fromList<V extends string>(options: readonly SelectOption<V>[], next: s
 /* Radix 2.3.7 의 ItemText·Value 는 className 을 버린다. 그래서 ItemText 에는 글자만 두고 격자 칸은 감싼 span 이 잡으며,
    트리거 내용은 Value 의 children 으로 따로 그린다 */
 function Item({ value, label, leading, description, disabled }: SelectOption<string>) {
+  // Radix 줄의 이름은 ItemText 뿐이다 — 둘째 줄(마감·Discord 미연결·고를 수 없는 이유)은 설명으로 잇는다. OptionList 와 같다
+  const descriptionId = useId()
   return (
     <RadixSelect.Item
       value={value}
       textValue={label}
       disabled={disabled}
+      aria-describedby={description ? descriptionId : undefined}
       className={`${ITEM} ${ITEM_SIZE.menu}`}
     >
       {leading ? <span className={ITEM_LEADING}>{leading}</span> : null}
       <span className={ITEM_LABEL}>
         <RadixSelect.ItemText>{label}</RadixSelect.ItemText>
       </span>
-      {description ? <span className={ITEM_DESCRIPTION}>{description}</span> : null}
+      {description ? (
+        <span id={descriptionId} className={ITEM_DESCRIPTION}>
+          {description}
+        </span>
+      ) : null}
       <RadixSelect.ItemIndicator className={ITEM_CHECK}>
         <Icon name="check" size={16} />
       </RadixSelect.ItemIndicator>
@@ -113,9 +155,10 @@ function Item({ value, label, leading, description, disabled }: SelectOption<str
   )
 }
 
-function PopperSelect<V extends string>(props: SelectProps<V>) {
+function PopperSelect<V extends string>(props: InnerSelectProps<V>) {
   const {
     onValueChange,
+    onOpenChange,
     options,
     placeholder,
     size = 'md',
@@ -142,6 +185,7 @@ function PopperSelect<V extends string>(props: SelectProps<V>) {
       onValueChange={(next) => onValueChange(fromList(options, next))}
       onOpenChange={(open) => {
         if (open) centered.current = false
+        onOpenChange(open)
       }}
       disabled={disabled}
       name={name}
@@ -191,9 +235,10 @@ function PopperSelect<V extends string>(props: SelectProps<V>) {
   )
 }
 
-function SheetSelect<V extends string>(props: SelectProps<V>) {
+function SheetSelect<V extends string>(props: InnerSelectProps<V>) {
   const {
     onValueChange,
+    onOpenChange,
     options,
     label,
     placeholder,
@@ -217,6 +262,7 @@ function SheetSelect<V extends string>(props: SelectProps<V>) {
   function openChange(next: boolean) {
     if (next) setActive(initialActive(items, chosen))
     setOpen(next)
+    onOpenChange(next)
   }
 
   return (
@@ -255,7 +301,7 @@ function SheetSelect<V extends string>(props: SelectProps<V>) {
         active={active}
         onActiveChange={setActive}
         onSelect={(next) => {
-          setOpen(false)
+          openChange(false)
           onValueChange(fromList(options, next))
         }}
         rowSize="sheet"

@@ -90,6 +90,9 @@ export function Combobox<V extends string>({
   }
 
   function handleSearchKey(event: KeyboardEvent<HTMLInputElement>) {
+    // 한글 조합을 확정하는 Enter·조합 중 화살표는 입력기 몫이다. Safari 는 확정 Enter 를 compositionend 뒤에 isComposing 없이
+    // keyCode 229 로만 보낸다
+    if (event.nativeEvent.isComposing || event.keyCode === 229) return
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       event.preventDefault()
       const next = stepActive(visible, active, event.key)
