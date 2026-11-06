@@ -25,7 +25,8 @@ export function WeekAhead({ tasks, names, today }: WeekAheadProps) {
           {monthDayOf(days[0])} — {monthDayOf(days[6])}
         </span>
       </div>
-      <ol className="grid grid-cols-7 gap-8">
+      {/* 휴대폰 폭에서는 칸이 글자 하나 폭으로 줄어든다. 칸 폭을 지키고 이 줄 안에서만 가로로 민다 (D-180) */}
+      <ol className="grid grid-cols-7 gap-8 max-md:grid-cols-[repeat(7,minmax(112px,1fr))] max-md:overflow-x-auto">
         {days.map((date) => {
           const isToday = date === today
           const weekend = isWeekend(date)
