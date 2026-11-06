@@ -5,7 +5,7 @@
 되돌리면 저장된 채팅 채널 설정이 지워진다.
 
 Revision ID: fe08fcbd6dc6
-Revises: c4e9a71b3d52
+Revises: a3d7f91c5e28
 Create Date: 2026-11-06 12:00:00.000000
 
 """
@@ -17,7 +17,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = 'fe08fcbd6dc6'
-down_revision: Union[str, Sequence[str], None] = 'c4e9a71b3d52'
+down_revision: Union[str, Sequence[str], None] = 'a3d7f91c5e28'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

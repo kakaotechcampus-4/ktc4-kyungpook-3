@@ -63,7 +63,7 @@
 
 ## 영향 범위와 재검토 조건
 
-- 코드: `app/services/chat_channel.py`, `app/services/discord.py`, `app/api/integrations.py`, `app/schemas/integration.py`, `app/core/errors.py`, 마이그레이션 `fe08fcbd6dc6`(`down_revision` `c4e9a71b3d52`).
+- 코드: `app/services/chat_channel.py`, `app/services/discord.py`, `app/api/integrations.py`, `app/schemas/integration.py`, `app/core/errors.py`, 마이그레이션 `fe08fcbd6dc6`(`down_revision` `a3d7f91c5e28`, #383 머지 뒤 다시 이음).
 - 계약: [AI 계약](../../../contracts/backend-ai-contract.md#채팅-수집-대상-목록-get-botchat-channels--200)(새 경로, 배포 순서), [Backend README](../../../../README.md#채팅-수집-채널)(경로·에러 코드). FE 쪽 계약 반영은 FE 담당이 #429 로 한다.
 - 재검토 조건
   - 워크스페이스당 채널이 여러 개 필요해질 때(1번: 별도 테이블로 옮기는 것을 검토한다).
