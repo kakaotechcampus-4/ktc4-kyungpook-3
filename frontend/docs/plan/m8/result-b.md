@@ -45,6 +45,18 @@
 - 브라우저(MSW), 네이티브 판: `node .cursor/skills/verify-managers-manager/scripts/verify.cjs run connections --grep '회의 채팅 채널|PM 이 설정에서 Discord|설정·팀 화면은'` 5개 통과(실행 `2026-11-06T18-00-38-939Z-connections-e4dd57f0`, 포트 닫힘 확인). 같은 묶음의 첫 실행은 내가 쓴 토스트 선택자가 두 요소에 맞아 실패했고 선택자를 고친 뒤 통과했다.
 - 공용 선택 상자로 바꾼 뒤(develop `83e31c8a` merge): 같은 명령 5개 통과(실행 `2026-11-06T18-59-27-077Z-connections-0747f369`, 포트 닫힘 확인). 여정은 상자를 키보드(Enter)로 열어 고른다. 바꾼 뒤 `npm run typecheck`·`npm run lint`·`npm run build` exit 0, `npx prettier --check src e2e docs README.md` 통과. 관련 테스트(`settingsConnections`·`settingsPage`·`notionConnection`·`lateAsyncRaces`, `features/integration-connection`, `shared/ui/select`, `entities/integration`, `shared/api`, `shared/mock`)를 `--maxWorkers=1` 로 돌려 41개 파일, 595개 모두 통과했다. 바꾼 뒤 전체 Vitest 는 다시 돌리지 않았다(CI). 화면 증거는 `frontend/.verify/evidence/`(커밋하지 않음).
 
+### 독립 리뷰 반영 (2026-11-07)
+
+Codex 독립 리뷰가 찾은 세 결함을 고쳤다. 각각 고치기 전에 새 단언이 실패하는 것을 확인했다.
+
+| 결함 | 고친 것 | 테스트 |
+|---|---|---|
+| 저장이 `DISCORD_CHANNEL_NOT_FOUND` 로 실패하고 다시 받은 목록에 고른 채널이 없으면, 상자는 빈칸인데 `저장` 이 남아 같은 PUT 을 반복했다 | 고른 채널이 지금 선택지에 없으면 저장한 값으로 돌아간다. 실패 문구는 남아 다시 고르라고 알린다 | 갱신 뒤 상자 표시가 저장값, `저장` 없음, PUT 1회 |
+| 목록 조회가 실패한 채로 Discord 연결을 끊어도 목록 오류와 `다시 시도` 가 남아 미연결 상태에서 목록을 다시 물었다 | 목록 오류는 연결돼 있을 때만 보이고, 다시 시도도 연결을 확인한다 | 목록 오류 뒤 연결 끊기: 미연결 안내만, 추가 GET 없음 |
+| 목록 조회의 `DISCORD_API_FAILED` 본문이 공용 문구(팀원 연결의 사용자 목록 문구)로 나왔다 | `QueryErrorState` 에 본문을 넘기는 선택 prop 을 두고, 칸이 `Discord에서 채널 목록을 가져오지 못했어요.` 를 준다. 공용 문구는 팀원 연결이 그대로 쓴다 | 목록 오류 본문, `QueryErrorState` 본문·취소, 문구 함수 |
+
+- 반영 뒤 `npm run typecheck`·`npm run lint`·`npm run build` exit 0, `npx prettier --check src e2e docs README.md` 통과. 관련 테스트(위 묶음에 `team`·`features/member-mapping`·`shared/ui/query-error-state` 를 더해) 44개 파일, 632개 모두 통과. 브라우저 여정 `verify.cjs run connections`(같은 필터) 5개 통과(실행 `2026-11-06T19-39-04-611Z-connections-cf79a33e`, 포트 닫힘 확인).
+
 ### 계획 대비 변경
 
 - 계획에 이 작업이 없다. 이슈와 지시에 따른 추가 작업이다.
