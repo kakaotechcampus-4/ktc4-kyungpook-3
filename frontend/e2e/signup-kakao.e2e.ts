@@ -70,7 +70,9 @@ async function logOutToLogin(page: Page) {
   await expect(async () => {
     await page.evaluate(() => fetch('/api/v1/auth/logout', { method: 'POST' }))
     await page.goto('/login')
-    await expect(page.getByRole('button', { name: '카카오 로그인' })).toBeVisible({ timeout: 2_000 })
+    await expect(page.getByRole('button', { name: '카카오 로그인' })).toBeVisible({
+      timeout: 2_000,
+    })
   }).toPass({ timeout: 15_000 })
 }
 
@@ -167,4 +169,16 @@ test('휴대폰 폭에서도 인증 화면을 끝까지 쓸 수 있다', async (
     )
     expect(overflow, path).toBe(0)
   }
+})
+
+test('긴 이메일도 휴대폰 코드 단계를 옆으로 밀지 않는다', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 780 })
+  await page.goto('/signup')
+  await page.getByLabel('이메일').fill(`${'longaddress'.repeat(5)}@example.com`)
+  await page.getByRole('button', { name: '인증 코드 받기' }).click()
+  await expect(page.getByLabel('인증 코드')).toBeVisible({ timeout: 15_000 })
+  const overflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  )
+  expect(overflow).toBe(0)
 })

@@ -2,9 +2,7 @@ import { ApiError, ERROR_CODES } from '@/shared/api/errors'
 
 /** 코드를 받지 않은 까닭. `SIGNUP_CODE_INVALID` 의 `details` 다 (계약 §4.1.2) */
 export type SignupCodeProblem =
-  | { reason: 'wrong'; attemptsLeft: number | null }
-  | { reason: 'expired' }
-  | { reason: 'too_many' }
+  { reason: 'wrong'; attemptsLeft: number | null } | { reason: 'expired' } | { reason: 'too_many' }
 
 /** 코드가 틀렸다는 응답이면 까닭을, 다른 실패면 null. 까닭이 없거나 모르는 값이면 횟수를 모르는 `wrong` 이다 */
 export function signupCodeProblem(error: unknown): SignupCodeProblem | null {

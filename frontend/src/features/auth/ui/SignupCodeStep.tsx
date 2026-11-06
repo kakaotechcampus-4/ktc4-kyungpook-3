@@ -18,7 +18,7 @@ import { ResendButton } from './ResendButton'
 
 const FORM = 'flex flex-col gap-16'
 
-const BODY = 'text-body text-ink'
+const BODY = 'text-body wrap-anywhere text-ink'
 
 const LEAD = 'text-[14px] leading-[22px] text-dim'
 
