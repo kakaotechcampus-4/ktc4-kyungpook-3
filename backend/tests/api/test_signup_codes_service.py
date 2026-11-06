@@ -114,6 +114,16 @@ def test_a_code_for_another_email_is_wrong(mdb):
     assert err.details["reason"] == "wrong"
 
 
+def test_same_code_for_two_emails_does_not_match_across_them(mdb, monkeypatch):
+    monkeypatch.setattr(svc.secrets, "randbelow", lambda n: 123456)
+    _request(mdb)
+    _request(mdb, email="other@example.com")
+
+    hashes = mdb.scalars(select(SignupEmailCode.code_hash)).all()
+
+    assert len(set(hashes)) == 2
+
+
 def test_sixth_try_is_refused_even_with_the_right_code(mdb):
     code = _code(_request(mdb))
     for left in (4, 3, 2, 1, 0):

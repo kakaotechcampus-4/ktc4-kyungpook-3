@@ -231,7 +231,7 @@ def _kakao_outcome(db: Session, identity: KakaoIdentity) -> User | Literal["emai
     owner = db.scalars(by_email_stmt(identity.email)).first() if identity.email else None
     if owner is None:
         return "needs_signup"
-    if not identity.email_verified or owner.provider_id is not None:
+    if not identity.email_verified:
         return "email_exists"
     return _link_kakao(db, owner, identity.provider_id)
 
