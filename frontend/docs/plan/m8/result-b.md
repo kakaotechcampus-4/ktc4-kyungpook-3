@@ -24,7 +24,7 @@
 - 응답 타입 [integration.ts](../../../src/shared/types/api/integration.ts)와 엔티티 [연동 API](../../../src/entities/integration/api/integrations.ts): 연결 조회의 `discord.chat_channel` 을 `discord.chatChannel` 로 바꾸고, 채널 목록(`['workspace', id, 'discord-channels']`)·저장·해제를 더했다.
 - 저장 훅 [useChatChannelSetting](../../../src/features/integration-connection/model/useChatChannelSetting.ts): 세션 범위(`captureSessionScope`)를 잡아 세션이 끝났으면 보내지 않고 늦은 응답은 버린다. 성공하면 저장한 공간의 연동 캐시에 결과를 쓰고 다시 받는다. 중복 저장을 막고 자동 재시도는 없다.
 - 실패 문구 [chatChannelMessages.ts](../../../src/features/integration-connection/lib/chatChannelMessages.ts): `DISCORD_CHANNEL_NOT_ACCESSIBLE` 의 `need=read` 는 채널 권한에 봇을 추가하라고, `need=send` 는 메시지 보내기 권한을 주라고 알린다. `DISCORD_CHANNEL_NOT_FOUND` 면 채널 목록을 다시 받는다. 공용 문구 표([errorMessages.ts](../../../src/shared/api/errorMessages.ts))에 두 코드를 더했다.
-- 칸 [ChatChannelField](../../../src/features/integration-connection/ui/ChatChannelField.tsx)와 선택 상자 [ChannelSelect](../../../src/features/integration-connection/ui/ChannelSelect.tsx): Discord 가 연결돼 있지 않으면 비활성과 연결 안내, 켜거나 바꿀 때 저장 전 안내, `저장`·`되돌리기`, 목록 오류의 다시 시도. 선택 상자는 공용 선택 상자(#471)가 develop 에 없어 네이티브 `<select>` 다.
+- 칸 [ChatChannelField](../../../src/features/integration-connection/ui/ChatChannelField.tsx): Discord 가 연결돼 있지 않으면 비활성과 연결 안내, 켜거나 바꿀 때 저장 전 안내, `저장`·`되돌리기`, 목록 오류의 다시 시도. 선택 칸은 공용 선택 상자([Select](../../../src/shared/ui/select/Select.tsx), #471)다. 처음에는 #471 이 develop 에 없어 네이티브 `<select>` 로 붙였고, #471 병합(develop `83e31c8a`) 뒤 develop 을 merge 해 바꿨다. 저장 실패 문구는 `aria-describedby`·`aria-invalid` 로 상자에 잇는다.
 - 연결 끊기 확인 창 [ConnectionActions](../../../src/features/integration-connection/ui/ConnectionActions.tsx): 채팅 채널이 있으면 `회의 채팅 채널(#이름) 수집도 함께 꺼져요.` 를 덧붙인다. 끊은 뒤 캐시의 채팅 채널도 비운다.
 - MSW [handlers/integration.ts](../../../src/shared/mock/handlers/integration.ts): 채널 목록·저장·해제를 BE 순서와 오류 그대로 흉내낸다. 모의 채널 네 개 중 `#운영-비공개` 는 읽기, `#공지` 는 보내기 권한이 없다. Discord 연결 해제는 채팅 채널도 지운다. 모의 DB 버전 15.
 - E2E [settings-team.e2e.ts](../../../e2e/settings-team.e2e.ts)에 고르기·실패 안내·저장·새로고침·끊기 확인 문구 여정을 더했다.
@@ -41,8 +41,9 @@
 
 ### 검증 내역
 
-- 2026-11-07, Node v24.11.0. 검사 결과는 아래 「전체 검사」에 적는다.
-- 브라우저(MSW): `node .cursor/skills/verify-managers-manager/scripts/verify.cjs run connections --grep '회의 채팅 채널|PM 이 설정에서 Discord|설정·팀 화면은'` 5개 통과(실행 `2026-11-06T18-00-38-939Z-connections-e4dd57f0`, 포트 닫힘 확인). 같은 묶음의 첫 실행은 내가 쓴 토스트 선택자가 두 요소에 맞아 실패했고 선택자를 고친 뒤 통과했다. 화면 증거는 `frontend/.verify/evidence/`(커밋하지 않음).
+- 2026-11-07, Node v24.11.0, 네이티브 `<select>` 판(develop merge 전, HEAD `0fef9ca6`). `npm run typecheck`·`npm run lint`·`npm run build` exit 0. `npm run format:check` exit 1 은 git 에서 제외한 로컬 파일 `.verify/reports/issue-428.md`·`issue-429.md` 두 개뿐이고, 바꾼 파일은 `prettier --check` 로 통과했다. `npm run test -- --maxWorkers=1` 은 242개 파일 중 1개, 2,940개 중 1개 실패였다. 실패한 `settingsPage.test.tsx`(알림 설정 실패 토스트 문구가 두 요소에 맞음)는 단독 재실행에서 21개 모두 통과해 부하로 본다.
+- 브라우저(MSW), 네이티브 판: `node .cursor/skills/verify-managers-manager/scripts/verify.cjs run connections --grep '회의 채팅 채널|PM 이 설정에서 Discord|설정·팀 화면은'` 5개 통과(실행 `2026-11-06T18-00-38-939Z-connections-e4dd57f0`, 포트 닫힘 확인). 같은 묶음의 첫 실행은 내가 쓴 토스트 선택자가 두 요소에 맞아 실패했고 선택자를 고친 뒤 통과했다.
+- 공용 선택 상자로 바꾼 뒤(develop `83e31c8a` merge): 같은 명령 5개 통과(실행 `2026-11-06T18-59-27-077Z-connections-0747f369`, 포트 닫힘 확인). 여정은 상자를 키보드(Enter)로 열어 고른다. 바꾼 뒤 `npm run typecheck`·`npm run lint`·`npm run build` exit 0, `npx prettier --check src e2e docs README.md` 통과. 관련 테스트(`settingsConnections`·`settingsPage`·`notionConnection`·`lateAsyncRaces`, `features/integration-connection`, `shared/ui/select`, `entities/integration`, `shared/api`, `shared/mock`)를 `--maxWorkers=1` 로 돌려 41개 파일, 595개 모두 통과했다. 바꾼 뒤 전체 Vitest 는 다시 돌리지 않았다(CI). 화면 증거는 `frontend/.verify/evidence/`(커밋하지 않음).
 
 ### 계획 대비 변경
 
@@ -52,7 +53,6 @@
 ### 남은 작업과 제한 사항
 
 - 실제 BE·Discord 서버와 붙인 저장·공지는 확인하지 않았다. MSW 기준이다.
-- #471 병합 뒤 `ChannelSelect` 를 공용 선택 상자로 바꾼다.
 - 카드의 `채널 바꾸기` 자리 버튼과 이 칸의 뜻이 겹친다. 정리는 제품 결정이 필요하다([결정 기록](basis-for-decision/2026-11-07-chat-channel-save-flow.md)).
 - 안내 문구와 위치는 #429 의 FE 기본값이다. PM·디자인 검토는 받지 않았다.
 - 전체 Storybook play 와 전체 E2E 는 CI 에 맡겼다.
