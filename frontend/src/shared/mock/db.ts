@@ -132,6 +132,13 @@ export interface MockPasswordReset {
   failure: PasswordResetFailure
 }
 
+/** #457 BE login_limit 의 이메일별 행. IP 제한과 15분 실패 창은 흉내 내지 않는다 — 실패는 막히거나 로그인할 때까지 쌓인다 */
+export interface MockLoginLimit {
+  failures: number
+  /** 이 시각(ms)까지 맞는 비밀번호도 429 다. null 이면 막히지 않았다 */
+  blockedUntil: number | null
+}
+
 /** 백엔드에서 막힘을 직접 건(applied) 열린 무응답 감시 기록에 대응한다. 막기 전 상태·사유를 든다 */
 export interface MockAutoBlock {
   prev_status: string
@@ -182,6 +189,8 @@ export interface MockDb {
   push: { publicKey: string | null; subscriptions: MockPushSubscription[] }
   invitations: MockInvitation[]
   passwordReset: MockPasswordReset
+  /** 보낸 이메일 문자열 그대로가 키다 */
+  loginLimit: Record<string, MockLoginLimit>
 }
 /** Vitest 가 테스트마다 돌아가는 상태다. 로그인돼 있고 ws_01·ws_02 에 속한다. 브라우저 시작 상태는 scenarios.ts 가 정한다 */
 export function initialDb(): MockDb {
@@ -220,6 +229,7 @@ export function initialDb(): MockDb {
     push: { publicKey: null, subscriptions: [] },
     invitations: [],
     passwordReset: { tokens: [], nextMailAt: {}, outbox: [], failure: 'none' },
+    loginLimit: {},
   }
 }
 export const db: MockDb = initialDb()

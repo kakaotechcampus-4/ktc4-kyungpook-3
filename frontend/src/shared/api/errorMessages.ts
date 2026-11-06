@@ -9,7 +9,8 @@ export const COMMON_MESSAGES = {
   fallback: '문제가 생겼어요. 잠시 후 다시 시도해 주세요.',
 } as const
 
-/* 서버 코드 전부 (backend core/errors.py). AI 경로에서만 오는 코드는 뺐다(계약 §2.3.1). 비밀번호 재설정의 두 코드는 합의만 됐고 BE 에 아직 없다(계약 §4.1.1) */
+/* 서버 코드 전부 (backend core/errors.py). AI 경로에서만 오는 코드는 뺐다(계약 §2.3.1). 비밀번호 재설정의 두 코드는 합의만 됐고 BE 에 아직 없다(계약 §4.1.1).
+   로그인 시도 제한은 BE PR #456 이 병합 전이고, 서버 문장을 그대로 쓴다 — 남은 시간도 잠금도 말하지 않는다 (#457) */
 const SERVER_MESSAGES: Record<ErrorCode, string> = {
   INVALID_REQUEST: '요청 내용을 다시 확인해 주세요.',
   MEETING_NOT_FOUND: '회의를 찾을 수 없어요.',
@@ -70,6 +71,7 @@ const SERVER_MESSAGES: Record<ErrorCode, string> = {
   MEMBER_HAS_PENDING_INVITATION: '초대를 수락한 뒤 바꾸거나 초대를 취소해 주세요.',
   PASSWORD_RESET_TOKEN_INVALID: '쓸 수 없는 링크예요. 비밀번호 재설정을 다시 요청해 주세요.',
   MAIL_UNAVAILABLE: '지금은 메일을 보낼 수 없어요. 잠시 뒤 다시 시도해 주세요.',
+  TOO_MANY_LOGIN_ATTEMPTS: '로그인 시도가 너무 많습니다. 잠시 후 다시 시도해 주세요.',
 }
 
 const CLIENT_MESSAGES: Record<ClientErrorCode, string> = {

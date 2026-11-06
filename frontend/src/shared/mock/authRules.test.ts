@@ -1,13 +1,36 @@
 import { fetchDto, jsonRequest } from '@/shared/test/api'
 import type { SessionDto } from '@/shared/types/api/auth'
+import { db } from './db'
 import { applyScenario } from './scenarios'
 
-/* #446 가입 이름 규칙(BE validate_name) */
+/* #446 가입 이름 규칙(BE validate_name)과 #457 로그인 시도 제한(BE PR #456 login_limit) */
 
 const EMAIL = 'pm@example.com'
+const PASSWORD = 'mock-password'
+const BLOCK_SECONDS = 15 * 60
 
 const signup = (name: string, email = 'new@example.com') =>
   fetchDto<SessionDto>('/auth/signup', jsonRequest('POST', { name, email, password: 'pass1234' }))
+const login = (password: string, email = EMAIL) =>
+  fetchDto<SessionDto>('/auth/login', jsonRequest('POST', { email, password }))
+
+/** `Retry-After` 헤더를 보려고 공용 request() 를 거치지 않는다 */
+async function rawLogin(password: string) {
+  const response = await fetch(`${location.origin}/api/v1/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: EMAIL, password }),
+  })
+  const body = (await response.json()) as {
+    error: { code: string; details: { retry_after_seconds: number } } | null
+  }
+  return { status: response.status, retryAfter: response.headers.get('Retry-After'), body }
+}
+
+async function failLogins(times: number, email = EMAIL) {
+  for (let attempt = 0; attempt < times; attempt += 1)
+    await expect(login('wrong-password', email)).rejects.toMatchObject({ status: 401 })
+}
 
 beforeEach(() => {
   applyScenario('signed-out')
@@ -54,5 +77,70 @@ describe('가입 이름 규칙 (#446, BE validate_name)', () => {
       status: 400,
       code: 'INVALID_REQUEST',
     })
+  })
+})
+
+describe('로그인 시도 제한 (#457, BE login_limit)', () => {
+  it('10번째 실패까지는 401 이고 그 뒤로는 맞는 비밀번호도 429 다. 남은 시간을 본문과 Retry-After 로 준다', async () => {
+    await failLogins(10)
+    const blocked = await rawLogin(PASSWORD)
+    expect(blocked.status).toBe(429)
+    expect(blocked.body.error?.code).toBe('TOO_MANY_LOGIN_ATTEMPTS')
+    const seconds = blocked.body.error?.details.retry_after_seconds
+    expect(Number.isInteger(seconds) && seconds! > 0 && seconds! <= BLOCK_SECONDS).toBe(true)
+    expect(blocked.retryAfter).toBe(String(seconds))
+  })
+
+  it('15분이 지나면 다시 로그인된다', async () => {
+    await failLogins(10)
+    vi.advanceTimersByTime(BLOCK_SECONDS * 1000 - 1)
+    await expect(login(PASSWORD)).rejects.toMatchObject({ status: 429 })
+    vi.advanceTimersByTime(1)
+    await expect(login(PASSWORD)).resolves.toMatchObject({ user: { email: EMAIL } })
+  })
+
+  it('막히기 전에 로그인하면 실패 횟수가 지워진다', async () => {
+    await failLogins(9)
+    await login(PASSWORD)
+    await failLogins(9)
+    await expect(login(PASSWORD)).resolves.toBeDefined()
+  })
+
+  it('다른 이메일은 막히지 않는다', async () => {
+    db.accounts.push({
+      ...structuredClone(db.accounts[0]),
+      session: {
+        ...structuredClone(db.accounts[0].session),
+        user: { ...db.accounts[0].session.user, user_id: 'us_02', email: 'other@example.com' },
+      },
+    })
+    await failLogins(10)
+    await expect(login(PASSWORD, 'other@example.com')).resolves.toMatchObject({
+      user: { email: 'other@example.com' },
+    })
+  })
+
+  it('비밀번호 재설정을 마치면 막힘이 풀린다', async () => {
+    await failLogins(10)
+    await fetchDto('/auth/password-reset/request', jsonRequest('POST', { email: EMAIL }))
+    const mail = db.passwordReset.outbox.at(-1)
+    if (!mail) throw new Error('no mail')
+    const token = decodeURIComponent(mail.resetPath.split('#token=')[1])
+    await fetchDto(
+      '/auth/password-reset/confirm',
+      jsonRequest('POST', { token, new_password: 'newpass123' }),
+    )
+    await expect(login('newpass123')).resolves.toMatchObject({ user: { email: EMAIL } })
+  })
+
+  it('login-rate-limited 는 맞는 비밀번호도 바로 429 이고 남은 시간은 900초다', async () => {
+    applyScenario('login-rate-limited')
+    const blocked = await rawLogin(PASSWORD)
+    expect(blocked.status).toBe(429)
+    expect(blocked.body.error).toMatchObject({
+      code: 'TOO_MANY_LOGIN_ATTEMPTS',
+      details: { retry_after_seconds: BLOCK_SECONDS },
+    })
+    expect(blocked.retryAfter).toBe(String(BLOCK_SECONDS))
   })
 })

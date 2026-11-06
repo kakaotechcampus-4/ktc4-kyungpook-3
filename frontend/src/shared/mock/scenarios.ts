@@ -28,6 +28,8 @@ import { blockBySilence, createTask } from './task-state'
 
 export const MOCK_SCENARIOS = [
   'signed-out',
+  // #457 비로그인이고 pm@example.com 이 로그인 시도 제한에 걸려 있다. 맞는 비밀번호도 429 다
+  'login-rate-limited',
   'no-workspace',
   'single-workspace',
   'multiple-workspaces',
@@ -566,6 +568,14 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
   switch (scenario) {
     case 'signed-out':
       state.authenticated = false
+      break
+    case 'login-rate-limited':
+      state.authenticated = false
+      // 같은 시나리오는 늘 같은 db 여야 해서 지금 시각이 아니라 고정 시각까지 막는다
+      state.loginLimit['pm@example.com'] = {
+        failures: 10,
+        blockedUntil: Date.parse('2099-12-31T00:00:00.000Z'),
+      }
       break
     case 'no-workspace':
       signInWith(state, [], null)

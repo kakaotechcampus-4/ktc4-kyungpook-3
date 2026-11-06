@@ -26,6 +26,10 @@ function checkedName(value: string): string | null {
   return NAME_FORBIDDEN.test(name) || !NAME_VISIBLE.test(name) ? null : name
 }
 
+const LOGIN_FAILURE_LIMIT = 10
+
+const LOGIN_BLOCK_MS = 15 * 60_000
+
 /** 소속 수는 응답할 때 센다 — 저장한 세션 값에는 수락한 초대로 생긴 소속이 없다 */
 const authResponse = () => ({
   ...db.session,
@@ -75,9 +79,36 @@ export const authHandlers = [
   }),
   http.post(`${base}/login`, async ({ request }) => {
     const body = (await request.json()) as { email?: unknown; password?: unknown }
-    const account = db.accounts.find(({ session }) => session.user.email === body.email)
-    if (!account || body.password !== account.password)
+    const email = typeof body.email === 'string' ? body.email : ''
+    // passwordReset.ts 처럼 멈춘 now() 가 아니라 흐르는 시계로 본다. 멈춘 시계로는 15분이 끝나지 않는다
+    const at = Date.now()
+    const blockedUntil = db.loginLimit[email]?.blockedUntil ?? null
+    if (blockedUntil !== null && blockedUntil > at) {
+      // 시나리오는 먼 미래까지 막아 둔다. BE 는 15분을 넘겨 답하지 않는다
+      const seconds = Math.min(
+        Math.max(Math.ceil((blockedUntil - at) / 1000), 1),
+        LOGIN_BLOCK_MS / 1000,
+      )
+      return fail(
+        'TOO_MANY_LOGIN_ATTEMPTS',
+        '로그인 시도가 너무 많습니다. 잠시 후 다시 시도해 주세요.',
+        429,
+        { retry_after_seconds: seconds },
+        { 'Retry-After': String(seconds) },
+      )
+    }
+    if (blockedUntil !== null) delete db.loginLimit[email]
+    const account = db.accounts.find(({ session }) => session.user.email === email)
+    if (!account || body.password !== account.password) {
+      // BE _bump 처럼 센 뒤에 본다. 10번째 실패는 401 이고 그다음 시도부터 막힌다
+      const failures = (db.loginLimit[email]?.failures ?? 0) + 1
+      db.loginLimit[email] = {
+        failures,
+        blockedUntil: failures >= LOGIN_FAILURE_LIMIT ? at + LOGIN_BLOCK_MS : null,
+      }
       return fail('INVALID_CREDENTIALS', '이메일 또는 비밀번호가 올바르지 않습니다.', 401)
+    }
+    delete db.loginLimit[email]
     db.session = structuredClone(account.session)
     db.authenticated = true
     return ok(authResponse())
