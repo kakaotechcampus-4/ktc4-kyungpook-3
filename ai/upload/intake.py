@@ -32,6 +32,7 @@ from upload.prepare import _epoch, prepare_from_segments
 from upload.tracks import load_mono_16k, to_wav_16k
 
 SUBMIT_TIMEOUT_S = 1800.0      # 제출한 뒤 결과가 이만큼 안 나오면 일시 실패로 보고 다시 제출한다
+FETCH_POLL_S = 30.0           # 결과를 기다릴 때 다시 확인하는 간격. 그 사이 다음 업로드를 claim 한다(#289 리뷰)
 # claim 한 뒤 이만큼 지나면 다시 맡기지 않고 실패로 보고한다. BE sweeper(#301)는 마지막 진행에서 3시간이 지난 업로드를
 # failed 로 바꾸므로 그보다 먼저 끝낸다(#288 합의). 결과 대기 30분 × 5회와 재시도 간격만 더해도 3시간 근처라 따로 둔다
 INTAKE_DEADLINE_S = 2.5 * 3600
@@ -244,6 +245,7 @@ def _step(recordings_dir, d, rec, *, client, diarizer, now, timezone, fresh) -> 
         if now() - datetime.fromisoformat(rec["submitted_at"]) > timedelta(seconds=SUBMIT_TIMEOUT_S):
             rec["state"], rec["job_id"], rec["submitted_at"] = "converted", None, None
             raise _Retry(f"결과가 {SUBMIT_TIMEOUT_S:.0f}초 안에 나오지 않았다")
+        _wait(d, rec, now())
         return Progress(mid, "waiting")
     try:
         audio, total = load_mono_16k(_wav(d))
@@ -262,6 +264,17 @@ def _step(recordings_dir, d, rec, *, client, diarizer, now, timezone, fresh) -> 
     rec.update(state="done", next_at=None, error=None)
     _save(d, rec)
     return Progress(mid, "done")
+
+
+def _wait(d: Path, rec: dict, t: datetime) -> None:
+    """결과를 기다린다. 다음 확인 시각을 적어 두어, 그때까지 바퀴가 다른 업로드를 claim·진전시킬 수 있게 한다.
+    기한을 넘겨 깨어나지 않는다(_transient 와 같다)."""
+    nxt = t + timedelta(seconds=FETCH_POLL_S)
+    claimed_at = _claimed_at(rec)
+    if claimed_at is not None:
+        nxt = min(nxt, claimed_at + timedelta(seconds=INTAKE_DEADLINE_S + 1))
+    rec["next_at"] = _iso(nxt)
+    _save(d, rec)
 
 
 def _set(d: Path, rec: dict, state: str) -> None:

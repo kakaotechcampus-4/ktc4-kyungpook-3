@@ -679,6 +679,21 @@ def test_default_intake_is_off_without_the_flag_even_with_everything_else_set(mo
         assert W.intake_from_env() is None, flag
 
 
+def test_default_intake_logs_the_names_of_missing_settings_without_values(monkeypatch, capsys):
+    """#289 리뷰: 켰는데 설정이 비어 조용히 꺼지면 업로드가 processing 으로 남는다. 빠진 이름만 한 줄 남긴다."""
+    _be_env(monkeypatch, url="http://be-secret-host", token="", key="")
+    assert W.intake_from_env() is None
+    out = capsys.readouterr().out
+    assert "BE_SERVICE_TOKEN" in out and "PYANNOTEAI_API_KEY" in out and "BE_BASE_URL" not in out
+    assert "be-secret-host" not in out
+
+
+def test_default_intake_is_silent_when_the_flag_is_off(monkeypatch, capsys):
+    _be_env(monkeypatch, url="", token="", key="", flag=None)
+    assert W.intake_from_env() is None
+    assert capsys.readouterr().out == ""
+
+
 # ---- 지정 받기(upload.assign)를 가져오기보다 먼저, 같은 한 회의 자리 안에서 부른다 ----
 
 class _Assign:
