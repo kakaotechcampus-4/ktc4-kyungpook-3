@@ -216,8 +216,8 @@ def test_email_match_ignores_case_and_spaces_for_a_user_who_signs_up_after(seed)
     assert accepted.json()["data"] == {"workspace_id": seed["ws"], "member_id": seed["minsu"].member_id}
 
 
-def test_email_match_ignores_case_for_an_account_stored_as_typed(db, seed):
-    """#427 전에 가입한 계정은 입력한 표기 그대로 저장돼 있다. 새 가입은 정규화돼 이 경우가 생기지 않는다."""
+def test_email_match_ignores_case_between_account_and_invitation(db, seed):
+    """계정을 대문자로 만들어도 소문자로 초대한 사람과 같은 이메일로 본다."""
     _user(db, "minsu", "MINSU@example.com")
     db.commit()
     _invite(seed["ws"], seed["minsu"].member_id, "minsu@example.com")
