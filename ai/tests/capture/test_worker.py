@@ -50,7 +50,7 @@ def _no_report(monkeypatch):
 @pytest.fixture(autouse=True)
 def _no_cleanup(monkeypatch):
     """기본은 로컬 정리 없음(가짜 client 문자열로 BE 를 부르지 않는다). 쓰는 테스트가 W.cleanup_one 을 다시 끼운다."""
-    monkeypatch.setattr(W, "cleanup_one", lambda *a, **k: None, raising=False)
+    monkeypatch.setattr(W, "cleanup_one", lambda *a, **k: None)
 
 
 def _status(path):
@@ -892,6 +892,7 @@ async def test_an_upload_goes_from_intake_to_handed_off_through_the_worker_laps(
     import soundfile as sf
     from tests.conftest import SEGS, FakeDiarizer
     from upload import assign as A
+    from upload import cleanup as CL
     from upload import report as RP
 
     t = np.arange(12 * 16000) / 16000
@@ -904,6 +905,7 @@ async def test_an_upload_goes_from_intake_to_handed_off_through_the_worker_laps(
     w = _worker(tmp_path, intake=(client, FakeDiarizer(SEGS)), handoff=H.Handoff(client), extractor=_extractor({}))
     monkeypatch.setattr(W, "assign_one", A.assign_one)
     monkeypatch.setattr(W, "report_one", RP.report_one)   # 보고도 진짜로: 워커 바퀴가 intake → report 로 이어진다
+    monkeypatch.setattr(W, "cleanup_one", CL.cleanup_one)  # 정리도 진짜로: 가져오기·지정·인계된 업로드를 건드리지 않아야 한다
     for _ in range(8):
         await w._intake_once()
     path = R.manifest_path(w.recordings_dir, "upload_m1")
@@ -921,6 +923,9 @@ async def test_an_upload_goes_from_intake_to_handed_off_through_the_worker_laps(
     assert not any(p == "/meetings" or p.endswith("/end") for _, p, _ in fake.calls)
     assert fake.meetings["m1"]["status"] == "done" and "m1" in fake.extractions
     assert {s["member_id"] for s in fake.sources["m1"].values() if s.get("member_id")} == {"u1"}
+    await w._intake_once()                                  # 인계 직후 정리 바퀴: 보관 기간 안이라 아무것도 지우지 않는다
+    assert path.exists() and path.parent.is_dir() and (w.recordings_dir / ".uploads" / "m1" / "intake.json").exists()
+    assert sum(1 for m, p, _ in fake.calls if m == "POST" and p.endswith("/speakers")) == 1   # 정리 때문에 재전송 없음
 
 
 async def test_a_pass_processes_a_mapped_upload_before_discord_meetings(tmp_path):
