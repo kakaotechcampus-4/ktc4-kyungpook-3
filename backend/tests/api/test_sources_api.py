@@ -16,6 +16,7 @@ from app.core.database import Base, get_db
 from app.main import app
 from app.models import Meeting, MeetingStatus, Member, Session as SessionModel, Source, User, Workspace
 from app.schemas.source import MAX_SECONDS
+from app.services.sessions import hash_session_token
 
 TOKEN = "test-service-token"
 HEADERS = {"X-Service-Token": TOKEN}
@@ -277,7 +278,7 @@ def _login_member(client, db, workspace_id: str) -> None:
         Member(workspace_id=workspace_id, user_id=user.user_id, display_name="member"),
         SessionModel(
             user_id=user.user_id,
-            session_token="member-token",
+            token_hash=hash_session_token("member-token"),
             expires_at=datetime.now(timezone.utc) + timedelta(days=1),
         ),
     ])

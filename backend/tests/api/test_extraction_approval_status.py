@@ -21,6 +21,7 @@ from app.models import (
     User,
     Workspace,
 )
+from app.services.sessions import hash_session_token
 
 SERVICE_TOKEN = "test-service-token"
 SERVICE_HEADERS = {"X-Service-Token": SERVICE_TOKEN}
@@ -64,8 +65,8 @@ def seed(db):
     db.add_all([pm_user, member_user])
     db.flush()
     db.add_all([
-        SessionModel(user_id=pm_user.user_id, session_token="pm-token", expires_at=expires),
-        SessionModel(user_id=member_user.user_id, session_token="member-token", expires_at=expires),
+        SessionModel(user_id=pm_user.user_id, token_hash=hash_session_token("pm-token"), expires_at=expires),
+        SessionModel(user_id=member_user.user_id, token_hash=hash_session_token("member-token"), expires_at=expires),
     ])
     pm = Member(workspace_id=ws.workspace_id, user_id=pm_user.user_id, display_name="PM", role="pm")
     jimin = Member(

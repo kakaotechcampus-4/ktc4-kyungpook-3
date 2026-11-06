@@ -220,7 +220,7 @@ class Session(Base):
     user_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("user.user_id", ondelete="CASCADE"), index=True
     )
-    session_token: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 

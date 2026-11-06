@@ -20,6 +20,7 @@ from app.main import app
 from app.models import Integration, Member, Session as SessionModel, User, Workspace
 from app.services import discord, discord_oauth, notion_oauth
 from app.services.discord_oauth import NONCE_COOKIE, DiscordGuild
+from app.services.sessions import hash_session_token
 
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
 FAILED = "oauth=discord&oauth_result=failed"
@@ -81,7 +82,7 @@ def _user(db, email: str, token: str) -> User:
     user = User(email=email, name=email.split("@")[0])
     db.add(user)
     db.flush()
-    db.add(SessionModel(user_id=user.user_id, session_token=token, expires_at=datetime.now(timezone.utc) + timedelta(days=1)))
+    db.add(SessionModel(user_id=user.user_id, token_hash=hash_session_token(token), expires_at=datetime.now(timezone.utc) + timedelta(days=1)))
     return user
 
 

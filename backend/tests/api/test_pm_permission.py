@@ -25,6 +25,7 @@ from app.models import (
     User,
     Workspace,
 )
+from app.services.sessions import hash_session_token
 
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
 
@@ -75,7 +76,7 @@ def _user(db, name: str, token: str) -> User:
     db.add(user)
     db.flush()
     db.add(SessionModel(
-        user_id=user.user_id, session_token=token,
+        user_id=user.user_id, token_hash=hash_session_token(token),
         expires_at=datetime.now(timezone.utc) + timedelta(days=1),
     ))
     return user

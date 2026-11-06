@@ -24,6 +24,7 @@ from app.models import (
     User,
     Workspace,
 )
+from app.services.sessions import hash_session_token
 
 # 임베딩 워커가 이미 채운 task. 임베딩이 없는 task가 있으면 auto로 보내지 않으므로 시드 task에 넣는다
 EMBEDDED = [0.1] * EMBEDDING_DIMENSIONS
@@ -70,8 +71,8 @@ def seed(db):
     db.add_all([pm_user, member_user])
     db.flush()
     db.add_all([
-        SessionModel(user_id=pm_user.user_id, session_token="pm-token", expires_at=expires),
-        SessionModel(user_id=member_user.user_id, session_token="member-token", expires_at=expires),
+        SessionModel(user_id=pm_user.user_id, token_hash=hash_session_token("pm-token"), expires_at=expires),
+        SessionModel(user_id=member_user.user_id, token_hash=hash_session_token("member-token"), expires_at=expires),
     ])
     pm = Member(workspace_id=ws.workspace_id, user_id=pm_user.user_id, display_name="PM", role="pm")
     jimin = Member(

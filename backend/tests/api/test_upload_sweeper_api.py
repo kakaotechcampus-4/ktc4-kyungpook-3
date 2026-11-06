@@ -16,6 +16,7 @@ from app.core.database import Base, get_db
 from app.main import app
 from app.models import Meeting, MeetingUpload, Member, Session as SessionModel, User, Workspace
 from app.services import upload_storage, upload_sweeper
+from app.services.sessions import hash_session_token
 
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
 TOKEN = "test-service-token"
@@ -73,7 +74,7 @@ def seed(db):
     db.add(user)
     db.flush()
     db.add(SessionModel(
-        user_id=user.user_id, session_token="pm-token",
+        user_id=user.user_id, token_hash=hash_session_token("pm-token"),
         expires_at=datetime.now(timezone.utc) + timedelta(days=1),
     ))
     ws = Workspace(name="A")
