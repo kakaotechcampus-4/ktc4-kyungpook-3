@@ -189,6 +189,18 @@ def test_send_with_retry_logs_last_exception_type_and_message_without_body(monke
     assert "Traceback" not in caplog.text
 
 
+def test_send_with_retry_failure_log_does_not_name_a_mail_purpose(monkeypatch, caplog):
+    """가입 코드 메일도 같은 함수로 나가므로 로그가 비밀번호 재설정이라고 적으면 원인을 잘못 찾게 된다."""
+    _patch_send(monkeypatch, 99)
+
+    with caplog.at_level(logging.ERROR):
+        mailer.send_with_retry("a@b.c", "s", "123456", log_label="signup_code")
+
+    assert "password reset" not in caplog.text
+    assert "signup_code" in caplog.text
+    assert "123456" not in caplog.text
+
+
 def test_app_base_url_strips_trailing_slash(monkeypatch):
     monkeypatch.setenv("APP_BASE_URL", "https://app.example.com/")
     assert mailer.app_base_url() == "https://app.example.com"

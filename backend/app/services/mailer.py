@@ -60,7 +60,7 @@ def send_mail(to: str, subject: str, text: str) -> None:
 
 
 def send_with_retry(to: str, subject: str, text: str, *, log_label: str) -> bool:
-    """첫 시도 + 재시도 3회. 모두 실패하면 로그만 남기고 False. 토큰이 든 본문은 로그에 넣지 않는다."""
+    """첫 시도 + 재시도 3회. 모두 실패하면 로그만 남기고 False. 토큰·코드가 든 본문은 로그에 넣지 않는다."""
     last_exc: Exception | None = None
     for delay in (*RETRY_DELAYS, None):
         try:
@@ -71,10 +71,10 @@ def send_with_retry(to: str, subject: str, text: str, *, log_label: str) -> bool
             if delay is None:
                 break
             _sleep(delay)
-    # exc_info 는 쓰지 않는다: traceback locals 에 토큰이 든 본문이 보일 수 있다.
+    # exc_info 는 쓰지 않는다: traceback locals 에 토큰·코드가 든 본문이 보일 수 있다.
     # 수신 거부 예외는 메시지에 받는 사람 주소가 그대로 들어 종류만 남긴다. 나머지는 진단용으로 메시지도 남긴다.
     detail = "" if isinstance(last_exc, smtplib.SMTPRecipientsRefused) else f": {last_exc}"
-    logger.error("password reset mail failed: %s (%s%s)", log_label, type(last_exc).__name__, detail)
+    logger.error("mail failed: %s (%s%s)", log_label, type(last_exc).__name__, detail)
     return False
 
 
