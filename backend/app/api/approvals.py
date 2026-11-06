@@ -318,7 +318,8 @@ def _apply_approval(
             changed_by=approval.resolved_by,
         )
 
-    # REMINDER_DM: 태스크에 반영할 내용이 없다 — 실제 발송은 알림 채널(디스코드 봇)의 책임
+    # REMINDER_DM: 태스크에 반영할 내용이 없다. 승인해도 이 행을 읽어 보내는 코드는 BE·AI 어디에도 없다(리마인드는
+    # 메시지 묶음 승인으로 나간다). 지금은 만들 수 없고 남은 행만 이 분기를 지난다. #335 2차 PR 에서 분기와 enum 을 지운다.
 
     if changed:
         approval.payload = json.dumps({**payload, "task_overrides": changed}, ensure_ascii=False)
@@ -352,6 +353,13 @@ def create_approval(
     아니라 로그인한 팀원으로 기록한다. 바디 값을 믿으면 다른 팀원 이름으로 요청을 올릴 수 있다.
     """
     member = require_member(db, user, payload.workspace_id)
+    # 리마인드는 묶음 승인(POST /messages/bundles/{id}/approve)으로 옮겼다. 남은 행의 조회·처리만 두고 새로 만들지 않는다(#335)
+    if payload.type == ApprovalType.REMINDER_DM:
+        raise AppError(
+            ErrorCode.INVALID_REQUEST,
+            message="reminder_dm 승인 요청은 더 이상 만들 수 없습니다. 리마인드는 메시지 묶음 승인으로 처리합니다.",
+            details={"field": "type", "allowed": [str(ApprovalType.TASK_CREATE), str(ApprovalType.TASK_UPDATE)]},
+        )
     # task_overrides는 승인하는 PM의 요청에서만 받는다. 요청 단계에서 미리 넣어 두면 PM이 고친 값처럼 읽힐 수 있다
     if "task_overrides" in payload.payload:
         raise AppError(
