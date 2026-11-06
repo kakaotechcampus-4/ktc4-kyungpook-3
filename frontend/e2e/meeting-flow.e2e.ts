@@ -254,3 +254,51 @@ test('⑦ 일반 팀원도 만료 이력을 볼 수 있고 재업로드는 PM에
     '기획 논의 녹음',
   )
 })
+
+test('⑧ 채팅 회의가 정리 중이어도 업로드 화면에 머물고 올릴 수 있다 (#450)', async ({
+  page,
+}, testInfo) => {
+  await start(page, 'meeting-chat-processing', UPLOAD)
+  await expect(page.getByRole('heading', { name: '회의를 올려 주세요' })).toBeVisible(FIRST_PAINT)
+  await expect(page.getByRole('button', { name: '정리 시작하기' })).toBeVisible()
+  await expect(page).toHaveURL(UPLOAD)
+  await page.screenshot({ path: testInfo.outputPath('chat-processing-upload.png') })
+  const requests = recordRequests(page)
+
+  await uploadShortAudio(page)
+
+  await expect(page).toHaveURL(PROCESSING_URL)
+  expect(new URL(page.url()).pathname.match(PROCESSING_URL)?.[1]).not.toBe('mt_11')
+  expect(
+    requests.filter(({ method, pathname }) => method === 'POST' && UPLOAD_POST.test(pathname)),
+  ).toHaveLength(1)
+  await expect(page.getByRole('heading', { name: '정리하고 있어요' })).toBeVisible(FIRST_PAINT)
+  await page.screenshot({ path: testInfo.outputPath('chat-processing-uploaded.png') })
+})
+
+test('⑨ 멈춘 채팅 회의(chat_stalled)는 토스트·처리 화면·회의록에서 다시 올리라고 하지 않는다 (#450)', async ({
+  page,
+}, testInfo) => {
+  const STALLED = '채팅 대화를 정리하다 멈췄어요. 다음 수집 때 다시 정리해요.'
+  await start(page, 'meeting-chat-stalled', `${WORKSPACE}/tasks`)
+  const failed = signalOf(page, '회의를 정리하지 못했어요')
+  await expect(failed).toBeVisible({ timeout: 15_000 })
+  await expect(failed).toContainText(STALLED)
+  await expect(failed).not.toContainText('다시 올려')
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  await page.screenshot({ path: testInfo.outputPath('chat-stalled-toast.png') })
+
+  await page.goto(`${WORKSPACE}/meetings/mt_11/processing`)
+  await expect(page.getByRole('heading', { name: '채팅 대화를 정리하지 못했어요' })).toBeVisible(
+    FIRST_PAINT,
+  )
+  await expect(page.getByText(STALLED)).toBeVisible()
+  await page.screenshot({ path: testInfo.outputPath('chat-stalled-processing.png') })
+
+  await page.getByRole('link', { name: '실패 사유 보기' }).click()
+  const detail = page.getByRole('region', { name: '회의록 본문' })
+  await expect(detail.getByText(STALLED)).toBeVisible(FIRST_PAINT)
+  await expect(page.getByRole('link', { name: '다시 업로드', exact: true })).toHaveCount(0)
+  await expect(detail.getByText(/재업로드|다시 올려/)).toHaveCount(0)
+  await page.screenshot({ path: testInfo.outputPath('chat-stalled-minutes.png') })
+})
