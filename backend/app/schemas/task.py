@@ -32,7 +32,9 @@ class TaskUpdateRequest(BaseModel):
     )
 
 
-class TaskResponse(BaseModel):
+class TaskFields(BaseModel):
+    """Task 행에서 그대로 읽는 필드. 응답은 이것에 auto_blocked 를 더한 TaskResponse 로 낸다."""
+
     model_config = ConfigDict(from_attributes=True)
 
     task_id: str
@@ -51,6 +53,14 @@ class TaskResponse(BaseModel):
     )
     created_at: datetime
     updated_at: datetime
+
+
+class TaskResponse(TaskFields):
+    auto_blocked: bool = Field(
+        ...,
+        description="지금 POST /tasks/{task_id}/auto-block/undo 가 성공하는 상태면 true. "
+        "무응답 자동 막힘이 걸려 있고 그 뒤 막힘 사유가 바뀌지 않았다는 뜻",
+    )
 
 
 class TaskListResponse(BaseModel):

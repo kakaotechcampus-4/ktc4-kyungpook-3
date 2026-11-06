@@ -11,7 +11,7 @@
 """
 import logging
 import threading
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Sequence
 from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy import func, or_, select, text
@@ -406,7 +406,7 @@ def open_watches(db: Session, now: datetime) -> None:
                 ReminderWatch.sent_at <= sent_at,
             ).order_by(ReminderWatch.sent_at)
         ).all():
-            if older.applied and reminder.task.status == TaskStatus.BLOCKED and reminder.task.blocker == BLOCKER_TEXT:
+            if older.applied and _auto_block_state(reminder.task):
                 inherited = older
             _close(older, WatchState.STOPPED, now)
         try:
@@ -561,19 +561,33 @@ def _status_before_block(db: Session, task: Task) -> str:
     return old if old and old != TaskStatus.BLOCKED else TaskStatus.TODO
 
 
+def _auto_block_state(task: Task) -> bool:
+    """태스크가 지금 스케줄러가 건 막힘의 모습인가. 이력은 보지 않는다."""
+    return task.status == TaskStatus.BLOCKED and task.blocker == BLOCKER_TEXT
+
+
+def _undoable_watches(task_ids: Sequence[str]):
+    """되돌릴 수 있는 시계(열려 있고 막힘을 직접 건 것)를 고르는 select."""
+    return select(ReminderWatch).where(
+        ReminderWatch.task_id.in_(task_ids),
+        ReminderWatch.state.in_(_OPEN_STATES),
+        ReminderWatch.applied.is_(True),
+    )
+
+
+def auto_blocked_ids(db: Session, tasks: Sequence[Task]) -> set[str]:
+    """지금 undo_auto_block 이 성공할 태스크 id. 막힌 후보가 없으면 DB 를 읽지 않고, 있으면 한 번만 읽는다."""
+    candidates = [t.task_id for t in tasks if not t.is_deleted and _auto_block_state(t)]
+    if not candidates:
+        return set()
+    watch_task_ids = _undoable_watches(candidates).with_only_columns(ReminderWatch.task_id).distinct()
+    return set(db.scalars(watch_task_ids))
+
+
 def undo_auto_block(db: Session, task: Task, *, changed_by: str, now: datetime) -> Task:
     """PM 이 스케줄러가 건 막힘을 막기 전 상태와 사유로 되돌린다. 그 뒤 누가 바꿨으면 되돌리지 않는다."""
-    watch = db.scalar(
-        select(ReminderWatch)
-        .where(
-            ReminderWatch.task_id == task.task_id,
-            ReminderWatch.state.in_(_OPEN_STATES),
-            ReminderWatch.applied.is_(True),
-        )
-        .order_by(ReminderWatch.sent_at.desc())
-        .limit(1)
-    )
-    if watch is None or task.status != TaskStatus.BLOCKED or task.blocker != BLOCKER_TEXT:
+    watch = db.scalar(_undoable_watches([task.task_id]).order_by(ReminderWatch.sent_at.desc()).limit(1))
+    if watch is None or not _auto_block_state(task):
         raise AppError(ErrorCode.AUTO_BLOCK_NOT_FOUND, details={"task_id": task.task_id})
     tasks.apply_task_updates(
         db, task, {"status": watch.prev_status, "blocker": watch.prev_blocker},
