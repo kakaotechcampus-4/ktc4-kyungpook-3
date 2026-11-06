@@ -130,10 +130,9 @@ setMockRole('member') // ws_01 의 역할을 일반 팀원으로
 
 `afterEach` 의 `resetDb()` 가 mode·역할까지 되돌린다.
 
-### Storybook·E2E 에서 고르기
+### E2E 에서 고르기
 
-- Storybook: `parameters.scenario` 에 시나리오 이름, `parameters.setup` 에 그 위의 손질(`() => void completeMeeting('mt_10')`, `() => setMockRole('member')`)을 준다(`.storybook/preview.tsx`). 스토리를 열 때마다 db 를 다시 만든다.
-- E2E: `start(page, 'meeting-instant', '/workspaces/ws_01/meetings/upload')`(`e2e/support.ts`). 테스트마다 새 컨텍스트라 서로 상태를 나누지 않는다. 정리 중에 다른 화면으로 떠날 틈이 필요하면 `meeting-demo`(3초 × 4회)를 쓴다 — `instant` 는 처리 화면이 첫 조회에서 끝을 보고 회의록으로 옮긴다.
+E2E 는 `start(page, 'meeting-instant', '/workspaces/ws_01/meetings/upload')`(`e2e/support.ts`)처럼 시나리오와 주소를 함께 준다. 테스트마다 새 컨텍스트라 서로 상태를 나누지 않는다. 정리 중에 다른 화면으로 떠날 틈이 필요하면 `meeting-demo`(3초 × 4회)를 쓴다 — `instant` 는 처리 화면이 첫 조회에서 끝을 보고 회의록으로 옮긴다.
 
 승인 요청에는 계약 §2.5의 `resolved_by`도 보낸다.
 
@@ -166,7 +165,7 @@ await fetch('/api/v1/approvals/ap_01', {
 http://localhost:5173/workspaces/ws_01/messages?msw-scenario=messages-default
 ```
 
-고른 대화는 `/messages/threads/<id>`, 고른 보낼 메시지는 `/messages?review=<묶음 id>` 다. `review` 없이 들어오면 아직 승인하지 않은 첫 묶음이 골라진다. 로딩은 시나리오가 아니라 테스트·스토리에서 응답을 붙잡아 재현한다. `답장 3일째 없음`·`지남` 같은 표기는 기기의 오늘로 계산한다 — 픽스처는 MOCK_NOW(2026-09-18) 기준이라 실제 날짜로 열면 숫자가 커진다.
+고른 대화는 `/messages/threads/<id>`, 고른 보낼 메시지는 `/messages?review=<묶음 id>` 다. `review` 없이 들어오면 아직 승인하지 않은 첫 묶음이 골라진다. 로딩은 시나리오가 아니라 테스트에서 응답을 붙잡아 재현한다. `답장 3일째 없음`·`지남` 같은 표기는 기기의 오늘로 계산한다 — 픽스처는 MOCK_NOW(2026-09-18) 기준이라 실제 날짜로 열면 숫자가 커진다.
 
 ## 설정·팀 (M8-B)
 
