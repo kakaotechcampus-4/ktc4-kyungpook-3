@@ -38,8 +38,9 @@ const EMPTY: MeetingUploadValues = { title: '', date: '', attendeeMemberIds: [] 
 /* Upload 캔버스 실측 — 카드 22 · 칸 사이 18 · 제목/날짜 14 · 날짜 칸 200px */
 const ROOT = 'flex flex-col gap-26'
 const FIELDS = 'flex flex-col gap-18 rounded-16 border border-line bg-surface p-22'
-const ROW = 'grid grid-cols-[minmax(0px,1fr)_200px] gap-14'
-const FOOTER = 'flex items-center justify-between gap-20'
+/* 폭 768 미만은 제목 · 날짜를 한 열로 쌓는다. 날짜 칸 200 이 옆에 남으면 제목 칸이 몇 px 로 눌린다 */
+const ROW = 'grid grid-cols-[minmax(0px,1fr)_200px] gap-14 max-md:grid-cols-1'
+const FOOTER = 'flex items-center justify-between gap-20 max-md:flex-wrap'
 const NOTE = 'text-caption text-dim'
 
 /**

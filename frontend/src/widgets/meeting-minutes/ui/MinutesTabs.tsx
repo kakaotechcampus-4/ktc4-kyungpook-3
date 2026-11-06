@@ -11,7 +11,9 @@ export interface MinutesTab<Id extends string> {
 }
 
 /* Meetings 캔버스 실측 — 탭 줄 좌우 36 · 아래 선, 탭 38px · 13.5px 600 · 간격 18, 선택은 먹 밑줄 2px */
-const LIST = 'flex items-center gap-18 border-b border-line px-36'
+/* 휴대폰에서 탭이 폭을 넘으면 탭 줄 안에서만 옆으로 민다 — 화면은 넘치지 않는다 */
+const LIST =
+  'flex items-center gap-18 border-b border-line px-36 max-md:overflow-x-auto max-md:px-20'
 const TAB =
   'inline-flex h-[38px] items-center gap-7 border-b-2 border-transparent px-3 text-body font-semibold text-sub hover:text-ink aria-selected:border-ink aria-selected:text-ink'
 const COUNT =
@@ -94,7 +96,7 @@ export function MinutesTabs<Id extends string>({
         role="tabpanel"
         id={`${prefix}-panel-${current.id}`}
         aria-labelledby={`${prefix}-tab-${current.id}`}
-        className="flex flex-col gap-30 px-36 pt-28 pb-56"
+        className="flex flex-col gap-30 px-36 pt-28 pb-56 max-md:px-20"
       >
         {current.panel}
       </div>

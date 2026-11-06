@@ -21,7 +21,7 @@ import { Button } from '@/shared/ui/button'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
 import { Skeleton } from '@/shared/ui/skeleton'
 
-const PAGE = 'mx-auto flex w-full max-w-shell flex-1 justify-center px-48 pt-48 pb-72'
+const PAGE = 'mx-auto flex w-full max-w-shell flex-1 justify-center px-48 pt-48 pb-72 max-md:px-20'
 const COLUMN = 'flex w-full max-w-[700px] flex-col gap-26'
 const TITLE = 'text-[30px] leading-[1.25] font-bold tracking-h1 text-ink'
 const LEAD = 'text-body text-sub'
