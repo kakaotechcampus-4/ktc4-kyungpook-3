@@ -106,7 +106,10 @@ def decode(kind: str, token: str, *, now: float | None = None) -> dict[str, obje
     if len(parts) != 2:
         return None
     segment, signature = parts
-    if not hmac.compare_digest(signature.encode(), _signature(segment).encode()):
+    try:
+        if not hmac.compare_digest(signature.encode(), _signature(segment).encode()):
+            return None
+    except UnicodeEncodeError:  # 짝 없는 서로게이트는 JSON 을 통과하지만 utf-8 로 바뀌지 않는다
         return None
     try:
         data = json.loads(_b64decode(segment))

@@ -112,3 +112,8 @@ def test_return_url_carries_a_known_reason():
 def test_return_url_rejects_an_unknown_reason():
     with pytest.raises(ValueError):
         oauth_state.frontend_return_url("kakao", "/login", "failed", "secret_detail")
+
+
+@pytest.mark.parametrize("token", ["a.\ud800", "\ud800.a"])
+def test_decode_refuses_a_token_that_cannot_be_encoded(token):
+    assert oauth_state.decode("signup_email", token) is None
