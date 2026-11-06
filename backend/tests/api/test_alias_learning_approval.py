@@ -3,6 +3,7 @@
 서비스 토큰으로 `POST /extractions`(봇 경로)를 부르는 `client`와, PM 세션 쿠키로 승인 API를 부르는
 `pm_client`를 둘 다 쓸 수 있다. 같은 `db`·`seed`를 공유한다.
 """
+import json
 import logging
 import os
 from datetime import datetime, timedelta, timezone
@@ -23,6 +24,7 @@ from app.models import (
     MemberAlias,
     Session as SessionModel,
     Task,
+    TaskHistory,
     User,
     Workspace,
 )
@@ -454,7 +456,19 @@ def test_save_alias_ignores_unique_conflict(client, pm_client, db, seed, monkeyp
     _assert_approved_with_task(db, r)
     assert len(_aliases(db)) == before
     db.expire_all()
-    assert _approvals(db, "task_create")[0].status == "approved"
+    approval = _approvals(db, "task_create")[0]
+    assert approval.status == "approved"
+    # savepoint 가 되돌린 것은 별칭뿐이다. 승인 반영(task 연결, PM 이 고친 값, 이력)은 그대로 남아야 한다
+    task = db.execute(select(Task).where(Task.title == "결제 환불")).scalar_one()
+    assert approval.related_task_id == task.task_id
+    assert _item(db, "결제 환불").task_id == task.task_id
+    assert json.loads(approval.payload)["task_overrides"] == {"assignee_member_id": seed["leader"].member_id}
+    histories = db.execute(select(TaskHistory).where(TaskHistory.task_id == task.task_id)).scalars().all()
+    # 생성 이력과 PM 이 담당자를 고친 이력(manual) 둘 다 남는다
+    assert sorted((h.changed_field, h.new_value, h.change_source) for h in histories) == [
+        ("assignee", seed["leader"].member_id, "manual"),
+        ("title", "결제 환불", "meeting"),
+    ]
 
 
 def _give_alias(db, member: Member, alias_text: str) -> None:
@@ -544,6 +558,55 @@ def test_save_alias_ignored_on_task_update_approval(pm_client, db, seed):
     assert r.status_code == 200, r.text
     assert r.json()["data"]["status"] == "approved"
     assert len(_aliases(db)) == before
+
+
+@pytest.mark.parametrize("kind, code", [("departed", "MEMBER_NOT_FOUND"), ("other_workspace", "WORKSPACE_MISMATCH")])
+def test_save_alias_with_invalid_assignee_fails_approval_and_can_be_retried(
+    client, pm_client, db, seed, kind, code
+):
+    """탈퇴했거나 다른 공간의 담당자를 골라 승인하면 오류이고, 승인은 pending 으로 남고 별칭도 없다. 다시 처리할 수 있다."""
+    _hold_item(client, seed)
+    if kind == "departed":
+        bad = _member(db, seed["ws"], "탈퇴", [])
+        bad.is_deleted = True
+    else:
+        other_ws = Workspace(name="B")
+        db.add(other_ws)
+        db.flush()
+        bad = _member(db, other_ws, "타팀", [])
+    db.commit()
+    before = len(_aliases(db))
+
+    r = _approve(pm_client, db, assignee=bad.member_id)
+
+    assert r.status_code >= 400
+    assert r.json()["error"]["code"] == code
+    db.expire_all()
+    approval = _approvals(db, "task_create")[0]
+    assert approval.status == "pending"
+    assert approval.related_task_id is None
+    assert db.execute(select(Task).where(Task.title == "결제 환불")).scalar_one_or_none() is None
+    assert len(_aliases(db)) == before
+
+    retried = _approve(pm_client, db, assignee=seed["leader"].member_id)
+
+    _assert_approved_with_task(db, retried)
+    learned = [a for a in _aliases(db) if a.source == "learned"]
+    assert [(a.member_id, a.alias_text) for a in learned] == [(seed["leader"].member_id, "화은")]
+
+
+def test_resolving_the_same_approval_again_does_not_add_alias(client, pm_client, db, seed):
+    _hold_item(client, seed)
+    first = _approve(pm_client, db, assignee=seed["leader"].member_id)
+    _assert_approved_with_task(db, first)
+    after_first = len(_aliases(db))
+
+    again = _approve(pm_client, db, assignee=seed["haeun"].member_id)
+
+    assert again.status_code == 409
+    assert again.json()["error"]["code"] == "APPROVAL_ALREADY_RESOLVED"
+    assert len(_aliases(db)) == after_first
+    assert [a for a in _aliases(db) if a.source == "learned" and a.member_id == seed["haeun"].member_id] == []
 
 
 def test_chat_meeting_log_does_not_count_thirdrole_item_as_would_have_been_auto(client, db, seed, caplog):
