@@ -359,13 +359,18 @@ def test_handed_off_upload_drops_only_tracks_after_keep(env):
     t0 = env.clock.t
     _set_manifest(env, source="upload", status="handed_off", be={"status": "done"},
                   stages={"handed_off": _iso(t0)})
+    folder = env.rec / f"upload_{MID}"
+    (folder / "transcript.md").write_text("대본", encoding="utf-8")   # 처리 바퀴가 회의 폴더에 쓰는 사람용 대본
+    tracks = [env.rec / e["file"] for e in json.loads(_manifest_file(env).read_text(encoding="utf-8"))["speakers"]]
+    assert tracks and all(t.exists() for t in tracks)
     env.be.calls.clear()
     env.clock.t = t0 + timedelta(seconds=KEEP_S - 1)
     assert _go(env) is None
     assert _kept(env)
     env.clock.t = t0 + timedelta(seconds=KEEP_S)
     assert _go(env) == (MID, "tracks_dropped")
-    assert not (env.rec / f"upload_{MID}").exists()
+    assert not any(t.exists() for t in tracks)                    # 트랙 wav 만 지운다(#439 리뷰)
+    assert (folder / "transcript.md").exists() and (folder / "diarization.json").exists()
     assert _manifest_file(env).exists() and (env.tr / f"session_upload_{MID}.json").exists()
     assert (env.rec / ".uploads" / MID / "intake.json").exists()
     assert _intake(env)["expire"]["state"] == "tracks_dropped"

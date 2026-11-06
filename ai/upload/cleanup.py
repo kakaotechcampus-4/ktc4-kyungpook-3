@@ -3,7 +3,7 @@
 기록은 recordings/.uploads/<meeting_id>/intake.json 의 `expire` 키다. intake·report·resume 의 상태 기계는 건드리지 않는다.
   checking  BE 에 다시 물어보는 중이다. 일시 실패는 attempts, next_at 만 바꾼다(포기 한도 없음: 지우지 않으니 해로울 것이 없다)
   expired   BE 가 이미 끝낸 회의다(409 MEETING_ALREADY_ENDED·오류 봉투의 404). 매니페스트·트랙·잠금·전사본을 지웠다(끝)
-  tracks_dropped  인계가 끝나 KEEP_S 가 지나 트랙 폴더만 지웠다(매니페스트·전사본 유지, 다시 보지 않는다)
+  tracks_dropped  인계가 끝나 KEEP_S 가 지나 트랙 wav 만 지웠다(회의 폴더의 대본·기록, 매니페스트·전사본 유지, 다시 보지 않는다)
   dropped         처리를 포기한 지 KEEP_S 가 지나 매니페스트·트랙·전사본을 지웠다
 끝난 기록 폴더(.uploads/<id>/)는 열린 상태가 없고 이 회의의 매니페스트가 없을 때 intake.json 수정 시각 + KEEP_S 뒤 통째로 지운다. 깨진 intake.json 은 지우지 않고 한 번만 경고한다.
 
@@ -147,10 +147,11 @@ def _keep_expired(recordings_dir: Path, transcripts_dir: Path, d: Path, rec: dic
             drop_transcripts(transcripts_dir, manifest)   # 매니페스트가 남아 있는 동안 먼저
             drop_local(recordings_dir, session)
         else:
-            try:
-                shutil.rmtree(recordings_dir / session)   # 트랙만: 매니페스트·전사본·intake.json 은 남긴다
-            except FileNotFoundError:
-                pass   # 이미 없어도 표시는 남긴다: 안 그러면 매번 같은 후보로 돌아온다
+            # 트랙 wav 만 지운다. 같은 회의 폴더의 대본(transcript.md·jsonl)·처리 기록·diarization.json,
+            # 매니페스트·전사본·intake.json 은 남긴다(#439 리뷰). 이미 없어도 표시는 남긴다
+            for e in manifest.get("speakers") or []:
+                if isinstance(e, dict) and e.get("file"):
+                    (recordings_dir / e["file"]).unlink(missing_ok=True)
         new.update(state=event, next_at=None)
         rec["expire"] = new
         _save(d, rec)
