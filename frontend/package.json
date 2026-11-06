@@ -23,7 +23,8 @@
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build",
     "test:e2e": "playwright test",
-    "test:storybook": "storybook build --quiet && playwright test -c playwright.storybook.config.ts"
+    "test:storybook": "storybook build --quiet && playwright test -c playwright.storybook.config.ts",
+    "startup-images": "node scripts/startup-images.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.9.1",
