@@ -1,16 +1,12 @@
-import { Button } from '@/shared/ui/button'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
-import { REVIEW_GONE_MESSAGE } from '../lib/actionMessages'
 import { actionTarget } from '../model/useMessageAction'
 import type { MessageAction } from '@/entities/message'
 import type { MessageActionControl } from '../model/useMessageAction'
 
-const GONE = 'flex flex-col items-start gap-10'
-
 /**
  * 행동 실패를 행동 가까이에 알린다 (role=alert). 다시 시도하면 같은 요청을 다시 보낸다.
- * 항목이 이미 처리됐거나 없으면 다시 시도 대신 목록을 새로 받게 한다.
- * 예정 시각이 지난 발송은 여기서 다시 시도하지 않는다 — 시각을 다시 고르는 안내가 그 자리다.
+ * 화면이 따로 다루는 거절(KNOWN_FAILURES)은 다시 시도 없이 그 문구만 쓴다. 토스트로 알린 거절과
+ * 보내기 전 확인이 잠금과 함께 그리는 승인의 지난 시각은 여기서 그리지 않는다.
  * 화면은 실패 전 서버 상태 그대로다 — 성공처럼 보이게 하지 않는다 (D-137)
  */
 export function ActionFailure({
@@ -26,15 +22,15 @@ export function ActionFailure({
   const failure = actions.failure
   if (failure === null || actionTarget(failure.action) !== target) return null
   if (kinds !== undefined && !kinds.includes(failure.action.kind)) return null
-  // 지난 시각 알림은 보내기 전 확인이 잠금 이유와 순서를 정해 그린다
-  if (failure.cause === 'time_passed') return null
-  if (failure.cause === 'gone')
-    return (
-      <div role="alert" className={GONE}>
-        <p className="text-body font-semibold text-ink">{failure.title}</p>
-        <p className="text-caption text-dim">{REVIEW_GONE_MESSAGE}</p>
-        <Button onClick={actions.refresh}>목록 새로 받기</Button>
-      </div>
-    )
-  return <QueryErrorState error={failure.error} onRetry={actions.retry} title={failure.title} />
+  const known = failure.known
+  if (known === null)
+    return <QueryErrorState error={failure.error} onRetry={actions.retry} title={failure.title} />
+  if (known.place === 'toast') return null
+  if (known.then === 'lockApproval' && failure.action.kind === 'approve') return null
+  return (
+    <div role="alert" className="flex flex-col items-start gap-6">
+      <p className="text-body font-semibold text-ink">{failure.title}</p>
+      <p className="text-caption text-dim">{known.message}</p>
+    </div>
+  )
 }

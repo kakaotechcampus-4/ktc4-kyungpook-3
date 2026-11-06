@@ -10,6 +10,8 @@ export {
   taskKeys,
   taskListQueryOptions,
   updateTaskStatus,
+  undoTaskAutoBlock,
+  writeServerTask,
 } from './api/taskApi'
 export type { TaskCreateInput } from './api/taskApi'
 export { filterByTab } from './lib/taskFilter'

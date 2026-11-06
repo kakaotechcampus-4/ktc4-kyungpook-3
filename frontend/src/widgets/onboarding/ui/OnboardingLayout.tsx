@@ -45,7 +45,7 @@ const BUBBLE =
 
 const NOTICE = 'flex items-center gap-9 pl-[42px] text-caption text-dim'
 
-const COUNTER = 'text-[13px] text-faint tabular-nums'
+const COUNTER = 'text-[13px] text-dim tabular-nums'
 
 /**
  * 온보딩 네 화면의 공통 틀 — 단계 표시 · 매스 말풍선 · 단계 카드 · `‹ n / 4 ›`.

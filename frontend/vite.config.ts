@@ -18,6 +18,12 @@ function proxyTarget(mode: string): string {
 
 export default defineConfig(({ mode }) => ({
   plugins: [react(), tailwindcss()],
+  // 앱의 워커는 푸시 서비스 워커 하나다. 범위가 주소 폴더라 고정 주소 `/push/sw.js` 로 두어 MSW(`/`)와 겹치지 않게 하고,
+  // 배포마다 같은 주소라 브라우저가 새 판으로 갱신한다. iife 는 모듈 서비스 워커를 못 쓰는 브라우저도 받는다
+  worker: {
+    format: 'iife',
+    rolldownOptions: { output: { entryFileNames: 'push/sw.js' } },
+  },
   resolve: {
     alias: { '@': resolve(import.meta.dirname, 'src') },
   },

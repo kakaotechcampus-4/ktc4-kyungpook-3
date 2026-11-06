@@ -365,6 +365,30 @@ def test_prompted_backend_sends_no_prompt_for_short_chunks():
     assert PROMPT_MIN_S == 1.5 and inner.prompts == [None, "동우님."]
 
 
+def test_prompted_backend_sends_the_line_before_as_the_prompt_of_a_short_chunk():
+    """짧은 묶음은 이름 대신 앞 줄을 프롬프트로 싣는다. 앞 줄이 없으면 프롬프트 없이(결정 기록 0031)."""
+    import numpy as np
+
+    from stt.backend import PROMPT_MIN_S, Prompted
+
+    class Inner:
+        def __init__(self):
+            self.prompts = []
+
+        def transcribe(self, samples, sample_rate, prompt=None):
+            self.prompts.append(prompt)
+            return SttResult(text="네", words=[])
+
+    inner = Inner()
+    b = Prompted(inner, "동우님.", min_s=PROMPT_MIN_S)
+    short = np.zeros(int(16_000 * 0.5), dtype=np.float32)
+    long_ = np.zeros(int(16_000 * 2), dtype=np.float32)
+    b.transcribe(short, 16_000, context="빼기로 하죠.")
+    b.transcribe(short, 16_000)
+    b.transcribe(long_, 16_000, context="빼기로 하죠.")
+    assert inner.prompts == ["빼기로 하죠.", None, "동우님."] and b.takes_context is True
+
+
 def test_name_prompt_dedupes_skips_blanks_and_caps_the_list():
     from stt.backend import NAME_PROMPT_MAX, name_prompt
 

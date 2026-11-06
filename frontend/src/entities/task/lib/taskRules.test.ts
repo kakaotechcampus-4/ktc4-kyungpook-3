@@ -1,4 +1,5 @@
 import { taskFixtures } from '@/shared/mock/fixtures/task'
+import { toTaskResponse } from '@/shared/mock/task-state'
 import { MOCK_TODAY, MOCK_NOW } from '@/shared/mock/fixtures/constants'
 import { toTask } from '../model/mapper'
 import { filterByTab } from './taskFilter'
@@ -12,7 +13,7 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers())
 
 it('counts every non-done status as in progress without mutating the task list', () => {
-  const tasks = taskFixtures.map(toTask)
+  const tasks = taskFixtures.map((row) => toTask(toTaskResponse(row)))
   expect(filterByTab(tasks, 'in_progress').map(({ id }) => id)).toEqual([
     'tk_01',
     'tk_02',
@@ -27,7 +28,7 @@ it('counts every non-done status as in progress without mutating the task list',
 })
 
 it('reproduces the fixed overdue and inclusive seven-day counts without overlap', () => {
-  const tasks = taskFixtures.map(toTask)
+  const tasks = taskFixtures.map((row) => toTask(toTaskResponse(row)))
   expect(tasks.filter((task) => isOverdue(task, MOCK_TODAY)).map(({ id }) => id)).toEqual([
     'tk_02',
     'tk_07',
@@ -49,7 +50,7 @@ it('reproduces the fixed overdue and inclusive seven-day counts without overlap'
 })
 
 it('joins an injected name map and preserves missing names without changing the task', () => {
-  const tasks = taskFixtures.map(toTask)
+  const tasks = taskFixtures.map((row) => toTask(toTaskResponse(row)))
   const names = new Map([['mb_01', '김서연']])
   expect(withAssigneeName(tasks[0], names)).toMatchObject({ id: 'tk_01', assigneeName: '김서연' })
   expect(withAssigneeName(tasks[1], names).assigneeName).toBeNull()

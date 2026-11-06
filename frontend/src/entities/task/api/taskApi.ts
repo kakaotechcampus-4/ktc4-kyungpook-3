@@ -1,4 +1,5 @@
 import { queryOptions } from '@tanstack/react-query'
+import type { QueryClient } from '@tanstack/react-query'
 import { request } from '@/shared/api/client'
 import { ApiError, CLIENT_ERROR_CODES, ERROR_CODES, createClientError } from '@/shared/api/errors'
 import { STALE_TIME } from '@/shared/api/queryClient'
@@ -74,6 +75,17 @@ export function taskDetailQueryOptions(workspaceId: string, taskId: string) {
   })
 }
 
+/** 서버가 돌려준 태스크를 그 태스크의 목록 행·상세 캐시에 쓴다. 다른 태스크와 없는 캐시는 건드리지 않는다 */
+export function writeServerTask(queryClient: QueryClient, workspaceId: string, task: Task): void {
+  const newer = (current: Task) => (current.version > task.version ? current : task)
+  queryClient.setQueryData(taskDetailQueryOptions(workspaceId, task.id).queryKey, (current) =>
+    current === undefined ? undefined : newer(current),
+  )
+  queryClient.setQueryData(taskListQueryOptions(workspaceId).queryKey, (current) =>
+    current?.map((item) => (item.id === task.id ? newer(item) : item)),
+  )
+}
+
 /**
  * 태스크 변경 이력. 최신순으로 온다. 이력 응답에는 공간이 없어서, 같은 태스크의 상세(공간을 확인한 캐시)를
  * 함께 확보한다 — 상세가 캐시에 있으면 다시 요청하지 않는다. 모든 이력의 `task_id` 가 요청한 태스크인지도 본다.
@@ -147,6 +159,24 @@ export async function retryTaskNotionSync(workspaceId: string, taskId: string): 
   return toWorkspaceTask(
     await request<TaskDto>(`/tasks/${encodeURIComponent(taskId)}/notion-sync/retry`, {
       method: 'POST',
+    }),
+    workspaceId,
+  )
+}
+
+/**
+ * 무응답 자동 막힘 풀기. PM 전용이다. 상태와 사유가 막히기 전 값으로 돌아간다. 돌려받은 태스크의 `autoBlocked` 는 false 다.
+ * 지금 풀 수 없으면(`autoBlocked` 가 false 인 상태) 409 다
+ */
+export async function undoTaskAutoBlock(
+  workspaceId: string,
+  taskId: string,
+  signal?: AbortSignal,
+): Promise<Task> {
+  return toWorkspaceTask(
+    await request<TaskDto>(`/tasks/${encodeURIComponent(taskId)}/auto-block/undo`, {
+      method: 'POST',
+      signal,
     }),
     workspaceId,
   )

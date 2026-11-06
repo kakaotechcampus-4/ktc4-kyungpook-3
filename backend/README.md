@@ -9,7 +9,7 @@
 - [문서 안내](docs/README.md): 문서 구조와 기존 문서 배치.
 - 계약: [AI(녹음 봇) 계약](docs/contracts/backend-ai-contract.md), 웹 화면용은 [프론트엔드 대표 계약](../frontend/docs/contracts/frontend-api-contract.md).
 - 계획: [전체 계획](docs/plan/backend-plan.md), [M0~M7 안내](docs/plan/README.md). 마일스톤별 plan.md는 아직 비어 있다. 진행 상태는 전체 계획의 마일스톤 개요(2026-10-02 기준)를 따른다.
-- 결과: [M0](docs/plan/m0/result.md)(백엔드 CI 보완), [M2](docs/plan/m2/result.md)(승인 때 대상 task 제목 확인), [M3](docs/plan/m3/result.md)(추출 근거를 발화 seq로 저장), [M5](docs/plan/m5/result.md)(녹음 업로드 저장과 AI 가져가기 API, AI 경로 미구현), [M7](docs/plan/m7/result.md)(배포 전 CI 검사, 봇 재시작 잠금, 되돌리기 문서). 모두 마일스톤 완료를 판정하지 않았다.
+- 결과: [M0](docs/plan/m0/result.md)(백엔드 CI 보완), [M2](docs/plan/m2/result.md)(승인 때 대상 task 제목 확인), [M3](docs/plan/m3/result.md)(추출 근거를 발화 seq로 저장), [M5](docs/plan/m5/result.md)(녹음 업로드 저장과 AI 가져가기 API, AI 경로 미구현), [M6](docs/plan/m6/result.md)(AI 처리 단계 보고와 진행 표시, #381), [M7](docs/plan/m7/result.md)(배포 전 CI 검사, 봇 재시작 잠금, 되돌리기 문서). 모두 마일스톤 완료를 판정하지 않았다.
 - 배포: [배포 안내](../deploy/README.md). 요청: [녹음 시작 때 배포 재시작 잠금 확인](docs/requests/bot-restart-lock.md)(AI).
 
 ## 실행
@@ -62,7 +62,7 @@ docker compose -f docker-compose.prod.yml logs -f api
 | 항목 | 동작 |
 |---|---|
 | 기동 순서 | db가 healthy가 된 뒤 api가 뜬다. api는 `alembic upgrade head` 후 uvicorn을 띄운다 |
-| 프로세스 | uvicorn `--workers 1`, `--reload` 없음. Notion/임베딩/업로드 sweeper 워커가 프로세스마다 뜨므로 워커를 늘리지 않는다 |
+| 프로세스 | uvicorn `--workers 1`, `--reload` 없음. Notion/임베딩/업로드 sweeper/리마인드 스케줄러 워커가 프로세스마다 뜨므로 워커를 늘리지 않는다 |
 | 포트 | api는 `127.0.0.1:8000`에만 열린다. 외부 공개는 같은 서버의 리버스 프록시(HTTPS)가 맡는다. db는 호스트에 열지 않는다 |
 | DB 접속 | api의 `DATABASE_URL`은 `.env`의 `POSTGRES_USER`/`POSTGRES_PASSWORD`/`POSTGRES_DB`로 다시 만든다(`db:5432`) |
 | 나머지 환경변수 | `NOTION_*`·`DISCORD_*`·`EMBEDDING_*`·`SERVICE_TOKEN` 등은 `.env`를 그대로 넘긴다 |
@@ -70,6 +70,8 @@ docker compose -f docker-compose.prod.yml logs -f api
 | 데이터 | DB는 `mm-prod_pgdata` 볼륨에 남는다. 로컬 개발용 볼륨(`mm-pgdata`)과 따로다 |
 | 업로드 녹음 | `mm-prod_uploads` 볼륨(컨테이너의 `/data/uploads`)에 둔다. 회의가 done·failed가 되면 그 회의 폴더를 지운다 |
 | 업로드 sweeper | 서버 안의 워커가 `UPLOAD_SWEEP_INTERVAL_SECONDS`(기본 300, 0 이하면 끔)마다 멈춘 업로드 회의를 failed 로 바꾸고 녹음 폴더를 지운다. AI 가 가져간 뒤 진행이 3시간 없으면 `failed_stage=diarize`, 화자 지정을 7일 기다리면 `speaker_assignment_expired`. 기준은 [봇 계약](docs/contracts/backend-ai-contract.md)의 "웹 업로드 가져가기" |
+| 리마인드 스케줄러 | 서버 안의 워커가 `REMINDER_SCHEDULER_INTERVAL_SECONDS`(기본 60, 0 이하면 끔)마다 재촉 제안, 발송 직전 확인, 72시간 무응답 막힘, 푸시 발송을 돈다. 브라우저 푸시는 `VAPID_PRIVATE_KEY`·`VAPID_PUBLIC_KEY`·`VAPID_SUBJECT` 가 모두 있어야 나가고, 하나라도 없으면 웹 안 알림만 쌓인다 |
+| 자동 막힘 표시 | 태스크 응답의 `auto_blocked` 는 `POST /tasks/{task_id}/auto-block/undo` 가 지금 성공하는 상태와 같다. 이력의 `change_source` 로 가리지 않는다. 막힌 뒤 사유를 PM 이 바꾸면 false 다 |
 | 로그 | 컨테이너당 10MB × 3개까지만 남긴다(디스크 50GB 고정) |
 
 ## 응답 형식
@@ -105,6 +107,11 @@ docker compose -f docker-compose.prod.yml logs -f api
 | `MEMBER_ALIAS_NOT_FOUND` | 404 | 담당자 별칭을 찾을 수 없음 |
 | `TASK_NOT_FOUND` | 404 | 태스크를 찾을 수 없음 |
 | `TASK_HISTORY_NOT_FOUND` | 404 | 반영 로그(태스크 히스토리)를 찾을 수 없음 |
+| `REMINDER_NOT_FOUND` | 404 | 리마인드를 찾을 수 없음. `details.reminder_id` |
+| `REMINDER_BUNDLE_NOT_FOUND` | 404 | 보낼 메시지(묶음)를 찾을 수 없음. `details.bundle_id` |
+| `INVITATION_NOT_FOUND` | 404 | 초대를 찾을 수 없음. 내 이메일로 온 초대가 아니거나(수락·거절), 그 워크스페이스 소속이 아니어도(취소·연결 끊기) 같음. `details.invitation_id` |
+| `MESSAGE_THREAD_NOT_FOUND` | 404 | 대화를 찾을 수 없음. `details.thread_id` |
+| `MESSAGE_NOT_FOUND` | 404 | 봇 메시지를 찾을 수 없음. `details.message_id` |
 | `MEETING_ALREADY_ENDED` | 409 | 이미 종료된 회의 |
 | `MEETING_NOT_PROCESSING` | 409 | 회의가 PROCESSING 상태가 아닌데 추출을 시도함 |
 | `MEETING_PROCESSING_IN_PROGRESS` | 409 | 같은 워크스페이스에 이미 처리 중인 회의가 있어 업로드를 받지 않음. `details.meeting_id` |
@@ -113,6 +120,20 @@ docker compose -f docker-compose.prod.yml logs -f api
 | `TASK_HISTORY_ALREADY_ROLLED_BACK` | 409 | 이미 되돌린 변경을 다시 되돌리려 함 |
 | `AUTO_TASK_NOT_REVERTIBLE` | 409 | auto로 만든 태스크를 되돌릴 수 없음. `details.reason`: `already_reverted`(이미 되돌림) · `not_auto_created`(auto로 만든 항목이 아님) · `task_missing`(태스크가 없음) · `task_changed`(만든 뒤 바뀜, `details.task_version`) · `pending_approval`(그 태스크의 처리 대기 승인 요청이 있음, `details.approval_id`). 태스크를 직접 고친다 |
 | `LAST_PM_REQUIRED` | 409 | 워크스페이스의 마지막 PM(로그인 계정이 있는 PM)을 member로 내리려 함. 다른 팀원을 먼저 PM으로 지정해야 함 |
+| `REMINDER_NOT_EDITABLE` | 409 | 예정 상태가 아닌 리마인드·묶음을 고치거나 승인하거나 취소하려 함. `details`에 `reminder_id` 또는 `bundle_id`와 `status` |
+| `REMINDER_SCHEDULED_AT_PASSED` | 409 | 지난 시각으로 만들거나 고치거나, 시각이 지난 묶음을 승인하려 함 |
+| `BUNDLE_CHANGED` | 409 | PM 이 본 뒤 묶음 문구나 구성이 바뀌어 승인하지 않음. `details.bundle_id`, `details.draft_version`(지금 판) |
+| `DRAFT_STALE` | 409 | 초안을 맡긴 뒤 묶음이 바뀌었거나 이미 승인·발송돼 초안을 받지 않음. `details.bundle_id`, `details.draft_version`, `details.status` |
+| `INVITATION_NOT_PENDING` | 409 | 대기 중이 아닌 초대를 수락·거절·취소하려 함. `details.invitation_id` |
+| `INVITATION_NOT_ACCEPTED` | 409 | 수락하지 않은 초대의 연결을 끊으려 함. `details.invitation_id` |
+| `MEMBER_ALREADY_LINKED` | 409 | 이미 계정이 연결된 팀원을 초대하거나 수락하려 함. `details.member_id` |
+| `ALREADY_WORKSPACE_MEMBER` | 409 | 그 이메일의 계정이 이미 이 워크스페이스 팀원임. 초대할 때 `details.email`, 수락할 때 `details.workspace_id` |
+| `EMAIL_ALREADY_INVITED` | 409 | 같은 이메일로 다른 팀원에게 보낸 초대가 대기 중임. `details.email` |
+| `PM_MEMBER_NOT_INVITABLE` | 409 | 역할이 PM 인 팀원을 초대하려 함. 팀원으로 초대해 수락한 뒤 PM 으로 바꿈. `details.member_id` |
+| `MEMBER_HAS_PENDING_INVITATION` | 409 | 대기 초대가 있는 팀원을 PM 으로 올리려 함. `details.member_id` |
+| `PASSWORD_RESET_TOKEN_INVALID` | 400 | 비밀번호 재설정 링크를 쓸 수 없음(없는·무효화된·이미 쓴·만료된 토큰). `details.reason` 은 `invalid`·`used`·`expired` |
+| `MAIL_UNAVAILABLE` | 503 | 메일을 보낼 수 없음(SMTP 설정이 없음). 발송 실패는 응답에 드러나지 않는다 |
+| `MESSAGE_RESULT_CONFLICT` | 409 | 이미 다른 결과가 보고됐거나 아직 가져가지 않은 메시지에 결과를 보고함. `details.message_id` |
 | `DISCORD_USER_ALREADY_MAPPED` | 409 | 같은 워크스페이스에서 탈퇴하지 않은 다른 팀원에 이미 연결된 디스코드 계정(`details.discord_user_id`). 탈퇴(`is_deleted`)한 팀원의 계정은 다시 연결할 수 있음. `discord_user_id`의 앞뒤 공백은 지우고, 빈 값은 연결 없음(null)으로 저장. 64자를 넘으면 이 코드가 아니라 400 `INVALID_REQUEST` |
 | `UPLOAD_NOT_CLAIMED` | 409 | AI가 아직 가져가지(claim) 않은 업로드에 화자를 보고하려 함. `details.status`(그 시점의 회의 상태) |
 | `SPEAKERS_ALREADY_REPORTED` | 409 | 이미 화자 목록을 받은 업로드에 저장된 것과 다른 목록을 보고하려 함(같은 목록의 재전송은 200). `details.status` |
@@ -207,7 +228,7 @@ callback은 워크스페이스별 경로가 아닌 고정 경로다. Notion에 �
 
 - "회의 Task" 같은 페이지 **바로 아래**에 데이터베이스를 둔다(열·토글 안에 넣으면 찾지 못한다).
 - 속성 이름과 종류를 `app/services/notion.py`의 `DATABASE_SCHEMA`와 맞춘다: Name/title, Status/select,
-  Assignee/rich_text, Due Date/date, Progress/number, Blocker/rich_text, **Task ID/rich_text**.
+  Assignee/rich_text, Due Date/date, Blocker/rich_text, **Task ID/rich_text**. 예전 템플릿의 Progress 속성은 있어도 되고, 워커가 쓰지 않는다.
 - Status 선택지에 `todo`·`in_progress`·`blocked`·`done`이 있어야 한다(색은 자유).
 - 속성·선택지를 더 넣거나 뷰·아이콘을 꾸미는 것은 자유다. 샘플 행은 지운다(복제된다).
 - 템플릿이 클수록 복제가 오래 걸려 60초를 넘길 수 있다.
@@ -335,6 +356,32 @@ scope는 `bot applications.commands identify`다. 봇 초대 scope만 요청하�
 | 오류 | 토큰이 없거나 틀리면 401 `UNAUTHENTICATED`, 없는 워크스페이스는 404 `WORKSPACE_NOT_FOUND` |
 | 봇 사용 | 봇은 아직 부르지 않는다. 디스코드 표시 이름 대신 이 값을 힌트로 쓰는 작업은 AI 후속이다. 자세한 내용은 [AI(녹음 봇) 계약](docs/contracts/backend-ai-contract.md#전사-힌트-조회) |
 
+## 비밀번호 재설정
+
+로그인 없이 부르는 경로 3개다. 결정 근거는 [M1 결정 기록](docs/plan/m1/basis-for-decision/2026-11-05-password-reset.md), 원본은 `app/services/password_reset.py`·`app/services/mailer.py`.
+
+| 경로 | 요청 | 응답 |
+|---|---|---|
+| `POST /api/v1/auth/password-reset/request` | `{email}` | 메일 설정이 없으면 503 `MAIL_UNAVAILABLE`. 있으면 가입 여부와 상관없이 200 `{}` |
+| `POST /api/v1/auth/password-reset/verify` | `{token}` | 200 `{expires_at, email_masked}`. 쓸 수 없으면 400 `PASSWORD_RESET_TOKEN_INVALID` |
+| `POST /api/v1/auth/password-reset/confirm` | `{token, new_password}` | 200 `{}`. 그 계정의 세션을 모두 지운다(새 세션은 만들지 않는다) |
+
+- 링크: `{APP_BASE_URL}/reset-password#token=<토큰>`. 30분 동안 한 번만 쓸 수 있고 DB 에는 sha256 해시만 둔다. 새 토큰을 발급하면 이전 미사용 토큰은 `invalid` 가 된다.
+- 요청 제한: 계정마다 60초에 1번, 1시간에 5번. 걸려도 응답은 같은 200 이고 이전 링크는 살아 있다. 이메일은 로그인처럼 정확히 일치해야 찾는다.
+- 발송: 응답 뒤 백그라운드에서 보내고, 실패하면 2·4·8초 뒤 3번 더 보낸다. 그래도 실패하면 로그만 남긴다(사용자는 다시 요청한다). 서버가 재시작되면 보내던 메일은 사라진다.
+- 비밀번호 규칙: 8자 이상, 숫자(0-9) 하나 이상. 회원가입(`POST /api/v1/auth/signup`)에도 같이 적용되고 어기면 400 `INVALID_REQUEST`.
+
+### 운영 메일 설정
+
+`.env` 에 `SMTP_HOST`·`SMTP_USERNAME`·`SMTP_PASSWORD`·`APP_BASE_URL` 이 모두 있어야 켜진다(나머지는 [.env.example](.env.example)). 팀 Gmail 을 쓰는 경우:
+
+1. 팀 전용 Gmail 계정에 2단계 인증을 켠다.
+2. Google 계정 > 보안 > 앱 비밀번호에서 비밀번호를 만든다. 일반 비밀번호로는 SMTP 로그인이 안 된다.
+3. 서버 `.env` 에 `SMTP_HOST=smtp.gmail.com`, `SMTP_USERNAME=<계정>`, `SMTP_PASSWORD=<앱 비밀번호>`, `APP_BASE_URL=<웹 주소>` 를 넣고 백엔드를 재시작한다.
+4. 실제 계정으로 재설정 메일을 받아 링크로 비밀번호를 바꿔 본다. 받은편지함에 없으면 스팸함을 본다.
+
+Gmail 은 하루 발송 한도(약 500통)가 있다. 다른 SMTP 로 옮길 때는 환경변수만 바꾼다(포트 465 면 `SMTP_SECURITY=ssl`).
+
 ## 권한
 
 로그인한 사용자가 요청한 워크스페이스의 팀원인지(소속) 확인하고, 아래 쓰기 API는 PM인지까지 확인한다. 아니면 403 `FORBIDDEN`.
@@ -342,14 +389,30 @@ scope는 `bot applications.commands identify`다. 봇 초대 scope만 요청하�
 
 | 구분 | API |
 |---|---|
-| PM 전용 | 승인·반려(`PATCH /approvals/{id}`), 할일 생성·수정(`POST /tasks`, `PATCH /tasks/{id}`), 되돌리기, auto 되돌리기(`POST /extractions/{id}/items/{item_id}/revert`), Notion 재시도, 팀원 생성·수정, 별칭 생성·삭제, Notion 연결 시작·콜백(`GET .../integrations/notion/start`, `GET /integrations/notion/callback`), Discord 연결 시작·콜백(`GET .../integrations/discord/start`, `GET /integrations/discord/callback`), 연동 해제, 회의 업로드, 온보딩 저장 |
-| 소속이면 누구나 | 조회 API 전부, 승인 요청 생성(`POST /approvals`) |
+| PM 전용 | 승인·반려(`PATCH /approvals/{id}`), 할일 생성·수정(`POST /tasks`, `PATCH /tasks/{id}`), 되돌리기, auto 되돌리기(`POST /extractions/{id}/items/{item_id}/revert`), Notion 재시도, 팀원 생성·수정, 별칭 생성·삭제, Notion 연결 시작·콜백(`GET .../integrations/notion/start`, `GET /integrations/notion/callback`), Discord 연결 시작·콜백(`GET .../integrations/discord/start`, `GET /integrations/discord/callback`), 연동 해제, 회의 업로드, 온보딩 저장, 메시지 설정 변경(`PATCH /workspaces/{workspace_id}/message-settings`) |
+| 소속이면 누구나 | 조회 API 전부(메시지 설정 조회 `GET .../message-settings` 포함), 승인 요청 생성(`POST /approvals`) |
 
 - Notion 연결 시작·콜백은 브라우저 페이지 이동이라 403 대신 앱 화면의 `?oauth=notion&oauth_result=failed`로 돌려보낸다.
 - 일반 팀원은 할일을 직접 바꾸지 못하고 승인 요청을 올려 PM의 승인을 받는다. 요청자(`requested_by`)는 바디 값이 아니라 로그인한 팀원으로 기록한다.
 - PM 역할은 `PATCH /members/{id}`의 `role`로 바꾼다. PM을 넘길 때는 다른 팀원을 먼저 PM으로 올린 뒤 자기를 내린다. 로그인 계정이 있는 PM이 한 명도 남지 않게 되면 409 `LAST_PM_REQUIRED`.
-- 봇 경로(회의 생성·종료·실패, 발화 저장, 유사 task 검색, 추출 등록, 서버로 워크스페이스 찾기, 전사 힌트 조회)는 사용자 세션 대신 서비스 토큰(`X-Service-Token`, `deps.require_service_token`)으로 막는다. 없거나 틀리면 401 `UNAUTHENTICATED`. 자세한 내용은 [AI(녹음 봇) 계약](docs/contracts/backend-ai-contract.md#인증).
+- 봇 경로(회의 생성·종료·단계 보고·실패, 발화 저장, 유사 task 검색, 추출 등록, 서버로 워크스페이스 찾기, 전사 힌트 조회)는 사용자 세션 대신 서비스 토큰(`X-Service-Token`, `deps.require_service_token`)으로 막는다. 없거나 틀리면 401 `UNAUTHENTICATED`. 자세한 내용은 [AI(녹음 봇) 계약](docs/contracts/backend-ai-contract.md#인증).
 
 ## 아직 없는 것
 
-봇이 서버로 워크스페이스를 찾아 회의를 보내는 연결(BE 조회는 있고 봇은 아직 `ai/.env`의 `BE_WORKSPACE_ID` 하나로 보낸다, AI #180 후속), 워크스페이스 초대, 업로드 녹음을 AI가 처리하는 경로(BE 가져가기 API는 있고 AI 쪽이 없다, [M5 결과](docs/plan/m5/result.md)), 메시지 로그.
+봇이 서버로 워크스페이스를 찾아 회의를 보내는 연결(BE 조회는 있고 봇은 아직 `ai/.env`의 `BE_WORKSPACE_ID` 하나로 보낸다, AI #180 후속), 워크스페이스 초대, 업로드 녹음을 AI가 처리하는 경로(BE 가져가기 API는 있고 AI 쪽이 없다, [M5 결과](docs/plan/m5/result.md)), 메시지 로그. PM 알림을 DM 으로 보내는 경로와 #회의록 요약 게시를 읽는 경로는 없어서 설정의 PM 알림 방식·요약 값은 저장만 하고 PM 알림은 항상 웹으로 간다.
+
+## 메시지·알림 설정
+
+워크스페이스마다 한 행(`workspace_message_settings`)이고, 행이 없으면 기본값이다(`saved: false`).
+
+| 요청 | 누가 | 하는 일 |
+|---|---|---|
+| `GET /api/v1/workspaces/{workspace_id}/message-settings` | 소속 팀원 | 설정 6개와 `saved`, `updated_at`, `updated_by`, PM 목록(`pms`, Discord 연결 여부 포함) |
+| `PATCH /api/v1/workspaces/{workspace_id}/message-settings` | PM | 보낸 키만 바꾼다. 빈 본문·null·범위 밖·모르는 키는 400 `INVALID_REQUEST` |
+
+- 키: `due_reminder`, `minutes_summary`, `silence_alert`, `reminder_auto_approve`(bool), `nudge_rule`(`days_before` 0~3, `hour` 0~23, 한국 시간, 객체째 보낸다), `pm_alert_method`(`web`·`discord_dm`·`both`).
+- `due_reminder` 가 꺼지면 스케줄러가 재촉을 제안하지 않는다. PM 이 직접 만든 재촉은 그대로 나간다. `silence_alert` 가 꺼지면 72시간 무응답 막힘 알림만 건너뛴다.
+- `reminder_auto_approve` 가 켜지면 켠 뒤 발송 시각이 오는 재촉 묶음을 발송 시각에 승인한다. 켜기 전에 시각이 지난 묶음은 보내지 않는다. 자동 승인된 묶음은 `approved_by` 가 null 이다.
+- 설정을 바꿔도 이미 만든 제안·묶음은 그대로다.
+- `pm_alert_method` 와 `minutes_summary` 는 저장만 한다.
+- 계약은 [FE 계약](../frontend/docs/contracts/frontend-api-contract.md), 결정 근거는 [결정 기록](docs/plan/m6/basis-for-decision/2026-11-04-message-settings.md).

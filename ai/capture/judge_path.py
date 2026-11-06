@@ -151,13 +151,19 @@ def build_extractor(*, run=None, candidates=None, cfg=None):
         candidates = BeClient(cfg.be_base_url, service_token=cfg.be_service_token)
 
     def extract(transcript: Transcript, speaker_names: dict[str, str] | None, today: date,
-                workspace_id: str | None = None) -> JudgeOutput:
+                workspace_id: str | None = None, *, context: Transcript | None = None,
+                dates: dict[int, date] | None = None) -> JudgeOutput:
         if not workspace_id:
             # 없으면 유사 검색이 /workspaces/None/... 로 가서 엉뚱한 404 나 판단 실패로 보인다
             raise ValueError("유사 task 검색에 쓸 워크스페이스가 없다(매니페스트 workspace_id)")
         names = {str(k): v for k, v in (speaker_names or {}).items()}
         labels = speaker_labels(names)
-        result = run(_relabel(transcript, labels), workspace_id=workspace_id, today=today, candidates=candidates)
+        extra: dict = {}  # 없으면 넘기지 않는다 — 음성 회의 경로와 예전 run 은 그대로
+        if context is not None:
+            extra["context"] = _relabel(context, labels)
+        if dates is not None:
+            extra["dates"] = dates
+        result = run(_relabel(transcript, labels), workspace_id=workspace_id, today=today, candidates=candidates, **extra)
         failures = [{"stage": f.stage, "text": f.finding_text, "reason": f.reason} for f in result.failures]
         if failures and not result.items:
             first = failures[0]

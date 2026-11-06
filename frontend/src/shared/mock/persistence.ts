@@ -1,4 +1,4 @@
-import { MEETING_FLOW_MODES, db, initialDb, replaceDb } from './db'
+import { MEETING_FLOW_MODES, PASSWORD_RESET_FAILURES, db, initialDb, replaceDb } from './db'
 import type { MockDb } from './db'
 
 /*
@@ -13,9 +13,17 @@ export const MOCK_DB_STORAGE_KEY = 'msw-db'
  * 2: M5 의 `meetingFlow` 칸 추가. 3: M8 의 메시지 칸(`messageReviews`·`messageThreads`·`messageFailures`) 추가.
  * 4: M8 메시지를 디자인 캔버스대로 다시 만들며 검토·메시지 필드와 `messageFailures.actions` 추가.
  * 5: 재촉을 검토 행 하나로 두고 대화 메시지에서 발송 단계를 빼다.
- * 올리면 e2e/restore.e2e.ts 의 버전 단언도 같이 고친다 (E2E 는 src 를 가져오지 않는다)
+ * 6: 팀원 초대(`invitations`) 칸 추가. 수락한 초대가 계정과 팀원을 잇는다.
+ * 7: 메시지를 백엔드 계약 모양으로 옮겨 검토 행(`messageReviews`)을 보낼 메시지(`messageBundles`)로 바꾸다 (#315).
+ * 8: 업로드 회의의 화자 지정(`meetingFlow.speakers`) 칸 추가 (#256).
+ * 9: 비밀번호 재설정(`passwordReset`) 칸 추가 (#356). 모의 메일함의 메일이 새로고침·링크 열기 뒤에도 남는다.
+ * 10: 메시지·알림 설정(`messageSettings`) 칸 추가 (#340).
+ * 11: 리마인드에 취소 시각(`cancelled_at`) 칸 추가 (#370). 마지막 태스크를 빼 닫힌 묶음이 함께 취소된 것만 돌려준다.
+ * 12: 계정에 공간별 팀원 행(`memberIds`) 칸 추가 (#367). 공간을 만든 계정이 새 PM 행과 이어진다.
+ * 13: 되돌릴 자동 막힘(`autoBlocks`) 칸 추가 (#365). 응답의 `auto_blocked` 를 이력이 아니라 이 기록으로 판정한다.
+ * 올리면 e2e/restore.e2e.ts 와 src/shared/mock/taskScenarios.test.ts 의 버전 단언도 같이 고친다 (E2E 는 src 를 가져오지 않는다)
  */
-export const MOCK_DB_VERSION = 5
+export const MOCK_DB_VERSION = 13
 
 interface StoredDb {
   version: number
@@ -45,7 +53,23 @@ function isMeetingFlow(value: unknown): boolean {
     isRecord(value.attendees) &&
     Object.values(value.attendees).every(
       (ids) => Array.isArray(ids) && ids.every((id) => typeof id === 'string'),
+    ) &&
+    isRecord(value.speakers) &&
+    Object.values(value.speakers).every(
+      (upload) => isRecord(upload) && Array.isArray(upload.speakers),
     )
+  )
+}
+
+function isPasswordReset(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    Array.isArray(value.tokens) &&
+    value.tokens.every((token) => hasStrings(token, ['token', 'email', 'expiresAt', 'status'])) &&
+    isRecord(value.nextMailAt) &&
+    Array.isArray(value.outbox) &&
+    value.outbox.every((mail) => hasStrings(mail, ['to', 'resetPath', 'sentAt'])) &&
+    (PASSWORD_RESET_FAILURES as readonly unknown[]).includes(value.failure)
   )
 }
 
@@ -70,7 +94,8 @@ function isMockDb(value: unknown): value is MockDb {
         isRecord(account) &&
         isSession(account.session) &&
         typeof account.password === 'string' &&
-        Array.isArray(account.workspaceIds),
+        Array.isArray(account.workspaceIds) &&
+        isRecord(account.memberIds),
     ) &&
     state.workspaces.every(
       (workspace) =>
@@ -83,7 +108,8 @@ function isMockDb(value: unknown): value is MockDb {
       (integration) =>
         hasStrings(integration.discord, ['status']) && hasStrings(integration.notion, ['status']),
     ) &&
-    isMeetingFlow(state.meetingFlow)
+    isMeetingFlow(state.meetingFlow) &&
+    isPasswordReset(state.passwordReset)
   )
 }
 

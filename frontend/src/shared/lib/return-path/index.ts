@@ -1,0 +1,1 @@
+export { parseReturnPath } from './returnPath'

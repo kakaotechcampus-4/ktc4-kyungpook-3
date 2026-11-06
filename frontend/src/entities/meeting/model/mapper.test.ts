@@ -1,4 +1,4 @@
-import { toMeeting, toMeetingSummary, toMeetingUploadResult } from './mapper'
+import { toMeeting, toMeetingSummary, toMeetingUploadResult, toSpeakerView } from './mapper'
 import { meetingFixtures, meetingSummaryFixtures } from '@/shared/mock/fixtures/meeting'
 
 it('maps detail and summary independently including the required progress', () => {
@@ -56,6 +56,10 @@ it('falls back unknown status and source without throwing', () => {
   }
 })
 
+it('keeps a chat source instead of falling back to discord', () => {
+  expect(toMeetingSummary({ ...meetingSummaryFixtures[0], source: 'chat' }).source).toBe('chat')
+})
+
 // 백엔드 Meeting.title 이 nullable 이고 목록은 그 값을 그대로 내린다. items 가 list[dict] 라
 // 스키마로는 드러나지 않는다 (계약 §4.0-②-14). 단건과 같은 폴백으로 도메인 계약을 지킨다
 it('falls back a null list title to an empty string like the detail mapper does', () => {
@@ -66,5 +70,46 @@ it('maps the 202 upload response to the meeting to track', () => {
   expect(toMeetingUploadResult({ meeting_id: 'mt_11', status: 'processing' })).toEqual({
     id: 'mt_11',
     status: 'processing',
+  })
+})
+
+it('reads awaiting_speakers as its own status, not as created', () => {
+  const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  try {
+    expect(toMeeting({ ...meetingFixtures[2], status: 'awaiting_speakers' }).status).toBe(
+      'awaiting_speakers',
+    )
+    expect(
+      toMeetingSummary({ ...meetingSummaryFixtures[2], status: 'awaiting_speakers' }).status,
+    ).toBe('awaiting_speakers')
+    expect(warning).not.toHaveBeenCalled()
+  } finally {
+    warning.mockRestore()
+  }
+})
+
+it('maps the speaker view keeping the server order and a missing recording', () => {
+  expect(
+    toSpeakerView({
+      meeting_id: 'mt_11',
+      status: 'awaiting_speakers',
+      speakers: [
+        { label: 'SPEAKER_01', total_sec: 120.5, samples: [{ start: 10, end: 14 }] },
+        { label: 'SPEAKER_00', total_sec: 3, samples: [] },
+      ],
+      candidates: [{ member_id: 'mb_01', display_name: '지민' }],
+      mapping: null,
+      audio: null,
+    }),
+  ).toEqual({
+    meetingId: 'mt_11',
+    status: 'awaiting_speakers',
+    speakers: [
+      { label: 'SPEAKER_01', totalSec: 120.5, samples: [{ start: 10, end: 14 }] },
+      { label: 'SPEAKER_00', totalSec: 3, samples: [] },
+    ],
+    candidates: [{ memberId: 'mb_01', displayName: '지민' }],
+    mapping: null,
+    audio: null,
   })
 })

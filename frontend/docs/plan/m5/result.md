@@ -45,7 +45,7 @@
 ## 남은 작업과 제한 사항
 
 - 자동 실패 전환은 미병합 BE PR #301의 담당 범위다. 이 작업에서 실제 3시간·7일 경과를 검증하지 않았다.
-- 화자 지정 제출 UI 구현 후 `409 MEETING_NOT_AWAITING_SPEAKERS(details.status=failed)`의 상세 재조회·재제출 차단을 연결해야 한다.
+- 화자 지정 제출 UI 구현 후 `409 MEETING_NOT_AWAITING_SPEAKERS(details.status=failed)`의 상세 재조회·재제출 차단을 연결해야 한다. 2026-11-05에 연결했다(아래 추가 결과).
 - BE 목록 변경은 구현 제안이며 파트 간 리뷰·합의와 실서버 배포 검증이 남았다. 운영 API·실제 AI 처리·Notion 반영은 이번 검증 대상이 아니다.
 
 ## 관련 기록
@@ -53,3 +53,106 @@
 - [대표 계약](../../contracts/frontend-api-contract.md#441-수동-업로드-실패-사유와-만료-이력-256-2026-11-04)
 - [만료 이력 보존 결정](basis-for-decision/2026-11-04-upload-failure-history.md)
 - [이슈 결정 댓글](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/256#issuecomment-6609243822)
+
+## 2026-11-04 추가 결과: 탭 패널 초점과 회의 날짜 Tab 순서 (#337)
+
+### 작업 근거와 요약
+
+2026.10.30 접근성 상세 이슈 보고서(KWCAG 2.2)의 초점 지적 두 건을 다룬 이슈 #337이 근거다. 먼저 실제 브라우저에서 재현하고, 근거에 따라 고칠지 설명할지 정하는 범위다. 탭 패널은 고쳤다. 회의 날짜는 갇힘이 재현되지 않아 기본 날짜 입력을 유지하고 근거를 남겼다. M5 전체 완료를 다시 판정하지 않는다.
+
+### 실제 구현 및 관련 코드
+
+- [panelTabStop](../../../src/shared/lib/tab-panel/panelTabStop.ts): `role="tabpanel"`에 거는 ref다. 패널 안에 Tab으로 갈 요소가 없을 때만 `tabindex="0"`을 두고, DOM이 바뀌면 다시 판단한다.
+- [회의록 탭](../../../src/widgets/meeting-minutes/ui/MinutesTabs.tsx)과 [태스크 목록 탭](../../../src/widgets/task-board/ui/TaskBoard.tsx)의 고정 `tabIndex={0}`을 이 ref로 바꿨다. 두 화면에 같은 기준을 적용한다.
+- [회의 올리기 폼](../../../src/features/meeting-upload/ui/MeetingUploadForm.tsx)은 바꾸지 않았다.
+- 테스트: [회의록](../../../src/app/meetingMinutes.test.tsx)은 `요약`에서 Tab이 패널로, `추출된 일`에서 첫 링크로 가는지 본다. [태스크](../../../src/app/tasks.test.tsx)는 목록이 있으면 첫 항목 링크로, 누를 것이 없는 빈 패널이면 패널로 가는지 본다.
+
+### 재현과 화면 검증
+
+MSW 모의 서버(verify-frontend 절차)를 띄워 Tab마다 초점이 간 접근성 노드를 기록했다. 대상 브라우저는 Playwright Chromium 153과 설치된 Google Chrome 156(한국어 UI)이다.
+
+| 화면 | 변경 전 | 변경 후 |
+|---|---|---|
+| 회의록 `요약` | 탭 → 패널 | 탭 → 패널(유지) |
+| 회의록 `추출된 일` | 탭 → 패널 → `로그인 API 연동` | 탭 → `로그인 API 연동` |
+| 태스크 `전체` | 탭 → 마감 조건 → 담당자 → 정렬 → 패널 → `알림 문구 검토` | 탭 → 마감 조건 → 담당자 → 정렬 → `알림 문구 검토` |
+| 회의 올리기 | 회의 제목 → 연도 → 월 → 일 → 날짜 선택도구 → (참석자 빼기) → `추가` → `정리 시작하기` | 같음(코드 변경 없음) |
+
+회의 날짜의 순서는 빈 폼, 파일·참석자 선택 뒤, 제목을 비우고 제출해 오류가 난 뒤, 날짜를 일부만 입력한 뒤, 참석자 메뉴를 열었다 닫은 뒤, Shift+Tab 역방향에서 모두 같았다. 보고서 환경인 Chrome 155는 직접 실행하지 못했다. 증거는 로컬 `.verify/evidence/`(before·after·chrome156)에 있으며 저장소에는 올리지 않는다.
+
+### 검증 내역
+
+실행일은 2026-11-04이며 Node v24.11.0를 사용했다.
+
+- `npm run typecheck`, `npm run lint`, `npm run build`: 통과.
+- `npm run format:check`: 통과. 처음 실행에서는 git이 무시하는 로컬 증거 폴더 `frontend/.verify/`만 걸렸고, 그 폴더를 잠시 옮긴 뒤 다시 실행해 통과했다.
+- `npm run test`: 178개 파일 중 158개, 2,018개 테스트 중 1,961개가 통과했다. 실패 57건은 다른 작업 트리의 설치·테스트와 함께 돈 부하에서 난 5~15초 시간 초과와 첫 화면 조회 실패였고, 이번에 바꾸지 않은 업로드 폼 테스트(23건)가 가장 많았다. 실패한 20개 파일을 `--maxWorkers=2`로 다시 돌려 20개 파일·481개 테스트가 모두 통과했다.
+- 새 테스트 중 Tab 건너뛰기 두 건(회의록·태스크 목록)은 수정 전 코드에서 실패하고 수정 뒤 통과했다. 빈 패널 테스트는 수정 전후 모두 통과하는 회귀 방지용이다.
+
+### 계획 대비 변경
+
+보고서 개선안은 패널의 `tabindex="0"`을 모두 빼는 것이다. APG 탭 패턴과 맞추기 위해, 안에 누를 것이 없는 패널에는 남겼다. 회의 날짜의 `role="spinbutton"` 제거안은 브라우저가 만드는 역할이라 적용할 수 없고, 갇힘도 재현되지 않아 코드를 바꾸지 않았다. 근거는 [결정 기록](basis-for-decision/2026-11-04-tab-panel-and-date-focus.md)에 있다.
+
+### 남은 작업과 제한 사항
+
+- 검수 측이 회의 날짜 갇힘을 다른 환경(보조기술, 확장 프로그램, Chrome 155)에서 다시 보이면 재현 절차를 받아 다시 확인한다. 회신 문안은 이슈 #337 댓글에 남겼다.
+- 숨겨진 요소나 비활성 `fieldset` 안의 버튼은 Tab 대상으로 셀 수 있다. 현재 두 패널에는 그런 구성이 없다.
+
+## 2026-11-05 추가 결과: 화자 지정 화면과 샘플 구간 (#256, #342)
+
+### 작업 근거와 요약
+
+2026-11-05 사용자가 #256의 화자 지정 화면과 #342의 샘플 구간 규칙을 구현하도록 지시했다. 진입점 세 곳, 별도 주소, 후보 범위, 제출 규칙은 사용자가 정했고 나머지는 기본값으로 정했다. 위 「남은 작업」의 409 만료 연결도 이번에 했다. M5 계획과 완료조건 원문은 고치지 않았고 마일스톤 완료를 다시 판정하지 않는다.
+
+### 실제 구현 및 관련 코드
+
+- 회의 상태에 `awaiting_speakers`를 더했다. 화자 조회·제출 API와 원본 재생 주소를 이었다([types.ts](../../../src/entities/meeting/model/types.ts), [speakers.ts](../../../src/entities/meeting/api/speakers.ts)).
+- [처리 추적](../../../src/features/meeting-processing/model/trackerOutcome.ts)은 대기 중에도 30초 간격으로 지켜본다. PM에게만 처리 화면 이동이나 `화자 지정이 필요해요` 토스트로 한 번 안내한다. [처리 화면](../../../src/pages/meeting-processing/ui/MeetingProcessingPage.tsx)은 대기 안내를 보인다.
+- [지정 화면](../../../src/pages/meeting-speakers/ui/MeetingSpeakersPage.tsx)은 `/workspaces/:workspaceId/meetings/:meetingId/speakers`에 있다. 라벨을 `화자 N`과 총 발화 시간으로 보이고 샘플 구간을 재생한다. 참석자, 펼치는 다른 팀원, 외부 참석자 중에서 고른다. 모든 라벨을 골라야 제출되고, 제출 오류는 [이유 하나](../../../src/features/speaker-assignment/model/submitRejection.ts)로 바꿔 안내한다. 팀원에게는 안내만 보인다.
+- [회의록 목록·상세](../../../src/widgets/meeting-minutes/ui/MeetingMinutes.tsx)가 대기 회의를 `화자 지정 필요`로 보이고 지정 화면으로 잇는다.
+- #256 A1에 따라 [근거 화자 이름](../../../src/entities/member/lib/speakerName.ts)을 팀원 ID로 먼저 찾는다. BE 응답에 `evidence.speaker_member_id`와 승인 payload의 `evidence_speaker_member_id`가 실리는 것을 `backend/app/schemas/meeting.py`와 `backend/app/api/extractions.py`에서 확인했다.
+- MSW에 화자 조회·제출·녹음 재생 목, 코드로 만든 무음 WAV, `meeting-speakers*` 시나리오 다섯 개를 더했다. 모의 DB 버전은 8이다. 대표 계약 §2.3.1·§2.4·§2.5·§4.4.1·§5.5와 [MSW 안내](../../msw-guide.md)를 갱신했다.
+
+### 완료조건 확인
+
+이번 작업은 M5 계획의 완료조건이 아니라 사용자 지시로 진행했다. 아래는 지시 항목별 상태다.
+
+| 지시 항목 | 상태 | 근거 |
+|---|---|---|
+| 처리 화면을 보던 PM을 대기 순간 지정 화면으로 안내 | 충족(MSW) | 브라우저 여정 `meeting-speakers`, `meetingSpeakersTracking.test.tsx` |
+| 목록 `화자 지정 필요` 행에서 지정 화면 진입 | 충족(MSW) | 브라우저 여정 `meeting-speakers-list`, `meetingMinutes.test.tsx`, E2E `meeting-speakers.e2e.ts` |
+| 다른 화면이면 토스트로 알리고 지정 화면으로 이동 | 충족(Vitest), 브라우저 미검증 | `meetingSpeakersTracking.test.tsx`. MSW 흐름은 첫 조회에 대기가 되어 브라우저에서 다른 화면으로 떠날 틈이 없다 |
+| 별도 주소, 새로고침·직접 진입, 팀원 안내 | 충족(MSW) | 여정 `meeting-speakers-edges`, `meetingSpeakers.test.tsx` |
+| 후보 범위(참석자, 다른 팀원, 외부 참석자 `null`), 다중 지정 | 충족(MSW) | 여정 `meeting-speakers`의 PUT 본문, `assignmentDraft.test.ts` |
+| 모든 라벨을 골라야 제출, 남은 수 표시 | 충족(MSW) | 여정 `meeting-speakers`, `meetingSpeakers.test.tsx` |
+| 샘플 재생(구간 끝 멈춤, 1개·2초 미만, `audio: null`) | 충족(MSW·jsdom) | 여정의 0.8초 샘플 자동 멈춤, `samplePlayback.test.ts`. m4a 시작 지연은 미검증 |
+| 409 `details.status=failed` 상세 재조회·재제출 차단 | 충족(MSW) | 여정 `meeting-speakers-edges`, E2E `meeting-speakers.e2e.ts` |
+| 제출 뒤 처리 재개, `done`까지 추적 | 충족(MSW) | 여정 `meeting-speakers`가 회의록까지 감 |
+| A1 근거 화자 이름 | 충족(MSW) | `speakerName.test.ts`, `approvals.test.tsx` |
+
+### 검증 내역
+
+실행일은 2026-11-05, Node v24.11.0이다. 모두 `frontend/`에서 실행했다.
+
+- `npm.cmd run typecheck`, `npm.cmd run lint`, `npm.cmd run format:check`, `npm.cmd run build`: 통과. 빌드 산출물에 `meeting-speakers` 시나리오 이름은 없고 지연 로드 화면 조각 이름만 있다.
+- 범위 Vitest(`npx vitest run --maxWorkers=1 <파일>`): 화자·추적·회의 엔티티·MSW 20개 파일 159개, 회의록 목록·상세 2개 파일 42개, A1·승인·추출·MSW 흐름 7개 파일 113개가 통과했다. 전체 `npm run test`는 다른 워크트리 부하 때문에 실행하지 않았다.
+- E2E `E2E_PORT=5236 npx playwright test e2e/meeting-speakers.e2e.ts`: 두 사례가 로그에서 통과했다. 실행 뒤 메모리 부족으로 프로세스가 회수되어 요약 줄과 종료 코드는 남지 않았다. E2E 전체는 실행하지 않았다.
+- 로컬 검증 스킬의 브라우저 여정(MSW, Chromium 1280×900, 포트 5246): `meeting-speakers`, `meeting-speakers-edges`, `meeting-speakers-list` 모두 `JOURNEY PASS`. 증거는 git 무시 경로 `frontend/.verify/artifacts/spk-2/`, `spk-3/`이다. 화면 선택, 만료 안내, 목록 행 스크린샷을 직접 확인했다. 콘솔 오류는 없었다.
+- 브랜치를 origin/develop 위로 옮긴 뒤 같은 검사를 다시 실행했다. 모의 DB 버전이 #315의 7과 겹쳐 8로 올렸고 `e2e/restore.e2e.ts`의 단언도 맞췄다.
+
+### 계획 대비 변경
+
+M5 계획에는 화자 지정 단계가 없었다. 수동 업로드에 AI 화자 분리와 PM 지정 단계가 생겨(#255, #266) 이번 지시로 화면과 상태를 추가했다. 처리 추적의 「정리 중일 때만 polling」 규칙에 대기 상태 30초 polling을 더했다. 이유와 대안은 [결정 기록](basis-for-decision/2026-11-05-speaker-assignment-screen.md)에 있다.
+
+### 남은 작업과 제한 사항
+
+- 실서버 연동은 검증하지 않았다. 화자 조회·제출·원본 재생과 m4a 원본의 재생 시각 어긋남(#342)을 실서버에서 확인해야 한다.
+- 후보를 참석자로 제한하지 않는다는 FE 결정을 #256에 답하고 BE 확인을 받아야 한다. BE가 제출을 참석자로 제한하면 「다른 팀원」 묶음을 지운다.
+- 다른 화면 토스트는 브라우저 여정 없이 Vitest로만 확인했다.
+- 전체 단위 테스트와 E2E 전체는 실행하지 않았다.
+
+### 관련 기록
+
+- [화자 지정 화면 결정](basis-for-decision/2026-11-05-speaker-assignment-screen.md)
+- [대표 계약 §2.3.1](../../contracts/frontend-api-contract.md#231-업로드-회의-화자-지정--pm-경로-266)
+- [이슈 #256](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/256), [이슈 #342](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/342)

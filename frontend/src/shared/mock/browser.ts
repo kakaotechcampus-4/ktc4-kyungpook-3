@@ -2,6 +2,8 @@ import { setupWorker } from 'msw/browser'
 import { handlers } from './handlers'
 import { prepareBrowserDb } from './browserDb'
 import { saveDb } from './persistence'
+import { fixClock } from '@/shared/lib/date'
+import { MOCK_NOW } from './fixtures/constants'
 
 export const worker = setupWorker(...handlers)
 
@@ -10,6 +12,7 @@ export const worker = setupWorker(...handlers)
  * 비로그인 시작과 sessionStorage 영속은 브라우저에만 있다.
  */
 export async function startMockWorker(): Promise<void> {
+  fixClock(Date.parse(MOCK_NOW))
   const { cleanPath } = prepareBrowserDb(new URL(window.location.href), window.sessionStorage)
   // 라우터가 뜨기 전이라 주소만 조용히 바꾼다. 시나리오 파라미터가 새로고침 때 다시 초기화하지 않게 한다
   if (cleanPath !== null) window.history.replaceState(window.history.state, '', cleanPath)

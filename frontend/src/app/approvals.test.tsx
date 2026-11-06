@@ -4,10 +4,12 @@ import { getResponse, http } from 'msw'
 import { clearTrackedMeetings } from '@/entities/meeting'
 import { WORKSPACE_LIST_QUERY_KEY } from '@/entities/workspace'
 import { paths } from '@/shared/config/routes'
-import { db } from '@/shared/mock/db'
+import { db, replaceDb } from '@/shared/mock/db'
 import { fail } from '@/shared/mock/envelope'
 import { MOCK_NOW } from '@/shared/mock/fixtures/constants'
 import { handlers } from '@/shared/mock/handlers'
+import { completeMeeting } from '@/shared/mock/meetingFlow'
+import { createScenarioDb } from '@/shared/mock/scenarios'
 import { server } from '@/shared/mock/server'
 import { setMockRole } from '@/shared/mock/sessions'
 import { deferred } from '@/shared/test/deferred'
@@ -112,7 +114,7 @@ describe('읽기 진입과 실 API 의 생성 승인 (AC-05)', () => {
     expect(field('회의 원문', '원문 마감')).toHaveTextContent('다음 주 월요일')
     const evidence = screen.getByRole('figure', { name: '근거' })
     expect(within(evidence).getByText('박민수님이 테스트 계획 정리을 맡기로 했어요.')).toBeVisible()
-    expect(evidence).toHaveTextContent('화자 김서연 · 시각 02:45')
+    await waitFor(() => expect(evidence).toHaveTextContent('화자 김서연 · 시각 02:45'))
     await waitFor(() =>
       expect(within(evidence).getByRole('link', { name: '3주차 정기회의' })).toHaveAttribute(
         'href',
@@ -122,6 +124,42 @@ describe('읽기 진입과 실 API 의 생성 승인 (AC-05)', () => {
     expect(screen.queryByRole('textbox')).toBeNull()
     expect(screen.queryByRole('combobox')).toBeNull()
     expect(screen.getByRole('button', { name: '보완하기' })).toBeVisible()
+  })
+
+  it('업로드 회의의 근거는 Discord uid 없이 팀원 ID 로 화자 이름을 찾는다 (#256)', async () => {
+    const { approvalIds } = completeMeeting('mt_10')
+    const approval = db.approvals.find(({ approval_id }) => approval_id === approvalIds[0])!
+    expect(approval.payload).toMatchObject({
+      evidence_speaker: null,
+      evidence_speaker_member_id: 'mb_02',
+    })
+    await openApproval(approval.approval_id)
+    const evidence = screen.getByRole('figure', { name: '근거' })
+    await waitFor(() => expect(evidence).toHaveTextContent('화자 박민수 · 시각 01:00'))
+  })
+
+  it('채팅 회의의 근거 시각은 녹음 위치가 아니라 메시지를 쓴 서울 시각이다 (#397)', async () => {
+    replaceDb(createScenarioDb('approval-chat'))
+    await openApproval('ap_07')
+    const evidence = screen.getByRole('figure', { name: '근거' })
+    await waitFor(() => expect(evidence).toHaveTextContent('화자 김서연 · 시각 09/11 18:40'))
+    expect(evidence).not.toHaveTextContent('9:28:00')
+  })
+
+  it('회의 목록을 받지 못하면 근거 시각을 녹음 위치로 짐작하지 않고 알 수 없다고 한다 (#397)', async () => {
+    replaceDb(createScenarioDb('approval-chat'))
+    server.use(
+      http.get('/api/v1/workspaces/:workspaceId/meetings', () => fail('INTERNAL_ERROR', 'x', 500)),
+    )
+    const log = recordRequests()
+    await openApproval('ap_07')
+    await waitFor(() =>
+      expect(log.answered).toContainEqual({ method: 'GET', path: '/workspaces/ws_01/meetings' }),
+    )
+    await settle()
+    expect(screen.getByRole('figure', { name: '근거' })).toHaveTextContent(
+      '화자 김서연 · 시각 알 수 없음',
+    )
   })
 
   it('미정인 담당자·마감은 승인을 막지 않으며 반려는 status만 보낸다', async () => {
@@ -368,6 +406,79 @@ describe('변경 승인의 비교와 충돌 재확인 (AC-06)', () => {
     expect(await screen.findByTestId('approval-result')).toHaveTextContent('반려했어요')
     expect(bodies).toEqual([{ status: 'approved' }, { status: 'rejected' }])
     expect(taskOf('tk_01').status).toBe('in_progress')
+  })
+})
+
+describe('범위 변경 승인 (#205)', () => {
+  beforeEach(() => replaceDb(createScenarioDb('approval-scope')))
+
+  it('바꿀 필드가 없으면 범위 변경 문장과 근거를 보이고 빈 비교표 대신 안내한다', async () => {
+    await openApproval('ap_05', '태스크 변경 확인')
+    const scope = screen.getByRole('region', { name: '범위 변경' })
+    expect(within(scope).getByText('소셜 로그인은 이번 범위에서 빼기로 했어요.')).toBeVisible()
+    const evidence = within(scope).getByRole('figure', { name: '근거' })
+    expect(within(evidence).getByText('소셜 로그인은 이번엔 빼기로 했어요.')).toBeVisible()
+    expect(await within(evidence).findByText(/화자 박민수/)).toBeVisible()
+    const changes = screen.getByRole('region', { name: '바꿀 내용' })
+    expect(within(changes).getByText('바꿀 항목 값은 없어요.')).toBeVisible()
+    expect(screen.queryByRole('table', { name: '현재값과 제안값' })).toBeNull()
+    expect(scope.compareDocumentPosition(changes) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('근거 시각은 회의 출처대로다 — 녹음 회의는 녹음 위치, 채팅 회의는 메시지를 쓴 서울 시각 (#397)', async () => {
+    await openApproval('ap_05', '태스크 변경 확인')
+    const recording = within(screen.getByRole('region', { name: '범위 변경' })).getByRole(
+      'figure',
+      { name: '근거' },
+    )
+    await waitFor(() => expect(recording).toHaveTextContent('화자 박민수 · 시각 12:34'))
+  })
+
+  it('채팅 회의에서 나온 범위 변경의 근거 시각은 실제 작성 시각이다 (#397)', async () => {
+    const proposal = db.approvals.find(({ approval_id }) => approval_id === 'ap_05')
+    if (proposal === undefined) throw new Error('ap_05 가 시나리오에 없다')
+    proposal.payload = { ...proposal.payload, meeting_id: 'mt_08', evidence_at_ms: 34_080_000 }
+    await openApproval('ap_05', '태스크 변경 확인')
+    const evidence = within(screen.getByRole('region', { name: '범위 변경' })).getByRole('figure', {
+      name: '근거',
+    })
+    await waitFor(() => expect(evidence).toHaveTextContent('화자 박민수 · 시각 09/11 18:40'))
+    expect(evidence).not.toHaveTextContent('9:28:00')
+  })
+
+  it('바꿀 필드가 함께 오면 범위 변경과 비교표를 모두 보인다', async () => {
+    await openApproval('ap_06', '태스크 변경 확인')
+    expect(
+      within(screen.getByRole('region', { name: '범위 변경' })).getByText(
+        '회원가입은 이메일 인증까지만 하고 마감을 25일로 미뤄요.',
+      ),
+    ).toBeVisible()
+    const table = screen.getByRole('table', { name: '현재값과 제안값' })
+    await waitFor(() =>
+      expect(
+        within(table)
+          .getAllByRole('row')
+          .map((row) => row.textContent),
+      ).toEqual(['항목현재값확정할 값', '마감2026-09-162026-09-25']),
+    )
+    expect(screen.queryByText('바꿀 항목 값은 없어요.')).toBeNull()
+  })
+
+  it('승인하면 태스크 변경 이력에 범위 변경 한 줄이 보인다', async () => {
+    const user = userEvent.setup()
+    await openApproval('ap_05', '태스크 변경 확인')
+    await waitFor(() => expect(approveButton()).toBeEnabled())
+    await user.click(approveButton())
+    expect(await screen.findByTestId('approval-result')).toHaveTextContent('승인했어요')
+    expect(screen.queryByRole('heading', { name: '원래 제안' })).toBeNull()
+    await user.click(
+      await within(screen.getByLabelText('처리된 태스크')).findByRole('link', {
+        name: '로그인 API 연동',
+      }),
+    )
+    expect(
+      await screen.findByText('범위 변경: 소셜 로그인은 이번 범위에서 빼기로 했어요.'),
+    ).toBeVisible()
   })
 })
 

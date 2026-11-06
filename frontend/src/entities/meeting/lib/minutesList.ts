@@ -6,7 +6,7 @@ import type { MeetingSummary } from '../model/types'
  */
 export interface MinutesList {
   minutes: MeetingSummary[]
-  /** 정리 중(`processing`)·회의 중(`created`·`recording`). 회의록이 아니라 상태 항목으로 보인다 */
+  /** 정리 중(`processing`)·화자 지정 대기(`awaiting_speakers`)·회의 중(`created`·`recording`). 회의록이 아니라 상태 항목으로 보인다 */
   inProgress: MeetingSummary[]
   expired: MeetingSummary[]
 }
