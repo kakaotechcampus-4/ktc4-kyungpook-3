@@ -51,6 +51,8 @@ export type Scenario =
   | 'messages-member'
   | 'messages-member-push'
   | 'messages-pm-self'
+  | 'reply-judgment'
+  | 'reply-judgment-member'
 
 /** 첫 방문 인트로를 본 기기 기록 (#430, entities/user introRecord). 키를 바꾸면 여기도 바꾼다 */
 const DEVICE_INTRO_KEY = 'first-visit-intro:device'
