@@ -65,7 +65,19 @@
 ```
 
 - `done`인 채팅 회의 중 `started_at`이 가장 늦은 것의 `started_at + duration_ms`다(UTC). `started_at`이 같으면 `duration_ms`가 큰 쪽, 그래도 같으면 `meeting_id`가 큰 쪽이다. 봇은 이 뒤의 메시지부터 모은다.
-- 구현됨(`app/api/bot_lookups.py`), BE 담당 리뷰 대기. AI는 `ai/capture/chat_poll.py` 가 `BeClient.chat_cursor`(`ai/capture/handoff.py`)로 부른다.
+- 구현됨(`app/api/bot_lookups.py`), BE 담당 리뷰 대기. AI는 `ai/capture/chat_poll.py` 가 `BeClient.chat_cursor`(`ai/capture/handoff.py`)로 워크스페이스마다 부른다.
+
+### `GET /bot/chat-channels` → 200
+
+채팅 폴링이 읽을 디스코드 채널 목록을 묻는다. `X-Service-Token` 필요.
+
+```jsonc
+// data
+{ "items": [ { "workspace_id": "…", "guild_id": "…", "channel_id": "…" } ] }
+```
+
+- 워크스페이스마다 채널 하나다. 디스코드 연결이 해제된 워크스페이스는 목록에서 빠진다.
+- 제안, BE #428 대기(BE 미구현). AI 는 `BeClient.chat_channels` 로 부르고, 목록이 `workspace_id` 를 주므로 chat_poll 은 `guild_workspace` 를 부르지 않는다. 항목마다 기존 흐름(chat-cursor, `POST /meetings` source=chat)을 돈다.
 
 ### `PATCH /meetings/{meeting_id}/end` → 202
 

@@ -16,7 +16,7 @@ make setup                      # uv venv + 의존성 + .env.example 복사. ven
 .venv/bin/python -m pytest -q   # 외부 서비스·API 키 없이 돈다. 변경 후 항상 실행
 python -m capture.run_recorder  # 개발용 봇 (/join /record /stop)
 python -m capture.worker        # 저장된 회의 처리. --retry <서버ID> 로 포기한 회의 재시도
-python -m capture.chat_poll     # 채팅 폴링 (운영은 타이머). --dry-run 은 BE 에 쓰지 않고 판단만
+python -m capture.chat_poll     # 채팅 폴링: BE 가 알려 준 채널마다 (운영은 타이머). [--workspace ID] [--dry-run] (--dry-run 은 BE 에 쓰지 않고 판단만)
 ```
 
 lint/format 설정은 없다. 있다고 가정하지 않는다.
