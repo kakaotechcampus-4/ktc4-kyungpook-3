@@ -123,3 +123,95 @@ it('768 경계를 넘나들어도 고른 대화와 쓰던 답장이 남는다', 
   expect(field).toHaveValue('쓰던 답장')
   expect(backLink()).toBeVisible()
 })
+
+it('휴대폰 목록의 기본 대화에서 쓰던 답장을 이탈 확인에서 버리면 실제로 사라지고 다시 묻지 않는다', async () => {
+  stubViewportWidth(390)
+  applyScenario('messages-member')
+  // 팀원의 첫 대화는 넓은 화면이 목록 주소에서 대신 고르는 대화다 — 목록으로 돌아가도 같은 상세가 숨어 남던 곳이다
+  const app = renderApp(paths.messageThread('ws_01', 'th_06'))
+  await userEvent.type(await screen.findByRole('textbox', { name: '답장' }), '버릴 답장')
+
+  await userEvent.click(backLink())
+  const prompt = await screen.findByRole('dialog')
+  await userEvent.click(within(prompt).getByRole('button', { name: '변경 내용 버리고 나가기' }))
+  await app.expectPath(paths.messages('ws_01'))
+  expect(screen.queryByRole('textbox', { name: '답장', hidden: true })).toBeNull()
+
+  const threads = await within(
+    await screen.findByRole('complementary', { name: '메시지 목록' }),
+  ).findByRole('region', { name: '대화' })
+  await userEvent.click(within(threads).getAllByRole('link')[0])
+  await app.expectPath(paths.messageThread('ws_01', 'th_06'))
+  expect(screen.queryByRole('dialog')).toBeNull()
+  expect(await screen.findByRole('textbox', { name: '답장' })).toHaveValue('')
+})
+
+it('넓은 화면 두 단에서 고른 대화는 휴대폰 폭에서 뒤로 가기가 이전 상세가 아니라 목록으로 간다', async () => {
+  const resize = stubViewportWidth(1024)
+  applyScenario('messages-pm-self')
+  const app = renderApp(paths.messageThread('ws_01', 'th_01'))
+  const threads = await within(
+    await screen.findByRole('complementary', { name: '메시지 목록' }),
+  ).findByRole('region', { name: '대화' })
+  const other = within(threads)
+    .getAllByRole('link')
+    .find((link) => link.getAttribute('aria-current') !== 'page')!
+  await userEvent.click(other)
+  await app.expectPath(other.getAttribute('href')!)
+
+  resize(390)
+  await userEvent.click(backLink())
+  await app.expectPath(paths.messages('ws_01'))
+  expect(app.visitedActions().at(-1)).toBe('REPLACE')
+})
+
+it('목록에서 상세로 들어가면 상세 머리 제목에, 돌아오면 누른 행에 포커스가 간다', async () => {
+  stubViewportWidth(390)
+  applyScenario('messages-member')
+  const app = renderApp(paths.messages('ws_01'))
+  const threads = await within(
+    await screen.findByRole('complementary', { name: '메시지 목록' }),
+  ).findByRole('region', { name: '대화' })
+  const row = within(threads).getAllByRole('link')[0]
+  const rowPath = row.getAttribute('href')!
+  await userEvent.click(row)
+  await app.expectPath(rowPath)
+  // 상세 머리(DetailBar)의 제목이다. jsdom 은 CSS 가 없어 768 이상 머리(max-md:hidden)도 남아 있어 속성으로 고른다
+  expect(document.activeElement?.tagName).toBe('H2')
+  expect(document.activeElement).toHaveAttribute('tabindex', '-1')
+
+  await userEvent.click(backLink())
+  await app.expectPath(paths.messages('ws_01'))
+  const list = await screen.findByRole('complementary', { name: '메시지 목록' })
+  const again = within(list)
+    .getAllByRole('link')
+    .find((link) => link.getAttribute('href') === rowPath)
+  expect(document.activeElement).toBe(again)
+})
+
+it('가상 키보드가 보이는 영역을 줄이면 화면 전체 상세를 그 영역에 맞춘다', async () => {
+  stubViewportWidth(390)
+  const listeners = new Set<() => void>()
+  const viewport = {
+    height: window.innerHeight,
+    offsetTop: 0,
+    addEventListener: (_: string, listener: () => void) => listeners.add(listener),
+    removeEventListener: (_: string, listener: () => void) => listeners.delete(listener),
+  }
+  vi.stubGlobal('visualViewport', viewport)
+  applyScenario('messages-member')
+  renderApp(paths.messageThread('ws_01', 'th_06'))
+  await screen.findByRole('textbox', { name: '답장' })
+  const main = screen.getByRole('region', { name: '메시지 내용' }).closest('main')!
+  expect(main.style.position).toBe('')
+
+  viewport.height = 400
+  viewport.offsetTop = 120
+  act(() => listeners.forEach((listener) => listener()))
+  expect(main.style).toMatchObject({ position: 'fixed', top: '120px', height: '400px' })
+
+  viewport.height = window.innerHeight
+  viewport.offsetTop = 0
+  act(() => listeners.forEach((listener) => listener()))
+  expect(main.style.position).toBe('')
+})

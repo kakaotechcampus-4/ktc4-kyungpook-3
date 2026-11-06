@@ -59,3 +59,26 @@ export function inboxPane(input: {
     input.invalidPath || input.threadId !== null || input.bundleId !== undefined || input.composing
   return addressed ? 'detail' : 'list'
 }
+
+/**
+ * 휴대폰 목록이 상세를 숨겨 들고 있을지 (#478). 넓은 화면에서 폭만 줄여 목록이 됐으면 그 상세를 숨겨 둔다 — 다시 넓히면
+ * 쓰던 답장이 그대로다. 이동으로 목록에 왔으면 상세를 그리지 않는다 — 이탈 확인에서 버린 답장이 숨은 채 남지 않는다.
+ * 숨겨 둔 상세가 있는 채 이동하면 판(epoch)을 올려 상세를 새로 그린다. 이동은 기록 항목(location key)이 바뀐 것이다
+ */
+export interface PaneMemory {
+  pane: InboxPane
+  locationKey: string
+  keep: boolean
+  epoch: number
+}
+
+export function nextPaneMemory(prev: PaneMemory, pane: InboxPane, locationKey: string): PaneMemory {
+  if (prev.pane === pane && prev.locationKey === locationKey) return prev
+  const navigated = prev.locationKey !== locationKey
+  return {
+    pane,
+    locationKey,
+    keep: pane === 'list' && !navigated && (prev.pane === 'both' || prev.keep),
+    epoch: navigated && prev.keep ? prev.epoch + 1 : prev.epoch,
+  }
+}

@@ -1,5 +1,6 @@
 import type { Bundle, MessageInbox, MessageThreadSummary } from '@/entities/message'
-import { inboxPane, selectDetail } from './selection'
+import { inboxPane, nextPaneMemory, selectDetail } from './selection'
+import type { InboxPane, PaneMemory } from './selection'
 
 const bundle = (id: string, stage: Bundle['stage'] = 'awaitingApproval') =>
   ({ id, stage }) as Bundle
@@ -108,5 +109,39 @@ describe('inboxPane', () => {
     expect(pane({ bundleId: null })).toBe('detail')
     expect(pane({ composing: true })).toBe('detail')
     expect(pane({ invalidPath: true })).toBe('detail')
+  })
+})
+
+describe('nextPaneMemory', () => {
+  const start = (pane: InboxPane, locationKey = 'a'): PaneMemory => ({
+    pane,
+    locationKey,
+    keep: false,
+    epoch: 0,
+  })
+
+  it('넓은 화면에서 폭만 줄여 목록이 되면 상세를 숨겨 들고 있다', () => {
+    const narrowed = nextPaneMemory(start('both'), 'list', 'a')
+    expect(narrowed.keep).toBe(true)
+    // 다시 넓혔다 줄여도 같다
+    expect(nextPaneMemory(nextPaneMemory(narrowed, 'both', 'a'), 'list', 'a').keep).toBe(true)
+  })
+
+  it('이동으로 목록에 오면 상세를 들고 있지 않는다', () => {
+    expect(nextPaneMemory(start('detail'), 'list', 'b').keep).toBe(false)
+    expect(nextPaneMemory(start('list'), 'list', 'b').keep).toBe(false)
+  })
+
+  it('숨겨 둔 상세가 있는 채 이동하면 판을 올려 상세를 새로 그린다', () => {
+    const narrowed = nextPaneMemory(start('both'), 'list', 'a')
+    const opened = nextPaneMemory(narrowed, 'detail', 'b')
+    expect(opened).toMatchObject({ keep: false, epoch: 1 })
+    // 들고 있지 않을 때의 이동은 판을 그대로 둔다
+    expect(nextPaneMemory(opened, 'list', 'c').epoch).toBe(1)
+  })
+
+  it('같은 칸·같은 기록이면 그대로 돌려준다', () => {
+    const memory = start('detail')
+    expect(nextPaneMemory(memory, 'detail', 'a')).toBe(memory)
   })
 })

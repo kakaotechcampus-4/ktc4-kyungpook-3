@@ -13,18 +13,23 @@ export function DetailBar({
   title,
   subtitle,
   titleAs: Title,
+  titleRef,
 }: {
   back: ReactNode
   title: string
   subtitle: string | null
   /** 대화는 이 제목이 대화의 제목(h2)이다. 다른 상세는 본문에 자기 제목이 있어 글자로만 둔다 */
   titleAs: 'h2' | 'p'
+  /** 목록에서 상세로 들어올 때 화면이 포커스를 둘 자리 */
+  titleRef: (element: HTMLElement | null) => void
 }) {
   return (
     <div className={BAR}>
       {back}
       <div className="flex min-w-[0px] flex-col items-center text-center">
-        <Title className={TITLE}>{title}</Title>
+        <Title ref={titleRef} tabIndex={-1} className={TITLE}>
+          {title}
+        </Title>
         {subtitle === null ? null : <p className={SUBTITLE}>{subtitle}</p>}
       </div>
     </div>

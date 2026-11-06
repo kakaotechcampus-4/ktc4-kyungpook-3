@@ -4,7 +4,11 @@ import { useLocation, useNavigate } from 'react-router'
 import { messageInboxQueryOptions, messageThreadQueryOptions } from '@/entities/message'
 import type { Bundle, MessageInbox as Inbox, MessageThreadSummary } from '@/entities/message'
 import { paths } from '@/shared/config/routes'
-import { useCompactScreen, useHideShellChrome } from '@/shared/lib/compact-screen'
+import {
+  useCompactScreen,
+  useHideShellChrome,
+  useVisibleViewport,
+} from '@/shared/lib/compact-screen'
 import { GuardedLink } from '@/shared/lib/unsaved-changes'
 import { EmptyState } from '@/shared/ui/empty-state'
 import { Icon } from '@/shared/ui/icon'
@@ -12,8 +16,8 @@ import { QueryErrorState } from '@/shared/ui/query-error-state'
 import { PinnedToastHost } from '@/shared/ui/toast'
 import { avatarText, bundleDateLabel, bundleSummary, shortDate } from '../lib/format'
 import { threadHeading } from '../model/conversation'
-import { inboxPane, selectDetail } from '../model/selection'
-import type { DetailSelection, InboxPane } from '../model/selection'
+import { inboxPane, nextPaneMemory, selectDetail } from '../model/selection'
+import type { DetailSelection, InboxPane, PaneMemory } from '../model/selection'
 import { SELF_SECTION_TITLE, threadPolicy } from '../model/viewer'
 import type { MessageViewer, ThreadPolicy } from '../model/viewer'
 import { ComposeDetail } from './ComposeDetail'
@@ -75,7 +79,8 @@ const BACK = 'grid size-44 place-items-center rounded-12 text-ink hover:bg-surfa
 /* 휴대폰 목록의 정리 중 토스트 — 셸 독과 같은 자리(오른쪽 24, 아래 탭 막대 위 24). 독 대신 이 자리를 잡아 셸의 아래 여백이 생기지 않는다 */
 const LIST_TOAST = 'fixed right-24 bottom-[calc(24px+var(--bottom-tab-bar))] z-10'
 
-/** 목록에서 연 상세라는 표식. 있으면 뒤로 가기가 브라우저 뒤로 가기와 같다 — 기록 한 칸 뒤가 그 목록이다 */
+/** 휴대폰 목록 화면에서 연 상세라는 표식. 있으면 뒤로 가기가 브라우저 뒤로 가기와 같다 — 기록 한 칸 뒤가 그 목록이다.
+    넓은 화면의 두 단에서 고른 항목에는 붙이지 않는다 — 그 한 칸 뒤는 목록이 아니라 이전 상세다 */
 const FROM_LIST = { messagesList: true } as const
 
 function openedFromList(state: unknown): boolean {
@@ -144,6 +149,35 @@ export function MessageInbox({
     inbox.data.threads.length === 0 &&
     (inbox.data.viewer === 'member' || inbox.data.bundles.length === 0)
   useHideShellChrome(pane === 'detail' && !nothing)
+  // 휴대폰 목록은 폭만 줄여 왔을 때만 상세를 숨겨 들고 있다. 이동으로 왔으면 그리지 않는다 (PaneMemory)
+  const [memory, setMemory] = useState<PaneMemory>(() => ({
+    pane,
+    locationKey: location.key,
+    keep: false,
+    epoch: 0,
+  }))
+  const nextMemory = nextPaneMemory(memory, pane, location.key)
+  if (nextMemory !== memory) setMemory(nextMemory)
+  const detailMounted = pane !== 'list' || nextMemory.keep
+  const epoch = nextMemory.epoch
+  // 가상 키보드가 보이는 영역을 줄이면(iOS) 상세를 그 영역에 맞춘다 — 머리와 답장 줄이 키보드 위에 함께 남는다
+  const visible = useVisibleViewport(pane === 'detail')
+  // 목록 → 상세는 상세 머리 제목으로, 상세 → 목록은 누른 행(없으면 목록 제목)으로 포커스를 옮긴다
+  const asideRef = useRef<HTMLElement>(null)
+  const listTitleRef = useRef<HTMLHeadingElement>(null)
+  const barTitleRef = useRef<HTMLElement | null>(null)
+  const href = location.pathname + location.search
+  const shown = useRef({ pane, href })
+  useLayoutEffect(() => {
+    const before = shown.current
+    shown.current = { pane, href }
+    if (before.pane === 'list' && pane === 'detail') barTitleRef.current?.focus()
+    else if (before.pane === 'detail' && pane === 'list') {
+      const rows = asideRef.current?.querySelectorAll('a') ?? []
+      const row = Array.from(rows).find((link) => link.getAttribute('href') === before.href)
+      ;(row ?? listTitleRef.current)?.focus()
+    }
+  }, [pane, href])
   // 휴대폰 목록에서는 아무것도 고르지 않았다 — 넓은 화면이 대신 고른 첫 항목을 표시하지 않는다
   const highlighted = pane === 'list' ? null : selection
   // 정리 중 토스트(#424)는 이 화면에서 대화 영역 오른쪽 아래에 앉는다 (#474). 대화 아래 고정 줄(답장·안내)이 있으면 그 위 16,
@@ -197,7 +231,7 @@ export function MessageInbox({
     // 대화가 바뀌면 상세를 새로 마운트한다 — 이전 대화의 스크롤 자리를 들고 있지 않는다
     detail = (
       <ThreadDetail
-        key={selection.threadId}
+        key={`${selection.threadId}:${epoch}`}
         workspaceId={workspaceId}
         threadId={selection.threadId}
         botName={botName}
@@ -210,7 +244,7 @@ export function MessageInbox({
     // 묶음이 바뀌면 고쳐 쓰던 문구·직접 정하던 시각을 들고 가지 않는다
     detail = (
       <ReviewDetail
-        key={selection.bundle.id}
+        key={`${selection.bundle.id}:${epoch}`}
         workspaceId={workspaceId}
         botName={botName}
         bundle={selection.bundle}
@@ -221,6 +255,7 @@ export function MessageInbox({
   else if (selection.kind === 'compose')
     detail = (
       <ComposeDetail
+        key={`compose:${epoch}`}
         workspaceId={workspaceId}
         toastClearance={toastClearance}
         onCreated={(bundleId) => {
@@ -240,19 +275,33 @@ export function MessageInbox({
   const heading = detailHeading(selection, inbox.data, viewer, botName)
 
   return (
-    <main className={SCREEN[pane]}>
+    <main
+      className={SCREEN[pane]}
+      style={
+        visible === null
+          ? undefined
+          : { position: 'fixed', insetInline: 0, top: visible.top, height: visible.height }
+      }
+    >
       <aside
+        ref={asideRef}
         aria-label="메시지 목록"
         hidden={pane === 'detail'}
         className={ASIDE[pane]}
         style={listClearance > 24 ? { paddingBottom: listClearance } : undefined}
       >
         <div className="flex items-center justify-between gap-8 pr-4">
-          <h1 className={ASIDE_TITLE[pane]}>메시지</h1>
+          <h1
+            ref={listTitleRef}
+            tabIndex={pane === 'list' ? -1 : undefined}
+            className={ASIDE_TITLE[pane]}
+          >
+            메시지
+          </h1>
           {viewer.role === 'pm' ? (
             <GuardedLink
               to={paths.messageCompose(workspaceId)}
-              state={FROM_LIST}
+              state={pane === 'list' ? FROM_LIST : undefined}
               end
               aria-current={highlighted?.kind === 'compose' ? 'page' : 'false'}
               className={COMPOSE_LINK}
@@ -269,6 +318,7 @@ export function MessageInbox({
             viewer={viewer}
             threadId={highlighted?.kind === 'thread' ? highlighted.threadId : null}
             bundleId={highlighted?.kind === 'bundle' ? highlighted.bundle.id : null}
+            openState={pane === 'list' ? FROM_LIST : undefined}
           />
         ) : inbox.error !== null ? (
           // 목록 오류는 목록 칸에만 알린다. 고른 대화는 따로 받아 그대로 보인다
@@ -313,9 +363,12 @@ export function MessageInbox({
             title={heading.title}
             subtitle={heading.subtitle}
             titleAs={selection.kind === 'thread' ? 'h2' : 'p'}
+            titleRef={(element) => {
+              barTitleRef.current = element
+            }}
           />
         ) : null}
-        {detail}
+        {detailMounted ? detail : null}
         {/* 상세 칸이 바뀌어도 자리는 그대로다 — 토스트가 다시 마운트되지 않아 접힘이 유지된다 */}
         {pane === 'list' ? null : (
           <PinnedToastHost
@@ -357,6 +410,7 @@ function InboxList({
   viewer,
   threadId,
   bundleId,
+  openState,
 }: {
   workspaceId: string
   botName: string
@@ -364,6 +418,8 @@ function InboxList({
   viewer: MessageViewer
   threadId: string | null
   bundleId: string | null
+  /** 행을 누를 때 기록 항목에 남길 표식. 휴대폰 목록 화면에서만 있다 */
+  openState: typeof FROM_LIST | undefined
 }) {
   const rows = inbox.threads.map((thread) => ({
     thread,
@@ -384,6 +440,7 @@ function InboxList({
             thread={thread}
             policy={policy}
             selected={thread.id === threadId}
+            openState={openState}
           />
         </li>
       ))}
@@ -414,6 +471,7 @@ function InboxList({
                     workspaceId={workspaceId}
                     bundle={bundle}
                     selected={bundle.id === bundleId}
+                    openState={openState}
                   />
                 </li>
               ))}
@@ -448,15 +506,17 @@ function BundleRow({
   workspaceId,
   bundle,
   selected,
+  openState,
 }: {
   workspaceId: string
   bundle: Bundle
   selected: boolean
+  openState: typeof FROM_LIST | undefined
 }) {
   return (
     <GuardedLink
       to={paths.messageReview(workspaceId, bundle.id)}
-      state={FROM_LIST}
+      state={openState}
       end
       aria-current={selected ? 'page' : 'false'}
       className={REVIEW_ROW}
@@ -479,12 +539,14 @@ function ThreadRow({
   thread,
   policy,
   selected,
+  openState,
 }: {
   workspaceId: string
   botName: string
   thread: MessageThreadSummary
   policy: ThreadPolicy
   selected: boolean
+  openState: typeof FROM_LIST | undefined
 }) {
   const { title } = threadHeading(thread.name, policy, botName)
   const queryClient = useQueryClient()
@@ -499,7 +561,7 @@ function ThreadRow({
   return (
     <GuardedLink
       to={paths.messageThread(workspaceId, thread.id)}
-      state={FROM_LIST}
+      state={openState}
       aria-current={selected ? 'page' : 'false'}
       className={THREAD_ROW}
       onPointerEnter={prefetch}

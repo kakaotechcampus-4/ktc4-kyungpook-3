@@ -56,18 +56,21 @@ async function expectPlaced(page: Page, fold: Fold, floor: Locator | null): Prom
   await expect.poll(() => placementErrors(page, fold, floor)).toEqual([])
 }
 
-/** 스크롤 칸을 끝까지 내린 뒤 targets 의 아래 끝이 모두 토스트 위 16px(±1) 위에 있다 */
+/**
+ * 스크롤 칸을 끝까지 내린 뒤 targets 의 아래 끝이 모두 토스트 위 16px(±1) 위에 있다.
+ * 펼친 토스트의 높이가 늦게 재져 끝 여백이 뒤에 늘 수 있다 — 잴 때마다 끝까지 다시 내린다
+ */
 async function expectClearOfToast(
   page: Page,
   fold: Fold,
   scroller: Locator,
   targets: Locator[],
 ): Promise<void> {
-  await scroller.evaluate((element) => {
-    element.scrollTop = element.scrollHeight
-  })
   await expect
     .poll(async () => {
+      await scroller.evaluate((element) => {
+        element.scrollTop = element.scrollHeight
+      })
       const top = (await box(toast(page, fold))).y
       const errors: string[] = []
       for (const target of targets) {
