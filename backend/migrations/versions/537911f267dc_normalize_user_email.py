@@ -21,7 +21,7 @@ DB 로케일에 따라 Python str.lower() 와 다를 수 있어, 0 이어도 위
 되돌릴 수 없다. 원래 대소문자는 저장하지 않으므로 downgrade 는 아무것도 하지 않는다.
 
 Revision ID: 537911f267dc
-Revises: a7c3e91d5b24
+Revises: a3d7f91c5e28
 Create Date: 2026-11-06 12:00:00.000000
 
 """
@@ -33,7 +33,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = '537911f267dc'
-down_revision: Union[str, Sequence[str], None] = 'a7c3e91d5b24'
+down_revision: Union[str, Sequence[str], None] = 'a3d7f91c5e28'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

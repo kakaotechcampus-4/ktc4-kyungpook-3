@@ -30,7 +30,7 @@
 
 - 규칙은 `app/schemas/email.py` 의 `normalize_email`(`strip().lower()`) 한 곳이다. `NormalizedEmail` 은 `EmailStr` 검사를 통과한 값에 이 함수를 적용하는 타입이고, `LoginRequest`·`SignupRequest`·`PasswordResetRequest`·`InvitationCreateRequest` 가 모두 쓴다. `schemas/invitation.py` 는 함수를 다시 내보내 `invitations.py` 의 import 가 그대로다.
 - 서비스 코드(가입·로그인·재설정 조회)는 이미 정규화된 값으로 정확 일치 비교를 한다. 기존 `ix_user_email` 유일 인덱스가 그대로 새 중복을 막는다.
-- 마이그레이션 `537911f267dc`(down_revision `a7c3e91d5b24`)는 `user_id, email` 을 읽어 마이그레이션 안에 복제한 함수(`strip().lower()`)로 묶는다. 앱 코드가 나중에 바뀌어도 마이그레이션은 그대로여야 해서 import 하지 않고 복제했고, "`normalize_email` 과 같아야 한다"는 주석을 남겼다.
+- 마이그레이션 `537911f267dc`(down_revision `a3d7f91c5e28`, #383 머지 뒤 다시 이음)는 `user_id, email` 을 읽어 마이그레이션 안에 복제한 함수(`strip().lower()`)로 묶는다. 앱 코드가 나중에 바뀌어도 마이그레이션은 그대로여야 해서 import 하지 않고 복제했고, "`normalize_email` 과 같아야 한다"는 주석을 남겼다.
   - 중복이 있으면 아무 행도 바꾸지 않고 `RuntimeError` 로 멈춘다. 오류에는 `user_id` 묶음만 담고 이메일 주소는 넣지 않는다. 검사를 모두 끝낸 뒤에만 UPDATE 를 시작하므로 DDL 트랜잭션이 없는 sqlite 에서도 부분 변경이 남지 않는다.
   - 바뀔 행만 UPDATE 한다. `downgrade` 는 원래 대소문자를 저장하지 않아 아무것도 하지 않는다.
 - 동시 가입은 `signup` 의 commit 에서 `IntegrityError` 를 잡아 rollback 하고 409 `EMAIL_ALREADY_EXISTS` 를 준다.
