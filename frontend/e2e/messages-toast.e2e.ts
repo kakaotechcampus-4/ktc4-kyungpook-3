@@ -141,6 +141,23 @@ test('F-2 보내기 전 확인: 토스트는 영역 아래 24px 이고, 끝까�
   ])
 })
 
+test('화면을 오가도 정리 중 토스트의 펼침이 그대로다', async ({ page }) => {
+  await start(page, 'messages-member', '/workspaces/ws_01/messages')
+  await fold(page, 'expanded')
+  await expect(card(page)).toBeVisible()
+  const header = page.getByRole('banner')
+
+  await header.getByRole('link', { name: '태스크' }).click()
+  await expect(page).toHaveURL(/\/tasks/)
+  await expect(card(page)).toBeVisible()
+  await expect(detail(page)).toHaveCount(0)
+
+  await header.getByRole('link', { name: '메시지' }).click()
+  await expect(detail(page)).toContainText('정리 중')
+  await expect(card(page)).toBeVisible()
+  await expect(pill(page)).toHaveCount(0)
+})
+
 test.describe('768px 미만', () => {
   test.use({ viewport: { width: 390, height: 844 } })
 

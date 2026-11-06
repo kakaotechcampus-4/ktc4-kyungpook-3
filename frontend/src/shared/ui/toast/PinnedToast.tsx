@@ -1,3 +1,4 @@
+import { useLayoutEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { usePinnedSlot } from './pinnedSlot'
@@ -9,5 +10,16 @@ import { usePinnedSlot } from './pinnedSlot'
  */
 export function PinnedToast({ children }: { children: ReactNode }) {
   const target = usePinnedSlot((state) => state.host ?? state.slot)
-  return target === null ? null : createPortal(children, target)
+  // 포털 대상이 바뀌면 React 는 안을 새로 마운트해 펼침 같은 상태를 잃는다. 대상은 늘 이 칸이고, 칸만 독과 화면 자리 사이로 옮긴다 (#474)
+  const [box] = useState(() => {
+    const element = document.createElement('div')
+    element.style.display = 'contents'
+    return element
+  })
+  useLayoutEffect(() => {
+    if (target === null) return
+    target.appendChild(box)
+    return () => box.remove()
+  }, [target, box])
+  return target === null ? null : createPortal(children, box)
 }

@@ -1,4 +1,6 @@
 import { act, render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { useState } from 'react'
 import { onTestFinished } from 'vitest'
 import { GlobalToaster } from './GlobalToaster'
 import { PinnedToast } from './PinnedToast'
@@ -49,7 +51,48 @@ function Screen({ hosts = [0] }: { hosts?: number[] }) {
   )
 }
 
+function Foldable() {
+  const [open, setOpen] = useState(false)
+  return (
+    <button type="button" aria-expanded={open} onClick={() => setOpen(!open)}>
+      정리 중
+    </button>
+  )
+}
+
+function Moving({ host }: { host: boolean }) {
+  return (
+    <>
+      <GlobalToaster />
+      {host ? (
+        <div data-testid="area">
+          <PinnedToastHost />
+        </div>
+      ) : null}
+      <PinnedToast>
+        <Foldable />
+      </PinnedToast>
+    </>
+  )
+}
+
 describe('PinnedToastHost', () => {
+  it('자리가 생기고 사라져도 고정 토스트는 다시 마운트되지 않아 펼침을 지킨다', async () => {
+    const { rerender } = render(<Moving host={false} />)
+    const toggle = () => screen.getByRole('button', { name: '정리 중' })
+    await userEvent.click(toggle())
+    expect(toggle()).toHaveAttribute('aria-expanded', 'true')
+
+    rerender(<Moving host />)
+    expect(screen.getByTestId('area')).toContainElement(toggle())
+    expect(toggle()).toHaveAttribute('aria-expanded', 'true')
+
+    await userEvent.click(toggle())
+    rerender(<Moving host={false} />)
+    expect(screen.getByTestId('pinned-toast-slot')).toContainElement(toggle())
+    expect(toggle()).toHaveAttribute('aria-expanded', 'false')
+  })
+
   it('화면이 자리를 두면 고정 토스트는 독이 아니라 그 자리에 그린다', () => {
     render(<Screen />)
     expect(screen.getByTestId('area-0')).toContainElement(screen.getByText('정리 중'))
@@ -97,7 +140,8 @@ describe('PinnedToastHost', () => {
         </PinnedToast>
       </>,
     )
-    const host = screen.getByText('정리 중').parentElement as HTMLElement
+    const host = screen.getByTestId('pinned-toast-host')
+    expect(host).toContainElement(screen.getByText('정리 중'))
     expect(host).toHaveClass('pointer-events-none', 'empty:hidden')
     vi.spyOn(host, 'getBoundingClientRect').mockReturnValue({ height: 40.5 } as DOMRect)
     resized()
