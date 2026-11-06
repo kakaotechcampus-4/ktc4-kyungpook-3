@@ -1,21 +1,26 @@
-import { memo, useId } from 'react'
+import { memo, useId, useRef, useState } from 'react'
+import type { KeyboardEvent, ReactNode } from 'react'
 import type { Task, TaskStatus } from '@/entities/task'
 import { AutoBlockNotice, useTaskAutoBlock } from '@/features/task-auto-block'
 import { TaskQuickAdd } from '@/features/task-create'
 import { paths } from '@/shared/config/routes'
+import { panelTabStop } from '@/shared/lib/tab-panel'
 import { GuardedLink } from '@/shared/lib/unsaved-changes'
 import { Popover, PopoverContent, PopoverTrigger } from '@/shared/ui/popover'
-import { doneColumnNote, sortDoneColumn, sortTasks } from '../lib/taskSort'
+import { tabKeyTarget } from '../lib/tabKeys'
+import { doneColumnNote, sortDoneColumn, sortLabel, sortTasks } from '../lib/taskSort'
 import type { TaskSort } from '../lib/taskSort'
 import {
   assigneeLabel,
   assigneeOf,
   cardBadges,
+  columnSummary,
+  countBadges,
   monthOf,
   shortDate,
   taskTone,
 } from '../lib/taskViews'
-import type { BoardPeriod, CardBadge, TaskTone } from '../lib/taskViews'
+import type { BoardPeriod, TaskTone } from '../lib/taskViews'
 import { Avatar } from './viewParts'
 
 type Column = 'todo' | 'active' | 'done'
@@ -45,8 +50,16 @@ const MARK: Record<Column, string> = {
   done: 'rounded-[2px] bg-line',
 }
 
-const CARD_BASE = 'flex flex-col gap-12 rounded-12 border px-13 py-12'
-const PILL = 'inline-flex h-20 shrink-0 items-center rounded-6 px-7 text-[10.5px] leading-none'
+/* 칸 고르기 (PwaTasks 시안) — #EDEDED 트랙·둥글기 12·패딩 4 에 같은 폭 세 탭, 고른 탭은 흰 면·굵은 글자·둥글기 9 */
+const PICKER = 'grid grid-cols-3 gap-2 rounded-12 bg-control p-4'
+const PICKER_TAB =
+  'inline-flex min-h-40 items-center justify-center gap-4 rounded-9 text-[14px] text-sub aria-selected:bg-surface aria-selected:font-bold aria-selected:text-ink'
+
+/* 휴대폰 카드는 PwaTasks 시안 크기다 — 패딩 14/16·둥글기 14, 제목 15px, 아래 줄 13px, 배지 11.5px */
+const CARD_BASE =
+  'flex flex-col gap-12 rounded-12 border px-13 py-12 max-md:gap-10 max-md:rounded-[14px] max-md:px-16 max-md:py-14'
+const PILL =
+  'inline-flex h-20 shrink-0 items-center rounded-6 px-7 text-[10.5px] leading-none max-md:text-[11.5px]'
 /* 막힘은 누르는 배지라 채운 `위험` 과 달리 테두리만 accent 로 그린다. 시안이 없어 위험 배지의 색·크기를 따른다 */
 const BLOCKED_PILL = `${PILL} cursor-pointer border border-accent bg-surface font-bold text-accent hover:bg-accent-solid hover:text-surface data-[state=open]:bg-accent-solid data-[state=open]:text-surface`
 
@@ -64,9 +77,11 @@ export interface BoardViewProps {
   canCreate: boolean
   /** 담당자 조건. 걸러 보는 중이면 직접 추가한 태스크의 담당자로 넣는다 */
   assignee: string | null
+  /** 폭 768px 미만이다. 세 칸을 나란히 두지 않고 고른 칸 하나만 보인다 */
+  compact: boolean
 }
 
-/** 보드 (TasksBoard 시안). 승인이 끝난 태스크만 상태 세 칸으로 나뉜다 */
+/** 보드 (TasksBoard 시안). 승인이 끝난 태스크만 상태 세 칸으로 나뉜다. 휴대폰은 칸을 골라 한 칸씩 본다 (PwaTasks 시안) */
 export function BoardView({
   workspaceId,
   tasks,
@@ -77,51 +92,63 @@ export function BoardView({
   pendingApprovals,
   canCreate,
   assignee,
+  compact,
 }: BoardViewProps) {
+  // 휴대폰에서 고른 칸. 시안은 진행 중을 먼저 보인다
+  const [selected, setSelected] = useState<Column>('active')
   const scoped =
     period === 'month'
       ? tasks.filter((task) => task.dueDate === null || monthOf(task.dueDate) === monthOf(today))
       : tasks
+  const columns = COLUMNS.map((column): BoardColumn => {
+    const inColumn = scoped.filter((task) => column.statuses.includes(task.status))
+    return {
+      ...column,
+      tasks: column.key === 'done' ? sortDoneColumn(inColumn, sort) : sortTasks(inColumn, sort),
+    }
+  })
+  const cards = (column: BoardColumn) => (
+    <ColumnCards
+      workspaceId={workspaceId}
+      column={column}
+      names={names}
+      today={today}
+      canCreate={canCreate}
+      assignee={assignee}
+    />
+  )
   return (
     <>
-      <div className="grid grid-cols-3 items-start gap-18">
-        {COLUMNS.map(({ key, title, statuses, createAs }) => {
-          const inColumn = scoped.filter((task) => statuses.includes(task.status))
-          const sorted = key === 'done' ? sortDoneColumn(inColumn, sort) : sortTasks(inColumn, sort)
-          return (
-            <section key={key} aria-label={title} className="flex flex-col gap-10">
+      {compact ? (
+        <ColumnTabs columns={columns} selected={selected} onSelect={setSelected}>
+          {(column) => (
+            <>
+              <p className="text-[12.5px] leading-[1.5] text-dim">
+                {columnSummary(
+                  column.tasks,
+                  today,
+                  column.key === 'done' ? doneColumnNote(sort) : sortLabel(sort),
+                )}
+              </p>
+              {cards(column)}
+            </>
+          )}
+        </ColumnTabs>
+      ) : (
+        <div className="grid grid-cols-3 items-start gap-18">
+          {columns.map((column) => (
+            <section key={column.key} aria-label={column.title} className="flex flex-col gap-10">
               <ColumnHead
-                column={key}
-                title={title}
-                count={sorted.length}
-                note={columnNote(key, sorted, today, sort)}
+                column={column.key}
+                title={column.title}
+                count={column.tasks.length}
+                note={columnNote(column.key, column.tasks, today, sort)}
               />
-              <ul className="flex flex-col gap-10">
-                {sorted.map((task) => (
-                  <li key={task.id}>
-                    <TaskCard
-                      workspaceId={workspaceId}
-                      task={task}
-                      names={names}
-                      today={today}
-                      emphasized={key === 'active'}
-                      isPm={canCreate}
-                    />
-                  </li>
-                ))}
-              </ul>
-              {canCreate ? (
-                <TaskQuickAdd
-                  workspaceId={workspaceId}
-                  status={createAs}
-                  columnLabel={title}
-                  assigneeMemberId={assignee}
-                />
-              ) : null}
+              {cards(column)}
             </section>
-          )
-        })}
-      </div>
+          ))}
+        </div>
+      )}
       {pendingApprovals > 0 ? (
         <p className="text-caption text-dim">
           확인이 필요한 일 <span className="text-ink tabular-nums">{pendingApprovals}</span>건은
@@ -129,6 +156,122 @@ export function BoardView({
         </p>
       ) : null}
     </>
+  )
+}
+
+/** 칸 하나와 그 칸에 든 태스크(정렬한 뒤) */
+type BoardColumn = (typeof COLUMNS)[number] & { tasks: readonly Task[] }
+
+/** 칸의 카드와 `직접 추가`. 넓은 화면의 칸과 휴대폰의 고른 칸이 같이 쓴다 */
+function ColumnCards({
+  workspaceId,
+  column,
+  names,
+  today,
+  canCreate,
+  assignee,
+}: {
+  workspaceId: string
+  column: BoardColumn
+  names: ReadonlyMap<string, string>
+  today: string
+  canCreate: boolean
+  assignee: string | null
+}) {
+  return (
+    <>
+      <ul className="flex flex-col gap-10">
+        {column.tasks.map((task) => (
+          <li key={task.id}>
+            <TaskCard
+              workspaceId={workspaceId}
+              task={task}
+              names={names}
+              today={today}
+              emphasized={column.key === 'active'}
+              isPm={canCreate}
+            />
+          </li>
+        ))}
+      </ul>
+      {canCreate ? (
+        <TaskQuickAdd
+          workspaceId={workspaceId}
+          status={column.createAs}
+          columnLabel={column.title}
+          assigneeMemberId={assignee}
+        />
+      ) : null}
+    </>
+  )
+}
+
+/**
+ * 휴대폰의 칸 고르기 (PwaTasks 시안). WAI-ARIA 탭 — 화살표·Home·End 로 옮기고 옮긴 탭을 바로 고른다.
+ * 패널은 고른 칸 하나만 그린다
+ */
+function ColumnTabs({
+  columns,
+  selected,
+  onSelect,
+  children,
+}: {
+  columns: readonly BoardColumn[]
+  selected: Column
+  onSelect: (column: Column) => void
+  children: (column: BoardColumn) => ReactNode
+}) {
+  const prefix = useId()
+  const buttons = useRef(new Map<Column, HTMLButtonElement>())
+  const current = columns.find(({ key }) => key === selected) ?? columns[0]
+
+  const move = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
+    const next = tabKeyTarget(event.key, index, columns.length)
+    if (next === null) return
+    event.preventDefault()
+    const target = columns[next].key
+    onSelect(target)
+    buttons.current.get(target)?.focus()
+  }
+
+  return (
+    <div className="flex flex-col gap-10">
+      <div role="tablist" aria-label="상태" className={PICKER}>
+        {columns.map(({ key, title, tasks }, index) => {
+          const active = key === current.key
+          return (
+            <button
+              key={key}
+              ref={(node) => {
+                if (node === null) buttons.current.delete(key)
+                else buttons.current.set(key, node)
+              }}
+              type="button"
+              role="tab"
+              id={`${prefix}-tab-${key}`}
+              aria-selected={active}
+              aria-controls={`${prefix}-panel`}
+              tabIndex={active ? 0 : -1}
+              className={PICKER_TAB}
+              onClick={() => onSelect(key)}
+              onKeyDown={(event) => move(event, index)}
+            >
+              {/* 읽는 이름이 `진행 중 4` 가 되게 띄운다 */}
+              {title} <span className="tabular-nums">{tasks.length}</span>
+            </button>
+          )
+        })}
+      </div>
+      <div
+        ref={panelTabStop}
+        role="tabpanel"
+        id={`${prefix}-panel`}
+        aria-labelledby={`${prefix}-tab-${current.key}`}
+        className="flex flex-col gap-12"
+      >
+        {children(current)}
+      </div>
+    </div>
   )
 }
 
@@ -152,9 +295,8 @@ function columnNote(column: Column, tasks: readonly Task[], today: string, sort:
     return due === null ? '마감일 없음' : `가장 이른 마감 ${shortDate(due)}`
   }
   if (column === 'done') return doneColumnNote(sort)
-  const badges = tasks.flatMap((task) => cardBadges(task, today))
-  const count = (badge: CardBadge) => badges.filter((each) => each === badge).length
-  return `막힘 ${count('blocked')} · 위험 ${count('danger')} · 주의 ${count('warn')}`
+  const { blocked, danger, warn } = countBadges(tasks, today)
+  return `막힘 ${blocked} · 위험 ${danger} · 주의 ${warn}`
 }
 
 function ColumnHead({
@@ -215,7 +357,7 @@ const TaskCard = memo(function TaskCard({
       <div className="flex items-start justify-between gap-8">
         <GuardedLink
           to={paths.tasks(workspaceId, task.id)}
-          className={`min-w-[0px] text-[13px] leading-[1.45] wrap-anywhere ${
+          className={`min-w-[0px] text-[13px] leading-[1.45] wrap-anywhere max-md:text-[15px] ${
             done ? 'font-normal text-dim line-through' : 'font-semibold text-ink'
           }`}
         >
@@ -235,12 +377,12 @@ const TaskCard = memo(function TaskCard({
       </div>
       <div className="flex items-center justify-between gap-8">
         <span
-          className={`inline-flex min-w-[0px] items-center gap-6 text-meta ${done ? 'text-dim' : 'text-sub'}`}
+          className={`inline-flex min-w-[0px] items-center gap-6 text-meta max-md:text-[13px] ${done ? 'text-dim' : 'text-sub'}`}
         >
           <Avatar name={assigneeOf(task, names)} size={21} muted={done} />
           <span className="truncate">{assigneeLabel(task.assigneeMemberId, names)}</span>
         </span>
-        <span className="shrink-0 text-meta text-dim tabular-nums">
+        <span className="shrink-0 text-meta text-dim tabular-nums max-md:text-[13px]">
           {task.dueDate === null ? '마감 없음' : shortDate(task.dueDate)}
         </span>
       </div>

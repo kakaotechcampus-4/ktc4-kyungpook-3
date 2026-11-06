@@ -4,6 +4,7 @@ import { useMemberWorkspace } from '@/entities/workspace'
 import { todayInSeoul } from '@/shared/lib/date'
 import { useGuardedNavigate } from '@/shared/lib/unsaved-changes'
 import { useRouteId } from '@/shared/lib/url'
+import { useCompactShell } from '@/widgets/app-shell'
 import {
   TaskBoard,
   boardSearch,
@@ -26,6 +27,7 @@ export function TasksPage() {
   const { pathname } = useLocation()
   const navigate = useGuardedNavigate()
   const isPm = workspace?.role === 'pm'
+  const compact = useCompactShell()
 
   const onQueryChange = useCallback(
     (next: BoardQuery) => navigate({ pathname, search: boardSearch(searchParams, next) }),
@@ -46,6 +48,7 @@ export function TasksPage() {
       onQueryChange={onQueryChange}
       view={readViewQuery(searchParams)}
       onViewChange={onViewChange}
+      compact={compact}
     />
   )
 }

@@ -22,6 +22,7 @@ import { EmptyState } from '@/shared/ui/empty-state'
 import { Icon } from '@/shared/ui/icon'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
 import { Skeleton } from '@/shared/ui/skeleton'
+import { tabKeyTarget } from '../lib/tabKeys'
 import { boardTabs, buildTaskBoard, parseDue, withPendingStatus } from '../lib/taskBoard'
 import type { BoardItem, BoardQuery } from '../lib/taskBoard'
 import {
@@ -58,8 +59,10 @@ const GanttView = lazy(() =>
 
 /* Tasks 시안 — main 패딩 48/48/72, 블록 사이 28px.
  * 리스트·보드는 상세·확인 필요 상세와 같이 960px 이하로 가운데에 둔다. 둘을 오갈 때 제목·탭·도구줄이 움직이지 않는다 (#466).
- * 캘린더·간트는 날짜 칸이 넓어야 해서 시안 셸 폭을 유지한다. */
-const PAGE_BASE = 'mx-auto flex w-full flex-1 justify-center px-48 pt-48 pb-72'
+ * 캘린더·간트는 날짜 칸이 넓어야 해서 시안 셸 폭을 유지한다.
+ * 폭 768px 미만은 대시보드(H-2)와 같은 패딩 12/20/32 다 (D-180) */
+const PAGE_BASE =
+  'mx-auto flex w-full flex-1 justify-center px-48 pt-48 pb-72 max-md:px-20 max-md:pt-12 max-md:pb-32'
 const PAGE: Record<TaskView, string> = {
   list: `${PAGE_BASE} max-w-[960px]`,
   board: `${PAGE_BASE} max-w-[960px]`,
@@ -73,7 +76,7 @@ const COLUMN: Record<TaskView, string> = {
   calendar: 'flex w-full flex-col gap-20',
   gantt: 'flex w-full flex-col gap-20',
 }
-const TITLE = 'text-[28px] leading-[1.25] font-bold tracking-h1 text-ink'
+const TITLE = 'text-[28px] leading-[1.25] font-bold tracking-h1 text-ink max-md:text-[24px]'
 const DESCRIPTION = 'text-body text-sub'
 const TOOLBAR = 'flex flex-wrap items-center justify-between gap-16'
 const TAB_LIST = 'inline-flex gap-[17px]'
@@ -87,10 +90,14 @@ const SECTION = 'flex flex-col gap-12'
 const SECTION_HEAD = 'flex items-center justify-between pt-12'
 const SECTION_TITLE = 'text-[14px] leading-[1.75] font-semibold text-ink'
 const ROW = 'flex items-center gap-14 border-b border-line py-14 last:border-b-0'
-const ROW_TITLE = 'min-w-[0px] text-[14px] font-semibold text-ink hover:text-sub'
+const ROW_TITLE =
+  'min-w-[0px] text-[14px] font-semibold text-ink hover:text-sub max-md:wrap-anywhere'
 const BADGE =
   'inline-flex h-[21px] shrink-0 items-center rounded-6 bg-control px-8 text-meta leading-none font-semibold text-sub'
-const ASSIGNEE = 'inline-flex shrink-0 items-center gap-7 text-caption text-dim'
+/* 휴대폰은 긴 담당자 이름이 제목 자리를 다 먹지 않게 폭을 두고 줄인다 */
+const ASSIGNEE =
+  'inline-flex shrink-0 items-center gap-7 text-caption text-dim max-md:max-w-[112px]'
+const ASSIGNEE_NAME = 'max-md:truncate'
 const DUE = 'shrink-0 text-caption text-dim tabular-nums'
 const EMPTY_UPLOAD =
   'inline-flex h-40 items-center justify-center rounded-9 bg-ink px-20 text-body font-semibold text-surface hover:bg-dim active:bg-sub'
@@ -136,6 +143,8 @@ export interface TaskBoardProps {
   /** URL 이 정한 보기·담당자·기간·정렬 */
   view: ViewQuery
   onViewChange: (next: ViewQuery) => void
+  /** 폭 768px 미만이다. 보드는 세 칸을 나란히 두지 않고 칸을 골라 한 칸씩 본다 (PwaTasks 시안) */
+  compact: boolean
 }
 
 /** Notion 에 반영된 태스크. `synced` 만 반영 완료다 — 페이지 ID 만으로는 아니다 */
@@ -157,6 +166,7 @@ export function TaskBoard({
   onQueryChange,
   view,
   onViewChange,
+  compact,
 }: TaskBoardProps) {
   const tasks = useQuery(taskListQueryOptions(workspaceId))
   const approvals = useQuery({ ...pendingApprovalListQueryOptions(workspaceId), enabled: isPm })
@@ -310,6 +320,7 @@ export function TaskBoard({
         pendingApprovals={approvalList?.length ?? 0}
         canCreate={isPm}
         assignee={view.assignee}
+        compact={compact}
       />
     )
   else if (view.view === 'calendar')
@@ -360,7 +371,7 @@ export function TaskBoard({
   return (
     <main className={PAGE[view.view]}>
       <div className={COLUMN[view.view]}>
-        <header className="flex items-end justify-between gap-24">
+        <header className="flex items-end justify-between gap-24 max-md:flex-col max-md:items-start max-md:gap-16">
           <div className="flex flex-col gap-5">
             <h1 className={TITLE}>태스크</h1>
             <p className={DESCRIPTION}>{DESCRIPTIONS[view.view](isPm)}</p>
@@ -398,7 +409,7 @@ export function TaskBoard({
         ) : (
           <>
             {view.view === 'board' ? (
-              <div className="flex items-center gap-8">
+              <div className="flex items-center gap-8 max-md:flex-wrap">
                 {assigneeFilter}
                 <PeriodFilter
                   value={view.period}
@@ -477,15 +488,10 @@ function BoardTabs({ tabs, selected, onSelect, trailing, panel }: BoardTabsProps
   const current = tabs.find(({ tab }) => tab === selected) ?? tabs[0]
 
   const move = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
-    const keys: Record<string, number> = {
-      ArrowRight: (index + 1) % tabs.length,
-      ArrowLeft: (index - 1 + tabs.length) % tabs.length,
-      Home: 0,
-      End: tabs.length - 1,
-    }
-    if (!Object.hasOwn(keys, event.key)) return
+    const next = tabKeyTarget(event.key, index, tabs.length)
+    if (next === null) return
     event.preventDefault()
-    const target = tabs[keys[event.key]].tab
+    const target = tabs[next].tab
     onSelect(target)
     buttons.current.get(target)?.focus()
   }
@@ -706,12 +712,14 @@ function TaskRow({ workspaceId, task, names, today, reflected = false }: TaskRow
       </div>
       {assigneeName === null || assigneeName === undefined ? (
         <span className={ASSIGNEE}>
-          {task.assigneeMemberId === null ? '담당자 없음' : '알 수 없는 담당자'}
+          <span className={ASSIGNEE_NAME}>
+            {task.assigneeMemberId === null ? '담당자 없음' : '알 수 없는 담당자'}
+          </span>
         </span>
       ) : (
         <span className={ASSIGNEE}>
           <Avatar name={assigneeName} />
-          {assigneeName}
+          <span className={ASSIGNEE_NAME}>{assigneeName}</span>
         </span>
       )}
       {task.dueDate === null ? (

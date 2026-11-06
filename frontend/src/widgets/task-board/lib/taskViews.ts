@@ -124,6 +124,26 @@ export function cardBadges(task: Task, today: string): readonly CardBadge[] {
   return tone === 'danger' || tone === 'warn' ? [tone] : []
 }
 
+/** 배지마다 그 배지를 단 카드 수. 막혔고 기한도 지난 카드는 막힘과 위험에 한 번씩 센다 */
+export function countBadges(tasks: readonly Task[], today: string): Record<CardBadge, number> {
+  const counts: Record<CardBadge, number> = { blocked: 0, danger: 0, warn: 0 }
+  for (const task of tasks) for (const badge of cardBadges(task, today)) counts[badge] += 1
+  return counts
+}
+
+/**
+ * 휴대폰 보드에서 고른 칸 아래 한 줄 (PwaTasks 시안) — `막힘 1 · 위험 4 · 마감 빠른 순`.
+ * 0 인 개수는 빼고, 끝에 그 칸의 순서(`order`)를 붙인다
+ */
+export function columnSummary(tasks: readonly Task[], today: string, order: string): string {
+  const { blocked, danger } = countBadges(tasks, today)
+  const counts = [
+    ['막힘', blocked],
+    ['위험', danger],
+  ] as const
+  return [...counts.flatMap(([label, n]) => (n === 0 ? [] : [`${label} ${n}`])), order].join(' · ')
+}
+
 /** 담당자로 거른다. 담당자를 고르지 않았으면 모두 맞다 */
 export function filterTasksByAssignee(tasks: readonly Task[], assignee: string | null): Task[] {
   return assignee === null ? [...tasks] : tasks.filter((task) => task.assigneeMemberId === assignee)
