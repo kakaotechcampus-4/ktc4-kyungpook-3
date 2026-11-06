@@ -80,3 +80,36 @@ def test_delete_session_removes_only_that_row(db, user_id):
     assert sessions.find_session(db, first) is None
     assert sessions.find_session(db, second) is not None
     assert len(db.scalars(select(SessionModel)).all()) == 1
+
+
+def _add_session(db, user_id, token_hash, expires_at):
+    db.add(SessionModel(user_id=user_id, token_hash=token_hash, expires_at=expires_at))
+
+
+def _remaining_expiries(db):
+    values = []
+    for row in db.scalars(select(SessionModel)).all():
+        expires_at = row.expires_at
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        values.append(expires_at)
+    return sorted(values)
+
+
+def test_sweep_deletes_only_expired(db, user_id):
+    _add_session(db, user_id, "a" * 64, NOW - timedelta(hours=1))
+    _add_session(db, user_id, "b" * 64, NOW)
+    _add_session(db, user_id, "c" * 64, NOW + timedelta(hours=1))
+    db.commit()
+
+    assert sessions.sweep_expired_sessions(db, now=NOW) == 1
+
+    assert _remaining_expiries(db) == [NOW, NOW + timedelta(hours=1)]
+
+
+def test_sweep_with_nothing_expired_returns_zero(db, user_id):
+    _add_session(db, user_id, "a" * 64, NOW + timedelta(hours=1))
+    db.commit()
+
+    assert sessions.sweep_expired_sessions(db, now=NOW) == 0
+    assert len(db.scalars(select(SessionModel)).all()) == 1
