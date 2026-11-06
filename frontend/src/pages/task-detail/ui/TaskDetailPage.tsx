@@ -3,7 +3,7 @@ import { todayInSeoul } from '@/shared/lib/date'
 import { useRouteId } from '@/shared/lib/url'
 import { TaskDetail, UnavailableTask } from '@/widgets/task-detail'
 
-const ROOT = 'mx-auto flex w-full max-w-[960px] flex-col gap-22 px-48 pt-40 pb-72'
+const ROOT = 'mx-auto flex w-full max-w-[960px] flex-col gap-22 px-16 pt-40 pb-72 sm:px-48'
 
 /**
  * `/workspaces/:workspaceId/tasks/:taskId` — 태스크 상세 (M6 §3-5). 라우트 조립만 한다.

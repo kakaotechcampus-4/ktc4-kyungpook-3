@@ -23,7 +23,7 @@ import { TaskInfoPanel } from './TaskInfoPanel'
 import { TaskReminder } from './TaskReminder'
 
 /* 태스크 목록·보드와 같은 960 컨테이너 — 본문 864px */
-const ROOT = 'mx-auto flex w-full max-w-[960px] flex-col gap-22 px-48 pt-40 pb-72'
+const ROOT = 'mx-auto flex w-full max-w-[960px] flex-col gap-22 px-16 pt-40 pb-72 sm:px-48'
 /* 대시보드 「전체 보기」와 같은 선 꺾쇠 */
 const BACK =
   'inline-flex min-h-32 items-center gap-4 self-start text-[13px] font-semibold text-sub hover:text-ink'
