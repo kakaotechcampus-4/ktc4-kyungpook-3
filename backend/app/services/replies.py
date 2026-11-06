@@ -495,7 +495,7 @@ def _waiting_cards(db: Session, task_id: str, group: list[tuple]) -> list[str] |
     waiting = {}
     for card in cards:
         payload = json.loads(card.payload)
-        waiting.update({(key, payload.get(key)): card.approval_id for key in _PAYLOAD_KEY.values()})
+        waiting.update({(key, payload[key]): card.approval_id for key in _PAYLOAD_KEY.values() if payload.get(key)})
     found = [waiting.get((_PAYLOAD_KEY.get(line.field), line.new_value)) for line, *_ in group]
     return None if None in found else found
 
@@ -732,6 +732,11 @@ def timeline(db: Session, task: Task, viewer: Member) -> list[dict]:
         .where(ReplyChange.task_id == task.task_id)
         .order_by(ReplyChange.created_at, ReplyChange.change_id)
     ).all()
+    # 같은 카드의 뒷 줄은 이력이 처음 줄에만 이어져 있어 처음 줄의 이력을 같이 읽는다.
+    first: dict[tuple[str, str], str] = {}
+    for line in lines:
+        if line.approval_id:
+            linked[line.change_id] = linked[first.setdefault((line.approval_id, line.field), line.change_id)]
     approvals = dict(db.execute(
         select(ApprovalRequest.approval_id, ApprovalRequest.status)
         .where(ApprovalRequest.approval_id.in_({line.approval_id for line in lines} - {None}))
