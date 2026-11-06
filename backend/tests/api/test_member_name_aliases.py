@@ -214,3 +214,82 @@ def test_post_409_even_when_precheck_is_bypassed(client, mdb, mseed, monkeypatch
     r = _post(client, mseed["ws"], "김동우", discord_user_id="d_alice")
     assert r.status_code == 409
     assert r.json()["error"]["code"] == "DISCORD_USER_ALREADY_MAPPED"
+
+
+def _create_alias(client, member_id: str, **body):
+    return client.post(f"{API}/members/{member_id}/aliases", json=body)
+
+
+def test_post_alias_same_text_as_auto_name_alias_promotes_it_to_manual(client, mdb, mseed):
+    first = _post(client, mseed["ws"], "김민수").json()["data"]["member_id"]
+    before = next(a for a in _aliases(mdb, first) if a.alias_text == "민수")
+    assert (before.source, before.verified, before.confidence) == ("display_name", True, 1.0)
+    alias_id = before.alias_id
+
+    r = _create_alias(client, first, alias_text="민수")
+
+    assert r.status_code == 201
+    data = r.json()["data"]
+    assert (data["alias_id"], data["alias_text"], data["source"], data["alias_type"]) == (
+        alias_id, "민수", "manual", "nickname",
+    )
+    rows = [a for a in _aliases(mdb, first) if a.alias_text == "민수"]
+    assert [(a.alias_id, a.source, a.alias_type, a.verified, a.confidence) for a in rows] == [
+        (alias_id, "manual", "nickname", True, 1.0)
+    ]
+
+
+def test_promoted_alias_keeps_other_member_from_getting_the_same_auto_alias(client, mdb, mseed):
+    first = _post(client, mseed["ws"], "김민수").json()["data"]["member_id"]
+    _create_alias(client, first, alias_text="민수")
+
+    second = _post(client, mseed["ws"], "이민수").json()["data"]["member_id"]
+
+    assert _texts(_aliases(mdb, second)) == {"이민수"}
+
+
+def test_promoted_alias_survives_the_name_change(client, mdb, mseed):
+    first = _post(client, mseed["ws"], "김민수").json()["data"]["member_id"]
+    _create_alias(client, first, alias_text="민수")
+
+    r = client.patch(f"{API}/members/{first}", json={"display_name": "김철수"})
+
+    assert r.status_code == 200
+    assert _texts(_aliases(mdb, first, "manual")) == {"민수"}
+    assert _texts(_aliases(mdb, first, "display_name")) == {"김철수", "철수"}
+
+
+def test_post_alias_verified_promotes_unverified_nickname_alias(client, mdb, mseed):
+    member = mseed["bob"]
+    mdb.add(MemberAlias(
+        workspace_id=member.workspace_id, member_id=member.member_id, alias_text="동우",
+        alias_type="nickname", source="discord_profile", confidence=0.8, verified=False,
+    ))
+    mdb.commit()
+
+    r = _create_alias(client, member.member_id, alias_text="동우", verified=True)
+
+    assert r.status_code == 201
+    rows = _aliases(mdb, member.member_id)
+    assert [(a.alias_text, a.source, a.verified, a.confidence) for a in rows] == [
+        ("동우", "manual", True, 1.0)
+    ]
+    assert r.json()["data"]["verified"] is True
+
+
+def test_post_alias_on_existing_manual_row_changes_nothing(client, mdb, mseed):
+    member = mseed["bob"]
+    mdb.add(MemberAlias(
+        workspace_id=member.workspace_id, member_id=member.member_id, alias_text="동우형",
+        alias_type="nickname", source="manual", confidence=0.3, verified=False,
+    ))
+    mdb.commit()
+
+    r = _create_alias(client, member.member_id, alias_text="동우형", alias_type="realname", confidence=0.9, verified=True)
+
+    assert r.status_code == 201
+    rows = _aliases(mdb, member.member_id)
+    assert [(a.alias_text, a.alias_type, a.source, a.verified, a.confidence) for a in rows] == [
+        ("동우형", "nickname", "manual", False, 0.3)
+    ]
+    assert (r.json()["data"]["verified"], r.json()["data"]["confidence"]) == (False, 0.3)

@@ -7,6 +7,7 @@ from app.core.database import get_db
 from app.core.errors import AppError, Envelope, ErrorCode, success
 from app.models import (
     AliasResolutionLog,
+    AliasSource,
     Invitation,
     InvitationStatus,
     Member,
@@ -346,6 +347,15 @@ def create_alias(
         )
     ).scalar_one_or_none()
     if exists is not None:
+        # 자동 별칭(이름·디스코드 닉네임)과 같은 글자를 PM 이 등록하면 사람이 정한 별칭으로 올린다. 그래야 다른
+        # 팀원의 자동 별칭을 막고 이름을 바꿔도 지워지지 않는다. 이미 사람이 정한 별칭은 그대로 둔다.
+        if exists.source in (str(AliasSource.DISPLAY_NAME), str(AliasSource.DISCORD_PROFILE)):
+            exists.alias_type = str(payload.alias_type)
+            exists.source = str(payload.source)
+            exists.confidence = payload.confidence
+            exists.verified = payload.verified
+            db.commit()
+            db.refresh(exists)
         return success(MemberAliasResponse.model_validate(exists).model_dump(mode="json"))
 
     alias = MemberAlias(
