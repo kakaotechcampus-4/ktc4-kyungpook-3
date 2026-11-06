@@ -140,10 +140,11 @@ export interface TaskBoardProps {
   today: string
   /** 탭·마감 조건을 바꾼다. 페이지가 URL 에 쓴다 */
   onQueryChange: (next: BoardQuery) => void
-  /** URL 이 정한 보기·담당자·기간·정렬 */
+  /** URL 이 정한 보기·담당자·기간·정렬·휴대폰 보드의 칸 */
   view: ViewQuery
-  onViewChange: (next: ViewQuery) => void
-  /** 폭 768px 미만이다. 보드는 세 칸을 나란히 두지 않고 칸을 골라 한 칸씩 본다 (PwaTasks 시안) */
+  /** 보기 조건을 바꾼다. `replace` 면 새 기록을 쌓지 않고 지금 기록을 고친다 */
+  onViewChange: (next: ViewQuery, options?: { replace?: boolean }) => void
+  /** 폭 768px 미만이다. 보드는 세 칸을 나란히 두지 않고 칸을 골라 한 칸씩 보고, 캘린더는 칸 안에서 가로로 민다 (PwaTasks 시안) */
   compact: boolean
 }
 
@@ -321,6 +322,8 @@ export function TaskBoard({
         canCreate={isPm}
         assignee={view.assignee}
         compact={compact}
+        column={view.column}
+        onColumnChange={(column, options) => onViewChange({ ...view, column }, options)}
       />
     )
   else if (view.view === 'calendar')
@@ -335,6 +338,7 @@ export function TaskBoard({
         today={today}
         month={view.month ?? monthOf(today)}
         onMonthChange={(month) => onViewChange({ ...view, month })}
+        compact={compact}
       />
     )
   else

@@ -28,10 +28,11 @@ describe('보기 조건 URL', () => {
       from: null,
       period: 'all',
       sort: 'due',
+      column: 'active',
     })
-    expect(read('?view=table&month=2026-13&from=2026-02-30&period=week&sort=priority')).toEqual(
-      read(''),
-    )
+    expect(
+      read('?view=table&month=2026-13&from=2026-02-30&period=week&sort=priority&column=blocked'),
+    ).toEqual(read(''))
   })
 
   it('쓴 값을 그대로 읽고, 탭·날짜 조건 파라미터는 건드리지 않는다', () => {
@@ -42,19 +43,35 @@ describe('보기 조건 URL', () => {
       from: null,
       period: 'month' as const,
       sort: 'updated' as const,
+      column: 'done' as const,
     }
     const written = viewSearch(new URLSearchParams('?tab=done&due=overdue,soon'), next)
     expect(written).toBe(
-      '?tab=done&due=overdue,soon&view=calendar&assignee=mb_02&month=2026-09&period=month&sort=updated',
+      '?tab=done&due=overdue,soon&view=calendar&assignee=mb_02&month=2026-09&period=month&sort=updated&column=done',
     )
     expect(read(written)).toEqual(next)
   })
 
   it('기본값으로 돌아오면 파라미터가 남지 않는다', () => {
     expect(
-      viewSearch(new URLSearchParams('?view=board&assignee=mb_01&sort=created'), read('')),
+      viewSearch(
+        new URLSearchParams('?view=board&assignee=mb_01&sort=created&column=todo'),
+        read(''),
+      ),
     ).toBe('')
     expect(viewSearch(new URLSearchParams('?tab=done&view=board'), read(''))).toBe('?tab=done')
+  })
+
+  it('휴대폰 보드의 칸은 시작 전·진행 중·완료 가운데 하나이고, 칸만 바꿔도 다른 조건은 남는다', () => {
+    expect(['todo', 'active', 'done'].map((column) => read(`?column=${column}`).column)).toEqual([
+      'todo',
+      'active',
+      'done',
+    ])
+    const current = new URLSearchParams('?view=board&assignee=mb_01&period=month&tab=done')
+    expect(viewSearch(current, { ...read(current.toString()), column: 'todo' })).toBe(
+      '?tab=done&view=board&assignee=mb_01&period=month&column=todo',
+    )
   })
 })
 
