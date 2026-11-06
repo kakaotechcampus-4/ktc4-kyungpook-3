@@ -14,7 +14,7 @@ from sqlalchemy.pool import StaticPool
 from app.core.database import Base, get_db
 from app.main import app
 from app.models import Integration, Member, Session as SessionModel, User, Workspace
-from app.services import discord
+from app.services import chat_channel, discord
 
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
 SERVICE_TOKEN = "test-service-token"
@@ -215,3 +215,321 @@ def test_channel_list_discord_failure_is_502(client, seed, db, fake_discord):
     assert error["code"] == "DISCORD_API_FAILED"
     assert error["details"] == {"status": 500, "reason": "HTTP 500"}
     assert "bot-token" not in response.text
+
+
+# ---------- 저장·해제(Task 3) ----------
+
+CHANNELS = [
+    {"channel_id": "31", "name": "회의"},
+    {"channel_id": "36", "name": "잡담"},
+]
+
+
+def _put(client, workspace_id, channel_id, session="alice-token"):
+    return client.put(
+        f"/api/v1/workspaces/{workspace_id}/integrations/discord/chat-channel",
+        json={"channel_id": channel_id},
+        headers=_cookie(session),
+    )
+
+
+def _clear(client, workspace_id, session="alice-token"):
+    return client.delete(
+        f"/api/v1/workspaces/{workspace_id}/integrations/discord/chat-channel",
+        headers=_cookie(session),
+    )
+
+
+def _row(db, workspace_id) -> Integration:
+    db.expire_all()
+    return db.query(Integration).filter(
+        Integration.workspace_id == workspace_id, Integration.provider == "discord"
+    ).one()
+
+
+def _ready(db, seed, fake_discord):
+    calls, state = fake_discord
+    _connect(db, seed["workspace_id"])
+    state["channels"] = CHANNELS
+    return calls, state
+
+
+def _assert_untouched(db, seed):
+    row = _row(db, seed["workspace_id"])
+    assert row.chat_channel_id is None
+    assert row.chat_channel_name is None
+
+
+def test_put_saves_after_check_read_and_on_notice(client, seed, db, fake_discord):
+    calls, _ = _ready(db, seed, fake_discord)
+
+    response = _put(client, seed["workspace_id"], "31")
+
+    assert response.status_code == 200
+    assert response.json()["data"] == {"channel_id": "31", "name": "회의"}
+    row = _row(db, seed["workspace_id"])
+    assert (row.chat_channel_id, row.chat_channel_name) == ("31", "회의")
+    assert calls == [("list", GUILD), ("read", "31"), ("post", "31", chat_channel.ON_NOTICE)]
+
+
+def test_put_unknown_or_non_text_channel_is_404(client, seed, db, fake_discord):
+    calls, _ = _ready(db, seed, fake_discord)
+
+    response = _put(client, seed["workspace_id"], "99")
+
+    assert response.status_code == 404
+    error = response.json()["error"]
+    assert error["code"] == "DISCORD_CHANNEL_NOT_FOUND"
+    assert error["details"] == {"channel_id": "99"}
+    assert calls == [("list", GUILD)]
+    _assert_untouched(db, seed)
+
+
+def test_put_unreadable_channel_is_409_read(client, seed, db, fake_discord):
+    calls, state = _ready(db, seed, fake_discord)
+    state["read_error"] = discord.DiscordApiError("HTTP 403", status_code=403, discord_code=50001)
+
+    response = _put(client, seed["workspace_id"], "31")
+
+    assert response.status_code == 409
+    error = response.json()["error"]
+    assert error["code"] == "DISCORD_CHANNEL_NOT_ACCESSIBLE"
+    assert error["details"] == {"channel_id": "31", "need": "read", "discord_code": 50001}
+    assert not any(call[0] == "post" for call in calls)
+    _assert_untouched(db, seed)
+
+
+def test_put_read_404_is_not_found(client, seed, db, fake_discord):
+    _, state = _ready(db, seed, fake_discord)
+    state["read_error"] = discord.DiscordApiError("HTTP 404", status_code=404)
+
+    response = _put(client, seed["workspace_id"], "31")
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "DISCORD_CHANNEL_NOT_FOUND"
+    _assert_untouched(db, seed)
+
+
+def test_put_on_notice_forbidden_is_409_send(client, seed, db, fake_discord):
+    _, state = _ready(db, seed, fake_discord)
+    state["post_error"] = discord.DiscordApiError("HTTP 403", status_code=403, discord_code=50013)
+
+    response = _put(client, seed["workspace_id"], "31")
+
+    assert response.status_code == 409
+    error = response.json()["error"]
+    assert error["code"] == "DISCORD_CHANNEL_NOT_ACCESSIBLE"
+    assert error["details"]["need"] == "send"
+    _assert_untouched(db, seed)
+
+
+def test_put_on_notice_server_error_is_502(client, seed, db, fake_discord):
+    _, state = _ready(db, seed, fake_discord)
+    state["post_error"] = discord.DiscordApiError("HTTP 500", status_code=500)
+
+    response = _put(client, seed["workspace_id"], "31")
+
+    assert response.status_code == 502
+    assert response.json()["error"]["code"] == "DISCORD_API_FAILED"
+    _assert_untouched(db, seed)
+
+
+def test_put_same_channel_again_calls_nothing(client, seed, db, fake_discord):
+    calls, _ = _ready(db, seed, fake_discord)
+    assert _put(client, seed["workspace_id"], "31").status_code == 200
+    calls.clear()
+
+    response = _put(client, seed["workspace_id"], "31")
+
+    assert response.status_code == 200
+    assert response.json()["data"] == {"channel_id": "31", "name": "회의"}
+    assert calls == []
+
+
+def test_put_other_channel_sends_off_notice_to_old_one(client, seed, db, fake_discord):
+    calls, state = _ready(db, seed, fake_discord)
+    assert _put(client, seed["workspace_id"], "31").status_code == 200
+
+    response = _put(client, seed["workspace_id"], "36")
+
+    assert response.status_code == 200
+    assert _row(db, seed["workspace_id"]).chat_channel_id == "36"
+    assert calls[-1] == ("post", "31", chat_channel.OFF_NOTICE)
+
+    # 옛 채널에 끄는 공지를 못 보내도 저장은 성공한다
+    state["post_errors"]["36"] = discord.DiscordApiError("HTTP 500", status_code=500)
+    response = _put(client, seed["workspace_id"], "31")
+    assert response.status_code == 200
+    assert _row(db, seed["workspace_id"]).chat_channel_id == "31"
+
+
+@pytest.mark.parametrize("bad", ["abc", "1" * 21, "   ", ""])
+def test_put_invalid_channel_id_is_400(client, seed, db, fake_discord, bad):
+    calls, _ = _ready(db, seed, fake_discord)
+
+    response = _put(client, seed["workspace_id"], bad)
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "INVALID_REQUEST"
+    assert calls == []
+
+
+def test_put_strips_surrounding_spaces(client, seed, db, fake_discord):
+    _ready(db, seed, fake_discord)
+
+    response = _put(client, seed["workspace_id"], " 31 ")
+
+    assert response.status_code == 200
+    assert _row(db, seed["workspace_id"]).chat_channel_id == "31"
+
+
+def test_put_is_pm_only(client, seed, db, fake_discord):
+    calls, _ = _ready(db, seed, fake_discord)
+
+    for session in ("bob-token", "carol-token"):
+        response = _put(client, seed["workspace_id"], "31", session)
+        assert response.status_code == 403
+        assert response.json()["error"]["code"] == "FORBIDDEN"
+    assert calls == []
+
+
+def test_put_without_connection_is_409(client, seed, db, fake_discord):
+    calls, _ = fake_discord
+
+    response = _put(client, seed["workspace_id"], "31")
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "INTEGRATION_NOT_CONNECTED"
+    assert calls == []
+
+
+def test_put_without_bot_token_is_502_and_saves_nothing(client, seed, db, fake_discord, monkeypatch):
+    calls, _ = _ready(db, seed, fake_discord)
+    monkeypatch.delenv("DISCORD_BOT_TOKEN")
+
+    response = _put(client, seed["workspace_id"], "31")
+
+    assert response.status_code == 502
+    assert response.json()["error"]["details"] == {"status": None, "reason": "bot_token_missing"}
+    assert calls == []
+    _assert_untouched(db, seed)
+
+
+def test_put_uses_the_guild_read_after_lock(client, seed, db, fake_discord, monkeypatch):
+    calls, state = fake_discord
+    _connect(db, seed["workspace_id"], guild_id="A")
+    state["channels"] = CHANNELS
+    original = chat_channel.connected_discord
+
+    def swap_guild_after_lock(session, workspace_id, *, lock=False):
+        integration = original(session, workspace_id, lock=lock)
+        integration.provider_channel_id = "B"
+        return integration
+
+    monkeypatch.setattr(chat_channel, "connected_discord", swap_guild_after_lock)
+
+    response = _put(client, seed["workspace_id"], "31")
+
+    assert response.status_code == 200
+    assert calls[0] == ("list", "B")
+
+
+def test_commit_failure_after_on_notice_is_logged_as_error(seed, db, fake_discord, monkeypatch, caplog):
+    calls, _ = _ready(db, seed, fake_discord)
+
+    def failing_commit():
+        raise RuntimeError("commit 실패")
+
+    monkeypatch.setattr(db, "commit", failing_commit)
+    safe_client = TestClient(app, raise_server_exceptions=False)
+
+    with caplog.at_level("ERROR"):
+        response = _put(safe_client, seed["workspace_id"], "31")
+
+    assert response.status_code == 500
+    assert ("post", "31", chat_channel.ON_NOTICE) in calls
+    assert any(r.levelname == "ERROR" and "저장 실패" in r.getMessage() for r in caplog.records)
+    monkeypatch.undo()
+    _assert_untouched(db, seed)
+
+
+def test_clear_removes_and_sends_off_notice(client, seed, db, fake_discord):
+    calls, _ = _ready(db, seed, fake_discord)
+    assert _put(client, seed["workspace_id"], "31").status_code == 200
+
+    response = _clear(client, seed["workspace_id"])
+
+    assert response.status_code == 200
+    assert response.json()["data"] == {"off_notice_sent": True}
+    _assert_untouched(db, seed)
+    assert calls[-1] == ("post", "31", chat_channel.OFF_NOTICE)
+
+
+@pytest.mark.parametrize("cause", ["post_fails", "no_bot_token"])
+def test_clear_succeeds_when_off_notice_fails(client, seed, db, fake_discord, monkeypatch, cause):
+    _, state = _ready(db, seed, fake_discord)
+    assert _put(client, seed["workspace_id"], "31").status_code == 200
+    if cause == "post_fails":
+        state["post_error"] = discord.DiscordApiError("HTTP 500", status_code=500)
+    else:
+        monkeypatch.delenv("DISCORD_BOT_TOKEN")
+
+    response = _clear(client, seed["workspace_id"])
+
+    assert response.status_code == 200
+    assert response.json()["data"] == {"off_notice_sent": False}
+    _assert_untouched(db, seed)
+
+
+@pytest.mark.parametrize("connected", [True, False])
+def test_clear_when_already_off_is_200_false(client, seed, db, fake_discord, connected):
+    calls, _ = fake_discord
+    if connected:
+        _connect(db, seed["workspace_id"])
+
+    response = _clear(client, seed["workspace_id"])
+
+    assert response.status_code == 200
+    assert response.json()["data"] == {"off_notice_sent": False}
+    assert calls == []
+
+
+def test_clear_is_pm_only(client, seed, db, fake_discord):
+    calls, _ = _ready(db, seed, fake_discord)
+    assert _put(client, seed["workspace_id"], "31").status_code == 200
+    calls.clear()
+
+    for session in ("bob-token", "carol-token"):
+        assert _clear(client, seed["workspace_id"], session).status_code == 403
+    assert calls == []
+    assert _row(db, seed["workspace_id"]).chat_channel_id == "31"
+
+
+def _integrations(client, workspace_id, session="alice-token"):
+    return client.get(f"/api/v1/workspaces/{workspace_id}/integrations", headers=_cookie(session))
+
+
+def test_integrations_shows_chat_channel(client, seed, db, fake_discord):
+    ws = seed["workspace_id"]
+    assert _integrations(client, ws).json()["data"]["discord"]["chat_channel"] is None
+
+    _ready(db, seed, fake_discord)
+    assert _integrations(client, ws).json()["data"]["discord"]["chat_channel"] is None
+
+    assert _put(client, ws, "31").status_code == 200
+    for session in ("alice-token", "bob-token"):
+        data = _integrations(client, ws, session).json()["data"]
+        assert data["discord"]["chat_channel"] == {"channel_id": "31", "name": "회의"}
+
+    assert _clear(client, ws).status_code == 200
+    assert _integrations(client, ws).json()["data"]["discord"]["chat_channel"] is None
+
+
+def test_delete_integration_route_still_matches_provider(client, seed, db, fake_discord):
+    _ready(db, seed, fake_discord)
+
+    response = client.delete(
+        f"/api/v1/workspaces/{seed['workspace_id']}/integrations/discord", headers=_cookie("alice-token")
+    )
+
+    assert response.status_code == 204
