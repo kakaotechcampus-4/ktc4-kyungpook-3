@@ -435,6 +435,27 @@ describe('설정의 회의 채팅 채널 — PM (#429)', () => {
     expect(area.queryByText('채널 목록을 불러오지 못했어요')).toBeNull()
   })
 
+  it('채널 목록을 받지 못한 채로 Discord 연결을 끊으면 목록 오류와 다시 시도가 사라지고 목록을 다시 묻지 않는다', async () => {
+    server.use(http.get(`/api/v1${CHANNELS}`, () => fail('DISCORD_API_FAILED', 'boom', 502)))
+    const user = userEvent.setup()
+    renderApp(paths.settings('ws_01'))
+    const area = await discordArea()
+    expect(
+      await area.findByText('채널 목록을 불러오지 못했어요', undefined, { timeout: 5_000 }),
+    ).toBeInTheDocument()
+    const log = recordRequests()
+
+    await user.click(area.getByRole('button', { name: '연결 끊기' }))
+    const confirm = await screen.findByRole('dialog', { name: 'Discord 연결을 끊을까요?' })
+    await user.click(within(confirm).getByRole('button', { name: '연결 끊기' }))
+    const select = area.getByRole('combobox', { name: '회의 채팅 채널' })
+    await waitFor(() => expect(select).toBeDisabled())
+    expect(select).toHaveAccessibleDescription(NOT_CONNECTED)
+    expect(area.queryByText('채널 목록을 불러오지 못했어요')).toBeNull()
+    expect(area.queryByRole('button', { name: '다시 시도' })).toBeNull()
+    expect(requestsTo(log, 'GET', CHANNELS)).toEqual([])
+  })
+
   it('일반 팀원은 칸을 보지 않고 채널 목록도 묻지 않는다', async () => {
     setMockRole('member', 'ws_01')
     const log = recordRequests()

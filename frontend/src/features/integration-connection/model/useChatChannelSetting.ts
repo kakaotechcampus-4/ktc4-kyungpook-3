@@ -29,7 +29,7 @@ interface Variables {
 }
 
 export interface ChatChannelSetting {
-  /** 연결한 Discord 서버의 텍스트 채널. 연결돼 있을 때만 받는다. `error` 는 받은 목록이 없을 때만 있다 */
+  /** 연결한 Discord 서버의 텍스트 채널. 연결돼 있을 때만 받는다. `error` 는 연결돼 있고 받은 목록이 없을 때만 있다 */
   channels: {
     data: ChatChannel[] | undefined
     loading: boolean
@@ -122,13 +122,16 @@ export function useChatChannelSetting(workspaceId: string, connected: boolean): 
 
   const clearFailure = useCallback(() => setFailure(null), [])
   const { refetch } = channels
-  const retry = useCallback(() => void refetch(), [refetch])
+  // 연결이 끊긴 뒤에는 서버가 409 로 거절한다. 남은 목록 오류도 보이지 않으므로 묻지 않는다
+  const retry = useCallback(() => {
+    if (connected) void refetch()
+  }, [connected, refetch])
 
   return {
     channels: {
       data: channels.data,
       loading: connected && channels.isPending,
-      error: channels.data === undefined ? channels.error : null,
+      error: connected && channels.data === undefined ? channels.error : null,
       retry,
     },
     save,
