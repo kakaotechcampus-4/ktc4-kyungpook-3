@@ -469,7 +469,8 @@ describe('대화 행을 가리키거나 포커스하면 그 대화를 미리 받
     expect(detail().getByRole('heading', { level: 2, name: '박민수' })).toBeVisible()
     await settle()
     expect(skeletonSeen()).toBe(false)
-    expect(messageRequests(log)).toEqual([TH_02])
+    // 연 대화에서 PM 은 답장 고르기만 새로 받는다 (#344)
+    expect(messageRequests(log)).toEqual([TH_02, `${TH_02}/attributions`])
   })
 
   it('같은 행을 다시 가리켜도 staleTime(앱 기본 30초) 안에는 다시 받지 않고, 지나면 다시 받는다', async () => {

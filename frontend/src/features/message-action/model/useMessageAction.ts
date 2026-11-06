@@ -17,9 +17,11 @@ interface ActionVariables {
   session: SessionScope
 }
 
-/** 행동의 대상 — 보낼 메시지(묶음) 또는 대화 */
+/** 행동의 대상 — 보낼 메시지(묶음), 대화, 또는 태스크를 고를 답장 */
 export function actionTarget(action: MessageAction): string {
-  return action.kind === 'reply' ? action.threadId : action.bundleId
+  if (action.kind === 'reply') return action.threadId
+  if (action.kind === 'attribute') return action.messageId
+  return action.bundleId
 }
 
 /** 마지막 행동의 실패. 다시 시도하면 같은 요청을 다시 보낸다 */
@@ -105,7 +107,7 @@ function knownFailureOf(error: unknown): KnownFailure | null {
 }
 
 /**
- * 메시지 쓰기 — 승인·보내지 않음·문구·보낼 시각·답장·태스크 빼기·메모 (계약 §5.7).
+ * 메시지 쓰기 — 승인·보내지 않음·문구·보낼 시각·답장·태스크 빼기·메모·답장의 태스크 고르기 (계약 §5.7).
  * - 서버 성공 뒤에만 반영한다. 낙관적 업데이트는 없다 — 메시지 캐시를 무효화해 서버 상태로 다시 그린다 (D-137, 계획 C-5)
  * - 다시 받기까지 끝나야 mutation 이 끝난다. 그래서 성공 뒤 이동이 처리 전 목록을 잠깐 보이지 않는다
  * - 실패하면 화면은 그대로이고 실패를 남긴다. 자동 재시도는 없고 `retry` 로 다시 보낸다. `run` 은 이전 실패를 지운다
