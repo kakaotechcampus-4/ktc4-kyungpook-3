@@ -20,7 +20,7 @@ from app.schemas.auth import (
     SignupRequest,
     UserResponse,
 )
-from app.services import mailer, password_reset
+from app.services import login_limit, mailer, password_reset
 from app.services.passwords import DUMMY_PASSWORD_HASH, hash_password, verify_password
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -107,18 +107,41 @@ def _password_hash_lock_stmt(user_id: str):
 
 
 @router.post("/login", response_model=Envelope[AuthResponse])
-def login(payload: LoginRequest, response: Response, db: Session = Depends(get_db)):
-    user = db.scalars(_login_user_stmt(payload.email)).first()
-    # 없는 이메일·비밀번호 없는 계정도 같은 해시 계산을 거치게 해 응답 시간으로 가입 여부가 드러나지 않게 한다.
-    stored = user.password_hash if user and user.password_hash else DUMMY_PASSWORD_HASH
-    ok = verify_password(payload.password, stored)
-    if not user or not user.password_hash or not ok:
-        raise AppError(ErrorCode.INVALID_CREDENTIALS)
-    if db.scalar(_password_hash_lock_stmt(user.user_id)) != user.password_hash:
-        raise AppError(ErrorCode.INVALID_CREDENTIALS)
+def login(payload: LoginRequest, request: Request, response: Response, db: Session = Depends(get_db)):
+    # 시도를 사용자 조회보다 먼저 센다. 해시 뒤에 세면 0.2초 사이의 동시 요청이 모두 검사를 통과하고,
+    # 조회 뒤에 하면 막힌 요청도 DB 연결을 잡는다. 클라이언트 주소는 uvicorn 이 해석한 request.client 만 읽는다.
+    ip_key = login_limit.client_ip_key(request.client.host if request.client else None)
+    try:
+        reservation = login_limit.reserve(payload.email, ip_key, now=login_limit.clock())
+    except login_limit.LoginBlocked as blocked:
+        seconds = blocked.retry_after_seconds
+        raise AppError(
+            ErrorCode.TOO_MANY_LOGIN_ATTEMPTS,
+            details={"retry_after_seconds": seconds},
+            headers={"Retry-After": str(seconds)},
+        ) from None
+    try:
+        user = db.scalars(_login_user_stmt(payload.email)).first()
+        # 없는 이메일·비밀번호 없는 계정도 같은 해시 계산을 거치게 해 응답 시간으로 가입 여부가 드러나지 않게 한다.
+        stored = user.password_hash if user and user.password_hash else DUMMY_PASSWORD_HASH
+        ok = verify_password(payload.password, stored)
+        if not user or not user.password_hash or not ok:
+            raise AppError(ErrorCode.INVALID_CREDENTIALS)
+        if db.scalar(_password_hash_lock_stmt(user.user_id)) != user.password_hash:
+            raise AppError(ErrorCode.INVALID_CREDENTIALS)
 
-    _create_session(db, user, response)
-    return success(_build_auth_response(db, user).model_dump(mode="json"))
+        _create_session(db, user, response)
+        result = success(_build_auth_response(db, user).model_dump(mode="json"))
+    except AppError as exc:
+        # 틀린 자격 증명만 시도로 센다. 그 밖의 오류는 사용자 잘못이 아니므로 예약을 되돌린다.
+        if exc.code != ErrorCode.INVALID_CREDENTIALS:
+            login_limit.cancel(reservation)
+        raise
+    except Exception:
+        login_limit.cancel(reservation)
+        raise
+    login_limit.succeed(reservation)
+    return result
 
 @router.post("/logout", response_model=Envelope[dict])
 def logout(request: Request, response: Response, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
