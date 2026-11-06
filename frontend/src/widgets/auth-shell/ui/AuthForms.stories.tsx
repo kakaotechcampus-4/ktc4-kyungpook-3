@@ -2,6 +2,7 @@ import type { Meta, StoryObj } from '@storybook/react-vite'
 import { delay, http } from 'msw'
 import { expect, userEvent, within } from 'storybook/test'
 import { ForgotPasswordForm, LoginForm, ResetPasswordForm, SignupForm } from '@/features/auth'
+import { ok } from '@/shared/mock/envelope'
 import { AuthShell } from './AuthShell'
 
 /* 로그인·회원가입 폼 (M4 ①). MSW 가 실제 request 경로로 답한다. 비로그인 시나리오에서 시작한다 */
@@ -30,7 +31,7 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-/** Google 로그인과 `비밀번호를 잊으셨나요?` 는 비활성이다 (D-005, D-007) */
+/** `비밀번호를 잊으셨나요?` 는 비활성이다 (D-005). 카카오 로그인 버튼이 있다 (D-179) */
 export const 로그인_기본: Story = {}
 
 /** 형식 오류는 입력 아래, 첫 오류 칸으로 포커스 (D-142) */
@@ -98,42 +99,102 @@ export const 회원가입_중복_이메일: Story = {
   parameters: { route: '/signup' },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await userEvent.type(canvas.getByLabelText('이름'), '최진호')
     await userEvent.type(canvas.getByLabelText('이메일'), 'pm@example.com')
-    await userEvent.type(canvas.getByLabelText('비밀번호'), 'pass1234')
-    await userEvent.click(canvas.getByRole('button', { name: '계정 만들기' }))
+    await userEvent.click(canvas.getByRole('button', { name: '인증 코드 받기' }))
     await expect(await canvas.findByText('이미 가입된 이메일이에요.')).toBeInTheDocument()
   },
 }
 
-/** 제출 중 — `계정 만들기` 가 비활성·aria-busy 라 다시 제출할 수 없다 */
+/** 제출 중 — `인증 코드 받기` 가 비활성·aria-busy 라 다시 제출할 수 없다 */
 export const 회원가입_제출_중: Story = {
   render: () => <Signup />,
   parameters: {
     route: '/signup',
     msw: [
-      http.post('/api/v1/auth/signup', async () => {
+      http.post('/api/v1/auth/signup/code', async () => {
         await delay('infinite')
       }),
     ],
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await userEvent.type(canvas.getByLabelText('이름'), '최진호')
     await userEvent.type(canvas.getByLabelText('이메일'), 'new@example.com')
-    await userEvent.type(canvas.getByLabelText('비밀번호'), 'pass1234')
-    await userEvent.click(canvas.getByRole('button', { name: '계정 만들기' }))
-    await expect(canvas.getByRole('button', { name: '계정 만들기' })).toBeDisabled()
+    await userEvent.click(canvas.getByRole('button', { name: '인증 코드 받기' }))
+    await expect(canvas.getByRole('button', { name: '인증 코드 받기' })).toBeDisabled()
   },
 }
 
-/** Google 가입은 비활성으로만 보인다 — 누를 수 없고 포커스도 받지 않는다 (D-007) */
-export const 회원가입_비활성: Story = {
+/** 카카오 가입 버튼이 있고 Google 버튼은 없다 (D-179) */
+export const 회원가입_카카오_버튼: Story = {
   render: () => <Signup />,
   parameters: { route: '/signup' },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await expect(canvas.getByRole('button', { name: 'Google 계정으로 가입하기' })).toBeDisabled()
+    await expect(canvas.getByRole('button', { name: '카카오로 가입하기' })).toBeEnabled()
+    await expect(canvas.queryByRole('button', { name: /Google/ })).not.toBeInTheDocument()
+  },
+}
+
+/** 코드 단계 — 보낸 주소, 다시 보내기 남은 초, 이메일 바꾸기 */
+export const 회원가입_코드_단계: Story = {
+  render: () => <Signup />,
+  parameters: { route: '/signup' },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.type(canvas.getByLabelText('이메일'), 'new@example.com')
+    await userEvent.click(canvas.getByRole('button', { name: '인증 코드 받기' }))
+    await expect(await canvas.findByLabelText('인증 코드')).toBeInTheDocument()
+  },
+}
+
+/** 프로필 단계 — 인증한 이메일은 고칠 수 없다 */
+export const 회원가입_프로필_단계: Story = {
+  render: () => <Signup />,
+  parameters: {
+    route: '/signup',
+    msw: [
+      http.post('/api/v1/auth/signup/code/confirm', () =>
+        ok({ verification_token: 'story-proof', expires_in: 1800 }),
+      ),
+    ],
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.type(canvas.getByLabelText('이메일'), 'new@example.com')
+    await userEvent.click(canvas.getByRole('button', { name: '인증 코드 받기' }))
+    await userEvent.type(await canvas.findByLabelText('인증 코드'), '123456')
+    await userEvent.click(canvas.getByRole('button', { name: '코드 확인' }))
+    await expect(await canvas.findByLabelText('이름')).toBeInTheDocument()
+    await expect(canvas.getByLabelText('이메일')).toHaveValue('new@example.com')
+  },
+}
+
+/** 카카오가 인증한 이메일로 온 가입 — 이메일은 잠겨 있고 이름은 닉네임으로 채운다 */
+export const 회원가입_카카오_연결: Story = {
+  render: () => <Signup />,
+  parameters: {
+    route: '/signup?kakao=1',
+    msw: [
+      http.get('/api/v1/auth/kakao/pending', () =>
+        ok({ email: 'kakao@example.com', nickname: '카카오 닉네임' }),
+      ),
+    ],
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(await canvas.findByLabelText('이름')).toHaveValue('카카오 닉네임')
+    await expect(canvas.getByLabelText('이메일')).toHaveAttribute('readonly')
+  },
+}
+
+/** 카카오 대기가 만료된 주소 — 카카오로 다시 시작하거나 카카오 없이 가입한다 */
+export const 회원가입_카카오_만료: Story = {
+  render: () => <Signup />,
+  parameters: { route: '/signup?kakao=1' },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(await canvas.findByRole('alert')).toHaveTextContent('카카오로 다시 시작해 주세요.')
+    await expect(canvas.getByRole('button', { name: '카카오 없이 가입' })).toBeInTheDocument()
   },
 }
 

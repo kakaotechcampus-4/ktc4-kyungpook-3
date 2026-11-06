@@ -13,8 +13,11 @@ export interface LoginDto {
   email: string
   password: string
 }
-export interface SignupDto extends LoginDto {
+export interface SignupDto {
+  verification_token?: string
+  password: string
   name: string
+  link_kakao: boolean
 }
 /* 가입 이메일 인증과 카카오 로그인 (#427, 계약 §4.1.2). 모두 로그인 없이 부른다 */
 export interface SignupCodeRequestDto {

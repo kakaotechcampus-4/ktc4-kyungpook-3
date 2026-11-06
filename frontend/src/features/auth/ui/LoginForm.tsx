@@ -87,7 +87,7 @@ export function LoginForm() {
           로그인
         </Button>
       </form>
-      <AlternativeAuth googleLabel="Google 계정으로 로그인" />
+      <AlternativeAuth label="카카오로 로그인" />
       <p className={FOOTNOTE}>
         처음이신가요?{' '}
         <GuardedLink to={paths.signup()} className={FOOTNOTE_LINK}>

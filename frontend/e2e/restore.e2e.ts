@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { finishOAuth, start } from './support'
+import { finishOAuth, signUp, start } from './support'
 
 /*
  * 시나리오 ③ 새로고침·OAuth 왕복 뒤 진행 상태 복원 (U5-2).
@@ -9,10 +9,7 @@ import { finishOAuth, start } from './support'
 
 test('가입한 계정·세션·만든 공간·온보딩 단계가 새로고침 뒤에도 남는다', async ({ page }) => {
   await start(page, 'signed-out', '/signup')
-  await page.getByLabel('이름').fill('복원 확인')
-  await page.getByLabel('이메일').fill('restore@example.com')
-  await page.getByLabel('비밀번호', { exact: true }).fill('pass1234')
-  await page.getByRole('button', { name: '계정 만들기' }).click()
+  await signUp(page, { name: '복원 확인', email: 'restore@example.com', password: 'pass1234' })
   await expect(page).toHaveURL('/onboarding/start')
   await page.getByRole('link', { name: /PM으로 팀 만들기/ }).click()
   await expect(page).toHaveURL('/onboarding/create_workspace')

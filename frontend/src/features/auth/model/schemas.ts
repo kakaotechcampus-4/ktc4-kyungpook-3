@@ -7,6 +7,7 @@ export const AUTH_MESSAGES = {
   emailFormat: '이메일 형식으로 입력해 주세요.',
   passwordRequired: '비밀번호를 입력해 주세요.',
   passwordRule: '비밀번호는 8자 이상이고 숫자를 포함해야 해요.',
+  codeFormat: '메일로 받은 6자리 숫자를 입력해 주세요.',
 } as const
 
 /** 비밀번호 규칙 안내. 회원가입 입력 아래에 늘 보인다 — Signup 캔버스의 `8자 이상, 숫자 포함` */
@@ -36,13 +37,24 @@ const newPassword = z
   .min(PASSWORD_MIN_LENGTH, AUTH_MESSAGES.passwordRule)
   .regex(/\d/, AUTH_MESSAGES.passwordRule)
 
-/** 이름 필수 · 이메일 형식 · 비밀번호 8자 이상 + 숫자. 강도 표시와 약관 동의는 이번 범위가 아니다 */
-export const signupSchema = z.object({
+/* 가입은 이메일 → 코드 → 프로필 세 단계다 (#427). 강도 표시와 약관 동의는 이번 범위가 아니다 */
+export const signupEmailSchema = z.object({ email })
+export type SignupEmailValues = z.infer<typeof signupEmailSchema>
+
+/** 메일에서 복사하면 공백이 묻어 올 수 있어 지우고 본다. BE 와 같이 ASCII 숫자만 받는다 */
+export const signupCodeSchema = z.object({
+  code: z
+    .string()
+    .trim()
+    .regex(/^[0-9]{6}$/, AUTH_MESSAGES.codeFormat),
+})
+export type SignupCodeValues = z.infer<typeof signupCodeSchema>
+
+export const signupProfileSchema = z.object({
   name: z.string().trim().min(1, AUTH_MESSAGES.nameRequired),
-  email,
   password: newPassword,
 })
-export type SignupValues = z.infer<typeof signupSchema>
+export type SignupProfileValues = z.infer<typeof signupProfileSchema>
 
 /** 재설정 메일 요청. 로그인과 같은 이메일 검사다 */
 export const forgotPasswordSchema = z.object({ email })

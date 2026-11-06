@@ -1,4 +1,4 @@
-import { fetchDto, fetchSessionDto, jsonRequest } from '@/shared/test/api'
+import { fetchSessionDto, signUpVerified } from '@/shared/test/api'
 import { db, initialDb } from './db'
 import { MOCK_SCENARIO_PARAM, prepareBrowserDb } from './browserDb'
 import { MOCK_DB_STORAGE_KEY, MOCK_DB_VERSION, saveDb } from './persistence'
@@ -26,10 +26,7 @@ describe('브라우저 MSW 시작 상태', () => {
 
   it('저장값이 있으면 복원한다 — 새로고침과 OAuth 왕복', async () => {
     prepareBrowserDb(at('/'), sessionStorage)
-    await fetchDto(
-      '/auth/signup',
-      jsonRequest('POST', { email: 'new@example.com', password: 'pass1234', name: '새 사용자' }),
-    )
+    await signUpVerified({ email: 'new@example.com', password: 'pass1234', name: '새 사용자' })
     saveDb(sessionStorage)
 
     expect(prepareBrowserDb(at('/onboarding/create_workspace'), sessionStorage)).toEqual({
