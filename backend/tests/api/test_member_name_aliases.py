@@ -293,3 +293,22 @@ def test_post_alias_on_existing_manual_row_changes_nothing(client, mdb, mseed):
         ("동우형", "nickname", "manual", False, 0.3)
     ]
     assert (r.json()["data"]["verified"], r.json()["data"]["confidence"]) == (False, 0.3)
+
+
+def test_post_alias_rejects_display_name_source(client, mdb, mseed):
+    # display_name 은 이름에서 자동으로 만든 별칭 표시라 서버만 쓴다. 받으면 이름을 바꿀 때 조용히 지워진다.
+    member = mseed["bob"]
+
+    r = _create_alias(client, member.member_id, alias_text="밥이", source="display_name")
+
+    assert r.status_code == 400
+    assert r.json()["error"]["code"] == "INVALID_REQUEST"
+    assert _aliases(mdb, member.member_id) == []
+
+
+@pytest.mark.parametrize("source", ["manual", "discord_profile", "learned"])
+def test_post_alias_still_accepts_contract_sources(client, mdb, mseed, source):
+    r = _create_alias(client, mseed["bob"].member_id, alias_text="밥이", source=source)
+
+    assert r.status_code == 201
+    assert r.json()["data"]["source"] == source

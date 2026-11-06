@@ -67,6 +67,14 @@ class MemberAliasCreateRequest(BaseModel):
     confidence: float = Field(1.0, ge=0.0, le=1.0)
     verified: bool = True
 
+    @field_validator("source")
+    @classmethod
+    def _reject_server_only_source(cls, value: AliasSource) -> AliasSource:
+        # display_name 은 이름에서 자동으로 만든 별칭 표시라 서버만 쓴다. 받으면 이름을 바꿀 때 조용히 지워진다.
+        if value == AliasSource.DISPLAY_NAME:
+            raise ValueError("display_name 별칭은 직접 등록할 수 없습니다")
+        return value
+
 
 class MemberAliasResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
