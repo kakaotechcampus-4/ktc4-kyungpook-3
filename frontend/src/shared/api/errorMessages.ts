@@ -54,6 +54,10 @@ const SERVER_MESSAGES: Record<ErrorCode, string> = {
   NOTIFICATION_NOT_FOUND: '알림을 찾을 수 없어요.',
   AUTO_BLOCK_NOT_FOUND:
     '막힌 뒤 상태나 사유가 바뀌어 되돌릴 수 없어요. 최신 태스크를 다시 불러왔어요.',
+  REPLY_JUDGMENT_NOT_FOUND: '이 답장의 판단 기록을 찾을 수 없어요.',
+  REPLY_ATTRIBUTION_NOT_NEEDED: '이미 태스크를 정한 답장이에요.',
+  REPLY_CHANGE_NOT_UNDOABLE:
+    '그 뒤에 태스크가 바뀌어 되돌릴 수 없어요. 최신 태스크를 다시 불러왔어요.',
   INVITATION_NOT_FOUND: '초대를 찾을 수 없어요.',
   INVITATION_NOT_PENDING: '이미 처리된 초대예요.',
   INVITATION_NOT_ACCEPTED: '수락하지 않은 초대라 연결을 끊을 수 없어요.',
