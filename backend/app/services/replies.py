@@ -346,8 +346,15 @@ def _judged(db: Session, row: ReplyJudgment, changes: list[ReplyChangeRequest], 
             _apply(db, task, line, now)
         elif outcome == ReplyChangeOutcome.PROPOSED:
             proposed[task.task_id].append((line, change, match))
+    repeated: list[ReplyChange] = []
     for task_id, group in proposed.items():
-        _propose(db, row, locked[task_id], group, owner_id)
+        waiting = _waiting_cards(db, task_id, group)
+        if waiting is None:
+            _propose(db, row, locked[task_id], group, owner_id)
+            continue
+        for (line, *_), approval_id in zip(group, waiting):
+            line.approval_id = approval_id
+            repeated.append(line)
     unknown = any(line.outcome == ReplyChangeOutcome.UNKNOWN for line in lines)
     if not unknown and not any(line.task_id for line in lines):
         for task_id in _unrecorded(db, row):
@@ -357,9 +364,10 @@ def _judged(db: Session, row: ReplyJudgment, changes: list[ReplyChangeRequest], 
             ))
     row.state = ReplyJudgmentState.NEEDS_PM if unknown else ReplyJudgmentState.DONE
     message = row.message
+    picked = row.picked_task_id is not None
     notice = _notice(
-        message.thread.member.display_name, scheduler._preview(message.body), lines, locked, row.thread_id,
-        picked=row.picked_task_id is not None,
+        message.thread.member.display_name, scheduler._preview(message.body),
+        lines if picked else [line for line in lines if line not in repeated], locked, row.thread_id, picked=picked,
     )
     if notice is not None:
         notifications.notify_pms(
@@ -470,6 +478,26 @@ def _apply(db: Session, task: Task, line: ReplyChange, now: datetime) -> None:
     for entry in entries:
         entry.reply_change_id = line.change_id
         entry.created_at = now
+
+
+def _waiting_cards(db: Session, task_id: str, group: list[tuple]) -> list[str] | None:
+    """줄마다 같은 값을 이미 낸 대기 카드. 하나라도 없으면 None 이다. 범위 줄과 못 찾은 담당자는 값이 없어 찾지 못한다.
+
+    출처를 가리지 않아 회의 추출 카드도 친다. 답장 판단은 대기 카드를 보지 못해 앞 제안을 그대로 또 낼 수 있다.
+    """
+    cards = db.scalars(
+        select(ApprovalRequest).where(
+            ApprovalRequest.related_task_id == task_id,
+            ApprovalRequest.status == ApprovalStatus.PENDING,
+            ApprovalRequest.type == str(ApprovalType.TASK_UPDATE),
+        )
+    ).all()
+    waiting = {}
+    for card in cards:
+        payload = json.loads(card.payload)
+        waiting.update({(key, payload.get(key)): card.approval_id for key in _PAYLOAD_KEY.values()})
+    found = [waiting.get((_PAYLOAD_KEY.get(line.field), line.new_value)) for line, *_ in group]
+    return None if None in found else found
 
 
 def _propose(
@@ -674,10 +702,15 @@ def undo_change(db: Session, task: Task, change_id: str, *, changed_by: str) -> 
 
 
 def link_history(db: Session, approval_id: str, entries: list[TaskHistory]) -> None:
-    """승인이 남긴 이력을 제안한 줄에 잇는다. PM 이 고쳐 승인한 줄도 같은 필드라 같이 이어진다."""
+    """승인이 남긴 이력을 제안한 줄에 잇는다. PM 이 고쳐 승인한 줄도 같은 필드라 같이 이어진다.
+
+    같은 카드에 이어진 줄이 여럿이면 처음 제안한 줄에 잇는다.
+    """
     db.flush()
     change_ids = dict(db.execute(
-        select(ReplyChange.field, ReplyChange.change_id).where(ReplyChange.approval_id == approval_id)
+        select(ReplyChange.field, ReplyChange.change_id)
+        .where(ReplyChange.approval_id == approval_id)
+        .order_by(ReplyChange.created_at.desc())
     ).all())
     for entry in entries:
         entry.reply_change_id = change_ids.get(entry.changed_field)

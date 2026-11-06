@@ -903,6 +903,16 @@ def test_scope_card_has_no_value_to_compare(mdb, mseed, two):
     assert len(_notes(mdb)) == 2
 
 
+def test_assignee_nobody_matches_has_no_value_to_compare(mdb, mseed, two):
+    a, _ = two
+    for at in (AT, AT + MIN):
+        _reply(mdb, mseed, at)
+        item = _claim()
+        _judge(item, _change(a, "assignee", "없는사람", assignee_type="name", assignee_raw="없는사람", claimed=item))
+
+    assert len(_cards(mdb)) == 2
+
+
 def test_repeated_blocked_line_still_keeps_the_clock_blocked(mdb, mseed, two):
     a, _ = two
     _same_again(mdb, mseed, a, ("status", "blocked"))
