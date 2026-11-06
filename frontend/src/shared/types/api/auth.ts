@@ -16,6 +16,27 @@ export interface LoginDto {
 export interface SignupDto extends LoginDto {
   name: string
 }
+/* 가입 이메일 인증과 카카오 로그인 (#427, 계약 §4.1.2). 모두 로그인 없이 부른다 */
+export interface SignupCodeRequestDto {
+  email: string
+}
+export interface SignupCodeSentDto {
+  expires_in: number
+  resend_after: number
+}
+export interface SignupCodeConfirmDto {
+  email: string
+  code: string
+}
+export interface SignupCodeConfirmedDto {
+  verification_token: string
+  expires_in: number
+}
+export interface KakaoPendingDto {
+  /** 카카오가 인증한 이메일. 없거나 인증되지 않았으면 null */
+  email: string | null
+  nickname: string | null
+}
 /* 비밀번호 재설정 (#356, 계약 §4.1.1). 세 경로 모두 로그인 없이 부른다 */
 export interface PasswordResetRequestDto {
   email: string

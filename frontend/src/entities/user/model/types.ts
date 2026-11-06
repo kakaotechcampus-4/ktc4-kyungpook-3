@@ -18,3 +18,8 @@ export interface LoginInput {
 export interface SignupInput extends LoginInput {
   name: string
 }
+/** 카카오 동의를 마치고 가입을 기다리는 신원. 이메일은 카카오가 인증했을 때만 있다 */
+export interface KakaoPending {
+  email: string | null
+  nickname: string | null
+}
