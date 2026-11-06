@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Request, Response
 from sqlalchemy import and_, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
@@ -81,7 +82,12 @@ def signup(payload: SignupRequest, response: Response, db: Session = Depends(get
         provider="local"
     )
     db.add(user)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        # 사전 조회와 저장 사이에 같은 이메일이 먼저 가입된 경우. 유일 제약이 막으므로 409 로 돌려준다.
+        db.rollback()
+        raise AppError(ErrorCode.EMAIL_ALREADY_EXISTS)
     db.refresh(user)
 
     _create_session(db, user, response)

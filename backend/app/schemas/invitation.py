@@ -1,21 +1,15 @@
 from datetime import datetime
 
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, Field
 
+from app.schemas.email import NormalizedEmail, normalize_email
 
-def normalize_email(email: str) -> str:
-    """초대 이메일과 가입 이메일을 비교하는 형태. 대소문자와 앞뒤 공백 차이로 초대를 못 받는 일이 없게 한다."""
-    return email.strip().lower()
+__all__ = ["normalize_email"]
 
 
 class InvitationCreateRequest(BaseModel):
     member_id: str = Field(..., description="초대할 팀원. 로그인 계정이 연결되지 않은 팀원이어야 한다")
-    email: EmailStr = Field(..., description="팀원의 가입 이메일. 소문자로 바꿔 저장한다")
-
-    @field_validator("email")
-    @classmethod
-    def _normalize_email(cls, value: str) -> str:
-        return normalize_email(value)
+    email: NormalizedEmail = Field(..., description="팀원의 가입 이메일. 소문자로 바꿔 저장한다")
 
 
 class InvitedUser(BaseModel):
