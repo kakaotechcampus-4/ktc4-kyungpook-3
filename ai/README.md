@@ -38,6 +38,9 @@ recordings/         녹음 산출물 (git 제외)
   `PATCH /meetings/{id}/fail` 에 `failed_stage=diarize` 를 보냅니다. 진행은 `recordings/.uploads/<meeting_id>/intake.json`,
   결과는 세션 `upload_<meeting_id>` 의 `diarized` 매니페스트(`be`, `workspace_id`, `attendees`, `upload` 포함)입니다. 자세한 흐름은 아래
   "수동 업로드" 항목에 있습니다.
+  PM 의 지정이 끝난 뒤에는 `mapped` 매니페스트를 처리 바퀴가 집어 `POST /meetings/{id}/sources`(화자는 `speaker_member_id`)와 `POST /extractions` 로 인계하며
+  `POST /meetings`·`PATCH /end` 는 부르지 않습니다. 그 앞 단계에서 화자 라벨 보고(`POST /uploads/{id}/speakers`), 지정 조회(`GET /uploads/assigned`),
+  `PATCH /uploads/{id}/resume` 도 같은 워커가 부릅니다(아래 "업로드 회의 인계").
 - 추출 단계의 추출기는 `MM_EXTRACT_PATH` 로 고릅니다 (`docs/basis_for_decision/member/2026-09-30-0016-judge-path-flag-and-unjudged-findings.md`). 기본(`legacy`)은 `extract/` 의
   `extract_tasks`, `judge` 는 판단 파이프라인(`judge/pipeline.py`)입니다. `judge` 는 1단계가 전사록에서 고른
   finding(결정이나 진척 보고 하나. 근거 줄 하나나 여러 줄과 요약 문장)마다 그 요약 문장으로 BE 의 유사 task 검색
@@ -58,10 +61,11 @@ recordings/         녹음 산출물 (git 제외)
   `SPEAKER00` 도 됩니다. 모든 라벨을 한 번에 지정해야 하고(빠진·모르는 라벨, 빈 문자열이거나 앞뒤 공백이 있는 멤버 ID 는 거절하며
   파일은 그대로입니다), `null` 은 외부 참석자이고, 같은 멤버를 여러 라벨에 지정해도 됩니다. 결과는 `speakers[].member_id`,
   최상위 `mapped_at`, `status` 가 `mapped` 입니다. `user_id`(라벨 id)·`file`·wav 이름은 그대로이고 `mapped` 에서 다시 지정하면
-  덮어씁니다. `diarized`·`mapped` 이거나 `source` 가 `upload` 인 매니페스트는 상태가 무엇이든(사람이 `saved` 로 고쳐도) 워커의
-  자동 바퀴·`--retry` 바퀴·복구 어디서도 처리하지 않습니다. 이 경로(`prepare`)로 만든 매니페스트에는 `workspace_id` 와 BE
-  회의 정보가 없고 디스코드 길드·채널이 없어 `guild`·`channel` 이 null 입니다. PM 의 지정은 BE 웹 경로와 `upload.assign` 이 받고, 전사·인계는
-  #286 에서 합니다.
+  덮어씁니다. `diarized` 인 업로드 매니페스트와 `workspace_id`·BE 회의(`be.meeting_id`)가 없는 업로드 매니페스트는 상태가 무엇이든
+  (사람이 `saved` 로 고쳐도) 워커의 자동 바퀴·`--retry` 바퀴·복구 어디서도 처리하지 않습니다. 이 경로(`prepare`)로 만든
+  매니페스트에는 `workspace_id` 와 BE 회의 정보가 없고 디스코드 길드·채널이 없어 `guild`·`channel` 이 null 이라 여기에 해당합니다.
+  PM 의 지정은 BE 웹 경로와 `upload.assign` 이 받고, 지정이 끝나 `mapped` 가 된 BE 업로드 회의는 워커의 처리 바퀴가 전사·BE 인계합니다
+  (아래 "업로드 회의 인계").
 - 웹 업로드 가져오기(`upload/intake.py`): PM 이 웹에 올린 오디오 회의를 워커가 가져와 같은 `diarized` 매니페스트로 만듭니다.
   명시적 opt-in 입니다. 환경 변수 `MM_UPLOAD_INTAKE=1` 이고 `BE_BASE_URL`·`BE_SERVICE_TOKEN`·`PYANNOTEAI_API_KEY` 가 모두 있을 때만 켜지고,
   아니면 BE 도 pyannoteAI 도 부르지 않습니다. **운영 서버 한 대에서만 켭니다(BE 의 claim 계약은 단일 워커를 전제로 합니다).** 워커가 바퀴 끝(정지 신호가 없을 때만)에 한 번 `intake_one` 을 부르며, 한 번에 한 건을 한 단계만 진전시킵니다.
@@ -72,7 +76,7 @@ recordings/         녹음 산출물 (git 제외)
   BE 에 `PATCH /meetings/{id}/fail`(`failed_stage=diarize`)을 보냅니다. 보내지 못하면 다음 바퀴에 다시 보냅니다. 세션 이름은
   `upload_<meeting_id>` 이고 매니페스트(`recordings/session_upload_<meeting_id>.json`)는 `be`(`{meeting_id, status}`), `workspace_id`,
   `title`, `attendees`, `upload`(원본 파일 정보)를 더해 `status` 가 `diarized` 입니다. 이 매니페스트도 위와 같이 워커의 처리 바퀴가
-  집지 않습니다(남은 것은 전사·인계 #286). 워커 로그에는 `[worker] 업로드 <meeting_id> <진행>` 한 줄이 남고,
+  집지 않습니다(지정 전이라서입니다). 워커 로그에는 `[worker] 업로드 <meeting_id> <진행>` 한 줄이 남고,
   하트비트 `current` 는 가져오는 동안 `upload` 입니다.
 - 지정 받기(`upload/assign.py`): PM 이 웹에서 화자 지정을 끝낸 업로드 회의를 워커가 `mapped` 로 바꿉니다. 같은 opt-in 이고, 워커가 같은
   자리(한 번에 한 회의)에서 `intake_one` 보다 먼저 `assign_one` 을 한 번 부릅니다. 한 번에 한 건을 한 단계만 진전시킵니다.
@@ -84,7 +88,7 @@ recordings/         녹음 산출물 (git 제외)
   않습니다. 연결 실패·5xx·`apply_mapping` 잠금 경합은 일시 실패라 대기 뒤 다시 하고 포기 한도는 없습니다. assigned 에 나왔는데 로컬
   매니페스트가 없으면 resume 하지 않고 건너뜁니다(로그는 실행 동안 회의마다 한 번). resume 은 됐는데 지정을 쓸 수 없으면(라벨 불일치 등)
   `PATCH /meetings/{id}/fail`(`failed_stage=diarize`)을 보내고(409 ended 는 성공으로 봅니다) 로컬을 정리해 `failed` 로 기록하며,
-  fail 을 보내지 못하면 기록에 남겨 다음에 다시 보냅니다. `mapped` 매니페스트도 워커의 처리 바퀴가 집지 않습니다. 로그는 같은
+  fail 을 보내지 못하면 기록에 남겨 다음에 다시 보냅니다. `mapped` 매니페스트는 워커의 처리 바퀴가 이어서 집습니다(아래 "업로드 회의 인계"). 로그는 같은
   `[worker] 업로드 <meeting_id> <진행>` 한 줄입니다.
 - 라벨 보고(`upload/report.py`): 가져오기가 끝난(`done`) 회의의 화자 라벨과 샘플 구간을 워커가 BE 에 보고합니다. 같은 opt-in 이고, 워커가
   같은 자리(한 번에 한 회의)에서 `assign_one` 다음, `intake_one` 보다 먼저 `report_one` 을 한 번 부릅니다. BE 는 보고를 받아야
@@ -95,12 +99,24 @@ recordings/         녹음 산출물 (git 제외)
     매니페스트의 모든 라벨이 한 번씩 들어갑니다.
   - 기록: `recordings/.uploads/<meeting_id>/intake.json` 의 `report` 키(상태 `reporting` → `reported`·`ended`, 실패는 `failing` → `failed`)입니다.
     보고 본문은 처음 만들 때 기록에 고정하고 재전송은 그 본문을 그대로 보내므로, 응답을 잃어도 같은 내용으로 다시 보냅니다. 가져오기 상태와
-    매니페스트(`diarized`)는 바꾸지 않습니다. 처리 바퀴가 업로드 매니페스트를 집지 않는 가드도 그대로입니다.
+    매니페스트(`diarized`)는 바꾸지 않습니다. `reporting` 인데 지정 받기가 남긴 `resume` 키가 있으면(PM 지정이 이미 끝난 회의) BE 를 부르지 않고 `reported` 로 닫습니다.
+    아래 어느 응답 처리에서도 `mapped` 매니페스트는 지우지 않습니다.
   - 응답 처리: 200 이면 `reported` 입니다. 409 `SPEAKERS_ALREADY_REPORTED` 는 BE 가 가진 라벨이 우리 것과 같으면 `reported`, 다르면 로컬을
     정리하고 `failed_stage=diarize` 로 실패를 보고합니다. 409 `MEETING_ALREADY_ENDED` 와 404 는 로컬을 정리하고 `ended` 로 기록하며 fail 을
     보내지 않습니다. 409 `UPLOAD_NOT_CLAIMED` 와 400 은 로컬 정리 뒤 fail 을 보냅니다. 매니페스트·분리 파일이 없거나 깨졌거나 라벨이 어긋나도
     같습니다. 연결 실패·5xx·401·BAD_RESPONSE 는 일시 실패라 대기 뒤 다시 하고 포기 한도는 없습니다. fail 을 보내지 못하면 `failing` 으로 남겨
     다음에 다시 보냅니다.
+- 업로드 회의 인계(`capture/handoff.py`·`capture/recorder.py`): 지정이 끝나 `mapped` 가 되고(모든 화자에 `member_id` 키가 있음) `workspace_id`·`be.meeting_id` 가
+  있는 업로드 매니페스트는 워커의 처리 바퀴(`run_pass`·복구)가 디스코드 회의보다 먼저 집어 전사 → 회의록 → 할일 추출 → BE 인계를 합니다. 디스코드 서버가
+  없어도 집습니다. 디스코드 회의가 BE 에 보내는 요청은 그대로입니다.
+  - 변환은 인계 직전에만 합니다. 전사 계약 파일과 추출 입력은 라벨 id(`SPEAKER00`)를 그대로 쓰고, BE 로 나갈 때만 라벨을 멤버 ID 로 바꿉니다.
+  - `POST /meetings/{id}/sources` 는 모든 발화에 `speaker` 를 null 로 두고, 멤버에 지정된 라벨의 발화에는 `speaker_member_id` 를 싣습니다. `speaker_names` 는 보내지 않습니다.
+  - `POST /extractions` 는 judge·legacy 항목 모두 `evidence_speaker` 를 null 로 두고 `evidence_speaker_member_id` 를 싣습니다.
+  - 외부 참석자로 지정한 라벨은 화자도 멤버 ID 도 비웁니다. 그 발화도 전사·발화 저장·추출에는 넣습니다. LLM 에는 "외부 참석자 N" 이라는 이름으로 보입니다.
+  - BE 회의는 가져오기 때 이미 만들어져 있어 `POST /meetings`·`PATCH /meetings/{id}/end` 를 부르지 않습니다.
+  - 400 `details.member_ids` 를 받으면 그 ID 를 null 로 바꿔 다시 보내고(서로 다른 ID 수만큼만), 버린 ID 는 `be.sources.dropped_member_ids` 와 로그에 남깁니다.
+  - 발화 저장의 409 `MEETING_FAILED`·404, 추출 등록의 409 `MEETING_NOT_PROCESSING`·404 는 BE 가 이미 끝낸 회의라는 뜻입니다. 새 회의를 만들지 않고 실패 횟수·`/fail` 도 없이
+    잠금을 놓은 뒤 로컬 매니페스트·잠금·트랙 폴더를 지웁니다.
 
 ## 설치 (이 디렉토리, `ai/` 안에서)
 

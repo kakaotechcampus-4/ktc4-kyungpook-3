@@ -21,13 +21,12 @@ resuming 으로 적고 이어 간다. 로컬 매니페스트가 없는 항목은
 from __future__ import annotations
 
 import logging
-import shutil
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Callable
 
 from capture.handoff import BeError
-from capture.recorder import _iso, backoff_s, manifest_path, utcnow
+from capture.recorder import _iso, backoff_s, drop_local, manifest_path, utcnow
 from upload.intake import FAILED_STAGE, Progress, _cleanup, _dir, _due, _load, _save
 from upload.mapping import MappingBusy, apply_mapping
 
@@ -102,7 +101,7 @@ def _advance(recordings_dir: Path, d: Path, rec: dict, *, client, now) -> Progre
         if e.code == "SPEAKERS_NOT_ASSIGNED":   # 지정이 아직이다: 매니페스트 그대로 두고 다음에
             return _later(d, rec, now(), f"{e.code}: {e}", "waiting")
         if e.code == "MEETING_ALREADY_ENDED" or _is_gone(e):
-            _drop_local(recordings_dir, mid)
+            drop_local(recordings_dir, f"upload_{mid}")
             return _finish(d, rec, "ended", f"{e.code}: {e}")
         return _later(d, rec, now(), f"{type(e).__name__}: {e}", "retry")
     except Exception as e:  # noqa: BLE001 - 연결 오류 등: 응답을 잃었을 수 있으니 같은 resume 을 다시 보낸다
@@ -112,21 +111,13 @@ def _advance(recordings_dir: Path, d: Path, rec: dict, *, client, now) -> Progre
     except MappingBusy as e:   # 다른 프로세스가 매니페스트를 쥐고 있다
         return _later(d, rec, now(), f"{type(e).__name__}: {e}", "retry")
     except ValueError as e:    # 라벨 불일치·status 가 맞지 않음 등: 다시 해도 같다
-        _drop_local(recordings_dir, mid)
+        drop_local(recordings_dir, f"upload_{mid}")
         r.update(state="failing", error=str(e), next_at=None)
         _save(d, rec)
         return _report_fail(recordings_dir, d, rec, client, now())
     except OSError as e:
         return _later(d, rec, now(), f"{type(e).__name__}: {e}", "retry")
     return _finish(d, rec, "mapped", None)
-
-
-def _drop_local(recordings_dir: Path, mid: str) -> None:
-    """이 회의의 매니페스트·잠금 파일·트랙 폴더를 지운다. 가져오기 기록(intake.json)은 남긴다."""
-    m = manifest_path(recordings_dir, f"upload_{mid}")
-    m.unlink(missing_ok=True)
-    m.with_suffix(".lock").unlink(missing_ok=True)
-    shutil.rmtree(recordings_dir / f"upload_{mid}", ignore_errors=True)
 
 
 def _finish(d: Path, rec: dict, state: str, error: str | None) -> Progress:

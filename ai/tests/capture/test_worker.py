@@ -507,8 +507,9 @@ def test_retry_asks_the_running_worker_and_says_whether_it_is_alive(tmp_path):
     assert "워커 신호가 없습니다" in W.retry(rec, "77")
 
 
-def test_a_pass_never_lists_an_upload_manifest(tmp_path):
-    """업로드 매니페스트(diarized·mapped·사람이 saved 로 고친 것)는 자동 바퀴도 수동 바퀴도 결과에 넣지 않는다."""
+def test_a_pass_never_lists_an_unready_upload_manifest(tmp_path):
+    """지정 시각·화자별 member_id·BE 회의가 없는 업로드 매니페스트(diarized, status 만 mapped·saved 로 고친 것)는
+    자동 바퀴도 수동 바퀴도 결과에 넣지 않는다. 갖춘 mapped 업로드는 아래 테스트가 본다(#286)."""
     from tests.conftest import SEGS, STARTED, FakeDiarizer, _audio
     from upload.prepare import prepare_upload
 
@@ -825,7 +826,9 @@ async def test_a_report_crash_is_logged_and_intake_still_runs(tmp_path, monkeypa
     assert rec.calls == 1 and w._current is None
 
 
-async def test_diarized_upload_becomes_mapped_through_the_worker_and_the_pass_leaves_it(tmp_path, monkeypatch):
+async def test_an_upload_goes_from_intake_to_handed_off_through_the_worker_laps(tmp_path, monkeypatch):
+    """업로드가 진짜 report_one·assign_one·intake_one 과 처리 바퀴로 끝까지 간다: 가져오기 → 라벨 보고 → 지정 받기(mapped)
+    → 처리 바퀴(전사·발화 저장·추출·인계) → handed_off. 서버(guild_id)가 없어도 바퀴가 집고 새 BE 회의는 만들지 않는다."""
     import io
     import numpy as np
     import soundfile as sf
@@ -838,19 +841,76 @@ async def test_diarized_upload_becomes_mapped_through_the_worker_and_the_pass_le
     sf.write(buf, (0.3 * np.sin(2 * np.pi * 220 * t)).astype(np.float32), 16000, format="WAV", subtype="PCM_16")
     fake = FakeBe()
     fake.add_upload("m1", audio=buf.getvalue(), stored_filename="a.wav", original_filename="회의.wav")
+    fake.members["ws-1"] = [{"member_id": "u1", "name": "민수", "discord_user_id": None, "aliases": []}]
     client = H.BeClient("http://be", session=fake, service_token="svc-token")
-    w = _worker(tmp_path, intake=(client, FakeDiarizer(SEGS)))
+    w = _worker(tmp_path, intake=(client, FakeDiarizer(SEGS)), handoff=H.Handoff(client), extractor=_extractor({}))
     monkeypatch.setattr(W, "assign_one", A.assign_one)
     monkeypatch.setattr(W, "report_one", RP.report_one)   # 보고도 진짜로: 워커 바퀴가 intake → report 로 이어진다
     for _ in range(8):
         await w._intake_once()
     path = R.manifest_path(w.recordings_dir, "upload_m1")
     assert _status(path) == "diarized"
+    assert await w.run_pass() == ([], [])                  # 지정 전에는 집지 않는다
     assert sum(1 for m, p, _ in fake.calls if m == "POST" and p.endswith("/speakers")) == 1   # 워커가 한 번 보고했다
     fake.assign("m1", {"SPEAKER_00": "u1", "SPEAKER_01": None})
     await w._intake_once()
     assert _status(path) == "mapped"
     assert sum(1 for m, p, _ in fake.calls if m == "PATCH" and p.endswith("/resume")) == 1
+    assert await w.run_pass(guild_id="1", manual=True) == ([], [])      # 서버별 바퀴는 서버 없는 업로드를 집지 않는다
+    results, _ = await w.run_pass()
+    assert [r["session"] for r in results] == ["upload_m1"] and results[0]["status"] == "handed_off"
+    assert _status(path) == "handed_off"
+    assert not any(p == "/meetings" or p.endswith("/end") for _, p, _ in fake.calls)
+    assert fake.meetings["m1"]["status"] == "done" and "m1" in fake.extractions
+    assert {s["member_id"] for s in fake.sources["m1"].values() if s.get("member_id")} == {"u1"}
+
+
+async def test_a_pass_processes_a_mapped_upload_before_discord_meetings(tmp_path):
+    from tests.capture.test_recorder import _mapped_upload
+    rec, dpath, _ = _session(tmp_path, ts=500)
+    _, upath, m = _mapped_upload(tmp_path)
+    fake = FakeBe()
+    fake.add_upload("m-up1")
+    fake.members["ws-1"] = [{"member_id": "u1", "name": "민수", "discord_user_id": None, "aliases": []}]
+    w = _worker(tmp_path, extractor=_extractor({}),
+                handoff=H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token")))
+    results, _ = await w.run_pass()
+    assert [r["session"] for r in results] == [m["session"], "77_500"]
+    assert _status(upath) == "handed_off" and _status(dpath) == "handed_off"
+
+
+async def test_a_pass_waits_for_assign_to_close_the_resume_record_before_picking_a_mapped_upload(tmp_path):
+    """apply_mapping 이 매니페스트를 mapped 로 썼어도 resume 기록이 resuming 이면 바퀴는 집지 않는다. 지정 받기 재시도가
+    그 회의의 로컬을 지울 수 있기 때문이다. assign_one 이 mapped 로 닫은 뒤에야 집는다."""
+    from datetime import datetime, timezone
+    from tests.capture.test_recorder import _mapped_upload
+    from upload import assign as A
+    rec, upath, m = _mapped_upload(tmp_path, resume="resuming", session="upload_m-up1")
+    fake = FakeBe()
+    fake.add_upload("m-up1")
+    fake.members["ws-1"] = [{"member_id": "u1", "name": "민수", "discord_user_id": None, "aliases": []}]
+    fake.mark_reported("m-up1", ["SPEAKER_00", "SPEAKER_01"])
+    fake.assign("m-up1", {"SPEAKER_00": "u1", "SPEAKER_01": None})
+    client = H.BeClient("http://be", session=fake, service_token="svc-token")
+    w = _worker(tmp_path, extractor=_extractor({}), handoff=H.Handoff(client))
     assert await w.run_pass() == ([], [])
-    assert await w.run_pass(guild_id="1", manual=True) == ([], [])
-    assert _status(path) == "mapped"
+    assert _status(upath) == "mapped"
+    prog = A.assign_one(rec, client=client, now=lambda: datetime.now(timezone.utc))
+    assert prog is not None and prog.event == "mapped"
+    results, _ = await w.run_pass()
+    assert [r["session"] for r in results] == [m["session"]] and results[0]["status"] == "handed_off"
+
+
+async def test_an_upload_ended_in_be_is_dropped_by_the_pass_and_logged_without_a_failure(tmp_path, capsys):
+    from tests.capture.test_recorder import _mapped_upload
+    rec, upath, m = _mapped_upload(tmp_path)
+    fake = FakeBe()
+    fake.add_upload("m-up1", status="failed")
+    w = _worker(tmp_path, extractor=_extractor({}),
+                handoff=H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token")))
+    results, _ = await w.run_pass()
+    assert [r["ended"] is not None for r in results] == [True]
+    assert not upath.exists() and not upath.with_suffix(".lock").exists() and not (rec / m["session"]).exists()
+    assert await w.run_pass() == ([], [])
+    assert "끝난 회의" in capsys.readouterr().out
+    assert not any(p.endswith("/fail") for _, p, _ in fake.calls)

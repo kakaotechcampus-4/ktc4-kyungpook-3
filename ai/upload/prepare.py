@@ -1,8 +1,9 @@
 """수동 업로드 오디오를 화자별 가상 트랙과 diarized 매니페스트로 만든다.
 
 이어서 사람이 화자 라벨을 멤버에 지정한다(upload.mapping: python -m upload.mapping <매니페스트> <mapping.json>, status 가 mapped 가 된다).
-워커의 처리 바퀴는 업로드 회의(source == "upload")를 상태와 상관없이 집지 않는다. BE 에서 가져온 회의는 워커가 upload.report 로 라벨을 보고하고
-upload.assign 으로 PM 의 지정을 받아 mapped 로 만든다. 그 뒤 전사·BE 인계는 아직 없다(#286).
+워커의 처리 바퀴는 업로드 회의(source == "upload")를 diarized 일 때, 그리고 BE 회의·워크스페이스가 없는 매니페스트(이 prepare 로 만든 것)를 상태와
+상관없이 집지 않는다. BE 에서 가져온 회의는 워커가 upload.report 로 라벨을 보고하고 upload.assign 으로 PM 의 지정을 받아 mapped 로 만들며,
+mapped 가 된 뒤에는 처리 바퀴가 집어 전사·BE 인계를 한다(디스코드 회의보다 먼저, /meetings·/end 는 부르지 않는다).
 BE 에 올라온 업로드를 가져오는 쪽은 upload.intake 이고, 분리 결과(Segment 목록)로 같은 매니페스트를 쓰는 prepare_from_segments 를 쓴다.
 meta 키워드로 be·workspace_id·title·attendees·upload 를 매니페스트에 얹는다.
 실행: python -m upload.prepare <오디오> --started-at <ISO> [--timezone Asia/Seoul]  (pyannoteAI 를 실제로 부른다)
@@ -95,7 +96,7 @@ def main(argv: list[str] | None = None) -> int:
     path, m = prepare_upload(a.audio, a.recordings_dir, diarizer=PyannoteAiDiarizer(),
                              started_at=a.started_at, timezone=a.timezone)
     print(f"{path}  화자 {len(m['speakers'])}명. 개발용으로 라벨을 멤버에 지정하려면: python -m upload.mapping {path} <mapping.json> "
-          "(PM 의 지정은 BE 웹 경로와 upload.assign 이 받고, 전사·인계는 #286 에서 한다).")
+          "(PM 의 지정은 BE 웹 경로와 upload.assign 이 받고, mapped 가 된 BE 업로드는 처리 바퀴가 전사·인계한다).")
     return 0
 
 

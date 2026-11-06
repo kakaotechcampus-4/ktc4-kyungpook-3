@@ -14,6 +14,8 @@ reporting -> reported | ended | failing -> failed.
 
 대상: 가져오기 state 가 done 이고 report·resume 키가 없는 기록(지정 받기가 이미 이어 가는 기록은 건드리지 않는다). 그다음 때가 된
 reporting·failing. 처리 가드와 가져오기 상태 기계는 그대로다.
+응답을 잃어 reporting 으로 남은 기록에 resume 키가 생겼으면(BE 가 라벨을 받았고 PM 이 지정해 지정 받기가 mapped 로 바꿨다) BE 를
+부르지 않고 reported 로 닫는다. 이 기록의 ENDED·다른 라벨·400 은 mapped 매니페스트를 지우게 되므로 보내지 않는다.
 """
 
 from __future__ import annotations
@@ -25,8 +27,8 @@ from pathlib import Path
 from typing import Callable, Iterable
 
 from capture.handoff import BeError
-from capture.recorder import _iso, backoff_s, manifest_path, utcnow
-from upload.assign import _drop_local, _is_gone
+from capture.recorder import _iso, backoff_s, drop_local, manifest_path, utcnow
+from upload.assign import _is_gone
 from upload.intake import FAILED_STAGE, Progress, _cleanup, _dir, _due, _load, _save
 
 _OPEN = ("reporting", "failing")
@@ -164,7 +166,7 @@ def report_one(recordings_dir: Path, *, client, now: Callable[[], datetime] = ut
         try:
             speakers = _prepare(recordings_dir, mid)
         except (OSError, ValueError, KeyError, TypeError) as e:   # 매니페스트·분리 파일이 없거나 깨졌거나 라벨이 어긋났다
-            _drop_local(recordings_dir, mid)
+            drop_local(recordings_dir, f"upload_{mid}")
             rec["report"] = {"state": "failing", "attempts": 0, "next_at": None, "error": f"{type(e).__name__}: {e}"}
             _save(d, rec)
             return _report_fail(d, rec, client, now())
@@ -173,6 +175,8 @@ def report_one(recordings_dir: Path, *, client, now: Callable[[], datetime] = ut
     r = rec["report"]
     if r["state"] == "failing":
         return _report_fail(d, rec, client, now())
+    if "resume" in rec:   # 지정 받기가 먼저 끝났다: BE 는 이미 라벨을 받았고 매니페스트는 mapped 다. 부르지 않고 닫아 어떤 오류 경로도 mapped 를 지우지 않게 한다
+        return _reported(d, rec, now())
     try:
         client.report_speakers(mid, r["speakers"])
     except BeError as e:
@@ -182,7 +186,7 @@ def report_one(recordings_dir: Path, *, client, now: Callable[[], datetime] = ut
                 return _reported(d, rec, now())
             return _fail(recordings_dir, d, rec, client, now(), f"{e.code}: 다른 라벨이 이미 보고됐다 {labels}")
         if e.code == "MEETING_ALREADY_ENDED" or _is_gone(e):
-            _drop_local(recordings_dir, mid)
+            drop_local(recordings_dir, f"upload_{mid}")
             return _finish(d, rec, "ended", f"{e.code}: {e}")
         if e.code == "UPLOAD_NOT_CLAIMED" or e.status == 400:   # 다시 해도 같다
             return _fail(recordings_dir, d, rec, client, now(), f"{e.code}: {e}")
@@ -224,7 +228,7 @@ def _later(d: Path, rec: dict, t: datetime, error: str, event: str) -> Progress:
 
 
 def _fail(recordings_dir: Path, d: Path, rec: dict, client, t: datetime, error: str) -> Progress:
-    _drop_local(recordings_dir, rec["meeting_id"])
+    drop_local(recordings_dir, "upload_" + rec["meeting_id"])
     rec["report"].update(state="failing", error=error, next_at=None)
     _save(d, rec)
     return _report_fail(d, rec, client, t)
