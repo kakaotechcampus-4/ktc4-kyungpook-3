@@ -4,11 +4,15 @@ import { expectNoHorizontalOverflow, start } from './support'
 import type { Scenario } from './support'
 
 /*
- * U5-4 레이아웃 — 1024·1280·1440px 에서 주요 화면에 가로 스크롤이 없고 핵심 요소가 화면 안에 보인다.
+ * U5-4 레이아웃 — 주요 화면에 가로 스크롤이 없고 핵심 요소가 화면 안에 보인다. 최소 지원 폭은 360px 이다 (D-180).
+ * 360·390px 은 `narrow` 인 화면만 본다. 나머지는 휴대폰 배치(#478 의 화면 PR)가 들어올 때 더한다.
  * 화면마다 스크린샷을 테스트 결과에 붙인다(playwright-report).
  */
 
-const VIEWPORTS = [1024, 1280, 1440] as const
+const VIEWPORTS = [360, 390, 1024, 1280, 1440] as const
+
+/** 이 폭 미만은 휴대폰 셸이다 — 헤더 탭 대신 아래 탭 막대 (D-180) */
+const COMPACT_BELOW = 768
 
 const SCREENS: {
   name: string
@@ -16,6 +20,7 @@ const SCREENS: {
   path: string
   role: 'link' | 'button' | 'heading'
   landmark: string
+  narrow?: true
 }[] = [
   { name: '랜딩', role: 'link', scenario: 'signed-out', path: '/', landmark: '시작하기' },
   { name: '로그인', role: 'button', scenario: 'signed-out', path: '/login', landmark: '로그인' },
@@ -32,6 +37,7 @@ const SCREENS: {
     scenario: 'multiple-workspaces',
     path: '/workspaces',
     landmark: '새 워크스페이스 만들기',
+    narrow: true,
   },
   {
     name: '온보딩',
@@ -39,6 +45,7 @@ const SCREENS: {
     scenario: 'incomplete-workspace',
     path: '/onboarding/ws_03/connect_discord',
     landmark: '연결하기',
+    narrow: true,
   },
   {
     name: '대시보드',
@@ -55,6 +62,7 @@ for (const width of VIEWPORTS) {
     test.use({ viewport: { width, height: 900 } })
 
     for (const screen of SCREENS) {
+      if (width < COMPACT_BELOW && !screen.narrow) continue
       test(`${screen.name} — 가로 스크롤 없음`, async ({ page }, testInfo) => {
         await start(page, screen.scenario, screen.path)
         const landmark = page.getByRole(screen.role, { name: screen.landmark, exact: true }).first()
@@ -65,6 +73,49 @@ for (const width of VIEWPORTS) {
           contentType: 'image/png',
         })
       })
+    }
+
+    if (width < COMPACT_BELOW) {
+      test('아래 탭 막대 — 탭 5개가 화면 안에 있고 지금 화면을 표시하며 토스트가 그 위에 뜬다', async ({
+        page,
+      }) => {
+        await start(page, 'multiple-workspaces', '/workspaces/ws_01/dashboard')
+        const nav = page.getByRole('navigation', { name: '주요 화면' })
+        await expect(nav).toHaveCount(1)
+        await expect(nav.getByRole('link')).toHaveText(['홈', '회의록', '태스크', '메시지', '팀'])
+        for (const tab of await nav.getByRole('link').all())
+          await expect(tab).toBeInViewport({ ratio: 1 })
+        await expect(nav.getByRole('link', { name: '홈' })).toHaveAttribute('aria-current', 'page')
+        // 대시보드 본문은 아직 360px 에 맞추지 않았다 — 문서 대신 막대 자체가 넘치지 않는지 본다
+        const bar = await nav.evaluate((element) => ({
+          overflow: element.scrollWidth - element.clientWidth,
+          bottom: element.getBoundingClientRect().bottom,
+          top: element.getBoundingClientRect().top,
+          viewport: window.innerHeight,
+        }))
+        expect(bar.overflow).toBeLessThanOrEqual(0)
+        expect(bar.bottom).toBe(bar.viewport)
+
+        const header = page
+          .getByRole('banner')
+          .filter({ has: page.getByRole('button', { name: /^워크스페이스 바꾸기/ }) })
+        await expect(header.getByRole('link')).toHaveCount(0)
+        for (const name of [/^알림/, /^워크스페이스 바꾸기/, /^내 계정/])
+          await expect(header.getByRole('button', { name })).toBeInViewport({ ratio: 1 })
+
+        const toast = page.getByTestId('pinned-toast-slot')
+        await expect(toast).toContainText('정리 중')
+        const toastBox = await toast.boundingBox()
+        expect(toastBox!.y + toastBox!.height).toBeLessThanOrEqual(bar.top)
+
+        await nav.getByRole('link', { name: '태스크' }).click()
+        await expect(page).toHaveURL(/\/workspaces\/ws_01\/tasks/)
+        await expect(nav.getByRole('link', { name: '태스크' })).toHaveAttribute(
+          'aria-current',
+          'page',
+        )
+      })
+      return
     }
 
     test('앱 헤더 — 탭 5개와 두 메뉴가 한 줄에 보인다', async ({ page }) => {
@@ -107,3 +158,53 @@ for (const width of VIEWPORTS) {
     })
   })
 }
+
+test.describe('768px 경계와 안전 영역 (D-180)', () => {
+  test('공간 메뉴를 연 채 390px → 768px 로 넓혀도 메뉴와 포커스가 남는다', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    await start(page, 'multiple-workspaces', '/workspaces/ws_01/dashboard')
+    const trigger = page.getByRole('button', { name: /^워크스페이스 바꾸기/ })
+    await trigger.click()
+    const menu = page.getByRole('menu')
+    await expect(menu).toBeVisible()
+    await expect.poll(() => menu.evaluate((el) => el.contains(document.activeElement))).toBe(true)
+
+    await page.setViewportSize({ width: 768, height: 844 })
+    // 열린 공간 메뉴가 나머지 화면을 접근성 트리에서 가리므로 셸 전환은 DOM 으로 본다
+    await expect(page.locator('[data-bottom-tab-bar]')).toHaveCount(0)
+    await expect(page.locator('header nav a', { hasText: '대시보드' })).toBeVisible()
+    await expect(menu).toBeVisible()
+    await expect.poll(() => menu.evaluate((el) => el.contains(document.activeElement))).toBe(true)
+    await page.keyboard.press('Escape')
+    await expect(trigger).toBeFocused()
+  })
+
+  for (const { width, height, inset } of [
+    { width: 852, height: 393, inset: 59 },
+    { width: 667, height: 375, inset: 44 },
+  ]) {
+    test(`가로 ${width}px · 좌우 안전 영역 ${inset}px 안쪽에 헤더와 탭 막대를 그린다`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height })
+      const cdp = await page.context().newCDPSession(page)
+      await cdp.send('Emulation.setSafeAreaInsetsOverride', {
+        insets: { top: 0, bottom: 21, left: inset, right: inset },
+      })
+      await start(page, 'multiple-workspaces', '/workspaces/ws_01/dashboard')
+      const header = page
+        .getByRole('banner')
+        .filter({ has: page.getByRole('button', { name: /^워크스페이스 바꾸기/ }) })
+      const controls = [header.getByRole('link'), header.getByRole('button')]
+      if (width < COMPACT_BELOW)
+        controls.push(page.getByRole('navigation', { name: '주요 화면' }).getByRole('link'))
+      for (const group of controls) {
+        for (const control of await group.all()) {
+          const box = await control.boundingBox()
+          expect(box!.x).toBeGreaterThanOrEqual(inset)
+          expect(box!.x + box!.width).toBeLessThanOrEqual(width - inset)
+        }
+      }
+    })
+  }
+})

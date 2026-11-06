@@ -84,7 +84,15 @@ describe('GlobalToaster', () => {
   it('오른쪽 아래 24px 에 고정하고 그림자·전환이 없다', () => {
     render(<GlobalToaster />)
     const dock = screen.getByTestId('toast-dock')
-    expect(dock).toHaveClass('fixed', 'right-24', 'bottom-24', 'z-100', 'flex', 'flex-col', 'gap-8')
+    expect(dock).toHaveClass(
+      'fixed',
+      'right-24',
+      'bottom-[calc(24px+var(--bottom-tab-bar))]',
+      'z-100',
+      'flex',
+      'flex-col',
+      'gap-8',
+    )
     expect(dock.className).not.toMatch(/shadow|transition|animate/)
   })
 

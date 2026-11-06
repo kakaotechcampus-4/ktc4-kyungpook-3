@@ -174,6 +174,121 @@ describe('앱 셸 (U4-2)', () => {
   }, 10_000)
 })
 
+/** 셸 헤더. 화면 머리도 header 라 banner 가 여럿일 수 있어 공간 메뉴가 든 것을 고른다 */
+async function shellHeader() {
+  const workspace = await screen.findByRole('button', { name: /^워크스페이스 바꾸기/ })
+  return workspace.closest('header')!
+}
+
+/** 폭을 바꿀 수 있는 matchMedia. 셸은 `(max-width: 767.98px)` 하나만 묻는다 */
+function stubViewportWidth(initial: number) {
+  let width = initial
+  const listeners = new Set<() => void>()
+  vi.stubGlobal('matchMedia', (query: string) => {
+    const max = /max-width: ([\d.]+)px/.exec(query)
+    return {
+      get matches() {
+        return max === null ? query === '(prefers-reduced-motion: reduce)' : width <= Number(max[1])
+      },
+      media: query,
+      addEventListener: (_: string, listener: () => void) => listeners.add(listener),
+      removeEventListener: (_: string, listener: () => void) => listeners.delete(listener),
+    }
+  })
+  return (next: number) => {
+    width = next
+    act(() => listeners.forEach((listener) => listener()))
+  }
+}
+
+describe('휴대폰 셸 (D-180)', () => {
+  it('768px 미만: 탭은 아래 탭 막대로 내려가고 헤더에는 공간·알림·계정만 남는다', async () => {
+    stubViewportWidth(360)
+    const app = renderApp('/workspaces/ws_01/dashboard')
+    const nav = await screen.findByRole('navigation', { name: '주요 화면' })
+    expect(
+      within(nav)
+        .getAllByRole('link')
+        .map((link) => link.textContent),
+    ).toEqual(['홈', '회의록', '태스크', '메시지', '팀'])
+    expect(within(nav).getByRole('link', { name: '홈' })).toHaveAttribute('aria-current', 'page')
+
+    const header = await shellHeader()
+    expect(within(header).queryByRole('link')).toBeNull()
+    expect(within(header).getByRole('button', { name: /^알림/ })).toBeInTheDocument()
+    expect(within(header).getByRole('button', { name: /^워크스페이스 바꾸기/ })).toBeInTheDocument()
+    const account = within(await openUserMenu())
+    expect(account.getByRole('menuitem', { name: '설정' })).toBeInTheDocument()
+    expect(account.getByRole('menuitem', { name: '로그아웃' })).toBeInTheDocument()
+    await userEvent.keyboard('{Escape}')
+
+    await userEvent.click(within(nav).getByRole('link', { name: '태스크' }))
+    await app.expectPath('/workspaces/ws_01/tasks')
+    expect(within(nav).getByRole('link', { name: '태스크' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    )
+    expect(within(nav).getByRole('link', { name: '홈' })).not.toHaveAttribute('aria-current')
+  })
+
+  it('폭이 768px 을 넘나들면 헤더 탭과 아래 탭 막대가 바로 바뀐다', async () => {
+    const resize = stubViewportWidth(1024)
+    renderApp('/workspaces/ws_01/dashboard')
+    const header = await shellHeader()
+    expect(within(header).getByRole('navigation', { name: '주요 화면' })).toBeInTheDocument()
+
+    resize(390)
+    expect(within(await shellHeader()).queryByRole('navigation')).toBeNull()
+    expect(screen.getAllByRole('navigation', { name: '주요 화면' })).toHaveLength(1)
+    expect(screen.getByRole('link', { name: '홈' })).toHaveAttribute('aria-current', 'page')
+
+    resize(768)
+    expect(screen.queryByRole('link', { name: '홈' })).toBeNull()
+    expect(within(await shellHeader()).getByRole('link', { name: '대시보드' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    )
+  })
+
+  it.each([
+    ['공간 메뉴', /^워크스페이스 바꾸기/, 390, 768],
+    ['공간 메뉴', /^워크스페이스 바꾸기/, 1024, 390],
+    ['계정 메뉴', /^내 계정/, 390, 768],
+    ['계정 메뉴', /^내 계정/, 1024, 390],
+  ] as const)(
+    '%s를 연 채 폭이 %ipx → %ipx 로 바뀌어도 열린 채 포커스가 남는다',
+    async (_, name, from, to) => {
+      const resize = stubViewportWidth(from)
+      renderApp('/workspaces/ws_01/dashboard')
+      await userEvent.click(await screen.findByRole('button', { name }))
+      const menu = await screen.findByRole('menu')
+      await waitFor(() => expect(menu).toContainElement(document.activeElement as HTMLElement))
+
+      resize(to)
+      expect(screen.getByRole('menu')).toBe(menu)
+      expect(menu).toContainElement(document.activeElement as HTMLElement)
+      await userEvent.keyboard('{Escape}')
+      await waitFor(() => expect(screen.getByRole('button', { name })).toHaveFocus())
+    },
+  )
+
+  it.each([
+    ['알림', /^알림/, 1024, 390],
+    ['공간 메뉴', /^워크스페이스 바꾸기/, 390, 1024],
+  ] as const)(
+    '자리를 옮기는 %s 버튼에 있던 포커스는 %ipx → %ipx 뒤에도 그 버튼에 있다',
+    async (_, name, from, to) => {
+      const resize = stubViewportWidth(from)
+      renderApp('/workspaces/ws_01/dashboard')
+      const trigger = await screen.findByRole('button', { name })
+      act(() => trigger.focus())
+      resize(to)
+      expect(screen.getByRole('button', { name })).toBe(trigger)
+      expect(trigger).toHaveFocus()
+    },
+  )
+})
+
 describe('메뉴 키보드 (U4-3)', () => {
   it('워크스페이스 메뉴: Enter 로 열고 화살표로 옮기고 Esc 로 닫으면 트리거로 포커스가 돌아온다', async () => {
     renderApp('/workspaces/ws_01/dashboard')
