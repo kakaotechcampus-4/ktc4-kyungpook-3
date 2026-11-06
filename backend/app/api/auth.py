@@ -181,6 +181,8 @@ def verify_password_reset(payload: PasswordResetVerifyRequest, db: Session = Dep
 
 @router.post("/password-reset/confirm", response_model=Envelope[dict])
 def confirm_password_reset(payload: PasswordResetConfirmRequest, db: Session = Depends(get_db)):
-    password_reset.confirm_reset(db, payload.token, payload.new_password, now=datetime.now(timezone.utc))
+    email = password_reset.confirm_reset(db, payload.token, payload.new_password, now=datetime.now(timezone.utc))
     db.commit()
+    # commit 이 성공한 뒤에만 막힘을 푼다. 새 비밀번호로 바로 로그인할 수 있어야 한다.
+    login_limit.clear_email(email)
     return success({})
