@@ -17,6 +17,13 @@ def _signup(client, name, email="name@example.com"):
     return client.post("/api/v1/auth/signup", json={"email": email, "password": PASSWORD, "name": name})
 
 
+def _assert_name_rejected(res):
+    assert res.status_code == 400
+    body = res.json()
+    assert body["error"]["code"] == "INVALID_REQUEST"
+    assert any("name" in f["loc"] for f in body["error"]["details"]["fields"])
+
+
 @pytest.mark.parametrize(
     "name",
     [
@@ -26,6 +33,8 @@ def _signup(client, name, email="name@example.com"):
         "​",
         "﻿",
         "​‍",
+        "​ ​",
+        "​　​",
         "가" * 101,
         " " + "가" * 101,
         "홍\x00길동",
@@ -35,20 +44,21 @@ def _signup(client, name, email="name@example.com"):
         "홍 길동",
     ],
     ids=[
-        "empty", "spaces", "ideographic-space", "zwsp", "bom", "zwsp-zwj", "101-chars",
-        "space-101-chars", "nul", "newline", "tab", "line-separator", "paragraph-separator",
+        "empty", "spaces", "ideographic-space", "zwsp", "bom", "zwsp-zwj", "zwsp-space-zwsp",
+        "zwsp-ideographic-zwsp", "101-chars", "space-101-chars", "nul", "newline", "tab",
+        "line-separator", "paragraph-separator",
     ],
 )
 def test_signup_rejects_invalid_name(mdb, name):
     res = _signup(_client(), name)
-    assert res.status_code == 400
-    body = res.json()
-    assert body["error"]["code"] == "INVALID_REQUEST"
-    assert any("name" in f["loc"] for f in body["error"]["details"]["fields"])
+    _assert_name_rejected(res)
+    assert "set-cookie" not in res.headers
     assert mdb.query(User).count() == 0
 
 
-@pytest.mark.parametrize("name", ["  홍길동  ", "　홍길동　", "홍길동\n"], ids=["spaces", "ideographic", "newline"])
+@pytest.mark.parametrize(
+    "name", ["  홍길동  ", "　홍길동　", "홍길동\n"], ids=["spaces", "ideographic", "newline"]
+)
 def test_signup_strips_surrounding_whitespace(mdb, name):
     res = _signup(_client(), name)
     assert res.status_code == 201
@@ -66,14 +76,14 @@ def test_pm_display_name_uses_stripped_name(mdb):
     client = _client()
     assert _signup(client, "  홍길동  ").status_code == 201
     res = client.post("/api/v1/workspaces", json={"name": "팀"})
-    assert res.status_code in (200, 201)
+    assert res.status_code == 201
     assert mdb.query(Member).one().display_name == "홍길동"
 
 
 @pytest.mark.parametrize(
     "name",
-    ["가" * 100, "홍 길동", "홍  길동", "홍　길동", "👩‍💻"],
-    ids=["100-chars", "inner-space", "inner-double-space", "inner-ideographic", "zwj-emoji"],
+    ["가" * 100, "홍 길동", "홍  길동", "홍　길동", "\U0001f469‍\U0001f4bb", "​ 홍"],
+    ids=["100-chars", "inner-space", "inner-double-space", "inner-ideographic", "zwj-emoji", "zwsp-space-letter"],
 )
 def test_signup_keeps_valid_name_as_is(mdb, name):
     res = _signup(_client(), name)
@@ -84,19 +94,17 @@ def test_signup_keeps_valid_name_as_is(mdb, name):
 
 def test_signup_rejects_missing_name(mdb):
     res = _client().post("/api/v1/auth/signup", json={"email": "a@example.com", "password": PASSWORD})
-    assert res.status_code == 400
+    _assert_name_rejected(res)
 
 
 def test_signup_rejects_null_name(mdb):
-    assert _signup(_client(), None).status_code == 400
+    _assert_name_rejected(_signup(_client(), None))
 
 
 def test_signup_blank_name_with_existing_email_returns_400(mdb):
     client = _client()
     assert _signup(client, "홍길동", "dup@example.com").status_code == 201
-    res = _signup(client, "   ", "dup@example.com")
-    assert res.status_code == 400
-    assert res.json()["error"]["code"] == "INVALID_REQUEST"
+    _assert_name_rejected(_signup(client, "   ", "dup@example.com"))
 
 
 def test_signup_rejects_lone_surrogate(mdb):
@@ -104,7 +112,7 @@ def test_signup_rejects_lone_surrogate(mdb):
     res = _client().post(
         "/api/v1/auth/signup", content=raw.encode("utf-8"), headers={"Content-Type": "application/json"}
     )
-    assert res.status_code == 400
+    _assert_name_rejected(res)
     assert mdb.query(User).count() == 0
 
 
