@@ -122,7 +122,7 @@ class BeClient:
         return items
 
     def chat_channels(self) -> list[dict]:
-        """채팅 폴링 대상 채널 목록(BE #428 제안). [{"workspace_id", "guild_id", "channel_id"}] 모두 str."""
+        """채팅 폴링 대상 채널 목록(BE #432 구현). [{"workspace_id", "guild_id", "channel_id"}] 모두 str."""
         data = self._call("GET", "/bot/chat-channels")
         items = data.get("items") if isinstance(data, dict) else None
         if not isinstance(items, list) or not all(isinstance(i, dict) for i in items):

@@ -103,6 +103,7 @@ def _runs_dir(tmp_path, monkeypatch):
 
 def _env(cursor=None):
     fake = FakeBe()
+    fake.chat_channels = list(CHANNELS)  # poll_all 이 워크스페이스마다 다시 받는 목록
     if cursor:
         fake.chat_cursors["ws-1"] = cursor.isoformat()
     return fake, BeClient("http://be.local", session=fake, service_token="svc-token")
@@ -381,6 +382,65 @@ def test_error_before_meeting_is_contained():
     rc, _ = _all(client, readers)
     assert rc == 1
     assert _meeting_workspaces(fake) == ["ws-2"] and readers[1].closed
+
+
+def test_workspace_dropped_from_list_mid_run_is_skipped(capsys):
+    fake, client = _env()
+    fake.chat_channels = [CHANNELS[0]]
+    rc, opened = _all(client, {1: FakeReader(_msg()), 2: FakeReader(_msg())})
+    assert rc == 0 and opened == [1]
+    assert _meeting_workspaces(fake) == ["ws-1"]
+    assert not any("ws-2/chat-cursor" in p for _, p in _paths(fake))
+    out = capsys.readouterr().out
+    assert "ws-2" in out and "건너뜁니다" in out
+
+
+def test_workspace_whose_channel_changed_is_skipped():
+    fake, client = _env()
+    fake.chat_channels = [CHANNELS[0], {"workspace_id": "ws-2", "guild_id": "g2", "channel_id": "3"}]
+    rc, opened = _all(client, {1: FakeReader(_msg()), 2: FakeReader(_msg())})
+    assert rc == 0 and opened == [1] and _meeting_workspaces(fake) == ["ws-1"]
+
+
+def test_channel_list_refetch_failure_skips_that_workspace_and_returns_1(capsys):
+    fake, client = _env()
+    orig = fake.request
+    failed = []
+
+    def request(method, url, **kw):
+        if url.endswith("/bot/chat-channels") and not failed:
+            failed.append(url)
+            from tests.capture.fake_be import _err
+            return _err(500, "INTERNAL")
+        return orig(method, url, **kw)
+
+    fake.request = request
+    rc, opened = _all(client, {1: FakeReader(_msg()), 2: FakeReader(_msg())})
+    assert rc == 1 and opened == [2] and _meeting_workspaces(fake) == ["ws-2"]
+    assert "ws-1" in capsys.readouterr().err
+
+
+def test_channel_list_is_refetched_before_each_workspace():
+    fake, client = _env()
+    _all(client, {1: FakeReader(_msg()), 2: FakeReader(_msg())})
+    paths = [p for _, p in _paths(fake)]
+    lists = [i for i, p in enumerate(paths) if p.endswith("/bot/chat-channels")]
+    c1, c2 = paths.index("/workspaces/ws-1/chat-cursor"), paths.index("/workspaces/ws-2/chat-cursor")
+    assert len(lists) == 2 and lists[0] < c1 < lists[1] < c2
+
+
+def test_dry_run_also_skips_dropped_workspace():
+    fake, client = _env()
+    fake.chat_channels = [CHANNELS[0]]
+    rc, opened = _all(client, {1: FakeReader(_msg()), 2: FakeReader(_msg())}, dry_run=True)
+    assert opened == [1] and ("POST", "/meetings") not in _paths(fake)
+
+
+def test_only_workspace_dropped_on_refetch_is_skipped_with_rc_0():
+    fake, client = _env()
+    fake.chat_channels = [CHANNELS[0]]
+    rc, opened = _all(client, {2: FakeReader(_msg())}, only="ws-2")
+    assert rc == 0 and opened == []
 
 
 def test_unreadable_channel_is_skipped_with_warning(capsys):

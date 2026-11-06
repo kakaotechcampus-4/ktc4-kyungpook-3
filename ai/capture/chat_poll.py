@@ -17,6 +17,7 @@
     python -m capture.chat_poll [--workspace ID] [--dry-run]
 봇 토큰은 DISCORD_BOT_TOKEN(음성 봇과 같다). 읽을 채널은 BE 가 알려 준다(GET /bot/chat-channels, 워크스페이스마다 하나).
 --workspace 는 그 워크스페이스만. --dry-run 은 BE 에 쓰지 않고 판단만 해 runs/ 에 저장한다.
+워크스페이스마다 읽기 직전에 목록을 다시 받아 빠졌으면 건너뛴다(종료 코드 0). 재조회 실패는 그 워크스페이스 실패다.
 워크스페이스 하나가 실패해도 나머지는 돌고 종료 코드는 1 이다. 봇이 채널을 읽을 수 없으면(403·404) 경고하고 건너뛴다(종료 코드 0).
 주의: 동시에 두 번 돌리면 제안이 중복된다. 서버에서 손으로 돌릴 때: 전체는 `systemctl start mm-chat-poll.service`,
 한 워크스페이스만이면 `/usr/bin/flock -n /run/lock/mm-chat-poll.lock /opt/mm/ai/.venv/bin/python -m capture.chat_poll --workspace <ID>`
@@ -277,7 +278,10 @@ def poll(reader: ChannelReader, client, extract, *, workspace_id: str, now: date
 
 def poll_all(channels: list[dict], open_reader, client, extract, *, now: datetime, cfg, dry_run: bool = False,
              only: str | None = None) -> int:
-    """BE 가 준 채널마다 워크스페이스별로 poll 한다. 하나가 실패해도 나머지는 돌고, 실패가 있으면 1."""
+    """BE 가 준 채널마다 워크스페이스별로 poll 한다. 하나가 실패해도 나머지는 돌고, 실패가 있으면 1.
+
+    워크스페이스마다 읽기 직전에 목록을 다시 받아 없으면 건너뛴다(종료 코드 0). 재조회 실패는 그 워크스페이스 실패(1).
+    """
     if only is not None:
         channels = [c for c in channels if c.get("workspace_id") == only]
         if not channels:
@@ -288,6 +292,10 @@ def poll_all(channels: list[dict], open_reader, client, extract, *, now: datetim
         ws, started = c.get("workspace_id"), time.monotonic()
         try:
             ws, channel_id = c["workspace_id"], c["channel_id"]
+            if not any(x.get("workspace_id") == ws and x.get("channel_id") == channel_id
+                       for x in client.chat_channels()):
+                print(f"[chat] ws={ws} 채널 {channel_id} 이 채팅 채널 목록에 없어 건너뜁니다(실행 중 꺼졌거나 바뀜).")
+                continue
             reader = open_reader(int(channel_id))
             try:
                 if poll(reader, client, extract, workspace_id=ws, now=now, cfg=cfg, dry_run=dry_run):

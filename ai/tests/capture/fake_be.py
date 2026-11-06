@@ -53,7 +53,7 @@ class FakeBe:
         self.members: dict[str, list[dict]] = {}
         # 채팅 커서 (backend chat-cursor). 워크스페이스 → last_message_at 문자열. 없으면 data null
         self.chat_cursors: dict[str, str] = {}
-        # 채팅 채널 목록 (BE #428 제안 모양, 미구현). None 이면 items 없는 {"data": {}} 를 준다
+        # 채팅 채널 목록 (BE #432 모양). None 이면 items 없는 {"data": {}} 를 준다
         self.chat_channels: list[dict] | None = []
         self._n = 0
 
