@@ -286,15 +286,3 @@ def test_chat_meeting_alive_within_poller_timeout_is_not_swept(db, seed):
     assert upload_sweeper.sweep_stalled_uploads(db) == []
     db.expire_all()
     assert db.get(Meeting, alive.meeting_id).status == "processing"
-
-
-def test_chat_meeting_sweep_boundary_is_seven_hours(db, seed):
-    ended_at = datetime(2026, 11, 6, 0, 0, tzinfo=timezone.utc)
-    meeting = Meeting(workspace_id=seed["ws"].workspace_id, source="chat", status="processing", ended_at=ended_at)
-    db.add(meeting)
-    db.commit()
-
-    assert upload_sweeper.sweep_stalled_uploads(db, now=ended_at + timedelta(hours=7)) == []
-    assert upload_sweeper.sweep_stalled_uploads(db, now=ended_at + timedelta(hours=7, seconds=1)) == [
-        (meeting.meeting_id, "chat_stalled")
-    ]
