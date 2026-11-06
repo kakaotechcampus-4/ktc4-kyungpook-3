@@ -13,6 +13,7 @@
 - 카카오 로그인: `GET /auth/kakao/start`, `/callback`, `/pending`. callback 은 계정을 만들지 않는다
 - 프론트: 이메일, 코드, 프로필 세 단계 가입, 카카오 연결 가입, 카카오 버튼, 실패 안내. Google 비활성 버튼을 지웠다
 - 인증 화면을 휴대폰 폭에 맞췄다. 나머지 화면은 FE 요청으로 넘긴다
+- 가입 인증 메일을 로고가 들어간 HTML 로 보낸다. 텍스트 본문도 함께 보낸다
 - 메일 실패 로그에서 메일 종류를 뺐다
 
 ## 왜
@@ -23,17 +24,17 @@
 
 | 항목 | 값 |
 |---|---|
-| backend pytest sqlite | 1661 통과, 1109 건너뜀 |
+| backend pytest sqlite | 1663 통과, 1110 건너뜀 |
 | backend pytest PostgreSQL | 2729 통과, 41 건너뜀 |
 | alembic | 빈 PostgreSQL 에서 upgrade, check, downgrade, upgrade 통과 |
 | frontend vitest | 2882 통과 |
 | frontend e2e | 146 통과, 1 실패. `tasks-approval.e2e.ts` 의 키보드 시나리오이고 이번 변경 전 develop 에서도 실패한다 |
 | 비용 | 0원 |
 
-실제 카카오 로그인과 실제 메일 수신은 아직 안 했다. 가짜 카카오 서버와 모의 메일로 확인했다.
+실제 메일은 Gmail 계정으로 가입 코드 API 를 호출해 받아 봤다. 실제 카카오 로그인은 아직 안 했고 가짜 카카오 서버로 확인했다.
 
 ## 다음
 
 - 서버 `.env` 에 SMTP 값과 카카오 키를 넣는다. SMTP 가 없으면 코드 요청이 503 이라 새 가입이 막힌다
-- 카카오 앱 등록 뒤 실제 로그인과 메일 수신을 확인한다
+- 카카오 앱 등록 뒤 실제 로그인을 확인한다
 - 인증 외 화면의 휴대폰 지원은 FE 요청 이슈로 넘긴다
