@@ -1,7 +1,9 @@
 import {
   clearTrackedMeetings,
+  dismissSettled,
   finishMeeting,
   promptSpeakers,
+  settleMeeting,
   trackMeeting,
   untrackMeeting,
   useMeetingTrackerStore,
@@ -70,7 +72,12 @@ describe('추적 끝내기 (U4-5)', () => {
   it('로그아웃(모두 비우기)은 끝낸 기록도 지운다 — 다음 사용자는 처음부터다', () => {
     finishMeeting(meeting)
     clearTrackedMeetings()
-    expect(useMeetingTrackerStore.getState()).toEqual({ meetings: [], finished: [], prompted: [] })
+    expect(useMeetingTrackerStore.getState()).toEqual({
+      meetings: [],
+      finished: [],
+      prompted: [],
+      settled: [],
+    })
     trackMeeting(meeting)
     expect(tracked()).toEqual([meeting])
   })
@@ -91,5 +98,36 @@ describe('화자 지정 안내 (#256)', () => {
     promptSpeakers(meeting)
     clearTrackedMeetings()
     expect(promptSpeakers(meeting)).toBe(true)
+  })
+})
+
+describe('끝난 결과 (#424)', () => {
+  const meeting = { workspaceId: 'ws_01', meetingId: 'mt_11' }
+  const settled = () => useMeetingTrackerStore.getState().settled
+
+  it('같은 회의의 결과는 하나만 두고 나중 결과로 바꾼다', () => {
+    settleMeeting({ ...meeting, title: '주간 회의', outcome: 'failed', failedStage: null })
+    settleMeeting({ ...meeting, title: '주간 회의', outcome: 'done' })
+    settleMeeting({ workspaceId: 'ws_04', meetingId: 'mt_11', title: '다른 공간', outcome: 'done' })
+    expect(settled()).toEqual([
+      { ...meeting, title: '주간 회의', outcome: 'done' },
+      { workspaceId: 'ws_04', meetingId: 'mt_11', title: '다른 공간', outcome: 'done' },
+    ])
+  })
+
+  it('닫으면 그 회의만 빠지고, 없는 회의를 닫아도 상태 객체는 그대로다', () => {
+    settleMeeting({ ...meeting, title: '주간 회의', outcome: 'done' })
+    settleMeeting({ workspaceId: 'ws_04', meetingId: 'mt_11', title: '다른 공간', outcome: 'done' })
+    dismissSettled(meeting)
+    expect(settled().map(({ workspaceId }) => workspaceId)).toEqual(['ws_04'])
+    const before = useMeetingTrackerStore.getState()
+    dismissSettled(meeting)
+    expect(useMeetingTrackerStore.getState()).toBe(before)
+  })
+
+  it('세션을 비우면 결과도 지운다', () => {
+    settleMeeting({ ...meeting, title: '주간 회의', outcome: 'done' })
+    clearTrackedMeetings()
+    expect(settled()).toEqual([])
   })
 })
