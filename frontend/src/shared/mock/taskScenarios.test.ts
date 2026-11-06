@@ -28,6 +28,7 @@ const M6_SCENARIOS = [
   'approval-conflict',
   'approval-scope',
   'approval-chat',
+  'minutes-edit-pending',
   'notion-sync-pending',
   'notion-sync-failed',
   'tasks-member',
@@ -195,6 +196,43 @@ describe('M6 시나리오 상태와 전이', () => {
     await expect(fetchDto('/tasks/tk_01')).resolves.toMatchObject({
       status: 'done',
       version: 2,
+    })
+  })
+
+  describe('minutes-edit-pending: 수정 제안은 승인 전에도 대상 태스크를 가리킨다 (#419)', () => {
+    const editItem = async () =>
+      (await fetchDto<ExtractionDto>('/extractions/ex_01')).items.find(
+        ({ item_id }) => item_id === 'it_08',
+      )
+
+    it('대기 중이면 task_id 는 tk_04 이고 approval_status 는 pending 이다', async () => {
+      applyScenario('minutes-edit-pending')
+      await expect(editItem()).resolves.toMatchObject({
+        task_id: 'tk_04',
+        approval_id: 'ap_08',
+        approval_status: 'pending',
+      })
+      expect((await pending()).items.map(({ approval_id }) => approval_id)).toContain('ap_08')
+    })
+
+    it('승인하면 approval_status 만 approved 로 바뀌고 태스크 마감이 반영된다', async () => {
+      applyScenario('minutes-edit-pending')
+      expect(await resolve('ap_08', { status: 'approved' })).toMatchObject({ status: 'approved' })
+      await expect(editItem()).resolves.toMatchObject({
+        task_id: 'tk_04',
+        approval_status: 'approved',
+      })
+      await expect(fetchDto('/tasks/tk_04')).resolves.toMatchObject({ due_date: '2026-09-26' })
+    })
+
+    it('반려하면 approval_status 만 rejected 로 바뀌고 태스크는 그대로다', async () => {
+      applyScenario('minutes-edit-pending')
+      expect(await resolve('ap_08', { status: 'rejected' })).toMatchObject({ status: 'rejected' })
+      await expect(editItem()).resolves.toMatchObject({
+        task_id: 'tk_04',
+        approval_status: 'rejected',
+      })
+      await expect(fetchDto('/tasks/tk_04')).resolves.toMatchObject({ due_date: '2026-09-24' })
     })
   })
 
