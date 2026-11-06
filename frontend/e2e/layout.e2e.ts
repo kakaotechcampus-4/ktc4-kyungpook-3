@@ -158,3 +158,53 @@ for (const width of VIEWPORTS) {
     })
   })
 }
+
+test.describe('768px 경계와 안전 영역 (D-180)', () => {
+  test('공간 메뉴를 연 채 390px → 768px 로 넓혀도 메뉴와 포커스가 남는다', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    await start(page, 'multiple-workspaces', '/workspaces/ws_01/dashboard')
+    const trigger = page.getByRole('button', { name: /^워크스페이스 바꾸기/ })
+    await trigger.click()
+    const menu = page.getByRole('menu')
+    await expect(menu).toBeVisible()
+    await expect.poll(() => menu.evaluate((el) => el.contains(document.activeElement))).toBe(true)
+
+    await page.setViewportSize({ width: 768, height: 844 })
+    // 열린 공간 메뉴가 나머지 화면을 접근성 트리에서 가리므로 셸 전환은 DOM 으로 본다
+    await expect(page.locator('[data-bottom-tab-bar]')).toHaveCount(0)
+    await expect(page.locator('header nav a', { hasText: '대시보드' })).toBeVisible()
+    await expect(menu).toBeVisible()
+    await expect.poll(() => menu.evaluate((el) => el.contains(document.activeElement))).toBe(true)
+    await page.keyboard.press('Escape')
+    await expect(trigger).toBeFocused()
+  })
+
+  for (const { width, height, inset } of [
+    { width: 852, height: 393, inset: 59 },
+    { width: 667, height: 375, inset: 44 },
+  ]) {
+    test(`가로 ${width}px · 좌우 안전 영역 ${inset}px 안쪽에 헤더와 탭 막대를 그린다`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height })
+      const cdp = await page.context().newCDPSession(page)
+      await cdp.send('Emulation.setSafeAreaInsetsOverride', {
+        insets: { top: 0, bottom: 21, left: inset, right: inset },
+      })
+      await start(page, 'multiple-workspaces', '/workspaces/ws_01/dashboard')
+      const header = page
+        .getByRole('banner')
+        .filter({ has: page.getByRole('button', { name: /^워크스페이스 바꾸기/ }) })
+      const controls = [header.getByRole('link'), header.getByRole('button')]
+      if (width < COMPACT_BELOW)
+        controls.push(page.getByRole('navigation', { name: '주요 화면' }).getByRole('link'))
+      for (const group of controls) {
+        for (const control of await group.all()) {
+          const box = await control.boundingBox()
+          expect(box!.x).toBeGreaterThanOrEqual(inset)
+          expect(box!.x + box!.width).toBeLessThanOrEqual(width - inset)
+        }
+      }
+    })
+  }
+})
