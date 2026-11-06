@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, Query
@@ -14,6 +15,7 @@ from app.schemas.task import (
     TaskHistoryListResponse,
     TaskHistoryResponse,
     TaskListResponse,
+    TaskFields,
     TaskResponse,
     TaskUpdateRequest,
 )
@@ -45,6 +47,19 @@ def _get_task(db: Session, task_id: str, *, lock: bool = False, include_deleted:
     return task
 
 
+def _task_responses(db: Session, tasks: Sequence[Task]) -> list[TaskResponse]:
+    """auto_blocked 는 감시 기록을 봐야 알 수 있어 목록 전체를 한 번에 판정한다."""
+    blocked = scheduler.auto_blocked_ids(db, tasks)
+    return [
+        TaskResponse(**TaskFields.model_validate(t).model_dump(), auto_blocked=t.task_id in blocked)
+        for t in tasks
+    ]
+
+
+def _task_response(db: Session, task: Task) -> dict:
+    return _task_responses(db, [task])[0].model_dump(mode="json")
+
+
 @router.post("", status_code=201, response_model=Envelope[TaskResponse])
 def create_task_endpoint(
     payload: TaskCreateRequest,
@@ -72,7 +87,7 @@ def create_task_endpoint(
     )
     db.commit()
     db.refresh(task)
-    return success(TaskResponse.model_validate(task).model_dump(mode="json"))
+    return success(_task_response(db, task))
 
 
 @router.get("", response_model=Envelope[TaskListResponse])
@@ -103,7 +118,7 @@ def list_tasks(
 
     return success(
         TaskListResponse(
-            items=[TaskResponse.model_validate(r) for r in rows], total=total
+            items=_task_responses(db, rows), total=total
         ).model_dump(mode="json")
     )
 
@@ -111,7 +126,7 @@ def list_tasks(
 @router.get("/{task_id}", response_model=Envelope[TaskResponse])
 def get_task(task_id: str, db: Session = Depends(get_db)) -> dict:
     task = _get_task(db, task_id)
-    return success(TaskResponse.model_validate(task).model_dump(mode="json"))
+    return success(_task_response(db, task))
 
 
 @router.patch("/{task_id}", response_model=Envelope[TaskResponse])
@@ -142,7 +157,7 @@ def update_task(
     )
     db.commit()
     db.refresh(task)
-    return success(TaskResponse.model_validate(task).model_dump(mode="json"))
+    return success(_task_response(db, task))
 
 
 @router.get("/{task_id}/history", response_model=Envelope[TaskHistoryListResponse])
@@ -186,7 +201,7 @@ def rollback_history_endpoint(
     rollback_task_history(db, task, history, changed_by=member.member_id)
     db.commit()
     db.refresh(task)
-    return success(TaskResponse.model_validate(task).model_dump(mode="json"))
+    return success(_task_response(db, task))
 
 
 @router.post("/{task_id}/auto-block/undo", response_model=Envelope[TaskResponse])
@@ -201,7 +216,7 @@ def undo_auto_block(
     scheduler.undo_auto_block(db, task, changed_by=member.member_id, now=datetime.now(timezone.utc))
     db.commit()
     db.refresh(task)
-    return success(TaskResponse.model_validate(task).model_dump(mode="json"))
+    return success(_task_response(db, task))
 
 
 @router.get("/{task_id}/timeline", response_model=Envelope[TaskTimelineResponse])
@@ -247,4 +262,4 @@ def retry_notion_sync(
     retry_failed_sync(db, task)
     db.commit()
     db.refresh(task)
-    return success(TaskResponse.model_validate(task).model_dump(mode="json"))
+    return success(_task_response(db, task))

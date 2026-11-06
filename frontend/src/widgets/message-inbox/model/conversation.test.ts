@@ -52,7 +52,7 @@ const bubbles = (items: ConversationItem[]) =>
 it('팀원은 봇을 왼쪽에 두고 웹 답장 표시를 붙이며, 답장 대기는 보이지 않는다', () => {
   const view = buildConversation(
     thread([bot('mg_01', '2026-09-16T18:00:00+09:00', { status: 'delivered' }), webReply]),
-    { policy: VIEWER_POLICY.member, botName: '카테캠 3팀', today, now },
+    { policy: VIEWER_POLICY.member, replyable: true, botName: '카테캠 3팀', today, now },
   )
   expect(view.title).toBe('카테캠 3팀 봇')
   expect(view.subtitle).toBe('Discord 개인 메시지 · 웹에서도 답장할 수 있어요')
@@ -78,7 +78,7 @@ it('DM 을 보내지 못한 봇 메시지는 이유와 함께 알린다', () => 
       bot('mg_03', '2026-09-15T11:00:00+09:00', { status: 'failed', reason: 'unknown' }),
       bot('mg_04', '2026-09-15T12:00:00+09:00', { status: 'claimed' }),
     ]),
-    { policy: VIEWER_POLICY.pm, botName: '카테캠 3팀', today, now },
+    { policy: VIEWER_POLICY.pm, replyable: false, botName: '카테캠 3팀', today, now },
   )
   expect(bubbles(view.days.flatMap((day) => day.items)).map(({ dmFailure }) => dmFailure)).toEqual([
     'DM 못 보냄 · 서버 DM이 막혀 있어요',
@@ -103,7 +103,7 @@ it('PM 은 메시지 뒤에 답장 대기를, 예정 묶음은 나갈 시각 자
         }),
       ],
     ),
-    { policy: VIEWER_POLICY.pm, botName: '카테캠 3팀', today, now },
+    { policy: VIEWER_POLICY.pm, replyable: false, botName: '카테캠 3팀', today, now },
   )
   expect(view.title).toBe('이재환')
   expect(view.subtitle).toBe('Discord 개인 메시지 · 카테캠 3팀 봇으로 보냄')

@@ -146,6 +146,13 @@ describe('최근 반영 (AC-03 판정부)', () => {
     expect(latestDoneMeeting(meetings.filter(({ status }) => status !== 'done'))).toBeNull()
   })
 
+  it('지워진(404) 회의를 빼면 그다음 완료 회의를 고르고, 모두 빼면 null 이다 (#405)', () => {
+    const meetings = meetingSummaryFixtures.map(toMeetingSummary)
+    expect(latestDoneMeeting(meetings, new Set(['mt_09']))?.id).toBe('mt_08')
+    expect(latestDoneMeeting(meetings, new Set(['mt_09', 'mt_08']))?.id).toBe('mt_07')
+    expect(latestDoneMeeting(meetings, new Set(['mt_09', 'mt_08', 'mt_07']))).toBeNull()
+  })
+
   describe('최신 완료 회의 선택 기준 (#350)', () => {
     const [summary] = meetingSummaryFixtures.map(toMeetingSummary)
     const meeting = (id: string, startedAt: string, status: MeetingStatus = 'done') => ({

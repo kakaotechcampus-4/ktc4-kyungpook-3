@@ -1,6 +1,8 @@
 import { useQuery } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
 import {
+  isAccessLost,
+  isMeetingUnavailable,
   meetingDetailQueryOptions,
   meetingFailure,
   speakerViewQueryOptions,
@@ -9,7 +11,6 @@ import {
 import type { Meeting, MeetingStatus, SpeakerView } from '@/entities/meeting'
 import { memberListQueryOptions } from '@/entities/member'
 import { useMemberWorkspace } from '@/entities/workspace'
-import { isAccessLost, isMeetingUnavailable } from '@/features/meeting-processing'
 import { SpeakerAssignmentForm, useSpeakerSubmit } from '@/features/speaker-assignment'
 import type { SubmitRejection } from '@/features/speaker-assignment'
 import { paths } from '@/shared/config/routes'
@@ -88,16 +89,18 @@ function useSpeakerScreen(
       movedElsewhere: moved?.kind === 'alreadyMoved',
     }
   if (role !== 'pm') return { kind: 'member' }
-  if (view.data === undefined) {
-    if (view.error !== null && isAccessLost(view.error)) return { kind: 'unavailable' }
+  // 받아 둔 화자 목록도 403·404 뒤에는 쓰지 않는다 — 실패해도 이전 data 가 남는다 (#405)
+  const speakers = isAccessLost(view.error) ? undefined : view.data
+  if (speakers === undefined) {
+    if (isAccessLost(view.error)) return { kind: 'unavailable' }
     if (view.error !== null)
       return { kind: 'error', error: view.error, retry: () => void view.refetch() }
     return { kind: 'loading' }
   }
-  if (view.data.status !== 'awaiting_speakers')
-    return { kind: 'notAwaiting', meeting, status: view.data.status, movedElsewhere: false }
-  if (view.data.speakers.length === 0) return { kind: 'noLabels', retry: () => void view.refetch() }
-  return { kind: 'assigning', meeting, view: view.data }
+  if (speakers.status !== 'awaiting_speakers')
+    return { kind: 'notAwaiting', meeting, status: speakers.status, movedElsewhere: false }
+  if (speakers.speakers.length === 0) return { kind: 'noLabels', retry: () => void view.refetch() }
+  return { kind: 'assigning', meeting, view: speakers }
 }
 
 function MeetingSpeakers({ workspaceId, meetingId }: { workspaceId: string; meetingId: string }) {

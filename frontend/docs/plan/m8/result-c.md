@@ -1,11 +1,72 @@
 # M8-C 구현 결과 — 메시지
 
-- 기록일: 2026-10-31 (2026-11-01 디자인 캔버스 기준 재작업과 검증 VR-C 발견 수정, 2026-11-02 Discord DM 카드 잘림 수정, 발송 시점 카드 hover·저장 중 버튼 깜빡임 수정, 대화 미리 받기 반영, 2026-11-04 실제 메시지 API 연결, 2026-11-05 합친 묶음으로 선택 옮기기, 재촉 직접 만들기와 태스크 빼기·메모 고치기)
-- 이슈: #245, 후속 #315(실제 API 연결), #368(묶음 합치기), #370(재촉 만들기·태스크 빼기)
+- 기록일: 2026-10-31 (2026-11-01 디자인 캔버스 기준 재작업과 검증 VR-C 발견 수정, 2026-11-02 Discord DM 카드 잘림 수정, 발송 시점 카드 hover·저장 중 버튼 깜빡임 수정, 대화 미리 받기 반영, 2026-11-04 실제 메시지 API 연결, 2026-11-05 합친 묶음으로 선택 옮기기, 재촉 직접 만들기와 태스크 빼기·메모 고치기, 2026-11-06 PM 자기 대화 답장)
+- 이슈: #245, 후속 #315(실제 API 연결), #368(묶음 합치기), #370(재촉 만들기·태스크 빼기), #367(PM 자기 대화 답장)
 - 대상: [M8 계획](plan.md) C 절의 구현 순서 1~6(결정 전)과 최종 게이트, 2026-11-01 사용자 결정(결정 4의 UI 범위 = 디자인 캔버스 기준, MSW 목)에 따른 재작업
+- 상태 (2026-11-06, #367): **팀원 행에도 연결된 PM 이 자기 대화에서 웹 답장을 쓴다.** 남의 대화와 워크스페이스 응답에 `member_id` 가 없거나 `null` 인 경우는 지금처럼 안내 바다. MSW 기준으로 게이트·E2E·브라우저 확인을 했고 실제 서버 연동은 미검증이다(아래 2026-11-06 #367 절).
 - 상태 (2026-11-05, #370): **PM 이 태스크 상세와 메시지 화면에서 재촉을 직접 만들고, 보내기 전 확인에서 묶은 태스크를 빼거나 메모를 고친다.** MSW 기준으로 게이트·E2E·브라우저 확인을 했고 실제 서버 연동은 미검증이다(아래 2026-11-05 #370 절).
 - 상태 (2026-11-04, #315): **화면을 계약 §5.7 의 실제 메시지 API 로 옮기고 production 을 포함한 모든 모드에서 연다.** 준비 중 안내와 MSW 모드 분기는 지웠다. 서버에 경로·값이 없는 시안 항목(답장 판정, `지금 바로`, 채널, 재촉 이유 등)은 뺐다. typecheck·lint·format·build·전체 테스트와 브라우저 확인은 MSW 기준으로 통과했고, 실제 서버 연동은 미검증이다(아래 2026-11-04 절). 아래 2026-11-02 까지의 상태 문장은 그때 기록이다.
 - 상태 (2026-11-02 까지): **AC-01~AC-07 충족(프론트·MSW 기준, UI/UX만), 목록·보내기 전 확인·대화·빈 상태가 디자인 캔버스의 항목·문구·상태와 일치(차이표, 남은 차이 4개는 아래).** 메시지 API가 없어 화면은 MSW 모드에서만 보이고, 실 API 모드와 production은 기존 「메시지는 준비 중이에요」 안내를 그대로 둔다. 보내기 전 확인의 행동(발송·보내지 않음·고쳐 쓰기·발송 시점, 대화의 승인·반려)은 MSW 목으로 서버 성공 뒤 반영한다. 권한 분기·상태 동기화(polling)·메시지 E2E는 하지 않았다. 전체 `test:e2e`는 실행하지 않았다. 실제 메시지 API 연동과 Discord 발송은 범위 밖이며 검증하지 않았다.
+
+## 2026-11-06 PM 자기 대화 답장 (#367)
+
+### 근거와 요약
+
+이슈 #367 의 BE 구현 완료 댓글(PR #374, develop 병합)과 코디네이터 작업 지시에 따랐다. 계획 [plan.md](plan.md)에 이 작업의 완료조건이 없어 새 AC 를 만들지 않았다. 기준은 `bd44cec6` 이다.
+
+PM 이 리마인드를 받는 팀원이기도 하면 자기 대화가 생긴다. BE 답장 API 는 대화 주인이면 PM 도 받는다. 전에는 화면이 로그인 계정의 팀원 행을 몰라 PM 의 자기 대화에도 답장 칸이 없었다. BE 가 워크스페이스 응답에 `member_id` 를 실어(계약 §4.2.1) 화면이 이 값을 대화의 `member_id` 와 비교한다.
+
+| 커밋 | 요지 |
+|---|---|
+| `9d1a8e48` | 워크스페이스 DTO·매퍼에 `member_id` → `memberId`. MSW 워크스페이스 응답에 세션 팀원 ID |
+| `0fe0830d` | `MessageViewer` 를 `{ role, memberId }` 로, 답장 칸은 `canReply` 하나가 정한다. 시나리오 `messages-pm-self`, 화면·MSW 테스트, 스토리 |
+| `16d1184e` | E2E `messages-reply.e2e.ts` 와 검증 스킬 `messages` 여정 |
+| `3fc61b84` | 계약 §4.2.1·§5.7 |
+| `1ebe96c5` | 리뷰 R1. MSW 에서 공간을 만든 계정을 새 PM 행과 잇는다. 계정의 `memberIds`, 모의 DB 버전 12 |
+
+### 바꾼 데이터 모양
+
+- `WorkspaceSummaryDto.member_id?: string | null`. 필드가 없는 BE 배포 전 응답을 받으려고 선택 필드로 두었다. `WorkspaceSummary.memberId: string | null` 이고 매퍼는 `dto.member_id ?? null` 이다.
+- `MessageViewer` 는 `Role` 에서 `{ role: Role; memberId: string | null }` 이 되었다. `VIEWER_POLICY` 는 역할로 고르고 값(봇 자리·답장 기다림·재촉 만들기)은 그대로다. 정책의 `foot` 을 지우고 `canReply(viewer, threadMemberId)` 를 두었다. 팀원은 늘 참이고, PM 은 `memberId` 가 그 대화의 `member_id` 와 같을 때만 참이다. `memberId` 가 `null` 이면 대화의 `member_id` 와 같을 수 없어 거짓이다.
+
+### 화면
+
+- PM 이 자기 대화를 열면 답장 칸이 보이고 머리 부제가 `Discord 개인 메시지 · 웹에서도 답장할 수 있어요` 다. 팀원 화면의 문구를 그대로 쓴다. 남의 대화는 지금처럼 안내 바와 `… 봇으로 보냄` 부제다.
+- PM 자기 대화의 다른 표시는 PM 화면 그대로 두었다. 봇 말풍선은 오른쪽, PM 자신의 답장은 왼쪽에 자기 이름으로 그려진다. 답장 기다림 배지·목록 점·`여기서부터 답장이 없습니다`, 예정 묶음과 `확인하기` 도 보인다. 이슈와 작업 지시가 PM 정책을 그대로 두라고 했다.
+
+### MSW
+
+- 워크스페이스 목록·상세·생성 응답에 `member_id: sessionMemberId(id)` 를 싣는다.
+- 계정과 팀원 행의 대응을 `sessions.ts` 의 고정 상수에서 모의 DB 계정의 `memberIds` 로 옮겼다. 공간을 만들면 BE `create_workspace` 처럼 생성자 계정이 새 PM 행과 이어진다. 그래서 새 공간에서도 생성·목록·상세의 `member_id` 가 그 행 ID 이고 그 행 대화의 답장이 201 이다. 독립 리뷰 지적 R1 을 고친 것이다. 같은 대응으로 생성자 PM 행 초대가 BE 처럼 409 `MEMBER_ALREADY_LINKED` 가 되었다. 전에는 `PM_MEMBER_NOT_INVITABLE` 이었다. 모의 DB 버전이 12 가 되었다.
+- 답장 핸들러는 이미 BE `post_reply` 처럼 대화 주인만 201, 아니면 403 이었다. 고치지 않았다.
+- 시나리오 `messages-pm-self` 는 `messages-default`(PM `mb_01`)에 `mb_01` 의 대화 `th_06` 과 보낼 메시지 `bd_05` 를 더한다.
+
+### 검증 (2026-11-06, Node v24.11.0, `0fe0830d` 코드 기준)
+
+| 명령 | 종료 코드 | 결과 |
+|---|---:|---|
+| `npm run typecheck` | 0 | |
+| `npm run lint` | 0 | |
+| `npm run format:check` | 1 | git 이 제외하는 `.verify/` 의 로컬 파일 2개(`brief.md`, 증거 JSON)만 걸렸다. git 이 추적하는 파일만 `prettier --check --ignore-unknown` 으로 본 결과는 통과다 |
+| `npm run build` | 0 | |
+| `npm run test -- --maxWorkers=1` | 0 | 222파일 2,641개 통과 |
+| `node .cursor/skills/verify-managers-manager/scripts/verify.cjs run messages` | 0 | 5개 통과(새 `messages-reply.e2e.ts` 2개 포함). 증거는 저장소 루트 `.verify/managers-manager/2026-11-05T15-28-12-185Z-messages-16aaba50/` (git 제외) |
+
+새 테스트:
+
+- [messagesMsw](../../../src/app/messagesMsw.test.tsx): PM 자기 대화의 답장 칸·부제와 보낸 답장, PM 남의 대화의 안내 바, 워크스페이스 응답에 `member_id` 가 없을 때와 `null` 일 때 답장 칸 없음.
+- [messageScenarios](../../../src/shared/mock/messageScenarios.test.ts): `messages-pm-self` 에서 워크스페이스 목록·상세의 `member_id` 가 `mb_01`, `th_06` 답장 201, `th_01` 답장 403 과 db 그대로.
+- [mapper](../../../src/entities/workspace/model/mapper.test.ts): `member_id` 있음·`null`·없음.
+- [messages-reply.e2e.ts](../../../e2e/messages-reply.e2e.ts): Chromium 에서 PM 자기 대화 답장을 보내고 새로고침 뒤에도 남는지, 남의 대화에는 폼이 없고 안내 바가 있는지.
+- 스토리 `PM_내_대화`. Storybook play 는 실행하지 않았다(CI 가 돈다).
+- 리뷰 R1 수정 뒤(`1ebe96c5`) 바꾼 곳의 테스트 36파일 604개가 통과했다. 세션·초대·저장·가입·워크스페이스를 쓰는 테스트, `messageScenarios`, `messagesMsw` 다. `typecheck` 와 바꾼 파일의 `eslint`·`prettier` 도 통과했다. Chromium 에서 `restore.e2e.ts` 4개와 `messages-reply.e2e.ts` 2개가 통과했다.
+- [messageScenarios](../../../src/shared/mock/messageScenarios.test.ts)에 새 공간 테스트를 더했다. 공간을 만들면 생성·목록·상세의 `member_id` 가 생성자 PM 행이다. 그 행의 대화 답장은 201 이고, 같은 공간의 다른 계정이 답장하면 403 이며 db 는 그대로다. 생성 핸들러에서 대응을 기록하는 줄을 빼면 이 테스트가 실패한다.
+- 구현 위임이 `canReply` 를 모든 PM 에게 참으로 바꿔 보았을 때 새 화면 테스트 4개 중 3개가 실패했다. 원래대로 돌려 두었다.
+
+### 남은 문제
+
+- 실제 서버에 붙여 PM 자기 대화 답장을 보내 보지 않았다. MSW 기준 확인이다.
+- PM 자기 대화의 말풍선 자리, 답장 기다림 표시, 예정 묶음 표시는 PM 화면 그대로다. 바꾸려면 화면 정책을 따로 정해야 한다.
 
 ## 2026-11-05 재촉 직접 만들기와 묶음에서 태스크 빼기·메모 고치기 (#370)
 

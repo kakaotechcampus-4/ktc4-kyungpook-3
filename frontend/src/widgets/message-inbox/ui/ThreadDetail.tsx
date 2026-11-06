@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
-import { useId, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
+import { BrowserPushPrompt } from '@/features/browser-push'
 import { messageThreadQueryOptions } from '@/entities/message'
 import type { MessageThread } from '@/entities/message'
 import { ApiError } from '@/shared/api/errors'
@@ -11,7 +12,7 @@ import { Icon } from '@/shared/ui/icon'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
 import { buildConversation } from '../model/conversation'
 import type { BubbleItem } from '../model/conversation'
-import { VIEWER_POLICY } from '../model/viewer'
+import { VIEWER_POLICY, canReply } from '../model/viewer'
 import type { MessageViewer } from '../model/viewer'
 import { ThreadSkeleton } from './MessageSkeletons'
 import { ReplyForm } from './ReplyForm'
@@ -134,9 +135,34 @@ function ThreadView({
     body.scrollTop = body.scrollHeight
     replyAnchor.current = null
   }, [replyTick, thread])
+  // 기기 알림 띠처럼 늦게 끼어드는 줄이 대화 칸을 줄여도, 맨 아래를 보던 사람에게는 가장 최근 메시지가 가려지지 않게 한다
+  useEffect(() => {
+    const body = bodyRef.current
+    if (body === null || typeof ResizeObserver === 'undefined') return
+    let atBottom = true
+    const onScroll = () => {
+      atBottom = body.scrollHeight - body.scrollTop - body.clientHeight <= 2
+    }
+    const resize = new ResizeObserver(() => {
+      if (atBottom) body.scrollTop = body.scrollHeight
+    })
+    body.addEventListener('scroll', onScroll, { passive: true })
+    resize.observe(body)
+    return () => {
+      resize.disconnect()
+      body.removeEventListener('scroll', onScroll)
+    }
+  }, [])
   const today = todayInSeoul()
-  const policy = VIEWER_POLICY[viewer]
-  const view = buildConversation(thread, { policy, botName, today, now })
+  const policy = VIEWER_POLICY[viewer.role]
+  const replyable = canReply(viewer, thread.memberId)
+  const view = buildConversation(thread, {
+    policy,
+    replyable,
+    botName,
+    today,
+    now,
+  })
   const waitingDays = view.waitingDays
 
   return (
@@ -159,6 +185,9 @@ function ThreadView({
           )}
         </div>
       </div>
+      {policy.pushPrompt && thread.messages.some(({ sender }) => sender === 'bot') ? (
+        <BrowserPushPrompt />
+      ) : null}
       {/* 스크롤 칸이라 키보드로도 내릴 수 있게 Tab 자리를 준다 (WCAG 2.1.1) */}
       {/* eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex */}
       <section ref={bodyRef} aria-label="대화 내용" tabIndex={0} className={BODY}>
@@ -187,7 +216,7 @@ function ThreadView({
           </div>
         ))}
       </section>
-      {policy.foot === 'reply' ? (
+      {replyable ? (
         <div className={FOOT}>
           <ReplyForm
             workspaceId={workspaceId}

@@ -57,7 +57,7 @@ export interface MessageInboxProps {
   workspaceId: string
   /** 메시지를 보내는 봇의 이름. 공간 이름을 쓴다 (Messages 시안의 `캡스톤 5조 봇`) */
   botName: string
-  /** 이 공간에서 화면을 보는 사람. 아래는 역할 표만 본다 */
+  /** 이 공간에서 화면을 보는 사람. 역할이 표를 고르고, 팀원 행은 답장할 수 있는 대화를 가른다 */
   viewer: MessageViewer
   /** URL 이 가리키는 대화. 없으면 null */
   threadId: string | null
@@ -89,7 +89,7 @@ export function MessageInbox({
   const inbox = useQuery(messageInboxQueryOptions(workspaceId))
   const detailRef = useRef<HTMLElement>(null)
   const navigate = useNavigate()
-  const policy = VIEWER_POLICY[viewer]
+  const policy = VIEWER_POLICY[viewer.role]
   const selection = selectDetail({
     inbox: inbox.data,
     threadId,
