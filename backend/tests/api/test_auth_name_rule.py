@@ -145,3 +145,16 @@ def test_signup_keeps_marks_next_to_visible_letters(mdb, name):
     res = _signup(_client(), name)
     assert res.status_code == 201
     assert mdb.query(User).one().name == name
+
+
+@pytest.mark.parametrize(
+    "mark",
+    ["\u202a", "\u202b", "\u202c", "\u202d", "\u202e", "\u2066", "\u2067", "\u2068", "\u2069"],
+    ids=["lre", "rle", "pdf", "lro", "rlo", "lri", "rli", "fsi", "pdi"],
+)
+@pytest.mark.parametrize("shape", ["{m}홍길동", "홍{m}길동", "홍길동{m}"], ids=["start", "middle", "end"])
+def test_signup_rejects_bidi_control_characters(mdb, mark, shape):
+    """글자 방향 제어 문자는 이름 뒤의 문장을 거꾸로 보이게 해 안내 문구를 위장할 수 있다(PR #445 리뷰)."""
+    res = _signup(_client(), shape.format(m=mark))
+    _assert_name_rejected(res)
+    assert mdb.query(User).count() == 0

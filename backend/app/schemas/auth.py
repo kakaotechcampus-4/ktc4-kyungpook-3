@@ -18,6 +18,8 @@ def validate_password(value: str) -> str:
 
 
 NAME_MAX_LENGTH = 100
+# 글자 방향 제어 문자(Cf). 이름 뒤의 문장을 거꾸로 보이게 할 수 있어 어디에 있어도 거절한다. ZWJ·ZWNJ 는 허용한다.
+_BIDI_CONTROLS = frozenset("‪‫‬‭‮⁦⁧⁨⁩")
 NAME_RULE_MESSAGE = "이름은 앞뒤 공백을 뺀 1~100자이고 제어문자를 포함할 수 없습니다."
 
 
@@ -30,6 +32,7 @@ def validate_name(value: str) -> str:
         # 결합 부호(Mn)·둘러싸는 부호(Me)는 글자 뒤에 붙어야 보이므로, 이것만 있는 이름도 빈칸으로 본다.
         or all(c in ("Cf", "Mn", "Me") or c.startswith("Z") for c in categories)
         or any(c in ("Cc", "Cs", "Zl", "Zp") for c in categories)
+        or any(ch in _BIDI_CONTROLS for ch in value)
         or len(value) > NAME_MAX_LENGTH
     ):
         raise ValueError(NAME_RULE_MESSAGE)
