@@ -540,3 +540,56 @@ def test_email_exists_clears_a_pending_kakao_left_in_the_browser(mdb, client, ka
 
     assert _query(res)["oauth_reason"] == ["email_exists"]
     assert _clears_pending(res)
+
+
+@pytest.fixture
+def notices(monkeypatch):
+    box = []
+    monkeypatch.setenv("APP_BASE_URL", "https://app.example.com/")
+    monkeypatch.setattr(auth.mailer, "is_configured", lambda: True)
+    monkeypatch.setattr(
+        auth.mailer, "send_in_background", lambda to, subject, text, *, log_label: box.append((to, subject, text))
+    )
+    return box
+
+
+def test_new_link_tells_the_account_mailbox_how_to_recover(mdb, client, kakao, notices):
+    _user(mdb)
+
+    res = _login(client, VERIFIED, kakao)
+
+    assert _query(res)["oauth_result"] == ["success"]
+    [(to, subject, text)] = notices
+    assert to == EMAIL
+    assert subject == "[Manager's Manager] 카카오 계정이 연결되었습니다"
+    assert "https://app.example.com/forgot-password" in text
+
+
+def test_returning_kakao_login_sends_no_link_notice(mdb, client, kakao, notices):
+    _user(mdb)
+    mdb.execute(User.__table__.update().values(provider="kakao", provider_id="77"))
+    mdb.commit()
+
+    _login(client, VERIFIED, kakao)
+
+    assert notices == []
+
+
+def test_refused_link_sends_no_link_notice(mdb, client, kakao, notices):
+    _user(mdb)
+    mdb.execute(User.__table__.update().values(provider="kakao", provider_id="other"))
+    mdb.commit()
+
+    _login(client, VERIFIED, kakao)
+
+    assert notices == []
+
+
+def test_link_still_logs_in_when_mail_is_not_configured(mdb, client, kakao, monkeypatch):
+    _user(mdb)
+    monkeypatch.setattr(auth.mailer, "is_configured", lambda: False)
+
+    res = _login(client, VERIFIED, kakao)
+
+    assert _query(res)["oauth_result"] == ["success"]
+    assert _row(mdb).provider_id == "77"

@@ -432,7 +432,7 @@ PM 이 디스코드 서버의 텍스트 채널 하나를 골라 두면 녹음 �
 | `error` 있음 | `access_denied` 는 `cancelled`, 나머지는 `failed`. 유효한 state 가 있을 때만 `next` 를 유지한다 |
 | state·nonce 불일치, 카카오 토큰·사용자 조회 실패 | `failed`, 원인은 로그에만 남긴다 |
 | `(kakao, id)` 계정 있음 | 세션, `/login?next=&oauth=kakao&oauth_result=success` |
-| 인증된 이메일의 계정 있음 | 비어 있으면 카카오를 잇고 세션과 `success`. 다른 카카오에 이어져 있으면 `failed`, `oauth_reason=email_exists` |
+| 인증된 이메일의 계정 있음 | 비어 있으면 카카오를 잇고 세션과 `success`, 계정 이메일로 연결 알림을 보낸다. 다른 카카오에 이어져 있으면 `failed`, `oauth_reason=email_exists` |
 | 인증되지 않은 이메일의 계정 있음 | `failed`, `oauth_reason=email_exists` |
 | 나머지 | 대기 쿠키를 심고 `/signup?kakao=1&next=`. callback 은 사용자를 만들지 않는다 |
 

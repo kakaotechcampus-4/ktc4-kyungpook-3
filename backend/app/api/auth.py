@@ -1,6 +1,7 @@
 import hmac
 import logging
 import secrets
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Literal
 
@@ -210,7 +211,13 @@ def _kakao_session_user_stmt(provider_id: str):
     return _kakao_user_stmt(provider_id).with_for_update(read=True)
 
 
-def _link_kakao(db: Session, owner: User, provider_id: str) -> User | Literal["email_exists"]:
+@dataclass(frozen=True)
+class KakaoLogin:
+    user: User
+    linked_now: bool = False
+
+
+def _link_kakao(db: Session, owner: User, provider_id: str) -> KakaoLogin | Literal["email_exists"]:
     """비어 있는 계정에만 카카오를 잇는다. 겹친 요청이 먼저 이었으면 그 결과를 따른다. commit 은 호출자가 한다."""
     try:
         linked = db.execute(
@@ -222,16 +229,17 @@ def _link_kakao(db: Session, owner: User, provider_id: str) -> User | Literal["e
     except IntegrityError:
         linked = 0
     if linked == 1:
-        return owner
+        return KakaoLogin(owner, linked_now=True)
     db.rollback()
-    return db.scalars(_kakao_session_user_stmt(provider_id)).first() or "email_exists"
+    known = db.scalars(_kakao_session_user_stmt(provider_id)).first()
+    return KakaoLogin(known) if known else "email_exists"
 
 
-def _kakao_outcome(db: Session, identity: KakaoIdentity) -> User | Literal["email_exists", "needs_signup"]:
+def _kakao_outcome(db: Session, identity: KakaoIdentity) -> KakaoLogin | Literal["email_exists", "needs_signup"]:
     """검증을 마친 카카오 신원의 결과. 위에서 아래로 먼저 맞는 것을 따른다."""
     known = db.scalars(_kakao_session_user_stmt(identity.provider_id)).first()
     if known is not None:
-        return known
+        return KakaoLogin(known)
     owner = db.scalars(_login_user_stmt(identity.email)).first() if identity.email else None
     if owner is None:
         return "needs_signup"
@@ -278,7 +286,11 @@ def _finish_kakao_login(request: Request, code: str, state: str, error: str, db:
     response = _kakao_redirect(return_path, "success")
     _clear_pending(response)
     # 주입받은 Response 의 쿠키는 RedirectResponse 를 돌려주면 사라지므로 redirect 에 직접 싣는다.
-    _create_session(db, outcome, response)
+    _create_session(db, outcome.user, response)
+    if outcome.linked_now and mailer.is_configured():
+        # 인증 없이 만든 옛 계정이면 남이 선점했을 수 있다. 메일함 주인에게 알려 재설정으로 되찾게 한다.
+        subject, text = kakao_oauth.link_notice(mailer.app_base_url())
+        mailer.send_in_background(outcome.user.email, subject, text, log_label="kakao_link")
     return response
 
 
