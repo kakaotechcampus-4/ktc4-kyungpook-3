@@ -7,7 +7,7 @@ from sqlalchemy import select
 
 from app.core.errors import AppError, ErrorCode
 from app.models import PasswordResetToken, Session as SessionModel, User
-from app.services import password_reset as svc
+from app.services import messages, password_reset as svc
 from app.services.passwords import hash_password, verify_password
 
 NOW = datetime(2026, 11, 5, 0, 0, tzinfo=timezone.utc)
@@ -109,7 +109,7 @@ def test_verify_returns_expiry_and_masked_email(mdb):
     _user(mdb)
     raw = _raw(_request(mdb))
     expires_at, masked = svc.verify_token(mdb, raw, now=NOW)
-    assert svc._utc(expires_at) == NOW + timedelta(minutes=30)
+    assert messages.utc(expires_at) == NOW + timedelta(minutes=30)
     assert masked == "ab***@example.com"
 
 

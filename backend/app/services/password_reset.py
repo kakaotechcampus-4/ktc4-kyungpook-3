@@ -2,13 +2,14 @@
 import hashlib
 import secrets
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session as DbSession
 
 from app.core.errors import AppError, ErrorCode
 from app.models import PasswordResetToken, Session as SessionModel, User
+from app.services import messages
 from app.services.passwords import hash_password
 
 TOKEN_TTL = timedelta(minutes=30)
@@ -23,13 +24,6 @@ class ResetMail:
     to: str
     subject: str
     text: str
-
-
-def _utc(value: datetime) -> datetime:
-    """시간대 없는 값(sqlite 가 돌려준 값)은 UTC 로 보고, 있는 값은 UTC 로 바꾼다."""
-    if value.tzinfo is None:
-        return value.replace(tzinfo=timezone.utc)
-    return value.astimezone(timezone.utc)
 
 
 def hash_token(raw: str) -> str:
@@ -49,7 +43,7 @@ def _reason(row: PasswordResetToken | None, now: datetime) -> str | None:
         return "invalid"
     if row.used_at is not None:
         return "used"
-    if _utc(row.expires_at) <= now:
+    if messages.utc(row.expires_at) <= now:
         return "expired"
     return None
 
@@ -61,7 +55,7 @@ def request_reset(db: DbSession, email: str, *, now: datetime, base_url: str) ->
     latest = db.scalar(
         select(func.max(PasswordResetToken.created_at)).where(PasswordResetToken.user_id == user.user_id)
     )
-    if latest is not None and _utc(latest) > now - COOLDOWN:
+    if latest is not None and messages.utc(latest) > now - COOLDOWN:
         return None
     recent = db.scalar(
         select(func.count())
@@ -120,7 +114,7 @@ def verify_token(db: DbSession, raw: str, *, now: datetime) -> tuple[datetime, s
     if reason is not None:
         raise _invalid(reason)
     user = db.get(User, row.user_id)
-    return _utc(row.expires_at), mask_email(user.email)
+    return messages.utc(row.expires_at), mask_email(user.email)
 
 
 def confirm_reset(db: DbSession, raw: str, new_password: str, *, now: datetime) -> None:
