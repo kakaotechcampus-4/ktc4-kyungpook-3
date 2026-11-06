@@ -2,16 +2,15 @@ import { toApproval } from '@/entities/approval'
 import { toExtraction } from '@/entities/extraction'
 import { approvalFixtures } from '@/shared/mock/fixtures/approval'
 import { extractionFixtures } from '@/shared/mock/fixtures/extraction'
-import type { ApprovalDto } from '@/shared/types/api/approval'
-import type { ExtractionDto } from '@/shared/types/api/extraction'
 import { extractedTasks } from './extractedTasks'
 
 const ids = (items: readonly { id: string }[]) => items.map(({ id }) => id)
 
 type EditStatus = 'pending' | 'approved' | 'rejected'
+type ApprovalRow = (typeof approvalFixtures)[number]
 
 // 백엔드 수정 항목처럼 task_id 는 승인 전에도 수정 대상 태스크다. 반영 여부는 approval_status 로만 알 수 있다 (#419)
-function withEditProposal(status: EditStatus): { dto: ExtractionDto; approval: ApprovalDto } {
+function withEditProposal(status: EditStatus) {
   const dto = structuredClone(extractionFixtures[1])
   dto.items.push({
     ...structuredClone(dto.items[4]),
@@ -22,7 +21,7 @@ function withEditProposal(status: EditStatus): { dto: ExtractionDto; approval: A
     approval_id: 'ap_08',
     approval_status: status,
   })
-  const approval: ApprovalDto = {
+  const approval: ApprovalRow = {
     approval_id: 'ap_08',
     workspace_id: 'ws_01',
     type: 'task_update',
@@ -45,7 +44,7 @@ function withEditProposal(status: EditStatus): { dto: ExtractionDto; approval: A
   return { dto, approval }
 }
 
-function openApprovals(...extra: ApprovalDto[]) {
+function openApprovals(...extra: ApprovalRow[]) {
   return [...approvalFixtures, ...extra]
     .filter(({ status }) => status === 'pending')
     .map(toApproval)
