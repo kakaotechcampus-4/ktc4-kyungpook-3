@@ -93,8 +93,11 @@ export async function signUp(
   page: Page,
   values: { name: string; email: string; password: string },
 ): Promise<void> {
+  // 주소는 lazy 화면보다 먼저 바뀐다. 앞 화면의 이메일 칸에 쓰지 않게 이 화면의 버튼부터 기다린다
+  const sendCode = page.getByRole('button', { name: '인증 코드 받기' })
+  await expect(sendCode).toBeVisible({ timeout: 15_000 })
   await page.getByLabel('이메일').fill(values.email)
-  await page.getByRole('button', { name: '인증 코드 받기' }).click()
+  await sendCode.click()
   await expect(page.getByLabel('인증 코드')).toBeVisible()
   await page.getByLabel('인증 코드').fill(await readMailedCode(page))
   await page.getByRole('button', { name: '코드 확인' }).click()
