@@ -526,6 +526,8 @@ def _is_pending(recordings_dir: Path, m: dict) -> bool:
             return False
     elif m.get("status") in (STATUS_DIARIZED, STATUS_MAPPED):
         return False
+    # partial 재시도는 디스코드 회의만 닿는다. 인계가 끝난 업로드는 be.status=done 이라 위 _upload_ready 에서 빠진다:
+    # BE 는 처리 중인 회의에만 추출을 받으므로 다시 인계할 수 없다(결정 기록 0043)
     if m.get("status") == STATUS_HANDED_OFF:
         if not (m.get("partial") and m.get("retry_runs", 0) < PARTIAL_RETRY_MAX):
             return False
