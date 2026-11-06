@@ -37,8 +37,6 @@ from shared.schemas import (
 # 문맥으로 풀린 이름(assignee_resolved)이 없으면 보내지 않는다 (capture/handoff.py 와 같은 규칙).
 _NOT_ALIAS_TYPES = {"second", "thirdpronoun", "thirdrole"}
 
-_MAX_EVIDENCE_SEQS = 100  # BE 는 항목 하나에 seq 가 이보다 많으면 요청 전체를 400 으로 막는다
-
 
 def _assignee(finding: JudgeFinding) -> tuple[str | None, str | None]:
     """(assignee_type, assignee_raw) — BE 가 member_id 로 해소할 값."""
@@ -61,6 +59,9 @@ def _evidence(finding: JudgeFinding, transcript: Transcript) -> dict[str, Any]:
         "evidence_speaker": finding.speaker,
         "evidence_at_ms": _evidence_at_ms(finding, transcript),
     }
+
+
+_MAX_EVIDENCE_SEQS = 100  # BE 는 항목 하나에 seq 가 이보다 많으면 요청 전체를 400 으로 막는다
 
 
 def _evidence_seqs(seqs: list[int]) -> list[int]:
