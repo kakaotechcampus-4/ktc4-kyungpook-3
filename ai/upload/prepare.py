@@ -2,6 +2,8 @@
 
 이어서 사람이 화자 라벨을 멤버에 지정한다(upload.mapping: python -m upload.mapping <매니페스트> <mapping.json>, status 가 mapped 가 된다).
 워커는 업로드 회의(source == "upload")를 상태와 상관없이 집지 않는다. 자동 이어받기와 BE 인계는 #254·#255 인계 합의 뒤 다음 PR 에서 정한다.
+BE 에 올라온 업로드를 가져오는 쪽은 upload.intake 이고, 분리 결과(Segment 목록)로 같은 매니페스트를 쓰는 prepare_from_segments 를 쓴다.
+meta 키워드로 be·workspace_id·title·attendees·upload 를 매니페스트에 얹는다.
 실행: python -m upload.prepare <오디오> --started-at <ISO> [--timezone Asia/Seoul]  (pyannoteAI 를 실제로 부른다)
 """
 
@@ -26,8 +28,8 @@ def _epoch(started_at: str) -> int:
 
 
 def prepare_upload(audio_path: Path, recordings_dir: Path, *, diarizer: Diarizer, session=None,
-                   started_at: str, timezone: str | None = None) -> tuple[Path, dict]:
-    """(매니페스트 경로, 매니페스트). 구간이 하나도 없으면 ValueError 이고 아무것도 쓰지 않는다.
+                   started_at: str, timezone: str | None = None, meta: dict | None = None) -> tuple[Path, dict]:
+    """(매니페스트 경로, 매니페스트). 구간이 하나도 없으면 ValueError 이고 아무것도 쓰지 않는다. meta 는 매니페스트에 얹을 키(be, workspace_id 등).
 
     회의 ID 는 upload_<ts>(ts 는 started_at 의 epoch 초). 같은 ID 가 있으면 ts 를 올린다."""
     audio_path, recordings_dir = Path(audio_path), Path(recordings_dir)
@@ -40,27 +42,41 @@ def prepare_upload(audio_path: Path, recordings_dir: Path, *, diarizer: Diarizer
             raise ValueError(f"이미 있는 세션이다: {session!r}")
     audio, total = load_mono_16k(audio_path)
     segments = normalize(diarizer.diarize(audio_path), total)
+    if session is None:
+        while manifest_path(recordings_dir, f"upload_{ts}").exists() or (recordings_dir / f"upload_{ts}").exists():
+            ts += 1
+        session = f"upload_{ts}"
+    return prepare_from_segments(audio, total, segments, recordings_dir, source_name=audio_path.name,
+                                 started_at=started_at, timezone=timezone, session=str(session), meta=meta, ts=ts)
+
+
+def prepare_from_segments(audio, total: float, segments: list[Segment], recordings_dir: Path, *, source_name: str,
+                          started_at: str, timezone: str | None, session: str,
+                          meta: dict | None = None, ts: int | None = None) -> tuple[Path, dict]:
+    """이미 분리된(normalize 를 거친) 구간 목록으로 가상 트랙과 diarized 매니페스트를 한 번에 쓴다.
+    업로드 가져오기(upload.intake)는 분리기를 따로 불러 두었다가 이 경로로 저장한다. meta 의 키는 매니페스트에 그대로 얹는다
+    (be, workspace_id, title, attendees, upload 등). 구간이 없으면 ValueError 이고 아무것도 쓰지 않는다.
+    ts 는 트랙 파일 이름({id}_{ts}.wav)에 쓴다. 기본은 started_at 의 epoch 초이고, 세션 이름의 ts 를 이름 충돌로 올렸다면 같은 값을 넘긴다."""
+    recordings_dir = Path(recordings_dir)
+    ts = _epoch(started_at) if ts is None else ts
     if not segments:
         raise ValueError("화자 구간이 없다: 사람 목소리를 찾지 못했다")
     if timezone is None:
         from shared.config import settings
         timezone = settings().meeting_timezone
-    if session is None:
-        while manifest_path(recordings_dir, f"upload_{ts}").exists() or (recordings_dir / f"upload_{ts}").exists():
-            ts += 1
-        session = f"upload_{ts}"
     meeting_dir = recordings_dir / str(session)
     entries = write_virtual_tracks(audio, segments, meeting_dir, str(ts))
     for e in entries:
         e["file"] = f"{session}/{e['file']}"
     (meeting_dir / "diarization.json").write_text(
-        json.dumps({"source": audio_path.name, "duration_sec": total,
+        json.dumps({"source": source_name, "duration_sec": total,
                     "segments": [{"start_s": s.start_s, "end_s": s.end_s, "label": s.label} for s in segments]},
                    ensure_ascii=False, indent=2), encoding="utf-8")
     manifest = {
         "session": str(session), "guild": None, "channel": None, "recorded_at": now_iso(),
         "library_version": None, "speakers": entries, "status": STATUS_DIARIZED,
         "started_at": started_at, "meeting_dir": str(session), "source": "upload", "timezone": timezone,
+        **(meta or {}),
     }
     path = manifest_path(recordings_dir, session)
     save_manifest(path, manifest)

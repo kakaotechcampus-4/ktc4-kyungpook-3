@@ -569,6 +569,134 @@ def test_similar_search_over_a_real_http_connection():
     assert [c.task_id for c in found] == ["task_login"]
 
 
+# ─────────────────────────────────────────────────────────── 웹 업로드 가져가기
+def _upload_client(fake, token="svc-token"):
+    return H.BeClient("http://be.local/", session=fake, service_token=token)
+
+
+def test_pending_uploads_returns_the_items_with_the_service_token():
+    fake = FakeBe()
+    item = fake.add_upload("m-up1")
+    got = _upload_client(fake).pending_uploads()
+    assert got == [item]
+    assert fake.calls[-1][:2] == ("GET", "/uploads/pending")
+    assert fake.headers[-1]["X-Service-Token"] == "svc-token"
+
+
+def test_pending_uploads_skips_claimed_and_ended_meetings():
+    fake = FakeBe()
+    fake.add_upload("m-a")
+    fake.add_upload("m-b")
+    fake.add_upload("m-c", status="failed")
+    client = _upload_client(fake)
+    client.claim_upload("m-a")
+    assert [i["meeting_id"] for i in client.pending_uploads()] == ["m-b"]
+
+
+def test_a_wrong_token_is_unauthenticated_on_every_upload_call(tmp_path):
+    fake = FakeBe()
+    fake.add_upload("m-up1")
+    client = _upload_client(fake, token="wrong")
+    for call in (client.pending_uploads, lambda: client.claim_upload("m-up1"),
+                 lambda: client.download_upload("m-up1", tmp_path / "a.bin")):
+        with pytest.raises(H.BeError) as e:
+            call()
+        assert e.value.code == "UNAUTHENTICATED"
+    assert not (tmp_path / "a.bin").exists()
+
+
+def test_claim_succeeds_once_then_in_progress_409():
+    fake = FakeBe()
+    fake.add_upload("m-up1")
+    client = _upload_client(fake)
+    assert client.claim_upload("m-up1") == {"meeting_id": "m-up1", "status": "processing"}
+    assert fake.calls[-1][:2] == ("PATCH", "/uploads/m-up1/claim")
+    with pytest.raises(H.BeError) as e:
+        client.claim_upload("m-up1")
+    assert e.value.code == "MEETING_PROCESSING_IN_PROGRESS" and e.value.status == 409
+    assert e.value.details == {"meeting_id": "m-up1"}
+
+
+def test_claim_on_an_ended_meeting_is_already_ended_with_the_status():
+    fake = FakeBe()
+    fake.add_upload("m-up1", status="done")
+    with pytest.raises(H.BeError) as e:
+        _upload_client(fake).claim_upload("m-up1")
+    assert e.value.code == "MEETING_ALREADY_ENDED" and e.value.details["status"] == "done"
+
+
+def test_claim_of_an_unknown_meeting_is_not_found():
+    with pytest.raises(H.BeError) as e:
+        _upload_client(FakeBe()).claim_upload("nope")
+    assert e.value.code == "MEETING_NOT_FOUND" and e.value.status == 404
+
+
+def test_claim_whose_response_was_lost_raises_network_and_the_retry_sees_in_progress():
+    fake = FakeBe()
+    fake.add_upload("m-up1")
+    fake.claim_lost = True
+    client = _upload_client(fake)
+    with pytest.raises(H.BeError) as e:
+        client.claim_upload("m-up1")
+    assert e.value.code == "NETWORK"
+    fake.claim_lost = False
+    with pytest.raises(H.BeError) as e:
+        client.claim_upload("m-up1")
+    assert e.value.code == "MEETING_PROCESSING_IN_PROGRESS"      # 서버에는 이미 반영됐다
+
+
+def test_download_streams_the_bytes_to_dest_and_returns_the_size(tmp_path):
+    fake = FakeBe()
+    audio = bytes(range(256)) * 5000          # 청크 하나보다 크다
+    fake.add_upload("m-up1", audio=audio)
+    dest = tmp_path / "in" / "audio.m4a"
+    dest.parent.mkdir()
+    assert _upload_client(fake).download_upload("m-up1", dest) == len(audio)
+    assert dest.read_bytes() == audio
+    assert fake.calls[-1][:2] == ("GET", "/uploads/m-up1/file")
+    assert fake.streams[-1] is True      # 스트리밍으로 받는다(큰 파일을 메모리에 올리지 않는다)
+    assert [p.name for p in dest.parent.iterdir()] == ["audio.m4a"]      # 임시 파일이 남지 않는다
+
+
+def test_download_of_a_missing_file_is_not_found_and_leaves_nothing(tmp_path):
+    fake = FakeBe()
+    fake.add_upload("m-up1", audio=None)
+    dest = tmp_path / "audio.m4a"
+    with pytest.raises(H.BeError) as e:
+        _upload_client(fake).download_upload("m-up1", dest)
+    assert e.value.code == "MEETING_NOT_FOUND"
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_a_broken_stream_is_a_network_error_and_removes_the_partial_file(tmp_path):
+    fake = FakeBe()
+    fake.add_upload("m-up1", audio=b"x" * 100_000)
+    fake.file_break_after = 40_000
+    dest = tmp_path / "audio.m4a"
+    with pytest.raises(H.BeError) as e:
+        _upload_client(fake).download_upload("m-up1", dest)
+    assert e.value.code == "NETWORK"
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_a_failed_download_does_not_clobber_an_existing_dest(tmp_path):
+    fake = FakeBe()
+    fake.add_upload("m-up1", audio=b"x" * 100_000)
+    fake.file_break_after = 10
+    dest = tmp_path / "audio.m4a"
+    dest.write_bytes(b"old")
+    with pytest.raises(H.BeError):
+        _upload_client(fake).download_upload("m-up1", dest)
+    assert dest.read_bytes() == b"old"
+
+
+def test_an_upload_meeting_can_be_failed_through_fail_meeting():
+    fake = FakeBe()
+    fake.add_upload("m-up1")
+    _upload_client(fake).fail_meeting("m-up1", "stt")
+    assert fake.meetings["m-up1"]["status"] == "failed"
+
+
 def test_member_names_come_from_the_meetings_workspace():
     """PM 이 온보딩에서 정한 이름과 별칭(BE 봇용 조회). 탈퇴한 팀원은 BE 가 빼고 준다."""
     fake = FakeBe()

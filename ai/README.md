@@ -33,6 +33,11 @@ recordings/         녹음 산출물 (git 제외)
   `PATCH /meetings/{id}/fail`. `BE_BASE_URL` 과 `BE_SERVICE_TOKEN` 이 없으면 이 단계에서 멈춥니다. 워크스페이스는
   `/record` 때 디스코드 서버로 BE 에 물어 매니페스트에 고정합니다. 웹에서 연결하지 않은 서버면 녹음을 시작하지 않고,
   처리할 때 연결이 없으면 채널에 한 번 알리고 연결될 때까지 전사하지 않습니다(#199).
+- 웹 업로드 회의 가져오기도 워커가 BE 를 직접 부릅니다. 대기 목록·claim·파일은 `GET /uploads/pending`,
+  `PATCH /uploads/{id}/claim`, `GET /uploads/{id}/file`(헤더 `X-Service-Token`)이고, 분리에 실패하면
+  `PATCH /meetings/{id}/fail` 에 `failed_stage=diarize` 를 보냅니다. 진행은 `recordings/.uploads/<meeting_id>/intake.json`,
+  결과는 세션 `upload_<meeting_id>` 의 `diarized` 매니페스트(`be`, `workspace_id`, `attendees`, `upload` 포함)입니다. 자세한 흐름은 아래
+  "수동 업로드" 항목에 있습니다.
 - 추출 단계의 추출기는 `MM_EXTRACT_PATH` 로 고릅니다 (`docs/basis_for_decision/member/2026-09-30-0016-judge-path-flag-and-unjudged-findings.md`). 기본(`legacy`)은 `extract/` 의
   `extract_tasks`, `judge` 는 판단 파이프라인(`judge/pipeline.py`)입니다. `judge` 는 1단계가 전사록에서 고른
   finding(결정이나 진척 보고 하나. 근거 줄 하나나 여러 줄과 요약 문장)마다 그 요약 문장으로 BE 의 유사 task 검색
@@ -54,9 +59,21 @@ recordings/         녹음 산출물 (git 제외)
   파일은 그대로입니다), `null` 은 외부 참석자이고, 같은 멤버를 여러 라벨에 지정해도 됩니다. 결과는 `speakers[].member_id`,
   최상위 `mapped_at`, `status` 가 `mapped` 입니다. `user_id`(라벨 id)·`file`·wav 이름은 그대로이고 `mapped` 에서 다시 지정하면
   덮어씁니다. `diarized`·`mapped` 이거나 `source` 가 `upload` 인 매니페스트는 상태가 무엇이든(사람이 `saved` 로 고쳐도) 워커의
-  자동 바퀴·`--retry` 바퀴·복구 어디서도 처리하지 않습니다. 업로드 회의의 BE 인계는 #254·#255 합의 뒤 다음 PR 에서 정합니다.
-  이 경로는 디스코드 길드·채널이 없어 `guild`·`channel` 이 null 이고, 매니페스트에 `workspace_id` 와 BE 회의 정보가 없으므로
-  `partial`·`sourced` 단계와 BE 인계는 사람이 그 칸을 채워 줘야 돌 수 있습니다.
+  자동 바퀴·`--retry` 바퀴·복구 어디서도 처리하지 않습니다. 이 경로(`prepare`)로 만든 매니페스트에는 `workspace_id` 와 BE
+  회의 정보가 없고 디스코드 길드·채널이 없어 `guild`·`channel` 이 null 입니다. 업로드 회의의 인계(전사 이후)는 #254·#255
+  합의 뒤 다음 PR 에서 정합니다.
+- 웹 업로드 가져오기(`upload/intake.py`): PM 이 웹에 올린 오디오 회의를 워커가 가져와 같은 `diarized` 매니페스트로 만듭니다.
+  명시적 opt-in 입니다. 환경 변수 `MM_UPLOAD_INTAKE=1` 이고 `BE_BASE_URL`·`BE_SERVICE_TOKEN`·`PYANNOTEAI_API_KEY` 가 모두 있을 때만 켜지고,
+  아니면 BE 도 pyannoteAI 도 부르지 않습니다. **운영 서버 한 대에서만 켭니다(BE 의 claim 계약은 단일 워커를 전제로 합니다).** 워커가 바퀴 끝(정지 신호가 없을 때만)에 한 번 `intake_one` 을 부르며, 한 번에 한 건을 한 단계만 진전시킵니다.
+  흐름은 BE `GET /uploads/pending` → `PATCH /uploads/{id}/claim`(조건부 한 번) → 원본 내려받기(`size_bytes` 확인) → 16kHz mono
+  wav 변환 → pyannoteAI 제출(`job_id` 기록. `job_id` 를 적은 뒤에는 재시작해도 다시 제출하지 않습니다. 다만 제출 응답을 받기 전에 끊기거나 30분이 지나도 결과가 없거나 job 이 실패하면 다시 제출(과금)될 수 있습니다). claim 한 뒤 2시간 30분이 지나면 다시 맡기지 않고 `failed_stage=diarize` 로 실패를 보고합니다(BE 가 3시간 뒤 정리하기 전에 끝내기 위해서입니다) → 결과 조회 → 트랙·매니페스트
+  작성 → 원본·wav 삭제입니다. 진행 기록은 `recordings/.uploads/<meeting_id>/intake.json`(상태 `claiming`·`claimed`·`converted`·
+  `submitted`·`done`·`failed`)이라 재시작해도 이어 갑니다. 일시 실패는 복구와 같은 시도 한도·대기로 다시 하고, 영구 실패나 한도 초과는
+  BE 에 `PATCH /meetings/{id}/fail`(`failed_stage=diarize`)을 보냅니다. 보내지 못하면 다음 바퀴에 다시 보냅니다. 세션 이름은
+  `upload_<meeting_id>` 이고 매니페스트(`recordings/session_upload_<meeting_id>.json`)는 `be`(`{meeting_id, status}`), `workspace_id`,
+  `title`, `attendees`, `upload`(원본 파일 정보)를 더해 `status` 가 `diarized` 입니다. 이 매니페스트도 위와 같이 워커의 처리 바퀴가
+  집지 않습니다(화자 지정과 이후 인계는 #254·#255). 워커 로그에는 `[worker] 업로드 <meeting_id> <진행>` 한 줄이 남고,
+  하트비트 `current` 는 가져오는 동안 `upload` 입니다.
 
 ## 설치 (이 디렉토리, `ai/` 안에서)
 

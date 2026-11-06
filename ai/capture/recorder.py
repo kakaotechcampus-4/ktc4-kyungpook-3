@@ -13,6 +13,9 @@ discord 이름은 여기 없다. capture/discord_adapter.py 가 이 함수들을
   started_at    녹음 시작 벽시계(UTC ISO). 트랙 안의 위치는 이 시각부터 흐른 monotonic 시간이다
   timezone      회의가 열린 시간대. "내일" 같은 상대 날짜의 기준일은 이 시간대의 시작 날짜다
   guild_id, voice_channel_id, text_channel_id, workspace_id   어느 서버의 어느 방 회의인지. 복구 범위와 게시 채널
+  source        "upload" 면 업로드 회의(녹음이 아니다). 복구가 집지 않는다
+  be, workspace_id, attendees, upload   업로드 가져오기(upload/intake.py)가 diarized 매니페스트에 더한다. be 는 {"meeting_id",
+                "status"}, attendees 는 웹이 받은 참석자, upload 는 원본 파일 정보. 분리 실패는 failed_stage=diarize 로 BE 에만 보낸다
   transcript    전사가 끝나면 회의록 경로
   tasks         할일 추출까지 됐으면 그 결과 파일 경로 (옛 경로 extract_tasks 의 결과)
   items         판단 경로(MM_EXTRACT_PATH=judge)의 결과 파일 경로. POST /extractions 의 항목 모양 그대로다.

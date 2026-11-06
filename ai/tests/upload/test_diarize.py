@@ -143,11 +143,64 @@ def test_non_transient_poll_error_is_not_retried(tmp_path):
     assert [c[0] for c in sess.calls].count("GET") == 1
 
 
-def test_the_diarizer_protocol_only_declares_diarize():
+def test_submit_uploads_and_creates_job_without_polling(tmp_path):
+    d, sess, sleeps, f = _make(tmp_path, [])
+    assert d.submit(f) == "J1"
+    assert [c[0] for c in sess.calls] == ["POST", "PUT", "POST"]
+    assert sess.calls[2][2]["json"]["url"] == sess.calls[0][2]["json"]["url"]
+    assert sleeps == []
+
+
+def test_submit_requires_key(tmp_path, monkeypatch):
+    monkeypatch.delenv("PYANNOTEAI_API_KEY", raising=False)
+    with pytest.raises(RuntimeError, match="PYANNOTEAI_API_KEY"):
+        PyannoteAiDiarizer(session=FakeSession([])).submit(tmp_path / "x.wav")
+
+
+def test_fetch_succeeded_returns_raw_segments_without_normalizing(tmp_path):
+    body = {"status": "succeeded", "output": {"diarization": [
+        {"speaker": "A", "start": 0, "end": 2}, {"speaker": "A", "start": 1, "end": 3}]}}
+    d, sess, sleeps, _f = _make(tmp_path, [body])
+    assert d.fetch("J1") == [Segment(0, 2, "A"), Segment(1, 3, "A")]
+    assert [c[0] for c in sess.calls] == ["GET"] and sess.calls[0][1].endswith("/v1/jobs/J1")
+    assert sess.calls[0][2]["headers"]["Authorization"] == "Bearer K"
+    assert sleeps == []
+
+
+@pytest.mark.parametrize("status", ["created", "pending", "running"])
+def test_fetch_in_progress_returns_none(tmp_path, status):
+    d, sess, sleeps, _f = _make(tmp_path, [{"status": status}])
+    assert d.fetch("J1") is None
+    assert len(sess.calls) == 1 and sleeps == []
+
+
+@pytest.mark.parametrize("status", ["failed", "canceled"])
+def test_fetch_failed_job_raises_runtime_error(tmp_path, status):
+    d, *_ = _make(tmp_path, [{"status": status}])
+    with pytest.raises(RuntimeError, match="J1"):
+        d.fetch("J1")
+
+
+def test_fetch_missing_job_raises_job_not_found(tmp_path):
+    from upload.diarize import JobNotFound
+
+    d, *_ = _make(tmp_path, [404])
+    with pytest.raises(JobNotFound) as ei:
+        d.fetch("J1")
+    assert isinstance(ei.value, LookupError)
+
+
+def test_fetch_retries_transient_errors(tmp_path):
+    d, sess, sleeps, _f = _make(tmp_path, [503, OK])
+    assert d.fetch("J1") == [Segment(0, 1, "A")]
+    assert len(sleeps) == 1
+
+
+def test_the_diarizer_protocol_declares_diarize_submit_fetch_only():
     """리뷰 반영 중 재시도 헬퍼가 Protocol 에 섞여 들어갔던 것을 막는다. 구현 세부는 PyannoteAiDiarizer 에만 있다."""
     from upload.diarize import Diarizer, PyannoteAiDiarizer
 
     declared = {n for n in vars(Diarizer) if not n.startswith("__") and not n.startswith("_abc")}
-    assert "diarize" in declared
+    assert {"diarize", "submit", "fetch"} <= declared
     assert not {"_transient", "_poll", "_poll_retries"} & declared
     assert hasattr(PyannoteAiDiarizer, "_poll") and hasattr(PyannoteAiDiarizer, "_transient")
