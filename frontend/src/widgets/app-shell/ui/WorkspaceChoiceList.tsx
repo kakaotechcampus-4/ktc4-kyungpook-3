@@ -1,6 +1,8 @@
 import { useIsFetching, useQuery, useQueryClient } from '@tanstack/react-query'
 import { myInvitationsQueryOptions } from '@/entities/invitation'
+import { captureAccountIntro } from '@/entities/user'
 import { workspaceListQueryOptions } from '@/entities/workspace'
+import type { Workspace } from '@/entities/workspace'
 import { useStartNewWorkspace } from '@/features/onboarding'
 import { useEnterWorkspace } from '@/features/workspace-switch'
 import { paths } from '@/shared/config/routes'
@@ -19,6 +21,7 @@ const ROW =
 /**
  * 선택 화면의 공간 목록. 헤더 메뉴와 같은 줄 모양·같은 진입 정책이다.
  * 선택 화면은 어느 공간 안도 아니라서 미완료 공간의 온보딩 나가기는 이 화면으로 돌아온다(기억 없음).
+ * 팀원 온보딩(`onboarding`)에서 처음 고른 공간은 첫 입장이라, 대시보드에서 매스 인트로를 보게 적는다 (#430).
  */
 export function WorkspaceChoiceList({
   showCreate = true,
@@ -31,6 +34,11 @@ export function WorkspaceChoiceList({
   const enter = useEnterWorkspace()
   const startNew = useStartNewWorkspace()
   const queryClient = useQueryClient()
+  const onboarding = variant === 'onboarding'
+  const choose = (workspace: Workspace) => {
+    if (onboarding) captureAccountIntro(queryClient)?.markPending()
+    enter(workspace, null)
+  }
   const invitationsKey = myInvitationsQueryOptions().queryKey
   const invitationsFetching = useIsFetching({ queryKey: invitationsKey }) > 0
   // 초대는 메일로 오지 않는다 — 다시 확인하면 소속과 받은 초대를 함께 다시 받는다
@@ -50,8 +58,8 @@ export function WorkspaceChoiceList({
   }
 
   return (
-    <div className={variant === 'onboarding' ? 'flex flex-col gap-1' : LIST}>
-      <MyInvitations />
+    <div className={onboarding ? 'flex flex-col gap-1' : LIST}>
+      <MyInvitations onboarding={onboarding} />
       {workspaces.data.length === 0 ? (
         <div className="flex flex-col items-start gap-12 px-10 py-9">
           <p className="text-body text-dim">아직 소속된 워크스페이스가 없어요.</p>
@@ -65,7 +73,7 @@ export function WorkspaceChoiceList({
         <ul className="flex flex-col gap-1">
           {workspaces.data.map((workspace) => (
             <li key={workspace.id}>
-              <button type="button" className={ROW} onClick={() => enter(workspace, null)}>
+              <button type="button" className={ROW} onClick={() => choose(workspace)}>
                 <WorkspaceRowContent workspace={workspace} current={false} />
               </button>
             </li>
@@ -85,7 +93,7 @@ export function WorkspaceChoiceList({
             </span>
           </button>
         </>
-      ) : variant === 'onboarding' ? (
+      ) : onboarding ? (
         <div className="flex justify-end pt-8">
           <Button
             variant="primary"
