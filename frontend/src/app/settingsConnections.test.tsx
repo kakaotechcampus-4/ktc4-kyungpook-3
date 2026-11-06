@@ -268,6 +268,19 @@ describe('설정의 회의 채팅 채널 — PM (#429)', () => {
     return { user, area, select }
   }
 
+  /** 키보드로 목록을 열고 줄을 누른다. 목록은 포털이라 카드 밖에 있다 */
+  async function openList(select: HTMLElement) {
+    select.focus()
+    await userEvent.keyboard('{Enter}')
+    return screen.findByRole('listbox')
+  }
+
+  async function pick(user: ReturnType<typeof userEvent.setup>, label: string) {
+    const select = screen.getByRole('combobox', { name: '회의 채팅 채널' })
+    await user.click(within(await openList(select)).getByRole('option', { name: label }))
+    await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull())
+  }
+
   it('Discord 가 연결돼 있지 않으면 칸이 꺼져 있고 먼저 연결하라고 안내하며, 채널 목록을 묻지 않는다', async () => {
     applyScenario('settings-discord-skipped')
     const log = recordRequests()
@@ -275,18 +288,18 @@ describe('설정의 회의 채팅 채널 — PM (#429)', () => {
     const select = await (await discordArea()).findByRole('combobox', { name: '회의 채팅 채널' })
     expect(select).toBeDisabled()
     expect(select).toHaveAccessibleDescription(NOT_CONNECTED)
-    expect(select).toHaveDisplayValue('사용 안 함')
+    expect(select).toHaveTextContent('사용 안 함')
     expect(log.started.filter(({ path }) => path.endsWith('/discord/channels'))).toEqual([])
   })
 
   it('선택지는 `사용 안 함` 과 연결한 서버의 텍스트 채널이고, 지금 값은 사용 안 함이다', async () => {
     const { select } = await openField()
     expect(
-      within(select)
+      within(await openList(select))
         .getAllByRole('option')
         .map((option) => option.textContent),
     ).toEqual(['사용 안 함', '#일반', '#회의록', '#운영-비공개', '#공지'])
-    expect(select).toHaveDisplayValue('사용 안 함')
+    expect(select).toHaveTextContent('사용 안 함')
   })
 
   it('채널을 고르면 저장 전에 안내를 보이고, 저장하면 그 채널로 PUT 을 보내 저장한 값을 보인다', async () => {
@@ -303,7 +316,7 @@ describe('설정의 회의 채팅 채널 — PM (#429)', () => {
     const { user, area, select } = await openField()
     const log = recordRequests()
 
-    await user.selectOptions(select, '#일반')
+    await pick(user, '#일반')
     expect(select).toHaveAccessibleDescription(SAVE_NOTICE)
     expect(requestsTo(log, 'PUT', CHAT_CHANNEL)).toEqual([])
 
@@ -311,16 +324,16 @@ describe('설정의 회의 채팅 채널 — PM (#429)', () => {
     expect(await screen.findByText('회의 채팅 채널을 저장했어요.')).toBeInTheDocument()
     expect(bodies).toEqual([{ channel_id: GENERAL.channel_id }])
     expect(db.integrations.ws_01.discord.chat_channel).toEqual(GENERAL)
-    expect(select).toHaveDisplayValue('#일반')
+    expect(select).toHaveTextContent('#일반')
     expect(area.queryByRole('button', { name: '저장' })).toBeNull()
     expect(area.queryByText(SAVE_NOTICE)).toBeNull()
   })
 
   it('되돌리기는 고른 값을 버리고 저장한 값으로 돌아간다', async () => {
     const { user, area, select } = await openField()
-    await user.selectOptions(select, '#회의록')
+    await pick(user, '#회의록')
     await user.click(area.getByRole('button', { name: '되돌리기' }))
-    expect(select).toHaveDisplayValue('사용 안 함')
+    expect(select).toHaveTextContent('사용 안 함')
     expect(area.queryByRole('button', { name: '저장' })).toBeNull()
     expect(area.queryByText(SAVE_NOTICE)).toBeNull()
   })
@@ -328,10 +341,10 @@ describe('설정의 회의 채팅 채널 — PM (#429)', () => {
   it('`사용 안 함` 으로 저장하면 DELETE 를 보내고 수집을 껐다고 알린다', async () => {
     db.integrations.ws_01.discord.chat_channel = { ...GENERAL }
     const { user, area, select } = await openField()
-    expect(select).toHaveDisplayValue('#일반')
+    expect(select).toHaveTextContent('#일반')
     const log = recordRequests()
 
-    await user.selectOptions(select, '사용 안 함')
+    await pick(user, '사용 안 함')
     // 끄면 새로 읽히는 채널이 없다 — 켬 안내를 보이지 않는다
     expect(area.queryByText(SAVE_NOTICE)).toBeNull()
     await user.click(area.getByRole('button', { name: '저장' }))
@@ -339,7 +352,7 @@ describe('설정의 회의 채팅 채널 — PM (#429)', () => {
     expect(requestsTo(log, 'DELETE', CHAT_CHANNEL)).toHaveLength(1)
     expect(requestsTo(log, 'PUT', CHAT_CHANNEL)).toEqual([])
     expect(db.integrations.ws_01.discord.chat_channel).toBeNull()
-    expect(select).toHaveDisplayValue('사용 안 함')
+    expect(select).toHaveTextContent('사용 안 함')
   })
 
   it.each([
@@ -355,13 +368,15 @@ describe('설정의 회의 채팅 채널 — PM (#429)', () => {
     '봇이 다룰 수 없는 채널(%s)은 고칠 방법을 칸 아래에 알리고 저장하지 않는다',
     async (option, message) => {
       const { user, area, select } = await openField()
-      await user.selectOptions(select, option)
+      await pick(user, option)
       await user.click(area.getByRole('button', { name: '저장' }))
       expect(await area.findByRole('alert')).toHaveTextContent(message)
       expect(db.integrations.ws_01.discord.chat_channel).toBeNull()
+      expect(select).toHaveAccessibleDescription(expect.stringContaining(message))
+      expect(select).toHaveAttribute('aria-invalid', 'true')
       // 고른 값은 남아 권한을 고친 뒤 다시 저장할 수 있다. 다른 채널을 고르면 지난 실패를 지운다
-      expect(select).toHaveDisplayValue(option)
-      await user.selectOptions(select, '#일반')
+      expect(select).toHaveTextContent(option)
+      await pick(user, '#일반')
       expect(area.queryByRole('alert')).toBeNull()
     },
   )
@@ -371,15 +386,15 @@ describe('설정의 회의 채팅 채널 — PM (#429)', () => {
     const log = recordRequests()
     db.discordChannels = db.discordChannels.filter(({ name }) => name !== '회의록')
 
-    await user.selectOptions(select, '#회의록')
+    await pick(user, '#회의록')
     await user.click(area.getByRole('button', { name: '저장' }))
     expect(await area.findByRole('alert')).toHaveTextContent(
       '연결된 Discord 서버에서 이 텍스트 채널을 찾을 수 없어요. 채널 목록을 다시 불러왔으니 다시 골라 주세요.',
     )
     await waitFor(() => expect(requestsTo(log, 'GET', CHANNELS)).toHaveLength(1))
-    await waitFor(() =>
-      expect(within(select).queryByRole('option', { name: '#회의록' })).toBeNull(),
-    )
+    await waitFor(() => expect(select).toBeEnabled())
+    expect(within(await openList(select)).queryByRole('option', { name: '#회의록' })).toBeNull()
+    expect(screen.getByRole('option', { name: '#일반' })).toBeInTheDocument()
   })
 
   it('저장한 채널이 지금 목록에 없어도 지금 값으로 보인다', async () => {
@@ -388,7 +403,7 @@ describe('설정의 회의 채팅 채널 — PM (#429)', () => {
       name: '옛-회의',
     }
     const { select } = await openField()
-    expect(select).toHaveDisplayValue('#옛-회의')
+    expect(select).toHaveTextContent('#옛-회의')
   })
 
   it('채널 목록을 받지 못하면 칸 아래에서 다시 시도할 수 있다', async () => {
@@ -407,7 +422,11 @@ describe('설정의 회의 채팅 채널 — PM (#429)', () => {
     ).toBeInTheDocument()
     failing = false
     await user.click(area.getByRole('button', { name: '다시 시도' }))
-    expect(await area.findByRole('option', { name: '#일반' })).toBeInTheDocument()
+    const select = area.getByRole('combobox', { name: '회의 채팅 채널' })
+    await waitFor(() => expect(select).toBeEnabled())
+    expect(
+      within(await openList(select)).getByRole('option', { name: '#일반' }),
+    ).toBeInTheDocument()
     expect(area.queryByText('채널 목록을 불러오지 못했어요')).toBeNull()
   })
 

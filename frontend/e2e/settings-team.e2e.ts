@@ -18,6 +18,13 @@ const FIRST_PAINT = { timeout: 15_000 }
 
 const discordArea = (page: Page) => page.getByTestId('discord-connection')
 
+/** 회의 채팅 채널 상자를 키보드로 열고 줄을 고른다. 목록은 포털이라 카드 밖에 뜬다 */
+async function pick(page: Page, label: string) {
+  await discordArea(page).getByLabel('회의 채팅 채널').press('Enter')
+  await page.getByRole('listbox').getByRole('option', { name: label }).click()
+  await expect(page.getByRole('listbox')).toHaveCount(0)
+}
+
 /** 온보딩 단계 저장(`PATCH .../onboarding`)을 센다. 설정의 연결은 단계를 저장하지 않는다 (D-173) */
 function countOnboardingSaves(page: Page): () => number {
   let count = 0
@@ -68,11 +75,10 @@ test('PM 이 회의 채팅 채널을 고르면 저장 전에 안내를 보고, �
   await start(page, 'single-workspace', '/workspaces/ws_01/settings')
   const area = discordArea(page)
   const field = area.getByLabel('회의 채팅 채널')
-  const picked = field.locator('option:checked')
   await expect(field).toBeEnabled(FIRST_PAINT)
-  await expect(picked).toHaveText('사용 안 함')
+  await expect(field).toHaveText('사용 안 함')
 
-  await field.selectOption({ label: '#운영-비공개' })
+  await pick(page, '#운영-비공개')
   await expect(
     area.getByText('이 채널 대화는 매일 09:00에 읽혀 task 제안에 쓰여요.', { exact: false }),
   ).toBeVisible()
@@ -82,7 +88,7 @@ test('PM 이 회의 채팅 채널을 고르면 저장 전에 안내를 보고, �
   ).toBeVisible()
   await capture(page, testInfo, 'chat-channel-need-read.png')
 
-  await field.selectOption({ label: '#일반' })
+  await pick(page, '#일반')
   await expect(area.getByText('봇이 이 채널을 읽을 수 없어요.', { exact: false })).toHaveCount(0)
   await area.getByRole('button', { name: '저장' }).click()
   await expect(
@@ -92,10 +98,7 @@ test('PM 이 회의 채팅 채널을 고르면 저장 전에 안내를 보고, �
   await capture(page, testInfo, 'chat-channel-saved.png')
 
   await page.reload()
-  await expect(discordArea(page).getByLabel('회의 채팅 채널').locator('option:checked')).toHaveText(
-    '#일반',
-    FIRST_PAINT,
-  )
+  await expect(discordArea(page).getByLabel('회의 채팅 채널')).toHaveText('#일반', FIRST_PAINT)
   await discordArea(page).getByRole('button', { name: '연결 끊기' }).click()
   const confirm = page.getByRole('dialog', { name: 'Discord 연결을 끊을까요?' })
   await expect(
