@@ -149,6 +149,21 @@ def clear_chat_channel(db: Session, workspace_id: str) -> bool:
     return notify_off_best_effort(old_channel_id, workspace_id=workspace_id)
 
 
+def list_enabled_for_bot(db: Session) -> list[dict]:
+    """채팅 수집을 켠 워크스페이스. 봇이 읽을 `[{"workspace_id", "guild_id", "channel_id"}]` 를 workspace_id 순으로."""
+    rows = (
+        db.query(Integration.workspace_id, Integration.provider_channel_id, Integration.chat_channel_id)
+        .filter(
+            Integration.provider == "discord",
+            Integration.provider_channel_id.isnot(None),
+            Integration.chat_channel_id.isnot(None),
+        )
+        .order_by(Integration.workspace_id)
+        .all()
+    )
+    return [{"workspace_id": w, "guild_id": g, "channel_id": c} for w, g, c in rows]
+
+
 def notify_off_best_effort(channel_id: str, *, workspace_id: str) -> bool:
     """끔 공지. 봇 토큰이 없거나 Discord 오류면 로그만 남기고 False. 예외를 밖으로 내지 않는다."""
     token = os.getenv("DISCORD_BOT_TOKEN", "")

@@ -15,7 +15,7 @@ from app.core.errors import AppError, Envelope, ErrorCode, success
 from app.models import Integration, Member, MemberRole
 from app.api.deps import get_current_member, get_current_pm, get_current_user, require_member, require_service_token
 from app.schemas.integration import (
-    ChatChannelClearResponse, ChatChannelResponse, ChatChannelSetRequest, DiscordChannelListResponse,
+    BotChatChannelListResponse, ChatChannelClearResponse, ChatChannelResponse, ChatChannelSetRequest, DiscordChannelListResponse,
 )
 from app.schemas.workspace import DiscordGuildWorkspaceResponse
 from app.services import chat_channel, discord, discord_oauth, notion, notion_connect, notion_oauth, oauth_state
@@ -30,6 +30,8 @@ callback_router = APIRouter(prefix="/integrations", tags=["integrations"])
 bot_router = APIRouter(
     prefix="/integrations", tags=["integrations"], dependencies=[Depends(require_service_token)]
 )
+# 채팅 수집 대상 목록. 경로가 /bot 아래라 위 bot_router(/integrations)와 따로 둔다.
+bot_chat_router = APIRouter(prefix="/bot", tags=["integrations"], dependencies=[Depends(require_service_token)])
 
 # Notion callback은 토큰만 저장하고, 대상 DB는 응답 뒤 백그라운드 작업이 찾아 붙인다. 그 작업은 길어야
 # WAIT_TIMEOUT_SECONDS 뒤 DB를 붙이거나, 실패하면 토큰을 비운다. 이 시간이 지나도 DB가 없으면 서버 재시작 등으로
@@ -137,8 +139,12 @@ def delete_integration(
     ).first()
     
     if integration:
+        old_chat_channel_id = integration.chat_channel_id if provider == "discord" else None
         db.delete(integration)
         db.commit()
+        # 연결을 끊으면 수집 대상도 사라진다. 끔 공지는 실패해도 해제를 되돌리지 않는다.
+        if old_chat_channel_id:
+            chat_channel.notify_off_best_effort(old_chat_channel_id, workspace_id=workspace_id)
     return
 
 
@@ -448,10 +454,17 @@ def discord_oauth_callback(
     integration = db.query(Integration).filter(
         Integration.workspace_id == payload.workspace_id,
         Integration.provider == discord_oauth.PROVIDER,
-    ).first()
+    ).with_for_update().first()
     if integration is None:
         integration = Integration(workspace_id=payload.workspace_id, provider=discord_oauth.PROVIDER)
         db.add(integration)
+    elif integration.provider_channel_id and integration.provider_channel_id != guild.guild_id:
+        # 다른 서버로 옮기면 이전 서버의 채널은 의미가 없다. 공지는 보내지 않고 비운다.
+        logger.info(
+            "다른 Discord 서버로 재연결해 채팅 수집 채널을 비웁니다 workspace_id=%s", payload.workspace_id
+        )
+        integration.chat_channel_id = None
+        integration.chat_channel_name = None
     integration.provider_channel_id = guild.guild_id
     try:
         db.commit()
@@ -462,6 +475,12 @@ def discord_oauth_callback(
             return finish("failed", "guild_already_linked")
         return finish("failed", "concurrent_connect")
     return finish("success", "connected")
+
+
+@bot_chat_router.get("/chat-channels", response_model=Envelope[BotChatChannelListResponse])
+def list_bot_chat_channels(db: Session = Depends(get_db)) -> dict:
+    """채팅 수집을 켠 워크스페이스의 (서버, 채널) 목록. 봇이 매일 읽을 대상을 정한다(#428)."""
+    return success({"items": chat_channel.list_enabled_for_bot(db)})
 
 
 @bot_router.get(
