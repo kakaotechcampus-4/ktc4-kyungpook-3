@@ -106,7 +106,7 @@ describe('상태 전환 — 같은 회의의 토스트 하나가 바뀐다', () 
     expect(speakers).toHaveTextContent('주간 회고 녹음 · 누가 말했는지 정하면 정리가 이어져요')
     expect(speakers).toHaveTextContent('7일 안에 정해 주세요')
     expect(within(speakers).queryByRole('button', { name: '닫기' })).toBeNull()
-    expect(within(speakers).queryByRole('button', { name: '접기' })).toBeNull()
+    expect(within(speakers).getByRole('button', { name: '접기' })).toBeVisible()
     expect(processingSignals()).toHaveLength(1)
 
     // 다른 곳에서 화자를 지정해 정리가 이어진다
@@ -334,6 +334,70 @@ describe('접기', () => {
     expect(within(await waitForCard()).getByRole('button', { name: '접기' })).toHaveFocus()
     expect(localStorage.getItem(COLLAPSE_KEY)).toBe('false')
   })
+
+  it('화자 지정 필요도 접어 알약으로 둔다. 상태가 바뀌면 다시 펼치고, 정리 중의 단계 진행은 접힘을 그대로 둔다', async () => {
+    fakeIntervals()
+    const user = userEvent.setup()
+    processingUpload()
+    renderApp(paths.members('ws_01'))
+    expect(await screen.findByRole('heading', { level: 1 })).toHaveTextContent(/^팀$/)
+    act(() => trackMeeting(UPLOAD))
+
+    await user.click(within(await waitForCard()).getByRole('button', { name: '접기' }))
+    expect(pill()).toHaveTextContent('정리 중0/3')
+    expect(localStorage.getItem(COLLAPSE_KEY)).toBe('true')
+
+    meetingRow().progress = { audio_merged: true, transcribed: false, extracted: false }
+    await poll()
+    await waitFor(() => expect(pill()).toHaveTextContent('정리 중1/3'))
+    expect(processingCard()).toBeNull()
+
+    awaitSpeakers(AWAITING_MEETING_ID)
+    await poll()
+    const speakers = await waitFor(() => {
+      expect(signalsWith(SPEAKERS_NEEDED_TITLE)).toHaveLength(1)
+      return signalsWith(SPEAKERS_NEEDED_TITLE)[0]
+    })
+    expect(speakers.tagName).toBe('SECTION')
+    expect(pill()).toBeNull()
+
+    await user.click(within(speakers).getByRole('button', { name: '접기' }))
+    expect(pill()).toHaveTextContent(SPEAKERS_NEEDED_TITLE)
+    expect(pill()).not.toHaveTextContent(/\d\/3/)
+    expect(pill()).toHaveFocus()
+    expect(screen.queryByRole('button', { name: '닫기' })).toBeNull()
+    expect(localStorage.getItem(COLLAPSE_KEY)).toBe('true')
+
+    setStatus('processing')
+    meetingRow().progress = { audio_merged: true, transcribed: true, extracted: false }
+    await poll(30_000)
+    await waitFor(() =>
+      expect(processingCard()).toHaveTextContent('결정사항과 할 일을 뽑고 있어요'),
+    )
+    expect(pill()).toBeNull()
+    expect(localStorage.getItem(COLLAPSE_KEY)).toBe('true')
+  }, 15_000)
+
+  it('접은 정리 중이 화자 지정 필요를 거쳐 정리 중으로 돌아오면 펼쳐 보인다', async () => {
+    fakeIntervals()
+    const user = userEvent.setup()
+    processingUpload()
+    renderApp(paths.members('ws_01'))
+    expect(await screen.findByRole('heading', { level: 1 })).toHaveTextContent(/^팀$/)
+    act(() => trackMeeting(UPLOAD))
+    await user.click(within(await waitForCard()).getByRole('button', { name: '접기' }))
+    expect(pill()).not.toBeNull()
+
+    awaitSpeakers(AWAITING_MEETING_ID)
+    await poll()
+    await waitFor(() => expect(signalsWith(SPEAKERS_NEEDED_TITLE)).toHaveLength(1))
+    expect(pill()).toBeNull()
+
+    setStatus('processing')
+    await poll(30_000)
+    await waitForCard()
+    expect(pill()).toBeNull()
+  }, 15_000)
 
   it('저장소가 막혀 있어도 접고 펼친다', async () => {
     const blocked = () => {

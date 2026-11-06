@@ -91,18 +91,31 @@ export const 팀원_화자_지정_대기: Story = {
   },
 }
 
-/** PM 의 화자 지정 필요 — 레드 R2 주의 면. 접혀 있었어도 펼쳐 보인다 */
+/** PM 의 화자 지정 필요 — 레드 R2 주의 면. 닫기는 없고 접기만 있다 */
 export const 화자_지정_필요: Story = {
+  args: { signal: signalOf({ phase: 'awaiting_speakers', title: TITLE, progress: null }) },
+  play: async ({ args, canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.getByText('7일 안에 정해 주세요')).toBeVisible()
+    await expect(canvas.queryByRole('button', { name: '닫기' })).toBeNull()
+    await userEvent.click(canvas.getByRole('button', { name: '화자 지정하기' }))
+    await expect(args.onAssignSpeakers).toHaveBeenCalled()
+    await userEvent.click(canvas.getByRole('button', { name: '접기' }))
+    await expect(args.onCollapsedChange).toHaveBeenCalledWith(true)
+  },
+}
+
+/** 화자 지정 필요(접힘) — `● 화자 지정이 필요해요` 알약. 상태가 바뀌면 다시 펼친다 */
+export const 화자_지정_필요_접힘: Story = {
   args: {
     collapsed: true,
     signal: signalOf({ phase: 'awaiting_speakers', title: TITLE, progress: null }),
   },
   play: async ({ args, canvasElement }) => {
-    const canvas = within(canvasElement)
-    await expect(canvas.getByText('7일 안에 정해 주세요')).toBeVisible()
-    await expect(canvas.queryByRole('button', { name: /펼치기|접기|닫기/ })).toBeNull()
-    await userEvent.click(canvas.getByRole('button', { name: '화자 지정하기' }))
-    await expect(args.onAssignSpeakers).toHaveBeenCalled()
+    const pill = within(canvasElement).getByRole('button', { name: /펼치기/ })
+    await expect(pill).toHaveTextContent('화자 지정이 필요해요')
+    await userEvent.click(pill)
+    await expect(args.onCollapsedChange).toHaveBeenCalledWith(false)
   },
 }
 

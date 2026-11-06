@@ -174,9 +174,9 @@ test('④ 정리에 실패하면 진행 토스트가 재업로드 안내로 바�
   await uploadShortAudio(page)
 
   // 처리 화면을 보고 있었으니 회의록 목록으로 옮긴다 (U4-6). 목록은 가장 최근 완료 회의를 고른다 (U5-1)
-  await expect(signalOf(page, '회의를 정리하지 못했어요. 파일을 다시 올려 주세요.')).toBeVisible({
-    timeout: 15_000,
-  })
+  const failed = signalOf(page, '회의를 정리하지 못했어요')
+  await expect(failed).toBeVisible({ timeout: 15_000 })
+  await expect(failed).toContainText(`${SHORT_AUDIO.name} · 파일을 다시 올려 주세요.`)
   await expect(page).toHaveURL(/\/workspaces\/ws_01\/meetings\/mt_\w+$/)
   const list = page.getByRole('complementary', { name: '회의 목록' })
   await expect(list.getByRole('link', { name: /기획 논의 녹음/ })).toBeVisible(FIRST_PAINT)

@@ -59,6 +59,15 @@ function progressSignal(
   }
 }
 
+/**
+ * 실패 카드의 제목은 늘 「회의를 정리하지 못했어요」다. 안내 문구가 그 문장으로 시작하면 설명에서 빼고, 사유별 안내 문장은 남긴다.
+ * `meetingFailure` 문구는 처리 화면·회의록도 쓰므로 거기서 바꾸지 않는다 (#424)
+ */
+function withoutTitleSentence(description: string): string {
+  const repeated = `${PROCESSING_FAILED_TITLE}.`
+  return description.startsWith(repeated) ? description.slice(repeated.length).trim() : description
+}
+
 /** 이 사람에게 보일 토스트. 보일 것이 없으면 null */
 export function processingSignal(subject: ProcessingSubject, role: Role): ProcessingSignal | null {
   const view = VIEWS[role][subject.phase]
@@ -74,7 +83,7 @@ export function processingSignal(subject: ProcessingSubject, role: Role): Proces
       return {
         kind: 'failed',
         title: subject.title,
-        description: meetingFailure(subject.failedStage).description,
+        description: withoutTitleSentence(meetingFailure(subject.failedStage).description),
       }
   }
 }

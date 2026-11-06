@@ -58,10 +58,22 @@ describe('진행 토스트의 역할 × 단계 (#424)', () => {
       title: TITLE,
       description: '음성 처리 중 회의 정리를 완료하지 못했어요. 파일을 다시 올려 주세요.',
     })
-    expect(processingSignal({ ...FAILED, failedStage: null }, 'pm')).toMatchObject({
-      description: '회의를 정리하지 못했어요. 파일을 다시 올려 주세요.',
+    expect(
+      processingSignal({ ...FAILED, failedStage: 'speaker_assignment_expired' }, 'pm'),
+    ).toMatchObject({
+      description:
+        '화자 지정 대기가 7일을 넘어 회의 정리가 종료됐어요. 다시 진행하려면 원본 파일을 다시 올려 주세요.',
     })
   })
+
+  it.each([null, 'unknown_stage'])(
+    '알 수 없는 실패(%s)의 설명은 카드 제목 문장을 되풀이하지 않는다',
+    (failedStage) => {
+      expect(processingSignal({ ...FAILED, failedStage }, 'pm')).toMatchObject({
+        description: '파일을 다시 올려 주세요.',
+      })
+    },
+  )
 
   it('팀원에게 실패는 아무것도 보이지 않는다', () => {
     expect(processingSignal(FAILED, 'member')).toBeNull()

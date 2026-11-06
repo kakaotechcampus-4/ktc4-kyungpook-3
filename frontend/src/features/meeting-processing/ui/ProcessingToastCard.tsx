@@ -44,7 +44,7 @@ const SPEAKERS_DEADLINE = '7일 안에 정해 주세요'
 
 export interface ProcessingToastCardProps {
   signal: ProcessingSignal
-  /** 정리 중일 때만 쓴다. 화자 지정·완료·실패는 늘 펼친다 */
+  /** 정리 중·화자 지정 필요에서 쓴다. 완료·실패는 늘 펼친다 */
   collapsed: boolean
   onCollapsedChange: (collapsed: boolean) => void
   onOpenProcessing: () => void
@@ -86,7 +86,7 @@ export function ProcessingToastCard({
   return (
     <div className="flex flex-col items-end">
       <p ref={status} role="status" className="sr-only" />
-      {signal.kind === 'processing' && collapsed ? (
+      {(signal.kind === 'processing' || signal.kind === 'speakers') && collapsed ? (
         <button
           type="button"
           ref={toggleButton}
@@ -95,10 +95,16 @@ export function ProcessingToastCard({
           onClick={() => toggle(false)}
         >
           <span aria-hidden="true" className="size-6 shrink-0 rounded-999 bg-accent-signal" />
-          정리 중
-          <span className="font-normal text-inactive tabular-nums">
-            {signal.doneCount}/{PROCESSING_STEP_COUNT}
-          </span>
+          {signal.kind === 'processing' ? (
+            <>
+              정리 중
+              <span className="font-normal text-inactive tabular-nums">
+                {signal.doneCount}/{PROCESSING_STEP_COUNT}
+              </span>
+            </>
+          ) : (
+            SPEAKERS_NEEDED_TITLE
+          )}
           <Icon name="chevron-up" size={14} />
           <span className="sr-only">펼치기</span>
         </button>
@@ -135,16 +141,7 @@ function Card({
               <span aria-hidden="true" className="size-6 shrink-0 rounded-999 bg-ink" />
               <span className="truncate">{signal.title} 정리 중</span>
             </p>
-            <button
-              type="button"
-              ref={toggleButton}
-              className={ICON_BUTTON}
-              aria-label="접기"
-              aria-expanded={true}
-              onClick={onCollapse}
-            >
-              <Icon name="chevron-down" size={14} />
-            </button>
+            <CollapseButton toggleButton={toggleButton} onCollapse={onCollapse} />
           </div>
           <p className={SUB}>{signal.sentence}</p>
           <div aria-hidden="true" className="grid grid-cols-3 gap-4">
@@ -165,7 +162,10 @@ function Card({
     case 'speakers':
       return (
         <section aria-label={SPEAKERS_NEEDED_TITLE} className={`${CARD} ${ATTENTION}`}>
-          <p className={`${TITLE} text-accent`}>{SPEAKERS_NEEDED_TITLE}</p>
+          <div className={TOP}>
+            <p className={`${TITLE} text-accent`}>{SPEAKERS_NEEDED_TITLE}</p>
+            <CollapseButton toggleButton={toggleButton} onCollapse={onCollapse} />
+          </div>
           <p className={SUB}>{signal.title} · 누가 말했는지 정하면 정리가 이어져요</p>
           <div className={FOOTER}>
             <span className={META}>{SPEAKERS_DEADLINE}</span>
@@ -203,6 +203,27 @@ function Card({
         </section>
       )
   }
+}
+
+function CollapseButton({
+  toggleButton,
+  onCollapse,
+}: {
+  toggleButton: Ref<HTMLButtonElement>
+  onCollapse: () => void
+}) {
+  return (
+    <button
+      type="button"
+      ref={toggleButton}
+      className={ICON_BUTTON}
+      aria-label="접기"
+      aria-expanded={true}
+      onClick={onCollapse}
+    >
+      <Icon name="chevron-down" size={14} />
+    </button>
+  )
 }
 
 function DismissButton({ onDismiss }: { onDismiss: () => void }) {
