@@ -208,3 +208,35 @@ describe('설정의 연결 영역 — 일반 팀원', () => {
     expect(discord.queryByRole('button')).toBeNull()
   })
 })
+
+describe('Discord 연결 끊기 확인 — 회의 채팅 채널', () => {
+  const DESCRIPTION = '연결을 끊으면 이미 반영한 내용은 그대로 남고, 새 내용만 쓰지 않게 됩니다.'
+
+  beforeEach(() => {
+    applyScenario('single-workspace')
+  })
+
+  async function openDisconnect() {
+    const user = userEvent.setup()
+    renderApp(paths.settings('ws_01'))
+    const area = await discordArea()
+    await user.click(await area.findByRole('button', { name: '연결 끊기' }))
+    return { user, dialog: await screen.findByRole('dialog', { name: 'Discord 연결을 끊을까요?' }) }
+  }
+
+  it('채팅 채널이 있으면 그 채널의 수집도 함께 꺼진다고 알리고, 끊은 뒤에는 채널이 비어 있다', async () => {
+    db.integrations.ws_01.discord.chat_channel = { channel_id: '1300000000000000001', name: '일반' }
+    const { user, dialog } = await openDisconnect()
+    expect(dialog).toHaveAccessibleDescription(
+      `${DESCRIPTION} 회의 채팅 채널(#일반) 수집도 함께 꺼져요.`,
+    )
+    await user.click(within(dialog).getByRole('button', { name: '연결 끊기' }))
+    expect(await (await discordArea()).findByText('연결 안 됨')).toBeInTheDocument()
+    expect(db.integrations.ws_01.discord.chat_channel).toBeNull()
+  })
+
+  it('채팅 채널이 없으면 기존 설명만 보인다', async () => {
+    const { dialog } = await openDisconnect()
+    expect(dialog).toHaveAccessibleDescription(DESCRIPTION)
+  })
+})

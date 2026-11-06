@@ -145,6 +145,11 @@ export function DiscordConnectionSection({
               workspaceId={workspaceId}
               provider="discord"
               onDisconnected={focusAfterDisconnect}
+              disconnectNote={
+                integration?.chatChannel
+                  ? `회의 채팅 채널(#${integration.chatChannel.name}) 수집도 함께 꺼져요.`
+                  : undefined
+              }
             />
           </div>
         ) : null}
