@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Literal
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models import Member, MessageSender, Reminder, ReminderOrigin, TaskHistory, ThreadMessage
@@ -40,15 +40,13 @@ def _latest_news(db: Session, task, thread_id: str) -> Evidence | None:
         .order_by(ThreadMessage.created_at.desc(), ThreadMessage.message_id.desc())
         .limit(1)
     ).first()
+    # 시각만 필요해서 같은 시각 이력의 순서는 의미가 없다. 동률 기준은 message_id 를 돌려주는 답장 조회에만 둔다.
     change = db.scalar(
-        select(TaskHistory.created_at)
-        .where(
+        select(func.max(TaskHistory.created_at)).where(
             TaskHistory.task_id == task.task_id,
             TaskHistory.changed_field.in_(scheduler._RESPONSE_FIELDS),
             TaskHistory.change_source.notin_(scheduler._NOT_RESPONSE_SOURCES),
         )
-        .order_by(TaskHistory.created_at.desc(), TaskHistory.history_id.desc())
-        .limit(1)
     )
     reply_ev = Evidence("reply", messages.utc(reply.created_at), reply.message_id) if reply else None
     change_ev = Evidence("task_change", messages.utc(change), None) if change is not None else None
