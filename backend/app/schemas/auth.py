@@ -27,7 +27,8 @@ def validate_name(value: str) -> str:
     if (
         not value
         # strip 은 양 끝의 형식 문자(Cf)에서 멈추므로, 안쪽에 공백(Z*)이 남아도 보이는 글자가 없으면 막는다.
-        or all(c == "Cf" or c.startswith("Z") for c in categories)
+        # 결합 부호(Mn)·둘러싸는 부호(Me)는 글자 뒤에 붙어야 보이므로, 이것만 있는 이름도 빈칸으로 본다.
+        or all(c in ("Cf", "Mn", "Me") or c.startswith("Z") for c in categories)
         or any(c in ("Cc", "Cs", "Zl", "Zp") for c in categories)
         or len(value) > NAME_MAX_LENGTH
     ):

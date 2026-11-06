@@ -126,3 +126,22 @@ def test_existing_account_with_empty_name_still_works(mdb):
     me = client.get("/api/v1/auth/me")
     assert me.status_code == 200
     assert me.json()["data"]["user"]["name"] == ""
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["\u0301", "\ufe0f", "\u20dd", "\u200b\u0301", "\u0301 \ufe0f"],
+    ids=["combining-acute", "variation-selector", "enclosing-circle", "zwsp-combining", "marks-and-space"],
+)
+def test_signup_rejects_name_with_only_invisible_marks(mdb, name):
+    """결합 부호(Mn)·둘러싸는 부호(Me)만 있으면 이름이 빈칸처럼 보인다(PR #445 리뷰)."""
+    res = _signup(_client(), name)
+    _assert_name_rejected(res)
+    assert mdb.query(User).count() == 0
+
+
+@pytest.mark.parametrize("name", ["e\u0301", "홍길동\ufe0f", "\u0301홍"], ids=["accent-on-letter", "trailing-selector", "leading-mark"])
+def test_signup_keeps_marks_next_to_visible_letters(mdb, name):
+    res = _signup(_client(), name)
+    assert res.status_code == 201
+    assert mdb.query(User).one().name == name
