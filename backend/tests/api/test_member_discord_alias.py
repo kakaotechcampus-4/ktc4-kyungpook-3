@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from app.main import app
-from app.models import Integration, MemberAlias
+from app.models import Integration, Member, MemberAlias
 from app.services import member_aliases
 from app.services.discord import DiscordApiError
 
@@ -333,6 +333,31 @@ def test_patch_unlink_with_same_name_refills_only_the_removed_nickname_text(clie
 
     assert r.status_code == 200
     assert _texts(mdb, member_id) == {"동우": "display_name"}
+
+
+@pytest.mark.parametrize(
+    "change", [{"discord_user_id": None}, {"discord_user_id": "d9"}, {"is_deleted": True}], ids=["unlinked", "relinked", "deleted"]
+)
+def test_account_changed_while_waiting_for_discord_adds_no_nickname_alias(
+    client, mdb, mseed, discord_env, monkeypatch, change
+):
+    """Discord 를 기다리는 동안(트랜잭션 닫힘) 다른 요청이 계정을 바꾸거나 팀원을 지우면 옛 닉네임을 넣지 않는다."""
+    member_id = _post(client, mseed["ws"], "Alice", None).json()["data"]["member_id"]
+
+    def fake(bot_token, guild_id, user_id, **kwargs):
+        # 다른 요청이 끼어들어 커밋한 것과 같다
+        member = mdb.get(Member, member_id)
+        for field, value in change.items():
+            setattr(member, field, value)
+        mdb.commit()
+        return {"nick": "동우", "user": {}}
+
+    monkeypatch.setattr(member_aliases.discord, "get_guild_member", fake)
+
+    r = client.patch(f"{API}/members/{member_id}", json={"discord_user_id": "d1"})
+
+    assert r.status_code == 200
+    assert _profile(mdb, member_id) == []
 
 
 def test_operational_error_on_alias_commit_is_swallowed(client, mdb, mseed, discord_env, calls, monkeypatch):

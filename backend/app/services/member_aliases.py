@@ -173,6 +173,16 @@ def add_discord_nickname_alias(
     nickname = pick_discord_nickname(guild_member)
     if nickname is None:
         return
+    # Discord 를 기다리는 동안 다른 요청이 계정을 바꾸거나 팀원을 지웠을 수 있다. 지금도 그 계정이면 넣는다.
+    still_linked = db.execute(
+        select(Member.member_id).where(
+            Member.member_id == member_id,
+            Member.discord_user_id == discord_user_id,
+            Member.is_deleted.is_(False),
+        )
+    ).first()
+    if still_linked is None:
+        return
     held = db.execute(
         select(MemberAlias.alias_id).where(
             MemberAlias.member_id == member_id, MemberAlias.alias_text == nickname
