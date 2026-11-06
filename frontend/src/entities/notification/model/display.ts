@@ -11,6 +11,9 @@ const KINDS: Readonly<Record<string, { title: string; aboutMessages: boolean }>>
   nudge_reapprove: { title: '재촉을 다시 승인해 주세요', aboutMessages: true },
   reminder_auto_cancelled: { title: '재촉이 자동으로 취소됐어요', aboutMessages: true },
   silence_blocked: { title: '응답이 없어 태스크가 막혔어요', aboutMessages: false },
+  // 답장이 대화에 들어왔고 고를 태스크(attributions)가 바뀌었을 수 있다
+  reply_judged: { title: '팀원 답장을 판단했어요', aboutMessages: true },
+  reply_unjudged: { title: '답장을 자동으로 판단하지 못했어요', aboutMessages: true },
 }
 
 export const DEFAULT_NOTIFICATION_TITLE = '새 알림'
