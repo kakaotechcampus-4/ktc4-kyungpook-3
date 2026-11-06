@@ -85,3 +85,14 @@ export const 열림: Story = {
     await expect(await within(document.body).findByRole('listbox')).toBeInTheDocument()
   },
 }
+
+/** 휴대폰 폭에서는 아래 시트로 연다 — 제목은 칸 이름, 줄 높이 52px */
+export const 휴대폰_시트: Story = {
+  globals: { viewport: { value: 'mobile1', isRotated: false } },
+  play: async ({ canvasElement }) => {
+    await userEvent.click(within(canvasElement).getByRole('combobox', { name: '담당자' }))
+    await expect(
+      await within(canvasElement.ownerDocument.body).findByRole('listbox'),
+    ).toBeInTheDocument()
+  },
+}

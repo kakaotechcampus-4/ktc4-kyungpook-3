@@ -105,11 +105,15 @@ export function OptionList<V extends string>({
     >
       {options.map(({ value, label, leading, description, disabled }, index) => {
         const checked = value === selected
+        const optionId = optionDomId(id, index)
         return (
+          // 이름은 글자만, 둘째 줄은 설명이다 — Radix Select 줄과 같은 이름으로 읽힌다
           <li
             key={value}
-            id={optionDomId(id, index)}
+            id={optionId}
             role="option"
+            aria-labelledby={`${optionId}-label`}
+            aria-describedby={description ? `${optionId}-description` : undefined}
             aria-selected={checked}
             aria-disabled={disabled || undefined}
             data-state={checked ? 'checked' : 'unchecked'}
@@ -128,8 +132,14 @@ export function OptionList<V extends string>({
             }}
           >
             {leading ? <span className={ITEM_LEADING}>{leading}</span> : null}
-            <span className={ITEM_LABEL}>{label}</span>
-            {description ? <span className={ITEM_DESCRIPTION}>{description}</span> : null}
+            <span id={`${optionId}-label`} className={ITEM_LABEL}>
+              {label}
+            </span>
+            {description ? (
+              <span id={`${optionId}-description`} className={ITEM_DESCRIPTION}>
+                {description}
+              </span>
+            ) : null}
             {checked ? (
               <span className={ITEM_CHECK}>
                 <Icon name="check" size={16} />
