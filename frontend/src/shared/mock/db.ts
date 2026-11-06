@@ -138,6 +138,8 @@ interface MockAccount {
   session: SessionDto
   password: string
   workspaceIds: string[]
+  /** 공간별로 이 계정이 연결된 팀원 행. 백엔드 Member.user_id 의 대응이다. 초대로 이어진 행은 수락한 초대가 대응이라 여기 두지 않는다 */
+  memberIds: Record<string, string>
 }
 export interface MockDb {
   session: SessionDto
@@ -181,6 +183,7 @@ export function initialDb(): MockDb {
         session: structuredClone(sessionFixture),
         password: 'mock-password',
         workspaceIds: ['ws_01', 'ws_02'],
+        memberIds: { ws_01: 'mb_01' },
       },
     ],
     workspaces: structuredClone(workspaceFixtures),
