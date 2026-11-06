@@ -30,7 +30,7 @@
 
 ## 인증
 
-- `X-Service-Token`: 봇이 부르는 경로 전부(회의 생성·종료·단계 보고·실패, 발화 저장, 유사 task 검색, 추출 등록, 서버로 워크스페이스 찾기, 전사 힌트 조회, 리마인드 DM 다섯 경로)와 웹 업로드 가져가기 여섯 경로에 건다 (`deps.require_service_token`). 헤더 값을 서버의 `SERVICE_TOKEN`과 비교하고, 없거나 다르면 401 `UNAUTHENTICATED`다. 서버에 `SERVICE_TOKEN`이 비어 있으면 모든 요청을 거절한다. 사용자 세션은 서비스 토큰을 대신하지 못한다.
+- `X-Service-Token`: 봇이 부르는 경로 전부(회의 생성·종료·단계 보고·실패, 발화 저장, 유사 task 검색, 추출 등록, 서버로 워크스페이스 찾기, 전사 힌트 조회, 채팅 수집 대상 목록, 리마인드 DM 다섯 경로)와 웹 업로드 가져가기 여섯 경로에 건다 (`deps.require_service_token`). 헤더 값을 서버의 `SERVICE_TOKEN`과 비교하고, 없거나 다르면 401 `UNAUTHENTICATED`다. 서버에 `SERVICE_TOKEN`이 비어 있으면 모든 요청을 거절한다. 사용자 세션은 서비스 토큰을 대신하지 못한다.
 - 합의 근거: 이슈 #179(BE)와 #193(AI). 회의 생성·종료·실패와 추출 등록이 리버스 프록시 설정에만 기대던 것을 서비스 토큰으로 막는다.
 - 현재 구현
   - BE(#179): 회의 생성·종료·실패와 추출 등록에 `require_service_token`을 건다. #179 전에는 발화 저장, 유사 검색, 서버로 워크스페이스 찾기에만 걸었다.
@@ -66,7 +66,7 @@
 ```
 
 - `done`인 채팅 회의 중 `started_at`이 가장 늦은 것의 `started_at + duration_ms`다(UTC). `started_at`이 같으면 `duration_ms`가 큰 쪽, 그래도 같으면 `meeting_id`가 큰 쪽이다. 봇은 이 뒤의 메시지부터 모은다.
-- 구현됨(`app/api/bot_lookups.py`), BE 담당 리뷰 대기. AI는 `ai/capture/chat_poll.py` 가 `BeClient.chat_cursor`(`ai/capture/handoff.py`)로 부른다.
+- 구현됨(#378, `app/api/bot_lookups.py`). AI는 `ai/capture/chat_poll.py` 가 `BeClient.chat_cursor`(`ai/capture/handoff.py`)로 부른다.
 
 ### `PATCH /meetings/{meeting_id}/end` → 202
 
@@ -242,6 +242,30 @@ AI `Transcript.to_dict()` 모양에 화자 이름을 더해 보낸다. 한 회�
   - 한 번 정한 값은 바꾸지 않는다. BE 회의를 만든 뒤 바뀌면 추출 등록이 `WORKSPACE_MISMATCH`가 된다.
   - 미연결이면 `/record`가 녹음을 시작하지 않고, PM이 웹 온보딩에서 서버를 연결한 뒤 다시 하라고 답한다. 합의는 "녹음은 하고 BE 인계만 멈춤"이었는데, main PR #175 리뷰가 미연결 서버의 녹음 거절을 권해 바꿨다. BE가 받는 요청은 어느 쪽이든 조회뿐이다.
   - 조회가 일시적으로 실패하면(연결 실패·5xx) 녹음은 하고 처리할 때 다시 조회한다. 그 실패는 발화 저장 단계의 실패로 세어 재시도하고, 401은 설정 문제로 BE 단계를 건너뛴다. 처리할 때 미연결이면 발화 저장·추출·인계를 멈추고, 워커가 그 채널에 한 번 알린 뒤 연결될 때까지 전사하지 않고 1분에 한 번 다시 묻는다.
+
+## 채팅 수집 대상 목록 `GET /bot/chat-channels` → 200
+
+봇이 매일 읽을 디스코드 채팅 채널을 묻는다(#428). PM 이 웹에서 서버의 텍스트 채널 하나를 골라 켜 둔 워크스페이스만 나온다. 채널을 켜고 끄는 API는 웹용이라 [프론트엔드 대표 계약](../../../frontend/docs/contracts/frontend-api-contract.md)에 있고 여기서 다시 적지 않는다. 동작 세부는 [Backend README](../../README.md#채팅-수집-채널)에 있다.
+
+```jsonc
+// 요청: 헤더 X-Service-Token, 본문·쿼리 없음
+// 응답 data. workspace_id 순
+{ "items": [ { "workspace_id": "ws_...", "guild_id": "900000000000000001", "channel_id": "900000000000000002" } ] }
+// 켠 워크스페이스가 없으면
+{ "items": [] }
+```
+
+| 항목 | 동작 |
+|---|---|
+| 인증 | `X-Service-Token`. 없거나 틀리면 401 `UNAUTHENTICATED`. 워크스페이스 멤버의 세션은 토큰을 대신하지 못한다 |
+| 대상 | 디스코드 연결(`provider_channel_id`=서버 ID)과 수집 채널이 모두 있는 워크스페이스만. 연결을 해제하면 사라지고, 다른 서버로 다시 연결하면 PM 이 채널을 새로 켤 때까지 빠진다 |
+| 빈 목록 | 켠 워크스페이스가 없으면 200 `{items: []}`다. 오류가 아니다 |
+| 변하는 값 | 목록과 실행 사이에 PM 이 채널을 바꾸거나 끄거나 연결을 해제할 수 있다. BE 는 회의 생성에서 채팅 수집 여부를 확인하지 않는다(꺼졌거나 연결이 해제된 워크스페이스도 `POST /meetings`는 201 이다). 봇은 워크스페이스마다 실행 직전에 목록을 다시 받아 목록에 있는 채널만 읽는다. 목록과 실행 사이에 PM 이 끄면 그날 실행분은 회의가 만들어질 수 있다 |
+
+- 합의 상태: **합의됨(#428, 2026-11-06).** 경로와 응답 모양은 AI 제안(#428 본문)을 BE 가 그대로 받아 구현했다(#428). 봇 쪽 전환(이 목록으로 대상 정하기, 음성 봇 토큰으로 바꾸기)은 AI 가 한다.
+- 현재 구현: BE 는 `app/api/integrations.py`의 `list_bot_chat_channels`, `app/services/chat_channel.py`의 `list_enabled_for_bot`이다. 구현됨(#428).
+- 배포 순서: BE 를 먼저 배포하고, 운영 PM 이 웹(또는 Swagger)에서 지금 봇이 읽는 채널을 켠 뒤, AI 가 이 목록을 쓰도록 전환한다. 켜기 전에 AI 가 먼저 전환하면 PM 이 켜기 전까지 수집이 멈춘다(목록이 비어 있다).
+- 영향받는 소비자: 이 경로는 새 경로라 기존 봇 동작은 바뀌지 않는다. `chat-cursor`는 그대로다.
 
 ## 웹 업로드 가져가기
 
@@ -551,5 +575,5 @@ AI 가 문구를 써야 하는 묶음을 준다. 요청 본문은 없다. 승인
 
 ## 코드 근거
 
-- Backend: `app/api/meetings.py`, `app/api/sources.py`, `app/api/similar_tasks.py`, `app/api/extractions.py`, `app/api/integrations.py`의 `get_discord_guild_workspace`, `app/api/bot_lookups.py`(`chat-cursor` 포함), `app/api/approvals.py`(채팅 이력 출처), `app/api/workspaces.py`(업로드 가드), `app/api/uploads.py`, `app/services/speaker_assignment.py`, `app/services/meeting_stage.py`, `app/api/deps.py`의 `require_service_token`, `app/schemas/meeting.py`, `app/schemas/member.py`, `app/schemas/source.py`, `app/schemas/task.py`, `app/schemas/workspace.py`, `app/schemas/upload.py`, `app/services/upload_storage.py`, `app/api/bot_messages.py`, `app/services/messages.py`, `app/schemas/message.py`
+- Backend: `app/api/meetings.py`, `app/api/sources.py`, `app/api/similar_tasks.py`, `app/api/extractions.py`, `app/api/integrations.py`의 `get_discord_guild_workspace`, `app/api/bot_lookups.py`(`chat-cursor` 포함), `app/api/integrations.py`의 `list_bot_chat_channels`, `app/services/chat_channel.py`, `app/schemas/integration.py`, `app/api/approvals.py`(채팅 이력 출처), `app/api/workspaces.py`(업로드 가드), `app/api/uploads.py`, `app/services/speaker_assignment.py`, `app/services/meeting_stage.py`, `app/api/deps.py`의 `require_service_token`, `app/schemas/meeting.py`, `app/schemas/member.py`, `app/schemas/source.py`, `app/schemas/task.py`, `app/schemas/workspace.py`, `app/schemas/upload.py`, `app/services/upload_storage.py`, `app/api/bot_messages.py`, `app/services/messages.py`, `app/schemas/message.py`
 - AI: `ai/capture/handoff.py`의 `BeClient`(`report_stage`, `STAGE_TIMEOUT_S`), `Handoff`(`report_stage`), `from_env`, `ai/capture/recorder.py`의 `process_session`(`begin`), `ai/draft/reminder_draft.py`의 `draft_reminder`, `ai/capture/dm.py`의 `DmCog`
