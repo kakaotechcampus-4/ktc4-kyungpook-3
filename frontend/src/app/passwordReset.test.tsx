@@ -265,21 +265,35 @@ describe('새 비밀번호', () => {
     expect(bodies).toEqual([])
   })
 
-  it('서버의 INVALID_REQUEST 는 새 비밀번호 칸의 오류다', async () => {
+  it('서버의 INVALID_REQUEST 는 새 비밀번호 칸의 오류이고, 고쳐 보내면 같은 링크로 바뀐다', async () => {
+    // 클라이언트 규칙이 BE 와 같아 실제 handler 로는 400 까지 가지 않는다. 한 번만 400 을 돌려준다
     server.use(
-      http.post('/api/v1/auth/password-reset/confirm', () =>
-        fail('INVALID_REQUEST', 'bad', 400, {
-          fields: [{ loc: ['body', 'new_password'], msg: 'Value error' }],
-        }),
+      http.post(
+        '/api/v1/auth/password-reset/confirm',
+        () =>
+          fail('INVALID_REQUEST', 'bad', 400, {
+            fields: [{ loc: ['body', 'new_password'], msg: 'Value error' }],
+          }),
+        { once: true },
       ),
     )
-    renderApp(RESET_LINK)
+    const bodies = recordRequestBodies('POST', '/auth/password-reset/confirm')
+    const app = renderApp(RESET_LINK)
     await changePassword('newpass123')
 
     const field = screen.getByLabelText('새 비밀번호')
     await waitFor(() => expect(field).toHaveAttribute('aria-invalid', 'true'))
     expect(field).toHaveAccessibleDescription('8자 이상, 숫자 포함 요청 내용을 다시 확인해 주세요.')
     expect(field).toHaveFocus()
+
+    await userEvent.clear(field)
+    await changePassword('newpass456')
+    expect(await screen.findByRole('status')).toHaveTextContent(PASSWORD_CHANGED)
+    await app.expectPath('/login')
+    expect(bodies).toEqual([
+      { token: TOKEN, new_password: 'newpass123' },
+      { token: TOKEN, new_password: 'newpass456' },
+    ])
   })
 
   it('바꾸면 로그인으로 가서 안내를 띄우고, 새 비밀번호로 로그인된다', async () => {
