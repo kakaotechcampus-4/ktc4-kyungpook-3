@@ -22,13 +22,9 @@ export function setMockRole(role: MockRole, workspaceId = 'ws_01', state: MockDb
 /*
  * 로그인한 사람의 공간별 팀원 ID. 백엔드 require_member 는 (세션 user_id, workspace_id) 로 팀원 행을 찾아
  * 변경자(changed_by)·처리자(resolved_by)를 그 팀원으로 기록한다. MemberDto 에는 user_id 가 없어서
- * MSW 는 픽스처 계정의 대응을 db 에서 찾을 수 없다 — 저장 모양을 바꾸지 않으려고 대응을 여기 고정해 둔다.
- * 픽스처 계정 us_01 은 ws_01 에서 mb_01(PM) 이다. 기존 테스트가 처리자·변경자로 넣던 값과 같다.
+ * 대응은 계정의 `memberIds` 에 둔다. 픽스처 계정 us_01 은 ws_01 에서 mb_01(PM) 이고, 공간을 만든 계정은 새 PM 행이다.
  * 초대로 이어진 계정은 수락한 초대가 대응이다. 둘 다 없는 공간에서는 세션 팀원을 정할 수 없으므로 태스크·승인 쓰기가 403 이다.
  */
-const SESSION_MEMBERS: Readonly<Record<string, Readonly<Record<string, string>>>> = {
-  us_01: { ws_01: 'mb_01' },
-}
 
 /** 초대 이메일 비교 형태. 백엔드 normalize_email 과 같다. 가입·로그인 이메일은 백엔드도 입력 그대로 비교한다 */
 export function normalizeEmail(email: string): string {
@@ -93,9 +89,10 @@ export function roleIn(
 
 /** 지금 세션의 그 공간 팀원 ID. 대응이 없거나 그 팀원이 그 공간에 없으면 null */
 export function sessionMemberId(workspaceId: string, state: MockDb = db): string | null {
+  const userId = currentUserId(state)
   const memberId =
-    linkOf(workspaceId, currentUserId(state), state)?.member_id ??
-    SESSION_MEMBERS[currentUserId(state)]?.[workspaceId]
+    linkOf(workspaceId, userId, state)?.member_id ??
+    state.accounts.find(({ session }) => session.user.user_id === userId)?.memberIds[workspaceId]
   if (memberId === undefined) return null
   return state.members.some(
     (member) => member.member_id === memberId && member.workspace_id === workspaceId,
@@ -104,7 +101,7 @@ export function sessionMemberId(workspaceId: string, state: MockDb = db): string
     : null
 }
 
-/** 그 팀원과 이어진 계정. 수락한 초대, 아니면 픽스처 대응. 없으면 null */
+/** 그 팀원과 이어진 계정. 수락한 초대, 아니면 계정의 `memberIds`. 없으면 null */
 export function linkedUserIdOf(memberId: string, state: MockDb = db): string | null {
   const accepted = state.invitations.find(
     (invitation) => invitation.member_id === memberId && invitation.status === 'accepted',
@@ -112,8 +109,8 @@ export function linkedUserIdOf(memberId: string, state: MockDb = db): string | n
   if (accepted) return accepted.accepted_user_id
   const member = state.members.find(({ member_id }) => member_id === memberId)
   if (!member) return null
-  const fixture = Object.entries(SESSION_MEMBERS).find(
-    ([, members]) => members[member.workspace_id] === memberId,
+  const account = state.accounts.find(
+    ({ memberIds }) => memberIds[member.workspace_id] === memberId,
   )
-  return fixture?.[0] ?? null
+  return account?.session.user.user_id ?? null
 }

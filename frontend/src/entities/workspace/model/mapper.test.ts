@@ -1,3 +1,4 @@
+import type { WorkspaceDto } from '@/shared/types/api/workspace'
 import { toWorkspace } from './mapper'
 
 it('maps workspace onboarding and safe defaults unknown values', () => {
@@ -75,4 +76,21 @@ it('treats the backend empty current_step as no current step without warning', (
   } finally {
     warning.mockRestore()
   }
+})
+
+// 이 칸을 넣기 전 백엔드는 member_id 를 주지 않는다. 없으면 팀원 행이 없는 것(null)과 같게 다룬다 (#367)
+it.each([
+  ['팀원 행이 있으면 그 ID', { member_id: 'mb_01' }, 'mb_01'],
+  ['팀원 행이 없으면 null', { member_id: null }, null],
+  ['칸이 없으면 null', {}, null],
+])('memberId — %s', (_, field, expected) => {
+  const dto: WorkspaceDto = {
+    workspace_id: 'ws_01',
+    name: '카테캠 3팀',
+    role: 'pm',
+    ...field,
+    created_at: '2026-09-01T00:00:00Z',
+    onboarding: { completed: true, current_step: null, steps: [] },
+  }
+  expect(toWorkspace(dto).memberId).toBe(expected)
 })

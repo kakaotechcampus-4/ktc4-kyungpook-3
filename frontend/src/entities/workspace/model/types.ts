@@ -11,6 +11,8 @@ export interface WorkspaceSummary {
   id: string
   name: string
   role: Role
+  /** 이 공간에서 로그인한 사람의 팀원 행. 없으면 null */
+  memberId: string | null
   createdAt: string
 }
 export interface Workspace extends WorkspaceSummary {

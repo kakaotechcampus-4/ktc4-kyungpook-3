@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { start } from './support'
+import { capture, start } from './support'
 
 /*
  * #370 — PM 이 메시지 화면의 `새 재촉` 으로 재촉을 만들면 그 보낼 메시지의 보내기 전 확인으로 옮겨 가고,
@@ -78,4 +78,73 @@ test('태스크 상세에서 만든 재촉은 메시지 화면 링크로 그 보
   await status.getByRole('link', { name: '메시지 화면에서 확인하기' }).click()
   await expect(page).toHaveURL(/\/messages\?review=bd_\d+$/)
   await expect(page.getByRole('heading', { level: 2, name: /보낼까요|보낼 예정인/ })).toBeVisible()
+})
+
+/*
+ * #411 ② 팀원이 봇 리마인드가 있는 자기 대화(th_06)를 열면 알림 띠가 보인다. 브라우저 알림 허용은 `알림 켜기` 를 누를 때만 묻는다.
+ * 허용 창을 그냥 닫은 것('default')으로 흉내 내 실제 구독은 만들지 않는다. 켜기·거절·실패·iPhone 은 app/browserPushPrompt.test.tsx 가 본다
+ */
+test('팀원이 리마인드 대화를 열면 알림 띠가 보이고, 알림 켜기를 누를 때만 허용을 묻고, 닫으면 새로고침 뒤에도 없다', async ({
+  page,
+}, testInfo) => {
+  await page.addInitScript(() => {
+    Reflect.set(window, 'permissionRequests', 0)
+    Object.defineProperty(Notification, 'permission', { configurable: true, get: () => 'default' })
+    Notification.requestPermission = () => {
+      Reflect.set(
+        window,
+        'permissionRequests',
+        Number(Reflect.get(window, 'permissionRequests')) + 1,
+      )
+      return Promise.resolve('default')
+    }
+  })
+  const permissionRequests = () =>
+    page.evaluate(() => Number(Reflect.get(window, 'permissionRequests')))
+  const pushRequests: string[] = []
+  page.on('request', (request) => {
+    const { pathname } = new URL(request.url())
+    if (pathname.startsWith('/api/v1/push/')) pushRequests.push(pathname)
+  })
+
+  await start(page, 'messages-member-push', '/workspaces/ws_01/messages/threads/th_06')
+  const band = page.getByRole('region', { name: '기기 알림' })
+  await expect(
+    band.getByRole('heading', { name: '다음 리마인드를 기기 알림으로 받을까요?' }),
+  ).toBeVisible({ timeout: 10_000 })
+  await expect(band.getByText('새 리마인드가 오면 이 기기로 바로 알려 드려요.')).toBeVisible()
+  await expect(band.getByRole('button', { name: '알림 켜기' })).toBeVisible()
+  await expect(band.getByRole('button', { name: '닫기' })).toBeVisible()
+  expect(await permissionRequests()).toBe(0)
+  expect(pushRequests).toContain('/api/v1/push/vapid-public-key')
+  const conversation = page.getByRole('region', { name: '대화 내용' })
+  const latest = conversation.getByRole('listitem').last()
+  await expect(latest.getByText('DM 못 보냄')).toBeInViewport({ ratio: 1 })
+  await expect(latest.getByText('18:00')).toBeInViewport({ ratio: 1 })
+  await capture(page, testInfo, 'push-band.png')
+
+  const first = conversation.getByText('서연님, 이번 주 할 일을 정리해 뒀어요.')
+  await conversation.hover()
+  await page.mouse.wheel(0, -5_000)
+  await expect(first).toBeInViewport({ ratio: 1 })
+  const viewport = page.viewportSize()
+  if (viewport === null) throw new Error('viewport size is fixed in playwright.config')
+  await page.setViewportSize({ ...viewport, height: viewport.height - 120 })
+  await expect(first).toBeInViewport({ ratio: 1 })
+  await page.setViewportSize(viewport)
+
+  await band.getByRole('button', { name: '알림 켜기' }).click()
+  await expect.poll(permissionRequests).toBe(1)
+  await expect(band.getByRole('button', { name: '알림 켜기' })).toBeEnabled()
+
+  await band.getByRole('button', { name: '닫기' }).click()
+  await expect(band).toHaveCount(0)
+
+  pushRequests.length = 0
+  await page.reload()
+  await expect(page.getByRole('region', { name: '대화 내용' })).toBeVisible({ timeout: 15_000 })
+  await page.waitForLoadState('networkidle')
+  await expect(band).toHaveCount(0)
+  expect(pushRequests).toEqual([])
+  await capture(page, testInfo, 'push-band-closed.png')
 })
