@@ -21,7 +21,7 @@ from app.schemas.auth import (
     UserResponse,
 )
 from app.services import mailer, password_reset
-from app.services.passwords import hash_password, verify_password
+from app.services.passwords import DUMMY_PASSWORD_HASH, hash_password, verify_password
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -109,7 +109,10 @@ def _password_hash_lock_stmt(user_id: str):
 @router.post("/login", response_model=Envelope[AuthResponse])
 def login(payload: LoginRequest, response: Response, db: Session = Depends(get_db)):
     user = db.scalars(_login_user_stmt(payload.email)).first()
-    if not user or not user.password_hash or not verify_password(payload.password, user.password_hash):
+    # 없는 이메일·비밀번호 없는 계정도 같은 해시 계산을 거치게 해 응답 시간으로 가입 여부가 드러나지 않게 한다.
+    stored = user.password_hash if user and user.password_hash else DUMMY_PASSWORD_HASH
+    ok = verify_password(payload.password, stored)
+    if not user or not user.password_hash or not ok:
         raise AppError(ErrorCode.INVALID_CREDENTIALS)
     if db.scalar(_password_hash_lock_stmt(user.user_id)) != user.password_hash:
         raise AppError(ErrorCode.INVALID_CREDENTIALS)
