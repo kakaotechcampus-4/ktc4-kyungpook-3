@@ -75,6 +75,10 @@ class ErrorCode(StrEnum):
     PM_MEMBER_NOT_INVITABLE = "PM_MEMBER_NOT_INVITABLE"
     MEMBER_HAS_PENDING_INVITATION = "MEMBER_HAS_PENDING_INVITATION"
 
+    # 비밀번호 재설정
+    PASSWORD_RESET_TOKEN_INVALID = "PASSWORD_RESET_TOKEN_INVALID"
+    MAIL_UNAVAILABLE = "MAIL_UNAVAILABLE"
+
 
 ERROR_STATUS: dict[ErrorCode, int] = {
     ErrorCode.INVALID_REQUEST: 400,
@@ -138,6 +142,8 @@ ERROR_STATUS: dict[ErrorCode, int] = {
     ErrorCode.EMAIL_ALREADY_INVITED: 409,
     ErrorCode.PM_MEMBER_NOT_INVITABLE: 409,
     ErrorCode.MEMBER_HAS_PENDING_INVITATION: 409,
+    ErrorCode.PASSWORD_RESET_TOKEN_INVALID: 400,
+    ErrorCode.MAIL_UNAVAILABLE: 503,
 }
 
 ERROR_MESSAGE: dict[ErrorCode, str] = {
@@ -202,6 +208,8 @@ ERROR_MESSAGE: dict[ErrorCode, str] = {
     ErrorCode.EMAIL_ALREADY_INVITED: "이 이메일로 다른 팀원에게 보낸 초대가 대기 중입니다.",
     ErrorCode.PM_MEMBER_NOT_INVITABLE: "PM 인 팀원은 초대할 수 없습니다. 팀원으로 바꿔 초대하고, 수락한 뒤 PM 으로 바꿔 주세요.",
     ErrorCode.MEMBER_HAS_PENDING_INVITATION: "대기 중인 초대가 있어 PM 으로 바꿀 수 없습니다. 초대를 수락한 뒤 바꾸거나 초대를 취소해 주세요.",
+    ErrorCode.PASSWORD_RESET_TOKEN_INVALID: "쓸 수 없는 재설정 링크입니다.",
+    ErrorCode.MAIL_UNAVAILABLE: "지금은 메일을 보낼 수 없습니다.",
 }
 
 

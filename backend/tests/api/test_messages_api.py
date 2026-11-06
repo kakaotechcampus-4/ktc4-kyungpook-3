@@ -650,3 +650,66 @@ def test_new_member_row_of_same_account_cannot_open_thread_of_row_that_left(mdb,
     alice = client("alice")
     assert alice.get(f"{P}/workspaces/{ws}/messages/threads/{tid}").status_code == 403
     assert alice.post(f"{P}/workspaces/{ws}/messages/threads/{tid}/replies", json={"body": "예전 대화"}).status_code == 403
+
+
+# 묶음 요약과 재촉 이유·근거
+
+def _inbox(c, seed):
+    return c.get(f"{P}/workspaces/{seed['ws']}/messages").json()["data"]
+
+
+def test_inbox_bundle_carries_summary_and_reminder_reason(mdb, mseed):
+    pm = client("pm")
+    _create(pm, mseed, task=0)
+    (bundle,) = _inbox(pm, mseed)["bundles"]
+    assert bundle["summary"] == "할일0 진행 상황 확인"
+    (reminder,) = bundle["reminders"]
+    assert reminder["reason"].startswith("PM님이 직접 만든 재촉이에요.")
+    assert reminder["evidence"] is None
+
+
+def test_thread_detail_and_create_response_carry_the_fields(mdb, mseed):
+    from app.services import messages as svc
+    pm = client("pm")
+    created = _create(pm, mseed, task=0)
+    assert created["reminder"]["reason"] and created["bundle"]["summary"] == "할일0 진행 상황 확인"
+    thread_id = created["bundle"]["thread_id"]
+    reply = ThreadMessage(thread_id=thread_id, sender="member", body="진행 중이에요",
+                          created_at=datetime.now(timezone.utc) + timedelta(minutes=1))
+    mdb.add(reply)
+    mdb.commit()
+    detail = pm.get(f"{P}/workspaces/{mseed['ws']}/messages/threads/{thread_id}").json()["data"]
+    (reminder,) = detail["bundles"][0]["reminders"]
+    assert detail["bundles"][0]["summary"] == "할일0 진행 상황 확인"
+    assert reminder["evidence"] == {
+        "kind": "reply", "at": svc.utc(reply.created_at).isoformat().replace("+00:00", "Z"),
+        "message_id": reply.message_id,
+    }
+    assert "이후로 진행 소식이 없어요." in reminder["reason"]
+
+
+def test_cancelled_bundle_summary_uses_reminders_cancelled_with_it(mdb, mseed):
+    pm = client("pm")
+    at = _future()
+    first = _create(pm, mseed, task=0, at=at)
+    second = _create(pm, mseed, task=1, at=at)
+    assert second["bundle"]["summary"] == "할일0 외 1건 진행 상황 확인"
+    reminders = f"{P}/workspaces/{mseed['ws']}/messages/reminders"
+    pm.post(f"{reminders}/{first['reminder']['reminder_id']}/cancel")
+    closed = pm.post(f"{_bundles_url(mseed, first['bundle']['bundle_id'])}/cancel").json()["data"]
+    assert closed["status"] == "cancelled"
+    assert closed["summary"] == "할일1 진행 상황 확인"
+
+
+def test_reading_does_not_change_the_bundle(mdb, mseed):
+    pm = client("pm")
+    bid = _create(pm, mseed, task=0)["bundle"]["bundle_id"]
+    assert _approve(pm, mseed, bid).status_code == 200
+    keys = ("draft_version", "approved", "body")
+    snapshots = [{k: _inbox(pm, mseed)["bundles"][0][k] for k in keys} for _ in range(2)]
+    assert snapshots[0] == snapshots[1] and snapshots[0]["approved"] is True
+
+
+def test_member_view_still_has_no_bundles(mdb, mseed):
+    _create(client("pm"), mseed, task=0)
+    assert _inbox(client("alice"), mseed)["bundles"] is None

@@ -73,11 +73,11 @@ const ADORNED_BOX =
 /* 포커스 선 색. 강조색 테두리 입력은 선도 강조색이다 — 먹 선이 덮으면 포커스 중에
    "승인이 막힌 칸"이라는 신호가 사라진다. 장식 없는 보통 입력은 전역 먹 선을 그대로 쓴다.
    docs/impl-decision/2026-09-23-focus-outline-over-border.md */
-const INPUT_FOCUS_ACCENT = 'focus-visible:outline-accent'
+const INPUT_FOCUS_ACCENT = 'focus-visible:outline-accent-point'
 
 const ADORNED_FOCUS = 'has-[input:focus-visible]:outline-ink'
 
-const ADORNED_FOCUS_ACCENT = 'has-[input:focus-visible]:outline-accent'
+const ADORNED_FOCUS_ACCENT = 'has-[input:focus-visible]:outline-accent-point'
 
 /**
  * 네이티브 `<input>`. Radix 를 쓰지 않는다 (§7-0).
@@ -114,7 +114,7 @@ export function TextField({
   // 경계색·플레이스홀더색·포커스 선 색은 한 곳에서만 고른다 — 두 클래스를 같이 붙이면 CSS 순서가 이긴다
   const accent = Boolean(error) || blocking
   const borderColor = accent ? 'border-accent' : TONE_BORDER[tone]
-  const placeholderColor = accent ? 'placeholder:text-accent-soft' : 'placeholder:text-dim'
+  const placeholderColor = accent ? 'placeholder:text-accent-solid' : 'placeholder:text-dim'
   const inputFocusColor = accent ? INPUT_FOCUS_ACCENT : undefined
   const adornedFocusColor = accent ? ADORNED_FOCUS_ACCENT : ADORNED_FOCUS
 

@@ -19,7 +19,7 @@ export const DOT: Record<IntegrationStatus, string> = {
   connected: 'h-5 w-5 rounded-999 bg-ink',
   connecting: 'h-5 w-5 rounded-999 bg-dim',
   not_connected: 'h-5 w-5 rounded-999 bg-dashed',
-  revoked: 'h-5 w-5 rounded-999 bg-accent',
+  revoked: 'h-5 w-5 rounded-999 bg-accent-point',
 }
 export const ACTIONS = 'flex shrink-0 items-center gap-8'
 /* 카드 버튼은 캔버스가 `height:34px; min-height:36px` 이다 — 제품 최소 36px(디자인 시스템). 공용 `md-compact` 는 34px 이라 높이만 채운다 */
