@@ -115,6 +115,29 @@ describe('끝난 결과 (#424)', () => {
     ])
   })
 
+  it('공간마다 가장 최근 결과 하나만 남는다 — 닫지 않고 이어 정리해도 쌓이지 않는다', () => {
+    for (const meetingId of ['mt_11', 'mt_12', 'mt_13'])
+      settleMeeting({ workspaceId: 'ws_01', meetingId, title: meetingId, outcome: 'done' })
+    settleMeeting({ workspaceId: 'ws_04', meetingId: 'mt_20', title: '다른 공간', outcome: 'done' })
+    settleMeeting({
+      workspaceId: 'ws_01',
+      meetingId: 'mt_14',
+      title: 'mt_14',
+      outcome: 'failed',
+      failedStage: null,
+    })
+    expect(settled()).toEqual([
+      { workspaceId: 'ws_04', meetingId: 'mt_20', title: '다른 공간', outcome: 'done' },
+      {
+        workspaceId: 'ws_01',
+        meetingId: 'mt_14',
+        title: 'mt_14',
+        outcome: 'failed',
+        failedStage: null,
+      },
+    ])
+  })
+
   it('닫으면 그 회의만 빠지고, 없는 회의를 닫아도 상태 객체는 그대로다', () => {
     settleMeeting({ ...meeting, title: '주간 회의', outcome: 'done' })
     settleMeeting({ workspaceId: 'ws_04', meetingId: 'mt_11', title: '다른 공간', outcome: 'done' })

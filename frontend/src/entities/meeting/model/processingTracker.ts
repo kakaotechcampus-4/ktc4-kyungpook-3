@@ -95,10 +95,13 @@ export function promptSpeakers(meeting: TrackedMeeting): boolean {
   return true
 }
 
-/** 끝난 결과를 적는다. 같은 회의의 이전 결과는 바꾼다 */
+/**
+ * 끝난 결과를 적는다. 공간마다 가장 최근 하나만 남긴다 — 닫지 않은 채 회의를 이어 정리해도 결과 카드가 쌓이지 않고,
+ * 한 공간의 진행 토스트는 많아야 결과 하나와 정리 중 하나다 (#424)
+ */
 export function settleMeeting(record: SettledMeeting): void {
   useMeetingTrackerStore.setState((state) => ({
-    settled: [...state.settled.filter((item) => !isSame(item, record)), record],
+    settled: [...state.settled.filter((item) => item.workspaceId !== record.workspaceId), record],
   }))
 }
 

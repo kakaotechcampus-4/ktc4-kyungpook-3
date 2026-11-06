@@ -20,7 +20,8 @@ const NEUTRAL = 'border-line-strong bg-surface'
 const ATTENTION = 'border-accent-chip bg-accent-badge'
 const TOP = 'flex items-start justify-between gap-8'
 const TITLE = 'flex min-w-0 items-center gap-7 text-body font-semibold'
-const SUB = 'text-caption text-sub'
+/* 회의 이름은 파일 이름 기본값이라 띄어 쓰지 않은 긴 글자일 수 있다. 이름이 들어가는 자리는 줄을 바꿔 카드 안에 둔다 */
+const SUB = 'text-caption text-sub wrap-anywhere'
 const META = 'text-meta text-dim tabular-nums'
 const FOOTER = 'flex items-center justify-between gap-8'
 const ICON_BUTTON =
@@ -139,7 +140,7 @@ function Card({
           <div className={TOP}>
             <p className={`${TITLE} text-ink`}>
               <span aria-hidden="true" className="size-6 shrink-0 rounded-999 bg-ink" />
-              <span className="truncate">{signal.title} 정리 중</span>
+              <span className="min-w-0 wrap-anywhere">{signal.title} 정리 중</span>
             </p>
             <CollapseButton toggleButton={toggleButton} onCollapse={onCollapse} />
           </div>
@@ -182,7 +183,7 @@ function Card({
             <p className={`${TITLE} text-ink`}>{PROCESSING_DONE_TITLE}</p>
             <DismissButton onDismiss={onDismiss} />
           </div>
-          <p className={`${SUB} truncate`}>{signal.title}</p>
+          <p className={SUB}>{signal.title}</p>
           <div className="flex justify-end">
             <Button variant="primary" size="sm" onClick={onOpenMinutes}>
               {PROCESSING_DONE_ACTION}

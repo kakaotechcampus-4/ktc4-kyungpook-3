@@ -216,6 +216,40 @@ describe('역할별 노출', () => {
   })
 })
 
+describe('같은 공간의 이어진 정리', () => {
+  it('완료를 닫지 않고 다음 회의를 정리하면 결과 하나와 정리 중 하나이고, 다음 결과가 이전 결과를 바꾼다', async () => {
+    fakeIntervals()
+    processingUpload()
+    renderApp(paths.members('ws_01'))
+    expect(await screen.findByRole('heading', { level: 1 })).toHaveTextContent(/^팀$/)
+    act(() => trackMeeting(UPLOAD))
+    await waitForCard()
+
+    completeMeeting(AWAITING_MEETING_ID)
+    await poll()
+    await waitFor(() => expect(signalsWith(PROCESSING_DONE_TITLE)).toHaveLength(1))
+
+    const next = { ...structuredClone(meetingRow()), meeting_id: 'mt_12', title: '두 번째 회의' }
+    db.meetings.push({
+      ...next,
+      status: 'processing',
+      extraction_id: null,
+      progress: { audio_merged: false, transcribed: false, extracted: false },
+    })
+    db.meetingFlow.attendees.mt_12 = db.meetingFlow.attendees[AWAITING_MEETING_ID]
+    act(() => trackMeeting({ workspaceId: 'ws_01', meetingId: 'mt_12' }))
+    await waitFor(() => expect(processingCard()).toHaveTextContent('두 번째 회의 정리 중'))
+    expect(processingSignals()).toHaveLength(2)
+
+    completeMeeting('mt_12')
+    await poll()
+    await waitFor(() => expect(processingCard()).toBeNull())
+    expect(processingSignals()).toHaveLength(1)
+    expect(signalsWith(PROCESSING_DONE_TITLE)[0]).toHaveTextContent('두 번째 회의')
+    expect(useMeetingTrackerStore.getState().settled).toHaveLength(1)
+  }, 15_000)
+})
+
 describe('보이는 자리', () => {
   it('그 회의의 처리 화면에서는 숨기고, 다른 화면으로 가면 다시 보인다', async () => {
     const user = userEvent.setup()

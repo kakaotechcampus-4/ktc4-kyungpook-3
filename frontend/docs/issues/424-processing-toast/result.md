@@ -19,14 +19,15 @@
 
 ### 상태 모델
 
-- [processingTracker.ts](../../../src/entities/meeting/model/processingTracker.ts): 추적 저장소에 끝난 결과 `settled`(회의 ID, 제목, 완료 또는 실패와 `failedStage`)를 더했다. 닫기·「회의록 보기」가 지우고, 로그아웃·세션 만료의 `clearTrackedMeetings` 가 함께 비운다.
+- [processingTracker.ts](../../../src/entities/meeting/model/processingTracker.ts): 추적 저장소에 끝난 결과 `settled`(회의 ID, 제목, 완료 또는 실패와 `failedStage`)를 더했다. 공간마다 가장 최근 결과 하나만 남긴다. 한 공간의 카드는 많아야 결과 하나와 정리 중 하나다. 닫기·「회의록 보기」가 지우고, 로그아웃·세션 만료의 `clearTrackedMeetings` 가 함께 비운다.
 - [processingSignal.ts](../../../src/features/meeting-processing/model/processingSignal.ts): 역할 × 단계 표가 카드 종류를 정한다. 단계 문장은 「음성 파일을 준비하고 있어요」·「음성을 텍스트로 옮기고 있어요」·「결정사항과 할 일을 뽑고 있어요」다. 화면 읽기 알림 문장도 여기서 정한다.
 - [useProcessingTracker.ts](../../../src/features/meeting-processing/model/useProcessingTracker.ts): 토스트를 띄우지 않는다. 완료와 끊김이 아닌 실패는 결과를 적는다. 화자 지정 대기는 목록 캐시 갱신과 처리 화면에서의 한 번 이동만 한다.
 - [useProcessingDiscovery.ts](../../../src/features/meeting-processing/model/useProcessingDiscovery.ts): 공간 목록에서 화자 지정 대기 회의도 찾는다. 새로고침 뒤에도 화자 지정 카드가 남는다.
 
 ### 화면
 
-- [GlobalToaster.tsx](../../../src/shared/ui/toast/GlobalToaster.tsx)·[PinnedToast.tsx](../../../src/shared/ui/toast/PinnedToast.tsx): 오른쪽 아래 24px 독에 짧은 토스트 목록과 그 아래 고정 칸을 둔다. 짧은 토스트는 진행 토스트 위로 쌓인다. `ToastViewport` 는 더 이상 스스로 고정되지 않는다.
+- [GlobalToaster.tsx](../../../src/shared/ui/toast/GlobalToaster.tsx)·[PinnedToast.tsx](../../../src/shared/ui/toast/PinnedToast.tsx): 오른쪽 아래 24px 독에 짧은 토스트 목록과 그 아래 고정 칸을 둔다. 짧은 토스트는 진행 토스트 위로 쌓인다. 고정 칸은 화면 높이의 절반을 넘으면 안에서 스크롤한다. `ToastViewport` 는 더 이상 스스로 고정되지 않는다.
+- 회의 이름이 들어가는 자리(정리 중 제목, 화자 지정·완료·실패 본문)는 띄어 쓰지 않은 긴 이름도 줄을 바꿔 카드 안에 둔다(`wrap-anywhere`).
 - [ProcessingToast.tsx](../../../src/features/meeting-processing/ui/ProcessingToast.tsx): 지금 공간의 회의만 그린다. 상세는 추적기가 polling 하는 캐시를 읽기만 한다(`enabled: false`). 그 회의의 처리 화면·화자 지정 화면에서는 숨긴다. 카드마다 처음 보인 세션을 잡아 두고, 세션이 바뀐 뒤 누른 「자세히 보기」·「화자 지정하기」·「회의록 보기」는 옮기지 않는다.
 - [ProcessingToastCard.tsx](../../../src/features/meeting-processing/ui/ProcessingToastCard.tsx): 다섯 모양.
   - 정리 중(펼침): 회의 이름, 단계 문장, 3칸 진행 표시, 「n / 3 단계 완료」, 「자세히 보기」, 접기(꺾쇠).
@@ -48,9 +49,9 @@
 
 ### 테스트
 
-- [processingToast.test.tsx](../../../src/app/processingToast.test.tsx) 19건: PM 정리 중 → 화자 지정 → 정리 중 → 완료, 실패는 닫을 때까지 남음, 팀원 대기·실패·완료, 새로 연 앱의 화자 지정 대기 발견(PM·팀원), 처리·화자 지정 화면에서 숨김, 공간 전환, 세션이 바뀐 뒤 세 버튼, 접기 기억과 막힌 저장소, 휴대폰 폭 시작, 알림 문장이 단계가 바뀔 때만 바뀜, 화자 지정 필요 접기(알약, 기록에 쓰지 않음)와 상태가 바뀌면 다시 펼침·단계 진행은 접힌 채, 접은 정리 중이 화자 지정 필요를 거쳐 돌아오면 펼침. 마지막 것은 되돌림 줄을 빼면 실패하는 것을 확인했다.
+- [processingToast.test.tsx](../../../src/app/processingToast.test.tsx) 20건: PM 정리 중 → 화자 지정 → 정리 중 → 완료, 실패는 닫을 때까지 남음, 팀원 대기·실패·완료, 새로 연 앱의 화자 지정 대기 발견(PM·팀원), 처리·화자 지정 화면에서 숨김, 공간 전환, 세션이 바뀐 뒤 세 버튼, 접기 기억과 막힌 저장소, 휴대폰 폭 시작, 알림 문장이 단계가 바뀔 때만 바뀜, 화자 지정 필요 접기(알약, 기록에 쓰지 않음)와 상태가 바뀌면 다시 펼침·단계 진행은 접힌 채, 접은 정리 중이 화자 지정 필요를 거쳐 돌아오면 펼침. 마지막 것은 되돌림 줄을 빼면 실패하는 것을 확인했다. 같은 공간에서 완료를 닫지 않고 다음 회의를 정리하면 결과 하나와 정리 중 하나이고 다음 결과가 이전 결과를 바꾼다. 이것은 공간마다 하나로 줄이기 전 코드에서 실패하는 것을 확인했다.
 - 발견 테스트 2건은 발견을 고치기 전 코드에서 실패하는 것을 확인했다.
-- 단위: `processingSignal.test.ts`(역할 × 단계 전부, 실패 설명에서 제목 문장 빼기), `processingTracker.test.ts`, `GlobalToaster.test.tsx`(독 자리, 고정 칸이 목록 아래, 독이 없으면 그리지 않음).
+- 단위: `processingSignal.test.ts`(역할 × 단계 전부, 실패 설명에서 제목 문장 빼기), `processingTracker.test.ts`(공간마다 결과 하나), `GlobalToaster.test.tsx`(독 자리, 고정 칸이 목록 아래이고 높이 상한·스크롤, 독이 없으면 그리지 않음).
 - 기존 처리 추적 테스트(`meetingProcessing`·`lateAsyncRaces`·`meetingSpeakers`·`meetingSpeakersTracking`·`meetingProcessingProgress`)는 같은 의도를 새 토스트로 단언한다.
 - E2E(`layout`·`meeting-flow`·`select-switch`)와 Storybook 목록의 기대값을 고쳤다. 로컬에서는 돌리지 않았다(CI가 돈다).
 
@@ -61,6 +62,7 @@
   - PM `meeting-speakers`: 새로 연 태스크 화면에 화자 지정 카드. 면 `rgb(251, 233, 231)`, 테두리 `rgb(244, 217, 215)`, 버튼 `rgb(211, 47, 47)`. 접으면 「화자 지정이 필요해요」 알약, 누르면 다시 펼침. 「화자 지정하기」로 화자 지정 화면에 가고 카드가 숨는다.
   - PM `meeting-fail`: 실패 카드 「short-meeting.wav · 파일을 다시 올려 주세요.」(제목 문장 반복 없음), 닫기로 사라짐.
   - 팀원 `meeting-speakers-member`: 「화자 지정을 기다리고 있어요」, 「화자 지정하기」 없음. 팀원 `meeting-member`: 완료 카드.
+  - 390px, 공백 없는 100자 이름: 정리 중·완료·화자 지정·실패 카드와 그 안 요소의 경계가 모두 화면 안이다. 같은 공간에서 두 번째 회의를 올리면 결과 하나 + 정리 중 하나이고, 두 번째가 끝나면 그 결과 하나만 남는다.
 - 스크린샷은 커밋하지 않는 로컬 증거다(`frontend/.verify/screens/`).
 - 전체 검사 결과는 PR 본문에 적는다.
 

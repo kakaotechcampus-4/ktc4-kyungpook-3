@@ -92,6 +92,8 @@ describe('GlobalToaster', () => {
     expect(dock).toContainElement(pinned)
     expect(dock).toContainElement(saved)
     expect(saved.compareDocumentPosition(pinned) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    // 고정 토스트가 늘어도 위의 짧은 토스트를 화면 밖으로 밀지 않게 칸 안에서 스크롤한다
+    expect(screen.getByTestId('pinned-toast-slot')).toHaveClass('max-h-[50dvh]', 'overflow-y-auto')
   })
 
   it('토스트 자리가 없으면 고정 토스트도 그리지 않는다', () => {
