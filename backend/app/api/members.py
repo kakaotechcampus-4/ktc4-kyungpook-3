@@ -28,6 +28,7 @@ from app.schemas.member import (
 )
 from app.api.deps import get_current_member, get_current_user, require_member, require_pm
 from app.services.matching import resolved_texts
+from app.services.member_aliases import sync_name_aliases
 
 router = APIRouter(prefix="/members", tags=["members"])
 
@@ -151,6 +152,8 @@ def create_member(
         role=str(payload.role),
     )
     db.add(member)
+    # 이름 별칭은 팀원과 한 커밋으로 들어간다(flush 하지 않는다). 디스코드 유일 위반이 _commit_member 안에서 나야 409 가 된다.
+    sync_name_aliases(db, member)
     _commit_member(db, member)
     db.refresh(member)
     return success(MemberResponse.model_validate(member).model_dump(mode="json"))
@@ -284,12 +287,17 @@ def update_member(
         db, member.workspace_id, updates.get("discord_user_id"), exclude_member_id=member_id
     )
 
+    old_name = member.display_name
     for field, value in updates.items():
         if field == "role":
             if value is not None:
                 member.role = str(value)
             continue
         setattr(member, field, value)
+
+    # 이름이 실제로 바뀐 때만 이름 별칭을 다시 맞춘다. 그 외에는 별칭 행을 건드리지 않는다.
+    if "display_name" in updates and updates["display_name"] != old_name:
+        sync_name_aliases(db, member, old_name)
 
     _commit_member(db, member)
     db.refresh(member)
