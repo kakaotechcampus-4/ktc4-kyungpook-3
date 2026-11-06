@@ -198,6 +198,17 @@ describe('리마인드 대화 위 알림 띠 (#411)', () => {
     expect(pushRequests(log)).toEqual([])
   })
 
+  it('PM 도 리마인드를 받은 자기 대화에는 띠가 보인다 (#417)', async () => {
+    applyScenario('messages-pm-self')
+    db.push.publicKey = 'AQID'
+    installPushBrowser()
+    await openThread()
+    const prompt = await findBand()
+    expect(
+      prompt.getByRole('heading', { name: '다음 리마인드를 기기 알림으로 받을까요?' }),
+    ).toBeVisible()
+  })
+
   it('PM 이 보는 팀원 대화에는 띠가 없다', async () => {
     applyScenario('messages-default')
     db.push.publicKey = 'AQID'

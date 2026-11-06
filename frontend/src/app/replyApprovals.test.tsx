@@ -21,7 +21,12 @@ afterEach(() => {
 describe('리마인드 답장에서 온 변경 승인 (#344)', () => {
   it('회의 대신 팀원 답장을 근거로 보이고, 회의 링크·회의 시각을 만들지 않는다', async () => {
     renderApp(paths.approval('ws_01', 'ap_31'))
-    await screen.findByRole('heading', { level: 2, name: '태스크 변경 확인' })
+    const heading = await screen.findByRole('heading', { level: 1, name: '이 변경, 승인할까요?' })
+    await waitFor(() =>
+      expect(heading.nextElementSibling).toHaveTextContent(
+        '이재환의 리마인드 답장에서 나온 변경이에요.',
+      ),
+    )
 
     const reply = screen.getByRole('region', { name: '팀원 답장' })
     expect(within(reply).getByText('마감을 26일로 미루자고 했어요')).toBeVisible()
@@ -30,6 +35,11 @@ describe('리마인드 답장에서 온 변경 승인 (#344)', () => {
     await waitFor(() => expect(evidence).toHaveTextContent('리마인드 답장 · 이재환'))
     expect(evidence).not.toHaveTextContent('시각')
     expect(within(evidence).queryByRole('link')).toBeNull()
+    expect(
+      within(screen.getByRole('region', { name: 'Notion 에 올라갈 변경' })).queryByRole('link', {
+        name: /회의/,
+      }),
+    ).toBeNull()
 
     const table = screen.getByRole('table', { name: '현재값과 제안값' })
     expect(within(table).getByText('2026-09-26')).toBeInTheDocument()
@@ -39,7 +49,7 @@ describe('리마인드 답장에서 온 변경 승인 (#344)', () => {
   it('회의에서 온 변경 승인에는 답장 근거 칸이 없다', async () => {
     replaceDb(createScenarioDb('approval-conflict'))
     renderApp(paths.approval('ws_01', 'ap_04'))
-    await screen.findByRole('heading', { level: 2, name: '태스크 변경 확인' })
+    await screen.findByRole('heading', { level: 1, name: '이 변경, 승인할까요?' })
     expect(screen.queryByRole('region', { name: '팀원 답장' })).toBeNull()
   })
 })
