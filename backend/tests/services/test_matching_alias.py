@@ -63,6 +63,11 @@ def _alias(db, member, text, *, verified=True, confidence=1.0) -> MemberAlias:
         ("", []),
         (None, []),
         ("님", ["님"]),
+        # 띄어 쓴 님: 떼고 남은 공백을 지운다(#463 리뷰). "환 님이"는 AI 프롬프트 예시다
+        ("환 님이", ["환 님이", "환 님", "환"]),
+        ("지민 님", ["지민 님", "지민"]),
+        ("  하은  님 ", ["하은 님", "하은"]),
+        ("BE  리더가", ["BE 리더가", "BE 리더"]),
     ],
 )
 def test_name_candidates(text, expected):
@@ -216,3 +221,13 @@ def test_resolved_texts_one_letter_alias_stays_unresolved(db, ws):
     _alias(db, _member(db, ws, "김동우"), "동우")
 
     assert resolved_texts(db, ws, ["준이가", "준", "동우가"]) == {"동우가"}
+
+
+def test_spaced_honorific_finds_alias(db, ws):
+    kim = _member(db, ws, "김지민")
+    _alias(db, kim, "지민")
+
+    for said in ("지민 님", "지민 님이", "지민 님께서"):
+        r = resolve_assignee(db, ws, said)
+        assert (r.result, r.member_id) == (ResolutionResult.MATCHED, kim.member_id), said
+    assert resolved_texts(db, ws, ["지민 님이"]) == {"지민 님이"}

@@ -40,10 +40,12 @@ def name_candidates(text: str | None) -> list[str]:
     AI 의 _name_candidates(ai/extract/eval_golden_set.py)와 같은 규칙이다. 바꾸면 둘 다 바꾼다.
     조사가 붙었는지 겉보기로 알 수 없다("하은"의 "은"은 이름, "환은"의 "은"은 조사). 그래서 조사를 뗀 것까지
     후보를 모두 만들고, 긴 후보(원문에 가까운 것)부터 찾는다. 예: "하은이가" → 하은이가, 하은이, 하은.
+    AI 규칙과 다른 점 하나: 공백을 한 칸으로 줄이고 후보마다 앞뒤 공백을 지운다. 그래야 띄어 쓴 님("환 님이" →
+    "환")도 찾는다(#463 리뷰). AI 쪽에도 같이 바꾸도록 알린다.
     """
     if not text:
         return []
-    base = text.strip()
+    base = " ".join(text.split())
     out = {base}
     if base.endswith("님"):
         out.add(base[:-1])
@@ -54,7 +56,8 @@ def name_candidates(text: str | None) -> list[str]:
                 out.add(stripped)
                 if stripped.endswith("님"):
                     out.add(stripped[:-1])
-    return sorted((x for x in out if x), key=lambda s: (-len(s), s))
+    trimmed = {x.strip() for x in out}
+    return sorted((x for x in trimmed if x), key=lambda s: (-len(s), s))
 
 
 def _is_one_letter(text: str) -> bool:
