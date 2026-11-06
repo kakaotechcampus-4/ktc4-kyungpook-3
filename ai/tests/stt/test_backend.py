@@ -1,3 +1,4 @@
+import os
 import re
 from types import SimpleNamespace
 
@@ -185,6 +186,86 @@ def test_elice_refuses_a_plain_http_address(monkeypatch):
     with pytest.raises(SttError) as e:
         EliceStt().transcribe(SAMPLES, 16_000)
     assert "https" in str(e.value) and "mlapi.example" not in str(e.value)
+
+
+def _through_requests(monkeypatch):
+    """서버에 닿기 직전까지 진짜 requests 를 태우고, 호출마다 정해진 TLS 검증값을 주소별로 남긴다."""
+    seen = {}
+
+    def send(self, request, **kwargs):
+        seen[request.url] = kwargs["verify"]
+        r = requests.Response()
+        r.status_code = 200
+        r.url = request.url
+        r._content = b'{"text": " ok", "data": {"workspace_id": "w1"}}'
+        return r
+
+    monkeypatch.setattr(requests.adapters.HTTPAdapter, "send", send)
+    monkeypatch.delenv("REQUESTS_CA_BUNDLE", raising=False)
+    monkeypatch.delenv("CURL_CA_BUNDLE", raising=False)
+    monkeypatch.setenv("ELICE_API_KEY", "test-key")
+    monkeypatch.setenv("ELICE_STT_BASE_URL", URL)
+    return seen
+
+
+STT_CALL = URL + "/v1/audio/transcriptions"
+
+
+def test_elice_ca_bundle_applies_to_the_transcription_call_only(monkeypatch, tmp_path):
+    """자체 서명 GPU 서버의 인증서다. 프로세스 전체로 번지면 워커의 BE 호출이 공인 CA 를 못 믿게 된다."""
+    from capture.handoff import BeClient
+    from stt.elice import EliceStt
+
+    seen = _through_requests(monkeypatch)
+    ca = tmp_path / "ca.pem"
+    ca.write_text("-----BEGIN CERTIFICATE-----\n")
+    monkeypatch.setenv("ELICE_STT_CA_BUNDLE", str(ca))
+    before = dict(os.environ)
+
+    EliceStt().transcribe(SAMPLES, 16_000)
+    BeClient("https://be.example").guild_workspace("g1")
+    requests.Session().get("https://other.example/")
+
+    assert seen.pop(STT_CALL) == str(ca)
+    assert list(seen.values()) == [True, True]
+    assert dict(os.environ) == before
+
+
+@pytest.mark.parametrize("ca_env", [None, ""])   # .env.example 을 복사하면 빈 값으로 들어온다
+def test_elice_without_ca_bundle_keeps_system_trust(monkeypatch, ca_env):
+    from stt.elice import EliceStt
+
+    seen = _through_requests(monkeypatch)
+    if ca_env is None:
+        monkeypatch.delenv("ELICE_STT_CA_BUNDLE", raising=False)
+    else:
+        monkeypatch.setenv("ELICE_STT_CA_BUNDLE", ca_env)
+    EliceStt().transcribe(SAMPLES, 16_000)
+    assert seen == {STT_CALL: True}
+
+
+def test_elice_without_ca_bundle_still_honours_requests_ca_bundle(monkeypatch):
+    """측정 도구는 REQUESTS_CA_BUNDLE 로 자체 서명 서버를 부른다(결과 문서 2026-11-04-gpu-serving)."""
+    from stt.elice import EliceStt
+
+    seen = _through_requests(monkeypatch)
+    monkeypatch.delenv("ELICE_STT_CA_BUNDLE", raising=False)
+    monkeypatch.setenv("REQUESTS_CA_BUNDLE", "/from/env.pem")
+    EliceStt().transcribe(SAMPLES, 16_000)
+    assert seen == {STT_CALL: "/from/env.pem"}
+
+
+def test_elice_missing_ca_bundle_fails_as_stt_error_before_any_call(monkeypatch, tmp_path):
+    """없는 경로를 requests 에 넘기면 RequestException 이 아닌 OSError 라 호출자의 except SttError 를 지나친다."""
+    from stt.elice import EliceStt
+
+    monkeypatch.setenv("ELICE_API_KEY", "test-key")
+    monkeypatch.setenv("ELICE_STT_BASE_URL", URL)
+    monkeypatch.setenv("ELICE_STT_CA_BUNDLE", str(tmp_path / "nothing.pem"))
+    monkeypatch.setattr(requests, "post", lambda *a, **k: pytest.fail("없는 인증서로 요청을 보내면 안 된다"))
+    with pytest.raises(SttError) as e:
+        EliceStt().transcribe(SAMPLES, 16_000)
+    assert "ELICE_STT_CA_BUNDLE" in str(e.value)
 
 
 def test_elice_turns_string_word_times_into_floats(monkeypatch):

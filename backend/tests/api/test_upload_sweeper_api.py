@@ -153,6 +153,44 @@ def test_ai_label_report_after_sweep_gets_409_already_ended(db, seed):
     assert r.json()["error"]["code"] == "MEETING_ALREADY_ENDED"
 
 
+def _report_labels(meeting, speakers):
+    return _client().post(
+        f"/api/v1/uploads/{meeting.meeting_id}/speakers", headers=HEADERS, json={"speakers": speakers}
+    )
+
+
+def test_same_label_report_after_seven_days_does_not_reset_the_clock(db, seed):
+    """AI 는 지정 대기 만료를 같은 라벨 보고 재전송으로 확인한다(#438). 재전송이 7일 시계를 늘리면 회의가 만료되지 않는다."""
+    long_ago = datetime.now(timezone.utc) - timedelta(days=8)
+    meeting = _stuck_upload(
+        db, seed, status="awaiting_speakers", claimed_at=long_ago,
+        speakers=json.dumps(LABELS), speakers_reported_at=long_ago,
+    )
+    upload = db.get(MeetingUpload, meeting.meeting_id)
+    reported_before = upload.speakers_reported_at
+
+    r = _report_labels(meeting, LABELS)
+
+    assert r.status_code == 200, r.text
+    assert r.json()["data"]["status"] == "awaiting_speakers"
+    db.expire_all()
+    assert db.get(MeetingUpload, meeting.meeting_id).speakers_reported_at == reported_before
+    assert db.get(Meeting, meeting.meeting_id).status == "awaiting_speakers"
+    assert upload_sweeper.sweep_stalled_uploads(db) == [(meeting.meeting_id, "speaker_assignment_expired")]
+
+
+@pytest.mark.parametrize("speakers", [LABELS, [{**LABELS[0], "label": "SPEAKER_09"}]], ids=["same", "different"])
+def test_label_report_after_expiry_gets_409_already_ended_regardless_of_body(db, seed, speakers):
+    """끝난 회의는 내용 비교보다 먼저 MEETING_ALREADY_ENDED 다. AI 는 이 코드를 받아야 로컬 파일을 정리한다(#438)."""
+    meeting = _swept_awaiting(db, seed)
+
+    r = _report_labels(meeting, speakers)
+
+    assert r.status_code == 409, r.text
+    assert r.json()["error"]["code"] == "MEETING_ALREADY_ENDED"
+    assert r.json()["error"]["details"]["status"] == "failed"
+
+
 def test_pm_assignment_after_expiry_gets_409_not_awaiting(db, seed):
     meeting = _swept_awaiting(db, seed)
 

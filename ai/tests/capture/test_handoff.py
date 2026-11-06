@@ -72,6 +72,28 @@ def test_sentence_said_by_two_speakers_leaves_the_speaker_empty():
     assert H.to_extraction_items([_task(source_sentence="")], TRANSCRIPT)[0]["evidence_speaker"] is None
 
 
+def test_legacy_item_carries_the_seq_of_the_located_sentence():
+    transcript = {"segments": [
+        {"speaker": "a", "start": 1.0, "end": 2.0, "text": "환불 기능 만들어요.", "seq": 7},
+        {"speaker": "b", "start": 3.0, "end": 4.0, "text": "네 좋아요.", "seq": 8},
+    ]}
+
+    [item] = H.to_extraction_items([{"task": "환불", "source_sentence": "환불 기능 만들어요."}], transcript)
+
+    assert item["evidence_seqs"] == [7]
+
+
+def test_legacy_item_has_no_seq_when_the_speaker_is_unknown():
+    transcript = {"segments": [
+        {"speaker": "a", "start": 1.0, "end": 2.0, "text": "네 좋아요.", "seq": 7},
+        {"speaker": "b", "start": 3.0, "end": 4.0, "text": "네 좋아요.", "seq": 8},
+    ]}
+
+    [item] = H.to_extraction_items([{"task": "환불", "source_sentence": "네 좋아요."}], transcript)
+
+    assert item["evidence_seqs"] == []
+
+
 def test_register_calls_create_end_extraction_in_order(tmp_path):
     fake = FakeBe()
     m, tdir = _manifest(tmp_path)
@@ -977,6 +999,381 @@ def test_fake_assign_is_strict_about_state_and_label_set_and_repeat_is_a_noop():
     n = fake._assign_n
     fake.assign("m-up2", {"SPEAKER_00": "u1", "SPEAKER_01": None})   # 같은 지정 반복
     assert fake._assign_n == n and fake.meetings["m-up2"]["status"] == "processing"
+
+
+# ───────────────────────────────────────────── 가짜 BE: 발화 저장·추출 등록의 멤버 ID 검증 (#286)
+def _members(fake, ws="ws-1", **deleted):
+    fake.members[ws] = [{"member_id": mid, "name": mid, "discord_user_id": None, "aliases": [], **({"deleted": True} if deleted.get(mid) else {})}
+                        for mid in ("u1", "u2", "u3")]
+
+
+def _put_sources(fake, mid, segments, token="svc-token"):
+    r = fake.request("POST", f"http://be/api/v1/meetings/{mid}/sources", json={"source": "meeting", "segments": segments},
+                     headers={"X-Service-Token": token})
+    return r.status_code, r.json()
+
+
+def _seg(seq, **kw):
+    return {"speaker": None, "start": float(seq), "end": float(seq) + 1, "text": f"t{seq}", "seq": seq, **kw}
+
+
+def test_fake_sources_too_long_member_id_is_400_with_fields_before_the_meeting_check_and_stores_nothing():
+    fake = FakeBe()                                   # 회의가 없어도 검증이 먼저다
+    status, payload = _put_sources(fake, "nope", [_seg(1), _seg(2, speaker_member_id="x" * 37)])
+    assert status == 400 and payload["error"]["code"] == "INVALID_REQUEST"
+    fields = payload["error"]["details"]["fields"]
+    assert fields == [{"loc": ["body", "segments", 1, "speaker_member_id"], "msg": fields[0]["msg"]}] and fields[0]["msg"]
+    fake.add_upload("m-up1")
+    assert _put_sources(fake, "m-up1", [_seg(1, speaker_member_id="x" * 37)])[0] == 400
+    assert fake.sources == {}
+
+
+def test_fake_sources_member_id_of_36_chars_is_checked_as_a_member_not_as_a_length_error():
+    fake = FakeBe()
+    fake.add_upload("m-up1")
+    _members(fake)
+    status, payload = _put_sources(fake, "m-up1", [_seg(1, speaker_member_id="x" * 36)])
+    assert status == 400 and payload["error"]["details"] == {"member_ids": ["x" * 36]}
+
+
+def test_fake_sources_unknown_inactive_or_other_workspace_ids_are_400_member_ids_in_first_seen_order_without_duplicates():
+    fake = FakeBe()
+    fake.add_upload("m-up1")
+    _members(fake, u2=True)                           # u2 는 탈퇴
+    fake.workspaces.add("ws-2")
+    _members(fake, ws="ws-2")
+    fake.members["ws-2"].append({"member_id": "other", "name": "x", "discord_user_id": None, "aliases": []})
+    segs = [_seg(1, speaker_member_id="u1"), _seg(2, speaker_member_id="other"), _seg(3, speaker_member_id="u2"),
+            _seg(4, speaker_member_id="other"), _seg(5, speaker_member_id="ghost")]
+    status, payload = _put_sources(fake, "m-up1", segs)
+    assert status == 400 and payload["error"]["code"] == "INVALID_REQUEST"
+    assert payload["error"]["message"]
+    assert payload["error"]["details"] == {"member_ids": ["other", "u2", "ghost"]}
+    assert fake.sources == {}                          # 하나라도 틀리면 아무것도 저장하지 않는다
+
+
+def test_fake_sources_already_stored_seq_is_still_validated():
+    fake = FakeBe()
+    fake.add_upload("m-up1")
+    _members(fake)
+    assert _put_sources(fake, "m-up1", [_seg(1, speaker_member_id="u1")])[0] == 201
+    status, payload = _put_sources(fake, "m-up1", [_seg(1, speaker_member_id="ghost"), _seg(2)])
+    assert status == 400 and payload["error"]["details"] == {"member_ids": ["ghost"]}
+    assert set(fake.sources["m-up1"]) == {1}
+
+
+def test_fake_sources_stores_member_id_preferring_speaker_member_id_over_the_discord_uid():
+    fake = FakeBe()
+    fake.add_upload("m-up1")
+    _members(fake)
+    fake.members["ws-1"][0]["discord_user_id"] = "101"          # u1 의 디스코드 uid
+    segs = [_seg(1, speaker="101"), _seg(2, speaker="101", speaker_member_id="u2"), _seg(3, speaker_member_id="u3"),
+            _seg(4), _seg(5, speaker="999")]
+    assert _put_sources(fake, "m-up1", segs)[0] == 201
+    got = {q: s.get("member_id") for q, s in fake.sources["m-up1"].items()}
+    assert got == {1: "u1", 2: "u2", 3: "u3", 4: None, 5: None}
+
+
+def test_fake_sources_failed_meeting_is_409_meeting_failed_and_done_meeting_is_accepted():
+    fake = FakeBe()
+    fake.add_upload("m-up1", status="failed")
+    status, payload = _put_sources(fake, "m-up1", [_seg(1)])
+    assert status == 409 and payload["error"]["code"] == "MEETING_FAILED" and fake.sources == {}
+    fake.add_upload("m-up2", status="done")
+    assert _put_sources(fake, "m-up2", [_seg(1)])[0] == 201
+
+
+def test_fake_sources_400s_have_loc_msg_fields():
+    fake = FakeBe()
+    fake.add_upload("m-up1")
+    status, payload = _put_sources(fake, "m-up1", [_seg(1), _seg(1)])
+    assert status == 400 and all(set(f) == {"loc", "msg"} for f in payload["error"]["details"]["fields"])
+    status, payload = _put_sources(fake, "m-up1", [_seg(-1)])
+    assert status == 400 and payload["error"]["details"]["fields"][0]["loc"] == ["body", "segments", 0, "seq"]
+
+
+def _post_extraction(fake, body, token="svc-token"):
+    r = fake.request("POST", "http://be/api/v1/extractions", json=body, headers={"X-Service-Token": token})
+    return r.status_code, r.json()
+
+
+def test_fake_extraction_too_long_evidence_member_id_is_400_fields_and_records_nothing():
+    fake = FakeBe()
+    fake.add_upload("m-up1")
+    item = {"task_title": "a", "evidence_speaker_member_id": "x" * 37}
+    status, payload = _post_extraction(fake, {"meeting_id": "m-up1", "workspace_id": "ws-1", "items": [item]})
+    assert status == 400 and payload["error"]["code"] == "INVALID_REQUEST"
+    assert payload["error"]["details"]["fields"][0]["loc"] == ["body", "items", 0, "evidence_speaker_member_id"]
+    assert fake.extractions == {} and fake.meetings["m-up1"]["status"] == "processing"
+
+
+def test_fake_extraction_records_the_received_items_as_they_are_and_not_processing_is_409_with_status():
+    fake = FakeBe()
+    fake.add_upload("m-up1")
+    item = {"task_title": "a", "evidence_speaker": None, "evidence_speaker_member_id": "u1"}
+    assert _post_extraction(fake, {"meeting_id": "m-up1", "workspace_id": "ws-1", "items": [item]})[0] == 201
+    assert fake.extractions["m-up1"]["items"] == [item]
+    fake.add_upload("m-up2", status="failed")
+    status, payload = _post_extraction(fake, {"meeting_id": "m-up2", "workspace_id": "ws-1", "items": [item]})
+    assert status == 409 and payload["error"]["code"] == "MEETING_NOT_PROCESSING"
+    assert payload["error"]["details"]["status"] == "failed"
+
+
+# ───────────────────────────────────────────── 업로드 회의 인계 (#286)
+UP_TRANSCRIPT = {
+    "source": "meeting",
+    "segments": [
+        {"speaker": "SPEAKER_00", "start": 1.0, "end": 3.0, "text": "와이어프레임은 누가 하죠?", "seq": 1},
+        {"speaker": "SPEAKER_01", "start": 4.0, "end": 6.0, "text": "제가 할게요. 금요일까지요", "seq": 2},
+        {"speaker": "SPEAKER_02", "start": 7.0, "end": 8.0, "text": "저는 외부 사람입니다", "seq": 3},
+    ],
+}
+
+
+def _upload(tmp_path, *, be=None, with_tasks=True, items=None):
+    """mapped 업로드 매니페스트. 라벨 SPEAKER_00 → u1(hint_members 에 이름), SPEAKER_01 → u2(참석자 이름), SPEAKER_02 → 외부 참석자."""
+    tdir = tmp_path / "transcripts"
+    tdir.mkdir(exist_ok=True)
+    (tdir / "session_up1.transcript.json").write_text(json.dumps(UP_TRANSCRIPT, ensure_ascii=False), encoding="utf-8")
+    m = {"session": "up1", "source": "upload", "status": "mapped", "started_at": "2026-11-03T01:00:00+09:00",
+         "timezone": "Asia/Seoul", "workspace_id": "ws-1", "mapped_at": "2026-11-03T03:00:00+00:00",
+         "speakers": [{"user_id": "SPEAKER_00", "display_name": "SPEAKER_00", "member_id": "u1"},
+                      {"user_id": "SPEAKER_01", "display_name": "SPEAKER_01", "member_id": "u2"},
+                      {"user_id": "SPEAKER_02", "display_name": "SPEAKER_02", "member_id": None}],
+         "hint_members": [{"member_id": "u1", "name": "민수", "discord_user_id": None, "aliases": []}],
+         "attendees": [{"member_id": "u1", "display_name": "민수(참석자)"}, {"member_id": "u2", "display_name": "서연"}],
+         "be": be if be is not None else {"meeting_id": "m-up1", "status": "processing"}}
+    if with_tasks:
+        (tdir / "session_up1.tasks.json").write_text(json.dumps([_task(source_sentence="제가 할게요.")], ensure_ascii=False),
+                                                     encoding="utf-8")
+        m["tasks"] = str(tdir / "session_up1.tasks.json")
+    if items is not None:
+        (tdir / "session_up1.items.json").write_text(json.dumps(items, ensure_ascii=False), encoding="utf-8")
+        m["items"] = str(tdir / "session_up1.items.json")
+    return m, tdir
+
+
+def _upload_fake(**kw):
+    fake = FakeBe()
+    fake.add_upload("m-up1", **kw)
+    fake.members["ws-1"] = [{"member_id": "u1", "name": "민수", "discord_user_id": None, "aliases": []},
+                            {"member_id": "u2", "name": "서연", "discord_user_id": None, "aliases": []}]
+    return fake
+
+
+def _body(fake, path):
+    return next(b for _, p, b in fake.calls if p == path)
+
+
+def test_is_upload_and_speaker_members_read_the_manifest():
+    m = {"source": "upload", "speakers": [{"user_id": "A", "member_id": "u1"}, {"user_id": "B", "member_id": None},
+                                          {"user_id": "C"}]}
+    assert H.is_upload(m) and not H.is_upload({"speakers": []})
+    assert H.speaker_members(m) == {"A": "u1", "B": None, "C": None}
+
+
+def test_upload_speaker_names_are_member_names_with_external_numbering():
+    m = {"source": "upload",
+         "speakers": [{"user_id": "L0", "display_name": "L0", "member_id": "u1"}, {"user_id": "L1", "display_name": "L1", "member_id": "u2"},
+                      {"user_id": "L2", "display_name": "L2", "member_id": None}, {"user_id": "L3", "display_name": "L3", "member_id": "u9"},
+                      {"user_id": "L4", "display_name": "L4", "member_id": None}],
+         "hint_members": [{"member_id": "u1", "name": "민수"}],
+         "attendees": [{"member_id": "u1", "display_name": "민수(참석자)"}, {"member_id": "u2", "display_name": "서연"}]}
+    assert H.speaker_names(m) == {"L0": "민수", "L1": "서연", "L2": "외부 참석자 1", "L3": "L3", "L4": "외부 참석자 2"}
+
+
+def test_upload_save_sources_sends_member_ids_not_speakers_and_no_speaker_names_and_no_meeting_calls(tmp_path):
+    fake = _upload_fake()
+    h = _handoff(fake)
+    m, tdir = _upload(tmp_path)
+    be = h.save_sources(m, transcripts_dir=tdir)
+    assert [(c[0], c[1]) for c in fake.calls] == [("POST", "/meetings/m-up1/sources")]      # /meetings·/end 는 부르지 않는다
+    sent = fake.calls[0][2]
+    assert sent == {"source": "meeting", "segments": [
+        {"speaker": None, "start": 1.0, "end": 3.0, "text": "와이어프레임은 누가 하죠?", "seq": 1, "speaker_member_id": "u1"},
+        {"speaker": None, "start": 4.0, "end": 6.0, "text": "제가 할게요. 금요일까지요", "seq": 2, "speaker_member_id": "u2"},
+        {"speaker": None, "start": 7.0, "end": 8.0, "text": "저는 외부 사람입니다", "seq": 3}]}     # 외부 참석자는 키가 없다
+    assert "speaker_names" not in sent
+    assert be["sources"] == {"inserted": 3, "skipped": 0, "duration_ms": 8000, "meeting_id": "m-up1"}
+    assert "replaced" not in m["be"]
+    # 전사 계약 파일은 라벨 id 그대로다
+    saved = json.loads((tdir / "session_up1.transcript.json").read_text(encoding="utf-8"))
+    assert [s["speaker"] for s in saved["segments"]] == ["SPEAKER_00", "SPEAKER_01", "SPEAKER_02"]
+
+
+def test_upload_400_member_ids_resends_those_ids_as_null_on_the_first_send_and_records_them(tmp_path):
+    fake = _upload_fake()
+    fake.members["ws-1"][1]["deleted"] = True                # u2 는 그 사이 탈퇴
+    h = _handoff(fake)
+    m, tdir = _upload(tmp_path)
+    be = h.save_sources(m, transcripts_dir=tdir)
+    assert [c[1] for c in fake.calls] == ["/meetings/m-up1/sources"] * 2
+    first, second = fake.calls[0][2]["segments"], fake.calls[1][2]["segments"]
+    assert first[1]["speaker_member_id"] == "u2"
+    assert "speaker_member_id" not in second[1] and second[1]["speaker"] is None   # null 로(키 없음) 다시 보낸다
+    assert second[0]["speaker_member_id"] == "u1"
+    assert be["sources"]["dropped_member_ids"] == ["u2"] and be["sources"]["inserted"] == 3
+    assert fake.sources["m-up1"][2].get("member_id") is None
+
+
+def test_register_leaves_out_the_member_id_that_the_sources_400_dropped(tmp_path):
+    """BE 가 팀원이 아니라고 해 발화에서 비운 멤버 ID 는 추출 등록의 evidence_speaker_member_id 에도 보내지 않는다."""
+    fake = _upload_fake()
+    fake.members["ws-1"][1]["deleted"] = True                # u2(근거 화자)는 그 사이 탈퇴
+    h = _handoff(fake)
+    m, tdir = _upload(tmp_path)
+    h.save_sources(m, transcripts_dir=tdir)
+    assert m["be"]["sources"]["dropped_member_ids"] == ["u2"]
+    h.register(m, transcripts_dir=tdir, model_name="x")
+    sent = next(c[2] for c in fake.calls if c[1] == "/extractions")
+    assert sent["items"][0]["evidence_speaker"] is None
+    assert "evidence_speaker_member_id" not in sent["items"][0]
+
+
+def test_upload_400_member_ids_on_a_resend_is_handled_the_same_way(tmp_path):
+    fake = _upload_fake()
+    h = _handoff(fake)
+    m, tdir = _upload(tmp_path)
+    h.save_sources(m, transcripts_dir=tdir)                   # 첫 전송은 성공했다
+    fake.members["ws-1"][0]["deleted"] = True                 # u1 이 탈퇴한 뒤 다시 보낸다
+    fake.calls.clear()
+    m["be"].pop("sources")
+    be = h.save_sources(m, transcripts_dir=tdir)
+    assert len(fake.calls) == 2 and be["sources"]["dropped_member_ids"] == ["u1"]
+    assert be["sources"]["skipped"] == 3
+
+
+def test_upload_400_member_ids_with_an_id_that_stays_is_an_error_that_carries_the_ids(tmp_path):
+    fake = _upload_fake()
+    fake.sources_fail = (400, "INVALID_REQUEST", {"member_ids": ["ghost"]})   # 보낸 적 없는 ID. 다시 보내도 같다
+    h = _handoff(fake)
+    m, tdir = _upload(tmp_path)
+    with pytest.raises(H.BeError) as e:
+        h.save_sources(m, transcripts_dir=tdir)
+    assert not isinstance(e.value, H.MeetingEnded) and "ghost" in str(e.value) and e.value.details == {"member_ids": ["ghost"]}
+    assert len(fake.calls) == 1                               # 되풀이하지 않는다
+
+
+def test_upload_400_member_ids_retries_are_bounded_by_the_distinct_ids(tmp_path):
+    fake = _upload_fake()
+    fake.sources_fail = (400, "INVALID_REQUEST", {"member_ids": ["u1"]})      # 지워도 계속 u1 을 탓한다
+    h = _handoff(fake)
+    m, tdir = _upload(tmp_path)
+    with pytest.raises(H.BeError) as e:
+        h.save_sources(m, transcripts_dir=tdir)
+    assert "u1" in str(e.value)
+    assert len(fake.calls) <= 3                               # 서로 다른 ID 2개 + 처음 한 번
+
+
+def test_discord_400_error_also_carries_member_ids_in_the_message(tmp_path):
+    fake = FakeBe()
+    h = _handoff(fake)
+    m, tdir = _manifest(tmp_path)
+    h.end(m)
+    fake.sources_fail = (400, "INVALID_REQUEST", {"member_ids": ["ghost"]})
+    with pytest.raises(H.BeError) as e:
+        h.save_sources(m, transcripts_dir=tdir)
+    assert "ghost" in str(e.value)
+
+
+@pytest.mark.parametrize("code,status", [("MEETING_FAILED", 409), ("MEETING_NOT_FOUND", 404)])
+def test_upload_sources_409_failed_or_404_is_meeting_ended_and_no_new_meeting(tmp_path, code, status):
+    fake = _upload_fake()
+    fake.sources_fail = (status, code, {"meeting_id": "m-up1", "status": "failed"})
+    h = _handoff(fake)
+    m, tdir = _upload(tmp_path)
+    with pytest.raises(H.MeetingEnded) as e:
+        h.save_sources(m, transcripts_dir=tdir)
+    assert isinstance(e.value, H.BeError) and e.value.code == code and e.value.status == status
+    assert [c[1] for c in fake.calls] == ["/meetings/m-up1/sources"]          # 새 회의·end 없음
+    assert m["be"]["meeting_id"] == "m-up1" and "replaced" not in m["be"]
+
+
+def test_discord_sources_409_is_still_a_plain_be_error(tmp_path):
+    fake = FakeBe()
+    h = _handoff(fake)
+    m, tdir = _manifest(tmp_path)
+    h.end(m)
+    fake.sources_fail = (409, "MEETING_FAILED", {"status": "failed"})
+    with pytest.raises(H.BeError) as e:
+        h.save_sources(m, transcripts_dir=tdir)
+    assert not isinstance(e.value, H.MeetingEnded)
+
+
+def test_upload_end_with_a_failed_be_status_raises_meeting_ended_without_patching(tmp_path):
+    fake = _upload_fake()
+    h = _handoff(fake)
+    m, _ = _upload(tmp_path, be={"meeting_id": "m-up1", "status": "failed"})
+    with pytest.raises(H.MeetingEnded):
+        h.end(m)
+    assert fake.calls == [] and m["be"]["meeting_id"] == "m-up1" and "replaced" not in m["be"]
+
+
+def test_upload_end_with_processing_or_done_status_is_a_noop(tmp_path):
+    fake = _upload_fake()
+    h = _handoff(fake)
+    for status in ("processing", "done"):
+        m, _ = _upload(tmp_path, be={"meeting_id": "m-up1", "status": status})
+        assert h.end(m)["status"] == status
+    assert fake.calls == []
+
+
+def test_upload_register_on_the_legacy_path_sends_the_member_id_and_no_speaker(tmp_path):
+    fake = _upload_fake()
+    h = _handoff(fake)
+    m, tdir = _upload(tmp_path)
+    be = h.register(m, transcripts_dir=tdir, model_name="x")
+    assert [(c[0], c[1]) for c in fake.calls] == [("POST", "/extractions")]
+    item = fake.calls[0][2]["items"][0]
+    assert item["evidence_speaker"] is None and item["evidence_speaker_member_id"] == "u2" and item["evidence_at_ms"] == 4000
+    assert be["status"] == "done" and fake.extractions["m-up1"]["items"][0]["evidence_speaker_member_id"] == "u2"
+
+
+def test_upload_register_on_the_judge_path_converts_every_item_and_leaves_an_external_speaker_without_the_key(tmp_path):
+    fake = _upload_fake()
+    h = _handoff(fake)
+    items = [{"action": "create", "task_title": "a", "evidence_speaker": "SPEAKER_00"},
+             {"action": "create", "task_title": "b", "evidence_speaker": "SPEAKER_02"},
+             {"action": "create", "task_title": "c", "evidence_speaker": None}]
+    m, tdir = _upload(tmp_path, with_tasks=False, items=items)
+    h.register(m, transcripts_dir=tdir, model_name="x")
+    sent = fake.calls[0][2]["items"]
+    assert [i["evidence_speaker"] for i in sent] == [None, None, None]
+    assert sent[0]["evidence_speaker_member_id"] == "u1"
+    assert "evidence_speaker_member_id" not in sent[1] and "evidence_speaker_member_id" not in sent[2]
+    # 매니페스트가 가리키는 items 파일은 라벨 id 그대로다
+    assert json.loads(Path(m["items"]).read_text(encoding="utf-8"))[0]["evidence_speaker"] == "SPEAKER_00"
+
+
+@pytest.mark.parametrize("status", ["failed", "done"])
+def test_upload_register_409_not_processing_is_meeting_ended_and_no_new_meeting(tmp_path, status):
+    fake = _upload_fake(status=status)
+    h = _handoff(fake)
+    m, tdir = _upload(tmp_path)                                # 매니페스트는 processing 이라고 믿는다
+    with pytest.raises(H.MeetingEnded) as e:
+        h.register(m, transcripts_dir=tdir, model_name="x")
+    assert e.value.code == "MEETING_NOT_PROCESSING" and e.value.details["status"] == status
+    assert [(c[0], c[1]) for c in fake.calls] == [("POST", "/extractions")]
+    assert "replaced" not in m["be"] and m["be"]["meeting_id"] == "m-up1"
+
+
+def test_upload_register_404_is_meeting_ended(tmp_path):
+    h = _handoff(FakeBe())                                     # BE 에 그 회의가 없다
+    m, tdir = _upload(tmp_path)
+    with pytest.raises(H.MeetingEnded) as e:
+        h.register(m, transcripts_dir=tdir, model_name="x")
+    assert e.value.code == "MEETING_NOT_FOUND"
+
+
+def test_discord_register_409_failed_still_makes_a_new_meeting(tmp_path):
+    fake = FakeBe()
+    h = _handoff(fake)
+    m, tdir = _manifest(tmp_path)
+    h.end(m)
+    fake.meetings["m1"]["status"] = "failed"
+    m["be"]["status"] = "processing"
+    be = h.register(m, transcripts_dir=tdir, model_name="x")
+    assert be["meeting_id"] == "m2" and be["replaced"] == ["m1"]
 
 
 # ─────────────────────────────────────────────────────────── 처리 단계 보고
