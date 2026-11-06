@@ -112,9 +112,6 @@ def _session_count(db):
     return len(db.scalars(select(SessionModel.session_id)).all())
 
 
-# ---------- start ----------
-
-
 def test_start_redirects_to_kakao_with_a_nonce_cookie(mdb, client):
     res = client.get(START, params={"next": "/workspaces/1"})
 
@@ -148,9 +145,6 @@ def test_start_without_settings_returns_to_login_as_failed(mdb, client, monkeypa
     assert _path(res) == "/login"
     assert _query(res)["oauth_result"] == ["failed"]
     assert _cookie(res, kakao_oauth.NONCE_COOKIE) is None
-
-
-# ---------- callback: 취소·검증 실패 ----------
 
 
 def test_cancel_without_state_is_cancelled_and_changes_nothing(mdb, client, kakao):
@@ -275,9 +269,6 @@ def test_a_state_cannot_be_replayed(mdb, client, kakao):
     assert len(kakao.calls) == 1
 
 
-# ---------- callback: 갈래 3~6 ----------
-
-
 def test_returning_kakao_user_gets_a_session_on_the_302(mdb, client, kakao):
     user = _user(mdb, "older@example.com")
     mdb.execute(User.__table__.update().values(provider="kakao", provider_id="77"))
@@ -373,9 +364,6 @@ def test_pending_identity_is_never_in_a_url(mdb, client, kakao):
     assert token not in location
 
 
-# ---------- pending ----------
-
-
 def test_pending_shows_the_verified_email_and_nickname(mdb, client, kakao):
     _login(client, VERIFIED, kakao)
 
@@ -402,9 +390,6 @@ def test_pending_without_a_cookie_is_expired(mdb, client):
 
     assert res.status_code == 400
     assert res.json()["error"]["code"] == "KAKAO_LINK_EXPIRED"
-
-
-# ---------- 한 계정으로 두 로그인 ----------
 
 
 def _signup_body(**body):
@@ -446,9 +431,6 @@ def test_linked_existing_account_keeps_its_password_login(mdb, client, kakao):
     )
 
     assert res.json()["data"]["user"]["user_id"] == user.user_id
-
-
-# ---------- 경쟁·로그 ----------
 
 
 def test_kakao_login_reads_the_user_row_with_a_share_lock():
@@ -538,5 +520,6 @@ def test_callback_never_logs_the_code_or_state(mdb, client, kakao, caplog):
     with caplog.at_level(logging.DEBUG, logger="app"):
         _callback(client, code="secret-kakao-code", state=state)
 
+    assert "카카오 로그인 callback 실패" in caplog.text
     assert "secret-kakao-code" not in caplog.text
     assert state not in caplog.text
