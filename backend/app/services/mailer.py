@@ -4,6 +4,7 @@ import os
 import smtplib
 import ssl
 import time
+from concurrent.futures import ThreadPoolExecutor
 from email.message import EmailMessage
 
 logger = logging.getLogger(__name__)
@@ -11,6 +12,11 @@ logger = logging.getLogger(__name__)
 # 첫 시도 뒤 재시도 전에 쉬는 초. 테스트가 _sleep 을 바꿔 끼운다.
 RETRY_DELAYS = (2, 4, 8)
 _sleep = time.sleep
+
+# 메일은 건당 최대 54초(시도 4번 x 10초 + 재시도 대기 14초)를 잡는다. API 요청 스레드 풀(BackgroundTasks)에서
+# 돌리면 SMTP 가 응답하지 않을 때 로그인까지 막히므로, 메일 전용 스레드로만 보낸다.
+MAIL_WORKERS = 2
+_executor = ThreadPoolExecutor(max_workers=MAIL_WORKERS, thread_name_prefix="mail")
 
 
 def is_configured() -> bool:
@@ -71,3 +77,7 @@ def send_with_retry(to: str, subject: str, text: str, *, log_label: str) -> bool
     )
     return False
 
+
+def send_in_background(to: str, subject: str, text: str, *, log_label: str) -> None:
+    """메일 전용 스레드에서 재시도까지 보낸다. 대기열이 길면 메일이 늦게 나갈 뿐 API 는 막히지 않는다."""
+    _executor.submit(send_with_retry, to, subject, text, log_label=log_label)

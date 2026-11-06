@@ -1,7 +1,7 @@
 import secrets
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Request, Response
+from fastapi import APIRouter, Depends, Request, Response
 from sqlalchemy import and_, func
 from sqlalchemy.orm import Session
 
@@ -111,9 +111,7 @@ def get_me(user: User = Depends(get_current_user), db: Session = Depends(get_db)
 
 
 @router.post("/password-reset/request", response_model=Envelope[dict])
-def request_password_reset(
-    payload: PasswordResetRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)
-):
+def request_password_reset(payload: PasswordResetRequest, db: Session = Depends(get_db)):
     if not mailer.is_configured():
         raise AppError(ErrorCode.MAIL_UNAVAILABLE)
     mail = password_reset.request_reset(
@@ -122,7 +120,7 @@ def request_password_reset(
     db.commit()
     # 가입 여부와 쿨다운 여부가 응답으로 드러나지 않게 항상 같은 응답을 준다.
     if mail is not None:
-        background_tasks.add_task(mailer.send_with_retry, mail.to, mail.subject, mail.text, log_label=mail.user_id)
+        mailer.send_in_background(mail.to, mail.subject, mail.text, log_label=mail.user_id)
     return success({})
 
 

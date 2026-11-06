@@ -1,6 +1,8 @@
 import logging
 import smtplib
 import ssl
+import threading
+import time
 
 import pytest
 
@@ -191,3 +193,44 @@ def test_app_base_url_strips_trailing_slash(monkeypatch):
     monkeypatch.setenv("APP_BASE_URL", "https://app.example.com/")
     assert mailer.app_base_url() == "https://app.example.com"
 
+
+def test_send_in_background_returns_before_the_mail_is_sent(monkeypatch):
+    started, release = threading.Event(), threading.Event()
+
+    def slow(to, subject, text, *, log_label):
+        started.set()
+        release.wait(5)
+
+    monkeypatch.setattr(mailer, "send_with_retry", slow)
+    try:
+        mailer.send_in_background("a@b.c", "s", "t", log_label="user=1")
+        assert started.wait(5)
+    finally:
+        release.set()
+
+
+def test_background_mail_never_uses_more_than_the_mail_workers(monkeypatch):
+    """SMTP 가 응답하지 않아도 API 요청 스레드 풀을 쓰지 않고 메일 전용 스레드 수 안에서만 돈다."""
+    lock = threading.Lock()
+    running = {"now": 0, "max": 0}
+    release = threading.Event()
+
+    def blocked(to, subject, text, *, log_label):
+        with lock:
+            running["now"] += 1
+            running["max"] = max(running["max"], running["now"])
+        release.wait(5)
+        with lock:
+            running["now"] -= 1
+
+    monkeypatch.setattr(mailer, "send_with_retry", blocked)
+    try:
+        for i in range(mailer.MAIL_WORKERS * 3):
+            mailer.send_in_background("a@b.c", "s", "t", log_label=f"user={i}")
+        deadline = time.time() + 5
+        while running["now"] < mailer.MAIL_WORKERS and time.time() < deadline:
+            time.sleep(0.01)
+        time.sleep(0.1)
+        assert running["max"] == mailer.MAIL_WORKERS
+    finally:
+        release.set()

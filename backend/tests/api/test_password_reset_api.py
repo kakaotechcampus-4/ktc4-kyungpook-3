@@ -14,6 +14,18 @@ NEW_PW = "newpass456"
 BASE = "https://mm.example"
 
 
+class _InlineExecutor:
+    """메일 전용 스레드 대신 호출한 자리에서 바로 돌려, 요청이 끝났을 때 발송 결과를 볼 수 있게 한다."""
+
+    def submit(self, fn, *args, **kwargs):
+        return fn(*args, **kwargs)
+
+
+@pytest.fixture(autouse=True)
+def inline_mail(monkeypatch):
+    monkeypatch.setattr(mailer, "_executor", _InlineExecutor())
+
+
 @pytest.fixture
 def sent(monkeypatch):
     box = []
