@@ -33,9 +33,10 @@ export function SignupSteps({ first, linkKakao, defaultName, onLinkExpired }: Si
         <SignupEmailStep
           linkKakao={linkKakao}
           notice={notice}
-          onSent={(email, resendAfter) =>
+          onSent={(email, resendAfter) => {
+            setNotice(null)
             setStep({ step: 'code', email, resendAt: resendAtAfter(resendAfter) })
-          }
+          }}
         />
       )
       break

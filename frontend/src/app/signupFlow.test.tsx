@@ -374,6 +374,23 @@ describe('프로필 단계', () => {
     expect(screen.getByRole('button', { name: '인증 코드 받기' })).toBeInTheDocument()
   })
 
+  it('만료 안내는 코드를 다시 받은 뒤 이메일을 바꿔도 되살아나지 않는다', async () => {
+    await openSignup()
+    await reachProfile()
+    for (const proof of Object.values(db.signupVerification.proofs)) proof.expiresAt = 0
+    await userEvent.type(screen.getByLabelText('이름'), NEW_USER.name)
+    await userEvent.type(screen.getByLabelText('비밀번호'), NEW_USER.password)
+    await click('계정 만들기')
+    await screen.findByRole('alert')
+
+    await userEvent.type(screen.getByLabelText('이메일'), 'next@example.com')
+    await click('인증 코드 받기')
+    await click('이메일 바꾸기')
+
+    await screen.findByRole('button', { name: '인증 코드 받기' })
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
   it('그 사이 같은 이메일이 가입되면 로그인 경로를 보인다', async () => {
     const app = await openSignup(paths.signup({ next: NEXT }))
     await reachProfile()
