@@ -113,7 +113,10 @@ def intake_from_env():
     cfg = settings()
     token = getattr(cfg, "be_service_token", "")
     key = os.environ.get("PYANNOTEAI_API_KEY", "").strip()
-    if not cfg.be_base_url or not token or not key:
+    missing = [n for n, v in (("BE_BASE_URL", cfg.be_base_url), ("BE_SERVICE_TOKEN", token), ("PYANNOTEAI_API_KEY", key))
+               if not v]
+    if missing:   # 켰는데 꺼지면 업로드가 processing 으로 남는다. 값은 찍지 않고 이름만 남긴다(#289 리뷰)
+        print(f"[worker] MM_UPLOAD_INTAKE=1 이지만 설정이 비어 업로드 가져오기를 끈다: {', '.join(missing)}", flush=True)
         return None
     return BeClient(cfg.be_base_url, service_token=token), PyannoteAiDiarizer(key)
 
