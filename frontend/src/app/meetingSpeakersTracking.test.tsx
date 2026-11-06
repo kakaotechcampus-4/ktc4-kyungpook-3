@@ -14,6 +14,7 @@ import { awaitSpeakers } from '@/shared/mock/speakerFlow'
 import { AWAITING_MEETING_ID, createSpeakerScenarioDb } from '@/shared/mock/speakerScenarios'
 import { recordRequests } from '@/shared/test/requests'
 import { toast } from '@/shared/ui/toast'
+import { processingSignals, signalsWith } from './test/processingToast'
 import { renderApp } from './test/renderApp'
 
 const MEETING = { workspaceId: 'ws_01', meetingId: AWAITING_MEETING_ID }
@@ -26,10 +27,7 @@ afterEach(() => {
   toast.clear()
 })
 
-const speakerToasts = () =>
-  Array.from(document.querySelectorAll<HTMLElement>('[data-toast-key]')).filter((node) =>
-    node.textContent?.includes(SPEAKERS_NEEDED_TITLE),
-  )
+const speakerToasts = () => signalsWith(SPEAKERS_NEEDED_TITLE)
 
 function processingUpload() {
   replaceDb(createSpeakerScenarioDb('meeting-speakers'))
@@ -64,7 +62,7 @@ describe('처리 추적 — 화자 지정 대기', () => {
     expect(useMeetingTrackerStore.getState().meetings).toContainEqual(MEETING)
   })
 
-  it('다른 화면의 PM 은 토스트를 한 번만 받고, 그 동작으로 지정 화면에 간다', async () => {
+  it('다른 화면의 PM 은 진행 토스트가 화자 지정으로 바뀌어 하나만 보이고, 그 단추로 지정 화면에 간다', async () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
     awaitingUpload()
     const log = recordRequests()
@@ -77,11 +75,14 @@ describe('처리 추적 — 화자 지정 대기', () => {
     expect(detailRequests(log)).toHaveLength(before)
     await act(() => vi.advanceTimersByTimeAsync(27_000))
     await waitFor(() => expect(detailRequests(log).length).toBeGreaterThan(before))
-    expect(speakerToasts()).toHaveLength(1)
+    expect(processingSignals()).toHaveLength(1)
+    expect(document.querySelectorAll('[data-toast-key]')).toHaveLength(0)
     fireEvent.click(
       within(speakerToasts()[0]).getByRole('button', { name: SPEAKERS_NEEDED_ACTION }),
     )
     await app.expectPath(SPEAKERS_PATH)
+    // 지정 화면에서는 같은 안내를 두 번 보이지 않는다
+    expect(processingSignals()).toEqual([])
   })
 
   it('PM 이 처리 화면에 직접 들어와도 처음 본 대기면 지정 화면으로 간다', async () => {
@@ -132,7 +133,7 @@ describe('처리 추적 — 화자 지정 대기', () => {
     },
   )
 
-  it('팀원은 처리 화면에 PM 이 지정 중이라는 안내만 보고 옮겨지거나 토스트를 받지 않는다', async () => {
+  it('팀원은 처리 화면에 PM 이 지정 중이라는 안내만 보고 옮겨지거나 화자 지정 토스트를 받지 않는다', async () => {
     awaitingUpload()
     setMockRole('member')
     const app = renderApp(PROCESSING_PATH)

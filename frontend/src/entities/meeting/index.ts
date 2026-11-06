@@ -36,11 +36,13 @@ export { latestMinutesId, toMinutesList } from './lib/minutesList'
 export { meetingFailure } from './lib/meetingFailure'
 export type { ProcessingStep, ProcessingStepState } from './lib/processingSteps'
 export { PROCESSING_STEP_COUNT, processingSteps } from './lib/processingSteps'
-export type { TrackedMeeting } from './model/processingTracker'
+export type { SettledMeeting, TrackedMeeting } from './model/processingTracker'
 export {
   clearTrackedMeetings,
+  dismissSettled,
   finishMeeting,
   promptSpeakers,
+  settleMeeting,
   trackMeeting,
   untrackMeeting,
   useMeetingTrackerStore,
