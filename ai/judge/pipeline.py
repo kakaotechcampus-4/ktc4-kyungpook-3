@@ -64,6 +64,14 @@ def _evidence(finding: JudgeFinding, transcript: Transcript) -> dict[str, Any]:
     }
 
 
+_MAX_EVIDENCE_SEQS = 100  # BE MAX_EVIDENCE_SEQS(schemas/meeting.py)와 같은 값. 넘으면 요청 전체가 400 이다
+
+
+def _evidence_seqs(seqs: list[int]) -> list[int]:
+    """BE 로 보낼 근거 발화 seq. 한 발화의 여러 문장은 seq 하나다. 넘치면 결론에 가까운 뒤쪽을 남긴다."""
+    return sorted(set(seqs))[-_MAX_EVIDENCE_SEQS:]
+
+
 def to_item(
     finding: JudgeFinding,
     result: JudgeResult,
@@ -96,6 +104,7 @@ def to_item(
         "assignee_raw": assignee_raw,
         "doc_text": drafted.doc_text,
         **_evidence(finding, transcript),
+        "evidence_seqs": _evidence_seqs(finding.seqs),
     }
     if result.is_new:
         return item
@@ -211,6 +220,10 @@ def _merge_into(card: dict[str, Any], finding: JudgeFinding, result: JudgeResult
     if result.category == "assignee":
         card["assignee_type"], card["assignee_raw"] = _assignee(finding)
         card.update(_evidence(finding, transcript))
+    # 인계 때 화자가 비면(업로드의 외부 참석자 포함) BE 는 1인칭 담당자를 가장 큰 seq 의 화자로 찾는다. 담당과 상관없는 뒤 발화를
+    # 더하면 그 사람이 담당자가 된다. 여기서는 인계 때 화자가 남을지 몰라 1인칭 카드에는 더하지 않는다
+    if not (card["assignee_type"] == "first" and result.category != "assignee"):
+        card["evidence_seqs"] = _evidence_seqs(card["evidence_seqs"] + finding.seqs)
     # 합친 설명은 자르지 않는다 — DOC_TEXT_MAX 는 Luna 한 문장의 상한이고(BE doc_text 는 길이 제한 없음), 자르면
     # 맨 뒤에 붙은 최신 결정부터 잘린다(PR #206 리뷰)
     card["doc_text"] = f"{card['doc_text']} / {drafted.doc_text}"
