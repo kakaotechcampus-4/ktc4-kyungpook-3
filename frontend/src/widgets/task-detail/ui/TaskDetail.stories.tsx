@@ -6,33 +6,41 @@ import { fail } from '@/shared/mock/envelope'
 import { TaskDetail } from './TaskDetail'
 
 /*
- * 태스크 상세 (M6 §3-5, §5-1). ws_01 하나에 로그인한 상태. tk_01 은 담당자·마감·연결 회의·이력이 있고 Notion 반영됨이다.
- * PM 만 상태를 바꾼다 — 팀원 스토리는 widget 의 `isPm` 과 시나리오(tasks-member) 둘 다 팀원이다.
+ * 태스크 상세 (M6 §3-5, §5-1, E-5). ws_01 하나에 로그인한 상태. tk_01 은 담당자·마감·연결 회의·이력이 있고 Notion 반영됨이다.
+ * PM 만 상태·담당자·마감을 바꾼다 — 팀원 스토리는 widget 의 `isPm` 과 시나리오(tasks-member) 둘 다 팀원이다.
+ * 오늘은 목 시계(MOCK_NOW)와 같은 2026-09-18 이다.
  */
 
 const meta = {
   title: 'M6 태스크/상세',
   component: TaskDetail,
-  args: { workspaceId: 'ws_01', taskId: 'tk_01', isPm: true },
+  args: { workspaceId: 'ws_01', taskId: 'tk_01', isPm: true, today: '2026-09-18' },
   parameters: { scenario: 'tasks-default', route: '/workspaces/ws_01/tasks/tk_01' },
 } satisfies Meta<typeof TaskDetail>
 
 export default meta
 type Story = StoryObj<typeof meta>
 
-/** PM — 모든 칸과 이력, 상태 바꾸기 */
+/** PM — 상태 트랙, 담당자·마감 연필, 재촉 카드, 이력 */
 export const PM_기본: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await expect(await canvas.findByRole('heading', { name: '로그인 API 연동' })).toBeVisible()
-    await expect(canvas.getByLabelText('상태 바꾸기')).toHaveValue('in_progress')
+    await expect(
+      await canvas.findByRole('heading', { level: 1, name: '로그인 API 연동' }),
+    ).toBeVisible()
+    const track = canvas.getByRole('radiogroup', { name: '상태 바꾸기' })
+    await expect(within(track).getByRole('radio', { name: '진행 중' })).toBeChecked()
+    await expect(canvas.getByRole('button', { name: '담당자 수정' })).toBeVisible()
+    await expect(canvas.getByRole('button', { name: '마감 수정' })).toBeVisible()
+    await expect(canvas.queryByText('기한 지남')).toBeNull()
+    await expect(canvas.queryByText('막힌 사유')).toBeNull()
     await expect(canvas.queryByText('진행률')).toBeNull()
     await expect(await canvas.findByTestId('notion-sync-status')).toHaveTextContent('반영됨')
     await expect(await canvas.findByRole('list', { name: '변경 이력' })).toBeInTheDocument()
   },
 }
 
-/** 일반 팀원(권한) — 읽기만 한다. 상태 바꾸기·Notion 다시 반영이 없다 */
+/** 일반 팀원(권한) — 읽기만 한다. 상태는 배지뿐이고 연필·재촉·Notion 다시 반영이 없다 */
 export const 팀원_읽기: Story = {
   args: { isPm: false },
   parameters: { scenario: 'tasks-member' },
@@ -41,6 +49,42 @@ export const 팀원_읽기: Story = {
     await expect(await canvas.findByRole('heading', { name: '로그인 API 연동' })).toBeVisible()
     await expect(canvas.getByTestId('task-status')).toHaveTextContent('진행 중')
     await expect(canvas.queryByLabelText('상태 바꾸기')).toBeNull()
+    await expect(canvas.queryByRole('button', { name: '담당자 수정' })).toBeNull()
+    await expect(canvas.queryByRole('button', { name: '마감 수정' })).toBeNull()
+  },
+}
+
+/** 마감이 지났다 — 머리 줄 마감이 강조색이고 「기한 지남」 배지가 붙는다. 재촉 안내도 마감이 지났다고 말한다 */
+export const 기한_지남: Story = {
+  args: { today: '2026-09-22' },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(await canvas.findByText('기한 지남')).toBeVisible()
+    await expect(canvas.getByText(/^마감이 지났어요/)).toBeVisible()
+  },
+}
+
+/** 막힌 태스크만 막힌 사유를 보인다 */
+export const 막힘: Story = {
+  args: { taskId: 'tk_03' },
+  parameters: { route: '/workspaces/ws_01/tasks/tk_03' },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(await canvas.findByText('Notion 권한 대기')).toBeVisible()
+    await expect(canvas.getByText('막힌 사유')).toBeVisible()
+  },
+}
+
+/** PM 이 마감을 고치는 중 — 저장 전에는 보내지 않고 저장 줄에 바뀐 내용이 보인다 */
+export const 마감_고치는_중: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(await canvas.findByRole('button', { name: '마감 수정' }))
+    const due = canvas.getByRole('textbox', { name: '마감' })
+    await userEvent.clear(due)
+    await userEvent.type(due, '2026-09-27')
+    await expect(canvas.getByText('바뀐 내용 1개 · 마감 09/20 → 09/27')).toBeVisible()
+    await expect(canvas.getByRole('button', { name: '저장' })).toBeEnabled()
   },
 }
 
@@ -106,9 +150,9 @@ export const 로딩: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await expect(await canvas.findByRole('link', { name: '← 태스크 목록' })).toBeInTheDocument()
+    await expect(await canvas.findByRole('link', { name: '태스크 목록' })).toBeInTheDocument()
     await expect(canvasElement.querySelector('[aria-busy="true"]')).not.toBeNull()
-    await expect(canvas.queryByRole('heading', { level: 2 })).toBeNull()
+    await expect(canvas.queryByRole('heading', { name: '로그인 API 연동' })).toBeNull()
   },
 }
 
