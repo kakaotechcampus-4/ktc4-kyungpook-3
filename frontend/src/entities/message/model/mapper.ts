@@ -6,6 +6,7 @@ import type {
   ThreadDetailDto,
   ThreadSummaryDto,
 } from '@/shared/types/api/message'
+import type { ReplyAttributionDto, TaskRefDto } from '@/shared/types/api/reply'
 import type {
   Bundle,
   BundleStage,
@@ -14,6 +15,8 @@ import type {
   MessageInbox,
   MessageThread,
   MessageThreadSummary,
+  ReplyAttribution,
+  TaskRef,
 } from './types'
 
 /** 보낸 쪽과 칸이 맞지 않으면 던진다 — 조회 오류로 보인다 */
@@ -112,6 +115,24 @@ export function toMessageThread(dto: ThreadDetailDto): MessageThread {
     ...toSummary(dto.thread),
     messages: dto.messages.map(toMessage),
     upcoming: dto.bundles === null ? [] : toBundles(dto.bundles),
+  }
+}
+
+function toTaskRef(dto: TaskRefDto): TaskRef {
+  return { id: dto.task_id, title: dto.title }
+}
+
+export function toReplyAttribution(dto: ReplyAttributionDto): ReplyAttribution {
+  if (dto.status === 'needs_pm')
+    return {
+      messageId: dto.message_id,
+      kind: 'needsPick',
+      candidates: dto.candidates.map(toTaskRef),
+    }
+  return {
+    messageId: dto.message_id,
+    kind: 'picked',
+    task: dto.task === null ? null : toTaskRef(dto.task),
   }
 }
 

@@ -146,6 +146,8 @@ export function toApproval(dto: ApprovalDto): Approval {
       docText: text(payload.doc_text) || null,
       evidence: evidence(payload),
       meetingId: text(payload.meeting_id),
+      replyMessageId:
+        payload.change_source === 'reminder_reply' ? text(payload.reply_message_id) : null,
     }
   return { ...base, kind: 'unsupported', type: dto.type }
 }

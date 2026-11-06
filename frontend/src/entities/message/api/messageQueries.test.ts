@@ -12,6 +12,7 @@ import {
   createReminder,
   messageInboxQueryOptions,
   messageThreadQueryOptions,
+  replyAttributionsQueryOptions,
   requestMessageAction,
 } from './messageQueries'
 
@@ -121,6 +122,49 @@ describe('메모 고치기', () => {
     expect(received).toEqual([
       { method: 'PATCH', path: `${BASE}/reminders/rm_02`, body: { note: '시안 3차까지' } },
       { method: 'PATCH', path: `${BASE}/reminders/rm_02`, body: { note: null } },
+    ])
+  })
+})
+
+describe('답장의 태스크 고르기', () => {
+  it('답장 경로로 고른 태스크를 보내고, 해당 없음이면 null 을 보낸다', async () => {
+    const received = answer('post', 'replies/:id/attribution', { message_id: 'mg_05' })
+    await expect(
+      requestMessageAction('ws_01', { kind: 'attribute', messageId: 'mg_05', taskId: 'tk_02' }),
+    ).resolves.toEqual({ kind: 'done' })
+    await requestMessageAction('ws_01', { kind: 'attribute', messageId: 'mg_05', taskId: null })
+    expect(received).toEqual([
+      { method: 'POST', path: `${BASE}/replies/mg_05/attribution`, body: { task_id: 'tk_02' } },
+      { method: 'POST', path: `${BASE}/replies/mg_05/attribution`, body: { task_id: null } },
+    ])
+  })
+
+  it('대화의 고르기는 그 대화의 답장마다 하나다', async () => {
+    server.use(
+      http.get(`${BASE}/threads/th_02/attributions`, () =>
+        ok({
+          items: [
+            {
+              message_id: 'mg_05',
+              status: 'needs_pm',
+              candidates: [{ task_id: 'tk_02', title: '회원가입 화면' }],
+              task: null,
+            },
+            { message_id: 'mg_06', status: 'resolved', candidates: null, task: null },
+          ],
+          total: 2,
+        }),
+      ),
+    )
+    await expect(
+      createQueryClient().fetchQuery(replyAttributionsQueryOptions('ws_01', 'th_02')),
+    ).resolves.toEqual([
+      {
+        messageId: 'mg_05',
+        kind: 'needsPick',
+        candidates: [{ id: 'tk_02', title: '회원가입 화면' }],
+      },
+      { messageId: 'mg_06', kind: 'picked', task: null },
     ])
   })
 })
