@@ -1,6 +1,7 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { paths } from '@/shared/config/routes'
+import { db } from '@/shared/mock/db'
 import { applyScenario } from '@/shared/mock/scenarios'
 import { renderApp } from './test/renderApp'
 
@@ -59,6 +60,39 @@ describe('태스크 상세의 답장 기록 (#344)', () => {
     // 되돌린 값은 새 이력 한 줄이고, 변경자는 /history 에서 채운다
     await waitFor(() => expect(historyLines(history)[0]).toBe('상태: 완료 → 막힘'))
     expect(history.children[0]).toHaveTextContent('김서연 · 리마인더 답장')
+  })
+
+  it('보는 사이 태스크가 지워져 되돌리기가 404 면 볼 수 없는 태스크로 바뀌고 목록에서도 빠진다', async () => {
+    applyScenario('reply-judgment')
+    const user = userEvent.setup()
+    // 목록을 먼저 받아 두어야 지운 태스크가 남은 목록 캐시를 다시 받는지 볼 수 있다
+    renderApp(paths.tasks('ws_01'))
+    await user.click(await screen.findByRole('link', { name: /DB 스키마 정리/ }))
+    await screen.findByRole('heading', { level: 2, name: 'DB 스키마 정리' })
+    const history = await screen.findByRole('list', { name: '변경 이력' })
+    await within(history).findByText(REPLY_META)
+    db.tasks = db.tasks.filter(({ task_id }) => task_id !== 'tk_03')
+
+    await user.click(
+      within(changeRow(history, '상태: 완료')).getByRole('button', { name: '되돌리기' }),
+    )
+
+    expect(
+      await screen.findByRole('heading', { level: 2, name: '이 태스크를 볼 수 없어요' }),
+    ).toBeVisible()
+    expect(screen.queryByRole('button', { name: '되돌리기' })).toBeNull()
+    expect(screen.queryByRole('heading', { level: 2, name: 'DB 스키마 정리' })).toBeNull()
+
+    await user.click(screen.getByRole('link', { name: '태스크 목록으로' }))
+    expect(await screen.findByText('회원가입 화면')).toBeInTheDocument()
+    // 같은 이름은 그 태스크의 승인 카드(ap_31)에만 남는다
+    await waitFor(() =>
+      expect(
+        screen
+          .queryAllByText('DB 스키마 정리')
+          .filter((element) => element.closest('[data-kind="approval"]') === null),
+      ).toEqual([]),
+    )
   })
 
   it('일반 팀원은 답장 글 대신 안내를 보고 되돌릴 수 없다', async () => {

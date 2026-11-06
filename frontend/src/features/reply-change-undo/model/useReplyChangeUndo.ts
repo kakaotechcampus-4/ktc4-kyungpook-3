@@ -1,6 +1,13 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useCallback } from 'react'
-import { taskKeys, undoReplyChange, writeServerTask } from '@/entities/task'
+import {
+  taskDetailQueryOptions,
+  taskHistoryQueryOptions,
+  taskKeys,
+  taskListQueryOptions,
+  undoReplyChange,
+  writeServerTask,
+} from '@/entities/task'
 import type { Task } from '@/entities/task'
 import { errorMessage } from '@/shared/api/errorMessages'
 import { ApiError, CLIENT_ERROR_CODES, ERROR_CODES, createClientError } from '@/shared/api/errors'
@@ -30,6 +37,13 @@ function isStale(error: unknown): boolean {
   )
 }
 
+/** 보는 사이 태스크가 지워졌다. 다시 눌러도 같은 404 다 */
+function isGone(error: unknown): boolean {
+  return (
+    error instanceof ApiError && error.status === 404 && error.code === ERROR_CODES.TASK_NOT_FOUND
+  )
+}
+
 export function useReplyChangeUndo(workspaceId: string, taskId: string): ReplyChangeUndo {
   const queryClient = useQueryClient()
   const { mutate, isPending, variables } = useMutation<Task, Error, UndoVariables>({
@@ -47,6 +61,21 @@ export function useReplyChangeUndo(workspaceId: string, taskId: string): ReplyCh
       if (!session.isCurrent()) return
       // 보여 준 기록이 낡았다. 그 뒤 다른 변경이 있었거나 이미 되돌렸다
       if (isStale(error)) void queryClient.invalidateQueries({ queryKey: taskKeys(workspaceId) })
+      if (isGone(error)) {
+        // 무효화만 하면 상세는 다시 받는 동안 받아 둔 태스크를 그대로 보인다. 비우고 다시 받아 볼 수 없는 태스크로 바꾼다
+        void queryClient.resetQueries({
+          queryKey: taskDetailQueryOptions(workspaceId, taskId).queryKey,
+          exact: true,
+        })
+        queryClient.removeQueries({
+          queryKey: taskHistoryQueryOptions(workspaceId, taskId).queryKey,
+          exact: true,
+        })
+        void queryClient.invalidateQueries({
+          queryKey: taskListQueryOptions(workspaceId).queryKey,
+          exact: true,
+        })
+      }
       toast.show({ title: REPLY_CHANGE_UNDO_FAILED, description: errorMessage(error) })
     },
   })
