@@ -30,7 +30,7 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-/** Google 로그인은 비활성이다 (D-005, D-007). `비밀번호를 잊으셨나요?` 는 재설정 요청 화면으로 가는 링크다 (#451) */
+/** Google 로그인은 비활성이다 (D-007). `비밀번호를 잊으셨나요?` 는 재설정 요청 화면으로 가는 링크다 (#451) */
 export const 로그인_기본: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
