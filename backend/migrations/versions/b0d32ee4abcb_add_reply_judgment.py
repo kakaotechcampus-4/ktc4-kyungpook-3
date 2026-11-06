@@ -7,7 +7,7 @@ task_history.reply_change_id 로 이력을 그 변경에 잇는다.
 되돌리면 두 테이블과 판단 기록이 지워지고 이력의 연결만 사라진다. 태스크에 이미 반영된 값과 이력은 그대로 남는다.
 
 Revision ID: b0d32ee4abcb
-Revises: fe08fcbd6dc6
+Revises: 537911f267dc
 Create Date: 2026-11-04 19:21:58.598324
 
 """
@@ -19,7 +19,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = 'b0d32ee4abcb'
-down_revision: Union[str, Sequence[str], None] = 'fe08fcbd6dc6'
+down_revision: Union[str, Sequence[str], None] = '537911f267dc'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
