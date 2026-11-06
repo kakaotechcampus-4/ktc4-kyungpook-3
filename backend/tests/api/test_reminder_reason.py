@@ -141,7 +141,8 @@ def test_kst_date_boundary(mdb, seed):
     assert "11/6(금)" in reason
 
 
-def test_pm_reminder_names_the_creator_or_falls_back(mdb, seed):
+def test_pm_reminder_names_the_creator_even_if_they_left(mdb, seed):
+    """"누가 만들었는가"를 밝히는 문장이라 만든 PM 이 탈퇴했어도 그 사람 이름이다(DM 첫 줄의 대체 PM 과 다르다)."""
     seed["pm"].display_name = "김PM"
     old = Member(workspace_id=seed["ws"], display_name="옛PM", role="pm", is_deleted=True)
     mdb.add(old)
@@ -151,7 +152,15 @@ def test_pm_reminder_names_the_creator_or_falls_back(mdb, seed):
     assert reason == "김PM님이 직접 만든 재촉이에요. 11/2(월)에 태스크를 만든 뒤로 진행 소식이 없어요."
     r2 = _make(mdb, seed, origin=ReminderOrigin.PM, created_by=old.member_id, who="bob")
     reason2, _ = reminder_reason(mdb, r2, _thread_id(r2))
-    assert reason2.startswith("김PM님이 직접 만든 재촉이에요.")
+    assert reason2.startswith("옛PM님이 직접 만든 재촉이에요.")
+
+
+def test_pm_reminder_without_a_creator_row_says_pm(mdb, seed):
+    seed["pm"].display_name = "김PM"  # 다른 PM 이 있어도 대신 부르지 않는다
+    mdb.commit()
+    r = _make(mdb, seed, origin=ReminderOrigin.PM, created_by=None)
+    reason, _ = reminder_reason(mdb, r, _thread_id(r))
+    assert reason.startswith("PM님이 직접 만든 재촉이에요.")
 
 
 def test_pm_reminder_on_task_without_due_date(mdb, seed):

@@ -10,7 +10,7 @@ from typing import Literal
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import MessageSender, Reminder, ReminderOrigin, TaskHistory, ThreadMessage
+from app.models import Member, MessageSender, Reminder, ReminderOrigin, TaskHistory, ThreadMessage
 from app.services import messages, scheduler
 
 DELETED_TASK_TITLE = "지워진 태스크"
@@ -71,7 +71,10 @@ def reminder_reason(db: Session, reminder: Reminder, thread_id: str) -> tuple[st
     else:
         news = f"{_kst_day(task.created_at)}에 태스크를 만든 뒤로 진행 소식이 없어요."
     if reminder.origin == ReminderOrigin.PM:
-        name = messages._pm_name(db, reminder.workspace_id, reminder.created_by)
+        # "누가 만들었는가"를 밝히는 문장이라 만든 PM 이 탈퇴했어도 그 사람 이름을 쓴다. DM 첫 줄에 쓰는
+        # messages._pm_name 은 지금 말하는 PM 이라 탈퇴하면 다른 PM 으로 바꾸지만, 여기서는 그러면 사실과 다르다.
+        creator = db.get(Member, reminder.created_by) if reminder.created_by else None
+        name = creator.display_name if creator is not None else "PM"
         return f"{name}님이 직접 만든 재촉이에요. {news}", evidence
     if task.due_date is not None:
         return f"'{task.title}' 마감이 {_kst_day(task.due_date)}인데, {news}", evidence
