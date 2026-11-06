@@ -44,7 +44,7 @@ const DM_FAILED = 'text-meta font-semibold text-accent'
 const DRAFTING = 'text-meta text-sub'
 const WAITING_NOTE =
   'inline-flex items-center gap-7 self-center rounded-999 bg-divider px-13 py-7 text-meta text-sub'
-const FOOT = 'shrink-0 border-t border-divider px-28 pt-14 pb-20'
+const FOOT = 'shrink-0 border-t border-divider px-28 pt-14 pb-16'
 const FOOT_CARD =
   'flex items-center gap-12 rounded-[14px] border border-line bg-surface px-14 py-12 text-dim'
 const FOOT_LINK =
