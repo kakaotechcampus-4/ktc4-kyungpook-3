@@ -9,6 +9,7 @@ from app.main import app
 from app.services import sessions
 
 
+# lifespan 워커를 더하는 PR 은 이 목록에 그 워커의 INTERVAL 상수를 꼭 더해야 한다(빠지면 이 테스트가 그 워커까지 띄운다).
 @pytest.fixture(autouse=True)
 def _other_workers_off(monkeypatch):
     for name in (

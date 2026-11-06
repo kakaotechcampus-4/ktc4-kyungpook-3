@@ -1,4 +1,5 @@
-"""세션 토큰 해시 마이그레이션(#437)의 변환·인덱스·downgrade 를 확인한다. sqlite in-memory, TEST_DATABASE_URL 이 있으면 PostgreSQL 도 돈다."""
+"""세션 토큰 해시 마이그레이션(#437)의 값 변환과 downgrade 를 확인한다. 컬럼·인덱스는 바뀌지 않는다. sqlite in-memory, TEST_DATABASE_URL 이 있으면 PostgreSQL 도 돈다."""
+import hashlib
 import importlib.util
 import os
 from datetime import datetime, timezone
@@ -31,25 +32,6 @@ def _load_migration():
     return module
 
 
-def _make_old_session_table(conn):
-    """마이그레이션 전 모양(session_token String(255), ix_session_session_token)으로 session 표를 다시 만든다."""
-    conn.execute(text("DROP TABLE session"))
-    conn.execute(
-        text(
-            "CREATE TABLE session ("
-            "session_id VARCHAR(36) NOT NULL, "
-            "user_id VARCHAR(36) NOT NULL, "
-            "session_token VARCHAR(255) NOT NULL, "
-            "expires_at TIMESTAMP WITH TIME ZONE NOT NULL, "
-            "created_at TIMESTAMP WITH TIME ZONE NOT NULL, "
-            "CONSTRAINT pk_session PRIMARY KEY (session_id), "
-            'CONSTRAINT fk_session_user_id_user FOREIGN KEY (user_id) REFERENCES "user" (user_id) ON DELETE CASCADE)'
-        )
-    )
-    conn.execute(text("CREATE UNIQUE INDEX ix_session_session_token ON session (session_token)"))
-    conn.execute(text("CREATE INDEX ix_session_user_id ON session (user_id)"))
-
-
 @pytest.fixture(
     params=[
         "sqlite",
@@ -69,7 +51,6 @@ def engine(request):
         eng = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool)
     Base.metadata.create_all(eng)
     with eng.begin() as conn:
-        _make_old_session_table(conn)
         conn.execute(User.__table__.insert().values(user_id="user-0", email="a@x.com", name="n"))
     try:
         yield eng
@@ -106,15 +87,22 @@ def _rows(engine, column):
         return conn.execute(text(f"SELECT session_id, {column}, expires_at FROM session ORDER BY session_id")).all()
 
 
+def _schema(engine):
+    insp = inspect(engine)
+    cols = {c["name"]: (getattr(c["type"], "length", None), c["nullable"]) for c in insp.get_columns("session")}
+    indexes = {i["name"]: (i["unique"], i["column_names"]) for i in insp.get_indexes("session")}
+    return cols, indexes
+
+
 def test_upgrade_hashes_existing_tokens(engine):
     ids = _insert_old(engine, RAW_A, RAW_B)
     before = _rows(engine, "session_token")
     _run(engine, "upgrade")
-    after = _rows(engine, "token_hash")
+    after = _rows(engine, "session_token")
     assert [r[0] for r in after] == ids
     assert [r[1] for r in after] == [hash_session_token(RAW_A), hash_session_token(RAW_B)]
+    assert [r[1] for r in after] == [hashlib.sha256(r.encode()).hexdigest() for r in (RAW_A, RAW_B)]
     assert [r[2] for r in after] == [r[2] for r in before]
-    assert "session_token" not in {c["name"] for c in inspect(engine).get_columns("session")}
 
 
 def test_raw_cookie_still_finds_session_after_upgrade(engine):
@@ -126,26 +114,22 @@ def test_raw_cookie_still_finds_session_after_upgrade(engine):
         assert find_session(db, "nope") is None
 
 
-def test_upgrade_creates_unique_token_hash_index(engine):
+def test_upgrade_leaves_schema_unchanged(engine):
+    _insert_old(engine, RAW_A)
+    before = _schema(engine)
     _run(engine, "upgrade")
-    insp = inspect(engine)
-    indexes = {i["name"]: i for i in insp.get_indexes("session")}
-    assert indexes["ix_session_token_hash"]["unique"]
-    assert indexes["ix_session_token_hash"]["column_names"] == ["token_hash"]
-    assert "ix_session_session_token" not in indexes
-    col = next(c for c in insp.get_columns("session") if c["name"] == "token_hash")
-    assert col["type"].length == 64 and not col["nullable"]
+    assert _schema(engine) == before
+    cols, indexes = before
+    assert "session_token" in cols and "token_hash" not in cols
+    assert indexes["ix_session_session_token"] == (True, ["session_token"])
+    assert cols["session_token"] == (255, False)
 
 
-def test_downgrade_deletes_sessions_and_restores_column(engine):
+def test_downgrade_deletes_sessions_and_keeps_schema(engine):
     _insert_old(engine, RAW_A, RAW_B)
+    before = _schema(engine)
     _run(engine, "upgrade")
     _run(engine, "downgrade")
     with engine.connect() as conn:
         assert conn.execute(text("SELECT count(*) FROM session")).scalar() == 0
-    insp = inspect(engine)
-    col = next(c for c in insp.get_columns("session") if c["name"] == "session_token")
-    assert col["type"].length == 255 and not col["nullable"]
-    indexes = {i["name"]: i for i in insp.get_indexes("session")}
-    assert indexes["ix_session_session_token"]["unique"]
-    assert "ix_session_token_hash" not in indexes
+    assert _schema(engine) == before

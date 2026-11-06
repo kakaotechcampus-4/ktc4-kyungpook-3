@@ -42,9 +42,10 @@ def test_login_cookie_is_stored_as_hash(mdb):
 
     assert _me(cookie).status_code == 200
     row = mdb.scalars(select(SessionModel)).one()
-    assert row.token_hash == hashlib.sha256(cookie.encode()).hexdigest()
-    assert not hasattr(SessionModel, "session_token")
-    assert "session_token" not in SessionModel.__table__.columns
+    assert row.session_token == hashlib.sha256(cookie.encode()).hexdigest()
+    assert row.session_token != cookie
+    assert "token_hash" not in SessionModel.__table__.columns
+    assert {i.name for i in SessionModel.__table__.indexes if i.unique} == {"ix_session_session_token"}
 
 
 def test_logout_deletes_only_current_session(mdb):
@@ -83,7 +84,7 @@ def test_expired_session_is_401(mdb):
     mdb.flush()
     mdb.add(SessionModel(
         user_id=user.user_id,
-        token_hash=hash_session_token("expired-raw"),
+        session_token=hash_session_token("expired-raw"),
         expires_at=datetime.now(timezone.utc) - timedelta(seconds=1),
     ))
     mdb.commit()
