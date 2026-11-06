@@ -1,5 +1,12 @@
 import type { BundleDto, MessageDto, ThreadSummaryDto } from '@/shared/types/api/message'
-import { toBundle, toCreatedReminder, toMessage, toMessageInbox, toMessageThread } from './mapper'
+import {
+  toBundle,
+  toCreatedReminder,
+  toMessage,
+  toMessageInbox,
+  toMessageThread,
+  toReplyAttribution,
+} from './mapper'
 
 const botDto = (patch: Partial<MessageDto> = {}): MessageDto => ({
   message_id: 'mg_01',
@@ -184,4 +191,38 @@ it('만든 재촉은 리마인드 ID 와 그것이 든 예정 묶음이고, 묶�
   expect(() =>
     toCreatedReminder({ reminder: dto.reminders[0], bundle: bundleDto({ status: 'cancelled' }) }),
   ).toThrow('bd_01')
+})
+
+describe('toReplyAttribution', () => {
+  it('PM 이 고를 답장은 후보를, 고른 답장은 고른 태스크를 쓴다. 해당 없음은 null 이다', () => {
+    expect(
+      toReplyAttribution({
+        message_id: 'mg_05',
+        status: 'needs_pm',
+        candidates: [
+          { task_id: 'tk_02', title: '회원가입 화면' },
+          { task_id: 'tk_05', title: '회의록 요약 검수' },
+        ],
+        task: null,
+      }),
+    ).toEqual({
+      messageId: 'mg_05',
+      kind: 'needsPick',
+      candidates: [
+        { id: 'tk_02', title: '회원가입 화면' },
+        { id: 'tk_05', title: '회의록 요약 검수' },
+      ],
+    })
+    expect(
+      toReplyAttribution({
+        message_id: 'mg_05',
+        status: 'resolved',
+        candidates: null,
+        task: { task_id: 'tk_02', title: '회원가입 화면' },
+      }),
+    ).toEqual({ messageId: 'mg_05', kind: 'picked', task: { id: 'tk_02', title: '회원가입 화면' } })
+    expect(
+      toReplyAttribution({ message_id: 'mg_05', status: 'resolved', candidates: null, task: null }),
+    ).toEqual({ messageId: 'mg_05', kind: 'picked', task: null })
+  })
 })

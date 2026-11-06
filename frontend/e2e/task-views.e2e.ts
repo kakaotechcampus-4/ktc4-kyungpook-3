@@ -112,3 +112,54 @@ for (const width of [1024, 1440, 1920] as const) {
     }
   })
 }
+
+/**
+ * 제목·보기 전환·도구줄의 자리. 도구줄은 리스트에서 탭 줄, 보드에서 조건 줄이고 가로 끝만 본다 —
+ * 머리와의 간격은 시안대로 리스트 28px·보드 22px 이다
+ */
+async function frameOf(page: Page) {
+  return page.evaluate(() => {
+    const edges = (element: Element) => {
+      const { left, right, top } = element.getBoundingClientRect()
+      return { left: Math.round(left), right: Math.round(right), top: Math.round(top) }
+    }
+    const header = document.querySelector('#root main header')!
+    const { left, right } = edges(header.nextElementSibling!)
+    // 제목 상자는 보기마다 다른 설명 줄 폭만큼 늘어나 시작점만 본다
+    const title = edges(header.querySelector('h1')!)
+    return {
+      title: { left: title.left, top: title.top },
+      viewSwitch: edges(header.querySelector('[aria-label="보기 방식"]')!),
+      toolbar: { left, right },
+    }
+  })
+}
+
+for (const width of [1280, 1440] as const) {
+  test.describe(`${width}px`, () => {
+    test.use({ viewport: { width, height: 900 } })
+
+    test('리스트와 보드를 오가도 제목·보기 전환·도구줄이 같은 자리에 있다 (#466)', async ({
+      page,
+    }) => {
+      await start(page, 'tasks-long-content', TASKS)
+      await expect(page.getByRole('tablist', { name: '태스크 구분' })).toBeVisible(FIRST_PAINT)
+      const list = await frameOf(page)
+
+      await page.getByLabel('보기 방식').getByText('보드', { exact: true }).click()
+      const board = areaOf(page, 'board')
+      await expect(board).toBeVisible(FIRST_PAINT)
+      expect(await frameOf(page)).toEqual(list)
+      // 보드 세 칸은 리스트와 같은 본문 폭(도구줄 폭)을 나눠 쓴다
+      const area = (await board.boundingBox())!
+      expect([Math.round(area.x), Math.round(area.x + area.width)]).toEqual([
+        list.toolbar.left,
+        list.toolbar.right,
+      ])
+
+      await page.getByLabel('보기 방식').getByText('리스트', { exact: true }).click()
+      await expect(page.getByRole('tablist', { name: '태스크 구분' })).toBeVisible()
+      expect(await frameOf(page)).toEqual(list)
+    })
+  })
+}

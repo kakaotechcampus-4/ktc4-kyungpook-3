@@ -8,6 +8,7 @@ import type {
   ThreadDetailDto,
 } from '@/shared/types/api/message'
 import type { ListDto } from '@/shared/types/api/envelope'
+import type { AttributionResponseDto, ReplyAttributionDto } from '@/shared/types/api/reply'
 import type { WorkspaceDto } from '@/shared/types/api/workspace'
 import { db, initialDb, replaceDb, resetDb } from './db'
 import { messagesMemberThread } from './fixtures/message'
@@ -286,6 +287,75 @@ describe('리마인드 handler — 백엔드 api/messages.py 의 reminders 경�
       const error = await failure(request)
       expect([error.status, error.code]).toEqual([403, 'FORBIDDEN'])
     }
+  })
+})
+
+const attributions = (threadId: string) =>
+  fetchDto<ListDto<ReplyAttributionDto>>(`${base()}/threads/${threadId}/attributions`)
+const attribute = (messageId: string, body: unknown) =>
+  fetchDto<AttributionResponseDto>(
+    `${base()}/replies/${messageId}/attribution`,
+    jsonRequest('POST', body),
+  )
+const NEEDS_PICK: ReplyAttributionDto = {
+  message_id: 'mg_05',
+  status: 'needs_pm',
+  candidates: [
+    { task_id: 'tk_02', title: '회원가입 화면' },
+    { task_id: 'tk_05', title: '회의록 요약 검수' },
+  ],
+  task: null,
+}
+
+describe('답장 고르기 handler — 백엔드 api/messages.py 의 attributions·attribution 경로', () => {
+  beforeEach(() => applyScenario('reply-judgment'))
+
+  it('PM 이 고를 답장은 후보와 함께 오고, 고를 답장이 없는 대화는 비어 있다', async () => {
+    expect(await attributions('th_02')).toEqual({ items: [NEEDS_PICK], total: 1 })
+    expect(await attributions('th_01')).toEqual({ items: [], total: 0 })
+    const missing = await failure(attributions('th_99'))
+    expect([missing.status, missing.code]).toEqual([404, 'MESSAGE_THREAD_NOT_FOUND'])
+  })
+
+  it('태스크를 고르면 고른 답장이 되고, 다시 고르면 409 REPLY_ATTRIBUTION_NOT_NEEDED 다', async () => {
+    expect(await attribute('mg_05', { task_id: 'tk_02' })).toEqual({ message_id: 'mg_05' })
+    expect((await attributions('th_02')).items).toEqual([
+      {
+        message_id: 'mg_05',
+        status: 'resolved',
+        candidates: null,
+        task: { task_id: 'tk_02', title: '회원가입 화면' },
+      },
+    ])
+    const again = await failure(attribute('mg_05', { task_id: 'tk_05' }))
+    expect([again.status, again.code]).toEqual([409, 'REPLY_ATTRIBUTION_NOT_NEEDED'])
+  })
+
+  it('해당 없음(null)으로 고르면 태스크 없이 고른 답장이 된다', async () => {
+    expect(await attribute('mg_05', { task_id: null })).toEqual({ message_id: 'mg_05' })
+    expect((await attributions('th_02')).items).toEqual([
+      { message_id: 'mg_05', status: 'resolved', candidates: null, task: null },
+    ])
+  })
+
+  it('후보가 아닌 태스크·task_id 가 없는 본문은 400, 판단이 없는 답장은 404 이고 고르기는 그대로다', async () => {
+    for (const body of [{ task_id: 'tk_01' }, {}, { task_id: 3 }]) {
+      const error = await failure(attribute('mg_05', body))
+      expect([error.status, error.code]).toEqual([400, 'INVALID_REQUEST'])
+    }
+    const missing = await failure(attribute('mg_99', { task_id: 'tk_02' }))
+    expect([missing.status, missing.code]).toEqual([404, 'REPLY_JUDGMENT_NOT_FOUND'])
+    expect((await attributions('th_02')).items).toEqual([NEEDS_PICK])
+  })
+
+  it('PM 이 아니면 두 경로 모두 403 이고 고르기는 그대로다', async () => {
+    applyScenario('reply-judgment-member')
+    for (const request of [attributions('th_02'), attribute('mg_05', { task_id: 'tk_02' })]) {
+      const error = await failure(request)
+      expect([error.status, error.code]).toEqual([403, 'FORBIDDEN'])
+    }
+    setMockRole('pm')
+    expect((await attributions('th_02')).items).toEqual([NEEDS_PICK])
   })
 })
 

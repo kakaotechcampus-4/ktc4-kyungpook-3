@@ -375,7 +375,8 @@ function Evidence({
   members,
 }: {
   workspaceId: string
-  approval: Pick<TaskCreateApproval | TaskUpdateApproval, 'evidence' | 'meetingId'>
+  approval: Pick<TaskCreateApproval | TaskUpdateApproval, 'evidence' | 'meetingId'> &
+    Partial<Pick<TaskUpdateApproval, 'replyMessageId'>>
   members: readonly Member[] | undefined
 }) {
   // 처리 추적이 이미 받는 목록이다 — 같은 key 라 따로 요청하지 않는다
@@ -390,18 +391,25 @@ function Evidence({
       ) : (
         <blockquote className={QUOTE}>{quote}</blockquote>
       )}
-      <figcaption className={META}>
-        화자 {speakerName(members, approval.evidence) ?? '알 수 없음'} · 시각{' '}
-        {evidenceMoment(meeting, atMs) ?? '알 수 없음'}
-        {approval.meetingId === null || meetingTitle === null ? null : (
-          <>
-            {' · '}
-            <GuardedLink to={paths.meetings(workspaceId, approval.meetingId)} className={LINK}>
-              {meetingTitle}
-            </GuardedLink>
-          </>
-        )}
-      </figcaption>
+      {approval.replyMessageId != null ? (
+        // 답장에는 회의도 회의 안 시각도 없다. 보낸 팀원만 밝힌다
+        <figcaption className={META}>
+          리마인드 답장 · {speakerName(members, approval.evidence) ?? '알 수 없음'}
+        </figcaption>
+      ) : (
+        <figcaption className={META}>
+          화자 {speakerName(members, approval.evidence) ?? '알 수 없음'} · 시각{' '}
+          {evidenceMoment(meeting, atMs) ?? '알 수 없음'}
+          {approval.meetingId === null || meetingTitle === null ? null : (
+            <>
+              {' · '}
+              <GuardedLink to={paths.meetings(workspaceId, approval.meetingId)} className={LINK}>
+                {meetingTitle}
+              </GuardedLink>
+            </>
+          )}
+        </figcaption>
+      )}
     </figure>
   )
 }
@@ -428,6 +436,7 @@ function TaskUpdateReview({
 }: TaskUpdateReviewProps) {
   const titleId = useId()
   const scopeTitleId = useId()
+  const replyTitleId = useId()
   const scope = isScopeChange(approval)
   const pending = approval.status === 'pending'
   const taskId = approval.relatedTaskId
@@ -468,6 +477,16 @@ function TaskUpdateReview({
           {approval.docText === null ? (
             <p className={NOTE}>설명이 없어요.</p>
           ) : (
+            <p className="text-body text-ink">{approval.docText}</p>
+          )}
+          <Evidence workspaceId={workspaceId} approval={approval} members={members} />
+        </section>
+      ) : approval.replyMessageId !== null ? (
+        <section aria-labelledby={replyTitleId} className={SECTION}>
+          <h3 id={replyTitleId} className={SECTION_TITLE}>
+            팀원 답장
+          </h3>
+          {approval.docText === null ? null : (
             <p className="text-body text-ink">{approval.docText}</p>
           )}
           <Evidence workspaceId={workspaceId} approval={approval} members={members} />
