@@ -24,6 +24,11 @@ pytestmark = pytest.mark.skipif(not (shutil.which("bash") and shutil.which("open
 FAKE_AWS = r"""#!/bin/bash
 d=$FAKE_AWS_DIR
 printf '%s\n' "$*" >>"$d/calls"
+if [ "$2" = "$(cat "$d/fail_next" 2>/dev/null)" ]; then
+  rm -f "$d/fail_next"
+  echo 'Could not connect to the endpoint URL' >&2
+  exit 255
+fi
 env | grep '^AWS_' >"$d/env"
 for a in "$@"; do
   case $a in file://*) cp "${a#file://}" "$d/user-data"; printf '%s\n' "${a#file://}" >"$d/user-data-path" ;; esac
@@ -635,6 +640,36 @@ def test_setup_shows_a_wait_error_and_does_not_tell_to_destroy(aws):
     assert "Could not connect" in r.stderr and "destroy" not in r.stderr
     assert len([c for c in aws.calls() if c.startswith("ec2 wait instance-stopped")]) == 1
     assert aws.calls("create-tags") == []
+
+
+def fail_next(aws, action: str) -> None:
+    (aws.dir / "fail_next").write_text(action)
+
+
+def test_a_failed_lookup_does_not_look_like_a_missing_standby_to_setup(aws):
+    standby(aws)
+    (aws.dir / "rules").write_text(f"tcp 8000 8000 {PROD_IP}/32\n")
+    aws_calls_before_standby_lookup = "describe-instances"
+    fail_next(aws, aws_calls_before_standby_lookup)
+    r = aws.run("setup", PROD_IP)
+    assert r.returncode != 0 and "Could not connect" in r.stderr
+    assert aws.calls("run-instances") == []
+
+
+def test_a_failed_lookup_does_not_look_like_a_missing_standby_to_on(aws):
+    standby(aws)
+    fail_next(aws, "describe-instances")
+    r = aws.run("on")
+    assert r.returncode != 0 and "Could not connect" in r.stderr
+    assert "먼저 setup" not in r.stderr
+
+
+def test_release_ip_does_not_claim_success_when_the_lookup_failed(aws):
+    standby(aws)
+    aws.set_instances()
+    fail_next(aws, "describe-addresses")
+    r = aws.run("destroy", "--release-ip")
+    assert r.returncode != 0 and "놓았습니다" not in r.stdout
 
 
 def test_missing_credentials_file_stops_before_any_aws_call(aws):

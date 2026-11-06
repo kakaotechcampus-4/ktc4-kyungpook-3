@@ -142,8 +142,10 @@ cmd_setup() {
 }
 
 ensure_standby() {
-  local id state ready
-  read -r id state _ _ ready <<<"$(fallback_rows "$STANDBY")" || true
+  local rows id state ready
+  # 조회를 따로 받아야 실패가 set -e 에 걸린다. 빈 값이면 서버가 없다고 보고 하나 더 만든다
+  rows=$(fallback_rows "$STANDBY")
+  read -r id state _ _ ready <<<"$rows" || true
   [ "$ready" != 1 ] || return 0
 
   USER_DATA=$(mktemp)
@@ -266,7 +268,7 @@ start_standby() {
 }
 
 cmd_on() {
-  local hours=3 state ready
+  local hours=3 rows state ready
   if [ $# -gt 0 ]; then
     [ "$1" = --hours ] && [ $# -eq 2 ] || usage
     hours=$2
@@ -280,7 +282,8 @@ cmd_on() {
   RUN_ERROR=$(mktemp)
   trap 'rm -f "$RUN_ERROR"' EXIT
 
-  read -r INSTANCE_ID state _ _ ready <<<"$(fallback_rows "$STANDBY")" || true
+  rows=$(fallback_rows "$STANDBY")
+  read -r INSTANCE_ID state _ _ ready <<<"$rows" || true
   if [ -n "$state" ] && [ "$ready" != 1 ]; then
     die "$INSTANCE_ID 는 setup 을 마치지 못했습니다. 켜도 곧 꺼질 수 있어 쓰지 않습니다. setup 을 다시 돌리거나 destroy 뒤 setup 을 돌립니다."
   fi
@@ -328,7 +331,7 @@ cmd_off() {
 }
 
 cmd_destroy() {
-  local ids remaining release=no allocation
+  local ids remaining release=no addresses allocation
   if [ $# -gt 0 ]; then
     [ "$1" = --release-ip ] && [ $# -eq 1 ] || usage
     release=yes
@@ -347,8 +350,8 @@ cmd_destroy() {
     echo "Role=stt-fallback 인스턴스 0대. 고정 IP 는 남겨 둡니다."
     return
   fi
-  read -r allocation _ <<<"$(aws ec2 describe-addresses --filters "$ROLE_FILTER" \
-    --query 'Addresses[].AllocationId' --output text)" || true
+  addresses=$(aws ec2 describe-addresses --filters "$ROLE_FILTER" --query 'Addresses[].AllocationId' --output text)
+  read -r allocation _ <<<"$addresses" || true
   if [ -n "$allocation" ]; then
     aws ec2 release-address --allocation-id "$allocation"
   fi
