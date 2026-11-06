@@ -38,7 +38,7 @@
 
 답장 1건은 평균 Terra 1.2, Luna 2.0, Jev 0.8회를 부른다. 장부의 Terra 실측에서 추정한 단가로 약 17원에 Jev 비용이 더해진다. Elice 실제 단가와 Jev 단가는 확인하지 않았다. 측정에 쓴 돈은 같은 추정으로 4,332원에 Jev 218회다.
 
-`cd ai && .venv/bin/python -m pytest -q -o addopts=""` 1414 통과. `cd backend && .venv/bin/python -m pytest -q` sqlite 1508 통과 1044 건너뜀, PG 2508 통과 44 건너뜀.
+`cd ai && .venv/bin/python -m pytest -q -o addopts=""` 1731 통과. `cd backend && .venv/bin/python -m pytest -q` sqlite 1707 통과 1202 건너뜀, PG 2865 통과 44 건너뜀.
 
 ## 다음
 
