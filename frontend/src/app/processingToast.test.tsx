@@ -171,6 +171,21 @@ describe('역할별 노출', () => {
     expect(screen.queryByRole('button', { name: '화자 지정하기' })).toBeNull()
   })
 
+  it.each([
+    ['PM', 'meeting-speakers', SPEAKERS_NEEDED_TITLE],
+    ['팀원', 'meeting-speakers-member', '화자 지정을 기다리고 있어요'],
+  ] as const)(
+    '%s: 새로 연 앱도 공간 목록에서 화자 지정 대기 회의를 찾아 토스트를 보인다',
+    async (_role, scenario, text) => {
+      replaceDb(createSpeakerScenarioDb(scenario))
+      setMeetingFlowMode('manual')
+      await openTasks()
+
+      await waitFor(() => expect(signalsWith(text)).toHaveLength(1))
+      expect(processingSignals()).toHaveLength(1)
+    },
+  )
+
   it('팀원: 실패하면 토스트가 조용히 사라진다', async () => {
     fakeIntervals()
     setMockRole('member')
