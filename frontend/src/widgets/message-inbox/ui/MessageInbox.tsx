@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useLayoutEffect, useRef, useState } from 'react'
+import { useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { useNavigate } from 'react-router'
 import { messageInboxQueryOptions, messageThreadQueryOptions } from '@/entities/message'
 import type { Bundle, MessageInbox as Inbox, MessageThreadSummary } from '@/entities/message'
@@ -110,9 +110,11 @@ export function MessageInbox({
     observer.observe(floor)
     return () => observer.disconnect()
   }, [floor])
+  // 768 미만은 대화 영역이 좁아 토스트가 목록을 덮는다 — 그때는 뷰포트 오른쪽 아래 독에 그대로 둔다 (#474, 좁은 배치는 #478)
+  const wide = useSyncExternalStore(subscribeWide, isWide, () => false)
   const toastOffset = floor === null ? 24 : 16
   const toastBottom = (floor === null ? 0 : floorHeight) + toastOffset
-  const toastClearance = toastHeight > 0 ? toastHeight + toastOffset + 16 : 0
+  const toastClearance = wide && toastHeight > 0 ? toastHeight + toastOffset + 16 : 0
 
   // 볼 것이 없다 — EmptyMessages 캔버스 한 장. 팀원은 받은 대화가 없을 때, PM 은 보낼 메시지와 대화가 모두 없을 때.
   // `알림 규칙 보기` 화면은 아직 없어 가장 가까운 팀 설정으로 보낸다 (결과 문서 C 의 차이표).
@@ -236,15 +238,29 @@ export function MessageInbox({
       <section ref={detailRef} aria-label="메시지 내용" tabIndex={-1} className={DETAIL}>
         {detail}
         {/* 상세 칸이 바뀌어도 자리는 그대로다 — 토스트가 다시 마운트되지 않아 접힘이 유지된다 */}
-        <PinnedToastHost
-          className="absolute right-24 z-10"
-          // 좁은 화면에서 안내 줄이 영역보다 길어지면 토스트가 위로 밀려 나간다 — 영역 위 16 에서 멈춘다
-          style={{ bottom: `min(${toastBottom}px, calc(100% - ${toastHeight + 16}px))` }}
-          onHeightChange={setToastHeight}
-        />
+        {wide ? (
+          <PinnedToastHost
+            className="absolute right-24 z-10"
+            style={{ bottom: toastBottom }}
+            onHeightChange={setToastHeight}
+          />
+        ) : null}
       </section>
     </main>
   )
+}
+
+const WIDE = '(min-width: 768px)'
+
+function subscribeWide(onStoreChange: () => void): () => void {
+  if (typeof window.matchMedia !== 'function') return () => {}
+  const query = window.matchMedia(WIDE)
+  query.addEventListener('change', onStoreChange)
+  return () => query.removeEventListener('change', onStoreChange)
+}
+
+function isWide(): boolean {
+  return typeof window.matchMedia === 'function' && window.matchMedia(WIDE).matches
 }
 
 function InboxList({

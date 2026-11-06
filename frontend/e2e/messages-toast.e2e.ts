@@ -6,7 +6,7 @@ import { start } from './support'
 /*
  * #474 — 메시지 화면에서 정리 중 토스트(#424)는 대화 영역 오른쪽 아래에 앉는다. 대화 아래 고정 줄(답장 줄·안내 줄)이 있으면
  * 그 위 16px, 없으면(보내기 전 확인) 영역 아래 24px, 오른쪽은 24px 이다. 셸의 아래 여백이 없어 바깥 페이지는 스크롤하지 않고,
- * 스크롤 칸을 끝까지 내리면 마지막 버튼·`확인하기` 가 토스트 위 16px 까지 올라온다.
+ * 스크롤 칸을 끝까지 내리면 마지막 버튼·`확인하기` 가 토스트 위 16px 까지 올라온다. 768px 미만은 예전 독 자리 그대로다.
  * 자리를 바꾸는 것과 셸 여백이 0 이 되는 것은 shared/ui/toast/PinnedToastHost.test.tsx 가 본다
  */
 
@@ -139,4 +139,17 @@ test('F-2 보내기 전 확인: 토스트는 영역 아래 24px 이고, 끝까�
     review.getByRole('button', { name: '보내지 않음' }),
     review.getByRole('button', { name: '이대로 발송' }),
   ])
+})
+
+test.describe('768px 미만', () => {
+  test.use({ viewport: { width: 390, height: 844 } })
+
+  test('토스트는 대화 영역이 아니라 예전처럼 뷰포트 오른쪽 아래 독에 있다', async ({ page }) => {
+    await start(page, 'messages-member', '/workspaces/ws_01/messages')
+    await expect(pill(page)).toBeVisible()
+    await expect(detail(page)).not.toContainText('정리 중')
+    await expect(page.getByTestId('pinned-toast-slot')).toContainText('정리 중')
+    const placed = await box(pill(page))
+    expect(390 - (placed.x + placed.width)).toBeCloseTo(24, 0)
+  })
 })
