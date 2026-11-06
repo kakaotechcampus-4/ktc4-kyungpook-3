@@ -58,13 +58,13 @@ def upgrade() -> None:
             f"정리할 user_id 묶음: {duplicates}"
         )
 
-    for user_id, email in rows:
-        normalized = _normalize(email)
-        if normalized != email:
-            conn.execute(
-                sa.text('UPDATE "user" SET email = :e WHERE user_id = :id'),
-                {"e": normalized, "id": user_id},
-            )
+    params = [
+        {"e": _normalize(email), "id": user_id}
+        for user_id, email in rows
+        if _normalize(email) != email
+    ]
+    if params:
+        conn.execute(sa.text('UPDATE "user" SET email = :e WHERE user_id = :id'), params)
 
 
 def downgrade() -> None:
