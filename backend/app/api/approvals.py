@@ -16,7 +16,7 @@ from app.schemas.approval import (
     ApprovalResponse,
 )
 from app.services import replies
-from app.services.alias_learning import approval_alias_texts
+from app.services.alias_learning import approval_alias_texts, learn_alias, learnable_alias_text
 from app.services.tasks import (
     apply_task_updates,
     create_task,
@@ -200,6 +200,7 @@ def _apply_approval(
     *,
     overrides: dict[str, object],
     confirm_task_version: int | None = None,
+    save_alias: bool = False,
 ) -> None:
     """승인된 요청을 실제 Task 생성/수정으로 반영한다.
 
@@ -264,6 +265,15 @@ def _apply_approval(
 
         if ext_item is not None:
             ext_item.task_id = task.task_id
+            # 별칭은 create_task 가 담당자(탈퇴·다른 공간)를 검증한 뒤에 저장한다. 담당자를 못 고른 항목은 건너뛴다
+            alias_text = learnable_alias_text(ext_item) if save_alias and final["assignee_member_id"] else None
+            if alias_text is not None:
+                learn_alias(
+                    db,
+                    workspace_id=approval.workspace_id,
+                    member_id=final["assignee_member_id"],
+                    alias_text=alias_text,
+                )
 
     elif approval.type == str(ApprovalType.TASK_UPDATE):
         if approval.related_task_id is None:
@@ -546,7 +556,10 @@ def resolve_approval(
 
     if payload.status == ApprovalStatus.APPROVED:
         try:
-            _apply_approval(db, approval, overrides=overrides, confirm_task_version=payload.confirm_task_version)
+            _apply_approval(
+                db, approval, overrides=overrides,
+                confirm_task_version=payload.confirm_task_version, save_alias=payload.save_alias,
+            )
         except AppError:
             # 반영하지 못했으면 승인 처리도 되돌려 pending으로 남긴다. 충돌을 확인한 PM이 다시 처리할 수 있다
             db.rollback()

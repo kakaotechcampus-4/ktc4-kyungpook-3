@@ -278,3 +278,178 @@ def test_manual_task_create_approval_is_not_alias_candidate(pm_client, seed):
     assert r.status_code == 201
     assert r.json()["data"]["alias_candidate"] is False
     assert r.json()["data"]["alias_text"] is None
+
+
+def _aliases(db) -> list[MemberAlias]:
+    return db.execute(select(MemberAlias)).scalars().all()
+
+
+def _approve(pm_client, db, *, assignee: str | None, save_alias=True, status="approved") -> object:
+    """pending task_create 승인을 PM 이 담당자를 골라 처리한다. save_alias 가 None 이면 필드를 보내지 않는다."""
+    approval = _approvals(db, "task_create")[0]
+    body: dict = {"status": status, "task_overrides": {"assignee_member_id": assignee}}
+    if save_alias is not None:
+        body["save_alias"] = save_alias
+    return pm_client.patch(f"/api/v1/approvals/{approval.approval_id}", json=body)
+
+
+def _assert_approved_with_task(db, r, title="결제 환불") -> None:
+    assert r.status_code == 200, r.text
+    assert r.json()["data"]["status"] == "approved"
+    assert db.execute(select(Task).where(Task.title == title)).scalar_one() is not None
+
+
+def test_save_alias_creates_learned_alias(client, pm_client, db, seed):
+    _hold_item(client, seed)
+    before = len(_aliases(db))
+
+    r = _approve(pm_client, db, assignee=seed["leader"].member_id)
+
+    _assert_approved_with_task(db, r)
+    learned = [a for a in _aliases(db) if a.source == "learned"]
+    assert len(_aliases(db)) == before + 1
+    assert len(learned) == 1
+    alias = learned[0]
+    assert alias.member_id == seed["leader"].member_id
+    assert alias.workspace_id == seed["ws"].workspace_id
+    assert alias.alias_text == "하은"
+    assert alias.alias_type == "nickname"
+    assert alias.verified is True
+    assert alias.confidence == 0.9
+    assert r.json()["data"]["alias_candidate"] is False
+
+
+def test_save_alias_thirdrole_strips_particle(client, pm_client, db, seed):
+    _hold_item(client, seed, title="백엔드 배포", raw="BE 리더가", type_="thirdrole")
+    # 시드의 "BE 리더" 는 지민이 갖고 있다. 하은에게 새로 붙인다.
+
+    r = _approve(pm_client, db, assignee=seed["haeun"].member_id)
+
+    _assert_approved_with_task(db, r, "백엔드 배포")
+    learned = [a for a in _aliases(db) if a.source == "learned"]
+    assert [(a.member_id, a.alias_text) for a in learned] == [(seed["haeun"].member_id, "BE 리더")]
+
+
+@pytest.mark.parametrize("save_alias", [None, False])
+def test_approve_without_save_alias_saves_nothing(client, pm_client, db, seed, save_alias):
+    _hold_item(client, seed)
+    before = len(_aliases(db))
+
+    r = _approve(pm_client, db, assignee=seed["leader"].member_id, save_alias=save_alias)
+
+    _assert_approved_with_task(db, r)
+    assert len(_aliases(db)) == before
+
+
+def test_save_alias_skips_existing_alias(client, pm_client, db, seed):
+    _hold_item(client, seed)
+    db.add(MemberAlias(
+        member_id=seed["leader"].member_id, workspace_id=seed["ws"].workspace_id, alias_text="하은",
+        alias_type="nickname", source="manual", confidence=0.5, verified=False,
+    ))
+    db.commit()
+    before = len(_aliases(db))
+
+    r = _approve(pm_client, db, assignee=seed["leader"].member_id)
+
+    _assert_approved_with_task(db, r)
+    aliases = _aliases(db)
+    assert len(aliases) == before
+    # 이미 있던 별칭을 학습 값으로 덮어쓰지 않는다
+    existing = [a for a in aliases if a.member_id == seed["leader"].member_id and a.alias_text == "하은"]
+    assert [(a.source, a.confidence) for a in existing] == [("manual", 0.5)]
+
+
+def test_save_alias_skips_item_that_already_had_assignee(client, pm_client, db, seed):
+    """추출 때 담당자를 찾은 항목을 다른 팀원으로 바꿔 승인해도 별칭은 배우지 않는다."""
+    _hold_item(client, seed, raw="하은")
+    assert _item(db, "결제 환불").assignee_member_id == seed["haeun"].member_id
+    before = len(_aliases(db))
+
+    r = _approve(pm_client, db, assignee=seed["leader"].member_id)
+
+    _assert_approved_with_task(db, r)
+    assert len(_aliases(db)) == before
+
+
+@pytest.mark.parametrize("type_", ["first", "second", "thirdpronoun", "group", "none"])
+def test_save_alias_skips_non_learnable_types(client, pm_client, db, seed, type_):
+    _hold_item(client, seed, raw="그 사람", type_=type_)
+    before = len(_aliases(db))
+
+    r = _approve(pm_client, db, assignee=seed["leader"].member_id)
+
+    _assert_approved_with_task(db, r)
+    assert len(_aliases(db)) == before
+
+
+def test_save_alias_skips_legacy_item_without_type(client, pm_client, db, seed):
+    _hold_item(client, seed)
+    item = _item(db, "결제 환불")
+    item.assignee_type = None
+    db.commit()
+    before = len(_aliases(db))
+
+    r = _approve(pm_client, db, assignee=seed["leader"].member_id)
+
+    _assert_approved_with_task(db, r)
+    assert len(_aliases(db)) == before
+
+
+def test_save_alias_skips_when_final_assignee_is_null(client, pm_client, db, seed):
+    _hold_item(client, seed)
+    before = len(_aliases(db))
+
+    r = _approve(pm_client, db, assignee=None)
+
+    _assert_approved_with_task(db, r)
+    assert len(_aliases(db)) == before
+
+
+def test_save_alias_ignored_on_manual_task_create(pm_client, db, seed):
+    created = pm_client.post("/api/v1/approvals", json={
+        "workspace_id": seed["ws"].workspace_id, "type": "task_create", "payload": {"title": "수동 요청"},
+    })
+    assert created.status_code == 201
+    before = len(_aliases(db))
+
+    r = pm_client.patch(f"/api/v1/approvals/{created.json()['data']['approval_id']}", json={
+        "status": "approved", "save_alias": True,
+        "task_overrides": {"assignee_member_id": seed["leader"].member_id},
+    })
+
+    _assert_approved_with_task(db, r, "수동 요청")
+    assert len(_aliases(db)) == before
+
+
+def test_save_alias_ignored_when_rejected(client, pm_client, db, seed):
+    _hold_item(client, seed)
+    before = len(_aliases(db))
+    approval = _approvals(db, "task_create")[0]
+
+    r = pm_client.patch(
+        f"/api/v1/approvals/{approval.approval_id}", json={"status": "rejected", "save_alias": True}
+    )
+
+    assert r.status_code == 200
+    assert r.json()["data"]["status"] == "rejected"
+    assert len(_aliases(db)) == before
+
+
+def test_save_alias_ignores_unique_conflict(client, pm_client, db, seed, monkeypatch):
+    """미리 조회를 지나친 동시 승인이 유니크 제약에 걸려도 승인은 그대로 커밋된다."""
+    _hold_item(client, seed)
+    db.add(MemberAlias(
+        member_id=seed["leader"].member_id, workspace_id=seed["ws"].workspace_id, alias_text="하은",
+        alias_type="nickname", source="manual", confidence=0.5, verified=False,
+    ))
+    db.commit()
+    before = len(_aliases(db))
+    monkeypatch.setattr("app.services.alias_learning._alias_exists", lambda *a, **k: False)
+
+    r = _approve(pm_client, db, assignee=seed["leader"].member_id)
+
+    _assert_approved_with_task(db, r)
+    assert len(_aliases(db)) == before
+    db.expire_all()
+    assert _approvals(db, "task_create")[0].status == "approved"

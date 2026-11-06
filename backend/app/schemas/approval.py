@@ -59,6 +59,11 @@ class ApprovalResolveRequest(BaseModel):
         "null 이면 미정(due_date, assignee_member_id 만 가능)이다. "
         "task_create 는 task_title, assignee_member_id, due_date, task_update 는 status, due_date 를 고칠 수 있다",
     )
+    save_alias: bool = Field(
+        False,
+        description="task_create 를 승인하며 고른 담당자에게 alias_text 를 별칭으로 저장할지. "
+        "alias_candidate 가 false 이거나 담당자가 미정이거나 이미 있으면 아무것도 하지 않는다. rejected 와 함께 오면 무시한다",
+    )
 
 
 class ApprovalListResponse(BaseModel):

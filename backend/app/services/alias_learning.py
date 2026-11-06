@@ -8,9 +8,19 @@ import logging
 from collections.abc import Sequence
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.models import ApprovalRequest, ApprovalStatus, ApprovalType, ExtractionAction, ExtractionItem
+from app.models import (
+    AliasSource,
+    AliasType,
+    ApprovalRequest,
+    ApprovalStatus,
+    ApprovalType,
+    ExtractionAction,
+    ExtractionItem,
+    MemberAlias,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -99,3 +109,41 @@ def approval_alias_texts(db: Session, approvals: Sequence[ApprovalRequest]) -> d
         if text is not None:
             texts[item.approval_id] = text
     return texts
+
+
+def _alias_exists(db: Session, workspace_id: str, member_id: str, alias_text: str) -> bool:
+    return db.scalar(
+        select(MemberAlias.alias_id).where(
+            MemberAlias.workspace_id == workspace_id,
+            MemberAlias.member_id == member_id,
+            MemberAlias.alias_text == alias_text,
+        )
+    ) is not None
+
+
+def learn_alias(db: Session, *, workspace_id: str, member_id: str, alias_text: str) -> bool:
+    """승인하며 고른 담당자에게 별칭을 저장한다. 저장했으면 True, 이미 있어서 넘어가면 False.
+
+    이 별칭은 덤이라 실패해도 승인을 막으면 안 된다. 같은 별칭이 동시에 들어와 유니크 제약에 걸리면
+    savepoint 만 되돌리고 넘어간다. savepoint 앞에서 flush 하는 이유는, 그 전에 남은 task·이력 flush 오류가
+    아래 IntegrityError 와 섞여 별칭 중복으로 잘못 삼켜지지 않게 하려는 것이다.
+    """
+    if _alias_exists(db, workspace_id, member_id, alias_text):
+        return False
+    db.flush()
+    try:
+        with db.begin_nested():
+            db.add(MemberAlias(
+                workspace_id=workspace_id,
+                member_id=member_id,
+                alias_text=alias_text,
+                alias_type=AliasType.NICKNAME,
+                source=AliasSource.LEARNED,
+                confidence=LEARNED_CONFIDENCE,
+                verified=True,
+            ))
+            db.flush()
+    except IntegrityError:
+        return False
+    logger.info("승인으로 별칭을 학습했습니다. workspace=%s member=%s", workspace_id, member_id)
+    return True
