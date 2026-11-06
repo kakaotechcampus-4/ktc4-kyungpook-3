@@ -65,9 +65,6 @@ class FakeReader:
         self.messages, self.before = list(messages), list(before)
         self.read_args, self.before_args = None, None
 
-    def guild_id(self):
-        return "900"
-
     def read(self, after, before):
         self.read_args = (after, before)
         return [m for m in self.messages if after < m[3] < before]   # Discord history 처럼 열린 구간
@@ -92,13 +89,12 @@ class FakeExtract:
 
 @pytest.fixture(autouse=True)
 def _runs_dir(tmp_path, monkeypatch):
-    # 시도 기록(runs/chat_poll_attempt.json)이 실제 runs/ 에 남지 않게 한다
+    # 시도 기록(runs/chat_poll_attempt_ws-1.json)이 실제 runs/ 에 남지 않게 한다
     monkeypatch.setattr("capture.chat_poll.RUNS_DIR", tmp_path)
 
 
 def _env(cursor=None):
     fake = FakeBe()
-    fake.guilds = {"900": "ws-1"}
     if cursor:
         fake.chat_cursors["ws-1"] = cursor.isoformat()
     return fake, BeClient("http://be.local", session=fake, service_token="svc-token")
@@ -111,14 +107,14 @@ def _paths(fake):
 def test_no_human_messages_creates_nothing():
     fake, client = _env()
     reader = FakeReader([("900", "봇", True, _at(hours=1), "회의록")])
-    assert poll(reader, client, FakeExtract(), now=NOW, cfg=CFG) == 0
+    assert poll(reader, client, FakeExtract(), workspace_id="ws-1", now=NOW, cfg=CFG) == 0
     assert ("POST", "/meetings") not in _paths(fake)
 
 
 def test_first_run_reads_initial_hours():
     fake, client = _env()
     reader = FakeReader()
-    poll(reader, client, FakeExtract(), now=NOW, cfg=CFG)
+    poll(reader, client, FakeExtract(), workspace_id="ws-1", now=NOW, cfg=CFG)
     assert reader.read_args == (datetime(2026, 11, 3, tzinfo=timezone.utc), NOW)
 
 
@@ -126,7 +122,7 @@ def test_message_at_cursor_is_skipped():
     cursor = _at(hours=5)
     fake, client = _env(cursor)
     reader = FakeReader([("1", "하은", False, cursor, "이미 처리"), ("1", "하은", False, _at(hours=4), "새 글")])
-    poll(reader, client, FakeExtract(), now=NOW, cfg=CFG)
+    poll(reader, client, FakeExtract(), workspace_id="ws-1", now=NOW, cfg=CFG)
     assert [s["text"] for s in fake.sources["m1"].values()] == ["새 글"]
 
 
@@ -137,7 +133,7 @@ def test_catch_up_sends_only_first_14_days_of_messages():
     reader = FakeReader([("1", "하은", False, first, "첫 글"),
                          ("1", "하은", False, first + timedelta(days=14), "경계"),
                          ("1", "하은", False, first + timedelta(days=14, seconds=1), "다음 실행")])
-    poll(reader, client, FakeExtract(), now=NOW, cfg=CFG)
+    poll(reader, client, FakeExtract(), workspace_id="ws-1", now=NOW, cfg=CFG)
     assert reader.read_args == (cursor, NOW)
     saved = list(fake.sources["m1"].values())
     assert [s["text"] for s in saved] == ["첫 글", "경계"]
@@ -148,7 +144,7 @@ def test_empty_window_after_cursor_does_not_stall():
     cursor = _at(days=20)
     fake, client = _env(cursor)
     reader = FakeReader([("1", "하은", False, cursor + timedelta(days=16), "한참 뒤 글")])
-    assert poll(reader, client, FakeExtract(), now=NOW, cfg=CFG) == 0
+    assert poll(reader, client, FakeExtract(), workspace_id="ws-1", now=NOW, cfg=CFG) == 0
     assert [s["text"] for s in fake.sources["m1"].values()] == ["한참 뒤 글"]
 
 
@@ -183,7 +179,7 @@ def test_calls_in_order_and_cursor_lands_on_last_message():
     first, last = _at(hours=3), _at(hours=1)
     reader = FakeReader([("1", "하은", False, first, "로그인 언제?"), ("2", "민수", False, last, "금요일")])
     item = {"action": "create", "task_title": "로그인"}
-    assert poll(reader, client, FakeExtract([item]), now=NOW, cfg=CFG) == 0
+    assert poll(reader, client, FakeExtract([item]), workspace_id="ws-1", now=NOW, cfg=CFG) == 0
     assert _paths(fake)[-4:] == [("POST", "/meetings"), ("PATCH", "/meetings/m1/end"),
                                  ("POST", "/meetings/m1/sources"), ("POST", "/extractions")]
     created = fake.calls[-4][2]
@@ -197,7 +193,7 @@ def test_calls_in_order_and_cursor_lands_on_last_message():
 def test_extraction_sent_even_with_zero_items():
     fake, client = _env()
     reader = FakeReader([("1", "하은", False, _at(hours=1), "점심 뭐 먹지")])
-    assert poll(reader, client, FakeExtract(), now=NOW, cfg=CFG) == 0
+    assert poll(reader, client, FakeExtract(), workspace_id="ws-1", now=NOW, cfg=CFG) == 0
     e = fake.extractions["m1"]
     assert e["items"] == [] and e["transcript_path"] is None and e["model_name"] is None
 
@@ -205,7 +201,7 @@ def test_extraction_sent_even_with_zero_items():
 def test_judge_failure_marks_meeting_failed():
     fake, client = _env()
     reader = FakeReader([("1", "하은", False, _at(hours=1), "로그인 할게요")])
-    assert poll(reader, client, FakeExtract(error=JudgeAllFailed("x")), now=NOW, cfg=CFG) == 1
+    assert poll(reader, client, FakeExtract(error=JudgeAllFailed("x")), workspace_id="ws-1", now=NOW, cfg=CFG) == 1
     assert fake.meetings["m1"]["status"] == "failed" and fake.meetings["m1"]["failed_stage"] == "extract"
     assert "m1" not in fake.extractions
 
@@ -216,7 +212,7 @@ def test_context_not_in_sources():
     reader = FakeReader([("1", "하은", False, first, "새 글")],
                         before=[("2", "민수", False, _at(hours=30), "옛 글\nsecond line")])
     extract = FakeExtract()
-    poll(reader, client, extract, now=NOW, cfg=CFG)
+    poll(reader, client, extract, workspace_id="ws-1", now=NOW, cfg=CFG)
     assert reader.before_args == (first, 30)
     assert [s["text"] for s in fake.sources["m1"].values()] == ["새 글"]
     assert [s.text for s in extract.seen.context.segments] == ["옛 글 second line"]
@@ -231,7 +227,7 @@ def test_message_dates_are_kst():
     assert message_dates(msgs, CFG.meeting_timezone) == {1: date(2026, 11, 4)}
     fake, client = _env()
     extract = FakeExtract()
-    poll(FakeReader(msgs), client, extract, now=NOW, cfg=CFG)
+    poll(FakeReader(msgs), client, extract, workspace_id="ws-1", now=NOW, cfg=CFG)
     assert extract.seen.dates == {1: date(2026, 11, 4)} and extract.seen.today == date(2026, 11, 4)
 
 
@@ -240,7 +236,7 @@ def test_dry_run_writes_nothing_to_be(tmp_path, monkeypatch):
     fake, client = _env()
     reader = FakeReader([("1", "하은", False, _at(hours=1), "로그인 할게요")])
     assert poll(reader, client, FakeExtract([{"action": "create", "task_title": "로그인"}]),
-                now=NOW, cfg=CFG, dry_run=True) == 0
+                workspace_id="ws-1", now=NOW, cfg=CFG, dry_run=True) == 0
     assert all(m == "GET" for m, _ in _paths(fake))
     assert len(list(tmp_path.glob("chat_poll_*.json"))) == 1
 
@@ -250,7 +246,7 @@ def test_repeated_failure_on_same_cursor_warns(capsys):
     msgs = [("1", "하은", False, _at(hours=4), "로그인 할게요")]
     for _ in range(2):
         fake, client = _env(cursor)
-        assert poll(FakeReader(msgs), client, FakeExtract(error=JudgeAllFailed("x")), now=NOW, cfg=CFG) == 1
+        assert poll(FakeReader(msgs), client, FakeExtract(error=JudgeAllFailed("x")), workspace_id="ws-1", now=NOW, cfg=CFG) == 1
     err = capsys.readouterr().err
     assert err.count("번째 시도") == 1 and "2번째 시도" in err
 
@@ -259,13 +255,13 @@ def test_success_clears_attempt_record(tmp_path, capsys):
     cursor = _at(hours=5)
     msgs = [("1", "하은", False, _at(hours=4), "로그인 할게요")]
     fake, client = _env(cursor)
-    poll(FakeReader(msgs), client, FakeExtract(error=JudgeAllFailed("x")), now=NOW, cfg=CFG)
+    poll(FakeReader(msgs), client, FakeExtract(error=JudgeAllFailed("x")), workspace_id="ws-1", now=NOW, cfg=CFG)
     fake, client = _env(cursor)
-    assert poll(FakeReader(msgs), client, FakeExtract(), now=NOW, cfg=CFG) == 0
-    assert not (tmp_path / "chat_poll_attempt.json").exists()
+    assert poll(FakeReader(msgs), client, FakeExtract(), workspace_id="ws-1", now=NOW, cfg=CFG) == 0
+    assert not (tmp_path / "chat_poll_attempt_ws-1.json").exists()
     capsys.readouterr()   # 성공한 두 번째 실행도 시작할 때는 2번째 시도로 경고한다
     fake, client = _env(cursor)
-    poll(FakeReader(msgs), client, FakeExtract(error=JudgeAllFailed("x")), now=NOW, cfg=CFG)
+    poll(FakeReader(msgs), client, FakeExtract(error=JudgeAllFailed("x")), workspace_id="ws-1", now=NOW, cfg=CFG)
     assert "번째 시도" not in capsys.readouterr().err
 
 
@@ -273,10 +269,10 @@ def test_first_run_failure_is_reread_by_next_run():
     # 커서가 없을 때 실패하면, 다음 날 실행도 now-24h 가 아니라 지난 실행의 시작점부터 읽는다
     msgs = [("1", "하은", False, _at(hours=20), "로그인 할게요")]
     fake, client = _env()
-    assert poll(FakeReader(msgs), client, FakeExtract(error=JudgeAllFailed("x")), now=NOW, cfg=CFG) == 1
+    assert poll(FakeReader(msgs), client, FakeExtract(error=JudgeAllFailed("x")), workspace_id="ws-1", now=NOW, cfg=CFG) == 1
     fake, client = _env()
     reader = FakeReader(msgs)
-    assert poll(reader, client, FakeExtract(), now=NOW + timedelta(days=1), cfg=CFG) == 0
+    assert poll(reader, client, FakeExtract(), workspace_id="ws-1", now=NOW + timedelta(days=1), cfg=CFG) == 0
     assert reader.read_args[0] == NOW - timedelta(hours=24)
     assert [s["text"] for s in fake.sources["m1"].values()] == ["로그인 할게요"]
 
@@ -284,5 +280,28 @@ def test_first_run_failure_is_reread_by_next_run():
 def test_dry_run_leaves_no_attempt_record(tmp_path):
     fake, client = _env()
     poll(FakeReader([("1", "하은", False, _at(hours=1), "글")]), client,
-         FakeExtract(error=JudgeAllFailed("x")), now=NOW, cfg=CFG, dry_run=True)
-    assert not (tmp_path / "chat_poll_attempt.json").exists()
+         FakeExtract(error=JudgeAllFailed("x")), workspace_id="ws-1", now=NOW, cfg=CFG, dry_run=True)
+    assert not (tmp_path / "chat_poll_attempt_ws-1.json").exists()
+
+
+def test_attempt_records_are_per_workspace(tmp_path, capsys):
+    cursor = _at(hours=5)
+    msgs = [("1", "하은", False, _at(hours=4), "로그인 할게요")]
+    for _ in range(2):
+        fake, client = _env(cursor)
+        assert poll(FakeReader(msgs), client, FakeExtract(error=JudgeAllFailed("x")),
+                    workspace_id="ws-1", now=NOW, cfg=CFG) == 1
+    assert "2번째 시도" in capsys.readouterr().err
+    fake, client = _env()
+    fake.chat_cursors["ws-2"] = cursor.isoformat()
+    assert poll(FakeReader(msgs), client, FakeExtract(), workspace_id="ws-2", now=NOW, cfg=CFG) == 0
+    assert "번째 시도" not in capsys.readouterr().err
+    assert (tmp_path / "chat_poll_attempt_ws-1.json").exists()
+    assert not (tmp_path / "chat_poll_attempt_ws-2.json").exists()
+
+
+def test_poll_does_not_look_up_guild():
+    fake, client = _env()
+    reader = FakeReader([("1", "하은", False, _at(hours=1), "글")])
+    assert poll(reader, client, FakeExtract(), workspace_id="ws-1", now=NOW, cfg=CFG) == 0
+    assert not any("/integrations/discord/guilds/" in p for _, p in _paths(fake))

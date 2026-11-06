@@ -3,7 +3,7 @@
 이어 읽는 자리는 BE 가 정한다. GET /workspaces/{id}/chat-cursor 가 BE 가 이미 가진 마지막 채팅 메시지 시각을 주고,
 그 뒤 메시지만 읽는다(없으면 now - chat_poll_initial_hours). 한 번에 chat_poll_max_days 까지만 따라잡는다.
 
-  1 길드 → 워크스페이스, 커서 조회   2 커서 뒤 사람 메시지 읽기   3 그 앞 메시지를 참고 문맥으로 읽기(판단만, 저장 안 함)
+  1 BE 가 준 워크스페이스로 커서 조회   2 커서 뒤 사람 메시지 읽기   3 그 앞 메시지를 참고 문맥으로 읽기(판단만, 저장 안 함)
   4 POST /meetings(source=chat, started_at=첫 새 메시지)   5 end   6 sources(새 메시지만)   7 판단   8 POST /extractions
 
 메시지마다 end = start 로 보낸다. BE 의 커서는 started_at + 가장 늦은 발화 끝이라 마지막 새 메시지 시각과 정확히 같아지고,
@@ -18,7 +18,7 @@
 봇 토큰은 CHAT_POLL_BOT_TOKEN, 채널은 --channel 또는 DISCORD_CHANNEL_ID. --dry-run 은 BE 에 쓰지 않고 판단만 해 runs/ 에 저장한다.
 주의: 커서는 워크스페이스 단위(BE 의 가장 최근 done 채팅 회의)라 --channel 은 설정된 채널이어야 한다. 동시에 두 번 돌리면 제안이
 중복된다. 서버에서 손으로 돌릴 때는 `systemctl start mm-chat-poll.service` 를 쓴다(유닛의 flock 이 타이머 실행과 겹치지 않게 막는다).
-실행마다 runs/chat_poll_attempt.json 에 시도를 남기고 성공하면 지운다(_begin_attempt).
+실행마다 runs/chat_poll_attempt_<워크스페이스>.json 에 시도를 남기고 성공하면 지운다(_begin_attempt).
 """
 
 from __future__ import annotations
@@ -78,8 +78,6 @@ def message_dates(messages: list[Message], tz: str) -> dict[int, date]:
 
 
 class ChannelReader(Protocol):
-    def guild_id(self) -> str: ...
-
     def read(self, after: datetime, before: datetime) -> list[Message]:
         """after 이후 before 까지(리액션 포함), 오래된 것부터."""
 
@@ -150,10 +148,11 @@ class DiscordReader:
         return self._run(go())
 
 
-ATTEMPT_FILE = "chat_poll_attempt.json"
+def _attempt_path(workspace_id: str):
+    return RUNS_DIR / f"chat_poll_attempt_{workspace_id}.json"
 
 
-def _begin_attempt(cursor: datetime | None, after: datetime) -> datetime:
+def _begin_attempt(workspace_id: str, cursor: datetime | None, after: datetime) -> datetime:
     """이번 실행을 시도로 남기고 읽기 시작 시각을 돌려준다. 성공하면 _end_attempt 가 지운다.
 
     실패한 회의는 커서에 들지 않아 같은 구간을 다시 읽는다. 매번 실패하는 구간이면 수집이 멈추므로, 같은 커서에서 두 번째
@@ -161,7 +160,7 @@ def _begin_attempt(cursor: datetime | None, after: datetime) -> datetime:
     커서가 없을 때(첫 실행) 실패하면 다음 실행의 now - initial_hours 가 그 구간을 건너뛰므로 지난 시작점부터 읽는다.
     ponytail: 기록은 이 서버의 runs/ 에만 있다. 서버를 옮기거나 runs/ 를 지우면 센 횟수와 첫 실행 시작점을 잃는다.
     """
-    path = RUNS_DIR / ATTEMPT_FILE
+    path = _attempt_path(workspace_id)
     try:
         prev = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -173,27 +172,27 @@ def _begin_attempt(cursor: datetime | None, after: datetime) -> datetime:
         if cursor is None and prev.get("after"):
             after = min(after, datetime.fromisoformat(prev["after"]))
     if count >= 2:
-        print(f"[chat] 경고: 같은 구간(커서 {key or '없음'}, {after:%Y-%m-%d %H:%M} 이후)에서 {count}번째 시도입니다. "
+        print(f"[chat] ws={workspace_id} 경고: 같은 구간(커서 {key or '없음'}, {after:%Y-%m-%d %H:%M} 이후)에서 {count}번째 시도입니다. "
               f"지난 {count - 1}번은 끝나지 못했습니다(failed 채팅 회의·journal 을 확인하세요).", file=sys.stderr)
     RUNS_DIR.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps({"cursor": key, "after": after.isoformat(), "count": count}), encoding="utf-8")
     return after
 
 
-def _end_attempt() -> None:
-    (RUNS_DIR / ATTEMPT_FILE).unlink(missing_ok=True)
+def _end_attempt(workspace_id: str) -> None:
+    _attempt_path(workspace_id).unlink(missing_ok=True)
 
 
-def poll(reader: ChannelReader, client, extract, *, now: datetime, cfg, dry_run: bool = False) -> int:
+def poll(reader: ChannelReader, client, extract, *, workspace_id: str, now: datetime, cfg, dry_run: bool = False) -> int:
     """한 번 돈다. 종료 코드를 돌려준다(0 정상·읽을 것 없음, 1 실패)."""
     from capture.handoff import clean_item
     from capture.judge_path import JudgeAllFailed
 
-    ws = client.guild_workspace(reader.guild_id())
+    ws = workspace_id
     cursor = client.chat_cursor(ws)
     after = cursor or now - timedelta(hours=cfg.chat_poll_initial_hours)
     if not dry_run:
-        after = _begin_attempt(cursor, after)
+        after = _begin_attempt(ws, cursor, after)
     # 커서 뒤 ~ now 를 다 읽고 첫 사람 메시지부터 max_days 까지만 보낸다. 나머지는 커서가 나아간 다음 실행이 읽는다.
     # 읽는 구간을 먼저 자르면 그 안에 메시지가 없을 때 커서가 못 나아가 같은 빈 구간에서 영원히 멈춘다.
     # 이미 BE 에 있는 시각(커서 이하)과 now 이후는 뺀다. 리액션 줄도 원래 메시지 시각이라 같이 빠진다
@@ -210,14 +209,14 @@ def poll(reader: ChannelReader, client, extract, *, now: datetime, cfg, dry_run:
     if not transcript.segments:
         print("새 메시지가 없습니다.")
         if not dry_run:
-            _end_attempt()
+            _end_attempt(ws)
         return 0
     kept = _kept(messages)
     first_at = kept[0][3]
     tz = ZoneInfo(cfg.meeting_timezone)
     dates = message_dates(messages, cfg.meeting_timezone)
     today = kept[-1][3].astimezone(tz).date()
-    print(f"[chat] 새 메시지 {len(transcript.segments)}개 ({after:%Y-%m-%d %H:%M} 이후)")
+    print(f"[chat] ws={ws} 새 메시지 {len(transcript.segments)}개 ({after:%Y-%m-%d %H:%M} 이후)")
 
     ctx_messages = reader.read_before(first_at, cfg.chat_poll_context_messages)
     # 한 줄로 접는다. 여러 줄 메시지가 번호 매긴 프롬프트 줄처럼 보이면 안 된다(reader 가 이미 접었어도 한 번 더 지킨다)
@@ -258,14 +257,14 @@ def poll(reader: ChannelReader, client, extract, *, now: datetime, cfg, dry_run:
         client.create_extraction(meeting_id, ws, transcript_path=None, model_name=None,
                                  items=[clean_item(i) for i in out.items])
     except Exception as e:  # noqa: BLE001 - 어느 단계든 회의를 failed 로 닫고 1 로 끝낸다
-        print(f"[chat] {stage} 실패: {type(e).__name__}: {e}", file=sys.stderr)
+        print(f"[chat] ws={ws} {stage} 실패: {type(e).__name__}: {e}", file=sys.stderr)
         try:
             client.fail_meeting(meeting_id, stage)
         except Exception as e2:  # noqa: BLE001
-            print(f"[chat] 실패 통보도 실패: {e2}", file=sys.stderr)
+            print(f"[chat] ws={ws} 실패 통보도 실패: {e2}", file=sys.stderr)
         return 1
-    _end_attempt()
-    print(f"[chat] 회의 {meeting_id} 등록, 항목 {len(out.items)}건, 판단 못 한 것 {len(out.failures)}건")
+    _end_attempt(ws)
+    print(f"[chat] ws={ws} 회의 {meeting_id} 등록, 항목 {len(out.items)}건, 판단 못 한 것 {len(out.failures)}건")
     return 0
 
 
@@ -295,7 +294,7 @@ def main() -> int:
         return 1
     reader = DiscordReader(cfg.chat_poll_bot_token, int(channel))
     try:
-        return poll(reader, client, extract, now=datetime.now(timezone.utc), cfg=cfg, dry_run=args.dry_run)
+        return poll(reader, client, extract, workspace_id=client.guild_workspace(reader.guild_id()), now=datetime.now(timezone.utc), cfg=cfg, dry_run=args.dry_run)
     finally:
         reader.close()
 
