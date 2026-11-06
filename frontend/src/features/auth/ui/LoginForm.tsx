@@ -10,6 +10,7 @@ import { PasswordField } from '@/shared/ui/password-field'
 import { TextField } from '@/shared/ui/text-field'
 import { applyServerError } from '../lib/serverError'
 import { loginSchema } from '../model/schemas'
+import { useAuthNext } from '../model/useAuthNext'
 import { useEnterSession } from '../model/useEnterSession'
 import { useLoginNotice } from '../model/useLoginNotice'
 import { AlternativeAuth } from './AlternativeAuth'
@@ -39,9 +40,10 @@ export function LoginForm() {
     formState: { errors, isSubmitting },
   } = form
   const enterSession = useEnterSession()
-  const [formError, setFormError] = useState<string | null>(null)
-  // 비밀번호를 바꾸고 온 경우의 안내. 한 번 읽고 기록에서 지운다 — 새로고침·뒤로가기에 다시 뜨지 않는다
+  // 비밀번호를 바꾸고 온 경우와 카카오에서 돌아온 경우의 안내. 한 번 읽고 기록에서 지운다 — 새로고침·뒤로가기에 다시 뜨지 않는다
   const notice = useLoginNotice()
+  const [formError, setFormError] = useState(notice.error)
+  const next = useAuthNext()
 
   const onSubmit = submit(async (values) => {
     setFormError(null)
@@ -55,9 +57,9 @@ export function LoginForm() {
   return (
     <>
       <form noValidate className={FORM} onSubmit={(event) => void onSubmit(event)}>
-        {notice === null ? null : (
+        {notice.status === null ? null : (
           <Panel role="status">
-            <p className={NOTICE}>{notice}</p>
+            <p className={NOTICE}>{notice.status}</p>
           </Panel>
         )}
         <FormErrorPanel message={formError} />
@@ -90,7 +92,7 @@ export function LoginForm() {
       <AlternativeAuth label="카카오로 로그인" />
       <p className={FOOTNOTE}>
         처음이신가요?{' '}
-        <GuardedLink to={paths.signup()} className={FOOTNOTE_LINK}>
+        <GuardedLink to={paths.signup({ next })} className={FOOTNOTE_LINK}>
           회원가입
         </GuardedLink>
       </p>

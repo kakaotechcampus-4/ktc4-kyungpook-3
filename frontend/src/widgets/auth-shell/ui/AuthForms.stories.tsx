@@ -34,6 +34,26 @@ type Story = StoryObj<typeof meta>
 /** `비밀번호를 잊으셨나요?` 는 비활성이다 (D-005). 카카오 로그인 버튼이 있다 (D-179) */
 export const 로그인_기본: Story = {}
 
+/** 카카오에서 돌아온 안내. 취소는 조용한 안내다 */
+export const 로그인_카카오_취소: Story = {
+  parameters: { route: '/login?oauth=kakao&oauth_result=cancelled' },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(await canvas.findByRole('status')).toHaveTextContent('카카오 로그인을 취소했어요.')
+  },
+}
+
+/** 이미 있는 이메일과 겹쳐 잇지 못했다. 이메일 로그인을 안내한다 */
+export const 로그인_카카오_이메일_충돌: Story = {
+  parameters: { route: '/login?oauth=kakao&oauth_result=failed&oauth_reason=email_exists' },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(await canvas.findByRole('alert')).toHaveTextContent(
+      '이미 가입된 이메일이에요. 이메일로 로그인해 주세요.',
+    )
+  },
+}
+
 /** 형식 오류는 입력 아래, 첫 오류 칸으로 포커스 (D-142) */
 export const 로그인_입력_오류: Story = {
   play: async ({ canvasElement }) => {

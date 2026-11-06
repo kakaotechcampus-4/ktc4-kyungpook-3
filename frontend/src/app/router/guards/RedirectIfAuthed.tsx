@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { Navigate, Outlet, useSearchParams } from 'react-router'
 import { sessionQueryOptions } from '@/entities/user'
 import { authRevisitPath, postLoginPath, workspaceListQueryOptions } from '@/entities/workspace'
+import { returnedFromKakaoLogin } from '@/features/auth'
 import { LOGIN_PARAMS } from '@/shared/config/routes'
 import { parseReturnPath } from '@/shared/lib/return-path'
 import { RouteSkeleton } from '../RouteSkeleton'
@@ -28,8 +29,9 @@ import { ScreenError } from './ScreenError'
 export function RedirectIfAuthed() {
   const session = useQuery(sessionQueryOptions())
   const workspaces = useQuery({ ...workspaceListQueryOptions(), enabled: Boolean(session.data) })
-  const [sawSignedOut, setSawSignedOut] = useState(false)
   const [searchParams] = useSearchParams()
+  // 카카오 로그인 복귀는 새 문서라 비로그인을 본 적이 없다. 방금 로그인했으니 이메일 로그인과 같은 분기로 시작한다
+  const [sawSignedOut, setSawSignedOut] = useState(() => returnedFromKakaoLogin(searchParams))
   // 조회가 끝났는데 사용자가 없으면 비로그인을 본 것이다 — 401(null)뿐 아니라 네트워크·5xx 실패도 그렇다.
   // 그 화면에서 로그인한 것은 로그인 직후다. 렌더 중 파생 상태 갱신이고 한 번 true 가 되면 되돌아가지 않는다
   if (!session.data && !session.isPending && !sawSignedOut) setSawSignedOut(true)
