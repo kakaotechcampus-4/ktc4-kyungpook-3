@@ -21,6 +21,7 @@ from app.models import (
     ApprovalType,
     ExtractionAction,
     ExtractionItem,
+    Member,
     MemberAlias,
 )
 
@@ -128,17 +129,22 @@ def approval_alias_texts(db: Session, approvals: Sequence[ApprovalRequest]) -> d
 
 
 def taken_alias_texts(db: Session, workspace_id: str, texts: Collection[str]) -> set[str]:
-    """texts 중 이 워크스페이스에서 이미 누군가 별칭으로 가진 글자들.
+    """texts 중 이 워크스페이스에서 탈퇴하지 않은 누군가가 이미 별칭으로 가진 글자들.
 
-    어느 팀원이든, 탈퇴한 팀원이든 센다. resolve_assignee 가 탈퇴 여부를 거르지 않고 같은 글자의 별칭 행을
-    모두 세서, 두 사람이 같은 글자를 가지면 AMBIGUOUS 로 판정해 원래 팀원 항목까지 hold 로 떨어뜨리기 때문이다.
+    다른 팀원이 가진 글자를 또 배우면 두 사람이 같은 글자를 갖게 되어, resolve_assignee 가 AMBIGUOUS 로
+    판정해 원래 팀원 항목까지 hold 로 떨어진다. 탈퇴한 팀원의 별칭은 세지 않는다. 담당자를 찾을 때도(#463
+    resolve_assignee) 보지 않으므로, 세면 그 글자는 PM 이 탈퇴자 별칭을 지울 때까지 배울 수 없다(#464 리뷰).
+    탈퇴자 별칭은 지우지 않고 두며, PM 이 별칭 관리(DELETE /members/aliases/{id})에서 지울 수 있다.
     """
     if not texts:
         return set()
     return set(db.scalars(
-        select(MemberAlias.alias_text).where(
+        select(MemberAlias.alias_text)
+        .join(Member, Member.member_id == MemberAlias.member_id)
+        .where(
             MemberAlias.workspace_id == workspace_id,
             MemberAlias.alias_text.in_(texts),
+            Member.is_deleted.is_(False),
         )
     ))
 

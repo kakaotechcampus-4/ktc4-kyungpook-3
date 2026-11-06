@@ -506,19 +506,24 @@ def test_alias_held_by_another_member_is_not_candidate_and_not_saved(client, pm_
     assert [a for a in _aliases(db) if a.member_id == seed["leader"].member_id and a.alias_text == "화은"] == []
 
 
-def test_alias_held_by_departed_member_is_not_candidate_and_not_saved(client, pm_client, db, seed):
-    """탈퇴 팀원의 별칭도 resolve_assignee 가 세므로 같은 기준으로 뺀다."""
+def test_alias_held_only_by_departed_member_is_still_candidate_and_saved(client, pm_client, db, seed):
+    """탈퇴 팀원의 별칭은 세지 않는다. 담당자를 찾을 때도(#463 resolve_assignee) 탈퇴자 별칭은 보지 않으므로,
+    세면 그 글자는 PM 이 탈퇴자 별칭을 지울 때까지 배울 수 없다(#464 리뷰). 탈퇴자 별칭은 지우지 않고 그대로 둔다."""
     gone = _member(db, seed["ws"], "탈퇴자", [("화은", 0.5)])
     gone.is_deleted = True
     db.commit()
     extraction_id = _hold_item(client, seed)
-    _assert_not_candidate_everywhere(pm_client, db, extraction_id)
-    before = len(_aliases(db))
 
+    item = _extraction_item(pm_client, extraction_id)
     r = _approve(pm_client, db, assignee=seed["leader"].member_id)
 
+    assert (item["alias_candidate"], item["alias_text"]) == (True, "화은")
     _assert_approved_with_task(db, r)
-    assert len(_aliases(db)) == before
+    held = sorted((a.member_id, a.alias_text, a.source) for a in _aliases(db) if a.alias_text == "화은")
+    assert held == sorted([
+        (gone.member_id, "화은", "manual"),
+        (seed["leader"].member_id, "화은", "learned"),
+    ])
 
 
 def test_alias_held_in_other_workspace_is_still_candidate_and_saved(client, pm_client, db, seed):

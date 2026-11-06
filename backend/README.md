@@ -382,10 +382,10 @@ PM 이 디스코드 서버의 텍스트 채널 하나를 골라 두면 녹음 �
 |---|---|
 | 담당자 종류 저장 | `POST /extractions` 항목의 `assignee_type`을 `extraction_item.assignee_type`에 저장한다. 알려진 7개(first·second·thirdname·thirdpronoun·thirdrole·group·none)가 아니면 NULL로 저장하고 경고 로그를 남긴다. 요청은 거절하지 않고, 게이트 판단에는 보낸 값을 그대로 쓴다. 이 기능 전에 저장된 항목은 NULL이다 |
 | 저장할 글자 | `assignee_raw`를 다듬은 것이다. 앞뒤 공백 제거 → 끝 조사 한 번(께서·한테·에게·이가·가·이·는·을·를·께, 긴 것부터, "은"은 떼지 않음) → 끝 "님" → 연속 공백을 하나로. 비면 저장하지 않는다. 예: "하은이가" → "하은", "지민님이" → "지민", "BE 리더가" → "BE 리더" |
-| 물어볼 항목 (`alias_candidate`) | 모두 만족하면 `true`이고 `alias_text`에 저장할 글자가 실린다. ① 새 항목(create) ② 추출 때 담당자가 비어 있었음(못 찾음·애매함) ③ `assignee_type`이 `thirdname`·`thirdrole` ④ 다듬은 글자가 비지 않음 ⑤ 연결된 승인 요청이 pending ⑥ 같은 워크스페이스에 그 글자를 가진 별칭이 하나도 없음(탈퇴 팀원 것도 센다. `resolve_assignee`가 그렇게 세기 때문이다). 아니면 `false`·`null`이다. 응답을 만들 때 계산하고 저장하지 않는다 |
+| 물어볼 항목 (`alias_candidate`) | 모두 만족하면 `true`이고 `alias_text`에 저장할 글자가 실린다. ① 새 항목(create) ② 추출 때 담당자가 비어 있었음(못 찾음·애매함) ③ `assignee_type`이 `thirdname`·`thirdrole` ④ 다듬은 글자가 비지 않음 ⑤ 연결된 승인 요청이 pending ⑥ 같은 워크스페이스에서 탈퇴하지 않은 팀원 누구도 그 글자를 별칭으로 갖고 있지 않음(다른 팀원 것을 또 배우면 두 사람이 겹쳐 애매함이 된다. 탈퇴 팀원의 별칭은 담당자를 찾을 때도 보지 않으므로 세지 않고, 지우지도 않는다. PM이 `DELETE /members/aliases/{id}`로 지울 수 있다). 아니면 `false`·`null`이다. 응답을 만들 때 계산하고 저장하지 않는다 |
 | 싣는 응답 | `GET /extractions/{id}`의 항목, `GET /approvals`, `GET /approvals/{id}`, `POST /approvals`, `PATCH /approvals/{id}`(처리 뒤라 항상 `false`). 수동으로 만든 승인 요청은 추출 항목이 없어 `false`다 |
 | 저장 (`save_alias`) | `PATCH /approvals/{id}`에 `{"status": "approved", "save_alias": true}`를 보내고, 위 ①~④·⑥을 만족하고, 최종 담당자(`task_overrides`로 고른 값 포함)가 있으면 그 팀원에게 `member_alias`(`source=learned`, `verified=true`, `confidence=0.9`, `alias_type=nickname`)를 하나 만든다. 확인된 별칭이라 다음 회의에서 바로 확정 매칭된다 |
-| 저장하지 않는 경우 | `save_alias`가 없거나 false, 반려(같이 와도 오류 없이 무시), task_update 승인, 추출 때 담당자를 찾았던 항목(PM이 다른 사람으로 바꿔도), 1·2인칭·대명사·그룹·없음, `assignee_type`이 NULL인 옛 항목, 담당자를 미정으로 승인, 그 글자를 이미 누군가 가짐. 모두 승인은 그대로 성공한다 |
+| 저장하지 않는 경우 | `save_alias`가 없거나 false, 반려(같이 와도 오류 없이 무시), task_update 승인, 추출 때 담당자를 찾았던 항목(PM이 다른 사람으로 바꿔도), 1·2인칭·대명사·그룹·없음, `assignee_type`이 NULL인 옛 항목, 담당자를 미정으로 승인, 그 글자를 탈퇴하지 않은 누군가가 이미 가짐. 모두 승인은 그대로 성공한다 |
 | 동시 승인 | 저장 전에 같은 글자가 있는지 보고, 같은 팀원·글자 유니크 제약(`uq_alias_per_member`)에 걸리면 그 저장만 savepoint로 되돌린다. 승인과 태스크 생성은 커밋된다 |
 | 역할 | `thirdrole` 새 항목은 학습한 별칭으로 확신도가 높아져도 `auto`로 보내지 않는다(위 create 행). 역할을 맡은 사람이 바뀌면 PM이 별칭을 지우고 다시 등록한다. 지금 AI는 역할 원문을 보내지 않아(`ai/capture/handoff.py`, `ai/judge/pipeline.py`) 역할 별칭은 아직 학습되지 않는다 |
 

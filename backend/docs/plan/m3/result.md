@@ -60,7 +60,7 @@ M3 plan.md 가 비어 있어 완료조건이 없다. 마일스톤 완료를 판�
 | 다듬기 규칙 | 충족 | `test_trim_alias_text` |
 | 물어볼 항목만 `alias_candidate=true` | 충족 | `test_learnable_alias_text_for_unmatched_name_and_role`, `test_learnable_alias_text_is_none_when_not_learnable`, 추출 조회·승인 목록·단건·반려 뒤·수동 생성 API 테스트 |
 | `save_alias=true` 승인으로 learned·verified·0.9 저장 | 충족 | `test_save_alias_creates_learned_alias`, `test_save_alias_thirdrole_strips_particle` |
-| 저장하지 않는 경우(생략·false·반려·담당자 있던 항목·대상 외 종류·NULL 옛 항목·담당자 미정·수동 승인·task_update·이미 누군가 가짐·탈퇴 팀원이 가짐) 승인은 성공 | 충족 | 같은 파일의 저장 안 됨 테스트들 |
+| 저장하지 않는 경우(생략·false·반려·담당자 있던 항목·대상 외 종류·NULL 옛 항목·담당자 미정·수동 승인·task_update·탈퇴하지 않은 누군가가 이미 가짐). 탈퇴 팀원만 가진 글자는 저장함(`test_alias_held_only_by_departed_member_is_still_candidate_and_saved`) 승인은 성공 | 충족 | 같은 파일의 저장 안 됨 테스트들 |
 | 유니크 충돌을 삼키고 승인 커밋 | 충족(SQLite) | `test_save_alias_ignores_unique_conflict` |
 | 학습한 별칭으로 다음 회의에서 찾힘 | 미검증 | PR ① 머지 뒤 확인하기로 함 |
 
@@ -80,7 +80,7 @@ M3 plan.md 가 비어 있어 완료조건이 없다. 마일스톤 완료를 판�
 이슈의 "1인칭 화자(`source.member_id`·`speaker_discord_user_id`)" 중 `speaker_discord_user_id` 만 쓴다. 지금의 `resolve_speaker` 에 넘겨 지운 팀원을 거르는 확인을 그대로 거치기 위해서다. 1인칭 화자는 이슈 규칙 ③·⑦(seq 로 찾으면 seq 우선)과 달리 요청의 `evidence_speaker` 를 먼저 쓴다. 코드 리뷰에서 "가장 큰 seq 가 빠지면 더 앞 발화가 대표가 되어, 다른 사람이 1인칭 담당자로 확정되고 auto 로 태스크까지 생길 수 있다"는 지적이 나왔다. `evidence_speaker` 는 AI 가 결론을 말한 사람으로 직접 보낸 값이라 먼저 쓰고, 없을 때만 대표 근거 발화의 화자를 쓴다. PR 리뷰에서 `evidence_speaker` 가 없을 때도 같은 일이 생긴다는 지적이 나와(예: `[2, 99]` 에서 99 가 없으면 일을 요청한 2번 화자가 담당자), 대표 근거 발화가 요청한 seq 중 가장 큰 것일 때만 그 화자를 쓰고 아니면 화자가 없는 1인칭 항목(`hold`)으로 둔다. 항목 전체를 `hold` 로 돌리는 것보다 좁게, 화자 판정에만 적용했다. 화자가 없는 1인칭 항목은 원래 `assignee_raw`("제가")를 별칭으로 찾아 판정 로그에 쌓였고, 이름이 오면 화자를 모르는데도 그 사람으로 확정될 수 있었다. 이 경로로 가는 경우가 늘어서 함께 고쳤다. 별칭으로 찾지 않고 not_found 로 두되, 원문은 언급 표시로 남겨 judge·legacy 모두 `hold` 다. 보여 주는 근거(승인 요청, 추출 조회)는 하나라도 찾았으면 찾은 것 중 가장 큰 seq 발화를 그대로 쓴다. AI 에는 PR 로 알린다.
 
 
-#459 PR ②: 설계 확정 뒤 최종 리뷰에서 "다른 팀원이 이미 가진 글자를 배우면 그 팀원의 매칭이 애매함으로 바뀐다"는 지적이 나왔다. 사용자 확인을 거쳐 그 글자를 누군가(탈퇴 팀원 포함) 이미 가졌으면 묻지도 저장하지도 않는 것으로 정했다. 이슈 규칙 ④ 의 "이미 있으면 조용히 넘어감"을 다른 팀원까지 넓힌 것이다.
+#459 PR ②: 설계 확정 뒤 최종 리뷰에서 "다른 팀원이 이미 가진 글자를 배우면 그 팀원의 매칭이 애매함으로 바뀐다"는 지적이 나왔다. 사용자 확인을 거쳐 그 글자를 누군가 이미 가졌으면 묻지도 저장하지도 않는 것으로 정했다. PR 리뷰(#464) 뒤 탈퇴 팀원의 별칭은 세지 않는 것으로 바꿨다. #463 의 담당자 찾기가 탈퇴자 별칭을 보지 않아서다. 탈퇴자 별칭은 지우지 않고 PM 이 직접 지울 수 있게 둔다. 이슈 규칙 ④ 의 "이미 있으면 조용히 넘어감"을 다른 팀원까지 넓힌 것이다.
 
 ## 남은 작업과 제한 사항
 
