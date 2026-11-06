@@ -107,7 +107,9 @@ export function OptionList<V extends string>({
         const checked = value === selected
         const optionId = optionDomId(id, index)
         return (
-          // 이름은 글자만, 둘째 줄은 설명이다 — Radix Select 줄과 같은 이름으로 읽힌다
+          // 이름은 글자만, 둘째 줄은 설명이다 — Radix Select 줄과 같은 이름으로 읽힌다.
+          // 키는 줄이 아니라 목록이나 찾기 칸이 받고, 짚은 줄은 aria-activedescendant 로 알린다
+          // eslint-disable-next-line jsx-a11y/click-events-have-key-events
           <li
             key={value}
             id={optionId}
@@ -125,8 +127,6 @@ export function OptionList<V extends string>({
             onPointerMove={() => {
               if (!disabled && index !== activeIndex) onActiveChange(value)
             }}
-            // 키는 줄이 아니라 목록이나 찾기 칸이 받고, 짚은 줄은 aria-activedescendant 로 알린다
-            // eslint-disable-next-line jsx-a11y/click-events-have-key-events
             onClick={() => {
               if (!disabled) onSelect(value)
             }}
