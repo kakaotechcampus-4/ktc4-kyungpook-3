@@ -146,7 +146,10 @@ def judge_reply(item: dict[str, Any], *, run=None, jev: JevClient | None = None,
 
     후보가 하나면 보충 판단을 하지 않는다. PM 이 고른 뒤의 재판단도 고른 태스크만 후보로 온다.
     전체 실패는 예외다. 호출자가 예외 종류를 failure_reason 으로 보고한다.
+    맡긴 뒤 후보가 모두 지워졌으면 판단할 태스크가 없어 부르지 않는다.
     """
+    if not item["candidates"]:
+        return {"attempt": item["attempt"], "failure_reason": None, "model_name": None, "changes": []}
     transcript = Transcript(source="chat", segments=[
         TranscriptSegment(speaker="PM" if line["sender"] == "pm" else item["member_name"], start=float(i),
                           end=float(i), text=_squeeze(line["text"]), seq=i + 1)

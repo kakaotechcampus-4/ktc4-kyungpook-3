@@ -227,6 +227,15 @@ def test_another_failure_next_to_a_change_is_a_failed_line():
     assert body["failure_reason"] is None
 
 
+def test_no_live_candidate_judges_nothing():
+    run = FakeRun()
+    claim = {**_claim(), "candidates": []}
+
+    assert judge_reply(claim, run=run, jev=FakeJev()) == {
+        "attempt": 2, "failure_reason": None, "model_name": None, "changes": []}
+    assert run.calls == []
+
+
 def test_unknown_next_to_a_failure_is_returned():
     run = FakeRun(_create(), failures=[PipelineFailure("draft", "요약", "x")])
     assert [c["field"] for c in _judge(run)["changes"]] == ["unknown", "failed"]
