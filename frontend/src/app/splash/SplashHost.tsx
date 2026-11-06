@@ -9,12 +9,7 @@ import {
 } from 'react'
 import type { CSSProperties, Ref } from 'react'
 import { createPortal } from 'react-dom'
-import {
-  getSplashHoldCount,
-  onSplashShow,
-  setSplashCovering,
-  subscribeSplashHolds,
-} from '@/shared/lib/splash'
+import { getSplashHoldCount, onSplashShow, subscribeSplashHolds } from '@/shared/lib/splash'
 import { Mascot } from '@/shared/ui/mascot'
 import type { MascotHandle, MascotPose } from '@/shared/ui/mascot'
 import {
@@ -178,14 +173,6 @@ function SplashRunView({ run, appRoot, onDone }: SplashRunViewProps) {
       appRoot.removeAttribute('inert')
     }
   }, [inert, appRoot])
-
-  useLayoutEffect(() => {
-    if (!shown) return
-    setSplashCovering(true)
-    return () => {
-      setSplashCovering(false)
-    }
-  }, [shown])
 
   if (!shown) return null
 

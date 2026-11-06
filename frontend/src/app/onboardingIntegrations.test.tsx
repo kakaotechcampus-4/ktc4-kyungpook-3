@@ -12,11 +12,7 @@ import type { RecordedRequest, RequestLog } from '@/shared/test/requests'
 import { integrationsQueryOptions } from '@/entities/integration'
 import { deferred } from '@/shared/test/deferred'
 import { expireSession } from './expireSession'
-import { seenDashboardIntro } from './test/firstVisitIntro'
 import { renderApp } from './test/renderApp'
-
-// 온보딩을 마치면 첫 대시보드에 인트로가 뜬다(#430). 이 파일은 그 뒤 대시보드를 본다
-beforeEach(() => seenDashboardIntro())
 
 /* U3-3·U3-4·U3-5. 현재 탭 이동은 jsdom 이 못 하므로 leaveApp 만 바꿔 끼워 주소를 본다 */
 vi.mock('@/shared/lib/location', () => ({ leaveApp: vi.fn() }))

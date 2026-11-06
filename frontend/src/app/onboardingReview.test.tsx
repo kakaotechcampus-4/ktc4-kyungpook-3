@@ -9,11 +9,7 @@ import { server } from '@/shared/mock/server'
 import { deferred } from '@/shared/test/deferred'
 import { recordRequestBodies, recordRequests } from '@/shared/test/requests'
 import type { RecordedRequest } from '@/shared/test/requests'
-import { seenDashboardIntro } from './test/firstVisitIntro'
 import { renderApp } from './test/renderApp'
-
-// 온보딩을 마치면 첫 대시보드에 인트로가 뜬다(#430). 이 파일은 그 뒤 대시보드를 본다
-beforeEach(() => seenDashboardIntro())
 
 /* 카운터 양옆 화살표(`이전 단계`/`다음 단계`)와 지난 단계 둘러보기(`?review=1`).
    docs/impl-decision/2026-09-28-onboarding-layout.md (2026-09-29). ws_03 은 생성만 마치고 Discord 단계다 */
