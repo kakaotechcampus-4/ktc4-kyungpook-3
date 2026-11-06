@@ -14,8 +14,9 @@ from app.core.database import get_db
 from app.core.errors import AppError, Envelope, ErrorCode, success
 from app.models import Integration, Member, MemberRole
 from app.api.deps import get_current_member, get_current_pm, get_current_user, require_member, require_service_token
+from app.schemas.integration import DiscordChannelListResponse
 from app.schemas.workspace import DiscordGuildWorkspaceResponse
-from app.services import discord, discord_oauth, notion, notion_connect, notion_oauth, oauth_state
+from app.services import chat_channel, discord, discord_oauth, notion, notion_connect, notion_oauth, oauth_state
 
 logger = logging.getLogger(__name__)
 
@@ -137,6 +138,17 @@ def list_discord_members(
             workspace_id, exc.status_code, exc.reason,
         )
         raise AppError(ErrorCode.DISCORD_API_FAILED, details={"status": exc.status_code}) from None
+    return success({"items": items, "total": len(items)})
+
+
+@router.get("/{workspace_id}/discord/channels", response_model=Envelope[DiscordChannelListResponse])
+def list_discord_channels(
+    workspace_id: str,
+    member = Depends(get_current_pm),
+    db: Session = Depends(get_db)
+) -> dict:
+    """연결한 Discord 서버의 텍스트 채널. PM 이 채팅 수집 채널을 고를 때 쓴다."""
+    items = chat_channel.list_channels(db, workspace_id)
     return success({"items": items, "total": len(items)})
 
 
