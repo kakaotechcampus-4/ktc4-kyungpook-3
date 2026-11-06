@@ -294,7 +294,7 @@ function ApprovalFields({ values, issues, members, editable, onChange }: Approva
         <div className="relative">
           <select
             id={assigneeId}
-            className={`${SELECT} ${assigneeMissing ? 'border-accent text-accent-soft' : 'border-input-border text-ink'}`}
+            className={`${SELECT} ${assigneeMissing ? 'border-accent text-accent-solid' : 'border-input-border text-ink'}`}
             aria-invalid={assigneeMissing ? true : undefined}
             disabled={!editable}
             value={values.assigneeMemberId ?? ''}
@@ -321,7 +321,7 @@ function ApprovalFields({ values, issues, members, editable, onChange }: Approva
         type="text"
         placeholder="YYYY-MM-DD 또는 미정"
         value={values.dueDate ?? ''}
-        style={dueMissing && !dueInvalid ? { color: 'var(--color-accent-soft)' } : undefined}
+        style={dueMissing && !dueInvalid ? { color: 'var(--color-accent-solid)' } : undefined}
         readOnly={!editable}
         labelTone={dueMissing && !dueInvalid ? 'required-blocking' : 'normal'}
         error={dueInvalid ? '마감은 있는 날짜여야 해요.' : undefined}
