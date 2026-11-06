@@ -53,7 +53,7 @@
 
 - `source: "chat"`과 `started_at`은 디스코드 채팅 자동 수집용이다(구현됨, BE 담당 리뷰 대기). `started_at`은 이 회의에 담긴 첫 메시지 시각이고, 채팅 회의의 발화 `start`·`end`(초)는 이 시각에서 잰 값이다.
 - 요청 본문 `source: "chat"`(sources)은 `source`가 `chat`인 회의에만 보낼 수 있다. 다른 회의에 보내면 400 `INVALID_REQUEST`다(24시간 상한 우회 방지).
-- 채팅 회의가 `processing`으로 남아도 웹 업로드를 막지 않는다. 폴러가 죽어 `/end` 뒤 7시간이 지나도록 `processing`이면 BE sweeper가 `failed`(`failed_stage=chat_stalled`)로 바꾼다. 폴러 시간 제한(6시간, #431)보다 길게 잡은 값이라, 제한을 7시간 이상으로 올리면 이 값도 함께 올린다. 업로드 409 검사(`MEETING_PROCESSING_IN_PROGRESS`)는 `source`가 `chat`인 회의를 세지 않는다.
+- 채팅 회의가 `processing`으로 남아도 웹 업로드를 막지 않는다. 폴러가 죽어 `/end` 뒤 7시간이 지나도록 `processing`이면 BE sweeper가 `failed`(`failed_stage=chat_stalled`)로 바꾼다. 폴러 시간 제한을 6시간까지 올리는 #431 에 맞춰 그보다 길게 잡은 값이라, 제한을 7시간 이상으로 올리면 이 값도 함께 올린다. 업로드 409 검사(`MEETING_PROCESSING_IN_PROGRESS`)는 `source`가 `chat`인 회의를 세지 않는다.
 - 합의 상태: AI 담당이 설계를 정하고 이 PR 에 포함했다. BE 담당 리뷰 전이라 BE·AI 합의는 확인 필요.
 
 ### `GET /workspaces/{workspace_id}/chat-cursor` → 200
