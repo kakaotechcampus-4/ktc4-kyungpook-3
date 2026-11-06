@@ -433,6 +433,7 @@ def test_dry_run_also_skips_dropped_workspace():
     fake, client = _env()
     fake.chat_channels = [CHANNELS[0]]
     rc, opened = _all(client, {1: FakeReader(_msg()), 2: FakeReader(_msg())}, dry_run=True)
+    assert rc == 0
     assert opened == [1] and ("POST", "/meetings") not in _paths(fake)
 
 

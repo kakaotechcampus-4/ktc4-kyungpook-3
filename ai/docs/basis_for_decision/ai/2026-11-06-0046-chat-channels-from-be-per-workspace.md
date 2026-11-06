@@ -66,3 +66,4 @@
 
 - [진행 로그](2026-11-06-chat-channel-per-workspace.md), [0042](2026-11-04-0042-chat-daily-poll-as-chat-meeting.md)
 - 근거: BE #428, FE #429 이슈 본문
+- develop 계약 [채팅 수집 대상 목록](../../../../backend/docs/contracts/backend-ai-contract.md) 절, BE PR #432(구현, 리뷰 스레드에서 워크스페이스별 재조회를 합의)
