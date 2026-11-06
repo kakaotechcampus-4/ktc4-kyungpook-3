@@ -108,6 +108,12 @@ class FakeBe:
         u["reported"] = True
         self.meetings[meeting_id]["status"] = "awaiting_speakers"
 
+    def expire(self, meeting_id: str) -> None:
+        """테스트 준비용: BE 의 업로드 sweeper 가 기한이 지난 회의를 닫은 것을 흉내 낸다(awaiting_speakers·processing -> failed)."""
+        m = self.meetings[meeting_id]
+        assert m["status"] in ("awaiting_speakers", "processing"), f"기한으로 닫히는 것은 지정을 기다리거나 처리 중인 회의다(지금 {m['status']})"
+        m["status"] = "failed"
+
     def assign(self, meeting_id: str, mapping: dict) -> None:
         """PM 이 화자 지정을 끝낸 것을 흉내 낸다(assign_speakers). 엄격하다: awaiting_speakers 이고 지정 키 집합이
         보고한 라벨 집합과 같을 때만 지정을 기록하고 processing 으로 옮긴다. 아니면 테스트 준비 오류(AssertionError).
