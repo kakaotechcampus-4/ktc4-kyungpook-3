@@ -110,6 +110,12 @@ def _kakao_user_stmt(provider_id: str):
     return select(User).where(User.provider == kakao_oauth.PROVIDER, User.provider_id == provider_id)
 
 
+def _clear_pending(response: Response) -> None:
+    response.delete_cookie(
+        kakao_oauth.PENDING_COOKIE, path=kakao_oauth.PENDING_PATH, httponly=True, secure=True, samesite="lax"
+    )
+
+
 def _signup_conflict(db: Session, email: str, kakao: KakaoIdentity | None) -> ErrorCode | None:
     if db.scalars(_login_user_stmt(email)).first() is not None:
         return ErrorCode.EMAIL_ALREADY_EXISTS
@@ -150,9 +156,7 @@ def signup(payload: SignupRequest, request: Request, response: Response, db: Ses
     db.refresh(user)
 
     _create_session(db, user, response)
-    response.delete_cookie(
-        kakao_oauth.PENDING_COOKIE, path=kakao_oauth.PENDING_PATH, httponly=True, secure=True, samesite="lax"
-    )
+    _clear_pending(response)
     return success(_build_auth_response(db, user).model_dump(mode="json"))
 
 def _login_user_stmt(email: str):
@@ -266,9 +270,13 @@ def _finish_kakao_login(request: Request, code: str, state: str, error: str, db:
             samesite="lax",
         )
         return response
+    # 앞서 다른 카카오로 가입하다 멈춘 대기 쿠키가 남아 있으면 이 브라우저의 다음 가입에 이어지지 않게 지운다.
     if outcome == "email_exists":
-        return _kakao_redirect(return_path, "failed", "email_exists")
+        response = _kakao_redirect(return_path, "failed", "email_exists")
+        _clear_pending(response)
+        return response
     response = _kakao_redirect(return_path, "success")
+    _clear_pending(response)
     # 주입받은 Response 의 쿠키는 RedirectResponse 를 돌려주면 사라지므로 redirect 에 직접 싣는다.
     _create_session(db, outcome, response)
     return response

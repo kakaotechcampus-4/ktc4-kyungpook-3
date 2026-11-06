@@ -514,3 +514,29 @@ def test_callback_never_logs_the_code_or_state(mdb, client, kakao, caplog):
     assert "카카오 로그인 callback 실패" in caplog.text
     assert "secret-kakao-code" not in caplog.text
     assert state not in caplog.text
+
+
+def _clears_pending(res):
+    return any(
+        header.startswith(f"{kakao_oauth.PENDING_COOKIE}=") and "Max-Age=0" in header
+        for header in res.headers.get_list("set-cookie")
+    )
+
+
+def test_login_clears_a_pending_kakao_left_in_the_browser(mdb, client, kakao):
+    _user(mdb)
+    mdb.execute(User.__table__.update().values(provider="kakao", provider_id="77"))
+    mdb.commit()
+
+    assert _clears_pending(_login(client, VERIFIED, kakao))
+
+
+def test_email_exists_clears_a_pending_kakao_left_in_the_browser(mdb, client, kakao):
+    _user(mdb)
+    mdb.execute(User.__table__.update().values(provider="kakao", provider_id="other"))
+    mdb.commit()
+
+    res = _login(client, VERIFIED, kakao)
+
+    assert _query(res)["oauth_reason"] == ["email_exists"]
+    assert _clears_pending(res)
