@@ -21,6 +21,7 @@ import {
   stepSplash,
 } from './splashMachine'
 import type { SplashState } from './splashMachine'
+import { SPLASH_SIZE } from './splashSize'
 
 /** index.html 이 JS 보다 먼저 그리는 스플래시 */
 const STATIC_SPLASH_ID = 'boot-splash'
@@ -230,7 +231,7 @@ function SplashOverlay({
         <div className="splash__mascot">
           <Mascot
             ref={mascotRef}
-            size={96}
+            size={SPLASH_SIZE.mascot}
             pose={pose}
             dial={dial}
             smile={smile}
