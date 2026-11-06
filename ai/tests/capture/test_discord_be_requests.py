@@ -9,14 +9,14 @@ import json
 
 from tests.capture import test_judge_wiring as W
 from tests.capture import test_recorder as T
-from tests.capture.fake_be import FakeBe
+from tests.capture.fake_be import FakeBe, without_stage
 
 
 def _wire(fake: FakeBe, tmp_path) -> list[tuple[str, str, str | None]]:
     """부른 순서 그대로 (메서드, 경로, 본문 바이트). 본문은 ensure_ascii=False 로 직렬화한 문자열이고,
-    임시 폴더 경로(transcript_path 안)만 <tmp> 로 바꾼다."""
+    임시 폴더 경로(transcript_path 안)만 <tmp> 로 바꾼다. 처리 단계 보고(#381)는 진행 표시용이라 뺀다."""
     return [(m, p, None if body is None else json.dumps(body, ensure_ascii=False).replace(str(tmp_path) + "/", "<tmp>/"))
-            for m, p, body in fake.calls]
+            for m, p, body in without_stage(fake.calls)]
 
 
 LEGACY = [
