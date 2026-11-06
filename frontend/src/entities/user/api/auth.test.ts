@@ -64,6 +64,23 @@ describe('signup', () => {
       signup({ name: '중복', email: 'pm@example.com', password: 'pass1234' }),
     ).rejects.toMatchObject({ status: 409, code: 'EMAIL_ALREADY_EXISTS' })
   })
+
+  it('비밀번호가 규칙에 어긋나면 이미 있는 이메일이어도 409 가 아니라 400 INVALID_REQUEST 다', async () => {
+    await expect(
+      signup({ name: '중복', email: 'pm@example.com', password: 'abcdefgh' }),
+    ).rejects.toMatchObject({
+      status: 400,
+      code: 'INVALID_REQUEST',
+      details: {
+        fields: [
+          {
+            loc: ['body', 'password'],
+            msg: 'Value error, 비밀번호는 8자 이상이고 숫자를 하나 이상 포함해야 합니다.',
+          },
+        ],
+      },
+    })
+  })
 })
 
 describe('logout', () => {

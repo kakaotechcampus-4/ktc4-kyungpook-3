@@ -21,7 +21,7 @@ it('covers signup conflict, invalid login, session lookup, and logout', async ()
   const signup = await fetch('http://localhost:3000/api/v1/auth/signup', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ email: 'pm@example.com', password: 'mock-password', name: '최진호' }),
+    body: JSON.stringify({ email: 'pm@example.com', password: 'mock-password1', name: '최진호' }),
   })
   const signupBody = (await signup.json()) as Envelope<SessionDto>
   expect(() => unwrap(signupBody, signup.status)).toThrow('이미 가입된 이메일입니다.')
@@ -50,18 +50,18 @@ it('keeps existing accounts after signup and accepts the new account password', 
     })
   const signup = await send('signup', {
     email: 'new@example.com',
-    password: 'new-password',
+    password: 'new-password1',
     name: '새 팀원',
   })
   expect(
     toSession(unwrap((await signup.json()) as Envelope<SessionDto>, signup.status)),
   ).toMatchObject({ workspaceCount: 0, lastWorkspaceId: null })
   expect(
-    (await send('signup', { email: 'pm@example.com', password: 'x', name: '중복' })).status,
+    (await send('signup', { email: 'pm@example.com', password: 'pass1234', name: '중복' })).status,
   ).toBe(409)
-  expect((await send('login', { email: 'new@example.com', password: 'new-password' })).status).toBe(
-    200,
-  )
+  expect(
+    (await send('login', { email: 'new@example.com', password: 'new-password1' })).status,
+  ).toBe(200)
   expect((await send('login', { email: 'pm@example.com', password: 'mock-password' })).status).toBe(
     200,
   )

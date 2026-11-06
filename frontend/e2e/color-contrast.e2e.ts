@@ -119,9 +119,8 @@ test('로그인 — 오류 문구·오류 입력의 플레이스홀더·`비밀�
   await expect(page.getByText('이메일을 입력해 주세요')).toBeVisible()
 
   expect(await expectAllPass(page)).toContain('이메일을 입력해 주세요.')
-  // 누를 수 없는 버튼이지만 보고서가 지적한 글자다 — 비활성 예외로 넘기지 않는다
   expect(
-    await textRatio(page.getByRole('button', { name: '비밀번호를 잊으셨나요?' })),
+    await textRatio(page.getByRole('link', { name: '비밀번호를 잊으셨나요?' })),
   ).toBeGreaterThanOrEqual(AA)
   expect(await textRatio(page.getByLabel('이메일'), '::placeholder')).toBeGreaterThanOrEqual(AA)
 })

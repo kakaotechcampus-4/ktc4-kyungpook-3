@@ -29,11 +29,14 @@ export const loginSchema = z.object({
 })
 export type LoginValues = z.infer<typeof loginSchema>
 
-/** 새로 정하는 비밀번호. 가입과 재설정이 같은 규칙이고 BE 도 같은 규칙으로 검사한다 (#356) */
+/**
+ * 새로 정하는 비밀번호. 가입과 재설정이 같은 규칙이고 BE 도 같은 규칙으로 검사한다 (#356).
+ * 길이는 BE `len()` 처럼 코드 포인트로 센다. `min()` 은 UTF-16 단위라 이모지 4개 + 숫자도 통과시킨다
+ */
 const newPassword = z
   .string()
   .min(1, AUTH_MESSAGES.passwordRequired)
-  .min(PASSWORD_MIN_LENGTH, AUTH_MESSAGES.passwordRule)
+  .refine((value) => [...value].length >= PASSWORD_MIN_LENGTH, AUTH_MESSAGES.passwordRule)
   .regex(/\d/, AUTH_MESSAGES.passwordRule)
 
 /** 이름 필수 · 이메일 형식 · 비밀번호 8자 이상 + 숫자. 강도 표시와 약관 동의는 이번 범위가 아니다 */

@@ -156,13 +156,31 @@ describe('회원가입 제출 (U2-6·U2-8)', () => {
 })
 
 describe('로그인 화면 (U2-3·U2-5)', () => {
-  it('Google 로그인과 `비밀번호를 잊으셨나요?` 는 비활성이다', async () => {
-    await openLogin()
+  it('Google 로그인은 비활성이고 `비밀번호를 잊으셨나요?` 는 재설정 요청 화면으로 가는 링크다', async () => {
+    const app = await openLogin()
     expect(screen.getByRole('button', { name: 'Google 계정으로 로그인' })).toBeDisabled()
-    const forgot = screen.getByRole('button', { name: '비밀번호를 잊으셨나요?' })
-    expect(forgot).toBeDisabled()
     // 준비 중 문구·배지를 달지 않는다 (D-006)
     expect(screen.queryByText(/준비 중/)).not.toBeInTheDocument()
+
+    const forgot = screen.getByRole('link', { name: '비밀번호를 잊으셨나요?' })
+    expect(forgot).toHaveAttribute('href', '/forgot-password')
+    await userEvent.click(forgot)
+    expect(await screen.findByRole('heading', { name: '비밀번호 재설정 요청' })).toBeInTheDocument()
+    await app.expectPath('/forgot-password')
+  })
+
+  it('`비밀번호를 잊으셨나요?` 는 이메일 다음 Tab 으로 닿고 Enter 로 이동한다', async () => {
+    const app = await openLogin()
+    await userEvent.click(screen.getByLabelText('이메일'))
+    await userEvent.tab()
+    expect(screen.getByRole('link', { name: '비밀번호를 잊으셨나요?' })).toHaveFocus()
+    await userEvent.tab()
+    expect(screen.getByLabelText('비밀번호')).toHaveFocus()
+
+    await userEvent.tab({ shift: true })
+    await userEvent.keyboard('{Enter}')
+    expect(await screen.findByRole('heading', { name: '비밀번호 재설정 요청' })).toBeInTheDocument()
+    await app.expectPath('/forgot-password')
   })
 
   it('회원가입의 Google 버튼도 비활성이다', async () => {

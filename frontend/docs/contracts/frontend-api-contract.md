@@ -297,6 +297,7 @@ AUDIO_TOO_LARGE(413)              DISCORD_USER_ALREADY_MAPPED(409)
 ```
 
 - `WORKSPACE_MISMATCH` 는 **400** 이다. 이전 판이 409 로 적은 것은 오류였다.
+- 비밀번호 재설정(BE PR #398, 2026-11-06 병합)이 `PASSWORD_RESET_TOKEN_INVALID(400)`·`MAIL_UNAVAILABLE(503)` 을 더했다. 위 31개에는 넣지 않았고 쓰임새는 §4.1.1 에 있다. 프론트 [오류 코드 목록](../../src/shared/api/errors.ts)과 [문구](../../src/shared/api/errorMessages.ts)에도 있다.
 - 아래 3개는 **정의만 되고 아직 아무도 던지지 않는다.** 화면은 처리 경로를 갖되 실제로 오는지는 기대하지 않는다 → §4.0.
   `ONBOARDING_INCOMPLETE` · `INTEGRATION_REVOKED` · `AUDIO_TOO_LARGE`
 
@@ -953,11 +954,11 @@ MSW 는 **API 를 흉내내므로 100자 기준을 그대로 쓴다.** 여기에
 - **만료는 서버 세션에만 있다.** `session.expires_at` 이 발급 후 7일이고 `get_current_user` 가 지나면 401 을 낸다. `set_cookie` 에는 `max_age` · `expires` 가 없어
   쿠키는 브라우저 세션 쿠키다 — 브라우저를 닫으면 7일 전이어도 사라진다 (2026-09-29 `auth.py` `_create_session`).
 
-#### 4.1.1 비밀번호 재설정 (#356) — 합의됨, BE PR #398 열림·미병합
+#### 4.1.1 비밀번호 재설정 (#356·#451) — 구현됨(BE PR #398 병합), 운영 메일 설정 전
 
-제공자는 BE, 소비자는 FE 요청 화면 `/forgot-password`와 변경 화면 `/reset-password`다. 합의 근거는 [BE 제안](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/356#issuecomment-6636865795), [FE 답변](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/356#issuecomment-6639046611), [BE 설계 확정](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/356#issuecomment-6652505200) 댓글이다. 서버 구현은 [BE PR #398](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/pull/398)이다. 2026-11-05 확인 당시 PR은 열려 있고 병합 전이다. 아래 규약은 그 PR의 `backend/app/api/auth.py`, `schemas/auth.py`, `services/password_reset.py`, `core/errors.py`, `main.py`를 읽고 대조했다. 로컬 백엔드나 배포 서버에 적용됐다고 가정하지 않는다.
+제공자는 BE, 소비자는 FE 요청 화면 `/forgot-password`와 변경 화면 `/reset-password`다. 합의 근거는 [BE 제안](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/356#issuecomment-6636865795), [FE 답변](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/356#issuecomment-6639046611), [BE 설계 확정](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/356#issuecomment-6652505200) 댓글이다. 서버 구현은 [BE PR #398](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/pull/398)이고 2026-11-06 develop에 병합됐다. 2026-11-06(#451)에 develop `41d81d68`의 [auth.py](../../../backend/app/api/auth.py), [schemas/auth.py](../../../backend/app/schemas/auth.py), [password_reset.py](../../../backend/app/services/password_reset.py), [errors.py](../../../backend/app/core/errors.py), [main.py](../../../backend/app/main.py)를 다시 읽고 대조했다. BE는 운영 서버 메일 설정을 마친 뒤 #356에 알리기로 했고, 2026-11-06 기준 알림이 없다. 그 전까지 배포 서버의 request는 503 `MAIL_UNAVAILABLE`이라고 BE가 적었다. FE는 실서버를 부르지 않아 이 상태를 확인하지 않았다.
 
-**규약 (BE PR #398 코드 기준).** 세 경로 모두 로그인이 필요 없다.
+**규약 (develop 코드 기준).** 세 경로 모두 로그인이 필요 없다.
 
 | Method | Path | 요청 | 성공 | 실패 |
 |---|---|---|---|---|
@@ -974,31 +975,32 @@ MSW 는 **API 를 흉내내므로 100자 기준을 그대로 쓴다.** 여기에
 - 이메일은 로그인과 같이 대소문자까지 정확히 일치해야 찾는다.
 - 메일 링크는 `{APP_BASE_URL}/reset-password#token=...`이다. 토큰이 서버 접근 로그와 Referer에 남지 않도록 fragment로 보낸다. 메일은 응답 뒤 백그라운드로 보내고 실패하면 3번까지 다시 보낸다.
 - 새 비밀번호 규칙은 8자 이상(코드 포인트 수), ASCII 숫자 0-9 하나 이상이다. confirm이 변경, 토큰 사용 처리, 그 계정의 세션 전부 삭제를 한 트랜잭션으로 한다. 새 세션은 만들지 않는다.
-- 회원가입 변화. `POST /auth/signup`도 같은 규칙을 어기면 400 `INVALID_REQUEST`다. 약한 비밀번호와 이미 있는 이메일이 함께 오면 409 대신 400이다. FE 회원가입 폼(`signupSchema`)은 같은 규칙을 먼저 검사하므로 화면에서 이 400에 닿지 않는다. 길이를 UTF-16 단위로 세는 차이는 아래 「합의와 구현의 차이」에 적었다.
+- 회원가입 변화. `POST /auth/signup`도 같은 규칙을 어기면 400 `INVALID_REQUEST`다. 약한 비밀번호와 이미 있는 이메일이 함께 오면 409 대신 400이다. FE 회원가입 폼(`signupSchema`)은 같은 규칙(길이는 코드 포인트)을 먼저 검사하므로 화면에서 이 400에 닿지 않는다. 그래도 400이 오면 폼 상단에 「요청 내용을 다시 확인해 주세요.」를 보인다. 409 `EMAIL_ALREADY_EXISTS`는 지금처럼 이메일 칸 아래에 보인다.
 
 **FE가 맞추기로 한 동작.** 화면 동작이며 API 형태가 아니다.
 
 - 변경 화면은 `location.hash`에서 토큰을 읽고, verify를 부르기 전에 주소에서 지운다(`history.replaceState`). 이후 토큰은 verify·confirm 본문으로만 보낸다.
 - `/reset-password`는 `RedirectIfAuthed` 밖이다. 로그인된 브라우저에서 열어도 변경 화면이 보인다. `/forgot-password`는 다른 공개 화면처럼 안에 둔다.
 - 변경 화면은 `email_masked`로 「{가린 이메일} 계정의 비밀번호를 바꿔요.」를 보인다.
-- 변경 성공 뒤 그 브라우저의 FE 세션 상태를 비우고 `/login`으로 보내 안내 문구를 띄운다.
+- 변경 성공 뒤 그 브라우저의 FE 세션 상태를 비우고 `/login`으로 보내 안내 문구를 띄운다. 응답을 기다리는 사이 이 브라우저에서 다른 계정으로 로그인했으면 그 요청은 취소되고, 늦은 응답이 와도 새 계정의 세션·화면·푸시 구독을 건드리지 않는다(#451).
+- 같은 변경 화면에 새 메일 링크(`#token=`)가 오면 그 링크를 새로 확인하고 그 토큰으로 바꾼다. 앞 링크의 확인 결과와 변경 거절은 버리고, 진행 중인 앞 확인은 취소한다(#451).
 - `reason`별로 문구를 나눈다. 세 경우 모두 「다시 요청하기」로 `/forgot-password`에 보낸다.
 - 요청을 보낸 뒤 60초 동안 「다시 보내기」를 막고 남은 초를 보인다. 1시간 5회 제한은 화면에서 막지 않는다.
-- 로그인 화면의 「비밀번호를 잊으셨나요?」는 BE 배포와 운영 메일 설정이 끝났다고 이슈에 알려 온 뒤에 켠다. 그 전에는 request가 503이다. 그때까지 두 화면은 주소로 직접 열 때만 보인다.
+- 로그인 화면의 「비밀번호를 잊으셨나요?」는 `/forgot-password`로 가는 링크다(#451). 이 변경은 BE가 운영 메일 설정 완료를 #356에 알린 뒤에 병합한다. 그 전에는 request가 503이라 사용자가 막다른 길을 만난다.
 
-**합의와 구현의 차이.**
+**합의와 구현의 차이.** 없다. 2026-11-05에 적은 두 차이는 #451(2026-11-06)에서 FE를 BE에 맞춰 없앴다.
 
-- 길이 세는 단위. BE는 코드 포인트, FE `signupSchema`·`resetPasswordSchema`는 UTF-16 단위로 센다. 이모지처럼 BMP 밖 문자가 섞인 비밀번호는 FE를 통과하고 BE에서 400이 될 수 있다. 화면은 그때 회원가입에서 폼 상단 「요청 내용을 다시 확인해 주세요.」, 재설정에서 새 비밀번호 칸 아래 같은 문구를 보인다. 드문 입력이라 이번에는 고치지 않았다.
-- MSW 회원가입은 비밀번호 규칙을 검사하지 않는다. 기존 통합 테스트 여럿이 약한 비밀번호로 MSW에 가입하므로 이 작업 범위 밖으로 남겼다. MSW 재설정 confirm은 BE와 같은 규칙과 순서를 따른다.
+- 길이 세는 단위. 전에는 FE `signupSchema`·`resetPasswordSchema`가 UTF-16 단위로 세어, 이모지처럼 BMP 밖 문자가 섞인 비밀번호가 FE를 통과하고 BE에서 400이 될 수 있었다. 이제 FE도 BE처럼 코드 포인트로 센다.
+- MSW 회원가입. 전에는 비밀번호 규칙을 보지 않고 이미 있는 이메일이면 409를 먼저 냈다. 이제 BE처럼 본문 검증(비밀번호 규칙)을 먼저 해 400 `INVALID_REQUEST`(`details.fields`)를 내고, 그다음에 409를 낸다. 규칙은 MSW 재설정 confirm과 한 곳에서 같이 쓴다.
 
-**현재 구현 (2026-11-05).** FE는 위 규약대로 만들었고 MSW로만 확인했다.
+**현재 구현 (2026-11-06, #451).** FE는 위 규약대로 만들었고 MSW로만 확인했다.
 
 - 요청: [DTO](../../src/shared/types/api/auth.ts), [요청 함수](../../src/entities/user/api/passwordReset.ts), [reason 해석](../../src/entities/user/model/passwordReset.ts). `details.reason`이 없거나 모르는 값이면 `invalid`로 읽는다. verify의 `expires_at`은 읽어 두지만 화면에 쓰지 않는다. `details.fields`는 읽지 않고 confirm의 `INVALID_REQUEST`를 새 비밀번호 칸의 오류로 보인다.
-- 오류 코드: `PASSWORD_RESET_TOKEN_INVALID`, `MAIL_UNAVAILABLE`을 [오류 코드 목록](../../src/shared/api/errors.ts)과 [문구](../../src/shared/api/errorMessages.ts)에 더했다. §1 「오류 코드」의 서버 목록은 BE PR 병합 뒤에 고친다.
+- 오류 코드: `PASSWORD_RESET_TOKEN_INVALID`, `MAIL_UNAVAILABLE`을 [오류 코드 목록](../../src/shared/api/errors.ts)과 [문구](../../src/shared/api/errorMessages.ts)에 더했다. 서버의 같은 이름·상태 코드는 §1 「오류 코드」 아래에 적었다.
 - 화면: [링크 상태](../../src/features/auth/model/useResetLink.ts), [변경 폼](../../src/features/auth/ui/ResetPasswordForm.tsx), [요청 폼](../../src/features/auth/ui/ForgotPasswordForm.tsx), [변경 뒤 정리](../../src/features/auth/model/useFinishPasswordReset.ts), [라우트](../../src/app/router/routes.tsx). 토큰은 첫 렌더의 주소에서 읽고, 주소를 replace로 비운 뒤에야 verify가 시작된다.
-- 로그인 화면 링크는 비활성 그대로다. 켤 때는 [LoginForm](../../src/features/auth/ui/LoginForm.tsx)의 비활성 버튼을 `paths.forgotPassword()`로 가는 링크로 바꾼다.
-- MSW: [handler](../../src/shared/mock/handlers/passwordReset.ts), [시나리오](../../src/shared/mock/passwordResetScenarios.ts). 정상·만료·재사용·재요청 무효·재요청 제한·서버 오류(500)·메일 미설정(503)을 고정 토큰으로 재현한다. 개발·MSW 모드에서만 모의 메일함 `/__mock/mail`이 보낸 링크를 보여 준다.
-- 검증: Vitest 단위·통합, 실제 Chromium E2E [password-reset.e2e.ts](../../e2e/password-reset.e2e.ts)(요청 → 모의 메일함 링크 → 변경 → 새 비밀번호 로그인, 만료 링크). BE PR 코드는 읽어서 대조만 했다. 실서버 왕복, 실제 메일 발송, 서버 세션 끊김은 BE 병합·배포와 메일 설정 뒤 확인한다.
+- 로그인 화면: [LoginForm](../../src/features/auth/ui/LoginForm.tsx)의 「비밀번호를 잊으셨나요?」가 `paths.forgotPassword()`로 가는 링크다(#451). 비밀번호 규칙은 [schemas.ts](../../src/features/auth/model/schemas.ts)의 `newPassword` 하나를 가입과 재설정이 같이 쓴다.
+- MSW: [handler](../../src/shared/mock/handlers/passwordReset.ts), [시나리오](../../src/shared/mock/passwordResetScenarios.ts). 정상·만료·재사용·재요청 무효·재요청 제한·서버 오류(500)·메일 미설정(503)을 고정 토큰으로 재현한다. 개발·MSW 모드에서만 모의 메일함 `/__mock/mail`이 보낸 링크를 보여 준다. 본문 검증(필수 문자열, 비밀번호 규칙)과 400 `details.fields` 모양은 [validation.ts](../../src/shared/mock/validation.ts) 한 곳에서 재설정과 회원가입 handler가 같이 쓴다.
+- 검증 (2026-11-06, #451): Vitest 단위·통합, 실제 Chromium E2E [password-reset.e2e.ts](../../e2e/password-reset.e2e.ts) 6개(로그인 링크 → 요청 → 모의 메일함 링크 → 변경 → 새 비밀번호 로그인, 만료·사용한·무효 링크, 규칙 위반 뒤 같은 링크로 변경, 메일 불가 503). 서버의 400 `INVALID_REQUEST` 뒤 같은 토큰으로 다시 바꾸는 경로는 클라이언트 규칙이 BE와 같아 실제 handler로는 닿지 않으므로 Vitest에서 한 번만 400을 주는 override로 확인했다. BE 코드는 읽어서 대조만 했다. 실서버 왕복, 실제 메일 발송, 서버 세션 끊김은 운영 메일 설정 뒤 확인한다.
 
 ### 4.2 워크스페이스의 사용자 스코프 · 역할 · 온보딩
 
@@ -1311,7 +1313,7 @@ MSW 픽스처의 단위이자 M1-C 의 작업 단위이기도 하다.
 | 랜딩 | 없음 | — |
 | 로그인 | `POST /auth/login` | **구현됨** §4.1 |
 | 회원가입 | `POST /auth/signup` | **구현됨** §4.1 — 201 |
-| 비밀번호 재설정 요청·변경 | `POST /auth/password-reset/request` · `verify` · `confirm` | ❌ **없다** §4.1.1 — BE PR #398 열림·미병합. MSW 로 개발 |
+| 비밀번호 재설정 요청·변경 | `POST /auth/password-reset/request` · `verify` · `confirm` | **구현됨** §4.1.1 — BE PR #398 병합(2026-11-06). 운영 메일 설정 전이라 실서버 미검증 |
 | Google 로그인 | `GET /auth/google/start?state=` 로 **페이지 이동** | ❌ **없다** §4.1 — M4 에서 버튼 비활성 |
 | 앱 부팅 | `GET /auth/me` | **구현됨** §4.1 |
 
