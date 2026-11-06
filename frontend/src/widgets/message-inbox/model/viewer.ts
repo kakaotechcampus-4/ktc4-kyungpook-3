@@ -17,11 +17,19 @@ export interface ViewerPolicy {
   compose: boolean
   /** 리마인드를 받은 대화 위에 이 기기의 알림을 켜자는 띠를 보인다 (#411). 리마인드는 팀원이 받는다 */
   pushPrompt: boolean
+  /** AI 가 정하지 못한 답장의 태스크를 고른다. 서버도 PM 만 받는다 */
+  pickTask: boolean
 }
 
 export const VIEWER_POLICY: Record<Role, ViewerPolicy> = {
-  pm: { ownSender: 'bot', awaiting: true, compose: true, pushPrompt: false },
-  member: { ownSender: 'member', awaiting: false, compose: false, pushPrompt: true },
+  pm: { ownSender: 'bot', awaiting: true, compose: true, pushPrompt: false, pickTask: true },
+  member: {
+    ownSender: 'member',
+    awaiting: false,
+    compose: false,
+    pushPrompt: true,
+    pickTask: false,
+  },
 }
 
 /**

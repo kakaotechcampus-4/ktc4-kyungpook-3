@@ -8,6 +8,6 @@ export const CHIP =
 export const CHIP_TONE: Record<InviteChipTone, string> = {
   waiting: 'border border-line text-sub',
   linked: 'bg-control text-sub',
-  signal: 'bg-accent text-surface',
+  signal: 'bg-accent-badge text-accent',
   closed: 'text-dim',
 }

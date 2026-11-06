@@ -18,9 +18,10 @@ from sqlalchemy import (
     UniqueConstraint,
     text,
 )
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 
 from app.core.database import Base
+from app.schemas.email import normalize_email
 
 # text-embedding-3-small의 차원. 모델을 바꾸면 컬럼과 저장된 벡터를 모두 다시 만들어야 한다.
 EMBEDDING_DIMENSIONS = 1536
@@ -87,6 +88,15 @@ class MeetingStatus(StrEnum):
     AWAITING_SPEAKERS = "awaiting_speakers"
     DONE = "done"
     FAILED = "failed"
+
+
+class MeetingProcessingStage(StrEnum):
+    """AI 가 처리 중인 회의에서 지금 하는 일(#381). 순서는 services/meeting_stage.py 의 stage_rank 가 정한다."""
+
+    STT = "stt"
+    SOURCES = "sources"
+    EXTRACT = "extract"
+    HANDOFF = "handoff"
 
 
 class MeetingSource(StrEnum):
@@ -182,6 +192,26 @@ class User(Base):
         back_populates="user", cascade="all, delete-orphan"
     )
 
+    @validates("email")
+    def _normalize_email(self, _key: str, value: str) -> str:
+        # 요청 스키마를 거치지 않는 쓰기 경로도 같은 규칙으로 저장한다(#434). SQL 직접 실행과 update() 는 지나지 않는다.
+        return normalize_email(value)
+
+
+class PasswordResetToken(Base):
+    """비밀번호 재설정 링크 토큰. 원문은 저장하지 않고 sha256 해시만 둔다(#356)."""
+
+    __tablename__ = "password_reset_token"
+    __table_args__ = (Index("ix_password_reset_token_user_created", "user_id", "created_at"),)
+
+    token_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("user.user_id", ondelete="CASCADE"))
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    invalidated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
 
 class Session(Base):
     __tablename__ = "session"
@@ -258,6 +288,9 @@ class Integration(Base):
     access_token: Mapped[str | None] = mapped_column(Text, nullable=True)
     refresh_token: Mapped[str | None] = mapped_column(Text, nullable=True)
     provider_channel_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # 디스코드 전용: 채팅 수집 채널(#428)
+    chat_channel_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    chat_channel_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_now, onupdate=_now
@@ -378,6 +411,11 @@ class Meeting(Base):
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # 전사 길이(ms). 전사가 들어오기 전에는 모르므로 NULL이다.
     duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # AI 가 알린 처리 단계(MeetingProcessingStage). processing 중에만 쓰고, 알리지 않았으면 NULL 이다
+    processing_stage: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    processing_stage_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     extractions: Mapped[list["Extraction"]] = relationship(
         back_populates="meeting", cascade="all, delete-orphan"
@@ -708,6 +746,10 @@ class TaskHistory(Base):
         DateTime(timezone=True), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    # 답장에서 나온 변경의 이력은 타임라인에서 그 답장 아래에 묶인다. 필드 하나에 이력이 둘일 수 있어(PM 이 고쳐 승인) 이쪽에 둔다.
+    reply_change_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("reply_change.change_id", ondelete="SET NULL"), nullable=True, index=True
+    )
 
     task: Mapped["Task"] = relationship(back_populates="history")
 
@@ -831,6 +873,102 @@ class ThreadMessage(Base):
     scheduled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     thread: Mapped["MessageThread"] = relationship()
+
+
+class ReplyJudgmentState(StrEnum):
+    PENDING = "pending"
+    DONE = "done"
+    NEEDS_PM = "needs_pm"
+    FAILED = "failed"
+    TIMED_OUT = "timed_out"
+
+
+class ReplyChangeField(StrEnum):
+    STATUS = "status"
+    DUE_DATE = "due_date"
+    ASSIGNEE = "assignee"
+    SCOPE = "scope"
+    UNKNOWN = "unknown"
+    DUE_CLEAR = "due_clear"
+    FAILED = "failed"
+    NONE = "none"
+
+
+class ReplyChangeOutcome(StrEnum):
+    APPLIED = "applied"
+    PROPOSED = "proposed"
+    UNKNOWN = "unknown"
+    NOTED = "noted"
+    RECORDED = "recorded"
+    DISMISSED = "dismissed"
+    PICKED = "picked"
+    SKIPPED = "skipped"
+
+
+class ReplyJudgment(Base):
+    """리마인드 답장 한 통의 판단 큐이자 기록. 답장 저장과 같은 트랜잭션에서 생긴다. 후보가 없는 답장에는 행이 없다.
+
+    queued_at 은 판단을 기다리기 시작한 시각이다. 저장 시각이고 PM 이 태스크를 고르면 그 시각이다.
+    attempt 는 맡길 때마다 오른다. candidates 는 task_id 목록(JSON)이고 PM 이 고르면 그 하나, 해당 없음이면 빈 목록이다.
+    claimed_statuses 는 맡길 때 후보의 실제 상태(JSON)다. 판단에 보인 값은 막기 전 상태일 수 있어 따로 둔다.
+    failure_reason 에는 예외 종류만 둔다. 답장 글을 싣지 않는다.
+    """
+
+    __tablename__ = "reply_judgment"
+
+    message_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("thread_message.message_id", ondelete="CASCADE"), primary_key=True
+    )
+    workspace_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("workspace.workspace_id", ondelete="CASCADE"), index=True
+    )
+    thread_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("message_thread.thread_id", ondelete="CASCADE"), index=True
+    )
+    state: Mapped[str] = mapped_column(String(16), default=ReplyJudgmentState.PENDING, index=True)
+    queued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    attempt: Mapped[int] = mapped_column(Integer, default=0)
+    claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    candidates: Mapped[str] = mapped_column(Text)
+    claimed_statuses: Mapped[str | None] = mapped_column(Text, nullable=True)
+    picked_task_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("task.task_id", ondelete="SET NULL"), nullable=True
+    )
+    failure_reason: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    model_name: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+    message: Mapped["ThreadMessage"] = relationship()
+
+
+class ReplyChange(Base):
+    """답장이 태스크에 뜻하는 변경 한 줄. 필드 하나가 한 줄이다. unknown 은 task_id 가 없고 due_clear·failed 는 어느 태스크인지 알 때만 있다.
+
+    승인 결과는 approval_id 로, 되돌림은 reply_change_id 로 이어진 이력으로 읽는다. 여기에 옮겨 적지 않는다.
+    """
+
+    __tablename__ = "reply_change"
+    __table_args__ = (
+        UniqueConstraint("message_id", "task_id", "field", name="uq_reply_change_message_task_field"),
+    )
+
+    change_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    message_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("reply_judgment.message_id", ondelete="CASCADE"), index=True
+    )
+    task_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("task.task_id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    field: Mapped[str] = mapped_column(String(16))
+    outcome: Mapped[str] = mapped_column(String(16))
+    new_value: Mapped[str | None] = mapped_column(Text, nullable=True)
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    evidence_quote: Mapped[str | None] = mapped_column(Text, nullable=True)
+    evidence_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    approval_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("approval_request.approval_id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 
 class BodySource(StrEnum):

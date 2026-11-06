@@ -273,6 +273,24 @@ export const PM_내_대화: Story = {
   },
 }
 
+/** AI 가 정하지 못한 답장 — PM 이 태스크를 고르면 고르기 대신 고른 태스크가 남는다 (#344) */
+export const 답장_확인_필요: Story = {
+  args: { threadId: 'th_02' },
+  parameters: { scenario: 'reply-judgment', route: paths.messageThread('ws_01', 'th_02') },
+  play: async ({ canvasElement }) => {
+    const detail = detailOf(canvasElement)
+    await expect(await detail.findByText('어느 태스크에 대한 답장인가요?')).toBeVisible()
+    await expect(
+      detail.getByText('AI가 어느 태스크에 대한 답장인지 정하지 못했어요.'),
+    ).toBeVisible()
+    await expect(detail.getByRole('radio', { name: '해당 없음' })).toBeInTheDocument()
+    await userEvent.click(detail.getByRole('radio', { name: '회원가입 화면' }))
+    await userEvent.click(detail.getByRole('button', { name: '정하기' }))
+    await expect(await detail.findByText('태스크: 회원가입 화면')).toBeVisible()
+    await expect(detail.queryByText('어느 태스크에 대한 답장인가요?')).toBeNull()
+  },
+}
+
 /** 예정 시각이 지난 묶음 — 이대로 발송은 거절되고 다시 시도는 없다 */
 export const 예정_시각_지남: Story = {
   args: { bundleId: 'bd_06' },

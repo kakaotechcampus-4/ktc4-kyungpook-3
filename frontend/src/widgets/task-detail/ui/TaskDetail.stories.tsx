@@ -65,6 +65,37 @@ export const 빈_칸: Story = {
   },
 }
 
+/** 답장 기록 (#344) — 이재환의 답장이 상태를 완료로 자동 반영했고 마감 변경은 승인 대기다. PM 은 자동 반영을 되돌린다 */
+export const 답장_기록: Story = {
+  args: { taskId: 'tk_03' },
+  parameters: { scenario: 'reply-judgment', route: '/workspaces/ws_01/tasks/tk_03' },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const history = await canvas.findByRole('list', { name: '변경 이력' })
+    await expect(
+      await within(history).findByText('이재환 답장 · Discord · 2026-09-17 10:00'),
+    ).toBeVisible()
+    await expect(within(history).getByText('상태: 완료')).toBeVisible()
+    await expect(within(history).getByText('승인 대기')).toBeVisible()
+    await userEvent.click(within(history).getByRole('button', { name: '되돌리기' }))
+    await waitFor(() => expect(canvas.getByTestId('task-status')).toHaveTextContent('막힘'))
+    await waitFor(() => expect(within(history).getByText('되돌림')).toBeVisible())
+  },
+}
+
+/** 답장 기록을 일반 팀원이 본다 — 답장 글 대신 안내가 보이고 되돌리기가 없다 */
+export const 답장_기록_팀원: Story = {
+  args: { taskId: 'tk_03', isPm: false },
+  parameters: { scenario: 'reply-judgment-member', route: '/workspaces/ws_01/tasks/tk_03' },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(
+      await canvas.findByText('답장 내용은 PM과 답장한 팀원만 볼 수 있어요.'),
+    ).toBeVisible()
+    await expect(canvas.queryByRole('button', { name: '되돌리기' })).toBeNull()
+  },
+}
+
 export const 로딩: Story = {
   parameters: {
     msw: [

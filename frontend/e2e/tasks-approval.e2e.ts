@@ -126,6 +126,52 @@ test('회의록의 확인 필요 항목을 보완·승인하고 돌아오면 회
   )
 })
 
+test.describe('회의록의 승인 전 수정 제안 (#419)', () => {
+  // minutes-edit-pending: mt_09 의 it_08 은 tk_04(배포 스크립트) 마감을 바꾸는 수정 제안 ap_08 이다. 승인 전에도 task_id 가 tk_04 다
+  const EDIT = '배포 스크립트'
+
+  async function openPendingEdit(page: Page) {
+    await start(page, 'minutes-edit-pending', `${WORKSPACE}/meetings/mt_09`)
+    const body = await openExtractedWork(page)
+    await expect(body.getByRole('heading', { name: '확인이 필요한 일 4' })).toBeVisible()
+    await expect(body.getByRole('link', { name: EDIT, exact: true })).toHaveCount(0)
+    await body.getByRole('link', { name: `${EDIT} 확인하기` }).click()
+    await expect(page).toHaveURL(`${WORKSPACE}/approvals/ap_08`)
+    await expect(page.getByRole('heading', { name: '태스크 변경 확인' })).toBeVisible(FIRST_PAINT)
+  }
+
+  test('승인하면 확인 필요에서 빠지고 반영된 태스크로 옮겨 대상 태스크를 가리킨다', async ({
+    page,
+  }) => {
+    await openPendingEdit(page)
+    await page.getByRole('button', { name: '승인', exact: true }).click()
+    await expect(page.getByTestId('approval-result')).toHaveText(/^승인했어요/)
+
+    await page.goBack()
+    await expect(page).toHaveURL(`${WORKSPACE}/meetings/mt_09`)
+    const body = await openExtractedWork(page)
+    await expect(body.getByRole('heading', { name: '확인이 필요한 일 3' })).toBeVisible()
+    await expect(body.getByRole('link', { name: `${EDIT} 확인하기` })).toHaveCount(0)
+    await expect(body.getByRole('link', { name: EDIT, exact: true })).toHaveAttribute(
+      'href',
+      `${WORKSPACE}/tasks/tk_04`,
+    )
+  })
+
+  test('반려하면 확인 필요에서 빠지고 반영된 태스크에도 나오지 않는다', async ({ page }) => {
+    await openPendingEdit(page)
+    await page.getByRole('button', { name: '반려', exact: true }).click()
+    await expect(page.getByTestId('approval-result')).toHaveText(/^반려했어요/)
+
+    await page.goBack()
+    await expect(page).toHaveURL(`${WORKSPACE}/meetings/mt_09`)
+    const body = await openExtractedWork(page)
+    await expect(body.getByRole('heading', { name: '확인이 필요한 일 3' })).toBeVisible()
+    await expect(body.getByRole('link', { name: `${EDIT} 확인하기` })).toHaveCount(0)
+    await expect(body.getByRole('link', { name: EDIT, exact: true })).toHaveCount(0)
+  })
+})
+
 /** 태스크 단건 조회 응답의 notion_sync_status. MSW 응답 봉투는 `{ data, error }` 다 */
 async function syncStatusOf(response: Response): Promise<unknown> {
   const body = (await response.json()) as { data?: { notion_sync_status?: unknown } }

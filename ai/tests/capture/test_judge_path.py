@@ -196,6 +196,17 @@ def test_the_default_candidate_source_is_the_be_client_with_the_service_token():
     assert isinstance(client, BeClient) and client.api == "http://be.local/api/v1" and client.service_token == "svc"
 
 
+def test_no_reply_judger_without_settings():
+    assert J.reply_judger(_cfg(terra_api_key="")) is None
+    assert J.reply_judger(_cfg(llm_mode="off")) is None
+    assert J.reply_judger(_cfg(be_service_token="")) is None
+
+
+def test_the_reply_judger_is_judge_reply():
+    from judge.reply import judge_reply
+    assert J.reply_judger(_cfg()) is judge_reply
+
+
 def test_extract_passes_context_and_dates_to_run():
     """문맥은 본문과 같은 이름 꼬리표를 달아 넘기고, dates 는 그대로 넘긴다. 둘 다 없으면 run 은 예전 인자만 받는다."""
     seen = {}

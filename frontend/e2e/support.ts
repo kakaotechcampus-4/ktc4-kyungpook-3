@@ -1,7 +1,7 @@
 import { expect } from '@playwright/test'
 import type { Page, TestInfo } from '@playwright/test'
 
-/** E2E 시나리오 이름 (shared/mock/scenarios.ts 의 MOCK_SCENARIOS). M4 U1 다섯 개 + M5 회의 흐름 + M6 태스크·승인 + M7 대시보드 + M8 태스크 보기·설정 + #320 팀원 초대 + #256 화자 지정 + #370 재촉 만들기 + #371 메시지 + #411 알림 띠 */
+/** E2E 시나리오 이름 (shared/mock/scenarios.ts 의 MOCK_SCENARIOS). M4 U1 다섯 개 + M5 회의 흐름 + M6 태스크·승인 + M7 대시보드 + M8 태스크 보기·설정 + #320 팀원 초대 + #256 화자 지정 + #370 재촉 만들기 + #371 메시지 + #411 알림 띠 + #419 수정 제안 */
 export type Scenario =
   | 'signed-out'
   | 'no-workspace'
@@ -27,6 +27,7 @@ export type Scenario =
   | 'approval-resolved'
   | 'approval-conflict'
   | 'approval-scope'
+  | 'minutes-edit-pending'
   | 'notion-sync-pending'
   | 'notion-sync-failed'
   | 'tasks-member'
@@ -50,6 +51,8 @@ export type Scenario =
   | 'messages-member'
   | 'messages-member-push'
   | 'messages-pm-self'
+  | 'reply-judgment'
+  | 'reply-judgment-member'
 
 /**
  * 모의 db 를 그 시나리오로 초기화하고 path 로 들어간다. 시나리오 파라미터는 저장값보다 앞서고
@@ -65,6 +68,9 @@ export async function start(page: Page, scenario: Scenario, path = '/'): Promise
   await expect(page.locator('#root main:not([aria-busy]), #root header').first()).toBeVisible({
     timeout: 15_000,
   })
+  // 로딩 스플래시(#430)는 화면 뼈대가 모두 걷힐 때까지 앱을 덮고 #root 를 inert 로 막는다. 헤더가 판 아래에 그려져 있어도
+  // 아직 포커스·클릭이 닿지 않으므로 판이 걷힐 때까지 기다린다
+  await expect(page.locator('.splash')).toHaveCount(0, { timeout: 15_000 })
 }
 
 /** 모의 OAuth 화면에서 결과를 골라 현재 탭으로 돌아온다 (D-158) */

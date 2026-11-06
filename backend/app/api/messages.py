@@ -25,6 +25,7 @@ from app.schemas.message import (
     InboxResponse,
     MessageResponse,
     ReminderCreateRequest,
+    ReminderEvidence,
     ReminderResponse,
     ReminderUpdateRequest,
     ReminderWithBundleResponse,
@@ -32,7 +33,10 @@ from app.schemas.message import (
     ThreadDetailResponse,
     ThreadSummary,
 )
+from app.schemas.reply import AttributionRequest, AttributionResponse, ReplyAttributionListResponse
 from app.services import messages as svc
+from app.services import replies
+from app.services.reminder_reason import bundle_summary, reminder_reason
 
 router = APIRouter(prefix="/workspaces/{workspace_id}/messages", tags=["messages"])
 
@@ -41,19 +45,24 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _reminder_dict(reminder: Reminder) -> dict:
+def _reminder_dict(db: Session, reminder: Reminder, thread_id: str) -> dict:
     task = reminder.task
+    reason, evidence = reminder_reason(db, reminder, thread_id)
     return ReminderResponse(
         reminder_id=reminder.reminder_id, bundle_id=reminder.bundle_id, task_id=reminder.task_id,
         task_title=task.title if task else None, due_date=task.due_date if task else None,
         note=reminder.note, status=reminder.status, kind=reminder.kind, origin=reminder.origin,
-        created_at=svc.utc(reminder.created_at),
+        created_at=svc.utc(reminder.created_at), reason=reason,
+        evidence=evidence and ReminderEvidence(
+            kind=evidence.kind, at=svc.utc(evidence.at), message_id=evidence.message_id
+        ),
     ).model_dump(mode="json")
 
 
 def _bundle_dict(db: Session, bundle: ReminderBundle) -> dict:
     """묶음과 그 안의 리마인드. 리마인드는 묶음과 같은 상태인 것만 보인다(예정 묶음이면 예정 리마인드, 취소 묶음이면 함께 취소된 것)."""
     member = bundle.thread.member
+    reminders = svc.bundle_reminders(db, bundle.bundle_id, bundle.status)
     return BundleResponse(
         bundle_id=bundle.bundle_id, thread_id=bundle.thread_id, member_id=member.member_id,
         recipient_name=member.display_name, scheduled_at=svc.utc(bundle.scheduled_at), status=bundle.status,
@@ -61,7 +70,8 @@ def _bundle_dict(db: Session, bundle: ReminderBundle) -> dict:
         approved_at=bundle.approved_at and svc.utc(bundle.approved_at),
         body=bundle.body, body_source=bundle.body_source, draft_status=bundle.draft_status,
         draft_version=bundle.draft_version,
-        reminders=[_reminder_dict(r) for r in svc.bundle_reminders(db, bundle.bundle_id, bundle.status)],
+        summary=bundle_summary(reminders),
+        reminders=[_reminder_dict(db, r, bundle.thread_id) for r in reminders],
     ).model_dump(mode="json")
 
 
@@ -175,7 +185,7 @@ def get_thread(
 
 
 def _with_bundle(db: Session, reminder: Reminder) -> dict:
-    return success({"reminder": _reminder_dict(reminder), "bundle": _bundle_dict(db, reminder.bundle)})
+    return success({"reminder": _reminder_dict(db, reminder, reminder.bundle.thread_id), "bundle": _bundle_dict(db, reminder.bundle)})
 
 
 @router.post("/reminders", status_code=201, response_model=Envelope[ReminderWithBundleResponse])
@@ -287,3 +297,30 @@ def post_reply(
     message = svc.add_web_reply(db, thread, body=payload.body, now=_now())
     db.commit()
     return success(MessageResponse.model_validate(message).model_dump(mode="json"))
+
+
+@router.get("/threads/{thread_id}/attributions", response_model=Envelope[ReplyAttributionListResponse])
+def list_attributions(
+    workspace_id: str,
+    thread_id: str,
+    _pm: Member = Depends(get_current_pm),
+    db: Session = Depends(get_db),
+) -> dict:
+    """그 대화에서 어느 태스크인지 PM 이 고를 답장과 고른 답장."""
+    _get_thread(db, workspace_id, thread_id)
+    items = replies.attributions(db, workspace_id, thread_id)
+    return success(ReplyAttributionListResponse(items=items, total=len(items)).model_dump(mode="json"))
+
+
+@router.post("/replies/{message_id}/attribution", response_model=Envelope[AttributionResponse])
+def attribute_reply(
+    workspace_id: str,
+    message_id: str,
+    payload: AttributionRequest,
+    _pm: Member = Depends(get_current_pm),
+    db: Session = Depends(get_db),
+) -> dict:
+    """태스크를 고르면 그 태스크만 후보로 다시 판단한다. task_id 가 null 이면 해당 없음으로 닫는다."""
+    replies.attribute(db, workspace_id, message_id, payload.task_id, _now())
+    db.commit()
+    return success({"message_id": message_id})

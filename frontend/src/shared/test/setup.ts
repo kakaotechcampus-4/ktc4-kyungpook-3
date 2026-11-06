@@ -42,5 +42,7 @@ afterEach(() => {
   // Zustand store 는 모듈과 함께 살아남는다. 전역 UI 상태도 테스트마다 비운다
   clearUnsavedChanges()
   toast.clear()
+  // 알림 띠를 닫은 기록처럼 기기에 남기는 값이 다음 테스트로 새지 않게 한다
+  window.localStorage.clear()
 })
 afterAll(() => server.close())

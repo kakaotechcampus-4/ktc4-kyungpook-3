@@ -71,21 +71,13 @@ for (const width of VIEWPORTS) {
       await start(page, 'multiple-workspaces', '/workspaces/ws_01/dashboard')
       const header = page.getByRole('banner')
       const nav = header.getByRole('navigation', { name: '주요 화면' })
-      // 이 시나리오의 ws_01 에는 정리 중 회의(mt_10)가 있다. M5 U4-9 로 회의록 탭 바로 뒤에 `정리 중` 링크가 붙는다 —
-      // 탭 5개는 이름으로 정확히 보고, 링크는 따로 정확히 1개·회의록 다음·같은 줄임을 본다
+      // 이 시나리오의 ws_01 에는 정리 중 회의(mt_10)가 있다. 정리 신호는 헤더가 아니라 오른쪽 아래 진행 토스트다 (#424) —
+      // 그 토스트(좁은 폭에서는 접힌 알약)가 보인 뒤에도 탭은 5개뿐이다
+      await expect(page.getByTestId('pinned-toast-slot')).toContainText('정리 중')
       const TAB_NAMES = ['대시보드', '회의록', '태스크', '메시지', '팀']
       const tabs = TAB_NAMES.map((name) => nav.getByRole('link', { name, exact: true }))
       for (const tab of tabs) await expect(tab).toHaveCount(1)
-      const processing = nav.getByRole('link', { name: '정리 중', exact: true })
-      await expect(processing).toHaveCount(1)
-      await expect(nav.getByRole('link')).toHaveText([
-        '대시보드',
-        '회의록',
-        '정리 중',
-        '태스크',
-        '메시지',
-        '팀',
-      ])
+      await expect(nav.getByRole('link')).toHaveText(TAB_NAMES)
       const menus = [/^워크스페이스 바꾸기/, /^내 계정/].map((name) =>
         header.getByRole('button', { name }),
       )
@@ -97,13 +89,12 @@ for (const width of VIEWPORTS) {
         expect(box).not.toBeNull()
         return box!
       }
-      // 화면에 놓인 순서 — 탭 사이에 `정리 중` 이 회의록 바로 뒤에 있다
-      const navItems = [tabs[0], tabs[1], processing, ...tabs.slice(2)]
-      const tabBoxes = await Promise.all(navItems.map(boxOf))
+
+      const tabBoxes = await Promise.all(tabs.map(boxOf))
       for (const box of tabBoxes) expect(Math.abs(box.y - tabBoxes[0].y)).toBeLessThanOrEqual(1)
       const items = [
         header.getByRole('link', { name: "Manager's Manager 대시보드" }),
-        ...navItems,
+        ...tabs,
         ...menus,
       ]
       const itemBoxes = await Promise.all(items.map(boxOf))

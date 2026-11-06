@@ -15,6 +15,8 @@ export type {
   MessageThread,
   MessageThreadSummary,
   ReminderCreateInput,
+  ReplyAttribution,
+  TaskRef,
 } from './model/types'
 export { MESSAGE_BODY_MAX_LENGTH } from './model/types'
 export {
@@ -22,5 +24,6 @@ export {
   messageInboxQueryOptions,
   messageKeys,
   messageThreadQueryOptions,
+  replyAttributionsQueryOptions,
   requestMessageAction,
 } from './api/messageQueries'

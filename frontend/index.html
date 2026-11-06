@@ -3,10 +3,158 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>frontend</title>
+    <title>Manager's Manager</title>
     <link rel="manifest" href="/manifest.webmanifest" />
     <meta name="theme-color" content="#ffffff" />
     <link rel="apple-touch-icon" href="/icons/app-192.png" />
+    <!-- iOS 는 이 표시가 있어야 아래 시작 이미지를 쓴다. manifest 의 standalone 과 같은 뜻이다 -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <!-- iOS 설치한 앱 시작 이미지. scripts/startup-images.mjs 가 만들고 이 줄들을 찍는다 -->
+    <link
+      rel="apple-touch-startup-image"
+      media="(device-width: 375px) and (device-height: 667px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)"
+      href="/splash/750x1334.png"
+    />
+    <link
+      rel="apple-touch-startup-image"
+      media="(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)"
+      href="/splash/828x1792.png"
+    />
+    <link
+      rel="apple-touch-startup-image"
+      media="(device-width: 375px) and (device-height: 812px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)"
+      href="/splash/1125x2436.png"
+    />
+    <link
+      rel="apple-touch-startup-image"
+      media="(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)"
+      href="/splash/1242x2688.png"
+    />
+    <link
+      rel="apple-touch-startup-image"
+      media="(device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)"
+      href="/splash/1170x2532.png"
+    />
+    <link
+      rel="apple-touch-startup-image"
+      media="(device-width: 428px) and (device-height: 926px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)"
+      href="/splash/1284x2778.png"
+    />
+    <link
+      rel="apple-touch-startup-image"
+      media="(device-width: 393px) and (device-height: 852px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)"
+      href="/splash/1179x2556.png"
+    />
+    <link
+      rel="apple-touch-startup-image"
+      media="(device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)"
+      href="/splash/1290x2796.png"
+    />
+    <link
+      rel="apple-touch-startup-image"
+      media="(device-width: 402px) and (device-height: 874px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)"
+      href="/splash/1206x2622.png"
+    />
+    <link
+      rel="apple-touch-startup-image"
+      media="(device-width: 420px) and (device-height: 912px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)"
+      href="/splash/1260x2736.png"
+    />
+    <link
+      rel="apple-touch-startup-image"
+      media="(device-width: 440px) and (device-height: 956px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)"
+      href="/splash/1320x2868.png"
+    />
+    <link
+      rel="apple-touch-startup-image"
+      media="(device-width: 744px) and (device-height: 1133px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)"
+      href="/splash/1488x2266.png"
+    />
+    <link
+      rel="apple-touch-startup-image"
+      media="(device-width: 744px) and (device-height: 1133px) and (-webkit-device-pixel-ratio: 2) and (orientation: landscape)"
+      href="/splash/2266x1488.png"
+    />
+    <link
+      rel="apple-touch-startup-image"
+      media="(device-width: 768px) and (device-height: 1024px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)"
+      href="/splash/1536x2048.png"
+    />
+    <link
+      rel="apple-touch-startup-image"
+      media="(device-width: 768px) and (device-height: 1024px) and (-webkit-device-pixel-ratio: 2) and (orientation: landscape)"
+      href="/splash/2048x1536.png"
+    />
+    <link
+      rel="apple-touch-startup-image"
+      media="(device-width: 810px) and (device-height: 1080px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)"
+      href="/splash/1620x2160.png"
+    />
+    <link
+      rel="apple-touch-startup-image"
+      media="(device-width: 810px) and (device-height: 1080px) and (-webkit-device-pixel-ratio: 2) and (orientation: landscape)"
+      href="/splash/2160x1620.png"
+    />
+    <link
+      rel="apple-touch-startup-image"
+      media="(device-width: 820px) and (device-height: 1180px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)"
+      href="/splash/1640x2360.png"
+    />
+    <link
+      rel="apple-touch-startup-image"
+      media="(device-width: 820px) and (device-height: 1180px) and (-webkit-device-pixel-ratio: 2) and (orientation: landscape)"
+      href="/splash/2360x1640.png"
+    />
+    <link
+      rel="apple-touch-startup-image"
+      media="(device-width: 834px) and (device-height: 1112px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)"
+      href="/splash/1668x2224.png"
+    />
+    <link
+      rel="apple-touch-startup-image"
+      media="(device-width: 834px) and (device-height: 1112px) and (-webkit-device-pixel-ratio: 2) and (orientation: landscape)"
+      href="/splash/2224x1668.png"
+    />
+    <link
+      rel="apple-touch-startup-image"
+      media="(device-width: 834px) and (device-height: 1194px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)"
+      href="/splash/1668x2388.png"
+    />
+    <link
+      rel="apple-touch-startup-image"
+      media="(device-width: 834px) and (device-height: 1194px) and (-webkit-device-pixel-ratio: 2) and (orientation: landscape)"
+      href="/splash/2388x1668.png"
+    />
+    <link
+      rel="apple-touch-startup-image"
+      media="(device-width: 834px) and (device-height: 1210px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)"
+      href="/splash/1668x2420.png"
+    />
+    <link
+      rel="apple-touch-startup-image"
+      media="(device-width: 834px) and (device-height: 1210px) and (-webkit-device-pixel-ratio: 2) and (orientation: landscape)"
+      href="/splash/2420x1668.png"
+    />
+    <link
+      rel="apple-touch-startup-image"
+      media="(device-width: 1024px) and (device-height: 1366px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)"
+      href="/splash/2048x2732.png"
+    />
+    <link
+      rel="apple-touch-startup-image"
+      media="(device-width: 1024px) and (device-height: 1366px) and (-webkit-device-pixel-ratio: 2) and (orientation: landscape)"
+      href="/splash/2732x2048.png"
+    />
+    <link
+      rel="apple-touch-startup-image"
+      media="(device-width: 1032px) and (device-height: 1376px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)"
+      href="/splash/2064x2752.png"
+    />
+    <link
+      rel="apple-touch-startup-image"
+      media="(device-width: 1032px) and (device-height: 1376px) and (-webkit-device-pixel-ratio: 2) and (orientation: landscape)"
+      href="/splash/2752x2064.png"
+    />
     <link
       rel="preload"
       as="font"
@@ -14,9 +162,205 @@
       crossorigin
       href="/src/shared/styles/fonts/NanumSquare-Regular.woff2"
     />
+    <!--
+      로딩 스플래시 (#430). JS 보다 먼저 그려야 해서 여기에 둔다. React 는 같은 클래스로 같은 자리를 이어받는다(src/app/splash).
+      등장 지연(300ms·600ms)은 splashMachine.ts 의 REVEAL_MS 와 짝이다.
+      설치한 앱(standalone)은 시작 이미지가 같은 그림이라 등장 없이 처음부터 보인다.
+    -->
+    <style>
+      @font-face {
+        font-family: 'NanumSquare';
+        font-style: normal;
+        font-weight: 700;
+        font-display: swap;
+        src: url('/src/shared/styles/fonts/NanumSquare-Bold.woff2') format('woff2');
+      }
+      .splash {
+        position: fixed;
+        inset: 0;
+        z-index: 2147483647;
+        display: grid;
+        place-items: center;
+        background: #ffffff;
+        color: #171717;
+      }
+      .splash[data-phase='leave'] {
+        pointer-events: none;
+        animation: splash-out 0.4s ease forwards;
+      }
+      .splash__group {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 18px;
+      }
+      /* 0.3초 안에 준비됐고 확인(0.1초)만 남았다. 등장 시각이 지나도 보이지 않은 채 걷힌다 */
+      .splash[data-settling] .splash__group {
+        visibility: hidden;
+      }
+      .splash__mascot {
+        width: 176px;
+        height: 176px;
+        animation: splash-rise 0.8s cubic-bezier(0.2, 0.7, 0.2, 1)
+          calc(300ms - var(--splash-shift, 0ms)) both;
+      }
+      .splash__word {
+        margin: 0;
+        font:
+          700 24px/1.2 'NanumSquare',
+          sans-serif;
+        animation: splash-follow 0.8s cubic-bezier(0.2, 0.7, 0.2, 1)
+          calc(600ms - var(--splash-shift, 0ms)) both;
+      }
+      .splash__status {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: calc(32px + env(safe-area-inset-bottom));
+        margin: 0;
+        text-align: center;
+        font:
+          400 13px/1.4 'NanumSquare',
+          sans-serif;
+        color: #525252;
+      }
+      #boot-splash [data-part='dial-shift'] {
+        animation: splash-dial 1.818s linear infinite;
+      }
+      /* 올라오는 거리는 크기에 비례한다(마스코트 높이의 1/8, 워드마크 글자 크기의 1/3). 크기를 바꾸면 함께 바꾼다 (#472) */
+      @keyframes splash-rise {
+        from {
+          opacity: 0;
+          transform: translateY(22px) scale(0.9);
+        }
+      }
+      @keyframes splash-follow {
+        from {
+          opacity: 0;
+          transform: translateY(8px);
+        }
+      }
+      @keyframes splash-out {
+        to {
+          opacity: 0;
+        }
+      }
+      /* 줄무늬 한 칸(0.1153 × 84)을 0.55Hz 로. Mascot 의 dialHz 0.55 와 같은 속도다 */
+      @keyframes splash-dial {
+        to {
+          transform: translateX(9.6852px);
+        }
+      }
+      @media (display-mode: standalone) {
+        .splash__mascot,
+        .splash__word {
+          animation: none;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .splash__mascot,
+        .splash__word {
+          animation-duration: 0s;
+          animation-delay: calc(300ms - var(--splash-shift, 0ms));
+        }
+        #boot-splash [data-part='dial-shift'] {
+          animation: none;
+        }
+        .splash[data-phase='leave'] {
+          animation: none;
+          opacity: 0;
+        }
+      }
+    </style>
   </head>
   <body>
     <div id="root"></div>
+    <div id="boot-splash" class="splash">
+      <div class="splash__group">
+        <div class="splash__mascot">
+          <svg
+            width="176"
+            height="176"
+            viewBox="0 0 240 240"
+            fill="none"
+            focusable="false"
+            aria-hidden="true"
+            style="display: block; overflow: visible"
+          >
+            <defs>
+              <clipPath id="boot-splash-face">
+                <ellipse cx="120" cy="113.91" rx="65.69" ry="64.01"></ellipse>
+              </clipPath>
+              <clipPath id="boot-splash-cap">
+                <rect x="-17.41" y="-9.14" width="34.82" height="18.28" rx="5.22" ry="5.22"></rect>
+              </clipPath>
+            </defs>
+            <g data-part="puppet">
+              <circle data-part="outer" cx="120" cy="120" r="84" fill="#171717"></circle>
+              <ellipse
+                data-part="inner"
+                cx="120"
+                cy="113.91"
+                rx="65.69"
+                ry="64.01"
+                fill="#FFFFFF"
+              ></ellipse>
+              <g data-part="cap-g" transform="translate(80.78 30.79) rotate(-22)">
+                <rect
+                  data-part="cap"
+                  x="-17.41"
+                  y="-9.14"
+                  width="34.82"
+                  height="18.28"
+                  rx="5.22"
+                  ry="5.22"
+                  fill="#171717"
+                ></rect>
+                <g data-part="dial" clip-path="url(#boot-splash-cap)" opacity="1">
+                  <g data-part="dial-shift" transform="translate(0 0)">
+                    <rect x="-59.42" y="-10.14" width="2.61" height="20.28" fill="#FFFFFF"></rect>
+                    <rect x="-49.73" y="-10.14" width="2.61" height="20.28" fill="#FFFFFF"></rect>
+                    <rect x="-40.05" y="-10.14" width="2.61" height="20.28" fill="#FFFFFF"></rect>
+                    <rect x="-30.36" y="-10.14" width="2.61" height="20.28" fill="#FFFFFF"></rect>
+                    <rect x="-20.68" y="-10.14" width="2.61" height="20.28" fill="#FFFFFF"></rect>
+                    <rect x="-10.99" y="-10.14" width="2.61" height="20.28" fill="#FFFFFF"></rect>
+                    <rect x="-1.31" y="-10.14" width="2.61" height="20.28" fill="#FFFFFF"></rect>
+                    <rect x="8.38" y="-10.14" width="2.61" height="20.28" fill="#FFFFFF"></rect>
+                    <rect x="18.06" y="-10.14" width="2.61" height="20.28" fill="#FFFFFF"></rect>
+                    <rect x="27.75" y="-10.14" width="2.61" height="20.28" fill="#FFFFFF"></rect>
+                    <rect x="37.44" y="-10.14" width="2.61" height="20.28" fill="#FFFFFF"></rect>
+                    <rect x="47.12" y="-10.14" width="2.61" height="20.28" fill="#FFFFFF"></rect>
+                    <rect x="56.81" y="-10.14" width="2.61" height="20.28" fill="#FFFFFF"></rect>
+                  </g>
+                </g>
+              </g>
+              <g data-part="eyes" clip-path="url(#boot-splash-face)">
+                <rect
+                  data-part="eye-l"
+                  x="91.73"
+                  y="88.25"
+                  width="14.78"
+                  height="38.3"
+                  rx="7.39"
+                  fill="#171717"
+                ></rect>
+                <rect
+                  data-part="eye-r"
+                  x="133.48"
+                  y="88.25"
+                  width="14.78"
+                  height="38.3"
+                  rx="7.39"
+                  fill="#171717"
+                ></rect>
+              </g>
+            </g>
+          </svg>
+        </div>
+        <p class="splash__word">Manager's Manager</p>
+      </div>
+      <p class="splash__status" role="status"></p>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

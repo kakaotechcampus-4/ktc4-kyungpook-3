@@ -15,6 +15,7 @@ from app.schemas.approval import (
     ApprovalResolveRequest,
     ApprovalResponse,
 )
+from app.services import replies
 from app.services.tasks import (
     apply_task_updates,
     create_task,
@@ -311,7 +312,7 @@ def _apply_approval(
         proposed = {k: v for k, v in updates.items() if k not in changed}
         if "due_date" in proposed:
             proposed["due_date"] = parse_date(proposed["due_date"], field="due_date")
-        apply_task_updates(
+        entries = apply_task_updates(
             db,
             task,
             proposed,
@@ -322,13 +323,15 @@ def _apply_approval(
         edited = dict(changed)
         if edited.get("due_date") is not None:
             edited["due_date"] = parse_date(edited["due_date"], field="due_date")
-        apply_task_updates(
+        entries += apply_task_updates(
             db,
             task,
             edited,
             change_source=str(ChangeSource.MANUAL),
             changed_by=approval.resolved_by,
         )
+        if payload.get("change_source") == str(ChangeSource.REMINDER_REPLY):
+            replies.link_history(db, approval.approval_id, entries)
 
     # REMINDER_DM: 태스크에 반영할 내용이 없다. 승인해도 이 행을 읽어 보내는 코드는 BE·AI 어디에도 없다(리마인드는
     # 메시지 묶음 승인으로 나간다). 지금은 만들 수 없고 남은 행만 이 분기를 지난다. #335 2차 PR 에서 분기와 enum 을 지운다.

@@ -14,12 +14,12 @@ import { formatSeoulMonthDayTime } from '@/shared/lib/date/format'
 import { useGuardedNavigate } from '@/shared/lib/unsaved-changes'
 import { Button } from '@/shared/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/shared/ui/popover'
-import { useRefreshMessagesOnNotification } from '../model/useRefreshMessagesOnNotification'
+import { useRefreshOnNotification } from '../model/useRefreshOnNotification'
 
 const TRIGGER =
   'relative inline-flex size-36 items-center justify-center rounded-9 text-ink hover:bg-surface-selected data-[state=open]:bg-surface-selected'
 const BADGE =
-  'absolute -top-2 -right-2 inline-flex h-16 min-w-16 items-center justify-center rounded-999 bg-accent px-4 text-[10.5px] leading-none font-bold text-surface'
+  'absolute -top-2 -right-2 inline-flex h-16 min-w-16 items-center justify-center rounded-999 bg-accent-solid px-4 text-[10.5px] leading-none font-bold text-surface'
 const ITEM =
   'flex w-full flex-col gap-4 rounded-9 px-10 py-9 text-left hover:bg-surface-selected disabled:opacity-50'
 
@@ -36,7 +36,7 @@ function triggerLabel(unreadCount: number): string {
 export function NotificationBell({ workspaceId }: { workspaceId: string }) {
   const [open, setOpen] = useState(false)
   const notifications = useQuery(notificationListQueryOptions(workspaceId))
-  useRefreshMessagesOnNotification(workspaceId, notifications.data?.items)
+  useRefreshOnNotification(workspaceId, notifications.data?.items)
   const queryClient = useQueryClient()
   const navigate = useGuardedNavigate()
   const read = useMutation({
@@ -113,7 +113,10 @@ export function NotificationBell({ workspaceId }: { workspaceId: string }) {
                 >
                   <span className="flex items-center gap-6 text-caption font-semibold text-ink">
                     {notification.readAt === null ? (
-                      <span aria-hidden="true" className="size-6 shrink-0 rounded-999 bg-accent" />
+                      <span
+                        aria-hidden="true"
+                        className="size-6 shrink-0 rounded-999 bg-accent-point"
+                      />
                     ) : null}
                     {notificationTitle(notification.kind)}
                     {notification.readAt === null ? (

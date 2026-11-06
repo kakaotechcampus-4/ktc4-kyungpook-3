@@ -5,6 +5,7 @@ import './app/styles/index.css'
 import { App } from './app/App'
 import { createApp } from './app/createApp'
 import { appRoutes } from './app/router/routes'
+import { SplashHost } from './app/splash/SplashHost'
 import { config } from './shared/config/env'
 
 const root = document.getElementById('root')
@@ -38,6 +39,8 @@ void enableMocking().finally(() => {
           <Routes>{appRoutes}</Routes>
         </BrowserRouter>
       </App>
+      {/* App 밖이다 — Root Error Boundary 가 앱을 오류 화면으로 바꿔도 스플래시는 남아서 그 화면으로 걷힌다 */}
+      <SplashHost appRoot={root} />
     </StrictMode>,
   )
 })
