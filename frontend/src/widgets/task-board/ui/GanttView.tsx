@@ -38,7 +38,7 @@ const BAR_BASE =
 const BAR: Record<TaskTone, string> = {
   active: 'bg-ink text-surface',
   warn: 'bg-ink text-surface',
-  danger: 'bg-accent text-surface',
+  danger: 'bg-accent-solid text-surface',
   todo: 'border border-line-strong bg-surface text-sub',
   done: 'bg-surface-sunken text-dim',
 }
@@ -402,7 +402,7 @@ function TaskBar({ task, from, today }: { task: Task; from: string; today: strin
     >
       <span className="tabular-nums">{label}</span>
       {tone === 'danger' ? (
-        <span className="inline-flex h-18 items-center rounded-6 bg-accent px-7 text-[10px] leading-none font-bold text-surface">
+        <span className="inline-flex h-18 items-center rounded-6 bg-accent-badge px-7 text-[10px] leading-none font-bold text-accent">
           위험
         </span>
       ) : tone === 'warn' ? (

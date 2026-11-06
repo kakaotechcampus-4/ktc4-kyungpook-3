@@ -253,6 +253,14 @@ def create_extraction(
                 assignee_confidence=match.confidence if mentioned else None,
                 blockers=blockers,
             )
+            if meeting.source == MeetingSource.CHAT and gate == Gate.AUTO:
+                # 채팅에서 나온 항목은 PM이 보지 않고 반영하지 않는다. hold는 그대로 둔다
+                gate = Gate.REVIEW
+                # 채팅이 아니었으면 auto였을 항목 수를 센다. chat의 auto를 열지 다시 볼 때 근거로 쓴다(결정 기록 0042)
+                logger.info(
+                    "chat 회의라 auto 항목을 review로 내립니다. meeting_id=%s title=%s",
+                    meeting.meeting_id, raw_item.task_title,
+                )
             if blockers:
                 # auto 조건과 유사도 기준을 조정할 때 어떤 조건에서 많이 걸리는지 본다
                 logger.info(

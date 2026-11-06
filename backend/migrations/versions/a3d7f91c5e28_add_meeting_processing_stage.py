@@ -1,7 +1,7 @@
 """add meeting processing_stage
 
 Revision ID: a3d7f91c5e28
-Revises: c4e9a71b3d52
+Revises: a7c3e91d5b24
 Create Date: 2026-11-05 12:00:00.000000
 
 """
@@ -12,7 +12,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = 'a3d7f91c5e28'
-down_revision: Union[str, None] = 'c4e9a71b3d52'
+down_revision: Union[str, None] = 'a7c3e91d5b24'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

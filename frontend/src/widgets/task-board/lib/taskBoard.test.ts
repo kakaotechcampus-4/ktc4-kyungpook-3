@@ -6,6 +6,7 @@ import { todayInSeoul } from '@/shared/lib/date'
 import { MOCK_TODAY } from '@/shared/mock/fixtures/constants'
 import { approvalFixtures } from '@/shared/mock/fixtures/approval'
 import { taskFixtures } from '@/shared/mock/fixtures/task'
+import { toTaskResponse } from '@/shared/mock/task-state'
 import {
   addDays,
   boardItems,
@@ -25,7 +26,7 @@ import { TASK_SORTS } from './taskSort'
  * 픽스처: ws_01 의 태스크 10건(미완료 7 · 완료 3), 대기 승인 3건(ap_01 · ap_02 · ap_03), 서울 오늘 2026-09-18.
  */
 
-const tasks = taskFixtures.map(toTask)
+const tasks = taskFixtures.map((row) => toTask(toTaskResponse(row)))
 const approvals = approvalFixtures.map(toApproval)
 const ids = (items: readonly BoardItem[]) =>
   items.map((item) => (item.kind === 'approval' ? item.approval.id : item.task.id))

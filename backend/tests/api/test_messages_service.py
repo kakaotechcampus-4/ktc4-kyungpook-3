@@ -320,6 +320,39 @@ def test_claim_never_returns_same_message_twice(mdb, mseed):
     assert svc.claim_for_bot(mdb, LATER) == []
 
 
+def test_claim_closes_only_the_message_whose_recipient_was_unlinked_or_deleted_after_dispatch(mdb, mseed):
+    _sendable(mdb, mseed, who="alice")
+    _sendable(mdb, mseed, who="carol")
+    pending = svc.dispatch_due(mdb, LATER)
+    assert {m.dm_status for m in pending} == {DmStatus.PENDING}
+    mdb.commit()
+    mseed["alice"].discord_user_id = None
+    mdb.commit()
+
+    claimed = svc.claim_for_bot(mdb, LATER)
+
+    assert [c.discord_user_id for c in claimed] == ["d_carol"]
+    (alice_msg,) = [m for m in pending if m.thread.member_id == mseed["alice"].member_id]
+    mdb.refresh(alice_msg)
+    assert alice_msg.dm_status == DmStatus.FAILED
+    assert alice_msg.dm_failure_reason == DmFailureReason.DISCORD_NOT_LINKED
+    assert alice_msg.claimed_at is None
+    assert svc.claim_for_bot(mdb, LATER) == []
+
+
+def test_claim_closes_a_message_whose_recipient_left_the_workspace_after_dispatch(mdb, mseed):
+    _sendable(mdb, mseed, who="alice")
+    (msg,) = svc.dispatch_due(mdb, LATER)
+    mdb.commit()
+    mseed["alice"].is_deleted = True
+    mdb.commit()
+
+    assert svc.claim_for_bot(mdb, LATER) == []
+    mdb.refresh(msg)
+    assert msg.dm_status == DmStatus.FAILED
+    assert msg.dm_failure_reason == DmFailureReason.DISCORD_NOT_LINKED
+
+
 def test_stale_claim_becomes_failed_unknown_and_is_not_reoffered(mdb, mseed):
     _sendable(mdb, mseed)
     (claimed,) = svc.claim_for_bot(mdb, LATER)

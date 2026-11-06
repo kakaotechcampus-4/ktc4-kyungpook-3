@@ -101,6 +101,7 @@ class MeetingProcessingStage(StrEnum):
 class MeetingSource(StrEnum):
     DISCORD = "discord"
     MANUAL_UPLOAD = "manual_upload"
+    CHAT = "chat"
 
 
 class EvidenceType(StrEnum):
@@ -189,6 +190,21 @@ class User(Base):
     sessions: Mapped[list["Session"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
+
+
+class PasswordResetToken(Base):
+    """비밀번호 재설정 링크 토큰. 원문은 저장하지 않고 sha256 해시만 둔다(#356)."""
+
+    __tablename__ = "password_reset_token"
+    __table_args__ = (Index("ix_password_reset_token_user_created", "user_id", "created_at"),)
+
+    token_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("user.user_id", ondelete="CASCADE"))
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    invalidated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class Session(Base):

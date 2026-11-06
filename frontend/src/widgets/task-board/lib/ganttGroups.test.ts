@@ -33,6 +33,7 @@ const task = (
   notionPageId: null,
   version: 1,
   notionSyncStatus: null,
+  autoBlocked: false,
   createdAt: '2026-11-01T00:00:00Z',
   updatedAt: '2026-11-01T00:00:00Z',
 })

@@ -464,6 +464,53 @@ def test_same_new_item_twice_becomes_one_card(monkeypatch):
     assert "맡기로" in card["doc_text"] and "10/9" in card["doc_text"]
 
 
+OWNER_MEETING = Transcript(segments=[
+    TranscriptSegment(speaker="uid_alice", start=1.0, end=3.0, text="결제 환불 기능 만들어야 해요.", seq=1),
+    TranscriptSegment(speaker="uid_bob", start=4.0, end=5.0, text="그건 제가 맡을게요.", seq=2),
+    TranscriptSegment(speaker="uid_carol", start=6.0, end=7.0, text="환불 기능은 금요일까지 해 주세요.", seq=3),
+])
+REFUND_NEW = {"indices": [0], "summary": "결제 환불 기능을 만들기로 함", "assignee_type": "first", "reason": "새 할일"}
+REFUND_BOB = {"indices": [1], "summary": "결제 환불 기능을 Bob 이 맡기로 함", "assignee_type": "first", "reason": "담당"}
+REFUND_FRI = {"indices": [2], "summary": "결제 환불 기능 마감을 금요일로 정함", "assignee_type": "none", "reason": "마감"}
+
+
+def _run_owner(monkeypatch, findings, terra, luna):
+    _install(monkeypatch, stage1={"findings": findings}, terra=terra, luna_draft=luna)
+    return run(OWNER_MEETING, workspace_id="ws_1", today=date(2026, 9, 28), candidates=DedupCandidates())
+
+
+def test_merged_assignee_carries_the_speaker_who_took_it(monkeypatch):
+    # Alice 카드에 Bob 의 "제가 맡을게요" 를 합치면 BE 는 evidence_speaker 로 Bob 을 찾아야 한다
+    out = _run_owner(
+        monkeypatch, [REFUND_NEW, REFUND_BOB],
+        [_terra(is_new=True, matched_candidate_index=None), _terra(category="assignee")],
+        [{"task": "결제 환불 기능 구현", "due_date": None, "doc_text": "결제 환불 기능 구현"},
+         {"task": None, "due_date": None, "doc_text": "Bob 이 맡기로 함"}],
+    )
+
+    card = out.items[0]
+    assert card["assignee_type"] == "first"
+    assert card["evidence_speaker"] == "uid_bob"
+    assert card["evidence_quote"] == "그건 제가 맡을게요."
+    assert card["evidence_at_ms"] == 4000
+
+
+def test_later_due_date_keeps_the_assignee_evidence(monkeypatch):
+    # 담당을 정한 뒤 다른 사람이 마감을 말해도 담당자 근거는 그대로다
+    out = _run_owner(
+        monkeypatch, [REFUND_NEW, REFUND_BOB, REFUND_FRI],
+        [_terra(is_new=True, matched_candidate_index=None), _terra(category="assignee"), _terra(category="schedule")],
+        [{"task": "결제 환불 기능 구현", "due_date": None, "doc_text": "결제 환불 기능 구현"},
+         {"task": None, "due_date": None, "doc_text": "Bob 이 맡기로 함"},
+         {"task": None, "due_date": "2026-10-02", "doc_text": "마감을 10/2 로 정함"}],
+    )
+
+    card = out.items[0]
+    assert card["due_date"] == "2026-10-02"
+    assert card["evidence_speaker"] == "uid_bob"
+    assert card["evidence_quote"] == "그건 제가 맡을게요."
+
+
 def test_different_new_items_stay_separate(monkeypatch):
     _install(
         monkeypatch, stage1={"findings": [REFUND_OWNER, NOTI_NEW]},
@@ -845,3 +892,27 @@ def test_run_merge_takes_max_similar_count_and_top_similarity(monkeypatch):
 
     card = out.items[0]
     assert (card["similar_count"], card["top_similarity"]) == (2, 0.8)
+
+
+def test_run_uses_per_seq_dates(monkeypatch):
+    _install(monkeypatch, stage1={"findings": FINDINGS}, terra=TERRA_OK, luna_draft=LUNA_DRAFT_OK)
+    seen = []
+    real = pipeline.draft
+    monkeypatch.setattr(pipeline, "draft", lambda finding, result, **kw: (seen.append((finding.seq, kw["today"])), real(finding, result, **kw))[1])
+
+    # 결제 환불 finding 은 seq=1, 로그인(1,2,3 → 앵커 seq=3)
+    run(MEETING, workspace_id="ws_1", today=date(2026, 11, 5), candidates=FakeCandidates(),
+        dates={3: date(2026, 11, 4)})
+
+    assert (3, date(2026, 11, 4)) in seen
+    assert (1, date(2026, 11, 5)) in seen  # dates 에 없는 seq 는 today
+
+
+def test_run_passes_context_to_stage1(monkeypatch):
+    _install(monkeypatch, stage1={"findings": []}, terra=[], luna_draft=[])
+    seen = {}
+    monkeypatch.setattr(pipeline, "extract_findings_counted",
+                        lambda t, context=None: (seen.update(context=context) or ([], pipeline.empty_drops())))
+    ctx = Transcript(segments=[], source="chat")
+    run(MEETING, workspace_id="ws_1", today=date(2026, 11, 5), candidates=FakeCandidates(), context=ctx)
+    assert seen["context"] is ctx

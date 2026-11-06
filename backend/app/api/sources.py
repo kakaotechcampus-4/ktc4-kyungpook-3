@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import require_service_token
 from app.core.database import get_db
 from app.core.errors import AppError, Envelope, ErrorCode, success
-from app.models import Meeting, MeetingStatus, Source
+from app.models import Meeting, MeetingSource, MeetingStatus, Source
 from app.schemas.source import TranscriptCreateRequest, TranscriptCreateResponse
 from app.services.matching import active_members_by_id, resolve_speaker
 
@@ -84,6 +84,13 @@ def create_sources(
     ).scalar_one_or_none()
     if meeting is None:
         raise AppError(ErrorCode.MEETING_NOT_FOUND, details={"meeting_id": meeting_id})
+    if payload.source == "chat" and meeting.source != MeetingSource.CHAT:
+        # 24시간 상한은 초·ms 를 잘못 보낸 버그를 막는 장치다. 요청 필드 하나로 우회하지 못하게 한다
+        raise AppError(
+            ErrorCode.INVALID_REQUEST,
+            message="source 'chat' 은 채팅 회의에만 보낼 수 있습니다.",
+            details={"meeting_id": meeting_id, "meeting_source": meeting.source},
+        )
     if meeting.status == MeetingStatus.FAILED:
         # MEETING_ALREADY_ENDED가 아니다. 봇은 그 코드를 "이미 처리됨"으로 보고 넘어가는데,
         # 여기서는 발화가 저장되지 않았으니 새 회의로 다시 올려야 한다.

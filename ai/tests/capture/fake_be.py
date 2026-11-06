@@ -57,6 +57,8 @@ class FakeBe:
         self.guilds: dict[str, str] = {}
         # 봇용 팀원 이름 조회 (backend/app/api/bot_lookups.py). 워크스페이스 → [{member_id, name, discord_user_id, aliases}]
         self.members: dict[str, list[dict]] = {}
+        # 채팅 커서 (backend chat-cursor). 워크스페이스 → last_message_at 문자열. 없으면 data null
+        self.chat_cursors: dict[str, str] = {}
         self._n = 0
 
     def request(self, method: str, url: str, json=None, timeout=None, headers=None):
@@ -70,6 +72,10 @@ class FakeBe:
         body = json or {}
         if method == "GET" and path.startswith("/integrations/discord/guilds/") and path.endswith("/workspace"):
             return self._guild_workspace(path.split("/")[4], headers or {})
+        if method == "GET" and path.startswith("/workspaces/") and path.endswith("/chat-cursor"):
+            ws = path.split("/")[2]
+            at = self.chat_cursors.get(ws)
+            return _ok(200, {"meeting_id": "m-prev", "last_message_at": at} if at else None)
         if method == "GET" and path.startswith("/workspaces/") and path.endswith("/members/names"):
             return self._member_names(path.split("/")[2], headers or {})
         if method == "POST" and path.startswith("/workspaces/") and path.endswith("/tasks/similar"):
@@ -81,7 +87,8 @@ class FakeBe:
             self._n += 1
             mid = f"m{self._n}"
             self.meetings[mid] = {"meeting_id": mid, "workspace_id": body["workspace_id"], "status": "created",
-                                  "title": body.get("title")}
+                                  "title": body.get("title"), "source": body.get("source"),
+                                  "started_at": body.get("started_at")}
             return _ok(201, {"meeting_id": mid, "workspace_id": body["workspace_id"], "status": "created",
                              "started_at": "2026-09-19T00:00:00+00:00"})
         if method == "POST" and path == "/extractions":

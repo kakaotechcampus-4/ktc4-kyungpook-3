@@ -131,6 +131,8 @@ docker compose -f docker-compose.prod.yml logs -f api
 | `EMAIL_ALREADY_INVITED` | 409 | 같은 이메일로 다른 팀원에게 보낸 초대가 대기 중임. `details.email` |
 | `PM_MEMBER_NOT_INVITABLE` | 409 | 역할이 PM 인 팀원을 초대하려 함. 팀원으로 초대해 수락한 뒤 PM 으로 바꿈. `details.member_id` |
 | `MEMBER_HAS_PENDING_INVITATION` | 409 | 대기 초대가 있는 팀원을 PM 으로 올리려 함. `details.member_id` |
+| `PASSWORD_RESET_TOKEN_INVALID` | 400 | 비밀번호 재설정 링크를 쓸 수 없음(없는·무효화된·이미 쓴·만료된 토큰). `details.reason` 은 `invalid`·`used`·`expired` |
+| `MAIL_UNAVAILABLE` | 503 | 메일을 보낼 수 없음(SMTP 설정이 없음). 발송 실패는 응답에 드러나지 않는다 |
 | `MESSAGE_RESULT_CONFLICT` | 409 | 이미 다른 결과가 보고됐거나 아직 가져가지 않은 메시지에 결과를 보고함. `details.message_id` |
 | `DISCORD_USER_ALREADY_MAPPED` | 409 | 같은 워크스페이스에서 탈퇴하지 않은 다른 팀원에 이미 연결된 디스코드 계정(`details.discord_user_id`). 탈퇴(`is_deleted`)한 팀원의 계정은 다시 연결할 수 있음. `discord_user_id`의 앞뒤 공백은 지우고, 빈 값은 연결 없음(null)으로 저장. 64자를 넘으면 이 코드가 아니라 400 `INVALID_REQUEST` |
 | `UPLOAD_NOT_CLAIMED` | 409 | AI가 아직 가져가지(claim) 않은 업로드에 화자를 보고하려 함. `details.status`(그 시점의 회의 상태) |
@@ -353,6 +355,32 @@ scope는 `bot applications.commands identify`다. 봇 초대 scope만 요청하�
 |---|---|
 | 오류 | 토큰이 없거나 틀리면 401 `UNAUTHENTICATED`, 없는 워크스페이스는 404 `WORKSPACE_NOT_FOUND` |
 | 봇 사용 | 봇은 아직 부르지 않는다. 디스코드 표시 이름 대신 이 값을 힌트로 쓰는 작업은 AI 후속이다. 자세한 내용은 [AI(녹음 봇) 계약](docs/contracts/backend-ai-contract.md#전사-힌트-조회) |
+
+## 비밀번호 재설정
+
+로그인 없이 부르는 경로 3개다. 결정 근거는 [M1 결정 기록](docs/plan/m1/basis-for-decision/2026-11-05-password-reset.md), 원본은 `app/services/password_reset.py`·`app/services/mailer.py`.
+
+| 경로 | 요청 | 응답 |
+|---|---|---|
+| `POST /api/v1/auth/password-reset/request` | `{email}` | 메일 설정이 없으면 503 `MAIL_UNAVAILABLE`. 있으면 가입 여부와 상관없이 200 `{}` |
+| `POST /api/v1/auth/password-reset/verify` | `{token}` | 200 `{expires_at, email_masked}`. 쓸 수 없으면 400 `PASSWORD_RESET_TOKEN_INVALID` |
+| `POST /api/v1/auth/password-reset/confirm` | `{token, new_password}` | 200 `{}`. 그 계정의 세션을 모두 지운다(새 세션은 만들지 않는다) |
+
+- 링크: `{APP_BASE_URL}/reset-password#token=<토큰>`. 30분 동안 한 번만 쓸 수 있고 DB 에는 sha256 해시만 둔다. 새 토큰을 발급하면 이전 미사용 토큰은 `invalid` 가 된다.
+- 요청 제한: 계정마다 60초에 1번, 1시간에 5번. 걸려도 응답은 같은 200 이고 이전 링크는 살아 있다. 이메일은 로그인처럼 정확히 일치해야 찾는다.
+- 발송: 응답 뒤 백그라운드에서 보내고, 실패하면 2·4·8초 뒤 3번 더 보낸다. 그래도 실패하면 로그만 남긴다(사용자는 다시 요청한다). 서버가 재시작되면 보내던 메일은 사라진다.
+- 비밀번호 규칙: 8자 이상, 숫자(0-9) 하나 이상. 회원가입(`POST /api/v1/auth/signup`)에도 같이 적용되고 어기면 400 `INVALID_REQUEST`.
+
+### 운영 메일 설정
+
+`.env` 에 `SMTP_HOST`·`SMTP_USERNAME`·`SMTP_PASSWORD`·`APP_BASE_URL` 이 모두 있어야 켜진다(나머지는 [.env.example](.env.example)). 팀 Gmail 을 쓰는 경우:
+
+1. 팀 전용 Gmail 계정에 2단계 인증을 켠다.
+2. Google 계정 > 보안 > 앱 비밀번호에서 비밀번호를 만든다. 일반 비밀번호로는 SMTP 로그인이 안 된다.
+3. 서버 `.env` 에 `SMTP_HOST=smtp.gmail.com`, `SMTP_USERNAME=<계정>`, `SMTP_PASSWORD=<앱 비밀번호>`, `APP_BASE_URL=<웹 주소>` 를 넣고 백엔드를 재시작한다.
+4. 실제 계정으로 재설정 메일을 받아 링크로 비밀번호를 바꿔 본다. 받은편지함에 없으면 스팸함을 본다.
+
+Gmail 은 하루 발송 한도(약 500통)가 있다. 다른 SMTP 로 옮길 때는 환경변수만 바꾼다(포트 465 면 `SMTP_SECURITY=ssl`).
 
 ## 권한
 

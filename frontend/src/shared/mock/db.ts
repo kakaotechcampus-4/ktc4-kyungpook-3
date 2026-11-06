@@ -131,6 +131,12 @@ export interface MockPasswordReset {
   failure: PasswordResetFailure
 }
 
+/** 백엔드에서 막힘을 직접 건(applied) 열린 무응답 감시 기록에 대응한다. 막기 전 상태·사유를 든다 */
+export interface MockAutoBlock {
+  prev_status: string
+  prev_blocker: string | null
+}
+
 /** 저장한 메시지·알림 설정 행. 응답의 `saved`·`pms` 는 handler 가 붙인다 */
 export type MockMessageSettings = Omit<MessageSettingsDto, 'saved' | 'pms'>
 
@@ -157,6 +163,7 @@ export interface MockDb {
   extractions: typeof extractionFixtures
   tasks: typeof taskFixtures
   taskHistory: typeof taskHistoryFixtures
+  autoBlocks: Record<string, MockAutoBlock>
   approvals: typeof approvalFixtures
   /** 회의 정리 흐름. 원본 파일은 담지 않는다 — 생성 결과는 위의 meetings·minutes·extractions·tasks·approvals 에 들어간다 */
   meetingFlow: MeetingFlowState
@@ -198,6 +205,7 @@ export function initialDb(): MockDb {
     extractions: structuredClone(extractionFixtures),
     tasks: structuredClone(taskFixtures),
     taskHistory: structuredClone(taskHistoryFixtures),
+    autoBlocks: {},
     approvals: structuredClone(approvalFixtures),
     meetingFlow: { mode: 'manual', attendees: {}, speakers: {} },
     messageBundles: structuredClone(messageBundleFixtures),

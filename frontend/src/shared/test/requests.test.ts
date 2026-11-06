@@ -41,7 +41,8 @@ it('공간 기본값은 ws_01 이고, 다른 공간의 목록 조회는 그 공�
 it('알림 종 조회는 지금 URL 공간의 것만 업무 요청에서 뺀다 — 다른 공간의 알림 조회는 남는다', () => {
   const forbidden = get('/workspaces/forbidden/notifications')
   const current = get('/workspaces/ws_01/notifications')
-  expect(businessRequests([current, forbidden])).toEqual([forbidden])
+  const limited = get('/workspaces/ws_01/notifications?limit=50')
+  expect(businessRequests([current, limited, forbidden])).toEqual([forbidden])
   expect(businessRequests([forbidden], { trackerWorkspaceId: 'forbidden' })).toEqual([])
   expect(
     businessRequests([{ method: 'POST', path: '/workspaces/ws_01/notifications' }]),
