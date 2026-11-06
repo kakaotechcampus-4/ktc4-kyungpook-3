@@ -278,7 +278,7 @@ def _login_member(client, db, workspace_id: str) -> None:
         Member(workspace_id=workspace_id, user_id=user.user_id, display_name="member"),
         SessionModel(
             user_id=user.user_id,
-            token_hash=hash_session_token("member-token"),
+            session_token=hash_session_token("member-token"),
             expires_at=datetime.now(timezone.utc) + timedelta(days=1),
         ),
     ])

@@ -48,7 +48,7 @@ def seed(db):
     db.add(
         SessionModel(
             user_id=user.user_id,
-            token_hash=hash_session_token("pm-token"),
+            session_token=hash_session_token("pm-token"),
             expires_at=datetime.now(timezone.utc) + timedelta(days=1),
         )
     )

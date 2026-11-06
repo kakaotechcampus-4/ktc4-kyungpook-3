@@ -68,7 +68,7 @@ def _user_with_session(db, email: str, token: str) -> User:
     db.add(
         SessionModel(
             user_id=user.user_id,
-            token_hash=hash_session_token(token),
+            session_token=hash_session_token(token),
             expires_at=datetime.now(timezone.utc) + timedelta(days=1),
         )
     )

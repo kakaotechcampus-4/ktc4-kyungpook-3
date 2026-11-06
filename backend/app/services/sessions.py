@@ -24,18 +24,18 @@ def create_session(db: Session, user_id: str, *, now: datetime | None = None) ->
     """세션 행을 추가하고 쿠키에 줄 원문을 돌려준다. commit 은 호출자가 한다."""
     raw = secrets.token_urlsafe(32)
     now = now or datetime.now(timezone.utc)
-    db.add(SessionModel(user_id=user_id, token_hash=hash_session_token(raw), expires_at=now + SESSION_TTL))
+    db.add(SessionModel(user_id=user_id, session_token=hash_session_token(raw), expires_at=now + SESSION_TTL))
     return raw
 
 
 def find_session(db: Session, raw: str) -> SessionModel | None:
     """원문의 해시로 찾는다. 만료는 검사하지 않는다."""
-    return db.scalars(select(SessionModel).where(SessionModel.token_hash == hash_session_token(raw))).first()
+    return db.scalars(select(SessionModel).where(SessionModel.session_token == hash_session_token(raw))).first()
 
 
 def delete_session(db: Session, raw: str) -> None:
     """원문의 해시와 맞는 행만 지운다. commit 은 호출자가 한다."""
-    db.execute(delete(SessionModel).where(SessionModel.token_hash == hash_session_token(raw)))
+    db.execute(delete(SessionModel).where(SessionModel.session_token == hash_session_token(raw)))
 
 
 def sweep_expired_sessions(db: Session, now: datetime | None = None) -> int:

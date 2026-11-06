@@ -75,7 +75,7 @@ def seed(db):
     db.flush()
     db.add_all([
         SessionModel(
-            user_id=user.user_id, token_hash=hash_session_token("pm-token"),
+            user_id=user.user_id, session_token=hash_session_token("pm-token"),
             expires_at=datetime.now(timezone.utc) + timedelta(days=1),
         ),
         Member(workspace_id=a.workspace_id, user_id=user.user_id, display_name="pm", role="pm"),

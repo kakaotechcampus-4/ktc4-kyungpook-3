@@ -48,7 +48,7 @@ def seed(db):
     db.flush()
     db.add(SessionModel(
         user_id=alice.user_id,
-        token_hash=hash_session_token("alice-token"),
+        session_token=hash_session_token("alice-token"),
         expires_at=datetime.now(timezone.utc) + timedelta(days=1),
     ))
 

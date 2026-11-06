@@ -73,7 +73,7 @@ def _user(db, email: str, token: str) -> User:
     user = User(email=email, name=email.split("@")[0])
     db.add(user)
     db.flush()
-    db.add(SessionModel(user_id=user.user_id, token_hash=hash_session_token(token), expires_at=datetime.now(timezone.utc) + timedelta(days=1)))
+    db.add(SessionModel(user_id=user.user_id, session_token=hash_session_token(token), expires_at=datetime.now(timezone.utc) + timedelta(days=1)))
     return user
 
 

@@ -75,7 +75,7 @@ def seed(db):
     db.add(user)
     db.flush()
     db.add(SessionModel(
-        user_id=user.user_id, token_hash=hash_session_token("pm-token"),
+        user_id=user.user_id, session_token=hash_session_token("pm-token"),
         expires_at=datetime.now(timezone.utc) + timedelta(days=1),
     ))
     ws, other_ws = Workspace(name="A"), Workspace(name="B")
@@ -425,7 +425,7 @@ def test_concurrent_uploads_to_one_workspace_accept_only_one(monkeypatch):
     seed_session.add(user)
     seed_session.flush()
     seed_session.add(SessionModel(
-        user_id=user.user_id, token_hash=hash_session_token("pm-token"),
+        user_id=user.user_id, session_token=hash_session_token("pm-token"),
         expires_at=datetime.now(timezone.utc) + timedelta(days=1),
     ))
     ws = Workspace(name="A")

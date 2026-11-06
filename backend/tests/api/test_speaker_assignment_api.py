@@ -77,7 +77,7 @@ def _add_user(db, email, token, ws_id, role, name):
     db.add(user)
     db.flush()
     db.add(SessionModel(
-        user_id=user.user_id, token_hash=hash_session_token(token),
+        user_id=user.user_id, session_token=hash_session_token(token),
         expires_at=datetime.now(timezone.utc) + timedelta(days=1),
     ))
     member = Member(workspace_id=ws_id, user_id=user.user_id, display_name=name, role=role)

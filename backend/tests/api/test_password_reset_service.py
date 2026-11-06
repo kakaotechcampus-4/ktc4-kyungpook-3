@@ -127,7 +127,7 @@ def test_verify_reasons(mdb):
 def test_confirm_changes_password_and_deletes_sessions(mdb):
     user = _user(mdb)
     for i in range(2):
-        mdb.add(SessionModel(user_id=user.user_id, token_hash=hash_session_token(f"tok{i}"), expires_at=NOW + timedelta(days=1)))
+        mdb.add(SessionModel(user_id=user.user_id, session_token=hash_session_token(f"tok{i}"), expires_at=NOW + timedelta(days=1)))
     mdb.commit()
     raw = _raw(_request(mdb))
     svc.confirm_reset(mdb, raw, "new-pass-1", now=NOW + timedelta(minutes=1))

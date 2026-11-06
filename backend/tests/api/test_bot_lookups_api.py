@@ -82,7 +82,7 @@ def seed(db):
     db.flush()
     db.add_all([
         SessionModel(
-            user_id=user.user_id, token_hash=hash_session_token("pm-session"),
+            user_id=user.user_id, session_token=hash_session_token("pm-session"),
             expires_at=datetime.now(timezone.utc) + timedelta(days=1),
         ),
         # A의 팀원. 만든 순서는 m2, 그다음 같은 시각의 m1과 m3이다. 넣는 순서를 member_id 순서와 일부러 엇갈리게 했다.

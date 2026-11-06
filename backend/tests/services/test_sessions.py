@@ -39,7 +39,7 @@ def test_create_session_stores_only_hash(db, user_id):
     db.commit()
 
     row = db.scalars(select(SessionModel)).one()
-    assert row.token_hash == hashlib.sha256(raw.encode()).hexdigest()
+    assert row.session_token == hashlib.sha256(raw.encode()).hexdigest()
     for column in SessionModel.__table__.columns:
         assert getattr(row, column.key) != raw
     expires_at = row.expires_at
@@ -62,7 +62,7 @@ def test_find_session_by_hash_value_fails(db, user_id):
     db.commit()
     row = sessions.find_session(db, raw)
 
-    assert sessions.find_session(db, row.token_hash) is None
+    assert sessions.find_session(db, row.session_token) is None
 
 
 def test_find_session_with_lone_surrogate_returns_none(db):
@@ -82,8 +82,8 @@ def test_delete_session_removes_only_that_row(db, user_id):
     assert len(db.scalars(select(SessionModel)).all()) == 1
 
 
-def _add_session(db, user_id, token_hash, expires_at):
-    db.add(SessionModel(user_id=user_id, token_hash=token_hash, expires_at=expires_at))
+def _add_session(db, user_id, session_token, expires_at):
+    db.add(SessionModel(user_id=user_id, session_token=session_token, expires_at=expires_at))
 
 
 def _remaining_expiries(db):

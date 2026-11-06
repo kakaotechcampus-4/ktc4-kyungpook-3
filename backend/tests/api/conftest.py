@@ -58,7 +58,7 @@ def _user(db, name: str) -> User:
     db.add(user)
     db.flush()
     db.add(SessionModel(
-        user_id=user.user_id, token_hash=hash_session_token(f"{name}-token"),
+        user_id=user.user_id, session_token=hash_session_token(f"{name}-token"),
         expires_at=datetime.now(timezone.utc) + timedelta(days=1),
     ))
     return user

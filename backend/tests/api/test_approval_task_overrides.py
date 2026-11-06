@@ -79,7 +79,7 @@ def seed(db):
     db.add(pm_user)
     db.flush()
     db.add(SessionModel(
-        user_id=pm_user.user_id, token_hash=hash_session_token("pm-token"),
+        user_id=pm_user.user_id, session_token=hash_session_token("pm-token"),
         expires_at=datetime.now(timezone.utc) + timedelta(days=1),
     ))
     pm = Member(workspace_id=ws.workspace_id, user_id=pm_user.user_id, display_name="PM", role="pm")
@@ -882,7 +882,7 @@ def member_client(db, seed):
     db.add(user)
     db.flush()
     db.add(SessionModel(
-        user_id=user.user_id, token_hash=hash_session_token("jimin-token"),
+        user_id=user.user_id, session_token=hash_session_token("jimin-token"),
         expires_at=datetime.now(timezone.utc) + timedelta(days=1),
     ))
     seed["jimin"].user_id = user.user_id
