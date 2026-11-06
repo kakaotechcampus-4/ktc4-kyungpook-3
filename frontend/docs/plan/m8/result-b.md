@@ -12,6 +12,51 @@
   - 같은 날 후속 지적으로, 프로필 메뉴에서 설정으로 옮겨 가면 포커스가 아바타에 남던 것을 설정 제목으로 옮겼다(같은 절 「후속 — 설정으로 옮긴 뒤의 포커스」).
   - 2026-11-05 알림 절을 메시지·알림 설정 API 에 연결했다(아래 「2026-11-05 알림 절의 설정 저장 API 연결 (#340)」).
 
+## 2026-11-07 회의 채팅 채널 고르기 (#429)
+
+### 작업 근거와 요약
+
+- 근거는 이슈 #429 본문과 FE 진행 기본값 댓글(2026-11-07), BE 설계 #428 과 구현 PR #432(2026-11-06 develop 병합), 코디네이터 작업 지시다. M8 계획에는 이 작업의 완료조건이 없어 아래는 이슈의 요청에 대응시킨다. M8-B 전체 완료로 표시하지 않는다.
+- PM 이 설정 연결 탭의 Discord 카드 아래 `회의 채팅 채널` 칸에서 연결한 서버의 텍스트 채널을 고르고 저장하면 매일 09:00 채팅 자동 수집이 켜진다. `사용 안 함` 을 저장하면 꺼진다. 일반 팀원에게는 칸이 없다. 온보딩에는 넣지 않았다.
+
+### 실제 구현 및 관련 코드
+
+- 응답 타입 [integration.ts](../../../src/shared/types/api/integration.ts)와 엔티티 [연동 API](../../../src/entities/integration/api/integrations.ts): 연결 조회의 `discord.chat_channel` 을 `discord.chatChannel` 로 바꾸고, 채널 목록(`['workspace', id, 'discord-channels']`)·저장·해제를 더했다.
+- 저장 훅 [useChatChannelSetting](../../../src/features/integration-connection/model/useChatChannelSetting.ts): 세션 범위(`captureSessionScope`)를 잡아 세션이 끝났으면 보내지 않고 늦은 응답은 버린다. 성공하면 저장한 공간의 연동 캐시에 결과를 쓰고 다시 받는다. 중복 저장을 막고 자동 재시도는 없다.
+- 실패 문구 [chatChannelMessages.ts](../../../src/features/integration-connection/lib/chatChannelMessages.ts): `DISCORD_CHANNEL_NOT_ACCESSIBLE` 의 `need=read` 는 채널 권한에 봇을 추가하라고, `need=send` 는 메시지 보내기 권한을 주라고 알린다. `DISCORD_CHANNEL_NOT_FOUND` 면 채널 목록을 다시 받는다. 공용 문구 표([errorMessages.ts](../../../src/shared/api/errorMessages.ts))에 두 코드를 더했다.
+- 칸 [ChatChannelField](../../../src/features/integration-connection/ui/ChatChannelField.tsx)와 선택 상자 [ChannelSelect](../../../src/features/integration-connection/ui/ChannelSelect.tsx): Discord 가 연결돼 있지 않으면 비활성과 연결 안내, 켜거나 바꿀 때 저장 전 안내, `저장`·`되돌리기`, 목록 오류의 다시 시도. 선택 상자는 공용 선택 상자(#471)가 develop 에 없어 네이티브 `<select>` 다.
+- 연결 끊기 확인 창 [ConnectionActions](../../../src/features/integration-connection/ui/ConnectionActions.tsx): 채팅 채널이 있으면 `회의 채팅 채널(#이름) 수집도 함께 꺼져요.` 를 덧붙인다. 끊은 뒤 캐시의 채팅 채널도 비운다.
+- MSW [handlers/integration.ts](../../../src/shared/mock/handlers/integration.ts): 채널 목록·저장·해제를 BE 순서와 오류 그대로 흉내낸다. 모의 채널 네 개 중 `#운영-비공개` 는 읽기, `#공지` 는 보내기 권한이 없다. Discord 연결 해제는 채팅 채널도 지운다. 모의 DB 버전 15.
+- E2E [settings-team.e2e.ts](../../../e2e/settings-team.e2e.ts)에 고르기·실패 안내·저장·새로고침·끊기 확인 문구 여정을 더했다.
+
+### 완료조건 확인
+
+| 이슈의 요청 | 상태 | 근거 |
+|---|---|---|
+| Discord 항목 아래 `회의 채팅 채널`(PM 만), 미연결이면 비활성과 연결 안내 | 충족(MSW) | `settingsConnections.test.tsx`(비활성·목록 요청 없음·일반 팀원 칸 없음) |
+| 선택지는 BE 채널 목록과 `사용 안 함`(해제) | 충족(MSW) | `settingsConnections.test.tsx`(목록·DELETE), 엔티티 API 테스트 |
+| 저장 전 안내 | 충족(MSW) | `settingsConnections.test.tsx`, E2E 여정, 결정 기록 |
+| 저장 실패 시 BE 오류와 고칠 방법 | 충족(MSW) | `settingsConnections.test.tsx`(`need=read`·`need=send`·`NOT_FOUND`), `chatChannelMessages.test.ts`, E2E 여정 |
+| 연결 해제 확인 문구에 채팅 채널 해제 | 충족(MSW) | `settingsConnections.test.tsx`, E2E 여정 |
+
+### 검증 내역
+
+- 2026-11-07, Node v24.11.0. 검사 결과는 아래 「전체 검사」에 적는다.
+- 브라우저(MSW): `node .cursor/skills/verify-managers-manager/scripts/verify.cjs run connections --grep '회의 채팅 채널|PM 이 설정에서 Discord|설정·팀 화면은'` 5개 통과(실행 `2026-11-06T18-00-38-939Z-connections-e4dd57f0`, 포트 닫힘 확인). 같은 묶음의 첫 실행은 내가 쓴 토스트 선택자가 두 요소에 맞아 실패했고 선택자를 고친 뒤 통과했다. 화면 증거는 `frontend/.verify/evidence/`(커밋하지 않음).
+
+### 계획 대비 변경
+
+- 계획에 이 작업이 없다. 이슈와 지시에 따른 추가 작업이다.
+- 연결 조회 응답 모양이 바뀌어 여러 테스트의 연동 응답 리터럴에 `chat_channel: null` 을 더했다.
+
+### 남은 작업과 제한 사항
+
+- 실제 BE·Discord 서버와 붙인 저장·공지는 확인하지 않았다. MSW 기준이다.
+- #471 병합 뒤 `ChannelSelect` 를 공용 선택 상자로 바꾼다.
+- 카드의 `채널 바꾸기` 자리 버튼과 이 칸의 뜻이 겹친다. 정리는 제품 결정이 필요하다([결정 기록](basis-for-decision/2026-11-07-chat-channel-save-flow.md)).
+- 안내 문구와 위치는 #429 의 FE 기본값이다. PM·디자인 검토는 받지 않았다.
+- 전체 Storybook play 와 전체 E2E 는 CI 에 맡겼다.
+
 ## 2026-11-05 알림 절의 설정 저장 API 연결 (#340)
 
 ### 작업 근거와 요약
