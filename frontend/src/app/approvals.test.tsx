@@ -600,7 +600,7 @@ describe('Notion 반영 문구 (AC-07)', () => {
     async (status, label) => {
       Object.assign(taskOf('tk_05'), { notion_sync_status: status, notion_page_id: 'notion_tk_05' })
       renderApp(paths.tasks('ws_01', 'tk_05'))
-      await screen.findByRole('heading', { level: 2, name: '회의록 요약 검수' })
+      await screen.findByRole('heading', { level: 1, name: '회의록 요약 검수' })
       await waitFor(() => expect(notionStatus()).toHaveTextContent(label))
       expect(notionStatus().textContent).toBe(label)
     },

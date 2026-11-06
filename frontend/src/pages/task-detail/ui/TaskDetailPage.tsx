@@ -1,8 +1,9 @@
 import { useMemberWorkspace } from '@/entities/workspace'
+import { todayInSeoul } from '@/shared/lib/date'
 import { useRouteId } from '@/shared/lib/url'
 import { TaskDetail, UnavailableTask } from '@/widgets/task-detail'
 
-const ROOT = 'mx-auto flex w-full max-w-[960px] flex-col gap-24 px-36 pt-32 pb-56'
+const ROOT = 'mx-auto flex w-full max-w-[960px] flex-col gap-22 px-48 pt-40 pb-72'
 
 /**
  * `/workspaces/:workspaceId/tasks/:taskId` — 태스크 상세 (M6 §3-5). 라우트 조립만 한다.
@@ -26,6 +27,7 @@ export function TaskDetailPage() {
       workspaceId={workspaceId}
       taskId={taskId}
       isPm={workspace.role === 'pm'}
+      today={todayInSeoul()}
     />
   )
 }
