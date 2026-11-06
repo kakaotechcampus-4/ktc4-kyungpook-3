@@ -13,6 +13,10 @@ discord 이름은 여기 없다. capture/discord_adapter.py 가 이 함수들을
   started_at    녹음 시작 벽시계(UTC ISO). 트랙 안의 위치는 이 시각부터 흐른 monotonic 시간이다
   timezone      회의가 열린 시간대. "내일" 같은 상대 날짜의 기준일은 이 시간대의 시작 날짜다
   guild_id, voice_channel_id, text_channel_id, workspace_id   어느 서버의 어느 방 회의인지. 복구 범위와 게시 채널
+  source        "upload" 면 업로드 회의(녹음이 아니다). 지정(mapped_at, 모든 화자의 member_id)·be.meeting_id·workspace_id 가 갖춰지고
+                be.status 가 processing 이면 서버 없이도 복구가 집는다(디스코드 회의보다 먼저). 그 전에는 집지 않는다
+  be, workspace_id, attendees, upload   업로드 가져오기(upload/intake.py)가 diarized 매니페스트에 더한다. be 는 {"meeting_id",
+                "status"}, attendees 는 웹이 받은 참석자, upload 는 원본 파일 정보. 분리 실패는 failed_stage=diarize 로 BE 에만 보낸다
   transcript    전사가 끝나면 회의록 경로
   tasks         할일 추출까지 됐으면 그 결과 파일 경로 (옛 경로 extract_tasks 의 결과)
   items         판단 경로(MM_EXTRACT_PATH=judge)의 결과 파일 경로. POST /extractions 의 항목 모양 그대로다.
@@ -57,6 +61,7 @@ import asyncio
 import functools
 import json
 import os
+import shutil
 import socket
 import uuid
 from datetime import date, datetime, timedelta, timezone
@@ -67,15 +72,15 @@ import soundfile as sf
 
 from capture import judge_path, ops_record
 from capture.judge_path import JudgeOutput
-from capture.handoff import speaker_names
+from capture.handoff import MeetingEnded, speaker_names
 from shared.config import TRANSCRIPTS_DIR, settings
 from shared.config import today as config_today
 from shared.schemas import now_iso
 
 STATUS_RECORDING = "recording"
 STATUS_SAVED = "saved"
-STATUS_DIARIZED = "diarized"      # 업로드 오디오를 화자별 트랙으로 나눴다. 복구가 집지 않는다(#254·#255 합의 전까지)
-STATUS_MAPPED = "mapped"          # 사람이 화자 라벨을 멤버에 지정했다. 복구가 집지 않는다(#254·#255 합의 전까지)
+STATUS_DIARIZED = "diarized"      # 업로드 오디오를 화자별 트랙으로 나눴다. 지정 전이라 복구가 집지 않는다
+STATUS_MAPPED = "mapped"          # 사람이 화자 라벨을 멤버에 지정했다. 업로드는 지정 받기 기록이 mapped 로 닫히고 BE 회의가 processing 이면 복구가 집는다(#286)
 STATUS_TRANSCRIBED = "transcribed"
 STATUS_PARTIAL = "partial"        # 전사는 돌았는데 실패한 줄이 남았다. failed_units 에 구간이 있다
 STATUS_SOURCED = "sourced"        # 전사 발화를 BE 에 저장했다
@@ -361,7 +366,8 @@ def remember_member_names(manifest: dict, handoff) -> bool:
         print(f"[hint] 팀원 이름 조회 실패. 디스코드 표시 이름으로 전사한다: {type(e).__name__}: {e}", flush=True)
         return False
     manifest["hint_members"] = [{"name": m.get("name") or "", "aliases": list(m.get("aliases") or []),
-                                 "discord_user_id": m.get("discord_user_id")} for m in members]
+                                 "discord_user_id": m.get("discord_user_id"), "member_id": m.get("member_id")}
+                                for m in members]
     return True
 
 
@@ -437,10 +443,66 @@ def pending_sessions(recordings_dir: Path, *, guild_id=None, exclude=None) -> li
     return [p for p, _ in _pending(recordings_dir, guild_id=guild_id, exclude=exclude)]
 
 
-def _queue_key(path: Path) -> tuple[int, str]:
-    """처리 순서. 회의 ID 끝의 시작 초(<guild>_<ts>) 순이고 같으면 파일 이름 순이다. 먼저 시작한 회의가 먼저다."""
+UPLOAD_PREFIX = "session_upload_"
+
+
+def _queue_key(path: Path) -> tuple[int, int, str]:
+    """처리 순서. 업로드 회의(파일 이름이 session_upload_ 로 시작)가 디스코드 회의보다 앞이고(결정 기록 0043),
+    업로드끼리는 먼저 지정된(mapped_at, BE sweeper 의 3시간 시계가 먼저 도는) 회의가 먼저다. 지정 시각이 없거나 깨지면
+    업로드 중 맨 뒤. 디스코드 회의는 회의 ID 끝의 시작 초(<guild>_<ts>) 순이다. 같으면 파일 이름 순이다."""
+    if path.name.startswith(UPLOAD_PREFIX):
+        m = _load(path) or {}
+        try:
+            at = int(datetime.fromisoformat(str(m.get("mapped_at"))).timestamp() * 1000)
+        except (TypeError, ValueError):
+            at = 2**63
+        return (0, at, path.name)
     tail = path.stem.rsplit("_", 1)[-1]
-    return (int(tail) if tail.isdigit() else 2**63, path.name)
+    return (1, int(tail) if tail.isdigit() else 2**63, path.name)
+
+
+def drop_local(recordings_dir: Path, session: str) -> None:
+    """이 회의의 매니페스트·잠금 파일·트랙 폴더를 지운다. 업로드 가져오기 기록(.uploads/<id>/intake.json)은 남긴다.
+
+    잠금을 쥔 채 부르지 않는다. 처리가 끝난 뒤 Claims.release·_keep_ops 가 매니페스트를 다시 쓰기 때문에, 잠금을 놓은 다음 지워야 다시 생기지 않는다."""
+    m = manifest_path(recordings_dir, session)
+    m.unlink(missing_ok=True)
+    m.with_suffix(".lock").unlink(missing_ok=True)
+    shutil.rmtree(recordings_dir / session, ignore_errors=True)
+
+
+def drop_transcripts(transcripts_dir: Path, manifest: dict) -> None:
+    """이 회의의 전사 산출물을 지운다: session_<회의>.* (계약 파일·줄 목록·추출 결과)와 session_<회의>__*(세션 통계),
+    트랙마다 쓴 <트랙 이름>__<모델>.* (파일당 전사). BE 가 끝낸 업로드를 정리할 때 drop_local 과 같이 쓴다(#288, #389 리뷰)."""
+    if not transcripts_dir.exists():
+        return
+    session = str(manifest["session"])
+    patterns = [f"session_{session}.*", f"session_{session}__*"]
+    patterns += [f"{Path(e['file']).stem}__*" for e in manifest.get("speakers") or [] if e.get("file")]
+    for pat in patterns:
+        for f in transcripts_dir.glob(pat):
+            if f.is_file():
+                f.unlink(missing_ok=True)
+
+
+def _resume_mapped(recordings_dir: Path, meeting_id: str) -> bool:
+    """지정 받기(upload.assign)가 이 업로드의 resume.state 를 mapped 로 닫았는가. 기록이 없거나 깨졌으면 False.
+    resuming 인 동안 처리를 시작하면 assign 의 재시도(ended·failing)가 같은 회의의 로컬을 지울 수 있다."""
+    try:
+        rec = json.loads((recordings_dir / ".uploads" / meeting_id / "intake.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    r = rec.get("resume") if isinstance(rec, dict) else None
+    return isinstance(r, dict) and r.get("state") == "mapped"
+
+
+def _upload_ready(recordings_dir: Path, m: dict) -> bool:
+    """업로드가 BE 로 넘길 수 있는가: 지정이 끝났고(mapped_at, 모든 화자에 member_id 키, 지정 받기 기록이 mapped),
+    웹 업로드가 만든 BE 회의가 처리 중이다."""
+    be = m.get("be") or {}
+    return bool(m.get("mapped_at") and m.get("workspace_id") and be.get("meeting_id") and be.get("status") == "processing"
+                and m.get("speakers") and all("member_id" in e for e in m["speakers"])
+                and _resume_mapped(recordings_dir, str(be["meeting_id"])))
 
 
 def _pending(recordings_dir: Path, *, guild_id=None, exclude=None):
@@ -457,9 +519,15 @@ def _pending(recordings_dir: Path, *, guild_id=None, exclude=None):
 
 def _is_pending(recordings_dir: Path, m: dict) -> bool:
     """끝까지 가지 않았고 돌릴 트랙이 있는 회의인가. 목록(pending_sessions)과 잡은 뒤의 재확인(recover_one)이 같이 쓴다."""
-    # 업로드 회의는 화자 지정(#254)·인계(#255) 합의 전까지 어떤 복구도 돌리지 않는다. 사람이 saved 로 고쳐도 그렇다
-    if m.get("source") == "upload" or m.get("status") in (STATUS_DIARIZED, STATUS_MAPPED):
+    # 업로드 회의는 지정이 끝나고 BE 회의가 처리 중일 때만 돌린다(#286). diarized 는 지정 전이라 사람이 saved 로 고쳐도 안 돌린다.
+    # 지정 시각·화자별 member_id 가 없는 업로드는 status 만 고쳐서는 돌지 않는다
+    if m.get("source") == "upload":
+        if m.get("status") == STATUS_DIARIZED or not _upload_ready(recordings_dir, m):
+            return False
+    elif m.get("status") in (STATUS_DIARIZED, STATUS_MAPPED):
         return False
+    # partial 재시도는 디스코드 회의만 닿는다. 인계가 끝난 업로드는 be.status=done 이라 위 _upload_ready 에서 빠진다:
+    # BE 는 처리 중인 회의에만 추출을 받으므로 다시 인계할 수 없다(결정 기록 0043)
     if m.get("status") == STATUS_HANDED_OFF:
         if not (m.get("partial") and m.get("retry_runs", 0) < PARTIAL_RETRY_MAX):
             return False
@@ -531,7 +599,7 @@ class Claims:
 
 def backoff_s(attempts: int) -> float:
     """attempts 번째 실패 뒤 다음 시도까지 기다리는 초. RECOVERY_BACKOFF_S 에서 두 배씩 늘고 한 시간에서 멈춘다."""
-    return min(RECOVERY_BACKOFF_S * 2 ** max(0, attempts - 1), RECOVERY_BACKOFF_CEIL_S)
+    return min(RECOVERY_BACKOFF_S * 2 ** min(max(0, attempts - 1), 20), RECOVERY_BACKOFF_CEIL_S)
 
 
 def _count_failure(manifest: dict, handoff, failed_stage: str, *, give_up: bool = False) -> dict:
@@ -600,6 +668,9 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
     시각을 적는다. 단계가 닫히면 recovery 를 지운다. RECOVERY_MAX_ATTEMPTS 에 닿으면 포기하고
     (recovery.gave_up_at) 그때 처음 BE 에 fail 을 보낸다. 그 전에는 BE 회의가 processing 으로 남는다.
 
+    업로드 회의가 BE 에서 이미 끝났으면(MeetingEnded) 실패로 세지 않고 BE 에 fail 도 보내지 않고 result["ended"] 에 이유를 적는다.
+    로컬 정리는 잠금을 놓은 뒤 recover_one 이 한다.
+
     돌려주는 dict: session, status, ran(이번에 끝낸 단계), skipped, error, failed_stage,
     transcribe({markdown, failed, summary, lines}), retried(다시 보낸 줄 수), tasks(옛 경로의 목록),
     items(판단 경로의 항목 목록. 옛 경로면 None), extract_failures(판단하지 못한 finding), be,
@@ -622,7 +693,7 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
               "error": None, "failed_stage": None, "transcribe": None, "retried": 0, "tasks": None, "be": None,
               "items": None, "extract_failures": [], "sources": None,
               "speakers": len(manifest.get("speakers") or []), "text_channel_id": manifest.get("text_channel_id"),
-              "partial": False, "missing_units": 0, "attempts": 0, "gave_up": False, "retry_in_s": None}
+              "partial": False, "missing_units": 0, "attempts": 0, "gave_up": False, "retry_in_s": None, "ended": None}
     stage = None
     counted = False
     ops = ops_record.OpsRun(manifest)
@@ -709,6 +780,8 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
             # 워크스페이스가 아직 없으면 여기서 묻지 않는다. 발화 저장 앞에서 한 번 묻고, 회의는 발화 저장이 만든다
             try:
                 handoff.end(manifest, title=meeting_title(manifest))
+            except MeetingEnded:
+                raise                                  # 끝난 업로드 회의다. 전사도 하지 않고 아래에서 끝낸다
             except Exception as e:  # noqa: BLE001
                 manifest.setdefault("be", {})["error"] = f"{type(e).__name__}: {e}"
             save()
@@ -848,6 +921,11 @@ def process_session(recordings_dir: Path, manifest: dict, *, backend, model_name
             be = handoff.register(manifest, transcripts_dir=tdir, model_name=model_name, title=meeting_title(manifest))
             result["be"] = dict(be)
             finish(STATUS_HANDED_OFF)
+    except MeetingEnded as e:
+        # 업로드 회의가 BE 에서 이미 끝났다(failed·done·없음). 다시 해도 같으니 실패로 세지 않고 BE 에 fail 도 보내지 않는다.
+        # 로컬 정리는 잠금을 놓은 뒤 recover_one 이 한다. 여기서 지우면 Claims.release·_keep_ops 가 매니페스트를 다시 쓴다
+        ops.end()
+        result["ended"] = f"{e.code}: {e}"
     except Exception as e:  # noqa: BLE001 - 어느 단계가 죽어도 매니페스트에 남기고 돌아온다
         ops.end()                                      # 단계 시간은 예외까지다. 실패 세기와 포기 알림은 넣지 않는다
         manifest["status"] = STATUS_FAILED
@@ -1000,6 +1078,7 @@ def recover_one(recordings_dir: Path, path: Path, *, claims: Claims, manual: boo
         cur = _load(path)
         who = claims.holder(path, cur) if cur is not None else None
         return {"session": cur.get("session"), "busy": True, **who} if who is not None else None
+    ended = False
     try:
         dead = claims.died_before(m)
         if dead is not None and _is_pending(recordings_dir, m):
@@ -1012,20 +1091,27 @@ def recover_one(recordings_dir: Path, path: Path, *, claims: Claims, manual: boo
             if handoff is not None:
                 handoff.fail(m, state.get("failed_stage") or m.get("failed_stage") or "unknown")
             return None                                # 바뀐 be 는 아래 release 가 표시를 지우며 같이 저장한다
-        return process_session(recordings_dir, m, backend=backend, model_name=model_name, workers=workers, gate=gate,
-                               transcripts_dir=transcripts_dir, extractor=extractor, handoff=handoff, name_of=name_of,
-                               wait_for_workspace=wait_for_workspace, progress=progress)
+        result = process_session(recordings_dir, m, backend=backend, model_name=model_name, workers=workers, gate=gate,
+                                 transcripts_dir=transcripts_dir, extractor=extractor, handoff=handoff, name_of=name_of,
+                                 wait_for_workspace=wait_for_workspace, progress=progress)
+        ended = bool(result.get("ended"))
+        return result
     finally:
         claims.release(path, m)
+        if ended:
+            drop_local(recordings_dir, str(m["session"]))   # 잠금을 놓은 뒤에 지운다. 놓기 전에 지우면 release 가 매니페스트를 다시 쓴다
+            drop_transcripts(transcripts_dir or TRANSCRIPTS_DIR, m)
 
 
 def queue_ahead(recordings_dir: Path, session, *, exclude=None) -> int:
-    """워커가 이 회의보다 먼저 처리할 회의 수. 워커의 루프 바퀴와 같은 목록(recovery_targets 에서 서버가 적힌 것)과
-    순서(시작 시각)를 쓴다. 지금 처리 중인(잠금이 걸린) 회의도 센다. 봇이 녹음 중인 회의는 exclude 로 뺀다."""
+    """워커가 이 회의보다 먼저 처리할 회의 수. 워커의 루프 바퀴와 같은 목록(recovery_targets 에서 서버가 적혔거나
+    업로드인 것, recover_pass 와 같다)과 순서(_queue_key: 업로드가 앞, 디스코드는 시작 시각)를 쓴다.
+    지금 처리 중인(잠금이 걸린) 회의도 센다. 봇이 녹음 중인 회의는 exclude 로 뺀다."""
     mine = _queue_key(manifest_path(recordings_dir, session))
     due, busy = recovery_targets(recordings_dir, claims=Claims(owner="queue"), exclude=exclude)
     # 서버에 연결된 워크스페이스를 기다리는 회의(workspace_wait)는 연결될 때까지 처리되지 않으니 세지 않는다
-    ahead = sum(1 for p, m in due if m.get("guild_id") and not m.get("workspace_wait") and _queue_key(p) < mine)
+    ahead = sum(1 for p, m in due
+                if (m.get("guild_id") or m.get("source") == "upload") and not m.get("workspace_wait") and _queue_key(p) < mine)
     return ahead + sum(1 for b in busy if _queue_key(manifest_path(recordings_dir, b["session"])) < mine)
 
 
@@ -1037,14 +1123,14 @@ async def recover_pass(recordings_dir: Path, *, claims: Claims, sem: asyncio.Sem
     """복구 한 바퀴. 워커(capture/worker.py)의 보통 바퀴와 --retry 가 깨운 바퀴(manual)가 쓴다.
 
     대상은 바퀴를 시작할 때 정한다(recovery_targets). 모든 서버를 보는 바퀴(guild_id=None)는 서버가 적히지 않은
-    옛 매니페스트를 뺀다. 서버별 바퀴도 집지 못한다. 회의마다 sem 을 잡고 recover_one 을 스레드에서
+    옛 매니페스트를 빼되 업로드 회의(서버가 없다)는 넣는다. 서버가 적히지 않은 옛 매니페스트는 서버별 바퀴도 집지 못한다. 회의마다 sem 을 잡고 recover_one 을 스레드에서
     돌린다. stop() 이 참이 되면 새 회의를 집지 않는다. on_start(매니페스트)는 처리 직전에, on_result(결과)는 처리
     뒤에 부른다. progress_for(매니페스트)를 주면 그 회의의 process_session progress 로 넘긴다(on_start 뒤에 부른다).
     돌려주는 것은 (돌린 회의의 결과, 남이 잡고 있어 건너뛴 회의)다.
     """
     due, busy = recovery_targets(recordings_dir, claims=claims, guild_id=guild_id, exclude=exclude, manual=manual)
     if guild_id is None:
-        due = [(p, m) for p, m in due if m.get("guild_id")]
+        due = [(p, m) for p, m in due if m.get("guild_id") or m.get("source") == "upload"]
     results = []
     for path, m in due:
         if stop is not None and stop():

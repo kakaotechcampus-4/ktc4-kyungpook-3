@@ -30,7 +30,7 @@
 
 ## 인증
 
-- `X-Service-Token`: 봇이 부르는 경로 전부(회의 생성·종료·단계 보고·실패, 발화 저장, 유사 task 검색, 추출 등록, 서버로 워크스페이스 찾기, 전사 힌트 조회, 리마인드 DM 다섯 경로)와 웹 업로드 가져가기 여섯 경로에 건다 (`deps.require_service_token`). 헤더 값을 서버의 `SERVICE_TOKEN`과 비교하고, 없거나 다르면 401 `UNAUTHENTICATED`다. 서버에 `SERVICE_TOKEN`이 비어 있으면 모든 요청을 거절한다. 사용자 세션은 서비스 토큰을 대신하지 못한다.
+- `X-Service-Token`: 봇이 부르는 경로 전부(회의 생성·종료·단계 보고·실패, 발화 저장, 유사 task 검색, 추출 등록, 서버로 워크스페이스 찾기, 전사 힌트 조회, 채팅 수집 대상 목록, 리마인드 DM 다섯 경로)와 웹 업로드 가져가기 여섯 경로에 건다 (`deps.require_service_token`). 헤더 값을 서버의 `SERVICE_TOKEN`과 비교하고, 없거나 다르면 401 `UNAUTHENTICATED`다. 서버에 `SERVICE_TOKEN`이 비어 있으면 모든 요청을 거절한다. 사용자 세션은 서비스 토큰을 대신하지 못한다.
 - 합의 근거: 이슈 #179(BE)와 #193(AI). 회의 생성·종료·실패와 추출 등록이 리버스 프록시 설정에만 기대던 것을 서비스 토큰으로 막는다.
 - 현재 구현
   - BE(#179): 회의 생성·종료·실패와 추출 등록에 `require_service_token`을 건다. #179 전에는 발화 저장, 유사 검색, 서버로 워크스페이스 찾기에만 걸었다.
@@ -66,7 +66,7 @@
 ```
 
 - `done`인 채팅 회의 중 `started_at`이 가장 늦은 것의 `started_at + duration_ms`다(UTC). `started_at`이 같으면 `duration_ms`가 큰 쪽, 그래도 같으면 `meeting_id`가 큰 쪽이다. 봇은 이 뒤의 메시지부터 모은다.
-- 구현됨(`app/api/bot_lookups.py`), BE 담당 리뷰 대기. AI는 `ai/capture/chat_poll.py` 가 `BeClient.chat_cursor`(`ai/capture/handoff.py`)로 부른다.
+- 구현됨(#378, `app/api/bot_lookups.py`). AI는 `ai/capture/chat_poll.py` 가 `BeClient.chat_cursor`(`ai/capture/handoff.py`)로 부른다.
 
 ### `PATCH /meetings/{meeting_id}/end` → 202
 
@@ -215,7 +215,7 @@ AI `Transcript.to_dict()` 모양에 화자 이름을 더해 보낸다. 한 회�
   - 같은 회의의 새 항목 카드에 뒤 발화를 합치면 `task_status`는 둘 중 낮은 쪽(certain > inferred > missing), `due_status`·`due_raw`는 마감을 정한 뒤 발화 기준이며 마감을 없애면 missing, `similar_count`·`top_similarity`는 큰 쪽이다.
   - BE 확인 필요: `backend/app/services/matching.py`의 auto 게이트 주석은 "할 일 근거 상태는 LLM의 자기 표시라 거의 certain"이라고 전제한다. 지금은 별도 판정 API로 다시 묻는 방식이라 이 전제가 맞지 않는다.
 - `evidence_seqs`의 모양과 규칙(배열, 순서 자유, 없는 seq 건너뛰기, 가장 큰 seq가 대표, 세 필드를 함께 보내고 빼지 않음, type은 모두 `task`)은 #229 이슈에서 AI·BE가 정했다. 1인칭 화자만 이슈의 "seq로 찾으면 seq 우선"과 달리 요청의 화자를 먼저 쓴다(#229 당시에는 `evidence_speaker`였고, #265 뒤의 순서는 담당자 행의 ①~④다). BE가 리뷰 중에 바꿨고, AI에는 PR로 알린다. BE는 받을 준비가 됐고, AI는 아직 이 키를 보내지 않는다(판단 경로의 `JudgeFinding.indices`, 기본 경로의 `locate_sentence` 결과를 seq로 바꾸는 작업이 남음). 보내기 전까지는 세 필드로 지금처럼 동작하고 `evidence`는 저장되지 않는다.
-- 화자를 멤버 ID로 받는 키(발화 저장의 `speaker_member_id`, 추출 등록의 `evidence_speaker_member_id`)는 이슈 #265에서 BE가 구현했다. 상태는 합의됨(#254, 2026-11-02)이고 BE가 구현했다. AI는 아직 이 키를 보내지 않는다. 키를 보내기 전까지는 기존 필드(`speaker`·`evidence_speaker`)로 지금처럼 동작한다. 새 필드는 모두 선택이고 기존 필드의 뜻은 그대로다. 변경은 요청의 선택 필드 둘과 발화 저장의 새 400 조건이다. 응답은 추출 조회 `evidence`의 `speaker_member_id`와 승인 요청 payload의 `evidence_speaker_member_id`가 늘 뿐이다(승인 목록은 payload를 저장된 그대로 내려준다). 두 요청 필드는 빈 문자열이나 공백뿐이면 null로 보고(`speaker`와 같다), 36자를 넘거나 문자열이 아니면 400 `INVALID_REQUEST`다. 배포는 BE를 먼저 한다. 모르는 키는 오류 없이 무시되므로 BE보다 AI가 먼저 나가면 멤버 ID가 조용히 버려지고 uid 경로로만 동작한다.
+- 화자를 멤버 ID로 받는 키(발화 저장의 `speaker_member_id`, 추출 등록의 `evidence_speaker_member_id`)는 이슈 #265에서 BE가 구현했다. 상태는 합의됨(#254, 2026-11-02)이고 BE가 구현했다. AI는 업로드 회의에서만 이 키를 보낸다(발화 저장의 `speaker_member_id`와 추출 등록의 `evidence_speaker_member_id`, 규칙은 [업로드 회의 인계 규칙](#업로드-회의-인계-규칙)). 디스코드 회의는 이 키를 보내지 않고 기존 필드(`speaker`·`evidence_speaker`)로 지금처럼 동작한다. 새 필드는 모두 선택이고 기존 필드의 뜻은 그대로다. 변경은 요청의 선택 필드 둘과 발화 저장의 새 400 조건이다. 응답은 추출 조회 `evidence`의 `speaker_member_id`와 승인 요청 payload의 `evidence_speaker_member_id`가 늘 뿐이다(승인 목록은 payload를 저장된 그대로 내려준다). 두 요청 필드는 빈 문자열이나 공백뿐이면 null로 보고(`speaker`와 같다), 36자를 넘거나 문자열이 아니면 400 `INVALID_REQUEST`다. 배포는 BE를 먼저 한다. 모르는 키는 오류 없이 무시되므로 BE보다 AI가 먼저 나가면 멤버 ID가 조용히 버려지고 uid 경로로만 동작한다.
 - 합의 여부 확인 필요: 위 키 모양을 판별 기준으로 쓰는 것은 #201에서 BE가 정했다. AI 코드는 바꾸지 않았다. 항목 모양이 바뀌면 판별이 틀어지므로 AI가 이 키를 바꿀 때 알려야 하고, AI가 경로를 직접 보내게 되면 그 값을 먼저 쓰도록 바꾼다.
 
 ## 워크스페이스 찾기 `GET /integrations/discord/guilds/{guild_id}/workspace` → 200
@@ -243,11 +243,35 @@ AI `Transcript.to_dict()` 모양에 화자 이름을 더해 보낸다. 한 회�
   - 미연결이면 `/record`가 녹음을 시작하지 않고, PM이 웹 온보딩에서 서버를 연결한 뒤 다시 하라고 답한다. 합의는 "녹음은 하고 BE 인계만 멈춤"이었는데, main PR #175 리뷰가 미연결 서버의 녹음 거절을 권해 바꿨다. BE가 받는 요청은 어느 쪽이든 조회뿐이다.
   - 조회가 일시적으로 실패하면(연결 실패·5xx) 녹음은 하고 처리할 때 다시 조회한다. 그 실패는 발화 저장 단계의 실패로 세어 재시도하고, 401은 설정 문제로 BE 단계를 건너뛴다. 처리할 때 미연결이면 발화 저장·추출·인계를 멈추고, 워커가 그 채널에 한 번 알린 뒤 연결될 때까지 전사하지 않고 1분에 한 번 다시 묻는다.
 
+## 채팅 수집 대상 목록 `GET /bot/chat-channels` → 200
+
+봇이 매일 읽을 디스코드 채팅 채널을 묻는다(#428). PM 이 웹에서 서버의 텍스트 채널 하나를 골라 켜 둔 워크스페이스만 나온다. 채널을 켜고 끄는 API는 웹용이라 [프론트엔드 대표 계약](../../../frontend/docs/contracts/frontend-api-contract.md)에 있고 여기서 다시 적지 않는다. 동작 세부는 [Backend README](../../README.md#채팅-수집-채널)에 있다.
+
+```jsonc
+// 요청: 헤더 X-Service-Token, 본문·쿼리 없음
+// 응답 data. workspace_id 순
+{ "items": [ { "workspace_id": "ws_...", "guild_id": "900000000000000001", "channel_id": "900000000000000002" } ] }
+// 켠 워크스페이스가 없으면
+{ "items": [] }
+```
+
+| 항목 | 동작 |
+|---|---|
+| 인증 | `X-Service-Token`. 없거나 틀리면 401 `UNAUTHENTICATED`. 워크스페이스 멤버의 세션은 토큰을 대신하지 못한다 |
+| 대상 | 디스코드 연결(`provider_channel_id`=서버 ID)과 수집 채널이 모두 있는 워크스페이스만. 연결을 해제하면 사라지고, 다른 서버로 다시 연결하면 PM 이 채널을 새로 켤 때까지 빠진다 |
+| 빈 목록 | 켠 워크스페이스가 없으면 200 `{items: []}`다. 오류가 아니다 |
+| 변하는 값 | 목록과 실행 사이에 PM 이 채널을 바꾸거나 끄거나 연결을 해제할 수 있다. BE 는 회의 생성에서 채팅 수집 여부를 확인하지 않는다(꺼졌거나 연결이 해제된 워크스페이스도 `POST /meetings`는 201 이다). 봇은 워크스페이스마다 실행 직전에 목록을 다시 받아 목록에 있는 채널만 읽는다. 목록과 실행 사이에 PM 이 끄면 그날 실행분은 회의가 만들어질 수 있다 |
+
+- 합의 상태: **합의됨(#428, 2026-11-06).** 경로와 응답 모양은 AI 제안(#428 본문)을 BE 가 그대로 받아 구현했다(#428). 봇 쪽 전환(이 목록으로 대상 정하기, 음성 봇 토큰으로 바꾸기)은 AI 가 한다.
+- 현재 구현: BE 는 `app/api/integrations.py`의 `list_bot_chat_channels`, `app/services/chat_channel.py`의 `list_enabled_for_bot`이다. 구현됨(#428).
+- 배포 순서: BE 를 먼저 배포하고, 운영 PM 이 웹(또는 Swagger)에서 지금 봇이 읽는 채널을 켠 뒤, AI 가 이 목록을 쓰도록 전환한다. 켜기 전에 AI 가 먼저 전환하면 PM 이 켜기 전까지 수집이 멈춘다(목록이 비어 있다).
+- 영향받는 소비자: 이 경로는 새 경로라 기존 봇 동작은 바뀌지 않는다. `chat-cursor`는 그대로다.
+
 ## 웹 업로드 가져가기
 
 웹에서 PM이 올린 녹음(`POST /workspaces/{id}/meetings/upload`, [프론트엔드 대표 계약](../../../frontend/docs/contracts/frontend-api-contract.md))을 AI가 가져가 처리하는 경로다.
 
-- 합의 상태: **합의됨(#255).** 가져가기(#219)와 화자 지정 경로(#266)를 BE가 만들었고 AI·BE 계약 부분은 #255에서 합의했다. AI는 아직 구현하지 않았다(표의 "AI 미구현").
+- 합의 상태: **합의됨(#255).** 가져가기(#219)와 화자 지정 경로(#266)를 BE가 만들었고 AI·BE 계약 부분은 #255에서 합의했다. AI는 구현했다(#289 묶음: 가져오기·라벨 보고·지정 받기·전사와 BE 인계). 업로드 회의를 BE로 인계할 때의 규칙은 [업로드 회의 인계 규칙](#업로드-회의-인계-규칙)이다.
 - 업로드 회의는 `source=manual_upload`이고 **업로드하자마자 `processing`**이다. 프론트가 Discord 회의처럼 정리 중으로 추적하고, 끝날 때까지 그 워크스페이스의 다음 업로드는 409다(프론트 D-088·D-089). 다만 `awaiting_speakers`(PM 지정 대기)는 막지 않는다. AI가 가져갔는지는 회의 상태가 아니라 `meeting_upload.claimed_at`으로 가린다.
 - 결과 보고는 Discord 회의와 같은 [발화 저장](#발화-저장-post-meetingsmeeting_idsources--201)·[추출 등록](#추출-등록-post-extractions--201)·[실패](#patch-meetingsmeeting_idfail--200)를 쓴다.
 - 녹음은 원본 그대로 서버 디스크(`UPLOAD_DIR/{meeting_id}/audio.<확장자>`)에 있고, 참석자·파일 정보는 DB `meeting_upload` 에 있다. 받는 형식은 wav·mp3·m4a·ogg·webm이고, BE는 확장자와 파일 첫 바이트만 확인한다. 실제로 디코딩되는지와 녹음 길이는 확인하지 않는다.
@@ -362,6 +386,34 @@ PM이 지정을 끝냈고(`speakers_assigned_at` 있음) 아직 다시 가져가
   - 정리된 뒤 AI는 `/fail`·라벨 보고·claim·resume에서 409 `MEETING_ALREADY_ENDED`(`details.status=failed`), 발화 저장에서 409 `MEETING_FAILED`, 원본 받기에서 404를 받는다. 다시 보내지 않고 로컬 파일을 지우고 끝낸다(#288).
   - 아직 아무도 가져가지 않은 업로드는 정리하지 않는다. AI가 꺼져 있으면 그 공간의 업로드는 계속 409이고, `PATCH /meetings/{meeting_id}/fail`(서비스 토큰)로 풀 수 있다.
   - 회의마다 조건부 UPDATE 한 번이라 AI 보고·PM 지정과 겹쳐도 한쪽만 이긴다. 다만 3시간 경계에서는 resume 200이나 발화 저장 201 직후 회의가 failed일 수 있다. resume은 회의 행을 잠그지 않고, 발화 저장 뒤 sweeper가 그 발화를 보지 못한 채 판정할 수 있어서다(resume 항목의 경합과 같다). 이어지는 발화 저장·추출 등록이 409로 막아 데이터는 깨지지 않는다.
+
+### 업로드 회의 인계 규칙
+
+PM 이 라벨을 멤버에 지정한 업로드 회의(`mapping`)를 AI 가 전사한 뒤 BE 로 넘길 때의 규칙이다.
+
+- 합의된 것: 화자를 멤버 ID 로 받는 키의 모양은 #254(위 "화자를 멤버 ID로 받는 키" 단락), 업로드 처리 경로와 상태는 #255, 정리된 회의를 다시 보내지 않고 로컬만 정리하는 것은 #288 에서 합의했다. BE 가 받는 동작은 위 [발화 저장](#발화-저장-post-meetingsmeeting_idsources--201)·[추출 등록](#추출-등록-post-extractions--201) 절을 따른다.
+- AI 구현, BE 동작 변경 없음: 아래 표와 그 뒤 항목은 AI 가 합의된 동작 위에서 정한 보내는 쪽 처리다(`capture/handoff.py`, #289 묶음). BE 의 응답과 검증은 바뀌지 않는다.
+
+AI 가 보내는 것(AI 구현):
+
+| 항목 | AI 가 보내는 것 |
+|---|---|
+| 발화 저장 `speaker` | 모든 발화에서 null. 업로드 녹음에는 Discord uid 가 없다 |
+| 발화 저장 `speaker_member_id` | 멤버에 지정된 라벨의 발화에만 그 멤버 ID. 외부 참석자(`mapping` 값이 null)로 지정한 라벨의 발화는 키를 보내지 않는다 |
+| 발화 저장 `speaker_names` | 보내지 않는다 |
+| 추출 등록 `evidence_speaker` | 모든 항목(judge·legacy)에서 null |
+| 추출 등록 `evidence_speaker_member_id` | 근거 화자가 멤버에 지정된 라벨이면 그 멤버 ID. 외부 참석자면 보내지 않는다 |
+| 회의 생성·종료 | `POST /meetings`와 `PATCH /meetings/{meeting_id}/end`를 부르지 않는다. 회의는 업로드 때 BE 가 이미 `processing`으로 만들었다 |
+
+AI 구현이 정한 처리(BE 동작은 그대로):
+
+- 외부 참석자의 발화도 전사·발화 저장·추출에는 넣는다. 화자와 멤버 ID 는 모두 비운다(위 지정 결과 조회에서 `mapping` 값 null 의 뜻 그대로다).
+- 발화 저장이 400 `INVALID_REQUEST`에 `details.member_ids`를 담아 거절하면, AI 는 그 ID 를 비우고(`speaker_member_id`를 보내지 않는다) 다시 보낸다. 첫 전송이든 재전송이든 같다. 서로 다른 ID 수만큼만 되풀이한다. 비운 ID 는 추출 등록의 `evidence_speaker_member_id`에서도 뺀다. BE 가 알려 준 것은 거절 사유이고 비우고 다시 보내는 것은 AI 의 처리다.
+- 외부 참석자의 표기는 위 표대로 키를 보내지 않는 것이다. null 을 보내지 않는다.
+
+합의된 정리 방식(#288):
+
+- 409 `MEETING_FAILED`(발화 저장)·409 `MEETING_NOT_PROCESSING`(추출 등록, `details.status`가 `processing`이 아님)·404 는 BE 가 이미 끝낸 회의다. AI 는 새 회의를 만들지 않고, 실패 횟수도 세지 않고 로컬 파일을 지우고 끝낸다. AI 구현은 이때 `PATCH /meetings/{meeting_id}/fail`도 보내지 않는다.
 
 ## 전사 힌트 조회
 
@@ -506,10 +558,10 @@ AI 가 문구를 써야 하는 묶음을 준다. 요청 본문은 없다. 승인
 | `WORKSPACE_NOT_FOUND` | 404 | tasks/similar, members/names | 실패 |
 | `WORKSPACE_MISMATCH` | 400 | extractions | 실패 |
 | `MEETING_ALREADY_ENDED` | 409 | end, fail, uploads claim·speakers·resume | 지금 상태로 보고 계속 (claim이면 다음 회의로) |
-| `MEETING_PROCESSING_IN_PROGRESS` | 409 | uploads claim | 이미 가져갔으니 다음 회의로. 내 재시도라면 이어서 처리 (AI 미구현) |
-| `UPLOAD_NOT_CLAIMED` | 409 | uploads speakers | 먼저 claim 한다 (AI 미구현) |
-| `SPEAKERS_ALREADY_REPORTED` | 409 | uploads speakers | 다른 내용의 라벨이 이미 저장됨. 재전송하지 않고 지정 결과 조회로 넘어감. `details.labels`가 내 라벨과 다르면 어긋난 것 (AI 미구현) |
-| `SPEAKERS_NOT_ASSIGNED` | 409 | uploads resume | 아직 지정 전. 다음 조회 때 다시 (AI 미구현) |
+| `MEETING_PROCESSING_IN_PROGRESS` | 409 | uploads claim | 이미 가져갔으니 다음 회의로. 내 재시도라면 이어서 처리 |
+| `UPLOAD_NOT_CLAIMED` | 409 | uploads speakers | AI 는 실패(diarize)로 보고하고 로컬을 지운다 |
+| `SPEAKERS_ALREADY_REPORTED` | 409 | uploads speakers | 다른 내용의 라벨이 이미 저장됨. 재전송하지 않고 지정 결과 조회로 넘어감. `details.labels`가 내 라벨과 다르면 어긋난 것 |
+| `SPEAKERS_NOT_ASSIGNED` | 409 | uploads resume | 아직 지정 전. 다음 조회 때 다시 |
 | `MEETING_FAILED` | 409 | sources | 실패 |
 | `MEETING_NOT_PROCESSING` | 409 | extractions | 실패 |
 | `EMBEDDING_UNAVAILABLE` | 502 | tasks/similar | 실패 (빈 목록으로 바꾸지 않음) |
@@ -523,5 +575,5 @@ AI 가 문구를 써야 하는 묶음을 준다. 요청 본문은 없다. 승인
 
 ## 코드 근거
 
-- Backend: `app/api/meetings.py`, `app/api/sources.py`, `app/api/similar_tasks.py`, `app/api/extractions.py`, `app/api/integrations.py`의 `get_discord_guild_workspace`, `app/api/bot_lookups.py`(`chat-cursor` 포함), `app/api/approvals.py`(채팅 이력 출처), `app/api/workspaces.py`(업로드 가드), `app/api/uploads.py`, `app/services/speaker_assignment.py`, `app/services/meeting_stage.py`, `app/api/deps.py`의 `require_service_token`, `app/schemas/meeting.py`, `app/schemas/member.py`, `app/schemas/source.py`, `app/schemas/task.py`, `app/schemas/workspace.py`, `app/schemas/upload.py`, `app/services/upload_storage.py`, `app/api/bot_messages.py`, `app/services/messages.py`, `app/schemas/message.py`
+- Backend: `app/api/meetings.py`, `app/api/sources.py`, `app/api/similar_tasks.py`, `app/api/extractions.py`, `app/api/integrations.py`의 `get_discord_guild_workspace`, `app/api/bot_lookups.py`(`chat-cursor` 포함), `app/api/integrations.py`의 `list_bot_chat_channels`, `app/services/chat_channel.py`, `app/schemas/integration.py`, `app/api/approvals.py`(채팅 이력 출처), `app/api/workspaces.py`(업로드 가드), `app/api/uploads.py`, `app/services/speaker_assignment.py`, `app/services/meeting_stage.py`, `app/api/deps.py`의 `require_service_token`, `app/schemas/meeting.py`, `app/schemas/member.py`, `app/schemas/source.py`, `app/schemas/task.py`, `app/schemas/workspace.py`, `app/schemas/upload.py`, `app/services/upload_storage.py`, `app/api/bot_messages.py`, `app/services/messages.py`, `app/schemas/message.py`
 - AI: `ai/capture/handoff.py`의 `BeClient`(`report_stage`, `STAGE_TIMEOUT_S`), `Handoff`(`report_stage`), `from_env`, `ai/capture/recorder.py`의 `process_session`(`begin`), `ai/draft/reminder_draft.py`의 `draft_reminder`, `ai/capture/dm.py`의 `DmCog`

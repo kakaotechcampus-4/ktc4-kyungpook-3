@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import av
 import numpy as np
 import pytest
 import soundfile as sf
 
 from stt.transcribe import parse_wav_stem
 from upload.diarize import Segment
-from upload.tracks import load_mono_16k, speaker_label_id, write_virtual_tracks
+from upload.tracks import load_mono_16k, speaker_label_id, to_wav_16k, write_virtual_tracks
 
 SR = 16000
 
@@ -118,3 +119,103 @@ def test_load_flac(tmp_path):
     sf.write(p, np.full(SR, 0.25, dtype=np.float32), SR, format="FLAC")
     audio, total = load_mono_16k(p)
     assert len(audio) == SR and total == pytest.approx(1.0)
+
+
+def _encode(path, codec, rate, layout, seconds=2.0):
+    """PyAV 로 사인파를 인코딩해 파일을 만든다(float 평면 프레임)."""
+    n_ch = 2 if layout == "stereo" else 1
+    t = np.arange(int(rate * seconds)) / rate
+    sig = (0.4 * np.sin(2 * np.pi * 440 * t)).astype(np.float32)
+    data = np.tile(sig, (n_ch, 1))
+    with av.open(str(path), "w") as out:
+        stream = out.add_stream(codec, rate=rate)
+        stream.layout = layout
+        step = 1024
+        for i in range(0, data.shape[1] - step + 1, step):
+            frame = av.AudioFrame.from_ndarray(np.ascontiguousarray(data[:, i:i + step]), format="fltp", layout=layout)
+            frame.sample_rate = rate
+            frame.pts = i
+            for pkt in stream.encode(frame):
+                out.mux(pkt)
+        for pkt in stream.encode(None):
+            out.mux(pkt)
+
+
+@pytest.mark.parametrize("name,codec,rate,layout", [
+    ("x.m4a", "aac", 44100, "stereo"),
+    ("x.webm", "libopus", 48000, "stereo"),
+])
+def test_load_compressed_formats_as_16k_mono(tmp_path, name, codec, rate, layout):
+    p = tmp_path / name
+    _encode(p, codec, rate, layout)
+    audio, total = load_mono_16k(p)
+    assert audio.ndim == 1 and audio.dtype == np.float32
+    assert total == len(audio) / SR == pytest.approx(2.0, abs=0.15)
+    assert 0.2 < abs(audio).max() < 0.6  # 440Hz 사인이 살아 있다
+
+
+def test_broken_file_raises_value_error(tmp_path):
+    p = tmp_path / "bad.m4a"
+    p.write_bytes(b"not audio at all" * 100)
+    with pytest.raises(ValueError):
+        load_mono_16k(p)
+
+
+def test_empty_file_raises_value_error(tmp_path):
+    p = tmp_path / "empty.wav"
+    p.write_bytes(b"")
+    with pytest.raises(ValueError):
+        load_mono_16k(p)
+
+
+def test_to_wav_16k_writes_16k_mono_pcm16(tmp_path):
+    src = tmp_path / "x.wav"
+    n = 44100 * 2
+    sf.write(src, np.zeros((n, 2), dtype=np.float32) + 0.2, 44100, subtype="PCM_16")
+    dst = tmp_path / "out.wav"
+    to_wav_16k(src, dst)
+    info = sf.info(dst)
+    assert (info.samplerate, info.channels, info.subtype) == (SR, 1, "PCM_16")
+    assert info.duration == pytest.approx(2.0, abs=1 / SR * 2)
+
+
+def _many_small_chunks(total):
+    """잘게 쪼갠 디코딩 조각(초기 버퍼를 여러 번 넘기게). 값은 위치를 알 수 있게 오름차순."""
+    data = np.arange(total, dtype=np.float32) / total
+
+    def fake(path):
+        for i in range(0, total, 1000):
+            yield data[i:i + 1000]
+
+    return data, fake
+
+
+def test_to_wav_16k_streams_chunks_without_building_the_whole_array(tmp_path, monkeypatch):
+    from upload import tracks
+    data, fake = _many_small_chunks(5000)
+    monkeypatch.setattr(tracks, "_decode_mono_16k", fake)
+    monkeypatch.setattr(tracks.np, "concatenate", lambda *a, **k: pytest.fail("전체 배열을 만들면 안 된다"))
+    dst = tmp_path / "out.wav"
+    assert to_wav_16k(tmp_path / "ignored", dst) == pytest.approx(5000 / SR)
+    got, sr = sf.read(dst, dtype="float32")
+    assert sr == SR and len(got) == 5000 and np.allclose(got, data, atol=1e-4)
+
+
+def test_to_wav_16k_of_nothing_is_a_valueerror_and_leaves_no_file(tmp_path, monkeypatch):
+    from upload import tracks
+    monkeypatch.setattr(tracks, "_decode_mono_16k", lambda path: iter(()))
+    dst = tmp_path / "out.wav"
+    with pytest.raises(ValueError):
+        to_wav_16k(tmp_path / "ignored", dst)
+    assert not dst.exists()
+
+
+def test_load_mono_16k_keeps_every_sample_when_the_buffer_has_to_grow(tmp_path, monkeypatch):
+    from upload import tracks
+    total = 3_000_000   # 처음 잡는 버퍼보다 길다
+    data, fake = _many_small_chunks(total)
+    monkeypatch.setattr(tracks, "_decode_mono_16k", fake)
+    monkeypatch.setattr(tracks.np, "concatenate", lambda *a, **k: pytest.fail("리스트를 이어 붙이면 안 된다"))
+    got, secs = load_mono_16k(tmp_path / "ignored")
+    assert got.dtype == np.float32 and len(got) == total and secs == pytest.approx(total / SR)
+    assert np.array_equal(got, data)
