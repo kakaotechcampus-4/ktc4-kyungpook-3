@@ -131,7 +131,6 @@ def login(payload: LoginRequest, request: Request, response: Response, db: Sessi
             raise AppError(ErrorCode.INVALID_CREDENTIALS)
 
         _create_session(db, user, response)
-        result = success(_build_auth_response(db, user).model_dump(mode="json"))
     except AppError as exc:
         # 틀린 자격 증명만 시도로 센다. 그 밖의 오류는 사용자 잘못이 아니므로 예약을 되돌린다.
         if exc.code != ErrorCode.INVALID_CREDENTIALS:
@@ -140,8 +139,9 @@ def login(payload: LoginRequest, request: Request, response: Response, db: Sessi
     except Exception:
         login_limit.cancel(reservation)
         raise
+    # 세션이 commit 된 순간 인증은 끝났다. 응답 조립이 DB 오류로 실패해도 맞는 비밀번호의 이전 실패 횟수는 지운다.
     login_limit.succeed(reservation)
-    return result
+    return success(_build_auth_response(db, user).model_dump(mode="json"))
 
 @router.post("/logout", response_model=Envelope[dict])
 def logout(request: Request, response: Response, user: User = Depends(get_current_user), db: Session = Depends(get_db)):

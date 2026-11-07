@@ -185,6 +185,24 @@ def test_unexpected_error_does_not_count(mdb, monkeypatch):
     assert _login(c).status_code == 200
 
 
+def test_response_failure_after_session_still_clears_email_count(mdb, monkeypatch):
+    """세션까지 만든 뒤 응답 조립이 실패해도 인증은 성공했으므로 이전 실패 횟수를 지운다(#456 리뷰)."""
+    c = _client(raise_server_exceptions=False)
+    _signup(c)
+    _fail_n(c, 9)
+
+    def boom(*_a, **_k):
+        raise RuntimeError("build failed")
+
+    monkeypatch.setattr(auth, "_build_auth_response", boom)
+    assert _login(c).status_code == 500
+    monkeypatch.undo()
+    monkeypatch.setattr("app.services.passwords._PBKDF2_ITERATIONS", 1)
+
+    # 횟수가 지워졌다면 틀린 비밀번호 10번이 모두 401 이다. 9번이 남아 있었다면 두 번째부터 429 다.
+    _fail_n(c, 10)
+
+
 def test_invalid_body_is_not_counted(mdb):
     c = _client()
     _signup(c)
