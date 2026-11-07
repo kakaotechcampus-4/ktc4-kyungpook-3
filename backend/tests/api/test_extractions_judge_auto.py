@@ -677,3 +677,23 @@ def test_pending_signal_is_read_even_after_a_legacy_auto_item(client, db, seed, 
     ]
     assert set(reasons.split(",")) == {"unsearched_task_exists", "unsearched_pending_exists"}
 
+
+@pytest.mark.parametrize("case", ["other_workspace", "approved", "rejected", "task_update"])
+def test_unembedded_request_outside_the_search_does_not_block_auto(client, db, seed, case):
+    # 유사 검색(include_pending)이 보는 것은 같은 워크스페이스의 승인 대기 task_create 뿐이다.
+    # 그 밖의 요청은 임베딩이 없어도 검색이 놓친 후보가 아니므로 auto 를 막지 않는다
+    workspace_id = seed["ws"].workspace_id
+    if case == "other_workspace":
+        other = Workspace(name="다른 팀")
+        db.add(other)
+        db.flush()
+        workspace_id = other.workspace_id
+    db.add(ApprovalRequest(
+        workspace_id=workspace_id,
+        type="task_update" if case == "task_update" else "task_create",
+        payload=json.dumps({"task_title": "결제 API 붙이기"}, ensure_ascii=False),
+        status=case if case in ("approved", "rejected") else "pending",
+    ))
+    db.commit()
+
+    assert _gate(client, seed) == "auto"
