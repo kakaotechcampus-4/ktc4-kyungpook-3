@@ -3,8 +3,8 @@
 디스코드 녹음 봇이 회의를 백엔드에 넘길 때 쓰는 API를 현재 코드 기준으로 정리한다. 웹 화면이 쓰는 API는 [프론트엔드 대표 계약](../../../frontend/docs/contracts/frontend-api-contract.md)에 있고 여기서 다시 적지 않는다.
 
 - 제공자: Backend (`backend/app/api/`)
-- 소비자: AI 녹음 봇 (`ai/capture/handoff.py`의 `BeClient`·`Handoff`, 판단 파이프라인 `ai/judge/pipeline.py`). [웹 업로드 가져가기](#웹-업로드-가져가기)의 소비자는 AI 쪽 업로드 처리 워커(`ai/capture/worker.py`)다
-- 기준: 2026-10-08 develop 코드 대조. 봇 회의 쓰기 경로의 서비스 토큰은 2026-10-09 #179 변경 코드로, 추출 등록의 auto 판단 키는 2026-10-16 #232 변경 코드로 다시 대조했다. 웹 업로드 가져가기는 2026-10-14 #219 브랜치 코드로, 화자 지정 경로(speakers·assigned·resume)는 2026-11-02 #266 브랜치 코드로, 처리 단계 보고(`PATCH /meetings/{meeting_id}/stage`)는 2026-11-05 #381 브랜치 코드로 대조했다. 라벨 보고 재전송과 지정 대기 만료는 2026-11-06 #438 에서 develop 코드로 다시 대조했다
+- 소비자: AI 녹음 봇 (`ai/capture/handoff.py`의 `BeClient`·`Handoff`, 판단 파이프라인 `ai/judge/pipeline.py`). [웹 업로드 가져가기](#웹-업로드-가져가기)의 소비자는 AI 쪽 업로드 처리 워커(`ai/capture/worker.py`)다. [회의 요약](#회의-요약)의 소비자는 AI 쪽 요약 워커이고 아직 구현되지 않았다(#462)
+- 기준: 2026-10-08 develop 코드 대조. 봇 회의 쓰기 경로의 서비스 토큰은 2026-10-09 #179 변경 코드로, 추출 등록의 auto 판단 키는 2026-10-16 #232 변경 코드로 다시 대조했다. 웹 업로드 가져가기는 2026-10-14 #219 브랜치 코드로, 화자 지정 경로(speakers·assigned·resume)는 2026-11-02 #266 브랜치 코드로, 처리 단계 보고(`PATCH /meetings/{meeting_id}/stage`)는 2026-11-05 #381 브랜치 코드로 대조했다. 라벨 보고 재전송과 지정 대기 만료는 2026-11-06 #438 에서 develop 코드로 다시 대조했다. 회의 요약 경로는 2026-11-07 #462 브랜치 코드로 대조했다
 - 합의 근거: 인계 방식은 [AI 결정 0009](../../../ai/decision_log/0009-bot-hands-off-to-be-api.md), 발화 저장은 [AI 결정 0017](../../../ai/decision_log/0017-transcript-sources-stage.md)에 AI 쪽 기록이 있다. 이 문서는 그 이후의 필드·오류 세부를 코드에서 읽은 것이며, 별도 합의 문서가 없는 항목은 구현 사실로만 적는다.
 
 ## 공통
@@ -25,6 +25,7 @@
 | 추출 도중 (항목마다) | `POST /workspaces/{workspace_id}/tasks/similar` | 변화 없음 | `X-Service-Token` |
 | 추출이 끝난 뒤 | `POST /extractions` | `done` | `X-Service-Token` |
 | 어느 단계든 실패 | `PATCH /meetings/{meeting_id}/fail` | `failed` | `X-Service-Token` |
+| 워커 바퀴 끝(회의 처리와 별개) | [회의 요약](#회의-요약)의 claim, summary-input, PUT | 변화 없음 | `X-Service-Token` |
 
 봇은 회의 상세 `GET /meetings/{meeting_id}`를 부르지 않는다.
 
@@ -191,6 +192,7 @@ AI `Transcript.to_dict()` 모양에 화자 이름을 더해 보낸다. 한 회�
 | 항목 | 동작 |
 |---|---|
 | 선점 | `processing` → `done`을 조건부 UPDATE로 한 번만 처리한다 |
+| 요약 표시 | 선점에 성공한 요청이 같은 트랜잭션에서 [요약 대기열](#회의-요약)에 줄 세운다. 회의 출처가 `discord`·`manual_upload`이고 발화가 한 줄이라도 있을 때만이다. 요청과 응답은 그대로다 |
 | 멱등 | 이미 `done`이고 추출이 있으면 기존 `extraction_id`와 항목 수를 그대로 돌려준다. 봇의 복구 재전송이 중복을 만들지 않는다 |
 | 상태 오류 | `processing`이 아니면 409 `MEETING_NOT_PROCESSING`. 회의가 없으면 404 `MEETING_NOT_FOUND`, 워크스페이스가 다르면 400 `WORKSPACE_MISMATCH` |
 | 담당자 | `assignee_type`이 `first`면 화자로 팀원을 찾고, 그 외에는 `assignee_raw`를 별칭으로 매칭한다. 1인칭 화자는 아래 순서로 정한다. ① `evidence_speaker_member_id`가 있으면 그 팀원이다. 이 워크스페이스의 탈퇴하지 않은 팀원이 아니면 uid를 못 찾은 것과 같게 처리하고(`not_found`, `assignee_hint`는 그 ID) ②③으로 넘어가지 않는다. ② `evidence_speaker`(Discord uid)가 있으면 그 uid로 `Member.discord_user_id`를 찾는다. ③ 둘 다 없고 대표 근거 발화(아래 근거 행)가 `evidence_seqs` 중 가장 큰 seq(결론 발화)일 때만 쓴다. 그 발화의 `member_id`가 이 워크스페이스의 탈퇴하지 않은 팀원이면 그 팀원이고, 아니면 그 발화의 `speaker_discord_user_id`로 찾는다. 결론 발화를 찾지 못했으면 쓰지 않는다. ④ 그래도 없으면 화자가 없는 1인칭 항목이다. 화자가 없는 1인칭 항목은 `assignee_raw`를 별칭으로 찾지 않고 담당자를 언급했는데 찾지 못한 것으로 본다(게이트는 아래 create 게이트 행). 틀린 `evidence_speaker_member_id`는 그 항목만 화자를 못 찾은 1인칭으로 처리하고 다른 항목은 그대로 처리한다. 예외로 36자를 넘거나 문자열이 아닌 값은 요청 검증에서 막혀 그 항목만이 아니라 요청 전체가 400 `INVALID_REQUEST`다. AI는 BE가 준 멤버 ID만 보내므로 생기지 않는 경우로 본다. `assignee_hint`가 그 ID 문자열이라 담당자 확신도 0.0이 항목 확신도에 들어가므로, 새 항목은 judge·legacy·경로 불명 어느 쪽이든 `hold`이고 update 항목은 항상 `review`다. 화자도 `assignee_raw`도 없는 1인칭(④)은 새 항목이 judge·경로 불명이면 `hold`이지만 legacy는 확신도로 정해서 `review`가 될 수 있다. `evidence_speaker_member_id`와 `evidence_speaker`는 AI가 결론을 말한 사람으로 직접 보낸 값이라 먼저 쓴다. 대표 근거 발화는 가장 큰 seq가 빠지면 더 앞 발화(보통 일을 요청한 사람)가 되어 다른 사람을 가리킬 수 있다 |
@@ -629,13 +631,125 @@ AI 가 문구를 써야 하는 묶음을 준다. 요청 본문은 없다. 승인
 | `REPLY_JUDGMENT_STALE` | 409 | 버리고 넘어간다. 다시 맡긴 판단이나 PM 이 고른 뒤의 결과다 |
 | `INVALID_REQUEST` | 400 | 후보 밖 태스크, 값이 잘못된 줄. 아무것도 반영하지 않는다. 봇은 같은 attempt 로 `failure_reason: "INVALID_REQUEST"` 를 한 번 보내 PM 에게 바로 알린다 |
 
+## 회의 요약
+
+음성 회의와 업로드 회의가 끝나면 BE 가 쥔 대기열에서 봇이 한 건씩 요약을 만든다. 처리 단계와 별개라 요약이 실패해도 회의는 `done` 그대로다.
+
+- 합의 상태: **BE 담당 합의(2026-11-06), BE 구현(#462). AI 소비자는 아직 구현되지 않았다.** 네 경로의 모양은 이번 구현에서 정했고 AI 구현이 쓰면서 바뀔 수 있다.
+- 합의 내용: 요약 일감은 BE 가 쥐고 봇이 서비스 토큰으로 회의 전문과 팀원 이름을 읽는다. 라이브와 재처리를 한 경로로 두고 항목 ID 를 얻기 위해서다. 라우터를 `app/api/bot_summaries.py` 로 나눠 회의 내용을 돌려주지 않는 `bot_lookups` 의 약속은 그대로다.
+- 대상: `POST /extractions` 가 표시한 회의, 재처리로 표시한 회의다. 표시가 없는 옛 회의와 채팅 회의는 돌지 않는다.
+- 순서: `Meeting.started_at` 오름차순이다. 앞 회의의 주제와 결정이 있어야 뒤 회의가 재사용하고 뒤집을 수 있다.
+- 재시도: claim 때 `attempt` 가 오르고 15분 임대가 걸린다. 임대가 지나면 다음 claim 이 다시 맡긴다. 회의당 2번까지다. 실패를 알리는 경로는 없다. 봇은 실패하면 PUT 을 보내지 않는다. LLM 실패, PUT 의 400·5xx, 워커 종료가 모두 같은 길을 간다.
+
+| 시점 | 요청 | 인증 |
+|---|---|---|
+| 맡기 | `POST /summaries/claim` | `X-Service-Token` |
+| 재료 읽기 | `GET /extractions/{extraction_id}/summary-input` | `X-Service-Token` |
+| 저장 | `PUT /extractions/{extraction_id}/summary` | `X-Service-Token` |
+| 재처리 표시 | `POST /workspaces/{workspace_id}/summary-requests` | `X-Service-Token` |
+
+### `POST /summaries/claim` → 200
+
+```jsonc
+// 요청. 본문은 없어도 된다
+{ "extraction_ids": ["…"] | null }      // 최대 500개
+// data. 맡길 것이 없으면 data 가 null 이다. 답장 claim 의 { "item": null } 과 다르다
+{ "extraction_id": "…", "meeting_id": "…", "workspace_id": "…", "attempt": 1 }
+```
+
+- `extraction_ids` 를 주면 그 안에서만 고른다. 빈 목록은 아무것도 맡기지 않고 `data` 가 null 이다. 본문이 없거나 `extraction_ids` 가 null 이면 범위 없이 고른다.
+- 재료는 싣지 않는다. 상태를 바꾸는 호출과 읽기를 나눠 미리 보기가 BE 상태를 건드리지 않는다.
+
+### `GET /extractions/{extraction_id}/summary-input` → 200
+
+상태를 바꾸지 않는다. 표시 여부와 무관하게 읽을 수 있다.
+
+```jsonc
+// data
+{
+  "extraction_id": "…", "meeting_id": "…", "workspace_id": "…",
+  "title": "3주차 정기회의" | null, "started_at": "2026-11-05T05:00:00Z",
+  "lines": [{ "seq": 12, "at_ms": 125000, "speaker": "김서연", "text": "…" }],
+  "items": [{ "item_id": "…", "action": "create" | "update", "title": "…", "assignee": "민수" | null, "due_date": "2026-11-14" | null }],
+  "topics": [{ "topic_id": "…", "name": "로그인·계정", "description": "…" }],
+  "decisions": [{ "decision_id": "…", "text": "…", "topic": "팀원 초대", "decided_on": "2026-10-20" }]
+}
+```
+
+- `lines[].speaker` 는 팀원 이름, 저장된 표시 이름, uid, `Unknown` 순서다.
+- `items` 는 BE 가 저장한 항목 전부다. 승인 전이거나 반려된 항목도 들어 있다. `assignee` 는 찾은 팀원 이름, 없으면 원문이다.
+- `topics` 는 최근에 쓴 순서로 최대 100개다.
+- `decisions` 는 이 회의 시점에 유효했던 결정이다. 이 회의보다 앞선 회의의 결정 중 뒤집히지 않았거나 이 회의 이후에 뒤집힌 것이고, 최근 순으로 최대 50개다. `decided_on` 은 한국 시간 날짜다.
+
+### `PUT /extractions/{extraction_id}/summary` → 200
+
+```jsonc
+// 요청. 예시 전체는 ai/tests/capture/fixtures/summary_put.json
+{
+  "model_name": "gpt-5.6-luna", "truncated_input": false,
+  "overview": "…",                // 필수, 빈 문자열 불가
+  "key_points": ["…"],            // 필수
+  "discussion": [{ "title": "…", "points": ["…"] }],
+  "facts": ["…"],
+  "task_changes": [{ "task": "…", "assignee": "", "due": "", "purpose": "", "precondition": "" }],
+  "schedule": [{ "when": "11/20", "what": "…" }],
+  "open_items": ["…"],
+  "topics": [{
+    "topic_id": "…" | null,       // 기존 주제. name 과 둘 중 하나만
+    "name": "…" | null,           // 새 주제. 100자까지
+    "description": "",            // 새 주제일 때만 쓴다
+    "item_ids": ["…"],            // 500개까지
+    "decisions": [{ "text": "…", "reason": "…" | null, "rejected": ["…"], "replaces": ["<decision_id>"] }]
+  }]
+}
+// data
+{ "extraction_id": "…", "meeting_id": "…", "applied": true, "topic_count": 1, "decision_count": 1 }
+```
+
+| 항목 | 동작 |
+|---|---|
+| 결정의 자리 | 결정은 주제 아래에만 있다. 주제 없는 결정은 보낼 수 없다 |
+| 먼저 온 쪽 | 표시가 비어 있으면 `applied=false` 이고 아무것도 쓰지 않는다. 늦게 온 PUT, 같은 PUT 재전송, 표시된 적 없는 추출이 여기 든다. 200 이므로 재시도하지 않는다 |
+| 임대 | PUT 은 임대나 `attempt` 를 보지 않는다. 표시가 남아 있으면 시도가 끝난 뒤 온 PUT 도 저장한다 |
+| 건너뜀 | 이 추출에 없는 `item_id`, 이 워크스페이스에 없는 `topic_id`, 없거나 다른 워크스페이스이거나 이 회의와 같거나 늦은 회의의 `decision_id` 는 그 값만 건너뛴다. 건너뛴 `topic_id` 나 글자가 없는 `name` 의 주제는 그 아래 결정까지 저장하지 않는다 |
+| 주제 재사용 | `name` 은 정규화(NFKC, 소문자, 글자와 숫자만 남김)한 값이 같으면 기존 주제를 쓴다. 표기와 설명은 처음 만든 값이 남는다. 한 본문에 같은 주제가 여러 번 있으면 합친다 |
+| 재실행 | 이 회의의 연결과 결정을 지우고 다시 쓴다. 이 회의가 뒤집었던 결정은 유효로 돌아갔다가 새 본문의 `replaces` 로 다시 뒤집힌다. 어느 회의에도 남지 않은 주제는 지운다. 더 늦은 회의가 이 회의의 결정을 뒤집어 둔 표시는 사라지므로 번복을 맞추려면 시간순으로 전체를 다시 돈다 |
+| 저장 모양 | `Extraction.summary` 에 JSON 으로 저장한다. 기존 `overview`, `key_points`, `decisions`(문자열 목록)가 항상 있고 `decision_details`, `topics`(이름 목록), `meta`, `schema_version` 을 더한다. 웹 응답은 [프론트엔드 계약 §4.4.2](../../../frontend/docs/contracts/frontend-api-contract.md) 에 있다 |
+
+### `POST /workspaces/{workspace_id}/summary-requests` → 200
+
+옛 회의를 대기열에 넣는다. `dry_run` 기본값이 `true` 라 생략하면 쓰지 않는다.
+
+```jsonc
+// 요청. meeting_ids 와 include_all 중 하나만
+{ "meeting_ids": ["…"] | null, "include_all": false, "force": false, "dry_run": true }
+// data. 회의 시작 순
+{ "items": [{ "meeting_id": "…", "extraction_id": "…" | null, "title": "…" | null, "started_at": "…",
+              "state": "requested", "chars": 24000 }] }
+```
+
+| `state` | 뜻 |
+|---|---|
+| `requested` | 이번에 표시했다. `dry_run` 이면 표시할 회의다 |
+| `done` | 요약이 있다. `force` 면 `requested` 가 된다 |
+| `queued` | 이미 줄 서 있거나 처리 중이다 |
+| `gave_up` | 두 번 실패했다. `force` 면 `requested` 가 된다 |
+| `no_sources` | 발화가 없다 |
+| `not_summarized_source` | 채팅 회의다 |
+| `not_done` | 추출이 끝나지 않았다 |
+
+- `force` 는 시도 횟수를 비우고 다시 줄 세운다. 기존 요약은 새 요약이 올 때까지 남는다.
+- `chars` 는 그 회의 발화의 글자 수 합이다.
+- `meeting_ids` 에 없거나 다른 워크스페이스의 회의가 있으면 아무것도 쓰지 않고 404 `MEETING_NOT_FOUND` 이고 `details.meeting_ids` 에 그 ID 들이 있다.
+
 ## 오류 코드 요약
 
 | 코드 | HTTP | 나오는 경로 | 봇 처리 |
 |---|---|---|---|
 | `UNAUTHENTICATED` | 401 | 봇 경로 전부 | 실패 (stage 는 로그만 남기고 계속) |
-| `MEETING_NOT_FOUND` | 404 | end, stage, fail, sources, extractions, uploads claim·file·speakers·resume | 실패 (stage 는 로그만 남기고 계속) |
-| `WORKSPACE_NOT_FOUND` | 404 | tasks/similar, members/names | 실패 |
+| `MEETING_NOT_FOUND` | 404 | end, stage, fail, sources, extractions, uploads claim·file·speakers·resume, summary-requests | 실패 (stage 는 로그만 남기고 계속) |
+| `WORKSPACE_NOT_FOUND` | 404 | tasks/similar, members/names, summary-requests | 실패 |
+| `EXTRACTION_NOT_FOUND` | 404 | summary-input, PUT summary | 실패. 임대가 지나 다시 맡겨진다 |
 | `WORKSPACE_MISMATCH` | 400 | extractions | 실패 |
 | `MEETING_ALREADY_ENDED` | 409 | end, fail, uploads claim·speakers·resume | 지금 상태로 보고 계속 (claim이면 다음 회의로) |
 | `MEETING_PROCESSING_IN_PROGRESS` | 409 | uploads claim | 이미 가져갔으니 다음 회의로. 내 재시도라면 이어서 처리 |
@@ -655,5 +769,7 @@ AI 가 문구를 써야 하는 묶음을 준다. 요청 본문은 없다. 승인
 
 ## 코드 근거
 
-- Backend: `app/api/meetings.py`, `app/api/sources.py`, `app/api/similar_tasks.py`, `app/api/extractions.py`, `app/api/integrations.py`의 `get_discord_guild_workspace`, `app/api/bot_lookups.py`(`chat-cursor` 포함), `app/api/integrations.py`의 `list_bot_chat_channels`, `app/services/chat_channel.py`, `app/schemas/integration.py`, `app/api/approvals.py`(채팅 이력 출처), `app/api/workspaces.py`(업로드 가드), `app/api/uploads.py`, `app/services/speaker_assignment.py`, `app/services/meeting_stage.py`, `app/api/deps.py`의 `require_service_token`, `app/schemas/meeting.py`, `app/schemas/member.py`, `app/schemas/source.py`, `app/schemas/task.py`, `app/schemas/workspace.py`, `app/schemas/upload.py`, `app/services/upload_storage.py`, `app/api/bot_messages.py`, `app/services/messages.py`, `app/schemas/message.py`
+- Backend: `app/api/meetings.py`, `app/api/sources.py`, `app/api/similar_tasks.py`, `app/api/extractions.py`, `app/api/integrations.py`의 `get_discord_guild_workspace`, `app/api/bot_lookups.py`(`chat-cursor` 포함), `app/api/integrations.py`의 `list_bot_chat_channels`, `app/services/chat_channel.py`, `app/schemas/integration.py`, `app/api/approvals.py`(채팅 이력 출처), `app/api/workspaces.py`(업로드 가드), `app/api/uploads.py`, `app/services/speaker_assignment.py`, `app/services/meeting_stage.py`, `app/api/deps.py`의 `require_service_token`, `app/schemas/meeting.py`, `app/schemas/member.py`, `app/schemas/source.py`, `app/schemas/task.py`, `app/schemas/workspace.py`, `app/schemas/upload.py`, `app/services/upload_storage.py`, `app/api/bot_messages.py`, `app/services/messages.py`, `app/schemas/message.py`, `app/api/bot_summaries.py`, `app/services/summary.py`, `app/schemas/project_map.py`
 - AI: `ai/capture/handoff.py`의 `BeClient`(`report_stage`, `STAGE_TIMEOUT_S`), `Handoff`(`report_stage`), `from_env`, `ai/capture/recorder.py`의 `process_session`(`begin`), `ai/draft/reminder_draft.py`의 `draft_reminder`, `ai/capture/dm.py`의 `DmCog`
+
+회의 요약 경로는 `backend/tests/api/test_summary_queue.py`, `test_summary_save.py` 로 SQLite 와 PostgreSQL 에서 검증했다. 실제 봇과 연결해 돌리지는 않았다. `ai/tests/capture/fixtures/summary_put.json` 은 BE 테스트가 `SummaryWriteRequest` 왕복으로 검증하고, AI 구현이 같은 파일을 쓰게 되어 있다.
