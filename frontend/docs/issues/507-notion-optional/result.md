@@ -17,7 +17,7 @@ BE 는 이미 Notion 없이 동작한다. 코드로 다음을 확인했다(정�
 
 ## D-099·D-100 을 지운 근거
 
-D-099(정리 중 Notion 해제 시 실패)와 D-100(그때 재연결 모달)은 위 실패 경로 목록 때문에 전제가 성립하지 않는다. 오히려 잘못된 안내를 냈다. FE 추적기(`useProcessingTracker`)는 알 수 없는 `failed_stage` 를 보면 `GET /integrations` 를 다시 물어, Notion 이 `revoked` 면 일반 실패 토스트 대신 「Notion 연결을 마치지 못했어요」 재연결 모달을 띄웠다. 서버의 `revoked` 는 연결 뒤 DB 찾기 실패·중단이라([M6 오류 기록](../../plan/m6-api/errors/2026-10-12-notion-revoked-meaning.md)), 그런 공간에서 STT 등 다른 이유로 정리가 실패해도 재업로드 대신 Notion 재연결을 안내했다. 관리 세션 승인(2026-11-07)을 받고 이 경로를 지웠다. 알 수 없는 실패 단계도 일반 실패 안내(D-092)다.
+D-099(정리 중 Notion 해제 시 실패)와 D-100(그때 재연결 모달)은 위 실패 경로 목록 때문에 전제가 성립하지 않는다. Notion 반영 실패는 회의 정리를 실패시키지 않는다 — Notion 쓰기는 정리와 따로 도는 태스크 반영 잡이고, 그 실패는 태스크의 `notion_sync_status` 에만 남는다. 오히려 잘못된 안내를 냈다. FE 추적기(`useProcessingTracker`)는 알 수 없는 `failed_stage` 를 보면 `GET /integrations` 를 다시 물어, Notion 이 `revoked` 면 일반 실패 토스트 대신 「Notion 연결을 마치지 못했어요」 재연결 모달을 띄웠다. 서버의 `revoked` 는 연결 뒤 DB 찾기가 실패·중단된 경우([M6 오류 기록](../../plan/m6-api/errors/2026-10-12-notion-revoked-meaning.md))와, 반영 중 토큰 갱신이 거절돼 토큰을 비운 경우(연결 끊김, `backend/app/api/integrations._notion_status`·`notion_sync._refresh_token`) 둘 다다. 어느 쪽이든 정리 실패와는 무관한데, 그런 공간에서 STT 등 다른 이유로 정리가 실패해도 재업로드 대신 Notion 재연결을 안내했다. 관리 세션 승인(2026-11-07)을 받고 이 경로를 지웠다. 알 수 없는 실패 단계도 일반 실패 안내(D-092)다.
 
 ## 실제 변경
 

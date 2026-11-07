@@ -37,7 +37,8 @@ const STATUS_LABEL: Record<IntegrationStatus, string> = {
   connected: '연결됨',
   connecting: '준비 중',
   not_connected: '연결 안 됨',
-  // 서버의 `revoked` 는 DB 찾기 실패·중단이다. 「끊김」이 아니다 (backend integrations._notion_status)
+  // 서버의 `revoked` 는 연결 뒤 DB 찾기 실패·중단과, 토큰 갱신이 거절돼 연결이 끊긴 경우 둘 다다.
+  // 어느 쪽이든 다시 연결해야 한다 (backend integrations._notion_status)
   revoked: '연결 실패',
 }
 

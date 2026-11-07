@@ -2258,7 +2258,8 @@ D-159 가 예고한 대조를 수행했다. 기준은 `origin/develop` `f441ea4`
 
 - BE 는 이미 Notion 없이 동작한다. 업로드(`POST /workspaces/{id}/meetings/upload`)·정리·승인 API 에 Notion 연결 검사가 없다. 미연동 공간의 태스크는 `notion_sync_status = null` 이고, 반영 잡은 「Notion 연동이 없습니다」로 SKIPPED 된다(`notion_sync._process`).
 - 서버의 정리 실패는 Notion 과 무관하다. `failed_stage` 는 AI 의 `PATCH /meetings/{id}/fail` 보고(`stt`·`sources`·`extract`·`handoff`·`diarize`, `ai/capture/recorder.FAILED_STAGE`)와 멈춤 정리 sweeper(`diarize`, `speaker_assignment_expired`, `chat_stalled`)에서만 온다(`meeting_failure.fail_meeting_if`, `upload_sweeper`). Notion 해제로 정리가 실패하는 경로가 없어 D-099·D-100 의 전제가 성립하지 않는다.
-- 오히려 잘못된 안내가 났다. FE 는 알 수 없는 실패 단계를 보면 연동 상태를 다시 물어 `revoked` 면 일반 실패 대신 「Notion 연결을 마치지 못했어요」 재연결 모달을 띄웠다. 서버의 `revoked` 는 연결 뒤 DB 찾기 실패·중단이라, 그런 공간에서 STT 등 다른 이유로 정리가 실패해도 재업로드 안내 대신 Notion 재연결을 안내했다.
+- Notion 반영 실패는 회의 정리를 실패시키지 않는다. Notion 쓰기는 정리와 따로 도는 태스크 반영 잡(`notion_sync`)이고, 그 실패는 태스크의 `notion_sync_status` 에만 남는다.
+- 오히려 잘못된 안내가 났다. FE 는 알 수 없는 실패 단계를 보면 연동 상태를 다시 물어 `revoked` 면 일반 실패 대신 「Notion 연결을 마치지 못했어요」 재연결 모달을 띄웠다. 서버의 `revoked` 는 연결 뒤 DB 찾기가 실패·중단된 경우와, 반영 중 토큰 갱신이 거절돼 토큰을 비운 경우(연결 끊김) 둘 다다(`backend/app/api/integrations._notion_status`, `notion_sync._refresh_token`). 어느 쪽이든 정리 실패와는 무관해, 그런 공간에서 STT 등 다른 이유로 정리가 실패해도 재업로드 안내 대신 Notion 재연결을 안내했다. 다시 연결하는 길은 설정 Notion 카드의 `Notion 다시 연결하기` 로 남는다.
 
 영향:
 
