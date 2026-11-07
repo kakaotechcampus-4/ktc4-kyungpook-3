@@ -458,7 +458,12 @@ describe('복귀 확인이 늦게 끝날 때', () => {
     const pm = db.members.find(({ workspace_id }) => workspace_id === 'ws_03')!
     db.members.push({ ...pm, member_id: 'mb_91', workspace_id: 'ws_04' })
     db.integrations.ws_04 = {
-      discord: { status: 'not_connected', display_name: null, connected_at: null },
+      discord: {
+        status: 'not_connected',
+        display_name: null,
+        connected_at: null,
+        chat_channel: null,
+      },
       notion: { status: 'not_connected', display_name: null, connected_at: null },
     }
     db.accounts[0].workspaceIds.push('ws_04')

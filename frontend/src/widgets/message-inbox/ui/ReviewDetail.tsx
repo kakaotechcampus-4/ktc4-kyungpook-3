@@ -26,9 +26,10 @@ import { ReviewTasks } from './ReviewTasks'
    열은 내용 높이를 따르고(`self-start`) 넘치면 PAGE 가 스크롤한다 — 칸 높이로 늘어나면(stretch) 세로 flex 가 자식을 줄이고,
    overflow-hidden 인 미리보기 카드는 최소 높이가 0 이라 본문이 잘린다.
    이름·태스크·본문은 띄어 쓰지 않은 긴 글자(주소, 전역 `keep-all` 의 긴 한글)도 칸 안에서 줄을 바꾼다(`wrap-anywhere`) */
-const PAGE = 'flex flex-1 justify-center overflow-y-auto px-36 pt-44 pb-56'
+const PAGE =
+  'flex flex-1 justify-center overflow-y-auto px-36 pt-44 pb-56 max-md:px-20 max-md:pt-24 max-md:pb-32'
 const COLUMN = 'flex w-full max-w-[604px] flex-col gap-24 self-start'
-const TITLE = 'text-[28px] leading-[1.25] font-bold tracking-h1 text-ink'
+const TITLE = 'text-[28px] leading-[1.25] font-bold tracking-h1 text-ink max-md:text-[24px]'
 
 export interface ReviewDetailProps {
   workspaceId: string
