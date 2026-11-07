@@ -53,6 +53,35 @@ plan.md 가 비어 있어 완료조건이 없다. 아래는 이슈 #381 의 설�
 - 한 회의의 현재 단계만 저장하므로 단계별 시각 이력은 없다.
 - 마이그레이션을 실제 DB 에 적용해 확인하지 않았다.
 
+## 2026-11-07 추가: 승인 대기 새 항목 요청을 유사 검색에 넣기(#141 첫 PR)
+
+M6 plan.md 는 비어 있어 완료조건이 없다. 마일스톤을 M6 으로 정한 것은 사용자다. 근거는 이슈 #141 의 합의(BE 제안·AI 답·BE 확인)와 설계 확정 댓글(2026-11-07)이다. #141 의 BE 몫 가운데 검색·임베딩만 했고, 합치기(action=merge)는 #464 머지 뒤 다음 PR 에서 한다. M6 완료는 판정하지 않는다.
+
+| 변경 | 위치 |
+|---|---|
+| `approval_request.embedding`, `embedding_rejected_title` 컬럼과 마이그레이션 1건(백필 없음) | `backend/app/models/models.py`, `backend/migrations/versions/a7c25d91e4f3_add_approval_request_embedding.py` |
+| 임베딩 워커가 task 다음에 승인 대기 task_create 요청의 제목을 채운다 | `backend/app/services/embedding.py`(`process_missing_approval_embeddings`, `pending_title`) |
+| 승인 대기 요청 검색(최대 2개)과 검색 못 하는 요청 판정 | `backend/app/services/embedding.py`(`search_similar_pending_approvals`, `has_unsearchable_pending`) |
+| `POST /tasks/similar` 의 `include_pending`(기본 false), 후보 `approval_id` | `backend/app/api/similar_tasks.py`, `backend/app/schemas/task.py` |
+| 임베딩 없는 승인 대기 요청이 있으면 judge auto 를 막는다(`unsearched_pending_exists`) | `backend/app/services/matching.py`, `backend/app/api/extractions.py` |
+| 계약 | [BE↔AI 계약](../../contracts/backend-ai-contract.md) 유사 검색 절과 auto 조건 |
+
+| #141 합의 항목 | 상태 | 근거 |
+|---|---|---|
+| 승인 대기 task_create 제목 임베딩(task 와 같은 워커) | 구현 | `tests/services/test_embedding.py` |
+| 유사 검색에 승인 대기 요청, 후보에 approval_id, 기본 false | 구현 | `tests/api/test_similar_tasks_api.py` |
+| task 후보 k개와 따로 최대 2개 | 구현. 쿼리는 PostgreSQL 테스트로만 확인되고 로컬에서는 돌지 않았다 | `tests/services/test_embedding_search_pg.py`(CI) |
+| auto 게이트: 임베딩 없는 승인 대기 요청이 있으면 막음 | 구현 | `tests/api/test_extractions_judge_auto.py`, `tests/services/test_matching_auto_blockers.py` |
+| action=merge, 합치기 규칙, 여러 회의 항목 task_id, 행 잠금 | 다음 PR(#464 머지 뒤) | 설계 확정 댓글 |
+
+검증(2026-11-07, `backend/`):
+
+- `.venv/Scripts/python.exe -m ruff check --no-cache .`: All checks passed
+- `.venv/Scripts/python.exe -m pytest -q -p no:cacheprovider`: 1798 passed, 1273 skipped, 3 warnings. skip 는 PostgreSQL 이 필요한 테스트이고, 새 승인 대기 검색 테스트 3개도 여기에 들어 CI 에서 처음 돈다.
+- 마이그레이션은 실제 DB 에 적용하지 않았다(CI migrations 잡에서 확인). 실제 임베딩 API 호출과 AI 를 붙인 종단 확인은 하지 않았다.
+
+남은 작업: 합치기 PR, AI 의 대기 후보 처리와 `include_pending` 켜기(합치기 배포 뒤), FE 답(#512).
+
 ## 2026-11-07 추가: 답장 담당자 변경 승인에서 PM 이 고른 담당자 받기
 
 M6 plan.md 는 비어 있어 완료조건이 없다. 마일스톤을 M6 으로 정한 것은 사용자다. 근거는 이슈 #460 과 설계 확정 댓글(2026-11-07)이고, BE 몫만 구현했다. FE 고르기 화면은 #344 에서 한다. M6 완료는 판정하지 않는다.
@@ -83,6 +112,7 @@ M6 plan.md 는 비어 있어 완료조건이 없다. 마일스톤을 M6 으로 �
 
 ## 관련 기록
 
+- [승인 대기 새 항목 요청을 유사 검색 후보에 따로 더한다](basis-for-decision/2026-11-07-pending-approval-search.md)
 - [답장 담당자 변경 승인에서 PM 이 담당자를 고르게 한다](basis-for-decision/2026-11-07-reply-assignee-override.md)
 - [처리 단계 보고를 회의 컬럼으로 저장한다](basis-for-decision/2026-11-05-processing-stage-report.md)
 - [BE↔AI 계약](../../contracts/backend-ai-contract.md)
