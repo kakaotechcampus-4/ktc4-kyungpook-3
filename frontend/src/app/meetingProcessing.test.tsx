@@ -17,7 +17,12 @@ import { db } from '@/shared/mock/db'
 import { fail, list, ok } from '@/shared/mock/envelope'
 import { MOCK_NOW } from '@/shared/mock/fixtures/constants'
 import { minutesFixtures } from '@/shared/mock/fixtures/minutes'
-import { advanceMeeting, completeMeeting, failMeeting } from '@/shared/mock/meetingFlow'
+import {
+  advanceMeeting,
+  completeMeeting,
+  failMeeting,
+  startChatMeeting,
+} from '@/shared/mock/meetingFlow'
 import { server } from '@/shared/mock/server'
 import { setMockRole } from '@/shared/mock/sessions'
 import { businessRequests, recordRequests, trackerRequests } from '@/shared/test/requests'
@@ -34,6 +39,7 @@ import { renderApp } from './test/renderApp'
 const MEETING = { workspaceId: 'ws_01', meetingId: 'mt_10' }
 const PROCESSING_PATH = paths.meetingProcessing('ws_01', 'mt_10')
 const PROCESSING_HEADING = '정리하고 있어요'
+const CHAT_STALLED_DESCRIPTION = '채팅 대화를 정리하다 멈췄어요. 다음 수집 때 다시 정리해요.'
 
 afterEach(() => {
   vi.useRealTimers()
@@ -92,7 +98,7 @@ function addCompletedWorkspace() {
   })
   db.accounts[0].workspaceIds.push('ws_04')
   db.integrations.ws_04 = {
-    discord: { status: 'connected', display_name: 'x', connected_at: MOCK_NOW },
+    discord: { status: 'connected', display_name: 'x', connected_at: MOCK_NOW, chat_channel: null },
     notion: { status: 'connected', display_name: 'x', connected_at: MOCK_NOW },
   }
 }
@@ -632,6 +638,36 @@ describe('실패 (U4-6, U4-7)', () => {
     expect(tracked()).toEqual([])
     expect(signalsWith('화자 지정 대기가 7일을 넘어')).toHaveLength(1)
     expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('채팅 회의가 멈춰 실패하면(chat_stalled) 토스트가 다시 올리라고 하지 않는다 (#450)', async () => {
+    fakeIntervals()
+    const chatId = startChatMeeting()
+    const log = recordRequests()
+    const app = renderApp(paths.tasks('ws_01'))
+    await screen.findByRole('heading', { name: '태스크' })
+    await until(() => expect(tracked()).toContainEqual({ workspaceId: 'ws_01', meetingId: chatId }))
+    failMeeting(chatId, { failedStage: 'chat_stalled' })
+    await act(() => vi.advanceTimersByTimeAsync(3_000))
+    await until(() => expect(signalsWith(CHAT_STALLED_DESCRIPTION)).toHaveLength(1))
+    expect(signalsWith('다시 올려')).toEqual([])
+    // 알려진 사유라 Notion 끊김인지 묻지 않는다
+    expect(log.started).not.toContainEqual({
+      method: 'GET',
+      path: '/workspaces/ws_01/integrations',
+    })
+    expect(app.visited().map(({ pathname }) => pathname)).toEqual([paths.tasks('ws_01')])
+  })
+
+  it('멈춘 채팅 회의(chat_stalled)의 처리 화면은 다시 올리라고 하지 않는다 (#450)', async () => {
+    const chatId = startChatMeeting()
+    failMeeting(chatId, { failedStage: 'chat_stalled' })
+    renderApp(paths.meetingProcessing('ws_01', chatId))
+    expect(
+      await screen.findByRole('heading', { name: '채팅 대화를 정리하지 못했어요' }),
+    ).toBeInTheDocument()
+    expect(screen.getByText(CHAT_STALLED_DESCRIPTION)).toBeInTheDocument()
+    expect(screen.queryByText(/다시 올려/)).toBeNull()
   })
 
   it('처리 화면을 보고 있으면 회의록 목록으로 옮기고 재업로드 안내 토스트로 바꾼다 — 실패 회의는 목록에서 빠진다', async () => {

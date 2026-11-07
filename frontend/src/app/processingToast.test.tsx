@@ -307,7 +307,12 @@ describe('보이는 자리', () => {
     })
     db.accounts[0].workspaceIds.push('ws_04')
     db.integrations.ws_04 = {
-      discord: { status: 'connected', display_name: 'x', connected_at: MOCK_NOW },
+      discord: {
+        status: 'connected',
+        display_name: 'x',
+        connected_at: MOCK_NOW,
+        chat_channel: null,
+      },
       notion: { status: 'connected', display_name: 'x', connected_at: MOCK_NOW },
     }
     const app = await openTasks()

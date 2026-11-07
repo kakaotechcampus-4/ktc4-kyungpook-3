@@ -18,6 +18,8 @@ export type Scenario =
   | 'meeting-notion-not-connected'
   | 'meeting-notion-revoked'
   | 'meeting-member'
+  | 'meeting-chat-processing'
+  | 'meeting-chat-stalled'
   | 'meeting-speakers'
   | 'meeting-speakers-expired'
   | 'tasks-default'
@@ -93,7 +95,7 @@ export async function finishOAuth(
   await expect(page).not.toHaveURL(/oauth_result/, { timeout: 15_000 })
 }
 
-/** 가로 스크롤이 생기지 않았는지 — 1024px 이상 지원 (계획 1절) */
+/** 가로 스크롤이 생기지 않았는지 — 최소 지원 폭은 360px 이다 (D-180). 어느 화면을 어느 폭에서 보는지는 layout.e2e.ts 가 정한다 */
 export async function expectNoHorizontalOverflow(page: Page): Promise<void> {
   const overflow = await page.evaluate(
     () => document.documentElement.scrollWidth - document.documentElement.clientWidth,

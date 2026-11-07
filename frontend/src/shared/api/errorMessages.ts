@@ -52,6 +52,10 @@ const SERVER_MESSAGES: Record<ErrorCode, string> = {
     '워크스페이스에 PM이 한 명은 있어야 해요. 다른 팀원을 먼저 PM으로 지정해 주세요.',
   EMBEDDING_UNAVAILABLE: '비슷한 태스크를 찾지 못했어요. 잠시 후 다시 시도해 주세요.',
   DISCORD_API_FAILED: 'Discord 서버의 사용자 목록을 가져오지 못했어요. 잠시 후 다시 시도해 주세요.',
+  DISCORD_CHANNEL_NOT_FOUND:
+    '연결된 Discord 서버에서 이 텍스트 채널을 찾을 수 없어요. 목록을 새로고침해 주세요.',
+  DISCORD_CHANNEL_NOT_ACCESSIBLE:
+    '봇이 이 채널을 읽거나 메시지를 보낼 수 없어요. 채널 권한에 봇을 추가해 주세요.',
   NOTIFICATION_NOT_FOUND: '알림을 찾을 수 없어요.',
   AUTO_BLOCK_NOT_FOUND:
     '막힌 뒤 상태나 사유가 바뀌어 되돌릴 수 없어요. 최신 태스크를 다시 불러왔어요.',

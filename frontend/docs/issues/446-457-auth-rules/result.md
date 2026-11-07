@@ -20,7 +20,7 @@
 - MSW 가입([auth.ts](../../../src/shared/mock/handlers/auth.ts)): BE `validate_name`을 옮겼다. Python `str.strip()`과 같은 공백 집합으로 앞뒤를 지우고, 코드 포인트로 100자, 제어문자·서로게이트·줄 구분자·글자 방향 제어 문자, 보이는 글자가 없는 이름을 400 `INVALID_REQUEST`(`details.fields`의 `loc` `['body','name']`)로 거절한다. 본문 검증이 중복 이메일 확인보다 먼저다. 응답 `user.name`은 지운 값이다.
 - MSW 로그인: BE `normalize_email`처럼 앞뒤 공백을 지우고 소문자로 바꾼 이메일별 실패 횟수를 모의 db `loginLimit`에 둔다. 첫 실패부터 15분 안의 10번째 실패는 401이고 그 뒤 15분 동안 맞는 비밀번호도 429다. 막히기 전에 15분이 지나면 횟수를 새로 센다. `details.retry_after_seconds`와 `Retry-After` 헤더가 같은 값이다. 로그인에 성공하거나 비밀번호 재설정을 마치면 그 이메일의 기록을 지운다. IP 제한은 흉내 내지 않는다. BE가 사설·루프백 IP를 세지 않아 로컬 요청은 닿지 않고 모의 요청에는 IP가 없다.
 - 독립 리뷰(2026-11-07)가 실패 창 누락, 이메일 대소문자로 횟수가 나뉘는 것, IP 제한 생략 이유 누락을 지적해 위처럼 고쳤다. MSW 계정 찾기는 전처럼 대소문자까지 정확히 맞아야 한다(BE는 정규화해 찾는다). 이번 범위 밖이다.
-- 시나리오 `login-rate-limited`: 비로그인이고 `pm@example.com`이 이미 막혀 있다. 남은 시간은 900초로 답한다. 모의 db 버전이 15가 되었다([persistence.ts](../../../src/shared/mock/persistence.ts)).
+- 시나리오 `login-rate-limited`: 비로그인이고 `pm@example.com`이 이미 막혀 있다. 남은 시간은 900초로 답한다. 모의 db 버전이 16이 되었다(develop 의 #429 가 먼저 15 를 써서 merge 때 올렸다, [persistence.ts](../../../src/shared/mock/persistence.ts)).
 - [계약 §4.1.2·§4.1.3](../../contracts/frontend-api-contract.md): 가입 이름 규칙과 로그인 429를 합의·현재 구현으로 나눠 적었다.
 
 ### 방침에 따른 선택

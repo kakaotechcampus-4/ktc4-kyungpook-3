@@ -3,20 +3,21 @@ import { Skeleton } from '../skeleton'
 
 /* widgets/meeting-minutes 의 MeetingMinutes · MinutesDetail · MinutesTabs 와 같은 치수다 (Meetings 캔버스 실측).
    shared 는 widgets 를 가져올 수 없어 값을 옮겨 적었다. 틀이 바뀌면 여기도 맞춘다 — e2e/meeting-skeleton.e2e.ts 가 위치를 잰다 */
-const SCREEN = 'flex flex-1 items-stretch'
-const ASIDE = 'flex w-aside shrink-0 flex-col border-r border-divider'
+const SCREEN = 'flex flex-1 items-stretch max-md:flex-col'
+const ASIDE =
+  'flex w-aside shrink-0 flex-col border-r border-divider max-md:w-full max-md:border-r-0 max-md:border-b'
 /* 머리 줄은 PM 의 `회의 올리기`(32px) 높이로 고정돼 있다 — 역할과 상관없이 목록이 같은 자리에서 시작한다 */
 const ASIDE_HEAD = 'flex min-h-64 items-center justify-between gap-12 px-20 pt-18 pb-14'
 const ASIDE_TITLE = 'flex h-lh items-center text-[17px] leading-[1.55]'
 const LIST = 'flex flex-col gap-4 px-12'
 const ROW = 'flex flex-col gap-6 px-14 py-13'
 const SECTION = 'flex min-w-[0px] flex-1 flex-col'
-const HEAD = 'flex flex-col gap-7 px-36 pt-44 pb-18'
+const HEAD = 'flex flex-col gap-7 px-36 pt-44 pb-18 max-md:px-20'
 const TITLE = 'flex h-lh items-center text-[26px] leading-[1.3]'
 const CHIP_ROW = 'flex h-22 items-center gap-12'
-const TAB_LIST = 'flex items-center gap-18 border-b border-line px-36'
+const TAB_LIST = 'flex items-center gap-18 border-b border-line px-36 max-md:px-20'
 const TAB = 'flex h-[38px] items-center px-3'
-const PANEL = 'flex flex-col gap-30 px-36 pt-28 pb-56'
+const PANEL = 'flex flex-col gap-30 px-36 pt-28 pb-56 max-md:px-20'
 
 /** 글 한 줄 자리 — 그 글자 크기의 줄 높이 안에 12px 뼈대가 가운데 앉는다. 줄 높이가 같아 그려질 때 아래가 밀리지 않는다 */
 function TextLine({ typography, width }: { typography: string; width: number | string }) {
