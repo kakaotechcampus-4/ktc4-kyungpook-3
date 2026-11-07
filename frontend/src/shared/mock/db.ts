@@ -154,6 +154,38 @@ export interface MockAutoBlock {
   prev_blocker: string | null
 }
 
+/** #427 이메일별 가입 코드. 실 API 는 해시만 저장하지만 모의 메일함이 코드를 보여야 해서 원문을 둔다. 시각은 ms 다 */
+export interface MockSignupCode {
+  code: string
+  attempts: number
+  expiresAt: number
+  sentAt: number
+  windowStartedAt: number
+  windowCount: number
+}
+
+/** 보낸 가입 인증 메일 */
+export interface MockSignupMail {
+  to: string
+  code: string
+  sentAt: string
+}
+
+export interface MockSignupVerification {
+  /** 정규화한 이메일이 키다 */
+  codes: Record<string, MockSignupCode>
+  outbox: MockSignupMail[]
+  /** 코드 확인이 준 증명 토큰이 키다. 값은 그 이메일과 만료 시각(ms)이다 */
+  proofs: Record<string, { email: string; expiresAt: number }>
+}
+
+/** 가입을 기다리는 카카오 신원. 실 API 의 HttpOnly 대기 쿠키 자리다. 이메일은 카카오가 인증했을 때만 있다 */
+export interface MockKakaoPending {
+  kakaoId: string
+  email: string | null
+  nickname: string | null
+}
+
 /** 저장한 메시지·알림 설정 행. 응답의 `saved`·`pms` 는 handler 가 붙인다 */
 export type MockMessageSettings = Omit<MessageSettingsDto, 'saved' | 'pms'>
 
@@ -163,6 +195,8 @@ interface MockAccount {
   workspaceIds: string[]
   /** 공간별로 이 계정이 연결된 팀원 행. 백엔드 Member.user_id 의 대응이다. 초대로 이어진 행은 수락한 초대가 대응이라 여기 두지 않는다 */
   memberIds: Record<string, string>
+  /** 이어진 카카오 계정. 백엔드 User.provider_id 의 대응이다 (#427) */
+  kakaoId?: string
 }
 export interface MockDb {
   session: SessionDto
@@ -200,6 +234,8 @@ export interface MockDb {
   push: { publicKey: string | null; subscriptions: MockPushSubscription[] }
   invitations: MockInvitation[]
   passwordReset: MockPasswordReset
+  signupVerification: MockSignupVerification
+  kakao: { pending: MockKakaoPending | null }
   /** loginLimitKey 로 정규화한 이메일이 키다 */
   loginLimit: Record<string, MockLoginLimit>
 }
@@ -241,6 +277,8 @@ export function initialDb(): MockDb {
     push: { publicKey: null, subscriptions: [] },
     invitations: [],
     passwordReset: { tokens: [], nextMailAt: {}, outbox: [], failure: 'none' },
+    signupVerification: { codes: {}, outbox: [], proofs: {} },
+    kakao: { pending: null },
     loginLimit: {},
   }
 }

@@ -175,6 +175,8 @@ class Gate(StrEnum):
 
 class User(Base):
     __tablename__ = "user"
+    # 비어 있는 provider_id 끼리는 겹치지 않는다(PostgreSQL·SQLite 모두 NULL 은 서로 다른 값으로 본다).
+    __table_args__ = (UniqueConstraint("provider", "provider_id", name="uq_user_provider_provider_id"),)
 
     user_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
@@ -211,6 +213,20 @@ class PasswordResetToken(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     invalidated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class SignupEmailCode(Base):
+    """가입 이메일 인증 코드. 이메일마다 한 행이고, 코드가 맞으면 지운다. 원문은 두지 않고 HMAC 만 둔다(#427)."""
+
+    __tablename__ = "signup_email_code"
+
+    email: Mapped[str] = mapped_column(String(255), primary_key=True)
+    code_hash: Mapped[str] = mapped_column(String(64))
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    window_started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    window_count: Mapped[int] = mapped_column(Integer, default=1)
 
 
 class Session(Base):

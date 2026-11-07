@@ -78,6 +78,17 @@ const mockOAuthRoute =
     />
   ) : null
 
+/* 모의 카카오 동의 화면. 모의 OAuth 화면과 같은 이유로 같은 조건 안에서만 등록한다. 경로는 devPaths.mockKakao 다 (#427) */
+const mockKakaoRoute =
+  import.meta.env.DEV && config.mswEnabled ? (
+    <Route
+      path="__mock/kakao"
+      element={screen(
+        lazyPage(() => import('@/shared/mock/oauth/MockKakaoPage').then((m) => m.MockKakaoPage)),
+      )}
+    />
+  ) : null
+
 /* 모의 메일함. 모의 OAuth 화면과 같은 이유로 같은 조건 안에서만 등록한다. 경로는 devPaths.mockMail 이다 (#356) */
 const mockMailRoute =
   import.meta.env.DEV && config.mswEnabled ? (
@@ -151,6 +162,7 @@ export const appRoutes = (
       </Route>
     </Route>
     {mockOAuthRoute}
+    {mockKakaoRoute}
     {mockMailRoute}
     <Route path="*" element={screen(<NotFoundPage />)} />
   </Route>

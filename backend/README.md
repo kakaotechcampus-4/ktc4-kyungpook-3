@@ -65,8 +65,8 @@ docker compose -f docker-compose.prod.yml logs -f api
 | 프로세스 | uvicorn `--workers 1`, `--reload` 없음. Notion/임베딩/업로드 sweeper/리마인드 스케줄러 워커가 프로세스마다 뜨므로 워커를 늘리지 않는다 |
 | 포트 | api는 `127.0.0.1:8000`에만 열린다. 외부 공개는 같은 서버의 리버스 프록시(HTTPS)가 맡는다. db는 호스트에 열지 않는다 |
 | DB 접속 | api의 `DATABASE_URL`은 `.env`의 `POSTGRES_USER`/`POSTGRES_PASSWORD`/`POSTGRES_DB`로 다시 만든다(`db:5432`) |
-| 나머지 환경변수 | `NOTION_*`·`DISCORD_*`·`EMBEDDING_*`·`SERVICE_TOKEN` 등은 `.env`를 그대로 넘긴다 |
-| 필수 값 | `OAUTH_STATE_SECRET`이 비어 있으면 `docker compose`가 기동 전에 멈춘다(Notion 연결용 서명 키) |
+| 나머지 환경변수 | `NOTION_*`·`DISCORD_*`·`KAKAO_*`·`EMBEDDING_*`·`SERVICE_TOKEN` 등은 `.env`를 그대로 넘긴다 |
+| 필수 값 | `OAUTH_STATE_SECRET`이 비어 있으면 `docker compose`가 기동 전에 멈춘다(OAuth state, 가입 이메일 증명, 카카오 로그인이 함께 쓰는 서명 키) |
 | 데이터 | DB는 `mm-prod_pgdata` 볼륨에 남는다. 로컬 개발용 볼륨(`mm-pgdata`)과 따로다 |
 | 업로드 녹음 | `mm-prod_uploads` 볼륨(컨테이너의 `/data/uploads`)에 둔다. 회의가 done·failed가 되면 그 회의 폴더를 지운다 |
 | 업로드 sweeper | 서버 안의 워커가 `UPLOAD_SWEEP_INTERVAL_SECONDS`(기본 300, 0 이하면 끔)마다 멈춘 업로드 회의를 failed 로 바꾸고 녹음 폴더를 지운다. AI 가 가져간 뒤 진행이 3시간 없으면 `failed_stage=diarize`, 화자 지정을 7일 기다리면 `speaker_assignment_expired`. 기준은 [봇 계약](docs/contracts/backend-ai-contract.md)의 "웹 업로드 가져가기" |
@@ -132,7 +132,12 @@ docker compose -f docker-compose.prod.yml logs -f api
 | `PM_MEMBER_NOT_INVITABLE` | 409 | 역할이 PM 인 팀원을 초대하려 함. 팀원으로 초대해 수락한 뒤 PM 으로 바꿈. `details.member_id` |
 | `MEMBER_HAS_PENDING_INVITATION` | 409 | 대기 초대가 있는 팀원을 PM 으로 올리려 함. `details.member_id` |
 | `PASSWORD_RESET_TOKEN_INVALID` | 400 | 비밀번호 재설정 링크를 쓸 수 없음(없는·무효화된·이미 쓴·만료된 토큰). `details.reason` 은 `invalid`·`used`·`expired` |
-| `MAIL_UNAVAILABLE` | 503 | 메일을 보낼 수 없음(SMTP 설정이 없음). 발송 실패는 응답에 드러나지 않는다 |
+| `MAIL_UNAVAILABLE` | 503 | 메일을 보낼 수 없음(SMTP 설정이 없음). 비밀번호 재설정 요청과 가입 코드 요청에서 나온다. 발송 실패는 응답에 드러나지 않는다 |
+| `SIGNUP_CODE_RATE_LIMITED` | 429 | 가입 코드를 너무 자주 요청함. `details.reason` 은 `cooldown`(60초 재발송 제한)·`hourly`(시간당 5회), `details.retry_after` 는 기다릴 초 |
+| `SIGNUP_CODE_INVALID` | 400 | 가입 코드를 쓸 수 없음. `details.reason` 은 `wrong`(`details.attempts_left` 함께)·`expired`(만료, 요청한 적 없음, 이미 씀)·`too_many`(5회 초과) |
+| `SIGNUP_VERIFICATION_INVALID` | 400 | 가입에 이메일 증명이 없거나 쓸 수 없음. 코드 인증부터 다시 한다 |
+| `KAKAO_LINK_EXPIRED` | 400 | 카카오 대기 쿠키가 없거나 만료됨. 카카오 로그인부터 다시 한다 |
+| `KAKAO_ALREADY_LINKED` | 409 | 대기 중인 카카오 계정이 이미 다른 계정에 이어져 있어 가입하지 않음 |
 | `MESSAGE_RESULT_CONFLICT` | 409 | 이미 다른 결과가 보고됐거나 아직 가져가지 않은 메시지에 결과를 보고함. `details.message_id` |
 | `DISCORD_USER_ALREADY_MAPPED` | 409 | 같은 워크스페이스에서 탈퇴하지 않은 다른 팀원에 이미 연결된 디스코드 계정(`details.discord_user_id`). 탈퇴(`is_deleted`)한 팀원의 계정은 다시 연결할 수 있음. `discord_user_id`의 앞뒤 공백은 지우고, 빈 값은 연결 없음(null)으로 저장. 64자를 넘으면 이 코드가 아니라 400 `INVALID_REQUEST` |
 | `UPLOAD_NOT_CLAIMED` | 409 | AI가 아직 가져가지(claim) 않은 업로드에 화자를 보고하려 함. `details.status`(그 시점의 회의 상태) |
@@ -219,7 +224,7 @@ callback은 워크스페이스별 경로가 아닌 고정 경로다. Notion에 �
 |---|---|
 | `NOTION_CLIENT_ID`, `NOTION_CLIENT_SECRET` | Notion 개발자 페이지의 Public connection → Configuration 탭. 워커의 토큰 갱신에도 쓴다. 없으면 401 때 갱신하지 못하고 error 로그를 남긴다 |
 | `NOTION_REDIRECT_URI` | 프론트와 같은 주소의 callback. 로컬 `http://localhost:5173/api/v1/integrations/notion/callback`(Vite 프록시가 백엔드로 넘긴다), 운영 `https://<서비스 주소>/api/v1/integrations/notion/callback` |
-| `OAUTH_STATE_SECRET` | state 서명 키, 32자 이상. `python3 -c "import secrets;print(secrets.token_urlsafe(48))"`로 만든다. 없으면 연결 시작이 `failed`가 된다 |
+| `OAUTH_STATE_SECRET` | state 서명 키, 32자 이상. `python3 -c "import secrets;print(secrets.token_urlsafe(48))"`로 만든다. 없으면 연결 시작이 `failed`가 된다. 가입 이메일 증명과 카카오 로그인도 이 키를 쓴다 |
 
 **Notion 개발자 페이지 설정** (Public connection)
 
@@ -395,6 +400,57 @@ PM 이 디스코드 서버의 텍스트 채널 하나를 골라 두면 녹음 �
 - 같은 이메일로 동시에 가입하면 하나만 만들어지고 나머지는 409 `EMAIL_ALREADY_EXISTS` 를 받는다.
 - 기존 계정은 마이그레이션 `537911f267dc` 가 소문자로 바꾼다. 소문자로 같아지는 계정이 있으면 아무것도 바꾸지 않고 멈춘다. 되돌릴 수 없고 배포 전 확인 방법은 그 파일 설명에 있다.
 - 결정 근거는 [M1 결정 기록](docs/plan/m1/basis-for-decision/2026-11-06-email-normalization.md).
+
+## 가입과 카카오 로그인
+
+이메일을 인증해야 가입할 수 있고, 카카오로 들어온 사용자도 가입 화면에서 비밀번호를 정해 두 로그인을 모두 쓴다. 원본은 `app/api/auth.py`, `app/services/signup_codes.py`, `app/services/kakao_oauth.py`.
+
+| 경로 | 요청 | 응답 |
+|---|---|---|
+| `POST /api/v1/auth/signup/code` | `{email}` | 200 `{expires_in: 600, resend_after: 60}`. 503 `MAIL_UNAVAILABLE`, 409 `EMAIL_ALREADY_EXISTS`, 429 `SIGNUP_CODE_RATE_LIMITED` |
+| `POST /api/v1/auth/signup/code/confirm` | `{email, code}`(숫자 6자리) | 200 `{verification_token, expires_in: 1800}`. 400 `SIGNUP_CODE_INVALID` |
+| `POST /api/v1/auth/signup` | `{verification_token?, name, password, link_kakao?}` | 201 사용자 정보와 세션 쿠키, 대기 쿠키 삭제. 본문의 이메일은 읽지 않는다 |
+| `GET /api/v1/auth/kakao/start?next=` | 앱 안 경로 | 302 카카오 동의 화면. 설정 오류면 302 `/login?oauth=kakao&oauth_result=failed` |
+| `GET /api/v1/auth/kakao/callback` | 카카오가 부른다 | 항상 302 |
+| `GET /api/v1/auth/kakao/pending` | 대기 쿠키 | 200 `{email, nickname}`(없으면 null). 400 `KAKAO_LINK_EXPIRED` |
+
+**가입할 이메일**
+
+| `link_kakao` | 대기 쿠키 | 이메일 |
+|---|---|---|
+| false | 있어도 보지 않는다 | 증명 토큰의 이메일. 없으면 400 `SIGNUP_VERIFICATION_INVALID` |
+| true | 없거나 만료 | 400 `KAKAO_LINK_EXPIRED` |
+| true | 카카오가 인증한 이메일 있음 | 쿠키의 이메일. 증명 토큰은 무시한다 |
+| true | 이메일 없음 | 증명 토큰의 이메일 |
+
+겹치면 409 `EMAIL_ALREADY_EXISTS` 또는 409 `KAKAO_ALREADY_LINKED` 다.
+
+**callback 갈래** (위에서 아래로 먼저 맞는 것)
+
+| 조건 | 결과 |
+|---|---|
+| `error` 있음 | `access_denied` 는 `cancelled`, 나머지는 `failed`. 유효한 state 가 있을 때만 `next` 를 유지한다 |
+| state·nonce 불일치, 카카오 토큰·사용자 조회 실패 | `failed`, 원인은 로그에만 남긴다 |
+| `(kakao, id)` 계정 있음 | 세션, `/login?next=&oauth=kakao&oauth_result=success` |
+| 인증된 이메일의 계정 있음 | 비어 있으면 카카오를 잇고 세션과 `success`, 계정 이메일로 연결 알림을 보낸다. 다른 카카오에 이어져 있으면 `failed`, `oauth_reason=email_exists` |
+| 인증되지 않은 이메일의 계정 있음 | `failed`, `oauth_reason=email_exists` |
+| 나머지 | 대기 쿠키를 심고 `/signup?kakao=1&next=`. callback 은 사용자를 만들지 않는다 |
+
+- 코드: 6자리, 유효 10분, 코드당 5회, 재발송 60초, 시간당 5회. 전체 주소 합계는 시간당 20통이고 넘으면 429 `global` 이다. DB 에는 HMAC 만 두고 맞으면 행을 지운다. 하루 지난 행은 다음 코드 요청이 지운다.
+- 대기 쿠키 `kakao_pending`: 서명, HttpOnly, Secure, SameSite=Lax, Path `/api/v1/auth`, 30분. 카카오 id, 인증된 이메일, 닉네임을 담고 주소에는 싣지 않는다. 서명이지 암호화가 아니므로 비밀 값을 넣지 않는다.
+- 카카오 이메일: `is_email_valid` 가 거짓이면 이메일이 없는 것으로 본다. `is_email_verified` 가 참일 때만 코드 인증을 생략한다.
+- 메일: 제목에 코드를 넣지 않고 재설정 메일과 같은 메일 전용 스레드로 보낸다. 보내는 이름은 `SMTP_FROM` 으로 정한다(`Manager's Manager <주소>`).
+
+**환경변수** (`.env.example` 참고)
+
+| 이름 | 값 |
+|---|---|
+| `KAKAO_REST_API_KEY` | 카카오 개발자 콘솔의 REST API 키 |
+| `KAKAO_CLIENT_SECRET` | 카카오 로그인 보안 설정의 Client Secret |
+| `KAKAO_REDIRECT_URI` | 콘솔에 등록한 값과 같은 callback. 로컬 `http://localhost:5173/api/v1/auth/kakao/callback`, 운영 `https://<서비스 주소>/api/v1/auth/kakao/callback` |
+| `OAUTH_STATE_SECRET` | Notion 연결과 같은 서명 키를 쓴다. 코드 해시 키도 여기서 파생한다 |
+
+SMTP 설정이 없으면 코드 요청이 503 이라 이메일로는 가입할 수 없다(운영 메일 설정은 아래 절).
 
 ## 비밀번호 재설정
 

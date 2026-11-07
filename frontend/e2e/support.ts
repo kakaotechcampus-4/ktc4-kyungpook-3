@@ -78,6 +78,44 @@ export async function start(page: Page, scenario: Scenario, path = '/'): Promise
   await expect(page.locator('.splash')).toHaveCount(0, { timeout: 15_000 })
 }
 
+/**
+ * 모의 메일함에 간 마지막 코드. 메일함 화면은 새 문서라 코드 단계가 사라지므로 저장된 모의 db 에서 읽는다.
+ * 메일함 화면 자체는 signup-kakao.e2e.ts 가 본다
+ */
+export async function readMailedCode(page: Page): Promise<string> {
+  let code: string | undefined
+  await expect
+    .poll(async () => {
+      code = await page.evaluate(() => {
+        const saved = JSON.parse(sessionStorage.getItem('msw-db') ?? '{}') as {
+          db?: { signupVerification?: { outbox: { code: string }[] } }
+        }
+        return saved.db?.signupVerification?.outbox.at(-1)?.code
+      })
+      return code
+    })
+    .toBeDefined()
+  return code as string
+}
+
+/** 이메일 → 코드 → 프로필을 밟고 `계정 만들기` 를 누른다 (#427) */
+export async function signUp(
+  page: Page,
+  values: { name: string; email: string; password: string },
+): Promise<void> {
+  // 주소는 lazy 화면보다 먼저 바뀐다. 앞 화면의 이메일 칸에 쓰지 않게 이 화면의 버튼부터 기다린다
+  const sendCode = page.getByRole('button', { name: '인증 코드 받기' })
+  await expect(sendCode).toBeVisible({ timeout: 15_000 })
+  await page.getByLabel('이메일').fill(values.email)
+  await sendCode.click()
+  await expect(page.getByLabel('인증 코드')).toBeVisible()
+  await page.getByLabel('인증 코드').fill(await readMailedCode(page))
+  await page.getByRole('button', { name: '코드 확인' }).click()
+  await page.getByLabel('이름').fill(values.name)
+  await page.getByLabel('비밀번호', { exact: true }).fill(values.password)
+  await page.getByRole('button', { name: '계정 만들기' }).click()
+}
+
 /** 모의 OAuth 화면에서 결과를 골라 현재 탭으로 돌아온다 (D-158) */
 export async function finishOAuth(
   page: Page,

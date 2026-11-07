@@ -22,6 +22,9 @@ from app.api.members import _ensure_no_pending_invitation, _ensure_other_pm
 from app.core.database import Base, get_db
 from app.main import app
 from app.models import Invitation, Member, Session as SessionModel, User, Workspace
+from tests.api.conftest import signup_verified
+
+pytestmark = pytest.mark.usefixtures("signup_secret")
 
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
 
@@ -150,7 +153,7 @@ def _workspace_count(token: str) -> int:
 
 def _signup(email: str, name: str) -> TestClient:
     c = _client()
-    res = c.post("/api/v1/auth/signup", json={"email": email, "password": "pw-123456", "name": name})
+    res = signup_verified(c, email, name=name)
     assert res.status_code == 201, res.text
     return c
 
@@ -206,6 +209,20 @@ def test_email_match_ignores_case_and_spaces_for_a_user_who_signs_up_after(seed)
     assert res.json()["data"]["email"] == "minsu@example.com"
 
     minsu = _signup("MINSU@example.com", "민수")
+    [item] = minsu.get("/api/v1/invitations/me").json()["data"]["items"]
+    accepted = minsu.post(f"/api/v1/invitations/{item['invitation_id']}/accept")
+
+    assert accepted.status_code == 200
+    assert accepted.json()["data"] == {"workspace_id": seed["ws"], "member_id": seed["minsu"].member_id}
+
+
+def test_email_match_ignores_case_between_account_and_invitation(db, seed):
+    """계정을 대문자로 만들어도 소문자로 초대한 사람과 같은 이메일로 본다."""
+    _user(db, "minsu", "MINSU@example.com")
+    db.commit()
+    _invite(seed["ws"], seed["minsu"].member_id, "minsu@example.com")
+
+    minsu = _client("minsu-token")
     [item] = minsu.get("/api/v1/invitations/me").json()["data"]["items"]
     accepted = minsu.post(f"/api/v1/invitations/{item['invitation_id']}/accept")
 
