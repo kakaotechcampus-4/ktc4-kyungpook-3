@@ -45,8 +45,12 @@ const REDUCED_MOTION = '(prefers-reduced-motion: reduce)'
 interface SplashRun {
   /** performance.now() 기준 시작 시각 */
   startedAt: number
-  /** 새로 접속은 index.html 이 이미 흰 화면을 덮고 있어 hidden 동안에도 덮는다. 로그인 직후는 보일 때부터 덮는다 */
-  coversWhileHidden: boolean
+  /**
+   * 보이기 시작하는 시각. 번쩍임 방지 대기(REVEAL_MS)는 새로 접속만 거친다 — index.html 이 이미 흰 판을 덮고 있어
+   * hidden 동안에도 덮는다. 설치한 앱은 시작 이미지에서 이어지고, 로그인 직후(#539)와 `시작하기` 는 사람이 누른
+   * 동작이라 0이다 — 누른 순간 덮어 그 사이 도착 화면 뼈대가 보이지 않는다
+   */
+  revealAt: number
   landing: boolean
   mode: SplashMode
 }
@@ -74,7 +78,7 @@ function bootRun(): SplashRun | null {
   }
   return {
     startedAt: paintedAt(node),
-    coversWhileHidden: true,
+    revealAt: window.matchMedia('(display-mode: standalone)').matches ? 0 : REVEAL_MS,
     // 써 본 사람이 `/` 로 오면 랜딩 대신 로그인으로 간다(LandingEntry). 랜딩의 바로 걷힘은 처음 온 사람(검색 로봇 포함)만이다
     landing: window.location.pathname === '/' && !hasSplashRecord(),
     mode: bootMode === 'quick' ? 'quick' : 'full',
@@ -82,12 +86,10 @@ function bootRun(): SplashRun | null {
 }
 
 function initialState(run: SplashRun): SplashState {
-  const standalone = window.matchMedia('(display-mode: standalone)').matches
   return startSplash({
     elapsed: performance.now() - run.startedAt,
     reduced: window.matchMedia(REDUCED_MOTION).matches,
-    // `시작하기` 는 누른 순간 정면으로 바로 보인다. 기다릴 로딩이 아니라 화면 전환이다
-    revealAt: standalone || run.mode === 'start' ? 0 : REVEAL_MS,
+    revealAt: run.revealAt,
     landing: run.landing,
     mode: run.mode,
   })
@@ -144,11 +146,12 @@ export function SplashHost({ appRoot }: SplashHostProps) {
       onSplashShow((startedAt, kind) => {
         setRun((current) => {
           if (kind === 'session') {
-            return current ?? { startedAt, coversWhileHidden: false, landing: false, mode: 'full' }
+            return current ?? { startedAt, revealAt: 0, landing: false, mode: 'full' }
           }
           // 랜딩의 사라짐이 아직 남아 있어도 `시작하기` 가 이어받는다
           if (current !== null && !current.landing) return current
-          return { startedAt, coversWhileHidden: true, landing: false, mode: 'start' }
+          // `시작하기` 는 누른 순간 정면으로 바로 보인다. 기다릴 로딩이 아니라 화면 전환이다
+          return { startedAt, revealAt: 0, landing: false, mode: 'start' }
         })
       }),
     [],
@@ -226,6 +229,7 @@ function SplashRunView({ run, appRoot, onDone }: SplashRunViewProps) {
   }, [stage.phase, onDone])
 
   // 전체 스플래시가 실제로 보였을 때만 기록한다. 0.3초 안에 준비돼 보이지 않은 채 끝나면 기록하지 않는다 (#510).
+  // 로그인 직후는 hidden 이 없어 띄우는 순간 기록한다 (#539)
   // 랜딩의 바로 걷힘과 설치한 앱의 짧은 사라짐은 전체 스플래시가 아니다
   const seen = stage.phase !== 'hidden' && stage.phase !== 'done'
   const full = !run.landing && run.mode !== 'quick'
@@ -257,7 +261,8 @@ function SplashRunView({ run, appRoot, onDone }: SplashRunViewProps) {
     if (looking) mascot.current?.press()
   }, [looking])
 
-  const shown = stage.phase === 'hidden' ? run.coversWhileHidden : stage.phase !== 'done'
+  // hidden 은 새로 접속에만 있고, 그동안 index.html 의 흰 판을 이어받아 덮는다
+  const shown = stage.phase !== 'done'
   // 움직임 줄이기면 준비되는 순간 걷히므로, 남은 확인 시간(SETTLE_MS) 동안은 이미 그려진 첫 화면을 막지 않는다.
   // 시작하기는 포커스를 판에 두므로 걷히기 시작할 때까지 막는다 — 그때 로그인 화면으로 포커스를 넘긴다
   const inert = shown && stage.phase !== 'leave' && (skippable || !(reduced && holds === 0))
