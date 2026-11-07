@@ -32,7 +32,8 @@ def _worker(tmp_path, *, handoff=None, extractor=None, interval_s=3600.0, poll_s
                     stt_factory=lambda: (EchoStt(), "echo", 1), gate_factory=lambda: None,
                     extractor_factory=lambda: extractor, handoff_factory=lambda: handoff,
                     interval_s=interval_s, poll_s=poll_s, notifier=notifier, debug=debug,
-                    intake_factory=lambda: intake)      # 기본은 intake 없음: 환경 변수에 기대지 않는다
+                    intake_factory=lambda: intake,      # 기본은 intake 없음: 환경 변수에 기대지 않는다
+                    summary_factory=lambda: None)
 
 
 @pytest.fixture(autouse=True)
@@ -914,3 +915,86 @@ async def test_an_upload_ended_in_be_is_dropped_by_the_pass_and_logged_without_a
     assert await w.run_pass() == ([], [])
     assert "끝난 회의" in capsys.readouterr().out
     assert not any(p.endswith("/fail") for _, p, _ in fake.calls)
+
+
+# ---- 회의 요약: 바퀴 끝에 한 건, 한 회의 자리 안에서, 정지 신호 뒤에는 맡지 않는다 ----
+
+class _Summary:
+    """SummaryRunner 자리. 부를 때 한 회의 자리가 잠겨 있는지 남긴다."""
+
+    def __init__(self, worker=None, *, error=None, on_call=None):
+        self.worker = worker
+        self.error = error
+        self.on_call = on_call
+        self.calls = 0
+        self.locked = []
+        self.current = []
+
+    def run_once(self):
+        self.calls += 1
+        if self.worker is not None:
+            self.locked.append(self.worker._sem.locked())
+            self.current.append(self.worker._current)
+        if self.on_call:
+            self.on_call()
+        if self.error:
+            raise self.error
+
+
+async def test_each_lap_summarizes_once_after_the_pass_and_the_intake(tmp_path, monkeypatch):
+    w = _worker(tmp_path, intake=("client", "diarizer"), interval_s=0.05)
+    order = []
+    monkeypatch.setattr(W, "intake_one", lambda *a, **k: order.append("intake"))
+    summary = _Summary(on_call=lambda: order.append("summary"))
+    w._summary = summary
+    assert await _laps(w, 3) == 3
+    assert order == ["intake", "summary", "intake", "summary"]
+
+
+async def test_summary_runs_inside_the_one_meeting_seat(tmp_path):
+    w = _worker(tmp_path)
+    summary = _Summary(w)
+    w._summary = summary
+    await w._summary_once()
+    assert summary.locked == [True] and summary.current == ["summary"]
+    assert w._current is None and not w._sem.locked()
+
+
+async def test_no_claim_after_the_stop_signal(tmp_path):
+    w = _worker(tmp_path)
+    w._summary = summary = _Summary()
+    w.stop()
+    await w._summary_once()
+    assert summary.calls == 0
+
+
+async def test_a_stop_while_waiting_for_the_seat_does_not_claim(tmp_path):
+    w = _worker(tmp_path)
+    w._summary = summary = _Summary()
+    await w._sem.acquire()
+    waiting = asyncio.create_task(w._summary_once())
+    await asyncio.sleep(0)
+    w.stop()
+    w._sem.release()
+    await waiting
+    assert summary.calls == 0
+
+
+async def test_no_runner_means_no_summary_work(tmp_path):
+    w = _worker(tmp_path)
+    assert w._summary is None
+    await w._summary_once()
+
+
+async def test_a_summary_crash_is_logged_and_the_worker_keeps_going(tmp_path, capsys):
+    w = _worker(tmp_path)
+    w._summary = _Summary(error=RuntimeError("boom"))
+    await w._summary_once()
+    assert "요약 오류: RuntimeError: boom" in capsys.readouterr().out
+    assert w._current is None and not w._sem.locked()
+
+
+def test_an_unknown_summary_model_stops_the_worker_at_start(tmp_path, monkeypatch):
+    monkeypatch.setenv("MM_SUMMARY_LLM", "gpt4")
+    with pytest.raises(ValueError):
+        W.Worker(tmp_path / "recordings", transcripts_dir=tmp_path / "transcripts", notifier=object(), debug=False)

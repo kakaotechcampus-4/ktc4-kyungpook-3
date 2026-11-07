@@ -11,3 +11,5 @@ def default_modes(monkeypatch):
     monkeypatch.delenv("MM_PIPELINE_MODE", raising=False)
     monkeypatch.delenv("MM_EXTRACT_PATH", raising=False)
     monkeypatch.delenv("MM_DEBUG_REPORT", raising=False)
+    # 지우지 않고 비운다. 하위 프로세스로 띄운 워커가 개발 기기의 .env 값을 다시 올려 실제 호출을 하는 일을 막는다
+    monkeypatch.setenv("MM_SUMMARY_LLM", "")

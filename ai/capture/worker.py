@@ -18,6 +18,8 @@
 것까지 바로 돈다. 봇이 녹음을 저장하면
 recordings/.worker/nudge 를 만들어(request_nudge) 다음 바퀴를 주기까지 기다리지 않게 한다.
 SIGTERM·SIGINT 를 받으면 새 회의를 집지 않고 하던 회의를 마친 뒤 끝난다.
+
+바퀴 끝에 회의 요약을 한 건 맡는다(capture/summary_sweep.py). 처리 단계와 별개라 실패해도 회의 상태는 그대로다.
 """
 
 from __future__ import annotations
@@ -35,6 +37,7 @@ from capture.handoff import from_env as handoff_from_env
 from capture.judge_path import extract_path
 from capture.notify import FileOutbox, MeetingReporter, debug_from_env
 from capture.recorder import STATUS_SOURCED, Claims, backend_from_env, build_extractor, recover_pass, save_manifest
+from capture.summary_sweep import summary_from_env
 from shared.config import RECORDINGS_DIR, TRANSCRIPTS_DIR
 from shared.schemas import now_iso
 from upload.assign import assign_one
@@ -125,12 +128,15 @@ def intake_from_env():
 class Worker:
     def __init__(self, recordings_dir: Path = RECORDINGS_DIR, *, transcripts_dir: Path = TRANSCRIPTS_DIR,
                  stt_factory=None, gate_factory=None, extractor_factory=None, handoff_factory=None, intake_factory=None,
-                 interval_s: float | None = None, poll_s: float = 1.0, notifier=None, debug: bool | None = None) -> None:
+                 summary_factory=None, interval_s: float | None = None, poll_s: float = 1.0, notifier=None,
+                 debug: bool | None = None) -> None:
         """팩토리 기본은 환경 변수다. poll_s 는 깨우기와 종료 신호를 확인하는 간격이다.
 
         notifier 는 채널 알림을 받는다(send). 기본은 봇이 읽는 우편함이다. debug 기본은 MM_DEBUG_REPORT 다.
         """
         extract_path()      # MM_EXTRACT_PATH 가 모르는 값이면 시작할 때 멈춘다. 추출은 워커만 한다
+        # MM_SUMMARY_LLM 도 시작할 때 본다. 가져오기와 달리 설정 오타를 지나치지 않는다
+        self._summary = (summary_factory if summary_factory is not None else summary_from_env)()
         self.recordings_dir = recordings_dir
         self.transcripts_dir = transcripts_dir
         self._stt_factory = stt_factory or backend_from_env
@@ -251,6 +257,21 @@ class Worker:
             if progress is not None:
                 print(f"[worker] 업로드 {progress.meeting_id} {progress.event}", flush=True)
 
+    async def _summary_once(self) -> None:
+        """회의 요약 한 건. 정지 신호 뒤에는 새로 맡지 않고, 한 번에 한 회의 자리(_sem) 안에서 돈다."""
+        if self._stopping or self._summary is None:
+            return
+        async with self._sem:
+            if self._stopping:
+                return
+            self._current = "summary"
+            try:
+                await asyncio.to_thread(self._summary.run_once)
+            except Exception as e:  # noqa: BLE001 - run_once 는 예외를 내지 않는 게 약속이지만 워커는 어떤 경우에도 계속 돈다
+                print(f"[worker] 요약 오류: {type(e).__name__}: {e}", flush=True)
+            finally:
+                self._current = None
+
     def _wakes(self) -> list[Path]:
         d = worker_dir(self.recordings_dir)
         return sorted(d.glob("wake-*")) if d.is_dir() else []
@@ -277,6 +298,7 @@ class Worker:
                     wake.unlink(missing_ok=True)
                     await self.run_pass(guild_id=wake.name[len("wake-"):], manual=True)
                 await self._intake_once()
+                await self._summary_once()
                 await self._nap()
         finally:
             beat.cancel()
