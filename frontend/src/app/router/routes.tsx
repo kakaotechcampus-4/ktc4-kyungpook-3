@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { Route } from 'react-router'
 import { NotFoundPage } from '@/pages/not-found'
 import { config } from '@/shared/config/env'
+import { LandingEntry } from './LandingEntry'
 import { RouteErrorBoundary } from './errors/RouteErrorBoundary'
 import { RedirectIfAuthed } from './guards/RedirectIfAuthed'
 import { RequireAuth } from './guards/RequireAuth'
@@ -100,7 +101,7 @@ const mockMailRoute =
 export const appRoutes = (
   <Route path="/" element={<RootLayout />}>
     <Route element={<RedirectIfAuthed />}>
-      <Route index element={screen(landingPage)} />
+      <Route index element={<LandingEntry>{screen(landingPage)}</LandingEntry>} />
       <Route path="login" element={screen(loginPage)} />
       <Route path="signup" element={screen(signupPage)} />
       <Route path="forgot-password" element={screen(forgotPasswordPage)} />
