@@ -77,6 +77,15 @@ def test_learnable_alias_text_for_unmatched_name():
         {"assignee_raw": "저희가"},
         {"assignee_raw": "우리"},
         {"assignee_raw": "본인이"},
+        # "도"·"들"이 붙은 꼴도 막는다. 다듬은 글자는 "저도"·"저희들"로 남는다
+        {"assignee_raw": "저도"},
+        {"assignee_raw": "나도"},
+        {"assignee_raw": "저희도"},
+        {"assignee_raw": "우리도"},
+        {"assignee_raw": "본인도"},
+        {"assignee_raw": "저희들이"},
+        {"assignee_raw": "우리들이"},
+        {"assignee_raw": "저희들도"},
     ],
 )
 def test_learnable_alias_text_is_none_when_not_learnable(fields):

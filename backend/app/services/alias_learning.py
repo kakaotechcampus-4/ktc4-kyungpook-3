@@ -101,9 +101,23 @@ def learnable_alias_text(item: ExtractionItem) -> str | None:
     ):
         return None
     text = trim_alias_text(item.assignee_raw)
-    if text in SELF_REFERENCE_WORDS:
+    if text is None or _is_self_reference(text):
         return None
     return text
+
+
+def _is_self_reference(text: str) -> bool:
+    """다듬은 글자가 1인칭 지칭어인가. 끝의 "도"·"들"은 떼어 가며 견준다("저도"·"저희들"·"저희들도").
+
+    비교할 때만 떼고 저장 글자는 그대로다(trim_alias_text). "도"·"들"은 조사 목록에 없어 다듬기에서는 남는다.
+    """
+    while True:
+        if text in SELF_REFERENCE_WORDS:
+            return True
+        if len(text) > 1 and text[-1] in "도들":
+            text = text[:-1]
+            continue
+        return False
 
 
 def approval_alias_texts(db: Session, approvals: Sequence[ApprovalRequest]) -> dict[str, str]:
