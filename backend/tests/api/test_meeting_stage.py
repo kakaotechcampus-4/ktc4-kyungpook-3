@@ -126,6 +126,7 @@ def test_stage_applies_on_processing(client, db, seed):
         "meeting_id": seed["meeting"],
         "status": "processing",
         "processing_stage": "stt",
+        "stt": None,
         "applied": True,
     }
     assert _meeting(db, seed["meeting"]).processing_stage_at is not None
@@ -223,3 +224,166 @@ def test_late_stt_after_handoff_keeps_progress(client, seed):
     assert late.json()["data"]["applied"] is False
     p = client.get(f"/api/v1/meetings/{seed['meeting']}").json()["data"]["progress"]
     assert (p["audio_merged"], p["transcribed"], p["extracted"]) == (True, True, True)
+
+
+# ---- 전사 진행(stt) ----
+
+
+def _stt(client, meeting_id, done, total, stage="stt"):
+    return client.patch(
+        f"/api/v1/meetings/{meeting_id}/stage",
+        json={"stage": stage, "stt": {"done": done, "total": total}},
+        headers=SERVICE_HEADERS,
+    )
+
+
+def _processing(client, meeting_id):
+    return client.get(f"/api/v1/meetings/{meeting_id}").json()["data"]["processing"]
+
+
+def test_stt_progress_is_stored_and_exposed(client, seed):
+    r = _stt(client, seed["meeting"], 0, 5)
+
+    assert r.status_code == 200
+    assert r.json()["data"]["applied"] is True
+    assert r.json()["data"]["stt"] == {"done": 0, "total": 5}
+    p = _processing(client, seed["meeting"])
+    assert p["stage"] == "stt"
+    assert p["stage_at"] is not None
+    assert p["stt"] == {"done": 0, "total": 5}
+
+
+def test_stt_progress_update_keeps_stage_at(client, db, seed):
+    _stt(client, seed["meeting"], 0, 5)
+    first_at = _meeting(db, seed["meeting"]).processing_stage_at
+
+    r = _stt(client, seed["meeting"], 2, 5)
+
+    assert r.json()["data"]["applied"] is True
+    assert r.json()["data"]["stt"] == {"done": 2, "total": 5}
+    assert _meeting(db, seed["meeting"]).processing_stage_at == first_at
+    assert _processing(client, seed["meeting"])["stt"] == {"done": 2, "total": 5}
+
+
+def test_same_stt_progress_is_ignored(client, seed):
+    _stt(client, seed["meeting"], 2, 5)
+
+    r = _stt(client, seed["meeting"], 2, 5)
+
+    assert r.json()["data"]["applied"] is False
+
+
+def test_stt_resend_without_progress_keeps_progress(client, seed):
+    _stt(client, seed["meeting"], 2, 5)
+
+    r = _stage(client, seed["meeting"], "stt")
+
+    assert r.json()["data"]["applied"] is False
+    assert r.json()["data"]["stt"] == {"done": 2, "total": 5}
+    assert _processing(client, seed["meeting"])["stt"] == {"done": 2, "total": 5}
+
+
+def test_stt_progress_decrease_overwrites(client, seed):
+    _stt(client, seed["meeting"], 4, 5)
+
+    r = _stt(client, seed["meeting"], 1, 5)
+
+    assert r.json()["data"]["applied"] is True
+    assert _processing(client, seed["meeting"])["stt"] == {"done": 1, "total": 5}
+
+
+def test_moving_past_stt_clears_progress(client, seed):
+    _stt(client, seed["meeting"], 5, 5)
+
+    r = _stage(client, seed["meeting"], "sources")
+
+    assert r.json()["data"]["applied"] is True
+    assert r.json()["data"]["stt"] is None
+    p = _processing(client, seed["meeting"])
+    assert p["stage"] == "sources"
+    assert p["stt"] is None
+
+
+def test_late_stt_progress_after_handoff_is_ignored(client, seed):
+    _stage(client, seed["meeting"], "handoff")
+
+    r = _stt(client, seed["meeting"], 3, 5)
+
+    assert r.json()["data"]["applied"] is False
+    assert r.json()["data"]["stt"] is None
+    p = _processing(client, seed["meeting"])
+    assert p["stage"] == "handoff"
+    assert p["stt"] is None
+
+
+def test_late_stt_progress_does_not_change_stored_value_after_handoff(client, db, seed):
+    meeting = _meeting(db, seed["meeting"])
+    meeting.processing_stage = "handoff"
+    meeting.processing_stt_done = 5
+    meeting.processing_stt_total = 5
+    db.commit()
+
+    r = _stt(client, seed["meeting"], 1, 5)
+
+    assert r.json()["data"]["applied"] is False
+    m = _meeting(db, seed["meeting"])
+    assert (m.processing_stt_done, m.processing_stt_total) == (5, 5)
+
+
+@pytest.mark.parametrize(
+    "stage, stt",
+    [
+        ("stt", {"done": 6, "total": 5}),
+        ("stt", {"done": 0, "total": 0}),
+        ("stt", {"done": -1, "total": 5}),
+        ("stt", {"done": "1", "total": 5}),
+        ("stt", {"done": 1, "total": "5"}),
+        ("stt", {"done": True, "total": 5}),
+        ("stt", {"done": 1, "total": True}),
+        ("sources", {"done": 1, "total": 5}),
+    ],
+)
+def test_stt_progress_invalid_400(client, db, seed, stage, stt):
+    r = client.patch(
+        f"/api/v1/meetings/{seed['meeting']}/stage",
+        json={"stage": stage, "stt": stt},
+        headers=SERVICE_HEADERS,
+    )
+
+    assert r.status_code == 400
+    assert r.json()["error"]["code"] == "INVALID_REQUEST"
+    assert _meeting(db, seed["meeting"]).processing_stage is None
+
+
+@pytest.mark.parametrize("status", ["created", "awaiting_speakers", "done", "failed"])
+def test_stt_progress_ignored_on_non_processing(client, db, seed, status):
+    meeting = _meeting(db, seed["meeting"])
+    meeting.status = status
+    db.commit()
+
+    r = _stt(client, seed["meeting"], 1, 5)
+
+    assert r.status_code == 200
+    assert r.json()["data"]["applied"] is False
+    assert r.json()["data"]["stt"] is None
+    m = _meeting(db, seed["meeting"])
+    assert m.processing_stt_done is None
+    assert m.processing_stt_total is None
+    assert _processing(client, seed["meeting"]) is None
+
+
+def test_processing_without_report_has_empty_fields(client, seed):
+    assert _processing(client, seed["meeting"]) == {"stage": None, "stage_at": None, "stt": None}
+
+
+def test_fail_response_processing_is_null(client, seed):
+    _stt(client, seed["meeting"], 1, 5)
+
+    r = client.patch(
+        f"/api/v1/meetings/{seed['meeting']}/fail",
+        json={"failed_stage": "STT"},
+        headers=SERVICE_HEADERS,
+    )
+
+    assert r.status_code == 200
+    assert r.json()["data"]["processing"] is None
