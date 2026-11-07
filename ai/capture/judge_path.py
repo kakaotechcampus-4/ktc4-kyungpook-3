@@ -226,16 +226,16 @@ def build_extractor(*, run=None, candidates=None, cfg=None):
         if dates is not None:
             extra["dates"] = dates
         result = run(_relabel(transcript, labels), workspace_id=workspace_id, today=today, candidates=candidates, **extra)
-        failures = [{"stage": f.stage, "text": f.finding_text, "reason": f.reason} for f in result.failures]
+        failures = {id(f): {"stage": f.stage, "text": f.finding_text, "reason": f.reason} for f in result.failures}
         if failures and not result.items:
-            first = failures[0]
+            first = next(iter(failures.values()))
             raise JudgeAllFailed(f"등록할 항목이 없고 판단하지 못한 발화 {len(failures)}개만 남았다. "
                                  f"첫 실패({first['stage']}): {first['reason']}")
         speakers = {s.speaker for s in transcript.segments if s.speaker is not None}
-        items = _restore(result.items, labels, names, speakers)
+        items = dict(zip(map(id, result.items), _restore(result.items, labels, names, speakers)))
         outcomes = [{"indices": list(o.indices), "kind": o.kind,
-                     "item": items[o.item] if o.kind == "item" else None,
-                     "failure": failures[o.failure] if o.kind == "failure" else None} for o in result.outcomes]
+                     "item": items[id(o.item)] if o.kind == "item" else None,
+                     "failure": failures[id(o.failure)] if o.kind == "failure" else None} for o in result.outcomes]
         return JudgeOutput(outcomes=outcomes, dropped=result.dropped)
 
     return extract

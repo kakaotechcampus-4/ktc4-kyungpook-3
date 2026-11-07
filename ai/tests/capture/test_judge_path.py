@@ -40,22 +40,24 @@ def _failure(stage="judge", text="로그인 마감을 미루기로 함", reason=
 class FakeRun:
     """judge.pipeline.run 자리. 받은 것을 적어 두고 정해 둔 결과를 돌려준다.
 
-    outcomes 를 주지 않으면 finding 하나가 항목이나 실패 하나가 됐다고 보고 서로 겹치지 않는 문장 번호를 붙인다.
+    outcomes 는 run 이 돌려준 항목과 실패를 받아 결과 목록을 만드는 함수다. 주지 않으면 finding 하나가 항목이나
+    실패 하나가 됐다고 보고 서로 겹치지 않는 문장 번호를 붙인다.
     """
 
     def __init__(self, items=(), failures=(), dropped=None, outcomes=None):
         self.items, self.failures = list(items), list(failures)
         self.dropped = dropped if dropped is not None else empty_drops()
-        self.outcomes = outcomes if outcomes is not None else (
-            [SimpleNamespace(indices=[k], kind="item", item=k, failure=None) for k in range(len(self.items))]
-            + [SimpleNamespace(indices=[len(self.items) + k], kind="failure", item=None, failure=k)
-               for k in range(len(self.failures))])
+        self.outcomes = outcomes or (lambda items, failures: (
+            [SimpleNamespace(indices=[k], kind="item", item=i, failure=None) for k, i in enumerate(items)]
+            + [SimpleNamespace(indices=[len(items) + k], kind="failure", item=None, failure=f)
+               for k, f in enumerate(failures)]))
         self.seen = None
 
     def __call__(self, transcript, *, workspace_id, today, candidates):
         self.seen = SimpleNamespace(transcript=transcript, workspace_id=workspace_id, today=today, candidates=candidates)
-        return SimpleNamespace(items=[dict(i) for i in self.items], failures=list(self.failures),
-                               dropped=dict(self.dropped), outcomes=list(self.outcomes))
+        items, failures = [dict(i) for i in self.items], list(self.failures)
+        return SimpleNamespace(items=items, failures=failures, dropped=dict(self.dropped),
+                               outcomes=self.outcomes(items, failures))
 
 
 def _extractor(run, **cfg):
@@ -205,12 +207,12 @@ def test_the_default_candidate_source_is_the_be_client_with_the_service_token():
 
 def test_each_finding_comes_back_with_its_sentences_and_what_became_of_it():
     """다시 돌린 실행끼리 같은 얘기를 짝지으려면 finding 마다 근거 문장 번호와 결과가 있어야 한다(#217).
-    항목은 화자를 uid 로 되돌린 것을 붙인다. 파이프라인은 항목을 위치로 가리킨다."""
-    outcomes = [SimpleNamespace(indices=[2], kind="item", item=0, failure=None),
-                SimpleNamespace(indices=[1], kind="skip", item=None, failure=None),
-                SimpleNamespace(indices=[0, 1], kind="failure", item=None, failure=0)]
+    항목은 화자를 uid 로 되돌린 것을 붙인다."""
+    outcomes = lambda items, failures: [SimpleNamespace(indices=[2], kind="item", item=items[0], failure=None),
+                                        SimpleNamespace(indices=[1], kind="skip", item=None, failure=None),
+                                        SimpleNamespace(indices=[0, 1], kind="failure", item=None, failure=failures[0])]
     extract, _ = _extractor(FakeRun([_item()], [_failure()], outcomes=outcomes))
-    out = extract(TRANSCRIPT, NAMES, date(2026, 9, 19))
+    out = extract(TRANSCRIPT, NAMES, date(2026, 9, 19), workspace_id="ws-1")
     restored = _item(evidence_speaker="103")
     failure = {"stage": "judge", "text": "로그인 마감을 미루기로 함", "reason": "Terra 응답을 파싱하지 못했습니다."}
     assert out.outcomes == [{"indices": [2], "kind": "item", "item": restored, "failure": None},
@@ -276,6 +278,14 @@ def test_the_same_story_from_two_runs_goes_out_once():
     assert J.merge_runs([first, second]) == ([other], [])
 
 
+def test_a_card_merged_in_one_run_stays_one_story_when_the_other_run_splits_it():
+    """1회차는 3번과 9번 문장을 카드 하나로 합쳤고, 2회차는 3번에서 실패하고 9번을 따로 카드로 냈다. 합친 카드가 문장을
+    전부 들고 있어 한 얘기로 묶이고, 같은 일의 카드가 두 장 서지 않는다."""
+    first = [_o("item", A1, at=[3, 9])]
+    second = [_o("failure", FB, at=[3]), _o("item", A2, at=[9])]
+    assert J.merge_runs([first, second]) == ([A1], [])
+
+
 def test_a_story_every_run_skips_goes_nowhere_and_the_items_keep_the_sentence_order():
     first = [_o("item", C, at=[7]), _o("skip", at=[1])]
     second = [_o("skip", at=[1]), _o("item", B, at=[5])]
@@ -299,7 +309,7 @@ def test_extract_passes_context_and_dates_to_run():
 
     def run(transcript, *, workspace_id, today, candidates, **extra):
         seen.update(extra)
-        return SimpleNamespace(items=[], failures=[], dropped=empty_drops())
+        return SimpleNamespace(items=[], failures=[], outcomes=[], dropped=empty_drops())
 
     extract, _ = _extractor(run)
     context = Transcript(segments=[TranscriptSegment(speaker="101", start=0.0, end=0.0, text="이전", seq=0)], source="meeting")

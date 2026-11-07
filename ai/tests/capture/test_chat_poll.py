@@ -92,7 +92,8 @@ class FakeExtract:
                                     context=context, dates=dates)
         if self.error:
             raise self.error
-        return JudgeOutput(items=[dict(i) for i in self.items])
+        return JudgeOutput(outcomes=[{"indices": [k], "kind": "item", "item": dict(i), "failure": None}
+                                     for k, i in enumerate(self.items)])
 
 
 @pytest.fixture(autouse=True)
