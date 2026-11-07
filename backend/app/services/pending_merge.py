@@ -80,9 +80,12 @@ def merge_into_pending(
 
     # 담당자는 이 항목이 담당자를 말한 항목일 때만 바꾼다. 다른 항목의 빈 값이 기존 담당자를 지우지 않게 한다
     if category == "assignee":
+        # 찾아 둔 담당자를 이 항목이 지우면(담당자 표현이 없는 none·group 항목) 항목 gate 는 review 지만 카드는 hold 로
+        # 올린다. review 로 두면 PM 화면에서 담당자가 지워졌다는 것이 드러나지 않는다(#533 리뷰)
+        clears_assignee = merged.get("assignee_member_id") is not None and assignee_member_id is None
         merged["assignee_member_id"] = assignee_member_id
         merged["assignee_raw"] = assignee_raw
-        merged["gate"] = gate
+        merged["gate"] = "hold" if clears_assignee else gate
         merged["assignee_item_id"] = item_id
 
     new_doc = (doc_text or "").strip()
