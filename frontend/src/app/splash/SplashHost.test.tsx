@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { resolve } from 'node:path'
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
@@ -52,8 +53,15 @@ function stubMotion({ reduced = false, standalone = false }: Motion = {}) {
   }
 }
 
+/* 라우트 뼈대는 캐시의 소속 목록으로 역할을 읽는다 (#510). 비어 있는 캐시면 된다 */
+const queryClient = new QueryClient()
+
 function Screen({ loading }: { loading: boolean }) {
-  return <MemoryRouter>{loading ? <RouteSkeleton /> : <h1>첫 화면</h1>}</MemoryRouter>
+  return (
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter>{loading ? <RouteSkeleton /> : <h1>첫 화면</h1>}</MemoryRouter>
+    </QueryClientProvider>
+  )
 }
 
 interface BootOptions {

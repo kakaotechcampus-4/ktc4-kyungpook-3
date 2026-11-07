@@ -2,8 +2,10 @@ import { createContext, useContext } from 'react'
 import type { ComponentPropsWithoutRef } from 'react'
 import * as ToggleGroupPrimitive from '@radix-ui/react-toggle-group'
 import type { ToggleGroupSingleProps } from '@radix-ui/react-toggle-group'
+import { ITEM, ITEM_SIZE, TRACK } from './styles'
+import type { SegmentedSize } from './styles'
 
-export type SegmentedSize = 'sm' | 'md'
+export type { SegmentedSize } from './styles'
 
 export interface SegmentedProps extends Omit<
   ToggleGroupSingleProps,
@@ -19,21 +21,6 @@ export interface SegmentedProps extends Omit<
 }
 
 export type SegmentedItemProps = ComponentPropsWithoutRef<typeof ToggleGroupPrimitive.Item>
-
-/* 표는 모듈 스코프에 둔다 — 렌더마다 다시 만들지 않는다.
-   근거: m2-design-tokens.md §7-7 (아트보드 5장 실측이 전부 같다) */
-
-const TRACK = 'inline-flex gap-3 rounded-11 border border-transparent bg-control p-3'
-
-/* `min-h-36` 을 빼면 시안보다 6px 낮아진다 — 인라인 `height`와 `min-height`가 함께 있고
-   렌더 높이는 36px 이다 (§7-7). 두 값을 같이 옮긴다. */
-const ITEM =
-  'inline-flex min-h-36 items-center justify-center rounded-9 border-0 bg-transparent font-semibold'
-
-const ITEM_SIZE: Record<SegmentedSize, string> = {
-  sm: 'h-30 px-13 text-caption',
-  md: 'h-32 px-15 text-control',
-}
 
 /* 두 묶음은 겹치는 속성이 없다 — 한 번에 하나만 붙는다.
    hover 를 미선택에만 거는 이유는 docs/impl-decision/2026-09-16-segmented-hover-pressed.md

@@ -7,6 +7,7 @@ import { QueryErrorState } from '@/shared/ui/query-error-state'
 import { Skeleton } from '@/shared/ui/skeleton'
 import type { Loadable } from '../model/useDashboardData'
 import type { DashboardRefreshFailure } from '../model/useRefreshFailure'
+import { LINE_SHAPE } from './frame'
 
 /* Main 시안의 본문 영역 공통 모양 — 머리줄(제목·오른쪽 링크) 아래 1px 선, 행 사이 1px 선 */
 export const SECTION_HEAD = 'flex items-center justify-between gap-16 border-b border-line py-15'
@@ -38,7 +39,6 @@ export interface SectionSkeletonShape {
   kind: 'review' | 'line'
 }
 
-const LINE_SHAPE: SectionSkeletonShape = { rows: 3, kind: 'line' }
 /* 행 치수는 Dashboard 의 REVIEW_ROW · DUE_ROW 와 RecentSection 의 ROW 와 같다 */
 const SKELETON_ROW = {
   review: 'flex flex-col gap-4 border-b border-line py-18 last:border-b-0',
@@ -46,7 +46,7 @@ const SKELETON_ROW = {
 }
 
 /** 영역 본문 뼈대 — 실제 목록과 같은 행 높이·구분선이다. 글자 줄 높이 안에 막대가 앉는다 */
-function SectionSkeleton({ rows, kind }: SectionSkeletonShape) {
+export function SectionSkeleton({ rows, kind }: SectionSkeletonShape) {
   return (
     <ul>
       {Array.from({ length: rows }, (_row, index) => (

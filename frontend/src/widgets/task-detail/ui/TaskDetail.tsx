@@ -20,15 +20,12 @@ import { QueryErrorState } from '@/shared/ui/query-error-state'
 import { DeferredSkeleton, Reveal } from '@/shared/ui/deferred-skeleton'
 import { assigneeLabel } from '../lib/history'
 import { TaskDetailSkeleton } from './TaskDetailSkeleton'
+import { BACK, ROOT } from './frame'
 import { TaskHistory } from './TaskHistory'
 import { TaskInfoPanel } from './TaskInfoPanel'
 import { TaskReminder } from './TaskReminder'
 
 /* 태스크 목록·보드와 같은 960 컨테이너 — 본문 864px */
-const ROOT = 'mx-auto flex w-full max-w-[960px] flex-col gap-22 px-16 pt-40 pb-72 sm:px-48'
-/* 대시보드 「전체 보기」와 같은 선 꺾쇠 */
-const BACK =
-  'inline-flex min-h-32 items-center gap-4 self-start text-[13px] font-semibold text-sub hover:text-ink'
 const HEADER = 'flex flex-wrap items-end justify-between gap-x-24 gap-y-16'
 const TITLE = 'text-[30px] leading-[1.3] font-bold tracking-h2 text-ink wrap-anywhere'
 const SUBLINE = 'flex flex-wrap items-center gap-8 text-[15px] text-sub'

@@ -13,19 +13,13 @@ import { DeferredSkeleton, Reveal } from '@/shared/ui/deferred-skeleton'
 import { firstAttention, inactiveMemberIds, tasksByMember, unlinkedDiscordUsers } from '../lib/team'
 import { MemberConnectDialog } from './MemberConnectDialog'
 import type { MappingSource } from './MemberConnectDialog'
-import { MemberListSkeleton, MemberSection } from './MemberList'
+import { COLUMNS, HEADER, LEAD, LEAD_TEXT, MAIN, TITLE } from './frame'
+import { MemberSection } from './MemberList'
+import { MemberListSkeleton } from './MemberListSkeleton'
 import { AttentionCard, UnlinkedAccountsCard } from './SideCards'
 import type { UnlinkedAccountsState } from './SideCards'
 import { WeekAhead } from './WeekAhead'
 
-/* Team 시안 — main 패딩 48/48/72, 블록 사이 22px, 본문은 `1fr | 336px` 두 단(간격 100px).
-   폭 768px 미만은 시안이 없어 대시보드(H-2)의 여백으로 한 단에 쌓는다 */
-const MAIN =
-  'mx-auto flex w-full max-w-shell flex-1 flex-col gap-22 px-48 pt-48 pb-72 max-md:px-20 max-md:pt-12 max-md:pb-32'
-const TITLE = 'text-[28px] leading-[1.25] font-bold tracking-h1 text-ink max-md:text-[24px]'
-const LEAD = 'text-body text-sub'
-const COLUMNS =
-  'grid grid-cols-[minmax(0px,1fr)_336px] items-start gap-[100px] max-md:grid-cols-1 max-md:gap-32'
 const EMPTY_TASKS: never[] = []
 
 function isNotConnected(error: unknown): boolean {
@@ -122,12 +116,10 @@ export function TeamOverview({
 
   return (
     <main className={MAIN}>
-      <header className="flex items-end justify-between gap-24 max-md:flex-col max-md:items-start max-md:gap-12">
+      <header className={HEADER}>
         <div className="flex flex-col gap-5">
           <h1 className={TITLE}>팀</h1>
-          <p className={LEAD}>
-            진행률은 팀원이 직접 말한 값입니다. 옆에 적힌 기준 날짜를 함께 보세요.
-          </p>
+          <p className={LEAD}>{LEAD_TEXT}</p>
         </div>
         {isPm ? (
           <Button
