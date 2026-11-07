@@ -577,7 +577,7 @@ AI 가 문구를 써야 하는 묶음을 준다. 요청 본문은 없다. 승인
 { "item": {
     "message_id": "…", "attempt": 1, "workspace_id": "…", "member_name": "재환",
     "reply_date": "2026-11-04",                        // 보낸 날, 한국 시간
-    "lines": [{ "sender": "pm" | "member", "text": "…" }],  // 시간순, 마지막이 이번 답장, 최대 12줄
+    "lines": [{ "sender": "pm" | "member", "text": "…" }],  // 시간순, 마지막이 이번 답장, 최대 12줄. PM 글은 DM 안내가 아니라 쓴 글 전체다
     "candidates": [{ "task_id": "…", "title": "…", "status": "in_progress", "due_date": "2026-11-20" | null,
                      "assignee_member_id": "…" | null, "updated_at": "…" }]
 } }   // 맡길 것이 없으면 { "item": null }
