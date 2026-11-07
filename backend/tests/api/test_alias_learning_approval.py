@@ -640,3 +640,20 @@ def test_chat_meeting_log_does_not_count_thirdrole_item_as_would_have_been_auto(
     role_lines = [m for m in caplog.messages if "역할 지목 항목이라 auto를 review로 내립니다" in m]
     assert len(role_lines) == 1
     assert "title=백엔드 배포" in role_lines[0]
+
+
+@pytest.mark.parametrize("raw", ["제가", "저는", "우리가", "본인이"])
+def test_first_person_word_misclassified_as_thirdname_is_not_alias_candidate_and_not_saved(
+    client, pm_client, db, seed, raw
+):
+    """AI 가 1인칭을 thirdname 으로 잘못 분류해도 묻지도 저장하지도 않는다. 저장되면 오분류된 "제가"·"우리"가
+    그 팀원으로 채워진다(#502)."""
+    extraction_id = _hold_item(client, seed, raw=raw, type_="thirdname")
+    item = _extraction_item(pm_client, extraction_id)
+    before = len(_aliases(db))
+
+    r = _approve(pm_client, db, assignee=seed["leader"].member_id)
+
+    assert (item["alias_candidate"], item["alias_text"]) == (False, None)
+    _assert_approved_with_task(db, r)
+    assert len(_aliases(db)) == before

@@ -69,7 +69,21 @@ def test_learnable_alias_text_for_unmatched_name():
         {"action": ExtractionAction.UPDATE},
         {"assignee_raw": "님"},
         {"assignee_raw": None},
+        # AI 가 1인칭을 thirdname 으로 잘못 분류해도 "제가"→"제" 같은 글자는 배우지 않는다(#502)
+        {"assignee_raw": "제가"},
+        {"assignee_raw": "저는"},
+        {"assignee_raw": "나는"},
+        {"assignee_raw": "내가"},
+        {"assignee_raw": "저희가"},
+        {"assignee_raw": "우리"},
+        {"assignee_raw": "본인이"},
     ],
 )
 def test_learnable_alias_text_is_none_when_not_learnable(fields):
     assert alias_learning.learnable_alias_text(_item(**fields)) is None
+
+
+def test_learnable_alias_text_keeps_names_that_only_contain_self_reference_letters():
+    """거르는 것은 다듬은 글자가 통째로 1인칭 지칭어일 때뿐이다. "제인", "나리"는 이름일 수 있다."""
+    assert alias_learning.learnable_alias_text(_item(assignee_raw="제인이가")) == "제인"
+    assert alias_learning.learnable_alias_text(_item(assignee_raw="나리")) == "나리"

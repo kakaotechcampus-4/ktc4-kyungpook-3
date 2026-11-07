@@ -40,6 +40,11 @@ KNOWN_ASSIGNEE_TYPES = frozenset(
 # 보내고 추측 이름을 보내지 않게 되면 다시 넣는다.
 LEARNABLE_ASSIGNEE_TYPES = frozenset({"thirdname"})
 
+# AI 가 1인칭을 thirdname 으로 잘못 분류한 기록이 있다(#502). "제가"→"제", "우리가"→"우리"처럼 다듬은 글자가
+# 확인된 별칭이 되면 오분류된 말이 그 팀원으로 채워진다. 한 글자는 #463 의 한 글자 규칙으로 확정 매칭은 안 되지만
+# "저희"·"우리"·"본인"은 두 글자라 걸리지 않는다. 다듬은 글자가 통째로 이 말일 때만 거른다("제인"은 배울 수 있다).
+SELF_REFERENCE_WORDS = frozenset({"제", "저", "나", "내", "저희", "우리", "본인"})
+
 # 사용자가 승인하며 확인한 별칭이라 자동 추정(AI·규칙)보다 높게 두되, 1.0 은 남겨 둔다.
 LEARNED_CONFIDENCE = 0.9
 
@@ -85,8 +90,9 @@ def storable_assignee_type(value: str | None) -> str | None:
 def learnable_alias_text(item: ExtractionItem) -> str | None:
     """이 항목의 담당자 표현을 별칭으로 배울 수 있으면 저장될 글자, 아니면 None.
 
-    새 task 를 만드는 항목인데 담당자를 못 찾았고, 표현이 이름 지목일 때만 대상이다(LEARNABLE_ASSIGNEE_TYPES). 승인 상태는
-    보지 않는다. pending 인지는 호출하는 쪽이 이미 가진 승인 상태로 거른다.
+    새 task 를 만드는 항목인데 담당자를 못 찾았고, 표현이 이름 지목일 때만 대상이다(LEARNABLE_ASSIGNEE_TYPES).
+    1인칭 지칭어(SELF_REFERENCE_WORDS)로 다듬어지면 AI 오분류로 보고 대상이 아니다. 승인 상태는 보지 않는다.
+    pending 인지는 호출하는 쪽이 이미 가진 승인 상태로 거른다.
     """
     if (
         item.action != ExtractionAction.CREATE
@@ -94,7 +100,10 @@ def learnable_alias_text(item: ExtractionItem) -> str | None:
         or item.assignee_type not in LEARNABLE_ASSIGNEE_TYPES
     ):
         return None
-    return trim_alias_text(item.assignee_raw)
+    text = trim_alias_text(item.assignee_raw)
+    if text in SELF_REFERENCE_WORDS:
+        return None
+    return text
 
 
 def approval_alias_texts(db: Session, approvals: Sequence[ApprovalRequest]) -> dict[str, str]:

@@ -61,6 +61,7 @@ M3 plan.md 가 비어 있어 완료조건이 없다. 마일스톤 완료를 판�
 | 물어볼 항목만 `alias_candidate=true` | 충족 | `test_learnable_alias_text_for_unmatched_name_and_role`, `test_learnable_alias_text_is_none_when_not_learnable`, 추출 조회·승인 목록·단건·반려 뒤·수동 생성 API 테스트 |
 | `save_alias=true` 승인으로 learned·verified·0.9 저장 | 충족 | `test_save_alias_creates_learned_alias` |
 | 저장하지 않는 경우(생략·false·반려·담당자 있던 항목·대상 외 종류·NULL 옛 항목·담당자 미정·수동 승인·task_update·탈퇴하지 않은 누군가가 이미 가짐). 탈퇴 팀원만 가진 글자는 저장함(`test_alias_held_only_by_departed_member_is_still_candidate_and_saved`) 승인은 성공 | 충족 | 같은 파일의 저장 안 됨 테스트들 |
+| 1인칭 지칭어(제·저·나·내·저희·우리·본인)로 다듬어지면 묻지도 저장하지도 않음 | 충족 | `test_learnable_alias_text_is_none_when_not_learnable`, `test_first_person_word_misclassified_as_thirdname_is_not_alias_candidate_and_not_saved` |
 | `thirdrole` 은 묻지도 저장하지도 않음 | 충족 | `test_thirdrole_item_is_not_alias_candidate_and_not_saved`, `test_learnable_alias_text_is_none_when_not_learnable` |
 | 유니크 충돌을 삼키고 승인 커밋 | 충족(SQLite) | `test_save_alias_ignores_unique_conflict` |
 | 학습한 별칭으로 다음 회의에서 찾힘 | 미검증 | PR ① 머지 뒤 확인하기로 함 |
