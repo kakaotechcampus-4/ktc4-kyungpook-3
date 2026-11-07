@@ -509,6 +509,11 @@ class Extraction(Base):
     model_name: Mapped[str | None] = mapped_column(String(64), nullable=True)
     # AI가 어느 추출 경로로 만든 결과인지(ExtractionPath). 항목이 없거나 판별할 수 없으면 NULL
     extraction_path: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    # 요약 대기열(app/services/summary.py). 값이 있으면 줄 서 있고 저장이 끝나면 비운다. 표시되지 않은 옛 회의는 돌지 않는다
+    summary_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    summary_attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    # 임대 시작. 지나면 다음 claim 이 다시 집는다. 실패를 알리는 API 없이 실패와 크래시가 이 한 경로로 돈다
+    summary_claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
     meeting: Mapped["Meeting"] = relationship(back_populates="extractions")
@@ -1277,3 +1282,72 @@ class WorkspaceMessageSettings(Base):
     updated_by: Mapped[str | None] = mapped_column(
         String(36), ForeignKey("member.member_id", ondelete="SET NULL"), nullable=True
     )
+
+
+class Topic(Base):
+    """프로젝트 맵의 주제. AI 가 회의 요약에서 만들고 이름이 같으면(name_key) 재사용한다."""
+
+    __tablename__ = "topic"
+    __table_args__ = (UniqueConstraint("workspace_id", "name_key", name="uq_topic_name_key"),)
+
+    topic_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    workspace_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("workspace.workspace_id", ondelete="CASCADE"), index=True
+    )
+    # 처음 만든 표기를 유지한다
+    name: Mapped[str] = mapped_column(String(100))
+    name_key: Mapped[str] = mapped_column(String(100))
+    description: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class TopicMeeting(Base):
+    """주제가 나온 회의. 항목도 결정도 없이 논의만 된 주제도 이 행으로 남는다."""
+
+    __tablename__ = "topic_meeting"
+
+    topic_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("topic.topic_id", ondelete="CASCADE"), primary_key=True
+    )
+    meeting_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("meeting.meeting_id", ondelete="CASCADE"), primary_key=True, index=True
+    )
+
+
+class TopicItem(Base):
+    """주제에 묶인 추출 항목. 회의 시점에는 Task 가 없는 항목이 많아 Task 가 아니라 항목에 단다."""
+
+    __tablename__ = "topic_item"
+
+    topic_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("topic.topic_id", ondelete="CASCADE"), primary_key=True
+    )
+    item_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("extraction_item.item_id", ondelete="CASCADE"), primary_key=True, index=True
+    )
+
+
+class Decision(Base):
+    """회의의 결정 한 줄. 요약 JSON 의 사본이 그 회의의 기록이고 이 행은 유효한 결정을 찾는 색인이다."""
+
+    __tablename__ = "decision"
+
+    decision_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    workspace_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("workspace.workspace_id", ondelete="CASCADE"), index=True
+    )
+    meeting_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("meeting.meeting_id", ondelete="CASCADE"), index=True
+    )
+    topic_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("topic.topic_id", ondelete="CASCADE"), index=True
+    )
+    # 회의 안 순서
+    position: Mapped[int] = mapped_column(Integer)
+    text: Mapped[str] = mapped_column(Text)
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # 이 결정을 뒤집은 결정. NULL 이면 지금 유효하다
+    replaced_by: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("decision.decision_id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
