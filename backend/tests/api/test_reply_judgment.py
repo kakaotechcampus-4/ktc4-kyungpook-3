@@ -8,6 +8,7 @@ from app.models import (
     ApprovalRequest,
     MemberAlias,
     Notification,
+    ReminderWatch,
     ReplyChange,
     ReplyJudgment,
     ReplyJudgmentState as S,
@@ -750,3 +751,351 @@ def test_two_failed_lines_on_one_task_are_kept_as_one(mdb, mseed, two):
 
     assert _row(mdb, item).state == S.DONE
     assert list(_lines(mdb, item)) == [(a.task_id, "failed")]
+
+
+# 대기 카드와 같은 제안
+
+def _same_again(db, seed, task, *fields, body="금요일까지요"):
+    """앞 답장이 낸 제안을 뒤 답장이 그대로 또 낸다."""
+    def judge(at):
+        _reply(db, seed, at, body=body)
+        item = _claim()
+        _judge(item, *[_change(task, field, value, claimed=item) for field, value in fields])
+        return item
+
+    return judge(AT), judge(AT + MIN)
+
+
+def _resolve(card, status="approved"):
+    r = client("pm").patch(f"{P}/approvals/{card.approval_id}", json={"status": status})
+    assert r.status_code == 200, r.text
+
+
+def test_same_value_twice_makes_one_card_and_one_notice(mdb, mseed, two):
+    a, _ = two
+    first, second = _same_again(mdb, mseed, a, ("due_date", "2026-11-27"))
+
+    [card] = _cards(mdb)
+    assert len(_notes(mdb)) == 1
+    lines = _lines(mdb, first)[(a.task_id, "due_date")], _lines(mdb, second)[(a.task_id, "due_date")]
+    assert [line.outcome for line in lines] == ["proposed", "proposed"]
+    assert [line.approval_id for line in lines] == [card.approval_id, card.approval_id]
+    assert _row(mdb, second).state == S.DONE
+
+
+def test_rejecting_the_one_card_leaves_nothing_waiting(mdb, mseed, two):
+    a, _ = two
+    _same_again(mdb, mseed, a, ("due_date", "2026-11-27"))
+    [card] = _cards(mdb)
+    _resolve(card, "rejected")
+
+    assert [c.status for c in _cards(mdb)] == ["rejected"]
+    items = client("pm").get(f"{P}/tasks/{a.task_id}/timeline").json()["data"]["items"]
+    assert [i["changes"][0]["result"] for i in items] == ["rejected", "rejected"]
+
+
+def test_different_value_makes_another_card(mdb, mseed, two):
+    a, _ = two
+    for at, value in ((AT, "2026-11-27"), (AT + MIN, "2026-11-28")):
+        _reply(mdb, mseed, at)
+        item = _claim()
+        _judge(item, _change(a, "due_date", value, claimed=item))
+
+    assert len(_cards(mdb)) == 2
+    assert len(_notes(mdb)) == 2
+
+
+def test_value_that_only_part_of_a_card_holds_still_counts(mdb, mseed, two):
+    a, _ = two
+    _reply(mdb, mseed, AT)
+    item = _claim()
+    _judge(
+        item,
+        _change(a, "due_date", "2026-11-27", claimed=item),
+        _change(a, "status", "todo", claimed=item, evidence="inferred"),
+    )
+    _reply(mdb, mseed, AT + MIN)
+    item = _claim()
+    _judge(item, _change(a, "due_date", "2026-11-27", claimed=item))
+
+    assert len(_cards(mdb)) == 1
+    assert len(_notes(mdb)) == 1
+
+
+def test_proposal_with_one_new_value_makes_a_card_with_all_its_values(mdb, mseed, two):
+    a, _ = two
+    _reply(mdb, mseed, AT)
+    item = _claim()
+    _judge(item, _change(a, "due_date", "2026-11-27", claimed=item))
+    _reply(mdb, mseed, AT + MIN)
+    item = _claim()
+    _judge(
+        item,
+        _change(a, "due_date", "2026-11-27", claimed=item),
+        _change(a, "status", "todo", claimed=item, evidence="inferred"),
+    )
+
+    cards = _cards(mdb)
+    assert len(cards) == 2
+    [newer] = [c for c in cards if "status" in json.loads(c.payload)]
+    assert json.loads(newer.payload)["due_date"] == "2026-11-27"
+    assert len(_notes(mdb)) == 2
+
+
+def test_rejected_card_does_not_hold_back_a_new_one(mdb, mseed, two):
+    a, _ = two
+    _reply(mdb, mseed, AT)
+    item = _claim()
+    _judge(item, _change(a, "due_date", "2026-11-27", claimed=item))
+    [card] = _cards(mdb)
+    _resolve(card, "rejected")
+
+    _reply(mdb, mseed, AT + MIN)
+    item = _claim()
+    _judge(item, _change(a, "due_date", "2026-11-27", claimed=item))
+
+    assert sorted(c.status for c in _cards(mdb)) == ["pending", "rejected"]
+    assert len(_notes(mdb)) == 2
+
+
+def test_approved_card_does_not_hold_back_a_new_one(mdb, mseed, two):
+    a, _ = two
+    _reply(mdb, mseed, AT)
+    item = _claim()
+    _judge(item, _change(a, "due_date", "2026-11-27", claimed=item))
+    [card] = _cards(mdb)
+    _resolve(card)
+    mdb.expire_all()
+    a.due_date = date(2026, 11, 20)
+    mdb.commit()
+
+    _reply(mdb, mseed, AT + MIN)
+    item = _claim()
+    _judge(item, _change(a, "due_date", "2026-11-27", claimed=item))
+
+    assert sorted(c.status for c in _cards(mdb)) == ["approved", "pending"]
+
+
+def test_card_from_a_meeting_counts_too(mdb, mseed, two):
+    a, _ = two
+    meeting_card = ApprovalRequest(
+        workspace_id=mseed["ws"], type="task_update", related_task_id=a.task_id,
+        payload=json.dumps({"due_date": "2026-11-27", "change_source": "meeting"}),
+    )
+    mdb.add(meeting_card)
+    mdb.commit()
+
+    _reply(mdb, mseed, AT)
+    item = _claim()
+    _judge(item, _change(a, "due_date", "2026-11-27", claimed=item))
+
+    assert len(_cards(mdb)) == 1
+    assert _notes(mdb) == []
+    assert _lines(mdb, item)[(a.task_id, "due_date")].approval_id == meeting_card.approval_id
+
+
+def test_card_of_another_task_does_not_count(mdb, mseed, two):
+    a, b = two
+    _reply(mdb, mseed, AT)
+    item = _claim()
+    _judge(item, _change(a, "due_date", "2026-11-27", claimed=item))
+    _reply(mdb, mseed, AT + MIN)
+    item = _claim()
+    _judge(item, _change(b, "due_date", "2026-11-27", claimed=item))
+
+    assert len(_cards(mdb)) == 2
+
+
+def test_scope_card_has_no_value_to_compare(mdb, mseed, two):
+    a, _ = two
+    _same_again(mdb, mseed, a, ("scope", None))
+
+    assert len(_cards(mdb)) == 2
+    assert len(_notes(mdb)) == 2
+
+
+def test_assignee_nobody_matches_has_no_value_to_compare(mdb, mseed, two):
+    a, _ = two
+    for at in (AT, AT + MIN):
+        _reply(mdb, mseed, at)
+        item = _claim()
+        _judge(item, _change(a, "assignee", "없는사람", assignee_type="name", assignee_raw="없는사람", claimed=item))
+
+    assert len(_cards(mdb)) == 2
+
+
+def test_card_without_that_field_does_not_catch_a_line_with_no_value(mdb, mseed, two):
+    a, _ = two
+    _reply(mdb, mseed, AT)
+    item = _claim()
+    _judge(item, _change(a, "due_date", "2026-11-27", claimed=item))
+    _reply(mdb, mseed, AT + MIN)
+    item = _claim()
+    _judge(item, _change(a, "assignee", None, assignee_type="name", claimed=item))
+
+    assert len(_cards(mdb)) == 2
+
+
+def test_card_with_a_value_that_is_not_text_does_not_break_the_judgment(mdb, mseed, two):
+    a, _ = two
+    r = client("alice").post(f"{P}/approvals", json={
+        "workspace_id": mseed["ws"], "type": "task_update", "related_task_id": a.task_id,
+        "payload": {"due_date": ["2026-11-27"]},
+    })
+    assert r.status_code == 201, r.text
+    _reply(mdb, mseed, AT)
+    item = _claim()
+    _judge(item, _change(a, "due_date", "2026-11-28", claimed=item))
+
+    assert len(_cards(mdb)) == 2
+
+
+def test_repeated_blocked_line_still_keeps_the_clock_blocked(mdb, mseed, two):
+    a, _ = two
+    _same_again(mdb, mseed, a, ("status", "blocked"))
+
+    assert len(_cards(mdb)) == 1
+    watch = mdb.query(ReminderWatch).filter(ReminderWatch.task_id == a.task_id).one()
+    assert replies.clock_effect(mdb, watch, before=None, after=AT) == replies.ClockEffect.KEEP_BLOCKED
+
+
+def test_notice_leaves_out_the_repeated_line_only(mdb, mseed, two):
+    a, _ = two
+    _reply(mdb, mseed, AT)
+    item = _claim()
+    _judge(item, _change(a, "due_date", "2026-11-27", claimed=item))
+    _reply(mdb, mseed, AT + MIN, body="다 했어요")
+    item = _claim()
+    _judge(
+        item,
+        _change(a, "due_date", "2026-11-27", claimed=item),
+        _change(a, "status", "done", claimed=item, evidence="certain"),
+    )
+
+    [first, second] = sorted(_notes(mdb), key=lambda n: n.created_at)
+    assert "미룰까요" in first.text
+    assert "완료로 바꿨어요" in second.text
+
+
+def test_repeated_value_after_a_pick_still_answers_the_pm(mdb, mseed, two):
+    a, _ = two
+    _reply(mdb, mseed, AT)
+    item = _claim()
+    _judge(item, _change(a, "due_date", "2026-11-27", claimed=item))
+    _reply(mdb, mseed, AT + MIN, body="그거요")
+    item = _claim()
+    _judge(item, _change(None, "unknown", quote="그거요"))
+    r = client("pm").post(
+        f"{P}/workspaces/{mseed['ws']}/messages/replies/{item['message_id']}/attribution", json={"task_id": a.task_id},
+    )
+    assert r.status_code == 200, r.text
+    item = _claim()
+    _judge(item, _change(a, "due_date", "2026-11-27", claimed=item))
+
+    assert len(_cards(mdb)) == 1
+    assert any("미룰까요" in n.text and "그거요" in n.text for n in _notes(mdb))
+
+
+def test_approving_links_history_to_the_first_line_and_timeline_shows_both(mdb, mseed, two):
+    a, _ = two
+    first, second = _same_again(mdb, mseed, a, ("due_date", "2026-11-27"))
+    [card] = _cards(mdb)
+    _resolve(card)
+
+    mdb.expire_all()
+    [entry] = mdb.query(TaskHistory).filter(TaskHistory.task_id == a.task_id, TaskHistory.changed_field == "due_date").all()
+    assert entry.reply_change_id == _lines(mdb, first)[(a.task_id, "due_date")].change_id
+    r = client("pm").get(f"{P}/tasks/{a.task_id}/timeline")
+    assert r.status_code == 200, r.text
+    items = r.json()["data"]["items"]
+    assert [item["changes"][0]["result"] for item in items] == ["approved", "approved"]
+
+
+def _meeting_card(db, seed, task, **values):
+    card = ApprovalRequest(
+        workspace_id=seed["ws"], type="task_update", related_task_id=task.task_id,
+        payload=json.dumps({**values, "change_source": "meeting"}),
+    )
+    db.add(card)
+    db.commit()
+    return card
+
+
+def test_meeting_card_keeps_its_own_history_in_the_timeline(mdb, mseed, two):
+    a, _ = two
+    meeting_card = _meeting_card(mdb, mseed, a, due_date="2026-11-27")
+    _reply(mdb, mseed, AT)
+    item = _claim()
+    _judge(item, _change(a, "due_date", "2026-11-27", claimed=item))
+    _resolve(meeting_card)
+
+    mdb.expire_all()
+    [entry] = mdb.query(TaskHistory).filter(TaskHistory.task_id == a.task_id, TaskHistory.changed_field == "due_date").all()
+    assert entry.reply_change_id is None
+    items = client("pm").get(f"{P}/tasks/{a.task_id}/timeline").json()["data"]["items"]
+    [reply] = [i for i in items if i["kind"] == "reply"]
+    [history] = [i for i in items if i["kind"] == "history" and i["changed_field"] == "due_date"]
+    assert reply["changes"][0]["result"] == "approved"
+    assert history["change_source"] == "meeting"
+
+
+def test_assignee_tied_to_a_meeting_card_reads_as_approved(mdb, mseed, two):
+    a, _ = two
+    bob = mseed["bob"].member_id
+    mdb.add(MemberAlias(workspace_id=mseed["ws"], member_id=bob, alias_text="밥", alias_type="name", source="manual"))
+    meeting_card = _meeting_card(mdb, mseed, a, assignee_member_id=bob)
+    _reply(mdb, mseed, AT)
+    item = _claim()
+    _judge(item, _change(a, "assignee", "밥", assignee_type="name", assignee_raw="밥", claimed=item))
+    _resolve(meeting_card)
+
+    items = client("pm").get(f"{P}/tasks/{a.task_id}/timeline").json()["data"]["items"]
+    [reply] = [i for i in items if i["kind"] == "reply"]
+    assert reply["changes"][0]["result"] == "approved"
+
+
+def test_lines_written_at_the_same_moment_keep_their_history_in_the_timeline(mdb, mseed, two):
+    a, _ = two
+    first, second = _same_again(mdb, mseed, a, ("due_date", "2026-11-27"))
+    lines = [_lines(mdb, item)[(a.task_id, "due_date")] for item in (first, second)]
+    for line in lines:
+        line.created_at = AT
+    mdb.commit()
+    [card] = _cards(mdb)
+    _resolve(card)
+
+    mdb.expire_all()
+    [entry] = mdb.query(TaskHistory).filter(TaskHistory.task_id == a.task_id, TaskHistory.changed_field == "due_date").all()
+    assert entry.reply_change_id == min(line.change_id for line in lines)
+
+
+def test_line_goes_to_the_oldest_of_cards_with_the_same_value(mdb, mseed, two):
+    a, _ = two
+    cards = [_meeting_card(mdb, mseed, a, due_date="2026-11-27") for _ in range(4)]
+    for offset, card in enumerate(cards):
+        card.created_at = AT - timedelta(hours=offset + 1)
+    mdb.commit()
+    oldest = cards[-1]
+
+    _reply(mdb, mseed, AT)
+    item = _claim()
+    _judge(item, _change(a, "due_date", "2026-11-27", claimed=item))
+
+    assert _lines(mdb, item)[(a.task_id, "due_date")].approval_id == oldest.approval_id
+
+
+def test_repeated_assignee_shows_approved_on_both_replies(mdb, mseed, two):
+    a, _ = two
+    mdb.add(MemberAlias(
+        workspace_id=mseed["ws"], member_id=mseed["bob"].member_id, alias_text="밥", alias_type="name", source="manual",
+    ))
+    mdb.commit()
+    for at in (AT, AT + MIN):
+        _reply(mdb, mseed, at)
+        item = _claim()
+        _judge(item, _change(a, "assignee", "밥", assignee_type="name", assignee_raw="밥", claimed=item))
+    [card] = _cards(mdb)
+    _resolve(card)
+
+    items = client("pm").get(f"{P}/tasks/{a.task_id}/timeline").json()["data"]["items"]
+    assert [i["changes"][0]["result"] for i in items] == ["approved", "approved"]

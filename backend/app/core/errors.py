@@ -92,6 +92,8 @@ class ErrorCode(StrEnum):
     SIGNUP_VERIFICATION_INVALID = "SIGNUP_VERIFICATION_INVALID"
     KAKAO_LINK_EXPIRED = "KAKAO_LINK_EXPIRED"
     KAKAO_ALREADY_LINKED = "KAKAO_ALREADY_LINKED"
+    # 로그인 시도 제한
+    TOO_MANY_LOGIN_ATTEMPTS = "TOO_MANY_LOGIN_ATTEMPTS"
 
 
 ERROR_STATUS: dict[ErrorCode, int] = {
@@ -169,6 +171,7 @@ ERROR_STATUS: dict[ErrorCode, int] = {
     ErrorCode.SIGNUP_VERIFICATION_INVALID: 400,
     ErrorCode.KAKAO_LINK_EXPIRED: 400,
     ErrorCode.KAKAO_ALREADY_LINKED: 409,
+    ErrorCode.TOO_MANY_LOGIN_ATTEMPTS: 429,
 }
 
 ERROR_MESSAGE: dict[ErrorCode, str] = {
@@ -246,6 +249,7 @@ ERROR_MESSAGE: dict[ErrorCode, str] = {
     ErrorCode.SIGNUP_VERIFICATION_INVALID: "이메일 인증이 필요합니다. 인증을 다시 진행해 주세요.",
     ErrorCode.KAKAO_LINK_EXPIRED: "카카오 로그인 정보가 만료됐습니다. 카카오로 다시 시작해 주세요.",
     ErrorCode.KAKAO_ALREADY_LINKED: "이미 다른 계정에 연결된 카카오 계정입니다.",
+    ErrorCode.TOO_MANY_LOGIN_ATTEMPTS: "로그인 시도가 너무 많습니다. 잠시 후 다시 시도해 주세요.",
 }
 
 
@@ -273,8 +277,10 @@ class AppError(Exception):
         code: ErrorCode,
         message: str | None = None,
         details: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
     ) -> None:
         self.code = code
+        self.headers = headers
         self.message = message or ERROR_MESSAGE.get(code, "오류가 발생했습니다.")
         self.details = details
         self.status_code = ERROR_STATUS.get(code, 500)
