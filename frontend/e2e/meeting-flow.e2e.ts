@@ -112,6 +112,16 @@ test('① Notion 을 연결하지 않은 공간에서도 짧은 음원을 올리
   await expect(signalOf(page, '회의 정리가 끝났어요')).toBeVisible()
   // 회의록·정리 어디에도 Notion 연결을 요구하는 창이 뜨지 않았다
   await expect(page.getByRole('dialog')).toHaveCount(0)
+
+  // 그 회의가 만든 태스크도 Notion 없이 쓴다 — 반영 중·실패가 아니라 반영 상태 없음이다
+  await page.getByRole('tab', { name: /추출된 일/ }).click()
+  const taskLink = page.getByRole('tabpanel').locator('a[href*="/tasks/"]').first()
+  const taskTitle = (await taskLink.textContent())?.trim() ?? ''
+  expect(taskTitle).not.toBe('')
+  await taskLink.click()
+  await expect(page.getByRole('heading', { level: 1, name: taskTitle })).toBeVisible(FIRST_PAINT)
+  await expect(page.getByTestId('notion-sync-status')).toHaveText('반영 상태 없음')
+  await expect(page.getByRole('button', { name: '다시 반영하기' })).toHaveCount(0)
 })
 
 test('② 정리 중에 다른 화면으로 가면 진행 토스트가 따라오고, 완료로 바뀐 토스트의 `회의록 보기`로 그 회의록에 간다', async ({
