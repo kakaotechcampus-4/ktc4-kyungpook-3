@@ -1076,6 +1076,23 @@ def test_status_only_reply_card_refuses_an_assignee_override(mdb, mseed, two):
     assert _is_pending(mdb, line.approval_id)
 
 
+def test_assignee_override_is_judged_per_card(mdb, mseed, two):
+    a, _ = two
+    bob = mseed["bob"].member_id
+    status_item = _proposed(mdb, mseed, _status_too(a))
+    _reply(mdb, mseed, AT + H, body="담당은 김철수예요")
+    assignee_item = _claim()
+    _judge(assignee_item, _change(a, "assignee", None, claimed=assignee_item, assignee_raw="김철수", assignee_type="named"))
+    status_line = _lines(mdb, status_item)[(a.task_id, "status")]
+    assignee_line = _lines(mdb, assignee_item)[(a.task_id, "assignee")]
+    assert status_line.approval_id != assignee_line.approval_id
+
+    r = _resolve(status_line.approval_id, task_overrides={"assignee_member_id": bob})
+    assert (r.status_code, r.json()["error"]["code"]) == (400, "INVALID_REQUEST")
+    assert _is_pending(mdb, status_line.approval_id)
+    assert _resolve(assignee_line.approval_id, task_overrides={"assignee_member_id": bob}).status_code == 200
+
+
 @pytest.mark.parametrize(("value", "status", "code"), [
     ("nope", 404, "MEMBER_NOT_FOUND"),
     ("", 404, "MEMBER_NOT_FOUND"),
