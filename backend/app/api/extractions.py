@@ -60,7 +60,7 @@ from app.services.matching import (
 from app.services import upload_storage
 from app.services.alias_learning import learnable_alias_texts, storable_assignee_type
 from app.services.embedding import has_unsearchable_pending, has_unsearchable_tasks
-from app.services.pending_merge import merge_into_pending, merge_target_problem
+from app.services.pending_merge import NOT_FOUND, merge_into_pending, merge_target_problem
 from app.services.tasks import create_task, delete_task
 
 logger = logging.getLogger(__name__)
@@ -201,14 +201,16 @@ def create_extraction(
             )
             continue
         if raw_item.action == ExtractionAction.MERGE:
-            problem = merge_target_problem(
-                merge_cards.get(raw_item.target_approval_id) if raw_item.target_approval_id else None,
-                raw_item.target_approval_id,
-                meeting.workspace_id,
+            locked = merge_cards.get(raw_item.target_approval_id) if raw_item.target_approval_id else None
+            # task_create 가 아닌 카드는 잠그지 않았다(_lock_merge_targets). 못 쓰는 이유를 남기려고 잠그지 않고 읽는다
+            seen = locked or (
+                db.get(ApprovalRequest, raw_item.target_approval_id) if raw_item.target_approval_id else None
             )
-            if problem is None:
-                merge_card = merge_cards[raw_item.target_approval_id]
+            problem = merge_target_problem(seen, raw_item.target_approval_id, meeting.workspace_id)
+            if problem is None and locked is not None:
+                merge_card = locked
             else:
+                problem = problem or NOT_FOUND
                 # 대상이 사라졌거나 이미 처리됐을 수 있다. 400 으로 돌려 회의 전체를 막지 않고 새 카드로 만든다
                 item_action = ExtractionAction.CREATE
                 logger.info(
@@ -569,6 +571,8 @@ def _lock_merge_targets(db: Session, items: list[ExtractionItemCreate]) -> dict[
     """합치기 항목이 가리키는 승인 요청을 ID 순서로 한 번에 잠근다. 커밋까지 잠겨 승인·반려와 겹치지 않는다.
 
     승인이 먼저 커밋되면 populate_existing 으로 최신 상태를 읽어 처리된 카드를 알아본다.
+    task_create 카드만 잠근다. task_update 카드는 합칠 수 없고, 그 승인은 카드 → task 순서로 잠그는데 이 요청은
+    task(_lock_update_targets) → 카드 순서라 함께 잠그면 서로 기다릴 수 있다.
     """
     approval_ids = sorted({
         item.target_approval_id
@@ -579,7 +583,10 @@ def _lock_merge_targets(db: Session, items: list[ExtractionItemCreate]) -> dict[
         return {}
     rows = db.execute(
         select(ApprovalRequest)
-        .where(ApprovalRequest.approval_id.in_(approval_ids))
+        .where(
+            ApprovalRequest.approval_id.in_(approval_ids),
+            ApprovalRequest.type == ApprovalType.TASK_CREATE,
+        )
         .order_by(ApprovalRequest.approval_id)
         .with_for_update()
         .execution_options(populate_existing=True)
