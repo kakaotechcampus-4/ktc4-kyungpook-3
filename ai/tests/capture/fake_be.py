@@ -1,6 +1,7 @@
 """BE 회의 API 를 흉내 낸다. 상태 전이와 409 응답이 backend/app/api/meetings.py, extractions.py 와 같다.
 유사 task 검색(similar_tasks.py)은 서비스 토큰과 워크스페이스를 보고 401, 404, 502 를 같은 봉투로 낸다.
 서버로 워크스페이스 찾기(integrations.py get_discord_guild_workspace)는 토큰을 보고 401, 연결이 없으면 409 다.
+회의 요약(bot_summaries.py)은 대기열 규칙이 services/summary.py 와 같다.
 
 requests.Session 자리에 넣는다. 부른 순서를 calls 에 남기고 회의와 추출 결과를 메모리에 둔다.
 """
@@ -91,6 +92,9 @@ class FakeBe:
         self.chat_cursors: dict[str, str] = {}
         # 채팅 채널 목록 (BE #432 모양). None 이면 items 없는 {"data": {}} 를 준다
         self.chat_channels: list[dict] | None = []
+        # 회의 요약 대기열 (backend/app/api/bot_summaries.py). 회의 시작 순서로 더한다. 회의 ID → add_summary 의 행
+        self.summaries: dict[str, dict] = {}
+        self.summary_put_fail: tuple | None = None   # (상태, 코드) 를 넣으면 요약 저장이 그 오류로 실패한다
         self._n = 0
 
     def add_upload(self, meeting_id: str, *, workspace_id: str = "ws-1", audio: bytes | None = b"RIFFfake-audio",
@@ -109,6 +113,23 @@ class FakeBe:
                                      "speakers_assigned": None, "mapping": None, "resumed": False,
                                      "speakers": None, "reported": False}
         return item
+
+    def add_summary(self, meeting_id: str, *, extraction_id: str | None = None, workspace_id: str = "ws-1",
+                    requested: bool = True, attempts: int = 0, leased: bool = False, saved: dict | None = None,
+                    blocked: str | None = None, chars: int = 100) -> None:
+        """blocked 는 요약 대상이 아닌 이유(no_sources, not_summarized_source, not_done)다. 대기열 칸은 Extraction 칸과 같다."""
+        extraction_id = None if blocked == "not_done" else extraction_id or f"e-{meeting_id}"
+        self.summaries[meeting_id] = {
+            "meeting_id": meeting_id, "extraction_id": extraction_id, "workspace_id": workspace_id,
+            "requested": requested, "attempts": attempts, "leased": leased, "saved": saved, "blocked": blocked,
+            "chars": chars, "title": f"{meeting_id} 회의", "started_at": "2026-11-05T05:00:00Z",
+            "lines": [{"seq": 1, "at_ms": 125000, "speaker": "민수", "text": "초대는 이메일로만 하죠"}],
+            "items": [{"item_id": "item-1", "action": "create", "title": "초대 메일 보내기", "assignee": "민수",
+                       "due_date": "2026-11-14"}],
+            "topics": [{"topic_id": "topic-1", "name": "팀원 초대", "description": "초대 방식"}],
+            "decisions": [{"decision_id": "dec-1", "text": "초대 코드로 합류한다", "topic": "팀원 초대",
+                           "decided_on": "2026-10-20"}],
+        }
 
     def mark_reported(self, meeting_id: str, labels: list[str]) -> None:
         """테스트 준비용: 가져가고(claim) 이 라벨들을 보고한 상태(awaiting_speakers)로 만든다. 샘플 구간은 없다."""
@@ -160,6 +181,16 @@ class FakeBe:
             return self._member_names(path.split("/")[2], headers or {})
         if method == "POST" and path.startswith("/workspaces/") and path.endswith("/tasks/similar"):
             return self._similar(path.split("/")[2], body, headers or {})
+        if path == "/summaries/claim" or "/summary" in path:
+            if (headers or {}).get("X-Service-Token") != self.service_token:
+                return _err(401, "UNAUTHENTICATED")
+            if method == "POST" and path == "/summaries/claim":
+                return self._claim_summary(body)
+            if method == "POST":
+                return self._summary_requests(path.split("/")[2], body)
+            if method == "GET":
+                return self._summary_input(path.split("/")[2])
+            return self._put_summary(path.split("/")[2], body)
         if (method == "POST" and path in ("/meetings", "/extractions")) or method == "PATCH":
             if (headers or {}).get("X-Service-Token") != self.service_token:   # 봇 쓰기 경로의 토큰 검사(#179)
                 return _err(401, "UNAUTHENTICATED")
@@ -297,6 +328,75 @@ class FakeBe:
         items = [c for word, cands in self.similar.items() if word in body["text"] for c in cands]
         return _ok(200, {"items": items})
 
+    def _claim_summary(self, body: dict):
+        only = body.get("extraction_ids")
+        for row in self.summaries.values():
+            eligible = row["requested"] and row["attempts"] < 2 and not row["leased"]
+            if eligible and (only is None or row["extraction_id"] in only):
+                row["attempts"] += 1
+                row["leased"] = True
+                return _ok(200, {"extraction_id": row["extraction_id"], "meeting_id": row["meeting_id"],
+                                 "workspace_id": row["workspace_id"], "attempt": row["attempts"]})
+        return _ok(200, None)
+
+    def _summary_row(self, extraction_id: str) -> dict | None:
+        return next((r for r in self.summaries.values() if r["extraction_id"] == extraction_id), None)
+
+    def _summary_input(self, extraction_id: str):
+        row = self._summary_row(extraction_id)
+        if row is None:
+            return _err(404, "EXTRACTION_NOT_FOUND", {"extraction_id": extraction_id})
+        keys = ("extraction_id", "meeting_id", "workspace_id", "title", "started_at", "lines", "items", "topics",
+                "decisions")
+        return _ok(200, {k: row[k] for k in keys})
+
+    def _put_summary(self, extraction_id: str, body: dict):
+        row = self._summary_row(extraction_id)
+        if row is None:
+            return _err(404, "EXTRACTION_NOT_FOUND", {"extraction_id": extraction_id})
+        if self.summary_put_fail:
+            status, code = self.summary_put_fail
+            return _err(status, code)
+        if _summary_problems(body):                  # SummaryWriteRequest 가 받지 않는 본문
+            return _err(422, "VALIDATION_ERROR", {"problems": _summary_problems(body)})
+        if not row["requested"]:
+            return _ok(200, {"extraction_id": extraction_id, "meeting_id": row["meeting_id"], "applied": False,
+                             "topic_count": 0, "decision_count": 0})
+        row.update(saved=body, requested=False, attempts=0, leased=False)
+        return _ok(200, {"extraction_id": extraction_id, "meeting_id": row["meeting_id"], "applied": True,
+                         "topic_count": len(body["topics"]),
+                         "decision_count": sum(len(t["decisions"]) for t in body["topics"])})
+
+    def _summary_requests(self, workspace_id: str, body: dict):
+        if workspace_id not in self.workspaces:
+            return _err(404, "WORKSPACE_NOT_FOUND", {"workspace_id": workspace_id})
+        meeting_ids, include_all = body.get("meeting_ids"), body.get("include_all", False)
+        if include_all == (meeting_ids is not None):
+            return _err(422, "VALIDATION_ERROR")
+        rows = [r for r in self.summaries.values() if r["workspace_id"] == workspace_id
+                and (include_all or r["meeting_id"] in meeting_ids)]
+        missing = sorted(set(meeting_ids or []) - {r["meeting_id"] for r in rows})
+        if missing:
+            return _err(404, "MEETING_NOT_FOUND", {"meeting_ids": missing})
+        items = []
+        for row in rows:
+            state = self._summary_state(row, bool(body.get("force")))
+            if state == "requested" and not body.get("dry_run", True):
+                row.update(requested=True, attempts=0, leased=False)
+            items.append({"meeting_id": row["meeting_id"], "extraction_id": row["extraction_id"], "title": row["title"],
+                          "started_at": row["started_at"], "state": state, "chars": row["chars"]})
+        return _ok(200, {"items": items})
+
+    @staticmethod
+    def _summary_state(row: dict, force: bool) -> str:
+        if row["blocked"]:
+            return row["blocked"]
+        if force:
+            return "requested"
+        if row["requested"]:
+            return "queued" if row["attempts"] < 2 or row["leased"] else "gave_up"
+        return "done" if row["saved"] is not None else "requested"
+
     def _uploads(self, method: str, path: str, headers: dict, body: dict | None = None):
         """토큰 → 대기 목록·claim·파일. 오류 코드는 uploads.py 와 같다."""
         if headers.get("X-Service-Token") != self.service_token:
@@ -389,6 +489,23 @@ class FakeBe:
             import requests
             raise requests.ConnectionError("라벨 보고 응답을 받지 못했다")
         return _ok(200, {"meeting_id": mid, "status": status})
+
+
+def _summary_problems(body: dict) -> list[str]:
+    """SummaryWriteRequest 의 제약 가운데 봇이 어길 수 있는 것."""
+    problems = []
+    if not body.get("overview"):
+        problems.append("overview")
+    if not isinstance(body.get("key_points"), list):
+        problems.append("key_points")
+    for topic in body.get("topics") or []:
+        if (topic.get("topic_id") is None) == (topic.get("name") is None):
+            problems.append("topic_id, name")
+        if len(topic.get("name") or "") > 100:
+            problems.append("name")
+        if len(topic.get("item_ids") or []) > 500:
+            problems.append("item_ids")
+    return problems
 
 
 def normalize_speakers(speakers: list[dict]) -> list[dict]:
