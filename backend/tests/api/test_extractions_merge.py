@@ -123,10 +123,16 @@ def _extract(client, seed, meeting_index: int, items: list[dict]) -> dict:
 
 
 def _pending_card(client, db, seed) -> str:
-    """첫 회의에서 review 카드 하나를 만들어 approval_id 를 돌려준다(유사 task 가 있어 auto 가 아니다)."""
+    """첫 회의에서 review 카드 하나를 만들어 approval_id 를 돌려준다(유사 task 가 있어 auto 가 아니다).
+
+    임베딩을 채워 둔다. 임베딩 없는 대기 카드는 그 자체로 judge auto 를 막아(unsearched_pending) 합치기·대상
+    없음 처리가 auto 를 내리는지 가릴 수 없게 만든다.
+    """
     _extract(client, seed, 0, [_judge(similar_count=1, top_similarity=0.8)])
     [card] = db.execute(select(ApprovalRequest)).scalars().all()
     assert json.loads(card.payload)["gate"] == "review"
+    card.embedding = EMBEDDED
+    db.commit()
     return card.approval_id
 
 
@@ -181,13 +187,41 @@ def test_merge_into_pending_adds_no_card_and_links_item(client, db, seed):
     assert payload["meeting_id"] == seed["meetings"][0].meeting_id
 
 
+def test_same_item_as_create_goes_auto(client, db, seed):
+    # 아래 merge 테스트들의 대조군: 같은 항목을 create 로 보내면 auto 다. 그래서 merge 쪽 review 는 합치기 처리 때문이다
+    _pending_card(client, db, seed)
+
+    _extract(client, seed, 1, [_merge_item(None, action="create")])
+
+    [item] = _items(db, seed["meetings"][1].meeting_id)
+    assert item.gate == "auto"
+
+
 def test_merged_item_never_goes_auto_even_when_judge_conditions_all_hold(client, db, seed):
     card_id = _pending_card(client, db, seed)
 
     _extract(client, seed, 1, [_merge_item(card_id)])
 
     [item] = _items(db, seed["meetings"][1].meeting_id)
-    assert item.gate != "auto"
+    assert item.gate == "review"
+
+
+def test_merged_item_does_not_read_unsearched_signals(client, db, seed, monkeypatch):
+    # 합쳐지는 항목은 새 일이 아니라 auto 조건을 보지 않는다
+    from app.api import extractions
+
+    calls: list[str] = []
+    for name in ("has_unsearchable_tasks", "has_unsearchable_pending"):
+        original = getattr(extractions, name)
+        monkeypatch.setattr(
+            extractions, name, lambda db, ws, _n=name, _f=original: (calls.append(_n), _f(db, ws))[1]
+        )
+    card_id = _pending_card(client, db, seed)
+    calls.clear()
+
+    _extract(client, seed, 1, [_merge_item(card_id)])
+
+    assert calls == []
 
 
 def test_merge_keeps_card_embedding(client, db, seed):
@@ -253,6 +287,7 @@ def test_update_create_and_merge_in_one_request(client, db, seed):
     actions = [i.action for i in _items(db, seed["meetings"][1].meeting_id)]
     assert sorted(actions) == ["create", "merge", "update"]
     # 카드는 처음 것 + update 요청 + create 새 카드
+    assert _count(db, ApprovalRequest) == 3
     assert len(_card_payload(db, card_id)["merged_items"]) == 1
 
 
