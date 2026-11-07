@@ -8,7 +8,7 @@
 이 변경 전에 만든 항목은 값이 NULL 이고 학습 대상이 아니다.
 
 Revision ID: c4a7e19d5b32
-Revises: b0d32ee4abcb
+Revises: 1032faab5855
 Create Date: 2026-11-06 12:00:00.000000
 
 """
@@ -20,7 +20,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = 'c4a7e19d5b32'
-down_revision: Union[str, Sequence[str], None] = 'b0d32ee4abcb'
+down_revision: Union[str, Sequence[str], None] = '1032faab5855'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

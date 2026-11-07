@@ -6,6 +6,14 @@ export interface TrackedMeeting {
   meetingId: string
 }
 
+/**
+ * 정리가 끝나 진행 토스트가 결과로 보일 회의 (#424). 끝난 회의의 상세 캐시는 구독이 끊기면 지워질 수 있어
+ * 토스트에 쓸 제목을 함께 둔다. 닫거나 세션이 끝날 때까지 남는다
+ */
+export type SettledMeeting = TrackedMeeting & { title: string } & (
+    { outcome: 'done' } | { outcome: 'failed'; failedStage: string | null }
+  )
+
 interface MeetingTrackerState {
   /** 등록한 순서. 같은 회의는 한 번만 있다 */
   meetings: readonly TrackedMeeting[]
@@ -15,6 +23,8 @@ interface MeetingTrackerState {
    */
   finished: readonly string[]
   prompted: readonly string[]
+  /** 끝난 결과를 보이는 회의. 같은 회의는 하나뿐이다 */
+  settled: readonly SettledMeeting[]
 }
 
 /*
@@ -30,6 +40,7 @@ export const useMeetingTrackerStore = create<MeetingTrackerState>()(() => ({
   meetings: [],
   finished: [],
   prompted: [],
+  settled: [],
 }))
 
 function isSame(a: TrackedMeeting, b: TrackedMeeting): boolean {
@@ -84,7 +95,26 @@ export function promptSpeakers(meeting: TrackedMeeting): boolean {
   return true
 }
 
+/**
+ * 끝난 결과를 적는다. 공간마다 가장 최근 하나만 남긴다 — 닫지 않은 채 회의를 이어 정리해도 결과 카드가 쌓이지 않고,
+ * 한 공간의 진행 토스트는 많아야 결과 하나와 정리 중 하나다 (#424)
+ */
+export function settleMeeting(record: SettledMeeting): void {
+  useMeetingTrackerStore.setState((state) => ({
+    settled: [...state.settled.filter((item) => item.workspaceId !== record.workspaceId), record],
+  }))
+}
+
+/** 끝난 결과를 닫는다 */
+export function dismissSettled(meeting: TrackedMeeting): void {
+  useMeetingTrackerStore.setState((state) =>
+    state.settled.some((item) => isSame(item, meeting))
+      ? { settled: state.settled.filter((item) => !isSame(item, meeting)) }
+      : state,
+  )
+}
+
 /** 로그아웃·세션 만료 때 모두 비운다 */
 export function clearTrackedMeetings(): void {
-  useMeetingTrackerStore.setState({ meetings: [], finished: [], prompted: [] })
+  useMeetingTrackerStore.setState({ meetings: [], finished: [], prompted: [], settled: [] })
 }

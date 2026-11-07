@@ -1,6 +1,5 @@
 import { screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { markDeviceIntroSeen } from '@/entities/user'
 import { db } from '@/shared/mock/db'
 import { businessRequests, recordRequests } from '@/shared/test/requests'
 import { renderApp } from './test/renderApp'
@@ -20,9 +19,7 @@ describe('랜딩 (U2-1)', () => {
     for (const link of starts) expect(link).toHaveAttribute('href', '/login')
   })
 
-  it('인트로를 본 기기에서 `시작하기` 를 누르면 바로 로그인 화면이다', async () => {
-    // 처음 누를 때의 인트로는 firstVisitIntro.test.tsx 가 본다 (#430)
-    markDeviceIntroSeen()
+  it('`시작하기` 를 누르면 로그인 화면이다', async () => {
     const app = await openLanding()
     await userEvent.click(
       within(screen.getByRole('banner')).getByRole('link', { name: '시작하기' }),

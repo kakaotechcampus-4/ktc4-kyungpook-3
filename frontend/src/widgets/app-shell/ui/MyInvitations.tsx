@@ -1,8 +1,7 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { myInvitationsQueryOptions } from '@/entities/invitation'
 import type { MyInvitation } from '@/entities/invitation'
-import { captureAccountIntro } from '@/entities/user'
 import { workspaceListQueryOptions } from '@/entities/workspace'
 import { useInvitationResponse } from '@/features/invitation-respond'
 import { useEnterWorkspace } from '@/features/workspace-switch'
@@ -19,17 +18,12 @@ const META = 'text-[12px] text-dim'
  * 내 가입 이메일로 온 초대. 수락하면 그 공간에 들어간다 — 공간에 들어가는 길은 useEnterWorkspace 하나다.
  * 거절은 되돌릴 수 없어 먼저 묻는다. 초대도 소속 공간도 없으면 PM 에게 초대를 요청하라고 알린다.
  * 소속 공간이 있고 초대가 없으면 아무것도 그리지 않는다. 불러오는 동안도 그리지 않는다.
- * 온보딩 화면(`onboarding`)에서 수락해 들어가면 첫 소속이라, 대시보드에서 매스 인트로를 보게 적는다 (#430).
  */
-export function MyInvitations({ onboarding = false }: { onboarding?: boolean }) {
+export function MyInvitations() {
   const invitations = useQuery(myInvitationsQueryOptions())
   const workspaces = useQuery(workspaceListQueryOptions())
-  const queryClient = useQueryClient()
   const enter = useEnterWorkspace()
-  const respond = useInvitationResponse((workspace) => {
-    if (onboarding) captureAccountIntro(queryClient)?.markPending()
-    enter(workspace, null)
-  })
+  const respond = useInvitationResponse((workspace) => enter(workspace, null))
   const [declining, setDeclining] = useState<MyInvitation | null>(null)
 
   if (invitations.data === undefined) {

@@ -84,6 +84,7 @@ describe('모의 OAuth 완료 권한', () => {
         status: 'not_connected',
         display_name: null,
         connected_at: null,
+        chat_channel: null,
       }
       setMockRole('member')
       const before = snapshot()
@@ -97,6 +98,7 @@ describe('모의 OAuth 완료 권한', () => {
       status: 'not_connected',
       display_name: null,
       connected_at: null,
+      chat_channel: null,
     }
     expect(settleMockOAuth({ workspaceId: 'ws_01', provider: 'discord', outcome: 'success' })).toBe(
       'success',

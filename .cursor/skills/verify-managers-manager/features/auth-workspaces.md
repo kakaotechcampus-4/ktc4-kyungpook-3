@@ -14,6 +14,7 @@
 - `restore-session`은 새로고침·OAuth 왕복 뒤 가입한 계정과 생성한 공간·진행 상태를 다시 확인한다.
 - `password-reset`은 재설정 메일을 요청하고 모의 메일함(`/__mock/mail`)의 링크로 새 비밀번호를 정한 뒤 그 비밀번호로 로그인한다. 만료 링크는 시나리오 주소로 재현한다(#356). BE가 없어 실제 메일 발송은 증거가 아니다.
 - `login-return`은 비로그인으로 연 대화·태스크 주소가 `/login?next=`로 가고 로그인 뒤 그 주소로 돌아오는지, 앱 밖 `next`는 버리는지, 직접 로그아웃하면 `next` 없이 로그인으로 가는지 확인한다(#411).
+- `auth-limits`는 101자 이름이 가입 폼에서 막히고 요청이 나가지 않는지, 시도 제한에 걸린 로그인(429)이 서버 문구만 보이고 남은 시간·잠금 문구가 없는지 확인한다(#446·#457).
 - `onboarding-design`은 시작·팀 확인 카드가 기존 생성 카드와 같은 폭·정렬·테두리·여백·제목 스타일인지 비교한다.
 
 ## How to get to it (user POV)
@@ -32,7 +33,7 @@ Preconditions:
 - `signup-onboard`는 `signed-out`, 재개는 `incomplete-workspace`, 키보드는 `multiple-workspaces`를 사용한다.
 - `pm@example.com` / `mock-password`는 기존 계정이다. 가입 테스트는 별도 새 컨텍스트에서 `e2e@example.com`을 만든다.
 
-- **전체 실행.** `node .cursor/skills/verify-managers-manager/scripts/verify.cjs run auth`를 실행한다. 일곱 파일의 테스트 이름별로 결과를 확인한다.
+- **전체 실행.** `node .cursor/skills/verify-managers-manager/scripts/verify.cjs run auth`를 실행한다. 여덟 파일의 테스트 이름별로 결과를 확인한다.
 - **가입.** `signup-onboard`의 `getByLabel('이름')`, `getByLabel('이메일')`, `getByLabel('비밀번호', { exact: true })`를 채우고 Enter로 제출한다. 시작 선택 화면에서 **PM으로 팀 만들기**를 누른다. **팀 이름**을 `  캡스톤   5조 `로 입력해 **만들기**를 누른다. 모의 OAuth의 **연결 허용**을 선택하고 `@seoyeon_01 — PM 새 사용자`를 체크한다. 대시보드 URL과 헤더의 `캡스톤 5조`, 주요 화면 링크 5개가 결과다.
 - **시작 작업.** `onboarding-start.e2e.ts`는 UI로 가입한 일반 회원의 팀원 선택, 목록 재확인, reload·Back을 확인한다. 생성 POST와 온보딩 PATCH가 0회여야 한다. PM 여정은 선택만으로 생성하지 않고 폼 제출 후 생성 응답·PM 멤버십·Discord 다음 단계를 확인한다. 두 여정의 PNG와 ARIA가 보고서에 첨부된다.
 - **복원.** `restore.e2e.ts`는 가입 계정·생성 공간·온보딩 진행을 새로고침과 OAuth 왕복 후 확인한다. 손상된 모의 저장값을 초기화하는 테스트는 복원 실패 시 비로그인 처리를 확인하는 보조 검사이며 사용자 행동으로 생성한 상태의 증거와 구분한다.
@@ -41,6 +42,7 @@ Preconditions:
 - **로그인과 전환.** `select-switch.e2e.ts`는 **이메일**·**비밀번호**로 로그인하고 공간을 선택한다. **내 계정** → **설정**에서 **워크스페이스 이름**을 바꾼 뒤 다른 공간을 선택한다. **계속 작성하기**는 입력을 유지하고 **변경 내용 버리고 나가기**는 `/onboarding/ws_02/connect_notion`으로 이동한다.
 - **비밀번호 재설정.** `password-reset.e2e.ts`만 돌리려면 `--grep '재설정 메일 요청|만료된 링크를 재현'`을 붙인다. `/forgot-password`에서 **이메일**을 넣고 **재설정 링크 보내기**를 누르면 **다시 보내기 (60초)**가 막힌다. `/__mock/mail`의 링크를 열면 주소가 `/reset-password`만 남고 **새 비밀번호** 칸이 보인다. 바꾼 뒤 `/login`의 안내와 새 비밀번호 로그인 → `/workspaces`가 결과다. 만료 테스트는 `/reset-password?msw-scenario=password-reset-expired#token=mock-reset-expired`로 시작한다.
 - **로그인 뒤 돌아가기.** `login-return.e2e.ts`만 돌리려면 `--grep '로그인 뒤 그|앱 밖|직접 로그아웃하면 돌아갈'`을 붙인다. `signed-out`으로 `/workspaces/ws_01/messages/threads/th_01`을 열면 주소가 `/login?next=%2Fworkspaces%2Fws_01%2Fmessages%2Fthreads%2Fth_01`이다. **이메일**·**비밀번호**를 채워 **로그인**을 누르면 그 대화 주소로 돌아오고 제목 `이재환`(h2)과 **대화 내용** 영역이 보인다. `/workspaces/ws_01/tasks/tk_01`은 같은 방법으로 돌아와 **태스크 정보**와 제목 `로그인 API 연동`이 보인다. `/login?next=https%3A%2F%2Fevil.com`과 `/login?next=%2F%2Fevil.com`은 로그인 뒤 같은 origin의 `/workspaces`(**워크스페이스 선택**)로 간다. `multiple-workspaces`로 태스크 상세를 연 채 **내 계정** → **로그아웃**을 누르면 주소가 쿼리 없는 `/login`이고, 다시 로그인하면 `/workspaces`다. 각 단계의 PNG가 테스트 폴더와 보고서에 남는다.
+- **가입 이름·로그인 제한.** `auth-limits.e2e.ts`만 돌리려면 `--grep '101자 이름|시도 제한'`을 붙인다. `signed-out`의 `/signup`에서 **이름**에 101자를 넣고 **계정 만들기**를 누르면 이름 칸 설명이 `이름은 100자 이하로 입력해 주세요.`이고 `POST /api/v1/auth/signup`이 0회다. `login-rate-limited`의 `/login`에서 `pm@example.com` / `mock-password`로 **로그인**하면 응답이 429·`Retry-After: 900`이고 폼 상단 alert가 `로그인 시도가 너무 많습니다. 잠시 후 다시 시도해 주세요.`다. `signup-name-101.png`, `login-429.png`가 남는다.
 - **키보드.** 같은 파일의 `키보드만으로 워크스페이스` 테스트는 Tab, Enter, Escape, End로 메뉴를 열고 닫으며 **워크스페이스 목록**에 진입한다. trace의 포커스 단언도 확인한다.
 
 ## Gotchas

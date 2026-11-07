@@ -4,10 +4,11 @@ export type {
   NotificationList,
   PushNotification,
 } from './model/types'
+export type { NotificationRefresh } from './model/display'
 export { toNotification, toPushNotification } from './model/mapper'
 export {
   DEFAULT_NOTIFICATION_TITLE,
-  isMessageNotification,
+  notificationRefreshes,
   notificationPath,
   notificationTitle,
 } from './model/display'

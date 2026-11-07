@@ -13,7 +13,15 @@ import type {
   ReplyCreateRequestDto,
   ThreadDetailDto,
 } from '@/shared/types/api/message'
-import { toBundle, toCreatedReminder, toMessageInbox, toMessageThread } from '../model/mapper'
+import type { ListDto } from '@/shared/types/api/envelope'
+import type { AttributionRequestDto, ReplyAttributionDto } from '@/shared/types/api/reply'
+import {
+  toBundle,
+  toCreatedReminder,
+  toMessageInbox,
+  toMessageThread,
+  toReplyAttribution,
+} from '../model/mapper'
 import type {
   Bundle,
   CreatedReminder,
@@ -80,6 +88,24 @@ export function messageThreadQueryOptions(workspaceId: string, threadId: string)
       ),
     refetchInterval: ({ state: { data } }) => session.pollWhileDrafting(data?.upcoming),
     refetchIntervalInBackground: false,
+  })
+}
+
+/**
+ * 그 대화에서 PM 이 태스크를 고를 답장과 고른 답장. PM 만 받는다 — 팀원은 서버가 403 이다.
+ * 메시지 key 아래에 두어 행동이 성공하면 같이 다시 받는다
+ */
+export function replyAttributionsQueryOptions(workspaceId: string, threadId: string) {
+  const session = boundToSession()
+  return queryOptions({
+    queryKey: workspaceKey(workspaceId, 'messages', 'threads', threadId, 'attributions'),
+    queryFn: async ({ signal }) => {
+      const { items } = await request<ListDto<ReplyAttributionDto>>(
+        `${messagesPath(workspaceId)}/threads/${encodeURIComponent(threadId)}/attributions`,
+        { signal: session.signal(signal) },
+      )
+      return items.map(toReplyAttribution)
+    },
   })
 }
 
@@ -153,6 +179,11 @@ const ROUTE: {
     path: `reminders/${enc(action.reminderId)}`,
     body: { note: action.note } satisfies ReminderUpdateRequestDto,
   }),
+  attribute: (action) => ({
+    method: 'POST',
+    path: `replies/${enc(action.messageId)}/attribution`,
+    body: { task_id: action.taskId } satisfies AttributionRequestDto,
+  }),
 }
 
 function routeOf(action: MessageAction): Route {
@@ -171,6 +202,8 @@ function routeOf(action: MessageAction): Route {
       return ROUTE.removeTask(action)
     case 'editNote':
       return ROUTE.editNote(action)
+    case 'attribute':
+      return ROUTE.attribute(action)
   }
 }
 

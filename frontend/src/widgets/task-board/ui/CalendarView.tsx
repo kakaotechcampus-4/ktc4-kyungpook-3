@@ -1,7 +1,7 @@
 import { memo, useMemo } from 'react'
 import type { TaskCreateApproval } from '@/entities/approval'
 import type { Task } from '@/entities/task'
-import { TASK_STATUS_LABEL } from '@/features/task-status'
+import { TASK_STATUS_LABEL } from '@/entities/task'
 import { paths } from '@/shared/config/routes'
 import { GuardedLink } from '@/shared/lib/unsaved-changes'
 import { Icon } from '@/shared/ui/icon'
@@ -15,7 +15,7 @@ import {
   taskTone,
 } from '../lib/taskViews'
 import type { TaskTone } from '../lib/taskViews'
-import { LegendItem, RangeHeader } from './viewParts'
+import { HorizontalScroll, LegendItem, RangeHeader } from './viewParts'
 
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'] as const
 const DAYS_PER_WEEK = WEEKDAYS.length
@@ -65,6 +65,13 @@ const CHIP: Record<TaskTone, { box: string; title: string; sub: string; mark: St
 
 /* 칸 폭은 7등분이다. 줄바꿈할 곳이 없는 긴 제목·이름도 칸 안에서 접어 잘리지 않게 한다 */
 const CHIP_BASE = 'flex flex-col gap-1 rounded-6 px-8 py-6 wrap-anywhere'
+/* 휴대폰의 칸은 제목이 한 줄에 다섯 글자 남짓이라 긴 제목이 칸을 한없이 늘린다. 세 줄까지 보이고 줄인다 — 전체 제목은 링크 이름에 있다 */
+const CHIP_TITLE = 'max-md:line-clamp-3'
+
+/* 휴대폰은 7등분하면 날짜 칸이 40px 남짓이라 제목을 읽을 수 없다. 표를 680px(날짜 칸 96 × 7 + 칸 사이 1 × 6 + 테두리 2) 이상으로 두고
+   표 영역 안에서 가로로 민다 (D-124). 96px 은 넓은 배치가 가장 좁을 때(폭 768px, 본문 672px)의 날짜 칸 폭(약 95px)이다 */
+const GRID =
+  'grid grid-cols-7 gap-1 overflow-hidden rounded-16 border border-line bg-line max-md:min-w-[680px]'
 
 interface CalendarMeeting {
   id: string
@@ -92,6 +99,8 @@ export interface CalendarViewProps {
   today: string
   month: string
   onMonthChange: (month: string) => void
+  /** 폭 768px 미만이다. 표를 이름 붙은 가로 스크롤 영역에 넣는다 */
+  compact: boolean
 }
 
 /** 캘린더 (TasksCalendar 시안). 마감일 기준이고 날짜가 없는 일은 아래 칸에 모은다 */
@@ -105,6 +114,7 @@ export function CalendarView({
   today,
   month,
   onMonthChange,
+  compact,
 }: CalendarViewProps) {
   const weeks = useMemo(() => {
     const grid = calendarGrid(month)
@@ -136,6 +146,93 @@ export function CalendarView({
   const dueInMonth = (item: { dueDate: string | null }) =>
     item.dueDate !== null && monthOf(item.dueDate) === month
   const emptyMonth = !tasks.some(dueInMonth) && !approvals.some(dueInMonth)
+  const table = (
+    <div role="table" aria-label={monthTitle(month)} className={GRID}>
+      <div role="row" className={WEEK_ROW}>
+        {WEEKDAYS.map((day, index) => (
+          <div
+            key={day}
+            role="columnheader"
+            className={`bg-surface-sunken px-10 py-9 text-meta font-semibold ${
+              isWeekend(index) ? 'text-dim' : 'text-sub'
+            }`}
+          >
+            {day}
+          </div>
+        ))}
+      </div>
+      {weeks.map((week) => (
+        <div key={week[0].date} role="row" className={WEEK_ROW}>
+          {week.map(({ date, inMonth }, index) => {
+            const {
+              tasks: dayTasks = [],
+              approvals: dayApprovals = [],
+              meetings: dayMeetings = [],
+            } = byDate.get(date) ?? {}
+            return (
+              <div
+                key={date}
+                role="cell"
+                aria-label={date}
+                className={`flex min-h-[116px] flex-col gap-5 bg-surface ${inMonth ? 'p-9' : 'px-20 py-18'}`}
+              >
+                <DayNumber
+                  date={date}
+                  today={date === today}
+                  inMonth={inMonth}
+                  weekend={isWeekend(index)}
+                />
+                {inMonth ? (
+                  <>
+                    {dayApprovals.map((approval) => (
+                      <GuardedLink
+                        key={approval.id}
+                        to={`${paths.tasks(workspaceId)}?tab=needs_review`}
+                        className={`${CHIP_BASE} bg-ink`}
+                        aria-label={chipName(
+                          MARK.review,
+                          approval.title,
+                          assigneeLabel(approval.assigneeMemberId, names, '담당자 미정'),
+                        )}
+                      >
+                        <span
+                          className={`text-[11.5px] leading-[1.4] font-bold text-surface ${CHIP_TITLE}`}
+                        >
+                          <MarkIcon mark={MARK.review} />
+                          {approval.title}
+                        </span>
+                        <span className="text-[10.5px] text-surface tabular-nums">
+                          {assigneeLabel(approval.assigneeMemberId, names, '담당자 미정')}
+                        </span>
+                      </GuardedLink>
+                    ))}
+                    {dayTasks.map((task) => (
+                      <TaskChip
+                        key={task.id}
+                        workspaceId={workspaceId}
+                        task={task}
+                        names={names}
+                        today={today}
+                      />
+                    ))}
+                    {dayMeetings.map((meeting) => (
+                      <GuardedLink
+                        key={meeting.id}
+                        to={paths.meetings(workspaceId, meeting.id)}
+                        className="flex items-center gap-6 rounded-6 border border-dashed px-8 py-6 text-[11.5px] leading-[1.4] wrap-anywhere text-sub"
+                      >
+                        {meeting.title}
+                      </GuardedLink>
+                    ))}
+                  </>
+                ) : null}
+              </div>
+            )
+          })}
+        </div>
+      ))}
+    </div>
+  )
   return (
     <>
       <RangeHeader
@@ -164,93 +261,7 @@ export function CalendarView({
             : '이 달에는 마감인 일이 없어요.'}
         </p>
       ) : null}
-      <div
-        role="table"
-        aria-label={monthTitle(month)}
-        className="grid grid-cols-7 gap-1 overflow-hidden rounded-16 border border-line bg-line"
-      >
-        <div role="row" className={WEEK_ROW}>
-          {WEEKDAYS.map((day, index) => (
-            <div
-              key={day}
-              role="columnheader"
-              className={`bg-surface-sunken px-10 py-9 text-meta font-semibold ${
-                isWeekend(index) ? 'text-dim' : 'text-sub'
-              }`}
-            >
-              {day}
-            </div>
-          ))}
-        </div>
-        {weeks.map((week) => (
-          <div key={week[0].date} role="row" className={WEEK_ROW}>
-            {week.map(({ date, inMonth }, index) => {
-              const {
-                tasks: dayTasks = [],
-                approvals: dayApprovals = [],
-                meetings: dayMeetings = [],
-              } = byDate.get(date) ?? {}
-              return (
-                <div
-                  key={date}
-                  role="cell"
-                  aria-label={date}
-                  className={`flex min-h-[116px] flex-col gap-5 bg-surface ${inMonth ? 'p-9' : 'px-20 py-18'}`}
-                >
-                  <DayNumber
-                    date={date}
-                    today={date === today}
-                    inMonth={inMonth}
-                    weekend={isWeekend(index)}
-                  />
-                  {inMonth ? (
-                    <>
-                      {dayApprovals.map((approval) => (
-                        <GuardedLink
-                          key={approval.id}
-                          to={`${paths.tasks(workspaceId)}?tab=needs_review`}
-                          className={`${CHIP_BASE} bg-ink`}
-                          aria-label={chipName(
-                            MARK.review,
-                            approval.title,
-                            assigneeLabel(approval.assigneeMemberId, names, '담당자 미정'),
-                          )}
-                        >
-                          <span className="text-[11.5px] leading-[1.4] font-bold text-surface">
-                            <MarkIcon mark={MARK.review} />
-                            {approval.title}
-                          </span>
-                          <span className="text-[10.5px] text-surface tabular-nums">
-                            {assigneeLabel(approval.assigneeMemberId, names, '담당자 미정')}
-                          </span>
-                        </GuardedLink>
-                      ))}
-                      {dayTasks.map((task) => (
-                        <TaskChip
-                          key={task.id}
-                          workspaceId={workspaceId}
-                          task={task}
-                          names={names}
-                          today={today}
-                        />
-                      ))}
-                      {dayMeetings.map((meeting) => (
-                        <GuardedLink
-                          key={meeting.id}
-                          to={paths.meetings(workspaceId, meeting.id)}
-                          className="flex items-center gap-6 rounded-6 border border-dashed px-8 py-6 text-[11.5px] leading-[1.4] wrap-anywhere text-sub"
-                        >
-                          {meeting.title}
-                        </GuardedLink>
-                      ))}
-                    </>
-                  ) : null}
-                </div>
-              )
-            })}
-          </div>
-        ))}
-      </div>
+      {compact ? <HorizontalScroll label="캘린더 표">{table}</HorizontalScroll> : table}
       <section
         aria-label="마감일 없음"
         className="flex flex-wrap items-center gap-16 rounded-16 border border-line bg-surface px-18 py-16"
@@ -387,7 +398,7 @@ const TaskChip = memo(function TaskChip({
       className={`${CHIP_BASE} ${style.box}`}
       aria-label={chipName(style.mark, task.title, meta)}
     >
-      <span className={`text-[11.5px] leading-[1.4] ${style.title}`}>
+      <span className={`text-[11.5px] leading-[1.4] ${style.title} ${CHIP_TITLE}`}>
         <MarkIcon mark={style.mark} />
         {task.title}
       </span>

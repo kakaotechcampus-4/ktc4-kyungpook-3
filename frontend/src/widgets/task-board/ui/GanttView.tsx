@@ -117,8 +117,8 @@ export function GanttView({
           className="relative overflow-hidden rounded-16 border border-line bg-surface"
           style={{ minWidth: TABLE_MIN_WIDTH }}
         >
-          {/* 주말 음영·오늘 선. `inset-0`·`top-0` 은 쓰지 않는다 — tokens.css 가 동적 간격 스케일을 꺼서 `*-0` 유틸이
-              생성되지 않아, 이 층이 높이 0 으로 접혀 보이지 않았다 (Modal 과 같은 까닭, m4 결정 2026-09-29-modal-inset-zero) */}
+          {/* 주말 음영·오늘 선. `inset-[0px]`·`top-[0px]` 은 `*-0` 유틸이 생성되지 않던 때(#497 전)의 값이다.
+              그때 이 층이 높이 0 으로 접혀 보이지 않았다 (Modal 과 같은 까닭, m4 결정 2026-09-29-modal-inset-zero) */}
           <div aria-hidden="true" className="absolute inset-[0px] z-0 flex">
             <div style={{ flex: `0 0 ${LABEL_WIDTH}px` }} />
             <div className="relative grid flex-1" style={GRID}>

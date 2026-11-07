@@ -1,14 +1,17 @@
 import { useId } from 'react'
 import type { ApprovalDecision } from '@/entities/approval'
 import { Button } from '@/shared/ui/button'
+import { Icon } from '@/shared/ui/icon'
 
-const ROOT = 'flex flex-col items-end gap-8'
-const BUTTONS = 'flex items-center gap-10'
-const REASON = 'max-w-[520px] text-right text-caption text-sub'
+const ROOT = 'flex flex-wrap items-center justify-between gap-x-16 gap-y-8'
+const HINT = 'inline-flex min-w-[0px] flex-1 basis-[240px] items-start gap-6 text-caption'
+const BUTTONS = 'ml-auto flex shrink-0 items-center gap-6'
 
 export interface ApprovalActionsProps {
-  /** 승인할 수 없는 이유. 있으면 `승인` 을 끄고 이 문구를 버튼 가까이에 보인다. null 이면 승인할 수 있다 */
+  /** 승인할 수 없는 이유. 있으면 `승인` 을 끄고 안내 자리에 이 문구를 보이며 버튼에 잇는다. null 이면 승인할 수 있다 */
   approveBlockedReason: string | null
+  /** 승인할 수 있을 때 안내 자리의 한 줄 (예: 마감을 비워 두면 미정으로 올라가요) */
+  note?: string
   onApprove: () => void
   onReject: () => void
   /** 처리 요청 중. 두 버튼 모두 잠근다 */
@@ -19,11 +22,12 @@ export interface ApprovalActionsProps {
 }
 
 /**
- * 승인·반려 버튼 (계획 §4-2, §4-5). 반려는 필수값과 무관하게 누를 수 있다.
+ * 승인·반려 줄 (계획 §4-2, §4-5, E-6). 반려는 필수값과 무관하게 누를 수 있다.
  * 요청 중에는 둘 다 잠긴다 — 화면 반영은 서버 성공 뒤다
  */
 export function ApprovalActions({
   approveBlockedReason,
+  note,
   onApprove,
   onReject,
   pending,
@@ -31,12 +35,22 @@ export function ApprovalActions({
   approveLabel = '승인',
 }: ApprovalActionsProps) {
   const reasonId = useId()
+  const hint = approveBlockedReason ?? note
   return (
     <div className={ROOT}>
+      {hint === undefined ? null : (
+        <p
+          id={approveBlockedReason === null ? undefined : reasonId}
+          className={`${HINT} ${approveBlockedReason === null ? 'text-sub' : 'text-ink'}`}
+        >
+          <Icon name="info" size={14} className="mt-3 shrink-0" />
+          {hint}
+        </p>
+      )}
       <div className={BUTTONS}>
         <Button
-          variant="outline"
-          size="lg"
+          variant="ghost"
+          size="xl"
           loading={pendingDecision === 'rejected'}
           disabled={pending}
           onClick={onReject}
@@ -45,7 +59,7 @@ export function ApprovalActions({
         </Button>
         <Button
           variant="primary"
-          size="lg"
+          size="xl"
           loading={pendingDecision === 'approved'}
           disabled={pending || approveBlockedReason !== null}
           aria-describedby={approveBlockedReason === null ? undefined : reasonId}
@@ -54,11 +68,6 @@ export function ApprovalActions({
           {approveLabel}
         </Button>
       </div>
-      {approveBlockedReason === null ? null : (
-        <p id={reasonId} className={REASON}>
-          {approveBlockedReason}
-        </p>
-      )}
     </div>
   )
 }

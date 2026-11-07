@@ -51,6 +51,7 @@ class AliasSource(StrEnum):
     MANUAL = "manual"
     DISCORD_PROFILE = "discord_profile"
     LEARNED = "learned"
+    DISPLAY_NAME = "display_name"
 
 
 class ResolutionResult(StrEnum):

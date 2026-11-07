@@ -12,11 +12,7 @@ import type { RecordedRequest, RequestLog } from '@/shared/test/requests'
 import { integrationsQueryOptions } from '@/entities/integration'
 import { deferred } from '@/shared/test/deferred'
 import { expireSession } from './expireSession'
-import { seenDashboardIntro } from './test/firstVisitIntro'
 import { renderApp } from './test/renderApp'
-
-// 온보딩을 마치면 첫 대시보드에 인트로가 뜬다(#430). 이 파일은 그 뒤 대시보드를 본다
-beforeEach(() => seenDashboardIntro())
 
 /* U3-3·U3-4·U3-5. 현재 탭 이동은 jsdom 이 못 하므로 leaveApp 만 바꿔 끼워 주소를 본다 */
 vi.mock('@/shared/lib/location', () => ({ leaveApp: vi.fn() }))
@@ -462,7 +458,12 @@ describe('복귀 확인이 늦게 끝날 때', () => {
     const pm = db.members.find(({ workspace_id }) => workspace_id === 'ws_03')!
     db.members.push({ ...pm, member_id: 'mb_91', workspace_id: 'ws_04' })
     db.integrations.ws_04 = {
-      discord: { status: 'not_connected', display_name: null, connected_at: null },
+      discord: {
+        status: 'not_connected',
+        display_name: null,
+        connected_at: null,
+        chat_channel: null,
+      },
       notion: { status: 'not_connected', display_name: null, connected_at: null },
     }
     db.accounts[0].workspaceIds.push('ws_04')

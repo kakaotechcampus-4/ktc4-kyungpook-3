@@ -100,7 +100,7 @@ test('키보드로 되돌리기를 열고 닫고, 확인하면 행이 `되돌림
   await expect(page).toHaveURL(/\/workspaces\/ws_01\/approvals\/ap_\d+$/)
 })
 
-test('막힌 일은 목록의 막힘 조건으로, 채워 넣기는 보완 폼이 열린 상세로 간다. 새로고침하면 읽기다 (D-176)', async ({
+test('막힌 일은 목록의 막힘 조건으로, 채워 넣기는 첫 빈 칸에 포커스를 둔 상세로 간다. 새로고침하면 포커스를 옮기지 않는다 (D-176)', async ({
   page,
 }) => {
   await openDashboard(page, 'dashboard-default')
@@ -114,20 +114,19 @@ test('막힌 일은 목록의 막힘 조건으로, 채워 넣기는 보완 폼�
 
   await page.getByRole('link', { name: '채워 넣기 — 알림 문구 검토' }).click()
   await expect(page).toHaveURL('/workspaces/ws_01/approvals/ap_01')
-  const form = page.getByRole('group', { name: '확정할 값 보완' })
-  await expect(form).toBeVisible(FIRST_PAINT)
-  await expect(page.getByRole('combobox', { name: '담당자' })).toBeFocused()
+  const assignee = page.getByRole('combobox', { name: '담당자 · 미정' })
+  await expect(assignee).toBeFocused(FIRST_PAINT)
 
   await page.reload()
-  await expect(page.getByRole('button', { name: '보완하기' })).toBeEnabled(FIRST_PAINT)
-  await expect(form).toHaveCount(0)
+  await expect(assignee).toBeEnabled(FIRST_PAINT)
+  await expect(assignee).not.toBeFocused()
 
-  // 뒤로 갔다 앞으로 와도 읽기다
+  // 뒤로 갔다 앞으로 와도 포커스를 옮기지 않는다
   await page.goBack()
   await expect(page).toHaveURL(DASHBOARD)
   await page.goForward()
-  await expect(page.getByRole('button', { name: '보완하기' })).toBeEnabled(FIRST_PAINT)
-  await expect(form).toHaveCount(0)
+  await expect(assignee).toBeEnabled(FIRST_PAINT)
+  await expect(assignee).not.toBeFocused()
 })
 
 /** 보이는 최근 반영 행 수와 마지막 행 아래 끝(문서 기준), 행 평균 높이 */

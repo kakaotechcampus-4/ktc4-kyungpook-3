@@ -100,3 +100,33 @@ PR 리뷰(#464)에서 AI 가 `thirdrole` 일 때 역할 원문 대신 문맥으�
 ## 관련 기록
 
 - [승인 때 별칭 학습: 저장 대상과 판단 위치](basis-for-decision/2026-11-06-learn-alias-on-approval.md)
+- [담당자 별칭 자동 채우기 결정](basis-for-decision/2026-11-06-member-alias-auto-fill.md) (#459)
+
+## 2026-11-06 추가: 담당자 별칭 자동 채우기 (#459 PR ①)
+
+### 작업 근거와 구현
+
+이슈 #459(별칭 자동 채우기와 님·조사 처리)의 BE PR ①이다. 사용자가 설계를 확정하고(이슈 설계 확정 댓글 2026-11-06) M3 로 기록하도록 지시했다. M3 plan.md 는 비어 있어 완료조건이 없고, 마일스톤 완료를 판정하지 않는다. 승인 때 별칭 저장(`assignee_type`)은 PR ②에서 한다.
+
+| 변경 | 위치 |
+|---|---|
+| "님"·조사를 뗀 후보를 긴 것부터 찾고 처음 걸린 후보로 판정. 탈퇴한 팀원 제외. 후보 규칙은 AI `_name_candidates`와 같음 | `app/services/matching.py` `name_candidates`, `resolve_assignee` |
+| 미매칭 목록 해결 판정을 같은 후보 규칙으로 | `app/services/matching.py` `resolved_texts`, `app/api/members.py` `list_unresolved_aliases` |
+| 팀원 생성·워크스페이스 생성(PM)·이름 변경 때 이름과 성 뗀 이름을 `source=display_name` 별칭으로(확인됨, 1.0). 이름 변경 때 옛 자동 별칭만 정리 | `app/services/member_aliases.py` `name_alias_forms`, `sync_name_aliases`, `app/models/models.py` `AliasSource.DISPLAY_NAME` |
+| 디스코드 연결 때 팀원 저장 뒤 한 명 조회(3초)로 한글 닉네임을 `source=discord_profile` 별칭으로(미확인, 0.8). 실패해도 응답 그대로. 계정 변경·해제 때 옛 닉네임 별칭 삭제 | `app/services/discord.py` `get_guild_member`, `app/services/member_aliases.py` `pick_discord_nickname`, `add_discord_nickname_alias`, `remove_discord_profile_aliases` |
+| 기존 팀원(탈퇴 제외) 이름 별칭 채우기 | `migrations/versions/1032faab5855_backfill_member_name_aliases.py` |
+| 계약·설명 | [AI 계약](../../contracts/backend-ai-contract.md), [Backend README "담당자 별칭"](../../../README.md) |
+
+### 검증
+
+- 2026-11-06 로컬(SQLite, Python 3.12)에서 새 테스트 7개 파일(`tests/services/test_matching_alias.py`, `tests/api/test_unresolved_aliases_candidates.py`, `tests/services/test_member_aliases.py`, `tests/api/test_member_name_aliases.py`, `tests/api/test_member_discord_alias.py`, `tests/services/test_discord.py`, `tests/test_migration_backfill_member_name_aliases.py`): 128 passed, 45 skipped(PostgreSQL 파라미터). 최신 develop 위로 옮긴 뒤 전체 `pytest -q`: 1876 passed, 1315 skipped. `ruff check .` 통과. 경고는 설치된 FastAPI 의 `starlette.testclient` 사용 경고로 이번 변경과 무관하다.
+- 최종 리뷰에서 한 PATCH 로 이름과 디스코드 계정을 함께 바꾸면 이름 별칭이 빠지는 문제가 재현되어 고쳤다(디스코드 별칭 삭제를 먼저 flush 하고 이름 별칭을 다시 맞춘다). 회귀 테스트 3개는 고치기 전 실패를 확인했다.
+- 각 태스크마다 테스트를 먼저 쓰고 구현 전 실패를 확인했다(후보 함수 ImportError, 별칭 0개, 마이그레이션 파일 없음 등).
+- PostgreSQL(`TEST_DATABASE_URL`)과 로컬 DB 의 `alembic upgrade head`·`alembic check` 는 돌리지 않았다. 사용자 결정으로 CI migrations 잡에서 확인한다. 실제 Discord 호출은 하지 않았고 스텁·`httpx.MockTransport` 로 시험했다.
+
+### 차이와 남은 작업
+
+- 이슈 #459 의 규칙과 다른 점은 없다. 설계에서 정한 세부(출처 값, 닉네임 신뢰도, 겹침·탈퇴·계정 변경 처리)는 [결정 기록](basis-for-decision/2026-11-06-member-alias-auto-fill.md)에 있다.
+- 이미 디스코드가 연결된 팀원의 닉네임은 채우지 않았다(나중에 정한다).
+- FE 알림(`source` 값 `display_name`, 미매칭 판정 기준, 연결 응답 지연 가능)은 PR ② 뒤 `[BE→FE]` 이슈에 묶는다. AI 는 할 일이 없다.
+- 이 마이그레이션은 머지된 #345 의 `b0d32ee4abcb` 뒤에 잇는다. 열린 PR #454 의 마이그레이션은 아직 `537911f267dc` 뒤에 있으므로, 이 PR 이 머지되면 #454 가 `down_revision` 을 맞춰야 한다.

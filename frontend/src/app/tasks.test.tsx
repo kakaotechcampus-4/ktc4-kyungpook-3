@@ -16,6 +16,7 @@ import { server } from '@/shared/mock/server'
 import { setMockRole } from '@/shared/mock/sessions'
 import { deferred } from '@/shared/test/deferred'
 import { recordRequestBodies, recordRequests } from '@/shared/test/requests'
+import { onTestFinished } from 'vitest'
 import { App } from './App'
 import { createApp } from './createApp'
 import { appRoutes } from './router/routes'
@@ -193,7 +194,7 @@ describe('역할별 탭·개수·병합·정렬 (AC-02)', () => {
     expect(approvalRequests(log)).toHaveLength(0)
     // 상세도 승인 API 를 부르지 않는다
     await userEvent.click(screen.getByRole('link', { name: '로그인 API 연동' }))
-    expect(await screen.findByRole('heading', { level: 2, name: '로그인 API 연동' })).toBeVisible()
+    expect(await screen.findByRole('heading', { level: 1, name: '로그인 API 연동' })).toBeVisible()
     await settle(200)
     expect(approvalRequests(log)).toHaveLength(0)
   })
@@ -356,6 +357,68 @@ describe('키보드 Tab 순서 (#337)', () => {
       await screen.findByRole('heading', { name: '이 구분에는 항목이 없어요' }, { timeout: 5_000 }),
     ).toBeVisible()
     expect(await tabIntoPanel(user)).toBe(screen.getByRole('tabpanel'))
+  })
+})
+
+describe('목록 탭 키보드', () => {
+  it('화살표·End·Home 으로 탭을 옮기면 그 탭에 포커스가 가고 골라진다', async () => {
+    const user = userEvent.setup()
+    await openList()
+    await waitFor(() => expect(tabTexts()).toHaveLength(4))
+    act(() => tab('전체').focus())
+
+    await user.keyboard('{ArrowRight}')
+    await waitFor(() => expect(tab('확인 필요')).toHaveAttribute('aria-selected', 'true'))
+    expect(tab('확인 필요')).toHaveFocus()
+    expect(
+      within(screen.getByRole('list', { name: '확인 필요 목록' })).getAllByRole('article'),
+    ).toHaveLength(3)
+
+    await user.keyboard('{End}')
+    await waitFor(() => expect(tab('완료')).toHaveAttribute('aria-selected', 'true'))
+    expect(tab('완료')).toHaveFocus()
+
+    await user.keyboard('{Home}')
+    await waitFor(() => expect(tab('전체')).toHaveAttribute('aria-selected', 'true'))
+    expect(tab('전체')).toHaveFocus()
+  })
+})
+
+describe('리스트 보기의 대기·실패·빈 목록', () => {
+  it('태스크를 받는 동안 탭은 개수 없이 이름만이고, 목록 자리는 기다림 표시이며 태스크 목록이 없다', async () => {
+    const gate = deferred()
+    onTestFinished(() => gate.resolve())
+    server.use(
+      http.get('/api/v1/tasks', async () => {
+        await gate.promise
+        return undefined
+      }),
+    )
+    renderApp(paths.tasks('ws_01'))
+    expect(await screen.findByRole('tab', { name: '전체' })).toBeInTheDocument()
+    expect(tabTexts()).toEqual(['전체', '확인 필요', '진행 중', '완료'])
+    expect(screen.getByRole('tabpanel').querySelector('[aria-busy="true"]')).not.toBeNull()
+    expect(screen.queryByRole('list', { name: '태스크 목록' })).toBeNull()
+  })
+
+  it('태스크 목록을 받지 못하면 목록 자리에 오류와 다시 시도를 보인다', async () => {
+    server.use(http.get('/api/v1/tasks', () => fail('INVALID_REQUEST', 'x', 400)))
+    renderApp(paths.tasks('ws_01'))
+    expect(
+      await within(await screen.findByRole('tabpanel')).findByText(
+        '태스크 목록을 불러오지 못했어요',
+      ),
+    ).toBeInTheDocument()
+    expect(
+      within(screen.getByRole('tabpanel')).getByRole('button', { name: '다시 시도' }),
+    ).toBeInTheDocument()
+  })
+
+  it('태스크도 확인 필요도 없으면 `아직 태스크가 없어요` 이고 탭 개수는 모두 0 이다', async () => {
+    replaceDb(createScenarioDb('tasks-empty'))
+    renderApp(paths.tasks('ws_01'))
+    expect(await screen.findByText('아직 태스크가 없어요')).toBeInTheDocument()
+    expect(tabTexts()).toEqual(['전체 0', '확인 필요 0', '진행 중 0', '완료 0'])
   })
 })
 
@@ -669,10 +732,11 @@ describe('상세·이력과 PM 의 상태 변경 (AC-04)', () => {
   }
   async function openDetail(taskId: string, title: string) {
     const app = renderApp(paths.tasks('ws_01', taskId))
-    await screen.findByRole('heading', { level: 2, name: title })
+    await screen.findByRole('heading', { level: 1, name: title })
     return app
   }
   const shownStatus = () => screen.getByTestId('task-status').textContent
+  const statusOption = (label: string) => screen.getByRole('radio', { name: label })
 
   /** 태스크마다 PATCH 응답 시점을 쥔다. fail 이면 500, 아니면 원래 handler 가 처리한다 */
   function holdPatches(plan: Record<string, { fail: boolean }>) {
@@ -691,18 +755,18 @@ describe('상세·이력과 PM 의 상태 변경 (AC-04)', () => {
   const toastFor = (taskId: string) =>
     document.querySelectorAll(`[data-toast-key="task-status-${taskId}"]`)
 
-  it('담당자·상태·마감·막힌 사유·연결 회의·이력을 읽는다', async () => {
+  it('담당자·상태·마감·출처 회의·이력을 읽고, 막히지 않았으면 막힌 사유 줄이 없다', async () => {
     await openDetail('tk_01', '로그인 API 연동')
-    expect(screen.getByRole('heading', { level: 1, name: '태스크' })).toBeInTheDocument()
     await waitFor(() => expect(field('담당자')).toHaveTextContent('김서연'))
-    expect(field('상태')).toHaveTextContent('진행 중')
+    expect(shownStatus()).toBe('진행 중')
     expect(field('마감')).toHaveTextContent('2026-09-20')
     expect(screen.queryByText('진행률')).toBeNull()
-    expect(field('막힌 사유')).toHaveTextContent('없음')
+    expect(within(info()).queryByText('막힌 사유')).toBeNull()
     await waitFor(() =>
-      expect(
-        within(field('연결 회의')).getByRole('link', { name: '3주차 정기회의' }),
-      ).toHaveAttribute('href', paths.meetings('ws_01', 'mt_09')),
+      expect(screen.getByRole('link', { name: '3주차 정기회의에서 나온 일' })).toHaveAttribute(
+        'href',
+        paths.meetings('ws_01', 'mt_09'),
+      ),
     )
     await waitFor(() =>
       expect(history()).toEqual(['상태: 할 일 → 진행 중', '마감: 2026-09-13 → 2026-09-20']),
@@ -715,14 +779,32 @@ describe('상세·이력과 PM 의 상태 변경 (AC-04)', () => {
     await openDetail('tk_05', '회의록 요약 검수')
     expect(field('담당자')).toHaveTextContent('담당자 없음')
     expect(field('마감')).toHaveTextContent('마감 없음')
-    expect(field('연결 회의')).toHaveTextContent('없음')
     expect(await screen.findByText('아직 변경 이력이 없어요.')).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /에서 나온 일$/ })).toBeNull()
   })
 
   it('막힌 태스크는 막힌 사유를 보여 준다', async () => {
     await openDetail('tk_03', 'DB 스키마 정리')
-    expect(field('상태')).toHaveTextContent('막힘')
+    expect(shownStatus()).toBe('막힘')
     expect(field('막힌 사유')).toHaveTextContent('Notion 권한 대기')
+  })
+
+  it('상세를 받는 동안 `태스크 목록` 링크와 기다림 표시가 있고 태스크 제목은 없다', async () => {
+    const gate = deferred()
+    onTestFinished(() => gate.resolve())
+    server.use(
+      http.get('/api/v1/tasks/:taskId', async () => {
+        await gate.promise
+        return undefined
+      }),
+    )
+    renderApp(paths.tasks('ws_01', 'tk_01'))
+    expect(await screen.findByRole('link', { name: '태스크 목록' })).toHaveAttribute(
+      'href',
+      paths.tasks('ws_01'),
+    )
+    expect(screen.getByRole('main').querySelector('[aria-busy="true"]')).not.toBeNull()
+    expect(screen.queryByRole('heading', { name: '로그인 API 연동' })).toBeNull()
   })
 
   it('없는 태스크는 볼 수 없다고 알리고 목록으로 돌려보낸다', async () => {
@@ -744,7 +826,7 @@ describe('상세·이력과 PM 의 상태 변경 (AC-04)', () => {
     expect(screen.queryByText('최신 상태를 받지 못했어요')).toBeNull()
     server.resetHandlers()
     fireEvent.click(screen.getByRole('button', { name: '다시 시도' }))
-    expect(await screen.findByRole('heading', { level: 2, name: '로그인 API 연동' })).toBeVisible()
+    expect(await screen.findByRole('heading', { level: 1, name: '로그인 API 연동' })).toBeVisible()
     expect(screen.queryByText('태스크를 불러오지 못했어요')).toBeNull()
   })
 
@@ -752,8 +834,9 @@ describe('상세·이력과 PM 의 상태 변경 (AC-04)', () => {
     setMockRole('member')
     const log = recordRequests()
     await openDetail('tk_01', '로그인 API 연동')
-    expect(field('상태')).toHaveTextContent('진행 중')
+    expect(shownStatus()).toBe('진행 중')
     expect(screen.queryByLabelText('상태 바꾸기')).toBeNull()
+    expect(screen.queryByRole('radio')).toBeNull()
     expect(screen.queryByRole('combobox')).toBeNull()
     await settle(200)
     expect(log.started.filter(({ method }) => method === 'PATCH')).toEqual([])
@@ -764,25 +847,28 @@ describe('상세·이력과 PM 의 상태 변경 (AC-04)', () => {
     const bodies = recordRequestBodies('PATCH', '/tasks/tk_01')
     const log = recordRequests()
     const app = await openDetail('tk_01', '로그인 API 연동')
-    const select = await screen.findByLabelText('상태 바꾸기')
+    await screen.findByRole('radiogroup', { name: '상태 바꾸기' })
 
     // 같은 틱의 두 입력 — 두 번째는 진행 중인 요청 때문에 보내지 않는다
     act(() => {
-      fireEvent.change(select, { target: { value: 'done' } })
-      fireEvent.change(select, { target: { value: 'blocked' } })
+      fireEvent.click(statusOption('완료'))
+      fireEvent.click(statusOption('막힘'))
     })
     // mutation 캐시 알림은 다음 틱에 묶여 온다 — 응답(쥐고 있음)보다 먼저 보이는지를 본다
     await waitFor(() => expect(shownStatus()).toBe('완료'))
-    expect(select).toBeDisabled()
-    expect(screen.getByRole('status')).toHaveTextContent('바꾸는 중이에요')
+    for (const label of ['할 일', '진행 중', '막힘', '완료'])
+      expect(statusOption(label)).toBeDisabled()
+    expect(within(screen.getByRole('main')).getByRole('status')).toHaveTextContent(
+      '바꾸는 중이에요',
+    )
     // 잠긴 뒤의 입력도 보내지 않는다
-    fireEvent.change(select, { target: { value: 'todo' } })
+    fireEvent.click(statusOption('할 일'))
     await settle()
     expect(log.started.filter(({ method }) => method === 'PATCH')).toHaveLength(1)
     expect(bodies).toEqual([{ status: 'done' }])
 
     act(() => gates.get('tk_01')!.resolve())
-    await waitFor(() => expect(select).toBeEnabled())
+    await waitFor(() => expect(statusOption('완료')).toBeEnabled())
     expect(shownStatus()).toBe('완료')
     expect(db.tasks.find(({ task_id }) => task_id === 'tk_01')?.status).toBe('done')
     // 이력을 다시 받아 새 변경이 맨 위에 있다
@@ -806,7 +892,7 @@ describe('상세·이력과 PM 의 상태 변경 (AC-04)', () => {
     const log = recordRequests()
     await openDetail('tk_01', '로그인 API 연동')
     const user = userEvent.setup()
-    await user.selectOptions(await screen.findByLabelText('상태 바꾸기'), '완료')
+    await user.click(await screen.findByRole('radio', { name: '완료' }))
     await waitFor(() => expect(shownStatus()).toBe('완료'))
 
     act(() => gates.get('tk_01')!.resolve())
@@ -814,8 +900,8 @@ describe('상세·이력과 PM 의 상태 변경 (AC-04)', () => {
     await waitFor(() => expect(toastFor('tk_01')).toHaveLength(1))
     expect(toastFor('tk_01')[0]).toHaveTextContent(TASK_STATUS_FAILED_TITLE)
     expect(toastFor('tk_01')[0]).toHaveTextContent('서버에 문제가 생겼어요')
-    expect(screen.getByLabelText('상태 바꾸기')).toHaveValue('in_progress')
-    expect(screen.getByLabelText('상태 바꾸기')).toBeEnabled()
+    expect(statusOption('진행 중')).toBeChecked()
+    expect(statusOption('완료')).toBeEnabled()
     // 실패 뒤 그 태스크의 상세·이력·목록을 다시 묻는다
     const answered = log.timeline.indexOf('answer PATCH /tasks/tk_01')
     await waitFor(() =>
@@ -831,11 +917,11 @@ describe('상세·이력과 PM 의 상태 변경 (AC-04)', () => {
     const user = userEvent.setup()
     const log = recordRequests()
     const app = await openDetail('tk_01', '로그인 API 연동')
-    await user.selectOptions(await screen.findByLabelText('상태 바꾸기'), '완료')
+    await user.click(await screen.findByRole('radio', { name: '완료' }))
 
     act(() => app.navigate(paths.tasks('ws_01', 'tk_02')))
-    await screen.findByRole('heading', { level: 2, name: '회원가입 화면' })
-    await user.selectOptions(await screen.findByLabelText('상태 바꾸기'), '진행 중')
+    await screen.findByRole('heading', { level: 1, name: '회원가입 화면' })
+    await user.click(await screen.findByRole('radio', { name: '진행 중' }))
     await waitFor(() => expect(shownStatus()).toBe('진행 중'))
 
     act(() => app.navigate(paths.tasks('ws_01')))
@@ -881,7 +967,7 @@ describe('상세·이력과 PM 의 상태 변경 (AC-04)', () => {
       const gates = holdPatches({ tk_01: { fail: true } })
       const log = recordRequests()
       const app = await openDetail('tk_01', '로그인 API 연동')
-      await userEvent.selectOptions(await screen.findByLabelText('상태 바꾸기'), '완료')
+      await userEvent.click(await screen.findByRole('radio', { name: '완료' }))
 
       await userEvent.click(screen.getByRole('button', { name: /^내 계정/ }))
       await userEvent.click(await screen.findByRole('menuitem', { name: '로그아웃' }))
@@ -930,7 +1016,7 @@ describe('상세·이력과 PM 의 상태 변경 (AC-04)', () => {
       ws02.onboarding.completed = true
       const gates = holdPatches({ tk_01: { fail: true } })
       const app = await openDetail('tk_01', '로그인 API 연동')
-      await userEvent.selectOptions(await screen.findByLabelText('상태 바꾸기'), '완료')
+      await userEvent.click(await screen.findByRole('radio', { name: '완료' }))
 
       act(() => app.navigate(paths.tasks('ws_02')))
       await app.expectPath(paths.tasks('ws_02'))
@@ -952,7 +1038,7 @@ describe('상세·이력과 PM 의 상태 변경 (AC-04)', () => {
     it('PM 이 아니게 된 뒤 도착한 실패는 알리지 않고, 고르는 칸도 사라진다', async () => {
       const gates = holdPatches({ tk_01: { fail: true } })
       const app = await openDetail('tk_01', '로그인 API 연동')
-      await userEvent.selectOptions(await screen.findByLabelText('상태 바꾸기'), '완료')
+      await userEvent.click(await screen.findByRole('radio', { name: '완료' }))
 
       setMockRole('member')
       await act(() => app.queryClient.refetchQueries({ queryKey: WORKSPACE_LIST_QUERY_KEY }))

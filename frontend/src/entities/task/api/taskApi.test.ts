@@ -88,7 +88,10 @@ describe('조회', () => {
 
   it('이력은 상세로 공간을 확인한 뒤 최신순 이력을 돌려준다', async () => {
     const history = await new QueryClient().fetchQuery(taskHistoryQueryOptions('ws_01', 'tk_01'))
-    expect(history.map(({ id }) => id)).toEqual(['hs_02', 'hs_01'])
+    expect(history.map((item) => (item.kind === 'history' ? item.entry.id : item.id))).toEqual([
+      'hs_02',
+      'hs_01',
+    ])
   })
 
   it('상세가 캐시에 있으면 이력 조회가 상세를 다시 요청하지 않는다', async () => {
@@ -96,7 +99,10 @@ describe('조회', () => {
     await client.fetchQuery(taskDetailQueryOptions('ws_01', 'tk_01'))
     const requests = recordRequests()
     await client.fetchQuery(taskHistoryQueryOptions('ws_01', 'tk_01'))
-    expect(requests.started).toEqual([{ method: 'GET', path: '/tasks/tk_01/history' }])
+    expect(requests.started).toEqual([
+      { method: 'GET', path: '/tasks/tk_01/history' },
+      { method: 'GET', path: '/tasks/tk_01/timeline' },
+    ])
   })
 
   it('이력 대상 태스크가 다른 공간이면 이력을 성공 결과로 캐시하지 않는다', async () => {
