@@ -5,6 +5,7 @@ import { integrationsQueryOptions } from '@/entities/integration'
 import { meetingDetailQueryOptions, meetingListQueryOptions } from '@/entities/meeting'
 import { memberListQueryOptions } from '@/entities/member'
 import { taskListQueryOptions } from '@/entities/task'
+import { captureSessionScope } from '@/shared/api/sessionScope'
 import { latestDoneMeeting } from './lib/dashboard'
 
 /**
@@ -14,12 +15,15 @@ import { latestDoneMeeting } from './lib/dashboard'
  * 화면(useDashboardData)과 같은 query options 를 그대로 쓴다. 규칙도 같다.
  * - 태스크·대기 승인(PM 만)·팀원·연동·회의 목록은 함께 받는다
  * - 최근 반영은 회의 목록 → 최신 완료 회의 상세 → 추출 순서로만 알 수 있어 그 순서로 받는다
- * 이미 받은 값은 다시 받지 않는다. 실패는 삼킨다 — 화면이 뜨면 같은 Query 가 다시 묻고 그 오류를 그린다.
+ * 이미 받은 값은 다시 받지 않는다. 다음 조회를 정하는 회의 목록·상세는 `fetchQuery` 로 받는다 — 오래된 캐시면 새 값을 기다려
+ * 화면이 고를 회의·추출을 고른다. 시작할 때 잡은 세션이 그 사이 끝났으면 다음 조회를 시작하지 않는다.
+ * 실패는 삼킨다 — 화면이 뜨면 같은 Query 가 다시 묻고 그 오류를 그린다.
  */
 export async function prefetchDashboard(
   queryClient: QueryClient,
   { workspaceId, isPm }: { workspaceId: string; isPm: boolean },
 ): Promise<void> {
+  const session = captureSessionScope()
   const lists = Promise.all([
     queryClient.prefetchQuery(taskListQueryOptions(workspaceId)),
     isPm ? queryClient.prefetchQuery(pendingApprovalListQueryOptions(workspaceId)) : null,
@@ -27,17 +31,13 @@ export async function prefetchDashboard(
     queryClient.prefetchQuery(integrationsQueryOptions(workspaceId)),
   ])
   try {
-    const meetings = await queryClient.ensureQueryData({
-      ...meetingListQueryOptions(workspaceId),
-      revalidateIfStale: true,
-    })
+    const meetings = await queryClient.fetchQuery(meetingListQueryOptions(workspaceId))
     const latest = latestDoneMeeting(meetings)
-    if (latest !== null) {
-      const meeting = await queryClient.ensureQueryData({
-        ...meetingDetailQueryOptions(workspaceId, latest.id),
-        revalidateIfStale: true,
-      })
-      if (meeting.extractionId !== null)
+    if (session.isCurrent() && latest !== null) {
+      const meeting = await queryClient.fetchQuery(
+        meetingDetailQueryOptions(workspaceId, latest.id),
+      )
+      if (session.isCurrent() && meeting.extractionId !== null)
         await queryClient.prefetchQuery(extractionQueryOptions(workspaceId, meeting.extractionId))
     }
   } catch {
