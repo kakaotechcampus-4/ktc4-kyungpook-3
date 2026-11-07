@@ -781,6 +781,15 @@ class ApprovalRequest(Base):
     resolved_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # 승인 대기 중인 task_create 요청의 제목(payload 의 task_title 또는 title) 임베딩. 임베딩 워커가
+    # 채운다(app/services/embedding.py). NULL인 동안은 유사 검색에서 빠진다. 요청이 처리된 뒤에도 지우지 않는다.
+    # 벡터 1536개를 매 조회마다 읽지 않도록 필요할 때만 불러온다(deferred).
+    embedding: Mapped[list[float] | None] = mapped_column(
+        Vector(EMBEDDING_DIMENSIONS), nullable=True, deferred=True
+    )
+    # 임베딩 API가 입력 오류로 거절한 제목. 이 값이 있으면 워커가 그 요청을 다시 고르지 않는다.
+    # 빈 문자열("")은 제목이 없거나 문자열이 아니어서 API를 부르지 않고 건너뛴 요청이다.
+    embedding_rejected_title: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 class ReminderStatus(StrEnum):
     SCHEDULED = "scheduled"
