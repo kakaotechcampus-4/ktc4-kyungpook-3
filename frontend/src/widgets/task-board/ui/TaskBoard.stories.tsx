@@ -43,6 +43,7 @@ const meta = {
     onQueryChange: () => {},
     view: DEFAULT_VIEW_QUERY,
     onViewChange: () => {},
+    compact: false,
   },
   parameters: { scenario: 'tasks-default', route: '/workspaces/ws_01/tasks' },
 } satisfies Meta<typeof TaskBoard>

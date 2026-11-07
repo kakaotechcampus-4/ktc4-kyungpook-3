@@ -9,7 +9,7 @@ import type { TaskSort } from './taskSort'
 
 /*
  * 태스크 화면의 보기 전환 (Tasks · TasksBoard · TasksCalendar · TasksGantt 시안).
- * 보기·담당자·기간·정렬은 탭·날짜 조건과 같은 URL 에 둔다 — 새로고침·뒤로가기가 그대로 되살린다.
+ * 보기·담당자·기간·정렬·휴대폰 보드의 칸은 탭·날짜 조건과 같은 URL 에 둔다 — 새로고침·뒤로가기가 그대로 되살린다.
  * 탭·날짜 조건은 `boardSearch` 가, 이 파라미터는 `viewSearch` 가 쓴다. 서로의 파라미터는 건드리지 않는다.
  */
 
@@ -30,10 +30,15 @@ export const VIEW_PARAMS = {
   from: 'from',
   period: 'period',
   sort: 'sort',
+  column: 'column',
 } as const
 
 export const BOARD_PERIODS = ['all', 'month'] as const
 export type BoardPeriod = (typeof BOARD_PERIODS)[number]
+
+/** 보드의 상태 칸. 순서가 화면의 칸 순서다 */
+export const BOARD_COLUMNS = ['todo', 'active', 'done'] as const
+export type BoardColumnKey = (typeof BOARD_COLUMNS)[number]
 
 export interface ViewQuery {
   view: TaskView
@@ -47,6 +52,8 @@ export interface ViewQuery {
   period: BoardPeriod
   /** 리스트·보드의 순서. 캘린더·간트는 쓰지 않고 URL 에 그대로 둔다 */
   sort: TaskSort
+  /** 휴대폰 보드에서 고른 칸. 넓은 화면은 세 칸을 다 보여 쓰지 않고 URL 에 그대로 둔다 */
+  column: BoardColumnKey
 }
 
 export const DEFAULT_VIEW_QUERY: ViewQuery = {
@@ -56,6 +63,8 @@ export const DEFAULT_VIEW_QUERY: ViewQuery = {
   from: null,
   period: 'all',
   sort: 'due',
+  // 시안(PwaTasks)은 진행 중 칸을 먼저 보인다
+  column: 'active',
 }
 
 const MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/
@@ -74,6 +83,9 @@ export function readViewQuery(params: URLSearchParams): ViewQuery {
     sort:
       parseEnumParam(params.get(VIEW_PARAMS.sort) ?? undefined, TASK_SORTS) ??
       DEFAULT_VIEW_QUERY.sort,
+    column:
+      parseEnumParam(params.get(VIEW_PARAMS.column) ?? undefined, BOARD_COLUMNS) ??
+      DEFAULT_VIEW_QUERY.column,
   }
 }
 
@@ -87,6 +99,7 @@ export function viewSearch(current: URLSearchParams, next: ViewQuery): string {
   if (next.from !== null) rest.set(VIEW_PARAMS.from, next.from)
   if (next.period !== 'all') rest.set(VIEW_PARAMS.period, next.period)
   if (next.sort !== DEFAULT_VIEW_QUERY.sort) rest.set(VIEW_PARAMS.sort, next.sort)
+  if (next.column !== DEFAULT_VIEW_QUERY.column) rest.set(VIEW_PARAMS.column, next.column)
   const search = rest.toString().replace(/%2C/g, ',')
   return search === '' ? '' : `?${search}`
 }
@@ -122,6 +135,26 @@ export function cardBadges(task: Task, today: string): readonly CardBadge[] {
   if (task.status === 'blocked') return isOverdue(task, today) ? ['blocked', 'danger'] : ['blocked']
   const tone = taskTone(task, today)
   return tone === 'danger' || tone === 'warn' ? [tone] : []
+}
+
+/** 배지마다 그 배지를 단 카드 수. 막혔고 기한도 지난 카드는 막힘과 위험에 한 번씩 센다 */
+export function countBadges(tasks: readonly Task[], today: string): Record<CardBadge, number> {
+  const counts: Record<CardBadge, number> = { blocked: 0, danger: 0, warn: 0 }
+  for (const task of tasks) for (const badge of cardBadges(task, today)) counts[badge] += 1
+  return counts
+}
+
+/**
+ * 휴대폰 보드에서 고른 칸 아래 한 줄 (PwaTasks 시안) — `막힘 1 · 위험 4 · 마감 빠른 순`.
+ * 0 인 개수는 빼고, 끝에 그 칸의 순서(`order`)를 붙인다
+ */
+export function columnSummary(tasks: readonly Task[], today: string, order: string): string {
+  const { blocked, danger } = countBadges(tasks, today)
+  const counts = [
+    ['막힘', blocked],
+    ['위험', danger],
+  ] as const
+  return [...counts.flatMap(([label, n]) => (n === 0 ? [] : [`${label} ${n}`])), order].join(' · ')
 }
 
 /** 담당자로 거른다. 담당자를 고르지 않았으면 모두 맞다 */
