@@ -137,3 +137,13 @@ def test_terms_file_loads_and_skips_comments():
     assert {"배포", "디자인", "기획서", "밸리데이션"} <= terms
     assert not any(t.startswith("#") or not t.strip() for t in terms)
     assert "이자인" not in terms   # 팀원 이름은 파일에 두지 않는다
+
+
+def test_suspects_are_capped_for_the_be_limit(vocab, monkeypatch):
+    # BE 는 51개 이상이면 요청 전체를 400 으로 거절한다. 긴 합친 근거에서도 50개까지만 보낸다(#532 리뷰)
+    many = [{"word": f"단어{i}", "source": "evidence", "candidates": []} for i in range(80)]
+    monkeypatch.setattr(A, "find_suspects", lambda text, v, source: many if source == "evidence" else [])
+    out = check_item(["아무 줄"], "제목", vocab)
+    assert len(out) == A.MAX_SUSPECTS == 50
+    assert out[0]["word"] == "단어0"
+

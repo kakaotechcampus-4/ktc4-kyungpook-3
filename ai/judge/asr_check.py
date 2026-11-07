@@ -42,6 +42,9 @@ _SPAN_START_TAGS = {"NNG", "NNP", "NNB", "NR", "XR", "XPN", "SN"}
 RARE_MORPHEME_ID = 50000
 _HANGUL = re.compile(r"^[가-힣]+$")
 CHECK_FAILED = "check_failed"
+# BE 가 받는 asr_suspects 상한(backend schemas/meeting.py). 넘으면 요청 전체가 400 이라 그 회의 항목이 다 빠진다.
+# 게이트는 하나만 있어도 막으므로 잘라도 결과가 같다(#532 리뷰)
+MAX_SUSPECTS = 50
 
 _CHO = "ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ"
 _JUNG = "ㅏㅐㅑㅒㅓㅔㅕㅖㅗㅘㅙㅚㅛㅜㅝㅞㅟㅠㅡㅢㅣ"
@@ -262,7 +265,7 @@ def check_item(lines: list[str], title: str | None, vocab: Vocabulary) -> list[d
                 if s["word"] not in seen:
                     seen.add(s["word"])
                     out.append(s)
-        return out
+        return out[:MAX_SUSPECTS]
     except Exception as e:  # noqa: BLE001 - 분석 실패가 항목 전체를 버리게 하지 않는다
         logger.warning("전사 오인식 검사 실패라 auto 를 막는다: %s: %s", type(e).__name__, e)
         return failed()

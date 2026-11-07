@@ -233,7 +233,12 @@ class AsrSuspect(BaseModel):
     """전사 오인식 의심 단어 하나(AI judge/asr_check.py). 확인 카드에 "'애포'는 '배포'일 수 있어요"로 보일 수 있다."""
 
     word: str = Field(max_length=100, description="의심 단어. 검사를 하지 못했으면 빈 문자열")
-    source: str = Field(max_length=32, description="evidence(근거 발화) · title(제목) · check_failed(검사 실패)")
+    source: str = Field(
+        max_length=32,
+        description="evidence(근거 발화) · title(제목) · check_failed(검사 실패, word 는 빈 문자열). "
+        "AI 가 새 값을 먼저 배포해도 회의 전체가 400 이 되지 않게 문자열로 받는다. 모르는 값도 payload 에 그대로 싣고 "
+        "FE 는 evidence·title 만 교정 후보로, check_failed 는 \"검사하지 못함\"으로 따로 보인다",
+    )
     candidates: list[Annotated[str, Field(max_length=100)]] = Field(
         default_factory=list, max_length=5, description="발음이 가까운 업무 용어 후보. 가까운 순, 최대 5개"
     )
