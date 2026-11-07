@@ -483,9 +483,11 @@ def _propose(
     for line, change, line_match in group:
         match = line_match or match
         key = _PAYLOAD_KEY.get(line.field)
-        # 담당자를 못 찾았으면 원문만 보여 준다. 원문은 팀원 ID 가 아니라 값으로 싣지 않으므로 승인해도 담당자는 그대로다.
-        if key and not (line_match and line_match.member_id is None):
-            values[key] = line.new_value
+        # 담당자를 못 찾았으면 원문만 보여 준다. 원문은 팀원 ID 가 아니라 값으로 싣지 않는다.
+        # 기준값은 남겨 PM 이 고를 때 그사이 바뀐 담당자를 알린다.
+        if key:
+            if not (line_match and line_match.member_id is None):
+                values[key] = line.new_value
             if line.field == ReplyChangeField.STATUS:
                 base_values[key] = _claimed_status(row, task)
             else:
