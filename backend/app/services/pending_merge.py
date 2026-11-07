@@ -37,6 +37,9 @@ def merge_target_problem(
         return BAD_PAYLOAD
     if not isinstance(payload, dict):
         return BAD_PAYLOAD
+    # 이미 있는 merged_items 가 리스트가 아니면 항목을 덧붙일 수 없다. 없거나 null 이면 새로 만들면 된다
+    if payload.get("merged_items") is not None and not isinstance(payload["merged_items"], list):
+        return BAD_PAYLOAD
     return None
 
 

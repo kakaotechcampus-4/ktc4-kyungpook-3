@@ -60,6 +60,7 @@ from app.services.matching import (
 from app.services import upload_storage
 from app.services.alias_learning import learnable_alias_texts, storable_assignee_type
 from app.services.embedding import has_unsearchable_pending, has_unsearchable_tasks
+from app.services.pending_merge import merge_into_pending, merge_target_problem
 from app.services.tasks import create_task, delete_task
 
 logger = logging.getLogger(__name__)
@@ -165,6 +166,8 @@ def create_extraction(
     # 그대로 둔다(결정 기록 2026-11-07-pending-approval-search.md)
     unsearched_pending: bool | None = None
     targets = _lock_update_targets(db, payload.items)
+    # task 잠금 다음에 합칠 승인 요청을 잠근다. 두 요청이 같은 카드들을 반대 순서로 합쳐도 ID 순이라 데드락이 없다
+    merge_cards = _lock_merge_targets(db, payload.items)
     sources_by_seq = _sources_by_seq(db, meeting.meeting_id, payload.items)
     # 멤버 ID로 화자를 정하는 데 쓸 팀원을 요청당 한 번에 읽는다(항목의 evidence_speaker_member_id와 근거 발화의 member_id)
     speaker_members = active_members_by_id(
@@ -178,6 +181,9 @@ def create_extraction(
         # 잘못된 항목 하나로 요청 전체를 실패시키면 봇이 같은 요청을 재시도하다 회의 전체가
         # 반영되지 않는다. 그런 항목은 건너뛰고 나머지를 처리한다.
         target: Task | None = None
+        # 합칠 수 있는 대상 카드. 없으면 merge 항목도 create 로 처리한다
+        merge_card: ApprovalRequest | None = None
+        item_action = raw_item.action
         if raw_item.action == ExtractionAction.UPDATE:
             target = targets.get(raw_item.target_task_id) if raw_item.target_task_id else None
             if target is None or target.is_deleted or target.workspace_id != meeting.workspace_id:
@@ -194,6 +200,21 @@ def create_extraction(
                 meeting.meeting_id, raw_item.evidence_quote,
             )
             continue
+        if raw_item.action == ExtractionAction.MERGE:
+            problem = merge_target_problem(
+                merge_cards.get(raw_item.target_approval_id) if raw_item.target_approval_id else None,
+                raw_item.target_approval_id,
+                meeting.workspace_id,
+            )
+            if problem is None:
+                merge_card = merge_cards[raw_item.target_approval_id]
+            else:
+                # 대상이 사라졌거나 이미 처리됐을 수 있다. 400 으로 돌려 회의 전체를 막지 않고 새 카드로 만든다
+                item_action = ExtractionAction.CREATE
+                logger.info(
+                    "merge_target_unavailable reason=%s target_approval_id=%s meeting_id=%s",
+                    problem, raw_item.target_approval_id, meeting.meeting_id,
+                )
 
         evidence_source = _representative_source(raw_item.evidence_seqs, sources_by_seq)
         evidence = _request_evidence(raw_item, evidence_source, speaker_members)
@@ -237,7 +258,8 @@ def create_extraction(
             path = raw_item.extraction_path()
             mentioned = mentions_assignee(raw_item.assignee_type, assignee_hint)
             blockers = None
-            if path == ExtractionPath.JUDGE:
+            # 합쳐지는 항목은 새 일이 아니라 유사 검색 결과로 auto 를 가리지 않는다. 어차피 아래에서 review 로 내린다
+            if path == ExtractionPath.JUDGE and merge_card is None:
                 if unsearched_tasks is None:
                     unsearched_tasks = has_unsearchable_tasks(db, meeting.workspace_id)
                     unsearched_pending = has_unsearchable_pending(db, meeting.workspace_id)
@@ -279,6 +301,10 @@ def create_extraction(
                     "chat 회의라 auto 항목을 review로 내립니다. meeting_id=%s title=%s",
                     meeting.meeting_id, raw_item.task_title,
                 )
+            if (merge_card is not None or raw_item.action == ExtractionAction.MERGE) and gate == Gate.AUTO:
+                # 승인 대기 카드에 합치는 항목, 합치려다 대상을 못 쓴 항목은 PM 이 본다.
+                # 합치기는 PM 이 아직 보지 않은 카드를 고치는 일이고, 대상을 못 쓴 항목은 중복 검사를 거치지 못했다
+                gate = Gate.REVIEW
             if blockers:
                 # auto 조건과 유사도 기준을 조정할 때 어떤 조건에서 많이 걸리는지 본다
                 logger.info(
@@ -288,7 +314,7 @@ def create_extraction(
 
         item = ExtractionItem(
             extraction_id=extraction.extraction_id,
-            action=str(raw_item.action),
+            action=str(item_action),
             task_title=target.title if target is not None else raw_item.task_title,
             task_confidence=raw_item.task_confidence,
             assignee_raw=raw_item.assignee_raw,
@@ -314,7 +340,31 @@ def create_extraction(
         saved_count += 1
         _add_item_evidence(db, meeting.meeting_id, item, raw_item.evidence_seqs, sources_by_seq)
 
-        if target is not None:
+        if merge_card is not None:
+            # 새 카드·task 를 만들지 않고 대상 카드 payload 에 값을 합친다. 승인 때 이 항목도 같은 task 에 연결된다
+            merged = merge_into_pending(
+                json.loads(merge_card.payload),
+                item_id=item.item_id,
+                meeting_id=meeting.meeting_id,
+                category=raw_item.category,
+                due_date=raw_item.due_date,
+                due_raw=raw_item.due_raw,
+                status=str(raw_item.status) if raw_item.status else None,
+                assignee_member_id=match.member_id,
+                assignee_raw=raw_item.assignee_raw,
+                gate=str(gate),
+                doc_text=raw_item.doc_text,
+                evidence={
+                    "evidence_quote": evidence.quote,
+                    "evidence_speaker": evidence.speaker,
+                    "evidence_speaker_member_id": evidence.speaker_member_id,
+                    "evidence_at_ms": evidence.at_ms,
+                },
+                now=datetime.now(timezone.utc),
+            )
+            merge_card.payload = json.dumps(merged, ensure_ascii=False)
+            item.approval_id = merge_card.approval_id
+        elif target is not None:
             _request_task_update(
                 db, meeting, item, raw_item, match, target, evidence, has_assignee=assignee_hint is not None
             )
@@ -511,6 +561,28 @@ def _lock_update_targets(db: Session, items: list[ExtractionItemCreate]) -> dict
         .execution_options(populate_existing=True)
     ).scalars().all()
     return {task.task_id: task for task in rows}
+
+
+def _lock_merge_targets(db: Session, items: list[ExtractionItemCreate]) -> dict[str, ApprovalRequest]:
+    """합치기 항목이 가리키는 승인 요청을 ID 순서로 한 번에 잠근다. 커밋까지 잠겨 승인·반려와 겹치지 않는다.
+
+    승인이 먼저 커밋되면 populate_existing 으로 최신 상태를 읽어 처리된 카드를 알아본다.
+    """
+    approval_ids = sorted({
+        item.target_approval_id
+        for item in items
+        if item.action == ExtractionAction.MERGE and item.target_approval_id
+    })
+    if not approval_ids:
+        return {}
+    rows = db.execute(
+        select(ApprovalRequest)
+        .where(ApprovalRequest.approval_id.in_(approval_ids))
+        .order_by(ApprovalRequest.approval_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    ).scalars().all()
+    return {card.approval_id: card for card in rows}
 
 
 def _same_instant(a: datetime, b: datetime) -> bool:
