@@ -1,5 +1,6 @@
 import type { Bundle, MessageInbox, MessageThreadSummary } from '@/entities/message'
-import { selectDetail } from './selection'
+import { inboxPane, nextPaneMemory, selectDetail } from './selection'
+import type { InboxPane, PaneMemory } from './selection'
 
 const bundle = (id: string, stage: Bundle['stage'] = 'awaitingApproval') =>
   ({ id, stage }) as Bundle
@@ -80,4 +81,67 @@ it('재촉 만들기는 목록을 기다리지 않고 고른 묶음보다 앞선
   ).toEqual({ kind: 'compose' })
   expect(select({ threadId: 'th_01', composing: true }).kind).toBe('thread')
   expect(select({ invalidPath: true, composing: true }).kind).toBe('invalid')
+})
+
+describe('inboxPane', () => {
+  const pane = (input: Partial<Parameters<typeof inboxPane>[0]>) =>
+    inboxPane({
+      compact: true,
+      threadId: null,
+      bundleId: undefined,
+      invalidPath: false,
+      composing: false,
+      ...input,
+    })
+
+  it('넓은 화면은 무엇을 골랐든 목록과 상세를 나란히 둔다', () => {
+    expect(pane({ compact: false })).toBe('both')
+    expect(pane({ compact: false, threadId: 'th_01' })).toBe('both')
+  })
+
+  it('휴대폰은 주소가 아무것도 가리키지 않으면 목록이다 — 첫 항목을 대신 고르지 않는다', () => {
+    expect(pane({})).toBe('list')
+  })
+
+  it('휴대폰은 주소가 대화·묶음·새 재촉·틀린 주소를 가리키면 상세를 화면 전체로 연다', () => {
+    expect(pane({ threadId: 'th_01' })).toBe('detail')
+    expect(pane({ bundleId: 'bd_01' })).toBe('detail')
+    expect(pane({ bundleId: null })).toBe('detail')
+    expect(pane({ composing: true })).toBe('detail')
+    expect(pane({ invalidPath: true })).toBe('detail')
+  })
+})
+
+describe('nextPaneMemory', () => {
+  const start = (pane: InboxPane, locationKey = 'a'): PaneMemory => ({
+    pane,
+    locationKey,
+    keep: false,
+    epoch: 0,
+  })
+
+  it('넓은 화면에서 폭만 줄여 목록이 되면 상세를 숨겨 들고 있다', () => {
+    const narrowed = nextPaneMemory(start('both'), 'list', 'a')
+    expect(narrowed.keep).toBe(true)
+    // 다시 넓혔다 줄여도 같다
+    expect(nextPaneMemory(nextPaneMemory(narrowed, 'both', 'a'), 'list', 'a').keep).toBe(true)
+  })
+
+  it('이동으로 목록에 오면 상세를 들고 있지 않는다', () => {
+    expect(nextPaneMemory(start('detail'), 'list', 'b').keep).toBe(false)
+    expect(nextPaneMemory(start('list'), 'list', 'b').keep).toBe(false)
+  })
+
+  it('숨겨 둔 상세가 있는 채 이동하면 판을 올려 상세를 새로 그린다', () => {
+    const narrowed = nextPaneMemory(start('both'), 'list', 'a')
+    const opened = nextPaneMemory(narrowed, 'detail', 'b')
+    expect(opened).toMatchObject({ keep: false, epoch: 1 })
+    // 들고 있지 않을 때의 이동은 판을 그대로 둔다
+    expect(nextPaneMemory(opened, 'list', 'c').epoch).toBe(1)
+  })
+
+  it('같은 칸·같은 기록이면 그대로 돌려준다', () => {
+    const memory = start('detail')
+    expect(nextPaneMemory(memory, 'detail', 'a')).toBe(memory)
+  })
 })
