@@ -1,26 +1,13 @@
 import { useId, useState } from 'react'
+import { TASK_STATUS_OPTIONS } from '@/entities/task'
 import { isDateOnly } from '@/shared/lib/date'
-import type { TaskStatus } from '@/shared/types/common'
 import { Button } from '@/shared/ui/button'
 import { DateField } from '@/shared/ui/date-field'
-import { Icon } from '@/shared/ui/icon'
 import { Label } from '@/shared/ui/label'
+import { Select } from '@/shared/ui/select'
 import type { TaskUpdateOverrides } from '../model/useTaskUpdateOverrides'
 
 const ROW = 'grid grid-cols-1 items-start gap-12 sm:grid-cols-2'
-const SELECT =
-  'h-44 w-full appearance-none rounded-9 border border-input-border bg-surface pr-40 pl-13 text-[15px] text-ink disabled:border-line disabled:bg-surface-sunken disabled:text-faint'
-
-const STATUS_OPTIONS: { value: TaskStatus; label: string }[] = [
-  { value: 'todo', label: '할 일' },
-  { value: 'in_progress', label: '진행 중' },
-  { value: 'blocked', label: '막힘' },
-  { value: 'done', label: '완료' },
-]
-
-function isStatus(value: string): value is TaskStatus {
-  return STATUS_OPTIONS.some((option) => option.value === value)
-}
 
 export interface TaskUpdateOverrideFieldsProps {
   overrides: TaskUpdateOverrides
@@ -30,7 +17,7 @@ export interface TaskUpdateOverrideFieldsProps {
 
 /**
  * 변경 승인의 상태·마감을 바로 고친다 (E-6). 만지지 않은 칸은 원래 제안을 유지한다.
- * 상태 선택 상자는 공용 선택 상자로 바꾸지 않는다 — 후속 #477 의 범위다
+ * 상태 줄은 보드 칸 머리와 같은 표식을 앞에 둔다
  */
 export function TaskUpdateOverrideFields({
   overrides,
@@ -48,32 +35,18 @@ export function TaskUpdateOverrideFields({
         <Label htmlFor={statusId} className="mb-6">
           상태
         </Label>
-        <div className="relative">
-          <select
-            id={statusId}
-            className={SELECT}
-            value={status}
-            disabled={disabled}
-            onChange={(event) => {
-              const value = event.target.value
-              if (value !== '' && !isStatus(value)) return
-              onInputChange()
-              overrides.setStatus(value)
-            }}
-          >
-            {overrides.statusKeepsProposal ? <option value="">원래 제안 유지</option> : null}
-            {STATUS_OPTIONS.map(({ value, label }) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </select>
-          <Icon
-            name="chevron-down"
-            size={14}
-            className="pointer-events-none absolute top-1/2 right-13 -translate-y-1/2 text-dim"
-          />
-        </div>
+        <Select
+          id={statusId}
+          label="상태"
+          value={status === '' ? null : status}
+          onValueChange={(value) => {
+            onInputChange()
+            overrides.setStatus(value ?? '')
+          }}
+          options={TASK_STATUS_OPTIONS}
+          noneOption={overrides.statusKeepsProposal ? { label: '원래 제안 유지' } : undefined}
+          disabled={disabled}
+        />
       </div>
       <div className="flex flex-col">
         <DateField

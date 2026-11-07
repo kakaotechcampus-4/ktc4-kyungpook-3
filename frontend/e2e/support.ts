@@ -18,6 +18,8 @@ export type Scenario =
   | 'meeting-notion-not-connected'
   | 'meeting-notion-revoked'
   | 'meeting-member'
+  | 'meeting-chat-processing'
+  | 'meeting-chat-stalled'
   | 'meeting-speakers'
   | 'meeting-speakers-expired'
   | 'tasks-default'

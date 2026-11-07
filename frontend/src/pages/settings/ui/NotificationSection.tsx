@@ -1,20 +1,16 @@
 import { useId } from 'react'
 import type { ReactNode } from 'react'
-import {
-  NUDGE_DAYS_BEFORE,
-  nudgeDayLabel,
-  nudgeHourLabel,
-  nudgeRuleLabel,
-} from '@/entities/message-settings'
+import { NUDGE_DAYS_BEFORE, nudgeHourLabel, nudgeRuleLabel } from '@/entities/message-settings'
 import type {
   MessageSettings,
   MessageSettingsChange,
-  NudgeDaysBefore,
   PmAlertMethod,
 } from '@/entities/message-settings'
 import { BrowserPushControl } from '@/features/browser-push'
 import { useMessageSettings } from '@/features/message-settings'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
+import { Select } from '@/shared/ui/select'
+import type { SelectOption } from '@/shared/ui/select'
 import { Skeleton } from '@/shared/ui/skeleton'
 import { existingSuggestionNote, pmWebOnlyNotice } from '../lib/notificationCopy'
 import { OPTION_CARD, OPTION_DESCRIPTION, OPTION_TITLE } from './settingsStyles'
@@ -88,8 +84,6 @@ const KNOB = 'h-[17px] w-[17px] rounded-999 bg-surface'
 /* 꺼진 손잡이의 실선 테두리는 점선 색이다. `border-dashed` 는 모양까지 점선으로 바꿔 쓰지 않는다
    (docs/impl-decision/2026-09-16-border-dashed-name-collision.md) */
 const KNOB_OFF = 'border border-(--color-dashed)'
-const SELECT =
-  'h-32 rounded-9 border border-input-border bg-surface px-8 text-caption text-ink disabled:cursor-default disabled:text-sub'
 const CAPTION = 'text-caption text-sub'
 
 export interface NotificationSectionProps {
@@ -206,6 +200,17 @@ function NotificationControls({
   )
 }
 
+/* 문장 「마감 [1일 전] [09:00]에 보내요」 안의 칸이라 「마감」 을 앞 글자로 빼고 줄인다 (시안 select-design.html 4) */
+const DAY_OPTIONS: readonly SelectOption<string>[] = NUDGE_DAYS_BEFORE.map((days) => ({
+  value: String(days),
+  label: days === 0 ? '당일' : `${String(days)}일 전`,
+}))
+
+const HOUR_OPTIONS: readonly SelectOption<string>[] = HOURS.map((hour) => ({
+  value: String(hour),
+  label: nudgeHourLabel(hour),
+}))
+
 /** 재촉 규칙 — 마감 며칠 전(0~3) · 몇 시(0~23시 정시, 한국 시간). 바꾸면 규칙 전체를 보낸다 */
 function NudgeRuleFields({
   settings,
@@ -216,47 +221,39 @@ function NudgeRuleFields({
   canManage: boolean
   onChange: (change: MessageSettingsChange) => void
 }) {
-  const daysId = useId()
-  const hourId = useId()
   const rule = settings.nudgeRule
   return (
-    <div className="mt-8 flex flex-wrap items-center gap-8">
-      <label htmlFor={daysId} className="sr-only">
-        재촉 며칠 전
-      </label>
-      <select
-        id={daysId}
-        className={SELECT}
-        value={rule.daysBefore}
-        disabled={!canManage}
-        onChange={(event) =>
-          onChange({
-            nudgeRule: { ...rule, daysBefore: Number(event.target.value) as NudgeDaysBefore },
-          })
-        }
-      >
-        {NUDGE_DAYS_BEFORE.map((days) => (
-          <option key={days} value={days}>
-            {nudgeDayLabel(days)}
-          </option>
-        ))}
-      </select>
-      <label htmlFor={hourId} className="sr-only">
-        재촉 보낼 시각
-      </label>
-      <select
-        id={hourId}
-        className={SELECT}
-        value={rule.hour}
-        disabled={!canManage}
-        onChange={(event) => onChange({ nudgeRule: { ...rule, hour: Number(event.target.value) } })}
-      >
-        {HOURS.map((hour) => (
-          <option key={hour} value={hour}>
-            {nudgeHourLabel(hour)}
-          </option>
-        ))}
-      </select>
+    <div className="mt-8 flex flex-wrap items-center gap-8 text-body text-ink">
+      <span>마감</span>
+      <div className="w-[96px]">
+        <Select
+          size="sm"
+          label="재촉 며칠 전"
+          aria-label="재촉 며칠 전"
+          value={String(rule.daysBefore)}
+          options={DAY_OPTIONS}
+          disabled={!canManage}
+          onValueChange={(value) => {
+            const daysBefore = NUDGE_DAYS_BEFORE.find((days) => String(days) === value)
+            if (daysBefore !== undefined) onChange({ nudgeRule: { ...rule, daysBefore } })
+          }}
+        />
+      </div>
+      <div className="w-[92px]">
+        <Select
+          size="sm"
+          label="재촉 보낼 시각"
+          aria-label="재촉 보낼 시각"
+          value={String(rule.hour)}
+          options={HOUR_OPTIONS}
+          disabled={!canManage}
+          onValueChange={(value) => {
+            const hour = HOURS.find((each) => String(each) === value)
+            if (hour !== undefined) onChange({ nudgeRule: { ...rule, hour } })
+          }}
+        />
+      </div>
+      <span>에 보내요</span>
     </div>
   )
 }

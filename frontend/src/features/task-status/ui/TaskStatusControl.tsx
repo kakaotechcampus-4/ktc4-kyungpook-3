@@ -1,7 +1,7 @@
+import { TASK_STATUSES, TASK_STATUS_LABEL } from '@/entities/task'
 import type { TaskStatus } from '@/entities/task'
 import { parseEnumParam } from '@/shared/lib/url'
 import { Segmented, SegmentedItem } from '@/shared/ui/segmented'
-import { TASK_STATUSES, TASK_STATUS_LABEL } from '../lib/statusLabel'
 import { useTaskStatusChange } from '../model/useTaskStatusChange'
 
 const BUSY = 'text-meta text-dim'

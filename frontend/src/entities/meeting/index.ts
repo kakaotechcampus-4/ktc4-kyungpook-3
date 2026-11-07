@@ -30,7 +30,7 @@ export { assignSpeakers, meetingAudioUrl, speakerViewQueryOptions } from './api/
 export { speakerTitle, speakingTime } from './lib/speakers'
 export type { UploadMeetingOptions } from './api/uploadMeeting'
 export { toUploadForm, uploadMeeting } from './api/uploadMeeting'
-export { findProcessingMeeting } from './lib/processingMeeting'
+export { findUploadBlockingMeeting } from './lib/uploadBlockingMeeting'
 export type { MinutesList } from './lib/minutesList'
 export { latestMinutesId, toMinutesList } from './lib/minutesList'
 export { meetingFailure } from './lib/meetingFailure'

@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useId, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { flushSync } from 'react-dom'
-import { memberListQueryOptions } from '@/entities/member'
+import { ASSIGNEE_NONE_OPTION, assigneeOptions, memberListQueryOptions } from '@/entities/member'
 import type { Task, TaskStatus } from '@/entities/task'
 import { TaskAutoBlockNotice } from '@/features/task-auto-block'
 import { taskFieldChanges, useTaskFieldsSave } from '@/features/task-fields-edit'
@@ -14,6 +14,7 @@ import { Button } from '@/shared/ui/button'
 import { DateField } from '@/shared/ui/date-field'
 import { ErrorText } from '@/shared/ui/error-text'
 import { Icon } from '@/shared/ui/icon'
+import { Select } from '@/shared/ui/select'
 import { assigneeLabel } from '../lib/history'
 
 const PANEL = 'flex flex-col gap-12 rounded-16 bg-surface-sunken px-20 py-18'
@@ -27,8 +28,6 @@ const VALUE =
 const PLAIN_VALUE = 'flex min-h-44 items-center text-[15px] text-ink'
 const EDIT_BUTTON =
   'inline-flex h-44 w-44 shrink-0 items-center justify-center rounded-9 text-ink hover:bg-control disabled:text-line-strong'
-const SELECT =
-  'h-44 w-full rounded-9 border border-input-border bg-surface px-13 text-body text-ink disabled:bg-surface-sunken disabled:text-faint'
 const BLOCKER = 'flex flex-col gap-6 border-t border-divider pt-12'
 const SAVE_ROW =
   'flex flex-wrap items-center justify-between gap-x-16 gap-y-8 border-t border-divider pt-12'
@@ -273,7 +272,7 @@ function ReadValue({
   )
 }
 
-/** 담당자 고르기. 공용 선택 상자로 바꾸는 일은 #477 이 맡는다 */
+/** 담당자 고르기 — 맨 위 「미정」, 지금 담당자가 팀원 목록에 없으면 「알 수 없는 담당자」 */
 function AssigneeInput({
   selectId,
   workspaceId,
@@ -286,29 +285,21 @@ function AssigneeInput({
   workspaceId: string
   value: string | null
   disabled: boolean
-  inputRef: (node: HTMLSelectElement | null) => void
+  inputRef: (node: HTMLButtonElement | null) => void
   onChange: (memberId: string | null) => void
 }) {
   const members = useQuery(memberListQueryOptions(workspaceId))
-  const options = members.data ?? []
-  const unknown = value !== null && !options.some(({ id }) => id === value)
   return (
-    <select
+    <Select
       id={selectId}
       ref={inputRef}
-      className={SELECT}
-      value={value ?? ''}
+      label="담당자"
+      value={value}
+      onValueChange={onChange}
+      options={assigneeOptions(members.data, value)}
+      noneOption={ASSIGNEE_NONE_OPTION}
       disabled={disabled}
-      onChange={(event) => onChange(event.target.value === '' ? null : event.target.value)}
-    >
-      <option value="">담당자 없음</option>
-      {unknown ? <option value={value}>알 수 없는 담당자</option> : null}
-      {options.map(({ id, displayName }) => (
-        <option key={id} value={id}>
-          {displayName}
-        </option>
-      ))}
-    </select>
+    />
   )
 }
 
