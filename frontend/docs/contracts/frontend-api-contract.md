@@ -64,7 +64,7 @@ FE 변경과 실제 검증은 [M6 후속 결과](../plan/m6/result.md)에 기록
 |---|---|---|
 | `POST /auth/signup`, `POST /auth/login`, `POST /auth/logout`, `GET /auth/me` | 가입 `{email,password,name}`, 로그인 `{email,password}`. 세션 DTO를 도메인 세션으로 변환, 토큰을 화면에 전달하지 않음 | [인증](../../src/entities/user/api/auth.ts), [세션](../../src/entities/user/api/session.ts), [인증 DTO](../../src/shared/types/api/auth.ts) |
 | `/workspaces` 목록·생성·상세, `PATCH /workspaces/{id}/onboarding` | 공간·역할·단계 상태를 사용. 단계 갱신 후 상세 재조회 | [공간 API](../../src/entities/workspace/api), [공간 DTO](../../src/shared/types/api/workspace.ts) |
-| `GET /workspaces/{id}/integrations`, `DELETE /workspaces/{id}/integrations/{provider}` | Discord·Notion 상태. 해제는 204 무본문 | [연동 API](../../src/entities/integration/api/integrations.ts), [연동 DTO](../../src/shared/types/api/integration.ts) |
+| `GET /workspaces/{id}/integrations`, `DELETE /workspaces/{id}/integrations/{provider}` | Discord·Notion 상태. 해제는 204 무본문. Discord 의 `chat_channel` 과 채팅 채널 목록·저장·해제는 §4.3.1 | [연동 API](../../src/entities/integration/api/integrations.ts), [연동 DTO](../../src/shared/types/api/integration.ts) |
 | `POST /workspaces/{id}/meetings/upload` | multipart `title`, ISO `started_at`, 참석자별 반복 `attendee_member_ids`, `file`. 202 data `{meeting_id,status}` | [업로드](../../src/entities/meeting/api/uploadMeeting.ts), [회의 DTO](../../src/shared/types/api/meeting.ts) |
 | `GET /workspaces/{id}/meetings`, `GET /meetings/{id}` | 목록은 `{items,total}`, nullable title. 상세는 workspace_id·status·progress·extraction_id·failed_stage | [회의 조회](../../src/entities/meeting/api/meetingQueries.ts), [회의 DTO](../../src/shared/types/api/meeting.ts) |
 | `GET /meetings/{id}/minutes` | nullable summary·title, 참석자 배열, 전사 배열, permissions `{can_review,can_undo}` | [회의록 조회](../../src/entities/minutes/api/minutesQuery.ts), [회의록 DTO](../../src/shared/types/api/minutes.ts) |
@@ -297,6 +297,7 @@ AUDIO_TOO_LARGE(413)              DISCORD_USER_ALREADY_MAPPED(409)
 ```
 
 - `WORKSPACE_MISMATCH` 는 **400** 이다. 이전 판이 409 로 적은 것은 오류였다.
+- 회의 채팅 채널(#428)이 `DISCORD_CHANNEL_NOT_FOUND(404)`·`DISCORD_CHANNEL_NOT_ACCESSIBLE(409)` 를 더했다. 위 목록의 개수는 이 절을 처음 쓴 때 기준이며 전체 목록은 `core/errors.py` 가 원천이다 → §4.3.1.
 - 아래 3개는 **정의만 되고 아직 아무도 던지지 않는다.** 화면은 처리 경로를 갖되 실제로 오는지는 기대하지 않는다 → §4.0.
   `ONBOARDING_INCOMPLETE` · `INTEGRATION_REVOKED` · `AUDIO_TOO_LARGE`
 
@@ -1079,6 +1080,25 @@ M4 에서 실 API 로 완결되지 않는다. 그때까지 MSW 로 진행한다.
   연동 카드는 provider 이름을 프론트엔드가 쓰고, `display_name` 은 실제 값이 올 때까지 표시하지 않는다.
 - 연결 요청에 본문이 없다. Notion 은 OAuth 만 수행하고 데이터베이스 선택 화면을 만들지 않는다 (D-154). → 연결 경로 자체가 아직 없다.
 
+#### 4.3.1 회의 채팅 채널 (#428·#429, 2026-11-07)
+
+- **합의된 규약.** [#428](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/428) 댓글의 BE 설계 확정과 구현(PR #432, 2026-11-06 develop 병합)에 따른다. PM 이 설정에서 디스코드 서버의 텍스트 채널 하나를 고르면 매일 09:00(KST)에 그 채널 대화를 읽어 task 제안을 만든다. 채널은 워크스페이스마다 하나이고 별도 봇 초대는 없다. FE 위치(설정 연결 탭의 Discord 항목 아래, PM 만)와 저장 전 안내 문구는 [#429](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/429) 의 FE 진행 기본값 댓글(2026-11-07)을 따른다. 그 댓글은 이견이 있으면 이슈에 남기라고 했으므로 PM·디자인의 최종 확인은 **합의 여부 확인 필요**로 둔다.
+
+| Method | Path | 권한 | 응답 `data` |
+|---|---|---|---|
+| GET | `/api/v1/workspaces/{workspace_id}/integrations` | 소속 팀원 | `discord.chat_channel: {channel_id, name} \| null` 이 더해졌다. `notion` 에는 없다 |
+| GET | `/api/v1/workspaces/{workspace_id}/discord/channels` | PM | `{items: [{channel_id, name}], total}`. 일반 텍스트 채널(type 0)만이다 |
+| PUT | `/api/v1/workspaces/{workspace_id}/integrations/discord/chat-channel` | PM | 요청 `{channel_id}`, 응답 `{channel_id, name}` |
+| DELETE | `/api/v1/workspaces/{workspace_id}/integrations/discord/chat-channel` | PM | 200 `{off_notice_sent: boolean}`. 이미 꺼져 있거나 연결이 없어도 200 이다 |
+
+- **저장 순서와 실패.** 서버는 연결 행을 잠그고 (1) 연결한 서버의 텍스트 채널인지 (2) 봇이 읽을 수 있는지(`GET /channels/{id}/messages?limit=1`) (3) 켬 공지를 보낼 수 있는지를 거친 뒤에만 저장한다. 하나라도 실패하면 저장하지 않는다. 같은 채널을 다시 저장하면 Discord 를 부르지 않고 성공한다. 채널 이름은 저장 시점 값이다.
+- **오류.** `channel_id` 가 숫자 1~20자가 아니면 400 `INVALID_REQUEST`. 연결이 없으면 409 `INTEGRATION_NOT_CONNECTED`(`details.provider`). 서버의 텍스트 채널이 아니면 404 `DISCORD_CHANNEL_NOT_FOUND`(`details.channel_id`). 봇이 읽거나 보낼 수 없으면 409 `DISCORD_CHANNEL_NOT_ACCESSIBLE`(`details.need` 가 `read` 또는 `send`, `channel_id`, `discord_code`). Discord 장애·봇 토큰 없음은 502 `DISCORD_API_FAILED`. 목록에 보이는 채널도 비공개면 저장이 실패할 수 있다.
+- **해제.** 채널을 바꾸거나 끄거나 Discord 연결을 해제하면 서버가 옛 채널에 끔 공지를 시도한다. 공지 실패는 끄기를 되돌리지 않고 `off_notice_sent: false` 로만 알린다. `DELETE /integrations/discord`(§4.3)도 채팅 채널을 함께 지운다. 다른 서버로 다시 연결하면 공지 없이 채널 값만 비운다.
+- **현재 서버 구현.** [api/integrations.py](../../../backend/app/api/integrations.py)의 `get_integrations`·`list_discord_channels`·`set_discord_chat_channel`·`clear_discord_chat_channel`·`delete_integration`, [services/chat_channel.py](../../../backend/app/services/chat_channel.py), [schemas/integration.py](../../../backend/app/schemas/integration.py), [core/errors.py](../../../backend/app/core/errors.py)다.
+- **현재 프론트 구현(#429).** DTO [integration.ts](../../src/shared/types/api/integration.ts), 엔티티 [연동 API](../../src/entities/integration/api/integrations.ts)가 조회·목록·저장·해제를 맡고 매퍼가 `discord.chatChannel` 로 바꾼다. 설정 연결 탭의 Discord 카드 아래 `회의 채팅 채널` 칸은 PM 에게만 보이고, Discord 가 연결돼 있지 않으면 비활성이며 목록을 부르지 않는다. 채널을 고르면 저장 전에 칸 아래 안내를 보이고 `저장` 으로 PUT, `사용 안 함` 저장은 DELETE 다. 쓰기는 세션 범위(`captureSessionScope`)를 잡아 세션이 바뀐 뒤 보내지 않는다. 오류 코드별 문구는 기능 안의 문구 표가 정하고, `need=read`·`need=send` 는 채널 권한에서 고칠 방법을 알린다. `DISCORD_CHANNEL_NOT_FOUND` 면 채널 목록을 다시 받는다. Discord 연결 해제 확인 창은 채팅 채널이 있을 때 함께 꺼진다고 알린다. 선택 칸은 공용 선택 상자(`shared/ui/select`, #471)다.
+- **모의 서버(MSW).** [integration handler](../../src/shared/mock/handlers/integration.ts)가 위 세 경로와 오류를 BE 모양으로 흉내낸다. 모의 채널마다 접근 상태(`ok`·`no_read`·`no_send`)를 두어 409 `need` 두 경우를 재현한다.
+- **검증 한계.** 실제 Discord 서버와 BE 를 붙인 저장·공지는 확인하지 않았다. FE 확인은 MSW 기준이다.
+
 ### 4.4 meetings 웹 경로
 
 봇 경로(§2.3)와 같은 리소스를 쓴다. `source` 로만 구분한다 (D-157).
@@ -1730,6 +1750,7 @@ FE 연결 (#340, 2026-11-05).
 | 건너뛴 온보딩 마저 하기 | 5.3 과 같다 | |
 | 팀원 초대·취소·연결 끊기 | `GET`·`POST /workspaces/{id}/invitations`, `POST /invitations/{id}/cancel`·`revoke` | BE 구현, 프론트엔드 미연결 §5.9 |
 | 알림(메시지·알림 설정) | `GET`·`PATCH /workspaces/{id}/message-settings` | **구현됨** §5.7 (#340) |
+| 회의 채팅 채널(PM) | `GET /workspaces/{id}/discord/channels`, `PUT`·`DELETE .../integrations/discord/chat-channel` | **구현됨** §4.3.1 (#428, #429) |
 
 - `unresolved-aliases` 가 쓰이는 곳이 여기다. 온보딩의 팀원 연결과 목적이 다르다 (§4.5).
 - 그 밖의 설정 항목은 결정 대기다.

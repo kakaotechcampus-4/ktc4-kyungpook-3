@@ -25,6 +25,8 @@ export interface ConnectionActionsProps {
   provider: IntegrationProvider
   /** 서버가 끊은 뒤, 카드가 미연결로 바뀌기 직전에 부른다. 이 버튼들은 그때 사라진다 — 카드가 포커스를 받아 간다 */
   onDisconnected?: () => void
+  /** 끊기 확인 설명 뒤에 붙는 문장. 끊으면 함께 꺼지는 것을 알린다 */
+  disconnectNote?: string
 }
 
 /**
@@ -35,6 +37,7 @@ export function ConnectionActions({
   workspaceId,
   provider,
   onDisconnected,
+  disconnectNote,
 }: ConnectionActionsProps) {
   const [confirming, setConfirming] = useState(false)
   const disconnect = useDisconnectIntegration(workspaceId, provider, onDisconnected)
@@ -68,7 +71,11 @@ export function ConnectionActions({
         open={confirming}
         onOpenChange={close}
         title={`${name} 연결을 끊을까요?`}
-        description={DISCONNECT_DESCRIPTION}
+        description={
+          disconnectNote === undefined
+            ? DISCONNECT_DESCRIPTION
+            : `${DISCONNECT_DESCRIPTION} ${disconnectNote}`
+        }
         actions={
           <>
             <Button variant="ghost" disabled={disconnect.isPending} onClick={() => close(false)}>

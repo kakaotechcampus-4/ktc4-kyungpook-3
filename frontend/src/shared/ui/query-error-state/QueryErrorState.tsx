@@ -6,6 +6,8 @@ export interface QueryErrorStateProps {
   onRetry: () => void
   /** 기본 `정보를 불러오지 못했어요` */
   title?: string
+  /** 본문. 기본은 오류 코드의 공용 문구다. 같은 코드라도 화면마다 실패한 대상이 다르면 준다 */
+  message?: string
 }
 
 const ROOT = 'flex flex-col items-start gap-10'
@@ -22,13 +24,14 @@ export function QueryErrorState({
   error,
   onRetry,
   title = COMMON_MESSAGES.loadFailed,
+  message,
 }: QueryErrorStateProps) {
   const notice = failureNotice(error)
   if (notice === null) return null
   return (
     <div role="alert" className={ROOT}>
       <p className={TITLE}>{title}</p>
-      <p className={MESSAGE}>{notice}</p>
+      <p className={MESSAGE}>{message ?? notice}</p>
       <Button onClick={onRetry}>{COMMON_MESSAGES.retry}</Button>
     </div>
   )

@@ -9,6 +9,7 @@ import { Skeleton } from '@/shared/ui/skeleton'
 import { useFocusAfterDisconnect } from '../model/useFocusAfterDisconnect'
 import { useIntegrationConnection } from '../model/useIntegrationConnection'
 import type { IntegrationConnectionNotice } from '../model/useIntegrationConnection'
+import { ChatChannelField } from './ChatChannelField'
 import { ConnectionActions } from './ConnectionActions'
 import {
   ACTIONS,
@@ -81,6 +82,7 @@ function DiscordMeta({ integration }: { integration: Integration }) {
  * 워크스페이스 설정 `연결` 절의 Discord 카드 (Settings 캔버스). 온보딩에서 건너뛴 Discord 를 여기서 연결한다 (D-011).
  * 연결해도 온보딩 단계는 저장하지 않는다 — 건너뜀으로 저장된 단계는 그대로다 (D-173).
  * OAuth 는 설정으로 돌아오고, 연결이 확인되면 팀 화면의 팀원 연결로 간다 (D-074).
+ * PM 은 카드 아래에서 회의 채팅 채널을 고른다 (#429).
  */
 export function DiscordConnectionSection({
   workspaceId,
@@ -145,6 +147,11 @@ export function DiscordConnectionSection({
               workspaceId={workspaceId}
               provider="discord"
               onDisconnected={focusAfterDisconnect}
+              disconnectNote={
+                integration?.chatChannel
+                  ? `회의 채팅 채널(#${integration.chatChannel.name}) 수집도 함께 꺼져요.`
+                  : undefined
+              }
             />
           </div>
         ) : null}
@@ -167,6 +174,11 @@ export function DiscordConnectionSection({
       ) : null}
       {!canManage && status === 'connected' ? (
         <p className={NOTE}>Discord 연결은 PM이 관리해요.</p>
+      ) : null}
+      {canManage && integration !== null ? (
+        <div className="pt-8">
+          <ChatChannelField workspaceId={workspaceId} integration={integration} />
+        </div>
       ) : null}
     </section>
   )
