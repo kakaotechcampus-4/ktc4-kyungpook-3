@@ -51,6 +51,7 @@ class AliasSource(StrEnum):
     MANUAL = "manual"
     DISCORD_PROFILE = "discord_profile"
     LEARNED = "learned"
+    DISPLAY_NAME = "display_name"
 
 
 class ResolutionResult(StrEnum):
@@ -220,6 +221,7 @@ class Session(Base):
     user_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("user.user_id", ondelete="CASCADE"), index=True
     )
+    # 쿠키 원문이 아니라 그 sha256 hex 가 들어간다(#437). 쓸 때 hash_session_token 으로 바꿔 넣는다.
     session_token: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
@@ -557,6 +559,9 @@ class ExtractionItem(Base):
     # 확신도는 AI가 보낸 값이다. NULL은 측정하지 않았다는 뜻이고 0.0(측정했는데 낮음)과 다르다
     task_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
     assignee_raw: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # 담당자 표현의 종류(first·thirdname·thirdrole 등). 승인 때 이 표현을 별칭으로 배울지 가리는 데 쓴다(#459).
+    # 알려진 값(alias_learning.KNOWN_ASSIGNEE_TYPES)이 아니면 NULL이고, 예전 항목도 NULL이라 학습 대상이 아니다
+    assignee_type: Mapped[str | None] = mapped_column(String(16), nullable=True)
     assignee_member_id: Mapped[str | None] = mapped_column(
         String(36), ForeignKey("member.member_id", ondelete="SET NULL"), nullable=True
     )

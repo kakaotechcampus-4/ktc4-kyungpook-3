@@ -5,7 +5,8 @@ from fastapi import Depends, Header, Request
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.errors import AppError, ErrorCode
-from app.models import Session as SessionModel, Task, User, Member, MemberRole
+from app.models import Task, User, Member, MemberRole
+from app.services.sessions import find_session
 
 def get_current_user(
     request: Request,
@@ -15,7 +16,7 @@ def get_current_user(
     if not session_token:
         raise AppError(ErrorCode.UNAUTHENTICATED)
 
-    session_record = db.query(SessionModel).filter(SessionModel.session_token == session_token).first()
+    session_record = find_session(db, session_token)
     if not session_record:
         raise AppError(ErrorCode.UNAUTHENTICATED)
 

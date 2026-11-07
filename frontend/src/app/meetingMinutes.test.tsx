@@ -621,8 +621,10 @@ describe('범위 밖 액션과 안내 (U5-7, U5-8, U5-9)', () => {
       const tasks = await openTab(user, /추출된 일/)
 
       expect(within(tasks).getByText(note)).toBeInTheDocument()
-      expect(note).toContain('회의록과 확실한 태스크는')
-      if (role === 'pm') expect(note).toContain('확인이 필요한 일은 승인한 뒤 반영해요')
+      // Notion 은 선택이고 올라가는 것은 태스크뿐이다 (D-182)
+      expect(note).toContain('Notion을 연결했다면 확실한 태스크는 바로')
+      expect(note).not.toContain('회의록')
+      if (role === 'pm') expect(note).toContain('확인이 필요한 태스크는 승인한 뒤')
     },
   )
 

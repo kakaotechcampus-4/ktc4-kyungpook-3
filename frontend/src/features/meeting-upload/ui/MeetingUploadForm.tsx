@@ -23,7 +23,6 @@ import type { MeetingUploadValues } from '../model/uploadSchema'
 import { selectedFile, useAudioSelection } from '../model/useAudioSelection'
 import { useMeetingUpload } from '../model/useMeetingUpload'
 import type { MeetingUploadHandlers } from '../model/useMeetingUpload'
-import type { NotionBlockReason } from '../model/useUploadEntry'
 import { AttendeePicker } from './AttendeePicker'
 import { AudioDropzone } from './AudioDropzone'
 import { SelectedAudio } from './SelectedAudio'
@@ -31,8 +30,6 @@ import { UploadStatus } from './UploadStatus'
 
 export interface MeetingUploadFormProps {
   workspaceId: string
-  /** 업로드가 Notion 연동 오류(409)로 막혔다. 화면이 차단 모달을 띄운다 (D-097, D-100) */
-  onBlocked: (reason: NotionBlockReason) => void
 }
 
 const EMPTY: MeetingUploadValues = { title: '', date: '', attendeeMemberIds: [] }
@@ -51,7 +48,7 @@ const NOTE = 'text-caption text-dim'
  * - 파일을 고른 뒤부터 떠나려 하면 기존 이탈 확인을 묻는다. 202 를 받으면 입력과 파일을 놓고 묻지 않고 간다 (U3-9)
  * - 제출은 한 번에 하나다. 보내는 동안 입력을 잠그고 다시 보내지 않는다 (U3-8)
  */
-export function MeetingUploadForm({ workspaceId, onBlocked }: MeetingUploadFormProps) {
+export function MeetingUploadForm({ workspaceId }: MeetingUploadFormProps) {
   const navigate = useNavigate()
   const members = useQuery(memberListQueryOptions(workspaceId))
   const membersIndicator = useLoadingIndicator(members.isPending)
@@ -90,9 +87,8 @@ export function MeetingUploadForm({ workspaceId, onBlocked }: MeetingUploadFormP
     return {
       onAccepted: (meetingId) => leave(paths.meetingProcessing(workspaceId, meetingId)),
       onProcessing: (meetingId) => leave(paths.meetingProcessing(workspaceId, meetingId)),
-      onBlocked,
     }
-  }, [unsaved, audio, form, navigate, workspaceId, onBlocked])
+  }, [unsaved, audio, form, navigate, workspaceId])
   const upload = useMeetingUpload(workspaceId, handlers)
   const locked = upload.pending
 
@@ -199,7 +195,8 @@ export function MeetingUploadForm({ workspaceId, onBlocked }: MeetingUploadFormP
 
       <div className={FOOTER}>
         <p className={NOTE}>
-          회의록과 확실한 태스크는 바로 Notion에 반영하고, 확인이 필요한 항목은 승인한 뒤 반영해요.
+          Notion을 연결했다면 태스크도 Notion에 올라가요. 확인이 필요한 태스크는 승인한 뒤에
+          올라가요.
         </p>
         <Button
           type="submit"

@@ -119,9 +119,7 @@ const TAB_LABEL: Record<TaskTab, string> = {
 
 const DESCRIPTIONS: Record<ViewQuery['view'], (isPm: boolean) => string> = {
   list: (isPm) =>
-    isPm
-      ? '담당자별로 걸러 보고, 준비된 태스크를 Notion에 반영하세요.'
-      : '팀의 태스크를 확인하세요.',
+    isPm ? '담당자별로 걸러 보고, 준비된 태스크를 확인하세요.' : '팀의 태스크를 확인하세요.',
   board: () => '승인이 끝난 일만 올라옵니다 — Notion 보드와 같은 상태예요.',
   calendar: () => '마감일 기준입니다. 날짜가 없는 일은 아래 칸에 모아 뒀어요.',
   gantt: () => '간트차트로 일정을 한 눈에 볼 수 있어요.',

@@ -2,7 +2,7 @@
 
 - 기록일: 2026-11-07
 - 대상: [#508](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/508)의 1(지연·최소 표시 규칙)
-- 기준: develop `4c632f4a`
+- 기준: develop `4c632f4a`. 뒤에 develop `333a249c`(#516 — #507 Notion 선택)를 merge 했다. 회의 올리기 화면은 #507 의 진입 판정(Notion 차단 없음) 위에 같은 래퍼를 다시 얹었다.
 - 상태: **1을 반영했다.** 2(화면과 맞지 않는 스켈레톤)는 아직이다. 회의 처리 화면과 설정 연결 영역은 다른 작업이 끝난 뒤 적용한다(아래 「적용 대기」).
 
 ## 작업 근거와 요약
@@ -57,8 +57,8 @@
 | 자리 | 파일 | 기다리는 작업 |
 |---|---|---|
 | 회의 처리 화면 진입 확인 | `src/pages/meeting-processing/ui/MeetingProcessingPage.tsx` | #483 B |
-| 설정 Discord 연결 | `src/features/integration-connection/ui/DiscordConnectionSection.tsx` | #507, 버튼 삭제 |
-| 설정 Notion 연결 | `src/features/integration-connection/ui/NotionConnectionSection.tsx` | #507, 버튼 삭제 |
+| 설정 Discord 연결 | `src/features/integration-connection/ui/DiscordConnectionSection.tsx` | 버튼 삭제. #507 은 병합됐다 — 2단계 PR 에서 적용(관리 세션 지시) |
+| 설정 Notion 연결 | `src/features/integration-connection/ui/NotionConnectionSection.tsx` | 버튼 삭제. #507 은 병합됐다 — 2단계 PR 에서 적용(관리 세션 지시) |
 
 ## 검증
 

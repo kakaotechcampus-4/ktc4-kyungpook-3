@@ -14,5 +14,4 @@ export {
 export type { TrackerOutcome } from './model/trackerOutcome'
 export { useProcessingDiscovery } from './model/useProcessingDiscovery'
 export { useProcessingTracker } from './model/useProcessingTracker'
-export type { ProcessingTracker } from './model/useProcessingTracker'
 export { ProcessingToast } from './ui/ProcessingToast'

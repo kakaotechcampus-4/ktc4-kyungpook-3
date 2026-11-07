@@ -9,7 +9,6 @@ import type { MeetingDto, MeetingSummaryDto, MeetingUploadDto } from '@/shared/t
 import type { MinutesDto } from '@/shared/types/api/minutes'
 import type { TaskDto } from '@/shared/types/api/task'
 import { db, initialDb } from './db'
-import type { MeetingFlowMode } from './db'
 import { advanceMeeting, completeMeeting, failMeeting, setMeetingFlowMode } from './meetingFlow'
 
 // 업로드 본문을 jsdom File 로 만들고, Undici 파서를 위해 전역만 Node File 로 바꾼다 (meeting.integration.test.ts)
@@ -262,16 +261,13 @@ describe('흐름 방식 — 상세 조회가 진행시킨다', () => {
     })
   })
 
-  it.each<[MeetingFlowMode, string]>([
-    ['fail', 'connected'],
-    ['fail-notion-revoked', 'revoked'],
-  ])('%s 는 첫 조회에 failed 이고 Notion 은 %s 다', async (mode, notion) => {
+  it('fail 은 첫 조회에 failed 이고 Notion 연동은 건드리지 않는다', async () => {
     const id = await upload()
-    setMeetingFlowMode(mode)
+    setMeetingFlowMode('fail')
     await expect(detail(id)).resolves.toMatchObject({ status: 'failed' })
     await expect(
       fetchDto<IntegrationsDto>('/workspaces/ws_01/integrations'),
-    ).resolves.toMatchObject({ notion: { status: notion } })
+    ).resolves.toMatchObject({ notion: { status: 'connected' } })
     expect((await listed()).map(({ meeting_id }) => meeting_id)).not.toContain(id)
   })
 

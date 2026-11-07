@@ -14,7 +14,6 @@ import { useLivePathname } from '@/shared/lib/live-pathname'
 import { classifyUploadError, UPLOAD_LOST_MESSAGE } from './uploadOutcome'
 import { toUploadPhase } from './uploadPhase'
 import type { UploadPhase } from './uploadPhase'
-import type { NotionBlockReason } from './useUploadEntry'
 
 /** mutation 변수 — 원본 파일을 뺀 업로드 입력 */
 type UploadFields = Omit<UploadMeetingInput, 'file'>
@@ -30,8 +29,6 @@ export interface MeetingUploadHandlers {
   onAccepted: (meetingId: string) => void
   /** 이미 정리 중인 회의가 있다 — 409 또는 응답을 잃은 뒤 목록에서 찾았다 */
   onProcessing: (meetingId: string) => void
-  /** Notion 연동 오류 — 차단 모달 흐름 (D-097, D-100) */
-  onBlocked: (reason: NotionBlockReason) => void
 }
 
 /** 폼에 보일 실패. 파일 칸 아래(`file`) 또는 폼 상단(`form`) */
@@ -169,9 +166,6 @@ export function useMeetingUpload(
           case 'processing':
             trackMeeting({ workspaceId, meetingId: outcome.meetingId })
             if (stillHere()) handlersRef.current.onProcessing(outcome.meetingId)
-            return
-          case 'blocked':
-            if (stillHere()) handlersRef.current.onBlocked(outcome.reason)
             return
           case 'file':
           case 'form':

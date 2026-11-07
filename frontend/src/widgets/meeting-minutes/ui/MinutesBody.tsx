@@ -37,12 +37,13 @@ const TRANSCRIPT_LINE =
 
 /**
  * Notion 반영 안내 (D-101, U5-8). 확실한 것은 바로, 확인이 필요한 것은 승인 뒤다.
+ * Notion 은 선택 기능이고 Notion 에 올라가는 것은 태스크뿐이다 — 회의록 본문은 올라가지 않는다 (D-182).
  * 일반 팀원에게는 확인 필요의 존재를 드러내지 않는 앞 문장만 보인다 (D-104)
  */
 export const NOTION_NOTE_FOR_PM =
-  '회의록과 확실한 태스크는 정리가 끝나면 바로 Notion에 반영하고, 확인이 필요한 일은 승인한 뒤 반영해요.'
+  'Notion을 연결했다면 확실한 태스크는 바로, 확인이 필요한 태스크는 승인한 뒤 Notion에도 올라가요.'
 export const NOTION_NOTE_FOR_MEMBER =
-  '회의록과 확실한 태스크는 정리가 끝나면 바로 Notion에 반영해요.'
+  'Notion을 연결했다면 확실한 태스크는 바로 Notion에도 올라가요.'
 
 /** 빈 상태 한 칸. 영역마다 따로 비어 있을 수 있어 화면 전체 빈 상태(EmptyState)가 아니라 영역 안의 글이다 */
 function SectionEmpty({ title, description }: { title: string; description: string }) {

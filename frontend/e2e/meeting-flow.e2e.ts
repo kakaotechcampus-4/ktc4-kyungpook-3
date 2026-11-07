@@ -7,9 +7,10 @@ import { expectAudioReady, expectMinutesOpened, SHORT_AUDIO, start } from './sup
  * 테스트마다 새 컨텍스트에서 `?msw-scenario=` 로 모의 db 를 처음부터 만든다 — 서로 상태를 나누지 않는다.
  *
  * - meeting-instant: 업로드 뒤 첫 상세 조회에 정리가 끝난다(인위적 지연 없음)
+ * - meeting-notion-not-connected: meeting-instant 와 같고 Notion 을 연결하지 않았다. Notion 은 선택 기능이다(D-182)
  * - meeting-demo: 상세 조회마다 한 단계씩 간다. 앱의 3초 polling 으로 세 단계 + 완료를 밟는다 — 정리 중에 다른 화면으로
  *   떠날 틈이 있어야 하는 ② 에만 쓴다. instant 는 처리 화면이 첫 조회에서 끝을 보고 회의록으로 옮겨 그 틈이 없다(U4-5)
- * - meeting-fail: 첫 상세 조회에 실패로 끝난다. Notion 은 연결된 채다(일반 실패, D-092)
+ * - meeting-fail: 첫 상세 조회에 실패로 끝난다(일반 실패, D-092)
  * - meeting-member: ws_01 의 일반 팀원
  */
 
@@ -77,9 +78,14 @@ async function uploadShortAudio(page: Page) {
   await page.getByRole('button', { name: '정리 시작하기' }).click()
 }
 
-test('① 짧은 음원을 올리면 정리가 끝나고 그 회의의 회의록이 열린다', async ({ page }) => {
-  await start(page, 'meeting-instant', UPLOAD)
+test('① Notion 을 연결하지 않은 공간에서도 짧은 음원을 올리면 정리가 끝나고 그 회의의 회의록이 열린다', async ({
+  page,
+}) => {
+  await start(page, 'meeting-notion-not-connected', UPLOAD)
+  // 연결을 요구하는 모달 없이 바로 업로드 폼이다 (D-182)
   await expect(page.getByRole('heading', { name: '회의를 올려 주세요' })).toBeVisible()
+  await expect(page.getByRole('button', { name: '컴퓨터에서 찾기' })).toBeVisible()
+  await expect(page.getByRole('dialog')).toHaveCount(0)
   const requests = recordRequests(page)
   const urls = recordUrls(page)
 
@@ -104,6 +110,18 @@ test('① 짧은 음원을 올리면 정리가 끝나고 그 회의의 회의록
   ).toHaveAttribute('aria-current', 'page')
   // 처리 화면을 보고 있었으니 바로 옮겨졌고, 진행 토스트는 완료로 바뀌었다
   await expect(signalOf(page, '회의 정리가 끝났어요')).toBeVisible()
+  // 회의록·정리 어디에도 Notion 연결을 요구하는 창이 뜨지 않았다
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+
+  // 그 회의가 만든 태스크도 Notion 없이 쓴다 — 반영 중·실패가 아니라 반영 상태 없음이다
+  await page.getByRole('tab', { name: /추출된 일/ }).click()
+  const taskLink = page.getByRole('tabpanel').locator('a[href*="/tasks/"]').first()
+  const taskTitle = (await taskLink.textContent())?.trim() ?? ''
+  expect(taskTitle).not.toBe('')
+  await taskLink.click()
+  await expect(page.getByRole('heading', { level: 1, name: taskTitle })).toBeVisible(FIRST_PAINT)
+  await expect(page.getByTestId('notion-sync-status')).toHaveText('반영 상태 없음')
+  await expect(page.getByRole('button', { name: '다시 반영하기' })).toHaveCount(0)
 })
 
 test('② 정리 중에 다른 화면으로 가면 진행 토스트가 따라오고, 완료로 바뀐 토스트의 `회의록 보기`로 그 회의록에 간다', async ({
@@ -231,7 +249,7 @@ test('⑤ 화자 지정 기한 만료는 목록과 상세에 남고 새로고침
   await expect(page.getByRole('heading', { name: '회의를 올려 주세요' })).toBeVisible(FIRST_PAINT)
 })
 
-test('⑥ 음성 처리 실패는 Notion 연결도 끊겨 있어도 해당 사유를 먼저 안내한다', async ({ page }) => {
+test('⑥ 음성 처리 실패는 그 사유로 안내한다', async ({ page }) => {
   await start(page, 'meeting-fail-diarize', UPLOAD)
   await uploadShortAudio(page)
   await expect(
