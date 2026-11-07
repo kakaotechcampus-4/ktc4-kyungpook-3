@@ -413,23 +413,30 @@ describe('랜딩', () => {
 })
 
 describe('로그인 직후', () => {
-  it('띄우기 신호를 받으면 0.3초 뒤부터 덮고, 놓고 도착 화면 뼈대가 사라지면 걷힌다', () => {
-    stubMotion()
+  function mountAfterLogin() {
     const appRoot = document.body.appendChild(document.createElement('div'))
     const app = render(<Screen loading={false} />, { container: appRoot })
     render(<SplashHost appRoot={appRoot} />)
+    return { appRoot, app }
+  }
+
+  it('띄우기 신호를 받는 순간 0.3초 대기 없이 덮고, 놓고 도착 화면 뼈대가 사라지면 걷힌다 (#539)', () => {
+    stubMotion()
+    const { appRoot, app } = mountAfterLogin()
     expect(overlay()).toBeNull()
 
     let release = () => {}
     act(() => {
       release = showSplash()
     })
-    advance(299)
-    expect(overlay()).toBeNull()
-    expect(appRoot).not.toHaveAttribute('inert')
-    advance(1)
-    expect(shift()).toBe('300ms')
+    // 누른 동작이라 번쩍임 방지 대기(hidden)가 없다. 그 사이 도착 화면 뼈대가 보이지 않는다
+    expect(overlay()).toBeInTheDocument()
+    expect(overlay()).not.toHaveAttribute('data-settling')
+    expect(mascotShown()).toBe(true)
+    expect(shift()).toBe('0ms')
     expect(appRoot).toHaveAttribute('inert')
+    // 보인 순간이라 12시간 기록이 바로 남는다 (#510)
+    expect(record()).not.toBeNull()
 
     act(() => {
       release()
@@ -446,11 +453,9 @@ describe('로그인 직후', () => {
     expect(appRoot).not.toHaveAttribute('inert')
   })
 
-  it('0.3초 안에 끝나면 띄우지 않는다', () => {
+  it('0.3초 안에 끝나도 띄운 채로 눈웃음 → 사라짐으로 끝난다 — 보이지 않은 채 걷히지 않는다 (#539)', () => {
     stubMotion()
-    const appRoot = document.body.appendChild(document.createElement('div'))
-    render(<Screen loading={false} />, { container: appRoot })
-    render(<SplashHost appRoot={appRoot} />)
+    const { appRoot } = mountAfterLogin()
 
     let release = () => {}
     act(() => {
@@ -460,61 +465,20 @@ describe('로그인 직후', () => {
     act(() => {
       release()
     })
-    for (let ms = 0; ms < 3000; ms += 50) {
-      advance(50)
-      expect(overlay()).toBeNull()
-    }
-  })
-
-  it('0.3초 직전에 놓으면 준비 확인이 0.3초를 넘겨도 띄우지 않는다', () => {
-    stubMotion()
-    const appRoot = document.body.appendChild(document.createElement('div'))
-    render(<Screen loading={false} />, { container: appRoot })
-    render(<SplashHost appRoot={appRoot} />)
-
-    let release = () => {}
-    act(() => {
-      release = showSplash()
-    })
-    advance(250)
-    act(() => {
-      release()
-    })
-    for (let ms = 250; ms < 3000; ms += 10) {
+    for (let ms = 150; ms < 300; ms += 10) {
       advance(10)
-      expect(overlay()).toBeNull()
-      expect(appRoot).not.toHaveAttribute('inert')
+      expect(overlay()).toBeInTheDocument()
+      expect(mascotShown()).toBe(true)
     }
-  })
-
-  it('0.3초 직전에 놓았다가 도착 화면이 다시 잡으면 그때부터 덮고 눈웃음 → 사라짐으로 끝난다', () => {
-    stubMotion()
-    const appRoot = document.body.appendChild(document.createElement('div'))
-    const app = render(<Screen loading={false} />, { container: appRoot })
-    render(<SplashHost appRoot={appRoot} />)
-
-    let release = () => {}
-    act(() => {
-      release = showSplash()
-    })
-    advance(250)
-    act(() => {
-      release()
-    })
-    advance(50)
-    app.rerender(<Screen loading />)
-    advance(10)
-    expect(overlay()).toBeInTheDocument()
+    expect(status()).toBe('준비됐어요')
+    expect(smiling()).toBe(true)
     expect(appRoot).toHaveAttribute('inert')
 
-    advance(290)
-    app.rerender(<Screen loading={false} />)
-    advance(100)
-    expect(status()).toBe('준비됐어요')
-    advance(1100)
+    advance(1050)
     expect(overlay()).toHaveAttribute('data-phase', 'leave')
     advance(600)
     expect(overlay()).toBeNull()
+    expect(appRoot).not.toHaveAttribute('inert')
   })
 })
 
@@ -613,31 +577,27 @@ describe('기록 시점 (#510)', () => {
     expect(status()).toBe('로그인 확인 중')
   })
 
-  it('로그인 직후 스플래시는 보였을 때 기록하고, 0.3초 안에 끝나면 기록하지 않는다', () => {
+  it('로그인 직후 스플래시는 12시간 기록과 상관없이 띄우는 순간 보이고 기록한다 — 0.3초 안에 끝나도 (#539)', () => {
     stubMotion()
+    window.localStorage.setItem(SPLASH_RECORD_KEY, '1')
     const appRoot = document.body.appendChild(document.createElement('div'))
     render(<Screen loading={false} />, { container: appRoot })
     render(<SplashHost appRoot={appRoot} />)
+    const before = Date.now()
 
     let release = () => {}
     act(() => {
       release = showSplash()
     })
+    expect(overlay()).toBeInTheDocument()
+    expect(Number(record())).toBeGreaterThanOrEqual(before)
     advance(150)
     act(() => {
       release()
     })
     advance(2000)
-    expect(record()).toBeNull()
-
-    act(() => {
-      release = showSplash()
-    })
-    advance(300)
-    expect(record()).not.toBeNull()
-    act(() => {
-      release()
-    })
+    expect(overlay()).toBeNull()
+    expect(Number(record())).toBeGreaterThanOrEqual(before)
   })
 })
 
