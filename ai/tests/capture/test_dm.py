@@ -383,6 +383,14 @@ async def test_a_failed_claim_keeps_the_last_web_url(tmp_path):
     assert msg.channel.sent == [LINK_NOTICE]
 
 
+async def test_a_failed_notice_does_not_use_up_the_hour(tmp_path):
+    cog, _ = _cog(tmp_path, FakeBot())
+    await cog.on_message(FakeMsg(FakeAuthor(USER_ID), channel=FakeChannel(fail=RuntimeError("503"))))
+    msg = FakeMsg(FakeAuthor(USER_ID))
+    await cog.on_message(msg)
+    assert len(msg.channel.sent) == 1
+
+
 async def test_a_second_dm_within_the_hour_gets_no_notice_and_after_the_hour_gets_one(tmp_path, monkeypatch):
     clock = Clock(monkeypatch)
     cog, _ = _cog(tmp_path, FakeBot())

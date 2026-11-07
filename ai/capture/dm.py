@@ -253,6 +253,7 @@ class DmCog(discord.Cog):
             await message.channel.send(self._web_notice())
         except Exception as e:  # noqa: BLE001 - 리스너 밖으로 내보내지 않는다
             print(f"[dm] {uid} 에게 웹 안내를 보내지 못했다: {type(e).__name__}: {e}", flush=True)
+            self._forget_notice(uid)
 
     def _notice_due(self, uid: str) -> bool:
         """안내를 보낼 차례면 지금 시각을 적고 True. 파일을 못 써도 안내는 보낸다(디스크가 찬 경우)."""
@@ -266,6 +267,16 @@ class DmCog(discord.Cog):
         except OSError as e:
             print(f"[dm] {uid} 안내 시각을 쓰지 못했다: {e}", flush=True)
         return True
+
+    def _forget_notice(self, uid: str) -> None:
+        """나가지 못한 안내는 세지 않는다. 안내는 DM 창 글에 돌아가는 유일한 응답이라 다음 글에 다시 보낸다."""
+        path = self.dir / "web_notice.json"
+        marks = _read_json(path, {})
+        marks.pop(uid, None)
+        try:
+            _write_json(path, marks)
+        except OSError as e:
+            print(f"[dm] {uid} 안내 시각을 지우지 못했다: {e}", flush=True)
 
     def _web_notice(self) -> str:
         if self._web_url:
