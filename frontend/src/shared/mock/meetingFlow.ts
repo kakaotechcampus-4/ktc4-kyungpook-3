@@ -318,6 +318,47 @@ export function failMeeting(
   return meeting
 }
 
+export function isChatMeeting(meetingId: string, state: MockDb = db): boolean {
+  return state.meetingSummaries.some(
+    (summary) => summary.meeting_id === meetingId && summary.source === 'chat',
+  )
+}
+
+/**
+ * 디스코드 채팅 자동 수집이 정리 중인 회의를 하나 더한다 (#379, #450).
+ * `/end` 뒤 아직 단계를 알리지 않았고 발화도 없는 회의라 서버 `_compute_progress` 처럼 세 값이 모두 false 다
+ */
+export function startChatMeeting(state: MockDb = db): string {
+  const meetingId = nextId(
+    'mt',
+    state.meetings.map(({ meeting_id }) => meeting_id),
+  )
+  const title = '채팅 2026-09-18'
+  const startedAt = '2026-09-18T02:00:00Z'
+  state.meetings.push({
+    meeting_id: meetingId,
+    workspace_id: 'ws_01',
+    title,
+    status: 'processing',
+    started_at: startedAt,
+    ended_at: '2026-09-18T09:40:00Z',
+    extraction_id: null,
+    failed_stage: null,
+    progress: { audio_merged: false, transcribed: false, extracted: false },
+  })
+  state.meetingSummaries.push({
+    meeting_id: meetingId,
+    title,
+    status: 'processing',
+    source: 'chat',
+    started_at: startedAt,
+    duration_ms: null,
+    attendee_count: 3,
+    processed_at: null,
+  })
+  return meetingId
+}
+
 /** 상세 조회 한 번에 처리 중 회의를 흐름 방식대로 진행한다. 처리 중이 아니거나 `manual` 이면 그대로다 */
 export function tickMeeting(meetingId: string, state: MockDb = db): void {
   const meeting = state.meetings.find(({ meeting_id }) => meeting_id === meetingId)
@@ -343,6 +384,10 @@ export function tickMeeting(meetingId: string, state: MockDb = db): void {
       return
     case 'fail-expired':
       failMeeting(meetingId, { failedStage: 'speaker_assignment_expired' }, state)
+      return
+    case 'fail-chat-stalled':
+      if (isChatMeeting(meetingId, state))
+        failMeeting(meetingId, { failedStage: 'chat_stalled' }, state)
       return
     case 'speakers':
       if (needsSpeakers(meetingId, state)) awaitSpeakers(meetingId, undefined, state)

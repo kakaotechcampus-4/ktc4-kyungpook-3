@@ -10,9 +10,11 @@ import { CARD_BUTTON } from './connectionStyles'
 
 const PROVIDER_NAME: Record<IntegrationProvider, string> = { discord: 'Discord', notion: 'Notion' }
 
-/** 연결된 카드의 앞 버튼. 대응 API 가 없어 누르면 준비 중이라고만 알린다 */
-const SECONDARY_ACTION: Record<IntegrationProvider, string> = {
-  discord: '채널 바꾸기',
+/**
+ * 연결된 카드의 앞 버튼. 대응 API 가 없어 누르면 준비 중이라고만 알린다.
+ * Discord 는 없다 — 채널은 카드 아래 `회의 채팅 채널` 칸에서 고른다 (#505)
+ */
+const SECONDARY_ACTION: Partial<Record<IntegrationProvider, string>> = {
   notion: '속성 다시 맞추기',
 }
 
@@ -25,16 +27,19 @@ export interface ConnectionActionsProps {
   provider: IntegrationProvider
   /** 서버가 끊은 뒤, 카드가 미연결로 바뀌기 직전에 부른다. 이 버튼들은 그때 사라진다 — 카드가 포커스를 받아 간다 */
   onDisconnected?: () => void
+  /** 끊기 확인 설명 뒤에 붙는 문장. 끊으면 함께 꺼지는 것을 알린다 */
+  disconnectNote?: string
 }
 
 /**
- * 연결된 카드의 PM 조작 — `채널 바꾸기`/`속성 다시 맞추기` 와 `연결 끊기` (Settings 캔버스).
+ * 연결된 카드의 PM 조작 — Notion 의 `속성 다시 맞추기` 와 두 카드의 `연결 끊기` (Settings 캔버스).
  * 끊기는 확인 모달을 거친다. 서버가 끊은 뒤에만 상태가 바뀐다 (D-137). 실패하면 모달에 남아 다시 시도할 수 있다
  */
 export function ConnectionActions({
   workspaceId,
   provider,
   onDisconnected,
+  disconnectNote,
 }: ConnectionActionsProps) {
   const [confirming, setConfirming] = useState(false)
   const disconnect = useDisconnectIntegration(workspaceId, provider, onDisconnected)
@@ -49,13 +54,15 @@ export function ConnectionActions({
 
   return (
     <>
-      <Button
-        size="md-compact"
-        className={CARD_BUTTON}
-        onClick={() => toast.show({ title: `${secondary}는 아직 준비 중이에요.` })}
-      >
-        {secondary}
-      </Button>
+      {secondary === undefined ? null : (
+        <Button
+          size="md-compact"
+          className={CARD_BUTTON}
+          onClick={() => toast.show({ title: `${secondary}는 아직 준비 중이에요.` })}
+        >
+          {secondary}
+        </Button>
+      )}
       <Button
         variant="ghost"
         size="md-compact"
@@ -68,7 +75,11 @@ export function ConnectionActions({
         open={confirming}
         onOpenChange={close}
         title={`${name} 연결을 끊을까요?`}
-        description={DISCONNECT_DESCRIPTION}
+        description={
+          disconnectNote === undefined
+            ? DISCONNECT_DESCRIPTION
+            : `${DISCONNECT_DESCRIPTION} ${disconnectNote}`
+        }
         actions={
           <>
             <Button variant="ghost" disabled={disconnect.isPending} onClick={() => close(false)}>

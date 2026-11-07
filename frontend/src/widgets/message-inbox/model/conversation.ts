@@ -8,7 +8,7 @@ import {
   groupByDay,
   shortDateTime,
 } from '../lib/format'
-import type { ViewerPolicy } from './viewer'
+import type { ThreadPolicy } from './viewer'
 
 export interface BubbleItem {
   kind: 'bubble'
@@ -108,12 +108,27 @@ function bundleBubble(bundle: Bundle, side: 'own' | 'other', now: number): Bubbl
   }
 }
 
-/** 대화를 그릴 모양으로. 보낸 쪽이 policy.ownSender 와 같으면 오른쪽이다. replyable 은 보는 사람이 이 대화에 답장할 수 있는지다 */
+/** 대화의 이름·부제·아바타. 대화 이름과 보는 사람의 규칙만으로 정해 목록 행과 상세 머리가 같은 이름을 쓴다 */
+export function threadHeading(
+  name: string,
+  policy: ThreadPolicy,
+  botName: string,
+): Pick<ConversationView, 'title' | 'subtitle' | 'avatar'> {
+  return {
+    title: policy.ownSender === 'member' ? `${botName} 봇` : name,
+    subtitle: policy.reply
+      ? 'Discord 개인 메시지 · 웹에서도 답장할 수 있어요'
+      : `Discord 개인 메시지 · ${botName} 봇으로 보냄`,
+    avatar: avatarText(policy.ownSender === 'member' ? botName : name),
+  }
+}
+
+/** 대화를 그릴 모양으로. 보낸 쪽이 policy.ownSender 와 같으면 오른쪽이다 */
 export function buildConversation(
   thread: MessageThread,
-  ctx: { policy: ViewerPolicy; replyable: boolean; botName: string; today: string; now: number },
+  ctx: { policy: ThreadPolicy; botName: string; today: string; now: number },
 ): ConversationView {
-  const { policy, replyable, botName, today, now } = ctx
+  const { policy, botName, today, now } = ctx
   const sideOf = (sender: 'bot' | 'member') => (sender === policy.ownSender ? 'own' : 'other')
   const waitingDays =
     policy.awaiting && thread.awaitingReplySince !== null
@@ -133,11 +148,7 @@ export function buildConversation(
   placed.sort((left, right) => Date.parse(left.at) - Date.parse(right.at))
 
   return {
-    title: policy.ownSender === 'member' ? `${botName} 봇` : thread.name,
-    subtitle: replyable
-      ? 'Discord 개인 메시지 · 웹에서도 답장할 수 있어요'
-      : `Discord 개인 메시지 · ${botName} 봇으로 보냄`,
-    avatar: avatarText(policy.ownSender === 'member' ? botName : thread.name),
+    ...threadHeading(thread.name, policy, botName),
     waitingDays,
     days: groupByDay(placed).map((day) => ({
       date: day.date,

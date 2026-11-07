@@ -11,7 +11,8 @@ import {
   unresolvedAliasFixtures,
 } from './fixtures/member'
 import { workspaceFixtures } from './fixtures/workspace'
-import { integrationFixtures } from './fixtures/integration'
+import { discordChannelFixtures, integrationFixtures } from './fixtures/integration'
+import type { MockDiscordChannel } from './fixtures/integration'
 import { meetingFixtures, meetingSummaryFixtures } from './fixtures/meeting'
 import { minutesFixtures } from './fixtures/minutes'
 import { extractionFixtures } from './fixtures/extraction'
@@ -19,6 +20,7 @@ import { taskFixtures, taskHistoryFixtures } from './fixtures/task'
 import { approvalFixtures } from './fixtures/approval'
 import { messageBundleFixtures, messageThreadFixtures } from './fixtures/message'
 import type { MockNotification, MockPushSubscription } from './fixtures/notification'
+import type { MockReplies } from './reply-state'
 
 /**
  * 처리 중 회의를 상세 조회(`GET /meetings/{id}`)가 어떻게 진행시키는가. 진행 규칙은 meetingFlow.ts 에 있다.
@@ -27,6 +29,7 @@ import type { MockNotification, MockPushSubscription } from './fixtures/notifica
  * - `instant`: 첫 조회에 바로 `done`. 인위적 지연이 없다 — E2E 용
  * - `fail`: 첫 조회에 `failed`
  * - `fail-notion-revoked`: 첫 조회에 `failed`, 그 공간의 Notion 연동이 `revoked` 가 된다 (D-099, D-100)
+ * - `fail-chat-stalled`: 채팅 회의만 첫 조회에 `failed`(`chat_stalled`)다. 업로드 회의는 `manual` 처럼 그대로다 (#450)
  * - `speakers`: 업로드 회의가 첫 조회에 화자 지정 대기가 된다. PM 이 지정을 내면 조회마다 한 단계씩(`staged`) 끝난다 (#256)
  */
 export type MeetingFlowMode =
@@ -37,6 +40,7 @@ export type MeetingFlowMode =
   | 'fail-notion-revoked'
   | 'fail-diarize'
   | 'fail-expired'
+  | 'fail-chat-stalled'
   | 'speakers'
 
 export const MEETING_FLOW_MODES = [
@@ -47,6 +51,7 @@ export const MEETING_FLOW_MODES = [
   'fail-notion-revoked',
   'fail-diarize',
   'fail-expired',
+  'fail-chat-stalled',
   'speakers',
 ] as const satisfies readonly MeetingFlowMode[]
 
@@ -131,6 +136,18 @@ export interface MockPasswordReset {
   failure: PasswordResetFailure
 }
 
+/** #457 BE login_limit 의 이메일별 행. IP 제한은 흉내 내지 않는다 — BE 는 공인 IP 만 세는데(client_ip_key) 모의 서버는 요청 IP 를 몰라, 로컬 브라우저는 그 제한에 닿지 않는다 */
+export interface MockLoginLimit {
+  failures: number
+  /** 첫 실패 시각(ms). 막히기 전에 15분이 지나면 이 행은 없는 것으로 본다 */
+  windowStartedAt: number
+  /** 이 시각(ms)까지 맞는 비밀번호도 429 다. null 이면 막히지 않았다 */
+  blockedUntil: number | null
+}
+
+/** BE normalize_email(strip().lower()) 과 같은 키다 */
+export const loginLimitKey = (email: string) => email.trim().toLowerCase()
+
 /** 백엔드에서 막힘을 직접 건(applied) 열린 무응답 감시 기록에 대응한다. 막기 전 상태·사유를 든다 */
 export interface MockAutoBlock {
   prev_status: string
@@ -157,6 +174,8 @@ export interface MockDb {
   unresolvedAliases: typeof unresolvedAliasFixtures
   discordUsers: typeof discordUserFixtures
   integrations: typeof integrationFixtures
+  /** #428 모의 Discord 서버의 텍스트 채널. 팀원 목록(`discordUsers`)처럼 서버가 하나라 어느 공간이든 연결하면 이 목록이다 */
+  discordChannels: MockDiscordChannel[]
   meetings: typeof meetingFixtures
   meetingSummaries: typeof meetingSummaryFixtures
   minutes: typeof minutesFixtures
@@ -164,6 +183,8 @@ export interface MockDb {
   tasks: typeof taskFixtures
   taskHistory: typeof taskHistoryFixtures
   autoBlocks: Record<string, MockAutoBlock>
+  /** #344 리마인드 답장 판단 결과. 판단은 시나리오가 넣는다 (reply-state.ts) */
+  replies: MockReplies
   approvals: typeof approvalFixtures
   /** 회의 정리 흐름. 원본 파일은 담지 않는다 — 생성 결과는 위의 meetings·minutes·extractions·tasks·approvals 에 들어간다 */
   meetingFlow: MeetingFlowState
@@ -179,6 +200,8 @@ export interface MockDb {
   push: { publicKey: string | null; subscriptions: MockPushSubscription[] }
   invitations: MockInvitation[]
   passwordReset: MockPasswordReset
+  /** loginLimitKey 로 정규화한 이메일이 키다 */
+  loginLimit: Record<string, MockLoginLimit>
 }
 /** Vitest 가 테스트마다 돌아가는 상태다. 로그인돼 있고 ws_01·ws_02 에 속한다. 브라우저 시작 상태는 scenarios.ts 가 정한다 */
 export function initialDb(): MockDb {
@@ -199,6 +222,7 @@ export function initialDb(): MockDb {
     unresolvedAliases: structuredClone(unresolvedAliasFixtures),
     discordUsers: structuredClone(discordUserFixtures),
     integrations: structuredClone(integrationFixtures),
+    discordChannels: structuredClone(discordChannelFixtures),
     meetings: structuredClone(meetingFixtures),
     meetingSummaries: structuredClone(meetingSummaryFixtures),
     minutes: structuredClone(minutesFixtures),
@@ -206,6 +230,7 @@ export function initialDb(): MockDb {
     tasks: structuredClone(taskFixtures),
     taskHistory: structuredClone(taskHistoryFixtures),
     autoBlocks: {},
+    replies: { judgments: [], changes: [], historyLinks: {} },
     approvals: structuredClone(approvalFixtures),
     meetingFlow: { mode: 'manual', attendees: {}, speakers: {} },
     messageBundles: structuredClone(messageBundleFixtures),
@@ -216,6 +241,7 @@ export function initialDb(): MockDb {
     push: { publicKey: null, subscriptions: [] },
     invitations: [],
     passwordReset: { tokens: [], nextMailAt: {}, outbox: [], failure: 'none' },
+    loginLimit: {},
   }
 }
 export const db: MockDb = initialDb()

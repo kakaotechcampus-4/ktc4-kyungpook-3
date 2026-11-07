@@ -42,6 +42,12 @@ function recordPatches(): unknown[] {
   return bodies
 }
 
+/** 재촉 규칙 칸을 열고 줄을 누른다 */
+async function choose(user: ReturnType<typeof userEvent.setup>, field: string, option: string) {
+  await user.click(screen.getByRole('combobox', { name: field }))
+  await user.click(await screen.findByRole('option', { name: option }))
+}
+
 async function notionArea() {
   return within(await screen.findByTestId('notion-connection'))
 }
@@ -162,8 +168,6 @@ describe('설정 화면 — PM', () => {
     const log = recordRequests()
     await user.click(await screen.findByRole('button', { name: '팀 삭제' }))
     expect(await screen.findByText('팀 삭제는 아직 준비 중이에요.')).toBeInTheDocument()
-    await user.click(await screen.findByRole('button', { name: '채널 바꾸기' }))
-    expect(await screen.findByText('채널 바꾸기는 아직 준비 중이에요.')).toBeInTheDocument()
     expect(businessRequests(log.started).filter(({ method }) => method !== 'GET')).toEqual([])
   })
 
@@ -174,10 +178,8 @@ describe('설정 화면 — PM', () => {
     expect(screen.getByRole('switch', { name: /회의 정리가 끝나면/ })).toBeChecked()
     expect(screen.getByRole('switch', { name: SILENCE })).toBeChecked()
     expect(screen.getByRole('switch', { name: '재촉 자동 승인' })).not.toBeChecked()
-    expect(screen.getByRole('combobox', { name: '재촉 며칠 전' })).toHaveDisplayValue(
-      '마감 하루 전',
-    )
-    expect(screen.getByRole('combobox', { name: '재촉 보낼 시각' })).toHaveDisplayValue('09:00')
+    expect(screen.getByRole('combobox', { name: '재촉 며칠 전' })).toHaveTextContent('1일 전')
+    expect(screen.getByRole('combobox', { name: '재촉 보낼 시각' })).toHaveTextContent('09:00')
     expect(
       within(screen.getByRole('radiogroup', { name: 'PM 알림 방식' })).getByRole('radio', {
         name: /^둘 다/,
@@ -218,11 +220,9 @@ describe('설정 화면 — PM', () => {
     const user = userEvent.setup()
     const patches = recordPatches()
     renderApp(SETTINGS)
-    await user.selectOptions(
-      await screen.findByRole('combobox', { name: '재촉 며칠 전' }),
-      '마감 2일 전',
-    )
-    await user.selectOptions(screen.getByRole('combobox', { name: '재촉 보낼 시각' }), '18:00')
+    await screen.findByRole('combobox', { name: '재촉 며칠 전' })
+    await choose(user, '재촉 며칠 전', '2일 전')
+    await choose(user, '재촉 보낼 시각', '18:00')
     expect(
       screen.getByRole('switch', { name: '마감 2일 전 18:00에 담당자에게 DM' }),
     ).toBeInTheDocument()
@@ -236,14 +236,13 @@ describe('설정 화면 — PM', () => {
       expect(db.messageSettings.ws_01?.nudge_rule).toEqual({ days_before: 2, hour: 18 }),
     )
 
-    await user.selectOptions(screen.getByRole('combobox', { name: '재촉 며칠 전' }), '마감 당일')
+    await choose(user, '재촉 며칠 전', '당일')
     expect(
       await screen.findByRole('switch', { name: '마감 당일 18:00에 담당자에게 DM' }),
     ).toBeInTheDocument()
     // 시각은 밤에도 고를 수 있다 — 0~23시 전부다
-    expect(
-      within(screen.getByRole('combobox', { name: '재촉 보낼 시각' })).getAllByRole('option'),
-    ).toHaveLength(24)
+    await user.click(screen.getByRole('combobox', { name: '재촉 보낼 시각' }))
+    expect(within(await screen.findByRole('listbox')).getAllByRole('option')).toHaveLength(24)
   })
 
   it.each([
@@ -259,9 +258,9 @@ describe('설정 화면 — PM', () => {
     expect(screen.getByText(message, { exact: false })).toBeInTheDocument()
     await waitFor(() => expect(due).toBeChecked())
 
-    await user.selectOptions(screen.getByRole('combobox', { name: '재촉 보낼 시각' }), '18:00')
+    await choose(user, '재촉 보낼 시각', '18:00')
     await waitFor(() =>
-      expect(screen.getByRole('combobox', { name: '재촉 보낼 시각' })).toHaveDisplayValue('09:00'),
+      expect(screen.getByRole('combobox', { name: '재촉 보낼 시각' })).toHaveTextContent('09:00'),
     )
     expect(
       screen.getByRole('switch', { name: '마감 하루 전 09:00에 담당자에게 DM' }),
@@ -415,7 +414,7 @@ describe('설정 화면 — 일반 팀원', () => {
     expect(due).toBeDisabled()
     expect(screen.getByRole('switch', { name: '재촉 자동 승인' })).toBeChecked()
     expect(screen.getByRole('switch', { name: SILENCE })).not.toBeChecked()
-    expect(screen.getByRole('combobox', { name: '재촉 보낼 시각' })).toHaveDisplayValue('20:00')
+    expect(screen.getByRole('combobox', { name: '재촉 보낼 시각' })).toHaveTextContent('20:00')
     expect(
       within(screen.getByRole('radiogroup', { name: 'PM 알림 방식' })).getByRole('radio', {
         name: /^웹/,

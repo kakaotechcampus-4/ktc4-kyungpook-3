@@ -133,6 +133,7 @@ docker compose -f docker-compose.prod.yml logs -f api
 | `MEMBER_HAS_PENDING_INVITATION` | 409 | 대기 초대가 있는 팀원을 PM 으로 올리려 함. `details.member_id` |
 | `PASSWORD_RESET_TOKEN_INVALID` | 400 | 비밀번호 재설정 링크를 쓸 수 없음(없는·무효화된·이미 쓴·만료된 토큰). `details.reason` 은 `invalid`·`used`·`expired` |
 | `MAIL_UNAVAILABLE` | 503 | 메일을 보낼 수 없음(SMTP 설정이 없음). 발송 실패는 응답에 드러나지 않는다 |
+| `TOO_MANY_LOGIN_ATTEMPTS` | 429 | 같은 이메일 10회·같은 공인 IP 50회 실패가 15분 안에 쌓여 로그인이 막힘(맞는 비밀번호도 막음). `Retry-After` 헤더와 `details.retry_after_seconds` 는 같은 정수 초 |
 | `MESSAGE_RESULT_CONFLICT` | 409 | 이미 다른 결과가 보고됐거나 아직 가져가지 않은 메시지에 결과를 보고함. `details.message_id` |
 | `DISCORD_USER_ALREADY_MAPPED` | 409 | 같은 워크스페이스에서 탈퇴하지 않은 다른 팀원에 이미 연결된 디스코드 계정(`details.discord_user_id`). 탈퇴(`is_deleted`)한 팀원의 계정은 다시 연결할 수 있음. `discord_user_id`의 앞뒤 공백은 지우고, 빈 값은 연결 없음(null)으로 저장. 64자를 넘으면 이 코드가 아니라 400 `INVALID_REQUEST` |
 | `UPLOAD_NOT_CLAIMED` | 409 | AI가 아직 가져가지(claim) 않은 업로드에 화자를 보고하려 함. `details.status`(그 시점의 회의 상태) |
@@ -395,6 +396,25 @@ PM 이 디스코드 서버의 텍스트 채널 하나를 골라 두면 녹음 �
 - 같은 이메일로 동시에 가입하면 하나만 만들어지고 나머지는 409 `EMAIL_ALREADY_EXISTS` 를 받는다.
 - 기존 계정은 마이그레이션 `537911f267dc` 가 소문자로 바꾼다. 소문자로 같아지는 계정이 있으면 아무것도 바꾸지 않고 멈춘다. 되돌릴 수 없고 배포 전 확인 방법은 그 파일 설명에 있다.
 - 결정 근거는 [M1 결정 기록](docs/plan/m1/basis-for-decision/2026-11-06-email-normalization.md).
+
+## 로그인 제한
+
+`POST /api/v1/auth/login` 은 실패가 쌓이면 429 `TOO_MANY_LOGIN_ATTEMPTS` 로 막는다. 원본은 `app/services/login_limit.py`, 적용은 `app/api/auth.py` 의 `login`.
+
+| 기준 | 한도 | 막는 시간 |
+|---|---|---|
+| 같은 이메일 | 15분 안에 10번 실패(첫 실패부터 창 시작) | 10번째 실패 직후부터 15분 동안 막는다(11번째 시도부터 429) |
+| 같은 공인 IP | 15분 안에 50번 실패(첫 실패부터 창 시작) | 50번째 실패 직후부터 15분 동안 막는다(51번째 시도부터 429) |
+
+- 막힌 동안에는 비밀번호가 맞아도 해시 계산 없이 429 를 준다. 막힌 동안 시도해도 시간이 늘지 않는다. 점증 잠금은 없다.
+- 응답은 이메일 막힘과 IP 막힘이 같고, 있는 이메일과 없는 이메일도 같다. `Retry-After` 헤더와 `details.retry_after_seconds` 는 같은 정수 초(올림, 최소 1)다.
+- 해제: 시간이 지나면 풀린다. 로그인에 성공하면 그 이메일의 횟수를 지운다. 비밀번호 재설정 confirm 이 commit 된 뒤에도 그 이메일의 막힘을 푼다. 이미 로그인한 세션은 영향이 없다.
+- 시도는 사용자 조회와 해시 계산 전에 잠금 안에서 먼저 센다(예약). 틀린 비밀번호는 센다. 500 같은 예기치 못한 오류나 401 이외의 `AppError` 는 예약을 되돌린다.
+- IP 판단: `request.client.host` 만 읽고 `X-Forwarded-For` 를 직접 읽지 않는다(uvicorn 이 `--proxy-headers` 로 해석한 값). IPv6 는 /64 로 묶는다. 사설 주소·해석할 수 없는 값(테스트 기본값 `testclient` 포함)은 IP 제한을 건너뛰고 이메일 제한만 적용한다. 로그인 성공 때 IP 쪽은 이번 예약만 되돌린다. IP 전체를 지우면 자기 계정으로 로그인해 초기화할 수 있어서다.
+- 같은 공인 IP(교육장 등)에서 실패가 50번 쌓이면 그 IP 전체가 막힌다. 급히 풀어야 할 때는 API 를 재시작한다.
+- 저장은 프로세스 메모리다. 서버를 재시작하면 모두 풀린다. 항목은 5만 개까지이고 넘치면 만료된 것을 먼저, 그다음 오래된 것부터 지운다.
+- 서버가 단일 프로세스(`--workers 1`)라는 전제다. `--workers` 를 늘리거나 서버를 2대 이상 두면 프로세스마다 횟수가 따로 쌓이므로 저장소부터 다시 설계한다.
+- 같은 이메일로 막을 수 있어 남이 내 계정을 15분 막을 수 있다. 결정 근거와 남은 노출은 [M1 결정 기록](docs/plan/m1/basis-for-decision/2026-11-06-login-rate-limit.md).
 
 ## 비밀번호 재설정
 

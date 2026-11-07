@@ -3,13 +3,20 @@ import { initialDb, replaceDb } from './db'
 import type { MeetingFlowMode, MockDb, MockInvitation } from './db'
 import { MOCK_NOW } from './fixtures/constants'
 import {
+  LONG_BUNDLE_BODY,
+  LONG_RECIPIENT_NAME,
+  LONG_UNBROKEN_URL,
+  LONG_WORKSPACE_NAME,
+  longConversation,
   mergeSourceBundle,
   messagesMemberBundle,
   messagesMemberThread,
+  reply,
   schedulePassedBundle,
 } from './fixtures/message'
-import { completeMeeting, failMeeting, setMeetingFlowMode } from './meetingFlow'
+import { completeMeeting, failMeeting, setMeetingFlowMode, startChatMeeting } from './meetingFlow'
 import { notificationFixtures } from './fixtures/notification'
+import { addReplyJudgments } from './fixtures/reply'
 import { setMockRole } from './sessions'
 import {
   PASSWORD_RESET_SCENARIOS,
@@ -27,6 +34,8 @@ import { blockBySilence, createTask } from './task-state'
 
 export const MOCK_SCENARIOS = [
   'signed-out',
+  // #457 비로그인이고 pm@example.com 이 로그인 시도 제한에 걸려 있다. 맞는 비밀번호도 429 다
+  'login-rate-limited',
   'no-workspace',
   'single-workspace',
   'multiple-workspaces',
@@ -42,6 +51,9 @@ export const MOCK_SCENARIOS = [
   'meeting-notion-not-connected',
   'meeting-notion-revoked',
   'meeting-member',
+  // 정리 중 채팅 회의가 있는 업로드 (#450). 둘째는 그 회의가 첫 상세 조회에 chat_stalled 로 실패한다
+  'meeting-chat-processing',
+  'meeting-chat-stalled',
   ...SPEAKER_SCENARIOS,
   // M6 태스크·승인. 모두 ws_01 하나에 PM 으로 로그인한다(마지막만 일반 팀원). 전이는 handler 가 만든다
   'tasks-default',
@@ -85,12 +97,16 @@ export const MOCK_SCENARIOS = [
   'messages-pm-self',
   'messages-schedule-passed',
   'messages-merge',
+  'messages-long-content',
   // M8-B 설정·팀 연결 관리. settings-discord-skipped 만 새로 만든 공간(ws_03)이고 나머지는 ws_01 이다
   'settings-discord-skipped',
   'settings-unmapped',
   'settings-member',
   // #330 알림·자동 막힘. ws_01 PM 이다
   'notifications-default',
+  // #344 리마인드 답장 판단. reply-judgment 는 ws_01 PM, reply-judgment-member 는 같은 상태의 일반 팀원(mb_01)이다
+  'reply-judgment',
+  'reply-judgment-member',
   // #320 팀원 초대. team-invitations 는 ws_01 PM 이 보는 초대 상태, invitation-pending 은 초대받은 사람의 가입 전이다
   'team-invitations',
   'invitation-pending',
@@ -158,7 +174,12 @@ function addCreatedWorkspace(state: MockDb, workspace: WorkspaceDto): void {
     created_at: MOCK_NOW,
   })
   state.integrations[workspace.workspace_id] = {
-    discord: { status: 'not_connected', display_name: null, connected_at: null },
+    discord: {
+      status: 'not_connected',
+      display_name: null,
+      connected_at: null,
+      chat_channel: null,
+    },
     notion: { status: 'not_connected', display_name: null, connected_at: null },
   }
 }
@@ -213,6 +234,24 @@ function addLongContent(state: MockDb): void {
       'manual',
       state,
     )
+}
+
+function addLongMessages(state: MockDb): void {
+  const workspace = state.workspaces.find(({ workspace_id }) => workspace_id === 'ws_01')
+  const bundle = state.messageBundles.find(({ bundle_id }) => bundle_id === 'bd_01')
+  const thread = state.messageThreads.find(({ thread_id }) => thread_id === 'th_01')
+  const longThread = state.messageThreads.find(({ thread_id }) => thread_id === 'th_02')
+  if (!workspace || !bundle || !thread || !longThread)
+    throw new Error('mock ws_01, bundle bd_01 or thread th_01·th_02 is missing')
+  workspace.name = LONG_WORKSPACE_NAME
+  bundle.recipient_name = LONG_RECIPIENT_NAME
+  bundle.body = LONG_BUNDLE_BODY
+  bundle.reminders[0].note = `링크 남겨요 ${LONG_UNBROKEN_URL}`
+  thread.name = LONG_RECIPIENT_NAME
+  thread.messages.push(
+    reply('mg_80', `링크 남겨요\n${LONG_UNBROKEN_URL}`, '2026-09-16T19:00:00+09:00'),
+  )
+  longThread.messages.push(...structuredClone(longConversation))
 }
 
 /** ws_01 의 태스크·이력·승인을 모두 비운다. 그 공간 추출 항목의 연결도 끊어 없는 태스크·승인을 가리키지 않게 한다 */
@@ -563,6 +602,15 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
     case 'signed-out':
       state.authenticated = false
       break
+    case 'login-rate-limited':
+      state.authenticated = false
+      // 같은 시나리오는 늘 같은 db 여야 해서 지금 시각이 아니라 고정 시각까지 막는다
+      state.loginLimit['pm@example.com'] = {
+        failures: 10,
+        windowStartedAt: Date.parse('2099-12-30T23:45:00.000Z'),
+        blockedUntil: Date.parse('2099-12-31T00:00:00.000Z'),
+      }
+      break
     case 'no-workspace':
       signInWith(state, [], null)
       break
@@ -614,6 +662,14 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
       signInWith(state, ['ws_01'], 'ws_01')
       setMockRole('member', 'ws_01', state)
       setMeetingFlowMode('instant', state)
+      break
+    case 'meeting-chat-processing':
+      readyToUpload(state, 'manual')
+      startChatMeeting(state)
+      break
+    case 'meeting-chat-stalled':
+      readyToUpload(state, 'fail-chat-stalled')
+      startChatMeeting(state)
       break
     case 'tasks-default':
       // 픽스처 그대로의 정상 목록: 태스크 10개(반영 완료 2개), 보완이 필요한 대기 생성 승인 3개
@@ -812,6 +868,12 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
       )
       state.messageBundles.push(structuredClone(mergeSourceBundle))
       break
+    case 'messages-long-content':
+      // messages-default 에 긴 문구를 더한다. 공간(봇) 이름과 이재환(bd_01·th_01)의 이름이 띄어 쓰지 않은 긴 이름이고,
+      // bd_01 은 여러 줄 본문 끝에 줄바꿈할 곳이 없는 주소가 있다. th_01 에는 그 주소의 답장, th_02(박민수)에는 며칠에 걸친 30통이 더 있다
+      signInWith(state, ['ws_01'], 'ws_01')
+      addLongMessages(state)
+      break
     case 'settings-discord-skipped':
       // 설정에서 Discord 를 연결한다. 연결해도 건너뜀으로 저장된 단계는 그대로다 (D-173)
       addCreatedWorkspace(state, discordSkippedWorkspace)
@@ -834,6 +896,7 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
         status: 'not_connected',
         display_name: null,
         connected_at: null,
+        chat_channel: null,
       }
       break
     case 'notifications-default':
@@ -841,6 +904,14 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
       signInWith(state, ['ws_01'], 'ws_01')
       state.notifications = structuredClone(notificationFixtures)
       blockBySilence(taskOf(state, 'tk_06'), '2026-09-18T08:30:00+09:00', state)
+      break
+    case 'reply-judgment':
+    case 'reply-judgment-member':
+      // 박민수 th_02 의 답장은 PM 이 태스크를 고를 차례다. 이재환 th_01 의 새 답장이 tk_03 을 완료로 바꿨고(되돌리기),
+      // tk_03 마감·tk_08 담당자 승인 카드 ap_31·ap_32 를 남겼다. 팀원에게는 답장 글이 보이지 않는다
+      signInWith(state, ['ws_01'], 'ws_01')
+      addReplyJudgments(state)
+      if (scenario === 'reply-judgment-member') setMockRole('member', 'ws_01', state)
       break
     case 'team-invitations':
       signInWith(state, ['ws_01'], 'ws_01')

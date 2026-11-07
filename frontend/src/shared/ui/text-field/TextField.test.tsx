@@ -105,6 +105,22 @@ describe('TextField', () => {
     )
   })
 
+  it('draws 44px with size lg, on a plain and an adorned input', () => {
+    render(
+      <>
+        <TextField size="lg" label="태스크명" />
+        <TextField size="lg" label="마감" endAdornment={<span />} />
+      </>,
+    )
+
+    const plain = screen.getByLabelText('태스크명')
+    expect(plain).toHaveClass('h-44', 'rounded-9')
+    expect(plain).not.toHaveClass('h-[42px]')
+    const adorned = screen.getByLabelText('마감').parentElement
+    expect(adorned).toHaveClass('h-44')
+    expect(adorned).not.toHaveClass('h-[42px]')
+  })
+
   it('draws the auth tone at 48px and radius 12', () => {
     render(<TextField tone="auth" label="이메일" />)
 
