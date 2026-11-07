@@ -129,3 +129,31 @@ def test_names_that_trim_to_self_reference_are_not_learned(raw):
     """받아들인 제약: 조사 "이"를 떼면 "제"·"나"가 되는 이름은 배우지 않는다. 못 배우는 쪽이라 해가 없고 PM 이
     별칭을 직접 등록할 수 있다(#464 리뷰)."""
     assert alias_learning.learnable_alias_text(_item(assignee_raw=raw)) is None
+
+
+def _self_reference_forms():
+    """1인칭 거르기가 막는 꼴을 규칙대로 만든다: 어간 × 복수 들 × 주어 표지(도·만·은).
+
+    "들"은 저희·우리·본인에만 붙는다("저들"은 3인칭). "은"은 받침 있는 말(본인, 들) 뒤에서만 붙는다. 받침 없는
+    어간은 "는"이라 "나은"(이름)은 막지 않는다. 이·가·는·를 같은 격조사는 다듬기(trim_alias_text)가 먼저 뗀다.
+    """
+    for stem in ("제", "저", "나", "내"):
+        yield from (stem, stem + "도", stem + "만")
+    for stem in ("저희", "우리"):
+        yield from (stem, stem + "도", stem + "만")
+        plural = stem + "들"
+        yield from (plural, plural + "도", plural + "만", plural + "은")
+    for stem in ("본인", "본인들"):
+        yield from (stem, stem + "도", stem + "만", stem + "은")
+
+
+@pytest.mark.parametrize("raw", sorted(_self_reference_forms()))
+def test_every_form_the_self_reference_rule_describes_is_blocked(raw):
+    assert alias_learning.learnable_alias_text(_item(assignee_raw=raw)) is None
+
+
+@pytest.mark.parametrize("raw", ["저희 모두", "우리끼리", "우리까지", "제가요", "저희끼리", "저들"])
+def test_forms_outside_the_self_reference_rule_are_not_blocked(raw):
+    """규칙 밖의 꼴은 막지 않는다: 주어 표지가 아닌 부사어·구·끝말, 그리고 3인칭 "저들". 새는 경우는 PM 동의, 한 글자
+    확인 필요(#463), 별칭 삭제, AI 오분류 개선이 받는다(#464 리뷰)."""
+    assert alias_learning.learnable_alias_text(_item(assignee_raw=raw)) is not None

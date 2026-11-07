@@ -7,6 +7,7 @@ STT 가 잘못 받아 적은 "화은이가")을 그 멤버의 별칭으로 저�
 별칭을 저장하는 함수(learn_alias)가 함께 있다. 요청 처리 흐름과 권한 확인은 API 쪽이 맡는다.
 """
 import logging
+import re
 from collections.abc import Collection, Iterable, Sequence
 
 from sqlalchemy import select
@@ -42,11 +43,21 @@ KNOWN_ASSIGNEE_TYPES = frozenset(
 LEARNABLE_ASSIGNEE_TYPES = frozenset({"thirdname"})
 
 # AI 가 1인칭을 thirdname 으로 잘못 분류한 기록이 있다(#502). "제가"→"제", "우리가"→"우리"처럼 다듬은 글자가
-# 확인된 별칭이 되면 오분류된 말이 그 팀원으로 채워진다. 한 글자는 #463 의 한 글자 규칙으로 확정 매칭은 안 되지만
-# "저희"·"우리"·"본인"은 두 글자라 걸리지 않는다. 다듬은 글자가 통째로 이 말일 때만 거른다("제인"은 배울 수 있다).
-# 이름 끝 "은"은 조사로 떼지 않아("하은"·"나은") "본인은"은 목록에 직접 둔다. 통째로 비교하므로 "제인"·"나연"은
-# 배운다. 대신 조사 "이"를 떼면 "제"·"나"가 되는 "제이"·"나이"는 배우지 않는다(못 배우는 쪽이라 PM 이 직접 등록한다).
-SELF_REFERENCE_WORDS = frozenset({"제", "저", "나", "내", "저희", "우리", "본인", "본인은"})
+# 확인된 별칭이 되면 오분류된 말이 그 팀원으로 채워진다. 그래서 1인칭이 할 일의 주어로 쓰인 꼴을 규칙 하나로 막는다.
+# 규칙은 어간 × 복수 "들" × 주어 표지다. 이·가·는·를 같은 격조사는 다듬기(trim_alias_text)가 먼저 떼므로 여기서는
+# 다듬기가 안 떼는 도·만·은과 복수 들을 본다.
+#   - 어간: 제·저·나·내 / 저희·우리 / 본인. "들"은 저희·우리·본인에만 붙는다("저들"은 3인칭이라 막지 않는다).
+#   - "은"은 받침 있는 말(본인, 들) 뒤에서만 붙는다. 받침 없는 어간은 "는"이라 "나은"(이름)은 막지 않는다.
+#   - 규칙 밖(끼리·까지·모두 같은 부사어·구, 문장 끝 "요")은 주어 표지가 아니라 막지 않는다. 새는 경우는 PM 동의,
+#     한 글자 확인 필요(#463), 별칭 삭제, AI 오분류 개선이 받는다. 새 꼴이 거론되면 "이 규칙이 만드는 조합인가"로
+#     판단한다. 안이면 버그고, 밖이면 문서에 남긴다. 규칙이 만드는 조합은 tests/services/test_alias_learning.py 가 전부 돈다.
+#   - 통째로 일치할 때만 막으므로 "제인"·"나연"은 배운다. 대신 조사 "이"를 떼면 "제"·"나"가 되는 "제이"·"나이"는
+#     배우지 않는다(못 배우는 쪽이라 해가 없고 PM 이 직접 등록한다).
+_SELF_REFERENCE = re.compile(
+    r"(?:제|저|나|내)(?:도|만)?"
+    r"|(?:저희|우리)(?:도|만|들(?:도|만|은)?)?"
+    r"|본인(?:들)?(?:도|만|은)?"
+)
 
 # 사용자가 승인하며 확인한 별칭이라 자동 추정(AI·규칙)보다 높게 두되, 1.0 은 남겨 둔다.
 LEARNED_CONFIDENCE = 0.9
@@ -94,7 +105,7 @@ def learnable_alias_text(item: ExtractionItem) -> str | None:
     """이 항목의 담당자 표현을 별칭으로 배울 수 있으면 저장될 글자, 아니면 None.
 
     새 task 를 만드는 항목인데 담당자를 못 찾았고, 표현이 이름 지목일 때만 대상이다(LEARNABLE_ASSIGNEE_TYPES).
-    1인칭 지칭어(SELF_REFERENCE_WORDS)로 다듬어지면 AI 오분류로 보고 대상이 아니다. 승인 상태는 보지 않는다.
+    1인칭이 주어로 쓰인 꼴(_SELF_REFERENCE)로 다듬어지면 AI 오분류로 보고 대상이 아니다. 승인 상태는 보지 않는다.
     pending 인지는 호출하는 쪽이 이미 가진 승인 상태로 거른다.
     """
     if (
@@ -110,17 +121,8 @@ def learnable_alias_text(item: ExtractionItem) -> str | None:
 
 
 def _is_self_reference(text: str) -> bool:
-    """다듬은 글자가 1인칭 지칭어인가. 끝의 "도"·"들"은 떼어 가며 견준다("저도"·"저희들"·"저희들도").
-
-    비교할 때만 떼고 저장 글자는 그대로다(trim_alias_text). "도"·"들"은 조사 목록에 없어 다듬기에서는 남는다.
-    """
-    while True:
-        if text in SELF_REFERENCE_WORDS:
-            return True
-        if len(text) > 1 and text[-1] in "도들":
-            text = text[:-1]
-            continue
-        return False
+    """다듬은 글자가 1인칭이 주어로 쓰인 꼴인가(_SELF_REFERENCE 규칙). 저장 글자는 바꾸지 않는다."""
+    return _SELF_REFERENCE.fullmatch(text) is not None
 
 
 def alias_lookup_forms(raw: str | None, text: str) -> set[str]:

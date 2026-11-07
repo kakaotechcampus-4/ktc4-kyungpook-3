@@ -643,7 +643,7 @@ def test_chat_meeting_log_does_not_count_thirdrole_item_as_would_have_been_auto(
     assert "title=백엔드 배포" in role_lines[0]
 
 
-@pytest.mark.parametrize("raw", ["제가", "저는", "우리가", "본인이", "본인은", "저도", "나도", "저희들이"])
+@pytest.mark.parametrize("raw", ["제가", "저는", "우리가", "본인이", "본인은", "저도", "나도", "저희들이", "저만", "저희들은", "본인들은"])
 def test_first_person_word_misclassified_as_thirdname_is_not_alias_candidate_and_not_saved(
     client, pm_client, db, seed, raw
 ):
