@@ -1,7 +1,15 @@
 from datetime import date, datetime
 from typing import Annotated
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator
+from pydantic import (
+    AwareDatetime,
+    BaseModel,
+    ConfigDict,
+    Field,
+    StrictInt,
+    field_validator,
+    model_validator,
+)
 
 from app.models import (
     ApprovalStatus,
@@ -60,16 +68,37 @@ class MeetingFailRequest(BaseModel):
     failed_stage: str = Field(..., description="어느 단계에서 실패했는지 (e.g., STT, LLM)")
 
 
+class MeetingSttProgress(BaseModel):
+    done: StrictInt = Field(..., ge=0, description="전사를 끝낸 조각 수")
+    total: StrictInt = Field(..., ge=1, description="전사할 전체 조각 수")
+
+    @model_validator(mode="after")
+    def _done_within_total(self) -> "MeetingSttProgress":
+        if self.done > self.total:
+            raise ValueError("done 은 total 이하여야 합니다")
+        return self
+
+
 class MeetingStageRequest(BaseModel):
     stage: MeetingProcessingStage = Field(
         ..., description="AI 가 지금 시작한 처리 단계"
     )
+    stt: MeetingSttProgress | None = Field(
+        None, description="stt 단계의 전사 진행. stage 가 stt 일 때만 보낸다"
+    )
+
+    @model_validator(mode="after")
+    def _stt_only_on_stt_stage(self) -> "MeetingStageRequest":
+        if self.stt is not None and self.stage != MeetingProcessingStage.STT:
+            raise ValueError("stt 진행은 stage 가 stt 일 때만 보낼 수 있습니다")
+        return self
 
 
 class MeetingStageResponse(BaseModel):
     meeting_id: str
     status: str
     processing_stage: str | None
+    stt: MeetingSttProgress | None = Field(None, description="저장된 전사 진행. stt 단계가 아니면 null")
     applied: bool = Field(..., description="이 보고가 반영됐는지(같은 단계·역행·처리 중이 아님은 False)")
 
 
@@ -77,6 +106,12 @@ class MeetingProgress(BaseModel):
     audio_merged: bool
     transcribed: bool
     extracted: bool
+
+
+class MeetingProcessing(BaseModel):
+    stage: str | None = Field(..., description="AI 가 알린 현재 단계. 아직 알리지 않았으면 null")
+    stage_at: datetime | None = Field(..., description="현재 단계가 시작된 시각")
+    stt: MeetingSttProgress | None = Field(..., description="전사 진행. stt 단계에서 알렸을 때만")
 
 
 class MeetingDetailResponse(BaseModel):
@@ -89,6 +124,9 @@ class MeetingDetailResponse(BaseModel):
     extraction_id: str | None = None
     failed_stage: str | None = None
     progress: MeetingProgress
+    processing: MeetingProcessing | None = Field(
+        None, description="status 가 processing 일 때만 객체, 그 밖에는 null"
+    )
 
 
 class MeetingListResponse(BaseModel):

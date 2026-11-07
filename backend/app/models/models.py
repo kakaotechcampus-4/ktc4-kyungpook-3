@@ -418,6 +418,9 @@ class Meeting(Base):
     processing_stage_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # stt 단계의 전사 진행(끝낸 조각 수 / 전체 조각 수). stt 단계에서 알렸을 때만 값이 있고 그 밖에는 NULL 이다
+    processing_stt_done: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    processing_stt_total: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     extractions: Mapped[list["Extraction"]] = relationship(
         back_populates="meeting", cascade="all, delete-orphan"
