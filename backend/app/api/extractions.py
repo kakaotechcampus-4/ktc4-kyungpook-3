@@ -301,6 +301,11 @@ def create_extraction(
                     "역할 지목 항목이라 auto를 review로 내립니다. meeting_id=%s title=%s",
                     meeting.meeting_id, raw_item.task_title,
                 )
+            if (merge_card is not None or raw_item.action == ExtractionAction.MERGE) and gate == Gate.AUTO:
+                # 승인 대기 카드에 합치는 항목, 합치려다 대상을 못 쓴 항목은 PM 이 본다.
+                # 합치기는 PM 이 아직 보지 않은 카드를 고치는 일이고, 대상을 못 쓴 항목은 중복 검사를 거치지 못했다.
+                # 역할 지목 강등처럼 채팅 강등보다 먼저 둬서 아래 로그가 이 항목을 세지 않게 한다
+                gate = Gate.REVIEW
             if meeting.source == MeetingSource.CHAT and gate == Gate.AUTO:
                 # 채팅에서 나온 항목은 PM이 보지 않고 반영하지 않는다. hold는 그대로 둔다
                 gate = Gate.REVIEW
@@ -309,10 +314,6 @@ def create_extraction(
                     "chat 회의라 auto 항목을 review로 내립니다. meeting_id=%s title=%s",
                     meeting.meeting_id, raw_item.task_title,
                 )
-            if (merge_card is not None or raw_item.action == ExtractionAction.MERGE) and gate == Gate.AUTO:
-                # 승인 대기 카드에 합치는 항목, 합치려다 대상을 못 쓴 항목은 PM 이 본다.
-                # 합치기는 PM 이 아직 보지 않은 카드를 고치는 일이고, 대상을 못 쓴 항목은 중복 검사를 거치지 못했다
-                gate = Gate.REVIEW
             if blockers:
                 # auto 조건과 유사도 기준을 조정할 때 어떤 조건에서 많이 걸리는지 본다
                 logger.info(

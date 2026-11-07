@@ -555,6 +555,18 @@ def test_chat_meeting_create_never_auto(client, db, seed, caplog):
     assert db.execute(select(Task).where(Task.title == "결제 API 연동")).scalar_one_or_none() is None
 
 
+def test_chat_downgrade_log_skips_unusable_merge_item(client, db, seed, caplog):
+    # 대상을 못 쓴 merge 항목은 채팅이 아니어도 review 라 "채팅이 아니었으면 auto" 로그에 세지 않는다
+    _make_chat(db, seed)
+
+    with caplog.at_level("INFO", logger="app.api.extractions"):
+        item = _only_item(client, _extract(client, seed, [_judge(action="merge", target_approval_id=None)]))
+
+    assert item["gate"] == "review"
+    assert "merge_target_unavailable" in caplog.text
+    assert "chat 회의라 auto 항목을 review로 내립니다" not in caplog.text
+
+
 def test_chat_meeting_hold_stays_hold(client, db, seed):
     _make_chat(db, seed)
 
