@@ -234,12 +234,17 @@ def test_concurrent_first_mark_read_keeps_one_row_and_latest(mdb, seed):
     Session = sessionmaker(bind=engine, autoflush=False)
     first_inserted = threading.Event()
 
-    # 첫 세션이 INSERT 한 뒤 커밋 전에 멈추고, 그동안 둘째 세션이 같은 행을 넣게 해
+    # 첫 세션이 INSERT 를 실행한 뒤 커밋 전에 멈추고, 그동안 둘째 세션이 같은 행을 넣게 해
     # 기본 키 충돌(IntegrityError)에서 조건부 UPDATE 로 가는 길을 반드시 지나게 한다.
-    def listener(conn, cursor, statement, params, context, executemany):
-        if threading.current_thread().name == "first" and statement.startswith("INSERT INTO message_thread_read"):
+    second_updates = []
+
+    def after_execute(conn, cursor, statement, params, context, executemany):
+        name = threading.current_thread().name
+        if name == "first" and statement.startswith("INSERT INTO message_thread_read"):
             first_inserted.set()
             time.sleep(0.5)
+        if name == "second" and statement.startswith("UPDATE message_thread_read"):
+            second_updates.append(statement)
 
     def worker(minutes, wait_first):
         def run():
@@ -258,7 +263,7 @@ def test_concurrent_first_mark_read_keeps_one_row_and_latest(mdb, seed):
         return run
 
     results = {}
-    event.listen(engine, "before_cursor_execute", listener)
+    event.listen(engine, "after_cursor_execute", after_execute)
     try:
         workers = [
             threading.Thread(name=name, target=lambda n=name, f=fn: results.update({n: f()}))
@@ -270,9 +275,10 @@ def test_concurrent_first_mark_read_keeps_one_row_and_latest(mdb, seed):
             w.join(20)
         assert not any(w.is_alive() for w in workers)
     finally:
-        event.remove(engine, "before_cursor_execute", listener)
+        event.remove(engine, "after_cursor_execute", after_execute)
 
     assert results == {"first": "ok", "second": "ok"}
+    assert len(second_updates) == 1, "둘째 세션이 충돌 뒤 조건부 UPDATE 를 지나지 않았다"
     mdb.expire_all()
     rows = mdb.scalars(select(MessageThreadRead).where(
         MessageThreadRead.thread_id == thread_id, MessageThreadRead.member_id == pm
