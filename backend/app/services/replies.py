@@ -346,8 +346,15 @@ def _judged(db: Session, row: ReplyJudgment, changes: list[ReplyChangeRequest], 
             _apply(db, task, line, now)
         elif outcome == ReplyChangeOutcome.PROPOSED:
             proposed[task.task_id].append((line, change, match))
+    repeated: list[ReplyChange] = []
     for task_id, group in proposed.items():
-        _propose(db, row, locked[task_id], group, owner_id)
+        waiting = _waiting_cards(db, task_id, group)
+        if waiting is None:
+            _propose(db, row, locked[task_id], group, owner_id)
+            continue
+        for (line, *_), approval_id in zip(group, waiting):
+            line.approval_id = approval_id
+            repeated.append(line)
     unknown = any(line.outcome == ReplyChangeOutcome.UNKNOWN for line in lines)
     if not unknown and not any(line.task_id for line in lines):
         for task_id in _unrecorded(db, row):
@@ -357,9 +364,10 @@ def _judged(db: Session, row: ReplyJudgment, changes: list[ReplyChangeRequest], 
             ))
     row.state = ReplyJudgmentState.NEEDS_PM if unknown else ReplyJudgmentState.DONE
     message = row.message
+    picked = row.picked_task_id is not None
     notice = _notice(
-        message.thread.member.display_name, scheduler._preview(message.body), lines, locked, row.thread_id,
-        picked=row.picked_task_id is not None,
+        message.thread.member.display_name, scheduler._preview(message.body),
+        lines if picked else [line for line in lines if line not in repeated], locked, row.thread_id, picked=picked,
     )
     if notice is not None:
         notifications.notify_pms(
@@ -470,6 +478,31 @@ def _apply(db: Session, task: Task, line: ReplyChange, now: datetime) -> None:
     for entry in entries:
         entry.reply_change_id = line.change_id
         entry.created_at = now
+
+
+def _waiting_cards(db: Session, task_id: str, group: list[tuple]) -> list[str] | None:
+    """줄마다 같은 값을 이미 낸 대기 카드. 하나라도 없으면 None 이다. 범위 줄과 못 찾은 담당자는 값이 없어 찾지 못한다.
+
+    출처를 가리지 않아 회의 추출 카드도 친다. 답장 판단은 대기 카드를 보지 못해 앞 제안을 그대로 또 낼 수 있다.
+    """
+    cards = db.scalars(
+        select(ApprovalRequest).where(
+            ApprovalRequest.related_task_id == task_id,
+            ApprovalRequest.status == ApprovalStatus.PENDING,
+            ApprovalRequest.type == str(ApprovalType.TASK_UPDATE),
+        ).order_by(ApprovalRequest.created_at.desc(), ApprovalRequest.approval_id.desc())
+    ).all()
+    # 같은 값의 카드가 여럿이면 가장 먼저 나온 카드가 남는다.
+    waiting = {}
+    for card in cards:
+        payload = json.loads(card.payload)
+        # 수동 생성(POST /approvals)은 payload 값을 검사하지 않는다. 줄의 값은 문자열이라 문자열만 견준다.
+        waiting.update({
+            (key, payload[key]): card.approval_id
+            for key in _PAYLOAD_KEY.values() if isinstance(payload.get(key), str) and payload[key]
+        })
+    found = [waiting.get((_PAYLOAD_KEY.get(line.field), line.new_value)) for line, *_ in group]
+    return None if None in found else found
 
 
 def _propose(
@@ -674,10 +707,15 @@ def undo_change(db: Session, task: Task, change_id: str, *, changed_by: str) -> 
 
 
 def link_history(db: Session, approval_id: str, entries: list[TaskHistory]) -> None:
-    """승인이 남긴 이력을 제안한 줄에 잇는다. PM 이 고쳐 승인한 줄도 같은 필드라 같이 이어진다."""
+    """승인이 남긴 이력을 제안한 줄에 잇는다. PM 이 고쳐 승인한 줄도 같은 필드라 같이 이어진다.
+
+    같은 카드에 이어진 줄이 여럿이면 처음 제안한 줄에 잇는다.
+    """
     db.flush()
     change_ids = dict(db.execute(
-        select(ReplyChange.field, ReplyChange.change_id).where(ReplyChange.approval_id == approval_id)
+        select(ReplyChange.field, ReplyChange.change_id)
+        .where(ReplyChange.approval_id == approval_id)
+        .order_by(ReplyChange.created_at.desc(), ReplyChange.change_id.desc())
     ).all())
     for entry in entries:
         entry.reply_change_id = change_ids.get(entry.changed_field)
@@ -699,10 +737,17 @@ def timeline(db: Session, task: Task, viewer: Member) -> list[dict]:
         .where(ReplyChange.task_id == task.task_id)
         .order_by(ReplyChange.created_at, ReplyChange.change_id)
     ).all()
-    approvals = dict(db.execute(
-        select(ApprovalRequest.approval_id, ApprovalRequest.status)
-        .where(ApprovalRequest.approval_id.in_({line.approval_id for line in lines} - {None}))
-    ).all())
+    # 같은 카드의 뒷 줄은 이력이 처음 줄에만 이어져 있어 처음 줄의 이력을 같이 읽는다.
+    first: dict[tuple[str, str], str] = {}
+    for line in lines:
+        if line.approval_id:
+            linked[line.change_id] = linked[first.setdefault((line.approval_id, line.field), line.change_id)]
+    approvals = {
+        card.approval_id: card
+        for card in db.scalars(
+            select(ApprovalRequest).where(ApprovalRequest.approval_id.in_({line.approval_id for line in lines} - {None}))
+        )
+    }
     by_message = defaultdict(list)
     for line in lines:
         by_message[line.message_id].append(line)
@@ -721,7 +766,7 @@ def timeline(db: Session, task: Task, viewer: Member) -> list[dict]:
 
 def _reply_item(
     db: Session, message_id: str, group: list[ReplyChange], linked: dict[str, list[TaskHistory]],
-    approvals: dict[str, str], viewer: Member,
+    approvals: dict[str, ApprovalRequest], viewer: Member,
 ) -> dict:
     message = db.get(ThreadMessage, message_id)
     owner = message.thread.member
@@ -747,12 +792,15 @@ def _reply_item(
     }
 
 
-def _result(line: ReplyChange, approvals: dict[str, str], entries: list[TaskHistory]) -> str:
+def _result(line: ReplyChange, approvals: dict[str, ApprovalRequest], entries: list[TaskHistory]) -> str:
     if line.outcome == ReplyChangeOutcome.PROPOSED:
-        status = approvals[line.approval_id]
-        # 담당자를 못 찾은 카드는 승인해도 바뀌는 값이 없다.
-        unchanged = status == ApprovalStatus.APPROVED and line.field == ReplyChangeField.ASSIGNEE and not entries
-        return "noted" if unchanged else status
+        card = approvals[line.approval_id]
+        # 담당자를 못 찾은 카드는 승인해도 바뀌는 값이 없다. 회의 카드의 이력은 줄에 잇지 않아 카드의 값으로 가른다.
+        unchanged = (
+            card.status == ApprovalStatus.APPROVED and line.field == ReplyChangeField.ASSIGNEE and not entries
+            and _PAYLOAD_KEY[ReplyChangeField.ASSIGNEE] not in json.loads(card.payload)
+        )
+        return "noted" if unchanged else card.status
     if line.outcome in (ReplyChangeOutcome.APPLIED, ReplyChangeOutcome.RECORDED):
         return line.outcome
     return "noted"
