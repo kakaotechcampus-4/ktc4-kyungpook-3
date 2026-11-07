@@ -22,6 +22,7 @@ from app.api.members import _ensure_no_pending_invitation, _ensure_other_pm
 from app.core.database import Base, get_db
 from app.main import app
 from app.models import Invitation, Member, Session as SessionModel, User, Workspace
+from app.services.sessions import hash_session_token
 
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
 
@@ -67,7 +68,7 @@ def _user(db, name: str, email: str | None = None) -> User:
     db.add(user)
     db.flush()
     db.add(SessionModel(
-        user_id=user.user_id, session_token=f"{name}-token",
+        user_id=user.user_id, session_token=hash_session_token(f"{name}-token"),
         expires_at=datetime.now(timezone.utc) + timedelta(days=1),
     ))
     return user
