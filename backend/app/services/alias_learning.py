@@ -7,7 +7,7 @@ STT 가 잘못 받아 적은 "화은이가")을 그 멤버의 별칭으로 저�
 별칭을 저장하는 함수(learn_alias)가 함께 있다. 요청 처리 흐름과 권한 확인은 API 쪽이 맡는다.
 """
 import logging
-from collections.abc import Collection, Sequence
+from collections.abc import Collection, Iterable, Sequence
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -24,6 +24,7 @@ from app.models import (
     Member,
     MemberAlias,
 )
+from app.services.matching import name_candidates
 
 logger = logging.getLogger(__name__)
 
@@ -120,39 +121,59 @@ def _is_self_reference(text: str) -> bool:
         return False
 
 
+def alias_lookup_forms(raw: str | None, text: str) -> set[str]:
+    """이 표현이 담당자 찾기에서 걸릴 글자들: 님·조사를 뗀 후보(#463 name_candidates)와 저장할 글자.
+
+    이 중 하나라도 탈퇴하지 않은 팀원이 별칭으로 가졌으면 이미 찾히거나 애매한 표현이라 배우지 않는다.
+    저장할 글자만 보면 "하은은"(후보 하은은·하은, "하은"은 두 팀원)이 아무도 안 가진 글자로 보여 저장되고,
+    이후 "하은은"이 그 팀원으로 항상 확정된다(#464 리뷰).
+    """
+    return set(name_candidates(raw)) | {text}
+
+
+def learnable_alias_texts(
+    db: Session, workspace_id: str, items: Iterable[ExtractionItem]
+) -> dict[str, str]:
+    """items 중 별칭을 배울 수 있는 것의 {item_id: 저장될 글자}. 이미 찾히는 표현은 뺀다.
+
+    표현의 찾기 후보(alias_lookup_forms) 중 하나라도 탈퇴하지 않은 팀원이 가졌으면 뺀다. 조회는 한 번(IN)만 한다.
+    """
+    candidates: dict[str, tuple[str, set[str]]] = {}
+    for item in items:
+        text = learnable_alias_text(item)
+        if text is not None:
+            candidates[item.item_id] = (text, alias_lookup_forms(item.assignee_raw, text))
+    if not candidates:
+        return {}
+    held = taken_alias_texts(db, workspace_id, set().union(*(forms for _, forms in candidates.values())))
+    return {item_id: text for item_id, (text, forms) in candidates.items() if not (forms & held)}
+
+
 def approval_alias_texts(db: Session, approvals: Sequence[ApprovalRequest]) -> dict[str, str]:
     """pending 생성 승인 중 별칭을 배울 수 있는 것의 {approval_id: 저장될 글자}.
 
     승인 목록 응답에 alias_candidate 를 채우려고 쓴다. 항목은 approval_id 로 한 번에 읽어 승인마다 쿼리하지 않는다.
     """
-    pending_ids = [
-        a.approval_id
+    workspace_of = {
+        a.approval_id: a.workspace_id
         for a in approvals
         if a.status == str(ApprovalStatus.PENDING) and a.type == str(ApprovalType.TASK_CREATE)
-    ]
-    if not pending_ids:
+    }
+    if not workspace_of:
         return {}
-    items = db.execute(select(ExtractionItem).where(ExtractionItem.approval_id.in_(pending_ids))).scalars()
-    texts: dict[str, str] = {}
+    items = db.execute(
+        select(ExtractionItem).where(ExtractionItem.approval_id.in_(list(workspace_of)))
+    ).scalars().all()
+    # 워크스페이스마다 한 번씩만 조회한다
+    items_by_workspace: dict[str, list[ExtractionItem]] = {}
     for item in items:
-        text = learnable_alias_text(item)
-        if text is not None:
-            texts[item.approval_id] = text
-    if not texts:
-        return {}
-    # 이미 누군가 가진 글자는 묻지 않는다. 워크스페이스마다 한 번씩만 조회한다
-    workspace_of = {a.approval_id: a.workspace_id for a in approvals}
-    texts_by_workspace: dict[str, set[str]] = {}
-    for approval_id, text in texts.items():
-        texts_by_workspace.setdefault(workspace_of[approval_id], set()).add(text)
-    taken = {
-        (workspace_id, text)
-        for workspace_id, workspace_texts in texts_by_workspace.items()
-        for text in taken_alias_texts(db, workspace_id, workspace_texts)
-    }
-    return {
-        approval_id: text for approval_id, text in texts.items() if (workspace_of[approval_id], text) not in taken
-    }
+        items_by_workspace.setdefault(workspace_of[item.approval_id], []).append(item)
+    approval_of = {item.item_id: item.approval_id for item in items}
+    texts: dict[str, str] = {}
+    for workspace_id, workspace_items in items_by_workspace.items():
+        for item_id, text in learnable_alias_texts(db, workspace_id, workspace_items).items():
+            texts[approval_of[item_id]] = text
+    return texts
 
 
 def taken_alias_texts(db: Session, workspace_id: str, texts: Collection[str]) -> set[str]:
@@ -176,18 +197,26 @@ def taken_alias_texts(db: Session, workspace_id: str, texts: Collection[str]) ->
     ))
 
 
-def _alias_taken(db: Session, workspace_id: str, alias_text: str) -> bool:
-    return bool(taken_alias_texts(db, workspace_id, [alias_text]))
+def _alias_taken(db: Session, workspace_id: str, forms: Collection[str]) -> bool:
+    return bool(taken_alias_texts(db, workspace_id, forms))
 
 
-def learn_alias(db: Session, *, workspace_id: str, member_id: str, alias_text: str) -> bool:
+def learn_alias(
+    db: Session,
+    *,
+    workspace_id: str,
+    member_id: str,
+    alias_text: str,
+    lookup_forms: Collection[str] = (),
+) -> bool:
     """승인하며 고른 담당자에게 별칭을 저장한다. 저장했으면 True, 이미 누가 가진 글자라 넘어가면 False.
 
-    같은 글자를 다른 팀원이 가졌으면 저장하지 않는다(taken_alias_texts). 이 별칭은 덤이라 실패해도 승인을 막으면 안 된다. 같은 별칭이 동시에 들어와 유니크 제약에 걸리면
-    savepoint 만 되돌리고 넘어간다. savepoint 앞에서 flush 하는 이유는, 그 전에 남은 task·이력 flush 오류가
-    아래 IntegrityError 와 섞여 별칭 중복으로 잘못 삼켜지지 않게 하려는 것이다.
+    저장할 글자나 lookup_forms(찾기 후보)를 탈퇴하지 않은 팀원이 이미 가졌으면 저장하지 않는다(taken_alias_texts).
+    이 별칭은 덤이라 실패해도 승인을 막으면 안 된다. 같은 별칭이 동시에 들어와 유니크 제약에 걸리면 savepoint 만
+    되돌리고 넘어간다. savepoint 앞에서 flush 하는 이유는, 그 전에 남은 task·이력 flush 오류가 아래
+    IntegrityError 와 섞여 별칭 중복으로 잘못 삼켜지지 않게 하려는 것이다.
     """
-    if _alias_taken(db, workspace_id, alias_text):
+    if _alias_taken(db, workspace_id, {alias_text, *lookup_forms}):
         return False
     db.flush()
     try:

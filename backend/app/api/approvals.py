@@ -16,7 +16,12 @@ from app.schemas.approval import (
     ApprovalResponse,
 )
 from app.services import replies
-from app.services.alias_learning import approval_alias_texts, learn_alias, learnable_alias_text
+from app.services.alias_learning import (
+    alias_lookup_forms,
+    approval_alias_texts,
+    learn_alias,
+    learnable_alias_text,
+)
 from app.services.tasks import (
     apply_task_updates,
     create_task,
@@ -273,6 +278,7 @@ def _apply_approval(
                     workspace_id=approval.workspace_id,
                     member_id=final["assignee_member_id"],
                     alias_text=alias_text,
+                    lookup_forms=alias_lookup_forms(ext_item.assignee_raw, alias_text),
                 )
 
     elif approval.type == str(ApprovalType.TASK_UPDATE):

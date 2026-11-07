@@ -58,7 +58,7 @@ from app.services.matching import (
     speaker_match,
 )
 from app.services import upload_storage
-from app.services.alias_learning import learnable_alias_text, storable_assignee_type, taken_alias_texts
+from app.services.alias_learning import learnable_alias_texts, storable_assignee_type
 from app.services.embedding import has_unsearchable_tasks
 from app.services.tasks import create_task, delete_task
 
@@ -822,15 +822,13 @@ def get_extraction(
 
     evidence_by_item = _representative_evidence(db, [i.item_id for i in items])
 
-    # 별칭 등록을 물어볼 항목은 승인 요청이 pending 인 것뿐이다. 위에서 읽은 승인 상태로 거르므로 쿼리가 늘지 않는다
-    alias_texts = {
-        i.item_id: text
-        for i in items
-        if approval_statuses[i.item_id] == str(ApprovalStatus.PENDING) and (text := learnable_alias_text(i))
-    }
-    # 이미 누군가 가진 글자는 묻지 않는다. 후보 글자를 모아 한 번에 조회한다
-    taken = taken_alias_texts(db, extraction.meeting.workspace_id, set(alias_texts.values()))
-    alias_texts = {item_id: text for item_id, text in alias_texts.items() if text not in taken}
+    # 별칭 등록을 물어볼 항목은 승인 요청이 pending 인 것뿐이다. 위에서 읽은 승인 상태로 거르므로 쿼리가 늘지 않는다.
+    # 이미 찾히는 표현(찾기 후보를 누군가 가진 것)은 묻지 않는다. 후보 글자를 모아 한 번에 조회한다
+    alias_texts = learnable_alias_texts(
+        db,
+        extraction.meeting.workspace_id,
+        [i for i in items if approval_statuses[i.item_id] == str(ApprovalStatus.PENDING)],
+    )
 
     item_responses = [
         ExtractionItemResponse(

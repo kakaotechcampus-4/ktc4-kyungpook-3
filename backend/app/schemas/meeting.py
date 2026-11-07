@@ -189,7 +189,7 @@ class ExtractionItemResponse(BaseModel):
     )
     alias_candidate: bool = Field(
         False,
-        description="담당자를 못 찾은 이름 지목(thirdname) 항목의 pending 생성 승인이고, 같은 워크스페이스에서 탈퇴하지 않은 팀원 누구도 그 글자를 별칭으로 갖고 있지 않으면 true. PM 이 담당자를 골라 save_alias=true 로 승인하면 alias_text 를 그 팀원의 별칭으로 저장한다. 탈퇴하지 않은 누군가가 이미 갖고 있으면 false 이고 저장하지 않는다(탈퇴한 팀원의 별칭은 세지 않는다)",
+        description="담당자를 못 찾은 이름 지목(thirdname) 항목의 pending 생성 승인이고, 같은 워크스페이스에서 탈퇴하지 않은 팀원 누구도 그 글자(님·조사를 뗀 찾기 후보 포함)를 별칭으로 갖고 있지 않으면 true. PM 이 담당자를 골라 save_alias=true 로 승인하면 alias_text 를 그 팀원의 별칭으로 저장한다. 탈퇴하지 않은 누군가가 이미 갖고 있으면 false 이고 저장하지 않는다(탈퇴한 팀원의 별칭은 세지 않는다)",
     )
     alias_text: str | None = Field(
         None,

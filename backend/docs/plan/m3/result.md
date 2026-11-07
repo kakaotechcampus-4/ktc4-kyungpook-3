@@ -62,9 +62,10 @@ M3 plan.md 가 비어 있어 완료조건이 없다. 마일스톤 완료를 판�
 | `save_alias=true` 승인으로 learned·verified·0.9 저장 | 충족 | `test_save_alias_creates_learned_alias` |
 | 저장하지 않는 경우(생략·false·반려·담당자 있던 항목·대상 외 종류·NULL 옛 항목·담당자 미정·수동 승인·task_update·탈퇴하지 않은 누군가가 이미 가짐). 탈퇴 팀원만 가진 글자는 저장함(`test_alias_held_only_by_departed_member_is_still_candidate_and_saved`) 승인은 성공 | 충족 | 같은 파일의 저장 안 됨 테스트들 |
 | 1인칭 지칭어(제·저·나·내·저희·우리·본인)로 다듬어지면 묻지도 저장하지도 않음 | 충족 | `test_learnable_alias_text_is_none_when_not_learnable`, `test_first_person_word_misclassified_as_thirdname_is_not_alias_candidate_and_not_saved` |
+| 찾기 후보 중 하나라도 탈퇴하지 않은 팀원이 가졌으면(동명이인 "하은은") 묻지도 저장하지도 않음 | 충족 | `test_alias_form_held_by_two_members_is_not_candidate_and_not_saved`, `test_alias_lookup_forms_include_matching_candidates_and_saved_text` |
+| 승인으로 배운 별칭이 다음 회의에서 찾힘(띄어 쓴 님·연속 공백 포함)과 미매칭 목록에서 빠짐 | 충족 | `test_learned_alias_is_found_in_the_next_meeting`, `test_trimmed_text_is_always_one_of_the_matching_candidates` |
 | `thirdrole` 은 묻지도 저장하지도 않음 | 충족 | `test_thirdrole_item_is_not_alias_candidate_and_not_saved`, `test_learnable_alias_text_is_none_when_not_learnable` |
 | 유니크 충돌을 삼키고 승인 커밋 | 충족(SQLite) | `test_save_alias_ignores_unique_conflict` |
-| 학습한 별칭으로 다음 회의에서 찾힘 | 미검증 | PR ① 머지 뒤 확인하기로 함 |
 
 ## 검증 내역
 
@@ -76,6 +77,8 @@ M3 plan.md 가 비어 있어 완료조건이 없다. 마일스톤 완료를 판�
 
 
 2026-11-06 #459 PR ②: 로컬(SQLite)에서 `ruff check --no-cache .` 통과, `pytest -q -p no:cacheprovider` 전체 1836 passed, 1301 skipped. 새 두 파일은 60 passed, 31 skipped(PostgreSQL 파라미터, `TEST_DATABASE_URL` 없음). 새 테스트는 구현 전에 실패하는 것을 확인했다. 마이그레이션은 DB 로 돌리지 않았다(`alembic upgrade`·`alembic check` 는 CI migrations 잡에서 확인).
+
+2026-11-07 #463 머지 뒤 develop 을 합치고 마이그레이션 `down_revision` 을 `1032faab5855` 로 맞췄다(`ScriptDirectory` 로 최신 단계가 하나인 것만 확인, DB 는 안 씀). 리뷰 반영(도·들, 찾기 후보 전체 비교, #463 과 이어지는 통합 테스트) 뒤 `ruff check --no-cache .` 통과, `pytest -q -p no:cacheprovider` 전체 2114 passed, 1434 skipped(SQLite). 통합 테스트 `test_learned_alias_is_found_in_the_next_meeting` 은 승인 → 다음 회의에서 찾힘과 미매칭 목록에서 빠짐을 띄어 쓴 입력까지 확인한다.
 
 ## 계획 대비 변경
 
@@ -95,7 +98,7 @@ PR 리뷰(#464)에서 AI 가 `thirdrole` 일 때 역할 원문 대신 문맥으�
   - `thirdrole` 은 학습 대상에서 뺐다. AI 가 역할 원문 대신 추측한 이름을 보낼 수 있어서다(#464 리뷰). AI 가 역할 원문만 보내게 되면 다시 넣는다. [BE→AI] 요청은 PR 뒤 따로 올린다.
   - FE 안내 창과 `save_alias` 전송, 멤버별 별칭 관리 화면은 [BE→FE] 요청으로 올린다.
   - 승인 목록 조회마다 `extraction_item.approval_id` 로 찾는 조회가 늘었고, 그 칸에는 인덱스가 없다.
-  - 미확인 별칭 목록은 원문 단위로 남는다(후속). 한 글자 별칭("환")은 #463 규칙상 확정 매칭되지 않고 목록에서도 빠지지 않는다.
+  - 한 글자 별칭("환")은 #463 규칙상 찾을 때 확정 매칭되지 않고 PM 확인으로 간다. 미매칭 목록에서는 해결로 빠진다.
 
 ## 관련 기록
 

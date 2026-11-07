@@ -657,3 +657,51 @@ def test_first_person_word_misclassified_as_thirdname_is_not_alias_candidate_and
     assert (item["alias_candidate"], item["alias_text"]) == (False, None)
     _assert_approved_with_task(db, r)
     assert len(_aliases(db)) == before
+
+
+def test_alias_form_held_by_two_members_is_not_candidate_and_not_saved(client, pm_client, db, seed):
+    """"하은은"의 후보는 [하은은, 하은]이고 "하은"을 두 팀원이 가져 애매함으로 못 찾는다. 다듬은 글자 "하은은"은 아무도
+    안 가졌지만 저장하면 이후 "하은은"은 긴 후보가 먼저 걸려 항상 그 팀원으로 확정되고, 다른 하은을 가리킨 말도
+    그리로 간다(#464 리뷰)."""
+    _member(db, seed["ws"], "다른하은", [("하은", 0.95)])
+    db.commit()
+    extraction_id = _hold_item(client, seed, raw="하은은", type_="thirdname")
+
+    item = _extraction_item(pm_client, extraction_id)
+    before = len(_aliases(db))
+    r = _approve(pm_client, db, assignee=seed["leader"].member_id)
+
+    assert item["assignee"]["member_id"] is None
+    assert (item["alias_candidate"], item["alias_text"]) == (False, None)
+    _assert_approved_with_task(db, r)
+    assert len(_aliases(db)) == before
+
+
+def _unresolved(pm_client, seed) -> list[str]:
+    r = pm_client.get("/api/v1/members/unresolved-aliases", params={"workspace_id": seed["ws"].workspace_id})
+    return [i["alias_text"] for i in r.json()["data"]["items"]]
+
+
+@pytest.mark.parametrize("later", ["화은 님이", "화은  님이", "화은님이", "화은이가", "화은"])
+def test_learned_alias_is_found_in_the_next_meeting(client, pm_client, db, seed, later):
+    """승인으로 배운 별칭이 #463 의 찾기와 이어진다. 띄어 쓴 님("화은 님이")과 연속 공백("화은  님이")도 찾고,
+    같은 글자는 미매칭 목록에서 빠진다."""
+    _hold_item(client, seed, raw="화은 님이", type_="thirdname")
+    assert "화은 님이" in _unresolved(pm_client, seed)
+
+    r = _approve(pm_client, db, assignee=seed["leader"].member_id)
+
+    _assert_approved_with_task(db, r)
+    assert [a.alias_text for a in _aliases(db) if a.source == "learned"] == ["화은"]
+    assert "화은 님이" not in _unresolved(pm_client, seed)
+    second = Meeting(workspace_id=seed["ws"].workspace_id, status="processing")
+    db.add(second)
+    db.commit()
+    r2 = client.post("/api/v1/extractions", json={
+        "meeting_id": second.meeting_id, "workspace_id": seed["ws"].workspace_id,
+        "items": [_legacy("다음 회의 일", 0.6, assignee_type="thirdname", assignee_raw=later)],
+    }, headers=SERVICE_HEADERS)
+    assert r2.status_code == 201
+    found = _item(db, "다음 회의 일")
+    assert found.assignee_member_id == seed["leader"].member_id
+    assert found.assignee_needs_check is False

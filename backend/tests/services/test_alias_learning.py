@@ -96,3 +96,21 @@ def test_learnable_alias_text_keeps_names_that_only_contain_self_reference_lette
     """거르는 것은 다듬은 글자가 통째로 1인칭 지칭어일 때뿐이다. "제인", "나리"는 이름일 수 있다."""
     assert alias_learning.learnable_alias_text(_item(assignee_raw="제인이가")) == "제인"
     assert alias_learning.learnable_alias_text(_item(assignee_raw="나리")) == "나리"
+
+
+@pytest.mark.parametrize(
+    "raw",
+    ["하은이가", "지민님이", "환 님이", "화은 님이", "화은  님이", "화은님", "민이", "하은은", "선생님께서",
+     "하은이가가", " 지민 님 ", "BE  리더가", "지민이는"],
+)
+def test_trimmed_text_is_always_one_of_the_matching_candidates(raw):
+    """저장할 글자는 담당자 찾기(#463 name_candidates)가 만드는 후보 안에 있어야 다음 회의에서 찾힌다."""
+    from app.services.matching import name_candidates
+
+    assert alias_learning.trim_alias_text(raw) in name_candidates(raw)
+
+
+def test_alias_lookup_forms_include_matching_candidates_and_saved_text():
+    forms = alias_learning.alias_lookup_forms("하은은", "하은은")
+    assert forms == {"하은은", "하은"}
+    assert alias_learning.alias_lookup_forms("화은 님이", "화은") == {"화은 님이", "화은 님", "화은"}
