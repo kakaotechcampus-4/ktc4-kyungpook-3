@@ -679,7 +679,7 @@ def _dm_body(db: Session, message: ThreadMessage) -> str:
         return message.body
     thread = message.thread
     workspace = db.get(Workspace, thread.workspace_id).name
-    notice = f"{workspace} {_pm_name(db, thread.workspace_id, message.author_member_id)} PM 이 메시지를 보냈어요."
+    notice = " ".join(filter(None, [workspace, message.author_name, "PM 이 메시지를 보냈어요."]))
     base = mailer.app_base_url()
     if not base:
         return notice

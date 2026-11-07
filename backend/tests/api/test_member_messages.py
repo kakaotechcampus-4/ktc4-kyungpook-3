@@ -269,6 +269,27 @@ def test_reply_without_the_reply_feature_goes_to_the_open_reminder_not_the_pm_no
     assert _discord("r2", reply_to="dm_b", sent_at=later)["workspace_id"] == other_ws
 
 
+def test_open_reminder_does_not_outrank_a_later_reminder_with_no_pm_notice_between(mdb, mseed):
+    other_ws, other_thread = _second_workspace(mdb, mseed)
+    _remind(mdb, mseed, [mseed["tasks"][0]], SLOT)
+    now = datetime.now(timezone.utc)
+    mdb.add(ThreadMessage(
+        thread_id=other_thread, sender="bot", body="B 의 재촉", dm_status="claimed", claimed_at=now, created_at=now,
+    ))
+    mdb.commit()
+
+    assert _discord("r1", sent_at=now + timedelta(minutes=5))["workspace_id"] == other_ws
+
+
+def test_pm_message_notice_drops_the_name_when_the_author_is_gone(mdb, mseed):
+    tid = _thread(mdb, mseed)
+    _send(client("pm"), mseed, tid, "글")
+    mdb.query(ThreadMessage).filter(ThreadMessage.sender == "pm").update({"author_member_id": None})
+    mdb.commit()
+
+    assert [i["body"] for i in _claim()] == ["A PM 이 메시지를 보냈어요."]
+
+
 def test_reply_to_the_only_pm_notice_reaches_that_workspace(mdb, mseed):
     other_ws, other_thread = _second_workspace(mdb, mseed)
     _send_in(other_ws, other_thread)
