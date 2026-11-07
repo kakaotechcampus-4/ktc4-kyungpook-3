@@ -204,7 +204,11 @@ function readyToUpload(state: MockDb, mode: MeetingFlowMode): void {
 }
 
 function disconnectNotion(state: MockDb): void {
-  state.integrations.ws_01.notion = { status: 'not_connected', display_name: null, connected_at: null }
+  state.integrations.ws_01.notion = {
+    status: 'not_connected',
+    display_name: null,
+    connected_at: null,
+  }
 }
 
 function addLongContent(state: MockDb): void {

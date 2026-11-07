@@ -188,7 +188,8 @@ export function MeetingUploadForm({ workspaceId }: MeetingUploadFormProps) {
 
       <div className={FOOTER}>
         <p className={NOTE}>
-          Notion을 연결했다면 태스크도 Notion에 올라가요. 확인이 필요한 태스크는 승인한 뒤에 올라가요.
+          Notion을 연결했다면 태스크도 Notion에 올라가요. 확인이 필요한 태스크는 승인한 뒤에
+          올라가요.
         </p>
         <Button
           type="submit"

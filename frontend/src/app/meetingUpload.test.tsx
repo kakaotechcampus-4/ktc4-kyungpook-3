@@ -587,7 +587,11 @@ describe('업로드 오류 (U3-10)', () => {
 
   it('Notion 을 연결하지 않은 공간에서도 올리면 처리 화면으로 간다 (D-182)', async () => {
     const { user, app } = await openUpload()
-    db.integrations.ws_01.notion = { status: 'not_connected', display_name: null, connected_at: null }
+    db.integrations.ws_01.notion = {
+      status: 'not_connected',
+      display_name: null,
+      connected_at: null,
+    }
     await fillValid(user)
     await user.click(screen.getByRole('button', { name: '정리 시작하기' }))
     await app.expectPath(paths.meetingProcessing('ws_01', 'mt_11'))
