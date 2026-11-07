@@ -131,7 +131,7 @@ M6 plan.md 는 비어 있어 완료조건이 없다. #381 과 같은 M6 에 둔�
 검증(2026-11-08, `backend/`):
 
 - `.venv/Scripts/python.exe -m ruff check --no-cache .`: All checks passed
-- `.venv/Scripts/python.exe -m pytest -q -p no:cacheprovider`: 2258 passed, 1499 skipped. skip 은 PostgreSQL 이 필요한 테스트이고 CI 에서 돈다.
+- `.venv/Scripts/python.exe -m pytest -q -p no:cacheprovider`: 2260 passed, 1501 skipped. skip 은 PostgreSQL 이 필요한 테스트이고 CI 에서 돈다.
 - 마이그레이션은 실제 DB 에 적용하지 않았다(CI migrations 잡에서 확인). 조건부 UPDATE 의 실제 경합은 sqlite 로 재현되지 않는다. AI·FE 와 붙인 종단 확인은 하지 않았다.
 
 남은 작업: AI 진행 보고(단위·빈도 결정 포함), FE 화면과 FE 계약 반영. BE 배포 뒤 #483 에 알린다.

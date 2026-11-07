@@ -80,9 +80,9 @@
 
 - 합의 상태: 구현됨(#381, PR #383). 호출하는 쪽(`ai/capture/handoff.py`, `ai/capture/recorder.py`)도 같은 PR 에서 구현했고 AI 파트 리뷰를 받았다. 보고 여부는 매니페스트의 `be.meeting_id`로만 정한다. 그래서 디스코드 회의와 수동 업로드 회의(#289, #326, #343 으로 develop 에 들어옴)가 같은 `process_session`을 지나며 보고한다. 업로드 회의의 `progress`도 디스코드 회의처럼 앞당겨진다(#383 리뷰 후속에서 정함). 채팅 회의는 보고하지 않는다.
 - 요청: `{ "stage": "stt" | "sources" | "extract" | "handoff", "stt"?: {"done": int, "total": int} }`. 네 단계 값은 AI의 `failed_stage` 이름과 같다. 다른 값이나 빠진 값은 400 `INVALID_REQUEST`.
-  - `stt`(선택, #483): 전사 진행. `stage`가 `stt`일 때만 보낼 수 있고, 다른 단계에 실으면 400 `INVALID_REQUEST`다. `total`은 1 이상, `done`은 0 이상 `total` 이하의 정수다(bool·문자열은 400). 무엇을 세는지(끝낸 트랙인지 호출인지)는 AI 가 정하고, BE 는 두 숫자를 그대로 저장해 보여 준다.
+  - `stt`(선택, #483): 전사 진행. `stage`가 `stt`일 때만 보낼 수 있고, 다른 단계에 실으면 400 `INVALID_REQUEST`다. `total`은 1 이상 2147483647 이하, `done`은 0 이상 `total` 이하의 정수다(bool·문자열은 400). 무엇을 세는지(끝낸 트랙인지 호출인지)는 AI 가 정하고, BE 는 두 숫자를 그대로 저장해 보여 준다.
   - 합의 상태: BE 구현됨(#483 A안). AI 호출은 아직 없다. `stt`를 보내지 않는 지금의 요청은 이전과 똑같이 동작한다.
-- `data`: `{meeting_id, status, processing_stage, stt, applied}`. `processing_stage`는 이 요청을 처리한 뒤 저장된 값이고 아직 보고가 없으면 `null`이다. `stt`는 저장된 전사 진행이고 `stt` 단계가 아니거나 진행을 받지 않았으면 `null`이다.
+- `data`: `{meeting_id, status, processing_stage, stt, applied}`. `processing_stage`는 이 요청을 처리한 뒤 저장된 값이고 아직 보고가 없으면 `null`이다. `stt`는 저장된 전사 진행이고 `stt` 단계가 아니거나 진행을 받지 않았으면 `null`이다. 회의 상태와 관계없이 저장값을 그대로 보이므로, `applied=false`인 늦은 보고에도 남아 있는 값이 올 수 있다(상세 `processing`은 처리 중일 때만 보인다).
 - 순서는 `stt` < `sources` < `extract` < `handoff`이고 단계는 앞으로만 간다. 건너뛰어도 된다(`extract`부터 재개하면 `extract`, `handoff`만 온다).
 - 다음은 오류가 아니라 200 `applied=false`이고 저장값을 바꾸지 않는다: 회의가 `processing`이 아닐 때(`created`·`awaiting_speakers`·`done`·`failed`), 같은 단계를 다시 보낼 때, 이미 보고한 단계보다 앞선 단계일 때. 반영할 때만 `applied=true`이고 단계와 갱신 시각을 함께 저장한다. 판정과 쓰기는 조건부 UPDATE 한 문장이라 늦게 도착한 보고가 앞선 단계를 덮지 않는다.
 - 전사 진행 규칙(#483):
