@@ -1618,7 +1618,7 @@ members 에만 있고 Discord 목록에 없으면      → 비활성 (서버를 
 - 대화 메시지(`messages[]`)는 `{message_id, thread_id, sender: "bot"|"member", body, created_at, reply_channel: "discord"|"web"|null, dm_status, dm_failure_reason, scheduled_at}` 이다.
   - 팀원 메시지의 `reply_channel` 이 `web` 이면 `웹에서 답장` 표시를 붙인다.
   - 봇 메시지의 `dm_status` 는 `pending`·`claimed`(봇이 보내는 중)·`delivered`·`failed` 다. `failed` 면 `dm_failure_reason` 이 `dm_blocked`(팀원이 서버 DM 을 막음)·`discord_not_linked`(디스코드 미연결)·`unknown` 중 하나이고, 화면은 `DM 못 보냄` 을 보인다. 웹 대화에는 들어갔으므로 상태는 `sent` 다.
-- 대화 목록 한 줄은 `{thread_id, member_id, name, last_message, awaiting_reply_since, dm_failed}` 다. `dm_failed` 는 그 팀원에게 마지막으로 나간 봇 메시지가 `failed` 인지다. 최근 메시지 순이고, 메시지가 없는 대화는 아래에 둔다.
+- 대화 목록 한 줄은 `{thread_id, member_id, name, last_message, awaiting_reply_since, dm_failed, web_reply_available}` 다. 대화 상세의 `thread` 도 같다. `dm_failed` 는 그 팀원에게 마지막으로 나간 봇 메시지가 `failed` 인지다. `web_reply_available` 은 그 팀원에게 계정이 연결됐는지(`member.user_id`)를 읽는 시점에 판정한 값이다. `false` 면 그 팀원은 PM 초대를 수락하기 전까지 웹 답장을 할 수 없다. 화면 연결은 아직 안 했다(#515). 최근 메시지 순이고, 메시지가 없는 대화는 아래에 둔다.
 - 팀원이 봇 DM 창에 쓴 글은 리마인드에 대한 답인지와 상관없이 모두 대화에 들어가 PM 이 본다. 팀원 화면에 이를 안내해야 한다.
 - 팀원 권한은 로그인 계정이 연결된 팀원(`member.user_id`) 기준이다. 계정이 연결되지 않은 팀원은 웹 답장을 할 수 없다. 대화 주인은 팀원 행으로 판단하므로, 탈퇴했다가 새 팀원 행으로 돌아온 계정은 예전 행의 대화를 열 수 없다.
 - 아직 없는 것: ~~웹의 답장 판정 입력(`답장 확인 필요`)과 판정 결과 표시~~(#344 에서 연결, 아래 「리마인드 답장 판단」의 FE 연결), 태스크 안내 DM·#회의록 요약, `지금 바로` 5분 합치기, AI 초안 워커, 시안의 `지금 바로`(`send_timing: now`)에 대응하는 BE 경로. 프론트엔드는 #315 에서 MSW 임시 경로 `reviews/{id}/send|dismiss` 를 `bundles/{id}/approve|cancel` 로 옮겼다.
