@@ -6,7 +6,17 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.models import Member, Notification, Reminder, ReminderBundle, ReminderWatch, Task, ThreadMessage, Workspace
+from app.models import (
+    Member,
+    Notification,
+    Reminder,
+    ReminderBundle,
+    ReminderWatch,
+    Task,
+    ThreadMessage,
+    WatchState,
+    Workspace,
+)
 from app.models import ReplyChangeField as F
 from app.models import ReplyChangeOutcome as O
 from app.models import ReplyJudgmentState as S
@@ -198,6 +208,29 @@ def test_the_count_drops_after_a_reply_closes_a_watch(mdb, mseed):
     _judged(mdb, _reply(mdb, mseed, SLOT + 2 * H), S.DONE, (first, F.NONE, O.NOTED))
     tick(mdb, SLOT + 2 * H)
     assert _sent(mdb, mseed, [second], SLOT + 3 * H).splitlines()[0] == _head("A", 2)
+
+
+def _done(task, seed):
+    task.status = "done"
+
+
+def _reassigned(task, seed):
+    task.assignee_member_id = seed["pm"].member_id
+
+
+def _deleted(task, seed):
+    task.is_deleted = True
+
+
+@pytest.mark.parametrize("change", [_done, _reassigned, _deleted])
+def test_a_task_no_longer_waiting_leaves_the_count_even_if_its_blocked_watch_stays_open(mdb, mseed, change):
+    first, second, _ = mseed["tasks"]
+    _sent(mdb, mseed, [first], SLOT)
+    mdb.query(ReminderWatch).one().state = WatchState.BLOCKED
+    change(first, mseed)
+    mdb.commit()
+    _due(mdb, mseed, [second], SLOT + H)
+    assert _claim_one(mdb, SLOT + H).body.splitlines()[0] == _head("A", 1)
 
 
 # 웹 답장

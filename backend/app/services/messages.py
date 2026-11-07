@@ -40,6 +40,7 @@ from app.models import (
     ReminderWatch,
     ReplyChannel,
     Task,
+    TaskStatus,
     ThreadMessage,
     Workspace,
     WorkspaceMessageSettings,
@@ -687,20 +688,23 @@ def _dm_body(db: Session, message: ThreadMessage) -> str:
     """봇이 보낼 글. 답장은 웹으로만 받아 저장된 문구 대신 안내를 보낸다. 시계는 가져간 뒤에 열릴 수 있어 이번 묶음을 합쳐 센다."""
     db.flush()
     thread = message.thread
-    tasks = set(db.scalars(
-        select(ReminderWatch.task_id).where(
-            ReminderWatch.thread_id == thread.thread_id, ReminderWatch.state.in_(scheduler._OPEN_STATES)
+    # 막힌 시계는 태스크가 끝나거나 담당이 바뀌어도 닫히지 않아 시계 쪽만 거른다. 이번 묶음은 방금 나가므로 그대로 센다.
+    watched = db.scalars(
+        select(ReminderWatch.task_id)
+        .join(Task, Task.task_id == ReminderWatch.task_id)
+        .where(
+            ReminderWatch.thread_id == thread.thread_id,
+            ReminderWatch.state.in_(scheduler._OPEN_STATES),
+            Task.is_deleted.is_(False),
+            Task.assignee_member_id == thread.member_id,
+            Task.status != TaskStatus.DONE,
         )
-    ).all())
+    ).all()
     bundle_id = db.scalar(select(ReminderBundle.bundle_id).where(ReminderBundle.message_id == message.message_id))
-    without_task = 0
-    for reminder in bundle_reminders(db, bundle_id, status=ReminderStatus.SENT):
-        if reminder.task_id is None:
-            without_task += 1
-        else:
-            tasks.add(reminder.task_id)
+    reminded = [r.task_id for r in bundle_reminders(db, bundle_id, status=ReminderStatus.SENT)]
+    count = len({*watched, *reminded} - {None}) + reminded.count(None)
     workspace = db.get(Workspace, thread.workspace_id).name
-    head = f"{workspace}에서 답장을 기다리는 리마인드가 {len(tasks) + without_task}개 있어요."
+    head = f"{workspace}에서 답장을 기다리는 리마인드가 {count}개 있어요."
     return f"{head}\n{_reply_guide(thread.member, thread)}"
 
 
