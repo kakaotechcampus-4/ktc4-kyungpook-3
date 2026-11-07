@@ -26,7 +26,7 @@
 
 | 항목 | 값 |
 |---|---|
-| backend pytest sqlite | 1932 통과, 1383 건너뜀 |
+| backend pytest sqlite | 2183 통과, 1511 건너뜀 |
 | backend pytest PostgreSQL | 3271 통과, 44 건너뜀 |
 | alembic | 빈 PostgreSQL 에서 upgrade, check, downgrade, upgrade 통과 |
 | frontend vitest | 3362 통과 |
