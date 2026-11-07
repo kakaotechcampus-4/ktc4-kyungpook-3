@@ -4,69 +4,105 @@ import type { ReactNode } from 'react'
 import {
   APPROVAL_RESOLUTION_REASONS,
   approvalDetailQueryOptions,
+  dueFillSuggestion,
+  isScopeChange,
   planApprovalResolution,
+  taskCreateValues,
+  taskUpdateChanges,
 } from '@/entities/approval'
 import type {
   Approval,
+  ApprovalMissing,
   TaskCreateApproval,
-  TaskCreateFields,
   TaskUpdateApproval,
   UnsupportedApproval,
 } from '@/entities/approval'
-import { meetingListQueryOptions } from '@/entities/meeting'
-import { memberListQueryOptions } from '@/entities/member'
+import { evidenceMoment, meetingListQueryOptions } from '@/entities/meeting'
+import type { MeetingSummary } from '@/entities/meeting'
+import { memberListQueryOptions, speakerName } from '@/entities/member'
 import type { Member } from '@/entities/member'
 import { taskDetailQueryOptions } from '@/entities/task'
 import {
   ApprovalActions,
-  TaskCreateOverridesForm,
-  currentApprovalTransport,
+  TaskCreateOverrideFields,
+  TaskUpdateOverrideFields,
+  openGaps,
   useApprovalResolve,
+  useTaskCreateOverrides,
+  useTaskUpdateOverrides,
 } from '@/features/approval-resolve'
 import type { ApprovalResolve, ApprovalResolveProblem } from '@/features/approval-resolve'
 import { TaskNotionSyncStatus } from '@/features/task-notion-sync'
 import { ApiError, ERROR_CODES } from '@/shared/api/errors'
 import { paths } from '@/shared/config/routes'
-import { formatSeoulDateTime } from '@/shared/lib/date'
+import { formatMonthDayWeekday, formatSeoulDateTime, seoulDateOf } from '@/shared/lib/date'
 import { GuardedLink, useUnsavedChanges } from '@/shared/lib/unsaved-changes'
-import { Button } from '@/shared/ui/button'
 import { EmptyState } from '@/shared/ui/empty-state'
 import { FormErrorPanel } from '@/shared/ui/form-error-panel'
+import { Icon } from '@/shared/ui/icon'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
 import { Skeleton } from '@/shared/ui/skeleton'
 import {
-  approvalKindLabel,
+  approvalHeading,
   approvalStatusLabel,
   currentFieldValue,
-  evidenceClock,
   fieldLabel,
   fieldValueLabel,
+  fillLabel,
+  gapReason,
+  gapSummary,
   memberLabel,
 } from '../lib/approvalView'
 
-const ROOT = 'mx-auto flex w-full max-w-[960px] flex-col gap-24 px-36 pt-32 pb-56'
-const BACK = 'text-caption font-semibold text-dim hover:text-ink'
-const EYEBROW = 'text-caption font-semibold text-dim'
-const TITLE = 'text-[24px] leading-[1.4] font-bold tracking-h2 text-ink'
+/* 본문 폭은 리스트·보드와 같은 960 컨테이너다(본문 864, #466). 좁은 화면은 좌우 16 */
+const ROOT = 'mx-auto flex w-full max-w-[960px] flex-col gap-22 px-16 pt-40 pb-72 sm:px-48'
+const BACK =
+  'inline-flex min-h-32 items-center gap-4 self-start text-[13px] font-semibold text-sub hover:text-ink'
+const TITLE = 'text-[30px] leading-[1.3] font-bold tracking-h2 text-ink'
+const LEAD = 'text-[15px] leading-[1.6] text-sub'
 const META = 'text-meta text-dim tabular-nums'
-const SECTION = 'flex flex-col gap-12'
-const SECTION_TITLE = 'text-[17px] leading-[1.55] font-bold tracking-h2 text-ink'
-const FIELDS =
-  'grid grid-cols-[120px_1fr] gap-x-16 gap-y-12 rounded-16 border border-line px-24 py-20'
+const CARD = 'flex flex-col overflow-hidden rounded-16 border border-line bg-surface'
+const CARD_HEAD =
+  'flex flex-wrap items-center justify-between gap-x-16 gap-y-6 border-b border-divider px-20 py-14'
+const CARD_TITLE = 'flex items-center gap-10 text-[14px] font-normal text-ink'
+const ATTENTION_BADGE =
+  'inline-flex h-22 shrink-0 items-center gap-6 rounded-6 bg-ink px-9 text-[12px] leading-none font-semibold text-surface'
+const RESOLVED_BADGE =
+  'inline-flex h-22 shrink-0 items-center rounded-6 bg-control px-9 text-[12px] leading-none font-semibold text-dim'
+const HEAD_LINK = 'inline-flex items-center gap-5 text-[13px] text-sub hover:text-ink tabular-nums'
+const CARD_BODY = 'flex flex-col gap-16 p-20'
+const CARD_FOOT = 'flex flex-col gap-12 border-t border-divider px-20 py-14'
+const EVIDENCE = 'flex flex-col gap-8 rounded-12 bg-surface-sunken px-18 py-16'
+const EVIDENCE_HEAD = 'flex flex-wrap items-center justify-between gap-x-12 gap-y-4'
+const EVIDENCE_META = 'text-caption text-dim tabular-nums'
+const QUOTE = 'text-[15px] leading-[1.6] font-bold text-ink'
+const RAW = 'text-[13px] text-sub'
+const NOTE = 'text-caption text-sub'
+const BLOCK_TITLE = 'text-caption font-semibold text-dim'
+const PANEL = 'flex flex-col gap-10 rounded-16 bg-surface-sunken px-20 py-18'
+const FILL_BUTTON =
+  'inline-flex min-h-44 shrink-0 items-center px-4 text-[14px] font-bold whitespace-nowrap text-ink hover:text-sub'
+const FIELDS = 'grid grid-cols-[120px_1fr] gap-x-16 gap-y-12'
 const TERM = 'text-caption font-semibold text-dim'
 const VALUE = 'text-body text-ink tabular-nums'
 const MISSING = 'text-body font-semibold text-accent'
-const NOTE = 'text-caption text-sub'
-const QUOTE = 'border-l-2 border-line-strong pl-14 text-body text-ink'
 const TABLE = 'w-full border-collapse text-left text-body text-ink'
 const TH = 'border-b border-line py-8 pr-16 text-caption font-semibold text-dim'
 const TD = 'border-b border-line py-10 pr-16 tabular-nums'
 const LINK = 'text-body font-semibold text-ink underline underline-offset-4 hover:text-sub'
-const PANEL = 'flex flex-col gap-12 rounded-16 border border-line-strong px-24 py-20'
+const ALERT = 'flex flex-col gap-12 rounded-16 border border-line-strong px-20 py-18'
+const SECTION_TITLE = 'text-[17px] leading-[1.55] font-bold tracking-h2 text-ink'
+
+const MEMBERS_LOADING_REASON = '팀원 목록을 불러온 뒤 승인할 수 있어요.'
 
 export interface ApprovalReviewProps {
   workspaceId: string
   approvalId: string
+  /**
+   * 대시보드 `채워 넣기` 로 들어왔다 (D-176). 마운트할 때 한 번만 읽는다 — 페이지가 곧 기록에서 지워 false 가 된다.
+   * key=approvalId 라 승인마다 새로 읽는다
+   */
+  fillInOnArrival?: boolean
 }
 
 function isUnavailable(error: unknown): boolean {
@@ -78,16 +114,21 @@ function isUnavailable(error: unknown): boolean {
 }
 
 /**
- * 확인 필요 상세 (계획 §4). PM 가드를 통과해야 마운트된다 — 승인 조회는 여기서 처음 시작한다.
- * 최초 진입은 읽기다. 생성 승인은 근거·원문·확정할 값을, 변경 승인은 현재값·제안값을 보인다.
- * 승인·반려는 서버 성공 뒤에 반영하고, 처리된 승인은 결과와 태스크·Notion 상태를 같은 화면에 남긴다
+ * 확인 필요 상세 (계획 §4, E-6). PM 가드를 통과해야 마운트된다 — 승인 조회는 여기서 처음 시작한다.
+ * 대기 중인 승인은 값·근거·까닭을 한 카드에 두고 그 자리에서 고친다. 승인·반려는 서버 성공 뒤에 반영하고,
+ * 처리된 승인은 결과와 태스크·Notion 상태를 같은 화면에 남긴다
  */
-export function ApprovalReview({ workspaceId, approvalId }: ApprovalReviewProps) {
+export function ApprovalReview({
+  workspaceId,
+  approvalId,
+  fillInOnArrival = false,
+}: ApprovalReviewProps) {
   const approval = useQuery(approvalDetailQueryOptions(workspaceId, approvalId))
+  const [fillIn] = useState(fillInOnArrival)
 
   let body: ReactNode
   if (approval.data !== undefined)
-    body = <ApprovalBody workspaceId={workspaceId} approval={approval.data} />
+    body = <ApprovalBody workspaceId={workspaceId} approval={approval.data} fillIn={fillIn} />
   else if (approval.error !== null && isUnavailable(approval.error))
     body = <UnavailableApproval workspaceId={workspaceId} />
   else if (approval.error !== null)
@@ -107,12 +148,11 @@ export function ApprovalReview({ workspaceId, approvalId }: ApprovalReviewProps)
 
   return (
     <main className={ROOT}>
-      <div className="flex flex-col gap-6">
-        <GuardedLink to={paths.tasks(workspaceId)} className={BACK}>
-          ← 태스크 목록
-        </GuardedLink>
-        <h1 className={EYEBROW}>확인 필요</h1>
-      </div>
+      <GuardedLink to={paths.tasks(workspaceId)} className={BACK}>
+        <Icon name="chevron-left" size={14} />
+        태스크 목록
+      </GuardedLink>
+      {approval.data === undefined ? <h1 className="sr-only">확인 필요</h1> : null}
       {body}
     </main>
   )
@@ -142,37 +182,48 @@ function useMemberNames(members: readonly Member[] | undefined): ReadonlyMap<str
   )
 }
 
-function ApprovalBody({ workspaceId, approval }: { workspaceId: string; approval: Approval }) {
+/** 리뷰가 함께 읽는 것. 회의 목록은 처리 추적이 이미 받는 목록이다 — 같은 key 라 따로 요청하지 않는다 */
+interface ReviewContext {
+  workspaceId: string
+  members: readonly Member[] | undefined
+  names: ReadonlyMap<string, string>
+  meeting: MeetingSummary | undefined
+  resolver: ApprovalResolve
+}
+
+function ApprovalBody({
+  workspaceId,
+  approval,
+  fillIn,
+}: {
+  workspaceId: string
+  approval: Approval
+  fillIn: boolean
+}) {
   const members = useQuery(memberListQueryOptions(workspaceId))
+  const meetings = useQuery(meetingListQueryOptions(workspaceId))
   const memberIds = useMemo(() => (members.data ?? []).map(({ id }) => id), [members.data])
   const names = useMemberNames(members.data)
   const resolver = useApprovalResolve(workspaceId, approval.id, memberIds)
+  const meetingId = approval.kind === 'unsupported' ? null : approval.meetingId
+  const context: ReviewContext = {
+    workspaceId,
+    members: members.data,
+    names,
+    meeting: meetings.data?.find(({ id }) => id === meetingId),
+    resolver,
+  }
 
   return (
     <>
-      <div className="flex flex-col gap-4">
-        <h2 className={TITLE}>{approvalKindLabel(approval)}</h2>
-        <p className={META}>
-          {approvalStatusLabel(approval)} · 요청 {formatSeoulDateTime(approval.createdAt)}
-        </p>
-      </div>
-      {approval.kind === 'task_create' ? (
-        <TaskCreateReview
-          workspaceId={workspaceId}
-          approval={approval}
-          members={members.data}
-          names={names}
-          resolver={resolver}
-        />
-      ) : approval.kind === 'task_update' ? (
-        <TaskUpdateReview
-          workspaceId={workspaceId}
-          approval={approval}
-          names={names}
-          resolver={resolver}
-        />
-      ) : (
+      {approval.kind === 'unsupported' ? (
         <UnsupportedReview approval={approval} />
+      ) : approval.status !== 'pending' ? (
+        <ResolvedReview approval={approval} context={context} />
+      ) : approval.kind === 'task_create' ? (
+        <TaskCreatePending approval={approval} context={context} fillIn={fillIn} />
+      ) : (
+        <TaskUpdatePending approval={approval} context={context} />
       )}
       {approval.status === 'pending' ? null : (
         <ResolutionResult
@@ -190,313 +241,578 @@ function problemMessage(problem: ApprovalResolveProblem | null): string | null {
   return problem?.kind === 'error' ? problem.message : null
 }
 
-const EDITING_REASON = '보완을 끝내거나 취소하면 승인할 수 있어요.'
-const MEMBERS_LOADING_REASON = '팀원 목록을 불러온 뒤 승인할 수 있어요.'
+type ReviewedApproval = TaskCreateApproval | TaskUpdateApproval
 
-interface TaskCreateReviewProps {
-  workspaceId: string
-  approval: TaskCreateApproval
-  members: readonly Member[] | undefined
-  names: ReadonlyMap<string, string>
-  resolver: ApprovalResolve
+function meetingTitleOf(approval: ReviewedApproval, meeting: MeetingSummary | undefined) {
+  return approval.meetingId === null ? null : (meeting?.title ?? '연결된 회의')
 }
 
-/**
- * 생성 승인 (계획 §4-1, §4-2). 원문 담당자·마감과 근거(인용·화자·시각)는 확정할 값과 나눠 보인다.
- * - 개발 MSW 에서만 `보완하기` 가 있다. 보완 완료한 값은 승인 한 번에 함께 실린다 — 그 전까지는 저장되지 않은 변경이다
- * - 실 API 는 기존 값이 필수조건을 채울 때만 승인할 수 있다. 아니면 `승인` 을 끄고 이유를 보인다. `반려` 는 늘 누를 수 있다
- */
-function TaskCreateReview({
-  workspaceId,
+/** 제목과 그 아래 한 줄 — 어디서 나온 일인지와 빠진 값 안내 */
+function ReviewHeader({
   approval,
-  members,
-  names,
-  resolver,
-}: TaskCreateReviewProps) {
-  const transport = currentApprovalTransport()
-  const pending = approval.status === 'pending'
-  const [editing, setEditing] = useState(false)
-  const [overrides, setOverrides] = useState<TaskCreateFields | null>(null)
-  useUnsavedChanges(pending && overrides !== null)
-
-  const original: TaskCreateFields = {
-    taskTitle: approval.title,
-    assigneeMemberId: approval.assigneeMemberId,
-    dueDate: approval.dueDate,
-  }
-  const confirmed = (pending ? overrides : null) ?? original
-  const memberIds = (members ?? []).map(({ id }) => id)
-  const plan = planApprovalResolution(approval, 'approved', {
-    transport,
-    memberIds,
-    overrides: pending ? overrides : null,
-  })
-  const blockedReason = editing
-    ? EDITING_REASON
-    : members === undefined
-      ? MEMBERS_LOADING_REASON
-      : plan.ok
-        ? null
-        : plan.reason
-
-  return (
-    <>
-      <section className={SECTION}>
-        <div className="flex items-center justify-between gap-12">
-          <h3 className={SECTION_TITLE}>{pending ? '확정할 값' : '요청한 값'}</h3>
-          {pending && transport === 'msw' && !editing ? (
-            <Button
-              variant="default"
-              onClick={() => setEditing(true)}
-              disabled={resolver.pending || members === undefined}
-            >
-              보완하기
-            </Button>
-          ) : null}
-        </div>
-        {pending && overrides !== null && !editing ? (
-          <p className={NOTE}>보완한 값이에요. 승인해야 저장돼요.</p>
-        ) : null}
-        <dl aria-label={pending ? '확정할 값' : '요청한 값'} className={FIELDS}>
-          <dt className={TERM}>제목</dt>
-          <FieldValue value={confirmed.taskTitle.trim() === '' ? null : confirmed.taskTitle} />
-          <dt className={TERM}>담당자</dt>
-          <FieldValue
-            value={
-              confirmed.assigneeMemberId === null
-                ? null
-                : memberLabel(confirmed.assigneeMemberId, names)
-            }
-          />
-          <dt className={TERM}>마감</dt>
-          <FieldValue value={confirmed.dueDate} />
-        </dl>
-      </section>
-
-      {pending && editing && members !== undefined ? (
-        <TaskCreateOverridesForm
-          initial={confirmed}
-          members={members}
-          disabled={resolver.pending}
-          onCancel={() => setEditing(false)}
-          onConfirm={(fields) => {
-            setOverrides(fields)
-            setEditing(false)
-          }}
-        />
-      ) : null}
-
-      <section className={SECTION}>
-        <h3 className={SECTION_TITLE}>회의 원문</h3>
-        <dl aria-label="회의 원문" className={FIELDS}>
-          <dt className={TERM}>원문 담당자</dt>
-          <dd className={VALUE}>{approval.assigneeRaw ?? '없음'}</dd>
-          <dt className={TERM}>원문 마감</dt>
-          <dd className={VALUE}>{approval.dueRaw ?? '없음'}</dd>
-        </dl>
-        <Evidence workspaceId={workspaceId} approval={approval} />
-      </section>
-
-      {pending ? (
-        <div className="flex flex-col gap-12">
-          <FormErrorPanel message={problemMessage(resolver.problem)} />
-          <ApprovalActions
-            approveBlockedReason={blockedReason}
-            pending={resolver.pending}
-            pendingDecision={resolver.pendingDecision}
-            onApprove={() =>
-              resolver.resolve(approval, {
-                decision: 'approved',
-                overrides: transport === 'msw' ? overrides : null,
-              })
-            }
-            onReject={() => resolver.resolve(approval, { decision: 'rejected' })}
-          />
-        </div>
-      ) : null}
-    </>
-  )
-}
-
-function FieldValue({ value }: { value: string | null }) {
-  return value === null ? (
-    <dd className={MISSING}>비어 있어요</dd>
-  ) : (
-    <dd className={VALUE}>{value}</dd>
-  )
-}
-
-/** 근거 인용·화자·녹음 위치와 연결 회의 */
-function Evidence({
-  workspaceId,
-  approval,
+  context,
+  summary,
 }: {
-  workspaceId: string
-  approval: TaskCreateApproval
+  approval: ReviewedApproval
+  context: ReviewContext
+  summary: string | null
 }) {
-  // 처리 추적이 이미 받는 목록이다 — 같은 key 라 따로 요청하지 않는다
-  const meetings = useQuery(meetingListQueryOptions(workspaceId))
-  const { quote, speaker, atMs } = approval.evidence
-  const meetingTitle =
-    approval.meetingId === null
-      ? null
-      : (meetings.data?.find(({ id }) => id === approval.meetingId)?.title ?? '연결된 회의')
+  const meetingTitle = meetingTitleOf(approval, context.meeting)
+  const what = approval.kind === 'task_create' ? '일' : '변경'
+  const replied = approval.kind === 'task_update' && approval.replyMessageId !== null
+  const sender = speakerName(context.members, approval.evidence)
+  return (
+    <div className="flex flex-col gap-10">
+      <h1 className={TITLE}>{approvalHeading(approval)}</h1>
+      {approval.status === 'pending' ? (
+        <p className={LEAD}>
+          {replied ? (
+            <>
+              <b className="font-bold text-ink">{sender ?? '팀원'}</b>의 리마인드 답장에서 나온{' '}
+              {what}이에요.{' '}
+            </>
+          ) : meetingTitle === null ? null : (
+            <>
+              <b className="font-bold text-ink">{meetingTitle}</b>에서 나온 {what}이에요.{' '}
+            </>
+          )}
+          {summary}
+        </p>
+      ) : (
+        <p className={META}>
+          {approvalStatusLabel(approval)} · 요청 {formatSeoulDateTime(approval.createdAt)}
+        </p>
+      )}
+    </div>
+  )
+}
+
+/** 흰 카드. 머리 줄은 상태 배지 + 무엇이 Notion 에 올라가는지 + 출처 회의 */
+function ReviewCard({
+  approval,
+  context,
+  title,
+  children,
+  footer,
+}: {
+  approval: ReviewedApproval
+  context: ReviewContext
+  title: string
+  children: ReactNode
+  footer?: ReactNode
+}) {
+  const titleId = useId()
+  const meetingTitle = meetingTitleOf(approval, context.meeting)
+  const clock = evidenceMoment(context.meeting, approval.evidence.atMs)
+  return (
+    <section aria-labelledby={titleId} className={CARD}>
+      <div className={CARD_HEAD}>
+        <h2 className={CARD_TITLE}>
+          {approval.status === 'pending' ? (
+            <span className={ATTENTION_BADGE}>
+              <span aria-hidden="true" className="h-5 w-5 rounded-999 bg-surface" />
+              확인 필요
+            </span>
+          ) : (
+            <span className={RESOLVED_BADGE}>{approvalStatusLabel(approval)}</span>
+          )}
+          <span id={titleId}>{title}</span>
+        </h2>
+        {approval.meetingId === null || meetingTitle === null ? null : (
+          <GuardedLink
+            to={paths.meetings(context.workspaceId, approval.meetingId)}
+            className={HEAD_LINK}
+          >
+            {meetingTitle}
+            {clock === null ? null : ` ${clock}`}
+            <Icon name="external" size={12} />
+          </GuardedLink>
+        )}
+      </div>
+      <div className={CARD_BODY}>{children}</div>
+      {footer === undefined ? null : <div className={CARD_FOOT}>{footer}</div>}
+    </section>
+  )
+}
+
+/** 근거 인용·출처. 회의면 전사문 시각·화자와 원문 듣기, 리마인드 답장이면 보낸 팀원만 밝힌다 (#344) */
+function EvidenceFigure({
+  approval,
+  context,
+  gaps,
+}: {
+  approval: ReviewedApproval
+  context: ReviewContext
+  gaps: readonly ApprovalMissing[]
+}) {
+  const { quote, atMs } = approval.evidence
+  const speaker = speakerName(context.members, approval.evidence) ?? '알 수 없음'
+  const replied = approval.kind === 'task_update' && approval.replyMessageId !== null
   return (
     <figure aria-label="근거" className="flex flex-col gap-8">
+      <figcaption className={EVIDENCE_HEAD}>
+        {replied ? (
+          // 답장에는 회의도 회의 안 시각도 없다. 보낸 팀원만 밝힌다
+          <span className={EVIDENCE_META}>리마인드 답장 · {speaker}</span>
+        ) : (
+          <span className={EVIDENCE_META}>
+            전사문 {evidenceMoment(context.meeting, atMs) ?? '시각 알 수 없음'} · {speaker}
+          </span>
+        )}
+        {replied || approval.meetingId === null ? null : (
+          <GuardedLink
+            to={paths.meetings(context.workspaceId, approval.meetingId)}
+            className={HEAD_LINK}
+          >
+            원문 듣기
+            <Icon name="external" size={12} />
+          </GuardedLink>
+        )}
+      </figcaption>
       {quote === null ? (
         <p className={NOTE}>근거 문장이 없어요.</p>
       ) : (
-        <blockquote className={QUOTE}>{quote}</blockquote>
+        <blockquote className={QUOTE}>“{quote}”</blockquote>
       )}
-      <figcaption className={META}>
-        화자 {speaker ?? '알 수 없음'} · 시각 {atMs === null ? '알 수 없음' : evidenceClock(atMs)}
-        {approval.meetingId === null || meetingTitle === null ? null : (
-          <>
-            {' · '}
-            <GuardedLink to={paths.meetings(workspaceId, approval.meetingId)} className={LINK}>
-              {meetingTitle}
-            </GuardedLink>
-          </>
-        )}
-      </figcaption>
+      {approval.kind === 'task_create' ? (
+        <p className={RAW}>
+          원문 담당자 <RawValue value={approval.assigneeRaw} missing={gaps.includes('assignee')} />{' '}
+          · 원문 마감 <RawValue value={approval.dueRaw} missing={gaps.includes('due')} />
+        </p>
+      ) : null}
     </figure>
   )
 }
 
-interface TaskUpdateReviewProps {
-  workspaceId: string
-  approval: TaskUpdateApproval
-  names: ReadonlyMap<string, string>
-  resolver: ApprovalResolve
+/** 빠진 값의 원문은 accent 글자다 */
+function RawValue({ value, missing }: { value: string | null; missing: boolean }) {
+  return <b className={missing ? 'font-bold text-accent' : 'font-normal'}>{value ?? '없음'}</b>
 }
 
-/**
- * 변경 승인 (계획 §4-3). 지금 태스크 값과 제안값을 비교한다.
- * 충돌이면 기준값·현재값·제안값과 충돌 필드를 보인다. PM 이 다시 누를 때만 서버 버전을 실어 재승인한다 —
- * 다시 충돌하면 새 충돌로 바꿔 보이고 자동으로 보내지 않는다
- */
-function TaskUpdateReview({ workspaceId, approval, names, resolver }: TaskUpdateReviewProps) {
+/** 근거 블록(연회색). 범위 변경·팀원 답장은 그 설명을 근거와 같은 블록에 둔다 (#205, #344) */
+function EvidenceBlock({
+  approval,
+  context,
+  gaps = [],
+}: {
+  approval: ReviewedApproval
+  context: ReviewContext
+  gaps?: readonly ApprovalMissing[]
+}) {
   const titleId = useId()
-  const pending = approval.status === 'pending'
-  const taskId = approval.relatedTaskId
-  const task = useQuery({
-    ...taskDetailQueryOptions(workspaceId, taskId ?? ''),
-    enabled: taskId !== null && pending,
-  })
-  const conflict = resolver.problem?.kind === 'conflict' ? resolver.problem : null
+  const figure = <EvidenceFigure approval={approval} context={context} gaps={gaps} />
+  if (approval.kind === 'task_create') return <div className={EVIDENCE}>{figure}</div>
+  const scope = isScopeChange(approval)
+  if (!scope && approval.replyMessageId === null) return <div className={EVIDENCE}>{figure}</div>
+  return (
+    <section aria-labelledby={titleId} className={EVIDENCE}>
+      <h3 id={titleId} className={BLOCK_TITLE}>
+        {scope ? '범위 변경' : '팀원 답장'}
+      </h3>
+      {approval.docText === null ? (
+        scope ? (
+          <p className={NOTE}>설명이 없어요.</p>
+        ) : null
+      ) : (
+        <p className="text-body text-ink">{approval.docText}</p>
+      )}
+      {figure}
+    </section>
+  )
+}
+
+const DUE_NOTE = '마감을 비워 두면 미정으로 올라가요'
+
+function TaskCreatePending({
+  approval,
+  context,
+  fillIn,
+}: {
+  approval: TaskCreateApproval
+  context: ReviewContext
+  fillIn: boolean
+}) {
+  const { members, resolver, meeting } = context
+  const memberIds = useMemo(() => (members ?? []).map(({ id }) => id), [members])
+  const overrides = useTaskCreateOverrides(approval, memberIds)
+  useUnsavedChanges(overrides.dirty)
+  const gaps = openGaps(overrides.attention)
+  const edits = { kind: 'task_create', values: overrides.edits } as const
+  const plan = planApprovalResolution(approval, 'approved', { memberIds, edits })
+  const blockedReason =
+    members === undefined ? MEMBERS_LOADING_REASON : plan.ok ? null : plan.reason
+  const meetingDate = meeting === undefined ? null : seoulDateOf(meeting.startedAt)
 
   return (
     <>
-      <section aria-labelledby={titleId} className={SECTION}>
-        <h3 id={titleId} className={SECTION_TITLE}>
-          바꿀 내용
-        </h3>
+      <ReviewHeader approval={approval} context={context} summary={gapSummary(gaps)} />
+      <ReviewCard
+        approval={approval}
+        context={context}
+        title="Notion 에 올라갈 태스크"
+        footer={
+          <>
+            <FormErrorPanel message={problemMessage(resolver.problem)} />
+            <ApprovalActions
+              approveBlockedReason={blockedReason}
+              note={DUE_NOTE}
+              pending={resolver.pending}
+              pendingDecision={resolver.pendingDecision}
+              onApprove={() => resolver.approve(approval, edits)}
+              onReject={() => resolver.reject(approval)}
+            />
+          </>
+        }
+      >
+        <TaskCreateOverrideFields
+          overrides={overrides}
+          members={members}
+          disabled={resolver.pending}
+          autoFocusFirstEmpty={fillIn}
+          onInputChange={resolver.invalidateConfirmation}
+        />
+        <EvidenceBlock approval={approval} context={context} gaps={gaps} />
+      </ReviewCard>
+      {gaps.length === 0 ? null : (
+        <GapReasons
+          approval={approval}
+          gaps={gaps}
+          dueFill={dueFillSuggestion(approval, meetingDate)}
+          disabled={resolver.pending}
+          onFillDue={(date) => {
+            resolver.invalidateConfirmation()
+            overrides.form.setValue('dueDate', date, { shouldDirty: true, shouldValidate: true })
+            overrides.form.setFocus('dueDate')
+          }}
+        />
+      )}
+    </>
+  )
+}
+
+/**
+ * 「확인이 필요한 이유」. 빠진 값마다 회의에서 한 말을 보이고, 원문 마감이 회의 날짜 기준으로 확실한 날이면
+ * 「M/D(요일)로 채우기」를 둔다 — 누르면 마감 칸만 채운다. 서버에는 승인할 때 보낸다
+ */
+function GapReasons({
+  approval,
+  gaps,
+  dueFill,
+  disabled,
+  onFillDue,
+}: {
+  approval: TaskCreateApproval
+  gaps: readonly ApprovalMissing[]
+  dueFill: string | null
+  disabled: boolean
+  onFillDue: (date: string) => void
+}) {
+  const titleId = useId()
+  return (
+    <section aria-labelledby={titleId} className={PANEL}>
+      <h2 id={titleId} className="text-caption font-normal text-dim">
+        확인이 필요한 이유
+      </h2>
+      <ul className="flex flex-col">
+        {gaps.map((gap) => (
+          <li key={gap} className="flex flex-wrap items-center justify-between gap-x-16">
+            <span className="py-10 text-[15px] leading-[1.6] text-ink">
+              <b className="mr-6 font-bold">{gap === 'due' ? '마감' : '담당자'}</b>
+              {gapReason(gap, gap === 'due' ? approval.dueRaw : approval.assigneeRaw)}
+            </span>
+            {gap === 'due' && dueFill !== null ? (
+              <button
+                type="button"
+                className={FILL_BUTTON}
+                disabled={disabled}
+                onClick={() => onFillDue(dueFill)}
+              >
+                {fillLabel(formatMonthDayWeekday(dueFill))}
+              </button>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
+}
+
+/**
+ * 변경 승인 (계획 §4-3). 지금 태스크 값과 제안값을 비교하고 상태·마감을 그 자리에서 고친다.
+ * 충돌이면 기준값·현재값·제안값과 충돌 필드를 보인다. PM 이 다시 누를 때만 서버 버전을 실어 재승인한다 —
+ * 다시 충돌하면 새 충돌로 바꿔 보이고 자동으로 보내지 않는다
+ */
+function TaskUpdatePending({
+  approval,
+  context,
+}: {
+  approval: TaskUpdateApproval
+  context: ReviewContext
+}) {
+  const { workspaceId, names, resolver } = context
+  const taskId = approval.relatedTaskId
+  const task = useQuery({
+    ...taskDetailQueryOptions(workspaceId, taskId ?? ''),
+    enabled: taskId !== null,
+  })
+  const conflict = resolver.problem?.kind === 'conflict' ? resolver.problem : null
+  const overrides = useTaskUpdateOverrides(approval)
+  useUnsavedChanges(overrides.dirty)
+  const edits = { kind: 'task_update', values: overrides.edits } as const
+  const plan = planApprovalResolution(approval, 'approved', { edits })
+  const blockedReason =
+    taskId === null ? '바꿀 태스크가 없어 승인할 수 없어요.' : plan.ok ? null : plan.reason
+  const current = (field: string) =>
+    task.data === undefined
+      ? task.isError
+        ? '불러오지 못했어요'
+        : '불러오는 중'
+      : fieldValueLabel(field, currentFieldValue(task.data, field), names)
+
+  return (
+    <>
+      <ReviewHeader approval={approval} context={context} summary={null} />
+      <ReviewCard
+        approval={approval}
+        context={context}
+        title="Notion 에 올라갈 변경"
+        footer={
+          <>
+            <FormErrorPanel message={problemMessage(resolver.problem)} />
+            <ApprovalActions
+              approveBlockedReason={blockedReason}
+              note="바꾸지 않은 칸은 원래 제안을 유지해요"
+              approveLabel={conflict === null ? '승인' : '지금 값을 확인했어요, 다시 승인'}
+              pending={resolver.pending}
+              pendingDecision={resolver.pendingDecision}
+              onApprove={() =>
+                conflict === null ? resolver.approve(approval, edits) : resolver.reapprove(approval)
+              }
+              onReject={() => resolver.reject(approval)}
+            />
+          </>
+        }
+      >
         {taskId === null ? (
           <p className={NOTE}>바꿀 태스크가 없는 요청이에요.</p>
-        ) : pending && task.data !== undefined ? (
+        ) : task.data === undefined ? null : (
           <p className={NOTE}>
             대상 태스크:{' '}
             <GuardedLink to={paths.tasks(workspaceId, taskId)} className={LINK}>
               {task.data.title}
             </GuardedLink>
           </p>
-        ) : null}
-        <table aria-label="현재값과 제안값" className={TABLE}>
-          <thead>
-            <tr>
-              <th className={TH}>항목</th>
-              {pending ? <th className={TH}>현재값</th> : null}
-              <th className={TH}>제안값</th>
-            </tr>
-          </thead>
-          <tbody>
-            {approval.changes.map(({ field, value }) => (
-              <tr key={field}>
-                <th scope="row" className={`${TD} font-semibold`}>
-                  {fieldLabel(field)}
-                </th>
-                {pending ? (
-                  <td className={TD}>
-                    {task.data === undefined
-                      ? task.isError
-                        ? '불러오지 못했어요'
-                        : '불러오는 중'
-                      : fieldValueLabel(field, currentFieldValue(task.data, field), names)}
-                  </td>
-                ) : null}
-                <td className={TD}>{fieldValueLabel(field, value, names)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </section>
-
-      {pending && conflict !== null ? (
-        <section role="alert" aria-label="변경 충돌" className={PANEL}>
-          <h3 className={SECTION_TITLE}>제안한 뒤에 태스크가 바뀌었어요</h3>
-          <p className={NOTE}>
-            아래 항목의 지금 값이 제안할 때와 달라요. 지금 값을 확인하고 다시 승인하면 제안값으로
-            바꿔요.
-          </p>
-          <table aria-label="충돌한 항목" className={TABLE}>
-            <thead>
-              <tr>
-                <th className={TH}>항목</th>
-                <th className={TH}>기준값</th>
-                <th className={TH}>현재값</th>
-                <th className={TH}>제안값</th>
-              </tr>
-            </thead>
-            <tbody>
-              {conflict.conflicts.map((item) => (
-                <tr key={item.field}>
-                  <th scope="row" className={`${TD} font-semibold`}>
-                    {fieldLabel(item.field)}
-                  </th>
-                  <td className={TD}>{fieldValueLabel(item.field, item.base, names)}</td>
-                  <td className={TD}>{fieldValueLabel(item.field, item.current, names)}</td>
-                  <td className={TD}>{fieldValueLabel(item.field, item.proposed, names)}</td>
+        )}
+        <ChangesTable
+          approval={approval}
+          changes={taskUpdateChanges(approval, overrides.edits)}
+          names={names}
+          valueHeader="확정할 값"
+          current={current}
+        />
+        <TaskUpdateOverrideFields
+          overrides={overrides}
+          disabled={resolver.pending}
+          onInputChange={resolver.invalidateConfirmation}
+        />
+        {conflict === null ? null : (
+          <section role="alert" aria-label="변경 충돌" className={ALERT}>
+            <h3 className={SECTION_TITLE}>제안한 뒤에 태스크가 바뀌었어요</h3>
+            <p className={NOTE}>
+              아래 항목의 지금 값이 제안할 때와 달라요. 지금 값을 확인하고 다시 승인하면 확정할
+              값으로 바꿔요.
+            </p>
+            <table aria-label="충돌한 항목" className={TABLE}>
+              <thead>
+                <tr>
+                  <th className={TH}>항목</th>
+                  <th className={TH}>기준값</th>
+                  <th className={TH}>현재값</th>
+                  <th className={TH}>확정할 값</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </section>
-      ) : null}
-
-      {pending ? (
-        <div className="flex flex-col gap-12">
-          <FormErrorPanel message={problemMessage(resolver.problem)} />
-          <ApprovalActions
-            approveBlockedReason={taskId === null ? '바꿀 태스크가 없어 승인할 수 없어요.' : null}
-            approveLabel={conflict === null ? '승인' : '지금 값을 확인했어요, 다시 승인'}
-            pending={resolver.pending}
-            pendingDecision={resolver.pendingDecision}
-            onApprove={() =>
-              resolver.resolve(approval, {
-                decision: 'approved',
-                confirmTaskVersion: conflict === null ? null : conflict.taskVersion,
-              })
-            }
-            onReject={() => resolver.resolve(approval, { decision: 'rejected' })}
-          />
-        </div>
-      ) : null}
+              </thead>
+              <tbody>
+                {conflict.conflicts.map((item) => (
+                  <tr key={item.field}>
+                    <th scope="row" className={`${TD} font-semibold`}>
+                      {fieldLabel(item.field)}
+                    </th>
+                    <td className={TD}>{fieldValueLabel(item.field, item.base, names)}</td>
+                    <td className={TD}>{fieldValueLabel(item.field, item.current, names)}</td>
+                    <td className={TD}>{fieldValueLabel(item.field, item.proposed, names)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </section>
+        )}
+        <EvidenceBlock approval={approval} context={context} />
+      </ReviewCard>
     </>
+  )
+}
+
+/** 변경 승인의 비교표. 대기 중이면 지금 태스크 값 열이 있다 */
+function ChangesTable({
+  approval,
+  changes,
+  names,
+  valueHeader,
+  current,
+}: {
+  approval: TaskUpdateApproval
+  changes: { field: string; value: unknown }[]
+  names: ReadonlyMap<string, string>
+  valueHeader: string
+  current?: (field: string) => string
+}) {
+  if (isScopeChange(approval) && changes.length === 0)
+    return <p className={NOTE}>바꿀 항목 값은 없어요.</p>
+  return (
+    <table aria-label="현재값과 제안값" className={TABLE}>
+      <thead>
+        <tr>
+          <th className={TH}>항목</th>
+          {current === undefined ? null : <th className={TH}>현재값</th>}
+          <th className={TH}>{valueHeader}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {changes.map(({ field, value }) => (
+          <tr key={field}>
+            <th scope="row" className={`${TD} font-semibold`}>
+              {fieldLabel(field)}
+            </th>
+            {current === undefined ? null : <td className={TD}>{current(field)}</td>}
+            <td className={TD}>{fieldValueLabel(field, value, names)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  )
+}
+
+/** 처리된 승인. 고칠 수 없고, 반영한 값과 처음 요청한 값을 나란히 남긴다 */
+function ResolvedReview({
+  approval,
+  context,
+}: {
+  approval: ReviewedApproval
+  context: ReviewContext
+}) {
+  const approved = approval.status === 'approved'
+  return (
+    <>
+      <ReviewHeader approval={approval} context={context} summary={null} />
+      <ReviewCard
+        approval={approval}
+        context={context}
+        title={
+          approval.kind === 'task_create' ? 'Notion 에 올라갈 태스크' : 'Notion 에 올라갈 변경'
+        }
+      >
+        {approval.kind === 'task_create' ? (
+          <ResolvedCreateValues approval={approval} names={context.names} />
+        ) : (
+          <>
+            <ChangesTable
+              approval={approval}
+              changes={taskUpdateChanges(approval, approved ? approval.storedOverrides : {})}
+              names={context.names}
+              valueHeader={approved ? '반영한 값' : '제안값'}
+            />
+            {approved && !(isScopeChange(approval) && approval.changes.length === 0) ? (
+              <FieldList
+                label="원래 제안"
+                rows={approval.changes.map(({ field, value }) => ({
+                  term: fieldLabel(field),
+                  value: fieldValueLabel(field, value, context.names),
+                }))}
+              />
+            ) : null}
+          </>
+        )}
+        <EvidenceBlock approval={approval} context={context} />
+      </ReviewCard>
+    </>
+  )
+}
+
+function ResolvedCreateValues({
+  approval,
+  names,
+}: {
+  approval: TaskCreateApproval
+  names: ReadonlyMap<string, string>
+}) {
+  const approved = approval.status === 'approved'
+  const rows = (fields: {
+    taskTitle: string
+    assigneeMemberId: string | null
+    dueDate: string | null
+  }) => [
+    { term: '제목', value: fields.taskTitle.trim() === '' ? null : fields.taskTitle },
+    {
+      term: '담당자',
+      value: fields.assigneeMemberId === null ? null : memberLabel(fields.assigneeMemberId, names),
+    },
+    { term: '마감', value: fields.dueDate },
+  ]
+  const requested = rows(taskCreateValues(approval))
+  if (!approved) return <FieldList label="요청한 값" rows={requested} />
+  return (
+    <>
+      <FieldList
+        label="반영한 값"
+        rows={rows(taskCreateValues(approval, approval.storedOverrides))}
+      />
+      <FieldList label="요청한 값" rows={requested} />
+    </>
+  )
+}
+
+/** 이름·값 목록. 값이 없으면 `미정` 이다 */
+function FieldList({
+  label,
+  rows,
+}: {
+  label: string
+  rows: { term: string; value: string | null }[]
+}) {
+  return (
+    <div className="flex flex-col gap-8">
+      <h3 className={BLOCK_TITLE}>{label}</h3>
+      <dl aria-label={label} className={FIELDS}>
+        {rows.map(({ term, value }) => (
+          <div key={term} className="contents">
+            <dt className={TERM}>{term}</dt>
+            {value === null ? (
+              <dd className={MISSING}>미정</dd>
+            ) : (
+              <dd className={VALUE}>{value}</dd>
+            )}
+          </div>
+        ))}
+      </dl>
+    </div>
   )
 }
 
 /** 지원하지 않는 종류 (계획 §4-4). 읽기 전용이고 승인 액션이 없다 */
 function UnsupportedReview({ approval }: { approval: UnsupportedApproval }) {
   return (
-    <section aria-label="지원하지 않는 확인 요청" className={SECTION}>
-      <dl className={FIELDS}>
-        <dt className={TERM}>종류</dt>
-        <dd className={VALUE}>{approval.type}</dd>
-      </dl>
-      {approval.status === 'pending' ? (
-        <p className={NOTE}>{APPROVAL_RESOLUTION_REASONS.unsupported}</p>
-      ) : null}
-    </section>
+    <>
+      <h1 className={TITLE}>{approvalHeading(approval)}</h1>
+      <section aria-label="지원하지 않는 확인 요청" className={`${CARD} ${CARD_BODY}`}>
+        <dl className={FIELDS}>
+          <dt className={TERM}>종류</dt>
+          <dd className={VALUE}>{approval.type}</dd>
+        </dl>
+        {approval.status === 'pending' ? (
+          <p className={NOTE}>{APPROVAL_RESOLUTION_REASONS.unsupported}</p>
+        ) : null}
+      </section>
+    </>
   )
 }
 
@@ -516,9 +832,9 @@ function ResolutionResult({ workspaceId, approval, problem }: ResolutionResultPr
   const taskId = approval.kind === 'unsupported' ? null : approval.relatedTaskId
   return (
     <section aria-labelledby={titleId} className={PANEL}>
-      <h3 id={titleId} className={SECTION_TITLE}>
+      <h2 id={titleId} className={SECTION_TITLE}>
         처리 결과
-      </h3>
+      </h2>
       {problem?.kind === 'already_resolved' ? (
         <p className={NOTE}>{APPROVAL_RESOLUTION_REASONS.resolved} 지금 결과를 보여 드려요.</p>
       ) : null}

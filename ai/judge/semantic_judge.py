@@ -100,12 +100,17 @@ def split_sentences(text: str) -> list[str]:
 
 
 def _flatten(transcript: Transcript) -> tuple[list[str], list[int], list[str | None]]:
-    """세그먼트를 시간순으로 훑어 문장 단위 병렬 리스트(문장/seq/화자)를 만든다."""
+    """세그먼트를 시간순으로 훑어 문장 단위 병렬 리스트(문장/seq/화자)를 만든다.
+
+    채팅은 메시지 하나가 한 줄이다. 사람이 한 번에 보낸 말이라 이미 묶여 있고, 문장 부호로 나누면 URL·버전
+    번호("v1.2")가 조각난다. 음성은 STT 덩어리에 여러 문장이 들어 있어 나눈다.
+    """
     sentences: list[str] = []
     seqs: list[int] = []
     speakers: list[str | None] = []
     for seg in sorted(transcript.segments, key=lambda s: s.start):
-        for sentence in split_sentences(seg.text):
+        parts = [seg.text.strip()] if transcript.source == "chat" else split_sentences(seg.text)
+        for sentence in filter(None, parts):
             sentences.append(sentence)
             seqs.append(seg.seq)
             speakers.append(seg.speaker)
@@ -144,6 +149,7 @@ def extract_findings_rules(transcript: Transcript) -> list[JudgeFinding]:
                 indices=[i],  # 문장을 묶을 능력도 없어서 항상 한 줄
                 source=transcript.source,
                 seq=seqs[i],
+                seqs=[seqs[i]],
                 speaker=speakers[i],
                 reason=reason,
                 method="rules",
@@ -191,6 +197,16 @@ def _valid_assignee(item: dict) -> tuple[str | None, str | None, str | None]:
     if a_type in _NO_RAW_TYPES:
         raw = None
     return a_type, raw, resolved
+
+
+def _context_block(context: Transcript | None) -> str:
+    """이전 대화를 번호 없이 보여 준다. 번호가 없으니 indices 로 고를 수 없고, 근거는 아래 번호 목록에서만 나온다."""
+    if context is None:
+        return ""
+    lines = [f"(이전) {seg.speaker or '?'}: {seg.text}" for seg in context.segments]
+    if not lines:
+        return ""
+    return "다음은 이전 대화다. 참고만 하고 근거(indices)로 고르지 마라.\n" + "\n".join(lines) + "\n\n"
 
 
 def _luna_user_prompt(numbered: str) -> str:
@@ -248,7 +264,7 @@ def extract_findings_llm(transcript: Transcript, client: LLMClient) -> list[Judg
 
 
 def _extract_findings_llm(
-    transcript: Transcript, client: LLMClient
+    transcript: Transcript, client: LLMClient, context: Transcript | None = None
 ) -> tuple[list[JudgeFinding] | None, dict[str, Any]]:
     """extract_findings_llm 과 같고, 검증에서 탈락한 항목 기록(empty_drops)을 함께 돌려준다."""
     dropped = empty_drops()
@@ -257,7 +273,8 @@ def _extract_findings_llm(
     if not sentences:
         return [], dropped
 
-    prompt = _LUNA_SYSTEM_PROMPT + "\n\n" + _luna_user_prompt(_numbered_lines(sentences, speakers))
+    prompt = (_LUNA_SYSTEM_PROMPT + "\n\n" + _context_block(context)
+              + _luna_user_prompt(_numbered_lines(sentences, speakers)))
     result = client.generate_json(prompt, reasoning_effort="low")
     if result is None:
         return None, dropped
@@ -294,6 +311,7 @@ def _extract_findings_llm(
                 indices=idxs,
                 source=transcript.source,
                 seq=seqs[anchor],
+                seqs=[seqs[i] for i in idxs],
                 speaker=speakers[anchor],
                 assignee_type=a_type,
                 assignee_raw=a_raw,
@@ -321,12 +339,14 @@ def extract_findings(transcript: Transcript) -> list[JudgeFinding]:
     return extract_findings_counted(transcript)[0]
 
 
-def extract_findings_counted(transcript: Transcript) -> tuple[list[JudgeFinding], dict[str, Any]]:
+def extract_findings_counted(
+    transcript: Transcript, context: Transcript | None = None
+) -> tuple[list[JudgeFinding], dict[str, Any]]:
     """extract_findings 와 같고, 검증에서 탈락한 항목 기록(empty_drops)을 함께 돌려준다(#186)."""
     client = get_llm("luna")
     if client.name == "off":
         raise FindingExtractionUnavailableError("Luna API 키가 없어 1단계 판단을 할 수 없습니다.")
-    result, dropped = _extract_findings_llm(transcript, client)
+    result, dropped = _extract_findings_llm(transcript, client, context)
     if result is None:
         raise FindingExtractionUnavailableError("Luna 응답을 파싱하지 못했습니다.")
     return result, dropped

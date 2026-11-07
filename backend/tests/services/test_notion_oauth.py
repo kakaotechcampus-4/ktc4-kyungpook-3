@@ -12,6 +12,7 @@ from app.services.notion_oauth import (
     authorize_url,
     exchange_code,
     frontend_return_url,
+    refresh_access_token,
     safe_return_path,
     sign_state,
     verify_state,
@@ -177,6 +178,11 @@ def _exchange(response: httpx.Response | Exception):
     return seen, httpx.MockTransport(handler)
 
 
+def _notion_error(status: int, code: str) -> httpx.Response:
+    """Notion 토큰 API가 실제로 돌려주는 오류 형식. 이유는 OAuth 표준의 `error`가 아니라 `code`에 있다."""
+    return httpx.Response(status, json={"object": "error", "status": status, "code": code, "message": "..."})
+
+
 def test_exchange_code_sends_basic_auth_and_parses_token():
     seen, transport = _exchange(
         httpx.Response(
@@ -234,8 +240,8 @@ def test_token_repr_does_not_show_secrets():
 @pytest.mark.parametrize(
     "response",
     [
-        httpx.Response(400, json={"error": "invalid_grant"}),
-        httpx.Response(401, json={"error": "unauthorized"}),
+        _notion_error(400, "invalid_grant"),
+        _notion_error(401, "invalid_client"),
         httpx.Response(500, text="oops"),
         httpx.Response(200, json={}),
         httpx.Response(200, json={"access_token": ""}),
@@ -253,7 +259,7 @@ def test_exchange_code_failure_raises_without_leaking_code(response):
 
 
 def test_exchange_code_error_message_names_status_and_error():
-    _, transport = _exchange(httpx.Response(400, json={"error": "invalid_grant"}))
+    _, transport = _exchange(_notion_error(400, "invalid_grant"))
 
     with pytest.raises(NotionOAuthError, match=r"HTTP 400 \(invalid_grant\)"):
         exchange_code("the-code", transport=transport)
@@ -276,6 +282,76 @@ def test_exchange_code_requires_env(monkeypatch, name):
 
     with pytest.raises(OAuthConfigError):
         exchange_code("the-code", transport=transport)
+
+
+# ---------- 토큰 갱신 ----------
+
+
+def test_refresh_access_token_sends_basic_auth_and_parses_new_pair():
+    seen, transport = _exchange(
+        httpx.Response(200, json={"access_token": "secret_new", "refresh_token": "refresh_new"})
+    )
+
+    token = refresh_access_token("refresh_old", transport=transport)
+
+    request = seen[0]
+    expected_auth = base64.b64encode(b"client-id:client-secret").decode()
+    assert request.method == "POST"
+    assert str(request.url) == "https://api.notion.com/v1/oauth/token"
+    assert request.headers["Authorization"] == f"Basic {expected_auth}"
+    assert request.read() == b'{"grant_type":"refresh_token","refresh_token":"refresh_old"}'
+    assert (token.access_token, token.refresh_token) == ("secret_new", "refresh_new")
+
+
+def test_refresh_access_token_without_new_refresh_token():
+    _, transport = _exchange(httpx.Response(200, json={"access_token": "secret_new"}))
+
+    assert refresh_access_token("refresh_old", transport=transport).refresh_token is None
+
+
+@pytest.mark.parametrize(
+    "response",
+    [_notion_error(400, "invalid_grant"), httpx.Response(400, json={"error": "invalid_grant"})],
+)
+def test_refresh_access_token_invalid_grant_is_rejected(response):
+    _, transport = _exchange(response)
+
+    with pytest.raises(NotionOAuthError, match=r"HTTP 400 \(invalid_grant\)") as caught:
+        refresh_access_token("refresh_old", transport=transport)
+
+    assert caught.value.rejected is True
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        _notion_error(400, "invalid_request"),
+        # 우리 서버의 클라이언트 ID·시크릿 문제다. 거절로 보면 설정 실수 한 번에 모든 연결의 토큰이 지워진다.
+        _notion_error(401, "invalid_client"),
+        httpx.Response(500, text="oops"),
+        httpx.Response(200, json={}),
+        httpx.Response(200, text="not json"),
+        httpx.ConnectError("failed to reach https://x/?refresh_token=refresh_old"),
+    ],
+)
+def test_refresh_access_token_other_failures_are_not_rejected(response):
+    _, transport = _exchange(response)
+
+    with pytest.raises(NotionOAuthError) as caught:
+        refresh_access_token("refresh_old", transport=transport)
+
+    assert caught.value.rejected is False
+    assert "refresh_old" not in str(caught.value)
+    assert caught.value.__cause__ is None
+
+
+@pytest.mark.parametrize("name", ["NOTION_CLIENT_ID", "NOTION_CLIENT_SECRET"])
+def test_refresh_access_token_requires_env(monkeypatch, name):
+    monkeypatch.delenv(name)
+    _, transport = _exchange(httpx.Response(200, json={"access_token": "secret_new"}))
+
+    with pytest.raises(OAuthConfigError):
+        refresh_access_token("refresh_old", transport=transport)
 
 
 # ---------- 복귀 경로 ----------

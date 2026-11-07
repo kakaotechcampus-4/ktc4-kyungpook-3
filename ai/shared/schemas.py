@@ -46,6 +46,8 @@ class TranscriptSegment(_Base):
     speaker: 플랫폼 사용자 ID(문자열) 또는 None
     start/end: **회의 시작 기준 초**. 화자 트랙 파일 안의 위치가 아니다
     seq: 회의 전체에서의 발화 순번. 근거 점프가 참조하는 안정된 식별자
+    speaker_member_id: 화자의 BE 멤버 ID. 업로드 회의를 BE 에 인계할 때만 채운다(speaker 는 None).
+        None 이면 to_dict 가 키를 뺀다. 디스코드 회의의 본문은 이 필드가 생기기 전과 같다
     """
 
     speaker: str | None
@@ -53,6 +55,13 @@ class TranscriptSegment(_Base):
     end: float
     text: str
     seq: int = 0
+    speaker_member_id: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        d = super().to_dict()
+        if d["speaker_member_id"] is None:
+            del d["speaker_member_id"]
+        return d
 
 
 @dataclass
@@ -150,6 +159,7 @@ class JudgeFinding(_Base):
     indices: list[int] = field(default_factory=list)  # 근거 문장의 전사록 내 위치. evidence 와 같은 순서
     source: str = "meeting"  # "meeting" | "chat"
     seq: int = 0  # 근거 마지막 줄의 TranscriptSegment.seq — 근거 추적용 안정 식별자
+    seqs: list[int] = field(default_factory=list)  # 근거 줄마다의 TranscriptSegment.seq. evidence 와 같은 순서
     speaker: str | None = None  # 근거 마지막 줄의 화자(opaque id) — 문맥 참고/디버깅용
     reason: str = ""  # 왜 후보로 골랐는지 (규칙 기반이면 어떤 규칙에 걸렸는지)
     method: str = "rules"  # rules | llm
@@ -180,6 +190,9 @@ class NotionCandidate(_Base):
     status: str | None = None  # 현재 진행 상태(todo/in_progress/done/blocked 등) — 비교 기준값
     similarity: float = 0.0  # 새 텍스트와의 벡터 유사도 (0.0~1.0). BE가 계산해서 넘겨줌
     updated_at: str | None = None  # 이 항목이 마지막으로 수정된 시각 — 오래된 정보인지 참고용
+    # 이번 회의 앞부분에서 만든 카드를 후보로 보여 줄 때의 설명("마감을 10/2 → 10/6 으로 바꾸자고 함"). 값이 DB 가 아니라
+    # 이번 회의 제안이라는 걸 Terra 가 알게 한다. 프롬프트에만 쓰고 BE 로 보내지 않는다(#140)
+    meeting_note: str = ""
 
 
 @dataclass
@@ -246,6 +259,9 @@ class DraftStructured(_Base):
 
     task: str | None = None  # 할일 제목. create 에서만 채움 — update 에서 채우면 기존 제목을 덮어씀
     due_date: str | None = None  # ISO 날짜(YYYY-MM-DD). 발화에 마감이 있을 때만
+    # 마감을 없애자는 결정("미정으로 되돌리자"). due_date=None 은 "바꾸지 않음"이라 따로 둔다. 수정에서만 True
+    due_cleared: bool = False
+    due_raw: str | None = None  # 근거 원문에서 마감을 가리킨 표현 그대로. 근거 상태 계산용(judge/evidence.py)
 
 
 @dataclass

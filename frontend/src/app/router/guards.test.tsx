@@ -4,7 +4,12 @@ import { db } from '@/shared/mock/db'
 import { handlers } from '@/shared/mock/handlers'
 import { server } from '@/shared/mock/server'
 import { deferred } from '@/shared/test/deferred'
-import { businessRequests, recordRequests } from '@/shared/test/requests'
+import {
+  businessRequests,
+  isDashboardRequest,
+  latestDoneExtractionId,
+  recordRequests,
+} from '@/shared/test/requests'
 import { renderApp } from '../test/renderApp'
 
 type RenderedApp = ReturnType<typeof renderApp>
@@ -42,7 +47,7 @@ describe('RequireAuth', () => {
 
 describe('인증 화면 재접근 (RedirectIfAuthed)', () => {
   it.each([
-    { label: '공간 0개', ids: [], last: null, from: '/login', to: '/onboarding/create_workspace' },
+    { label: '공간 0개', ids: [], last: null, from: '/login', to: '/onboarding/start' },
     {
       label: '공간 1개',
       ids: ['ws_01'],
@@ -84,7 +89,15 @@ describe('인증 화면 재접근 (RedirectIfAuthed)', () => {
     const log = recordRequests()
     const app = renderApp(from)
     await landsOn(app, to)
-    expect(businessRequests(log.started)).toEqual([])
+    // 대시보드로 착지하면 그 화면의 조회(M7)만 있다. 시작·선택 화면만 받은 초대를 읽는다(#320). 가드가 더하는 업무 요청은 없다
+    const showsInvitations = to === '/onboarding/start' || to === '/workspaces'
+    expect(
+      businessRequests(log.started).filter(
+        (request) =>
+          !isDashboardRequest(request, { extractionId: latestDoneExtractionId() }) &&
+          !(showsInvitations && request.method === 'GET' && request.path === '/invitations/me'),
+      ),
+    ).toEqual([])
   })
 })
 
@@ -195,7 +208,10 @@ describe('RequirePM', () => {
     const title = String(db.approvals[0].payload.task_title)
     const log = recordRequests()
     renderApp('/workspaces/ws_01/approvals/ap_01')
-    expect(await screen.findByText(title)).toBeInTheDocument()
+    expect(
+      await screen.findByRole('heading', { level: 1, name: '이 태스크, 승인할까요?' }),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: /^태스크명/ })).toHaveValue(title)
 
     // M6 S4 부터 상세가 담당자 이름·보완 판정에 쓰는 팀원 목록을 함께 받는다. 승인 상세와 팀원 목록 말고는 아무것도 없다
     await waitFor(() =>
@@ -236,13 +252,15 @@ describe('RequirePM', () => {
 })
 
 describe('경로', () => {
-  it('메시지는 준비 중 화면이고 API 를 부르지 않는다', async () => {
+  it('메시지 대화 경로는 메시지 화면이고 그 공간의 메시지 목록과 그 대화만 부른다', async () => {
     const log = recordRequests()
     renderApp('/workspaces/ws_01/messages/threads/1')
-    expect(
-      await screen.findByRole('heading', { name: '메시지는 준비 중이에요' }),
-    ).toBeInTheDocument()
-    expect(businessRequests(log.started)).toEqual([])
+    expect(await screen.findByRole('heading', { level: 1, name: '메시지' })).toBeInTheDocument()
+    await waitFor(() =>
+      expect(new Set(businessRequests(log.started).map(({ path }) => path))).toEqual(
+        new Set(['/workspaces/ws_01/messages', '/workspaces/ws_01/messages/threads/1']),
+      ),
+    )
   })
 
   it.each([

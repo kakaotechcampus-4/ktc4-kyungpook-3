@@ -3,6 +3,7 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.models import AliasSource, AliasType, MemberRole
+from app.services.matching import normalize_alias_text
 
 # member.discord_user_id 컬럼 길이
 DISCORD_USER_ID_MAX_LENGTH = 64
@@ -67,6 +68,23 @@ class MemberAliasCreateRequest(BaseModel):
     confidence: float = Field(1.0, ge=0.0, le=1.0)
     verified: bool = True
 
+    @field_validator("alias_text")
+    @classmethod
+    def _normalize_alias_text(cls, value: str) -> str:
+        # 후보를 만들 때와 같은 규칙으로 공백을 정리해 저장한다. 공백뿐인 표기는 어떤 입력으로도 걸리지 않으니 막는다.
+        normalized = normalize_alias_text(value)
+        if not normalized:
+            raise ValueError("별칭은 공백만으로 이루어질 수 없습니다")
+        return normalized
+
+    @field_validator("source")
+    @classmethod
+    def _reject_server_only_source(cls, value: AliasSource) -> AliasSource:
+        # display_name 은 이름에서 자동으로 만든 별칭 표시라 서버만 쓴다. 받으면 이름을 바꿀 때 조용히 지워진다.
+        if value == AliasSource.DISPLAY_NAME:
+            raise ValueError("display_name 별칭은 직접 등록할 수 없습니다")
+        return value
+
 
 class MemberAliasResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -96,3 +114,16 @@ class UnresolvedAliasResponse(BaseModel):
 class UnresolvedAliasListResponse(BaseModel):
     items: list[UnresolvedAliasResponse]
     total: int
+
+
+class MemberNameResponse(BaseModel):
+    """녹음 봇이 전사 이름 힌트로 쓰는 팀원 이름."""
+
+    member_id: str
+    name: str = Field(..., description="PM이 온보딩에서 정한 이름(display_name)")
+    discord_user_id: str | None
+    aliases: list[str] = Field(..., description="별칭 문자열. 확인한(verified) 별칭부터, 만든 순서")
+
+
+class MemberNameListResponse(BaseModel):
+    items: list[MemberNameResponse]

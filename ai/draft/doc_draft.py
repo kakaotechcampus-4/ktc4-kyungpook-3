@@ -46,28 +46,28 @@ _FEW_SHOT = """예시 (기준일은 예시마다 다르다 — 실제 계산은 
 [예시 1] 새 할일 생성 / 기준일 2026-03-02 (월)
 요약: API 에러 코드 목록을 수빈님이 이번 주 금요일까지 정리하기로 함
 근거: "API 에러 코드 목록 정리가 필요할 것 같아요." / "그건 제가 이번 주 금요일까지 할게요."
-→ {"task": "API 에러 코드 목록 정리", "due_date": "2026-03-06", "doc_text": "API 에러 코드 목록 정리를 수빈님이 3/6(금)까지 하기로 함"}
+→ {"task": "API 에러 코드 목록 정리", "due_date": "2026-03-06", "due_raw": "이번 주 금요일까지", "doc_text": "API 에러 코드 목록 정리를 수빈님이 3/6(금)까지 하기로 함"}
 
 [예시 2] 기존 할일 수정 · 일정(마감일) / 기준일 2026-03-02 (월)
 요약: 배포 가이드 문서 마감을 다음 주 수요일로 미루기로 함
 현재 값: 제목 "배포 가이드 문서 작성" / 마감일 2026-03-06 / 상태 진행 중
-→ {"task": null, "due_date": "2026-03-11", "doc_text": "배포 가이드 문서 작성 마감을 3/6에서 3/11로 연기"}
+→ {"task": null, "due_date": "2026-03-11", "due_raw": "다음 주 수요일", "doc_text": "배포 가이드 문서 작성 마감을 3/6에서 3/11로 연기"}
 
 [예시 3] 기존 할일 수정 · 상태(완료) / 기준일 2026-03-02 (월)
 요약: 관리자 대시보드 통계 차트 작업을 끝냈다고 보고함
 현재 값: 제목 "관리자 대시보드 통계 차트" / 마감일 2026-03-04 / 상태 진행 중
-→ {"task": null, "due_date": null, "doc_text": "관리자 대시보드 통계 차트 작업 완료 (진행 중 → 완료)"}
+→ {"task": null, "due_date": null, "due_raw": null, "doc_text": "관리자 대시보드 통계 차트 작업 완료 (진행 중 → 완료)"}
 
 [예시 4] 기존 할일 수정 · 담당자 / 기준일 2026-03-02 (월)
 요약: 다크모드 토글 구현은 태윤님이 맡기로 함
 담당자 언급: 태윤님
 현재 값: 제목 "다크모드 토글 구현" / 마감일 없음 / 상태 할 일
-→ {"task": null, "due_date": null, "doc_text": "다크모드 토글 구현 담당을 태윤님으로 지정"}
+→ {"task": null, "due_date": null, "due_raw": null, "doc_text": "다크모드 토글 구현 담당을 태윤님으로 지정"}
 
 [예시 5] 기존 할일 수정 · 작업 범위 / 기준일 2026-03-02 (월)
 요약: 사용자 설정 페이지에서 이메일 알림 옵션은 이번 버전에서 빼기로 함
 현재 값: 제목 "사용자 설정 페이지 개발" / 마감일 2026-03-10 / 상태 진행 중
-→ {"task": null, "due_date": null, "doc_text": "사용자 설정 페이지 개발에서 이메일 알림 옵션을 이번 버전 범위에서 제외"}"""
+→ {"task": null, "due_date": null, "due_raw": null, "doc_text": "사용자 설정 페이지 개발에서 이메일 알림 옵션을 이번 버전 범위에서 제외"}"""
 
 
 def _assignee_line(finding: JudgeFinding) -> str:
@@ -81,9 +81,9 @@ def _assignee_line(finding: JudgeFinding) -> str:
 
 def _current_values(candidate: NotionCandidate) -> str:
     status = _STATUS_KO.get(candidate.status or "", candidate.status or "없음")
-    return (
-        f"- 제목: {candidate.title} / 마감일: {candidate.due_date or '없음'} / 상태: {status}"
-    )
+    line = f"- 제목: {candidate.title} / 마감일: {candidate.due_date or '없음'} / 상태: {status}"
+    # 이번 회의 앞부분 제안이 덮인 값이면 원래 값을 함께 보여 준다 — 없으면 "원래대로"를 날짜로 못 바꾼다(#140)
+    return f"{line}\n  ({candidate.meeting_note})" if candidate.meeting_note else line
 
 
 def _draft_prompt(
@@ -122,12 +122,16 @@ def _draft_prompt(
         '   - "다음 주 수요일"처럼 "다음 주"가 붙으면 다음 주(월~일)의 그 요일\n'
         "   - 요일이 특정되지 않은 기간은 그 기간의 마지막 날:\n"
         '     "이번 주 안으로" → 이번 주 일요일, "다음 주까지" → 다음 주 일요일, "월말까지" → 그 달 마지막 날\n'
-        "3. doc_text — PM 이 승인 화면에서 읽을 한 문장. 무엇이 어떻게 바뀌는지 쓴다.\n"
+        '   - "원래대로"처럼 되돌리자고 하면 현재 값 아래 괄호 메모의 원래 값(화살표 앞의 날짜)\n'
+        '   - 마감을 없애자고 하거나, 되돌릴 원래 값이 "없음"이면 "none"\n'
+        '3. due_raw — due_date 를 계산한 근거 원문의 마감 표현을 고치지 말고 그대로 (예: "이번 주 금요일까지").\n'
+        "   due_date 가 null 이면 null.\n"
+        "4. doc_text — PM 이 승인 화면에서 읽을 한 문장. 무엇이 어떻게 바뀌는지 쓴다.\n"
         '   기존 할일 수정이면 "현재 값 → 새 값"이 드러나게 쓴다. 단 작업 범위 변경은 바뀌는 값이 없으므로\n'
         "   화살표 없이 무엇이 범위에서 빠지거나 더해지는지만 쓴다. 근거 원문에 없는 내용은 쓰지 마라.\n\n"
         f"{_FEW_SHOT}\n\n"
         "JSON으로만 답하라:\n"
-        '{"task": str|null, "due_date": "YYYY-MM-DD"|null, "doc_text": str}'
+        '{"task": str|null, "due_date": "YYYY-MM-DD"|"none"|null, "due_raw": str|null, "doc_text": str}'
     )
 
 
@@ -147,15 +151,22 @@ def _parse_draft_response(raw: dict, result: JudgeResult, today: date) -> DraftR
     elif task is None:
         return None  # 제목 없는 새 Task 는 만들 수 없다
 
-    due_raw = raw.get("due_date")
-    due = sanity_check_due_date(due_raw if isinstance(due_raw, str) else None, today)
+    due_value = raw.get("due_date")
+    # "none" 은 마감을 없애자는 결정이다. null(못 정함·파싱 실패)과 구분한다. 새 Task 는 마감 없이 만들면 되므로 수정에서만
+    cleared = due_value == "none" and not result.is_new and result.category == "schedule"
+    due = sanity_check_due_date(due_value if isinstance(due_value, str) else None, today)
     if not result.is_new and result.category != "schedule":
         due = None  # 일정 변경이 아닌 수정에서 마감일을 채우면 관계없는 필드가 바뀐다
-    elif not result.is_new and due is None:
+    elif not result.is_new and due is None and not cleared:
         return None  # 일정 변경인데 마감일이 없으면 to_item() 이 "바뀌는 값 없음"으로 조용히 버린다
 
+    quote = raw.get("due_raw")
+    due_raw = quote.strip() if isinstance(quote, str) and quote.strip() and (due or result.is_new) else None  # due 가 걸러져도 표현은 남긴다: 마감이 있었다는 신호(judge/evidence.py 가 inferred 로 둔다)
+
     return DraftResult(
-        structured=DraftStructured(task=task, due_date=due.isoformat() if due else None),
+        structured=DraftStructured(
+            task=task, due_date=due.isoformat() if due else None, due_cleared=cleared, due_raw=due_raw,
+        ),
         doc_text=doc_text[:DOC_TEXT_MAX],
     )
 

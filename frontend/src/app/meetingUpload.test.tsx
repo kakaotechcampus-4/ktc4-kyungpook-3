@@ -7,7 +7,7 @@ import { readAudioDuration } from '@/features/meeting-upload'
 import { paths } from '@/shared/config/routes'
 import { db } from '@/shared/mock/db'
 import { fail, ok } from '@/shared/mock/envelope'
-import { completeMeeting } from '@/shared/mock/meetingFlow'
+import { completeMeeting, startChatMeeting } from '@/shared/mock/meetingFlow'
 import { server } from '@/shared/mock/server'
 import { setMockRole } from '@/shared/mock/sessions'
 import { deferred } from '@/shared/test/deferred'
@@ -118,6 +118,20 @@ describe('진입 (U3-1)', () => {
     expect(paths_).not.toContain('/workspaces/ws_01/integrations')
   })
 
+  it('정리 중인 회의가 채팅 회의뿐이면 처리 화면으로 옮기지 않고 올릴 수 있다 (#450)', async () => {
+    completeMeeting('mt_10')
+    startChatMeeting()
+    const user = userEvent.setup({ applyAccept: false })
+    const app = renderApp(UPLOAD_PATH)
+    await screen.findByRole('button', { name: '정리 시작하기' })
+    await app.expectPath(UPLOAD_PATH)
+
+    await fillValid(user)
+    await user.click(screen.getByRole('button', { name: '정리 시작하기' }))
+    // 채팅 회의(mt_11) 다음 번호가 방금 올린 회의다
+    await app.expectPath(paths.meetingProcessing('ws_01', 'mt_12'))
+  })
+
   it('목록은 들어올 때 새로 받는다 — 30초 캐시의 「정리 중 없음」을 믿지 않는다', async () => {
     completeMeeting('mt_10')
     const app = renderApp(paths.dashboard('ws_01'))
@@ -130,6 +144,11 @@ describe('진입 (U3-1)', () => {
       }),
     )
     db.meetings[2].status = 'processing'
+    // 대시보드(M7)가 최신 완료 회의로 mt_10 의 `done` 상세를 받아 두었다. 끝난 회의가 다시 정리 중이 되는 것은
+    // 이 테스트가 만든 상황이라, 그 캐시를 지워 처리 화면이 서버의 지금 상태를 보게 한다
+    act(() =>
+      app.queryClient.removeQueries({ queryKey: ['workspace', 'ws_01', 'meetings', 'detail'] }),
+    )
     act(() => app.navigate(UPLOAD_PATH))
     expect(await screen.findByRole('heading', { name: PROCESSING_HEADING })).toBeInTheDocument()
     await app.expectPath(paths.meetingProcessing('ws_01', 'mt_10'))
@@ -150,13 +169,22 @@ describe('진입 (U3-1)', () => {
     expect(app.visited().map(({ pathname }) => pathname)).toContain(paths.meetings('ws_01'))
   })
 
+  it('Notion 이 준비 중(connecting)이면 막지 않고 폼을 연다 — 그 사이 태스크도 DB 가 붙으면 반영된다 (#204)', async () => {
+    completeMeeting('mt_10')
+    db.integrations.ws_01.notion.status = 'connecting'
+    renderApp(UPLOAD_PATH)
+
+    expect(await screen.findByRole('button', { name: '정리 시작하기' })).toBeInTheDocument()
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
   it('Notion 끊김이면 D-100 모달 — 연결 버튼은 설정의 Notion 영역으로, 복귀는 업로드 경로다', async () => {
     completeMeeting('mt_10')
     db.integrations.ws_01.notion.status = 'revoked'
     const user = userEvent.setup()
     const app = renderApp(UPLOAD_PATH)
 
-    const dialog = await screen.findByRole('dialog', { name: 'Notion 연결이 끊어졌어요' })
+    const dialog = await screen.findByRole('dialog', { name: 'Notion 연결을 마치지 못했어요' })
     await user.click(within(dialog).getByRole('button', { name: 'Notion 다시 연결하기' }))
     await app.expectPath(paths.settings('ws_01'))
     await app.expectSearch(`?section=notion&next=${encodeURIComponent(UPLOAD_PATH)}`)
@@ -218,6 +246,14 @@ describe('일반 팀원 (U3-11)', () => {
 })
 
 describe('파일 고르기 (U3-4)', () => {
+  it('파일을 끌고 들어오면 놓는 칸이 끌고 있다고 표시한다', async () => {
+    await openUpload()
+    const zone = screen.getByTestId('audio-dropzone')
+    expect(zone).not.toHaveAttribute('data-dragging')
+    fireEvent.dragEnter(zone)
+    expect(zone).toHaveAttribute('data-dragging', 'true')
+  })
+
   it('여러 파일을 한 번에 넣으면 오류를 보이고 받지 않는다', async () => {
     await openUpload()
     drop([audio('a.m4a'), audio('b.m4a')])
@@ -270,13 +306,14 @@ describe('파일 고르기 (U3-4)', () => {
     expect(screen.queryByText('2시간 이하 녹음만 올릴 수 있어요.')).toBeNull()
   })
 
-  it('파일 없이 제출하면 파일 안내와 다른 칸의 안내를 함께 보이고 요청하지 않는다', async () => {
+  it('파일 없이 제출하면 파일 안내와 다른 칸의 안내를 함께 보이고, 파일 고르기로 포커스를 옮기며 요청하지 않는다', async () => {
     const log = recordRequests()
     const { user } = await openUpload()
     await user.click(screen.getByRole('button', { name: '정리 시작하기' }))
     expect(await screen.findByText('정리할 녹음 파일을 골라 주세요.')).toBeInTheDocument()
     expect(screen.getByText('회의 제목을 입력해 주세요.')).toBeInTheDocument()
     expect(screen.getByText('참석자를 한 명 이상 골라 주세요.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '컴퓨터에서 찾기' })).toHaveFocus()
     expect(uploadsIn(log)).toEqual([])
   })
 })
@@ -493,6 +530,26 @@ describe('제출 (U3-7, U3-8, U3-9)', () => {
     expect(screen.getByText('3주차 정기회의.m4a')).toBeInTheDocument()
   })
 
+  it('응답을 잃었을 때 정리 중인 채팅 회의는 방금 올린 회의로 보지 않는다 (#450)', async () => {
+    server.use(
+      http.post(UPLOAD, () => {
+        // 서버는 받지 못했고, 그사이 채팅 수집이 정리를 시작했다
+        startChatMeeting()
+        return HttpResponse.error()
+      }),
+    )
+    const { user, app } = await openUpload()
+    await fillValid(user)
+    await user.click(screen.getByRole('button', { name: '정리 시작하기' }))
+
+    expect(
+      await screen.findByText(
+        '올린 결과를 확인하지 못했어요. 네트워크 연결을 확인한 뒤 다시 올려 주세요.',
+      ),
+    ).toBeInTheDocument()
+    await app.expectPath(UPLOAD_PATH)
+  })
+
   it('파일을 고른 뒤 떠나려 하면 이탈 확인을 묻는다', async () => {
     const { user, app } = await openUpload()
     await choose(user, audio())
@@ -572,7 +629,7 @@ describe('업로드 오류 (U3-10)', () => {
 
   it.each([
     ['not_connected', 'Notion 연결이 필요해요'],
-    ['revoked', 'Notion 연결이 끊어졌어요'],
+    ['revoked', 'Notion 연결을 마치지 못했어요'],
   ] as const)('연동 오류(%s)는 차단 모달로 바뀐다', async (status, title) => {
     const { user, app } = await openUpload()
     await fillValid(user)

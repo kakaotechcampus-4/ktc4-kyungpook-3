@@ -61,6 +61,13 @@ def test_cut_keeps_absolute_meeting_time(tmp_path):
     assert 6_400 <= utts[0].end_ms <= 6_600
 
 
+def test_batch_cut_keeps_a_short_reply(tmp_path):
+    """배치의 최소 발화는 BATCH_MIN_SPEECH_MS(100ms)다. 실시간 경로의 320ms 와 따로 둔다(결정 기록 0031)."""
+    p = tmp_path / "7_100.wav"
+    write_track(p, [silence(1_000), tone(200), silence(2_000)])
+    assert B.BATCH_MIN_SPEECH_MS == 100 and len(B.cut(B.load_track(p), "7")) == 1
+
+
 def test_discover_reads_uid_from_filename_and_manifest_names(tmp_path):
     write_track(tmp_path / "111_500.wav", [tone(500)])
     write_track(tmp_path / "222_500.wav", [tone(500)])
@@ -108,6 +115,31 @@ def test_chunks_keep_a_turn_together_and_split_only_at_its_longest_pause():
     long_turn = _utts((0, 12), (12.4, 12), (25.9, 12))
     chunks = B.build_chunks(long_turn, max_s=28.0)
     assert [[u.start_ms for _, u in c.pieces] for c in chunks] == [[0, 12_400], [25_900]]
+
+
+def test_with_barriers_a_chunk_never_spans_where_another_speaker_starts():
+    """단어 시각이 없으면 묶음 하나가 회의록 한 줄이 된다. 다른 화자가 말을 시작한 자리를 사이에 둔 클립은 같은
+    묶음에 넣지 않는다. 그 사이에 다른 화자가 없으면 3초 넘게 떨어져 있어도 지금처럼 묶는다(#ordered)."""
+    utts = _utts((0, 2), (5, 2), (10, 2), (14, 2))
+    chunks = B.build_chunks(utts, max_s=28.0, barriers=[3_000, 12_500])
+    assert [[u.start_ms for _, u in c.pieces] for c in chunks] == [[0], [5_000, 10_000], [14_000]]
+    # 다른 화자가 이 화자의 클립 안에서 시작하면(겹쳐 말함) 그 클립 뒤에서 가른다. 겹친 말은 어느 쪽이 먼저랄 것이 없다
+    chunks = B.build_chunks(utts, max_s=28.0, barriers=[5_500])
+    assert [[u.start_ms for _, u in c.pieces] for c in chunks] == [[0, 5_000], [10_000, 14_000]]
+    # 경계 사이 구간도 28초를 넘으면 지금처럼 가장 긴 쉼에서 가른다
+    long_run = _utts((0, 12), (12.4, 12), (25.9, 12))
+    chunks = B.build_chunks(long_run, max_s=28.0, barriers=[])
+    assert [[u.start_ms for _, u in c.pieces] for c in chunks] == [[0, 12_400], [25_900]]
+
+
+def test_with_no_other_speaker_the_chunks_are_the_same_as_before():
+    """혼자 말한 회의(9/29)는 경계가 없다. 그때 묶음이 예전과 같아야 문맥과 호출 수, CER 이 그대로다."""
+    cases = [_utts((0, 9), (9.5, 9.5), (40, 8)), _utts((0, 12), (12.4, 12), (25.9, 12)),
+             _utts((0, 10), (20, 10), (40, 10), (60, 5)), _utts(*[(i * 6.0, 4.0) for i in range(12)])]
+    for utts in cases:
+        before = [[u.start_ms for _, u in c.pieces] for c in B.build_chunks(utts, max_s=28.0)]
+        after = [[u.start_ms for _, u in c.pieces] for c in B.build_chunks(utts, max_s=28.0, barriers=[])]
+        assert after == before
 
 
 def test_long_clip_is_split_at_its_quietest_frame():
@@ -343,3 +375,141 @@ def test_over_the_hold_limit_earlier_tracks_are_collected_and_released_before_th
     lines, _ = B.run(B.discover(tmp_path), SlowEcho(), mode="chunk", gate=None, workers=1)
     assert len(lines) == 4 and len(refs) == 4
     assert leaks == []
+
+
+def _dialogue(tmp_path):
+    """A 가 0~1초와 6~7초에, B 가 3~4초에 말한다. A 의 두 말은 28초 안이라 지금 방식이면 한 묶음이다."""
+    write_track(tmp_path / "a.wav", [tone(1_000), silence(5_000), tone(1_000), silence(1_000)])
+    write_track(tmp_path / "b.wav", [silence(3_000), tone(1_000), silence(4_000)])
+    return B.discover(tmp_path)
+
+
+class NoWordsStt(EchoStt):
+    """Elice 처럼 단어 시각을 주지 않는다."""
+
+    gives_word_times = False
+
+    def __init__(self):
+        super().__init__(words=False)
+
+
+def _jumps(lines):
+    """다른 화자가 말을 시작한 자리를 사이에 둔 줄의 수."""
+    return sum(1 for a in lines for b in lines if b.speaker_id != a.speaker_id and a.start_ms < b.start_ms < a.end_ms)
+
+
+def test_without_word_times_lines_follow_the_speaking_order(tmp_path):
+    """묶음을 다른 화자가 끼지 않은 구간으로만 만들면 줄이 말한 순서대로 선다. 전에는 A 의 두 말이 0~7초 한 줄이
+    돼서 B 의 말을 건너뛰었다."""
+    lines, stats = B.run(_dialogue(tmp_path), NoWordsStt(), mode="chunk", gate=None)
+    assert [ln.speaker_id for ln in lines] == ["a", "b", "a"] and _jumps(lines) == 0
+    assert stats.calls == 3
+    old, old_stats = B.run(_dialogue(tmp_path), NoWordsStt(), mode="chunk", gate=None, ordered=False)
+    assert [ln.speaker_id for ln in old] == ["a", "b"] and _jumps(old) == 1 and old_stats.calls == 2
+
+
+class ContextStt(NoWordsStt):
+    """운영 Prompted 처럼 min_s 보다 짧은 묶음은 앞 줄(context)을 프롬프트로 받는다."""
+
+    takes_context = True
+    min_s = 1.5
+
+    def __init__(self):
+        super().__init__()
+        self.sent = []
+
+    def transcribe(self, samples, sample_rate, context=None):
+        dur = len(samples) / sample_rate
+        self.sent.append((round(dur, 1), context))
+        return SttResult(text=f"{'짧음' if dur < self.min_s else '김'}{len(self.sent)}", words=[])
+
+
+def _reply(tmp_path):
+    """b 가 말하고(0~2초), a 가 짧게 대답하고(3초), b 가 다시 말한다(5~7초). 트랙은 a(짧은 대답)부터 읽는다."""
+    write_track(tmp_path / "a.wav", [silence(3_000), tone(400), silence(4_600)])
+    write_track(tmp_path / "b.wav", [tone(2_000), silence(3_000), tone(2_000), silence(1_000)])
+    return B.discover(tmp_path)
+
+
+def test_short_chunks_go_last_with_the_line_before_them_as_context(tmp_path):
+    """짧은 묶음은 나머지를 전사한 뒤 보내고, 시간순으로 바로 앞 줄의 전사문을 프롬프트로 받는다(결정 기록 0031)."""
+    stt = ContextStt()
+    lines, stats = B.run(_reply(tmp_path), stt, mode="chunk", gate=None, merge=False)
+    assert [d >= 1.5 for d, _ in stt.sent] == [True, True, False] and all(c is None for _, c in stt.sent[:2])
+    first_b = next(ln for ln in lines if ln.speaker_id == "b")
+    assert stt.sent[2][1] == first_b.text
+    assert [ln.speaker_id for ln in lines] == ["b", "a", "b"] and stats.calls == 3
+
+
+def test_a_short_chunk_with_no_line_before_it_gets_no_context(tmp_path):
+    write_track(tmp_path / "b.wav", [silence(500), tone(400), silence(2_000)])
+    stt = ContextStt()
+    B.run(B.discover(tmp_path), stt, mode="chunk", gate=None)
+    assert len(stt.sent) == 1 and stt.sent[0][1] is None
+
+
+def test_backends_without_context_keep_the_old_order(tmp_path):
+    """앞 줄을 받지 않는 백엔드(로컬, 프롬프트 없는 Elice)는 지금처럼 트랙 순서대로 한 번에 보낸다."""
+    stt = NoWordsStt()
+    B.run(_reply(tmp_path), stt, mode="chunk", gate=None)
+    assert [d >= 1.5 for d in stt.calls] == [False, True, True]
+
+
+def test_ordering_runs_the_speech_filter_once_and_noise_is_no_barrier(tmp_path):
+    """다른 트랙을 먼저 훑을 때 말 필터를 건 판정을 본 단계가 다시 쓴다. 필터에 걸린 잡음 클립은 경계가 되지 않는다."""
+
+    class Gate:
+        def __init__(self):
+            self.calls = 0
+
+        def accepts(self, pcm, sr, tag=""):
+            self.calls += 1
+            return not tag.startswith("b#")          # b 트랙(3~4초)은 잡음이라 버린다
+
+    gate = Gate()
+    lines, stats = B.run(_dialogue(tmp_path), NoWordsStt(), mode="chunk", gate=gate)
+    assert gate.calls == 3 and stats.gated == 1
+    assert [ln.speaker_id for ln in lines] == ["a"] and stats.calls == 1     # 잡음 자리에서 A 를 가르지 않는다
+
+
+def test_with_word_times_turns_are_packed_as_before(tmp_path):
+    """단어 시각이 있으면 묶음을 클립으로 되돌려 순서가 맞는다. 묶음을 줄이지 않아 호출이 그대로다."""
+    stt = EchoStt()
+    lines, stats = B.run(_dialogue(tmp_path), stt, mode="chunk", gate=None)
+    assert stats.calls == 2 and [ln.speaker_id for ln in lines] == ["a", "b", "a"]
+
+
+def test_the_judges_sentence_numbers_follow_the_speaking_order(tmp_path):
+    """판단 1단계(_flatten)는 세그먼트를 시작 시각으로 줄 세워 문장 번호를 매긴다. 줄이 순서대로면 번호도 그렇다."""
+    from judge.semantic_judge import _flatten
+    from shared.schemas import Transcript, TranscriptSegment
+
+    class Said(NoWordsStt):
+        def transcribe(self, samples, sample_rate):
+            super().transcribe(samples, sample_rate)
+            return SttResult(text=f"{len(self.calls)}번째 말입니다.", words=[])
+
+    lines, _ = B.run(_dialogue(tmp_path), Said(), mode="chunk", gate=None, workers=1)
+    t = Transcript(segments=[TranscriptSegment(speaker=ln.speaker_id, start=ln.start_ms / 1000, end=ln.end_ms / 1000,
+                                               text=ln.text, seq=ln.seq) for ln in lines])
+    _sentences, seqs, speakers = _flatten(t)
+    assert speakers == ["a", "b", "a"] and seqs == sorted(seqs)
+
+
+def test_run_reports_progress_each_time_a_call_finishes(tmp_path):
+    # 봇이 채널에 "전사 중 n/N" 을 보이는 데 쓴다. 끝난 호출, 보낸 호출, 읽은 트랙, 전체 트랙
+    seen = []
+    lines, stats = B.run(_session(tmp_path), EchoStt(), mode="chunk", gate=None, workers=2,
+                         progress=lambda done, sent, tracks, total: seen.append((done, sent, tracks, total)))
+    assert len(seen) == stats.calls
+    assert seen[-1] == (stats.calls, stats.calls, stats.tracks, stats.tracks)
+    assert all(done <= sent for done, sent, _, _ in seen)
+    assert [d for d, *_ in seen] == sorted(d for d, *_ in seen)       # 끝난 수가 뒤로 가지 않는다
+
+
+def test_a_failing_progress_report_does_not_stop_the_transcription(tmp_path):
+    def boom(*args):
+        raise RuntimeError("채널이 막혔다")
+
+    lines, stats = B.run(_session(tmp_path), EchoStt(), mode="chunk", gate=None, progress=boom)
+    assert stats.failed == 0 and lines

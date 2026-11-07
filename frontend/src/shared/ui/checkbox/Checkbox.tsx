@@ -1,10 +1,11 @@
 import { useId } from 'react'
-import type { ComponentPropsWithoutRef, ReactNode } from 'react'
+import type { ComponentPropsWithRef, ReactNode } from 'react'
 import * as CheckboxPrimitive from '@radix-ui/react-checkbox'
 
 export type CheckboxState = boolean | 'indeterminate'
 
-export interface CheckboxProps extends ComponentPropsWithoutRef<typeof CheckboxPrimitive.Root> {
+/* ref 는 체크 버튼(Root)으로 간다 — React Hook Form 이 오류 칸으로 포커스를 옮기는 데 쓴다 (D-142) */
+export interface CheckboxProps extends ComponentPropsWithRef<typeof CheckboxPrimitive.Root> {
   /** 약관 미체크처럼 승인을 막는 입력에만. 테두리가 강조색이 된다 */
   invalid?: boolean
   /** 라벨. 문구는 호출자가 준다 — 법적 고지 문구를 컴포넌트에 넣지 않는다 */
@@ -33,7 +34,7 @@ const BOX_BORDER =
 /* 강조색 테두리는 포커스 선도 강조색이다 — 먹 선이 덮으면 "승인이 막힌 칸" 신호가 사라진다.
    체크·중간 상태는 먹 면이라 BOX_SURFACE 의 흰 선이 이긴다 (변형 유틸이 뒤에 생성되고 더 구체적이다).
    docs/impl-decision/2026-09-23-focus-outline-over-border.md */
-const BOX_BORDER_INVALID = 'border-accent focus-visible:outline-accent'
+const BOX_BORDER_INVALID = 'border-accent focus-visible:outline-accent-point'
 
 /** 비활성은 면이 비활성 표식 한 단이다. 미체크만 테두리가 남는다 */
 const BOX_DISABLED = 'border-transparent bg-inactive data-[state=unchecked]:border-line-strong'

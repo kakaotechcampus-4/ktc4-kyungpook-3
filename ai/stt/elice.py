@@ -47,6 +47,7 @@ class EliceStt:
     name = "elice/whisper-large-v3"
 
     accepts_prompt = True       # 회의마다 이름 프롬프트를 받는다(recorder.hinted, #195)
+    gives_word_times = False    # vLLM 이 words 를 채우지 않는다. 배치 전사가 묶음을 말한 순서대로 자른다(stt.batch.run)
     TIMEOUT_PER_AUDIO_S = 0.6   # 오디오 1초당 더 기다리는 시간. 옛 주소 실측 0.45배에 여유
 
     def __init__(self, language: str = "ko", timeout: int = 30, word_timestamps: bool = True):
@@ -68,6 +69,10 @@ class EliceStt:
         if not base.startswith("https://"):
             # http 면 Bearer 키가 평문으로 나간다. 주소에 엔드포인트 id 가 있어 메시지에는 싣지 않는다
             raise SttError("ELICE_STT_BASE_URL 은 https:// 로 시작해야 합니다.")
+        ca = os.environ.get("ELICE_STT_CA_BUNDLE")
+        if ca and not os.path.exists(ca):
+            # requests 는 없는 경로에 plain OSError 를 던진다. 아래 except 를 지나쳐 SttError 가 되지 못한다
+            raise SttError("ELICE_STT_CA_BUNDLE 경로에 파일이 없습니다.")
 
         wav = to_wav_bytes(samples, sample_rate)
         grans = ["word", "segment"] if self.word_timestamps else ["segment"]
@@ -84,6 +89,8 @@ class EliceStt:
                 files={"file": ("seg.wav", wav, "audio/wav")},
                 data=data,
                 timeout=self.timeout_for(len(samples) / sample_rate),
+                # 이 호출에만 건다. REQUESTS_CA_BUNDLE 은 프로세스 전체라 워커의 BE 호출까지 바뀐다. True 면 그 변수는 그대로 듣는다
+                verify=ca or True,
             )
         except requests.RequestException as e:
             # 연결 끊김과 타임아웃은 OSError 계열이라 호출자의 except SttError 를 그냥 지나친다.

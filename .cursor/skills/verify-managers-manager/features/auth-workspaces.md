@@ -1,0 +1,58 @@
+# 가입·온보딩·공간 선택
+
+새 사용자가 계정과 공간을 만들고 연동·팀원 연결을 마친다. 기존 사용자는 로그인 후 공간을 선택하고 미저장 변경을 처리하며 전환한다. 로그인이 풀린 채 연 보호 주소는 로그인 뒤 그 주소로 돌아간다(#411).
+
+## Sub-features
+
+- `signup-onboard`는 가입부터 Discord·Notion 모의 연결과 PM 연결을 거쳐 새 공간에 진입한다.
+- `pm-resume`은 PM 연결을 저장하고 다시 방문했을 때 중복 팀원 없이 복원한다.
+- `oauth-cancel`은 연결 취소와 단계별 건너뛰기를 제공한다.
+- `login-switch`는 로그인·공간 선택·미저장 입력 유지 또는 버리기를 확인한다.
+- `workspace-keyboard`는 공간 메뉴와 선택 화면을 키보드로 연다.
+- `start-intent`는 소속 없는 계정이 팀원 작업과 PM 생성을 먼저 고른다.
+- `member-teams`는 팀원 작업에서 생성 요청 없이 현재 소속 목록과 빈 상태를 확인한다.
+- `restore-session`은 새로고침·OAuth 왕복 뒤 가입한 계정과 생성한 공간·진행 상태를 다시 확인한다.
+- `password-reset`은 재설정 메일을 요청하고 모의 메일함(`/__mock/mail`)의 링크로 새 비밀번호를 정한 뒤 그 비밀번호로 로그인한다. 만료 링크는 시나리오 주소로 재현한다(#356). BE가 없어 실제 메일 발송은 증거가 아니다.
+- `login-return`은 비로그인으로 연 대화·태스크 주소가 `/login?next=`로 가고 로그인 뒤 그 주소로 돌아오는지, 앱 밖 `next`는 버리는지, 직접 로그아웃하면 `next` 없이 로그인으로 가는지 확인한다(#411).
+- `auth-limits`는 101자 이름이 가입 폼에서 막히고 요청이 나가지 않는지, 시도 제한에 걸린 로그인(429)이 서버 문구만 보이고 남은 시간·잠금 문구가 없는지 확인한다(#446·#457).
+- `onboarding-design`은 시작·팀 확인 카드가 기존 생성 카드와 같은 폭·정렬·테두리·여백·제목 스타일인지 비교한다.
+
+## How to get to it (user POV)
+
+- 비로그인 상태에서 `/` → **로그인** → **회원가입**으로 간다.
+- 소속 없이 로그인·가입하면 `/onboarding/start`에서 시작 방식을 선택한다. **팀원으로 시작**은 `/onboarding/member`, **PM으로 팀 만들기**는 기존 생성 과정으로 간다.
+- `/login`에서 로그인하고 `/workspaces`의 **카테캠 3팀**을 선택한다.
+- 앱 헤더의 **워크스페이스 바꾸기** 메뉴 또는 **워크스페이스 목록**으로 이동한다.
+- 미완료 공간을 선택하면 저장된 온보딩 단계로 돌아간다.
+- 비로그인으로 보호 주소(예: 푸시로 받은 `/workspaces/ws_01/messages/threads/th_01`)를 열면 `/login?next=<그 주소>`로 간다.
+
+## Driving it with Playwright
+
+Preconditions:
+
+- `signup-onboard`는 `signed-out`, 재개는 `incomplete-workspace`, 키보드는 `multiple-workspaces`를 사용한다.
+- `pm@example.com` / `mock-password`는 기존 계정이다. 가입 테스트는 별도 새 컨텍스트에서 `e2e@example.com`을 만든다.
+
+- **전체 실행.** `node .cursor/skills/verify-managers-manager/scripts/verify.cjs run auth`를 실행한다. 여덟 파일의 테스트 이름별로 결과를 확인한다.
+- **가입.** `signup-onboard`의 `getByLabel('이름')`, `getByLabel('이메일')`, `getByLabel('비밀번호', { exact: true })`를 채우고 Enter로 제출한다. 시작 선택 화면에서 **PM으로 팀 만들기**를 누른다. **팀 이름**을 `  캡스톤   5조 `로 입력해 **만들기**를 누른다. 모의 OAuth의 **연결 허용**을 선택하고 `@seoyeon_01 — PM 새 사용자`를 체크한다. 대시보드 URL과 헤더의 `캡스톤 5조`, 주요 화면 링크 5개가 결과다.
+- **시작 작업.** `onboarding-start.e2e.ts`는 UI로 가입한 일반 회원의 팀원 선택, 목록 재확인, reload·Back을 확인한다. 생성 POST와 온보딩 PATCH가 0회여야 한다. PM 여정은 선택만으로 생성하지 않고 폼 제출 후 생성 응답·PM 멤버십·Discord 다음 단계를 확인한다. 두 여정의 PNG와 ARIA가 보고서에 첨부된다.
+- **복원.** `restore.e2e.ts`는 가입 계정·생성 공간·온보딩 진행을 새로고침과 OAuth 왕복 후 확인한다. 손상된 모의 저장값을 초기화하는 테스트는 복원 실패 시 비로그인 처리를 확인하는 보조 검사이며 사용자 행동으로 생성한 상태의 증거와 구분한다.
+- **디자인 통일.** `onboarding-design.e2e.ts`는 먼저 기존 생성 카드의 실제 브라우저 스타일을 읽고 시작 방식 선택·소속 팀 확인 카드와 비교한다. 시작 전 화면에는 앱 헤더와 공간의 단계 점을 표시하지 않는다. 두 화면의 캡처를 보고서에 첨부한다.
+- **재개와 취소.** 같은 명령의 `팀원 연결: 이름이 달라도 PM` 테스트는 다시 방문한 PM 체크·잠긴 이름 칸과 팀원 읽기 전용 조회를 확인한다. `모의 OAuth 에서 취소하면` 테스트는 안내 후 각 단계를 건너뛰어 대시보드에 도착한다.
+- **로그인과 전환.** `select-switch.e2e.ts`는 **이메일**·**비밀번호**로 로그인하고 공간을 선택한다. **내 계정** → **설정**에서 **워크스페이스 이름**을 바꾼 뒤 다른 공간을 선택한다. **계속 작성하기**는 입력을 유지하고 **변경 내용 버리고 나가기**는 `/onboarding/ws_02/connect_notion`으로 이동한다.
+- **비밀번호 재설정.** `password-reset.e2e.ts`만 돌리려면 `--grep '재설정 메일 요청|만료된 링크를 재현'`을 붙인다. `/forgot-password`에서 **이메일**을 넣고 **재설정 링크 보내기**를 누르면 **다시 보내기 (60초)**가 막힌다. `/__mock/mail`의 링크를 열면 주소가 `/reset-password`만 남고 **새 비밀번호** 칸이 보인다. 바꾼 뒤 `/login`의 안내와 새 비밀번호 로그인 → `/workspaces`가 결과다. 만료 테스트는 `/reset-password?msw-scenario=password-reset-expired#token=mock-reset-expired`로 시작한다.
+- **로그인 뒤 돌아가기.** `login-return.e2e.ts`만 돌리려면 `--grep '로그인 뒤 그|앱 밖|직접 로그아웃하면 돌아갈'`을 붙인다. `signed-out`으로 `/workspaces/ws_01/messages/threads/th_01`을 열면 주소가 `/login?next=%2Fworkspaces%2Fws_01%2Fmessages%2Fthreads%2Fth_01`이다. **이메일**·**비밀번호**를 채워 **로그인**을 누르면 그 대화 주소로 돌아오고 제목 `이재환`(h2)과 **대화 내용** 영역이 보인다. `/workspaces/ws_01/tasks/tk_01`은 같은 방법으로 돌아와 **태스크 정보**와 제목 `로그인 API 연동`이 보인다. `/login?next=https%3A%2F%2Fevil.com`과 `/login?next=%2F%2Fevil.com`은 로그인 뒤 같은 origin의 `/workspaces`(**워크스페이스 선택**)로 간다. `multiple-workspaces`로 태스크 상세를 연 채 **내 계정** → **로그아웃**을 누르면 주소가 쿼리 없는 `/login`이고, 다시 로그인하면 `/workspaces`다. 각 단계의 PNG가 테스트 폴더와 보고서에 남는다.
+- **가입 이름·로그인 제한.** `auth-limits.e2e.ts`만 돌리려면 `--grep '101자 이름|시도 제한'`을 붙인다. `signed-out`의 `/signup`에서 **이름**에 101자를 넣고 **계정 만들기**를 누르면 이름 칸 설명이 `이름은 100자 이하로 입력해 주세요.`이고 `POST /api/v1/auth/signup`이 0회다. `login-rate-limited`의 `/login`에서 `pm@example.com` / `mock-password`로 **로그인**하면 응답이 429·`Retry-After: 900`이고 폼 상단 alert가 `로그인 시도가 너무 많습니다. 잠시 후 다시 시도해 주세요.`다. `signup-name-101.png`, `login-429.png`가 남는다.
+- **키보드.** 같은 파일의 `키보드만으로 워크스페이스` 테스트는 Tab, Enter, Escape, End로 메뉴를 열고 닫으며 **워크스페이스 목록**에 진입한다. trace의 포커스 단언도 확인한다.
+
+## Gotchas
+
+- 시작 방식 선택은 계정의 역할을 저장하거나 PM 권한을 부여하지 않는다. 역할은 실제 공간 멤버십에서 정한다.
+- 팀원 화면은 현재 소속 목록 확인이다. 초대 링크·코드로 새 팀에 가입하는 기능은 제공하지 않는다.
+- 시작·팀 확인 화면도 기존 온보딩의 공통 프레임과 카드를 사용한다. 별도의 앱 셸 스타일을 만들면 `onboarding-design` 검사에서 실패해야 한다.
+- OAuth는 현재 탭의 모의 화면이며 실제 제공자 연결을 증명하지 않는다.
+- reload 때 시나리오를 다시 붙이면 저장 검증 대신 초기화가 된다.
+- 설정 진입점은 헤더의 **내 계정** 메뉴다. 주요 화면 탭에 설정은 없다.
+- `signup-onboard`만 필터링한 실행은 공간 전환·키보드 경로의 증거가 아니다.
+- `login-return`의 앱 밖 `next`는 두 값만 브라우저로 본다. 역슬래시·인코딩·점 경로·인증 화면 같은 나머지 거르기는 `src/shared/lib/return-path/returnPath.test.ts`, 소속이 아닌 공간·세션 만료·회원가입 링크는 `src/app/loginReturn.test.tsx`가 본다.
+- 소속이 둘인 `pm@example.com`이라 돌아갈 경로가 없을 때의 로그인 결과는 `/workspaces`다. 공간 하나인 시나리오로 바꾸면 기대 주소도 바뀐다.

@@ -14,8 +14,11 @@ from app.core.database import get_db
 from app.core.errors import AppError, Envelope, ErrorCode, success
 from app.models import Integration, Member, MemberRole
 from app.api.deps import get_current_member, get_current_pm, get_current_user, require_member, require_service_token
+from app.schemas.integration import (
+    BotChatChannelListResponse, ChatChannelClearResponse, ChatChannelResponse, ChatChannelSetRequest, DiscordChannelListResponse,
+)
 from app.schemas.workspace import DiscordGuildWorkspaceResponse
-from app.services import discord, discord_oauth, notion, notion_connect, notion_oauth, oauth_state
+from app.services import chat_channel, discord, discord_oauth, notion, notion_connect, notion_oauth, oauth_state
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +30,8 @@ callback_router = APIRouter(prefix="/integrations", tags=["integrations"])
 bot_router = APIRouter(
     prefix="/integrations", tags=["integrations"], dependencies=[Depends(require_service_token)]
 )
+# 채팅 수집 대상 목록. 경로가 /bot 아래라 위 bot_router(/integrations)와 따로 둔다.
+bot_chat_router = APIRouter(prefix="/bot", tags=["integrations"], dependencies=[Depends(require_service_token)])
 
 # Notion callback은 토큰만 저장하고, 대상 DB는 응답 뒤 백그라운드 작업이 찾아 붙인다. 그 작업은 길어야
 # WAIT_TIMEOUT_SECONDS 뒤 DB를 붙이거나, 실패하면 토큰을 비운다. 이 시간이 지나도 DB가 없으면 서버 재시작 등으로
@@ -37,7 +42,8 @@ NOTION_CONNECTING_TIMEOUT = timedelta(seconds=notion_connect.WAIT_TIMEOUT_SECOND
 def _notion_status(integration: Integration, now: datetime) -> dict:
     """연결 행이 있을 때의 Notion 상태. 행이 없으면(연결한 적 없음, PM이 끊음) 부르지 않는다 — `not_connected`다.
 
-    DB를 찾지 못했거나 찾는 작업이 사라진 연결은 `revoked`로 내려 PM이 다시 연결하게 한다.
+    DB를 찾는 중이면 `connecting`이다. 토큰이 비었거나, DB를 찾지 못했거나 찾는 작업이 사라진 연결은 `revoked`로
+    내려 PM이 다시 연결하게 한다.
     """
     connected = {
         "status": "connected",
@@ -45,7 +51,10 @@ def _notion_status(integration: Integration, now: datetime) -> dict:
         "connected_at": integration.created_at.isoformat() if integration.created_at else None,
     }
     if integration.provider_channel_id:
-        return connected
+        if integration.access_token:
+            return connected
+        # 워커가 401을 받고 토큰 갱신도 거절돼 토큰을 비웠다(`notion_sync`). DB ID는 다시 연결할 때 이어 쓰려고 남겨 둔다.
+        return {"status": "revoked", "display_name": "Notion 연결 끊김", "connected_at": None}
     revoked = {"status": "revoked", "display_name": "Notion DB 연결 실패", "connected_at": None}
     if not integration.access_token:
         # DB 찾기가 실패해 토큰을 비웠다(`notion_connect.attach_template_database`).
@@ -55,11 +64,8 @@ def _notion_status(integration: Integration, now: datetime) -> dict:
         # SQLite는 시간대 없이 돌려준다. 저장한 값은 UTC다.
         updated_at = updated_at.replace(tzinfo=timezone.utc)
     if updated_at is not None and now - updated_at <= NOTION_CONNECTING_TIMEOUT:
-        # 임시: 프론트는 `connecting`을 모르는 값으로 보고 `not_connected`로 바꿔, OAuth 직후 매번 "연결 실패"를 띄운다.
-        # 프론트가 받을 준비가 될 때까지 `connected`로 내려준다. 찾는 사이 만든 Task도 DB가 붙으면 반영되므로
-        # (`notion_sync`) 표시만 다르다. 프론트가 대응하면 아래로 바꾼다.
-        # return {"status": "connecting", "display_name": "Notion 준비 중", "connected_at": None}
-        return connected
+        # DB를 찾는 중이다. 프론트는 `connecting`인 동안 다시 묻고, 붙으면 `connected`, 실패하면 `revoked`를 받는다.
+        return {"status": "connecting", "display_name": "Notion 준비 중", "connected_at": None}
     return revoked
 
 
@@ -72,7 +78,7 @@ def get_integrations(
     integrations = db.query(Integration).filter(Integration.workspace_id == workspace_id).all()
 
     resp = {
-        "discord": {"status": "not_connected", "display_name": None, "connected_at": None},
+        "discord": {"status": "not_connected", "display_name": None, "connected_at": None, "chat_channel": None},
         "notion": {"status": "not_connected", "display_name": None, "connected_at": None}
     }
 
@@ -86,8 +92,39 @@ def get_integrations(
                 "display_name": f"{i.provider.capitalize()} 연결됨",
                 "connected_at": i.created_at.isoformat() if i.created_at else None
             }
-            
+            if i.provider == "discord":
+                resp["discord"]["chat_channel"] = (
+                    {"channel_id": i.chat_channel_id, "name": i.chat_channel_name}
+                    if i.chat_channel_id else None
+                )
+
     return success(resp)
+
+
+@router.put(
+    "/{workspace_id}/integrations/discord/chat-channel", response_model=Envelope[ChatChannelResponse]
+)
+def set_discord_chat_channel(
+    workspace_id: str,
+    body: ChatChannelSetRequest,
+    member = Depends(get_current_pm),
+    db: Session = Depends(get_db)
+) -> dict:
+    """채팅 수집 채널을 정한다. 목록·읽기 확인과 켬 공지를 마친 뒤에만 저장한다."""
+    return success(chat_channel.set_chat_channel(db, workspace_id, body.channel_id))
+
+
+@router.delete(
+    "/{workspace_id}/integrations/discord/chat-channel", response_model=Envelope[ChatChannelClearResponse]
+)
+def clear_discord_chat_channel(
+    workspace_id: str,
+    member = Depends(get_current_pm),
+    db: Session = Depends(get_db)
+) -> dict:
+    """채팅 수집을 끈다. 이미 꺼져 있어도 200 이다."""
+    return success({"off_notice_sent": chat_channel.clear_chat_channel(db, workspace_id)})
+
 
 @router.delete("/{workspace_id}/integrations/{provider}", status_code=204)
 def delete_integration(
@@ -99,11 +136,15 @@ def delete_integration(
     integration = db.query(Integration).filter(
         Integration.workspace_id == workspace_id,
         Integration.provider == provider
-    ).first()
+    ).with_for_update().first()  # 겹친 PUT 이 끝난 뒤의 채널로 끔 공지를 보낸다
     
     if integration:
+        old_chat_channel_id = integration.chat_channel_id if provider == "discord" else None
         db.delete(integration)
         db.commit()
+        # 연결을 끊으면 수집 대상도 사라진다. 끔 공지는 실패해도 해제를 되돌리지 않는다.
+        if old_chat_channel_id:
+            chat_channel.notify_off_best_effort(old_chat_channel_id, workspace_id=workspace_id)
     return
 
 
@@ -136,6 +177,17 @@ def list_discord_members(
             workspace_id, exc.status_code, exc.reason,
         )
         raise AppError(ErrorCode.DISCORD_API_FAILED, details={"status": exc.status_code}) from None
+    return success({"items": items, "total": len(items)})
+
+
+@router.get("/{workspace_id}/discord/channels", response_model=Envelope[DiscordChannelListResponse])
+def list_discord_channels(
+    workspace_id: str,
+    member = Depends(get_current_pm),
+    db: Session = Depends(get_db)
+) -> dict:
+    """연결한 Discord 서버의 텍스트 채널. PM 이 채팅 수집 채널을 고를 때 쓴다."""
+    items = chat_channel.list_channels(db, workspace_id)
     return success({"items": items, "total": len(items)})
 
 
@@ -234,8 +286,9 @@ def _check_callback(
 
 # ---------- Notion 연결 ----------
 #
-# callback은 토큰만 저장하고 바로 돌려보낸다. 템플릿 복제가 끝나야 대상 DB를 찾을 수 있어서,
-# 그 일은 응답 뒤에 `notion_connect.attach_template_database()`가 한다.
+# 템플릿을 복제했으면 callback은 토큰만 저장하고 바로 돌려보낸다. 복제가 끝나야 대상 DB를 찾을 수 있어서,
+# 그 일은 응답 뒤에 `notion_connect.attach_template_database()`가 한다. 다시 연결하며 기존 페이지를 골랐으면
+# 쓰던 DB를 새 토큰으로 확인해 이어 쓴다.
 
 
 @router.get("/{workspace_id}/integrations/notion/start")
@@ -276,28 +329,36 @@ def notion_oauth_callback(
         logger.warning("Notion 토큰 교환 실패: %s", exc)
         return finish(path, "failed", "token_exchange")
 
-    if token.duplicated_template_id is None:
-        # 허용 화면에서 템플릿 대신 기존 페이지를 골랐다. DB를 놓을 곳을 정할 수 없어 받지 않는다.
-        return finish(path, "failed", "template_not_used")
-
     integration = notion.get_notion_integration(db, payload.workspace_id)
-    keep_database = False
-    if integration is not None and integration.provider_channel_id:
-        # 다시 연결: 쓰던 DB를 새 토큰으로도 쓸 수 있으면 그대로 둔다. 이미 반영된 Task 페이지와 이어진다.
+    # 대상 DB는 PM이 허용 화면에서 고른 방식대로 정한다. 템플릿을 복제했으면 새 사본의 DB로 옮기고,
+    # 기존 페이지를 골랐으면 쓰던 DB를 이어 쓴다.
+    keep_database = token.duplicated_template_id is None
+    if keep_database:
+        if integration is None or not integration.provider_channel_id:
+            # 이어 쓸 DB가 없다. 고른 페이지 중 어디에 DB가 있는지 정할 수 없어 받지 않는다.
+            return finish(path, "failed", "template_not_used")
+        # 쓰던 DB를 새 토큰으로 읽어 본다. 못 쓰면 아무것도 바꾸지 않고 실패로 돌려보낸다. PM이 그 DB를 공유해
+        # 다시 연결하거나 템플릿을 복제하면 된다.
         try:
-            keep_database = not notion.verify_database_schema(
-                token.access_token, integration.provider_channel_id
-            )
+            problems = notion.verify_database_schema(token.access_token, integration.provider_channel_id)
         except notion.NotionWriteError as exc:
             if exc.retryable:
-                # Notion이 잠깐 응답하지 못했다. 쓰던 DB를 못 쓴다고 단정하면 멀쩡한 연결이 새 DB로 바뀌므로
-                # 아무것도 바꾸지 않고 실패로 돌려보낸다. 잠시 뒤 다시 연결하면 된다.
+                # Notion이 잠깐 응답하지 못했다. 잠시 뒤 다시 연결하면 된다.
                 return finish(path, "failed", "verify_database_unavailable")
-            keep_database = False
+            # 그 밖에 다시 해도 소용없는 오류(400·401 등)다. 403·404(고른 페이지에 쓰던 DB가 없음)는
+            # 위에서 "접근할 수 없음"으로 온다.
+            problems = [f"Notion 오류 status={exc.status_code}: {exc.reason}"]
         except Exception:
             # 예상 못 한 응답(예: JSON이 아닌 본문)이다. 500 화면 대신 실패로 돌려보내고 기존 연결은 그대로 둔다.
             logger.exception("Notion 재연결 DB 확인 중 예상하지 못한 오류")
             return finish(path, "failed", "verify_database_error")
+        if problems:
+            # 이유(DB 공유 안 됨·속성 다름·토큰 문제)마다 PM이 할 일이 달라 구분할 수 있게 남긴다.
+            logger.warning(
+                "Notion 재연결: 쓰던 DB를 쓸 수 없음 workspace_id=%s: %s",
+                payload.workspace_id, "; ".join(problems),
+            )
+            return finish(path, "failed", "old_database_unusable")
 
     if integration is None:
         integration = Integration(workspace_id=payload.workspace_id, provider="notion")
@@ -393,10 +454,17 @@ def discord_oauth_callback(
     integration = db.query(Integration).filter(
         Integration.workspace_id == payload.workspace_id,
         Integration.provider == discord_oauth.PROVIDER,
-    ).first()
+    ).with_for_update().first()
     if integration is None:
         integration = Integration(workspace_id=payload.workspace_id, provider=discord_oauth.PROVIDER)
         db.add(integration)
+    elif integration.provider_channel_id and integration.provider_channel_id != guild.guild_id:
+        # 다른 서버로 옮기면 이전 서버의 채널은 의미가 없다. 공지는 보내지 않고 비운다.
+        logger.info(
+            "다른 Discord 서버로 재연결해 채팅 수집 채널을 비웁니다 workspace_id=%s", payload.workspace_id
+        )
+        integration.chat_channel_id = None
+        integration.chat_channel_name = None
     integration.provider_channel_id = guild.guild_id
     try:
         db.commit()
@@ -407,6 +475,12 @@ def discord_oauth_callback(
             return finish("failed", "guild_already_linked")
         return finish("failed", "concurrent_connect")
     return finish("success", "connected")
+
+
+@bot_chat_router.get("/chat-channels", response_model=Envelope[BotChatChannelListResponse])
+def list_bot_chat_channels(db: Session = Depends(get_db)) -> dict:
+    """채팅 수집을 켠 워크스페이스의 (서버, 채널) 목록. 봇이 매일 읽을 대상을 정한다(#428)."""
+    return success({"items": chat_channel.list_enabled_for_bot(db)})
 
 
 @bot_router.get(

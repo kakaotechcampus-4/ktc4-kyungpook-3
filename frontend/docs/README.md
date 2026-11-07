@@ -46,6 +46,7 @@ M0~M5의 기존 계획을 빈 초기화 파일 자리로 옮겼다. M6~M8의 계
 - [디자인 시스템](design/design-system.md), [캔버스 안내](design/canvas/README.md), [캐릭터](design/character.md): 시안·폰트·프로토타입과 함께 유지.
 - [마스코트](mascot/mascot.md): HTML·JS 자산과 함께 유지.
 - [성능 자료](performance/README.md): 측정·후속 개선 자료.
+- [이슈 작업 결과](issues/): 마일스톤 계획 밖에서 이슈로 진행한 작업의 결과. 폴더 이름은 `<이슈 번호>-<요약>/result.md`. 예: [#379 채팅 출처 회의](issues/379-chat-meeting/result.md). 파트 README에는 줄을 더하지 않는다. 2026-11-07 까지의 목록은 [issues/README.md](issues/README.md)에 있다.
 - [제품·기술 결정](decision/frontend-decisions.md): 여러 마일스톤이 공유하는 D-번호와 합의 근거.
 - [구현 결정 안내](plan/basis-for-decision-guide.md): 기존 작성 양식과 이동한 원문 탐색 안내.
 - [MSW 사용 안내](msw-guide.md): 개발·테스트의 공통 모의 데이터 사용법.

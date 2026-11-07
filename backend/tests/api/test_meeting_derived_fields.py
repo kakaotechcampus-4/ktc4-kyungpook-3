@@ -18,6 +18,7 @@ from app.models import (
     User,
     Workspace,
 )
+from app.services.sessions import hash_session_token
 
 
 @pytest.fixture
@@ -47,7 +48,7 @@ def seed(db):
     db.add(
         SessionModel(
             user_id=user.user_id,
-            session_token="pm-token",
+            session_token=hash_session_token("pm-token"),
             expires_at=datetime.now(timezone.utc) + timedelta(days=1),
         )
     )
@@ -173,6 +174,59 @@ def test_workspace_meeting_list_reads_source_once(client, db, seed):
         event.remove(db.get_bind(), "before_cursor_execute", record)
 
     assert len([s for s in statements if "FROM source" in s]) == 1
+
+
+@pytest.mark.parametrize(
+    ("source", "stage", "visible"),
+    [
+        ("manual_upload", "speaker_assignment_expired", True),
+        ("manual_upload", "diarize", False),
+        ("manual_upload", "STT", False),
+        ("manual_upload", None, False),
+        ("manual_upload", "future_stage", False),
+        ("discord", "speaker_assignment_expired", False),
+    ],
+)
+def test_list_keeps_only_expired_manual_upload_failures(client, db, seed, source, stage, visible):
+    meeting = Meeting(
+        workspace_id=seed["ws"], title="기한이 지난 업로드",
+        source=source, status="failed", failed_stage=stage,
+    )
+    db.add(meeting)
+    db.commit()
+
+    # 목록을 다시 받아도 같은 정책을 적용하고, 상세의 사유와 일치한다.
+    for _ in range(2):
+        response = client.get(f"/api/v1/workspaces/{seed['ws']}/meetings")
+        assert response.status_code == 200
+        data = response.json()["data"]
+        by_id = {item["meeting_id"]: item for item in data["items"]}
+        assert data["total"] == len(by_id)
+        assert (meeting.meeting_id in by_id) is visible
+        if visible:
+            assert by_id[meeting.meeting_id]["failed_stage"] == stage
+            assert by_id[meeting.meeting_id]["status"] == "failed"
+        assert by_id[seed["spoken"]]["failed_stage"] is None
+
+    detail = client.get(f"/api/v1/meetings/{meeting.meeting_id}").json()["data"]
+    assert detail["failed_stage"] == stage
+
+
+def test_expired_upload_history_stays_within_its_workspace(client, db, seed):
+    other = Workspace(name="다른 팀")
+    db.add(other)
+    db.flush()
+    meeting = Meeting(
+        workspace_id=other.workspace_id, source="manual_upload",
+        status="failed", failed_stage="speaker_assignment_expired",
+    )
+    db.add(meeting)
+    db.commit()
+
+    own = client.get(f"/api/v1/workspaces/{seed['ws']}/meetings").json()["data"]
+    assert all(item["meeting_id"] != meeting.meeting_id for item in own["items"])
+    assert client.get(f"/api/v1/workspaces/{other.workspace_id}/meetings").status_code == 403
+    assert client.get(f"/api/v1/meetings/{meeting.meeting_id}").status_code == 403
 
 
 def test_audio_merged_follows_source(client, db, seed):

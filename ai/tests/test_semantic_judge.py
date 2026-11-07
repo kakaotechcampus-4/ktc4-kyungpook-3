@@ -1,6 +1,7 @@
 import pytest
 
 from judge.semantic_judge import (
+    _flatten,
     FindingExtractionUnavailableError,
     extract_findings,
     extract_findings_counted,
@@ -245,6 +246,7 @@ def test_llm_path_uses_summary_as_text_and_keeps_raw_sentence_as_evidence():
             indices=[1],
             source="meeting",
             seq=6,
+            seqs=[6],
             speaker="mem_jimin",
             reason="일정 변경 합의",
             method="llm",
@@ -561,3 +563,50 @@ def test_dispatcher_raises_when_llm_call_fails(monkeypatch):
     )
     with pytest.raises(FindingExtractionUnavailableError):
         extract_findings(t)
+
+
+def test_chat_message_stays_one_line_but_meeting_splits_into_sentences():
+    text = "https://github.com/x/y.git 보고 v1.2 올릴게요. 금요일까지요."
+    seg = TranscriptSegment(speaker="u1", start=0.0, end=0.0, text=text, seq=1)
+
+    assert _flatten(Transcript(segments=[seg], source="chat"))[0] == [text]
+    assert len(_flatten(Transcript(segments=[seg], source="meeting"))[0]) > 1
+
+
+# ── 이전 대화 문맥 (채팅 폴링) ───────────────────────────────────────────────
+
+
+def _one_line_findings_llm():
+    return FakeLLM(responses=[{"findings": [{"indices": [0], "summary": "요약", "reason": "r"}]}])
+
+
+def test_context_lines_unnumbered_in_prompt(monkeypatch):
+    fake = _one_line_findings_llm()
+    monkeypatch.setattr("judge.semantic_judge.get_llm", lambda which: fake)
+    context = _transcript(
+        TranscriptSegment(speaker="민수", start=0.0, end=0.0, text="어제 얘기한 시안 어떻게 됐어요?", seq=1),
+        TranscriptSegment(speaker="재환", start=0.0, end=0.0, text="아직 작업 중입니다.", seq=2),
+        source="chat",
+    )
+    t = _transcript(TranscriptSegment(speaker="민수", start=0.0, end=0.0, text="내일까지 올려 주세요.", seq=3), source="chat")
+
+    extract_findings_counted(t, context=context)
+
+    prompt = fake.prompts[0]
+    assert "다음은 이전 대화다. 참고만 하고 근거(indices)로 고르지 마라." in prompt
+    assert "(이전) 민수: 어제 얘기한 시안 어떻게 됐어요?" in prompt
+    assert "(이전) 재환: 아직 작업 중입니다." in prompt
+    assert prompt.count("(이전) ") == 2
+    assert prompt.count("[0]") == 1 and "[1]" not in prompt
+    assert prompt.index("(이전) 재환") < prompt.index("[0] 민수: 내일까지")
+
+
+def test_context_none_prompt_unchanged(monkeypatch):
+    t = _transcript(TranscriptSegment(speaker="민수", start=0.0, end=0.0, text="내일까지 올려 주세요.", seq=3))
+    a, b = _one_line_findings_llm(), _one_line_findings_llm()
+    monkeypatch.setattr("judge.semantic_judge.get_llm", lambda which: a)
+    extract_findings_counted(t)
+    monkeypatch.setattr("judge.semantic_judge.get_llm", lambda which: b)
+    extract_findings_counted(t, context=None)
+    assert a.prompts == b.prompts
+    assert "(이전)" not in a.prompts[0]

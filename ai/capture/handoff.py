@@ -5,6 +5,7 @@ extractions.py). 봇이 이 전이를 순서대로 부른다.
 
   /record 직후       POST  /api/v1/meetings              created. 매니페스트 be.meeting_id
   트랙을 닫은 뒤     PATCH /api/v1/meetings/{id}/end     processing
+  단계가 시작될 때   PATCH /api/v1/meetings/{id}/stage   변화 없음(BE 진행 표시). 실패는 삼킨다
   전사가 닫힌 뒤     POST  /api/v1/meetings/{id}/sources 발화 저장(X-Service-Token). 같은 seq 는 BE 가 건너뛴다
   추출이 끝난 뒤     POST  /api/v1/extractions           done. 항목 저장, 담당자 매칭, 게이트 판정
   어느 단계든 실패   PATCH /api/v1/meetings/{id}/fail    failed, failed_stage
@@ -30,8 +31,10 @@ Discord 이름은 여기 없다. 매니페스트 dict 와 파일 경로만 다�
 from __future__ import annotations
 
 import json
+import logging
 import re
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -39,10 +42,20 @@ import requests
 
 from shared.schemas import NotionCandidate, Transcript
 
+log = logging.getLogger(__name__)
+
 API_PREFIX = "/api/v1"
 TIMEOUT_S = 10.0
 # 유사 검색은 BE 가 임베딩 서버를 10초까지 기다린다. 그보다 길어야 BE 의 502 를 받고, 짧으면 이쪽이 먼저 끊는다
 SIMILAR_TIMEOUT_S = 15.0
+# 녹음 내려받기의 읽기 제한. 스트리밍이라 청크 사이 무응답 시간이고 전체 시간이 아니다
+DOWNLOAD_TIMEOUT_S = 60.0
+DOWNLOAD_CHUNK = 1 << 20
+# 단계 보고는 진행 표시일 뿐이다. BE 가 느려도 처리를 붙들지 않게 짧게 끊는다
+STAGE_TIMEOUT_S = 3.0
+
+# 서버(길드)에 연결된 워크스페이스가 없을 때 BE 가 주는 코드(backend/app/api/integrations.py, #180)
+NOT_CONNECTED = "INTEGRATION_NOT_CONNECTED"
 
 # 추출기의 마감 상태를 BE 의 숫자 신뢰도로. BE 는 due_raw 가 없으면 이 값을 보지 않는다
 STATUS_CONFIDENCE = {"certain": 1.0, "inferred": 0.6, "missing": 0.0}
@@ -57,6 +70,55 @@ class BeError(Exception):
         self.message = message
         self.status = status
         self.details = details or {}
+
+
+class MeetingEnded(BeError):
+    """업로드 회의가 BE 에서 이미 끝났거나(failed·done) 없다. 새 회의를 만들지 않고 이 회의의 인계를 멈춘다는 뜻이다.
+
+    발화 저장의 409 MEETING_FAILED·404, 추출 등록의 409 MEETING_NOT_PROCESSING·404, 매니페스트의 be.status 가
+    processing·done 이 아닐 때 낸다. 디스코드 회의는 새 회의로 바꾸므로 이 예외를 내지 않는다.
+    """
+
+
+def is_upload(manifest: dict) -> bool:
+    """수동 업로드 회의인가. 업로드는 BE 회의를 웹 업로드가 이미 만들어 두었다."""
+    return manifest.get("source") == "upload"
+
+
+def speaker_members(manifest: dict) -> dict[str, str | None]:
+    """화자 라벨 id(speakers[].user_id) -> BE 멤버 ID. 외부 참석자나 지정 전이면 None. 라벨을 멤버로 바꾸는 곳은 인계뿐이다."""
+    return {str(e["user_id"]): e.get("member_id") or None for e in manifest.get("speakers") or []}
+
+
+def _upload_speaker_names(manifest: dict) -> dict[str, str]:
+    """업로드의 라벨 -> LLM 이 볼 이름. 멤버면 hint_members(PM 이 정한 이름), 없으면 참석자 표시 이름, 그것도 없으면 라벨의
+    표시 이름. 외부 참석자는 "외부 참석자 N"(N 은 speakers 순서)."""
+    by_id = {m["member_id"]: m["name"] for m in manifest.get("hint_members") or [] if m.get("member_id") and m.get("name")}
+    for a in manifest.get("attendees") or []:
+        if a.get("member_id") and a.get("display_name"):
+            by_id.setdefault(a["member_id"], a["display_name"])
+    out: dict[str, str] = {}
+    external = 0
+    for e in manifest.get("speakers") or []:
+        uid, mid = str(e["user_id"]), e.get("member_id")
+        if mid:
+            out[uid] = by_id.get(mid) or e.get("display_name") or uid
+        else:
+            external += 1
+            out[uid] = f"외부 참석자 {external}"
+    return out
+
+
+def speaker_names(manifest: dict) -> dict[str, str]:
+    """화자 uid -> 회의록에 쓸 이름. BE 에서 받은 팀원 이름(hint_members)에 그 uid 가 있으면 PM 이 정한 이름,
+    없으면 디스코드 표시 이름이다. 매니페스트의 speakers 는 디스코드 표시 이름 그대로 둔다.
+    업로드는 라벨이 uid 자리에 있고 멤버 이름으로 바꾼다(_upload_speaker_names)."""
+    if is_upload(manifest):
+        return _upload_speaker_names(manifest)
+    pm = {str(m["discord_user_id"]): m["name"] for m in manifest.get("hint_members") or []
+          if m.get("discord_user_id") and m.get("name")}
+    return {str(e["user_id"]): pm.get(str(e["user_id"])) or e.get("display_name") or str(e["user_id"])
+            for e in manifest.get("speakers") or []}
 
 
 class BeClient:
@@ -81,6 +143,11 @@ class BeClient:
             r = self._session.request(method, self.api + path, json=body, timeout=timeout or self.timeout, **extra)
         except requests.RequestException as e:
             raise BeError("NETWORK", f"{type(e).__name__}: {e}") from e
+        return self._unwrap(r)
+
+    @staticmethod
+    def _unwrap(r) -> Any:
+        """응답 봉투를 벗긴다. 오류 봉투와 4xx·5xx 는 BeError 다."""
         try:
             payload = r.json()
         except ValueError:
@@ -93,8 +160,130 @@ class BeClient:
             raise BeError(f"HTTP_{r.status_code}", (getattr(r, "text", "") or "")[:200], status=r.status_code)
         return payload.get("data")
 
-    def create_meeting(self, workspace_id: str, *, title: str | None = None, source: str = "discord") -> dict:
-        return self._call("POST", "/meetings", {"workspace_id": workspace_id, "title": title, "source": source})
+    def pending_uploads(self) -> list[dict]:
+        """웹 업로드 회의 중 아직 아무도 가져가지 않은 것(GET /uploads/pending), 먼저 올라온 순서.
+
+        항목: {meeting_id, workspace_id, title, started_at, attendees: [{member_id, display_name}], original_filename,
+        stored_filename, size_bytes, content_type, uploaded_at}.
+        """
+        data = self._call("GET", "/uploads/pending")
+        items = data.get("items") if isinstance(data, dict) else None
+        if not isinstance(items, list):
+            raise BeError("BAD_RESPONSE", "대기 목록 응답에 items 목록이 없다")
+        return items
+
+    def claim_upload(self, meeting_id: str) -> dict:
+        """업로드 회의를 가져간다(PATCH /uploads/{id}/claim). 성공하면 {meeting_id, status}.
+
+        돌려주지 않고 BeError 로 알리는 경우는 부르는 쪽이 판단한다. 409 MEETING_PROCESSING_IN_PROGRESS(이미 가져감,
+        앞선 응답을 놓친 재시도일 수 있다), 409 MEETING_ALREADY_ENDED(details.status), 404 MEETING_NOT_FOUND, NETWORK.
+        """
+        return self._call("PATCH", f"/uploads/{meeting_id}/claim")
+
+    def report_speakers(self, meeting_id: str, speakers: list[dict]) -> dict:
+        """화자 분리가 끝난 업로드 회의의 라벨과 샘플 구간을 보고한다(POST /uploads/{id}/speakers). 성공하면 {meeting_id, status}.
+
+        speakers: [{label, total_sec, samples: [{start, end}]}]. 같은 내용을 다시 보내면 BE 가 200 을 주고(status 는 현재 값)
+        응답을 잃은 재시도가 안전하다. BeError: 409 SPEAKERS_ALREADY_REPORTED(details.labels 가 저장된 라벨),
+        409 MEETING_ALREADY_ENDED(details.status), 409 UPLOAD_NOT_CLAIMED, 404 MEETING_NOT_FOUND, 400(details.fields), NETWORK.
+        """
+        data = self._call("POST", f"/uploads/{meeting_id}/speakers", {"speakers": speakers})
+        if not isinstance(data, dict):
+            raise BeError("BAD_RESPONSE", "라벨 보고 응답에 data 객체가 없다")
+        return data
+
+    def assigned_uploads(self) -> list[dict]:
+        """PM 이 화자 지정을 끝냈고 아직 resume 하지 않은 업로드 회의(GET /uploads/assigned), 지정 순서.
+
+        항목: {meeting_id, workspace_id, title, started_at, mapping, assigned_at}. 여기 mapping 은 쓰지 않고
+        resume 응답의 것을 쓴다.
+        """
+        data = self._call("GET", "/uploads/assigned")
+        items = data.get("items") if isinstance(data, dict) else None
+        if not isinstance(items, list):
+            raise BeError("BAD_RESPONSE", "지정 목록 응답에 items 목록이 없다")
+        return items
+
+    def resume_upload(self, meeting_id: str) -> dict:
+        """지정 결과를 가져간다(PATCH /uploads/{id}/resume). 성공하면 {meeting_id, status, mapping}.
+
+        processing 이면 몇 번 불러도 같은 mapping 으로 200 이라 응답을 잃은 재시도가 안전하다. BeError:
+        409 SPEAKERS_NOT_ASSIGNED(details.status), 409 MEETING_ALREADY_ENDED(details.status), 404 MEETING_NOT_FOUND.
+        """
+        data = self._call("PATCH", f"/uploads/{meeting_id}/resume")
+        if not isinstance(data, dict) or not isinstance(data.get("mapping"), dict):
+            raise BeError("BAD_RESPONSE", "resume 응답에 mapping 객체가 없다")
+        return data
+
+    def download_upload(self, meeting_id: str, dest: Path) -> int:
+        """업로드 녹음 원본을 dest 로 스트리밍으로 받고 바이트 수를 돌려준다(GET /uploads/{id}/file).
+
+        임시 파일에 받아 끝까지 성공해야 dest 로 바꾼다. 실패하면 임시 파일을 지우고 dest 는 건드리지 않는다.
+        오류 봉투와 연결 끊김은 BeError 로 올리고, 디스크 오류(OSError)는 그대로 나간다.
+        """
+        dest = Path(dest)
+        headers = {"X-Service-Token": self.service_token} if self.service_token else {}
+        try:
+            r = self._session.request("GET", f"{self.api}/uploads/{meeting_id}/file", timeout=DOWNLOAD_TIMEOUT_S,
+                                      headers=headers, stream=True)
+        except requests.RequestException as e:
+            raise BeError("NETWORK", f"{type(e).__name__}: {e}") from e
+        tmp = dest.with_name(dest.name + ".part")
+        try:
+            if r.status_code >= 400:
+                self._unwrap(r)
+                raise BeError(f"HTTP_{r.status_code}", "", status=r.status_code)
+            size = 0
+            with open(tmp, "wb") as f:
+                for chunk in r.iter_content(chunk_size=DOWNLOAD_CHUNK):
+                    f.write(chunk)
+                    size += len(chunk)
+            tmp.replace(dest)
+            return size
+        except requests.RequestException as e:
+            raise BeError("NETWORK", f"{type(e).__name__}: {e}") from e
+        finally:
+            tmp.unlink(missing_ok=True)
+            close = getattr(r, "close", None)
+            if close:
+                close()
+
+    def guild_workspace(self, guild_id: str) -> str:
+        """디스코드 서버에 연결된 워크스페이스(#199, BE #197). 연결이 없으면 BeError(INTEGRATION_NOT_CONNECTED)."""
+        return self._call("GET", f"/integrations/discord/guilds/{guild_id}/workspace")["workspace_id"]
+
+    def member_names(self, workspace_id: str) -> list[dict]:
+        """워크스페이스 팀원의 이름(PM 이 온보딩에서 정한 것)과 별칭. 전사 이름 힌트에 쓴다(BE 봇용 조회).
+
+        [{"member_id", "name", "discord_user_id", "aliases"}]. 탈퇴한 팀원은 BE 가 빼고 준다.
+        """
+        data = self._call("GET", f"/workspaces/{workspace_id}/members/names")
+        items = data.get("items") if isinstance(data, dict) else None
+        if not isinstance(items, list):
+            raise BeError("BAD_RESPONSE", "팀원 이름 응답에 items 목록이 없다")
+        return items
+
+    def chat_channels(self) -> list[dict]:
+        """채팅 폴링 대상 채널 목록(BE #432 구현). [{"workspace_id", "guild_id", "channel_id"}] 모두 str."""
+        data = self._call("GET", "/bot/chat-channels")
+        items = data.get("items") if isinstance(data, dict) else None
+        if not isinstance(items, list) or not all(isinstance(i, dict) for i in items):
+            raise BeError("BAD_RESPONSE", "채팅 채널 응답에 items 목록이 없다")
+        return items
+
+    def create_meeting(self, workspace_id: str, *, title: str | None = None, source: str = "discord",
+                       started_at: datetime | None = None) -> dict:
+        body = {"workspace_id": workspace_id, "title": title, "source": source}
+        if started_at is not None:
+            body["started_at"] = started_at.isoformat()
+        return self._call("POST", "/meetings", body)
+
+    def chat_cursor(self, workspace_id: str) -> datetime | None:
+        """BE 가 이미 가진 마지막 채팅 메시지 시각(chat-cursor). 채팅 회의가 없으면 None."""
+        data = self._call("GET", f"/workspaces/{workspace_id}/chat-cursor")
+        if not data:
+            return None
+        return datetime.fromisoformat(data["last_message_at"])
 
     def end_meeting(self, meeting_id: str) -> str:
         """created → processing. 이미 넘어간 회의면 BE 가 409 로 지금 상태를 알려 주므로 그 상태를 돌려준다."""
@@ -105,6 +294,14 @@ class BeClient:
             if e.code == "MEETING_ALREADY_ENDED":
                 return str(e.details.get("status", "processing"))
             raise
+
+    def report_stage(self, meeting_id: str, stage: str) -> dict:
+        """처리 단계가 시작됐다고 알린다(stt, sources, extract, handoff). BE 가 진행 표시에 쓴다.
+
+        data 는 {meeting_id, status, processing_stage, applied}. 처리 중이 아니거나 같은·앞선 단계면 applied 가 False 다.
+        오류는 BeError 그대로 올린다. 삼키는 것은 Handoff.report_stage 다.
+        """
+        return self._call("PATCH", f"/meetings/{meeting_id}/stage", {"stage": stage}, timeout=STAGE_TIMEOUT_S)
 
     def fail_meeting(self, meeting_id: str, failed_stage: str) -> dict:
         try:
@@ -120,12 +317,14 @@ class BeClient:
                                                     "transcript_path": transcript_path, "model_name": model_name,
                                                     "items": items})
 
-    def create_sources(self, meeting_id: str, transcript: dict, speaker_names: dict[str, str]) -> dict:
+    def create_sources(self, meeting_id: str, transcript: dict, speaker_names: dict[str, str] | None) -> dict:
         """전사 발화를 BE 에 저장한다(#130). 같은 seq 는 BE 가 건너뛰어 다시 보내도 쌓이지 않는다.
 
         돌려주는 것: {meeting_id, inserted, skipped, duration_ms}. transcript 는 Transcript.to_dict() 모양이다.
+        speaker_names 가 None 이면 그 키를 보내지 않는다(업로드는 화자가 uid 가 아니라 멤버 ID 다).
         """
-        return self._call("POST", f"/meetings/{meeting_id}/sources", {**transcript, "speaker_names": speaker_names})
+        body = transcript if speaker_names is None else {**transcript, "speaker_names": speaker_names}
+        return self._call("POST", f"/meetings/{meeting_id}/sources", dict(body))
 
     def similar_tasks(self, workspace_id: str, text: str) -> list[NotionCandidate]:
         """문장과 비슷한 기존 task 후보. 판단 파이프라인(judge.pipeline.CandidateSource)이 finding 마다 그 요약 문장으로 부른다.
@@ -146,19 +345,19 @@ def _squash(text: str) -> str:
     return re.sub(r"[\W_]+", "", text or "")
 
 
-def locate_sentence(sentence: str, segments: list[dict]) -> tuple[str | None, int | None]:
-    """근거 문장을 말한 화자와 시각. 화자가 둘 이상 같은 문장을 말했으면 모른다고 답한다 (PM 확인으로)."""
+def locate_sentence(sentence: str, segments: list[dict]) -> tuple[str | None, int | None, int | None]:
+    """근거 문장을 말한 화자, 시각, 발화 seq. 화자가 둘 이상 같은 문장을 말했으면 모른다고 답한다 (PM 확인으로)."""
     key = _squash(sentence)
     if not key:
-        return None, None
+        return None, None, None
     squashed = [(s, _squash(s.get("text", ""))) for s in segments]
     # 통째로 같은 발화가 있으면 그것. 없으면 그 문장을 품은 발화 (한 발화에 문장이 여럿일 때)
     hits = [s for s, t in squashed if t == key] or [s for s, t in squashed if key in t]
     speakers = {s.get("speaker") for s in hits}
     if len(speakers) != 1:
-        return None, None
+        return None, None, None
     first = min(hits, key=lambda s: float(s.get("start", 0.0)))
-    return first.get("speaker"), int(round(float(first.get("start", 0.0)) * 1000))
+    return first.get("speaker"), int(round(float(first.get("start", 0.0)) * 1000)), first.get("seq")
 
 
 def to_extraction_items(tasks: list[dict], transcript: dict) -> list[dict]:
@@ -171,7 +370,7 @@ def to_extraction_items(tasks: list[dict], transcript: dict) -> list[dict]:
     items = []
     for t in tasks:
         sentence = t.get("source_sentence") or ""
-        speaker, at_ms = locate_sentence(sentence, segments)
+        speaker, at_ms, seq = locate_sentence(sentence, segments)
         kind = t.get("assignee_type")
         # "네가"·"그분"·"백엔드 리더" 는 별칭이 아니다. 이름으로 풀리지 않았으면 BE 에 조회를 시키지 않는다
         mention = None if kind in ("second", "thirdpronoun", "thirdrole") else t.get("assignee_mention")
@@ -187,6 +386,7 @@ def to_extraction_items(tasks: list[dict], transcript: dict) -> list[dict]:
             "evidence_quote": sentence or None,
             "evidence_speaker": speaker,
             "evidence_at_ms": at_ms,
+            "evidence_seqs": [] if seq is None else [seq],
         })
     return items
 
@@ -200,20 +400,62 @@ def clean_item(item: dict) -> dict:
     return {k: (None if isinstance(v, str) and not v.strip() else v) for k, v in item.items()}
 
 
+def _with_member_speakers(items: list[dict], members: dict[str, str | None]) -> list[dict]:
+    """업로드 항목의 화자(라벨 id)를 멤버 ID 로 바꾼 사본. evidence_speaker 는 None, 멤버면 evidence_speaker_member_id 를 더한다.
+    외부 참석자나 화자를 모르는 항목은 그 키를 더하지 않는다."""
+    out = []
+    for item in items:
+        member = members.get(item.get("evidence_speaker"))
+        item = {**item, "evidence_speaker": None}
+        if member:
+            item["evidence_speaker_member_id"] = member
+        out.append(item)
+    return out
+
+
+def _explained(e: BeError) -> BeError:
+    """400 이 알려 주는 단서를 오류 문장에 싣는다. fields 는 어느 줄의 어느 필드인지, member_ids 는 어느 팀원 ID 인지다.
+    다시 보내도 같아 이것이 유일한 단서다(BE 명세). 단서가 없으면 문장은 그대로다."""
+    clues = [json.dumps(e.details[k], ensure_ascii=False)[:300] for k in ("fields", "member_ids") if e.details.get(k)]
+    message = " ".join([e.message, *clues])
+    return BeError(e.code, message, status=e.status, details=e.details)
+
+
 # ─────────────────────────────────────────────────────────── 인계
 @dataclass
 class Handoff:
-    """한 워크스페이스로 인계한다. 매니페스트의 be 항목을 읽고 쓴다."""
+    """매니페스트의 워크스페이스로 인계한다. 매니페스트의 be 항목과 workspace_id 를 읽고 쓴다."""
 
     client: BeClient
-    workspace_id: str
+
+    def workspace(self, manifest: dict) -> str | None:
+        """회의의 워크스페이스. 비어 있으면 서버(guild_id)로 BE 에 묻고 매니페스트에 고정한다. 연결이 없으면 None.
+
+        정한 값은 바꾸지 않는다. BE 회의를 만든 뒤 바뀌면 추출 등록이 WORKSPACE_MISMATCH 로 막힌다.
+        연결 없음 밖의 오류(연결 실패, 5xx, 401)는 BeError 로 올린다.
+        """
+        if manifest.get("workspace_id"):
+            return manifest["workspace_id"]
+        if not manifest.get("guild_id"):
+            return None
+        try:
+            ws = self.client.guild_workspace(str(manifest["guild_id"]))
+        except BeError as e:
+            if e.code == NOT_CONNECTED:
+                return None
+            raise
+        manifest["workspace_id"] = ws
+        return ws
 
     def start(self, manifest: dict, *, title: str | None = None) -> dict:
         """BE 회의를 만든다. 이미 있으면 그대로. /record 직후와 인계 단계가 같이 부른다."""
         be = manifest.setdefault("be", {})
         if be.get("meeting_id"):
             return be
-        data = self.client.create_meeting(self.workspace_id, title=title)
+        ws = self.workspace(manifest)
+        if ws is None:
+            raise BeError(NOT_CONNECTED, "이 서버에 연결된 워크스페이스가 없다")
+        data = self.client.create_meeting(ws, title=title)
         be.update({"meeting_id": data["meeting_id"], "status": str(data.get("status", "created"))})
         be.pop("error", None)
         return be
@@ -228,7 +470,16 @@ class Handoff:
         return self.start(manifest, title=title)
 
     def end(self, manifest: dict, *, title: str | None = None) -> dict:
-        """녹음이 끝났다. created → processing. BE 가 failed 로 닫아 둔 회의면 새로 만든다."""
+        """녹음이 끝났다. created → processing. BE 가 failed 로 닫아 둔 회의면 새로 만든다.
+
+        업로드는 BE 의 웹 업로드가 회의를 이미 processing 으로 만들어 두었다. 부르지 않고 매니페스트의 be 를 믿는다.
+        processing·done 이 아니면(failed 등) 새 회의를 만들지 않고 MeetingEnded 다.
+        """
+        if is_upload(manifest):
+            be = manifest.setdefault("be", {})
+            if not be.get("meeting_id") or be.get("status") not in ("processing", "done"):
+                raise MeetingEnded("MEETING_ENDED", f"업로드 회의가 처리 중이 아니다: {be.get('status')!r}", details=dict(be))
+            return be
         be = self.start(manifest, title=title)
         if be.get("status") in ("processing", "done"):
             return be
@@ -238,6 +489,19 @@ class Handoff:
             status = self.client.end_meeting(be["meeting_id"])
         be["status"] = status
         return be
+
+    def report_stage(self, manifest: dict, stage: str) -> None:
+        """단계가 시작될 때 BE 에 알린다. 진행 표시용이라 매니페스트를 바꾸지 않고, 어떤 실패도 삼킨다.
+
+        BE 회의가 아직 없으면(be.meeting_id 없음) 부르지 않는다. 처리 결과를 바꾸면 안 되므로 예외는 로그만 남긴다.
+        """
+        meeting_id = (manifest.get("be") or {}).get("meeting_id")
+        if not meeting_id:
+            return
+        try:
+            self.client.report_stage(meeting_id, stage)
+        except Exception as e:  # noqa: BLE001 - 진행 표시 실패가 전사·인계를 막으면 안 된다
+            print(f"[stage] 세션 {manifest.get('session')} 단계 보고 실패({stage}): {type(e).__name__}: {e}", flush=True)
 
     def save_sources(self, manifest: dict, *, transcripts_dir: Path, title: str | None = None) -> dict:
         """전사 발화를 BE 에 저장한다. processing 이나 done 회의에 보낸다. end 로 회의를 확보하고, BE 가 failed 로 닫아
@@ -257,18 +521,48 @@ class Handoff:
             be = manifest.setdefault("be", {})
             be["sources"] = {"inserted": 0, "skipped": 0, "duration_ms": None, "meeting_id": be.get("meeting_id")}
             return be
-        names = {str(e["user_id"]): e.get("display_name") or str(e["user_id"]) for e in manifest.get("speakers") or []}
+        upload = is_upload(manifest)
         be = self.end(manifest, title=title)
+        if upload:
+            return self._save_upload_sources(manifest, be, transcript)
+        names = speaker_names(manifest)
         try:
             data = self.client.create_sources(be["meeting_id"], transcript, names)
         except BeError as e:
-            fields = e.details.get("fields")
-            if fields:   # 400 이 알려 주는 어느 줄의 어느 필드인지. 다시 보내도 같아 이것이 유일한 단서다(BE 명세)
-                raise BeError(e.code, f"{e.message} {json.dumps(fields, ensure_ascii=False)[:300]}", status=e.status,
-                              details=e.details) from e
-            raise
+            raise _explained(e) from e
         be["sources"] = {k: data.get(k) for k in ("inserted", "skipped", "duration_ms")}
         be["sources"]["meeting_id"] = be["meeting_id"]
+        return be
+
+    def _save_upload_sources(self, manifest: dict, be: dict, transcript: dict) -> dict:
+        """업로드 발화 저장. 라벨을 멤버 ID 로 바꿔 보낸다. BE 가 팀원이 아니라고 돌려준 ID(400 details.member_ids)는 null 로
+        바꿔 다시 보내고 be["sources"]["dropped_member_ids"] 에 남긴다. 다시 보내는 횟수는 서로 다른 ID 수까지다.
+        끝난 회의(409 MEETING_FAILED, 404)는 MeetingEnded 다."""
+        members = speaker_members(manifest)
+        segments = [{**s, "speaker": None, **({"speaker_member_id": members[s["speaker"]]} if members.get(s["speaker"]) else {})}
+                    for s in transcript["segments"]]
+        dropped: list[str] = []
+        budget = len({s["speaker_member_id"] for s in segments if "speaker_member_id" in s})
+        while True:
+            try:
+                data = self.client.create_sources(be["meeting_id"], {**transcript, "segments": segments}, None)
+                break
+            except BeError as e:
+                if e.code == "MEETING_FAILED" or e.code == "MEETING_NOT_FOUND":
+                    raise MeetingEnded(e.code, e.message, status=e.status, details=e.details) from e
+                ids = e.details.get("member_ids")
+                present = {s["speaker_member_id"] for s in segments if "speaker_member_id" in s}
+                bad = [i for i in ids if i in present] if isinstance(ids, list) else []
+                if not bad or budget <= 0:
+                    raise _explained(e) from e
+                budget -= 1
+                segments = [{k: v for k, v in s.items() if not (k == "speaker_member_id" and v in bad)} for s in segments]
+                dropped += [i for i in bad if i not in dropped]
+        be["sources"] = {k: data.get(k) for k in ("inserted", "skipped", "duration_ms")}
+        be["sources"]["meeting_id"] = be["meeting_id"]
+        if dropped:
+            be["sources"]["dropped_member_ids"] = dropped
+            log.warning("BE 가 팀원이 아니라고 한 멤버 ID 를 비우고 보냈다: %s (회의 %s)", dropped, be["meeting_id"])
         return be
 
     def register(self, manifest: dict, *, transcripts_dir: Path, model_name: str | None,
@@ -289,19 +583,26 @@ class Handoff:
             tasks = json.loads(Path(tasks_path).read_text(encoding="utf-8"))
             transcript = json.loads(transcript_json.read_text(encoding="utf-8")) if transcript_json.exists() else {}
             items = to_extraction_items(tasks, transcript)
+        upload = is_upload(manifest)
+        if upload:
+            dropped = ((manifest.get("be") or {}).get("sources") or {}).get("dropped_member_ids") or []
+            members = {label: (None if member in dropped else member) for label, member in speaker_members(manifest).items()}
+            items = _with_member_speakers(items, members)   # 발화 저장에서 BE 가 거절해 비운 ID 는 여기서도 뺀다
         changed = bool(manifest.get("reextracted"))                       # 전사가 바뀌어 다시 뽑은 결과다
         previous = (manifest.get("be") or {}).get("extraction_id")
 
         be = self.end(manifest, title=title)
         try:
-            data = self._register(be["meeting_id"], transcript_json, model_name, items)
+            data = self._register(be["meeting_id"], manifest["workspace_id"], transcript_json, model_name, items)
         except BeError as e:
+            if upload and e.code in ("MEETING_NOT_PROCESSING", "MEETING_NOT_FOUND"):
+                raise MeetingEnded(e.code, e.message, status=e.status, details=e.details) from e
             if e.code == "MEETING_NOT_PROCESSING" and e.details.get("status") == "failed":
                 be = self._fresh(manifest, title)
                 be = self.end(manifest, title=title)
                 # 발화 먼저(BE 명세). 옛 회의에 보낸 발화를 새 회의에도 둔다
                 self.save_sources(manifest, transcripts_dir=transcripts_dir, title=title)
-                data = self._register(be["meeting_id"], transcript_json, model_name, items)
+                data = self._register(be["meeting_id"], manifest["workspace_id"], transcript_json, model_name, items)
             else:
                 raise
         be.update({"status": "done", "extraction_id": data["extraction_id"], "item_count": data.get("item_count", len(items))})
@@ -332,8 +633,9 @@ class Handoff:
             be.pop("missing_units", None)
         return be
 
-    def _register(self, meeting_id: str, transcript_json: Path, model_name: str | None, items: list[dict]) -> dict:
-        return self.client.create_extraction(meeting_id, self.workspace_id, transcript_path=str(transcript_json),
+    def _register(self, meeting_id: str, workspace_id: str, transcript_json: Path, model_name: str | None,
+                  items: list[dict]) -> dict:
+        return self.client.create_extraction(meeting_id, workspace_id, transcript_path=str(transcript_json),
                                              model_name=model_name, items=items)
 
     def fail(self, manifest: dict, failed_stage: str) -> None:
@@ -353,7 +655,8 @@ class Handoff:
 
 
 def from_env() -> Handoff | None:
-    """BE_BASE_URL, BE_WORKSPACE_ID, BE_SERVICE_TOKEN 이 다 있을 때만. 하나라도 없으면 인계 단계를 건너뛴다.
+    """BE_BASE_URL 과 BE_SERVICE_TOKEN 이 다 있을 때만. 하나라도 없으면 인계 단계를 건너뛴다.
+    워크스페이스는 설정이 아니라 회의마다 서버로 찾는다(Handoff.workspace, #199).
 
     토큰이 없으면 BE 가 봇의 모든 쓰기 요청을 401 로 거절한다(#179). 회의마다 실패하게 두지 않고 켜지 않는다.
     """
@@ -361,6 +664,6 @@ def from_env() -> Handoff | None:
 
     cfg = settings()
     token = getattr(cfg, "be_service_token", "")
-    if not cfg.be_base_url or not cfg.be_workspace_id or not token:
+    if not cfg.be_base_url or not token:
         return None
-    return Handoff(BeClient(cfg.be_base_url, service_token=token), cfg.be_workspace_id)
+    return Handoff(BeClient(cfg.be_base_url, service_token=token))

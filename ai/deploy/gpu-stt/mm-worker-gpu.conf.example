@@ -1,0 +1,4 @@
+# 운영 서버의 /etc/systemd/system/mm-worker.service.d/gpu-stt.conf 로 둔다. 절차는 README.md.
+# shared/config.py 의 load_env 는 이미 있는 환경변수를 덮지 않는다. 그래서 .env 를 고치지 않고 전사 주소와 키만 바뀐다.
+[Service]
+EnvironmentFile=/etc/mm/gpu-stt.env

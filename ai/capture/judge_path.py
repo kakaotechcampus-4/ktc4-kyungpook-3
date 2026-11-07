@@ -33,10 +33,10 @@ from shared.schemas import Transcript
 
 EXTRACT_PATHS = ("legacy", "judge")
 # 설정 이름과 Settings 의 칸. 빠진 것을 이 순서로 말한다
-_REQUIRED = (("TERRA_API_KEY", "terra_api_key"), ("TERRA_BASE_URL", "terra_base_url"),
-             ("LUNA_API_KEY", "luna_api_key"), ("LUNA_BASE_URL", "luna_base_url"),
-             ("BE_BASE_URL", "be_base_url"), ("BE_WORKSPACE_ID", "be_workspace_id"),
-             ("BE_SERVICE_TOKEN", "be_service_token"))
+_REQUIRED_LLM = (("TERRA_API_KEY", "terra_api_key"), ("TERRA_BASE_URL", "terra_base_url"),
+                 ("LUNA_API_KEY", "luna_api_key"), ("LUNA_BASE_URL", "luna_base_url"))
+# 유사 task 검색(BeClient)에만 쓴다. 검색을 밖에서 끼우면(candidates) 보지 않는다
+_REQUIRED_BE = (("BE_BASE_URL", "be_base_url"), ("BE_SERVICE_TOKEN", "be_service_token"))
 
 
 def extract_path() -> str:
@@ -122,14 +122,19 @@ class JudgeAllFailed(RuntimeError):
     """등록할 항목이 하나도 없는데 판단하지 못한 finding 이 있다. 빈 추출로 닫지 않고 회의 전체의 실패로 본다."""
 
 
-def missing_settings(cfg=None, *, run=None) -> list[str]:
-    """판단 경로에 없는 설정의 이름. 비어 있으면 돌 수 있다. run 을 밖에서 끼웠으면 모듈은 확인하지 않는다."""
+def missing_settings(cfg=None, *, run=None, candidates=None) -> list[str]:
+    """판단 경로에 없는 설정의 이름. 비어 있으면 돌 수 있다. run 을 밖에서 끼웠으면 모듈은 확인하지 않는다.
+
+    candidates(유사 task 검색)를 밖에서 끼웠으면 BE 설정은 확인하지 않는다. BE 없이 판단만 돌리는 채팅 폴링 검증
+    (capture/chat_poll.py)이 그렇다. 봇과 워커는 끼우지 않으므로 지금처럼 BE 설정까지 요구한다.
+    """
     if cfg is None:
         from shared.config import settings
         cfg = settings()
     if (getattr(cfg, "llm_mode", "") or "").lower() == "off":
         return ["PM_AGENT_LLM=off"]
-    missing = [name for name, attr in _REQUIRED if not getattr(cfg, attr, "")]
+    required = _REQUIRED_LLM + (_REQUIRED_BE if candidates is None else ())
+    missing = [name for name, attr in required if not getattr(cfg, attr, "")]
     if run is None:
         try:
             import judge.pipeline  # noqa: F401
@@ -190,26 +195,37 @@ def _restore(items: list[dict], labels: dict[str, str], names: dict[str, str], s
 
 
 def build_extractor(*, run=None, candidates=None, cfg=None):
-    """판단 추출기 extract(transcript, speaker_names, today) -> JudgeOutput. 설정이 없으면 None.
+    """판단 추출기 extract(transcript, speaker_names, today, workspace_id) -> JudgeOutput. 설정이 없으면 None.
+
+    workspace_id 는 회의의 워크스페이스다(매니페스트, #199). 유사 task 검색이 그 워크스페이스에서 찾는다.
 
     run 은 judge.pipeline.run, candidates 는 유사 task 검색(capture.handoff.BeClient)이다. 테스트가 바꿔 끼운다.
     """
     if cfg is None:
         from shared.config import settings
         cfg = settings()
-    if missing_settings(cfg, run=run):
+    if missing_settings(cfg, run=run, candidates=candidates):
         return None
     if run is None:
         from judge.pipeline import run
     if candidates is None:
         from capture.handoff import BeClient
         candidates = BeClient(cfg.be_base_url, service_token=cfg.be_service_token)
-    workspace_id = cfg.be_workspace_id
 
-    def extract(transcript: Transcript, speaker_names: dict[str, str] | None, today: date) -> JudgeOutput:
+    def extract(transcript: Transcript, speaker_names: dict[str, str] | None, today: date,
+                workspace_id: str | None = None, *, context: Transcript | None = None,
+                dates: dict[int, date] | None = None) -> JudgeOutput:
+        if not workspace_id:
+            # 없으면 유사 검색이 /workspaces/None/... 로 가서 엉뚱한 404 나 판단 실패로 보인다
+            raise ValueError("유사 task 검색에 쓸 워크스페이스가 없다(매니페스트 workspace_id)")
         names = {str(k): v for k, v in (speaker_names or {}).items()}
         labels = speaker_labels(names)
-        result = run(_relabel(transcript, labels), workspace_id=workspace_id, today=today, candidates=candidates)
+        extra: dict = {}  # 없으면 넘기지 않는다 — 음성 회의 경로와 예전 run 은 그대로
+        if context is not None:
+            extra["context"] = _relabel(context, labels)
+        if dates is not None:
+            extra["dates"] = dates
+        result = run(_relabel(transcript, labels), workspace_id=workspace_id, today=today, candidates=candidates, **extra)
         failures = [{"stage": f.stage, "text": f.finding_text, "reason": f.reason} for f in result.failures]
         if failures and not result.items:
             first = failures[0]
@@ -223,3 +239,14 @@ def build_extractor(*, run=None, candidates=None, cfg=None):
         return JudgeOutput(outcomes=outcomes, dropped=result.dropped)
 
     return extract
+
+
+def reply_judger(cfg=None):
+    """봇의 답장 판단기 judger(item) -> 판단 본문(judge.reply.judge_reply). 설정이 없으면 None 이라 답장 루프를 띄우지 않는다.
+
+    Jev 는 보지 않는다. 없으면 근거가 모두 inferred 라 자동 반영이 없고, 후보가 둘 이상이면 대상을 확인하지 못해 PM 이 고른다.
+    """
+    if missing_settings(cfg):
+        return None
+    from judge.reply import judge_reply
+    return judge_reply

@@ -1,9 +1,13 @@
 import {
   formatSeoulDateTime,
+  formatSeoulMonthDayTime,
+  fromSeoulInputValue,
   isDateOnly,
+  monthDayOf,
   readDateOnly,
   seoulDateOf,
   seoulMidnightIso,
+  toSeoulInputValue,
 } from './format'
 
 describe('timestamp 는 한국 시간으로 보여 준다', () => {
@@ -14,6 +18,12 @@ describe('timestamp 는 한국 시간으로 보여 준다', () => {
 
   it('오프셋이 붙은 값도 서울 시각이다', () => {
     expect(formatSeoulDateTime('2026-09-18T09:00:00+09:00')).toBe('2026-09-18 09:00')
+  })
+
+  it('짧은 표기는 MM/DD 와 MM/DD HH:mm 이다', () => {
+    expect(monthDayOf('2026-09-08')).toBe('09/08')
+    expect(formatSeoulMonthDayTime('2026-09-11T05:22:00Z')).toBe('09/11 14:22')
+    expect(formatSeoulMonthDayTime('not a date')).toBe('')
   })
 
   it('서울 기준 날짜를 뽑는다', () => {
@@ -81,4 +91,11 @@ describe('서울 자정', () => {
   it('다시 서울 날짜로 읽으면 같은 날이다', () => {
     expect(seoulDateOf(seoulMidnightIso('2026-09-18')!)).toBe('2026-09-18')
   })
+})
+
+it('datetime-local 입력값은 한국 시각으로 오간다', () => {
+  expect(toSeoulInputValue('2026-09-25T05:30:00Z')).toBe('2026-09-25T14:30')
+  expect(fromSeoulInputValue('2026-09-25T14:30')).toBe('2026-09-25T14:30:00+09:00')
+  expect(fromSeoulInputValue('')).toBeNull()
+  expect(fromSeoulInputValue('2026-09-25')).toBeNull()
 })

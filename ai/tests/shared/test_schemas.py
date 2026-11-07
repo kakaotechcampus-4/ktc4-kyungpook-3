@@ -134,7 +134,18 @@ def test_draft_result_roundtrip():
         doc_text="결제 환불 기능을 지민님이 10/5까지 구현하기로 함",
     )
     assert d.method == "llm"
-    assert d.to_dict()["structured"] == {"task": "결제 환불 기능 구현", "due_date": "2026-10-05"}
+    assert d.to_dict()["structured"] == {
+        "task": "결제 환불 기능 구현", "due_date": "2026-10-05", "due_cleared": False, "due_raw": None,
+    }
+    assert DraftResult.from_dict(d.to_dict()) == d
+
+
+def test_draft_result_roundtrip_keeps_due_raw():
+    d = DraftResult(
+        structured=DraftStructured(task="결제 환불 기능 구현", due_date="2026-10-05", due_raw="이번 주 금요일까지"),
+        doc_text="결제 환불 기능을 10/5까지 구현하기로 함",
+    )
+    assert d.to_dict()["structured"]["due_raw"] == "이번 주 금요일까지"
     assert DraftResult.from_dict(d.to_dict()) == d
 
 
@@ -143,3 +154,24 @@ def test_draft_result_from_dict_without_structured():
     d = DraftResult.from_dict({"doc_text": "검색 성능 개선 작업 완료"})
     assert d.structured == DraftStructured()
     assert d.method == "llm"
+
+
+def test_transcript_segment_without_member_id_keeps_the_old_keys_exactly():
+    s = TranscriptSegment(speaker="123", start=1.0, end=2.5, text="네", seq=7)
+    assert s.speaker_member_id is None
+    assert list(s.to_dict()) == ["speaker", "start", "end", "text", "seq"]      # 디스코드 본문 바이트가 그대로다
+
+
+def test_transcript_segment_member_id_roundtrips_and_a_none_speaker_stays():
+    s = TranscriptSegment(speaker=None, start=1.0, end=2.5, text="네", seq=7, speaker_member_id="mem_1")
+    d = s.to_dict()
+    assert d["speaker"] is None and d["speaker_member_id"] == "mem_1"
+    assert list(d)[-1] == "speaker_member_id"
+    assert TranscriptSegment.from_dict(d) == s
+
+
+def test_transcript_to_dict_leaves_the_member_id_key_out_when_none():
+    t = Transcript(segments=[TranscriptSegment(speaker="1", start=0.0, end=1.0, text="a", seq=1),
+                             TranscriptSegment(speaker=None, start=1.0, end=2.0, text="b", seq=2, speaker_member_id="m")])
+    segs = t.to_dict()["segments"]
+    assert "speaker_member_id" not in segs[0] and segs[1]["speaker_member_id"] == "m"

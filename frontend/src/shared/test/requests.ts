@@ -1,4 +1,6 @@
 import { onTestFinished } from 'vitest'
+import { db } from '@/shared/mock/db'
+import type { MockDb } from '@/shared/mock/db'
 import { server } from '@/shared/mock/server'
 
 export interface RecordedRequest {
@@ -75,13 +77,27 @@ export function trackerRequests(
   return requests.filter((request) => isTrackerRequest(request, workspaceId))
 }
 
+/**
+ * 앱 머리 알림 종의 상시 조회 `GET /workspaces/{workspaceId}/notifications` 인가 (#330). 워크스페이스 화면마다 나간다.
+ * 추적기처럼 지금 URL 공간의 조회만 인정한다 — 비로그인·비소속 공간·다른 공간의 알림 조회는 업무 요청으로 남아 단언에 걸린다
+ */
+export function isNotificationListRequest(
+  { method, path }: RecordedRequest,
+  workspaceId: string = DEFAULT_TRACKER_WORKSPACE,
+): boolean {
+  const [pathname] = path.split('?')
+  return (
+    method === 'GET' && pathname === `/workspaces/${encodeURIComponent(workspaceId)}/notifications`
+  )
+}
+
 export interface BusinessRequestOptions {
-  /** 추적기 요청으로 볼 지금 URL 공간. 기본은 ws_01 */
+  /** 추적기·알림 종 요청으로 볼 지금 URL 공간. 기본은 ws_01 */
   trackerWorkspaceId?: string
 }
 
 /**
- * 부팅 조회(세션·워크스페이스 목록)와 처리 추적기의 상시 요청을 뺀 나머지. 이것이 「화면의 업무 API」다.
+ * 부팅 조회(세션·워크스페이스 목록), 처리 추적기와 알림 종의 상시 요청을 뺀 나머지. 이것이 「화면의 업무 API」다.
  *
  * M5 U4 부터 인증된 앱 영역의 추적기가 워크스페이스 화면마다 지금 공간의 회의 목록을 받고, 정리 중 회의의 상세를
  * polling 한다(계획 §2·§3, U4-1). 부팅 조회처럼 화면과 무관하게 앱이 내는 요청이라 함께 뺀다 —
@@ -95,8 +111,53 @@ export function businessRequests(
   return requests.filter(
     (request) =>
       !(request.method === 'GET' && BOOT_PATHS.has(request.path)) &&
-      !isTrackerRequest(request, trackerWorkspaceId),
+      !isTrackerRequest(request, trackerWorkspaceId) &&
+      !isNotificationListRequest(request, trackerWorkspaceId),
   )
+}
+
+/**
+ * 그 공간의 최신 완료 회의(시작 시각이 가장 늦은 `done`)의 추출 ID. 대시보드가 최근 반영으로 부르는 추출이다.
+ * 모의 db 에서 읽는다 — 테스트가 회의를 바꾼 뒤에 부르면 바뀐 값이다. 없으면 null
+ */
+export function latestDoneExtractionId(
+  workspaceId: string = DEFAULT_TRACKER_WORKSPACE,
+  state: MockDb = db,
+): string | null {
+  const done = state.meetings
+    .filter((meeting) => meeting.workspace_id === workspaceId && meeting.status === 'done')
+    .sort((a, b) => Date.parse(b.started_at) - Date.parse(a.started_at))
+  return done[0]?.extraction_id ?? null
+}
+
+export interface DashboardRequestScope {
+  /** 대시보드 공간. 기본은 ws_01 */
+  workspaceId?: string
+  /**
+   * 대시보드가 부를 추출 ID(`latestDoneExtractionId`). 이 ID 의 `GET /extractions/{id}` 만 인정한다.
+   * 넘기지 않거나 null 이면 어떤 추출 조회도 인정하지 않는다 — 다른 회의·공간의 추출 조회 회귀를 숨기지 않는다 (E-05)
+   */
+  extractionId?: string | null
+}
+
+/**
+ * M7 대시보드 화면 자신의 조회인가 (widgets/dashboard useDashboardData). 태스크 목록·대기 승인·팀원·연동과 최신 완료 회의의 추출이다.
+ * 회의 목록·회의 상세는 추적기 요청과 같은 모양이라 `businessRequests` 가 이미 뺀다.
+ * 대시보드로 착지하는 가드·부팅 테스트가 「그 밖의 업무 요청은 없다」를 단언할 때 쓴다
+ */
+export function isDashboardRequest(
+  { method, path }: RecordedRequest,
+  { workspaceId = DEFAULT_TRACKER_WORKSPACE, extractionId = null }: DashboardRequestScope = {},
+): boolean {
+  if (method !== 'GET') return false
+  const id = encodeURIComponent(workspaceId)
+  return [
+    `/tasks?workspace_id=${id}`,
+    `/approvals?workspace_id=${id}&status=pending`,
+    `/members?workspace_id=${id}`,
+    `/workspaces/${id}/integrations`,
+    ...(extractionId === null ? [] : [`/extractions/${encodeURIComponent(extractionId)}`]),
+  ].includes(path)
 }
 
 /** 이 테스트 동안 `method path`(`/api/v1` 을 뗀 경로, 검색 문자열 제외)로 간 JSON 본문을 보낸 순서대로 적는다 */

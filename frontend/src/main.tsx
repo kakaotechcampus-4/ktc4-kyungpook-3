@@ -5,6 +5,7 @@ import './app/styles/index.css'
 import { App } from './app/App'
 import { createApp } from './app/createApp'
 import { appRoutes } from './app/router/routes'
+import { SplashHost } from './app/splash/SplashHost'
 import { config } from './shared/config/env'
 
 const root = document.getElementById('root')
@@ -14,7 +15,16 @@ if (!root) {
 
 async function enableMocking(): Promise<void> {
   // DEV 를 먼저 본다 — 번들러가 이 분기를 지워야 프로덕션 번들에 MSW 가 남지 않는다
-  if (!import.meta.env.DEV || !config.mswEnabled) return
+  if (!import.meta.env.DEV) return
+  if (!config.mswEnabled) {
+    // 실제 API 로 띄울 때 예전 MSW 실행이 남긴 worker 가 요청을 받지 않게 지운다
+    const { unregisterMockWorker } = await import('./app/mockWorkerCleanup')
+    if (await unregisterMockWorker()) {
+      window.location.reload()
+      await new Promise<never>(() => {})
+    }
+    return
+  }
   const { startMockWorker } = await import('@/shared/mock/browser')
   await startMockWorker()
 }
@@ -29,6 +39,8 @@ void enableMocking().finally(() => {
           <Routes>{appRoutes}</Routes>
         </BrowserRouter>
       </App>
+      {/* App 밖이다 — Root Error Boundary 가 앱을 오류 화면으로 바꿔도 스플래시는 남아서 그 화면으로 걷힌다 */}
+      <SplashHost appRoot={root} />
     </StrictMode>,
   )
 })

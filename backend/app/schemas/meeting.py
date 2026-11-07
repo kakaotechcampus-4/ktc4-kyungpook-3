@@ -1,16 +1,42 @@
 from datetime import date, datetime
+from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator
 
-from app.models import ExtractionAction, MeetingSource, TaskStatus
+from app.models import (
+    ApprovalStatus,
+    EvidenceStatus,
+    ExtractionAction,
+    ExtractionPath,
+    MeetingProcessingStage,
+    MeetingSource,
+    TaskStatus,
+)
+from app.schemas.source import INT4_MAX
+
+# 추출 항목 하나의 근거 발화 수 상한. 근거는 결론까지의 몇 줄이라 넉넉하다
+MAX_EVIDENCE_SEQS = 100
 
 
 class MeetingCreateRequest(BaseModel):
     workspace_id: str = Field(..., description="소속 워크스페이스 ID")
     title: str | None = Field(None, description="회의 제목 (optional)")
     source: MeetingSource = Field(
-        MeetingSource.DISCORD, description="discord | manual_upload"
+        MeetingSource.DISCORD, description="discord | manual_upload | chat"
     )
+    started_at: AwareDatetime | None = Field(
+        None,
+        description="회의 시작 시각(시간대 필수, UTC 로 저장). 없으면 지금. 지금보다 늦으면 400. "
+        "채팅 출처는 이 회의에 담긴 첫 메시지 시각을 보낸다",
+    )
+
+
+class ChatCursorResponse(BaseModel):
+    """봇이 마지막으로 처리한 채팅 위치. 끝난 채팅 회의가 없으면 data 가 null 이다."""
+
+    meeting_id: str
+    # str 로 둔다. datetime 으로 직렬화하면 +00:00 이 Z 로 바뀌어 계약(`+00:00`)과 달라진다
+    last_message_at: str = Field(..., description="마지막 메시지 시각. ISO 8601, UTC(+00:00)")
 
 
 class MeetingCreateResponse(BaseModel):
@@ -32,6 +58,19 @@ class MeetingEndResponse(BaseModel):
 
 class MeetingFailRequest(BaseModel):
     failed_stage: str = Field(..., description="어느 단계에서 실패했는지 (e.g., STT, LLM)")
+
+
+class MeetingStageRequest(BaseModel):
+    stage: MeetingProcessingStage = Field(
+        ..., description="AI 가 지금 시작한 처리 단계"
+    )
+
+
+class MeetingStageResponse(BaseModel):
+    meeting_id: str
+    status: str
+    processing_stage: str | None
+    applied: bool = Field(..., description="이 보고가 반영됐는지(같은 단계·역행·처리 중이 아님은 False)")
 
 
 class MeetingProgress(BaseModel):
@@ -72,7 +111,10 @@ class MeetingMinutesResponse(BaseModel):
 
 class TaskInfo(BaseModel):
     title: str
-    confidence: float
+    confidence: float | None = Field(None, description="null이면 AI가 측정하지 않았다(judge 경로)")
+    evidence_status: EvidenceStatus | None = Field(
+        None, description="할 일이 원문에 얼마나 드러나 있는지(judge 새 항목). AI가 보내지 않았으면 null"
+    )
 
 
 class AssigneeInfo(BaseModel):
@@ -86,13 +128,21 @@ class AssigneeInfo(BaseModel):
 class DueDateInfo(BaseModel):
     value: date | None
     raw: str | None
-    confidence: float
+    confidence: float | None = Field(None, description="null이면 AI가 측정하지 않았다(judge 경로)")
+    evidence_status: EvidenceStatus | None = Field(
+        None, description="마감이 원문에 얼마나 드러나 있는지(judge 새 항목). AI가 보내지 않았으면 null"
+    )
 
 
 class EvidenceInfo(BaseModel):
     quote: str | None
     speaker: str | None
     at_ms: int | None
+    speaker_member_id: str | None = Field(
+        None,
+        description="근거 발화를 한 팀원 ID. 근거 발화를 찾았으면 그 발화에 저장된 값 그대로이고(탈퇴했어도), 못 찾았으면 "
+        "요청의 evidence_speaker_member_id(이 워크스페이스의 탈퇴하지 않은 팀원으로 확인된 값만). 없으면 null",
+    )
 
 
 class ExtractionItemResponse(BaseModel):
@@ -100,19 +150,57 @@ class ExtractionItemResponse(BaseModel):
     task: TaskInfo
     assignee: AssigneeInfo
     due_date: DueDateInfo
-    confidence: float
-    gate: str
+    confidence: float | None = Field(
+        None, description="언급된 값들의 확신도 최솟값. 할 일 확신도가 측정되지 않았으면 null"
+    )
+    gate: str = Field(
+        ...,
+        description="auto | review | hold. auto는 승인 없이 태스크를 바로 만든 항목이다. "
+        "PM이 되돌려도 처음 판단을 남기려고 auto로 둔다. 되돌렸는지는 reverted_at으로 본다",
+    )
     evidence: EvidenceInfo
-    task_id: str | None = Field(None, description="gate=auto — 바로 생성된 태스크 ID")
+    similar_count: int | None = Field(
+        None, description="AI가 판단할 때 본 비슷한 기존 태스크 수(judge 새 항목). 보내지 않았으면 null"
+    )
+    top_similarity: float | None = Field(
+        None, description="그 태스크들 중 가장 높은 유사도(0~1). 보내지 않았거나 검색 결과가 없으면 null"
+    )
+    reverted_at: datetime | None = Field(
+        None,
+        description="auto로 만든 태스크를 PM이 되돌린 시각. 되돌리면 태스크는 지워지고 같은 내용의 생성 승인 "
+        "요청이 approval_id로 연결된다. 되돌리지 않았으면 null",
+    )
+    task_id: str | None = Field(
+        None,
+        description=(
+            "연결된 태스크 ID. 생성 항목은 태스크가 생긴 뒤(자동 생성 또는 생성 승인 뒤)에 채워진다. "
+            "수정 항목은 수정 대상 태스크라 승인 전에도 있다. 반영 여부는 approval_status로 본다"
+        ),
+    )
     approval_id: str | None = Field(
-        None, description="gate=review|hold — PM 승인이 필요한 승인 요청 ID"
+        None, description="연결된 승인 요청 ID. 승인·반려 뒤에도 남는다. 승인 요청이 없으면 null"
+    )
+    approval_status: ApprovalStatus | None = Field(
+        None,
+        description=(
+            "연결된 승인 요청의 지금 상태. 승인 요청이 없으면 null. "
+            "approved는 태스크 반영과 승인 처리가 함께 커밋된 상태다"
+        ),
     )
 
 
 class ExtractionDetailResponse(BaseModel):
     extraction_id: str
     meeting_id: str
+    extraction_path: str | None = Field(None, description="legacy | judge. 판별할 수 없었으면 null")
     items: list[ExtractionItemResponse]
+
+
+class ExtractionItemRevertResponse(BaseModel):
+    item_id: str
+    reverted_task_id: str = Field(..., description="지운 태스크 ID")
+    approval_id: str = Field(..., description="대신 만든 생성 승인 요청 ID(pending)")
+    reverted_at: datetime
 
 
 class TargetSnapshot(BaseModel):
@@ -149,41 +237,124 @@ class ExtractionItemCreate(BaseModel):
         description="action이 create면 필수(비어 있으면 그 항목만 건너뛴다). "
         "update면 보내지 않아도 되고, 보내도 제목은 바꾸지 않는다.",
     )
-    task_confidence: float = 0.0
+    task_confidence: float | None = Field(
+        None,
+        description="할 일 확신도(0~1). legacy 경로만 보낸다. 보내지 않으면 null(측정 안 함)이고 0.0과 다르다.",
+    )
     assignee_raw: str | None = Field(
         None, description="담당자를 가리킨 원문. first가 아니면 이 값을 별칭 텍스트로 매칭한다."
     )
     assignee_type: str | None = Field(
         None,
         description="'first'(1인칭), 'second', 'thirdname', 'group', 'none' 등. "
-        "first이면 assignee_raw 대신 evidence_speaker(Discord uid)로 Member.discord_user_id를 찾는다.",
+        "first이면 assignee_raw 대신 화자로 팀원을 찾는다. 화자는 다음 순서로 정한다. "
+        "(1) evidence_speaker_member_id가 있으면 그 팀원이다. 이 워크스페이스의 탈퇴하지 않은 팀원이 아니면 "
+        "화자를 못 찾은 것이고 (2)(3)으로 넘어가지 않는다. "
+        "(2) evidence_speaker(Discord uid)로 Member.discord_user_id를 찾는다. "
+        "(3) 둘 다 없으면 evidence_seqs 중 가장 큰 seq의 발화(결론 발화)를 찾았을 때 그 발화의 member_id, "
+        "없거나 탈퇴한 팀원이면 그 발화의 화자 uid. 그 발화를 찾지 못하면 화자가 없다.",
     )
     due_date: date | None = None
     due_raw: str | None = None
-    due_confidence: float = 0.0
+    due_confidence: float | None = Field(
+        None, description="마감 확신도(0~1). legacy 경로만 보낸다. 보내지 않으면 null(측정 안 함)."
+    )
     evidence_quote: str | None = None
     evidence_speaker: str | None = Field(
         None, description="근거 문장을 말한 화자의 Discord uid (별칭 텍스트가 아님)"
     )
+    evidence_speaker_member_id: str | None = Field(
+        None,
+        max_length=36,
+        description="근거 문장을 말한 화자의 팀원 ID. 있으면 evidence_speaker보다 먼저 쓴다. "
+        "이 워크스페이스의 탈퇴하지 않은 팀원이 아니면 화자를 못 찾은 것으로 본다. 빈 문자열은 null",
+    )
     evidence_at_ms: int | None = None
+    # 범위는 발화 저장 API의 seq와 같다. 벗어난 값은 DB 조회에서 터지므로 요청에서 막는다
+    evidence_seqs: list[Annotated[int, Field(ge=0, le=INT4_MAX)]] | None = Field(
+        None,
+        # 요청 전체의 seq를 IN 한 번으로 읽는다. 잘못 만든 항목 하나가 DB의 바인드 변수 한도를 넘기지 않게 막는다
+        max_length=MAX_EVIDENCE_SEQS,
+        description="근거 발화의 seq 목록(발화 저장 API의 seq). 순서는 자유, 최대 100개. 모두 evidence로 저장하고 "
+        "가장 큰 seq를 대표 근거로 쓴다. 이 회의에 없는 seq는 건너뛴다. 모르면 [] 또는 생략",
+    )
     category: str | None = Field(
         None, max_length=16, description="schedule / assignee / scope / decision (JudgeResult.category)"
     )
     status: TaskStatus | None = Field(None, description="JudgeResult.status. 언급이 없으면 null")
     doc_text: str | None = Field(None, description="PM에게 보여 줄 설명 문장 (DraftResult.doc_text)")
+    task_status: EvidenceStatus | None = Field(
+        None,
+        description="할 일 근거 상태. judge 새 항목만 보낸다. certain이어야 auto가 될 수 있다. "
+        "보내지 않으면 null이고 auto로 보내지 않는다",
+    )
+    due_status: EvidenceStatus | None = Field(
+        None,
+        description="마감 근거 상태. judge 새 항목만 보낸다. 마감이 없으면 missing. "
+        "certain이거나 missing이어야 auto가 될 수 있다. 보내지 않으면 null이고 auto로 보내지 않는다",
+    )
+    similar_count: int | None = Field(
+        None,
+        ge=0,
+        description="AI가 판단할 때 유사 검색이 돌려준 기존 태스크 수. judge 새 항목만 보낸다. "
+        "0이어야 auto가 될 수 있다. 보내지 않으면 null이고 auto로 보내지 않는다",
+    )
+    top_similarity: float | None = Field(
+        None,
+        ge=0.0,
+        le=1.0,
+        description="그 태스크들 중 가장 높은 유사도. 기록용이라 게이트 판단에는 쓰지 않는다. "
+        "검색 결과가 없으면 null",
+    )
     target_snapshot: TargetSnapshot | None = Field(
         None,
         description="action이 update일 때 AI가 유사 검색에서 본 대상 task 값. 승인 충돌의 기준값이 된다. "
         "없으면 등록 시점의 DB 값을 기준으로 쓴다.",
     )
 
+    @field_validator("evidence_speaker_member_id", mode="before")
+    @classmethod
+    def _blank_member_id_is_unknown(cls, value: object) -> object:
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
+
+    def extraction_path(self) -> ExtractionPath | None:
+        """이 항목을 만든 AI 추출 경로. 값이 아니라 어떤 키를 보냈는지로 가린다.
+
+        judge(ai/judge/pipeline.py to_item)는 action·category·doc_text를 값이 null이어도 키째 보내고,
+        확신도는 보내지 않는다. legacy(ai/capture/handoff.py to_extraction_items)는 task_confidence·
+        due_confidence를 항상 보내고, judge의 키는 보내지 않는다. 둘 다 아니면 None(판별 불가)이다.
+        judge의 키가 있으면 확신도를 함께 보냈어도 judge로 본다. 게이트를 경로로 정하므로, judge가
+        나중에 확신도를 보내기 시작해도 정책을 바꾸기 전까지는 auto로 가지 않게 하려는 것이다.
+        """
+        sent = self.model_fields_set
+        if sent & _JUDGE_KEYS:
+            return ExtractionPath.JUDGE
+        if sent & _LEGACY_KEYS:
+            return ExtractionPath.LEGACY
+        return None
+
+
+# 경로를 가리는 키. ExtractionItemCreate.extraction_path 참고
+_JUDGE_KEYS = frozenset({"action", "category", "doc_text"})
+_LEGACY_KEYS = frozenset({"task_confidence", "due_confidence"})
+
 
 class ExtractionCreateRequest(BaseModel):
     meeting_id: str
     workspace_id: str
     transcript_path: str | None = None
-    model_name: str | None = None
+    model_name: str | None = Field(None, description="STT 모델 이름. 두 추출 경로에서 같아 경로 판별에 쓰지 않는다")
     items: list[ExtractionItemCreate] = []
+
+    def extraction_path(self) -> ExtractionPath | None:
+        """추출 전체의 경로. 모든 항목이 같은 경로일 때만 그 경로이고, 항목이 없거나 섞였거나 판별할 수
+        없는 항목이 있으면 None이다. AI는 회의 하나를 한 경로로만 처리하므로 섞이면 정상 요청이 아니다."""
+        paths = {item.extraction_path() for item in self.items}
+        if len(paths) == 1:
+            return paths.pop()
+        return None
 
 
 class ExtractionCreateResponse(BaseModel):

@@ -1,6 +1,6 @@
 import { ApiError } from '@/shared/api/errors'
 import { approvalFixtures } from '@/shared/mock/fixtures/approval'
-import { toApproval, toApprovalResolveFailure } from './mapper'
+import { isScopeChange, toApproval, toApprovalResolveFailure } from './mapper'
 
 it('maps task-create payload and derives each missing-field combination', () => {
   expect(approvalFixtures.map(toApproval)).toMatchObject([
@@ -12,6 +12,7 @@ it('maps task-create payload and derives each missing-field combination', () => 
       gate: 'hold',
       relatedTaskId: null,
       assigneeRaw: '민수',
+      evidence: { speaker: '1123', speakerMemberId: 'mb_01' },
     },
     { id: 'ap_02', missing: ['due'], assigneeMemberId: 'mb_02', gate: 'review' },
     { id: 'ap_03', missing: ['assignee'], dueDate: '2026-09-25', gate: 'review' },
@@ -26,7 +27,7 @@ it('tolerates missing payload leaves and follows the backend title fallback orde
     meetingId: null,
     extractionItemId: null,
     gate: null,
-    evidence: { quote: null, speaker: null, atMs: null },
+    evidence: { quote: null, speaker: null, speakerMemberId: null, atMs: null },
     missing: ['assignee', 'due'],
   })
   expect(toApproval({ ...approvalFixtures[0], payload: {} })).toMatchObject({ title: '' })
@@ -46,6 +47,98 @@ it('narrows task-update changes to the contract fields present in payload includ
       { field: 'status', value: 'done' },
       { field: 'due_date', value: null },
     ],
+  })
+})
+
+it('names a task_update by the target task, not by the proposed title', () => {
+  const update = (payload: Record<string, unknown>) =>
+    toApproval({ ...approvalFixtures[0], type: 'task_update', payload })
+
+  expect(
+    update({ task_title: '로그인 API 연동', base_title: '로그인 연동', title: '새 제목' }),
+  ).toMatchObject({
+    title: '로그인 API 연동',
+    changes: [{ field: 'title', value: '새 제목' }],
+  })
+  expect(update({ base_title: '로그인 연동', status: 'done' })).toMatchObject({
+    title: '로그인 연동',
+  })
+  expect(update({ title: '새 제목' })).toMatchObject({ title: null })
+})
+
+describe('task_update 의 범위 변경 (#205)', () => {
+  const update = (payload: Record<string, unknown>) =>
+    toApproval({ ...approvalFixtures[0], type: 'task_update', payload })
+
+  it('reads the decision sentence, category, evidence, and meeting', () => {
+    const approval = update({
+      category: 'scope',
+      doc_text: '소셜 로그인은 이번 범위에서 빼기로 했어요.',
+      evidence_quote: '소셜 로그인은 이번엔 빼기로 했어요.',
+      evidence_speaker: '1124',
+      evidence_speaker_member_id: 'mb_02',
+      evidence_at_ms: 754_000,
+      meeting_id: 'mt_09',
+    })
+    expect(approval).toMatchObject({
+      kind: 'task_update',
+      category: 'scope',
+      docText: '소셜 로그인은 이번 범위에서 빼기로 했어요.',
+      evidence: {
+        quote: '소셜 로그인은 이번엔 빼기로 했어요.',
+        speaker: '1124',
+        speakerMemberId: 'mb_02',
+        atMs: 754_000,
+      },
+      meetingId: 'mt_09',
+      changes: [],
+    })
+    expect(isScopeChange(approval)).toBe(true)
+  })
+
+  it('leaves missing keys null and is not a scope change', () => {
+    const approval = update({ status: 'done' })
+    expect(approval).toMatchObject({
+      category: null,
+      docText: null,
+      evidence: { quote: null, speaker: null, speakerMemberId: null, atMs: null },
+      meetingId: null,
+    })
+    expect(isScopeChange(approval)).toBe(false)
+    expect(isScopeChange(update({ category: 'schedule' }))).toBe(false)
+    expect(
+      isScopeChange(toApproval({ ...approvalFixtures[0], payload: { category: 'scope' } })),
+    ).toBe(false)
+  })
+
+  it('리마인드 답장에서 온 제안은 회의 대신 답장을 가리킨다', () => {
+    const approval = update({
+      status: 'done',
+      change_source: 'reminder_reply',
+      reply_message_id: 'mg_31',
+      evidence_quote: 'DB 스키마 정리는 끝냈어요',
+      evidence_speaker_member_id: 'mb_03',
+      evidence_at_ms: null,
+    })
+    expect(approval).toMatchObject({
+      replyMessageId: 'mg_31',
+      meetingId: null,
+      evidence: { quote: 'DB 스키마 정리는 끝냈어요', speakerMemberId: 'mb_03', atMs: null },
+    })
+    expect(update({ status: 'done', reply_message_id: 'mg_31' })).toMatchObject({
+      replyMessageId: null,
+    })
+  })
+
+  it('does not guess an unknown category', () => {
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      expect(update({ category: 'future' })).toMatchObject({ category: null })
+      expect(update({ category: 3 })).toMatchObject({ category: null })
+      expect(warning).toHaveBeenCalledTimes(1)
+    } finally {
+      warning.mockRestore()
+    }
   })
 })
 
@@ -131,5 +224,52 @@ describe('toApprovalResolveFailure', () => {
     expect(toApprovalResolveFailure(httpError('INVALID_REQUEST', null))).toBeNull()
     expect(toApprovalResolveFailure(new Error('boom'))).toBeNull()
     expect(toApprovalResolveFailure(undefined)).toBeNull()
+  })
+})
+
+describe('stored approval edits', () => {
+  it('keeps the original proposal and evidence separate from partial nullable overrides', () => {
+    const original = approvalFixtures[0]
+    expect(
+      toApproval({
+        ...original,
+        status: 'approved',
+        payload: {
+          ...original.payload,
+          task_overrides: { task_title: '최종 제목', due_date: null, future: true },
+        },
+      }),
+    ).toMatchObject({
+      title: original.payload.task_title,
+      evidence: { quote: original.payload.evidence_quote },
+      storedOverrides: { taskTitle: '최종 제목', dueDate: null },
+    })
+    expect(
+      toApproval({
+        ...original,
+        type: 'task_update',
+        status: 'approved',
+        payload: { status: 'done', due_date: '2026-10-22', task_overrides: { due_date: null } },
+      }),
+    ).toMatchObject({
+      changes: [
+        { field: 'status', value: 'done' },
+        { field: 'due_date', value: '2026-10-22' },
+      ],
+      storedOverrides: { dueDate: null },
+    })
+  })
+  it.each([
+    ['task_create', { task_title: null }],
+    ['task_create', { assignee_member_id: 1 }],
+    ['task_create', { due_date: false }],
+    ['task_update', { status: null }],
+    ['task_update', { status: 'invalid' }],
+    ['task_update', { due_date: 2 }],
+    ['task_create', null],
+  ])('rejects malformed known stored fields for %s', (type, task_overrides) => {
+    expect(() => toApproval({ ...approvalFixtures[0], type, payload: { task_overrides } })).toThrow(
+      expect.objectContaining({ kind: 'invalid_response', code: 'INVALID_RESPONSE' }),
+    )
   })
 })

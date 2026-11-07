@@ -214,7 +214,7 @@ def results_from_lines(tracks: list, lines: list, *, mode: str, model_name: str,
 
 def transcribe_session_batch(wavs: list[Path], names: dict[str, str], backend, *, mode: str,
                              model_name: str, gate=None, workers: int = 1,
-                             lines_out: list | None = None) -> tuple[dict[Path, dict], dict]:
+                             lines_out: list | None = None, progress=None) -> tuple[dict[Path, dict], dict]:
     """한 세션의 트랙들을 stt.batch 로 전사해 파일당 결과 dict 를 돌려준다.
 
     한 세션을 한 번에 넣는 이유는 순번(seq)이 회의 전체 기준이기 때문이다. 돌려주는 두 번째 값은
@@ -223,7 +223,7 @@ def transcribe_session_batch(wavs: list[Path], names: dict[str, str], backend, *
     from stt import batch as B
 
     tracks = _tracks_for(wavs, names)
-    lines, stats = B.run(tracks, backend, mode=mode, gate=gate, workers=workers)
+    lines, stats = B.run(tracks, backend, mode=mode, gate=gate, workers=workers, progress=progress)
     if lines_out is not None:
         lines_out.extend(lines)   # 회의록(md/jsonl)을 쓰려는 호출자용
     results = results_from_lines(tracks, lines, mode=mode, model_name=model_name, backend=backend,
@@ -258,7 +258,7 @@ def save_session_outputs(lines: list, *, results: dict[Path, dict], summary: dic
 
 def run_session(wavs: list[Path], names: dict[str, str], backend, *, mode: str = "chunk",
                 model_name: str, gate=None, workers: int = 1, out_dir: Path,
-                session_id: str | None = None) -> dict:
+                session_id: str | None = None, progress=None) -> dict:
     """한 세션을 전사해 파일당 json/txt, 세션 통계, 병합 Transcript 까지 쓴다.
 
     돌려주는 dict: results(파일당 결과), summary(통계), lines(회의록용 Line), transcript_json(경로).
@@ -267,7 +267,7 @@ def run_session(wavs: list[Path], names: dict[str, str], backend, *, mode: str =
     """
     lines: list = []
     results, summary = transcribe_session_batch(wavs, names, backend, mode=mode, model_name=model_name,
-                                                gate=gate, workers=workers, lines_out=lines)
+                                                gate=gate, workers=workers, lines_out=lines, progress=progress)
     session = session_id or (parse_wav_stem(wavs[0].stem)[1] if wavs else "")
     merged = save_session_outputs(lines, results=results, summary=summary, model_name=model_name,
                                   out_dir=out_dir, session=session)

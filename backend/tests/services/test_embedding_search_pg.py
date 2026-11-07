@@ -107,3 +107,13 @@ def test_includes_all_statuses_but_excludes_missing_embeddings_and_other_workspa
     results = embedding.search_similar_tasks(db, ws.workspace_id, QUERY, k=10)
 
     assert sorted(_titles(results)) == ["blocked", "done", "in_progress", "todo"]
+
+
+def test_excludes_deleted_tasks(db):
+    ws = _workspace(db)
+    _task(db, ws, "남은 task", 0.8)
+    deleted = _task(db, ws, "지운 task", 0.95)
+    deleted.is_deleted = True
+    db.commit()
+
+    assert _titles(embedding.search_similar_tasks(db, ws.workspace_id, QUERY)) == ["남은 task"]

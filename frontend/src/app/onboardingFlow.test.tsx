@@ -40,6 +40,8 @@ describe('온보딩 전체 흐름 (U3-11)', { timeout: 15_000 }, () => {
     applyScenario('no-workspace')
     const bodies = recordRequestBodies('PATCH', '/workspaces/ws_03/onboarding')
     let app = renderApp('/login')
+    await screen.findByRole('heading', { name: '어떻게 시작할까요?' })
+    await userEvent.click(screen.getByRole('link', { name: /PM으로 팀 만들기/ }))
     expect(await screen.findByRole('heading', { name: '워크스페이스 만들기' })).toBeInTheDocument()
 
     await userEvent.type(screen.getByLabelText('팀 이름'), '캡스톤 5조')
@@ -51,7 +53,8 @@ describe('온보딩 전체 흐름 (U3-11)', { timeout: 15_000 }, () => {
 
     app = await connectVia(app, 'notion')
     await screen.findByLabelText('@seoyeon_01의 팀원 이름', {}, { timeout: 3000 })
-    await userEvent.type(screen.getByLabelText('@seoyeon_01의 팀원 이름'), '최진호')
+    // 확인 완료는 PM 체크가 있어야 한다 (#228) — 예전에는 생성자 이름을 그대로 적어 이었다
+    await userEvent.click(screen.getByRole('checkbox', { name: '@seoyeon_01 — PM 최진호' }))
     await userEvent.type(screen.getByLabelText('@minsu의 팀원 이름'), '박민수')
     await userEvent.click(screen.getByRole('button', { name: '2명 확인 완료' }))
 

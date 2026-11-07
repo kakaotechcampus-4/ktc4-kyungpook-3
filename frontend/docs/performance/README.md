@@ -33,4 +33,6 @@
 
 | 문서 | 요약 | 상태 |
 |---|---|---|
-| [2026-09-29-font-loading.md](2026-09-29-font-loading.md) | NanumSquare 두 벌(약 316KB)을 미리 불러와 첫 화면 JS 와 대역폭을 나눠 쓴다 | 대기 |
+| [2026-09-29-font-loading.md](2026-09-29-font-loading.md) | NanumSquare 두 벌(약 316KB)을 미리 불러와 첫 화면 JS 와 대역폭을 나눠 쓴다 | 대기(1·2 는 2026-11-05 에 정함) |
+| [2026-11-05-font-loading-remeasure.md](2026-11-05-font-loading-remeasure.md) | Bold preload 를 빼 LCP 0.5~1.0초 단축, unicode-range 분할은 이득 없음 | 반영됨 |
+| [2026-11-05-taskboard-derived.md](2026-11-05-taskboard-derived.md) | TaskBoard가 보기와 무관하게 만드는 파생값·탭 개수. 2,000건에서 한 번에 5.3~8.7ms, 개발 빌드 화면 비중 최대 약 5%라 코드 변경을 보류했다(#351). memo 무효화는 #391에서 반영([결정](../plan/m8/basis-for-decision/2026-11-05-task-board-due-value-memo.md)) | 일부 반영(나머지 보류) |

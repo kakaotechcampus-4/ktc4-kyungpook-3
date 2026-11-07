@@ -222,6 +222,21 @@ def test_worker_excludes_blank_titles(db):
     assert _embedding_of(db, spaces) is None
 
 
+def test_worker_skips_deleted_tasks(db):
+    workspace = _workspace(db)
+    deleted = _task(db, workspace, "지운 task")
+    deleted.is_deleted = True
+    db.commit()
+    _task(db, workspace, "로그인 API 구현")
+
+    api = FakeEmbeddingApi()
+    assert embedding.process_missing_embeddings(db, transport=api.transport) == 1
+
+    # 지운 task는 검색에서 빠지므로 임베딩하지 않는다
+    assert api.inputs() == [["로그인 API 구현"]]
+    assert _embedding_of(db, deleted) is None
+
+
 def test_worker_input_error_retries_one_by_one_and_skips_rejected_task(db):
     workspace = _workspace(db)
     first = _task(db, workspace, "로그인 API 구현")

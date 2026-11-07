@@ -14,7 +14,6 @@ class TaskCreateRequest(BaseModel):
     start_date: date | None = None
     due_date: date | None = None
     status: TaskStatus = TaskStatus.TODO
-    progress: int | None = Field(None, ge=0, le=100)
     blocker: str | None = None
     created_by: str | None = Field(
         None, description="하위 호환용. 생성한 사람은 이 값 대신 로그인한 멤버(세션)로 기록한다."
@@ -25,7 +24,6 @@ class TaskUpdateRequest(BaseModel):
     title: str | None = Field(None, min_length=1, max_length=300)
     assignee_member_id: str | None = None
     status: TaskStatus | None = None
-    progress: int | None = Field(None, ge=0, le=100)
     blocker: str | None = None
     start_date: date | None = None
     due_date: date | None = None
@@ -34,7 +32,9 @@ class TaskUpdateRequest(BaseModel):
     )
 
 
-class TaskResponse(BaseModel):
+class TaskFields(BaseModel):
+    """Task 행에서 그대로 읽는 필드. 응답은 이것에 auto_blocked 를 더한 TaskResponse 로 낸다."""
+
     model_config = ConfigDict(from_attributes=True)
 
     task_id: str
@@ -43,7 +43,6 @@ class TaskResponse(BaseModel):
     title: str
     assignee_member_id: str | None
     status: str
-    progress: int | None
     blocker: str | None
     start_date: date | None
     due_date: date | None
@@ -54,6 +53,14 @@ class TaskResponse(BaseModel):
     )
     created_at: datetime
     updated_at: datetime
+
+
+class TaskResponse(TaskFields):
+    auto_blocked: bool = Field(
+        ...,
+        description="지금 POST /tasks/{task_id}/auto-block/undo 가 성공하는 상태면 true. "
+        "무응답 자동 막힘이 걸려 있고 그 뒤 막힘 사유가 바뀌지 않았다는 뜻",
+    )
 
 
 class TaskListResponse(BaseModel):

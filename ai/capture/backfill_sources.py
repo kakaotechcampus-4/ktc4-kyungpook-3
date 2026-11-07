@@ -71,7 +71,7 @@ def main(argv: list[str] | None = None) -> int:
     a = ap.parse_args(argv)
     handoff = handoff_from_env()
     if handoff is None:
-        print("BE_BASE_URL, BE_WORKSPACE_ID, BE_SERVICE_TOKEN 이 다 있어야 보낼 수 있다", file=sys.stderr)
+        print("BE_BASE_URL, BE_SERVICE_TOKEN 이 다 있어야 보낼 수 있다", file=sys.stderr)
         return 1
     rows = backfill(Path(a.recordings), transcripts_dir=Path(a.transcripts), handoff=handoff, dry_run=a.dry_run)
     for r in rows:

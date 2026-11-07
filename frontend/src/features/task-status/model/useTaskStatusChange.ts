@@ -6,8 +6,9 @@ import {
   taskHistoryQueryOptions,
   taskListQueryOptions,
   updateTaskStatus,
+  writeServerTask,
 } from '@/entities/task'
-import type { Task, TaskStatus } from '@/entities/task'
+import type { TaskStatus } from '@/entities/task'
 import { captureSession } from '@/entities/user'
 import { findMemberWorkspace, workspaceListQueryOptions } from '@/entities/workspace'
 import { failureNotice } from '@/shared/api/errorMessages'
@@ -58,18 +59,6 @@ export function useTaskStatusOverlay(workspaceId: string): ReadonlyMap<string, T
         ),
       ),
     [pending],
-  )
-}
-
-/** 서버가 돌려준 태스크를 그 태스크의 목록 행·상세 캐시에 쓴다. 다른 태스크와 없는 캐시는 건드리지 않는다 */
-function writeServerTask(queryClient: QueryClient, workspaceId: string, task: Task): void {
-  // 이미 더 새 버전을 받았으면 그대로 둔다
-  const newer = (current: Task) => (current.version > task.version ? current : task)
-  queryClient.setQueryData(taskDetailQueryOptions(workspaceId, task.id).queryKey, (current) =>
-    current === undefined ? undefined : newer(current),
-  )
-  queryClient.setQueryData(taskListQueryOptions(workspaceId).queryKey, (current) =>
-    current?.map((item) => (item.id === task.id ? newer(item) : item)),
   )
 }
 

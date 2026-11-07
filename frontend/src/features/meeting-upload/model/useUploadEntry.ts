@@ -2,14 +2,15 @@ import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { integrationsQueryOptions } from '@/entities/integration'
 import type { DisconnectedStatus } from '@/entities/integration'
-import { findProcessingMeeting, meetingListQueryOptions } from '@/entities/meeting'
+import { findUploadBlockingMeeting, meetingListQueryOptions } from '@/entities/meeting'
 
 /** Notion 이 연결돼 있지 않은 까닭. 모달이 둘이다 — 미연결(D-097)과 끊김(D-100) */
 export type NotionBlockReason = DisconnectedStatus
 
 /**
  * 업로드 화면에 들어올 때의 판정 (U3-1).
- * - `processing`: 공간에 정리 중인 회의가 있다 — 그 처리 화면으로 `replace` 이동 (D-088~D-090)
+ * - `processing`: 공간에 업로드를 막는 정리 중 회의가 있다 — 그 처리 화면으로 `replace` 이동 (D-088~D-090).
+ *   채팅 회의는 막지 않는다 (#450)
  * - `blocked`: Notion 이 연결돼 있지 않다 — 차단 모달 (D-096, D-097, D-100)
  * - `error`: 확인하지 못했다. 미연결로 보지 않고 다시 시도를 준다
  */
@@ -33,7 +34,7 @@ export function useUploadEntry(workspaceId: string): UploadEntry {
   const meetings = useQuery({ ...meetingListQueryOptions(workspaceId), staleTime: 0 })
   const meetingsChecked = meetings.isFetchedAfterMount && !meetings.isFetching
   const processing =
-    meetingsChecked && meetings.data !== undefined ? findProcessingMeeting(meetings.data) : null
+    meetingsChecked && meetings.data !== undefined ? findUploadBlockingMeeting(meetings.data) : null
   const integrations = useQuery({
     ...integrationsQueryOptions(workspaceId),
     staleTime: 0,
@@ -50,7 +51,9 @@ export function useUploadEntry(workspaceId: string): UploadEntry {
     return { kind: 'error', error: integrations.error, retry: () => void integrations.refetch() }
   if (!integrationsChecked || integrations.data === undefined) return { kind: 'checking' }
   const { status } = integrations.data.notion
-  if (status !== 'connected') return { kind: 'blocked', reason: status }
+  // 준비 중(`connecting`)은 막지 않는다. 그 사이 만든 태스크도 DB 가 붙으면 반영 대기열에 오른다
+  // (backend integrations._notion_status 주석, #204)
+  if (status === 'not_connected' || status === 'revoked') return { kind: 'blocked', reason: status }
   // 렌더 중 상태 갱신은 같은 컴포넌트에서 한 번만 일어난다 — 다음 렌더부터 settled 다
   setSettled(true)
   return { kind: 'ready' }

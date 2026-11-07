@@ -49,6 +49,15 @@ def test_prompt_carries_meeting_date_evidence_and_current_values():
     assert "마감일: 2026-09-28" in prompt
 
 
+def test_prompt_shows_meeting_note_so_reverting_has_a_date():
+    # 앞 제안(10/6)이 덮인 후보만 보이면 "원래대로"를 날짜로 못 바꾼다 — 원래 값이 든 메모를 함께 보여 준다(#140)
+    cand = _candidate(due_date="2026-10-06",
+                      meeting_note="이번 회의 앞부분에서 마감을 2026-09-28 → 2026-10-06 바꾸자고 함. 아직 승인 전")
+    prompt = _draft_prompt(_finding(text="로그인 화면 마감을 원래대로 두기로 함"), _result(), cand, TODAY)
+    assert "2026-09-28 → 2026-10-06" in prompt
+    assert "원래대로" in prompt and "원래 값" in prompt
+
+
 def test_prompt_for_create_has_no_current_values_but_shows_assignee():
     f = _finding(
         text="결제 환불 기능을 지민님이 다음 주까지 구현하기로 함",
@@ -94,6 +103,45 @@ def test_update_outside_schedule_drops_due_date():
     assert drafted.structured == DraftStructured()
 
 
+def _create_response(**extra) -> dict:
+    return {"task": "API 에러 코드 목록 정리", "due_date": "2026-10-02", "doc_text": "API 에러 코드 목록 정리", **extra}
+
+
+def _draft_create(response: dict):
+    result = _result(category="decision", is_new=True, matched_task_id=None)
+    return draft_llm(_finding(), result, None, TODAY, FakeLLM(responses=[response]))
+
+
+def test_due_raw_is_parsed():
+    drafted = _draft_create(_create_response(due_raw="이번 주 금요일까지"))
+    assert drafted.structured.due_raw == "이번 주 금요일까지"
+
+
+@pytest.mark.parametrize("blank", ["", "  ", 3, None, "missing"])
+def test_due_raw_blank_or_not_str_is_none(blank):
+    response = _create_response() if blank == "missing" else _create_response(due_raw=blank)
+    drafted = _draft_create(response)
+    assert drafted is not None
+    assert drafted.structured.due_raw is None
+
+
+def test_due_raw_kept_when_due_date_is_rejected():
+    # 마감 표현이 있었는데 날짜가 걸러진 경우(과거 날짜 등). 표현이 남아야 evidence 가 missing 이 아니라 inferred 로 둔다
+    drafted = _draft_create(_create_response(due_date=None, due_raw="금요일"))
+    assert drafted.structured.due_date is None and drafted.structured.due_raw == "금요일"
+
+
+def test_due_raw_dropped_for_updates():
+    fake = FakeLLM(responses=[{"task": None, "due_date": "2026-10-02", "due_raw": "금요일", "doc_text": "완료"}])
+    result = _result(category="decision", status="done")
+    drafted = draft_llm(_finding(), result, _candidate(), TODAY, fake)
+    assert drafted.structured.due_raw is None
+
+
+def test_prompt_asks_for_due_raw():
+    assert "due_raw" in _draft_prompt(_finding(), _result(), _candidate(), TODAY)
+
+
 @pytest.mark.parametrize("bad", ["2020-01-01", "다음 주 화요일", "2026-13-01", 20261006, None])
 def test_invalid_due_date_becomes_none_without_failing(bad):
     # 날짜만 틀렸으면 마감만 비우고 나머지는 살린다
@@ -113,6 +161,18 @@ def test_update_schedule_without_usable_due_date_is_failure(bad, monkeypatch):
     with pytest.raises(DraftUnavailableError):
         draft(_finding(), _result(), candidate=_candidate(), today=TODAY)
 
+
+
+def test_none_due_clears_the_due_only_on_a_schedule_update():
+    # "none" 은 마감을 없애자는 결정, null 은 못 정함. 일정 변경 수정에서 null 은 지금처럼 실패다(멘토 리뷰 #230)
+    def run(response, **result):
+        return draft_llm(_finding(), _result(**result), _candidate(), TODAY, FakeLLM(responses=[response]))
+
+    cleared = run({"task": None, "due_date": "none", "doc_text": "로그인 화면 마감을 미정으로 되돌림"})
+    assert cleared.structured == DraftStructured(task=None, due_date=None, due_cleared=True)
+    assert run({"task": None, "due_date": None, "doc_text": "마감 연기"}) is None
+    new = run({"task": "알림 설정", "due_date": "none", "doc_text": "알림 설정"}, is_new=True, matched_task_id=None)
+    assert new.structured.due_cleared is False and new.structured.due_date is None
 
 @pytest.mark.parametrize("response, is_new", [
     ({"task": "알림 설정 페이지 개발", "due_date": None, "doc_text": "  "}, True),  # doc_text 없음

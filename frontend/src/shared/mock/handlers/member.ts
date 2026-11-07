@@ -1,7 +1,7 @@
 import { http } from 'msw'
 import { db } from '../db'
 import { fail, list, ok } from '../envelope'
-import { requireMember } from '../auth-guard'
+import { requireMember, requirePmRole } from '../auth-guard'
 import { MOCK_NOW } from '../fixtures/constants'
 import { nextId } from '../utils'
 const base = '/api/v1'
@@ -79,6 +79,9 @@ export const memberHandlers = [
       return fail('INVALID_REQUEST', '팀원 요청이 올바르지 않습니다.', 400)
     if (!db.workspaces.some(({ workspace_id }) => workspace_id === body.workspace_id))
       return fail('WORKSPACE_NOT_FOUND', '워크스페이스가 없습니다.', 404)
+    // 백엔드는 공간을 찾은 뒤 require_pm 을 본다 (members.py 의 create_member)
+    const denied = requirePmRole(body.workspace_id)
+    if (denied) return denied
     if (
       typeof body.discord_user_id === 'string' &&
       db.members.some(
@@ -107,12 +110,24 @@ export const memberHandlers = [
   http.patch(`${base}/members/:memberId`, async ({ params, request }) => {
     const member = db.members.find(({ member_id }) => member_id === params.memberId)
     if (!member) return fail('MEMBER_NOT_FOUND', '팀원이 없습니다.', 404)
+    // 백엔드는 팀원을 찾은 뒤 그 공간의 PM 인지 본다 (members.py 의 _get_member(..., pm=True))
+    const denied = requirePmRole(member.workspace_id)
+    if (denied) return denied
     const body = (await request.json()) as {
       discord_user_id?: unknown
       display_name?: unknown
       notion_name?: unknown
       role?: unknown
     }
+    // 초대를 기다리는 팀원을 PM 으로 올리면 수락한 계정이 곧바로 PM 이 된다. 아무것도 바꾸지 않고 막는다 (결정 0036)
+    if (
+      body.role === 'pm' &&
+      member.role !== 'pm' &&
+      db.invitations.some(
+        ({ member_id, status }) => member_id === member.member_id && status === 'pending',
+      )
+    )
+      return fail('MEMBER_HAS_PENDING_INVITATION', '대기 중인 초대가 있는 팀원입니다.', 409)
     if (
       typeof body.discord_user_id === 'string' &&
       db.members.some(

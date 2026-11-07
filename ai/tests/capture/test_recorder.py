@@ -1,18 +1,24 @@
 """녹음 코어(capture/recorder.py). 매니페스트 상태, 단계 재개, 부분 실패 재전사, 트랙 재발견, 회의 날짜. 모델은 안 쓴다."""
 
 import json
+import re
 import shutil
-from datetime import date
+import threading
+import time
+from datetime import date, datetime, timedelta, timezone
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
 import soundfile as sf
 
 from capture import handoff as H
+from capture import ops_record as O
 from capture import recorder as R
+from capture.judge_path import JudgeOutput
 from stt import batch as B
 from stt.backend import SttResult, Word
-from tests.capture.fake_be import FakeBe
+from tests.capture.fake_be import FakeBe, without_stage
 
 SR = 16_000
 
@@ -62,7 +68,7 @@ class Task:
 
 
 def _extractor(seen: dict):
-    def run(transcript, names, today):
+    def run(transcript, names, today, workspace_id=None):
         seen["names"], seen["n"], seen["today"] = names, len(transcript.segments), today
         return [Task(transcript.segments[0].text)]
     return run
@@ -80,7 +86,8 @@ def _session(tmp_path, ts=500, started_at="2026-09-16T00:00:00Z", guild="77", st
         entries = []
     path, manifest = R.write_status(rec, f"{guild}_{ts}", status=status, entries=entries, guild="g", channel="회의방",
                                     library_version="x", started_at=started_at, meeting_dir=f"{guild}_{ts}",
-                                    extra={"timezone": "Asia/Seoul", "guild_id": guild, "text_channel_id": "900"})
+                                    extra={"timezone": "Asia/Seoul", "guild_id": guild, "text_channel_id": "900",
+                                           "workspace_id": "ws-1"})
     return rec, path, manifest
 
 
@@ -145,7 +152,7 @@ def test_process_session_runs_every_stage_and_records_when(tmp_path):
     fake = FakeBe()
     seen = {}
     r = _run(rec, manifest, tmp_path, extractor=_extractor(seen),
-             handoff=H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"), "ws-1"))
+             handoff=H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token")))
     assert r["ran"] == ["transcribed", "sourced", "extracted", "handed_off"] and r["status"] == "handed_off"
     assert r["text_channel_id"] == "900"
     saved = json.loads(path.read_text(encoding="utf-8"))
@@ -154,10 +161,11 @@ def test_process_session_runs_every_stage_and_records_when(tmp_path):
     assert saved["be"]["meeting_id"] == "m1" and saved["be"]["status"] == "done" and saved["be"]["extraction_id"] == "e-m1"
     assert seen["today"] == date(2026, 9, 16) and seen["names"] == {"1": "민수", "2": "서연"} and seen["n"] == 3
     # BE 에는 회의 생성 → 종료 → 발화 저장 → 추출 등록 순서로 갔고, 1인칭 항목에 그 트랙의 uid 가 실렸다
-    assert [(c[0], c[1]) for c in fake.calls] == [("POST", "/meetings"), ("PATCH", "/meetings/m1/end"),
+    assert [(c[0], c[1]) for c in without_stage(fake.calls)] == [("POST", "/meetings"), ("PATCH", "/meetings/m1/end"),
+                                                   ("GET", "/workspaces/ws-1/members/names"),
                                                    ("POST", "/meetings/m1/sources"), ("POST", "/extractions")]
     assert fake.calls[0][2]["title"] == "회의방 2026-09-16"
-    assert fake.calls[3][2]["items"][0]["evidence_speaker"] == "1"
+    assert without_stage(fake.calls)[4][2]["items"][0]["evidence_speaker"] == "1"
     assert R.pending_sessions(rec) == []
 
 
@@ -175,9 +183,9 @@ def test_process_session_stops_where_settings_are_missing_and_recover_resumes(tm
     fake = FakeBe()
     results = R.recover(rec, backend=EchoStt(), model_name="echo", workers=1, gate=None,
                         transcripts_dir=tmp_path / "transcripts", extractor=_extractor({}),
-                        handoff=H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"), "ws-1"))
+                        handoff=H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token")))
     assert results[0]["ran"] == ["sourced", "handed_off"] and results[0]["status"] == "handed_off"
-    assert [c[1] for c in fake.calls] == ["/meetings", "/meetings/m1/end", "/meetings/m1/sources", "/extractions"]
+    assert [c[1] for c in without_stage(fake.calls)] == ["/meetings", "/meetings/m1/end", "/meetings/m1/sources", "/extractions"]
     assert R.pending_sessions(rec) == []
 
 
@@ -254,9 +262,9 @@ def test_when_no_line_survives_the_meeting_stays_partial(tmp_path, monkeypatch):
 def test_failed_stage_is_recorded_and_retried_from_there_on_the_same_be_meeting(tmp_path):
     rec, path, manifest = _session(tmp_path)
     fake = FakeBe()
-    h = H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"), "ws-1")
+    h = H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"))
 
-    def dying(transcript, names, today):
+    def dying(transcript, names, today, workspace_id=None):
         raise RuntimeError("LLM 죽음")
 
     r = _run(rec, manifest, tmp_path, extractor=dying, handoff=h)
@@ -341,7 +349,7 @@ def test_extract_after_transcription_uses_the_meeting_date_and_skips_without_ext
     assert out == tdir / "session_77_500.tasks.json"
     assert json.loads(out.read_text(encoding="utf-8"))[0]["task"] == "와이어프레임 그리기"
     assert seen["today"] == date(2026, 9, 17)                          # 한국 시각으로 다음 날
-    assert R.extract_after_transcription(tdir, manifest, extractor=lambda *a: [], today=date(2026, 1, 1)) == out
+    assert R.extract_after_transcription(tdir, manifest, extractor=lambda *a, **k: [], today=date(2026, 1, 1)) == out
     assert R.extract_after_transcription(tmp_path / "없음", manifest, extractor=_extractor({})) is None
 
 
@@ -361,7 +369,7 @@ def test_a_changed_transcript_invalidates_extraction_and_flags_a_stale_be_extrac
     monkeypatch.setattr(R, "PARTIAL_RETRY_MAX", 1)
     rec, path, manifest = _session(tmp_path)
     fake = FakeBe()
-    h = H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"), "ws-1")
+    h = H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"))
     seen = {}
     stt = DiesOnLong()                                    # 화자 1 의 묶음(4.4초)만 죽는다
     r = _run(rec, manifest, tmp_path, backend=stt, extractor=_extractor(seen), handoff=h)
@@ -390,7 +398,7 @@ def test_a_changed_transcript_invalidates_extraction_and_flags_a_stale_be_extrac
 # ─────────────────────────────────────────────────────────── 회의록 저장 단계 (#146)
 def _be(fake):
     """서비스 토큰까지 있는 BE 설정. 발화 저장 API 는 토큰이 있어야 받는다."""
-    return H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"), "ws-1")
+    return H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"))
 
 
 def test_lines_are_saved_to_the_be_between_transcription_and_extraction(tmp_path):
@@ -399,7 +407,8 @@ def test_lines_are_saved_to_the_be_between_transcription_and_extraction(tmp_path
     r = _run(rec, manifest, tmp_path, extractor=_extractor({}), handoff=_be(fake))
     assert r["ran"] == ["transcribed", "sourced", "extracted", "handed_off"] and r["status"] == "handed_off"
     # 발화 먼저, 추출 등록 나중 (BE 명세)
-    assert [(c[0], c[1]) for c in fake.calls] == [("POST", "/meetings"), ("PATCH", "/meetings/m1/end"),
+    assert [(c[0], c[1]) for c in without_stage(fake.calls)] == [("POST", "/meetings"), ("PATCH", "/meetings/m1/end"),
+                                                   ("GET", "/workspaces/ws-1/members/names"),
                                                    ("POST", "/meetings/m1/sources"), ("POST", "/extractions")]
     assert sorted(fake.sources["m1"]) == [1, 2, 3]
     assert [fake.sources["m1"][q]["speaker_name"] for q in (1, 2, 3)] == ["민수", "서연", "민수"]
@@ -468,12 +477,12 @@ def test_a_run_that_died_without_be_settings_is_counted_at_the_stage_it_was_in(t
     assert m["failed_stage"] == "extract"
 
 
-def _dying(transcript, names, today):
+def _dying(transcript, names, today, workspace_id=None):
     raise RuntimeError("LLM 죽음")
 
 
 def test_lines_follow_the_meeting_when_the_be_meeting_is_replaced(tmp_path, monkeypatch):
-    """추출에서 포기해 BE m1 이 failed 가 된 뒤 /recover 하면 새 회의 m2 가 생긴다. 발화도 m2 에 먼저 다시 보낸다."""
+    """추출에서 포기해 BE m1 이 failed 가 된 뒤 --retry 하면 새 회의 m2 가 생긴다. 발화도 m2 에 먼저 다시 보낸다."""
     monkeypatch.setattr(R, "RECOVERY_MAX_ATTEMPTS", 1)
     rec, path, manifest = _session(tmp_path)
     fake = FakeBe()
@@ -484,7 +493,7 @@ def test_lines_follow_the_meeting_when_the_be_meeting_is_replaced(tmp_path, monk
     saved = json.loads(path.read_text(encoding="utf-8"))
     assert saved["be"]["meeting_id"] == "m2" and saved["be"]["sources"]["meeting_id"] == "m2"
     assert sorted(fake.sources["m2"]) == [1, 2, 3]
-    paths = [c[1] for c in fake.calls]
+    paths = [c[1] for c in without_stage(fake.calls)]
     assert paths.index("/meetings/m2/sources") < paths.index("/extractions")
 
 
@@ -493,19 +502,19 @@ def test_a_meeting_the_be_failed_during_extraction_moves_with_its_lines(tmp_path
     rec, path, manifest = _session(tmp_path)
     fake = FakeBe()
 
-    def meanwhile_failed(transcript, names, today):
+    def meanwhile_failed(transcript, names, today, workspace_id=None):
         fake.meetings["m1"]["status"] = "failed"
         return [Task(transcript.segments[0].text)]
 
     r = _run(rec, manifest, tmp_path, extractor=meanwhile_failed, handoff=_be(fake))
     assert r["status"] == "handed_off" and r["be"]["meeting_id"] == "m2"
-    assert [c[1] for c in fake.calls][-4:] == ["/meetings", "/meetings/m2/end", "/meetings/m2/sources", "/extractions"]
+    assert [c[1] for c in without_stage(fake.calls)][-4:] == ["/meetings", "/meetings/m2/end", "/meetings/m2/sources", "/extractions"]
     assert sorted(fake.sources["m2"]) == [1, 2, 3] and list(fake.extractions) == ["m2"]
     assert json.loads(path.read_text(encoding="utf-8"))["be"]["sources"]["meeting_id"] == "m2"
 
 
 def test_resending_the_lines_keeps_the_failure_count_of_a_later_stage(tmp_path, monkeypatch):
-    """포기한 회의를 /recover 로 다시 돌려 또 실패하면 곧바로 다시 포기한다. 발화를 새 회의에 다시 보내는 단계가
+    """포기한 회의를 --retry 로 다시 돌려 또 실패하면 곧바로 다시 포기한다. 발화를 새 회의에 다시 보내는 단계가
     그 횟수를 지우면 네 번을 더 기다리고, 판단 경로면 그만큼 LLM 호출이 더 나간다."""
     monkeypatch.setattr(R, "RECOVERY_MAX_ATTEMPTS", 3)
     rec, path, manifest = _session(tmp_path)
@@ -574,6 +583,87 @@ def test_a_missing_route_is_waited_out_not_given_up(tmp_path):
     assert fake.meetings["m1"]["status"] == "processing"
 
 
+# ── 서버로 워크스페이스 찾기(#199). 처리할 때 비어 있으면 다시 묻고, 연결이 없으면 전사까지만 한다 ──────────────
+
+def test_an_unconnected_server_stops_after_the_transcript_and_resumes_once_connected(tmp_path):
+    fake = FakeBe()
+    rec, path, manifest = _session(tmp_path)
+    del manifest["workspace_id"]
+    h = H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"))
+    r = _run(rec, manifest, tmp_path, extractor=_extractor({}), handoff=h)
+    assert r["status"] == "transcribed" and r["workspace"] == "not_connected"
+    assert set(r["skipped"]) == {"sourced", "extracted", "handed_off"}
+    assert [c[1] for c in fake.calls] == ["/integrations/discord/guilds/77/workspace"]       # 묻는 곳은 한 곳이다
+    assert "error" not in json.loads(path.read_text(encoding="utf-8")).get("be", {})        # 연결 없음은 오류가 아니다
+    fake.guilds = {"77": "ws-1"}                                                              # 웹에서 연결했다
+    r2 = _run(rec, json.loads(path.read_text(encoding="utf-8")), tmp_path, extractor=_extractor({}), handoff=h)
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    assert r2["status"] == "handed_off" and saved["workspace_id"] == "ws-1"
+    assert fake.meetings["m1"]["workspace_id"] == "ws-1"
+
+
+def test_a_failed_lookup_is_a_sources_failure_that_retries(tmp_path):
+    fake = FakeBe()
+    rec, path, manifest = _session(tmp_path)
+    del manifest["workspace_id"]
+    fake.down = True
+    h = H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"))
+    r = _run(rec, manifest, tmp_path, extractor=_extractor({}), handoff=h)
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    assert r["status"] == "failed" and r["failed_stage"] == "sources" and "NETWORK" in r["error"]
+    assert saved["recovery"]["attempts"] == 1 and "transcribed" in saved["stages"]
+
+
+def test_a_rejected_service_token_skips_the_be_stages_as_a_setting_problem(tmp_path):
+    rec, path, manifest = _session(tmp_path)
+    del manifest["workspace_id"]
+    h = H.Handoff(H.BeClient("http://be", session=FakeBe(), service_token="wrong"))
+    r = _run(rec, manifest, tmp_path, extractor=_extractor({}), handoff=h)
+    assert r["status"] == "transcribed" and "workspace" not in r
+    assert r["skipped"]["handed_off"] == R.TOKEN_REJECTED_REASON
+
+
+def test_the_extractor_gets_the_workspace_of_the_manifest(tmp_path):
+    seen = {}
+
+    def extractor(transcript, names, today, workspace_id=None):
+        seen["ws"] = workspace_id
+        return []
+
+    rec, path, manifest = _session(tmp_path)
+    _run(rec, manifest, tmp_path, extractor=extractor)
+    assert seen["ws"] == "ws-1"
+
+
+def test_queue_ahead_counts_pending_uploads_that_run_before_a_discord_meeting(tmp_path):
+    """업로드 회의(서버가 없다)는 디스코드 회의보다 먼저 처리되니 디스코드 회의의 "앞에 N건" 에 센다."""
+    rec, _, _ = _mapped_upload(tmp_path, session="upload_m-up1")
+    _mapped_upload(tmp_path, session="upload_m-up2", be={"meeting_id": "m-up2", "status": "processing"})
+    _session(tmp_path, ts=600)
+    assert len(R.pending_sessions(rec)) == 3
+    assert R.queue_ahead(rec, "77_600") == 2
+
+
+def test_waiting_for_the_workspace_skips_the_transcript_until_the_server_is_connected(tmp_path):
+    """워커(#199). 연결이 없으면 전사해도 올릴 웹이 없다. 연결 전에는 전사하지 않고 기다린다.
+    기다리는 회의는 다른 회의의 "앞에 N건" 에 세지 않는다."""
+    fake = FakeBe()
+    rec, path, manifest = _session(tmp_path)
+    del manifest["workspace_id"]
+    _session(tmp_path, ts=600)                                   # 다른 서버가 뒤에 녹음한 회의
+    h = H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"))
+    r = _run(rec, manifest, tmp_path, extractor=_extractor({}), handoff=h, wait_for_workspace=True)
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    assert r["workspace"] == "not_connected" and r["ran"] == [] and "transcribed" not in saved.get("stages", {})
+    assert saved["status"] == "saved" and saved["workspace_wait"]
+    assert R.queue_ahead(rec, "77_600") == 0
+    fake.guilds = {"77": "ws-1"}
+    saved["workspace_wait"] = "2026-01-01T00:00:00+00:00"          # 마지막으로 물은 지 1분이 지났다
+    r2 = _run(rec, saved, tmp_path, extractor=_extractor({}), handoff=h, wait_for_workspace=True)
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    assert r2["status"] == "handed_off" and "workspace_wait" not in saved and saved["workspace_id"] == "ws-1"
+
+
 # ── 이름 힌트(#195). 매니페스트의 hint_names 로 프롬프트를 받는 백엔드에만 건다 ──────────────────────
 
 class PromptEcho(EchoStt):
@@ -619,6 +709,65 @@ def test_a_meeting_without_names_sends_no_prompt(tmp_path):
     assert stt.prompts and set(stt.prompts) == {None}
 
 
+def _members(fake):
+    fake.members = {"ws-1": [{"member_id": "m1", "name": "김동우", "discord_user_id": "1", "aliases": []},
+                             {"member_id": "m2", "name": "유재환", "discord_user_id": "2", "aliases": ["재환이", "jh"]}]}
+    return fake
+
+
+def test_the_names_the_pm_set_are_the_hint_and_are_kept_for_retries(tmp_path):
+    """디스코드 표시 이름은 아이디 꼴이거나 성이 빠져 있다. 처리할 때 BE 에서 PM 이 정한 이름을 받아 프롬프트에
+    싣고, 실패 구간 재전사도 같은 이름을 쓰게 매니페스트에 남긴다."""
+    rec, path, manifest = _session(tmp_path)
+    manifest["hint_names"] = ["yujaehwan2261", "동우"]
+    fake = _members(FakeBe())
+    stt = PromptEcho()
+    _run(rec, manifest, tmp_path, backend=stt, extractor=_extractor({}), handoff=_be(fake))
+    assert set(stt.prompts) == {"동우님, 동우, 김동우, 재환님, 재환, 유재환, 재환이."}
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    assert saved["hint_members"] == [{"name": "김동우", "aliases": [], "discord_user_id": "1", "member_id": "m1"},
+                                     {"name": "유재환", "aliases": ["재환이", "jh"], "discord_user_id": "2", "member_id": "m2"}]
+    assert ("GET", "/workspaces/ws-1/members/names") in [c[:2] for c in fake.calls]
+
+
+def test_without_names_from_the_be_the_discord_names_are_the_hint(tmp_path):
+    """BE 가 안 되거나 워크스페이스가 없으면 디스코드 표시 이름으로 돌아간다. 힌트 때문에 전사를 멈추지 않는다."""
+    rec, path, manifest = _session(tmp_path)
+    manifest["hint_names"] = ["동우"]
+    fake = FakeBe()
+    fake.down = True
+    stt = PromptEcho()
+    r = _run(rec, manifest, tmp_path, backend=stt, extractor=_extractor({}), handoff=_be(fake))
+    assert "transcribed" in r["ran"] and set(stt.prompts) == {"동우님, 동우."}
+    assert "hint_members" not in json.loads(path.read_text(encoding="utf-8"))
+
+
+def test_the_minutes_use_the_names_the_pm_set(tmp_path):
+    """회의록(BE 발화 저장, 대본 파일, 추출)의 화자 이름도 디스코드 표시 이름 대신 PM 이 정한 이름이다.
+    프롬프트를 받지 않는 로컬 백엔드여도 같다. 팀원 목록에 없는 화자는 디스코드 표시 이름 그대로다."""
+    rec, path, manifest = _session(tmp_path)
+    fake = FakeBe()
+    fake.members = {"ws-1": [{"member_id": "m1", "name": "김동우", "discord_user_id": "1", "aliases": []},
+                             {"member_id": "m3", "name": "윤지민", "discord_user_id": None, "aliases": []}]}
+    seen = {}
+    _run(rec, manifest, tmp_path, extractor=_extractor(seen), handoff=_be(fake))
+    assert [fake.sources["m1"][q]["speaker_name"] for q in (1, 2, 3)] == ["김동우", "서연", "김동우"]
+    assert seen["names"] == {"1": "김동우", "2": "서연"}
+    md = (rec / manifest["meeting_dir"] / "transcript.md").read_text(encoding="utf-8")
+    assert "김동우" in md and "민수" not in md
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    assert saved["speakers"][0]["display_name"] == "민수"     # 디스코드 표시 이름은 매니페스트에 그대로 남긴다
+
+
+def test_without_names_from_the_be_the_minutes_keep_the_discord_names(tmp_path):
+    rec, path, manifest = _session(tmp_path)
+    fake = FakeBe()
+    fake.down = True
+    _run(rec, manifest, tmp_path, extractor=_extractor({}), handoff=_be(fake))
+    md = (rec / manifest["meeting_dir"] / "transcript.md").read_text(encoding="utf-8")
+    assert "민수" in md and "서연" in md
+
+
 class PromptDiesOnLong(DiesOnLong):
     name = "elice/whisper-large-v3"
     accepts_prompt = True
@@ -646,3 +795,481 @@ def test_retrying_failed_clips_sends_the_same_name_prompt(tmp_path, monkeypatch)
                    transcripts_dir=tmp_path / "transcripts", extractor=_extractor({}), handoff=None)[0]
     assert r2["ran"][0] == "retried" and r2["retried"] == 2
     assert stt.prompts and set(stt.prompts) == {"동우님, 동우."}
+
+
+# ─────────────────────────────────────────────────────────── 회의마다 처리 기록 (#153)
+def _ops(path):
+    return json.loads(path.read_text(encoding="utf-8"))["ops"]
+
+
+def _md_rows(rec, meeting="77_500"):
+    md = (rec / meeting / "처리기록.md").read_text(encoding="utf-8")
+    return md, [ln for ln in md.splitlines() if re.match(r"\| \d\d/\d\d ", ln)]
+
+
+def _samplers():
+    return [t for t in threading.enumerate() if t.name == O.SAMPLER_NAME and t.is_alive()]
+
+
+class LazyEcho(EchoStt):
+    """로컬 백엔드처럼 _model 과 _load 가 있고, 전사 호출이 처음 부를 때 모델을 올린다."""
+
+    def __init__(self):
+        self._model = None
+
+    def _load(self):
+        if self._model is None:
+            self._model = object()
+        return self._model
+
+    def transcribe(self, samples, sample_rate):
+        self._load()
+        return super().transcribe(samples, sample_rate)
+
+
+def test_a_run_leaves_a_record_with_stage_times_in_the_manifest(tmp_path, monkeypatch):
+    monkeypatch.setattr(O, "read_rss", lambda: 300 * 1024 ** 2)
+    rec, path, manifest = _session(tmp_path)
+    r = _run(rec, manifest, tmp_path, extractor=_extractor({}), handoff=_be(FakeBe()))
+    assert r["ran"] == ["transcribed", "sourced", "extracted", "handed_off"] and r["status"] == "handed_off"
+    ops = _ops(path)
+    assert len(ops) == 1 and r["ops"] == ops[0]
+    entry = ops[0]
+    assert list(entry["stages"]) == ["stt", "sources", "extract", "handoff"]
+    times = [t for s in entry["stages"].values() for t in (s["started_at"], s["ended_at"])]
+    assert times == sorted(times) and entry["run_started_at"] <= times[0] and times[-1] <= entry["run_ended_at"]
+    assert all(s["s"] >= 0 for s in entry["stages"].values()) and entry["wall_s"] >= entry["stages"]["stt"]["s"]
+    assert (entry["status"], entry["failed_stage"], entry["model"], entry["backend"]) == ("handed_off", None, "echo", "echo")
+    assert entry["calls"] == 2 and entry["meeting_s"] == 12.0 and entry["rtf_meeting"] is not None
+    assert entry["peak_rss_bytes"] == 300 * 1024 ** 2
+    assert entry["model_load_s"] is None                        # EchoStt 는 올릴 모델이 없다
+    assert _samplers() == []
+
+
+def test_the_wait_runs_from_saving_the_recording_to_starting_the_run(tmp_path):
+    rec, path, manifest = _session(tmp_path)
+    manifest["recorded_at"] = (datetime.now(timezone.utc) - timedelta(minutes=2)).replace(microsecond=0).isoformat()
+    r = _run(rec, manifest, tmp_path)
+    assert 119 <= r["ops"]["wait_s"] < 150
+
+
+def test_runs_that_return_early_are_recorded_and_each_run_adds_a_row(tmp_path, monkeypatch):
+    """partial 로 돌아간 처리, 추출기가 없어 멈춘 처리, BE 설정이 없어 멈춘 처리도 기록이 남는다."""
+    monkeypatch.setattr(B, "RETRY_WAIT_S", 0.0)
+    rec, path, manifest = _session(tmp_path)
+    stt = DiesOnLong()                                    # 화자 1 의 묶음(4.4초)만 죽는다
+    r = _run(rec, manifest, tmp_path, backend=stt, extractor=None)
+    assert r["status"] == "partial" and r["ops"]["status"] == "partial" and list(r["ops"]["stages"]) == ["stt"]
+    assert r["ops"]["calls"] == 2 and r["ops"]["failed"] == 1
+    r2 = _run(rec, json.loads(path.read_text(encoding="utf-8")), tmp_path, backend=stt, extractor=None)
+    assert r2["ran"] == ["retried"] and r2["status"] == "transcribed"
+    assert r2["ops"]["retried_lines"] == 2 and r2["ops"]["recovery_attempts"] == 1
+    assert r2["ops"]["rtf_meeting"] is None and r2["ops"]["calls"] is None   # 다시 보낸 두 줄로 RTF 를 내지 않는다
+    r3 = _run(rec, json.loads(path.read_text(encoding="utf-8")), tmp_path, backend=stt, extractor=_extractor({}))
+    assert r3["status"] == "extracted" and r3["skipped"] == {"handed_off": "BE 설정 없음"}
+    assert list(r3["ops"]["stages"]) == ["extract"] and r3["ops"]["status"] == "extracted"
+    assert [o["status"] for o in _ops(path)] == ["partial", "transcribed", "extracted"]
+    md, rows = _md_rows(rec)
+    assert md.startswith("# 처리 기록: 회의방 2026-09-16") and len(rows) == 3
+    assert "전사 일부 실패" in rows[0] and "추출까지" in rows[2]
+
+
+def test_a_run_that_does_nothing_leaves_no_record(tmp_path):
+    """설정이 없어 멈춘 회의(추출기 없음, BE 설정 없음)는 recovery 가 없어 복구 바퀴마다 다시 집힌다. 아무 단계도
+    돌지 않은 처리까지 남기면 바퀴마다 한 줄씩 쌓인다(워커 10초 주기면 회의 하나에 하루 8,640줄)."""
+    rec, path, manifest = _session(tmp_path)
+
+    def loop_pass(extractor):
+        R.recover(rec, backend=EchoStt(), model_name="echo", workers=1, transcripts_dir=tmp_path / "transcripts",
+                  extractor=extractor, handoff=None, manual=False)
+
+    _run(rec, manifest, tmp_path, extractor=None)
+    for _ in range(3):
+        loop_pass(None)                                    # 추출기가 없어 전사에서 멈춘 회의
+    assert [o["status"] for o in _ops(path)] == ["transcribed"]
+    for _ in range(3):
+        loop_pass(_extractor({}))                          # 첫 바퀴는 추출하고 그 뒤는 BE 설정이 없어 멈춘 회의
+    assert [o["status"] for o in _ops(path)] == ["transcribed", "extracted"]
+    assert len(_md_rows(rec)[1]) == 2
+
+
+def test_stage_times_leave_out_the_failure_count_and_what_comes_after_the_stage(tmp_path, monkeypatch):
+    """실패 횟수 세기(포기하면 BE 에 fail 을 보낸다. 제한 시간 10초)와 다음 단계 준비는 단계 시간에 들지 않는다.
+    첫 전사의 partial, 재전사 뒤 추출, 예외로 끝난 추출을 본다."""
+    monkeypatch.setattr(B, "RETRY_WAIT_S", 0.0)
+    count = R._count_failure
+
+    def slow_count(*args, **kwargs):
+        time.sleep(0.5)
+        return count(*args, **kwargs)
+
+    monkeypatch.setattr(R, "_count_failure", slow_count)
+    rec, path, manifest = _session(tmp_path)
+    stt = DiesOnLong()
+    r = _run(rec, manifest, tmp_path, backend=stt, extractor=None)
+    assert r["status"] == "partial" and r["ops"]["stages"]["stt"]["s"] < 0.4
+    monkeypatch.setattr(O.OpsRun, "watch_llm", lambda self: time.sleep(0.5))
+    r2 = _run(rec, json.loads(path.read_text(encoding="utf-8")), tmp_path, backend=stt, extractor=_dying)
+    assert r2["ran"] == ["retried"] and r2["failed_stage"] == "extract"
+    assert r2["ops"]["stages"]["stt"]["s"] < 0.4 and r2["ops"]["stages"]["extract"]["s"] < 0.4
+    assert r2["ops"]["wall_s"] >= 1.0                     # 기다린 시간은 처리 시간에는 든다
+
+
+def test_the_model_is_loaded_before_the_stt_stage_and_not_for_a_later_stage(tmp_path):
+    """모델 올리기를 전사 단계 밖에서 따로 잰다. 추출부터 잇는 처리는 모델을 올리지 않는다(원래도 안 올렸다)."""
+    rec, path, manifest = _session(tmp_path)
+    r = _run(rec, manifest, tmp_path, backend=LazyEcho(), extractor=None)
+    assert r["status"] == "transcribed" and r["ops"]["model_load_s"] is not None
+    later = LazyEcho()
+    r2 = _run(rec, json.loads(path.read_text(encoding="utf-8")), tmp_path, backend=later, extractor=_extractor({}))
+    assert r2["ran"] == ["extracted"] and later._model is None and r2["ops"]["model_load_s"] is None
+
+
+def test_the_judge_path_counts_the_llm_calls_of_the_extract_stage(tmp_path, monkeypatch):
+    import llm
+
+    clients = {"terra": SimpleNamespace(calls=4), "luna": SimpleNamespace(calls=0)}
+    monkeypatch.setattr(llm, "get_llm", lambda which: clients[which])
+    monkeypatch.setenv("MM_EXTRACT_PATH", "judge")
+
+    def judging(transcript, names, today, workspace_id=None):
+        clients["terra"].calls += 2
+        clients["luna"].calls += 3
+        return JudgeOutput(items=[], failures=[])
+
+    rec, path, manifest = _session(tmp_path)
+    r = _run(rec, manifest, tmp_path, extractor=judging)
+    assert r["status"] == "extracted" and r["ops"]["llm_calls"] == {"terra": 2, "luna": 3}
+    assert r["ops"]["extract_path"] == "judge"
+
+
+def _raise(*args, **kwargs):
+    raise RuntimeError("기록 깨짐")
+
+
+@pytest.mark.parametrize("target", ["finish", "write_markdown", "read_rss"])
+def test_a_broken_record_does_not_change_the_run(tmp_path, monkeypatch, capsys, target):
+    """처리 기록은 곁가지다. 기록을 만들거나 쓰다 실패해도 회의 처리 결과와 매니페스트 상태는 그대로다."""
+    if target == "finish":
+        monkeypatch.setattr(O.OpsRun, "finish", _raise)
+    else:
+        monkeypatch.setattr(O, target, _raise)
+    rec, path, manifest = _session(tmp_path)
+    fake = FakeBe()
+    r = _run(rec, manifest, tmp_path, extractor=_extractor({}), handoff=_be(fake))
+    assert r["ran"] == ["transcribed", "sourced", "extracted", "handed_off"] and r["status"] == "handed_off"
+    assert r["error"] is None and fake.meetings["m1"]["status"] == "done"
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    assert saved["status"] == "handed_off" and "error" not in saved
+    assert _samplers() == []                               # 표본 스레드는 어느 경우든 멈춘다
+    if target == "finish":
+        assert r.get("ops") is None and "ops" not in saved and "기록 깨짐" in capsys.readouterr().out
+    elif target == "write_markdown":
+        assert len(saved["ops"]) == 1 and not (rec / "77_500" / "처리기록.md").exists()
+    else:
+        assert r["ops"]["peak_rss_bytes"] is None
+
+
+def test_process_session_reports_each_stage_as_it_starts_and_the_transcription_count(tmp_path):
+    rec, path, manifest = _session(tmp_path)
+    events = []
+    _run(rec, manifest, tmp_path, extractor=lambda transcript, names, today: [],
+         progress=lambda stage, info=None: events.append((stage, info)))
+    starts = [stage for stage, info in events if info is None]
+    assert starts[:1] == ["stt"] and "extract" in starts
+    counts = [info for stage, info in events if stage == "stt" and info]
+    assert counts and counts[-1]["done"] == counts[-1]["sent"] and counts[-1]["tracks"] == counts[-1]["tracks_total"]
+
+
+def test_process_session_reports_each_stage_as_it_finishes_with_what_it_made(tmp_path):
+    """워커가 단계가 끝날 때마다 채널에 알린다(capture/notify.py). 끝난 단계와 그때까지의 결과를 넘긴다."""
+    rec, path, manifest = _session(tmp_path)
+    done = []
+    _run(rec, manifest, tmp_path, extractor=_extractor({}), handoff=_be(FakeBe()),
+         progress=lambda stage, info=None: done.append((info["stage"], dict(info["result"]))) if stage == "done" else None)
+    assert [s for s, _ in done] == ["transcribed", "sourced", "extracted", "handed_off"]
+    by = dict(done)
+    assert by["transcribed"]["transcribe"]["lines"] > 0 and by["sourced"]["sources"]["inserted"] > 0
+    assert by["handed_off"]["be"]["meeting_id"] == "m1"
+
+
+def test_a_failing_progress_report_does_not_change_the_result(tmp_path):
+    rec, path, manifest = _session(tmp_path)
+
+    def boom(stage, info=None):
+        raise RuntimeError("채널이 막혔다")
+
+    result = _run(rec, manifest, tmp_path, progress=boom)
+    assert result["status"] == R.STATUS_TRANSCRIBED and result["error"] is None
+
+
+def test_the_production_hint_skips_short_chunks():
+    """운영 전사는 PROMPT_MIN_S 보다 짧은 묶음에 프롬프트를 싣지 않는다(결정 기록 0030)."""
+    from stt.backend import PROMPT_MIN_S
+
+    assert R.hinted(PromptEcho(), {"hint_names": ["동우"]}).min_s == PROMPT_MIN_S
+
+
+# ───────────────────────────────────────────── mapped 업로드 회의 처리 (#286)
+def _write_intake(rec, meeting_id, resume):
+    """recordings/.uploads/<id>/intake.json 에 가져오기 기록을 쓴다. resume 이 None 이면 resume 키를 두지 않고,
+    문자열이면 {"state": resume} 로 둔다(그 밖의 값은 그대로 쓴다)."""
+    d = rec / ".uploads" / meeting_id
+    d.mkdir(parents=True, exist_ok=True)
+    body = {"meeting_id": meeting_id, "state": "done", "item": {"meeting_id": meeting_id}}
+    if resume is not None:
+        body["resume"] = {"state": resume, "attempts": 0, "next_at": None, "error": None} if isinstance(resume, str) else resume
+    (d / "intake.json").write_text(json.dumps(body, ensure_ascii=False), encoding="utf-8")
+
+
+def _mapped_upload(tmp_path, *, be=None, mapping=None, drop=(), resume="mapped", session=None):
+    """prepare_upload 로 만든 진짜 트랙에 지정을 쓴 mapped 업로드. 라벨 SPEAKER_00 → u1, SPEAKER_01 → 외부 참석자.
+    drop 에 적은 키는 매니페스트에서 뺀다(대상 조건 확인용). resume 은 지정 받기 기록(intake.json)의 resume.state 다
+    (None 이면 resume 키 없이, False 면 기록 파일 없이 둔다)."""
+    from tests.conftest import SEGS, STARTED, FakeDiarizer, _audio
+    from upload.mapping import apply_mapping
+    from upload.prepare import prepare_upload
+
+    rec = tmp_path / "recordings"
+    meta = {"be": be if be is not None else {"meeting_id": "m-up1", "status": "processing"}, "workspace_id": "ws-1",
+            "title": "주간 회의", "attendees": [{"member_id": "u1", "display_name": "민수"}]}
+    path, _ = prepare_upload(_audio(tmp_path), rec, diarizer=FakeDiarizer(SEGS), started_at=STARTED, timezone="Asia/Seoul",
+                             meta=meta, session=session)
+    apply_mapping(path, mapping or {"SPEAKER_00": "u1", "SPEAKER_01": None})
+    m = json.loads(path.read_text(encoding="utf-8"))
+    for key in drop:
+        m.pop(key, None)
+    R.save_manifest(path, m)
+    if resume is not False:
+        _write_intake(rec, (m.get("be") or {}).get("meeting_id") or "m-up1", resume)
+    return rec, path, m
+
+
+def _upload_be():
+    fake = FakeBe()
+    fake.add_upload("m-up1")
+    fake.members["ws-1"] = [{"member_id": "u1", "name": "민수", "discord_user_id": None, "aliases": []}]
+    return fake
+
+
+def test_a_mapped_upload_is_processed_and_handed_off_with_member_ids_and_no_meeting_calls(tmp_path):
+    rec, path, m = _mapped_upload(tmp_path)
+    fake = _upload_be()
+    r = _run(rec, m, tmp_path, extractor=_extractor({}), handoff=_be(fake))
+    assert r["status"] == "handed_off" and r["ended"] is None
+    calls = [(c[0], c[1]) for c in fake.calls]
+    assert ("POST", "/meetings") not in calls and not any(p.endswith("/end") for _, p in calls)   # 웹 업로드가 이미 만들었다
+    sent = next(b for _, p, b in fake.calls if p == "/meetings/m-up1/sources")
+    assert all(s["speaker"] is None for s in sent["segments"])
+    assert any(s.get("speaker_member_id") == "u1" for s in sent["segments"])
+    assert not any(s.get("speaker_member_id") for s in sent["segments"] if s["start"] >= 5.0)   # 외부 참석자는 키가 없다
+    ext = next(b for _, p, b in fake.calls if p == "/extractions")
+    assert ext["meeting_id"] == "m-up1" and ext["items"][0]["evidence_speaker"] is None
+    assert ext["items"][0]["evidence_speaker_member_id"] == "u1"
+    assert json.loads(path.read_text(encoding="utf-8"))["status"] == "handed_off"
+
+
+def _pending_upload_cases():
+    return [
+        ("complete", {}, True),
+        ("no mapped_at", {"drop": ("mapped_at",)}, False),
+        ("no be", {"drop": ("be",)}, False),
+        ("no workspace", {"drop": ("workspace_id",)}, False),
+        ("be not processing", {"be": {"meeting_id": "m-up1", "status": "failed"}}, False),
+        ("be done", {"be": {"meeting_id": "m-up1", "status": "done"}}, False),
+        ("be without meeting id", {"be": {"status": "processing"}}, False),
+    ]
+
+
+@pytest.mark.parametrize("name,kw,expected", _pending_upload_cases(), ids=[c[0] for c in _pending_upload_cases()])
+def test_an_upload_is_pending_only_when_mapped_and_ready_for_handoff(tmp_path, name, kw, expected):
+    rec, path, m = _mapped_upload(tmp_path, **kw)
+    assert R._is_pending(rec, m) is expected
+    assert (R.pending_sessions(rec) == [path]) is expected
+
+
+def test_an_upload_is_not_pending_until_the_resume_record_says_mapped(tmp_path):
+    """매니페스트가 mapped 여도 지정 받기(upload.assign)가 resume.state 를 mapped 로 닫기 전에는 집지 않는다.
+    resuming 인 동안 처리를 시작하면 assign 의 재시도가 같은 회의의 로컬을 지울 수 있다."""
+    rec, path, m = _mapped_upload(tmp_path, resume="resuming")
+    assert R._is_pending(rec, m) is False and R.pending_sessions(rec) == []
+    _write_intake(rec, "m-up1", "mapped")
+    assert R._is_pending(rec, m) is True
+
+
+@pytest.mark.parametrize("record", ["missing", "broken", "no_resume", "not_a_dict"])
+def test_an_upload_without_a_usable_resume_record_is_not_pending(tmp_path, record):
+    rec, path, m = _mapped_upload(tmp_path, resume="mapped")
+    f = rec / ".uploads" / "m-up1" / "intake.json"
+    if record == "missing":
+        f.unlink()
+    elif record == "broken":
+        f.write_text("{not json", encoding="utf-8")
+    elif record == "no_resume":
+        _write_intake(rec, "m-up1", None)
+    else:
+        body = json.loads(f.read_text(encoding="utf-8"))
+        body["resume"] = "mapped"                   # resume 이 dict 가 아니면 state 를 못 읽는다
+        f.write_text(json.dumps(body), encoding="utf-8")
+    assert R._is_pending(rec, m) is False
+
+
+def test_an_upload_with_a_speaker_missing_the_member_id_key_is_not_pending(tmp_path):
+    rec, path, m = _mapped_upload(tmp_path)
+    del m["speakers"][1]["member_id"]
+    assert R._is_pending(rec, m) is False
+    m["speakers"][1]["member_id"] = None            # 외부 참석자(null)는 지정이 끝난 것이다
+    assert R._is_pending(rec, m) is True
+
+
+def test_a_diarized_or_finished_upload_is_not_pending_even_when_everything_else_is_there(tmp_path):
+    rec, path, m = _mapped_upload(tmp_path)
+    for status in (R.STATUS_DIARIZED, R.STATUS_HANDED_OFF):
+        assert R._is_pending(rec, {**m, "status": status}) is False
+    for status in (R.STATUS_MAPPED, R.STATUS_FAILED, R.STATUS_TRANSCRIBED, R.STATUS_SOURCED):
+        assert R._is_pending(rec, {**m, "status": status}) is True       # 중간에 멈춘 업로드는 이어 간다
+
+
+def test_an_upload_is_queued_before_discord_meetings(tmp_path):
+    rec, dpath, _ = _session(tmp_path, ts=500)
+    _, upath, _ = _mapped_upload(tmp_path)
+    assert [p for p in R.pending_sessions(rec)] == [upath, dpath]
+    assert R._queue_key(upath) < R._queue_key(dpath)
+
+
+def test_uploads_are_queued_by_when_they_were_mapped_not_by_file_name(tmp_path):
+    """#389 리뷰: 업로드끼리는 먼저 지정된(BE sweeper 시계가 먼저 도는) 회의가 먼저다. 파일 이름(uuid) 순이 아니다."""
+    def up(name, mapped_at):
+        p = tmp_path / f"session_upload_{name}.json"
+        p.write_text(json.dumps({"session": f"upload_{name}", "source": "upload", "mapped_at": mapped_at}), encoding="utf-8")
+        return p
+    late = up("aaa", "2026-11-05T10:00:05+00:00")
+    early = up("zzz", "2026-11-05T10:00:00+00:00")
+    unknown = up("bbb", None)                       # 지정 시각이 없거나 깨지면 업로드 중 맨 뒤
+    rec, dpath, _ = _session(tmp_path / "d", ts=500)
+    assert sorted([late, unknown, early, dpath], key=R._queue_key) == [early, late, unknown, dpath]
+
+
+def test_remember_member_names_keeps_the_member_id_too(tmp_path):
+    manifest = {"workspace_id": "ws-1"}
+    assert R.remember_member_names(manifest, _be(_members(FakeBe()))) is True
+    assert [m["member_id"] for m in manifest["hint_members"]] == ["m1", "m2"]
+
+
+def test_a_meeting_ended_during_an_upload_is_not_counted_as_a_failure_and_sends_no_fail(tmp_path):
+    rec, path, m = _mapped_upload(tmp_path)
+    fake = _upload_be()
+    fake.meetings["m-up1"]["status"] = "failed"          # 웹 sweeper 가 이미 닫았다
+    r = _run(rec, m, tmp_path, extractor=_extractor({}), handoff=_be(fake))
+    assert r["ended"] and "MEETING_FAILED" in r["ended"]
+    assert r["status"] != "failed" and r["error"] is None and r["attempts"] == 0 and not r["gave_up"]
+    assert not any(p.endswith("/fail") or p == "/meetings" for _, p, _ in fake.calls)
+    assert "recovery" not in json.loads(path.read_text(encoding="utf-8"))
+
+
+def test_an_upload_whose_be_status_is_not_processing_ends_before_any_work(tmp_path):
+    rec, path, m = _mapped_upload(tmp_path)
+    m["be"]["status"] = "failed"
+    fake = _upload_be()
+
+    class Boom:
+        name = "boom"
+
+        def transcribe(self, samples, sample_rate):
+            raise AssertionError("끝난 회의에 STT 를 부르면 안 된다")
+
+    r = _run(rec, m, tmp_path, backend=Boom(), extractor=_extractor({}), handoff=_be(fake))
+    assert r["ended"] and r["ran"] == [] and fake.calls == []
+
+
+# ─────────────────────────────────────────────────────────── 처리 단계 보고
+def _stages_reported(fake):
+    return [c[2]["stage"] for c in fake.calls if c[0] == "PATCH" and c[1].endswith("/stage")]
+
+
+def _paths(fake):
+    return [c[1] for c in fake.calls]
+
+
+def test_process_session_reports_stages_in_order(tmp_path):
+    rec, path, manifest = _session(tmp_path)
+    fake = FakeBe()
+    r = _run(rec, manifest, tmp_path, extractor=_extractor({}), handoff=_be(fake))
+    assert r["status"] == "handed_off"
+    assert _stages_reported(fake) == ["stt", "sources", "extract", "handoff"]
+    # 단계는 그 일이 시작되기 전에 알린다. 발화 저장 앞에 sources, 추출 등록 앞에 handoff
+    paths = _paths(fake)
+    stage_at = [i for i, p in enumerate(paths) if p.endswith("/stage")]
+    assert stage_at[0] < paths.index("/meetings/m1/sources") and stage_at[1] < paths.index("/meetings/m1/sources")
+    assert stage_at[3] < paths.index("/extractions")
+
+
+def test_stage_report_failure_does_not_change_result(tmp_path):
+    ok_rec, _, ok_manifest = _session(tmp_path / "ok")
+    ok_fake = FakeBe()
+    ok = _run(ok_rec, ok_manifest, tmp_path / "ok", extractor=_extractor({}), handoff=_be(ok_fake))
+    for trouble in (500, 404):
+        sub = tmp_path / f"fail{trouble}"
+        rec, path, manifest = _session(sub)
+        fake = FakeBe()
+        fake.stage_fail = trouble
+        r = _run(rec, manifest, sub, extractor=_extractor({}), handoff=_be(fake))
+        assert r["status"] == ok["status"] == "handed_off" and r["ran"] == ok["ran"]
+        # 본문에는 임시 경로(transcript_path)가 있어 호출 순서와 대상만 비교한다
+        assert [c[:2] for c in without_stage(fake.calls)] == [c[:2] for c in without_stage(ok_fake.calls)]
+        assert _stages_reported(fake) == ["stt", "sources", "extract", "handoff"]   # 실패해도 단계마다 시도는 한다
+        assert json.loads(path.read_text(encoding="utf-8"))["status"] == "handed_off"
+
+
+def test_stage_report_goes_out_after_the_progress_note_and_before_the_ops_stage_opens(tmp_path, monkeypatch):
+    """보고 HTTP 시간이 ops 단계 시간에 들어가지 않는다. 진행 표시 -> BE 보고 -> ops.begin 순서."""
+    events = []
+    real_begin = R.ops_record.OpsRun.begin
+    monkeypatch.setattr(R.ops_record.OpsRun, "begin",
+                        lambda self, name: (events.append(("ops", name)), real_begin(self, name))[1])
+    fake = FakeBe()
+    real_request = fake.request
+
+    def spy(method, url, **kw):
+        if method == "PATCH" and url.endswith("/stage"):
+            events.append(("report", kw["json"]["stage"]))
+        return real_request(method, url, **kw)
+
+    fake.request = spy
+    rec, path, manifest = _session(tmp_path)
+    _run(rec, manifest, tmp_path, extractor=_extractor({}), handoff=_be(fake),
+         progress=lambda name, info: events.append(("tell", name)) if info is None else None)   # 단계 시작 알림만
+    for stage in ("stt", "sources", "extract", "handoff"):
+        assert [e[0] for e in events if e[1] == stage] == ["tell", "report", "ops"], stage
+
+
+def test_resume_from_extract_reports_only_remaining_stages(tmp_path):
+    rec, path, manifest = _session(tmp_path)
+    fake = FakeBe()
+    first = _run(rec, manifest, tmp_path, extractor=None, handoff=_be(fake))
+    assert first["ran"] == ["transcribed", "sourced"]
+    assert _stages_reported(fake) == ["stt", "sources"]
+    fake.calls.clear()
+    r = _run(rec, json.loads(path.read_text(encoding="utf-8")), tmp_path, extractor=_extractor({}), handoff=_be(fake))
+    assert r["ran"] == ["extracted", "handed_off"]
+    assert _stages_reported(fake) == ["extract", "handoff"]
+
+
+def test_no_handoff_no_stage_calls(tmp_path):
+    rec, path, manifest = _session(tmp_path)
+    r = _run(rec, manifest, tmp_path, extractor=_extractor({}), handoff=None)
+    assert r["ran"] == ["transcribed", "extracted"]          # 예외 없이 BE 없는 길을 끝까지 간다
+
+
+def test_partial_retry_reports_stt(tmp_path, monkeypatch):
+    monkeypatch.setattr(B, "RETRY_WAIT_S", 0.0)
+    rec, path, manifest = _session(tmp_path)
+    stt = DiesOnLong()
+    fake = FakeBe()
+    r = _run(rec, manifest, tmp_path, backend=stt, extractor=_extractor({}), handoff=_be(fake))
+    assert r["status"] == "partial" and _stages_reported(fake) == ["stt"]
+    fake.calls.clear()
+    results = R.recover(rec, backend=stt, model_name="echo", workers=1, gate=None,
+                        transcripts_dir=tmp_path / "transcripts", extractor=_extractor({}), handoff=_be(fake))
+    assert results[0]["ran"][0] == "retried"
+    assert _stages_reported(fake).count("stt") == 1          # 다시 보내는 길도 전사 단계로 알린다

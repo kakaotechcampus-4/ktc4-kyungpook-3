@@ -1,6 +1,17 @@
 import type { ExtractionDto, ExtractionItemDto } from '@/shared/types/api/extraction'
 import { enumValue } from '@/shared/lib/enum'
-import type { Extraction, ExtractionItem } from './types'
+import type { Extraction, ExtractionApprovalStatus, ExtractionItem } from './types'
+
+const APPROVAL_STATUSES = ['pending', 'approved', 'rejected'] as const
+
+// 없는 값(이전 서버 응답)·모르는 값은 null 이다. 승인이 걸린 항목이 null 이면 반영으로 보지 않는다(extractionView). 모르는 값은 경고를 남긴다
+function approvalStatusOf(value: string | null | undefined): ExtractionApprovalStatus | null {
+  if (value === null || value === undefined) return null
+  if ((APPROVAL_STATUSES as readonly string[]).includes(value))
+    return value as ExtractionApprovalStatus
+  if (import.meta.env.DEV) console.warn(`Unknown extraction approval status: ${value}`)
+  return null
+}
 
 export function toExtractionItem(dto: ExtractionItemDto): ExtractionItem {
   return {
@@ -18,10 +29,13 @@ export function toExtractionItem(dto: ExtractionItemDto): ExtractionItem {
     evidence: {
       quote: dto.evidence.quote,
       speaker: dto.evidence.speaker,
+      speakerMemberId: dto.evidence.speaker_member_id,
       atMs: dto.evidence.at_ms,
     },
     appliedTaskId: dto.task_id,
     approvalId: dto.approval_id,
+    approvalStatus: approvalStatusOf(dto.approval_status),
+    revertedAt: dto.reverted_at ?? null,
   }
 }
 export function toExtraction(dto: ExtractionDto): Extraction {

@@ -38,14 +38,48 @@ const items: ExtractionItemDto[] = seeds.map(
     gate,
     evidence: {
       quote: `${raw}님이 ${title}을 맡기로 했어요.`,
-      speaker: '김서연',
+      speaker: '1123',
       at_ms: 125000 + index * 10000,
+      speaker_member_id: 'mb_01',
     },
+    reverted_at: null,
     task_id,
     approval_id,
+    // 조회 handler 가 지금 승인 상태로 다시 채운다. 저장값은 시작 상태다
+    approval_status: approval_id === null ? null : 'pending',
   }),
 )
 export const extractionFixtures: ExtractionDto[] = [
   { extraction_id: 'ex_00', meeting_id: 'mt_07', items: [] },
   { extraction_id: 'ex_01', meeting_id: 'mt_09', items },
+  {
+    extraction_id: 'ex_02',
+    meeting_id: 'mt_08',
+    items: [
+      {
+        item_id: 'it_07',
+        task: { title: '배포 스크립트', confidence: 0.95 },
+        assignee: {
+          raw: '김서연',
+          member_id: 'mb_01',
+          display_name: '김서연',
+          confidence: 0.95,
+          needs_check: false,
+        },
+        due_date: { value: '2026-09-24', raw: '24일', confidence: 0.9 },
+        confidence: 0.9,
+        gate: 'auto',
+        evidence: {
+          quote: '네, 배포 스크립트는 제가 24일까지 마칠게요.',
+          speaker: '1123',
+          speaker_member_id: 'mb_01',
+          at_ms: 34_080_000,
+        },
+        reverted_at: null,
+        task_id: 'tk_04',
+        approval_id: null,
+        approval_status: null,
+      },
+    ],
+  },
 ]

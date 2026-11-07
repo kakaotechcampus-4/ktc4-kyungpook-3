@@ -4,21 +4,25 @@ import { fail, list, ok } from '../envelope'
 import { MOCK_NOW } from '../fixtures/constants'
 import { nextId } from '../utils'
 import { requireAuth, requireMember } from '../auth-guard'
+import { isMemberOf, roleIn, sessionMemberId } from '../sessions'
 const base = '/api/v1/workspaces'
+/** 로그인한 계정이 보는 공간 응답. 백엔드 _build_workspace_response 처럼 그 계정의 역할과 팀원 행을 넣는다 */
+function viewedBy<T extends { workspace_id: string }>(workspace: T) {
+  const { workspace_id: workspaceId } = workspace
+  return { ...workspace, role: roleIn(workspaceId), member_id: sessionMemberId(workspaceId) }
+}
 export const workspaceHandlers = [
   http.get(base, () => {
     const denied = requireAuth()
     if (denied) return denied
     return list(
       db.workspaces
-        .filter(({ workspace_id }) =>
-          db.accounts
-            .find(({ session }) => session.user.user_id === db.session.user.user_id)
-            ?.workspaceIds.includes(workspace_id),
-        )
+        .filter(({ workspace_id }) => isMemberOf(workspace_id))
         // 백엔드는 목록에서도 _build_workspace_response 를 불러 role 과 onboarding 을 넣는다.
         // 여기서 깎으면 워크스페이스 선택 화면이 설정 미완료 상태를 못 받는다 (계약 §2.1, D-070)
-        .sort((a, b) => b.created_at.localeCompare(a.created_at)),
+        .sort((a, b) => b.created_at.localeCompare(a.created_at))
+        // role·member_id 는 보는 계정 기준이다. 저장한 행은 바꾸지 않는다
+        .map((workspace) => viewedBy(workspace)),
     )
   }),
   http.post(base, async ({ request }) => {
@@ -64,7 +68,7 @@ export const workspaceHandlers = [
     db.workspaces.push(workspace)
     // 백엔드는 생성자를 PM Member 로 함께 저장한다 (workspaces.py 의 create_workspace).
     // 이게 없으면 가입 → 워크스페이스 생성 → 팀원 목록 흐름의 초기 상태가 실 API 와 다르다
-    db.members.push({
+    const creator = {
       member_id: nextId(
         'mb',
         db.members.map(({ member_id }) => member_id),
@@ -76,18 +80,26 @@ export const workspaceHandlers = [
       notion_name: null,
       role: 'pm',
       created_at: MOCK_NOW,
-    })
+    }
+    db.members.push(creator)
     db.integrations[workspace.workspace_id] = {
-      discord: { status: 'not_connected', display_name: null, connected_at: null },
+      discord: {
+        status: 'not_connected',
+        display_name: null,
+        connected_at: null,
+        chat_channel: null,
+      },
       notion: { status: 'not_connected', display_name: null, connected_at: null },
     }
     if (account) {
       account.workspaceIds.push(workspace.workspace_id)
+      // 백엔드의 생성자 PM 행은 user_id 로 이 계정에 이어진다. 응답·답장 판정의 member_id 가 이 행이다
+      account.memberIds[workspace.workspace_id] = creator.member_id
       account.session.workspace_count = account.workspaceIds.length
       account.session.last_workspace_id = workspace.workspace_id
       db.session = structuredClone(account.session)
     }
-    return ok(workspace, { status: 201 })
+    return ok(viewedBy(workspace), { status: 201 })
   }),
   http.get(`${base}/:workspaceId`, ({ params }) => {
     // 실 API 순서 그대로다 — 로그인(401) → 공간 존재(404) → 소속(`require_member`, 403) (workspaces.py get_workspace)
@@ -97,7 +109,7 @@ export const workspaceHandlers = [
     if (!workspace) return fail('WORKSPACE_NOT_FOUND', '워크스페이스가 없습니다.', 404)
     const denied = requireMember(workspace.workspace_id)
     if (denied) return denied
-    return ok(workspace)
+    return ok(viewedBy(workspace))
   }),
   http.patch(`${base}/:workspaceId/onboarding`, async ({ params, request }) => {
     const denied = requireMember(String(params.workspaceId))
@@ -105,7 +117,8 @@ export const workspaceHandlers = [
     const workspace = db.workspaces.find(({ workspace_id }) => workspace_id === params.workspaceId)
     if (!workspace) return fail('WORKSPACE_NOT_FOUND', '워크스페이스가 없습니다.', 404)
     // 백엔드는 PM 만 온보딩을 바꿀 수 있다 (workspaces.py 의 update_onboarding)
-    if (workspace.role !== 'pm') return fail('FORBIDDEN', '이 작업을 수행할 권한이 없습니다.', 403)
+    if (roleIn(workspace.workspace_id) !== 'pm')
+      return fail('FORBIDDEN', '이 작업을 수행할 권한이 없습니다.', 403)
     const body = (await request.json()) as { step?: unknown; action?: unknown }
     const item = workspace.onboarding.steps.find(({ step }) => step === body.step)
     if (!item || (body.action !== 'skip' && body.action !== 'complete'))

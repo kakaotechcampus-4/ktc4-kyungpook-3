@@ -1,39 +1,31 @@
-import hashlib
-import hmac
-import secrets
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Request, Response
+from sqlalchemy import and_, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
 from app.core.database import get_db
 from app.core.errors import AppError, Envelope, ErrorCode, success
-from app.models import Member, Session as SessionModel, User
-from app.schemas.auth import AuthResponse, LoginRequest, SignupRequest, UserResponse
+from app.models import Invitation, InvitationStatus, Member, User
+from app.schemas.auth import (
+    AuthResponse,
+    LoginRequest,
+    PasswordResetConfirmRequest,
+    PasswordResetRequest,
+    PasswordResetVerifyRequest,
+    PasswordResetVerifyResponse,
+    SignupRequest,
+    UserResponse,
+)
+from app.services import login_limit, mailer, password_reset, sessions
+from app.services.passwords import DUMMY_PASSWORD_HASH, hash_password, verify_password
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-_PBKDF2_ITERATIONS = 260_000
-
-def _hash_password(password: str) -> str:
-    salt = secrets.token_hex(16)
-    digest = hashlib.pbkdf2_hmac("sha256", password.encode(), bytes.fromhex(salt), _PBKDF2_ITERATIONS)
-    return f"{salt}${digest.hex()}"
-
-def _verify_password(password: str, stored_hash: str) -> bool:
-    try:
-        salt, digest_hex = stored_hash.split("$", 1)
-    except ValueError:
-        return False
-    digest = hashlib.pbkdf2_hmac("sha256", password.encode(), bytes.fromhex(salt), _PBKDF2_ITERATIONS)
-    return hmac.compare_digest(digest.hex(), digest_hex)
-
 def _create_session(db: Session, user: User, response: Response):
-    token = secrets.token_urlsafe(32)
-    expires = datetime.now(timezone.utc) + timedelta(days=7)
-    db_session = SessionModel(user_id=user.user_id, session_token=token, expires_at=expires)
-    db.add(db_session)
+    token = sessions.create_session(db, user.user_id)
     db.commit()
     response.set_cookie(
         key="session_token",
@@ -45,7 +37,22 @@ def _create_session(db: Session, user: User, response: Response):
 
 def _build_auth_response(db: Session, user: User) -> AuthResponse:
     workspace_count = db.query(Member).filter(Member.user_id == user.user_id, Member.is_deleted.is_(False)).count()
-    last_workspace = db.query(Member).filter(Member.user_id == user.user_id, Member.is_deleted.is_(False)).order_by(Member.created_at.desc()).first()
+    # 초대로 들어온 팀원 행은 PM 이 예전에 만든 것이라 수락 시각을 들어온 시각으로 본다.
+    joined_at = func.coalesce(Invitation.responded_at, Member.created_at)
+    last_workspace = (
+        db.query(Member)
+        .outerjoin(
+            Invitation,
+            and_(
+                Invitation.member_id == Member.member_id,
+                Invitation.accepted_user_id == user.user_id,
+                Invitation.status == str(InvitationStatus.ACCEPTED),
+            ),
+        )
+        .filter(Member.user_id == user.user_id, Member.is_deleted.is_(False))
+        .order_by(joined_at.desc())
+        .first()
+    )
 
     return AuthResponse(
         user=UserResponse(
@@ -66,31 +73,77 @@ def signup(payload: SignupRequest, response: Response, db: Session = Depends(get
 
     user = User(
         email=payload.email,
-        password_hash=_hash_password(payload.password),
+        password_hash=hash_password(payload.password),
         name=payload.name,
         provider="local"
     )
     db.add(user)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        # 사전 조회와 저장 사이에 같은 이메일이 먼저 가입된 경우. 유일 제약이 막으므로 409 로 돌려준다.
+        # user 테이블의 제약은 PK(서버가 만든 UUID)와 이메일 유일뿐이라 종류를 가리지 않는다. 제약이 늘면 이메일 충돌만 고른다.
+        db.rollback()
+        raise AppError(ErrorCode.EMAIL_ALREADY_EXISTS) from None
     db.refresh(user)
 
     _create_session(db, user, response)
     return success(_build_auth_response(db, user).model_dump(mode="json"))
 
-@router.post("/login", response_model=Envelope[AuthResponse])
-def login(payload: LoginRequest, response: Response, db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.email == payload.email).first()
-    if not user or not user.password_hash or not _verify_password(payload.password, user.password_hash):
-        raise AppError(ErrorCode.INVALID_CREDENTIALS)
+def _login_user_stmt(email: str):
+    # 비밀번호 검사(PBKDF2, 약 0.2초)는 잠금 없이 한다. 검사 내내 공유 잠금을 잡으면 로그인이 계속 겹칠 때
+    # 재설정 confirm 의 FOR UPDATE 가 끝없이 밀린다(PostgreSQL 은 대기 중인 배타 잠금이 있어도 새 공유 잠금을 준다).
+    return select(User).where(User.email == email)
 
-    _create_session(db, user, response)
+
+def _password_hash_lock_stmt(user_id: str):
+    # 세션을 넣기 직전에만 사용자 행을 공유 잠금으로 다시 읽는다. confirm 은 이 행을 잠근 채 비밀번호를 바꾸고
+    # 옛 세션을 지우므로, 그 사이에 비밀번호가 바뀌었으면 해시가 달라 옛 비밀번호 세션을 7일 동안 남기지 않는다.
+    return select(User.password_hash).where(User.user_id == user_id).with_for_update(read=True)
+
+
+@router.post("/login", response_model=Envelope[AuthResponse])
+def login(payload: LoginRequest, request: Request, response: Response, db: Session = Depends(get_db)):
+    # 시도를 사용자 조회보다 먼저 센다. 해시 뒤에 세면 0.2초 사이의 동시 요청이 모두 검사를 통과하고,
+    # 조회 뒤에 하면 막힌 요청도 DB 연결을 잡는다. 클라이언트 주소는 uvicorn 이 해석한 request.client 만 읽는다.
+    ip_key = login_limit.client_ip_key(request.client.host if request.client else None)
+    try:
+        reservation = login_limit.reserve(payload.email, ip_key, now=login_limit.clock())
+    except login_limit.LoginBlocked as blocked:
+        seconds = blocked.retry_after_seconds
+        raise AppError(
+            ErrorCode.TOO_MANY_LOGIN_ATTEMPTS,
+            details={"retry_after_seconds": seconds},
+            headers={"Retry-After": str(seconds)},
+        ) from None
+    try:
+        user = db.scalars(_login_user_stmt(payload.email)).first()
+        # 없는 이메일·비밀번호 없는 계정도 같은 해시 계산을 거치게 해 응답 시간으로 가입 여부가 드러나지 않게 한다.
+        stored = user.password_hash if user and user.password_hash else DUMMY_PASSWORD_HASH
+        ok = verify_password(payload.password, stored)
+        if not user or not user.password_hash or not ok:
+            raise AppError(ErrorCode.INVALID_CREDENTIALS)
+        if db.scalar(_password_hash_lock_stmt(user.user_id)) != user.password_hash:
+            raise AppError(ErrorCode.INVALID_CREDENTIALS)
+
+        _create_session(db, user, response)
+    except AppError as exc:
+        # 틀린 자격 증명만 시도로 센다. 그 밖의 오류는 사용자 잘못이 아니므로 예약을 되돌린다.
+        if exc.code != ErrorCode.INVALID_CREDENTIALS:
+            login_limit.cancel(reservation)
+        raise
+    except Exception:
+        login_limit.cancel(reservation)
+        raise
+    # 세션이 commit 된 순간 인증은 끝났다. 응답 조립이 DB 오류로 실패해도 맞는 비밀번호의 이전 실패 횟수는 지운다.
+    login_limit.succeed(reservation)
     return success(_build_auth_response(db, user).model_dump(mode="json"))
 
 @router.post("/logout", response_model=Envelope[dict])
 def logout(request: Request, response: Response, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     session_token = request.cookies.get("session_token")
     if session_token:
-        db.query(SessionModel).filter(SessionModel.session_token == session_token).delete()
+        sessions.delete_session(db, session_token)
         db.commit()
     response.delete_cookie("session_token")
     return success({})
@@ -98,3 +151,34 @@ def logout(request: Request, response: Response, user: User = Depends(get_curren
 @router.get("/me", response_model=Envelope[AuthResponse])
 def get_me(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     return success(_build_auth_response(db, user).model_dump(mode="json"))
+
+
+@router.post("/password-reset/request", response_model=Envelope[dict])
+def request_password_reset(payload: PasswordResetRequest, db: Session = Depends(get_db)):
+    if not mailer.is_configured():
+        raise AppError(ErrorCode.MAIL_UNAVAILABLE)
+    mail = password_reset.request_reset(
+        db, payload.email, now=datetime.now(timezone.utc), base_url=mailer.app_base_url()
+    )
+    db.commit()
+    # 가입 여부와 쿨다운 여부가 응답으로 드러나지 않게 항상 같은 응답을 준다.
+    if mail is not None:
+        mailer.send_in_background(mail.to, mail.subject, mail.text, log_label=mail.user_id)
+    return success({})
+
+
+@router.post("/password-reset/verify", response_model=Envelope[PasswordResetVerifyResponse])
+def verify_password_reset(payload: PasswordResetVerifyRequest, db: Session = Depends(get_db)):
+    expires_at, email_masked = password_reset.verify_token(db, payload.token, now=datetime.now(timezone.utc))
+    return success(
+        PasswordResetVerifyResponse(expires_at=expires_at, email_masked=email_masked).model_dump(mode="json")
+    )
+
+
+@router.post("/password-reset/confirm", response_model=Envelope[dict])
+def confirm_password_reset(payload: PasswordResetConfirmRequest, db: Session = Depends(get_db)):
+    email = password_reset.confirm_reset(db, payload.token, payload.new_password, now=datetime.now(timezone.utc))
+    db.commit()
+    # commit 이 성공한 뒤에만 막힘을 푼다. 새 비밀번호로 바로 로그인할 수 있어야 한다.
+    login_limit.clear_email(email)
+    return success({})

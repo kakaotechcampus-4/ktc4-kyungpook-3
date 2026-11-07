@@ -28,6 +28,27 @@ def test_numbered_candidates_includes_content_snippet():
     assert "카카오 로그인만 지원" in _numbered_candidates(ji)
 
 
+def test_numbered_candidates_shows_meeting_note_instead_of_similarity():
+    # 이번 회의 앞부분에서 나온 카드는 검색 결과가 아니라 유사도 대신 어디서 온 값인지 보여 준다(#140)
+    from_meeting = NotionCandidate(task_id="task_login", title="로그인", due_date="2026-10-06",
+                                   meeting_note="이번 회의 앞부분에서 마감을 2026-10-02 → 2026-10-06 바꾸자고 함. 아직 승인 전")
+    from_db = NotionCandidate(task_id="task_search", title="검색", similarity=0.7)
+    text = _numbered_candidates(JudgeInput(source="meeting", text="x", candidates=[from_meeting, from_db]))
+    first, second = text.splitlines()
+    assert "2026-10-02 → 2026-10-06" in first and "유사도" not in first
+    assert "유사도=0.70" in second
+
+
+def test_meeting_card_rule_only_when_a_candidate_has_a_meeting_note():
+    # 이번 회의 카드가 있을 때만 규칙을 넣는다 — 일반 판단 프롬프트는 그대로여야 기존 판단이 흔들리지 않는다(#140)
+    from judge.final_judge import _terra_user_prompt
+    card = NotionCandidate(task_id="pending:0", title="결제 환불", meeting_note="이번 회의에서 새로 나온 항목")
+    with_card = _terra_user_prompt(JudgeInput(source="meeting", text="x", candidates=[card]))
+    plain = _terra_user_prompt(JudgeInput(source="meeting", text="x", candidates=[_candidate()]))
+    assert "원래 값으로 되돌리자는 말도 바뀌는 것이다" in with_card
+    assert "이번 회의" not in plain
+
+
 # ── judge_llm (Terra) ─────────────────────────────────────────────────────
 
 
@@ -110,6 +131,16 @@ def test_prompt_tells_terra_what_counts_as_no_change():
     assert "문서가 좀 헷갈리네요" in prompt
     assert "새로 정했다면" in prompt
     assert "status|scope" in prompt
+
+
+def test_prompt_reads_status_from_facts_but_never_guesses_done():
+    # 상태 단어가 없어도 발화가 드러내는 상태를 채우되, 끝났는지 확실하지 않으면 done 으로 올리지 않는다(#207)
+    from judge.final_judge import _terra_user_prompt
+    prompt = _terra_user_prompt(JudgeInput(source="meeting", text="x", candidates=[_candidate()]))
+    assert "상태 단어가 없어도" in prompt
+    assert "명시적으로 언급됐을 때만" not in prompt
+    assert "끝냈는지 확실하지 않으면" in prompt
+    assert "기다리는 것은 막힘이 아니다" in prompt
 
 
 def test_llm_returns_none_on_invalid_category():

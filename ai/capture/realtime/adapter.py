@@ -34,8 +34,7 @@ latency.jsonl 은 발화별 지연이다 = {"seq", "speaker", "start", "end", "q
 게시기로 넘어가 처음 화면에 뜰 때까지이고 셋은 겹치지 않는다. 못 잰 값은 0 이 아니라 null 이다.
 transcript.jsonl 은 BE 와 맞춘 계약이라 필드를 늘리지 않고 파일을 나눴다.
 
-DISCORD_CHANNEL_ID 는 이 Cog 가 읽지 않는다. 줄은 /live 를 친 채널(또는 /live channel: 로
-고른 채널)에 올라간다.
+줄은 /live 를 친 채널(또는 /live channel: 로 고른 채널)에 올라간다.
 """
 
 from __future__ import annotations

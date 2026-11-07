@@ -1,3 +1,4 @@
+import type { TaskCreateEdits, TaskUpdateEdits } from './resolution'
 import type { ExtractionEvidence } from '@/shared/types/common'
 export type ApprovalStatus = 'pending' | 'approved' | 'rejected'
 export type ApprovalMissing = 'assignee' | 'due'
@@ -13,6 +14,7 @@ interface ApprovalBase {
 }
 export interface TaskCreateApproval extends ApprovalBase {
   kind: 'task_create'
+  storedOverrides?: TaskCreateEdits
   title: string
   assigneeMemberId: string | null
   assigneeRaw: string | null
@@ -24,10 +26,20 @@ export interface TaskCreateApproval extends ApprovalBase {
   extractionItemId: string | null
   gate: 'review' | 'hold' | null
 }
+/** AI 판정 분류 (ai/shared/schemas.py JudgeCategory) */
+export type TaskUpdateCategory = 'schedule' | 'assignee' | 'status' | 'scope' | 'decision' | 'none'
 export interface TaskUpdateApproval extends ApprovalBase {
   kind: 'task_update'
+  storedOverrides?: TaskUpdateEdits
   title: string | null
   changes: { field: string; value: unknown }[]
+  /** 모르는 값이거나 없으면 null 이다 */
+  category: TaskUpdateCategory | null
+  docText: string | null
+  evidence: ExtractionEvidence
+  meetingId: string | null
+  /** 리마인드 답장에서 온 제안이면 그 답장. 이때 meetingId 는 null 이고 근거는 답장 글이다 */
+  replyMessageId: string | null
 }
 export interface UnsupportedApproval extends ApprovalBase {
   kind: 'unsupported'

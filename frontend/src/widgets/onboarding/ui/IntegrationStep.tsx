@@ -68,6 +68,8 @@ export function IntegrationStep({ workspaceId, provider, review = false }: Integ
       ? '디스코드 연동 완료'
       : undefined
   const connected = flow.integration?.status === 'connected'
+  // Notion 이 DB 를 붙이는 중이다(#204). 복귀 확인이 기다리는 중이거나, 새로고침 뒤 연동 조회가 아직 준비 중이라고 답했다
+  const preparing = flow.preparing || flow.integration?.status === 'connecting'
   const busy = flow.saving || flow.verifying
   const failure = flow.notice
     ? NOTICE[flow.notice]
@@ -99,7 +101,12 @@ export function IntegrationStep({ workspaceId, provider, review = false }: Integ
     </Button>
   ) : (
     <>
-      <Button variant="primary" size="lg-onboarding" disabled={busy} onClick={flow.connect}>
+      <Button
+        variant="primary"
+        size="lg-onboarding"
+        disabled={busy || preparing}
+        onClick={flow.connect}
+      >
         연결하기
       </Button>
       <Button
@@ -143,7 +150,7 @@ export function IntegrationStep({ workspaceId, provider, review = false }: Integ
                 <Button
                   variant="primary"
                   size="lg-onboarding"
-                  disabled={busy || flow.connectBlocked}
+                  disabled={busy || preparing || flow.connectBlocked}
                   onClick={flow.connect}
                 >
                   연결하기
@@ -168,7 +175,11 @@ export function IntegrationStep({ workspaceId, provider, review = false }: Integ
           <QueryErrorState error={flow.integrationsError} onRetry={flow.retryIntegrations} />
         ) : null}
         {connected ? <p className={CONNECTED}>연결됨</p> : null}
-        {flow.verifying ? (
+        {preparing ? (
+          <p role="status" className="pt-6 text-body text-dim">
+            노션을 준비하고 있어요. 1분 정도 걸릴 수 있어요.
+          </p>
+        ) : flow.verifying ? (
           <p role="status" className="pt-6 text-body text-dim">
             연결을 확인하고 있어요.
           </p>

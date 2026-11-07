@@ -5,7 +5,7 @@
 
 실행 (ai/ 디렉토리 안에서):  python -m capture.run_recorder
 전사 백엔드는 MM_STT_BACKEND=local|elice (기본 local), 모델은 MM_STT_MODEL (기본 large-v3-turbo).
-할일 추출은 LLM_API_KEY, BE 인계는 BE_BASE_URL 과 BE_WORKSPACE_ID 가 있을 때 돈다. 없으면 그 단계에서 멈춘다.
+할일 추출은 LLM_API_KEY, BE 인계는 BE_BASE_URL 과 BE_SERVICE_TOKEN 이 있을 때 돈다. 없으면 그 단계에서 멈춘다.
 """
 
 from __future__ import annotations
@@ -16,6 +16,9 @@ from pathlib import Path
 import discord
 
 from capture.discord_adapter import RecordingCog, required_intents
+from capture.dm import DmCog
+from capture.handoff import from_env as handoff_from_env
+from capture.judge_path import reply_judger
 from shared.config import settings
 
 S = settings()
@@ -34,6 +37,9 @@ def build_bot() -> discord.Bot:
         debug_guilds=[int(S.discord_guild_id)] if S.discord_guild_id else None,
     )
     bot.add_cog(RecordingCog(bot, on_session_saved=on_session_saved))
+    handoff = handoff_from_env()
+    if handoff is not None:                 # 리마인드 DM 은 BE 설정이 있을 때만 (capture/dm.py)
+        bot.add_cog(DmCog(bot, be=handoff.client, judger=reply_judger()))
 
     @bot.event
     async def on_ready() -> None:

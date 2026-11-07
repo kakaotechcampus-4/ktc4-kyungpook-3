@@ -15,10 +15,14 @@
 OAuth 없이 시험할 때는 행을 직접 넣어도 된다:
 `Integration(workspace_id=..., provider="notion", access_token="secret_...", provider_channel_id="<database_id>")`.
 """
+import logging
+
 import httpx
 from sqlalchemy.orm import Session
 
 from app.models import Integration, Member, Task, TaskStatus
+
+logger = logging.getLogger(__name__)
 
 NOTION_API_BASE = "https://api.notion.com/v1"
 NOTION_VERSION = "2022-06-28"
@@ -29,7 +33,6 @@ PROPERTY_NAMES = {
     "status": "Status",
     "assignee": "Assignee",
     "due_date": "Due Date",
-    "progress": "Progress",
     "blocker": "Blocker",
     # 페이지와 Task를 잇는 키. 생성 결과가 불명확할 때 이 값으로 기존 페이지를 찾는다.
     "task_id": "Task ID",
@@ -41,7 +44,6 @@ DATABASE_SCHEMA = {
     PROPERTY_NAMES["status"]: "select",
     PROPERTY_NAMES["assignee"]: "rich_text",
     PROPERTY_NAMES["due_date"]: "date",
-    PROPERTY_NAMES["progress"]: "number",
     PROPERTY_NAMES["blocker"]: "rich_text",
     PROPERTY_NAMES["task_id"]: "rich_text",
 }
@@ -108,7 +110,6 @@ def build_properties(db: Session, task: Task) -> dict[str, object]:
     properties[PROPERTY_NAMES["due_date"]] = {
         "date": {"start": task.due_date.isoformat()} if task.due_date else None
     }
-    properties[PROPERTY_NAMES["progress"]] = {"number": task.progress}
     properties[PROPERTY_NAMES["blocker"]] = {
         "rich_text": [{"text": {"content": task.blocker}}] if task.blocker else []
     }
@@ -139,7 +140,7 @@ def _send(
     integration: Integration,
     method: str,
     path: str,
-    body: dict[str, object],
+    body: dict[str, object] | None,
     transport: httpx.BaseTransport | None,
 ) -> dict:
     return _request(integration.access_token, method, path, transport, json=body)
@@ -173,6 +174,7 @@ def _request(
             reason,
             # 429(rate limit)·409(동시 수정 충돌)·5xx만 다시 보낼 가치가 있다.
             # 400(속성 불일치)·401/403(권한)·404(공유 해제)는 몇 번을 보내도 같다.
+            # 401은 워커가 토큰 갱신을 한 번 시도하고, 갱신되면 새 토큰으로 다시 보낸다(`notion_sync`).
             retryable=status in (409, 429) or status >= 500,
             # 5xx는 Notion 내부에서 처리가 끝났는데 응답만 실패했을 수도 있다.
             outcome_uncertain=status >= 500,
@@ -226,6 +228,49 @@ def update_page(
         {"properties": build_properties(db, task)},
         transport,
     )
+
+
+def archive_page(
+    integration: Integration,
+    page_id: str,
+    *,
+    transport: httpx.BaseTransport | None = None,
+) -> None:
+    """페이지를 보관(archive)한다. 지운 Task의 페이지에 쓴다. Notion 휴지통으로 옮겨져 DB에서 빠지고, Notion에서 복원할 수 있다.
+
+    이미 보관된 페이지는 400이 온다. 응답을 못 받아 다시 보낸 경우나 PM이 Notion에서 먼저 지운 경우다.
+    하지만 400은 요청 검증 오류일 수 있고, 404는 연결에 페이지가 공유되지 않았을 때도 온다. 그래서 400·404를 받으면
+    페이지를 다시 읽어 보관된 것이 확인될 때만 성공으로 본다. 확인하지 못하면 받은 오류를 원인과 함께 올린다
+    (다시 보내도 같으므로 retryable은 그대로 거짓이다). 다시 읽다가 실패하면 그 오류를 올린다(5xx·네트워크면 재시도).
+    """
+    try:
+        _send(integration, "PATCH", f"/pages/{page_id}", {"archived": True}, transport)
+    except NotionWriteError as exc:
+        if exc.status_code not in (400, 404):
+            raise
+        if _is_archived(integration, page_id, transport):
+            logger.info("이미 보관된 Notion 페이지입니다. page_id=%s status=%s", page_id, exc.status_code)
+            return
+        raise NotionWriteError(
+            f"{exc.reason} — 페이지가 보관됐는지 확인하지 못했습니다"
+            " (연결에 공유되지 않았거나 영구 삭제됐거나 요청이 거부됨).",
+            retryable=exc.retryable,
+            status_code=exc.status_code,
+            retry_after=exc.retry_after,
+        ) from exc
+
+
+def _is_archived(
+    integration: Integration, page_id: str, transport: httpx.BaseTransport | None
+) -> bool:
+    """페이지를 읽어 보관(휴지통 포함)된 상태인지 본다. 404면 읽을 수 없어 확인하지 못한 것이다."""
+    try:
+        data = _send(integration, "GET", f"/pages/{page_id}", None, transport)
+    except NotionWriteError as exc:
+        if exc.status_code == 404:
+            return False
+        raise
+    return bool(data.get("archived") or data.get("in_trash"))
 
 
 def find_page_by_task_id(

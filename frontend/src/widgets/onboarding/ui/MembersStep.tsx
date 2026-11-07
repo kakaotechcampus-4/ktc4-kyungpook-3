@@ -1,28 +1,22 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { useRef, useState } from 'react'
 import type { FormEvent } from 'react'
-import { z } from 'zod'
 import { integrationsQueryOptions } from '@/entities/integration'
-import { discordUsersQueryOptions, memberListQueryOptions } from '@/entities/member'
+import { discordUsersQueryOptions, memberListQueryOptions, pmsOf } from '@/entities/member'
 import type { Member } from '@/entities/member'
 import {
-  MappingSaveError,
+  MemberMappingFields,
   buildMappingRows,
-  findMappingIssues,
-  saveMemberMappings,
-  useOnboardingSave,
-} from '@/features/onboarding'
-import type { MappingIssue, MappingRow } from '@/features/onboarding'
+  useMemberMappingForm,
+} from '@/features/member-mapping'
+import type { MappingRow } from '@/features/member-mapping'
+import { useOnboardingSave } from '@/features/onboarding'
 import { errorMessage } from '@/shared/api/errorMessages'
 import { ApiError, ERROR_CODES } from '@/shared/api/errors'
-import { useAppForm } from '@/shared/lib/form'
-import { useUnsavedChanges } from '@/shared/lib/unsaved-changes'
 import { Button } from '@/shared/ui/button'
 import { FormErrorPanel } from '@/shared/ui/form-error-panel'
-import { Icon } from '@/shared/ui/icon'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
 import { Skeleton } from '@/shared/ui/skeleton'
-import { TextField } from '@/shared/ui/text-field'
 import { ExitLink } from './ExitLink'
 import { OnboardingCard } from './OnboardingCard'
 import { OnboardingLayout } from './OnboardingLayout'
@@ -34,23 +28,8 @@ const CARD = {
   description: '디스코드 계정과 이름을 이어 두면 마감 하루 전에 DM이 나갑니다.',
 } as const
 
-const ISSUE_MESSAGES: Record<MappingIssue, string> = {
-  duplicated: '같은 팀원 이름을 두 줄에 쓸 수 없어요.',
-  taken: '이미 다른 Discord 계정과 연결된 팀원이에요.',
-}
-
-const PARTIAL_FAILURE = '일부 팀원을 저장하지 못했어요. 남은 줄만 다시 저장해요.'
-
 const NOT_CONNECTED =
   '디스코드를 연결하지 않아 팀원을 불러올 수 없어요. 이전 단계에서 연결하거나 건너뛸 수 있어요.'
-
-const ROW = 'flex items-start gap-10 border-b border-surface-selected py-10 last:border-b-0'
-
-const HANDLE = 'min-w-[0px] flex-1 truncate pt-12 text-caption text-dim tabular-nums'
-
-const schema = z.object({
-  rows: z.array(z.object({ discordUserId: z.string(), username: z.string(), name: z.string() })),
-})
 
 function messagesFor(rows: readonly MappingRow[]): string[] {
   const unknown = rows.filter(({ name }) => !name.trim()).length
@@ -65,75 +44,33 @@ function messagesFor(rows: readonly MappingRow[]): string[] {
 interface MembersFormProps {
   workspaceId: string
   initialRows: MappingRow[]
+  /** PM 팀원. 먼저 만들어진 순서다 — 첫째가 워크스페이스를 만든 PM 이고 체크박스가 그 PM 을 가리킨다 (#228) */
+  pms: Member[]
   notice: string | undefined
   /** `이전 단계` 가 갈 Notion 둘러보기 */
   previous: string | null
 }
 
 /**
- * 팀원 연결 입력. 한 줄이 Discord 사용자 한 명이고 옆에 실제 팀원 이름을 적는다 (D-026).
- * 빈 줄은 저장하지 않는다 — 일부만 적어도 저장하고 끝낼 수 있다 (D-029). 같은 이름은 두 줄에 못 쓴다 (D-027).
- * 저장은 줄마다 순서대로다. 일부가 실패하면 실패한 줄에 오류를 두고 입력은 그대로 남긴다.
- * 모두 저장한 뒤에만 팀원 연결 단계 완료를 보낸다.
+ * 온보딩의 팀원 연결 입력. 입력과 저장 규칙은 `useMemberMappingForm` 이 맡는다.
+ * `확인 완료` 는 PM 을 체크해야 하고(#228), 모두 저장한 뒤에만 팀원 연결 단계 완료를 보낸다.
+ * `나중에 하기`·나가기 저장은 PM 체크를 막지 않는다.
  * 하단 `다음 단계` 는 `나중에 하기` 와 같다(같은 잠금). `이전 단계` 는 공통 이탈 확인을 거친다 — 입력을 저장하지 않는다.
  */
-function MembersForm({ workspaceId, initialRows, notice, previous }: MembersFormProps) {
-  const queryClient = useQueryClient()
-  const { form, submit } = useAppForm(schema, { rows: initialRows })
+function MembersForm({ workspaceId, initialRows, pms, notice, previous }: MembersFormProps) {
+  const mapping = useMemberMappingForm(workspaceId, initialRows, pms)
   const {
-    register,
-    setError,
-    clearErrors,
-    reset,
-    getValues,
-    watch,
-    formState: { errors, isSubmitting, isDirty },
-  } = form
-  const unsaved = useUnsavedChanges(isDirty)
+    form: {
+      getValues,
+      formState: { isSubmitting, isDirty },
+    },
+    submit,
+    filled,
+    setFormError,
+    save,
+    release,
+  } = mapping
   const onboarding = useOnboardingSave(workspaceId)
-  const [formError, setFormError] = useState<string | null>(null)
-  const rows = watch('rows')
-  const filled = rows.filter(({ name }) => name.trim()).length
-
-  const members = (): Member[] =>
-    queryClient.getQueryData<Member[]>(memberListQueryOptions(workspaceId).queryKey) ?? []
-
-  /** 입력 중 매핑을 저장한다. 성공하면 true — 저장한 값이 새 기준이라 더 묻지 않는다 */
-  const saveMappings = async (values: { rows: MappingRow[] }): Promise<boolean> => {
-    setFormError(null)
-    clearErrors()
-    const issues = findMappingIssues(values.rows, members())
-    if (issues.size > 0) {
-      let first = true
-      for (const [index, issue] of issues) {
-        setError(
-          `rows.${index}.name`,
-          { type: 'mapping', message: ISSUE_MESSAGES[issue] },
-          { shouldFocus: first },
-        )
-        first = false
-      }
-      return false
-    }
-    try {
-      await saveMemberMappings(queryClient, workspaceId, values.rows)
-    } catch (error) {
-      if (error instanceof MappingSaveError) {
-        setError(
-          `rows.${error.rowIndex}.name`,
-          { type: 'server', message: errorMessage(error.cause) },
-          { shouldFocus: true },
-        )
-        setFormError(PARTIAL_FAILURE)
-      } else {
-        setFormError(errorMessage(error))
-      }
-      return false
-    }
-    reset(values)
-    unsaved.release()
-    return true
-  }
 
   /* `확인 완료` · `나중에 하기` · `나가기` 저장은 한 번에 하나다 (F-r1 #7). 둘이 겹치면 같은 팀원 캐시로 계획해
      같은 줄에 POST 가 두 번 나갈 수 있다. 렌더를 기다리지 않고 ref 로 막는다 — 버튼이 비활성이 되기 전의 클릭도 막힌다 */
@@ -153,7 +90,7 @@ function MembersForm({ workspaceId, initialRows, notice, previous }: MembersForm
   const onSubmit = (event: FormEvent<HTMLFormElement>) =>
     submit((values) =>
       exclusive(async () => {
-        if (!(await saveMappings(values))) return
+        if (!(await save(values, true))) return
         await onboarding
           .save({ step: 'connect_members', action: 'complete' })
           .catch((error: unknown) => setFormError(errorMessage(error)))
@@ -167,7 +104,7 @@ function MembersForm({ workspaceId, initialRows, notice, previous }: MembersForm
     void exclusive(() =>
       onboarding
         .save({ step: 'connect_members', action: 'skip' })
-        .then(() => unsaved.release())
+        .then(() => release())
         .catch((error: unknown) => setFormError(errorMessage(error))),
     )
   }
@@ -179,7 +116,7 @@ function MembersForm({ workspaceId, initialRows, notice, previous }: MembersForm
     let ok = false
     setExiting(true)
     await exclusive(async () => {
-      ok = await saveMappings(getValues())
+      ok = await save(getValues())
     })
     setExiting(false)
     return ok
@@ -223,27 +160,7 @@ function MembersForm({ workspaceId, initialRows, notice, previous }: MembersForm
             </>
           }
         >
-          <FormErrorPanel message={formError} className="mt-6" />
-          {initialRows.length === 0 ? (
-            <p className="pt-6 text-body text-dim">디스코드 서버에서 팀원을 찾지 못했어요.</p>
-          ) : (
-            <ul className="pt-6">
-              {initialRows.map((row, index) => (
-                <li key={row.discordUserId} className={ROW}>
-                  <span className={HANDLE}>@{row.username}</span>
-                  <Icon name="arrow-right" size={12} className="mt-15 shrink-0 text-dashed" />
-                  <TextField
-                    tone="onboarding"
-                    className="flex-1"
-                    aria-label={`@${row.username}의 팀원 이름`}
-                    placeholder="누구인가요?"
-                    error={errors.rows?.[index]?.name?.message}
-                    {...register(`rows.${index}.name`)}
-                  />
-                </li>
-              ))}
-            </ul>
-          )}
+          <MemberMappingFields mapping={mapping} />
         </OnboardingCard>
       </form>
     </OnboardingLayout>
@@ -369,6 +286,7 @@ export function MembersStep({ workspaceId }: MembersStepProps) {
     <MembersForm
       workspaceId={workspaceId}
       initialRows={buildMappingRows(discordUsers.data, members.data)}
+      pms={pmsOf(members.data)}
       notice={notice}
       previous={previous}
     />

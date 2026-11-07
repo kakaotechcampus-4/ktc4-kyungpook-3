@@ -34,12 +34,12 @@ def _saved(path):
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def _dying(transcript, names, today):
+def _dying(transcript, names, today, workspace_id=None):
     raise RuntimeError("LLM 죽음")
 
 
 def _handoff(fake):
-    return H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"), "ws-1")
+    return H.Handoff(H.BeClient("http://be", session=fake, service_token="svc-token"))
 
 
 def _fails(fake):
@@ -62,7 +62,7 @@ def test_a_claim_takes_the_meeting_lock_and_the_same_process_cannot_take_it_twic
     assert m is not None and m["session"] == "77_500"
     saved = _saved(path)
     assert saved["claimed_by"] == "host:1:a" and saved["claimed_at"] == "2026-09-26T03:00:00+00:00"   # 보여 주기용
-    assert claims.acquire(path) is None                  # 루프가 잡은 회의를 같은 프로세스의 /recover 가 못 잡는다
+    assert claims.acquire(path) is None                  # 한 바퀴가 잡은 회의를 같은 프로세스의 다른 바퀴가 못 잡는다
     assert R.Claims(owner="host:1:c").acquire(path) is None
 
 
@@ -72,6 +72,18 @@ def test_probing_a_lock_does_not_let_it_go(tmp_path, clock):
     claims.acquire(path)
     assert [R.is_locked(path) for _ in range(3)] == [True, True, True]
     assert R.Claims(owner="other:9:b").acquire(path) is None
+
+
+def test_the_restart_lock_is_taken_through_a_read_only_open(tmp_path):
+    """배포 스크립트가 만든 재시작 잠금 파일은 봇에게 쓰기 권한이 없을 수 있다. 읽기로 열어 잡는다(#215)."""
+    (tmp_path / "restart.lock").touch()
+    (tmp_path / "restart.lock").chmod(0o444)
+    lock = R.try_restart_lock(tmp_path)
+    assert lock is not None and R.try_restart_lock(tmp_path) is None     # 쥔 동안 다른 쪽은 못 잡는다
+    lock.release()
+    again = R.try_restart_lock(tmp_path)
+    assert again is not None
+    again.release()
 
 
 def test_a_claim_left_in_the_manifest_without_a_lock_does_not_block(tmp_path, clock):
@@ -121,13 +133,13 @@ def test_release_clears_the_claim_and_the_lock_so_another_owner_can_take_it_at_o
 
 
 def test_who_and_since_when_stay_in_the_manifest_while_the_meeting_is_processed(tmp_path, clock):
-    """/recover 가 "누가 몇 분째" 를 보여 줄 수 있게 처리 중에도 표시가 남는다. 시각은 잡은 때 그대로다."""
+    """"누가 몇 분째" 를 매니페스트에서 볼 수 있게 처리 중에도 표시가 남는다. 시각은 잡은 때 그대로다."""
     rec, path, _ = _session(tmp_path)
     m = R.Claims(owner="host:1:a").acquire(path)                 # 03:00:00
     clock["t"] = T0 + timedelta(minutes=17)                      # 전사가 17분 걸렸다
     seen = {}
 
-    def extractor(transcript, names, today):
+    def extractor(transcript, names, today, workspace_id=None):
         seen.update(_saved(path))
         return []
 
@@ -150,6 +162,10 @@ def test_each_failed_run_waits_twice_as_long_before_the_next_try(tmp_path, clock
 def test_the_wait_stops_growing_at_an_hour(monkeypatch):
     monkeypatch.setattr(R, "RECOVERY_BACKOFF_S", 1000.0)
     assert [R.backoff_s(n) for n in (1, 2, 3, 4)] == [1000.0, 2000.0, 3600.0, 3600.0]
+
+
+def test_the_wait_does_not_overflow_for_huge_attempt_counts():
+    assert R.backoff_s(1100) == R.RECOVERY_BACKOFF_CEIL_S
 
 
 def test_be_is_told_failed_only_when_the_retries_run_out(tmp_path, clock, limits, monkeypatch):
@@ -177,9 +193,9 @@ def test_a_stage_that_finishes_starts_the_count_again(tmp_path, clock, limits):
     fake = FakeBe()
     revived = _extractor({})
 
-    def extract_then_be_goes_down(*args):              # 발화 저장과 추출은 끝났고 인계에서 BE 가 꺼져 있다
+    def extract_then_be_goes_down(*args, **kw):        # 발화 저장과 추출은 끝났고 인계에서 BE 가 꺼져 있다
         fake.down = True
-        return revived(*args)
+        return revived(*args, **kw)
 
     r = _run(rec, _saved(path), tmp_path, extractor=extract_then_be_goes_down, handoff=_handoff(fake))
     assert r["ran"] == ["sourced", "extracted"] and r["failed_stage"] == "handoff"
@@ -325,7 +341,7 @@ def test_the_loop_resends_only_the_fail_when_be_missed_it_at_give_up(tmp_path, c
 
 
 def test_hand_recovery_of_a_given_up_meeting_opens_a_new_be_meeting(tmp_path, clock, limits, monkeypatch):
-    """BE 의 failed 는 끝 상태다. 사람이 /recover 로 다시 돌리면 handoff 의 우회(새 회의, 옛 ID 는 replaced)로 간다."""
+    """BE 의 failed 는 끝 상태다. 사람이 --retry 로 다시 돌리면 handoff 의 우회(새 회의, 옛 ID 는 replaced)로 간다."""
     monkeypatch.setattr(R, "RECOVERY_MAX_ATTEMPTS", 2)
     rec, path, _ = _session(tmp_path)
     fake = FakeBe()
@@ -472,3 +488,158 @@ def test_the_windows_branch_means_the_same_as_flock(tmp_path, monkeypatch):
         os.close(a)
         os.close(b)
     assert {(mode, n, at) for mode, n, at in fake.calls} == {(fake.LK_NBLCK, 1, 0), (fake.LK_UNLCK, 1, 0)}
+
+
+def test_a_meeting_waiting_for_the_workspace_asks_again_at_most_once_a_minute(tmp_path, clock):
+    """워커 루프는 10초마다 돈다. 연결을 기다리는 회의가 바퀴마다 BE 에 묻지 않게 1분에 한 번만 묻는다(#199)."""
+    fake = FakeBe()
+    rec, path, manifest = _session(tmp_path)
+    del manifest["workspace_id"]
+
+    def lookups():
+        return sum(1 for c in fake.calls if c[1].endswith("/workspace"))
+
+    def run():
+        return _run(rec, _saved(path), tmp_path, extractor=_extractor({}), handoff=_handoff(fake), wait_for_workspace=True)
+
+    _run(rec, manifest, tmp_path, extractor=_extractor({}), handoff=_handoff(fake), wait_for_workspace=True)
+    clock["t"] += timedelta(seconds=10)
+    assert run()["workspace"] == "not_connected" and lookups() == 1
+    fake.guilds = {"77": "ws-1"}                                   # 웹에서 연결했다
+    clock["t"] += timedelta(seconds=60)
+    assert run()["status"] == "handed_off" and lookups() == 2
+
+
+def test_a_diarized_manifest_is_not_pending_until_it_is_saved(tmp_path):
+    (tmp_path / "111_1.wav").write_bytes(b"x")
+    path = tmp_path / "session_g_1.json"
+    manifest = {"session": "g_1", "guild_id": "g", "status": R.STATUS_DIARIZED,
+                "speakers": [{"user_id": "111", "file": "111_1.wav"}]}
+    path.write_text(json.dumps(manifest), encoding="utf-8")
+    assert R.pending_sessions(tmp_path) == []
+    manifest["status"] = R.STATUS_SAVED
+    path.write_text(json.dumps(manifest), encoding="utf-8")
+    assert R.pending_sessions(tmp_path) == [path]
+
+
+def _upload(tmp_path, status):
+    """업로드 매니페스트를 만들고 status 로 바꿔 둔다. source 는 upload 그대로다."""
+    from tests.conftest import SEGS, STARTED, FakeDiarizer, _audio
+    from upload.prepare import prepare_upload
+
+    rec = tmp_path / "rec"
+    path, m = prepare_upload(_audio(tmp_path), rec, diarizer=FakeDiarizer(SEGS), started_at=STARTED, timezone="Asia/Seoul")
+    m["status"] = status
+    R.save_manifest(path, m)
+    return rec, path
+
+
+@pytest.mark.parametrize("status", [R.STATUS_DIARIZED, R.STATUS_MAPPED, R.STATUS_SAVED, R.STATUS_FAILED,
+                                    R.STATUS_HANDED_OFF, R.STATUS_RECORDING])
+def test_an_unready_upload_manifest_is_never_picked_up_by_recovery(tmp_path, clock, status):
+    """지정(mapped_at, 모든 화자의 member_id)·BE 회의·워크스페이스가 갖춰지지 않은 업로드는 어떤 복구 경로도 돌리지 않는다.
+    사람이 status 만 saved·mapped 로 고쳐도 그렇다. 갖춘 업로드는 아래 테스트가 본다(#286)."""
+    rec, path = _upload(tmp_path, status)
+    claims = R.Claims(owner="host:1:a")
+    assert R.pending_sessions(rec) == []
+    assert R.recovery_targets(rec, claims=claims)[0] == []
+    assert R.recovery_targets(rec, claims=claims, manual=True)[0] == []
+    assert R.recovery_targets(rec, claims=claims, guild_id="123", manual=True)[0] == []
+
+    class Boom:
+        def __getattr__(self, name):
+            raise AssertionError("업로드 회의에 STT 를 부르면 안 된다")
+
+    assert R.recover(rec, backend=Boom(), model_name="x", workers=1, claims=claims) == []
+    assert R.recover(rec, backend=Boom(), model_name="x", workers=1, claims=claims, guild_id="123") == []
+
+
+def _ready_upload(tmp_path):
+    from tests.capture.test_recorder import _mapped_upload
+    return _mapped_upload(tmp_path)
+
+
+def test_a_ready_mapped_upload_is_picked_up_by_the_all_server_and_manual_paths_but_not_a_server_wheel(tmp_path, clock):
+    rec, path, _ = _ready_upload(tmp_path)
+    claims = R.Claims(owner="host:1:a")
+    assert R.pending_sessions(rec) == [path]
+    assert [p for p, _ in R.recovery_targets(rec, claims=claims)[0]] == [path]
+    assert [p for p, _ in R.recovery_targets(rec, claims=claims, manual=True)[0]] == [path]
+    assert R.recovery_targets(rec, claims=claims, guild_id="123", manual=True)[0] == []     # 서버가 없으니 서버별 바퀴는 안 집는다
+
+
+def test_recover_pass_for_all_servers_keeps_an_upload_that_has_no_guild_id(tmp_path, clock):
+    import asyncio
+    from tests.capture.test_recorder import _upload_be
+    rec, path, m = _ready_upload(tmp_path)
+    _, dpath, _ = _session(tmp_path, ts=500)
+    assert "guild_id" not in m
+    fake = _upload_be()
+    seen = []
+
+    async def go():
+        return await R.recover_pass(rec, claims=R.Claims(owner="host:1:a"), sem=asyncio.Semaphore(1),
+                                    stt_factory=lambda: (EchoStt(), "echo", 1), gate_factory=lambda: None,
+                                    extractor_factory=lambda: _extractor({}), handoff_factory=lambda: _handoff(fake),
+                                    transcripts_dir=tmp_path / "transcripts", on_result=lambda r: _record(seen, r))
+
+    async def _record(seen, r):
+        seen.append(r["session"])
+
+    results, _ = asyncio.run(go())
+    assert [r["session"] for r in results] == seen == [m["session"], "77_500"]       # 업로드가 디스코드 회의보다 먼저
+
+
+def _ended_upload(tmp_path):
+    from tests.capture.test_recorder import _upload_be
+    rec, path, m = _ready_upload(tmp_path)
+    fake = _upload_be()
+    fake.meetings["m-up1"]["status"] = "failed"          # BE 가 이미 끝냈다
+    return rec, path, m, fake
+
+
+@pytest.mark.parametrize("how", ["sources_409", "register_409", "sources_404"])
+def test_an_upload_ended_in_be_is_dropped_locally_after_the_lock_is_released_and_never_comes_back(tmp_path, clock, how):
+    rec, path, m, fake = _ended_upload(tmp_path)
+    if how == "register_409":
+        fake.meetings["m-up1"]["status"] = "processing"
+        orig = fake.request
+
+        def late(method, url, *a, **k):
+            if url.endswith("/extractions"):
+                fake.meetings["m-up1"]["status"] = "failed"      # 추출 등록 직전에 닫혔다
+            return orig(method, url, *a, **k)
+        fake.request = late
+    if how == "sources_404":
+        del fake.meetings["m-up1"]
+    others = ["session_77_500.transcript.json", "SPEAKER00_1__echo.json"]   # 다른 회의의 전사본은 남는다
+    (tmp_path / "transcripts").mkdir()
+    for n in others:
+        (tmp_path / "transcripts" / n).write_text("{}", encoding="utf-8")
+    claims = R.Claims(owner="host:1:a")
+    r = R.recover_one(rec, path, claims=claims, backend=EchoStt(), model_name="echo", workers=1,
+                      transcripts_dir=tmp_path / "transcripts", extractor=_extractor({}), handoff=_handoff(fake),
+                      wait_for_workspace=True)
+    assert r["ended"] and r["error"] is None and not r["gave_up"] and r["attempts"] == 0
+    assert not path.exists() and not path.with_suffix(".lock").exists() and not (rec / m["session"]).exists()
+    assert sorted(p.name for p in (tmp_path / "transcripts").iterdir()) == sorted(others)   # 이 회의 전사본만 지운다(#389 리뷰)
+    assert not any(c[1].endswith("/fail") or c[1] == "/meetings" or c[1].endswith("/end") for c in fake.calls)
+    assert R.pending_sessions(rec) == [] and R.recover(rec, backend=EchoStt(), model_name="echo", workers=1,
+                                                      claims=claims, handoff=_handoff(fake)) == []
+    assert not path.exists() and not path.with_suffix(".lock").exists()          # 정리한 뒤 다시 생기지 않는다
+
+
+def test_a_failed_upload_stage_is_counted_and_kept_not_dropped(tmp_path, clock):
+    """끝난 회의(MeetingEnded)만 지운다. 일반 단계 실패는 실패 횟수를 세고 매니페스트를 남긴다."""
+    rec, path, m, _ = _ended_upload(tmp_path)
+    claims = R.Claims(owner="host:1:a")
+    r = R.recover_one(rec, path, claims=claims, backend=EchoStt(), model_name="echo", workers=1,
+                      transcripts_dir=tmp_path / "transcripts", extractor=_dying, handoff=_handoff(_ok_upload()),
+                      wait_for_workspace=True)
+    assert r["status"] == "failed" and r["attempts"] == 1 and r["ended"] is None
+    assert path.exists()
+
+
+def _ok_upload():
+    from tests.capture.test_recorder import _upload_be
+    return _upload_be()

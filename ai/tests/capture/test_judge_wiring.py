@@ -80,7 +80,7 @@ def _transcribed(tmp_path, segments):
         json.dumps({"source": "meeting", "segments": segments}, ensure_ascii=False), encoding="utf-8")
     path, manifest = R.write_status(rec, "77_500", status=R.STATUS_TRANSCRIBED, entries=SPEAKERS, guild="g",
                                     channel="회의방", library_version="x", started_at="2026-09-28T01:00:00+00:00",
-                                    meeting_dir="77_500", extra={"timezone": "Asia/Seoul", "guild_id": "77",
+                                    meeting_dir="77_500", extra={"timezone": "Asia/Seoul", "guild_id": "77", "workspace_id": "ws-1",
                                                                  "stages": {"transcribed": "2026-09-28T01:30:00+00:00"}})
     return rec, tdir, path, manifest
 
@@ -90,14 +90,14 @@ def _process(tmp_path, fake, segments=MEETING, *, sourced=False, then_token=None
     rec, tdir, path, manifest = _transcribed(tmp_path, segments)
     client = H.BeClient("http://be", session=fake, service_token="svc-token")
     if sourced:
-        be = H.Handoff(client, "ws-1").end(manifest)
+        be = H.Handoff(client).end(manifest)
         manifest["stages"]["sourced"] = "2026-09-28T01:31:00+00:00"
         be["sources"] = {"inserted": len(segments), "skipped": 0, "duration_ms": None, "meeting_id": be["meeting_id"]}
     if then_token is not None:
         fake.service_token = then_token
     extractor = J.build_extractor(run=pipeline.run, candidates=client, cfg=_cfg())
     result = R.process_session(rec, manifest, backend=None, model_name="echo", workers=1, transcripts_dir=tdir,
-                               extractor=extractor, handoff=H.Handoff(client, "ws-1"))
+                               extractor=extractor, handoff=H.Handoff(client))
     return result, json.loads(path.read_text(encoding="utf-8"))
 
 

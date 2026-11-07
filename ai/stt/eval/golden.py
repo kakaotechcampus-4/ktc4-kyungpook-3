@@ -156,7 +156,8 @@ def session_tracks(session: Path) -> list:
 def score(session: Path, mode: str, backend_kind: str, model: str, gate_on: bool, workers: int | None,
           yes: bool, *, beam: int = 5, cond: bool | None = None, hst: float | None = None,
           preprocess: str | None = None, pack_turns: bool = True, merge: bool = True,
-          tag: str = "", out_dir: Path | None = None, backend=None, lines_out: list | None = None) -> dict | None:
+          tag: str = "", out_dir: Path | None = None, backend=None, lines_out: list | None = None,
+          ordered: bool | None = None) -> dict | None:
     """정렬본 하나를 한 설정으로 전사해 지표를 JSON 으로 남긴다.
 
     preprocess: "highpass" 면 100~7500Hz 대역 제한을 트랙에 건다 (0007 의 필터).
@@ -184,7 +185,7 @@ def score(session: Path, mode: str, backend_kind: str, model: str, gate_on: bool
 
     ru0 = resource.getrusage(resource.RUSAGE_SELF)
     lines, stats = B.run(tracks, backend, mode=mode, gate=gate, workers=w, pack_turns=pack_turns,
-                         merge=merge, preprocess=pre)
+                         merge=merge, preprocess=pre, ordered=ordered)
     ru1 = resource.getrusage(resource.RUSAGE_SELF)
     if lines_out is not None:
         lines_out.extend(lines)
@@ -196,6 +197,7 @@ def score(session: Path, mode: str, backend_kind: str, model: str, gate_on: bool
     out = {
         "session": session.name, "mode": mode, "backend": stats.backend, "gate": gate_on,
         "beam": beam, "cond": cond, "hst": hst, "preprocess": preprocess, "pack_turns": pack_turns,
+        "ordered": stats.ordered,
         "merge": merge, "workers": w, "tag": tag, "scoring_version": SCORING_VERSION,
         "krw_per_meeting_hour": round(m["krw"] / meeting_h, 1) if meeting_h > 0 else None,
         "cpu_s_per_speech_s": round(cpu_s / stats.speech_s, 3) if stats.speech_s > 0 else None,

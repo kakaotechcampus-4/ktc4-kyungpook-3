@@ -4,7 +4,12 @@ import { db } from '@/shared/mock/db'
 import { ok } from '@/shared/mock/envelope'
 import { server } from '@/shared/mock/server'
 import { deferred } from '@/shared/test/deferred'
-import { businessRequests, recordRequests } from '@/shared/test/requests'
+import {
+  businessRequests,
+  isDashboardRequest,
+  latestDoneExtractionId,
+  recordRequests,
+} from '@/shared/test/requests'
 import { renderApp } from './test/renderApp'
 
 describe('앱 부팅', () => {
@@ -38,7 +43,12 @@ describe('앱 부팅', () => {
 
     expect(log.started.filter(({ path }) => path === '/auth/me')).toHaveLength(1)
     expect(log.started.filter(({ path }) => path === '/workspaces')).toHaveLength(1)
-    expect(businessRequests(log.started)).toEqual([])
+    // M7 부터 대시보드는 자기 조회(태스크·승인·팀원·연동·추출)를 한다. 그 밖의 업무 요청은 없다
+    expect(
+      businessRequests(log.started).filter(
+        (request) => !isDashboardRequest(request, { extractionId: latestDoneExtractionId() }),
+      ),
+    ).toEqual([])
   })
 
   it('화면을 옮겨 다녀도 세션과 목록을 다시 부르지 않는다', async () => {

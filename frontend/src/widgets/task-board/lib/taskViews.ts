@@ -2,18 +2,26 @@ import type { Approval, TaskCreateApproval } from '@/entities/approval'
 import type { Member } from '@/entities/member'
 import type { Task } from '@/entities/task'
 import { isDueSoon, isOverdue } from '@/entities/task'
-import { isDateOnly } from '@/shared/lib/date'
+import { addDays, isDateOnly, soonUntil } from '@/shared/lib/date'
 import { parseEnumParam } from '@/shared/lib/url'
-import { addDays, soonUntil } from './taskBoard'
+import { TASK_SORTS } from './taskSort'
+import type { TaskSort } from './taskSort'
 
 /*
  * 태스크 화면의 보기 전환 (Tasks · TasksBoard · TasksCalendar · TasksGantt 시안).
- * 보기·담당자·기간은 탭·날짜 조건과 같은 URL 에 둔다 — 새로고침·뒤로가기가 그대로 되살린다.
+ * 보기·담당자·기간·정렬·휴대폰 보드의 칸은 탭·날짜 조건과 같은 URL 에 둔다 — 새로고침·뒤로가기가 그대로 되살린다.
  * 탭·날짜 조건은 `boardSearch` 가, 이 파라미터는 `viewSearch` 가 쓴다. 서로의 파라미터는 건드리지 않는다.
  */
 
 export const TASK_VIEWS = ['list', 'board', 'calendar', 'gantt'] as const
 export type TaskView = (typeof TASK_VIEWS)[number]
+
+export const VIEW_LABEL: Record<TaskView, string> = {
+  list: '리스트',
+  board: '보드',
+  calendar: '캘린더',
+  gantt: '간트',
+}
 
 export const VIEW_PARAMS = {
   view: 'view',
@@ -21,10 +29,16 @@ export const VIEW_PARAMS = {
   month: 'month',
   from: 'from',
   period: 'period',
+  sort: 'sort',
+  column: 'column',
 } as const
 
 export const BOARD_PERIODS = ['all', 'month'] as const
 export type BoardPeriod = (typeof BOARD_PERIODS)[number]
+
+/** 보드의 상태 칸. 순서가 화면의 칸 순서다 */
+export const BOARD_COLUMNS = ['todo', 'active', 'done'] as const
+export type BoardColumnKey = (typeof BOARD_COLUMNS)[number]
 
 export interface ViewQuery {
   view: TaskView
@@ -36,6 +50,10 @@ export interface ViewQuery {
   from: string | null
   /** 보드의 기간. `month` 는 이번 달 마감만 본다 */
   period: BoardPeriod
+  /** 리스트·보드의 순서. 캘린더·간트는 쓰지 않고 URL 에 그대로 둔다 */
+  sort: TaskSort
+  /** 휴대폰 보드에서 고른 칸. 넓은 화면은 세 칸을 다 보여 쓰지 않고 URL 에 그대로 둔다 */
+  column: BoardColumnKey
 }
 
 export const DEFAULT_VIEW_QUERY: ViewQuery = {
@@ -44,6 +62,9 @@ export const DEFAULT_VIEW_QUERY: ViewQuery = {
   month: null,
   from: null,
   period: 'all',
+  sort: 'due',
+  // 시안(PwaTasks)은 진행 중 칸을 먼저 보인다
+  column: 'active',
 }
 
 const MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/
@@ -59,6 +80,12 @@ export function readViewQuery(params: URLSearchParams): ViewQuery {
     month: month !== null && MONTH_PATTERN.test(month) ? month : null,
     from: from !== null && isDateOnly(from) ? from : null,
     period: parseEnumParam(params.get(VIEW_PARAMS.period) ?? undefined, BOARD_PERIODS) ?? 'all',
+    sort:
+      parseEnumParam(params.get(VIEW_PARAMS.sort) ?? undefined, TASK_SORTS) ??
+      DEFAULT_VIEW_QUERY.sort,
+    column:
+      parseEnumParam(params.get(VIEW_PARAMS.column) ?? undefined, BOARD_COLUMNS) ??
+      DEFAULT_VIEW_QUERY.column,
   }
 }
 
@@ -71,6 +98,8 @@ export function viewSearch(current: URLSearchParams, next: ViewQuery): string {
   if (next.month !== null) rest.set(VIEW_PARAMS.month, next.month)
   if (next.from !== null) rest.set(VIEW_PARAMS.from, next.from)
   if (next.period !== 'all') rest.set(VIEW_PARAMS.period, next.period)
+  if (next.sort !== DEFAULT_VIEW_QUERY.sort) rest.set(VIEW_PARAMS.sort, next.sort)
+  if (next.column !== DEFAULT_VIEW_QUERY.column) rest.set(VIEW_PARAMS.column, next.column)
   const search = rest.toString().replace(/%2C/g, ',')
   return search === '' ? '' : `?${search}`
 }
@@ -91,6 +120,41 @@ export function taskTone(task: Task, today: string): TaskTone {
   if (task.status === 'blocked' || isOverdue(task, today)) return 'danger'
   if (isDueSoon(task, today, soonUntil(today))) return 'warn'
   return task.status === 'in_progress' ? 'active' : 'todo'
+}
+
+/** 보드 카드의 배지. `taskTone` 의 위험(막힘 또는 기한 지남)을 원인별로 나눈다 */
+export type CardBadge = 'blocked' | 'danger' | 'warn'
+
+/**
+ * 보드 카드에 붙는 배지 (D-175). 막혔으면 `막힘`, 기한도 지났으면 `위험` 을 함께 단다.
+ * 막힌 태스크에는 `주의` 를 달지 않는다 — 위험이 주의보다 앞서던 지금 규칙 그대로다.
+ * 캘린더·간트는 `taskTone` 을 그대로 쓴다 (막힘도 위험)
+ */
+export function cardBadges(task: Task, today: string): readonly CardBadge[] {
+  if (task.status === 'done') return []
+  if (task.status === 'blocked') return isOverdue(task, today) ? ['blocked', 'danger'] : ['blocked']
+  const tone = taskTone(task, today)
+  return tone === 'danger' || tone === 'warn' ? [tone] : []
+}
+
+/** 배지마다 그 배지를 단 카드 수. 막혔고 기한도 지난 카드는 막힘과 위험에 한 번씩 센다 */
+export function countBadges(tasks: readonly Task[], today: string): Record<CardBadge, number> {
+  const counts: Record<CardBadge, number> = { blocked: 0, danger: 0, warn: 0 }
+  for (const task of tasks) for (const badge of cardBadges(task, today)) counts[badge] += 1
+  return counts
+}
+
+/**
+ * 휴대폰 보드에서 고른 칸 아래 한 줄 (PwaTasks 시안) — `막힘 1 · 위험 4 · 마감 빠른 순`.
+ * 0 인 개수는 빼고, 끝에 그 칸의 순서(`order`)를 붙인다
+ */
+export function columnSummary(tasks: readonly Task[], today: string, order: string): string {
+  const { blocked, danger } = countBadges(tasks, today)
+  const counts = [
+    ['막힘', blocked],
+    ['위험', danger],
+  ] as const
+  return [...counts.flatMap(([label, n]) => (n === 0 ? [] : [`${label} ${n}`])), order].join(' · ')
 }
 
 /** 담당자로 거른다. 담당자를 고르지 않았으면 모두 맞다 */
@@ -147,11 +211,16 @@ export interface CalendarCell {
   inMonth: boolean
 }
 
-/** 일요일부터 시작하는 6주 격자. 시안과 같다 */
+/**
+ * 일요일부터 시작하는 격자. 그 달의 날이 든 주만 그린다 — 2026-09 는 5주(시안), 2026-08 은 6주다.
+ * 다음 달 날만 있는 주는 그리지 않는다
+ */
 export function calendarGrid(month: string): CalendarCell[] {
   const first = `${month}-01`
-  const start = addDays(first, -weekday(first))
-  return Array.from({ length: 42 }, (_, index) => {
+  const lead = weekday(first)
+  const days = daysBetween(first, `${addMonths(month, 1)}-01`)
+  const start = addDays(first, -lead)
+  return Array.from({ length: Math.ceil((lead + days) / 7) * 7 }, (_, index) => {
     const date = addDays(start, index)
     return { date, inMonth: monthOf(date) === month }
   })
@@ -202,4 +271,16 @@ export function memberNames(members: readonly Member[] | undefined): Map<string,
 
 export function assigneeOf(task: Task, names: ReadonlyMap<string, string>): string | null {
   return task.assigneeMemberId === null ? null : (names.get(task.assigneeMemberId) ?? null)
+}
+
+/**
+ * 담당자 표시 문구. 담당자가 없으면 `none`, 팀원 목록에서 찾지 못하면(팀원 조회 실패 포함) `알 수 없는 담당자`다 —
+ * 받지 못한 이름을 `담당자 없음` 으로 쓰지 않는다 (AC-A-05). 리스트 행과 같은 문구다
+ */
+export function assigneeLabel(
+  memberId: string | null,
+  names: ReadonlyMap<string, string>,
+  none = '담당자 없음',
+): string {
+  return memberId === null ? none : (names.get(memberId) ?? '알 수 없는 담당자')
 }

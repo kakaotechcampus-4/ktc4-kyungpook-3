@@ -21,27 +21,34 @@
 기록된 페이지와 반영 버전은 옛 DB의 것이므로 쓰지 않고, 지금 DB에 페이지를 새로 만든다. 새 DB가 붙으면
 `enqueue_workspace_sync()`가 워크스페이스의 모든 Task에 요청을 넣는다.
 
-연결 행은 있는데 DB가 없는 워크스페이스(DB를 찾는 중이거나 연결이 실패함)의 요청은 꺼내지 않고 둔다.
-DB가 붙으면 그때 처리된다. 연결 행이 없는 워크스페이스(연동 안 함·끊음)의 요청은 건너뛴다.
+연결 행은 있는데 DB나 토큰이 없는 워크스페이스(DB를 찾는 중, 연결 실패, 토큰 갱신 거절)의 요청은 꺼내지 않고
+둔다. DB와 토큰이 다 있게 되면 그때 처리된다. 연결 행이 없는 워크스페이스(연동 안 함·끊음)의 요청은 건너뛴다.
+
+토큰 갱신: Notion이 401(토큰이 유효하지 않음)을 돌려주면 `refresh_token`으로 한 번 갱신하고 요청을 바로 다시 보낸다.
+갱신이 거절되면 연결 행의 토큰을 비운다. 연동 조회는 끊김(`revoked`)으로 알리고, 요청은 다시 연결할 때까지 기다린다.
 
 페이지 생성 타임아웃: POST 직전에 `Task.notion_create_attempted_at`을 먼저 커밋한다.
 POST 결과를 모르는 채로 끝나면(타임아웃·5xx·워커 중단) 이 값이 남아 있으므로, 다음 시도는
 POST를 반복하지 않고 `Task ID` 속성으로 이미 생긴 페이지가 있는지부터 조회한다.
+
+지운 Task(`Task.is_deleted`): 지울 때도 버전을 올려 요청을 넣는다. 워커는 지금 DB에 페이지가 있으면 보관(archive)하고,
+없으면 만들지 않는다. 새 DB가 붙어도 지운 Task에는 요청을 넣지 않는다.
 
 워커는 프로세스당 하나만 도는 것을 전제로 한다(`app/main.py` lifespan).
 """
 import logging
 import threading
 from datetime import datetime, timedelta, timezone
+from enum import StrEnum
 
 import httpx
-from sqlalchemy import exists, insert, select, update
+from sqlalchemy import exists, insert, or_, select, update
 from sqlalchemy.orm import Session
 
 from app.core.database import SessionLocal
 from app.core.errors import AppError, ErrorCode
 from app.models import Integration, NotionSyncJob, NotionSyncJobStatus, NotionSyncStatus, Task
-from app.services import notion
+from app.services import notion, notion_oauth
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +85,10 @@ def enqueue_workspace_sync(db: Session, workspace_id: str) -> None:
     Task의 Notion 기록은 지우지 않는다. 워커가 기록된 DB와 새 DB가 다른 것을 보고 새 DB에 페이지를 만든다.
     여기서 못 본 Task(아직 커밋 전)는 자기 요청을 이미 갖고 있다(`enqueue_task_sync`).
     """
-    tasks = db.execute(select(Task.task_id, Task.version).where(Task.workspace_id == workspace_id)).all()
+    # 지운 task는 새 DB에 페이지가 없으니 보관할 것도 없다
+    tasks = db.execute(
+        select(Task.task_id, Task.version).where(Task.workspace_id == workspace_id, Task.is_deleted.is_(False))
+    ).all()
     if not tasks:
         return
     # job_id·상태·시각은 모델의 기본값으로 채운다.
@@ -88,7 +98,7 @@ def enqueue_workspace_sync(db: Session, workspace_id: str) -> None:
     )
     db.execute(
         update(Task)
-        .where(Task.workspace_id == workspace_id)
+        .where(Task.workspace_id == workspace_id, Task.is_deleted.is_(False))
         .values(notion_sync_status=str(NotionSyncStatus.PENDING), updated_at=Task.updated_at)
     )
 
@@ -144,12 +154,15 @@ def process_due_jobs(
     busy_tasks = select(NotionSyncJob.task_id).where(
         NotionSyncJob.status == str(NotionSyncJobStatus.IN_PROGRESS)
     )
-    # 연결 행은 있는데 DB가 없는 워크스페이스(찾는 중·연결 실패)의 요청은 DB가 붙을 때까지 꺼내지 않는다.
+    # 연결 행은 있는데 DB(찾는 중·연결 실패)나 토큰(갱신 거절)이 없는 워크스페이스의 요청은 둘 다 생길 때까지 꺼내지 않는다.
     # 꺼냈다 되돌리기를 되풀이하면 이 요청들이 한 번에 꺼내는 자리를 차지해 다른 워크스페이스 반영이 밀린다.
-    waiting_for_database = (
+    waiting_for_connection = (
         select(Task.task_id)
         .join(Integration, Integration.workspace_id == Task.workspace_id)
-        .where(Integration.provider == "notion", Integration.provider_channel_id.is_(None))
+        .where(
+            Integration.provider == "notion",
+            or_(Integration.provider_channel_id.is_(None), Integration.access_token.is_(None)),
+        )
     )
     job_ids = db.execute(
         select(NotionSyncJob.job_id)
@@ -158,7 +171,7 @@ def process_due_jobs(
             NotionSyncJob.next_attempt_at <= now,
             # 같은 Task를 두 작업이 동시에 보내면 늦게 도착한 쪽이 옛 값으로 덮어쓸 수 있다.
             NotionSyncJob.task_id.not_in(busy_tasks),
-            NotionSyncJob.task_id.not_in(waiting_for_database),
+            NotionSyncJob.task_id.not_in(waiting_for_connection),
         )
         .order_by(NotionSyncJob.created_at)
         .limit(limit)
@@ -286,8 +299,9 @@ def _process(
         db.commit()
         return
     if not notion.is_configured(stored):
-        # 꺼낸 직후 DB가 비었다(다시 연결 시작 등). 시도로 세지 않고 대기로 되돌린다. DB가 붙을 때까지는 꺼내지 않는다.
-        _finish(job, NotionSyncJobStatus.PENDING, now, "Notion 대상 DB 연결을 기다립니다.")
+        # 꺼낸 직후 DB나 토큰이 비었다(다시 연결 시작, 같은 워크스페이스의 앞 요청에서 갱신 거절 등).
+        # 시도로 세지 않고 대기로 되돌린다. 둘 다 생길 때까지는 꺼내지 않는다.
+        _finish(job, NotionSyncJobStatus.PENDING, now, "Notion 연결을 기다립니다.")
         job.attempts -= 1
         db.commit()
         return
@@ -325,7 +339,12 @@ def _process(
             if page_id is not None:
                 _update_task_sync(db, task_id, notion_page_id=page_id, notion_database_id=database_id)
 
-        if page_id is not None:
+        if task.is_deleted:
+            # 지운 task — 페이지가 있으면 보관하고, 없으면 새로 만들지 않는다
+            synced_version = task.version
+            if page_id is not None:
+                notion.archive_page(integration, page_id, transport=transport)
+        elif page_id is not None:
             synced_version = task.version
             notion.update_page(db, integration, task, page_id, transport=transport)
         else:
@@ -333,11 +352,21 @@ def _process(
             # POST 전에 먼저 커밋해 둬야, 응답을 못 받은 채 워커가 죽어도 흔적이 남는다.
             _update_task_sync(db, task_id, notion_create_attempted_at=now)
             db.commit()
+            # 커밋하면 Task를 다시 읽는다. 처음 읽은 뒤 지워졌으면(auto 되돌리기) 만들지 않는다. 그대로 만들면 지운 뒤의
+            # 버전까지 반영된 것으로 기록되어, 보관할 요청이 건너뛰어지고 페이지가 남는다
+            if task.is_deleted:
+                _update_task_sync(db, task_id, notion_create_attempted_at=None)
+                _finish(job, NotionSyncJobStatus.SKIPPED, now, "처리하는 사이 Task가 지워졌습니다.")
+                db.commit()
+                return
             synced_version = task.version
             page_id = notion.create_page(db, integration, task, transport=transport)
             _update_task_sync(db, task_id, notion_page_id=page_id, notion_database_id=database_id)
     except notion.NotionWriteError as exc:
-        _handle_failure(db, job, task_id, exc, creating=creating, now=now)
+        _handle_failure(
+            db, job, task_id, exc,
+            creating=creating, now=now, integration=integration, transport=transport,
+        )
         return
 
     _finish(job, NotionSyncJobStatus.DONE, now)
@@ -364,14 +393,34 @@ def _handle_failure(
     *,
     creating: bool,
     now: datetime,
+    integration: Integration,
+    transport: httpx.BaseTransport | None,
 ) -> None:
     error = f"[{exc.status_code}] {exc.reason}" if exc.status_code else exc.reason
     if creating and not exc.outcome_uncertain:
         # 요청이 거부됐거나 도달하지 않은 게 확실하다 — 다음엔 조회 없이 바로 POST해도 된다.
         _update_task_sync(db, task_id, notion_create_attempted_at=None)
 
-    if exc.retryable and job.attempts < MAX_ATTEMPTS:
-        delay = exc.retry_after or min(
+    retryable = exc.retryable
+    send_again = False
+    if exc.status_code == 401:
+        # Task 기록을 먼저 커밋해 Task 행을 놓고 나서 연결 행을 잠근다. DB를 붙이는 쪽은 연결 행 → Task 순서로 고치므로,
+        # Task 행을 잡은 채 연결 행을 기다리면 서로를 기다리며 멈출 수 있다.
+        db.commit()
+        refreshed = _refresh_token(db, integration.workspace_id, integration.access_token, transport)
+        if refreshed is _Refresh.REVOKED:
+            # 시도로 세지 않고 다시 연결할 때까지 둔다. 토큰이 빈 연결의 요청은 꺼내지 않는다(`process_due_jobs`).
+            _finish(job, NotionSyncJobStatus.PENDING, now, f"{error} — Notion 연결이 끊겨 다시 연결을 기다립니다.")
+            job.attempts -= 1
+            db.commit()
+            return
+        retryable = True
+        send_again = refreshed is _Refresh.SEND_AGAIN
+
+    # 마지막 시도에서 토큰이 만료돼 갱신했다면 새 토큰으로 한 번은 더 보낸다. 한 번만 허용해, 갱신해도 401이
+    # 계속되면 그다음에 멈춘다.
+    if retryable and (job.attempts < MAX_ATTEMPTS or send_again and job.attempts == MAX_ATTEMPTS):
+        delay = 0 if send_again else exc.retry_after or min(
             BASE_BACKOFF_SECONDS * 2 ** (job.attempts - 1), MAX_BACKOFF_SECONDS
         )
         _finish(job, NotionSyncJobStatus.PENDING, now, error)
@@ -383,6 +432,69 @@ def _handle_failure(
             _update_task_sync(db, task_id, notion_sync_status=str(NotionSyncStatus.FAILED))
         logger.warning("Notion 반영 실패 task_id=%s version=%s: %s", task_id, job.task_version, error)
     db.commit()
+
+
+class _Refresh(StrEnum):
+    SEND_AGAIN = "send_again"  # 새 토큰이 있다(이번에 갱신했거나 그 사이 바뀌었다). 바로 다시 보낸다
+    UNAVAILABLE = "unavailable"  # 지금은 갱신하지 못했다. 평소처럼 간격을 두고 다시 시도한다
+    REVOKED = "revoked"  # 토큰이 비었다(이번 갱신이 거절됐거나 그 사이 비워졌다). PM이 다시 연결해야 한다
+
+
+def _refresh_token(
+    db: Session,
+    workspace_id: str,
+    failed_token: str,
+    transport: httpx.BaseTransport | None,
+) -> _Refresh:
+    """401을 받은 토큰을 `refresh_token`으로 한 번 갱신한다.
+
+    새 토큰은 받자마자 커밋한다. 그 밖의 결과(토큰 비우기 등)는 부른 쪽이 커밋해야 저장되고 잠금이 풀린다.
+
+    연결 행을 잠그고 다시 읽는다. Notion은 갱신할 때마다 `refresh_token`도 새로 주고 옛것은 받지 않는다. 두 워커가
+    같은 토큰을 동시에 갱신하면 늦은 쪽이 옛 `refresh_token`으로 거절당해 멀쩡한 연결의 토큰을 비운다.
+    """
+    stored = db.execute(
+        select(Integration)
+        .where(Integration.workspace_id == workspace_id, Integration.provider == "notion")
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    ).scalar_one_or_none()
+    if stored is not None and stored.access_token is None:
+        # 그 사이 토큰이 비었다(다른 워커의 갱신 거절 등). 새 토큰이 생긴 게 아니니 다시 연결을 기다린다.
+        return _Refresh.REVOKED
+    if stored is None or stored.access_token != failed_token:
+        # 그 사이 다른 워커가 갱신했거나, PM이 다시 연결했거나 끊었다. 다음 처리가 지금 연결을 보고 정한다.
+        return _Refresh.SEND_AGAIN
+
+    if stored.refresh_token:
+        try:
+            token = notion_oauth.refresh_access_token(stored.refresh_token, transport=transport)
+        except notion_oauth.OAuthConfigError as exc:
+            logger.error("Notion 토큰 갱신 설정 오류 workspace_id=%s: %s", workspace_id, exc)
+            return _Refresh.UNAVAILABLE
+        except notion_oauth.NotionOAuthError as exc:
+            if not exc.rejected:
+                logger.warning("Notion 토큰 갱신 실패 workspace_id=%s: %s", workspace_id, exc)
+                return _Refresh.UNAVAILABLE
+            reason = str(exc)
+        else:
+            stored.access_token = token.access_token
+            # 응답에 새 refresh_token이 없으면 쓰던 것을 둔다. 더는 유효하지 않다면 다음 갱신이 거절돼 그때 끊는다.
+            stored.refresh_token = token.refresh_token or stored.refresh_token
+            # Notion은 옛 refresh_token을 더는 받지 않는다. 저장하기 전에 워커가 멈추면 새 토큰을 잃고 다음 갱신이
+            # 거절돼 PM이 다시 연결해야 하므로, 요청 상태 정리를 기다리지 않고 바로 저장한다.
+            db.commit()
+            logger.info("Notion 토큰 갱신 workspace_id=%s", workspace_id)
+            return _Refresh.SEND_AGAIN
+    else:
+        reason = "refresh_token이 없습니다"
+
+    # DB ID는 남긴다. 다시 연결할 때 PM이 기존 페이지를 고르면 callback이 새 토큰으로 이 DB를 읽어 보고, 읽을 수 있으면
+    # 이어 쓴다(이미 만든 페이지도 이어진다). 템플릿을 복제하면 새 사본의 DB를 붙여 모든 Task를 다시 만든다.
+    stored.access_token = None
+    stored.refresh_token = None
+    logger.warning("Notion 토큰 갱신이 거절돼 연결을 끊음 workspace_id=%s: %s", workspace_id, reason)
+    return _Refresh.REVOKED
 
 
 def run_worker(stop_event: threading.Event, interval: float) -> None:

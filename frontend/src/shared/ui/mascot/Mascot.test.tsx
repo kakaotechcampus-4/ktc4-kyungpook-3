@@ -1,7 +1,8 @@
+import { createRef } from 'react'
 import { act, render } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Mascot } from './Mascot'
-import type { MascotPalette, MascotPose } from './Mascot'
+import type { MascotHandle, MascotPalette, MascotPose } from './Mascot'
 
 const REDUCED_MOTION = '(prefers-reduced-motion: reduce)'
 
@@ -16,8 +17,6 @@ const ALL_POSES: MascotPose[] = [
   'dial',
 ]
 
-/* jsdom 에는 matchMedia 가 아예 없다. 줄이기를 켠 사람을 흉내 내려면 테스트가 직접 깔아야 한다.
-   setup.ts 는 T0 소유라 손대지 않고 이 파일 안에서만 세운다. */
 function installMatchMedia(initial: boolean) {
   const listeners = new Set<(event: MediaQueryListEvent) => void>()
   const query = {
@@ -46,6 +45,36 @@ function installMatchMedia(initial: boolean) {
   }
 }
 
+/** rAF 를 손으로 돌린다. 프레임마다 시계가 frameMs 씩 간다. 이펙트가 다시 돌면 첫 프레임은 dt 0 이다 */
+function installFrames() {
+  const pending = new Map<number, FrameRequestCallback>()
+  let nextId = 0
+  let now = 1000
+  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+    nextId += 1
+    pending.set(nextId, callback)
+    return nextId
+  })
+  vi.stubGlobal('cancelAnimationFrame', (id: number) => {
+    pending.delete(id)
+  })
+  // 깜빡임은 3.2초 뒤, 자동 눌림은 5.4초 뒤로 민다
+  vi.spyOn(Math, 'random').mockReturnValue(0.99)
+
+  return {
+    run(frames: number, frameMs = 50) {
+      for (let frame = 0; frame < frames; frame += 1) {
+        act(() => {
+          const callbacks = [...pending.values()]
+          pending.clear()
+          for (const callback of callbacks) callback(now)
+          now += frameMs
+        })
+      }
+    },
+  }
+}
+
 function part(container: HTMLElement, name: string): Element {
   const node = container.querySelector(`[data-part="${name}"]`)
   if (node === null) throw new Error(`data-part="${name}" 가 없다`)
@@ -64,6 +93,14 @@ afterEach(() => {
 })
 
 describe('Mascot', () => {
+  it('keeps decorative motion off in the default test browser', () => {
+    const raf = vi.spyOn(window, 'requestAnimationFrame')
+
+    render(<Mascot />)
+
+    expect(raf).not.toHaveBeenCalled()
+  })
+
   /* §8-3 의 9개 숫자. Login.dc.html 의 정적 SVG 와 글자 그대로 같아야 포팅이 맞는 것이다. */
   it('draws idle at the nine artboard numbers', () => {
     const { container } = render(<Mascot pose="idle" />)
@@ -363,9 +400,175 @@ describe('Mascot', () => {
     })
 
     it('survives a missing matchMedia', () => {
+      vi.stubGlobal('matchMedia', undefined)
+      expect(typeof window.matchMedia).toBe('undefined')
       const { container } = render(<Mascot />)
 
       expect(part(container, 'inner')).toHaveAttribute('cy', '113.91')
+    })
+  })
+
+  /* 눈웃음 끝 모양 (이슈 #430). 눈 중심 cx = 120 ± 0.2485×84×1.18, cy = 120 − 0.15×84 = 107.4,
+     M (cx−11.5, cy+4) C (cx−4.6, cy−5) (cx+4.6, cy−5) (cx+11.5, cy+4), 굵기 0.176×84 */
+  const SMILE_L = 'M83.87 111.4 C90.77 102.4 99.97 102.4 106.87 111.4'
+  const SMILE_R = 'M133.13 111.4 C140.03 102.4 149.23 102.4 156.13 111.4'
+
+  describe('smile', () => {
+    it('turns the idle eyes into two round-capped arches', () => {
+      const { container } = render(<Mascot smile />)
+
+      const smileL = part(container, 'smile-l')
+      expect(smileL).toHaveAttribute('d', SMILE_L)
+      expect(smileL).toHaveAttribute('stroke-width', '14.78')
+      expect(smileL).toHaveAttribute('stroke-linecap', 'round')
+      expect(smileL).toHaveAttribute('stroke', '#171717')
+      expect(smileL).toHaveAttribute('fill', 'none')
+      expect(part(container, 'smile-r')).toHaveAttribute('d', SMILE_R)
+      expect(container.querySelector('[data-part="eye-l"], [data-part="eye-r"]')).toBeNull()
+    })
+
+    it('keeps the arches inside the face clip', () => {
+      const { container } = render(<Mascot smile />)
+
+      expect(part(container, 'eyes').contains(part(container, 'smile-l'))).toBe(true)
+    })
+
+    it('strokes the arches in the eye colour of the palette', () => {
+      const { container } = render(<Mascot smile palette="coral" />)
+
+      expect(part(container, 'smile-l')).toHaveAttribute('stroke', '#FF6969')
+    })
+
+    it('draws the original eye capsules with smile off', () => {
+      const { container } = render(<Mascot smile={false} />)
+
+      expect(part(container, 'eye-l')).toHaveAttribute('x', '91.73')
+      expect(container.querySelector('path')).toBeNull()
+    })
+
+    it('jumps straight to the arch under prefers-reduced-motion', () => {
+      installMatchMedia(true)
+      const raf = vi.spyOn(window, 'requestAnimationFrame')
+
+      const { container, rerender } = render(<Mascot />)
+      rerender(<Mascot smile />)
+
+      expect(part(container, 'smile-l')).toHaveAttribute('d', SMILE_L)
+      expect(raf).not.toHaveBeenCalled()
+    })
+
+    it('bends the open eye into the arch over time and back', () => {
+      installMatchMedia(false)
+      const frames = installFrames()
+
+      const { container, rerender } = render(<Mascot />)
+      rerender(<Mascot smile />)
+      frames.run(4)
+
+      // 0.15초면 아직 휘는 중이다. 위 끝은 캡슐 위쪽과 아치 사이에 있다
+      const midway = part(container, 'smile-l').getAttribute('d')
+      expect(midway).not.toBe(SMILE_L)
+      expect(container.querySelector('[data-part="eye-l"]')).toBeNull()
+
+      frames.run(50)
+      expect(part(container, 'smile-l')).toHaveAttribute('d', SMILE_L)
+
+      rerender(<Mascot />)
+      frames.run(50)
+      expect(part(container, 'eye-l')).toHaveAttribute('x', '91.73')
+      expect(container.querySelector('path')).toBeNull()
+    })
+  })
+
+  describe('speed and dial options', () => {
+    it('turns slower with a lower lambda', () => {
+      installMatchMedia(false)
+      const frames = installFrames()
+
+      const pair = (pose: MascotPose) => (
+        <>
+          <Mascot pose={pose} />
+          <Mascot pose={pose} lambda={3.2} />
+        </>
+      )
+      const { container, rerender } = render(pair('idle'))
+      rerender(pair('left'))
+      // 첫 프레임은 dt 0, 뒤 5프레임이 0.25초
+      frames.run(6)
+
+      const [defaultInner, slowInner] = Array.from(
+        container.querySelectorAll('[data-part="inner"]'),
+      )
+      // left 의 inner cx 는 106.98. λ 8 은 120 − 13.02×(1 − e^−2), λ 3.2 는 120 − 13.02×(1 − e^−0.8)
+      expect(defaultInner).toHaveAttribute('cx', '108.74')
+      expect(slowInner).toHaveAttribute('cx', '112.83')
+    })
+
+    it('scrolls the dial at the dialHz the caller asks for', () => {
+      installMatchMedia(false)
+      const frames = installFrames()
+
+      const { container } = render(
+        <>
+          <Mascot pose="dial" />
+          <Mascot pose="dial" dialHz={0.55} />
+        </>,
+      )
+      frames.run(6)
+
+      const [defaultShift, slowShift] = Array.from(
+        container.querySelectorAll('[data-part="dial-shift"]'),
+      )
+      // 0.25초 × 1.1칸 × 9.6852 와 그 절반
+      expect(defaultShift).toHaveAttribute('transform', 'translate(2.66 0)')
+      expect(slowShift).toHaveAttribute('transform', 'translate(1.33 0)')
+    })
+
+    it('lays the dial stripes over another pose', () => {
+      const { container } = render(<Mascot pose="left" dial />)
+
+      expect(part(container, 'dial')).toHaveAttribute('opacity', '1')
+      expect(part(container, 'inner')).toHaveAttribute('cx', '106.98')
+    })
+
+    it('keeps the stripes to the dial pose without the dial option', () => {
+      const { container: left } = render(<Mascot pose="left" />)
+      const { container: dial } = render(<Mascot pose="dial" />)
+
+      expect(part(left, 'dial')).toHaveAttribute('opacity', '0')
+      expect(part(dial, 'dial')).toHaveAttribute('opacity', '1')
+    })
+  })
+
+  describe('ref', () => {
+    it('presses the cap on demand', () => {
+      installMatchMedia(false)
+      const frames = installFrames()
+      const ref = createRef<MascotHandle>()
+
+      const { container } = render(<Mascot ref={ref} />)
+      frames.run(1)
+      act(() => {
+        ref.current?.press()
+      })
+      // 0.1초면 0.26초 눌림의 바닥이다 — 윗면이 0.58 까지 내려온다
+      frames.run(2)
+
+      expect(part(container, 'cap-g').getAttribute('transform')).toContain('scale(1 0.58)')
+    })
+
+    it('ignores press under prefers-reduced-motion', () => {
+      const ref = createRef<MascotHandle>()
+
+      const { container } = render(<Mascot ref={ref} />)
+      act(() => {
+        ref.current?.press()
+      })
+
+      expect(part(container, 'cap-g')).toHaveAttribute(
+        'transform',
+        'translate(80.78 30.79) rotate(-22)',
+      )
     })
   })
 })
