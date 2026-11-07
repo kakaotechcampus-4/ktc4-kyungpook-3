@@ -29,6 +29,7 @@ router = APIRouter(prefix="/approvals", tags=["approvals"])
 _TASK_UPDATE_FIELDS = {"title", "assignee_member_id", "status", "blocker", "due_date"}
 
 # 승인하면서 PM이 고칠 수 있는 필드. 승인 유형마다 다르다
+# 예외: 담당자 줄이 있는 답장 카드(task_update)는 assignee_member_id 도 고칠 수 있다(_normalize_overrides)
 _EDITABLE_FIELDS: dict[str, frozenset[str]] = {
     str(ApprovalType.TASK_CREATE): frozenset({"task_title", "assignee_member_id", "due_date"}),
     str(ApprovalType.TASK_UPDATE): frozenset({"status", "due_date"}),
@@ -111,7 +112,7 @@ def _normalize_edit(field: str, value: object) -> object:
 
 
 def _normalize_overrides(
-    approval_type: str, status: ApprovalStatus, overrides: dict[str, object] | None
+    db: Session, approval: ApprovalRequest, status: ApprovalStatus, overrides: dict[str, object] | None
 ) -> dict[str, object]:
     """승인하면서 고친 값을 검증한다. 상태를 바꾸기 전에 불러야 잘못된 요청이 아무것도 커밋하지 못한다."""
     if not overrides:
@@ -122,7 +123,15 @@ def _normalize_overrides(
             message="고친 값(task_overrides)은 승인할 때만 보낼 수 있습니다.",
             details={"status": str(status)},
         )
+    approval_type = approval.type
     allowed = _EDITABLE_FIELDS.get(approval_type, frozenset())
+    # 담당자 줄이 있는 답장 카드만 PM 이 담당자를 고를 수 있다. 키가 없으면 줄을 찾지 않는다
+    if (
+        approval_type == str(ApprovalType.TASK_UPDATE)
+        and "assignee_member_id" in overrides
+        and replies.has_assignee_line(db, approval.approval_id)
+    ):
+        allowed = allowed | {"assignee_member_id"}
     outside = sorted(set(overrides) - allowed)
     if outside:
         raise AppError(
@@ -505,7 +514,7 @@ def resolve_approval(
             ErrorCode.APPROVAL_ALREADY_RESOLVED,
             details={"approval_id": approval_id, "current_status": target.status},
         )
-    overrides = _normalize_overrides(target.type, payload.status, payload.task_overrides)
+    overrides = _normalize_overrides(db, target, payload.status, payload.task_overrides)
 
     stmt = (
         update(ApprovalRequest)
