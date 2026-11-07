@@ -4,7 +4,7 @@
 기존 row는 NULL로 두고 임베딩 워커가 채운다. 백필과 벡터 인덱스는 만들지 않는다.
 
 Revision ID: a7c25d91e4f3
-Revises: b0d32ee4abcb
+Revises: 3c9a1f7d2b64
 Create Date: 2026-11-07 10:00:00.000000
 
 """
@@ -17,7 +17,7 @@ from pgvector.sqlalchemy import Vector
 
 # revision identifiers, used by Alembic.
 revision: str = 'a7c25d91e4f3'
-down_revision: Union[str, Sequence[str], None] = 'b0d32ee4abcb'
+down_revision: Union[str, Sequence[str], None] = '3c9a1f7d2b64'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
