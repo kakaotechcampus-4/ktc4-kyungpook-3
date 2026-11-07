@@ -1,6 +1,0 @@
-import{n as e}from"./rolldown-runtime-DkW27tQK.js";import{t}from"./jsx-runtime-DeHZSEgm.js";function n({tone:e=`product`,blocking:t,className:n,children:o,...s}){let c=[`block font-normal`,i[e],t?`text-accent`:a[e],n].filter(Boolean).join(` `);return(0,r.jsx)(`label`,{className:c,...s,children:o})}var r,i,a;function o(){return(o=e((()=>{r=t(),i={product:`text-[12px]`,onboarding:`text-[12px]`,auth:`text-[13px]`},a={product:`text-sub`,onboarding:`text-dim`,auth:`text-dim`},n.__docgenInfo={description:`필드 라벨. 네이티브 \`<label htmlFor>\` 이 포커스를 넘긴다 (§7-0).
-
-**굵기는 400 하나뿐이다.** 4개 화면군 실측이 전부 400이고, design-system.md §4-1 의
-"버튼·라벨·배지 13/600" 은 배지·버튼을 말한다. 여기에 600 을 섞지 않는다.
-
-문구는 \`children\` 으로 받는다 — 라벨 텍스트를 컴포넌트에 넣지 않는다.`,methods:[],displayName:`Label`,props:{tone:{required:!1,tsType:{name:`union`,raw:`'product' | 'onboarding' | 'auth'`,elements:[{name:`literal`,value:`'product'`},{name:`literal`,value:`'onboarding'`},{name:`literal`,value:`'auth'`}]},description:`화면군. 기본 'product'`,defaultValue:{value:`'product'`,computed:!1}},blocking:{required:!1,tsType:{name:`boolean`},description:`true 면 글자가 강조색이 된다 — "비우면 승인이 막히는 입력"에만`}},composes:[`ComponentPropsWithoutRef`]}})))()}export{o as n,n as t};

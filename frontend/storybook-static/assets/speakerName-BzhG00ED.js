@@ -1,1 +1,0 @@
-import{n as e}from"./rolldown-runtime-DkW27tQK.js";function t(e,{speaker:t,speakerMemberId:n}){return e===void 0?null:((n===null?void 0:e.find(({id:e})=>e===n))??(t===null?void 0:e.find(({discordUserId:e})=>e===t)))?.displayName??null}function n(){return(n=e((()=>{})))()}export{t as n,n as t};

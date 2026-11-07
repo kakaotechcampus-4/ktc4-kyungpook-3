@@ -1,1 +1,0 @@
-import{n as e}from"./rolldown-runtime-DkW27tQK.js";import{n as t}from"./Mascot-CvD6w6uw.js";function n(){return(n=e((()=>{t()})))()}export{n as t};
