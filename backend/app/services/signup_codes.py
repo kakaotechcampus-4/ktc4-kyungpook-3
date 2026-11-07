@@ -9,7 +9,7 @@ import secrets
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session as DbSession
 
@@ -22,6 +22,8 @@ CODE_TTL = timedelta(minutes=10)
 MAX_ATTEMPTS = 5
 COOLDOWN = timedelta(seconds=60)
 HOURLY_LIMIT = 5
+# 전체 주소 합계. 재설정 메일과 같은 계정을 쓰므로 하루로 곱해도 Gmail 발송 한도(약 500통)를 넘지 않게 둔다.
+GLOBAL_HOURLY_LIMIT = 20
 WINDOW = timedelta(hours=1)
 RETENTION = timedelta(days=1)
 PROOF_KIND = "signup_email"
@@ -50,15 +52,29 @@ def _invalid(reason: str, **details: int) -> AppError:
     return AppError(ErrorCode.SIGNUP_CODE_INVALID, details={"reason": reason, **details})
 
 
+def _check_global_cap(db: DbSession, now: datetime) -> None:
+    sent, oldest = db.execute(
+        select(func.coalesce(func.sum(SignupEmailCode.window_count), 0), func.min(SignupEmailCode.window_started_at))
+        .where(SignupEmailCode.window_started_at > now - WINDOW)
+    ).one()
+    if sent >= GLOBAL_HOURLY_LIMIT:
+        raise _rate_limited("global", utc(oldest) + WINDOW, now)
+
+
 def request_code(db: DbSession, email: str, *, now: datetime) -> SignupCodeMail:
     """정규화한 이메일에 새 코드를 만든다. commit 은 호출자가 한다."""
     if db.scalar(select(User.user_id).where(User.email == email)) is not None:
         raise AppError(ErrorCode.EMAIL_ALREADY_EXISTS)
-    db.execute(delete(SignupEmailCode).where(SignupEmailCode.sent_at < now - RETENTION))
+    db.execute(
+        delete(SignupEmailCode)
+        .where(SignupEmailCode.sent_at < now - RETENTION)
+        .execution_options(synchronize_session=False)
+    )
 
     row = db.scalars(select(SignupEmailCode).where(SignupEmailCode.email == email).with_for_update()).first()
     code = f"{secrets.randbelow(1_000_000):06d}"
     if row is None:
+        _check_global_cap(db, now)
         db.add(
             SignupEmailCode(
                 email=email,
@@ -85,6 +101,7 @@ def request_code(db: DbSession, email: str, *, now: datetime) -> SignupCodeMail:
             row.window_started_at, row.window_count = now, 0
         elif row.window_count >= HOURLY_LIMIT:
             raise _rate_limited("hourly", window_ends, now)
+        _check_global_cap(db, now)
         row.window_count += 1
         row.code_hash = _hash(email, code)
         row.attempts = 0

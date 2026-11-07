@@ -293,3 +293,29 @@ def test_html_mail_shows_the_code_but_the_subject_does_not(mdb):
     assert code not in mail.subject
     assert "cid:logo" in mail.html
     assert "10분" in mail.html
+
+
+def test_new_address_is_refused_once_the_hour_cap_is_used(mdb):
+    for n in range(svc.GLOBAL_HOURLY_LIMIT):
+        svc.request_code(mdb, f"user{n}@example.com", now=NOW + timedelta(seconds=n))
+    mdb.commit()
+
+    err = _failure(lambda: svc.request_code(mdb, "late@example.com", now=NOW + timedelta(minutes=30)))
+
+    assert err.details["reason"] == "global"
+    assert err.details["retry_after"] == 30 * 60
+
+
+def test_cap_also_stops_a_resend_and_lifts_after_the_hour(mdb):
+    for n in range(svc.GLOBAL_HOURLY_LIMIT):
+        svc.request_code(mdb, f"user{n}@example.com", now=NOW)
+    mdb.commit()
+
+    err = _failure(lambda: svc.request_code(mdb, "user0@example.com", now=NOW + timedelta(minutes=5)))
+    assert err.details["reason"] == "global"
+
+    assert svc.request_code(mdb, "late@example.com", now=NOW + timedelta(hours=1, seconds=1)).to == "late@example.com"
+
+
+def test_cap_keeps_a_day_under_the_gmail_daily_limit():
+    assert svc.GLOBAL_HOURLY_LIMIT * 24 < 500
