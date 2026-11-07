@@ -30,8 +30,7 @@
 
 4. ai/.env 에 DISCORD_BOT_TOKEN 과 ELICE_API_KEY 를 넣는다. 값은 화면에 출력하지 않는다.
    DISCORD_GUILD_ID 에 서버 ID 를 채우면 슬래시 명령이 몇 초 안에 그 서버에 뜬다. 여러
-   서버에서 쓰려면 비운다 — 글로벌 등록이라 반영까지 최대 1시간 걸린다. DISCORD_CHANNEL_ID 는
-   이 Cog 가 쓰지 않는다. 확인은 봇을 띄운 뒤 서버에서 / 를 쳐서 live, live-join, live-stop,
+   서버에서 쓰려면 비운다 — 글로벌 등록이라 반영까지 최대 1시간 걸린다. 확인은 봇을 띄운 뒤 서버에서 / 를 쳐서 live, live-join, live-stop,
    selftest 네 개가 보이는지 본다.
 
 매번 하는 것
