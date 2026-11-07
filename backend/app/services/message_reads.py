@@ -132,10 +132,14 @@ def mark_read(db: Session, viewer: Member, thread: MessageThread) -> datetime | 
 
 
 def mark_workspace_read(db: Session, member: Member, at: datetime) -> None:
-    """member 의 워크스페이스 모든 대화를 at 까지 읽은 것으로 한다. PM 으로 올라간 사람이 그 전 답장을
-    한꺼번에 읽지 않은 것으로 보지 않게 한다."""
+    """member 의 워크스페이스 남의 대화를 at 까지 읽은 것으로 한다. PM 으로 올라간 사람이 그 전 답장을
+    한꺼번에 읽지 않은 것으로 보지 않게 한다. 자기 대화는 뺀다. 거기서 세는 것은 봇 리마인드라 승격 전에도
+    세던 것이고, 올라간다고 읽은 것이 되지 않는다."""
     thread_ids = db.scalars(
-        select(MessageThread.thread_id).where(MessageThread.workspace_id == member.workspace_id)
+        select(MessageThread.thread_id).where(
+            MessageThread.workspace_id == member.workspace_id,
+            MessageThread.member_id != member.member_id,
+        )
     ).all()
     for thread_id in thread_ids:
         _advance(db, thread_id, member.member_id, at)

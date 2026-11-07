@@ -206,6 +206,23 @@ def test_reply_sent_before_bot_message_but_saved_later_does_not_answer_it(mdb, s
     assert reads.unread_count(mdb, seed["alice"]) == 1
 
 
+def test_mark_workspace_read_keeps_own_thread_bot_messages_unread(mdb, seed):
+    own_thread = _thread(mdb, seed["bob"])
+    other_thread = _thread(mdb, seed["carol"])
+    _msg(mdb, own_thread, MessageSender.BOT, _minutes(1))
+    _msg(mdb, own_thread, MessageSender.BOT, _minutes(2))
+    _msg(mdb, other_thread, MessageSender.MEMBER, _minutes(3))
+    bob = seed["bob"]
+    bob.role = MemberRole.PM
+    mdb.commit()
+
+    reads.mark_workspace_read(mdb, bob, _minutes(10))
+    mdb.commit()
+
+    # 올라가기 전 남의 대화의 답장은 읽음이지만, 자기 대화의 봇 리마인드는 승격 전에도 세던 것이라 그대로다
+    assert reads.unread_by_thread(mdb, bob) == {own_thread.thread_id: 2, other_thread.thread_id: 0}
+
+
 def test_unread_by_thread_excludes_deleted_members_threads(mdb, seed):
     thread = _thread(mdb, seed["alice"])
     _msg(mdb, thread, MessageSender.MEMBER, _minutes(1))
