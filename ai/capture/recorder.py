@@ -60,6 +60,7 @@ from __future__ import annotations
 
 import asyncio
 import functools
+import hashlib
 import json
 import os
 import shutil
@@ -138,7 +139,7 @@ def manifest_path(recordings_dir: Path, session) -> Path:
     return recordings_dir / f"session_{session}.json"
 
 
-def save_manifest(path: Path, manifest: dict) -> None:
+def save_manifest(path: Path, manifest: dict | list) -> None:
     """임시 파일에 쓴 뒤 바꿔 끼운다. 쓰는 도중 죽어도 반쯤 쓰인 JSON 이 남지 않는다."""
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
@@ -1268,12 +1269,26 @@ def _last_attempt(manifest: dict) -> bool:
     return (manifest.get("recovery") or {}).get("attempts", 0) + 1 >= RECOVERY_MAX_ATTEMPTS
 
 
-def _kept_judge_runs(transcripts_dir: Path, manifest: dict) -> list[dict]:
-    """같은 전사로 앞서 돈 판단 실행들의 finding 별 결과. 다시 돌릴 차례를 기다리는 회의에만 있다(#217)."""
+def _kept_judge_runs(transcripts_dir: Path, manifest: dict, transcript: str) -> list[dict]:
+    """이 전사로 앞서 돈 판단 실행들의 finding 별 결과. 다시 돌릴 차례를 기다리는 회의에만 있다(#217).
+
+    근거 문장 번호는 전사마다 다른 문장을 가리키므로, 전사가 바뀐 표시를 지우지 못하고 남은 실행은 뺀다.
+    """
     path = transcripts_dir / f"session_{manifest['session']}.judge_runs.json"
     if manifest.get("judge_runs") != str(path) or not path.exists():
         return []
-    return json.loads(path.read_text(encoding="utf-8"))
+    return [r for r in json.loads(path.read_text(encoding="utf-8")) if r["transcript"] == transcript]
+
+
+def _kept_before_runs(path: Path, manifest: dict, out: JudgeOutput) -> bool:
+    """실행 기록 없이 재시도를 기다리던 회의의 결과를 지킬까. 합칠 수 없으니 옛 규칙(항목 수, 실패 수)으로 견준다.
+
+    합치는 규칙이 배포되기 전부터 기다리던 회의에만 있다. 번호가 없어 실행 기록으로 옮길 수 없다.
+    """
+    if "judge_runs" in manifest or manifest.get("items") != str(path) or not path.exists():
+        return False
+    items = json.loads(path.read_text(encoding="utf-8"))
+    return (len(out.items), -len(out.failures)) <= (len(items), -len(manifest.get("extract_failures") or []))
 
 
 def _keep_judge_output(transcripts_dir: Path, manifest: dict, out: JudgeOutput) -> Path:
@@ -1291,14 +1306,20 @@ def _keep_judge_output(transcripts_dir: Path, manifest: dict, out: JudgeOutput) 
     파이프라인이 통째로 실패한 경우는 extract_after_transcription 이 같은 규칙으로 닫는다.
     """
     path = transcripts_dir / f"session_{manifest['session']}.items.json"
-    runs_path = transcripts_dir / f"session_{manifest['session']}.judge_runs.json"
-    history = _kept_judge_runs(transcripts_dir, manifest) + [{"outcomes": out.outcomes, "dropped": out.dropped}]
-    runs_path.write_text(json.dumps(history, ensure_ascii=False, indent=2), encoding="utf-8")
-    manifest["judge_runs"] = str(runs_path)
-    items, kept = merge_runs([r["outcomes"] for r in history])
-    path.write_text(json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8")
-    # 1단계 탈락 기록(#186). 항목이 여러 실행에서 오므로 실행마다 하나씩 남긴다
-    manifest["extract_dropped"] = [r["dropped"] for r in history]
+    if _kept_before_runs(path, manifest, out):
+        kept = manifest.get("extract_failures") or []
+    else:
+        runs_path = transcripts_dir / f"session_{manifest['session']}.judge_runs.json"
+        src = transcripts_dir / f"session_{manifest['session']}.transcript.json"
+        transcript = hashlib.sha256(src.read_bytes()).hexdigest()
+        history = _kept_judge_runs(transcripts_dir, manifest, transcript)
+        history.append({"transcript": transcript, "outcomes": out.outcomes, "dropped": out.dropped})
+        save_manifest(runs_path, history)
+        manifest["judge_runs"] = str(runs_path)
+        items, kept = merge_runs([r["outcomes"] for r in history])
+        path.write_text(json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8")
+        # 1단계 탈락 기록(#186). 항목이 여러 실행에서 오므로 실행마다 하나씩 남긴다
+        manifest["extract_dropped"] = [r["dropped"] for r in history]
     manifest["items"] = str(path)
     manifest.pop("tasks", None)
     if not kept:

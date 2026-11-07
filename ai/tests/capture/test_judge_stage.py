@@ -177,6 +177,61 @@ def test_an_empty_rerun_does_not_replace_the_kept_result(tmp_path, clock, limits
     assert fake.extractions["m1"]["items"] == [A, B_] and _saved(path)["be"]["missing_findings"] == 1
 
 
+def _held(tmp_path, items=(A,), failures=(F1,)):
+    """옛 규칙으로 돌던 회의. 항목 파일과 실패 표시는 있고 실행 기록은 없다."""
+    path = tmp_path / "session_s.items.json"
+    path.write_text(json.dumps(list(items), ensure_ascii=False), encoding="utf-8")
+    (tmp_path / "session_s.transcript.json").write_text("전사", encoding="utf-8")
+    return {"session": "s", "items": str(path), "extract_failures": list(failures), "extract_runs": 1}
+
+
+def test_a_meeting_held_across_the_deploy_keeps_its_items_when_the_rerun_finds_nothing(tmp_path, clock, limits):
+    """배포 때 재시도를 기다리던 회의에는 실행 기록이 없어 합칠 수 없다. BE 는 회의당 추출을 한 번만 받으므로, 이때는
+    옛 규칙으로 견줘 앞 결과를 지킨다. 지키지 않으면 항목이 빈 채로 닫혀 되돌릴 수 없다."""
+    manifest = _held(tmp_path)
+    with pytest.raises(R.ExtractIncomplete):
+        R._keep_judge_output(tmp_path, manifest, J.JudgeOutput())
+    assert json.loads(Path(manifest["items"]).read_text(encoding="utf-8")) == [A]
+    assert manifest["extract_failures"] == [F1]
+    assert manifest["extract_runs"] == 2
+
+
+def test_a_meeting_held_across_the_deploy_starts_merging_from_a_better_rerun(tmp_path, clock, limits):
+    manifest = _held(tmp_path)
+    R._keep_judge_output(tmp_path, manifest, _out([A, B_]))
+    assert json.loads(Path(manifest["items"]).read_text(encoding="utf-8")) == [A, B_]
+    assert "extract_failures" not in manifest and manifest["judge_runs"]
+
+
+def test_runs_on_another_transcript_are_not_merged(tmp_path, clock, limits):
+    """전사가 바뀐 표시가 지워지지 못하고 남아도(되살린 줄이 있어도 일찍 돌아가거나, 매니페스트를 쓰기 전에 죽은 경우)
+    번호가 다른 문장을 가리키는 실행을 합치면 안 된다."""
+    (tmp_path / "session_s.transcript.json").write_text("옛 전사", encoding="utf-8")
+    manifest = {"session": "s"}
+    with pytest.raises(R.ExtractIncomplete):
+        R._keep_judge_output(tmp_path, manifest, _out([A], [F1]))
+    (tmp_path / "session_s.transcript.json").write_text("새 전사", encoding="utf-8")
+    R._keep_judge_output(tmp_path, manifest, _out([C]))
+    assert json.loads(Path(manifest["items"]).read_text(encoding="utf-8")) == [C]
+    assert "extract_failures" not in manifest
+
+
+def test_a_write_cut_short_leaves_the_kept_runs_readable(tmp_path, clock, limits, monkeypatch):
+    """실행 기록을 쓰다 죽어도 앞선 실행을 읽을 수 있어야 한다. 잘린 파일은 회의 전체를 실패로 닫는다."""
+    (tmp_path / "session_s.transcript.json").write_text("전사", encoding="utf-8")
+    manifest = {"session": "s"}
+    with pytest.raises(R.ExtractIncomplete):
+        R._keep_judge_output(tmp_path, manifest, _out([A], [F1]))
+
+    def cut(*args):
+        raise OSError("디스크가 가득 찼다")
+
+    monkeypatch.setattr(R.os, "replace", cut)
+    with pytest.raises(OSError):
+        R._keep_judge_output(tmp_path, manifest, _out([B_]))
+    assert len(json.loads((tmp_path / "session_s.judge_runs.json").read_text(encoding="utf-8"))) == 1
+
+
 def test_items_found_only_in_the_rerun_are_added(tmp_path, clock, limits):
     """1단계가 다시 돌린 실행에서 발화를 더 잘게 골라 새 항목을 냈다. 가진 항목에 더한다."""
     rec, path, manifest = _session(tmp_path)
