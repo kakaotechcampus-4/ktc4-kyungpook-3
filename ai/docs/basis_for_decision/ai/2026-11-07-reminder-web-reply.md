@@ -2,7 +2,7 @@
 
 - 날짜: 2026-11-07
 - 이슈: #515
-- PR: #PRNUM
+- PR: #524
 - 브랜치: feature/515-reminder-web-reply
 - 작성자: 김동우
 
