@@ -127,3 +127,56 @@ export function LegendItem({
     </li>
   )
 }
+
+/** 캘린더 범례 — CalendarView 와 그 뼈대가 같이 쓴다. 표식(확인 필요 · 마감 임박)은 캘린더 칩의 표식과 같다 */
+export function CalendarLegend() {
+  return (
+    <>
+      <LegendItem swatch="bg-ink text-surface" icon="eye">
+        확인 필요
+      </LegendItem>
+      <LegendItem swatch="bg-accent-chip text-ink" icon="alert">
+        마감 임박
+      </LegendItem>
+      <LegendItem swatch="bg-surface-selected">진행 중</LegendItem>
+      <LegendItem swatch="border-2 border-dashed bg-surface">회의</LegendItem>
+    </>
+  )
+}
+
+/** 간트 범례 — GanttView 와 그 뼈대가 같이 쓴다 */
+export function GanttLegend() {
+  return (
+    <>
+      <LegendItem swatch="bg-ink">진행 중</LegendItem>
+      <LegendItem swatch="border border-line-strong bg-surface">시작 전</LegendItem>
+      <LegendItem swatch="bg-surface-sunken">완료</LegendItem>
+      <LegendItem swatch="border-2 border-dashed bg-surface">확인 필요</LegendItem>
+    </>
+  )
+}
+
+/**
+ * RangeHeader 와 같은 틀의 자리표시 (#508) — 제목은 글자, 이전·다음은 누를 수 없는 같은 크기의 칸, 범례는 그대로다.
+ * 데이터를 기다리는 뼈대 안에 둔다(누를 것도 heading 도 없다). 스크린리더에서 뺀다
+ */
+export function RangeHeaderFrame({ title, legend }: { title: string; legend: ReactNode }) {
+  return (
+    <div aria-hidden="true" className="flex flex-wrap items-center justify-between gap-16">
+      <div className="flex items-center gap-12">
+        <p className="text-[19px] leading-[1.55] font-bold tracking-h2 text-ink">{title}</p>
+        <div className="flex items-center gap-4">
+          {(['chevron-left', 'chevron-right'] as const).map((icon) => (
+            <span
+              key={icon}
+              className="inline-flex h-30 min-h-36 w-30 items-center justify-center rounded-9 bg-control text-sub"
+            >
+              <Icon name={icon} size={15} />
+            </span>
+          ))}
+        </div>
+      </div>
+      <ul className="flex flex-wrap items-center gap-16">{legend}</ul>
+    </div>
+  )
+}
