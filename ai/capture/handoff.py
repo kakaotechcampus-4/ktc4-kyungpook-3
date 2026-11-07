@@ -355,8 +355,9 @@ def locate_sentence(sentence: str, segments: list[dict]) -> tuple[str | None, in
 def to_extraction_items(tasks: list[dict], transcript: dict) -> list[dict]:
     """ExtractedTask.to_dict() 목록을 BE 의 ExtractionItemCreate 목록으로.
 
-    assignee_raw 는 별칭 텍스트다. 2인칭·대명사는 추출기가 문맥으로 푼 이름(assignee_resolved)이 있으면
-    그것을 보낸다. first, group, none 은 추출기가 언급을 비우므로 None 이 간다.
+    assignee_raw 는 별칭 텍스트다. 2인칭·대명사·역할은 추출기가 문맥으로 푼 이름(assignee_resolved)이 있으면
+    그것을 보낸다. thirdname 은 원문 언급만 보낸다 — 추출기가 고친 이름이 틀리면 BE 가 그 글자를 별칭으로
+    배우기 때문이다. first, group, none 은 None 이 간다.
     """
     segments = transcript.get("segments", [])
     items = []
@@ -364,13 +365,16 @@ def to_extraction_items(tasks: list[dict], transcript: dict) -> list[dict]:
         sentence = t.get("source_sentence") or ""
         speaker, at_ms, seq = locate_sentence(sentence, segments)
         kind = t.get("assignee_type")
-        # "네가"·"그분"·"백엔드 리더" 는 별칭이 아니다. 이름으로 풀리지 않았으면 BE 에 조회를 시키지 않는다
-        mention = None if kind in ("second", "thirdpronoun", "thirdrole") else t.get("assignee_mention")
+        # "네가"·"그분"·"백엔드 리더" 는 별칭이 아니라 푼 이름만 보낸다. 그 밖은 원문 언급만(resolved 무시)
+        if kind in ("second", "thirdpronoun", "thirdrole"):
+            assignee_raw = t.get("assignee_resolved")
+        else:
+            assignee_raw = t.get("assignee_mention")
         items.append({
             "task_title": t.get("task", ""),
             # BE(item_confidence)가 필드별 숫자의 최솟값을 직접 내므로 할일 자체의 상태만 보낸다
             "task_confidence": STATUS_CONFIDENCE.get(t.get("task_status"), 0.0),
-            "assignee_raw": t.get("assignee_resolved") or mention,
+            "assignee_raw": assignee_raw,
             "assignee_type": t.get("assignee_type"),
             "due_date": t.get("due_date"),
             "due_raw": t.get("due_raw"),
