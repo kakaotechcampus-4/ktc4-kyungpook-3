@@ -224,7 +224,15 @@ def create_extraction(
 
         evidence_source = _representative_source(raw_item.evidence_seqs, sources_by_seq)
         evidence = _request_evidence(raw_item, evidence_source, speaker_members)
-        if raw_item.assignee_type == "first":
+        # 합치는 항목이 담당자를 말한 항목(category=assignee)이 아니면 카드 담당자를 바꾸지 않는다. 실려 온 이름으로
+        # 별칭을 찾으면 해결 대기 별칭 목록에 쌓이고, 항목 행의 gate 가 카드(review)와 어긋난다. 그래서 담당자를 보지 않는다
+        # (합치려다 대상을 못 쓴 항목은 새 카드를 만드는 create 라 보통대로 찾는다)
+        ignore_assignee = merge_card is not None and raw_item.category != "assignee"
+        assignee_type = None if ignore_assignee else raw_item.assignee_type
+        if ignore_assignee:
+            assignee_hint = None
+            match = resolve_assignee(db, meeting.workspace_id, None)
+        elif assignee_type == "first":
             # 1인칭: 화자로 팀원을 찾는다. 화자를 모르면 누군지 모르는 것이라 not_found다.
             # assignee_raw("제가")는 별칭이 아니라 조회하지 않는다. 별칭으로 찾으면 판정 로그에 쌓이고, 이름이 오면 화자를
             # 모르는데도 그 사람으로 확정될 수 있다. 그래도 담당자를 언급한 것이라 화자가 없으면 원문을 힌트로 남겨 hold로 보낸다
@@ -262,7 +270,7 @@ def create_extraction(
         else:
             # 경로는 항목마다 가린다. 추출 전체의 경로는 섞이면 None이지만 항목의 정책은 정할 수 있다.
             path = raw_item.extraction_path()
-            mentioned = mentions_assignee(raw_item.assignee_type, assignee_hint)
+            mentioned = mentions_assignee(assignee_type, assignee_hint)
             blockers = None
             # 합쳐지는 항목은 새 일이 아니라 유사 검색 결과로 auto 를 가리지 않는다. 어차피 아래에서 review 로 내린다
             if path == ExtractionPath.JUDGE and merge_card is None:
