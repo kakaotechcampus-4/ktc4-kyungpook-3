@@ -66,7 +66,8 @@ def _alias(db, member, text, *, verified=True, confidence=1.0, source="manual") 
         # 띄어 쓴 님: 떼고 남은 공백을 지운다(#463 리뷰). "환 님이"는 AI 프롬프트 예시다
         ("환 님이", ["환 님이", "환 님", "환"]),
         ("지민 님", ["지민 님", "지민"]),
-        ("  하은  님 ", ["하은 님", "하은"]),
+        # 띄어 쓴 호칭도 붙여 쓴 "하은님"과 같은 후보를 만든다(뗀 뒤 끝 공백이 남아 조사 "은"에 안 걸리던 것을 맞춘다)
+        ("  하은  님 ", ["하은 님", "하은", "하"]),
         ("BE  리더가", ["BE 리더가", "BE 리더"]),
         # 조사를 떼고 "이"로 끝나면 "이"를 한 번 더 뗀 것도 후보다(#463 리뷰). "이가"만 한 덩어리 조사라 되던 것을 넓힌다
         ("하은이는", ["하은이는", "하은이", "하은"]),
@@ -83,6 +84,12 @@ def _alias(db, member, text, *, verified=True, confidence=1.0, source="manual") 
         ("민수 씨는", ["민수 씨는", "민수 씨", "민수"]),
         ("김씨", ["김씨", "김"]),
         ("씨", ["씨"]),
+        # 호칭(님·씨)을 뗀 뒤에도 "이"를 한 번 더 뗀다. 띄어 쓴 호칭은 뗀 뒤 끝 공백을 지운다(#463 리뷰)
+        ("하은이님이", ["하은이님이", "하은이님", "하은이", "하은"]),
+        ("하은이 씨는", ["하은이 씨는", "하은이 씨", "하은이", "하은"]),
+        ("하은이 님", ["하은이 님", "하은이", "하은"]),
+        ("하은이님", ["하은이님", "하은이", "하은"]),
+        ("하은이 님께서", ["하은이 님께서", "하은이 님", "하은이", "하은"]),
     ],
 )
 def test_name_candidates(text, expected):
@@ -312,3 +319,13 @@ def test_ssi_name_is_kept_by_longest_first(db, ws):
     _alias(db, only, "김")
     r = resolve_assignee(db, ws, "김씨")
     assert (r.member_id, r.needs_check) == (only.member_id, True)
+
+
+def test_honorific_then_i_reaches_the_name(db, ws):
+    haeun = _member(db, ws, "이하은")
+    _alias(db, haeun, "하은")
+
+    for said in ("하은이님이", "하은이 씨는", "하은이 님", "하은이님", "하은이 님께서"):
+        r = resolve_assignee(db, ws, said)
+        assert (r.result, r.member_id, r.needs_check) == (ResolutionResult.MATCHED, haeun.member_id, False), said
+    assert resolved_texts(db, ws, ["하은이님이", "하은이 씨는"]) == {"하은이님이", "하은이 씨는"}

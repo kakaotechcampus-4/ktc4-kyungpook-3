@@ -53,27 +53,44 @@ def name_candidates(text: str | None) -> list[str]:
     후보를 모두 만들고, 긴 후보(원문에 가까운 것)부터 찾는다. 예: "하은이가" → 하은이가, 하은이, 하은.
     AI 규칙과 다른 점(AI 쪽도 같이 맞춘다, #463 리뷰): ① 공백을 한 칸으로 줄이고 후보마다 앞뒤 공백을 지운다.
     그래야 띄어 쓴 님("환 님이" → "환")도 찾는다. ② 조사를 떼고 "이"로 끝나면 "이"를 한 번 더 뗀 것도 후보다.
-    "하은이는" → 하은이는, 하은이, 하은. ③ "님"처럼 "씨"도 뗀다. "민수 씨", "민수씨가" → 민수.
+    "하은이는" → 하은이는, 하은이, 하은. ③ "님"처럼 "씨"도 뗀다. "민수 씨", "민수씨가" → 민수. 호칭을 뗀 뒤에도
+    ②의 "이" 떼기를 적용한다. "하은이님이", "하은이 씨는" → 하은.
     """
     if not text:
         return []
     base = normalize_alias_text(text)
     out = {base}
-    if base.endswith(_HONORIFICS):
-        out.add(base[:-1])
-    for form in list(out):
+
+    def add_remainder(form: str) -> None:
+        # 호칭이나 조사를 떼고 남은 꼴을 후보로 둔다. 띄어 쓴 호칭("하은이 님")은 뗀 뒤 끝 공백을 지운다. "이"로
+        # 끝나면 "이"를 한 번 더 뗀 것도 둔다. "하은이는"·"하은이 님"은 "하은이"에서 멈췄다. "세이"처럼 이름이
+        # "이"로 끝나도 긴 후보부터 찾아 지킨다.
+        form = form.strip()
+        if not form:
+            return
+        out.add(form)
+        if form.endswith("이") and len(form) > 1:
+            out.add(form[:-1].strip())
+
+    def without_honorific(form: str) -> str:
+        # 호칭(님·씨)으로 끝나면 뗀 꼴(앞뒤 공백 정리), 아니면 빈 문자열
+        return form[:-1].strip() if form.endswith(_HONORIFICS) else ""
+
+    # 조사를 떼는 대상은 원문과 원문에서 호칭을 뗀 꼴뿐이다. 떼고 남은 꼴("이"를 더 뗀 것 포함)에서 다시 떼지 않는다
+    sources = [base]
+    bare = without_honorific(base)
+    if bare:
+        sources.append(bare)
+        add_remainder(bare)
+    for form in sources:
         for particle in _PARTICLES:
             if form.endswith(particle) and len(form) > len(particle):
-                stripped = form[: -len(particle)]
-                out.add(stripped)
-                if stripped.endswith(_HONORIFICS):
-                    out.add(stripped[:-1])
-                # 조사를 떼고 "이"로 끝나면 "이"를 한 번 더 뗀 것도 후보로 둔다. "하은이는"·"하은이한테"는 목록에서
-                # "이가"만 한 덩어리라 "하은이"에서 멈췄다. "세이"처럼 이름이 "이"로 끝나도 긴 후보부터 찾아 지킨다.
-                if stripped.endswith("이") and len(stripped) > 1:
-                    out.add(stripped[:-1])
-    trimmed = {x.strip() for x in out}
-    return sorted((x for x in trimmed if x), key=lambda s: (-len(s), s))
+                stripped = form[: -len(particle)].strip()
+                add_remainder(stripped)
+                bare = without_honorific(stripped)
+                if bare:
+                    add_remainder(bare)
+    return sorted((x for x in out if x), key=lambda s: (-len(s), s))
 
 
 def _is_one_letter(text: str) -> bool:
