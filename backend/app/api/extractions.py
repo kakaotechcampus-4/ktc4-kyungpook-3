@@ -171,7 +171,7 @@ def create_extraction(
     unsearched_pending: bool | None = None
     targets = _lock_update_targets(db, payload.items)
     # task 잠금 다음에 합칠 승인 요청을 잠근다. 두 요청이 같은 카드들을 반대 순서로 합쳐도 ID 순이라 데드락이 없다
-    merge_cards = _lock_merge_targets(db, payload.items)
+    merge_cards = _lock_merge_targets(db, payload.items, meeting.workspace_id)
     sources_by_seq = _sources_by_seq(db, meeting.meeting_id, payload.items)
     # 멤버 ID로 화자를 정하는 데 쓸 팀원을 요청당 한 번에 읽는다(항목의 evidence_speaker_member_id와 근거 발화의 member_id)
     speaker_members = active_members_by_id(
@@ -206,7 +206,7 @@ def create_extraction(
             continue
         if raw_item.action == ExtractionAction.MERGE:
             locked = merge_cards.get(raw_item.target_approval_id) if raw_item.target_approval_id else None
-            # task_create 가 아닌 카드는 잠그지 않았다(_lock_merge_targets). 못 쓰는 이유를 남기려고 잠그지 않고 읽는다
+            # task_create 가 아니거나 다른 워크스페이스 카드는 잠그지 않았다(_lock_merge_targets). 못 쓰는 이유를 남기려고 잠그지 않고 읽는다
             seen = locked or (
                 db.get(ApprovalRequest, raw_item.target_approval_id) if raw_item.target_approval_id else None
             )
@@ -580,11 +580,14 @@ def _lock_update_targets(db: Session, items: list[ExtractionItemCreate]) -> dict
     return {task.task_id: task for task in rows}
 
 
-def _lock_merge_targets(db: Session, items: list[ExtractionItemCreate]) -> dict[str, ApprovalRequest]:
+def _lock_merge_targets(
+    db: Session, items: list[ExtractionItemCreate], workspace_id: str
+) -> dict[str, ApprovalRequest]:
     """합치기 항목이 가리키는 승인 요청을 ID 순서로 한 번에 잠근다. 커밋까지 잠겨 승인·반려와 겹치지 않는다.
 
     승인이 먼저 커밋되면 populate_existing 으로 최신 상태를 읽어 처리된 카드를 알아본다.
-    task_create 카드만 잠근다. task_update 카드는 합칠 수 없고, 그 승인은 카드 → task 순서로 잠그는데 이 요청은
+    이 워크스페이스의 task_create 카드만 잠근다. 다른 워크스페이스 카드를 잠그면 그 PM 의 승인이 이 요청이 끝날 때까지
+    기다린다. task_update 카드는 합칠 수 없고, 그 승인은 카드 → task 순서로 잠그는데 이 요청은
     task(_lock_update_targets) → 카드 순서라 함께 잠그면 서로 기다릴 수 있다.
     """
     approval_ids = sorted({
@@ -599,6 +602,7 @@ def _lock_merge_targets(db: Session, items: list[ExtractionItemCreate]) -> dict[
         .where(
             ApprovalRequest.approval_id.in_(approval_ids),
             ApprovalRequest.type == ApprovalType.TASK_CREATE,
+            ApprovalRequest.workspace_id == workspace_id,
         )
         .order_by(ApprovalRequest.approval_id)
         .with_for_update()
