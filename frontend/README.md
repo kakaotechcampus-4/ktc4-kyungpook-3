@@ -24,15 +24,7 @@ npm run build
 
 포맷을 맞출 때는 `npm run format`, 린트 자동 수정은 `npm run lint:fix`.
 
-## Storybook
-
-```bash
-npm run storybook        # http://localhost:6006
-npm run build-storybook  # storybook-static/
-npm run test:storybook   # 빌드 뒤 정적으로 띄워 스토리 handler 회귀를 본다 (포트 6211)
-```
-
-스토리는 앱과 같은 MSW handler 로 데이터를 받는다. 스토리마다 `parameters.scenario` 로 시작 상태를 고르고, `parameters.msw` 는 기본 handler 위에 얹는다 (`.storybook/preview.tsx`).
+화면 단위 검사는 `npm run test`(Vitest + React Testing Library, 앱과 같은 MSW handler)로, 사용자 흐름은 아래 E2E 로 본다. Storybook 은 쓰지 않는다(#482).
 
 ## E2E
 
@@ -48,7 +40,7 @@ E2E 는 매번 자기 개발 서버를 새로 띄운다 — 이미 떠 있는 �
 
 ## 개발 모드의 모의 데이터
 
-모의 데이터는 `VITE_ENABLE_MSW=true`를 명시했을 때만 쓴다. E2E·Storybook·Vitest는 이 설정과 상관없이 MSW를 쓴다. 실제 API 호출이 실패해도 모의 응답으로 자동 전환하지 않는다.
+모의 데이터는 `VITE_ENABLE_MSW=true`를 명시했을 때만 쓴다. E2E·Vitest는 이 설정과 상관없이 MSW를 쓴다. 실제 API 호출이 실패해도 모의 응답으로 자동 전환하지 않는다.
 
 `VITE_ENABLE_MSW=true` 면 브라우저는 **비로그인**으로 시작하고, 가입·워크스페이스·온보딩 진행이 같은 탭의 sessionStorage 에 남는다(새로고침·OAuth 왕복).
 픽스처 계정은 `pm@example.com` / `mock-password` 다. 시작 상태를 고르려면 주소에 `?msw-scenario=` 를 붙인다 —
