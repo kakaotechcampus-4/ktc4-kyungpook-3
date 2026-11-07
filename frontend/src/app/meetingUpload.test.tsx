@@ -246,6 +246,14 @@ describe('일반 팀원 (U3-11)', () => {
 })
 
 describe('파일 고르기 (U3-4)', () => {
+  it('파일을 끌고 들어오면 놓는 칸이 끌고 있다고 표시한다', async () => {
+    await openUpload()
+    const zone = screen.getByTestId('audio-dropzone')
+    expect(zone).not.toHaveAttribute('data-dragging')
+    fireEvent.dragEnter(zone)
+    expect(zone).toHaveAttribute('data-dragging', 'true')
+  })
+
   it('여러 파일을 한 번에 넣으면 오류를 보이고 받지 않는다', async () => {
     await openUpload()
     drop([audio('a.m4a'), audio('b.m4a')])
@@ -298,13 +306,14 @@ describe('파일 고르기 (U3-4)', () => {
     expect(screen.queryByText('2시간 이하 녹음만 올릴 수 있어요.')).toBeNull()
   })
 
-  it('파일 없이 제출하면 파일 안내와 다른 칸의 안내를 함께 보이고 요청하지 않는다', async () => {
+  it('파일 없이 제출하면 파일 안내와 다른 칸의 안내를 함께 보이고, 파일 고르기로 포커스를 옮기며 요청하지 않는다', async () => {
     const log = recordRequests()
     const { user } = await openUpload()
     await user.click(screen.getByRole('button', { name: '정리 시작하기' }))
     expect(await screen.findByText('정리할 녹음 파일을 골라 주세요.')).toBeInTheDocument()
     expect(screen.getByText('회의 제목을 입력해 주세요.')).toBeInTheDocument()
     expect(screen.getByText('참석자를 한 명 이상 골라 주세요.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '컴퓨터에서 찾기' })).toHaveFocus()
     expect(uploadsIn(log)).toEqual([])
   })
 })

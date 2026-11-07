@@ -115,13 +115,17 @@ describe('설정의 Notion 연결 영역 (U3-3)', () => {
     expect(startedState()).toBe(paths.settingsNotion('ws_01'))
   })
 
-  it.each(['not_connected', 'revoked'] as const)(
-    '일반 팀원 — %s 상태와 PM 에게 연결을 요청하라는 안내만 본다',
-    async (status) => {
+  it.each([
+    ['not_connected', '연결 안 됨'],
+    ['revoked', '연결 실패'],
+  ] as const)(
+    '일반 팀원 — %s 는 %s 상태와 PM 에게 연결을 요청하라는 안내만 본다',
+    async (status, label) => {
       notion(status)
       setMockRole('member')
       renderApp(paths.settings('ws_01'))
       const area = await section()
+      expect(await area.findByText(label)).toBeInTheDocument()
       expect(
         await area.findByText(
           'Notion 연결은 PM만 할 수 있어요. 회의를 정리하려면 PM에게 Notion 연결을 요청해 주세요.',
@@ -146,7 +150,7 @@ describe('설정의 Notion 연결 영역 (U3-3)', () => {
     expect(area.queryByRole('button', { name: /Notion .*연결하기/ })).toBeNull()
   })
 
-  it('연동 상태를 불러오지 못하면 다시 시도를 준다', async () => {
+  it('연동 상태를 불러오지 못하면 미연결로 보이지 않고 다시 시도를 준다', async () => {
     server.use(
       http.get('/api/v1/workspaces/:workspaceId/integrations', () => fail('FORBIDDEN', 'no', 403), {
         once: true,
@@ -155,7 +159,9 @@ describe('설정의 Notion 연결 영역 (U3-3)', () => {
     const user = userEvent.setup()
     renderApp(paths.settings('ws_01'))
     const area = await section()
-    await user.click(await area.findByRole('button', { name: '다시 시도' }))
+    const retry = await area.findByRole('button', { name: '다시 시도' })
+    expect(area.queryByText('연결 안 됨')).toBeNull()
+    await user.click(retry)
     expect(await area.findByText('연결됨')).toBeInTheDocument()
   })
 })
