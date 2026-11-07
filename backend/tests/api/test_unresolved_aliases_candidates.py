@@ -88,3 +88,14 @@ def test_unverified_alias_keeps_particle_form_unresolved(db, seed):
     _alias(db, seed, "하은", verified=False)
 
     assert _unresolved(seed) == ["하은이가"]
+
+
+def test_manual_one_letter_alias_removes_the_row_from_unresolved(db, seed):
+    # 표기가 딱 한 글자인 행도 PM 이 별칭을 등록하면 목록에서 빠진다(#463 리뷰)
+    _log(db, seed, "환")
+    _log(db, seed, "환이가")
+    assert sorted(_unresolved(seed)) == ["환", "환이가"]
+
+    _alias(db, seed, "환", verified=True)
+
+    assert _unresolved(seed) == []

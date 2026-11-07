@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.models import (
     AliasResolutionLog,
+    AliasSource,
     EvidenceStatus,
     ExtractionPath,
     Gate,
@@ -32,6 +33,8 @@ class MatchResult:
 
 # 담당자 이름 뒤에 붙는 조사. AI 의 _PARTICLES(ai/extract/eval_golden_set.py)와 순서까지 같게 둔다
 _PARTICLES = ("께서", "한테", "에게", "이가", "이", "가", "은", "는", "을", "를", "께")
+# 이름 뒤에 붙는 호칭. "님"은 AI 규칙에도 있고 "씨"는 BE 에서 더했다(#463 리뷰, AI 쪽도 같이 맞춘다)
+_HONORIFICS = ("님", "씨")
 
 
 def normalize_alias_text(text: str) -> str:
@@ -50,20 +53,20 @@ def name_candidates(text: str | None) -> list[str]:
     후보를 모두 만들고, 긴 후보(원문에 가까운 것)부터 찾는다. 예: "하은이가" → 하은이가, 하은이, 하은.
     AI 규칙과 다른 점(AI 쪽도 같이 맞춘다, #463 리뷰): ① 공백을 한 칸으로 줄이고 후보마다 앞뒤 공백을 지운다.
     그래야 띄어 쓴 님("환 님이" → "환")도 찾는다. ② 조사를 떼고 "이"로 끝나면 "이"를 한 번 더 뗀 것도 후보다.
-    "하은이는" → 하은이는, 하은이, 하은.
+    "하은이는" → 하은이는, 하은이, 하은. ③ "님"처럼 "씨"도 뗀다. "민수 씨", "민수씨가" → 민수.
     """
     if not text:
         return []
     base = normalize_alias_text(text)
     out = {base}
-    if base.endswith("님"):
+    if base.endswith(_HONORIFICS):
         out.add(base[:-1])
     for form in list(out):
         for particle in _PARTICLES:
             if form.endswith(particle) and len(form) > len(particle):
                 stripped = form[: -len(particle)]
                 out.add(stripped)
-                if stripped.endswith("님"):
+                if stripped.endswith(_HONORIFICS):
                     out.add(stripped[:-1])
                 # 조사를 떼고 "이"로 끝나면 "이"를 한 번 더 뗀 것도 후보로 둔다. "하은이는"·"하은이한테"는 목록에서
                 # "이가"만 한 덩어리라 "하은이"에서 멈췄다. "세이"처럼 이름이 "이"로 끝나도 긴 후보부터 찾아 지킨다.
@@ -211,23 +214,28 @@ def resolved_texts(db: Session, workspace_id: str, texts: Iterable[str]) -> set[
 
     각 text 의 첫 히트 후보(name_candidates 순서)에 걸린 별칭이 정확히 1개이고 그 별칭이 검증된 경우만
     해결된 것으로 본다. 검증 1명 + 미검증 1명처럼 여럿이면 ambiguous 이므로 해결 대기로 남는다.
-    탈퇴한 팀원의 별칭은 세지 않는다. 한 글자 별칭으로 걸린 것은 확인 필요라 해결로 보지 않는다.
+    탈퇴한 팀원의 별칭은 세지 않는다.
+
+    한 글자 별칭은 PM 이 직접 등록한(manual·learned) 것만 해결로 본다. 이름에서 자동으로 만든 한 글자
+    별칭("김환" → "환")은 PM 이 연결한 것이 아니라 계속 남긴다. 이 목록은 "팀원과 연결됐나"를 묻고
+    resolve_assignee 는 "자동 반영해도 되나"를 묻는다. 그래서 한 글자는 여기서 해결이어도 찾으면 확인 필요다(#463 리뷰).
     """
     rows = db.execute(
-        select(MemberAlias.alias_text, MemberAlias.verified)
+        select(MemberAlias.alias_text, MemberAlias.verified, MemberAlias.source)
         .join(Member, Member.member_id == MemberAlias.member_id)
         .where(MemberAlias.workspace_id == workspace_id, Member.is_deleted.is_(False))
     ).all()
-    verified_by_text: dict[str, list[bool]] = {}
-    for alias_text, verified in rows:
-        verified_by_text.setdefault(alias_text, []).append(verified)
+    aliases_by_text: dict[str, list[tuple[bool, str]]] = {}
+    for alias_text, verified, source in rows:
+        aliases_by_text.setdefault(alias_text, []).append((verified, source))
 
+    human_sources = (str(AliasSource.MANUAL), str(AliasSource.LEARNED))
     resolved: set[str] = set()
     for text in texts:
         for candidate in name_candidates(text):
-            hit = verified_by_text.get(candidate)
+            hit = aliases_by_text.get(candidate)
             if hit:
-                if len(hit) == 1 and hit[0] and not _is_one_letter(candidate):
+                if len(hit) == 1 and hit[0][0] and (not _is_one_letter(candidate) or hit[0][1] in human_sources):
                     resolved.add(text)
                 break
     return resolved

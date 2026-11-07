@@ -37,13 +37,13 @@ def _member(db, ws, name, **fields) -> Member:
     return member
 
 
-def _alias(db, member, text, *, verified=True, confidence=1.0) -> MemberAlias:
+def _alias(db, member, text, *, verified=True, confidence=1.0, source="manual") -> MemberAlias:
     alias = MemberAlias(
         member_id=member.member_id,
         workspace_id=member.workspace_id,
         alias_text=text,
         alias_type="realname",
-        source="manual",
+        source=source,
         confidence=confidence,
         verified=verified,
     )
@@ -76,6 +76,13 @@ def _alias(db, member, text, *, verified=True, confidence=1.0) -> MemberAlias:
         ("하은이께서", ["하은이께서", "하은이", "하은"]),
         ("세이가", ["세이가", "세이", "세"]),
         ("지민이", ["지민이", "지민"]),
+        # "씨"도 "님"과 같은 호칭이다(#463 리뷰). 띄어 쓰든 붙이든, 조사가 붙든 떼든 이름까지 닿는다
+        ("민수 씨", ["민수 씨", "민수"]),
+        ("민수씨", ["민수씨", "민수"]),
+        ("민수씨가", ["민수씨가", "민수씨", "민수"]),
+        ("민수 씨는", ["민수 씨는", "민수 씨", "민수"]),
+        ("김씨", ["김씨", "김"]),
+        ("씨", ["씨"]),
     ],
 )
 def test_name_candidates(text, expected):
@@ -224,11 +231,33 @@ def test_two_letter_alias_match_stays_confirmed(db, ws):
     assert (r.result, r.member_id, r.needs_check) == (ResolutionResult.MATCHED, lee.member_id, False)
 
 
-def test_resolved_texts_one_letter_alias_stays_unresolved(db, ws):
-    _alias(db, _member(db, ws, "이준"), "준")
+def test_resolved_texts_auto_one_letter_alias_stays_unresolved(db, ws):
+    # 이름에서 자동으로 만든 한 글자 별칭("김환" → "환")은 해결로 보지 않는다. PM 이 직접 연결한 것이 아니다
+    _alias(db, _member(db, ws, "김환"), "환", source="display_name")
+    _alias(db, _member(db, ws, "박닉"), "닉", source="discord_profile")
     _alias(db, _member(db, ws, "김동우"), "동우")
 
-    assert resolved_texts(db, ws, ["준이가", "준", "동우가"]) == {"동우가"}
+    assert resolved_texts(db, ws, ["환이가", "환", "닉", "동우가"]) == {"동우가"}
+
+
+@pytest.mark.parametrize("source", ["manual", "learned"])
+def test_resolved_texts_human_one_letter_alias_is_resolved(db, ws, source):
+    # PM 이 직접 등록한 한 글자 별칭은 "팀원과 연결된 이름"이라 미매칭 목록에서 뺀다(#463 리뷰).
+    # 담당자 찾기는 한 글자면 계속 확인 필요다(resolve_assignee). 둘의 질문이 다르다: 연결됐나 / 자동 반영해도 되나
+    lee = _member(db, ws, "이준")
+    _alias(db, lee, "준", source=source)
+
+    assert resolved_texts(db, ws, ["준이가", "준"]) == {"준이가", "준"}
+    r = resolve_assignee(db, ws, "준")
+    assert (r.member_id, r.needs_check) == (lee.member_id, True)
+
+
+def test_resolved_texts_unverified_or_shared_one_letter_alias_stays_unresolved(db, ws):
+    _alias(db, _member(db, ws, "이준"), "준", verified=False)
+    _alias(db, _member(db, ws, "김환"), "환")
+    _alias(db, _member(db, ws, "박환"), "환")
+
+    assert resolved_texts(db, ws, ["준", "환"]) == set()
 
 
 def test_spaced_honorific_finds_alias(db, ws):
@@ -259,3 +288,27 @@ def test_name_ending_in_i_is_kept_by_longest_first(db, ws):
     _alias(db, se, "세")
 
     assert resolve_assignee(db, ws, "세이는").member_id == sei.member_id
+
+
+def test_ssi_honorific_finds_alias(db, ws):
+    kim = _member(db, ws, "김민수")
+    _alias(db, kim, "민수")
+
+    for said in ("민수 씨", "민수씨", "민수씨가", "민수 씨는", "민수 씨께서"):
+        r = resolve_assignee(db, ws, said)
+        assert (r.result, r.member_id, r.needs_check) == (ResolutionResult.MATCHED, kim.member_id, False), said
+
+
+def test_ssi_name_is_kept_by_longest_first(db, ws):
+    # "…씨"로 끝나는 이름도 긴 후보부터 찾아 지켜진다. 떼어서 한 글자가 되면 확인 필요로만 걸린다
+    exact = _member(db, ws, "이영씨")
+    other = _member(db, ws, "이영")
+    _alias(db, exact, "이영씨")
+    _alias(db, other, "이영")
+
+    assert resolve_assignee(db, ws, "이영씨가").member_id == exact.member_id
+
+    only = _member(db, ws, "김하")
+    _alias(db, only, "김")
+    r = resolve_assignee(db, ws, "김씨")
+    assert (r.member_id, r.needs_check) == (only.member_id, True)
