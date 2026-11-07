@@ -194,6 +194,7 @@ from dataclasses import replace  # noqa: E402
 from datetime import date  # noqa: E402
 
 import draft.doc_draft as doc_draft  # noqa: E402
+import judge.asr_check as asr_check  # noqa: E402
 import judge.final_judge as final_judge  # noqa: E402
 import judge.pipeline as pipeline  # noqa: E402
 import judge.semantic_judge as semantic_judge  # noqa: E402
@@ -1067,3 +1068,74 @@ def test_run_passes_context_to_stage1(monkeypatch):
     ctx = Transcript(segments=[], source="chat")
     run(MEETING, workspace_id="ws_1", today=date(2026, 11, 5), candidates=FakeCandidates(), context=ctx)
     assert seen["context"] is ctx
+
+
+# ── 전사 오인식 의심 단어 (asr_suspects, judge/asr_check.py) ──────────────────────
+
+
+def _asr_run(monkeypatch, lines, task, candidates=None, source="meeting"):
+    meeting = Transcript(source=source, segments=_one_line_meeting(*lines).segments)
+    _install(monkeypatch, stage1={"findings": [_stage1(0)]}, terra=[NEW],
+             luna_draft=[{"task": task, "due_date": None, "due_raw": None, "doc_text": task}], jev=[_jev(0.95)])
+    return run(meeting, workspace_id="ws_1", today=date(2026, 9, 28), candidates=candidates or ListCandidates([]))
+
+
+def test_run_flags_a_misrecognized_word_in_the_evidence(monkeypatch):
+    # 초안이 제목을 "배포 문서 정리"로 고쳐도 근거 원문의 "애포"는 남는다
+    out = _asr_run(monkeypatch, ["애포문서 정리는 제가 맡을게요."], "배포 문서 정리")
+    [s] = out.items[0]["asr_suspects"]
+    assert (s["word"], s["source"]) == ("애포", "evidence") and "배포" in s["candidates"]
+
+
+def test_run_sends_an_empty_list_for_a_clean_item(monkeypatch):
+    out = _asr_run(monkeypatch, ["배포 문서 정리는 제가 맡을게요."], "배포 문서 정리")
+    assert out.items[0]["asr_suspects"] == []
+
+
+def test_run_other_utterances_and_search_titles_count_as_team_words(monkeypatch):
+    # "핀테크볼트"는 분석기가 모르는 말이다. 기존 태스크 제목(유사 검색)에 있으면 팀이 쓰는 말로 본다
+    titled = ListCandidates([replace(SEARCH, title="핀테크볼트 연동", similarity=0.5)])
+    out = _asr_run(monkeypatch, ["핀테크볼트 정산 정리는 제가 맡을게요."], "핀테크볼트 정산 정리", candidates=titled)
+    assert out.items[0]["asr_suspects"] == []
+
+
+def test_run_uses_member_names_from_the_search_client(monkeypatch):
+    class WithNames(ListCandidates):
+        def member_names(self, workspace_id):
+            return [{"member_id": "m1", "name": "콜린스", "discord_user_id": "u1", "aliases": ["콜린"]}]
+
+    line = ["콜린스님이 배포 문서 정리 맡아 주세요."]
+    without = _asr_run(monkeypatch, line, "배포 문서 정리")
+    named = _asr_run(monkeypatch, line, "배포 문서 정리", candidates=WithNames([]))
+    assert any(s["word"].startswith("콜린") for s in without.items[0]["asr_suspects"])
+    assert named.items[0]["asr_suspects"] == []
+
+
+def test_run_member_name_lookup_failure_does_not_stop_the_check(monkeypatch):
+    class Broken(ListCandidates):
+        def member_names(self, workspace_id):
+            raise ConnectionError("BE 연결 실패")
+
+    out = _asr_run(monkeypatch, ["애포 문서 정리는 제가 맡을게요."], "배포 문서 정리", candidates=Broken([]))
+    assert [s["word"] for s in out.items[0]["asr_suspects"]] == ["애포"]
+
+
+def test_run_marks_every_create_item_when_the_analyzer_cannot_start(monkeypatch):
+    def boom(text):
+        raise OSError("모델 파일 없음")
+    monkeypatch.setattr(asr_check, "_nouns", boom)
+    out = _asr_run(monkeypatch, ["배포 문서 정리는 제가 맡을게요."], "배포 문서 정리")
+    assert out.items[0]["asr_suspects"] == asr_check.failed()
+
+
+def test_run_update_items_are_not_checked(monkeypatch):
+    _install(monkeypatch, stage1={"findings": FINDINGS}, terra=TERRA_OK, luna_draft=LUNA_DRAFT_OK)
+    create, update = _run().items
+    assert "asr_suspects" in create and "asr_suspects" not in update
+
+
+def test_run_chat_items_are_not_checked(monkeypatch):
+    # 채팅은 전사를 거치지 않고 auto 로도 가지 않는다(BE 가 review 로 내림). 분석기를 올리지 않는다
+    monkeypatch.setattr(asr_check, "_kiwi", lambda: (_ for _ in ()).throw(AssertionError("분석기를 올리면 안 된다")))
+    out = _asr_run(monkeypatch, ["애포 문서 정리는 제가 맡을게요."], "배포 문서 정리", source="chat")
+    assert "asr_suspects" not in out.items[0]

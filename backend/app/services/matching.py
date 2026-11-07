@@ -329,6 +329,8 @@ class AutoSignals:
     similar_count: int | None
     # BE가 등록 시점에 본 값. 임베딩이 없는 task(기다리는 중이거나 임베딩 API가 거절한)는 AI의 유사 검색에 잡히지 않았다
     unsearched_tasks_exist: bool = False
+    # AI가 찾은 전사 오인식 의심 단어 수. 근거 문장 자체가 잘못 전사됐을 수 있어 auto로 보내지 않는다
+    asr_suspect_count: int = 0
 
 
 def auto_blockers(
@@ -368,6 +370,9 @@ def auto_blockers(
     elif signals.unsearched_tasks_exist:
         # 검색이 못 본 task가 있어 similar_count=0을 믿을 수 없다. 같은 회의에서 앞서 auto로 만든 task도 여기 걸린다
         reasons.append("unsearched_task_exists")
+    if signals.asr_suspect_count:
+        # Jev 의 certain 은 근거에 충실한지만 본다. "애포문서 정리"처럼 근거가 잘못 전사됐으면 그대로 certain 이다
+        reasons.append("asr_suspect")
     return reasons
 
 

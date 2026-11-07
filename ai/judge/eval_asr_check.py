@@ -1,13 +1,14 @@
 """전사 오인식 검사(judge/asr_check.py) 평가 — 오류를 넣은 문장은 잡고, 멀쩡한 문장은 놓아주는지 잰다.
 
 LLM·API 를 부르지 않는다(형태소 분석기만). 그래도 대사가 많고 결과를 기록으로 남기는 평가라 pytest 와 따로 둔다.
-대사: judge/golden_set_asr/cases.json
+대사: judge/golden_set_asr/ — cases.json 은 규칙을 맞출 때 본 세트, holdout.json 은 규칙을 정한 뒤 한 번만 잰
+처음 보는 세트(다른 팀·다른 업무 단어, 검사 규칙을 모르는 상태로 만들었다). 수치는 holdout 을 기준으로 본다.
 - injected: 업무 단어 하나를 발음이 비슷한 비단어로 바꾼 문장. 의심 단어가 있어야 한다(없으면 auto 로 샌다).
 - normal: 멀쩡한 문장(팀 용어·영문·변형 표기 포함). 의심 단어가 없어야 한다(있으면 auto 가 괜히 줄어든다).
 - realword: 오인식이 실제 낱말이 된 문장("배포"→"대표"). 이 검사로 못 잡는 한계를 확인하려고 둔다.
 
 실행 (ai/ 디렉토리 안에서):
-    .venv/bin/python -m judge.eval_asr_check [--out judge/eval_results/<날짜>-asr-check.json]
+    .venv/bin/python -m judge.eval_asr_check [--set cases|holdout] [--out judge/eval_results/<날짜>-asr-check.json]
 """
 
 from __future__ import annotations
@@ -18,7 +19,7 @@ from pathlib import Path
 
 from judge.asr_check import Vocabulary, check_item
 
-SET_PATH = Path(__file__).resolve().parent / "golden_set_asr" / "cases.json"
+SET_DIR = Path(__file__).resolve().parent / "golden_set_asr"
 
 
 def _hit(suspects: list[dict], wrong: str | None) -> dict | None:
@@ -78,9 +79,10 @@ def report(s: dict) -> None:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
+    ap.add_argument("--set", default="holdout", help="cases(규칙을 맞춘 세트) 또는 holdout(처음 보는 세트)")
     ap.add_argument("--out", default="")
     args = ap.parse_args()
-    s = evaluate(json.loads(SET_PATH.read_text(encoding="utf-8")))
+    s = evaluate(json.loads((SET_DIR / f"{args.set}.json").read_text(encoding="utf-8")))
     report(s)
     if args.out:
         Path(args.out).write_text(json.dumps(s, ensure_ascii=False, indent=1), encoding="utf-8")

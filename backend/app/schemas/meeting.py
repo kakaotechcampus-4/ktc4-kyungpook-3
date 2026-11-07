@@ -229,6 +229,16 @@ class TargetSnapshot(BaseModel):
     )
 
 
+class AsrSuspect(BaseModel):
+    """전사 오인식 의심 단어 하나(AI judge/asr_check.py). 확인 카드에 "'애포'는 '배포'일 수 있어요"로 보일 수 있다."""
+
+    word: str = Field(max_length=100, description="의심 단어. 검사를 하지 못했으면 빈 문자열")
+    source: str = Field(max_length=32, description="evidence(근거 발화) · title(제목) · check_failed(검사 실패)")
+    candidates: list[Annotated[str, Field(max_length=100)]] = Field(
+        default_factory=list, max_length=5, description="발음이 가까운 업무 용어 후보. 가까운 순, 최대 5개"
+    )
+
+
 class ExtractionItemCreate(BaseModel):
     action: ExtractionAction = Field(
         ExtractionAction.CREATE,
@@ -314,6 +324,12 @@ class ExtractionItemCreate(BaseModel):
         le=1.0,
         description="그 태스크들 중 가장 높은 유사도. 기록용이라 게이트 판단에는 쓰지 않는다. "
         "검색 결과가 없으면 null",
+    )
+    asr_suspects: list[AsrSuspect] | None = Field(
+        None,
+        max_length=50,
+        description="전사 오인식 의심 단어. judge 새 항목만 보낸다. 하나라도 있으면 auto로 보내지 않는다. "
+        "검사해서 없으면 빈 목록, 보내지 않으면(옛 AI) null이고 둘 다 게이트에 영향이 없다",
     )
     target_snapshot: TargetSnapshot | None = Field(
         None,

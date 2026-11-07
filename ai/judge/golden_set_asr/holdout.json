@@ -1,0 +1,2464 @@
+{
+ "team": {
+  "members": [
+   "박준호",
+   "김다은",
+   "이수빈",
+   "최현우",
+   "정유진",
+   "한도윤",
+   "오세라",
+   "강민재"
+  ],
+  "task_titles": [
+   "장바구니 쿠폰 적용",
+   "상품 상세 리뉴얼",
+   "주문 취소 API",
+   "추천 알고리즘 실험",
+   "데이터 대시보드 지표 정의",
+   "앱 푸시 캠페인",
+   "결제 PG 연동",
+   "환불 프로세스 개선",
+   "배송 상태 알림",
+   "회원가입 온보딩 개선",
+   "검색 필터 고도화",
+   "리뷰 작성 리워드",
+   "재고 동기화 배치",
+   "백오피스 어드민 권한",
+   "메인 배너 교체",
+   "코호트 리텐션 분석",
+   "구매 퍼널 전환율 분석",
+   "BigQuery 파이프라인 구축",
+   "GA4 이벤트 설계",
+   "블랙프라이데이 프로모션",
+   "정산 리포트 자동화",
+   "iOS 앱 배포",
+   "A/B 테스트 플랫폼 도입",
+   "고객센터 문의 분류",
+   "스프린트 회고"
+  ]
+ },
+ "cases": [
+  {
+   "name": "injected: 쿠폰->쿠퐁 (title corrected)",
+   "group": "injected",
+   "lines": [
+    "쿠퐁 적용이 장바구니에서 두 번 되는 버그가 있어서 그거 이번 주에 고칠게요"
+   ],
+   "title": "장바구니 쿠폰 중복 적용 버그 수정",
+   "other_lines": [
+    "그럼 다음 안건으로 넘어갈게요.",
+    "그니까 우선순위를 먼저 정해야 될 것 같아요.",
+    "그리고 QA 일정도 같이 봐야 할 것 같아요."
+   ],
+   "expect_suspect": true,
+   "wrong": "쿠퐁",
+   "right": "쿠폰"
+  },
+  {
+   "name": "injected: 장바구니->장마구니 (error in title)",
+   "group": "injected",
+   "lines": [
+    "어 그니까 장마구니 화면에서 수량 바꾸면 가격이 안 바뀌는 거죠?"
+   ],
+   "title": "장마구니 수량 변경 가격 반영",
+   "other_lines": [
+    "어 이건 지난주에 얘기했던 거랑 연결되는 거죠?",
+    "네 그건 제가 슬랙에 공유드릴게요.",
+    "좋아요 그럼 그렇게 진행하시죠."
+   ],
+   "expect_suspect": true,
+   "wrong": "장마구니",
+   "right": "장바구니"
+  },
+  {
+   "name": "injected: 리뉴얼->리뉴엘 (title corrected)",
+   "group": "injected",
+   "lines": [
+    "상품 상세 리뉴엘은 다은 님이 시안 먼저 잡아 주시고요"
+   ],
+   "title": "상품 상세 리뉴얼 시안",
+   "other_lines": [
+    "음 저도 거기에 동의해요.",
+    "시간이 좀 부족하니까 빠르게 갈게요.",
+    "음 이 부분은 데이터 보고 판단하는 게 좋겠어요."
+   ],
+   "expect_suspect": true,
+   "wrong": "리뉴엘",
+   "right": "리뉴얼"
+  },
+  {
+   "name": "injected: 대시보드->데시보드 (error in title)",
+   "group": "injected",
+   "lines": [
+    "주간 매출 데시보드에 CVR 지표도 하나 추가해 주세요"
+   ],
+   "title": "매출 데시보드 CVR 지표 추가",
+   "other_lines": [
+    "일단 금요일까지 한번 정리해 볼게요.",
+    "아 그거 디자인 쪽이랑 먼저 맞춰봐야 해요.",
+    "저는 내일 오전에 외근이라 오후에 볼게요."
+   ],
+   "expect_suspect": true,
+   "wrong": "데시보드",
+   "right": "대시보드"
+  },
+  {
+   "name": "injected: 캠페인->캄페인 (title corrected)",
+   "group": "injected",
+   "lines": [
+    "이번 달 푸시 캄페인은 수빈 님이 세그먼트 나눠서 돌려 주세요"
+   ],
+   "title": "푸시 캠페인 세그먼트 발송",
+   "other_lines": [
+    "혹시 다른 의견 있으신 분 계세요?",
+    "다음 주 월요일에 다시 확인하죠.",
+    "그럼 다음 안건으로 넘어갈게요."
+   ],
+   "expect_suspect": true,
+   "wrong": "캄페인",
+   "right": "캠페인"
+  },
+  {
+   "name": "injected: 알고리즘->알고니즘 (error in title)",
+   "group": "injected",
+   "lines": [
+    "추천 알고니즘 바꾼 거 A/B 테스트로 2주 돌려 볼게요"
+   ],
+   "title": "추천 알고니즘 A/B 테스트",
+   "other_lines": [
+    "그니까 우선순위를 먼저 정해야 될 것 같아요.",
+    "그리고 QA 일정도 같이 봐야 할 것 같아요.",
+    "어 이건 지난주에 얘기했던 거랑 연결되는 거죠?"
+   ],
+   "expect_suspect": true,
+   "wrong": "알고니즘",
+   "right": "알고리즘"
+  },
+  {
+   "name": "injected: 프로모션->프로모선 (title corrected)",
+   "group": "injected",
+   "lines": [
+    "블프 프로모선 페이지는 11월 20일까지 오픈해야 돼요"
+   ],
+   "title": "블프 프로모션 페이지 오픈",
+   "other_lines": [
+    "네 그건 제가 슬랙에 공유드릴게요.",
+    "좋아요 그럼 그렇게 진행하시죠.",
+    "음 저도 거기에 동의해요."
+   ],
+   "expect_suspect": true,
+   "wrong": "프로모선",
+   "right": "프로모션"
+  },
+  {
+   "name": "injected: 와이어프레임->와이어프렘 (error in title)",
+   "group": "injected",
+   "lines": [
+    "음 체크아웃 와이어프렘 먼저 그려서 공유드릴게요"
+   ],
+   "title": "체크아웃 와이어프렘 작성",
+   "other_lines": [
+    "시간이 좀 부족하니까 빠르게 갈게요.",
+    "음 이 부분은 데이터 보고 판단하는 게 좋겠어요.",
+    "일단 금요일까지 한번 정리해 볼게요."
+   ],
+   "expect_suspect": true,
+   "wrong": "와이어프렘",
+   "right": "와이어프레임"
+  },
+  {
+   "name": "injected: 퍼널->퍼녈 (title corrected)",
+   "group": "injected",
+   "lines": [
+    "구매 퍼녈에서 결제 단계 이탈이 제일 크더라고요 그거 파 볼게요"
+   ],
+   "title": "구매 퍼널 결제 이탈 분석",
+   "other_lines": [
+    "아 그거 디자인 쪽이랑 먼저 맞춰봐야 해요.",
+    "저는 내일 오전에 외근이라 오후에 볼게요.",
+    "혹시 다른 의견 있으신 분 계세요?"
+   ],
+   "expect_suspect": true,
+   "wrong": "퍼녈",
+   "right": "퍼널"
+  },
+  {
+   "name": "injected: 코호트->코호뜨 (error in title)",
+   "group": "injected",
+   "lines": [
+    "가입 월별로 코호뜨 나눠서 리텐션 다시 뽑아 주세요"
+   ],
+   "title": "가입 월별 코호뜨 리텐션",
+   "other_lines": [
+    "다음 주 월요일에 다시 확인하죠.",
+    "그럼 다음 안건으로 넘어갈게요.",
+    "그니까 우선순위를 먼저 정해야 될 것 같아요."
+   ],
+   "expect_suspect": true,
+   "wrong": "코호뜨",
+   "right": "코호트"
+  },
+  {
+   "name": "injected: 리텐션->리탠션 (title corrected)",
+   "group": "injected",
+   "lines": [
+    "D7 리탠션이 지난달보다 떨어져서 원인 좀 봐야 할 것 같아요"
+   ],
+   "title": "D7 리텐션 하락 원인 분석",
+   "other_lines": [
+    "그리고 QA 일정도 같이 봐야 할 것 같아요.",
+    "어 이건 지난주에 얘기했던 거랑 연결되는 거죠?",
+    "네 그건 제가 슬랙에 공유드릴게요."
+   ],
+   "expect_suspect": true,
+   "wrong": "리탠션",
+   "right": "리텐션"
+  },
+  {
+   "name": "injected: 백오피스->백오비스 (error in title)",
+   "group": "injected",
+   "lines": [
+    "백오비스에서 주문 강제 취소 버튼 하나 만들어 주세요"
+   ],
+   "title": "백오비스 주문 강제 취소 기능",
+   "other_lines": [
+    "좋아요 그럼 그렇게 진행하시죠.",
+    "음 저도 거기에 동의해요.",
+    "시간이 좀 부족하니까 빠르게 갈게요."
+   ],
+   "expect_suspect": true,
+   "wrong": "백오비스",
+   "right": "백오피스"
+  },
+  {
+   "name": "injected: 어드민->어드밍 (title corrected)",
+   "group": "injected",
+   "lines": [
+    "어드밍 계정 권한을 운영팀이랑 개발팀이랑 분리해야 돼요"
+   ],
+   "title": "어드민 계정 권한 분리",
+   "other_lines": [
+    "음 이 부분은 데이터 보고 판단하는 게 좋겠어요.",
+    "일단 금요일까지 한번 정리해 볼게요.",
+    "아 그거 디자인 쪽이랑 먼저 맞춰봐야 해요."
+   ],
+   "expect_suspect": true,
+   "wrong": "어드밍",
+   "right": "어드민"
+  },
+  {
+   "name": "injected: 배너->배녀 (error in title)",
+   "group": "injected",
+   "lines": [
+    "메인 배녀 이미지 다음 주 화요일에 교체할게요"
+   ],
+   "title": "메인 배녀 이미지 교체",
+   "other_lines": [
+    "저는 내일 오전에 외근이라 오후에 볼게요.",
+    "혹시 다른 의견 있으신 분 계세요?",
+    "다음 주 월요일에 다시 확인하죠."
+   ],
+   "expect_suspect": true,
+   "wrong": "배녀",
+   "right": "배너"
+  },
+  {
+   "name": "injected: 썸네일->썸내일 (title corrected)",
+   "group": "injected",
+   "lines": [
+    "상품 썸내일이 안드로이드에서 깨져 보인대요"
+   ],
+   "title": "상품 썸네일 AOS 깨짐 수정",
+   "other_lines": [
+    "그럼 다음 안건으로 넘어갈게요.",
+    "그니까 우선순위를 먼저 정해야 될 것 같아요.",
+    "그리고 QA 일정도 같이 봐야 할 것 같아요."
+   ],
+   "expect_suspect": true,
+   "wrong": "썸내일",
+   "right": "썸네일"
+  },
+  {
+   "name": "injected: 회고->회꼬 (error in title)",
+   "group": "injected",
+   "lines": [
+    "금요일 스프린트 회꼬는 한 시간만 잡을게요"
+   ],
+   "title": "스프린트 회꼬 진행",
+   "other_lines": [
+    "어 이건 지난주에 얘기했던 거랑 연결되는 거죠?",
+    "네 그건 제가 슬랙에 공유드릴게요.",
+    "좋아요 그럼 그렇게 진행하시죠."
+   ],
+   "expect_suspect": true,
+   "wrong": "회꼬",
+   "right": "회고"
+  },
+  {
+   "name": "injected: 공수->공쑤 (title corrected)",
+   "group": "injected",
+   "lines": [
+    "주문 취소 API 공쑤 산정해서 내일까지 알려 주세요"
+   ],
+   "title": "주문 취소 API 공수 산정",
+   "other_lines": [
+    "음 저도 거기에 동의해요.",
+    "시간이 좀 부족하니까 빠르게 갈게요.",
+    "음 이 부분은 데이터 보고 판단하는 게 좋겠어요."
+   ],
+   "expect_suspect": true,
+   "wrong": "공쑤",
+   "right": "공수"
+  },
+  {
+   "name": "injected: 인수인계->인수인게 (error in title)",
+   "group": "injected",
+   "lines": [
+    "현우 님 휴가 가시기 전에 정산 배치 인수인게 문서 남겨 주세요"
+   ],
+   "title": "정산 배치 인수인게 문서",
+   "other_lines": [
+    "일단 금요일까지 한번 정리해 볼게요.",
+    "아 그거 디자인 쪽이랑 먼저 맞춰봐야 해요.",
+    "저는 내일 오전에 외근이라 오후에 볼게요."
+   ],
+   "expect_suspect": true,
+   "wrong": "인수인게",
+   "right": "인수인계"
+  },
+  {
+   "name": "injected: 견적->견젹 (title corrected)",
+   "group": "injected",
+   "lines": [
+    "PG사 두 군데 견젹 받아서 비교표 만들어 볼게요"
+   ],
+   "title": "PG사 견적 비교",
+   "other_lines": [
+    "혹시 다른 의견 있으신 분 계세요?",
+    "다음 주 월요일에 다시 확인하죠.",
+    "그럼 다음 안건으로 넘어갈게요."
+   ],
+   "expect_suspect": true,
+   "wrong": "견젹",
+   "right": "견적"
+  },
+  {
+   "name": "injected: 기획안->기획얀 (error in title)",
+   "group": "injected",
+   "lines": [
+    "리뷰 리워드 기획얀은 세라 님이 목요일까지 써 주시면 돼요"
+   ],
+   "title": "리뷰 리워드 기획얀 작성",
+   "other_lines": [
+    "그니까 우선순위를 먼저 정해야 될 것 같아요.",
+    "그리고 QA 일정도 같이 봐야 할 것 같아요.",
+    "어 이건 지난주에 얘기했던 거랑 연결되는 거죠?"
+   ],
+   "expect_suspect": true,
+   "wrong": "기획얀",
+   "right": "기획안"
+  },
+  {
+   "name": "injected: 일정표->일정포 (title corrected)",
+   "group": "injected",
+   "lines": [
+    "iOS 배포 일정포를 노션에 업데이트해 둘게요"
+   ],
+   "title": "iOS 배포 일정표 업데이트",
+   "other_lines": [
+    "네 그건 제가 슬랙에 공유드릴게요.",
+    "좋아요 그럼 그렇게 진행하시죠.",
+    "음 저도 거기에 동의해요."
+   ],
+   "expect_suspect": true,
+   "wrong": "일정포",
+   "right": "일정표"
+  },
+  {
+   "name": "injected: 산출물->산출믈 (error in title)",
+   "group": "injected",
+   "lines": [
+    "이번 스프린트 산출믈은 API 명세랑 테스트 리포트예요"
+   ],
+   "title": "스프린트 산출믈 정리",
+   "other_lines": [
+    "시간이 좀 부족하니까 빠르게 갈게요.",
+    "음 이 부분은 데이터 보고 판단하는 게 좋겠어요.",
+    "일단 금요일까지 한번 정리해 볼게요."
+   ],
+   "expect_suspect": true,
+   "wrong": "산출믈",
+   "right": "산출물"
+  },
+  {
+   "name": "injected: 계약서->계약써 (title corrected)",
+   "group": "injected",
+   "lines": [
+    "PG 연동 계약써 법무 검토 요청 넣어 놨어요"
+   ],
+   "title": "PG 연동 계약서 법무 검토",
+   "other_lines": [
+    "아 그거 디자인 쪽이랑 먼저 맞춰봐야 해요.",
+    "저는 내일 오전에 외근이라 오후에 볼게요.",
+    "혹시 다른 의견 있으신 분 계세요?"
+   ],
+   "expect_suspect": true,
+   "wrong": "계약써",
+   "right": "계약서"
+  },
+  {
+   "name": "injected: 결제->겔제 (error in title)",
+   "group": "injected",
+   "lines": [
+    "네이버페이 겔제 실패 케이스 로그 좀 뽑아 주실 수 있어요?"
+   ],
+   "title": "네이버페이 겔제 실패 로그 분석",
+   "other_lines": [
+    "다음 주 월요일에 다시 확인하죠.",
+    "그럼 다음 안건으로 넘어갈게요.",
+    "그니까 우선순위를 먼저 정해야 될 것 같아요."
+   ],
+   "expect_suspect": true,
+   "wrong": "겔제",
+   "right": "결제"
+  },
+  {
+   "name": "injected: 정산->정싼 (title corrected)",
+   "group": "injected",
+   "lines": [
+    "셀러 정싼 금액이 하루씩 밀려서 들어온대요"
+   ],
+   "title": "셀러 정산 지연 이슈",
+   "other_lines": [
+    "그리고 QA 일정도 같이 봐야 할 것 같아요.",
+    "어 이건 지난주에 얘기했던 거랑 연결되는 거죠?",
+    "네 그건 제가 슬랙에 공유드릴게요."
+   ],
+   "expect_suspect": true,
+   "wrong": "정싼",
+   "right": "정산"
+  },
+  {
+   "name": "injected: 상세->상쎄 (error in title)",
+   "group": "injected",
+   "lines": [
+    "상품 상쎄 페이지 로딩이 3초 넘게 걸려요"
+   ],
+   "title": "상품 상쎄 로딩 개선",
+   "other_lines": [
+    "좋아요 그럼 그렇게 진행하시죠.",
+    "음 저도 거기에 동의해요.",
+    "시간이 좀 부족하니까 빠르게 갈게요."
+   ],
+   "expect_suspect": true,
+   "wrong": "상쎄",
+   "right": "상세"
+  },
+  {
+   "name": "injected: 주문->주뭄 (title corrected)",
+   "group": "injected",
+   "lines": [
+    "주뭄 취소하고 나서 재고가 원복이 안 되고 있어요"
+   ],
+   "title": "주문 취소 시 재고 원복",
+   "other_lines": [
+    "음 이 부분은 데이터 보고 판단하는 게 좋겠어요.",
+    "일단 금요일까지 한번 정리해 볼게요.",
+    "아 그거 디자인 쪽이랑 먼저 맞춰봐야 해요."
+   ],
+   "expect_suspect": true,
+   "wrong": "주뭄",
+   "right": "주문"
+  },
+  {
+   "name": "injected: 추천->추촌 (error in title)",
+   "group": "injected",
+   "lines": [
+    "홈 화면 추촌 영역 CTR이 1퍼센트도 안 나와요"
+   ],
+   "title": "홈 추촌 영역 CTR 개선",
+   "other_lines": [
+    "저는 내일 오전에 외근이라 오후에 볼게요.",
+    "혹시 다른 의견 있으신 분 계세요?",
+    "다음 주 월요일에 다시 확인하죠."
+   ],
+   "expect_suspect": true,
+   "wrong": "추촌",
+   "right": "추천"
+  },
+  {
+   "name": "injected: 지표->지뵤 (title corrected)",
+   "group": "injected",
+   "lines": [
+    "북극성 지뵤는 주간 구매자 수로 가는 걸로 하죠"
+   ],
+   "title": "북극성 지표 정의",
+   "other_lines": [
+    "그럼 다음 안건으로 넘어갈게요.",
+    "그니까 우선순위를 먼저 정해야 될 것 같아요.",
+    "그리고 QA 일정도 같이 봐야 할 것 같아요."
+   ],
+   "expect_suspect": true,
+   "wrong": "지뵤",
+   "right": "지표"
+  },
+  {
+   "name": "injected: 이벤트->이밴트 (error in title)",
+   "group": "injected",
+   "lines": [
+    "GA4 이밴트 이름 규칙부터 먼저 맞춰야 해요"
+   ],
+   "title": "GA4 이밴트 네이밍 규칙",
+   "other_lines": [
+    "어 이건 지난주에 얘기했던 거랑 연결되는 거죠?",
+    "네 그건 제가 슬랙에 공유드릴게요.",
+    "좋아요 그럼 그렇게 진행하시죠."
+   ],
+   "expect_suspect": true,
+   "wrong": "이밴트",
+   "right": "이벤트"
+  },
+  {
+   "name": "injected: 카테고리->카테고니 (title corrected)",
+   "group": "injected",
+   "lines": [
+    "카테고니 탭 순서를 판매량 기준으로 바꿔 볼게요"
+   ],
+   "title": "카테고리 탭 정렬 변경",
+   "other_lines": [
+    "음 저도 거기에 동의해요.",
+    "시간이 좀 부족하니까 빠르게 갈게요.",
+    "음 이 부분은 데이터 보고 판단하는 게 좋겠어요."
+   ],
+   "expect_suspect": true,
+   "wrong": "카테고니",
+   "right": "카테고리"
+  },
+  {
+   "name": "injected: 필터->필떠 (error in title)",
+   "group": "injected",
+   "lines": [
+    "검색 결과 필떠에 가격대 옵션 추가해 주세요"
+   ],
+   "title": "검색 필떠 가격대 옵션",
+   "other_lines": [
+    "일단 금요일까지 한번 정리해 볼게요.",
+    "아 그거 디자인 쪽이랑 먼저 맞춰봐야 해요.",
+    "저는 내일 오전에 외근이라 오후에 볼게요."
+   ],
+   "expect_suspect": true,
+   "wrong": "필떠",
+   "right": "필터"
+  },
+  {
+   "name": "injected: 검색->검섹 (title corrected)",
+   "group": "injected",
+   "lines": [
+    "어 검섹어 자동완성이 오타를 잘 못 잡더라고요"
+   ],
+   "title": "검색어 자동완성 오타 보정",
+   "other_lines": [
+    "혹시 다른 의견 있으신 분 계세요?",
+    "다음 주 월요일에 다시 확인하죠.",
+    "그럼 다음 안건으로 넘어갈게요."
+   ],
+   "expect_suspect": true,
+   "wrong": "검섹",
+   "right": "검색"
+  },
+  {
+   "name": "injected: 리뷰->리부 (error in title)",
+   "group": "injected",
+   "lines": [
+    "포토 리부 쓰면 적립금 주는 거 이번에 같이 넣죠"
+   ],
+   "title": "포토 리부 적립금 지급",
+   "other_lines": [
+    "그니까 우선순위를 먼저 정해야 될 것 같아요.",
+    "그리고 QA 일정도 같이 봐야 할 것 같아요.",
+    "어 이건 지난주에 얘기했던 거랑 연결되는 거죠?"
+   ],
+   "expect_suspect": true,
+   "wrong": "리부",
+   "right": "리뷰"
+  },
+  {
+   "name": "injected: 환불->환뷸 (title corrected)",
+   "group": "injected",
+   "lines": [
+    "부분 환뷸 처리할 때 쿠폰 금액 계산이 꼬여요"
+   ],
+   "title": "부분 환불 금액 계산 수정",
+   "other_lines": [
+    "네 그건 제가 슬랙에 공유드릴게요.",
+    "좋아요 그럼 그렇게 진행하시죠.",
+    "음 저도 거기에 동의해요."
+   ],
+   "expect_suspect": true,
+   "wrong": "환뷸",
+   "right": "환불"
+  },
+  {
+   "name": "injected: 배송->배숑 (error in title)",
+   "group": "injected",
+   "lines": [
+    "배숑 조회 API가 택배사 응답 늦으면 타임아웃 나요"
+   ],
+   "title": "배숑 조회 타임아웃 처리",
+   "other_lines": [
+    "시간이 좀 부족하니까 빠르게 갈게요.",
+    "음 이 부분은 데이터 보고 판단하는 게 좋겠어요.",
+    "일단 금요일까지 한번 정리해 볼게요."
+   ],
+   "expect_suspect": true,
+   "wrong": "배숑",
+   "right": "배송"
+  },
+  {
+   "name": "injected: 재고->재꼬 (title corrected)",
+   "group": "injected",
+   "lines": [
+    "물류 쪽 재꼬 데이터랑 우리 DB가 하루에 한 번만 맞춰지거든요"
+   ],
+   "title": "재고 데이터 동기화 주기",
+   "other_lines": [
+    "아 그거 디자인 쪽이랑 먼저 맞춰봐야 해요.",
+    "저는 내일 오전에 외근이라 오후에 볼게요.",
+    "혹시 다른 의견 있으신 분 계세요?"
+   ],
+   "expect_suspect": true,
+   "wrong": "재꼬",
+   "right": "재고"
+  },
+  {
+   "name": "injected: 온보딩->온보링 (error in title)",
+   "group": "injected",
+   "lines": [
+    "신규 가입자 온보링 화면을 세 장에서 두 장으로 줄일게요"
+   ],
+   "title": "가입 온보링 화면 축소",
+   "other_lines": [
+    "다음 주 월요일에 다시 확인하죠.",
+    "그럼 다음 안건으로 넘어갈게요.",
+    "그니까 우선순위를 먼저 정해야 될 것 같아요."
+   ],
+   "expect_suspect": true,
+   "wrong": "온보링",
+   "right": "온보딩"
+  },
+  {
+   "name": "injected: 로그인->로그잉 (title corrected)",
+   "group": "injected",
+   "lines": [
+    "카카오 로그잉 붙이는 건 민재 님이 맡아 주세요"
+   ],
+   "title": "카카오 로그인 연동",
+   "other_lines": [
+    "그리고 QA 일정도 같이 봐야 할 것 같아요.",
+    "어 이건 지난주에 얘기했던 거랑 연결되는 거죠?",
+    "네 그건 제가 슬랙에 공유드릴게요."
+   ],
+   "expect_suspect": true,
+   "wrong": "로그잉",
+   "right": "로그인"
+  },
+  {
+   "name": "injected: 회원가입->회언가입 (error in title)",
+   "group": "injected",
+   "lines": [
+    "회언가입 할 때 마케팅 수신 동의 체크박스 위치 바꿔야 돼요"
+   ],
+   "title": "회언가입 수신 동의 UI 수정",
+   "other_lines": [
+    "좋아요 그럼 그렇게 진행하시죠.",
+    "음 저도 거기에 동의해요.",
+    "시간이 좀 부족하니까 빠르게 갈게요."
+   ],
+   "expect_suspect": true,
+   "wrong": "회언가입",
+   "right": "회원가입"
+  },
+  {
+   "name": "injected: 스프린트->스프린츠 (title corrected)",
+   "group": "injected",
+   "lines": [
+    "다음 스프린츠에는 결제 쪽 기술 부채 좀 정리하죠"
+   ],
+   "title": "스프린트 결제 기술 부채 정리",
+   "other_lines": [
+    "음 이 부분은 데이터 보고 판단하는 게 좋겠어요.",
+    "일단 금요일까지 한번 정리해 볼게요.",
+    "아 그거 디자인 쪽이랑 먼저 맞춰봐야 해요."
+   ],
+   "expect_suspect": true,
+   "wrong": "스프린츠",
+   "right": "스프린트"
+  },
+  {
+   "name": "injected: 배포->배뽀 (error in title)",
+   "group": "injected",
+   "lines": [
+    "안드로이드 배뽀는 목요일 저녁에 하는 걸로 할게요"
+   ],
+   "title": "안드로이드 배뽀 일정",
+   "other_lines": [
+    "저는 내일 오전에 외근이라 오후에 볼게요.",
+    "혹시 다른 의견 있으신 분 계세요?",
+    "다음 주 월요일에 다시 확인하죠."
+   ],
+   "expect_suspect": true,
+   "wrong": "배뽀",
+   "right": "배포"
+  },
+  {
+   "name": "injected: 마케팅->마캐팅 (title corrected)",
+   "group": "injected",
+   "lines": [
+    "마캐팅 팀에서 UTM 파라미터 규칙 정리해 달래요"
+   ],
+   "title": "마케팅 UTM 규칙 정리",
+   "other_lines": [
+    "그럼 다음 안건으로 넘어갈게요.",
+    "그니까 우선순위를 먼저 정해야 될 것 같아요.",
+    "그리고 QA 일정도 같이 봐야 할 것 같아요."
+   ],
+   "expect_suspect": true,
+   "wrong": "마캐팅",
+   "right": "마케팅"
+  },
+  {
+   "name": "injected: 리포트->리포투 (error in title)",
+   "group": "injected",
+   "lines": [
+    "주간 매출 리포투는 월요일 아침에 자동 발송되게 할게요"
+   ],
+   "title": "주간 매출 리포투 자동 발송",
+   "other_lines": [
+    "어 이건 지난주에 얘기했던 거랑 연결되는 거죠?",
+    "네 그건 제가 슬랙에 공유드릴게요.",
+    "좋아요 그럼 그렇게 진행하시죠."
+   ],
+   "expect_suspect": true,
+   "wrong": "리포투",
+   "right": "리포트"
+  },
+  {
+   "name": "injected: 쿼리->쿼니 (title corrected)",
+   "group": "injected",
+   "lines": [
+    "BigQuery 쿼니 비용이 너무 나와서 파티션부터 걸어야 해요"
+   ],
+   "title": "BigQuery 쿼리 비용 절감",
+   "other_lines": [
+    "음 저도 거기에 동의해요.",
+    "시간이 좀 부족하니까 빠르게 갈게요.",
+    "음 이 부분은 데이터 보고 판단하는 게 좋겠어요."
+   ],
+   "expect_suspect": true,
+   "wrong": "쿼니",
+   "right": "쿼리"
+  },
+  {
+   "name": "injected: 파이프라인->파이프라잉 (error in title)",
+   "group": "injected",
+   "lines": [
+    "로그 파이프라잉에서 중복 이벤트가 들어오는 것 같아요"
+   ],
+   "title": "로그 파이프라잉 중복 제거",
+   "other_lines": [
+    "일단 금요일까지 한번 정리해 볼게요.",
+    "아 그거 디자인 쪽이랑 먼저 맞춰봐야 해요.",
+    "저는 내일 오전에 외근이라 오후에 볼게요."
+   ],
+   "expect_suspect": true,
+   "wrong": "파이프라잉",
+   "right": "파이프라인"
+  },
+  {
+   "name": "injected: 매출->매츨 (title corrected)",
+   "group": "injected",
+   "lines": [
+    "매츨 집계에서 취소 건 빼는 기준을 통일해야 돼요"
+   ],
+   "title": "매출 집계 기준 통일",
+   "other_lines": [
+    "혹시 다른 의견 있으신 분 계세요?",
+    "다음 주 월요일에 다시 확인하죠.",
+    "그럼 다음 안건으로 넘어갈게요."
+   ],
+   "expect_suspect": true,
+   "wrong": "매츨",
+   "right": "매출"
+  },
+  {
+   "name": "injected: 할인->할잉 (error in title)",
+   "group": "injected",
+   "lines": [
+    "할잉 금액 표시를 원 단위 말고 퍼센트로도 보여 주죠"
+   ],
+   "title": "할잉 퍼센트 표시",
+   "other_lines": [
+    "그니까 우선순위를 먼저 정해야 될 것 같아요.",
+    "그리고 QA 일정도 같이 봐야 할 것 같아요.",
+    "어 이건 지난주에 얘기했던 거랑 연결되는 거죠?"
+   ],
+   "expect_suspect": true,
+   "wrong": "할잉",
+   "right": "할인"
+  },
+  {
+   "name": "injected: 적립금->정닙금 (title corrected)",
+   "group": "injected",
+   "lines": [
+    "정닙금 소멸 예정 알림 푸시를 7일 전에 보낼게요"
+   ],
+   "title": "적립금 소멸 알림 푸시",
+   "other_lines": [
+    "네 그건 제가 슬랙에 공유드릴게요.",
+    "좋아요 그럼 그렇게 진행하시죠.",
+    "음 저도 거기에 동의해요."
+   ],
+   "expect_suspect": true,
+   "wrong": "정닙금",
+   "right": "적립금"
+  },
+  {
+   "name": "injected: 체크아웃->체크아욷 (error in title)",
+   "group": "injected",
+   "lines": [
+    "체크아욷 단계에서 주소 입력을 한 페이지로 합칠게요"
+   ],
+   "title": "체크아욷 주소 입력 통합",
+   "other_lines": [
+    "시간이 좀 부족하니까 빠르게 갈게요.",
+    "음 이 부분은 데이터 보고 판단하는 게 좋겠어요.",
+    "일단 금요일까지 한번 정리해 볼게요."
+   ],
+   "expect_suspect": true,
+   "wrong": "체크아욷",
+   "right": "체크아웃"
+  },
+  {
+   "name": "injected: 레이아웃->레이아옷 (title corrected)",
+   "group": "injected",
+   "lines": [
+    "태블릿에서 상품 목록 레이아옷이 두 줄로 밀려요"
+   ],
+   "title": "태블릿 상품 목록 레이아웃 수정",
+   "other_lines": [
+    "아 그거 디자인 쪽이랑 먼저 맞춰봐야 해요.",
+    "저는 내일 오전에 외근이라 오후에 볼게요.",
+    "혹시 다른 의견 있으신 분 계세요?"
+   ],
+   "expect_suspect": true,
+   "wrong": "레이아옷",
+   "right": "레이아웃"
+  },
+  {
+   "name": "injected: 고객센터->고객샌터 (error in title)",
+   "group": "injected",
+   "lines": [
+    "고객샌터 문의 중에 배송 문의가 절반이 넘어요"
+   ],
+   "title": "고객샌터 문의 유형 분석",
+   "other_lines": [
+    "다음 주 월요일에 다시 확인하죠.",
+    "그럼 다음 안건으로 넘어갈게요.",
+    "그니까 우선순위를 먼저 정해야 될 것 같아요."
+   ],
+   "expect_suspect": true,
+   "wrong": "고객샌터",
+   "right": "고객센터"
+  },
+  {
+   "name": "injected: 문의->뭉의 (title corrected)",
+   "group": "injected",
+   "lines": [
+    "1:1 뭉의 자동 분류 모델 한번 붙여 볼까요"
+   ],
+   "title": "1:1 문의 자동 분류",
+   "other_lines": [
+    "그리고 QA 일정도 같이 봐야 할 것 같아요.",
+    "어 이건 지난주에 얘기했던 거랑 연결되는 거죠?",
+    "네 그건 제가 슬랙에 공유드릴게요."
+   ],
+   "expect_suspect": true,
+   "wrong": "뭉의",
+   "right": "문의"
+  },
+  {
+   "name": "injected: 시안->시얀 (error in title)",
+   "group": "injected",
+   "lines": [
+    "음 상세 페이지 시얀 두 개 중에 B안이 나은 것 같아요"
+   ],
+   "title": "상세 페이지 시얀 선정",
+   "other_lines": [
+    "좋아요 그럼 그렇게 진행하시죠.",
+    "음 저도 거기에 동의해요.",
+    "시간이 좀 부족하니까 빠르게 갈게요."
+   ],
+   "expect_suspect": true,
+   "wrong": "시얀",
+   "right": "시안"
+  },
+  {
+   "name": "injected: 피드백->피드빽 (title corrected)",
+   "group": "injected",
+   "lines": [
+    "베타 테스터 피드빽 모아서 노션에 정리해 주세요"
+   ],
+   "title": "베타 테스터 피드백 정리",
+   "other_lines": [
+    "음 이 부분은 데이터 보고 판단하는 게 좋겠어요.",
+    "일단 금요일까지 한번 정리해 볼게요.",
+    "아 그거 디자인 쪽이랑 먼저 맞춰봐야 해요."
+   ],
+   "expect_suspect": true,
+   "wrong": "피드빽",
+   "right": "피드백"
+  },
+  {
+   "name": "injected: 런칭->런징 (error in title)",
+   "group": "injected",
+   "lines": [
+    "선물하기 기능 런징은 12월 첫 주로 미룰게요"
+   ],
+   "title": "선물하기 기능 런징",
+   "other_lines": [
+    "저는 내일 오전에 외근이라 오후에 볼게요.",
+    "혹시 다른 의견 있으신 분 계세요?",
+    "다음 주 월요일에 다시 확인하죠."
+   ],
+   "expect_suspect": true,
+   "wrong": "런징",
+   "right": "런칭"
+  },
+  {
+   "name": "injected: 세그먼트->세그멍트 (title corrected)",
+   "group": "injected",
+   "lines": [
+    "휴면 고객 세그멍트 따로 빼서 쿠폰 쏴 볼게요"
+   ],
+   "title": "휴면 고객 세그먼트 쿠폰 발송",
+   "other_lines": [
+    "그럼 다음 안건으로 넘어갈게요.",
+    "그니까 우선순위를 먼저 정해야 될 것 같아요.",
+    "그리고 QA 일정도 같이 봐야 할 것 같아요."
+   ],
+   "expect_suspect": true,
+   "wrong": "세그멍트",
+   "right": "세그먼트"
+  },
+  {
+   "name": "injected: 디자인->디쟈인 (error in title)",
+   "group": "injected",
+   "lines": [
+    "디쟈인 시스템 컬러 토큰을 이번에 정리하죠"
+   ],
+   "title": "디쟈인 시스템 컬러 토큰",
+   "other_lines": [
+    "어 이건 지난주에 얘기했던 거랑 연결되는 거죠?",
+    "네 그건 제가 슬랙에 공유드릴게요.",
+    "좋아요 그럼 그렇게 진행하시죠."
+   ],
+   "expect_suspect": true,
+   "wrong": "디쟈인",
+   "right": "디자인"
+  },
+  {
+   "name": "injected: 프로필->프러필 (title corrected)",
+   "group": "injected",
+   "lines": [
+    "마이페이지 프러필 사진 업로드가 iOS에서만 실패해요"
+   ],
+   "title": "프로필 사진 업로드 iOS 오류",
+   "other_lines": [
+    "음 저도 거기에 동의해요.",
+    "시간이 좀 부족하니까 빠르게 갈게요.",
+    "음 이 부분은 데이터 보고 판단하는 게 좋겠어요."
+   ],
+   "expect_suspect": true,
+   "wrong": "프러필",
+   "right": "프로필"
+  },
+  {
+   "name": "injected: 스키마->스키머 (error in title)",
+   "group": "injected",
+   "lines": [
+    "주문 테이블 스키머 바꾸면 대시보드 쿼리도 같이 고쳐야 돼요"
+   ],
+   "title": "주문 테이블 스키머 변경",
+   "other_lines": [
+    "일단 금요일까지 한번 정리해 볼게요.",
+    "아 그거 디자인 쪽이랑 먼저 맞춰봐야 해요.",
+    "저는 내일 오전에 외근이라 오후에 볼게요."
+   ],
+   "expect_suspect": true,
+   "wrong": "스키머",
+   "right": "스키마"
+  },
+  {
+   "name": "injected: 테스트->테수트 (title corrected)",
+   "group": "injected",
+   "lines": [
+    "결제 모듈 통합 테수트는 스테이징에서 수빈 님이 해 주세요"
+   ],
+   "title": "결제 모듈 통합 테스트",
+   "other_lines": [
+    "혹시 다른 의견 있으신 분 계세요?",
+    "다음 주 월요일에 다시 확인하죠.",
+    "그럼 다음 안건으로 넘어갈게요."
+   ],
+   "expect_suspect": true,
+   "wrong": "테수트",
+   "right": "테스트"
+  },
+  {
+   "name": "normal: 장바구니 쿠폰 적용",
+   "group": "normal",
+   "lines": [
+    "어 장바구니 쿠폰 적용은 제가 이번 주 안에 끝내 볼게요"
+   ],
+   "title": "장바구니 쿠폰 적용",
+   "other_lines": [
+    "그니까 우선순위를 먼저 정해야 될 것 같아요.",
+    "그리고 QA 일정도 같이 봐야 할 것 같아요.",
+    "어 이건 지난주에 얘기했던 거랑 연결되는 거죠?"
+   ],
+   "expect_suspect": false,
+   "wrong": null,
+   "right": null
+  },
+  {
+   "name": "normal: 상품 상세 리뉴얼 시안",
+   "group": "normal",
+   "lines": [
+    "상품 상세 리뉴얼 디자인 시안은 다은 님이 수요일까지 주시기로 했고요"
+   ],
+   "title": "상품 상세 리뉴얼 시안",
+   "other_lines": [
+    "네 그건 제가 슬랙에 공유드릴게요.",
+    "좋아요 그럼 그렇게 진행하시죠.",
+    "음 저도 거기에 동의해요."
+   ],
+   "expect_suspect": false,
+   "wrong": null,
+   "right": null
+  },
+  {
+   "name": "normal: 주문 취소 API 부분 취소 지원",
+   "group": "normal",
+   "lines": [
+    "주문 취소 API는 부분 취소까지 지원해야 하니까 스펙 다시 볼게요"
+   ],
+   "title": "주문 취소 API 부분 취소 지원",
+   "other_lines": [
+    "시간이 좀 부족하니까 빠르게 갈게요.",
+    "음 이 부분은 데이터 보고 판단하는 게 좋겠어요.",
+    "일단 금요일까지 한번 정리해 볼게요."
+   ],
+   "expect_suspect": false,
+   "wrong": null,
+   "right": null
+  },
+  {
+   "name": "normal: 추천 알고리즘 실험",
+   "group": "normal",
+   "lines": [
+    "음 추천 알고리즘 실험은 트래픽 10퍼센트만 먼저 태워 보죠",
+    "그래서 실험 기간은 2주로 잡을게요"
+   ],
+   "title": "추천 알고리즘 실험",
+   "other_lines": [
+    "아 그거 디자인 쪽이랑 먼저 맞춰봐야 해요.",
+    "저는 내일 오전에 외근이라 오후에 볼게요.",
+    "혹시 다른 의견 있으신 분 계세요?"
+   ],
+   "expect_suspect": false,
+   "wrong": null,
+   "right": null
+  },
+  {
+   "name": "normal: 데이터 대시보드 지표 정의",
+   "group": "normal",
+   "lines": [
+    "데이터 대시보드 지표 정의는 유진 님이 초안 쓰고 다 같이 리뷰할게요"
+   ],
+   "title": "데이터 대시보드 지표 정의",
+   "other_lines": [
+    "다음 주 월요일에 다시 확인하죠.",
+    "그럼 다음 안건으로 넘어갈게요.",
+    "그니까 우선순위를 먼저 정해야 될 것 같아요."
+   ],
+   "expect_suspect": false,
+   "wrong": null,
+   "right": null
+  },
+  {
+   "name": "normal: 앱 푸시 캠페인 발송 시간 조정",
+   "group": "normal",
+   "lines": [
+    "앱 푸시 캠페인은 오후 8시 발송이 제일 오픈율이 높았어요"
+   ],
+   "title": "앱 푸시 캠페인 발송 시간 조정",
+   "other_lines": [
+    "그리고 QA 일정도 같이 봐야 할 것 같아요.",
+    "어 이건 지난주에 얘기했던 거랑 연결되는 거죠?",
+    "네 그건 제가 슬랙에 공유드릴게요."
+   ],
+   "expect_suspect": false,
+   "wrong": null,
+   "right": null
+  },
+  {
+   "name": "normal: 결제 PG 연동",
+   "group": "normal",
+   "lines": [
+    "결제 PG 연동은 토스페이먼츠 SDK로 가는 걸로 정리됐어요"
+   ],
+   "title": "결제 PG 연동",
+   "other_lines": [
+    "좋아요 그럼 그렇게 진행하시죠.",
+    "음 저도 거기에 동의해요.",
+    "시간이 좀 부족하니까 빠르게 갈게요."
+   ],
+   "expect_suspect": false,
+   "wrong": null,
+   "right": null
+  },
+  {
+   "name": "normal: GA4 BigQuery 연동",
+   "group": "normal",
+   "lines": [
+    "그니까 GA4랑 BigQuery 연결해서 원본 이벤트를 매일 쌓자는 거죠"
+   ],
+   "title": "GA4 BigQuery 연동",
+   "other_lines": [
+    "음 이 부분은 데이터 보고 판단하는 게 좋겠어요.",
+    "일단 금요일까지 한번 정리해 볼게요.",
+    "아 그거 디자인 쪽이랑 먼저 맞춰봐야 해요."
+   ],
+   "expect_suspect": false,
+   "wrong": null,
+   "right": null
+  },
+  {
+   "name": "normal: 주간 활성 사용자 스케줄 쿼리",
+   "group": "normal",
+   "lines": [
+    "SQL로 주간 활성 사용자 뽑는 거 제가 스케줄 쿼리로 걸어 둘게요"
+   ],
+   "title": "주간 활성 사용자 스케줄 쿼리",
+   "other_lines": [
+    "저는 내일 오전에 외근이라 오후에 볼게요.",
+    "혹시 다른 의견 있으신 분 계세요?",
+    "다음 주 월요일에 다시 확인하죠."
+   ],
+   "expect_suspect": false,
+   "wrong": null,
+   "right": null
+  },
+  {
+   "name": "normal: A/B 테스트 결과 정리",
+   "group": "normal",
+   "lines": [
+    "A/B 테스트 결과 보니까 B안 CTR이 2.3퍼센트 더 높았어요",
+    "통계적으로 유의한지는 유진 님이 확인해 주세요"
+   ],
+   "title": "A/B 테스트 결과 정리",
+   "other_lines": [
+    "그럼 다음 안건으로 넘어갈게요.",
+    "그니까 우선순위를 먼저 정해야 될 것 같아요.",
+    "그리고 QA 일정도 같이 봐야 할 것 같아요."
+   ],
+   "expect_suspect": false,
+   "wrong": null,
+   "right": null
+  },
+  {
+   "name": "normal: CVR 하락 원인 분석",
+   "group": "normal",
+   "lines": [
+    "CVR이 지난주 대비 0.5퍼센트포인트 떨어졌는데 원인 파악해 볼게요"
+   ],
+   "title": "CVR 하락 원인 분석",
+   "other_lines": [
+    "어 이건 지난주에 얘기했던 거랑 연결되는 거죠?",
+    "네 그건 제가 슬랙에 공유드릴게요.",
+    "좋아요 그럼 그렇게 진행하시죠."
+   ],
+   "expect_suspect": false,
+   "wrong": null,
+   "right": null
+  },
+  {
+   "name": "normal: iOS AOS 배포 일정",
+   "group": "normal",
+   "lines": [
+    "iOS는 심사 때문에 하루 일찍 올리고 AOS는 금요일에 배포할게요"
+   ],
+   "title": "iOS AOS 배포 일정",
+   "other_lines": [
+    "음 저도 거기에 동의해요.",
+    "시간이 좀 부족하니까 빠르게 갈게요.",
+    "음 이 부분은 데이터 보고 판단하는 게 좋겠어요."
+   ],
+   "expect_suspect": false,
+   "wrong": null,
+   "right": null
+  },
+  {
+   "name": "normal: PG사 미팅",
+   "group": "normal",
+   "lines": [
+    "어 박준호 님이 PG사 미팅 잡아 주시기로 했죠?"
+   ],
+   "title": "PG사 미팅",
+   "other_lines": [
+    "일단 금요일까지 한번 정리해 볼게요.",
+    "아 그거 디자인 쪽이랑 먼저 맞춰봐야 해요.",
+    "저는 내일 오전에 외근이라 오후에 볼게요."
+   ],
+   "expect_suspect": false,
+   "wrong": null,
+   "right": null
+  },
+  {
+   "name": "normal: 메인 배너 이미지 사이즈 확인",
+   "group": "normal",
+   "lines": [
+    "김다은 님 그 메인 배너 이미지 사이즈 다시 한번 확인해 주세요"
+   ],
+   "title": "메인 배너 이미지 사이즈 확인",
+   "other_lines": [
+    "혹시 다른 의견 있으신 분 계세요?",
+    "다음 주 월요일에 다시 확인하죠.",
+    "그럼 다음 안건으로 넘어갈게요."
+   ],
+   "expect_suspect": false,
+   "wrong": null,
+   "right": null
+  },
+  {
+   "name": "normal: 환불 프로세스 개선",
+   "group": "normal",
+   "lines": [
+    "이수빈 님하고 최현우 님은 환불 프로세스 같이 봐 주시고요"
+   ],
+   "title": "환불 프로세스 개선",
+   "other_lines": [
+    "그니까 우선순위를 먼저 정해야 될 것 같아요.",
+    "그리고 QA 일정도 같이 봐야 할 것 같아요.",
+    "어 이건 지난주에 얘기했던 거랑 연결되는 거죠?"
+   ],
+   "expect_suspect": false,
+   "wrong": null,
+   "right": null
+  },
+  {
+   "name": "normal: 코호트 리텐션 분석",
+   "group": "normal",
+   "lines": [
+    "정유진 님이 코호트 리텐션 분석 결과 다음 회의 때 공유해 주신대요"
+   ],
+   "title": "코호트 리텐션 분석",
+   "other_lines": [
+    "네 그건 제가 슬랙에 공유드릴게요.",
+    "좋아요 그럼 그렇게 진행하시죠.",
+    "음 저도 거기에 동의해요."
+   ],
+   "expect_suspect": false,
+   "wrong": null,
+   "right": null
+  },
+  {
+   "name": "normal: 백오피스 어드민 권한",
+   "group": "normal",
+   "lines": [
+    "한도윤 님은 백오피스 어드민 권한 설계 맡아 주세요"
+   ],
+   "title": "백오피스 어드민 권한",
+   "other_lines": [
+    "시간이 좀 부족하니까 빠르게 갈게요.",
+    "음 이 부분은 데이터 보고 판단하는 게 좋겠어요.",
+    "일단 금요일까지 한번 정리해 볼게요."
+   ],
+   "expect_suspect": false,
+   "wrong": null,
+   "right": null
+  },
+  {
+   "name": "normal: 블랙프라이데이 프로모션 기획",
+   "group": "normal",
+   "lines": [
+    "오세라 님이 블랙프라이데이 프로모션 기획안 정리해 오기로 했어요"
+   ],
+   "title": "블랙프라이데이 프로모션 기획",
+   "other_lines": [
+    "아 그거 디자인 쪽이랑 먼저 맞춰봐야 해요.",
+    "저는 내일 오전에 외근이라 오후에 볼게요.",
+    "혹시 다른 의견 있으신 분 계세요?"
+   ],
+   "expect_suspect": false,
+   "wrong": null,
+   "right": null
+  },
+  {
+   "name": "normal: 재고 동기화 배치 실패 알림",
+   "group": "normal",
+   "lines": [
+    "강민재 님은 재고 동기화 배치 실패 알림 슬랙으로 오게 해 주세요"
+   ],
+   "title": "재고 동기화 배치 실패 알림",
+   "other_lines": [
+    "다음 주 월요일에 다시 확인하죠.",
+    "그럼 다음 안건으로 넘어갈게요.",
+    "그니까 우선순위를 먼저 정해야 될 것 같아요."
+   ],
+   "expect_suspect": false,
+   "wrong": null,
+   "right": null
+  },
+  {
+   "name": "normal: 푸시 메세지 문구 확정",
+   "group": "normal",
+   "lines": [
+    "음 푸시 메세지 문구는 마케팅 팀이랑 한 번 더 맞춰 볼게요"
+   ],
+   "title": "푸시 메세지 문구 확정",
+   "other_lines": [
+    "그리고 QA 일정도 같이 봐야 할 것 같아요.",
+    "어 이건 지난주에 얘기했던 거랑 연결되는 거죠?",
+    "네 그건 제가 슬랙에 공유드릴게요."
+   ],
+   "expect_suspect": false,
+   "wrong": null,
+   "right": null
+  },
+  {
+   "name": "normal: 컨텐츠 배너 교체",
+   "group": "normal",
+   "lines": [
+    "이번 달 컨텐츠 배너는 신상품 위주로 가죠"
+   ],
+   "title": "컨텐츠 배너 교체",
+   "other_lines": [
+    "좋아요 그럼 그렇게 진행하시죠.",
+    "음 저도 거기에 동의해요.",
+    "시간이 좀 부족하니까 빠르게 갈게요."
+   ],
+   "expect_suspect": false,
+   "wrong": null,
+   "right": null
+  },
+  {
+   "name": "normal: 앱 첫 화면 진입 속도 개선",
+   "group": "normal",
+   "lines": [
+    "어플 첫 화면 진입 속도가 너무 느리다는 리뷰가 많아요"
+   ],
+   "title": "앱 첫 화면 진입 속도 개선",
+   "other_lines": [
+    "음 이 부분은 데이터 보고 판단하는 게 좋겠어요.",
+    "일단 금요일까지 한번 정리해 볼게요.",
+    "아 그거 디자인 쪽이랑 먼저 맞춰봐야 해요."
+   ],
+   "expect_suspect": false,
+   "wrong": null,
+   "right": null
+  },
+  {
+   "name": "normal: 스테이징 환경 셋팅",
+   "group": "normal",
+   "lines": [
+    "스테이징 환경 셋팅은 제가 오늘 오후에 해 둘게요"
+   ],
+   "title": "스테이징 환경 셋팅",
+   "other_lines": [
+    "저는 내일 오전에 외근이라 오후에 볼게요.",
+    "혹시 다른 의견 있으신 분 계세요?",
+    "다음 주 월요일에 다시 확인하죠."
+   ],
+   "expect_suspect": false,
+   "wrong": null,
+   "right": null
+  },
+  {
+   "name": "normal: 정산 리포트 자동화",
+   "group": "normal",
+   "lines": [
+    "그리고 정산 리포트 자동화는 다음 스프린트로 넘기죠"
+   ],
+   "title": "정산 리포트 자동화",
+   "other_lines": [
+    "그럼 다음 안건으로 넘어갈게요.",
+    "그니까 우선순위를 먼저 정해야 될 것 같아요.",
+    "그리고 QA 일정도 같이 봐야 할 것 같아요."
+   ],
+   "expect_suspect": false,
+   "wrong": null,
+   "right": null
+  },
+  {
+   "name": "normal: 배송 상태 알림",
+   "group": "normal",
+   "lines": [
+    "배송 상태 알림은 카카오 알림톡으로 보내고 실패하면 문자로 대체해서 보내요",
+    "알림톡 템플릿 승인은 3일 정도 걸린대요"
+   ],
+   "title": "배송 상태 알림",
+   "other_lines": [
+    "어 이건 지난주에 얘기했던 거랑 연결되는 거죠?",
+    "네 그건 제가 슬랙에 공유드릴게요.",
+    "좋아요 그럼 그렇게 진행하시죠."
+   ],
+   "expect_suspect": false,
+   "wrong": null,
+   "right": null
+  },
+  {
+   "name": "normal: 회원가입 온보딩 개선",
+   "group": "normal",
+   "lines": [
+    "회원가입 온보딩 개선하고 나서 가입 완료율이 얼마나 오르는지 보죠"
+   ],
+   "title": "회원가입 온보딩 개선",
+   "other_lines": [
+    "음 저도 거기에 동의해요.",
+    "시간이 좀 부족하니까 빠르게 갈게요.",
+    "음 이 부분은 데이터 보고 판단하는 게 좋겠어요."
+   ],
+   "expect_suspect": false,
+   "wrong": null,
+   "right": null
+  },
+  {
+   "name": "normal: 검색 필터 고도화",
+   "group": "normal",
+   "lines": [
+    "검색 필터 고도화는 브랜드 필터부터 먼저 넣을게요"
+   ],
+   "title": "검색 필터 고도화",
+   "other_lines": [
+    "일단 금요일까지 한번 정리해 볼게요.",
+    "아 그거 디자인 쪽이랑 먼저 맞춰봐야 해요.",
+    "저는 내일 오전에 외근이라 오후에 볼게요."
+   ],
+   "expect_suspect": false,
+   "wrong": null,
+   "right": null
+  },
+  {
+   "name": "normal: 리뷰 작성 리워드",
+   "group": "normal",
+   "lines": [
+    "리뷰 작성 리워드는 포인트 500원으로 시작해 보고요"
+   ],
+   "title": "리뷰 작성 리워드",
+   "other_lines": [
+    "혹시 다른 의견 있으신 분 계세요?",
+    "다음 주 월요일에 다시 확인하죠.",
+    "그럼 다음 안건으로 넘어갈게요."
+   ],
+   "expect_suspect": false,
+   "wrong": null,
+   "right": null
+  },
+  {
+   "name": "normal: 구매 퍼널 전환율 분석",
+   "group": "normal",
+   "lines": [
+    "구매 퍼널 전환율 분석은 상세에서 장바구니 넘어가는 구간이 핵심이에요"
+   ],
+   "title": "구매 퍼널 전환율 분석",
+   "other_lines": [
+    "그니까 우선순위를 먼저 정해야 될 것 같아요.",
+    "그리고 QA 일정도 같이 봐야 할 것 같아요.",
+    "어 이건 지난주에 얘기했던 거랑 연결되는 거죠?"
+   ],
+   "expect_suspect": false,
+   "wrong": null,
+   "right": null
+  },
+  {
+   "name": "normal: BigQuery 파이프라인 구축",
+   "group": "normal",
+   "lines": [
+    "BigQuery 파이프라인 구축하면서 비용 모니터링도 같이 걸어 주세요"
+   ],
+   "title": "BigQuery 파이프라인 구축",
+   "other_lines": [
+    "네 그건 제가 슬랙에 공유드릴게요.",
+    "좋아요 그럼 그렇게 진행하시죠.",
+    "음 저도 거기에 동의해요."
+   ],
+   "expect_suspect": false,
+   "wrong": null,
+   "right": null
+  },
+  {
+   "name": "normal: GA4 이벤트 설계",
+   "group": "normal",
+   "lines": [
+    "GA4 이벤트 설계 문서는 노션에 템플릿 만들어 뒀어요"
+   ],
+   "title": "GA4 이벤트 설계",
+   "other_lines": [
+    "시간이 좀 부족하니까 빠르게 갈게요.",
+    "음 이 부분은 데이터 보고 판단하는 게 좋겠어요.",
+    "일단 금요일까지 한번 정리해 볼게요."
+   ],
+   "expect_suspect": false,
+   "wrong": null,
+   "right": null
+  },
+  {
+   "name": "normal: 고객센터 문의 분류",
+   "group": "normal",
+   "lines": [
+    "고객센터 문의 분류는 일단 키워드 룰 기반으로 시작하고 나중에 모델 붙이죠"
+   ],
+   "title": "고객센터 문의 분류",
+   "other_lines": [
+    "아 그거 디자인 쪽이랑 먼저 맞춰봐야 해요.",
+    "저는 내일 오전에 외근이라 오후에 볼게요.",
+    "혹시 다른 의견 있으신 분 계세요?"
+   ],
+   "expect_suspect": false,
+   "wrong": null,
+   "right": null
+  },
+  {
+   "name": "normal: 스프린트 회고",
+   "group": "normal",
+   "lines": [
+    "스프린트 회고는 금요일 4시에 30분만 할게요"
+   ],
+   "title": "스프린트 회고",
+   "other_lines": [
+    "다음 주 월요일에 다시 확인하죠.",
+    "그럼 다음 안건으로 넘어갈게요.",
+    "그니까 우선순위를 먼저 정해야 될 것 같아요."
+   ],
+   "expect_suspect": false,
+   "wrong": null,
+   "right": null
+  },
+  {
+   "name": "normal: A/B 테스트 플랫폼 도입",
+   "group": "normal",
+   "lines": [
+    "A/B 테스트 플랫폼 도입은 외부 솔루션 두 개 비교해서 가져올게요"
+   ],
+   "title": "A/B 테스트 플랫폼 도입",
+   "other_lines": [
+    "그리고 QA 일정도 같이 봐야 할 것 같아요.",
+    "어 이건 지난주에 얘기했던 거랑 연결되는 거죠?",
+    "네 그건 제가 슬랙에 공유드릴게요."
+   ],
+   "expect_suspect": false,
+   "wrong": null,
+   "right": null
+  },
+  {
+   "name": "normal: 11월 15일 점검 공지",
+   "group": "normal",
+   "lines": [
+    "어 그 11월 15일 점검 공지는 앱 내 팝업이랑 푸시 둘 다 나가야 돼요"
+   ],
+   "title": "11월 15일 점검 공지",
+   "other_lines": [
+    "좋아요 그럼 그렇게 진행하시죠.",
+    "음 저도 거기에 동의해요.",
+    "시간이 좀 부족하니까 빠르게 갈게요."
+   ],
+   "expect_suspect": false,
+   "wrong": null,
+   "right": null
+  },
+  {
+   "name": "normal: SDK 버전 업데이트",
+   "group": "normal",
+   "lines": [
+    "음 일단은 SDK 버전 올리고 나서 크래시율 다시 보죠"
+   ],
+   "title": "SDK 버전 업데이트",
+   "other_lines": [
+    "음 이 부분은 데이터 보고 판단하는 게 좋겠어요.",
+    "일단 금요일까지 한번 정리해 볼게요.",
+    "아 그거 디자인 쪽이랑 먼저 맞춰봐야 해요."
+   ],
+   "expect_suspect": false,
+   "wrong": null,
+   "right": null
+  },
+  {
+   "name": "normal: 결제 실패율 개선",
+   "group": "normal",
+   "lines": [
+    "결제 실패율이 1.8퍼센트인데 업계 평균보다 좀 높은 편이에요"
+   ],
+   "title": "결제 실패율 개선",
+   "other_lines": [
+    "저는 내일 오전에 외근이라 오후에 볼게요.",
+    "혹시 다른 의견 있으신 분 계세요?",
+    "다음 주 월요일에 다시 확인하죠."
+   ],
+   "expect_suspect": false,
+   "wrong": null,
+   "right": null
+  },
+  {
+   "name": "normal: 주문 데이터 파티션 설계",
+   "group": "normal",
+   "lines": [
+    "주문 데이터는 하루 3만 건 정도라서 파티션은 날짜 기준이면 충분해요"
+   ],
+   "title": "주문 데이터 파티션 설계",
+   "other_lines": [
+    "그럼 다음 안건으로 넘어갈게요.",
+    "그니까 우선순위를 먼저 정해야 될 것 같아요.",
+    "그리고 QA 일정도 같이 봐야 할 것 같아요."
+   ],
+   "expect_suspect": false,
+   "wrong": null,
+   "right": null
+  },
+  {
+   "name": "normal: 쿠폰 중복 사용 방지",
+   "group": "normal",
+   "lines": [
+    "그니까 쿠폰 중복 사용 막는 로직이 서버에도 있어야 한다는 거죠",
+    "클라이언트에서만 막으면 우회될 수 있어서요"
+   ],
+   "title": "쿠폰 중복 사용 방지",
+   "other_lines": [
+    "어 이건 지난주에 얘기했던 거랑 연결되는 거죠?",
+    "네 그건 제가 슬랙에 공유드릴게요.",
+    "좋아요 그럼 그렇게 진행하시죠."
+   ],
+   "expect_suspect": false,
+   "wrong": null,
+   "right": null
+  },
+  {
+   "name": "normal: 상품 목록 무한 스크롤",
+   "group": "normal",
+   "lines": [
+    "상품 목록 무한 스크롤 넣으면서 로딩 스피너도 바꿀게요"
+   ],
+   "title": "상품 목록 무한 스크롤",
+   "other_lines": [
+    "음 저도 거기에 동의해요.",
+    "시간이 좀 부족하니까 빠르게 갈게요.",
+    "음 이 부분은 데이터 보고 판단하는 게 좋겠어요."
+   ],
+   "expect_suspect": false,
+   "wrong": null,
+   "right": null
+  },
+  {
+   "name": "normal: 썸네일 webp 변환",
+   "group": "normal",
+   "lines": [
+    "어 썸네일은 webp로 바꾸면 용량이 절반 정도 줄어요"
+   ],
+   "title": "썸네일 webp 변환",
+   "other_lines": [
+    "일단 금요일까지 한번 정리해 볼게요.",
+    "아 그거 디자인 쪽이랑 먼저 맞춰봐야 해요.",
+    "저는 내일 오전에 외근이라 오후에 볼게요."
+   ],
+   "expect_suspect": false,
+   "wrong": null,
+   "right": null
+  },
+  {
+   "name": "normal: 개발 공수 산정",
+   "group": "normal",
+   "lines": [
+    "다음 주까지 와이어프레임 나오면 바로 개발 공수 산정할게요"
+   ],
+   "title": "개발 공수 산정",
+   "other_lines": [
+    "혹시 다른 의견 있으신 분 계세요?",
+    "다음 주 월요일에 다시 확인하죠.",
+    "그럼 다음 안건으로 넘어갈게요."
+   ],
+   "expect_suspect": false,
+   "wrong": null,
+   "right": null
+  },
+  {
+   "name": "normal: 인수인계 문서 작성",
+   "group": "normal",
+   "lines": [
+    "현우 님 휴가 전에 인수인계 문서만 꼭 부탁드려요"
+   ],
+   "title": "인수인계 문서 작성",
+   "other_lines": [
+    "그니까 우선순위를 먼저 정해야 될 것 같아요.",
+    "그리고 QA 일정도 같이 봐야 할 것 같아요.",
+    "어 이건 지난주에 얘기했던 거랑 연결되는 거죠?"
+   ],
+   "expect_suspect": false,
+   "wrong": null,
+   "right": null
+  },
+  {
+   "name": "normal: 어드민 엑셀 다운로드 마스킹",
+   "group": "normal",
+   "lines": [
+    "어드민에서 엑셀 다운로드할 때 개인정보는 마스킹해서 내려 줘야 해요"
+   ],
+   "title": "어드민 엑셀 다운로드 마스킹",
+   "other_lines": [
+    "네 그건 제가 슬랙에 공유드릴게요.",
+    "좋아요 그럼 그렇게 진행하시죠.",
+    "음 저도 거기에 동의해요."
+   ],
+   "expect_suspect": false,
+   "wrong": null,
+   "right": null
+  },
+  {
+   "name": "normal: 프로모션 예산 확인",
+   "group": "normal",
+   "lines": [
+    "이번 프로모션 예산은 지난번보다 20퍼센트 늘었어요"
+   ],
+   "title": "프로모션 예산 확인",
+   "other_lines": [
+    "시간이 좀 부족하니까 빠르게 갈게요.",
+    "음 이 부분은 데이터 보고 판단하는 게 좋겠어요.",
+    "일단 금요일까지 한번 정리해 볼게요."
+   ],
+   "expect_suspect": false,
+   "wrong": null,
+   "right": null
+  },
+  {
+   "name": "normal: 구매 이력 세그먼트 분리",
+   "group": "normal",
+   "lines": [
+    "세그먼트는 최근 30일 구매 이력 있는 사람하고 없는 사람으로 나눌게요"
+   ],
+   "title": "구매 이력 세그먼트 분리",
+   "other_lines": [
+    "아 그거 디자인 쪽이랑 먼저 맞춰봐야 해요.",
+    "저는 내일 오전에 외근이라 오후에 볼게요.",
+    "혹시 다른 의견 있으신 분 계세요?"
+   ],
+   "expect_suspect": false,
+   "wrong": null,
+   "right": null
+  },
+  {
+   "name": "normal: 퍼널 단계 정의",
+   "group": "normal",
+   "lines": [
+    "음 퍼널 단계를 다섯 개로 할지 여섯 개로 할지 정해야 해요"
+   ],
+   "title": "퍼널 단계 정의",
+   "other_lines": [
+    "다음 주 월요일에 다시 확인하죠.",
+    "그럼 다음 안건으로 넘어갈게요.",
+    "그니까 우선순위를 먼저 정해야 될 것 같아요."
+   ],
+   "expect_suspect": false,
+   "wrong": null,
+   "right": null
+  },
+  {
+   "name": "normal: 리텐션 차트 주 단위 변경",
+   "group": "normal",
+   "lines": [
+    "그리고 리텐션 차트는 주 단위로 보는 게 더 나을 것 같아요"
+   ],
+   "title": "리텐션 차트 주 단위 변경",
+   "other_lines": [
+    "그리고 QA 일정도 같이 봐야 할 것 같아요.",
+    "어 이건 지난주에 얘기했던 거랑 연결되는 거죠?",
+    "네 그건 제가 슬랙에 공유드릴게요."
+   ],
+   "expect_suspect": false,
+   "wrong": null,
+   "right": null
+  },
+  {
+   "name": "normal: CTR CVR 지표 정의",
+   "group": "normal",
+   "lines": [
+    "CTR은 노출 대비 클릭이고 CVR은 클릭 대비 구매로 정의할게요"
+   ],
+   "title": "CTR CVR 지표 정의",
+   "other_lines": [
+    "좋아요 그럼 그렇게 진행하시죠.",
+    "음 저도 거기에 동의해요.",
+    "시간이 좀 부족하니까 빠르게 갈게요."
+   ],
+   "expect_suspect": false,
+   "wrong": null,
+   "right": null
+  },
+  {
+   "name": "normal: 대시보드 쿼리 연결",
+   "group": "normal",
+   "lines": [
+    "수빈 님이 쿼리 짜 주시면 제가 대시보드에 붙일게요"
+   ],
+   "title": "대시보드 쿼리 연결",
+   "other_lines": [
+    "음 이 부분은 데이터 보고 판단하는 게 좋겠어요.",
+    "일단 금요일까지 한번 정리해 볼게요.",
+    "아 그거 디자인 쪽이랑 먼저 맞춰봐야 해요."
+   ],
+   "expect_suspect": false,
+   "wrong": null,
+   "right": null
+  },
+  {
+   "name": "normal: PG 수수료율 재협상",
+   "group": "normal",
+   "lines": [
+    "PG 수수료율 재협상은 박준호 님이 다음 달에 진행하신대요"
+   ],
+   "title": "PG 수수료율 재협상",
+   "other_lines": [
+    "저는 내일 오전에 외근이라 오후에 볼게요.",
+    "혹시 다른 의견 있으신 분 계세요?",
+    "다음 주 월요일에 다시 확인하죠."
+   ],
+   "expect_suspect": false,
+   "wrong": null,
+   "right": null
+  },
+  {
+   "name": "normal: 푸시 수신 동의율 분석",
+   "group": "normal",
+   "lines": [
+    "어 푸시 수신 동의율이 iOS가 AOS보다 훨씬 낮아요"
+   ],
+   "title": "푸시 수신 동의율 분석",
+   "other_lines": [
+    "그럼 다음 안건으로 넘어갈게요.",
+    "그니까 우선순위를 먼저 정해야 될 것 같아요.",
+    "그리고 QA 일정도 같이 봐야 할 것 같아요."
+   ],
+   "expect_suspect": false,
+   "wrong": null,
+   "right": null
+  },
+  {
+   "name": "normal: 장바구니 리마인드 푸시",
+   "group": "normal",
+   "lines": [
+    "장바구니에 담고 사흘 지나면 리마인드 푸시 보내는 거 해 보죠"
+   ],
+   "title": "장바구니 리마인드 푸시",
+   "other_lines": [
+    "어 이건 지난주에 얘기했던 거랑 연결되는 거죠?",
+    "네 그건 제가 슬랙에 공유드릴게요.",
+    "좋아요 그럼 그렇게 진행하시죠."
+   ],
+   "expect_suspect": false,
+   "wrong": null,
+   "right": null
+  },
+  {
+   "name": "normal: 상세 페이지 추천 상품",
+   "group": "normal",
+   "lines": [
+    "상세 페이지 하단 추천 상품은 같은 카테고리에서만 뽑아 주세요"
+   ],
+   "title": "상세 페이지 추천 상품",
+   "other_lines": [
+    "음 저도 거기에 동의해요.",
+    "시간이 좀 부족하니까 빠르게 갈게요.",
+    "음 이 부분은 데이터 보고 판단하는 게 좋겠어요."
+   ],
+   "expect_suspect": false,
+   "wrong": null,
+   "right": null
+  },
+  {
+   "name": "normal: 계약서 법무 확인",
+   "group": "normal",
+   "lines": [
+    "음 이건 법무팀 확인이 필요해서 계약서 받아 보고 결정할게요"
+   ],
+   "title": "계약서 법무 확인",
+   "other_lines": [
+    "일단 금요일까지 한번 정리해 볼게요.",
+    "아 그거 디자인 쪽이랑 먼저 맞춰봐야 해요.",
+    "저는 내일 오전에 외근이라 오후에 볼게요."
+   ],
+   "expect_suspect": false,
+   "wrong": null,
+   "right": null
+  },
+  {
+   "name": "normal: 외주 업체 선정",
+   "group": "normal",
+   "lines": [
+    "견적은 두 업체 다 받았고 금요일까지 하나 고를게요"
+   ],
+   "title": "외주 업체 선정",
+   "other_lines": [
+    "혹시 다른 의견 있으신 분 계세요?",
+    "다음 주 월요일에 다시 확인하죠.",
+    "그럼 다음 안건으로 넘어갈게요."
+   ],
+   "expect_suspect": false,
+   "wrong": null,
+   "right": null
+  },
+  {
+   "name": "normal: 분기 산출물 정리",
+   "group": "normal",
+   "lines": [
+    "이번 분기 산출물 목록은 제가 정리해서 드라이브에 올릴게요"
+   ],
+   "title": "분기 산출물 정리",
+   "other_lines": [
+    "그니까 우선순위를 먼저 정해야 될 것 같아요.",
+    "그리고 QA 일정도 같이 봐야 할 것 같아요.",
+    "어 이건 지난주에 얘기했던 거랑 연결되는 거죠?"
+   ],
+   "expect_suspect": false,
+   "wrong": null,
+   "right": null
+  },
+  {
+   "name": "normal: QA 일정 조정",
+   "group": "normal",
+   "lines": [
+    "일정표 보면 QA 기간이 너무 짧아서 이틀은 더 필요해요"
+   ],
+   "title": "QA 일정 조정",
+   "other_lines": [
+    "네 그건 제가 슬랙에 공유드릴게요.",
+    "좋아요 그럼 그렇게 진행하시죠.",
+    "음 저도 거기에 동의해요."
+   ],
+   "expect_suspect": false,
+   "wrong": null,
+   "right": null
+  },
+  {
+   "name": "normal: 주간 정산 프로세스",
+   "group": "normal",
+   "lines": [
+    "그니까 정산은 매주 수요일에 전주 거 한 번에 하는 거죠"
+   ],
+   "title": "주간 정산 프로세스",
+   "other_lines": [
+    "시간이 좀 부족하니까 빠르게 갈게요.",
+    "음 이 부분은 데이터 보고 판단하는 게 좋겠어요.",
+    "일단 금요일까지 한번 정리해 볼게요."
+   ],
+   "expect_suspect": false,
+   "wrong": null,
+   "right": null
+  },
+  {
+   "name": "normal: 회고 액션 아이템 반영",
+   "group": "normal",
+   "lines": [
+    "음 그 회고 때 나온 액션 아이템 세 개는 이번 스프린트에 넣을게요",
+    "자세한 일정은 슬랙에 올릴게요"
+   ],
+   "title": "회고 액션 아이템 반영",
+   "other_lines": [
+    "아 그거 디자인 쪽이랑 먼저 맞춰봐야 해요.",
+    "저는 내일 오전에 외근이라 오후에 볼게요.",
+    "혹시 다른 의견 있으신 분 계세요?"
+   ],
+   "expect_suspect": false,
+   "wrong": null,
+   "right": null
+  },
+  {
+   "name": "normal: 아이콘 세트 공유",
+   "group": "normal",
+   "lines": [
+    "어 다은 님 그 아이콘 세트 피그마 링크 좀 보내 주세요"
+   ],
+   "title": "아이콘 세트 공유",
+   "other_lines": [
+    "다음 주 월요일에 다시 확인하죠.",
+    "그럼 다음 안건으로 넘어갈게요.",
+    "그니까 우선순위를 먼저 정해야 될 것 같아요."
+   ],
+   "expect_suspect": false,
+   "wrong": null,
+   "right": null
+  },
+  {
+   "name": "normal: SQL 코드 리뷰",
+   "group": "normal",
+   "lines": [
+    "SQL 리뷰는 도윤 님이 봐 주시고 머지는 제가 할게요"
+   ],
+   "title": "SQL 코드 리뷰",
+   "other_lines": [
+    "그리고 QA 일정도 같이 봐야 할 것 같아요.",
+    "어 이건 지난주에 얘기했던 거랑 연결되는 거죠?",
+    "네 그건 제가 슬랙에 공유드릴게요."
+   ],
+   "expect_suspect": false,
+   "wrong": null,
+   "right": null
+  },
+  {
+   "name": "normal: 품절 뱃지 표시",
+   "group": "normal",
+   "lines": [
+    "재고가 0이면 상품 상세에 품절 뱃지 뜨게 하고 구매 버튼은 막을게요"
+   ],
+   "title": "품절 뱃지 표시",
+   "other_lines": [
+    "좋아요 그럼 그렇게 진행하시죠.",
+    "음 저도 거기에 동의해요.",
+    "시간이 좀 부족하니까 빠르게 갈게요."
+   ],
+   "expect_suspect": false,
+   "wrong": null,
+   "right": null
+  },
+  {
+   "name": "normal: 환불 요청 티켓 자동 생성",
+   "group": "normal",
+   "lines": [
+    "환불 요청 들어오면 고객센터 쪽에 자동으로 티켓 생성되게 해 주세요"
+   ],
+   "title": "환불 요청 티켓 자동 생성",
+   "other_lines": [
+    "음 이 부분은 데이터 보고 판단하는 게 좋겠어요.",
+    "일단 금요일까지 한번 정리해 볼게요.",
+    "아 그거 디자인 쪽이랑 먼저 맞춰봐야 해요."
+   ],
+   "expect_suspect": false,
+   "wrong": null,
+   "right": null
+  },
+  {
+   "name": "normal: 12월 정책 변경 공지",
+   "group": "normal",
+   "lines": [
+    "어 그거 12월 1일부터 적용이니까 그 전에 공지 나가야 돼요"
+   ],
+   "title": "12월 정책 변경 공지",
+   "other_lines": [
+    "저는 내일 오전에 외근이라 오후에 볼게요.",
+    "혹시 다른 의견 있으신 분 계세요?",
+    "다음 주 월요일에 다시 확인하죠."
+   ],
+   "expect_suspect": false,
+   "wrong": null,
+   "right": null
+  },
+  {
+   "name": "normal: 소셜 로그인 연동",
+   "group": "normal",
+   "lines": [
+    "민재 님이 카카오 로그인 붙이고 나서 네이버 로그인도 해 주세요"
+   ],
+   "title": "소셜 로그인 연동",
+   "other_lines": [
+    "그럼 다음 안건으로 넘어갈게요.",
+    "그니까 우선순위를 먼저 정해야 될 것 같아요.",
+    "그리고 QA 일정도 같이 봐야 할 것 같아요."
+   ],
+   "expect_suspect": false,
+   "wrong": null,
+   "right": null
+  },
+  {
+   "name": "normal: 인플루언서 협업 일정 공유",
+   "group": "normal",
+   "lines": [
+    "세라 님 그 인플루언서 협업 컨텐츠 일정 공유해 주실 수 있을까요"
+   ],
+   "title": "인플루언서 협업 일정 공유",
+   "other_lines": [
+    "어 이건 지난주에 얘기했던 거랑 연결되는 거죠?",
+    "네 그건 제가 슬랙에 공유드릴게요.",
+    "좋아요 그럼 그렇게 진행하시죠."
+   ],
+   "expect_suspect": false,
+   "wrong": null,
+   "right": null
+  },
+  {
+   "name": "normal: BigQuery 권한 정리",
+   "group": "normal",
+   "lines": [
+    "유진 님이 BigQuery 권한 정리하고 나면 분석가들한테 계정 나눠 줄게요"
+   ],
+   "title": "BigQuery 권한 정리",
+   "other_lines": [
+    "음 저도 거기에 동의해요.",
+    "시간이 좀 부족하니까 빠르게 갈게요.",
+    "음 이 부분은 데이터 보고 판단하는 게 좋겠어요."
+   ],
+   "expect_suspect": false,
+   "wrong": null,
+   "right": null
+  },
+  {
+   "name": "normal: 메인 배너 문구 변경",
+   "group": "normal",
+   "lines": [
+    "음 메인 배너 클릭률이 생각보다 낮아서 문구를 바꿔 보죠"
+   ],
+   "title": "메인 배너 문구 변경",
+   "other_lines": [
+    "일단 금요일까지 한번 정리해 볼게요.",
+    "아 그거 디자인 쪽이랑 먼저 맞춰봐야 해요.",
+    "저는 내일 오전에 외근이라 오후에 볼게요."
+   ],
+   "expect_suspect": false,
+   "wrong": null,
+   "right": null
+  },
+  {
+   "name": "normal: 주문 완료 쿠폰 노출",
+   "group": "normal",
+   "lines": [
+    "그리고 주문 완료 페이지에 다음 구매 쿠폰 노출하는 것도 해 봐요"
+   ],
+   "title": "주문 완료 쿠폰 노출",
+   "other_lines": [
+    "혹시 다른 의견 있으신 분 계세요?",
+    "다음 주 월요일에 다시 확인하죠.",
+    "그럼 다음 안건으로 넘어갈게요."
+   ],
+   "expect_suspect": false,
+   "wrong": null,
+   "right": null
+  },
+  {
+   "name": "realword: 정산->정상",
+   "group": "realword",
+   "lines": [
+    "셀러 정상 금액이 이번 주에도 늦게 들어왔대요"
+   ],
+   "title": "셀러 정산 지연 대응",
+   "other_lines": [
+    "그니까 우선순위를 먼저 정해야 될 것 같아요.",
+    "그리고 QA 일정도 같이 봐야 할 것 같아요.",
+    "어 이건 지난주에 얘기했던 거랑 연결되는 거죠?"
+   ],
+   "expect_suspect": false,
+   "wrong": "정상",
+   "right": "정산"
+  },
+  {
+   "name": "realword: 지표->지퍼",
+   "group": "realword",
+   "lines": [
+    "대시보드 지퍼 정의는 유진 님이 다시 써 주세요"
+   ],
+   "title": "대시보드 지표 정의",
+   "other_lines": [
+    "네 그건 제가 슬랙에 공유드릴게요.",
+    "좋아요 그럼 그렇게 진행하시죠.",
+    "음 저도 거기에 동의해요."
+   ],
+   "expect_suspect": false,
+   "wrong": "지퍼",
+   "right": "지표"
+  },
+  {
+   "name": "realword: 퍼널->퍼즐",
+   "group": "realword",
+   "lines": [
+    "구매 퍼즐 단계별 이탈률 다시 뽑아 볼게요"
+   ],
+   "title": "구매 퍼널 이탈률 분석",
+   "other_lines": [
+    "시간이 좀 부족하니까 빠르게 갈게요.",
+    "음 이 부분은 데이터 보고 판단하는 게 좋겠어요.",
+    "일단 금요일까지 한번 정리해 볼게요."
+   ],
+   "expect_suspect": false,
+   "wrong": "퍼즐",
+   "right": "퍼널"
+  },
+  {
+   "name": "realword: 리뷰->이유",
+   "group": "realword",
+   "lines": [
+    "포토 이유 작성률이 너무 낮아서 리워드를 올려야 해요"
+   ],
+   "title": "포토 리뷰 리워드 상향",
+   "other_lines": [
+    "아 그거 디자인 쪽이랑 먼저 맞춰봐야 해요.",
+    "저는 내일 오전에 외근이라 오후에 볼게요.",
+    "혹시 다른 의견 있으신 분 계세요?"
+   ],
+   "expect_suspect": false,
+   "wrong": "이유",
+   "right": "리뷰"
+  },
+  {
+   "name": "realword: 결제->결재",
+   "group": "realword",
+   "lines": [
+    "간편 결재 버튼을 상단으로 올려 볼게요"
+   ],
+   "title": "간편 결제 버튼 위치 변경",
+   "other_lines": [
+    "다음 주 월요일에 다시 확인하죠.",
+    "그럼 다음 안건으로 넘어갈게요.",
+    "그니까 우선순위를 먼저 정해야 될 것 같아요."
+   ],
+   "expect_suspect": false,
+   "wrong": "결재",
+   "right": "결제"
+  },
+  {
+   "name": "realword: 공수->공부",
+   "group": "realword",
+   "lines": [
+    "어드민 기능 공부 산정은 내일까지 드릴게요"
+   ],
+   "title": "어드민 기능 공수 산정",
+   "other_lines": [
+    "그리고 QA 일정도 같이 봐야 할 것 같아요.",
+    "어 이건 지난주에 얘기했던 거랑 연결되는 거죠?",
+    "네 그건 제가 슬랙에 공유드릴게요."
+   ],
+   "expect_suspect": false,
+   "wrong": "공부",
+   "right": "공수"
+  },
+  {
+   "name": "realword: 견적->결정",
+   "group": "realword",
+   "lines": [
+    "물류 대행사 결정 받아서 비교해 볼게요"
+   ],
+   "title": "물류 대행사 견적 비교",
+   "other_lines": [
+    "좋아요 그럼 그렇게 진행하시죠.",
+    "음 저도 거기에 동의해요.",
+    "시간이 좀 부족하니까 빠르게 갈게요."
+   ],
+   "expect_suspect": false,
+   "wrong": "결정",
+   "right": "견적"
+  },
+  {
+   "name": "realword: 일정->일종",
+   "group": "realword",
+   "lines": [
+    "앱 배포 일종 좀 하루 당겨 주실 수 있어요?"
+   ],
+   "title": "앱 배포 일정 조정",
+   "other_lines": [
+    "음 이 부분은 데이터 보고 판단하는 게 좋겠어요.",
+    "일단 금요일까지 한번 정리해 볼게요.",
+    "아 그거 디자인 쪽이랑 먼저 맞춰봐야 해요."
+   ],
+   "expect_suspect": false,
+   "wrong": "일종",
+   "right": "일정"
+  },
+  {
+   "name": "realword: 문의->무늬",
+   "group": "realword",
+   "lines": [
+    "고객센터 무늬 유형을 다섯 개로 나눌게요"
+   ],
+   "title": "고객센터 문의 유형 분류",
+   "other_lines": [
+    "저는 내일 오전에 외근이라 오후에 볼게요.",
+    "혹시 다른 의견 있으신 분 계세요?",
+    "다음 주 월요일에 다시 확인하죠."
+   ],
+   "expect_suspect": false,
+   "wrong": "무늬",
+   "right": "문의"
+  },
+  {
+   "name": "realword: 배송->배속",
+   "group": "realword",
+   "lines": [
+    "배속 조회 화면에 택배사 링크를 붙여 주세요"
+   ],
+   "title": "배송 조회 택배사 링크",
+   "other_lines": [
+    "그럼 다음 안건으로 넘어갈게요.",
+    "그니까 우선순위를 먼저 정해야 될 것 같아요.",
+    "그리고 QA 일정도 같이 봐야 할 것 같아요."
+   ],
+   "expect_suspect": false,
+   "wrong": "배속",
+   "right": "배송"
+  },
+  {
+   "name": "realword: 상세->상체",
+   "group": "realword",
+   "lines": [
+    "상품 상체 이미지 확대 기능이 안드로이드에서 안 돼요"
+   ],
+   "title": "상품 상세 이미지 확대 오류",
+   "other_lines": [
+    "어 이건 지난주에 얘기했던 거랑 연결되는 거죠?",
+    "네 그건 제가 슬랙에 공유드릴게요.",
+    "좋아요 그럼 그렇게 진행하시죠."
+   ],
+   "expect_suspect": false,
+   "wrong": "상체",
+   "right": "상세"
+  },
+  {
+   "name": "realword: 재고->제고",
+   "group": "realword",
+   "lines": [
+    "제고 부족 알림을 MD 쪽 슬랙으로 보내 주세요"
+   ],
+   "title": "재고 부족 알림",
+   "other_lines": [
+    "음 저도 거기에 동의해요.",
+    "시간이 좀 부족하니까 빠르게 갈게요.",
+    "음 이 부분은 데이터 보고 판단하는 게 좋겠어요."
+   ],
+   "expect_suspect": false,
+   "wrong": "제고",
+   "right": "재고"
+  },
+  {
+   "name": "realword: 주문->주민",
+   "group": "realword",
+   "lines": [
+    "주민 번호 검색이 어드민에서 너무 느려요"
+   ],
+   "title": "주문 번호 검색 속도 개선",
+   "other_lines": [
+    "일단 금요일까지 한번 정리해 볼게요.",
+    "아 그거 디자인 쪽이랑 먼저 맞춰봐야 해요.",
+    "저는 내일 오전에 외근이라 오후에 볼게요."
+   ],
+   "expect_suspect": false,
+   "wrong": "주민",
+   "right": "주문"
+  },
+  {
+   "name": "realword: 추천->추첨",
+   "group": "realword",
+   "lines": [
+    "개인화 추첨 결과를 홈 상단에 노출해 볼게요"
+   ],
+   "title": "개인화 추천 홈 노출",
+   "other_lines": [
+    "혹시 다른 의견 있으신 분 계세요?",
+    "다음 주 월요일에 다시 확인하죠.",
+    "그럼 다음 안건으로 넘어갈게요."
+   ],
+   "expect_suspect": false,
+   "wrong": "추첨",
+   "right": "추천"
+  },
+  {
+   "name": "realword: 회고->회계",
+   "group": "realword",
+   "lines": [
+    "이번 스프린트 회계는 비대면으로 할게요"
+   ],
+   "title": "스프린트 회고",
+   "other_lines": [
+    "그니까 우선순위를 먼저 정해야 될 것 같아요.",
+    "그리고 QA 일정도 같이 봐야 할 것 같아요.",
+    "어 이건 지난주에 얘기했던 거랑 연결되는 거죠?"
+   ],
+   "expect_suspect": false,
+   "wrong": "회계",
+   "right": "회고"
+  },
+  {
+   "name": "realword: 시안->시간",
+   "group": "realword",
+   "lines": [
+    "결제 완료 페이지 시간 두 개 중에 골라 주세요"
+   ],
+   "title": "결제 완료 페이지 시안 선정",
+   "other_lines": [
+    "네 그건 제가 슬랙에 공유드릴게요.",
+    "좋아요 그럼 그렇게 진행하시죠.",
+    "음 저도 거기에 동의해요."
+   ],
+   "expect_suspect": false,
+   "wrong": "시간",
+   "right": "시안"
+  },
+  {
+   "name": "realword: 필터->필드",
+   "group": "realword",
+   "lines": [
+    "검색 필드에 무료배송 옵션도 넣어 주세요"
+   ],
+   "title": "검색 필터 무료배송 옵션",
+   "other_lines": [
+    "시간이 좀 부족하니까 빠르게 갈게요.",
+    "음 이 부분은 데이터 보고 판단하는 게 좋겠어요.",
+    "일단 금요일까지 한번 정리해 볼게요."
+   ],
+   "expect_suspect": false,
+   "wrong": "필드",
+   "right": "필터"
+  },
+  {
+   "name": "realword: 리포트->리모트",
+   "group": "realword",
+   "lines": [
+    "주간 매출 리모트 포맷을 바꿔야 할 것 같아요"
+   ],
+   "title": "주간 매출 리포트 포맷 변경",
+   "other_lines": [
+    "아 그거 디자인 쪽이랑 먼저 맞춰봐야 해요.",
+    "저는 내일 오전에 외근이라 오후에 볼게요.",
+    "혹시 다른 의견 있으신 분 계세요?"
+   ],
+   "expect_suspect": false,
+   "wrong": "리모트",
+   "right": "리포트"
+  },
+  {
+   "name": "realword: 전환->전화",
+   "group": "realword",
+   "lines": [
+    "광고 전화 이벤트를 GA4에 다시 매핑해야 돼요"
+   ],
+   "title": "광고 전환 이벤트 매핑",
+   "other_lines": [
+    "다음 주 월요일에 다시 확인하죠.",
+    "그럼 다음 안건으로 넘어갈게요.",
+    "그니까 우선순위를 먼저 정해야 될 것 같아요."
+   ],
+   "expect_suspect": false,
+   "wrong": "전화",
+   "right": "전환"
+  },
+  {
+   "name": "realword: 할인->하인",
+   "group": "realword",
+   "lines": [
+    "하인 쿠폰 발급 조건을 첫 구매자로 한정할게요"
+   ],
+   "title": "할인 쿠폰 발급 조건",
+   "other_lines": [
+    "그리고 QA 일정도 같이 봐야 할 것 같아요.",
+    "어 이건 지난주에 얘기했던 거랑 연결되는 거죠?",
+    "네 그건 제가 슬랙에 공유드릴게요."
+   ],
+   "expect_suspect": false,
+   "wrong": "하인",
+   "right": "할인"
+  }
+ ]
+}
