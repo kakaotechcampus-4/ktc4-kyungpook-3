@@ -136,8 +136,8 @@ def test_a_rerun_that_judges_the_failed_story_clears_the_failure_marks(tmp_path,
 
 def test_each_story_keeps_what_some_run_got_right(tmp_path, clock, limits):
     """#128 멘토 리뷰의 예. 1회차는 A 얘기에서 항목 2개와 B 실패, 2회차는 A 를 바꿀 것 없음으로 보고 B 를 판단했다.
-    항목 수로 실행 하나를 고르면 1회차가 남아 B 가 끝까지 실패로 남는다. 얘기마다 합치면 A 는 1회차의 항목(엇갈린
-    판단이라 PM 이 본다), B 는 2회차의 항목을 쓰고 실패 없이 인계한다."""
+    항목 수로 실행 하나를 고르면 1회차가 남아 B 가 끝까지 실패로 남는다. 얘기마다 합치면 A 는 1회차의 항목,
+    B 는 2회차의 항목을 쓰고 실패 없이 인계한다."""
     rec, path, manifest = _session(tmp_path)
     fake = FakeBe()
     first = J.JudgeOutput(outcomes=[_o("item", A, at=[1]), _o("item", C, at=[3]), _o("failure", FB, at=[2])])

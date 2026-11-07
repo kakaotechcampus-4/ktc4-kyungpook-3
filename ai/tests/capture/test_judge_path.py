@@ -234,7 +234,7 @@ FB, FB2 = ({"stage": "judge", "text": t, "reason": "Terra 응답을 파싱하지
 def test_a_story_that_succeeds_only_in_the_rerun_is_kept():
     """#128 멘토 리뷰의 예. 1회차는 A 관련 항목 2개와 B 실패, 2회차는 A 는 바꿀 것 없음과 B 항목이다.
     항목 수로 실행 하나를 고르면 1회차가 남아 B 가 버려진다. 얘기마다 합치면 A 는 1회차, B 는 2회차의 것을 쓴다.
-    A 는 실행마다 판단이 엇갈렸지만 항목을 남긴다. judge 항목은 PM 검토로 간다."""
+    A 는 실행마다 판단이 엇갈렸지만 항목을 남긴다."""
     first = [_o("item", A1, at=[3]), _o("item", A2, at=[4]), _o("failure", FB, at=[9])]
     second = [_o("skip", at=[3, 4]), _o("item", B, at=[9])]
     assert J.merge_runs([first, second]) == ([A1, A2, B], [])
