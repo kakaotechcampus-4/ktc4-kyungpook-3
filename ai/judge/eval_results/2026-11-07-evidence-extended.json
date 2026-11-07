@@ -1,0 +1,1075 @@
+{
+ "meeting_date": "2026-11-02",
+ "threshold_in_use": 0.8,
+ "cases": 217,
+ "repeat": 3,
+ "calls": 651,
+ "no_answer": 0,
+ "at_threshold": {
+  "task": {
+   "n": 651,
+   "negatives": 249,
+   "positives": 402,
+   "correct": 642,
+   "false_certain": 3,
+   "false_certain_rate": 0.012048192771084338,
+   "false_certain_rate_upper95": 0.03481827266594757,
+   "missed_certain": 6,
+   "recall": 0.9850746268656716,
+   "precision": 0.9924812030075187
+  },
+  "due": {
+   "n": 327,
+   "negatives": 132,
+   "positives": 195,
+   "correct": 269,
+   "false_certain": 3,
+   "false_certain_rate": 0.022727272727272728,
+   "false_certain_rate_upper95": 0.06469024411861142,
+   "missed_certain": 55,
+   "recall": 0.717948717948718,
+   "precision": 0.9790209790209791
+  }
+ },
+ "sweep": {
+  "0.5": {
+   "task": {
+    "n": 651,
+    "negatives": 249,
+    "positives": 402,
+    "correct": 642,
+    "false_certain": 9,
+    "false_certain_rate": 0.03614457831325301,
+    "false_certain_rate_upper95": 0.06725447586119442,
+    "missed_certain": 0,
+    "recall": 1.0,
+    "precision": 0.9781021897810219
+   },
+   "due": {
+    "n": 327,
+    "negatives": 132,
+    "positives": 195,
+    "correct": 291,
+    "false_certain": 36,
+    "false_certain_rate": 0.2727272727272727,
+    "false_certain_rate_upper95": 0.3543247872833216,
+    "missed_certain": 0,
+    "recall": 1.0,
+    "precision": 0.8441558441558441
+   }
+  },
+  "0.6": {
+   "task": {
+    "n": 651,
+    "negatives": 249,
+    "positives": 402,
+    "correct": 645,
+    "false_certain": 6,
+    "false_certain_rate": 0.024096385542168676,
+    "false_certain_rate_upper95": 0.051565079576047564,
+    "missed_certain": 0,
+    "recall": 1.0,
+    "precision": 0.9852941176470589
+   },
+   "due": {
+    "n": 327,
+    "negatives": 132,
+    "positives": 195,
+    "correct": 306,
+    "false_certain": 21,
+    "false_certain_rate": 0.1590909090909091,
+    "false_certain_rate_upper95": 0.23099154008530573,
+    "missed_certain": 0,
+    "recall": 1.0,
+    "precision": 0.9027777777777778
+   }
+  },
+  "0.7": {
+   "task": {
+    "n": 651,
+    "negatives": 249,
+    "positives": 402,
+    "correct": 643,
+    "false_certain": 4,
+    "false_certain_rate": 0.01606425702811245,
+    "false_certain_rate_upper95": 0.040569815388180656,
+    "missed_certain": 4,
+    "recall": 0.9900497512437811,
+    "precision": 0.9900497512437811
+   },
+   "due": {
+    "n": 327,
+    "negatives": 132,
+    "positives": 195,
+    "correct": 301,
+    "false_certain": 9,
+    "false_certain_rate": 0.06818181818181818,
+    "false_certain_rate_upper95": 0.12450534693335545,
+    "missed_certain": 17,
+    "recall": 0.9128205128205128,
+    "precision": 0.9518716577540107
+   }
+  },
+  "0.75": {
+   "task": {
+    "n": 651,
+    "negatives": 249,
+    "positives": 402,
+    "correct": 641,
+    "false_certain": 4,
+    "false_certain_rate": 0.01606425702811245,
+    "false_certain_rate_upper95": 0.040569815388180656,
+    "missed_certain": 6,
+    "recall": 0.9850746268656716,
+    "precision": 0.99
+   },
+   "due": {
+    "n": 327,
+    "negatives": 132,
+    "positives": 195,
+    "correct": 295,
+    "false_certain": 5,
+    "false_certain_rate": 0.03787878787878788,
+    "false_certain_rate_upper95": 0.08560920952521273,
+    "missed_certain": 27,
+    "recall": 0.8615384615384616,
+    "precision": 0.9710982658959537
+   }
+  },
+  "0.8": {
+   "task": {
+    "n": 651,
+    "negatives": 249,
+    "positives": 402,
+    "correct": 642,
+    "false_certain": 3,
+    "false_certain_rate": 0.012048192771084338,
+    "false_certain_rate_upper95": 0.03481827266594757,
+    "missed_certain": 6,
+    "recall": 0.9850746268656716,
+    "precision": 0.9924812030075187
+   },
+   "due": {
+    "n": 327,
+    "negatives": 132,
+    "positives": 195,
+    "correct": 269,
+    "false_certain": 3,
+    "false_certain_rate": 0.022727272727272728,
+    "false_certain_rate_upper95": 0.06469024411861142,
+    "missed_certain": 55,
+    "recall": 0.717948717948718,
+    "precision": 0.9790209790209791
+   }
+  },
+  "0.85": {
+   "task": {
+    "n": 651,
+    "negatives": 249,
+    "positives": 402,
+    "correct": 629,
+    "false_certain": 3,
+    "false_certain_rate": 0.012048192771084338,
+    "false_certain_rate_upper95": 0.03481827266594757,
+    "missed_certain": 19,
+    "recall": 0.9527363184079602,
+    "precision": 0.9922279792746114
+   },
+   "due": {
+    "n": 327,
+    "negatives": 132,
+    "positives": 195,
+    "correct": 243,
+    "false_certain": 0,
+    "false_certain_rate": 0.0,
+    "false_certain_rate_upper95": 0.028279996702041194,
+    "missed_certain": 84,
+    "recall": 0.5692307692307692,
+    "precision": 1.0
+   }
+  },
+  "0.9": {
+   "task": {
+    "n": 651,
+    "negatives": 249,
+    "positives": 402,
+    "correct": 616,
+    "false_certain": 3,
+    "false_certain_rate": 0.012048192771084338,
+    "false_certain_rate_upper95": 0.03481827266594757,
+    "missed_certain": 32,
+    "recall": 0.9203980099502488,
+    "precision": 0.9919571045576407
+   },
+   "due": {
+    "n": 327,
+    "negatives": 132,
+    "positives": 195,
+    "correct": 203,
+    "false_certain": 0,
+    "false_certain_rate": 0.0,
+    "false_certain_rate_upper95": 0.028279996702041194,
+    "missed_certain": 124,
+    "recall": 0.3641025641025641,
+    "precision": 1.0
+   }
+  },
+  "0.95": {
+   "task": {
+    "n": 651,
+    "negatives": 249,
+    "positives": 402,
+    "correct": 581,
+    "false_certain": 2,
+    "false_certain_rate": 0.008032128514056224,
+    "false_certain_rate_upper95": 0.028808459911883334,
+    "missed_certain": 68,
+    "recall": 0.8308457711442786,
+    "precision": 0.9940476190476191
+   },
+   "due": {
+    "n": 327,
+    "negatives": 132,
+    "positives": 195,
+    "correct": 158,
+    "false_certain": 0,
+    "false_certain_rate": 0.0,
+    "false_certain_rate_upper95": 0.028279996702041194,
+    "missed_certain": 169,
+    "recall": 0.13333333333333333,
+    "precision": 1.0
+   }
+  }
+ },
+ "by_category": {
+  "A": {
+   "n": 180,
+   "false_certain": 0,
+   "missed_certain": 24
+  },
+  "B": {
+   "n": 54,
+   "false_certain": 0,
+   "missed_certain": 3
+  },
+  "C": {
+   "n": 120,
+   "false_certain": 0,
+   "missed_certain": 0
+  },
+  "D": {
+   "n": 228,
+   "false_certain": 0,
+   "missed_certain": 7
+  },
+  "E": {
+   "n": 96,
+   "false_certain": 0,
+   "missed_certain": 10
+  },
+  "F": {
+   "n": 36,
+   "false_certain": 3,
+   "missed_certain": 0
+  },
+  "G": {
+   "n": 72,
+   "false_certain": 3,
+   "missed_certain": 7
+  },
+  "H": {
+   "n": 66,
+   "false_certain": 0,
+   "missed_certain": 7
+  },
+  "기존": {
+   "n": 126,
+   "false_certain": 0,
+   "missed_certain": 3
+  }
+ },
+ "unstable": [
+  {
+   "set": "extended",
+   "case": "A: 결정+D일",
+   "field": "due",
+   "p_yes": [
+    0.84,
+    0.86,
+    0.79
+   ]
+  },
+  {
+   "set": "extended",
+   "case": "A: 지시+다음 주 화요일",
+   "field": "due",
+   "p_yes": [
+    0.79,
+    0.8,
+    0.82
+   ]
+  },
+  {
+   "set": "extended",
+   "case": "A: 약속+bare 토요일",
+   "field": "due",
+   "p_yes": [
+    0.78,
+    0.76,
+    0.84
+   ]
+  },
+  {
+   "set": "extended",
+   "case": "A: 약속+bare 일요일",
+   "field": "due",
+   "p_yes": [
+    0.75,
+    0.75,
+    0.8
+   ]
+  },
+  {
+   "set": "extended",
+   "case": "D: 요일+밤",
+   "field": "due",
+   "p_yes": [
+    0.81,
+    0.77,
+    0.83
+   ]
+  },
+  {
+   "set": "extended",
+   "case": "E: 대안 날짜",
+   "field": "due",
+   "p_yes": [
+    0.77,
+    0.81,
+    0.82
+   ]
+  },
+  {
+   "set": "extended",
+   "case": "G: 추임새+금요일",
+   "field": "due",
+   "p_yes": [
+    0.78,
+    0.77,
+    0.8
+   ]
+  },
+  {
+   "set": "extended",
+   "case": "G: 한글 숫자 날짜",
+   "field": "due",
+   "p_yes": [
+    0.77,
+    0.82,
+    0.79
+   ]
+  },
+  {
+   "set": "extended",
+   "case": "G: 한글 숫자 삼일",
+   "field": "due",
+   "p_yes": [
+    0.78,
+    0.78,
+    0.8
+   ]
+  },
+  {
+   "set": "extended",
+   "case": "G: 반복 요일",
+   "field": "due",
+   "p_yes": [
+    0.83,
+    0.84,
+    0.77
+   ]
+  },
+  {
+   "set": "extended",
+   "case": "H: 토욜에",
+   "field": "due",
+   "p_yes": [
+    0.78,
+    0.82,
+    0.81
+   ]
+  }
+ ],
+ "errors": [
+  {
+   "set": "base",
+   "case": "결정+다음 주 요일",
+   "category": "기존",
+   "field": "due",
+   "run": 0,
+   "want": true,
+   "p_yes": 0.78,
+   "choice": "yes"
+  },
+  {
+   "set": "base",
+   "case": "결정+다음 주 요일",
+   "category": "기존",
+   "field": "due",
+   "run": 1,
+   "want": true,
+   "p_yes": 0.78,
+   "choice": "yes"
+  },
+  {
+   "set": "base",
+   "case": "결정+다음 주 요일",
+   "category": "기존",
+   "field": "due",
+   "run": 2,
+   "want": true,
+   "p_yes": 0.77,
+   "choice": "yes"
+  },
+  {
+   "set": "extended",
+   "case": "A: 약속+글피",
+   "category": "A",
+   "field": "due",
+   "run": 0,
+   "want": true,
+   "p_yes": 0.62,
+   "choice": "yes"
+  },
+  {
+   "set": "extended",
+   "case": "A: 약속+글피",
+   "category": "A",
+   "field": "due",
+   "run": 1,
+   "want": true,
+   "p_yes": 0.61,
+   "choice": "yes"
+  },
+  {
+   "set": "extended",
+   "case": "A: 약속+글피",
+   "category": "A",
+   "field": "due",
+   "run": 2,
+   "want": true,
+   "p_yes": 0.63,
+   "choice": "yes"
+  },
+  {
+   "set": "extended",
+   "case": "A: 결정+D일",
+   "category": "A",
+   "field": "due",
+   "run": 2,
+   "want": true,
+   "p_yes": 0.79,
+   "choice": "yes"
+  },
+  {
+   "set": "extended",
+   "case": "A: 지시+다음 주 금요일",
+   "category": "A",
+   "field": "due",
+   "run": 0,
+   "want": true,
+   "p_yes": 0.72,
+   "choice": "yes"
+  },
+  {
+   "set": "extended",
+   "case": "A: 지시+다음 주 금요일",
+   "category": "A",
+   "field": "due",
+   "run": 1,
+   "want": true,
+   "p_yes": 0.79,
+   "choice": "yes"
+  },
+  {
+   "set": "extended",
+   "case": "A: 지시+다음 주 금요일",
+   "category": "A",
+   "field": "due",
+   "run": 2,
+   "want": true,
+   "p_yes": 0.73,
+   "choice": "yes"
+  },
+  {
+   "set": "extended",
+   "case": "A: 지시+다음 주 화요일",
+   "category": "A",
+   "field": "due",
+   "run": 0,
+   "want": true,
+   "p_yes": 0.79,
+   "choice": "yes"
+  },
+  {
+   "set": "extended",
+   "case": "A: 결정+D일 담당 지정",
+   "category": "A",
+   "field": "due",
+   "run": 0,
+   "want": true,
+   "p_yes": 0.74,
+   "choice": "yes"
+  },
+  {
+   "set": "extended",
+   "case": "A: 결정+D일 담당 지정",
+   "category": "A",
+   "field": "due",
+   "run": 1,
+   "want": true,
+   "p_yes": 0.74,
+   "choice": "yes"
+  },
+  {
+   "set": "extended",
+   "case": "A: 결정+D일 담당 지정",
+   "category": "A",
+   "field": "due",
+   "run": 2,
+   "want": true,
+   "p_yes": 0.73,
+   "choice": "yes"
+  },
+  {
+   "set": "extended",
+   "case": "A: 지시+다음 주 월요일 오전",
+   "category": "A",
+   "field": "due",
+   "run": 0,
+   "want": true,
+   "p_yes": 0.63,
+   "choice": "yes"
+  },
+  {
+   "set": "extended",
+   "case": "A: 지시+다음 주 월요일 오전",
+   "category": "A",
+   "field": "due",
+   "run": 1,
+   "want": true,
+   "p_yes": 0.75,
+   "choice": "yes"
+  },
+  {
+   "set": "extended",
+   "case": "A: 지시+다음 주 월요일 오전",
+   "category": "A",
+   "field": "due",
+   "run": 2,
+   "want": true,
+   "p_yes": 0.74,
+   "choice": "yes"
+  },
+  {
+   "set": "extended",
+   "case": "A: 약속+bare 토요일",
+   "category": "A",
+   "field": "due",
+   "run": 0,
+   "want": true,
+   "p_yes": 0.78,
+   "choice": "yes"
+  },
+  {
+   "set": "extended",
+   "case": "A: 약속+bare 토요일",
+   "category": "A",
+   "field": "due",
+   "run": 1,
+   "want": true,
+   "p_yes": 0.76,
+   "choice": "yes"
+  },
+  {
+   "set": "extended",
+   "case": "A: 약속+bare 일요일",
+   "category": "A",
+   "field": "due",
+   "run": 0,
+   "want": true,
+   "p_yes": 0.75,
+   "choice": "yes"
+  },
+  {
+   "set": "extended",
+   "case": "A: 약속+bare 일요일",
+   "category": "A",
+   "field": "due",
+   "run": 1,
+   "want": true,
+   "p_yes": 0.75,
+   "choice": "yes"
+  },
+  {
+   "set": "extended",
+   "case": "A: 결정+다음 주 목요일",
+   "category": "A",
+   "field": "due",
+   "run": 0,
+   "want": true,
+   "p_yes": 0.75,
+   "choice": "yes"
+  },
+  {
+   "set": "extended",
+   "case": "A: 결정+다음 주 목요일",
+   "category": "A",
+   "field": "due",
+   "run": 1,
+   "want": true,
+   "p_yes": 0.7,
+   "choice": "yes"
+  },
+  {
+   "set": "extended",
+   "case": "A: 결정+다음 주 목요일",
+   "category": "A",
+   "field": "due",
+   "run": 2,
+   "want": true,
+   "p_yes": 0.69,
+   "choice": "yes"
+  },
+  {
+   "set": "extended",
+   "case": "A: 약속+다음 주 일요일",
+   "category": "A",
+   "field": "due",
+   "run": 0,
+   "want": true,
+   "p_yes": 0.69,
+   "choice": "yes"
+  },
+  {
+   "set": "extended",
+   "case": "A: 약속+다음 주 일요일",
+   "category": "A",
+   "field": "due",
+   "run": 1,
+   "want": true,
+   "p_yes": 0.65,
+   "choice": "yes"
+  },
+  {
+   "set": "extended",
+   "case": "A: 약속+다음 주 일요일",
+   "category": "A",
+   "field": "due",
+   "run": 2,
+   "want": true,
+   "p_yes": 0.69,
+   "choice": "yes"
+  },
+  {
+   "set": "extended",
+   "case": "B: 좀 해 주세요",
+   "category": "B",
+   "field": "task",
+   "run": 0,
+   "want": true,
+   "p_yes": 0.65,
+   "choice": "yes"
+  },
+  {
+   "set": "extended",
+   "case": "B: 좀 해 주세요",
+   "category": "B",
+   "field": "task",
+   "run": 1,
+   "want": true,
+   "p_yes": 0.69,
+   "choice": "yes"
+  },
+  {
+   "set": "extended",
+   "case": "B: 좀 해 주세요",
+   "category": "B",
+   "field": "task",
+   "run": 2,
+   "want": true,
+   "p_yes": 0.67,
+   "choice": "yes"
+  },
+  {
+   "set": "extended",
+   "case": "D: 시각만+오늘",
+   "category": "D",
+   "field": "due",
+   "run": 0,
+   "want": true,
+   "p_yes": 0.63,
+   "choice": "yes"
+  },
+  {
+   "set": "extended",
+   "case": "D: 시각만+오늘",
+   "category": "D",
+   "field": "due",
+   "run": 1,
+   "want": true,
+   "p_yes": 0.69,
+   "choice": "yes"
+  },
+  {
+   "set": "extended",
+   "case": "D: 시각만+오늘",
+   "category": "D",
+   "field": "due",
+   "run": 2,
+   "want": true,
+   "p_yes": 0.67,
+   "choice": "yes"
+  },
+  {
+   "set": "extended",
+   "case": "D: 다다음 주 금요일",
+   "category": "D",
+   "field": "due",
+   "run": 0,
+   "want": true,
+   "p_yes": 0.66,
+   "choice": "yes"
+  },
+  {
+   "set": "extended",
+   "case": "D: 다다음 주 금요일",
+   "category": "D",
+   "field": "due",
+   "run": 1,
+   "want": true,
+   "p_yes": 0.64,
+   "choice": "yes"
+  },
+  {
+   "set": "extended",
+   "case": "D: 다다음 주 금요일",
+   "category": "D",
+   "field": "due",
+   "run": 2,
+   "want": true,
+   "p_yes": 0.66,
+   "choice": "yes"
+  },
+  {
+   "set": "extended",
+   "case": "D: 요일+밤",
+   "category": "D",
+   "field": "due",
+   "run": 1,
+   "want": true,
+   "p_yes": 0.77,
+   "choice": "yes"
+  },
+  {
+   "set": "extended",
+   "case": "E: 협상 후 합의 날짜",
+   "category": "E",
+   "field": "due",
+   "run": 0,
+   "want": true,
+   "p_yes": 0.64,
+   "choice": "yes"
+  },
+  {
+   "set": "extended",
+   "case": "E: 협상 후 합의 날짜",
+   "category": "E",
+   "field": "due",
+   "run": 1,
+   "want": true,
+   "p_yes": 0.66,
+   "choice": "yes"
+  },
+  {
+   "set": "extended",
+   "case": "E: 협상 후 합의 날짜",
+   "category": "E",
+   "field": "due",
+   "run": 2,
+   "want": true,
+   "p_yes": 0.66,
+   "choice": "yes"
+  },
+  {
+   "set": "extended",
+   "case": "E: 지시+마감+확인",
+   "category": "E",
+   "field": "due",
+   "run": 0,
+   "want": true,
+   "p_yes": 0.71,
+   "choice": "yes"
+  },
+  {
+   "set": "extended",
+   "case": "E: 지시+마감+확인",
+   "category": "E",
+   "field": "due",
+   "run": 1,
+   "want": true,
+   "p_yes": 0.78,
+   "choice": "yes"
+  },
+  {
+   "set": "extended",
+   "case": "E: 지시+마감+확인",
+   "category": "E",
+   "field": "due",
+   "run": 2,
+   "want": true,
+   "p_yes": 0.74,
+   "choice": "yes"
+  },
+  {
+   "set": "extended",
+   "case": "E: 대안 날짜",
+   "category": "E",
+   "field": "due",
+   "run": 0,
+   "want": true,
+   "p_yes": 0.77,
+   "choice": "yes"
+  },
+  {
+   "set": "extended",
+   "case": "E: 자원+마감",
+   "category": "E",
+   "field": "due",
+   "run": 0,
+   "want": true,
+   "p_yes": 0.76,
+   "choice": "yes"
+  },
+  {
+   "set": "extended",
+   "case": "E: 자원+마감",
+   "category": "E",
+   "field": "due",
+   "run": 1,
+   "want": true,
+   "p_yes": 0.75,
+   "choice": "yes"
+  },
+  {
+   "set": "extended",
+   "case": "E: 자원+마감",
+   "category": "E",
+   "field": "due",
+   "run": 2,
+   "want": true,
+   "p_yes": 0.75,
+   "choice": "yes"
+  },
+  {
+   "set": "extended",
+   "case": "F: 템플릿 vs 작성",
+   "category": "F",
+   "field": "task",
+   "run": 0,
+   "want": false,
+   "p_yes": 0.97,
+   "choice": "yes"
+  },
+  {
+   "set": "extended",
+   "case": "F: 템플릿 vs 작성",
+   "category": "F",
+   "field": "task",
+   "run": 1,
+   "want": false,
+   "p_yes": 0.94,
+   "choice": "yes"
+  },
+  {
+   "set": "extended",
+   "case": "F: 템플릿 vs 작성",
+   "category": "F",
+   "field": "task",
+   "run": 2,
+   "want": false,
+   "p_yes": 0.99,
+   "choice": "yes"
+  },
+  {
+   "set": "extended",
+   "case": "G: 추임새+금요일",
+   "category": "G",
+   "field": "due",
+   "run": 0,
+   "want": true,
+   "p_yes": 0.78,
+   "choice": "yes"
+  },
+  {
+   "set": "extended",
+   "case": "G: 추임새+금요일",
+   "category": "G",
+   "field": "due",
+   "run": 1,
+   "want": true,
+   "p_yes": 0.77,
+   "choice": "yes"
+  },
+  {
+   "set": "extended",
+   "case": "G: 한글 숫자 날짜",
+   "category": "G",
+   "field": "due",
+   "run": 0,
+   "want": true,
+   "p_yes": 0.77,
+   "choice": "yes"
+  },
+  {
+   "set": "extended",
+   "case": "G: 한글 숫자 날짜",
+   "category": "G",
+   "field": "due",
+   "run": 2,
+   "want": true,
+   "p_yes": 0.79,
+   "choice": "yes"
+  },
+  {
+   "set": "extended",
+   "case": "G: 한글 숫자 날짜 계산 오류",
+   "category": "G",
+   "field": "due",
+   "run": 0,
+   "want": false,
+   "p_yes": 0.81,
+   "choice": "yes"
+  },
+  {
+   "set": "extended",
+   "case": "G: 한글 숫자 날짜 계산 오류",
+   "category": "G",
+   "field": "due",
+   "run": 1,
+   "want": false,
+   "p_yes": 0.81,
+   "choice": "yes"
+  },
+  {
+   "set": "extended",
+   "case": "G: 한글 숫자 날짜 계산 오류",
+   "category": "G",
+   "field": "due",
+   "run": 2,
+   "want": false,
+   "p_yes": 0.84,
+   "choice": "yes"
+  },
+  {
+   "set": "extended",
+   "case": "G: 한글 숫자 삼일",
+   "category": "G",
+   "field": "due",
+   "run": 0,
+   "want": true,
+   "p_yes": 0.78,
+   "choice": "yes"
+  },
+  {
+   "set": "extended",
+   "case": "G: 한글 숫자 삼일",
+   "category": "G",
+   "field": "due",
+   "run": 1,
+   "want": true,
+   "p_yes": 0.78,
+   "choice": "yes"
+  },
+  {
+   "set": "extended",
+   "case": "G: 반복 요일",
+   "category": "G",
+   "field": "due",
+   "run": 2,
+   "want": true,
+   "p_yes": 0.77,
+   "choice": "yes"
+  },
+  {
+   "set": "extended",
+   "case": "H: 부탁+넵",
+   "category": "H",
+   "field": "due",
+   "run": 0,
+   "want": true,
+   "p_yes": 0.79,
+   "choice": "yes"
+  },
+  {
+   "set": "extended",
+   "case": "H: 부탁+넵",
+   "category": "H",
+   "field": "due",
+   "run": 1,
+   "want": true,
+   "p_yes": 0.72,
+   "choice": "yes"
+  },
+  {
+   "set": "extended",
+   "case": "H: 부탁+넵",
+   "category": "H",
+   "field": "due",
+   "run": 2,
+   "want": true,
+   "p_yes": 0.76,
+   "choice": "yes"
+  },
+  {
+   "set": "extended",
+   "case": "H: 메모식 배정",
+   "category": "H",
+   "field": "task",
+   "run": 0,
+   "want": true,
+   "p_yes": 0.69,
+   "choice": "yes"
+  },
+  {
+   "set": "extended",
+   "case": "H: 메모식 배정",
+   "category": "H",
+   "field": "task",
+   "run": 1,
+   "want": true,
+   "p_yes": 0.71,
+   "choice": "yes"
+  },
+  {
+   "set": "extended",
+   "case": "H: 메모식 배정",
+   "category": "H",
+   "field": "task",
+   "run": 2,
+   "want": true,
+   "p_yes": 0.71,
+   "choice": "yes"
+  },
+  {
+   "set": "extended",
+   "case": "H: 토욜에",
+   "category": "H",
+   "field": "due",
+   "run": 0,
+   "want": true,
+   "p_yes": 0.78,
+   "choice": "yes"
+  }
+ ]
+}
