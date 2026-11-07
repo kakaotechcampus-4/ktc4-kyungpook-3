@@ -68,9 +68,13 @@ class MeetingFailRequest(BaseModel):
     failed_stage: str = Field(..., description="어느 단계에서 실패했는지 (e.g., STT, LLM)")
 
 
+# 컬럼이 PostgreSQL INTEGER(4바이트)라 그보다 큰 값은 DB 에서 500 이 되기 전에 400 으로 막는다
+_INT4_MAX = 2_147_483_647
+
+
 class MeetingSttProgress(BaseModel):
     done: StrictInt = Field(..., ge=0, description="전사를 끝낸 조각 수")
-    total: StrictInt = Field(..., ge=1, description="전사할 전체 조각 수")
+    total: StrictInt = Field(..., ge=1, le=_INT4_MAX, description="전사할 전체 조각 수")
 
     @model_validator(mode="after")
     def _done_within_total(self) -> "MeetingSttProgress":
