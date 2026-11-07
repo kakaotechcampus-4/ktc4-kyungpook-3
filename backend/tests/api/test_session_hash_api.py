@@ -46,6 +46,8 @@ def test_login_cookie_is_stored_as_hash(mdb):
     assert row.session_token != cookie
     assert "token_hash" not in SessionModel.__table__.columns
     assert {i.name for i in SessionModel.__table__.indexes if i.unique} == {"ix_session_session_token"}
+    # DB 에 있는 해시값을 쿠키로 보내도 로그인되지 않는다(#437 완료 조건을 API 수준에서도 확인)
+    assert _me(row.session_token).status_code == 401
 
 
 def test_logout_deletes_only_current_session(mdb):
