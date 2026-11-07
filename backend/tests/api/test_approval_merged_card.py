@@ -25,6 +25,7 @@ from app.models import (
     MemberAlias,
     Session as SessionModel,
     Task,
+    TaskHistory,
     User,
     Workspace,
 )
@@ -200,6 +201,29 @@ def test_rejecting_merged_card_rejects_every_item(client, db, seed):
         [item] = client.get(f"/api/v1/extractions/{extraction_id}").json()["data"]["items"]
         assert item["approval_status"] == "rejected"
     assert all(i.task_id is None for i in _items_of(db, card_id))
+
+
+def test_approving_merged_member_made_card_links_task_without_meeting(client, db, seed):
+    # 팀원이 직접 만든 카드(POST /approvals)는 payload 에 title 만 있고 meeting_id·extraction_item_id 가 없다.
+    # 회의 항목이 합쳐진 뒤 승인해도 task 는 meeting_id 없이 manual 로 만들어지고(merged_items 의 회의는 보지 않는다),
+    # 합쳐진 항목에는 task_id 가 이어진다
+    card = ApprovalRequest(
+        workspace_id=seed["ws"].workspace_id, type="task_create", status="pending", embedding=EMBEDDED,
+        payload=json.dumps({"title": "수동 카드", "due_date": "2026-10-20"}, ensure_ascii=False),
+    )
+    db.add(card)
+    db.commit()
+    _extract(client, seed, 1, [_merge_item(card.approval_id)])
+
+    r = _patch(client, card.approval_id, {"status": "approved"})
+
+    assert r.status_code == 200, r.text
+    task = db.get(Task, r.json()["data"]["related_task_id"])
+    assert (task.title, task.meeting_id, str(task.due_date)) == ("수동 카드", None, "2026-10-25")
+    [history] = db.execute(select(TaskHistory).where(TaskHistory.task_id == task.task_id)).scalars().all()
+    assert history.change_source == "manual"
+    [item] = _items_of(db, card.approval_id)
+    assert (item.action, item.task_id) == ("merge", task.task_id)
 
 
 def test_approval_reads_payload_changed_after_the_pending_check(client, db, seed, monkeypatch):
