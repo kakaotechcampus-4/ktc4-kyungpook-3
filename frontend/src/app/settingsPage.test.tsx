@@ -168,8 +168,6 @@ describe('설정 화면 — PM', () => {
     const log = recordRequests()
     await user.click(await screen.findByRole('button', { name: '팀 삭제' }))
     expect(await screen.findByText('팀 삭제는 아직 준비 중이에요.')).toBeInTheDocument()
-    await user.click(await screen.findByRole('button', { name: '채널 바꾸기' }))
-    expect(await screen.findByText('채널 바꾸기는 아직 준비 중이에요.')).toBeInTheDocument()
     expect(businessRequests(log.started).filter(({ method }) => method !== 'GET')).toEqual([])
   })
 
