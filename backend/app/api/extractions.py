@@ -160,7 +160,7 @@ def create_extraction(
     # 유사 검색이 못 보는 task가 있는지(judge auto 조건). 처음 judge 새 항목에서 한 번 읽고, 이 요청이 auto로 task를
     # 만들면 그 task도 임베딩 전이라 검색에 잡히지 않으므로 True로 바꾼다. 그 밖에는 이 요청 안에서 바뀌지 않는다
     unsearched_tasks: bool | None = None
-    # 임베딩이 없어 유사 검색(include_pending)이 못 보는 승인 대기 요청이 있는지. unsearched_tasks 와 같은 자리에서 한 번만
+    # 임베딩이 없어 유사 검색(include_pending)이 못 보는 승인 대기 요청이 있는지. 처음 judge 새 항목에서 한 번만
     # 읽고 바꾸지 않는다. 이 요청의 review/hold 항목이 만드는 pending 은 보통 첫 judge 새 항목 처리 뒤에 생겨 읽은 값에 없다.
     # 단 legacy 새 항목이 judge 항목보다 앞에 오면 그 pending 이 먼저 flush 되어 첫 judge 항목의 auto 를 막는다. 막는 쪽이라
     # 그대로 둔다(결정 기록 2026-11-07-pending-approval-search.md)
@@ -262,6 +262,8 @@ def create_extraction(
             if path == ExtractionPath.JUDGE and merge_card is None:
                 if unsearched_tasks is None:
                     unsearched_tasks = has_unsearchable_tasks(db, meeting.workspace_id)
+                # 앞의 legacy auto 항목이 unsearched_tasks 를 먼저 True 로 정해도 따로 읽어 게이트 사유에 남긴다
+                if unsearched_pending is None:
                     unsearched_pending = has_unsearchable_pending(db, meeting.workspace_id)
                 blockers = auto_blockers(
                     AutoSignals(

@@ -655,3 +655,25 @@ def test_pending_created_earlier_in_the_same_request_does_not_block_auto(client,
     # 첫 항목이 실제로 pending task_create 를 만들었는데도 두 번째 항목은 auto 다
     pending = [r for r in _approvals(db) if r.type == "task_create" and r.status == "pending"]
     assert len(pending) == 1
+
+
+def test_pending_signal_is_read_even_after_a_legacy_auto_item(client, db, seed, caplog):
+    # 앞의 legacy auto 항목이 unsearched_tasks 를 먼저 True 로 정해도 pending 신호는 따로 읽어 사유에 남긴다
+    _pending_create(db, seed)
+    legacy = {
+        "task_title": "로그인 화면 시안", "assignee_raw": "지민님", "due_date": "2026-10-20",
+        "evidence_quote": "지민님이 시안 맡아 주세요", "evidence_speaker": "uid-pm",
+        "task_confidence": 0.99, "due_confidence": 0.99,
+    }
+
+    with caplog.at_level("INFO", logger="app.api.extractions"):
+        extraction_id = _extract(client, seed, [legacy, _judge()])
+
+    items = client.get(f"/api/v1/extractions/{extraction_id}").json()["data"]["items"]
+    assert [i["gate"] for i in items] == ["auto", "review"]
+    [reasons] = [
+        r.getMessage().split("reasons=")[1] for r in caplog.records
+        if "auto로 보내지 않습니다" in r.getMessage()
+    ]
+    assert set(reasons.split(",")) == {"unsearched_task_exists", "unsearched_pending_exists"}
+
