@@ -8,6 +8,7 @@ from sqlalchemy import select
 
 from app.main import app
 from app.models import Member, MemberAlias
+from app.services.sessions import hash_session_token
 
 API = "/api/v1"
 
@@ -70,7 +71,7 @@ def test_create_workspace_gives_pm_member_name_aliases(client, mdb, mseed):
     mdb.add(user)
     mdb.flush()
     mdb.add(SessionModel(
-        user_id=user.user_id, session_token="korean-token",
+        user_id=user.user_id, session_token=hash_session_token("korean-token"),
         expires_at=datetime.now(timezone.utc) + timedelta(days=1),
     ))
     mdb.commit()

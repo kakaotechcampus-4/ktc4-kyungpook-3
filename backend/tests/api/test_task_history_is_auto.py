@@ -20,6 +20,7 @@ from app.models import (
     User,
     Workspace,
 )
+from app.services.sessions import hash_session_token
 
 
 @pytest.fixture
@@ -49,7 +50,7 @@ def seed(db):
     db.flush()
     db.add(SessionModel(
         user_id=alice.user_id,
-        session_token="alice-token",
+        session_token=hash_session_token("alice-token"),
         expires_at=datetime.now(timezone.utc) + timedelta(days=1),
     ))
 
