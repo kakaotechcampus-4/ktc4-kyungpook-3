@@ -1,11 +1,11 @@
 import { screen, within } from '@testing-library/react'
 import { paths } from '@/shared/config/routes'
 import { db } from '@/shared/mock/db'
-import { failMeeting } from '@/shared/mock/meetingFlow'
+import { completeMeeting, failMeeting, startChatMeeting } from '@/shared/mock/meetingFlow'
 import { renderApp } from './test/renderApp'
 
 /*
- * #384 — BE PR #383 뒤의 progress 시점. AI 가 단계를 알리는 회의는 인계(handoff)에 들어가면 extracted 가 true 이고,
+ * #384·#483 — BE PR #383 뒤의 progress 시점. AI 가 단계를 알리는 회의는 인계(handoff)에 들어가면 extracted 가 true 이고,
  * 그 값이 done·failed 뒤에도 남는다. 처리 화면이 그 값으로 잘못 그리지 않는지 실제 경로·MSW 로 본다.
  */
 
@@ -18,19 +18,55 @@ function meeting(meetingId: string) {
 }
 
 describe('처리 화면과 #383 의 progress (#384)', () => {
-  it('인계 중이면 세 단계가 모두 끝났지만 아직 정리 중이다', async () => {
+  it('인계 중이면 extracted 가 참이어도 마지막 단계는 아직 진행 중이다 (#483)', async () => {
     meeting('mt_10').progress = ALL_DONE
     renderApp(paths.meetingProcessing('ws_01', 'mt_10'))
 
     expect(await screen.findByRole('heading', { name: '정리하고 있어요' })).toBeInTheDocument()
     const steps = within(screen.getByRole('list', { name: '정리 단계' })).getAllByRole('listitem')
     expect(steps.map((step) => step.textContent)).toEqual([
-      '음성 파일 준비하기완료',
+      '차례 기다리는 중완료',
       '음성을 텍스트로 옮기기완료',
-      '결정사항과 할 일 뽑아내기완료',
+      '결정사항과 할 일 뽑아내기진행 중',
     ])
-    expect(steps.filter((step) => step.hasAttribute('aria-current'))).toEqual([])
-    expect(screen.getByRole('status')).toHaveTextContent(/^3 \/ 3 단계 완료$/)
+    expect(steps[2]).toHaveAttribute('aria-current', 'step')
+    expect(screen.getByRole('status')).toHaveTextContent(
+      /^2 \/ 3 단계 완료 · 결정사항과 할 일 뽑아내기 진행 중$/,
+    )
+  })
+
+  it('채팅 회의는 대화 모으기 → 뽑아내기 두 단계이고 넘기는 중에도 둘째가 진행 중이다 (#483)', async () => {
+    completeMeeting('mt_10')
+    const chatId = startChatMeeting()
+    renderApp(paths.meetingProcessing('ws_01', chatId))
+
+    expect(await screen.findByRole('heading', { name: '정리하고 있어요' })).toBeInTheDocument()
+    const rows = () =>
+      within(screen.getByRole('list', { name: '정리 단계' }))
+        .getAllByRole('listitem')
+        .map((step) => step.textContent)
+    expect(rows()).toEqual(['대화 모으기진행 중', '결정사항과 할 일 뽑아내기대기'])
+    expect(screen.getByRole('status')).toHaveTextContent(/^0 \/ 2 단계 완료 · 대화 모으기 진행 중$/)
+  })
+
+  it.each([
+    ['발화가 저장된 뒤', { audio_merged: true, transcribed: true, extracted: false }],
+    ['넘기는 중', ALL_DONE],
+  ])('채팅 회의 — %s 는 1 / 2 이고 뽑아내기가 진행 중이다 (#483)', async (_, progress) => {
+    completeMeeting('mt_10')
+    const chatId = startChatMeeting()
+    meeting(chatId).progress = progress
+    renderApp(paths.meetingProcessing('ws_01', chatId))
+
+    expect(await screen.findByRole('heading', { name: '정리하고 있어요' })).toBeInTheDocument()
+    const steps = within(screen.getByRole('list', { name: '정리 단계' })).getAllByRole('listitem')
+    expect(steps.map((step) => step.textContent)).toEqual([
+      '대화 모으기완료',
+      '결정사항과 할 일 뽑아내기진행 중',
+    ])
+    expect(screen.getByRole('status')).toHaveTextContent(
+      /^1 \/ 2 단계 완료 · 결정사항과 할 일 뽑아내기 진행 중$/,
+    )
   })
 
   it.each([

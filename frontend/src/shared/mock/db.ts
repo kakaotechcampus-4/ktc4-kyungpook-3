@@ -25,7 +25,8 @@ import type { MockReplies } from './reply-state'
 /**
  * 처리 중 회의를 상세 조회(`GET /meetings/{id}`)가 어떻게 진행시키는가. 진행 규칙은 meetingFlow.ts 에 있다.
  * - `manual`: 저절로 바뀌지 않는다. 테스트가 `advanceMeeting` 등으로 직접 바꾼다 — Vitest 와 기존 시나리오의 기본값
- * - `staged`: 조회마다 한 단계(`audio_merged` → `transcribed` → `extracted` → `done`). 브라우저 데모용
+ * - `staged`: 조회마다 한 단계. 서버 순서대로 녹음은 대기 → `audio_merged`(stt) → `transcribed`(sources) → `extracted`(handoff, 아직 processing) → `done`,
+ *   채팅은 대기 → 앞 두 값(발화 저장) → `extracted` → `done` 이다 (#483). 브라우저 데모용
  * - `instant`: 첫 조회에 바로 `done`. 인위적 지연이 없다 — E2E 용
  * - `fail`: 첫 조회에 `failed`
  * - `fail-notion-revoked`: 첫 조회에 `failed`, 그 공간의 Notion 연동이 `revoked` 가 된다 (D-099, D-100)

@@ -9,7 +9,10 @@ export type MeetingTimeAxis = 'recording' | 'wall_clock'
 
 export interface MeetingSourceTraits {
   timeAxis: MeetingTimeAxis
-  /** 처리 화면의 단계(음성 파일 준비하기 …)가 녹음 기준이라, 이 회의의 정리 상태를 그 화면으로 보일 수 있는지 */
+  /**
+   * 회의록 목록의 정리 중 행을 처리 화면으로 잇는지. 채팅 회의는 처리 화면 단계가 녹음 기준이던 때(#379) 막았다.
+   * 채팅 두 단계(#483)가 생긴 뒤에도 목록에서 다시 잇는 것은 정하지 않았다 — 진행 토스트의 「자세히 보기」는 잇는다
+   */
   hasProcessingScreen: boolean
 }
 

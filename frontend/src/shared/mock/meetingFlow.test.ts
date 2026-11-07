@@ -10,7 +10,13 @@ import type { MinutesDto } from '@/shared/types/api/minutes'
 import type { TaskDto } from '@/shared/types/api/task'
 import { db, initialDb } from './db'
 import type { MeetingFlowMode } from './db'
-import { advanceMeeting, completeMeeting, failMeeting, setMeetingFlowMode } from './meetingFlow'
+import {
+  advanceMeeting,
+  completeMeeting,
+  failMeeting,
+  setMeetingFlowMode,
+  startChatMeeting,
+} from './meetingFlow'
 
 // 업로드 본문을 jsdom File 로 만들고, Undici 파서를 위해 전역만 Node File 로 바꾼다 (meeting.integration.test.ts)
 const BrowserFile = globalThis.File
@@ -233,11 +239,10 @@ describe('Vitest 기본 계약은 상태를 명시적으로 제어한다 (U2-3)'
 })
 
 describe('흐름 방식 — 상세 조회가 진행시킨다', () => {
-  it('staged 는 조회마다 한 단계, 네 번째 조회에 done 이다', async () => {
-    const id = await upload()
-    setMeetingFlowMode('staged')
+  /** 조회마다 `상태:progress 세 값` 을 적는다 */
+  async function polls(id: string, count: number) {
     const seen: string[] = []
-    for (let poll = 0; poll < 4; poll += 1) {
+    for (let poll = 0; poll < count; poll += 1) {
       const meeting = await detail(id)
       const progress = meeting.progress ?? {
         audio_merged: false,
@@ -248,7 +253,31 @@ describe('흐름 방식 — 상세 조회가 진행시킨다', () => {
         `${meeting.status}:${Number(progress.audio_merged)}${Number(progress.transcribed)}${Number(progress.extracted)}`,
       )
     }
-    expect(seen).toEqual(['processing:100', 'processing:110', 'processing:111', 'done:111'])
+    return seen
+  }
+
+  it('staged 녹음 회의는 서버 순서다 — 대기 → stt → sources → handoff(아직 processing) → done (#483)', async () => {
+    const id = await upload()
+    setMeetingFlowMode('staged')
+    expect(await polls(id, 5)).toEqual([
+      'processing:000',
+      'processing:100',
+      'processing:110',
+      'processing:111',
+      'done:111',
+    ])
+  })
+
+  it('staged 채팅 회의는 발화 저장에 앞 두 값이 함께 켜진다 — 000 → 110 → 111 → done (#483)', async () => {
+    completeMeeting('mt_10')
+    const id = startChatMeeting()
+    setMeetingFlowMode('staged')
+    expect(await polls(id, 4)).toEqual([
+      'processing:000',
+      'processing:110',
+      'processing:111',
+      'done:111',
+    ])
   })
 
   it('instant 는 첫 조회에 done 이고 회의록을 바로 읽을 수 있다', async () => {

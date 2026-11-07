@@ -436,7 +436,7 @@ describe('처리 화면 (U4-4, U4-10)', () => {
     await openProcessing()
     const steps = within(screen.getByRole('list', { name: '정리 단계' })).getAllByRole('listitem')
     expect(steps.map((step) => step.textContent)).toEqual([
-      '음성 파일 준비하기완료',
+      '차례 기다리는 중완료',
       '음성을 텍스트로 옮기기진행 중',
       '결정사항과 할 일 뽑아내기대기',
     ])
@@ -449,8 +449,23 @@ describe('처리 화면 (U4-4, U4-10)', () => {
     expect(screen.queryByRole('progressbar')).toBeNull()
     // 범위 밖 캔버스 요소(원본 재생·중단)가 없다
     expect(screen.queryByRole('button', { name: /들어보기|중단하기/ })).toBeNull()
-    // D-101 로 바뀐 Notion 반영 안내
-    expect(main).toHaveTextContent('회의록과 확실한 태스크는 바로 Notion에 반영하고')
+    // Notion 반영 안내 — 회의록 본문은 올리지 않는다. 기본 역할 PM 은 승인 문장까지 본다 (D-101, 2026-11-07)
+    expect(main).toHaveTextContent(
+      'Notion을 연결했다면 확실한 태스크는 바로, 확인이 필요한 태스크는 승인한 뒤 Notion에도 올라가요.',
+    )
+    expect(main).not.toHaveTextContent('회의록과')
+  })
+
+  it('일반 팀원은 승인 문장 없이 확실한 태스크만 Notion에 올라간다는 안내를 본다', async () => {
+    setMockRole('member')
+    await openProcessing()
+    const main = screen.getByRole('main')
+    await waitFor(() =>
+      expect(main).toHaveTextContent(
+        'Notion을 연결했다면 확실한 태스크는 바로 Notion에도 올라가요.',
+      ),
+    )
+    expect(main).not.toHaveTextContent('승인한 뒤')
   })
 
   it('아직 끝난 단계가 없으면 정리하고 있다는 제목과 0 / 3 단계 완료를 알린다', async () => {

@@ -71,12 +71,12 @@ describe('회의 시나리오 (U2-4)', () => {
     },
   )
 
-  it('meeting-demo: 업로드한 회의가 조회마다 한 단계씩 보이다가 끝난다', async () => {
+  it('meeting-demo: 업로드한 회의가 대기부터 조회마다 한 단계씩 보이다가 끝난다 (#483)', async () => {
     applyScenario('meeting-demo')
     const { meeting_id } = await upload()
     const statuses: string[] = []
-    for (let poll = 0; poll < 4; poll += 1) statuses.push((await detail(meeting_id)).status)
-    expect(statuses).toEqual(['processing', 'processing', 'processing', 'done'])
+    for (let poll = 0; poll < 5; poll += 1) statuses.push((await detail(meeting_id)).status)
+    expect(statuses).toEqual(['processing', 'processing', 'processing', 'processing', 'done'])
   })
 
   it('meeting-instant: 인위적 지연 없이 첫 조회에 끝난다', async () => {
@@ -117,6 +117,20 @@ describe('회의 시나리오 (U2-4)', () => {
       progress: { audio_merged: false, transcribed: false, extracted: false },
     })
     await expect(upload()).resolves.toMatchObject({ meeting_id: 'mt_12', status: 'processing' })
+  })
+
+  it('meeting-chat-demo: 채팅 회의 mt_11 이 조회마다 대기 → 발화 저장 → 넘기기 → done 이다 (#483)', async () => {
+    applyScenario('meeting-chat-demo')
+    const seen: string[] = []
+    for (let poll = 0; poll < 4; poll += 1) {
+      const { status, progress } = await detail('mt_11')
+      seen.push(
+        `${status}:${Object.values(progress ?? {})
+          .map(Number)
+          .join('')}`,
+      )
+    }
+    expect(seen).toEqual(['processing:000', 'processing:110', 'processing:111', 'done:111'])
   })
 
   it('meeting-chat-stalled: 채팅 회의만 첫 조회에 chat_stalled 로 끝나고 올린 회의는 그대로다 (#450)', async () => {
@@ -184,10 +198,11 @@ describe('sessionStorage 영속 (U2-4)', () => {
         [meeting_id]: { speakers: [], mapping: null, audio: true, expireOnSubmit: false },
       },
     })
-    // 복원된 진행 단계에서 이어 간다
+    // 복원된 진행 단계에서 이어 간다 — 첫 조회가 대기를 답하고 stt 로 넘어가 있었다 (#483)
     await expect(detail(meeting_id)).resolves.toMatchObject({
-      progress: { audio_merged: true, transcribed: true, extracted: false },
+      progress: { audio_merged: true, transcribed: false, extracted: false },
     })
+    await detail(meeting_id)
     await detail(meeting_id)
     await detail(meeting_id)
     await expect(fetchDto<MinutesDto>(`/meetings/${meeting_id}/minutes`)).resolves.toMatchObject({

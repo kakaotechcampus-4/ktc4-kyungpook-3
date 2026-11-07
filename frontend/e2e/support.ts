@@ -20,6 +20,7 @@ export type Scenario =
   | 'meeting-member'
   | 'meeting-chat-processing'
   | 'meeting-chat-stalled'
+  | 'meeting-chat-demo'
   | 'meeting-speakers'
   | 'meeting-speakers-expired'
   | 'tasks-default'

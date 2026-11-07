@@ -54,6 +54,8 @@ export const MOCK_SCENARIOS = [
   // 정리 중 채팅 회의가 있는 업로드 (#450). 둘째는 그 회의가 첫 상세 조회에 chat_stalled 로 실패한다
   'meeting-chat-processing',
   'meeting-chat-stalled',
+  // 정리 중 채팅 회의 mt_11 이 상세 조회마다 한 단계씩 간다 — 대화 모으기 → 뽑아내기 (#483)
+  'meeting-chat-demo',
   ...SPEAKER_SCENARIOS,
   // M6 태스크·승인. 모두 ws_01 하나에 PM 으로 로그인한다(마지막만 일반 팀원). 전이는 handler 가 만든다
   'tasks-default',
@@ -669,6 +671,10 @@ export function createScenarioDb(scenario: MockScenario): MockDb {
       break
     case 'meeting-chat-stalled':
       readyToUpload(state, 'fail-chat-stalled')
+      startChatMeeting(state)
+      break
+    case 'meeting-chat-demo':
+      readyToUpload(state, 'staged')
       startChatMeeting(state)
       break
     case 'tasks-default':

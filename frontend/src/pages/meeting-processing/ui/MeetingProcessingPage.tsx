@@ -6,12 +6,11 @@ import {
   meetingDetailQueryOptions,
   meetingFailure,
   meetingListQueryOptions,
-  PROCESSING_STEP_COUNT,
   processingSteps,
   trackMeeting,
   viewableMeeting,
 } from '@/entities/meeting'
-import type { Meeting, ProcessingStep } from '@/entities/meeting'
+import type { Meeting, MeetingSource, ProcessingStep } from '@/entities/meeting'
 import { useMemberWorkspace } from '@/entities/workspace'
 import { ApiError } from '@/shared/api/errors'
 import { paths } from '@/shared/config/routes'
@@ -36,9 +35,14 @@ const MARK = 'inline-flex size-22 shrink-0 items-center justify-center rounded-9
 const LINK =
   'inline-flex h-36 items-center justify-center self-start rounded-9 bg-ink px-16 text-control font-semibold text-surface hover:bg-dim active:bg-sub'
 
-/** 정리 방식 안내. 확실한 것은 바로, 확인 필요 항목은 승인 뒤 반영한다 (D-101) */
-const NOTION_NOTE =
-  '회의록과 확실한 태스크는 바로 Notion에 반영하고, 확인이 필요한 항목은 승인한 뒤 반영해요.'
+/**
+ * Notion 반영 안내. 확실한 태스크는 바로, 확인 필요 태스크는 PM 승인 뒤 올라간다 (D-101). BE 는 회의록 본문을 Notion 에 올리지 않는다.
+ * 승인은 PM 만 하므로 팀원에게는 승인 문장을 빼고 보인다 (2026-11-07 사용자 결정)
+ */
+const NOTION_NOTE = {
+  pm: 'Notion을 연결했다면 확실한 태스크는 바로, 확인이 필요한 태스크는 승인한 뒤 Notion에도 올라가요.',
+  member: 'Notion을 연결했다면 확실한 태스크는 바로 Notion에도 올라가요.',
+} as const
 
 const STEP_TEXT: Record<ProcessingStep['state'], string> = {
   done: '완료',
@@ -52,7 +56,7 @@ const STEP_TEXT: Record<ProcessingStep['state'], string> = {
  * 이 화면은 같은 캐시를 그린다. 이 화면에서 정리 중·화자 지정 대기 회의를 보면 추적기에 등록한다(다른 팀원이 올린 회의, 직접 링크).
  * 완료·실패 뒤 이동은 추적기가 한다 — 이 화면을 보고 있을 때만이다.
  *
- * 서버의 `progress` 세 값을 단계로만 보인다. 캔버스의 진행 막대·경과·단계별 시간·말 겹침 안내·`중단하기` 는 넣지 않는다 —
+ * 서버의 `progress` 세 값과 회의 상태를 단계로만 보인다 — 녹음 회의는 세 단계, 채팅 회의는 두 단계다 (#483). 캔버스의 진행 막대·경과·단계별 시간·말 겹침 안내·`중단하기` 는 넣지 않는다 —
  * 서버가 주지 않는 숫자이거나(U4-4) 범위 밖 기능이다(원본 재생, 중단 API 없음).
  */
 export function MeetingProcessingPage() {
@@ -78,7 +82,7 @@ function Layout({ status, children }: { status: string; children: ReactNode }) {
 
 function MeetingProcessing({ workspaceId, meetingId }: { workspaceId: string; meetingId: string }) {
   const detail = useQuery(meetingDetailQueryOptions(workspaceId, meetingId))
-  // 참석 인원은 목록에만 있다. 추적기의 발견과 같은 캐시라 보통 새 요청이 없다
+  // 참석 인원·출처는 목록에만 있다. 추적기의 발견과 같은 캐시라 보통 새 요청이 없다
   const summary = useQuery({
     ...meetingListQueryOptions(workspaceId),
     select: (meetings) => meetings.find(({ id }) => id === meetingId) ?? null,
@@ -103,16 +107,11 @@ function MeetingProcessing({ workspaceId, meetingId }: { workspaceId: string; me
           />
         </Layout>
       )
-    return (
-      <Layout status="정리 상태를 불러오는 중이에요">
-        <div aria-busy="true">
-          <Skeleton lines={4} />
-        </div>
-      </Layout>
-    )
+    return <Loading />
   }
 
   const attendeeCount = summary.data?.attendeeCount ?? null
+  const source = summary.data?.source ?? null
   // 받아 둔 상태가 있는데 다시 묻지 못했다 — 정리 실패가 아니다. 다시 물어볼 때까지 마지막 상태를 둔다 (U4-8).
   // 403·404·다른 공간은 다시 물어도 같은 답이라 viewableMeeting 이 먼저 걸러 볼 수 없는 회의로 그린다. 그 밖의 재조회 실패
   // (네트워크 오류·408·5xx 등)는 마지막 상태를 두고, 연결 불안정 안내는 네트워크 오류일 때만 보인다 (#405)
@@ -164,8 +163,29 @@ function MeetingProcessing({ workspaceId, meetingId }: { workspaceId: string; me
         </Layout>
       )
     default:
-      return <Processing meeting={meeting} attendeeCount={attendeeCount} stale={stale} />
+      // 단계 목록이 출처마다 달라(#483) 목록을 처음 받는 동안은 기다린다 — 채팅 회의가 녹음 세 단계로 잠깐 보이지 않게 한다.
+      // 목록을 받지 못하면 출처를 모르는 채(녹음 회의 단계로) 그린다
+      if (summary.isPending) return <Loading />
+      return (
+        <Processing
+          meeting={meeting}
+          source={source}
+          isPm={isPm}
+          attendeeCount={attendeeCount}
+          stale={stale}
+        />
+      )
   }
+}
+
+function Loading() {
+  return (
+    <Layout status="정리 상태를 불러오는 중이에요">
+      <div aria-busy="true">
+        <Skeleton lines={4} />
+      </div>
+    </Layout>
+  )
 }
 
 function Heading({
@@ -194,17 +214,21 @@ function Heading({
 
 function Processing({
   meeting,
+  source,
+  isPm,
   attendeeCount,
   stale,
 }: {
   meeting: Meeting
+  source: MeetingSource | null
+  isPm: boolean
   attendeeCount: number | null
   stale: boolean
 }) {
-  const steps = processingSteps(meeting.progress, meeting.status)
+  const steps = processingSteps(meeting.progress, meeting.status, source)
   const doneCount = steps.filter(({ state }) => state === 'done').length
   const current = steps.find(({ state }) => state === 'current')
-  const position = `${doneCount} / ${PROCESSING_STEP_COUNT} 단계 완료`
+  const position = `${doneCount} / ${steps.length} 단계 완료`
   return (
     <Layout status={current === undefined ? position : `${position} · ${current.label} 진행 중`}>
       <Heading meeting={meeting} attendeeCount={attendeeCount} title="정리하고 있어요" />
@@ -222,7 +246,8 @@ function Processing({
         <p className={META}>연결이 불안정해요. 다시 연결되면 정리 상태를 바로 확인할게요.</p>
       ) : null}
       <p className={NOTE}>
-        정리하는 동안 다른 화면을 써도 괜찮아요. 끝나면 알려드릴게요. {NOTION_NOTE}
+        정리하는 동안 다른 화면을 써도 괜찮아요. 끝나면 알려드릴게요.{' '}
+        {NOTION_NOTE[isPm ? 'pm' : 'member']}
       </p>
     </Layout>
   )

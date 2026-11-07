@@ -16,6 +16,7 @@ import {
   completeMeeting,
   failMeeting,
   setMeetingFlowMode,
+  startChatMeeting,
 } from '@/shared/mock/meetingFlow'
 import { setMockRole } from '@/shared/mock/sessions'
 import { awaitSpeakers } from '@/shared/mock/speakerFlow'
@@ -106,7 +107,7 @@ describe('상태 전환 — 같은 회의의 토스트 하나가 바뀐다', () 
 
     const processing = await openCard()
     expect(processing).toHaveTextContent('주간 회고 녹음 정리 중')
-    expect(processing).toHaveTextContent('음성 파일을 준비하고 있어요')
+    expect(processing).toHaveTextContent('차례를 기다리고 있어요')
     expect(processing).toHaveTextContent('0 / 3 단계 완료')
     expect(within(processing).queryByRole('button', { name: '닫기' })).toBeNull()
     const status = announcement()
@@ -493,6 +494,44 @@ describe('접기', () => {
     await waitForCard()
     expect(pill()).toBeNull()
   }, 15_000)
+})
+
+describe('단계 표시는 처리 화면과 같은 목록이다 (#483)', () => {
+  it('녹음 회의는 넘기는 중(extracted 참, 아직 processing)에도 2/3 이고 마지막 칸이 진행 중이다', async () => {
+    fakeIntervals()
+    db.meetings.find(({ meeting_id }) => meeting_id === 'mt_10')!.progress = {
+      audio_merged: true,
+      transcribed: true,
+      extracted: true,
+    }
+    await openTasks()
+    expect(await waitForPill()).toHaveTextContent('정리 중2/3')
+    const card = await openCard()
+    expect(card).toHaveTextContent('결정사항과 할 일을 뽑고 있어요')
+    expect(card).toHaveTextContent('2 / 3 단계 완료')
+  })
+
+  it('채팅 회의는 두 단계다 — 대화 모으기 0/2 → 뽑아내기 1/2, 넘기는 중에도 1/2 다', async () => {
+    fakeIntervals()
+    completeMeeting('mt_10')
+    const chatId = startChatMeeting()
+    const chat = db.meetings.find(({ meeting_id }) => meeting_id === chatId)!
+    await openTasks()
+    expect(await waitForPill()).toHaveTextContent('정리 중0/2')
+    const card = await openCard()
+    expect(card).toHaveTextContent('대화를 모으고 있어요')
+    expect(card).toHaveTextContent('0 / 2 단계 완료')
+
+    chat.progress = { audio_merged: true, transcribed: true, extracted: false }
+    await poll()
+    await waitFor(() => expect(processingCard()).toHaveTextContent('1 / 2 단계 완료'))
+    expect(processingCard()).toHaveTextContent('결정사항과 할 일을 뽑고 있어요')
+
+    chat.progress = { audio_merged: true, transcribed: true, extracted: true }
+    await poll()
+    await poll()
+    expect(processingCard()).toHaveTextContent('1 / 2 단계 완료')
+  })
 })
 
 describe('화면 읽기 알림 (role=status)', () => {

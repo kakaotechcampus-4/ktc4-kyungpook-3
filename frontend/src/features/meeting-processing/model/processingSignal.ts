@@ -1,11 +1,24 @@
 import { meetingFailure, processingSteps } from '@/entities/meeting'
-import type { MeetingProgress, ProcessingStep, ProcessingStepState } from '@/entities/meeting'
+import type {
+  MeetingProgress,
+  MeetingSource,
+  ProcessingStepKey,
+  ProcessingStepState,
+} from '@/entities/meeting'
 import type { Role } from '@/shared/types/common'
 import { PROCESSING_DONE_TITLE, PROCESSING_FAILED_TITLE, SPEAKERS_NEEDED_TITLE } from './notices'
 
-/** 진행 토스트가 보는 회의 하나. 정리 중·대기는 상세 캐시에서, 완료·실패는 끝난 결과 기록에서 온다 (#424) */
+/**
+ * 진행 토스트가 보는 회의 하나. 정리 중·대기는 상세 캐시에서, 완료·실패는 끝난 결과 기록에서 온다 (#424).
+ * `source` 는 상세에 없어 목록 요약에서 온다. 모르면 null — 녹음 회의 단계다 (#483)
+ */
 export type ProcessingSubject =
-  | { phase: 'processing' | 'awaiting_speakers'; title: string; progress: MeetingProgress | null }
+  | {
+      phase: 'processing' | 'awaiting_speakers'
+      title: string
+      progress: MeetingProgress | null
+      source: MeetingSource | null
+    }
   | { phase: 'done'; title: string }
   | { phase: 'failed'; title: string; failedStage: string | null }
 
@@ -35,11 +48,12 @@ const VIEWS: Record<Role, Record<Phase, View | null>> = {
   member: { processing: 'processing', awaiting_speakers: 'waiting', done: 'done', failed: null },
 }
 
-/** 처리 화면의 단계와 같은 순서다. 지금 단계가 없는 정리 중(옛 응답·세 단계 모두 끝)은 마지막 단계 문장이다 */
-const STAGE_SENTENCES: Record<ProcessingStep['key'], string> = {
-  audioMerged: '음성 파일을 준비하고 있어요',
-  transcribed: '음성을 텍스트로 옮기고 있어요',
-  extracted: '결정사항과 할 일을 뽑고 있어요',
+/** 처리 화면의 단계마다 하나다. 지금 단계가 없는 정리 중은 마지막 단계 문장이다 */
+const STAGE_SENTENCES: Record<ProcessingStepKey, string> = {
+  queue: '차례를 기다리고 있어요',
+  transcribe: '음성을 텍스트로 옮기고 있어요',
+  collect: '대화를 모으고 있어요',
+  extract: '결정사항과 할 일을 뽑고 있어요',
 }
 
 const WAITING_SENTENCE = '화자 지정을 기다리고 있어요'
@@ -48,12 +62,12 @@ function progressSignal(
   subject: Extract<ProcessingSubject, { phase: 'processing' | 'awaiting_speakers' }>,
   waiting: boolean,
 ): ProcessingSignal {
-  const steps = processingSteps(subject.progress, subject.phase)
+  const steps = processingSteps(subject.progress, subject.phase, subject.source)
   const current = steps.find(({ state }) => state === 'current')
   return {
     kind: 'processing',
     title: subject.title,
-    sentence: waiting ? WAITING_SENTENCE : STAGE_SENTENCES[current?.key ?? 'extracted'],
+    sentence: waiting ? WAITING_SENTENCE : STAGE_SENTENCES[current?.key ?? 'extract'],
     steps: steps.map(({ state }) => state),
     doneCount: steps.filter(({ state }) => state === 'done').length,
   }
