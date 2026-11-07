@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends
@@ -63,6 +64,15 @@ from app.services.embedding import has_unsearchable_tasks
 from app.services.tasks import create_task, delete_task
 
 logger = logging.getLogger(__name__)
+
+
+def auto_create_enabled() -> bool:
+    """새 항목을 PM 확인 없이 태스크로 만들어도 되는지(환경변수 AUTO_CREATE_ENABLED, 기본 켜짐).
+
+    false·0·off·no 면 auto 로 정해진 새 항목을 review 로 내린다. legacy·judge 모두 해당하고 hold 는 그대로다.
+    요청마다 읽으므로 바꾼 뒤 재시작만 하면 된다. 검증 실행은 AI 쪽 JEV_API_KEY 가 따로 정한다.
+    """
+    return os.getenv("AUTO_CREATE_ENABLED", "true").strip().lower() not in {"false", "0", "off", "no"}
 
 router = APIRouter(prefix="/extractions", tags=["extractions"])
 
@@ -271,6 +281,14 @@ def create_extraction(
                 logger.info(
                     "chat 회의라 auto 항목을 review로 내립니다. meeting_id=%s title=%s",
                     meeting.meeting_id, raw_item.task_title,
+                )
+            if gate == Gate.AUTO and not auto_create_enabled():
+                # 자동 생성 스위치(#382 멘토 리뷰). 검증(AI 의 Jev)은 그대로 돌고 근거 상태도 저장하되, 태스크는 PM 확인
+                # 뒤에만 만든다. 이 로그가 "켰으면 auto 였을 항목"이라, 승인·수정·반려 결과와 맞춰 보고 단계적으로 연다
+                gate = Gate.REVIEW
+                logger.info(
+                    "자동 생성이 꺼져 있어 auto 항목을 review로 내립니다. meeting_id=%s path=%s title=%s",
+                    meeting.meeting_id, raw_item.extraction_path(), raw_item.task_title,
                 )
             if blockers:
                 # auto 조건과 유사도 기준을 조정할 때 어떤 조건에서 많이 걸리는지 본다

@@ -594,3 +594,56 @@ def test_approve_meeting_create_still_records_meeting_source(client, db, seed):
     task = db.execute(select(Task).where(Task.title == "결제 API 연동")).scalar_one()
     [history] = db.execute(select(TaskHistory).where(TaskHistory.task_id == task.task_id)).scalars().all()
     assert history.change_source == "meeting"
+
+
+# ── 자동 생성 스위치 (AUTO_CREATE_ENABLED, #382 멘토 리뷰) ─────────────────────────
+
+
+def _legacy_auto() -> dict:
+    """legacy 경로에서 확신도로 auto 가 되는 새 항목."""
+    return {
+        "task_title": "결제 환불 기능 구현", "task_confidence": 0.95, "assignee_raw": "지민님",
+        "due_date": "2026-10-20", "due_confidence": 0.95,
+        "evidence_quote": "지민님이 20일까지 결제 환불 붙여 주세요", "evidence_speaker": "uid-pm",
+    }
+
+
+@pytest.mark.parametrize("value", ["false", "0", "off", " False "])
+def test_auto_create_off_turns_judge_auto_into_review(client, db, seed, monkeypatch, caplog, value):
+    # 검증(Jev)은 그대로 돌아 근거 상태가 저장되고, 태스크만 PM 확인 뒤에 생긴다
+    monkeypatch.setenv("AUTO_CREATE_ENABLED", value)
+    with caplog.at_level("INFO", logger="app.api.extractions"):
+        item = _only_item(client, _extract(client, seed, [_judge()]))
+
+    assert item["gate"] == "review"
+    assert item["task_id"] is None and item["approval_id"] is not None
+    assert item["task"]["evidence_status"] == "certain"
+    assert item["due_date"]["evidence_status"] == "certain"
+    assert db.execute(select(Task).where(Task.title == "결제 API 연동")).scalar_one_or_none() is None
+    assert "자동 생성이 꺼져 있어 auto 항목을 review로 내립니다" in caplog.text
+
+
+def test_auto_create_off_also_stops_legacy_auto(client, db, seed, monkeypatch):
+    monkeypatch.setenv("AUTO_CREATE_ENABLED", "false")
+    item = _only_item(client, _extract(client, seed, [_legacy_auto()]))
+
+    assert item["gate"] == "review"
+    assert db.execute(select(Task).where(Task.title == "결제 환불 기능 구현")).scalar_one_or_none() is None
+
+
+def test_auto_create_off_keeps_hold(client, seed, monkeypatch):
+    # 끄는 것은 auto 만 review 로 내린다. PM 이 채워야 하는 hold 는 그대로다
+    monkeypatch.setenv("AUTO_CREATE_ENABLED", "false")
+    assert _gate(client, seed, assignee_raw="모르는사람") == "hold"
+
+
+@pytest.mark.parametrize("value", [None, "", "true", "1", "on"])
+def test_auto_create_on_or_unset_keeps_auto(client, db, seed, monkeypatch, value):
+    if value is None:
+        monkeypatch.delenv("AUTO_CREATE_ENABLED", raising=False)
+    else:
+        monkeypatch.setenv("AUTO_CREATE_ENABLED", value)
+    item = _only_item(client, _extract(client, seed, [_judge()]))
+
+    assert item["gate"] == "auto"
+    assert db.get(Task, item["task_id"]).title == "결제 API 연동"
