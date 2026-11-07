@@ -559,6 +559,9 @@ class ExtractionItem(Base):
     # 확신도는 AI가 보낸 값이다. NULL은 측정하지 않았다는 뜻이고 0.0(측정했는데 낮음)과 다르다
     task_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
     assignee_raw: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # 담당자 표현의 종류(first·thirdname·thirdrole 등). 승인 때 이 표현을 별칭으로 배울지 가리는 데 쓴다(#459).
+    # 알려진 값(alias_learning.KNOWN_ASSIGNEE_TYPES)이 아니면 NULL이고, 예전 항목도 NULL이라 학습 대상이 아니다
+    assignee_type: Mapped[str | None] = mapped_column(String(16), nullable=True)
     assignee_member_id: Mapped[str | None] = mapped_column(
         String(36), ForeignKey("member.member_id", ondelete="SET NULL"), nullable=True
     )

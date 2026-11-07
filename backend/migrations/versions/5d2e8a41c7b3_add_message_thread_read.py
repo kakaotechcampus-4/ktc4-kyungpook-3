@@ -9,7 +9,7 @@ sqlite·PostgreSQL 에서 같게 동작하며, 마이그레이션이 도는 동�
 앱 코드를 import 하지 않아 앱이 바뀌어도 이 마이그레이션은 그대로다.
 
 Revision ID: 5d2e8a41c7b3
-Revises: 3c9a1f7d2b64
+Revises: c4a7e19d5b32
 Create Date: 2026-11-07 10:00:00.000000
 
 """
@@ -22,7 +22,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = '5d2e8a41c7b3'
-down_revision: Union[str, Sequence[str], None] = '3c9a1f7d2b64'
+down_revision: Union[str, Sequence[str], None] = 'c4a7e19d5b32'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
