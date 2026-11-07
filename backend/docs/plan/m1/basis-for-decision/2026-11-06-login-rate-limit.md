@@ -43,7 +43,7 @@
 - 코드: `app/services/login_limit.py`(신규), `app/api/auth.py`(login 예약·성공·취소, confirm 뒤 해제), `app/services/passwords.py`(`DUMMY_PASSWORD_HASH`, `surrogatepass`), `app/services/password_reset.py`(`confirm_reset` 이 해제할 이메일을 돌려줌), `app/core/errors.py`, `app/main.py`. 모델·마이그레이션 변경은 없다.
 - 남은 노출(범위 밖): 가입의 `EMAIL_ALREADY_EXISTS` 로 가입 여부가 드러남(#427), `hash_password` 의 서로게이트 비밀번호 500(#448), 재설정 요청의 응답 시간 차이(감수).
 - 재검토 조건: `--workers` 를 늘릴 때, 서버를 2대 이상 둘 때. 그때 저장소부터 다시 설계한다.
-- 프록시 위험: `docker-compose.prod.yml:40` 이 `FORWARDED_ALLOW_IPS: "*"` 이고, 설치된 uvicorn 은 이때 `X-Forwarded-For` 의 맨 왼쪽 값을 클라이언트로 쓴다. 그래서 Caddy 가 들어온 XFF 를 버리지 않고 뒤에 덧붙이면 (a) 공격자가 IP 제한을 피할 수 있고 (b) 공격자가 남의 공인 IP 를 XFF 에 넣고 50번 실패시켜 그 IP 를 쓰는 사람 모두를 15분 막을 수 있다. 이메일 제한은 헤더와 무관해 유효하다. Caddy 의 기본 동작은 확인하지 못했고 Caddyfile 이 저장소에 없다. 위조가 통한다고 확인된 것은 아니다.
+- 프록시 위험: `docker-compose.prod.yml:40` 이 `FORWARDED_ALLOW_IPS: "*"` 이고, 설치된 uvicorn 은 이때 `X-Forwarded-For` 의 맨 왼쪽 값을 클라이언트로 쓴다. 그래서 Caddy 가 들어온 XFF 를 버리지 않고 뒤에 덧붙이면 (a) 공격자가 IP 제한을 피할 수 있고 (b) 공격자가 남의 공인 IP 를 XFF 에 넣고 50번 실패시켜 그 IP 를 쓰는 사람 모두를 15분 막을 수 있다. 이메일 제한은 헤더와 무관해 유효하다. Caddy 의 기본 동작은 확인하지 못했고 Caddyfile 이 저장소에 없다. 위조가 통한다고 확인된 것은 아니다. 설치된 uvicorn 의 이 동작은 `tests/api/test_login_rate_limit.py` 의 `test_uvicorn_proxy_headers_resolve_client` 가 고정한다. uvicorn 을 올려 이 테스트가 깨지면 위 설명을 다시 확인한다.
 - 머지 전 사람이 서버에서 확인할 것: XFF 를 위조한 요청(`curl -H 'X-Forwarded-For: 1.2.3.4'`)을 보냈을 때 API 가 보는 클라이언트 주소가 1.2.3.4 가 아니라 실제 접속 주소인지 본다. 위조가 통하면 머지 전에 Caddy 설정을 고친다.
 - 확인 상태: 코드·테스트는 구현됐다. 서버의 Caddy 확인은 하지 않았다.
 

@@ -292,6 +292,9 @@ def test_commit_failure_keeps_block(mdb, sent, monkeypatch):
 
 
 def test_uvicorn_proxy_headers_resolve_client():
+    """앱 코드가 아니라 설치된 uvicorn 의 동작을 고정한다. FORWARDED_ALLOW_IPS="*" 일 때 X-Forwarded-For 의 값이
+    클라이언트 주소가 된다는 것이 결정 기록 "프록시 위험"의 전제다. uvicorn 을 올려 이 동작이 바뀌면 결정 기록의
+    위험 설명을 다시 확인하라. 이 테스트만 보고 지우지 말 것(#456 리뷰)."""
     from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
     seen = {}
