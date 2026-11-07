@@ -19,6 +19,7 @@ AI 파트(ai/embedding.py)와 같은 모델(text-embedding-3-small)과 같은 �
 검색: pgvector의 코사인 거리로 같은 워크스페이스의 task를 찾는다(todo·in_progress·blocked·done).
 임베딩이 아직 없는 task는 검색에서 빠진다. PostgreSQL 전용이다.
 """
+import json
 import logging
 import os
 import threading
@@ -28,7 +29,14 @@ from sqlalchemy import func, or_, select, update
 from sqlalchemy.orm import Session
 
 from app.core.database import SessionLocal
-from app.models import EMBEDDING_DIMENSIONS, Task, TaskStatus
+from app.models import (
+    EMBEDDING_DIMENSIONS,
+    ApprovalRequest,
+    ApprovalStatus,
+    ApprovalType,
+    Task,
+    TaskStatus,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -220,7 +228,7 @@ def process_missing_embeddings(
             raise
         if len(rows) == 1:
             # 하나뿐이면 다시 보내도 같은 결과다.
-            _log_rejected(rows[0].task_id, exc)
+            _log_rejected("task", rows[0].task_id, exc)
             pairs, rejected = [], list(rows)
         else:
             pairs, rejected, error = _embed_one_by_one(rows, transport=transport)
@@ -249,10 +257,123 @@ def process_missing_embeddings(
     return filled
 
 
+def pending_title(payload_text: str | None) -> str | None:
+    """승인 요청 payload(JSON 문자열)에서 task_create 의 제목을 꺼낸다.
+
+    task_title 이 공백 아닌 문자열이면 그것, 아니면 title 이 공백 아닌 문자열이면 그것이다
+    (approvals 의 승인 분기와 같은 규칙). JSON 이 아니거나 객체가 아니거나 제목이 없으면 None.
+    값은 strip 하지 않고 원문 그대로 돌려준다.
+    """
+    if not payload_text:
+        return None
+    try:
+        payload = json.loads(payload_text)
+    except ValueError:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    for key in ("task_title", "title"):
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip():
+            return value
+    return None
+
+
+def process_missing_approval_embeddings(
+    db: Session,
+    *,
+    transport: httpx.BaseTransport | None = None,
+    limit: int = BATCH_SIZE,
+) -> int:
+    """승인 대기 중인 task_create 요청 중 임베딩이 없는 것을 최대 `limit`개 채우고, 채운 개수를 돌려준다.
+
+    process_missing_embeddings 와 같은 방식이다. 제목이 없거나 문자열이 아닌 요청은 API 를 부르지 않고
+    embedding_rejected_title 에 ""를 적어 건너뛰며, 입력 오류로 거절된 요청은 그 제목을 적는다.
+    둘 다 다음 호출부터 대상에서 빠져서 뒤의 요청이 굶지 않는다. payload 는 바꾸지 않는다.
+    계산하는 사이에 승인·반려된 요청에는 벡터를 넣지 않는다.
+    """
+    raw = db.execute(
+        select(ApprovalRequest.approval_id, ApprovalRequest.payload)
+        .where(
+            ApprovalRequest.type == ApprovalType.TASK_CREATE,
+            ApprovalRequest.status == ApprovalStatus.PENDING,
+            ApprovalRequest.embedding.is_(None),
+            ApprovalRequest.embedding_rejected_title.is_(None),
+        )
+        .order_by(ApprovalRequest.approval_id)
+        .limit(limit)
+    ).all()
+    if not raw:
+        return 0
+
+    rows = []
+    unusable = []
+    for approval_id, payload in raw:
+        title = pending_title(payload)
+        if title is None:
+            unusable.append(approval_id)
+        else:
+            rows.append((approval_id, title))
+
+    error: EmbeddingError | None = None
+    rejected = []
+    pairs = []
+    if rows:
+        try:
+            pairs = list(zip(rows, embed_texts([title for _, title in rows], transport=transport)))
+        except EmbeddingError as exc:
+            if not exc.is_input_error:
+                raise
+            if len(rows) == 1:
+                _log_rejected("approval", rows[0][0], exc)
+                rejected = list(rows)
+            else:
+                pairs, rejected, error = _embed_one_by_one(rows, transport=transport, kind="approval")
+
+    for approval_id in unusable:
+        db.execute(
+            update(ApprovalRequest)
+            .where(
+                ApprovalRequest.approval_id == approval_id,
+                ApprovalRequest.status == ApprovalStatus.PENDING,
+            )
+            .values(embedding_rejected_title="")
+        )
+    for approval_id, title in rejected:
+        db.execute(
+            update(ApprovalRequest)
+            .where(
+                ApprovalRequest.approval_id == approval_id,
+                ApprovalRequest.status == ApprovalStatus.PENDING,
+            )
+            .values(embedding_rejected_title=title)
+        )
+
+    filled = 0
+    for (approval_id, _title), vector in pairs:
+        # 계산하는 사이에 승인·반려됐으면 벡터를 넣지 않는다.
+        result = db.execute(
+            update(ApprovalRequest)
+            .where(
+                ApprovalRequest.approval_id == approval_id,
+                ApprovalRequest.status == ApprovalStatus.PENDING,
+                ApprovalRequest.embedding.is_(None),
+            )
+            .values(embedding=vector)
+        )
+        filled += result.rowcount
+    db.commit()
+    if error is not None:
+        raise error
+    return filled
+
+
 def _embed_one_by_one(
-    rows, *, transport: httpx.BaseTransport | None
+    rows, *, transport: httpx.BaseTransport | None, kind: str = "task"
 ) -> tuple[list, list, EmbeddingError | None]:
-    """배치가 입력 오류로 거절됐을 때 task를 하나씩 다시 보낸다.
+    """배치가 입력 오류로 거절됐을 때 task(또는 승인 요청)를 하나씩 다시 보낸다.
+
+    rows 는 (id, title) 순서로 읽을 수 있는 행이다. kind 는 로그에 쓰는 이름이다.
 
     입력 오류로 거절된 task는 건너뛰고 따로 모아 둔다. 도중에 입력 오류가 아닌 실패(장애·429 등)가
     나면 남은 task도 똑같이 실패할 것이라 거기서 멈추고,
@@ -262,19 +383,19 @@ def _embed_one_by_one(
     rejected = []
     for row in rows:
         try:
-            [vector] = embed_texts([row.title], transport=transport)
+            [vector] = embed_texts([row[1]], transport=transport)
         except EmbeddingError as exc:
             if not exc.is_input_error:
                 return pairs, rejected, exc
-            _log_rejected(row.task_id, exc)
+            _log_rejected(kind, row[0], exc)
             rejected.append(row)
             continue
         pairs.append((row, vector))
     return pairs, rejected, None
 
 
-def _log_rejected(task_id: str, exc: EmbeddingError) -> None:
-    logger.warning("task 임베딩 입력이 거절되어 건너뜁니다 task_id=%s: %s", task_id, exc)
+def _log_rejected(kind: str, row_id: str, exc: EmbeddingError) -> None:
+    logger.warning("%s 임베딩 입력이 거절되어 건너뜁니다 %s_id=%s: %s", kind, kind, row_id, exc)
 
 
 def retry_delay(interval: float, failures: int, exc: EmbeddingError) -> float:
@@ -330,6 +451,7 @@ def run_worker(stop_event: threading.Event, interval: float) -> None:
         db = SessionLocal()
         try:
             process_missing_embeddings(db)
+            process_missing_approval_embeddings(db)
             failures = 0
         except EmbeddingError as exc:
             db.rollback()
