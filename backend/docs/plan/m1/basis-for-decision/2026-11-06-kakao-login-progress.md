@@ -26,10 +26,10 @@
 
 | 항목 | 값 |
 |---|---|
-| backend pytest sqlite | 1929 통과, 1381 건너뜀 |
-| backend pytest PostgreSQL | 3266 통과, 44 건너뜀 |
+| backend pytest sqlite | 1932 통과, 1383 건너뜀 |
+| backend pytest PostgreSQL | 3271 통과, 44 건너뜀 |
 | alembic | 빈 PostgreSQL 에서 upgrade, check, downgrade, upgrade 통과 |
-| frontend vitest | 2955 통과 |
+| frontend vitest | 3362 통과 |
 | frontend e2e | 149 통과, 1 실패. `tasks-approval.e2e.ts` 의 키보드 시나리오이고 이번 변경 전 develop 에서도 실패한다 |
 | 비용 | 0원 |
 
