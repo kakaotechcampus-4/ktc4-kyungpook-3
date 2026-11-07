@@ -6,7 +6,15 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 
 from app.core.database import Base
-from app.models import EMBEDDING_DIMENSIONS, Task, TaskHistory, Workspace
+from app.models import (
+    EMBEDDING_DIMENSIONS,
+    ApprovalRequest,
+    ApprovalStatus,
+    ApprovalType,
+    Task,
+    TaskHistory,
+    Workspace,
+)
 from app.services import embedding
 from app.services.tasks import apply_task_updates, create_task, rollback_task_history
 
@@ -465,8 +473,168 @@ def test_run_worker_backs_off_while_failing_and_resets_after_success(monkeypatch
 
     monkeypatch.setattr(embedding, "SessionLocal", FakeSession)
     monkeypatch.setattr(embedding, "process_missing_embeddings", fake_process)
+    monkeypatch.setattr(embedding, "process_missing_approval_embeddings", lambda db: 0)
 
     embedding.run_worker(FakeStopEvent(), 5)
 
     # 실패 두 번에 10초·20초, 성공하면 5초로 돌아가고, 다시 실패하면 10초부터
     assert waits == [10, 20, 5, 10]
+
+
+# ── 승인 대기 task_create 요청의 임베딩 ──
+
+def _approval(
+    db,
+    workspace: Workspace,
+    payload,
+    *,
+    type: str = ApprovalType.TASK_CREATE,
+    status: str = ApprovalStatus.PENDING,
+) -> ApprovalRequest:
+    text = payload if isinstance(payload, str) else json.dumps(payload, ensure_ascii=False)
+    request = ApprovalRequest(
+        workspace_id=workspace.workspace_id, type=type, payload=text, status=status
+    )
+    db.add(request)
+    db.commit()
+    return request
+
+
+def _approval_row(db, request: ApprovalRequest):
+    db.expire_all()
+    return db.execute(
+        select(
+            ApprovalRequest.embedding,
+            ApprovalRequest.embedding_rejected_title,
+            ApprovalRequest.payload,
+        ).where(ApprovalRequest.approval_id == request.approval_id)
+    ).one()
+
+
+def test_pending_title_rules():
+    assert embedding.pending_title('{"task_title":"A","title":"B"}') == "A"
+    assert embedding.pending_title('{"task_title":"  ","title":"B"}') == "B"
+    assert embedding.pending_title('{"task_title":3}') is None
+    assert embedding.pending_title("x") is None
+    assert embedding.pending_title(None) is None
+    assert embedding.pending_title("[]") is None
+    # 원문 그대로 돌려준다
+    assert embedding.pending_title('{"task_title":" A "}') == " A "
+
+
+def test_approval_worker_fills_only_pending_task_create(db):
+    workspace = _workspace(db)
+    target = _approval(db, workspace, {"task_title": "로그인 API 구현"})
+    update = _approval(db, workspace, {"task_title": "수정"}, type=ApprovalType.TASK_UPDATE)
+    done = _approval(
+        db, workspace, {"task_title": "끝난 요청"}, status=ApprovalStatus.APPROVED
+    )
+
+    api = FakeEmbeddingApi()
+    assert embedding.process_missing_approval_embeddings(db, transport=api.transport) == 1
+
+    assert api.inputs() == [["로그인 API 구현"]]
+    assert _approval_row(db, target).embedding is not None
+    assert _approval_row(db, update).embedding is None
+    assert _approval_row(db, done).embedding is None
+
+
+def test_approval_worker_skips_blank_or_broken_title_without_calling_api(db):
+    workspace = _workspace(db)
+    bad = [
+        _approval(db, workspace, {"task_title": "   "}),
+        _approval(db, workspace, "not json"),
+        _approval(db, workspace, "[]"),
+        _approval(db, workspace, {"task_title": 3}),
+    ]
+
+    api = FakeEmbeddingApi()
+    assert embedding.process_missing_approval_embeddings(db, transport=api.transport, limit=4) == 0
+    assert api.requests == []
+    assert [_approval_row(db, r).embedding_rejected_title for r in bad] == [""] * 4
+
+    good = _approval(db, workspace, {"task_title": "정상 요청"})
+    assert embedding.process_missing_approval_embeddings(db, transport=api.transport, limit=4) == 1
+    assert api.inputs() == [["정상 요청"]]
+    assert _approval_row(db, good).embedding is not None
+
+
+def test_approval_worker_marks_only_the_rejected_row(db):
+    workspace = _workspace(db)
+    first = _approval(db, workspace, {"task_title": "로그인 API 구현"})
+    bad = _approval(db, workspace, {"task_title": "거절되는 제목"})
+    last = _approval(db, workspace, {"task_title": "결제 API 리팩토링"})
+
+    api = FakeEmbeddingApi(reject={"거절되는 제목"})
+    assert embedding.process_missing_approval_embeddings(db, transport=api.transport) == 2
+
+    assert _approval_row(db, first).embedding is not None
+    assert _approval_row(db, last).embedding is not None
+    rejected = _approval_row(db, bad)
+    assert rejected.embedding is None
+    assert rejected.embedding_rejected_title == "거절되는 제목"
+    assert _approval_row(db, first).embedding_rejected_title is None
+
+    # 거절된 행은 다시 고르지 않는다
+    sent = len(api.requests)
+    assert embedding.process_missing_approval_embeddings(db, transport=api.transport) == 0
+    assert len(api.requests) == sent
+
+
+def test_approval_worker_does_not_fill_a_request_resolved_meanwhile(db):
+    request = _approval(db, _workspace(db), {"task_title": "로그인 API 구현"})
+
+    def handler(http_request: httpx.Request) -> httpx.Response:
+        # 임베딩을 계산하는 사이에 PM이 승인한다
+        db.execute(
+            ApprovalRequest.__table__.update()
+            .where(ApprovalRequest.approval_id == request.approval_id)
+            .values(status=ApprovalStatus.APPROVED)
+        )
+        db.commit()
+        return httpx.Response(200, json={"data": [{"index": 0, "embedding": _vector(1.0)}]})
+
+    transport = httpx.MockTransport(handler)
+    assert embedding.process_missing_approval_embeddings(db, transport=transport) == 0
+    assert _approval_row(db, request).embedding is None
+
+
+def test_approval_worker_keeps_payload(db):
+    workspace = _workspace(db)
+    request = _approval(db, workspace, {"task_title": "로그인 API 구현", "extra": [1, 2]})
+    before = _approval_row(db, request).payload
+
+    assert embedding.process_missing_approval_embeddings(db, transport=FakeEmbeddingApi().transport) == 1
+
+    assert _approval_row(db, request).payload == before
+
+
+def test_run_worker_also_fills_approvals(monkeypatch):
+    calls: list[str] = []
+
+    class FakeSession:
+        def rollback(self):
+            pass
+
+        def close(self):
+            pass
+
+    class FakeStopEvent:
+        def __init__(self):
+            self.done = False
+
+        def is_set(self):
+            return self.done
+
+        def wait(self, delay):
+            self.done = True
+
+    monkeypatch.setattr(embedding, "SessionLocal", FakeSession)
+    monkeypatch.setattr(embedding, "process_missing_embeddings", lambda db: calls.append("task") or 0)
+    monkeypatch.setattr(
+        embedding, "process_missing_approval_embeddings", lambda db: calls.append("approval") or 0
+    )
+
+    embedding.run_worker(FakeStopEvent(), 5)
+
+    assert calls == ["task", "approval"]
