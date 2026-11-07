@@ -8,7 +8,7 @@ sender 는 문자열 칸이라 값 추가에 스키마 변경이 없다.
 나간 pm 글은 옛 코드에서 재촉으로 읽혀 답장 기다림 표시가 생기고 첫 재촉 소개가 빠질 수 있다.
 
 Revision ID: 5ae76a6102a8
-Revises: 3c9a1f7d2b64
+Revises: c4a7e19d5b32
 Create Date: 2026-11-07 20:04:38.337124
 
 """
@@ -20,7 +20,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = '5ae76a6102a8'
-down_revision: Union[str, Sequence[str], None] = '3c9a1f7d2b64'
+down_revision: Union[str, Sequence[str], None] = 'c4a7e19d5b32'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

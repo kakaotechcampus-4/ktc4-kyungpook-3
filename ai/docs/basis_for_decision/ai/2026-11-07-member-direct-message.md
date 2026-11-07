@@ -22,7 +22,7 @@
 
 | 확인 | 명령 | 결과 |
 |---|---|---|
-| backend, sqlite 와 Postgres | `TEST_DATABASE_URL=... python -m pytest -q` | 3455 passed, 44 skipped |
+| backend, sqlite 와 Postgres | `TEST_DATABASE_URL=... python -m pytest -q` | 3675 passed, 44 skipped |
 | 마이그레이션 왕복 | `alembic upgrade head`, `downgrade -1`, `upgrade head`, `alembic check` | 통과, pm 글은 bot 으로 돌아간다 |
 | lint | `uvx ruff@0.14.0 check .` | 통과 |
 
