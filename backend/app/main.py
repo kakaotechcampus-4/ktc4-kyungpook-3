@@ -14,7 +14,7 @@ from app.api import approvals, bot_lookups, bot_messages, extractions, invitatio
 from app.api import message_settings, notifications
 from app.services import scheduler
 from app.core.errors import AppError, Envelope, ErrorCode, failure, success
-from app.services import embedding, notion_sync, upload_sweeper
+from app.services import embedding, notion_sync, sessions, upload_sweeper
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +26,8 @@ NOTION_SYNC_INTERVAL_SECONDS = float(os.getenv("NOTION_SYNC_INTERVAL_SECONDS", "
 EMBEDDING_SYNC_INTERVAL_SECONDS = float(os.getenv("EMBEDDING_SYNC_INTERVAL_SECONDS", "5"))
 # 멈춘 업로드 회의를 failed 로 정리하는 주기(초). 0 이하면 워커를 띄우지 않는다.
 UPLOAD_SWEEP_INTERVAL_SECONDS = float(os.getenv("UPLOAD_SWEEP_INTERVAL_SECONDS", "300"))
+# 만료된 로그인 세션을 지우는 주기(초). 0 이하면 워커를 띄우지 않는다.
+SESSION_SWEEP_INTERVAL_SECONDS = float(os.getenv("SESSION_SWEEP_INTERVAL_SECONDS", "3600"))
 
 
 @asynccontextmanager
@@ -42,6 +44,8 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
             logger.warning("EMBEDDING_API_KEY/EMBEDDING_BASE_URL이 없어 task 임베딩 워커를 띄우지 않습니다.")
     if UPLOAD_SWEEP_INTERVAL_SECONDS > 0:
         workers.append(upload_sweeper.start_worker(UPLOAD_SWEEP_INTERVAL_SECONDS))
+    if SESSION_SWEEP_INTERVAL_SECONDS > 0:
+        workers.append(sessions.start_worker(SESSION_SWEEP_INTERVAL_SECONDS))
     try:
         yield
     finally:
@@ -87,6 +91,7 @@ async def app_error_handler(_: Request, exc: AppError) -> JSONResponse:
     return JSONResponse(
         status_code=exc.status_code,
         content=failure(exc.code, exc.message, exc.details),
+        headers=exc.headers,
     )
 
 

@@ -51,6 +51,7 @@ class AliasSource(StrEnum):
     MANUAL = "manual"
     DISCORD_PROFILE = "discord_profile"
     LEARNED = "learned"
+    DISPLAY_NAME = "display_name"
 
 
 class ResolutionResult(StrEnum):
@@ -220,6 +221,7 @@ class Session(Base):
     user_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("user.user_id", ondelete="CASCADE"), index=True
     )
+    # 쿠키 원문이 아니라 그 sha256 hex 가 들어간다(#437). 쓸 때 hash_session_token 으로 바꿔 넣는다.
     session_token: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
