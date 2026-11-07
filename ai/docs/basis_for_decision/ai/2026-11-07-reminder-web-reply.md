@@ -25,7 +25,7 @@
 | 항목 | 값 |
 |---|---|
 | backend sqlite | 2235 통과, 1495 건너뜀 |
-| backend PostgreSQL(pgvector pg16) | 마지막 수정 전 커밋에서 3412 통과, 44 건너뜀. 마지막 커밋은 CI 로 확인 |
+| backend PostgreSQL(pgvector pg16) | CI 에서 3686 통과, 44 건너뜀 |
 | ai | 1829 통과 |
 | ruff | 통과 |
 | 유료 호출 | 0원 |
