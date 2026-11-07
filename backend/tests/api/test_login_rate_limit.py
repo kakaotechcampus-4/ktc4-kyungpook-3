@@ -77,6 +77,15 @@ def test_blocks_after_limit_even_with_correct_password(mdb, monkeypatch):
     assert calls == []
 
 
+def test_email_case_and_spaces_share_one_count(mdb):
+    """대소문자·앞뒤 공백만 다른 이메일은 같은 횟수로 센다. LoginRequest.email 의 정규화에 기대는 동작이다(#456 리뷰)."""
+    c = _client()
+    _signup(c)
+    _fail_n(c, 10, " LIMIT@Example.com ")
+
+    assert _login(c, "limit@example.com").status_code == 429
+
+
 def test_block_response_is_same_for_unknown_email(mdb, monkeypatch):
     monkeypatch.setattr(login_limit, "clock", lambda: 1000.0)
     c = _client()
