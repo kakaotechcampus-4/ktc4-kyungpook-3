@@ -37,6 +37,8 @@ SERVICE_HEADERS = {"X-Service-Token": SERVICE_TOKEN}
 JOIN_TIMEOUT = 30
 # 기다리는 쪽이 정말 잠금에 걸릴 시간을 주는 간격. 이 값이 작아도 순서는 이벤트로 이미 고정돼 있다
 SETTLE = 0.5
+# 테스트가 실패해 스레드가 행 잠금에 걸린 채 남아도, 정리(drop_all)가 그 잠금을 무한히 기다리지 않게 한다
+LOCK_LIMIT = {"options": "-c lock_timeout=15s -c statement_timeout=60s"}
 
 
 def _locks_cards(statement: str) -> bool:
@@ -52,7 +54,7 @@ def pg(monkeypatch):
     if not TEST_DATABASE_URL:
         pytest.skip("행 잠금은 PostgreSQL 에서만 확인한다(TEST_DATABASE_URL 없음)")
     monkeypatch.setenv("SERVICE_TOKEN", SERVICE_TOKEN)
-    engine = create_engine(TEST_DATABASE_URL)
+    engine = create_engine(TEST_DATABASE_URL, connect_args=LOCK_LIMIT)
     with engine.begin() as conn:
         conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
     Base.metadata.drop_all(engine)
@@ -72,7 +74,7 @@ def pg(monkeypatch):
     finally:
         app.dependency_overrides.pop(get_db, None)
         engine.dispose()
-        cleanup = create_engine(TEST_DATABASE_URL)
+        cleanup = create_engine(TEST_DATABASE_URL, connect_args=LOCK_LIMIT)
         Base.metadata.drop_all(cleanup)
         cleanup.dispose()
 
@@ -125,7 +127,9 @@ def _judge(**fields) -> dict:
 
 
 def _merge_item(card_id: str, **fields) -> dict:
-    return _judge(action="merge", target_approval_id=card_id, category="due", due_date="2026-10-25", **fields)
+    # 호출하는 쪽이 due_date 등을 바꿀 수 있게 기본값을 먼저 펼친다
+    values = {"action": "merge", "target_approval_id": card_id, "category": "due", "due_date": "2026-10-25", **fields}
+    return _judge(**values)
 
 
 def _post_extraction(client: TestClient, seed: dict, meeting_index: int, items: list[dict]):
@@ -157,7 +161,7 @@ def _run(results: dict, **targets):
 
         return run
 
-    threads = [threading.Thread(target=wrap(n, fn), name=n) for n, fn in targets.items()]
+    threads = [threading.Thread(target=wrap(n, fn), name=n, daemon=True) for n, fn in targets.items()]
     for t in threads:
         t.start()
     for t in threads:
@@ -300,7 +304,8 @@ def test_merge_waits_for_approval_and_becomes_new_review_card(pg, seed):
 def test_two_extractions_merging_same_cards_in_opposite_order_do_not_deadlock(pg, seed):
     engine, factory = pg
     card_x, card_y = _make_cards(factory, seed, ["카드 X", "카드 Y"])
-    both_inside = threading.Barrier(2, timeout=0.5)
+    both_inside = threading.Barrier(2, timeout=10)
+    barrier_broken = threading.Event()
 
     # 둘 다 합치기 요청이 카드 잠금 쿼리를 보낸 시점에 겹치게 한다. 한쪽이 잠금을 잡은 채 잠깐 멈추면 다른 쪽은
     # 같은 쿼리에서 기다릴 뿐이다. 카드를 항목 순서대로 하나씩 잠그면 서로를 기다려 데드락이 난다
@@ -313,7 +318,7 @@ def test_two_extractions_merging_same_cards_in_opposite_order_do_not_deadlock(pg
             try:
                 both_inside.wait()
             except threading.BrokenBarrierError:
-                pass
+                barrier_broken.set()
 
     def merge(meeting_index, first, second):
         return _post_extraction(_client(), seed, meeting_index, [
@@ -335,6 +340,8 @@ def test_two_extractions_merging_same_cards_in_opposite_order_do_not_deadlock(pg
         event.remove(engine, "before_cursor_execute", before)
         event.remove(engine, "after_cursor_execute", after)
 
+    # 두 요청이 같은 시점에 잠금 쿼리에 들어갔어야 겹침을 확인한 것이다
+    assert not barrier_broken.is_set(), "두 요청이 겹치지 않았다"
     assert results == {"xy": 201, "yx": 201}
     cards, _, _ = _db_state(factory)
     assert len(cards) == 2
