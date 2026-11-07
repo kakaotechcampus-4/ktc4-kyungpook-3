@@ -286,10 +286,16 @@ def test_a_card_merged_in_one_run_stays_one_story_when_the_other_run_splits_it()
     assert J.merge_runs([first, second]) == ([A1], [])
 
 
-def test_a_story_every_run_skips_goes_nowhere_and_the_items_keep_the_sentence_order():
+def test_a_story_every_run_skips_goes_nowhere():
     first = [_o("item", C, at=[7]), _o("skip", at=[1])]
     second = [_o("skip", at=[1]), _o("item", B, at=[5])]
-    assert J.merge_runs([first, second]) == ([B, C], [])
+    assert J.merge_runs([first, second]) == ([C, B], [])
+
+
+def test_a_single_run_keeps_the_order_of_the_pipeline():
+    """BE 는 한 요청에서 앞선 새 항목만 auto 로 보낸다. 재시도가 없는 회의의 순서를 바꾸면 어느 일이 검토 없이 Task 가
+    되는지가 바뀐다. 파이프라인은 마지막 근거 문장 순서로 내보내므로 첫 근거 문장으로 다시 줄 세우지 않는다."""
+    assert J.merge_runs([[_o("item", B, at=[1]), _o("item", A1, at=[0, 3])]]) == ([B, A1], [])
 
 
 def test_no_reply_judger_without_settings():

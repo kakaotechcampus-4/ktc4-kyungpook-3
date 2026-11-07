@@ -75,7 +75,7 @@ def merge_runs(runs: list[list[dict]]) -> tuple[list[dict], list[dict]]:
       한 번이라도 항목이 나왔으면 항목을 남긴다. 같은 카드가 두 장 서지 않게 실행 하나의 것만 쓴다(실패 없이 끝난
       실행, 항목이 많은 실행, 먼저 돈 실행 순). 실행마다 판단이 엇갈려도 남긴다. 어디로 갈지는 BE 게이트가 정한다
       어느 실행에서든 실패 없이 끝났으면 실패로 세지 않는다. 모든 실행이 실패했을 때만 실패로 남긴다
-    finding 이 하나도 없는 실행(1단계가 응답을 이상하게 준 경우)은 아무것도 바꾸지 않는다. 항목은 근거 문장 순서다.
+    finding 이 하나도 없는 실행(1단계가 응답을 이상하게 준 경우)은 아무것도 바꾸지 않는다. 얘기는 처음 나온 순서라, 실행이 하나면 받은 순서 그대로다.
     """
     nodes = [(r, o) for r, run in enumerate(runs) for o in run]
     parent = list(range(len(nodes)))
@@ -96,7 +96,7 @@ def merge_runs(runs: list[list[dict]]) -> tuple[list[dict], list[dict]]:
 
     items: list[dict] = []
     failures: list[dict] = []
-    for members in sorted(stories.values(), key=lambda m: min(min(nodes[i][1]["indices"]) for i in m)):
+    for members in stories.values():
         by_run: dict[int, list[dict]] = {}
         for i in members:
             by_run.setdefault(nodes[i][0], []).append(nodes[i][1])
