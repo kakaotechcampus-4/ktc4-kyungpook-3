@@ -155,9 +155,9 @@ AI `Transcript.to_dict()` 모양에 화자 이름을 더해 보낸다. 한 회�
 
 - 항목 필드는 AI `NotionCandidate`(`ai/shared/schemas.py`)와 이름을 맞춘다. `content_snippet`은 지금 항상 빈 문자열이다.
 - 같은 워크스페이스에서 임베딩이 있는 task만 유사도 순으로 돌려준다.
-- `include_pending`이 true이면 승인 대기 중인 task_create 요청을 후보에 합친다(합의됨 #141, 구현됨 PR 1). task 상위 `k`개에 pending 최대 2개를 더해 유사도 내림차순(같으면 task가 앞)으로 돌려주고, pending 검색에도 같은 `min_similarity`를 쓴다. false(기본)이면 지금과 같다.
+- `include_pending`이 true이면 승인 대기 중인 task_create 요청을 후보에 합친다(합의됨 #141). task 상위 `k`개에 pending 최대 2개를 더해 유사도 내림차순(같으면 task가 앞)으로 돌려주고, pending 검색에도 같은 `min_similarity`를 쓴다. false(기본)이면 지금과 같다.
 - pending 후보는 `task_id`·`status`·`notion_page_id`가 null이고 `approval_id`가 있다. `title`·`due_date`·`assignee_member_id`는 요청 payload에서 읽고(날짜·담당자 형식이 틀리면 null), `updated_at`은 요청 생성 시각이다. task 후보는 `approval_id`가 null이다.
-- AI는 BE가 pending 후보를 합치는 PR 2 배포 뒤에 `include_pending`을 켠다. 그 전에는 보내지 않는다.
+- AI는 BE가 pending 후보를 합치는 BE 합치기(action=merge) 배포 뒤에 `include_pending`을 켠다. 그 전에는 보내지 않는다.
 - 없는 워크스페이스는 404 `WORKSPACE_NOT_FOUND`. 임베딩 호출 실패는 빈 목록이 아니라 502 `EMBEDDING_UNAVAILABLE`이다. 봇도 실패를 빈 목록으로 바꾸지 않는다.
 
 ## 추출 등록 `POST /extractions` → 201
