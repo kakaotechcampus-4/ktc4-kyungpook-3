@@ -223,6 +223,14 @@ def test_a_call_without_usage_is_still_counted_from_the_transcript_length(fake, 
     assert _ledger(tmp_path)[0]["원"] == B.estimate_won(24000)
 
 
+def test_run_without_an_output_folder_still_saves_and_keeps_the_ledger(fake, llm, tmp_path, capsys):
+    fake.add_summary("m1", requested=False)
+    llm.responses = [GOOD]
+    args = _ws("--meeting", "m1", "--run", "--llm", "luna", "--ledger", str(tmp_path / "ledger.jsonl"))
+    assert B.main(args) == 0
+    assert fake.summaries["m1"]["saved"] and len(_ledger(tmp_path)) == 1
+
+
 def test_preview_summarizes_by_extraction_id_and_never_writes(fake, llm, tmp_path, capsys):
     fake.add_summary("m1", requested=False, saved={"overview": "옛 요약"})
     fake.add_summary("m2", requested=False)

@@ -23,8 +23,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from capture.handoff import BeClient, BeError
-from capture.handoff import from_env as handoff_from_env
+from capture.handoff import BeClient, BeError, from_env as handoff_from_env
 from capture.summary_sweep import SUMMARY_MODELS, SummaryRunner
 from llm import LLMClient, LLMReply, NullLLM, get_llm
 from shared.config import AI_ROOT
