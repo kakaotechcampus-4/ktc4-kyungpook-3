@@ -42,6 +42,7 @@ from app.models import (
     Task,
     TaskStatus,
     ThreadMessage,
+    WatchState,
     Workspace,
     WorkspaceMessageSettings,
 )
@@ -688,7 +689,7 @@ def _dm_body(db: Session, message: ThreadMessage) -> str:
     """봇이 보낼 글. 답장은 웹으로만 받아 저장된 문구 대신 안내를 보낸다. 시계는 가져간 뒤에 열릴 수 있어 이번 묶음을 합쳐 센다."""
     db.flush()
     thread = message.thread
-    # 막힌 시계는 태스크가 끝나거나 담당이 바뀌어도 닫히지 않아 시계 쪽만 거른다. 이번 묶음은 방금 나가므로 그대로 센다.
+    # 막힌 시계는 태스크가 끝나거나 풀리거나 담당이 바뀌어도 닫히지 않아 시계 쪽만 거른다. 이번 묶음은 방금 나가므로 그대로 센다.
     watched = db.scalars(
         select(ReminderWatch.task_id)
         .join(Task, Task.task_id == ReminderWatch.task_id)
@@ -698,6 +699,7 @@ def _dm_body(db: Session, message: ThreadMessage) -> str:
             Task.is_deleted.is_(False),
             Task.assignee_member_id == thread.member_id,
             Task.status != TaskStatus.DONE,
+            or_(ReminderWatch.state != WatchState.BLOCKED, Task.status == TaskStatus.BLOCKED),
         )
     ).all()
     bundle_id = db.scalar(select(ReminderBundle.bundle_id).where(ReminderBundle.message_id == message.message_id))

@@ -233,6 +233,26 @@ def test_a_task_no_longer_waiting_leaves_the_count_even_if_its_blocked_watch_sta
     assert _claim_one(mdb, SLOT + H).body.splitlines()[0] == _head("A", 1)
 
 
+def test_a_task_a_person_unblocked_leaves_the_count(mdb, mseed):
+    first, second, _ = mseed["tasks"]
+    _sent(mdb, mseed, [first], SLOT)
+    mdb.query(ReminderWatch).one().state = WatchState.BLOCKED
+    first.status = "in_progress"
+    mdb.commit()
+    _due(mdb, mseed, [second], SLOT + H)
+    assert _claim_one(mdb, SLOT + H).body.splitlines()[0] == _head("A", 1)
+
+
+def test_a_task_still_blocked_by_its_watch_stays_in_the_count(mdb, mseed):
+    first, second, _ = mseed["tasks"]
+    _sent(mdb, mseed, [first], SLOT)
+    mdb.query(ReminderWatch).one().state = WatchState.BLOCKED
+    first.status = "blocked"
+    mdb.commit()
+    _due(mdb, mseed, [second], SLOT + H)
+    assert _claim_one(mdb, SLOT + H).body.splitlines()[0] == _head("A", 2)
+
+
 # 웹 답장
 
 def test_a_web_reply_reaches_the_judgment_queue(mdb, mseed):
