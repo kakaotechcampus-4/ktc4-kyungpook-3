@@ -232,8 +232,15 @@ class TargetSnapshot(BaseModel):
 class ExtractionItemCreate(BaseModel):
     action: ExtractionAction = Field(
         ExtractionAction.CREATE,
-        description="create: 새 task(없으면 create) / update: target_task_id의 기존 task 수정. "
+        description="create: 새 task(없으면 create) / update: target_task_id의 기존 task 수정 / "
+        "merge: target_approval_id의 승인 대기 task_create 카드에 합침. "
         "AI Terra 2단계의 JudgeResult.is_new에서 온다.",
+    )
+    target_approval_id: str | None = Field(
+        None,
+        max_length=36,
+        description="action이 merge일 때 합칠 승인 대기 카드 ID. merge일 때만 읽는다. "
+        "없거나 이 워크스페이스의 대기 중 task_create 카드가 아니면 create로 처리한다(auto 아님).",
     )
     target_task_id: str | None = Field(
         None,
@@ -242,7 +249,7 @@ class ExtractionItemCreate(BaseModel):
     )
     task_title: str | None = Field(
         None,
-        description="action이 create면 필수(비어 있으면 그 항목만 건너뛴다). "
+        description="action이 create·merge면 필수(비어 있으면 그 항목만 건너뛴다). "
         "update면 보내지 않아도 되고, 보내도 제목은 바꾸지 않는다.",
     )
     task_confidence: float | None = Field(
