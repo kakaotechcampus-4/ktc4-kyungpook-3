@@ -8,8 +8,11 @@ commit 은 부르는 쪽 몫이다. 시각은 UTC 로 바꿔 저장한다. sqlit
 묶음 구성이 바뀌면 _rebuild 가 규칙 문구로 다시 만들고 승인을 풀며, AI 초안은 그 뒤 비어 있는 자리에 들어온다.
 
 봇 이름으로 온 DM 만으로는 누가 보낸 연락인지 모르므로, 규칙 문구·메모·AI 초안은 가운데에 두고 BE 가 앞뒤 틀을
-씌워 저장한다. 그 대화에 나간(delivered) 봇 DM 이 없으면 PM 소개와 맺음을, 있으면 PM 이름만 붙인다. PM 이 고친
+씌워 저장한다. 그 대화에 나간(delivered) 리마인드가 없으면 PM 소개와 맺음을, 있으면 PM 이름만 붙인다. PM 이 고친
 문구는 보이는 전체를 고친 것이라 틀을 다시 씌우지 않는다.
+
+PM 이 웹에서 쓴 글(sender=pm)은 묶음 없이 바로 발송 대기로 간다. 나가는 DM 은 dm_status 로 보고, sender=bot 은
+리마인드만 뜻한다. 그래서 PM 글은 틀을 고르거나 묶음을 다시 만드는 판정에 들어가지 않는다.
 """
 import re
 from dataclasses import dataclass
@@ -138,7 +141,7 @@ def framed_body(
 ) -> str:
     """가운데 문구에 첫 DM 이면 PM 소개와 맺음을, 아니면 PM 이름을 씌운다. PM 은 묶음의 첫 리마인드를 만든 사람이다.
 
-    first 를 주지 않으면 그 대화에 나간 봇 DM 이 있는지로 정한다.
+    first 를 주지 않으면 그 대화에 나간 리마인드가 있는지로 정한다.
     """
     recipient = bundle.thread.member.display_name
     pm = _pm_name(db, bundle.workspace_id, reminders[0].created_by)
@@ -506,6 +509,15 @@ def _auto_approve_due(db: Session, now: datetime, exclude: list[str]) -> None:
     db.flush()
 
 
+def _dm_fields(member: Member) -> dict:
+    """나가는 글의 발송 상태. 연결이 없으면 바로 못 보냄으로 닫고, 나중에 연결해도 다시 보내지 않는다."""
+    linked = bool(member.discord_user_id)
+    return {
+        "dm_status": DmStatus.PENDING if linked else DmStatus.FAILED,
+        "dm_failure_reason": None if linked else DmFailureReason.DISCORD_NOT_LINKED,
+    }
+
+
 def dispatch_due(db: Session, now: datetime) -> list[ThreadMessage]:
     """승인됐고 발송 시각이 된 묶음마다 봇 메시지 한 통을 만든다. 문구는 묶음 문구 그대로다. 탈퇴한 팀원의 묶음은 취소한다."""
     now = utc(now)
@@ -529,15 +541,13 @@ def dispatch_due(db: Session, now: datetime) -> list[ThreadMessage]:
         if member.is_deleted:
             cancel_bundle(db, bundle, now=now)
             continue
-        linked = bool(member.discord_user_id)
         message = ThreadMessage(
             thread_id=bundle.thread_id,
             sender=MessageSender.BOT,
             body=bundle.body,
             created_at=now,
             scheduled_at=utc(bundle.scheduled_at),
-            dm_status=DmStatus.PENDING if linked else DmStatus.FAILED,
-            dm_failure_reason=None if linked else DmFailureReason.DISCORD_NOT_LINKED,
+            **_dm_fields(member),
         )
         db.add(message)
         db.flush()
@@ -657,6 +667,15 @@ class ClaimedMessage:
     workspace_id: str
     member_id: str
     discord_user_id: str
+    body: str
+
+
+def _dm_body(db: Session, message: ThreadMessage) -> str:
+    """봇이 보낼 글자. 봇 계정이라 보낸 사람이 안 보이고 여러 공간 소속도 가려지므로 PM 글 첫 줄에 공간과 쓴 PM 을 붙인다."""
+    if message.sender != MessageSender.PM:
+        return message.body
+    workspace = db.get(Workspace, message.thread.workspace_id).name
+    return f"[{workspace}] {message.author_name or 'PM'}\n{message.body}"
 
 
 def claim_for_bot(db: Session, now: datetime) -> list[ClaimedMessage]:
@@ -666,11 +685,7 @@ def claim_for_bot(db: Session, now: datetime) -> list[ClaimedMessage]:
 
     stale = db.scalars(
         select(ThreadMessage)
-        .where(
-            ThreadMessage.sender == MessageSender.BOT,
-            ThreadMessage.dm_status == DmStatus.CLAIMED,
-            ThreadMessage.claimed_at < now - CLAIM_TIMEOUT,
-        )
+        .where(ThreadMessage.dm_status == DmStatus.CLAIMED, ThreadMessage.claimed_at < now - CLAIM_TIMEOUT)
         .with_for_update(skip_locked=True)
     ).all()
     for message in stale:
@@ -679,7 +694,7 @@ def claim_for_bot(db: Session, now: datetime) -> list[ClaimedMessage]:
 
     pending = db.scalars(
         select(ThreadMessage)
-        .where(ThreadMessage.sender == MessageSender.BOT, ThreadMessage.dm_status == DmStatus.PENDING)
+        .where(ThreadMessage.dm_status == DmStatus.PENDING)
         .order_by(ThreadMessage.created_at, ThreadMessage.message_id)
         .with_for_update(skip_locked=True)
     ).all()
@@ -693,7 +708,9 @@ def claim_for_bot(db: Session, now: datetime) -> list[ClaimedMessage]:
             continue
         message.dm_status = DmStatus.CLAIMED
         message.claimed_at = now
-        claimed.append(ClaimedMessage(message, message.thread.workspace_id, member.member_id, member.discord_user_id))
+        claimed.append(ClaimedMessage(
+            message, message.thread.workspace_id, member.member_id, member.discord_user_id, _dm_body(db, message),
+        ))
     db.flush()
     return claimed
 
@@ -710,11 +727,11 @@ def report_result(
     """봇의 발송 결과. 가져간 메시지에만 받는다. 시간 초과로 닫힌 메시지는 늦은 보고가 실제 결과로 덮어쓴다.
 
     discord_message_ids 는 실제로 나간 DM 들의 id 다. 답장의 워크스페이스를 찾는 데 쓴다.
-    그 대화에 처음 나간 DM 이면, 첫 DM 틀로 만들어 둔 승인 전 규칙·AI 묶음을 두 번째 틀로 다시 만든다.
+    그 대화에 처음 나간 리마인드면, 첫 DM 틀로 만들어 둔 승인 전 규칙·AI 묶음을 두 번째 틀로 다시 만든다.
     """
     now = utc(now)
     message = db.get(ThreadMessage, message_id, with_for_update=True)
-    if message is None or message.sender != MessageSender.BOT:
+    if message is None or message.dm_status is None:
         raise AppError(ErrorCode.MESSAGE_NOT_FOUND, details={"message_id": message_id})
     if not delivered and failure_reason in (None, DmFailureReason.DISCORD_NOT_LINKED):
         raise AppError(ErrorCode.INVALID_REQUEST, message="실패 사유는 dm_blocked 또는 unknown 이어야 합니다.")
@@ -738,7 +755,7 @@ def report_result(
     if ids and db.scalar(select(BotDmPart.discord_message_id).where(BotDmPart.discord_message_id.in_(ids))):
         raise AppError(ErrorCode.MESSAGE_RESULT_CONFLICT, details={"message_id": message_id})
     first_delivery = False
-    if delivered:
+    if delivered and message.sender == MessageSender.BOT:
         # PM 조작과 같이 대화를 잠근 뒤 본다. 겹친 보고나 PM 조작이 첫 DM 판정을 엇갈려 보지 않는다.
         _lock_thread(db, message.thread_id)
         first_delivery = not _has_delivered_dm(db, message.thread_id)
@@ -853,7 +870,7 @@ def _pick_member_for_discord_user(
         return (
             select(MessageThread.member_id)
             .join(ThreadMessage, ThreadMessage.thread_id == MessageThread.thread_id)
-            .where(MessageThread.member_id.in_(by_id), ThreadMessage.sender == MessageSender.BOT)
+            .where(MessageThread.member_id.in_(by_id), ThreadMessage.dm_status.is_not(None))
         )
 
     if reply_to is not None:
@@ -886,7 +903,7 @@ def _pick_member_for_discord_user(
         db.execute(
             select(MessageThread.member_id, func.max(ThreadMessage.created_at))
             .join(ThreadMessage, ThreadMessage.thread_id == MessageThread.thread_id)
-            .where(MessageThread.member_id.in_(by_id), ThreadMessage.sender == MessageSender.BOT)
+            .where(MessageThread.member_id.in_(by_id), ThreadMessage.dm_status.is_not(None))
             .group_by(MessageThread.member_id)
         ).all()
     )
@@ -909,4 +926,21 @@ def add_web_reply(db: Session, thread: MessageThread, *, body: str, now: datetim
     db.add(message)
     db.flush()
     replies.open_judgment(db, message, now)
+    return message
+
+
+def add_pm_message(db: Session, thread: MessageThread, *, author: Member, body: str, now: datetime) -> ThreadMessage:
+    """PM 이 웹에서 쓴 글. 예약·승인 없이 바로 발송 대기로 가고, 시계·판단은 건드리지 않는다."""
+    now = utc(now)
+    member = thread.member
+    if member.is_deleted:
+        raise AppError(ErrorCode.MEMBER_NOT_FOUND, details={"member_id": member.member_id})
+    if len(body) > DRAFT_MAX_LENGTH:
+        raise AppError(ErrorCode.INVALID_REQUEST, message=f"메시지는 {DRAFT_MAX_LENGTH}자 이하여야 합니다.")
+    message = ThreadMessage(
+        thread_id=thread.thread_id, sender=MessageSender.PM, body=body, author_member_id=author.member_id,
+        created_at=now, **_dm_fields(member),
+    )
+    db.add(message)
+    db.flush()
     return message

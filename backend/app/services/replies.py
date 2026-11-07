@@ -226,7 +226,7 @@ def _lines(db: Session, message: ThreadMessage, task_ids: list[str]) -> list[Cla
         .limit(LINE_LIMIT - 1)
     ).all()
     return [
-        ClaimedLine(sender="pm" if m.sender == MessageSender.BOT else "member", text=m.body)
+        ClaimedLine(sender="member" if m.sender == MessageSender.MEMBER else "pm", text=m.body)
         for m in [*reversed(earlier), message]
     ]
 

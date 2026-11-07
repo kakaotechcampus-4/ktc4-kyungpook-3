@@ -107,8 +107,8 @@ def _summary(db: Session, thread: MessageThread) -> ThreadSummary:
     )
     if last_member_at is not None:
         awaiting = awaiting.where(ThreadMessage.created_at > last_member_at)
-    last_bot = db.scalar(
-        messages().where(ThreadMessage.sender == MessageSender.BOT).order_by(ThreadMessage.created_at.desc()).limit(1)
+    last_dm = db.scalar(
+        messages().where(ThreadMessage.dm_status.is_not(None)).order_by(ThreadMessage.created_at.desc()).limit(1)
     )
     awaiting_since = db.scalar(awaiting)
     return ThreadSummary(
@@ -121,7 +121,7 @@ def _summary(db: Session, thread: MessageThread) -> ThreadSummary:
             "author_name": last.author_name,
         },
         awaiting_reply_since=awaiting_since and svc.utc(awaiting_since),
-        dm_failed=last_bot is not None and last_bot.dm_status == DmStatus.FAILED,
+        dm_failed=last_dm is not None and last_dm.dm_status == DmStatus.FAILED,
     )
 
 
@@ -291,11 +291,13 @@ def post_reply(
     member: Member = Depends(get_current_member),
     db: Session = Depends(get_db),
 ) -> dict:
-    """대화 주인인 팀원의 웹 답장. PM 도 남의 대화에는 쓸 수 없다. 웹 답장은 디스코드로 보내지 않는다."""
+    """대화 주인의 웹 답장은 디스코드로 보내지 않는다. PM 이 남의 대화에 쓰면 바로 봇 DM 으로 나간다."""
     thread = _get_thread(db, workspace_id, thread_id)
-    if thread.member_id != member.member_id:
-        raise AppError(ErrorCode.FORBIDDEN, details={"thread_id": thread_id})
-    message = svc.add_web_reply(db, thread, body=payload.body, now=_now())
+    _check_thread_access(thread, member)
+    if thread.member_id == member.member_id:
+        message = svc.add_web_reply(db, thread, body=payload.body, now=_now())
+    else:
+        message = svc.add_pm_message(db, thread, author=member, body=payload.body, now=_now())
     db.commit()
     return success(MessageResponse.model_validate(message).model_dump(mode="json"))
 
