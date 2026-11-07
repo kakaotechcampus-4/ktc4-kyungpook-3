@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { MEETING_SOURCE_TRAITS, meetingListQueryOptions, toMinutesList } from '@/entities/meeting'
+import { meetingListQueryOptions, toMinutesList } from '@/entities/meeting'
 import type { MeetingSummary, MinutesList } from '@/entities/meeting'
 import { paths } from '@/shared/config/routes'
 import { GuardedLink } from '@/shared/lib/unsaved-changes'
@@ -267,12 +267,7 @@ function inProgressStatus(
 ): { label: string; to: string | null } {
   switch (meeting.status) {
     case 'processing':
-      return {
-        label: '정리 중',
-        to: MEETING_SOURCE_TRAITS[meeting.source].hasProcessingScreen
-          ? paths.meetingProcessing(workspaceId, meeting.id)
-          : null,
-      }
+      return { label: '정리 중', to: paths.meetingProcessing(workspaceId, meeting.id) }
     case 'awaiting_speakers':
       return { label: '화자 지정 필요', to: paths.meetingSpeakers(workspaceId, meeting.id) }
     default:
@@ -283,7 +278,7 @@ function inProgressStatus(
 /**
  * 회의록이 아직 없는 회의의 상태 항목 (U5-2). 정리 중이면 처리 화면, 화자 지정 대기면 지정 화면으로 잇는다.
  * Discord 봇이 기록 중인 회의(`created`·`recording`)는 갈 곳이 없어 상태만 보인다 (U5-9).
- * 채팅 회의는 처리 화면의 단계가 녹음 기준이라 정리 중이어도 잇지 않는다 (#379).
+ * 채팅 회의도 처리 화면으로 잇는다 — 처리 화면에 채팅 두 단계가 생겼다 (#483, #379 의 「잇지 않는다」를 바꿨다).
  */
 function InProgressRow({ workspaceId, meeting }: { workspaceId: string; meeting: MeetingSummary }) {
   const title = meeting.title === '' ? '제목 없는 회의' : meeting.title

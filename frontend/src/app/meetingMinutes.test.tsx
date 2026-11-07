@@ -702,7 +702,7 @@ describe('채팅 회의 (#379)', () => {
     expect(applied).toHaveTextContent('09/11 18:40')
   })
 
-  it('정리 중인 채팅 회의는 처리 화면으로 잇지 않고 상태만 보인다', async () => {
+  it('정리 중인 채팅 회의도 처리 화면으로 잇는다 — 채팅 두 단계 처리 화면이 생겼다 (#483)', async () => {
     db.meetings.push({
       ...db.meetings[3],
       meeting_id: 'mt_21',
@@ -726,8 +726,11 @@ describe('채팅 회의 (#379)', () => {
     const row = within(inProgress).getByText('채팅 2026-09-19').closest('li')!
     expect(row).toHaveTextContent('채팅')
     expect(row).toHaveTextContent('정리 중')
-    expect(within(row).queryByRole('link')).toBeNull()
-    // 녹음 회의의 정리 중 항목은 그대로 처리 화면으로 잇는다
+    expect(within(row).getByRole('link')).toHaveAttribute(
+      'href',
+      paths.meetingProcessing('ws_01', 'mt_21'),
+    )
+    // 녹음 회의의 정리 중 항목도 그대로 처리 화면으로 잇는다
     expect(within(inProgress).getByRole('link', { name: /기획 논의 녹음/ })).toHaveAttribute(
       'href',
       paths.meetingProcessing('ws_01', 'mt_10'),
