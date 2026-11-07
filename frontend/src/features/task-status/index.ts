@@ -1,4 +1,3 @@
-export { TASK_STATUSES, TASK_STATUS_LABEL } from './lib/statusLabel'
 export {
   TASK_STATUS_FAILED_TITLE,
   taskStatusMutationKey,

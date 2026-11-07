@@ -29,12 +29,13 @@ async function open(kind = '이 변경, 승인할까요?') {
 }
 const dueInput = () => screen.getByRole('textbox', { name: '마감' })
 const undecideDue = () => screen.getByRole('button', { name: '마감 미정' })
-function edit(values: { due?: string; status?: string }) {
-  if (values.due !== undefined) fireEvent.change(dueInput(), { target: { value: values.due } })
-  if (values.status !== undefined)
-    fireEvent.change(screen.getByRole('combobox', { name: '상태' }), {
-      target: { value: values.status },
-    })
+function edit(values: { due: string }) {
+  fireEvent.change(dueInput(), { target: { value: values.due } })
+}
+const statusField = () => screen.getByRole('combobox', { name: '상태' })
+async function chooseStatus(name: string) {
+  await userEvent.click(statusField())
+  await userEvent.click(await screen.findByRole('option', { name }))
 }
 function values(label: string) {
   return screen.getByLabelText(label).textContent
@@ -71,18 +72,19 @@ it('a deadline absent from proposal goes back to keeping the current task due on
   updateProposal({ blocker: '제안 막힘 사유' })
   const bodies = recordRequestBodies('PATCH', '/approvals/ap_01')
   const app = await open()
-  expect(screen.getByRole('combobox', { name: '상태' })).toHaveValue('')
+  expect(statusField()).toHaveTextContent('원래 제안 유지')
   expect(dueInput()).toHaveValue('')
-  fireEvent.change(screen.getByRole('combobox', { name: '상태' }), { target: { value: 'done' } })
-  fireEvent.change(screen.getByRole('combobox', { name: '상태' }), { target: { value: '' } })
-  expect(screen.getByRole('combobox', { name: '상태' })).toHaveValue('')
+  await chooseStatus('완료')
+  expect(statusField()).toHaveTextContent('완료')
+  await chooseStatus('원래 제안 유지')
+  expect(statusField()).toHaveTextContent('원래 제안 유지')
   Object.assign(db.tasks[0], { status: 'blocked', due_date: '2026-11-10', version: 2 })
   await act(() =>
     app.queryClient.invalidateQueries({
       queryKey: taskDetailQueryOptions('ws_01', 'tk_01').queryKey,
     }),
   )
-  expect(screen.getByRole('combobox', { name: '상태' })).toHaveValue('')
+  expect(statusField()).toHaveTextContent('원래 제안 유지')
   expect(dueInput()).toHaveValue('')
   // 미정으로 바꿨다가 날짜를 적으면 그 날짜이고, 칸을 비우면 원래 제안 유지로 돌아간다
   await userEvent.click(undecideDue())

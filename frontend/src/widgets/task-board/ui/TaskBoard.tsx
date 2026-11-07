@@ -8,9 +8,15 @@ import { meetingListQueryOptions } from '@/entities/meeting'
 import type { MeetingSummary } from '@/entities/meeting'
 import { memberListQueryOptions } from '@/entities/member'
 import type { Member } from '@/entities/member'
-import { isDueSoon, isOverdue, taskListQueryOptions, withAssigneeName } from '@/entities/task'
+import {
+  TASK_STATUS_LABEL,
+  isDueSoon,
+  isOverdue,
+  taskListQueryOptions,
+  withAssigneeName,
+} from '@/entities/task'
 import type { Task, TaskTab } from '@/entities/task'
-import { TASK_STATUS_LABEL, useTaskStatusOverlay } from '@/features/task-status'
+import { useTaskStatusOverlay } from '@/features/task-status'
 import { COMMON_MESSAGES } from '@/shared/api/errorMessages'
 import { paths } from '@/shared/config/routes'
 import { seoulDateOf, soonUntil } from '@/shared/lib/date'

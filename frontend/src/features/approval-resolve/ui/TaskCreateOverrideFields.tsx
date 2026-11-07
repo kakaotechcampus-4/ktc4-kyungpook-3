@@ -1,10 +1,11 @@
-import { useEffect, useId, useMemo, useRef } from 'react'
+import { useEffect, useId, useRef } from 'react'
 import { Controller } from 'react-hook-form'
+import { ASSIGNEE_NONE_OPTION, assigneeOptions } from '@/entities/member'
 import type { Member } from '@/entities/member'
 import { DateField } from '@/shared/ui/date-field'
 import { ErrorText } from '@/shared/ui/error-text'
 import { Label } from '@/shared/ui/label'
-import { Select, SelectInitial, SelectNoneMark } from '@/shared/ui/select'
+import { Select } from '@/shared/ui/select'
 import { TextField } from '@/shared/ui/text-field'
 import { OVERRIDE_FORM_MESSAGES } from '../model/overridesSchema'
 import type { TaskCreateOverrides } from '../model/useTaskCreateOverrides'
@@ -48,15 +49,6 @@ export function TaskCreateOverrideFields({
   const dueId = useId()
   const loaded = members !== undefined
   const focused = useRef(false)
-  const options = useMemo(
-    () =>
-      (members ?? []).map(({ id, displayName }) => ({
-        value: id,
-        label: displayName,
-        leading: <SelectInitial name={displayName} />,
-      })),
-    [members],
-  )
 
   useEffect(() => {
     if (!autoFocusFirstEmpty || !loaded || focused.current) return
@@ -111,8 +103,9 @@ export function TaskCreateOverrideFields({
                 onInputChange()
                 field.onChange(value ?? '')
               }}
-              options={options}
-              noneOption={{ label: '미정', leading: <SelectNoneMark /> }}
+              options={assigneeOptions(members, field.value === '' ? null : field.value)}
+              noneOption={ASSIGNEE_NONE_OPTION}
+              label="담당자"
               placeholder={assigneeMissing ? '담당자 고르기' : undefined}
               tone={attention.assignee === null ? 'normal' : 'blocking'}
               disabled={disabled || !loaded}

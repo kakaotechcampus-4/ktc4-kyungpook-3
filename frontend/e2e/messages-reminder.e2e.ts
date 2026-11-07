@@ -13,8 +13,10 @@ test('새 재촉으로 만든 재촉은 보내기 전 확인에 남고 새로고
   await expect(page).toHaveURL(/\/messages\?new=reminder$/)
   await expect(page.getByRole('heading', { level: 2, name: '새 재촉' })).toBeVisible()
 
-  await page.getByLabel('받는 사람').selectOption({ label: '이재환' })
-  await page.getByLabel('태스크').selectOption({ label: 'DB 스키마 정리 · 09/22 마감' })
+  await page.getByRole('combobox', { name: '받는 사람' }).click()
+  await page.getByRole('option', { name: '이재환' }).click()
+  await page.getByRole('combobox', { name: '태스크' }).click()
+  await page.getByRole('option', { name: 'DB 스키마 정리' }).click()
   await expect(page.getByRole('radio', { name: /^마감 하루 전\s*09\/21 09:00$/ })).toBeChecked()
   await page.getByRole('button', { name: '재촉 만들기' }).click()
 

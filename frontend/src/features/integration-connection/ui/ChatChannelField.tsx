@@ -68,6 +68,7 @@ export function ChatChannelField({ workspaceId, integration }: ChatChannelFieldP
       <div aria-busy={setting.channels.loading || undefined}>
         <Select
           id={id}
+          label="회의 채팅 채널"
           value={selected}
           onValueChange={change}
           options={options}

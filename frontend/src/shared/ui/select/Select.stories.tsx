@@ -3,7 +3,8 @@ import type { Meta, StoryObj } from '@storybook/react-vite'
 import { expect, userEvent, within } from 'storybook/test'
 import { Label } from '../label/Label'
 import { Select, SelectInitial, SelectNoneMark } from './Select'
-import type { SelectOption, SelectProps } from './Select'
+import type { SelectProps } from './Select'
+import type { SelectOption } from './options'
 
 const MEMBERS: readonly SelectOption<string>[] = ['김서연', '박민수', '이재환', '정하늘'].map(
   (name) => ({ value: name, label: name, leading: <SelectInitial name={name} /> }),
@@ -25,7 +26,7 @@ function Demo({ label, initialValue, ...props }: DemoProps) {
       <Label htmlFor={id} blocking={props.tone === 'blocking'}>
         {label}
       </Label>
-      <Select id={id} value={value} onValueChange={setValue} {...props} />
+      <Select id={id} label={label} value={value} onValueChange={setValue} {...props} />
     </div>
   )
 }
@@ -82,5 +83,16 @@ export const 열림: Story = {
     within(canvasElement).getByRole('combobox', { name: '담당자' }).focus()
     await userEvent.keyboard('{Enter}')
     await expect(await within(document.body).findByRole('listbox')).toBeInTheDocument()
+  },
+}
+
+/** 휴대폰 폭에서는 아래 시트로 연다 — 제목은 칸 이름, 줄 높이 52px */
+export const 휴대폰_시트: Story = {
+  globals: { viewport: { value: 'mobile1', isRotated: false } },
+  play: async ({ canvasElement }) => {
+    await userEvent.click(within(canvasElement).getByRole('combobox', { name: '담당자' }))
+    await expect(
+      await within(canvasElement.ownerDocument.body).findByRole('listbox'),
+    ).toBeInTheDocument()
   },
 }

@@ -1,25 +1,26 @@
 import { useQuery } from '@tanstack/react-query'
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import { memberListQueryOptions } from '@/entities/member'
 import type { Member } from '@/entities/member'
 import { MESSAGE_BODY_MAX_LENGTH } from '@/entities/message'
 import type { CreatedReminder } from '@/entities/message'
 import { SendTimingPicker, useDeadlineSend } from '@/entities/message-settings'
-import { taskListQueryOptions } from '@/entities/task'
+import { TASK_STATUS_LABEL, isOverdue, taskListQueryOptions } from '@/entities/task'
 import type { Task } from '@/entities/task'
 import { paths } from '@/shared/config/routes'
-import { monthDayOf } from '@/shared/lib/date'
+import { monthDayOf, now, todayInSeoul } from '@/shared/lib/date'
 import { GuardedLink, useUnsavedChanges } from '@/shared/lib/unsaved-changes'
 import { Button } from '@/shared/ui/button'
 import { Label } from '@/shared/ui/label'
 import { LockedButton } from '@/shared/ui/locked-button'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
+import { Combobox, Select, SelectInitial } from '@/shared/ui/select'
+import type { SelectOption } from '@/shared/ui/select'
 import { CREATE_FAILURE_TITLE } from '../lib/createMessages'
 import { useCreateReminder } from '../model/useCreateReminder'
 
-/* 시안이 없다 — 승인 보완 폼의 select, 문구 고쳐 쓰기의 칸, 보내기 전 확인의 보낼 시각 카드를 그대로 쓴다 */
-const SELECT =
-  'h-[42px] w-full rounded-9 border border-input-border bg-surface px-13 text-body text-ink disabled:bg-surface-sunken disabled:text-faint'
+/* 받는 사람·태스크는 시안 select-design.html 3. 메모 칸은 문구 고쳐 쓰기의 칸, 보낼 시각은 보내기 전 확인의 카드를 그대로 쓴다 */
 const TEXTAREA =
   'min-h-[80px] w-full resize-y rounded-9 border border-input-border bg-surface px-12 py-10 text-[14px] leading-[1.8] text-ink focus-visible:-outline-offset-1'
 const LINK = 'font-semibold text-ink underline underline-offset-4 hover:text-sub'
@@ -48,11 +49,55 @@ const byDue = (left: Task, right: Task) =>
         ? -1
         : left.dueDate.localeCompare(right.dueDate)
 
-/** 그 팀원이 맡은 끝나지 않은 태스크 */
-function openTasksOf(tasks: readonly Task[], memberId: string): Task[] {
+/** 그 팀원이 맡은 태스크 — 끝나지 않은 것(open)과 끝난 것(done) */
+function tasksOf(tasks: readonly Task[], memberId: string, done: boolean): Task[] {
   return tasks
-    .filter(({ assigneeMemberId, status }) => assigneeMemberId === memberId && status !== 'done')
+    .filter(
+      ({ assigneeMemberId, status }) =>
+        assigneeMemberId === memberId && (status === 'done') === done,
+    )
     .sort(byDue)
+}
+
+/** 태스크가 이보다 많으면 목록 위에 찾기 칸을 둔다 (시안 select-design.html 3) */
+const SEARCHABLE_OVER = 8
+
+const WARN = 'text-accent'
+
+function memberOption(member: Member, tasks: readonly Task[] | undefined): SelectOption<string> {
+  const description: ReactNode =
+    member.discordUserId === null ? (
+      <span className={WARN}>Discord 미연결 · DM 이 나가지 않아요</span>
+    ) : tasks === undefined ? undefined : (
+      `진행 중 ${String(tasksOf(tasks, member.id, false).length)}개`
+    )
+  return {
+    value: member.id,
+    label: member.displayName,
+    leading: <SelectInitial name={member.displayName} />,
+    description,
+  }
+}
+
+/** `09/20 마감 · 기한 지남` — 기한이 지났으면 줄 전체를 강조색으로 */
+function taskOption(task: Task, today: string): SelectOption<string> {
+  const due = task.dueDate === null ? '마감 없음' : `${monthDayOf(task.dueDate)} 마감`
+  if (task.status === 'done')
+    return {
+      value: task.id,
+      label: task.title,
+      description: '완료한 태스크는 재촉할 수 없어요',
+      disabled: true,
+    }
+  return {
+    value: task.id,
+    label: task.title,
+    description: isOverdue(task, today) ? (
+      <span className={WARN}>{`${due} · 기한 지남`}</span>
+    ) : (
+      `${due} · ${TASK_STATUS_LABEL[task.status]}`
+    ),
+  }
 }
 
 /**
@@ -93,9 +138,20 @@ export function ReminderCreateForm({
   const memberId = target.kind === 'task' ? target.task.assigneeMemberId : chosenMemberId || null
   const member = members.data?.find(({ id }) => id === memberId)
   const choices = useMemo(
-    () => (memberId === null ? [] : openTasksOf(tasks.data ?? [], memberId)),
+    () => (memberId === null ? [] : tasksOf(tasks.data ?? [], memberId, false)),
     [tasks.data, memberId],
   )
+  const memberOptions = useMemo(
+    () => [...(members.data ?? [])].sort(byName).map((each) => memberOption(each, tasks.data)),
+    [members.data, tasks.data],
+  )
+  const taskOptions = useMemo(() => {
+    if (memberId === null) return []
+    const today = todayInSeoul(new Date(now()))
+    return [...choices, ...tasksOf(tasks.data ?? [], memberId, true)].map((each) =>
+      taskOption(each, today),
+    )
+  }, [choices, tasks.data, memberId])
   const task = target.kind === 'task' ? target.task : choices.find(({ id }) => id === chosenTaskId)
   const { deadline } = useDeadlineSend(workspaceId, task?.dueDate ?? null)
   // 고르지 않았으면 마감 기준 시각이다. 고를 수 없으면 비워 두고 직접 고르게 한다
@@ -158,46 +214,34 @@ export function ReminderCreateForm({
         <>
           <div className="flex flex-col gap-6">
             <Label htmlFor={memberFieldId}>받는 사람</Label>
-            <select
+            <Select
               id={memberFieldId}
-              className={SELECT}
-              value={chosenMemberId}
+              label="받는 사람"
+              placeholder="팀원 고르기"
+              value={chosenMemberId || null}
+              options={memberOptions}
               disabled={locked || members.data === undefined}
-              onChange={(event) => {
-                setChosenMemberId(event.target.value)
+              onValueChange={(value) => {
+                setChosenMemberId(value ?? '')
                 setChosenTaskId('')
                 resetTime()
                 clearFailure()
               }}
-            >
-              <option value="">팀원 고르기</option>
-              {[...(members.data ?? [])].sort(byName).map(({ id, displayName }) => (
-                <option key={id} value={id}>
-                  {displayName}
-                </option>
-              ))}
-            </select>
+            />
           </div>
           <div className="flex flex-col gap-6">
             <Label htmlFor={taskFieldId}>태스크</Label>
-            <select
+            <TaskPicker
               id={taskFieldId}
-              className={SELECT}
-              value={chosenTaskId}
+              value={chosenTaskId || null}
+              options={taskOptions}
               disabled={locked || memberId === null || choices.length === 0}
-              onChange={(event) => {
-                setChosenTaskId(event.target.value)
+              onValueChange={(value) => {
+                setChosenTaskId(value ?? '')
                 resetTime()
                 clearFailure()
               }}
-            >
-              <option value="">태스크 고르기</option>
-              {choices.map(({ id, title, dueDate }) => (
-                <option key={id} value={id}>
-                  {`${title} · ${dueDate === null ? '마감 없음' : `${monthDayOf(dueDate)} 마감`}`}
-                </option>
-              ))}
-            </select>
+            />
             {memberId !== null && tasks.data !== undefined && choices.length === 0 ? (
               <p className="text-caption text-dim">
                 {recipientName}님이 맡은 진행 중인 태스크가 없어요.
@@ -291,5 +335,31 @@ export function ReminderCreateForm({
         )}
       </div>
     </div>
+  )
+}
+
+interface TaskPickerProps {
+  id: string
+  value: string | null
+  options: readonly SelectOption<string>[]
+  disabled: boolean
+  onValueChange: (value: string | null) => void
+}
+
+/** 태스크 고르기. 줄이 많으면 찾기 칸이 있는 선택 상자로 연다 */
+function TaskPicker({ id, value, options, disabled, onValueChange }: TaskPickerProps) {
+  const common = {
+    id,
+    label: '태스크',
+    placeholder: '태스크 고르기',
+    value,
+    options,
+    disabled,
+    onValueChange,
+  }
+  return options.length > SEARCHABLE_OVER ? (
+    <Combobox {...common} searchLabel="태스크 찾기" emptyText="맞는 태스크가 없어요" />
+  ) : (
+    <Select {...common} />
   )
 }
