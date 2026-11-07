@@ -1,5 +1,6 @@
 """읽지 않은 메시지 수 계산과 읽음 처리 서비스. mdb·mseed 픽스처가 tests/api 에 있어 이 폴더에 둔다."""
 import threading
+import time
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -150,6 +151,30 @@ def test_mark_read_on_empty_thread_returns_existing_position(mdb, seed):
     assert reads.mark_read(mdb, seed["alice"], thread) == _minutes(7)
 
 
+def test_mark_read_uses_arrival_not_created_at(mdb, seed):
+    thread = _thread(mdb, seed["alice"])
+    # 디스코드 답장 꼴: 보낸 시각은 앞서고 받은 시각이 뒤다.
+    _msg(mdb, thread, MessageSender.MEMBER, _minutes(9), received_at=_minutes(11))
+
+    returned = reads.mark_read(mdb, seed["pm"], thread)
+    mdb.commit()
+
+    assert returned == _minutes(11)
+    assert reads.unread_by_thread(mdb, seed["pm"]) == {thread.thread_id: 0}
+
+
+def test_mark_read_after_own_last_reply_moves_to_that_reply(mdb, seed):
+    thread = _thread(mdb, seed["alice"])
+    _msg(mdb, thread, MessageSender.BOT, _minutes(1))
+    _msg(mdb, thread, MessageSender.MEMBER, _minutes(2))
+
+    returned = reads.mark_read(mdb, seed["alice"], thread)
+    mdb.commit()
+
+    assert returned == _minutes(2)
+    assert reads.unread_by_thread(mdb, seed["alice"]) == {thread.thread_id: 0}
+
+
 def test_mark_workspace_read_sets_all_threads(mdb, seed):
     alice_thread = _thread(mdb, seed["alice"])
     carol_thread = _thread(mdb, seed["carol"])
@@ -205,28 +230,49 @@ def test_concurrent_first_mark_read_keeps_one_row_and_latest(mdb, seed):
     thread = _thread(mdb, seed["alice"])
     _msg(mdb, thread, MessageSender.BOT, _minutes(1))
     pm, thread_id = seed["pm"].member_id, thread.thread_id
-    Session = sessionmaker(bind=mdb.get_bind(), autoflush=False)
-    barrier = threading.Barrier(2)
+    engine = mdb.get_bind()
+    Session = sessionmaker(bind=engine, autoflush=False)
+    first_inserted = threading.Event()
 
-    # 두 세션이 모두 "행 없음"을 본 뒤 동시에 넣게 맞춘다. 시각이 다른 두 요청의 더 늦은 값이 남아야 한다.
-    def run(minutes):
-        db = Session()
-        try:
-            member = db.get(Member, pm)
-            db.scalar(select(MessageThreadRead.last_read_at).where(MessageThreadRead.thread_id == thread_id))
-            barrier.wait(5)
-            reads.mark_workspace_read(db, member, _minutes(minutes))
-            db.commit()
-        finally:
-            db.close()
+    # 첫 세션이 INSERT 한 뒤 커밋 전에 멈추고, 그동안 둘째 세션이 같은 행을 넣게 해
+    # 기본 키 충돌(IntegrityError)에서 조건부 UPDATE 로 가는 길을 반드시 지나게 한다.
+    def listener(conn, cursor, statement, params, context, executemany):
+        if threading.current_thread().name == "first" and statement.startswith("INSERT INTO message_thread_read"):
+            first_inserted.set()
+            time.sleep(0.5)
 
-    workers = [threading.Thread(target=run, args=(m,)) for m in (5, 9)]
-    for w in workers:
-        w.start()
-    for w in workers:
-        w.join(20)
-    assert not any(w.is_alive() for w in workers)
+    def worker(minutes, wait_first):
+        def run():
+            db = Session()
+            try:
+                if wait_first:
+                    first_inserted.wait(5)
+                reads.mark_workspace_read(db, db.get(Member, pm), _minutes(minutes))
+                db.commit()
+                return "ok"
+            except Exception as e:  # noqa: BLE001
+                db.rollback()
+                return f"{type(e).__name__}: {str(e).splitlines()[0]}"
+            finally:
+                db.close()
+        return run
 
+    results = {}
+    event.listen(engine, "before_cursor_execute", listener)
+    try:
+        workers = [
+            threading.Thread(name=name, target=lambda n=name, f=fn: results.update({n: f()}))
+            for name, fn in (("first", worker(5, False)), ("second", worker(9, True)))
+        ]
+        for w in workers:
+            w.start()
+        for w in workers:
+            w.join(20)
+        assert not any(w.is_alive() for w in workers)
+    finally:
+        event.remove(engine, "before_cursor_execute", listener)
+
+    assert results == {"first": "ok", "second": "ok"}
     mdb.expire_all()
     rows = mdb.scalars(select(MessageThreadRead).where(
         MessageThreadRead.thread_id == thread_id, MessageThreadRead.member_id == pm
