@@ -2,7 +2,7 @@
 
 Elice 전사가 멈추면 운영 워커를 평소 꺼 둔 GPU 서버로 사람이 옮기고, 끝나면 되돌린 뒤 서버를 끈다. 서버는 지우지 않고 꺼 둔다. `setup` 이 대기 서버를 한 번 만들고 `on` 은 start, `off` 는 stop 이다.
 
-`setup`, `on`, `off`, 자동 stop 과 운영 서버에서 GPU 서버를 부르는 데까지는 2026-11-06 에 실제로 돌렸다([측정](../../stt/eval/results/2026-11-05-gpu-fallback-prod/README.md)). 전환 4단계의 drop-in 과 워커 재시작, 재처리, 복귀는 아직 돌려 보지 않았다. 처음 쓰는 날에는 그 단계가 그대로 통하지 않을 수 있다고 보고 시간을 잡는다.
+`setup`, `on`, `off`, 자동 stop 과 운영 서버에서 GPU 서버를 부르는 데까지는 2026-11-06 에 실제로 돌렸다([측정](../../stt/eval/results/2026-11-05-gpu-fallback-prod/README.md)). 전환 4단계의 drop-in, 워커 재시작, 복귀는 2026-11-07 에 저장된 6인 회의 하나로 돌렸다([리허설 기록](../../docs/basis_for_decision/ai/2026-11-07-gpu-stt-rehearsal.md)). 재처리는 아직 돌려 보지 않았다. 처음 쓰는 날에는 그 단계가 그대로 통하지 않을 수 있다고 보고 시간을 잡는다.
 
 서버는 g4dn.xlarge 의 vLLM, whisper-large-v3 이고 측정값은 [결과 문서](../../stt/eval/results/2026-11-04-gpu-serving/README.md), 판단은 [결정 0039](../../docs/basis_for_decision/ai/2026-11-04-0039-gpu-stt-server.md) 에 있다. 서비스 전체의 복구 절차는 [#359](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/359) 에서 다룬다.
 
@@ -131,6 +131,8 @@ cd /opt/mm/ai && sudo -u <워커 사용자> .venv/bin/python -m capture.worker -
 
 재처리는 처음 전사와 경로가 다르다. 회의를 하나씩 돌고 클립을 하나씩 보낸다. 시간은 재지 않았다.
 
+저장된 회의를 복제해 리허설하면 실제 회의처럼 처리된다. BE 에 새 회의가 생기고, 추출 결과가 자동으로 태스크가 되면 Notion 까지 동기화되고, 승인 대기도 쌓인다. BE 에는 회의 삭제 API 가 없다. 리허설을 다시 하면 쓸 워크스페이스와 정리 방법을 먼저 정한다.
+
 ## 잊지 말 것
 
 서버는 켠 뒤 3시간에 스스로 stop 한다. 지우지 않으니 대기 서버는 남는다. 부팅할 때마다 다시 예약하고, 짧은 시각으로 실제 꺼지는 것을 확인했다. 분 단위로 올려 잡고 종료 처리도 있어 정한 시각보다 1분에서 2분 늦게 꺼지기 시작할 수 있다. 끝나면 `off` 와 `status` 를 돌린다. 더 필요하면 켤 때 `on --hours N` 을 준다. 회의가 남았는데 꺼졌으면 꺼짐이 끝난 뒤 `on` 을 다시 돌린다. 고정 IP 와 인증서가 같아서 운영 서버는 그대로 두면 되고, 켜는 시간만 다시 기다린다.
@@ -154,6 +156,8 @@ G 계열 vCPU 한도 8 을 같은 계정의 다른 GPU 작업과 나눠 쓴다. 
 꺼 둔 서버는 켤 때 AWS 의 남은 용량에 기댄다. `InsufficientInstanceCapacity` 로 실패하면 잠시 뒤 다시 돌린다. 측정에서는 나오지 않았다.
 
 서버에 접속할 수단을 넣지 않았다. 키 페어도 SSM 역할도 없어서 `/var/log/vllm.log` 를 볼 수 없다. 200 이 오지 않으면 `off` 로 끈 뒤 `on` 을 해 보는 것 말고 원인을 찾기 어렵다. 그래도 안 되면 `destroy` 뒤 `setup` 으로 다시 만든다.
+
+GPU 서버의 전사가 비어 있어도 워커는 실패로 세지 않는다. 리허설에서 15구간 중 2구간이 오류 없이 빈 응답으로 왔고, 회의는 실패 0으로 인계됐으며 `--retry` 대상도 아니었다. 원인은 찾지 못했다. 전환 중 처리한 회의는 전사에 빠진 구간이 없는지 사람이 확인한다.
 
 장애 동안 실제 회의 음성이 TLS 로 개인 AWS 계정을 지난다. 동의 범위는 팀이 정할 일이고 [#360](https://github.com/kakaotechcampus-4/ktc4-kyungpook-3/issues/360), [결정 0039](../../docs/basis_for_decision/ai/2026-11-04-0039-gpu-stt-server.md) 와 함께 다룬다.
 
