@@ -449,7 +449,7 @@ AI 구현이 정한 처리(BE 동작은 그대로):
 
 PM 이 웹에서 승인한 리마인드를 봇이 디스코드 DM 안내로 알리고 답장은 웹에서 받는 경로다. 리마인드 문구 초안을 AI 가 써 넣는 경로도 여기 있다. 웹 쪽 조작(만들기·고치기·승인·취소, 대화 조회, 웹 답장)은 [프론트엔드 대표 계약](../../../frontend/docs/contracts/frontend-api-contract.md) §5.7 에 있다.
 
-- 합의 상태: **BE·봇·초안 워커 구현.** #310 에서 BE 와 AI 쪽 초안 모듈(`ai/draft/reminder_draft.py`)을 만들었고, #317 에서 봇의 DM 발송·수신과 초안 워커(`ai/capture/dm.py`)를 붙였다. #515 에서 DM 을 웹 답장 안내로 바꿨고, 근거인 결정 0048 은 검토중이다.
+- 합의 상태: **BE·봇·초안 워커 구현.** #310 에서 BE 와 AI 쪽 초안 모듈(`ai/draft/reminder_draft.py`)을 만들었고, #317 에서 봇의 DM 발송·수신과 초안 워커(`ai/capture/dm.py`)를 붙였다. #515 에서 DM 을 웹 답장 안내로 바꿨고, 근거는 결정 0048 이다.
 - 결정 근거: [결정 0034](../../../ai/docs/basis_for_decision/ai/2026-11-04-0034-reminder-and-thread-message.md), [결정 0035](../../../ai/docs/basis_for_decision/ai/2026-11-04-0035-bot-dm-local-journal-and-backfill.md), [결정 0048](../../../ai/docs/basis_for_decision/ai/2026-11-07-0048-reminder-web-reply-notice.md), FE 메시지 정책(D-174)
 - 리마인드 하나는 태스크 하나 × 받는 사람 한 명이다. 같은 받는 사람·같은 발송 시각의 리마인드는 "보낼 메시지"(묶음) 하나로 모이고, PM 은 묶음 문구를 보고 승인한다. 승인된 묶음 문구는 웹 대화에 저장되고, 봇은 BE 가 가져가기 때 만든 안내를 보낸다.
 - 봇이 BE 를 주기적으로 불러 보낼 메시지를 가져간다. 봇이 꺼져 있는 동안 발송 시각이 된 메시지는 사라지지 않고 다음 가져가기에서 나온다.
