@@ -24,3 +24,14 @@ def test_asr_reason_is_added_next_to_other_reasons():
     reasons = auto_blockers(_signals(task_status=EvidenceStatus.INFERRED, similar_count=2, asr_suspect_count=1),
                             assignee_type="none", assignee=None, has_due_date=False)
     assert reasons == ["task_not_certain", "similar_task_found", "asr_suspect"]
+
+
+def test_check_failure_has_its_own_reason():
+    assert auto_blockers(_signals(asr_check_failed=True), assignee_type="none", assignee=None,
+                         has_due_date=False) == ["asr_check_failed"]
+
+
+def test_suspects_and_failure_are_reported_together():
+    assert auto_blockers(_signals(asr_suspect_count=1, asr_check_failed=True), assignee_type="none",
+                         assignee=None, has_due_date=False) == ["asr_suspect", "asr_check_failed"]
+

@@ -9,7 +9,9 @@ import { TASK_STATUS_LABEL, isOverdue } from '@/entities/task'
 import { FILL_IN_ARRIVAL } from '@/features/approval-resolve'
 import { paths } from '@/shared/config/routes'
 import { seoulDateOf } from '@/shared/lib/date'
+import { useLoadingIndicator } from '@/shared/lib/loading-indicator'
 import { GuardedLink } from '@/shared/lib/unsaved-changes'
+import { DeferredSkeleton, revealClass } from '@/shared/ui/deferred-skeleton'
 import { Icon } from '@/shared/ui/icon'
 import { Skeleton } from '@/shared/ui/skeleton'
 import {
@@ -173,19 +175,26 @@ function headline(isPm: boolean, waiting: readonly Approval[] | null): string {
 
 /** 제목 아래 최근 처리 회의 안내 (D-063, D-065). 정보 문구라 링크가 아니다 */
 function MeetingLead({ data }: { data: DashboardData }) {
-  if (data.meetings.status === 'loading') return <Skeleton width={240} />
+  const indicator = useLoadingIndicator(data.meetings.status === 'loading')
+  if (data.meetings.status === 'loading' || indicator.pending)
+    return (
+      <DeferredSkeleton indicator={indicator}>
+        <Skeleton width={240} />
+      </DeferredSkeleton>
+    )
+  const lead = [LEAD, revealClass(indicator)].filter(Boolean).join(' ')
   if (data.meetings.status === 'error')
-    return <p className={LEAD}>최근 회의 정보를 불러오지 못했어요</p>
+    return <p className={lead}>최근 회의 정보를 불러오지 못했어요</p>
   const meeting = data.recent
   if (meeting === null || meeting === undefined)
-    return <p className={LEAD}>아직 정리한 회의가 없어요</p>
+    return <p className={lead}>아직 정리한 회의가 없어요</p>
   const date = seoulDateOf(meeting.meeting.startedAt)
   const { title, source, durationMs } = meeting.meeting
   // 채팅 회의의 길이는 녹음 분량이 아니라 첫 메시지부터 마지막 메시지까지의 기간이라 쓰지 않는다 (#379)
   const duration =
     MEETING_SOURCE_TRAITS[source].timeAxis === 'recording' ? durationLabel(durationMs) : null
   return (
-    <p className={LEAD}>
+    <p className={lead}>
       {date === null ? '' : `${monthDayLabel(date)} `}
       {title}
       {objectParticle(title)} 정리했어요
@@ -267,24 +276,31 @@ function SummaryItem({
   value: number | undefined
   href: string
 }) {
+  const indicator = useLoadingIndicator(state === 'loading')
   let shown: ReactNode
-  if (state === 'error' || (state === 'ready' && value === undefined))
+  if (state === 'loading' || indicator.pending)
+    shown = (
+      <>
+        <DeferredSkeleton indicator={indicator}>
+          <Skeleton variant="block" width={18} height={18} />
+        </DeferredSkeleton>
+        <span className="sr-only">불러오는 중</span>
+      </>
+    )
+  else if (state === 'error' || value === undefined)
     shown = (
       <>
         <span aria-hidden="true">–</span>
         <span className="sr-only">불러오지 못했어요</span>
       </>
     )
-  else if (state === 'loading' || value === undefined)
-    shown = (
-      <>
-        <Skeleton variant="block" width={18} height={18} aria-hidden="true" />
-        <span className="sr-only">불러오는 중</span>
-      </>
-    )
   else
     shown = (
-      <GuardedLink to={href} aria-label={`${label} ${value}`} className={SUMMARY_LINK}>
+      <GuardedLink
+        to={href}
+        aria-label={`${label} ${value}`}
+        className={[SUMMARY_LINK, revealClass(indicator)].filter(Boolean).join(' ')}
+      >
         {value}
       </GuardedLink>
     )

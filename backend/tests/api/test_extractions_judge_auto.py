@@ -615,9 +615,30 @@ def test_asr_suspect_blocks_auto_and_rides_on_the_approval(client, db, seed, cap
     assert json.loads(approval.payload)["asr_suspects"] == [_suspect()]
 
 
-def test_asr_check_failure_also_blocks_auto(client, seed):
+def test_asr_check_failure_also_blocks_auto_with_its_own_reason(client, seed, caplog):
+    # 분석기 장애로 모두 막히는 것과 오탐 증가를 BE 로그만으로 구별할 수 있게 사유를 나눈다(#532 리뷰)
     failed = {"word": "", "source": "check_failed", "candidates": []}
-    assert _gate(client, seed, asr_suspects=[failed]) == "review"
+    with caplog.at_level("INFO", logger="app.api.extractions"):
+        assert _gate(client, seed, asr_suspects=[failed]) == "review"
+    assert "asr_check_failed" in caplog.text
+    assert "reasons=asr_suspect" not in caplog.text and ",asr_suspect" not in caplog.text
+
+
+@pytest.mark.parametrize("count, status", [(50, 201), (51, 400)])
+def test_asr_suspects_limit_is_fifty(client, seed, count, status):
+    suspects = [_suspect(word=f"단어{i}") for i in range(count)]
+    r = client.post("/api/v1/extractions", json={
+        "meeting_id": seed["meeting"].meeting_id, "workspace_id": seed["ws"].workspace_id,
+        "items": [_judge(asr_suspects=suspects)],
+    }, headers=SERVICE_HEADERS)
+    assert r.status_code == status, r.text
+
+
+def test_unknown_source_is_accepted_and_kept(client, db, seed):
+    # AI 가 새 source 를 먼저 배포해도 회의 전체가 400 이 되지 않는다. 모르는 값도 그대로 싣는다
+    _only_item(client, _extract(client, seed, [_judge(asr_suspects=[_suspect(source="context")])]))
+    [approval] = _approvals(db)
+    assert json.loads(approval.payload)["asr_suspects"][0]["source"] == "context"
 
 
 @pytest.mark.parametrize("sent", ["empty", "missing"])
@@ -646,3 +667,64 @@ def test_malformed_asr_suspects_are_rejected(client, seed, bad):
         "items": [_judge(asr_suspects=bad)],
     }, headers=SERVICE_HEADERS)
     assert r.status_code == 400, r.text
+
+
+# ── 승인 대기 요청(pending) 이 유사 검색에 잡히는지 ────────────────────────────
+
+
+def _pending_create(db, seed, *, embedding=None, rejected_title=None, title="결제 API 붙이기") -> ApprovalRequest:
+    """다른 회의에서 만든 승인 대기 task_create 요청."""
+    approval = ApprovalRequest(
+        workspace_id=seed["ws"].workspace_id,
+        type="task_create",
+        payload=json.dumps({"task_title": title}, ensure_ascii=False),
+        status="pending",
+        embedding=embedding,
+        embedding_rejected_title=rejected_title,
+    )
+    db.add(approval)
+    db.commit()
+    return approval
+
+
+def test_unembedded_pending_from_another_meeting_blocks_auto(client, db, seed):
+    # 임베딩이 채워지기 전의 pending 은 AI 의 유사 검색에 잡히지 않아 similar_count=0 을 믿을 수 없다
+    _pending_create(db, seed)
+
+    item = _only_item(client, _extract(client, seed, [_judge()]))
+
+    assert item["gate"] == "review"
+    assert item["task_id"] is None
+
+
+def test_embedded_pending_does_not_block_auto(client, db, seed):
+    _pending_create(db, seed, embedding=EMBEDDED)
+
+    assert _gate(client, seed) == "auto"
+
+
+def test_pending_with_blank_title_does_not_block_auto(client, db, seed):
+    # 제목이 없어 같은 할 일일 수 없는 요청이라 워커가 "" 로 표시해 둔다
+    _pending_create(db, seed, rejected_title="")
+
+    assert _gate(client, seed) == "auto"
+
+
+def test_pending_rejected_by_embedding_api_blocks_auto(client, db, seed):
+    _pending_create(db, seed, rejected_title="결제 API 붙이기")
+
+    assert _gate(client, seed) == "review"
+
+
+def test_pending_created_earlier_in_the_same_request_does_not_block_auto(client, db, seed):
+    # 앞 항목이 review 로 pending 을 만들어도, 신호는 처음 읽은 값을 쓰므로 뒤 항목을 막지 않는다
+    extraction_id = _extract(client, seed, [
+        _judge(task_title="로그인 개선", similar_count=1, top_similarity=0.5),
+        _judge(),
+    ])
+
+    items = client.get(f"/api/v1/extractions/{extraction_id}").json()["data"]["items"]
+    assert [i["gate"] for i in items] == ["review", "auto"]
+    # 첫 항목이 실제로 pending task_create 를 만들었는데도 두 번째 항목은 auto 다
+    pending = [r for r in _approvals(db) if r.type == "task_create" and r.status == "pending"]
+    assert len(pending) == 1

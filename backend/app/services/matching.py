@@ -329,8 +329,12 @@ class AutoSignals:
     similar_count: int | None
     # BE가 등록 시점에 본 값. 임베딩이 없는 task(기다리는 중이거나 임베딩 API가 거절한)는 AI의 유사 검색에 잡히지 않았다
     unsearched_tasks_exist: bool = False
+    # 승인 대기 중인 task_create 요청 가운데 임베딩이 없어 유사 검색(include_pending)에 잡히지 않은 것이 있는지
+    unsearched_pending_exist: bool = False
     # AI가 찾은 전사 오인식 의심 단어 수. 근거 문장 자체가 잘못 전사됐을 수 있어 auto로 보내지 않는다
     asr_suspect_count: int = 0
+    # AI가 전사 오인식 검사를 하지 못했다(분석기 장애 등). 보수적으로 막고, 오탐 증가와 구별되게 사유를 따로 둔다
+    asr_check_failed: bool = False
 
 
 def auto_blockers(
@@ -367,12 +371,18 @@ def auto_blockers(
         reasons.append("due_mismatch")
     if signals.similar_count > 0:
         reasons.append("similar_task_found")
-    elif signals.unsearched_tasks_exist:
-        # 검색이 못 본 task가 있어 similar_count=0을 믿을 수 없다. 같은 회의에서 앞서 auto로 만든 task도 여기 걸린다
-        reasons.append("unsearched_task_exists")
+    else:
+        # 검색이 못 본 후보가 있어 similar_count=0을 믿을 수 없다. 두 사유는 서로 독립이다
+        if signals.unsearched_tasks_exist:
+            # 같은 회의에서 앞서 auto로 만든 task도 여기 걸린다
+            reasons.append("unsearched_task_exists")
+        if signals.unsearched_pending_exist:
+            reasons.append("unsearched_pending_exists")
     if signals.asr_suspect_count:
         # Jev 의 certain 은 근거에 충실한지만 본다. "애포문서 정리"처럼 근거가 잘못 전사됐으면 그대로 certain 이다
         reasons.append("asr_suspect")
+    if signals.asr_check_failed:
+        reasons.append("asr_check_failed")
     return reasons
 
 

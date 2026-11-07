@@ -59,7 +59,7 @@ from app.services.matching import (
 )
 from app.services import upload_storage
 from app.services.alias_learning import learnable_alias_texts, storable_assignee_type
-from app.services.embedding import has_unsearchable_tasks
+from app.services.embedding import has_unsearchable_pending, has_unsearchable_tasks
 from app.services.tasks import create_task, delete_task
 
 logger = logging.getLogger(__name__)
@@ -159,6 +159,11 @@ def create_extraction(
     # 유사 검색이 못 보는 task가 있는지(judge auto 조건). 처음 judge 새 항목에서 한 번 읽고, 이 요청이 auto로 task를
     # 만들면 그 task도 임베딩 전이라 검색에 잡히지 않으므로 True로 바꾼다. 그 밖에는 이 요청 안에서 바뀌지 않는다
     unsearched_tasks: bool | None = None
+    # 임베딩이 없어 유사 검색(include_pending)이 못 보는 승인 대기 요청이 있는지. unsearched_tasks 와 같은 자리에서 한 번만
+    # 읽고 바꾸지 않는다. 이 요청의 review/hold 항목이 만드는 pending 은 보통 첫 judge 새 항목 처리 뒤에 생겨 읽은 값에 없다.
+    # 단 legacy 새 항목이 judge 항목보다 앞에 오면 그 pending 이 먼저 flush 되어 첫 judge 항목의 auto 를 막는다. 막는 쪽이라
+    # 그대로 둔다(결정 기록 2026-11-07-pending-approval-search.md)
+    unsearched_pending: bool | None = None
     targets = _lock_update_targets(db, payload.items)
     sources_by_seq = _sources_by_seq(db, meeting.meeting_id, payload.items)
     # 멤버 ID로 화자를 정하는 데 쓸 팀원을 요청당 한 번에 읽는다(항목의 evidence_speaker_member_id와 근거 발화의 member_id)
@@ -235,13 +240,16 @@ def create_extraction(
             if path == ExtractionPath.JUDGE:
                 if unsearched_tasks is None:
                     unsearched_tasks = has_unsearchable_tasks(db, meeting.workspace_id)
+                    unsearched_pending = has_unsearchable_pending(db, meeting.workspace_id)
                 blockers = auto_blockers(
                     AutoSignals(
                         task_status=raw_item.task_status,
                         due_status=raw_item.due_status,
                         similar_count=raw_item.similar_count,
                         unsearched_tasks_exist=unsearched_tasks,
-                        asr_suspect_count=len(raw_item.asr_suspects or []),
+                        unsearched_pending_exist=bool(unsearched_pending),
+                        asr_suspect_count=sum(1 for s in raw_item.asr_suspects or [] if s.source != "check_failed"),
+                        asr_check_failed=any(s.source == "check_failed" for s in raw_item.asr_suspects or []),
                     ),
                     assignee_type=raw_item.assignee_type,
                     assignee=match if mentioned else None,

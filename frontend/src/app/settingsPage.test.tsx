@@ -255,7 +255,10 @@ describe('설정 화면 — PM', () => {
     const due = await screen.findByRole('switch', { name: '마감 하루 전 09:00에 담당자에게 DM' })
     await user.click(due)
     expect(await screen.findByText(MESSAGE_SETTINGS_FAILED_TITLE)).toBeInTheDocument()
-    expect(screen.getByText(message, { exact: false })).toBeInTheDocument()
+    // Radix 토스트가 잠깐 그리는 스크린리더 알림(span[aria-live])도 같은 글을 품는다 — 토스트 본문만 본다
+    expect(
+      screen.getByText(message, { exact: false, ignore: 'script, style, span[aria-live]' }),
+    ).toBeInTheDocument()
     await waitFor(() => expect(due).toBeChecked())
 
     await choose(user, '재촉 보낼 시각', '18:00')
