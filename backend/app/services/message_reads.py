@@ -36,12 +36,15 @@ def unread_by_thread(db: Session, viewer: Member) -> dict[str, int]:
         and_(~own_thread, ThreadMessage.sender == MessageSender.MEMBER),
     )
     # 자기 대화에서 봇 메시지 뒤에 내가 답장했다면 그 봇 메시지는 이미 본 것으로 친다.
+    # "뒤"는 보낸 시각(created_at)으로 가른다. 도착 시각으로 보면 봇 DM 전에 보낸 글이 늦게 저장됐을 때 그 DM 에
+    # 답한 것으로 빠지는데, 같은 화면의 awaiting_reply_since 는 created_at 기준이라 여전히 답 대기라서 어긋난다.
+    # 읽은 위치보다 늦게 들어왔는지(arrival > baseline)만 도착 시각을 쓴다.
     not_answered = or_(
         ~own_thread,
         ~exists().where(
             later_reply.thread_id == ThreadMessage.thread_id,
             later_reply.sender == MessageSender.MEMBER,
-            _arrival(later_reply) > arrival,
+            later_reply.created_at > ThreadMessage.created_at,
         ),
     )
 

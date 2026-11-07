@@ -196,6 +196,16 @@ def test_mark_workspace_read_sets_all_threads(mdb, seed):
     assert utc(stored) == _minutes(100)
 
 
+def test_reply_sent_before_bot_message_but_saved_later_does_not_answer_it(mdb, seed):
+    thread = _thread(mdb, seed["alice"])
+    _msg(mdb, thread, MessageSender.BOT, _minutes(10))
+    # 봇 DM 전에 보낸 글이 늦게 저장됐다. 보낸 시각은 앞서고 받은 시각만 뒤라 그 DM 에 답한 것이 아니다.
+    # 같은 화면의 awaiting_reply_since(created_at 기준)도 여전히 답 대기라 둘이 어긋나면 안 된다.
+    _msg(mdb, thread, MessageSender.MEMBER, _minutes(5), received_at=_minutes(11))
+
+    assert reads.unread_count(mdb, seed["alice"]) == 1
+
+
 def test_unread_by_thread_excludes_deleted_members_threads(mdb, seed):
     thread = _thread(mdb, seed["alice"])
     _msg(mdb, thread, MessageSender.MEMBER, _minutes(1))
