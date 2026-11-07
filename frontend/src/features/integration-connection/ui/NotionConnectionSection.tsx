@@ -3,7 +3,9 @@ import { useSearchParams } from 'react-router'
 import type { DisconnectedStatus, Integration, IntegrationStatus } from '@/entities/integration'
 import { SETTINGS_PARAMS } from '@/shared/config/routes'
 import { formatSeoulMonthDayTime } from '@/shared/lib/date'
+import { useLoadingIndicator } from '@/shared/lib/loading-indicator'
 import { Button } from '@/shared/ui/button'
+import { DeferredSkeleton, Reveal } from '@/shared/ui/deferred-skeleton'
 import { FormErrorPanel } from '@/shared/ui/form-error-panel'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
 import { Skeleton } from '@/shared/ui/skeleton'
@@ -111,7 +113,13 @@ export function NotionConnectionSection({ workspaceId, canManage }: NotionConnec
     if (focusHere) headingRef.current?.focus()
   }, [focusHere])
 
-  const integration = connection.integration
+  // 연동 상태를 받는 자리의 지연·최소 표시 (#508). 붙잡는 동안에는 조회 결과로 생기는 것(배지·설명·버튼·안내·처음 조회
+  // 실패)을 모두 그리지 않고, 끝나면 한 번에 바꾼다. OAuth 확인·준비 표시와 알림은 조회 결과가 아니라 타이머를 기다리지 않는다
+  const indicator = useLoadingIndicator(
+    connection.integration === null && !connection.integrationError,
+  )
+  const integration = indicator.pending ? null : connection.integration
+  const integrationError = indicator.pending ? null : connection.integrationError
   const status = integration?.status ?? null
   const busy = connection.verifying
   // 연결·재연결을 줄 상태. 준비 중(`connecting`)은 DB 를 붙이는 중이라 다시 연결하게 하지 않는다 (#204)
@@ -132,47 +140,55 @@ export function NotionConnectionSection({ workspaceId, canManage }: NotionConnec
               Notion <span className="sr-only">연결</span>
             </h3>
             {status === null ? null : (
-              <span className={BADGE}>
-                <span className={DOT[status]} aria-hidden="true" />
-                {STATUS_LABEL[status]}
-              </span>
+              <Reveal indicator={indicator}>
+                <span className={BADGE}>
+                  <span className={DOT[status]} aria-hidden="true" />
+                  {STATUS_LABEL[status]}
+                </span>
+              </Reveal>
             )}
           </div>
-          {integration === null ? (
-            connection.integrationError ? null : (
-              <div aria-busy="true">
-                <Skeleton width={220} />
-              </div>
-            )
-          ) : (
-            <NotionMeta integration={integration} />
+          {indicator.pending ? (
+            <DeferredSkeleton indicator={indicator}>
+              <Skeleton width={220} />
+            </DeferredSkeleton>
+          ) : integration === null ? null : (
+            <Reveal indicator={indicator}>
+              <NotionMeta integration={integration} />
+            </Reveal>
           )}
         </div>
         {canManage && disconnected ? (
-          <div className={ACTIONS}>
-            <Button
-              size="md-compact"
-              className={CARD_BUTTON}
-              loading={busy}
-              onClick={connection.connect}
-            >
-              {CONNECT_LABEL[disconnected]}
-            </Button>
-          </div>
+          <Reveal indicator={indicator}>
+            <div className={ACTIONS}>
+              <Button
+                size="md-compact"
+                className={CARD_BUTTON}
+                loading={busy}
+                onClick={connection.connect}
+              >
+                {CONNECT_LABEL[disconnected]}
+              </Button>
+            </div>
+          </Reveal>
         ) : null}
         {canManage && status === 'connected' ? (
-          <div className={ACTIONS}>
-            <ConnectionActions
-              workspaceId={workspaceId}
-              provider="notion"
-              onDisconnected={focusAfterDisconnect}
-            />
-          </div>
+          <Reveal indicator={indicator}>
+            <div className={ACTIONS}>
+              <ConnectionActions
+                workspaceId={workspaceId}
+                provider="notion"
+                onDisconnected={focusAfterDisconnect}
+              />
+            </div>
+          </Reveal>
         ) : null}
       </div>
 
-      {status === null && connection.integrationError ? (
-        <QueryErrorState error={connection.integrationError} onRetry={connection.retry} />
+      {status === null && integrationError ? (
+        <Reveal indicator={indicator}>
+          <QueryErrorState error={integrationError} onRetry={connection.retry} />
+        </Reveal>
       ) : null}
       {preparing ? (
         <p role="status" className={NOTE}>
@@ -185,12 +201,17 @@ export function NotionConnectionSection({ workspaceId, canManage }: NotionConnec
       ) : null}
       <FormErrorPanel message={connection.notice === null ? null : NOTICE[connection.notice]} />
       {!canManage && disconnected !== null ? (
-        <p className={NOTE}>
-          Notion 연결은 PM만 할 수 있어요. 태스크를 Notion에도 올리려면 PM에게 연결을 요청해 주세요.
-        </p>
+        <Reveal indicator={indicator}>
+          <p className={NOTE}>
+            Notion 연결은 PM만 할 수 있어요. 태스크를 Notion에도 올리려면 PM에게 연결을 요청해
+            주세요.
+          </p>
+        </Reveal>
       ) : null}
       {!canManage && status === 'connected' ? (
-        <p className={NOTE}>Notion 연결은 PM이 관리해요.</p>
+        <Reveal indicator={indicator}>
+          <p className={NOTE}>Notion 연결은 PM이 관리해요.</p>
+        </Reveal>
       ) : null}
     </section>
   )

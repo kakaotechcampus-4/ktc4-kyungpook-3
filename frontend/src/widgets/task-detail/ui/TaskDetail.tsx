@@ -18,8 +18,8 @@ import { EmptyState } from '@/shared/ui/empty-state'
 import { Icon } from '@/shared/ui/icon'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
 import { DeferredSkeleton, Reveal } from '@/shared/ui/deferred-skeleton'
-import { Skeleton } from '@/shared/ui/skeleton'
 import { assigneeLabel } from '../lib/history'
+import { TaskDetailSkeleton } from './TaskDetailSkeleton'
 import { TaskHistory } from './TaskHistory'
 import { TaskInfoPanel } from './TaskInfoPanel'
 import { TaskReminder } from './TaskReminder'
@@ -95,7 +95,7 @@ export function TaskDetail({ workspaceId, taskId, isPm, today }: TaskDetailProps
   else body = null
   body = indicator.pending ? (
     <DeferredSkeleton indicator={indicator}>
-      <Skeleton lines={5} />
+      <TaskDetailSkeleton />
     </DeferredSkeleton>
   ) : (
     <Reveal indicator={indicator}>{body}</Reveal>

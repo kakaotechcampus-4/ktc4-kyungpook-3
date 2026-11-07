@@ -10,11 +10,10 @@ import { Button } from '@/shared/ui/button'
 import { Icon } from '@/shared/ui/icon'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
 import { DeferredSkeleton, Reveal } from '@/shared/ui/deferred-skeleton'
-import { Skeleton } from '@/shared/ui/skeleton'
 import { firstAttention, inactiveMemberIds, tasksByMember, unlinkedDiscordUsers } from '../lib/team'
 import { MemberConnectDialog } from './MemberConnectDialog'
 import type { MappingSource } from './MemberConnectDialog'
-import { MemberSection } from './MemberList'
+import { MemberListSkeleton, MemberSection } from './MemberList'
 import { AttentionCard, UnlinkedAccountsCard } from './SideCards'
 import type { UnlinkedAccountsState } from './SideCards'
 import { WeekAhead } from './WeekAhead'
@@ -146,8 +145,8 @@ export function TeamOverview({
       <div className={COLUMNS}>
         <div className="flex flex-col gap-[38px]">
           {listIndicator.pending ? (
-            <DeferredSkeleton indicator={listIndicator} className="py-14">
-              <Skeleton lines={4} />
+            <DeferredSkeleton indicator={listIndicator}>
+              <MemberListSkeleton />
             </DeferredSkeleton>
           ) : members.data !== undefined && tasks.data !== undefined ? (
             <Reveal indicator={listIndicator}>

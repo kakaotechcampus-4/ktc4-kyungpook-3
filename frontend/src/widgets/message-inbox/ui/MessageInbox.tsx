@@ -24,7 +24,8 @@ import { SELF_SECTION_TITLE, threadPolicy } from '../model/viewer'
 import type { MessageViewer, ThreadPolicy } from '../model/viewer'
 import { ComposeDetail } from './ComposeDetail'
 import { DetailBar } from './DetailBar'
-import { InboxListSkeleton, ReviewSkeleton } from './MessageSkeletons'
+import { GROUP_LABEL } from './listStyles'
+import { InboxListSkeleton, ReviewSkeleton, ThreadSkeleton } from './MessageSkeletons'
 import { ReviewDetail } from './ReviewDetail'
 import { ThreadDetail, ThreadUnavailable } from './ThreadDetail'
 
@@ -49,7 +50,6 @@ const ASIDE_TITLE: Record<InboxPane, string> = {
   detail: '',
 }
 const DETAIL = 'relative flex min-w-[0px] flex-1 flex-col'
-const GROUP_LABEL = 'mono text-[10.5px] leading-[1.75] font-normal tracking-[0.1em] text-dim'
 const GROUP_NOTE = 'px-8 text-caption text-dim'
 const REVIEW_ROW =
   'group flex w-full flex-col items-start gap-7 rounded-10 px-14 py-13 text-left hover:bg-surface-sunken aria-[current=page]:bg-surface-selected'
@@ -232,7 +232,14 @@ export function MessageInbox({
     )
 
   let detail
-  if (detailIndicator.pending) detail = <ReviewSkeleton indicator={detailIndicator} />
+  // 목록을 받아야 고를 수 있는 상세 — 묶음을 가리키거나 PM 의 기본 선택(보낼 메시지)이면 검토 모양, 팀원의 기본 선택은 대화 모양이다
+  if (detailIndicator.pending)
+    detail =
+      typeof bundleId !== 'string' && viewer.role !== 'pm' ? (
+        <ThreadSkeleton indicator={detailIndicator} />
+      ) : (
+        <ReviewSkeleton indicator={detailIndicator} />
+      )
   else if (selection.kind === 'invalid') detail = <ThreadUnavailable />
   else if (selection.kind === 'thread')
     // 대화가 바뀌면 상세를 새로 마운트한다 — 이전 대화의 스크롤 자리를 들고 있지 않는다
@@ -319,7 +326,7 @@ export function MessageInbox({
           ) : null}
         </div>
         {listIndicator.pending ? (
-          <InboxListSkeleton indicator={listIndicator} />
+          <InboxListSkeleton indicator={listIndicator} pm={viewer.role === 'pm'} />
         ) : inbox.data !== undefined ? (
           <Reveal indicator={listIndicator}>
             <InboxList
