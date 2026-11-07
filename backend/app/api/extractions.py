@@ -259,16 +259,16 @@ def create_extraction(
                 # 판단 경로(judge)는 auto_blockers가 이미 막으므로 사실상 legacy에 걸리지만, 경로와 무관하게 막는다.
                 # 채팅 강등보다 먼저 둔다. 아래 로그가 "채팅이 아니었으면 auto였을 항목"만 세게 하려는 것이다
                 gate = Gate.REVIEW
+                logger.info(
+                    "역할 지목 항목이라 auto를 review로 내립니다. meeting_id=%s title=%s",
+                    meeting.meeting_id, raw_item.task_title,
+                )
             if meeting.source == MeetingSource.CHAT and gate == Gate.AUTO:
                 # 채팅에서 나온 항목은 PM이 보지 않고 반영하지 않는다. hold는 그대로 둔다
                 gate = Gate.REVIEW
                 # 채팅이 아니었으면 auto였을 항목 수를 센다. chat의 auto를 열지 다시 볼 때 근거로 쓴다(결정 기록 0042)
                 logger.info(
                     "chat 회의라 auto 항목을 review로 내립니다. meeting_id=%s title=%s",
-                    meeting.meeting_id, raw_item.task_title,
-                )
-                logger.info(
-                    "역할 지목 항목이라 auto를 review로 내립니다. meeting_id=%s title=%s",
                     meeting.meeting_id, raw_item.task_title,
                 )
             if blockers:

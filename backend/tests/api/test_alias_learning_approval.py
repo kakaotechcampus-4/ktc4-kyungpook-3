@@ -633,6 +633,10 @@ def test_chat_meeting_log_does_not_count_thirdrole_item_as_would_have_been_auto(
     assert r.status_code == 201
     assert _item(db, "백엔드 배포").gate == "review"
     assert _item(db, "결제 환불").gate == "review"
-    lines = [m for m in caplog.messages if "chat 회의라 auto 항목을 review로 내립니다" in m]
-    assert len(lines) == 1
-    assert "title=결제 환불" in lines[0]
+    chat_lines = [m for m in caplog.messages if "chat 회의라 auto 항목을 review로 내립니다" in m]
+    assert len(chat_lines) == 1
+    assert "title=결제 환불" in chat_lines[0]
+    # 역할 강등 로그는 역할 항목에만 찍힌다. 채팅 강등 블록에 들어가 채팅의 auto 항목마다 찍히면 안 된다(#464 리뷰)
+    role_lines = [m for m in caplog.messages if "역할 지목 항목이라 auto를 review로 내립니다" in m]
+    assert len(role_lines) == 1
+    assert "title=백엔드 배포" in role_lines[0]
