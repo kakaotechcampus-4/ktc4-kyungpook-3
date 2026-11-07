@@ -714,7 +714,7 @@ def link_history(db: Session, approval_id: str, entries: list[TaskHistory]) -> N
     change_ids = dict(db.execute(
         select(ReplyChange.field, ReplyChange.change_id)
         .where(ReplyChange.approval_id == approval_id)
-        .order_by(ReplyChange.created_at.desc())
+        .order_by(ReplyChange.created_at.desc(), ReplyChange.change_id.desc())
     ).all())
     for entry in entries:
         entry.reply_change_id = change_ids.get(entry.changed_field)

@@ -1043,6 +1043,21 @@ def test_assignee_tied_to_a_meeting_card_reads_as_approved(mdb, mseed, two):
     assert reply["changes"][0]["result"] == "approved"
 
 
+def test_lines_written_at_the_same_moment_keep_their_history_in_the_timeline(mdb, mseed, two):
+    a, _ = two
+    first, second = _same_again(mdb, mseed, a, ("due_date", "2026-11-27"))
+    lines = [_lines(mdb, item)[(a.task_id, "due_date")] for item in (first, second)]
+    for line in lines:
+        line.created_at = AT
+    mdb.commit()
+    [card] = _cards(mdb)
+    _resolve(card)
+
+    mdb.expire_all()
+    [entry] = mdb.query(TaskHistory).filter(TaskHistory.task_id == a.task_id, TaskHistory.changed_field == "due_date").all()
+    assert entry.reply_change_id == min(line.change_id for line in lines)
+
+
 def test_repeated_assignee_shows_approved_on_both_replies(mdb, mseed, two):
     a, _ = two
     mdb.add(MemberAlias(
