@@ -2,7 +2,9 @@ import { useId, useRef } from 'react'
 import type { DisconnectedStatus, Integration, IntegrationStatus } from '@/entities/integration'
 import { paths } from '@/shared/config/routes'
 import { formatSeoulMonthDayTime } from '@/shared/lib/date'
+import { useLoadingIndicator } from '@/shared/lib/loading-indicator'
 import { Button } from '@/shared/ui/button'
+import { DeferredSkeleton, Reveal } from '@/shared/ui/deferred-skeleton'
 import { FormErrorPanel } from '@/shared/ui/form-error-panel'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
 import { Skeleton } from '@/shared/ui/skeleton'
@@ -95,6 +97,8 @@ export function DiscordConnectionSection({
   const headingId = useId()
   const headingRef = useRef<HTMLHeadingElement>(null)
   const integration = connection.integration
+  // 연동 상태를 받는 자리의 지연·최소 표시 (#508). 붙잡는 동안 상태 배지와 설명 줄을 함께 미룬다
+  const indicator = useLoadingIndicator(integration === null && !connection.integrationError)
   const status = integration?.status ?? null
   const busy = connection.verifying
   const disconnected: DisconnectedStatus | null =
@@ -112,21 +116,21 @@ export function DiscordConnectionSection({
             <h3 id={headingId} ref={headingRef} tabIndex={-1} className={NAME}>
               Discord <span className="sr-only">연결</span>
             </h3>
-            {status === null ? null : (
+            {status === null || indicator.pending ? null : (
               <span className={BADGE}>
                 <span className={DOT[status]} aria-hidden="true" />
                 {STATUS_LABEL[status]}
               </span>
             )}
           </div>
-          {integration === null ? (
-            connection.integrationError ? null : (
-              <div aria-busy="true">
-                <Skeleton width={220} />
-              </div>
-            )
-          ) : (
-            <DiscordMeta integration={integration} />
+          {indicator.pending ? (
+            <DeferredSkeleton indicator={indicator}>
+              <Skeleton width={220} />
+            </DeferredSkeleton>
+          ) : integration === null ? null : (
+            <Reveal indicator={indicator}>
+              <DiscordMeta integration={integration} />
+            </Reveal>
           )}
         </div>
         {canManage && disconnected ? (

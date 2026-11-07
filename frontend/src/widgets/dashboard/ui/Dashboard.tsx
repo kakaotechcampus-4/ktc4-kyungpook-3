@@ -281,7 +281,8 @@ function SummaryItem({
   if (state === 'loading' || indicator.pending)
     shown = (
       <>
-        <DeferredSkeleton indicator={indicator}>
+        {/* 숫자 한 줄 높이 안에 앉는다 — 숫자가 와도 칸 높이가 그대로다 */}
+        <DeferredSkeleton indicator={indicator} className="flex h-lh items-center">
           <Skeleton variant="block" width={18} height={18} />
         </DeferredSkeleton>
         <span className="sr-only">불러오는 중</span>
@@ -333,7 +334,11 @@ function ReviewSection({ workspaceId, approvals, meetings, needsReviewHref }: Re
           <Icon name="chevron-right" size={13} />
         </GuardedLink>
       </div>
-      <SectionBody state={approvals} errorTitle="확인이 필요한 일을 불러오지 못했어요">
+      <SectionBody
+        state={approvals}
+        errorTitle="확인이 필요한 일을 불러오지 못했어요"
+        skeleton={{ rows: 3, kind: 'review' }}
+      >
         {(list) => {
           const shown = waitingApprovals(list).slice(0, LIST_LIMIT)
           if (shown.length === 0) return <p className={EMPTY_NOTE}>지금 확인할 일이 없어요.</p>
@@ -437,7 +442,11 @@ function DueSection({ workspaceId, tasks, members, today, dueSoonHref }: DueSect
           </GuardedLink>
         ) : null}
       </div>
-      <SectionBody state={tasks} errorTitle="태스크를 불러오지 못했어요">
+      <SectionBody
+        state={tasks}
+        errorTitle="태스크를 불러오지 못했어요"
+        skeleton={{ rows: 5, kind: 'line' }}
+      >
         {() =>
           due.length === 0 ? (
             <p className={EMPTY_NOTE}>마감이 임박한 태스크가 없습니다</p>
