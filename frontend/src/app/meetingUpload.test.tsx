@@ -154,61 +154,19 @@ describe('진입 (U3-1)', () => {
     await app.expectPath(paths.meetingProcessing('ws_01', 'mt_10'))
   })
 
-  it('Notion 미연결이면 D-097 모달 — 취소하면 회의록 목록으로', async () => {
-    completeMeeting('mt_10')
-    db.integrations.ws_01.notion.status = 'not_connected'
-    const user = userEvent.setup()
-    const app = renderApp(UPLOAD_PATH)
+  it.each(['not_connected', 'revoked', 'connecting'] as const)(
+    'Notion 이 %s 여도 막지 않고 폼을 연다 — 연동 상태를 묻지 않는다 (D-182)',
+    async (status) => {
+      completeMeeting('mt_10')
+      db.integrations.ws_01.notion.status = status
+      const log = recordRequests()
+      renderApp(UPLOAD_PATH)
 
-    const dialog = await screen.findByRole('dialog', { name: 'Notion 연결이 필요해요' })
-    expect(within(dialog).getByRole('button', { name: 'Notion 연결하기' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '정리 시작하기' })).toBeNull()
-    await user.click(within(dialog).getByRole('button', { name: '취소' }))
-    // 취소는 회의록 목록으로 간다. U5 부터 목록은 가장 최근 회의록(정리를 마친 mt_10)으로 주소를 바꾼다 (D-106, U5-1)
-    await app.expectPath(paths.meetings('ws_01', 'mt_10'))
-    expect(app.visited().map(({ pathname }) => pathname)).toContain(paths.meetings('ws_01'))
-  })
-
-  it('Notion 이 준비 중(connecting)이면 막지 않고 폼을 연다 — 그 사이 태스크도 DB 가 붙으면 반영된다 (#204)', async () => {
-    completeMeeting('mt_10')
-    db.integrations.ws_01.notion.status = 'connecting'
-    renderApp(UPLOAD_PATH)
-
-    expect(await screen.findByRole('button', { name: '정리 시작하기' })).toBeInTheDocument()
-    expect(screen.queryByRole('dialog')).toBeNull()
-  })
-
-  it('Notion 끊김이면 D-100 모달 — 연결 버튼은 설정의 Notion 영역으로, 복귀는 업로드 경로다', async () => {
-    completeMeeting('mt_10')
-    db.integrations.ws_01.notion.status = 'revoked'
-    const user = userEvent.setup()
-    const app = renderApp(UPLOAD_PATH)
-
-    const dialog = await screen.findByRole('dialog', { name: 'Notion 연결을 마치지 못했어요' })
-    await user.click(within(dialog).getByRole('button', { name: 'Notion 다시 연결하기' }))
-    await app.expectPath(paths.settings('ws_01'))
-    await app.expectSearch(`?section=notion&next=${encodeURIComponent(UPLOAD_PATH)}`)
-    expect(await screen.findByRole('heading', { name: 'Notion 연결' })).toHaveFocus()
-  })
-
-  it('연동 상태 조회 실패는 미연결로 보지 않는다 — 모달 없이 다시 시도를 주고, 다시 시도하면 들어간다', async () => {
-    completeMeeting('mt_10')
-    server.use(
-      http.get(
-        '/api/v1/workspaces/:workspaceId/integrations',
-        () => fail('FORBIDDEN', 'nope', 403),
-        { once: true },
-      ),
-    )
-    const user = userEvent.setup()
-    renderApp(UPLOAD_PATH)
-
-    const alert = await screen.findByRole('alert')
-    expect(alert).toHaveTextContent('회의를 올릴 수 있는지 확인하지 못했어요')
-    expect(screen.queryByRole('dialog')).toBeNull()
-    await user.click(within(alert).getByRole('button', { name: '다시 시도' }))
-    expect(await screen.findByRole('button', { name: '정리 시작하기' })).toBeInTheDocument()
-  })
+      expect(await screen.findByRole('button', { name: '정리 시작하기' })).toBeInTheDocument()
+      expect(screen.queryByRole('dialog')).toBeNull()
+      expect(log.started.map(({ path }) => path)).not.toContain('/workspaces/ws_01/integrations')
+    },
+  )
 
   it('회의 목록 조회 실패도 다시 시도를 준다', async () => {
     completeMeeting('mt_10')
@@ -627,19 +585,13 @@ describe('업로드 오류 (U3-10)', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('요청 내용을 다시 확인해 주세요.')
   })
 
-  it.each([
-    ['not_connected', 'Notion 연결이 필요해요'],
-    ['revoked', 'Notion 연결을 마치지 못했어요'],
-  ] as const)('연동 오류(%s)는 차단 모달로 바뀐다', async (status, title) => {
+  it('Notion 을 연결하지 않은 공간에서도 올리면 처리 화면으로 간다 (D-182)', async () => {
     const { user, app } = await openUpload()
+    db.integrations.ws_01.notion = { status: 'not_connected', display_name: null, connected_at: null }
     await fillValid(user)
-    // 들어온 뒤에 연결이 끊겼다 — 서버의 409 가 알린다
-    db.integrations.ws_01.notion.status = status
     await user.click(screen.getByRole('button', { name: '정리 시작하기' }))
-    const dialog = await screen.findByRole('dialog', { name: title })
-    await user.click(within(dialog).getByRole('button', { name: '취소' }))
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
-    await app.expectPath(UPLOAD_PATH)
+    await app.expectPath(paths.meetingProcessing('ws_01', 'mt_11'))
+    expect(screen.queryByRole('dialog')).toBeNull()
   })
 
   it('401 은 기존 세션 만료 처리로 로그인에 간다', async () => {

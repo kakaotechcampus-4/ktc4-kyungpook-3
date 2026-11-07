@@ -46,9 +46,7 @@ describe('회의 시나리오 (U2-4)', () => {
     ['meeting-demo', 'staged', 'connected'],
     ['meeting-instant', 'instant', 'connected'],
     ['meeting-fail', 'fail', 'connected'],
-    ['meeting-fail-notion-revoked', 'fail-notion-revoked', 'connected'],
     ['meeting-notion-not-connected', 'instant', 'not_connected'],
-    ['meeting-notion-revoked', 'instant', 'revoked'],
   ])(
     '%s: ws_01 PM 으로 로그인, 흐름 %s, Notion %s. 처리 중 회의가 없어 바로 올릴 수 있다',
     async (scenario, mode, notion) => {
@@ -93,21 +91,10 @@ describe('회의 시나리오 (U2-4)', () => {
     expect(items.map(({ meeting_id: id }) => id)).not.toContain(meeting_id)
   })
 
-  it('meeting-fail-notion-revoked: 실패하면서 Notion 이 끊긴다', async () => {
-    applyScenario('meeting-fail-notion-revoked')
+  it('meeting-notion-not-connected: Notion 없이도 업로드는 202 이고 정리가 끝난다 (D-182)', async () => {
+    applyScenario('meeting-notion-not-connected')
     const { meeting_id } = await upload()
-    await detail(meeting_id)
-    await expect(
-      fetchDto<IntegrationsDto>('/workspaces/ws_01/integrations'),
-    ).resolves.toMatchObject({ notion: { status: 'revoked' } })
-  })
-
-  it.each<[MockScenario, string]>([
-    ['meeting-notion-not-connected', 'INTEGRATION_NOT_CONNECTED'],
-    ['meeting-notion-revoked', 'INTEGRATION_REVOKED'],
-  ])('%s: 업로드는 409 %s 다', async (scenario, code) => {
-    applyScenario(scenario)
-    await expect(upload()).rejects.toMatchObject({ code, status: 409 })
+    await expect(detail(meeting_id)).resolves.toMatchObject({ status: 'done' })
   })
 
   it('meeting-chat-processing: 정리 중인 채팅 회의가 있어도 업로드는 202 이고 채팅 회의는 저절로 끝나지 않는다 (#450)', async () => {
