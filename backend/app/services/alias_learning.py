@@ -104,12 +104,12 @@ def storable_assignee_type(value: str | None) -> str | None:
 def learnable_alias_text(item: ExtractionItem) -> str | None:
     """이 항목의 담당자 표현을 별칭으로 배울 수 있으면 저장될 글자, 아니면 None.
 
-    새 task 를 만드는 항목인데 담당자를 못 찾았고, 표현이 이름 지목일 때만 대상이다(LEARNABLE_ASSIGNEE_TYPES).
+    새 task 를 만들거나 대기 카드에 합쳐지는 항목인데 담당자를 못 찾았고, 표현이 이름 지목일 때만 대상이다(LEARNABLE_ASSIGNEE_TYPES).
     1인칭이 주어로 쓰인 꼴(_SELF_REFERENCE)로 다듬어지면 AI 오분류로 보고 대상이 아니다. 승인 상태는 보지 않는다.
     pending 인지는 호출하는 쪽이 이미 가진 승인 상태로 거른다.
     """
     if (
-        item.action != ExtractionAction.CREATE
+        item.action not in (ExtractionAction.CREATE, ExtractionAction.MERGE)
         or item.assignee_member_id is not None
         or item.assignee_type not in LEARNABLE_ASSIGNEE_TYPES
     ):
