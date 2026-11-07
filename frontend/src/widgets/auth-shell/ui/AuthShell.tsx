@@ -51,7 +51,8 @@ export function AuthShell({ title, formLabel, aside, children }: AuthShellProps)
             <h1 className={HEADING}>{title}</h1>
           </div>
           {/* 스크린리더가 제목 목록에서 이 화면을 찾는 이름이다. 보이는 제목은 캔버스 그대로 둔다 */}
-          <h2 id={formHeadingId} className="sr-only">
+          {/* 화면에 들어온 시작점이다. 시작하기 스플래시가 걷히면 포커스가 여기로 온다(data-focus-start, #510) */}
+          <h2 id={formHeadingId} tabIndex={-1} data-focus-start="" className="sr-only">
             {formLabel}
           </h2>
           {children}

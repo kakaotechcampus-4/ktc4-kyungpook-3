@@ -38,7 +38,7 @@ const STATIC_SPLASH_ID = 'boot-splash'
  */
 const BOOT_MODE_ATTRIBUTE = 'data-splash'
 const LOOK_POSES: readonly MascotPose[] = ['idle', 'left', 'right']
-/** 시작하기 스플래시가 걷힌 뒤 로그인 화면이 아직 뼈대면 첫 입력이 나타날 때까지 이만큼 기다린다 */
+/** 시작하기 스플래시가 걷힌 뒤 로그인 화면이 아직 뼈대면 시작점이 나타날 때까지 이만큼 기다린다 */
 const FOCUS_WAIT_MS = 10_000
 const REDUCED_MOTION = '(prefers-reduced-motion: reduce)'
 
@@ -100,15 +100,17 @@ function focusUnclaimed(): boolean {
 }
 
 /**
- * 시작하기 스플래시가 걷힌 뒤 로그인 화면의 시작점(첫 입력)으로 포커스를 옮긴다 (#510).
- * 건너뛰어 화면이 아직 뼈대면 입력이 나타날 때까지 기다린다. 그 사이 사람이 포커스를 옮겼으면 그만둔다
+ * 시작하기 스플래시가 걷힌 뒤 로그인 화면의 시작점으로 포커스를 옮긴다 (#510). 화면이 표시한 시작점(`data-focus-start`,
+ * 인증 틀의 폼 제목)이 먼저고, 없으면 첫 입력이다. 입력에 바로 두지 않는 까닭 — 빈 칸에서 다른 곳을 누르면 칸을 떠난 것이라
+ * 검증 오류가 뜨고 아래 링크가 밀려, 누르려던 `회원가입` 이 빗나갔다(CI e2e).
+ * 건너뛰어 화면이 아직 뼈대면 시작점이 나타날 때까지 기다린다. 그 사이 사람이 포커스를 옮겼으면 그만둔다
  */
-function focusFirstField(appRoot: HTMLElement): void {
+function focusScreenStart(appRoot: HTMLElement): void {
   const tryFocus = (): boolean => {
     if (!focusUnclaimed()) return true
-    const field = appRoot.querySelector<HTMLElement>(
-      'main input:not([type="hidden"]):not(:disabled)',
-    )
+    const field =
+      appRoot.querySelector<HTMLElement>('main [data-focus-start]') ??
+      appRoot.querySelector<HTMLElement>('main input:not([type="hidden"]):not(:disabled)')
     if (field === null) return false
     field.focus({ preventScroll: true })
     return true
@@ -267,12 +269,12 @@ function SplashRunView({ run, appRoot, onDone }: SplashRunViewProps) {
     }
   }, [inert, appRoot])
 
-  // 시작하기: 사라지기 시작하거나 끝나거나 건너뛰면 로그인 화면의 첫 입력으로 포커스를 넘긴다. 한 번만이다
+  // 시작하기: 사라지기 시작하거나 끝나거나 건너뛰면 로그인 화면의 시작점으로 포커스를 넘긴다. 한 번만이다
   const handedOff = useRef(false)
   useEffect(() => {
     if (!skippable || inert || handedOff.current) return
     handedOff.current = true
-    focusFirstField(appRoot)
+    focusScreenStart(appRoot)
   }, [skippable, inert, appRoot])
 
   if (!shown) return null

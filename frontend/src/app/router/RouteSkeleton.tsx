@@ -24,21 +24,23 @@ import { TaskDetailRouteSkeleton } from '@/widgets/task-detail/skeleton'
 import { TeamOverviewSkeleton } from '@/widgets/team/skeleton'
 import { WorkspaceShellSkeleton } from './layouts/WorkspaceLayout'
 
-/** 회의록 화면 경로(routes.tsx 의 `meetings/:meetingId?`). `meetings/upload` 는 정적 경로가 먼저라 회의록이 아니다 */
-function isMinutesPath(pathname: string): boolean {
-  const match = matchPath('/workspaces/:workspaceId/meetings/:meetingId?', pathname)
-  return match !== null && match.params.meetingId !== 'upload'
+/*
+ * 경로 판정은 routes.tsx 의 경로와 같은 패턴을 matchPath 로 본다 — 라우터처럼 대소문자를 가리지 않고 끝 슬래시를 받는다.
+ * 동적 ID 는 바꾸지 않고 parseRouteId 로 모양만 본다 (#510)
+ */
+const WORKSPACE = '/workspaces/:workspaceId'
+
+/** 경로가 패턴과 맞고 공간 ID 모양이 맞으면 그 매치. 공간 밖 패턴은 ID 를 보지 않는다 */
+function match(pattern: string, pathname: string) {
+  const found = matchPath(pattern, pathname)
+  if (found === null) return null
+  if (pattern.startsWith(WORKSPACE) && parseRouteId(found.params.workspaceId) === null) return null
+  return found
 }
 
-/** 공간 화면 경로의 화면 이름과 공간 ID. `workspaces/:workspaceId/<screen>/...` */
-function workspaceScreen(
-  pathname: string,
-): { workspaceId: string; screen: string; rest: string } | null {
-  const match = matchPath('/workspaces/:workspaceId/:screen/*', pathname)
-  const workspaceId = parseRouteId(match?.params.workspaceId)
-  const screen = match?.params.screen
-  if (match === null || workspaceId === null || screen === undefined) return null
-  return { workspaceId, screen, rest: match.params['*'] ?? '' }
+/** 공간 화면 경로의 공간 ID. 역할을 읽는 데 쓴다 */
+function routeWorkspaceId(pathname: string): string | null {
+  return parseRouteId(matchPath(`${WORKSPACE}/*`, pathname)?.params.workspaceId)
 }
 
 /**
@@ -62,46 +64,43 @@ interface SkeletonContext {
 
 /** 경로에 맞는 화면 뼈대. 화면이 데이터를 기다릴 때 그리는 틀과 같다 — 코드를 받은 뒤 바뀌어도 제목·틀이 움직이지 않는다 (#510) */
 function screenSkeleton({ pathname, search, isPm, compact }: SkeletonContext): ReactNode {
-  const inWorkspace = workspaceScreen(pathname)
-  if (inWorkspace !== null && inWorkspace.rest === '') {
-    if (inWorkspace.screen === 'dashboard')
-      return <DashboardSkeleton isPm={isPm} today={todayInSeoul()} />
-    if (inWorkspace.screen === 'tasks')
-      return <TaskBoardSkeleton search={search} isPm={isPm} today={todayInSeoul()} />
-    if (inWorkspace.screen === 'members') return <TeamOverviewSkeleton isPm={isPm} />
-    if (inWorkspace.screen === 'settings')
-      return (
-        <SettingsSkeleton
-          isPm={isPm}
-          connections={new URLSearchParams(search).get(SETTINGS_PARAMS.section) === 'notion'}
-        />
-      )
-  }
-  if (inWorkspace?.screen === 'meetings') {
-    if (inWorkspace.rest === 'upload') return <UploadRouteSkeleton />
-    if (/^[^/]+\/processing$/.test(inWorkspace.rest)) return <ProcessingRouteSkeleton />
-    if (/^[^/]+\/speakers$/.test(inWorkspace.rest)) return <SpeakersRouteSkeleton />
-  }
-  if (inWorkspace?.screen === 'messages') {
-    const params = new URLSearchParams(search)
+  const at = (pattern: string) => match(pattern, pathname) !== null
+  const params = new URLSearchParams(search)
+  if (at('/login')) return <LoginPageSkeleton />
+  if (at('/signup')) return <SignupPageSkeleton />
+  if (at('/forgot-password')) return <ForgotPasswordPageSkeleton />
+  if (at('/workspaces')) return <WorkspaceSelectSkeleton />
+  if (at('/onboarding/*')) return <OnboardingSkeleton />
+  if (at(`${WORKSPACE}/dashboard`)) return <DashboardSkeleton isPm={isPm} today={todayInSeoul()} />
+  if (at(`${WORKSPACE}/tasks`))
+    return <TaskBoardSkeleton search={search} isPm={isPm} today={todayInSeoul()} />
+  if (at(`${WORKSPACE}/tasks/:taskId`)) return <TaskDetailRouteSkeleton />
+  if (at(`${WORKSPACE}/approvals/:approvalId`)) return <ApprovalRouteSkeleton />
+  if (at(`${WORKSPACE}/members`)) return <TeamOverviewSkeleton isPm={isPm} />
+  if (at(`${WORKSPACE}/settings`))
+    return (
+      <SettingsSkeleton
+        isPm={isPm}
+        connections={params.get(SETTINGS_PARAMS.section) === 'notion'}
+      />
+    )
+  // `upload` 가 회의 ID 로 읽히지 않게 정적 경로가 먼저다 — routes.tsx 와 같다
+  if (at(`${WORKSPACE}/meetings/upload`)) return <UploadRouteSkeleton />
+  if (at(`${WORKSPACE}/meetings/:meetingId/processing`)) return <ProcessingRouteSkeleton />
+  if (at(`${WORKSPACE}/meetings/:meetingId/speakers`)) return <SpeakersRouteSkeleton />
+  if (at(`${WORKSPACE}/meetings/:meetingId?`)) return <MinutesPageSkeleton />
+  const messages = match(`${WORKSPACE}/messages/*`, pathname)
+  if (messages !== null) {
     const addressed =
-      inWorkspace.rest !== '' ||
+      (messages.params['*'] ?? '') !== '' ||
       params.has(MESSAGE_PARAMS.review) ||
       params.has(MESSAGE_PARAMS.compose)
     // 휴대폰에서 상세를 바로 여는 주소는 셸을 걷은 전체 화면이다 — 그 틀은 화면이 그린다
     if (!(compact && addressed))
-      return <MessageInboxSkeleton isPm={isPm} thread={inWorkspace.rest.startsWith('threads/')} />
+      return (
+        <MessageInboxSkeleton isPm={isPm} thread={at(`${WORKSPACE}/messages/threads/:threadId`)} />
+      )
   }
-  if (inWorkspace !== null && !inWorkspace.rest.includes('/')) {
-    if (inWorkspace.screen === 'tasks') return <TaskDetailRouteSkeleton />
-    if (inWorkspace.screen === 'approvals') return <ApprovalRouteSkeleton />
-  }
-  if (pathname === '/login') return <LoginPageSkeleton />
-  if (pathname === '/signup') return <SignupPageSkeleton />
-  if (pathname === '/forgot-password') return <ForgotPasswordPageSkeleton />
-  if (pathname === '/workspaces') return <WorkspaceSelectSkeleton />
-  if (pathname.startsWith('/onboarding/')) return <OnboardingSkeleton />
-  if (isMinutesPath(pathname)) return <MinutesPageSkeleton />
   return <PageSkeleton />
 }
 
@@ -116,7 +115,7 @@ function screenSkeleton({ pathname, search, isPm, compact }: SkeletonContext): R
 export function RouteSkeleton() {
   useSplashHold()
   const { pathname, search } = useLocation()
-  const isPm = useCachedIsPm(workspaceScreen(pathname)?.workspaceId ?? null)
+  const isPm = useCachedIsPm(routeWorkspaceId(pathname))
   const compact = useCompactScreen()
   return screenSkeleton({ pathname, search, isPm, compact })
 }

@@ -1,4 +1,4 @@
-import { ITEM, ITEM_OFF, ITEM_ON, ITEM_SIZE, TRACK } from './styles'
+import { ITEM, ITEM_SIZE, ITEM_TONE, TRACK } from './styles'
 import type { SegmentedSize } from './styles'
 
 export interface SegmentedFrameProps {
@@ -20,7 +20,8 @@ export function SegmentedFrame({ items, selected, size = 'sm' }: SegmentedFrameP
       {items.map(({ value, label }) => (
         <span
           key={value}
-          className={[ITEM, ITEM_SIZE[size], value === selected ? ITEM_ON : ITEM_OFF].join(' ')}
+          data-state={value === selected ? 'on' : 'off'}
+          className={[ITEM, ITEM_SIZE[size], ITEM_TONE.default].join(' ')}
         >
           {label}
         </span>

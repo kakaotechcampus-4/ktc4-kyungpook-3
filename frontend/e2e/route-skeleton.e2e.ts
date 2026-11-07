@@ -21,6 +21,8 @@ interface ScreenCase {
   against: Exclude<Mode, 'route'>
   /** 두 쪽에 모두 있어야 하는 글자. 비교가 빈 채로 통과하지 않게 한다 */
   anchors: string[]
+  /** 고른 항목(보기 고르기 · 탭 · 목차)의 글자. 색·면·밑줄까지 같아야 한다 — 고른 표시가 화면이 뜰 때 생기지 않게 */
+  selected?: string[]
   widths: number[]
 }
 
@@ -64,6 +66,7 @@ const CASES: ScreenCase[] = [
     path: `${W}/tasks`,
     against: 'screen',
     anchors: ['리스트', '전체', '확인 필요', '완료'],
+    selected: ['리스트', '전체'],
     widths: [1280, 390],
   },
   {
@@ -72,6 +75,7 @@ const CASES: ScreenCase[] = [
     path: `${W}/tasks?view=board`,
     against: 'screen',
     anchors: ['보드', '시작 전', '진행 중'],
+    selected: ['보드'],
     widths: [1280],
   },
   {
@@ -104,6 +108,7 @@ const CASES: ScreenCase[] = [
     path: `${W}/settings`,
     against: 'screen',
     anchors: ['설정', '워크스페이스 이름', '되돌리기', '자동 반영'],
+    selected: ['일반'],
     widths: [1280],
   },
   {
@@ -169,12 +174,37 @@ async function textBoxes(page: Page): Promise<TextBox[]> {
   return boxes.filter(({ text }) => counts.get(text) === 1)
 }
 
+/** 고른 표시의 색 — 글자색 · 면 · 밑줄 */
+type Paint = Record<'color' | 'background' | 'underline', string>
+
+/** main 안에서 그 글자를 가진 첫 글자 요소의 칠. 목차처럼 같은 글자가 뒤에 또 있어도 앞의 것(고르기)을 본다 */
+async function paintOf(page: Page, text: string): Promise<Paint | null> {
+  return page.evaluate((wanted) => {
+    const main = document.querySelector('#root main')
+    const element = [...(main?.querySelectorAll('*') ?? [])].find(
+      (each) => each.children.length === 0 && (each.textContent ?? '').trim() === wanted,
+    )
+    if (element === undefined) return null
+    const style = getComputedStyle(element)
+    return {
+      color: style.color,
+      background: style.backgroundColor,
+      underline: `${style.borderBottomWidth} ${style.borderBottomColor}`,
+    }
+  }, text)
+}
+
+interface Capture {
+  boxes: TextBox[]
+  paints: Map<string, Paint | null>
+}
+
 async function capture(
   browser: Browser,
-  { scenario, path }: ScreenCase,
+  { scenario, path, selected = [] }: ScreenCase,
   width: number,
   mode: Mode,
-): Promise<TextBox[]> {
+): Promise<Capture> {
   const context = await browser.newContext({ viewport: { width, height: 900 } })
   await context.addInitScript({ content: holdScript(mode) })
   const page = await context.newPage()
@@ -194,22 +224,24 @@ async function capture(
     await expect(page.locator('#root main[aria-busy="true"]')).toHaveCount(0, { timeout: 15_000 })
   await page.evaluate(() => document.fonts.ready)
   const boxes = await textBoxes(page)
+  const paints = new Map<string, Paint | null>()
+  for (const text of selected) paints.set(text, await paintOf(page, text))
   await context.close()
-  return boxes
+  return { boxes, paints }
 }
 
 test.describe.configure({ mode: 'parallel' })
 
 for (const screenCase of CASES) {
   for (const width of screenCase.widths) {
-    test(`${screenCase.name} ${width}px — 라우트 뼈대에서 화면으로 바뀌어도 정해진 글자가 움직이지 않는다`, async ({
+    test(`${screenCase.name} ${width}px — 라우트 뼈대에서 화면으로 바뀌어도 정해진 글자가 움직이지 않고 고른 표시가 같다`, async ({
       browser,
     }) => {
       test.setTimeout(60_000)
       const route = await capture(browser, screenCase, width, 'route')
       const other = await capture(browser, screenCase, width, screenCase.against)
-      const byText = new Map(other.map((box) => [box.text, box]))
-      const shared = route.filter(({ text }) => byText.has(text))
+      const byText = new Map(other.boxes.map((box) => [box.text, box]))
+      const shared = route.boxes.filter(({ text }) => byText.has(text))
       for (const anchor of screenCase.anchors) {
         expect(
           shared.map(({ text }) => text),
@@ -222,6 +254,11 @@ for (const screenCase of CASES) {
         if (match === undefined) continue
         expect(Math.abs(box.x - match.x), `「${box.text}」 의 가로 자리`).toBeLessThanOrEqual(1)
         expect(Math.abs(box.y - match.y), `「${box.text}」 의 세로 자리`).toBeLessThanOrEqual(1)
+      }
+      for (const text of screenCase.selected ?? []) {
+        const paint = route.paints.get(text)
+        expect(paint, `라우트 뼈대에 고른 「${text}」 가 있다`).not.toBeNull()
+        expect(paint, `고른 「${text}」 의 글자색 · 면 · 밑줄`).toEqual(other.paints.get(text))
       }
     })
   }

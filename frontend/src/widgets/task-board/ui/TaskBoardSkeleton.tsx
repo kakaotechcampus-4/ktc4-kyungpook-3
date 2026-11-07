@@ -13,7 +13,6 @@ import {
   TAB,
   TAB_LABEL,
   TAB_LIST,
-  TAB_SELECTED,
   TITLE,
   TOOLBAR,
   TRIGGER,
@@ -79,7 +78,11 @@ export function TaskBoardSkeleton({ search, isPm, today }: TaskBoardSkeletonProp
             <div className={TOOLBAR}>
               <div className={TAB_LIST}>
                 {boardTabs(isPm).map((tab) => (
-                  <span key={tab} className={tab === query.tab ? `${TAB} ${TAB_SELECTED}` : TAB}>
+                  <span
+                    key={tab}
+                    data-selected={tab === query.tab ? '' : undefined}
+                    className={TAB}
+                  >
                     {TAB_LABEL[tab]}
                   </span>
                 ))}

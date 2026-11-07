@@ -17,9 +17,6 @@ import {
   TITLE,
 } from './settingsStyles'
 
-/* 목차의 고른 항목 — NAV_ITEM 의 `aria-[current=location]` 과 같은 면이다 */
-const NAV_CURRENT = 'bg-surface-selected text-ink'
-
 export interface SettingsSkeletonProps {
   /** 역할을 모르면 PM 틀이다. PM 에게만 이름의 `되돌리기` 가 있다 */
   isPm: boolean
@@ -41,7 +38,12 @@ export function SettingsSkeleton({ isPm, connections }: SettingsSkeletonProps) {
           <p className={TITLE}>설정</p>
           <div className="flex flex-col gap-2">
             {SETTINGS_SECTIONS.map(({ id, label }) => (
-              <span key={id} className={id === current ? `${NAV_ITEM} ${NAV_CURRENT}` : NAV_ITEM}>
+              <span
+                key={id}
+                // 목차와 같은 상태 선택자(aria-[current=location])로 고른 항목을 칠한다
+                aria-current={id === current ? 'location' : undefined}
+                className={NAV_ITEM}
+              >
                 {label}
               </span>
             ))}

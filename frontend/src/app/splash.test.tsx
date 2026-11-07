@@ -119,7 +119,11 @@ it('로그인 직후: 공간 확인부터 덮고, 도착 화면이 그려지면 
   expect(app.container).not.toHaveAttribute('inert')
 })
 
+/** 로그인 폼의 숨은 제목 — 인증 틀이 표시한 화면 시작점이다. 입력에 두면 다른 곳을 누를 때 빈 칸 검증이 떠 링크가 밀린다 */
+const formStart = () => screen.getByRole('heading', { level: 2, name: '로그인' })
+
 // 2.5초를 20ms 씩 렌더하며 넘긴다. 앱 전체를 띄우는 흐름이라 기본 5초 한도가 빠듯하다
+
 describe('랜딩 `시작하기` 스플래시의 포커스와 안내 (#510)', { timeout: 15_000 }, () => {
   const HINT = '로그인 화면을 준비하고 있어요. Enter 나 Esc 를 누르면 건너뛰어요.'
 
@@ -134,7 +138,7 @@ describe('랜딩 `시작하기` 스플래시의 포커스와 안내 (#510)', { t
     return { app, user }
   }
 
-  it('링크를 Enter 로 누르면 판이 포커스를 받아 건너뛰는 법을 알리고, 걷히기 시작하면 로그인 첫 입력으로 포커스가 간다', async () => {
+  it('링크를 Enter 로 누르면 판이 포커스를 받아 건너뛰는 법을 알리고, 걷히기 시작하면 로그인 폼 제목으로 포커스가 간다', async () => {
     const { app } = await pressStartWithEnter()
 
     const dialog = screen.getByRole('dialog', { name: "Manager's Manager" })
@@ -148,18 +152,18 @@ describe('랜딩 `시작하기` 스플래시의 포커스와 안내 (#510)', { t
     expect(dialog).toHaveFocus()
     expect(app.container).toHaveAttribute('inert')
 
+    // 사라짐(0.6초)이 시작되는 순간 앱을 풀고 포커스를 넘긴다. 실제 시간도 흐르므로 사라짐 도중인지 끝났는지는 보지 않는다
     await advance(700)
-    await waitFor(() => expect(overlay()).toHaveAttribute('data-phase', 'leave'))
-    expect(app.container).not.toHaveAttribute('inert')
-    expect(screen.getByLabelText('이메일')).toHaveFocus()
+    await waitFor(() => expect(app.container).not.toHaveAttribute('inert'))
+    expect(formStart()).toHaveFocus()
 
     await advance(600)
     expect(overlay()).toBeNull()
-    expect(screen.getByLabelText('이메일')).toHaveFocus()
+    expect(formStart()).toHaveFocus()
   })
 
   it.each(['{Enter}', '{Escape}'])(
-    '%s 로 건너뛰면 바로 걷히고 로그인 첫 입력으로 포커스가 간다',
+    '%s 로 건너뛰면 바로 걷히고 로그인 폼 제목으로 포커스가 간다',
     async (key) => {
       const { app, user } = await pressStartWithEnter()
       expect(screen.getByRole('dialog', { name: "Manager's Manager" })).toHaveFocus()
@@ -168,7 +172,7 @@ describe('랜딩 `시작하기` 스플래시의 포커스와 안내 (#510)', { t
       await user.keyboard(key)
       expect(overlay()).toBeNull()
       expect(app.container).not.toHaveAttribute('inert')
-      await waitFor(() => expect(screen.getByLabelText('이메일')).toHaveFocus())
+      await waitFor(() => expect(formStart()).toHaveFocus())
     },
   )
 })

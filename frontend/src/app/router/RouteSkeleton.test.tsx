@@ -124,6 +124,7 @@ describe('RouteSkeleton — 화면마다 화면 안 뼈대와 같은 틀', () =>
     '%s 는 온보딩 틀(가운데 512px 열)의 뼈대다',
     (path) => {
       const { main } = renderAt(path)
+      expect(main).toHaveAttribute('aria-busy', 'true')
       expect(main).toHaveClass('justify-center', 'items-center')
       expect(main.firstElementChild).toHaveClass('w-[512px]')
     },
@@ -133,6 +134,7 @@ describe('RouteSkeleton — 화면마다 화면 안 뼈대와 같은 틀', () =>
     '%s 는 회의록 틀(왼쪽 목록 308 + 오른쪽 본문)의 2단 뼈대다 — 목록·본문 자리가 화면의 로딩 뼈대와 같다',
     (path) => {
       const { main } = renderAt(path)
+      expect(main).toHaveAttribute('aria-busy', 'true')
       expect(main).not.toHaveClass('max-w-column')
       const aside = screen.getByTestId('minutes-skeleton-aside')
       expect(aside).toHaveClass('w-aside', 'border-r')
@@ -142,6 +144,34 @@ describe('RouteSkeleton — 화면마다 화면 안 뼈대와 같은 틀', () =>
       expect(within(main).getByTestId('minutes-detail-skeleton')).toBeInTheDocument()
     },
   )
+
+  /* 라우터는 대소문자를 가리지 않고 끝 슬래시를 받는다(caseSensitive 기본 false). 뼈대도 같은 경로를 같은 화면으로 본다 */
+  it.each([
+    ['/login/', '이메일'],
+    ['/LOGIN', '이메일'],
+    ['/Signup/', '8자 이상, 숫자 포함'],
+    ['/Workspaces/', '워크스페이스 선택'],
+    ['/Workspaces/ws_01/Dashboard/', '워크스페이스 현황'],
+    ['/workspaces/ws_01/TASKS?view=board', '시작 전'],
+    ['/workspaces/ws_01/tasks/tk_01/', '태스크 정보'],
+    ['/workspaces/ws_01/Members/', '연결되지 않은 계정'],
+    ['/workspaces/ws_01/Meetings/UPLOAD/', '회의를 올려 주세요'],
+    ['/workspaces/ws_01/meetings/mt_11/Speakers/', '누가 말했는지 골라 주세요'],
+    ['/workspaces/ws_01/Messages/', '보내기 전 확인'],
+  ])('%s 도 실제 라우트처럼 그 화면의 뼈대다', (path, text) => {
+    const { main } = renderAt(path)
+    expect(within(main).getAllByText(text).length).toBeGreaterThan(0)
+  })
+
+  it('끝 슬래시가 붙은 회의 처리 주소도 처리 화면 틀이다', () => {
+    const { main } = renderAt('/workspaces/ws_01/meetings/mt_10/processing/')
+    expect(main.firstElementChild).toHaveClass('max-w-[560px]')
+  })
+
+  it('공간 ID 모양이 틀리면 화면 뼈대가 아니다 — 소속 가드가 404 를 그린다', () => {
+    const { main } = renderAt('/workspaces/bad%20id/dashboard')
+    expect(main).toHaveClass('max-w-column')
+  })
 
   it('회의 처리는 정리 상태를 기다리는 한 단(560) 틀이다', () => {
     const { main } = renderAt('/workspaces/ws_01/meetings/mt_10/processing')

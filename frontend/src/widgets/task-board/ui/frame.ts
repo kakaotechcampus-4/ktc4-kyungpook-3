@@ -28,11 +28,11 @@ export const TITLE = 'text-[28px] leading-[1.25] font-bold tracking-h1 text-ink 
 export const DESCRIPTION = 'text-body text-sub'
 export const TOOLBAR = 'flex flex-wrap items-center justify-between gap-16'
 export const TAB_LIST = 'inline-flex gap-[17px]'
+/* 고른 탭은 aria-selected(화면의 탭)·data-selected(라우트 뼈대의 자리표시)로 칠한다 — 기본색(`border-transparent`·`text-sub`)을 상태 선택자가 덮는다 (#510) */
 export const TAB =
-  'inline-flex h-32 items-center gap-7 border-b-2 border-transparent px-3 text-control font-semibold text-sub hover:text-ink aria-selected:border-ink aria-selected:text-ink'
+  'inline-flex h-32 items-center gap-7 border-b-2 border-transparent px-3 text-control font-semibold text-sub hover:text-ink aria-selected:border-ink aria-selected:text-ink data-selected:border-ink data-selected:text-ink'
 export const HEADER =
   'flex items-end justify-between gap-24 max-md:flex-col max-md:items-start max-md:gap-16'
-export const TAB_SELECTED = 'border-ink text-ink'
 
 export const TAB_LABEL: Record<TaskTab, string> = {
   all: '전체',

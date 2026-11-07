@@ -17,6 +17,13 @@ export const ITEM_SIZE: Record<SegmentedSize, string> = {
   md: 'h-32 px-15 text-control',
 }
 
-/* 고른 칸의 면 — Segmented 의 `data-[state=on]` 과 같다 */
-export const ITEM_ON = 'bg-surface text-ink'
-export const ITEM_OFF = 'text-sub'
+/* 칸의 색은 고른 상태(data-state)로 정한다 — 기본색(`bg-transparent`·`text-sub`)과 고른 색이 같은 우선순위라
+   클래스를 나란히 붙이면 CSS 순서가 이긴다. 상태 선택자가 기본색을 덮는다. 뼈대(SegmentedFrame)도 같은 선택자를 쓴다 (#510).
+   두 묶음은 겹치는 속성이 없다 — 한 번에 하나만 붙는다.
+   hover 를 미선택에만 거는 이유는 docs/impl-decision/2026-09-16-segmented-hover-pressed.md
+   누르는 동안 면은 바뀌지 않는다 — docs/impl-decision/2026-09-23-no-pressed-face-checkbox-segmented.md */
+export const ITEM_TONE = {
+  default:
+    'text-sub data-[state=on]:bg-surface data-[state=on]:text-ink data-[state=off]:hover:text-ink',
+  disabled: 'pointer-events-none text-line-strong data-[state=on]:bg-surface',
+}
