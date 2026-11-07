@@ -1148,6 +1148,95 @@ def test_rejecting_with_an_assignee_override_is_refused(mdb, mseed, two):
     assert _is_pending(mdb, line.approval_id)
 
 
+# 담당자를 못 찾은 카드의 충돌 기준값
+
+def _payload(db, approval_id):
+    db.expire_all()
+    return json.loads(db.get(ApprovalRequest, approval_id).payload)
+
+
+def _reassign(task, member_id):
+    r = client("pm").patch(f"{P}/tasks/{task.task_id}", json={"assignee_member_id": member_id})
+    assert r.status_code == 200, r.text
+
+
+def test_unresolved_card_records_the_assignee_it_was_based_on(mdb, mseed, two):
+    a, _ = two
+    line = _unresolved_card(mdb, mseed, a)
+    payload = _payload(mdb, line.approval_id)
+    assert payload["base_values"]["assignee_member_id"] == mseed["alice"].member_id
+    assert "assignee_member_id" not in payload
+
+
+def test_unresolved_card_conflicts_when_the_assignee_moved(mdb, mseed, two):
+    a, _ = two
+    bob, carol = mseed["bob"].member_id, mseed["carol"].member_id
+    line = _unresolved_card(mdb, mseed, a)
+    _reassign(a, bob)
+    r = _resolve(line.approval_id, task_overrides={"assignee_member_id": carol})
+    assert (r.status_code, r.json()["error"]["code"]) == (409, "APPROVAL_CONFLICT")
+    assert r.json()["error"]["details"]["conflicts"] == [
+        {"field": "assignee_member_id", "base": mseed["alice"].member_id, "current": bob, "proposed": carol},
+    ]
+    assert _is_pending(mdb, line.approval_id)
+    assert a.assignee_member_id == bob
+
+
+def test_unresolved_card_conflict_is_confirmed_with_the_task_version(mdb, mseed, two):
+    a, _ = two
+    bob, carol = mseed["bob"].member_id, mseed["carol"].member_id
+    line = _unresolved_card(mdb, mseed, a)
+    _reassign(a, bob)
+    override = {"assignee_member_id": carol}
+    seen = _resolve(line.approval_id, task_overrides=override).json()["error"]["details"]["task_version"]
+    r = _resolve(line.approval_id, task_overrides=override, confirm_task_version=seen)
+    assert r.status_code == 200, r.text
+    mdb.expire_all()
+    assert a.assignee_member_id == carol
+
+
+def test_unresolved_card_does_not_conflict_when_already_the_picked_value(mdb, mseed, two):
+    a, _ = two
+    bob = mseed["bob"].member_id
+    line = _unresolved_card(mdb, mseed, a)
+    _reassign(a, bob)
+    assert _resolve(line.approval_id, task_overrides={"assignee_member_id": bob}).status_code == 200
+    assert _assignee_change(a)["result"] == "noted"
+
+
+def test_unresolved_card_without_an_override_ignores_a_moved_assignee(mdb, mseed, two):
+    a, _ = two
+    bob = mseed["bob"].member_id
+    line = _unresolved_card(mdb, mseed, a)
+    _reassign(a, bob)
+    assert _resolve(line.approval_id).status_code == 200
+    mdb.expire_all()
+    assert a.assignee_member_id == bob
+    assert _assignee_change(a)["result"] == "noted"
+
+
+def test_old_unresolved_card_without_a_base_is_not_checked(mdb, mseed, two):
+    a, _ = two
+    bob, carol = mseed["bob"].member_id, mseed["carol"].member_id
+    line = _unresolved_card(mdb, mseed, a)
+    row = mdb.get(ApprovalRequest, line.approval_id)
+    payload = json.loads(row.payload)
+    payload["base_values"].pop("assignee_member_id", None)
+    row.payload = json.dumps(payload, ensure_ascii=False)
+    mdb.commit()
+    _reassign(a, bob)
+    assert _resolve(line.approval_id, task_overrides={"assignee_member_id": carol}).status_code == 200
+    mdb.expire_all()
+    assert a.assignee_member_id == carol
+
+
+def test_unresolved_card_base_falls_back_to_current_without_a_snapshot(mdb, mseed, two):
+    a, _ = two
+    item = _proposed(mdb, mseed, lambda i: _change(a, "assignee", None, assignee_raw="김철수", assignee_type="named"))
+    line = _lines(mdb, item)[(a.task_id, "assignee")]
+    assert _payload(mdb, line.approval_id)["base_values"]["assignee_member_id"] == mseed["alice"].member_id
+
+
 # 태스크가 실린 failed·due_clear 줄
 
 @pytest.mark.parametrize("field", ["failed", "due_clear"])
