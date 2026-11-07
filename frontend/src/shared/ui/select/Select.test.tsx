@@ -1,8 +1,10 @@
 import { createRef } from 'react'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { stubViewport } from '@/shared/test/viewport'
 import { Select, SelectInitial, SelectNoneMark } from './Select'
-import type { SelectOption, SelectProps } from './Select'
+import type { SelectProps } from './Select'
+import type { SelectOption } from './options'
 
 type Member = 'kim' | 'park' | 'lee' | 'jung'
 
@@ -18,6 +20,7 @@ function renderSelect(props: Partial<SelectProps<Member>> = {}) {
   render(
     <Select<Member>
       aria-label="담당자"
+      label="담당자"
       value="park"
       onValueChange={onValueChange}
       options={MEMBERS}
@@ -134,10 +137,139 @@ describe('Select', () => {
     expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
   })
 
+  it('둘째 줄은 줄 이름이 아니라 설명으로 읽힌다', async () => {
+    const { trigger } = renderSelect()
+    await openWithKeyboard(trigger)
+    const lee = screen.getByRole('option', { name: '이재환' })
+    expect(lee).toHaveAccessibleDescription('이번 주 휴가')
+    expect(screen.getByRole('option', { name: '박민수' })).not.toHaveAttribute('aria-describedby')
+  })
+
   it('목록은 트리거 아래로 연다', async () => {
     const { trigger } = renderSelect()
     const listbox = await openWithKeyboard(trigger)
     expect(listbox).toHaveAttribute('data-side', 'bottom')
     expect(listbox).toHaveAttribute('data-align', 'start')
+  })
+})
+
+describe('Select — 휴대폰 폭(560px 미만)', () => {
+  async function openSheet(props: Partial<SelectProps<Member>> = {}) {
+    stubViewport(true)
+    const rendered = renderSelect(props)
+    await userEvent.click(rendered.trigger)
+    const sheet = await screen.findByRole('dialog', { name: '담당자' })
+    const listbox = within(sheet).getByRole('listbox', { name: '담당자' })
+    return { ...rendered, sheet, listbox }
+  }
+
+  function activeOption(listbox: HTMLElement) {
+    const id = listbox.getAttribute('aria-activedescendant')
+    return id === null ? null : document.getElementById(id)
+  }
+
+  it('칸 이름이 제목인 시트로 열리고, 목록이 포커스를 받아 고른 줄을 짚는다', async () => {
+    const { trigger, listbox } = await openSheet()
+    expect(trigger).toHaveAttribute('aria-expanded', 'true')
+    await waitFor(() => expect(listbox).toHaveFocus())
+    const park = within(listbox).getByRole('option', { name: '박민수' })
+    expect(park).toHaveAttribute('aria-selected', 'true')
+    expect(activeOption(listbox)).toBe(park)
+    const names = ['미정', '김서연', '박민수', /^이재환/, '정하늘']
+    const rows = within(listbox).getAllByRole('option')
+    expect(rows).toHaveLength(names.length)
+    names.forEach((name, index) => expect(rows[index]).toHaveAccessibleName(name))
+  })
+
+  it('↓ 는 비활성 줄을 건너뛰고, Enter 로 고르면 닫혀 트리거로 포커스가 돌아온다', async () => {
+    const { trigger, listbox, onValueChange } = await openSheet()
+    await waitFor(() => expect(listbox).toHaveFocus())
+    await userEvent.keyboard('{ArrowDown}')
+    expect(activeOption(listbox)).toHaveTextContent('정하늘')
+    await userEvent.keyboard('{Home}')
+    expect(activeOption(listbox)).toHaveTextContent('미정')
+    await userEvent.keyboard('{End}{Enter}')
+    expect(onValueChange).toHaveBeenCalledExactlyOnceWith('jung')
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(trigger).toHaveFocus()
+  })
+
+  it('글자를 치면 그 글자로 시작하는 줄을 짚고, 미정 줄을 누르면 null 을 낸다', async () => {
+    const { listbox, onValueChange } = await openSheet()
+    await waitFor(() => expect(listbox).toHaveFocus())
+    await userEvent.keyboard('김')
+    expect(activeOption(listbox)).toHaveTextContent('김서연')
+    await userEvent.click(within(listbox).getByRole('option', { name: '미정' }))
+    expect(onValueChange).toHaveBeenCalledExactlyOnceWith(null)
+  })
+
+  it('Esc 로 닫으면 값을 바꾸지 않는다', async () => {
+    const { trigger, onValueChange } = await openSheet()
+    await userEvent.keyboard('{ArrowDown}{Escape}')
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(trigger).toHaveFocus()
+    expect(onValueChange).not.toHaveBeenCalled()
+  })
+
+  it('비활성 줄은 눌러도 고르지 않는다', async () => {
+    const { listbox, onValueChange } = await openSheet()
+    await userEvent.click(within(listbox).getByRole('option', { name: /이재환/ }))
+    expect(onValueChange).not.toHaveBeenCalled()
+  })
+
+  it('트리거에서 ↓ 로도 열린다', async () => {
+    stubViewport(true)
+    const { trigger } = renderSelect()
+    trigger.focus()
+    await userEvent.keyboard('{ArrowDown}')
+    expect(await screen.findByRole('dialog', { name: '담당자' })).toBeInTheDocument()
+  })
+
+  it('폭이 560 경계를 넘으면 떠 있는 목록과 시트가 바뀐다', async () => {
+    const viewport = stubViewport(false)
+    const { trigger } = renderSelect()
+    await openWithKeyboard(trigger)
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    await userEvent.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('listbox')).not.toBeInTheDocument())
+
+    viewport.resize(true)
+    await userEvent.click(screen.getByRole('combobox', { name: '담당자' }))
+    expect(await screen.findByRole('dialog', { name: '담당자' })).toBeInTheDocument()
+    await userEvent.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+
+    viewport.resize(false)
+    await openWithKeyboard(screen.getByRole('combobox', { name: '담당자' }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('열린 채 폭이 560 경계를 넘으면 닫히고 새로 그린 트리거로 포커스가 간다', async () => {
+    const viewport = stubViewport(false)
+    const { trigger, onValueChange } = renderSelect()
+    await openWithKeyboard(trigger)
+
+    viewport.resize(true)
+    await waitFor(() => expect(screen.queryByRole('listbox')).not.toBeInTheDocument())
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    const sheetTrigger = screen.getByRole('combobox', { name: '담당자' })
+    await waitFor(() => expect(document.activeElement).toBe(sheetTrigger))
+
+    await userEvent.keyboard('{ArrowDown}')
+    expect(await screen.findByRole('dialog', { name: '담당자' })).toBeInTheDocument()
+    viewport.resize(false)
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
+    const popperTrigger = screen.getByRole('combobox', { name: '담당자' })
+    await waitFor(() => expect(document.activeElement).toBe(popperTrigger))
+    expect(onValueChange).not.toHaveBeenCalled()
+  })
+
+  it('ref·aria-invalid 는 시트 트리거에도 간다', () => {
+    stubViewport(true)
+    const ref = createRef<HTMLButtonElement>()
+    const { trigger } = renderSelect({ ref, 'aria-invalid': true })
+    expect(ref.current).toBe(trigger)
+    expect(trigger).toHaveAttribute('aria-invalid', 'true')
   })
 })

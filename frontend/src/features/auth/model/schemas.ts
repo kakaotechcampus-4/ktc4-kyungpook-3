@@ -1,8 +1,11 @@
 import { z } from 'zod'
 
+export const NAME_MAX_LENGTH = 100
+
 /* 캔버스에 오류 문구가 한 줄도 없다(ErrorText 참고). 아래 문구는 D-142·D-149 에 맞춘 이 기능 전용 문구다 */
 export const AUTH_MESSAGES = {
   nameRequired: '이름을 입력해 주세요.',
+  nameTooLong: `이름은 ${NAME_MAX_LENGTH}자 이하로 입력해 주세요.`,
   emailRequired: '이메일을 입력해 주세요.',
   emailFormat: '이메일 형식으로 입력해 주세요.',
   passwordRequired: '비밀번호를 입력해 주세요.',
@@ -36,9 +39,16 @@ const newPassword = z
   .min(PASSWORD_MIN_LENGTH, AUTH_MESSAGES.passwordRule)
   .regex(/\d/, AUTH_MESSAGES.passwordRule)
 
-/** 이름 필수 · 이메일 형식 · 비밀번호 8자 이상 + 숫자. 강도 표시와 약관 동의는 이번 범위가 아니다 */
+/**
+ * 이름 필수·100자 이하 · 이메일 형식 · 비밀번호 8자 이상 + 숫자. 강도 표시와 약관 동의는 이번 범위가 아니다.
+ * 이름 길이는 UTF-16 단위로 센다. 코드 포인트로 세는 BE 보다 엄격해서 폼을 통과한 이름은 BE 도 길이로 거절하지 않는다 (#446)
+ */
 export const signupSchema = z.object({
-  name: z.string().trim().min(1, AUTH_MESSAGES.nameRequired),
+  name: z
+    .string()
+    .trim()
+    .min(1, AUTH_MESSAGES.nameRequired)
+    .max(NAME_MAX_LENGTH, AUTH_MESSAGES.nameTooLong),
   email,
   password: newPassword,
 })
