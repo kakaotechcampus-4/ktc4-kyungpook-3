@@ -1547,7 +1547,7 @@ members 에만 있고 Discord 목록에 없으면      → 비활성 (서버를 
 - 알림은 표의 `message_received` 다. PM 글은 대화 주인에게, 팀원 글(웹·디스코드)은 쓴 사람을 뺀 PM 전원에게 간다. `text` 는 `{이름}: {미리보기}` 다. 미리보기는 첫 줄 60자이고 DM 머리는 들어가지 않는다. 글 하나에 알림 하나다. 판단 행이 생기지 않은 글은 바로 알리고, 판단을 타는 글은 결과가 `reply_judged` 면 그것만, 바꿀 것이 없으면 그때 `message_received` 를, 판단 실패·시간 초과면 `reply_unjudged` 만 낸다. 대화·방향마다 5분 구간에 한 번이라 이어 쓴 글은 첫 글의 미리보기만 보인다.
 - 실시간 신호는 없다. 화면은 기존 조회와 알림 목록 polling 으로 새 글을 받는다.
 
-프론트엔드는 아직 이 경로를 쓰지 않는다. 지금 화면에서 달라 보이는 점과 할 일은 아래와 같다(BE 를 먼저 배포해도 조회는 깨지지 않는다).
+프론트엔드는 아직 이 경로를 쓰지 않는다. 지금 화면에서 달라 보이는 점과 할 일은 아래와 같다. BE 를 먼저 배포해도 조회가 깨지지 않는다는 것은 mapper.ts 코드를 읽어 판단한 것이고 실행으로 확인하지는 않았다.
 
 - [mapper.ts](../../src/entities/message/model/mapper.ts) 는 `member` 가 아니면 봇 가지로 보내므로 `pm` 글은 `봇` 말풍선으로 보인다. `author_name` 표시와 `Message` 유니온의 `pm` 가지가 필요하다.
 - 목록의 `나:` 표시는 `last.sender === policy.ownSender` 비교라 `pm` 글에는 붙지 않는다([MessageInbox.tsx](../../src/widgets/message-inbox/ui/MessageInbox.tsx)). 푸시 안내 조건 `sender === 'bot'`([ThreadDetail.tsx](../../src/widgets/message-inbox/ui/ThreadDetail.tsx))은 FE 가 `pm` 가지를 더하면 PM 글만 있는 대화에서 사라진다.
