@@ -49,7 +49,7 @@
 ## 영향 범위와 재검토 조건
 
 - 코드: `app/services/sessions.py`(신규), `app/models/models.py`(`Session.session_token` 주석만), `app/api/auth.py`(발급·로그아웃), `app/api/deps.py`(조회), `app/main.py`(워커), 마이그레이션 `3c9a1f7d2b64`, 테스트 픽스처 전반. 엔드포인트·응답·쿠키·에러 코드는 바뀌지 않는다.
-- 머지 순서: #345 는 머지되어 이 마이그레이션은 `b0d32ee4abcb` 뒤에 이었다. #454(head `d2f6b81c4e07`, 부모 `537911f267dc`)와 #456 은 아직 열려 있고, 나중에 머지되는 쪽이 `down_revision` 을 다시 잇는다. 컬럼 이름이 그대로라 #454 의 픽스처는 해시 방식(`session_token=hash_session_token(...)`)만 맞추면 되고 이름을 바꿀 일은 없다.
+- 머지 순서: #345 는 머지되어 이 마이그레이션은 `b0d32ee4abcb` 뒤에 이었다. #454(head `d2f6b81c4e07`, 부모 `b0d32ee4abcb`로 이 PR 과 같다)와 #456 은 아직 열려 있고, 나중에 머지되는 쪽이 `down_revision` 을 다시 잇는다. 컬럼 이름이 그대로라 #454 의 픽스처는 해시 방식(`session_token=hash_session_token(...)`)만 맞추면 되고 이름을 바꿀 일은 없다.
 - 머지 직전 운영 확인(읽기 전용, 토큰 값은 출력하지 않는다). 저장소 루트에서 실행한다. 출력의 `rows` 는 변환될 세션 수, `max length` 는 원문 최대 길이다(해시는 항상 64자라 길이와 무관하게 들어간다).
 
 ```
