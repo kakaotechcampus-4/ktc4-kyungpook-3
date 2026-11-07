@@ -608,7 +608,7 @@ def _legacy_auto() -> dict:
     }
 
 
-@pytest.mark.parametrize("value", ["false", "0", "off", " False "])
+@pytest.mark.parametrize("value", ["false", "0", "off", "no", " False "])
 def test_auto_create_off_turns_judge_auto_into_review(client, db, seed, monkeypatch, caplog, value):
     # 검증(Jev)은 그대로 돌아 근거 상태가 저장되고, 태스크만 PM 확인 뒤에 생긴다
     monkeypatch.setenv("AUTO_CREATE_ENABLED", value)
@@ -620,7 +620,9 @@ def test_auto_create_off_turns_judge_auto_into_review(client, db, seed, monkeypa
     assert item["task"]["evidence_status"] == "certain"
     assert item["due_date"]["evidence_status"] == "certain"
     assert db.execute(select(Task).where(Task.title == "결제 API 연동")).scalar_one_or_none() is None
-    assert "자동 생성이 꺼져 있어 auto 항목을 review로 내립니다" in caplog.text
+    [line] = [m for m in caplog.messages if "자동 생성이 꺼져 있어 auto 항목을 review로 내립니다" in m]
+    # 항목 단위로 PM 결과와 맞출 수 있게 추출·항목 ID 를 싣는다(#526 리뷰)
+    assert f"item_id={item['item_id']}" in line and "extraction_id=" in line and "path=judge" in line
 
 
 def test_auto_create_off_also_stops_legacy_auto(client, db, seed, monkeypatch):
@@ -637,7 +639,7 @@ def test_auto_create_off_keeps_hold(client, seed, monkeypatch):
     assert _gate(client, seed, assignee_raw="모르는사람") == "hold"
 
 
-@pytest.mark.parametrize("value", [None, "", "true", "1", "on"])
+@pytest.mark.parametrize("value", [None, "", "true", "1", "on", "yes", " TRUE "])
 def test_auto_create_on_or_unset_keeps_auto(client, db, seed, monkeypatch, value):
     if value is None:
         monkeypatch.delenv("AUTO_CREATE_ENABLED", raising=False)
@@ -647,3 +649,23 @@ def test_auto_create_on_or_unset_keeps_auto(client, db, seed, monkeypatch, value
 
     assert item["gate"] == "auto"
     assert db.get(Task, item["task_id"]).title == "결제 API 연동"
+
+
+@pytest.mark.parametrize("value", ["flase", "disabled", "n", "끔"])
+def test_unknown_switch_values_count_as_off_and_warn_once(client, db, seed, monkeypatch, caplog, value):
+    # 안전장치라 오타·모르는 값은 꺼짐으로 본다. 껐다고 믿었는데 auto 가 열려 있으면 안 된다(#526 리뷰)
+    from app.api import extractions
+    extractions._warn_unknown_auto_create.cache_clear()
+    monkeypatch.setenv("AUTO_CREATE_ENABLED", value)
+    with caplog.at_level("WARNING", logger="app.api.extractions"):
+        assert _gate(client, seed) == "review"
+        assert _gate(client, seed, task_title="다른 결제 작업") == "review"
+    warnings = [m for m in caplog.messages if "AUTO_CREATE_ENABLED" in m]
+    assert len(warnings) == 1   # 요청마다 읽지만 같은 값은 한 번만 경고한다
+
+
+def test_legacy_auto_item_is_auto_when_switch_is_on(client, db, seed, monkeypatch):
+    # 끔 테스트가 스위치 덕분에 review 인지 확인하려면, 같은 입력이 켜짐에서는 auto 여야 한다(#526 리뷰)
+    monkeypatch.delenv("AUTO_CREATE_ENABLED", raising=False)
+    item = _only_item(client, _extract(client, seed, [_legacy_auto()]))
+    assert item["gate"] == "auto"
