@@ -58,7 +58,11 @@ from app.services.matching import (
     speaker_match,
 )
 from app.services import upload_storage
-from app.services.alias_learning import learnable_alias_texts, storable_assignee_type
+from app.services.alias_learning import (
+    card_assignee_item,
+    learnable_alias_texts,
+    storable_assignee_type,
+)
 from app.services.embedding import has_unsearchable_pending, has_unsearchable_tasks
 from app.services.pending_merge import NOT_FOUND, merge_into_pending, merge_target_problem
 from app.services.tasks import create_task, delete_task
@@ -887,16 +891,17 @@ def get_extraction(
     # 지운 task는 연결하지 않은 것으로 내린다. 수정 항목이 가리키던 task가 auto 되돌리기로 지워지면, 그대로 내린 ID는
     # 조회하면 404다. 생성 항목은 되돌릴 때 task_id를 이미 비운다
     stmt = (
-        select(ExtractionItem, ApprovalRequest.status, Task.is_deleted)
+        select(ExtractionItem, ApprovalRequest.status, Task.is_deleted, ApprovalRequest.payload)
         .outerjoin(ApprovalRequest, ApprovalRequest.approval_id == ExtractionItem.approval_id)
         .outerjoin(Task, Task.task_id == ExtractionItem.task_id)
         .where(ExtractionItem.extraction_id == extraction_id)
         .order_by(ExtractionItem.created_at)
     )
     rows = db.execute(stmt).all()
-    items = [item for item, _, _ in rows]
-    approval_statuses = {item.item_id: status for item, status, _ in rows}
-    deleted_task_items = {item.item_id for item, _, task_deleted in rows if task_deleted}
+    items = [item for item, _, _, _ in rows]
+    approval_statuses = {item.item_id: status for item, status, _, _ in rows}
+    deleted_task_items = {item.item_id for item, _, task_deleted, _ in rows if task_deleted}
+    card_payloads = {item.item_id: payload for item, _, _, payload in rows}
 
     member_ids = {i.assignee_member_id for i in items if i.assignee_member_id}
     names: dict[str, str] = {}
@@ -915,7 +920,12 @@ def get_extraction(
     alias_texts = learnable_alias_texts(
         db,
         extraction.meeting.workspace_id,
-        [i for i in items if approval_statuses[i.item_id] == str(ApprovalStatus.PENDING)],
+        [
+            i for i in items
+            if approval_statuses[i.item_id] == str(ApprovalStatus.PENDING)
+            # 합쳐진 카드는 담당자를 정한 항목만 후보다(승인 때 저장하는 규칙과 같다)
+            and i.item_id == card_assignee_item(card_payloads[i.item_id])
+        ],
     )
 
     item_responses = [
