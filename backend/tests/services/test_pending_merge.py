@@ -283,6 +283,14 @@ def test_target_problem_bad_payload():
     assert merge_target_problem(_card(payload=None), "ap-1", "ws-1") == "bad_payload"
 
 
+def test_target_problem_bad_payload_when_merged_items_is_not_a_list():
+    # 리스트가 아닌 merged_items 에 항목을 덧붙이면 TypeError 가 나므로 합칠 수 없는 카드로 본다
+    payload = {**_base_payload(), "merged_items": {"extraction_item_id": "item-9"}}
+    card = _card(payload=json.dumps(payload, ensure_ascii=False))
+
+    assert merge_target_problem(card, "ap-1", "ws-1") == "bad_payload"
+
+
 def test_target_problem_reasons_are_distinct_strings():
     reasons = {
         pending_merge.MISSING,
