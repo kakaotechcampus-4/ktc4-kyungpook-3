@@ -5,9 +5,8 @@ import { evidenceMoment, MEETING_SOURCE_TRAITS } from '@/entities/meeting'
 import type { MeetingSummary } from '@/entities/meeting'
 import type { Member } from '@/entities/member'
 import type { Task } from '@/entities/task'
-import { isOverdue } from '@/entities/task'
+import { TASK_STATUS_LABEL, isOverdue } from '@/entities/task'
 import { FILL_IN_ARRIVAL } from '@/features/approval-resolve'
-import { TASK_STATUS_LABEL } from '@/features/task-status'
 import { paths } from '@/shared/config/routes'
 import { seoulDateOf } from '@/shared/lib/date'
 import { GuardedLink } from '@/shared/lib/unsaved-changes'
@@ -42,24 +41,35 @@ import {
 } from './parts'
 import { RecentSection } from './RecentSection'
 
-/* Main 시안 — main 패딩 48/48/72, 블록 사이 32px, 본문은 `1fr | 360px` 두 단(간격 68px) */
-const MAIN = 'mx-auto flex w-full max-w-shell flex-1 flex-col gap-32 px-48 pt-48 pb-72'
-const HEADER = 'flex items-end justify-between gap-24'
-const TITLE = 'text-[32px] leading-[1.4] font-bold tracking-h1 text-ink'
+/* Main 시안 — main 패딩 48/48/72, 블록 사이 32px, 본문은 `1fr | 360px` 두 단(간격 68px).
+   폭 768px 미만은 PwaDashboard 시안(H-2) — 패딩 12/20, 블록 사이 22px, 한 단, 요약은 네 칸 카드다 */
+const MAIN =
+  'mx-auto flex w-full max-w-shell flex-1 flex-col gap-32 px-48 pt-48 pb-72 max-md:gap-22 max-md:px-20 max-md:pt-12 max-md:pb-32'
+const HEADER =
+  'flex items-end justify-between gap-24 max-md:flex-col max-md:items-start max-md:gap-6'
+const TITLE = 'text-[32px] leading-[1.4] font-bold tracking-h1 text-ink max-md:text-[24px]'
 const LEAD = 'text-body text-sub'
 const TODAY = 'text-caption text-dim tabular-nums'
-const SUMMARY = 'flex flex-wrap items-baseline gap-36 pb-8'
-const SUMMARY_ITEM = 'relative flex items-center gap-5 text-control text-sub'
-const SUMMARY_VALUE = 'text-[20px] leading-none font-semibold text-ink tabular-nums'
+/* 휴대폰 요약 칸 수는 항목 수(PM 넷, 팀원 셋)를 따른다. 팀원 줄에 빈 칸이 남지 않는다 */
+const SUMMARY =
+  'flex flex-wrap items-baseline gap-36 pb-8 max-md:grid max-md:auto-cols-fr max-md:items-stretch max-md:grid-flow-col max-md:gap-8 max-md:pb-[0px]'
+const SUMMARY_ITEM =
+  'relative flex items-center gap-5 text-control text-sub max-md:flex-col max-md:items-start max-md:justify-between max-md:gap-2 max-md:rounded-12 max-md:px-10 max-md:pt-10 max-md:pb-12 max-md:text-[11px] max-md:leading-[1.45]'
+/* 휴대폰 칸 면. 기한 지남 칸은 지난 일이 있을 때 경고 면이다 (H-2). 두 면 클래스를 같이 붙이면 CSS 순서로 하나가 이겨 하나만 붙인다 */
+const SUMMARY_ITEM_PLAIN = 'max-md:bg-surface-sunken'
+const SUMMARY_ITEM_ALERT = 'max-md:bg-accent-badge max-md:text-accent'
+const SUMMARY_VALUE =
+  'text-[20px] leading-none font-semibold text-ink tabular-nums max-md:text-[22px] max-md:leading-[1.3] max-md:font-bold'
 /* 링크는 숫자에만 걸고 누르는 자리는 항목 전체로 넓힌다 — dt·dd 를 링크로 감쌀 수 없다.
    밑줄은 긋지 않는다. 올리면 숫자만 옅어지고, 키보드 포커스는 전역 outline 이다 */
 const SUMMARY_LINK = 'hover:text-sub after:absolute after:inset-0'
-const COLUMNS = 'grid grid-cols-[minmax(0px,1fr)_360px] items-start gap-[68px]'
-const SIDE = 'flex flex-col gap-40'
+const COLUMNS =
+  'grid grid-cols-[minmax(0px,1fr)_360px] items-start gap-[68px] max-md:grid-cols-1 max-md:gap-22'
+const SIDE = 'flex flex-col gap-40 max-md:gap-22'
 const REVIEW_ROW = 'flex items-start gap-16 border-b border-line py-18 last:border-b-0'
 const REVIEW_TITLE = 'text-[15px] leading-[1.55] font-semibold text-ink'
 const DUE_ROW =
-  'flex items-center gap-12 px-18 py-12 text-ink hover:bg-surface-sunken focus-visible:-outline-offset-2'
+  'flex items-center gap-12 px-18 py-12 text-ink hover:bg-surface-sunken focus-visible:-outline-offset-2 max-md:gap-10 max-md:px-[0px]'
 
 /** 요약 숫자마다 그 수만큼 보이는 태스크 목록 주소 (D-178). 페이지가 목록의 URL 규칙으로 만든다 */
 export interface SummaryHrefs {
@@ -220,6 +230,7 @@ function Summary({ isPm, data, waiting, today, hrefs }: SummaryProps) {
         ) : null}
         <SummaryItem
           label="기한 지남"
+          alert={(counts?.overdue ?? 0) > 0}
           state={taskState}
           value={counts?.overdue}
           href={hrefs.overdue}
@@ -244,11 +255,14 @@ function Summary({ isPm, data, waiting, today, hrefs }: SummaryProps) {
 /** 숫자를 안 뒤에만 링크다(0 포함). 불러오는 중·실패(`–`)는 링크가 아니다 */
 function SummaryItem({
   label,
+  alert = false,
   state,
   value,
   href,
 }: {
   label: string
+  /** 휴대폰 요약 칸을 경고 면으로 그린다. 0 건이면 경고가 아니라 끈다 */
+  alert?: boolean
   state: Loadable<unknown>['status']
   value: number | undefined
   href: string
@@ -275,9 +289,9 @@ function SummaryItem({
       </GuardedLink>
     )
   return (
-    <div className={SUMMARY_ITEM}>
+    <div className={`${SUMMARY_ITEM} ${alert ? SUMMARY_ITEM_ALERT : SUMMARY_ITEM_PLAIN}`}>
       <dt>{label}</dt>
-      <dd className={SUMMARY_VALUE}>{shown}</dd>
+      <dd className={alert ? `${SUMMARY_VALUE} max-md:text-accent` : SUMMARY_VALUE}>{shown}</dd>
     </div>
   )
 }
@@ -457,7 +471,7 @@ function DueRow({ workspaceId, task, assignee, overdue }: DueRowProps) {
       >
         {shortDate(dueDate)}
       </time>
-      <span className="min-w-[0px] flex-1 truncate text-control font-normal text-ink">
+      <span className="min-w-[0px] flex-1 truncate text-control font-normal text-ink max-md:leading-[1.45] max-md:whitespace-normal">
         {task.title}
       </span>
       {overdue ? (

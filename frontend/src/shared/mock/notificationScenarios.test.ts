@@ -42,7 +42,7 @@ describe('알림 목록과 읽음', () => {
     expect(unread_count).toBe(4)
     expect(items[3]).toEqual({
       notification_id: 'nt_04',
-      kind: 'reply_judged',
+      kind: 'checkin_digest',
       text: '정하늘님의 답장을 태스크에 반영했어요.',
       link: { type: 'reply', id: 'rp_01' },
       read_at: null,

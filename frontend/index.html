@@ -2,7 +2,10 @@
 <html lang="ko">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content"
+    />
     <title>Manager's Manager</title>
     <link rel="manifest" href="/manifest.webmanifest" />
     <meta name="theme-color" content="#ffffff" />
@@ -184,30 +187,31 @@
         background: #ffffff;
         color: #171717;
       }
+      /* 사라짐 시간은 splashMachine.ts 의 FADE_MS 와 같다(staticSplash.test.tsx 가 본다) */
       .splash[data-phase='leave'] {
         pointer-events: none;
-        animation: splash-out 0.4s ease forwards;
+        animation: splash-out 0.6s ease forwards;
       }
       .splash__group {
         display: flex;
         flex-direction: column;
         align-items: center;
-        gap: 12px;
+        gap: 18px;
       }
       /* 0.3초 안에 준비됐고 확인(0.1초)만 남았다. 등장 시각이 지나도 보이지 않은 채 걷힌다 */
       .splash[data-settling] .splash__group {
         visibility: hidden;
       }
       .splash__mascot {
-        width: 96px;
-        height: 96px;
+        width: 176px;
+        height: 176px;
         animation: splash-rise 0.8s cubic-bezier(0.2, 0.7, 0.2, 1)
           calc(300ms - var(--splash-shift, 0ms)) both;
       }
       .splash__word {
         margin: 0;
         font:
-          700 18px/1.2 'NanumSquare',
+          700 24px/1.2 'NanumSquare',
           sans-serif;
         animation: splash-follow 0.8s cubic-bezier(0.2, 0.7, 0.2, 1)
           calc(600ms - var(--splash-shift, 0ms)) both;
@@ -227,16 +231,17 @@
       #boot-splash [data-part='dial-shift'] {
         animation: splash-dial 1.818s linear infinite;
       }
+      /* 올라오는 거리는 크기에 비례한다(마스코트 높이의 1/8, 워드마크 글자 크기의 1/3). 크기를 바꾸면 함께 바꾼다 (#472) */
       @keyframes splash-rise {
         from {
           opacity: 0;
-          transform: translateY(12px) scale(0.9);
+          transform: translateY(22px) scale(0.9);
         }
       }
       @keyframes splash-follow {
         from {
           opacity: 0;
-          transform: translateY(6px);
+          transform: translateY(8px);
         }
       }
       @keyframes splash-out {
@@ -278,8 +283,8 @@
       <div class="splash__group">
         <div class="splash__mascot">
           <svg
-            width="96"
-            height="96"
+            width="176"
+            height="176"
             viewBox="0 0 240 240"
             fill="none"
             focusable="false"

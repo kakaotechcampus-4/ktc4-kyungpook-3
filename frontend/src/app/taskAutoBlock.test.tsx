@@ -42,14 +42,17 @@ describe('태스크 상세의 자동 막힘 (#330, #365)', () => {
     return within(screen.getByLabelText('태스크 정보')).getByText(term, { selector: 'dt' })
       .nextElementSibling as HTMLElement
   }
+  const blockerShown = () =>
+    within(screen.getByLabelText('태스크 정보')).queryByText('막힌 사유', { selector: 'dt' }) !==
+    null
 
   async function openDetail(taskId: string, title: string) {
     const app = renderApp(paths.tasks('ws_01', taskId))
-    await screen.findByRole('heading', { level: 2, name: title })
+    await screen.findByRole('heading', { level: 1, name: title })
     return app
   }
 
-  it('PM 이 막힘을 풀면 상태와 사유가 막히기 전 값으로 돌아가고 알린다', async () => {
+  it('PM 이 막힘을 풀면 상태가 막히기 전 값으로 돌아가 막힌 사유 줄이 사라지고 알린다', async () => {
     const user = userEvent.setup()
     await openDetail('tk_06', 'STT 정확도 측정')
     expect(await within(field('막힌 사유')).findByText(AUTO_NOTICE)).toBeInTheDocument()
@@ -57,8 +60,8 @@ describe('태스크 상세의 자동 막힘 (#330, #365)', () => {
     await user.click(within(field('막힌 사유')).getByRole('button', { name: '막힘 풀기' }))
 
     await waitFor(() => expect(screen.getByTestId('task-status')).toHaveTextContent('진행 중'))
-    expect(field('막힌 사유')).toHaveTextContent('없음')
-    expect(within(field('막힌 사유')).queryByText(AUTO_NOTICE)).toBeNull()
+    expect(blockerShown()).toBe(false)
+    expect(screen.queryByText(AUTO_NOTICE)).toBeNull()
     expect(await screen.findByText('자동 막힘을 풀었어요')).toBeInTheDocument()
   })
 
@@ -85,7 +88,7 @@ describe('태스크 상세의 자동 막힘 (#330, #365)', () => {
     await user.click(await within(field('막힌 사유')).findByRole('button', { name: '막힘 풀기' }))
 
     await waitFor(() => expect(screen.getByTestId('task-status')).toHaveTextContent('진행 중'))
-    expect(field('막힌 사유')).toHaveTextContent('없음')
+    expect(blockerShown()).toBe(false)
   })
 
   it('막힌 뒤 값이 바뀌어 409 면 안내하고 태스크를 다시 불러온다', async () => {

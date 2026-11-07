@@ -448,6 +448,31 @@ describe('마감 임박 (AC-02)', () => {
     ])
   })
 
+  it('태스크와 승인을 함께 받는 중이면 PM 제목은 `워크스페이스 현황` 이고 요약 넷이 모두 불러오는 중이다', async () => {
+    const gate = deferred()
+    onTestFinished(() => gate.resolve())
+    for (const path of ['/api/v1/tasks', '/api/v1/approvals'])
+      server.use(
+        http.get(path, async () => {
+          await gate.promise
+          return undefined
+        }),
+      )
+    renderApp(DASHBOARD)
+    await waitFor(() =>
+      expect(summary()).toEqual({
+        '확인 대기': '불러오는 중',
+        '기한 지남': '불러오는 중',
+        '7일 이내 마감': '불러오는 중',
+        '막힌 일': '불러오는 중',
+      }),
+    )
+    expect(headline()).toBe('워크스페이스 현황')
+    expect(summaryLinks()).toEqual([])
+    expect(screen.queryByRole('list', { name: '확인이 필요한 일 목록' })).toBeNull()
+    expect(screen.queryByRole('list', { name: '마감 임박 목록' })).toBeNull()
+  })
+
   it('승인을 받는 중이거나 받지 못하면 확인 대기는 링크가 아니다', async () => {
     const gate = deferred()
     onTestFinished(() => gate.resolve())

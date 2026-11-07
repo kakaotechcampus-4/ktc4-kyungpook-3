@@ -24,8 +24,8 @@ export interface ModalProps {
 /* 표는 모듈 스코프에 둔다 — 렌더마다 다시 만들지 않는다.
    근거: m2-design-tokens.md §7-8, docs/impl-decision/2026-09-16-no-cn-clsx-tailwind-merge.md */
 
-/* `inset-0` 을 쓰지 않는다 — tokens.css 가 동적 간격 스케일을 꺼서 `*-0` 유틸이 생성되지 않는다.
-   M2 부터 오버레이가 화면을 덮지 못하고 문서 흐름 아래에 떠 있었다(브라우저 E2E 에서 발견).
+/* `inset-[0px]` 은 tokens.css 에 `--spacing-0` 이 없어 `inset-0` 이 생성되지 않던 때의 우회다.
+   그때 오버레이가 화면을 덮지 못하고 문서 흐름 아래에 떠 있었다. #497 부터는 `inset-0` 도 같은 값이다.
    docs/impl-decision/2026-09-29-modal-inset-zero.md */
 const OVERLAY = 'fixed inset-[0px] z-100 flex items-center justify-center p-24'
 

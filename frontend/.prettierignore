@@ -1,10 +1,7 @@
 dist
 coverage
-storybook-static
 playwright-report
 test-results
-playwright-report-storybook
-test-results-storybook
 docs
 package-lock.json
 public/mockServiceWorker.js

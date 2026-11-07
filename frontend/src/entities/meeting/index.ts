@@ -30,17 +30,19 @@ export { assignSpeakers, meetingAudioUrl, speakerViewQueryOptions } from './api/
 export { speakerTitle, speakingTime } from './lib/speakers'
 export type { UploadMeetingOptions } from './api/uploadMeeting'
 export { toUploadForm, uploadMeeting } from './api/uploadMeeting'
-export { findProcessingMeeting } from './lib/processingMeeting'
+export { findUploadBlockingMeeting } from './lib/uploadBlockingMeeting'
 export type { MinutesList } from './lib/minutesList'
 export { latestMinutesId, toMinutesList } from './lib/minutesList'
 export { meetingFailure } from './lib/meetingFailure'
 export type { ProcessingStep, ProcessingStepState } from './lib/processingSteps'
 export { PROCESSING_STEP_COUNT, processingSteps } from './lib/processingSteps'
-export type { TrackedMeeting } from './model/processingTracker'
+export type { SettledMeeting, TrackedMeeting } from './model/processingTracker'
 export {
   clearTrackedMeetings,
+  dismissSettled,
   finishMeeting,
   promptSpeakers,
+  settleMeeting,
   trackMeeting,
   untrackMeeting,
   useMeetingTrackerStore,

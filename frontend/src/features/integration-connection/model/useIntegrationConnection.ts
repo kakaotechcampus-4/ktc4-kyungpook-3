@@ -8,7 +8,7 @@ import {
   readIntegrationReturn,
   waitWhileConnecting,
 } from '@/entities/integration'
-import type { Integration, IntegrationProvider } from '@/entities/integration'
+import type { IntegrationProvider, Integrations } from '@/entities/integration'
 import { messageSettingsQueryOptions } from '@/entities/message-settings'
 import { captureSession } from '@/entities/user'
 import { fetchFresh } from '@/shared/api/fetchFresh'
@@ -27,9 +27,9 @@ export interface IntegrationConnectionOptions {
   connectedTo: string | null
 }
 
-export interface IntegrationConnection {
+export interface IntegrationConnection<P extends IntegrationProvider = IntegrationProvider> {
   /** 지금 이 제공자의 연동 상태. 조회 전이면 null */
-  integration: Integration | null
+  integration: Integrations[P] | null
   integrationError: unknown
   retry: () => void
   /** 복귀했는데 연결되지 않았으면 그 까닭 */
@@ -58,11 +58,11 @@ export interface IntegrationConnection {
  * 옮길 때는 앱 안 이동의 관문(useGuardedNavigate)을 탄다. 확인 중에도 설정의 다른 입력은 고칠 수 있고, 고친 것이 있으면
  * 기존 이탈 확인이 묻는다 — 확인 중에 입력을 잠그면 이 영역이 화면 전체 입력의 상태를 알아야 한다.
  */
-export function useIntegrationConnection(
+export function useIntegrationConnection<P extends IntegrationProvider>(
   workspaceId: string,
-  provider: IntegrationProvider,
+  provider: P,
   { returnPath, connectedTo }: IntegrationConnectionOptions,
-): IntegrationConnection {
+): IntegrationConnection<P> {
   const queryClient = useQueryClient()
   const navigate = useGuardedNavigate()
   const { pathname } = useLocation()

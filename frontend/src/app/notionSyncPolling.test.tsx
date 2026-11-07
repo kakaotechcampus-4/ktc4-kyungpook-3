@@ -64,7 +64,7 @@ const label = () => screen.getByTestId('notion-sync-status').textContent
 async function openTask(id: string, title: string) {
   const log = recordRequests()
   const app = renderApp(paths.tasks('ws_01', id))
-  await screen.findByRole('heading', { level: 2, name: title })
+  await screen.findByRole('heading', { level: 1, name: title })
   await waitFor(() => expect(screen.getByTestId('notion-sync-status')).toBeInTheDocument())
   // 첫 조회(상세·이력·팀원)가 끝나 조용해질 때까지
   await pause(150)
@@ -223,7 +223,7 @@ describe('재조회 실패 안내 (#236)', () => {
       const shown = await failNextPoll()
       expect(shown).toHaveLength(1)
       expect(shown[0]?.closest('[role="alert"]')).not.toBeNull()
-      expect(screen.getByRole('heading', { level: 2, name: '배포 스크립트' })).toBeVisible()
+      expect(screen.getByRole('heading', { level: 1, name: '배포 스크립트' })).toBeVisible()
       expect(label()).toBe('반영 중')
       expect(screen.queryByText('태스크를 불러오지 못했어요')).toBeNull()
 
@@ -287,7 +287,7 @@ describe('재조회 실패 안내 (#236)', () => {
     await waitFor(() => expect(retryButton()).toBeEnabled(), { timeout: 5_000 })
     expect(notices()).toHaveLength(1)
     expect(label()).toBe('반영 중')
-    expect(screen.getByRole('heading', { level: 2, name: '배포 스크립트' })).toBeVisible()
+    expect(screen.getByRole('heading', { level: 1, name: '배포 스크립트' })).toBeVisible()
 
     server.resetHandlers()
     await pause(150)
@@ -330,6 +330,30 @@ describe('재조회 실패 안내 (#236)', () => {
 })
 
 describe('승인 결과의 반영 상태 (AC-07)', () => {
+  it('승인 직후 그 태스크를 받기 전에는 확인하는 중이라고 보이고, 받으면 반영 상태로 바꾼다', async () => {
+    const approval = db.approvals.find(({ approval_id }) => approval_id === 'ap_02')!
+    approval.payload.due_date = '2026-09-30'
+    renderApp(paths.approval('ws_01', 'ap_02'))
+    const approve = await screen.findByRole('button', { name: '승인' })
+    await waitFor(() => expect(approve).toBeEnabled())
+    const gate = deferred()
+    server.use(
+      http.get('/api/v1/tasks/:taskId', async () => {
+        await gate.promise
+        return undefined
+      }),
+    )
+    await userEvent.click(approve)
+    expect(await screen.findByText('확인하는 중이에요')).toBeInTheDocument()
+    expect(screen.queryByTestId('notion-sync-status')).toBeNull()
+
+    gate.resolve()
+    await waitFor(() =>
+      expect(screen.getByTestId('notion-sync-status')).toHaveTextContent('반영 중'),
+    )
+    expect(screen.queryByText('확인하는 중이에요')).toBeNull()
+  })
+
   it('승인 성공 뒤 결과에 반영 중을 보이고, 실제 synced 가 올 때만 반영됨이다', async () => {
     const approval = db.approvals.find(({ approval_id }) => approval_id === 'ap_02')!
     approval.payload.due_date = '2026-09-30'

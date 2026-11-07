@@ -8,7 +8,7 @@
  * 마스코트는 src/shared/ui/mascot/Mascot.tsx 를 그대로 그린다(idle·ink). 그림을 따로 두면 마스코트를
  * 고칠 때 시작 이미지만 옛 모양으로 남는다.
  *
- * 크기는 앱 안 스플래시와 같은 CSS 값(마스코트 96px, 간격 12px, 워드마크 18px)을 기기 픽셀 비율로
+ * 크기는 앱 안 스플래시와 같은 CSS 값(src/app/splash/splashSize.ts)을 기기 픽셀 비율로
  * 찍는다. 화면 짧은 변에 비례해 키우면 iPad 에서 시작 이미지가 사라지고 웹 스플래시가 뜨는 순간
  * 마스코트가 작아지며 튄다.
  *
@@ -29,11 +29,7 @@ const ROOT = fileURLToPath(new URL('..', import.meta.url))
 const OUT_DIR = fileURLToPath(new URL('../public/splash/', import.meta.url))
 const FONT_FILE = new URL('../src/shared/styles/fonts/NanumSquare-Bold.woff2', import.meta.url)
 
-const MASCOT_SIZE = 96
-const GAP = 12
-const WORDMARK_SIZE = 18
 const WORDMARK = "Manager's Manager"
-const WORDMARK_FONT = `700 ${WORDMARK_SIZE}px NanumSquare`
 
 /** CSS 픽셀 세로 크기와 기기 픽셀 비율. 같은 값을 쓰는 기기는 한 줄에 묶는다 */
 const PHONES = [
@@ -94,7 +90,7 @@ function linkTag(screen) {
   return `<link rel="apple-touch-startup-image" media="${media}" href="/splash/${fileName(screen)}" />`
 }
 
-async function renderMascot() {
+async function loadSplash() {
   const vite = await createServer({
     root: ROOT,
     logLevel: 'error',
@@ -103,15 +99,17 @@ async function renderMascot() {
   })
   try {
     const { Mascot } = await vite.ssrLoadModule('/src/shared/ui/mascot/Mascot.tsx')
-    return renderToStaticMarkup(
-      createElement(Mascot, { pose: 'idle', palette: 'ink', size: MASCOT_SIZE }),
+    const { SPLASH_SIZE } = await vite.ssrLoadModule('/src/app/splash/splashSize.ts')
+    const mascot = renderToStaticMarkup(
+      createElement(Mascot, { pose: 'idle', palette: 'ink', size: SPLASH_SIZE.mascot }),
     )
+    return { mascot, size: SPLASH_SIZE }
   } finally {
     await vite.close()
   }
 }
 
-function pageHtml(mascot, font) {
+function pageHtml({ mascot, size }, font) {
   return `<!doctype html>
 <html lang="ko">
 <head>
@@ -123,7 +121,7 @@ function pageHtml(mascot, font) {
   src: url(data:font/woff2;base64,${font.toString('base64')}) format('woff2');
 }
 html, body { margin: 0; height: 100%; background: #ffffff; }
-body { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: ${GAP}px; }
+body { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: ${size.gap}px; }
 p { margin: 0; font: ${WORDMARK_FONT}; line-height: 1.2; color: #171717; }
 </style>
 </head>
@@ -131,8 +129,9 @@ p { margin: 0; font: ${WORDMARK_FONT}; line-height: 1.2; color: #171717; }
 </html>`
 }
 
-const [mascot, font] = await Promise.all([renderMascot(), readFile(FONT_FILE)])
-const html = pageHtml(mascot, font)
+const [splash, font] = await Promise.all([loadSplash(), readFile(FONT_FILE)])
+const WORDMARK_FONT = `700 ${splash.size.wordmark}px NanumSquare`
+const html = pageHtml(splash, font)
 
 await rm(OUT_DIR, { recursive: true, force: true })
 await mkdir(OUT_DIR, { recursive: true })

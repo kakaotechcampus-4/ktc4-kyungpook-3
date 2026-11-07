@@ -17,7 +17,7 @@ hashlib.sha256(raw.encode("utf-8", "surrogatepass")).hexdigest() 이며, 마이�
     docker compose -f backend/docker-compose.prod.yml exec api python -c 'import os,sqlalchemy as sa;c=sa.create_engine(os.environ["DATABASE_URL"]).connect();print("rows:",c.execute(sa.text("select count(*) from session")).scalar(),"max length:",c.execute(sa.text("select max(length(session_token)) from session")).scalar())'
 
 Revision ID: 3c9a1f7d2b64
-Revises: b0d32ee4abcb
+Revises: 1032faab5855
 Create Date: 2026-11-06 15:00:00.000000
 
 """
@@ -30,7 +30,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = '3c9a1f7d2b64'
-down_revision: Union[str, Sequence[str], None] = 'b0d32ee4abcb'
+down_revision: Union[str, Sequence[str], None] = '1032faab5855'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

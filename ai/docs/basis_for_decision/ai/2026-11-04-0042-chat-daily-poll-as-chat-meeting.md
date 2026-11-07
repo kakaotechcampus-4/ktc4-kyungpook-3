@@ -57,6 +57,7 @@
 
 - 바뀐 곳: `ai/capture/chat_poll.py`, `ai/judge/`(문맥·날짜), `ai/deploy/systemd/mm-chat-poll.*`, BE 회의·승인, [backend-ai 계약](../../../../backend/docs/contracts/backend-ai-contract.md).
 - 재검토: 하루 한 번이 길다는 요청이 나올 때, 채널을 여럿 읽어야 할 때, chat 항목의 승인 품질이 충분해져 AUTO 를 열고 싶을 때, 14일 넘게 밀리는 일이 잦을 때.
+- 채널을 워크스페이스별로 BE 에서 받는 후속 결정: [0046](2026-11-06-0046-chat-channels-from-be-per-workspace.md)
 
 ## 근거와 관련 문서
 

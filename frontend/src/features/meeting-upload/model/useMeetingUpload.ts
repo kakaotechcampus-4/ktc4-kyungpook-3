@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import {
-  findProcessingMeeting,
+  findUploadBlockingMeeting,
   meetingListQueryOptions,
   trackMeeting,
   uploadMeeting,
@@ -130,7 +130,7 @@ export function useMeetingUpload(
         // 세션이 끝났으면 취소로 끝난다(아래 catch)
         const latest = await fetchFresh(queryClient, meetingListQueryOptions(workspaceId))
         if (!isCurrentSession()) return
-        const processing = findProcessingMeeting(latest)
+        const processing = findUploadBlockingMeeting(latest)
         if (processing !== null) {
           trackMeeting({ workspaceId, meetingId: processing.id })
           if (stillHere()) handlersRef.current.onProcessing(processing.id)

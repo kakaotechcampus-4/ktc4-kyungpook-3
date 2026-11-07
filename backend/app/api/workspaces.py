@@ -27,6 +27,7 @@ from app.models import (
 )
 from app.schemas.meeting import MeetingListResponse
 from app.services import upload_storage
+from app.services.member_aliases import sync_name_aliases
 from app.schemas.workspace import (
     WorkspaceCreateRequest,
     WorkspaceListResponse,
@@ -93,6 +94,7 @@ def create_workspace(
     # 워크스페이스 생성자를 PM으로 등록
     member = Member(workspace_id=workspace.workspace_id, user_id=user.user_id, display_name=user.name, role=MemberRole.PM)
     db.add(member)
+    sync_name_aliases(db, member)
     db.commit()
     db.refresh(workspace)
     

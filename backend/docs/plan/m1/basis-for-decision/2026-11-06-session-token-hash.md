@@ -33,7 +33,7 @@
 - 로그아웃은 해당 행 하나만 지운다. 비밀번호 재설정 confirm 은 기존대로 `user_id` 로 그 계정의 세션을 모두 지운다.
 - `auth._create_session` 시그니처는 유지한다. #454 의 카카오 로그인이 이 함수를 부르므로 그쪽 코드를 고칠 필요가 없다.
 - 워커는 `app/main.py` lifespan 에서 `SESSION_SWEEP_INTERVAL_SECONDS`(기본 3600, 0 이하면 끔)로 돌고 `upload_sweeper` 와 같은 시작·종료 방식을 쓴다.
-- 마이그레이션 `3c9a1f7d2b64`(down_revision `b0d32ee4abcb`, #345 의 reply judgment 뒤)는 데이터만 바꾼다. 기존 행을 Python 루프로 sha256 hex 로 바꿔 1000건씩 UPDATE 하고, 컬럼·인덱스는 건드리지 않는다. 해시는 앱을 import 하지 않고 마이그레이션 안에 복제했다(앱 코드가 바뀌어도 이 마이그레이션은 그대로여야 해서, 이메일 정규화 마이그레이션과 같은 이유).
+- 마이그레이션 `3c9a1f7d2b64`(down_revision `1032faab5855`, #463 의 이름 별칭 채우기 뒤)는 데이터만 바꾼다. 기존 행을 Python 루프로 sha256 hex 로 바꿔 1000건씩 UPDATE 하고, 컬럼·인덱스는 건드리지 않는다. 해시는 앱을 import 하지 않고 마이그레이션 안에 복제했다(앱 코드가 바뀌어도 이 마이그레이션은 그대로여야 해서, 이메일 정규화 마이그레이션과 같은 이유).
 
 ## 장단점과 감수한 제약
 
@@ -49,7 +49,7 @@
 ## 영향 범위와 재검토 조건
 
 - 코드: `app/services/sessions.py`(신규), `app/models/models.py`(`Session.session_token` 주석만), `app/api/auth.py`(발급·로그아웃), `app/api/deps.py`(조회), `app/main.py`(워커), 마이그레이션 `3c9a1f7d2b64`, 테스트 픽스처 전반. 엔드포인트·응답·쿠키·에러 코드는 바뀌지 않는다.
-- 머지 순서: #345 는 머지되어 이 마이그레이션은 `b0d32ee4abcb` 뒤에 이었다. #454(head `d2f6b81c4e07`, 부모 `b0d32ee4abcb`로 이 PR 과 같다)와 #456 은 아직 열려 있고, 나중에 머지되는 쪽이 `down_revision` 을 다시 잇는다. 컬럼 이름이 그대로라 #454 의 픽스처는 해시 방식(`session_token=hash_session_token(...)`)만 맞추면 되고 이름을 바꿀 일은 없다.
+- 머지 순서: #345·#456·#463 이 먼저 머지되어 이 마이그레이션은 #463 의 `1032faab5855` 뒤에 다시 이었다. #454(head `d2f6b81c4e07`, 부모 `b0d32ee4abcb`)는 아직 열려 있어 머지할 때 `down_revision` 을 다시 잇는다. 컬럼 이름이 그대로라 #454 의 픽스처는 해시 방식(`session_token=hash_session_token(...)`)만 맞추면 되고 이름을 바꿀 일은 없다.
 - 머지 직전 운영 확인(읽기 전용, 토큰 값은 출력하지 않는다). 저장소 루트에서 실행한다. 출력의 `rows` 는 변환될 세션 수, `max length` 는 원문 최대 길이다(해시는 항상 64자라 길이와 무관하게 들어간다).
 
 ```
