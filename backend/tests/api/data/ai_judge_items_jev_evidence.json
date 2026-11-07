@@ -1,0 +1,72 @@
+{
+  "note": "2026-11-07 ai judge 파이프라인을 실제 Luna·Terra·임베딩·Jev 로 돌린 출력(ai/judge/golden_set_pipeline/meeting_jev_evidence_status.json 의 전사). 손대지 않고 그대로 둔다",
+  "items": [
+    {
+      "action": "create",
+      "target_task_id": null,
+      "category": "schedule",
+      "task_title": "로그인 API 연동",
+      "due_date": "2026-11-13",
+      "status": null,
+      "assignee_type": "first",
+      "assignee_raw": null,
+      "doc_text": "로그인 API 연동을 11/13(금)까지 마무리하기로 함",
+      "evidence_quote": "네, 금요일까지 로그인 API 연동 끝낼게요.",
+      "evidence_speaker": "uid_haeun",
+      "evidence_at_ms": 9500,
+      "evidence_seqs": [
+        2,
+        3
+      ],
+      "task_status": "certain",
+      "due_status": "certain",
+      "due_raw": "이번 주 금요일까지",
+      "similar_count": 0,
+      "top_similarity": null
+    },
+    {
+      "action": "create",
+      "target_task_id": null,
+      "category": "schedule",
+      "task_title": "검색 성능 개선 검토",
+      "due_date": "2026-11-15",
+      "status": null,
+      "assignee_type": "first",
+      "assignee_raw": null,
+      "doc_text": "검색 성능 개선 검토를 11/15(일)까지 진행",
+      "evidence_quote": "검색 성능 개선은 제가 이번 주 안에 한번 볼게요.",
+      "evidence_speaker": "uid_minsu",
+      "evidence_at_ms": 13000,
+      "evidence_seqs": [
+        4
+      ],
+      "task_status": "certain",
+      "due_status": "inferred",
+      "due_raw": "이번 주 안에",
+      "similar_count": 0,
+      "top_similarity": null
+    },
+    {
+      "action": "create",
+      "target_task_id": null,
+      "category": "assignee",
+      "task_title": "알림 설정 페이지 개발",
+      "due_date": null,
+      "status": null,
+      "assignee_type": "first",
+      "assignee_raw": null,
+      "doc_text": "알림 설정 페이지 개발을 화자가 맡아 진행",
+      "evidence_quote": "알림 설정 페이지는 제가 맡아서 만들게요.",
+      "evidence_speaker": "uid_pm",
+      "evidence_at_ms": 19000,
+      "evidence_seqs": [
+        5
+      ],
+      "task_status": "certain",
+      "due_status": "missing",
+      "due_raw": null,
+      "similar_count": 0,
+      "top_similarity": null
+    }
+  ]
+}
