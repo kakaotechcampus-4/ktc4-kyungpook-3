@@ -33,6 +33,7 @@ const MESSAGE_SCENARIOS = [
   'messages-pm-self',
   'messages-schedule-passed',
   'messages-merge',
+  'messages-long-content',
 ] as const satisfies readonly MockScenario[]
 
 afterEach(() => sessionStorage.clear())
