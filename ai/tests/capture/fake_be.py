@@ -89,6 +89,8 @@ class FakeBe:
         self.members: dict[str, list[dict]] = {}
         # 채팅 커서 (backend chat-cursor). 워크스페이스 → last_message_at 문자열. 없으면 data null
         self.chat_cursors: dict[str, str] = {}
+        # 채팅 채널 목록 (BE #432 모양). None 이면 items 없는 {"data": {}} 를 준다
+        self.chat_channels: list[dict] | None = []
         self._n = 0
 
     def add_upload(self, meeting_id: str, *, workspace_id: str = "ws-1", audio: bytes | None = b"RIFFfake-audio",
@@ -150,6 +152,10 @@ class FakeBe:
             ws = path.split("/")[2]
             at = self.chat_cursors.get(ws)
             return _ok(200, {"meeting_id": "m-prev", "last_message_at": at} if at else None)
+        if method == "GET" and path == "/bot/chat-channels":
+            if (headers or {}).get("X-Service-Token") != self.service_token:
+                return _err(401, "UNAUTHENTICATED")
+            return _ok(200, {} if self.chat_channels is None else {"items": list(self.chat_channels)})
         if method == "GET" and path.startswith("/workspaces/") and path.endswith("/members/names"):
             return self._member_names(path.split("/")[2], headers or {})
         if method == "POST" and path.startswith("/workspaces/") and path.endswith("/tasks/similar"):
