@@ -101,14 +101,24 @@ function UploadSkeleton() {
           {['회의 제목', '회의 날짜'].map((label) => (
             <div key={label} className="flex flex-col gap-6">
               <span className="text-caption text-sub">{label}</span>
-              <Skeleton variant="block" height={44} className="rounded-9" />
+              <Skeleton variant="block" height={45} className="rounded-9" />
             </div>
           ))}
         </div>
         <div className="flex flex-col gap-6">
           <span className="text-caption text-sub">참석자</span>
           <Skeleton variant="block" width={64} height={32} className="rounded-9" />
+          <div className="flex h-lh items-center text-caption">
+            <Skeleton width={240} />
+          </div>
         </div>
+      </div>
+      {/* 아래 줄 — 안내 문구와 `정리 시작하기` (MeetingUploadForm 의 FOOTER) */}
+      <div className="flex items-center justify-between gap-20 max-md:flex-wrap">
+        <div className="flex h-lh flex-1 items-center text-caption">
+          <Skeleton width="60%" />
+        </div>
+        <Skeleton variant="block" width={132} height={44} className="rounded-9" />
       </div>
     </div>
   )

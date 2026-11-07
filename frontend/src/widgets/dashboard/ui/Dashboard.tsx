@@ -178,7 +178,8 @@ function MeetingLead({ data }: { data: DashboardData }) {
   const indicator = useLoadingIndicator(data.meetings.status === 'loading')
   if (data.meetings.status === 'loading' || indicator.pending)
     return (
-      <DeferredSkeleton indicator={indicator}>
+      // 안내 줄(LEAD)과 같은 한 줄 높이 — 문구가 와도 아래 날짜·요약이 밀리지 않는다
+      <DeferredSkeleton indicator={indicator} className="flex h-lh items-center text-body">
         <Skeleton width={240} />
       </DeferredSkeleton>
     )

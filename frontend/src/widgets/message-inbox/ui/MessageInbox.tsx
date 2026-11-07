@@ -235,7 +235,7 @@ export function MessageInbox({
   // 목록을 받아야 고를 수 있는 상세 — 묶음을 가리키거나 PM 의 기본 선택(보낼 메시지)이면 검토 모양, 팀원의 기본 선택은 대화 모양이다
   if (detailIndicator.pending)
     detail =
-      bundleId === null && viewer.role !== 'pm' ? (
+      typeof bundleId !== 'string' && viewer.role !== 'pm' ? (
         <ThreadSkeleton indicator={detailIndicator} />
       ) : (
         <ReviewSkeleton indicator={detailIndicator} />

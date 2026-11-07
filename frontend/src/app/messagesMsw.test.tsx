@@ -380,6 +380,29 @@ describe('빈 상태·로딩·목록 오류·대화 오류가 서로 구분되�
     expect(detail().getByRole('region', { name: '대화 내용' }).closest(REVEAL_TARGETS)).toBe(target)
   })
 
+  it('목록을 받는 동안의 뼈대는 역할에 맞는 틀이다 — PM 은 보내기 전 확인 · 검토 모양, 팀원은 대화 이름만 · 대화 모양 (#508)', async () => {
+    const pmGate = hold('/workspaces/ws_01/messages')
+    const pm = renderApp(paths.messages('ws_01'))
+    const pmList = await screen.findByTestId('message-list-skeleton')
+    // 묶음 이름은 정해진 글자라 막대 대신 글자다
+    expect(pmList).toHaveTextContent('보내기 전 확인')
+    expect(pmList).toHaveTextContent('대화')
+    expect(screen.getByTestId('message-review-skeleton')).toBeInTheDocument()
+    act(() => pmGate.resolve())
+    pm.unmount()
+
+    applyScenario('messages-member')
+    const memberGate = hold('/workspaces/ws_01/messages')
+    onTestFinished(() => memberGate.resolve())
+    renderApp(paths.messages('ws_01'))
+    const memberList = await screen.findByTestId('message-list-skeleton')
+    expect(memberList).not.toHaveTextContent('보내기 전 확인')
+    expect(memberList).toHaveTextContent('대화')
+    // 팀원의 기본 선택은 첫 대화다 — 상세 뼈대도 대화 모양이다
+    expect(screen.getByTestId('message-thread-skeleton')).toBeInTheDocument()
+    expect(screen.queryByTestId('message-review-skeleton')).toBeNull()
+  })
+
   it('목록 오류는 목록 칸에서 다시 시도로 알리고, 고른 대화는 그대로 보인다', async () => {
     db.messageFailures.inbox = true
     renderApp(paths.messageThread('ws_01', 'th_01'))

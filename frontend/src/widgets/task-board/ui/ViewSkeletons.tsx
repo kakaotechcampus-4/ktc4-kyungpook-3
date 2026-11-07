@@ -29,7 +29,8 @@ function ListSkeleton() {
   )
 }
 
-/** 보드 — 넓은 화면은 세 칸, 휴대폰은 칸 고르기 아래 첫 칸. 칸 이름은 글자다 */
+/** 보드 — 넓은 화면은 세 칸, 휴대폰은 칸 고르기 아래 기본 칸(진행 중, taskViews 의 기본값)과 요약 줄. 칸 이름은 글자다 */
+const MOBILE_COLUMN = 1
 function BoardSkeleton() {
   return (
     <div
@@ -41,7 +42,7 @@ function BoardSkeleton() {
           <span
             key={title}
             className={`inline-flex min-h-40 items-center justify-center rounded-9 text-[14px] ${
-              index === 0 ? 'bg-surface font-bold text-ink' : 'text-sub'
+              index === MOBILE_COLUMN ? 'bg-surface font-bold text-ink' : 'text-sub'
             }`}
           >
             {title}
@@ -51,8 +52,11 @@ function BoardSkeleton() {
       {BOARD_COLUMNS.map((title, index) => (
         <div
           key={title}
-          className={`flex flex-col gap-10 max-md:gap-12 ${index === 0 ? '' : 'max-md:hidden'}`}
+          className={`flex flex-col gap-10 max-md:gap-12 ${index === MOBILE_COLUMN ? '' : 'max-md:hidden'}`}
         >
+          <div className="hidden h-lh items-center text-[12.5px] leading-[1.5] max-md:flex">
+            <Skeleton width={160} />
+          </div>
           <div className="flex flex-col gap-4 border-b border-line px-2 pb-12 max-md:hidden">
             <div className="flex items-center gap-8">
               <span className="h-8 w-8 rounded-999 bg-line" />
