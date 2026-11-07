@@ -109,8 +109,21 @@ export function NotificationSection({ workspaceId, canManage }: NotificationSect
     >
       <BrowserPushControl className={`${OPTION_CARD} ${ROW}`} />
       {indicator.pending ? (
-        <DeferredSkeleton indicator={indicator}>
-          <Skeleton width={220} />
+        <DeferredSkeleton indicator={indicator} className="flex flex-col gap-10">
+          {/* 알림 칸과 같은 틀 — 제목 · 설명 두 줄과 오른쪽 토글. 칸마다 문구는 설정을 받아야 알아 막대다 (#508) */}
+          {[0, 1].map((card) => (
+            <div key={card} aria-hidden="true" className={`${OPTION_CARD} ${ROW} border-line`}>
+              <div className="flex flex-1 flex-col gap-4">
+                <div className="flex h-lh items-center text-body">
+                  <Skeleton width={`${[48, 40][card]}%`} />
+                </div>
+                <div className="flex h-lh items-center text-caption">
+                  <Skeleton width="64%" />
+                </div>
+              </div>
+              <span className="h-[23px] w-40 shrink-0 rounded-999 bg-control" />
+            </div>
+          ))}
         </DeferredSkeleton>
       ) : (
         <Reveal indicator={indicator}>

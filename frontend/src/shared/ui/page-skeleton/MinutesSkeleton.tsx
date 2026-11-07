@@ -17,7 +17,13 @@ const HEAD = 'flex flex-col gap-7 px-36 pt-44 pb-18 max-md:px-20'
 const TITLE = 'flex h-lh items-center text-[26px] leading-[1.3]'
 const CHIP_ROW = 'flex h-22 items-center gap-12'
 const TAB_LIST = 'flex items-center gap-18 border-b border-line px-36 max-md:px-20'
-const TAB = 'flex h-[38px] items-center px-3'
+/* 탭 이름은 정해진 글자라 막대 대신 글자로 그린다 — MinutesTabs 의 TAB 과 같은 글자·높이. 첫 탭(요약)이 골라져 있다 */
+const TAB =
+  'flex h-[38px] items-center border-b-2 border-transparent px-3 text-body font-semibold text-sub'
+const TAB_SELECTED = 'border-ink text-ink'
+const TAB_LABELS = ['요약', '전사문', '추출된 일']
+/* 요약 탭의 묶음 제목 — MinutesBody 의 SECTION_TITLE 과 같다 */
+const SECTION_TITLE = 'text-[14px] leading-[1.55] font-semibold text-ink'
 const PANEL = 'flex flex-col gap-30 px-36 pt-28 pb-56 max-md:px-20'
 
 /** 라우트 뼈대(MinutesPageSkeleton)와 회의를 바꾼 뒤의 본문 뼈대는 바로 보인다. 화면이 데이터를 기다릴 때는 지연 규칙(#508)을 넘긴다 */
@@ -96,21 +102,27 @@ export function MinutesDetailSkeleton({
       className="flex flex-col"
     >
       {head ?? <MinutesHeadSkeleton />}
-      <div data-testid="minutes-detail-skeleton-tabs" className={TAB_LIST}>
-        {[28, 40, 64].map((width) => (
-          <div key={width} className={TAB}>
-            <Skeleton width={width} />
+      {/* 정해진 글자는 자리표시라 스크린리더에서 뺀다 — 기다림은 컨테이너의 aria-busy 가 알린다 */}
+      <div data-testid="minutes-detail-skeleton-tabs" aria-hidden="true" className={TAB_LIST}>
+        {TAB_LABELS.map((label, index) => (
+          <div key={label} className={index === 0 ? `${TAB} ${TAB_SELECTED}` : TAB}>
+            {label}
           </div>
         ))}
       </div>
       <div className={PANEL}>
+        <TextLine typography="text-[14px] leading-[1.7]" width="80%" />
         <div className="flex flex-col gap-14">
-          <TextLine typography="text-[14px] leading-[1.55]" width={72} />
-          <Skeleton lines={4} />
+          <p aria-hidden="true" className={SECTION_TITLE}>
+            핵심 내용
+          </p>
+          <Skeleton lines={3} />
         </div>
         <div className="flex flex-col gap-14">
-          <TextLine typography="text-[14px] leading-[1.55]" width={96} />
-          <Skeleton lines={3} />
+          <p aria-hidden="true" className={SECTION_TITLE}>
+            결정한 것
+          </p>
+          <Skeleton lines={2} />
         </div>
       </div>
     </DeferredSkeleton>
@@ -127,9 +139,10 @@ export function MinutesPageSkeleton() {
     <main aria-busy="true" className={SCREEN}>
       <div data-testid="minutes-skeleton-aside" className={ASIDE}>
         <div className={ASIDE_HEAD}>
-          <div className={ASIDE_TITLE}>
-            <Skeleton variant="block" width={56} height={18} className="rounded-6" />
-          </div>
+          {/* 목록 제목은 정해진 글자다 — MeetingMinutes 의 ASIDE_TITLE 과 같은 글자 */}
+          <p aria-hidden="true" className={`${ASIDE_TITLE} font-bold tracking-h2 text-ink`}>
+            회의록
+          </p>
         </div>
         <MinutesListSkeleton />
       </div>

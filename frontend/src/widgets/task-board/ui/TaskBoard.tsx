@@ -29,7 +29,6 @@ import { EmptyState } from '@/shared/ui/empty-state'
 import { Icon } from '@/shared/ui/icon'
 import { QueryErrorState } from '@/shared/ui/query-error-state'
 import { DeferredSkeleton, Reveal } from '@/shared/ui/deferred-skeleton'
-import { Skeleton } from '@/shared/ui/skeleton'
 import { tabKeyTarget } from '../lib/tabKeys'
 import { boardTabs, buildTaskBoard, parseDue, withPendingStatus } from '../lib/taskBoard'
 import type { BoardItem, BoardQuery } from '../lib/taskBoard'
@@ -53,6 +52,8 @@ import {
   ViewSwitch,
 } from './ViewControls'
 import { Avatar } from './viewParts'
+import { TaskViewSkeleton } from './ViewSkeletons'
+import type { TaskViewKind } from './ViewSkeletons'
 
 /* 보드·캘린더·간트는 그 보기를 고를 때 코드를 받는다 (M8 AC-A-02). 리스트로 들어오면 셋 다 내려받지 않는다 */
 const BoardView = lazy(() =>
@@ -378,11 +379,11 @@ export function TaskBoard({
   const indicator = useLoadingIndicator(loading)
   if (indicator.pending)
     body = isList ? (
-      <DeferredSkeleton indicator={indicator} className="flex flex-col gap-8">
-        <Skeleton lines={4} />
+      <DeferredSkeleton indicator={indicator}>
+        <TaskViewSkeleton view="list" />
       </DeferredSkeleton>
     ) : (
-      <ViewLoading label="태스크를 불러오는 중" indicator={indicator} />
+      <ViewLoading label="태스크를 불러오는 중" view={view.view} indicator={indicator} />
     )
   else body = <Reveal indicator={indicator}>{body}</Reveal>
 
@@ -450,7 +451,12 @@ export function TaskBoard({
               {/* 보기마다 새 경계다 — 보기 전환(transition)에도 이전 보기를 붙잡지 않고 이 자리에 대기를 그린다 */}
               <Suspense
                 key={view.view}
-                fallback={<ViewLoading label={`${VIEW_LABEL[view.view]} 화면을 불러오는 중`} />}
+                fallback={
+                  <ViewLoading
+                    label={`${VIEW_LABEL[view.view]} 화면을 불러오는 중`}
+                    view={view.view}
+                  />
+                }
               >
                 {body}
               </Suspense>
@@ -471,19 +477,17 @@ const CODE_WAIT = { skeletonVisible: true }
  */
 function ViewLoading({
   label,
+  view,
   indicator = CODE_WAIT,
 }: {
   label: string
+  /** 그 보기와 같은 틀의 뼈대를 그린다 (#508) */
+  view: TaskViewKind
   indicator?: { skeletonVisible: boolean }
 }) {
   return (
-    <DeferredSkeleton
-      indicator={indicator}
-      role="status"
-      aria-label={label}
-      className="flex flex-col gap-8"
-    >
-      <Skeleton lines={4} />
+    <DeferredSkeleton indicator={indicator} role="status" aria-label={label}>
+      <TaskViewSkeleton view={view} />
     </DeferredSkeleton>
   )
 }

@@ -56,7 +56,7 @@ function MeetingUpload({ workspaceId }: { workspaceId: string }) {
     return (
       <UploadLayout>
         <DeferredSkeleton indicator={indicator}>
-          <Skeleton lines={4} />
+          <UploadSkeleton />
         </DeferredSkeleton>
       </UploadLayout>
     )
@@ -78,4 +78,38 @@ function MeetingUpload({ workspaceId }: { workspaceId: string }) {
         </UploadLayout>
       )
   }
+}
+
+/**
+ * 올릴 수 있는지 확인하는 동안의 뼈대 (#508). 업로드 폼과 같은 틀이다 — 파일 끌어 놓기 칸, 회의 정보 칸(제목 · 날짜 · 참석자).
+ * 정해진 글자(칸 이름)는 글자로 그린다. 자리표시라 스크린리더에서 뺀다. 치수는 AudioDropzone 의 ZONE, MeetingUploadForm 의
+ * ROOT · FIELDS · ROW 와 같다
+ */
+function UploadSkeleton() {
+  return (
+    <div aria-hidden="true" className="flex flex-col gap-26">
+      <div className="flex flex-col items-center gap-14 rounded-16 border border-line bg-surface-sunken px-32 py-44">
+        <Skeleton variant="block" width={48} height={48} className="rounded-9" />
+        <div className="flex w-full flex-col items-center gap-5">
+          <Skeleton width={200} />
+          <Skeleton width={140} />
+        </div>
+        <Skeleton width={260} />
+      </div>
+      <div className="flex flex-col gap-18 rounded-16 border border-line bg-surface p-22">
+        <div className="grid grid-cols-[minmax(0px,1fr)_200px] gap-14 max-md:grid-cols-1">
+          {['회의 제목', '회의 날짜'].map((label) => (
+            <div key={label} className="flex flex-col gap-6">
+              <span className="text-caption text-sub">{label}</span>
+              <Skeleton variant="block" height={44} className="rounded-9" />
+            </div>
+          ))}
+        </div>
+        <div className="flex flex-col gap-6">
+          <span className="text-caption text-sub">참석자</span>
+          <Skeleton variant="block" width={64} height={32} className="rounded-9" />
+        </div>
+      </div>
+    </div>
+  )
 }
