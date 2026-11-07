@@ -783,6 +783,17 @@ def test_same_value_twice_makes_one_card_and_one_notice(mdb, mseed, two):
     assert _row(mdb, second).state == S.DONE
 
 
+def test_rejecting_the_one_card_leaves_nothing_waiting(mdb, mseed, two):
+    a, _ = two
+    _same_again(mdb, mseed, a, ("due_date", "2026-11-27"))
+    [card] = _cards(mdb)
+    _resolve(card, "rejected")
+
+    assert [c.status for c in _cards(mdb)] == ["rejected"]
+    items = client("pm").get(f"{P}/tasks/{a.task_id}/timeline").json()["data"]["items"]
+    assert [i["changes"][0]["result"] for i in items] == ["rejected", "rejected"]
+
+
 def test_different_value_makes_another_card(mdb, mseed, two):
     a, _ = two
     for at, value in ((AT, "2026-11-27"), (AT + MIN, "2026-11-28")):
