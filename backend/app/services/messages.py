@@ -44,7 +44,7 @@ from app.models import (
     Workspace,
     WorkspaceMessageSettings,
 )
-from app.services import notifications, replies, scheduler
+from app.services import mailer, notifications, replies, scheduler
 
 # 봇이 가져간 뒤 결과 보고가 이 시간 안에 없으면 못 보냄(알 수 없음)으로 닫는다. 다시 주지 않는다(최대 한 번).
 CLAIM_TIMEOUT = timedelta(minutes=10)
@@ -673,11 +673,16 @@ class ClaimedMessage:
 
 
 def _dm_body(db: Session, message: ThreadMessage) -> str:
-    """봇이 보낼 글자. 봇 계정이라 보낸 사람이 안 보이고 여러 공간 소속도 가려지므로 PM 글 첫 줄에 공간과 쓴 PM 을 붙인다."""
+    """봇이 보낼 글자. PM 글은 답장을 웹 대화로만 받으므로 본문 없이 누가 보냈는지와 대화 링크만 보낸다."""
     if message.sender != MessageSender.PM:
         return message.body
-    workspace = db.get(Workspace, message.thread.workspace_id).name
-    return f"[{workspace}] {message.author_name or 'PM'}\n{message.body}"
+    thread = message.thread
+    workspace = db.get(Workspace, thread.workspace_id).name
+    notice = f"{workspace} {_pm_name(db, thread.workspace_id, message.author_member_id)} PM 이 메시지를 보냈어요."
+    base = mailer.app_base_url()
+    if not base:
+        return notice
+    return f"{notice}\n{base}/workspaces/{thread.workspace_id}/messages/threads/{thread.thread_id}"
 
 
 def claim_for_bot(db: Session, now: datetime) -> list[ClaimedMessage]:
@@ -958,8 +963,6 @@ def add_pm_message(db: Session, thread: MessageThread, *, author: Member, body: 
     member = thread.member
     if member.is_deleted:
         raise AppError(ErrorCode.MEMBER_NOT_FOUND, details={"member_id": member.member_id})
-    if len(body) > DRAFT_MAX_LENGTH:
-        raise AppError(ErrorCode.INVALID_REQUEST, message=f"메시지는 {DRAFT_MAX_LENGTH}자 이하여야 합니다.")
     message = ThreadMessage(
         thread_id=thread.thread_id, sender=MessageSender.PM, body=body, author_member_id=author.member_id,
         created_at=now, **_dm_fields(member),

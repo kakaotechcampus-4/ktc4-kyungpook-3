@@ -57,7 +57,7 @@ def _inbox_row(c, seed, thread_id):
 
 # 보내기
 
-def test_pm_message_reaches_the_bot_with_a_header_and_the_web_keeps_what_was_written(mdb, mseed):
+def test_pm_message_reaches_the_bot_as_a_notice_and_the_web_keeps_what_was_written(mdb, mseed):
     pm, tid = client("pm"), _thread(mdb, mseed)
     r = _send(pm, mseed, tid, "내일 회의 자료 부탁해요")
 
@@ -71,7 +71,7 @@ def test_pm_message_reaches_the_bot_with_a_header_and_the_web_keeps_what_was_wri
 
     (item,) = _claim()
     assert item["message_id"] == written["message_id"]
-    assert item["body"] == "[A] PM\n내일 회의 자료 부탁해요"
+    assert item["body"] == "A PM PM 이 메시지를 보냈어요."
     assert item["discord_user_id"] == "d_alice" and item["scheduled_at"] is None
     assert _claim() == []
 
@@ -90,7 +90,7 @@ def test_each_pm_signs_their_own_message_in_one_thread(mdb, mseed):
     _send(client("pm"), mseed, tid, "하나")
     _send(client("bob"), mseed, tid, "둘")
 
-    assert [i["body"] for i in _claim()] == ["[A] PM\n하나", "[A] 밥\n둘"]
+    assert [i["body"] for i in _claim()] == ["A PM PM 이 메시지를 보냈어요.", "A 밥 PM 이 메시지를 보냈어요."]
 
 
 def test_member_lines_stay_authorless(mdb, mseed):
@@ -109,14 +109,14 @@ def test_a_pm_writing_in_their_own_thread_is_the_owner_and_sends_no_dm(mdb, msee
     assert _claim() == []
 
 
-def test_message_length_is_capped_for_pm_messages_only(mdb, mseed):
+def test_pm_message_notice_links_to_the_conversation(mdb, mseed, monkeypatch):
+    monkeypatch.setenv("APP_BASE_URL", "https://mm.example/")
     tid = _thread(mdb, mseed)
-    long, too_long = "가" * 2000, "가" * 2001
+    _send(client("pm"), mseed, tid, "본문은 DM 에 나가지 않는다")
 
-    assert _send(client("pm"), mseed, tid, too_long).status_code == 400
-    assert _send(client("pm"), mseed, tid, long).status_code == 201
-    assert _send(client("alice"), mseed, tid, too_long).status_code == 201
-    assert mdb.query(ThreadMessage).filter(ThreadMessage.sender == "pm").count() == 1
+    body = _claim()[0]["body"]
+
+    assert body == f"A PM PM 이 메시지를 보냈어요.\nhttps://mm.example/workspaces/{mseed['ws']}/messages/threads/{tid}"
 
 
 # 묶음 문구
@@ -247,7 +247,7 @@ def test_reply_to_a_pm_dm_lands_in_that_workspace(mdb, mseed):
     _report(reminder, "dm_a")
     _send_in(other_ws, other_thread)
     (plain,) = _claim()
-    assert plain["body"] == "[B] 비\nB 공간 글"
+    assert plain["body"] == "B 비 PM 이 메시지를 보냈어요."
     _report(plain, "dm_b")
 
     later = datetime.now(timezone.utc) + timedelta(minutes=5)
@@ -372,7 +372,7 @@ def test_pm_opens_a_thread_in_a_workspace_with_no_reminders_and_it_reaches_the_b
     assert detail["messages"] == []
 
     assert _send(pm, mseed, thread["thread_id"], "안녕하세요").status_code == 201
-    assert [i["body"] for i in _claim()] == ["[A] PM\n안녕하세요"]
+    assert [i["body"] for i in _claim()] == ["A PM PM 이 메시지를 보냈어요."]
 
 
 def test_opening_a_thread_twice_gives_the_same_thread(mdb, mseed):

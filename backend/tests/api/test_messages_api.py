@@ -552,7 +552,7 @@ def test_owner_web_reply_never_goes_to_bot_and_pm_message_does(mdb, mseed):
     assert r.status_code == 201 and r.json()["data"]["reply_channel"] == "web"
     assert _claim() == []
     assert pm.post(url, json={"body": "PM 글"}).status_code == 201
-    assert [i["body"] for i in _claim()] == ["[A] PM\nPM 글"]
+    assert [i["body"] for i in _claim()] == ["A PM PM 이 메시지를 보냈어요."]
     msgs = pm.get(f"{P}/workspaces/{ws}/messages/threads/{tid}").json()["data"]["messages"]
     assert [m["body"] for m in msgs] == ["웹으로 답해요", "PM 글"]
 
